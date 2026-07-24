@@ -1,4 +1,4 @@
-import { createSignal, type Accessor, Show } from "solid-js"
+import { createSignal, type Accessor, type JSX, Show } from "solid-js"
 import { t } from "../../i18n"
 import type { AlphaSessionIdentity, AlphaSessionLiveSnapshot } from "./session-workspace-core"
 
@@ -71,7 +71,11 @@ function WorkspaceTopbar(props: {
   )
 }
 
-export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext }) {
+export function SessionWorkspaceShell(props: {
+  live: AlphaSessionLiveContext
+  /** composer 停靠位内容(REQ-125 C7:AlphaComposer 直挂,props 传入 —— 零 Portal/零选择器)。 */
+  composer?: () => JSX.Element
+}) {
   const [panel, setPanel] = createSignal<"review" | "terminal" | undefined>("review")
   const [lastPanel, setLastPanel] = createSignal<"review" | "terminal">("review")
   const openPanel = (next: "review" | "terminal") => {
@@ -107,7 +111,9 @@ export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext }) 
           data-alpha-session-composer-dock
           aria-label={t("alpha.session.composerHost")}
         >
-          <div class="a-swk-composer-host" data-alpha-session-composer-host />
+          <div class="a-swk-composer-host" data-alpha-session-composer-host>
+            {props.composer?.()}
+          </div>
         </section>
       </main>
       <Show when={panel()}>

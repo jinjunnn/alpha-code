@@ -170,9 +170,10 @@ function decorateBashExit(trigger: HTMLElement) {
   content.appendChild(badge)
 }
 
-// ⑦ Slash-command → compact chip. LIVE CAPTURE REMOVED (#251): captureSend read the composer at send
-// time, but ComposerTakeover hides the upstream composer and the user's real input lives in
-// AlphaComposer — the capture path could never see a command again (S48 REQ-088 O2: chip count 0→0).
+// ⑦ Slash-command → compact chip. LIVE CAPTURE REMOVED (#251): captureSend read the upstream composer
+// at send time, but the user's real input lives in AlphaComposer (REQ-125 C7 起在 seam 会话页直挂,
+// send-time capture 走 session-slash-origin typed 登记) — the DOM capture path could never see a
+// command again (S48 REQ-088 O2: chip count 0→0).
 // What remains is the RENDER half: folds persisted in localStorage (alpha-cmd:<messageID>) keep
 // rendering as chips across reloads / app restarts / reopening the session.
 type SlashType = "command" | "skill" | "mcp"
@@ -299,8 +300,8 @@ export function TimelineInject() {
     }, 0)
   }
   // #251: the send-time capture listeners (keydown Enter / prompt-submit click → captureSend) are
-  // gone — they read the upstream composer that ComposerTakeover hides, so they could never capture
-  // again. scanCommands() still folds messages recorded in localStorage.
+  // gone — they read the upstream composer while the user's real input lives in AlphaComposer, so
+  // they could never capture again. scanCommands() still folds messages recorded in localStorage.
   onMount(() => {
     scan()
     for (const d of [120, 400, 900]) setTimeout(scan, d)

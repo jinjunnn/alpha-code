@@ -7,10 +7,10 @@ import { onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PermissionSurfaceProps } from "./providers"
 import { PermissionDialog } from "./PermissionDialog"
+import { sessionApprovalDockClaimed } from "./session-workspace/session-approval-claim"
+import { reconcilePermissionRequests, type PermissionFeedDelta } from "./session-workspace/session-permission-feed"
 
-type PermissionDelta =
-  | { type: "asked"; request: PermissionV2Request }
-  | { type: "replied"; receipt: PermissionV2DecisionReceipt }
+type PermissionDelta = PermissionFeedDelta
 
 export function PermissionWatcher(props: PermissionSurfaceProps) {
   const [state, setState] = createStore({ requests: [] as PermissionV2Request[] })
@@ -85,7 +85,9 @@ export function PermissionWatcher(props: PermissionSurfaceProps) {
     props.client.reply(request.id, command)
 
   return (
-    <Show when={state.requests[0]} keyed>
+    // REQ-125 C7:seam 会话页的 composer dock 接管当前会话的审批呈现时,watcher 让位
+    // (进程内 claim,零 DOM 协调);dock 卸载即恢复兜底 —— 不呈现 = 不放行,fail-closed 不变。
+    <Show when={!sessionApprovalDockClaimed(props.sessionID) && state.requests[0]} keyed>
       {(request) => (
         <PermissionDialog
           request={request}
@@ -95,25 +97,5 @@ export function PermissionWatcher(props: PermissionSurfaceProps) {
         />
       )}
     </Show>
-  )
-}
-
-function reconcilePermissionRequests(
-  snapshot: PermissionV2Request[],
-  deltas: PermissionDelta[],
-  resolved: Set<string>,
-) {
-  return [...snapshot.map((request) => ({ type: "asked", request }) as const), ...deltas].reduce<PermissionV2Request[]>(
-    (requests, delta) => {
-      if (delta.type === "replied") {
-        const ids = new Set([delta.receipt.requestID, ...delta.receipt.resolvedRequestIDs])
-        return requests.filter((request) => !ids.has(request.id))
-      }
-      if (resolved.has(delta.request.id)) return requests
-      const index = requests.findIndex((request) => request.id === delta.request.id)
-      if (index < 0) return [...requests, delta.request]
-      return requests.map((request, itemIndex) => (itemIndex === index ? delta.request : request))
-    },
-    [],
   )
 }

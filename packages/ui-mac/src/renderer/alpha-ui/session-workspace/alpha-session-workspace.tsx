@@ -2,7 +2,9 @@ import { ServerConnection, type MaybePreloadableComponent, useServerSDK, useServ
 import { useLocation } from "@solidjs/router"
 import { createContext, createMemo, type ParentProps, useContext } from "solid-js"
 import { parseRoute } from "../../../shared/route-manifest"
+import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import { SurfaceBoundary } from "../surface-boundary"
+import { SessionComposerDock } from "./session-composer-dock"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
 import { type AlphaSessionLiveContext, SessionWorkspaceShell } from "./session-workspace-shell"
 import "./session-workspace.css"
@@ -19,7 +21,7 @@ function SessionLiveProvider(props: ParentProps<{ value: AlphaSessionLiveContext
   return <SessionLiveContext.Provider value={props.value}>{props.children}</SessionLiveContext.Provider>
 }
 
-export function AlphaSessionWorkspace() {
+export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
   const location = useLocation()
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
@@ -41,12 +43,15 @@ export function AlphaSessionWorkspace() {
   return (
     <SurfaceBoundary surface="session">
       <SessionLiveProvider value={live}>
-        <SessionWorkspaceShell live={live} />
+        <SessionWorkspaceShell
+          live={live}
+          composer={() => <SessionComposerDock live={live} projects={props.projects} />}
+        />
       </SessionLiveProvider>
     </SurfaceBoundary>
   )
 }
 
-export function alphaSessionWorkspaceSurface(): MaybePreloadableComponent {
-  return () => <AlphaSessionWorkspace />
+export function alphaSessionWorkspaceSurface(projects: AlphaProjectsApi): MaybePreloadableComponent {
+  return () => <AlphaSessionWorkspace projects={projects} />
 }

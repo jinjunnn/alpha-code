@@ -48,6 +48,7 @@ const EXTERNALIZED_SURFACES = [
   "alpha-ui/model-picker-add.tsx",
   "alpha-ui/model-picker-core.ts",
   "alpha-ui/session-workspace/alpha-session-workspace.tsx",
+  "alpha-ui/session-workspace/session-composer-dock.tsx",
   "alpha-ui/settings.tsx",
   "alpha-ui/surface-boundary.tsx",
   "dev/surface-map-inspector.tsx",

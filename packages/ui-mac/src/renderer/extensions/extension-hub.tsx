@@ -174,7 +174,7 @@ export function ExtensionHub(props: {
   onClose: () => void
 }) {
   let hubCloseButton: HTMLButtonElement | undefined
-  // REQ-099(#307)项目上下文 = 当前路由的项目目录(与 composer-takeover 同款 parseRoute 先例;
+  // REQ-099(#307)项目上下文 = 当前路由的项目目录(route-manifest parseRoute 先例;
   // 设计稿 Q1 采 A 案)。home/new-session 路由 = 无上下文 →「本项目」组不渲染。
   const loc = useLocation()
   const projectDir = createMemo((): string | undefined => {

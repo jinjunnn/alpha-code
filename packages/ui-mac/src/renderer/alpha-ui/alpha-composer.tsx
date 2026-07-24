@@ -1,13 +1,14 @@
-// AlphaComposer — REQ-055:alpha 唯一的 composer 组件(用户拍板 2026-07-07:「一个 CSS 一个完整的
-// 组件」「自建,不再集成 opencode」)。首页(mode="home")与会话页(mode="session",经
-// composer-takeover 顶替上游 prompt-input)渲染**同一个组件**,样式只来自 alpha-composer.css。
+// AlphaComposer — REQ-055/REQ-125 C7:alpha 唯一的 composer 组件(用户拍板 2026-07-07:「一个 CSS
+// 一个完整的组件」「自建,不再集成 opencode」)。首页(mode="home")、新会话与会话页
+// (mode="session",由 seam 会话页的 SessionComposerDock **直挂**,props 传入 —— 零 Portal/
+// 零选择器,takeover 时代随 REQ-125 C7 终结)渲染**同一个组件**,样式只来自 alpha-composer.css。
 //
 // 与旧世界的本质区别:session 的模型/推理档以 typed Session Model.Ref 为真源，composer-state
-// 只保留已确认的 UI 投影；agent/权限仍是轻量提交态。不再有 agent.cycle 轮转、variant cycleTo
-// 或隐藏上游选择器标签发布 —— 那一类「驱动隐藏上游控件」的机制全部退役。
+// 只保留已确认的 UI 投影;agent/权限仍是轻量提交态。不再有 agent.cycle 轮转、variant cycleTo
+// 或隐藏上游选择器标签发布 —— 那一类「驱动/收养隐藏上游控件」的机制全部退役。
 //
-// v1 诚实边界(见 requirements/REQ-055):附件/拖拽/图片粘贴不迁(+ 菜单沿用);上下文 ring 在会话页
-// 由 takeover 收养上游活节点(纯只读复用);BYOK 模型无档位数据 → 全链 ready 后 effort 弹层如实说明。
+// session 专属数据(live 运行态/上下文用量/审批挂起/斜杠捕获)一律经 sessionDock props 从
+// typed 通道注入(基线 I1/I2/I8);2.5s status 轮询与上游 ring DOM 收养已删。
 
 import {
   createEffect,
@@ -509,6 +510,32 @@ function EffortChip(props: {
 
 /* ── AlphaComposer 主体 ─────────────────────────────────────────────────────── */
 
+/** 斜杠命令发送成功时的来源捕获(REQ-125 C7,供时间线 chip;上游 send 后不保留)。 */
+export type ComposerSlashCapture = {
+  sessionID: string
+  directory: string
+  command: string
+  arguments: string
+  /** 引擎返回的 assistant message id(session.command response.info.id)。 */
+  assistantMessageID?: string
+}
+
+/**
+ * session 模式的 typed 数据面(REQ-125 C7)。由 seam 会话页的 SessionComposerDock 注入;
+ * 全部取自 typed 通道(session_status / messages+model catalog / PermissionV2 feed),
+ * 缺席(home/newSession 或测试)时组件按「无会话数据」诚实降级:无停止键、无 ring。
+ */
+export type ComposerSessionDockApi = {
+  /** live 运行态(session_status typed 通道;不再轮询)。 */
+  running: () => boolean
+  /** 上下文用量百分比(0-100);null = 事实不足,ring 不渲染。 */
+  contextUsage: () => number | null
+  /** 当前会话是否有挂起审批(驱动占位文案与权限 chip 琥珀态)。 */
+  approvalPending: () => boolean
+  /** 斜杠命令发送成功后的捕获回调。 */
+  onSlashCommand?: (capture: ComposerSlashCapture) => void
+}
+
 export type AlphaComposerProps = {
   mode: "home" | "session"
   projects: AlphaProjectsApi
@@ -516,6 +543,8 @@ export type AlphaComposerProps = {
   directory: () => string | undefined
   /** session 模式必传:目标会话。 */
   sessionID?: () => string | undefined
+  /** session 模式:seam dock 注入的 typed 数据面。 */
+  sessionDock?: ComposerSessionDockApi
   /** home:零工作区时的引导(打开工作区选择器)。 */
   onNeedWorkspace?: () => void
   /** home:创建+首发成功后的跳转。 */
@@ -548,7 +577,6 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const modelContract = props.modelContract ?? createModelContract(props.projects.sdk)
   const [text, setText] = createSignal(props.initialText ?? "")
   const [sending, setSending] = createSignal(false)
-  const [busy, setBusy] = createSignal(false) // session:引擎侧运行中(status 轮询,见下)
   const [modelChainState, setModelChainState] = createSignal<"loading" | "ready" | "error">("loading")
   const [mentions, setMentions] = createSignal<MentionPart[]>([])
   const [composing, setComposing] = createSignal(false)
@@ -628,28 +656,18 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   )
   const hasWorkspace = () => !!props.directory()
 
-  /* session 模式:忙态轮询(v1;v2 换 SSE)。只在本组件可见 + 已知会话时跑,2.5s 间隔,
-     idle 即停 —— 状态未知时**不显示**停止按钮(C28:不装能停)。 */
-  let statusTimer: ReturnType<typeof setInterval> | undefined
-  const pollStatus = async () => {
-    const c = props.projects.sdk()
-    const sid = props.sessionID?.()
-    if (!c || !sid) return
-    try {
-      const { data } = await c.session.status({ directory: props.directory() } as any)
-      const st = data && (data as Record<string, { type?: string }>)[sid]
-      setBusy(!!st && st.type !== "idle")
-    } catch {
-      setBusy(false)
-    }
+  /* session 模式:运行态来自 sessionDock 注入的 live status typed 通道(REQ-125 C7,取代
+     2.5s 轮询)。状态未知(dock 缺席)= false —— 不显示停止按钮(C28:不装能停)。 */
+  const running = () => (props.mode === "session" && props.sessionDock?.running()) || false
+  const approvalPending = () => (props.mode === "session" && props.sessionDock?.approvalPending()) || false
+  const contextUsage = createMemo(() =>
+    props.mode === "session" ? (props.sessionDock?.contextUsage() ?? null) : null,
+  )
+  const placeholder = () => {
+    if (approvalPending()) return t("alpha.composer.placeholderDecision")
+    if (running()) return t("alpha.composer.placeholderQueue")
+    return composerAgent() === "plan" ? t("alpha.composer.placeholderPlan") : t("alpha.composer.placeholder")
   }
-  const startPolling = () => {
-    if (props.mode !== "session" || statusTimer) return
-    void pollStatus()
-    statusTimer = setInterval(() => void pollStatus(), 2500)
-  }
-  onMount(startPolling)
-  onCleanup(() => statusTimer && clearInterval(statusTimer))
 
   /* ── 默认模型解析链。session 先从 typed get 收敛真实 Model.Ref；随后 list 负责可用性与默认。
      home 只保留创建会话前的内存选择，创建时把同一 Model.Ref 写进 Session。 */
@@ -1002,7 +1020,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           .list({ directory: dir } as any)
           .catch(() => ({ data: undefined }) as const)
         if (Array.isArray(cmds) && cmds.some((x: any) => x?.name === slash.name)) {
-          const { error } = await c.session.command({
+          const { data: commanded, error } = await c.session.command({
             sessionID: sid,
             directory: dir,
             command: slash.name,
@@ -1012,9 +1030,17 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
             pushToast({ kind: "error", title: t("alpha.composer.commandFailed") })
             return
           }
+          // REQ-125 C7:send 当下捕获命令来源(上游不保留);assistant messageID 用于时间线对齐。
+          const assistantMessageID = (commanded as { info?: { id?: string } } | undefined)?.info?.id
+          props.sessionDock?.onSlashCommand?.({
+            sessionID: sid,
+            directory: dir,
+            command: slash.name,
+            arguments: slash.args,
+            ...(typeof assistantMessageID === "string" && assistantMessageID ? { assistantMessageID } : {}),
+          })
           setText("")
           setMentions([])
-          setBusy(true)
           return
         }
       }
@@ -1031,7 +1057,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       setText("")
       setMentions([])
       setAttachments([])
-      setBusy(true) // 立即反映;轮询随后校准
+      // 运行中发送 = 排队(queue/steer 语义):忙态由 live status typed 通道驱动,这里不再乐观置位。
     } finally {
       setSending(false)
     }
@@ -1052,12 +1078,13 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   }
 
   return (
-    // a-ui 作用域类必须随组件走:session 面经 Portal 挂进上游容器,没有 .a-ui 祖先 —— 缺了它,
-    // 焦点圈治理(.a-ui .a-chip:focus…)与基础排版全部失效,上游肥橙焦点圈漏进来(用户报障 2026-07-07)。
+    // a-ui 作用域类保持随组件走:home 与 session 宿主布局各异,自带作用域才能保证焦点圈治理
+    // (.a-ui .a-chip:focus…)与基础排版在任何挂点一致(用户报障 2026-07-07 的固化教训)。
     <div
       class="a-ui a-comp"
       data-alpha-composer={props.mode}
       data-empty={text().trim() ? undefined : ""}
+      data-approval={approvalPending() ? "" : undefined}
       data-drag={dragOver() ? "" : undefined}
       onClick={stop}
       onDragOver={(e) => {
@@ -1116,8 +1143,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         ref={taRef}
         class="a-comp-input"
         rows="1"
-        placeholder={composerAgent() === "plan" ? t("alpha.composer.placeholderPlan") : t("alpha.composer.placeholder")}
-        aria-label={composerAgent() === "plan" ? t("alpha.composer.placeholderPlan") : t("alpha.composer.placeholder")}
+        placeholder={placeholder()}
+        aria-label={placeholder()}
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={auto.open()}
@@ -1152,9 +1179,17 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         <PermChip command={command} />
         <PlanChip />
         <div class="a-comp-grow" />
-        {/* 上下文用量 ring 停靠位(session:takeover 把上游活 ring 收养进来;home 无会话无用量,不渲染) */}
-        <Show when={props.mode === "session"}>
-          <span class="a-comp-usage" data-alpha-usage-host />
+        {/* 上下文用量 ring(session:sessionDock 从 typed 通道计算注入;事实不足 = null 不渲染;
+            home 无会话无用量,不渲染 —— 收养上游 DOM 节点的 takeover 机制已随 REQ-125 C7 终结) */}
+        <Show when={contextUsage() !== null}>
+          <span
+            class="a-comp-usage"
+            title={t("alpha.composer.contextUsage", { percent: contextUsage()! })}
+            aria-label={t("alpha.composer.contextUsage", { percent: contextUsage()! })}
+          >
+            <span class="a-comp-usage-ring" style={{ "--a-comp-usage-fill": `${contextUsage()}%` }} aria-hidden="true" />
+            <span class="a-comp-usage-num">{contextUsage()}%</span>
+          </span>
         </Show>
         <ModelChip
           contract={modelContract}
@@ -1173,7 +1208,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           modelChainReady={() => modelChainState() === "ready"}
         />
         <Show
-          when={props.mode === "session" && busy()}
+          when={running()}
           fallback={
             <button
               class="a-comp-send"
@@ -1191,8 +1226,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
             class="a-comp-send a-comp-stop"
             data-ready
             onClick={() => void abort()}
-            title={t("alpha.composer.abort")}
-            aria-label={t("alpha.composer.abort")}
+            title={t("alpha.composer.stopGenerating")}
+            aria-label={t("alpha.composer.stopGenerating")}
           >
             <StopSquare />
           </button>

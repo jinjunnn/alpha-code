@@ -154,14 +154,6 @@
 .a-chip:hover .a-ic {
   color: var(--a-text-secondary);
 }
-/* 会话页 host 必须复刻上游 composer 的 stacking(relative + z-index:10):timeline 滚动视口是
- * positioned 且尾部延伸到 composer 下方 —— host 若是 static,视觉在上、hit-test 在下,chips 的
- * 真实鼠标点击全被视口吃掉(真机实测 2026-07-07:会话页 effort/model「点了没反应」的根因)。 */
-[data-alpha-composer-host] {
-  position: relative;
-  z-index: 10;
-}
-
 /* 焦点圈治理(用户报障 2026-07-07「一直回归错误的样式」):鼠标/程序化点击留下的 :focus-visible
  * 肥紫圈在 chips 上永久压掉,键盘可达性改用细描边。 */
 .a-ui .a-chip:focus-visible,
@@ -225,26 +217,41 @@
   flex: none;
 }
 
-/* ── 上下文用量停靠位(session:takeover 收养上游 progress-circle 按钮进来)── */
+/* ── 上下文用量 ring(session:typed 通道取数,alpha 自绘;REQ-125 C7 终结 DOM 收养)── */
 .a-comp-usage {
   display: inline-flex;
   align-items: center;
-}
-.a-comp-usage:empty {
-  display: none;
-}
-.a-comp-usage > button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  background: transparent;
+  gap: 6px;
+  flex: none;
+  height: 30px;
+  padding: 0 9px 0 7px;
   border-radius: var(--a-radius-md);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
 }
-.a-comp-usage > button:hover {
-  background: var(--a-bg-muted);
+.a-comp-usage-ring {
+  position: relative;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--a-radius-full);
+  background: conic-gradient(var(--a-text-tertiary) var(--a-comp-usage-fill, 0%), var(--a-bg-inset) 0);
+}
+.a-comp-usage-ring::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-surface);
+}
+.a-comp-usage-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 审批挂起:权限 chip 转琥珀提示当前模式(已批稿「审批请求停靠」变体)── */
+.a-comp[data-approval] .a-chip-perm {
+  color: var(--a-warning);
 }
 
 /* ── 发送 / 中止 ── */
@@ -275,19 +282,6 @@
 }
 .a-comp-stop[data-ready] {
   background: var(--a-danger, #dc2626);
-}
-
-/* ── 会话页接管:上游 composer 隐藏(保留 DOM,不接收输入)── */
-body[data-alpha-composer-takeover] [data-component="session-prompt-dock"] [data-component="prompt-input-v2"] {
-  display: none !important;
-}
-[data-alpha-composer-host] {
-  display: block;
-  padding: 0 12px 12px;
-}
-[data-alpha-composer-host] .a-comp {
-  max-width: 900px;
-  margin: 0 auto;
 }
 
 /* ── 自建模型弹层 ── */

@@ -66,6 +66,11 @@ describe("REQ-125 session workspace real Solid mount", () => {
     expect(host.querySelector("[data-alpha-session-timeline-host]")).not.toBeNull()
     expect(host.querySelector("[data-alpha-session-composer-dock]")).not.toBeNull()
     expect(host.querySelector("[data-alpha-session-composer-host]")).not.toBeNull()
+    // REQ-125 C7 直挂:composer 内容渲染在停靠位子树内(无 Portal 逃逸,body 下无游离节点)。
+    const composerStub = host.querySelector("[data-alpha-session-composer-stub]")
+    expect(composerStub).not.toBeNull()
+    expect(composerStub!.closest("[data-alpha-session-composer-host]")).not.toBeNull()
+    expect(document.querySelectorAll("[data-alpha-session-composer-stub]")).toHaveLength(1)
     expect(host.querySelector("[data-alpha-session-rail-host]")?.getAttribute("data-alpha-session-rail-panel")).toBe(
       "review",
     )

@@ -23,7 +23,9 @@ export function SessionWorkspaceHarness() {
     current: snapshot,
     accepts: (identity) => sameSessionIdentity(identity, snapshot()?.identity),
   }
-  return <SessionWorkspaceShell live={live} />
+  // composer 停靠位走与生产同一条直挂通道(props 传入);harness 用标记桩替代真实
+  // SessionComposerDock(后者依赖 ServerSDK/ServerSync 上下文),直挂结构本身被真实断言。
+  return <SessionWorkspaceShell live={live} composer={() => <div data-alpha-session-composer-stub />} />
 }
 
 export function setSessionWorkspaceSnapshot(next: AlphaSessionLiveSnapshot | undefined) {

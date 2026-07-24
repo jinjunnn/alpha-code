@@ -4,6 +4,9 @@ import { join, resolve } from "node:path"
 
 const tsx = readFileSync(join(import.meta.dir, "alpha-session-workspace.tsx"), "utf8")
 const shell = readFileSync(join(import.meta.dir, "session-workspace-shell.tsx"), "utf8")
+const dock = readFileSync(join(import.meta.dir, "session-composer-dock.tsx"), "utf8")
+const dockCore = readFileSync(join(import.meta.dir, "session-dock-core.ts"), "utf8")
+const permissionFeed = readFileSync(join(import.meta.dir, "session-permission-feed.ts"), "utf8")
 const css = readFileSync(join(import.meta.dir, "session-workspace.css"), "utf8")
 const rendererIndex = readFileSync(join(import.meta.dir, "../../index.tsx"), "utf8")
 const sidebar = readFileSync(join(import.meta.dir, "../../sidebar/alpha-sidebar.tsx"), "utf8")
@@ -42,7 +45,7 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
       "UpstreamSessionLeaf",
       "SessionPage",
     ]
-    forbidden.forEach((token) => expect(`${tsx}\n${shell}`).not.toContain(token))
+    forbidden.forEach((token) => expect(`${tsx}\n${shell}\n${dock}\n${dockCore}\n${permissionFeed}`).not.toContain(token))
     expect(tsx).not.toContain("preloadSessionLeaf")
     expect(sidebar).not.toContain("preloadSessionLeaf")
     expect(tsx).toContain("useServerSDK")
@@ -62,8 +65,8 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
 
   test("keeps the release seam and existing Alpha Recovery boundary", () => {
     expect(rendererIndex).toContain(`if (resolved?.session.mode !== "alpha") return undefined`)
-    expect(rendererIndex).toContain(`return alphaSessionWorkspaceSurface()`)
-    expect(rendererIndex).toContain(`const session = productionRoutes.session.mount(resolved)`)
+    expect(rendererIndex).toContain(`return alphaSessionWorkspaceSurface(projects)`)
+    expect(rendererIndex).toContain(`const session = productionRoutes.session.mount(resolved, alphaProjects)`)
     expect(upstreamApp).toContain(`function createTargetSessionRoute(`)
     expect(upstreamApp).toContain(`<TargetSessionRouteContent content={Content} />`)
     expect(upstreamApp).toContain(`<Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />`)
