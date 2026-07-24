@@ -25,7 +25,7 @@ function authHeaders(info: ServerInfo): Record<string, string> | undefined {
 function routeDirectory(pathname: string): string | null {
   // 只认带 id 的会话路由(旧正则要求 "/session/" 后有内容;/:dir/session 无 id 的 draft 页不触发)。
   const r = parseRoute(pathname)
-  return r.kind === "session" && r.id ? r.directory : null
+  return r.kind === "session" && r.id && r.directory ? r.directory : null
 }
 
 export function ExtTrustWatcher(props: { server: Accessor<ServerInfo | undefined> }) {

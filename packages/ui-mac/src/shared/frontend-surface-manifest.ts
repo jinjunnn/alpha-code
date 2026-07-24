@@ -344,7 +344,7 @@ export function frontendSurfaceIdForRoute(route: Route): FrontendSurfaceId | und
   if (route.identity.routeId === "directory") return "route.directory"
   if (route.identity.routeId === "session-admission") return "route.session-admission"
   if (route.identity.routeId === "new-session") return "route.new-session"
-  if (route.identity.routeId === "session") return "route.session"
+  if (route.identity.routeId === "legacy-session" || route.identity.routeId === "session") return "route.session"
   if (route.identity.routeId === "settings") return "overlay.settings"
   if (route.identity.routeId === "dialog") return "overlay.dialog"
   if (route.identity.routeId === "recovery") return "inline.surface-recovery"

@@ -19,10 +19,6 @@ import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
 import { homeHref, newSessionHref, projectLabel, sessionHref } from "./route"
 import { parseRoute } from "../../shared/route-manifest"
-// REQ-088 T2(C4 携带项③):session 叶 lazy chunk 预热。C4 实测冷入场时 0ms 采样 panel=0
-// (侧栏是裸 <a>+navigate(),无路由级 hover preload)——hover/导航前预热消掉该窗口;
-// 窄导出与上游 lazy 同一模块 id,legacy 模式同样受益。
-import { preloadSessionLeaf } from "../alpha-ui/session-workspace/alpha-session-workspace"
 import {
   clearHiddenProjects,
   hiddenProjects,
@@ -422,7 +418,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   const route = createMemo<{ dir?: string; sessionId?: string }>(() => {
     const r = parseRoute(location.pathname)
     if (r.kind === "directory") return { dir: r.directory }
-    if (r.kind === "session") return { dir: r.directory, sessionId: r.id }
+    if (r.kind === "session" && r.directory) return { dir: r.directory, sessionId: r.id }
     return {}
   })
 
@@ -595,7 +591,6 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   // sidebar) so the new conversation appears in the project immediately, then navigate into it.
   // If creation fails we fall back to opencode's draft route.
   const startChat = async (worktree: string) => {
-    preloadSessionLeaf() // 与 createSession 并行预热叶 chunk(C4 携带项③)
     setProjectExpanded(worktree, true)
     const id = await createSession(worktree)
     if (id) navigate(sessionHref(worktree, id))
@@ -629,7 +624,6 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
 
   const openSession = (e: MouseEvent, directory: string, id: string) => {
     e.preventDefault()
-    preloadSessionLeaf() // 键盘/无 hover 路径兜底(幂等;hover 已预热则零成本)
     navigate(sessionHref(directory, id))
   }
 
@@ -1065,7 +1059,6 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                                       class="alpha-session"
                                       href={sessionHref(session.directory, session.id)}
                                       data-active={route().sessionId === session.id ? "" : undefined}
-                                      onMouseEnter={preloadSessionLeaf}
                                       onClick={(e) => openSession(e, session.directory, session.id)}
                                     >
                                       <span class="alpha-session-title">{sessionDisplayTitle(session.title)}</span>

@@ -1,50 +1,91 @@
 import { describe, expect, test } from "bun:test"
 import { parseRoute } from "../../../shared/route-manifest"
-import { isCrossServerSessionError, workspaceContextOf } from "./session-workspace-core"
+import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
 
-/** URL-safe base64 目录段(与 route-manifest encodeDirectory 同构;经 parseRoute 消费验证)。 */
-const slug = (dir: string) => btoa(dir).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
-
-describe("REQ-088 T2 chrome 展示模型(只读 route manifest,零 upstream context)", () => {
-  test("session 路由(带 id)→ 项目 basename + 会话尾 8 位", () => {
-    const ctx = workspaceContextOf(parseRoute(`/${slug("/Users/tide/app/alpha-work")}/session/ses_0123456789abcdef`))
-    expect(ctx).toEqual({
-      directory: "/Users/tide/app/alpha-work",
+describe("REQ-125 C1a typed live session context", () => {
+  test("v2 target route plus typed sync record resolves the real server/directory/session triple", () => {
+    expect(
+      sessionLiveSnapshotOf({
+        route: parseRoute("/server/c2lkZWNhcg/session/ses_0123456789abcdef"),
+        providerServerKey: "sidecar",
+        session: {
+          id: "ses_0123456789abcdef",
+          directory: "/Users/tide/app/alpha-work",
+          title: "整理架构说明",
+        },
+        status: { type: "idle" },
+      }),
+    ).toEqual({
+      identity: {
+        serverKey: "sidecar",
+        directory: "/Users/tide/app/alpha-work",
+        sessionID: "ses_0123456789abcdef",
+      },
       project: "alpha-work",
-      sessionId: "ses_0123456789abcdef",
-      sessionShort: "89abcdef",
+      title: "整理架构说明",
+      activity: "idle",
     })
   })
 
-  test("session 路由(无 id,draft 过渡态)→ sessionShort 为空(chrome 显示「新会话」)", () => {
-    const ctx = workspaceContextOf(parseRoute(`/${slug("/tmp/proj")}/session`))
-    expect(ctx?.project).toBe("proj")
-    expect(ctx?.sessionId).toBeUndefined()
-    expect(ctx?.sessionShort).toBeUndefined()
+  test("legacy route remains readable while the canonical route is v2", () => {
+    expect(
+      sessionLiveSnapshotOf({
+        route: parseRoute("/L3RtcC9wcm9q/session/ses_1"),
+        providerServerKey: "sidecar",
+        status: { type: "busy" },
+      }),
+    ).toMatchObject({
+      identity: { serverKey: "sidecar", directory: "/tmp/proj", sessionID: "ses_1" },
+      project: "proj",
+      title: "ses_1",
+      activity: "running",
+    })
   })
 
-  test("非 session 路由(workspace 不该挂载的位置)→ undefined", () => {
-    expect(workspaceContextOf(parseRoute("/"))).toBeUndefined()
-    expect(workspaceContextOf(parseRoute("/new-session?draftId=d1"))).toBeUndefined()
-    expect(workspaceContextOf(parseRoute("/!!!invalid/session/x"))).toBeUndefined()
+  test("status projection has exactly idle and running UI states", () => {
+    const route = parseRoute("/server/c2lkZWNhcg/session/ses_1")
+    const session = { id: "ses_1", directory: "/tmp/proj", title: "Session" }
+    expect(sessionLiveSnapshotOf({ route, providerServerKey: "sidecar", session })?.activity).toBe("idle")
+    expect(
+      sessionLiveSnapshotOf({ route, providerServerKey: "sidecar", session, status: { type: "retry" } })?.activity,
+    ).toBe("running")
+    expect(
+      sessionLiveSnapshotOf({ route, providerServerKey: "sidecar", session, status: { type: "busy" } })?.activity,
+    ).toBe("running")
   })
 })
 
-describe("REQ-088 T2 跨 server 错误有界识别(C4 S5 最小安全解)", () => {
-  test("引擎 control-plane 文案族 → true(大小写不敏感,含 id 尾缀)", () => {
-    expect(isCrossServerSessionError(new Error("Session not found: ses_abc123"))).toBe(true)
-    expect(isCrossServerSessionError(new Error("session not found"))).toBe(true)
-    expect(isCrossServerSessionError("Session not found: ses_x")).toBe(true)
-    expect(isCrossServerSessionError({ message: "Session not found: ses_x" })).toBe(true)
+describe("REQ-125 C1a I8 session switch isolation", () => {
+  const active = {
+    serverKey: "sidecar",
+    directory: "/tmp/next",
+    sessionID: "ses_next",
+  }
+
+  test("all three identity fields must match before an async result is accepted", () => {
+    expect(sameSessionIdentity(active, { ...active })).toBe(true)
+    expect(sameSessionIdentity(active, { ...active, serverKey: "remote" })).toBe(false)
+    expect(sameSessionIdentity(active, { ...active, directory: "/tmp/previous" })).toBe(false)
+    expect(sameSessionIdentity(active, { ...active, sessionID: "ses_previous" })).toBe(false)
+    expect(sameSessionIdentity(active, undefined)).toBe(false)
   })
 
-  test("其余错误一律 false ⇒ 调用方 rethrow 回 SurfaceBoundary(致命链路语义不变)", () => {
-    expect(isCrossServerSessionError(new Error("Model not found: openai/gpt"))).toBe(false)
-    expect(isCrossServerSessionError(new Error("network timeout"))).toBe(false)
-    expect(isCrossServerSessionError(new Error(""))).toBe(false)
-    expect(isCrossServerSessionError(undefined)).toBe(false)
-    expect(isCrossServerSessionError(null)).toBe(false)
-    expect(isCrossServerSessionError({})).toBe(false)
-    expect(isCrossServerSessionError(42)).toBe(false)
+  test("late records from the previous route/provider cannot populate the next session", () => {
+    const nextRoute = parseRoute("/server/c2lkZWNhcg/session/ses_next")
+    expect(
+      sessionLiveSnapshotOf({
+        route: nextRoute,
+        providerServerKey: "sidecar",
+        session: { id: "ses_previous", directory: "/tmp/previous", title: "Previous" },
+      }),
+    ).toBeUndefined()
+    expect(
+      sessionLiveSnapshotOf({
+        route: nextRoute,
+        providerServerKey: "remote",
+        session: { id: "ses_next", directory: "/tmp/next", title: "Next" },
+      }),
+    ).toBeUndefined()
+    expect(sessionLiveSnapshotOf({ route: nextRoute, providerServerKey: "sidecar" })).toBeUndefined()
   })
 })

@@ -7,7 +7,7 @@ import type { SurfaceId } from "./alpha-surfaces"
 
 export const ROUTE_MANIFEST_VERSION = 1
 
-export type RouteParameterCodec = "component" | "directory"
+export type RouteParameterCodec = "component" | "directory" | "server"
 
 export type RoutePathSegment =
   | { kind: "literal"; value: string }
@@ -148,12 +148,27 @@ export const ROUTE_MANIFEST = {
       composition: { kind: "surface", surface: "newSession" },
     },
     {
-      id: "session",
+      id: "legacy-session",
       version: 1,
       location: {
         kind: "path",
         path: [
           { kind: "parameter", name: "directory", codec: "directory" },
+          { kind: "literal", value: "session" },
+          { kind: "parameter", name: "sessionId", codec: "component" },
+        ],
+        query: [],
+      },
+      composition: { kind: "redirect", routeId: "session" },
+    },
+    {
+      id: "session",
+      version: 2,
+      location: {
+        kind: "path",
+        path: [
+          { kind: "literal", value: "server" },
+          { kind: "parameter", name: "serverKey", codec: "server" },
           { kind: "literal", value: "session" },
           { kind: "parameter", name: "sessionId", codec: "component" },
         ],
@@ -228,11 +243,25 @@ export type ResolvedRoute =
       kind: "session"
       directory: string
       slug: string
+      serverKey?: undefined
       id?: undefined
       prompt?: string
     } & IdentifiedRoute<"session-admission">)
   | ({ kind: "newSession"; draftId: string; prompt?: string } & IdentifiedRoute<"new-session">)
-  | ({ kind: "session"; directory: string; slug: string; id: string } & IdentifiedRoute<"session">)
+  | ({
+      kind: "session"
+      directory: string
+      slug: string
+      serverKey?: undefined
+      id: string
+    } & IdentifiedRoute<"legacy-session">)
+  | ({
+      kind: "session"
+      serverKey: string
+      directory?: undefined
+      slug?: undefined
+      id: string
+    } & IdentifiedRoute<"session">)
   | ({ kind: "settings" } & IdentifiedRoute<"settings">)
   | ({ kind: "dialog" } & IdentifiedRoute<"dialog">)
   | ({ kind: "recovery" } & IdentifiedRoute<"recovery">)
@@ -433,8 +462,10 @@ export const navFor = {
   directorySession: (directory: string, prompt?: string) =>
     resolveNavigation(referenceFor("session-admission", { directory, prompt })),
   newSession: (draftId: string, prompt?: string) => resolveNavigation(referenceFor("new-session", { draftId, prompt })),
-  session: (directory: string, sessionId: string) =>
-    resolveNavigation(referenceFor("session", { directory, sessionId })),
+  legacySession: (directory: string, sessionId: string) =>
+    resolveNavigation(referenceFor("legacy-session", { directory, sessionId })),
+  session: (serverKey: string, sessionId: string) =>
+    resolveNavigation(referenceFor("session", { serverKey, sessionId })),
   settings: () => resolveNavigation(referenceFor("settings")),
   dialog: () => resolveNavigation(referenceFor("dialog")),
   recovery: () => resolveNavigation(referenceFor("recovery")),
@@ -459,7 +490,8 @@ export const hrefFor = {
   directory: (directory: string) => requireHref(navFor.directory(directory)),
   sessionAdmission: (directory: string, prompt?: string) => requireHref(navFor.sessionAdmission(directory, prompt)),
   directorySession: (directory: string, prompt?: string) => requireHref(navFor.sessionAdmission(directory, prompt)),
-  session: (directory: string, sessionId: string) => requireHref(navFor.session(directory, sessionId)),
+  legacySession: (directory: string, sessionId: string) => requireHref(navFor.legacySession(directory, sessionId)),
+  session: (serverKey: string, sessionId: string) => requireHref(navFor.session(serverKey, sessionId)),
   newSession: (draftId: string, prompt?: string) => requireHref(navFor.newSession(draftId, prompt)),
 } as const
 
@@ -578,12 +610,12 @@ function encodeLocation(
 }
 
 function encodeParameter(codec: RouteParameterCodec, value: string): string {
-  if (codec === "directory") return encodeDirectory(value)
+  if (codec === "directory" || codec === "server") return encodeDirectory(value)
   return encodeURIComponent(value)
 }
 
 function decodeParameter(codec: RouteParameterCodec, value: string): string | undefined {
-  if (codec === "directory") return decodeDirectory(value)
+  if (codec === "directory" || codec === "server") return decodeDirectory(value)
   return decodeComponent(value)
 }
 
@@ -621,13 +653,21 @@ function routeFromParams(routeId: RouteId, params: Readonly<Record<string, strin
       ...(params.prompt === undefined ? {} : { prompt: params.prompt }),
     }
   }
-  if (routeId === "session") {
+  if (routeId === "legacy-session") {
     const directory = params.directory!
     return {
       kind: "session",
       identity: { ...identity, routeId },
       directory,
       slug: encodeDirectory(directory),
+      id: params.sessionId!,
+    }
+  }
+  if (routeId === "session") {
+    return {
+      kind: "session",
+      identity: { ...identity, routeId },
+      serverKey: params.serverKey!,
       id: params.sessionId!,
     }
   }
