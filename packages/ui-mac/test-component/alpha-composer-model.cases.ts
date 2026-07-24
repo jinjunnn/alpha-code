@@ -909,3 +909,78 @@ describe("REQ-125 C558 SessionComposerMount 按身份 keyed:切会话草稿正�
     mounted.dispose()
   })
 })
+
+// REQ-125 C558 复审第5轮 Major:发送请求在途期间切会话,composer 卸载不能把**正在发送的文本**
+// 当草稿捕获(否则翻回会话「复活」→ 用户再发 = 重复发送)。修:onCleanup 在 sending() 为真时跳过
+// onDraftCapture;失败保留仍走既有失败路径(text 留 composer 信号,失败落定 sending=false,卸载可捕获)。
+describe("REQ-125 C558 发送在途与草稿捕获互斥", () => {
+  const contract: ModelContract = {
+    list: async () => platformModels,
+    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+    switch: async () => {},
+  }
+  const enter = (el: HTMLTextAreaElement) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+  const typeInto = (el: HTMLTextAreaElement, value: string) => {
+    el.value = value
+    el.dispatchEvent(new Event("input", { bubbles: true }))
+  }
+
+  test("输入→发送挂起(in-flight)→卸载:跳过在途文本(不入 stash,不复活/不重发)", async () => {
+    installApi()
+    let release: (v: unknown) => void = () => {}
+    const sendProjects = {
+      ...projects,
+      sdk: () => ({ session: { promptAsync: () => new Promise((res) => (release = res)) } }) as any,
+    }
+    const captured: string[] = []
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: sendProjects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: contract,
+        onDraftCapture: (text) => captured.push(text),
+      }),
+    )
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    const el = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")!
+    typeInto(el, "in-flight message")
+    await flush()
+    enter(el) // 发起发送 → sending=true,promptAsync 挂起(不 resolve)
+    await flush()
+    mounted.dispose() // 在途中卸载(切走会话)
+    expect(captured).toEqual([]) // 在途文本未被当草稿捕获 → 翻回不复活、不重发
+    release({ data: {} }) // 收尾:让挂起的 promptAsync 落定(组件已卸载,无副作用)
+  })
+
+  test("发送失败→卸载:文本仍可恢复(sending 落回 false,capture 拿到失败保留文本)", async () => {
+    installApi()
+    const sendProjects = {
+      ...projects,
+      sdk: () => ({ session: { promptAsync: async () => ({ error: { message: "boom" } }) } }) as any,
+    }
+    const captured: string[] = []
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: sendProjects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: contract,
+        onDraftCapture: (text) => captured.push(text),
+      }),
+    )
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    const el = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")!
+    typeInto(el, "will fail")
+    await flush()
+    enter(el) // 发起 → 失败落定 → 文本保留(既有失败路径,不清空)
+    await waitFor(() => expect(el.value).toBe("will fail"))
+    mounted.dispose() // 失败后卸载 → sending=false → capture 拿到保留文本
+    expect(captured).toEqual(["will fail"])
+  })
+})

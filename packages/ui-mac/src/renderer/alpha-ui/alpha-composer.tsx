@@ -579,9 +579,14 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const command = props.command
   const modelContract = props.modelContract ?? createModelContract(props.projects.sdk)
   const [text, setText] = createSignal(props.initialText ?? "")
-  // REQ-125 C558:卸载时把当前草稿交回宿主(seam dock 按身份暂存),避免门翻转卸载丢草稿。
-  onCleanup(() => props.onDraftCapture?.(text()))
   const [sending, setSending] = createSignal(false)
+  // REQ-125 C558:卸载时把当前草稿交回宿主(seam dock 按身份暂存),避免门翻转卸载丢草稿。
+  // 但发送在途(sending)时 text() 是**正在交付的提交文本**、非草稿:跳过捕获,否则切走会话再
+  // 翻回会「复活」已发送文本、用户再发 = 重复发送。失败保留仍走既有失败路径(text 留在 composer
+  // 信号供原地重试,不入 stash)。
+  onCleanup(() => {
+    if (!sending()) props.onDraftCapture?.(text())
+  })
   const [modelChainState, setModelChainState] = createSignal<"loading" | "ready" | "error">("loading")
   const [mentions, setMentions] = createSignal<MentionPart[]>([])
   const [composing, setComposing] = createSignal(false)
