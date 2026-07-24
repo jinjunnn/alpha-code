@@ -18,7 +18,7 @@ export function base64UrlDecode(value: string): string {
 
 /** Route to an existing session inside a project directory. */
 export function sessionHref(directory: string, sessionID: string): string {
-  return hrefFor.session(directory, sessionID)
+  return hrefFor.legacySession(directory, sessionID)
 }
 
 /**

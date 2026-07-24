@@ -7,8 +7,8 @@
 //      surface 工厂/session 叶内 —— adapter 换叶不触碰它们的生命周期;
 //   ② 遗留观察面:经 document.body MutationObserver 工作,
 //      只依赖上游叶渲染的 DOM 锚点,不依赖叶「怎么被挂进来」;
-//   ③ 同 document 前提:adapter 模式经 `@opencode-ai/app/surface/session` 窄导出在
-//      同一 document 内渲染上游叶(无 iframe)—— ②的选择器/事件才可达。
+//   ③ REQ-125 C1 后 alpha session surface 不再消费上游 session 叶；遗留 takeover
+//      仅保留到 C8 清理，且在 v2 alpha seam 下应零命中。
 // 另补钉 takeover 依赖、但 REQ-012 锚点契约(upstream-anchors.json)覆盖不到的上游锚点:
 //   - session composer 现在由 app 的 `session-prompt-dock` 包住 session-ui 的
 //     `prompt-input-v2`。此处直接钉两段渲染链与 takeover 的组合选择器。
@@ -90,22 +90,14 @@ describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无�
   })
 })
 
-describe("T6 ③同 document 前提:窄导出消费者不得引入 iframe/独立 document", () => {
-  test("renderer 内每个 @opencode-ai/app/surface/session 消费者都在同一 document 渲染叶(无 iframe)", () => {
-    // 不钉具体文件名:T2 正把 spike host 正式化为 AlphaSessionWorkspace,唯一收敛点断言归
-    // req087-characterization.test.ts(随 T2 更新)。此处只钉「无论宿主叫什么,不得是 iframe」。
+describe("REQ-125 C1 I1:上游 session 叶消费者归零", () => {
+  test("renderer 不再 import @opencode-ai/app/surface/session", () => {
     const importers: string[] = []
     for (const f of walk(RENDERER)) {
       const src = read(f)
       if (src.includes("@opencode-ai/app/surface/session")) importers.push(f)
     }
-    expect(importers.length).toBeGreaterThanOrEqual(1)
-    for (const f of importers) {
-      expect({ file: path.relative(RENDERER, f), iframe: read(f).includes("<iframe") }).toEqual({
-        file: path.relative(RENDERER, f),
-        iframe: false,
-      })
-    }
+    expect(importers.map((file) => path.relative(RENDERER, file))).toEqual([])
   })
 })
 

@@ -68,13 +68,24 @@ describe("canonical route manifest", () => {
       "directory",
       "session-admission",
       "new-session",
+      "legacy-session",
       "session",
       "settings",
       "dialog",
       "recovery",
     ])
     expect(new Set(ROUTE_MANIFEST.routes.map((route) => route.id)).size).toBe(ROUTE_MANIFEST.routes.length)
-    expect(ROUTE_MANIFEST.routes.every((route) => route.version === 1)).toBe(true)
+    expect(Object.fromEntries(ROUTE_MANIFEST.routes.map((route) => [route.id, route.version]))).toEqual({
+      home: 1,
+      directory: 1,
+      "session-admission": 1,
+      "new-session": 1,
+      "legacy-session": 1,
+      session: 2,
+      settings: 1,
+      dialog: 1,
+      recovery: 1,
+    })
     expect(
       ROUTE_MANIFEST.routes.every((route) =>
         route.location.kind === "path"
@@ -207,7 +218,8 @@ describe("manifest-derived parse, href, and navigation", () => {
       navFor.sessionAdmission("C:\\Users\\dev\\proj", "continue here & 中文"),
       navFor.sessionAdmission("/empty-prompt", ""),
       navFor.newSession("draft /? 1", "hello world & 中文?"),
-      navFor.session("/家/项目/试验", "ses_/?: 123"),
+      navFor.legacySession("/家/项目/试验", "ses_/?: 123"),
+      navFor.session("sidecar", "ses_/?: 123"),
     ]
 
     navigations.forEach((result) => {
@@ -218,16 +230,32 @@ describe("manifest-derived parse, href, and navigation", () => {
     })
   })
 
-  test("golden hrefs retain the incumbent path shapes", () => {
+  test("golden hrefs retain legacy compatibility and encode the canonical v2 target route", () => {
     expect(hrefFor.home()).toBe("/")
     expect(hrefFor.directory("/Users/dev/proj")).toBe("/L1VzZXJzL2Rldi9wcm9q")
     expect(hrefFor.sessionAdmission("/Users/dev/proj")).toBe("/L1VzZXJzL2Rldi9wcm9q/session")
     expect(hrefFor.sessionAdmission("/Users/dev/proj", "continue here")).toBe(
       "/L1VzZXJzL2Rldi9wcm9q/session?prompt=continue%20here",
     )
-    expect(hrefFor.session("/Users/dev/proj", "ses_123")).toBe("/L1VzZXJzL2Rldi9wcm9q/session/ses_123")
+    expect(hrefFor.legacySession("/Users/dev/proj", "ses_123")).toBe(
+      "/L1VzZXJzL2Rldi9wcm9q/session/ses_123",
+    )
+    expect(hrefFor.session("sidecar", "ses_123")).toBe("/server/c2lkZWNhcg/session/ses_123")
     expect(hrefFor.newSession("d 1", "a+b")).toBe("/new-session?draftId=d%201&prompt=a%2Bb")
     expect(hrefFor.newSession("d1")).toBe("/new-session?draftId=d1")
+  })
+
+  test("v2 target route parses the real serverKey/sessionID pair without inventing a directory", () => {
+    expect(parseRoute("/server/c2lkZWNhcg/session/ses_123")).toEqual({
+      kind: "session",
+      identity: {
+        manifestVersion: 1,
+        routeId: "session",
+        routeVersion: 2,
+      },
+      serverKey: "sidecar",
+      id: "ses_123",
+    })
   })
 
   test("explicit search takes precedence over an embedded query", () => {
@@ -242,8 +270,15 @@ describe("fail-closed route recovery", () => {
   test("invalid directory", () => {
     expect(requireFailure(parseRoute("/!!!not-base64!!!/session/ses_1"))).toEqual({
       code: "invalid-directory",
-      routeId: "session",
+      routeId: "legacy-session",
       param: "directory",
+    })
+  })
+
+  test("invalid v2 server key fails closed", () => {
+    expect(requireFailure(parseRoute("/server/!!!not-base64!!!/session/ses_1"))).toEqual({
+      code: "corrupt-deep-link",
+      routeId: "session",
     })
   })
 
@@ -255,9 +290,9 @@ describe("fail-closed route recovery", () => {
     })
     const result = resolveNavigation({
       manifestVersion: 1,
-      routeVersion: 1,
+      routeVersion: 2,
       routeId: "session",
-      params: { directory: "/tmp/project" },
+      params: { serverKey: "sidecar" },
     })
     expect(result.ok).toBe(false)
     if (result.ok) return
@@ -283,6 +318,20 @@ describe("fail-closed route recovery", () => {
     expect(futureRoute.ok).toBe(false)
     if (futureRoute.ok) return
     expect(futureRoute.error).toEqual({ code: "unsupported-route-version", routeId: "home", receivedVersion: 2 })
+
+    const legacySessionIdentity = resolveNavigation({
+      manifestVersion: 1,
+      routeVersion: 1,
+      routeId: "session",
+      params: { serverKey: "sidecar", sessionId: "ses_1" },
+    })
+    expect(legacySessionIdentity.ok).toBe(false)
+    if (legacySessionIdentity.ok) return
+    expect(legacySessionIdentity.error).toEqual({
+      code: "unsupported-route-version",
+      routeId: "session",
+      receivedVersion: 1,
+    })
   })
 
   test("corrupt deep links recover deterministically", () => {
@@ -298,7 +347,7 @@ describe("fail-closed route recovery", () => {
   })
 
   test("typed href helpers reject invalid runtime input rather than guessing", () => {
-    expect(() => hrefFor.session("/tmp/project", "")).toThrow(RouteManifestError)
-    expect(() => hrefFor.session("/tmp/project", "")).toThrow("route-manifest:missing-param:session:sessionId")
+    expect(() => hrefFor.session("sidecar", "")).toThrow(RouteManifestError)
+    expect(() => hrefFor.session("sidecar", "")).toThrow("route-manifest:missing-param:session:sessionId")
   })
 })

@@ -38,6 +38,7 @@ describe("frontend surface manifest", () => {
     expect(frontendSurfaceIdForRoute(parseRoute("/L3RtcC9hbHBoYQ"))).toBe("route.directory")
     expect(frontendSurfaceIdForRoute(parseRoute("/L3RtcC9hbHBoYQ/session"))).toBe("route.session-admission")
     expect(frontendSurfaceIdForRoute(parseRoute("/new-session?draftId=draft-1"))).toBe("route.new-session")
+    expect(frontendSurfaceIdForRoute(parseRoute("/server/c2lkZWNhcg/session/ses-1"))).toBe("route.session")
     expect(frontendSurfaceIdForRoute(parseRoute("/L3RtcC9hbHBoYQ/session/ses-1"))).toBe("route.session")
     expect(frontendSurfaceIdForRoute(parseRoute("/not/a/known/route"))).toBe("inline.surface-recovery")
   })

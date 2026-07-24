@@ -17,6 +17,7 @@ const expectedSurfaces = {
   directory: "newSession",
   "session-admission": "newSession",
   "new-session": "newSession",
+  "legacy-session": "session",
   session: "session",
   settings: "settings",
   dialog: "dialog",

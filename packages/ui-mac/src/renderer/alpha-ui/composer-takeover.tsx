@@ -8,7 +8,7 @@
 // - 上下文用量 ring:收养上游活的 progress-circle 按钮进 alpha 工具条的 [data-alpha-usage-host]
 //   (纯只读复用,v2 换 SSE 自建 —— 见 requirements/REQ-055 非目标)。
 //
-// 路由解析:/:b64dir/session/:id(route-manifest,REQ-089 —— 与 hrefFor.session 对偶)。
+// 只在 legacy /:b64dir/session/:id 上工作；v2 alpha seam 不再渲染可接管的上游 DOM。
 
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
@@ -21,7 +21,7 @@ const COMPOSER_SEL = '[data-component="session-prompt-dock"] [data-component="pr
 
 function parseSessionRoute(pathname: string): { directory: string; sessionID: string } | null {
   const r = parseRoute(pathname)
-  if (r.kind !== "session" || !r.id) return null // 只认带 id 的会话页(draft 页走上游 new-session)
+  if (r.kind !== "session" || !r.id || !r.directory) return null
   return { directory: r.directory, sessionID: r.id }
 }
 

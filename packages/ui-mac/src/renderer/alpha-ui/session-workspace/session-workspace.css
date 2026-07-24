@@ -1,149 +1,236 @@
-/*
- * AlphaSessionWorkspace chrome(REQ-088 T2)。
- *
- * 宿主红线(T6 审计 §3,静态钉在 alpha-session-workspace.test.ts):
- *   R1 —— 活叶包裹(.a-swk / .a-swk-leaf)保持普通文档流:flex 列 + flex:1 + min-height:0,
- *         禁止隐藏活叶、禁止脱离文档流的定位(takeover 的 offsetParent 可见性口径依赖于此)。
- *   R2 —— 本文件只使用 alpha 自有类名(a-swk-*)与 data-alpha-* 属性,绝不与上游锚点同名。
- * 视觉:alpha 设计语言(tokens.css 的 --a-* 变量),chrome 元素挂 .a-ui 作字体/颜色作用域;
- * 外层与叶包裹**不挂** .a-ui —— 避免 alpha 排版级联进上游叶,破坏 legacy 视觉 parity。
- */
 @import "../tokens.css";
 @import "../base.css";
 
-/* ── 外框:flex 列,叶占满剩余空间 ──────────────────────────────────────
- * 尺寸契约 = 上游 Session 页根逐属性对齐(session.tsx:1574
- * `relative size-full overflow-hidden flex flex-col`):外框替换的是整页叶,
- * 宽高都必须 100%,缺 width 会在非拉伸槽位下收缩成窄条(S48 视觉验收实证)。 */
 .a-swk-root {
-  position: relative;
   display: flex;
-  flex-direction: column;
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  background: var(--a-bg-canvas);
 }
 
-.a-swk-leaf {
+.a-swk-main {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
 }
 
-/* ── chrome:header / 上下文条 ──────────────────────────────────────────── */
-.a-swk-chrome {
+.a-swk-topbar {
   display: flex;
   align-items: center;
-  gap: var(--a-space-2, 8px);
+  gap: 6px;
   flex: none;
-  height: 30px;
-  padding: 0 var(--a-space-3, 12px);
-  background: var(--a-bg-subtle, #f6f7f9);
-  border-bottom: 1px solid var(--a-border-faint, #eef0f3);
-  font-size: var(--a-text-xs, 11.5px);
-  color: var(--a-text-secondary, #52525b);
-  user-select: none;
+  height: 46px;
+  min-width: 0;
+  padding: 0 12px 0 14px;
+  border-bottom: 1px solid var(--a-border-faint);
+  background: var(--a-bg-canvas);
   white-space: nowrap;
-  overflow: hidden;
 }
 
-.a-swk-dot {
+.a-swk-project-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--a-radius-md);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-swk-project-avatar {
+  display: grid;
+  place-items: center;
   flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--a-radius-full, 9999px);
-  background: var(--a-accent, #4f46e5);
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  background: var(--a-accent-solid);
+  color: var(--a-text-on-accent);
+  font-size: 9px;
+  font-weight: var(--a-weight-bold);
 }
 
-.a-swk-project {
-  font-weight: var(--a-weight-medium, 500);
-  color: var(--a-text, #18181b);
+.a-swk-project-label,
+.a-swk-session-title {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.a-swk-sep {
-  color: var(--a-text-tertiary, #7c7d85);
+.a-swk-project-label {
+  max-width: 180px;
 }
 
-.a-swk-session {
-  font-family: var(--a-font-mono, ui-monospace, monospace);
-  font-size: var(--a-text-2xs, 10.5px);
-  color: var(--a-text-tertiary, #7c7d85);
+.a-swk-separator {
+  flex: none;
+  color: var(--a-text-disabled);
+  font-size: var(--a-text-sm);
 }
 
-.a-swk-spacer {
+.a-swk-session-title {
+  height: 28px;
+  max-width: min(42vw, 420px);
+  padding: 3px 9px 0;
+  border-radius: var(--a-radius-md);
+  color: var(--a-text);
+  font-size: var(--a-text-md);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-tight);
+}
+
+.a-swk-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 24px;
+  margin-left: 4px;
+  padding: 0 9px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-swk-status-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-text-disabled);
+}
+
+.a-swk-status--running {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+}
+
+.a-swk-status--running .a-swk-status-dot {
+  animation: a-swk-status-pulse 1.4s var(--a-ease-in-out) infinite;
+  background: var(--a-accent);
+}
+
+.a-swk-grow {
   flex: 1;
 }
 
-.a-swk-badge {
+.a-swk-panel-button {
+  display: grid;
+  place-items: center;
   flex: none;
-  padding: 1px 8px;
-  border: 1px solid var(--a-accent-border, rgba(79, 70, 229, 0.35));
-  border-radius: var(--a-radius-full, 9999px);
-  font-size: var(--a-text-2xs, 10.5px);
-  font-weight: var(--a-weight-medium, 500);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--a-accent, #4f46e5);
-}
-
-/* ── 跨 server 会话引导(C4 S5 最小安全解;替代 boundary 崩溃体验)──────── */
-.a-swk-guard {
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--a-space-6, 24px);
-}
-
-.a-swk-guard-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--a-space-2, 8px);
-  max-width: 420px;
-  padding: var(--a-space-5, 20px) var(--a-space-6, 24px);
-  border: 1px solid var(--a-border, #e4e6ea);
-  border-radius: var(--a-radius-lg, 11px);
-  background: var(--a-surface, #fff);
-  box-shadow: var(--a-shadow-md, 0 4px 12px rgba(15, 17, 21, 0.08));
-}
-
-.a-swk-guard-title {
-  font-weight: var(--a-weight-semibold, 600);
-  color: var(--a-text, #18181b);
-}
-
-.a-swk-guard-desc {
-  font-size: var(--a-text-xs, 11.5px);
-  line-height: var(--a-leading-normal, 1.5);
-  color: var(--a-text-secondary, #52525b);
-}
-
-.a-swk-guard-actions {
-  display: flex;
-  gap: var(--a-space-2, 8px);
-  margin-top: var(--a-space-2, 8px);
-}
-
-.a-swk-btn {
-  padding: 4px 12px;
-  border: 1px solid var(--a-border, #e4e6ea);
-  border-radius: var(--a-radius-sm, 6px);
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--a-radius-md);
   background: transparent;
-  font-size: var(--a-text-xs, 11.5px);
-  color: var(--a-text, #18181b);
+  color: var(--a-text-tertiary);
   cursor: pointer;
+  transition:
+    background var(--a-dur-fast) var(--a-ease-out),
+    color var(--a-dur-fast) var(--a-ease-out);
 }
 
-.a-swk-btn:hover {
-  background: var(--a-bg-muted, #eceef1);
+.a-swk-panel-button:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
 }
 
-.a-swk-btn--primary {
-  border-color: var(--a-accent-border, rgba(79, 70, 229, 0.35));
-  color: var(--a-accent, #4f46e5);
+.a-swk-panel-button--active {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+}
+
+.a-swk-panel-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.a-swk-control-separator {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--a-border-faint);
+}
+
+.a-swk-timeline-host {
+  flex: 1;
+  min-height: 0;
+  background: var(--a-bg-canvas);
+}
+
+.a-swk-composer-dock {
+  flex: none;
+  padding: 12px 20px 16px;
+  background: var(--a-bg-canvas);
+}
+
+.a-swk-composer-host {
+  width: 100%;
+  max-width: 860px;
+  height: 92px;
+  margin: 0 auto;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-xl);
+  background: var(--a-surface);
+  box-shadow: var(--a-shadow-sm), var(--a-edge-light);
+}
+
+.a-swk-rail-host {
+  flex: none;
+  width: min(400px, 38vw);
+  min-width: 320px;
+  min-height: 0;
+  border-left: 1px solid var(--a-border-faint);
+  background: var(--a-bg-subtle);
+}
+
+@keyframes a-swk-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 860px) {
+  .a-swk-project-label {
+    max-width: 110px;
+  }
+
+  .a-swk-status {
+    display: none;
+  }
+
+  .a-swk-rail-host {
+    width: min(360px, 44vw);
+    min-width: 280px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .a-swk-status--running .a-swk-status-dot {
+    animation: none;
+  }
+
+  .a-swk-panel-button {
+    transition: none;
+  }
 }
