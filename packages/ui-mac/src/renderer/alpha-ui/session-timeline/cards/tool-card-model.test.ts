@@ -5,9 +5,14 @@ import {
   boundedBlock,
   contextGroupSummaryOf,
   contextRowOf,
+  DIAG_FILES_SCAN_MAX,
+  DIAG_MAX_ROWS,
+  diagnosticsOf,
   extractHttpUrls,
   mediaLabelOf,
   mediaThumbable,
+  OPEN_TARGET_MAX_CHARS,
+  openTargetOf,
   taskCardInfoOf,
   TOOL_BODY_MAX_CHARS,
   TOOL_BODY_MAX_LINES,
@@ -427,5 +432,115 @@ describe("REQ-125 C6 task/skill/折叠组/媒体辅助", () => {
     expect(mediaLabelOf("application/pdf", "doc.pdf")).toBe("PDF")
     expect(mediaLabelOf("application/octet-stream", "data.parquet")).toBe("PARQUET")
     expect(mediaLabelOf("application/octet-stream", "noext")).toBe("FILE")
+  })
+})
+
+// ═══════════════ #568 — 「在面板打开」目标 / 诊断行(T19) ═══════════════
+
+describe("#568 openTargetOf(T8 pill 目标)", () => {
+  test("write/edit 返回原始 filePath;其余工具/非法路径 fail-closed", () => {
+    expect(openTargetOf(part("write", { input: { filePath: "/repo/AGENTS.md" } }))).toBe("/repo/AGENTS.md")
+    expect(openTargetOf(part("edit", { input: { filePath: "/tmp/x.txt" } }))).toBe("/tmp/x.txt")
+    expect(openTargetOf(part("read", { input: { filePath: "/repo/AGENTS.md" } }))).toBeUndefined()
+    expect(openTargetOf(part("write", { input: {} }))).toBeUndefined()
+    expect(openTargetOf(part("write", { input: { filePath: 42 } }))).toBeUndefined()
+    expect(openTargetOf(part("write", { input: { filePath: "x".repeat(OPEN_TARGET_MAX_CHARS + 1) } }))).toBeUndefined()
+  })
+})
+
+describe("#568 diagnosticsOf(T19 诊断行)", () => {
+  const issue = (severity: number, line: number, message: string) => ({
+    severity,
+    message,
+    range: { start: { line, character: 4 }, end: { line, character: 9 } },
+  })
+
+  test("只取本卡文件的 ERROR 级;行号 1 基;其他文件与低级别忽略", () => {
+    const result = diagnosticsOf(
+      part("edit", {
+        input: { filePath: "/repo/app/prompt_builder.py" },
+        metadata: {
+          diagnostics: {
+            "/repo/app/prompt_builder.py": [issue(1, 101, '"kama_latest" is possibly unbound'), issue(2, 5, "warn")],
+            "/repo/other.py": [issue(1, 1, "elsewhere")],
+          },
+        },
+      }),
+    )
+    expect(result.rows).toEqual([
+      { file: "prompt_builder.py", line: 102, message: '"kama_latest" is possibly unbound' },
+    ])
+    expect(result.truncated).toBe(false)
+  })
+
+  test("条数帽 + 截断标记;非法形状 fail-closed 为空", () => {
+    const many = Array.from({ length: DIAG_MAX_ROWS + 4 }, (_, index) => issue(1, index, `e${index}`))
+    const capped = diagnosticsOf(
+      part("write", { input: { filePath: "/a/b.ts" }, metadata: { diagnostics: { "/a/b.ts": many } } }),
+    )
+    expect(capped.rows).toHaveLength(DIAG_MAX_ROWS)
+    expect(capped.truncated).toBe(true)
+
+    expect(diagnosticsOf(part("bash", { metadata: { diagnostics: { x: [issue(1, 1, "m")] } } })).rows).toEqual([])
+    expect(diagnosticsOf(part("edit", { input: { filePath: "/a.ts" }, metadata: {} })).rows).toEqual([])
+    expect(
+      diagnosticsOf(part("edit", { input: { filePath: "/a.ts" }, metadata: { diagnostics: "junk" } })).rows,
+    ).toEqual([])
+    expect(
+      diagnosticsOf(part("edit", { input: { filePath: "/a.ts" }, metadata: { diagnostics: { "/a.ts": "junk" } } }))
+        .rows,
+    ).toEqual([])
+    expect(
+      diagnosticsOf(
+        part("edit", {
+          input: { filePath: "/a.ts" },
+          metadata: { diagnostics: { "/a.ts": [null, { severity: 1 }, { severity: 1, message: 42 }] } },
+        }),
+      ).rows,
+    ).toEqual([])
+    // 运行中(未完成)不出诊断行。
+    expect(
+      diagnosticsOf(part("edit", { status: "running", input: { filePath: "/a.ts" } })).rows,
+    ).toEqual([])
+  })
+
+  test("Windows 分隔符归一后仍能对上本卡文件;缺 range 行号诚实缺席", () => {
+    const result = diagnosticsOf(
+      part("edit", {
+        input: { filePath: "C:\\repo\\x.ts" },
+        metadata: { diagnostics: { "C:/repo/x.ts": [{ severity: 1, message: "broken" }] } },
+      }),
+    )
+    expect(result.rows).toEqual([{ file: "x.ts", line: undefined, message: "broken" }])
+  })
+})
+
+describe("#568 审计修复:diagnostics 外层文件数扫描预算(Major-3)", () => {
+  const issue = { severity: 1, message: "boom", range: { start: { line: 0, character: 0 } } }
+
+  test("万文件诊断映射:需归一匹配的键落在预算外 → 提前终止,零渲染", () => {
+    const map: Record<string, unknown> = {}
+    for (let index = 0; index < 10_000; index += 1) map[`/proj/f${index}.ts`] = [issue]
+    expect(10_000).toBeGreaterThan(DIAG_FILES_SCAN_MAX)
+    // 目标键需要 \\→/ 归一才能命中,且按插入序落在 DIAG_FILES_SCAN_MAX 之外。
+    map["C:/ws/target.ts"] = [issue]
+    const result = diagnosticsOf(
+      part("edit", { input: { filePath: "C:\\ws\\target.ts" }, metadata: { diagnostics: map } }),
+    )
+    expect(result.rows).toEqual([])
+  })
+
+  test("精确键命中走 O(1) 快路,不受外层预算影响;预算内的归一匹配仍工作", () => {
+    const map: Record<string, unknown> = {}
+    for (let index = 0; index < 10_000; index += 1) map[`/proj/f${index}.ts`] = [issue]
+    map["/ws/exact.ts"] = [issue]
+    const exact = diagnosticsOf(part("edit", { input: { filePath: "/ws/exact.ts" }, metadata: { diagnostics: map } }))
+    expect(exact.rows).toHaveLength(1)
+
+    const small: Record<string, unknown> = { "C:/ws/win.ts": [issue] }
+    const normalized = diagnosticsOf(
+      part("write", { input: { filePath: "C:\\ws\\win.ts" }, metadata: { diagnostics: small } }),
+    )
+    expect(normalized.rows).toHaveLength(1)
   })
 })

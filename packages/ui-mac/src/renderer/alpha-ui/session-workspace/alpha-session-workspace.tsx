@@ -11,6 +11,7 @@ import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal
 import { AlphaSessionTimeline } from "../session-timeline/session-timeline"
 import { SurfaceBoundary } from "../surface-boundary"
 import { SessionComposerDock } from "./session-composer-dock"
+import { sessionSlashOriginsFor } from "./session-slash-origin"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
 import { type AlphaSessionLiveContext, SessionWorkspaceShell } from "./session-workspace-shell"
 import "./session-workspace.css"
@@ -74,7 +75,7 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
       <SessionLiveProvider value={live}>
         <SessionWorkspaceShell
           live={live}
-          timeline={<AlphaSessionTimeline />}
+          timeline={(rail) => <AlphaSessionTimeline rail={rail} slashOriginsFor={sessionSlashOriginsFor} />}
           composer={() => <SessionComposerDock live={live} projects={props.projects} />}
           panels={{
             review: (rail) => <SessionRailReviewPanel live={live} rail={rail} />,

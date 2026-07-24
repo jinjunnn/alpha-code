@@ -1,22 +1,38 @@
-// REQ-125 C5/C6 — 数据绑定层:SDK typed 通道 → 行模型 → 视图。
+// REQ-125 C5/C6/#568 — 数据绑定层:SDK typed 通道 → 行模型 → 视图。
 //
 // 只消费公开 typed hooks(useServerSync;I1 白名单),不触碰上游 session 叶/DOM。
 // I8:一切读取以 live context 的 serverKey+directory+sessionID 三元组为键——store 本身按
 // sessionID 分片,行投影只读当前三元组对应的分片;历史翻页的滚动补偿在视图侧以 epoch
 // (三元组合成键)拒绝滞后结果。
-// C6 intents:openSession(子任务卡跳子会话)用 route-manifest 构 href 后导航——导航即换
-// epoch,天然满足 I8;focusArtifact 留空(右栏 rail api 不在本基座,接线归 C8 收口)。
+// intents:openSession(子任务卡跳子会话)用 route-manifest 构 href 后导航——导航即换
+// epoch,天然满足 I8;focusArtifact/openFile 接 C4 SessionRailApi(#568 真接线),rail
+// 缺席时两者 undefined → 行/pill 降级纯展示(fail-closed)。rail api 内部以 live 身份
+// 铸造 target 并在会话切换时作废(I8 归 shell)。
 import { useServerSync } from "@opencode-ai/app"
 import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, on } from "solid-js"
 import { hrefFor } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
 import { useAlphaSessionLiveContext } from "../session-workspace/alpha-session-workspace"
+import type { SessionRailApi } from "../session-workspace/session-workspace-shell"
 import type { TimelineIntents } from "./cards/timeline-intents"
 import { SessionTimelineView } from "./session-timeline-view"
-import { projectTimelineRows, reuseTimelineRows, type TimelineRow } from "./timeline-model"
+import {
+  projectTimelineRows,
+  reuseTimelineRows,
+  reviewPathOf,
+  type SessionSlashOriginsFor,
+  type TimelineRow,
+} from "./timeline-model"
 
-export function AlphaSessionTimeline() {
+export interface AlphaSessionTimelineProps {
+  /** C4 右栏联动 api(#568 接线);缺席 = pill/媒体/产物行降级纯展示。 */
+  rail?: Pick<SessionRailApi, "jumpToReview" | "focusArtifact">
+  /** #545 C7 的斜杠命令来源供给;缺席 = chip 零渲染(fail-closed)。 */
+  slashOriginsFor?: SessionSlashOriginsFor
+}
+
+export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
   const live = useAlphaSessionLiveContext()
   const serverSync = useServerSync()
 
@@ -44,6 +60,17 @@ export function AlphaSessionTimeline() {
     if (!id) return false
     return session().data.message[id] !== undefined
   })
+  // 斜杠命令来源(C7 可选供给):供给方异常不拖垮时间线(fail-closed → 无 chip)。
+  const slashOrigins = createMemo(() => {
+    const provider = props.slashOriginsFor
+    const identity = live.current()?.identity
+    if (!provider || !identity) return undefined
+    try {
+      return provider(identity)
+    } catch {
+      return undefined
+    }
+  })
   const rows = createMemo<TimelineRow[]>((previous) => {
     const id = sessionID()
     if (!id) return []
@@ -59,6 +86,7 @@ export function AlphaSessionTimeline() {
           status?.type === "retry"
             ? { attempt: status.attempt, message: typeof status.message === "string" ? status.message : "" }
             : undefined,
+        slashOrigins: slashOrigins(),
       }),
     )
   })
@@ -89,7 +117,27 @@ export function AlphaSessionTimeline() {
         // 非法参数 → 不导航。
       }
     },
-    // focusArtifact:右栏 rail api 不在 C5/C6 基座,接线归 C8 收口(行降级为纯展示)。
+    // 媒体/产物行 → 右栏产物面板。id 货币 = 产物名(manifest artifact id 的名字级
+    // 回落);对不上时面板打开但不改选中(artifacts-core 的 fail-closed 合同)。
+    get focusArtifact() {
+      const rail = props.rail
+      if (!rail) return undefined
+      return (intent: { name: string }) => rail.focusArtifact(intent.name)
+    },
+    // write/edit pill 与 diffsum 行 → 右栏审查面板的文件卡。路径必须先被证明为
+    // 安全 workspace-relative(reviewPathOf,审计 Major-2):证明不了 → 零动作,
+    // 不打面板、不递路径。未知但合法的文件由 review 面板静默不聚焦。
+    get openFile() {
+      const rail = props.rail
+      if (!rail) return undefined
+      return (intent: { path: string }) => {
+        const identity = live.current()?.identity
+        if (!identity) return
+        const relative = reviewPathOf(intent.path, identity.directory)
+        if (relative === undefined) return
+        rail.jumpToReview(relative)
+      }
+    },
   }
 
   return (

@@ -14,10 +14,12 @@ import {
   basenameOf,
   contextGroupSummaryOf,
   contextRowOf,
+  diagnosticsOf,
   dirnameOf,
   mediaLabelOf,
   mediaThumbable,
   OPEN_DEFAULT_MAX_CHARS,
+  openTargetOf,
   taskCardInfoOf,
   toolCardBodyOf,
   toolCardHeadOf,
@@ -379,6 +381,10 @@ export function TimelineToolCard(props: { part: ToolPart }) {
   }
   const task = createMemo(() => (head().kind === "task" ? taskCardInfoOf(props.part) : undefined))
   const intents = useTimelineIntents()
+  // T8「在面板打开」pill:write/edit 的文件目标 + openFile intent 双在场才渲染(fail-closed)。
+  const openPath = createMemo(() => openTargetOf(props.part))
+  // T19 诊断行:edit/write 完成态的本文件 ERROR 级诊断(有界;缺席零渲染)。
+  const diag = createMemo(() => diagnosticsOf(props.part))
 
   const headInner = () => (
     <>
@@ -420,12 +426,32 @@ export function TimelineToolCard(props: { part: ToolPart }) {
       data-status={head().status}
       data-open={hasBody() && open() ? "true" : undefined}
     >
-      <Show when={hasBody()} fallback={<div class="a-tc-head">{headInner()}</div>}>
-        <button type="button" class="a-tc-head" aria-expanded={open()} onClick={() => setChosen(!open())}>
-          {headInner()}
-          {chevron()}
-        </button>
-      </Show>
+      <div class="a-tc-headwrap">
+        <Show when={hasBody()} fallback={<div class="a-tc-head">{headInner()}</div>}>
+          <button type="button" class="a-tc-head" aria-expanded={open()} onClick={() => setChosen(!open())}>
+            {headInner()}
+          </button>
+        </Show>
+        <Show when={openPath() && intents.openFile}>
+          <button
+            type="button"
+            class="a-tc-openp"
+            data-alpha-open-in-panel
+            onClick={() => intents.openFile!({ path: openPath()! })}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M15 3h6v6M10 14L21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+            </svg>
+            {t("alpha.timeline.openInPanel")}
+          </button>
+        </Show>
+        <Show when={hasBody()}>
+          {/* 装饰性开合指示;点击等效头部按钮(键盘路径在头部按钮上)。 */}
+          <span class="a-tc-chevhit" aria-hidden="true" onClick={() => setChosen(!open())}>
+            {chevron()}
+          </span>
+        </Show>
+      </div>
       <Show when={task()?.childSessionID && intents.openSession}>
         <div class="a-tc-actions">
           <button type="button" class="a-tc-open" onClick={() => intents.openSession!(task()!.childSessionID!)}>
@@ -442,6 +468,80 @@ export function TimelineToolCard(props: { part: ToolPart }) {
       <Show when={hasBody() && open()}>
         <div class="a-tc-body">
           <CardBody head={head()} body={body()} />
+        </div>
+      </Show>
+      <Show when={diag().rows.length > 0}>
+        <div class="a-tc-diag" data-alpha-tool-diagnostics>
+          <For each={diag().rows}>
+            {(row) => (
+              <div class="a-tc-diag-row">
+                <span class="a-tc-diag-lvl">{t("alpha.timeline.diagError")}</span>
+                <span class="a-tc-diag-loc">{row.line === undefined ? row.file : `${row.file}:${row.line}`}</span>
+                <span class="a-tc-diag-msg">{row.message}</span>
+              </div>
+            )}
+          </For>
+          <Show when={diag().truncated}>
+            <TruncatedNote />
+          </Show>
+        </div>
+      </Show>
+    </section>
+  )
+}
+
+// ── 本回合改动汇总(S2,design §④ .diffsum 帧) ────────────────────────────
+export function TurnDiffSummaryRow(props: { row: Extract<TimelineRow, { kind: "diffsum" }> }) {
+  const intents = useTimelineIntents()
+  const [open, setOpen] = createSignal(false)
+  const fileInner = (file: { file: string; additions: number; deletions: number }) => (
+    <>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+        <path d="M14 3v6h6" />
+      </svg>
+      <span class="a-tc-file-dir">{dirnameOf(file.file)}</span>
+      <span class="a-tc-file-name">{basenameOf(file.file)}</span>
+      <StatBadge stat={{ additions: file.additions, deletions: file.deletions }} />
+    </>
+  )
+  return (
+    <section class="a-tl-row a-diffsum" data-alpha-timeline-row="diffsum" data-open={open() ? "true" : undefined}>
+      <button type="button" class="a-diffsum-head" aria-expanded={open()} onClick={() => setOpen((value) => !value)}>
+        <span class="a-diffsum-ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <circle cx="6" cy="6" r="2.4" />
+            <circle cx="6" cy="18" r="2.4" />
+            <circle cx="18" cy="9" r="2.4" />
+            <path d="M6 8.4v7.2M18 11.4a6 6 0 0 1-6 6H8.4" />
+          </svg>
+        </span>
+        <b>{t("alpha.timeline.turnDiffs", { count: props.row.files.length })}</b>
+        <StatBadge stat={{ additions: props.row.additions, deletions: props.row.deletions }} />
+        {chevron()}
+      </button>
+      <Show when={open()}>
+        <div class="a-diffsum-body">
+          <For each={props.row.files}>
+            {(file) => (
+              <Show when={intents.openFile} fallback={<div class="a-diffsum-row">{fileInner(file)}</div>}>
+                <button
+                  type="button"
+                  class="a-diffsum-row"
+                  aria-label={t("alpha.session.filesOpenInReview")}
+                  onClick={() => intents.openFile!({ path: file.file })}
+                >
+                  {fileInner(file)}
+                  <svg class="a-diffsum-go" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M15 3h6v6M10 14L21 3" />
+                  </svg>
+                </button>
+              </Show>
+            )}
+          </For>
+          <Show when={props.row.truncated}>
+            <TruncatedNote />
+          </Show>
         </div>
       </Show>
     </section>

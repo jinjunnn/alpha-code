@@ -18,11 +18,22 @@
   box-shadow: var(--a-edge-light);
 }
 
+/* 头部行:展开按钮(flex:1)+「在面板打开」pill + 开合指示,同一行(T8)。 */
+.a-tc-headwrap {
+  display: flex;
+  align-items: center;
+}
+
+.a-tc-headwrap:has(> button.a-tc-head):hover {
+  background: var(--a-bg-subtle);
+}
+
 .a-tc-head {
   display: flex;
   gap: 10px;
   align-items: center;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 9px 12px;
   border: 0;
   background: transparent;
@@ -36,13 +47,53 @@ button.a-tc-head {
   cursor: pointer;
 }
 
-button.a-tc-head:hover {
-  background: var(--a-bg-subtle);
-}
-
 button.a-tc-head:focus-visible {
   outline: none;
   box-shadow: inset var(--a-ring-focus);
+}
+
+.a-tc-chevhit {
+  display: grid;
+  flex: none;
+  place-items: center;
+  padding: 9px 12px 9px 0;
+  cursor: pointer;
+}
+
+/* 「在面板打开」pill(T8) */
+.a-tc-openp {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--a-radius-full);
+  background: transparent;
+  color: var(--a-accent);
+  font-family: inherit;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+}
+
+.a-tc-openp:hover {
+  background: var(--a-accent-subtle);
+}
+
+.a-tc-openp:focus-visible {
+  outline: none;
+  box-shadow: var(--a-ring-focus);
+}
+
+.a-tc-openp svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .a-tc-ico {
@@ -229,12 +280,12 @@ button.a-tc-head:focus-visible {
   border-color: var(--a-accent-border);
 }
 
-.a-tc[data-status="running"] .a-tc-head {
+.a-tc[data-status="running"] .a-tc-headwrap {
   position: relative;
   overflow: hidden;
 }
 
-.a-tc[data-status="running"] .a-tc-head::after {
+.a-tc[data-status="running"] .a-tc-headwrap::after {
   content: "";
   position: absolute;
   top: 0;
@@ -937,6 +988,161 @@ button.a-media-row:focus-visible {
   text-overflow: ellipsis;
 }
 
+/* ── 诊断行(T19,design ③ .diag 帧;挂在 edit/write 卡内) ──────────────── */
+.a-tc-diag {
+  margin: 8px 12px 10px;
+  padding: 8px 11px;
+  border: 1px solid var(--a-error);
+  border-radius: var(--a-radius-md);
+  background: var(--a-error-subtle);
+  font-size: var(--a-text-sm);
+}
+
+.a-tc-diag-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+}
+
+.a-tc-diag-lvl {
+  flex: none;
+  color: var(--a-error);
+  font-weight: var(--a-weight-bold);
+}
+
+.a-tc-diag-loc {
+  flex: none;
+  color: var(--a-text-tertiary);
+}
+
+.a-tc-diag-msg {
+  min-width: 0;
+  color: var(--a-text);
+  overflow-wrap: anywhere;
+}
+
+/* ── 本回合改动汇总(S2,design ④ .diffsum 帧) ─────────────────────────── */
+.a-diffsum {
+  align-self: flex-start;
+  width: 100%;
+  max-width: 760px;
+  overflow: hidden;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-edge-light);
+}
+
+.a-diffsum-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--a-text);
+  font-family: inherit;
+  font-size: var(--a-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.a-diffsum-head:hover {
+  background: var(--a-bg-subtle);
+}
+
+.a-diffsum-head:focus-visible {
+  outline: none;
+  box-shadow: inset var(--a-ring-focus);
+}
+
+.a-diffsum-head b {
+  font-weight: var(--a-weight-medium);
+}
+
+.a-diffsum-head .a-tc-chev {
+  margin-left: auto;
+}
+
+.a-diffsum-ico {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border-radius: var(--a-radius-sm);
+  background: var(--a-tool-list);
+  color: var(--a-text-on-accent);
+}
+
+.a-diffsum-ico svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-diffsum-body {
+  padding: 4px;
+  border-top: 1px solid var(--a-border-faint);
+}
+
+.a-diffsum-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-family: inherit;
+  font-size: var(--a-text-sm);
+  text-align: left;
+}
+
+button.a-diffsum-row {
+  cursor: pointer;
+}
+
+button.a-diffsum-row:hover {
+  background: var(--a-bg-subtle);
+}
+
+button.a-diffsum-row:focus-visible {
+  outline: none;
+  box-shadow: inset var(--a-ring-focus);
+}
+
+.a-diffsum-row > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--a-tool-read);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-diffsum-row .a-tc-stat {
+  margin-left: auto;
+}
+
+.a-diffsum-row .a-diffsum-go {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  stroke: var(--a-accent);
+}
+
 /* ── 关键帧与 reduced-motion 关断 ────────────────────────────────────────── */
 @keyframes a-tc-spin {
   to {
@@ -972,7 +1178,7 @@ button.a-media-row:focus-visible {
   .a-retry-spin,
   .a-tc-ring,
   .a-tc-cursor,
-  .a-tc[data-status="running"] .a-tc-head::after,
+  .a-tc[data-status="running"] .a-tc-headwrap::after,
   .a-tc[data-status="running"] .a-tc-ico {
     animation: none;
   }

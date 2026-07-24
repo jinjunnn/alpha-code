@@ -143,8 +143,12 @@ function WorkspaceTopbar(props: {
 
 export function SessionWorkspaceShell(props: {
   live: AlphaSessionLiveContext
-  /** C5:时间线(挂进 timeline 宿主;缺省 = 空宿主,组件测试哨位)。 */
-  timeline?: JSX.Element
+  /**
+   * C5:时间线(挂进 timeline 宿主;缺省 = 空宿主,组件测试哨位)。
+   * #568:renderer 形态收到 rail api,时间线卡片经 timeline-intents 联动右栏
+   * (write/edit pill → jumpToReview,媒体/产物行 → focusArtifact)。
+   */
+  timeline?: JSX.Element | ((rail: SessionRailApi) => JSX.Element)
   /** C7:composer 停靠位内容(AlphaComposer 直挂,props 传入 —— 零 Portal/零选择器)。 */
   composer?: () => JSX.Element
   panels?: SessionRailPanelRenderers
@@ -321,7 +325,7 @@ export function SessionWorkspaceShell(props: {
           data-alpha-session-timeline-host
           aria-label={t("alpha.session.timelineHost")}
         >
-          {props.timeline}
+          {typeof props.timeline === "function" ? props.timeline(rail) : props.timeline}
         </section>
         <section
           class="a-swk-composer-dock"

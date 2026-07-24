@@ -20,6 +20,7 @@ import type {
   ToolPart,
   UserMessage,
 } from "@opencode-ai/sdk/v2/client"
+import type { AlphaSessionIdentity } from "../session-workspace/session-workspace-core"
 
 /** I7 资源耗尽面:单块内容进渲染管线前的硬上限(字符)。 */
 export const MARKDOWN_MAX_CHARS = 60_000
@@ -68,6 +69,47 @@ export interface TimelineMediaSource {
   url: string
 }
 
+// ── 斜杠命令 chip 的 typed 数据源(C7 session-slash-origin 登记;缺席零渲染) ──
+/**
+ * send 时 composer 捕获的一条命令来源登记(C7 SessionSlashOrigin 的消费面投影):
+ * assistantMessageID 缺席(send 响应未带)= 对不上任何回合,该登记不出 chip。
+ */
+export interface TimelineSlashOrigin {
+  /** send 响应捕获的 assistant messageID(用于对齐所属回合)。 */
+  assistantMessageID?: string
+  command: string
+  arguments?: string
+}
+
+/** C7 的供给接口(sessionSlashOriginsFor);workspace 装配传入,缺席零渲染。 */
+export type SessionSlashOriginsFor = (identity: AlphaSessionIdentity) => readonly TimelineSlashOrigin[]
+
+/** 斜杠登记的字段帽与扫描预算(I7)。 */
+export const SLASH_COMMAND_MAX_CHARS = 200
+export const SLASH_ARGUMENTS_MAX_CHARS = 400
+export const SLASH_ORIGINS_SCAN_MAX = 100
+
+/** 回合末富脚注(A6/A7)的数据快照;缺字段诚实缺席。 */
+export interface TimelineFootnote {
+  agent?: string
+  model?: string
+  /** input+output+reasoning 合计;非有限或 ≤0 → 缺席。 */
+  tokens?: number
+  durationMs?: number
+}
+
+/** 本回合改动汇总(S2)的一行;file = 服务端 git 相对路径(review 面板同一货币)。 */
+export interface TimelineTurnDiffFile {
+  file: string
+  additions: number
+  deletions: number
+}
+
+export const TURN_DIFF_FILES_MAX = 24
+export const TURN_DIFF_SCAN_MAX = 200
+const TURN_DIFF_FILE_MAX_CHARS = 400
+const FOOTNOTE_FIELD_MAX_CHARS = 120
+
 export type TimelineRow =
   | { kind: "turn"; key: string; rev: string; userMessageID: string; createdAt: number }
   | {
@@ -80,6 +122,8 @@ export type TimelineRow =
       segments: TimelineSegment[]
       attachments: TimelineAttachment[]
       comments: TimelineComment[]
+      /** 斜杠命令来源(C7 可选供给;缺席 = 普通气泡)。 */
+      slash?: { command: string; arguments?: string }
     }
   | { kind: "reasoning"; key: string; rev: string; part: ReasoningPart; streaming: boolean }
   | { kind: "markdown"; key: string; rev: string; part: TextPart; streaming: boolean }
@@ -91,6 +135,25 @@ export type TimelineRow =
   | { kind: "turnError"; key: string; rev: string; userMessageID: string; name: string; message: string }
   | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "compaction" | "interrupted" }
   | { kind: "thinking"; key: string; rev: string; userMessageID: string }
+  | {
+      kind: "footnote"
+      key: string
+      rev: string
+      userMessageID: string
+      footnote: TimelineFootnote
+      /** 复制正文(该回合全部助手 text part;调用时从数据面取,不预存大字符串)。 */
+      copyText: () => string
+    }
+  | {
+      kind: "diffsum"
+      key: string
+      rev: string
+      userMessageID: string
+      files: TimelineTurnDiffFile[]
+      additions: number
+      deletions: number
+      truncated: boolean
+    }
 
 export interface TimelineProjectionInput {
   messages: readonly Message[]
@@ -99,6 +162,8 @@ export interface TimelineProjectionInput {
   status: string
   /** session_status[sessionID] 为 retry 时的载荷(attempt/message),对齐 v2 行模型的 Retry 行。 */
   retry?: { attempt: number; message: string }
+  /** 斜杠命令来源登记(C7 可选供给;缺席 = 不出 chip,fail-closed)。 */
+  slashOrigins?: readonly TimelineSlashOrigin[]
 }
 
 /** 用户消息里被 dock/审批面接管、时间线不渲染的工具。 */
@@ -300,6 +365,141 @@ export function artifactLinksOf(part: ToolPart): TimelineArtifactLink[] {
   return links
 }
 
+// ── 回合末富脚注(A6):数据源 = 已消费的 SDK 助手消息元数据 ──────────────────
+function cappedField(value: unknown, max = FOOTNOTE_FIELD_MAX_CHARS): string | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined
+  return value.length > max ? value.slice(0, max) : value
+}
+
+/**
+ * 回合末脚注:只认「回合尾态 = 成功完成」——回合**最后一个**助手消息必须已完成且
+ * 无错误,否则无脚注;不回溯早先的完成助手(成功→流式、成功→失败序列一律零脚注,
+ * 旧指标不得与未终结/失败内容混用;复制动作随行同门)。字段独立诚实缺席(I2)。
+ */
+export function footnoteOf(assistants: readonly AssistantMessage[]): TimelineFootnote | undefined {
+  const source = assistants.at(-1)
+  if (!source || typeof source.time.completed !== "number" || source.error) return undefined
+  const footnote: TimelineFootnote = {}
+  footnote.agent = cappedField(source.agent)
+  footnote.model = cappedField(source.modelID)
+  const tokens = source.tokens
+  if (typeof tokens === "object" && tokens !== null) {
+    const total = [tokens.input, tokens.output, tokens.reasoning]
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
+      .reduce((sum, value) => sum + value, 0)
+    if (total > 0) footnote.tokens = total
+  }
+  const completed = source.time.completed
+  if (typeof completed === "number" && Number.isFinite(source.time.created) && completed >= source.time.created)
+    footnote.durationMs = completed - source.time.created
+  return footnote
+}
+
+/** 复制正文:该回合全部助手的非 synthetic text part,按顺序以空行连接。 */
+export function turnCopyText(
+  assistants: readonly AssistantMessage[],
+  partsOf: (messageID: string) => readonly Part[],
+): string {
+  const blocks: string[] = []
+  for (const assistant of assistants) {
+    for (const part of partsOf(assistant.id)) {
+      if (part.type !== "text" || part.synthetic) continue
+      const text = part.text?.trim()
+      if (text) blocks.push(text)
+    }
+  }
+  return blocks.join("\n\n")
+}
+
+// ── 本回合改动汇总(S2):数据源 = userMessage.summary.diffs(服务端回合后写入) ──
+/** 非负有限数才合法;其余(含缺失/NaN/负数)= 畸形,整条丢弃(审计 minor)。 */
+function diffCountOf(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined
+  return Math.floor(value)
+}
+
+/**
+ * I2/I7 防御读取:畸形条目**整条丢弃**——超长文件名不截断(截断会指向另一个路径)、
+ * 非法 ±行数不改写为 0(不伪造统计);项数帽 + 扫描预算;无合法行 → undefined。
+ */
+export function turnDiffsOf(message: UserMessage): {
+  files: TimelineTurnDiffFile[]
+  additions: number
+  deletions: number
+  truncated: boolean
+} | undefined {
+  const diffs = message.summary?.diffs
+  if (!Array.isArray(diffs) || diffs.length === 0) return undefined
+  const files: TimelineTurnDiffFile[] = []
+  let truncated = false
+  for (let index = 0; index < diffs.length; index += 1) {
+    if (index >= TURN_DIFF_SCAN_MAX || files.length >= TURN_DIFF_FILES_MAX) {
+      truncated = true
+      break
+    }
+    const item = diffs[index]
+    if (typeof item !== "object" || item === null) continue
+    const record = item as { file?: unknown; additions?: unknown; deletions?: unknown }
+    if (typeof record.file !== "string" || record.file.length === 0) continue
+    if (record.file.length > TURN_DIFF_FILE_MAX_CHARS) continue
+    const additions = diffCountOf(record.additions)
+    const deletions = diffCountOf(record.deletions)
+    if (additions === undefined || deletions === undefined) continue
+    files.push({ file: record.file, additions, deletions })
+  }
+  if (files.length === 0) return undefined
+  return {
+    files,
+    additions: files.reduce((sum, row) => sum + row.additions, 0),
+    deletions: files.reduce((sum, row) => sum + row.deletions, 0),
+    truncated,
+  }
+}
+
+// ── 面板联动的路径纪律(I1,审计 Major-2) ───────────────────────────────────
+const DRIVE_LETTER_RE = /^[A-Za-z]:/
+
+/**
+ * 把「在面板打开」目标证明为安全的 workspace-relative 路径(review 面板货币):
+ * 只接受 ①位于 identity.directory 之下的绝对路径(剥前缀)②本就相对的路径;
+ * 归一(\→/)后不得残留 ".."/"."/空段/盘符/绝对残留。无法证明 → undefined,
+ * 消费侧零动作(pill/diffsum 同门;不把工作区外的路径递进 jumpToReview)。
+ */
+export function reviewPathOf(path: string, directory: string): string | undefined {
+  const normalized = path.replaceAll("\\", "/")
+  const root = directory.replaceAll("\\", "/").replace(/\/+$/, "")
+  let relative: string | undefined
+  if (root && normalized.startsWith(`${root}/`)) relative = normalized.slice(root.length + 1)
+  else if (!normalized.startsWith("/") && !DRIVE_LETTER_RE.test(normalized)) relative = normalized
+  if (!relative) return undefined
+  if (DRIVE_LETTER_RE.test(relative)) return undefined
+  const segments = relative.split("/")
+  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) return undefined
+  return relative
+}
+
+// ── 斜杠命令 chip:登记按 assistant messageID 对齐所属回合 ───────────────────
+/** fail-closed:登记缺席/字段非法/对不上回合 → undefined(不出 chip)。 */
+export function slashOriginForTurn(
+  origins: readonly TimelineSlashOrigin[] | undefined,
+  assistantIDs: ReadonlySet<string>,
+): { command: string; arguments?: string } | undefined {
+  if (!Array.isArray(origins)) return undefined
+  for (let index = 0; index < origins.length && index < SLASH_ORIGINS_SCAN_MAX; index += 1) {
+    const item = origins[index]
+    if (typeof item !== "object" || item === null) continue
+    const record = item as { assistantMessageID?: unknown; command?: unknown; arguments?: unknown }
+    if (typeof record.assistantMessageID !== "string" || !assistantIDs.has(record.assistantMessageID)) continue
+    if (typeof record.command !== "string" || record.command.length === 0) continue
+    const args = typeof record.arguments === "string" && record.arguments.length > 0 ? record.arguments : undefined
+    return {
+      command: record.command.slice(0, SLASH_COMMAND_MAX_CHARS),
+      arguments: args?.slice(0, SLASH_ARGUMENTS_MAX_CHARS),
+    }
+  }
+  return undefined
+}
+
 /** 回合级错误(排除中断):读第一个出错助手消息的 name+message,均有界(I7)。 */
 export function turnErrorOf(assistants: readonly AssistantMessage[]): { name: string; message: string } | undefined {
   const failed = assistants.find((message) => message.error && message.error.name !== "MessageAbortedError")
@@ -355,8 +555,10 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
     const segments = segmentUserText(text, mentionSpans(userParts))
     const attachments = userParts.flatMap((part) => (part.type === "file" ? (attachmentOf(part) ?? []) : []))
     const comments = userParts.flatMap((part) => commentOf(part) ?? [])
+    const turnAssistants = assistantsByParent.get(userMessage.id) ?? []
+    const slash = slashOriginForTurn(input.slashOrigins, new Set(turnAssistants.map((message) => message.id)))
 
-    if (text || attachments.length > 0 || comments.length > 0)
+    if (text || attachments.length > 0 || comments.length > 0 || slash)
       rows.push({
         kind: "user",
         key: `user:${userMessage.id}`,
@@ -366,6 +568,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           segments.map((segment) => `${segment.kind ?? "t"}:${segment.text.length}`).join(","),
           attachments.map((attachment) => attachment.partID).join(","),
           comments.map((comment) => comment.partID).join(","),
+          slash ? `${slash.command} ${slash.arguments ?? ""}` : "",
         ].join("§"),
         message: userMessage,
         text,
@@ -373,6 +576,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         segments,
         attachments,
         comments,
+        slash,
       })
 
     if (userParts.some((part) => part.type === "compaction"))
@@ -385,7 +589,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
       })
 
     let emitted = 0
-    const assistants = assistantsByParent.get(userMessage.id) ?? []
+    const assistants = turnAssistants
 
     // 连续已完成的探查工具缓冲:≥ CONTEXT_GROUP_MIN 折叠成「已探索」组,单个保留独立卡;
     // 单组成员 ≤ CONTEXT_GROUP_MAX(I7),超长连续段切成多个组行。
@@ -510,6 +714,37 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           label: "interrupted",
         })
     }
+
+    // 回合末富脚注(A6):只在回合尾态成功完成且有可见内容时出行;当前活跃回合
+    // (busy/retry 等非 idle)尾态未定,一律不出(审计 Major-1)。
+    const turnActive = userMessage.id === activeUserID && input.status !== "idle"
+    const footnote = emitted > 0 && !turnActive ? footnoteOf(assistants) : undefined
+    if (footnote)
+      rows.push({
+        kind: "footnote",
+        key: `footnote:${userMessage.id}`,
+        rev: [footnote.agent ?? "", footnote.model ?? "", footnote.tokens ?? "", footnote.durationMs ?? ""].join("§"),
+        userMessageID: userMessage.id,
+        footnote,
+        copyText: () => turnCopyText(assistants, input.partsOf),
+      })
+
+    // 本回合改动汇总(S2):userMessage.summary.diffs 解析出合法行才出行(fail-closed)。
+    const turnDiffs = turnDiffsOf(userMessage)
+    if (turnDiffs)
+      rows.push({
+        kind: "diffsum",
+        key: `diffsum:${userMessage.id}`,
+        rev: [
+          turnDiffs.files.map((row) => `${row.file}:${row.additions}/${row.deletions}`).join(","),
+          String(turnDiffs.truncated),
+        ].join("§"),
+        userMessageID: userMessage.id,
+        files: turnDiffs.files,
+        additions: turnDiffs.additions,
+        deletions: turnDiffs.deletions,
+        truncated: turnDiffs.truncated,
+      })
 
     if (userMessage.id === activeUserID && input.status === "busy" && emitted === 0)
       rows.push({ kind: "thinking", key: `thinking:${userMessage.id}`, rev: "", userMessageID: userMessage.id })

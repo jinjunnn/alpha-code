@@ -482,6 +482,91 @@ export function extractHttpUrls(text: string): string[] {
   return result
 }
 
+// ── 「在面板打开」pill(T8):write/edit 卡头的文件目标 ──────────────────────
+/** 路径帽:超长路径不进 intent(截断的路径指向错误目标,fail-closed 无 pill)。 */
+export const OPEN_TARGET_MAX_CHARS = 1_024
+
+/** write/edit 卡的面板打开目标 = 原始 input.filePath;其余工具/非法路径 → 无 pill。 */
+export function openTargetOf(part: ToolPart): string | undefined {
+  const kind = toolCardKindOf(part.tool)
+  if (kind !== "write" && kind !== "edit") return undefined
+  const filePath = inputOf(part).filePath
+  if (typeof filePath !== "string" || filePath.length === 0 || filePath.length > OPEN_TARGET_MAX_CHARS) return undefined
+  return filePath
+}
+
+// ── 诊断行(T19):edit/write 完成态 metadata.diagnostics 的有界投影 ─────────
+export const DIAG_MAX_ROWS = 8
+/** 外层帽(审计 Major-3):诊断映射的文件键扫描预算,超出即停(精确键命中不受限)。 */
+export const DIAG_FILES_SCAN_MAX = 200
+
+export interface DiagnosticRow {
+  file: string
+  line?: number
+  message: string
+}
+
+function normalizedPath(path: string): string {
+  return path.replaceAll("\\", "/")
+}
+
+/**
+ * 只取本卡文件的 ERROR 级(severity=1)诊断,与上游 report() 同口径;四重帽(I7):
+ * 外层文件键预算(DIAG_FILES_SCAN_MAX)+ 条数帽(DIAG_MAX_ROWS)+ 条目扫描预算
+ * (TOOL_LIST_SCAN_MAX)+ 单条帽(cappedItem)。文件对不上/形状非法 → 空(fail-closed)。
+ */
+export function diagnosticsOf(part: ToolPart): { rows: DiagnosticRow[]; truncated: boolean } {
+  const none = { rows: [], truncated: false }
+  const kind = toolCardKindOf(part.tool)
+  if (kind !== "write" && kind !== "edit") return none
+  if (part.state.status !== "completed") return none
+  const filePath = inputOf(part).filePath
+  if (typeof filePath !== "string" || filePath.length === 0) return none
+  const diagnostics = metadataOf(part).diagnostics
+  if (typeof diagnostics !== "object" || diagnostics === null) return none
+  const map = diagnostics as Record<string, unknown>
+  // 外层文件数扫描预算(审计 Major-3):该映射可为全项目诊断,不做全量
+  // Object.entries/归一化 —— 先走本文件精确键 O(1) 快路,再有界逐键扫描,
+  // 预算耗尽即停(历史卡片数 × 项目文件数不再可放大)。
+  let entry: unknown = Object.prototype.hasOwnProperty.call(map, filePath) ? map[filePath] : undefined
+  if (entry === undefined) {
+    const wanted = normalizedPath(filePath)
+    let scanned = 0
+    for (const key in map) {
+      if (scanned >= DIAG_FILES_SCAN_MAX) break
+      scanned += 1
+      if (!Object.prototype.hasOwnProperty.call(map, key)) continue
+      if (normalizedPath(key) === wanted) {
+        entry = map[key]
+        break
+      }
+    }
+  }
+  if (!Array.isArray(entry)) return none
+  const file = cappedItem(basenameOf(filePath))
+  const rows: DiagnosticRow[] = []
+  let truncated = false
+  for (let index = 0; index < entry.length; index += 1) {
+    if (index >= TOOL_LIST_SCAN_MAX || rows.length >= DIAG_MAX_ROWS) {
+      truncated = true
+      break
+    }
+    const item = entry[index]
+    if (typeof item !== "object" || item === null) continue
+    const record = item as { severity?: unknown; message?: unknown; range?: { start?: { line?: unknown } } }
+    if (record.severity !== 1) continue
+    const message = stringOf(record.message)
+    if (!message) continue
+    const line = finiteOf(record.range?.start?.line)
+    rows.push({
+      file,
+      line: line === undefined ? undefined : Math.max(0, Math.floor(line)) + 1,
+      message: cappedItem(message),
+    })
+  }
+  return { rows, truncated }
+}
+
 // ── 分支专属信息 ────────────────────────────────────────────────────────────
 export interface TaskCardInfo {
   description?: string

@@ -25,7 +25,7 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("23 pass")
+    expect(output).toContain("29 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -110,10 +110,13 @@ describe("REQ-125 C5 I5 令牌白名单与运动契约", () => {
 })
 
 describe("REQ-125 C5 shell 接线(最小增量)", () => {
-  test("workspace 把时间线挂进 timeline 宿主,宿主仍是唯一挂载点", () => {
+  test("workspace 把时间线挂进 timeline 宿主(#568:renderer 形态携带 rail api + C7 斜杠真供给),宿主仍是唯一挂载点", () => {
     expect(workspace).toContain(`import { AlphaSessionTimeline } from "../session-timeline/session-timeline"`)
-    expect(workspace).toContain(`timeline={<AlphaSessionTimeline />}`)
-    expect(shell).toContain("{props.timeline}")
+    expect(workspace).toContain(
+      `timeline={(rail) => <AlphaSessionTimeline rail={rail} slashOriginsFor={sessionSlashOriginsFor} />}`,
+    )
+    expect(workspace).toContain(`import { sessionSlashOriginsFor } from "./session-slash-origin"`)
+    expect(shell).toContain(`typeof props.timeline === "function" ? props.timeline(rail) : props.timeline`)
     expect(shell.match(/data-alpha-session-timeline-host/g)).toHaveLength(1)
   })
 })
