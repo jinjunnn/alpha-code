@@ -150,20 +150,48 @@ const PREFIXES = ["OPENCODE_", "XDG_", "LC_", "ELECTRON_"]
 //       this row for a gated invariant.
 //
 // Accepted residual, stated rather than hidden: a credential noun buried mid-name with no separator
-// and not in trailing position (XKEYX) is no longer vetoed. It must still clear an allow rule to
-// reach the sidecar. NOTE this list used to include OPENCODE_KEYFILE on the reasoning that a
-// *_KEYFILE name is a path, not the secret — the adversarial round disproved it (see CONTAINER
-// above), which is why the residual is now one name and not a family. Symmetrically, a BARE MONKEY /
+// and not in trailing position (XKEYX) is not vetoed. It must still clear an allow rule to reach the
+// sidecar. Two earlier versions of this note were WRONG and the corrections are kept visible on
+// purpose: v1 filed the whole *_KEYFILE family here ("a keyfile name is a path, not the secret" —
+// disproved by GOOGLE_CLOUD_KEYFILE_JSON), and v2 then claimed the residual was "one name, not a
+// family" — also disproved, by KRB_KEYTAB / TINK_KEYSET / APIKEY_FILE. The honest statement is that
+// this residual is bounded by what the CONTAINER and WRAPPER lists currently enumerate, and a new
+// credential spelling that fits neither list will pass. That is why the corpus differential gate
+// below exists, and why widening the corpus is the review action when a new family shows up. Symmetrically, a BARE MONKEY /
 // TURKEY / DONKEY is still vetoed by rule 2 — over-denial is the safe direction, and every reported
 // false positive was `MONKEY_MODE`-shaped (noun not trailing).
 const CREDENTIAL_NOUN = "KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL"
-const CREDENTIAL_CONTAINER = "FILE|STORE|CHAIN|RING|PAIR|DATA"
+// Round 2 of the adversarial review added TAB (KRB_KEYTAB — the HashiCorp Vault provider points it
+// at a Kerberos keytab holding login entries) and SET (TINK_KEYSET — a Tink keyset IS the key
+// collection), plus MATERIAL/BLOB/BUNDLE by the same "compound still denotes the secret" standard.
+// Deliberately NOT here: VAULT. AZURE_KEYVAULT_URL is a service address, and the authenticating
+// half is still spelled with SECRET/TOKEN — vetoing on KEYVAULT would re-create an obvious
+// false positive.
+const CREDENTIAL_CONTAINER = "FILE|STORE|CHAIN|RING|PAIR|DATA|TAB|SET|MATERIAL|BLOB|BUNDLE"
 const CREDENTIAL_WORD = `(?:${CREDENTIAL_NOUN})(?:${CREDENTIAL_CONTAINER})?S?`
 const SECRETISH = new RegExp(`(^|_)${CREDENTIAL_WORD}(_|$)|${CREDENTIAL_WORD}$`, "i")
 
+// Widening the CONTAINER list alone was still not enough (adversarial round 2): in APIKEY_FILE the
+// noun is not at a segment start (the segment is APIKEY, and APIKEY !== KEY) while FILE has been
+// split off into its own `_` segment, so NEITHER rule can see it. APIPASSWORD_FILE, PRIVATEKEY_PATH
+// and TINK_KEYSET_JSON are the same shape, and all of them are env vars real projects use to point
+// at a secrets file. So a trailing WRAPPER segment is stripped and the name retested: the wrapper
+// says "this var carries the thing", it never makes the thing stop being a credential. Stripping is
+// safe in the other direction because it only ever shortens the name — KEYBOARD_FILE reduces to
+// KEYBOARD, which still matches nothing.
+const WRAPPER_SEGMENT = /_(FILE|PATH|JSON|B64|BASE64|CONTENTS?)$/i
+
 /** The credential-name veto. Exported so its gates execute the production predicate, not a copy. */
 export function isSecretish(name: string): boolean {
-  return SECRETISH.test(name)
+  let candidate = name
+  // Bounded: every iteration strips one trailing segment, so it terminates on the name's length.
+  for (let i = 0; i < 4; i++) {
+    if (SECRETISH.test(candidate)) return true
+    const stripped = candidate.replace(WRAPPER_SEGMENT, "")
+    if (stripped === candidate) break
+    candidate = stripped
+  }
+  return SECRETISH.test(candidate)
 }
 
 // Container-valued vars: SECRETISH matches NAMES, so it is blind to a secret carried in the VALUE.

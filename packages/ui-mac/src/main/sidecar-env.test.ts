@@ -268,6 +268,13 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
     "SSH_KEYFILE",
     "JAVA_KEYSTORE",
     "GPG_KEYRING",
+    // 对抗审 R2 新报三族:KEYTAB(HashiCorp Vault provider 的 Kerberos keytab)、
+    // KEYSET(Tink 密钥集)、以及「名词不在段首 + 包装段被 _ 分隔」的 *_FILE 形态。
+    "KRB_KEYTAB",
+    "TINK_KEYSET_JSON",
+    "APIKEY_FILE",
+    "APIPASSWORD_FILE",
+    "PRIVATEKEY_PATH",
   ]
 
   // #605 must-allow: the false positives the substring match caused, plus every name #603 measured
@@ -286,7 +293,7 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
     "ALPHA_BASE_URL",
   ]
 
-  test("reverse gate: all 11 names #603 measured stay vetoed, on the path that would admit them", () => {
+  test("reverse gate: every must-deny name stays vetoed, on the path that would admit them", () => {
     // The hatch names every one of them, so each has an allow rule behind it; only the veto stops
     // them. A distinct probe value per name proves the VALUE is gone, not merely the key.
     const env = createSidecarEnv({
@@ -300,7 +307,7 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
     }
     // …and the run was not vacuous: the hatch really was live on this call.
     expect(env.MY_CUSTOM_VAR).toBe("kept")
-    expect(MUST_DENY.length).toBe(25)
+    expect(MUST_DENY.length).toBe(30)
   })
 
   test("reverse gate: the predicate itself vetoes every must-deny name (hatch/EXACT/prefix)", () => {
@@ -343,6 +350,13 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
       ["_SECRET", true], // leading separator: rule 1 as _SECRET$
       ["APIKEY", true], // NO separator. THE risk of the rewrite; rule 2 keeps it denied
       ["MYKEY", true], // ditto — the second name the issue calls out
+      ["KRB_KEYTAB", true],
+      ["TINK_KEYSET", true],
+      ["APIKEY_FILE", true],
+      // — 剥包装段不得反向误杀:短化后仍不匹配的名字照旧放行 —
+      ["KEYBOARD_FILE", false],
+      // — 刻意不收 VAULT:AZURE_KEYVAULT_URL 是服务地址,认证那半仍由 SECRET/TOKEN 拼写 —
+      ["AZURE_KEYVAULT_URL", false],
       ["XKEYX", false], // ACCEPTED RESIDUAL: buried, non-trailing, no separator
       // — the no-separator class rule 2 exists for —
       ["GITHUBTOKEN", true],
