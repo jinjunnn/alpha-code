@@ -14,7 +14,7 @@
 import { ALPHA_PATHS } from "../shared/alpha-config"
 import { decodeJsonContract, isContractIncompatibleError } from "@alpha-code/contracts-consumer"
 import { resolveEndpoints } from "./alpha-endpoints"
-import { getAccessToken, refreshTokens } from "./alpha-auth"
+import { getAccessToken, getAuthIdentityEpoch, refreshTokens } from "./alpha-auth"
 import { getLogger } from "./logging"
 import { reportContractFailure } from "./alpha-contract-health"
 import type { AccountResult, AccountSummary, AccountTransaction } from "../preload/types"
@@ -24,17 +24,17 @@ import { createAuthedGet } from "./alpha-account-request"
 const accountBase = () => resolveEndpoints().account
 
 // B2 defense-in-depth:如果「续期后重试仍 401」,说明该 access token 确实被端点拒绝(不是过期),
-// 再续也只是白烧往返。按 purpose 冷却一段时间:一个持续 401 的账户端点最多驱动约每 30s 一次续期,
-// 与 UI 重拉频率无关。(alpha-auth.ts 的 publish 身份门控是断风暴的主闸;这里是本地兜底,确保未来
-// 任何重拉模式都无法重新引爆循环。)
+// 再续也只是白烧往返 —— 而每次成功续期都会驱动一次 token-only 换血。#601:该 purpose 的账户驱动
+// 刷新就此锁住,直到该端点出现非 401 成功或用户登入/登出,不再用有限冷却窗口当终局(那会自激成
+// 每 30 秒中断一次会话的 respawn 循环)。
 // B2:401 拦截 —— access token 失效时先续期一次再重试(单飞在 refreshTokens 内);续期失败(会话
 // revoked → 那边已降级登出)才把 unauthorized 交给 renderer 触发重新登录。
 const authedGet = createAuthedGet({
   accountBase,
   getAccessToken,
   refreshTokens,
+  authIdentityEpoch: getAuthIdentityEpoch,
   fetch,
-  now: Date.now,
   warn: (message, error) => getLogger().warn(message, error),
   isContractIncompatibleError,
   reportContractFailure,

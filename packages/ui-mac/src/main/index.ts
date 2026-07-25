@@ -112,6 +112,7 @@ import {
   initAuthEnv,
   isStoredTokenExpired,
   logout as authLogout,
+  markTokenGenerationApplied,
   setAuthDeps,
   setAuthMode,
   startAuth,
@@ -123,6 +124,8 @@ import {
   createTokenRotationLatch,
 } from "./auth-renewal"
 import {
+  armRespawnGenerationTerminal,
+  commitForkedTokenGeneration,
   createSidecarRespawnQueue,
   shouldReloadRenderer,
   shouldRetryRespawn,
@@ -147,10 +150,16 @@ let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
 let rendererReloadCount = 0
+// 「活着的 sidecar 已被健康确认携带的 token 代」——latch 的 forkedGeneration() 读它。
+// R3 新 Major:只有健康确认才提交(规则在 sidecar-lifecycle.commitForkedTokenGeneration,
+// boot 与 respawn 两条路共用),否则「fork 出去但从未健康」会被 latch 当成已应用。
 let sidecarTokenGeneration = 0
-const markSidecarTokenSnapshot = () => {
-  sidecarTokenGeneration = getTokenGeneration()
+const commitSidecarTokenGeneration = (forked: number, healthy: boolean) => {
+  sidecarTokenGeneration = commitForkedTokenGeneration(sidecarTokenGeneration, forked, healthy)
 }
+// 「首个 fork **启动时**继承的 token 代」——只用于 boot 后那次「登录发生在 fork 之前吗」的
+// 判断(它问的是继承事实,不是健康事实),与上面那个健康确认值刻意分开。
+let bootForkTokenGeneration = 0
 
 const pendingDeepLinks: string[] = []
 
@@ -215,20 +224,32 @@ let requestSidecarRespawn: ((reason: SidecarRespawnReason) => Promise<boolean>) 
 let recoveryService: RecoveryService | null = null
 const sidecarGeneration = createSidecarGenerationState()
 
+// R1 Major3:发布必须是全函数(never throws)。它是终态生产者、pre-arm catch 与 latch 三条
+// 路径共用的收口点,任何一次抛出都会把「恰好一个终态」变成零个,或让 latch 收到 rejected
+// respawn 而不再武装重试。状态先落 store(renderer 经 getState 回读得到同一事实),
+// 只有 IPC 推送这一步可能因窗口崩溃/销毁失败,失败降级为一条日志。
 function publishSidecarGeneration(next: SidecarGenerationState) {
   sidecarGeneration.update(next)
-  markStartupTimeline("main.sidecar.generation.emit", {
-    generation: next.generation,
-    phase: next.status,
-    reason: next.reason,
-  })
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("sidecar-generation", next)
+  try {
+    markStartupTimeline("main.sidecar.generation.emit", {
+      generation: next.generation,
+      phase: next.status,
+      reason: next.reason,
+    })
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("sidecar-generation", next)
+  } catch (error) {
+    logger.warn("sidecar generation publish failed", error)
+  }
 }
 
 const tokenRotation = createTokenRotationLatch({
   forkedGeneration: () => sidecarTokenGeneration,
-  canRespawn: () => Boolean(server && requestSidecarRespawn && !quittingApp),
+  // #600:sidecar 已死(换血的 spawn 失败后 server 为 null)恰恰是必须允许再换血的时刻 ——
+  // 旧的 `server &&` 让「换血失败 ⇒ 无 sidecar」变成永久不可用:低频重试永远进不了 respawn 入口。
+  canRespawn: () => Boolean(requestSidecarRespawn && !quittingApp),
   respawn: (reason) => requestSidecarRespawn?.(reason) ?? Promise.resolve(false),
+  // #600 M1:换血真正落地时解除平台面的「恢复中」——低频重试成功也走这条。
+  onApplied: (generation) => markTokenGenerationApplied(generation),
   mark: (result, trigger, outcome) =>
     markStartupTimeline("main.auth.rotation", {
       generation: result.generation,
@@ -639,7 +660,9 @@ const main = Effect.gen(function* () {
       }
       pendingAuthStructuralRespawn = true
     },
-    onRenewed: (result) => void tokenRotation.accept(result, "renewal"),
+    // #600 M1:返回换血 Promise —— refreshTokens 等它落定后才回报恢复,account 401 路径
+    // 因此不会在 sidecar 仍握旧 token 时就把平台当成已恢复。
+    onRenewed: (result) => tokenRotation.accept(result, "renewal"),
     onChanged: () => authScheduler?.rearm("auth-change"),
   })
   // A′:过期 token 在恢复存储后立即开始续期和 1.2s hard grace，和迁移、配置预检、端口分配
@@ -957,7 +980,7 @@ const main = Effect.gen(function* () {
     const spawnGen = ++sidecarGen
     publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason: "boot" })
     selfHeal = noteSpawn(selfHeal, Date.now())
-    markSidecarTokenSnapshot()
+    bootForkTokenGeneration = getTokenGeneration()
     const { listener, health } = yield* Effect.promise(() => {
       const started = performance.now()
       markStartupTimeline("main.sidecar.boot.fork.start", { generation: spawnGen })
@@ -1000,6 +1023,16 @@ const main = Effect.gen(function* () {
       return spawning
     })
     server = listener
+    // R3 新 Major:boot 也 capture-then-commit —— 健康握手通过之后才把这一代记成
+    // 「活着的 sidecar 携带的代」。旧接线在 spawn 之前就记账,于是「boot 健康仍 pending 甚至
+    // 最终失败」时,latch 的 inEffect 路径会据此清掉重试并发布 ready(#600 M1 的反面)。
+    // 健康永不落定 ⇒ 永不提交(fail-closed):latch 保持 pending,由封顶低频 timer 继续重试。
+    // 这里只改 token 快照时序,不碰终态发布接线(armBootGenerationTerminal 的 detached 武装
+    // 位置与 `return spawning` 的顺序完全未动 —— #577/#598 的接线锚仍然成立)。
+    void health.wait.then(
+      () => commitSidecarTokenGeneration(bootForkTokenGeneration, true),
+      () => {},
+    )
     armEngineRunawayMeter(spawnGen)
     sessionGrantRegistry.beginSession(spawnGen) // #408:新会话空集起步(grant 面绑本代)
     yield* Deferred.succeed(serverReady, {
@@ -1039,6 +1072,10 @@ const main = Effect.gen(function* () {
   // SDK/SSE reconnection so the renderer tree remains mounted.
   const doRespawnSidecar = async (reason: SidecarRespawnReason) => {
     if (quittingApp) return false
+    // #600:发出 recovering 之后必须恰好发布一个终态。终态生产者(armRespawnGenerationTerminal)
+    // 一经武装就独占发布权;它武装之前出错的路径由下面的 catch 兜住那唯一一个 failed。
+    let announcedGeneration: number | null = null
+    let terminal: Promise<boolean> | null = null
     try {
       logger.log("respawning sidecar", { reason })
       // REQ-001:respawn 前刷新 edition 白名单缓存(登录刚建立 → 按租户 edition 收窄;8s 超时内置,
@@ -1076,11 +1113,16 @@ const main = Effect.gen(function* () {
         return false
       }
       const spawnGen = ++sidecarGen
+      // #600:「当前 sidecar 携带的 token 代」只能在健康换血成功后记账。旧接线在 fork 前就记,
+      // 失败后 latch 误判该代已应用(同代永不再试),而此刻根本没有活着的 sidecar。
+      const forkTokenGeneration = getTokenGeneration()
+      // R1 Major3:先记账再发布 —— 反过来的话,recovering 发布自身抛出时 catch 认不出
+      // 「这一代已经宣告过」,补不上那个 failed。
+      announcedGeneration = spawnGen
       publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason })
       await killSidecar()
       ensureLoopbackNoProxy()
       useEnvProxy()
-      markSidecarTokenSnapshot()
       selfHeal = noteSpawn(selfHeal, Date.now())
       const started = performance.now()
       markStartupTimeline("main.sidecar.respawn.fork.start", { generation: spawnGen, reason })
@@ -1107,19 +1149,28 @@ const main = Effect.gen(function* () {
             outcome: errorOutcome(error),
           }),
       )
-      const { listener, health } = await spawning
+      // #600:recovering 已发出 ⇒ 终态生产者立刻武装(与 boot 的 armBootGenerationTerminal 同构),
+      // spawn 在返回 health 之前失败 / 健康失败 / 20s 超时 三条路各发布恰好一个 failed,
+      // 健康通过发布恰好一个 ready。旧接线只在 healthy 时发 ready,另两条路让 generation
+      // 永久停在 recovering,而 renderer 探不出一个不存在的 sidecar。
+      terminal = armRespawnGenerationTerminal({
+        generation: spawnGen,
+        reason,
+        spawning,
+        timeoutMs: 20000,
+        publish: publishSidecarGeneration,
+        logError: (message) => logger.error(message),
+      })
+      // R1 Major3:spawn reject 时下面的 await 直接跳到 catch,没人再 await terminal ——
+      // 挂一个吞异常的守卫,任何情况下都不会留下 unhandled rejection(main 进程有退出风险)。
+      void terminal.catch(() => {})
+      const { listener } = await spawning
       server = listener
       armEngineRunawayMeter(spawnGen)
       sessionGrantRegistry.beginSession(spawnGen) // #408:respawn = 新会话,grant 恒从空集开始
       // B5 验收②:未健康不 reload —— reload 进死后端只会白屏(REQ-014 同族),留旧 renderer 状态。
-      const healthy = await Promise.race([
-        health.wait.then(
-          () => true,
-          () => false,
-        ),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 20000)),
-      ])
-      if (healthy) publishSidecarGeneration({ status: "ready", generation: spawnGen, reason })
+      const healthy = await terminal
+      commitSidecarTokenGeneration(forkTokenGeneration, healthy)
       if (healthy && mainWindow && !mainWindow.isDestroyed()) {
         if (shouldReloadRenderer(reason)) {
           markStartupTimeline("main.renderer.reload", {
@@ -1137,12 +1188,14 @@ const main = Effect.gen(function* () {
           })
           logger.log("sidecar token rotated without renderer reload")
         }
-      } else if (!healthy) {
-        logger.error("sidecar respawned but health check failed — skipping renderer reload")
       }
       return healthy
     } catch (error) {
       logger.error("sidecar respawn failed", error)
+      // 终态生产者已武装 ⇒ 由它发布(spawn reject 也走那条路);尚未武装但已发出 recovering ⇒
+      // 这里补上那唯一一个 failed,绝不让 generation 停在 recovering。
+      if (announcedGeneration !== null && !terminal)
+        publishSidecarGeneration({ status: "failed", generation: announcedGeneration, reason })
       return false
     }
   }
@@ -1151,7 +1204,7 @@ const main = Effect.gen(function* () {
   const respawnSidecar = createSidecarRespawnQueue(doRespawnSidecar)
 
   requestSidecarRespawn = respawnSidecar // B5:崩溃自愈复用同一互斥/合并入口
-  if (pendingAuthStructuralRespawn && sidecarTokenGeneration !== getTokenGeneration())
+  if (pendingAuthStructuralRespawn && bootForkTokenGeneration !== getTokenGeneration())
     void respawnSidecar("structural")
   pendingAuthStructuralRespawn = false
   setProviderLifecycleDeps({ refreshRuntime: () => respawnSidecar("structural") })
