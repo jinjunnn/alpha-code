@@ -1,19 +1,24 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test, vi } from "bun:test"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ContractIncompatibleError, type RoutePurpose } from "@alpha-code/contracts-consumer"
 import { createTokenRotationLatch } from "./auth-renewal"
+import { createAuthedGet } from "./alpha-account-request"
 import { deepLinkFor } from "../shared/route-manifest"
 
 const logger = { log: () => {}, warn: () => {}, error: () => {} }
+// R1 Major4:DEV_PLATFORM_TOKEN 只该在非 packaged 构建生效;测试要能翻这个开关。
+let packagedBuild = false
 
 mock.module("electron", () => ({
   app: {
     getVersion: () => "9.9.9",
     getPath: () => "/tmp",
     getName: () => "alpha-code",
-    isPackaged: false,
+    get isPackaged() {
+      return packagedBuild
+    },
     on: () => {},
     off: () => {},
     whenReady: () => Promise.resolve(),
@@ -68,9 +73,11 @@ const {
   getTokenGeneration,
   handleAuthDeepLink,
   initAuthEnv,
+  getAuthIdentityEpoch,
   isStoredTokenExpired,
   ensureFreshToken,
   logout,
+  markTokenGenerationApplied,
   refreshTokens,
   setAuthDeps,
   startAuth,
@@ -152,12 +159,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
-function fakeWindow(sends: string[]) {
+/** 捕获 main → renderer 的 auth 推送。`platformStatuses` 记录每次 auth-state 的平台态,
+ *  用来断言「ready 什么时候被发布」而不是只断言最终值。 */
+function fakeWindow(sends: string[], platformStatuses: (string | undefined)[] = []) {
   return {
     isDestroyed: () => false,
     webContents: {
-      send: (channel: string) => {
+      send: (channel: string, payload?: unknown) => {
         sends.push(channel)
+        if (channel === "auth-state" && isRecord(payload))
+          platformStatuses.push(typeof payload.platformStatus === "string" ? payload.platformStatus : undefined)
       },
     },
   } as unknown as ReturnType<Parameters<typeof setAuthDeps>[0]["getWindow"]>
@@ -194,6 +205,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  setSystemTime()
+  vi.useRealTimers()
   MANAGED_ENV.forEach((key) => {
     if (savedEnv[key] === undefined) delete process.env[key]
     else process.env[key] = savedEnv[key]
@@ -409,11 +422,12 @@ describe("refresh bundle rotation", () => {
     expect(renewedGenerations).toEqual([])
   })
 
-  // #600 M1:account 401 路径靠 `await refreshTokens()` 判断"恢复了没有"。旧接线把
-  // onRenewed 的 Promise `void` 掉,refresh 立即完成 → UI 报恢复、sidecar 仍握旧 token,
-  // 用户此时发送首次推理可能 401。正确行为:续期必须等 latch 对该 generation 的应用结果。
+  // #600 M1(R1 Blocker1 + Minor2 重写):此前本条**接受**「换血失败仍返回 refreshed」,
+  // 且用 getWindow:null 绕开了正要验证的 platform-ready 发布 —— 假闸门。正确行为三条:
+  // ① 换血落定之前绝不发布 platformStatus:"ready";② 换血失败 ⇒ 结果 applied:false 且平台面
+  // 保持 recovering;③ 低频重试真正应用后才转 ready。
   test.each([true, false] as const)(
-    "a renewal reports back only after the token rotation settled (rotation healthy=%p)",
+    "platform ready is published only after the rotation applied (rotation healthy=%p)",
     async (rotationHealthy) => {
       const newBundle = tokenBundle("new")
       storeAuth({
@@ -423,6 +437,7 @@ describe("refresh bundle rotation", () => {
         lifetimeMs: 1000,
       })
       const events: string[] = []
+      const published: (string | undefined)[] = []
       let releaseRotation!: () => void
       const rotationGate = new Promise<void>((resolve) => {
         releaseRotation = resolve
@@ -433,6 +448,7 @@ describe("refresh bundle rotation", () => {
         canRespawn: () => true,
         respawn: async () => {
           events.push("rotation:start")
+          published.push(`during-rotation:${getAuthState().platformStatus}`)
           await rotationGate
           if (!rotationHealthy) {
             events.push("rotation:failed")
@@ -442,9 +458,10 @@ describe("refresh bundle rotation", () => {
           events.push("rotation:applied")
           return true
         },
+        onApplied: (generation) => markTokenGenerationApplied(generation),
       })
       setAuthDeps({
-        getWindow: () => null,
+        getWindow: () => fakeWindow([], published),
         respawn: () => {
           structuralRespawns++
         },
@@ -463,17 +480,77 @@ describe("refresh bundle rotation", () => {
       })
       for (let tick = 0; tick < 200 && !events.includes("rotation:start"); tick++)
         await new Promise((resolve) => setTimeout(resolve, 1))
+      // 换血在途:续期尚未回报,且此刻的平台态是「恢复中」——即便 main 已经握着新 token。
       expect(events).toEqual(["rotation:start"])
+      expect(getAuthState().platformStatus).toBe("recovering")
+      expect(published).not.toContain("ready")
+      expect(published).toContain("during-rotation:recovering")
 
       releaseRotation()
-      expect(await pending).toMatchObject({ outcome: "refreshed" })
+      const result = await pending
       expect(events).toEqual(
         rotationHealthy
           ? ["rotation:start", "rotation:applied", "renewal:reported"]
           : ["rotation:start", "rotation:failed", "renewal:reported"],
       )
+      expect(result).toMatchObject({ outcome: "refreshed", applied: rotationHealthy })
+      expect(getAuthState().platformStatus).toBe(rotationHealthy ? "ready" : "recovering")
+      // ready 一次都不能出现在换血落定之前
+      if (rotationHealthy) expect(published.indexOf("ready")).toBeGreaterThan(published.indexOf("recovering"))
+      else expect(published).not.toContain("ready")
     },
   )
+
+  // 换血失败后不是终局:latch 的低频重试真正应用该代时,平台面才从 recovering 转 ready。
+  test("a later successful rotation retry is what clears the recovering platform state", async () => {
+    const newBundle = tokenBundle("new")
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-old",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    const timers: Array<() => void> = []
+    let healthy = false
+    let forkedGeneration = getTokenGeneration()
+    const rotation = createTokenRotationLatch({
+      forkedGeneration: () => forkedGeneration,
+      canRespawn: () => true,
+      respawn: async () => {
+        if (!healthy) return false
+        forkedGeneration = getTokenGeneration()
+        return true
+      },
+      onApplied: (generation) => markTokenGenerationApplied(generation),
+      setTimer: (run) => {
+        timers.push(run)
+        return setTimeout(() => {}, 0)
+      },
+      clearTimer: (timer) => clearTimeout(timer),
+    })
+    setAuthDeps({
+      getWindow: () => null,
+      respawn: () => {
+        structuralRespawns++
+      },
+      onRenewed: (result) => rotation.accept(result, "renewal"),
+    })
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        platform_access_tokens: newBundle,
+        refresh_token: "refresh-new",
+        expires_in: 3600,
+      })) as typeof fetch
+
+    expect(await refreshTokens()).toMatchObject({ outcome: "refreshed", applied: false })
+    expect(getAuthState().platformStatus).toBe("recovering")
+    expect(timers).toHaveLength(1)
+
+    healthy = true
+    timers[0]()
+    await rotation.flush()
+    expect(getAuthState().platformStatus).toBe("ready")
+  })
 
   test("ensureFreshToken models a not-due token as still-valid without network or respawn", async () => {
     storeAuth({
@@ -609,18 +686,22 @@ describe("refresh compare-and-set before commit", () => {
 
 // #602 M2:有效期缺失/无效必须 fail-closed 为 recovering 并进入续期路径,
 // 不得标 ready(基线 ③:不得为视觉目标把未验证的过期平台 token 标成可用)。
+// #602 M2 + R1 Blocker3:有效期缺失/无效必须 fail-closed —— 而且「成功但结果不可用」的
+// 续期响应**不得提交**:提交就意味着 generation++ → 换血 → 有效期仍未知 → 调度器 30s 后再刷,
+// 与 #601 同类的第二条自激。
 describe("expiry fail-closed", () => {
   test.each([undefined, 0, -1] as const)(
-    "a refreshed response whose expires_in is %p fails closed to recovering and keeps renewing",
+    "a refresh response whose expires_in is %p is unusable: not committed, no generation, no rotation",
     async (expiresIn) => {
+      const oldBundle = tokenBundle()
       const newBundle = tokenBundle("new")
       storeAuth({
-        platformAccessTokens: tokenBundle(),
+        platformAccessTokens: oldBundle,
         refreshToken: "refresh-old",
         expiresAt: Date.now() + 60_000,
         lifetimeMs: 15 * 60_000,
       })
-      expect(getAuthState().platformStatus).toBe("ready")
+      const generationBefore = getTokenGeneration()
       let refreshRequests = 0
       globalThis.fetch = (async () => {
         refreshRequests++
@@ -631,15 +712,49 @@ describe("expiry fail-closed", () => {
         })
       }) as typeof fetch
 
-      expect(await refreshTokens()).toMatchObject({ outcome: "refreshed" })
-      expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "recovering" })
-      expect(getAuthState().expiresAt).toBeUndefined()
-      // 进入续期路径:启动宽限判据(A′)为真,且调度到点即刷 —— 不再被陈旧 expiresAt 蒙住。
-      expect(isStoredTokenExpired()).toBe(true)
-      expect(await ensureFreshToken()).toMatchObject({ outcome: "refreshed" })
-      expect(refreshRequests).toBe(2)
+      expect(await refreshTokens()).toMatchObject({ outcome: "unusable-response" })
+      expect(refreshRequests).toBe(1)
+      // 保留上一份已验证凭证(与 incomplete-bundle 同一降级语义),且不推进 generation/不换血。
+      PURPOSES.forEach((purpose) => expect(getAccessToken(purpose)).toBe(oldBundle[purpose]))
+      expect(getTokenGeneration()).toBe(generationBefore)
+      expect(renewedGenerations).toEqual([])
+      expect(structuralRespawns).toBe(0)
+      expect(readStoredAuth()).toMatchObject({ platformAccessTokens: oldBundle, refreshToken: "refresh-old" })
     },
   )
+
+  test("a stored credential without an expiry is recovering and enters the boot renewal path", () => {
+    storeAuth({ platformAccessTokens: tokenBundle(), refreshToken: "refresh-old" })
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "recovering" })
+    expect(getAuthState().expiresAt).toBeUndefined()
+    expect(isStoredTokenExpired()).toBe(true)
+  })
+
+  test("a login whose token response has no usable expiry is recovering, never ready", async () => {
+    initAuthEnv(dataPath) // 未登录起步:本例走完整登录回调,不预置凭证
+    const bundle = tokenBundle("login")
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        platform_access_tokens: bundle,
+        refresh_token: "refresh-login",
+        expires_in: 0,
+        email: "a@example.invalid",
+      })) as typeof fetch
+
+    await startAuth()
+    const pkce: unknown = JSON.parse(readFileSync(join(dataPath, "alpha-pkce.json"), "utf8"))
+    if (!isRecord(pkce) || typeof pkce.state !== "string") throw new Error("expected a persisted pkce state")
+    const callback = new URL(deepLinkFor.authCallback())
+    callback.searchParams.set("code", "code-a")
+    callback.searchParams.set("state", pkce.state)
+    handleAuthDeepLink(callback.toString())
+    for (let tick = 0; tick < 500 && getAuthState().status !== "logged-in"; tick++)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "recovering" })
+    expect(getAuthState().expiresAt).toBeUndefined()
+    expect(isStoredTokenExpired()).toBe(true)
+  })
 
   test.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY] as const)(
     "expires_in %p is not a usable lifetime and is dropped from the decoded response",
@@ -651,4 +766,192 @@ describe("expiry fail-closed", () => {
       expect(decoded.expires_in).toBeUndefined()
     },
   )
+})
+
+// R1 Blocker2:CAS 曾只保护成功响应。账号 A 的**拒绝**响应迟到时会直接 logout() ——
+// 把刚登录的账号 B 的凭证、env、持久态清空并触发 structural respawn。
+describe("late refresh rejections must not act on a newer identity", () => {
+  test.each([400, 401] as const)("a stale HTTP %p arriving after a new login does not log it out", async (status) => {
+    const nextBundle = tokenBundle("next")
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-a",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    globalThis.fetch = (async (_input, init) => {
+      const body: unknown = JSON.parse(typeof init?.body === "string" ? init.body : "{}")
+      if (isRecord(body) && body.grant_type === "refresh_token") {
+        await gate
+        return new Response("", { status })
+      }
+      return jsonResponse({
+        platform_access_tokens: nextBundle,
+        refresh_token: "refresh-b",
+        session_id: "session-b",
+        expires_in: 3600,
+        email: "b@example.invalid",
+      })
+    }) as typeof fetch
+
+    const pending = refreshTokens()
+    await startAuth()
+    const pkce: unknown = JSON.parse(readFileSync(join(dataPath, "alpha-pkce.json"), "utf8"))
+    if (!isRecord(pkce) || typeof pkce.state !== "string") throw new Error("expected a persisted pkce state")
+    const callback = new URL(deepLinkFor.authCallback())
+    callback.searchParams.set("code", "code-b")
+    callback.searchParams.set("state", pkce.state)
+    handleAuthDeepLink(callback.toString())
+    for (let tick = 0; tick < 500 && getAuthState().account?.email !== "b@example.invalid"; tick++)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    expect(getAuthState().account?.email).toBe("b@example.invalid")
+
+    release()
+    expect(await pending).toMatchObject({ outcome: "transient-failure" })
+    expect(getAuthState().status).toBe("logged-in")
+    PURPOSES.forEach((purpose) => expect(getAccessToken(purpose)).toBe(nextBundle[purpose]))
+    expect(process.env.ALPHA_API_KEY).toBe(nextBundle["model.invoke"])
+    expect(readStoredAuth()).toMatchObject({ platformAccessTokens: nextBundle, refreshToken: "refresh-b" })
+  })
+})
+
+// R1 Major4:DEV_PLATFORM_TOKEN 是 §A 的开发短路。packaged 构建里读到它就会把一个未验证的
+// token 标 ready 并物化给 sidecar —— 登录 shell 里恰好设了这个变量的生产构建同样中招。
+describe("DEV_PLATFORM_TOKEN is a non-packaged override only", () => {
+  afterEach(() => {
+    packagedBuild = false
+  })
+
+  test("a packaged build ignores it entirely (no ready, no env, no logged-in)", () => {
+    packagedBuild = true
+    process.env.DEV_PLATFORM_TOKEN = jwt("model.invoke", "dev")
+    initAuthEnv(dataPath)
+    expect(getAuthState().status).toBe("logged-out")
+    expect(getAuthState().platformStatus).toBeUndefined()
+    expect(getAccessToken("model.invoke")).toBeUndefined()
+    expect(process.env.ALPHA_API_KEY).toBeUndefined()
+  })
+
+  test("a non-packaged build keeps the development short-circuit", () => {
+    packagedBuild = false
+    process.env.DEV_PLATFORM_TOKEN = jwt("model.invoke", "dev")
+    initAuthEnv(dataPath)
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "ready" })
+    expect(process.env.ALPHA_API_KEY).toBe(process.env.DEV_PLATFORM_TOKEN)
+  })
+})
+
+// R1 Major5:换血链最坏含 allowlist 8s + stop 6s + ready IPC 60s + health 20s ≈ 94s。
+// 让 account 401 路径悬那么久不可接受 —— 等待必须有界,超时如实报 applied:false。
+describe("the rotation wait is bounded", () => {
+  test("a rotation that never settles releases the renewal as not-applied", async () => {
+    const newBundle = tokenBundle("new")
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-old",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    let rotationStarted = false
+    setAuthDeps({
+      getWindow: () => null,
+      respawn: () => {
+        structuralRespawns++
+      },
+      onRenewed: () =>
+        new Promise<boolean>(() => {
+          rotationStarted = true
+        }),
+    })
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        platform_access_tokens: newBundle,
+        refresh_token: "refresh-new",
+        expires_in: 3600,
+      })) as typeof fetch
+
+    const started = Date.now()
+    const result = await refreshTokens()
+    const waited = Date.now() - started
+
+    expect(rotationStarted).toBe(true)
+    expect(result).toMatchObject({ outcome: "refreshed", applied: false })
+    expect(waited).toBeLessThan(30_000)
+    // 超时不是 ready:换血还没落定,平台面继续恢复中。
+    expect(getAuthState().platformStatus).toBe("recovering")
+  }, 40_000)
+})
+
+// R1 Minor1:#601 退出条件② 此前只在 createAuthedGet 的单测里数了几次调用 —— 既没跨过那个
+// 已退役的 30 秒窗口,也没经过生产 composition。这条走真实链路:真 refreshTokens + 真 latch +
+// 真 createAuthedGet,并把系统时钟真的推过 30 秒窗口若干轮。
+describe("a persistently 401 account endpoint (production composition)", () => {
+  test("drives exactly one refresh and one token-only rotation across a span well past the retired 30s window", async () => {
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-old",
+      expiresAt: Date.now() + 60_000,
+      lifetimeMs: 15 * 60_000,
+    })
+    let tokenPosts = 0
+    let accountRequests = 0
+    const rotations: string[] = []
+    let forkedGeneration = getTokenGeneration()
+    const rotation = createTokenRotationLatch({
+      forkedGeneration: () => forkedGeneration,
+      canRespawn: () => true,
+      respawn: async (reason) => {
+        rotations.push(reason)
+        forkedGeneration = getTokenGeneration()
+        return true
+      },
+      onApplied: (generation) => markTokenGenerationApplied(generation),
+    })
+    setAuthDeps({
+      getWindow: () => null,
+      respawn: () => {
+        structuralRespawns++
+      },
+      onRenewed: (result) => rotation.accept(result, "renewal"),
+    })
+    globalThis.fetch = (async (input: unknown) => {
+      if (String(input).includes("account.invalid")) {
+        accountRequests++
+        return new Response("", { status: 401 })
+      }
+      tokenPosts++
+      return jsonResponse({
+        platform_access_tokens: tokenBundle(`gen${tokenPosts}`),
+        refresh_token: `refresh-${tokenPosts}`,
+        expires_in: 3600,
+      })
+    }) as typeof fetch
+    const authedGet = createAuthedGet({
+      accountBase: () => "https://account.invalid",
+      getAccessToken,
+      refreshTokens,
+      authIdentityEpoch: getAuthIdentityEpoch,
+      fetch: (input, init) => globalThis.fetch(input, init),
+      warn: () => {},
+      isContractIncompatibleError: () => false,
+      reportContractFailure: () => {},
+    })
+
+    const base = Date.now()
+    for (let round = 0; round < 6; round++) {
+      setSystemTime(new Date(base + round * 31_000)) // 真的越过每一个 30 秒窗口
+      expect(await authedGet("/v1/account/summary", "account.read", (text) => text)).toEqual({
+        error: "unauthorized",
+      })
+    }
+    setSystemTime()
+
+    expect(tokenPosts).toBe(1)
+    expect(rotations).toEqual(["token-only"])
+    expect(accountRequests).toBe(7) // 首轮 401 + 续期后重试 401,其后 5 轮各一次(锁住,不再续期)
+  })
 })

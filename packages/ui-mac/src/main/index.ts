@@ -112,6 +112,7 @@ import {
   initAuthEnv,
   isStoredTokenExpired,
   logout as authLogout,
+  markTokenGenerationApplied,
   setAuthDeps,
   setAuthMode,
   startAuth,
@@ -216,14 +217,22 @@ let requestSidecarRespawn: ((reason: SidecarRespawnReason) => Promise<boolean>) 
 let recoveryService: RecoveryService | null = null
 const sidecarGeneration = createSidecarGenerationState()
 
+// R1 Major3:发布必须是全函数(never throws)。它是终态生产者、pre-arm catch 与 latch 三条
+// 路径共用的收口点,任何一次抛出都会把「恰好一个终态」变成零个,或让 latch 收到 rejected
+// respawn 而不再武装重试。状态先落 store(renderer 经 getState 回读得到同一事实),
+// 只有 IPC 推送这一步可能因窗口崩溃/销毁失败,失败降级为一条日志。
 function publishSidecarGeneration(next: SidecarGenerationState) {
   sidecarGeneration.update(next)
-  markStartupTimeline("main.sidecar.generation.emit", {
-    generation: next.generation,
-    phase: next.status,
-    reason: next.reason,
-  })
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("sidecar-generation", next)
+  try {
+    markStartupTimeline("main.sidecar.generation.emit", {
+      generation: next.generation,
+      phase: next.status,
+      reason: next.reason,
+    })
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("sidecar-generation", next)
+  } catch (error) {
+    logger.warn("sidecar generation publish failed", error)
+  }
 }
 
 const tokenRotation = createTokenRotationLatch({
@@ -232,6 +241,8 @@ const tokenRotation = createTokenRotationLatch({
   // 旧的 `server &&` 让「换血失败 ⇒ 无 sidecar」变成永久不可用:低频重试永远进不了 respawn 入口。
   canRespawn: () => Boolean(requestSidecarRespawn && !quittingApp),
   respawn: (reason) => requestSidecarRespawn?.(reason) ?? Promise.resolve(false),
+  // #600 M1:换血真正落地时解除平台面的「恢复中」——低频重试成功也走这条。
+  onApplied: (generation) => markTokenGenerationApplied(generation),
   mark: (result, trigger, outcome) =>
     markStartupTimeline("main.auth.rotation", {
       generation: result.generation,
@@ -1088,8 +1099,10 @@ const main = Effect.gen(function* () {
       // #600:「当前 sidecar 携带的 token 代」只能在健康换血成功后记账。旧接线在 fork 前就记,
       // 失败后 latch 误判该代已应用(同代永不再试),而此刻根本没有活着的 sidecar。
       const forkTokenGeneration = getTokenGeneration()
-      publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason })
+      // R1 Major3:先记账再发布 —— 反过来的话,recovering 发布自身抛出时 catch 认不出
+      // 「这一代已经宣告过」,补不上那个 failed。
       announcedGeneration = spawnGen
+      publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason })
       await killSidecar()
       ensureLoopbackNoProxy()
       useEnvProxy()
@@ -1131,6 +1144,9 @@ const main = Effect.gen(function* () {
         publish: publishSidecarGeneration,
         logError: (message) => logger.error(message),
       })
+      // R1 Major3:spawn reject 时下面的 await 直接跳到 catch,没人再 await terminal ——
+      // 挂一个吞异常的守卫,任何情况下都不会留下 unhandled rejection(main 进程有退出风险)。
+      void terminal.catch(() => {})
       const { listener } = await spawning
       server = listener
       armEngineRunawayMeter(spawnGen)

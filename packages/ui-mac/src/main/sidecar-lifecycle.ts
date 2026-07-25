@@ -24,12 +24,19 @@ export function armRespawnGenerationTerminal(opts: {
   publish: (state: SidecarGenerationState) => void
   logError: (message: string) => void
 }): Promise<boolean> {
+  // R1 Major3:终态生产者不得因为 publish 抛出而变成 rejected promise —— 它常常无人 await
+  // (spawn reject 路径),rejection 会变成 main 进程的 unhandled rejection;而 latch 侧收到
+  // rejected respawn 就不会武装重试(无定时器终局)。发布失败只降级为一条日志。
   const settle = (healthy: boolean) => {
-    opts.publish({
-      status: healthy ? "ready" : "failed",
-      generation: opts.generation,
-      reason: opts.reason,
-    })
+    try {
+      opts.publish({
+        status: healthy ? "ready" : "failed",
+        generation: opts.generation,
+        reason: opts.reason,
+      })
+    } catch (error) {
+      opts.logError(`sidecar generation terminal publish failed: ${String(error)}`)
+    }
     return healthy
   }
   return opts.spawning.then(

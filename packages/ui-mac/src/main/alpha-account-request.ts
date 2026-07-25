@@ -19,14 +19,18 @@ export function createAuthedGet(deps: {
   // (基线 ③ 明令 transient 降级保持、禁循环 respawn)。改为锁住该 purpose 的账户驱动刷新,
   // 直到 ① 该端点出现非 401 成功,或 ② 外部 auth 身份变化(登入/登出)。有限 cooldown 不是终局。
   const refreshLockedAtEpoch = new Map<RoutePurpose, number>()
-  const isRefreshLocked = (purpose: RoutePurpose) => refreshLockedAtEpoch.get(purpose) === deps.authIdentityEpoch()
 
   const authedGet = async <T>(
     path: string,
     purpose: RoutePurpose,
     decode: (text: string) => T,
     retried = false,
+    chainEpoch?: number,
   ): Promise<AccountResult<T>> => {
+    // R1 Major1:锁必须绑定「这条读取链发起时」的身份代,并原样传给续期后的重试 ——
+    // 读落地时的当前代会让账号 A 的迟到 401 把刚登录的账号 B 锁住,反向抵消
+    // #601 的「auth 变化解锁」。
+    const epoch = chainEpoch ?? deps.authIdentityEpoch()
     try {
       const token = deps.getAccessToken(purpose)
       if (!token) return { error: "not-authenticated" }
@@ -36,17 +40,22 @@ export function createAuthedGet(deps: {
         signal: AbortSignal.timeout(8000),
       })
       if (res.status === 401) {
-        if (!retried && !isRefreshLocked(purpose)) {
+        if (!retried && refreshLockedAtEpoch.get(purpose) !== epoch) {
           const renewal = await deps.refreshTokens()
-          if (renewal.outcome === "refreshed") return authedGet(path, purpose, decode, true)
+          if (renewal.outcome === "refreshed") return authedGet(path, purpose, decode, true, epoch)
+          // 续期本身「成功但结果不可用」(签发端给不出可用有效期)⇒ 再驱动只会重复白烧,
+          // 且消费方的封顶退避会把它变成高频重刷。与「续期后仍 401」同等对待:锁住。
+          if (renewal.outcome === "unusable-response") refreshLockedAtEpoch.set(purpose, epoch)
         }
-        if (retried) refreshLockedAtEpoch.set(purpose, deps.authIdentityEpoch())
+        if (retried) refreshLockedAtEpoch.set(purpose, epoch)
         return { error: "unauthorized" }
       }
       if (!res.ok) return { error: `http-${res.status}` }
-      // 非 401 成功 = 该端点真的恢复了,解锁(HTTP 层的失败不算恢复,锁保持)。
+      // R1 Major2:「非 401 成功」必须包含 decode 成功 —— 否则 malformed 200 也解锁,
+      // 服务在 malformed 200 与 401 之间抖动时仍能周期性驱动 refresh+换血。
+      const decoded = decode(await res.text())
       refreshLockedAtEpoch.delete(purpose)
-      return decode(await res.text())
+      return decoded
     } catch (error) {
       if (deps.isContractIncompatibleError(error)) {
         deps.reportContractFailure(error)

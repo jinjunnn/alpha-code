@@ -53,6 +53,8 @@ describe("sidecar respawn reasons", () => {
 
 // #600 B1:respawn 一旦发出 recovering,终态必须可达。旧接线只在健康通过时发 ready ——
 // spawn reject 与健康失败/超时都只 return false,generation 永久停在 recovering。
+type SpawnResult = { health: { wait: Promise<unknown> } }
+
 describe("respawn generation terminal", () => {
   const collect = () => {
     const published: SidecarGenerationState[] = []
@@ -109,6 +111,30 @@ describe("respawn generation terminal", () => {
 
     expect(settled).toBe(false)
     expect(sink.published).toEqual([{ status: "failed", generation: 9, reason: "structural" }])
+  })
+
+  // R1 Major3:终态生产者常常无人 await(spawn reject 路径)。publish 抛出时它若变成
+  // rejected promise,就是 main 进程的 unhandled rejection,latch 侧也收不到「失败 → 重试」。
+  const throwingPublishCases: Array<[string, () => Promise<SpawnResult>]> = [
+    ["a spawn rejection", () => Promise.reject(new Error("fork failed"))],
+    ["a health rejection", () => Promise.resolve({ health: { wait: Promise.reject(new Error("unhealthy")) } })],
+    ["a healthy handshake", () => Promise.resolve({ health: { wait: Promise.resolve("ok") } })],
+  ]
+  test.each(throwingPublishCases)("a throwing publish on %s still settles instead of rejecting", async (_label, spawning) => {
+    const errors: string[] = []
+    const settled = await armRespawnGenerationTerminal({
+      generation: 11,
+      reason: "token-only",
+      spawning: spawning(),
+      timeoutMs: 50,
+      publish: () => {
+        throw new Error("renderer gone")
+      },
+      logError: (message) => errors.push(message),
+    })
+
+    expect(typeof settled).toBe("boolean")
+    expect(errors.some((message) => message.includes("terminal publish failed"))).toBe(true)
   })
 
   test("a healthy handshake publishes exactly one ready and never a failed", async () => {

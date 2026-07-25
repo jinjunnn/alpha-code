@@ -4,6 +4,10 @@ import type { SidecarRespawnReason } from "./sidecar-lifecycle"
 
 export const BOOT_RENEWAL_GRACE_MS = 1_200
 export const AUTH_RENEWAL_MIN_INTERVAL_MS = 30_000
+/** #600 B3:上一次续期「成功但结果不可用」时的降频节奏(≈一个 token TTL)。按 30s 最小间隔
+ *  重刷会把一个给不出可用有效期的签发端变成永久重刷循环;降频续跑既不进无定时器终局,
+ *  也不制造风暴(③′3)。 */
+export const AUTH_RENEWAL_DEGRADED_INTERVAL_MS = 15 * 60_000
 /** #600:换血失败后重试同一 pending generation 的封顶低频节奏(降频续跑,不自旋、不进无定时器终局)。 */
 export const TOKEN_ROTATION_RETRY_MS = 60_000
 
@@ -60,12 +64,15 @@ export function createAuthRenewalScheduler(deps: {
   let timer: Timer | undefined
   let running = false
   let stopped = false
+  // #600 B3:上一次续期结果不可用 ⇒ 下一次按降频节奏,不按 refreshDueAt 的最小间隔。
+  let degraded = false
 
   const rearm = (reason: string) => {
     if (timer) clearTimer(timer)
     timer = undefined
     if (stopped) return
-    const delayMs = authRenewalDelayMs(deps.timing(), now())
+    const base = authRenewalDelayMs(deps.timing(), now())
+    const delayMs = base === null || !degraded ? base : Math.max(base, AUTH_RENEWAL_DEGRADED_INTERVAL_MS)
     deps.onArm?.(reason, delayMs)
     if (delayMs === null) return
     timer = setTimer(() => {
@@ -74,7 +81,10 @@ export function createAuthRenewalScheduler(deps: {
       running = true
       void deps
         .renew()
-        .then((result) => deps.onResult?.(result))
+        .then((result) => {
+          degraded = result.outcome === "unusable-response"
+          deps.onResult?.(result)
+        })
         .finally(() => {
           running = false
           rearm("result")
@@ -98,6 +108,9 @@ export function createTokenRotationLatch(deps: {
   canRespawn: () => boolean
   respawn: (reason: SidecarRespawnReason) => Promise<boolean>
   mark?: (result: RenewalResult, trigger: string, outcome: string) => void
+  /** 该 generation 真正被健康换血采用时回调 —— 平台面「恢复中 → ready」的唯一解除点,
+   *  低频重试成功时同样触发(alpha-auth.markTokenGenerationApplied)。 */
+  onApplied?: (generation: number) => void
   setTimer?: SetTimer
   clearTimer?: ClearTimer
 }) {
@@ -144,7 +157,12 @@ export function createTokenRotationLatch(deps: {
     active = (async () => {
       while (requestedGeneration > Math.max(handledGeneration, deps.forkedGeneration())) {
         const target = requestedGeneration
-        const healthy = await deps.respawn("token-only")
+        // respawn 入口自身抛出(publish 异常等)必须收敛成一次失败,否则 latch 连同重试
+        // 定时器一起被 rejection 带走 —— 那正是 ③′3 禁止的无定时器终局。
+        const healthy = await deps.respawn("token-only").catch((error: unknown) => {
+          deps.mark?.({ outcome: "transient-failure", generation: target }, "rotation", `threw:${String(error)}`)
+          return false
+        })
         if (!healthy) {
           // handledGeneration 只在健康换血成功后推进 —— 旧接线在 respawn 之前就推进,
           // 失败即把该代标记为「已处理」,同代永不再试(#600 的悬崖)。
@@ -153,6 +171,7 @@ export function createTokenRotationLatch(deps: {
           return false
         }
         handledGeneration = Math.max(handledGeneration, target)
+        deps.onApplied?.(target)
       }
       clearRetry()
       return true

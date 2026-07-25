@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "bun:test"
 import {
+  AUTH_RENEWAL_DEGRADED_INTERVAL_MS,
   AUTH_RENEWAL_MIN_INTERVAL_MS,
   awaitBootRenewalGrace,
   authRenewalDelayMs,
@@ -91,6 +92,44 @@ describe("expiresAt scheduler", () => {
   })
 })
 
+// #600 B3:签发端返回 200 却给不出可用有效期时,按 refreshDueAt 的最小间隔重刷会变成永久
+// 重刷循环(与 #601 同类)。结果不可用 ⇒ 降频续跑;恢复可用 ⇒ 立刻回到正常节奏。
+describe("degraded renewal cadence after an unusable response", () => {
+  test("an unusable-response arms the degraded interval and a usable one restores the normal cadence", async () => {
+    vi.useFakeTimers()
+    let now = 1_000_000
+    let outcome: RenewalResult["outcome"] = "unusable-response"
+    const expiresAt = now + 15 * 60_000
+    const arms: Array<number | null> = []
+    const scheduler = createAuthRenewalScheduler({
+      timing: () => ({ active: true, expiresAt, lifetimeMs: 15 * 60_000 }),
+      now: () => now,
+      renew: async () => ({ outcome, generation: 2 }),
+      onArm: (_reason, delayMs) => arms.push(delayMs),
+    })
+
+    scheduler.rearm("startup")
+    expect(arms.at(-1)).toBe(10 * 60_000) // 正常:按 refreshDueAt
+
+    vi.advanceTimersByTime(10 * 60_000)
+    now += 10 * 60_000
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(arms.at(-1)).toBe(AUTH_RENEWAL_DEGRADED_INTERVAL_MS) // 不可用 ⇒ 降频,不是 30s 最小间隔
+    expect(arms.at(-1)).toBeGreaterThan(AUTH_RENEWAL_MIN_INTERVAL_MS)
+
+    outcome = "refreshed"
+    vi.advanceTimersByTime(AUTH_RENEWAL_DEGRADED_INTERVAL_MS)
+    now += AUTH_RENEWAL_DEGRADED_INTERVAL_MS
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(arms.at(-1)).toBe(AUTH_RENEWAL_MIN_INTERVAL_MS) // 恢复可用 ⇒ 回到正常判据
+    scheduler.stop()
+  })
+})
+
 describe("token rotation latch", () => {
   test("rotates at most once per refreshed generation", async () => {
     let forked = 1
@@ -157,6 +196,70 @@ describe("token rotation latch", () => {
     expect(timers).toHaveLength(1)
     await latch.accept(result("refreshed", 2), "after-success")
     expect(respawns).toBe(2)
+  })
+
+  // R1 Major3:respawn 入口抛出(publish 异常等)必须收敛成一次失败并照常武装重试 ——
+  // 否则 rejection 把 latch 连同重试定时器一起带走,正是 ③′3 禁止的无定时器终局。
+  test("a respawn entry that throws is treated as a failed attempt and still arms the retry", async () => {
+    const timers: Array<{ run: () => void; delayMs: number }> = []
+    let attempts = 0
+    let throwing = true
+    let forked = 1
+    const latch = createTokenRotationLatch({
+      forkedGeneration: () => forked,
+      canRespawn: () => true,
+      respawn: async () => {
+        attempts++
+        if (throwing) throw new Error("publish exploded")
+        forked = 2
+        return true
+      },
+      setTimer: (run, delayMs) => {
+        timers.push({ run, delayMs })
+        return setTimeout(() => {}, 0)
+      },
+      clearTimer: (timer) => clearTimeout(timer),
+    })
+
+    expect(await latch.accept(result("refreshed", 2), "renewal")).toBe(false)
+    expect(attempts).toBe(1)
+    expect(timers.map((timer) => timer.delayMs)).toEqual([TOKEN_ROTATION_RETRY_MS])
+
+    throwing = false
+    timers[0].run()
+    expect(await latch.flush()).toBe(true)
+    expect(attempts).toBe(2)
+  })
+
+  // #600 M1:换血真正应用是「平台恢复中 → ready」的唯一解除点;失败不得回调。
+  test("onApplied fires only when a generation is actually applied", async () => {
+    const applied: number[] = []
+    const timers: Array<{ run: () => void }> = []
+    let healthy = false
+    let forked = 1
+    const latch = createTokenRotationLatch({
+      forkedGeneration: () => forked,
+      canRespawn: () => true,
+      respawn: async () => {
+        if (!healthy) return false
+        forked = 2
+        return true
+      },
+      onApplied: (generation) => applied.push(generation),
+      setTimer: (run) => {
+        timers.push({ run })
+        return setTimeout(() => {}, 0)
+      },
+      clearTimer: (timer) => clearTimeout(timer),
+    })
+
+    await latch.accept(result("refreshed", 2), "renewal")
+    expect(applied).toEqual([])
+
+    healthy = true
+    timers[0].run()
+    await latch.flush()
+    expect(applied).toEqual([2])
   })
 
   // ③′3:重试预算耗尽不得进入无定时器终局。sidecar 已死(canRespawn=false)正是那个终局。

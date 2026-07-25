@@ -137,6 +137,109 @@ test("an explicit auth identity change (login/logout) releases the lock", async 
   expect(harness.counts().refreshes).toBe(2)
 })
 
+// R1 Major1:锁必须绑定「请求发出时」的身份代。读落地时的当前代,会让账号 A 的迟到 401
+// 把刚登录的账号 B 锁住 —— #601 的「auth 变化解锁」被迟到响应反向抵消。
+test("a 401 that lands after a new login locks the old identity, never the new one", async () => {
+  let epoch = 1
+  let refreshes = 0
+  let releaseFirst!: () => void
+  const firstInFlight = new Promise<void>((resolve) => {
+    releaseFirst = resolve
+  })
+  let requests = 0
+  const authedGet = createAuthedGet({
+    accountBase: () => "https://account.invalid",
+    getAccessToken: () => "test-only",
+    refreshTokens: async () => {
+      refreshes++
+      return renewed("refreshed", refreshes + 1)
+    },
+    authIdentityEpoch: () => epoch,
+    fetch: async () => {
+      requests++
+      if (requests <= 2) await firstInFlight // 账号 A 的首轮与重试都迟到
+      return new Response("", { status: 401 })
+    },
+    warn: () => {},
+    isContractIncompatibleError: () => false,
+    reportContractFailure: () => {},
+  })
+
+  const stale = authedGet("/v1/account/summary", "account.read", (text) => text)
+  epoch = 2 // 账号 B 登录
+  releaseFirst()
+  expect(await stale).toEqual({ error: "unauthorized" })
+  expect(refreshes).toBe(1)
+
+  // 新身份必须仍能驱动一次续期(锁记在旧身份代上)。
+  expect(await authedGet("/v1/account/summary", "account.read", (text) => text)).toEqual({
+    error: "unauthorized",
+  })
+  expect(refreshes).toBe(2)
+})
+
+// R1 Major2:「非 401 成功」必须包含 decode 成功。否则服务在 malformed 200 与 401 之间抖动时,
+// 每个 malformed 200 都解一次锁,下一个 401 又能驱动 refresh + 换血 —— 周期性中断回来了。
+test("a malformed 200 does not count as recovery and keeps the lock", async () => {
+  let status = 401
+  let refreshes = 0
+  const authedGet = createAuthedGet({
+    accountBase: () => "https://account.invalid",
+    getAccessToken: () => "test-only",
+    refreshTokens: async () => {
+      refreshes++
+      return renewed("refreshed", refreshes + 1)
+    },
+    authIdentityEpoch: () => 1,
+    fetch: async () => new Response(status === 200 ? "not-json" : "", { status }),
+    warn: () => {},
+    isContractIncompatibleError: (error) => error instanceof SyntaxError,
+    reportContractFailure: () => {},
+  })
+  const read = () =>
+    authedGet("/v1/account/summary", "account.read", (text): unknown => JSON.parse(text))
+
+  await read()
+  expect(refreshes).toBe(1)
+
+  status = 200
+  expect(await read()).toEqual({ error: "contract-incompatible" })
+
+  status = 401
+  await read()
+  expect(refreshes).toBe(1)
+})
+
+// #600 B3 的账户侧收口:续期本身「成功但结果不可用」时,消费方的封顶退避会把它变成高频重刷。
+test("an unusable renewal locks account-driven refresh just like a post-renewal 401", async () => {
+  let refreshes = 0
+  let requests = 0
+  const authedGet = createAuthedGet({
+    accountBase: () => "https://account.invalid",
+    getAccessToken: () => "test-only",
+    refreshTokens: async () => {
+      refreshes++
+      return renewed("unusable-response", 1)
+    },
+    authIdentityEpoch: () => 1,
+    fetch: async () => {
+      requests++
+      return new Response("", { status: 401 })
+    },
+    warn: () => {},
+    isContractIncompatibleError: () => false,
+    reportContractFailure: () => {},
+  })
+
+  for (let attempt = 0; attempt < 10; attempt++)
+    expect(await authedGet("/v1/account/summary", "account.read", (text) => text)).toEqual({
+      error: "unauthorized",
+    })
+
+  expect(refreshes).toBe(1)
+  expect(requests).toBe(10)
+})
+
 test("a non-401 failure keeps the lock (only a real success proves the endpoint recovered)", async () => {
   let status = 401
   const harness = lockingHarness({ status: () => status, epoch: () => 1 })

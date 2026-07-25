@@ -16,7 +16,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { safeStorage, shell, type BrowserWindow } from "electron"
+import { app, safeStorage, shell, type BrowserWindow } from "electron"
 import {
   ContractIncompatibleError,
   decodeTokenClaims,
@@ -58,11 +58,16 @@ export type TokenResponse = {
   endpoints?: { schema_version: 1 } & AlphaEndpoints
 }
 
-export type RenewalOutcome = "refreshed" | "still-valid" | "transient-failure" | "invalid-grant"
+// #602 M2 / #600 B3:「成功但结果不可用」必须与 refreshed 分开建模 —— 签发端返回 200 却给不出
+// 可用有效期时,若当作 refreshed 提交,就会 generation++ → 换血 → expiresAt 仍未知 → 调度器
+// 30 秒后再刷 → 再换血,永久重复(与 #601 同类的自激,只是触发源换成无效有效期)。
+export type RenewalOutcome = "refreshed" | "still-valid" | "transient-failure" | "invalid-grant" | "unusable-response"
 export type RenewalResult = {
   outcome: RenewalOutcome
   generation: number
   expiresAt?: number
+  /** #600 M1:`refreshed` 时新 token 是否已被 sidecar 换血采用。false = 平台仍恢复中。 */
+  applied?: boolean
 }
 
 export type PlatformAccessTokenBundleErrorReason =
@@ -118,6 +123,24 @@ let tokenGeneration = 0
 // #601:身份代 —— 只有登入/登出推进,token 轮换不算。账户驱动刷新的 401 锁据此解锁,
 // 所以「持续 401」不会因为一次普通续期就重新获得驱动 respawn 的资格。
 let authIdentityEpoch = 0
+// #600 M1:续期提交后、换血落定前(以及换血失败后),sidecar 仍握旧 token 或已不存在 ——
+// 平台面必须保持 recovering,绝不能因为 main 手里有了新 token 就先报 ready。
+let unappliedRenewalGeneration: number | null = null
+/** 等换血落定的上界。超时不取消换血(它自带封顶低频重试),只是不再让调用方(account 401
+ *  路径)继续悬着:如实报 applied:false,平台面维持 recovering,直到 latch 真正应用。 */
+const ROTATION_WAIT_MS = 10_000
+
+// dev-only 静态短路。R1 Major4:此前任何构建读到 DEV_PLATFORM_TOKEN 都会把一个未知/过期的
+// token 标成 ready 并物化给 sidecar —— 登录 shell 里设了这个变量的**生产**构建同样中招。
+// 它只是 §A 的开发短路,故只在非 packaged 构建生效;packaged 里当它不存在。
+function devPlatformToken(): string | undefined {
+  try {
+    if (app.isPackaged) return undefined
+  } catch {
+    return undefined // app 不可用(非 Electron 宿主)时同样保守失效
+  }
+  return process.env.DEV_PLATFORM_TOKEN
+}
 
 function log(message: string, meta?: unknown) {
   try {
@@ -186,12 +209,15 @@ function load() {
 }
 
 function deriveState(): AuthState {
-  const devToken = Boolean(process.env.DEV_PLATFORM_TOKEN)
+  const devToken = Boolean(devPlatformToken())
   const loggedIn = hasRequiredPlatformAccessTokens(stored.platformAccessTokens) || devToken
-  // #602 M2:有效期未知/已过期 ⇒ recovering(isTokenExpired 已 fail-closed)。DEV_PLATFORM_TOKEN
-  // 是没有续期手段的静态短路,按 fail-closed 会永久停在 recovering(违反 ③′2「fail-closed 必须
-  // 有有界自证路径」),故 dev 短路仍报 ready;生产登录一律按 expiresAt 判定。
-  const platformReady = devToken || !isTokenExpired(stored.expiresAt, Date.now())
+  // #602 M2:有效期未知/已过期 ⇒ recovering(isTokenExpired 已 fail-closed)。
+  // #600 M1:续期后未完成换血同样是 recovering —— sidecar 还握着旧 token。
+  // devPlatformToken() 只在非 packaged 构建返回值(见该函数),是没有续期手段的静态短路,
+  // 按 fail-closed 会永久停在 recovering(违反 ③′2「fail-closed 必须有有界自证路径」),
+  // 故 dev 短路报 ready;生产一律按 expiresAt + 换血结果判定。
+  const platformReady =
+    devToken || (!isTokenExpired(stored.expiresAt, Date.now()) && unappliedRenewalGeneration === null)
   return {
     status: loggedIn ? "logged-in" : "logged-out",
     mode: stored.mode ?? "byok",
@@ -242,7 +268,7 @@ function publishAuthError(code: AuthErrorCode) {
 // 401'd until a full quit). On logout the token vars are cleared explicitly + the sidecar respawns
 // (see logout). DEV_PLATFORM_TOKEN acts as a static platform login.
 export function applyAuthEnv() {
-  const devToken = process.env.DEV_PLATFORM_TOKEN
+  const devToken = devPlatformToken()
   const loggedInPlatform = deriveState().status === "logged-in" && (stored.mode === "platform" || Boolean(devToken))
   const ep = resolveEndpoints()
   const base = ep.platform
@@ -277,6 +303,7 @@ export function initAuthEnv(dataPath: string) {
   stored = { mode: "byok" }
   load()
   tokenGeneration++
+  unappliedRenewalGeneration = null
   applyAuthEnv()
 }
 
@@ -320,7 +347,7 @@ export function getAuthRenewalTiming() {
 // the dev short-circuit wins, else the stored platform access token. MAIN-ONLY: never expose this
 // to the renderer; its only callers are main-process clients (alpha-account.ts).
 export function getAccessToken(purpose: RoutePurpose): string | undefined {
-  const token = process.env.DEV_PLATFORM_TOKEN ?? stored.platformAccessTokens?.[purpose]
+  const token = devPlatformToken() ?? stored.platformAccessTokens?.[purpose]
   if (!token) return undefined
   try {
     requireTokenPurpose(token, purpose)
@@ -443,6 +470,9 @@ async function completeAuth(parsed: URL) {
   }
   tokenGeneration++
   authIdentityEpoch++
+  // 登录自带 structural respawn(下方),不走续期换血闩;清掉上一身份留下的未应用标记,
+  // 否则新身份会挂在旧身份的 recovering 上。
+  unappliedRenewalGeneration = null
   persist()
   applyAuthEnv()
   publish()
@@ -578,24 +608,23 @@ export function refreshTokens(): Promise<RenewalResult> {
   // fail-closed 呈现 recovering，直到续期成功或 invalid-grant 登出。
   publish()
   const attempt = doRefresh().then(async (outcome): Promise<RenewalResult> => {
-    const result = {
+    const result: RenewalResult = {
       outcome,
       generation: tokenGeneration,
       ...(stored.expiresAt === undefined ? {} : { expiresAt: stored.expiresAt }),
     }
-    // #600 M1:换血才是「恢复完成」。这个 Promise 曾被 void 掉 —— account 401 路径
-    // (await refreshTokens())因此在 sidecar 还握着旧 token 时就报恢复,用户此刻发送的
-    // 首次推理可能 401。等 latch 对本 generation 的应用结果落定(成功或失败)再回报;
-    // 失败时 respawn 入口已发布 failed 终态并保留低频重试,平台面维持恢复中。
-    if (outcome === "refreshed") {
-      try {
-        await onRenewed(result)
-      } catch (error) {
-        warn("alpha-auth: token rotation application failed", error)
-      }
+    if (outcome !== "refreshed") {
+      onAuthChanged()
+      return result
     }
+    // #600 M1:换血才是「平台恢复」的完成点。doRefresh 提交时置了 unappliedRenewalGeneration,
+    // 所以此刻发布出去的是 recovering —— ready 只可能在下面换血落定之后发布。
+    const applied = await awaitRotation(result)
+    if (applied) markTokenGenerationApplied(result.generation)
+    // 换血落定后才发布最终平台态:成功 → ready;失败/超时 → 仍 recovering(latch 低频重试中)。
+    publish()
     onAuthChanged()
-    return result
+    return { ...result, applied }
   })
   void attempt.then(
     (result) =>
@@ -615,6 +644,45 @@ export function refreshTokens(): Promise<RenewalResult> {
     refreshing = null
   })
   return refreshing
+}
+
+/** 等换血落定,但有界(R1 Major5:换血链最坏含 allowlist 8s + stop 6s + ready IPC 60s +
+ *  health 20s ≈ 94s,让 account 401 路径悬那么久不可接受)。超时按「尚未应用」如实回报,
+ *  换血本身继续跑,应用成功时经 markTokenGenerationApplied 补发 ready。 */
+async function awaitRotation(result: RenewalResult): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const applied = await Promise.race([
+    (async () => {
+      try {
+        return (await onRenewed(result)) !== false
+      } catch (error) {
+        warn("alpha-auth: token rotation application failed", error)
+        return false
+      }
+    })(),
+    new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => {
+        warn("alpha-auth: token rotation still pending — reporting the platform as recovering")
+        resolve(false)
+      }, ROTATION_WAIT_MS)
+      timer.unref?.()
+    }),
+  ])
+  clearTimeout(timer)
+  return applied
+}
+
+/** 换血入口在该 generation 真正被 sidecar 采用时回调(含 latch 的低频重试路径)。
+ *  这是「平台恢复中 → ready」的唯一解除点。 */
+export function markTokenGenerationApplied(generation: number): void {
+  if (unappliedRenewalGeneration === null || generation < unappliedRenewalGeneration) return
+  unappliedRenewalGeneration = null
+  publish()
+}
+
+/** #602 B4:提交/降级之前都必须确认 auth 状态没被 logout / 新账号登录改代。 */
+function isStaleRefresh(startedGeneration: number, refreshToken: string): boolean {
+  return tokenGeneration !== startedGeneration || stored.refreshToken !== refreshToken
 }
 
 async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
@@ -644,6 +712,12 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
   } catch (error) {
     warn("alpha-auth: refresh network failure — keeping current tokens", error)
     publish()
+    return "transient-failure"
+  }
+  // R1 Blocker2:CAS 必须先于**任何**提交或降级 —— 成功响应受保护而拒绝响应不受时,
+  // 账号 A 的迟到 400/401 会把刚登录的账号 B 直接 logout(清 env、清持久态、structural respawn)。
+  if (isStaleRefresh(startedGeneration, refreshToken)) {
+    warn("alpha-auth: discarding a refresh response whose auth generation changed mid-flight (logout/login)")
     return "transient-failure"
   }
   if (res.status === 400 || res.status === 401) {
@@ -680,12 +754,20 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
     publish()
     return "transient-failure"
   }
-  // #602 B4:整份丢弃迟到的旧响应 —— 在途期间 logout / 新账号登录都改了代,把 `...stored`
-  // 写回会复活登出态,或让 UI 显示账号 B 而 sidecar/account bearer 仍是账号 A。丢弃即
+  // #602 B4:decode 期间(await res.json())状态仍可能改代 —— 提交前再 CAS 一次。整份丢弃:
   // 不发现端点、不持久化、不发布、不换血,返回既有的非 refreshed 终态。
-  if (tokenGeneration !== startedGeneration || stored.refreshToken !== refreshToken) {
+  if (isStaleRefresh(startedGeneration, refreshToken)) {
     warn("alpha-auth: discarding a refresh response whose auth generation changed mid-flight (logout/login)")
     return "transient-failure"
+  }
+  // #602 M2 / R1 Blocker3:有效期不可用的 200 是「成功但结果不可用」,**不得提交** ——
+  // 提交就意味着 generation++ → 换血 → expiresAt 仍未知 → 调度器 30 秒后再刷 → 再换血,
+  // 永久重复(与 #601 同类的自激)。按既有「保留上一份已验证 bundle」的降级语义处理,
+  // 由 unusable-response 让调度器降频续跑(auth-renewal.ts)。
+  if (tokens.expires_in === undefined) {
+    warn("alpha-auth: refresh response carries no usable expires_in — keeping the prior validated bundle")
+    publish()
+    return "unusable-response"
   }
   if (tokens.endpoints) setDiscoveredEndpoints(tokens.endpoints)
   stored = {
@@ -693,12 +775,14 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
     platformAccessTokens: tokens.platform_access_tokens,
     refreshToken: tokens.refresh_token ?? stored.refreshToken,
     sessionId: tokens.session_id ?? stored.sessionId,
-    // #602 M2:响应没给可用有效期 ⇒ 有效期未知,不得继承旧的 expiresAt 冒充可用
-    // (那正是「未验证的 token 被标 ready」的口子)。未知 → fail-closed recovering + 续期路径。
-    expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
-    lifetimeMs: tokens.expires_in ? tokens.expires_in * 1000 : undefined,
+    expiresAt: Date.now() + tokens.expires_in * 1000,
+    lifetimeMs: tokens.expires_in * 1000,
   }
   tokenGeneration++
+  // #600 M1 / R1 Blocker1:ready 不得先于换血发布。置位后 deriveState 判 recovering,
+  // 所以下面这次 publish 发出的是「恢复中」;ready 只可能由 markTokenGenerationApplied
+  // 或 refreshTokens 在换血落定后发出。
+  unappliedRenewalGeneration = tokenGeneration
   persist()
   applyAuthEnv()
   publish()
@@ -759,6 +843,7 @@ export async function logout(): Promise<void> {
   stored = { mode: "byok" }
   tokenGeneration++
   authIdentityEpoch++
+  unappliedRenewalGeneration = null
   // deriveState() also treats DEV_PLATFORM_TOKEN as a static platform login, so while it's set an
   // explicit logout would leave the state pinned to "logged-in" (the user sees nothing happen). Drop
   // it for this session so the logged-out state actually takes effect; it re-applies on next launch.
