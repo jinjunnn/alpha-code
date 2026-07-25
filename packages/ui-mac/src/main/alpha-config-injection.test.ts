@@ -1,0 +1,171 @@
+// #607:alpha 注入的**执行级**闸门。#603 R2 勘破的缺口:全仓没有任何测试 import 过 sidecar.ts
+// (它的第一个 import 就是 bun 未实现的 `node:module` registerHooks,顶层还有 getParentPort()),
+// 于是「注入到底有没有跑起来」零覆盖 —— 而 injectAlphaConfig 有一层**函数级 catch**,内部任何
+// 抛错都被静默吞掉,可见症状只是「模型全灰 / 正在同步」(2026-07-24 事故的表现)。
+//
+// 本文件执行的是**生产 composition**:真 injectAlphaConfig + 真 12 个 sibling 模块 + 真临时盘,
+// 零 mock、零替身、不重写任何接线(rev2c ③″3-1 禁止镜像)。
+//   · 正向闸门:content 必须携带 model / enabled_providers / provider / 三个 alpha agent / {file:} ref。
+//   · 反向闸门(rev2c ③″3-7):用真实故障(userDataPath 的父级是普通文件 → 生产代码 mkdirSync 抛
+//     ENOTDIR)触发那层 catch,并要求 ①失败必须出声 ②正向闸门的断言体在这条路径上**真的转红**。
+//
+// 边界,不谎报:catch 语义本票不改(#607 明令等价搬迁),**生产端仍然会吞掉抛错**。本文件改变的
+// 是「吞掉之后无人知晓」——从此任何让注入抛错的回归都会撞红正向闸门。
+
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
+import { injectAlphaConfig } from "./alpha-config-injection"
+import { secretFilePath } from "./alpha-secret-files"
+
+// 注入读到的每一个 env 输入 + 它自己写出的三个 env 输出:逐个快照/清空/还原,
+// 既隔离宿主机真实配置,也不把注入结果泄漏给同进程的其它测试文件。
+const MANAGED = [
+  "ALPHA_JSONC_TRUTH_DISABLE",
+  "ALPHA_LEGACY_INSTALL_ROOT",
+  "ALPHA_GLOBAL_DIR",
+  "ALPHA_OPENCODE_HOME",
+  "XDG_CONFIG_HOME",
+  "OPENCODE_CONFIG",
+  "OPENCODE_CONFIG_CONTENT",
+  "OPENCODE_CONFIG_DIR",
+  "ALPHA_IDENTITY_DISABLE",
+  "ALPHA_BEHAVIOR_DISABLE",
+  "ALPHA_MODELS_DISABLE",
+  "ALPHA_AUTOMATION_DISABLE",
+  "ALPHA_READONLY_DISABLE",
+  "ALPHA_WEBSEARCH_DISABLE",
+  "OPENCODE_ENABLE_EXA",
+  "ALPHA_CLOUD_MCP_URL",
+  "ALPHA_BASE_URL",
+  "ALPHA_DEFAULT_MODEL",
+] as const
+
+const PLATFORM_KEY = "sk-platform-injection-gate"
+const BYOK_KEY = "sk-deepseek-injection-gate"
+const DEFAULT_MODEL = "deepseek/deepseek-chat"
+
+const saved: Record<string, string | undefined> = {}
+let tmp = ""
+let userData = ""
+
+/** 按 main 的 syncSecretFiles 姿势把密钥种进 {file:} 通道(A6:env 里从不出现密钥值)。 */
+const plantSecret = (varName: string, value: string) => {
+  const file = secretFilePath(userData, varName)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, value, { mode: 0o600 })
+}
+
+beforeEach(() => {
+  for (const k of MANAGED) {
+    saved[k] = process.env[k]
+    delete process.env[k]
+  }
+  tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-inject-")))
+  // 当前环境根(alpha.jsonc 真源 = OPENCODE_CONFIG 的注入目标)。
+  process.env.ALPHA_GLOBAL_DIR = path.join(tmp, "alpha-code-state", "env", "dev")
+  fs.mkdirSync(process.env.ALPHA_GLOBAL_DIR, { recursive: true })
+  // 用户全局引擎配置面(readUserProviderIds / injectMcpDefaultDeny 的枚举源)—— 指向空目录,
+  // 宿主机 ~/.config/opencode 与 ~/.opencode 不得渗进断言。
+  process.env.XDG_CONFIG_HOME = path.join(tmp, "xdg")
+  process.env.ALPHA_OPENCODE_HOME = path.join(tmp, "opencode-home")
+  for (const d of [process.env.XDG_CONFIG_HOME, process.env.ALPHA_OPENCODE_HOME]) fs.mkdirSync(d, { recursive: true })
+  userData = path.join(tmp, "userdata")
+  fs.mkdirSync(userData, { recursive: true })
+})
+
+afterEach(() => {
+  for (const k of MANAGED) {
+    if (saved[k] === undefined) delete process.env[k]
+    else process.env[k] = saved[k]
+  }
+  try {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  } catch {
+    /* best effort */
+  }
+})
+
+/** main 在 fork 时给 sidecar 的那组输入,种成真实的盘上/env 状态(见 sidecar-env.ts 的转发清单)。 */
+const givenLoggedInWithByok = () => {
+  plantSecret("ALPHA_API_KEY", PLATFORM_KEY)
+  plantSecret("DEEPSEEK_API_KEY", BYOK_KEY)
+  process.env.ALPHA_BASE_URL = "https://gateway.example.invalid/v1"
+  process.env.ALPHA_DEFAULT_MODEL = DEFAULT_MODEL
+}
+
+/**
+ * 正向闸门的断言体。**反向用例会把同一个函数对着「注入抛错之后」的 env 再跑一遍并要求它抛** ——
+ * 所以这里每一条 expect 既是正向锁也是反向锁,不得改成宽松断言(改宽 = 两个闸门同时失效)。
+ */
+function assertInjectedFacts(content: string | undefined, userDataPath: string): void {
+  expect(content).toBeDefined()
+  const config: {
+    model?: unknown
+    enabled_providers?: unknown
+    provider?: Record<string, { options?: { apiKey?: unknown } }>
+    agent?: Record<string, unknown>
+  } = JSON.parse(content!)
+  // model:picker 的默认模型(main 经 sidecar-env 转发 ALPHA_DEFAULT_MODEL)。
+  expect(config.model).toBe(DEFAULT_MODEL)
+  // enabled_providers:引擎对该键是 REPLACE 而非 union —— 表空/缺项 = 模型全灰。
+  expect(config.enabled_providers).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
+  // provider:白名单里的每个 id 必须真有节点定义,否则白名单是空头支票。
+  expect(Object.keys(config.provider ?? {})).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
+  // 三个 alpha agent(automation 只读 / composer 只读 / automation 可写)。
+  expect(Object.keys(config.agent ?? {})).toEqual(
+    expect.arrayContaining(["alpha-automation", "alpha-readonly", "alpha-automation-standard"]),
+  )
+  // A6:密钥以 {file:} ref 进 content,明文永不进(此处是**组合体**层面的锁,
+  // alpha-models.test.ts 锁的是单件 buildAlphaModelConfig)。
+  expect(config.provider!.alpha.options!.apiKey).toBe(`{file:${secretFilePath(userDataPath, "ALPHA_API_KEY")}}`)
+  expect(config.provider!["deepseek-byok"].options!.apiKey).toBe(
+    `{file:${secretFilePath(userDataPath, "DEEPSEEK_API_KEY")}}`,
+  )
+  expect(content).not.toContain(PLATFORM_KEY)
+  expect(content).not.toContain(BYOK_KEY)
+}
+
+describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () => {
+  test("正向闸门:生产 composition 跑通,content 携带 model/enabled_providers/provider/三个 alpha agent/{file:} ref", () => {
+    givenLoggedInWithByok()
+
+    injectAlphaConfig(userData, undefined, "stable")
+
+    assertInjectedFacts(process.env.OPENCODE_CONFIG_CONTENT, userData)
+    // 组合体的另外两个 env 产物:v1 文件通道(alpha.jsonc)与 v2 目录桥,缺一都会让引擎看不见 provider。
+    expect(process.env.OPENCODE_CONFIG).toBe(path.join(process.env.ALPHA_GLOBAL_DIR, "alpha.jsonc"))
+    expect(process.env.OPENCODE_CONFIG_DIR).toBe(path.join(userData, "alpha-engine-config"))
+  })
+
+  test("反向闸门:注入内部抛错时失败必须出声,且正向闸门的断言体真的转红(函数级 catch 不再能瞒过测试)", () => {
+    givenLoggedInWithByok()
+    // 真实故障、零 mock:userDataPath 的父级是一个普通文件 → 生产代码里的
+    // `fs.mkdirSync(userDataPath, { recursive: true })` 抛 ENOTDIR,正落进那层函数级 catch。
+    const parentIsAFile = path.join(tmp, "not-a-directory")
+    fs.writeFileSync(parentIsAFile, "")
+    const brokenUserData = path.join(parentIsAFile, "userdata")
+
+    const warned: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => {
+      warned.push(args.map((a) => String(a)).join(" "))
+    }
+    try {
+      injectAlphaConfig(brokenUserData, undefined, "stable")
+    } finally {
+      console.warn = originalWarn
+    }
+
+    // ① 失败必须出声。catch 本身按 #607 保持等价不动,但它不得静音。
+    expect(warned.some((w) => w.includes("failed to inject alpha config"))).toBe(true)
+    // ② catch 的真实爆炸半径:整个注入丢失 —— content 与 v2 桥都没写出去。
+    //    这正是「模型全灰 / 正在同步」的成因,不是局部降级。
+    expect(process.env.OPENCODE_CONFIG_CONTENT).toBeUndefined()
+    expect(process.env.OPENCODE_CONFIG_DIR).toBeUndefined()
+    // ③ 本票的核心:把正向闸门的断言体对着这条被吞掉的路径再跑一遍,它**必须**转红。
+    //    于是「注入内部抛错 ⇒ 有测试变红」每次 CI 都被现场证明一遍,而不是一句声称(rev2c ③″3-8)。
+    expect(() => assertInjectedFacts(process.env.OPENCODE_CONFIG_CONTENT, brokenUserData)).toThrow()
+  })
+})

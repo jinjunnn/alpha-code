@@ -29,7 +29,10 @@ review_after: 2026-10-23
 
 ## alpha 的注入方案:单一真源、双投影
 
-sidecar fork 时(`packages/ui-mac/src/main/sidecar.ts` → `injectAlphaConfig`),
+sidecar fork 时(`packages/ui-mac/src/main/sidecar.ts` → `prepareSidecarEnv` 调用
+`packages/ui-mac/src/main/alpha-config-injection.ts` 的 `injectAlphaConfig`;#607 把注入
+组合体从 sidecar.ts 抽出成独立模块,**只为让它可被测试真实执行** —— sidecar.ts 的首个
+import 是 bun 未实现的 `node:module` registerHooks,顶层还有 `getParentPort()`),
 同一个 config 对象(平台 provider + BYOK 节点 + 权限 + MCP + disabled 覆盖,源自
 `alpha-models.json` + live allowlist + 钥匙串)一次产出、两路投影:
 
@@ -52,6 +55,11 @@ sidecar fork 时(`packages/ui-mac/src/main/sidecar.ts` → `injectAlphaConfig`),
   的值由 main 算好经 `StartCommand` 传入(如 `registryChannel`)。
 - **`injectAlphaConfig` 内任何加固层/旁路步骤必须有自己的降级域**,不得借函数级
   catch 把 provider/权限注入一并炸掉。
+  强制手段(#607,`packages/ui-mac/src/main/alpha-config-injection.test.ts`):正向闸门
+  执行生产 composition 并锁住 content 里的 model / `enabled_providers` / provider /
+  三个 alpha agent / `{file:}` ref;反向闸门用真实故障触发那层 catch,要求失败出声、
+  且正向断言体在该路径上真的转红。**该闸门锁的是「注入整体不得静默失败」,
+  不是「每个加固层都已各自分域」** —— 后者仍靠 review 逐处核。
 - **v2 文件必须能通过 `isV1 → migrate → decode` 链**:v2 解码失败是静默整文件
   丢弃,新增键前先以真实链验证(参照 2026-07-23 探针方法)。
 - **密钥不落 v2 文件**:v2 无解析机制,写入即明文。
