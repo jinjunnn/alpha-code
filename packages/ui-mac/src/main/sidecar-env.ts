@@ -81,10 +81,53 @@ const EXACT = new Set([
 // Prefix families that are config/infrastructure, not credentials. The SECRETISH veto below runs
 // before every allow rule, so anything credential-shaped is dropped no matter which rule would have
 // admitted it — a hypothetical OPENCODE_API_KEY under a prefix, a name listed in the escape hatch, or
-// a token var mistakenly added to EXACT. Cost of the reuse: the substring match also vetoes innocent
-// names that merely contain one of the words (MONKEY_MODE); rename such a var to pass it through.
+// a token var mistakenly added to EXACT.
 const PREFIXES = ["OPENCODE_", "XDG_", "LC_", "ELECTRON_"]
-const SECRETISH = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i
+
+// The credential-NAME veto (#605). It used to be a bare substring match, which also vetoed innocent
+// names that merely contain one of the words (MONKEY_MODE, KEYBOARD_LAYOUT, TURKEY_REGION,
+// TOKENIZER_PATH) — harmless while the veto only guarded PREFIXES, but #603 hoisted it above every
+// allow rule, so the false-positive surface grew to all three paths. Two alternatives now, both /i:
+//
+//   1. `(^|_)WORD S? (_|$)` — the word is a whole `_`-delimited segment.
+//      ALPHA_API_KEY, AWS_SECRET_ACCESS_KEY, DB_PASSWORD, my_api_key, bare KEY, TOKEN_.
+//   2. `WORD S? $`          — the name ENDS with the word, no separator required.
+//      APIKEY, MYKEY, GITHUBTOKEN, camelCase myApiKey. Rule 1 alone lets every one of those
+//      through, and the trailing segment is exactly where a real key name puts the word ("this var
+//      IS a key"). Dropping rule 2 is the single mutation that reopens the leak.
+//
+// `S?` is not cosmetic: without it API_KEYS / ACCESS_TOKENS / SOME_CREDENTIALS are `_`-bounded on
+// the left but not the right and do not end in the singular either, so BOTH rules miss them. A
+// plural is the likeliest real key name a naive boundary rewrite would have re-opened.
+//
+// This is a DENY predicate being NARROWED — the fail-open direction (startup baseline ③″4-2/4-4).
+// Invariants it now depends on, and what enforces each (③″1):
+//
+//   I1. Every real credential var name carries the word either as a full `_`-segment or in trailing
+//       position (± plural). Enforced by the must-deny matrix in sidecar-env.test.ts: the 11 names
+//       #603 measured, plus the no-separator and plural forms. Reddening mutation: delete the
+//       `WORD S? $` alternative.
+//   I2. No EXACT member is credential-shaped, so a veto that runs before the EXACT check cannot
+//       strand a var the sidecar genuinely needs. Enforced by the "no EXACT allowlist entry is
+//       credential-shaped" guard, which calls isSecretish() — re-typing the regex in the test would
+//       have kept asserting the OLD predicate after this change (③″3-1 禁止镜像). Reddening
+//       mutation: add a "*_TOKEN" name to EXACT.
+//   I3. Narrowing a DENY rule must not widen ALLOW. Structurally enforced: the veto only decides
+//       what to DROP; a name it stops vetoing still has to clear EXACT / PREFIXES / the hatch, and
+//       is otherwise dropped by default-deny. Reddening mutation: any allow-rule edit fails the
+//       must-allow matrix's "nothing else got in" assertions.
+//
+// Accepted residual, stated rather than hidden: a credential word buried mid-name with no separator
+// and not in trailing position (XKEYX, OPENCODE_KEYFILE) is no longer vetoed. It must still clear an
+// allow rule to reach the sidecar, and no real key var is spelled that way. Symmetrically, a BARE
+// MONKEY / TURKEY / DONKEY is still vetoed by rule 2 — over-denial is the safe direction, and every
+// reported false positive was `MONKEY_MODE`-shaped (word not trailing).
+const SECRETISH = /(^|_)(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)S?(_|$)|(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)S?$/i
+
+/** The credential-name veto. Exported so its gates execute the production predicate, not a copy. */
+export function isSecretish(name: string): boolean {
+  return SECRETISH.test(name)
+}
 
 // Container-valued vars: SECRETISH matches NAMES, so it is blind to a secret carried in the VALUE.
 // OPENCODE_CONFIG_CONTENT is a whole-config JSON blob that can embed an inline provider apiKey, and
@@ -121,7 +164,7 @@ export function createSidecarEnv(source: NodeJS.ProcessEnv = process.env): Recor
     // casing the OS hands us. The ALLOW rules stay case-sensitive: that can only ever admit FEWER
     // vars, and a var it declines to admit is simply dropped. Nothing reaches the sidecar without
     // clearing both DENY rules first, so no casing variant can bypass them (#603 R2).
-    if (SECRETISH.test(key)) continue
+    if (isSecretish(key)) continue
     if (NEVER_INHERIT.has(key.toLowerCase())) continue
     const allowed = extra.has(key) || EXACT.has(key) || PREFIXES.some((prefix) => key.startsWith(prefix))
     if (!allowed) continue

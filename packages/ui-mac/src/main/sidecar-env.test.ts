@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
-import { createSidecarEnv } from "./sidecar-env"
+import { createSidecarEnv, isSecretish } from "./sidecar-env"
 
 describe("createSidecarEnv — default-deny", () => {
   test("strips every secret named by the A6 acceptance criteria", () => {
@@ -162,7 +162,9 @@ describe("createSidecarEnv — escape hatch", () => {
       PATH: "/usr/bin",
       MY_CUSTOM_VAR: "v",
     })
-    expect(Object.keys(env).filter((key) => /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(key))).toEqual([])
+    // isSecretish, not a re-typed regex: a copy would keep asserting whatever the predicate USED to
+    // be after someone edits it (#605 / startup baseline ③″3-1 禁止镜像).
+    expect(Object.keys(env).filter(isSecretish)).toEqual([])
     // …while the hatch and the ordinary allowlist keep working
     expect(env.MY_CUSTOM_VAR).toBe("v")
     expect(env.OPENCODE_CLIENT).toBe("desktop")
@@ -187,13 +189,17 @@ describe("createSidecarEnv — escape hatch", () => {
   // from a test. What makes the EXACT path safe is the pair (a) the veto runs before the EXACT check
   // and (b) no EXACT member is credential-shaped. (a) is structural; this guard holds (b) — so the
   // regression "someone adds FOO_TOKEN to EXACT" fails here loudly instead of leaking silently.
+  //
+  // #605 invariant I2. The filter calls isSecretish (the production predicate) rather than a re-typed
+  // regex: the copy this line used to hold would have gone on asserting the pre-#605 substring rule
+  // while production ran the narrowed one, i.e. the guard would have silently stopped guarding.
   test("guard: no EXACT allowlist entry is credential-shaped", () => {
     const src = fs.readFileSync(path.join(import.meta.dir, "sidecar-env.ts"), "utf8")
     const block = src.match(/const EXACT = new Set\(\[([\s\S]*?)\]\)/)
     expect(block).not.toBeNull()
     const names = [...block![1].matchAll(/"([^"]+)"/g)].map((m) => m[1])
     expect(names.length).toBeGreaterThan(20)
-    expect(names.filter((name) => /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(name))).toEqual([])
+    expect(names.filter(isSecretish)).toEqual([])
   })
 
   // NEVER_INHERIT is compared lowercased, so an entry written in uppercase would silently never
@@ -205,6 +211,127 @@ describe("createSidecarEnv — escape hatch", () => {
     const names = [...block![1].matchAll(/"([^"]+)"/g)].map((m) => m[1])
     expect(names.length).toBeGreaterThan(0)
     expect(names.filter((name) => name !== name.toLowerCase())).toEqual([])
+  })
+})
+
+// #605: SECRETISH went from a bare substring match to word-boundary + trailing-word. That is a DENY
+// predicate being NARROWED — structurally the fail-open direction (startup baseline ③″4-2: ALLOW 放宽
+// = 扩大攻击面; ③″4-4: 修 fail-closed 极易修成 fail-open). So the must-DENY matrix below is the
+// REVERSE GATE the baseline demands: it is not here to show the new rule is precise, it is here to
+// go red the moment the narrowing lets a real credential name through.
+describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
+  // The exact 11 names #603 measured as vetoed. Not one may become admissible.
+  const MUST_DENY = [
+    "ALPHA_API_KEY",
+    "ALPHA_CLOUD_TOKEN",
+    "DEV_PLATFORM_TOKEN",
+    "EXA_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "OPENCODE_API_KEY",
+    "AWS_SECRET_ACCESS_KEY",
+    "GH_TOKEN",
+    "DB_PASSWORD",
+    "SOME_CREDENTIAL",
+    "my_api_key",
+  ]
+
+  // #605 must-allow: the false positives the substring match caused, plus every name #603 measured
+  // as passing (the narrowing must not disturb them either).
+  const MUST_ALLOW = [
+    "MONKEY_MODE",
+    "KEYBOARD_LAYOUT",
+    "TURKEY_REGION",
+    "TOKENIZER_PATH",
+    "MY_CUSTOM_VAR",
+    "MY_PROVIDER_BASE_URL",
+    "JAVA_HOME",
+    "GOPATH",
+    "OPENCODE_CLIENT",
+    "PATH",
+    "ALPHA_BASE_URL",
+  ]
+
+  test("reverse gate: all 11 names #603 measured stay vetoed, on the path that would admit them", () => {
+    // The hatch names every one of them, so each has an allow rule behind it; only the veto stops
+    // them. A distinct probe value per name proves the VALUE is gone, not merely the key.
+    const env = createSidecarEnv({
+      ALPHA_ENV_ALLOWLIST_EXTRA: [...MUST_DENY, "MY_CUSTOM_VAR"].join(","),
+      ...Object.fromEntries(MUST_DENY.map((name) => [name, `leak-${name}`])),
+      MY_CUSTOM_VAR: "kept",
+    })
+    for (const name of MUST_DENY) {
+      expect(env[name]).toBeUndefined()
+      expect(JSON.stringify(env)).not.toContain(`leak-${name}`)
+    }
+    // …and the run was not vacuous: the hatch really was live on this call.
+    expect(env.MY_CUSTOM_VAR).toBe("kept")
+    expect(MUST_DENY.length).toBe(11)
+  })
+
+  test("reverse gate: the predicate itself vetoes all 11 (shared by hatch/EXACT/prefix paths)", () => {
+    expect(MUST_DENY.filter((name) => !isSecretish(name))).toEqual([])
+  })
+
+  test("reverse gate: the no-separator and plural classes are dropped on the prefix path", () => {
+    // OPENCODE_APIKEY is the shape rule 1 alone would have re-opened; OPENCODE_API_KEYS is the shape
+    // BOTH rules miss without `S?`. Both ride an allowed prefix, so only the veto can stop them.
+    const env = createSidecarEnv({
+      OPENCODE_APIKEY: "leak-apikey",
+      OPENCODE_API_KEYS: "leak-plural",
+      OPENCODE_ACCESS_TOKENS: "leak-tokens",
+      OPENCODE_CLIENT: "desktop",
+    })
+    expect(env.OPENCODE_APIKEY).toBeUndefined()
+    expect(env.OPENCODE_API_KEYS).toBeUndefined()
+    expect(env.OPENCODE_ACCESS_TOKENS).toBeUndefined()
+    expect(JSON.stringify(env)).not.toContain("leak-")
+    expect(env.OPENCODE_CLIENT).toBe("desktop")
+  })
+
+  test("no longer vetoes the MONKEY_MODE class, and the passing names #603 measured still pass", () => {
+    expect(MUST_ALLOW.filter(isSecretish)).toEqual([])
+    // Clearing the veto is only half of it — they must actually arrive in the sidecar env.
+    const viaHatch = MUST_ALLOW.filter((name) => !["OPENCODE_CLIENT", "PATH", "ALPHA_BASE_URL"].includes(name))
+    const env = createSidecarEnv({
+      ALPHA_ENV_ALLOWLIST_EXTRA: viaHatch.join(","),
+      ...Object.fromEntries(MUST_ALLOW.map((name) => [name, `value-${name}`])),
+    })
+    expect(MUST_ALLOW.filter((name) => env[name] === undefined)).toEqual([])
+  })
+
+  // Every edge case #605 required to be adjudicated explicitly, verdict inline. `true` = vetoed.
+  test("edge cases: explicit verdicts, including the accepted residuals", () => {
+    const verdicts: Array<[string, boolean]> = [
+      // — named in the issue —
+      ["KEY", true], // bare word: rule 1 as ^KEY$
+      ["TOKEN_", true], // trailing separator: rule 1 as ^TOKEN_
+      ["_SECRET", true], // leading separator: rule 1 as _SECRET$
+      ["APIKEY", true], // NO separator. THE risk of the rewrite; rule 2 keeps it denied
+      ["MYKEY", true], // ditto — the second name the issue calls out
+      ["XKEYX", false], // ACCEPTED RESIDUAL: buried, non-trailing, no separator
+      // — the no-separator class rule 2 exists for —
+      ["GITHUBTOKEN", true],
+      ["AWSSECRET", true],
+      ["myApiKey", true], // camelCase suffix, caught by /i + rule 2
+      // — the plural class `S?` exists for —
+      ["API_KEYS", true],
+      ["ACCESS_TOKENS", true],
+      ["SOME_CREDENTIALS", true],
+      ["DB_PASSWORDS", true],
+      // — the false positives this ticket removes —
+      ["MONKEY_MODE", false],
+      ["KEYBOARD_LAYOUT", false],
+      ["TURKEY_REGION", false],
+      ["DONKEY_CART", false],
+      ["TOKENIZER_PATH", false],
+      // — accepted OVER-denial (safe direction): the word IS the trailing segment —
+      ["MONKEY", true],
+      ["TURKEY", true],
+      ["DONKEYS", true],
+      // — accepted RESIDUAL under-denial: word buried, not trailing, no separator —
+      ["OPENCODE_KEYFILE", false],
+    ]
+    expect(verdicts.map(([name]) => [name, isSecretish(name)])).toEqual(verdicts.map(([n, v]) => [n, v]))
   })
 })
 
