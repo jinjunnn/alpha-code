@@ -137,11 +137,30 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     // 组合体的另外两个 env 产物:v1 文件通道(alpha.jsonc)与 v2 目录桥,缺一都会让引擎看不见 provider。
     expect(process.env.OPENCODE_CONFIG).toBe(path.join(process.env.ALPHA_GLOBAL_DIR, "alpha.jsonc"))
     expect(process.env.OPENCODE_CONFIG_DIR).toBe(path.join(userData, "alpha-engine-config"))
+
+    // I7 是「v2 桥目录已物化」,不是「env 里有那个字符串」(#607 R1)。只断言 OPENCODE_CONFIG_DIR
+    // 的值,会让「删掉写 opencode.jsonc 的 writeFileSync、保留下一行赋值」全绿通过 ——
+    // 而 v2 `/api/model` 实际读的正是那份文件,缺了它 alpha/BYOK 模型照样全灰。
+    // 锁行为不锁形状(rev2c ③″3-2):读回生成的文件,断言它真带着 model 与必需 provider 节点。
+    const v2Path = path.join(process.env.OPENCODE_CONFIG_DIR, "opencode.jsonc")
+    expect(fs.existsSync(v2Path)).toBe(true)
+    const v2 = JSON.parse(fs.readFileSync(v2Path, "utf8"))
+    expect(typeof v2.model).toBe("string")
+    expect(v2.model.length).toBeGreaterThan(0)
+    expect(Object.keys(v2.provider ?? {})).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
+    // v2 投影是**刻意 keyless** 的(契约 docs/contracts/engine-config-channels.md:41-42):
+    // 推理走 v1 的 {file:} 通道,v2 只供 picker 列目录,所以这份文件里既不该有明文密钥,
+    // 也不该有 apiKey 字段本身。断言两者,而不是断言「有 {file: ref」——
+    // (作者第一版就把 v1 的形态套到了 v2 上,被这条断言当场证伪。)
+    const v2Raw = fs.readFileSync(v2Path, "utf8")
+    expect(v2Raw).not.toContain(PLATFORM_KEY)
+    expect(v2Raw).not.toContain(BYOK_KEY)
+    expect(v2Raw).not.toContain("apiKey")
   })
 
   test("反向闸门:注入内部抛错时失败必须出声,且正向闸门的断言体真的转红(函数级 catch 不再能瞒过测试)", () => {
     givenLoggedInWithByok()
-    // 真实故障、零 mock:userDataPath 的父级是一个普通文件 → 生产代码里的
+    // 真实故障、零模块/依赖 mock(仅拦截日志 sink,见下):userDataPath 的父级是一个普通文件 → 生产代码里的
     // `fs.mkdirSync(userDataPath, { recursive: true })` 抛 ENOTDIR,正落进那层函数级 catch。
     const parentIsAFile = path.join(tmp, "not-a-directory")
     fs.writeFileSync(parentIsAFile, "")
