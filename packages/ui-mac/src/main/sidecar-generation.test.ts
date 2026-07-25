@@ -136,17 +136,37 @@ test("#577 健康探测超时 → 恰好一个 failed 终态,health 迟到 resol
   expect(published).toEqual([{ status: "failed", generation: 4, reason: "boot" }])
 })
 
-// #577 接线锚(R1 加固:上面的 fiber 用例锁的是被 index.ts 调用的生产函数在监督
-// 生命周期下的行为;index.ts 本体是 electron main,无法在 bun test 里 import 执行,
-// 生产接线的最后一英里只能锁源码形状)。断言三件事:
-// ① index.ts 恰好以 `void armBootGenerationTerminal(` 武装终态生产者(detached,
-//    且在 spawn factory 内 —— 早于任何可失败的 yield*);
+// #577 接线锚(R1 加固 + R2 位置加固:上面的 fiber 用例锁的是被 index.ts 调用的生产
+// 函数在监督生命周期下的行为;index.ts 本体是 electron main,无法在 bun test 里
+// import 执行,生产接线的最后一英里只能锁源码形状)。
+//
+// R2 指出仅锁「detached + 恰好一次 + 无 yield*」不足以闭合假闸门:把
+// `void armBootGenerationTerminal(...)` 保留为 detached 调用、但挪到
+// `yield* Effect.promise(...)` 成功返回之后,三条形状断言仍全部满足,而 spawn reject
+// 时 fiber 在抵达 arm 之前就失败了 —— generation 又永久只剩 recovering,测试却绿。
+// 故必须额外锁住位置关系:武装点在 spawn promise 创建之后、在它被交回 fiber 之前。
+//
+// 断言五件事:
+// ① 恰好一次 `void armBootGenerationTerminal(` 武装终态生产者(detached);
 // ② 它从未被 yield* 进任何 fiber(那会把终态重新放回监督死区);
 // ③ index.ts 不再直接调用 settleBootHealth(终态生产一律经 armBootGenerationTerminal,
-//    避免有人绕过 spawn-失败分支)。
-test("#577 接线锚:index.ts 的终态生产者必须 detached 武装,不得 yield 回 fiber", () => {
+//    避免有人绕过 spawn-失败分支);
+// ④ 位置:spawn promise 创建 → 武装 → 交回 fiber(`return spawning`),顺序不得错;
+// ⑤ 武装调用确实拿到了那个 spawn promise(`spawning,`),而不是别的东西。
+test("#577 接线锚:终态生产者必须在 spawn promise 交回 fiber 之前 detached 武装", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
+
   expect(source.split("void armBootGenerationTerminal(").length - 1).toBe(1)
   expect(source).not.toMatch(/yield\*\s*armBootGenerationTerminal/)
   expect(source).not.toMatch(/settleBootHealth\s*\(/)
+
+  // boot 路的 spawn(respawn 路另有一处,indexOf 从 0 起自然取到 boot 这一处)
+  const spawn = source.indexOf("const spawning = spawnLocalServer(")
+  const arm = source.indexOf("\n      void armBootGenerationTerminal(", spawn)
+  const handoff = source.indexOf("\n      return spawning", spawn)
+
+  expect(spawn).toBeGreaterThan(-1)
+  expect(arm).toBeGreaterThan(spawn)
+  expect(handoff).toBeGreaterThan(arm)
+  expect(source.slice(arm, handoff)).toContain("spawning,")
 })
