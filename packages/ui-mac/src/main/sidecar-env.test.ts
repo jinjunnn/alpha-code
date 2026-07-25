@@ -4,6 +4,8 @@
 // the sidecar genuinely needs must still pass.
 
 import { describe, expect, test } from "bun:test"
+import fs from "node:fs"
+import path from "node:path"
 import { createSidecarEnv } from "./sidecar-env"
 
 describe("createSidecarEnv — default-deny", () => {
@@ -165,5 +167,88 @@ describe("createSidecarEnv — escape hatch", () => {
     expect(env.MY_CUSTOM_VAR).toBe("v")
     expect(env.OPENCODE_CLIENT).toBe("desktop")
     expect(env.PATH).toBe("/usr/bin")
+  })
+
+  // R1 Minor: the case above admits both secrets through the hatch, so it cannot tell "the hatch is
+  // vetoed" apart from "the prefix rule is vetoed". These two isolate one path each.
+  test("prefix path alone (no hatch at all) vetoes a credential-shaped name", () => {
+    const env = createSidecarEnv({ OPENCODE_API_KEY: "zen", OPENCODE_CLIENT: "desktop" })
+    expect(env.OPENCODE_API_KEY).toBeUndefined()
+    expect(env.OPENCODE_CLIENT).toBe("desktop")
+  })
+
+  test("hatch path alone (name matches no prefix and no exact entry) vetoes a credential-shaped name", () => {
+    const env = createSidecarEnv({ ALPHA_ENV_ALLOWLIST_EXTRA: "WIDGET_TOKEN", WIDGET_TOKEN: "leak" })
+    expect(env.WIDGET_TOKEN).toBeUndefined()
+    expect(Object.values(env)).not.toContain("leak")
+  })
+
+  // R1 Minor, third path: EXACT is module-private, so a credential-shaped member cannot be injected
+  // from a test. What makes the EXACT path safe is the pair (a) the veto runs before the EXACT check
+  // and (b) no EXACT member is credential-shaped. (a) is structural; this guard holds (b) — so the
+  // regression "someone adds FOO_TOKEN to EXACT" fails here loudly instead of leaking silently.
+  test("guard: no EXACT allowlist entry is credential-shaped", () => {
+    const src = fs.readFileSync(path.join(import.meta.dir, "sidecar-env.ts"), "utf8")
+    const block = src.match(/const EXACT = new Set\(\[([\s\S]*?)\]\)/)
+    expect(block).not.toBeNull()
+    const names = [...block![1].matchAll(/"([^"]+)"/g)].map((m) => m[1])
+    expect(names.length).toBeGreaterThan(20)
+    expect(names.filter((name) => /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(name))).toEqual([])
+  })
+})
+
+// #603 R1 Blocker: a name-based veto is blind to secrets carried in a VALUE. OPENCODE_CONFIG_CONTENT
+// is a whole-config JSON blob; its name matches no SECRETISH word but it can embed an inline
+// provider apiKey, and the OPENCODE_ prefix rule used to forward it verbatim. Blast radius is the
+// same as a raw key var: sidecar.ts:419 writes it back into the sidecar's process.env, and upstream
+// MCP/LSP/PTY spread the whole process.env into third-party children.
+//
+// Scope note (why there is no "generated content passes" case here): createSidecarEnv runs ONLY in
+// main, to build the fork env. The sidecar's own content is produced post-fork by injectAlphaConfig
+// (sidecar.ts:157, not exported, single call site :135) and written straight to its own process.env
+// at :419 — it never traverses this function. So the drop is unconditional and does not need to
+// inspect the value; alpha's injection is unaffected. The tests that protect alpha's injection are
+// the "inputs still pass" case below.
+describe("createSidecarEnv — container-valued vars", () => {
+  test("drops externally inherited OPENCODE_CONFIG_CONTENT carrying an inline apiKey", () => {
+    const env = createSidecarEnv({
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({
+        provider: { deepseek: { options: { apiKey: "sk-inline-probe-value" } } },
+      }),
+      PATH: "/usr/bin",
+    })
+    expect(env.OPENCODE_CONFIG_CONTENT).toBeUndefined()
+    // the probe VALUE must be absent from the env, not merely the variable name
+    expect(JSON.stringify(env)).not.toContain("sk-inline-probe-value")
+    expect(env.PATH).toBe("/usr/bin")
+  })
+
+  test("drops externally inherited OPENCODE_CONFIG_CONTENT regardless of what the value holds", () => {
+    // Uniform rule: no value parsing. A {file:}-only blob is dropped too — main has no business
+    // forwarding a config blob at all, and the sidecar builds its own after fork.
+    const env = createSidecarEnv({
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider: { p: { options: { apiKey: "{file:/tmp/k}" } } } }),
+    })
+    expect(env.OPENCODE_CONFIG_CONTENT).toBeUndefined()
+  })
+
+  test("keeps the config channels alpha's own injection depends on (the file/dir channels)", () => {
+    // injectAlphaConfig sets OPENCODE_CONFIG itself (sidecar.ts:170) and materializeV2EngineConfig
+    // sets OPENCODE_CONFIG_DIR; both are PATHS, not secret containers. Closing exactly one channel
+    // must not close the family — this is the gate against strangling alpha's injection.
+    const env = createSidecarEnv({
+      OPENCODE_CONFIG: "/Users/u/.alpha/alpha.jsonc",
+      OPENCODE_CONFIG_DIR: "/Users/u/Library/Application Support/alpha-code/engine-config",
+      ALPHA_IDENTITY_DISABLE: "1",
+      ALPHA_BEHAVIOR_DISABLE: "1",
+      ALPHA_CLOUD_MCP_URL: "https://mcp.example",
+      ALPHA_GLOBAL_DIR: "/Users/u/.alpha",
+    })
+    expect(env.OPENCODE_CONFIG).toBe("/Users/u/.alpha/alpha.jsonc")
+    expect(env.OPENCODE_CONFIG_DIR).toBeDefined()
+    expect(env.ALPHA_IDENTITY_DISABLE).toBe("1")
+    expect(env.ALPHA_BEHAVIOR_DISABLE).toBe("1")
+    expect(env.ALPHA_CLOUD_MCP_URL).toBe("https://mcp.example")
+    expect(env.ALPHA_GLOBAL_DIR).toBe("/Users/u/.alpha")
   })
 })

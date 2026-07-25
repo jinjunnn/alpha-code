@@ -13,6 +13,9 @@
 //     Migrate the ref to "{file:...}"; a credential-shaped MY_VAR cannot be restored by the hatch.
 //   - Agent shell commands no longer see the user's full shell exports (the shell is spawned
 //     non-login with the sidecar env). That also means `echo $ALPHA_API_KEY` now prints nothing.
+//   - An OPENCODE_CONFIG_CONTENT exported by the launching shell is dropped (#603, see
+//     NEVER_INHERIT). Configure the engine through a config FILE instead (OPENCODE_CONFIG /
+//     OPENCODE_CONFIG_DIR / ~/.opencode/opencode.jsonc), all of which still pass.
 //
 // Escape hatch: ALPHA_ENV_ALLOWLIST_EXTRA="VAR1,VAR2" passes the named vars through verbatim. This
 // re-opens child inheritance for exactly those vars — an explicit, per-var user decision. It is NOT
@@ -83,6 +86,17 @@ const EXACT = new Set([
 const PREFIXES = ["OPENCODE_", "XDG_", "LC_", "ELECTRON_"]
 const SECRETISH = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i
 
+// Container-valued vars: SECRETISH matches NAMES, so it is blind to a secret carried in the VALUE.
+// OPENCODE_CONFIG_CONTENT is a whole-config JSON blob that can embed an inline provider apiKey, and
+// its name matches no SECRETISH word while the OPENCODE_ prefix would forward it verbatim (#603).
+// main must never forward one it inherited from the launching shell. This costs alpha nothing: main
+// never produces this var (the only writer in ui-mac/src is sidecar.ts:419, which runs AFTER fork,
+// inside the sidecar), and injectAlphaConfig already starts from a fresh skeleton when it is unset
+// (sidecar.ts:173-174) — that is the branch every normal boot already takes. The engine keeps its
+// file/dir config channels (OPENCODE_CONFIG, OPENCODE_CONFIG_DIR); only the inline-JSON-in-env
+// channel is closed, and a config blob holding a real secret belongs in the {file:} channel anyway.
+const NEVER_INHERIT = new Set(["OPENCODE_CONFIG_CONTENT"])
+
 export function createSidecarEnv(source: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const extra = new Set(
     (source.ALPHA_ENV_ALLOWLIST_EXTRA ?? "")
@@ -96,6 +110,7 @@ export function createSidecarEnv(source: NodeJS.ProcessEnv = process.env): Recor
     if (value === undefined) continue
     // The secret veto comes FIRST, so it holds on every path — including the escape hatch (#603).
     if (SECRETISH.test(key)) continue
+    if (NEVER_INHERIT.has(key)) continue
     const allowed = extra.has(key) || EXACT.has(key) || PREFIXES.some((prefix) => key.startsWith(prefix))
     if (!allowed) continue
     env[key] = String(value)

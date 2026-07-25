@@ -106,7 +106,7 @@
 
 ### Security
 
-- **环境变量放行名单的「例外」不再能放行密钥**(需下个签名版本生效)——`ALPHA_ENV_ALLOWLIST_EXTRA` 本用于按需放行个别环境变量给引擎,此前它排在密钥拦截之前:一旦名单里写上密钥类变量(例如 `ALPHA_API_KEY`),你的平台登录凭证就会进入引擎进程,并被它启动的**全部**子进程继承——包括你安装的第三方连接器(MCP)与语言服务。现在名单里的变量同样要过密钥拦截,名字含 KEY / TOKEN / SECRET / PASSWORD / CREDENTIAL 的一律不放行,这条边界不接受任何开关豁免;普通(非密钥)变量的放行照常可用。**影响一处此前的说明**:0.1.1 里提到「自有 Exa key 用户可设 `ALPHA_ENV_ALLOWLIST_EXTRA=EXA_API_KEY` 恢复」的做法即日起失效,websearch 保持走 keyless 公共端点。需要把密钥交给引擎的场景请改用文件通道(`{file:...}`)。
+- **环境变量放行名单的「例外」不再能放行密钥**(需下个签名版本生效)——`ALPHA_ENV_ALLOWLIST_EXTRA` 本用于按需放行个别环境变量给引擎,此前它排在密钥拦截之前:一旦名单里写上密钥类变量(例如 `ALPHA_API_KEY`),你的平台登录凭证就会进入引擎进程,并被它启动的**全部**子进程继承——包括你安装的第三方连接器(MCP)与语言服务。现在名单里的变量同样要过密钥拦截,名字含 KEY / TOKEN / SECRET / PASSWORD / CREDENTIAL 的一律不放行,这条边界不接受任何开关豁免;普通(非密钥)变量的放行照常可用。**影响一处此前的说明**:0.1.1 里提到「自有 Exa key 用户可设 `ALPHA_ENV_ALLOWLIST_EXTRA=EXA_API_KEY` 恢复」的做法即日起失效,websearch 保持走 keyless 公共端点。需要把密钥交给引擎的场景请改用文件通道(`{file:...}`)。同一轮还堵上另一条同类通道:从启动 shell 继承来的 `OPENCODE_CONFIG_CONTENT`(整份配置内联在环境变量里,可夹带明文 apiKey)不再传给引擎——变量名不含 KEY 字样,却和密钥变量一样会被全部子进程读到。改用配置**文件**(`OPENCODE_CONFIG` / `OPENCODE_CONFIG_DIR` / `~/.opencode/opencode.jsonc`)即可,这些通道照常可用;应用自身的配置注入不受影响。
 
 ## [0.1.2] - 2026-07-07
 
