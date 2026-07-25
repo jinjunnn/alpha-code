@@ -55,7 +55,8 @@ KEY 的直连模型全体变灰。本契约把它拆成两个**互不推导**的
 逃逸口:成功空清单 + 链 ready ⇒ 仍可提交)。「未就绪」由它真正的所有者 `modelChainState` 单独
 把门:发送门与行内说明都只在链 `ready` 之后消费本结论,冷启动窗口因此不会被误杀。
 支撑这条的实现侧不变量(由本仓自己维持,不是假设):`engineModelRefs` 的写入
-(`alpha-composer.tsx:995`)**早于** `setModelChainState("ready")`(`:1046`),
+(`alpha-composer.tsx:997`)**早于** `setModelChainState("ready")`(`:1048`,全文件唯一一处
+`ready` 转换;链重跑先 `:824` 切 `loading` 再 `:829` 清空清单),
 链重跑时先切 `loading` 再清空 ⇒ 只要链是 `ready`,清单就是本次真实加载的结果。
 
 **执行失败不得反向改写谓词 1(硬约束)**:引擎恢复后回报的清单里没有某个本地 BYOK 节点,
