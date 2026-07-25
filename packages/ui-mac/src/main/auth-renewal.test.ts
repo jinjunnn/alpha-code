@@ -5,6 +5,7 @@ import {
   authRenewalDelayMs,
   createAuthRenewalScheduler,
   createTokenRotationLatch,
+  TOKEN_ROTATION_RETRY_MS,
 } from "./auth-renewal"
 import type { RenewalResult } from "./alpha-auth"
 
@@ -112,19 +113,78 @@ describe("token rotation latch", () => {
     expect(respawns).toBe(1)
   })
 
-  test("a failed token-only respawn is not retried for the same generation", async () => {
+  // #600 B1:失败的 token-only 换血曾是终局(handledGeneration 在 respawn 之前就推进,
+  // 同代永不再试)。正确行为 = 该代仍然 pending,由封顶低频 timer 重试,成功后才推进。
+  test("a failed token-only respawn keeps the generation pending and retries it on a capped low-frequency timer", async () => {
+    let forked = 1
+    let healthy = false
     let respawns = 0
+    const timers: Array<{ run: () => void; delayMs: number }> = []
     const latch = createTokenRotationLatch({
-      forkedGeneration: () => 1,
+      forkedGeneration: () => forked,
       canRespawn: () => true,
+      // 生产语义:只有健康换血成功才认「当前 sidecar 携带该代」(index.ts 在 healthy 时才提交快照)。
       respawn: async () => {
         respawns++
-        return false
+        if (!healthy) return false
+        forked = 2
+        return true
       },
+      setTimer: (run, delayMs) => {
+        timers.push({ run, delayMs })
+        return setTimeout(() => {}, 0) // 真 Timer 句柄;重试由测试显式驱动
+      },
+      clearTimer: (timer) => clearTimeout(timer),
     })
 
-    await latch.accept(result("refreshed", 2), "scheduled")
+    expect(await latch.accept(result("refreshed", 2), "scheduled")).toBe(false)
+    expect(respawns).toBe(1)
+    expect(timers.map((timer) => timer.delayMs)).toEqual([TOKEN_ROTATION_RETRY_MS])
+
+    // 不自旋:没有 timer 触发时,重复 accept / 额外 flush 都不得就地再试。
     await latch.accept(result("refreshed", 2), "duplicate")
+    await latch.flush()
+    expect(respawns).toBe(1)
+
+    // 低频重试:同一 pending generation 再试,成功后回到 ready 语义(healthy=true → forked 推进)。
+    healthy = true
+    timers[0].run()
+    expect(await latch.flush()).toBe(true)
+    expect(respawns).toBe(2)
+    expect(forked).toBe(2)
+
+    // 成功后不再留悬挂定时器,也不再重试该代。
+    expect(timers).toHaveLength(1)
+    await latch.accept(result("refreshed", 2), "after-success")
+    expect(respawns).toBe(2)
+  })
+
+  // ③′3:重试预算耗尽不得进入无定时器终局。sidecar 已死(canRespawn=false)正是那个终局。
+  test("a pending generation keeps a capped retry armed even when nothing can be respawned yet", async () => {
+    const timers: Array<{ run: () => void; delayMs: number }> = []
+    let respawns = 0
+    let respawnable = false
+    const latch = createTokenRotationLatch({
+      forkedGeneration: () => 1,
+      canRespawn: () => respawnable,
+      respawn: async () => {
+        respawns++
+        return true
+      },
+      setTimer: (run, delayMs) => {
+        timers.push({ run, delayMs })
+        return setTimeout(() => {}, 0) // 真 Timer 句柄;重试由测试显式驱动
+      },
+      clearTimer: (timer) => clearTimeout(timer),
+    })
+
+    await latch.accept(result("refreshed", 2), "renewal")
+    expect(respawns).toBe(0)
+    expect(timers.map((timer) => timer.delayMs)).toEqual([TOKEN_ROTATION_RETRY_MS])
+
+    respawnable = true
+    timers[0].run()
+    expect(await latch.flush()).toBe(true)
     expect(respawns).toBe(1)
   })
 
