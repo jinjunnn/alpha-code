@@ -10,12 +10,16 @@
 //     keyless is already the ADR-009 default). Upstream reads it straight from env, so the file
 //     channel can't serve it without re-exposing it to children.
 //   - A user opencode.jsonc custom provider whose apiKey is "{env:MY_VAR}" no longer sees MY_VAR.
-//     Migrate the ref to "{file:...}" — or use the escape hatch below.
+//     Migrate the ref to "{file:...}"; a credential-shaped MY_VAR cannot be restored by the hatch.
 //   - Agent shell commands no longer see the user's full shell exports (the shell is spawned
 //     non-login with the sidecar env). That also means `echo $ALPHA_API_KEY` now prints nothing.
 //
 // Escape hatch: ALPHA_ENV_ALLOWLIST_EXTRA="VAR1,VAR2" passes the named vars through verbatim. This
-// re-opens child inheritance for exactly those vars — an explicit, per-var user decision.
+// re-opens child inheritance for exactly those vars — an explicit, per-var user decision. It is NOT
+// a secret hatch: names matching SECRETISH are vetoed even when listed (#603). The "no token in the
+// sidecar env" invariant is absolute and not user-waivable, because the blast radius is not the
+// user's alone to accept — every third-party MCP/LSP child would inherit the value. A user who
+// needs a credential in a child process must route it through the {file:} channel instead.
 //
 // DEBUG and LD_PRELOAD, which the old copy-everything implementation deleted case-by-case, now fall
 // out via default-deny like everything else.
@@ -71,8 +75,11 @@ const EXACT = new Set([
   "ALPHA_ENV_ALLOWLIST_EXTRA",
 ])
 
-// Prefix families that are config/infrastructure, not credentials. The SECRETISH guard below still
-// vetoes anything credential-shaped that sneaks under a prefix (e.g. a hypothetical OPENCODE_API_KEY).
+// Prefix families that are config/infrastructure, not credentials. The SECRETISH veto below runs
+// before every allow rule, so anything credential-shaped is dropped no matter which rule would have
+// admitted it — a hypothetical OPENCODE_API_KEY under a prefix, a name listed in the escape hatch, or
+// a token var mistakenly added to EXACT. Cost of the reuse: the substring match also vetoes innocent
+// names that merely contain one of the words (MONKEY_MODE); rename such a var to pass it through.
 const PREFIXES = ["OPENCODE_", "XDG_", "LC_", "ELECTRON_"]
 const SECRETISH = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i
 
@@ -87,11 +94,9 @@ export function createSidecarEnv(source: NodeJS.ProcessEnv = process.env): Recor
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(source)) {
     if (value === undefined) continue
-    if (extra.has(key)) {
-      env[key] = String(value)
-      continue
-    }
-    const allowed = EXACT.has(key) || (PREFIXES.some((prefix) => key.startsWith(prefix)) && !SECRETISH.test(key))
+    // The secret veto comes FIRST, so it holds on every path — including the escape hatch (#603).
+    if (SECRETISH.test(key)) continue
+    const allowed = extra.has(key) || EXACT.has(key) || PREFIXES.some((prefix) => key.startsWith(prefix))
     if (!allowed) continue
     env[key] = String(value)
   }

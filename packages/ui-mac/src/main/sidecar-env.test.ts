@@ -108,17 +108,62 @@ describe("createSidecarEnv — default-deny", () => {
 })
 
 describe("createSidecarEnv — escape hatch", () => {
-  test("ALPHA_ENV_ALLOWLIST_EXTRA passes exactly the named vars through", () => {
+  test("ALPHA_ENV_ALLOWLIST_EXTRA passes the named non-secret vars through", () => {
     const env = createSidecarEnv({
-      ALPHA_ENV_ALLOWLIST_EXTRA: "EXA_API_KEY, MY_CUSTOM_VAR",
-      EXA_API_KEY: "exa",
+      ALPHA_ENV_ALLOWLIST_EXTRA: "MY_CUSTOM_VAR, MY_PROVIDER_BASE_URL",
       MY_CUSTOM_VAR: "v",
+      MY_PROVIDER_BASE_URL: "https://p.example/v1",
+      UNNAMED_VAR: "not-in-the-hatch",
       DEEPSEEK_API_KEY: "still-stripped",
     })
-    expect(env.EXA_API_KEY).toBe("exa")
     expect(env.MY_CUSTOM_VAR).toBe("v")
+    expect(env.MY_PROVIDER_BASE_URL).toBe("https://p.example/v1")
+    expect(env.UNNAMED_VAR).toBeUndefined()
     expect(env.DEEPSEEK_API_KEY).toBeUndefined()
     // the hatch itself stays visible for diagnostics
     expect(env.ALPHA_ENV_ALLOWLIST_EXTRA).toBeDefined()
+  })
+
+  // #603: the hatch used to pass its named vars BEFORE the SECRETISH guard, so
+  // ALPHA_ENV_ALLOWLIST_EXTRA=ALPHA_API_KEY leaked the raw platform bearer into the sidecar and
+  // every MCP/LSP/agent-shell child it spawns. The A6 / startup-baseline ③ invariant "a token never
+  // enters the sidecar env" is absolute: no user opt-in may waive it.
+  test("vetoes the absolute platform tokens even when named in the hatch", () => {
+    const env = createSidecarEnv({
+      ALPHA_ENV_ALLOWLIST_EXTRA: "ALPHA_API_KEY,ALPHA_CLOUD_TOKEN,DEV_PLATFORM_TOKEN",
+      ALPHA_API_KEY: "jwt",
+      ALPHA_CLOUD_TOKEN: "bearer",
+      DEV_PLATFORM_TOKEN: "dev",
+    })
+    expect(env.ALPHA_API_KEY).toBeUndefined()
+    expect(env.ALPHA_CLOUD_TOKEN).toBeUndefined()
+    expect(env.DEV_PLATFORM_TOKEN).toBeUndefined()
+  })
+
+  test("vetoes any credential-shaped name named in the hatch (SECRETISH, not a fixed blocklist)", () => {
+    const names = ["EXA_API_KEY", "GH_TOKEN", "DB_PASSWORD", "SOME_CREDENTIAL", "AWS_SECRET_ACCESS_KEY", "my_api_key"]
+    const env = createSidecarEnv({
+      ALPHA_ENV_ALLOWLIST_EXTRA: names.join(","),
+      ...Object.fromEntries(names.map((name) => [name, "leak"])),
+      MY_CUSTOM_VAR: "kept",
+    })
+    for (const name of names) expect(env[name]).toBeUndefined()
+    expect(Object.values(env)).not.toContain("leak")
+  })
+
+  test("the veto is absolute: no path (hatch, exact, prefix) passes a credential-shaped name", () => {
+    const env = createSidecarEnv({
+      ALPHA_ENV_ALLOWLIST_EXTRA: "ALPHA_API_KEY,OPENCODE_API_KEY,MY_CUSTOM_VAR",
+      ALPHA_API_KEY: "jwt",
+      OPENCODE_API_KEY: "zen",
+      OPENCODE_CLIENT: "desktop",
+      PATH: "/usr/bin",
+      MY_CUSTOM_VAR: "v",
+    })
+    expect(Object.keys(env).filter((key) => /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(key))).toEqual([])
+    // …while the hatch and the ordinary allowlist keep working
+    expect(env.MY_CUSTOM_VAR).toBe("v")
+    expect(env.OPENCODE_CLIENT).toBe("desktop")
+    expect(env.PATH).toBe("/usr/bin")
   })
 })
