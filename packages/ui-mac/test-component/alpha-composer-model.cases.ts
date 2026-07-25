@@ -1914,7 +1914,9 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
 
     // 选择只是内存写,不得把还在退避重试的链判 stale —— 否则自动恢复永久闩死(#594 同类)。
     await new Promise((resolve) => setTimeout(resolve, 3500))
+    // 对照:引擎恢复后的清单**含**该节点 ⇒ 发送门照常打开,谓词 2 不得过度收紧。
     expect(send.disabled).toBe(false)
+    expect(mounted.host.textContent).not.toContain(zh["alpha.composer.modelNotLoadedDetail"])
     expect(composerModel()?.providerID).toBe(deepseekEngineId)
     expect(composerModelSuspended()).toBeNull()
     mounted.dispose()
@@ -1952,9 +1954,16 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
     // 退避 1s 后第二次 list 成功 → 链 ready → 两轮 resolveSelection reconciliation。
     await new Promise((resolve) => setTimeout(resolve, 1600))
     expect(listCalls).toBeGreaterThan(1)
+    // ① 谓词 1:选择保留,不被引擎清单撤销。
     expect(composerModelSuspended()).toBeNull()
     expect(composerModel()?.providerID).toBe(deepseekEngineId)
     expect(composerModel()?.id).toBe(deepseekModels[0])
+    // ② 谓词 2:引擎里没有这个节点 ⇒ 发送门必须关闭(否则会提交一个引擎不存在的 Model Ref)。
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    expect(send.disabled).toBe(true)
+    // ③ 如实告知:按钮已禁用,toast 点不出来,必须有常驻说明 + 重试入口。
+    expect(mounted.host.textContent).toContain(zh["alpha.composer.modelNotLoadedDetail"])
+    expect(mounted.host.textContent).toContain(composerModel()!.name)
     mounted.dispose()
   })
 

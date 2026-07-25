@@ -28,8 +28,8 @@ const ctx = (over: Partial<ModelResolveCtx>): ModelResolveCtx => ({
   ...over,
 })
 
-const proxyModel = { providerID: PLATFORM }
-const dsModel = { providerID: "deepseek" }
+const proxyModel = { providerID: PLATFORM, id: "claude-sonnet-4.6" }
+const dsModel = { providerID: "deepseek", id: "deepseek-chat" }
 const engineWithProxy = [
   { providerID: PLATFORM, id: "claude-sonnet-4.6" },
   { providerID: PLATFORM, id: "claude-fable-5" },
@@ -143,11 +143,12 @@ describe("resolveDefaultModel(第②③④级:自动默认)", () => {
 
 describe("preflightBlockReason(发送前最后一道)", () => {
   const pctx = (
-    over: Partial<{ loggedIn: boolean; platformProviderId: string | null; hasConfiguredByok: boolean }>,
-  ) => ({
+    over: Partial<Parameters<typeof preflightBlockReason>[1]>,
+  ): Parameters<typeof preflightBlockReason>[1] => ({
     loggedIn: false,
     platformProviderId: PLATFORM,
     hasConfiguredByok: false,
+    engineModels: [],
     ...over,
   })
   test("未登录 + 选中平台模型 → 拦(引导替代网关拒绝原文)", () => {
@@ -167,6 +168,28 @@ describe("preflightBlockReason(发送前最后一道)", () => {
   })
   test("无选择 + 已登录 → 放行", () => {
     expect(preflightBlockReason(null, pctx({ loggedIn: true }))).toBeNull()
+  })
+  // REQ-109 #595 谓词 2:撤销豁免让选择活了下来,发送门必须自己挡住不可执行的提交。
+  test("#595:本地 BYOK 已选但引擎清单(非空)查无该节点 → byok-not-registered", () => {
+    const byok = { providerID: "deepseek-byok", id: "deepseek-v4-flash" }
+    expect(preflightBlockReason(byok, pctx({ engineModels: engineWithProxy }))).toBe("byok-not-registered")
+  })
+  test("#595:引擎清单含该节点 → 放行(不得过度收紧)", () => {
+    const byok = { providerID: "deepseek-byok", id: "deepseek-v4-flash" }
+    expect(preflightBlockReason(byok, pctx({ engineModels: [byok] }))).toBeNull()
+    // 同 provider 但 model id 不在册 —— 提交的是引擎不认识的 Ref,照样拦。
+    expect(
+      preflightBlockReason({ providerID: "deepseek-byok", id: "ghost" }, pctx({ engineModels: [byok] })),
+    ).toBe("byok-not-registered")
+  })
+  test("#595:引擎清单为空 = 未就绪 → 让路(不误杀冷启动)", () => {
+    expect(preflightBlockReason({ providerID: "deepseek-byok", id: "deepseek-v4-flash" }, pctx({}))).toBeNull()
+  })
+  test("#595:约束不外溢 —— 平台行与非 BYOK 自定义节点的既有语义不变", () => {
+    expect(preflightBlockReason(proxyModel, pctx({ loggedIn: true, engineModels: engineWithDs }))).toBeNull()
+    expect(
+      preflightBlockReason({ providerID: "my-endpoint", id: "x" }, pctx({ loggedIn: true, engineModels: engineWithDs })),
+    ).toBeNull()
   })
   test("catalog 未知(platformProviderId null)→ 平台判定不误伤", () => {
     expect(preflightBlockReason(proxyModel, pctx({ platformProviderId: null, hasConfiguredByok: true }))).toBeNull()

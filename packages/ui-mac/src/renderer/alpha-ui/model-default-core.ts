@@ -13,6 +13,7 @@
 //   4. 全无 → none:composer 保持引导占位,picker 内登录/配 KEY 双出口,发送前 preflight 拦截。
 
 import type { ModelRef } from "@opencode-ai/sdk/v2/client"
+import { isByokEngineId } from "../../shared/alpha-model-types"
 
 export type EngineModelRef = Pick<ModelRef, "providerID" | "id">
 
@@ -104,13 +105,30 @@ export function resolveDefaultModel(ctx: ModelResolveCtx): DefaultResolution {
 }
 
 /** preflight(发送前最后一道):平台代理模型在未登录态绝不出手 —— 用引导替代网关拒绝原文
- *  (网关校验保留为兜底防线,但正常流不该触达)。返回 null = 放行。 */
+ *  (网关校验保留为兜底防线,但正常流不该触达)。返回 null = 放行。
+ *
+ *  REQ-109 #595 谓词 2:`checkSelectedModel` 不再用引擎清单撤销本地 BYOK 选择(谓词 1 不可被引擎
+ *  否决),**执行面就必须在这里真的挡住** —— 否则选择保住了却把一个引擎里不存在的 Model Ref 提交
+ *  上去。两个谓词各自执行:可选择性归本地事实,可执行性归引擎清单。空清单 = 未就绪,不误杀。 */
 export function preflightBlockReason(
-  model: { providerID: string } | null,
-  ctx: { loggedIn: boolean; platformProviderId: string | null; hasConfiguredByok: boolean },
-): "platform-needs-login" | "nothing-usable" | null {
+  model: { providerID: string; id: string } | null,
+  ctx: {
+    loggedIn: boolean
+    platformProviderId: string | null
+    hasConfiguredByok: boolean
+    /** 引擎实际注册的模型;空数组 = 未就绪,本判据整体让路。 */
+    engineModels: EngineModelRef[]
+  },
+): "platform-needs-login" | "nothing-usable" | "byok-not-registered" | null {
   if (model && ctx.platformProviderId && model.providerID === ctx.platformProviderId && !ctx.loggedIn)
     return "platform-needs-login"
+  if (
+    model &&
+    isByokEngineId(model.providerID) &&
+    ctx.engineModels.length > 0 &&
+    !ctx.engineModels.some((e) => e.providerID === model.providerID && e.id === model.id)
+  )
+    return "byok-not-registered"
   // 无选择时引擎会用自己的默认 —— 未登录且一个 KEY 都没配,那个默认不可能可用,拦下给引导。
   if (!model && !ctx.loggedIn && !ctx.hasConfiguredByok) return "nothing-usable"
   return null

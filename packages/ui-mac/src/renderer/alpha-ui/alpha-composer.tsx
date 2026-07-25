@@ -724,6 +724,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const [platformPermission, setPlatformPermission] = createSignal<"out" | "recovering" | "ready" | "failed">(
     "recovering",
   )
+  /* #595 谓词 2 的事实源:引擎本次实际注册的模型。撤销豁免(checkSelectedModel)让「选择」活了下来,
+     发送门就必须自己拿这份清单挡住不可执行的提交 —— 两个谓词各自执行,谁也不代替谁。 */
+  const [engineModelRefs, setEngineModelRefs] = createSignal<EngineModelRef[]>([])
   const [authEpoch, setAuthEpoch] = createSignal(0)
   const [modelRetryEpoch, setModelRetryEpoch] = createSignal(0)
   let chainSeq = 0
@@ -741,6 +744,16 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const accountRetryWakeup = createRetryWakeup()
   const authSignature = (state: AuthState) =>
     `${state.status}\u0000${state.mode}\u0000${state.platformStatus ?? "ready"}\u0000${state.account?.email ?? ""}`
+  const preflightCtx = () => ({
+    loggedIn: lastAuth()?.status === "logged-in" && (lastAuth()?.platformStatus ?? "ready") === "ready",
+    platformProviderId: platformId(),
+    hasConfiguredByok: hasConfiguredByok(),
+    engineModels: engineModelRefs(),
+  })
+  /** #595:已选的本地 BYOK 在引擎清单里查无对应节点 —— 可选择性照旧(不撤销),但**不可执行**。 */
+  const byokNotRegistered = createMemo(
+    () => preflightBlockReason(composerModel(), preflightCtx()) === "byok-not-registered",
+  )
   const canSend = createMemo(() => {
     const selected = composerModel()
     const needsPlatform =
@@ -751,6 +764,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       !!props.directory() &&
       modelChainState() === "ready" &&
       (!needsPlatform || platformPermission() === "ready") &&
+      // 谓词 2:引擎里没有这个直连节点就发不出去,按钮如实关闭(行内另有告知)。
+      !byokNotRegistered() &&
       !sending()
     )
   })
@@ -809,6 +824,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     setPlatformId(null)
     setHasConfiguredByok(false)
     setPlatformPermission("recovering")
+    setEngineModelRefs([])
     if (sessionID) invalidateComposerModelProjection(sessionID)
     else resetComposerModelProjection()
 
@@ -976,6 +992,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     const engineModels: EngineModelRef[] = loaded.data
       .filter((model) => model.enabled && model.status !== "deprecated")
       .map((model) => ({ providerID: model.providerID, id: model.id }))
+    setEngineModelRefs(engineModels)
     setHasConfiguredByok(
       configured.some(
         (id) =>
@@ -1170,12 +1187,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       return
     }
     // REQ-069 preflight:未登录 + 代理模型(或全无可用)→ 行内引导替代网关拒绝原文。
-    const block = preflightBlockReason(composerModel(), {
-      loggedIn:
-        lastAuth()?.status === "logged-in" && (lastAuth()?.platformStatus ?? "ready") === "ready",
-      platformProviderId: platformId(),
-      hasConfiguredByok: hasConfiguredByok(),
-    })
+    // #595:Enter 直调 submit(不经 canSend),同一条纯核判据必须在这里也拦住不可执行的 BYOK。
+    const block = preflightBlockReason(composerModel(), preflightCtx())
     if (block) {
       pushToast(
         block === "platform-needs-login"
@@ -1184,11 +1197,17 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
               title: t("alpha.composer.modelNeedsLogin"),
               detail: t("alpha.composer.modelNeedsLoginDetail"),
             }
-          : {
-              kind: "info",
-              title: t("alpha.composer.noModel"),
-              detail: t("alpha.composer.noModelDetail"),
-            },
+          : block === "byok-not-registered"
+            ? {
+                kind: "info",
+                title: t("alpha.composer.modelNotLoaded", { model: composerModel()?.name ?? "" }),
+                detail: t("alpha.composer.modelNotLoadedDetail"),
+              }
+            : {
+                kind: "info",
+                title: t("alpha.composer.noModel"),
+                detail: t("alpha.composer.noModelDetail"),
+              },
       )
       return
     }
@@ -1472,6 +1491,17 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       <Show when={modelChainState() === "recovering"}>
         <div class="a-comp-model-alert" role="status">
           <span>{t("alpha.model.syncing")}</span>
+        </div>
+      </Show>
+      {/* #595:发送门因「引擎没有这个直连节点」而关闭时,必须常驻如实说明 ——
+          按钮已 disabled,toast 点不出来,不说等于静默失败。选择本身照旧保留。 */}
+      <Show when={modelChainState() === "ready" && byokNotRegistered()}>
+        <div class="a-comp-model-alert" role="status">
+          <span>{t("alpha.composer.modelNotLoaded", { model: composerModel()?.name ?? "" })}</span>
+          <span>{t("alpha.composer.modelNotLoadedDetail")}</span>
+          <button type="button" onClick={retryCurrentModel}>
+            {t("alpha.common.retry")}
+          </button>
         </div>
       </Show>
       <div class="a-comp-bar">
