@@ -54,6 +54,13 @@ describe("isTokenExpired", () => {
   test("过期判定含边界(=expiresAt 即过期)", () => {
     expect(isTokenExpired(NOW, NOW)).toBe(true)
     expect(isTokenExpired(NOW + 1, NOW)).toBe(false)
-    expect(isTokenExpired(undefined, NOW)).toBe(false)
+  })
+  // #602 M2:本条原先断言「缺 expiresAt → 未过期」,把 fail-open 锁成了正确行为 ——
+  // renderer 因此拿到 platformStatus:"ready",启动也不进 A′ 续期宽限,sidecar 先带一个
+  // 未知(可能已过期)的 token 起来。基线 ③:不得为视觉目标把未验证的过期 token 标成可用。
+  test("有效期未知或无效 → fail-closed 视为已过期", () => {
+    expect(isTokenExpired(undefined, NOW)).toBe(true)
+    expect(isTokenExpired(Number.NaN, NOW)).toBe(true)
+    expect(isTokenExpired(Number.POSITIVE_INFINITY, NOW)).toBe(true)
   })
 })

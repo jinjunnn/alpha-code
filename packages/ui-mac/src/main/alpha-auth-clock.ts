@@ -24,7 +24,11 @@ export function refreshDueAt(expiresAt: number | undefined, lifetimeMs: number |
   return expiresAt - refreshAheadMs(lifetimeMs)
 }
 
-/** access token 已过期(启动宽限与 renderer 平台可用性据此 fail closed)。 */
+/** access token 已过期,或有效期未知/无效(启动宽限与 renderer 平台可用性据此 fail closed)。
+ *  #602 M2:未知有效期曾判「未过期」—— renderer 拿到 platformStatus:"ready",启动也不进 A′
+ *  续期宽限,sidecar 先带一个可能已过期的 token 起来。基线 ③ 明令不得为视觉目标把未验证的
+ *  过期平台 token 标成可用,故这里 fail-closed:有限正数之外一律视为已过期。 */
 export function isTokenExpired(expiresAt: number | undefined, now: number): boolean {
-  return typeof expiresAt === "number" && now >= expiresAt
+  if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return true
+  return now >= expiresAt
 }

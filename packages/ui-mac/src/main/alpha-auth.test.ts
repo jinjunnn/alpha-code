@@ -9,5 +9,5 @@ test("purpose-keyed platform access token bundle auth flow", () => {
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain("14 pass")
+  expect(output).toContain("25 pass")
 })

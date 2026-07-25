@@ -3,6 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ContractIncompatibleError, type RoutePurpose } from "@alpha-code/contracts-consumer"
+import { createTokenRotationLatch } from "./auth-renewal"
+import { deepLinkFor } from "../shared/route-manifest"
 
 const logger = { log: () => {}, warn: () => {}, error: () => {} }
 
@@ -63,11 +65,15 @@ const {
   decodeTokenResponse,
   getAccessToken,
   getAuthState,
+  getTokenGeneration,
+  handleAuthDeepLink,
   initAuthEnv,
   isStoredTokenExpired,
   ensureFreshToken,
+  logout,
   refreshTokens,
   setAuthDeps,
+  startAuth,
 } = await import("./alpha-auth")
 
 const PURPOSES = [
@@ -144,6 +150,21 @@ function captureBundleError(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function fakeWindow(sends: string[]) {
+  return {
+    isDestroyed: () => false,
+    webContents: {
+      send: (channel: string) => {
+        sends.push(channel)
+      },
+    },
+  } as unknown as ReturnType<Parameters<typeof setAuthDeps>[0]["getWindow"]>
+}
+
+function jsonResponse(body: Record<string, unknown>) {
+  return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
 }
 
 function readStoredAuth() {
@@ -388,6 +409,72 @@ describe("refresh bundle rotation", () => {
     expect(renewedGenerations).toEqual([])
   })
 
+  // #600 M1:account 401 路径靠 `await refreshTokens()` 判断"恢复了没有"。旧接线把
+  // onRenewed 的 Promise `void` 掉,refresh 立即完成 → UI 报恢复、sidecar 仍握旧 token,
+  // 用户此时发送首次推理可能 401。正确行为:续期必须等 latch 对该 generation 的应用结果。
+  test.each([true, false] as const)(
+    "a renewal reports back only after the token rotation settled (rotation healthy=%p)",
+    async (rotationHealthy) => {
+      const newBundle = tokenBundle("new")
+      storeAuth({
+        platformAccessTokens: tokenBundle(),
+        refreshToken: "refresh-old",
+        expiresAt: 1,
+        lifetimeMs: 1000,
+      })
+      const events: string[] = []
+      let releaseRotation!: () => void
+      const rotationGate = new Promise<void>((resolve) => {
+        releaseRotation = resolve
+      })
+      let forkedGeneration = getTokenGeneration()
+      const rotation = createTokenRotationLatch({
+        forkedGeneration: () => forkedGeneration,
+        canRespawn: () => true,
+        respawn: async () => {
+          events.push("rotation:start")
+          await rotationGate
+          if (!rotationHealthy) {
+            events.push("rotation:failed")
+            return false
+          }
+          forkedGeneration = getTokenGeneration()
+          events.push("rotation:applied")
+          return true
+        },
+      })
+      setAuthDeps({
+        getWindow: () => null,
+        respawn: () => {
+          structuralRespawns++
+        },
+        onRenewed: (result) => rotation.accept(result, "renewal"),
+      })
+      globalThis.fetch = (async () =>
+        jsonResponse({
+          platform_access_tokens: newBundle,
+          refresh_token: "refresh-new",
+          expires_in: 3600,
+        })) as typeof fetch
+
+      const pending = refreshTokens().then((result) => {
+        events.push("renewal:reported")
+        return result
+      })
+      for (let tick = 0; tick < 200 && !events.includes("rotation:start"); tick++)
+        await new Promise((resolve) => setTimeout(resolve, 1))
+      expect(events).toEqual(["rotation:start"])
+
+      releaseRotation()
+      expect(await pending).toMatchObject({ outcome: "refreshed" })
+      expect(events).toEqual(
+        rotationHealthy
+          ? ["rotation:start", "rotation:applied", "renewal:reported"]
+          : ["rotation:start", "rotation:failed", "renewal:reported"],
+      )
+    },
+  )
+
   test("ensureFreshToken models a not-due token as still-valid without network or respawn", async () => {
     storeAuth({
       platformAccessTokens: tokenBundle(),
@@ -406,4 +493,162 @@ describe("refresh bundle rotation", () => {
     expect(structuralRespawns).toBe(0)
     expect(renewedGenerations).toEqual([])
   })
+})
+
+// #602 B4:旧 refresh 响应必须在提交前做 CAS。此前 doRefresh() 直接 `...stored` 写回,
+// 在途期间的 logout 会被复活,新账号登录会被账号 A 的 token 覆盖(UI 显示 B、bearer 是 A)。
+describe("refresh compare-and-set before commit", () => {
+  test("a refresh in flight is discarded when logout changes the auth generation", async () => {
+    const newBundle = tokenBundle("new")
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-old",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    const sends: string[] = []
+    setAuthDeps({
+      getWindow: () => fakeWindow(sends),
+      respawn: () => {
+        structuralRespawns++
+      },
+      onRenewed: (result) => {
+        renewedGenerations.push(result.generation)
+      },
+    })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    globalThis.fetch = (async () => {
+      await gate
+      return jsonResponse({
+        platform_access_tokens: newBundle,
+        refresh_token: "refresh-new",
+        session_id: "session-new",
+        expires_in: 3600,
+      })
+    }) as typeof fetch
+
+    const pending = refreshTokens()
+    await logout()
+    const publishedByLogout = sends.length
+    release()
+
+    expect(await pending).toMatchObject({ outcome: "transient-failure" })
+    expect(getAuthState().status).toBe("logged-out")
+    PURPOSES.forEach((purpose) => expect(getAccessToken(purpose)).toBeUndefined())
+    expect(process.env.ALPHA_API_KEY).toBeUndefined()
+    expect(process.env.ALPHA_CLOUD_TOKEN).toBeUndefined()
+    // 丢弃 = 不持久化、不发布、不换血(structural respawn 只有 logout 自己那一次)
+    expect(readStoredAuth()).toEqual({ mode: "byok" })
+    expect(sends.length).toBe(publishedByLogout)
+    expect(structuralRespawns).toBe(1)
+    expect(renewedGenerations).toEqual([])
+  })
+
+  test("a refresh in flight never overwrites the account that logged in while it was open", async () => {
+    const staleBundle = tokenBundle("stale")
+    const nextBundle = tokenBundle("next")
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-a",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    globalThis.fetch = (async (_input, init) => {
+      const body: unknown = JSON.parse(typeof init?.body === "string" ? init.body : "{}")
+      if (isRecord(body) && body.grant_type === "refresh_token") {
+        await gate
+        return jsonResponse({
+          platform_access_tokens: staleBundle,
+          refresh_token: "refresh-a2",
+          session_id: "session-a2",
+          expires_in: 3600,
+          email: "a@example.invalid",
+        })
+      }
+      return jsonResponse({
+        platform_access_tokens: nextBundle,
+        refresh_token: "refresh-b",
+        session_id: "session-b",
+        expires_in: 3600,
+        email: "b@example.invalid",
+        plan: "pro",
+      })
+    }) as typeof fetch
+
+    const pending = refreshTokens()
+    await startAuth()
+    const pkce: unknown = JSON.parse(readFileSync(join(dataPath, "alpha-pkce.json"), "utf8"))
+    if (!isRecord(pkce) || typeof pkce.state !== "string") throw new Error("expected a persisted pkce state")
+    const callback = new URL(deepLinkFor.authCallback())
+    callback.searchParams.set("code", "code-b")
+    callback.searchParams.set("state", pkce.state)
+    expect(handleAuthDeepLink(callback.toString())).toBe(true)
+    for (let tick = 0; tick < 500 && getAuthState().account?.email !== "b@example.invalid"; tick++)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    expect(getAuthState().account?.email).toBe("b@example.invalid")
+
+    release()
+    expect(await pending).toMatchObject({ outcome: "transient-failure" })
+    PURPOSES.forEach((purpose) => expect(getAccessToken(purpose)).toBe(nextBundle[purpose]))
+    expect(process.env.ALPHA_API_KEY).toBe(nextBundle["model.invoke"])
+    expect(getAuthState().account).toEqual({ email: "b@example.invalid", plan: "pro" })
+    expect(readStoredAuth()).toMatchObject({
+      platformAccessTokens: nextBundle,
+      refreshToken: "refresh-b",
+      sessionId: "session-b",
+    })
+  })
+})
+
+// #602 M2:有效期缺失/无效必须 fail-closed 为 recovering 并进入续期路径,
+// 不得标 ready(基线 ③:不得为视觉目标把未验证的过期平台 token 标成可用)。
+describe("expiry fail-closed", () => {
+  test.each([undefined, 0, -1] as const)(
+    "a refreshed response whose expires_in is %p fails closed to recovering and keeps renewing",
+    async (expiresIn) => {
+      const newBundle = tokenBundle("new")
+      storeAuth({
+        platformAccessTokens: tokenBundle(),
+        refreshToken: "refresh-old",
+        expiresAt: Date.now() + 60_000,
+        lifetimeMs: 15 * 60_000,
+      })
+      expect(getAuthState().platformStatus).toBe("ready")
+      let refreshRequests = 0
+      globalThis.fetch = (async () => {
+        refreshRequests++
+        return jsonResponse({
+          platform_access_tokens: newBundle,
+          refresh_token: "refresh-new",
+          ...(expiresIn === undefined ? {} : { expires_in: expiresIn }),
+        })
+      }) as typeof fetch
+
+      expect(await refreshTokens()).toMatchObject({ outcome: "refreshed" })
+      expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "recovering" })
+      expect(getAuthState().expiresAt).toBeUndefined()
+      // 进入续期路径:启动宽限判据(A′)为真,且调度到点即刷 —— 不再被陈旧 expiresAt 蒙住。
+      expect(isStoredTokenExpired()).toBe(true)
+      expect(await ensureFreshToken()).toMatchObject({ outcome: "refreshed" })
+      expect(refreshRequests).toBe(2)
+    },
+  )
+
+  test.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY] as const)(
+    "expires_in %p is not a usable lifetime and is dropped from the decoded response",
+    (expiresIn) => {
+      const decoded = decodeTokenResponse({
+        platform_access_tokens: tokenBundle(),
+        expires_in: expiresIn,
+      })
+      expect(decoded.expires_in).toBeUndefined()
+    },
+  )
 })

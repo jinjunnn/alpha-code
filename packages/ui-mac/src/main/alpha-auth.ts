@@ -110,11 +110,14 @@ const webBase = () => resolveEndpoints().web
 let userDataPath = ""
 let getWindow: () => BrowserWindow | null = () => null
 let respawnSidecar: (reason: "structural") => void = () => {}
-let onRenewed: (result: RenewalResult) => void = () => {}
+let onRenewed: (result: RenewalResult) => void | Promise<unknown> = () => {}
 let onAuthChanged: () => void = () => {}
 let stored: StoredAuth = { mode: "byok" }
 let pkce: { verifier: string; state: string } | null = null
 let tokenGeneration = 0
+// #601:身份代 —— 只有登入/登出推进,token 轮换不算。账户驱动刷新的 401 锁据此解锁,
+// 所以「持续 401」不会因为一次普通续期就重新获得驱动 respawn 的资格。
+let authIdentityEpoch = 0
 
 function log(message: string, meta?: unknown) {
   try {
@@ -183,18 +186,18 @@ function load() {
 }
 
 function deriveState(): AuthState {
-  const loggedIn =
-    hasRequiredPlatformAccessTokens(stored.platformAccessTokens) || Boolean(process.env.DEV_PLATFORM_TOKEN)
+  const devToken = Boolean(process.env.DEV_PLATFORM_TOKEN)
+  const loggedIn = hasRequiredPlatformAccessTokens(stored.platformAccessTokens) || devToken
+  // #602 M2:有效期未知/已过期 ⇒ recovering(isTokenExpired 已 fail-closed)。DEV_PLATFORM_TOKEN
+  // 是没有续期手段的静态短路,按 fail-closed 会永久停在 recovering(违反 ③′2「fail-closed 必须
+  // 有有界自证路径」),故 dev 短路仍报 ready;生产登录一律按 expiresAt 判定。
+  const platformReady = devToken || !isTokenExpired(stored.expiresAt, Date.now())
   return {
     status: loggedIn ? "logged-in" : "logged-out",
     mode: stored.mode ?? "byok",
     account: stored.account,
     expiresAt: stored.expiresAt,
-    ...(loggedIn
-      ? {
-          platformStatus: isTokenExpired(stored.expiresAt, Date.now()) ? ("recovering" as const) : ("ready" as const),
-        }
-      : {}),
+    ...(loggedIn ? { platformStatus: platformReady ? ("ready" as const) : ("recovering" as const) } : {}),
   }
 }
 
@@ -281,7 +284,8 @@ export function initAuthEnv(dataPath: string) {
 export function setAuthDeps(deps: {
   getWindow: () => BrowserWindow | null
   respawn: (reason: "structural") => void
-  onRenewed?: (result: RenewalResult) => void
+  /** #600 M1:返回 Promise 时 refreshTokens 会等它 —— 换血是「恢复了」的真实完成点。 */
+  onRenewed?: (result: RenewalResult) => void | Promise<unknown>
   onChanged?: () => void
 }) {
   getWindow = deps.getWindow
@@ -297,6 +301,11 @@ export function getAuthState(): AuthState {
 
 export function getTokenGeneration(): number {
   return tokenGeneration
+}
+
+/** 外部 auth 身份代:登入/登出才推进(token 轮换不算)。#601 的账户驱动刷新锁据此解锁。 */
+export function getAuthIdentityEpoch(): number {
+  return authIdentityEpoch
 }
 
 export function getAuthRenewalTiming() {
@@ -433,6 +442,7 @@ async function completeAuth(parsed: URL) {
     account: { email: tokens.email, plan: tokens.plan },
   }
   tokenGeneration++
+  authIdentityEpoch++
   persist()
   applyAuthEnv()
   publish()
@@ -503,6 +513,9 @@ export function decodeTokenResponse(value: unknown): TokenResponse {
   if (response.refresh_token !== undefined && typeof response.refresh_token !== "string") throw invalidTokenResponse()
   if (response.session_id !== undefined && typeof response.session_id !== "string") throw invalidTokenResponse()
   if (response.expires_in !== undefined && typeof response.expires_in !== "number") throw invalidTokenResponse()
+  // #602 M2:有效期必须是有限正数。0 / 负数 / 非有限值不是可用寿命 —— 一律当「未知」丢弃,
+  // 让下游 fail-closed 走 recovering + 续期路径,而不是把一个算不出来的期限当成可用。
+  const expiresIn = usableExpiresIn(response.expires_in)
   if (response.email !== undefined && typeof response.email !== "string") throw invalidTokenResponse()
   if (response.plan !== undefined && typeof response.plan !== "string") throw invalidTokenResponse()
   const endpoints = response.endpoints !== undefined ? decodeEndpointDiscovery(response.endpoints) : undefined
@@ -510,7 +523,7 @@ export function decodeTokenResponse(value: unknown): TokenResponse {
     platform_access_tokens: platformAccessTokens,
     ...(response.refresh_token !== undefined ? { refresh_token: response.refresh_token } : {}),
     ...(response.session_id !== undefined ? { session_id: response.session_id } : {}),
-    ...(response.expires_in !== undefined ? { expires_in: response.expires_in } : {}),
+    ...(expiresIn !== undefined ? { expires_in: expiresIn } : {}),
     ...(response.email !== undefined ? { email: response.email } : {}),
     ...(response.plan !== undefined ? { plan: response.plan } : {}),
     ...(endpoints ? { endpoints: { schema_version: 1, ...endpoints } } : {}),
@@ -519,6 +532,12 @@ export function decodeTokenResponse(value: unknown): TokenResponse {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+/** 可用的签发寿命(秒):有限正数才算,其余(缺失/0/负/非有限)视为未知 → fail-closed。 */
+function usableExpiresIn(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined
+  return value
 }
 
 function isRoutePurpose(value: string): value is RoutePurpose {
@@ -558,13 +577,23 @@ export function refreshTokens(): Promise<RenewalResult> {
   // 提前续期时旧 token 仍经验证且可用，不把平台误降成恢复中；只有已经过期的 token 才
   // fail-closed 呈现 recovering，直到续期成功或 invalid-grant 登出。
   publish()
-  const attempt = doRefresh().then((outcome): RenewalResult => {
+  const attempt = doRefresh().then(async (outcome): Promise<RenewalResult> => {
     const result = {
       outcome,
       generation: tokenGeneration,
       ...(stored.expiresAt === undefined ? {} : { expiresAt: stored.expiresAt }),
     }
-    if (outcome === "refreshed") onRenewed(result)
+    // #600 M1:换血才是「恢复完成」。这个 Promise 曾被 void 掉 —— account 401 路径
+    // (await refreshTokens())因此在 sidecar 还握着旧 token 时就报恢复,用户此刻发送的
+    // 首次推理可能 401。等 latch 对本 generation 的应用结果落定(成功或失败)再回报;
+    // 失败时 respawn 入口已发布 failed 终态并保留低频重试,平台面维持恢复中。
+    if (outcome === "refreshed") {
+      try {
+        await onRenewed(result)
+      } catch (error) {
+        warn("alpha-auth: token rotation application failed", error)
+      }
+    }
     onAuthChanged()
     return result
   })
@@ -594,6 +623,8 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
     publish()
     return "transient-failure"
   }
+  // #602 B4:CAS 基线 —— 提交响应前必须确认 auth 状态没被 logout / 新账号登录改代。
+  const startedGeneration = tokenGeneration
   let res: Response
   try {
     res = await fetch(`${webBase()}${ALPHA_PATHS.token}`, {
@@ -649,14 +680,23 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
     publish()
     return "transient-failure"
   }
+  // #602 B4:整份丢弃迟到的旧响应 —— 在途期间 logout / 新账号登录都改了代,把 `...stored`
+  // 写回会复活登出态,或让 UI 显示账号 B 而 sidecar/account bearer 仍是账号 A。丢弃即
+  // 不发现端点、不持久化、不发布、不换血,返回既有的非 refreshed 终态。
+  if (tokenGeneration !== startedGeneration || stored.refreshToken !== refreshToken) {
+    warn("alpha-auth: discarding a refresh response whose auth generation changed mid-flight (logout/login)")
+    return "transient-failure"
+  }
   if (tokens.endpoints) setDiscoveredEndpoints(tokens.endpoints)
   stored = {
     ...stored,
     platformAccessTokens: tokens.platform_access_tokens,
     refreshToken: tokens.refresh_token ?? stored.refreshToken,
     sessionId: tokens.session_id ?? stored.sessionId,
-    expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : stored.expiresAt,
-    lifetimeMs: tokens.expires_in ? tokens.expires_in * 1000 : stored.lifetimeMs,
+    // #602 M2:响应没给可用有效期 ⇒ 有效期未知,不得继承旧的 expiresAt 冒充可用
+    // (那正是「未验证的 token 被标 ready」的口子)。未知 → fail-closed recovering + 续期路径。
+    expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
+    lifetimeMs: tokens.expires_in ? tokens.expires_in * 1000 : undefined,
   }
   tokenGeneration++
   persist()
@@ -718,6 +758,7 @@ export function isStoredTokenExpired(): boolean {
 export async function logout(): Promise<void> {
   stored = { mode: "byok" }
   tokenGeneration++
+  authIdentityEpoch++
   // deriveState() also treats DEV_PLATFORM_TOKEN as a static platform login, so while it's set an
   // explicit logout would leave the state pinned to "logged-in" (the user sees nothing happen). Drop
   // it for this session so the logged-out state actually takes effect; it re-applies on next launch.
