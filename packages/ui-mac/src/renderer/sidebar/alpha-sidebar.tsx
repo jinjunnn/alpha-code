@@ -17,6 +17,7 @@ import { pushToast } from "../alpha-ui/Toast"
 import { Mark } from "../logo-alpha"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
+import { subscribeAuthState } from "../auth-recovery"
 import { homeHref, newSessionHref, projectLabel, sessionHref } from "./route"
 import { parseRoute } from "../../shared/route-manifest"
 import {
@@ -135,7 +136,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   // out → start the browser OAuth flow; signed in → show the account and sign out. web is the
   // session authority, so this is just a thin view of main's state (see platform-integration.md §C).
   const [authState, setAuthState] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
-  onCleanup(window.api.auth.subscribe(setAuthState))
+  onCleanup(subscribeAuthState(setAuthState))
   const accountLabel = () => authState().account?.email ?? t("alpha.auth.account")
 
   // B11 复扫行16:登录链失败(main 只 warn 日志 → 用户「点了没反应」)→ error toast,按 code 给原因。
