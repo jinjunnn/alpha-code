@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import type { SidecarGenerationState } from "../preload/types"
 import {
   armRespawnGenerationTerminal,
@@ -170,4 +172,35 @@ describe("forked token generation commits", () => {
     // respawn 已经健康提交了 G5;boot 的健康握手此刻才落定,带着旧的 G2。
     expect(commitForkedTokenGeneration(5, 2, true)).toBe(5)
   })
+})
+
+// R4 假闸门 A:上一轮把 boot 改成 capture-then-commit,但**删掉那条接线之后所有测试仍然全绿**
+// —— helper 单测只锁纯函数,#577 的五条形状锚只看 armBootGenerationTerminal。生产接线的最后
+// 一英里(index.ts 是 electron main,bun test 里 import 不起来)只能锁源码形状,范式沿用 #577 锚。
+//
+// 锁四件事:
+// ① boot 只 **capture**:恰好一处 `bootForkTokenGeneration = getTokenGeneration()`,且在 boot 的
+//    spawn 之前(捕获的必须是 fork 继承的那一代);
+// ② 提交只在 **health 落定之后**:`void health.wait.then(` 存在,且提交调用就在它的回调里;
+// ③ 两条路都经 healthy 门:commit 一律走 commitForkedTokenGeneration,respawn 侧带 healthy 实参;
+// ④ 旧的「fork 前直接记账」形状不得复活(`sidecarTokenGeneration = getTokenGeneration()`)。
+test("#600 接线锚:boot 的 token 代必须捕获在 fork 前、提交在 health 之后", () => {
+  const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
+
+  expect(source.split("bootForkTokenGeneration = getTokenGeneration()").length - 1).toBe(1)
+  const capture = source.indexOf("bootForkTokenGeneration = getTokenGeneration()")
+  const bootSpawn = source.indexOf("const spawning = spawnLocalServer(")
+  expect(capture).toBeGreaterThan(-1)
+  expect(bootSpawn).toBeGreaterThan(capture)
+
+  const healthGate = source.indexOf("void health.wait.then(")
+  expect(healthGate).toBeGreaterThan(bootSpawn)
+  expect(source.slice(healthGate, healthGate + 200)).toContain(
+    "commitSidecarTokenGeneration(bootForkTokenGeneration, true)",
+  )
+  expect(source.split("commitSidecarTokenGeneration(bootForkTokenGeneration").length - 1).toBe(1)
+
+  expect(source).toContain("sidecarTokenGeneration = commitForkedTokenGeneration(")
+  expect(source).toContain("commitSidecarTokenGeneration(forkTokenGeneration, healthy)")
+  expect(source).not.toMatch(/sidecarTokenGeneration = getTokenGeneration\(\)/)
 })

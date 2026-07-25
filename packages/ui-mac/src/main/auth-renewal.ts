@@ -85,12 +85,16 @@ export function degradedRenewalDelayMs(
 // 平台 token 的恢复 owner(rev2c ③″2-1:任一时刻至多一个、且可被观察)。
 //
 // 依赖的不变量与各自的强制手段(③″1;每条后面括号里是「什么变异会让它转红」):
-//  ① `timing.expiresAt` 是**网络响应**写入的已验证期限 —— 登录与续期两个提交点都经
-//     alpha-auth.usableExpiresAt(hasUsableLifetime)。持久态由 load() 直接恢复,**不经**
-//     该入口,故恢复的期限一律按 isTokenExpired fail-closed 处理(未知/已过期 ⇒ recovering
-//     + 启动续期),不被当作"已验证还有余量"。
+//  ① `timing.expiresAt` 有两个来源,**强度不同**,不要混为一谈:
+//     (a) **网络响应**写入的,经 alpha-auth.usableExpiresAt(hasUsableLifetime)验证过余量
+//         —— 登录与续期两个提交点都走它;
+//     (b) **持久化来源恢复**的(load() 直接接受落盘字段),本次 load **不做**余量验证,
+//         只在读取时过 isTokenExpired 的过期性检查:未来时刻的 expiresAt 直接按 ready 处理
+//         (既有契约,alpha-auth.cases.ts 有闸门),未知/已过期才 fail-closed 成 recovering。
+//     本判据只对 (a) 声称"已验证还有余量";(b) 只声称"做过过期性检查"。
 //     (变异:把 usableExpiresAt 换回 `expires_in ? ... : undefined` → cases.ts 的 6 种
-//      不可用 expires_in 用例转红;把 isTokenExpired 的 fail-closed 去掉 → clock 用例转红。)
+//      不可用 expires_in 用例转红[实测 3 个用例红];把 isTokenExpired 的 fail-closed 去掉
+//      → clock 用例转红[实测红]。)
 //  ② rearm 是全函数:除 stop 外必然再武装一次,且 renew 的 finally 一定 rearm。
 //     (变异:删掉 finally 里的 rearm → 「fires once at refreshDueAt and re-arms」转红;
 //      让 rearm 在 degraded 时提前 return → 「降频后仍有下一次」转红。)
@@ -101,8 +105,9 @@ export function degradedRenewalDelayMs(
 //  ④ 凭证身份 = `timing.generation`,不得用 expiresAt 代理。
 //     (变异:把 degradedFor 改回记 expiresAt → 「同一到期时刻的新凭证」用例转红。)
 //  ⑤ 唤醒地板与「可用寿命」下界是同一个常量(否则 ①③ 会各自漂移)。
-//     (变异:把 AUTH_RENEWAL_MIN_INTERVAL_MS 改成字面量 30_000 也仍相等 —— 故断言写成
-//      `toBe(MIN_USABLE_TOKEN_LIFETIME_MS)`,改动任一侧数值即转红。)
+//     **强制手段是直接别名**(`= MIN_USABLE_TOKEN_LIFETIME_MS`,结构上不可能不等),不是测试。
+//     那条相等断言只是回归锁:改动任一侧的**数值**会转红;把别名改回同值字面量 30_000
+//     **不会**转红(实测 GREEN)—— 如实记在这里,别把它当成防重新内联的闸门。
 export function createAuthRenewalScheduler(deps: {
   timing: () => AuthRenewalTiming
   renew: () => Promise<RenewalResult>
@@ -140,18 +145,27 @@ export function createAuthRenewalScheduler(deps: {
       timer = undefined
       if (running || stopped) return rearm("coalesced")
       running = true
+      // R4:「该凭证过期后已经尝试过」必须在**起手**时按 generation 记账 —— 尝试从这一刻
+      // 就开始了。只在 .then 里记会漏两条路,两条都会退化成 0ms 自旋:
+      //  ① renewal 在途时的 coalesced rearm(resume/auth-change 连来)仍读到 false → 又武装 0ms;
+      //  ② renewal reject 时 .then 被整段跳过 → finally 的 rearm 仍读到 false → 立刻再发一次。
+      // 记账按 generation:续期成功换代后这条记录自然失配,新凭证不会继承它。
+      const attempting = deps.timing()
+      if (attempting.expiresAt === undefined || attempting.expiresAt <= now())
+        attemptedForExpired = attempting.generation
       void deps
         .renew()
-        .then((result) => {
-          const settled = deps.timing()
-          degraded = result.outcome === "unusable-response"
-          degradedFor = degraded ? settled.generation : undefined
-          // 这次尝试跑完时凭证仍是过期/未知 ⇒ 记账「该凭证过期后已经尝试过、也已经发过
-          // recovering」,规则二据此才允许进入完整降频节奏。
-          const expired = settled.expiresAt === undefined || settled.expiresAt <= now()
-          attemptedForExpired = expired ? settled.generation : undefined
-          deps.onResult?.(result)
-        })
+        .then(
+          (result) => {
+            degraded = result.outcome === "unusable-response"
+            degradedFor = degraded ? deps.timing().generation : undefined
+            deps.onResult?.(result)
+          },
+          // renew 自身抛出:尝试已在起手记账,降级状态维持原样,由 finally 的 rearm 按当前
+          // 判据排下一次。这里必须有 handler —— 否则 `void ....then(onFulfilled)` 会在 main
+          // 进程留下 unhandled rejection。
+          () => {},
+        )
         .finally(() => {
           running = false
           rearm("result")

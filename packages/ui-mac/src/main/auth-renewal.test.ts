@@ -182,6 +182,99 @@ describe("degraded renewal cadence after an unusable response", () => {
     scheduler.stop()
   })
 
+  // R4:「尝试过」若只记在 Promise 结算后,尝试**在途**与**reject** 两条路都会让 rearm
+  // 继续读到 false,于是一次次重新武装 0ms —— 退化成自旋。
+  // 复现必须是「先在凭证**还活着**时拿到 unusable(此时不该记账),再让它过期」——
+  // 否则第一次尝试自己就把账记上了,变异根本不会露头(这一版之前正是这样写错的)。
+  const degradedThenExpiredHarness = (renew: () => Promise<RenewalResult>) => {
+    const state = { now: 1_000_000, expiresAt: 1_000_000 + 15 * 60_000 }
+    const arms: Array<[string, number | null]> = []
+    let pending: (() => void) | undefined
+    const scheduler = createAuthRenewalScheduler({
+      timing: () => ({ active: true, generation: 1, expiresAt: state.expiresAt, lifetimeMs: 15 * 60_000 }),
+      now: () => state.now,
+      renew,
+      onArm: (reason, delayMs) => arms.push([reason, delayMs]),
+      setTimer: (run) => {
+        pending = run
+        return setTimeout(() => {}, 0) // 真 Timer 句柄;触发由测试显式驱动
+      },
+      clearTimer: () => {},
+    })
+    return { state, arms, scheduler, fire: () => pending?.() }
+  }
+
+  test("a rearm while the overdue attempt is still in flight must not arm another immediate attempt", async () => {
+    let renewals = 0
+    let hang = false
+    const harness = degradedThenExpiredHarness(async () => {
+      renewals++
+      if (hang) return new Promise<RenewalResult>(() => {}) // 在途:永不落定
+      return { outcome: "unusable-response", generation: 1 }
+    })
+
+    // ① 凭证还活着时拿到 unusable → 进入降级,且**不**记「过期后已尝试」。
+    harness.scheduler.rearm("startup")
+    harness.state.now += 10 * 60_000
+    harness.fire()
+    await settleRenewal()
+    expect(renewals).toBe(1)
+    expect(harness.arms.at(-1)?.[1]).toBe(5 * 60_000) // 降频封顶到到期点
+
+    // ② 凭证过期:首次 overdue 必须立刻尝试。
+    harness.state.now += 5 * 60_000
+    hang = true
+    harness.scheduler.rearm("resume")
+    expect(harness.arms.at(-1)?.[1]).toBe(0)
+    harness.fire() // 起手第二次尝试,永不落定
+    await settleRenewal()
+    expect(renewals).toBe(2)
+
+    // ③ 在途期间连续 resume:必须已经算「尝试过」,一律降频,不得再武装 0ms。
+    const armedBefore = harness.arms.length
+    for (let round = 0; round < 5; round++) {
+      harness.scheduler.rearm("resume")
+      harness.fire() // 命中 running → rearm("coalesced")
+      await settleRenewal()
+    }
+    expect(renewals).toBe(2) // 在途期间不得再发起 renewal
+    expect(harness.arms.slice(armedBefore).map(([, delayMs]) => delayMs)).toEqual(
+      Array<number>(10).fill(AUTH_RENEWAL_DEGRADED_INTERVAL_MS),
+    )
+    harness.scheduler.stop()
+  })
+
+  test("a rejected renewal still counts as an attempt and must not arm an immediate retry", async () => {
+    let renewals = 0
+    let reject = false
+    const harness = degradedThenExpiredHarness(async () => {
+      renewals++
+      if (reject) throw new Error("renewal blew up")
+      return { outcome: "unusable-response", generation: 1 }
+    })
+
+    harness.scheduler.rearm("startup")
+    harness.state.now += 10 * 60_000
+    harness.fire()
+    await settleRenewal()
+    expect(renewals).toBe(1)
+
+    harness.state.now += 5 * 60_000 // 过期
+    reject = true
+    harness.scheduler.rearm("resume")
+    expect(harness.arms.at(-1)?.[1]).toBe(0) // 首次 overdue 立刻尝试
+    const armedBefore = harness.arms.length
+
+    harness.fire() // 这次 renew reject —— .then 被整段跳过
+    await settleRenewal()
+    expect(renewals).toBe(2)
+    // 记账在起手,故 finally 的 rearm 仍按降频排,而不是又一次 0ms。
+    expect(harness.arms.slice(armedBefore).map(([, delayMs]) => delayMs)).toEqual([
+      AUTH_RENEWAL_DEGRADED_INTERVAL_MS,
+    ])
+    harness.scheduler.stop()
+  })
+
   // R3 Minor1:凭证身份不能由 expiry 代理 —— 换账号完全可能拿到**相同**的绝对到期时刻。
   test("a new credential with the same absolute expiry still clears the degrade", async () => {
     vi.useFakeTimers()
@@ -458,6 +551,13 @@ describe("token rotation latch", () => {
     })
 
     const rotated = latch.accept(result("refreshed", 2), "renewal")
+    // R4 假闸门 B:只断言终局的话,把 commit 挪到 health 之前照样全绿 —— 而时序正是本轮修的
+    // 东西。在**第一个 fork 仍卡在健康握手上**的这一刻锁住:既不得提交,也不得报 applied。
+    await settleRenewal()
+    expect(forks).toEqual([])
+    expect(committed).toBe(0)
+    expect(applied).toEqual([])
+
     // 第一次 fork 还在途:一次成功续期把凭证推到 G3,随后的登录/模式切换直接进队列,
     // 被合并成一次 structural follow-up。
     tokenGeneration = 3
