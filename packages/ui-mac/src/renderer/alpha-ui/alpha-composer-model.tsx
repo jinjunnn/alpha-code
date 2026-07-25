@@ -19,7 +19,7 @@ import { AddProvider } from "./model-picker-add"
 import { accountResultState } from "./model-recovery"
 import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
-import { subscribeRuntimeRecovery, subscribeSseReconnected } from "../runtime-recovery"
+import { replayRuntimeRecoveryState, subscribeRuntimeRecovery, subscribeSseReconnected } from "../runtime-recovery"
 
 const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
 type LoadState<T> =
@@ -248,6 +248,10 @@ export function ModelPickPop(props: {
   }
 
   const retryAll = () => {
+    // #594 闩死点三:重试必须覆盖 client 构造层 —— 重读 generation 现值并广播,让
+    // use-projects 在 client 被拆毁而现值已 ready 时重建 client;只重跑 fetch
+    //(onRetryCurrent/loadAll)治不了 sdk() === undefined 的同步失败。
+    void replayRuntimeRecoveryState()
     props.onRetryCurrent?.()
     loadAll()
   }
@@ -268,10 +272,16 @@ export function ModelPickPop(props: {
     const unsubscribeRuntime = subscribeRuntimeRecovery((state) => {
       if (!receivedRuntimeState) {
         receivedRuntimeState = true
-        if (state.status === "ready") return
+        // 首值为终态(ready/failed)时初始 loadAll 已在跑,无需额外唤醒。
+        if (state.status !== "recovering") return
       }
       if (state.status === "recovering") {
         if (models().length > 0) setListState("recovering")
+        return
+      }
+      if (state.status === "failed") {
+        // #577 终态:引擎未通过健康线,不得当成 ready 触发立即重试;
+        // 弹窗自身的封顶退避(REQ-083 scheduleRetry)继续自证。
         return
       }
       retryImmediately("generation-ready")

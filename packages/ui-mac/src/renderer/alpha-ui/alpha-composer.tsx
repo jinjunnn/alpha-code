@@ -75,7 +75,7 @@ import { ModelPickPop } from "./alpha-composer-model"
 import { createModelContract, type ModelContract } from "./model-contract"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
-import { accountResultState, createRetryWakeup } from "./model-recovery"
+import { accountResultState, createRetryWakeup, loadEngineModelsWithRetry } from "./model-recovery"
 import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
 import { subscribeRuntimeRecovery, subscribeSseReconnected } from "../runtime-recovery"
@@ -920,42 +920,33 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         })()
       : null
 
-    let engineModels: EngineModelRef[] = []
-    let modelsLoaded = false
-    for (let i = 0; i < 20 && !chainDisposed && seq === chainSeq; i++) {
-      try {
-        const listed = await modelListing
-        if (chainDisposed || seq !== chainSeq) return
-        engineModels = listed
-          .filter((model) => model.enabled && model.status !== "deprecated")
-          .map((model) => ({ providerID: model.providerID, id: model.id }))
-        modelsLoaded = true
-        modelRetryWakeup.clear()
-        break
-      } catch {
-        if (chainDisposed || seq !== chainSeq) return
-        setModelChainState("recovering")
-      }
-      const wait = await modelRetryWakeup.wait(1000)
-      if (chainDisposed || seq !== chainSeq) return
-      if (props.mode === "home" && i + 1 < 20 && homeModelRetryMarkCount < 25) {
-        homeModelRetryMarkCount++
-        markStartupTimeline("renderer.home.model_list.retry_tick", {
-          attempt: i + 2,
-          chain: seq,
-          count: homeModelRetryMarkCount,
-          delayMs: wait === "cancelled" ? 0 : 1000,
-          reason: wait === "cancelled" ? "recovery-signal" : "request-error",
-        })
-      }
-      modelListing = readModels()
-    }
-    if (chainDisposed || seq !== chainSeq) return
-    if (!modelsLoaded) {
-      // An exhausted transport retry budget is not a hard catalog failure.
-      setModelChainState("recovering")
-      return
-    }
+    // #594 闩死点二:list 重试不再有 20×1s 预算悬崖(耗尽后不安排任何定时器 = 三个唤醒源
+    // 全死时永久闩死)。改为无上限封顶退避(loadEngineModelsWithRetry,1s/2s/4s/8s 封顶),
+    // 直到成功或本链被 supersede;唤醒信号(generation/SSE/手动重试)仍可提前打断等待。
+    const loaded = await loadEngineModelsWithRetry({
+      initial: modelListing,
+      read: readModels,
+      wait: (delayMs) => modelRetryWakeup.wait(delayMs),
+      clearWake: () => modelRetryWakeup.clear(),
+      isStale: () => chainDisposed || seq !== chainSeq,
+      onAttemptFailed: () => setModelChainState("recovering"),
+      onRetryTick: ({ attempt, delayMs, wait }) => {
+        if (props.mode === "home" && homeModelRetryMarkCount < 25) {
+          homeModelRetryMarkCount++
+          markStartupTimeline("renderer.home.model_list.retry_tick", {
+            attempt,
+            chain: seq,
+            count: homeModelRetryMarkCount,
+            delayMs: wait === "cancelled" ? 0 : delayMs,
+            reason: wait === "cancelled" ? "recovery-signal" : "request-error",
+          })
+        }
+      },
+    })
+    if (loaded.status === "stale") return
+    const engineModels: EngineModelRef[] = loaded.data
+      .filter((model) => model.enabled && model.status !== "deprecated")
+      .map((model) => ({ providerID: model.providerID, id: model.id }))
     setHasConfiguredByok(
       configured.some(
         (id) =>
@@ -1074,6 +1065,12 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
             detail: t("alpha.composer.generationInterruptedDetail"),
           })
         }
+        return
+      }
+      if (state.status === "failed") {
+        // #577 终态:引擎未通过健康线,不得当成 ready 唤醒(那是在已知失败下伪造恢复信号)。
+        // 执行面保持关闭(modelChainState 不动),模型链自身的无上限封顶退避(#594)继续自证:
+        // 引擎真实可达时 list 成功,链自然回 ready。
         return
       }
       modelRetryWakeup.wake("generation-ready")
