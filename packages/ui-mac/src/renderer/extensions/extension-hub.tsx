@@ -23,6 +23,7 @@ import { t } from "../i18n"
 import { parseRoute } from "../../shared/route-manifest"
 import { initialDesiredState } from "../../shared/ext-install-policy"
 import { projectLabel } from "../sidebar/route"
+import { subscribeAuthState } from "../auth-recovery"
 import { BuiltinControlsPanel } from "./builtin-controls-panel"
 import { catalog, catalogSource, entryVersion, refreshCatalog } from "./catalog-source"
 import { Dialog } from "../alpha-ui/Dialog"
@@ -200,7 +201,7 @@ export function ExtensionHub(props: {
   // REQ-020 T2:云门控。subscribe 会立即回放当前态(preload 内置 getState),再跟增量推送。
   // 云可用 ⟺ 已登录且 platform 模式(mcp.cloud 由 sidecar 在该态注入,ADR-013/ADR-016)。
   const [authState, setAuthState] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
-  onCleanup(window.api.auth.subscribe(setAuthState))
+  onCleanup(subscribeAuthState(setAuthState))
   const cloudReady = () => authState().status === "logged-in" && authState().mode === "platform"
   const cloudLive = () => ext.store.mcp["cloud"]
   const [query, setQuery] = createSignal("")

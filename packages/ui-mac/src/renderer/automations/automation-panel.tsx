@@ -14,6 +14,7 @@ import { AUTOMATION_DEFAULTS } from "../../shared/automation-types"
 import { describeSchedule, isValidCron, parseCron } from "../../shared/automation-schedule"
 import { parseAutomationText } from "../../shared/automation-nl"
 import { sessionHref } from "../sidebar/route"
+import { subscribeAuthState } from "../auth-recovery"
 import { Svg } from "../extensions/ext-presentation"
 import { automationOpen, setAutomationOpen } from "./automation-state"
 import "./automation-panel.css"
@@ -105,7 +106,7 @@ export function AutomationPanel() {
   const [pausedAll, setPausedAll] = createSignal(false)
   const [loginItem, setLoginItem] = createSignal(false)
   const [authState, setAuthState] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
-  onCleanup(window.api.auth.subscribe(setAuthState))
+  onCleanup(subscribeAuthState(setAuthState))
 
   // 视图:list(默认)/ edit(新建或编辑,editing=null 为新建)
   const [view, setView] = createSignal<"list" | "edit">("list")

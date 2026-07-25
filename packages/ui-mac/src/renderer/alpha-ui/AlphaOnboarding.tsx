@@ -7,6 +7,7 @@ import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import type { AuthState } from "../../preload/types"
 import { t } from "../i18n"
+import { subscribeAuthState } from "../auth-recovery"
 import "./onboarding.css"
 
 const DONE_KEY = "alpha.onboarding.done"
@@ -15,7 +16,7 @@ export function AlphaOnboarding() {
   const [dismissed, setDismissed] = createSignal(localStorage.getItem(DONE_KEY) === "1")
   const [auth, setAuth] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
   onMount(() => {
-    const unsub = window.api.auth.subscribe(setAuth)
+    const unsub = subscribeAuthState(setAuth)
     onCleanup(unsub)
   })
   const loggedIn = () => auth().status === "logged-in"

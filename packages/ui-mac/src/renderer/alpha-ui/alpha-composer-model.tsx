@@ -20,6 +20,7 @@ import { accountResultState } from "./model-recovery"
 import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
 import { replayRuntimeRecoveryState, subscribeRuntimeRecovery, subscribeSseReconnected } from "../runtime-recovery"
+import { reconcileAuthSnapshot, subscribeAuthState } from "../auth-recovery"
 
 const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
 type LoadState<T> =
@@ -211,8 +212,10 @@ export function ModelPickPop(props: {
     }
     void window.api.auth
       .getState()
-      .then((state) => {
+      .then((raw) => {
         if (!isCurrent(seq, epoch)) return
+        // #604:弹窗这次读取同样只是一份快照,过 owner 的 freshness 判据后再用它的现值。
+        const state = reconcileAuthSnapshot(raw)
         lastAuthSignature = authSignature(state)
         setAuth({ status: "ready", data: state })
         loadSummary(state, seq, epoch)
@@ -263,7 +266,7 @@ export function ModelPickPop(props: {
   })
 
   onMount(() => {
-    const unsubscribe = window.api.auth.subscribe((state) => {
+    const unsubscribe = subscribeAuthState((state) => {
       if (authSignature(state) === lastAuthSignature) return
       lastAuthSignature = authSignature(state)
       loadAll(state)

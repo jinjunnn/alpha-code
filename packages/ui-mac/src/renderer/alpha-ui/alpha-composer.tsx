@@ -80,6 +80,7 @@ import { accountResultState, createRetryWakeup, loadEngineModelsWithRetry, resol
 import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
 import { subscribeRuntimeRecovery, subscribeSseReconnected } from "../runtime-recovery"
+import { reconcileAuthSnapshot, subscribeAuthState } from "../auth-recovery"
 import "./alpha-composer.css"
 
 /* ── 单开注册表(全部 chips 共享;开新的自动关旧的)──────────────────────────── */
@@ -899,7 +900,10 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       setModelChainState("error")
       return
     }
-    const authState = auth.status === "ready" ? auth.data : null
+    // #604:链自己这次读取与 owner 的视图之间没有顺序保证(两次读取之间 main 可能已完成续期)。
+    // 交给 owner 过同一条 freshness 判据并取回它认定的现值,避免用更旧的快照把已恢复的能力判成
+    // recovering —— 那正是「消费侧各读各的」把恢复信号丢掉的相位。读取失败仍按既有语义算未登录。
+    const authState = auth.status === "ready" ? reconcileAuthSnapshot(auth.data) : null
     if (authState) {
       lastAuthSignature = authSignature(authState)
       setLastAuth(authState)
@@ -1078,7 +1082,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   onMount(() => {
     // 登录态变化递增 epoch；路由 directory/sessionID 由上面的 effect 直接跟踪。
     let receivedInitialAuth = false
-    const unsub = window.api.auth.subscribe((state) => {
+    const unsub = subscribeAuthState((state) => {
       const signature = authSignature(state)
       if (!receivedInitialAuth) {
         receivedInitialAuth = true

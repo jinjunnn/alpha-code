@@ -74,6 +74,7 @@ const {
   "../src/renderer/alpha-ui/composer-state"
 )
 const { byokEngineId } = await import("../src/shared/alpha-model-types")
+const { resetAuthRecoveryForTests } = await import("../src/renderer/auth-recovery")
 
 const catalog = {
   ...(await Bun.file(new URL("../src/main/alpha-models.json", import.meta.url)).json()),
@@ -218,6 +219,7 @@ function input(element: HTMLInputElement, value: string) {
 
 afterEach(() => {
   activeDisposals.splice(0).forEach((dispose) => dispose())
+  resetAuthRecoveryForTests()
   setProviderLifecycleDeps()
   tempDirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true }))
   if (savedAlphaGlobalDir === undefined) delete process.env.ALPHA_GLOBAL_DIR
@@ -614,6 +616,106 @@ describe("AlphaComposer production model seam", () => {
 
     failing = false
     window.dispatchEvent(new Event("alpha:sse-reconnected"))
+    await waitFor(() => expect(send.disabled).toBe(false))
+    send.click()
+    await waitFor(() => expect(submissions).toBe(1))
+    mounted.dispose()
+  })
+
+  test("#604 auth ready 事件丢失时平台能力自证恢复,不再永久 recovering", async () => {
+    // 生产 composition:真 AlphaComposerRuntime + 真 subscribeAuthState 接线。
+    // main 的 token 过期 → platformStatus recovering → 发送 fail-closed;main 刷新成功后
+    // **那一次 `auth-state ready` 永不到达**(publish() 的身份签名去重让它也不会重发)。
+    // 修复前:消费侧再无下一次 auth.getState(),发送按钮永久关闭。
+    // 相位 A:链与 owner 的两次读取都先读到 recovering,之后 main 恢复但事件不来。
+    // 本例取最强形态:整个生命周期里桥一个事件都不送,可用性只能由自探自己挣回来。
+    let authNow: AuthState = { status: "logged-in", mode: "platform", platformStatus: "recovering" }
+    let submissions = 0
+    installApi({
+      auth: async () => authNow,
+      // 桥全程不送任何 auth-state 事件(连首值回放都没有)—— 恢复只能靠自探。
+      keyStatus: async () =>
+        Object.fromEntries(
+          catalog.byokProviders.map((provider) => [provider.id, { configured: false, source: "none" }]),
+        ) as ProviderKeyStatus,
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async () => {
+            submissions++
+            return "session-new"
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          list: async () => platformModels,
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "hello",
+      }),
+    )
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    await waitFor(() => expect(send.disabled).toBe(true))
+    send.click()
+    expect(submissions).toBe(0)
+
+    // main 刷新成功了;没有任何事件会通知 renderer —— 只能靠自探。
+    authNow = { status: "logged-in", mode: "platform", platformStatus: "ready" }
+    await new Promise((resolve) => setTimeout(resolve, 1600))
+
+    await waitFor(() => expect(send.disabled).toBe(false))
+    send.click()
+    await waitFor(() => expect(submissions).toBe(1))
+    mounted.dispose()
+  })
+
+  test("#604 相位 B:链读到 recovering 而 owner 首读已是 ready 时,平台能力仍必须放行", async () => {
+    // Codex R1 Blocker:main 在「链读取」与「owner 首读」之间完成续期。链拿到的是 recovering,
+    // owner 拿到的是 ready,而丢失的 auth-state ready 不会补发。若 owner 只更新自己的视图而不
+    // 广播、或链坚持用自己那份旧快照,发送按钮就永久关闭。桥全程零事件。
+    let reads = 0
+    let submissions = 0
+    installApi({
+      auth: async () => {
+        reads++
+        // 第一次读取(链自己那次)看到过期态;此后 main 已就绪。
+        return reads === 1
+          ? { status: "logged-in", mode: "platform", platformStatus: "recovering" }
+          : { status: "logged-in", mode: "platform", platformStatus: "ready" }
+      },
+      keyStatus: async () =>
+        Object.fromEntries(
+          catalog.byokProviders.map((provider) => [provider.id, { configured: false, source: "none" }]),
+        ) as ProviderKeyStatus,
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async () => {
+            submissions++
+            return "session-new"
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          list: async () => platformModels,
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "hello",
+      }),
+    )
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
     await waitFor(() => expect(send.disabled).toBe(false))
     send.click()
     await waitFor(() => expect(submissions).toBe(1))
