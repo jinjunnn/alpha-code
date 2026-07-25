@@ -1,10 +1,12 @@
 ---
 title: 冷启动模型可用性 + token 轮换正确性 方案基线
 kind: design
-status: draft-pending-owner-approval
+status: approved
+approved_by: owner
+approved_on: 2026-07-25
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-24
+last_reviewed: 2026-07-25
 review_after: 2026-10-23
 ---
 
