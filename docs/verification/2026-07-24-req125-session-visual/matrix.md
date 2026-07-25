@@ -96,6 +96,28 @@ FAIL 转 bug 票挂父票 #538。
   22. **产物链接行 parquet 无中性态**(I1):六行全强调色,设计 parquet = 中性色同形态。
   23. **重试卡文案结构**(F10,轻微):「自动重试中(第 N 次)… + message」两段式;设计单句内嵌。
 
+## 批3 采集记录(2026-07-24,#547 第三批 · BYOK 真回合 — 中止,零帧)
+
+- 目标:用 owner 提供的智谱 BYOK key 在隔离根构造真回合,补采批2 仍受阻的 20 行
+  (A1–A4、B2、C2、C3、D1、D2、D8、D9 余项、I2、I3、J1–J7;E8 组件缺席不采)。
+- 结果:**中止,新增 0 帧;智谱 key 零真实调用,token 消耗 = 0**。四次拉起隔离 dev 实例
+  (`OPENCODE_TEST_ONBOARDING=1` + env 注入 ZHIPU_API_KEY,`alpha-secrets sync: wrote
+  [ZHIPU_API_KEY]` 实证 BYOK env→secret-file 通道可用),每次实例在 1–2 分钟内被外部
+  关闭 —— 本机处于 owner 活跃使用状态,采集窗口与真机使用互相干扰(期间 dev 实例的
+  登录跳转还把 /Applications 正式版 alpha-code 经 deep-link 拉起)。owner 指示停止采集、
+  收尾登记。
+- 凭据卫生(已核验):四个含 key 的隔离根已整体删除(alpha-secrets/ZHIPU_API_KEY 全清,
+  无 alpha-byok-keys.json 落盘 —— 本批只走 env 通道,未写钥匙库/钥匙串);scratchpad
+  env 文件已删;仓库工作树零 key 残留、零 commit;dev 进程/5173/9222 端口全停。
+- 批3 环境发现(承接批1 环境事故,只记不修):#577 sidecar `recovering` 竞态复现
+  (合成 ready 事件解锁法仍有效);`OPENCODE_TEST_ONBOARDING=1` 下 OPENCODE_DB=:memory:
+  意味着实例被关即丢全部会话 —— 真回合采集对「实例存活整个采集窗口」硬依赖,与 owner
+  同机使用互斥。
+- 处置建议(归 owner/编排者):剩余 20 行改约「机器空闲窗口」重跑批3(方法与脚本已
+  就绪:scratchpad `cdp.ts`/`capture-run.ts` 形态 + 本记录),或按 harness-plan 后备
+  口径逐行裁决。J4(followup)/J7(handoff)另有 #558/PR#571 票面裁定「数据面缺失」,
+  建议直接判 `N/A(组件缺席)` 而非继续挂受阻。
+
 ## A · 整页 × 右栏四 tab(SW §full,1440 页幅)
 
 | ID | 待采帧 | 对照稿锚点 | 实现票 | 浅 | 暗 | 备注 |
