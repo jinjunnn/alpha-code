@@ -4,7 +4,7 @@ kind: design
 status: draft-pending-owner-approval
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-23
+last_reviewed: 2026-07-24
 review_after: 2026-10-23
 ---
 
@@ -131,3 +131,147 @@ token-only 换血 renderer mount 保持 1;account 续期成功后 sidecar 不再
 token;UI 恢复后的首次平台推理不得 401;续期失败无 respawn 循环。
 
 T6 独立可交付,不依赖 T2–T5 排序。
+
+## rev2(2026-07-24):T3/T4 落地事故 + BYOK 主权裁决
+
+本轮修订由一次真机事故驱动:**T3/T4(PR #556)交付后,打包版冷启动 100%
+不可用** —— 全部模型(含 BYOK)显示「正在同步…」,横幅「正在连接引擎(可能正在
+重启)」常驻,「立即重试」无效,发送被禁;重新登录可恢复,冷启动必复发。
+本节把新勘破写进基线,并记录 owner 对 BYOK 主权的裁决。
+
+### ①′ 新增勘破(2026-07-24 真机取证,打包版 built 10:47:02 / 基线 `7281627ed`)
+
+取证法:`~/Library/Application Support/ai.opencode.desktop.dev/logs/<session>/startup-timeline.log`
+逐 session 普查(T1 插桩 #530 的直接回报)。**最近 14 次冷启动 100% 复现**,
+分界 session `20260724T052444`(正常)→ `20260724T064451`(损坏),
+窜入提交 `4128368ee`(合并 `151614f93` / PR #556)在损坏前 2 分钟。
+
+7. **`Effect.forkChild` 启动死区**:启动装载体
+   `Effect.gen(...).pipe(..., Effect.forkChild)`(`main/index.ts:1013`)是 `main`
+   fiber 的**被监督**子 fiber;effect@4.0.0-beta.83 的 forkChild = auto
+   supervision(父终止即杀子,`effect.d.ts:15769-15773`)。父 fiber 在
+   `index.ts:1021` 从 `Deferred.await(serverReady)` 醒来后**到结束没有任何
+   `yield*`**(建窗口/菜单/scheduler 全同步),毫秒级终止 → 子 fiber 停在
+   `index.ts:1000-1008` 等健康探测(引擎健康需秒级)时被 interrupt。
+   ⇒ `index.ts:1009` 的 `publishSidecarGeneration({status:"ready",reason:"boot"})`
+   **永不执行**;30s 兜底同 fiber 一起死。铁证:47 个 session 中
+   `index.ts:1010`/`1012` 两行日志**出现次数 0**,而同函数早期 `index.ts:956`
+   的 `spawning sidecar` 每次都在。
+   死区自初始 clone `55e91db59` 即存在,长期只损失两行日志无人察觉;
+   **T4 把 ready 发布搬进死区,潜伏缺陷变产品事故**。
+   → **教训入基线不变量**:见 ③′-1。
+8. **消费侧 fail-closed 无兜底**:`renderer/sidebar/use-projects.ts:508-512`
+   收到 `recovering` 即 `client = undefined`;`:525-527` **唯一**重建路径是收到
+   `ready`;`:530-534` 的 1s 兜底只在「从未收到任何 generation 状态」时武装
+   —— 冷启动经 preload 回放(`preload/index.ts:33-35` → `ipc.ts:76` 返回
+   `sidecarGeneration.get()`)拿到的那颗 `recovering` 恰好把兜底**永久解除武装**。
+   client 为空时 `alpha-ui/model-contract.ts:19-20` **同步 throw**,请求不上网络
+   —— 日志 `model_list.end` 耗时 0.1–0.2ms 的 `error:request` 即此。
+   ⇒ **「订阅前先读一次当前值」已经实现,但它忠实回放了坏状态** ——
+   光靠订阅纪律修不了,producer 必须保证终态可达 + consumer 必须超时自证。
+9. **B′ 的重试预算变成新悬崖**:`alpha-ui/alpha-composer.tsx:925-952` 的
+   20 次 × 1s 耗尽后 `:954-957` 直接 return,**不再安排任何定时器**
+   (注释 "Remain recovering until auth/generation/SSE or a manual retry")。
+   三个唤醒源全死路:generation-ready 永不来(勘破 7);SSE 重连不可能
+   (`use-projects.ts:433-435` client 为空时 `subscribe()` 直接 return,
+   事件流根本不存在);account-recovered 要求 summary 曾 recovering 过
+   (`:903-904`)。原基线「取消退避残余、立即单飞重试」只覆盖了**有信号**的情形,
+   没覆盖**信号永不到达**。
+10. **「立即重试」不覆盖卡住的那一层**:`alpha-composer-model.tsx:250-253` 的
+    `retryAll` 重试 **fetch 层**,而卡死在 **client 构造层**;按钮不触碰
+    use-projects、不重读 generation ⇒ 原地同步失败。
+11. **BYOK 与代理共用单一 `listState` 闸门(一刀切)**:
+    `alpha-ui/model-picker-core.ts:118-135` 对 key 已配置的 BYOK 行仍写
+    `if (input.listState !== "ready")` → `alpha.model.syncing`;`:141-153` 即使
+    `listState==="ready"` 也要求引擎清单存在 `<id>-byok:<modelID>` 且 enabled
+    —— **可用性最终裁判是引擎回报,本地 key + 本地目录不算数**。点击层
+    `alpha-composer-model.tsx:341-345` 的 `selectionBlocked` 含
+    `listState() !== "ready"`,BYOK 行同样被禁点。
+    ⇒ 原基线「账户只门控平台 entitlement,不门控本地 catalog」**已落实于账户维度**
+    (`model-picker-core.ts:198-216`,BYOK 分支从不读 accountState),
+    **但漏了引擎清单维度** —— 引擎一病,BYOK 陪葬。
+12. **分离可行性(已勘破:可行)**:BYOK 渲染所需三样今天已全部走 main IPC、
+    不经引擎 —— 本地目录 `alpha-models.json` 的 `byokProviders[].models`、
+    `models-catalog` IPC(`main/models-ipc.ts:11` → `main/alpha-platform-models.ts:83-104`)、
+    `providers-key-status` IPC(`main/provider-ipc.ts:20`)。
+    密钥层亦**已**与登录解耦(登出只摘 `ALPHA_*`;注入门是 `hasSecretFile`,
+    `main/alpha-models.ts:66`;key 状态判据全本地,`main/alpha-provider-status.ts:25-43`)。
+    硬约束(物理下限):会话内换模型走 v2 `session.switchModel`
+    (`model-contract.ts:40-47`)与推理本身需活引擎;但 home 模式选择只是内存写
+    (`alpha-composer.tsx:778`),**不需要引擎**。
+
+### ②′ 方案修订
+
+- **T4 修订(→ #577)**:把「等健康 → 发 ready」移出被监督 fiber(普通 promise 链,
+  与 `doRespawnSidecar` 同构;或 `forkDetach`/`forkIn`)。**健康失败/超时也必须发
+  终态**(如 `status:"failed"`),让 consumer 有事实可依而非永远等下一个事件。
+- **T3 修订(→ #594)**:consumer 侧一律改为「不依赖某个事件一定到达」——
+  `recovering` 后有界兜底自探;重试改无上限封顶退避(复用
+  `alpha-ui/model-picker-logic.ts:8-10`)或耗尽后降频续跑;「立即重试」必须
+  重读 generation 并重建 client。
+- **BYOK 可用性从 `listState` 摘出(→ #595)**:key 已配置的 BYOK 行恒渲染本地目录
+  model id;`listState !== "ready"` 时行内状态为「引擎重启中·可先选择」而非
+  「正在同步」;`selectionBlocked` 对 BYOK 豁免(session 模式把 `switchModel`
+  延后到 ready);发送仍需活引擎(物理下限,不得假装)。
+- **owner 裁决(2026-07-24):撤掉平台 live allowlist 对 BYOK 目录的收窄** ——
+  `main/alpha-models.ts:56-57` 的 `byokAllowed` 与
+  `main/alpha-platform-models.ts:95-96` 的目录收窄一并移除。BYOK 目录**只由本地
+  `alpha-models.json` 决定,平台不得远程干预**。这推翻 2026-07-03「目录跟随
+  edition」的一半(平台侧模型目录仍跟随 edition;BYOK 段不再跟随)。
+- **新增契约 `docs/contracts/byok-availability.md`**(随 #595 落地):
+  BYOK 可用性的合法输入 = {本地钥匙串, 本地目录, 引擎 liveness};
+  **登录态、账户额度、平台连通、live allowlist 一律不得进入判据。**
+  立契约的理由是结构性的:设计稿早有明文两处
+  (`docs/design/2026-06-27-model-picker-redesign/spec.md:139`、
+  `docs/design/2026-06-29-llm-auth-routing/design.md:23,48,105`),
+  但 `docs/contracts/` 无一条钉住 ⇒ 设计明文挡不住实现漂移,契约才挡得住。
+
+被否决的替代(本轮新增):
+
+- **只修 producer(仅 #577)不动 consumer**:能让今天这条路复通,但任何未来的
+  ready 丢失都会再次永久闩死;`use-projects.ts:530-534` 已证明「唯一事件源」
+  假设的脆弱性,否。
+- **给 BYOK 单开一条并行 model.list 通道**:徒增第二套取数路径与两套陈旧语义;
+  本地目录已经在 renderer 手上(勘破 12),只需改判据不需改通道,否。
+- **把 BYOK 行标为「可用」但点击时才报错**:视觉可用性造假,违反 ③-2 既有不变量
+  (「不得为视觉目标把未验证的态标成可用」),否。
+
+### ③′ 安全面:本轮新增不变量
+
+1. **禁止在启动装载体 `serverReady` 之后的位置发布任何状态或终态。** 该位置在
+   `Effect.forkChild` 的死区内,父 fiber 终止即杀。要发布就用普通 promise 链或
+   `forkDetach`/`forkIn`。**指纹**:同一函数内早期日志有、后段日志 0 次。
+2. **任何 fail-closed 的消费侧都必须有有界自证路径**,不得把可用性无限期押在
+   「某个事件一定会到达」上。回放当前值不算兜底(它会忠实回放坏状态)。
+3. **任何重试预算耗尽后不得进入无定时器终局**;要么无上限封顶退避,要么降频续跑。
+4. **BYOK 可用性判据的输入集是封闭的**:{本地钥匙串, 本地目录, 引擎 liveness}。
+   新增任何输入(登录、账户、平台、allowlist)即为契约违反。
+5. 撤销 allowlist 收窄后,BYOK 目录不再有远程 kill-switch —— **本地目录即权威**,
+   这是有意的主权选择(呼应 ②「让本系统成为权威、让外部无从覆盖」),
+   代价是错误的本地目录条目只能靠发版修正,不能远程摘除。owner 已接受。
+
+### ④′ 子票切分修订
+
+| 子票 | 内容 | 级别 |
+| --- | --- | --- |
+| #577 CODE | T4 修订:ready 出死区 + 健康失败发终态 | M |
+| #594 CODE | T3 修订:consumer 三闩死点改为不依赖事件必达 | M |
+| #595 CODE | BYOK 判据脱离 listState + 撤平台收窄 + 落契约 | M |
+
+新增核心断言(补充既有验收基准):
+
+- 冷启动 startup-timeline **必须**在 N 秒内出现
+  `main.sidecar.generation.emit … phase:"ready"`(进 L3 打包冒烟清单,防同类回归
+  逃逸到真机)。
+- `ready` 永不到达而引擎实际可达时,client 必须在有界时间内重建。
+- 未登录 / 平台不可达 / 引擎 recovering 三种情况下,已配置 key 的 BYOK 行均可选。
+- live allowlist 不含某 BYOK 供应商(或平台不可达)时,该供应商仍在目录中。
+
+**不修(已定性)**:respawn 发出 ready 后首拉那次 ~5ms 失败不是闩死(下一次 attempt
+大概率成功,只是整页 reload 先到),最可能是连接池复用死 socket,历史在案于
+`alpha-ui/model-picker-logic.ts:12-20`。
+
+**哑弹(归 B 侧)**:live 清单 `models[].provider` 写 `"zhipu"` 而目录 id 是
+`"zhipuai"`;该字段在 alpha-code 无任何消费方(`main/alpha-models.ts:94-96`、
+`main/alpha-platform-models.ts:90-93` 只用 `m.id`),今天不炸,但谁拿它 join
+`byokProviders` 就静默零匹配 → alpha-platform registry 命名空间统一低优票。
