@@ -128,7 +128,7 @@ import {
   shouldRetryRespawn,
   type SidecarRespawnReason,
 } from "./sidecar-lifecycle"
-import { createSidecarGenerationState, type SidecarGenerationState } from "./sidecar-generation"
+import { createSidecarGenerationState, settleBootHealth, type SidecarGenerationState } from "./sidecar-generation"
 
 const APP_NAMES: Record<string, string> = {
   dev: "alpha-code",
@@ -987,6 +987,21 @@ const main = Effect.gen(function* () {
     server = listener
     armEngineRunawayMeter(spawnGen)
     sessionGrantRegistry.beginSession(spawnGen) // #408:新会话空集起步(grant 面绑本代)
+
+    // #577:健康等待必须脱离本被监督 fiber。父 fiber 在下方 Deferred.await(serverReady)
+    // 醒来后到结束没有任何 yield*,毫秒级终止即杀本 fiber —— 曾把「等健康 → 发 ready」
+    // 连同 30s 兜底一起杀死,冷启动从未发出 ready 终态。settleBootHealth 是与
+    // doRespawnSidecar 同构的普通 promise 链,fiber interrupt 杀不掉;在 Deferred.succeed
+    // 之前武装,彻底绕开父子 fiber 的调度竞态。
+    void settleBootHealth({
+      generation: spawnGen,
+      healthWait: health.wait,
+      timeoutMs: 30_000,
+      publish: publishSidecarGeneration,
+      log: (message) => logger.log(message),
+      logError: (message) => logger.error(message),
+    })
+
     yield* Deferred.succeed(serverReady, {
       url,
       username: "opencode",
@@ -996,28 +1011,15 @@ const main = Effect.gen(function* () {
     if (process.platform === "win32") {
       void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
     }
-
-    const healthy = yield* Effect.promise(() =>
-      Promise.race([
-        health.wait.then(
-          () => true,
-          () => false,
-        ),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 30_000)),
-      ]),
-    )
-    if (healthy) publishSidecarGeneration({ status: "ready", generation: spawnGen, reason: "boot" })
-    else logger.error("sidecar health check failed")
-
-    logger.log("loading task finished")
   }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)
 
   // A1 (window-first): open the window as soon as the sidecar has spawned (serverReady settles) rather
-  // than blocking on the health probe (~line 410), which can lag many seconds under a slow sidecar / MCP
-  // storm. The renderer shows a splash and gates on this same serverReady via awaitInitialization; the
-  // forked task finishes health.wait in the background. Awaiting serverReady (not zero-wait) keeps the
-  // forked spawn alive to completion; we ignore its failure so the window still opens to surface the
-  // connection error, matching the prior behavior.
+  // than blocking on the health probe, which can lag many seconds under a slow sidecar / MCP
+  // storm. The renderer shows a splash and gates on this same serverReady via awaitInitialization;
+  // health settling runs on a detached promise chain (settleBootHealth, #577) that survives this
+  // fiber tree ending. Awaiting serverReady (not zero-wait) keeps the forked spawn alive to
+  // completion; we ignore its failure so the window still opens to surface the connection error,
+  // matching the prior behavior.
   yield* Deferred.await(serverReady).pipe(Effect.catch(() => Effect.sync(() => {})))
 
   mainWindow = createMainWindow()
