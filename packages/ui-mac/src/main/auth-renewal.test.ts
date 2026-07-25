@@ -6,8 +6,10 @@ import {
   authRenewalDelayMs,
   createAuthRenewalScheduler,
   createTokenRotationLatch,
+  degradedRenewalDelayMs,
   TOKEN_ROTATION_RETRY_MS,
 } from "./auth-renewal"
+import { MIN_USABLE_TOKEN_LIFETIME_MS } from "./alpha-auth-clock"
 import type { RenewalResult } from "./alpha-auth"
 
 const result = (outcome: RenewalResult["outcome"], generation = 1): RenewalResult => ({
@@ -16,6 +18,11 @@ const result = (outcome: RenewalResult["outcome"], generation = 1): RenewalResul
 })
 
 afterEach(() => vi.useRealTimers())
+
+/** 让 renew() 的 then/finally 链跑完(fake timers 下不能靠真实 setTimeout 让路)。 */
+const settleRenewal = async () => {
+  for (let tick = 0; tick < 5; tick++) await Promise.resolve()
+}
 
 describe("boot renewal grace", () => {
   test("fast renewal wins the 1.2s grace", async () => {
@@ -95,6 +102,62 @@ describe("expiresAt scheduler", () => {
 // #600 B3:签发端返回 200 却给不出可用有效期时,按 refreshDueAt 的最小间隔重刷会变成永久
 // 重刷循环(与 #601 同类)。结果不可用 ⇒ 降频续跑;恢复可用 ⇒ 立刻回到正常节奏。
 describe("degraded renewal cadence after an unusable response", () => {
+  // ③″1 强制手段:调度地板与「可用寿命」下界必须是同一个数,否则「寿命短于地板即不可用」
+  // 这条判据会随任一侧改动悄悄失真。
+  test("the scheduler wake floor is the same constant as the usable-lifetime floor", () => {
+    expect(AUTH_RENEWAL_MIN_INTERVAL_MS).toBe(MIN_USABLE_TOKEN_LIFETIME_MS)
+  })
+
+  // R2 新 Major1:固定 15 分钟降频会从失败时刻重新计时,越过旧凭证真实到期点 ——
+  // 15 分钟 token 在第 10 分钟拿到 unusable,旧 token 只剩 5 分钟,却被排到第 25 分钟:
+  // 中间约 10 分钟不可用,且到期那一刻没有任何 timer 触发 auth-state 发布。
+  test("the degraded delay never lands after the currently verified expiry", () => {
+    const now = 1_000_000
+    const lifetimeMs = 15 * 60_000
+    // 第 10 分钟进入续期窗口,旧 token 还剩 5 分钟 → 下一次必须正好落在到期点。
+    expect(degradedRenewalDelayMs({ active: true, expiresAt: now + 5 * 60_000, lifetimeMs }, now)).toBe(5 * 60_000)
+    // 降频只会把下一次**推后**,不会提前:正常判据本来就要等 55 分钟时,按正常判据。
+    // (推论:凭证还活着时,降频的实际效果恒为「最晚在到期点唤醒一次」——
+    //  因为 base ≥ untilExpiry − 提前量,15 分钟节奏只有在到期后才真正生效。)
+    expect(degradedRenewalDelayMs({ active: true, expiresAt: now + 60 * 60_000, lifetimeMs }, now)).toBe(55 * 60_000)
+    // 余量比调度地板还短 → 地板兜底(只多一次,随后进入完整降频)。
+    expect(degradedRenewalDelayMs({ active: true, expiresAt: now + 10_000, lifetimeMs }, now)).toBe(
+      AUTH_RENEWAL_MIN_INTERVAL_MS,
+    )
+    // 已过期/有效期未知:没有余量可保护,用完整降频节奏(不得回到 30 秒重刷)。
+    expect(degradedRenewalDelayMs({ active: true, expiresAt: now - 1, lifetimeMs }, now)).toBe(
+      AUTH_RENEWAL_DEGRADED_INTERVAL_MS,
+    )
+    expect(degradedRenewalDelayMs({ active: true }, now)).toBe(AUTH_RENEWAL_DEGRADED_INTERVAL_MS)
+    expect(degradedRenewalDelayMs({ active: false }, now)).toBeNull()
+  })
+
+  // R2 新 Minor1:降频只对当时那份凭证成立 —— 换了凭证(登录/任何路径的成功续期)必须立刻作废,
+  // 否则新拿到的正常 token 白白损失提前量(15 分钟 token 被排到 900000 而不是 600000)。
+  test("a new credential clears the degrade even before the next renewal runs", async () => {
+    vi.useFakeTimers()
+    let now = 1_000_000
+    let expiresAt = now + 15 * 60_000
+    const arms: Array<number | null> = []
+    const scheduler = createAuthRenewalScheduler({
+      timing: () => ({ active: true, expiresAt, lifetimeMs: 15 * 60_000 }),
+      now: () => now,
+      renew: async () => ({ outcome: "unusable-response", generation: 2 }),
+      onArm: (_reason, delayMs) => arms.push(delayMs),
+    })
+
+    scheduler.rearm("startup")
+    now += 10 * 60_000
+    vi.advanceTimersByTime(10 * 60_000)
+    await settleRenewal()
+    expect(arms.at(-1)).toBe(5 * 60_000) // 降频但不越过到期点
+
+    expiresAt = now + 15 * 60_000 // 新登录换来的正常凭证
+    scheduler.rearm("auth-change")
+    expect(arms.at(-1)).toBe(10 * 60_000) // 完整提前量,不是 900000
+    scheduler.stop()
+  })
+
   test("an unusable-response arms the degraded interval and a usable one restores the normal cadence", async () => {
     vi.useFakeTimers()
     let now = 1_000_000
@@ -111,20 +174,17 @@ describe("degraded renewal cadence after an unusable response", () => {
     scheduler.rearm("startup")
     expect(arms.at(-1)).toBe(10 * 60_000) // 正常:按 refreshDueAt
 
-    vi.advanceTimersByTime(10 * 60_000)
     now += 10 * 60_000
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(arms.at(-1)).toBe(AUTH_RENEWAL_DEGRADED_INTERVAL_MS) // 不可用 ⇒ 降频,不是 30s 最小间隔
+    vi.advanceTimersByTime(10 * 60_000)
+    await settleRenewal()
+    // 不可用 ⇒ 降频;且封顶到当前已验证到期点(此刻旧 token 还剩 5 分钟)。
+    expect(arms.at(-1)).toBe(5 * 60_000)
     expect(arms.at(-1)).toBeGreaterThan(AUTH_RENEWAL_MIN_INTERVAL_MS)
 
     outcome = "refreshed"
-    vi.advanceTimersByTime(AUTH_RENEWAL_DEGRADED_INTERVAL_MS)
-    now += AUTH_RENEWAL_DEGRADED_INTERVAL_MS
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
+    now += 5 * 60_000
+    vi.advanceTimersByTime(5 * 60_000)
+    await settleRenewal()
     expect(arms.at(-1)).toBe(AUTH_RENEWAL_MIN_INTERVAL_MS) // 恢复可用 ⇒ 回到正常判据
     scheduler.stop()
   })
@@ -229,6 +289,87 @@ describe("token rotation latch", () => {
     timers[0].run()
     expect(await latch.flush()).toBe(true)
     expect(attempts).toBe(2)
+  })
+
+  // R2 新 Major2:onApplied 必须报「实际健康 fork 的那一代」。respawn 队列会把 token-only 请求
+  // 与随后的 structural follow-up 合并成一个 composite:latch 等到的 true 可能对应一次实际
+  // fork 了**更新**一代的换血。报 target 会让更新的那代永远等不到解除 ⇒ 平台永久 recovering。
+  test("onApplied reports the generation the live sidecar actually carries, not the requested target", async () => {
+    let forked = 1
+    const applied: number[] = []
+    const latch = createTokenRotationLatch({
+      forkedGeneration: () => forked,
+      canRespawn: () => true,
+      // 队列 follow-up 实际 fork 了 G3,而本次请求的 target 是 G2。
+      respawn: async () => {
+        forked = 3
+        return true
+      },
+      onApplied: (generation) => applied.push(generation),
+    })
+
+    expect(await latch.accept(result("refreshed", 2), "renewal")).toBe(true)
+    expect(applied).toEqual([3])
+  })
+
+  // 同类的第二条路:accept 时该代已经在效力中(boot fork 直接带上了)。返回 false 会让
+  // refreshTokens 判 applied:false,平台面永远停在 recovering。
+  test("accepting a generation the sidecar already carries reports it as applied", async () => {
+    const applied: number[] = []
+    let respawns = 0
+    const latch = createTokenRotationLatch({
+      forkedGeneration: () => 5,
+      canRespawn: () => true,
+      respawn: async () => {
+        respawns++
+        return true
+      },
+      onApplied: (generation) => applied.push(generation),
+    })
+
+    expect(await latch.accept(result("refreshed", 5), "boot-grace")).toBe(true)
+    expect(respawns).toBe(0)
+    expect(applied).toEqual([5])
+  })
+
+  // 第三条路:pending 期间外部(boot fork / 队列)带上了该代,随后的 flush 必须解除。
+  test("a pending generation adopted externally is reported applied on the next flush", async () => {
+    let forked = 1
+    let respawnable = false
+    const applied: number[] = []
+    const latch = createTokenRotationLatch({
+      forkedGeneration: () => forked,
+      canRespawn: () => respawnable,
+      respawn: async () => true,
+      onApplied: (generation) => applied.push(generation),
+      setTimer: () => setTimeout(() => {}, 0),
+      clearTimer: (timer) => clearTimeout(timer),
+    })
+
+    expect(await latch.accept(result("refreshed", 2), "boot-grace")).toBe(false)
+    expect(applied).toEqual([])
+
+    forked = 2 // boot fork 起来时就带上了这一代
+    expect(await latch.flush()).toBe(true)
+    expect(applied).toEqual([2])
+  })
+
+  // R2 新 Minor2:onApplied 的消费方(auth publish)仍可能抛;latch 不得被它 derail。
+  test("an onApplied consumer that throws does not derail the latch", async () => {
+    let forked = 1
+    const latch = createTokenRotationLatch({
+      forkedGeneration: () => forked,
+      canRespawn: () => true,
+      respawn: async () => {
+        forked = 2
+        return true
+      },
+      onApplied: () => {
+        throw new Error("renderer gone")
+      },
+    })
+
+    expect(await latch.accept(result("refreshed", 2), "renewal")).toBe(true)
   })
 
   // #600 M1:换血真正应用是「平台恢复中 → ready」的唯一解除点;失败不得回调。

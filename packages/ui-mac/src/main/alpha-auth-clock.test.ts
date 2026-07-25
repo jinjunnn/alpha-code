@@ -2,7 +2,9 @@
 
 import { describe, expect, test } from "bun:test"
 import {
+  hasUsableLifetime,
   isTokenExpired,
+  MIN_USABLE_TOKEN_LIFETIME_MS,
   refreshAheadMs,
   refreshDueAt,
   REFRESH_AHEAD_CAP_MS,
@@ -62,5 +64,27 @@ describe("isTokenExpired", () => {
     expect(isTokenExpired(undefined, NOW)).toBe(true)
     expect(isTokenExpired(Number.NaN, NOW)).toBe(true)
     expect(isTokenExpired(Number.POSITIVE_INFINITY, NOW)).toBe(true)
+  })
+})
+
+// #600 B3(rev2c ③″2-6):判据必须落在**换算出来的绝对期限**上。`expires_in` 是有限正数
+// 不代表换算后还有余量 —— Number.MIN_VALUE 被浮点吸收后 expiresAt 就等于 now,
+// 旧判据放它过关 ⇒ 提交、推进代际、换血,然后每 30 秒重来一次。
+describe("hasUsableLifetime", () => {
+  test("只有真的留出可用余量才算可用", () => {
+    expect(hasUsableLifetime(NOW + MIN_USABLE_TOKEN_LIFETIME_MS, NOW)).toBe(true)
+    expect(hasUsableLifetime(NOW + MIN_USABLE_TOKEN_LIFETIME_MS - 1, NOW)).toBe(false)
+    expect(hasUsableLifetime(NOW, NOW)).toBe(false)
+    expect(hasUsableLifetime(NOW - 1, NOW)).toBe(false)
+    expect(hasUsableLifetime(undefined, NOW)).toBe(false)
+    expect(hasUsableLifetime(Number.NaN, NOW)).toBe(false)
+    expect(hasUsableLifetime(Number.POSITIVE_INFINITY, NOW)).toBe(false)
+  })
+
+  test("极小有限正数换算后没有余量 —— 按值挡不住,按换算结果才挡得住", () => {
+    for (const expiresIn of [Number.MIN_VALUE, 1e-9, 0.001, 29.999]) {
+      expect(hasUsableLifetime(NOW + expiresIn * 1000, NOW)).toBe(false)
+    }
+    expect(hasUsableLifetime(NOW + 30 * 1000, NOW)).toBe(true)
   })
 })

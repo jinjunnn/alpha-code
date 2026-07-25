@@ -27,7 +27,7 @@ import type { AuthErrorCode, AuthMode, AuthState } from "../preload/types"
 import { getLogger } from "./logging"
 import { ALPHA_PATHS, type AlphaEndpoints } from "../shared/alpha-config"
 import { deepLinkFor, matchAuthDeepLink } from "../shared/route-manifest"
-import { isTokenExpired, shouldRefreshToken } from "./alpha-auth-clock"
+import { hasUsableLifetime, isTokenExpired, shouldRefreshToken } from "./alpha-auth-clock"
 import { decodeEndpointDiscovery, resolveEndpoints, setDiscoveredEndpoints } from "./alpha-endpoints"
 import { reportContractFailure } from "./alpha-contract-health"
 import { parseAccessTokenIdentity } from "./alpha-auth-identity"
@@ -248,8 +248,15 @@ function publish() {
     platformStatus: state.platformStatus,
   })
   if (sig === lastPublishedSig) return
-  lastPublishedSig = sig
-  win.webContents.send("auth-state", state)
+  // R2 Minor2:先记账后发送会在 IPC 抛出时把这次状态「记成已发布」——后续同签名的 publish
+  // (例如换血落定后补发的那次 ready)会被身份门控静默吞掉,平台面永远停在 recovering。
+  // 只有真的送出去才记账;抛出降级为一条日志(权威状态仍可经 auth-get-state 回读)。
+  try {
+    win.webContents.send("auth-state", state)
+    lastPublishedSig = sig
+  } catch (error) {
+    warn("alpha-auth: auth-state publish failed", error)
+  }
 }
 
 // B11 复扫行16:登录整链失败不再只留日志 —— 推 auth-error 给 renderer(sidebar 订阅 → error toast),
@@ -454,6 +461,8 @@ async function completeAuth(parsed: URL) {
   // ① Learn gateway/account/cloud locations from alpha-web's current token response so a moved
   // backend can update clients without a desktop release.
   if (tokens.endpoints) setDiscoveredEndpoints(tokens.endpoints)
+  const loginNow = Date.now()
+  const loginExpiresAt = usableExpiresAt(tokens.expires_in, loginNow)
   stored = {
     // The ALPHA proxy (代理节点) is the recommended path, so login opts into platform-pays BY DEFAULT
     // (ADR-016 product direction). applyAuthEnv() below writes the proxy env for the NEXT sidecar fork,
@@ -464,8 +473,10 @@ async function completeAuth(parsed: URL) {
     platformAccessTokens: tokens.platform_access_tokens,
     refreshToken: tokens.refresh_token,
     sessionId: tokens.session_id,
-    expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
-    lifetimeMs: tokens.expires_in ? tokens.expires_in * 1000 : undefined,
+    // #600 B3:换算出的期限必须真的还有可用余量,否则视为「未知」→ fail-closed recovering
+    // + 启动续期路径,绝不把一个当场就到期的期限当成可用。
+    expiresAt: loginExpiresAt,
+    lifetimeMs: loginExpiresAt === undefined ? undefined : loginExpiresAt - loginNow,
     account: { email: tokens.email, plan: tokens.plan },
   }
   tokenGeneration++
@@ -564,10 +575,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
-/** 可用的签发寿命(秒):有限正数才算,其余(缺失/0/负/非有限)视为未知 → fail-closed。 */
+/** 结构上合法的签发寿命(秒):有限正数才算。这是 decoder 层的形状判据,
+ *  「换算出来的期限是否真的可用」由 usableExpiresAt 在提交前判(#600 B3)。 */
 function usableExpiresIn(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined
   return value
+}
+
+// #600 B3(rev2c ③″2-6):把 expires_in 换算成**绝对期限**,并要求它相对 now 真的还有可用
+// 余量;拿不出就是「未知」。判据必须落在换算结果上 —— `Number.MIN_VALUE` 是合法的有限正数,
+// 但 `now + 5e-324*1000` 被浮点吸收后就等于 now,旧判据放它过关 ⇒ 提交、推进代际、换血,
+// 随后每 30 秒重来一次,正是本票要消灭的那条循环。
+//
+// 依赖的不变量与强制手段(rev2c ③″1):
+//  ① 这是 stored.expiresAt 的**唯一**写入口(completeAuth 与 doRefresh 都经过它);
+//     强制手段 = alpha-auth.cases.ts 的「不可用有效期不提交/登录不标 ready」两组用例。
+//  ② 「可用余量」的下界 = 续期调度器的唤醒地板(MIN_USABLE_TOKEN_LIFETIME_MS,同一常量
+//     派生出 AUTH_RENEWAL_MIN_INTERVAL_MS);强制手段 = auth-renewal.test.ts 的常量相等断言。
+function usableExpiresAt(expiresIn: number | undefined, now: number): number | undefined {
+  if (expiresIn === undefined) return undefined
+  const expiresAt = now + expiresIn * 1000
+  return hasUsableLifetime(expiresAt, now) ? expiresAt : undefined
 }
 
 function isRoutePurpose(value: string): value is RoutePurpose {
@@ -764,8 +792,12 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
   // 提交就意味着 generation++ → 换血 → expiresAt 仍未知 → 调度器 30 秒后再刷 → 再换血,
   // 永久重复(与 #601 同类的自激)。按既有「保留上一份已验证 bundle」的降级语义处理,
   // 由 unusable-response 让调度器降频续跑(auth-renewal.ts)。
-  if (tokens.expires_in === undefined) {
-    warn("alpha-auth: refresh response carries no usable expires_in — keeping the prior validated bundle")
+  const refreshedNow = Date.now()
+  const refreshedExpiresAt = usableExpiresAt(tokens.expires_in, refreshedNow)
+  if (refreshedExpiresAt === undefined) {
+    warn("alpha-auth: refresh response carries no usable expiry — keeping the prior validated bundle", {
+      expiresIn: tokens.expires_in,
+    })
     publish()
     return "unusable-response"
   }
@@ -775,8 +807,8 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
     platformAccessTokens: tokens.platform_access_tokens,
     refreshToken: tokens.refresh_token ?? stored.refreshToken,
     sessionId: tokens.session_id ?? stored.sessionId,
-    expiresAt: Date.now() + tokens.expires_in * 1000,
-    lifetimeMs: tokens.expires_in * 1000,
+    expiresAt: refreshedExpiresAt,
+    lifetimeMs: refreshedExpiresAt - refreshedNow,
   }
   tokenGeneration++
   // #600 M1 / R1 Blocker1:ready 不得先于换血发布。置位后 deriveState 判 recovering,

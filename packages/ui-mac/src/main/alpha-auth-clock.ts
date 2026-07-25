@@ -7,6 +7,20 @@
 export const REFRESH_AHEAD_CAP_MS = 5 * 60 * 1000
 export const REFRESH_AHEAD_DIVISOR = 3
 
+// #600 B3(rev2c ③″2-6「成功必须等于结果可用」):可用寿命的下界。**唯一**能让平台 token
+// 保鲜的机制是续期调度器,而它的唤醒地板就是这个值(auth-renewal 的 AUTH_RENEWAL_MIN_INTERVAL_MS
+// 由本常量派生,两者不可能漂移)。整段寿命短于这个地板的凭证,调度器根本来不及醒一次 ——
+// 它在定义上就不可用,不是「短但能用」。阈值依据就是这条,不是拍脑袋的数。
+export const MIN_USABLE_TOKEN_LIFETIME_MS = 30_000
+
+/** 换算出来的**绝对期限**相对 now 是否真的还有可用余量。
+ *  判据落在换算结果上而不是响应字段上:`expires_in` 是有限正数(例如 Number.MIN_VALUE)
+ *  并不代表 `now + expires_in*1000` 之后还有余量 —— 浮点吸收后它可能就等于 now。 */
+export function hasUsableLifetime(expiresAt: number | undefined, now: number): boolean {
+  if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return false
+  return expiresAt - now >= MIN_USABLE_TOKEN_LIFETIME_MS
+}
+
 export function refreshAheadMs(lifetimeMs?: number): number {
   if (!lifetimeMs || lifetimeMs <= 0) return REFRESH_AHEAD_CAP_MS
   return Math.min(REFRESH_AHEAD_CAP_MS, Math.floor(lifetimeMs / REFRESH_AHEAD_DIVISOR))

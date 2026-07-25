@@ -162,16 +162,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** 捕获 main → renderer 的 auth 推送。`platformStatuses` 记录每次 auth-state 的平台态,
  *  用来断言「ready 什么时候被发布」而不是只断言最终值。 */
 function fakeWindow(sends: string[], platformStatuses: (string | undefined)[] = []) {
-  return {
-    isDestroyed: () => false,
-    webContents: {
-      send: (channel: string, payload?: unknown) => {
-        sends.push(channel)
-        if (channel === "auth-state" && isRecord(payload))
-          platformStatuses.push(typeof payload.platformStatus === "string" ? payload.platformStatus : undefined)
-      },
-    },
-  } as unknown as ReturnType<Parameters<typeof setAuthDeps>[0]["getWindow"]>
+  return windowWith((channel, payload) => {
+    sends.push(channel)
+    if (channel === "auth-state" && isRecord(payload))
+      platformStatuses.push(typeof payload.platformStatus === "string" ? payload.platformStatus : undefined)
+  })
+}
+
+/** 测试替身窗口的唯一断言点(其余用例都经 fakeWindow / windowWith,不再各自 cast)。 */
+function windowWith(send: (channel: string, payload?: unknown) => void) {
+  return { isDestroyed: () => false, webContents: { send } } as unknown as ReturnType<
+    Parameters<typeof setAuthDeps>[0]["getWindow"]
+  >
 }
 
 function jsonResponse(body: Record<string, unknown>) {
@@ -690,7 +692,9 @@ describe("refresh compare-and-set before commit", () => {
 // 续期响应**不得提交**:提交就意味着 generation++ → 换血 → 有效期仍未知 → 调度器 30s 后再刷,
 // 与 #601 同类的第二条自激。
 describe("expiry fail-closed", () => {
-  test.each([undefined, 0, -1] as const)(
+  // R2 B3:判据必须落在换算出来的绝对期限上 —— Number.MIN_VALUE 是合法有限正数,
+  // 但 now + 5e-324*1000 被浮点吸收后就等于 now(Codex 实测它原样通过旧判据并复活了 30 秒循环)。
+  test.each([undefined, 0, -1, Number.MIN_VALUE, 1e-9, 29.999] as const)(
     "a refresh response whose expires_in is %p is unusable: not committed, no generation, no rotation",
     async (expiresIn) => {
       const oldBundle = tokenBundle()
@@ -953,5 +957,112 @@ describe("a persistently 401 account endpoint (production composition)", () => {
     expect(tokenPosts).toBe(1)
     expect(rotations).toEqual(["token-only"])
     expect(accountRequests).toBe(7) // 首轮 401 + 续期后重试 401,其后 5 轮各一次(锁住,不再续期)
+  })
+})
+
+// R2 新 Major2 / Minor2 的 composition 侧:换血落定的通知与 auth 发布必须真的把平台面
+// 从 recovering 带回 ready,而且不能被「报了更旧的代」或「一次 IPC 抛出」永久卡住。
+describe("clearing the recovering platform state", () => {
+  const rotationHarness = (adopt: (current: number) => number) => {
+    let forked = getTokenGeneration()
+    const rotation = createTokenRotationLatch({
+      forkedGeneration: () => forked,
+      canRespawn: () => true,
+      respawn: async () => {
+        forked = adopt(getTokenGeneration())
+        return true
+      },
+      onApplied: (generation) => markTokenGenerationApplied(generation),
+    })
+    setAuthDeps({
+      getWindow: () => null,
+      respawn: () => {
+        structuralRespawns++
+      },
+      onRenewed: (result) => rotation.accept(result, "renewal"),
+    })
+    return rotation
+  }
+
+  test("a rotation that adopts a newer generation than the request still clears recovering", async () => {
+    const newBundle = tokenBundle("new")
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-old",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    // 队列 follow-up 让本次换血实际带上了比 target 更新的一代。
+    rotationHarness((current) => current + 5)
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        platform_access_tokens: newBundle,
+        refresh_token: "refresh-new",
+        expires_in: 3600,
+      })) as typeof fetch
+
+    expect(await refreshTokens()).toMatchObject({ outcome: "refreshed", applied: true })
+    expect(getAuthState().platformStatus).toBe("ready")
+  })
+
+  test("an applied notification for an older generation must not clear a newer pending rotation", async () => {
+    const newBundle = tokenBundle("new")
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-old",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    setAuthDeps({
+      getWindow: () => null,
+      respawn: () => {
+        structuralRespawns++
+      },
+      onRenewed: () => false, // 换血失败:该代仍未应用
+    })
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        platform_access_tokens: newBundle,
+        refresh_token: "refresh-new",
+        expires_in: 3600,
+      })) as typeof fetch
+
+    const result = await refreshTokens()
+    expect(result).toMatchObject({ outcome: "refreshed", applied: false })
+    expect(getAuthState().platformStatus).toBe("recovering")
+
+    markTokenGenerationApplied(result.generation - 1)
+    expect(getAuthState().platformStatus).toBe("recovering")
+
+    markTokenGenerationApplied(result.generation)
+    expect(getAuthState().platformStatus).toBe("ready")
+  })
+
+  test("an auth-state push that throws is not recorded, so the next publish still delivers it", () => {
+    const sends: string[] = []
+    let failing = false
+    const win = windowWith((channel) => {
+      if (failing) throw new Error("renderer gone")
+      sends.push(channel)
+    })
+    const install = () => setAuthDeps({ getWindow: () => win, respawn: () => {} })
+
+    initAuthEnv(dataPath) // 未登录:先把已发布签名推到一个已知状态
+    install()
+    sends.length = 0
+
+    failing = true
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-old",
+      expiresAt: Date.now() + 15 * 60_000,
+      lifetimeMs: 15 * 60_000,
+    })
+    install() // 登录态发布 —— IPC 抛出
+    expect(sends).toEqual([])
+
+    failing = false
+    install() // 同一个签名必须真的补发,不能被身份门控当成「已发过」
+    expect(sends).toEqual(["auth-state"])
   })
 })

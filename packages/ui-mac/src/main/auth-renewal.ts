@@ -1,9 +1,11 @@
 import type { RenewalResult } from "./alpha-auth"
-import { refreshDueAt } from "./alpha-auth-clock"
+import { MIN_USABLE_TOKEN_LIFETIME_MS, refreshDueAt } from "./alpha-auth-clock"
 import type { SidecarRespawnReason } from "./sidecar-lifecycle"
 
 export const BOOT_RENEWAL_GRACE_MS = 1_200
-export const AUTH_RENEWAL_MIN_INTERVAL_MS = 30_000
+// 调度器的唤醒地板 = 「可用寿命」的下界,同一个常量派生,两者不可能漂移
+// (alpha-auth-clock.MIN_USABLE_TOKEN_LIFETIME_MS 的注释解释了为什么是同一个数)。
+export const AUTH_RENEWAL_MIN_INTERVAL_MS = MIN_USABLE_TOKEN_LIFETIME_MS
 /** #600 B3:上一次续期「成功但结果不可用」时的降频节奏(≈一个 token TTL)。按 30s 最小间隔
  *  重刷会把一个给不出可用有效期的签发端变成永久重刷循环;降频续跑既不进无定时器终局,
  *  也不制造风暴(③′3)。 */
@@ -49,6 +51,29 @@ export function authRenewalDelayMs(timing: AuthRenewalTiming, now: number): numb
   )
 }
 
+// 上一次续期「成功但结果不可用」后的降频节奏。
+//
+// 依赖的不变量与各自的强制手段(rev2c ③″1):
+//  ① `timing.expiresAt` 是**已验证**的绝对期限 —— 只有通过 hasUsableLifetime 的响应才会被
+//     提交(alpha-auth 的 usableExpiresAt 是唯一写入口);强制手段 = alpha-auth.cases.ts
+//     「不可用有效期不提交」用例 + alpha-auth-clock 的 hasUsableLifetime 单测。
+//  ② 续期调度器是平台 token 唯一的恢复 owner(③″2-1),且 rearm 是全函数(除 stop 外必然
+//     再武装);强制手段 = 本文件「结果后必 rearm」与「降频后仍有下一次」两条用例。
+//  ③ 降频**不得**把下一次唤醒排到当前已验证 expiresAt 之后 —— 否则旧凭证在窗口中间过期,
+//     而那一刻没有任何 timer 触发 auth-state 发布,renderer 会继续显示 ready
+//     (③″2-4:owner 不得静默退场,到期那一刻必须有人在场);强制手段 = 下面的封顶 +
+//     「10 分钟时降频不得越过 15 分钟到期点」用例。
+// 已到期(没有余量可保护)后才允许用完整降频节奏 —— 此时平台已 fail-closed 为 recovering,
+// 继续每 30 秒重刷就是 #600 B3 要消灭的那条循环。
+export function degradedRenewalDelayMs(timing: AuthRenewalTiming, now: number): number | null {
+  const base = authRenewalDelayMs(timing, now)
+  if (base === null) return null
+  const untilExpiry = timing.expiresAt === undefined ? 0 : timing.expiresAt - now
+  const degraded =
+    untilExpiry > 0 ? Math.min(AUTH_RENEWAL_DEGRADED_INTERVAL_MS, untilExpiry) : AUTH_RENEWAL_DEGRADED_INTERVAL_MS
+  return Math.max(base, degraded)
+}
+
 export function createAuthRenewalScheduler(deps: {
   timing: () => AuthRenewalTiming
   renew: () => Promise<RenewalResult>
@@ -65,14 +90,21 @@ export function createAuthRenewalScheduler(deps: {
   let running = false
   let stopped = false
   // #600 B3:上一次续期结果不可用 ⇒ 下一次按降频节奏,不按 refreshDueAt 的最小间隔。
+  // 降频只对**当时那份凭证**成立:凭证一换(登录、或任何路径上一次成功续期都会改写
+  // expiresAt),降频立即作废 —— 否则新拿到的正常 token 会白白损失提前量。
   let degraded = false
+  let degradedFor: number | undefined
+  const currentDegraded = (timing: AuthRenewalTiming) => {
+    if (degraded && timing.expiresAt !== degradedFor) degraded = false
+    return degraded
+  }
 
   const rearm = (reason: string) => {
     if (timer) clearTimer(timer)
     timer = undefined
     if (stopped) return
-    const base = authRenewalDelayMs(deps.timing(), now())
-    const delayMs = base === null || !degraded ? base : Math.max(base, AUTH_RENEWAL_DEGRADED_INTERVAL_MS)
+    const timing = deps.timing()
+    const delayMs = currentDegraded(timing) ? degradedRenewalDelayMs(timing, now()) : authRenewalDelayMs(timing, now())
     deps.onArm?.(reason, delayMs)
     if (delayMs === null) return
     timer = setTimer(() => {
@@ -83,6 +115,7 @@ export function createAuthRenewalScheduler(deps: {
         .renew()
         .then((result) => {
           degraded = result.outcome === "unusable-response"
+          degradedFor = degraded ? deps.timing().expiresAt : undefined
           deps.onResult?.(result)
         })
         .finally(() => {
@@ -108,8 +141,10 @@ export function createTokenRotationLatch(deps: {
   canRespawn: () => boolean
   respawn: (reason: SidecarRespawnReason) => Promise<boolean>
   mark?: (result: RenewalResult, trigger: string, outcome: string) => void
-  /** 该 generation 真正被健康换血采用时回调 —— 平台面「恢复中 → ready」的唯一解除点,
-   *  低频重试成功时同样触发(alpha-auth.markTokenGenerationApplied)。 */
+  /** 通知「当前活着的 sidecar 实际携带的那一代」—— 平台面「恢复中 → ready」的唯一解除点。
+   *  参数必须是 `forkedGeneration()`(实际健康 fork 的代),不是本次请求的 target:
+   *  respawn 队列合并时,一次 composite 可能实际 fork 了比 target 更新的代,报 target 会让
+   *  更新的那代永远等不到解除(rev2c ③″2-4:owner 不得静默退场)。 */
   onApplied?: (generation: number) => void
   setTimer?: SetTimer
   clearTimer?: ClearTimer
@@ -127,6 +162,22 @@ export function createTokenRotationLatch(deps: {
     retryTimer = undefined
   }
 
+  /** 「请求的代已经在效力中」——三条路都要走它:换血成功、accept 时已是当前代、
+   *  flush 时发现外部(boot fork / 队列 follow-up)已经带上了。消费方回调抛出不得
+   *  derail latch(Minor2:auth publish 仍可能抛)。 */
+  const notifyApplied = () => {
+    try {
+      deps.onApplied?.(deps.forkedGeneration())
+    } catch (error) {
+      deps.mark?.(
+        { outcome: "transient-failure", generation: deps.forkedGeneration() },
+        "rotation",
+        `applied-notify-threw:${String(error)}`,
+      )
+    }
+  }
+  const inEffect = () => requestedGeneration <= Math.max(handledGeneration, deps.forkedGeneration())
+
   // #600 B1:失败不是终局。保留单飞、保留 pending generation,用封顶低频 timer 重试
   // (③′3:不得进入无定时器终局;也不得同步自旋 —— timer 独占下一次尝试)。
   const scheduleRetry = () => {
@@ -140,8 +191,14 @@ export function createTokenRotationLatch(deps: {
 
   const flush = (): Promise<boolean> => {
     if (active) return active
-    if (requestedGeneration <= Math.max(handledGeneration, deps.forkedGeneration())) {
+    if (inEffect()) {
       clearRetry()
+      // 曾经 pending、现在已在效力中(boot fork 抢先采用 / 队列 follow-up 带上了更新的代)
+      // ⇒ 它就是「已应用」。少了这一步,平台面会永远停在 recovering。
+      if (requestedGeneration > 0) {
+        notifyApplied()
+        return Promise.resolve(true)
+      }
       return Promise.resolve(false)
     }
     // 失败后由 timer 独占重试该代:重复 accept / 其它触发不得就地再试(否则退化成自旋);
@@ -171,7 +228,7 @@ export function createTokenRotationLatch(deps: {
           return false
         }
         handledGeneration = Math.max(handledGeneration, target)
-        deps.onApplied?.(target)
+        notifyApplied()
       }
       clearRetry()
       return true
@@ -187,9 +244,13 @@ export function createTokenRotationLatch(deps: {
         deps.mark?.(result, trigger, "kept")
         return Promise.resolve(false)
       }
+      // 已经是当前代(boot fork 直接带上了 / 上一次换血已覆盖)⇒ 这一代**就是已应用**,
+      // 不是「什么都没发生」。返回 false 会让调用方(refreshTokens)判 applied:false,
+      // 平台面永远停在 recovering。accept 的布尔语义 = 「请求的代现在是否在效力中」。
       if (result.generation <= Math.max(handledGeneration, deps.forkedGeneration())) {
         deps.mark?.(result, trigger, "already-current")
-        return Promise.resolve(false)
+        notifyApplied()
+        return Promise.resolve(true)
       }
       requestedGeneration = Math.max(requestedGeneration, result.generation)
       deps.mark?.(result, trigger, deps.canRespawn() ? "requested" : "pending")
