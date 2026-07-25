@@ -61,6 +61,9 @@ export function buildModelPickerRows(input: {
   keyStatusState: KeyStatusState
   keyStatus: ProviderKeyStatus
   accountState: AccountState
+  /** true = 会话内的 picker(换模型必须落到服务端 switchModel)。只影响 BYOK 行在引擎恢复中的
+   *  **文案诚实性**:home 可先选,session 不能 —— 不得让两者共用「可先选择」。 */
+  sessionScoped: boolean
   query: string
 }): ModelPickerRow[] {
   const actual = new Map(input.models.map((model) => [`${model.providerID}:${model.id}`, model]))
@@ -137,8 +140,15 @@ export function buildModelPickerRows(input: {
         pico: provider.pico,
         reasoning: !!display?.reasoning,
         availability: "available",
-        // 「当前可执行」是另一个谓词:引擎未 ready 时如实说明发送还要等,但不撤销可选择性。
-        ...(input.listState === "ready" ? {} : { reason: t("alpha.model.byokEngineRestarting") }),
+        // 「当前可执行」是另一个谓词:引擎未 ready 时如实说明还要等什么,但不撤销可选择性。
+        // session 与 home 的可做之事不同,文案必须分开 —— 否则会出现「说可先选却点不了」。
+        ...(input.listState === "ready"
+          ? {}
+          : {
+              reason: input.sessionScoped
+                ? t("alpha.model.byokEngineRestartingSession")
+                : t("alpha.model.byokEngineRestarting"),
+            }),
         engineIndependent: true,
       }
     })

@@ -50,6 +50,7 @@ const rows = (over: Partial<Parameters<typeof buildModelPickerRows>[0]> = {}) =>
     keyStatusState: "ready",
     keyStatus: keys,
     accountState: "member",
+    sessionScoped: false,
     query: "",
     ...over,
   })
@@ -213,6 +214,18 @@ describe("BYOK 可选择性脱离登录 / 平台 / 引擎清单(#595)", () => {
     const unkeyed = rows({ keyStatus: {} }).filter((row) => row.group === "byok")
     expect(unkeyed.every((row) => row.availability === "needs-key")).toBe(true)
     expect(unkeyed.some((row) => row.engineIndependent)).toBe(false)
+  })
+
+  test("#595 Minor:session 与 home 的恢复中文案分开 —— session 不得说「可先选择」", () => {
+    const home = deepseekRows({ listState: "recovering" })
+    const session = deepseekRows({ listState: "recovering", sessionScoped: true })
+    expect(home.every((row) => row.reason === t("alpha.model.byokEngineRestarting"))).toBe(true)
+    expect(session.every((row) => row.reason === t("alpha.model.byokEngineRestartingSession"))).toBe(true)
+    expect(session.some((row) => row.reason === t("alpha.model.byokEngineRestarting"))).toBe(false)
+    // 可选择性本身与模式无关(谓词 1 是行的属性,不是模式的属性)。
+    expect(session.every((row) => row.availability === "available")).toBe(true)
+    // 引擎 ready 时两种模式都不带恢复中文案。
+    expect(deepseekRows({ sessionScoped: true }).every((row) => row.reason === undefined)).toBe(true)
   })
 
   test("engineIndependent 只标本地 BYOK 目录行:平台行与自定义节点行都不带", () => {

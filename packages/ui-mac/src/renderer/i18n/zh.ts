@@ -954,6 +954,7 @@ export const dict = {
   "alpha.model.keyFailed": "KEY 状态读取失败",
   "alpha.model.keyMissing": "未配置 KEY · 点击配置",
   "alpha.model.byokEngineRestarting": "引擎重启中 · 可先选择",
+  "alpha.model.byokEngineRestartingSession": "引擎重启中 · 恢复后可切换",
   "alpha.model.unavailable": "当前不可用",
   "alpha.model.needsLogin": "需登录",
   "alpha.model.needsCredit": "余额不足",

@@ -23,6 +23,7 @@ const ctx = (over: Partial<ModelResolveCtx>): ModelResolveCtx => ({
   platformProviderId: PLATFORM,
   engineModels: [],
   configuredProviders: [],
+  localKeyedByokProviders: [],
   catalog: CATALOG,
   ...over,
 })
@@ -59,6 +60,33 @@ describe("checkSelectedModel(第①级:session 当前选择校验)", () => {
   })
   test("BYOK 模型 + provider 仍注册 → ok(与登录态无关)", () => {
     expect(checkSelectedModel(dsModel, ctx({ engineModels: engineWithDs }))).toEqual({ ok: true })
+  })
+
+  // REQ-109 #595:引擎清单不得反向撤销一个本地目录 + 本地 KEY 支撑的选择。
+  test("#595:本地目录 BYOK(KEY 已配置)+ 引擎表非空且查无此 provider → 仍 ok,不判 provider-gone", () => {
+    const local = { providerID: "deepseek-byok" }
+    expect(
+      checkSelectedModel(local, ctx({ engineModels: engineWithProxy, localKeyedByokProviders: ["deepseek-byok"] })),
+    ).toEqual({ ok: true })
+    // 反面:同一形状但本地 KEY 未配置(不在 localKeyedByokProviders)→ 照旧撤销,主权不等于放行一切。
+    expect(checkSelectedModel(local, ctx({ engineModels: engineWithProxy }))).toEqual({
+      ok: false,
+      reason: "provider-gone",
+    })
+    // 豁免只覆盖本地目录 BYOK:自定义节点消失仍照旧撤销。
+    expect(
+      checkSelectedModel({ providerID: "my-endpoint" }, ctx({
+        engineModels: engineWithProxy,
+        localKeyedByokProviders: ["deepseek-byok"],
+      })),
+    ).toEqual({ ok: false, reason: "provider-gone" })
+  })
+
+  test("#595:豁免不越界到平台代理 —— 平台 id 即使被误列也仍走登录/额度判据", () => {
+    expect(checkSelectedModel(proxyModel, ctx({ localKeyedByokProviders: [PLATFORM] }))).toEqual({
+      ok: false,
+      reason: "needs-login",
+    })
   })
 })
 

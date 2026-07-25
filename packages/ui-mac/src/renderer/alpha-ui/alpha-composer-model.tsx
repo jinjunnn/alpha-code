@@ -334,6 +334,7 @@ export function ModelPickPop(props: {
       keyStatusState: pickerKeyStatus(),
       keyStatus: readyKeyStatus(),
       accountState: accountState(),
+      sessionScoped: composerModelProjection().sessionID !== null,
       query: query(),
     })
   })
@@ -612,6 +613,9 @@ function ModelRow(props: {
   }
   const disabled = () =>
     props.selectionBlocked(props.row) || ["loading", "unavailable"].includes(props.row.availability) || !!props.switching()
+  // #595 Minor:视觉必须跟着可点性走。availability "available" 但被选择门阻断(如 session 恢复中的
+  // BYOK 行、epoch 陈旧的平台行)时,行同样置灰 —— 否则用户看到一条正常亮行却点不动。
+  const dimmed = () => props.row.availability !== "available" || props.selectionBlocked(props.row)
   const status = () =>
     props.row.reason ?? (props.row.tier ? `${props.tierLabel(props.row.tier)} ${props.row.mult ?? ""}`.trim() : "")
   return (
@@ -621,7 +625,7 @@ function ModelRow(props: {
       data-group={props.row.group}
       classList={{
         selected: selected(),
-        locked: props.row.availability !== "available",
+        locked: dimmed(),
         "is-switching": props.switching() === props.row.key,
       }}
       aria-current={selected() ? "true" : undefined}

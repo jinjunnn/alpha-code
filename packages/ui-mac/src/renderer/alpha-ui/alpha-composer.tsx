@@ -73,7 +73,7 @@ import {
 } from "./model-default-core"
 import { ModelPickPop } from "./alpha-composer-model"
 import { createModelContract, type ModelContract } from "./model-contract"
-import { isByokEngineId } from "../../shared/alpha-model-types"
+import { byokEngineId, isByokEngineId } from "../../shared/alpha-model-types"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
 import { accountResultState, createRetryWakeup, loadEngineModelsWithRetry, resolveAccountWithRetry } from "./model-recovery"
@@ -766,10 +766,15 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     if (modelChainState() !== "ready" && !homeLocalByok) throw new Error("model chain is not ready")
     if (model.providerID === platformId() && platformPermission() !== "ready")
       throw new Error("platform permission is recovering")
-    // 恢复中的 home BYOK 选择**不得** supersede 在跑的模型链:`++chainSeq` 会让 list 重试循环
-    // (loadEngineModelsWithRetry 的 isStale)静默终止 —— 正是 #594 修掉的那类永久闩死。
-    // 链已 ready 时沿用既有语义:用户显式选择压过链尾的默认解析。
-    const seq = homeLocalByok && modelChainState() !== "ready" ? chainSeq : ++chainSeq
+    /* home 本地 BYOK 选择在**任何** modelChainState 下都不得 supersede 在跑的链:`++chainSeq` 会让
+       list 重试循环(loadEngineModelsWithRetry)与账户恢复循环(resolveAccountWithRetry)双双判
+       isStale 而静默退出 —— 前者是 #594 修掉的模型链悬崖,后者是它的孪生形态(链已 ready 而
+       account 仍在重试时,supersede 会让 platformPermission 永久留在 recovering,代理节点再也选不了)。
+       不递增也不丢语义:home 无 sessionID,`seq` 只被下面的 session switch 分支消费;而链尾的默认
+       解析读的是 `composerModel()` 实时值,本次选择照样压过它(applyDefaultComposerModel 空判)。
+       安全的 supersede(directory / authEpoch / session 切换 / retryAll)都会建立新的 replacement
+       owner,不在此列。 */
+    const seq = homeLocalByok ? chainSeq : ++chainSeq
     const sessionID = props.sessionID?.()
     if (sessionID) {
       const projection = composerModelProjection()
@@ -978,6 +983,11 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           engineModels.some((model) => model.providerID === id || model.providerID === `${id}-byok`),
       ),
     )
+    // #595:「BYOK 本地可选择」的载体 —— 本地目录 ∩ 本地 KEY 已配置,**不经引擎清单过滤**。
+    // 与下面 engine 过滤过的 configuredEngineProviders 分工不同:后者只服务「默认必须真能跑」。
+    const localKeyedByokProviders = cat.data.byokProviders
+      .filter((provider) => configured.includes(provider.id))
+      .map((provider) => byokEngineId(provider.id))
     const configuredEngineProviders = configured.flatMap((id) => {
       if (engineModels.some((model) => model.providerID === id)) return [id]
       const byokID = `${id}-byok`
@@ -992,6 +1002,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         accountUsable,
         platformProviderId: pid,
         configuredProviders: configuredEngineProviders,
+        localKeyedByokProviders,
         catalog: { defaultModel: cat.data.defaultModel, platformModels: cat.data.platformModels },
         engineModels,
       }

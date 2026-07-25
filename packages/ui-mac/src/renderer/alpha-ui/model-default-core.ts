@@ -26,8 +26,13 @@ export type ModelResolveCtx = {
   platformProviderId: string | null
   /** 引擎实际注册的模型;空数组 = 引擎/sdk 未就绪(冷启动常态),解析返回 wait。 */
   engineModels: EngineModelRef[]
-  /** BYOK KEY 已配置(keyStatus.configured)的 provider id;未配 KEY 的 builtin 注入行不算。 */
+  /** BYOK KEY 已配置(keyStatus.configured)**且**已在引擎注册的 provider id;未配 KEY 的 builtin
+   *  注入行不算。只服务第 ③ 级自动默认(默认必须真能跑)。 */
   configuredProviders: string[]
+  /** REQ-109 #595:本地目录 BYOK ∩ 本地 KEY 已配置的**引擎侧** provider id(`<id>-byok`)。
+   *  判据只由本地目录 + 本地钥匙串决定,**不经引擎清单过滤** —— 它是「BYOK 本地可选择」谓词的载体,
+   *  用于禁止引擎清单反向撤销一个本地事实支撑的选择。契约:docs/contracts/byok-availability.md。 */
+  localKeyedByokProviders: string[]
   catalog: {
     defaultModel: string | null
     platformModels: Array<{ id: string; name: string; tier: string; variants?: Record<string, unknown> }>
@@ -38,13 +43,18 @@ export type SelectedVerdict = { ok: true } | { ok: false; reason: "needs-login" 
 
 /** 第 1 级:session 当前选择的可用性。判定只依据**确定的负面事实**——代理模型看登录/entitlement
  *  (auth 侧,冷启动即刻可得);BYOK 只有在引擎表已加载且查无此 provider 才判失效(空表 = 未就绪,
- *  不误杀)。代理模型不因「引擎尚未注册代理 provider」挂起 —— 那是 fork 时序,登录态下必然到来。 */
+ *  不误杀)。代理模型不因「引擎尚未注册代理 provider」挂起 —— 那是 fork 时序,登录态下必然到来。
+ *
+ *  REQ-109 #595:本地目录 BYOK(本地 KEY 已配置)**豁免** provider-membership 撤销。引擎清单缺该
+ *  节点是**执行面**事实 —— 由发送门(canSend)与会话切换门(switchModel)承担,**不得**反向撤销
+ *  选择,否则 `model.list` 又成了「BYOK 本地可选择」的最终裁判。 */
 export function checkSelectedModel(m: { providerID: string }, ctx: ModelResolveCtx): SelectedVerdict {
   if (ctx.platformProviderId && m.providerID === ctx.platformProviderId) {
     if (!ctx.loggedIn) return { ok: false, reason: "needs-login" }
     if (!ctx.accountUsable) return { ok: false, reason: "needs-credit" }
     return { ok: true }
   }
+  if (ctx.localKeyedByokProviders.includes(m.providerID)) return { ok: true }
   if (ctx.engineModels.length && !ctx.engineModels.some((e) => e.providerID === m.providerID))
     return { ok: false, reason: "provider-gone" }
   return { ok: true }

@@ -1829,6 +1829,10 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
     const row = byokRows(openPicker())[0]
     // 展示:本地 BYOK 行照常在;可点:不行 —— 会话换模型必须落到服务端 switchModel。
     expect(row.disabled).toBe(true)
+    // #595 Minor:文案与视觉都不得自相矛盾 —— session 不说「可先选择」,且不可点即置灰。
+    expect(row.textContent).toContain(zh["alpha.model.byokEngineRestartingSession"])
+    expect(row.textContent).not.toContain(zh["alpha.model.byokEngineRestarting"])
+    expect(row.classList.contains("locked")).toBe(true)
     // 绕过原生 disabled 抑制,直接证伪「点了就当已切换」。
     row.dispatchEvent(new MouseEvent("click", { bubbles: true }))
     await flush()
@@ -1913,6 +1917,91 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
     expect(send.disabled).toBe(false)
     expect(composerModel()?.providerID).toBe(deepseekEngineId)
     expect(composerModelSuspended()).toBeNull()
+    mounted.dispose()
+  })
+
+  test("引擎恢复后清单缺 `<id>-byok`:已选的本地 BYOK 不得被父层 reconciliation 撤销", async () => {
+    installApi()
+    let listCalls = 0
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          // 先失败(recovering),之后返回**非空**清单但**缺** deepseek-byok ——
+          // 旧行为在此判 provider-gone 并 suspend,等于让 model.list 当最终裁判。
+          list: async () => {
+            if (++listCalls <= 1) throw new Error("engine restarting")
+            return platformModels
+          },
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "hello",
+      }),
+    )
+
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(byokRows(openPicker())).toHaveLength(1))
+    click(byokRows(openPicker())[0])
+    await waitFor(() => expect(composerModel()?.providerID).toBe(deepseekEngineId))
+
+    // 退避 1s 后第二次 list 成功 → 链 ready → 两轮 resolveSelection reconciliation。
+    await new Promise((resolve) => setTimeout(resolve, 1600))
+    expect(listCalls).toBeGreaterThan(1)
+    expect(composerModelSuspended()).toBeNull()
+    expect(composerModel()?.providerID).toBe(deepseekEngineId)
+    expect(composerModel()?.id).toBe(deepseekModels[0])
+    mounted.dispose()
+  })
+
+  test("链已 ready 而账户仍在重试时选 BYOK:不得杀掉账户恢复 owner", async () => {
+    const start = Date.now()
+    let accountReads = 0
+    installApi({
+      account: async () => {
+        accountReads++
+        return Date.now() - start < 1500 ? { error: "network" } : summary
+      },
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        // 引擎清单只有平台模型 ⇒ hasConfiguredByok 为 false ⇒ 无选择时发送门要求 platformPermission
+        // 已 ready。这就是 platformPermission 的可观测探针。
+        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+        initialText: "hello",
+      }),
+    )
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    // 前置事实:模型链已 ready(BYOK 行可点),而账户链仍在恢复(发送门仍关)。
+    await waitFor(() => expect(byokRows(openPicker())[0]?.disabled).toBe(false))
+    expect(send.disabled).toBe(true)
+    expect(composerModel()).toBeNull()
+    click(byokRows(openPicker())[0])
+    await waitFor(() => expect(composerModel()?.providerID).toBe(deepseekEngineId))
+    // pick 成功即关弹层 ⇒ 此后只有 composer 的账户链会继续读 summary。
+    const readsAfterPick = accountReads
+
+    await new Promise((resolve) => setTimeout(resolve, 4000))
+    // ① 账户链没被这次选择判 stale:仍在继续读。
+    expect(accountReads).toBeGreaterThan(readsAfterPick)
+    // ② platformPermission 真的回到 ready —— 否则父层会拒绝平台提交,选择不会改变。
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    const platformRow = () =>
+      [...openPicker().querySelectorAll<HTMLButtonElement>('.a-mpp-row[data-group="platform"]')][0]
+    await waitFor(() => expect(platformRow()?.disabled).toBe(false))
+    click(platformRow())
+    await waitFor(() => expect(composerModel()?.providerID).toBe(catalog.platformProvider.id))
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.switchFailed"])
     mounted.dispose()
   })
 })

@@ -45,14 +45,29 @@ KEY 的直连模型全体变灰。本契约把它拆成两个**互不推导**的
 `session.switchModel`。可执行性由发送门(`canSend`)与会话切换门承担,**不得**回头
 否定谓词 1。
 
+**执行失败不得反向改写谓词 1(硬约束)**:引擎恢复后回报的清单里没有某个本地 BYOK 节点,
+只允许让「当前可执行」为假(发送门关闭、切换门拒绝、如实报错),**不得撤销、挂起或清空**
+一个由本地目录 + 本地 KEY 支撑的选择。放行这条撤销,`model.list` 就又变成了谓词 1 的
+最终裁判 —— 只是把裁判点从渲染层挪到了父层 reconciliation。
+撤销豁免只覆盖本地目录 BYOK:自定义节点消失、平台代理的登录/额度否定,一律照旧生效。
+
+**恢复 owner 不得被选择行为 supersede**:home 的本地 BYOK 选择只是一次内存写,在**任何**
+链状态下都不得让在跑的模型链或账户链判 stale —— 那会把「可用性押在一个不会再到来的事件上」
+这类悬崖重新造出来。建立了新 replacement owner 的 supersede(工作区切换、登录态变化、
+会话切换、显式重试)不在此列。
+
 ## 两个谓词的组合语义(唯一合法呈现)
 
-| 本地可选择 | 当前可执行 | 呈现 |
-| --- | --- | --- |
-| 是 | 是 | 行可选;选中即生效;可发送 |
-| 是 | 否 | 行可选,行内如实标「引擎重启中 · 可先选择」;**home 可先选**(内存写);发送门保持关闭 |
-| 否(未配 KEY) | — | 行呈现「未配置 KEY · 点击配置」,点击进配置流 |
-| 否(KEY 状态未知/读取失败) | — | 如实呈现读取中 / 读取失败,**不得**降格成「未配置」 |
+| 本地可选择 | 当前可执行 | 界面 | 呈现 |
+| --- | --- | --- | --- |
+| 是 | 是 | home / session | 行可点;选中即生效;可发送 |
+| 是 | 否 | **home** | 行可点,行内标「引擎重启中 · 可先选择」;选中只是内存写;发送门保持关闭 |
+| 是 | 否 | **session** | 行照常展示,但**不可点**且随之置灰,行内标「引擎重启中 · 恢复后可切换」—— 会话换模型必须落到服务端,不得让用户看到一条正常亮行却点不动 |
+| 否(未配 KEY) | — | home / session | 行呈现「未配置 KEY · 点击配置」,点击进配置流 |
+| 否(KEY 状态未知/读取失败) | — | home / session | 如实呈现读取中 / 读取失败,**不得**降格成「未配置」 |
+
+呈现纪律(与上表同级):**视觉必须跟随可点性**。行只要被选择门阻断就置灰,不允许出现
+「`availability` 说可选、按钮却 disabled、样式仍是正常亮行」这种三方互相打架的状态。
 
 `recovering` 下的会话边界:**home 模式可先选择;session 模式展示本地 BYOK 行,但在引擎
 恢复、`switchModel` 确认之前不得伪装成已切换。** 不存在也不得新增 session 排队切换
@@ -62,9 +77,11 @@ KEY 的直连模型全体变灰。本契约把它拆成两个**互不推导**的
 
 BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干预:
 
-- gateway `/v1/models` 的 `byok_providers` 字段在 alpha-code 侧**没有任何消费方**,
-  不解码、不缓存、不记录、不经 IPC 传递(REQ-109 #595,owner 裁决 2026-07-24)。
-  平台 wire/schema 侧的字段删除另行处理,不影响本契约。
+- gateway `/v1/models` 的 `byok_providers` 字段在 alpha-code 侧**没有任何策略消费方**:
+  **不作策略消费、不缓存、不记录、不经 IPC 传播**(REQ-109 #595,owner 裁决 2026-07-24)。
+  **它仍被解码与校验** —— `ModelCatalogV1` 把 `byok_providers` 列为 required,缺字段会判
+  `contract-incompatible`;`decodeJsonContract` 照旧解出完整信封,只是本仓不再读取该字段。
+  wire/schema 侧的字段删除另票处理,不影响本契约。
 - live allowlist 仍然收窄**平台代理模型清单**(edition-scoped),这一半不变。
 - 因此 BYOK 段没有远程 kill-switch。已接受的代价:供应商破坏性改鉴权/URL/协议、模型
   下架或改名、供应商安全事故、法务/制裁要求下架、错误 baseURL 或计费语义变化,都只能
@@ -89,21 +106,27 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
 | 谓词 1 的行派生(`availability` = picker 可选择性) | `packages/ui-mac/src/renderer/alpha-ui/model-picker-core.ts` |
 | row-aware 选择门 + 跳过引擎清单 membership | `packages/ui-mac/src/renderer/alpha-ui/alpha-composer-model.tsx` |
 | home 恢复中的内存写豁免 / `canSend` 不豁免 | `packages/ui-mac/src/renderer/alpha-ui/alpha-composer.tsx` |
+| 禁止引擎清单反向撤销已选本地 BYOK | `packages/ui-mac/src/renderer/alpha-ui/model-default-core.ts`(`checkSelectedModel`) |
 | 目录主权 + 失败域隔离 | `packages/ui-mac/src/main/alpha-platform-models.ts` |
 | 注入不受 allowlist 收窄 | `packages/ui-mac/src/main/alpha-models.ts` |
 | 缓存不含 BYOK 策略面 | `packages/ui-mac/src/main/alpha-live-allowlist.ts` |
 
 ## 回归闸门
 
-| 条款 | 闸门 |
-| --- | --- |
-| 未登录 + KEY 已配置 → 可选,非「正在同步」 | `model-picker-core.test.ts`、`test-component/alpha-composer-model.cases.ts` |
-| `listState === "recovering"` → 可选,行内「引擎重启中」 | 同上 |
-| 引擎清单缺 `<id>-byok`(或标 disabled/deprecated)→ 仍可选 | 同上 |
-| live allowlist 排除某供应商 / 平台不可达 → 仍在目录与注入中 | `alpha-models.test.ts`、`alpha-platform-catalog.cases.ts` |
-| 平台目录 contract-incompatible → 本地 BYOK 仍返回 | `alpha-platform-catalog.cases.ts` |
-| session recovering 下点击 → 零 `switchModel`,不呈现为已切换 | `test-component/alpha-composer-model.cases.ts` |
-| home 选中后发送门仍关闭 | 同上 |
+闸门层次要读准:**行派生**(纯核)只证明渲染判据,**点击层**只证明 picker 的门,
+**父层 reconciliation** 才证明选择不会在引擎回报后被撤销。三层缺一,主权就有漏口。
+
+| 条款 | 层次 | 闸门 |
+| --- | --- | --- |
+| 未登录 + KEY 已配置 → 可选,非「正在同步」 | 行派生 + 点击层 | `model-picker-core.test.ts`、`test-component/alpha-composer-model.cases.ts` |
+| `listState === "recovering"` → 可选,行内「引擎重启中」 | 行派生 + 点击层 | 同上 |
+| 引擎清单缺 `<id>-byok`(或标 disabled/deprecated)→ 行仍可选 | 行派生 + 点击层 | 同上 |
+| 引擎恢复后清单仍缺该节点 → 已选的本地 BYOK **不被撤销/挂起** | **父层 reconciliation** | `model-default-core.test.ts`(纯核豁免)、`test-component/alpha-composer-model.cases.ts`(真链两轮 reconciliation) |
+| home 选择不得 supersede 在跑的模型链 / 账户链 | **父层生命周期** | `test-component/alpha-composer-model.cases.ts`(链恢复自愈 + 账户链存活 → `platformPermission` 回 ready) |
+| live allowlist 排除某供应商 / 平台不可达 → 仍在目录与注入中 | main | `alpha-models.test.ts`、`alpha-platform-catalog.cases.ts` |
+| 平台目录 contract-incompatible → 本地 BYOK 仍返回 | main | `alpha-platform-catalog.cases.ts` |
+| session recovering 下点击 → 零 `switchModel`,不呈现为已切换,行置灰且文案不说「可先选择」 | 点击层 + 呈现 | `test-component/alpha-composer-model.cases.ts` |
+| home 选中后发送门仍关闭 | 点击层 + 发送门 | 同上 |
 
 相关:引擎两代配置面见 [`engine-config-channels.md`](engine-config-channels.md);平台目录
 拉取与 edition 语义见 [`platform-integration.md`](platform-integration.md)。

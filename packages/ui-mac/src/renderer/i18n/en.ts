@@ -959,6 +959,7 @@ export const dict = {
   "alpha.model.keyFailed": "Key status failed",
   "alpha.model.keyMissing": "No key configured · click to configure",
   "alpha.model.byokEngineRestarting": "Engine restarting · you can pick it now",
+  "alpha.model.byokEngineRestartingSession": "Engine restarting · switchable once it is back",
   "alpha.model.unavailable": "Currently unavailable",
   "alpha.model.needsLogin": "Sign-in required",
   "alpha.model.needsCredit": "Insufficient balance",
