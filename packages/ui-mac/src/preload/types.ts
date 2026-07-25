@@ -62,8 +62,10 @@ export type ServerReadyData = {
 }
 
 export type SidecarGenerationReason = "boot" | "token-only" | "structural"
+// #577:"failed" 是健康探测失败/超时的终态 —— consumer 拿到事实后自证(有界自探),
+// 而不是永远等一个不会再来的 "ready"。
 export type SidecarGenerationState = {
-  status: "recovering" | "ready"
+  status: "recovering" | "ready" | "failed"
   generation: number
   reason: SidecarGenerationReason
 }

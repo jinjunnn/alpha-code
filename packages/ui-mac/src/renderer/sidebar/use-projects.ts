@@ -22,6 +22,7 @@ import {
   notifySseReconnected,
   subscribeRuntimeRecovery,
 } from "../runtime-recovery"
+import { nextEngineRetryDelay } from "../alpha-ui/model-picker-logic"
 
 export interface ServerInfo {
   baseUrl: string
@@ -117,7 +118,14 @@ function sortSessions(list: AlphaSession[]): AlphaSession[] {
   return [...list].sort((a, b) => b.updated - a.updated)
 }
 
-export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): AlphaProjectsApi {
+export function useAlphaProjects(
+  server: Accessor<ServerInfo | undefined>,
+  // #594 测试注入口:自探节奏与探测器。生产走默认(/global/health + 1s/2s/4s/8s 封顶退避)。
+  probeOverrides?: {
+    delayFor?: (attempt: number) => number
+    probe?: (info: ServerInfo) => Promise<boolean>
+  },
+): AlphaProjectsApi {
   const [store, setStore] = createStore<AlphaProjectsStore>({ projects: [], ready: false, error: false })
 
   // The active read client + a generation token. Imperative actions (createSession) use the
@@ -501,6 +509,61 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     return gen
   }
 
+  // #594 闩死点一:client 重建不能无限期押在「ready 事件必达」上 —— #577 一类 producer 事故
+  // 会让 ready 永不到达(preload 回放的 recovering 又把 1s 兜底永久解除武装);failed 终态
+  // (#577)则明确 ready 不会再来,而引擎可能随后活了。收到 recovering/failed 后武装有界自探:
+  // 封顶退避轮询引擎 /global/health,可达即按 generation 现值乐观重建 client;ready 事件到达
+  // 或 client 已重建则自探退役。自探只在健康探测真实通过后才重建 —— failed 绝不被当成 ready。
+  const probeDelayFor = probeOverrides?.delayFor ?? nextEngineRetryDelay
+  const probeEngine =
+    probeOverrides?.probe ??
+    (async (info: ServerInfo): Promise<boolean> => {
+      try {
+        const res = await fetch(new URL("/global/health", info.baseUrl), {
+          headers: authHeaders(info),
+          signal: AbortSignal.timeout(2_000),
+        })
+        return res.ok
+      } catch {
+        return false
+      }
+    })
+  let selfProbeTimer: ReturnType<typeof setTimeout> | undefined
+  let selfProbeAttempt = 0
+  // R1 Minor2:root 卸载后在途的 health fetch 仍会 settle,旧闭包不得在无 owner 后 connect。
+  let selfProbeDisposed = false
+  // R1 Major1:自探建立的连接是 provisional 的 —— respawn 先发 recovering 后 kill 旧进程
+  // (graceful stop 最长数秒),自探可能被仍占端口的旧 sidecar 应答;交界处失败的
+  // loadProjects 无人重跑。记 provisional,让同代权威 ready 仍强制刷新一次。
+  let provisionalClient = false
+
+  const stopSelfProbe = () => {
+    clearTimeout(selfProbeTimer)
+    selfProbeTimer = undefined
+    selfProbeAttempt = 0
+  }
+
+  const scheduleSelfProbe = () => {
+    clearTimeout(selfProbeTimer)
+    selfProbeTimer = setTimeout(() => void runSelfProbe(), probeDelayFor(selfProbeAttempt++))
+  }
+
+  const runSelfProbe = async () => {
+    if (selfProbeDisposed) return
+    if (client) return stopSelfProbe() // ready 已到、client 已重建 → 自探退役
+    if (!serverInfo) return scheduleSelfProbe() // server info 未就绪(冷启动竞态)→ 稍后再探
+    const reachable = await probeEngine(serverInfo)
+    if (selfProbeDisposed || client) return // 卸载 / 探测期间 ready 已重建 → 不再动作
+    if (!reachable || !serverInfo) return scheduleSelfProbe()
+    stopSelfProbe()
+    provisionalClient = true
+    connect(serverInfo, runtimeState?.generation ?? connectedSidecarGeneration)
+    // R1 Blocker2:重建 client 只修好数据层;composer/picker 的读取链可能早已停跑
+    // (recovering 后无循环在等,而新 SSE 首连不触发 notifySseReconnected)。发本地
+    // 传输恢复通知把全部消费链唤醒 —— 这正是它们已订阅的「传输已恢复」信号。
+    notifySseReconnected("self-probe")
+  }
+
   const unsubscribeRuntime = subscribeRuntimeRecovery((state) => {
     runtimeStateReceived = true
     runtimeState = state
@@ -509,9 +572,23 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
       generation++
       client = undefined
       abortRef.abort()
+      stopSelfProbe()
+      scheduleSelfProbe()
       return
     }
-    if (!serverInfo || state.generation === connectedSidecarGeneration) return
+    if (state.status === "failed") {
+      // #577 终态:本代 ready 不会再来。执行面保持关闭(不盲目重建 client),
+      // 只靠自探自证 —— 引擎真实可达才重建。
+      stopSelfProbe()
+      scheduleSelfProbe()
+      return
+    }
+    stopSelfProbe()
+    if (!serverInfo) return
+    // R1 Major1:同代已有 client 只在「权威连接」时跳过;自探建的 provisional 连接可能
+    // 应答自将死的旧进程,权威 ready 必须强制刷新一次(重建 client + 重拉 + 重订阅)。
+    if (state.generation === connectedSidecarGeneration && client && !provisionalClient) return
+    provisionalClient = false
     connect(serverInfo, state.generation)
   })
 
@@ -523,10 +600,14 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
       return
     }
     if (runtimeState?.status === "ready") {
-      if (!client || runtimeState.generation !== connectedSidecarGeneration)
+      if (!client || runtimeState.generation !== connectedSidecarGeneration) {
+        provisionalClient = false
         connect(serverInfo, runtimeState.generation)
+      }
       return
     }
+    // recovering/failed 由自探兜底(scheduleSelfProbe)接管重建,不在此处盲连;
+    // 下面的 1s 兜底只覆盖「从未收到任何 generation 状态」。
     if (runtimeStateReceived) return
     clearTimeout(bridgeFallbackTimer)
     bridgeFallbackTimer = setTimeout(() => {
@@ -539,6 +620,8 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     client = undefined
     abortRef.abort()
     clearTimeout(bridgeFallbackTimer)
+    selfProbeDisposed = true
+    stopSelfProbe()
     unsubscribeRuntime()
   })
 
