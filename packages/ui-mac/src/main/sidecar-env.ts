@@ -96,16 +96,35 @@ const PREFIXES = ["OPENCODE_", "XDG_", "LC_", "ELECTRON_"]
 // TOKENIZER_PATH) — harmless while the veto only guarded PREFIXES, but #603 hoisted it above every
 // allow rule, so the false-positive surface grew to all three paths. Two alternatives now, both /i:
 //
-//   1. `(^|_)WORD S? (_|$)` — the word is a whole `_`-delimited segment.
+//   1. `(^|_)WORD (_|$)` — the word is a whole `_`-delimited segment.
 //      ALPHA_API_KEY, AWS_SECRET_ACCESS_KEY, DB_PASSWORD, my_api_key, bare KEY, TOKEN_.
-//   2. `WORD S? $`          — the name ENDS with the word, no separator required.
+//   2. `WORD $`          — the name ENDS with the word, no separator required.
 //      APIKEY, MYKEY, GITHUBTOKEN, camelCase myApiKey. Rule 1 alone lets every one of those
 //      through, and the trailing segment is exactly where a real key name puts the word ("this var
 //      IS a key"). Dropping rule 2 is the single mutation that reopens the leak.
 //
+// WORD is not the bare noun. It is `NOUN CONTAINER? S?`:
+//
+//   NOUN      = KEY | TOKEN | SECRET | PASSWORD | CREDENTIAL
+//   CONTAINER = FILE | STORE | CHAIN | RING | PAIR | DATA
+//
 // `S?` is not cosmetic: without it API_KEYS / ACCESS_TOKENS / SOME_CREDENTIALS are `_`-bounded on
 // the left but not the right and do not end in the singular either, so BOTH rules miss them. A
 // plural is the likeliest real key name a naive boundary rewrite would have re-opened.
+//
+// CONTAINER is the fix for a leak this rewrite ORIGINALLY SHIPPED (found by the adversarial round,
+// #605 R1): GOOGLE_CLOUD_KEYFILE_JSON and GCLOUD_KEYFILE_JSON are real, currently-supported
+// credential vars — the HashiCorp Google provider stuffs the raw service-account JSON into them —
+// and `KEY` buried in `_KEYFILE_` satisfies neither rule 1 nor rule 2. The old substring predicate
+// vetoed them; the first boundary rewrite did not.
+//
+// Why a suffix list and not a smarter shape rule: KEYFILE and KEYBOARD are STRUCTURALLY IDENTICAL
+// (credential noun + suffix). Shape alone cannot separate them — the difference is semantic, not
+// lexical. What separates them is that FILE/STORE/CHAIN/RING/PAIR/DATA name a CONTAINER OF the
+// credential, so the compound still denotes the secret, whereas BOARD/-IZER/-EY make the noun a
+// coincidental prefix of an unrelated word. That is the invariant this list encodes; it is a
+// closed, reviewable enumeration rather than a general rule, and adding to it is the correct move
+// when a new container word shows up.
 //
 // This is a DENY predicate being NARROWED — the fail-open direction (startup baseline ③″4-2/4-4).
 // Invariants it now depends on, and what enforces each (③″1):
@@ -119,17 +138,28 @@ const PREFIXES = ["OPENCODE_", "XDG_", "LC_", "ELECTRON_"]
 //       credential-shaped" guard, which calls isSecretish() — re-typing the regex in the test would
 //       have kept asserting the OLD predicate after this change (③″3-1 禁止镜像). Reddening
 //       mutation: add a "*_TOKEN" name to EXACT.
-//   I3. Narrowing a DENY rule must not widen ALLOW. Structurally enforced: the veto only decides
-//       what to DROP; a name it stops vetoing still has to clear EXACT / PREFIXES / the hatch, and
-//       is otherwise dropped by default-deny. Reddening mutation: any allow-rule edit fails the
-//       must-allow matrix's "nothing else got in" assertions.
+//   I3. Narrowing a DENY rule must not widen ALLOW. **Structural argument plus differential
+//       evidence — NOT an independent gate** (③″1 / ③″3-12: the honest label belongs in the source,
+//       not only in a delivery report). The structure: the veto only decides what to DROP; a name it
+//       stops vetoing still has to clear EXACT / PREFIXES / the hatch, and is otherwise dropped by
+//       default-deny. The evidence: the corpus differential in the test file reports every
+//       old-deny→new-allow transition and asserts none of them is a real credential name, plus
+//       old-allow→new-deny = 0. What is NOT enforced: adding an untested benign name to EXACT does
+//       widen ALLOW and no gate reddens (the must-allow matrix only asserts known names survive;
+//       there is no "nothing else got in" assertion). Stated so the next reader does not mistake
+//       this row for a gated invariant.
 //
-// Accepted residual, stated rather than hidden: a credential word buried mid-name with no separator
-// and not in trailing position (XKEYX, OPENCODE_KEYFILE) is no longer vetoed. It must still clear an
-// allow rule to reach the sidecar, and no real key var is spelled that way. Symmetrically, a BARE
-// MONKEY / TURKEY / DONKEY is still vetoed by rule 2 — over-denial is the safe direction, and every
-// reported false positive was `MONKEY_MODE`-shaped (word not trailing).
-const SECRETISH = /(^|_)(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)S?(_|$)|(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)S?$/i
+// Accepted residual, stated rather than hidden: a credential noun buried mid-name with no separator
+// and not in trailing position (XKEYX) is no longer vetoed. It must still clear an allow rule to
+// reach the sidecar. NOTE this list used to include OPENCODE_KEYFILE on the reasoning that a
+// *_KEYFILE name is a path, not the secret — the adversarial round disproved it (see CONTAINER
+// above), which is why the residual is now one name and not a family. Symmetrically, a BARE MONKEY /
+// TURKEY / DONKEY is still vetoed by rule 2 — over-denial is the safe direction, and every reported
+// false positive was `MONKEY_MODE`-shaped (noun not trailing).
+const CREDENTIAL_NOUN = "KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL"
+const CREDENTIAL_CONTAINER = "FILE|STORE|CHAIN|RING|PAIR|DATA"
+const CREDENTIAL_WORD = `(?:${CREDENTIAL_NOUN})(?:${CREDENTIAL_CONTAINER})?S?`
+const SECRETISH = new RegExp(`(^|_)${CREDENTIAL_WORD}(_|$)|${CREDENTIAL_WORD}$`, "i")
 
 /** The credential-name veto. Exported so its gates execute the production predicate, not a copy. */
 export function isSecretish(name: string): boolean {

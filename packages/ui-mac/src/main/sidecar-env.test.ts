@@ -247,6 +247,27 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
     "DB_PASSWORD",
     "SOME_CREDENTIAL",
     "my_api_key",
+    // #605 R1 (adversarial): the first boundary rewrite SHIPPED a leak here. These are real,
+    // currently-supported credential vars — the HashiCorp Google provider stuffs the raw
+    // service-account JSON into them — and `KEY` buried in `_KEYFILE_` satisfied neither rule.
+    "GOOGLE_CLOUD_KEYFILE_JSON",
+    "GCLOUD_KEYFILE_JSON",
+    // Re-judged in the same round: KEYSTORE/KEYCHAIN really do hold keys, so the earlier verdict
+    // that filed them as "innocent old-deny→new-allow" was wrong. Over-denial is the safe side.
+    "KEYSTORE_DIR",
+    "KEYCHAIN_PATH",
+    "OPENCODE_KEYFILE",
+    // Corpus widened after the leak: the family that slipped through was absent from the first
+    // corpus, so cloud / IaC / CI / db credential names are now first-class must-deny entries.
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "AZURE_CLIENT_SECRET",
+    "VAULT_TOKEN",
+    "NPM_TOKEN",
+    "CI_JOB_TOKEN",
+    "PGPASSWORD",
+    "SSH_KEYFILE",
+    "JAVA_KEYSTORE",
+    "GPG_KEYRING",
   ]
 
   // #605 must-allow: the false positives the substring match caused, plus every name #603 measured
@@ -279,10 +300,10 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
     }
     // …and the run was not vacuous: the hatch really was live on this call.
     expect(env.MY_CUSTOM_VAR).toBe("kept")
-    expect(MUST_DENY.length).toBe(11)
+    expect(MUST_DENY.length).toBe(25)
   })
 
-  test("reverse gate: the predicate itself vetoes all 11 (shared by hatch/EXACT/prefix paths)", () => {
+  test("reverse gate: the predicate itself vetoes every must-deny name (hatch/EXACT/prefix)", () => {
     expect(MUST_DENY.filter((name) => !isSecretish(name))).toEqual([])
   })
 
@@ -342,10 +363,85 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
       ["MONKEY", true],
       ["TURKEY", true],
       ["DONKEYS", true],
-      // — accepted RESIDUAL under-denial: word buried, not trailing, no separator —
-      ["OPENCODE_KEYFILE", false],
+      // — CONTAINER compounds: noun + FILE/STORE/CHAIN/RING/PAIR/DATA still denotes the secret.
+      //   KEYFILE and KEYBOARD are structurally identical (noun + suffix); shape alone cannot
+      //   separate them, which is why the container words are a closed enumeration (#605 R1). —
+      ["OPENCODE_KEYFILE", true],
+      ["GOOGLE_CLOUD_KEYFILE_JSON", true],
+      ["KEYSTORE_DIR", true],
+      ["KEYCHAIN_PATH", true],
+      ["GPG_KEYRING", true],
+      ["SIGNING_KEYPAIR", true],
+      ["TOKENSTORE", true],
+      // — accepted RESIDUAL under-denial: noun buried, not trailing, no separator. One name, not a
+      //   family — the *_KEYFILE family used to live here and the adversarial round removed it. —
+      ["XKEYX", false],
     ]
     expect(verdicts.map(([name]) => [name, isSecretish(name)])).toEqual(verdicts.map(([n, v]) => [n, v]))
+  })
+
+  // The differential the I3 note in sidecar-env.ts points at. I3 is a STRUCTURAL argument plus THIS
+  // evidence — it is not an independent gate (see that note). What this does gate: narrowing the
+  // DENY predicate must not stop vetoing any real credential name, in either direction.
+  test("corpus differential: no real credential name moved from denied to allowed", () => {
+    const OLD_SUBSTRING = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i
+    // Real credential var names, widened after #605 R1 (the *_KEYFILE_JSON family was absent from
+    // the first corpus, which is exactly why the leak shipped).
+    const REAL_CREDENTIALS = [
+      ...MUST_DENY,
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "AZURE_CLIENT_SECRET",
+      "GOOGLE_CLOUD_KEYFILE_JSON",
+      "GCLOUD_KEYFILE_JSON",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+      "TF_VAR_credentials",
+      "PULUMI_ACCESS_TOKEN",
+      "GITHUB_TOKEN",
+      "GITLAB_TOKEN",
+      "CIRCLE_TOKEN",
+      "NPM_TOKEN",
+      "CARGO_REGISTRY_TOKEN",
+      "PGPASSWORD",
+      "MYSQL_PWD_SECRET",
+      "REDIS_PASSWORD",
+      "RABBITMQ_DEFAULT_PASS_SECRET",
+      "KAFKA_SASL_PASSWORD",
+      "DOCKER_REGISTRY_PASSWORD",
+      "VAULT_TOKEN",
+      "SSH_KEYFILE",
+      "JAVA_KEYSTORE",
+      "ANDROID_KEYSTORE",
+      "GPG_KEYRING",
+      "SIGNING_KEYPAIR",
+      "SERVICE_ACCOUNT_KEYDATA",
+      "APIKEY",
+      "MYKEY",
+      "GITHUBTOKEN",
+      "API_KEYS",
+      "ACCESS_TOKENS",
+    ]
+    const INNOCENT = [
+      ...MUST_ALLOW,
+      "DONKEY_CART",
+      "TOKENIZERS_PARALLELISM",
+      "PASSWORDLESS_MODE",
+      "SECRETARY_NAME",
+      "MONKEY_BUSINESS",
+      "KEYBOARD_SHORTCUTS",
+    ]
+    const corpus = [...new Set([...REAL_CREDENTIALS, ...INNOCENT])]
+
+    // Direction that would leak: old vetoed it, new does not.
+    const nowAllowed = corpus.filter((name) => OLD_SUBSTRING.test(name) && !isSecretish(name))
+    expect(nowAllowed.filter((name) => REAL_CREDENTIALS.includes(name))).toEqual([])
+
+    // Direction that would silently narrow ALLOW: old admitted it, new vetoes it.
+    expect(corpus.filter((name) => !OLD_SUBSTRING.test(name) && isSecretish(name))).toEqual([])
+
+    // Not vacuous: the differential really does have transitions, and they are all innocent.
+    expect(nowAllowed.length).toBeGreaterThan(0)
+    expect(nowAllowed.every((name) => INNOCENT.includes(name))).toBe(true)
   })
 })
 
