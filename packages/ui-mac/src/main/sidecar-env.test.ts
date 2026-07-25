@@ -195,6 +195,17 @@ describe("createSidecarEnv — escape hatch", () => {
     expect(names.length).toBeGreaterThan(20)
     expect(names.filter((name) => /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i.test(name))).toEqual([])
   })
+
+  // NEVER_INHERIT is compared lowercased, so an entry written in uppercase would silently never
+  // match. Same guard shape as above: make that mistake fail here instead of leaking.
+  test("guard: every NEVER_INHERIT entry is lowercase (it is compared lowercased)", () => {
+    const src = fs.readFileSync(path.join(import.meta.dir, "sidecar-env.ts"), "utf8")
+    const block = src.match(/const NEVER_INHERIT = new Set\(\[([\s\S]*?)\]\)/)
+    expect(block).not.toBeNull()
+    const names = [...block![1].matchAll(/"([^"]+)"/g)].map((m) => m[1])
+    expect(names.length).toBeGreaterThan(0)
+    expect(names.filter((name) => name !== name.toLowerCase())).toEqual([])
+  })
 })
 
 // #603 R1 Blocker: a name-based veto is blind to secrets carried in a VALUE. OPENCODE_CONFIG_CONTENT
@@ -223,6 +234,29 @@ describe("createSidecarEnv — container-valued vars", () => {
     expect(env.PATH).toBe("/usr/bin")
   })
 
+  // R2 Blocker: Windows env keys are case-insensitive, and Object.entries() yields whatever casing
+  // the OS stored. A Set lookup is case-SENSITIVE, so a lowercase twin slipped past the drop while
+  // the sidecar's `process.env.OPENCODE_CONFIG_CONTENT` read (sidecar.ts:173) still resolved it on
+  // Windows. ui-mac really ships there (package.json `ship:windows`).
+  test("drops OPENCODE_CONFIG_CONTENT under Windows casing, even when named in the hatch", () => {
+    const env = createSidecarEnv({
+      ALPHA_ENV_ALLOWLIST_EXTRA: "opencode_config_content",
+      opencode_config_content: JSON.stringify({ provider: { p: { options: { apiKey: "sk-win-probe" } } } }),
+      PATH: "/usr/bin",
+    })
+    expect(env.opencode_config_content).toBeUndefined()
+    expect(JSON.stringify(env)).not.toContain("sk-win-probe")
+    expect(env.PATH).toBe("/usr/bin")
+  })
+
+  test("drops OPENCODE_CONFIG_CONTENT under any mixed casing", () => {
+    for (const key of ["Opencode_Config_Content", "OPENCODE_config_CONTENT", "openCODE_CONFIG_content"]) {
+      const env = createSidecarEnv({ [key]: JSON.stringify({ apiKey: "sk-mixed-probe" }) })
+      expect(env[key]).toBeUndefined()
+      expect(JSON.stringify(env)).not.toContain("sk-mixed-probe")
+    }
+  })
+
   test("drops externally inherited OPENCODE_CONFIG_CONTENT regardless of what the value holds", () => {
     // Uniform rule: no value parsing. A {file:}-only blob is dropped too — main has no business
     // forwarding a config blob at all, and the sidecar builds its own after fork.
@@ -232,10 +266,18 @@ describe("createSidecarEnv — container-valued vars", () => {
     expect(env.OPENCODE_CONFIG_CONTENT).toBeUndefined()
   })
 
-  test("keeps the config channels alpha's own injection depends on (the file/dir channels)", () => {
+  // NAMING IS DELIBERATE (R2 Minor): this asserts only that createSidecarEnv still forwards the
+  // INPUTS alpha's injection reads. It is NOT a gate on the injection succeeding — injectAlphaConfig
+  // could throw internally, be swallowed by its function-level catch (sidecar.ts:421), produce no
+  // content at all, and this test would stay green. That end-to-end gate cannot live in this repo's
+  // test process today: sidecar.ts is unimportable under bun because its first import,
+  // `registerHooks` from node:module (the ADR-006 TS-resolve bridge, sidecar.ts:2/:25), is
+  // undefined in bun 1.3.14 — and behind it sidecar.ts:84 calls getParentPort() at top level, which
+  // throws outside a utility process. No test in this repo imports sidecar.ts for that reason.
+  test("forwards the env INPUTS alpha's injection reads (not a gate on the injection succeeding)", () => {
     // injectAlphaConfig sets OPENCODE_CONFIG itself (sidecar.ts:170) and materializeV2EngineConfig
     // sets OPENCODE_CONFIG_DIR; both are PATHS, not secret containers. Closing exactly one channel
-    // must not close the family — this is the gate against strangling alpha's injection.
+    // must not close the family.
     const env = createSidecarEnv({
       OPENCODE_CONFIG: "/Users/u/.alpha/alpha.jsonc",
       OPENCODE_CONFIG_DIR: "/Users/u/Library/Application Support/alpha-code/engine-config",

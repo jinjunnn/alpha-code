@@ -95,7 +95,15 @@ const SECRETISH = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i
 // (sidecar.ts:173-174) — that is the branch every normal boot already takes. The engine keeps its
 // file/dir config channels (OPENCODE_CONFIG, OPENCODE_CONFIG_DIR); only the inline-JSON-in-env
 // channel is closed, and a config blob holding a real secret belongs in the {file:} channel anyway.
-const NEVER_INHERIT = new Set(["OPENCODE_CONFIG_CONTENT"])
+//
+// Entries are lowercase and compared lowercased. Windows env keys are case-insensitive and
+// Object.entries() yields whatever casing the OS stored, so a case-sensitive Set lookup let a
+// lowercase twin through while the sidecar's `process.env.OPENCODE_CONFIG_CONTENT` read still
+// resolved it (#603 R2; ui-mac ships Windows). Applied on every platform, not behind a
+// process.platform branch: a DENY rule that is uniformly case-insensitive cannot be wrong, and on
+// POSIX a lowercase twin is inert to the engine anyway (it reads the exact uppercase name), so
+// dropping it costs nothing. The ALLOW rules below stay case-sensitive on purpose — see the loop.
+const NEVER_INHERIT = new Set(["opencode_config_content"])
 
 export function createSidecarEnv(source: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const extra = new Set(
@@ -108,9 +116,13 @@ export function createSidecarEnv(source: NodeJS.ProcessEnv = process.env): Recor
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(source)) {
     if (value === undefined) continue
-    // The secret veto comes FIRST, so it holds on every path — including the escape hatch (#603).
+    // Both DENY rules come FIRST and are case-insensitive (SECRETISH via /i, NEVER_INHERIT via the
+    // lowercased compare), so they hold on every path — including the escape hatch — under any
+    // casing the OS hands us. The ALLOW rules stay case-sensitive: that can only ever admit FEWER
+    // vars, and a var it declines to admit is simply dropped. Nothing reaches the sidecar without
+    // clearing both DENY rules first, so no casing variant can bypass them (#603 R2).
     if (SECRETISH.test(key)) continue
-    if (NEVER_INHERIT.has(key)) continue
+    if (NEVER_INHERIT.has(key.toLowerCase())) continue
     const allowed = extra.has(key) || EXACT.has(key) || PREFIXES.some((prefix) => key.startsWith(prefix))
     if (!allowed) continue
     env[key] = String(value)
