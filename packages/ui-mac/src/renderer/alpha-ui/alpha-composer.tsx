@@ -73,6 +73,7 @@ import {
 } from "./model-default-core"
 import { ModelPickPop } from "./alpha-composer-model"
 import { createModelContract, type ModelContract } from "./model-contract"
+import { isByokEngineId } from "../../shared/alpha-model-types"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
 import { accountResultState, createRetryWakeup, loadEngineModelsWithRetry, resolveAccountWithRetry } from "./model-recovery"
@@ -755,11 +756,20 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   })
 
   const selectComposerModel = async (model: NonNullable<ReturnType<typeof composerModel>>) => {
+    /* REQ-109 #595:home 的本地 BYOK 直连节点在引擎链恢复中也能写进内存选择 —— 它的可选择性只由
+       本地目录 + 本地 KEY 决定(契约 docs/contracts/byok-availability.md),而 home 的“选中”本身
+       只是一次内存写(下方 setComposerModel),不需要引擎。执行仍是另一个谓词:canSend 继续要求
+       modelChainState() === "ready",绝不在引擎未恢复时假装能发送。
+       session 模式不豁免:换模型必须落到服务端 switchModel,引擎不在就不能伪装成已切换。 */
+    const homeLocalByok = props.mode === "home" && !props.sessionID?.() && isByokEngineId(model.providerID)
     // 未获全链 admission 时不能 supersede 正在完成 auth/KEY/account/list 的 owner，否则无人接管 loading。
-    if (modelChainState() !== "ready") throw new Error("model chain is not ready")
+    if (modelChainState() !== "ready" && !homeLocalByok) throw new Error("model chain is not ready")
     if (model.providerID === platformId() && platformPermission() !== "ready")
       throw new Error("platform permission is recovering")
-    const seq = ++chainSeq
+    // 恢复中的 home BYOK 选择**不得** supersede 在跑的模型链:`++chainSeq` 会让 list 重试循环
+    // (loadEngineModelsWithRetry 的 isStale)静默终止 —— 正是 #594 修掉的那类永久闩死。
+    // 链已 ready 时沿用既有语义:用户显式选择压过链尾的默认解析。
+    const seq = homeLocalByok && modelChainState() !== "ready" ? chainSeq : ++chainSeq
     const sessionID = props.sessionID?.()
     if (sessionID) {
       const projection = composerModelProjection()

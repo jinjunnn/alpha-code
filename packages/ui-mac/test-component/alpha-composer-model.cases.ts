@@ -73,6 +73,7 @@ const {
 } = await import(
   "../src/renderer/alpha-ui/composer-state"
 )
+const { byokEngineId } = await import("../src/shared/alpha-model-types")
 
 const catalog = {
   ...(await Bun.file(new URL("../src/main/alpha-models.json", import.meta.url)).json()),
@@ -1706,5 +1707,212 @@ describe("REQ-125 C558 发送在途与草稿捕获互斥(v2 durable)", () => {
     await waitFor(() => expect(sendDisabled(mounted.host)).toBe(false)) // sending 落回 false
     mounted.dispose() // 失败后卸载 → capture 拿到保留文本
     expect(captured).toEqual(["will fail"])
+  })
+})
+
+/* ── REQ-109 #595:BYOK 可选择性与登录/平台/引擎清单解耦(真 DOM 闸门)────────────────────────
+   两个独立谓词(契约 docs/contracts/byok-availability.md):
+     「BYOK 本地可选择」= 本地目录存在模型 + 本地 KEY 已配置;
+     「当前可执行」     = 引擎已恢复。
+   下面四条断言的是**行为**(真实按钮的 disabled / 真实点击的后果 / 真实发送门),不是镜像逻辑。 */
+describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
+  const deepseekEngineId = byokEngineId("deepseek")
+  const deepseekModels = catalog.byokProviders.find((provider) => provider.id === "deepseek")!.models
+  const byokRows = (host: HTMLElement) =>
+    [...host.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].filter(
+      (row) => row.dataset.group === "byok" && row.textContent?.includes(deepseekModels[0]),
+    )
+  const openPicker = () =>
+    [...document.body.querySelectorAll<HTMLElement>('[data-alpha-picker-owner="alpha.composer-model"]')][0]
+
+  test("退出条件 1/3:未登录 + 引擎清单缺 `<id>-byok` → BYOK 行可见可选,且不显示「正在同步」", async () => {
+    resetComposerModelProjection()
+    installApi({ auth: async () => loggedOut })
+    const picked: ComposerModel[] = []
+    let pickedClosed = 0
+    // 引擎清单只有平台模型 —— 一个 `deepseek-byok` 条目都没有。
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async (model) => {
+          picked.push(model)
+        },
+        onPicked: () => {
+          pickedClosed++
+        },
+      }),
+    )
+
+    await waitFor(() => expect(byokRows(mounted.host)).toHaveLength(1))
+    const row = byokRows(mounted.host)[0]
+    expect(row.disabled).toBe(false)
+    expect(row.classList.contains("locked")).toBe(false)
+    expect(row.textContent).not.toContain(zh["alpha.model.syncing"])
+    expect(row.textContent).not.toContain(zh["alpha.model.unavailable"])
+    click(row)
+    await waitFor(() => expect(picked).toHaveLength(1))
+    expect(picked[0]).toMatchObject({ providerID: deepseekEngineId, id: deepseekModels[0] })
+    expect(pickedClosed).toBe(1)
+    mounted.dispose()
+  })
+
+  test("退出条件 2:引擎恢复中 + modelChainReady=false,home 的 BYOK 行仍可点且行内是「引擎重启中」", async () => {
+    resetComposerModelProjection()
+    installApi()
+    const picked: ComposerModel[] = []
+    let pickedClosed = 0
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: {
+          list: async () => {
+            throw new Error("engine restarting")
+          },
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async (model) => {
+          picked.push(model)
+        },
+        onPicked: () => {
+          pickedClosed++
+        },
+        modelChainReady: () => false,
+      }),
+    )
+
+    await waitFor(() => {
+      expect(mounted.host.textContent).toContain(zh["alpha.model.engineConnecting"])
+      expect(byokRows(mounted.host)).toHaveLength(1)
+    })
+    const row = byokRows(mounted.host)[0]
+    expect(row.textContent).toContain(zh["alpha.model.byokEngineRestarting"])
+    expect(row.textContent).not.toContain(zh["alpha.model.syncing"])
+    expect(row.disabled).toBe(false)
+    click(row)
+    await waitFor(() => expect(picked).toHaveLength(1))
+    expect(picked[0]).toMatchObject({ providerID: deepseekEngineId, id: deepseekModels[0] })
+    expect(pickedClosed).toBe(1)
+    // 恢复中 readyListEpoch 为 null —— 不得因此卡在切换动画里(旧 epoch 判据会漏掉复位)。
+    expect(byokRows(mounted.host)[0].classList.contains("is-switching")).toBe(false)
+    mounted.dispose()
+  })
+
+  test("退出条件 6:session 模式恢复中点 BYOK 行 —— 展示但不可点,零 switchModel,不呈现为已切换", async () => {
+    installApi()
+    const switches: Array<{ sessionID: string; model: ModelRef }> = []
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects,
+        directory: () => "/workspace",
+        sessionID: () => "S1",
+        command,
+        modelContract: {
+          list: async () => {
+            throw new Error("engine restarting")
+          },
+          current: async () => undefined,
+          switch: async (sessionID, model) => {
+            switches.push({ sessionID, model })
+          },
+        },
+      }),
+    )
+
+    await waitFor(() => expect(composerModelProjection()).toEqual({ status: "ready", sessionID: "S1" }))
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(byokRows(openPicker())).toHaveLength(1))
+    const row = byokRows(openPicker())[0]
+    // 展示:本地 BYOK 行照常在;可点:不行 —— 会话换模型必须落到服务端 switchModel。
+    expect(row.disabled).toBe(true)
+    // 绕过原生 disabled 抑制,直接证伪「点了就当已切换」。
+    row.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await flush()
+    expect(switches).toEqual([])
+    expect(composerModel()).toBeNull()
+    expect(row.getAttribute("aria-current")).toBeNull()
+    expect(row.classList.contains("selected")).toBe(false)
+    mounted.dispose()
+  })
+
+  test("home 恢复中选中本地 BYOK 只是内存写:发送门仍关闭(canSend 不做 BYOK 豁免)", async () => {
+    installApi()
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          list: async () => {
+            throw new Error("engine restarting")
+          },
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "hello",
+      }),
+    )
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    expect(send.disabled).toBe(true)
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(byokRows(openPicker())).toHaveLength(1))
+    const row = byokRows(openPicker())[0]
+    expect(row.disabled).toBe(false)
+    click(row)
+
+    // 选择成功落进内存(chip 标签随之更新),但发送仍等引擎 —— 视觉不造假。
+    await waitFor(() => expect(composerModel()?.providerID).toBe(deepseekEngineId))
+    expect(composerModel()?.id).toBe(deepseekModels[0])
+    expect(mounted.host.querySelector('[data-kind="model"] .a-chip-label')?.textContent).toContain(
+      composerModel()!.name,
+    )
+    expect(send.disabled).toBe(true)
+    mounted.dispose()
+  })
+
+  test("home 恢复中的 BYOK 选择不 supersede 在跑的模型链:引擎回来后自动 ready,选择保留", async () => {
+    installApi()
+    const byokModel = info(deepseekEngineId, deepseekModels[0])
+    let listCalls = 0
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          // 前两次失败(引擎重启),之后成功 —— 自动恢复只能靠还活着的重试循环。
+          list: async () => {
+            if (++listCalls <= 2) throw new Error("engine restarting")
+            return [...platformModels, byokModel]
+          },
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "hello",
+      }),
+    )
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(byokRows(openPicker())).toHaveLength(1))
+    click(byokRows(openPicker())[0])
+    await waitFor(() => expect(composerModel()?.providerID).toBe(deepseekEngineId))
+    expect(send.disabled).toBe(true)
+
+    // 选择只是内存写,不得把还在退避重试的链判 stale —— 否则自动恢复永久闩死(#594 同类)。
+    await new Promise((resolve) => setTimeout(resolve, 3500))
+    expect(send.disabled).toBe(false)
+    expect(composerModel()?.providerID).toBe(deepseekEngineId)
+    expect(composerModelSuspended()).toBeNull()
+    mounted.dispose()
   })
 })

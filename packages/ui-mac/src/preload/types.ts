@@ -953,7 +953,7 @@ export type ElectronAPI = {
   models: {
     catalog: () => Promise<EffectiveCatalog>
     platformLive: () => Promise<
-      CloudResult<{ models: PlatformLiveModel[]; edition?: string; byokProviders: string[] | null }>
+      CloudResult<{ models: PlatformLiveModel[]; edition?: string }>
     >
   }
   // custom provider add/test (writes alpha.jsonc provider[], respawns sidecar; 1-token probe).

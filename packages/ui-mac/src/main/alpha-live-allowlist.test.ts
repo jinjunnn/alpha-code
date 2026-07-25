@@ -25,33 +25,29 @@ describe("readLiveAllowlist — fail-open 读侧", () => {
     expect(readLiveAllowlist(tmp)).toBeNull()
   })
 
-  test("形状不对(models 非数组 / byokProviders 非 null 非数组)→ null", () => {
-    fs.writeFileSync(liveAllowlistPath(tmp), JSON.stringify({ fetchedAt: "x", byokProviders: null, models: "oops" }))
-    expect(readLiveAllowlist(tmp)).toBeNull()
-    fs.writeFileSync(
-      liveAllowlistPath(tmp),
-      JSON.stringify({ fetchedAt: "x", byokProviders: "deepseek", models: [] }),
-    )
+  test("形状不对(models 非数组)→ null", () => {
+    fs.writeFileSync(liveAllowlistPath(tmp), JSON.stringify({ fetchedAt: "x", models: "oops" }))
     expect(readLiveAllowlist(tmp)).toBeNull()
   })
 })
 
 describe("write → read 回路", () => {
-  test("roundtrip 保真(edition/byok/models)", () => {
+  test("roundtrip 保真(edition/models)", () => {
     writeLiveAllowlist(tmp, {
       fetchedAt: "2026-07-03T00:00:00Z",
       edition: "cn",
-      byokProviders: ["deepseek"],
       models: [{ id: "deepseek-chat", provider: "deepseek", minPlan: "free" }],
     })
     const r = readLiveAllowlist(tmp)!
     expect(r.edition).toBe("cn")
-    expect(r.byokProviders).toEqual(["deepseek"])
     expect(r.models.map((m) => m.id)).toEqual(["deepseek-chat"])
   })
 
-  test("byokProviders null(不限制)合法", () => {
-    writeLiveAllowlist(tmp, { fetchedAt: "x", byokProviders: null, models: [] })
-    expect(readLiveAllowlist(tmp)!.byokProviders).toBeNull()
+  // REQ-109 #595:BYOK 白名单已撤销 —— 写侧不再产出该字段,读侧也不得再据它拒绝旧缓存。
+  test("#595:写出的缓存不含任何 BYOK 策略字段;旧缓存残留该字段仍可读(平台无 BYOK 干预面)", () => {
+    writeLiveAllowlist(tmp, { fetchedAt: "x", models: [] })
+    expect(Object.keys(JSON.parse(fs.readFileSync(liveAllowlistPath(tmp), "utf8")))).not.toContain("byokProviders")
+    fs.writeFileSync(liveAllowlistPath(tmp), JSON.stringify({ fetchedAt: "x", byokProviders: "deepseek", models: [] }))
+    expect(readLiveAllowlist(tmp)).not.toBeNull()
   })
 })
