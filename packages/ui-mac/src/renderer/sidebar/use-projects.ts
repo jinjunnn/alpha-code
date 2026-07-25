@@ -530,6 +530,12 @@ export function useAlphaProjects(
     })
   let selfProbeTimer: ReturnType<typeof setTimeout> | undefined
   let selfProbeAttempt = 0
+  // R1 Minor2:root 卸载后在途的 health fetch 仍会 settle,旧闭包不得在无 owner 后 connect。
+  let selfProbeDisposed = false
+  // R1 Major1:自探建立的连接是 provisional 的 —— respawn 先发 recovering 后 kill 旧进程
+  // (graceful stop 最长数秒),自探可能被仍占端口的旧 sidecar 应答;交界处失败的
+  // loadProjects 无人重跑。记 provisional,让同代权威 ready 仍强制刷新一次。
+  let provisionalClient = false
 
   const stopSelfProbe = () => {
     clearTimeout(selfProbeTimer)
@@ -543,13 +549,19 @@ export function useAlphaProjects(
   }
 
   const runSelfProbe = async () => {
+    if (selfProbeDisposed) return
     if (client) return stopSelfProbe() // ready 已到、client 已重建 → 自探退役
     if (!serverInfo) return scheduleSelfProbe() // server info 未就绪(冷启动竞态)→ 稍后再探
     const reachable = await probeEngine(serverInfo)
-    if (client) return stopSelfProbe() // 探测期间 ready 已重建
+    if (selfProbeDisposed || client) return // 卸载 / 探测期间 ready 已重建 → 不再动作
     if (!reachable || !serverInfo) return scheduleSelfProbe()
     stopSelfProbe()
+    provisionalClient = true
     connect(serverInfo, runtimeState?.generation ?? connectedSidecarGeneration)
+    // R1 Blocker2:重建 client 只修好数据层;composer/picker 的读取链可能早已停跑
+    // (recovering 后无循环在等,而新 SSE 首连不触发 notifySseReconnected)。发本地
+    // 传输恢复通知把全部消费链唤醒 —— 这正是它们已订阅的「传输已恢复」信号。
+    notifySseReconnected("self-probe")
   }
 
   const unsubscribeRuntime = subscribeRuntimeRecovery((state) => {
@@ -572,7 +584,11 @@ export function useAlphaProjects(
       return
     }
     stopSelfProbe()
-    if (!serverInfo || (state.generation === connectedSidecarGeneration && client)) return
+    if (!serverInfo) return
+    // R1 Major1:同代已有 client 只在「权威连接」时跳过;自探建的 provisional 连接可能
+    // 应答自将死的旧进程,权威 ready 必须强制刷新一次(重建 client + 重拉 + 重订阅)。
+    if (state.generation === connectedSidecarGeneration && client && !provisionalClient) return
+    provisionalClient = false
     connect(serverInfo, state.generation)
   })
 
@@ -584,8 +600,10 @@ export function useAlphaProjects(
       return
     }
     if (runtimeState?.status === "ready") {
-      if (!client || runtimeState.generation !== connectedSidecarGeneration)
+      if (!client || runtimeState.generation !== connectedSidecarGeneration) {
+        provisionalClient = false
         connect(serverInfo, runtimeState.generation)
+      }
       return
     }
     // recovering/failed 由自探兜底(scheduleSelfProbe)接管重建,不在此处盲连;
@@ -602,6 +620,7 @@ export function useAlphaProjects(
     client = undefined
     abortRef.abort()
     clearTimeout(bridgeFallbackTimer)
+    selfProbeDisposed = true
     stopSelfProbe()
     unsubscribeRuntime()
   })

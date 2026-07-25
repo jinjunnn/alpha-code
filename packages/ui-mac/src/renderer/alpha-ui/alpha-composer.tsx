@@ -75,7 +75,7 @@ import { ModelPickPop } from "./alpha-composer-model"
 import { createModelContract, type ModelContract } from "./model-contract"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
-import { accountResultState, createRetryWakeup, loadEngineModelsWithRetry } from "./model-recovery"
+import { accountResultState, createRetryWakeup, loadEngineModelsWithRetry, resolveAccountWithRetry } from "./model-recovery"
 import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
 import { subscribeRuntimeRecovery, subscribeSseReconnected } from "../runtime-recovery"
@@ -86,6 +86,7 @@ const [openChipId, setOpenChipId] = createSignal<number | null>(null)
 let chipSeq = 0
 let homeModelListMarkCount = 0
 let homeModelRetryMarkCount = 0
+let homeAccountMarkCount = 0
 export const closeChips = () => setOpenChipId(null)
 
 function useChip() {
@@ -880,43 +881,56 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     const platformAuthReady = loggedIn && (authState.platformStatus ?? "ready") === "ready"
     if (!loggedIn) setPlatformPermission("out")
     else if (!platformAuthReady) setPlatformPermission("recovering")
+    // #594 R1 第 4 实例:account summary 是被修掉的 list 预算悬崖的同类 —— 旧 20×1s 耗尽后
+    // 不再安排任何定时器,唤醒 wake 落空、epoch 重启又只看 model 链 ⇒ 代理节点永久不可用。
+    // 改为与 list 同构的无上限封顶退避(resolveAccountWithRetry),直到 ready/failed/supersede。
     const accountResolution = platformAuthReady
       ? (async () => {
           let recovering = false
-          for (let attempt = 1; attempt <= 20 && !chainDisposed && seq === chainSeq; attempt++) {
-            const started = performance.now()
-            if (props.mode === "home")
-              markStartupTimeline("renderer.home.account_summary.start", { attempt, chain: seq })
-            const summary = await readState(window.api.account.summary())
-            const state = summary.status === "error" ? "recovering" : accountResultState(summary.data)
-            if (props.mode === "home")
-              markStartupTimeline("renderer.home.account_summary.end", {
-                attempt,
-                chain: seq,
-                durationMs: performance.now() - started,
-                outcome: state,
-              })
-            if (chainDisposed || seq !== chainSeq) return { status: "superseded" as const }
-            if (state === "ready" && summary.status === "ready") {
-              const usable = summaryUsable(summary.data)
-              setPlatformPermission(usable ? "ready" : "failed")
-              if (recovering && modelChainState() === "recovering")
-                modelRetryWakeup.wake("account-recovered")
-              accountRetryWakeup.clear()
-              return { status: "ready" as const, usable }
-            }
-            if (state === "failed") {
-              setPlatformPermission("failed")
-              accountRetryWakeup.clear()
-              return { status: "failed" as const }
-            }
-            recovering = true
-            setPlatformPermission("recovering")
-            await accountRetryWakeup.wait(1000)
+          const classify = (summary: Awaited<ReturnType<typeof readSummary>>) =>
+            summary.status === "error" ? ("recovering" as const) : accountResultState(summary.data)
+          function readSummary() {
+            return readState(window.api.account.summary())
           }
-          // Transport retry budget exhaustion is still not a verified entitlement denial.
-          // Remain recovering until auth/generation/SSE or a manual retry starts a fresh chain.
-          return { status: "recovering" as const }
+          const resolved = await resolveAccountWithRetry({
+            read: async (attempt) => {
+              const markAccount = props.mode === "home" && homeAccountMarkCount < 25
+              const started = performance.now()
+              if (markAccount) {
+                homeAccountMarkCount++
+                markStartupTimeline("renderer.home.account_summary.start", { attempt, chain: seq })
+              }
+              const summary = await readSummary()
+              if (markAccount)
+                markStartupTimeline("renderer.home.account_summary.end", {
+                  attempt,
+                  chain: seq,
+                  durationMs: performance.now() - started,
+                  outcome: classify(summary),
+                })
+              return summary
+            },
+            classify,
+            wait: (delayMs) => accountRetryWakeup.wait(delayMs),
+            isStale: () => chainDisposed || seq !== chainSeq,
+            onRecovering: () => {
+              recovering = true
+              setPlatformPermission("recovering")
+            },
+          })
+          if (resolved.status === "stale") return { status: "superseded" as const }
+          if (resolved.status === "failed") {
+            setPlatformPermission("failed")
+            accountRetryWakeup.clear()
+            return { status: "failed" as const }
+          }
+          // classify 只在 readState 成功时给 ready;这里的收窄是类型层面的防御。
+          if (resolved.data.status !== "ready") return { status: "superseded" as const }
+          const usable = summaryUsable(resolved.data.data)
+          setPlatformPermission(usable ? "ready" : "failed")
+          if (recovering && modelChainState() === "recovering") modelRetryWakeup.wake("account-recovered")
+          accountRetryWakeup.clear()
+          return { status: "ready" as const, usable }
         })()
       : null
 

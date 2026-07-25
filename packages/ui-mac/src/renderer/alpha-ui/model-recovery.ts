@@ -70,6 +70,33 @@ export async function loadEngineModelsWithRetry<T>(opts: {
   return { status: "stale" }
 }
 
+// #594 R1 第 4 实例:account summary 与 model list 是同一类预算悬崖 —— 旧 20×1s 耗尽后
+// 返回 recovering 且不再安排任何定时器;此后 generation/SSE 唤醒的 accountRetryWakeup.wake
+// 落在无人等待的 wakeup 上是空操作,而 epoch 重启又只看 model 链是否 recovering(此刻是
+// ready,被跳过)⇒ 代理节点永久不可用。与 loadEngineModelsWithRetry 同构地单点修:
+// 无上限封顶退避直到 ready / failed / supersede,唤醒信号永远有人接。
+export async function resolveAccountWithRetry<T>(opts: {
+  /** 读一次 account summary(attempt 从 1 起,供打点)。 */
+  read: (attempt: number) => Promise<T>
+  classify: (result: T) => "ready" | "recovering" | "failed"
+  wait: (delayMs: number) => Promise<"elapsed" | "cancelled">
+  isStale: () => boolean
+  onRecovering: () => void
+  delayFor?: (attempt: number) => number
+}): Promise<{ status: "ready"; data: T } | { status: "failed" } | { status: "stale" }> {
+  const delayFor = opts.delayFor ?? nextEngineRetryDelay
+  for (let attempt = 1; !opts.isStale(); attempt++) {
+    const result = await opts.read(attempt)
+    if (opts.isStale()) return { status: "stale" }
+    const state = opts.classify(result)
+    if (state === "ready") return { status: "ready", data: result }
+    if (state === "failed") return { status: "failed" }
+    opts.onRecovering()
+    await opts.wait(delayFor(attempt - 1))
+  }
+  return { status: "stale" }
+}
+
 export function createRetryWakeup(deps: {
   setTimer?: typeof setTimeout
   clearTimer?: typeof clearTimeout
@@ -91,12 +118,18 @@ export function createRetryWakeup(deps: {
         return Promise.resolve("cancelled")
       }
       return new Promise((resolve) => {
-        resolveWait = resolve
-        timer = setTimer(() => {
-          timer = undefined
-          resolveWait = undefined
+        // R1 Minor1:单槽指针带所有权 —— 链 A 被 supersede 后链 B 的 wait 会覆盖单槽,
+        // A 的旧定时器到期时若无条件清空,会把 B 的真实定时器指针抹掉,此后 wake/dispose
+        // 取消不掉 B(最长残留一个封顶周期)。只有仍持有槽位的定时器才允许清槽。
+        const handle = setTimer(() => {
+          if (timer === handle) {
+            timer = undefined
+            resolveWait = undefined
+          }
           resolve("elapsed")
         }, delayMs)
+        timer = handle
+        resolveWait = resolve
       })
     },
     wake(reason: string) {

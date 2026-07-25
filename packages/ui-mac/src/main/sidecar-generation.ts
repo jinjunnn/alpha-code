@@ -50,3 +50,36 @@ export async function settleBootHealth(opts: {
   opts.log("loading task finished")
   return healthy ? "ready" : "failed"
 }
+
+// #577(R1 Blocker1 收口):boot generation 的终态生产者,从 spawn promise 起就活在
+// 普通 promise 链上,不受任何 fiber 监督。三条路恰好发布一个终态:
+// ① spawn 在返回 health 之前失败(fork 报错 / ready IPC 前退出 / stall reject)→ failed
+//   —— 旧接线里这条路直接把启动 Effect 失败到 forwardInitializationFailure,
+//   settleBootHealth 根本来不及武装,generation 永久停在 recovering;
+// ② 健康通过 → ready;③ 健康失败/超时 → failed(settleBootHealth,含日志指纹)。
+export function armBootGenerationTerminal(opts: {
+  generation: number
+  spawning: Promise<{ health: { wait: Promise<unknown> } }>
+  timeoutMs: number
+  publish: (state: SidecarGenerationState) => void
+  log: (message: string) => void
+  logError: (message: string) => void
+}): Promise<"ready" | "failed"> {
+  return opts.spawning.then(
+    ({ health }) =>
+      settleBootHealth({
+        generation: opts.generation,
+        healthWait: health.wait,
+        timeoutMs: opts.timeoutMs,
+        publish: opts.publish,
+        log: opts.log,
+        logError: opts.logError,
+      }),
+    () => {
+      opts.logError("sidecar spawn failed before health handshake")
+      opts.publish({ status: "failed", generation: opts.generation, reason: "boot" })
+      opts.log("loading task finished")
+      return "failed" as const
+    },
+  )
+}

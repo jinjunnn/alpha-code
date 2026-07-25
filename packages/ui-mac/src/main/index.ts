@@ -128,7 +128,7 @@ import {
   shouldRetryRespawn,
   type SidecarRespawnReason,
 } from "./sidecar-lifecycle"
-import { createSidecarGenerationState, settleBootHealth, type SidecarGenerationState } from "./sidecar-generation"
+import { armBootGenerationTerminal, createSidecarGenerationState, type SidecarGenerationState } from "./sidecar-generation"
 
 const APP_NAMES: Record<string, string> = {
   dev: "alpha-code",
@@ -982,26 +982,26 @@ const main = Effect.gen(function* () {
             outcome: errorOutcome(error),
           }),
       )
+      // #577:终态生产者与 spawn 同时武装。父 fiber 从 serverReady 醒来后毫秒级终止会
+      // 连带杀死本被监督 fiber(forkChild auto supervision),曾把「等健康 → 发 ready」
+      // 连同 30s 兜底一起杀死;spawn 在返回 health 之前失败(R1 Blocker1)则连武装的机会
+      // 都没有。armBootGenerationTerminal 是与 doRespawnSidecar 同构的普通 promise 链,
+      // 覆盖三条路(spawn 失败 / 健康通过 / 健康失败超时),恰好发布一个终态,
+      // 本 fiber 与父 fiber 的生死不再影响它。禁止把它搬回 yield* —— 回归锁见
+      // sidecar-generation.test.ts 的接线锚断言。
+      void armBootGenerationTerminal({
+        generation: spawnGen,
+        spawning,
+        timeoutMs: 30_000,
+        publish: publishSidecarGeneration,
+        log: (message) => logger.log(message),
+        logError: (message) => logger.error(message),
+      })
       return spawning
     })
     server = listener
     armEngineRunawayMeter(spawnGen)
     sessionGrantRegistry.beginSession(spawnGen) // #408:新会话空集起步(grant 面绑本代)
-
-    // #577:健康等待必须脱离本被监督 fiber。父 fiber 在下方 Deferred.await(serverReady)
-    // 醒来后到结束没有任何 yield*,毫秒级终止即杀本 fiber —— 曾把「等健康 → 发 ready」
-    // 连同 30s 兜底一起杀死,冷启动从未发出 ready 终态。settleBootHealth 是与
-    // doRespawnSidecar 同构的普通 promise 链,fiber interrupt 杀不掉;在 Deferred.succeed
-    // 之前武装,彻底绕开父子 fiber 的调度竞态。
-    void settleBootHealth({
-      generation: spawnGen,
-      healthWait: health.wait,
-      timeoutMs: 30_000,
-      publish: publishSidecarGeneration,
-      log: (message) => logger.log(message),
-      logError: (message) => logger.error(message),
-    })
-
     yield* Deferred.succeed(serverReady, {
       url,
       username: "opencode",
@@ -1016,8 +1016,9 @@ const main = Effect.gen(function* () {
   // A1 (window-first): open the window as soon as the sidecar has spawned (serverReady settles) rather
   // than blocking on the health probe, which can lag many seconds under a slow sidecar / MCP
   // storm. The renderer shows a splash and gates on this same serverReady via awaitInitialization;
-  // health settling runs on a detached promise chain (settleBootHealth, #577) that survives this
-  // fiber tree ending. Awaiting serverReady (not zero-wait) keeps the forked spawn alive to
+  // the boot generation terminal (ready/failed) runs on a detached promise chain armed at spawn
+  // time (armBootGenerationTerminal, #577) that survives this fiber tree ending — including a
+  // spawn that fails before health exists. Awaiting serverReady (not zero-wait) keeps the forked spawn alive to
   // completion; we ignore its failure so the window still opens to surface the connection error,
   // matching the prior behavior.
   yield* Deferred.await(serverReady).pipe(Effect.catch(() => Effect.sync(() => {})))

@@ -31,13 +31,22 @@ export function hasRuntimeRecoveryBridge() {
 
 // #594 闩死点三:「立即重试」必须覆盖 client 构造层。从 preload 重读 generation 现值并向
 // 全部订阅者重新广播,让 use-projects 在 client 已拆毁而现值为 ready 时按现值重建 client。
-// 显式自愈请求不做 shouldApplySidecarState 去重 —— 现值本身就是主进程的当前事实;
-// consumer 各自的 ready/failed 分支语义不变(failed 仍不会被当成 ready 盲连)。
+// R1 Major2:显式自愈允许「重复广播完全相同的状态」(把已恢复的事实再递给停跑的消费链),
+// 但不得绕过 generation 单调性与同代终态互斥 —— 迟到的 getState 响应(读到旧 recovering)
+// 若无条件覆盖,会把已 ready 的 consumer 再次拆毁,而该代不会有第二个 ready;
+// 被污染的 lastSidecarState 还会把回退值回放给之后的新订阅者。
 export async function replayRuntimeRecoveryState(): Promise<void> {
   const bridge = window.api?.sidecarGeneration
   if (!bridge) return
   try {
     const state = await bridge.getState()
+    const current = lastSidecarState
+    const identical =
+      current !== undefined &&
+      current.generation === state.generation &&
+      current.status === state.status &&
+      current.reason === state.reason
+    if (!identical && !shouldApplySidecarState(current, state)) return
     lastSidecarState = state
     window.dispatchEvent(new CustomEvent<SidecarGenerationState>(RUNTIME_RECOVERY_EVENT, { detail: state }))
   } catch {
@@ -54,8 +63,10 @@ export function subscribeRuntimeRecovery(listener: (state: SidecarGenerationStat
   return () => window.removeEventListener(RUNTIME_RECOVERY_EVENT, handle)
 }
 
-export function notifySseReconnected() {
-  markStartupTimeline("renderer.sse.reconnected")
+// trigger 只进 timeline 打点(排障溯源:真 SSE 流内重连 vs 自探重建后的本地恢复通知),
+// 订阅者语义一致 —— 都是「传输已恢复,停跑的消费链该醒了」。
+export function notifySseReconnected(trigger?: string) {
+  markStartupTimeline("renderer.sse.reconnected", trigger ? { trigger } : undefined)
   window.dispatchEvent(new Event(SSE_RECONNECTED_EVENT))
 }
 

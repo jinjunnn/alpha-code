@@ -1,6 +1,13 @@
 import { expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { Deferred, Effect } from "effect"
-import { createSidecarGenerationState, settleBootHealth, type SidecarGenerationState } from "./sidecar-generation"
+import {
+  armBootGenerationTerminal,
+  createSidecarGenerationState,
+  settleBootHealth,
+  type SidecarGenerationState,
+} from "./sidecar-generation"
 
 test("sidecar generation snapshot moves from recovering to ready without credentials", () => {
   const state = createSidecarGenerationState()
@@ -13,32 +20,41 @@ test("sidecar generation snapshot moves from recovering to ready without credent
   expect(state.get()).toEqual({ status: "ready", generation: 4, reason: "token-only" })
 })
 
-// #577 回归锁:冷启动的健康等待不能活在 forkChild 被监督 fiber 里。父 fiber 从
-// serverReady 醒来后没有任何 yield*,毫秒级终止并连带杀死停在健康等待上的子 fiber,
-// ready 终态从未发出(47 session 铁证)。本测试镜像 index.ts 启动装载体的接线形状
-// (settleBootHealth 在 Deferred.succeed 之前、以普通 promise 链武装,fiber interrupt
-// 杀不掉):health 在「serverReady 被消费、父 effect 跑完之后」才 resolve,ready 仍必须发出。
-// 改前红(旧接线把健康等待 yield 在子 fiber 里):published 为 [],本用例失败。
-test("#577 冷启动:health 在父 effect 结束后才 resolve,仍必须发出 ready 终态(boot)", async () => {
+// #577 回归锁(基线 rev2b ③′-1 行为断言①):冷启动的健康等待不能活在 forkChild
+// 被监督 fiber 里。父 fiber 从 serverReady 醒来后没有任何 yield*,毫秒级终止并连带
+// 杀死停在健康等待上的子 fiber,ready 终态从未发出(47 session 铁证)。
+// 本测试把生产的终态生产者(armBootGenerationTerminal,index.ts 在 spawn factory 内
+// 以 void 武装的同一个函数)放进 index.ts 的接线形状(forkChild 子 fiber + 父 fiber
+// 无 yield* 终止):health 在「serverReady 被消费、父 effect 跑完之后」才 resolve,
+// 仍必须恰好发出一个 ready。改前红(旧接线把健康等待 yield 在子 fiber 里):
+// published 为 [],本用例失败(R0 已实跑确认)。
+test("#577 冷启动:health 在父 effect 结束后才 resolve,仍必须恰好发出一个 ready 终态(boot)", async () => {
   const published: SidecarGenerationState[] = []
   const logs: string[] = []
   let resolveHealth!: () => void
-  const healthWait = new Promise<void>((resolve) => {
-    resolveHealth = resolve
+  const spawning = Promise.resolve({
+    health: {
+      wait: new Promise<void>((resolve) => {
+        resolveHealth = resolve
+      }),
+    },
   })
 
   const serverReady = Deferred.makeUnsafe<{ url: string }, unknown>()
   await Effect.runPromise(
     Effect.gen(function* () {
       yield* Effect.gen(function* () {
-        // —— 镜像 index.ts 修复后接线:settleBootHealth 在 Deferred.succeed 前武装 ——
-        void settleBootHealth({
-          generation: 1,
-          healthWait,
-          timeoutMs: 2_000,
-          publish: (state) => published.push(state),
-          log: (message) => logs.push(message),
-          logError: (message) => logs.push(message),
+        // —— 镜像 index.ts 修复后接线:终态生产者在 spawn factory 内以 void 武装 ——
+        yield* Effect.promise(() => {
+          void armBootGenerationTerminal({
+            generation: 1,
+            spawning,
+            timeoutMs: 2_000,
+            publish: (state) => published.push(state),
+            log: (message) => logs.push(message),
+            logError: (message) => logs.push(message),
+          })
+          return spawning
         })
         yield* Deferred.succeed(serverReady, { url: "http://127.0.0.1:0" })
       }).pipe(Effect.forkChild)
@@ -53,6 +69,28 @@ test("#577 冷启动:health 在父 effect 结束后才 resolve,仍必须发出 r
   await new Promise((resolve) => setTimeout(resolve, 50))
   // 恰好一次终态:恰好一个 ready,不得伴随 failed
   expect(published).toEqual([{ status: "ready", generation: 1, reason: "boot" }])
+  expect(logs).toContain("loading task finished")
+})
+
+// #577 R1 Blocker1:spawnLocalServer 在返回 {listener, health} 之前失败(fork 报错 /
+// ready IPC 前退出 / stall reject)时,旧接线里 settleBootHealth 根本来不及武装,
+// generation 永久停在 recovering。终态生产者必须从 spawn promise 起就武装:
+// spawn reject → 恰好一个 failed。
+test("#577 R1 Blocker1:spawn 在 health 之前 reject → 恰好一个 failed 终态", async () => {
+  const published: SidecarGenerationState[] = []
+  const logs: string[] = []
+  const errors: string[] = []
+  const outcome = await armBootGenerationTerminal({
+    generation: 1,
+    spawning: Promise.reject(new Error("sidecar exited before health check passed")),
+    timeoutMs: 2_000,
+    publish: (state) => published.push(state),
+    log: (message) => logs.push(message),
+    logError: (message) => errors.push(message),
+  })
+  expect(outcome).toBe("failed")
+  expect(published).toEqual([{ status: "failed", generation: 1, reason: "boot" }])
+  expect(errors).toContain("sidecar spawn failed before health handshake")
   expect(logs).toContain("loading task finished")
 })
 
@@ -96,4 +134,19 @@ test("#577 健康探测超时 → 恰好一个 failed 终态,health 迟到 resol
   resolveHealth()
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(published).toEqual([{ status: "failed", generation: 4, reason: "boot" }])
+})
+
+// #577 接线锚(R1 加固:上面的 fiber 用例锁的是被 index.ts 调用的生产函数在监督
+// 生命周期下的行为;index.ts 本体是 electron main,无法在 bun test 里 import 执行,
+// 生产接线的最后一英里只能锁源码形状)。断言三件事:
+// ① index.ts 恰好以 `void armBootGenerationTerminal(` 武装终态生产者(detached,
+//    且在 spawn factory 内 —— 早于任何可失败的 yield*);
+// ② 它从未被 yield* 进任何 fiber(那会把终态重新放回监督死区);
+// ③ index.ts 不再直接调用 settleBootHealth(终态生产一律经 armBootGenerationTerminal,
+//    避免有人绕过 spawn-失败分支)。
+test("#577 接线锚:index.ts 的终态生产者必须 detached 武装,不得 yield 回 fiber", () => {
+  const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
+  expect(source.split("void armBootGenerationTerminal(").length - 1).toBe(1)
+  expect(source).not.toMatch(/yield\*\s*armBootGenerationTerminal/)
+  expect(source).not.toMatch(/settleBootHealth\s*\(/)
 })
