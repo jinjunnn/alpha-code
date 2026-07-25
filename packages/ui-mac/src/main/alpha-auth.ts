@@ -345,6 +345,8 @@ export function getAuthIdentityEpoch(): number {
 export function getAuthRenewalTiming() {
   return {
     active: hasRequiredPlatformAccessTokens(stored.platformAccessTokens) && Boolean(stored.refreshToken),
+    // 凭证身份:调度器的降级/尝试记账按它判定,不用 expiresAt 代理(R3 Minor1)。
+    generation: tokenGeneration,
     expiresAt: stored.expiresAt,
     lifetimeMs: stored.lifetimeMs,
   }

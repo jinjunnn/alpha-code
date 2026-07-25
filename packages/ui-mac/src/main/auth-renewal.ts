@@ -39,6 +39,10 @@ export async function awaitBootRenewalGrace(
 
 export type AuthRenewalTiming = {
   active: boolean
+  /** 凭证身份(alpha-auth 的 tokenGeneration:登录/续期/登出/恢复都推进)。
+   *  R3 Minor1:降级与「过期后已尝试」的记账一律按它判定 —— **不得用 expiresAt 代理**,
+   *  换账号完全可能拿到相同的绝对到期时刻。必填,少给一个生产者就编译不过。 */
+  generation: number
   expiresAt?: number
   lifetimeMs?: number
 }
@@ -51,29 +55,54 @@ export function authRenewalDelayMs(timing: AuthRenewalTiming, now: number): numb
   )
 }
 
-// 上一次续期「成功但结果不可用」后的降频节奏。
+// 上一次续期「成功但结果不可用」后的降频节奏。**两条规则都在函数内强制**,不靠调用方自觉:
 //
-// 依赖的不变量与各自的强制手段(rev2c ③″1):
-//  ① `timing.expiresAt` 是**已验证**的绝对期限 —— 只有通过 hasUsableLifetime 的响应才会被
-//     提交(alpha-auth 的 usableExpiresAt 是唯一写入口);强制手段 = alpha-auth.cases.ts
-//     「不可用有效期不提交」用例 + alpha-auth-clock 的 hasUsableLifetime 单测。
-//  ② 续期调度器是平台 token 唯一的恢复 owner(③″2-1),且 rearm 是全函数(除 stop 外必然
-//     再武装);强制手段 = 本文件「结果后必 rearm」与「降频后仍有下一次」两条用例。
-//  ③ 降频**不得**把下一次唤醒排到当前已验证 expiresAt 之后 —— 否则旧凭证在窗口中间过期,
-//     而那一刻没有任何 timer 触发 auth-state 发布,renderer 会继续显示 ready
-//     (③″2-4:owner 不得静默退场,到期那一刻必须有人在场);强制手段 = 下面的封顶 +
-//     「10 分钟时降频不得越过 15 分钟到期点」用例。
-// 已到期(没有余量可保护)后才允许用完整降频节奏 —— 此时平台已 fail-closed 为 recovering,
-// 继续每 30 秒重刷就是 #600 B3 要消灭的那条循环。
-export function degradedRenewalDelayMs(timing: AuthRenewalTiming, now: number): number | null {
+//  规则一(凭证还活着,untilExpiry > 0):下一次唤醒**必须落在到期点或之前** ——
+//    即使这意味着早于唤醒地板(只剩 10 秒就 10 秒后醒)。地板防的是无限重刷;而每份凭证
+//    最多只会有这一次亚地板唤醒(醒来即到期,随后走规则二),不构成风暴。
+//    R3 反例:旧实现 `Math.max(base, 降频)` 在剩 10 秒时返回 30 秒 —— 被地板推过到期点 20 秒,
+//    那 20 秒里没有任何 timer 触发发布,renderer 继续持有 ready。
+//
+//  规则二(已过期,或有效期未知):**只有该凭证过期后已经真的跑过一次续期尝试**
+//    (那次尝试自身以 refreshTokens() 起手的 publish() 发出 recovering)之后,才允许进入
+//    完整降频节奏;否则立刻尝试(返回 0)。
+//    R3 反例:睡眠越过到期点后 resume 先 rearm 清掉过期 timer,旧实现直接返回 900000 ——
+//    静默沉默 15 分钟(③″2-4:owner 不得静默退场)。
+//
+// 依赖的不变量与强制手段见文件末尾的 createAuthRenewalScheduler 注释。
+export function degradedRenewalDelayMs(
+  timing: AuthRenewalTiming,
+  now: number,
+  attemptedSinceExpiry: boolean,
+): number | null {
   const base = authRenewalDelayMs(timing, now)
   if (base === null) return null
   const untilExpiry = timing.expiresAt === undefined ? 0 : timing.expiresAt - now
-  const degraded =
-    untilExpiry > 0 ? Math.min(AUTH_RENEWAL_DEGRADED_INTERVAL_MS, untilExpiry) : AUTH_RENEWAL_DEGRADED_INTERVAL_MS
-  return Math.max(base, degraded)
+  if (untilExpiry > 0) return Math.min(Math.max(base, AUTH_RENEWAL_DEGRADED_INTERVAL_MS), untilExpiry)
+  return attemptedSinceExpiry ? AUTH_RENEWAL_DEGRADED_INTERVAL_MS : 0
 }
 
+// 平台 token 的恢复 owner(rev2c ③″2-1:任一时刻至多一个、且可被观察)。
+//
+// 依赖的不变量与各自的强制手段(③″1;每条后面括号里是「什么变异会让它转红」):
+//  ① `timing.expiresAt` 是**网络响应**写入的已验证期限 —— 登录与续期两个提交点都经
+//     alpha-auth.usableExpiresAt(hasUsableLifetime)。持久态由 load() 直接恢复,**不经**
+//     该入口,故恢复的期限一律按 isTokenExpired fail-closed 处理(未知/已过期 ⇒ recovering
+//     + 启动续期),不被当作"已验证还有余量"。
+//     (变异:把 usableExpiresAt 换回 `expires_in ? ... : undefined` → cases.ts 的 6 种
+//      不可用 expires_in 用例转红;把 isTokenExpired 的 fail-closed 去掉 → clock 用例转红。)
+//  ② rearm 是全函数:除 stop 外必然再武装一次,且 renew 的 finally 一定 rearm。
+//     (变异:删掉 finally 里的 rearm → 「fires once at refreshDueAt and re-arms」转红;
+//      让 rearm 在 degraded 时提前 return → 「降频后仍有下一次」转红。)
+//  ③ 降频不得越过已验证 expiresAt,且过期后未尝试过就不得进入完整降频节奏
+//     —— 由 degradedRenewalDelayMs 两条规则在函数内强制。
+//     (变异:把规则一换回 `Math.max(base, 降频)` → 「剩 10 秒」用例转红;
+//      把规则二的 attemptedSinceExpiry 恒当 true → 「resume-after-expiry」用例转红。)
+//  ④ 凭证身份 = `timing.generation`,不得用 expiresAt 代理。
+//     (变异:把 degradedFor 改回记 expiresAt → 「同一到期时刻的新凭证」用例转红。)
+//  ⑤ 唤醒地板与「可用寿命」下界是同一个常量(否则 ①③ 会各自漂移)。
+//     (变异:把 AUTH_RENEWAL_MIN_INTERVAL_MS 改成字面量 30_000 也仍相等 —— 故断言写成
+//      `toBe(MIN_USABLE_TOKEN_LIFETIME_MS)`,改动任一侧数值即转红。)
 export function createAuthRenewalScheduler(deps: {
   timing: () => AuthRenewalTiming
   renew: () => Promise<RenewalResult>
@@ -90,21 +119,21 @@ export function createAuthRenewalScheduler(deps: {
   let running = false
   let stopped = false
   // #600 B3:上一次续期结果不可用 ⇒ 下一次按降频节奏,不按 refreshDueAt 的最小间隔。
-  // 降频只对**当时那份凭证**成立:凭证一换(登录、或任何路径上一次成功续期都会改写
-  // expiresAt),降频立即作废 —— 否则新拿到的正常 token 会白白损失提前量。
+  // 降级与「过期后已尝试」都记在**凭证身份(generation)**上,不是 expiresAt(R3 Minor1:
+  // 换账号可能拿到相同的绝对到期时刻,用 expiresAt 代理会让新凭证继承旧凭证的降级)。
   let degraded = false
   let degradedFor: number | undefined
-  const currentDegraded = (timing: AuthRenewalTiming) => {
-    if (degraded && timing.expiresAt !== degradedFor) degraded = false
-    return degraded
-  }
+  let attemptedForExpired: number | undefined
 
   const rearm = (reason: string) => {
     if (timer) clearTimer(timer)
     timer = undefined
     if (stopped) return
     const timing = deps.timing()
-    const delayMs = currentDegraded(timing) ? degradedRenewalDelayMs(timing, now()) : authRenewalDelayMs(timing, now())
+    if (degraded && timing.generation !== degradedFor) degraded = false
+    const delayMs = degraded
+      ? degradedRenewalDelayMs(timing, now(), attemptedForExpired === timing.generation)
+      : authRenewalDelayMs(timing, now())
     deps.onArm?.(reason, delayMs)
     if (delayMs === null) return
     timer = setTimer(() => {
@@ -114,8 +143,13 @@ export function createAuthRenewalScheduler(deps: {
       void deps
         .renew()
         .then((result) => {
+          const settled = deps.timing()
           degraded = result.outcome === "unusable-response"
-          degradedFor = degraded ? deps.timing().expiresAt : undefined
+          degradedFor = degraded ? settled.generation : undefined
+          // 这次尝试跑完时凭证仍是过期/未知 ⇒ 记账「该凭证过期后已经尝试过、也已经发过
+          // recovering」,规则二据此才允许进入完整降频节奏。
+          const expired = settled.expiresAt === undefined || settled.expiresAt <= now()
+          attemptedForExpired = expired ? settled.generation : undefined
           deps.onResult?.(result)
         })
         .finally(() => {

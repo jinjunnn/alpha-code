@@ -12,6 +12,14 @@ export function shouldRetryRespawn(reason: SidecarRespawnReason): boolean {
   return reason === "structural"
 }
 
+// 「活着的 sidecar 携带的 token 代」的唯一推进规则(R3 新 Major:boot 路原先在 spawn 之前就
+// 记账,健康握手还没通过甚至最终失败时,latch 的 inEffect 路径就会据此报 applied 并发 ready)。
+//  - 只有**健康确认**才提交 —— fork 出去、健康未过,不算数;
+//  - 单调 —— boot 的健康握手可能晚于一次 respawn 落定,迟到的旧代不得把它推回去。
+export function commitForkedTokenGeneration(current: number, forked: number, healthy: boolean): number {
+  return healthy ? Math.max(current, forked) : current
+}
+
 // #600 B1:respawn 一旦发出 recovering,终态必须可达 —— 与 boot 侧 armBootGenerationTerminal
 // 同构:从 spawn promise 起就活在普通 promise 链上,三条路(spawn 在返回 health 之前失败 /
 // 健康通过 / 健康失败或超时)恰好发布一个 ready|failed。旧接线只在健康通过时发 ready,

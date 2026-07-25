@@ -10,6 +10,7 @@ import {
   TOKEN_ROTATION_RETRY_MS,
 } from "./auth-renewal"
 import { MIN_USABLE_TOKEN_LIFETIME_MS } from "./alpha-auth-clock"
+import { commitForkedTokenGeneration, createSidecarRespawnQueue } from "./sidecar-lifecycle"
 import type { RenewalResult } from "./alpha-auth"
 
 const result = (outcome: RenewalResult["outcome"], generation = 1): RenewalResult => ({
@@ -59,12 +60,12 @@ describe("expiresAt scheduler", () => {
   test("uses the 15min TTL due time and enforces the minimum wake interval", () => {
     const now = 1_000_000
     expect(
-      authRenewalDelayMs({ active: true, expiresAt: now + 15 * 60_000, lifetimeMs: 15 * 60_000 }, now),
+      authRenewalDelayMs({ active: true, generation: 1, expiresAt: now + 15 * 60_000, lifetimeMs: 15 * 60_000 }, now),
     ).toBe(10 * 60_000)
-    expect(authRenewalDelayMs({ active: true, expiresAt: now - 1, lifetimeMs: 15 * 60_000 }, now)).toBe(
+    expect(authRenewalDelayMs({ active: true, generation: 1, expiresAt: now - 1, lifetimeMs: 15 * 60_000 }, now)).toBe(
       AUTH_RENEWAL_MIN_INTERVAL_MS,
     )
-    expect(authRenewalDelayMs({ active: false }, now)).toBeNull()
+    expect(authRenewalDelayMs({ active: false, generation: 1 }, now)).toBeNull()
   })
 
   test("fires once at refreshDueAt and re-arms on result/resume/login change", async () => {
@@ -74,7 +75,7 @@ describe("expiresAt scheduler", () => {
     let renewals = 0
     const arms: string[] = []
     const scheduler = createAuthRenewalScheduler({
-      timing: () => ({ active: true, expiresAt, lifetimeMs: 15 * 60_000 }),
+      timing: () => ({ active: true, generation: 1, expiresAt, lifetimeMs: 15 * 60_000 }),
       now: () => now,
       renew: async () => {
         renewals++
@@ -108,41 +109,57 @@ describe("degraded renewal cadence after an unusable response", () => {
     expect(AUTH_RENEWAL_MIN_INTERVAL_MS).toBe(MIN_USABLE_TOKEN_LIFETIME_MS)
   })
 
-  // R2 新 Major1:固定 15 分钟降频会从失败时刻重新计时,越过旧凭证真实到期点 ——
-  // 15 分钟 token 在第 10 分钟拿到 unusable,旧 token 只剩 5 分钟,却被排到第 25 分钟:
-  // 中间约 10 分钟不可用,且到期那一刻没有任何 timer 触发 auth-state 发布。
-  test("the degraded delay never lands after the currently verified expiry", () => {
+  // R3 判定:上一版这条测试**自身断言「剩 10 秒 → 30 秒后唤醒」**,正好允许越过到期点 20 秒 ——
+  // 一个名字叫「绝不越过」的测试,断言的是越过(第十例假闸门)。重写为逐条锁真规则:
+  // 凭证还活着时,返回值恒 ≤ 剩余寿命(即使因此低于唤醒地板)。
+  test("while the credential is alive the degraded delay never lands after its expiry", () => {
     const now = 1_000_000
     const lifetimeMs = 15 * 60_000
-    // 第 10 分钟进入续期窗口,旧 token 还剩 5 分钟 → 下一次必须正好落在到期点。
-    expect(degradedRenewalDelayMs({ active: true, expiresAt: now + 5 * 60_000, lifetimeMs }, now)).toBe(5 * 60_000)
-    // 降频只会把下一次**推后**,不会提前:正常判据本来就要等 55 分钟时,按正常判据。
-    // (推论:凭证还活着时,降频的实际效果恒为「最晚在到期点唤醒一次」——
-    //  因为 base ≥ untilExpiry − 提前量,15 分钟节奏只有在到期后才真正生效。)
-    expect(degradedRenewalDelayMs({ active: true, expiresAt: now + 60 * 60_000, lifetimeMs }, now)).toBe(55 * 60_000)
-    // 余量比调度地板还短 → 地板兜底(只多一次,随后进入完整降频)。
-    expect(degradedRenewalDelayMs({ active: true, expiresAt: now + 10_000, lifetimeMs }, now)).toBe(
-      AUTH_RENEWAL_MIN_INTERVAL_MS,
-    )
-    // 已过期/有效期未知:没有余量可保护,用完整降频节奏(不得回到 30 秒重刷)。
-    expect(degradedRenewalDelayMs({ active: true, expiresAt: now - 1, lifetimeMs }, now)).toBe(
-      AUTH_RENEWAL_DEGRADED_INTERVAL_MS,
-    )
-    expect(degradedRenewalDelayMs({ active: true }, now)).toBe(AUTH_RENEWAL_DEGRADED_INTERVAL_MS)
-    expect(degradedRenewalDelayMs({ active: false }, now)).toBeNull()
+    const timing = (untilExpiry: number) => ({ active: true, generation: 1, expiresAt: now + untilExpiry, lifetimeMs })
+
+    // 覆盖「远早于到期 / 刚进续期窗口 / 只剩地板 / 远小于地板」四档,逐档锁不越过。
+    for (const untilExpiry of [60 * 60_000, 5 * 60_000, 30_000, 10_000, 1]) {
+      const delay = degradedRenewalDelayMs(timing(untilExpiry), now, false)
+      expect(delay).not.toBeNull()
+      expect(delay!).toBeLessThanOrEqual(untilExpiry)
+    }
+
+    // 逐档的精确值:第 10 分钟拿到 unusable(剩 5 分钟)→ 正好排在到期点;
+    // 剩 10 秒 → 10 秒(**不是**被地板推成 30 秒);正常判据更晚时按正常判据(只推后不提前)。
+    expect(degradedRenewalDelayMs(timing(5 * 60_000), now, false)).toBe(5 * 60_000)
+    expect(degradedRenewalDelayMs(timing(10_000), now, false)).toBe(10_000)
+    expect(degradedRenewalDelayMs(timing(60 * 60_000), now, false)).toBe(55 * 60_000)
+    expect(degradedRenewalDelayMs({ active: false, generation: 1 }, now, false)).toBeNull()
   })
 
-  // R2 新 Minor1:降频只对当时那份凭证成立 —— 换了凭证(登录/任何路径的成功续期)必须立刻作废,
-  // 否则新拿到的正常 token 白白损失提前量(15 分钟 token 被排到 900000 而不是 600000)。
-  test("a new credential clears the degrade even before the next renewal runs", async () => {
+  // R3 反例二:睡眠越过到期点 → resume 先 rearm 清掉过期 timer → 旧实现直接返回 900000,
+  // 期间没有任何 auth-state 发布,renderer 可继续持有 ready。过期后**尚未尝试过**必须立刻尝试
+  // (那次尝试自身发布 recovering),只有尝试过了才允许进入完整降频节奏。
+  test("an expired credential must be attempted immediately before the slow cadence may start", () => {
+    const now = 1_000_000
+    const lifetimeMs = 15 * 60_000
+    const expired = { active: true, generation: 1, expiresAt: now - 1, lifetimeMs }
+    const unknown = { active: true, generation: 1, lifetimeMs }
+
+    expect(degradedRenewalDelayMs(expired, now, false)).toBe(0)
+    expect(degradedRenewalDelayMs(unknown, now, false)).toBe(0)
+    expect(degradedRenewalDelayMs(expired, now, true)).toBe(AUTH_RENEWAL_DEGRADED_INTERVAL_MS)
+    expect(degradedRenewalDelayMs(unknown, now, true)).toBe(AUTH_RENEWAL_DEGRADED_INTERVAL_MS)
+  })
+
+  test("resume after sleeping past the expiry attempts at once instead of going quiet for 15 minutes", async () => {
     vi.useFakeTimers()
     let now = 1_000_000
-    let expiresAt = now + 15 * 60_000
+    const expiresAt = now + 15 * 60_000
     const arms: Array<number | null> = []
+    let renewals = 0
     const scheduler = createAuthRenewalScheduler({
-      timing: () => ({ active: true, expiresAt, lifetimeMs: 15 * 60_000 }),
+      timing: () => ({ active: true, generation: 1, expiresAt, lifetimeMs: 15 * 60_000 }),
       now: () => now,
-      renew: async () => ({ outcome: "unusable-response", generation: 2 }),
+      renew: async () => {
+        renewals++
+        return { outcome: "unusable-response", generation: 1 }
+      },
       onArm: (_reason, delayMs) => arms.push(delayMs),
     })
 
@@ -150,11 +167,52 @@ describe("degraded renewal cadence after an unusable response", () => {
     now += 10 * 60_000
     vi.advanceTimersByTime(10 * 60_000)
     await settleRenewal()
-    expect(arms.at(-1)).toBe(5 * 60_000) // 降频但不越过到期点
+    expect(arms.at(-1)).toBe(5 * 60_000) // 排在到期点
+    expect(renewals).toBe(1)
 
-    expiresAt = now + 15 * 60_000 // 新登录换来的正常凭证
+    // 机器睡过去了:timer 没能在到期点触发,resume 先 rearm 清掉它。
+    now += 3 * 60 * 60_000
+    scheduler.rearm("resume")
+    expect(arms.at(-1)).toBe(0) // 立刻尝试(这次尝试会发布 recovering),不是 900000
+
+    vi.advanceTimersByTime(0)
+    await settleRenewal()
+    expect(renewals).toBe(2)
+    expect(arms.at(-1)).toBe(AUTH_RENEWAL_DEGRADED_INTERVAL_MS) // 尝试过了才进入完整降频
+    scheduler.stop()
+  })
+
+  // R3 Minor1:凭证身份不能由 expiry 代理 —— 换账号完全可能拿到**相同**的绝对到期时刻。
+  test("a new credential with the same absolute expiry still clears the degrade", async () => {
+    vi.useFakeTimers()
+    let now = 1_000_000
+    let generation = 1
+    let expiresAt = now + 15 * 60_000
+    const arms: Array<number | null> = []
+    const scheduler = createAuthRenewalScheduler({
+      timing: () => ({ active: true, generation, expiresAt, lifetimeMs: 15 * 60_000 }),
+      now: () => now,
+      renew: async () => ({ outcome: "unusable-response", generation }),
+      onArm: (_reason, delayMs) => arms.push(delayMs),
+    })
+
+    scheduler.rearm("startup")
+    now += 10 * 60_000
+    vi.advanceTimersByTime(10 * 60_000)
+    await settleRenewal()
+    expect(arms.at(-1)).toBe(5 * 60_000) // 降级中
+
+    // 新账号登录:绝对到期时刻**恰好相同**,只有 generation 变了。
+    generation = 2
+    expiresAt = now + 5 * 60_000
     scheduler.rearm("auth-change")
-    expect(arms.at(-1)).toBe(10 * 60_000) // 完整提前量,不是 900000
+    expect(arms.at(-1)).toBe(AUTH_RENEWAL_MIN_INTERVAL_MS) // 按正常判据,不继承旧凭证的降级
+
+    // 同时也覆盖「expiry 变了」的老路径。
+    generation = 3
+    expiresAt = now + 15 * 60_000
+    scheduler.rearm("auth-change")
+    expect(arms.at(-1)).toBe(10 * 60_000)
     scheduler.stop()
   })
 
@@ -165,7 +223,7 @@ describe("degraded renewal cadence after an unusable response", () => {
     const expiresAt = now + 15 * 60_000
     const arms: Array<number | null> = []
     const scheduler = createAuthRenewalScheduler({
-      timing: () => ({ active: true, expiresAt, lifetimeMs: 15 * 60_000 }),
+      timing: () => ({ active: true, generation: 1, expiresAt, lifetimeMs: 15 * 60_000 }),
       now: () => now,
       renew: async () => ({ outcome, generation: 2 }),
       onArm: (_reason, delayMs) => arms.push(delayMs),
@@ -370,6 +428,46 @@ describe("token rotation latch", () => {
     })
 
     expect(await latch.accept(result("refreshed", 2), "renewal")).toBe(true)
+  })
+
+  // R3 要求的组合覆盖:latch + respawn 队列 + 每次 fork 的 capture-then-commit 一起跑。
+  // 队列会把在途请求合并成一个 composite —— latch 等到的 true 对应的是**最终那次健康
+  // follow-up**,onApplied 必须报它实际携带的代。
+  test("queue + health commit + latch: the coalesced follow-up decides the reported generation", async () => {
+    let committed = 0 // = index.ts 的 sidecarTokenGeneration(只由健康确认推进)
+    let tokenGeneration = 2 // = alpha-auth 的当前凭证代
+    const forks: number[] = []
+    const applied: number[] = []
+    let releaseFirstFork!: () => void
+    const firstFork = new Promise<void>((resolve) => {
+      releaseFirstFork = resolve
+    })
+
+    const request = createSidecarRespawnQueue(async () => {
+      const captured = tokenGeneration // fork 时捕获
+      if (forks.length === 0) await firstFork
+      forks.push(captured)
+      committed = commitForkedTokenGeneration(committed, captured, true) // 健康后提交
+      return true
+    })
+    const latch = createTokenRotationLatch({
+      forkedGeneration: () => committed,
+      canRespawn: () => true,
+      respawn: (reason) => request(reason),
+      onApplied: (generation) => applied.push(generation),
+    })
+
+    const rotated = latch.accept(result("refreshed", 2), "renewal")
+    // 第一次 fork 还在途:一次成功续期把凭证推到 G3,随后的登录/模式切换直接进队列,
+    // 被合并成一次 structural follow-up。
+    tokenGeneration = 3
+    void request("structural")
+    releaseFirstFork()
+
+    expect(await rotated).toBe(true)
+    expect(forks).toEqual([2, 3])
+    expect(committed).toBe(3)
+    expect(applied).toEqual([3]) // 报最终健康实例携带的代,不是本次请求的 target(2)
   })
 
   // #600 M1:换血真正应用是「平台恢复中 → ready」的唯一解除点;失败不得回调。

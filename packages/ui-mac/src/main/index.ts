@@ -125,6 +125,7 @@ import {
 } from "./auth-renewal"
 import {
   armRespawnGenerationTerminal,
+  commitForkedTokenGeneration,
   createSidecarRespawnQueue,
   shouldReloadRenderer,
   shouldRetryRespawn,
@@ -149,10 +150,16 @@ let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
 let rendererReloadCount = 0
+// 「活着的 sidecar 已被健康确认携带的 token 代」——latch 的 forkedGeneration() 读它。
+// R3 新 Major:只有健康确认才提交(规则在 sidecar-lifecycle.commitForkedTokenGeneration,
+// boot 与 respawn 两条路共用),否则「fork 出去但从未健康」会被 latch 当成已应用。
 let sidecarTokenGeneration = 0
-const markSidecarTokenSnapshot = () => {
-  sidecarTokenGeneration = getTokenGeneration()
+const commitSidecarTokenGeneration = (forked: number, healthy: boolean) => {
+  sidecarTokenGeneration = commitForkedTokenGeneration(sidecarTokenGeneration, forked, healthy)
 }
+// 「首个 fork **启动时**继承的 token 代」——只用于 boot 后那次「登录发生在 fork 之前吗」的
+// 判断(它问的是继承事实,不是健康事实),与上面那个健康确认值刻意分开。
+let bootForkTokenGeneration = 0
 
 const pendingDeepLinks: string[] = []
 
@@ -973,7 +980,7 @@ const main = Effect.gen(function* () {
     const spawnGen = ++sidecarGen
     publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason: "boot" })
     selfHeal = noteSpawn(selfHeal, Date.now())
-    markSidecarTokenSnapshot()
+    bootForkTokenGeneration = getTokenGeneration()
     const { listener, health } = yield* Effect.promise(() => {
       const started = performance.now()
       markStartupTimeline("main.sidecar.boot.fork.start", { generation: spawnGen })
@@ -1016,6 +1023,16 @@ const main = Effect.gen(function* () {
       return spawning
     })
     server = listener
+    // R3 新 Major:boot 也 capture-then-commit —— 健康握手通过之后才把这一代记成
+    // 「活着的 sidecar 携带的代」。旧接线在 spawn 之前就记账,于是「boot 健康仍 pending 甚至
+    // 最终失败」时,latch 的 inEffect 路径会据此清掉重试并发布 ready(#600 M1 的反面)。
+    // 健康永不落定 ⇒ 永不提交(fail-closed):latch 保持 pending,由封顶低频 timer 继续重试。
+    // 这里只改 token 快照时序,不碰终态发布接线(armBootGenerationTerminal 的 detached 武装
+    // 位置与 `return spawning` 的顺序完全未动 —— #577/#598 的接线锚仍然成立)。
+    void health.wait.then(
+      () => commitSidecarTokenGeneration(bootForkTokenGeneration, true),
+      () => {},
+    )
     armEngineRunawayMeter(spawnGen)
     sessionGrantRegistry.beginSession(spawnGen) // #408:新会话空集起步(grant 面绑本代)
     yield* Deferred.succeed(serverReady, {
@@ -1153,7 +1170,7 @@ const main = Effect.gen(function* () {
       sessionGrantRegistry.beginSession(spawnGen) // #408:respawn = 新会话,grant 恒从空集开始
       // B5 验收②:未健康不 reload —— reload 进死后端只会白屏(REQ-014 同族),留旧 renderer 状态。
       const healthy = await terminal
-      if (healthy) sidecarTokenGeneration = forkTokenGeneration
+      commitSidecarTokenGeneration(forkTokenGeneration, healthy)
       if (healthy && mainWindow && !mainWindow.isDestroyed()) {
         if (shouldReloadRenderer(reason)) {
           markStartupTimeline("main.renderer.reload", {
@@ -1187,7 +1204,7 @@ const main = Effect.gen(function* () {
   const respawnSidecar = createSidecarRespawnQueue(doRespawnSidecar)
 
   requestSidecarRespawn = respawnSidecar // B5:崩溃自愈复用同一互斥/合并入口
-  if (pendingAuthStructuralRespawn && sidecarTokenGeneration !== getTokenGeneration())
+  if (pendingAuthStructuralRespawn && bootForkTokenGeneration !== getTokenGeneration())
     void respawnSidecar("structural")
   pendingAuthStructuralRespawn = false
   setProviderLifecycleDeps({ refreshRuntime: () => respawnSidecar("structural") })

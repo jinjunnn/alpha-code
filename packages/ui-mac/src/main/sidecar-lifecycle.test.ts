@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { SidecarGenerationState } from "../preload/types"
 import {
   armRespawnGenerationTerminal,
+  commitForkedTokenGeneration,
   createSidecarRespawnQueue,
   mergeRespawnReason,
   shouldReloadRenderer,
@@ -152,5 +153,21 @@ describe("respawn generation terminal", () => {
     expect(settled).toBe(true)
     expect(sink.published).toEqual([{ status: "ready", generation: 10, reason: "token-only" }])
     expect(sink.errors).toEqual([])
+  })
+})
+
+// R3 新 Major:「活着的 sidecar 携带的 token 代」只能由**健康确认**推进,且必须单调。
+// boot 路原先在 spawn 之前就记账 ⇒ 健康仍 pending 甚至最终失败时,latch 的 inEffect 路径
+// 会据此清掉重试并发布 ready。boot 与 respawn 两条路现在共用这一条规则。
+describe("forked token generation commits", () => {
+  test("only a healthy fork advances it", () => {
+    expect(commitForkedTokenGeneration(1, 3, true)).toBe(3)
+    expect(commitForkedTokenGeneration(1, 3, false)).toBe(1)
+    expect(commitForkedTokenGeneration(0, 2, false)).toBe(0)
+  })
+
+  test("a late boot handshake must not push a newer respawned generation backwards", () => {
+    // respawn 已经健康提交了 G5;boot 的健康握手此刻才落定,带着旧的 G2。
+    expect(commitForkedTokenGeneration(5, 2, true)).toBe(5)
   })
 })
