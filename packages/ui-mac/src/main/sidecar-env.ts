@@ -176,9 +176,23 @@ const SECRETISH = new RegExp(`(^|_)${CREDENTIAL_WORD}(_|$)|${CREDENTIAL_WORD}$`,
 // split off into its own `_` segment, so NEITHER rule can see it. APIPASSWORD_FILE, PRIVATEKEY_PATH
 // and TINK_KEYSET_JSON are the same shape, and all of them are env vars real projects use to point
 // at a secrets file. So a trailing WRAPPER segment is stripped and the name retested: the wrapper
-// says "this var carries the thing", it never makes the thing stop being a credential. Stripping is
-// safe in the other direction because it only ever shortens the name — KEYBOARD_FILE reduces to
-// KEYBOARD, which still matches nothing.
+// says "this var carries the thing", it never makes the thing stop being a credential.
+//
+// "Stripping only shortens the name, so it is safe in the other direction" — that argument was in
+// this comment and it is WRONG (adversarial round 3). Rule 2 is anchored at `$`, so shortening
+// CREATES new trailing positions and can expose a coincidental mid-name noun as a trailing word:
+// MONKEY_FILE → MONKEY, TURKEY_PATH → TURKEY, CATALOG_PUBKEY_B64 → CATALOG_PUBKEY. Those names are
+// now vetoed where the un-stripped predicate admitted them.
+//
+// That over-denial is ACCEPTED, deliberately, on three grounds — not waved away:
+//   · it is the same over-denial rule 2 already applies to a bare MONKEY / TURKEY / DONKEY, so the
+//     behaviour is consistent rather than new in kind;
+//   · over-denial is the safe direction for a veto (③″4-2) — the cost is a rename, not a leak;
+//   · measured, not assumed: all 70 `process.env.*` names this repo actually reads were run through
+//     both predicates, and the set stripping newly denies is EMPTY. The pinned cases below exist so
+//     that if a future env var lands in that set, a human sees the trade rather than a silent veto.
+// Shape genuinely cannot separate APIKEY from MONKEY — both are "a word ending in KEY". This is
+// where the enumeration bottoms out, and it is stated instead of dressed up as a general rule.
 const WRAPPER_SEGMENT = /_(FILE|PATH|JSON|B64|BASE64|CONTENTS?)$/i
 
 /** The credential-name veto. Exported so its gates execute the production predicate, not a copy. */

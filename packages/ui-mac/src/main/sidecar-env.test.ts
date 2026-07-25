@@ -357,6 +357,12 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
       ["KEYBOARD_FILE", false],
       // — 刻意不收 VAULT:AZURE_KEYVAULT_URL 是服务地址,认证那半仍由 SECRET/TOKEN 拼写 —
       ["AZURE_KEYVAULT_URL", false],
+      // — 剥离引入的**过拦**面(R3):尾锚 $ 会把中段偶合的名词暴露成尾词。已实测本仓 70 个真实
+      //   process.env 名中，剥离新增拒绝者为空集；这些用例把代价钉出来，将来真有 env 落进这一类时
+      //   人能看见取舍，而不是被静默 veto。("只缩短所以反向安全"那句论证是错的，已在实现里更正。) —
+      ["MONKEY_FILE", true],
+      ["TURKEY_PATH", true],
+      ["CATALOG_PUBKEY_B64", true],
       ["XKEYX", false], // ACCEPTED RESIDUAL: buried, non-trailing, no separator
       // — the no-separator class rule 2 exists for —
       ["GITHUBTOKEN", true],
@@ -387,8 +393,12 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
       ["GPG_KEYRING", true],
       ["SIGNING_KEYPAIR", true],
       ["TOKENSTORE", true],
-      // — accepted RESIDUAL under-denial: noun buried, not trailing, no separator. One name, not a
-      //   family — the *_KEYFILE family used to live here and the adversarial round removed it. —
+      // — accepted RESIDUAL under-denial: noun buried, not trailing, no separator.
+      //   NOTE: an earlier version of this note said "one name, not a family" — that was WRONG and
+      //   the adversarial round disproved it with KRB_KEYTAB / TINK_KEYSET / APIKEY_FILE. The honest
+      //   bound is "whatever the CONTAINER and WRAPPER lists currently enumerate"; a credential
+      //   spelling that fits neither list still passes. The corpus differential below is the gate
+      //   that makes each widening visible — it cannot prove the enumeration complete. —
       ["XKEYX", false],
     ]
     expect(verdicts.map(([name]) => [name, isSecretish(name)])).toEqual(verdicts.map(([n, v]) => [n, v]))
