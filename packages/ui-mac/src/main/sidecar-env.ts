@@ -10,12 +10,19 @@
 //     keyless is already the ADR-009 default). Upstream reads it straight from env, so the file
 //     channel can't serve it without re-exposing it to children.
 //   - A user opencode.jsonc custom provider whose apiKey is "{env:MY_VAR}" no longer sees MY_VAR.
-//     Migrate the ref to "{file:...}" — or use the escape hatch below.
+//     Migrate the ref to "{file:...}"; a credential-shaped MY_VAR cannot be restored by the hatch.
 //   - Agent shell commands no longer see the user's full shell exports (the shell is spawned
 //     non-login with the sidecar env). That also means `echo $ALPHA_API_KEY` now prints nothing.
+//   - An OPENCODE_CONFIG_CONTENT exported by the launching shell is dropped (#603, see
+//     NEVER_INHERIT). Configure the engine through a config FILE instead (OPENCODE_CONFIG /
+//     OPENCODE_CONFIG_DIR / ~/.opencode/opencode.jsonc), all of which still pass.
 //
 // Escape hatch: ALPHA_ENV_ALLOWLIST_EXTRA="VAR1,VAR2" passes the named vars through verbatim. This
-// re-opens child inheritance for exactly those vars — an explicit, per-var user decision.
+// re-opens child inheritance for exactly those vars — an explicit, per-var user decision. It is NOT
+// a secret hatch: names matching SECRETISH are vetoed even when listed (#603). The "no token in the
+// sidecar env" invariant is absolute and not user-waivable, because the blast radius is not the
+// user's alone to accept — every third-party MCP/LSP child would inherit the value. A user who
+// needs a credential in a child process must route it through the {file:} channel instead.
 //
 // DEBUG and LD_PRELOAD, which the old copy-everything implementation deleted case-by-case, now fall
 // out via default-deny like everything else.
@@ -71,10 +78,32 @@ const EXACT = new Set([
   "ALPHA_ENV_ALLOWLIST_EXTRA",
 ])
 
-// Prefix families that are config/infrastructure, not credentials. The SECRETISH guard below still
-// vetoes anything credential-shaped that sneaks under a prefix (e.g. a hypothetical OPENCODE_API_KEY).
+// Prefix families that are config/infrastructure, not credentials. The SECRETISH veto below runs
+// before every allow rule, so anything credential-shaped is dropped no matter which rule would have
+// admitted it — a hypothetical OPENCODE_API_KEY under a prefix, a name listed in the escape hatch, or
+// a token var mistakenly added to EXACT. Cost of the reuse: the substring match also vetoes innocent
+// names that merely contain one of the words (MONKEY_MODE); rename such a var to pass it through.
 const PREFIXES = ["OPENCODE_", "XDG_", "LC_", "ELECTRON_"]
 const SECRETISH = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL/i
+
+// Container-valued vars: SECRETISH matches NAMES, so it is blind to a secret carried in the VALUE.
+// OPENCODE_CONFIG_CONTENT is a whole-config JSON blob that can embed an inline provider apiKey, and
+// its name matches no SECRETISH word while the OPENCODE_ prefix would forward it verbatim (#603).
+// main must never forward one it inherited from the launching shell. This costs alpha nothing: main
+// never produces this var (the only writer in ui-mac/src is sidecar.ts:419, which runs AFTER fork,
+// inside the sidecar), and injectAlphaConfig already starts from a fresh skeleton when it is unset
+// (sidecar.ts:173-174) — that is the branch every normal boot already takes. The engine keeps its
+// file/dir config channels (OPENCODE_CONFIG, OPENCODE_CONFIG_DIR); only the inline-JSON-in-env
+// channel is closed, and a config blob holding a real secret belongs in the {file:} channel anyway.
+//
+// Entries are lowercase and compared lowercased. Windows env keys are case-insensitive and
+// Object.entries() yields whatever casing the OS stored, so a case-sensitive Set lookup let a
+// lowercase twin through while the sidecar's `process.env.OPENCODE_CONFIG_CONTENT` read still
+// resolved it (#603 R2; ui-mac ships Windows). Applied on every platform, not behind a
+// process.platform branch: a DENY rule that is uniformly case-insensitive cannot be wrong, and on
+// POSIX a lowercase twin is inert to the engine anyway (it reads the exact uppercase name), so
+// dropping it costs nothing. The ALLOW rules below stay case-sensitive on purpose — see the loop.
+const NEVER_INHERIT = new Set(["opencode_config_content"])
 
 export function createSidecarEnv(source: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const extra = new Set(
@@ -87,11 +116,14 @@ export function createSidecarEnv(source: NodeJS.ProcessEnv = process.env): Recor
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(source)) {
     if (value === undefined) continue
-    if (extra.has(key)) {
-      env[key] = String(value)
-      continue
-    }
-    const allowed = EXACT.has(key) || (PREFIXES.some((prefix) => key.startsWith(prefix)) && !SECRETISH.test(key))
+    // Both DENY rules come FIRST and are case-insensitive (SECRETISH via /i, NEVER_INHERIT via the
+    // lowercased compare), so they hold on every path — including the escape hatch — under any
+    // casing the OS hands us. The ALLOW rules stay case-sensitive: that can only ever admit FEWER
+    // vars, and a var it declines to admit is simply dropped. Nothing reaches the sidecar without
+    // clearing both DENY rules first, so no casing variant can bypass them (#603 R2).
+    if (SECRETISH.test(key)) continue
+    if (NEVER_INHERIT.has(key.toLowerCase())) continue
+    const allowed = extra.has(key) || EXACT.has(key) || PREFIXES.some((prefix) => key.startsWith(prefix))
     if (!allowed) continue
     env[key] = String(value)
   }
