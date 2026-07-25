@@ -1046,7 +1046,7 @@ export const dict = {
   "alpha.composer.modelNeedsLogin": "该模型需登录后使用",
   "alpha.composer.modelNeedsLoginDetail": "登录后零配置直用;或换用自己 API KEY 的模型。",
   "alpha.composer.modelNotLoaded": "「{{model}}」现在发不出去",
-  "alpha.composer.modelNotLoadedDetail": "本次引擎启动没有加载这个直连供应商。可以先换一个模型,或重试。",
+  "alpha.composer.modelNotLoadedDetail": "本次引擎启动没有加载这个模型。可以先换一个模型,或重试。",
   "alpha.composer.noModel": "还没有可用的模型",
   "alpha.composer.noModelDetail": "登录即可零配置使用;或在模型选择器里添加自己的 API KEY。",
   "alpha.composer.commandNoAttachments": "斜杠命令不携带附件",

@@ -109,14 +109,20 @@ export function resolveDefaultModel(ctx: ModelResolveCtx): DefaultResolution {
  *
  *  REQ-109 #595 谓词 2:`checkSelectedModel` 不再用引擎清单撤销本地 BYOK 选择(谓词 1 不可被引擎
  *  否决),**执行面就必须在这里真的挡住** —— 否则选择保住了却把一个引擎里不存在的 Model Ref 提交
- *  上去。两个谓词各自执行:可选择性归本地事实,可执行性归引擎清单。空清单 = 未就绪,不误杀。 */
+ *  上去。两个谓词各自执行:可选择性归本地事实,可执行性归引擎清单。
+ *
+ *  **空清单同样算不满足成员关系。** 本判据刻意**不**依赖「空清单 ⇒ 引擎未就绪」—— 那是一个状态机
+ *  从未承诺的不变量:`model.list` 可以成功返回 `[]`,链照样进 `ready`。把「未就绪」的判断留在
+ *  它真正的所有者(`modelChainState`)身上:调用方必须在链 ready 之后才让本结论生效
+ *  (`canSend` 与 `submit` 都已先行把门),冷启动窗口因此不会被误杀。 */
 export function preflightBlockReason(
   model: { providerID: string; id: string } | null,
   ctx: {
     loggedIn: boolean
     platformProviderId: string | null
     hasConfiguredByok: boolean
-    /** 引擎实际注册的模型;空数组 = 未就绪,本判据整体让路。 */
+    /** 引擎**本次实际注册**的模型。空数组不是「未知」而是「什么都没注册」——
+     *  调用方负责只在 `modelChainState === "ready"` 后消费本结论。 */
     engineModels: EngineModelRef[]
   },
 ): "platform-needs-login" | "nothing-usable" | "byok-not-registered" | null {
@@ -125,7 +131,6 @@ export function preflightBlockReason(
   if (
     model &&
     isByokEngineId(model.providerID) &&
-    ctx.engineModels.length > 0 &&
     !ctx.engineModels.some((e) => e.providerID === model.providerID && e.id === model.id)
   )
     return "byok-not-registered"

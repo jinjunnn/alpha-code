@@ -1053,7 +1053,7 @@ export const dict = {
   "alpha.composer.modelNeedsLogin": "This model requires sign-in",
   "alpha.composer.modelNeedsLoginDetail": "Sign in to use it without configuration, or choose a model with your own API key.",
   "alpha.composer.modelNotLoaded": "“{{model}}” can’t be sent right now",
-  "alpha.composer.modelNotLoadedDetail": "This direct provider was not loaded in the current engine session. Pick another model, or retry.",
+  "alpha.composer.modelNotLoadedDetail": "This model was not loaded in the current engine session. Pick another model, or retry.",
   "alpha.composer.noModel": "No models are available yet",
   "alpha.composer.noModelDetail": "Sign in for zero-config access, or add your own API key in the model picker.",
   "alpha.composer.commandNoAttachments": "Slash commands do not carry attachments",

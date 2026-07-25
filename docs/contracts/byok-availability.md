@@ -49,14 +49,26 @@ KEY 的直连模型全体变灰。本契约把它拆成两个**互不推导**的
 **两个谓词必须各自都被执行(硬约束)**。撤销豁免(下条)让选择在引擎缺该节点时活了下来,
 发送门就**必须自己**拿引擎清单挡住 —— 否则会把一个引擎里根本不存在的 Model Ref 提交上去。
 「引擎不能否决可选择性」与「发送门不检查可执行性」是同一个缺陷的两面:前者太严,后者太松。
-清单为空 = 引擎未就绪,该判据整体让路(不误杀冷启动)。
+
+**空清单同样算不满足成员关系。** `model.list` 可以**成功**返回 `[]`,而模型链照样进 `ready` ——
+「空清单 ⇒ 引擎未就绪」是一个**状态机从未承诺的不变量**,判据不得依赖它(依赖它就等于留了一条
+逃逸口:成功空清单 + 链 ready ⇒ 仍可提交)。「未就绪」由它真正的所有者 `modelChainState` 单独
+把门:发送门与行内说明都只在链 `ready` 之后消费本结论,冷启动窗口因此不会被误杀。
+支撑这条的实现侧不变量(由本仓自己维持,不是假设):`engineModelRefs` 的写入
+(`alpha-composer.tsx:995`)**早于** `setModelChainState("ready")`(`:1046`),
+链重跑时先切 `loading` 再清空 ⇒ 只要链是 `ready`,清单就是本次真实加载的结果。
 
 **执行失败不得反向改写谓词 1(硬约束)**:引擎恢复后回报的清单里没有某个本地 BYOK 节点,
 只允许让「当前可执行」为假(发送门关闭、切换门拒绝、如实报错),**不得撤销、挂起或清空**
 一个由本地目录 + 本地 KEY 支撑的选择。括号里那三件事是**配套义务而非可选项** ——
 豁免撤销的同时必须补上发送门约束,否则就是把「视觉造假」换成了「提交造假」。放行这条撤销,`model.list` 就又变成了谓词 1 的
 最终裁判 —— 只是把裁判点从渲染层挪到了父层 reconciliation。
-撤销豁免只覆盖本地目录 BYOK:自定义节点消失、平台代理的登录/额度否定,一律照旧生效。
+撤销豁免只覆盖本地目录 BYOK(`localKeyedByokProviders`:本地目录 ∩ 本地 KEY):平台代理的
+登录/额度否定、以及绝大多数自定义节点消失,一律照旧生效。
+**两处判据的集合刻意不严格相同**,如实登记:撤销豁免用上面那个精确集合,发送门约束用
+`isByokEngineId` 后缀集合(前者是后者的子集)。后果是一个恰好以 `-byok` 结尾的**用户自定义**
+节点会**受发送门约束**但**不受撤销豁免** —— 方向是 fail-closed(它确实不在引擎里就是发不出去),
+故不收紧;但不要把它表述成「自定义节点语义完全未变」。
 
 **恢复 owner 不得被选择行为 supersede**:home 的本地 BYOK 选择只是一次内存写,在**任何**
 链状态下都不得让在跑的模型链或账户链判 stale —— 那会把「可用性押在一个不会再到来的事件上」
@@ -70,12 +82,15 @@ KEY 的直连模型全体变灰。本契约把它拆成两个**互不推导**的
 | 是 | 是 | home / session | 行可点;选中即生效;可发送 |
 | 是 | 否 | **home** | 行可点,行内标「引擎重启中 · 可先选择」;选中只是内存写;发送门保持关闭 |
 | 是 | 否 | **session** | 行照常展示,但**不可点**且随之置灰,行内标「引擎重启中 · 恢复后可切换」—— 会话换模型必须落到服务端,不得让用户看到一条正常亮行却点不动 |
-| 是 | 否(引擎已 ready 但清单无此节点) | home / session | **选择保留不撤销**;发送门关闭;界面常驻一行如实说明(说清是本次引擎启动没加载这个直连供应商)并给重试入口 —— 不静默、不撤销、不假装能发 |
+| 是 | 否(引擎已 ready,但清单里没有该 `(provider, model)`,**含成功返回空清单**) | home / session | **选择保留不撤销**;发送门关闭(按钮与 Enter 两条入口共用同一判据);界面常驻一行如实说明「本次引擎启动没有加载这个模型」并给重试入口 —— 不静默、不撤销、不假装能发 |
 | 否(未配 KEY) | — | home / session | 行呈现「未配置 KEY · 点击配置」,点击进配置流 |
 | 否(KEY 状态未知/读取失败) | — | home / session | 如实呈现读取中 / 读取失败,**不得**降格成「未配置」 |
 
 呈现纪律(与上表同级):**视觉必须跟随可点性**。行只要被选择门阻断就置灰,不允许出现
 「`availability` 说可选、按钮却 disabled、样式仍是正常亮行」这种三方互相打架的状态。
+
+告知纪律(同级):**说明必须与判据同粒度**。发送门查的是精确 `(providerID, model id)`,
+说明就不能只声称「这个供应商没加载」—— 供应商在册而所选模型缺失时那句话是假的。
 
 `recovering` 下的会话边界:**home 模式可先选择;session 模式展示本地 BYOK 行,但在引擎
 恢复、`switchModel` 确认之前不得伪装成已切换。** 不存在也不得新增 session 排队切换
@@ -131,7 +146,9 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
 | `listState === "recovering"` → 可选,行内「引擎重启中」 | 行派生 + 点击层 | 同上 |
 | 引擎清单缺 `<id>-byok`(或标 disabled/deprecated)→ 行仍可选 | 行派生 + 点击层 | 同上 |
 | 引擎恢复后清单仍缺该节点 → 已选的本地 BYOK **不被撤销/挂起** | **父层 reconciliation** | `model-default-core.test.ts`(纯核豁免)、`test-component/alpha-composer-model.cases.ts`(真链两轮 reconciliation) |
-| 引擎 ready 但清单缺该节点 → 发送门关闭 + 如实告知(且不撤销选择) | **父层发送门** | `model-default-core.test.ts`(纯核 `byok-not-registered` 四例)、`test-component/alpha-composer-model.cases.ts`(真链:选择保留 + `send.disabled` + 常驻说明) |
+| 引擎 ready 但清单缺该节点 → 发送门关闭 + 如实告知(且不撤销选择) | **父层发送门** | `model-default-core.test.ts`(纯核 `byok-not-registered`)、`test-component/alpha-composer-model.cases.ts`(真链:选择保留 + `send.disabled` + 常驻说明) |
+| 引擎**成功返回空清单**且链仍进 ready → 同样关闭发送门 | **父层发送门** | 同上两处(纯核 + 真链各一例) |
+| **Enter 键**(唯一能绕过 disabled 按钮的入口)→ 零 `startChat`,并如实告知 | **父层发送门** | `test-component/alpha-composer-model.cases.ts` |
 | 清单**含**该节点 → 发送门照常打开(不得过度收紧) | **父层发送门** | `test-component/alpha-composer-model.cases.ts` |
 | home 选择不得 supersede 在跑的模型链 / 账户链 | **父层生命周期** | `test-component/alpha-composer-model.cases.ts`(链恢复自愈 + 账户链存活 → `platformPermission` 回 ready) |
 | live allowlist 排除某供应商 / 平台不可达 → 仍在目录与注入中 | main | `alpha-models.test.ts`、`alpha-platform-catalog.cases.ts` |

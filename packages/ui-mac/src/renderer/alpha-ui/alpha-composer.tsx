@@ -750,7 +750,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     hasConfiguredByok: hasConfiguredByok(),
     engineModels: engineModelRefs(),
   })
-  /** #595:已选的本地 BYOK 在引擎清单里查无对应节点 —— 可选择性照旧(不撤销),但**不可执行**。 */
+  /** #595:已选的本地 BYOK 在引擎清单里查无对应节点(含引擎成功返回空清单)—— 可选择性照旧
+   *  (不撤销),但**不可执行**。判据自己不猜「就绪」:`engineModelRefs` 只在链 ready 之前写入
+   *  (:995 早于 :1046),消费方一律先过 `modelChainState() === "ready"`,冷启动窗口不会误杀。 */
   const byokNotRegistered = createMemo(
     () => preflightBlockReason(composerModel(), preflightCtx()) === "byok-not-registered",
   )

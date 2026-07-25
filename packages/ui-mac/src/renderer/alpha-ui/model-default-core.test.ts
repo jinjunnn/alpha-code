@@ -182,8 +182,16 @@ describe("preflightBlockReason(发送前最后一道)", () => {
       preflightBlockReason({ providerID: "deepseek-byok", id: "ghost" }, pctx({ engineModels: [byok] })),
     ).toBe("byok-not-registered")
   })
-  test("#595:引擎清单为空 = 未就绪 → 让路(不误杀冷启动)", () => {
-    expect(preflightBlockReason({ providerID: "deepseek-byok", id: "deepseek-v4-flash" }, pctx({}))).toBeNull()
+  // R3:`model.list` 可以成功返回 [] 且链照样进 ready —— 判据不得依赖「空清单 ⇒ 未就绪」
+  // 这个状态机从未承诺的不变量。空清单同样算不满足成员关系;「未就绪」由 modelChainState 单独把门。
+  test("#595:引擎成功返回空清单 → 同样判 byok-not-registered(不靠「空=未就绪」放行)", () => {
+    expect(preflightBlockReason({ providerID: "deepseek-byok", id: "deepseek-v4-flash" }, pctx({}))).toBe(
+      "byok-not-registered",
+    )
+  })
+  test("#595:空清单不外溢 —— 平台行与非 BYOK 节点仍按各自既有判据", () => {
+    expect(preflightBlockReason(proxyModel, pctx({ loggedIn: true }))).toBeNull()
+    expect(preflightBlockReason({ providerID: "my-endpoint", id: "x" }, pctx({ loggedIn: true }))).toBeNull()
   })
   test("#595:约束不外溢 —— 平台行与非 BYOK 自定义节点的既有语义不变", () => {
     expect(preflightBlockReason(proxyModel, pctx({ loggedIn: true, engineModels: engineWithDs }))).toBeNull()

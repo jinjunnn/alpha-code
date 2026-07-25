@@ -2013,4 +2013,74 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
     expect(mounted.host.textContent).not.toContain(zh["alpha.model.switchFailed"])
     mounted.dispose()
   })
+
+  test("引擎成功返回空清单且链仍进 ready:发送门必须照样关闭(不靠「空=未就绪」放行)", async () => {
+    installApi()
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        // model.list 成功返回 [] —— 链照样进 ready。「空清单 ⇒ 未就绪」是状态机从未承诺的不变量。
+        modelContract: { list: async () => [], current: async () => undefined, switch: async () => {} },
+        initialText: "hello",
+      }),
+    )
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(byokRows(openPicker())[0]?.disabled).toBe(false))
+    click(byokRows(openPicker())[0])
+    await waitFor(() => expect(composerModel()?.providerID).toBe(deepseekEngineId))
+
+    // 谓词 1:选择照旧保留。谓词 2:引擎什么都没注册 ⇒ 发送门关闭 + 如实告知。
+    expect(composerModelSuspended()).toBeNull()
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelNotLoadedDetail"]))
+    expect(send.disabled).toBe(true)
+    mounted.dispose()
+  })
+
+  test("按 Enter 绕不过发送门:零 startChat,并如实告知", async () => {
+    installApi()
+    let chats = 0
+    const toasts = mount(() => createComponent(ToastViewport, {}))
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async () => {
+            chats++
+            return undefined
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        // 非空清单但缺 deepseek-byok —— 主路径。
+        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+        initialText: "hello",
+      }),
+    )
+
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(byokRows(openPicker())[0]?.disabled).toBe(false))
+    click(byokRows(openPicker())[0])
+    await waitFor(() => expect(composerModel()?.providerID).toBe(deepseekEngineId))
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    expect(send.disabled).toBe(true)
+    // Enter 直调 submit,是唯一能绕过 disabled 按钮的真实入口 —— 它必须过同一条判据。
+    const textarea = mounted.host.querySelector<HTMLTextAreaElement>("textarea")!
+    expect(textarea.value).toBe("hello")
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }))
+    await flush()
+    await flush()
+
+    expect(chats).toBe(0)
+    expect(document.body.textContent).toContain(zh["alpha.composer.modelNotLoadedDetail"])
+    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("hello")
+    mounted.dispose()
+    toasts.dispose()
+  })
 })
