@@ -74,6 +74,13 @@ const EXACT = new Set([
   // injectAlphaConfig(alpha.jsonc 真源)与 @alpha-code/ext(全局根边界判定)必须与 main 同根,
   // 否则引擎会读到另一环境的可变状态(AC#1 破)。
   "ALPHA_GLOBAL_DIR",
+  // REQ-059 / ADR-019 逃生阀。main 与 sidecar 必须同口径:main 侧读它们跳过 truth 迁移与
+  // desired-state 投影(index.ts / engine-config-truth-boot.ts)并把 mcp/plugin/provider 写回
+  // legacy 目标(ext-config.ts),sidecar 侧读它们跳过 OPENCODE_CONFIG 注入(sidecar.ts)。缺了这两项
+  // 时 sidecar 收不到它们,于是 main 走 legacy 而 sidecar 照旧注入 —— 正是 req053 设计稿 §风险8
+  // 「逃生舱错位」那一格,也让两个逃生阀在真出事故时按了没反应(#606)。布尔开关,非密钥。
+  "ALPHA_JSONC_TRUTH_DISABLE",
+  "ALPHA_LEGACY_INSTALL_ROOT",
   // the escape hatch itself, so the sidecar can surface it in diagnostics
   "ALPHA_ENV_ALLOWLIST_EXTRA",
 ])

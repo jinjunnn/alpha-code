@@ -202,6 +202,20 @@ describe("createSidecarEnv — escape hatch", () => {
     expect(names.filter(isSecretish)).toEqual([])
   })
 
+  // #606 turned the guard above into a live concern: it proves no EXACT member is credential-SHAPED,
+  // but not that every member actually survives the function. Same invariant (I2) from the behavior
+  // side, and it stays valid no matter how the veto is spelled — an EXACT entry that any DENY rule
+  // eats is an allowlist entry that silently does nothing, which is how #606's two switches were
+  // dead in the first place (they were simply absent; this catches the near-miss where someone adds
+  // a name that a DENY rule then swallows).
+  test("guard: every EXACT allowlist entry really survives createSidecarEnv", () => {
+    const src = fs.readFileSync(path.join(import.meta.dir, "sidecar-env.ts"), "utf8")
+    const names = [...src.match(/const EXACT = new Set\(\[([\s\S]*?)\]\)/)![1].matchAll(/"([^"]+)"/g)].map((m) => m[1])
+    expect(names.length).toBeGreaterThan(20)
+    const env = createSidecarEnv(Object.fromEntries(names.map((name) => [name, `v-${name}`])))
+    expect(names.filter((name) => env[name] !== `v-${name}`)).toEqual([])
+  })
+
   // NEVER_INHERIT is compared lowercased, so an entry written in uppercase would silently never
   // match. Same guard shape as above: make that mistake fail here instead of leaking.
   test("guard: every NEVER_INHERIT entry is lowercase (it is compared lowercased)", () => {
@@ -332,6 +346,41 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
       ["OPENCODE_KEYFILE", false],
     ]
     expect(verdicts.map(([name]) => [name, isSecretish(name)])).toEqual(verdicts.map(([n, v]) => [n, v]))
+  })
+})
+
+// #606: sidecar.ts reads ALPHA_JSONC_TRUTH_DISABLE / ALPHA_LEGACY_INSTALL_ROOT inside the SIDECAR
+// process to decide whether to inject OPENCODE_CONFIG, but neither name was in EXACT — and the
+// sidecar's env is this function's explicit return object (Electron ForkOptions.env inherits
+// process.env only when OMITTED, server.ts:191). So the reads could never see them: both escape
+// hatches were dead. They are not obsolete — main still honours them in index.ts (desired-state
+// reconcile), engine-config-truth-boot.ts (truth migration), ext-config.ts (mcp/plugin/provider
+// write target), ext-fs-installer.ts, factory-skills.ts and ext-install-planner.ts, and ADR-019 §5 /
+// ADR-028 name ALPHA_LEGACY_INSTALL_ROOT as the documented rollback surface. Forwarding them (route
+// 1) is therefore the fix; deleting the sidecar read (route 2) would leave main in legacy mode while
+// the sidecar kept injecting — req053 设计稿 §风险8「逃生舱错位」exactly.
+describe("createSidecarEnv — escape switches the sidecar itself reads (#606)", () => {
+  for (const name of ["ALPHA_JSONC_TRUTH_DISABLE", "ALPHA_LEGACY_INSTALL_ROOT"]) {
+    test(`${name}=1 reaches the sidecar env`, () => {
+      const env = createSidecarEnv({ [name]: "1", PATH: "/usr/bin" })
+      expect(env[name]).toBe("1")
+    })
+  }
+
+  test("both switches are forwarded together, and neither is credential-shaped", () => {
+    const env = createSidecarEnv({
+      ALPHA_JSONC_TRUTH_DISABLE: "1",
+      ALPHA_LEGACY_INSTALL_ROOT: "1",
+      ALPHA_GLOBAL_DIR: "/Users/u/.alpha",
+      ALPHA_API_KEY: "jwt",
+    })
+    expect(env.ALPHA_JSONC_TRUTH_DISABLE).toBe("1")
+    expect(env.ALPHA_LEGACY_INSTALL_ROOT).toBe("1")
+    expect(isSecretish("ALPHA_JSONC_TRUTH_DISABLE")).toBe(false)
+    expect(isSecretish("ALPHA_LEGACY_INSTALL_ROOT")).toBe(false)
+    // adding them must not have disturbed anything else on the path
+    expect(env.ALPHA_GLOBAL_DIR).toBe("/Users/u/.alpha")
+    expect(env.ALPHA_API_KEY).toBeUndefined()
   })
 })
 
