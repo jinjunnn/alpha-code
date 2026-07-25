@@ -73,6 +73,7 @@ import {
 } from "./model-default-core"
 import { ModelPickPop } from "./alpha-composer-model"
 import { createModelContract, type ModelContract } from "./model-contract"
+import { byokEngineId, isByokEngineId } from "../../shared/alpha-model-types"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
 import { accountResultState, createRetryWakeup, loadEngineModelsWithRetry, resolveAccountWithRetry } from "./model-recovery"
@@ -723,6 +724,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const [platformPermission, setPlatformPermission] = createSignal<"out" | "recovering" | "ready" | "failed">(
     "recovering",
   )
+  /* #595 谓词 2 的事实源:引擎本次实际注册的模型。撤销豁免(checkSelectedModel)让「选择」活了下来,
+     发送门就必须自己拿这份清单挡住不可执行的提交 —— 两个谓词各自执行,谁也不代替谁。 */
+  const [engineModelRefs, setEngineModelRefs] = createSignal<EngineModelRef[]>([])
   const [authEpoch, setAuthEpoch] = createSignal(0)
   const [modelRetryEpoch, setModelRetryEpoch] = createSignal(0)
   let chainSeq = 0
@@ -740,6 +744,18 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const accountRetryWakeup = createRetryWakeup()
   const authSignature = (state: AuthState) =>
     `${state.status}\u0000${state.mode}\u0000${state.platformStatus ?? "ready"}\u0000${state.account?.email ?? ""}`
+  const preflightCtx = () => ({
+    loggedIn: lastAuth()?.status === "logged-in" && (lastAuth()?.platformStatus ?? "ready") === "ready",
+    platformProviderId: platformId(),
+    hasConfiguredByok: hasConfiguredByok(),
+    engineModels: engineModelRefs(),
+  })
+  /** #595:已选的本地 BYOK 在引擎清单里查无对应节点(含引擎成功返回空清单)—— 可选择性照旧
+   *  (不撤销),但**不可执行**。判据自己不猜「就绪」:`engineModelRefs` 只在链 ready 之前写入
+   *  (:995 早于 :1046),消费方一律先过 `modelChainState() === "ready"`,冷启动窗口不会误杀。 */
+  const byokNotRegistered = createMemo(
+    () => preflightBlockReason(composerModel(), preflightCtx()) === "byok-not-registered",
+  )
   const canSend = createMemo(() => {
     const selected = composerModel()
     const needsPlatform =
@@ -750,16 +766,32 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       !!props.directory() &&
       modelChainState() === "ready" &&
       (!needsPlatform || platformPermission() === "ready") &&
+      // 谓词 2:引擎里没有这个直连节点就发不出去,按钮如实关闭(行内另有告知)。
+      !byokNotRegistered() &&
       !sending()
     )
   })
 
   const selectComposerModel = async (model: NonNullable<ReturnType<typeof composerModel>>) => {
+    /* REQ-109 #595:home 的本地 BYOK 直连节点在引擎链恢复中也能写进内存选择 —— 它的可选择性只由
+       本地目录 + 本地 KEY 决定(契约 docs/contracts/byok-availability.md),而 home 的“选中”本身
+       只是一次内存写(下方 setComposerModel),不需要引擎。执行仍是另一个谓词:canSend 继续要求
+       modelChainState() === "ready",绝不在引擎未恢复时假装能发送。
+       session 模式不豁免:换模型必须落到服务端 switchModel,引擎不在就不能伪装成已切换。 */
+    const homeLocalByok = props.mode === "home" && !props.sessionID?.() && isByokEngineId(model.providerID)
     // 未获全链 admission 时不能 supersede 正在完成 auth/KEY/account/list 的 owner，否则无人接管 loading。
-    if (modelChainState() !== "ready") throw new Error("model chain is not ready")
+    if (modelChainState() !== "ready" && !homeLocalByok) throw new Error("model chain is not ready")
     if (model.providerID === platformId() && platformPermission() !== "ready")
       throw new Error("platform permission is recovering")
-    const seq = ++chainSeq
+    /* home 本地 BYOK 选择在**任何** modelChainState 下都不得 supersede 在跑的链:`++chainSeq` 会让
+       list 重试循环(loadEngineModelsWithRetry)与账户恢复循环(resolveAccountWithRetry)双双判
+       isStale 而静默退出 —— 前者是 #594 修掉的模型链悬崖,后者是它的孪生形态(链已 ready 而
+       account 仍在重试时,supersede 会让 platformPermission 永久留在 recovering,代理节点再也选不了)。
+       不递增也不丢语义:home 无 sessionID,`seq` 只被下面的 session switch 分支消费;而链尾的默认
+       解析读的是 `composerModel()` 实时值,本次选择照样压过它(applyDefaultComposerModel 空判)。
+       安全的 supersede(directory / authEpoch / session 切换 / retryAll)都会建立新的 replacement
+       owner,不在此列。 */
+    const seq = homeLocalByok ? chainSeq : ++chainSeq
     const sessionID = props.sessionID?.()
     if (sessionID) {
       const projection = composerModelProjection()
@@ -794,6 +826,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     setPlatformId(null)
     setHasConfiguredByok(false)
     setPlatformPermission("recovering")
+    setEngineModelRefs([])
     if (sessionID) invalidateComposerModelProjection(sessionID)
     else resetComposerModelProjection()
 
@@ -961,6 +994,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     const engineModels: EngineModelRef[] = loaded.data
       .filter((model) => model.enabled && model.status !== "deprecated")
       .map((model) => ({ providerID: model.providerID, id: model.id }))
+    setEngineModelRefs(engineModels)
     setHasConfiguredByok(
       configured.some(
         (id) =>
@@ -968,6 +1002,11 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           engineModels.some((model) => model.providerID === id || model.providerID === `${id}-byok`),
       ),
     )
+    // #595:「BYOK 本地可选择」的载体 —— 本地目录 ∩ 本地 KEY 已配置,**不经引擎清单过滤**。
+    // 与下面 engine 过滤过的 configuredEngineProviders 分工不同:后者只服务「默认必须真能跑」。
+    const localKeyedByokProviders = cat.data.byokProviders
+      .filter((provider) => configured.includes(provider.id))
+      .map((provider) => byokEngineId(provider.id))
     const configuredEngineProviders = configured.flatMap((id) => {
       if (engineModels.some((model) => model.providerID === id)) return [id]
       const byokID = `${id}-byok`
@@ -982,6 +1021,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         accountUsable,
         platformProviderId: pid,
         configuredProviders: configuredEngineProviders,
+        localKeyedByokProviders,
         catalog: { defaultModel: cat.data.defaultModel, platformModels: cat.data.platformModels },
         engineModels,
       }
@@ -1149,12 +1189,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       return
     }
     // REQ-069 preflight:未登录 + 代理模型(或全无可用)→ 行内引导替代网关拒绝原文。
-    const block = preflightBlockReason(composerModel(), {
-      loggedIn:
-        lastAuth()?.status === "logged-in" && (lastAuth()?.platformStatus ?? "ready") === "ready",
-      platformProviderId: platformId(),
-      hasConfiguredByok: hasConfiguredByok(),
-    })
+    // #595:Enter 直调 submit(不经 canSend),同一条纯核判据必须在这里也拦住不可执行的 BYOK。
+    const block = preflightBlockReason(composerModel(), preflightCtx())
     if (block) {
       pushToast(
         block === "platform-needs-login"
@@ -1163,11 +1199,17 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
               title: t("alpha.composer.modelNeedsLogin"),
               detail: t("alpha.composer.modelNeedsLoginDetail"),
             }
-          : {
-              kind: "info",
-              title: t("alpha.composer.noModel"),
-              detail: t("alpha.composer.noModelDetail"),
-            },
+          : block === "byok-not-registered"
+            ? {
+                kind: "info",
+                title: t("alpha.composer.modelNotLoaded", { model: composerModel()?.name ?? "" }),
+                detail: t("alpha.composer.modelNotLoadedDetail"),
+              }
+            : {
+                kind: "info",
+                title: t("alpha.composer.noModel"),
+                detail: t("alpha.composer.noModelDetail"),
+              },
       )
       return
     }
@@ -1451,6 +1493,17 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       <Show when={modelChainState() === "recovering"}>
         <div class="a-comp-model-alert" role="status">
           <span>{t("alpha.model.syncing")}</span>
+        </div>
+      </Show>
+      {/* #595:发送门因「引擎没有这个直连节点」而关闭时,必须常驻如实说明 ——
+          按钮已 disabled,toast 点不出来,不说等于静默失败。选择本身照旧保留。 */}
+      <Show when={modelChainState() === "ready" && byokNotRegistered()}>
+        <div class="a-comp-model-alert" role="status">
+          <span>{t("alpha.composer.modelNotLoaded", { model: composerModel()?.name ?? "" })}</span>
+          <span>{t("alpha.composer.modelNotLoadedDetail")}</span>
+          <button type="button" onClick={retryCurrentModel}>
+            {t("alpha.common.retry")}
+          </button>
         </div>
       </Show>
       <div class="a-comp-bar">

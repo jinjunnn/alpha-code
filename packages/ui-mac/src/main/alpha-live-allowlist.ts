@@ -1,9 +1,12 @@
 // REQ-001:B 网关 edition 白名单的本地缓存(文件桥,复用 A6 的「main 写 / sidecar 读」模式)。
 //
-// 网关 GET /v1/models 是「允许哪些 provider / model」的权威源(edition-scoped)。main 在启动 /
+// 网关 GET /v1/models 是「允许哪些**平台代理**模型」的权威源(edition-scoped)。main 在启动 /
 // 登录后 respawn / picker 打开时同步一份到 <userData>/alpha-live-models.json;fork 期的
 // buildAlphaModelConfig(sidecar)与 picker 的 effective catalog(main)都读这份缓存装配显隐。
 // 缓存缺失 / 损坏 / 网关不可达 → 回退内置 snapshot(alpha-models.json),picker 永不空白(B20)。
+//
+// REQ-109 #595:BYOK 供应商白名单(旧 `byokProviders` 字段)已撤销 —— BYOK 目录只由本地
+// alpha-models.json 决定,缓存里不再有任何 BYOK 策略面(契约 docs/contracts/byok-availability.md)。
 //
 // electron-free:sidecar(utilityProcess)经 alpha-models.ts 读;main 经 alpha-platform-models.ts 写。
 
@@ -17,8 +20,6 @@ export type LiveAllowlist = {
   fetchedAt: string
   /** 网关判定的 edition(cn/intl/…)。 */
   edition?: string
-  /** 内置 BYOK 目录 provider 白名单;null = 不限制。**用户自定义节点不受此约束**(2026-07-03 拍板)。 */
-  byokProviders: string[] | null
   /** edition-scoped 平台模型清单(registry 真实 id)。 */
   models: LiveAllowlistModel[]
 }
@@ -35,7 +36,6 @@ export function readLiveAllowlist(userDataPath: string): LiveAllowlist | null {
     const raw = fs.readFileSync(liveAllowlistPath(userDataPath), "utf8")
     const parsed = JSON.parse(raw) as LiveAllowlist
     if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.models)) return null
-    if (parsed.byokProviders !== null && !Array.isArray(parsed.byokProviders)) return null
     return parsed
   } catch {
     return null

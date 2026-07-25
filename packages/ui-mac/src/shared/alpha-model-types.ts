@@ -36,6 +36,11 @@ export type ByokProvider = {
  *  (renderer/model-picker-core.ts). */
 export const byokEngineId = (id: string): string => `${id}-byok`
 
+/** Inverse of {@link byokEngineId}: is this engine-facing provider id an injected BYOK direct node?
+ *  REQ-109 #595 uses it as the one fact that decides "this selection is a local BYOK direct node, so
+ *  it does not depend on platform login/entitlement or on the engine's model list being loaded". */
+export const isByokEngineId = (providerID: string): boolean => providerID.endsWith("-byok")
+
 /** A model fronted by the alpha-platform proxy (代理节点). Visible always (locked when logged-out). */
 export type PlatformModel = {
   id: string
@@ -71,9 +76,9 @@ export type LiveSyncInfo = {
   edition?: string
 }
 
-/** window.api.models.catalog() 实际返回:catalog 经 edition 白名单过滤后的视图 + 来源标注。
- *  platformModels 已按网关白名单收窄(真实 registry id);byokProviders 已按 edition 收窄
- *  (用户自定义节点不经此目录,不受影响)。 */
+/** window.api.models.catalog() 实际返回:catalog 的**平台段**经 edition 清单过滤后的视图 + 来源标注。
+ *  platformModels 已按网关清单收窄(真实 registry id);**byokProviders 原样透出** —— REQ-109 #595
+ *  撤销了 edition 收窄,BYOK 目录只由本地 alpha-models.json 决定(docs/contracts/byok-availability.md)。 */
 export type EffectiveCatalog = AlphaModelCatalog & { liveSync: LiveSyncInfo }
 
 // ── custom-provider add/test IPC (window.api.providers.*) ───────────────────────────────────────

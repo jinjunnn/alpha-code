@@ -51,10 +51,10 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   const enabled: string[] = []
 
   // REQ-001:B 网关 edition 白名单(main 经 syncLiveAllowlist 同步的本地缓存;缺失/损坏 → 不限制,
-  // 内置 snapshot 兜底,fail-open)。约束对象 = 内置 BYOK 目录 + 平台模型清单;用户自定义节点
-  // (下方 readUserProviderIds)**不受限**(2026-07-03 用户拍板:目录跟随 edition,自定义不拦)。
+  // 内置 snapshot 兜底,fail-open)。约束对象**只有平台模型清单**;用户自定义节点(下方
+  // readUserProviderIds)不受限;BYOK 目录自 REQ-109 #595 起也不受限 —— owner 裁决 BYOK 走全主权,
+  // 本地 alpha-models.json 即权威,平台不得远程干预(契约 docs/contracts/byok-availability.md)。
   const live = readLiveAllowlist(userDataPath)
-  const byokAllowed = (id: string) => !live || live.byokProviders === null || live.byokProviders.includes(id)
 
   // (1) BYOK 直连节点 (方案 C): inject each catalog provider that HAS a key (opt-in) as a FULL custom
   // provider — npm/baseURL/models come from the catalog (alpha-code defines them, independent of
@@ -62,7 +62,6 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   // shell / alpha.env via main's syncSecretFiles at fork, A6). No key file → not injected, so the
   // picker only shows keyed BYOK nodes. Calls go DIRECT to the provider's baseURL (never via the gateway).
   for (const p of CATALOG.byokProviders) {
-    if (!byokAllowed(p.id)) continue
     if (!p.keyEnv || !hasSecretFile(userDataPath, p.keyEnv)) continue
     const npm = p.compat === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible"
     const models: Record<string, { name: string }> = {}

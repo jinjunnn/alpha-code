@@ -23,12 +23,13 @@ const ctx = (over: Partial<ModelResolveCtx>): ModelResolveCtx => ({
   platformProviderId: PLATFORM,
   engineModels: [],
   configuredProviders: [],
+  localKeyedByokProviders: [],
   catalog: CATALOG,
   ...over,
 })
 
-const proxyModel = { providerID: PLATFORM }
-const dsModel = { providerID: "deepseek" }
+const proxyModel = { providerID: PLATFORM, id: "claude-sonnet-4.6" }
+const dsModel = { providerID: "deepseek", id: "deepseek-chat" }
 const engineWithProxy = [
   { providerID: PLATFORM, id: "claude-sonnet-4.6" },
   { providerID: PLATFORM, id: "claude-fable-5" },
@@ -59,6 +60,33 @@ describe("checkSelectedModel(第①级:session 当前选择校验)", () => {
   })
   test("BYOK 模型 + provider 仍注册 → ok(与登录态无关)", () => {
     expect(checkSelectedModel(dsModel, ctx({ engineModels: engineWithDs }))).toEqual({ ok: true })
+  })
+
+  // REQ-109 #595:引擎清单不得反向撤销一个本地目录 + 本地 KEY 支撑的选择。
+  test("#595:本地目录 BYOK(KEY 已配置)+ 引擎表非空且查无此 provider → 仍 ok,不判 provider-gone", () => {
+    const local = { providerID: "deepseek-byok" }
+    expect(
+      checkSelectedModel(local, ctx({ engineModels: engineWithProxy, localKeyedByokProviders: ["deepseek-byok"] })),
+    ).toEqual({ ok: true })
+    // 反面:同一形状但本地 KEY 未配置(不在 localKeyedByokProviders)→ 照旧撤销,主权不等于放行一切。
+    expect(checkSelectedModel(local, ctx({ engineModels: engineWithProxy }))).toEqual({
+      ok: false,
+      reason: "provider-gone",
+    })
+    // 豁免只覆盖本地目录 BYOK:自定义节点消失仍照旧撤销。
+    expect(
+      checkSelectedModel({ providerID: "my-endpoint" }, ctx({
+        engineModels: engineWithProxy,
+        localKeyedByokProviders: ["deepseek-byok"],
+      })),
+    ).toEqual({ ok: false, reason: "provider-gone" })
+  })
+
+  test("#595:豁免不越界到平台代理 —— 平台 id 即使被误列也仍走登录/额度判据", () => {
+    expect(checkSelectedModel(proxyModel, ctx({ localKeyedByokProviders: [PLATFORM] }))).toEqual({
+      ok: false,
+      reason: "needs-login",
+    })
   })
 })
 
@@ -115,11 +143,12 @@ describe("resolveDefaultModel(第②③④级:自动默认)", () => {
 
 describe("preflightBlockReason(发送前最后一道)", () => {
   const pctx = (
-    over: Partial<{ loggedIn: boolean; platformProviderId: string | null; hasConfiguredByok: boolean }>,
-  ) => ({
+    over: Partial<Parameters<typeof preflightBlockReason>[1]>,
+  ): Parameters<typeof preflightBlockReason>[1] => ({
     loggedIn: false,
     platformProviderId: PLATFORM,
     hasConfiguredByok: false,
+    engineModels: [],
     ...over,
   })
   test("未登录 + 选中平台模型 → 拦(引导替代网关拒绝原文)", () => {
@@ -139,6 +168,36 @@ describe("preflightBlockReason(发送前最后一道)", () => {
   })
   test("无选择 + 已登录 → 放行", () => {
     expect(preflightBlockReason(null, pctx({ loggedIn: true }))).toBeNull()
+  })
+  // REQ-109 #595 谓词 2:撤销豁免让选择活了下来,发送门必须自己挡住不可执行的提交。
+  test("#595:本地 BYOK 已选但引擎清单(非空)查无该节点 → byok-not-registered", () => {
+    const byok = { providerID: "deepseek-byok", id: "deepseek-v4-flash" }
+    expect(preflightBlockReason(byok, pctx({ engineModels: engineWithProxy }))).toBe("byok-not-registered")
+  })
+  test("#595:引擎清单含该节点 → 放行(不得过度收紧)", () => {
+    const byok = { providerID: "deepseek-byok", id: "deepseek-v4-flash" }
+    expect(preflightBlockReason(byok, pctx({ engineModels: [byok] }))).toBeNull()
+    // 同 provider 但 model id 不在册 —— 提交的是引擎不认识的 Ref,照样拦。
+    expect(
+      preflightBlockReason({ providerID: "deepseek-byok", id: "ghost" }, pctx({ engineModels: [byok] })),
+    ).toBe("byok-not-registered")
+  })
+  // R3:`model.list` 可以成功返回 [] 且链照样进 ready —— 判据不得依赖「空清单 ⇒ 未就绪」
+  // 这个状态机从未承诺的不变量。空清单同样算不满足成员关系;「未就绪」由 modelChainState 单独把门。
+  test("#595:引擎成功返回空清单 → 同样判 byok-not-registered(不靠「空=未就绪」放行)", () => {
+    expect(preflightBlockReason({ providerID: "deepseek-byok", id: "deepseek-v4-flash" }, pctx({}))).toBe(
+      "byok-not-registered",
+    )
+  })
+  test("#595:空清单不外溢 —— 平台行与非 BYOK 节点仍按各自既有判据", () => {
+    expect(preflightBlockReason(proxyModel, pctx({ loggedIn: true }))).toBeNull()
+    expect(preflightBlockReason({ providerID: "my-endpoint", id: "x" }, pctx({ loggedIn: true }))).toBeNull()
+  })
+  test("#595:约束不外溢 —— 平台行与非 BYOK 自定义节点的既有语义不变", () => {
+    expect(preflightBlockReason(proxyModel, pctx({ loggedIn: true, engineModels: engineWithDs }))).toBeNull()
+    expect(
+      preflightBlockReason({ providerID: "my-endpoint", id: "x" }, pctx({ loggedIn: true, engineModels: engineWithDs })),
+    ).toBeNull()
   })
   test("catalog 未知(platformProviderId null)→ 平台判定不误伤", () => {
     expect(preflightBlockReason(proxyModel, pctx({ platformProviderId: null, hasConfiguredByok: true }))).toBeNull()

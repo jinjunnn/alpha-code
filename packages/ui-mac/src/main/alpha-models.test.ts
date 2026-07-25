@@ -216,20 +216,24 @@ describe("buildAlphaModelConfig — default model + user providers", () => {
 describe("buildAlphaModelConfig — REQ-001 edition 白名单(live 缓存)", () => {
   const liveBase = { fetchedAt: "2026-07-03T00:00:00Z", edition: "cn" }
 
-  test("byokProviders 白名单收窄内置 BYOK:不在名单的 keyed provider 不注入", () => {
+  // REQ-109 #595(owner 裁决):live allowlist 不再收窄 BYOK —— 注入只看本地目录 + 本地 KEY 文件。
+  test("#595 退出条件 4:live 清单只列 deepseek,zhipu 的 keyed 节点照样注入(平台无权收窄 BYOK)", () => {
     plantSecret("DEEPSEEK_API_KEY", "sk-1")
     plantSecret("ZHIPU_API_KEY", "sk-2")
-    writeLiveAllowlist(userData, { ...liveBase, byokProviders: ["deepseek"], models: [] })
+    writeLiveAllowlist(userData, { ...liveBase, models: [{ id: "deepseek-v4-flash" }] })
     const cfg = buildAlphaModelConfig(userData)!
     expect(cfg.enabled_providers).toContain("deepseek-byok")
-    expect(cfg.provider["zhipuai-byok"]).toBeUndefined()
-    expect(cfg.enabled_providers).not.toContain("zhipuai-byok")
+    expect(cfg.provider["zhipuai-byok"]).toBeDefined()
+    expect(cfg.enabled_providers).toContain("zhipuai-byok")
   })
 
-  test("byokProviders null = 不限制(两个 keyed 都注入)", () => {
+  test("#595:旧缓存里残留的 byokProviders 收窄字段已无消费方,两个 keyed 节点都注入", () => {
     plantSecret("DEEPSEEK_API_KEY", "sk-1")
     plantSecret("ZHIPU_API_KEY", "sk-2")
-    writeLiveAllowlist(userData, { ...liveBase, byokProviders: null, models: [] })
+    fs.writeFileSync(
+      path.join(userData, "alpha-live-models.json"),
+      JSON.stringify({ ...liveBase, byokProviders: ["deepseek"], models: [] }),
+    )
     const cfg = buildAlphaModelConfig(userData)!
     expect(cfg.enabled_providers).toContain("deepseek-byok")
     expect(cfg.enabled_providers).toContain("zhipuai-byok")
@@ -240,7 +244,6 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(live 缓存)", () 
     plantSecret("ALPHA_API_KEY", "jwt")
     writeLiveAllowlist(userData, {
       ...liveBase,
-      byokProviders: null,
       models: [{ id: "deepseek-v4-flash" }, { id: "brand-new-model" }],
     })
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
@@ -265,13 +268,13 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(live 缓存)", () 
   test("live models 空数组 → 回退 snapshot(空白名单按坏配置处理,fail-open 不出空目录)", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
-    writeLiveAllowlist(userData, { ...liveBase, byokProviders: null, models: [] })
+    writeLiveAllowlist(userData, { ...liveBase, models: [] })
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
     expect(Object.keys(p.models).length).toBe(getModelCatalog().platformModels.length)
   })
 
   test("用户自定义 provider 不受白名单约束(2026-07-03 拍板:目录跟随 edition,自定义不拦)", () => {
-    writeLiveAllowlist(userData, { ...liveBase, byokProviders: ["deepseek"], models: [] })
+    writeLiveAllowlist(userData, { ...liveBase, models: [] })
     fs.writeFileSync(
       path.join(tmp, "opencode.jsonc"),
       JSON.stringify({ provider: { myco: { npm: "@ai-sdk/openai-compatible", options: {} } } }),

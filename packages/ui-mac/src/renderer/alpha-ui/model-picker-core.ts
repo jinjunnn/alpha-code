@@ -18,8 +18,13 @@ export type ModelPickerRow = {
   tier?: Tier
   mult?: string
   reasoning: boolean
+  /** **picker 可选择性**,不是引擎执行证明(契约 docs/contracts/byok-availability.md)。 */
   availability: ModelAvailability
   reason?: string
+  /** REQ-109 #595:该行的可选择性完全由本地事实(本地目录 + 本地 KEY)决定,引擎清单
+   *  (`listState` / `model.list` 内容 / `readyListEpoch`)不得否定它。只有内置 BYOK 目录行带此标记;
+   *  平台代理行与从引擎清单派生的自定义节点行都不带。点击层据此跳过引擎清单 membership 检查。 */
+  engineIndependent?: true
 }
 
 export function modelRefOf(model: ComposerModel): ModelRef {
@@ -56,6 +61,9 @@ export function buildModelPickerRows(input: {
   keyStatusState: KeyStatusState
   keyStatus: ProviderKeyStatus
   accountState: AccountState
+  /** true = 会话内的 picker(换模型必须落到服务端 switchModel)。只影响 BYOK 行在引擎恢复中的
+   *  **文案诚实性**:home 可先选,session 不能 —— 不得让两者共用「可先选择」。 */
+  sessionScoped: boolean
   query: string
 }): ModelPickerRow[] {
   const actual = new Map(input.models.map((model) => [`${model.providerID}:${model.id}`, model]))
@@ -115,42 +123,33 @@ export function buildModelPickerRows(input: {
         },
       ]
     }
-    if (input.listState !== "ready") {
-      const recovering = input.listState === "recovering"
-      return (recovering ? provider.models : [provider.models[0] ?? ""]).map((id) => ({
-        key: `${provider.id}:${id || "loading"}`,
-        group: "byok",
-        model: { id, providerID: provider.id, name: id || provider.name, variants: [] },
-        providerName: provider.name,
-        pico: provider.pico,
-        reasoning: false,
-        availability: input.listState === "failed" ? ("unavailable" as const) : ("loading" as const),
-        reason:
-          input.listState === "failed"
-            ? t("alpha.model.configuredUnavailable")
-            : recovering
-              ? t("alpha.model.syncing")
-              : t("alpha.model.configuredLoading"),
-      }))
-    }
+    // REQ-109 #595:KEY 已配置 ⇒ 直接从本地目录派生可选行。**引擎不再是最终裁判** —— 不查
+    // `model.list`、不看 `listState`,后者最多提供「引擎重启中」文案。判据集封闭为
+    // {本地钥匙串, 本地目录}(契约 docs/contracts/byok-availability.md);登录态、账户额度、
+    // 平台连通、live allowlist、引擎清单内容一律不得否定它。
     return provider.models.map((id): ModelPickerRow => {
       // The engine injects BYOK nodes under `<id>-byok` (byokEngineId) to dodge the models.dev
-      // collision, so the engine's model list is keyed by the engine id — look it up there, and carry
-      // the engine id as the selectable model's providerID so inference routes to the injected node.
-      // Display id (provider.id) stays for keyStatus/pico/name/key above.
-      const engineProviderId = byokEngineId(provider.id)
-      const info = actual.get(`${engineProviderId}:${id}`)
+      // collision, so carry the engine id as the selectable model's providerID — inference must route
+      // to the injected node. Display id (provider.id) stays for keyStatus/pico/name/key above.
       const display = input.catalog.platformModels.find((model) => model.id === id)
-      const available = !!info?.enabled && info.status !== "deprecated"
       return {
         key: `${provider.id}:${id}`,
         group: "byok",
-        model: { id, providerID: engineProviderId, name: display?.name ?? id, variants: [] },
+        model: { id, providerID: byokEngineId(provider.id), name: display?.name ?? id, variants: [] },
         providerName: provider.name,
         pico: provider.pico,
         reasoning: !!display?.reasoning,
-        availability: available ? "available" : "unavailable",
-        reason: available ? undefined : t("alpha.model.unavailable"),
+        availability: "available",
+        // 「当前可执行」是另一个谓词:引擎未 ready 时如实说明还要等什么,但不撤销可选择性。
+        // session 与 home 的可做之事不同,文案必须分开 —— 否则会出现「说可先选却点不了」。
+        ...(input.listState === "ready"
+          ? {}
+          : {
+              reason: input.sessionScoped
+                ? t("alpha.model.byokEngineRestartingSession")
+                : t("alpha.model.byokEngineRestarting"),
+            }),
+        engineIndependent: true,
       }
     })
   })

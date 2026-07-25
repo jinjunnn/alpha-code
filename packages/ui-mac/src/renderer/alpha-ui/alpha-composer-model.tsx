@@ -334,6 +334,7 @@ export function ModelPickPop(props: {
       keyStatusState: pickerKeyStatus(),
       keyStatus: readyKeyStatus(),
       accountState: accountState(),
+      sessionScoped: composerModelProjection().sessionID !== null,
       query: query(),
     })
   })
@@ -348,14 +349,22 @@ export function ModelPickPop(props: {
     const current = summary()
     return current.status === "ready" ? (current.data?.balanceFen ?? 0) : 0
   }
-  const selectionBlocked = () =>
+  /* REQ-109 #595:选择门 row-aware。
+     - home(无 session 投影)的本地 BYOK 行:可选择性只由本地目录 + 本地 KEY 决定,
+       `modelChainReady` / `listState` / `readyListEpoch` 一律不得阻断,选中只是内存写
+       (alpha-composer.selectComposerModel),发送仍由 canSend 等引擎;
+     - 平台代理行、自定义节点行,以及 session 模式的一切行:继续受全链 + 引擎清单 epoch 管辖
+       —— session 换模型必须落到服务端 `switchModel`,引擎不在就不能伪装成已切换。
+     无 row 的调用方(「添加自定义节点」入口)沿用最严格的门。 */
+  const homeLocalByok = (row?: ModelPickerRow) =>
+    !!row?.engineIndependent && composerModelProjection().sessionID === null
+  const selectionBlocked = (row?: ModelPickerRow) =>
     composerModelProjection().status !== "ready" ||
-    props.modelChainReady?.() === false ||
-    listState() !== "ready" ||
-    readyListEpoch() !== epochKey()
+    (!homeLocalByok(row) &&
+      (props.modelChainReady?.() === false || listState() !== "ready" || readyListEpoch() !== epochKey()))
 
   const pick = async (row: ModelPickerRow) => {
-    if (selectionBlocked()) return
+    if (selectionBlocked(row)) return
     if (!rows().includes(row)) return
     if (row.availability === "needs-key") {
       setConfigureId(row.model.providerID)
@@ -371,19 +380,29 @@ export function ModelPickPop(props: {
       return
     }
     if (row.availability !== "available" || switching()) return
-    if (!models().some((model) => model.providerID === row.model.providerID && model.id === row.model.id)) return
+    // #595:engineIndependent 行不做引擎清单 membership 检查 —— 引擎回报不是它的可选择性证明。
+    if (
+      !row.engineIndependent &&
+      !models().some((model) => model.providerID === row.model.providerID && model.id === row.model.id)
+    )
+      return
     const epoch = readyListEpoch()
+    const clickedEpoch = epochKey()
+    // 陈旧判据同样 row-aware:home 的本地 BYOK 行不依赖引擎清单 epoch(恢复中它本就是 null),
+    // 只有 directory / session 换了才算陈旧;否则会漏掉 onPicked 与 switching 复位。
+    const stale = () =>
+      homeLocalByok(row) ? epochKey() !== clickedEpoch : epoch !== readyListEpoch() || epoch !== epochKey()
     setSwitchError(false)
     setSwitching(row.key)
     try {
       await props.onSelect(row.model)
-      if (epoch !== readyListEpoch() || epoch !== epochKey()) return
+      if (stale()) return
       props.onPicked()
     } catch {
-      if (epoch !== readyListEpoch() || epoch !== epochKey()) return
+      if (stale()) return
       setSwitchError(true)
     } finally {
-      if (epoch === readyListEpoch() && epoch === epochKey()) setSwitching(null)
+      if (!stale()) setSwitching(null)
     }
   }
 
@@ -583,7 +602,8 @@ function ModelRow(props: {
   row: ModelPickerRow
   selected: () => ComposerModel | null
   switching: () => string | null
-  selectionBlocked: () => boolean
+  /** row-aware(#595):本行是否被选择门阻断 —— 传本行,不要传空。 */
+  selectionBlocked: (row: ModelPickerRow) => boolean
   onPick: (row: ModelPickerRow) => Promise<void>
   tierLabel: (tier?: Tier) => string
 }) {
@@ -592,7 +612,10 @@ function ModelRow(props: {
     return current?.providerID === props.row.model.providerID && current.id === props.row.model.id
   }
   const disabled = () =>
-    props.selectionBlocked() || ["loading", "unavailable"].includes(props.row.availability) || !!props.switching()
+    props.selectionBlocked(props.row) || ["loading", "unavailable"].includes(props.row.availability) || !!props.switching()
+  // #595 Minor:视觉必须跟着可点性走。availability "available" 但被选择门阻断(如 session 恢复中的
+  // BYOK 行、epoch 陈旧的平台行)时,行同样置灰 —— 否则用户看到一条正常亮行却点不动。
+  const dimmed = () => props.row.availability !== "available" || props.selectionBlocked(props.row)
   const status = () =>
     props.row.reason ?? (props.row.tier ? `${props.tierLabel(props.row.tier)} ${props.row.mult ?? ""}`.trim() : "")
   return (
@@ -602,7 +625,7 @@ function ModelRow(props: {
       data-group={props.row.group}
       classList={{
         selected: selected(),
-        locked: props.row.availability !== "available",
+        locked: dimmed(),
         "is-switching": props.switching() === props.row.key,
       }}
       aria-current={selected() ? "true" : undefined}
