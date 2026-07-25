@@ -4,7 +4,10 @@
 // 抛错都被静默吞掉,可见症状只是「模型全灰 / 正在同步」(2026-07-24 事故的表现)。
 //
 // 本文件执行的是**生产 composition**:真 injectAlphaConfig + 真 12 个 sibling 模块 + 真临时盘,
-// 零 mock、零替身、不重写任何接线(rev2c ③″3-1 禁止镜像)。
+// **零模块/依赖 mock**、不重写任何接线(rev2c ③″3-1 禁止镜像)。
+// 唯一的替身是反向闸门里拦截 `console.warn` 这个**日志 sink** —— 它证明生产代码调用了 warn,
+// 不证明真实 stderr 输出。不写「零替身」:那句话与下方的拦截冲突,而交付物不得声称未达成的状态
+// (rev2c ③″3-6/12)。
 //   · 正向闸门:content 必须携带 model / enabled_providers / provider / 三个 alpha agent / {file:} ref。
 //   · 反向闸门(rev2c ③″3-7):用真实故障(userDataPath 的父级是普通文件 → 生产代码 mkdirSync 抛
 //     ENOTDIR)触发那层 catch,并要求 ①失败必须出声 ②正向闸门的断言体在这条路径上**真的转红**。
