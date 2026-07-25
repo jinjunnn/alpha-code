@@ -238,9 +238,16 @@ T6 独立可交付,不依赖 T2–T5 排序。
 
 ### ③′ 安全面:本轮新增不变量
 
-1. **禁止在启动装载体 `serverReady` 之后的位置发布任何状态或终态。** 该位置在
-   `Effect.forkChild` 的死区内,父 fiber 终止即杀。要发布就用普通 promise 链或
-   `forkDetach`/`forkIn`。**指纹**:同一函数内早期日志有、后段日志 0 次。
+1. **boot generation 的终态生产者不得受启动父 fiber 生命周期监督;父 effect 结束后,
+   健康结果仍必须恰好发布一个 `ready` 或 `failed`。**
+   (rev2b 修正:本条初稿写作「禁止在 `serverReady` 之后的位置发布任何状态」——
+   **归因过宽且表述有误**。真正的边界是**监督生命周期**,不是源码词法位置:一个
+   detached 的 promise callback 即使写在 `serverReady` 之后也可以安全执行。
+   按位置立禁令会误杀安全写法,也守不住真正的失效模式。)
+   **强制手段 = 行为断言而非 lint**(自定义 lint 检查源码位置很脆且误杀,不值得):
+   ①父 effect 已结束后再 resolve health → 恰好一个 `ready`;
+   ②health reject/timeout → 恰好一个 `failed`,且此后不得变 ready。
+   **指纹**(排障用,非门控):同一函数内早期日志有、后段日志 0 次。
 2. **任何 fail-closed 的消费侧都必须有有界自证路径**,不得把可用性无限期押在
    「某个事件一定会到达」上。回放当前值不算兜底(它会忠实回放坏状态)。
 3. **任何重试预算耗尽后不得进入无定时器终局**;要么无上限封顶退避,要么降频续跑。
@@ -275,3 +282,114 @@ T6 独立可交付,不依赖 T2–T5 排序。
 `"zhipuai"`;该字段在 alpha-code 无任何消费方(`main/alpha-models.ts:94-96`、
 `main/alpha-platform-models.ts:90-93` 只用 `m.id`),今天不炸,但谁拿它 join
 `byokProviders` 就静默零匹配 → alpha-platform registry 命名空间统一低优票。
+
+## rev2b(2026-07-24):Codex 开发前问询轮回写
+
+Codex 只读方案质询轮(thread `019f9725-94ad-7892-bcc9-cfc36315f4ce`,
+基于 `origin/alpha = f8cd650d1`)判定 **GO WITH REVISIONS**。以下为必须的修订,
+已按治理回写基线;此后 review 轮对照本节,不再逐轮重新推导。
+
+### 修订 1:#595 必须拆成两个谓词,且删除一处错误断言
+
+rev2 的「BYOK 可用性」是**混淆概念** —— 它把「可选择性」与「当前可执行性」揉成一个。
+正确的最简定义是两个独立谓词:
+
+- **BYOK 本地可选择** = `本地目录存在模型 + 本地 key 已配置`
+- **当前可执行** = 引擎已恢复
+
+**登录态、账户额度、平台连通、live allowlist、引擎 `model.list` 内容,
+一律不得否定前者。** 契约文件(`docs/contracts/byok-availability.md`)按这两个谓词写,
+不再用模糊的「BYOK 可用性」。
+
+具体最小改法(Codex 给出,取代 rev2 ②′ 中相应条目):
+- `renderer/alpha-ui/model-picker-core.ts:89` 起:key 已配置即直接从
+  `EffectiveCatalog.byokProviders[].models` 生成行,`availability` 表示
+  **picker 可选择**而非引擎执行证明;`listState` 最多提供「引擎重启中」**文案**,
+  不参与可选判定。**删掉「list ready 后命中 `<id>-byok` 才升级为完全可用」的语义**
+  —— 留着它引擎就仍是最终裁判,主权没收回来。
+- `renderer/alpha-ui/alpha-composer-model.tsx:341`:gate 改为 **row-aware**。
+  home 的 BYOK 行不受 `modelChainReady` / `listState` / `readyListEpoch` 阻断,
+  并**跳过 `:364` 的引擎清单 membership 检查**;平台行与 session 模式继续受控。
+- `renderer/alpha-ui/alpha-composer.tsx:756` 一带:只允许 **home** 在链恢复中把 BYOK
+  写进内存选择。**`canSend` 不需要在 #595 里另做 BYOK 豁免** —— `:742` 的发送门
+  留作执行就绪门,待 #594 恢复后自然打开。
+
+**rev2 的一处事实错误(本节更正)**:rev2 ②′ 称「session 模式沿用现有
+suspend/`retryImmediately` 机制把 `switchModel` 延后到 ready」——**该机制不存在**。
+`renderer/alpha-ui/composer-state.ts:99` 的 suspended 是**挂起已选模型**,不是
+pending selection;`retryImmediately` 也只重跑读取链。按错误断言开工会制造一个
+未设计的 pending 真值或点击失败。#595 的 recovering 验收据此改为:
+
+> **home 模式可先选择;session 模式展示本地 BYOK 行,但在引擎恢复、`switchModel`
+> 确认之前不得伪装成已切换。**
+
+即:不新增任何 session 排队切换状态机。
+
+被否决(本轮新增):**只改 `listState` 的计算方式**——它会同时误放平台代理,
+且后面仍有 `selectionBlocked`、membership、父层 `modelChainState` 三道门,否。
+**只改分组渲染**——只能"看见"不能"选择",否。把 BYOK 行派生**整体移出引擎清单依赖**
+才是正确的第三条路。
+
+### 修订 2:补掉平台契约错误吞掉本地 BYOK 的漏口(新勘破 13)
+
+13. **`main/alpha-platform-models.ts:83` 的 `getEffectiveCatalog()` 在平台目录契约
+    不兼容时直接 throw**,导致整个 `models-catalog` IPC 失败 —— **连本地 BYOK 一起阵亡**。
+    ⇒ rev2 勘破 12 的推论「BYOK 数据经 main IPC、不经引擎,所以已与平台分离」
+    **不成立**:平台侧一个解码错误仍能全灭本地目录。
+    #595 必须**隔离这一失败域**:平台契约错误应上报,但不得阻断本地目录返回。
+
+同时更正 rev2 ②′ 的另一处推论:「豁免 `selectionBlocked` 即可选择」**不成立** ——
+还有行级 `availability`、引擎清单 membership、父层 model-chain gate 三道门。
+
+### 修订 3:#577 与 #594 必须原子同 PR
+
+`preload/types.ts:64` 的 `SidecarGenerationState` 现只有 `recovering | ready`;
+`renderer/alpha-ui/model-recovery.ts:5` 的转换过滤器只接受 `recovering → ready`;
+各 consumer 又把「非 recovering」隐式当成 ready。**若 #577 单独发布 `failed`**:
+live 事件会被转换过滤器丢弃 / preload 回放到 consumer 时被误当 ready /
+client 可能在已知健康失败时重建。
+
+职责据此明确:
+- **#577**:producer 生命周期、`failed` 状态联合、**恰好一次终态**(exactly-once:
+  不得既发 ready 又发 failed,也不得一个都不发)。
+- **#594**:转换过滤器接受 `recovering → failed`;所有 consumer 明确区分 ready/failed;
+  failed 下**保持执行面关闭 + 启动自探**。
+- **两票同一 PR 原子落地**;#595 单独一 PR,基于前一 PR 合并结果开工。
+
+`#594` 与 `#595` 虽都触碰 `alpha-composer.tsx` / `alpha-composer-model.tsx`,
+但触点分别是「重试/重建」与「选择判据」,从已合并基线起分支不会产生实质冲突。
+**不要为规避小范围相邻修改而把三个中等风险主题塞进一个 PR。**
+
+### 修订 4:撤收窄的代价清单(Q2 结论:撤销正确,但代价比 rev2 一句话重)
+
+owner 要的是「平台无权覆盖」,就不能同时保留平台远程 kill-switch —— 撤销成立。
+真实代价(rev2 只写了一句,此处展开):
+- 供应商破坏性修改鉴权 / URL / 协议后,旧客户端持续提供**必失败**条目;
+- 模型永久下架或 id 改名后,picker 保留**死入口**;
+- 供应商安全事故或数据处理政策恶化时,**无法紧急阻断既有安装**;
+- 法务 / 制裁 / 区域合规要求立即下架某供应商时,**只能等发版**;
+- 错误 baseURL 或计费语义变化可能让用户**直接承担异常账单**。
+
+这些风险**不推翻** owner 已接受的主权选择(当前无真实用户/租户)。
+**不得为它引入新的在线政策面。**
+被否决:「签名、只减不增、带 TTL 与 reason 的紧急 denylist」—— 技术可做,
+但它仍是外部覆盖,且要治理签发/失效/缓存/误杀,当前不够简单,**不进三票门控**;
+若将来出现真实法务紧急摘除要求再评估(OPTIONAL,非门控)。
+
+### 修订 5:撤收窄后区分两个同名概念,停止传播死远程字段
+
+- 本地 `AlphaModelCatalog.byokProviders` 仍是**核心数据**,不是死字段。
+- 平台 wire/cache 的 `byok_providers` 撤销后**失去任何策略消费方**,只剩解码、缓存、
+  日志与 IPC 类型穿透 = **死配置面**。#595 顺手停止在 alpha-code 的
+  `PlatformModelsResult`、`LiveAllowlist`、preload 类型与日志中继续传递该远程字段。
+  外部 producer/schema 的完整删除另行处理,不阻塞本票。
+
+### 修订 6:其余不变量的强制手段(③′2–5)
+
+- ③′2 → #594 的「ready 丢失但 health 可达,client 有界重建」**假时钟**测试。
+- ③′3 → 「超过原 20 次后仍存在下一次 retry,恢复后回 ready」测试。
+- ③′4 → 契约改成两个谓词后,用**未登录 / 平台错误 / list recovering / list 缺行**
+  四情形矩阵测试。若日后仍频繁漂移,再考虑把 BYOK 行派生提成**不接收 account/list**
+  的小纯函数(当前不作门控)。
+- ③′5 → 增加「远程 allowlist 排除供应商」与「平台目录 contract-incompatible」
+  两种情况下**本地 BYOK 仍返回**的测试。
