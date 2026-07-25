@@ -4,9 +4,10 @@ import { join } from "node:path"
 import type { AuthState } from "../preload/types"
 import { reconcileAuthSnapshot, resetAuthRecoveryForTests, subscribeAuthState } from "./auth-recovery"
 
-// #604:auth fail-closed 的有界自证。三条退出条件 + auth-recovery.ts 顶部声明的七条不变量
-// (A 现值可重读且必广播 / B 绝不静默退场 / C 单 owner / D 自读 single-flight /
-//  E 送达逐个隔离 / F 分歧取保守值并纠正 / G 判据粒度不低于 main)各自有闸门。
+// #604:auth fail-closed 的有界自证。三条退出条件 + auth-recovery.ts 顶部声明的八条不变量
+// (A 现值可重读且必广播 / B 绝不静默退场 / C 单 owner / D 至多一个在途读、欠账时乐观值
+//  须后读确认而保守值可先行采信 / E 送达逐个隔离 / F 分歧取保守值并纠正 /
+//  G 判据粒度不低于 main / H 证据持续到达时 owner 有产出且不热循环)各自有闸门。
 
 const drain = async () => {
   for (let index = 0; index < 20; index++) await Promise.resolve()
@@ -379,9 +380,10 @@ describe("auth fail-closed 的有界自证", () => {
     await drain()
     vi.advanceTimersByTime(0)
     await drain()
-    // 丢弃-补发必须收敛:两个订阅者都拿到现值,读取次数有界。
+    // 丢弃-补发必须收敛:两个订阅者都拿到现值。保守值(recovering)直接采信,不必再读一次
+    // (不变量 H:owner 一定有产出),所以这里恰好一次自读。
     expect(seen).toEqual([recovering, recovering])
-    expect(bridge.calls).toBe(2)
+    expect(bridge.calls).toBe(1)
 
     current = ready
     vi.advanceTimersByTime(8_000)
@@ -389,6 +391,90 @@ describe("auth fail-closed 的有界自证", () => {
     expect(seen).toEqual([recovering, recovering, ready, ready])
     a()
     b()
+  })
+
+  test("不变量 H:证据持续到达时 owner 仍必须有产出,且读取不得退化成热循环", async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    let emit: ((state: AuthState) => void) | undefined
+    let flip = false
+    // main 在**每一次**自读的往返窗口内都推一条翻转事件 => owedRead 恒为真。
+    const read = () => {
+      calls++
+      queueMicrotask(() => {
+        flip = !flip
+        emit?.(flip ? ready : recovering)
+      })
+      return Promise.resolve(flip ? recovering : ready)
+    }
+    const api = {
+      auth: {
+        getState: read,
+        subscribe: (callback: (state: AuthState) => void) => {
+          emit = callback
+          return () => {}
+        },
+      },
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "window")
+    Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: { api } })
+    restoreWindow = () => {
+      if (descriptor) Object.defineProperty(globalThis, "window", descriptor)
+      else delete (globalThis as { window?: unknown }).window
+    }
+
+    const seen: AuthState[] = []
+    const unsubscribe = subscribeAuthState((state) => seen.push(state))
+    await drain()
+    for (let tick = 0; tick < 200; tick++) {
+      vi.advanceTimersByTime(1)
+      await drain()
+    }
+
+    // 产出:消费侧确实收到了更新,而不是被无限丢弃饿死(修前:201 次读取只广播 1 次)。
+    expect(seen.length).toBeGreaterThan(0)
+    // 速率:200ms 内的读取次数必须远低于「每毫秒一次」(修前 = 201)。
+    expect(calls).toBeLessThanOrEqual(5)
+    // owner 仍在跑,没有因为降频而退场。
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+    unsubscribe()
+  })
+
+  // 表征回归(**不是闸门**):本模块内找不到能让它转红的变异 —— 放大的前提是「消费侧与 owner
+  // 持久分歧」,那只能由 main 的行为造成,不能由本模块的任何单点改动造成(已试 accept 无条件
+  // 广播 / reconcile 无条件置 diverged / reconcile 不早退,三者均不转红)。保留它是为了钉住
+  // 实测代价:若将来有人改动使瞬时分歧开始逐圈放大,这条会失败。
+  test("表征:一次瞬时分歧只换来一次纠正广播,不与消费侧的重跑构成放大循环", async () => {
+    vi.useFakeTimers()
+    // 消费侧收到广播就重跑业务链并把自己读到的快照交回 owner(composer/picker 的真实形态)。
+    // 若「保守回退 -> 强制纠正广播 -> 消费侧重跑 -> 再次分歧」互相喂,就是无界放大:
+    // 实测持久分歧下 50 次重跑 = 51 次广播 + 51 次自读,每圈在生产里是一整条模型链。
+    // 但放大要成立,需要**持续的 main/auth churn**(main 在每一轮都给出与消费侧不同的答案);
+    // 当前生产守卫下它不会由 renderer 自激产生 —— renderer 单独制造不出这种持续分歧。
+    //(不声称 platformStatus 严格单调:Date.now() 跨越期限、unappliedRenewalGeneration 的
+    // 置位/清除都会改变它,D-4 那条守护序列本身就依赖 recovering -> ready -> recovering 可达。)
+    // 真实形态是**瞬时**分歧(两次读取跨过了续期那一刻)。这里把瞬时分歧的代价钉死。
+    const bridge = installBridge(async () => ready)
+    bridge.replay = ready
+    let chainRuns = 0
+    const seen: AuthState[] = []
+    const unsubscribe = subscribeAuthState((state) => {
+      seen.push(state)
+      chainRuns++
+      // 第一次重跑读到的是过期那一刻的快照(与 owner 分歧),之后与 owner 一致。
+      reconcileAuthSnapshot(chainRuns === 1 ? recovering : ready)
+    })
+    await drain()
+    for (let round = 0; round < 20; round++) {
+      vi.advanceTimersByTime(10)
+      await drain()
+    }
+
+    // 收敛:一次分歧 = 一次纠正广播,不是每圈一次。
+    expect(seen).toHaveLength(2)
+    expect(chainRuns).toBe(2)
+    expect(bridge.calls).toBeLessThanOrEqual(3)
+    unsubscribe()
   })
 
   test("IPC 预算:六个消费侧同拍挂载 = 一条桥订阅 + 有界次数的自读", async () => {
@@ -405,6 +491,8 @@ describe("auth fail-closed 的有界自证", () => {
     // base 是「每个消费侧各一次 preload 回放」= 6 次;single-flight 后自读次数与消费侧数量无关。
     // 实测:自读恰好 2 次(首发 + 因在途欠账补发一次),与消费侧数量无关。
     // base 是「每个消费侧各一次 preload 回放」= 6 次 IPC;现在总计 1 回放 + 2 自读 = 3 次。
+    // **该结论只针对本例的「同拍挂载」**:错峰挂载时每次挂载各有自己的 requestRead(),
+    // 不落在同一个 single-flight 窗口里,不应把「2 次」泛化过去。
     expect(bridge.calls).toBe(2)
     expect(seen).toHaveLength(6)
     releases.forEach((release) => release())

@@ -22,9 +22,11 @@ import { nextEngineRetryDelay } from "./alpha-ui/model-picker-logic"
 // 自读各自捕获同一个号,先返回的那次定案并作废另一次,较晚取到的真实 recovering 反而被丢掉
 // 且不留重试 => fail-open。编号治不了并行,**并行本身才是要消掉的东西**:
 //
+//   **至多一个在途读;有欠账时,乐观结果必须由后读确认,保守结果允许先行采信。**
 //   owner 同一时刻只允许一次自读在途(single-flight)。在途期间的任何新请求/新证据只记
-//   `owedRead`;该次读回来时若 owedRead 已置位,它就**可能更旧** —— 丢弃并立刻补发一次。
-//   于是「更新的读」永远是**最后发出**的那次,不需要任何编号。
+//   `owedRead`;该次读回来时若 owedRead 已置位,它就**可能更旧**:乐观值(ready)不采信,
+//   立刻补一次读由后读定夺;保守值(recovering / 未知)允许先行采信 —— 方向只会收紧权限,
+//   且保证 owner 一定有产出(不变量 H)。于是定案权永远落在**后发出**的那次读,不需要编号。
 //
 // 外部快照(前三类)一律只当**提示**,不当真值:
 //   - 视图空着       -> 先采信它引导(消费侧立刻有值可用),同时欠一次自读去证实;
@@ -47,9 +49,9 @@ import { nextEngineRetryDelay } from "./alpha-ui/model-picker-logic"
 // C 「至多一个 owner:一条 timer、一条桥订阅」
 //   强制:模块级单例 + timer 幂等守卫;多消费侧共享例 + 入口枚举 ratchet。
 //   变异:桥订阅不再单例 -> 红。
-// D 「owner 自读 single-flight:在途期间的新请求只记账,回来若已欠账就丢弃并补发」
-//   —— 保证「最后发出的那次读」才是定案的那次,不依赖任何「先返回 = 更新」的假定。
-//   强制:reading 闸住并发;owedRead 记在途期间的欠账;回来先看 owedRead 再决定采信。
+// D 「至多一个在途读;有欠账时,乐观结果必须由后读确认,保守结果允许先行采信」
+//   —— 定案权落在最后发出的那次读,不依赖任何「先返回 = 更新」的假定。
+//   强制:reading 闸住并发;owedRead 记在途期间的欠账;回来先看 owedRead 再按方向决定采信。
 //   「引导 / 新订阅者不误伤在途读」同样由**补发**保证,不靠编号。
 //   变异:去掉 single-flight 闸(并发自读)/ 回来不看 owedRead / 引导后不补自读 -> 各自转红。
 // E 「送达对单个订阅者抛错免疫」——广播与迟到订阅者的首值回放**同一条送达路径**。
@@ -62,6 +64,11 @@ import { nextEngineRetryDelay } from "./alpha-ui/model-picker-logic"
 // G 「广播的判据必须至少与 main 的 publish 判据一样细」
 //   强制:签名含 status/mode/platformStatus/email/**plan**(与 main publish 的身份签名对齐)。
 //   变异:签名去掉 plan -> 红(同邮箱 free->pro 被判一致而不广播)。
+//
+// H 「owner 必须有产出:证据持续到达时不得既不采信也不停手」
+//   强制:自读回来若已欠账,保守值先采信(owner 一定有产出),乐观值重读;
+//   probeNow 在自读在途时是 no-op —— 两者合起来既不饿死也不热循环。
+//   变异:回到「一律丢弃」/ 保守值也丢弃 / probeNow 在途仍另排 -> 各自转红。
 //
 // 刻意**不**依赖:`status === "logged-in"`(登出态若带 recovering,漏探才是危险方向);
 // preload 一定会回放(owner 每次挂载自己读一次);main 会再发一次 ready(它不会);
@@ -106,6 +113,9 @@ function scheduleRetry() {
 /** 有证据提出了尚未定夺的问题 —— 立刻自读;同一 tick 内的多个提示合并成一次。 */
 function probeNow() {
   if (listeners.size === 0) return
+  // 已有自读在途:它回来时会按 owedRead 处理这笔欠账。再排一次 0ms 只会把 timer 反复前移,
+  // 在「证据持续到达」下形成每毫秒一次的热循环(实测 200ms 内 201 次读取)。
+  if (reading) return
   if (probeTimer !== undefined) clearTimeout(probeTimer)
   probeTimer = setTimeout(runProbe, 0)
 }
@@ -196,7 +206,17 @@ async function runRead() {
     return
   }
   if (owedRead) {
-    // 在途期间又有新证据/新请求 -> 这次读到的可能更旧,丢弃并立刻补发(不变量 D)。
+    // 在途期间又有新证据/新请求 -> 这次读到的可能更旧。但「一律丢弃并重读」会在证据持续到达时
+    // 把 owner 饿死:实测持续翻转下 201 次读取只广播 1 次,消费侧永远等不到更新 —— 这正是本票
+    // 要消灭的「owner 不给答案」缺陷换了个触发条件(不变量 H)。按 fail-closed 方向拆开:
+    //   保守值(recovering / 未知)即使可能更旧也先采信 —— 方向只会收紧权限,且保证有产出;
+    //   乐观值必须由后读确认,立刻重读(probeNow 在自读在途时是 no-op,不会热循环)。
+    if (unresolved(next)) {
+      // 保守值即使可能更旧也先采信:方向安全,且保证 owner 一定有产出。
+      accept(next)
+      return
+    }
+    // 乐观值不放行:立刻重读,由后一次读定夺(probeNow 在自读在途时是 no-op,不会热循环)。
     probeNow()
     return
   }
