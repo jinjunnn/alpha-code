@@ -188,9 +188,14 @@ const SECRETISH = new RegExp(`(^|_)${CREDENTIAL_WORD}(_|$)|${CREDENTIAL_WORD}$`,
 //   · it is the same over-denial rule 2 already applies to a bare MONKEY / TURKEY / DONKEY, so the
 //     behaviour is consistent rather than new in kind;
 //   · over-denial is the safe direction for a veto (③″4-2) — the cost is a rename, not a leak;
-//   · measured, not assumed: all 70 `process.env.*` names this repo actually reads were run through
-//     both predicates, and the set stripping newly denies is EMPTY. The pinned cases below exist so
-//     that if a future env var lands in that set, a human sees the trade rather than a silent veto.
+//   · sampled, not assumed — and the sample is smaller than it looks: a single lexical grep for
+//     STATIC UPPERCASE dot-access (`process.env.[A-Z0-9_]+`) under `packages/ui-mac/src` yielded 70
+//     fragments, and running both predicates over them produced an EMPTY newly-denied set. That is
+//     a bounded sample, NOT proof of全量: it includes tests/writes/comments, truncates mixed-case
+//     names (`process.env.SystemRoot` → `S`), and misses `process.env[key]`, destructuring, env
+//     objects passed as parameters, and the embedded upstream server. The pinned cases below only
+//     DOCUMENT the categories already known to be over-denied — they do not scan future env names,
+//     so a new var landing in this class will NOT automatically redden anything.
 // Shape genuinely cannot separate APIKEY from MONKEY — both are "a word ending in KEY". This is
 // where the enumeration bottoms out, and it is stated instead of dressed up as a general rule.
 const WRAPPER_SEGMENT = /_(FILE|PATH|JSON|B64|BASE64|CONTENTS?)$/i

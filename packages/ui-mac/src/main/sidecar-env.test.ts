@@ -357,9 +357,12 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
       ["KEYBOARD_FILE", false],
       // — 刻意不收 VAULT:AZURE_KEYVAULT_URL 是服务地址,认证那半仍由 SECRET/TOKEN 拼写 —
       ["AZURE_KEYVAULT_URL", false],
-      // — 剥离引入的**过拦**面(R3):尾锚 $ 会把中段偶合的名词暴露成尾词。已实测本仓 70 个真实
-      //   process.env 名中，剥离新增拒绝者为空集；这些用例把代价钉出来，将来真有 env 落进这一类时
-      //   人能看见取舍，而不是被静默 veto。("只缩短所以反向安全"那句论证是错的，已在实现里更正。) —
+      // — 剥离引入的**过拦**面(R3):尾锚 $ 会把中段偶合的名词暴露成尾词。
+      //   ("只缩短所以反向安全"那句论证是错的,已在实现里更正。)
+      //   下面三条**只把已知的过拦类别文档化** —— 它们不扫描未来的 env 名,新变量落进这一类
+      //   **不会**自动让任何用例转红。支撑「暂无真实回归」的是一次**有限词法抽样**
+      //   (packages/ui-mac/src 下静态大写点访问,70 个片段,新增拒绝为空集),该抽样不覆盖
+      //   动态读取 / 解构 / 作为参数传递的 env 对象 / 上游内嵌 server。 —
       ["MONKEY_FILE", true],
       ["TURKEY_PATH", true],
       ["CATALOG_PUBKEY_B64", true],
