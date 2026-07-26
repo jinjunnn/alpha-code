@@ -115,7 +115,7 @@ describe("REQ-125 C3 files panel real Solid mount", () => {
     await flush()
     expect(harness.calls.open).toEqual(["file://README.md"])
     expect(readme.classList.contains("a-srf-row--selected")).toBe(true)
-    expect(readme.getAttribute("aria-selected")).toBe("true")
+    expect(readme.getAttribute("aria-current")).toBe("true")
     const opentab = host.querySelector("[data-alpha-srf-opentab='README.md']")
     expect(opentab).not.toBeNull()
     expect(opentab!.classList.contains("a-srf-opentab--on")).toBe(true)
@@ -251,7 +251,7 @@ describe("REQ-125 C3 files panel real Solid mount", () => {
     await flushTimers()
 
     // Root: 5 entries, per-level cap 3 → 3 rows + hint "3 / 5".
-    expect(host.querySelectorAll(".a-srf-tree > .a-srf-row")).toHaveLength(3)
+    expect(host.querySelectorAll(".a-srf-tree > .a-srf-item > .a-srf-row")).toHaveLength(3)
     const rootHint = host.querySelector("[data-alpha-srf-truncated='']")
     expect(rootHint).not.toBeNull()
     expect(rootHint!.textContent).toContain("3 / 5")
@@ -265,6 +265,54 @@ describe("REQ-125 C3 files panel real Solid mount", () => {
     const childHint = host.querySelector("[data-alpha-srf-truncated='big']")
     expect(childHint).not.toBeNull()
     expect(childHint!.textContent).toContain("2 / 4")
+  })
+
+  test("C21 AC2: rows claim list semantics only and stay operable by Tab + Enter alone", async () => {
+    const harness = runtime.createFilesHarness({
+      listDir: (path) =>
+        path === "" ? Promise.resolve([dir("alpha-ui"), file("README.md")]) : Promise.resolve([file("alpha-ui/a.ts")]),
+    })
+    const host = mount(harness.View)
+    await flushTimers()
+
+    // 降级后不再对 AT 许诺 tree 的键盘契约(方向键漫游 / Left 收起 / 层级跳转)。
+    expect(host.querySelectorAll("[role='tree'], [role='treeitem']")).toHaveLength(0)
+    expect(host.querySelector(".a-srf-tree")?.getAttribute("role")).toBe("list")
+
+    // 兑现的是原生 button:每行都在 Tab 序列里(无 roving 的 -1),回车即打开。
+    // listitem 由外包层承担 —— ARIA in HTML 不允许 <button> 覆盖成 listitem,
+    // 而且 listitem 不支持 aria-expanded,盖上去会同时丢掉按钮语义与展开态播报。
+    const rows = [...host.querySelectorAll<HTMLButtonElement>(".a-srf-row")]
+    expect(rows.length).toBeGreaterThan(1)
+    rows.forEach((row) => {
+      expect(row.tagName).toBe("BUTTON")
+      expect(row.hasAttribute("role")).toBe(false)
+      expect(row.tabIndex).toBe(0)
+      expect(row.parentElement?.getAttribute("role")).toBe("listitem")
+    })
+
+    const readme = host.querySelector<HTMLButtonElement>("[data-alpha-srf-file='README.md']")!
+    readme.focus()
+    expect(document.activeElement).toBe(readme)
+    readme.click() // 原生 button:Enter/Space 由浏览器转成 click,行为与此一致。
+    await flush()
+    expect(harness.calls.open).toEqual(["file://README.md"])
+    expect(readme.getAttribute("aria-current")).toBe("true")
+
+    // 展开态仍向 AT 暴露(目录行的 aria-expanded 不因降级消失)。
+    const dirRow = host.querySelector<HTMLButtonElement>("[data-alpha-srf-dir='alpha-ui']")!
+    expect(dirRow.getAttribute("aria-expanded")).toBe("false")
+    dirRow.click()
+    await flushTimers()
+    expect(dirRow.getAttribute("aria-expanded")).toBe("true")
+
+    // role="list" 只拥有 listitem:子层 list 落在目录行自己的 listitem 内,不是它的兄弟。
+    for (const list of host.querySelectorAll("[role='list']")) {
+      for (const child of list.children) expect(child.getAttribute("role")).toBe("listitem")
+    }
+    const nested = host.querySelector(".a-srf-indent")!
+    expect(nested.getAttribute("role")).toBe("list")
+    expect(nested.closest("[role='listitem']")).toBe(dirRow.parentElement)
   })
 
   test("shell rail strip: files tab mounts the panel, jump-to-review switches tabs and keeps files alive", async () => {

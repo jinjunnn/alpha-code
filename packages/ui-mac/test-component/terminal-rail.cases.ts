@@ -58,6 +58,8 @@ function mount(component: () => unknown) {
 
 const tab = (host: HTMLElement, id: string) => host.querySelector<HTMLElement>(`[data-alpha-terminal-tab="${id}"]`)
 const tabButton = (host: HTMLElement, id: string) => tab(host, id)?.querySelector<HTMLButtonElement>("[role='tab']")
+const key = (name: string, init: KeyboardEventInit = {}) =>
+  new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true, ...init })
 
 describe("REQ-125 terminal rail panel real Solid mount", () => {
   test("renders instance tabs, run indicators, engine output, and the foot from the channel", async () => {
@@ -96,6 +98,88 @@ describe("REQ-125 terminal rail panel real Solid mount", () => {
     expect(
       host.querySelector("[data-alpha-terminal-panel]")?.getAttribute("data-alpha-terminal-any-running"),
     ).toBeNull()
+  })
+
+  test("C21 AC2: the tablist honours ←→/Home/End and keeps one Tab landing point", async () => {
+    const host = mount(() => runtime.TerminalRailHarness())
+    await flush()
+
+    // roving tabIndex:整条页签条在 Tab 序列里只占一个落点 —— 激活页签。
+    expect(tabButton(host, "pty_1")?.tabIndex).toBe(0)
+    expect(tabButton(host, "pty_2")?.tabIndex).toBe(-1)
+
+    tabButton(host, "pty_1")!.focus()
+    tabButton(host, "pty_1")!.dispatchEvent(key("ArrowRight"))
+    await flush()
+
+    // 移动即激活:与点击同一条通道,且 DOM 焦点跟到新页签。
+    expect(runtime.channelCalls).toContain("open:pty_2")
+    expect(tabButton(host, "pty_2")?.getAttribute("aria-selected")).toBe("true")
+    expect(document.activeElement).toBe(tabButton(host, "pty_2"))
+    expect(tabButton(host, "pty_2")?.tabIndex).toBe(0)
+    expect(tabButton(host, "pty_1")?.tabIndex).toBe(-1)
+
+    // 环形移动 + Home/End 直达两端。
+    tabButton(host, "pty_2")!.dispatchEvent(key("ArrowRight"))
+    await flush()
+    expect(tabButton(host, "pty_1")?.getAttribute("aria-selected")).toBe("true")
+
+    tabButton(host, "pty_1")!.dispatchEvent(key("End"))
+    await flush()
+    expect(tabButton(host, "pty_2")?.getAttribute("aria-selected")).toBe("true")
+
+    // 横排 tablist 不认 ↑↓(那是纵向 tablist 的键),也不认带修饰键的方向键。
+    for (const ignored of [key("ArrowDown"), key("ArrowUp"), key("ArrowLeft", { metaKey: true })]) {
+      tabButton(host, "pty_2")!.dispatchEvent(ignored)
+      await flush()
+      expect(ignored.defaultPrevented).toBe(false)
+      expect(tabButton(host, "pty_2")?.getAttribute("aria-selected")).toBe("true")
+    }
+
+    // 非导航键不被页签条吞掉(Tab/Escape 仍归外层)。
+    const escape = key("Escape")
+    tabButton(host, "pty_2")!.dispatchEvent(escape)
+    await flush()
+    expect(escape.defaultPrevented).toBe(false)
+    expect(tabButton(host, "pty_2")?.getAttribute("aria-selected")).toBe("true")
+  })
+
+  test("C21 AC2: the new-terminal button sits outside the tablist, the close button leaves the Tab sequence, and closing hands focus to a survivor", async () => {
+    const host = mount(() => runtime.TerminalRailHarness())
+    await flush()
+
+    // 新建按钮不是页签,已移出 role="tablist"。关闭按钮仍在页签子树内 —— 那是 APG 可删除页签的
+    // 形态(tab 是 tablist 的 required-owned,不是「只能拥有」):它退出 Tab 序列,键盘入口是
+    // 页签上的 Delete。所以这里断言的是「新建按钮在外」,不是「tablist 子树里只有 tab」。
+    const tablist = host.querySelector<HTMLElement>("[role='tablist']")!
+    expect(tablist.querySelector("[data-alpha-terminal-new]")).toBeNull()
+    expect(host.querySelector("[data-alpha-terminal-new]")).not.toBeNull()
+
+    // 关闭按钮退出 Tab 序列:N 个实例不得产生 N+1 个停靠点。
+    // 断言比的是 id 而不是元素本身:元素数组一旦不等,深比对要打印整棵 happy-dom 树。
+    const stops = [...host.querySelectorAll<HTMLElement>("[role='tablist'] button")]
+      .filter((element) => element.tabIndex === 0)
+      .map((element) => element.id || element.className)
+    expect(stops).toEqual([tabButton(host, "pty_1")!.id])
+    expect(host.querySelector<HTMLElement>("[data-alpha-terminal-close='pty_1']")?.tabIndex).toBe(-1)
+
+    // 键盘关闭走页签上的 Delete(APG 可删除页签的键),焦点交给存活的相邻页签 ——
+    // 被删元素带着焦点消失会把焦点丢回 <body>,键盘用户得从头 Tab 回来。
+    tabButton(host, "pty_1")!.focus()
+    const del = key("Delete")
+    tabButton(host, "pty_1")!.dispatchEvent(del)
+    await flush()
+    expect(del.defaultPrevented).toBe(true)
+    expect(runtime.channelCalls).toContain("close:pty_1")
+    expect(tab(host, "pty_1")).toBeNull()
+    expect(document.activeElement).toBe(tabButton(host, "pty_2"))
+
+    // 关掉最后一个实例:面板落到空态,焦点交给空态的「新建」按钮,不掉回 body。
+    const last = key("Delete")
+    tabButton(host, "pty_2")!.dispatchEvent(last)
+    await flush()
+    expect(host.querySelector("[data-alpha-terminal-empty]")).not.toBeNull()
+    expect(document.activeElement).toBe(host.querySelector("[data-alpha-terminal-new]"))
   })
 
   test("switching tabs goes through the channel and remounts the engine output", async () => {

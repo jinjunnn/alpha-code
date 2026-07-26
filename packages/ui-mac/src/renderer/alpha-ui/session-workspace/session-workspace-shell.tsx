@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../../i18n"
+import { rovingKey, rovingTabIndex } from "../roving-focus"
 import { acceptedEngineChannel, type AlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-rail-core"
 import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"
 import { terminalRailAnyRunning } from "../session-rail/terminal/terminal-rail-state"
@@ -257,22 +258,11 @@ export function SessionWorkspaceShell(props: {
   }
 
   const enabledPanels = () => RAIL_PANELS.filter(available)
-  const onTabKey = (event: KeyboardEvent) => {
-    const list = enabledPanels()
-    const active = panel()
-    if (!active || list.length === 0) return
-    const index = Math.max(0, list.indexOf(active))
-    let next: number | null = null
-    if (event.key === "ArrowRight") next = (index + 1) % list.length
-    else if (event.key === "ArrowLeft") next = (index + list.length - 1) % list.length
-    else if (event.key === "Home") next = 0
-    else if (event.key === "End") next = list.length - 1
-    if (next === null) return
-    event.preventDefault()
-    const kind = list[next]!
-    openPanel(kind)
-    document.getElementById(`alpha-session-rail-tab-${kind}`)?.focus()
-  }
+  const onTabKey = (event: KeyboardEvent) =>
+    rovingKey(event, "horizontal-tabs", enabledPanels(), panel(), (kind) => {
+      openPanel(kind)
+      document.getElementById(`alpha-session-rail-tab-${kind}`)?.focus()
+    })
 
   const applyWidth = (kind: SessionRailPanel, value: number) => {
     setWidths((current) => ({ ...current, [kind]: clampRailWidth(value) }))
@@ -373,7 +363,7 @@ export function SessionWorkspaceShell(props: {
                     aria-controls={`alpha-session-rail-panel-${kind}`}
                     data-alpha-session-rail-tab={kind}
                     disabled={!available(kind)}
-                    tabIndex={activePanel() === kind ? 0 : -1}
+                    tabIndex={rovingTabIndex(activePanel() === kind)}
                     onClick={() => openPanel(kind)}
                     onKeyDown={onTabKey}
                   >

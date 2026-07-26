@@ -59,6 +59,13 @@ function mount() {
   return host
 }
 
+function mountQuestion() {
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(solidWeb.render(() => runtime.SessionQuestionHarness(), host))
+  return host
+}
+
 function mountPartial(panels: Parameters<typeof runtime.SessionWorkspacePartialHarness>[0]["panels"]) {
   const host = document.createElement("div")
   document.body.append(host)
@@ -384,5 +391,121 @@ describe("REQ-125 session workspace real Solid mount", () => {
     tab("review").dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }))
     await flush()
     expect(tab("artifacts").classList.contains("a-swk-rail-tab--on")).toBe(true)
+  })
+
+  test("C21 AC2: every question group carries its own name", async () => {
+    const host = mountQuestion()
+    await flush()
+
+    const groups = [...host.querySelectorAll<HTMLElement>("[role='radiogroup']")]
+    expect(groups).toHaveLength(2)
+    // 两组选项标签一模一样(是 / 否)。组自己没有名字时,读屏进第二组只报「radio group, 是」,
+    // 用户听不出在答哪道题 —— 名称必须来自可见的问题文本。
+    const names = groups.map((group) => document.getElementById(group.getAttribute("aria-labelledby")!)?.textContent)
+    expect(names).toEqual(["现在就发布吗?", "失败时自动回滚吗?"])
+
+    // 多选组是 group/checkbox,不是 radiogroup;它同样带名字。
+    const multiple = host.querySelectorAll<HTMLElement>(".a-swk-question-options[role='group']")
+    expect(multiple).toHaveLength(1)
+    expect(document.getElementById(multiple[0]!.getAttribute("aria-labelledby")!)?.textContent).toBe("包含哪些包?")
+  })
+
+  test("C21 AC2: a chosen radio cannot be un-chosen; arrows move the choice; multi-select still toggles", async () => {
+    const host = mountQuestion()
+    await flush()
+    const key = (name: string) => new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })
+    const group = (index: number) => [...host.querySelectorAll<HTMLElement>(".a-swk-question-options")][index]!
+    const radios = (index: number) => [...group(index).querySelectorAll<HTMLButtonElement>("button")]
+    const checked = (index: number) =>
+      radios(index)
+        .filter((button) => button.getAttribute("aria-checked") === "true")
+        .map((button) => button.textContent)
+
+    // 未答时:组内仍只有一个 Tab 落点(首项),但一个都没选中。
+    expect(checked(0)).toEqual([])
+    // 比 textContent 而不是元素:元素数组不等时深比对会打印整棵 happy-dom 树。
+    const tabbable = (index: number) =>
+      radios(index)
+        .filter((button) => button.tabIndex === 0)
+        .map((button) => button.textContent)
+    expect(tabbable(0)).toEqual(["是"])
+
+    radios(0)[0]!.click()
+    await flush()
+    expect(checked(0)).toEqual(["是"])
+
+    // APG:已选 radio 上的 Space 什么都不做。原生 button 把 Space/Enter 转成 click,
+    // 所以这里的第二次 click 就是键盘上的那一下 —— 它不得把整组清空成「无答案」。
+    radios(0)[0]!.click()
+    await flush()
+    expect(checked(0)).toEqual(["是"])
+
+    // 移动即选中,焦点跟着走,Tab 落点始终只有一个。
+    radios(0)[0]!.focus()
+    radios(0)[0]!.dispatchEvent(key("ArrowDown"))
+    await flush()
+    expect(checked(0)).toEqual(["否"])
+    expect(document.activeElement).toBe(radios(0)[1])
+    expect(tabbable(0)).toEqual(["否"])
+
+    // 第二组独立:第一组的作答不外溢。
+    expect(checked(1)).toEqual([])
+
+    // 多选组仍是 checkbox 语义:再点取消,且每个 checkbox 各自留在 Tab 序列里。
+    radios(2)[0]!.click()
+    radios(2)[1]!.click()
+    await flush()
+    expect(checked(2)).toEqual(["界面", "内核"])
+    radios(2)[0]!.click()
+    await flush()
+    expect(checked(2)).toEqual(["内核"])
+    expect(radios(2).every((button) => button.tabIndex === 0)).toBe(true)
+  })
+
+  test("C21 AC2: the rail tablist roves on ←→ and keeps one Tab landing point", async () => {
+    const host = mount()
+    await flush()
+    const tab = (kind: string) => host.querySelector<HTMLButtonElement>(`[data-alpha-session-rail-tab='${kind}']`)!
+    const key = (name: string, init: KeyboardEventInit = {}) =>
+      new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true, ...init })
+
+    // 页签条是横排 flex(.a-swk-rail-tabs),所以键表就是 W3C 横向 tablist 的那张:←→ + Home/End。
+    tab("review").dispatchEvent(key("ArrowRight"))
+    await flush()
+    expect(tab("files").classList.contains("a-swk-rail-tab--on")).toBe(true)
+    expect(document.activeElement).toBe(tab("files"))
+
+    tab("files").dispatchEvent(key("ArrowLeft"))
+    await flush()
+    expect(tab("review").classList.contains("a-swk-rail-tab--on")).toBe(true)
+
+    // ↑↓ 属于纵向 tablist。横排页签条吞掉它就是把页面滚动抢走 —— 必须原样交还。
+    const down = key("ArrowDown")
+    tab("review").dispatchEvent(down)
+    await flush()
+    expect(down.defaultPrevented).toBe(false)
+    expect(tab("review").classList.contains("a-swk-rail-tab--on")).toBe(true)
+
+    // 带修饰键的方向键归系统(Cmd+→ 导航、VoiceOver 光标是 Ctrl+Option+方向键)。
+    const vo = key("ArrowRight", { ctrlKey: true, altKey: true })
+    tab("review").dispatchEvent(vo)
+    await flush()
+    expect(vo.defaultPrevented).toBe(false)
+    expect(tab("review").classList.contains("a-swk-rail-tab--on")).toBe(true)
+
+    // 整条页签条在 Tab 序列里只占一个落点(禁用页签也不例外)。
+    const tabs = [...host.querySelectorAll<HTMLButtonElement>("[data-alpha-session-rail-tab]")]
+    const landing = tabs
+      .filter((element) => element.tabIndex === 0)
+      .map((element) => element.dataset.alphaSessionRailTab)
+    expect(landing).toEqual(["review"])
+    expect(tabs.filter((element) => element.tabIndex === -1)).toHaveLength(tabs.length - 1)
+
+    // 非导航键原样放行:页签条不得吞掉 Escape / Tab。
+    const escape = key("Escape")
+    tab("review").dispatchEvent(escape)
+    await flush()
+    expect(escape.defaultPrevented).toBe(false)
+    expect(tab("review").classList.contains("a-swk-rail-tab--on")).toBe(true)
   })
 })

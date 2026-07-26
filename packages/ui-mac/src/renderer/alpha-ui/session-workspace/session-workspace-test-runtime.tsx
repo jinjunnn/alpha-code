@@ -1,6 +1,8 @@
+import type { QuestionRequest } from "@opencode-ai/sdk/v2/client"
 import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import type { AlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-rail-core"
+import { SessionQuestionCard } from "./session-question-card"
 import { sameSessionIdentity, type AlphaSessionLiveSnapshot } from "./session-workspace-core"
 import {
   SessionWorkspaceShell,
@@ -66,6 +68,30 @@ export function SessionWorkspaceHarness() {
       panels={panels}
       railMeta={{ reviewCount, terminalRunning }}
       terminalChannel={() => terminalChannel}
+    />
+  )
+}
+
+// C21 AC2 的提问卡取证:两道选项标签完全相同的单选题(读屏进第二组必须能听出在答哪道)
+// 加一道多选题。提交通道故意缺席(client 返回 undefined)—— 这里要的是键盘与 ARIA 事实。
+const option = (label: string) => ({ label, description: "" })
+const questionRequest = {
+  id: "que_harness",
+  sessionID: initial.identity.sessionID,
+  questions: [
+    { header: "发布", question: "现在就发布吗?", options: [option("是"), option("否")] },
+    { header: "回滚", question: "失败时自动回滚吗?", options: [option("是"), option("否")] },
+    { header: "范围", question: "包含哪些包?", multiple: true, options: [option("界面"), option("内核")] },
+  ],
+} as unknown as QuestionRequest
+
+export function SessionQuestionHarness() {
+  return (
+    <SessionQuestionCard
+      request={questionRequest}
+      identity={() => initial.identity}
+      accepts={() => true}
+      client={() => undefined}
     />
   )
 }
