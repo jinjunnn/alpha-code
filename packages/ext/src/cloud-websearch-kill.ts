@@ -61,7 +61,7 @@
 //
 //   **例外(治理云 server)= 绑定 alpha 自己写的那份定义的端点身份,不再看名字前缀。**
 //   `ALPHA_CLOUD_MCP_DEF` 里的 `url` 是 alpha 在**本次 fork** 自己写进 env 的(injectAlphaConfig
-//   在每条分支上覆盖或删除它),外部伪造不了;`recordMcpOwnership()` 在 `config` 钩子里拿**引擎
+//   在每条分支上覆盖或删除它),外部伪造不了;`computeMcpOwnership()` 在 `config` 钩子里拿**引擎
 //   已合并完成的**配置逐个核对:名字等于点名的那个、`type==="remote"`、`url` 逐字相同,才算治理
 //   server。工具归属按 sanitize 后的 server 名前缀解析,**任何歧义都倒向 fail-closed**:只要有
 //   一个可能的归属方不是治理 server,豁免就不给。因此 `cloud_attacker_web_search` 与
@@ -80,6 +80,24 @@
 // 运行时 `POST /mcp` 用**同一个名字**换掉已连的客户端,从 ext 的视角与原客户端不可分辨 —— 上游
 // 没有任何接口把「当前活着的 server 定义」暴露给插件,而收编 `handlers/mcp.ts` / `mcp/index.ts`
 // 不在本票范围;那条路装的是「用户自己新装的第三方 MCP」,正落在上面收窄掉的那一类里。
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// #223 R7 Blocker:归属快照是**每个插件实例**的,模块里不许留可变状态。
+//
+// R6 的端点身份核验本身成立,但结果被存进本模块的一个模块级 `let`。本模块由 Bun 动态 import
+// **缓存**(一个引擎进程只有一份),而 Plugin / MCP 状态按 directory 建实例 —— 后跑的实例于是
+// 覆盖先跑的快照。R7 只读探针实测:实例 A 记录正常 `cloud` 后 `cloud_web_search` 放行;实例 B
+// 只要多记一个 foreign `cloud_web`,A 的**同一个**权威云工具立刻被误拒。一个项目因此能改变另一个
+// 项目云工具的可用性 —— 违反本文件对治理云 server 的保证,也违反 AC4「不误杀」。
+//
+// 本轮的形态:本模块只留**纯函数**(`computeMcpOwnership`),归属由 `plugin.ts` 存在**每个
+// `AlphaExt` 实例自己的闭包**里,在该实例全部配置合并完成之后(项目 `alpha.jsonc` 合并之后)才算,
+// 并显式传给该实例的 `tool.execute.before`。判决函数的默认实参恒为 `UNVERIFIED_MCP_OWNERSHIP`
+// —— 没传归属 = 没有治理 server = 豁免不给,fail-closed 不因这次重构而松动。
+//
+// 同轮的 Minor:分类判据 ②(`search` + 具名搜索引擎词)此前按**词元集合同时出现**判,而上面这段
+// 与 ADR-009 写的都是**相邻** —— 两张皮,且集合判会误杀 `brave_translate_and_search` /
+// `internet_archive_search` 一类第三方工具(与 AC4 反向)。改**实现**为真正的相邻判定。
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { readFileSync } from "node:fs"
@@ -151,7 +169,11 @@ function toolWords(tool: string): string[] {
  * 两条判据:
  *   ① 去掉全部分隔符后含 `websearch` / `searchweb` —— 覆盖 `web_search`、`web-search`、
  *      `search_web`、`websearchTool`、`exa_web_search_exa`、`web_search_v2` 等一切写法;
- *   ② 词元里同时有 `search` 与一个具名搜索引擎词 —— 覆盖 `brave-search`、`tavily_search`。
+ *   ② `search` 与一个具名搜索引擎词**相邻** —— 覆盖 `brave-search`、`tavily_search`。
+ *
+ * ②**必须是相邻,不是「同时出现」**(#223 R7 out-of-round Minor):按集合判会把
+ * `brave_translate_and_search`、`internet_archive_search` 一类第三方工具误杀,那与 AC4「不误杀」
+ * 反向。相邻判据同时让实现与本注释宣称的口径一致(此前文档说相邻、实现按集合,是两张皮)。
  *
  * **已知漏洞(R6 实测,以回归钉住)**:非 ASCII 工具名经 `McpCatalog.sanitize`
  * (`[^a-zA-Z0-9_-]` → `_`)后只剩下划线,任何按名字的分类器都看不见它。因此「按名字关掉一切
@@ -161,9 +183,12 @@ function toolWords(tool: string): string[] {
 export function isWebSearchToolId(tool: string): boolean {
   const glued = tool.toLowerCase().replace(/[^a-z0-9]/g, "")
   if (glued.includes("websearch") || glued.includes("searchweb")) return true
-  const words = new Set(toolWords(tool))
-  if (!words.has("search")) return false
-  for (const engine of SEARCH_ENGINE_WORDS) if (words.has(engine)) return true
+  const words = toolWords(tool)
+  for (let i = 1; i < words.length; i++) {
+    const [left, right] = [words[i - 1]!, words[i]!]
+    if (left === "search" && SEARCH_ENGINE_WORDS.has(right)) return true
+    if (right === "search" && SEARCH_ENGINE_WORDS.has(left)) return true
+  }
   return false
 }
 
@@ -187,10 +212,11 @@ export type McpOwnership = {
   foreign: string[]
 }
 
-/** 尚未核验(config 钩子还没跑 / 配置里没有 mcp 段)= 没有任何治理 server,豁免一律不给。 */
-const UNVERIFIED_OWNERSHIP: McpOwnership = { governed: [], foreign: [] }
-
-let recorded: McpOwnership | undefined
+/**
+ * 尚未核验(config 钩子还没跑 / 配置里没有 mcp 段 / 合并中途失败)= 没有任何治理 server,
+ * 豁免一律不给。这是判决函数的默认实参 —— 调用方不传归属时永远 fail-closed。
+ */
+export const UNVERIFIED_MCP_OWNERSHIP: McpOwnership = { governed: [], foreign: [] }
 
 /**
  * alpha 在**本次 fork** 自己写进 env 的那份云 server 定义的端点身份。
@@ -223,13 +249,21 @@ function isGovernedEntry(entry: unknown, endpoint: { url: string }): boolean {
   return type === "remote" && url === endpoint.url
 }
 
-/** 从一份**已合并完成的**引擎配置算出治理归属(纯函数,便于单测;写入由 `recordMcpOwnership` 做)。 */
+/**
+ * 从一份**已合并完成的**引擎配置算出治理归属。
+ *
+ * **纯函数,不写任何模块级状态**(#223 R7 Blocker):本模块由 Bun 动态 import **缓存**,一个引擎
+ * 进程只有一份;而 Plugin / MCP 状态按 directory 建实例,同一份模块被多个 `AlphaExt` 实例共用。
+ * 归属一旦存进模块级变量,后跑的实例就会覆盖先跑的实例的快照 —— 实测:实例 B 记录一个 foreign
+ * `cloud_web` 后,实例 A 的 `cloud_web_search` 立刻被误拒(跨项目串扰)。因此归属由调用方
+ * (`plugin.ts` 里**每个实例自己的闭包**)保存,并显式传给判决函数。
+ */
 export function computeMcpOwnership(
   cfg: unknown,
   env: Record<string, string | undefined> = process.env,
 ): McpOwnership {
   const host = cfg as McpHost | null | undefined
-  if (!host || typeof host !== "object") return UNVERIFIED_OWNERSHIP
+  if (!host || typeof host !== "object") return UNVERIFIED_MCP_OWNERSHIP
   const servers = host.mcp && typeof host.mcp === "object" ? host.mcp : {}
   const endpoint = governedCloudEndpoint(env)
   const governed: string[] = []
@@ -239,18 +273,6 @@ export function computeMcpOwnership(
     else foreign.push(name)
   }
   return { governed, foreign }
-}
-
-/**
- * `config` 钩子里调用一次:把本次装载的治理归属记下来,供 `tool.execute.before` 的闸使用。
- * 必须排在 `installCloudMcp()` **之后** —— 那一句才刚把 alpha 的云定义装进 `cfg.mcp`。
- */
-export function recordMcpOwnership(
-  cfg: unknown,
-  env: Record<string, string | undefined> = process.env,
-): McpOwnership {
-  recorded = computeMcpOwnership(cfg, env)
-  return recorded
 }
 
 /**
@@ -283,7 +305,7 @@ function isGovernedCloudTool(tool: string, ownership: McpOwnership): boolean {
 export function webSearchToolDenial(
   tool: string,
   env: Record<string, string | undefined> = process.env,
-  ownership: McpOwnership = recorded ?? UNVERIFIED_OWNERSHIP,
+  ownership: McpOwnership = UNVERIFIED_MCP_OWNERSHIP,
 ): string | undefined {
   if (!isWebSearchToolId(tool)) return undefined
   if (isGovernedCloudTool(tool, ownership))
@@ -311,7 +333,7 @@ export class WebSearchSovereigntyError extends Error {
 export function assertWebSearchToolAllowed(
   tool: string,
   env: Record<string, string | undefined> = process.env,
-  ownership: McpOwnership = recorded ?? UNVERIFIED_OWNERSHIP,
+  ownership: McpOwnership = UNVERIFIED_MCP_OWNERSHIP,
 ): void {
   const reason = webSearchToolDenial(tool, env, ownership)
   if (reason) throw new WebSearchSovereigntyError(tool, reason)
@@ -349,7 +371,9 @@ export function assertWebSearchToolAllowed(
 // 于是那些来源里的一份完整 `cloud` 定义照样自动连接,`enabled:false` 也照样能被 `/connect` 翻开。
 // 注入面因此改为写一份**中和条目**(`ui-mac/src/main/cloud-web-search.ts` 的 `WITHHELD_CLOUD_MCP`:
 // `type:"remote"` + 一个不做 DNS、必然 ECONNREFUSED 的 `127.0.0.1:1` URL + `enabled:false`),深合并里
-// 逐字段压过任何继承来的 `cloud`;本函数在 ext 确认装载后**整条替换**它。ext 缺席 ⇒ 留下的是那份
+// **覆盖连接控制字段**(`type`/`url`/`enabled`/`oauth`)压过任何继承来的 `cloud`;本函数在 ext 确认装载后
+// **整条替换**它。(#223 R7 措辞更正:不是「逐字段完整覆盖」—— 真实 `mergeDeep` 探针显示继承的
+// `headers` / `timeout` 会留下;URL 已是不可用 loopback,它们发不出去,但宣称必须写准。)ext 缺席 ⇒ 留下的是那份
 // 中和条目 ⇒ `/mcp/cloud/connect` 连不上任何东西,连兄弟云工具一起损失 —— 诚实的 fail-closed 降级。
 // 覆盖不到的只有 managed 目录与 MDM 托管偏好(引擎把它们排在 `OPENCODE_CONFIG_CONTENT` **之后**),
 // 那两个都是 root/管理员通道,不在用户威胁模型内 —— 事实由多源加载回归钉住,不谎称已关。

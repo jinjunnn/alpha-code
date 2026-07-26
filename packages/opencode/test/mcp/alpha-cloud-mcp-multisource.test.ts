@@ -13,8 +13,11 @@
 // 也没用 —— `MCP.connect()` 无条件复制成 `enabled:true`(见 alpha-cloud-mcp-revival.test.ts)。
 //
 // 修法 = 注入面改写一份**中和条目**(`ui-mac/src/main/cloud-web-search.ts` 的
-// `WITHHELD_CLOUD_MCP`),靠 later-wins 的标量覆盖逐字段压过先前来源:`type` / `url` /
+// `WITHHELD_CLOUD_MCP`),靠 later-wins 的标量覆盖压过先前来源的**连接控制字段**:`type` / `url` /
 // `enabled` 全部被换成一个不做 DNS、必然 ECONNREFUSED 的 `127.0.0.1:1` 端点 + `enabled:false`。
+// **不是「逐字段完整覆盖」(#223 R7 措辞更正)**:继承来的 `headers` / `timeout` 会留在合并结果里
+// (`oauth` 子对象被 `false` 整体替换)。URL 已是不可用 loopback,它们发不出去,故判决不变 ——
+// 但宣称只能写「覆盖连接控制字段」。
 //
 // 本文件用**真实的多源 Config 加载**(真 `Config.Service`、真文件、真 `Flag.OPENCODE_CONFIG`、
 // 真 managed 目录)逐来源证明这件事,并用**真实的 MCP lifecycle + HttpApi 路由**证明「压过之后
@@ -64,7 +67,7 @@ const inheritedCloud = (url: string) => ({
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ① 真实多源 Config 加载:逐来源证明「中和条目逐字段压过继承定义」
+// ① 真实多源 Config 加载:逐来源证明「中和条目覆盖继承定义的连接控制字段」
 // ─────────────────────────────────────────────────────────────────────────────
 
 const unexpectedHttp = HttpClient.make((request) =>
@@ -134,7 +137,7 @@ const plantInherited = async (source: "global" | "alpha-jsonc" | "project" | "ma
   return write(path.join(managedConfigDir, "opencode.json"), entry)
 }
 
-describe("#223 R6 Major:kill-switch 的中和条目逐字段压过每一个用户可及的配置源", () => {
+describe("#223 R6 Major:kill-switch 的中和条目压过每一个用户可及的配置源(连接控制字段)", () => {
   // 正向对照:没有中和条目时,四个来源里的完整定义**真的**都会进合并结果 —— 这就是 R6 判 Major
   // 的事实。没有这一条,下面的绿可能只是「来源根本没被加载」。
   for (const source of ["global", "alpha-jsonc", "project", "managed"] as const)
@@ -151,7 +154,7 @@ describe("#223 R6 Major:kill-switch 的中和条目逐字段压过每一个用�
   // 修复后:注入面的中和条目排在 global / `OPENCODE_CONFIG` / 项目**之后**,标量 later-wins,
   // 于是 type/url/enabled 全被换掉 —— 那份继承定义再也连不到它原来的端点。
   for (const source of ["global", "alpha-jsonc", "project"] as const)
-    it.instance(`修复(${source}):中和条目把继承定义逐字段压成不可连接的端点`, () =>
+    it.instance(`修复(${source}):中和条目把继承定义的连接控制字段压成不可连接的端点`, () =>
       Effect.gen(function* () {
         const tmp = yield* TestInstance
         yield* Effect.promise(() => plantInherited(source, tmp.directory))

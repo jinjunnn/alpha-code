@@ -309,8 +309,9 @@ export function injectAlphaConfig(
       // 声称「继承来的同名条目一并抹掉」—— 不成立。引擎另外还加载 XDG global、`OPENCODE_CONFIG`
       // (alpha.jsonc)、项目目录与 managed 配置,深合并里「缺少 cloud 键」**不会删除**先前来源的
       // 定义(`opencode/src/config/config.ts`)。所以这里改为写一份**中和条目**
-      // (`WITHHELD_CLOUD_MCP`),用 later-wins 的标量覆盖把任何继承来的 `cloud` 逐字段压成一个
-      // 连不上的 `127.0.0.1:1` 端点 + `enabled:false`;ext 确认装载后由 `installCloudMcp()` 整条
+      // (`WITHHELD_CLOUD_MCP`),用 later-wins 的标量覆盖把任何继承来的 `cloud` 的**连接控制字段**
+      // (`type`/`url`/`enabled`/`oauth`;`headers`/`timeout` 会留下 —— #223 R7 措辞更正,它们已无处
+      // 可发)压成一个连不上的 `127.0.0.1:1` 端点;ext 确认装载后由 `installCloudMcp()` 整条
       // 替换它。ext 缺席 ⇒ 留下的是中和条目 ⇒ `/connect` 连不上任何东西(连兄弟工具一起损失)——
       // 诚实降级,不是 AC4 的「误杀」:AC4 管的是闸生效时的正常态。
       const cloud = materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN"))

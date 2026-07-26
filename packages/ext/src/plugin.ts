@@ -12,7 +12,13 @@ import { injectFactorySkillPaths } from "./factory-paths"
 import { injectSkillGenerationPaths } from "./gen-skill-paths"
 import { rebrandSystem } from "./prompt-rebrand"
 import { validateCloudToolInput, validateCloudToolOutput } from "./cloud-contract-hook"
-import { assertWebSearchToolAllowed, installCloudMcp, recordMcpOwnership } from "./cloud-websearch-kill"
+import {
+  assertWebSearchToolAllowed,
+  computeMcpOwnership,
+  installCloudMcp,
+  UNVERIFIED_MCP_OWNERSHIP,
+  type McpOwnership,
+} from "./cloud-websearch-kill"
 
 /**
  * alpha-code backend isolation extension.
@@ -49,6 +55,13 @@ export const AlphaExt: Plugin = async (input) => {
     return identity.status === "project" ? identity : null
   }
 
+  // #223 R7 Blocker:MCP 治理归属是**本实例**的状态,不是模块的。插件模块由 Bun 动态 import
+  // **缓存**(一个引擎进程一份),而 Plugin / MCP 状态按 directory 建实例 —— 快照存在模块级变量上
+  // 时,后跑的实例会覆盖先跑的:实例 B 记录一个 foreign `cloud_web` 后,实例 A 的 `cloud_web_search`
+  // 立刻被误拒(跨项目串扰,回归见 cloud-websearch-kill.test.ts「跨实例隔离」)。因此归属只活在
+  // 这个闭包里,由本实例的 config 钩子写、显式传给本实例的执行钩子,模块侧不留任何可变状态。
+  let mcpOwnership: McpOwnership = UNVERIFIED_MCP_OWNERSHIP
+
   const ownHooks: Awaited<ReturnType<Plugin>> = {
     "tool.execute.before": async (hookInput, output) => {
       // #223 R3→R5:web search 主权判决在 **MCP 工具**一侧的最终闸,必须是本钩子的第一句 ——
@@ -56,8 +69,9 @@ export const AlphaExt: Plugin = async (input) => {
       // 且完全不查 permission ruleset。命中面覆盖**任何** MCP server 上的 web search 形态
       // (含用户自己配置的 remote MCP,例如 `exa_web_search_exa`),alpha 治理的云 server 例外
       // 只在 kill-switch 下关 —— 「是不是治理云 server」按 config 钩子核验过的**端点身份**判,
-      // 不是名字前缀(#223 R6)。理由、产品语义与边界见 cloud-websearch-kill.ts。
-      assertWebSearchToolAllowed(hookInput.tool)
+      // 不是名字前缀(#223 R6),且核验结果取**本实例**的那一份(#223 R7)。理由、产品语义与
+      // 边界见 cloud-websearch-kill.ts。
+      assertWebSearchToolAllowed(hookInput.tool, process.env, mcpOwnership)
       validateCloudToolInput(hookInput.tool, output.args)
     },
     "tool.execute.after": async (hookInput, output) => {
@@ -79,12 +93,10 @@ export const AlphaExt: Plugin = async (input) => {
         console.log(
           `[@alpha-code/ext] cloud MCP server "${installed}" installed — the web search sovereignty gate is registered in this engine process`,
         )
-      // #223 R6 Blocker:治理豁免绑定的是**端点身份**,不是名字前缀。这一句在 installCloudMcp
-      // 之后、任何项目配置分支之前,拿引擎已合并完成的 cfg 核验「哪个 server 名真的是 alpha 那份
-      // 定义」;没跑到(或核不上)就没有任何 server 拿得到豁免 —— fail-closed。
-      const ownership = recordMcpOwnership(cfg)
-      if (process.env.ALPHA_EXT_VERBOSE)
-        console.log(`[@alpha-code/ext] MCP ownership: ${JSON.stringify(ownership)}`)
+      // #223 R7:归属在**本实例全部配置合并完成之后**才算 —— 下面的项目 alpha.jsonc 合并还会往
+      // `cfg.mcp` 里加 server,先算就会漏掉它们(漏掉 foreign ⇒ 豁免可能错给)。放在 finally 里,
+      // 上面那些 early return 也照样重算;合并中途**抛错**则 cfg 只合了一半,倒向 fail-closed。
+      let merged = true
       try {
         const project = projectRootFor(input.directory)
         if (project) {
@@ -143,7 +155,16 @@ export const AlphaExt: Plugin = async (input) => {
             console.log(`[@alpha-code/ext] prompt takeover applied: ${takeover.applied.join(", ")}`)
         }
       } catch (error) {
+        merged = false
         console.error(`[@alpha-code/ext] project config hook failed: ${error instanceof Error ? error.message : String(error)}`)
+      } finally {
+        // #223 R6 Blocker:治理豁免绑定的是**端点身份**,不是名字前缀 —— 拿本实例已合并完成的 cfg
+        // 核验「哪个 server 名真的是 alpha 那份定义」。#223 R7 Blocker:结果写进**本实例的闭包**,
+        // 不是模块级变量,否则并存的另一个项目实例会覆盖它。核不上(或这一句没跑到)就没有任何
+        // server 拿得到豁免 —— fail-closed。
+        mcpOwnership = merged ? computeMcpOwnership(cfg) : UNVERIFIED_MCP_OWNERSHIP
+        if (process.env.ALPHA_EXT_VERBOSE)
+          console.log(`[@alpha-code/ext] MCP ownership (${input.directory}): ${JSON.stringify(mcpOwnership)}`)
       }
     },
     // REQ-062 T1(路线A):系统提示词品牌转写 —— 精选子串对(见 prompt-rebrand.ts 纪律说明)。

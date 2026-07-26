@@ -32,8 +32,11 @@ export const CLOUD_MCP_SERVER_NAME = "cloud"
  * 「缺少 cloud 键」**不会删除**先前来源的定义。于是那些来源里的一份完整 `cloud` 定义仍会自动
  * 连接;写成 `enabled:false` 也没用 —— `MCP.connect()` 无条件复制成 `enabled:true`。
  *
- * 能压过先前来源的只有**逐字段覆盖**:`OPENCODE_CONFIG_CONTENT` 排在 global / `OPENCODE_CONFIG` /
+ * 能压过先前来源的只有**覆盖连接控制字段**:`OPENCODE_CONFIG_CONTENT` 排在 global / `OPENCODE_CONFIG` /
  * 项目 / `.opencode` 与 `OPENCODE_CONFIG_DIR` 目录**之后**,`type` 与 `url` 是标量,later-wins。
+ * **不是逐字段完整覆盖(#223 R7 措辞更正)**:真实 `mergeDeep` 探针显示继承来的 `headers` / `timeout`
+ * 会留下(`oauth` 子对象则被 `false` 整体替换)。它们无害 —— `url` 已经换成不可用的 loopback,那些
+ * 头一个字节也发不出去 —— 但宣称只能写「覆盖连接控制字段」,不能写成逐字段完整覆盖。
  * URL 指向 `127.0.0.1:1`:**不做 DNS**、必然 ECONNREFUSED(端口 1 在类 Unix 上要 root 才能 bind),
  * 于是即便有人经 `/mcp/cloud/connect` 强行翻开,TCP 握手就失败、一个字节都发不出去 —— 继承来的
  * Authorization 头也就不会去到任何地方。

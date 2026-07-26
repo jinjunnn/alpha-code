@@ -199,7 +199,8 @@ describe("websearch 执行副本普查(#223 R3 · R4 起降为纵深)", () => {
     const plugin = read("packages/ext/src/plugin.ts")
     const hook = plugin.indexOf('"tool.execute.before"')
     expect(hook).toBeGreaterThanOrEqual(0)
-    const gate = plugin.indexOf("assertWebSearchToolAllowed(hookInput.tool)", hook)
+    // #223 R7:归属实参从模块级默认值改成本实例闭包(`, process.env, mcpOwnership`),故只钉调用点。
+    const gate = plugin.indexOf("assertWebSearchToolAllowed(hookInput.tool", hook)
     const contract = plugin.indexOf("validateCloudToolInput(", hook)
     expect(gate).toBeGreaterThan(hook)
     expect(gate).toBeLessThan(contract)

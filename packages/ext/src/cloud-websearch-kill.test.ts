@@ -55,7 +55,7 @@ const engineConfig = (servers: Record<string, unknown> = {}) => ({
   },
 })
 
-/** 生产路径的归属快照(`config` 钩子里 `recordMcpOwnership(cfg)` 算出来的同一个值)。 */
+/** 生产路径的归属快照(`config` 钩子里 `computeMcpOwnership(cfg)` 算出来、存进本实例闭包的同一个值)。 */
 const owned = (env: Record<string, string | undefined>, servers?: Record<string, unknown>): McpOwnership =>
   computeMcpOwnership(engineConfig(servers), env)
 
@@ -128,6 +128,21 @@ describe("cloud web search kill switch", () => {
       "srv_search_replace",
     ])
       expect([tool, isWebSearchToolId(tool)]).toEqual([tool, false])
+  })
+
+  // #223 R7 out-of-round Minor:判据 ② 是「`search` 与引擎词**相邻**」,不是「同时出现」。
+  // 按集合判时下面两个第三方工具都会命中 —— 误杀,与 AC4 反向。
+  test("R7 回归:引擎词与 search 不相邻时不命中(brave_translate_and_search / internet_archive_search)", () => {
+    for (const tool of [
+      "brave_translate_and_search",
+      "internet_archive_search",
+      "exa_company_search_jobs",
+      "online_docs_semantic_search",
+    ])
+      expect([tool, isWebSearchToolId(tool)]).toEqual([tool, false])
+    // 相邻的那一类照旧命中(收窄没有把判据 ② 判空)。
+    for (const tool of ["srv_brave_search", "srv_search_brave", "tavily_search", "srv_kagi-search", "srv_ddg_search"])
+      expect([tool, isWebSearchToolId(tool)]).toEqual([tool, true])
   })
 
   // #223 R6 Blocker ①(诚实登记的天花板):非 ASCII 工具名经 `McpCatalog.sanitize` 后只剩下划线,
@@ -255,7 +270,7 @@ describe("治理豁免绑定端点身份,名字伪造不了(R6 Blocker)", () => 
   })
 
   test("config 钩子没跑过 ⇒ 没有任何治理 server(模块默认值 fail-closed)", () => {
-    // 不传 ownership:模块里还没有 recordMcpOwnership 的结果时,豁免一律不给。
+    // 不传 ownership:本实例的 config 钩子还没算出归属时,豁免一律不给(默认实参 = UNVERIFIED)。
     expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, { governed: [], foreign: [] })).toThrow(
       WebSearchSovereigntyError,
     )
@@ -597,6 +612,110 @@ describe("ext 缺席三态:云 MCP 定义根本不进配置(#223 R4→R5 云 kil
     const cfg = injectedConfig()
     await engineLoadAndConfigure(cfg, { pure: false, specs: [realExt] })
     expect(cfg.mcp.cloud).toEqual({ ...WITHHELD })
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #223 R7 Blocker:治理归属是**每个 AlphaExt 实例**的状态,不是模块状态。
+//
+// 插件模块由 Bun 动态 import **缓存**(一个进程只有一份模块),而 Plugin / MCP 状态按 directory
+// 建实例 —— 快照存在模块级 `let` 上时,后跑的实例会把先跑的实例的归属覆盖掉。R7 的只读探针实测:
+// 实例 A 记录正常 `cloud` 后 `cloud_web_search` 放行;实例 B 只要多记一个 foreign `cloud_web`,
+// A 的**同一个** alpha 云工具立刻被误拒 —— 一个项目改变了另一个项目权威云工具的可用性,违反本票
+// 对治理云 server 的保证与 AC4「不误杀」。
+//
+// 下面这条跑的是**真的** `AlphaExt`:同一个(被缓存的)模块 import 两次、各带自己的 directory,
+// 与引擎并存两个项目实例同款。判据 = B 的 foreign server 改不动 A 的判决,两个方向都验。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("跨实例隔离:治理归属按实例闭包,不串扰(#223 R7 Blocker)", () => {
+  const saved: Record<string, string | undefined> = {}
+  let root = ""
+  let dirA = ""
+  let dirB = ""
+
+  /** alpha 自己那份定义的端点身份(A、B 两个项目看到的是同一个 alpha 云 server)。 */
+  const GOVERNED = { type: "remote", url: CLOUD_URL, enabled: true } as const
+  /** B 项目里用户自己配的第三方 server —— 名字前缀正好与 `cloud_web_search` 的边界歧义撞上。 */
+  const FOREIGN = { type: "remote", url: "https://attacker.example/mcp" } as const
+
+  beforeEach(() => {
+    for (const key of ["ALPHA_GLOBAL_DIR", LOCAL_WEBSEARCH_DENY_ENV, CLOUD_MCP_SERVER_ENV, CLOUD_MCP_DEF_ENV])
+      saved[key] = process.env[key]
+    root = realpathSync(mkdtempSync(join(tmpdir(), "alpha-ext-xtalk-")))
+    dirA = realpathSync(mkdtempSync(join(tmpdir(), "alpha-ext-projA-")))
+    dirB = realpathSync(mkdtempSync(join(tmpdir(), "alpha-ext-projB-")))
+    process.env.ALPHA_GLOBAL_DIR = root
+    // 平台代付(无 kill-switch):治理云工具是权威通道,必须放行;第三方 web search 一律关。
+    process.env[LOCAL_WEBSEARCH_DENY_ENV] = "1"
+    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
+    process.env[CLOUD_MCP_DEF_ENV] = CLOUD_DEF
+  })
+  afterEach(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+
+  type Hooks = Record<string, unknown>
+  /** 引擎按 directory 建实例:同一个模块 import 两次(第二次命中 import 缓存 —— 串扰的载体)。 */
+  const instance = async (directory: string): Promise<Hooks> => {
+    const mod = (await import("./plugin")) as { default: (input: unknown) => Promise<Hooks> }
+    return mod.default({
+      client: {} as never,
+      directory,
+      worktree: directory,
+      project: { id: `prj_${directory}` },
+      $: undefined,
+    })
+  }
+  const configure = (hooks: Hooks, cfg: unknown) => (hooks["config"] as (cfg: unknown) => Promise<void>)(cfg)
+  /** 判决:`null` = 放行,否则是拒绝理由(错误名)。 */
+  const verdict = async (hooks: Hooks, tool: string): Promise<string | null> => {
+    try {
+      await (hooks["tool.execute.before"] as (input: unknown, output: unknown) => Promise<void>)(
+        { tool, sessionID: "ses_xtalk", callID: "call_xtalk" },
+        { args: {} },
+      )
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.name : String(error)
+    }
+  }
+
+  test("B 记录一个 foreign `cloud_web` 后,A 的 cloud_web_search 仍然放行", async () => {
+    const a = await instance(dirA)
+    const b = await instance(dirB)
+
+    // 项目 A:只有 alpha 那份治理云 server ⇒ 权威通道放行(基线,否则下面的判据是空的)。
+    await configure(a, { mcp: { cloud: { ...GOVERNED } } })
+    expect(await verdict(a, "cloud_web_search")).toBeNull()
+
+    // 项目 B:同一份治理云 server + 用户自己配的 `cloud_web` ⇒ B 侧归属歧义,fail-closed。
+    await configure(b, { mcp: { cloud: { ...GOVERNED }, cloud_web: { ...FOREIGN } } })
+    expect(await verdict(b, "cloud_web_search")).toBe("WebSearchSovereigntyError")
+
+    // 修复前:B 的 config 钩子覆盖了模块级快照 ⇒ A 的同一个工具被误拒(跨项目串扰)。
+    expect(await verdict(a, "cloud_web_search")).toBeNull()
+    // 反向同理:A 重跑 config 也不能把豁免漏给 B。
+    await configure(a, { mcp: { cloud: { ...GOVERNED } } })
+    expect(await verdict(b, "cloud_web_search")).toBe("WebSearchSovereigntyError")
+    expect(await verdict(a, "cloud_web_search")).toBeNull()
+  })
+
+  test("两个实例的 foreign server 互不可见(A 的第三方 web search 关,B 的兄弟工具不受影响)", async () => {
+    const a = await instance(dirA)
+    const b = await instance(dirB)
+    await configure(a, { mcp: { cloud: { ...GOVERNED }, exa: { type: "remote", url: "https://mcp.exa.ai/mcp" } } })
+    await configure(b, { mcp: { cloud: { ...GOVERNED } } })
+
+    // 第三方 web search 在两侧都关(判据是工具形态,与归属快照无关)。
+    for (const hooks of [a, b]) expect(await verdict(hooks, "exa_web_search_exa")).toBe("WebSearchSovereigntyError")
+    // AC4:兄弟云工具在两侧都照常执行(`cloud_dispatch` 除外 —— 同一钩子的下一句是**契约**校验,
+    // 空 args 会被它按 CloudJobRequestV1 拒掉,那与本闸无关)。
+    for (const hooks of [a, b])
+      for (const tool of siblingCloudTools.filter((tool) => tool !== "cloud_dispatch"))
+        expect([tool, await verdict(hooks, tool)]).toEqual([tool, null])
   })
 })
 

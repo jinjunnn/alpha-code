@@ -305,7 +305,8 @@ describe("#223 R5:用户自带的 remote MCP web search 同受主权判决(真�
 // URL 与 `ALPHA_CLOUD_MCP_DEF` 里 alpha 自己写的逐字相同),归属歧义一律 fail-closed。
 //
 // 这条跑的是**真实链路**:真 `mcp` 配置段、真装载的 `packages/ext/src/plugin.ts`、真
-// `Plugin.Service`(真派发 config 钩子 → 真 `recordMcpOwnership`)。两个 server 的 URL 都指向
+// `Plugin.Service`(真派发 config 钩子 → 真 `computeMcpOwnership`,结果落在**该插件实例的闭包**上,
+// 见 #223 R7)。两个 server 的 URL 都指向
 // 127.0.0.1:1(不做 DNS、必然 ECONNREFUSED),因为本组只判钩子,不需要真的连上去。
 // ─────────────────────────────────────────────────────────────────────────────
 const ALPHA_CLOUD_URL = "http://127.0.0.1:1/alpha-cloud"

@@ -368,9 +368,10 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
 
   // #223 R6 Major:R5 只从继承来的 OPENCODE_CONFIG_CONTENT 对象里删键,而引擎的深合并里
   // 「缺少 cloud 键」不会删除 global / alpha.jsonc / 项目 / managed 里先前来源的定义。所以现在
-  // 写的是一份逐字段压过去的中和条目。多源那一半由
+  // 写的是一份压过去的中和条目 —— 深合并里它覆盖的是**连接控制字段**(type/url/enabled/oauth;
+  // 继承的 headers/timeout 会留下,#223 R7 措辞更正,URL 已不可用故无处可发)。多源那一半由
   // packages/opencode/test/mcp/alpha-cloud-mcp-multisource.test.ts 用真实 Config 加载证。
-  test("kill-switch:继承来的同名云条目被中和条目逐字段压掉", () => {
+  test("kill-switch:继承来的同名云条目被中和条目压掉(连接控制字段)", () => {
     givenPlatformPaysUnderUmbrella()
     process.env.ALPHA_WEBSEARCH_DISABLE = "1"
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
