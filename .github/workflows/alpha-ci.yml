@@ -141,6 +141,12 @@ jobs:
             ':(exclude)packages/client/src/generated/client.ts'
             ':(exclude)packages/client/src/generated-effect/client.ts'
             ':(exclude)packages/client/src/generated/types.ts'
+            # ADR-035(#489,2026-07-25):E7 web search 失败诚实。打包端挂载的是 opencode 副本,
+            # 失败面(伪成功串 / orDie 塌成匿名 defect)只能在这两个文件里修;云路径的
+            # catalog.ts / code-mode.ts 已 loud,刻意不收编。
+            ':(exclude)packages/opencode/src/tool/websearch.ts'
+            ':(exclude)packages/opencode/src/tool/mcp-websearch.ts'
+            ':(exclude)packages/opencode/test/tool/websearch.test.ts'
           )
           changed="$(git diff --diff-filter=DMR --name-only origin/dev...HEAD -- $UPSTREAM_PATHS "${excludes[@]}")"
           if [ -n "$changed" ]; then
