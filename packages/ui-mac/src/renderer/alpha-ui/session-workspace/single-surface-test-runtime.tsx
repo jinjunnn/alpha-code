@@ -6,6 +6,7 @@
 // (single-surface-app-stub / single-surface-router-stub);dock、composer、watcher 的
 // 生产源码零改动 —— 被测的就是它们本体的运行时行为。
 
+import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type {
   PermissionV2DecisionCommand,
   PermissionV2DecisionReceipt,
@@ -77,6 +78,26 @@ export function injectPermissionAsked(request: PermissionV2Request) {
 export function injectPermissionReplied(receipt: PermissionV2DecisionReceipt) {
   surfaceListeners?.replied(receipt)
   emitDockPermissionReplied(receipt)
+}
+
+/** R2 对抗探针:逐字复刻 Codex R2 打穿闸门的那种等义改写 —— **不新增任何 DOM**、
+ *  在 dock 链路里**另建一个真实 SDK client**、再用方括号取值提交决定。
+ *  探针走的是与生产代码完全相同的 import(`createOpencodeClient` from `@opencode-ai/sdk/v2/client`),
+ *  因此它测的就是 harness 的 alias 是否真的把「新建 client」收进录音面:
+ *  alias 在 → 调用记入 dockClientCalls,闸③红;alias 一旦被撤 → 变成真实 client 直发
+ *  `POST /api/session/<id>/permission/<id>/reply`,零记录,回归测试立刻红。 */
+export function submitDecisionViaFreshClient(requestID: string, fingerprint: string) {
+  const fresh = createOpencodeClient({ baseUrl: "http://127.0.0.1:39117" }) as any
+  const submitted = fresh["v2"]["session"]["permission"]["reply"]({
+    sessionID: HARNESS_IDENTITY.sessionID,
+    requestID,
+    permissionV2DecisionCommand: {
+      decision: "once",
+      decisionID: "dec_fresh_client_probe",
+      requestFingerprint: fingerprint,
+    },
+  })
+  if (submitted && typeof submitted.catch === "function") submitted.catch(() => {})
 }
 
 export function SingleSurfaceHarness() {

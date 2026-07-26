@@ -9,6 +9,11 @@
 //      规范化后与注入前逐字节相等 —— 任何改名后的审批节点一出现即红;
 //   ③ 决定只到达 Permission surface client —— dock/composer 的全部 SDK 出口是录音
 //      proxy,方括号等义改写的调用同样被记录,除快照 list 外零 permission 流量。
+//
+// R2(Codex 复审)补:录音面原先只覆盖「被注入的 client」,dock 若**另建**一个真实
+// `createOpencodeClient` 就能不新增 DOM、方括号提交,实测 POST .../permission/<id>/reply
+// 真的发出而三条闸门全绿。现将 `@opencode-ai/sdk` 全部子路径 alias 到录音替身
+// (single-surface-sdk-stub),新建 client 因此同样入账;该形态本身钉成第二条回归用例。
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test"
@@ -28,10 +33,18 @@ await build({
   logLevel: "silent",
   plugins: [appPlugin.at(-1)!],
   resolve: {
-    alias: {
-      "@opencode-ai/app": join(import.meta.dir, "single-surface-app-stub.ts"),
-      "@solidjs/router": join(import.meta.dir, "single-surface-router-stub.ts"),
-    },
+    alias: [
+      { find: "@opencode-ai/app", replacement: join(import.meta.dir, "single-surface-app-stub.ts") },
+      // 正则(而非字符串前缀)才能把 `@opencode-ai/sdk` 的**全部子路径** —— /v2/client、
+      // /v2、/client、/v2/gen/client… —— 整条映到同一个替身(字符串 alias 只做前缀替换,
+      // 会留下 `<stub>.ts/v2/client` 这种残尾)。于是 bundle 里**新建**的 client 也落进
+      // 同一录音 proxy,「另建真实 client 偷偷提交」因此进闸③射程(#619 R2 Blocker)。
+      {
+        find: /^@opencode-ai\/sdk(?:\/.*)?$/,
+        replacement: join(import.meta.dir, "single-surface-sdk-stub.ts"),
+      },
+      { find: "@solidjs/router", replacement: join(import.meta.dir, "single-surface-router-stub.ts") },
+    ],
   },
   build: {
     emptyOutDir: true,
@@ -128,6 +141,17 @@ function canonicalizeDock(node: Node): string {
   return `<${element.tagName}|${attributes.join("|")}>[${children.join(",")}]`
 }
 
+/** 闸③的判据本体:dock/composer 侧录音面上的审批类流量。录音面覆盖注入的 client
+ *  **与 bundle 内新建的 client**(@opencode-ai/sdk 全前缀 alias),属性访问链无拼写豁免,
+ *  方括号等义改写同样入账。合法值只有快照 list 一条。 */
+function dockPermissionTraffic(): Set<string> {
+  return new Set(
+    runtime.dockClientCalls
+      .map((call) => call.path)
+      .filter((path) => path.toLowerCase().includes("permission") || path.toLowerCase().includes("reply")),
+  )
+}
+
 const FACTS = ["subject", "action", "resources", "scope", "expiry"] as const
 
 describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", () => {
@@ -176,10 +200,7 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
     await flush()
     expect(runtime.surfaceReplyCalls.map((call) => call.requestID)).toEqual([request.id])
     expect(runtime.surfaceReplyCalls[0]!.command.decision).toBe("once")
-    const dockDecisionTraffic = runtime.dockClientCalls
-      .map((call) => call.path)
-      .filter((path) => path.toLowerCase().includes("permission") || path.toLowerCase().includes("reply"))
-    expect(new Set(dockDecisionTraffic)).toEqual(new Set(["v2.session.permission.list"]))
+    expect(dockPermissionTraffic()).toEqual(new Set(["v2.session.permission.list"]))
 
     // 收尾相位:收据按生产 SSE 扇出双投递 → dialog 关闭、dock 提示回落、结构回到基线。
     runtime.injectPermissionReplied(runtime.surfaceReceipts[0]!)
@@ -188,5 +209,36 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
     expect(composerRoot.hasAttribute("data-approval")).toBeFalse()
     expect(composerInput.getAttribute("placeholder")).not.toBe(zh["alpha.composer.placeholderDecision"])
     expect(canonicalizeDock(dockHost)).toBe(dockCanonicalBefore)
+  })
+
+  // Codex R2 实测打穿上一版三条闸门的等义改写:**不新增 DOM**、在 dock 链路里**另建一个
+  // 真实 SDK client**、方括号取值提交 —— 当时 `POST /api/session/<id>/permission/<id>/reply`
+  // 真的发出而闸①②③全绿(录音面只覆盖被注入的 client)。本例把该形态本身钉成回归:
+  // 新建 client 必须同样落进录音面,亦即闸③会红。alias 一撤,这里立刻红。
+  test("等义改写回归:不新增 DOM、另建真实 SDK client、方括号提交 —— 同样落进录音面,闸③照样红", async () => {
+    mountHarness()
+    await flush()
+    await flush()
+
+    const dockHost = document.body.querySelector("[data-harness-dock]")!
+    runtime.injectPermissionAsked(request)
+    await flush()
+    const dockCanonicalBefore = canonicalizeDock(dockHost)
+    // 前置:此刻闸③仍绿 —— 只有快照 list 一条合法流量。
+    expect(dockPermissionTraffic()).toEqual(new Set(["v2.session.permission.list"]))
+
+    runtime.submitDecisionViaFreshClient(request.id, request.fingerprint)
+    await flush()
+
+    // 这条绕过对闸①②完全隐形:零新增 DOM、Permission surface client 零提交。
+    expect(canonicalizeDock(dockHost)).toBe(dockCanonicalBefore)
+    expect(document.querySelectorAll("[role='dialog']")).toHaveLength(1)
+    expect(runtime.surfaceReplyCalls).toHaveLength(0)
+
+    // 唯一抓住它的是闸③:新建 client 的提交进了录音面,合法集合被打破。
+    expect(dockPermissionTraffic()).toEqual(
+      new Set(["v2.session.permission.list", "v2.session.permission.reply"]),
+    )
+    expect(dockPermissionTraffic()).not.toEqual(new Set(["v2.session.permission.list"]))
   })
 })
