@@ -37,7 +37,6 @@ export interface FrontendSurfaceEntry {
   availability: FrontendSurfaceAvailability
   source: string
   releaseSurface?: SurfaceId
-  fallback?: string
   entrypoints: readonly string[]
   transitions: readonly { label: string; target: string }[]
 }
@@ -50,7 +49,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
   {
     id: "route.home",
     label: "首页",
-    description: "Alpha 自有首页叶；发布默认启用，致命渲染错误进入 Alpha Recovery，不改变 composition。",
+    description: "Alpha 自有首页叶；致命渲染错误进入 Alpha Recovery，不改变 composition。",
     owner: "alpha.home",
     lineage: "alpha",
     target: "alpha",
@@ -58,7 +57,6 @@ export const FRONTEND_SURFACE_MANIFEST = [
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/AlphaHome.tsx",
     releaseSurface: "home",
-    fallback: "opencode.home",
     entrypoints: ["应用启动", "侧栏品牌按钮", "返回首页"],
     transitions: [
       { label: "首页提交", target: "route.session" },
@@ -103,14 +101,13 @@ export const FRONTEND_SURFACE_MANIFEST = [
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/alpha-new-session.tsx",
     releaseSurface: "newSession",
-    fallback: "opencode.new-session",
     entrypoints: ["新会话准入", "draft 深链"],
     transitions: [{ label: "首次提交并晋升", target: "route.session" }],
   },
   {
     id: "route.session",
     label: "会话工作区",
-    description: "Alpha 自有会话工作区叶（顶栏/时间线/右栏四面板），发布默认 alpha，零消费上游 session 叶；legacy 仅为启动期 env/pin 回退。",
+    description: "Alpha 自有会话工作区叶（顶栏/时间线/右栏四面板），零消费上游 session 叶；这是该路由唯一的组合。",
     owner: "alpha.session-seam",
     lineage: "alpha",
     target: "alpha",
@@ -118,7 +115,6 @@ export const FRONTEND_SURFACE_MANIFEST = [
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/session-workspace/alpha-session-workspace.tsx",
     releaseSurface: "session",
-    fallback: "opencode.session",
     entrypoints: ["首页提交", "新会话晋升", "侧栏会话", "通知深链"],
     transitions: [
       { label: "新建会话", target: "route.session-admission" },

@@ -3,6 +3,7 @@ import {
   ROUTE_MANIFEST,
   ROUTE_MANIFEST_VERSION,
   RouteManifestError,
+  decodeDeepLink,
   deepLinkFor,
   decodeDirectory,
   encodeDirectory,
@@ -188,6 +189,45 @@ describe("manifest-derived deep links", () => {
       "opencode://open-project?directory=%2Ftmp&prompt=unexpected",
       "opencode://open-project?directory=%2Ftmp#fragment",
     ).forEach((link) => expect(parseDeepLink(link).ok).toBe(false))
+  })
+})
+
+describe("decoded deep-link deliveries", () => {
+  // What Alpha main forwards to the renderer. The href must be exactly what a consumer would
+  // otherwise hand-build, because that hand-building is what this delivery replaces.
+  test("both declared deep links decode into a delivery carrying a manifest-derived href", () => {
+    expect(decodeDeepLink("opencode://open-project?directory=%2Ftmp%2Fdemo")).toEqual({
+      deepLinkId: "open-project",
+      routeId: "directory",
+      directory: "/tmp/demo",
+      href: hrefFor.directory("/tmp/demo"),
+    })
+    expect(decodeDeepLink("opencode://new-session?directory=%2Ftmp%2Fdemo")).toEqual({
+      deepLinkId: "new-session",
+      routeId: "session-admission",
+      directory: "/tmp/demo",
+      href: hrefFor.sessionAdmission("/tmp/demo"),
+    })
+    expect(decodeDeepLink("opencode://new-session?directory=%2Ftmp%2Fdemo&prompt=hello%20world")).toEqual({
+      deepLinkId: "new-session",
+      routeId: "session-admission",
+      directory: "/tmp/demo",
+      prompt: "hello world",
+      href: hrefFor.sessionAdmission("/tmp/demo", "hello world"),
+    })
+  })
+
+  test("anything the manifest does not recognise decodes to nothing at the boundary", () => {
+    Array.of(
+      "opencode://other?directory=%2Ftmp",
+      "https://example.com",
+      "opencode://open-project",
+      "opencode://open-project?directory=",
+      "opencode://open-project?directory=%2Ftmp&unknown=x",
+      "opencode://open-project/%E0%A4%A%",
+      "alpha-code://auth/callback",
+      "not a url",
+    ).forEach((link) => expect(decodeDeepLink(link)).toBeUndefined())
   })
 })
 

@@ -2,7 +2,6 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { useLocation } from "@solidjs/router"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import type { ResolvedSurfaces } from "../../shared/alpha-surfaces"
 import {
   FRONTEND_SURFACE_MANIFEST,
   FRONTEND_SURFACE_MANIFEST_VERSION,
@@ -39,7 +38,7 @@ const mountLabel = (kind: FrontendSurfaceMount["kind"]) => {
   return t("alpha.surfaceMap.boot")
 }
 
-export default function SurfaceMapInspector(props: { resolved?: ResolvedSurfaces | null }) {
+export default function SurfaceMapInspector() {
   const location = useLocation()
   const [open, setOpen] = createSignal(false)
   const [query, setQuery] = createSignal("")
@@ -247,7 +246,7 @@ export default function SurfaceMapInspector(props: { resolved?: ResolvedSurfaces
                   <Show when={filtered().length > 0} fallback={<div class="a-smap-empty"><strong>{t("alpha.surfaceMap.noMatches")}</strong><span>{t("alpha.surfaceMap.noMatchesDetail")}</span></div>}>
                     <For each={filtered()}>
                       {(surface) => {
-                        const runtime = () => surfaceRuntimeState(surface, props.resolved)
+                        const runtime = () => surfaceRuntimeState(surface)
                         return (
                           <article class="a-smap-card" data-active={active().has(surface.id) ? "" : undefined}>
                             <div class="a-smap-card-title">
@@ -264,8 +263,6 @@ export default function SurfaceMapInspector(props: { resolved?: ResolvedSurfaces
                               <div><dt>{t("alpha.surfaceMap.owner")}</dt><dd><code>{surface.owner}</code></dd></div>
                               <div><dt>{t("alpha.surfaceMap.mount")}</dt><dd>{mountDescription(surface.mount)}</dd></div>
                               <div><dt>{t("alpha.surfaceMap.runtime")}</dt><dd><strong>{runtime().mode}</strong><span>{runtime().detail}</span></dd></div>
-                              <div><dt>{t("alpha.surfaceMap.releaseDefault")}</dt><dd>{runtime().release ?? "—"}</dd></div>
-                              <div><dt>{t("alpha.surfaceMap.fallback")}</dt><dd><code>{surface.fallback ?? "none"}</code></dd></div>
                               <div><dt>{t("alpha.surfaceMap.source")}</dt><dd><code title={surface.source}>{surface.source}</code></dd></div>
                             </dl>
                             <div class="a-smap-paths">

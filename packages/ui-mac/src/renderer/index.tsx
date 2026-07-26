@@ -45,7 +45,7 @@ import { AlphaNewSession } from "./alpha-ui/alpha-new-session"
 import { SurfaceBoundary } from "./alpha-ui/surface-boundary"
 import { RuntimeRecoveryHost } from "./alpha-ui/RuntimeRecoveryHost"
 import { UpstreamDialogHost } from "./alpha-ui/UpstreamDialogHost"
-import type { ResolvedSurfaces } from "../shared/alpha-surfaces"
+import { DEEP_LINK_EVENT, type DeepLinkDelivery } from "../shared/route-manifest"
 import { alphaSessionWorkspaceSurface } from "./alpha-ui/session-workspace/alpha-session-workspace" // REQ-088 T2
 import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { AlphaSettings } from "./alpha-ui/settings"
@@ -61,27 +61,21 @@ import { ALPHA_THEME, ALPHA_THEME_ID } from "./theme-alpha"
 import { composeRoutes } from "./route-composition"
 import { markStartupTimeline } from "./startup-timeline"
 
+// Every route composes exactly one Alpha surface. There is no second release state and no
+// runtime switch: a fatal render goes to Alpha Recovery (SurfaceBoundary), never to an
+// upstream leaf.
 const productionRoutes = composeRoutes({
-  home: (resolved: ResolvedSurfaces | null | undefined, projects: AlphaProjectsApi) => {
-    if (resolved?.home.mode !== "alpha") return undefined
-    return () => (
-      <SurfaceBoundary surface="home">
-        <AlphaHome projects={projects} />
-      </SurfaceBoundary>
-    )
-  },
-  newSession: (resolved: ResolvedSurfaces | null | undefined, projects: AlphaProjectsApi) => {
-    if (resolved?.newSession.mode !== "alpha") return undefined
-    return (props: DraftSurfaceProps) => (
-      <SurfaceBoundary surface="newSession">
-        <AlphaNewSession projects={projects} draftId={props.draftId} promoteDraft={props.promoteDraft} />
-      </SurfaceBoundary>
-    )
-  },
-  session: (resolved: ResolvedSurfaces | null | undefined, projects: AlphaProjectsApi) => {
-    if (resolved?.session.mode !== "alpha") return undefined
-    return alphaSessionWorkspaceSurface(projects)
-  },
+  home: (projects: AlphaProjectsApi) => () => (
+    <SurfaceBoundary surface="home">
+      <AlphaHome projects={projects} />
+    </SurfaceBoundary>
+  ),
+  newSession: (projects: AlphaProjectsApi) => (props: DraftSurfaceProps) => (
+    <SurfaceBoundary surface="newSession">
+      <AlphaNewSession projects={projects} draftId={props.draftId} promoteDraft={props.promoteDraft} />
+    </SurfaceBoundary>
+  ),
+  session: (projects: AlphaProjectsApi) => alphaSessionWorkspaceSurface(projects),
   settings: () => (
     <AlphaBoundary name="AlphaSettings">
       <AlphaSettings open={settingsOpen()} onClose={() => setSettingsOpen(false)} />
@@ -139,19 +133,20 @@ void initI18n()
 const [updaterState, setUpdaterState] = createSignal<UpdaterState>({ status: "disabled" })
 void window.api.updater.subscribe(setUpdaterState)
 
-const deepLinkEvent = "opencode:deep-link"
+// Deliveries arrive already decoded by the manifest (main). The buffer covers links that land
+// before the layout mounts; the event covers everything after. Both are read by the upstream
+// layout, which owns no codec of its own.
+const deepLinkBuffer = window as Window & { __alphaDeepLinks?: DeepLinkDelivery[] }
 
-const emitDeepLinks = (urls: string[]) => {
-  if (urls.length === 0) return
-  window.__OPENCODE__ ??= {}
-  const pending = window.__OPENCODE__.deepLinks ?? []
-  window.__OPENCODE__.deepLinks = [...pending, ...urls]
-  window.dispatchEvent(new CustomEvent(deepLinkEvent, { detail: { urls } }))
+const emitDeepLinks = (links: DeepLinkDelivery[]) => {
+  if (links.length === 0) return
+  deepLinkBuffer.__alphaDeepLinks = [...(deepLinkBuffer.__alphaDeepLinks ?? []), ...links]
+  window.dispatchEvent(new CustomEvent(DEEP_LINK_EVENT, { detail: { links } }))
 }
 
 const listenForDeepLinks = () => {
-  void window.api.consumeInitialDeepLinks().then((urls) => emitDeepLinks(urls))
-  return window.api.onDeepLink((urls) => emitDeepLinks(urls))
+  void window.api.consumeInitialDeepLinks().then((links) => emitDeepLinks(links))
+  return window.api.onDeepLink((links) => emitDeepLinks(links))
 }
 
 const createPlatform = (): Platform => {
@@ -428,22 +423,8 @@ render(() => {
       </div>
     )
 
-    // ADR-027/REQ-084:surface 选择在可信 main 配置进入 renderer 后、route tree 首次挂载前
-    // 一次性完成;解析失败 fail-safe 到全 legacy(升级面故障不能挡住产品)。
-    const [resolvedSurfaces] = createResource<ResolvedSurfaces | null>(() =>
-      window.api.surfaces.resolve().catch((err): null => {
-        console.error("[alpha-surface] resolve failed — falling back to legacy surfaces", err)
-        return null
-      }),
-    )
-
     const ready = createMemo(
-      () =>
-        !defaultServer.loading &&
-        !sidecar.loading &&
-        !windowCount.loading &&
-        !locale.loading &&
-        !resolvedSurfaces.loading,
+      () => !defaultServer.loading && !sidecar.loading && !windowCount.loading && !locale.loading,
     )
     const servers = createMemo(() => {
       const data = initializationData(sidecar)
@@ -477,27 +458,18 @@ render(() => {
     // instance instead of each running its own (was ×2 project.list / ×2N session.list + an extra SSE).
     const alphaProjects = useAlphaProjects(sidebarServer)
 
-    // REQ-085/086:alpha 模式的叶页面经 typed surface seam 注入(单一 page root,upstream 叶
-    // 不挂载);legacy 模式不注入 = 严格 upstream 默认页面。surface 组件经 SurfaceBoundary 兜
-    // 致命 render 错误(main 建立稳定 incident + Alpha Recovery；禁止回退 legacy)。
-    const surfaceComponents = createMemo<AppSurfaces>(() => {
-      const resolved = resolvedSurfaces.latest
-      const surfaces: AppSurfaces = {
-        permission: (props) => (
-          <AlphaBoundary name="PermissionWatcher">
-            <PermissionWatcher {...props} />
-          </AlphaBoundary>
-        ),
-      }
-      const home = productionRoutes.home.mount(resolved, alphaProjects)
-      const newSession = productionRoutes["new-session"].mount(resolved, alphaProjects)
-      const session = productionRoutes.session.mount(resolved, alphaProjects)
-      if (home) surfaces[productionRoutes.home.surface] = home
-      if (newSession) surfaces[productionRoutes["new-session"].surface] = newSession
-      // REQ-088 T5:resolved session mode 是唯一挂载条件；legacy 保持上游默认叶。
-      if (session) surfaces[productionRoutes.session.surface] = session
-      return surfaces
-    })
+    // 每个叶页面经 typed surface seam 注入(单一 page root,upstream 叶不挂载)。surface 组件
+    // 经 SurfaceBoundary 兜致命 render 错误(main 建立稳定 incident + Alpha Recovery)。
+    const surfaceComponents = createMemo<AppSurfaces>(() => ({
+      permission: (props) => (
+        <AlphaBoundary name="PermissionWatcher">
+          <PermissionWatcher {...props} />
+        </AlphaBoundary>
+      ),
+      [productionRoutes.home.surface]: productionRoutes.home.mount(alphaProjects),
+      [productionRoutes["new-session"].surface]: productionRoutes["new-session"].mount(alphaProjects),
+      [productionRoutes.session.surface]: productionRoutes.session.mount(alphaProjects),
+    }))
 
     return (
       <Show when={ready()} fallback={splash}>
@@ -546,7 +518,7 @@ render(() => {
                 <ContractFailureBanner />
               </AlphaBoundary>
               <RecoverySurface />
-              <DevSurfaceMapInspector resolved={resolvedSurfaces.latest} />
+              <DevSurfaceMapInspector />
             </AppInterface>
           )}
         </Show>

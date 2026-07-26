@@ -1257,32 +1257,33 @@ export default function LegacyLayout(props: ParentProps) {
     if (navigate) return navigateToProject(directory)
   }
 
-  const handleDeepLinks = (urls: string[]) => {
+  // The shell decodes deep links against its route manifest and forwards the result, including
+  // the destination href — nothing is parsed or route-shaped here.
+  const handleDeepLinks = (links: readonly unknown[]) => {
     if (!server.isLocal()) return
 
-    for (const directory of collectOpenProjectDeepLinks(urls)) {
-      void openProject(directory)
+    for (const link of collectOpenProjectDeepLinks(links)) {
+      void openProject(link.directory)
     }
 
-    for (const link of collectNewSessionDeepLinks(urls)) {
+    for (const link of collectNewSessionDeepLinks(links)) {
       void openProject(link.directory, false)
-      const slug = base64Encode(link.directory)
       if (link.prompt) {
-        setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(slug)), {
-          prompt: link.prompt,
-        })
+        setSessionHandoff(
+          SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(base64Encode(link.directory))),
+          { prompt: link.prompt },
+        )
       }
-      const href = link.prompt ? `/${slug}/session?prompt=${encodeURIComponent(link.prompt)}` : `/${slug}/session`
-      navigateWithSidebarReset(href)
+      navigateWithSidebarReset(link.href)
     }
   }
 
   onMount(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ urls: string[] }>).detail
-      const urls = detail?.urls ?? []
-      if (urls.length === 0) return
-      handleDeepLinks(urls)
+      const detail = (event as CustomEvent<{ links?: unknown[] }>).detail
+      const links = detail?.links ?? []
+      if (links.length === 0) return
+      handleDeepLinks(links)
     }
 
     handleDeepLinks(drainPendingDeepLinks(window))

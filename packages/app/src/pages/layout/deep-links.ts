@@ -1,50 +1,51 @@
+// Deep links are decoded by the Alpha shell's route manifest before they ever reach this
+// renderer. This module is the passthrough on the receiving end: it validates the shape of the
+// decoded deliveries and hands them to the layout. It owns no URL parsing, no scheme literal and
+// no route/query schema — those live in exactly one place now.
+//
+// The event name is the single wire constant this side must spell out (packages/app cannot import
+// from the shell). packages/ui-mac/src/shared/route-upstream-shape.test.ts anchors it against the
+// manifest so the two copies cannot drift apart silently.
 export const deepLinkEvent = "opencode:deep-link"
 
-const parseUrl = (input: string) => {
-  if (!input.startsWith("opencode://")) return
-  if (typeof URL.canParse === "function" && !URL.canParse(input)) return
-  try {
-    return new URL(input)
-  } catch {
-    return
+export interface DeepLinkDelivery {
+  /** Which declared deep link this was — the shell's identity, not a hostname parsed here. */
+  deepLinkId: string
+  directory: string
+  prompt?: string
+  /** Ready-to-use in-app route href, derived from the same manifest that decoded the link. */
+  href: string
+}
+
+declare global {
+  interface Window {
+    __alphaDeepLinks?: DeepLinkDelivery[]
   }
 }
 
-export const parseDeepLink = (input: string) => {
-  const url = parseUrl(input)
-  if (!url) return
-  if (url.hostname !== "open-project") return
-  const directory = url.searchParams.get("directory")
-  if (!directory) return
-  return directory
+const isDelivery = (value: unknown): value is DeepLinkDelivery => {
+  if (typeof value !== "object" || value === null) return false
+  const link = value as Record<string, unknown>
+  return (
+    typeof link.deepLinkId === "string" &&
+    typeof link.directory === "string" &&
+    link.directory.length > 0 &&
+    typeof link.href === "string" &&
+    link.href.length > 0 &&
+    (link.prompt === undefined || typeof link.prompt === "string")
+  )
 }
 
-export const parseNewSessionDeepLink = (input: string) => {
-  const url = parseUrl(input)
-  if (!url) return
-  if (url.hostname !== "new-session") return
-  const directory = url.searchParams.get("directory")
-  if (!directory) return
-  const prompt = url.searchParams.get("prompt") || undefined
-  if (!prompt) return { directory }
-  return { directory, prompt }
-}
+const deliveriesFor = (deepLinkId: string, links: readonly unknown[]) =>
+  links.filter(isDelivery).filter((link) => link.deepLinkId === deepLinkId)
 
-export const collectOpenProjectDeepLinks = (urls: string[]) =>
-  urls.map(parseDeepLink).filter((directory): directory is string => !!directory)
+export const collectOpenProjectDeepLinks = (links: readonly unknown[]) => deliveriesFor("open-project", links)
 
-export const collectNewSessionDeepLinks = (urls: string[]) =>
-  urls.map(parseNewSessionDeepLink).filter((link): link is { directory: string; prompt?: string } => !!link)
+export const collectNewSessionDeepLinks = (links: readonly unknown[]) => deliveriesFor("new-session", links)
 
-type OpenCodeWindow = Window & {
-  __OPENCODE__?: {
-    deepLinks?: string[]
-  }
-}
-
-export const drainPendingDeepLinks = (target: OpenCodeWindow) => {
-  const pending = target.__OPENCODE__?.deepLinks ?? []
+export const drainPendingDeepLinks = (target: Window) => {
+  const pending = target.__alphaDeepLinks ?? []
   if (pending.length === 0) return []
-  if (target.__OPENCODE__) target.__OPENCODE__.deepLinks = []
+  target.__alphaDeepLinks = []
   return pending
 }

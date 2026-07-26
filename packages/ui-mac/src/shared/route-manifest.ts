@@ -211,6 +211,27 @@ export type DeepLinkRouteId = (typeof ROUTE_MANIFEST.deepLinks.routes)[number]["
 
 export const DEEP_LINK_SCHEMES = ROUTE_MANIFEST.deepLinks.schemes.map((scheme) => scheme.value)
 
+/**
+ * The single event name Alpha's shell uses to hand a decoded deep link to the renderer.
+ * The upstream layout listens for this name; `route-upstream-shape.test.ts` anchors its copy
+ * against this constant so the two cannot drift silently.
+ */
+export const DEEP_LINK_EVENT = "opencode:deep-link"
+
+/**
+ * What Alpha's main process forwards after the manifest has decoded an OS deep link: the
+ * decoded result, never the URL. Downstream consumers (including the upstream renderer) read
+ * these fields and therefore cannot own a second URL codec.
+ */
+export interface DeepLinkDelivery {
+  deepLinkId: DeepLinkRouteId
+  routeId: RouteId
+  directory: string
+  prompt?: string
+  /** Manifest-derived in-app route href — the only navigation target a consumer needs. */
+  href: string
+}
+
 export interface RouteIdentity {
   manifestVersion: typeof ROUTE_MANIFEST_VERSION
   routeId: RouteId
@@ -394,6 +415,39 @@ export function parseDeepLink(input: string): DeepLinkNavigation {
   const corrupt = candidates.find((candidate) => candidate.matched.kind === "corrupt")
   if (corrupt) return failedDeepLink({ code: "corrupt-deep-link", routeId: corrupt.entry.routeId })
   return failedDeepLink({ code: "unknown-route" })
+}
+
+/**
+ * Decode one OS deep link into the delivery Alpha forwards to the renderer. Anything the
+ * manifest does not recognise — foreign scheme, unknown host, corrupt or incomplete query —
+ * decodes to `undefined` and is dropped at the boundary (fail-closed, AC4).
+ */
+export function decodeDeepLink(input: string): DeepLinkDelivery | undefined {
+  const navigation = parseDeepLink(input)
+  if (!navigation.ok) return undefined
+  const route = navigation.route
+  const directory = "directory" in route ? route.directory : undefined
+  if (directory === undefined) return undefined
+  const prompt = "prompt" in route ? route.prompt : undefined
+  return {
+    deepLinkId: navigation.identity.deepLinkId,
+    routeId: navigation.identity.routeId,
+    directory,
+    ...(prompt === undefined ? {} : { prompt }),
+    href: navigation.routeHref,
+  }
+}
+
+/**
+ * The `/literal/:param` template a manifest entry declares (system surfaces have none).
+ * `route-upstream-shape.test.ts` compares this set against the upstream Route tree, so an
+ * upstream path-shape change fails loudly instead of drifting into a second route truth.
+ */
+export function manifestPathTemplate(entry: { location: RouteManifestEntry["location"] }): string | undefined {
+  if (entry.location.kind !== "path") return undefined
+  return `/${entry.location.path
+    .map((segment) => (segment.kind === "literal" ? segment.value : `:${segment.name}`))
+    .join("/")}`
 }
 
 export function matchAuthDeepLink(input: string): AuthDeepLinkMatch {

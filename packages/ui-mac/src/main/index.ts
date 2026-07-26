@@ -13,7 +13,7 @@ import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
-import { DEEP_LINK_SCHEMES, isDeepLink, parseDeepLink } from "../shared/route-manifest"
+import { DEEP_LINK_SCHEMES, decodeDeepLink, isDeepLink, type DeepLinkDelivery } from "../shared/route-manifest"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
@@ -161,7 +161,7 @@ const commitSidecarTokenGeneration = (forked: number, healthy: boolean) => {
 // 判断(它问的是继承事实,不是健康事实),与上面那个健康确认值刻意分开。
 let bootForkTokenGeneration = 0
 
-const pendingDeepLinks: string[] = []
+const pendingDeepLinks: DeepLinkDelivery[] = []
 
 function useEnvProxy() {
   try {
@@ -174,13 +174,14 @@ function useEnvProxy() {
 }
 
 function emitDeepLinks(urls: string[]) {
-  // Auth transport is consumed by the PKCE module. Application routes are validated and
-  // canonicalized by the manifest before the arm's-length upstream renderer receives them.
+  // Auth transport is consumed by the PKCE module. Everything else is DECODED here, by the
+  // manifest, and only the decoded delivery crosses into the arm's-length upstream renderer —
+  // so no second URL codec can exist downstream. Anything the manifest rejects is dropped.
   const forwarded = urls
     .filter((url) => !handleAuthDeepLink(url))
     .flatMap((url) => {
-      const navigation = parseDeepLink(url)
-      return navigation.ok ? [navigation.href] : []
+      const delivery = decodeDeepLink(url)
+      return delivery ? [delivery] : []
     })
   if (forwarded.length === 0) return
   pendingDeepLinks.push(...forwarded)

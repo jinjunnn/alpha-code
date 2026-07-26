@@ -16,7 +16,11 @@ import type {
 // #408:preload/index.ts 只许 import "./types"(ext-security-boundaries AC4③ 装载路径钉)—— wire 类型经此转口。
 export type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
-import type { ResolvedSurfaces, SurfaceId } from "../shared/alpha-surfaces"
+// Deep links reach the renderer already decoded by the route manifest — the wire carries the
+// delivery, never a URL, so no second codec can exist on the renderer side.
+import type { DeepLinkDelivery } from "../shared/route-manifest"
+export type { DeepLinkDelivery } from "../shared/route-manifest"
+import type { SurfaceId } from "../shared/alpha-surfaces"
 import type { RecoveryAction, RecoveryActionResult, RecoveryIncidentWire } from "../shared/recovery"
 import type {
   AlphaSettings,
@@ -467,7 +471,7 @@ export type ElectronAPI = {
   awaitInitialization: () => Promise<ServerReadyData>
   wslServers: WslServersAPI
   updater: UpdaterAPI
-  consumeInitialDeepLinks: () => Promise<string[]>
+  consumeInitialDeepLinks: () => Promise<DeepLinkDelivery[]>
   getDefaultServerUrl: () => Promise<string | null>
   setDefaultServerUrl: (url: string | null) => Promise<void>
   getDisplayBackend: () => Promise<LinuxDisplayBackend | null>
@@ -496,7 +500,7 @@ export type ElectronAPI = {
 
   getWindowCount: () => Promise<number>
   onMenuCommand: (cb: (id: string) => void) => () => void
-  onDeepLink: (cb: (urls: string[]) => void) => () => void
+  onDeepLink: (cb: (links: DeepLinkDelivery[]) => void) => () => void
 
   openDirectoryPicker: (opts?: {
     multiple?: boolean
@@ -533,10 +537,9 @@ export type ElectronAPI = {
   /** REQ-098:App 环境快照(只读)。main 启动时解析后冻结;此 IPC 无参数、无对应写面 —— renderer
    *  既不能伪造环境,也没有任何通道改写环境根(AC#6)。 */
   environment: () => Promise<AlphaEnvironmentInfo>
-  /** REQ-084/090:启动期 surface 选择 + crash admission。main 按 crashID 建立唯一 incident，
-   *  renderer 只能持有安全 Recovery DTO；失败 surface 留在 Alpha 区域，不得回退 legacy。 */
+  /** REQ-090:surface crash admission。main 按 crashID 建立唯一 incident，renderer 只能持有安全
+   *  Recovery DTO；失败 surface 留在 Alpha 区域(没有可回退的第二种组合)。 */
   surfaces: {
-    resolve: () => Promise<ResolvedSurfaces>
     reportFailure: (payload: { crashID: string; surface: SurfaceId }) => Promise<RecoveryIncidentWire>
   }
   getZoomFactor: () => Promise<number>

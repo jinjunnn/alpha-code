@@ -3,6 +3,13 @@ import { join, relative } from "node:path"
 
 const packageRoot = join(import.meta.dir, "../..")
 const sourceRoot = join(packageRoot, "src")
+const workspaceRoot = join(packageRoot, "../..")
+// The upstream renderer is held at arm's length, but its deep-link module is a surface Alpha
+// owns end to end (the manifest decodes; that module only consumes). Scan it for the deep-link
+// codec class specifically — the general href rules do not apply there, because upstream's own
+// sidebar legitimately writes its own route literals; that layer is contracted by path SHAPE in
+// route-upstream-shape.test.ts instead.
+const upstreamDeepLinkRoot = join(workspaceRoot, "packages/app/src/pages/layout")
 const ratchetPath = join(import.meta.dir, "route-authority-ratchet.test.ts")
 const routeManifestPath = join(import.meta.dir, "route-manifest.ts")
 const surfaceLedgerPath = join(import.meta.dir, "frontend-surface-manifest.ts")
@@ -60,6 +67,13 @@ function violationsFor(file: SourceFile) {
     violations.push({ path, rule: "removed legacy route ABI reference" })
   }
 
+  // Every route composes exactly one Alpha surface. The release-state machine that once let a
+  // route fall back to an upstream leaf (env override / userData pin / crash fallback) is gone
+  // and must not grow back.
+  if (/\bSURFACE_RELEASE_STATES\b|\bALPHA_SURFACE_(?:HOME|NEW_SESSION|SESSION)\b|\balpha-surfaces-resolve\b/.test(source)) {
+    violations.push({ path, rule: "removed legacy surface release flag" })
+  }
+
   // The frontend surface manifest is a descriptive ownership ledger: it does not register,
   // parse, or navigate routes. Executable route strings have only one exemption: the manifest.
   if (![routeManifestPath, surfaceLedgerPath].includes(file.path) && !/\.test\.[cm]?[jt]sx?$/.test(file.path)) {
@@ -92,14 +106,29 @@ function violationsFor(file: SourceFile) {
   return violations
 }
 
-async function alphaSources() {
-  const paths = await Array.fromAsync(new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: sourceRoot, absolute: true }))
+async function sourcesUnder(root: string) {
+  const paths = await Array.fromAsync(new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: root, absolute: true }))
   return Promise.all(
     paths
       .filter((path) => path !== ratchetPath)
       .sort()
       .map(async (path) => ({ path, source: await Bun.file(path).text() })),
   )
+}
+
+const DEEP_LINK_CODEC_RULES = [
+  { rule: "deep-link scheme literal outside the manifest", pattern: /["'`](?:opencode|alpha-code):\/\// },
+  { rule: "deep-link URL codec outside the manifest", pattern: /\bnew URL\s*\(|\.hostname\b|\bsearchParams\b/ },
+] as const
+
+function deepLinkViolationsFor(file: SourceFile): Violation[] {
+  if (/\.test\.[cm]?[jt]sx?$/.test(file.path)) return []
+  const source = withoutComments(file.source)
+  const path = relative(workspaceRoot, file.path)
+  return DEEP_LINK_CODEC_RULES.filter((entry) => entry.pattern.test(source)).map((entry) => ({
+    path,
+    rule: entry.rule,
+  }))
 }
 
 describe("Alpha route authority ratchet", () => {
@@ -123,6 +152,20 @@ describe("Alpha route authority ratchet", () => {
   })
 
   test("Alpha sources do not reintroduce a parallel route or deep-link codec", async () => {
-    expect((await alphaSources()).flatMap(violationsFor)).toEqual([])
+    expect((await sourcesUnder(sourceRoot)).flatMap(violationsFor)).toEqual([])
+  })
+
+  test("the upstream deep-link module stays a passthrough, not a second codec", async () => {
+    expect((await sourcesUnder(upstreamDeepLinkRoot)).flatMap(deepLinkViolationsFor)).toEqual([])
+  })
+
+  test("the deep-link detector bites on a revived upstream parser", () => {
+    const source = `
+      const url = new URL("opencode://new-session?directory=/tmp")
+      if (url.hostname === "new-session") dispatch(url.searchParams.get("directory"))
+    `
+    expect(
+      deepLinkViolationsFor({ path: join(upstreamDeepLinkRoot, "fixture.ts"), source }).map((entry) => entry.rule),
+    ).toEqual(["deep-link scheme literal outside the manifest", "deep-link URL codec outside the manifest"])
   })
 })

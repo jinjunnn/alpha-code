@@ -1,26 +1,8 @@
-// REQ-084:启动期 surface 选择的共享契约。三个路由叶(home / newSession / session)各带一个发布
-// 态(alpha / legacy);main 在 renderer 挂载路由树之前解析出每个 surface 的生效
-// 模式(alpha | legacy),renderer 经 IPC(window.api.surfaces.resolve)读一次。解析结果只在
-// 加载时生效 —— 运行中绝不热切换,改动(env / pin)一律下次加载才体现。
+// 三个路由叶(home / newSession / session)的共享身份。REQ-089 硬切之后**只有一种组合**:
+// 每个 surface 恒为 Alpha 自有叶 —— 没有 legacy 发布态,没有 env / pin 覆盖,也没有崩溃回退开关
+// (致命渲染错误进 Alpha Recovery,绝不改变 composition)。该 id 现在唯一的职责是给
+// SurfaceBoundary 与失败诊断记录一个稳定名字。
 // Pure constants only — NO electron/node imports — so both the main and renderer bundles can
 // import this module(镜像 shared/alpha-config.ts 的跨 bundle 模式)。
 
 export type SurfaceId = "home" | "newSession" | "session"
-export type SurfaceMode = "alpha" | "legacy"
-export type SurfaceReleaseState = "alpha" | "legacy"
-
-/** 单个 surface 的解析结果:生效模式 + 命中哪一层(env > pin > 发布默认)。 */
-export interface ResolvedSurface {
-  mode: SurfaceMode
-  reason: "release-default" | "env-override" | "pin"
-}
-export type ResolvedSurfaces = Record<SurfaceId, ResolvedSurface>
-
-/** 发布默认态 —— 改一个 surface 的出厂状态改这里(env/pin 只做部署期覆盖)。 */
-export const SURFACE_RELEASE_STATES: Record<SurfaceId, SurfaceReleaseState> = {
-  home: "alpha",
-  newSession: "alpha",
-  session: "alpha",
-}
-
-export const SURFACE_ABI_VERSION = 1

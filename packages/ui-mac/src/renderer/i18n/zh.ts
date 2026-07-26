@@ -1420,7 +1420,6 @@ export const dict = {
   "alpha.surfaceMap.noMatchesDetail": "清除筛选或换一个关键词。",
   "alpha.surfaceMap.mounted": "已挂载",
   "alpha.surfaceMap.runtime": "运行态",
-  "alpha.surfaceMap.releaseDefault": "发布默认",
   "alpha.surfaceMap.entrypoints": "入口",
   "alpha.surfaceMap.transitions": "跳转",
   "alpha.surfaceMap.title": "前端 Surface Map",
@@ -1434,6 +1433,5 @@ export const dict = {
   "alpha.surfaceMap.boot": "启动",
   "alpha.surfaceMap.owner": "所有者",
   "alpha.surfaceMap.mount": "挂载",
-  "alpha.surfaceMap.fallback": "回退",
   "alpha.surfaceMap.source": "来源",
 }

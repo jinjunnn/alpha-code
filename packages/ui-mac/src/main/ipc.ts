@@ -13,6 +13,7 @@ import type {
   SidecarGenerationState,
   TitlebarTheme,
 } from "../preload/types"
+import type { DeepLinkDelivery } from "../shared/route-manifest"
 import { getAlphaEnvironment } from "./alpha-environment"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { alphaUserWorkspaceDir, ensureUserWorkspaceDir } from "./alpha-user-workspace"
@@ -40,7 +41,7 @@ type Deps = {
   sidecarGenerationState: () => SidecarGenerationState
   relaunch: () => void
   awaitInitialization: () => Promise<ServerReadyData>
-  consumeInitialDeepLinks: () => Promise<string[]> | string[]
+  consumeInitialDeepLinks: () => Promise<DeepLinkDelivery[]> | DeepLinkDelivery[]
   getDefaultServerUrl: () => Promise<string | null> | string | null
   setDefaultServerUrl: (url: string | null) => Promise<void> | void
   getDisplayBackend: () => Promise<string | null>
@@ -339,6 +340,6 @@ export function sendMenuCommand(win: BrowserWindow, id: string) {
   win.webContents.send("menu-command", id)
 }
 
-export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
-  win.webContents.send("deep-link", urls)
+export function sendDeepLinks(win: BrowserWindow, links: DeepLinkDelivery[]) {
+  win.webContents.send("deep-link", links)
 }

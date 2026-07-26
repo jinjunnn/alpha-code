@@ -118,10 +118,11 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
     expect(sidebarCss).toContain('body[data-alpha-sidebar="collapsed"] .a-swk-topbar')
   })
 
-  test("keeps the release seam and existing Alpha Recovery boundary", () => {
-    expect(rendererIndex).toContain(`if (resolved?.session.mode !== "alpha") return undefined`)
-    expect(rendererIndex).toContain(`return alphaSessionWorkspaceSurface(projects)`)
-    expect(rendererIndex).toContain(`const session = productionRoutes.session.mount(resolved, alphaProjects)`)
+  test("keeps the single session composition and existing Alpha Recovery boundary", () => {
+    expect(rendererIndex).toContain(`session: (projects: AlphaProjectsApi) => alphaSessionWorkspaceSurface(projects)`)
+    expect(rendererIndex).toContain(
+      `[productionRoutes.session.surface]: productionRoutes.session.mount(alphaProjects)`,
+    )
     expect(upstreamApp).toContain(`function createTargetSessionRoute(`)
     expect(upstreamApp).toContain(`<TargetSessionRouteContent content={Content} />`)
     expect(upstreamApp).toContain(`<Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />`)

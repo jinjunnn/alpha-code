@@ -3,7 +3,7 @@ title: REQ-089 Alpha route manifest 成为唯一路由组合真相 — 路由架
 kind: design
 status: active
 owners: [alpha-code product and design maintainers]
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-25
 review_after: 2027-01-16
 ---
 
@@ -292,3 +292,44 @@ wiring 部分 + 子票 3 内删 session 的 legacy flag)**排序在 #181 翻转�
   翻转前,子票 2 的 session wiring 与子票 3 的 session legacy-flag 删除不落地;其余片可先行。
 
 因此 ready_disposition = **ready-blocked-on-owner**。
+
+---
+
+## §5 交付记录 —— #182 收尾(2026-07-25)与本稿的关系
+
+本节记录基线**已落地的部分**与它相对上文的差异,不新增权威:凡与 §1–§4 冲突处,以本节
+为**当前事实**(上文是设计意图的原始表述,保留以便追溯)。#494/#495/#496 已交付 manifest /
+`composeRoutes` / ownership ledger;#182 收掉最后三片残余。
+
+**A. 上游 path 形状 ratchet(§2 红旗对策落地)** ——
+`packages/ui-mac/src/shared/route-upstream-shape.test.ts` 从 `packages/app/src/app.tsx` 源码抽出
+整棵 `<Route>` 树(展平嵌套、展开可选段 `:id?`),与 `manifestPathTemplate()` 派生的模板做
+**集合相等**断言。只比形状不比参数名(上游 `:dir`/`:id` vs 清单 `:directory`/`:sessionId`),
+**不镜像 provider/layout** —— §2 点名的 re-sync 无底洞照旧不进。
+
+**B. deep-link codec 折入清单(§2「折码入清单」落地)** —— `deep-links.ts` 不再持有
+`new URL` + hostname 分派 + `directory`/`prompt` schema。改为:manifest 新增
+`decodeDeepLink()`,alpha main 解码后**只转发解码结果**(`DeepLinkDelivery` = deepLinkId /
+directory / prompt? / 清单派生的 route href),上游 renderer 侧退化为形状校验 + 分发的
+passthrough。事件名 `DEEP_LINK_EVENT` 归清单;packages/app 无法 import 清单,故其副本由
+`route-upstream-shape.test.ts` 的锚点钉住。ratchet(`route-authority-ratchet.test.ts`)新增
+扫描根 `packages/app/src/pages/layout/`,**只施加 deep-link codec 类规则**——该目录里上游自有
+侧栏合法地写自己的路由字面量,那一层由 A 的 path 形状契约管,不由 href 规则管。
+
+**C. legacy surface flag 硬切(§2「删 alias 层」落地,owner 2026-07-25 裁决)** ——
+`SurfaceMode`/`SurfaceReleaseState`/`SURFACE_RELEASE_STATES`、`ALPHA_SURFACE_*` env 覆盖、
+userData pin、`surfaces.resolve` IPC、renderer 三处 `mode !== "alpha"` 闸门、ledger 的
+`fallback` 字段**全部删除**;`SurfaceId` 只作 SurfaceBoundary 与失败诊断的稳定名字。
+**逃生阀连同崩溃回退一并删**(无真实用户、无向后兼容):致命路径按 AC4 进 Alpha Recovery。
+旧版留下的 pin 字段读掉即弃,不改变 composition。ratchet 新增一条防回潮规则。
+`docs/design/system/{patterns,replacing-opencode}.md` 里描述该机器的段落已同步改写;
+`docs/design/2026-07-24-session-seam-baseline.md` 中"`ALPHA_SURFACE_SESSION` / pin 是启动期
+逃生阀"的表述**自本次交付起作废**(该稿是当时事实的记录,不回改)。
+
+**明确未做(与计划的偏离)** —— `packages/desktop/src/main/index.ts` 的
+`setAsDefaultProtocolClient("opencode")` **保持不动**。`packages/desktop` 相对 `origin/dev`
+的 alpha delta 恒为 0(上游外壳的参照副本,alpha 出货的是 `packages/ui-mac`),它也不依赖
+ui-mac —— 让上游外壳反向 import alpha 清单是依赖倒置,且首次改动会在 `packages/{app,ui}` 的
+补丁 SOT 之外制造一处长期 sync 冲突面。alpha 真正出货的外壳
+(`packages/ui-mac/src/main/index.ts`)早已 `DEEP_LINK_SCHEMES.forEach(...)` 从清单派生,
+ratchet 也扫得到它。

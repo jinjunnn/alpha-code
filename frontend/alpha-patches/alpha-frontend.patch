@@ -1173,7 +1173,7 @@ index c6fed8f6d..4ce6fd511 100644
          <Suspense>{props.children}</Suspense>
        </main>
 diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
-index 812a479b2..6e7261633 100644
+index 812a479b2..0660bac82 100644
 --- a/packages/app/src/pages/layout.tsx
 +++ b/packages/app/src/pages/layout.tsx
 @@ -1106,11 +1106,12 @@ export default function LegacyLayout(props: ParentProps) {
@@ -1190,7 +1190,55 @@ index 812a479b2..6e7261633 100644
      const run = ++dialogRun
      const module = settings.general.newLayoutDesigns()
        ? import("@/components/settings-v2")
-@@ -1348,7 +1349,7 @@ export default function LegacyLayout(props: ParentProps) {
+@@ -1256,32 +1257,33 @@ export default function LegacyLayout(props: ParentProps) {
+     if (navigate) return navigateToProject(directory)
+   }
+ 
+-  const handleDeepLinks = (urls: string[]) => {
++  // The shell decodes deep links against its route manifest and forwards the result, including
++  // the destination href — nothing is parsed or route-shaped here.
++  const handleDeepLinks = (links: readonly unknown[]) => {
+     if (!server.isLocal()) return
+ 
+-    for (const directory of collectOpenProjectDeepLinks(urls)) {
+-      void openProject(directory)
++    for (const link of collectOpenProjectDeepLinks(links)) {
++      void openProject(link.directory)
+     }
+ 
+-    for (const link of collectNewSessionDeepLinks(urls)) {
++    for (const link of collectNewSessionDeepLinks(links)) {
+       void openProject(link.directory, false)
+-      const slug = base64Encode(link.directory)
+       if (link.prompt) {
+-        setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(slug)), {
+-          prompt: link.prompt,
+-        })
++        setSessionHandoff(
++          SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(base64Encode(link.directory))),
++          { prompt: link.prompt },
++        )
+       }
+-      const href = link.prompt ? `/${slug}/session?prompt=${encodeURIComponent(link.prompt)}` : `/${slug}/session`
+-      navigateWithSidebarReset(href)
++      navigateWithSidebarReset(link.href)
+     }
+   }
+ 
+   onMount(() => {
+     const handler = (event: Event) => {
+-      const detail = (event as CustomEvent<{ urls: string[] }>).detail
+-      const urls = detail?.urls ?? []
+-      if (urls.length === 0) return
+-      handleDeepLinks(urls)
++      const detail = (event as CustomEvent<{ links?: unknown[] }>).detail
++      const links = detail?.links ?? []
++      if (links.length === 0) return
++      handleDeepLinks(links)
+     }
+ 
+     handleDeepLinks(drainPendingDeepLinks(window))
+@@ -1348,7 +1350,7 @@ export default function LegacyLayout(props: ParentProps) {
      const run = ++dialogRun
      void import("@/components/dialog-edit-project").then((x) => {
        if (dialogDead || dialogRun !== run) return
@@ -1199,7 +1247,7 @@ index 812a479b2..6e7261633 100644
      })
    }
  
-@@ -1879,9 +1880,9 @@ export default function LegacyLayout(props: ParentProps) {
+@@ -1879,9 +1881,9 @@ export default function LegacyLayout(props: ParentProps) {
      workspaceExpanded: (directory, local) => store.workspaceExpanded[directory] ?? local,
      setWorkspaceExpanded: (directory, value) => setStore("workspaceExpanded", directory, value),
      showResetWorkspaceDialog: (root, directory) =>
@@ -1211,6 +1259,221 @@ index 812a479b2..6e7261633 100644
      setScrollContainerRef: (el, mobile) => {
        if (!mobile) scrollContainerRef = el
      },
+diff --git a/packages/app/src/pages/layout/deep-links.ts b/packages/app/src/pages/layout/deep-links.ts
+index 5dca421f7..b22a1646e 100644
+--- a/packages/app/src/pages/layout/deep-links.ts
++++ b/packages/app/src/pages/layout/deep-links.ts
+@@ -1,50 +1,51 @@
++// Deep links are decoded by the Alpha shell's route manifest before they ever reach this
++// renderer. This module is the passthrough on the receiving end: it validates the shape of the
++// decoded deliveries and hands them to the layout. It owns no URL parsing, no scheme literal and
++// no route/query schema — those live in exactly one place now.
++//
++// The event name is the single wire constant this side must spell out (packages/app cannot import
++// from the shell). packages/ui-mac/src/shared/route-upstream-shape.test.ts anchors it against the
++// manifest so the two copies cannot drift apart silently.
+ export const deepLinkEvent = "opencode:deep-link"
+ 
+-const parseUrl = (input: string) => {
+-  if (!input.startsWith("opencode://")) return
+-  if (typeof URL.canParse === "function" && !URL.canParse(input)) return
+-  try {
+-    return new URL(input)
+-  } catch {
+-    return
+-  }
++export interface DeepLinkDelivery {
++  /** Which declared deep link this was — the shell's identity, not a hostname parsed here. */
++  deepLinkId: string
++  directory: string
++  prompt?: string
++  /** Ready-to-use in-app route href, derived from the same manifest that decoded the link. */
++  href: string
+ }
+ 
+-export const parseDeepLink = (input: string) => {
+-  const url = parseUrl(input)
+-  if (!url) return
+-  if (url.hostname !== "open-project") return
+-  const directory = url.searchParams.get("directory")
+-  if (!directory) return
+-  return directory
++declare global {
++  interface Window {
++    __alphaDeepLinks?: DeepLinkDelivery[]
++  }
+ }
+ 
+-export const parseNewSessionDeepLink = (input: string) => {
+-  const url = parseUrl(input)
+-  if (!url) return
+-  if (url.hostname !== "new-session") return
+-  const directory = url.searchParams.get("directory")
+-  if (!directory) return
+-  const prompt = url.searchParams.get("prompt") || undefined
+-  if (!prompt) return { directory }
+-  return { directory, prompt }
++const isDelivery = (value: unknown): value is DeepLinkDelivery => {
++  if (typeof value !== "object" || value === null) return false
++  const link = value as Record<string, unknown>
++  return (
++    typeof link.deepLinkId === "string" &&
++    typeof link.directory === "string" &&
++    link.directory.length > 0 &&
++    typeof link.href === "string" &&
++    link.href.length > 0 &&
++    (link.prompt === undefined || typeof link.prompt === "string")
++  )
+ }
+ 
+-export const collectOpenProjectDeepLinks = (urls: string[]) =>
+-  urls.map(parseDeepLink).filter((directory): directory is string => !!directory)
++const deliveriesFor = (deepLinkId: string, links: readonly unknown[]) =>
++  links.filter(isDelivery).filter((link) => link.deepLinkId === deepLinkId)
+ 
+-export const collectNewSessionDeepLinks = (urls: string[]) =>
+-  urls.map(parseNewSessionDeepLink).filter((link): link is { directory: string; prompt?: string } => !!link)
++export const collectOpenProjectDeepLinks = (links: readonly unknown[]) => deliveriesFor("open-project", links)
+ 
+-type OpenCodeWindow = Window & {
+-  __OPENCODE__?: {
+-    deepLinks?: string[]
+-  }
+-}
++export const collectNewSessionDeepLinks = (links: readonly unknown[]) => deliveriesFor("new-session", links)
+ 
+-export const drainPendingDeepLinks = (target: OpenCodeWindow) => {
+-  const pending = target.__OPENCODE__?.deepLinks ?? []
++export const drainPendingDeepLinks = (target: Window) => {
++  const pending = target.__alphaDeepLinks ?? []
+   if (pending.length === 0) return []
+-  if (target.__OPENCODE__) target.__OPENCODE__.deepLinks = []
++  target.__alphaDeepLinks = []
+   return pending
+ }
+diff --git a/packages/app/src/pages/layout/helpers.test.ts b/packages/app/src/pages/layout/helpers.test.ts
+index df87ddfec..d85435c8c 100644
+--- a/packages/app/src/pages/layout/helpers.test.ts
++++ b/packages/app/src/pages/layout/helpers.test.ts
+@@ -3,8 +3,7 @@ import {
+   collectNewSessionDeepLinks,
+   collectOpenProjectDeepLinks,
+   drainPendingDeepLinks,
+-  parseDeepLink,
+-  parseNewSessionDeepLink,
++  type DeepLinkDelivery,
+ } from "./deep-links"
+ import { type Session } from "@opencode-ai/sdk/v2/client"
+ import {
+@@ -37,75 +36,47 @@ const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
+   }) as Session
+ 
+ describe("layout deep links", () => {
+-  test("parses open-project deep links", () => {
+-    expect(parseDeepLink("opencode://open-project?directory=/tmp/demo")).toBe("/tmp/demo")
++  // The shell decodes deep links against its route manifest; this side only accepts the decoded
++  // deliveries, so the tests describe shape validation and dispatch, not URL parsing.
++  const openProject: DeepLinkDelivery = { deepLinkId: "open-project", directory: "/a", href: "/L2E" }
++  const newSession: DeepLinkDelivery = { deepLinkId: "new-session", directory: "/c", href: "/L2M/session" }
++  const newSessionWithPrompt: DeepLinkDelivery = {
++    deepLinkId: "new-session",
++    directory: "/d",
++    prompt: "ship it",
++    href: "/L2Q/session?prompt=ship%20it",
++  }
++
++  test("collects only open-project deliveries", () => {
++    expect(collectOpenProjectDeepLinks([openProject, newSession, newSessionWithPrompt])).toEqual([openProject])
+   })
+ 
+-  test("ignores non-project deep links", () => {
+-    expect(parseDeepLink("opencode://other?directory=/tmp/demo")).toBeUndefined()
+-    expect(parseDeepLink("https://example.com")).toBeUndefined()
+-  })
+-
+-  test("ignores malformed deep links safely", () => {
+-    expect(() => parseDeepLink("opencode://open-project/%E0%A4%A%")).not.toThrow()
+-    expect(parseDeepLink("opencode://open-project/%E0%A4%A%")).toBeUndefined()
+-  })
+-
+-  test("parses links when URL.canParse is unavailable", () => {
+-    const original = Object.getOwnPropertyDescriptor(URL, "canParse")
+-    Object.defineProperty(URL, "canParse", { configurable: true, value: undefined })
+-    try {
+-      expect(parseDeepLink("opencode://open-project?directory=/tmp/demo")).toBe("/tmp/demo")
+-    } finally {
+-      if (original) Object.defineProperty(URL, "canParse", original)
+-      if (!original) Reflect.deleteProperty(URL, "canParse")
+-    }
+-  })
+-
+-  test("ignores open-project deep links without directory", () => {
+-    expect(parseDeepLink("opencode://open-project")).toBeUndefined()
+-    expect(parseDeepLink("opencode://open-project?directory=")).toBeUndefined()
+-  })
+-
+-  test("collects only valid open-project directories", () => {
+-    const result = collectOpenProjectDeepLinks([
+-      "opencode://open-project?directory=/a",
+-      "opencode://other?directory=/b",
+-      "opencode://open-project?directory=/c",
++  test("collects only new-session deliveries, carrying the optional prompt", () => {
++    expect(collectNewSessionDeepLinks([openProject, newSession, newSessionWithPrompt])).toEqual([
++      newSession,
++      newSessionWithPrompt,
+     ])
+-    expect(result).toEqual(["/a", "/c"])
+   })
+ 
+-  test("parses new-session deep links with optional prompt", () => {
+-    expect(parseNewSessionDeepLink("opencode://new-session?directory=/tmp/demo")).toEqual({ directory: "/tmp/demo" })
+-    expect(parseNewSessionDeepLink("opencode://new-session?directory=/tmp/demo&prompt=hello%20world")).toEqual({
+-      directory: "/tmp/demo",
+-      prompt: "hello world",
+-    })
+-  })
+-
+-  test("ignores new-session deep links without directory", () => {
+-    expect(parseNewSessionDeepLink("opencode://new-session")).toBeUndefined()
+-    expect(parseNewSessionDeepLink("opencode://new-session?directory=")).toBeUndefined()
+-  })
+-
+-  test("collects only valid new-session deep links", () => {
+-    const result = collectNewSessionDeepLinks([
+-      "opencode://new-session?directory=/a",
+-      "opencode://open-project?directory=/b",
+-      "opencode://new-session?directory=/c&prompt=ship%20it",
+-    ])
+-    expect(result).toEqual([{ directory: "/a" }, { directory: "/c", prompt: "ship it" }])
++  test("drops anything that is not a complete delivery", () => {
++    const malformed = [
++      "opencode://open-project?directory=/a",
++      null,
++      undefined,
++      42,
++      { deepLinkId: "open-project" },
++      { deepLinkId: "open-project", directory: "", href: "/" },
++      { deepLinkId: "open-project", directory: "/a", href: "" },
++      { deepLinkId: "open-project", directory: "/a", href: "/L2E", prompt: 7 },
++    ]
++    expect(collectOpenProjectDeepLinks(malformed)).toEqual([])
++    expect(collectNewSessionDeepLinks(malformed)).toEqual([])
+   })
+ 
+-  test("drains global deep links once", () => {
+-    const target = {
+-      __OPENCODE__: {
+-        deepLinks: ["opencode://open-project?directory=/a"],
+-      },
+-    } as unknown as Window & { __OPENCODE__?: { deepLinks?: string[] } }
++  test("drains pending deliveries once", () => {
++    const target = { __alphaDeepLinks: [openProject] } as unknown as Window
+ 
+-    expect(drainPendingDeepLinks(target)).toEqual(["opencode://open-project?directory=/a"])
++    expect(drainPendingDeepLinks(target)).toEqual([openProject])
+     expect(drainPendingDeepLinks(target)).toEqual([])
+   })
+ })
 diff --git a/packages/app/src/pages/session.tsx b/packages/app/src/pages/session.tsx
 index 3ce284167..02f4c33c7 100644
 --- a/packages/app/src/pages/session.tsx
