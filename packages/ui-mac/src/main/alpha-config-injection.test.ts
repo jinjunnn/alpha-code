@@ -287,6 +287,14 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
     process.env.OPENCODE_ENABLE_EXA = "0" // 主权闸已经写过 "0",仍不足以关闭工具
   }
 
+  /** ext bundle 的真实落点替身(注入只把路径合并进 config.plugin,不读文件内容)。 */
+  const extPluginPath = () => {
+    const file = path.join(tmp, "alpha-ext", "plugin.js")
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, "export default async () => ({})\n")
+    return file
+  }
+
   const injectedPermissions = () => {
     const config: {
       permission?: Record<string, unknown>
@@ -315,13 +323,41 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
     givenPlatformPaysUnderUmbrella()
     process.env.ALPHA_WEBSEARCH_DISABLE = "1"
 
-    injectAlphaConfig(userData, undefined, "stable")
+    // #223 R3:kill-switch 下云工具的最终闸住在 ext 钩子里,所以云 server 只在 ext 在场时才注册。
+    injectAlphaConfig(userData, extPluginPath(), "stable")
 
     const config = injectedPermissions()
     expect(config.permission?.websearch).toBe("deny")
     expect(config.permission?.cloud_web_search).toBe("deny")
     expect(config.permission?.cloud_dispatch).toBeUndefined()
     expect(config.mcp?.cloud).toBeDefined()
+  })
+
+  // #223 R3 fail-closed:ext 没被装载 = 那条不可覆盖的最终闸不存在,而注入面的 permission deny
+  // 可被后置 agent/session allow 顶掉。此时宁可整个云 server 不注册(连兄弟工具一起损失),
+  // 也不放一个活的 web_search 出去。只在 kill-switch 下如此 —— 代付态的云工具是权威通道。
+  test("kill-switch 且 ext 未装载:云 server 整个不注册,并且出声", () => {
+    givenPlatformPaysUnderUmbrella()
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    const errors: unknown[][] = []
+    const original = console.error
+    console.error = (...args: unknown[]) => void errors.push(args)
+    try {
+      injectAlphaConfig(userData, undefined, "stable")
+    } finally {
+      console.error = original
+    }
+
+    expect(injectedPermissions().mcp?.cloud).toBeUndefined()
+    expect(errors.flat().join("\n")).toContain("refusing to register the cloud MCP server")
+  })
+
+  test("代付但无 kill-switch 时,ext 缺席不影响云 server 注册", () => {
+    givenPlatformPaysUnderUmbrella()
+
+    injectAlphaConfig(userData, undefined, "stable")
+
+    expect(injectedPermissions().mcp?.cloud).toBeDefined()
   })
 
   test("登出/BYOK:keyless 本地 websearch 保持可用(不误伤登出兜底)", () => {

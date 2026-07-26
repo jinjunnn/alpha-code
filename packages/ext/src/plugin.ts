@@ -12,6 +12,7 @@ import { injectFactorySkillPaths } from "./factory-paths"
 import { injectSkillGenerationPaths } from "./gen-skill-paths"
 import { rebrandSystem } from "./prompt-rebrand"
 import { validateCloudToolInput, validateCloudToolOutput } from "./cloud-contract-hook"
+import { assertWebSearchToolAllowed } from "./cloud-websearch-kill"
 
 /**
  * alpha-code backend isolation extension.
@@ -50,6 +51,10 @@ export const AlphaExt: Plugin = async (input) => {
 
   const ownHooks: Awaited<ReturnType<Plugin>> = {
     "tool.execute.before": async (hookInput, output) => {
+      // #223 R3:web search kill-switch 在云工具一侧的**最终**闸,必须是本钩子的第一句 ——
+      // 引擎在 `ctx.ask` 之前触发本钩子(普通 MCP 与 code-mode 两条路都是),抛出即终止调用,
+      // 且完全不查 permission ruleset。理由与边界见 cloud-websearch-kill.ts。
+      assertWebSearchToolAllowed(hookInput.tool)
       validateCloudToolInput(hookInput.tool, output.args)
     },
     "tool.execute.after": async (hookInput, output) => {

@@ -77,6 +77,9 @@ export function injectAlphaConfig(
     // ADR-009 B1 的「平台代付」判据(云 MCP URL + 密钥文件同在)。caps 事实、云 MCP 注册与
     // web search 主权 deny 三处共用同一个判据,不许各算各的。
     const platformPays = Boolean(process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN"))
+    // ADR-009 B2 的能力总闸。main 在每次 fork 前用同一个表达式判过一次并把判决写进
+    // `ALPHA_CLOUD_WEBSEARCH_DENY`(server.ts);这里重算是因为注入面自己也要用(见下方云 MCP 注册)。
+    const killSwitch = Boolean(process.env.ALPHA_WEBSEARCH_DISABLE)
     // 只记录本轮函数自己新放进 mcp 的名字;继承来的 OPENCODE_CONFIG_CONTENT 不是治理授权。
     const injectedMcpNames = new Set<string>()
 
@@ -282,11 +285,23 @@ export function injectAlphaConfig(
     //      because we attach our own capability token and must skip OAuth auto-detection.
     const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
     if (mcpUrl && platformPays) {
-      config.mcp = {
-        ...(config.mcp ?? {}),
-        cloud: materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN")),
+      // #223 R3 fail-closed:kill-switch 下 `cloud_web_search` 的**最终**闸住在 @alpha-code/ext 的
+      // tool.execute.before 钩子里(远端 MCP 无 per-tool 注册期过滤,permission deny 可被后置 allow
+      // 顶掉)。ext 没被装载时那个闸根本不存在,而引擎对插件装载失败是 log-and-continue
+      // (`opencode/src/plugin/index.ts`)—— 此时宁可整个云 server 不注册(连兄弟工具一起损失),
+      // 也不放一个活的 web_search 出去。这是诚实的降级,不是 AC4 的「误杀」:AC4 管的是闸生效时
+      // 的正常态。
+      if (killSwitch && !extPluginPath) {
+        console.error(
+          "[alpha-code#223] web search kill switch is set but @alpha-code/ext is not loaded — refusing to register the cloud MCP server (its cloud_web_search would have no unbypassable gate); sibling cloud tools are unavailable this fork",
+        )
+      } else {
+        config.mcp = {
+          ...(config.mcp ?? {}),
+          cloud: materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN")),
+        }
+        injectedMcpNames.add("cloud")
       }
-      injectedMcpNames.add("cloud")
     }
 
     // Remote MCP config only toggles whole servers, but the engine's global permission layer filters
@@ -294,7 +309,7 @@ export function injectAlphaConfig(
     // model-visible cloud_web_search ID and keep the cloud server plus sibling tools live.
     // #223:同一处也 deny 本地 `websearch` —— env 层的 keyless force-off 压不住
     // `OPENCODE_EXPERIMENTAL` umbrella(见 cloud-web-search.ts)。必须排在 agent 注入之后。
-    applyWebSearchDenies(config, { killSwitch: Boolean(process.env.ALPHA_WEBSEARCH_DISABLE), platformPays })
+    applyWebSearchDenies(config, { killSwitch, platformPays })
 
     // #395(Codex r11 pivot → 主权注入):把账本 disabled 的 mcp/agent 权威覆盖注入 OPENCODE_CONFIG_CONTENT
     // —— 它在引擎加载序 step 6(所有 in-scope 源之后:XDG / ~/.opencode / agent-md·plugin-script 自动

@@ -16,6 +16,31 @@ import { checksum } from "../util/encode"
 import { ToolRegistry } from "./registry"
 
 export const name = "websearch"
+
+/**
+ * ADR-009 B1/B2 主权判决送进引擎进程的通道(#223 R3 Blocker 1)。
+ *
+ * 这是**第二份**同名 `websearch` 注册:打包 sidecar 的 HttpApi 同时挂载 V2 Session 路由与
+ * Location 服务(`packages/opencode/src/server/routes/instance/httpapi/server.ts`),
+ * `location-services.ts` 装载 `BuiltInTools`,本文件的注册因此是**已挂载的活路径**。
+ * legacy 那份(`packages/opencode/src/tool/websearch.ts`)的最终闸对它不成立 —— R3 判 Blocker 1
+ * 未闭合正是因为主权信号只覆盖了一份副本。
+ *
+ * 名字在四个包里各写一份(core / opencode / ui-mac / ext 之间没有可共用的 alpha 依赖边),
+ * 漂移与「第三份副本」由 `packages/ui-mac/src/main/websearch-copies.test.ts` 的普查闸钉住。
+ */
+export const LOCAL_WEBSEARCH_DENY_ENV = "ALPHA_LOCAL_WEBSEARCH_DENY"
+
+/** fail-closed:除「缺省 / 空串 / `"0"`」外的任何取值都判为 deny。与 legacy 副本逐字同义。 */
+export function localWebSearchDenied(env: Record<string, string | undefined> = process.env) {
+  const value = env[LOCAL_WEBSEARCH_DENY_ENV]
+  return value !== undefined && value !== "" && value !== "0"
+}
+
+/** 模型可见的拒绝理由。明说「别重试」,否则模型会把它当成瞬时故障反复调用。 */
+export const LOCAL_WEBSEARCH_DENIED_MESSAGE =
+  "Web search is unavailable: the local keyless websearch tool is denied by alpha sovereignty (ADR-009 B1/B2 — the platform pays for search, or the web search kill switch is set). This is not a transient failure; do not retry. Use cloud_web_search if it is present, otherwise answer without web search and say so."
+
 export const NO_RESULTS = "No search results found. Please try a different query."
 export const EXA_URL = "https://mcp.exa.ai/mcp"
 export const PARALLEL_URL = "https://search.parallel.ai/mcp"
@@ -204,6 +229,15 @@ const layer = Layer.effectDiscard(
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: output.text }],
           execute: (input, context) => {
+            // #223 R3 Blocker 1:主权 deny 必须是**最终**规则,且必须覆盖**每一份**已挂载的
+            // websearch 执行副本。这一份走的是 V2 `PermissionV2` ruleset(下方 `permission.assert`)——
+            // 与 legacy 那份同病:任何排在注入的 deny 之后的 allow(agent 规则 / 持久化 session
+            // permission / ask 的 approved)都能顶掉它。所以闸放在**工具自身**的首行:它根本不查
+            // ruleset,因而没有任何 permission 规则能覆盖,也早于 permission.assert 的弹窗。
+            // `ToolFailure` 会被 `ToolRegistry.settle` 结算成模型可见的 tool error(registry.ts)。
+            if (localWebSearchDenied())
+              return Effect.fail(new ToolFailure({ message: LOCAL_WEBSEARCH_DENIED_MESSAGE }))
+
             const provider = selectProvider(context.sessionID, config, config.provider)
             return Effect.gen(function* () {
               yield* permission.assert({

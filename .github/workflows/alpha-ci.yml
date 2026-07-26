@@ -149,6 +149,13 @@ jobs:
             # 无需 exclude),上游那份继续受守。
             ':(exclude)packages/opencode/src/tool/websearch.ts'
             ':(exclude)packages/opencode/src/tool/mcp-websearch.ts'
+            # ADR-035 §1 追加(#223 R3 Blocker 1,2026-07-26):ADR-035 背景 §2 初版称 core 的 v2
+            # builtin websearch「永不挂载」——与事实不符。打包 sidecar 的 HttpApi 同时挂载 V2
+            # Session 路由与 Location 服务,core 的 BuiltInTools 里是**第二份已挂载的同名注册**,
+            # 不读主权信号、直接调 Exa/Parallel。主权最终闸必须覆盖每一份执行副本,故同类叶子
+            # 再收一个;接管面仅 execute 首行的闸。防第四份副本的普查闸见
+            # packages/ui-mac/src/main/websearch-copies.test.ts。
+            ':(exclude)packages/core/src/tool/websearch.ts'
           )
           changed="$(git diff --diff-filter=DMR --name-only origin/dev...HEAD -- $UPSTREAM_PATHS "${excludes[@]}")"
           if [ -n "$changed" ]; then

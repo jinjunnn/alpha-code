@@ -68,6 +68,10 @@ const EXACT = new Set([
   // **最终**拒绝 —— permission 规则(agent wildcard / 持久 session permission / approved)覆盖不了。
   // 非密钥:一个布尔判决,取值只有 1。
   "ALPHA_LOCAL_WEBSEARCH_DENY",
+  // #223 R3:云侧同一条通道(kill-switch 才置位)。@alpha-code/ext 的 tool.execute.before 钩子读它,
+  // 在 `ctx.ask` 之前拒掉 `cloud_web_search`(普通 MCP 与 code-mode 两条路都过这个钩子)——
+  // 远端 MCP 没有 per-tool 的注册期过滤,permission deny 又能被后置 allow 顶掉。同为布尔判决,非密钥。
+  "ALPHA_CLOUD_WEBSEARCH_DENY",
   // REQ-062 路线A 逃生门(ext 插件在引擎进程内读:T1 转写 + T3/T6 内容接管一键回退)
   "ALPHA_PROMPT_REBRAND_DISABLE",
   // REQ-065 修订:出厂技能目录(main 启动时算好,ext config hook 内存注入 —— 不落用户配置文件)

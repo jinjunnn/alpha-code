@@ -17,11 +17,26 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
 1. **E7 要求 web search 失败诚实**(设计基线
    [`docs/design/2026-07-22-e7-cloud-web-search-baseline.md`](../../../docs/design/2026-07-22-e7-cloud-web-search-baseline.md),
    决策见 [[ADR-009]] 决策 B):禁伪成功、任何非 2xx 一律 LOUD、云失败不静默切回 keyless。
-2. **打包端真正挂载的是 opencode 副本**。sidecar 服 `virtual:opencode-server` →
-   `packages/opencode/dist`(`ui-mac/electron.vite.config.ts`、`sidecar.ts`),`packages/core`
-   的 v2 builtin websearch **永不挂载**。所以失败诚实必须改
+2. **打包端挂载的是 opencode 副本**。sidecar 服 `virtual:opencode-server` →
+   `packages/opencode/dist`(`ui-mac/electron.vite.config.ts`、`sidecar.ts`)。所以失败诚实必须改
    `packages/opencode/src/tool/websearch.ts` 与它唯一的传输实现
-   `packages/opencode/src/tool/mcp-websearch.ts`,别处改了都是死码。
+   `packages/opencode/src/tool/mcp-websearch.ts`。
+
+   > **事实更正(2026-07-26,#223 R3 Blocker 1)**:本条初版续写「`packages/core` 的 v2 builtin
+   > websearch **永不挂载**」——**与事实不符,已作废**。同一个 opencode server 的 HttpApi 同时挂载
+   > V2 Session 路由与 Location 服务(`packages/opencode/src/server/routes/instance/httpapi/server.ts`
+   > 的 `SessionV2.node` / `buildLocationServiceMap()`),`packages/core/src/location-services.ts`
+   > 装载 `BuiltInTools`,其 deps 里就有 `WebSearchTool.node`
+   > (`packages/core/src/tool/builtins.ts`)。因此 `packages/core/src/tool/websearch.ts` 是**第二份
+   > 已挂载的同名 `websearch` 注册**:同样被 `OPENCODE_EXPERIMENTAL` 打开(其实注册本身无条件),
+   > 走自己的 `PermissionV2` 后直接调 Exa/Parallel。R2 把主权最终闸只放进 legacy 那一份,于是
+   > R3 判 Blocker 1 未闭合。收口见 §1 第三个被接管文件与 §后果。
+   >
+   > **教训已登记为类**:本仓「引擎 v1/v2 断层」已第三次现形(picker 走 v2 / 推理走 v1 /
+   > 配置信道不通 → 现在是工具注册双份)。因此本轮的守法不是再补一个实例,而是加一条**普查闸**:
+   > `packages/ui-mac/src/main/websearch-copies.test.ts` 钉住「全仓注册为 `websearch` 的源文件集合」
+   > 与「全仓直接引用 Exa/Parallel 端点的源文件集合」,并要求每一份注册都读同一个主权信号、
+   > 且闸排在任何 permission 交互/出网调用之前。出现第四份副本时它变红。
 3. **这两个文件当时的行为是两处失守**:`websearch.ts` 用
    `output: result ?? "No search results found…"` 把空/坏响应伪装成成功串;末尾
    `.pipe(Effect.orDie)` 把一切错误塌成匿名 defect(无类别、无状态、表现为工具崩溃)。
@@ -39,6 +54,25 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
 
 - `packages/opencode/src/tool/websearch.ts` —— 工具定义、provider 选路、失败结算。
 - `packages/opencode/src/tool/mcp-websearch.ts` —— MCP over HTTP 的请求/响应/失败映射。
+- `packages/core/src/tool/websearch.ts` —— **第二份已挂载的同名注册**(2026-07-26 追加,#223 R3
+  Blocker 1;同一裁决的延续,owner 2026-07-25 的「走 ADR-029 L3 文件级 exclude」口径不变)。
+  接管内容仅一处:`execute` 首行的主权最终闸(读同一个 `ALPHA_LOCAL_WEBSEARCH_DENY`)。
+
+  **为什么没有更窄的解**(逐条勘探,不是推断):
+
+  - **L0 接缝 / 插件钩子**:V2 的工具结算走 `packages/core/src/tool/registry.ts` 的 `settle`,
+    **不触发任何 plugin hook**(`tool.execute.before` 只存在于 V1 的 `session/tools.ts` 与
+    `tool/code-mode.ts`)。云工具那条路能用的钩子,在这条路上根本不存在。
+  - **注册期摘掉它**:`BuiltInTools`(`packages/core/src/tool/builtins.ts`)是**静态 deps 列表**,
+    删掉 `WebSearchTool.node` 既要改上游文件(同样是接管),又把工具**永久**去掉 —— 而主权判决
+    是**每次 fork 动态重算**的(登出/BYOK 必须还回 keyless,ADR-009 B1),静态删除违反需求。
+  - **permission 层**:V2 的 `PermissionV2` ruleset 与 V1 同病 —— 任何排在注入的 deny 之后的
+    allow 都赢,R2 已判定「可覆盖的 permission 不能证明能力真关」。
+  - **改 `registry.ts` / `location-services.ts`**:高 churn 的通用上游面,代价远超本票
+    (ADR-029 的整包/通用面禁区)。
+
+  代价与 §5 同口径:这个文件的上游 churn 与安全修复不再自动进入 alpha。它同为低频叶子
+  (工具实现,无人依赖其内部),且 alpha 的改动面只有首行一句闸 + 三个常量,re-freeze 成本最低。
 
 **刻意不接管上游测试文件**(2026-07-25 修正,#223 对抗审计 Minor 7):初版把
 `packages/opencode/test/tool/websearch.test.ts` 整文件加进 exclude 清单「随源接管」,但该文件里还
@@ -92,8 +126,8 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
 ### 3. 守卫形态(§3 要件)
 
 沿用 [[ADR-033]] 的**文件级 `:(exclude)`** 机制(不是 ADR-020 的整包移出——`packages/opencode`
-其余部分仍是高频同步面,必须继续被守着)。两处 exclude 清单同步加**这两条源文件**(测试文件不
-在内,理由见 §1),且必须保持一致:
+与 `packages/core` 其余部分仍是高频同步面,必须继续被守着)。两处 exclude 清单同步加**这三条源
+文件**(测试文件不在内,理由见 §1),且必须保持一致:
 
 - `.github/workflows/alpha-ci.yml` 的 `upstream-guard` job(CI 强制面)。
 - `scripts/alpha-check.sh` 的 `[1/3] north-star guard`(本地先手面,`.githooks/pre-push` 走它)。
@@ -107,15 +141,20 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
 
 ### 4. 回退方案(§3 要件)
 
-撤销接管走 L3 唯一写通道 = 受控 re-freeze:用某上游 ref 覆盖这两个文件 + 从两处 exclude 清单
-移除对应两行 + 删除 alpha 自有的 `test/tool/alpha-websearch-failure.test.ts` + 把失败诚实需求降级
-重表达(等 L2 patch 机制建成后改走 L2)。代价 = 回退本次失败映射,回到「一切错误塌成 defect」。
+撤销接管走 L3 唯一写通道 = 受控 re-freeze:用某上游 ref 覆盖这三个文件 + 从两处 exclude 清单
+移除对应三行 + 删除 alpha 自有的 `test/tool/alpha-websearch-failure.test.ts` /
+`packages/core/test/alpha-websearch-sovereignty.test.ts` /
+`packages/ui-mac/src/main/websearch-copies.test.ts` + 把失败诚实与主权闸需求降级重表达
+(等 L2 patch 机制建成后改走 L2)。代价 = 回退本次失败映射(回到「一切错误塌成 defect」)
+**并且**两份 websearch 副本同时回到「主权 deny 可被后置 permission 顶掉」。
 
 ### 5. 放弃白嫖范围声明(§3 的 L3 专属要件,单向门)
 
-这两个文件的**上游 churn 与安全修复不再自动进入 alpha**。具体放弃的白嫖面:上游对 Exa /
-Parallel 端点、MCP 请求形状、provider 选路策略的后续改动,以及这两个文件里的任何上游安全修复。
-吸收上游改进的唯一通道 = 受控 re-freeze(逐案评估)。**owner 2026-07-25 明示接受。**
+这三个文件的**上游 churn 与安全修复不再自动进入 alpha**。具体放弃的白嫖面:上游对 Exa /
+Parallel 端点、MCP 请求形状、provider 选路策略的后续改动(V1 与 V2 两份各自的),以及这三个文件
+里的任何上游安全修复。吸收上游改进的唯一通道 = 受控 re-freeze(逐案评估)。
+**owner 2026-07-25 明示接受前两个文件;第三个(`packages/core/src/tool/websearch.ts`)是同一裁决
+在 R3 事实更正后的延续 —— 同类叶子、同机制、改动面仅首行一句闸,未另开新的接管类别。**
 
 风险与缓解:端点/请求形状漂移的表现是**运行时失败**而非编译红。缓解 = 本次接管把失败改成
 LOUD 且带上游 body —— 端点变了会直接以可辨失败暴露,而不是像接管前那样塌成一个没有信息的
@@ -142,17 +181,30 @@ defect。这是本决策自带的 tripwire。
   先整块 `push(chunk)` 再判越界,上限只对「块小」的流有效:R2 喂入单个 3 MiB chunk,`Buffer.concat`
   实收 **3,145,728** 字节而声明上限是 **2,097,152**。现在最后一块只保留「剩余可读字节」
   (`subarray`),`MAX_BODY_BYTES` 是与块大小无关的**硬限**,由一条按字节精确断言的测试守住。
-- ✅ **主权 deny 的最终规则(#223 R2 Blocker 1)**:`websearch.ts` 的 `execute` 首行读
-  `ALPHA_LOCAL_WEBSEARCH_DENY`(由 `ui-mac` 的 `applyWebSearchSovereignty()` 每次 fork 前重算、
-  经 `sidecar-env.ts` 白名单进 sidecar)并直接以 `ToolFailure` 拒绝。它**不查 permission ruleset**,
-  因此 agent wildcard / 持久 session permission / `approved` 三条后置规则都覆盖不了它(裁决与
-  三条反向测试见 [[ADR-009]] 裁决 (b))。之所以落在本 ADR 已接管的文件里,是因为这是最窄的解:
-  零新增上游接管,不必改 `permission/index.ts` 的求值序,也不必改 `registry.ts` 的注册闸
-  (两者都在守卫内且是高 churn 的通用面)。本条**不扩大** §1 的接管范围。
+- ✅ **主权 deny 的最终规则(#223 R2 Blocker 1 + R3 补全)**:**两份**已挂载的 `websearch` 副本
+  (`packages/opencode/src/tool/websearch.ts` 与 `packages/core/src/tool/websearch.ts`)的 `execute`
+  首行都读 `ALPHA_LOCAL_WEBSEARCH_DENY`(由 `ui-mac` 的 `applyWebSearchSovereignty()` 每次 fork
+  前重算、经 `sidecar-env.ts` 白名单进 sidecar)并直接以 `ToolFailure` 拒绝。它们**不查 permission
+  ruleset**,因此 agent wildcard / 持久 session permission / `approved` 三条后置规则都覆盖不了
+  (裁决与反向测试见 [[ADR-009]] 裁决 (b))。
+  **2026-07-26 更正(R3 Blocker 1)**:初版这里写「`websearch.ts` 的 execute 首行」并据此声称能力
+  真关 —— 当时**只覆盖了 legacy 一份副本**,V2 Core 那份不读这个信号、走自己的 permission 后直接
+  调 Exa/Parallel。已按上文补齐,并加了防第四份副本的普查闸
+  (`packages/ui-mac/src/main/websearch-copies.test.ts`)。真实 V2 链路的回归证据在
+  `packages/core/test/alpha-websearch-sovereignty.test.ts`(真 `ToolRegistry.materialize()` +
+  `settle()`,含「显式 allow 的 ruleset 也顶不掉」与「permission 层根本没被咨询」两条)。
+- ⚠️ **这两条回归跑在 alpha 的合并闸之外**:`scripts/alpha-check.sh` 与 `alpha-ci.yml` 只跑
+  contracts-consumer / ext / ui-mac 三个包的测试,`packages/core` 与 `packages/opencode` 的测试
+  两处都不跑。因此本轮把**机制事实**(集合普查 + 闸的位置 + 上游次序前提)固化在 ui-mac 与 ext
+  的测试里 —— 那两处才是真的会拦住 PR 的地方;engine 侧那两个文件是**行为证据**,需人工跑
+  (`bun test test/alpha-websearch-sovereignty.test.ts`)。把 engine 测试纳入合并闸是独立议题,
+  不在本 ADR 范围。
 - ✅ 本地 `scripts/alpha-check.sh` 的 north-star 守卫与 CI 恢复 1:1,不再恒报假红。
 - ⚠️ **单向门**:两个文件脱离上游同步(含安全修复),re-freeze 是唯一吸收通道。
-- ⚠️ 接管面每多一处,「北极星」衡量的分母就小一点。本 ADR 的自限是**只收两个源文件**:云路径
-  (`catalog.ts` / `code-mode.ts`)与上游测试文件明确不收,理由已在 §1 记录,后续若要收须自己的 ADR。
+- ⚠️ 接管面每多一处,「北极星」衡量的分母就小一点。本 ADR 的自限是**只收三个源文件**(全部是
+  websearch 工具叶子):云路径(`catalog.ts` / `code-mode.ts`)、`session/tools.ts`、
+  `permission/index.ts`、`registry.ts`、`location-services.ts`、`builtins.ts` 与上游测试文件
+  **明确不收**,理由已在 §1 记录,后续若要收须自己的 ADR。
 - ⚠️ **云链路仍无失败分类**(#223 Major 2):`cloud_web_search` 的失败是 loud 且带完整 gateway
   body,但没有 HTTP 状态、没有统一 `error.code` —— 状态在平台薄壳被丢弃。归 **alpha-platform#105**。
   本仓以 `alpha-websearch-failure.test.ts` 的反向断言把这个事实钉住,防止文档再次跑到事实前面。

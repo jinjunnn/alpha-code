@@ -54,6 +54,10 @@ UPSTREAM_EXCLUDES=(
   # test/tool/alpha-websearch-failure.test.ts(新增文件不触发 --diff-filter=DMR,无需 exclude)。
   ':(exclude)packages/opencode/src/tool/websearch.ts'
   ':(exclude)packages/opencode/src/tool/mcp-websearch.ts'
+  # ADR-035 §1 追加(#223 R3 Blocker 1,2026-07-26):打包 sidecar 同时挂载 V2 Location 服务,
+  # core 的 BuiltInTools 里是**第二份已挂载的同名 websearch 注册**。主权最终闸必须覆盖每一份
+  # 执行副本,故同类叶子再收一个;接管面仅 execute 首行的闸。
+  ':(exclude)packages/core/src/tool/websearch.ts'
 )
 fail=0
 

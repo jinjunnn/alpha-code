@@ -5,7 +5,7 @@ import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { tryGetAlphaEnvironment } from "./alpha-environment"
-import { LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-search"
+import { CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-search"
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
 import { hasSecretFile, syncSecretFiles } from "./alpha-secret-files"
 import { loadAlphaSecrets } from "./alpha-secrets"
@@ -109,6 +109,12 @@ function captureKeylessWebSearchBaseline(source: Record<string, string | undefin
 export function applyWebSearchSovereignty(userDataPath: string) {
   const killSwitch = Boolean(process.env.ALPHA_WEBSEARCH_DISABLE)
   const platformPays = Boolean(process.env.ALPHA_CLOUD_MCP_URL) && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")
+  // #223 R3:云侧判决与本地侧分开 —— 平台代付时云工具正是**权威**通道,只有 kill-switch 才关它。
+  // 与本地那条同纪律:两个方向都写,判决由 main 在每次 fork 前同步落定,sidecar 只读不算。
+  // 不让 ext 直接读 `ALPHA_WEBSEARCH_DISABLE`:那样真值判定会在两个包里各写一份(main 用
+  // `Boolean(...)`,即 `"0"` 也算开),迟早漂移。
+  if (killSwitch) process.env[CLOUD_WEBSEARCH_DENY_ENV] = "1"
+  else delete process.env[CLOUD_WEBSEARCH_DENY_ENV]
   if (killSwitch || platformPays) {
     for (const key of KEYLESS_WEBSEARCH_FLAGS) process.env[key] = "0"
     // #223 R2(Blocker 1):env force-off 压不住 umbrella,注入的 permission deny 又能被后置的

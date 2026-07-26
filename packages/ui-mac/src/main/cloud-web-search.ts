@@ -9,6 +9,16 @@ export const LOCAL_WEB_SEARCH_TOOL_ID = "websearch"
  * 名字在两个包各写一份(ui-mac 不依赖 opencode),漂移由 `cloud-web-search.test.ts` 的字面量锁钉住。
  */
 export const LOCAL_WEBSEARCH_DENY_ENV = "ALPHA_LOCAL_WEBSEARCH_DENY"
+/**
+ * 云侧同一条通道(#223 R3)。`cloud_web_search` 是**远端 MCP 工具**,没有 alpha 能改的
+ * `execute` 首行可放闸,而 `ConfigMCPV1.Remote`(`packages/core/src/v1/config/mcp.ts`)只有
+ * 整 server 的 `enabled`,**没有 per-tool 过滤** —— 「注册期就不提供这个工具」在引擎侧不存在。
+ * 于是最终闸落在 alpha 自有的 ext 插件的 `tool.execute.before` 钩子
+ * (`packages/ext/src/cloud-websearch-kill.ts`):普通 MCP(`session/tools.ts`)与 code-mode
+ * (`tool/code-mode.ts`)两条路都在 `ctx.ask` **之前**触发它,钩子抛错即 die,
+ * 因此 agent/session 的后置 allow 与 `approved` 一概够不着。
+ */
+export const CLOUD_WEBSEARCH_DENY_ENV = "ALPHA_CLOUD_WEBSEARCH_DENY"
 
 type AgentConfig = { permission?: Record<string, unknown> }
 
@@ -29,7 +39,10 @@ export type WebSearchSovereignty = {
  * 把 ADR-009 的 web search 主权判决落到引擎 permission 层。
  *
  * - **云 `cloud_web_search`**:仅 kill-switch 时 deny(alpha-code#490)。`ConfigMCPV1.Remote`
- *   只支持整 server 开关,而整 server 关会误伤 `cloud_dispatch` 等兄弟工具。
+ *   只支持整 server 开关,而整 server 关会误伤 `cloud_dispatch` 等兄弟工具。**这层同样只是
+ *   可用性**(#223 R3):远端 MCP 工具最终走 `ctx.ask`,后置 allow / `approved` 都能顶掉它。
+ *   云侧不可覆盖的最终闸在 `packages/ext/src/cloud-websearch-kill.ts` 的 `tool.execute.before`
+ *   钩子,判决经 `CLOUD_WEBSEARCH_DENY_ENV` 过河。
  * - **本地 `websearch`**:kill-switch **或**平台代付时 deny。#223 对抗审计(2026-07-25)动态
  *   复现:env 层的 4 个 keyless flag force-off **压不住** umbrella —— 上游
  *   `runtime-flags.ts` 的 `enableExa = OPENCODE_EXPERIMENTAL || OPENCODE_ENABLE_EXA ||

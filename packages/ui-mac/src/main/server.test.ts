@@ -240,6 +240,32 @@ describe("web search sovereignty at sidecar fork (#621)", () => {
 
     expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBeUndefined()
   })
+
+  // #223 R3:云侧的同一条通道。`cloud_web_search` 是远端 MCP 工具,没有 alpha 能改的 execute
+  // 首行;最终闸在 @alpha-code/ext 的 tool.execute.before 钩子里,靠这个变量过河。它只在
+  // kill-switch 时置位 —— 平台代付态下云工具正是权威通道,不能连它一起关。
+  test("the kill switch ships a cloud verdict to the sidecar; platform-pays does not", async () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    preferAppEnv(userDataPath)
+    expect((await forkSidecar()).ALPHA_CLOUD_WEBSEARCH_DENY).toBe("1")
+
+    delete process.env.ALPHA_WEBSEARCH_DISABLE
+    applyAuthEnvLikeLogin()
+    const paying = await forkSidecar()
+    expect(paying.ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+    expect(paying.ALPHA_CLOUD_WEBSEARCH_DENY).toBeUndefined()
+  })
+
+  test("turning the kill switch back off clears the cloud verdict on the next fork", async () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+    expect((await forkSidecar()).ALPHA_CLOUD_WEBSEARCH_DENY).toBe("1")
+
+    delete process.env.ALPHA_WEBSEARCH_DISABLE
+
+    expect((await forkSidecar()).ALPHA_CLOUD_WEBSEARCH_DENY).toBeUndefined()
+  })
 })
 
 // #223 对抗审计 Major 3(2026-07-25):基线曾在**登录 shell env 合入之前**截取。上面那组用例
