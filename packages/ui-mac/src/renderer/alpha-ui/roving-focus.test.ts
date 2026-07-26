@@ -203,10 +203,12 @@ function keyboardContractBindings(source: string) {
  * `aria-activedescendant`):属性挂在输入框那一侧(alpha-composer.tsx),listbox 在这一侧,
  * 所以本文件的源码里永远不会出现那个属性,静态文本无从自证。
  *
- * 例外的正确性不由源码文本背书,由真实挂载测试背书:composer-a11y.test.ts 的
- * 「combobox expanded state and active descendant track ArrowDown and ArrowUp」按下 ↑↓ 后读回
- * `aria-activedescendant`,断言它指向的元素确实在这个 listbox 内、`role="option"`、
- * `aria-selected="true"`,并在 Escape 后消失 —— 可执行判据,不是字面量计数。
+ * 例外的正确性不由源码文本背书,由**挂载出货代码**的测试背书:
+ * test-component/alpha-composer-model.cases.ts 的「AlphaComposer 生产 combobox 无障碍绑定」
+ * 挂载生产 `AlphaComposerRuntime`,读生产 textarea `.a-comp-input` 上的 `aria-activedescendant`,
+ * 断言活动 id 非空、全 DOM 唯一,且指向这个 listbox 内 `role="option"` + `aria-selected="true"`
+ * 的元素,↑↓ 后仍然如此,Escape 后属性消失 —— 删掉 alpha-composer.tsx 那行绑定,该例立刻红。
+ * 测试自建 textarea 复刻一份绑定不算证据(C21 R3 F9):生产绑定被删,那种 harness 照样绿。
  *
  * 额度写死为 1:这个文件里再多一个复合控件,闸门照样红。
  */
@@ -281,7 +283,7 @@ describe("alpha-ui composite-role ratchet", () => {
 
   test("the cross-file combobox exception is one named file, capped at one widget", () => {
     const listbox = `<div id={listboxId} role="listbox"><button id={optionId(item)} role="option" /></div>`
-    // 例外按文件名开,且只开给它一处:真实性由 composer-a11y.test.ts 的真实挂载测试背书。
+    // 例外按文件名开,且只开给它一处:真实性由挂载生产 AlphaComposerRuntime 的组件测试背书。
     expect(compositeRoleOffender("composer-autocomplete.tsx", listbox)).toBeUndefined()
     // 同名文件换个目录、或任何别的文件,都拿不到这个额度(例外不是恒真)。
     expect(compositeRoleOffender("session-workspace/composer-autocomplete.tsx", listbox)).toContain("只接上 0 套")

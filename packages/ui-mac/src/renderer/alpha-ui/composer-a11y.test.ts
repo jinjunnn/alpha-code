@@ -6,17 +6,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { build } from "vite"
-import type {
-  AutocompleteHarness,
-  PermChipHarness,
-  render,
-  resetComposerA11yHarness,
-} from "./composer-a11y-test-runtime"
+import type { PermChipHarness, render, resetComposerA11yHarness } from "./composer-a11y-test-runtime"
 
 type TestRuntime = {
   render: typeof render
   PermChipHarness: typeof PermChipHarness
-  AutocompleteHarness: typeof AutocompleteHarness
   resetComposerA11yHarness: typeof resetComposerA11yHarness
 }
 
@@ -127,59 +121,7 @@ describe("composer accessibility behavior", () => {
     expect(document.activeElement).not.toBe(trigger)
   })
 
-  // 这条测试同时是 roving-focus.test.ts 里 `CROSS_FILE_COMBOBOX_EXCEPTIONS` 的兑现证据:
-  // composer-autocomplete.tsx 的 listbox 不走 roving tabIndex,而走 combobox 的
-  // aria-activedescendant —— 属性挂在这一侧的 textarea 上,静态闸门读不到关联,所以关联由这里
-  // 真实挂载后逐帧断言:活动 id 必须指向该 listbox 内一个 role="option" 且 aria-selected="true"
-  // 的元素,键盘移动后仍然如此,关闭后属性消失。
-  test("combobox expanded state and active descendant track ArrowDown and ArrowUp", async () => {
-    mount(() => runtime.AutocompleteHarness())
-    const textarea = document.querySelector<HTMLTextAreaElement>("textarea[role='combobox']")!
-    textarea.setSelectionRange(1, 1)
-    textarea.dispatchEvent(new InputEvent("input", { bubbles: true }))
-    await flush()
-
-    expect(textarea.getAttribute("aria-expanded")).toBe("true")
-    const listbox = document.getElementById(textarea.getAttribute("aria-controls")!)!
-    const initial = textarea.getAttribute("aria-activedescendant")!
-    expect(listbox.getAttribute("role")).toBe("listbox")
-    const activeOption = document.getElementById(initial)!
-    expect({
-      role: activeOption.getAttribute("role"),
-      selected: activeOption.getAttribute("aria-selected"),
-      insideListbox: listbox.contains(activeOption),
-    }).toEqual({ role: "option", selected: "true", insideListbox: true })
-
-    const two = Array.from(listbox.querySelectorAll<HTMLElement>("[role='option']")).find((option) =>
-      option.textContent?.includes("/two"),
-    )!
-    const twoId = two.id
-
-    keydown(textarea, "ArrowDown")
-    await flush()
-    const down = textarea.getAttribute("aria-activedescendant")!
-    expect(down).not.toBe(initial)
-    const downOption = document.getElementById(down)!
-    expect({
-      role: downOption.getAttribute("role"),
-      selected: downOption.getAttribute("aria-selected"),
-      insideListbox: listbox.contains(downOption),
-    }).toEqual({ role: "option", selected: "true", insideListbox: true })
-
-    keydown(textarea, "ArrowUp")
-    await flush()
-    expect(textarea.getAttribute("aria-activedescendant")).toBe(initial)
-
-    textarea.value = "/two"
-    textarea.setSelectionRange(4, 4)
-    textarea.dispatchEvent(new InputEvent("input", { bubbles: true }))
-    await flush()
-    expect(textarea.getAttribute("aria-activedescendant")).toBe(twoId)
-    expect(document.getElementById(twoId)?.textContent).toContain("/two")
-
-    keydown(textarea, "Escape")
-    await flush()
-    expect(textarea.getAttribute("aria-expanded")).toBe("false")
-    expect(textarea.hasAttribute("aria-activedescendant")).toBe(false)
-  })
+  // combobox(textarea ↔ autocomplete Menu)的证据不在本文件:harness 自建 textarea 会复刻一份
+  // 绑定,生产绑定被删掉照样绿(C21 R3 F9)。那条断言真实挂载生产 `AlphaComposerRuntime`,见
+  // test-component/alpha-composer-model.cases.ts 的「AlphaComposer 生产 combobox 无障碍绑定」。
 })

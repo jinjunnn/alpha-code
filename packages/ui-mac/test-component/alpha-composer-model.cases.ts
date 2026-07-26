@@ -2228,3 +2228,91 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
     toasts.dispose()
   })
 })
+
+// C21 R3 F9:roving-focus.test.ts 的 `CROSS_FILE_COMBOBOX_EXCEPTIONS` 由这一条兑现。
+// 例外放行 composer-autocomplete.tsx 的 listbox,理由是它走 combobox 的 aria-activedescendant,
+// 而属性挂在 alpha-composer.tsx 那一侧 —— 关联跨文件,静态文本无从自证。
+// 兑现证据必须落在**出货代码**上:本例挂载的是生产 `AlphaComposerRuntime`(与 app 同一条组件树),
+// 读的是生产 textarea `.a-comp-input` 上的属性。删掉生产的 `aria-activedescendant` 绑定 → 本例立刻红。
+// 用测试自建的 textarea 复刻一份绑定不算证据:那种 harness 在生产绑定被删后照样绿。
+describe("AlphaComposer 生产 combobox 无障碍绑定", () => {
+  const slashCommand = {
+    options: [
+      { id: "alpha.test.one", title: "One", slash: "one" },
+      { id: "alpha.test.two", title: "Two", slash: "two" },
+    ],
+    trigger: () => {},
+  } as unknown as AlphaComposerRuntimeProps["command"]
+
+  /** 活动 id 必须**非空**,且在全 DOM 里**唯一** —— IDREF 有歧义就无法证明它指认了哪一个 option。 */
+  function resolveActive(textarea: HTMLTextAreaElement) {
+    const id = textarea.getAttribute("aria-activedescendant")
+    expect(typeof id === "string" && id.length > 0).toBe(true)
+    const matches = [...document.querySelectorAll<HTMLElement>("[id]")].filter((element) => element.id === id)
+    expect(matches).toHaveLength(1)
+    return { id: id!, element: matches[0]! }
+  }
+
+  function typeInto(textarea: HTMLTextAreaElement, value: string) {
+    textarea.value = value
+    textarea.setSelectionRange(value.length, value.length)
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true }))
+  }
+
+  test("生产 textarea 的 aria-activedescendant 无歧义指向 Menu 内的活动 option,并随 ↑↓ 移动", async () => {
+    installApi()
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command: slashCommand,
+        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+      }),
+    )
+    const textarea = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")!
+    expect(textarea.getAttribute("role")).toBe("combobox")
+    expect(textarea.getAttribute("aria-autocomplete")).toBe("list")
+
+    typeInto(textarea, "/")
+    await waitFor(() => expect(textarea.getAttribute("aria-expanded")).toBe("true"))
+
+    const listbox = document.getElementById(textarea.getAttribute("aria-controls")!)!
+    expect(listbox.getAttribute("role")).toBe("listbox")
+    const initial = resolveActive(textarea)
+    expect({
+      role: initial.element.getAttribute("role"),
+      selected: initial.element.getAttribute("aria-selected"),
+      insideListbox: listbox.contains(initial.element),
+    }).toEqual({ role: "option", selected: "true", insideListbox: true })
+
+    const two = [...listbox.querySelectorAll<HTMLElement>("[role='option']")].find((option) =>
+      option.textContent?.includes("/two"),
+    )!
+    const twoId = two.id
+
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "ArrowDown" }))
+    await flush()
+    const down = resolveActive(textarea)
+    expect(down.id).not.toBe(initial.id)
+    expect({
+      role: down.element.getAttribute("role"),
+      selected: down.element.getAttribute("aria-selected"),
+      insideListbox: listbox.contains(down.element),
+    }).toEqual({ role: "option", selected: "true", insideListbox: true })
+
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "ArrowUp" }))
+    await flush()
+    expect(resolveActive(textarea).id).toBe(initial.id)
+
+    typeInto(textarea, "/two")
+    await waitFor(() => expect(textarea.getAttribute("aria-activedescendant")).toBe(twoId))
+    expect(document.getElementById(twoId)?.textContent).toContain("/two")
+
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape" }))
+    await flush()
+    expect(textarea.getAttribute("aria-expanded")).toBe("false")
+    expect(textarea.hasAttribute("aria-activedescendant")).toBe(false)
+    mounted.dispose()
+  })
+})
