@@ -505,13 +505,25 @@ const HTTP_REASONS = new Map<number, string>([
 ])
 
 /**
- * 「模型网关错误」证据门(R1 Blocker 修正):只认两种**明确**证据之一 ——
+ * 「模型网关错误」第一道门 = **工具类型**(R2 Blocker 修正):结构判据,不是词面。
+ * `502 Bad Gateway` / `504 Gateway Timeout` 是标准 HTTP 原因短语,任何 webfetch/
+ * curl 失败都可能带上;`gateway` 也随时出现在路径、命令名、主机名里 —— 所以对
+ * 执行路径根本不经过模型网关的工具(read/bash/webfetch/…),词面证据再强也不可能
+ * 是模型网关错误。白名单收窄到唯一真正经模型网关的工具:`task`(子代理会话的
+ * 模型调用失败沿 opencode task 工具 Effect.fail 传为本卡错误文本)。websearch 走
+ * Exa/Parallel 搜索 API、webfetch 抓任意网页、其余全是本地 FS/shell —— 都不进
+ * 白名单;未知/MCP 工具同样 fail-closed 归「工具执行失败」。
+ */
+const GATEWAY_CAPABLE_TOOLS = new Set(["task"])
+
+/**
+ * 第二道门 = 词面证据(R1 Blocker 修正,只对白名单工具适用):只认两种**明确**
+ * 证据之一 ——
  * ① 文本直接点名网关层(`网关` / `gateway`);
  * ② 模型词(`模型` / `model`)与模型路由层词(`代理` / `proxy` / `provider` /
  *   `baseURL`)同现。
- * 裸 URL、`api`、`http`、`endpoint`、单独的 `proxy`/`provider` 一律不算证据:
- * webfetch/curl 的普通 HTTP 失败、配置解析失败都曾被旧宽门整类误报成网关错误。
- * 证据不足 → 退回通用「工具执行失败」,保守优于误报。
+ * 裸 URL、`api`、`http`、`endpoint`、单独的 `proxy`/`provider` 一律不算证据。
+ * 任一道门不过 → 退回通用「工具执行失败」,保守漏报优于误报。
  */
 const GATEWAY_LAYER_WORD = /网关|\bgateway\b/i
 const MODEL_WORD = /模型|\bmodel\b/i
@@ -533,12 +545,14 @@ export interface ToolErrorSummary {
 }
 
 /**
- * 错误文本 → 标题行模型。纯函数,输入已是有界错误体。类别只看证据门;代码副标
- * 只报文本里**真实出现**的东西:独立 3 位状态码(表内,不吃 `v1.404` 粘连片段)
- * → `NNN · Reason`;只出现标准原因短语 → 只给短语本身,不反推数字(数据面没有
- * 状态字段,`Not Found` 反推成 `404` 是把推测显示成事实);都没有 → 无代码。
+ * (工具名, 错误文本)→ 标题行模型。纯函数,输入已是有界错误体。类别过双门:
+ * 工具类型白名单(结构)→ 词面证据;代码副标只报文本里**真实出现**的东西:
+ * 独立 3 位状态码(表内,不吃 `v1.404` 粘连片段)→ `NNN · Reason`;只出现标准
+ * 原因短语 → 只给短语本身,不反推数字(数据面没有状态字段,`Not Found` 反推成
+ * `404` 是把推测显示成事实);都没有 → 无代码。
  */
-export function toolErrorSummaryOf(message: string): ToolErrorSummary {
+export function toolErrorSummaryOf(tool: string, message: string): ToolErrorSummary {
+  if (!GATEWAY_CAPABLE_TOOLS.has(tool)) return { titleKey: TOOL_ERROR_TITLE_GENERIC }
   const scan = message.slice(0, TOOL_ERROR_SCAN_MAX_CHARS)
   if (!hasGatewayEvidence(scan)) return { titleKey: TOOL_ERROR_TITLE_GENERIC }
   for (const match of scan.matchAll(/(?<![\w.])(\d{3})(?![\w.])/g)) {

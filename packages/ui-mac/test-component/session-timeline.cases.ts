@@ -729,10 +729,19 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
           error: "E".repeat(4_001),
           time: { start: 0, end: 1 },
         }),
-        toolPartFixture("prt_m4", "bash", {
+        // 结构门(R2 Blocker):网关标题只可能出现在 task 卡(唯一经模型网关的
+        // 工具)—— 子代理会话的模型调用失败沿 task 工具传为本卡错误文本。
+        toolPartFixture("prt_m4", "task", {
           status: "error",
-          input: { command: "curl gateway/models" },
+          input: { description: "诊断构建失败", subagent_type: "explore" },
           error: gatewayError,
+          time: { start: 0, end: 1 },
+        }),
+        // 同样带 gateway 字样的 webfetch 失败(502 标准原因短语)必须停在通用标题。
+        toolPartFixture("prt_m5", "webfetch", {
+          status: "error",
+          input: { url: "https://example.com" },
+          error: "webfetch https://example.com failed: HTTP 502 Bad Gateway",
           time: { start: 0, end: 1 },
         }),
       ]),
@@ -771,7 +780,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
 
     // G4 帧形态:「模型网关错误」标题 + mono 代码副标 + 可触发的复制钮。
     // 代码副标只报文本里真实出现的短语,不把 Not Found 反推成 404(R1 Blocker)。
-    const gateway = host.querySelector("[data-alpha-tool-card][data-tool='bash'][data-status='error']")!
+    const gateway = host.querySelector("[data-alpha-tool-card][data-tool='task'][data-status='error']")!
     expect(gateway.querySelector(".a-tc-err-head")!.textContent).toContain("模型网关错误")
     expect(gateway.querySelector(".a-tc-err-code")!.textContent).toBe("Not Found")
     const copy = gateway.querySelector<HTMLButtonElement>("[data-alpha-tool-error-copy]")!
@@ -779,6 +788,13 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     copy.click()
     await flush()
     expect(copied).toEqual(["E".repeat(4_000), gatewayError])
+
+    // R2 Blocker 结构门:webfetch 的 502 Bad Gateway(标准 HTTP 原因短语自带
+    // gateway 字样)停在通用标题,不编造代码副标。
+    const fetchFail = host.querySelector("[data-alpha-tool-card][data-tool='webfetch'][data-status='error']")!
+    expect(fetchFail.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
+    expect(fetchFail.querySelector(".a-tc-err-head")!.textContent).not.toContain("模型网关错误")
+    expect(fetchFail.querySelector(".a-tc-err-code")).toBeNull()
   })
 
   test("edit diff 视图:jsdiff 行渲染 ±行号与 +/− 行;write 显示预览与总行数;补丁卡出徽章行", async () => {

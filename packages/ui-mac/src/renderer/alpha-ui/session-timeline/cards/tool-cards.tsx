@@ -313,8 +313,10 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
 // 重试 / 换模型:**登记跳过** —— 工具重跑没有 typed 通道,模型选择器的开合是
 // composer 的私有状态(alpha-composer 的 useChip,无对外开启入口)。没有现成
 // 会话命令入口就不接,不为它们新建链路、也不放只会假装可用的按钮。
-function ToolErrorHead(props: { message: string }) {
-  const summary = createMemo(() => toolErrorSummaryOf(props.message))
+function ToolErrorHead(props: { tool: string; message: string }) {
+  // 分类第一道门是工具类型(props.tool = SDK ToolPart.tool,数据面原生标识):
+  // 只有真正经模型网关的工具才可能出「模型网关错误」标题,词面证据是第二道门。
+  const summary = createMemo(() => toolErrorSummaryOf(props.tool, props.message))
   const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard
   const copy = () => {
     try {
@@ -520,7 +522,7 @@ export function TimelineToolCard(props: { part: ToolPart }) {
         {(err) => (
           <div class="a-tc-body">
             <div class="a-tc-err" role="alert">
-              <ToolErrorHead message={err().message} />
+              <ToolErrorHead tool={props.part.tool} message={err().message} />
               <Show when={open()}>
                 <div class="a-tc-error-body">
                   {err().message}
