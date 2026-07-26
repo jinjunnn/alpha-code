@@ -29,6 +29,22 @@
 //     the queue and is retried against the windows that are left. So does a batch held by a
 //     renderer that refuses a later delivery — unreachable with no lifecycle event is still gone.
 //
+// That retention is a PARK, not a promise, and it is bounded on both axes:
+//   * LIVENESS. Nothing guarantees the next document ever arrives — the reload can land on a page
+//     that mounts no layout, it can fail outright, and `render-process-gone` only pops a recovery
+//     dialog the user may ignore. Electron's `did-start-loading` says a load STARTED, never that a
+//     document mounted. So a park expires after `RENDERER_RETENTION_MS` and what it held goes back
+//     to the queue for whoever is still on screen. Without that the link sits in `inFlight` for the
+//     life of the process, because no existing window ever drains again on its own.
+//   * ORDER. While a batch is parked, no NEWER batch may be handed to anyone. Otherwise batch 2
+//     reaches the window still on screen immediately and batch 1 follows it whenever the park
+//     resolves, and the app acts on the two links backwards. Parked batches therefore hold their
+//     place in the delivery order, and the wait is bounded by the same retention window.
+//     Known residual: two renderers parked AT ONCE (a sidecar respawn reloads every window) each
+//     keep their own batch, so a document that mounts under one of them takes its own batch back
+//     while the other park is still blocking older work. Ordering between two windows that both
+//     died mid-delivery is not pinned; ordering at any one renderer, for one park, is.
+//
 // `acknowledge` is idempotent and identity-checked, and the identity is the set of renderers the
 // batch has EVER been handed to, not whoever holds it now: a batch is in exactly one of `pending`
 // or `inFlight`, an ack from a renderer the batch was never handed to is ignored, and an ack that
@@ -54,7 +70,22 @@ export interface DeepLinkQueueDeps {
    * `true` only means the transport accepted it — the batch is still owed an acknowledgement.
    */
   deliver: (rendererId: number, batch: DeepLinkBatch) => boolean
+  /**
+   * Run `expire` once, `delayMs` from now. The queue uses it for exactly one thing: ending a park.
+   * It is a dependency rather than a bare `setTimeout` because the park is what makes the retention
+   * safe — a queue that could not end one would hold a link forever — and a bound nothing can
+   * observe is a bound nobody tests.
+   */
+  schedule: (delayMs: number, expire: () => void) => void
 }
+
+/**
+ * How long a renderer that kept its id may keep batches nobody else can be given. Long enough to
+ * cover a reload or a crash-and-reload (both are sub-second when they work at all), short enough
+ * that a load which never mounts a document does not strand the user's link — or, because parks
+ * hold their place in the delivery order, the links behind it.
+ */
+export const RENDERER_RETENTION_MS = 10_000
 
 export interface DeepLinkQueue {
   /**
@@ -81,8 +112,9 @@ export interface DeepLinkQueue {
   /**
    * That renderer instance stopped being a live consumer. A stale id (already dropped, or never an
    * owner) is a no-op for ownership. `exit` decides what happens to what it never acknowledged:
-   * `"reloading"` keeps it on that renderer's books for its next document, `"gone"` returns it to
-   * the queue for the renderers still there. See `RENDERER_EXIT_BY_EVENT` for why.
+   * `"reloading"` parks it on that renderer's books for its next document — for at most
+   * `RENDERER_RETENTION_MS`, after which the queue stops waiting — and `"gone"` returns it to the
+   * queue for the renderers still there straight away. See `RENDERER_EXIT_BY_EVENT` for why.
    */
   rendererGone: (rendererId: number, exit: RendererExit) => void
 }
@@ -152,6 +184,10 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
   // owner: with two windows open, the newest one to have drained takes the stream, and closing it
   // hands the stream back to the one still on screen rather than stranding links in the buffer.
   const owners: number[] = []
+  // Renderers that kept their id but have no live document: a park. Their unacknowledged batches
+  // stay on their own books — nobody else may adopt them, because "it never got it" and "its ack is
+  // still on the wire" are indistinguishable — until their next document drains or the park expires.
+  const parked = new Set<number>()
   let nextBatchId = 1
 
   const hand = (batch: HeldBatch, rendererId: number) => {
@@ -171,11 +207,24 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
     inOrder(pending)
   }
 
+  /**
+   * The oldest parked batch — the line nothing newer may cross. A batch handed out ahead of it
+   * would be acted on first and then followed by the older link when the park resolves, which is
+   * the same delivery order the user's two clicks did NOT have.
+   */
+  const parkedFloor = () => {
+    let floor = Number.POSITIVE_INFINITY
+    for (const batch of inFlight) if (parked.has(batch.handedTo!) && batch.id < floor) floor = batch.id
+    return floor
+  }
+
   /** Push what is queued at the current owner, in order, until it refuses or nothing is left. */
   const flush = () => {
     while (pending.length > 0 && owners.length > 0) {
       const rendererId = owners[owners.length - 1]!
       const batch = pending[0]!
+      // Blocked behind a park, and only ever for the length of one: bounded delay, never reordering.
+      if (batch.id > parkedFloor()) return
       // A refusal means that renderer is not there any more — unreachable with no lifecycle event
       // is still gone. It stops being an owner AND gives back what it never acknowledged; leaving
       // that behind strands the older batch in `inFlight` for the life of the process while the
@@ -189,6 +238,17 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
       pending.shift()
       inFlight.push(batch)
     }
+  }
+
+  /**
+   * End a park the queue has waited long enough for. Stale timers are the norm — a park usually
+   * ends because the next document drained or the window was destroyed — so only a park still
+   * standing gives anything back.
+   */
+  const release = (rendererId: number) => {
+    if (!parked.delete(rendererId)) return
+    reclaim(rendererId)
+    flush()
   }
 
   const retire = (list: HeldBatch[], rendererId: number, batchId: number) => {
@@ -216,18 +276,27 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
     consumeInitial(rendererId) {
       const at = owners.indexOf(rendererId)
       if (at !== -1) owners.splice(at, 1)
-      // A fresh document is the only thing that can take over a batch no live owner is answerable
-      // for: this renderer's own batches held across a reload or a crash, plus anything a departed
-      // renderer left owing that no surviving window could be given. What a LIVE owner still holds
-      // stays with it — that is the ownership rule, and taking it here would be the second
-      // consumption this queue exists to prevent.
+      // Its next document is here, so this renderer's own park is over: what it kept comes back to
+      // it below, and it stops blocking anyone else.
+      parked.delete(rendererId)
+      const floor = parkedFloor()
+      // A fresh document takes over its OWN batches — held across a reload or a crash — plus
+      // anything a departed renderer left owing that no surviving window could be given. What
+      // another renderer still holds stays with it, whether that renderer is a LIVE owner or a
+      // PARKED one: in both cases an ack may simply be late, and taking the batch here would be the
+      // second consumption this queue exists to prevent. Parked is the case ownership-by-liveness
+      // gets wrong — nobody is live, and the batch is still not free.
       const taken: HeldBatch[] = []
       for (let index = inFlight.length - 1; index >= 0; index -= 1) {
         const batch = inFlight[index]!
-        if (batch.handedTo !== rendererId && owners.includes(batch.handedTo!)) continue
+        if (batch.handedTo !== rendererId && (owners.includes(batch.handedTo!) || parked.has(batch.handedTo!))) continue
         taken.push(inFlight.splice(index, 1)[0]!)
       }
-      taken.push(...pending.splice(0))
+      // Queued batches newer than a standing park wait behind it here too; a drain is a delivery
+      // like any other, and letting one jump the park is the same reordering `flush` refuses.
+      let queued = 0
+      while (queued < pending.length && pending[queued]!.id < floor) queued += 1
+      taken.push(...pending.splice(0, queued))
       inOrder(taken)
       owners.push(rendererId)
       for (const batch of taken) {
@@ -249,9 +318,17 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
     rendererGone(rendererId, exit) {
       const at = owners.indexOf(rendererId)
       if (at !== -1) owners.splice(at, 1)
-      // A reloading or crashed renderer keeps its id and its books: its next document drains them
-      // back. Only a retired id hands them over, because only then is there no next document.
-      if (exit === "gone") reclaim(rendererId)
+      if (exit === "gone") {
+        // A retired id: there is no next document, so there is nothing to wait for.
+        parked.delete(rendererId)
+        reclaim(rendererId)
+      } else if (!parked.has(rendererId) && inFlight.some((batch) => batch.handedTo === rendererId)) {
+        // It kept its id and still owes acknowledgements: park them for its next document, and
+        // start the clock that ends the wait if that document never mounts. A second lifecycle
+        // event (crash then reload) must not restart that clock — the bound is on the whole park.
+        parked.add(rendererId)
+        deps.schedule(RENDERER_RETENTION_MS, () => release(rendererId))
+      }
       flush()
     },
   }

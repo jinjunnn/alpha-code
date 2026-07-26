@@ -22,6 +22,9 @@ export const deepLinks = createDeepLinkQueue({
     contents.send("deep-link", batch)
     return true
   },
+  // Ends a park (see RENDERER_RETENTION_MS). `unref` because a pending retention timer must never
+  // be the reason the app is still alive at quit.
+  schedule: (delayMs, expire) => void setTimeout(expire, delayMs).unref(),
 })
 
 /** Attach one renderer's lifecycle to the queue. Called from `createMainWindow` — every window. */

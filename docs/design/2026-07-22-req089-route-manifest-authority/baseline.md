@@ -502,3 +502,52 @@ R4 判 R3 那一轮为 NOT-MERGE。F5 已判 FIXED 不再改动;下列三条闭�
   `packages/app` 侧 drain 的出口 —— 一条落在上游文件里的**新跨包回传线**,和本票的 main 侧仲裁
   是两件事。§5.2 末尾「残余边界(明示)」记的就是这条边界,现在它有了票号:#633,代码侧的注释
   钉在 `packages/ui-mac/src/renderer/index.tsx` 的 `acceptDeepLinks` 上。
+
+### §5.4 第五轮对抗审计(R5)驳回后的修正(2026-07-26)
+
+R5 判 desktop 门禁为 FIXED、A 项已由 [#633] 承接、B 项(`destroyed` 分支迟到 ack 的重投竞态)
+为 Major 非 Blocker 不门控。剩下两条,一条是真 bug,一条是判据边界该写死的地方。
+
+- **F1 —— 留存(park)必须同时有活性与顺序。** R4 让 reload/crash 的未 ack batch 留在原
+  renderer 名下,修掉了「立刻改派给另一个窗口」。但留存本身留了两个洞,R5 用生产
+  `createDeepLinkQueue` 实跑复现:
+  - **(a) 领养**。`consumeInitial` 的条件是「当前持有者不是活 owner 就接管」,而 reload 恰好
+    把持有者从 `owners` 里摘掉了。于是在迟到 ack 到达前,**任何**一个 document 先 drain(第三个
+    窗口、重新加载的第一个窗口、乃至它自己的新 document)都会把这个 batch 领走,原持有者随后
+    的 ack 撤不回已经交出去的副本 —— 还是消费两次。R5 的重放得到 `adoptedByW3=[1]`。
+  - **(b) 滞留**。若之后没有任何 document 在该 id 下 drain,旧 batch 永久留在 `inFlight`:既有
+    窗口不会主动再 `consumeInitial()`。而新 batch 期间可以正常发给别的窗口,等到该 renderer 终于
+    `destroyed` 时旧 batch 才补发 —— 用户看到 `2 → 1` 逆序。「reload 后立即 destroyed」能被
+    `gone → reclaim()` 救回,「加载到不挂 layout 的页面 / 加载失败 / crash 后不 reload」不能:
+    生产的 crash handler 只弹恢复对话框,Electron 的 `did-start-loading` 也只承诺**开始**加载。
+
+  现在把这个状态显式命名为 **park**(`parked: Set<rendererId>`),并给它两条判据:
+  - **活性**:park 最多存活 `RENDERER_RETENTION_MS`(10s),到点由注入的 `schedule` 触发
+    `release()`,把它还压着的 batch 交回队列重试。`schedule` 是依赖注入而不是裸 `setTimeout`,
+    因为「有界」如果不可观测就等于没有 —— 测试用手动时钟推进它。
+  - **顺序**:park 期间**没有更新的 batch 可以被交给任何人**(`flush` 与 `consumeInitial` 都按
+    `parkedFloor()` 卡住),等待时长因此被同一个 10s 上界兜住。领养条件同时补上
+    `parked.has(handedTo)`:活 owner 与 parked 持有者的 batch 都不可被第三方接管。
+  **明示残余**:两个 renderer **同时** park(sidecar respawn 会重载所有窗口)时,先挂载回来的
+  那个仍会取回自己的 batch,而另一个 park 还在压着更旧的 —— 两个都死在投递中途的窗口之间的
+  顺序不做保证;单个 park、单个 renderer 上的顺序做保证。执行测试两条:「新 document 先 drain、
+  旧 ack 后到」与「永不 drain」,各自单点回退变红(领养闸 / 顺序闸 / 排期各一次)。
+
+- **F7 —— 封掉点名的参数遮蔽与重导出别名,然后把边界写死。** R5 给的可执行假绿是
+  `;(consumeDeepLinks => { … })(rewired)`:`bindingsOf` 的形参正则要求标识符紧邻逗号或右括号,
+  **无括号箭头形参**因此完全在射程外,带类型注解 / 默认值 / rest / 解构的形参同理。现在形参那半
+  改成**区域判定**:先扫出「右括号后接 `=>`、`{` 或简单返回类型注解」的括号组,再看名字是否落在
+  区域内,形参自身长什么样就不再重要;无括号那一种单独一条正则。六种写法各有一条用例,退回 R4
+  正则时六条全红。另一条是**重导出别名**:`withoutImports` 会把 import 抹白,于是
+  `export { createDeepLinkConsumer as buildConsumer }` 这类模块对调用点判据完全隐形。在调用点封
+  它要写模块解析器;改在**创建侧**封只要一条 —— 工厂的名字只允许出现在两个文件(定义处与唯一调用
+  处),扫描面 `packages/app/src` + `packages/ui-mac/src`。真在树里种一个别名模块即变红。
+
+  **然后停在这里,并把边界写进 `route-authority-ratchet.test.ts` 文件头**:这条 ratchet 的职责是
+  **防漂移**(上游重排、后来者无意改动),**不是**防对抗性构造;**主判据是执行类测试**
+  `route-deep-link-consumer.test.ts`(跑真实生产 consumer,断言导航目标 == 从清单独立派生的
+  href)。文件头逐条列出**已知不覆盖**的构造类别:不指名工厂的动态取值(字符串拼接、
+  `import()` 运行时 specifier)、扫描面之外的重导出、layout.tsx `onMount` 之外挂载的第二 consumer
+  (对象属性 / JSX 内联 / 别的组件)、模板字面量 `${…}` 内的接线;并声明它**故意**向假红一侧偏
+  (`if (consumeDeepLinks) {` 会被读成再绑定)。继续追「对抗性不可绕」会把判据复杂化到无法维护,
+  超出本票 AC。

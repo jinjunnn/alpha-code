@@ -1,3 +1,33 @@
+// Route-authority ratchet — a SOURCE-TEXT gate, and the boundary of what that can mean.
+//
+// WHAT THIS IS FOR. Drift: an upstream release that reshuffles layout.tsx, a later contributor who
+// moves the deep-link wiring without knowing why it is shaped this way, a revived parallel route or
+// URL codec. Those changes are made in the open, and reading the source catches them.
+//
+// WHAT THIS IS NOT. A barrier against someone who is trying to get past it. Text rules on this
+// surface have now been walked three times (R3 rewrote the `navigate` callback, R4 aliased the
+// factory, R5 shadowed the binding with a parenthesis-free arrow parameter), and each fix bought a
+// smaller class than the one before. The escapes below are known and left open on purpose, because
+// closing them means writing a type-aware module resolver inside a test file, and an unmaintainable
+// gate is a gate that gets deleted:
+//   * a second consumer reached WITHOUT naming the factory — `mod["createDeepLink" + "Consumer"]`,
+//     a dynamic `import()` with an assembled specifier, any name produced at runtime;
+//   * a re-export planted outside the two roots scanned here (`packages/app/src` and this package's
+//     `src`) — a third workspace package, generated code, a patched dependency;
+//   * a second consumer MOUNTED somewhere other than layout.tsx's `onMount` — an object property, a
+//     JSX inline handler, another component, an effect in a different file;
+//   * wiring hidden inside a template literal's `${…}`: strings are skipped when parameter regions
+//     are scanned.
+// It also errs the other way on purpose: `if (consumeDeepLinks) {` reads as a re-binding. A false
+// red is a conversation; a false green is what this file exists to avoid, and it has produced three.
+//
+// SO THE PRIMARY JUDGEMENT IS ELSEWHERE. `route-deep-link-consumer.test.ts` EXECUTES the real
+// production consumer over a real manifest-decoded delivery and asserts the observed navigation
+// target equals the href the manifest derives independently. Any change to what the app actually
+// does — a rewritten target, a remapped delivery, a dropped link — moves that assertion, whatever
+// the source text says. This file pins only the one stretch that test cannot reach into: layout.tsx
+// handing the consumer its primitives and mounting it. Read a green here as "nothing drifted",
+// never as "no second consumer can exist".
 import { describe, expect, test } from "bun:test"
 import { join, relative } from "node:path"
 
@@ -17,6 +47,9 @@ const upstreamLayoutRoot = join(workspaceRoot, "packages/app/src/pages/layout")
 // the module; it may not re-become the consumer, because then the hand-assembled href would be
 // back in a file the full rule set cannot police.
 const upstreamLayoutFile = join(workspaceRoot, "packages/app/src/pages/layout.tsx")
+// The whole upstream renderer source: the search space for a module that re-exports the consumer
+// factory under a second name, which is the one alias route the call-site judgement cannot see.
+const upstreamAppRoot = join(workspaceRoot, "packages/app/src")
 const ratchetPath = join(import.meta.dir, "route-authority-ratchet.test.ts")
 const routeManifestPath = join(import.meta.dir, "route-manifest.ts")
 const surfaceLedgerPath = join(import.meta.dir, "frontend-surface-manifest.ts")
@@ -198,19 +231,84 @@ function withoutImports(source: string) {
 }
 
 /**
- * How many times `name` is BOUND in this source: a declaration, a function or arrow parameter, or
- * a catch clause. More than one means the uses below cannot be attributed to the consumer, because
- * two different variables answer to the same identifier. The parameter pattern requires the
- * closing paren to be followed by `=>` or `{` so that passing the consumer as an argument
- * (`makeEventListener(window, event, consumeDeepLinks)`) is not mistaken for re-binding it.
+ * Every parenthesised group that introduces a BODY: its closing paren is followed by `=>`, by `{`,
+ * or by a simple return-type annotation on the way to either. Parameter lists are the shape that
+ * matters, and reading them as regions rather than as one regex is what makes the parameter's own
+ * shape irrelevant — annotated, defaulted, rest, destructured, or renamed in a destructuring
+ * pattern all land inside the same region. Strings are skipped, so a paren inside one cannot open
+ * a region; brackets nest, so an annotation's own parens do not close the outer one early.
+ *
+ * Deliberately generous: `catch (e) {`, `if (x) {` and `for (…) {` are read as parameter lists too.
+ * Over-counting can only make `singleBinding` false — a red the author reads and explains — while
+ * under-counting is what silently lets a shadowed consumer through.
+ */
+function bodyIntroducingGroups(source: string) {
+  const groups: string[] = []
+  const open: number[] = []
+  let quote: string | undefined
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index]!
+    if (quote) {
+      if (char === "\\") index += 1
+      else if (char === quote) quote = undefined
+      continue
+    }
+    if (char === '"' || char === "'" || char === "`") quote = char
+    else if (char === "(") open.push(index)
+    else if (char === ")") {
+      const from = open.pop()
+      // `\w` and `[]` cover a plain annotation (`: void`, `: Ref<T>[]`); anything with its own
+      // parens or arrow in the return type is left to the arrow/brace forms above it.
+      if (from !== undefined && /^\s*(?::[\w\s$.<>,|&[\]]*)?(?:=>|\{)/.test(source.slice(index + 1, index + 200)))
+        groups.push(source.slice(from + 1, index))
+    }
+  }
+  return groups
+}
+
+/**
+ * How many times `name` is BOUND in this source: a declaration, a parameter in any shape, or a
+ * catch clause. More than one means the uses below cannot be attributed to the consumer, because
+ * two different variables answer to the same identifier.
+ *
+ * The parameter half is a region test rather than a pattern over the parameter itself. R5 walked
+ * the pattern version with `;(consumeDeepLinks => { … })(rewired)` — a single arrow parameter needs
+ * no parentheses at all — and the same hole was open for `(consumeDeepLinks: () => void)`,
+ * `(consumeDeepLinks = rewired)`, `(...consumeDeepLinks)` and `({ consumeDeepLinks })`. Passing the
+ * consumer as an argument (`makeEventListener(window, event, consumeDeepLinks)`) is still not a
+ * binding: that group introduces no body.
  */
 function bindingsOf(source: string, name: string) {
-  const patterns = [
+  // `\.\.\.` because a rest parameter puts a dot immediately before the name, and a dot is
+  // otherwise what tells a member access apart from an identifier.
+  const mentioned = new RegExp(`(^|[^\\w$.]|\\.\\.\\.)${name}\\b`)
+  const declared = [
     new RegExp(`\\b(?:const|let|var|function|class)\\s+${name}\\b`, "g"),
-    new RegExp(`\\((?:[^()]*,)?\\s*${name}\\s*(?:,[^()]*)?\\)\\s*(?:=>|\\{)`, "g"),
-    new RegExp(`\\bcatch\\s*\\(\\s*${name}\\b`, "g"),
-  ]
-  return patterns.reduce((total, pattern) => total + (source.match(pattern) ?? []).length, 0)
+    // The parenthesis-free arrow parameter, which no region can catch because there is no region.
+    new RegExp(`(^|[^\\w$.])${name}\\s*=>`, "g"),
+  ].reduce((total, pattern) => total + (source.match(pattern) ?? []).length, 0)
+  return declared + bodyIntroducingGroups(source).filter((group) => mentioned.test(group)).length
+}
+
+/**
+ * Which files may spell the factory's name at all — its definition and its one call site.
+ *
+ * `withoutImports` blanks the statement that would reveal an alias, so a module re-exporting the
+ * factory under a second name (`export { createDeepLinkConsumer as buildConsumer }`) is invisible
+ * to `deepLinkWiringIn`: layout.tsx's honest call still reads as the only one while a second
+ * consumer built from the alias registers first and drains the buffer before it. Closing that at
+ * the call site needs a module resolver. Closing it at the SOURCE needs only this, because a
+ * second exported name cannot come into existence without the factory's own name appearing in the
+ * file that creates it.
+ *
+ * Bounded to `packages/app/src` and this package's `src` — see the header for what that leaves out.
+ */
+function factoryNameSites(files: SourceFile[]) {
+  const mentions = new RegExp(`\\b${CONSUMER_FACTORY}\\b`)
+  return files
+    .filter((file) => !/\.test\.[cm]?[jt]sx?$/.test(file.path) && mentions.test(withoutComments(file.source)))
+    .map((file) => relative(workspaceRoot, file.path))
+    .sort()
 }
 
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim()
@@ -585,6 +683,68 @@ describe("Alpha route authority ratchet", () => {
     `)
 
     expect(shadowed.usage).toEqual({ listener: true, invoked: true, singleBinding: false })
+  })
+
+  // R5's executable false green, and the family it belongs to: the previous pattern demanded the
+  // identifier sit immediately next to a comma or the closing paren, so every parameter shape that
+  // is not a bare name walked straight past it — starting with the one that has no parentheses at
+  // all. Each of these mounts a DIFFERENT function under the same spelling.
+  test.each([
+    ["no parentheses at all", "consumeDeepLinks => {"],
+    ["a type annotation", "(consumeDeepLinks: () => void) => {"],
+    ["a default value", "(consumeDeepLinks = rewired) => {"],
+    ["a rest parameter", "(...consumeDeepLinks) => {"],
+    ["a destructuring pattern", "({ consumeDeepLinks }) => {"],
+    ["a renamed destructuring pattern", "({ inner: consumeDeepLinks }) => {"],
+  ])("a shadowing parameter written with %s is still a re-binding", (_shape, parameters) => {
+    const shadowed = deepLinkWiringIn(`
+      const consumeDeepLinks = createDeepLinkConsumer({${HONEST_DEPS}})
+      onMount(() => {
+        ;(${parameters}
+          makeEventListener(window, deepLinkEvent, consumeDeepLinks)
+          consumeDeepLinks()
+        })(rewired)
+      })
+    `)
+
+    expect(shadowed.usage).toEqual({ listener: true, invoked: true, singleBinding: false })
+  })
+
+  test("the consumer factory's name lives in exactly two files: its definition and its call site", async () => {
+    const sources = [...(await sourcesUnder(upstreamAppRoot)), ...(await sourcesUnder(sourceRoot))]
+
+    expect(factoryNameSites(sources)).toEqual([
+      "packages/app/src/pages/layout.tsx",
+      "packages/app/src/pages/layout/deep-links.ts",
+    ])
+  })
+
+  test("a module re-exporting the factory under a second name is seen, though the wiring is not", () => {
+    // The wiring judgement reads this call site as perfect: honest deps, one factory call, one
+    // binding, subscribed and drained. It is still defeated — the aliased consumer drains the
+    // buffer first and the honest one then drains nothing. The import that would give it away was
+    // blanked, so the alias has to be caught where it is CREATED instead.
+    const wiring = deepLinkWiringIn(`
+      import { buildConsumer } from "./layout/consumer-alias"
+      const consumeDeepLinks = createDeepLinkConsumer({${HONEST_DEPS}})
+      onMount(() => {
+        const rewired = buildConsumer({ buffer: () => rewritten(window) })
+        rewired()
+        makeEventListener(window, deepLinkEvent, consumeDeepLinks)
+        consumeDeepLinks()
+      })
+    `)
+    expect(wiring.foreign).toEqual([])
+    expect(wiring.usage).toEqual({ listener: true, invoked: true, singleBinding: true })
+
+    expect(
+      factoryNameSites([
+        {
+          path: join(upstreamLayoutRoot, "consumer-alias.ts"),
+          source: `export { createDeepLinkConsumer as buildConsumer } from "./deep-links"`,
+        },
+      ]),
+    ).toEqual(["packages/app/src/pages/layout/consumer-alias.ts"])
   })
 
   test("the consumer detector bites when dispatch moves back into layout.tsx", () => {

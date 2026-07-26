@@ -3,6 +3,7 @@ import {
   createDeepLinkQueue,
   trackRendererLifecycle,
   RENDERER_LIFECYCLE_EVENTS,
+  RENDERER_RETENTION_MS,
   type DeepLinkBatch,
   type DeepLinkQueue,
   type DeepLinkQueueDeps,
@@ -93,6 +94,10 @@ function renderer(id: number) {
 function harness(overrides: Partial<DeepLinkQueueDeps> = {}) {
   const auth: string[] = []
   const renderers = new Map<number, ReturnType<typeof renderer>>()
+  // A manual clock, so "the retention window expires" is a step in a test rather than a wall-clock
+  // wait. Nothing here fires on its own: time only moves when `advance` says so.
+  const timers: { at: number; run: () => void }[] = []
+  let now = 0
   const queue = createDeepLinkQueue({
     consumeAuth: (url) => {
       if (!url.startsWith("alpha-code://auth/")) return false
@@ -102,6 +107,7 @@ function harness(overrides: Partial<DeepLinkQueueDeps> = {}) {
     // Mirrors the production `deliver`: a renderer that is not reachable refuses, it does not
     // silently swallow — and one that IS reachable has only been handed the batch, not consumed it.
     deliver: (rendererId, batch) => renderers.get(rendererId)?.accept(batch) ?? false,
+    schedule: (delayMs, expire) => void timers.push({ at: now + delayMs, run: expire }),
     ...overrides,
   })
   return {
@@ -113,6 +119,14 @@ function harness(overrides: Partial<DeepLinkQueueDeps> = {}) {
       renderers.set(id, created)
       trackRendererLifecycle(created, queue)
       return created
+    },
+    /** Move the clock forward, running every retention timer that has come due, oldest first. */
+    advance(ms: number) {
+      now += ms
+      for (const timer of timers.splice(0).sort((left, right) => left.at - right.at)) {
+        if (timer.at <= now) timer.run()
+        else timers.push(timer)
+      }
     },
     /** Every delivery the app actually acted on, across every window. */
     consumed: () => [...renderers.values()].flatMap((win) => win.consumed),
@@ -509,6 +523,83 @@ describe("a batch in flight survives the renderer dying before it arrives", () =
     boot.receive(h.queue)
 
     expect(boot.consumed.map((link) => link.deepLinkId)).toEqual(["open-project", "new-session"])
+  })
+})
+
+/**
+ * A renderer that kept its id but has no live document holds a PARK, and a park is the state both
+ * halves of exactly-once get wrong if it is treated as "nobody owns this": free it too early and
+ * the delivery goes out twice, wait for it forever and the delivery never goes out at all. These
+ * tests pin both ends and the ordering the second one costs.
+ */
+describe("a parked batch is neither adopted early nor stranded forever", () => {
+  test("a new document draining first does not adopt it, and the late ack still retires it", () => {
+    // R5's counter-example to R4's fix. The reload no longer pushes the batch at the window still
+    // on screen — but nothing stopped the NEXT drain, from any window, from taking it: a third
+    // window, a reloaded first one, or the reloading renderer's own new document. The owner acted
+    // on the delivery and its ack is still on the wire, so every one of those is a second
+    // consumption the ack can no longer call back.
+    const h = harness()
+    const boot = h.open(BOOT)
+    boot.drain(h.queue)
+    const second = h.open(SECOND)
+    second.drain(h.queue) // the newer window owns the stream
+
+    h.queue.ingest([NEW_SESSION])
+    const held = second.consumeHoldingAck() // acted on; the acknowledgement has not landed yet
+    second.emit("did-start-loading", true) // main processes the reload first
+
+    const third = h.open(THIRD)
+    third.drain(h.queue) // a brand-new document drains while the park still stands
+    expect(third.consumed).toEqual([])
+    boot.drain(h.queue) // …and so does an existing window, which is just as much a new document
+    expect(boot.consumed).toEqual([])
+
+    for (const batch of held) h.queue.acknowledge(SECOND, batch.id) // the late ack finally lands
+    second.drain(h.queue) // the reloaded document finds nothing left to replay
+    expect(h.consumed()).toHaveLength(1)
+  })
+
+  test("a park nothing ever ends: the deadline releases it, and nothing newer overtook it", () => {
+    // The load lands on a page that mounts no layout, or fails, or the crash dialog is ignored:
+    // `did-start-loading`/`render-process-gone` promise a load STARTED, never a document mounted,
+    // and no existing window drains again on its own. So the park has to expire — and until it
+    // does, the batch behind it waits, or the window on screen acts on link 2 before link 1.
+    const h = harness()
+    const boot = h.open(BOOT)
+    boot.drain(h.queue)
+    const second = h.open(SECOND)
+    second.drain(h.queue)
+
+    h.queue.ingest([OPEN_PROJECT]) // batch 1, in flight to the owner…
+    second.emit("render-process-gone") // …which crashes and never mounts another document
+    h.queue.ingest([NEW_SESSION]) // batch 2 must not jump the queue
+    boot.receive(h.queue)
+    expect(boot.consumed).toEqual([])
+
+    h.advance(RENDERER_RETENTION_MS)
+    boot.receive(h.queue)
+
+    expect(boot.consumed.map((link) => link.deepLinkId)).toEqual(["open-project", "new-session"])
+    expect(h.consumed()).toHaveLength(2)
+  })
+
+  test("the next document arrives before the deadline: the expiry timer then releases nothing", () => {
+    const h = harness()
+    const boot = h.open(BOOT)
+    boot.drain(h.queue)
+    const second = h.open(SECOND)
+    second.drain(h.queue)
+
+    h.queue.ingest([NEW_SESSION])
+    second.emit("did-start-loading", true)
+    second.drain(h.queue) // the new document takes its own batch back, ending the park
+    expect(second.consumed).toHaveLength(1)
+
+    h.advance(RENDERER_RETENTION_MS) // the timer fires against a park that is already over
+    boot.receive(h.queue)
+    expect(boot.consumed).toEqual([])
+    expect(h.consumed()).toHaveLength(1)
   })
 })
 
