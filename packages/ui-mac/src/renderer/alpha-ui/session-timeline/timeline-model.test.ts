@@ -558,12 +558,30 @@ describe("#588 连接器提及(resource source → chip 段)", () => {
     expect(user.segments).toEqual([{ text: "GitHub", kind: "file" }, { text: " 对照" }])
   })
 
-  test("I7:超长来源名按帽截断", () => {
-    const segments = segmentUserText("x", [
-      { start: 0, end: 1, kind: "resource", label: "n".repeat(MENTION_LABEL_MAX_CHARS) },
-    ])
-    expect(segments[0]).toMatchObject({ kind: "resource" })
-    expect((segments[0] as { label?: string }).label!.length).toBe(MENTION_LABEL_MAX_CHARS)
+  test("I7:超长来源名走真实投影路径(mentionSpans)按帽截断", () => {
+    // 输入必须真的超帽,且经 projectTimelineRows → mentionSpans 的生产 slice 路径 ——
+    // 直接向 segmentUserText 传恰好等帽的 label 是伪闸门(审计 R1 Blocker:删掉生产
+    // 截断仍会绿)。
+    const rows = project([userMsg("msg_u1", 1000)], {
+      msg_u1: [
+        textPart("prt_u1", "msg_u1", "GitHub 对照 README.md 核对"),
+        resourceFile({
+          source: {
+            type: "resource",
+            clientName: "n".repeat(MENTION_LABEL_MAX_CHARS + 40),
+            uri: "github://issue/12",
+            text: { value: "GitHub", start: 0, end: 6 },
+          },
+        }),
+      ],
+    })
+    const user = rows[0]!
+    if (user.kind !== "user") throw new Error("expected user row")
+    expect(user.segments[0]).toEqual({
+      text: "GitHub",
+      kind: "resource",
+      label: "n".repeat(MENTION_LABEL_MAX_CHARS),
+    })
   })
 })
 
@@ -584,6 +602,14 @@ describe("#591 富脚注 provider 与效率段", () => {
     const cold = { input: 1000, output: 200, reasoning: 0, cache: { read: 0, write: 0 } }
     expect(withTokens(cold)?.cacheHit).toBeUndefined()
     expect(withTokens({ ...cold, cache: { read: -5, write: 0 } } as never)?.cacheHit).toBeUndefined()
+  })
+
+  test("分母含 cache.write:session.ts 已把 input 规范化为非缓存输入,漏 write 档位会偏高", () => {
+    // 审计 R1 Blocker 反例:input=500/read=200/write=300 → 完整提示词 1000,命中 20%
+    // (旧算式 read/(read+input)=200/700 会给出 29%)。
+    expect(withTokens({ input: 500, output: 100, reasoning: 0, cache: { read: 200, write: 300 } })?.cacheHit).toBe(20)
+    // write 非法(负数/缺席)按 0 计,不放大也不吞掉命中率。
+    expect(withTokens({ input: 1000, output: 100, reasoning: 0, cache: { read: 1000, write: -7 } } as never)?.cacheHit).toBe(50)
   })
 })
 

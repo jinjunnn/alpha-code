@@ -45,7 +45,11 @@ const harnessIntents = {
     return intentsEnabled() ? (intent: TimelineOpenFileIntent) => intentLog.openFile.push(intent) : undefined
   },
   get continueTurn() {
-    return intentsEnabled() ? () => (intentLog.continueTurn += 1) : undefined
+    return intentsEnabled()
+      ? () => {
+          intentLog.continueTurn += 1
+        }
+      : undefined
   },
 }
 

@@ -1182,6 +1182,7 @@ export const dict = {
   "alpha.timeline.interrupted": "已由你停止",
   "alpha.timeline.continueTurn": "继续生成",
   "alpha.timeline.continuePrompt": "继续",
+  "alpha.timeline.continueFailed": "发送失败,请重试",
   "alpha.timeline.loadOlder": "加载更早的消息",
   "alpha.timeline.loadingOlder": "正在加载更早的消息…",
   "alpha.timeline.jumpLatest": "回到最新",

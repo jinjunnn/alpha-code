@@ -177,6 +177,11 @@
   box-shadow: var(--a-ring-focus);
 }
 
+/* 续发失败:admission 前被拒不产生 session_status 事件,只能就地呈现(点击续钮即重试并清除)。 */
+.a-tl-int-failed {
+  color: var(--a-error);
+}
+
 /* ── 用户侧 ───────────────────────────────────────────────────────────── */
 .a-tl-user {
   display: flex;

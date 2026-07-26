@@ -84,6 +84,51 @@ mock.module("@opencode-ai/session-ui/markdown", () => ({
   },
 }))
 
+// ── #589 真闸门的假环境(审计 R1 Blocker:旧闸门只断言测试桩,没执行生产 handler)──
+// typed hooks/路由/live context 以受控假件供给,生产绑定层(session-timeline.tsx 的
+// AlphaSessionTimeline)原样执行;闸门在 SDK 层观察真实请求参数。本 cases 文件由
+// session-timeline.test.ts spawn 在独立 bun 子进程运行,module mock 不泄漏进主进程。
+const BINDING_SESSION_ID = "ses_live"
+const sdkPromptCalls: unknown[] = []
+let sdkPromptImpl: () => Promise<unknown> = () => Promise.resolve({})
+const bindingData: {
+  message: Record<string, unknown[]>
+  part: Record<string, unknown[]>
+  session_status: Record<string, { type: string }>
+} = { message: {}, part: {}, session_status: {} }
+
+mock.module("@opencode-ai/app", () => ({
+  useServerSDK: () => () => ({
+    client: {
+      v2: {
+        session: {
+          prompt: (args: unknown) => {
+            sdkPromptCalls.push(args)
+            return sdkPromptImpl()
+          },
+        },
+      },
+    },
+  }),
+  useServerSync: () => () => ({
+    session: {
+      sync: () => Promise.resolve(),
+      data: bindingData,
+      history: { more: () => false, loading: () => false, loadMore: () => Promise.resolve() },
+    },
+  }),
+}))
+mock.module("@solidjs/router", () => ({ useNavigate: () => () => {} }))
+mock.module("../src/renderer/alpha-ui/session-workspace/alpha-session-workspace", () => ({
+  useAlphaSessionLiveContext: () => ({
+    current: () => ({
+      identity: { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: BINDING_SESSION_ID },
+      title: "整理架构说明",
+    }),
+    accepts: () => true,
+  }),
+}))
+
 Bun.plugin({
   name: "session-timeline-component-test",
   setup(builder) {
@@ -103,6 +148,7 @@ Bun.plugin({
 
 const runtime = await import("../src/renderer/alpha-ui/session-timeline/session-timeline-test-runtime")
 const model = await import("../src/renderer/alpha-ui/session-timeline/timeline-model")
+const binding = await import("../src/renderer/alpha-ui/session-timeline/session-timeline")
 
 const disposers: Array<() => void> = []
 
@@ -1492,6 +1538,107 @@ describe("#589 中断态:左对齐安静行 + 继续生成", () => {
     expect(row.classList.contains("a-tl-divider")).toBe(true)
     expect(row.querySelector(".a-tl-divider-pill")!.textContent).toBe("上下文已压缩")
     expect(host.querySelector(".a-tl-int-continue")).toBeNull()
+  })
+})
+
+describe("#589 真实继续生成闸门(生产绑定层挂载,SDK 层观察)", () => {
+  function primeInterruptedBinding(statusType?: string) {
+    sdkPromptCalls.length = 0
+    bindingData.message[BINDING_SESSION_ID] = [
+      {
+        id: "msg_bu1",
+        sessionID: BINDING_SESSION_ID,
+        role: "user",
+        time: { created: 1000 },
+        agent: "build",
+        model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+      },
+      {
+        id: "msg_ba1",
+        sessionID: BINDING_SESSION_ID,
+        role: "assistant",
+        time: { created: 10, completed: 20 },
+        parentID: "msg_bu1",
+        modelID: "deepseek-reasoner",
+        providerID: "deepseek",
+        mode: "build",
+        agent: "build",
+        path: { cwd: "/tmp", root: "/tmp" },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        error: { name: "MessageAbortedError", data: { message: "" } },
+      },
+    ]
+    bindingData.part["msg_bu1"] = [
+      { id: "prt_bu1", sessionID: BINDING_SESSION_ID, messageID: "msg_bu1", type: "text", text: "开始" },
+    ]
+    bindingData.part["msg_ba1"] = [
+      { id: "prt_bt1", sessionID: BINDING_SESSION_ID, messageID: "msg_ba1", type: "text", text: "写到一半" },
+    ]
+    if (statusType) bindingData.session_status[BINDING_SESSION_ID] = { type: statusType }
+    else delete bindingData.session_status[BINDING_SESSION_ID]
+  }
+
+  function mountBinding() {
+    const host = document.createElement("div")
+    document.body.append(host)
+    disposers.push(solidWeb.render(() => binding.AlphaSessionTimeline(), host))
+    return host
+  }
+
+  /** 一个宏任务:把 rejection→catch→signal 的整条微任务链清干净。 */
+  async function settle() {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  test("续钮执行生产 handler:v2.session.prompt 收到本会话 ID 与继续文案", async () => {
+    primeInterruptedBinding()
+    sdkPromptImpl = () => Promise.resolve({})
+    const host = mountBinding()
+    await settle()
+
+    const cont = host.querySelector<HTMLButtonElement>(".a-tl-int-continue")
+    expect(cont).not.toBeNull()
+    cont!.click()
+    await settle()
+
+    expect(sdkPromptCalls).toEqual([{ sessionID: BINDING_SESSION_ID, prompt: { text: "继续" } }])
+    expect(host.querySelector(".a-tl-int-failed")).toBeNull()
+  })
+
+  test("续发失败(admission 前拒绝,无任何 session_status 事件)不再静默:就地失败提示,重试成功即清除", async () => {
+    primeInterruptedBinding()
+    sdkPromptImpl = () => Promise.reject(new Error("ECONNREFUSED"))
+    const host = mountBinding()
+    await settle()
+
+    host.querySelector<HTMLButtonElement>(".a-tl-int-continue")!.click()
+    await settle()
+    expect(sdkPromptCalls).toHaveLength(1)
+    const failed = host.querySelector(".a-tl-int-failed")
+    expect(failed).not.toBeNull()
+    expect(failed!.textContent).toBe("发送失败,请重试")
+
+    sdkPromptImpl = () => Promise.resolve({})
+    host.querySelector<HTMLButtonElement>(".a-tl-int-continue")!.click()
+    await settle()
+    expect(sdkPromptCalls).toHaveLength(2)
+    expect(host.querySelector(".a-tl-int-failed")).toBeNull()
+  })
+
+  test("会话不空闲(busy)时续钮零动作:不发 prompt,也不谎报失败", async () => {
+    primeInterruptedBinding("busy")
+    sdkPromptImpl = () => Promise.resolve({})
+    const host = mountBinding()
+    await settle()
+
+    const cont = host.querySelector<HTMLButtonElement>(".a-tl-int-continue")
+    expect(cont).not.toBeNull()
+    cont!.click()
+    await settle()
+
+    expect(sdkPromptCalls).toHaveLength(0)
+    expect(host.querySelector(".a-tl-int-failed")).toBeNull()
   })
 })
 

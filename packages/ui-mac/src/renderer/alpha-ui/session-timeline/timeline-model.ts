@@ -263,6 +263,15 @@ function mentionSpans(parts: readonly Part[]) {
       const span = { start: textSource.start, end: textSource.end }
       // 连接器提及(MCP 资源):来源名 = clientName;名字缺席则退回普通文件提及(fail-closed,
       // 不出没有名字的 chip)。
+      //
+      // 上游数据面缺口登记(#588,审计 R1):这条 resource 分支当前在生产不可达 ——
+      // ① Alpha composer 只支持 file/agent 提及,V2 PromptInput 没有携带 clientName/uri 的
+      //    resource 身份;② 旧 V1 路径收到 resource part 后,在 packages/opencode/src/session/
+      //    prompt.ts(resolveUserPart,source.type==="resource" 分支,~L703)把原 part 替换成
+      //    synthetic text/blob part,不保留 source.type==="resource" 的原件。
+      // 按 #588 票面「上游数据面缺失则登记并保证组件可由模型构造」履约:本分支由模型可
+      // 构造性契约与组件/单元测试覆盖;上游补齐 resource part 持久化后无需改动即生效。
+      // 不在此伪造数据面、不改上游(跨票边界)。
       if (source.type === "resource" && typeof source.clientName === "string" && source.clientName.length > 0)
         spans.push({ ...span, kind: "resource", label: source.clientName.slice(0, MENTION_LABEL_MAX_CHARS) })
       else spans.push({ ...span, kind: "file" })
@@ -408,13 +417,17 @@ export function footnoteOf(assistants: readonly AssistantMessage[]): TimelineFoo
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
       .reduce((sum, value) => sum + value, 0)
     if (total > 0) footnote.tokens = total
-    // 效率段:本回合提示词的缓存命中率 = cache.read /(cache.read + input)。cache.read 为 0
-    // 时无法区分「模型不支持缓存」与「首轮冷启动」,一律缺席 —— 不拿零值装成「效率低」。
+    // 效率段:本回合提示词的缓存命中率 = cache.read /(cache.read + cache.write + input)。
+    // 分母是完整提示词:session.ts getUsage 已把 tokens.input 规范化为「非缓存输入」
+    // (inputTokens − cacheRead − cacheWrite),read/write/input 三段互斥 —— 分母漏掉
+    // write 会把档位系统性算高(审计 R1 Blocker:input=500/read=200/write=300 曾显示
+    // 29%「中」,真实 200/1000=20%「低」)。cache.read 为 0 时无法区分「模型不支持缓存」
+    // 与「首轮冷启动」,一律缺席 —— 不拿零值装成「效率低」。
     const cached = tokens.cache?.read
     if (typeof cached === "number" && Number.isFinite(cached) && cached > 0) {
-      const input = tokens.input
-      const fresh = typeof input === "number" && Number.isFinite(input) && input > 0 ? input : 0
-      footnote.cacheHit = Math.round((cached / (cached + fresh)) * 100)
+      const nonCached = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0)
+      const prompt = cached + nonCached(tokens.cache?.write) + nonCached(tokens.input)
+      footnote.cacheHit = Math.round((cached / prompt) * 100)
     }
   }
   const completed = source.time.completed

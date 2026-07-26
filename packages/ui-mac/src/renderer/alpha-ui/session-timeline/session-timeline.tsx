@@ -143,19 +143,14 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
     },
     // 中断态「继续生成」:走 composer 同一条 v2 durable 发送入口。会话不空闲(还在跑/重试)
     // 时零动作 —— 续写只对已经停下的回合成立,不往在跑的回合里塞输入(fail-closed)。
-    continueTurn: () => {
+    // 发送失败(SDK 不可得/网络断开/admission 前被拒)不产生任何 session_status 事件,
+    // typed 通道呈现不了 —— rejection 原样交给视图,由中断行就地给出失败提示,不静默
+    // 吞掉(审计 R1 Major;async 函数把同步抛错一并折算成 rejection)。
+    continueTurn: async () => {
       const id = sessionID()
       if (!id) return
       if ((session().data.session_status[id]?.type ?? "idle") !== "idle") return
-      try {
-        void serverSDK()
-          .client.v2.session.prompt({ sessionID: id, prompt: { text: t("alpha.timeline.continuePrompt") } })
-          .catch(() => {
-            // 发送失败(网络/引擎拒绝)→ 静默;会话状态仍由 typed 通道如实呈现。
-          })
-      } catch {
-        // SDK 客户端不可得(服务端未就绪)→ 零动作。
-      }
+      await serverSDK().client.v2.session.prompt({ sessionID: id, prompt: { text: t("alpha.timeline.continuePrompt") } })
     },
   }
 

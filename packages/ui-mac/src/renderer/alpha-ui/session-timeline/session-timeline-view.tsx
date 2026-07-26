@@ -639,9 +639,12 @@ function DividerRow(props: { row: Extract<TimelineRow, { kind: "divider" }> }) {
 
 // 中断态(design ② .interrupted 帧):左对齐安静行,不是居中告警 pill。
 // 「继续生成」经 continueTurn intent 接绑定层的现有会话发送入口;intent 缺席即只剩事实陈述
-// (fail-closed,不给一个点不动的按钮)。
+// (fail-closed,不给一个点不动的按钮)。发送失败(admission 前被拒/网络断开)不产生任何
+// session_status 事件,typed 通道呈现不了 —— rejection 在此就地给出失败提示,再点即重试
+// (审计 R1 Major:此前同步与异步错误全被吞掉,用户点了没反应)。
 function InterruptedRow() {
   const intents = useTimelineIntents()
+  const [sendFailed, setSendFailed] = createSignal(false)
   return (
     <div class="a-tl-row a-tl-interrupted" data-alpha-timeline-row="divider" data-label="interrupted">
       <svg class="a-tl-int-stop" viewBox="0 0 24 24" aria-hidden="true">
@@ -652,9 +655,21 @@ function InterruptedRow() {
         {(handler) => (
           <>
             <span class="a-tl-int-dot" aria-hidden="true" />
-            <button type="button" class="a-tl-int-continue" onClick={() => handler()()}>
+            <button
+              type="button"
+              class="a-tl-int-continue"
+              onClick={() => {
+                setSendFailed(false)
+                void Promise.resolve(handler()()).catch(() => setSendFailed(true))
+              }}
+            >
               {t("alpha.timeline.continueTurn")}
             </button>
+            <Show when={sendFailed()}>
+              <span class="a-tl-int-failed" role="status">
+                {t("alpha.timeline.continueFailed")}
+              </span>
+            </Show>
           </>
         )}
       </Show>

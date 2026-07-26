@@ -1193,6 +1193,7 @@ export const dict = {
   "alpha.timeline.interrupted": "Stopped by you",
   "alpha.timeline.continueTurn": "Continue",
   "alpha.timeline.continuePrompt": "Continue",
+  "alpha.timeline.continueFailed": "Couldn't send. Try again.",
   "alpha.timeline.loadOlder": "Load earlier messages",
   "alpha.timeline.loadingOlder": "Loading earlier messages…",
   "alpha.timeline.jumpLatest": "Jump to latest",
