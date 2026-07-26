@@ -6,6 +6,7 @@ import DESCRIPTION from "./websearch.txt"
 import { checksum } from "@opencode-ai/core/util/encode"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ToolFailure } from "@opencode-ai/llm"
 
 export const Parameters = Schema.Struct({
   query: Schema.String.annotate({ description: "Websearch query" }),
@@ -130,14 +131,23 @@ export const WebSearchTool = Tool.define(
             },
           })
 
-          const result = yield* callProvider(http, provider, params, ctx)
+          // #489:失败一律 LOUD。旧写法是 `.pipe(Effect.orDie)` —— 一切错误塌成匿名 defect
+          // (工具崩溃、无类别、无状态);这里把可辨的 WebSearchFailure 转成 canonical 的
+          // ToolFailure 再 die,legacy 工具链跨 Promise 边界后两条消费路(AI SDK / native
+          // adapter)都能把它当作模型可见的 tool error 结算,消息里带着类别 + 状态 + 上游 body。
+          const result = yield* callProvider(http, provider, params, ctx).pipe(
+            Effect.catch((failure) =>
+              Effect.die(new ToolFailure({ message: failure.message, error: failure, metadata: { provider } })),
+            ),
+          )
 
+          // 空结果不再伪装成成功串:callProvider 只在拿到真实结果时成功。
           return {
-            output: result ?? "No search results found. Please try a different query.",
+            output: result,
             title: `${title}: ${params.query}`,
             metadata: { provider },
           }
-        }).pipe(Effect.orDie),
+        }),
     }
   }),
 )
