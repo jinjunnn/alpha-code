@@ -15,13 +15,22 @@
 
 /* ── 实例页签条 ─────────────────────────────────────────────── */
 
-.a-term-tabs {
+/* 页签条 = tablist(只装页签)+ 条外的新建按钮。外框承担原来 .a-term-tabs 的定位与内边距,
+   排布与间距一字不改;唯一差别是页签横向溢出滚动时,新建按钮不再跟着滚出视野。 */
+.a-term-tabbar {
   display: flex;
   align-items: center;
   gap: 4px;
   flex: none;
   min-width: 0;
   padding: 8px 10px 0;
+}
+
+.a-term-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   overflow-x: auto;
 }
 

@@ -339,7 +339,7 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
   // tablist 键盘语义(REQ-094 AC#6)—— 键位表在 roving-focus,本处只给项集合与激活方式。
   const MODES: PreviewMode[] = ["preview", "source", "metadata"]
   const onTabKey = (event: KeyboardEvent) =>
-    rovingKey(event, MODES, mode(), (next) => {
+    rovingKey(event, "horizontal-tabs", MODES, mode(), (next) => {
       setMode(next)
       document.getElementById(`a-wb-tab-${next}`)?.focus()
     })

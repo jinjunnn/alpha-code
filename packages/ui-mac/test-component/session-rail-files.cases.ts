@@ -251,7 +251,7 @@ describe("REQ-125 C3 files panel real Solid mount", () => {
     await flushTimers()
 
     // Root: 5 entries, per-level cap 3 → 3 rows + hint "3 / 5".
-    expect(host.querySelectorAll(".a-srf-tree > .a-srf-row")).toHaveLength(3)
+    expect(host.querySelectorAll(".a-srf-tree > .a-srf-item > .a-srf-row")).toHaveLength(3)
     const rootHint = host.querySelector("[data-alpha-srf-truncated='']")
     expect(rootHint).not.toBeNull()
     expect(rootHint!.textContent).toContain("3 / 5")
@@ -269,7 +269,8 @@ describe("REQ-125 C3 files panel real Solid mount", () => {
 
   test("C21 AC2: rows claim list semantics only and stay operable by Tab + Enter alone", async () => {
     const harness = runtime.createFilesHarness({
-      listDir: (path) => (path === "" ? Promise.resolve([dir("alpha-ui"), file("README.md")]) : Promise.resolve([])),
+      listDir: (path) =>
+        path === "" ? Promise.resolve([dir("alpha-ui"), file("README.md")]) : Promise.resolve([file("alpha-ui/a.ts")]),
     })
     const host = mount(harness.View)
     await flushTimers()
@@ -279,12 +280,15 @@ describe("REQ-125 C3 files panel real Solid mount", () => {
     expect(host.querySelector(".a-srf-tree")?.getAttribute("role")).toBe("list")
 
     // 兑现的是原生 button:每行都在 Tab 序列里(无 roving 的 -1),回车即打开。
+    // listitem 由外包层承担 —— ARIA in HTML 不允许 <button> 覆盖成 listitem,
+    // 而且 listitem 不支持 aria-expanded,盖上去会同时丢掉按钮语义与展开态播报。
     const rows = [...host.querySelectorAll<HTMLButtonElement>(".a-srf-row")]
     expect(rows.length).toBeGreaterThan(1)
     rows.forEach((row) => {
       expect(row.tagName).toBe("BUTTON")
-      expect(row.getAttribute("role")).toBe("listitem")
+      expect(row.hasAttribute("role")).toBe(false)
       expect(row.tabIndex).toBe(0)
+      expect(row.parentElement?.getAttribute("role")).toBe("listitem")
     })
 
     const readme = host.querySelector<HTMLButtonElement>("[data-alpha-srf-file='README.md']")!
@@ -301,6 +305,14 @@ describe("REQ-125 C3 files panel real Solid mount", () => {
     dirRow.click()
     await flushTimers()
     expect(dirRow.getAttribute("aria-expanded")).toBe("true")
+
+    // role="list" 只拥有 listitem:子层 list 落在目录行自己的 listitem 内,不是它的兄弟。
+    for (const list of host.querySelectorAll("[role='list']")) {
+      for (const child of list.children) expect(child.getAttribute("role")).toBe("listitem")
+    }
+    const nested = host.querySelector(".a-srf-indent")!
+    expect(nested.getAttribute("role")).toBe("list")
+    expect(nested.closest("[role='listitem']")).toBe(dirRow.parentElement)
   })
 
   test("shell rail strip: files tab mounts the panel, jump-to-review switches tabs and keeps files alive", async () => {

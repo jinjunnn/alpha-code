@@ -69,7 +69,7 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
   })
 
   const onModeKey = (event: KeyboardEvent) =>
-    rovingKey(event, MODES, mode(), (next) => {
+    rovingKey(event, "horizontal-tabs", MODES, mode(), (next) => {
       setMode(next)
       document.getElementById(`a-rart-tab-${next}`)?.focus()
     })

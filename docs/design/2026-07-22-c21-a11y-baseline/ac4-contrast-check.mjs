@@ -11,10 +11,12 @@ const lum = ([r,g,b]) => 0.2126*lin(r)+0.7152*lin(g)+0.0722*lin(b);
 const ratio = (a,b) => { const L1=lum(hex(a)),L2=lum(hex(b)); const hi=Math.max(L1,L2),lo=Math.min(L1,L2); return (hi+0.05)/(lo+0.05); };
 
 // LANDED token values (tokens.css). Light = :root; dark = [data-color-scheme=dark] + @media prefers dark (identical).
+// #221 added --a-bg-inset to the pairing set (alpha-composer.css paints tertiary on it) and moved the
+// light tertiary #6a6b73 -> #64656d, which is what that pairing needed to clear 4.5:1.
 const THEMES = {
-  light: { bg: { canvas:'#ffffff', subtle:'#f6f7f9', muted:'#eceef1', surface:'#ffffff', raised:'#ffffff' },
-           accent:'#4f46e5', tertiary:'#6a6b73' },
-  dark:  { bg: { canvas:'#0a0b0d', subtle:'#0e0f11', muted:'#16171a', surface:'#121316', raised:'#17181b' },
+  light: { bg: { canvas:'#ffffff', subtle:'#f6f7f9', muted:'#eceef1', inset:'#e3e6ea', surface:'#ffffff', raised:'#ffffff' },
+           accent:'#4f46e5', tertiary:'#64656d' },
+  dark:  { bg: { canvas:'#0a0b0d', subtle:'#0e0f11', muted:'#16171a', inset:'#1e2024', surface:'#121316', raised:'#17181b' },
            accent:'#818cf8', tertiary:'#86878f' },
 };
 

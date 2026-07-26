@@ -9,7 +9,7 @@
 //   额外绑 request ID(session-permission-feed 闸死 stale)。
 
 import { useServerSDK, useServerSync } from "@opencode-ai/app"
-import type { createOpencodeClient, ModelV2Info, QuestionRequest, Todo } from "@opencode-ai/sdk/v2/client"
+import type { ModelV2Info, Todo } from "@opencode-ai/sdk/v2/client"
 import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { unwrap } from "solid-js/store"
@@ -18,7 +18,6 @@ import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import type { ComposerSessionDockApi, ComposerSlashCapture } from "../alpha-composer"
 import { createModelContract } from "../model-contract"
-import { rovingKey, rovingTabIndex } from "../roving-focus"
 import { SessionApprovalHost } from "./session-approval-card"
 import { SessionComposerMount } from "./session-composer-mount"
 import {
@@ -27,13 +26,13 @@ import {
   contextUsagePercent,
   createComposerDraftStash,
   headPendingQuestion,
-  questionAnswersComplete,
   revertDockFacts,
   sdkResultFailed,
   todoDockVisible,
   todoDone,
 } from "./session-dock-core"
 import { createPermissionV2Feed, type PermissionV2Feed } from "./session-permission-feed"
+import { SessionQuestionCard } from "./session-question-card"
 import { recordSessionSlashOrigin } from "./session-slash-origin"
 import { type AlphaSessionIdentity, identityKey } from "./session-workspace-core"
 import type { AlphaSessionLiveContext } from "./session-workspace-shell"
@@ -256,159 +255,6 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
         )}
       </Show>
     </div>
-  )
-}
-
-/* ── 提问卡(question typed 通道;回答绑 sessionID+requestID)────────────────────── */
-function SessionQuestionCard(props: {
-  request: QuestionRequest
-  identity: () => AlphaSessionIdentity | undefined
-  accepts: (identity: AlphaSessionIdentity) => boolean
-  client: () => ReturnType<typeof createOpencodeClient> | undefined
-}) {
-  const [selections, setSelections] = createSignal<string[][]>(props.request.questions.map(() => []))
-  const [custom, setCustom] = createSignal<string[]>(props.request.questions.map(() => ""))
-  const [submitting, setSubmitting] = createSignal(false)
-  const [failed, setFailed] = createSignal(false)
-
-  const toggle = (questionIndex: number, label: string, multiple: boolean | undefined) => {
-    setSelections((previous) =>
-      previous.map((picked, index) => {
-        if (index !== questionIndex) return picked
-        if (picked.includes(label)) return picked.filter((value) => value !== label)
-        return multiple ? [...picked, label] : [label]
-      }),
-    )
-  }
-  // C21 AC2:单选组的方向键 =「移动即选中」(radiogroup 契约),与点击的「再点取消」不同,
-  // 所以走独立的 select 而不是 toggle;当前项 = 已选项,未选时为首项(组内仍留一个 Tab 落点)。
-  const select = (questionIndex: number, label: string) =>
-    setSelections((previous) => previous.map((picked, index) => (index === questionIndex ? [label] : picked)))
-  const activeOption = (info: QuestionRequest["questions"][number], questionIndex: number) =>
-    info.options.find((option) => (selections()[questionIndex] ?? []).includes(option.label)) ?? info.options[0]
-  const optionID = (questionIndex: number, optionIndex: number) =>
-    `alpha-question-${props.request.id}-${questionIndex}-${optionIndex}`
-
-  const answers = createMemo(() =>
-    props.request.questions.map((info, index) => {
-      const picked = selections()[index] ?? []
-      const written = info.custom ? (custom()[index] ?? "").trim() : ""
-      return picked.length > 0 ? picked : written ? [written] : []
-    }),
-  )
-  const complete = createMemo(() => questionAnswersComplete(props.request.questions, answers()))
-
-  const submit = (kind: "reply" | "reject") => {
-    if (submitting()) return
-    const bound = props.identity()
-    const client = props.client()
-    // I8:提交绑定发起时刻的身份 + request ID;身份已切换/通道缺席的提交直接丢弃。
-    if (!bound || !client || !props.accepts(bound) || props.request.sessionID !== bound.sessionID) return
-    setSubmitting(true)
-    setFailed(false)
-    const call =
-      kind === "reply"
-        ? client.v2.session.question.reply({
-            sessionID: bound.sessionID,
-            requestID: props.request.id,
-            questionV2Reply: { answers: answers() as string[][] },
-          })
-        : client.v2.session.question.reject({ sessionID: bound.sessionID, requestID: props.request.id })
-    call.then(
-      (result) => {
-        // throwOnError:false 档位的 { error } 信封同样是失败(审计 minor:4xx 不装成功)。
-        if (sdkResultFailed(result)) {
-          setSubmitting(false)
-          setFailed(true)
-          return
-        }
-        setSubmitting(false)
-      },
-      () => {
-        setSubmitting(false)
-        setFailed(true)
-      },
-    )
-  }
-
-  return (
-    <section
-      class="a-swk-card a-swk-question"
-      data-alpha-session-question={props.request.id}
-      role="group"
-      aria-label={t("alpha.session.questionTitle")}
-    >
-      <For each={props.request.questions}>
-        {(info, index) => (
-          <div class="a-swk-question-item">
-            <header class="a-swk-question-head">
-              <span class="a-swk-question-kicker">{info.header || t("alpha.session.questionTitle")}</span>
-              <span class="a-swk-question-text">{info.question}</span>
-            </header>
-            <div class="a-swk-question-options" role={info.multiple ? "group" : "radiogroup"}>
-              <For each={info.options}>
-                {(option, optionIndex) => (
-                  <button
-                    type="button"
-                    id={optionID(index(), optionIndex())}
-                    class="a-swk-option"
-                    role={info.multiple ? "checkbox" : "radio"}
-                    aria-checked={(selections()[index()] ?? []).includes(option.label)}
-                    data-selected={(selections()[index()] ?? []).includes(option.label) ? "" : undefined}
-                    title={option.description}
-                    disabled={submitting()}
-                    tabIndex={info.multiple ? undefined : rovingTabIndex(activeOption(info, index()) === option)}
-                    onClick={() => toggle(index(), option.label, info.multiple)}
-                    onKeyDown={(event) => {
-                      // 多选组是 group/checkbox:每个 checkbox 都在 Tab 序列里,不欠方向键。
-                      if (info.multiple) return
-                      rovingKey(event, info.options, activeOption(info, index()), (next) => {
-                        select(index(), next.label)
-                        document.getElementById(optionID(index(), info.options.indexOf(next)))?.focus()
-                      })
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                )}
-              </For>
-            </div>
-            <Show when={info.custom}>
-              <input
-                class="a-swk-question-custom"
-                type="text"
-                placeholder={t("alpha.session.questionCustomPlaceholder")}
-                value={custom()[index()] ?? ""}
-                disabled={submitting()}
-                onInput={(event) =>
-                  setCustom((previous) =>
-                    previous.map((value, valueIndex) => (valueIndex === index() ? event.currentTarget.value : value)),
-                  )
-                }
-              />
-            </Show>
-          </div>
-        )}
-      </For>
-      <div class="a-swk-question-actions">
-        <button
-          type="button"
-          class="a-swk-btn a-swk-btn--primary"
-          disabled={submitting() || !complete()}
-          onClick={() => submit("reply")}
-        >
-          {t("alpha.session.questionSubmit")}
-        </button>
-        <button type="button" class="a-swk-btn" disabled={submitting()} onClick={() => submit("reject")}>
-          {t("alpha.session.questionDismiss")}
-        </button>
-      </div>
-      <Show when={failed()}>
-        <p class="a-swk-approval-error" role="alert">
-          {t("alpha.session.questionFailed")}
-        </p>
-      </Show>
-    </section>
   )
 }
 

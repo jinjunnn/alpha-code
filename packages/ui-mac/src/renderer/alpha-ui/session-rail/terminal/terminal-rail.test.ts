@@ -81,8 +81,11 @@ describe("REQ-125 C3-term real Solid mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("10 pass")
-    expect(output).toContain("0 fail")
+    // 判据只有「子进程绿」:钉总数会在别人合法新增一条用例时误红,而 `toContain("0 fail")`
+    // 反过来能被 "10 fail" 匹配上 —— 取回真实数字再比,并要求至少跑过一条。
+    const fail = output.match(/(\d+) fail\b/)?.[1]
+    const pass = Number(output.match(/(\d+) pass\b/)?.[1] ?? 0)
+    expect({ fail, ran: pass > 0 }).toEqual({ fail: "0", ran: true })
   })
 })
 

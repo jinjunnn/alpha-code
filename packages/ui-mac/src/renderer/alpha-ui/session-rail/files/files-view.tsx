@@ -7,9 +7,15 @@
  * 键盘契约(方向键跨层移动、Left 收起、Home/End)。面板今天的真实操作只有「Tab 到行 + 回车/空格
  * 打开或展开」,靠原生 <button> 自洽,所以这里宣称 list/listitem —— 不再对 AT 许诺做不到的事。
  * 将来真要做树操作(方向键漫游、层级跳转)时恢复 tree 语义并接 roving-focus:见 #622。
+ *
+ * listitem 由外层 <div> 承担,不盖在 <button> 上:ARIA in HTML 允许 <button> 覆盖成的 role
+ * 里没有 listitem(只有 checkbox、radio、tab、treeitem、option、三种 menuitem、switch、
+ * link、combobox、button 本身),而且 listitem 不支持 aria-expanded —— 盖上去等于同时丢掉
+ * 「这是个按钮」和「目录是否展开」两条播报。外包一层后按钮保留原生 button 语义与
+ * aria-expanded,role="list" 也只拥有 listitem。
  */
 
-import { For, Show, type Accessor } from "solid-js"
+import { For, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../../../i18n"
 import type { FileChangeKind, TreeEntry } from "./files-core"
 import type { FilesPanelState, SearchState } from "./files-state"
@@ -76,28 +82,38 @@ function DirError(props: { state: FilesPanelState; path: string }) {
   )
 }
 
+/** role="list" 只拥有 listitem —— 行、加载态、错误态、截断提示一律经这层入列。 */
+function ListItem(props: { children: JSX.Element }) {
+  return (
+    <div class="a-srf-item" role="listitem">
+      {props.children}
+    </div>
+  )
+}
+
 function FileRow(props: { state: FilesPanelState; entry: TreeEntry }) {
   const kind = () => props.state.badge(props.entry.path)
   const isSelected = () => props.state.selected() === props.entry.path
   return (
-    <button
-      type="button"
-      class="a-srf-row"
-      classList={{
-        "a-srf-row--selected": isSelected(),
-        "a-srf-row--ignored": props.entry.ignored,
-      }}
-      role="listitem"
-      aria-current={isSelected() ? "true" : undefined}
-      data-alpha-srf-file={props.entry.path}
-      title={kind() ? t("alpha.session.filesOpenInReview") : undefined}
-      onClick={() => props.state.activateFile(props.entry.path)}
-    >
-      <span class="a-srf-caret-spacer" aria-hidden="true" />
-      <FileIcon />
-      <span class="a-srf-name">{props.entry.name}</span>
-      <Show when={kind()}>{(resolved) => <ChangeBadge kind={resolved()} />}</Show>
-    </button>
+    <ListItem>
+      <button
+        type="button"
+        class="a-srf-row"
+        classList={{
+          "a-srf-row--selected": isSelected(),
+          "a-srf-row--ignored": props.entry.ignored,
+        }}
+        aria-current={isSelected() ? "true" : undefined}
+        data-alpha-srf-file={props.entry.path}
+        title={kind() ? t("alpha.session.filesOpenInReview") : undefined}
+        onClick={() => props.state.activateFile(props.entry.path)}
+      >
+        <span class="a-srf-caret-spacer" aria-hidden="true" />
+        <FileIcon />
+        <span class="a-srf-name">{props.entry.name}</span>
+        <Show when={kind()}>{(resolved) => <ChangeBadge kind={resolved()} />}</Show>
+      </button>
+    </ListItem>
   )
 }
 
@@ -105,12 +121,11 @@ function DirRow(props: { state: FilesPanelState; entry: TreeEntry }) {
   const dir = () => props.state.dirState(props.entry.path)
   const expanded = () => dir()?.expanded === true
   return (
-    <>
+    <ListItem>
       <button
         type="button"
         class="a-srf-row a-srf-row--dir"
         classList={{ "a-srf-row--open": expanded() }}
-        role="listitem"
         aria-expanded={expanded()}
         data-alpha-srf-dir={props.entry.path}
         onClick={() => props.state.toggleDir(props.entry.path)}
@@ -122,15 +137,30 @@ function DirRow(props: { state: FilesPanelState; entry: TreeEntry }) {
         <span class="a-srf-name">{props.entry.name}</span>
       </button>
       <Show when={expanded()}>
+        {/* 子层的 role="list" 落在本 listitem 内 —— list 的直接子元素只能是 listitem。 */}
         <div class="a-srf-indent" role="list">
-          <Show when={!dir()?.error} fallback={<DirError state={props.state} path={props.entry.path} />}>
-            <Show when={dir()?.entries} fallback={<LoadingRow />}>
+          <Show
+            when={!dir()?.error}
+            fallback={
+              <ListItem>
+                <DirError state={props.state} path={props.entry.path} />
+              </ListItem>
+            }
+          >
+            <Show
+              when={dir()?.entries}
+              fallback={
+                <ListItem>
+                  <LoadingRow />
+                </ListItem>
+              }
+            >
               <TreeLevel state={props.state} path={props.entry.path} />
             </Show>
           </Show>
         </div>
       </Show>
-    </>
+    </ListItem>
   )
 }
 
@@ -149,9 +179,11 @@ function TreeLevel(props: { state: FilesPanelState; path: string }) {
       </For>
       <Show when={props.state.dirState(props.path)?.truncated}>
         {(info) => (
-          <div class="a-srf-truncated" role="note" data-alpha-srf-truncated={props.path}>
-            {t("alpha.session.filesTruncated", { shown: String(info().shown), total: String(info().total) })}
-          </div>
+          <ListItem>
+            <div class="a-srf-truncated" role="note" data-alpha-srf-truncated={props.path}>
+              {t("alpha.session.filesTruncated", { shown: String(info().shown), total: String(info().total) })}
+            </div>
+          </ListItem>
         )}
       </Show>
     </>

@@ -259,7 +259,7 @@ export function SessionWorkspaceShell(props: {
 
   const enabledPanels = () => RAIL_PANELS.filter(available)
   const onTabKey = (event: KeyboardEvent) =>
-    rovingKey(event, enabledPanels(), panel(), (kind) => {
+    rovingKey(event, "horizontal-tabs", enabledPanels(), panel(), (kind) => {
       openPanel(kind)
       document.getElementById(`alpha-session-rail-tab-${kind}`)?.focus()
     })
