@@ -11,9 +11,9 @@ export function shouldApplySidecarState(
   if (next.generation < previous.generation) return false
   if (next.generation > previous.generation) return true
   if (next.status === previous.status) return false
-  // 同代内只允许 recovering → 终态(ready/failed)。终态恰好一次(#577):failed 之后
-  // 同代不得再变 ready(引擎迟到恢复走 consumer 自探或新 generation),ready 也不回退。
-  return previous.status === "recovering" && (next.status === "ready" || next.status === "failed")
+  // 同代内只允许 recovering → 终态(ready/failed/injection-failed,#613)。终态恰好一次
+  // (#577):同代终态之间互不转换(引擎迟到恢复走 consumer 自探或新 generation)。
+  return previous.status === "recovering" && next.status !== "recovering"
 }
 
 export function accountResultState(result: unknown): "ready" | "recovering" | "failed" {

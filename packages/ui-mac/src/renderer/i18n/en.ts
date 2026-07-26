@@ -943,6 +943,9 @@ export const dict = {
   "alpha.model.suspendedUnavailable": "is unavailable and paused",
   "alpha.model.catalogFailed": "Model catalog failed to load",
   "alpha.model.catalogFailedDetail": "No guessed model list is shown.",
+  "alpha.model.engineConfigFailed": "Model configuration didn't take effect",
+  "alpha.model.engineConfigFailedDetail":
+    "The engine started, but this device's model configuration failed to load, so models are temporarily unavailable. Restart the app; if this keeps happening, contact support with your logs.",
   "alpha.model.engineConnecting": "Connecting to the engine (it may be restarting)…",
   "alpha.model.engineConnectingDetail": "The current selection is unchanged; the list will recover automatically.",
   "alpha.model.retryNow": "Retry now",

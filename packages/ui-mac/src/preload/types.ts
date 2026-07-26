@@ -64,8 +64,10 @@ export type ServerReadyData = {
 export type SidecarGenerationReason = "boot" | "token-only" | "structural"
 // #577:"failed" 是健康探测失败/超时的终态 —— consumer 拿到事实后自证(有界自探),
 // 而不是永远等一个不会再来的 "ready"。
+// #613:"injection-failed" 是与其并列的第三终态 —— 引擎就绪(健康线已过)但 alpha 配置注入
+// 整份丢失(模型全灰的真因),renderer 据此与「引擎未就绪」区分呈现;同代终态仍恰好一个。
 export type SidecarGenerationState = {
-  status: "recovering" | "ready" | "failed"
+  status: "recovering" | "ready" | "failed" | "injection-failed"
   generation: number
   reason: SidecarGenerationReason
 }

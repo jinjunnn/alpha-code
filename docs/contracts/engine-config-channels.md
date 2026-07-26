@@ -60,6 +60,14 @@ import 是 bun 未实现的 `node:module` registerHooks,顶层还有 `getParentP
   三个 alpha agent / `{file:}` ref;反向闸门用真实故障触发那层 catch,要求失败出声、
   且正向断言体在该路径上真的转红。**该闸门锁的是「注入整体不得静默失败」,
   不是「每个加固层都已各自分域」** —— 后者仍靠 review 逐处核。
+- **注入失败在生产侧必须离开 sidecar 进程**(#613):`injectAlphaConfig` 返回结构化结果,
+  sidecar 随 ready IPC 上报 main;main 无条件 error 记日志(`server.ts`),终态生产者在
+  健康通过时发布 `"injection-failed"`(与 `ready`/`failed` 并列的第三终态,同代仍恰好一个;
+  引擎未就绪支配注入失败),renderer 据此区分「引擎未就绪」与「引擎就绪但注入失败」
+  (picker 横幅)。函数级 catch 保留 —— sidecar 照常启动,fail-loud 不是裸崩溃。
+  强制手段:`alpha-config-injection.test.ts`(返回值 + sidecar.ts 接线锚)、`server.test.ts`
+  (ready IPC 透传)、`sidecar-generation.test.ts` / `sidecar-lifecycle.test.ts`(终态)、
+  `test-component/alpha-composer-model.cases.ts`(renderer 区分,变异实跑已红)。
 - **v2 文件必须能通过 `isV1 → migrate → decode` 链**:v2 解码失败是静默整文件
   丢弃,新增键前先以真实链验证(参照 2026-07-23 探针方法)。
 - **密钥不落 v2 文件**:v2 无解析机制,写入即明文。

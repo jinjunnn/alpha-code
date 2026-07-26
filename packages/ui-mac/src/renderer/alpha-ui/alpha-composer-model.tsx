@@ -52,6 +52,9 @@ export function ModelPickPop(props: {
   const [keyStatus, setKeyStatus] = createSignal<LoadState<ProviderKeyStatus>>({ status: "loading" })
   const [models, setModels] = createSignal<Awaited<ReturnType<ModelContract["list"]>>>([])
   const [listState, setListState] = createSignal<ModelListState>("loading")
+  // #613:引擎就绪但 alpha 配置注入失败(sidecar generation 终态 "injection-failed")。
+  // 与「引擎未就绪」是两回事:引擎可达、列表能拉,但平台/BYOK 配置整份丢失 —— 横幅解释真因。
+  const [injectionFailed, setInjectionFailed] = createSignal(false)
   const [readyListEpoch, setReadyListEpoch] = createSignal<string | null>(null)
   const [query, setQuery] = createSignal("")
   const [addOpen, setAddOpen] = createSignal(false)
@@ -273,9 +276,12 @@ export function ModelPickPop(props: {
     })
     let receivedRuntimeState = false
     const unsubscribeRuntime = subscribeRuntimeRecovery((state) => {
+      // #613:横幅事实先落、再走唤醒判定 —— 它不依赖首值门,回放/迟到订阅同样呈现;
+      // 新 generation 的 recovering/ready 自然清横幅。
+      setInjectionFailed(state.status === "injection-failed")
       if (!receivedRuntimeState) {
         receivedRuntimeState = true
-        // 首值为终态(ready/failed)时初始 loadAll 已在跑,无需额外唤醒。
+        // 首值为终态(ready/failed/injection-failed)时初始 loadAll 已在跑,无需额外唤醒。
         if (state.status !== "recovering") return
       }
       if (state.status === "recovering") {
@@ -287,7 +293,9 @@ export function ModelPickPop(props: {
         // 弹窗自身的封顶退避(REQ-083 scheduleRetry)继续自证。
         return
       }
-      retryImmediately("generation-ready")
+      // ready 与 injection-failed(#613)都证明引擎可达:唤醒停跑的链。注入失败下 list
+      // 会成功返回引擎的真实清单,行按事实置灰,横幅解释真因 —— 不再是「正在同步」的谎。
+      retryImmediately(state.status === "ready" ? "generation-ready" : "engine-config-lost")
     })
     const unsubscribeSse = subscribeSseReconnected(() => retryImmediately("sse-reconnected"))
     queueMicrotask(() => search?.focus())
@@ -505,6 +513,13 @@ export function ModelPickPop(props: {
           <button type="button" onClick={retryAll}>
             {t("alpha.common.retry")}
           </button>
+        </div>
+      </Show>
+      <Show when={injectionFailed()}>
+        {/* #613:与下面「正在连接引擎」(引擎未就绪)相区分 —— 引擎已就绪,但配置没跟上。 */}
+        <div class="a-mpp-alert" role="alert">
+          <strong>{t("alpha.model.engineConfigFailed")}</strong>
+          <span>{t("alpha.model.engineConfigFailedDetail")}</span>
         </div>
       </Show>
       <Show when={!catalogError() && listState() === "recovering"}>

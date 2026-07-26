@@ -183,6 +183,33 @@ describe("spawnLocalServer", () => {
     expect(cwd).not.toBe(process.cwd())
     expect(cwd).not.toBe(resolve(homedir()))
     expect(cwd).not.toBe(parse(resolve(userDataPath)).root)
+    // #613:正常 ready 不携带注入失败
+    expect(result.injectionFailure).toBeUndefined()
+
+    await result.listener.stop()
+  })
+
+  // #613 反向闸门(退出条件 1/3:main 侧可观测,链条第三环):ready IPC 携带 injectionFailure 时,
+  // spawnLocalServer 必须把它暴露给调用方(终态生产者据此发布 "injection-failed")。
+  // 把 server.ts 里的 `injectionFailure = message.injectionFailure` 删掉(main 重新装聋),本用例转红。
+  test("ready IPC 携带 injectionFailure 时,spawnLocalServer 把注入失败暴露给 main", async () => {
+    class InjectionFailedChild extends FakeChild {
+      postMessage(message: { type: string }) {
+        if (message.type === "start")
+          queueMicrotask(() =>
+            this.emit("message", { type: "ready", injectionFailure: { message: "ENOTDIR: mkdir userdata" } }),
+          )
+        if (message.type === "stop") queueMicrotask(() => this.emit("exit", 0))
+      }
+    }
+    const result = await spawnLocalServer("127.0.0.1", 4097, "password", {
+      userDataPath,
+      healthCheck: async () => true,
+      fork: (() => new InjectionFailedChild()) as unknown as typeof import("electron").utilityProcess.fork,
+    })
+    await result.health.wait
+
+    expect(result.injectionFailure).toEqual({ message: "ENOTDIR: mkdir userdata" })
 
     await result.listener.stop()
   })

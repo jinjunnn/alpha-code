@@ -1,5 +1,7 @@
-// #607:注入组合体的执行级可测面。本模块**不含任何逻辑变更** —— injectAlphaConfig 与
-// materializeV2EngineConfig 从 sidecar.ts 逐字搬来(含那层函数级 catch)。
+// #607:注入组合体的执行级可测面。injectAlphaConfig 与 materializeV2EngineConfig 从
+// sidecar.ts 逐字搬来(含那层函数级 catch)。#613:catch 仍在(裸崩溃是票面明令禁止的另一种谎),
+// 但失败不再只是进程内一行 warn —— 结果作为返回值交给 sidecar.ts,随 ready IPC 上报 main,
+// 由终态生产者发布 "injection-failed"(与 ready/failed 并列,见 sidecar-generation.ts)。
 //
 // 为什么必须单独成模块:sidecar.ts 的第一个 import 就是 `node:module` 的 registerHooks
 // (ADR-006 的 TS 解析桥),bun 1.3.14 未实现该 API —— 错误发生在 import 语句上,stub 任何东西
@@ -42,7 +44,17 @@ import type { ChannelName } from "./catalog-channels"
 //   4. B6(=G1):@alpha-code/ext 装载 —— main 解析好的自包含 bundle 绝对路径合并进 V1 `plugin`
 //      (单数键,见 opencode-config-v1-schema)数组,保留用户自己的 plugin 列表。zod 跨实例路径
 //      (ADR-006 caveat)的运行时证明 = alpha_ping 出现在工具表且能执行(真机批核验)。
-export function injectAlphaConfig(userDataPath: string, extPluginPath?: string, registryChannel?: ChannelName) {
+
+// #613:注入失败的可上报形态(结构化,可过 IPC)。爆炸半径 = 整份注入丢失
+// (OPENCODE_CONFIG_CONTENT / OPENCODE_CONFIG_DIR 双双缺席),用户可见症状 = 模型全灰。
+export type AlphaConfigInjectionFailure = { message: string; stack?: string }
+export type AlphaConfigInjectionResult = { ok: true } | { ok: false; error: AlphaConfigInjectionFailure }
+
+export function injectAlphaConfig(
+  userDataPath: string,
+  extPluginPath?: string,
+  registryChannel?: ChannelName,
+): AlphaConfigInjectionResult {
   try {
     // REQ-059 G1:引擎经 OPENCODE_CONFIG 加载当前环境的 alpha.jsonc(mcp/plugin/
     // provider/治理键)。文件通道 → dispose 重建重读文件 = 安装免重启;merge 序 XDG 后(压 provider)/
@@ -306,8 +318,15 @@ export function injectAlphaConfig(userDataPath: string, extPluginPath?: string, 
 
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
     materializeV2EngineConfig(userDataPath, config)
+    return { ok: true }
   } catch (error) {
+    // #613:catch 保留(sidecar 照常起,候选形态③),但失败必须离开本进程:
+    // warn 是 #607 反向闸门锁住的进程内出声,返回值是送往 main/renderer 的结构化事实。
     console.warn("failed to inject alpha config", error)
+    return {
+      ok: false,
+      error: error instanceof Error ? { message: error.message, stack: error.stack } : { message: String(error) },
+    }
   }
 }
 
