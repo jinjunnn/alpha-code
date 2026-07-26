@@ -743,7 +743,14 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(done.querySelector(".a-tc-cursor")).toBeNull()
   })
 
-  test("未知工具 fail-closed:mono 工具名 + 有界纯文本体;error 态成工具级错误卡;超帽错误体默认收起", async () => {
+  test("未知工具 fail-closed:mono 工具名 + 有界纯文本体;error 态成工具级错误卡(标题行 + 复制);超帽错误默认收起但标题/复制常驻", async () => {
+    // 工具级错误卡的复制动作要真写剪贴板(CT #tools G4 帧的 .errcard-head 复制钮)。
+    const copied: string[] = []
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText: (text: string) => (copied.push(text), Promise.resolve()) },
+      configurable: true,
+    })
+    const gatewayLookalikeError = '{"detail":"Not Found"} — 代理 baseURL 或模型 ID 不存在'
     const host = mount()
     runtime.setTimelineRows(
       assistantFixture([
@@ -768,6 +775,22 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
           error: "E".repeat(4_001),
           time: { start: 0, end: 1 },
         }),
+        // R3 Blocker:「模型网关错误」分类已整体移除(引擎无 typed gateway
+        // provenance,词面判据被证明无真阳性且有可达误报,见 ToolErrorHead 注释)。
+        // 网关味最浓的 task 错误文本也必须停在统一的「工具执行失败」标题。
+        toolPartFixture("prt_m4", "task", {
+          status: "error",
+          input: { description: "诊断构建失败", subagent_type: "explore" },
+          error: gatewayLookalikeError,
+          time: { start: 0, end: 1 },
+        }),
+        // 带 gateway 字样的 webfetch 失败(502 标准原因短语)同样是通用标题。
+        toolPartFixture("prt_m5", "webfetch", {
+          status: "error",
+          input: { url: "https://example.com" },
+          error: "webfetch https://example.com failed: HTTP 502 Bad Gateway",
+          time: { start: 0, end: 1 },
+        }),
       ]),
     )
     await flush()
@@ -782,13 +805,42 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(failed.getAttribute("data-open")).toBe("true")
     expect(failed.querySelector(".a-tc-error-body")!.textContent).toContain("ENOTREACHABLE")
     expect(failed.textContent).toContain("失败")
+    // 错误卡标题统一为「工具执行失败」,没有分类、没有编造的错误代码副标。
+    expect(failed.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
+    expect(failed.querySelector(".a-tc-err-code")).toBeNull()
 
     const bigError = host.querySelector("[data-alpha-tool-card][data-tool='cloud_big']")!
     expect(bigError.getAttribute("data-status")).toBe("error")
     expect(bigError.getAttribute("data-open")).toBeNull()
+    // R1 Major:超帽错误默认收起时,标题行与复制钮**常驻可见**,收起只藏 mono 正文。
+    expect(bigError.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
+    expect(bigError.querySelector(".a-tc-error-body")).toBeNull()
+    const bigCopy = bigError.querySelector<HTMLButtonElement>("[data-alpha-tool-error-copy]")!
+    bigCopy.click()
+    await flush()
+    // 复制的是有界错误体(TOOL_ERROR_MAX_CHARS 帽后的 4000 字符)。
+    expect(copied).toEqual(["E".repeat(4_000)])
     ;(bigError.querySelector(".a-tc-head") as HTMLButtonElement).click()
     await flush()
     expect(bigError.getAttribute("data-open")).toBe("true")
+    expect(bigError.querySelector(".a-tc-error-body")!.textContent).toContain("EEEE")
+
+    // R3 Blocker 反例:网关味最浓的 task 错误(代理 baseURL/模型 ID/Not Found)
+    // 也是同一张通用错误卡 —— 标题「工具执行失败」、无代码副标、复制钮可触发。
+    const taskFail = host.querySelector("[data-alpha-tool-card][data-tool='task'][data-status='error']")!
+    expect(taskFail.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
+    expect(taskFail.querySelector(".a-tc-err-code")).toBeNull()
+    const copy = taskFail.querySelector<HTMLButtonElement>("[data-alpha-tool-error-copy]")!
+    expect(copy.getAttribute("aria-label")).toBe("复制错误信息")
+    copy.click()
+    await flush()
+    expect(copied).toEqual(["E".repeat(4_000), gatewayLookalikeError])
+
+    // R3 Blocker 反例:webfetch 的 502 Bad Gateway(标准 HTTP 原因短语自带
+    // gateway 字样)同样是通用标题,不编造代码副标。
+    const fetchFail = host.querySelector("[data-alpha-tool-card][data-tool='webfetch'][data-status='error']")!
+    expect(fetchFail.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
+    expect(fetchFail.querySelector(".a-tc-err-code")).toBeNull()
   })
 
   test("edit diff 视图:jsdiff 行渲染 ±行号与 +/− 行;write 显示预览与总行数;补丁卡出徽章行", async () => {

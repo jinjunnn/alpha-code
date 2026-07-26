@@ -654,6 +654,8 @@ admission · 阈值边界 …<span class="cur"></span></div></div></div>
     <!-- error tool card -->
     <div class="errcard"><div class="errcard-head"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M4.9 4.9l14.2 14.2"/></svg>模型网关错误<span class="sub">404 · Not Found</span><button class="copy"><svg class="ic xs" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button></div><pre>{"detail":"Not Found"} — 代理 baseURL 或模型 ID 不存在</pre><div class="acts"><button class="btn-ghost">重试</button><button class="btn-ghost">换模型</button></div></div>
 
+    <div class="note warn"><b>与落地形态的差异注记(2026-07-26 owner 裁决)</b>:上帧的<b>分类标题「模型网关错误」与副标「404 · Not Found」不落地</b> —— 引擎侧不存在结构化的网关失败字段,判定只能从自由错误文本反推;而真正的模型侧失败经子会话路径记为完成,根本不产生工具错误卡,故该标题只会在判错时出现。副标的状态码同样是从正文反推,数据面无此字段。落地形态 = <b>固定标题「工具执行失败」+ 错误正文 + 复制钮</b>,标题行与复制钮常驻(错误超帽收起时仍可见可复制)。<b>重试 / 换模型两钮亦不落地</b>:引擎无「重跑工具」命令,模型选择器无对外打开入口。上游补齐结构化失败字段后方可恢复分类,反推不再回来。</div>
+
     <!-- permission -->
     <div class="perm-card"><div class="ph"><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-warning)"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批 · 工具执行</div><div class="pb">即将运行:<code>git commit -m "docs: agents"</code></div><div class="pa"><button class="btn-primary">允许一次</button><button class="btn-ghost">总是允许</button><button class="btn-ghost">拒绝</button></div></div>
 
@@ -747,7 +749,7 @@ admission · 阈值边界 …<span class="cur"></span></div></div></div>
   </div></div>
   <div class="note"><b>由 v1 形态更新(子任务卡)</b>:子任务卡从通用 spinner 重锚为 v2 形态 —— agent 主题色点缀(名称旁色点)+ 环形进度指示 + 「打开子会话」跳转。<b>新帧(匹配文件)</b>:glob 工具卡,标题行 = 图标 + 「匹配文件」+ 模式 + 计数,展开为匹配列表,形态对齐既有读取 / 检索卡。</div>
   <div class="note"><b>新帧 · bash 流式输出</b>:运行中的命令卡沿用通用运行态(强调边框 + 扫线 + 运行 chip),输出体 = 终端流实时增行、尾行块状光标;命令结束即转为其上方的完成态帧 —— 状态翻「退出 N」、光标消失、输出定格,卡片本体不换。<b>新帧 · 文件行徽章六态一览</b>:读取 / 写入 / 移动为本次补齐,新增 / 修改 / 删除与应用补丁卡同一套;徽章只表动作类别,统计徽标照旧。</div>
-  <div class="note warn"><b>渲染位注记</b>:本节的「请求审批」待批卡、任务清单卡、提问可选项卡,真实渲染位为<b>输入框上方的停靠区</b>(不是时间线行);落地时挂载点以 <a href="../session-workspace/design.html">session-workspace 稿</a>的审批停靠帧为准。此处帧只定卡片形态。</div>
+  <div class="note warn"><b>渲染位注记</b>:本节的「请求审批」待批卡、任务清单卡、提问可选项卡,真实渲染位为<b>输入框上方的停靠区</b>(不是时间线行);落地时挂载点以 <a href="../session-workspace/design.html">session-workspace 稿</a>为准。此处帧只定卡片形态。<br><b>审批例外(2026-07-26 owner 裁决)</b>:「请求审批」待批卡<b>不走停靠区</b> —— 审批统一由独立 Permission 对话框呈现(强模态、五栏事实、Esc 不可关闭),session-workspace 稿的审批停靠帧已随该裁决作废。此处审批帧仅存卡片形态的历史参照,不再是落地锚点。</div>
 
   <!-- ════════════════ STRUCTURE ════════════════ -->
   <div class="sec-kicker" id="struct" style="margin-top:40px">④ 上下文分组 · 回合 · 结构</div>

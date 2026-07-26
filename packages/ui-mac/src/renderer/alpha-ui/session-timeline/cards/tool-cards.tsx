@@ -186,7 +186,6 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
   const diff = () => (props.body.type === "diff" ? props.body : undefined)
   const write = () => (props.body.type === "write" ? props.body : undefined)
   const patch = () => (props.body.type === "patch" ? props.body : undefined)
-  const error = () => (props.body.type === "error" ? props.body : undefined)
   return (
     <>
       <Show when={term()}>
@@ -301,17 +300,66 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
           </div>
         )}
       </Show>
-      <Show when={error()}>
-        {(body) => (
-          <div class="a-tc-error-body" role="alert">
-            {body().message}
-            <Show when={body().truncated}>
-              <TruncatedNote />
-            </Show>
-          </div>
-        )}
-      </Show>
     </>
+  )
+}
+
+// ── 工具级错误卡(#590,design §③ .errcard 帧) ─────────────────────────────
+// 标题行 = 固定标题「工具执行失败」+ 复制,由 TimelineToolCard **常驻渲染**
+// (R1 Major:超帽错误默认收起时也必须能看到标题、能复制,与设计稿的常驻卡片头
+// 同口径);受开合控制的只有 mono 错误正文。error 体不走 CardBody 分支。
+// 复制:剪贴板通道缺席即不渲染按钮(fail-closed),与回合末脚注同一口径。
+//
+// 「模型网关错误」分类:**登记不做**(R3 Blocker 裁决)。引擎侧没有 typed gateway
+// provenance,而词面判据在 task 上被证明既无真阳性也有可达误报:
+// ① 子会话的 provider 错误由 processor 写进 assistant error 并返回 stop
+//   (packages/opencode/src/session/processor.ts:599),而 TaskTool.runTask 只取
+//   最后一段 text、不检查 result.info.error(packages/opencode/src/tool/task.ts:200)
+//   —— 后台任务照记 completed,模型网关失败根本到不了 task 工具错误卡;
+// ② TaskTool 会把模型可控的 subagent_type 原样写进 unknown-agent 错误文本
+//   (packages/opencode/src/tool/task.ts:131),"Unknown agent type: gateway" 这类
+//   词面即成可达误报;
+// ③ ToolPart.tool === "task" 也非可信来源:插件可注册同名自定义工具覆盖内建
+//   (registry.ts:251 内建后接自定义、tools.ts:92 按 ID 后写覆盖)。
+// 将来上游给 ToolPart 补了结构化的网关失败字段(typed provenance)后,才允许
+// 基于**该 typed 字段**恢复分类标题;词面推断在任何情况下都不得回来。
+// 代码副标(状态码/原因短语)同理不做:数据面没有状态字段,反推是把推测当事实。
+//
+// 重试 / 换模型:**登记跳过** —— 工具重跑没有 typed 通道,模型选择器的开合是
+// composer 的私有状态(alpha-composer 的 useChip,无对外开启入口)。没有现成
+// 会话命令入口就不接,不为它们新建链路、也不放只会假装可用的按钮。
+function ToolErrorHead(props: { message: string }) {
+  const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard
+  const copy = () => {
+    try {
+      void navigator.clipboard.writeText(props.message).catch(() => {})
+    } catch {
+      // 剪贴板拒绝(权限/环境)→ 静默;不阻断时间线。
+    }
+  }
+  return (
+    <div class="a-tc-err-head">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M4.9 4.9l14.2 14.2" />
+      </svg>
+      <b>{t("alpha.timeline.toolErrorGeneric")}</b>
+      <Show when={canCopy}>
+        <button
+          type="button"
+          class="a-tc-err-copy"
+          data-alpha-tool-error-copy
+          title={t("alpha.timeline.copyError")}
+          aria-label={t("alpha.timeline.copyError")}
+          onClick={copy}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2" />
+            <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+          </svg>
+        </button>
+      </Show>
+    </div>
   )
 }
 
@@ -385,6 +433,11 @@ export function TimelineToolCard(props: { part: ToolPart }) {
   const openPath = createMemo(() => openTargetOf(props.part))
   // T19 诊断行:edit/write 完成态的本文件 ERROR 级诊断(有界;缺席零渲染)。
   const diag = createMemo(() => diagnosticsOf(props.part))
+  // error 体单独出 CardBody:标题行 + 复制常驻,open() 只控 mono 正文(R1 Major)。
+  const errorBody = () => {
+    const value = body()
+    return value.type === "error" ? value : undefined
+  }
 
   const headInner = () => (
     <>
@@ -465,10 +518,31 @@ export function TimelineToolCard(props: { part: ToolPart }) {
       <Show when={description()}>
         <div class="a-tc-subdesc">{description()}</div>
       </Show>
-      <Show when={hasBody() && open()}>
-        <div class="a-tc-body">
-          <CardBody head={head()} body={body()} />
-        </div>
+      <Show
+        when={errorBody()}
+        fallback={
+          <Show when={hasBody() && open()}>
+            <div class="a-tc-body">
+              <CardBody head={head()} body={body()} />
+            </div>
+          </Show>
+        }
+      >
+        {(err) => (
+          <div class="a-tc-body">
+            <div class="a-tc-err" role="alert">
+              <ToolErrorHead message={err().message} />
+              <Show when={open()}>
+                <div class="a-tc-error-body">
+                  {err().message}
+                  <Show when={err().truncated}>
+                    <TruncatedNote />
+                  </Show>
+                </div>
+              </Show>
+            </div>
+          </div>
+        )}
       </Show>
       <Show when={diag().rows.length > 0}>
         <div class="a-tc-diag" data-alpha-tool-diagnostics>
