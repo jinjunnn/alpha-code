@@ -56,6 +56,25 @@ describe("sidecar generation ordering", () => {
     expect(shouldApplySidecarState(failed, { status: "recovering", generation: 7, reason: "structural" })).toBe(true)
     expect(shouldApplySidecarState(failed, { status: "ready", generation: 7, reason: "structural" })).toBe(true)
   })
+
+  // #613:injection-failed 是同代第三种终态(引擎就绪但注入丢失)。recovering → injection-failed
+  // 必须放行 —— 把它并回 (ready|failed) 白名单(消费侧静默丢弃,renderer 永远看不见这个状态),
+  // 第一条断言当场转红。终态互斥与新代放行的规则与 ready/failed 一致。
+  test("#613 injection-failed 终态:recovering→injection-failed 放行,同代终态互斥,新代放行", () => {
+    const recovering = { status: "recovering", generation: 8, reason: "boot" } as const
+    const injectionFailed = { status: "injection-failed", generation: 8, reason: "boot" } as const
+
+    expect(shouldApplySidecarState(undefined, injectionFailed)).toBe(true)
+    expect(shouldApplySidecarState(recovering, injectionFailed)).toBe(true)
+    // 同代终态互斥(producer exactly-once 违约时的消费侧防线,同上一用例的防御性断言)
+    expect(shouldApplySidecarState(injectionFailed, { status: "ready", generation: 8, reason: "boot" })).toBe(false)
+    expect(shouldApplySidecarState(injectionFailed, { status: "failed", generation: 8, reason: "boot" })).toBe(false)
+    expect(shouldApplySidecarState(injectionFailed, recovering)).toBe(false)
+    expect(shouldApplySidecarState(injectionFailed, { status: "recovering", generation: 9, reason: "structural" })).toBe(
+      true,
+    )
+    expect(shouldApplySidecarState(injectionFailed, { status: "ready", generation: 9, reason: "structural" })).toBe(true)
+  })
 })
 
 describe("engine model list retry (#594 闩死点二)", () => {

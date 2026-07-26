@@ -22,8 +22,9 @@ import { markStartupTimeline } from "./startup-timeline"
 
 export type HealthCheck = { wait: Promise<void> }
 
+// #613:ready 可携带注入失败(sidecar.ts 同构镜像)——引擎起来了但 alpha 配置整份丢失。
 type SidecarMessage =
-  | { type: "ready" }
+  | { type: "ready"; injectionFailure?: { message: string; stack?: string } }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
@@ -193,6 +194,9 @@ export async function spawnLocalServer(
     stdio: "pipe",
   })
   let exited = false
+  // #613:ready IPC 带回的注入失败。在此立即 error(main 侧无条件可观测,不依赖后续健康结果),
+  // 并随返回值交给终态生产者(armBoot/armRespawnGenerationTerminal)发布 "injection-failed"。
+  let injectionFailure: { message: string; stack?: string } | undefined
   const exit = defer<number>()
 
   const onProcessGone = (_event: unknown, details: Details) => {
@@ -233,6 +237,11 @@ export async function spawnLocalServer(
     const onMessage = (message: SidecarMessage) => {
       if (message.type === "ready") {
         if (done) return
+        injectionFailure = message.injectionFailure
+        if (injectionFailure)
+          getLogger()?.error(
+            `alpha config injection failed in sidecar — engine starts WITHOUT alpha config (models will be unavailable): ${injectionFailure.message}`,
+          )
         markStartupTimeline("main.sidecar.ready_ipc", {
           context: options.timelineContext ?? "other",
         })
@@ -316,6 +325,7 @@ export async function spawnLocalServer(
       },
     },
     health: { wait },
+    injectionFailure,
   }
 }
 

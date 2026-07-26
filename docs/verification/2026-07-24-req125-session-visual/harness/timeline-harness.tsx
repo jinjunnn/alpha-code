@@ -109,6 +109,18 @@ const STATES: Record<string, TimelineRow[]> = {
       attachments: [{ partID: "att2", name: "界面截图.png", media: "image", label: "PNG" }],
     }),
   ],
+  // E8 连接器 chip(资源提及;来源名 = MCP clientName)
+  e8: [
+    userRow("e8", {
+      text: "GitHub 对照 README.md 核对仓库结构。",
+      segments: [
+        { text: "GitHub", kind: "resource", label: "GitHub" },
+        { text: " 对照 " },
+        { text: "README.md", kind: "file" },
+        { text: " 核对仓库结构。" },
+      ],
+    }),
+  ],
   // E9/E10 内联提及
   e9: [
     userRow("e9", {
@@ -203,7 +215,14 @@ const STATES: Record<string, TimelineRow[]> = {
       key: "f6",
       rev: "1",
       userMessageID: "msg_user",
-      footnote: { agent: "build", model: "DeepSeek Reasoner", durationMs: 5200, tokens: 3200 },
+      footnote: {
+        provider: "deepseek",
+        agent: "build",
+        model: "DeepSeek Reasoner",
+        cacheHit: 75,
+        durationMs: 5200,
+        tokens: 3200,
+      },
       copyText: () => "已完成结构核对,结论如上。",
     } as any,
   ],
@@ -528,6 +547,7 @@ const intents = {
   focusArtifact: (intent: unknown) => console.log("[harness] focusArtifact", intent),
   openSession: (id: string) => console.log("[harness] openSession", id),
   openFile: (intent: unknown) => console.log("[harness] openFile", intent),
+  continueTurn: () => console.log("[harness] continueTurn"),
 }
 
 document.title = "REQ-125 timeline harness"

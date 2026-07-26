@@ -413,3 +413,81 @@ REQ-087 spike 交付物①(timeline/diff/terminal/permission 段)的可直接消
 - 本档头注 :8 与 Issue #214 Source 均指 `docs/requirements/REQ-005-frontend-takeover-closeout.md`
   ——该文件与整个 `docs/requirements/` **已删**(`d2f9cd08`,docs-governance v3)。结论现落
   `docs/audits/` + `docs/verification/`。Issue Source 行的修正见 #214 评论。
+
+---
+
+## 8. 全档作废声明(2026-07-25):坐标系随被测对象一并消失
+
+> append-only。本节不改写 §1–§7,只把作废范围从 §7 的「三处过期前提」扩到**全档**:
+> 本档整体不再是任何面的现行判定依据。
+
+### 8.1 作废的是什么——是坐标系,不只是行号
+
+§1 矩阵 / §2 COUPLING 清单 / §3 依赖清单共用同一套坐标系:
+**「上游渲染表面 × alpha CSS 覆盖度」**。每一格问的都是「上游在哪个 file:line 渲染了哪个
+`data-*` 锚点、alpha 哪条 reskin 规则覆盖了它、判完成/部分/缺口」。其成立前提是
+**重型面由上游渲染,alpha 只做 CSS 换肤 + DOM 注入**。
+
+该前提今日不成立。故 §1 全部 D/T/P 单元格、§2 的约 40 组锚点清单、§3.1/§3.2/§3.5 的注入
+触点登记、§6 的六条缺口回写清单(T3/T4/D6/D7/P5/P6)**整体作废**,不得再用作今日的覆盖度
+判定、取证口径或缺口来源。§7 只作废了三处前提(冻结基线 / knownDead 勘误 / 权限 dock 链),
+本节声明的是坐标系本身已无被测对象。
+
+### 8.2 为什么——被测对象已物理删除,不是「过期」
+
+REQ-125(2026-07-24 交付)把 session / timeline / composer / lineage 收进 alpha。其收官
+commit `c70ee78a8`(PR#572,C8)**删除了 §2 清单的全部载体**:
+
+| 被删文件 | 行数 | 本档引用位置 |
+|---|---|---|
+| `alpha-ui/timeline-inject.tsx` | 316 | §1.2 结构性接管遗留、§3.1 alpha 现触 anchor、§3.5 |
+| `alpha-ui/timeline-reskin.css` | 660 | §2 全节、§1.2 D1、§1.4 |
+| `alpha-ui/timeline/{user,assistant,tools,structure,review,misc}.css` | 138 / 382 / 457 / 173 / 314 / 48 = 1512 | §1.1 T1、§1.2 D1–D4/D8、§2 |
+
+该 commit 全量 19 files、+118 / −2782。锚集随之坍缩:§0 记 `alive=176 / knownDead=6`,
+§7.2 记漂移到 `alive=172 / knownDead=4`,**今日 `upstream-anchors.json` 实测
+`alive=16 / knownDead=4`**。alive 16 条中属重型面的**只剩 `component:terminal` 一条**——
+timeline / diff / permission 三面在上游锚集中已零出现,即「上游表面」这一列本身空了。
+
+### 8.3 今天的等价物在哪
+
+重型面今日归属(2026-07-25 实测):
+
+| 面 | 今日归属 | 落点 |
+|---|---|---|
+| timeline | **alpha 自有** | `packages/ui-mac/src/renderer/alpha-ui/session-timeline/`(typed leaf,非注入) |
+| diff · 审查面板 | **alpha 自有**,diff 引擎已换 jsdiff | `session-rail/review/review-core.ts:9` `parsePatch` from `diff`;服务端 patch 为唯一源。§1.2 D5「@pierre Shadow DOM 外部不可达」的引擎边界随之消失(`packages/ui/src/pierre` 已不存在) |
+| permission | **alpha 自有**(REQ-090 收编) | §7.2 已记 `PermissionWatcher` + `PermissionDialog` |
+| terminal | **唯一仍是 hybrid** | alpha 外壳包上游引擎:`session-rail/terminal/terminal-rail.css:178` 的 `.a-term-output [data-component="terminal"]`(ADR-027 AppSurfaces 窄 export) |
+
+判定形态也换了:本档的「CSS 覆盖度矩阵」由**方案基线 + 类型身份 + 静态断言测试**取代——
+
+- 接缝口径 = [`docs/design/2026-07-24-session-seam-baseline.md`](../design/2026-07-24-session-seam-baseline.md)(REQ-125 seam surface 方案基线);
+- 会话身份 = `session-workspace/session-workspace-core.ts` 的 `AlphaSessionIdentity`
+  (+ `sameSessionIdentity` / `identityKey`),由 `session-workspace-core.test.ts` 锁住;
+- 静态断言取代覆盖度判定 = `session-rail/review/review-panel.test.ts:32-50` 的 I1 白名单棘轮
+  (review 源码禁止出现 `@opencode-ai/session-ui`、`@pierre/`、`querySelector`、
+  `MutationObserver` 等),`takeover-adapter-coexistence.test.ts:142-151` 断言
+  `timeline-inject` / `timeline-reskin` / `timeline/` 目录**不存在**且 renderer 生产文本零引用。
+  也就是说:§2/§3 描述的注入体系今日由测试**禁止复活**——「覆盖了多少上游表面」这个问题
+  已被「是否触碰上游 DOM」的二值门取代。
+
+### 8.4 证据去哪找
+
+- 视觉证据现行总表 =
+  [`docs/verification/2026-07-24-req125-session-visual/matrix.md`](../verification/2026-07-24-req125-session-visual/matrix.md)
+  (采集方法见同目录 `harness-plan.md`,功能/安全不变量见 `invariant-checks.md`)。
+- §5 残项中的「40 条 timeline 构件深浅色回归」已被该矩阵末节
+  **「40 构件清单逐条映射(TL-01–TL-40 → 矩阵行)」** 逐条钉到新矩阵行:39 条落到采集行
+  (含横切 TL-15/16/22、锚点借用与条件项 TL-19/TL-34、仅验配色的降级判定 TL-31),
+  1 条不适用(TL-37 视图模式 select —— 重构后无该控件,能力被「统一/拆分 seg + 全部展开」吸收)。
+- §5 其余残项(PTY 面板 / 权限卡 / question dock / packaged `ship:mac`)的 packaged 层取证
+  归 REQ-125 的采集批次,见
+  [`docs/verification/2026-07-22-req005-packaged-evidence-index.md`](../verification/2026-07-22-req005-packaged-evidence-index.md)
+  档头声明;**不在 REQ-005 名下复活**。
+
+### 8.5 本档此后的地位
+
+只读历史证据:记录 2026-07-12 冻结期「上游渲染 + alpha 换肤」形态的一次性快照及其缺口分布。
+可用于回答「收编前长什么样」;**不可**用于判定今日覆盖度、导出缺口清单,或充当任何取证的
+判定口径。

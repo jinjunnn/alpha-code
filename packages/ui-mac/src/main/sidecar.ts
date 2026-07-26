@@ -4,7 +4,10 @@ import * as http from "node:http"
 import * as tls from "node:tls"
 // #607:注入组合体住在自己的模块里 —— 本文件的第一个 import(registerHooks)与顶层
 // getParentPort() 让 sidecar.ts 无法被测试 import,注入因此长期零覆盖。见 alpha-config-injection.ts。
-import { injectAlphaConfig } from "./alpha-config-injection"
+import { injectAlphaConfig, type AlphaConfigInjectionResult } from "./alpha-config-injection"
+// #613 R1:ready 消息构造抽成 bun 可真执行的单元 —— 文本锚锁不住「值真的上车」,运行时闸门
+// 在 sidecar-ready-message.test.ts;本文件不得字面量构造 ready 消息(接线锚断言其不存在)。
+import { buildReadyMessage, type SidecarReadyMessage } from "./sidecar-ready-message"
 import type { ChannelName } from "./catalog-channels"
 
 // ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
@@ -60,8 +63,10 @@ type StartCommand = {
 type StopCommand = { type: "stop" }
 type SidecarCommand = StartCommand | StopCommand
 
+// #613:注入失败随 ready 上报(server.ts 持有同构镜像)——引擎照常起,但 main 必须知情。
+// ready 变体的形状与构造住在 sidecar-ready-message.ts(那里有真运行时闸门)。
 type SidecarMessage =
-  | { type: "ready" }
+  | SidecarReadyMessage
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
@@ -89,7 +94,9 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
-    prepareSidecarEnv(command.password, command.userDataPath, command.extPluginPath, command.registryChannel)
+    // #613:注入结果必须捕获并随 ready 上报 —— 注入失败 = 引擎起来了但整份 alpha 配置丢失
+    // (模型全灰),不上报则 main/renderer 无从与「引擎未就绪」区分。
+    const injection = prepareSidecarEnv(command.password, command.userDataPath, command.extPluginPath, command.registryChannel)
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
@@ -102,7 +109,7 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
-    parentPort.postMessage({ type: "ready" })
+    parentPort.postMessage(buildReadyMessage(injection))
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
     setImmediate(() => process.exit(1))
@@ -119,13 +126,18 @@ async function stop() {
   }
 }
 
-function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath?: string, registryChannel?: ChannelName) {
+function prepareSidecarEnv(
+  password: string,
+  userDataPath: string,
+  extPluginPath?: string,
+  registryChannel?: ChannelName,
+): AlphaConfigInjectionResult {
   Object.assign(process.env, {
     OPENCODE_SERVER_USERNAME: "opencode",
     OPENCODE_SERVER_PASSWORD: password,
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
   })
-  injectAlphaConfig(userDataPath, extPluginPath, registryChannel)
+  return injectAlphaConfig(userDataPath, extPluginPath, registryChannel)
 }
 
 function ensureLoopbackNoProxy() {
