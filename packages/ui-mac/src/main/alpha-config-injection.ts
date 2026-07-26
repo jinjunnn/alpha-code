@@ -18,7 +18,13 @@ import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { buildAlphaCapabilities, buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
-import { applyWebSearchDenies, CLOUD_MCP_ARM_ENV, CLOUD_MCP_SERVER_NAME } from "./cloud-web-search"
+import {
+  applyWebSearchDenies,
+  CLOUD_MCP_ARM_ENV,
+  CLOUD_MCP_DEF_ENV,
+  CLOUD_MCP_SERVER_ENV,
+  CLOUD_MCP_SERVER_NAME,
+} from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
 import { injectMcpDefaultDeny } from "./mcp-default-deny"
@@ -285,31 +291,46 @@ export function injectAlphaConfig(
     //      because we attach our own capability token and must skip OAuth auto-detection.
     const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
     if (mcpUrl && platformPays) {
-      // #223 R4 fail-closed:kill-switch 下 `cloud_web_search` 的**最终**闸住在 @alpha-code/ext 的
-      // tool.execute.before 钩子里(远端 MCP 无 per-tool 注册期过滤,permission deny 可被后置 allow
-      // 顶掉)。R3 用「extPluginPath 路径是否存在」判 ext 在不在场 —— R4 证明那不成立:
+      // #223 R4→R5 fail-closed:kill-switch 下 `cloud_web_search` 的**最终**闸住在 @alpha-code/ext
+      // 的 tool.execute.before 钩子里(远端 MCP 无 per-tool 注册期过滤,permission deny 可被后置
+      // allow 顶掉)。R3 用「extPluginPath 路径是否存在」判 ext 在不在场 —— R4 证明那不成立:
       // `OPENCODE_PURE=true` 让引擎整个跳过外部插件,bundle import 失败与插件初始化失败也都是
       // log-and-continue,三种情形下路径都还在而钩子不存在。
       //
-      // 改成握手:注入面只写一个 **disabled** 的云 server 并置位 arm 通道;把它打开的是 ext 自己的
-      // `config` 钩子(armCloudMcp)。钩子能跑 ⇒ 插件已返回 hooks ⇒ 同一对象上的闸确实注册了。
-      // ext 缺席则云 server 永远停在 disabled(连兄弟工具一起损失)—— 诚实降级,不是 AC4 的
+      // R4 改成握手,但把定义先写成 `enabled:false` 再由 ext 翻开 —— **R5 判其为回归**:
+      // `MCP.connect()`(`opencode/src/mcp/index.ts`)无条件把配置复制成 `enabled:true`,该能力
+      // 公开为 `/mcp/:name/connect` 且产品 UI 真的在调,于是 ext 缺席时用户点一下就能把那份含
+      // 完整 URL/header 的定义热连起来。`enabled:false` 从来不是「不可重开」。
+      //
+      // R5 形态:**完整定义根本不进配置**,只经 env 托管给 ext。ext 缺席 ⇒ 配置里没有 `cloud`
+      // 条目 ⇒ `/connect` NotFound、无物可复活(连兄弟工具一起损失)—— 诚实降级,不是 AC4 的
       // 「误杀」:AC4 管的是闸生效时的正常态。
       const cloud = materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN"))
+      // ext 的闸靠它把「alpha 治理的云 server」与用户自带的 web-search MCP 区分开(R5 Blocker)。
+      process.env[CLOUD_MCP_SERVER_ENV] = CLOUD_MCP_SERVER_NAME
       if (killSwitch) {
-        config.mcp = { ...(config.mcp ?? {}), [CLOUD_MCP_SERVER_NAME]: { ...cloud, enabled: false } }
+        // 继承来的 OPENCODE_CONFIG_CONTENT 若带着一个同名条目,这里一并抹掉:kill-switch 下
+        // 配置里不允许存在任何可被 connect 复活的云定义。
+        if (config.mcp && CLOUD_MCP_SERVER_NAME in config.mcp) {
+          const { [CLOUD_MCP_SERVER_NAME]: _inherited, ...rest } = config.mcp as Record<string, unknown>
+          config.mcp = rest
+        }
         process.env[CLOUD_MCP_ARM_ENV] = CLOUD_MCP_SERVER_NAME
+        process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify(cloud)
         console.error(
-          `[alpha-code#223] web search kill switch is set — the cloud MCP server is registered DISARMED (enabled:false); only a confirmed @alpha-code/ext load arms it via ${CLOUD_MCP_ARM_ENV}${extPluginPath ? "" : ", and no ext bundle path was resolved this fork so it will stay dark"}`,
+          `[alpha-code#223] web search kill switch is set — the cloud MCP server definition is WITHHELD from the engine config; only a confirmed @alpha-code/ext load installs it via ${CLOUD_MCP_ARM_ENV}/${CLOUD_MCP_DEF_ENV}${extPluginPath ? "" : ", and no ext bundle path was resolved this fork so it will stay dark"}`,
         )
       } else {
         // 代付但无 kill-switch:云工具是权威通道,不需要闸,也就不该依赖 ext 是否装载。
         delete process.env[CLOUD_MCP_ARM_ENV]
+        delete process.env[CLOUD_MCP_DEF_ENV]
         config.mcp = { ...(config.mcp ?? {}), [CLOUD_MCP_SERVER_NAME]: cloud }
+        injectedMcpNames.add(CLOUD_MCP_SERVER_NAME)
       }
-      injectedMcpNames.add(CLOUD_MCP_SERVER_NAME)
     } else {
       delete process.env[CLOUD_MCP_ARM_ENV]
+      delete process.env[CLOUD_MCP_DEF_ENV]
+      delete process.env[CLOUD_MCP_SERVER_ENV]
     }
 
     // Remote MCP config only toggles whole servers, but the engine's global permission layer filters

@@ -24,25 +24,49 @@ export const CLOUD_WEBSEARCH_DENY_ENV = "ALPHA_CLOUD_WEBSEARCH_DENY"
 export const CLOUD_MCP_SERVER_NAME = "cloud"
 
 /**
- * ext 装载**握手**通道(#223 R4)。
+ * 告诉 ext「哪个 MCP server 是 alpha 治理的云通道」(#223 R5)。
+ *
+ * ext 的 `tool.execute.before` 闸现在对**任何** MCP server 上的 web search 形态生效(用户自带的
+ * `exa_web_search_exa` 也在内,见 `packages/ext/src/cloud-websearch-kill.ts` 的 R5 段)。唯一的
+ * 例外是这个 server:平台代付时它是**权威**通道,只有 kill-switch 才关它。ext 靠本变量识别它,
+ * 而不是写死 `"cloud"` 字面量。注入面在每次 fork 注册云 server 时置位、否则删除。
+ */
+export const CLOUD_MCP_SERVER_ENV = "ALPHA_CLOUD_MCP_SERVER"
+
+/**
+ * ext 装载**握手**通道(#223 R4,R5 收紧)。
  *
  * R3 的 fail-closed 判据是「`extPluginPath` 这个路径存不存在」——R4 证明那什么也证明不了:
  * `OPENCODE_PURE=true`(经 `sidecar-env.ts` 的 `OPENCODE_` 前缀规则进 sidecar,
  * `opencode/src/effect/runtime-flags.ts` 解释为 pure)会让 `opencode/src/plugin/index.ts` **整个
  * 跳过外部插件**;bundle import 失败与 `AlphaExt` 初始化失败同样是 log-and-continue。三种情形下
- * 路径都还在,钩子却根本不存在,云 `cloud_web_search` 于是带着一个可被后置 allow / approved
- * 顶掉的 permission deny 活着。
+ * 路径都还在,钩子却根本不存在。
  *
- * 所以 kill-switch 下的注册改成**两段式**:注入面只写一个 `enabled:false` 的云 server 并把本变量
- * 置成 server 名;真正把它打开的是 `@alpha-code/ext` 自己的 `config` 钩子
- * (`packages/ext/src/cloud-websearch-kill.ts` 的 `armCloudMcp`)。那个钩子能跑 = 插件函数已返回
- * hooks 对象 = 同一个对象上的 `tool.execute.before` 闸确实注册了。ext 缺席则云 server 永远停在
- * disabled,一个活的 web_search 都出不去 —— 这才是「确认装载」,不是「路径存在」。
+ * R4 据此把 kill-switch 下的注册改成两段式:注入面写一个 `enabled:false` 的云 server,由 ext 的
+ * `config` 钩子翻开。**R5 判该形态是回归**:`MCP.connect()`(`opencode/src/mcp/index.ts`)会
+ * **无条件**把配置复制成 `enabled:true`,而该能力公开为 `/mcp/:name/connect`
+ * (`server/routes/instance/httpapi/handlers/mcp.ts`)且产品 UI 真的在调 —— ext 缺席时用户点一下
+ * 就能把那份含完整 URL 与 Authorization header 的定义热连起来,此时闸并不存在。
  *
- * 本变量由 sidecar 内的 `injectAlphaConfig` 自己置位/删除;它不在 `sidecar-env.ts` 的白名单里,
- * 因此外部 shell 伪造一个同名变量也进不来。
+ * 所以 R5 起:**kill-switch 下完整定义根本不进 `OPENCODE_CONFIG_CONTENT`**。注入面把它经
+ * `CLOUD_MCP_DEF_ENV` 交给 ext(本变量点名),由 `installCloudMcp()` 在 `config` 钩子里装进配置。
+ * 那个钩子能跑 = 插件函数已返回 hooks 对象 = 同一个对象上的 `tool.execute.before` 闸确实注册了。
+ * ext 缺席则配置里**没有**名为 `cloud` 的条目,`/connect` 直接 NotFound —— 这才是「确认装载」。
+ *
+ * **通道可信度的准确表述(#223 R5 Minor,更正 R4 的「shell 进不来」)**:本变量确实不在
+ * `sidecar-env.ts` 的固定白名单里,但那份白名单有一个逃生阀 `ALPHA_ENV_ALLOWLIST_EXTRA`,
+ * 用它点名即可放行任意非密钥名 —— 所以「外部 shell 伪造进不来」**不成立**。真正成立的是:
+ * `injectAlphaConfig` 在每次 fork 的每一条分支上都**覆盖或删除**本变量与 `CLOUD_MCP_DEF_ENV`,
+ * 因此继承来的值一律不作数;而且单有 ARM 没有 DEF 时 ext 什么也不装。
  */
 export const CLOUD_MCP_ARM_ENV = "ALPHA_CLOUD_MCP_ARM"
+
+/**
+ * 与 ARM 配对的云 server 定义(JSON)。内容是 `materializeCloudMcpConfig()` 的产物,
+ * Authorization 头里是 `{file:…}` 引用而不是 token 值本身(A6:密钥不进 env)。
+ * ext 侧由 `installCloudMcp()` 解析该引用并装进配置。
+ */
+export const CLOUD_MCP_DEF_ENV = "ALPHA_CLOUD_MCP_DEF"
 
 type AgentConfig = { permission?: Record<string, unknown> }
 

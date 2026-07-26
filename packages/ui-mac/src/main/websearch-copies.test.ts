@@ -1,4 +1,11 @@
-// #223 R4 —— 本地 web search 主权闸的**类级**落点是传输层;本文件是它的静态半场 + 纵深普查。
+// #223 R4/R5 —— 本地 `websearch` **工具**这一类的主权闸落在传输层;本文件是它的静态半场 + 纵深普查。
+//
+// ⚠️ R5 事实更正:R4 把下面这两条传输称为 web search 的**共同执行边界** —— 不成立。它们只覆盖
+// 「本地 keyless websearch 工具」这一类。用户配置里的通用 Remote MCP
+// (`{"mcp":{"exa":{"type":"remote","url":"…"}}}` → `exa_web_search_exa`)两条都不经过,它的钳制点
+// 是 `packages/ext` 的 `tool.execute.before` 钩子(证据:
+// `packages/opencode/test/tool/alpha-mcp-websearch-gate.test.ts`)。本文件的范围因此**只**是本地
+// 工具那一类,别再据它声称 web search 已按类闭合。
 //
 // 演进史(写在这里免得下一轮又走回头路):
 //   R2 收了 legacy `packages/opencode/src/tool/websearch.ts` 的 `execute` 首行。
@@ -30,7 +37,13 @@
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, resolve, sep } from "node:path"
 import { describe, expect, test } from "bun:test"
-import { CLOUD_MCP_ARM_ENV, CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-search"
+import {
+  CLOUD_MCP_ARM_ENV,
+  CLOUD_MCP_DEF_ENV,
+  CLOUD_MCP_SERVER_ENV,
+  CLOUD_WEBSEARCH_DENY_ENV,
+  LOCAL_WEBSEARCH_DENY_ENV,
+} from "./cloud-web-search"
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..", "..")
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", ".git", "gen", "generated"])
@@ -107,6 +120,13 @@ const FIRST_EFFECT = [/permission\.assert\(/, /ctx\.ask\(/, /callMcp\(/, /callPr
 const registrations = FILES.filter((file) => REGISTRATION.some((pattern) => pattern.test(file.body)))
 const providerCallers = FILES.filter((file) => /mcp\.exa\.ai|search\.parallel\.ai/.test(file.body))
 const transportPaths = GATED_TRANSPORTS.map((transport) => transport.path as string)
+/**
+ * 提到端点但**不出网**的文件。网 ② 抓的是「谁能打到 Exa/Parallel」,一段引用端点的**说明**不是
+ * 执行面 —— 但它同样让集合变化,所以按「新增即分类」显式登记,并由下面那条断言证明它确实不出网
+ * (零 HTTP / 零 MCP 调用原语)。#223 R5:ext 的闸在注释里引用了那份 exa remote MCP 配置示例。
+ */
+const DOCUMENTED_MENTIONS = ["packages/ext/src/cloud-websearch-kill.ts"]
+const EGRESS_PRIMITIVES = [/HttpClientRequest\./, /\bfetch\s*\(/, /\.callTool\s*\(/, /new\s+Request\s*\(/]
 
 describe("websearch 执行副本普查(#223 R3 · R4 起降为纵深)", () => {
   test("全仓注册为 websearch 的工具恰好是这两份", () => {
@@ -132,8 +152,16 @@ describe("websearch 执行副本普查(#223 R3 · R4 起降为纵深)", () => {
     }
   })
 
-  test("直接引用 Exa/Parallel 端点的文件恰好是两条带闸的传输(新增即分类)", () => {
-    expect(providerCallers.map((file) => file.path).sort()).toEqual([...transportPaths].sort())
+  test("直接引用 Exa/Parallel 端点的文件恰好是两条带闸的传输 + 已登记的纯说明(新增即分类)", () => {
+    expect(providerCallers.map((file) => file.path).sort()).toEqual([...transportPaths, ...DOCUMENTED_MENTIONS].sort())
+  })
+
+  test("登记为「纯说明」的文件确实不出网(否则它就该按传输分类)", () => {
+    for (const path of DOCUMENTED_MENTIONS) {
+      const body = read(path)
+      for (const pattern of EGRESS_PRIMITIVES)
+        expect([path, pattern.source, pattern.test(body)]).toEqual([path, pattern.source, false])
+    }
   })
 
   test("主权信道名在四个包里逐字一致(没有共用依赖边,只能靠这条锁)", () => {
@@ -150,16 +178,21 @@ describe("websearch 执行副本普查(#223 R3 · R4 起降为纵深)", () => {
     expect(read("packages/ext/src/cloud-websearch-kill.ts")).toContain(
       `export const CLOUD_WEBSEARCH_DENY_ENV = "${CLOUD_WEBSEARCH_DENY_ENV}"`,
     )
+    for (const name of [CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV])
+      expect(read("packages/ext/src/cloud-websearch-kill.ts")).toContain(`_ENV = "${name}"`)
+    // 本地判决在 ext 侧也必须逐字一致 —— R5 起 ext 的闸靠它拦第三方 web-search MCP。
     expect(read("packages/ext/src/cloud-websearch-kill.ts")).toContain(
-      `export const CLOUD_MCP_ARM_ENV = "${CLOUD_MCP_ARM_ENV}"`,
+      `export const LOCAL_WEBSEARCH_DENY_ENV = "${LOCAL_WEBSEARCH_DENY_ENV}"`,
     )
     // 两条判决都必须真的过得了 sidecar 白名单,否则闸在打包态恒不置位。
     const allowlist = read("packages/ui-mac/src/main/sidecar-env.ts")
     expect(allowlist).toContain(`"${LOCAL_WEBSEARCH_DENY_ENV}"`)
     expect(allowlist).toContain(`"${CLOUD_WEBSEARCH_DENY_ENV}"`)
-    // arm 通道**刻意不在**白名单里:它由 sidecar 内的 injectAlphaConfig 自己置位,
-    // 外部 shell 伪造同名变量必须进不来(否则 ext 缺席也能把云 server 打开)。
-    expect(allowlist).not.toContain(`"${CLOUD_MCP_ARM_ENV}"`)
+    // 三个握手通道不在**固定**白名单里。⚠️ R5 事实更正:这**不等于**「外部 shell 伪造进不来」——
+    // 逃生阀 ALPHA_ENV_ALLOWLIST_EXTRA 点名即放行(它们都不是 credential-shaped),那半句 R4 的
+    // 断言是错的,真实判据见 sidecar-env.test.ts 与 alpha-config-injection.test.ts 两条。
+    for (const name of [CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV])
+      expect(allowlist).not.toContain(`"${name}"`)
   })
 
   test("云侧最终闸是 ext 钩子的第一句(排在契约校验与 ctx.ask 之前)", () => {
@@ -174,14 +207,31 @@ describe("websearch 执行副本普查(#223 R3 · R4 起降为纵深)", () => {
 
   // #223 R4:ext 装载回执必须是 config 钩子的第一句 —— 它后面那些项目配置分支有 early return,
   // 排在它们之后会让「项目 alpha.jsonc 读不了」顺带把云工具一起关掉。
+  // R5:回执从「翻开 enabled:false」改成「把定义装进配置」(`installCloudMcp`),位置要求不变。
   test("ext 装载回执是 config 钩子的第一句", () => {
     const plugin = read("packages/ext/src/plugin.ts")
     const hook = plugin.indexOf("async config(cfg) {")
     expect(hook).toBeGreaterThanOrEqual(0)
-    const arm = plugin.indexOf("armCloudMcp(cfg)", hook)
+    const install = plugin.indexOf("installCloudMcp(cfg)", hook)
     // 只找**语句**形态的 return(行首缩进后紧跟 return),否则注释里的字眼会误判位置。
     const firstReturn = hook + plugin.slice(hook).search(/\n\s*return[\s;]/)
-    expect(arm).toBeGreaterThan(hook)
-    expect(arm).toBeLessThan(firstReturn)
+    expect(install).toBeGreaterThan(hook)
+    expect(install).toBeLessThan(firstReturn)
+  })
+
+  // #223 R5 Major:注入面在 kill-switch 下**不许**把云 server 定义写进配置 —— `MCP.connect()` 会
+  // 无条件把 `enabled:false` 复制成 `enabled:true`(`/mcp/:name/connect` 公开、产品 UI 在调)。
+  // 行为证据在 packages/opencode/test/mcp/alpha-cloud-mcp-revival.test.ts;这里钉住静态形状。
+  test("kill-switch 分支不把云 server 写进 config.mcp,只经 ARM/DEF 托管", () => {
+    const injection = read("packages/ui-mac/src/main/alpha-config-injection.ts")
+    const branch = injection.indexOf("if (killSwitch) {")
+    expect(branch).toBeGreaterThanOrEqual(0)
+    const elseAt = injection.indexOf("\n      } else {", branch)
+    expect(elseAt).toBeGreaterThan(branch)
+    const body = injection.slice(branch, elseAt)
+    expect(body).toContain(`process.env[CLOUD_MCP_ARM_ENV]`)
+    expect(body).toContain(`process.env[CLOUD_MCP_DEF_ENV]`)
+    // 这条分支只允许**删** config.mcp 里的同名条目,绝不允许写一个。
+    expect(body).not.toMatch(/config\.mcp\s*=\s*\{\s*\.\.\./)
   })
 })

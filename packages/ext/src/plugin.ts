@@ -12,7 +12,7 @@ import { injectFactorySkillPaths } from "./factory-paths"
 import { injectSkillGenerationPaths } from "./gen-skill-paths"
 import { rebrandSystem } from "./prompt-rebrand"
 import { validateCloudToolInput, validateCloudToolOutput } from "./cloud-contract-hook"
-import { armCloudMcp, assertWebSearchToolAllowed } from "./cloud-websearch-kill"
+import { assertWebSearchToolAllowed, installCloudMcp } from "./cloud-websearch-kill"
 
 /**
  * alpha-code backend isolation extension.
@@ -51,9 +51,11 @@ export const AlphaExt: Plugin = async (input) => {
 
   const ownHooks: Awaited<ReturnType<Plugin>> = {
     "tool.execute.before": async (hookInput, output) => {
-      // #223 R3:web search kill-switch 在云工具一侧的**最终**闸,必须是本钩子的第一句 ——
+      // #223 R3→R5:web search 主权判决在 **MCP 工具**一侧的最终闸,必须是本钩子的第一句 ——
       // 引擎在 `ctx.ask` 之前触发本钩子(普通 MCP 与 code-mode 两条路都是),抛出即终止调用,
-      // 且完全不查 permission ruleset。理由与边界见 cloud-websearch-kill.ts。
+      // 且完全不查 permission ruleset。命中面覆盖**任何** MCP server 上的 web search 形态
+      // (含用户自己配置的 remote MCP,例如 `exa_web_search_exa`),alpha 治理的云 server 例外
+      // 只在 kill-switch 下关。理由、产品语义与边界见 cloud-websearch-kill.ts。
       assertWebSearchToolAllowed(hookInput.tool)
       validateCloudToolInput(hookInput.tool, output.args)
     },
@@ -65,14 +67,16 @@ export const AlphaExt: Plugin = async (input) => {
     // `.opencode`(零桥)。变异可见性由真机 spike 验(hook "Notify" 语义,T0 gate)。dispose 重建重
     // 触发 = 免重启。信任门(项目自带 mcp/plugin = 加载可执行物)= T1 后续,当前 spike 只验通道。
     async config(cfg) {
-      // #223 R4:ext 装载回执,必须是本钩子的**第一句** —— 下面的项目配置分支有多条 early
+      // #223 R4→R5:ext 装载回执,必须是本钩子的**第一句** —— 下面的项目配置分支有多条 early
       // return(身份漂移 / 读失败),排在它们之后就会让「项目配置读不了」顺带把云工具一起关掉。
-      // 本句能执行 = 插件已返回 hooks = 同一对象上的 `tool.execute.before` 闸已注册,
-      // 于是注入面留下的 disarmed 云 MCP server 现在可以安全打开(理由见 cloud-websearch-kill.ts)。
-      const armed = armCloudMcp(cfg)
-      if (armed)
+      // 本句能执行 = 插件已返回 hooks = 同一对象上的 `tool.execute.before` 闸已注册,于是注入面
+      // 托管的云 MCP server 定义现在可以安全**装进配置**。R4 那版把定义先写成 `enabled:false`
+      // 再由本句翻开 —— R5 判其为回归:`/mcp/:name/connect` 会无条件把它复制成 `enabled:true`。
+      // 现在定义在 ext 确认之前根本不在配置里(理由见 cloud-websearch-kill.ts)。
+      const installed = installCloudMcp(cfg)
+      if (installed)
         console.log(
-          `[@alpha-code/ext] cloud MCP server "${armed}" armed — the web search kill-switch gate is registered in this engine process`,
+          `[@alpha-code/ext] cloud MCP server "${installed}" installed — the web search sovereignty gate is registered in this engine process`,
         )
       try {
         const project = projectRootFor(input.directory)

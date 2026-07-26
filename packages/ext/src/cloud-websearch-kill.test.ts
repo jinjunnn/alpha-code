@@ -3,16 +3,23 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import {
-  armCloudMcp,
   assertWebSearchToolAllowed,
   CLOUD_MCP_ARM_ENV,
+  CLOUD_MCP_DEF_ENV,
+  CLOUD_MCP_SERVER_ENV,
   CLOUD_WEBSEARCH_DENY_ENV,
   cloudWebSearchDenied,
+  installCloudMcp,
   isWebSearchToolId,
-  WebSearchKillSwitchError,
+  LOCAL_WEBSEARCH_DENY_ENV,
+  localWebSearchDenied,
+  WebSearchSovereigntyError,
 } from "./cloud-websearch-kill"
 
-const ON = { [CLOUD_WEBSEARCH_DENY_ENV]: "1" }
+/** kill-switch:云侧与本地侧同时置位(main 的 applyWebSearchSovereignty 就是这么写的)。 */
+const ON = { [CLOUD_WEBSEARCH_DENY_ENV]: "1", [LOCAL_WEBSEARCH_DENY_ENV]: "1", [CLOUD_MCP_SERVER_ENV]: "cloud" }
+/** 平台代付、无 kill-switch:只有本地侧置位,云工具是权威通道。 */
+const PLATFORM_PAYS = { [LOCAL_WEBSEARCH_DENY_ENV]: "1", [CLOUD_MCP_SERVER_ENV]: "cloud" }
 const OFF = {}
 
 const siblingCloudTools = [
@@ -26,12 +33,16 @@ const siblingCloudTools = [
 ]
 
 describe("cloud web search kill switch", () => {
-  test("fail-closed:只有缺省/空串/\"0\" 放行", () => {
-    expect(cloudWebSearchDenied(OFF)).toBe(false)
-    expect(cloudWebSearchDenied({ [CLOUD_WEBSEARCH_DENY_ENV]: "" })).toBe(false)
-    expect(cloudWebSearchDenied({ [CLOUD_WEBSEARCH_DENY_ENV]: "0" })).toBe(false)
-    for (const value of ["1", "true", "yes", "no", "off", "false", " "])
-      expect(cloudWebSearchDenied({ [CLOUD_WEBSEARCH_DENY_ENV]: value })).toBe(true)
+  test("fail-closed:只有缺省/空串/\"0\" 放行(云侧与本地侧同一条规则)", () => {
+    for (const [denied, name] of [
+      [cloudWebSearchDenied, CLOUD_WEBSEARCH_DENY_ENV],
+      [localWebSearchDenied, LOCAL_WEBSEARCH_DENY_ENV],
+    ] as const) {
+      expect(denied(OFF)).toBe(false)
+      expect(denied({ [name]: "" })).toBe(false)
+      expect(denied({ [name]: "0" })).toBe(false)
+      for (const value of ["1", "true", "yes", "no", "off", "false", " "]) expect(denied({ [name]: value })).toBe(true)
+    }
   })
 
   test("命中云 web search,放过全部兄弟云工具(AC4:不误杀)", () => {
@@ -44,14 +55,67 @@ describe("cloud web search kill switch", () => {
       expect(isWebSearchToolId(tool)).toBe(false)
   })
 
+  // #223 R5 Blocker:通用 Remote MCP 是第三条现存出口。`{"mcp":{"exa":{"type":"remote",
+  // "url":"https://mcp.exa.ai/mcp"}}}` 产生的工具 id 带 server 前缀**和**工具名自带后缀。
+  test("命中带前后缀的第三方形态(exa_web_search_exa 等)", () => {
+    for (const tool of [
+      "exa_web_search_exa",
+      "exa_websearch",
+      "brave_web_search",
+      "my-search_web_search_v2",
+      "tavily_web_search-preview",
+    ])
+      expect(isWebSearchToolId(tool)).toBe(true)
+    for (const tool of ["exa_deep_researcher_start", "exa_company_research", "exa_crawling", "context7_query-docs"])
+      expect(isWebSearchToolId(tool)).toBe(false)
+  })
+
   test("闸开时抛,闸关时全放行", () => {
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", ON)).toThrow(WebSearchKillSwitchError)
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", ON)).toThrow(WebSearchSovereigntyError)
     expect(() => assertWebSearchToolAllowed("cloud_web_search", ON)).toThrow(/do not retry/)
     expect(() => assertWebSearchToolAllowed("cloud_web_search", OFF)).not.toThrow()
     for (const tool of siblingCloudTools) {
       expect(() => assertWebSearchToolAllowed(tool, ON)).not.toThrow()
       expect(() => assertWebSearchToolAllowed(tool, OFF)).not.toThrow()
     }
+  })
+})
+
+// #223 R5 Blocker:主权判决必须覆盖**任何** MCP server 上的 web search,不只是 alpha 自己那个。
+describe("第三方 MCP 上的 web search 同受主权判决(R5 Blocker)", () => {
+  const thirdParty = ["exa_web_search_exa", "brave_web_search", "tavily_websearch"]
+
+  test("平台代付(无 kill-switch):第三方全关,alpha 治理的云工具**不**关", () => {
+    for (const tool of thirdParty) {
+      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS)).toThrow(WebSearchSovereigntyError)
+      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS)).toThrow(/do not retry/)
+    }
+    // AC4:平台代付时云工具是权威通道,闸不许误杀它,也不许误杀兄弟工具。
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS)).not.toThrow()
+    for (const tool of siblingCloudTools) expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS)).not.toThrow()
+  })
+
+  test("kill-switch:第三方与云工具一起关", () => {
+    for (const tool of [...thirdParty, "cloud_web_search"])
+      expect(() => assertWebSearchToolAllowed(tool, ON)).toThrow(WebSearchSovereigntyError)
+    for (const tool of siblingCloudTools) expect(() => assertWebSearchToolAllowed(tool, ON)).not.toThrow()
+  })
+
+  test("登出 / BYOK(两个信号都不置位):第三方 web search 照常可用", () => {
+    for (const tool of thirdParty) expect(() => assertWebSearchToolAllowed(tool, OFF)).not.toThrow()
+  })
+
+  test("治理例外只认注入面点名的那个 server,不写死 \"cloud\" 字面量", () => {
+    const renamed = { ...PLATFORM_PAYS, [CLOUD_MCP_SERVER_ENV]: "alphacloud" }
+    expect(() => assertWebSearchToolAllowed("alphacloud_web_search", renamed)).not.toThrow()
+    // 名字没对上就不是治理通道 —— 一个自称 cloud 的第三方 server 拿不到豁免。
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", renamed)).toThrow(WebSearchSovereigntyError)
+  })
+
+  test("注入面没点名任何云 server 时(登出态误置信号)倒向 fail-closed", () => {
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", { [LOCAL_WEBSEARCH_DENY_ENV]: "1" })).toThrow(
+      WebSearchSovereigntyError,
+    )
   })
 })
 
@@ -86,7 +150,7 @@ describe("后置 allow / approved 覆盖不了 kill-switch", () => {
 
   test("kill-switch 下 cloud_web_search 到不了 callTool(两条链同一个骨架)", () => {
     const chain = engineChain(ON)
-    expect(() => chain.run("cloud_web_search")).toThrow(WebSearchKillSwitchError)
+    expect(() => chain.run("cloud_web_search")).toThrow(WebSearchSovereigntyError)
     expect(chain.calls).toEqual([]) // 连 ask 都没走到,approved 无从生效
   })
 
@@ -152,61 +216,116 @@ describe("上游次序前提(trigger 早于 ask)", () => {
 // #223 R4:ext 装载握手。上一轮的 fail-closed 判据是 main 侧「ext bundle 路径存不存在」——
 // R4 给出三条路径仍在、钩子却不存在的真实情形。下面每一条都真跑一遍:走的是**真实的**
 // `AlphaExt`(动态 import 本包源码,与引擎装它的方式同款)与真实的失败模块,不是替身。
+//
+// R5 收紧:握手的产物从「翻开一个 enabled:false 的条目」改成「把定义装进配置」——
+// `enabled:false` 会被 `/mcp/:name/connect` 无条件复制成 `enabled:true`(R5 Major 回归)。
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("armCloudMcp 单元判据", () => {
-  const disarmed = () => ({ mcp: { cloud: { type: "remote", enabled: false }, other: { type: "local", enabled: false } } })
+describe("installCloudMcp 单元判据", () => {
+  const tokenFile = join(tmpdir(), `alpha-ext-token-${process.pid}`)
+  const def = JSON.stringify({
+    type: "remote",
+    url: "https://cloud.example/mcp",
+    enabled: true,
+    headers: { Authorization: `Bearer {file:${tokenFile}}` },
+    oauth: false,
+  })
+  const armed = { [CLOUD_MCP_ARM_ENV]: "cloud", [CLOUD_MCP_DEF_ENV]: def }
+  const readToken = () => "tok-live"
 
-  test("只开注入面点名的那一个,且只在它确实 disarmed 时开", () => {
-    const cfg = disarmed()
-    expect(armCloudMcp(cfg, { [CLOUD_MCP_ARM_ENV]: "cloud" })).toBe("cloud")
-    expect(cfg.mcp.cloud.enabled).toBe(true)
-    // 账本 disabled 覆盖 / XDG 默认拒绝也写 enabled:false —— 那些不归本握手管。
-    expect(cfg.mcp.other.enabled).toBe(false)
+  test("装的是完整定义,且 {file:} 引用在这一层才被解析(config 钩子拿到的已是解析后对象)", () => {
+    const cfg: { mcp?: Record<string, unknown> } = { mcp: { other: { type: "local", enabled: false } } }
+    expect(installCloudMcp(cfg, armed, readToken)).toBe("cloud")
+    expect(cfg.mcp!.cloud).toEqual({
+      type: "remote",
+      url: "https://cloud.example/mcp",
+      enabled: true,
+      headers: { Authorization: "Bearer tok-live" },
+      oauth: false,
+    })
+    // 别人的 disabled 条目(账本覆盖 / XDG 默认拒绝)不归本握手管。
+    expect(cfg.mcp!.other).toEqual({ type: "local", enabled: false })
   })
 
-  test("没有 arm 通道 / 名字对不上 / 本来就是开的 —— 一律不动", () => {
-    const none = disarmed()
-    expect(armCloudMcp(none, {})).toBeUndefined()
-    expect(none.mcp.cloud.enabled).toBe(false)
+  test("ARM 与 DEF 必须成对;缺一个就什么都不装", () => {
+    const onlyArm: { mcp?: Record<string, unknown> } = {}
+    expect(installCloudMcp(onlyArm, { [CLOUD_MCP_ARM_ENV]: "cloud" }, readToken)).toBeUndefined()
+    expect(onlyArm.mcp).toBeUndefined()
 
-    const mismatched = disarmed()
-    expect(armCloudMcp(mismatched, { [CLOUD_MCP_ARM_ENV]: "nope" })).toBeUndefined()
-    expect(mismatched.mcp.cloud.enabled).toBe(false)
+    const onlyDef: { mcp?: Record<string, unknown> } = {}
+    expect(installCloudMcp(onlyDef, { [CLOUD_MCP_DEF_ENV]: def }, readToken)).toBeUndefined()
+    expect(onlyDef.mcp).toBeUndefined()
 
-    const already = { mcp: { cloud: { type: "remote", enabled: true } } }
-    expect(armCloudMcp(already, { [CLOUD_MCP_ARM_ENV]: "cloud" })).toBeUndefined()
+    const nothing: { mcp?: Record<string, unknown> } = {}
+    expect(installCloudMcp(nothing, {}, readToken)).toBeUndefined()
+    expect(nothing.mcp).toBeUndefined()
   })
 
-  test("配置里根本没有 mcp 段也不抛", () => {
-    expect(armCloudMcp({}, { [CLOUD_MCP_ARM_ENV]: "cloud" })).toBeUndefined()
-    expect(armCloudMcp(undefined, { [CLOUD_MCP_ARM_ENV]: "cloud" })).toBeUndefined()
+  test("坏 DEF(非 JSON / 非对象)fail-closed:不装,也不抛", () => {
+    for (const raw of ["{not json", '"a string"', "[1,2]", "null"]) {
+      const cfg: { mcp?: Record<string, unknown> } = {}
+      expect(installCloudMcp(cfg, { [CLOUD_MCP_ARM_ENV]: "cloud", [CLOUD_MCP_DEF_ENV]: raw }, readToken)).toBeUndefined()
+      expect(cfg.mcp).toBeUndefined()
+    }
+  })
+
+  test("密钥文件读不到(登出 / 同步失败)⇒ 不装一个没有凭据的 server", () => {
+    const cfg: { mcp?: Record<string, unknown> } = {}
+    const missing = () => {
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" })
+    }
+    expect(installCloudMcp(cfg, armed, missing)).toBeUndefined()
+    expect(cfg.mcp).toBeUndefined()
+  })
+
+  test("配置里根本没有 mcp 段也不抛;cfg 不是对象则不动", () => {
+    const empty: { mcp?: Record<string, unknown> } = {}
+    expect(installCloudMcp(empty, armed, readToken)).toBe("cloud")
+    expect(empty.mcp!.cloud).toBeDefined()
+    expect(installCloudMcp(undefined, armed, readToken)).toBeUndefined()
+    expect(installCloudMcp(null, armed, readToken)).toBeUndefined()
   })
 })
 
-describe("ext 缺席三态:云 MCP 停在 disarmed(#223 R4 云 kill-switch)", () => {
+describe("ext 缺席三态:云 MCP 定义根本不进配置(#223 R4→R5 云 kill-switch)", () => {
   let root = ""
   let savedRoot: string | undefined
   let savedArm: string | undefined
+  let savedDef: string | undefined
+  let tokenFile = ""
+
+  const cloudDef = () => ({
+    type: "remote",
+    url: "https://cloud.example/mcp",
+    enabled: true,
+    headers: { Authorization: `Bearer {file:${tokenFile}}` },
+    oauth: false,
+  })
 
   beforeEach(() => {
     savedRoot = process.env.ALPHA_GLOBAL_DIR
     savedArm = process.env[CLOUD_MCP_ARM_ENV]
+    savedDef = process.env[CLOUD_MCP_DEF_ENV]
     root = realpathSync(mkdtempSync(join(tmpdir(), "alpha-ext-arm-")))
     process.env.ALPHA_GLOBAL_DIR = root
-    // main 侧 injectAlphaConfig 在 kill-switch 下置位的握手通道。
+    tokenFile = join(root, "ALPHA_CLOUD_TOKEN")
+    writeFileSync(tokenFile, "tok-live\n")
+    // main 侧 injectAlphaConfig 在 kill-switch 下置位的握手通道(定义只在 env 里托管)。
     process.env[CLOUD_MCP_ARM_ENV] = "cloud"
+    process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify(cloudDef())
   })
   afterEach(() => {
     if (savedRoot === undefined) delete process.env.ALPHA_GLOBAL_DIR
     else process.env.ALPHA_GLOBAL_DIR = savedRoot
     if (savedArm === undefined) delete process.env[CLOUD_MCP_ARM_ENV]
     else process.env[CLOUD_MCP_ARM_ENV] = savedArm
+    if (savedDef === undefined) delete process.env[CLOUD_MCP_DEF_ENV]
+    else process.env[CLOUD_MCP_DEF_ENV] = savedDef
   })
 
-  /** 注入面在 kill-switch 下写出的配置:云 server 在册但 disabled。 */
-  const injectedConfig = () => ({
-    mcp: { cloud: { type: "remote", url: "https://cloud.example/mcp", enabled: false } },
+  /** 注入面在 kill-switch 下写出的配置:**没有** cloud 条目,一个字节都没有。 */
+  const injectedConfig = (): { mcp: Record<string, { enabled?: boolean; headers?: Record<string, string> }> } => ({
+    mcp: {},
   })
 
   const pluginInput = () => ({
@@ -250,25 +369,27 @@ describe("ext 缺席三态:云 MCP 停在 disarmed(#223 R4 云 kill-switch)", ()
 
   const realExt = () => import("./plugin") as Promise<{ default: (input: unknown) => Promise<unknown> }>
 
-  test("基线:ext 真的装载 ⇒ 云 server 被 armed(否则下面三条是空的)", async () => {
+  test("基线:ext 真的装载 ⇒ 云 server 被装进配置(否则下面三条是空的)", async () => {
     const cfg = injectedConfig()
     const hooks = await engineLoadAndConfigure(cfg, { pure: false, specs: [realExt] })
 
     expect(hooks).toHaveLength(1)
-    // armed 的同一个 hooks 对象上,那道不可覆盖的闸确实在。
+    // 装上的同一个 hooks 对象上,那道不可覆盖的闸确实在。
     expect(typeof hooks[0]!["tool.execute.before"]).toBe("function")
-    expect(cfg.mcp.cloud.enabled).toBe(true)
+    expect(cfg.mcp.cloud).toMatchObject({ type: "remote", enabled: true })
+    // {file:} 引用由 ext 自己解析(config 钩子拿到的是引擎已替换过的对象)。
+    expect(cfg.mcp.cloud!.headers).toEqual({ Authorization: "Bearer tok-live" })
   })
 
-  test("① OPENCODE_PURE:引擎整个跳过外部插件 ⇒ 云 server 仍 disarmed", async () => {
+  test("① OPENCODE_PURE:引擎整个跳过外部插件 ⇒ 配置里没有 cloud 条目", async () => {
     const cfg = injectedConfig()
     const hooks = await engineLoadAndConfigure(cfg, { pure: true, specs: [realExt] })
 
     expect(hooks).toEqual([])
-    expect(cfg.mcp.cloud.enabled).toBe(false)
+    expect(cfg.mcp.cloud).toBeUndefined()
   })
 
-  test("② bundle import 失败(log-and-continue)⇒ 云 server 仍 disarmed", async () => {
+  test("② bundle import 失败(log-and-continue)⇒ 配置里没有 cloud 条目", async () => {
     const broken = join(root, "broken-bundle.mjs")
     writeFileSync(broken, 'throw new Error("bundle is corrupt")\n')
     const cfg = injectedConfig()
@@ -279,10 +400,10 @@ describe("ext 缺席三态:云 MCP 停在 disarmed(#223 R4 云 kill-switch)", ()
     })
 
     expect(hooks).toEqual([])
-    expect(cfg.mcp.cloud.enabled).toBe(false)
+    expect(cfg.mcp.cloud).toBeUndefined()
   })
 
-  test("③ 插件初始化抛错(log-and-continue)⇒ 云 server 仍 disarmed", async () => {
+  test("③ 插件初始化抛错(log-and-continue)⇒ 配置里没有 cloud 条目", async () => {
     const failing = join(root, "init-throws.mjs")
     writeFileSync(failing, 'export default async () => { throw new Error("AlphaExt init failed") }\n')
     const cfg = injectedConfig()
@@ -293,15 +414,31 @@ describe("ext 缺席三态:云 MCP 停在 disarmed(#223 R4 云 kill-switch)", ()
     })
 
     expect(hooks).toEqual([])
-    expect(cfg.mcp.cloud.enabled).toBe(false)
+    expect(cfg.mcp.cloud).toBeUndefined()
   })
 
-  // 反向:握手通道没置位(= 注入面没走 kill-switch 路径)时,ext 装载也不该乱开别人的 disabled MCP。
-  test("没有 arm 通道时 ext 不动任何 disabled MCP", async () => {
+  // ext 缺席 ⇒ 配置里没有可复活的定义。`MCP.connect()` 的复活路径由
+  // `packages/opencode/test/mcp/alpha-cloud-mcp-revival.test.ts` 用真实 MCP lifecycle + HTTP 断言。
+  test("ext 缺席时配置里连一个 URL / Authorization 头都不存在(R5 Major:热连无物可连)", async () => {
+    const cfg = injectedConfig()
+    await engineLoadAndConfigure(cfg, { pure: true, specs: [realExt] })
+    expect(JSON.stringify(cfg)).not.toContain("cloud.example")
+    expect(JSON.stringify(cfg)).not.toContain("Authorization")
+  })
+
+  // 反向:握手通道没置位(= 注入面没走 kill-switch 路径)时,ext 装载也不该凭空装一个云 server。
+  test("没有 arm 通道时 ext 什么也不装", async () => {
     delete process.env[CLOUD_MCP_ARM_ENV]
     const cfg = injectedConfig()
     await engineLoadAndConfigure(cfg, { pure: false, specs: [realExt] })
-    expect(cfg.mcp.cloud.enabled).toBe(false)
+    expect(cfg.mcp.cloud).toBeUndefined()
+  })
+
+  test("只有 arm 没有 def(伪造半个通道)⇒ 什么也不装", async () => {
+    delete process.env[CLOUD_MCP_DEF_ENV]
+    const cfg = injectedConfig()
+    await engineLoadAndConfigure(cfg, { pure: false, specs: [realExt] })
+    expect(cfg.mcp.cloud).toBeUndefined()
   })
 })
 

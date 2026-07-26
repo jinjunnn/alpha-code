@@ -28,7 +28,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { injectAlphaConfig } from "./alpha-config-injection"
 import { secretFilePath } from "./alpha-secret-files"
-import { CLOUD_MCP_ARM_ENV } from "./cloud-web-search"
+import { CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV } from "./cloud-web-search"
 
 // 注入读到的每一个 env 输入 + 它自己写出的三个 env 输出:逐个快照/清空/还原,
 // 既隔离宿主机真实配置,也不把注入结果泄漏给同进程的其它测试文件。
@@ -50,8 +50,10 @@ const MANAGED = [
   "OPENCODE_ENABLE_EXA",
   "OPENCODE_EXPERIMENTAL",
   "ALPHA_CLOUD_MCP_URL",
-  // #223 R4:注入面自己置位/删除的 ext 装载握手通道(输出之一)。
+  // #223 R4/R5:注入面自己置位/删除的 ext 装载握手通道 + 云 server 身份(输出之三)。
   "ALPHA_CLOUD_MCP_ARM",
+  "ALPHA_CLOUD_MCP_DEF",
+  "ALPHA_CLOUD_MCP_SERVER",
   "ALPHA_BASE_URL",
   "ALPHA_DEFAULT_MODEL",
 ] as const
@@ -322,14 +324,15 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
       expect([name, agent.permission?.websearch]).toEqual([name, "deny"])
   })
 
-  // #223 R4:kill-switch 下云 server 一律注册成 **disarmed**(`enabled:false`)+ 置位 arm 通道。
-  // 打开它的唯一途径是 @alpha-code/ext 的 config 钩子(见 packages/ext/src/cloud-websearch-kill.ts)。
-  // R3 那版按「ext bundle 路径是否存在」判在场 —— 路径存在 ≠ 插件装载,故 ext 在不在场都是 disarmed。
+  // #223 R4→R5:kill-switch 下云 server 的**完整定义根本不进配置**,只经 ARM/DEF 两个 env 托管给
+  // @alpha-code/ext(见 packages/ext/src/cloud-websearch-kill.ts)。R4 那版写一个 `enabled:false`
+  // 的条目 —— R5 判其为回归:`MCP.connect()` 会无条件把它复制成 `enabled:true`,而该能力公开为
+  // `/mcp/:name/connect` 且产品 UI 真的在调,于是 ext 缺席时用户点一下就能热连起来。
   for (const [name, ext] of [
     ["ext bundle 路径已解析", true],
     ["ext bundle 路径缺席", false],
   ] as const)
-    test(`kill-switch(${name}):云 server 注册但 disarmed,本地与云两个 web search 都被 deny`, () => {
+    test(`kill-switch(${name}):配置里没有云 server 定义,本地与云两个 web search 都被 deny`, () => {
       givenPlatformPaysUnderUmbrella()
       process.env.ALPHA_WEBSEARCH_DISABLE = "1"
       const errors: unknown[][] = []
@@ -345,29 +348,76 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
       expect(config.permission?.websearch).toBe("deny")
       expect(config.permission?.cloud_web_search).toBe("deny")
       expect(config.permission?.cloud_dispatch).toBeUndefined()
-      // 注册在册,但引擎会判 disabled(mcp/index.ts:`enabled === false` ⇒ 不建客户端、零工具)。
-      expect(config.mcp?.cloud).toMatchObject({ type: "remote", enabled: false })
+      // 一个字节的可复活定义都不留:没有条目、没有 URL、没有 Authorization 头。
+      expect(config.mcp?.cloud).toBeUndefined()
+      expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("cloud.example")
+      expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("Authorization")
+      // 定义只在 env 里托管,ext 的 config 钩子跑起来才装。
       expect(process.env[CLOUD_MCP_ARM_ENV]).toBe("cloud")
-      expect(errors.flat().join("\n")).toContain("registered DISARMED")
+      expect(JSON.parse(process.env[CLOUD_MCP_DEF_ENV]!)).toMatchObject({
+        type: "remote",
+        url: "https://cloud.example/mcp",
+      })
+      // A6:托管的定义里是 {file:} 引用,不是 token 值本身。
+      expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("{file:")
+      expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("cloud-token")
+      expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
+      expect(errors.flat().join("\n")).toContain("WITHHELD from the engine config")
     })
 
-  test("代付但无 kill-switch 时:云 server 直接可用,且不置位 arm 通道(不依赖 ext 装载)", () => {
+  test("kill-switch:继承来的 OPENCODE_CONFIG_CONTENT 里的同名云条目被抹掉", () => {
+    givenPlatformPaysUnderUmbrella()
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+      mcp: { cloud: { type: "remote", url: "https://inherited.example/mcp", enabled: true } },
+    })
+
+    injectAlphaConfig(userData, undefined, "stable")
+
+    expect(injectedPermissions().mcp?.cloud).toBeUndefined()
+    expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("inherited.example")
+  })
+
+  test("代付但无 kill-switch 时:云 server 直接可用,且不置位 arm/def 通道(不依赖 ext 装载)", () => {
     givenPlatformPaysUnderUmbrella()
 
     injectAlphaConfig(userData, undefined, "stable")
 
     expect(injectedPermissions().mcp?.cloud).toMatchObject({ type: "remote", enabled: true })
     expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
+    expect(process.env[CLOUD_MCP_DEF_ENV]).toBeUndefined()
+    // 闸要能把「alpha 治理的云 server」与用户自带的 web-search MCP 区分开(R5 Blocker)。
+    expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
   })
 
-  // arm 通道是 sidecar 内部的握手,绝不能被外部 shell 伪造:注入面在非 kill-switch 路径上主动删。
-  test("外部伪造的 arm 变量被注入面清掉", () => {
+  // 握手通道的可信度**不**来自 sidecar-env 白名单(逃生阀 ALPHA_ENV_ALLOWLIST_EXTRA 能放行它,
+  // 见 sidecar-env.test.ts 的同名事实),而来自:注入面在每次 fork 的每条分支上覆盖或删除它们。
+  test("继承/伪造的 arm+def 变量在每条分支上都被注入面覆盖或清掉", () => {
     givenPlatformPaysUnderUmbrella()
-    process.env[CLOUD_MCP_ARM_ENV] = "cloud"
+    process.env[CLOUD_MCP_ARM_ENV] = "forged"
+    process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify({ type: "remote", url: "https://attacker.example/mcp" })
+    process.env[CLOUD_MCP_SERVER_ENV] = "forged"
 
+    // ① 代付、无 kill-switch:两个握手变量都被删。
     injectAlphaConfig(userData, undefined, "stable")
-
     expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
+    expect(process.env[CLOUD_MCP_DEF_ENV]).toBeUndefined()
+    expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
+
+    // ② kill-switch:被覆盖成 alpha 自己的名字与定义,伪造的 URL 一点不剩。
+    process.env[CLOUD_MCP_ARM_ENV] = "forged"
+    process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify({ type: "remote", url: "https://attacker.example/mcp" })
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    injectAlphaConfig(userData, undefined, "stable")
+    expect(process.env[CLOUD_MCP_ARM_ENV]).toBe("cloud")
+    expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("attacker.example")
+
+    // ③ 登出 / BYOK(不代付):三个都被删,伪造的通道彻底失效。
+    delete process.env.ALPHA_CLOUD_MCP_URL
+    injectAlphaConfig(userData, undefined, "stable")
+    expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
+    expect(process.env[CLOUD_MCP_DEF_ENV]).toBeUndefined()
+    expect(process.env[CLOUD_MCP_SERVER_ENV]).toBeUndefined()
   })
 
   test("登出/BYOK:keyless 本地 websearch 保持可用(不误伤登出兜底)", () => {

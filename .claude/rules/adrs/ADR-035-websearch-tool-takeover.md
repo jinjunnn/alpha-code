@@ -42,10 +42,21 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
    > **不成立,已作废**。R4 的可执行反例:`const id = ["web","search"].join("")` 之后
    > `Tool.define(id, /* 调用既有 McpWebSearch.call */)` —— 注册名是算出来的,传输复用**本 ADR 已
    > 接管**的 `mcp-websearch.ts`,于是两张网都看不见它(用测试里的原正则实测 `netA=false,
-   > netB=false`),而它自己不读主权信号。真正的类级落点是**共同的执行边界**:本地 keyless web
-   > search 的两条出网出口(`mcp-websearch.ts` 的 `call()`、`packages/core/src/tool/websearch.ts`
-   > 的 `callMcp()`,两条都在本 ADR 的接管面内)现在都在第一句读 `ALPHA_LOCAL_WEBSEARCH_DENY`。
+   > netB=false`),而它自己不读主权信号。收口 = 本地 keyless web search 的两条出网出口
+   > (`mcp-websearch.ts` 的 `call()`、`packages/core/src/tool/websearch.ts` 的 `callMcp()`,两条
+   > 都在本 ADR 的接管面内)现在都在第一句读 `ALPHA_LOCAL_WEBSEARCH_DENY`。
    > 普查闸保留,但只作**纵深**(抓自带全新 HTTP 出口的副本),不再是主判据,也不再声称穷尽。
+   >
+   > **事实更正(2026-07-26,#223 R5 Blocker)**:上一段把这两条出口称为 web search 的
+   > **共同执行边界** —— **不成立,已作废**。它们是「本地 keyless websearch **工具**」这一类的共同
+   > 边界,不是 web search **能力**的共同边界。R5 的反例是仓内**已支持**的通用路径:配置里声明
+   > `{"mcp":{"exa":{"type":"remote","url":"https://mcp.exa.ai/mcp"}}}`,引擎经
+   > `packages/opencode/src/mcp/index.ts` 建通用 MCP 传输,产生 `exa_web_search_exa`;普通模式经
+   > `session/tools.ts` → `McpCatalog.convertTool()` → `client.callTool()`,code-mode 经
+   > `tool/code-mode.ts` 直接 `client.callTool()` —— 两条都不经过本 ADR 接管的任何一个文件。
+   > **MCP 那一类的共同钳制点在本 ADR 的接管面之外**:alpha 自有包 `packages/ext` 的
+   > `tool.execute.before` 钩子。本地主权判决已一并接到那里(见 [[ADR-009]] 裁决 (b) 的五次收口段),
+   > 本 ADR 的接管面**不变**(仍是三个源文件),两条传输闸降为本地 `websearch` 工具的纵深。
 3. **这两个文件当时的行为是两处失守**:`websearch.ts` 用
    `output: result ?? "No search results found…"` 把空/坏响应伪装成成功串;末尾
    `.pipe(Effect.orDie)` 把一切错误塌成匿名 defect(无类别、无状态、表现为工具崩溃)。
@@ -211,12 +222,18 @@ defect。这是本决策自带的 tripwire。
   已作为**变异种**在两个引擎包各跑一遍(「R4 变异」组,各带闸不置位时确实出网的正向对照),
   断言:传输层拒 + 零出网 + 模型面拿到「别重试」原文。**不再声称穷尽**:自带全新出口且端点也算
   出来的副本仍拦不住,那需要进程级出网拦截,不在本 ADR 范围。
-- ⚠️ **这两条回归跑在 alpha 的合并闸之外**:`scripts/alpha-check.sh` 与 `alpha-ci.yml` 只跑
+  **2026-07-26 三次更正(R5 Blocker)**:上一段把这两条出口当成 web search 的共同执行边界 ——
+  **不成立,已作废**(见 §背景 2 的 R5 事实更正)。它们只覆盖「本地 keyless websearch 工具」这一类;
+  用户配置里的通用 Remote MCP(`exa_web_search_exa`)两条都不经过。**本 ADR 的接管面不因此扩大**:
+  MCP 那一类的钳制点在 alpha 自有的 `packages/ext`(`tool.execute.before`),不需要新收编任何上游文件。
+  证据在 `packages/opencode/test/tool/alpha-mcp-websearch-gate.test.ts`(新增文件,对守卫是 `A`)。
+- ⚠️ **这些回归跑在 alpha 的合并闸之外**:`scripts/alpha-check.sh` 与 `alpha-ci.yml` 只跑
   contracts-consumer / ext / ui-mac 三个包的测试,`packages/core` 与 `packages/opencode` 的测试
-  两处都不跑。因此本轮把**机制事实**(集合普查 + 闸的位置 + 上游次序前提)固化在 ui-mac 与 ext
-  的测试里 —— 那两处才是真的会拦住 PR 的地方;engine 侧那两个文件是**行为证据**,需人工跑
-  (`bun test test/alpha-websearch-sovereignty.test.ts`)。把 engine 测试纳入合并闸是独立议题,
-  不在本 ADR 范围。
+  两处都不跑。因此本轮把**机制事实**(集合普查 + 闸的位置 + 上游次序前提 + 握手通道的两半)固化在
+  ui-mac 与 ext 的测试里 —— 那两处才是真的会拦住 PR 的地方;engine 侧是**行为证据**,需人工跑:
+  `bun --cwd packages/core test test/alpha-websearch-sovereignty.test.ts`、
+  `bun --cwd packages/opencode test test/tool/alpha-websearch-failure.test.ts test/tool/alpha-mcp-websearch-gate.test.ts test/mcp/alpha-cloud-mcp-revival.test.ts`。
+  把 engine 测试纳入合并闸是独立议题,不在本 ADR 范围。
 - ✅ 本地 `scripts/alpha-check.sh` 的 north-star 守卫与 CI 恢复 1:1,不再恒报假红。
 - ⚠️ **单向门**:两个文件脱离上游同步(含安全修复),re-freeze 是唯一吸收通道。
 - ⚠️ 接管面每多一处,「北极星」衡量的分母就小一点。本 ADR 的自限是**只收三个源文件**(全部是
