@@ -46,7 +46,7 @@ mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {
 // <tempdir>/alpha-secrets,无 ALPHA 密钥环境变量时 no-op,afterEach 清理)。全局 mock.module 会跨文件
 // 泄漏残缺导出面,撞坏 alpha-secret-files.test.ts 的 `import { secretFileRef, ... }`(2026-07-21 Linux CI 实锤)。
 
-const { hasSecretFile, syncSecretFiles } = await import("./alpha-secret-files")
+const { hasSecretFile } = await import("./alpha-secret-files")
 const { preferAppEnv, spawnLocalServer } = await import("./server")
 
 let userDataPath = ""
@@ -59,6 +59,7 @@ const keylessWebSearchFlags = [
 const managedEnv = [
   "SHELL",
   "ALPHA_CLOUD_MCP_URL",
+  "ALPHA_CLOUD_TOKEN",
   "ALPHA_ENV_FILE",
   "ALPHA_SECRETS_DISABLE",
   "ALPHA_WEBSEARCH_DISABLE",
@@ -87,8 +88,36 @@ afterEach(() => {
   rmSync(userDataPath, { recursive: true, force: true })
 })
 
-function webSearchToolSnapshot() {
-  const local = keylessWebSearchFlags.some((key) => process.env[key] === "1")
+const fakeFork = ((file: string, args: string[], options: Record<string, unknown>) => {
+  forkCalls.push({ file, args, options })
+  return new FakeChild()
+}) as unknown as typeof import("electron").utilityProcess.fork
+
+/** Fork the sidecar the way boot/respawn does and hand back the env it was forked with. */
+async function forkSidecar() {
+  const result = await spawnLocalServer("127.0.0.1", 4096, "password", {
+    userDataPath,
+    healthCheck: async () => true,
+    fork: fakeFork,
+  })
+  await result.health.wait
+  await result.listener.stop()
+  return (forkCalls.at(-1)?.options.env ?? {}) as Record<string, string | undefined>
+}
+
+/** #621:登录态由 initAuthEnv/applyAuthEnv 建立,**晚于** preferAppEnv;env token 在下次 fork 时
+ *  才经 syncSecretFiles 变成密钥文件。测试照这个真实顺序走,不预置 force-off 的判据。 */
+function applyAuthEnvLikeLogin() {
+  process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
+  process.env.ALPHA_CLOUD_TOKEN = "token"
+}
+
+function applyAuthEnvLikeLogout() {
+  delete process.env.ALPHA_CLOUD_TOKEN
+}
+
+function webSearchToolSnapshot(env: Record<string, string | undefined>) {
+  const local = keylessWebSearchFlags.some((key) => env[key] === "1")
   return [
     ...(local ? ["websearch"] : []),
     ...(process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")
@@ -97,71 +126,91 @@ function webSearchToolSnapshot() {
   ]
 }
 
-describe("preferAppEnv websearch selection", () => {
-  test("platform-pays exposes only cloud_web_search and forces off every keyless flag", () => {
-    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
-    syncSecretFiles(userDataPath, { ALPHA_CLOUD_TOKEN: "token" })
+const allFlagsOff = Object.fromEntries(keylessWebSearchFlags.map((key) => [key, "0"]))
 
+function keylessFlagsOf(env: Record<string, string | undefined>) {
+  return Object.fromEntries(keylessWebSearchFlags.map((key) => [key, env[key]]))
+}
+
+describe("web search sovereignty at sidecar fork (#621)", () => {
+  test("cold start with a logged-in user forces keyless off at fork, not at preferAppEnv", async () => {
+    // 真实顺序:preferAppEnv 先跑,此刻 initAuthEnv 还没写 ALPHA_CLOUD_MCP_URL/token。
     preferAppEnv(userDataPath)
+    expect(process.env.OPENCODE_ENABLE_EXA).toBe("1") // boot 期只能判「登出」——这正是 #621 的现场
 
-    expect(webSearchToolSnapshot()).toEqual(["cloud_web_search"])
-    expect({
-      OPENCODE_ENABLE_EXA: process.env.OPENCODE_ENABLE_EXA,
-      OPENCODE_EXPERIMENTAL_EXA: process.env.OPENCODE_EXPERIMENTAL_EXA,
-      OPENCODE_ENABLE_PARALLEL: process.env.OPENCODE_ENABLE_PARALLEL,
-      OPENCODE_EXPERIMENTAL_PARALLEL: process.env.OPENCODE_EXPERIMENTAL_PARALLEL,
-    }).toEqual({
-      OPENCODE_ENABLE_EXA: "0",
-      OPENCODE_EXPERIMENTAL_EXA: "0",
-      OPENCODE_ENABLE_PARALLEL: "0",
-      OPENCODE_EXPERIMENTAL_PARALLEL: "0",
-    })
+    applyAuthEnvLikeLogin()
+
+    const env = await forkSidecar()
+    expect(keylessFlagsOf(env)).toEqual(allFlagsOff)
+    expect(webSearchToolSnapshot(env)).toEqual(["cloud_web_search"])
   })
 
-  test("platform-pays overrides a shell-exported keyless flag", () => {
-    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
+  test("cold start overrides a shell-exported keyless flag at fork time", async () => {
     process.env.OPENCODE_ENABLE_PARALLEL = "1"
-    syncSecretFiles(userDataPath, { ALPHA_CLOUD_TOKEN: "token" })
 
     preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
 
-    expect(webSearchToolSnapshot()).toEqual(["cloud_web_search"])
-    expect(process.env.OPENCODE_ENABLE_PARALLEL).toBe("0")
+    const env = await forkSidecar()
+    expect(env.OPENCODE_ENABLE_PARALLEL).toBe("0")
+    expect(webSearchToolSnapshot(env)).toEqual(["cloud_web_search"])
   })
 
-  test.each(keylessWebSearchFlags)("disable overrides a shell-exported %s flag in every auth state", (flag) => {
+  test.each(keylessWebSearchFlags)("disable overrides a shell-exported %s flag in every auth state", async (flag) => {
     process.env.ALPHA_WEBSEARCH_DISABLE = "1"
     process.env[flag] = "1"
 
     preferAppEnv(userDataPath)
 
-    expect(webSearchToolSnapshot()).toEqual([])
-    expect(Object.fromEntries(keylessWebSearchFlags.map((key) => [key, process.env[key]]))).toEqual(
-      Object.fromEntries(keylessWebSearchFlags.map((key) => [key, "0"])),
-    )
+    const env = await forkSidecar()
+    expect(keylessFlagsOf(env)).toEqual(allFlagsOff)
+    expect(webSearchToolSnapshot(env)).toEqual([])
   })
 
-  test("disable wins over all shell-exported keyless flags even when cloud is registered", () => {
+  test("disable wins over all shell-exported keyless flags even when cloud is registered", async () => {
     process.env.ALPHA_WEBSEARCH_DISABLE = "1"
-    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
     Object.assign(process.env, Object.fromEntries(keylessWebSearchFlags.map((key) => [key, "1"])))
-    syncSecretFiles(userDataPath, { ALPHA_CLOUD_TOKEN: "token" })
 
     preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
 
-    expect(keylessWebSearchFlags.map((key) => process.env[key])).toEqual(["0", "0", "0", "0"])
+    const env = await forkSidecar()
+    expect(keylessFlagsOf(env)).toEqual(allFlagsOff)
   })
 
-  test("logged-out/BYOK exposes only the unchanged local keyless websearch", () => {
-    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
+  test("logged-out/BYOK forks with the unchanged local keyless websearch", async () => {
+    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp" // URL 在场但无密钥文件 = 未登录
 
     preferAppEnv(userDataPath)
 
-    expect(webSearchToolSnapshot()).toEqual(["websearch"])
-    expect(process.env.OPENCODE_ENABLE_EXA).toBe("1")
-    expect(process.env.OPENCODE_EXPERIMENTAL_EXA).toBeUndefined()
-    expect(process.env.OPENCODE_ENABLE_PARALLEL).toBeUndefined()
-    expect(process.env.OPENCODE_EXPERIMENTAL_PARALLEL).toBeUndefined()
+    const env = await forkSidecar()
+    expect(webSearchToolSnapshot(env)).toEqual(["websearch"])
+    expect(env.OPENCODE_ENABLE_EXA).toBe("1")
+    expect(env.OPENCODE_EXPERIMENTAL_EXA).toBeUndefined()
+    expect(env.OPENCODE_ENABLE_PARALLEL).toBeUndefined()
+    expect(env.OPENCODE_EXPERIMENTAL_PARALLEL).toBeUndefined()
+  })
+
+  test("logout respawn gives the keyless baseline back instead of leaving it forced off", async () => {
+    process.env.OPENCODE_ENABLE_PARALLEL = "1" // 用户 shell 的真 export
+
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+    expect(keylessFlagsOf(await forkSidecar())).toEqual(allFlagsOff)
+
+    applyAuthEnvLikeLogout()
+
+    const env = await forkSidecar()
+    expect(env.OPENCODE_ENABLE_PARALLEL).toBe("1")
+    expect(env.OPENCODE_ENABLE_EXA).toBe("1")
+    expect(webSearchToolSnapshot(env)).toEqual(["websearch"])
+  })
+
+  test("re-forking without an auth change is idempotent", async () => {
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+
+    expect(keylessFlagsOf(await forkSidecar())).toEqual(keylessFlagsOf(await forkSidecar()))
   })
 })
 
@@ -170,10 +219,7 @@ describe("spawnLocalServer", () => {
     const result = await spawnLocalServer("127.0.0.1", 4096, "password", {
       userDataPath,
       healthCheck: async () => true,
-      fork: ((file: string, args: string[], options: Record<string, unknown>) => {
-        forkCalls.push({ file, args, options })
-        return new FakeChild()
-      }) as unknown as typeof import("electron").utilityProcess.fork,
+      fork: fakeFork,
     })
     await result.health.wait
 

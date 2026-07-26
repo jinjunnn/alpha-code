@@ -68,22 +68,63 @@ export function setDefaultServerUrl(url: string | null) {
   getStore().delete(DEFAULT_SERVER_URL_KEY)
 }
 
+// ADR-009 B1/B2 的 4 个 keyless web search 专用 flag。umbrella(`OPENCODE_EXPERIMENTAL`)刻意不碰
+// ——「一开关一具名能力」,盲目 force-0 会连带关掉 references / code-mode 等无关实验能力。
+const KEYLESS_WEBSEARCH_FLAGS = [
+  "OPENCODE_ENABLE_EXA",
+  "OPENCODE_EXPERIMENTAL_EXA",
+  "OPENCODE_ENABLE_PARALLEL",
+  "OPENCODE_EXPERIMENTAL_PARALLEL",
+] as const
+type KeylessWebSearchFlag = (typeof KEYLESS_WEBSEARCH_FLAGS)[number]
+
+// 主权基线 = 被 force-off 覆盖**之前**的用户真值(shell export / 系统 env)。force-off 是覆盖写,
+// 会销毁原值;登出 respawn 要把 keyless 还回去(ADR-009 B1「登出/BYOK 保留 keyless」),故必须先留底。
+let keylessWebSearchBaseline: Partial<Record<KeylessWebSearchFlag, string>> = {}
+
+function captureKeylessWebSearchBaseline(source: Record<string, string | undefined>, reset = false) {
+  if (reset) keylessWebSearchBaseline = {}
+  for (const key of KEYLESS_WEBSEARCH_FLAGS) {
+    if (!(key in source)) continue
+    const value = source[key]
+    if (value === undefined) delete keylessWebSearchBaseline[key]
+    else keylessWebSearchBaseline[key] = value
+  }
+}
+
+/**
+ * ADR-009 B1/B2 的 web search 主权闸,**幂等**、可反复重算。
+ *
+ * #621:判据里的 `ALPHA_CLOUD_MCP_URL` 由 `applyAuthEnv()` 写入(alpha-auth.ts),而它经
+ * `initAuthEnv()` 在 `whenReady` 之后才跑 —— **晚于** `preferAppEnv()`。因此冷启动的登录用户在
+ * `preferAppEnv` 里判出来的恒是「登出」,force-off 恒不触发,反而把 `OPENCODE_ENABLE_EXA` 设成
+ * `"1"`,fork 出去的 sidecar 本地 keyless 与 `cloud_web_search` 双活。修法不是挪 `preferAppEnv`
+ * 的位置(它必须早,fork 要 PATH 等),而是**每次 fork 前重算**(见 `spawnLocalServer`),与
+ * `syncSecretFiles` 同纪律。
+ *
+ * 两个方向都写:登录/kill-switch → 覆盖写 `"0"`(压过 shell export);登出/BYOK → 还原基线 +
+ * 桌面默认(set-if-unset `OPENCODE_ENABLE_EXA=1`),否则一次登录会把 keyless 永久哑掉到重启。
+ */
+export function applyWebSearchSovereignty(userDataPath: string) {
+  const killSwitch = Boolean(process.env.ALPHA_WEBSEARCH_DISABLE)
+  const platformPays = Boolean(process.env.ALPHA_CLOUD_MCP_URL) && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")
+  if (killSwitch || platformPays) {
+    for (const key of KEYLESS_WEBSEARCH_FLAGS) process.env[key] = "0"
+    return
+  }
+  for (const key of KEYLESS_WEBSEARCH_FLAGS) {
+    const baseline = keylessWebSearchBaseline[key]
+    if (baseline === undefined) delete process.env[key]
+    else process.env[key] = baseline
+  }
+  process.env.OPENCODE_ENABLE_EXA ??= "1"
+}
+
 export function preferAppEnv(userDataPath: string) {
   const logger = getLogger()
   const logShellEnvCache = (message: string, extra?: Record<string, unknown>) => write("main", message, extra)
-  const forceOffKeylessWebSearch = () => {
-    if (
-      !process.env.ALPHA_WEBSEARCH_DISABLE &&
-      (!process.env.ALPHA_CLOUD_MCP_URL || !hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN"))
-    )
-      return
-    Object.assign(process.env, {
-      OPENCODE_ENABLE_EXA: "0",
-      OPENCODE_EXPERIMENTAL_EXA: "0",
-      OPENCODE_ENABLE_PARALLEL: "0",
-      OPENCODE_EXPERIMENTAL_PARALLEL: "0",
-    })
-  }
+  // 基线必须在任何 force-off 之前取,且每次 preferAppEnv 重取(单测逐例重置 env)。
+  captureKeylessWebSearchBaseline(process.env, true)
   const shell = process.platform === "win32" ? null : getUserShell()
   // 1. Login-shell env first -- a real `export` wins over the secrets file and ordinary defaults;
   //    the websearch capability controls below are explicit local sovereignty overrides.
@@ -107,7 +148,10 @@ export function preferAppEnv(userDataPath: string) {
             )
           writeShellEnvCache(userDataPath, shell, cleanFresh, logShellEnvCache)
           Object.assign(process.env, cleanFresh)
-          forceOffKeylessWebSearch()
+          // 新鲜 shell 值是「真 export」,它更新基线(只并入 cleanFresh 里真出现的键,不整体重取
+          // ——process.env 里那几个键此刻可能已是 force-off 写下的 "0")。
+          captureKeylessWebSearchBaseline(cleanFresh)
+          applyWebSearchSovereignty(userDataPath)
           logger.log(`[server] Shell env refreshed in background (${Object.keys(cleanFresh).length} vars)`)
         })
         .catch(() => {})
@@ -143,7 +187,9 @@ export function preferAppEnv(userDataPath: string) {
     OPENCODE_DISABLE_MODELS_FETCH: process.env.OPENCODE_DISABLE_MODELS_FETCH ?? "1",
     ...(process.env.ALPHA_WEBSEARCH_DISABLE ? {} : { OPENCODE_ENABLE_EXA: process.env.OPENCODE_ENABLE_EXA ?? "1" }),
   })
-  forceOffKeylessWebSearch()
+  // boot 期这一跑只在「登出 / kill-switch / 已有 ALPHA_CLOUD_MCP_URL 的 dev export」下有结论;
+  // 登录态的真判据要等 initAuthEnv,故 fork 前还会再跑一次(#621)。
+  applyWebSearchSovereignty(userDataPath)
 }
 
 export async function spawnLocalServer(
@@ -168,6 +214,12 @@ export async function spawnLocalServer(
   } catch (error) {
     getLogger()?.error("alpha-secrets sync FAILED — platform/BYOK providers will be missing", error)
   }
+
+  // #621:web search 主权闸重算,**每次 fork 都跑**,且必须排在 syncSecretFiles 之后 —— 它的两个
+  // 判据在 preferAppEnv 时都还不成立:`ALPHA_CLOUD_MCP_URL` 由 initAuthEnv(whenReady 之后)写,
+  // `ALPHA_CLOUD_TOKEN` 密钥文件由上面这次 sync 刚落盘/刚删除。冷启动登录用户此前恒判「登出」,
+  // 本地 keyless 与 cloud_web_search 双活(ADR-009 B1 破)。幂等 ⇒ 登录/登出 respawn 自动收敛。
+  applyWebSearchSovereignty(options.userDataPath)
 
   // B6(=G1):解析 @alpha-code/ext bundle 路径,经 StartCommand 传 sidecar(不走 env,免动 A6 白名单)。
   // 缺文件 loud warn(anti-B11:否则表现为「alpha_ping 工具静默不在」);ALPHA_EXT_DISABLE=1 静默跳过。
