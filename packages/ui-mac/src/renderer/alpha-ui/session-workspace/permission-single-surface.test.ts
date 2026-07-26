@@ -5,6 +5,10 @@
 // 本文件按同一审计给出的最简判据补运行时行为闸:同场真实挂载生产 PermissionWatcher 与
 // 生产 SessionComposerDock,注入同一请求,断言
 //   ① 全局恰一个五栏 Dialog,归属 Permission surface,不在 dock 子树;
+//   ①′ **全局呈现面判据**:注入前后,整个 document 的规范形差异恰好是 Permission surface
+//      的 portal 子树;且该子树逐字节等于「surface 单独渲染」的参考规范形。Portal 到任意
+//      已存在节点、Portal 进 overlay 内部搭车、改写既有节点、新建 style/title、attachShadow
+//      (原型层入账,含 closed)—— 一律红;
 //   ② dock 只发生既定的 placeholder/权限 chip 增量(data-approval + 提示文案),结构
 //      规范化后与注入前逐字节相等 —— 任何改名后的审批节点一出现即红;
 //   ③ 决定只到达 Permission surface client —— dock/composer 的全部 SDK 出口是录音
@@ -14,6 +18,11 @@
 // `createOpencodeClient` 就能不新增 DOM、方括号提交,实测 POST .../permission/<id>/reply
 // 真的发出而三条闸门全绿。现将 `@opencode-ai/sdk` 全部子路径 alias 到录音替身
 // (single-surface-sdk-stub),新建 client 因此同样入账;该形态本身钉成第二条回归用例。
+//
+// R3(自查登记,owner 2026-07-26 裁决今晚堵):旧闸① 只数 dialog + body **直接**子节点增量,
+// 闸② 只看 dock 子树 —— dock 里 `<Portal mount={任意已存在非 dock 节点}>` 渲一个只读
+// 审批卡(无 role=dialog、无 data-permission-*)实测三闸全绿。①′ 把判据升成上述整体快照:
+// 差异集合 = 恰好 Permission surface,不再枚举「什么算审批节点」。
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test"
@@ -60,6 +69,16 @@ await build({
 
 const disposers: Array<() => void> = []
 GlobalRegistrator.register()
+
+// 呈现面不可迁出 light DOM:闸①′ 的规范形只走 childNodes,shadow root(尤其 closed)对它
+// 不可见 —— 所以在原型层记录**一切** attachShadow 调用,场景内断言为零。open/closed 一律入账。
+const shadowRootHosts: Element[] = []
+const originalAttachShadow = Element.prototype.attachShadow
+Element.prototype.attachShadow = function (this: Element, init: ShadowRootInit) {
+  shadowRootHosts.push(this)
+  return originalAttachShadow.call(this, init)
+}
+
 const runtime = (await import(
   pathToFileURL(join(runtimeDirectory, "single-surface-test-runtime.js")).href
 )) as typeof RuntimeModule
@@ -85,6 +104,7 @@ const request: PermissionV2Request = {
 
 beforeEach(() => {
   runtime.resetSingleSurfaceHarness()
+  shadowRootHosts.splice(0)
   document.body.replaceChildren()
   Object.defineProperty(window, "api", {
     configurable: true,
@@ -106,6 +126,7 @@ afterEach(async () => {
 })
 
 afterAll(async () => {
+  Element.prototype.attachShadow = originalAttachShadow
   await GlobalRegistrator.unregister()
   rmSync(runtimeDirectory, { recursive: true, force: true })
 })
@@ -122,23 +143,49 @@ function mountHarness() {
   disposers.push(runtime.render(() => runtime.SingleSurfaceHarness(), host))
 }
 
-/** dock 子树的规范序列化。除「审批挂起提示」的既定增量 —— composer 根的 data-approval
- *  与输入框(.a-comp-input)的 placeholder / aria-label 文案 —— 之外,任何节点增删、属性
- *  变化、文本变化都会改变序列化结果。等义改写(改名组件、新 class、新 data-* 属性)造出
- *  的第二审批面必然新增节点/属性,规范化后与基线不再相等。 */
-function canonicalizeDock(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) return `#${node.textContent}`
+/** 规范序列化核心:元素标签 + 全部属性(经 dropAttribute 过滤)+ 递归子节点与文本。
+ *  任何节点增删、属性变化、文本变化都会改变序列化结果;`exclude` 子树整棵跳过。 */
+function canonicalizeNode(node: Node, dropAttribute: (element: Element, name: string) => boolean, exclude?: Node): string {
+  if (exclude && node === exclude) return ""
+  // 空文本节点是 Solid 动态插入的定位标记(Show 翻转后留在原位),零呈现,不入账;
+  // 任何**非空**文本(含纯空白 —— 可影响排版)照常入账。
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ? `#${node.textContent}` : ""
   if (node.nodeType !== Node.ELEMENT_NODE) return ""
   const element = node as Element
-  const sanctionedTextAttrs = element.classList.contains("a-comp-input") ? ["placeholder", "aria-label"] : []
   const attributes = Array.from(element.attributes)
-    .filter((attribute) => attribute.name !== "data-approval" && !sanctionedTextAttrs.includes(attribute.name))
+    .filter((attribute) => !dropAttribute(element, attribute.name))
     .map((attribute) => `${attribute.name}=${attribute.value}`)
     .sort()
   const children = Array.from(element.childNodes)
-    .map(canonicalizeDock)
+    .map((child) => canonicalizeNode(child, dropAttribute, exclude))
     .filter((serialized) => serialized !== "")
   return `<${element.tagName}|${attributes.join("|")}>[${children.join(",")}]`
+}
+
+/** 「审批挂起提示」的既定增量 —— composer 根的 data-approval 与输入框(.a-comp-input)的
+ *  placeholder / aria-label 文案。这是注入前后 dock(乃至全文档)唯一被豁免的属性差异。 */
+const sanctionedDockDelta = (element: Element, name: string) =>
+  name === "data-approval" ||
+  (element.classList.contains("a-comp-input") && (name === "placeholder" || name === "aria-label"))
+
+/** dock 子树的规范序列化(闸②)。等义改写(改名组件、新 class、新 data-* 属性)造出的
+ *  第二审批面必然新增节点/属性,规范化后与基线不再相等。 */
+function canonicalizeDock(node: Node): string {
+  return canonicalizeNode(node, sanctionedDockDelta)
+}
+
+/** 全文档呈现面规范形(闸①′)。在 dock 既定增量之外,只再豁免两类**不携带呈现**的属性:
+ *  - inert / aria-hidden:dialog 分层对 body 其余直接子节点的合法写入,只能隐藏、不能呈现;
+ *  - id / aria-labelledby / aria-describedby:createUniqueId 铸造,跨两次渲染非确定 ——
+ *    overlay 与参考渲染的逐字节比较必须豁免;三者同样不携带呈现。
+ *  style、class、文本与其余一切属性照常入账:把既有节点改写成审批卡同样改变这份规范形。 */
+const nonPresentationalAttrs = new Set(["inert", "aria-hidden", "id", "aria-labelledby", "aria-describedby"])
+function canonicalizePresentation(node: Node, exclude?: Node): string {
+  return canonicalizeNode(
+    node,
+    (element, name) => sanctionedDockDelta(element, name) || nonPresentationalAttrs.has(name),
+    exclude,
+  )
 }
 
 /** 闸③的判据本体:dock/composer 侧录音面上的审批类流量。录音面覆盖注入的 client
@@ -155,7 +202,27 @@ function dockPermissionTraffic(): Set<string> {
 const FACTS = ["subject", "action", "resources", "scope", "expiry"] as const
 
 describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", () => {
-  test("同一请求到达两个消费面:恰一个五栏 Dialog;dock 仅既定提示增量、零新增审批节点;决定只到达 surface client", async () => {
+  test("同一请求到达两个消费面:全文档呈现面差异恰为 Permission surface;dock 仅既定提示增量;决定只到达 surface client", async () => {
+    // ①′ 参照系:先**只**挂生产 Permission surface(无 dock),同一请求下取其 portal 子树的
+    // 规范形 —— 这就是「Permission surface 自身」的定义。参照场里没有 dock,dock 谱系的任何
+    // 搭车节点都不可能混进参照;比较是逐字节等值,没有「什么算审批节点」的枚举。
+    const referenceHost = document.createElement("div")
+    document.body.append(referenceHost)
+    const disposeReference = runtime.render(() => runtime.PermissionSurfaceReference(), referenceHost)
+    await flush()
+    await flush()
+    const referenceBodyBefore = new Set(Array.from(document.body.children))
+    runtime.injectPermissionAsked(request)
+    await flush()
+    const referenceAdded = Array.from(document.body.children).filter((child) => !referenceBodyBefore.has(child))
+    expect(referenceAdded).toHaveLength(1)
+    expect(referenceAdded[0]!.querySelector("[role='dialog']")).not.toBeNull()
+    const surfaceReferenceCanonical = canonicalizePresentation(referenceAdded[0]!)
+    disposeReference()
+    await flush()
+    document.body.replaceChildren()
+    runtime.resetSingleSurfaceHarness()
+
     mountHarness()
     await flush()
     await flush()
@@ -171,6 +238,7 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
 
     const bodyChildrenBefore = new Set(Array.from(document.body.children))
     const dockCanonicalBefore = canonicalizeDock(dockHost)
+    const documentCanonicalBefore = canonicalizePresentation(document.documentElement)
 
     runtime.injectPermissionAsked(request)
     await flush()
@@ -185,7 +253,23 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
     expect(dockHost.contains(dialogs[0]!)).toBeFalse()
     const addedBodyChildren = Array.from(document.body.children).filter((child) => !bodyChildrenBefore.has(child))
     expect(addedBodyChildren).toHaveLength(1)
-    expect(addedBodyChildren[0]!.contains(dialogs[0]!)).toBeTrue()
+    const overlay = addedBodyChildren[0]!
+    expect(overlay.contains(dialogs[0]!)).toBeTrue()
+
+    // ①′ 全局呈现面判据(#619 残余路径 2):注入前后,**整个 document** 的规范形差异恰好是
+    //    Permission surface 的 portal 子树 —— 把它整棵排除后与注入前逐字节相等。Portal 到任何
+    //    已存在节点(dock 内、harness 根、surface 宿主、head、html…)、新建 style/title、把既有
+    //    节点改写成审批卡,全都改变这份全文档规范形 → 红。
+    expect(canonicalizePresentation(document.documentElement, overlay)).toBe(documentCanonicalBefore)
+    //    而这棵被排除的子树本身,必须逐字节等于参考渲染 —— 「除 surface 自身外零新增呈现节点」
+    //    的「自身」以生产 PermissionWatcher 单独渲染的结果为定义,「Portal 进 overlay 内部搭车」
+    //    同样关死。
+    expect(canonicalizePresentation(overlay)).toBe(surfaceReferenceCanonical)
+    //    呈现面也不可迁进 shadow root(closed 模式对 childNodes 走查不可见,故在原型层入账)、
+    //    不可经 adoptedStyleSheets 走 CSS content 通道(新建 <style>/<link> 已被上面的全文档
+    //    规范形抓住)。
+    expect(shadowRootHosts).toHaveLength(0)
+    expect(document.adoptedStyleSheets ?? []).toHaveLength(0)
 
     // ② dock 只发生既定的 placeholder / 权限 chip 增量;结构规范化后与注入前逐字节相等
     //    = 零新增审批节点(改名/新属性的等义改写在此必红)。
@@ -202,13 +286,16 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
     expect(runtime.surfaceReplyCalls[0]!.command.decision).toBe("once")
     expect(dockPermissionTraffic()).toEqual(new Set(["v2.session.permission.list"]))
 
-    // 收尾相位:收据按生产 SSE 扇出双投递 → dialog 关闭、dock 提示回落、结构回到基线。
+    // 收尾相位:收据按生产 SSE 扇出双投递 → dialog 关闭、dock 提示回落、**全文档**呈现面回到
+    // 基线 —— 决定之后才现身的迟到搭车节点(如「审批结果」浮层)在这里同样红。
     runtime.injectPermissionReplied(runtime.surfaceReceipts[0]!)
     await flush()
     expect(document.querySelector("[role='dialog']")).toBeNull()
     expect(composerRoot.hasAttribute("data-approval")).toBeFalse()
     expect(composerInput.getAttribute("placeholder")).not.toBe(zh["alpha.composer.placeholderDecision"])
     expect(canonicalizeDock(dockHost)).toBe(dockCanonicalBefore)
+    expect(canonicalizePresentation(document.documentElement)).toBe(documentCanonicalBefore)
+    expect(shadowRootHosts).toHaveLength(0)
   })
 
   // Codex R2 实测打穿上一版三条闸门的等义改写:**不新增 DOM**、在 dock 链路里**另建一个

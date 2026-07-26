@@ -100,6 +100,40 @@ export function submitDecisionViaFreshClient(requestID: string, fingerprint: str
   if (submitted && typeof submitted.catch === "function") submitted.catch(() => {})
 }
 
+function PermissionSurfaceMount() {
+  return (
+    <div data-harness-permission-surface>
+      <PermissionWatcher
+        sessionID={HARNESS_IDENTITY.sessionID}
+        projectID="prj_alpha"
+        client={{
+          list: () => Promise.resolve([]),
+          reply: (requestID, command) => {
+            surfaceReplyCalls.push({ requestID, command })
+            const receipt = receiptFor(requestID, command)
+            surfaceReceipts.push(receipt)
+            return Promise.resolve(receipt)
+          },
+          subscribe: (listeners) => {
+            surfaceListeners = listeners
+            return () => {
+              surfaceListeners = undefined
+            }
+          },
+        }}
+      />
+    </div>
+  )
+}
+
+/** 参考渲染(#619 残余路径 2 闸门):**只**挂生产 Permission surface、不挂 dock。同一请求
+ *  下它 portal 出的子树,就是「Permission surface 自身」的唯一定义 —— 主场景的 overlay 必须
+ *  与之逐字节相等。dock 谱系的任何搭车节点不可能出现在这份参照里(参照场里根本没有 dock),
+ *  因此不存在任何「按名字识别审批节点」的环节。 */
+export function PermissionSurfaceReference() {
+  return <PermissionSurfaceMount />
+}
+
 export function SingleSurfaceHarness() {
   const live = {
     current: () => snapshot,
@@ -111,27 +145,7 @@ export function SingleSurfaceHarness() {
   const projects = { sdk: () => recordingClient } as unknown as AlphaProjectsApi
   return (
     <div data-harness-single-surface>
-      <div data-harness-permission-surface>
-        <PermissionWatcher
-          sessionID={HARNESS_IDENTITY.sessionID}
-          projectID="prj_alpha"
-          client={{
-            list: () => Promise.resolve([]),
-            reply: (requestID, command) => {
-              surfaceReplyCalls.push({ requestID, command })
-              const receipt = receiptFor(requestID, command)
-              surfaceReceipts.push(receipt)
-              return Promise.resolve(receipt)
-            },
-            subscribe: (listeners) => {
-              surfaceListeners = listeners
-              return () => {
-                surfaceListeners = undefined
-              }
-            },
-          }}
-        />
-      </div>
+      <PermissionSurfaceMount />
       <div data-harness-dock>
         <SessionComposerDock live={live} projects={projects} />
       </div>
