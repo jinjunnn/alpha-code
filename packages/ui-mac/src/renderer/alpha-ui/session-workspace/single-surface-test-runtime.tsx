@@ -126,10 +126,13 @@ function PermissionSurfaceMount() {
   )
 }
 
-/** 参考渲染(#619 残余路径 2 闸门):**只**挂生产 Permission surface、不挂 dock。同一请求
- *  下它 portal 出的子树,就是「Permission surface 自身」的唯一定义 —— 主场景的 overlay 必须
- *  与之逐字节相等。dock 谱系的任何搭车节点不可能出现在这份参照里(参照场里根本没有 dock),
- *  因此不存在任何「按名字识别审批节点」的环节。 */
+/** dock 增量差分基线(#619 R3 Major 改窄):**只**挂生产 Permission surface、不挂 dock。
+ *  主场景 overlay 与它逐字节相等 ⇒ 全文档差异集合恰好收敛于 surface 自己的 portal 子树,
+ *  dock 谱系零搭车节点(基线场里根本没有 dock,不存在「按名字识别审批节点」的环节)。
+ *  它**不是** surface 正确性的独立判据:与主场景共用同一个 PermissionSurfaceMount /
+ *  PermissionWatcher,生产 PermissionDialog 自身的缺陷两侧同错同等(Codex R3 实测:加一个
+ *  无标记第二按钮,参考与主场都长出来、比较照样相等、全部断言绿)。surface 自身的形态由
+ *  PermissionDialog 合同测试与 L2 证据把关,不由这份基线把关。 */
 export function PermissionSurfaceReference() {
   return <PermissionSurfaceMount />
 }

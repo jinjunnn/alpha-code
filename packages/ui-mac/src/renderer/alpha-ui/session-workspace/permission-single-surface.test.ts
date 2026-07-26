@@ -23,6 +23,16 @@
 // 闸② 只看 dock 子树 —— dock 里 `<Portal mount={任意已存在非 dock 节点}>` 渲一个只读
 // 审批卡(无 role=dialog、无 data-permission-*)实测三闸全绿。①′ 把判据升成上述整体快照:
 // 差异集合 = 恰好 Permission surface,不再枚举「什么算审批节点」。
+//
+// R3 收尾(Codex R3 实测四种残余退化,owner 2026-07-26 裁决按最小闭合堵,不重写架构):
+// 快照从「属性 + 文本」升为「属性 + 文本 + 呈现相关 IDL/CSSOM 状态」—— textarea/input 的
+// .value/.checked、style/link 的 CSSOM 规则文本入账;aria-hidden/inert 只在 body 直接子节点
+// (dialog 分层的合法写入面)豁免;id 系属性从整类丢弃改为按出现序稳定化;收尾相位补查
+// adoptedStyleSheets(活跃期检查对「收据后才收养」不设防)。
+// 「不存在第二提交通道」这类命题**运行时测试原理上证明不了**(只证明已执行路径;Alt+Y
+// 键盘处理器、window.confirm 门控分支不被派发就永不执行,Codex R3 两条实测绕过全绿)——
+// 该面不归本文件管,由 permission-mount-ratchet.test.ts 的「决定提交入口白名单棘轮」按
+// **源码可达性**互补覆盖,分工声明见彼处注释。
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test"
@@ -143,9 +153,34 @@ function mountHarness() {
   disposers.push(runtime.render(() => runtime.SingleSurfaceHarness(), host))
 }
 
-/** 规范序列化核心:元素标签 + 全部属性(经 dropAttribute 过滤)+ 递归子节点与文本。
- *  任何节点增删、属性变化、文本变化都会改变序列化结果;`exclude` 子树整棵跳过。 */
-function canonicalizeNode(node: Node, dropAttribute: (element: Element, name: string) => boolean, exclude?: Node): string {
+/** 呈现相关的 **IDL/CSSOM 状态** —— 不反射为 DOM 属性,纯属性快照抓不到(#619 R3
+ *  Blocker-1 实测退化):textarea/input 的 `.value`/`.checked` 是用户真实可见的脏值;
+ *  style/link 的 CSSOM 规则文本可经 `insertRule` 在 `textContent` 不变时改写呈现。 */
+function idlState(element: Element): string {
+  if (element.tagName === "TEXTAREA") return `|~value=${(element as HTMLTextAreaElement).value}`
+  if (element.tagName === "INPUT") {
+    const input = element as HTMLInputElement
+    return `|~value=${input.value}|~checked=${input.checked}`
+  }
+  if (element.tagName === "STYLE" || element.tagName === "LINK") {
+    const sheet = (element as HTMLStyleElement | HTMLLinkElement).sheet
+    if (!sheet) return ""
+    return `|~css=${Array.from(sheet.cssRules)
+      .map((rule) => rule.cssText)
+      .join("␟")}`
+  }
+  return ""
+}
+
+/** 规范序列化核心:元素标签 + 全部属性(经 mapAttribute 过滤/归一)+ 呈现相关 IDL/CSSOM
+ *  状态 + 递归子节点与文本。任何节点增删、属性变化、文本变化、IDL 值变化、CSSOM 规则
+ *  变化都会改变序列化结果;`exclude` 子树整棵跳过。
+ *  mapAttribute 返回 undefined = 丢弃该属性;返回字符串 = 以该值入账(可做稳定化归一)。 */
+function canonicalizeNode(
+  node: Node,
+  mapAttribute: (element: Element, name: string, value: string) => string | undefined,
+  exclude?: Node,
+): string {
   if (exclude && node === exclude) return ""
   // 空文本节点是 Solid 动态插入的定位标记(Show 翻转后留在原位),零呈现,不入账;
   // 任何**非空**文本(含纯空白 —— 可影响排版)照常入账。
@@ -153,13 +188,14 @@ function canonicalizeNode(node: Node, dropAttribute: (element: Element, name: st
   if (node.nodeType !== Node.ELEMENT_NODE) return ""
   const element = node as Element
   const attributes = Array.from(element.attributes)
-    .filter((attribute) => !dropAttribute(element, attribute.name))
+    .map((attribute) => ({ name: attribute.name, value: mapAttribute(element, attribute.name, attribute.value) }))
+    .filter((attribute): attribute is { name: string; value: string } => attribute.value !== undefined)
     .map((attribute) => `${attribute.name}=${attribute.value}`)
     .sort()
   const children = Array.from(element.childNodes)
-    .map((child) => canonicalizeNode(child, dropAttribute, exclude))
+    .map((child) => canonicalizeNode(child, mapAttribute, exclude))
     .filter((serialized) => serialized !== "")
-  return `<${element.tagName}|${attributes.join("|")}>[${children.join(",")}]`
+  return `<${element.tagName}|${attributes.join("|")}${idlState(element)}>[${children.join(",")}]`
 }
 
 /** 「审批挂起提示」的既定增量 —— composer 根的 data-approval 与输入框(.a-comp-input)的
@@ -171,19 +207,37 @@ const sanctionedDockDelta = (element: Element, name: string) =>
 /** dock 子树的规范序列化(闸②)。等义改写(改名组件、新 class、新 data-* 属性)造出的
  *  第二审批面必然新增节点/属性,规范化后与基线不再相等。 */
 function canonicalizeDock(node: Node): string {
-  return canonicalizeNode(node, sanctionedDockDelta)
+  return canonicalizeNode(node, (element, name, value) => (sanctionedDockDelta(element, name) ? undefined : value))
 }
 
-/** 全文档呈现面规范形(闸①′)。在 dock 既定增量之外,只再豁免两类**不携带呈现**的属性:
- *  - inert / aria-hidden:dialog 分层对 body 其余直接子节点的合法写入,只能隐藏、不能呈现;
- *  - id / aria-labelledby / aria-describedby:createUniqueId 铸造,跨两次渲染非确定 ——
- *    overlay 与参考渲染的逐字节比较必须豁免;三者同样不携带呈现。
+/** 全文档呈现面规范形(闸①′)。属性处置(#619 R3 Blocker-1 最小闭合,owner 2026-07-26 裁决):
+ *  - inert / aria-hidden:只在 **body 直接子节点** 上豁免 —— 那是 dialog 分层的合法写入面
+ *    (打开期对兄弟子树只能隐藏);其余任何深度的节点上照常入账 —— 用 aria-hidden 触发
+ *    既有 CSS 把节点从 display:none 翻成 block 的退化在此红。
+ *  - id / aria-labelledby / aria-describedby:createUniqueId 铸造、跨两次渲染非确定,但
+ *    **不再整类丢弃** —— 改为按出现序局部稳定化(首见的 id token 记为 @id1、@id2…,定义与
+ *    引用共享同一映射):新增/删除 id、改动引用拓扑照样改变规范形,被抹平的只有「同一
+ *    出现位」的随机铸值本身。
  *  style、class、文本与其余一切属性照常入账:把既有节点改写成审批卡同样改变这份规范形。 */
-const nonPresentationalAttrs = new Set(["inert", "aria-hidden", "id", "aria-labelledby", "aria-describedby"])
 function canonicalizePresentation(node: Node, exclude?: Node): string {
+  const idTokens = new Map<string, string>()
+  const stableIdTokens = (raw: string) =>
+    raw
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((token) => {
+        if (!idTokens.has(token)) idTokens.set(token, `@id${idTokens.size + 1}`)
+        return idTokens.get(token)!
+      })
+      .join(" ")
   return canonicalizeNode(
     node,
-    (element, name) => sanctionedDockDelta(element, name) || nonPresentationalAttrs.has(name),
+    (element, name, value) => {
+      if (sanctionedDockDelta(element, name)) return undefined
+      if ((name === "inert" || name === "aria-hidden") && element.parentElement === document.body) return undefined
+      if (name === "id" || name === "aria-labelledby" || name === "aria-describedby") return stableIdTokens(value)
+      return value
+    },
     exclude,
   )
 }
@@ -202,10 +256,14 @@ function dockPermissionTraffic(): Set<string> {
 const FACTS = ["subject", "action", "resources", "scope", "expiry"] as const
 
 describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", () => {
-  test("同一请求到达两个消费面:全文档呈现面差异恰为 Permission surface;dock 仅既定提示增量;决定只到达 surface client", async () => {
-    // ①′ 参照系:先**只**挂生产 Permission surface(无 dock),同一请求下取其 portal 子树的
-    // 规范形 —— 这就是「Permission surface 自身」的定义。参照场里没有 dock,dock 谱系的任何
-    // 搭车节点都不可能混进参照;比较是逐字节等值,没有「什么算审批节点」的枚举。
+  test("同一请求到达两个消费面:全文档呈现面差异收敛于 surface 子树(dock 增量差分基线);dock 仅既定提示增量;决定只到达 surface client", async () => {
+    // ①′ 差分基线(R3 Major 改窄):先**只**挂生产 Permission surface(无 dock),同一请求下
+    // 取其 portal 子树的规范形。它锁的只是「差异集合恰好收敛于 surface 自己的子树」——
+    // 参照场里没有 dock,dock 谱系的任何搭车节点不可能混进参照,比较是逐字节等值,没有
+    // 「什么算审批节点」的枚举。它**不是** surface 正确性的独立判据:参照与主场共用同一个
+    // PermissionSurfaceMount,生产 PermissionDialog 自身的缺陷两侧同错同等(Codex R3 实测:
+    // 给 dialog 加一个无标记第二按钮,两侧都出现、比较照样相等)。surface 自身长什么样由
+    // PermissionDialog 的合同测试与 L2 证据把关。
     const referenceHost = document.createElement("div")
     document.body.append(referenceHost)
     const disposeReference = runtime.render(() => runtime.PermissionSurfaceReference(), referenceHost)
@@ -261,9 +319,9 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
     //    已存在节点(dock 内、harness 根、surface 宿主、head、html…)、新建 style/title、把既有
     //    节点改写成审批卡,全都改变这份全文档规范形 → 红。
     expect(canonicalizePresentation(document.documentElement, overlay)).toBe(documentCanonicalBefore)
-    //    而这棵被排除的子树本身,必须逐字节等于参考渲染 —— 「除 surface 自身外零新增呈现节点」
-    //    的「自身」以生产 PermissionWatcher 单独渲染的结果为定义,「Portal 进 overlay 内部搭车」
-    //    同样关死。
+    //    而这棵被排除的子树本身,必须逐字节等于差分基线 —— overlay 里若有 dock 谱系的搭车
+    //    节点(「Portal 进 overlay 内部搭车」),无 dock 的基线场里不可能有它,比较必红。
+    //    (基线只界定差异集合的归属,不为 surface 自身的正确性作保 —— 见本用例头注。)
     expect(canonicalizePresentation(overlay)).toBe(surfaceReferenceCanonical)
     //    呈现面也不可迁进 shadow root(closed 模式对 childNodes 走查不可见,故在原型层入账)、
     //    不可经 adoptedStyleSheets 走 CSS content 通道(新建 <style>/<link> 已被上面的全文档
@@ -296,6 +354,9 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
     expect(canonicalizeDock(dockHost)).toBe(dockCanonicalBefore)
     expect(canonicalizePresentation(document.documentElement)).toBe(documentCanonicalBefore)
     expect(shadowRootHosts).toHaveLength(0)
+    // R3 收尾相位补:活跃期的 adoptedStyleSheets 检查(上方)对「收据之后才收养」的
+    // CSS content 通道不设防 —— 收尾在此重查,迟到收养同样红。
+    expect(document.adoptedStyleSheets ?? []).toHaveLength(0)
   })
 
   // Codex R2 实测打穿上一版三条闸门的等义改写:**不新增 DOM**、在 dock 链路里**另建一个
