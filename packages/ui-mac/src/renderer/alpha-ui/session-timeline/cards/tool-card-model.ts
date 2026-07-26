@@ -505,12 +505,22 @@ const HTTP_REASONS = new Map<number, string>([
 ])
 
 /**
- * 网关语境标记:这些词出现,才允许把错误归到「模型网关错误」类。
- * 没有这道门,bash 的 `command not found` 会被原因短语误判成 404 —— 宁可退回
- * 通用标题,也不给一个假的错误类别。
+ * 「模型网关错误」证据门(R1 Blocker 修正):只认两种**明确**证据之一 ——
+ * ① 文本直接点名网关层(`网关` / `gateway`);
+ * ② 模型词(`模型` / `model`)与模型路由层词(`代理` / `proxy` / `provider` /
+ *   `baseURL`)同现。
+ * 裸 URL、`api`、`http`、`endpoint`、单独的 `proxy`/`provider` 一律不算证据:
+ * webfetch/curl 的普通 HTTP 失败、配置解析失败都曾被旧宽门整类误报成网关错误。
+ * 证据不足 → 退回通用「工具执行失败」,保守优于误报。
  */
-const GATEWAY_CONTEXT =
-  /https?:\/\/|\b(?:api|http|gateway|upstream|proxy|baseurl|base_url|provider|endpoint)\b|网关|代理|接口/i
+const GATEWAY_LAYER_WORD = /网关|\bgateway\b/i
+const MODEL_WORD = /模型|\bmodel\b/i
+const MODEL_ROUTE_WORD = /代理|\bproxy\b|\bprovider\b|base_?url/i
+
+function hasGatewayEvidence(scan: string): boolean {
+  if (GATEWAY_LAYER_WORD.test(scan)) return true
+  return MODEL_WORD.test(scan) && MODEL_ROUTE_WORD.test(scan)
+}
 
 export const TOOL_ERROR_TITLE_GATEWAY = "alpha.timeline.toolErrorGateway"
 export const TOOL_ERROR_TITLE_GENERIC = "alpha.timeline.toolErrorGeneric"
@@ -522,20 +532,22 @@ export interface ToolErrorSummary {
   code?: string
 }
 
-/** 错误文本 → 标题行模型(类别 + 代码)。纯函数,输入已是有界错误体。 */
+/**
+ * 错误文本 → 标题行模型。纯函数,输入已是有界错误体。类别只看证据门;代码副标
+ * 只报文本里**真实出现**的东西:独立 3 位状态码(表内,不吃 `v1.404` 粘连片段)
+ * → `NNN · Reason`;只出现标准原因短语 → 只给短语本身,不反推数字(数据面没有
+ * 状态字段,`Not Found` 反推成 `404` 是把推测显示成事实);都没有 → 无代码。
+ */
 export function toolErrorSummaryOf(message: string): ToolErrorSummary {
   const scan = message.slice(0, TOOL_ERROR_SCAN_MAX_CHARS)
-  if (!GATEWAY_CONTEXT.test(scan)) return { titleKey: TOOL_ERROR_TITLE_GENERIC }
-  // 先认独立出现的状态码(不吃 `v1.404`、`x404` 这类粘连片段),再认标准原因短语
-  // (网关常只回短语不回码);都认不出就只给类别标题,不给代码。
+  if (!hasGatewayEvidence(scan)) return { titleKey: TOOL_ERROR_TITLE_GENERIC }
   for (const match of scan.matchAll(/(?<![\w.])(\d{3})(?![\w.])/g)) {
     const reason = HTTP_REASONS.get(Number(match[1]))
     if (reason) return { titleKey: TOOL_ERROR_TITLE_GATEWAY, code: `${match[1]} · ${reason}` }
   }
   const lower = scan.toLowerCase()
-  for (const [status, reason] of HTTP_REASONS) {
-    if (lower.includes(reason.toLowerCase()))
-      return { titleKey: TOOL_ERROR_TITLE_GATEWAY, code: `${status} · ${reason}` }
+  for (const [, reason] of HTTP_REASONS) {
+    if (lower.includes(reason.toLowerCase())) return { titleKey: TOOL_ERROR_TITLE_GATEWAY, code: reason }
   }
   return { titleKey: TOOL_ERROR_TITLE_GATEWAY }
 }

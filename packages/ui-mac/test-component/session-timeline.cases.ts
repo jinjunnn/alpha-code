@@ -697,7 +697,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(done.querySelector(".a-tc-cursor")).toBeNull()
   })
 
-  test("未知工具 fail-closed:mono 工具名 + 有界纯文本体;error 态成工具级错误卡(标题行 + 复制);超帽错误体默认收起", async () => {
+  test("未知工具 fail-closed:mono 工具名 + 有界纯文本体;error 态成工具级错误卡(标题行 + 复制);超帽错误默认收起但标题/复制常驻", async () => {
     // 工具级错误卡的复制动作要真写剪贴板(CT #tools G4 帧的 .errcard-head 复制钮)。
     const copied: string[] = []
     Object.defineProperty(window.navigator, "clipboard", {
@@ -756,19 +756,29 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     const bigError = host.querySelector("[data-alpha-tool-card][data-tool='cloud_big']")!
     expect(bigError.getAttribute("data-status")).toBe("error")
     expect(bigError.getAttribute("data-open")).toBeNull()
+    // R1 Major:超帽错误默认收起时,标题行与复制钮**常驻可见**,收起只藏 mono 正文。
+    expect(bigError.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
+    expect(bigError.querySelector(".a-tc-error-body")).toBeNull()
+    const bigCopy = bigError.querySelector<HTMLButtonElement>("[data-alpha-tool-error-copy]")!
+    bigCopy.click()
+    await flush()
+    // 复制的是有界错误体(TOOL_ERROR_MAX_CHARS 帽后的 4000 字符)。
+    expect(copied).toEqual(["E".repeat(4_000)])
     ;(bigError.querySelector(".a-tc-head") as HTMLButtonElement).click()
     await flush()
     expect(bigError.getAttribute("data-open")).toBe("true")
+    expect(bigError.querySelector(".a-tc-error-body")!.textContent).toContain("EEEE")
 
     // G4 帧形态:「模型网关错误」标题 + mono 代码副标 + 可触发的复制钮。
+    // 代码副标只报文本里真实出现的短语,不把 Not Found 反推成 404(R1 Blocker)。
     const gateway = host.querySelector("[data-alpha-tool-card][data-tool='bash'][data-status='error']")!
     expect(gateway.querySelector(".a-tc-err-head")!.textContent).toContain("模型网关错误")
-    expect(gateway.querySelector(".a-tc-err-code")!.textContent).toBe("404 · Not Found")
+    expect(gateway.querySelector(".a-tc-err-code")!.textContent).toBe("Not Found")
     const copy = gateway.querySelector<HTMLButtonElement>("[data-alpha-tool-error-copy]")!
     expect(copy.getAttribute("aria-label")).toBe("复制错误信息")
     copy.click()
     await flush()
-    expect(copied).toEqual([gatewayError])
+    expect(copied).toEqual(["E".repeat(4_000), gatewayError])
   })
 
   test("edit diff 视图:jsdiff 行渲染 ±行号与 +/− 行;write 显示预览与总行数;补丁卡出徽章行", async () => {

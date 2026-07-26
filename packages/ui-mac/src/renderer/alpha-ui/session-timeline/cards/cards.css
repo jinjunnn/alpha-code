@@ -332,6 +332,11 @@ button.a-tc-head:focus-visible {
   font-weight: var(--a-weight-medium);
 }
 
+/* 收起态(超帽错误)只剩常驻标题行:自补底边距(展开时由正文提供)。 */
+.a-tc:not([data-open="true"]) .a-tc-err-head {
+  padding-bottom: 9px;
+}
+
 .a-tc-err-code {
   color: var(--a-error);
   font-family: var(--a-font-mono);
