@@ -39,13 +39,34 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
 
 - `packages/opencode/src/tool/websearch.ts` —— 工具定义、provider 选路、失败结算。
 - `packages/opencode/src/tool/mcp-websearch.ts` —— MCP over HTTP 的请求/响应/失败映射。
-- 对应的上游测试(随源,同 [[ADR-033]] §1 末条):`packages/opencode/test/tool/websearch.test.ts`。
 
-**刻意不接管**:`packages/opencode/src/mcp/catalog.ts` 与
+**刻意不接管上游测试文件**(2026-07-25 修正,#223 对抗审计 Minor 7):初版把
+`packages/opencode/test/tool/websearch.test.ts` 整文件加进 exclude 清单「随源接管」,但该文件里还
+有一组**未被接管**的断言 —— `registry.ts` 的 `webSearchEnabled` 闸。整文件 exclude 等于把那组断言
+也移出守卫:以后改动/删除它们守卫仍绿,而 alpha CI 又不跑 opencode 测试,构成治理盲区。
+改用更窄的写法:E7 的失败断言落在 alpha 自有的新文件
+`packages/opencode/test/tool/alpha-websearch-failure.test.ts`,上游那份**原样保留、继续受守**。
+新增文件对守卫的 `--diff-filter=DMR` 天然不触发(它对上游是 `A`),因此**不需要**任何 exclude 条目
+—— exclude 清单只留源文件两条。
+
+**刻意不接管云路径**:`packages/opencode/src/mcp/catalog.ts` 与
 `packages/opencode/src/tool/code-mode.ts`。云 `cloud_web_search` 走的是这两处,而它们在
 `result.isError` 时**已经**抛出带 body 的 `Error`(已 loud)。为了给云失败加一层分类前缀而把两个
-高 churn 通用文件也收编,代价(放弃白嫖面 + 守卫盲区)远大于收益。云侧的可辨性由平台契约的
-`error.code` 与 HTTP 状态在 body 里透传保证。
+高 churn 通用文件也收编,代价(放弃白嫖面 + 守卫盲区)远大于收益。
+
+> **事实更正(2026-07-25,#223 对抗审计 Major 2)**:本节初版称「云侧的可辨性由平台契约的
+> `error.code` 与 HTTP 状态在 body 里透传保证」——**与事实不符,已作废**。真实链路是:
+> gateway 返回带状态的 JSON → alpha-platform `packages/gateway/src/cloud-mcp.ts` 的薄壳
+> `text(body, !r.ok)` 只把 body 序列化进 MCP text content 并置 `isError`,**HTTP 状态在这一层
+> 就被丢掉**;`catalog.ts` 于是抛出一个普通 `Error(body)`。而 gateway 的两条 402 body **也不带
+> `error.code`**(只有 `message`,per-job 那条多一个 `job_id`),连「从 body 认码」这条退路都没有。
+>
+> 因此本 ADR 交付的 `WebSearchFailure`(含 `payment_required`)**只覆盖本地 Exa/Parallel 直连
+> 链路**(`websearch` 工具);登录态的 `cloud_web_search` 今天是「loud + 原 body 完整,但**无状态、
+> 无分类**」。这个事实由 `alpha-websearch-failure.test.ts` 的 "cloud MCP path" 一组走**真实
+> `McpCatalog.convertTool` 链路**钉成回归基线(含一条反向断言:云错误**不是** `WebSearchFailure`、
+> 不带 status)。平台侧透传状态/补 402 `error.code` 归 **alpha-platform#105**;在它落地之前,
+> 本仓任何文档/代码都不得声称已消费云侧 402。
 
 ### 2. 为何 L0–L2 不够用(§3 要件:低级别不可行的勘探证据)
 
@@ -64,7 +85,8 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
 ### 3. 守卫形态(§3 要件)
 
 沿用 [[ADR-033]] 的**文件级 `:(exclude)`** 机制(不是 ADR-020 的整包移出——`packages/opencode`
-其余部分仍是高频同步面,必须继续被守着)。两处 exclude 清单同步加这两条,且必须保持一致:
+其余部分仍是高频同步面,必须继续被守着)。两处 exclude 清单同步加**这两条源文件**(测试文件不
+在内,理由见 §1),且必须保持一致:
 
 - `.github/workflows/alpha-ci.yml` 的 `upstream-guard` job(CI 强制面)。
 - `scripts/alpha-check.sh` 的 `[1/3] north-star guard`(本地先手面,`.githooks/pre-push` 走它)。
@@ -79,8 +101,8 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
 ### 4. 回退方案(§3 要件)
 
 撤销接管走 L3 唯一写通道 = 受控 re-freeze:用某上游 ref 覆盖这两个文件 + 从两处 exclude 清单
-移除对应两行 + 把失败诚实需求降级重表达(等 L2 patch 机制建成后改走 L2)。代价 = 回退本次
-失败映射,回到「一切错误塌成 defect」。
+移除对应两行 + 删除 alpha 自有的 `test/tool/alpha-websearch-failure.test.ts` + 把失败诚实需求降级
+重表达(等 L2 patch 机制建成后改走 L2)。代价 = 回退本次失败映射,回到「一切错误塌成 defect」。
 
 ### 5. 放弃白嫖范围声明(§3 的 L3 专属要件,单向门)
 
@@ -94,11 +116,22 @@ defect。这是本决策自带的 tripwire。
 
 ## 后果
 
-- ✅ #489(E7 失败诚实)解锁并交付:失败集覆盖 `401` / `403`(带 `error.code`,
-  `action_forbidden` 与 `job_not_enforceable` 可区分)/ `400` / `402`(preauth 拒绝、per-job
-  超预算)/ `502` / 其余非 2xx 一律 LOUD;空结果不再伪装成成功;传输层 defect 收进同一可辨类型。
+- ✅ #489(E7 失败诚实)解锁并交付:**本地 Exa/Parallel 直连链路**的失败集覆盖 `401` / `403`
+  (带 `error.code`,`action_forbidden` 与 `job_not_enforceable` 可区分)/ `400` / `402`
+  (preauth 拒绝、per-job 超预算)/ `502` / 其余非 2xx 一律 LOUD;空结果不再伪装成成功;
+  传输层 defect 收进同一可辨类型。
+- ✅ 零命中与 provider error 的判定按结构化事实收口(#223 Major 5):`structuredContent` 进
+  schema —— 「`content: []` + `results: []`」是**合法零命中成功**(原样交出 `structuredContent`,
+  不编造 "No search results found");「200 + 未置 `isError` 但负载是 `{error:…}`」是**loud
+  provider error**(带 `error.code`),不再当搜索结果回给模型;200 的 HTML/非 JSON 错误页
+  在 `empty_result` 里附上原 body,可辨。
+- ✅ 传输有界(#223 Major 6):headers + body 读取在**同一个** timeout 内(此前 body 在期限外,
+  body 永不结束 = 无限等待且零失败),body 边读边计数、2MiB 处停手。
 - ✅ 本地 `scripts/alpha-check.sh` 的 north-star 守卫与 CI 恢复 1:1,不再恒报假红。
 - ⚠️ **单向门**:两个文件脱离上游同步(含安全修复),re-freeze 是唯一吸收通道。
-- ⚠️ 接管面每多一处,「北极星」衡量的分母就小一点。本 ADR 的自限是**只收两个文件**:云路径
-  (`catalog.ts` / `code-mode.ts`)明确不收,理由已在 §1 记录,后续若要收须自己的 ADR。
+- ⚠️ 接管面每多一处,「北极星」衡量的分母就小一点。本 ADR 的自限是**只收两个源文件**:云路径
+  (`catalog.ts` / `code-mode.ts`)与上游测试文件明确不收,理由已在 §1 记录,后续若要收须自己的 ADR。
+- ⚠️ **云链路仍无失败分类**(#223 Major 2):`cloud_web_search` 的失败是 loud 且带完整 gateway
+  body,但没有 HTTP 状态、没有统一 `error.code` —— 状态在平台薄壳被丢弃。归 **alpha-platform#105**。
+  本仓以 `alpha-websearch-failure.test.ts` 的反向断言把这个事实钉住,防止文档再次跑到事实前面。
 - ✅ [[ADR-009]] 的「未竟 · #489」条目随本次交付关闭并更正(同 PR)。

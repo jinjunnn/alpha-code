@@ -18,7 +18,7 @@ import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { buildAlphaCapabilities, buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
-import { applyCloudWebSearchDisable } from "./cloud-web-search"
+import { applyWebSearchDenies } from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
 import { injectMcpDefaultDeny } from "./mcp-default-deny"
@@ -74,6 +74,9 @@ export function injectAlphaConfig(
 
     const existing = process.env.OPENCODE_CONFIG_CONTENT
     const config = existing ? JSON.parse(existing) : { $schema: "https://opencode.ai/config.json" }
+    // ADR-009 B1 的「平台代付」判据(云 MCP URL + 密钥文件同在)。caps 事实、云 MCP 注册与
+    // web search 主权 deny 三处共用同一个判据,不许各算各的。
+    const platformPays = Boolean(process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN"))
     // 只记录本轮函数自己新放进 mcp 的名字;继承来的 OPENCODE_CONFIG_CONTENT 不是治理授权。
     const injectedMcpNames = new Set<string>()
 
@@ -97,9 +100,7 @@ export function injectAlphaConfig(
       if (wantIdentity) {
         // Capability facts the base prompt can't know — purely informational (ADR-009 / ADR-002).
         // The cloud token lives in the {file:} channel, never in this process's env (A6).
-        const cloudDispatch = Boolean(
-          process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN"),
-        )
+        const cloudDispatch = platformPays
         const caps = buildAlphaCapabilities({
           websearchDisabled: Boolean(process.env.ALPHA_WEBSEARCH_DISABLE),
           keylessWebsearch: process.env.OPENCODE_ENABLE_EXA !== "0",
@@ -280,7 +281,7 @@ export function injectAlphaConfig(
     //      process's env nor OPENCODE_CONFIG_CONTENT ever contains the token value. oauth:false
     //      because we attach our own capability token and must skip OAuth auto-detection.
     const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
-    if (mcpUrl && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")) {
+    if (mcpUrl && platformPays) {
       config.mcp = {
         ...(config.mcp ?? {}),
         cloud: materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN")),
@@ -291,7 +292,9 @@ export function injectAlphaConfig(
     // Remote MCP config only toggles whole servers, but the engine's global permission layer filters
     // individual registered MCP tool IDs from both ordinary and code-mode tool sets. Deny only the
     // model-visible cloud_web_search ID and keep the cloud server plus sibling tools live.
-    applyCloudWebSearchDisable(config, process.env)
+    // #223:同一处也 deny 本地 `websearch` —— env 层的 keyless force-off 压不住
+    // `OPENCODE_EXPERIMENTAL` umbrella(见 cloud-web-search.ts)。必须排在 agent 注入之后。
+    applyWebSearchDenies(config, { killSwitch: Boolean(process.env.ALPHA_WEBSEARCH_DISABLE), platformPays })
 
     // #395(Codex r11 pivot → 主权注入):把账本 disabled 的 mcp/agent 权威覆盖注入 OPENCODE_CONFIG_CONTENT
     // —— 它在引擎加载序 step 6(所有 in-scope 源之后:XDG / ~/.opencode / agent-md·plugin-script 自动

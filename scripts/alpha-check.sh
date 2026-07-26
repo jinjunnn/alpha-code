@@ -49,10 +49,11 @@ UPSTREAM_EXCLUDES=(
   ':(exclude)packages/client/src/generated/client.ts'
   ':(exclude)packages/client/src/generated-effect/client.ts'
   ':(exclude)packages/client/src/generated/types.ts'
-  # ADR-035(#489):E7 web search 失败诚实所需的两文件接管(L3)
+  # ADR-035(#489):E7 web search 失败诚实所需的两文件接管(L3)。上游
+  # test/tool/websearch.test.ts **不**接管(#223 修复轮):新增失败测试落 alpha 自有的
+  # test/tool/alpha-websearch-failure.test.ts(新增文件不触发 --diff-filter=DMR,无需 exclude)。
   ':(exclude)packages/opencode/src/tool/websearch.ts'
   ':(exclude)packages/opencode/src/tool/mcp-websearch.ts'
-  ':(exclude)packages/opencode/test/tool/websearch.test.ts'
 )
 fail=0
 

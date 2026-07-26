@@ -47,6 +47,7 @@ const MANAGED = [
   "ALPHA_READONLY_DISABLE",
   "ALPHA_WEBSEARCH_DISABLE",
   "OPENCODE_ENABLE_EXA",
+  "OPENCODE_EXPERIMENTAL",
   "ALPHA_CLOUD_MCP_URL",
   "ALPHA_BASE_URL",
   "ALPHA_DEFAULT_MODEL",
@@ -267,5 +268,70 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     //    整体返回(锁到行尾 + 函数闭括号:`return injectAlphaConfig(...), {ok:true}` 逗号改写、
     //    换行续写表达式,都无处容身)。
     expect(source).toMatch(/return injectAlphaConfig\(userDataPath, extPluginPath, registryChannel\)\n\}/)
+  })
+})
+
+// #223 对抗审计 Blocker(2026-07-25):`OPENCODE_EXPERIMENTAL=1` 绕过 web search 主权闸。
+// 上游 `runtime-flags.ts` 的 `enableExa = OPENCODE_EXPERIMENTAL || OPENCODE_ENABLE_EXA ||
+// OPENCODE_EXPERIMENTAL_EXA`,所以 main 把四个 keyless 专用 flag 覆盖写 `"0"` 之后 umbrella 仍
+// 让 `webSearchEnabled()` 注册本地 `websearch` —— 代付态本地+云双活,kill-switch 下云暗而本地仍活。
+// 这里跑的是**真实生产 composition**(真 injectAlphaConfig、真密钥文件、真 env),
+// 不预置 config.permission。
+describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
+  /** main 侧 syncSecretFiles 落盘的登录态 + 主权闸对四个 keyless flag 的 force-off。 */
+  const givenPlatformPaysUnderUmbrella = () => {
+    givenLoggedInWithByok()
+    plantSecret("ALPHA_CLOUD_TOKEN", "cloud-token")
+    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
+    process.env.OPENCODE_EXPERIMENTAL = "1" // 用户 shell 的真 export —— env 层压不掉
+    process.env.OPENCODE_ENABLE_EXA = "0" // 主权闸已经写过 "0",仍不足以关闭工具
+  }
+
+  const injectedPermissions = () => {
+    const config: {
+      permission?: Record<string, unknown>
+      agent?: Record<string, { permission?: Record<string, unknown> }>
+      mcp?: Record<string, unknown>
+    } = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!)
+    return config
+  }
+
+  test("平台代付:本地 websearch 被 deny,云工具与兄弟云工具照常在册", () => {
+    givenPlatformPaysUnderUmbrella()
+
+    injectAlphaConfig(userData, undefined, "stable")
+
+    const config = injectedPermissions()
+    expect(config.permission?.websearch).toBe("deny")
+    // 云工具是代付态的权威 web search —— 不许被顺手关掉。
+    expect(config.permission?.cloud_web_search).toBeUndefined()
+    expect(config.mcp?.cloud).toBeDefined()
+    // agent 级规则排在全局之后:三个 alpha agent 若还写着 allow,全局 deny 对它们无效。
+    for (const [name, agent] of Object.entries(config.agent ?? {}))
+      expect([name, agent.permission?.websearch]).toEqual([name, "deny"])
+  })
+
+  test("kill-switch:本地与云两个 web search 都被 deny,兄弟云工具不受牵连", () => {
+    givenPlatformPaysUnderUmbrella()
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+
+    injectAlphaConfig(userData, undefined, "stable")
+
+    const config = injectedPermissions()
+    expect(config.permission?.websearch).toBe("deny")
+    expect(config.permission?.cloud_web_search).toBe("deny")
+    expect(config.permission?.cloud_dispatch).toBeUndefined()
+    expect(config.mcp?.cloud).toBeDefined()
+  })
+
+  test("登出/BYOK:keyless 本地 websearch 保持可用(不误伤登出兜底)", () => {
+    givenLoggedInWithByok()
+    process.env.OPENCODE_EXPERIMENTAL = "1"
+
+    injectAlphaConfig(userData, undefined, "stable")
+
+    const config = injectedPermissions()
+    expect(config.permission?.websearch).toBeUndefined()
+    for (const agent of Object.values(config.agent ?? {})) expect(agent.permission?.websearch).toBe("allow")
   })
 })

@@ -70,6 +70,15 @@ review_after: 2027-01-16
 > 故 E7 的失败集**必须含 402**(两条来源),且 403 的可辨性要靠 `error.code`。本稿下文
 > §3b/票 3c 中一切「无 402 分支 / 402 是未来分支 / web_search 尚未入册」的表述,以本块为准。
 > 交付实现见 #489(`WebSearchFailure`)与 [[ADR-035]]。
+>
+> **二次更正(2026-07-25,#223 对抗审计 Major 2)——客户端能消费到哪一步**:上列是**平台**
+> 的失败面事实,但 alpha-code 今天只在**本地 Exa/Parallel 直连链路**上做得到分类。登录态的
+> `cloud_web_search` 走 MCP 客户端(`packages/opencode/src/mcp/catalog.ts`),而平台的 cloud MCP
+> 薄壳(`packages/gateway/src/cloud-mcp.ts`:`const body = await r.json(); return text(body, !r.ok)`)
+> **把 `r.status` 丢掉了**,gateway 的两条 402 body 也**不带 `error.code`**(只有 `message`,
+> per-job 那条多一个 `job_id`)。因此云失败是「loud + 原 body 完整,但无状态、无分类」。
+> 本稿与 [[ADR-035]] 里任何「HTTP 状态在 body 透传」的说法均已作废。透传缺口归
+> **alpha-platform#105**;在它落地前不得声称云侧 402 已被消费。
 - 计费:per-call `WEB_SEARCH_USD_PER_CALL` 进 ledger(`:764`)+ settle(`:765-792`,
   失败入 `SETTLE_Q` 死信,非静默吞)。
 
@@ -267,6 +276,13 @@ question 上报 owner、不得静默整 server 关。
      force-0(会连带关全部实验能力),改为只在工具闸(`webSearchEnabled`)收口 web_search 的
      umbrella→`enableExa` 那一条路径;置位后在 shell `export OPENCODE_EXPERIMENTAL=1` 下仍无
      活的本地 `web_search`。(`providerID==="opencode"` 打包端不可达,不在此列。)
+   - **退出条件②的实际收口(2026-07-25,#223 对抗审计 Blocker)**:首轮实现只做了「不盲目
+     force-0 umbrella」的前半句,**没做**后半句(「置位后 umbrella 下仍无活的本地 web_search」)——
+     审计动态复现:`export OPENCODE_EXPERIMENTAL=1` 后代付态本地 + 云双活,kill-switch 下云暗
+     而本地仍活。收口 = 走 [[ADR-009]] 裁决 (b) 的路 (i):注入面对本地工具 ID `websearch` 也写
+     `permission: "deny"`(`cloud-web-search.ts`),并连 alpha 自己注入的三个 agent 的
+     `websearch: "allow"` 一起压平(引擎 agent 级规则并在全局之后)。零改 umbrella、零改上游
+     `registry.ts`。
 
 3c. **[跨仓依赖] web_search per-call 余额门 = `alpha-platform#37`(2026-07-25 更正:已落地)**
    - 归属:per-call 余额门归 `alpha-platform#37`(AC1 单一 reserve 无绕过 + AC5 web-search
@@ -277,7 +293,9 @@ question 上报 owner、不得静默整 server 关。
      handler 有 `accountPreauth`(`:867-871` → `402`)与 per-job 预算 precall(`:863` → `402`)。
      本稿原文「今天无 `accountPreauth`、settle-only 退化」已作废。
    - alpha-code E7 侧:insufficient-funds decline 是**当下就存在**的 LOUD 失败状态,已由票 2
-     的失败映射(`payment_required`)覆盖;§3 失败诚实不变量不变。
+     的失败映射(`payment_required`)覆盖 —— **但仅限本地 Exa/Parallel 直连链路**。云
+     `cloud_web_search` 那条链拿不到状态(平台薄壳丢弃,见 §1 二次更正),失败 loud 但不可分类;
+     缺口归 alpha-platform#105。§3 失败诚实不变量不变。
 
 4. **[REQ-xxx][CODE] `caps.websearch` 事实反映云在场**
    - AC:`sidecar.ts:188-193` 的 `websearch` 事实在云工具在场且本地被抑制时仍为真,

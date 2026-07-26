@@ -123,8 +123,6 @@ export function applyWebSearchSovereignty(userDataPath: string) {
 export function preferAppEnv(userDataPath: string) {
   const logger = getLogger()
   const logShellEnvCache = (message: string, extra?: Record<string, unknown>) => write("main", message, extra)
-  // 基线必须在任何 force-off 之前取,且每次 preferAppEnv 重取(单测逐例重置 env)。
-  captureKeylessWebSearchBaseline(process.env, true)
   const shell = process.platform === "win32" ? null : getUserShell()
   // 1. Login-shell env first -- a real `export` wins over the secrets file and ordinary defaults;
   //    the websearch capability controls below are explicit local sovereignty overrides.
@@ -161,6 +159,12 @@ export function preferAppEnv(userDataPath: string) {
       if (probed) writeShellEnvCache(userDataPath, shell, probed, logShellEnvCache)
     }
   }
+  // #223 对抗审计(2026-07-25):基线必须在**登录 shell env 合入之后**、首次主权计算之前取。
+  // 取早了(合入之前)的现场:Finder 首启 + 用户 `export OPENCODE_ENABLE_PARALLEL=1` →
+  // 基线先被重置为空 → 探测把真值写进 process.env 却不进基线 → 登出「还原基线」反而**删掉**
+  // 用户的 Parallel flag 并默认打开 Exa,即首启就用错 provider。缓存命中路同一窗口。
+  // 每次 preferAppEnv 重取(reset=true;单测逐例重置 env)。
+  captureKeylessWebSearchBaseline(process.env, true)
   // 2. Fill missing API keys (EXA_API_KEY, *_API_KEY, ...) from the alpha.env secrets file, so app
   //    users never have to touch ~/.zshrc. Never overrides anything already set in step 1.
   loadAlphaSecrets(userDataPath, logger)
@@ -212,7 +216,13 @@ export async function spawnLocalServer(
         "alpha-secrets: POSIX 0600/0700 权限位在 Windows(NTFS)不生效 —— 密钥文件暂无 owner-only 保证(icacls ACL 待 REQ-076 T3 拍板)",
       )
   } catch (error) {
-    getLogger()?.error("alpha-secrets sync FAILED — platform/BYOK providers will be missing", error)
+    // #223 对抗审计(2026-07-25):这里以前只 log 就继续 fork —— 登出时删不掉旧 token 文件的话,
+    // 下面的主权闸读到陈旧文件仍判 `platformPays=true`,新 sidecar 带着**已作废的 token** 注册云
+    // 工具;反向地,登录时写文件失败会静默回落 keyless。两者都破坏登录态迁移不变量。密钥文件是
+    // fork 的前置条件而不是尽力而为的副作用 ⇒ fail closed:拒绝本次 fork,让两个调用点(boot /
+    // respawn,index.ts)照既有路径发布 generation failed。
+    getLogger()?.error("alpha-secrets sync FAILED — refusing to fork the sidecar (fail closed)", error)
+    throw new Error(`alpha-secrets sync failed — sidecar fork refused: ${serializeError(error).message}`)
   }
 
   // #621:web search 主权闸重算,**每次 fork 都跑**,且必须排在 syncSecretFiles 之后 —— 它的两个
