@@ -2,23 +2,22 @@
 //
 // 职责:
 // - AlphaComposer 以 mode="session" **直挂**(props 传入;零 Portal/零选择器/零收养);
-// - composer 上方停靠区:审批卡(PermissionV2 typed feed,fail-closed)、提问卡(question
-//   typed 通道)、任务清单卡(todo typed 通道);
+// - composer 上方停靠区:提问卡(question typed 通道)、任务清单卡(todo typed 通道)等
+//   任务类停靠;**审批呈现统一走独立 Permission surface**(PermissionDialog,owner 裁决
+//   2026-07-25)—— dock 不渲审批卡,只以 PermissionV2 typed feed(fail-closed)驱动
+//   composer 的审批挂起提示;
 // - live status / 上下文用量 / 斜杠命令捕获经 ComposerSessionDockApi 注入 composer;
-// - 一切异步结果绑定 serverKey+directory+sessionID(C1 live context 原语,I8),审批回复
-//   额外绑 request ID(session-permission-feed 闸死 stale)。
+// - 一切异步结果绑定 serverKey+directory+sessionID(C1 live context 原语,I8)。
 
 import { useServerSDK, useServerSync } from "@opencode-ai/app"
 import type { createOpencodeClient, ModelV2Info, QuestionRequest, Todo } from "@opencode-ai/sdk/v2/client"
 import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
-import { unwrap } from "solid-js/store"
 import { hrefFor } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import type { ComposerSessionDockApi, ComposerSlashCapture } from "../alpha-composer"
 import { createModelContract } from "../model-contract"
-import { SessionApprovalHost } from "./session-approval-card"
 import { SessionComposerMount } from "./session-composer-mount"
 import {
   childParentHref,
@@ -52,7 +51,10 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
     return bound ? serverSDK().ensureDirSdkContext(bound.directory) : undefined
   })
 
-  /* ── PermissionV2 feed:随会话身份重建;身份失效的结果一律丢弃(I8) ────────────── */
+  /* ── PermissionV2 feed:随会话身份重建;身份失效的结果一律丢弃(I8)。
+        审批呈现与决定提交都不在 dock(owner 裁决 2026-07-25,统一走独立 Permission
+        surface);feed 只为 composer 的审批挂起提示(placeholder + 权限 chip)供事实,
+        与 PermissionWatcher 同一 fail-closed 实现 —— 未就绪 = 无审批挂起。 ─────────── */
   const [feed, setFeed] = createSignal<PermissionV2Feed | undefined>(undefined)
   createEffect(
     on(
@@ -70,13 +72,8 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
               if (!result.data) throw new Error("Permission list response is missing data")
               return result.data.data
             }),
-          reply: (requestID, command) =>
-            sdk.client.v2.session.permission
-              .reply({ sessionID: bound.sessionID, requestID, permissionV2DecisionCommand: command })
-              .then((result) => {
-                if (!result.data) throw new Error("Permission reply response is missing DecisionReceipt")
-                return result.data.data
-              }),
+          // dock 无决定提交路径:审批决定只能经独立 Permission surface 提交。
+          reply: () => Promise.reject(new Error("approval decisions are submitted only via the permission surface")),
         })
         const stopAsked = sdk.event.on("permission.v2.asked", (event) => {
           if (event.properties.sessionID !== bound.sessionID || !accepted()) return
@@ -99,18 +96,12 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
     ),
   )
 
-  // 呈现权先立后破 + 唯一 owner(审计第 2/3 轮):claim 与审批卡渲染封装在
-  // SessionApprovalHost —— 仅 feed 就绪才持 claim;多 dock 并存时按登记序恰一个 owner
-  // 渲染审批卡;list 在途/失败期间不夺权,watcher 凭自身通道继续兜底。
-
-  // fail-closed:feed 未就绪(缺席/读不到)= 无审批可呈现,亦无任何放行动作。
-  // unwrap:store 代理的 $PROXY 符号会破坏 permissionRequestFacts 的严格键集核验,
-  // 必须以 raw 对象交给审批卡(与 PermissionWatcher 同一处置)。
-  const approval = createMemo(() => {
+  // fail-closed:feed 未就绪(缺席/读不到)= 无审批挂起可提示。依赖的不变量与强制手段:
+  // ready 仅在「最近一次 list 成功且无新拉取在途」为 true(session-permission-feed 的
+  // Blocker-1 语义,其测试锁定);提示为纯只读投影,dock 无任何放行动作可言。
+  const approvalPending = createMemo(() => {
     const active = feed()
-    if (!active?.state.ready) return undefined
-    const head = active.state.requests[0]
-    return head ? unwrap(head) : undefined
+    return !!active?.state.ready && active.state.requests.length > 0
   })
 
   /* ── todo / question:typed sync 通道,读当前身份对应的会话 ─────────────────────── */
@@ -171,18 +162,10 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
     return contextUsagePercent(serverSync().session.data.message[bound.sessionID], listed.models)
   })
 
-  /* ── 「始终允许」授权所需的项目身份:取会话自身的精确 projectID(typed session info,
-        与独立 Permission surface 的当前项目同源;sandbox 会话因此同样可用)────────────── */
-  const projectID = createMemo(() => {
-    const bound = identity()
-    if (!bound) return undefined
-    return serverSync().session.data.info[bound.sessionID]?.projectID
-  })
-
   const dockApi: ComposerSessionDockApi = {
     running,
     contextUsage: usage,
-    approvalPending: () => approval() !== undefined,
+    approvalPending,
     onSlashCommand: (capture: ComposerSlashCapture) => {
       const bound = identity()
       if (!bound || bound.sessionID !== capture.sessionID || bound.directory !== capture.directory) return
@@ -198,17 +181,6 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
 
   return (
     <div class="a-swk-dock" data-alpha-session-dock>
-      <SessionApprovalHost
-        sessionID={() => identity()?.sessionID}
-        ready={() => feed()?.state.ready ?? false}
-        approval={approval}
-        projectID={projectID}
-        onSubmit={(requestID, command) => {
-          const active = feed()
-          if (!active) return Promise.reject(new Error("permission feed is not ready"))
-          return active.reply(requestID, command).then(() => undefined)
-        }}
-      />
       <Show when={question()} keyed>
         {(request) => (
           <SessionQuestionCard
@@ -385,7 +357,7 @@ function SessionQuestionCard(props: {
         </button>
       </div>
       <Show when={failed()}>
-        <p class="a-swk-approval-error" role="alert">
+        <p class="a-swk-question-error" role="alert">
           {t("alpha.session.questionFailed")}
         </p>
       </Show>

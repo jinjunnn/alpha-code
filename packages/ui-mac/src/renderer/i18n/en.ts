@@ -1168,7 +1168,6 @@ export const dict = {
   "alpha.session.timelineHost": "Session timeline",
   "alpha.session.composerHost": "Session composer",
   "alpha.session.railHost": "Session side panel",
-  "alpha.session.approvalTitle": "Approval requested",
   "alpha.session.questionTitle": "Question",
   "alpha.session.questionSubmit": "Submit answer",
   "alpha.session.questionDismiss": "Dismiss",

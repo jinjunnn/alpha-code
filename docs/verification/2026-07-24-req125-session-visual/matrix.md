@@ -139,7 +139,7 @@ FAIL 转 bug 票挂父票 #538。
 | ID | 待采帧 | 对照稿锚点 | 实现票 | 浅 | 暗 | 备注 |
 |---|---|---|---|---|---|---|
 | C1 | 变体一 · 右栏收起(时间线回中) | SW `#states` fitE | #539 | PASS(布局) | PASS(布局) | 时间线 760 上限居中;开关退未激活;`C1-{light,dark}.png`(时间线内容缺席=A1 同因,布局不变量全成立) |
-| C2 | 变体二 · 审批停靠在输入框上方 | SW `#states` 变体二 | #545 | 受阻(无模型) | 受阻(无模型) | ⚠ 口径冲突已登记:帧画 dock 停靠,基线 rev2 定审批走独立 Permission surface(REQ-090 已批 Dialog,另见 `docs/verification/2026-07-21-req090-permission-l2/`)。采集按 #545 落地形态,与两锚点不一致时先记录、判定交 owner |
+| C2 | 变体二 · 审批呈现(独立 Permission surface) | REQ-090 已批 Dialog(`docs/verification/2026-07-21-req090-permission-l2/`);SW `#states` 变体二已作废 | #545 #619 | 受阻(无模型) | 受阻(无模型) | 口径冲突已裁决(owner 2026-07-25,#619):审批统一走独立 Permission surface,dock 停靠帧作废。判定改为:审批请求出现时恰呈现一个 PermissionDialog(五栏强模态),dock 无审批卡;composer 仅置灰提示语 + 琥珀权限 chip |
 | C3 | 变体三 · 会话运行中(顶栏+尾部+停止键) | SW `#states` 变体三 | #543 #545 | 受阻(无模型) | 受阻(无模型) | 三层指示:状态胶囊 / 运行卡+思考+流式光标 / 停止键 |
 
 ## D · 右栏面板细部(SW §review/§files/§term/§arts/§railsec)
@@ -234,7 +234,7 @@ FAIL 转 bug 票挂父票 #538。
 
 | ID | 待采帧 | 对照稿锚点 | 实现票 | 浅 | 暗 | 备注 |
 |---|---|---|---|---|---|---|
-| J1 | 审批待批卡(形态+挂载位) | CT `#tools` perm-card + SW `#states` 变体二 | #545 | | | 同 C2 的口径冲突注记;rev2:审批非 dock 集合 |
+| J1 | 审批呈现(独立 Permission surface;非 dock) | REQ-090 已批 Dialog(`docs/verification/2026-07-21-req090-permission-l2/`) | #545 #619 | | | 裁决同 C2(owner 2026-07-25,#619):审批不属 dock 集合,dock 审批卡已删;判定按独立 Permission surface(恰一个 PermissionDialog),反向闸门在 `takeover-adapter-coexistence.test.ts` |
 | J2 | todo 任务清单卡(三态+进度) | CT `#tools` todos 帧(渲染位=dock) | #545 | | | HIDDEN_TOOLS 仅 todowrite,渲染在 dock |
 | J3 | question 提问卡(选项 A/B) | CT `#tools` qa 帧(渲染位=dock) | #545 | | | pending/running question 单独条件过滤进 dock |
 | J4 | followup dock 态 | **设计稿无帧**(CT §⑦ 索引无此类型;SW 只画审批停靠) | #558 | | | 按 #558 落地形态+文字合同判定;采集后作回归基线留档 |
@@ -246,7 +246,8 @@ FAIL 转 bug 票挂父票 #538。
 
 - 采集行 74(A4 B2 C3 D9 E11 F11 G18 H6 I3 J7)× 明/暗 = **148 帧**。
 - 有设计稿帧锚点 69 行;**无帧 5 行**(D7、J4–J7,按文字合同/实现基线判定);
-  条件项 1 行(H1,批2 已解:实现=可见分隔条);口径冲突登记 2 处(C2/J1 审批挂载位、E1 展开提示词)。
+  条件项 1 行(H1,批2 已解:实现=可见分隔条);口径冲突登记 2 处:C2/J1 审批挂载位
+  **已裁决**(owner 2026-07-25,#619,按独立 Permission surface 判定),E1 展开提示词仍开放。
 - 批次进度:批1(真机)已采 9 行全帧 + 8 行局部;批2(harness)已采 45 行 × 明暗 = 90 帧
   (E 组 10、F 组 11、G 组 18、H 组 5、I1;E8 受阻)+ C6 回归档 2 帧 + 真机重采 12 帧
   (A3/D6/D5-partial 双主题)。形态一致 26 行,偏差登记 19 行(发现5–23);
@@ -305,8 +306,8 @@ E5/F2/G2/G4/G6/G9/G15 等行覆盖 —— 全组件类型无漏。
 ## 40 清单之外的已知缺口(非 TL)
 
 1. dock followup/revert/child-session/handoff 四态:设计稿无帧(J4–J7),依据 CT §⑦
-   索引不含此类型、SW 仅画审批停靠;按 #558 落地+文字合同判定。
+   索引不含此类型、SW 仅画审批停靠(该帧已作废,见第 4 条);按 #558 落地+文字合同判定。
 2. 终端面板空态:无帧(D7),SW §term 帧外文字规格。
 3. 消息导航(上一条/下一条):CT §⑦ 明确「待补,代码未接线」——**不采集,不入矩阵**。
-4. 审批挂载位:SW 变体二(dock 停靠)vs 基线 rev2(独立 Permission surface)口径冲突,
-   已在 C2/J1 登记,判定前须 owner 裁决。
+4. 审批挂载位:口径冲突**已裁决**(owner 2026-07-25,#619)——审批统一走独立
+   Permission surface,SW 变体二 dock 停靠帧作废;C2/J1 按独立 PermissionDialog 判定。

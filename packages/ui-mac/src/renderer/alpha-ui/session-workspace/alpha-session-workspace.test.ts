@@ -27,7 +27,8 @@ describe("REQ-125 C1b seam skeleton mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("11 pass")
+    // 9 用例:审批 claim 两用例已随 dock 审批卡删除(审批统一走独立 Permission surface)。
+    expect(output).toContain("9 pass")
     expect(output).toContain("0 fail")
   })
 })
