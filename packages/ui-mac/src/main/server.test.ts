@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { EventEmitter } from "node:events"
-import { mkdtempSync, rmSync } from "node:fs"
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join, parse, resolve } from "node:path"
 
@@ -46,7 +46,8 @@ mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {
 // <tempdir>/alpha-secrets,无 ALPHA 密钥环境变量时 no-op,afterEach 清理)。全局 mock.module 会跨文件
 // 泄漏残缺导出面,撞坏 alpha-secret-files.test.ts 的 `import { secretFileRef, ... }`(2026-07-21 Linux CI 实锤)。
 
-const { hasSecretFile, syncSecretFiles } = await import("./alpha-secret-files")
+const { hasSecretFile } = await import("./alpha-secret-files")
+const { writeShellEnvCache } = await import("./shell-env-cache")
 const { preferAppEnv, spawnLocalServer } = await import("./server")
 
 let userDataPath = ""
@@ -59,6 +60,7 @@ const keylessWebSearchFlags = [
 const managedEnv = [
   "SHELL",
   "ALPHA_CLOUD_MCP_URL",
+  "ALPHA_CLOUD_TOKEN",
   "ALPHA_ENV_FILE",
   "ALPHA_SECRETS_DISABLE",
   "ALPHA_WEBSEARCH_DISABLE",
@@ -87,8 +89,36 @@ afterEach(() => {
   rmSync(userDataPath, { recursive: true, force: true })
 })
 
-function webSearchToolSnapshot() {
-  const local = keylessWebSearchFlags.some((key) => process.env[key] === "1")
+const fakeFork = ((file: string, args: string[], options: Record<string, unknown>) => {
+  forkCalls.push({ file, args, options })
+  return new FakeChild()
+}) as unknown as typeof import("electron").utilityProcess.fork
+
+/** Fork the sidecar the way boot/respawn does and hand back the env it was forked with. */
+async function forkSidecar() {
+  const result = await spawnLocalServer("127.0.0.1", 4096, "password", {
+    userDataPath,
+    healthCheck: async () => true,
+    fork: fakeFork,
+  })
+  await result.health.wait
+  await result.listener.stop()
+  return (forkCalls.at(-1)?.options.env ?? {}) as Record<string, string | undefined>
+}
+
+/** #621:登录态由 initAuthEnv/applyAuthEnv 建立,**晚于** preferAppEnv;env token 在下次 fork 时
+ *  才经 syncSecretFiles 变成密钥文件。测试照这个真实顺序走,不预置 force-off 的判据。 */
+function applyAuthEnvLikeLogin() {
+  process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
+  process.env.ALPHA_CLOUD_TOKEN = "token"
+}
+
+function applyAuthEnvLikeLogout() {
+  delete process.env.ALPHA_CLOUD_TOKEN
+}
+
+function webSearchToolSnapshot(env: Record<string, string | undefined>) {
+  const local = keylessWebSearchFlags.some((key) => env[key] === "1")
   return [
     ...(local ? ["websearch"] : []),
     ...(process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")
@@ -97,83 +127,231 @@ function webSearchToolSnapshot() {
   ]
 }
 
-describe("preferAppEnv websearch selection", () => {
-  test("platform-pays exposes only cloud_web_search and forces off every keyless flag", () => {
-    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
-    syncSecretFiles(userDataPath, { ALPHA_CLOUD_TOKEN: "token" })
+const allFlagsOff = Object.fromEntries(keylessWebSearchFlags.map((key) => [key, "0"]))
 
+function keylessFlagsOf(env: Record<string, string | undefined>) {
+  return Object.fromEntries(keylessWebSearchFlags.map((key) => [key, env[key]]))
+}
+
+describe("web search sovereignty at sidecar fork (#621)", () => {
+  test("cold start with a logged-in user forces keyless off at fork, not at preferAppEnv", async () => {
+    // 真实顺序:preferAppEnv 先跑,此刻 initAuthEnv 还没写 ALPHA_CLOUD_MCP_URL/token。
     preferAppEnv(userDataPath)
+    expect(process.env.OPENCODE_ENABLE_EXA).toBe("1") // boot 期只能判「登出」——这正是 #621 的现场
 
-    expect(webSearchToolSnapshot()).toEqual(["cloud_web_search"])
-    expect({
-      OPENCODE_ENABLE_EXA: process.env.OPENCODE_ENABLE_EXA,
-      OPENCODE_EXPERIMENTAL_EXA: process.env.OPENCODE_EXPERIMENTAL_EXA,
-      OPENCODE_ENABLE_PARALLEL: process.env.OPENCODE_ENABLE_PARALLEL,
-      OPENCODE_EXPERIMENTAL_PARALLEL: process.env.OPENCODE_EXPERIMENTAL_PARALLEL,
-    }).toEqual({
-      OPENCODE_ENABLE_EXA: "0",
-      OPENCODE_EXPERIMENTAL_EXA: "0",
-      OPENCODE_ENABLE_PARALLEL: "0",
-      OPENCODE_EXPERIMENTAL_PARALLEL: "0",
-    })
+    applyAuthEnvLikeLogin()
+
+    const env = await forkSidecar()
+    expect(keylessFlagsOf(env)).toEqual(allFlagsOff)
+    expect(webSearchToolSnapshot(env)).toEqual(["cloud_web_search"])
   })
 
-  test("platform-pays overrides a shell-exported keyless flag", () => {
-    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
+  test("cold start overrides a shell-exported keyless flag at fork time", async () => {
     process.env.OPENCODE_ENABLE_PARALLEL = "1"
-    syncSecretFiles(userDataPath, { ALPHA_CLOUD_TOKEN: "token" })
 
     preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
 
-    expect(webSearchToolSnapshot()).toEqual(["cloud_web_search"])
-    expect(process.env.OPENCODE_ENABLE_PARALLEL).toBe("0")
+    const env = await forkSidecar()
+    expect(env.OPENCODE_ENABLE_PARALLEL).toBe("0")
+    expect(webSearchToolSnapshot(env)).toEqual(["cloud_web_search"])
   })
 
-  test.each(keylessWebSearchFlags)("disable overrides a shell-exported %s flag in every auth state", (flag) => {
+  test.each(keylessWebSearchFlags)("disable overrides a shell-exported %s flag in every auth state", async (flag) => {
     process.env.ALPHA_WEBSEARCH_DISABLE = "1"
     process.env[flag] = "1"
 
     preferAppEnv(userDataPath)
 
-    expect(webSearchToolSnapshot()).toEqual([])
-    expect(Object.fromEntries(keylessWebSearchFlags.map((key) => [key, process.env[key]]))).toEqual(
-      Object.fromEntries(keylessWebSearchFlags.map((key) => [key, "0"])),
-    )
+    const env = await forkSidecar()
+    expect(keylessFlagsOf(env)).toEqual(allFlagsOff)
+    expect(webSearchToolSnapshot(env)).toEqual([])
   })
 
-  test("disable wins over all shell-exported keyless flags even when cloud is registered", () => {
+  test("disable wins over all shell-exported keyless flags even when cloud is registered", async () => {
     process.env.ALPHA_WEBSEARCH_DISABLE = "1"
-    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
     Object.assign(process.env, Object.fromEntries(keylessWebSearchFlags.map((key) => [key, "1"])))
-    syncSecretFiles(userDataPath, { ALPHA_CLOUD_TOKEN: "token" })
 
     preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
 
-    expect(keylessWebSearchFlags.map((key) => process.env[key])).toEqual(["0", "0", "0", "0"])
+    const env = await forkSidecar()
+    expect(keylessFlagsOf(env)).toEqual(allFlagsOff)
   })
 
-  test("logged-out/BYOK exposes only the unchanged local keyless websearch", () => {
-    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
+  test("logged-out/BYOK forks with the unchanged local keyless websearch", async () => {
+    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp" // URL 在场但无密钥文件 = 未登录
 
     preferAppEnv(userDataPath)
 
-    expect(webSearchToolSnapshot()).toEqual(["websearch"])
-    expect(process.env.OPENCODE_ENABLE_EXA).toBe("1")
-    expect(process.env.OPENCODE_EXPERIMENTAL_EXA).toBeUndefined()
+    const env = await forkSidecar()
+    expect(webSearchToolSnapshot(env)).toEqual(["websearch"])
+    expect(env.OPENCODE_ENABLE_EXA).toBe("1")
+    expect(env.OPENCODE_EXPERIMENTAL_EXA).toBeUndefined()
+    expect(env.OPENCODE_ENABLE_PARALLEL).toBeUndefined()
+    expect(env.OPENCODE_EXPERIMENTAL_PARALLEL).toBeUndefined()
+  })
+
+  test("logout respawn gives the keyless baseline back instead of leaving it forced off", async () => {
+    process.env.OPENCODE_ENABLE_PARALLEL = "1" // 用户 shell 的真 export
+
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+    expect(keylessFlagsOf(await forkSidecar())).toEqual(allFlagsOff)
+
+    applyAuthEnvLikeLogout()
+
+    const env = await forkSidecar()
+    expect(env.OPENCODE_ENABLE_PARALLEL).toBe("1")
+    expect(env.OPENCODE_ENABLE_EXA).toBe("1")
+    expect(webSearchToolSnapshot(env)).toEqual(["websearch"])
+  })
+
+  test("re-forking without an auth change is idempotent", async () => {
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+
+    expect(keylessFlagsOf(await forkSidecar())).toEqual(keylessFlagsOf(await forkSidecar()))
+  })
+
+  // #223 R2 Blocker 1:env force-off 与注入的 permission deny 都能被后置规则顶掉(agent wildcard /
+  // 持久 session permission / approved)。主权判决必须另有一条到得了**工具自身**的通道 —— 这条
+  // 断言走真实 fork,证明判决确实进了 sidecar 的 env(即 sidecar-env 白名单也放行了它)。
+  test("the sovereignty verdict reaches the sidecar so the tool itself can refuse", async () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    preferAppEnv(userDataPath)
+
+    expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+  })
+
+  test("platform pays also ships the sovereignty verdict to the sidecar", async () => {
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+
+    expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+  })
+
+  test("logout respawn clears the sovereignty verdict instead of leaving the tool dead", async () => {
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+    expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+
+    applyAuthEnvLikeLogout()
+
+    expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBeUndefined()
+  })
+
+  // #223 R3:云侧的同一条通道。`cloud_web_search` 是远端 MCP 工具,没有 alpha 能改的 execute
+  // 首行;最终闸在 @alpha-code/ext 的 tool.execute.before 钩子里,靠这个变量过河。它只在
+  // kill-switch 时置位 —— 平台代付态下云工具正是权威通道,不能连它一起关。
+  test("the kill switch ships a cloud verdict to the sidecar; platform-pays does not", async () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    preferAppEnv(userDataPath)
+    expect((await forkSidecar()).ALPHA_CLOUD_WEBSEARCH_DENY).toBe("1")
+
+    delete process.env.ALPHA_WEBSEARCH_DISABLE
+    applyAuthEnvLikeLogin()
+    const paying = await forkSidecar()
+    expect(paying.ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+    expect(paying.ALPHA_CLOUD_WEBSEARCH_DENY).toBeUndefined()
+  })
+
+  test("turning the kill switch back off clears the cloud verdict on the next fork", async () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+    expect((await forkSidecar()).ALPHA_CLOUD_WEBSEARCH_DENY).toBe("1")
+
+    delete process.env.ALPHA_WEBSEARCH_DISABLE
+
+    expect((await forkSidecar()).ALPHA_CLOUD_WEBSEARCH_DENY).toBeUndefined()
+  })
+})
+
+// #223 对抗审计 Major 3(2026-07-25):基线曾在**登录 shell env 合入之前**截取。上面那组用例
+// 靠 `SHELL=nu` 跳过真实 shell 导入(`loadShellEnv` 对 nushell 直接 return null),又在
+// `preferAppEnv` 之前手写 `process.env` —— 于是整条真实导入序零覆盖,缺陷从测试面前溜过去了。
+// 这组换成**真实登录 shell 探测**:SHELL 指向一个真脚本,由 spawnSync 真跑、真回吐 `env -0`。
+describe("keyless baseline vs the real login-shell import (#223 Major 3)", () => {
+  /** 写一个真能被 `spawnSync(shell, ["-il","-c","env -0"])` 跑起来的登录 shell 替身。 */
+  function fakeLoginShell(name: string, exported: Record<string, string>) {
+    const script = join(userDataPath, name)
+    const body = Object.entries(exported)
+      .map(([key, value]) => `${key}=${value}`)
+      .join("\\000")
+    writeFileSync(script, `#!/bin/sh\nprintf '${body}\\000'\n`)
+    chmodSync(script, 0o755)
+    return script
+  }
+
+  test("a shell-exported keyless flag survives the login → logout round trip", async () => {
+    // 用户 rc 里 `export OPENCODE_ENABLE_PARALLEL=1`,当前进程 env 里没有它 —— 只有真实导入能带进来。
+    process.env.SHELL = fakeLoginShell("login-shell.sh", {
+      PATH: "/usr/bin:/bin",
+      OPENCODE_ENABLE_PARALLEL: "1",
+    })
     expect(process.env.OPENCODE_ENABLE_PARALLEL).toBeUndefined()
-    expect(process.env.OPENCODE_EXPERIMENTAL_PARALLEL).toBeUndefined()
+
+    preferAppEnv(userDataPath)
+    // ① Finder 首启(已登出)就必须用用户真值。基线取早了的话,「还原基线」会把它直接删掉,
+    //    再默认打开 Exa —— 首次启动就换错了 provider。
+    expect(process.env.OPENCODE_ENABLE_PARALLEL).toBe("1")
+    expect(webSearchToolSnapshot(await forkSidecar())).toEqual(["websearch"])
+
+    applyAuthEnvLikeLogin()
+    expect(keylessFlagsOf(await forkSidecar())).toEqual(allFlagsOff)
+
+    applyAuthEnvLikeLogout()
+    // ② 登出 respawn 还原的必须是用户真值,而不是「探测之前的空基线」。
+    const env = await forkSidecar()
+    expect(env.OPENCODE_ENABLE_PARALLEL).toBe("1")
+    expect(webSearchToolSnapshot(env)).toEqual(["websearch"])
+  })
+
+  test("the cached shell env path has the same baseline truth", async () => {
+    // 生产上的常见路径是缓存命中(0ms 套用)。故意让脚本非零退出:缓存照常命中并套用,
+    // 而后台异步刷新拿不到结果(`if (!fresh) return`),用例保持确定性。
+    const shell = join(userDataPath, "broken-shell.sh")
+    writeFileSync(shell, "#!/bin/sh\nexit 1\n")
+    chmodSync(shell, 0o755)
+    process.env.SHELL = shell
+    writeShellEnvCache(userDataPath, shell, { PATH: "/usr/bin:/bin", OPENCODE_ENABLE_PARALLEL: "1" })
+
+    preferAppEnv(userDataPath)
+    expect(process.env.OPENCODE_ENABLE_PARALLEL).toBe("1")
+
+    applyAuthEnvLikeLogin()
+    expect(keylessFlagsOf(await forkSidecar())).toEqual(allFlagsOff)
+
+    applyAuthEnvLikeLogout()
+    expect((await forkSidecar()).OPENCODE_ENABLE_PARALLEL).toBe("1")
   })
 })
 
 describe("spawnLocalServer", () => {
+  // #223 对抗审计 Major 4(2026-07-25):密钥文件同步失败后仍继续 fork —— 登出删不掉旧 token
+  // 文件时只写日志继续,主权闸读到旧文件仍判 platformPays=true,新 sidecar 带着已作废的 token
+  // 注册云工具;反向地登录写失败会静默回落 keyless。密钥同步是 fork 的前置条件,不是尽力而为。
+  test("refuses to fork when the secret file sync fails", async () => {
+    const parentIsAFile = join(userDataPath, "not-a-directory")
+    writeFileSync(parentIsAFile, "")
+    const brokenUserData = join(parentIsAFile, "userdata")
+
+    await expect(
+      spawnLocalServer("127.0.0.1", 4096, "password", {
+        userDataPath: brokenUserData,
+        healthCheck: async () => true,
+        fork: fakeFork,
+      }),
+    ).rejects.toThrow(/alpha-secrets sync failed/)
+    expect(forkCalls).toHaveLength(0)
+  })
+
   test("forks the sidecar in the userData scratch directory", async () => {
     const result = await spawnLocalServer("127.0.0.1", 4096, "password", {
       userDataPath,
       healthCheck: async () => true,
-      fork: ((file: string, args: string[], options: Record<string, unknown>) => {
-        forkCalls.push({ file, args, options })
-        return new FakeChild()
-      }) as unknown as typeof import("electron").utilityProcess.fork,
+      fork: fakeFork,
     })
     await result.health.wait
 

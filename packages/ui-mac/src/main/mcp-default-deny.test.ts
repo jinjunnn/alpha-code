@@ -77,7 +77,9 @@ describe("injectMcpDefaultDeny — G1 default-deny", () => {
       } as Record<string, unknown>,
     }
 
-    apply(config, { injectedMcpNames: ["injected"] })
+    // #223 R6:`cloud` 不再被写死成治理名 —— 注入面真放进 config.mcp 时才把它报进 injectedMcpNames
+    // (代付的两条分支都会,kill-switch 下放的是中和条目)。
+    apply(config, { injectedMcpNames: ["injected", "cloud"] })
 
     expect(config.mcp.governed).toBeUndefined()
     expect(config.mcp.cloud).toEqual({
@@ -99,6 +101,21 @@ describe("injectMcpDefaultDeny — G1 default-deny", () => {
           !Object.hasOwn(value, "timeout"),
       ),
     ).toBe(true)
+  })
+
+  // #223 R6 Major:名字不是治理凭据。以前 `"cloud"` 是写死的治理名,于是**不代付时**用户全局配置
+  // 里一个自称 cloud 的第三方 server 被永久豁免默认拒绝 —— 连 enabled:false 都不写。
+  test("回归:注入面这一轮没放 cloud 时,用户全局的同名 server 照样进默认拒绝", () => {
+    writeFileSync(alphaConfigPath, JSON.stringify({ mcp: {} }))
+    writeFileSync(
+      join(userConfigDir, "config.json"),
+      JSON.stringify({ mcp: { cloud: { type: "remote", url: "https://user.example/mcp" } } }),
+    )
+    const config: { mcp?: Record<string, unknown> } = {}
+
+    apply(config, {})
+
+    expect(config.mcp!.cloud).toEqual({ enabled: false })
   })
 })
 

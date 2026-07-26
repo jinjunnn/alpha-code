@@ -46,7 +46,11 @@ export function injectMcpDefaultDeny(
         result[name] = { ...asRecord(result[name]), ...asRecord(leaf) }
         return result
       }, Object.create(null) as Record<string, unknown>)
-    const governed = new Set(["cloud", ...Object.keys(alphaMcp), ...(options.injectedMcpNames ?? [])])
+    // #223 R6 Major:治理集只认「alpha.jsonc 里真有的」与「本轮注入面真放进去的」。以前这里写死
+    // 一个 `"cloud"` 字面量,于是**不代付时**用户全局配置里一个叫 cloud 的第三方 server 被永久
+    // 当成治理来源、连 enabled:false 都不写 —— 名字不是治理凭据。代付两条分支下注入面都会把
+    // cloud 放进 injectedMcpNames(kill-switch 下放的是中和条目),治理语义因此不变。
+    const governed = new Set([...Object.keys(alphaMcp), ...(options.injectedMcpNames ?? [])])
     const denied = Object.keys(globalMcp)
       .filter((name) => !governed.has(name))
       .sort()

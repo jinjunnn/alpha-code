@@ -28,6 +28,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { injectAlphaConfig } from "./alpha-config-injection"
 import { secretFilePath } from "./alpha-secret-files"
+import { CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV, WITHHELD_CLOUD_MCP } from "./cloud-web-search"
 
 // 注入读到的每一个 env 输入 + 它自己写出的三个 env 输出:逐个快照/清空/还原,
 // 既隔离宿主机真实配置,也不把注入结果泄漏给同进程的其它测试文件。
@@ -47,7 +48,12 @@ const MANAGED = [
   "ALPHA_READONLY_DISABLE",
   "ALPHA_WEBSEARCH_DISABLE",
   "OPENCODE_ENABLE_EXA",
+  "OPENCODE_EXPERIMENTAL",
   "ALPHA_CLOUD_MCP_URL",
+  // #223 R4/R5:注入面自己置位/删除的 ext 装载握手通道 + 云 server 身份(输出之三)。
+  "ALPHA_CLOUD_MCP_ARM",
+  "ALPHA_CLOUD_MCP_DEF",
+  "ALPHA_CLOUD_MCP_SERVER",
   "ALPHA_BASE_URL",
   "ALPHA_DEFAULT_MODEL",
 ] as const
@@ -267,5 +273,183 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     //    整体返回(锁到行尾 + 函数闭括号:`return injectAlphaConfig(...), {ok:true}` 逗号改写、
     //    换行续写表达式,都无处容身)。
     expect(source).toMatch(/return injectAlphaConfig\(userDataPath, extPluginPath, registryChannel\)\n\}/)
+  })
+})
+
+// #223 对抗审计 Blocker(2026-07-25):`OPENCODE_EXPERIMENTAL=1` 绕过 web search 主权闸。
+// 上游 `runtime-flags.ts` 的 `enableExa = OPENCODE_EXPERIMENTAL || OPENCODE_ENABLE_EXA ||
+// OPENCODE_EXPERIMENTAL_EXA`,所以 main 把四个 keyless 专用 flag 覆盖写 `"0"` 之后 umbrella 仍
+// 让 `webSearchEnabled()` 注册本地 `websearch` —— 代付态本地+云双活,kill-switch 下云暗而本地仍活。
+// 这里跑的是**真实生产 composition**(真 injectAlphaConfig、真密钥文件、真 env),
+// 不预置 config.permission。
+describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
+  /** main 侧 syncSecretFiles 落盘的登录态 + 主权闸对四个 keyless flag 的 force-off。 */
+  const givenPlatformPaysUnderUmbrella = () => {
+    givenLoggedInWithByok()
+    plantSecret("ALPHA_CLOUD_TOKEN", "cloud-token")
+    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
+    process.env.OPENCODE_EXPERIMENTAL = "1" // 用户 shell 的真 export —— env 层压不掉
+    process.env.OPENCODE_ENABLE_EXA = "0" // 主权闸已经写过 "0",仍不足以关闭工具
+  }
+
+  /** ext bundle 的真实落点替身(注入只把路径合并进 config.plugin,不读文件内容)。 */
+  const extPluginPath = () => {
+    const file = path.join(tmp, "alpha-ext", "plugin.js")
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, "export default async () => ({})\n")
+    return file
+  }
+
+  const injectedPermissions = () => {
+    const config: {
+      permission?: Record<string, unknown>
+      agent?: Record<string, { permission?: Record<string, unknown> }>
+      mcp?: Record<string, unknown>
+    } = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!)
+    return config
+  }
+
+  test("平台代付:本地 websearch 被 deny,云工具与兄弟云工具照常在册", () => {
+    givenPlatformPaysUnderUmbrella()
+
+    injectAlphaConfig(userData, undefined, "stable")
+
+    const config = injectedPermissions()
+    expect(config.permission?.websearch).toBe("deny")
+    // 云工具是代付态的权威 web search —— 不许被顺手关掉。
+    expect(config.permission?.cloud_web_search).toBeUndefined()
+    expect(config.mcp?.cloud).toBeDefined()
+    // agent 级规则排在全局之后:三个 alpha agent 若还写着 allow,全局 deny 对它们无效。
+    for (const [name, agent] of Object.entries(config.agent ?? {}))
+      expect([name, agent.permission?.websearch]).toEqual([name, "deny"])
+  })
+
+  // #223 R4→R5:kill-switch 下云 server 的**完整定义根本不进配置**,只经 ARM/DEF 两个 env 托管给
+  // @alpha-code/ext(见 packages/ext/src/cloud-websearch-kill.ts)。R4 那版写一个 `enabled:false`
+  // 的条目 —— R5 判其为回归:`MCP.connect()` 会无条件把它复制成 `enabled:true`,而该能力公开为
+  // `/mcp/:name/connect` 且产品 UI 真的在调,于是 ext 缺席时用户点一下就能热连起来。
+  for (const [name, ext] of [
+    ["ext bundle 路径已解析", true],
+    ["ext bundle 路径缺席", false],
+  ] as const)
+    test(`kill-switch(${name}):配置里没有云 server 定义,本地与云两个 web search 都被 deny`, () => {
+      givenPlatformPaysUnderUmbrella()
+      process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+      const errors: unknown[][] = []
+      const original = console.error
+      console.error = (...args: unknown[]) => void errors.push(args)
+      try {
+        injectAlphaConfig(userData, ext ? extPluginPath() : undefined, "stable")
+      } finally {
+        console.error = original
+      }
+
+      const config = injectedPermissions()
+      expect(config.permission?.websearch).toBe("deny")
+      expect(config.permission?.cloud_web_search).toBe("deny")
+      expect(config.permission?.cloud_dispatch).toBeUndefined()
+      // 一个字节的可复活定义都不留:配置里只有那份中和条目(#223 R6 Major:它必须在,
+      // 否则继承来源里的同名定义压根不会被覆盖),没有真 URL、没有 Authorization 头。
+      expect(config.mcp?.cloud).toEqual({ ...WITHHELD_CLOUD_MCP })
+      expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("cloud.example")
+      expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("Authorization")
+      // 定义只在 env 里托管,ext 的 config 钩子跑起来才装。
+      expect(process.env[CLOUD_MCP_ARM_ENV]).toBe("cloud")
+      expect(JSON.parse(process.env[CLOUD_MCP_DEF_ENV]!)).toMatchObject({
+        type: "remote",
+        url: "https://cloud.example/mcp",
+      })
+      // A6:托管的定义里是 {file:} 引用,不是 token 值本身。
+      expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("{file:")
+      expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("cloud-token")
+      expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
+      expect(errors.flat().join("\n")).toContain("WITHHELD from the engine config")
+    })
+
+  // #223 R6 Major:R5 只从继承来的 OPENCODE_CONFIG_CONTENT 对象里删键,而引擎的深合并里
+  // 「缺少 cloud 键」不会删除 global / alpha.jsonc / 项目 / managed 里先前来源的定义。所以现在
+  // 写的是一份压过去的中和条目 —— 深合并里它覆盖的是**连接控制字段**(type/url/enabled/oauth;
+  // 继承的 headers/timeout 会留下,#223 R7 措辞更正,URL 已不可用故无处可发)。多源那一半由
+  // packages/opencode/test/mcp/alpha-cloud-mcp-multisource.test.ts 用真实 Config 加载证。
+  test("kill-switch:继承来的同名云条目被中和条目压掉(连接控制字段)", () => {
+    givenPlatformPaysUnderUmbrella()
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+      mcp: {
+        cloud: {
+          type: "remote",
+          url: "https://inherited.example/mcp",
+          enabled: true,
+          headers: { Authorization: "Bearer inherited" },
+        },
+      },
+    })
+
+    injectAlphaConfig(userData, undefined, "stable")
+
+    expect(injectedPermissions().mcp?.cloud).toEqual({ ...WITHHELD_CLOUD_MCP })
+    expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("inherited.example")
+    expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("Bearer inherited")
+  })
+
+  test("代付但无 kill-switch 时:云 server 直接可用,只托管 def 身份、不置位 arm(不依赖 ext 装载)", () => {
+    givenPlatformPaysUnderUmbrella()
+
+    injectAlphaConfig(userData, undefined, "stable")
+
+    expect(injectedPermissions().mcp?.cloud).toMatchObject({ type: "remote", enabled: true })
+    // ARM 不置位 ⇒ ext 的 installCloudMcp 什么都不装(ARM/DEF 必须成对)。
+    expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
+    // #223 R6 Blocker:治理豁免绑定的是 DEF 里那份定义的端点身份,所以代付两条分支都托管它。
+    expect(JSON.parse(process.env[CLOUD_MCP_DEF_ENV]!)).toMatchObject({
+      type: "remote",
+      url: "https://cloud.example/mcp",
+    })
+    expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("{file:")
+    expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("cloud-token")
+    // 闸要能把「alpha 治理的云 server」与用户自带的 web-search MCP 区分开(R5 Blocker)。
+    expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
+  })
+
+  // 握手通道的可信度**不**来自 sidecar-env 白名单(逃生阀 ALPHA_ENV_ALLOWLIST_EXTRA 能放行它,
+  // 见 sidecar-env.test.ts 的同名事实),而来自:注入面在每次 fork 的每条分支上覆盖或删除它们。
+  test("继承/伪造的 arm+def 变量在每条分支上都被注入面覆盖或清掉", () => {
+    givenPlatformPaysUnderUmbrella()
+    process.env[CLOUD_MCP_ARM_ENV] = "forged"
+    process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify({ type: "remote", url: "https://attacker.example/mcp" })
+    process.env[CLOUD_MCP_SERVER_ENV] = "forged"
+
+    // ① 代付、无 kill-switch:ARM 被删,DEF/SERVER 被覆盖成 alpha 自己的值(伪造的 URL 不剩)。
+    injectAlphaConfig(userData, undefined, "stable")
+    expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
+    expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("attacker.example")
+    expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("cloud.example")
+    expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
+
+    // ② kill-switch:被覆盖成 alpha 自己的名字与定义,伪造的 URL 一点不剩。
+    process.env[CLOUD_MCP_ARM_ENV] = "forged"
+    process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify({ type: "remote", url: "https://attacker.example/mcp" })
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    injectAlphaConfig(userData, undefined, "stable")
+    expect(process.env[CLOUD_MCP_ARM_ENV]).toBe("cloud")
+    expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("attacker.example")
+
+    // ③ 登出 / BYOK(不代付):三个都被删,伪造的通道彻底失效。
+    delete process.env.ALPHA_CLOUD_MCP_URL
+    injectAlphaConfig(userData, undefined, "stable")
+    expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
+    expect(process.env[CLOUD_MCP_DEF_ENV]).toBeUndefined()
+    expect(process.env[CLOUD_MCP_SERVER_ENV]).toBeUndefined()
+  })
+
+  test("登出/BYOK:keyless 本地 websearch 保持可用(不误伤登出兜底)", () => {
+    givenLoggedInWithByok()
+    process.env.OPENCODE_EXPERIMENTAL = "1"
+
+    injectAlphaConfig(userData, undefined, "stable")
+
+    const config = injectedPermissions()
+    expect(config.permission?.websearch).toBeUndefined()
+    for (const agent of Object.values(config.agent ?? {})) expect(agent.permission?.websearch).toBe("allow")
   })
 })

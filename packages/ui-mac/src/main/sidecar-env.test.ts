@@ -185,6 +185,24 @@ describe("createSidecarEnv — escape hatch", () => {
     expect(Object.values(env)).not.toContain("leak")
   })
 
+  // #223 R5 Minor — 事实更正。R4 的注释声称 ext 装载握手通道「不在白名单里,所以外部 shell 伪造
+  // 一个同名变量也进不来」。**不成立**:这三个名字都不是 credential-shaped,逃生阀点名即放行。
+  // 这条测试把真事实钉住(shell 进得来),握手的可信度另有来源 —— `injectAlphaConfig` 在每次 fork
+  // 的每一条分支上覆盖或删除它们,由 `alpha-config-injection.test.ts`「继承/伪造的 arm+def 变量在
+  // 每条分支上都被注入面覆盖或清掉」断言。两条测试合起来才是完整判据;删掉任何一条都会让
+  // 「握手不可伪造」重新变成没有支撑的声明。
+  test("hatch DOES pass the ext handshake vars — the handshake is not protected by this allowlist", () => {
+    const handshake = ["ALPHA_CLOUD_MCP_ARM", "ALPHA_CLOUD_MCP_DEF", "ALPHA_CLOUD_MCP_SERVER"]
+    const env = createSidecarEnv({
+      ALPHA_ENV_ALLOWLIST_EXTRA: handshake.join(","),
+      ...Object.fromEntries(handshake.map((name) => [name, `forged-${name}`])),
+    })
+    for (const name of handshake) expect(env[name]).toBe(`forged-${name}`)
+    // …and without the hatch they really are outside the fixed allowlist (that half of R4 was true).
+    const plain = createSidecarEnv(Object.fromEntries(handshake.map((name) => [name, "forged"])))
+    for (const name of handshake) expect(plain[name]).toBeUndefined()
+  })
+
   // R1 Minor, third path: EXACT is module-private, so a credential-shaped member cannot be injected
   // from a test. What makes the EXACT path safe is the pair (a) the veto runs before the EXACT check
   // and (b) no EXACT member is credential-shaped. (a) is structural; this guard holds (b) — so the

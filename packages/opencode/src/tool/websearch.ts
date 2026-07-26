@@ -6,6 +6,7 @@ import DESCRIPTION from "./websearch.txt"
 import { checksum } from "@opencode-ai/core/util/encode"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ToolFailure } from "@opencode-ai/llm"
 
 export const Parameters = Schema.Struct({
   query: Schema.String.annotate({ description: "Websearch query" }),
@@ -23,6 +24,25 @@ export const Parameters = Schema.Struct({
     description: "Maximum characters for context string optimized for LLMs (default: 10000)",
   }),
 })
+
+/**
+ * ADR-009 B1/B2 主权判决送进引擎进程的通道(#223 R2 Blocker 1 → R4 下沉)。
+ *
+ * main 的 `applyWebSearchSovereignty()`(`ui-mac/src/main/server.ts`)在**每次 fork 前**重算
+ * kill-switch / 平台代付,置位或删除本变量;`ui-mac/src/main/sidecar-env.ts` 的白名单把它带进
+ * sidecar。
+ *
+ * **声明点已下沉到 `mcp-websearch.ts`(本引擎唯一的 keyless web search 出网出口)**:R4 的反例
+ * 是「算出注册名 + 复用既有传输」——闸只放在工具叶子时,那份新副本谁也拦不住。这里只是转出,
+ * 不再自己声明,免得两处漂移。下面 `execute` 首行那道闸保留为纵深(早于 `ctx.ask`,连弹窗都省)。
+ */
+export const LOCAL_WEBSEARCH_DENY_ENV = McpWebSearch.LOCAL_WEBSEARCH_DENY_ENV
+
+/** fail-closed:除「缺省 / 空串 / `"0"`」外的任何取值都判为 deny。 */
+export const localWebSearchDenied = McpWebSearch.localWebSearchDenied
+
+/** 模型可见的拒绝理由。明说「别重试」,否则模型会把它当成瞬时故障反复调用。 */
+export const LOCAL_WEBSEARCH_DENIED_MESSAGE = McpWebSearch.LOCAL_WEBSEARCH_DENIED_MESSAGE
 
 const WebSearchProviderSchema = Schema.Literals(["exa", "parallel"])
 export type WebSearchProvider = Schema.Schema.Type<typeof WebSearchProviderSchema>
@@ -109,6 +129,27 @@ export const WebSearchTool = Tool.define(
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          // #223 R2 Blocker 1:主权 deny 必须是**最终**规则。permission ruleset 里任何排在
+          // 注入的全局 deny 之后的 allow 都能顶掉它,R2 的动态探针实测三条路径全部变 allow:
+          //   ① agent 的 `"*": "allow"`(`agent/agent.ts` 把 agent 规则并在全局之后,
+          //      `Permission.evaluate` 取 `findLast`);注入面只看得见 alpha 自己的 agent,
+          //      别的 config 源后加载的 agent 压不平。
+          //   ② `PromptInput.tools.websearch=true` 被**持久化**进 session permission
+          //      (`session/prompt.ts` → `sessions.setPermission`),`session/tools.ts` 再把它
+          //      并在 agent 规则之后,sidecar respawn 也带得回来。
+          //   ③ `Permission.ask` 里的 `approved` 排在整个 ruleset 之后(`permission/index.ts`)。
+          // 所以最终闸放在**工具自身**:它根本不查 ruleset,因而没有任何 permission 规则能覆盖。
+          // 注入面的 permission deny 继续留着 —— 那层负责把工具从模型工具表里滤掉
+          // (`tool/registry.ts` + `session/llm/request.ts` 的 `Permission.disabled`),
+          // 是可用性(别让模型看见一个必失败的工具),不是主权保证。
+          if (localWebSearchDenied())
+            return yield* Effect.die(
+              new ToolFailure({
+                message: LOCAL_WEBSEARCH_DENIED_MESSAGE,
+                metadata: { denied: "alpha-sovereignty", tool: "websearch" },
+              }),
+            )
+
           const provider = selectWebSearchProvider(ctx.sessionID, {
             exa: flags.enableExa,
             parallel: flags.enableParallel,
@@ -130,14 +171,23 @@ export const WebSearchTool = Tool.define(
             },
           })
 
-          const result = yield* callProvider(http, provider, params, ctx)
+          // #489:失败一律 LOUD。旧写法是 `.pipe(Effect.orDie)` —— 一切错误塌成匿名 defect
+          // (工具崩溃、无类别、无状态);这里把可辨的 WebSearchFailure 转成 canonical 的
+          // ToolFailure 再 die,legacy 工具链跨 Promise 边界后两条消费路(AI SDK / native
+          // adapter)都能把它当作模型可见的 tool error 结算,消息里带着类别 + 状态 + 上游 body。
+          const result = yield* callProvider(http, provider, params, ctx).pipe(
+            Effect.catch((failure) =>
+              Effect.die(new ToolFailure({ message: failure.message, error: failure, metadata: { provider } })),
+            ),
+          )
 
+          // 空结果不再伪装成成功串:callProvider 只在拿到真实结果时成功。
           return {
-            output: result ?? "No search results found. Please try a different query.",
+            output: result,
             title: `${title}: ${params.query}`,
             metadata: { provider },
           }
-        }).pipe(Effect.orDie),
+        }),
     }
   }),
 )

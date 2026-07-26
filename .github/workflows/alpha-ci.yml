@@ -141,6 +141,21 @@ jobs:
             ':(exclude)packages/client/src/generated/client.ts'
             ':(exclude)packages/client/src/generated-effect/client.ts'
             ':(exclude)packages/client/src/generated/types.ts'
+            # ADR-035(#489,2026-07-25):E7 web search 失败诚实。打包端挂载的是 opencode 副本,
+            # 失败面(伪成功串 / orDie 塌成匿名 defect)只能在这两个文件里修;云路径的
+            # catalog.ts / code-mode.ts 已 loud,刻意不收编。上游 test/tool/websearch.test.ts
+            # **不**接管(#223 修复轮):新增失败测试落在 alpha 自有的
+            # test/tool/alpha-websearch-failure.test.ts(新增文件对 --diff-filter=DMR 天然不触发,
+            # 无需 exclude),上游那份继续受守。
+            ':(exclude)packages/opencode/src/tool/websearch.ts'
+            ':(exclude)packages/opencode/src/tool/mcp-websearch.ts'
+            # ADR-035 §1 追加(#223 R3 Blocker 1,2026-07-26):ADR-035 背景 §2 初版称 core 的 v2
+            # builtin websearch「永不挂载」——与事实不符。打包 sidecar 的 HttpApi 同时挂载 V2
+            # Session 路由与 Location 服务,core 的 BuiltInTools 里是**第二份已挂载的同名注册**,
+            # 不读主权信号、直接调 Exa/Parallel。主权最终闸必须覆盖每一份执行副本,故同类叶子
+            # 再收一个;接管面仅 execute 首行的闸。防第四份副本的普查闸见
+            # packages/ui-mac/src/main/websearch-copies.test.ts。
+            ':(exclude)packages/core/src/tool/websearch.ts'
           )
           changed="$(git diff --diff-filter=DMR --name-only origin/dev...HEAD -- $UPSTREAM_PATHS "${excludes[@]}")"
           if [ -n "$changed" ]; then

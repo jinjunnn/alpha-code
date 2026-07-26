@@ -4,7 +4,7 @@ kind: design
 status: active
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-25
 review_after: 2027-01-16
 ---
 
@@ -48,19 +48,37 @@ review_after: 2027-01-16
 - 挂载:`:795` `/v1/tools/web_search`(规范)+ `:796` `/v1/web/search`(别名)。
 - 请求:`{ query: string, max_results?: number }`(`:759,:762`,`max_results` 缺省 5)。
 - 响应:`{ query, results[] }`(`:793`)。
-- 失败面:`401 {error.message:"unauthorized"}`(`:755` 无 auth);
-  `403 {error.code:"scope_forbidden"}`(`:756` apikey 缺 `models` scope);
-  `400`(`:758` 坏 JSON / `:760` 缺 query);`502`(`:761` 无 Tavily/Brave 后端 /
-  上游失败)。**无 402/余额面**:`readinessGate`(`:97-106`)是**计费依赖就绪**闸
-  (`evaluateReadiness` 依赖缺失 → `503 BILLING_UNREADY`,**非** per-tenant 余额);唯一
-  的 402 来自 `accountPreauth`(`:153-187`),而它**只**挂模型路径(`:387` chat /
-  `:632` messages)——`webSearchHandler`(`:752-796`)**无 preauth**,计费是**事后
-  settle**(`:764-792`,失败入 `SETTLE_Q` 死信)。故余额不足在 `/v1/tools/web_search`
-  上**今天不产生任何 per-call 失败**。**这正是** `alpha-platform#37`(「Reserve every
-  paid action…」,AC1 单一 reserve 无绕过 + AC5 web-search reserve-then-settle)与 ADR-018
-  (「未登记的收费入口不得运行」)下 `web_search` **尚未入册**的那一片(settle-only 退化):
-  模型路径已 preauth,`web_search` 是唯一仍 settle-only 的 billable egress。补齐归 #37
-  (见票 3c),不在本稿 author。
+- 失败面(**2026-07-25 更正,见下方「勘破更正」**):`401 {error.message:"unauthorized"}`
+  (无 auth);`403 {error.code:"action_forbidden"}`(`model.invoke` 未授权)与
+  `403 {error.code:"job_not_enforceable"}`;`400`(坏 JSON / 缺 query);
+  **`402` 两条**(per-job 超预算 / `accountPreauth` 拒绝);`502`(无 Tavily/Brave 后端);
+  `503`(预算执行器不可用 / settlement capability 不可用 / `BILLING_UNREADY`)。
+
+> **勘破更正(2026-07-25,alpha-code#223)**:本稿 2026-07-22 写的「**无 402/余额面**」与
+> 「`403 scope_forbidden`」**今天都是错的**,照原文实现会漏掉真实失败态。平台侧
+> (`packages/gateway/src/worker.ts` @ `2fd1984`)已变:
+>
+> - `/v1/tools/web_search` 已登记进 `BILLABLE_ROUTES`(`:92`,`reservePolicy:
+>   "fixed-web-search-unit"`),并由启动断言 `assertRegisteredBillableRoutes(app.routes)`
+>   (`:952`)与真实 router 双向核对 —— ADR-018「未登记的收费入口不得运行」对 `web_search`
+>   **已满足**,`alpha-platform#37` 的 web_search 切片(AC5)已落地。
+> - `webSearchHandler`(`:849-871`)**已有 preauth**:per-job 预算 precall 超额 → `402`
+>   (`:863`);`accountPreauth(env, auth, "web-search", …)` 拒绝 → `402`(`:867-871`)。
+> - 403 的码是 **`action_forbidden`**(`:853-854`),不是 `scope_forbidden` ——
+>   `scope_forbidden` 属**另一个 worker**(`packages/gateway/src/server.ts:59`),不在这条链上。
+>
+> 故 E7 的失败集**必须含 402**(两条来源),且 403 的可辨性要靠 `error.code`。本稿下文
+> §3b/票 3c 中一切「无 402 分支 / 402 是未来分支 / web_search 尚未入册」的表述,以本块为准。
+> 交付实现见 #489(`WebSearchFailure`)与 [[ADR-035]]。
+>
+> **二次更正(2026-07-25,#223 对抗审计 Major 2)——客户端能消费到哪一步**:上列是**平台**
+> 的失败面事实,但 alpha-code 今天只在**本地 Exa/Parallel 直连链路**上做得到分类。登录态的
+> `cloud_web_search` 走 MCP 客户端(`packages/opencode/src/mcp/catalog.ts`),而平台的 cloud MCP
+> 薄壳(`packages/gateway/src/cloud-mcp.ts`:`const body = await r.json(); return text(body, !r.ok)`)
+> **把 `r.status` 丢掉了**,gateway 的两条 402 body 也**不带 `error.code`**(只有 `message`,
+> per-job 那条多一个 `job_id`)。因此云失败是「loud + 原 body 完整,但无状态、无分类」。
+> 本稿与 [[ADR-035]] 里任何「HTTP 状态在 body 透传」的说法均已作废。透传缺口归
+> **alpha-platform#105**;在它落地前不得声称云侧 402 已被消费。
 - 计费:per-call `WEB_SEARCH_USD_PER_CALL` 进 ledger(`:764`)+ settle(`:765-792`,
   失败入 `SETTLE_Q` 死信,非静默吞)。
 
@@ -85,12 +103,20 @@ review_after: 2027-01-16
    返回;`:140` `.pipe(Effect.orDie)` —— 执行分支**一切错误塌成 defect(die)**,既非可辨的
    `ToolFailure`,也**无** 4xx / 5xx / 余额 区分,调用方拿到的是**未处理 defect(工具崩溃)**。
    工具可见性由 `registry.ts:289` → `webSearchEnabled`(`:58-59`)闸。云壳只有 `isError`,
-   **无处**区分 4xx / 5xx(**无 402**,见 §1 契约),也无处禁「假成功」。
+   **无处**区分 4xx / 5xx(含 `402`,见 §1 勘破更正),也无处禁「假成功」。
 3. **逃生开关不覆盖云**:`ALPHA_WEBSEARCH_DISABLE` 只闸本地 `OPENCODE_ENABLE_EXA`
    (`server.ts:122`,`sidecar.ts:190`)——**完全不碰** `sidecar.ts:369-380` 注册的
    云 MCP。关了本地 web search,云 `cloud_web_search` 仍活。
 4. **caps.websearch 失真**:`sidecar.ts:188-193` 的 `websearch` 事实只看本地两开关,
    **不反映**云工具是否在场(而 `cloudDispatch` 事实反映了云在场)。
+5. **(2026-07-25 补勘破,#621)冷启动时序缺陷 —— 云优先在冷启动路径上从未成立**:
+   force-off 的判据 `ALPHA_CLOUD_MCP_URL` 只在 `alpha-auth.ts` 的 `applyAuthEnv()` 里写,
+   由 `initAuthEnv()`(`main/index.ts`,`whenReady` 之后)触发,**晚于** `preferAppEnv()`。
+   故 #490 交付的 force-off 在冷启动的登录用户身上**恒不触发**,`preferAppEnv` 反把
+   `OPENCODE_ENABLE_EXA` 设成 `"1"` → fork 出去的 sidecar 里本地 keyless 与
+   `cloud_web_search` **双活**。原单测手工预置了 `ALPHA_CLOUD_MCP_URL`,掩盖了真实时序。
+   修法 = 把闸抽成 `applyWebSearchSovereignty()`,在 `spawnLocalServer()` 里
+   `syncSecretFiles` 之后、fork 之前每次重算,并做成双向幂等(登出 respawn 还原 keyless)。
 
 远端接线本身正确:`sidecar.ts:369-380` 仅当 `ALPHA_CLOUD_MCP_URL` + `ALPHA_CLOUD_TOKEN`
 密钥文件同在时注册 `cloud`(登录→云工具可见;登出/BYOK→暗),bearer 走 `{file:}` 通道
@@ -187,13 +213,12 @@ question 上报 owner、不得静默整 server 关。
 
 ### (b) failure-honesty 类 —— 失败必响,禁伪成功
 
-- 失败 **必须 LOUD**:实现须区分平台契约的真实失败集 `401` / `403-scope_forbidden` /
-  `400` / `502` **及任何非 2xx / 意外状态**,分别面向模型呈现可辨错误,**替换**
+- 失败 **必须 LOUD**:实现须区分平台契约的真实失败集 `401` / `403`(靠 `error.code` 分
+  `action_forbidden` 与 `job_not_enforceable`)/ `400` / **`402`(preauth 拒绝、per-job
+  超预算)** / `502` **及任何非 2xx / 意外状态**,分别面向模型呈现可辨错误,**替换**
   `packages/opencode/src/tool/websearch.ts:140` 的 `Effect.orDie`(现把一切错误塌成
-  defect,无可辨错误、无状态区分)。**注**:`/v1/tools/web_search` 今天**无 402/余额面**
-  (见 §1),故无 402 分支;意外状态一律 LOUD。402/insufficient-funds 分支**仅在**
-  `alpha-platform#37` 的 web_search 预留入册后才变为 live(见票 3c),届时作为又一个 LOUD
-  状态被票 2 的失败映射自然消费,不在本稿此票 author。
+  defect,无可辨错误、无状态区分)。**402 是 live 状态,不是未来分支**(2026-07-25 更正,
+  见 §1 勘破更正块;原文的「无 402/余额面」与 `scope_forbidden` 均已作废)。
 - **禁伪成功**:不得把空/nullish 结果(`websearch.ts:136` `result ?? "No search results
   found…"`)当成功串返回来掩盖失败。
 - **唯一允许的回退 = 模型自带(provider 原生)web search**;**禁止**云失败时静默切
@@ -229,14 +254,14 @@ question 上报 owner、不得静默整 server 关。
 
 2. **[REQ-xxx][CODE] web_search 失败映射诚实化(替换 orDie,禁伪成功;意外状态 LOUD)**
    - 负责 AC:`packages/opencode/src/tool/websearch.ts:133-140` 用可辨错误替换
-     `Effect.orDie`,区分 `401`/`403-scope_forbidden`/`400`/`502`/**任何非 2xx→LOUD**;
-     `:136` 空/nullish 结果不再当成功串;云失败不静默切 keyless。
-   - 边界:opencode `websearch.ts` execute 分支 + 云壳失败呈现语义;`core` 副本**不动**
-     (打包引擎不挂载它)。
-   - out-of-scope:不改平台失败契约;不新增回退路径(除已允许的模型自带 search);
-     **无 402 分支**(该路径今天不产生余额失败)。
-   - 退出条件:各真实状态与意外状态均有可辨错误文本、无 defect 崩溃;无「空=成功」路径;
-     无 402 死码。
+     `Effect.orDie`,区分 `401`/`403`(带 `error.code`)/`400`/**`402`**/`502`/
+     **任何非 2xx→LOUD**;`:136` 空/nullish 结果不再当成功串;云失败不静默切 keyless。
+   - 边界:opencode `websearch.ts` + `mcp-websearch.ts`;`core` 副本**不动**(打包引擎不挂载
+     它);`mcp/catalog.ts` / `tool/code-mode.ts` **不动**(云路径已 loud,不为分类前缀扩大收编面)。
+   - out-of-scope:不改平台失败契约;不新增回退路径(除已允许的模型自带 search)。
+   - 退出条件:各真实状态与意外状态均有可辨错误文本、无 defect 崩溃;无「空=成功」路径。
+   - **交付(2026-07-25,#489)**:`WebSearchFailure` typed failure + [[ADR-035]] L3 接管
+     (两文件 + 随源测试退出守卫 pathspec)。原「依赖 alpha-patch 机制」的前提被 owner 裁决取代。
 
 3. **[REQ-xxx][CODE] `ALPHA_WEBSEARCH_DISABLE` force-off 全 keyless flag + 收敛云 web_search(不误伤兄弟)**
    - 负责 AC:开关置位 → `preferAppEnv` **覆盖写** 4 个 keyless flag 为 `"0"`(压过 shell
@@ -251,20 +276,26 @@ question 上报 owner、不得静默整 server 关。
      force-0(会连带关全部实验能力),改为只在工具闸(`webSearchEnabled`)收口 web_search 的
      umbrella→`enableExa` 那一条路径;置位后在 shell `export OPENCODE_EXPERIMENTAL=1` 下仍无
      活的本地 `web_search`。(`providerID==="opencode"` 打包端不可达,不在此列。)
+   - **退出条件②的实际收口(2026-07-25,#223 对抗审计 Blocker)**:首轮实现只做了「不盲目
+     force-0 umbrella」的前半句,**没做**后半句(「置位后 umbrella 下仍无活的本地 web_search」)——
+     审计动态复现:`export OPENCODE_EXPERIMENTAL=1` 后代付态本地 + 云双活,kill-switch 下云暗
+     而本地仍活。收口 = 走 [[ADR-009]] 裁决 (b) 的路 (i):注入面对本地工具 ID `websearch` 也写
+     `permission: "deny"`(`cloud-web-search.ts`),并连 alpha 自己注入的三个 agent 的
+     `websearch: "allow"` 一起压平(引擎 agent 级规则并在全局之后)。零改 umbrella、零改上游
+     `registry.ts`。
 
-3c. **[跨仓依赖] web_search per-call 余额门 = `alpha-platform#37` 的未竟切片(非本稿 DECIDE)**
-   - 归属:per-call 余额门**已归** `alpha-platform#37`(AC1 单一 reserve 无绕过 + AC5
-     web-search reserve-then-settle)+ ADR-018(「未登记的收费入口不得运行」)。今天
-     `/v1/tools/web_search` 无 `accountPreauth`、仅事后 settle
-     (`packages/gateway/src/worker.ts:752-796`),是 #37 AC1/AC5 唯一未入册的 billable
-     egress(settle-only 退化);模型路径(`:387`/`:632`)已 preauth。`web_search` 有定额
-     单价(`WEB_SEARCH_USD_PER_CALL`),preauth 平凡。
-   - 工作(不在本稿 author):`alpha-platform#37` 的一张 CODE 子票——把 `web_search` 入册
-     共享 reserve 闸,并把 reserve 入口做成**已登记中间件**,使未来任何 `/v1/tools/*` 都不能
-     再 settle-only 出厂(ADR-018 的机械化强制)。
-   - alpha-code E7 侧:仅在 #37 的 web_search 切片落地后,把随之出现的 insufficient-funds
-     decline 当作又一个 LOUD 失败状态消费(票 2 的失败映射自然涵盖);§3 失败诚实不变量不变。
-     今天:任何非 2xx → LOUD,**无** 402 分支(见 §3b 注)。
+3c. **[跨仓依赖] web_search per-call 余额门 = `alpha-platform#37`(2026-07-25 更正:已落地)**
+   - 归属:per-call 余额门归 `alpha-platform#37`(AC1 单一 reserve 无绕过 + AC5 web-search
+     reserve-then-settle)+ ADR-018(「未登记的收费入口不得运行」)。
+   - **状态更正**:该切片**已上线**(`packages/gateway/src/worker.ts` @ `2fd1984`):
+     `/v1/tools/web_search` 已入 `BILLABLE_ROUTES`(`:92`)、由启动断言
+     `assertRegisteredBillableRoutes(app.routes)`(`:952`)与真实 router 双向核对,
+     handler 有 `accountPreauth`(`:867-871` → `402`)与 per-job 预算 precall(`:863` → `402`)。
+     本稿原文「今天无 `accountPreauth`、settle-only 退化」已作废。
+   - alpha-code E7 侧:insufficient-funds decline 是**当下就存在**的 LOUD 失败状态,已由票 2
+     的失败映射(`payment_required`)覆盖 —— **但仅限本地 Exa/Parallel 直连链路**。云
+     `cloud_web_search` 那条链拿不到状态(平台薄壳丢弃,见 §1 二次更正),失败 loud 但不可分类;
+     缺口归 alpha-platform#105。§3 失败诚实不变量不变。
 
 4. **[REQ-xxx][CODE] `caps.websearch` 事实反映云在场**
    - AC:`sidecar.ts:188-193` 的 `websearch` 事实在云工具在场且本地被抑制时仍为真,
@@ -278,20 +309,22 @@ question 上报 owner、不得静默整 server 关。
      flag、失败诚实、唯一回退=模型自带 search」;登记(a)远端逐工具禁用机制裁决(票3),
      (b)`OPENCODE_EXPERIMENTAL` umbrella 只收口 web_search 路径、不盲目 force-0(票3 退出
      条件),(c)`providerID==="opencode"` Zen 分支打包端不可达、以禁用 provider 棘轮守死,
-     (d)host-tool **无 402/余额门**为现状、per-call 余额门归 `alpha-platform#37`(票3c 跨仓
-     依赖)。
-   - 边界:`.claude/rules/adrs/ADR-009-websearch-default.md` + 必要时新 ADR。
+     (d)host-tool 的真实失败集(**2026-07-25 更正**:402 与余额门**已上线**、403 码为
+     `action_forbidden`;原「无 402/余额门为现状」表述作废,见票3c)。
+   - 边界:`.claude/rules/adrs/ADR-009-websearch-default.md` + 必要时新 ADR
+     (已新增 [[ADR-035]]:两文件 L3 接管)。
    - out-of-scope:不改本地 keyless 基础设施决策(仍保留作登出兜底)。
-   - 退出:ADR status 更新,决策与后果反映本稿各条(含 no-402 现状与两条工具闸裁决)。
+   - 退出:ADR status 更新,决策与后果反映本稿各条(含更正后的 402 事实与两条工具闸裁决)。
 
 6. **[REQ-xxx][VERIFY] 打包真调 + keyless 兜底 + 计费/失败证据(L2/RC)**
    - AC:打包桌面端登录态下 `listTools` 探针见 `cloud_web_search` + 一次真调返回
      `{query,results}`;登出态见 keyless 本地兜底;计费(ledger/settle)与真实失败集
-     (`401`/`403`/`400`/`502` + 意外状态 LOUD、defect 消失)留证据。
+     (`401`/`403`/`400`/**`402`**/`502` + 意外状态 LOUD、defect 消失)留证据。
    - 边界:`docs/verification/` 下 L2 harness + RC 冒烟。
-   - out-of-scope:不做平台侧单测(平台仓自证);**不采集 402/余额证据**(该路径今天不产生;
-     402 证据归 `alpha-platform#37` web_search 入册后,见票3c)。
-   - 退出:证据落 `docs/verification/`,LIVE-PATH GATE 三项全绿;失败集证据无 402 项。
+   - out-of-scope:不做平台侧单测(平台仓自证)。
+   - 退出:证据落 `docs/verification/`,LIVE-PATH GATE 三项全绿。
+   - **2026-07-25 更正**:原文「不采集 402/余额证据(该路径今天不产生)」作废 —— 平台侧
+     preauth 已上线,402 是可采集的真实失败态,失败集证据**须含 402 项**。
 
 ---
 

@@ -16,6 +16,46 @@ import { checksum } from "../util/encode"
 import { ToolRegistry } from "./registry"
 
 export const name = "websearch"
+
+/**
+ * ADR-009 B1/B2 主权判决送进引擎进程的通道(#223 R3 Blocker 1 → R4 下沉到传输层)。
+ *
+ * 这是**第二份**同名 `websearch` 注册:打包 sidecar 的 HttpApi 同时挂载 V2 Session 路由与
+ * Location 服务(`packages/opencode/src/server/routes/instance/httpapi/server.ts`),
+ * `location-services.ts` 装载 `BuiltInTools`,本文件的注册因此是**已挂载的活路径**。
+ * legacy 那份(`packages/opencode/src/tool/websearch.ts`)的最终闸对它不成立 —— R3 判 Blocker 1
+ * 未闭合正是因为主权信号只覆盖了一份副本。
+ *
+ * R4 再判未闭合:闸放在每个叶子的 `execute` 首行 + 源码普查兜底,挡不住「算出注册名 + 复用
+ * 既有传输」。于是本文件的闸也下沉一层 —— 下面导出的 `callMcp` 是 V2 Core 这一侧**唯一**的
+ * keyless web search 出网出口,它的第一句读同一个信号。叶子首行那道保留为纵深。
+ *
+ * 名字在四个包里各写一份(core / opencode / ui-mac / ext 之间没有可共用的 alpha 依赖边),
+ * 漂移与「新的出网出口」由 `packages/ui-mac/src/main/websearch-copies.test.ts` 的普查闸钉住
+ * (R4 起该普查网是纵深,不再是主判据)。
+ */
+export const LOCAL_WEBSEARCH_DENY_ENV = "ALPHA_LOCAL_WEBSEARCH_DENY"
+
+/** fail-closed:除「缺省 / 空串 / `"0"`」外的任何取值都判为 deny。与 legacy 副本逐字同义。 */
+export function localWebSearchDenied(env: Record<string, string | undefined> = process.env) {
+  const value = env[LOCAL_WEBSEARCH_DENY_ENV]
+  return value !== undefined && value !== "" && value !== "0"
+}
+
+/** 模型可见的拒绝理由。明说「别重试」,否则模型会把它当成瞬时故障反复调用。 */
+export const LOCAL_WEBSEARCH_DENIED_MESSAGE =
+  "Web search is unavailable: the local keyless websearch tool is denied by alpha sovereignty (ADR-009 B1/B2 — the platform pays for search, or the web search kill switch is set). This is not a transient failure; do not retry. Use cloud_web_search if it is present, otherwise answer without web search and say so."
+
+/**
+ * 传输层闸的失败值。刻意用 canonical 的 `ToolFailure` 而不是自定义 Error:
+ * `ToolRegistry.settle` 只把 `LLM.ToolFailure` 结算成**模型可见的 tool error**
+ * (`registry.ts` 的 `Effect.catchTag("LLM.ToolFailure", …)`),别的错误一律是 defect。
+ * 于是任何复用本传输的副本 —— 哪怕它自己一句错误映射都没写 —— 拿到的都是那句「别重试」,
+ * 而不是一次工具崩溃。
+ */
+export const localWebSearchDeniedFailure = () =>
+  new ToolFailure({ message: LOCAL_WEBSEARCH_DENIED_MESSAGE, metadata: { denied: "alpha-sovereignty" } })
+
 export const NO_RESULTS = "No search results found. Please try a different query."
 export const EXA_URL = "https://mcp.exa.ai/mcp"
 export const PARALLEL_URL = "https://search.parallel.ai/mcp"
@@ -149,7 +189,14 @@ const exaUrl = (apiKey: string | undefined) => {
   return url.toString()
 }
 
-const callMcp = <F extends Schema.Struct.Fields>(
+/**
+ * V2 Core 这一侧**唯一**的 keyless web search 出网出口(#223 R4 Blocker 1)。
+ *
+ * 导出而不是私有:它是这一层的**共同执行边界**。将来 core 里再出现一份 websearch 副本时,
+ * 正确写法是复用本函数 —— 复用即带闸,注册名怎么算出来都无所谓。第一句就是主权闸,拒绝
+ * 发生在构造请求之前(零出网)。
+ */
+export const callMcp = <F extends Schema.Struct.Fields>(
   http: HttpClient.HttpClient,
   url: string,
   tool: string,
@@ -158,6 +205,7 @@ const callMcp = <F extends Schema.Struct.Fields>(
   headers: Record<string, string> = {},
 ) =>
   Effect.gen(function* () {
+    if (localWebSearchDenied()) return yield* Effect.fail(localWebSearchDeniedFailure())
     const request = yield* HttpClientRequest.post(url).pipe(
       HttpClientRequest.accept("application/json, text/event-stream"),
       HttpClientRequest.setHeaders(headers),
@@ -204,6 +252,15 @@ const layer = Layer.effectDiscard(
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: output.text }],
           execute: (input, context) => {
+            // #223 R3 Blocker 1:主权 deny 必须是**最终**规则,且必须覆盖**每一份**已挂载的
+            // websearch 执行副本。这一份走的是 V2 `PermissionV2` ruleset(下方 `permission.assert`)——
+            // 与 legacy 那份同病:任何排在注入的 deny 之后的 allow(agent 规则 / 持久化 session
+            // permission / ask 的 approved)都能顶掉它。所以闸放在**工具自身**的首行:它根本不查
+            // ruleset,因而没有任何 permission 规则能覆盖,也早于 permission.assert 的弹窗。
+            // `ToolFailure` 会被 `ToolRegistry.settle` 结算成模型可见的 tool error(registry.ts)。
+            if (localWebSearchDenied())
+              return Effect.fail(new ToolFailure({ message: LOCAL_WEBSEARCH_DENIED_MESSAGE }))
+
             const provider = selectProvider(context.sessionID, config, config.provider)
             return Effect.gen(function* () {
               yield* permission.assert({
@@ -245,7 +302,15 @@ const layer = Layer.effectDiscard(
                 provider,
                 text: text ?? NO_RESULTS,
               }
-            }).pipe(Effect.mapError(() => new ToolFailure({ message: `Unable to search the web for ${input.query}` })))
+            }).pipe(
+              Effect.mapError((error) =>
+                // 传输层的主权拒绝必须原话到模型面 —— 塌成 "Unable to search…" 会让模型当成
+                // 瞬时故障反复重试(这条通用消息本身保留给真正的搜索失败)。
+                error instanceof ToolFailure
+                  ? error
+                  : new ToolFailure({ message: `Unable to search the web for ${input.query}` }),
+              ),
+            )
           },
         }),
       })

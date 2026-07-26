@@ -18,7 +18,14 @@ import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { buildAlphaCapabilities, buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
-import { applyCloudWebSearchDisable } from "./cloud-web-search"
+import {
+  applyWebSearchDenies,
+  CLOUD_MCP_ARM_ENV,
+  CLOUD_MCP_DEF_ENV,
+  CLOUD_MCP_SERVER_ENV,
+  CLOUD_MCP_SERVER_NAME,
+  WITHHELD_CLOUD_MCP,
+} from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
 import { injectMcpDefaultDeny } from "./mcp-default-deny"
@@ -74,6 +81,12 @@ export function injectAlphaConfig(
 
     const existing = process.env.OPENCODE_CONFIG_CONTENT
     const config = existing ? JSON.parse(existing) : { $schema: "https://opencode.ai/config.json" }
+    // ADR-009 B1 的「平台代付」判据(云 MCP URL + 密钥文件同在)。caps 事实、云 MCP 注册与
+    // web search 主权 deny 三处共用同一个判据,不许各算各的。
+    const platformPays = Boolean(process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN"))
+    // ADR-009 B2 的能力总闸。main 在每次 fork 前用同一个表达式判过一次并把判决写进
+    // `ALPHA_CLOUD_WEBSEARCH_DENY`(server.ts);这里重算是因为注入面自己也要用(见下方云 MCP 注册)。
+    const killSwitch = Boolean(process.env.ALPHA_WEBSEARCH_DISABLE)
     // 只记录本轮函数自己新放进 mcp 的名字;继承来的 OPENCODE_CONFIG_CONTENT 不是治理授权。
     const injectedMcpNames = new Set<string>()
 
@@ -97,9 +110,7 @@ export function injectAlphaConfig(
       if (wantIdentity) {
         // Capability facts the base prompt can't know — purely informational (ADR-009 / ADR-002).
         // The cloud token lives in the {file:} channel, never in this process's env (A6).
-        const cloudDispatch = Boolean(
-          process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN"),
-        )
+        const cloudDispatch = platformPays
         const caps = buildAlphaCapabilities({
           websearchDisabled: Boolean(process.env.ALPHA_WEBSEARCH_DISABLE),
           keylessWebsearch: process.env.OPENCODE_ENABLE_EXA !== "0",
@@ -280,18 +291,58 @@ export function injectAlphaConfig(
     //      process's env nor OPENCODE_CONFIG_CONTENT ever contains the token value. oauth:false
     //      because we attach our own capability token and must skip OAuth auto-detection.
     const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
-    if (mcpUrl && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")) {
-      config.mcp = {
-        ...(config.mcp ?? {}),
-        cloud: materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN")),
+    if (mcpUrl && platformPays) {
+      // #223 R4→R5 fail-closed:kill-switch 下 `cloud_web_search` 的**最终**闸住在 @alpha-code/ext
+      // 的 tool.execute.before 钩子里(远端 MCP 无 per-tool 注册期过滤,permission deny 可被后置
+      // allow 顶掉)。R3 用「extPluginPath 路径是否存在」判 ext 在不在场 —— R4 证明那不成立:
+      // `OPENCODE_PURE=true` 让引擎整个跳过外部插件,bundle import 失败与插件初始化失败也都是
+      // log-and-continue,三种情形下路径都还在而钩子不存在。
+      //
+      // R4 改成握手,但把定义先写成 `enabled:false` 再由 ext 翻开 —— **R5 判其为回归**:
+      // `MCP.connect()`(`opencode/src/mcp/index.ts`)无条件把配置复制成 `enabled:true`,该能力
+      // 公开为 `/mcp/:name/connect` 且产品 UI 真的在调,于是 ext 缺席时用户点一下就能把那份含
+      // 完整 URL/header 的定义热连起来。`enabled:false` 从来不是「不可重开」。
+      //
+      // R5 形态:**完整定义根本不进配置**,只经 env 托管给 ext。
+      //
+      // #223 R6 Major:R5 只从继承来的 `OPENCODE_CONFIG_CONTENT` 对象里删掉 `mcp.cloud`,并据此
+      // 声称「继承来的同名条目一并抹掉」—— 不成立。引擎另外还加载 XDG global、`OPENCODE_CONFIG`
+      // (alpha.jsonc)、项目目录与 managed 配置,深合并里「缺少 cloud 键」**不会删除**先前来源的
+      // 定义(`opencode/src/config/config.ts`)。所以这里改为写一份**中和条目**
+      // (`WITHHELD_CLOUD_MCP`),用 later-wins 的标量覆盖把任何继承来的 `cloud` 的**连接控制字段**
+      // (`type`/`url`/`enabled`/`oauth`;`headers`/`timeout` 会留下 —— #223 R7 措辞更正,它们已无处
+      // 可发)压成一个连不上的 `127.0.0.1:1` 端点;ext 确认装载后由 `installCloudMcp()` 整条
+      // 替换它。ext 缺席 ⇒ 留下的是中和条目 ⇒ `/connect` 连不上任何东西(连兄弟工具一起损失)——
+      // 诚实降级,不是 AC4 的「误杀」:AC4 管的是闸生效时的正常态。
+      const cloud = materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN"))
+      // ext 的闸靠这两个变量核验「哪个 MCP server 真的是 alpha 治理的云通道」——
+      // #223 R6 Blocker:判据是 DEF 里那份定义的**端点身份**(URL),不再是名字前缀,所以 DEF 在
+      // 代付的两条分支上都置位(ARM 只在 kill-switch 分支置位;ARM/DEF 缺一 ext 什么都不装)。
+      process.env[CLOUD_MCP_SERVER_ENV] = CLOUD_MCP_SERVER_NAME
+      process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify(cloud)
+      config.mcp = { ...(config.mcp ?? {}), [CLOUD_MCP_SERVER_NAME]: killSwitch ? { ...WITHHELD_CLOUD_MCP } : cloud }
+      injectedMcpNames.add(CLOUD_MCP_SERVER_NAME)
+      if (killSwitch) {
+        process.env[CLOUD_MCP_ARM_ENV] = CLOUD_MCP_SERVER_NAME
+        console.error(
+          `[alpha-code#223] web search kill switch is set — the cloud MCP server definition is WITHHELD from the engine config (a neutralised ${WITHHELD_CLOUD_MCP.url} entry overrides any inherited one); only a confirmed @alpha-code/ext load installs the real one via ${CLOUD_MCP_ARM_ENV}/${CLOUD_MCP_DEF_ENV}${extPluginPath ? "" : ", and no ext bundle path was resolved this fork so it will stay dark"}`,
+        )
+      } else {
+        // 代付但无 kill-switch:云工具是权威通道,不需要闸,也就不该依赖 ext 是否装载。
+        delete process.env[CLOUD_MCP_ARM_ENV]
       }
-      injectedMcpNames.add("cloud")
+    } else {
+      delete process.env[CLOUD_MCP_ARM_ENV]
+      delete process.env[CLOUD_MCP_DEF_ENV]
+      delete process.env[CLOUD_MCP_SERVER_ENV]
     }
 
     // Remote MCP config only toggles whole servers, but the engine's global permission layer filters
     // individual registered MCP tool IDs from both ordinary and code-mode tool sets. Deny only the
     // model-visible cloud_web_search ID and keep the cloud server plus sibling tools live.
-    applyCloudWebSearchDisable(config, process.env)
+    // #223:同一处也 deny 本地 `websearch` —— env 层的 keyless force-off 压不住
+    // `OPENCODE_EXPERIMENTAL` umbrella(见 cloud-web-search.ts)。必须排在 agent 注入之后。
+    applyWebSearchDenies(config, { killSwitch, platformPays })
 
     // #395(Codex r11 pivot → 主权注入):把账本 disabled 的 mcp/agent 权威覆盖注入 OPENCODE_CONFIG_CONTENT
     // —— 它在引擎加载序 step 6(所有 in-scope 源之后:XDG / ~/.opencode / agent-md·plugin-script 自动
