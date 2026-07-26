@@ -40,6 +40,7 @@ import { testEffect } from "../lib/effect"
 
 // ext 的主权信号名(alpha 自有包;这里只取常量,判决逻辑由被装载的插件本体执行)。
 import {
+  CLOUD_MCP_DEF_ENV,
   CLOUD_MCP_SERVER_ENV,
   LOCAL_WEBSEARCH_DENY_ENV,
 } from "../../../ext/src/cloud-websearch-kill"
@@ -105,7 +106,8 @@ beforeAll(async () => {
   allowed = await startExa()
   allowedCodeMode = await startExa()
   alphaRoot = realpathSync(mkdtempSync(join(tmpdir(), "alpha-mcp-gate-")))
-  for (const key of ["ALPHA_GLOBAL_DIR", LOCAL_WEBSEARCH_DENY_ENV, CLOUD_MCP_SERVER_ENV]) saved[key] = process.env[key]
+  for (const key of ["ALPHA_GLOBAL_DIR", LOCAL_WEBSEARCH_DENY_ENV, CLOUD_MCP_SERVER_ENV, CLOUD_MCP_DEF_ENV])
+    saved[key] = process.env[key]
   // AlphaExt 初始化前置(sidecar 侧由 main 落定的环境根)。
   process.env.ALPHA_GLOBAL_DIR = alphaRoot
 })
@@ -290,6 +292,82 @@ describe("#223 R5:用户自带的 remote MCP web search 同受主权判决(真�
         expect(Exit.isFailure(yield* fire(TOOL_ID))).toBe(true)
       }),
     { config: configWith(() => denied) },
+    30_000,
+  )
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #223 R6 Blocker ② —— 治理豁免不能由 MCP 名字伪造。
+//
+// R5 的例外判据是 `tool.startsWith("${server}_")`。R6 实跑证明:用户声明一个叫 `cloud_attacker`
+// 的 remote MCP,`cloud_attacker_web_search` 就被当成 alpha 治理的云工具、在平台代付态直接放行。
+// 现在判据是 `config` 钩子核验过的**端点身份**(名字 = 注入面点名的那个 **且** 配置里那条定义的
+// URL 与 `ALPHA_CLOUD_MCP_DEF` 里 alpha 自己写的逐字相同),归属歧义一律 fail-closed。
+//
+// 这条跑的是**真实链路**:真 `mcp` 配置段、真装载的 `packages/ext/src/plugin.ts`、真
+// `Plugin.Service`(真派发 config 钩子 → 真 `recordMcpOwnership`)。两个 server 的 URL 都指向
+// 127.0.0.1:1(不做 DNS、必然 ECONNREFUSED),因为本组只判钩子,不需要真的连上去。
+// ─────────────────────────────────────────────────────────────────────────────
+const ALPHA_CLOUD_URL = "http://127.0.0.1:1/alpha-cloud"
+const ATTACKER_URL = "http://127.0.0.1:1/attacker"
+
+describe("#223 R6:治理豁免绑定端点身份(真实配置 + 真实 ext 装载)", () => {
+  const withGovernedCloud = () => {
+    process.env[LOCAL_WEBSEARCH_DENY_ENV] = "1"
+    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
+    // 注入面在代付分支托管的那份定义(端点身份的真源)。
+    process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify({ type: "remote", url: ALPHA_CLOUD_URL, enabled: true })
+  }
+
+  const fire = (plugin: Plugin.Service["Service"], tool: string) =>
+    plugin
+      .trigger("tool.execute.before", { tool, sessionID: "ses_r6" as never, callID: "call_r6" }, { args: {} })
+      .pipe(Effect.exit)
+
+  it.instance(
+    "cloud_attacker_web_search 拿不到豁免(R5 下它被当成治理云工具放行),真治理云工具照常放行",
+    () =>
+      Effect.gen(function* () {
+        withGovernedCloud()
+        const plugin = yield* Plugin.Service
+        expect((yield* plugin.list()).some((hook) => typeof hook["tool.execute.before"] === "function")).toBe(true)
+
+        // 端点身份对上 ⇒ 代付态权威通道照常可用(AC4:不误杀)。
+        expect(Exit.isSuccess(yield* fire(plugin, "cloud_web_search"))).toBe(true)
+
+        // 名字前缀撞上治理 server,但它自己不是治理 server ⇒ 豁免不给,照常被拒。
+        const denied = yield* fire(plugin, "cloud_attacker_web_search")
+        expect(Exit.isFailure(denied)).toBe(true)
+        expect((Cause.squash((denied as Exit.Failure<never, unknown>).cause) as Error).message).toContain(
+          "do not retry",
+        )
+      }),
+    {
+      config: () => ({
+        mcp: {
+          cloud: { type: "remote" as const, url: ALPHA_CLOUD_URL, enabled: false as const },
+          cloud_attacker: { type: "remote" as const, url: ATTACKER_URL, enabled: false as const },
+        },
+        plugin: [EXT_PLUGIN],
+      }),
+    },
+    30_000,
+  )
+
+  it.instance(
+    "同名但换了 URL(后置来源覆盖回去)⇒ 端点身份核不上,连 cloud_web_search 也被拒",
+    () =>
+      Effect.gen(function* () {
+        withGovernedCloud()
+        const plugin = yield* Plugin.Service
+        expect(Exit.isFailure(yield* fire(plugin, "cloud_web_search"))).toBe(true)
+      }),
+    {
+      config: () => ({
+        mcp: { cloud: { type: "remote" as const, url: ATTACKER_URL, enabled: false as const } },
+        plugin: [EXT_PLUGIN],
+      }),
+    },
     30_000,
   )
 })

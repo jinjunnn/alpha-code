@@ -28,6 +28,7 @@ import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { Context, Effect } from "effect"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { McpPaths } from "../../src/server/routes/instance/httpapi/groups/mcp"
+import { WITHHELD_CLOUD_MCP } from "../../../ui-mac/src/main/cloud-web-search"
 import { TestInstance } from "../fixture/fixture"
 import { it } from "../lib/effect"
 
@@ -139,8 +140,8 @@ describe("#223 R5:kill-switch 下云 MCP 的两条复活路径", () => {
     },
   )
 
-  // ── R5 形态 ────────────────────────────────────────────────────────────────
-  it.instance("R5 形态:定义不在配置里 ⇒ /mcp/:name/connect 打不开,远端零请求", () =>
+  // ── R5/R6 形态 ─────────────────────────────────────────────────────────────
+  it.instance("R5 形态:定义不在任何配置源里 ⇒ /mcp/:name/connect 打不开,远端零请求", () =>
     Effect.gen(function* () {
       const tmp = yield* TestInstance
       const before = cloud.requests.length
@@ -152,6 +153,28 @@ describe("#223 R5:kill-switch 下云 MCP 的两条复活路径", () => {
       expect(yield* statusOf(tmp.directory, CLOUD)).toBeUndefined()
       expect(cloud.requests.length).toBe(before)
     }),
+  )
+
+  // #223 R6 Major:上一条只在「没有任何来源定义过 cloud」时成立。真实注入面现在总会写一份**中和
+  // 条目**(`ui-mac/src/main/cloud-web-search.ts` 的 `WITHHELD_CLOUD_MCP`)—— 它必须在,否则
+  // global / alpha.jsonc / 项目里的同名定义不会被深合并覆盖(多源那一半见 alpha-cloud-mcp-multisource)。
+  // 这里证明:中和条目在场时 `/connect` 也打不开,远端零请求。
+  it.instance(
+    "R6 形态:中和条目在场 ⇒ 初始化 disabled,/connect 之后仍连不上,远端零请求",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* TestInstance
+        const before = cloud.requests.length
+
+        expect(yield* statusOf(tmp.directory, CLOUD)).toBe("disabled")
+
+        const connected = yield* request(`/mcp/${CLOUD}/connect`, tmp.directory, { method: "POST" })
+        expect(connected.status).toBe(200)
+        expect(yield* statusOf(tmp.directory, CLOUD)).not.toBe("connected")
+        expect(cloud.requests.length).toBe(before)
+      }),
+    { config: () => ({ mcp: { [CLOUD]: WITHHELD_CLOUD_MCP } }) },
+    30_000,
   )
 
   it.instance("R5 形态:`mcp.add` 只带 enabled:true(想翻开一个不存在的条目)进不了引擎,远端零请求", () =>

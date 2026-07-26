@@ -12,7 +12,7 @@ import { injectFactorySkillPaths } from "./factory-paths"
 import { injectSkillGenerationPaths } from "./gen-skill-paths"
 import { rebrandSystem } from "./prompt-rebrand"
 import { validateCloudToolInput, validateCloudToolOutput } from "./cloud-contract-hook"
-import { assertWebSearchToolAllowed, installCloudMcp } from "./cloud-websearch-kill"
+import { assertWebSearchToolAllowed, installCloudMcp, recordMcpOwnership } from "./cloud-websearch-kill"
 
 /**
  * alpha-code backend isolation extension.
@@ -55,7 +55,8 @@ export const AlphaExt: Plugin = async (input) => {
       // 引擎在 `ctx.ask` 之前触发本钩子(普通 MCP 与 code-mode 两条路都是),抛出即终止调用,
       // 且完全不查 permission ruleset。命中面覆盖**任何** MCP server 上的 web search 形态
       // (含用户自己配置的 remote MCP,例如 `exa_web_search_exa`),alpha 治理的云 server 例外
-      // 只在 kill-switch 下关。理由、产品语义与边界见 cloud-websearch-kill.ts。
+      // 只在 kill-switch 下关 —— 「是不是治理云 server」按 config 钩子核验过的**端点身份**判,
+      // 不是名字前缀(#223 R6)。理由、产品语义与边界见 cloud-websearch-kill.ts。
       assertWebSearchToolAllowed(hookInput.tool)
       validateCloudToolInput(hookInput.tool, output.args)
     },
@@ -78,6 +79,12 @@ export const AlphaExt: Plugin = async (input) => {
         console.log(
           `[@alpha-code/ext] cloud MCP server "${installed}" installed — the web search sovereignty gate is registered in this engine process`,
         )
+      // #223 R6 Blocker:治理豁免绑定的是**端点身份**,不是名字前缀。这一句在 installCloudMcp
+      // 之后、任何项目配置分支之前,拿引擎已合并完成的 cfg 核验「哪个 server 名真的是 alpha 那份
+      // 定义」;没跑到(或核不上)就没有任何 server 拿得到豁免 —— fail-closed。
+      const ownership = recordMcpOwnership(cfg)
+      if (process.env.ALPHA_EXT_VERBOSE)
+        console.log(`[@alpha-code/ext] MCP ownership: ${JSON.stringify(ownership)}`)
       try {
         const project = projectRootFor(input.directory)
         if (project) {

@@ -35,20 +35,51 @@
 // 普通模式与 code-mode 的每一次 MCP 工具执行都先过它。所以本地主权判决
 // (`ALPHA_LOCAL_WEBSEARCH_DENY`)也接到同一个钩子上,判据按**工具形态**而不是 server 名。
 //
-// **产品语义(按「关」实现,归 owner 复核)**:主权态(平台代付或 kill-switch)下,连**用户自己
-// 配置的** web-search MCP server 一起关。技术上这是唯一自洽的答案 —— 本地 keyless websearch 已
-// 因「平台代付」被关,若用户加一个 exa remote MCP 就能拿回同一能力,那条主权判决等于不存在。
+// **产品语义(按「关」实现,归 owner 复核)**:主权态(平台代付或 kill-switch)下,对用户自己
+// 配置的 web-search MCP server 也**尽力**关。技术上这是唯一自洽的方向 —— 本地 keyless websearch
+// 已因「平台代付」被关,若用户加一个 exa remote MCP 就能拿回同一能力,那条主权判决就被架空。
 // 但这是产品取舍,不是纯技术结论,已在 ADR-009 登记并标「归 owner 复核」。
 //
-// 例外只有一个:alpha 自己注册的那个云 server(名字经 `ALPHA_CLOUD_MCP_SERVER` 过河)。平台代付
-// 时它正是**权威**通道,只有 kill-switch(`ALPHA_CLOUD_WEBSEARCH_DENY`)才关它。
+// ─────────────────────────────────────────────────────────────────────────────
+// #223 R6 Blocker:分类是**尽力而为**,例外必须是**不可伪造**的。
+//
+// R6 对 R5 那版给出两条实跑证据:
+//
+//   ① 分类漏。判据只认 `web_search` 词根,合法工具名 `search_web` / `web-search` /
+//      `websearchTool` / `brave-search` 全部 `denial:null`;更根本地,非 ASCII 工具名经
+//      `McpCatalog.sanitize`(`opencode/src/mcp/catalog.ts`)后只剩下划线,**任何**按名字的
+//      分类器都看不见它。按名字识别第三方 web search **做不到穷尽**,这是判据形态本身的天花板。
+//   ② 例外可伪造。R5 的例外是 `tool.startsWith("${server}_")` —— 那不是 server **身份**,是
+//      名字前缀。于是用户声明一个叫 `cloud_attacker` 的 server,`cloud_attacker_web_search`
+//      就被当成 alpha 治理的云工具直接放行;一个叫 `cloud_web` 的 server 上的 `search` 同理。
+//
+// 本轮据此把两件事分开,并按 R6 的裁决收窄宣称:
+//
+//   **分类(`isWebSearchToolId`)= 尽力而为的启发式,不谎称穷尽。** 词根之外补了「`search` 与
+//   web/internet/online 或一个具名搜索引擎相邻」这一类,把 R6 点名的四个合法改名收进来;
+//   sanitize 后失去信息的非 ASCII 名**仍然漏**,这条以回归的形式钉住(见测试同名用例)。
+//
+//   **例外(治理云 server)= 绑定 alpha 自己写的那份定义的端点身份,不再看名字前缀。**
+//   `ALPHA_CLOUD_MCP_DEF` 里的 `url` 是 alpha 在**本次 fork** 自己写进 env 的(injectAlphaConfig
+//   在每条分支上覆盖或删除它),外部伪造不了;`recordMcpOwnership()` 在 `config` 钩子里拿**引擎
+//   已合并完成的**配置逐个核对:名字等于点名的那个、`type==="remote"`、`url` 逐字相同,才算治理
+//   server。工具归属按 sanitize 后的 server 名前缀解析,**任何歧义都倒向 fail-closed**:只要有
+//   一个可能的归属方不是治理 server,豁免就不给。因此 `cloud_attacker_web_search` 与
+//   `cloud_web`+`search` 都拿不到豁免,照常被判 deny。
+//
+// **本票保证的范围(R6 裁决,ADR-009 同步收窄)**:
+//   - alpha 治理的云 server(按上述**定义身份**识别)—— 保证;
+//   - alpha 自有的本地 websearch 工具(传输层闸,ADR-035)—— 保证;
+//   - 用户自配的第三方 web-search MCP —— **不在**本票保证内。按名字识别做不到,且已实测可绕
+//     (非 ASCII 名、`POST /mcp` 自带定义新装一个 server)。本闸对它是**尽力拦截**,不是保证。
 //
 // 已知边界(不谎称穷尽):本闸只覆盖**引擎内**的 MCP / code-mode 工具执行 —— 它跑在 ext 装载
-// 之后。ext 缺席时(见下方握手段)本闸不存在,那时能守住的只有「云 server 的定义根本不进配置」
-// 与本地 websearch 工具自身的闸;一个用户自带的第三方 web-search MCP 在 ext 缺席时没有拦截点,
-// 收口它需要收编 `session/tools.ts` / `code-mode.ts` 这类通用上游文件,不在本票范围。
-// 本闸也不改变远端 MCP 目录本身(server 仍然会 advertise 这些工具),更够不着任何绕过 opencode
-// 工具循环直接说 MCP 协议的客户端。
+// 之后。ext 缺席时(见下方握手段)本闸不存在,那时能守住的只有「云 server 的定义根本不进配置、
+// 且任何继承来的同名条目都被中和」与本地 websearch 工具自身的闸。本闸也不改变远端 MCP 目录本身
+// (server 仍然会 advertise 这些工具),更够不着任何绕过 opencode 工具循环直接说 MCP 协议的客户端;
+// 运行时 `POST /mcp` 用**同一个名字**换掉已连的客户端,从 ext 的视角与原客户端不可分辨 —— 上游
+// 没有任何接口把「当前活着的 server 定义」暴露给插件,而收编 `handlers/mcp.ts` / `mcp/index.ts`
+// 不在本票范围;那条路装的是「用户自己新装的第三方 MCP」,正落在上面收窄掉的那一类里。
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { readFileSync } from "node:fs"
@@ -77,7 +108,38 @@ export function localWebSearchDenied(env: Record<string, string | undefined> = p
 }
 
 /**
- * 命中判据 = 工具 id 的**末段**正是一个 web search。
+ * 具名 web search 引擎词。只收**专职**网页搜索的产品名 —— `google` / `bing` 这类同时是文档、
+ * 地图、邮件的品牌不收,免得把 `gdrive_search`、`bing_maps_search` 一类误杀(AC4)。
+ * 这是启发式词表,**非穷尽**,加词不改变任何保证的形状。
+ */
+const SEARCH_ENGINE_WORDS = new Set([
+  "web",
+  "internet",
+  "online",
+  "brave",
+  "exa",
+  "tavily",
+  "perplexity",
+  "serper",
+  "serpapi",
+  "duckduckgo",
+  "ddg",
+  "searx",
+  "searxng",
+  "kagi",
+])
+
+/** 工具 id → 小写词元。切 `_` / `-` 等分隔符,并切 camelCase 边界(`websearchTool` → web…/Tool)。 */
+function toolWords(tool: string): string[] {
+  return tool
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .map((word) => word.toLowerCase())
+}
+
+/**
+ * 命中判据 = 这个工具 id **看起来**是一个 web search。**尽力而为,不谎称穷尽**(#223 R6)。
  *
  * MCP 工具 id 由 `McpCatalog.toolName` 拼成 `<server>_<tool>`,所以 alpha 注入的云 server
  * (`cloud`)上的 `web_search` 落地为 `cloud_web_search`,而用户自带的 exa remote MCP 落地为
@@ -86,19 +148,129 @@ export function localWebSearchDenied(env: Record<string, string | undefined> = p
  * `cloud_status` / `cloud_await` / `cloud_artifacts` / `cloud_schedule_*`)一律不命中 ——
  * AC4 要求的「不误杀」。
  *
- * 边界:判据认的是 `web[_]search` 这个词根。一个把工具叫 `search_the_web` 或 `lookup` 的
- * server 不会被命中 —— 那属于「自带全新形态」,与传输层那两道闸的残留同类,不谎称穷尽。
+ * 两条判据:
+ *   ① 去掉全部分隔符后含 `websearch` / `searchweb` —— 覆盖 `web_search`、`web-search`、
+ *      `search_web`、`websearchTool`、`exa_web_search_exa`、`web_search_v2` 等一切写法;
+ *   ② 词元里同时有 `search` 与一个具名搜索引擎词 —— 覆盖 `brave-search`、`tavily_search`。
+ *
+ * **已知漏洞(R6 实测,以回归钉住)**:非 ASCII 工具名经 `McpCatalog.sanitize`
+ * (`[^a-zA-Z0-9_-]` → `_`)后只剩下划线,任何按名字的分类器都看不见它。因此「按名字关掉一切
+ * 第三方 web-search MCP」**做不到**,ADR-009 已按此收窄宣称:第三方 web-search MCP 不在本票
+ * 保证内,本闸对它是尽力拦截。
  */
 export function isWebSearchToolId(tool: string): boolean {
-  return /(^|_)web_?search([_-][a-z0-9]+)*$/i.test(tool)
+  const glued = tool.toLowerCase().replace(/[^a-z0-9]/g, "")
+  if (glued.includes("websearch") || glued.includes("searchweb")) return true
+  const words = new Set(toolWords(tool))
+  if (!words.has("search")) return false
+  for (const engine of SEARCH_ENGINE_WORDS) if (words.has(engine)) return true
+  return false
 }
 
 /** alpha 自己注册的云 MCP server 名(注入面经 `ALPHA_CLOUD_MCP_SERVER` 告知,见 ui-mac 同名常量)。 */
 export const CLOUD_MCP_SERVER_ENV = "ALPHA_CLOUD_MCP_SERVER"
 
-function isGovernedCloudTool(tool: string, env: Record<string, string | undefined>): boolean {
-  const server = env[CLOUD_MCP_SERVER_ENV]
-  return !!server && tool.startsWith(`${server}_`)
+/** `McpCatalog.sanitize`(`opencode/src/mcp/catalog.ts`)逐字同义 —— 工具 id 的前缀就是它的产物。 */
+function sanitizeMcpName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_")
+}
+
+/**
+ * 一次配置装载里,每个 MCP server 名的**治理归属**。
+ *
+ * `governed` = 端点身份核验通过的 alpha 云 server(名字等于 `ALPHA_CLOUD_MCP_SERVER` 点名的那个,
+ * 且配置里那条定义是 `type:"remote"` 且 `url` 与 `ALPHA_CLOUD_MCP_DEF` 里 alpha 自己写的逐字相同)。
+ * `foreign` = 配置里其余每一个 server 名 —— 一个都拿不到治理豁免。
+ */
+export type McpOwnership = {
+  governed: string[]
+  foreign: string[]
+}
+
+/** 尚未核验(config 钩子还没跑 / 配置里没有 mcp 段)= 没有任何治理 server,豁免一律不给。 */
+const UNVERIFIED_OWNERSHIP: McpOwnership = { governed: [], foreign: [] }
+
+let recorded: McpOwnership | undefined
+
+/**
+ * alpha 在**本次 fork** 自己写进 env 的那份云 server 定义的端点身份。
+ *
+ * 不可伪造的根据与 ARM/DEF 握手同一条:`injectAlphaConfig` 在每次 fork 的**每一条分支**上覆盖或
+ * 删除 `ALPHA_CLOUD_MCP_SERVER` / `ALPHA_CLOUD_MCP_DEF`,继承来的值一律不作数(逃生阀
+ * `ALPHA_ENV_ALLOWLIST_EXTRA` 能把名字放进 sidecar,但放不进一个活过注入面的值)。
+ */
+function governedCloudEndpoint(
+  env: Record<string, string | undefined>,
+): { name: string; url: string } | undefined {
+  const name = env[CLOUD_MCP_SERVER_ENV]
+  const raw = env[CLOUD_MCP_DEF_ENV]
+  if (!name || !raw) return undefined
+  let definition: unknown
+  try {
+    definition = JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+  if (!definition || typeof definition !== "object" || Array.isArray(definition)) return undefined
+  const { type, url } = definition as { type?: unknown; url?: unknown }
+  if (type !== "remote" || typeof url !== "string" || !url) return undefined
+  return { name, url }
+}
+
+function isGovernedEntry(entry: unknown, endpoint: { url: string }): boolean {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false
+  const { type, url } = entry as { type?: unknown; url?: unknown }
+  return type === "remote" && url === endpoint.url
+}
+
+/** 从一份**已合并完成的**引擎配置算出治理归属(纯函数,便于单测;写入由 `recordMcpOwnership` 做)。 */
+export function computeMcpOwnership(
+  cfg: unknown,
+  env: Record<string, string | undefined> = process.env,
+): McpOwnership {
+  const host = cfg as McpHost | null | undefined
+  if (!host || typeof host !== "object") return UNVERIFIED_OWNERSHIP
+  const servers = host.mcp && typeof host.mcp === "object" ? host.mcp : {}
+  const endpoint = governedCloudEndpoint(env)
+  const governed: string[] = []
+  const foreign: string[] = []
+  for (const [name, entry] of Object.entries(servers)) {
+    if (endpoint && name === endpoint.name && isGovernedEntry(entry, endpoint)) governed.push(name)
+    else foreign.push(name)
+  }
+  return { governed, foreign }
+}
+
+/**
+ * `config` 钩子里调用一次:把本次装载的治理归属记下来,供 `tool.execute.before` 的闸使用。
+ * 必须排在 `installCloudMcp()` **之后** —— 那一句才刚把 alpha 的云定义装进 `cfg.mcp`。
+ */
+export function recordMcpOwnership(
+  cfg: unknown,
+  env: Record<string, string | undefined> = process.env,
+): McpOwnership {
+  recorded = computeMcpOwnership(cfg, env)
+  return recorded
+}
+
+/**
+ * 工具 id 的可能归属方。sanitize 不是单射,而 `<server>_<tool>` 的边界也不唯一
+ * (`cloud_web` + `search` 与 `cloud` + `web_search` 拼出同一个 id),所以这里收集**全部**候选。
+ */
+function ownersOf(tool: string, ownership: McpOwnership) {
+  const match = (names: string[]) => names.filter((name) => tool.startsWith(`${sanitizeMcpName(name)}_`))
+  return { governed: match(ownership.governed), foreign: match(ownership.foreign) }
+}
+
+/**
+ * 治理豁免判据(#223 R6):**只有**当这个工具 id 唯一可能来自已核验端点身份的那个 server 时才成立。
+ *
+ * 任何歧义都倒向 fail-closed:候选里出现任何一个非治理 server(`cloud_attacker`、`cloud_web` …),
+ * 或者一个候选都没有(运行时新装的 server、config 钩子没跑),豁免都不给。
+ */
+function isGovernedCloudTool(tool: string, ownership: McpOwnership): boolean {
+  const owners = ownersOf(tool, ownership)
+  return owners.governed.length > 0 && owners.foreign.length === 0
 }
 
 /**
@@ -111,9 +283,10 @@ function isGovernedCloudTool(tool: string, env: Record<string, string | undefine
 export function webSearchToolDenial(
   tool: string,
   env: Record<string, string | undefined> = process.env,
+  ownership: McpOwnership = recorded ?? UNVERIFIED_OWNERSHIP,
 ): string | undefined {
   if (!isWebSearchToolId(tool)) return undefined
-  if (isGovernedCloudTool(tool, env))
+  if (isGovernedCloudTool(tool, ownership))
     return cloudWebSearchDenied(env) ? "the alpha web search kill switch (ADR-009 B2) is set" : undefined
   if (localWebSearchDenied(env) || cloudWebSearchDenied(env))
     return (
@@ -135,8 +308,12 @@ export class WebSearchSovereigntyError extends Error {
 }
 
 /** `tool.execute.before` 的首行。命中即抛 —— 抛出点早于 `ctx.ask`,故 approved/后置 allow 够不着。 */
-export function assertWebSearchToolAllowed(tool: string, env: Record<string, string | undefined> = process.env): void {
-  const reason = webSearchToolDenial(tool, env)
+export function assertWebSearchToolAllowed(
+  tool: string,
+  env: Record<string, string | undefined> = process.env,
+  ownership: McpOwnership = recorded ?? UNVERIFIED_OWNERSHIP,
+): void {
+  const reason = webSearchToolDenial(tool, env, ownership)
   if (reason) throw new WebSearchSovereigntyError(tool, reason)
 }
 
@@ -164,13 +341,24 @@ export function assertWebSearchToolAllowed(tool: string, env: Record<string, str
 // R5 形态:**kill-switch 下云 server 的完整定义根本不进配置**。注入面只把它经
 // `ALPHA_CLOUD_MCP_DEF` 交给本模块(`ALPHA_CLOUD_MCP_ARM` 点名),由本函数在 `config` 钩子里
 // 装进 `cfg.mcp`。`config` 钩子能跑 ⇒ 插件函数已返回 hooks 对象 ⇒ 同一对象上的
-// `tool.execute.before` 闸确实注册了。三种缺席情形下本函数一次都不会被调用,配置里于是**没有
-// 任何名为 cloud 的条目**:`/mcp/cloud/connect` 拿不到配置(`requireMcpConfig` → NotFound),
-// 连兄弟云工具一起损失 —— 诚实的 fail-closed 降级。
+// `tool.execute.before` 闸确实注册了。三种缺席情形下本函数一次都不会被调用。
+//
+// **R6 Major 修正**:R5 声称此时「配置里没有任何名为 cloud 的条目」,那只对
+// `OPENCODE_CONFIG_CONTENT` 自己那一份成立。引擎另外还加载 XDG global、`OPENCODE_CONFIG`、项目
+// 目录与 managed 配置,深合并里「缺少某个键」**不会删除**先前来源的定义(`config/config.ts`)——
+// 于是那些来源里的一份完整 `cloud` 定义照样自动连接,`enabled:false` 也照样能被 `/connect` 翻开。
+// 注入面因此改为写一份**中和条目**(`ui-mac/src/main/cloud-web-search.ts` 的 `WITHHELD_CLOUD_MCP`:
+// `type:"remote"` + 一个不做 DNS、必然 ECONNREFUSED 的 `127.0.0.1:1` URL + `enabled:false`),深合并里
+// 逐字段压过任何继承来的 `cloud`;本函数在 ext 确认装载后**整条替换**它。ext 缺席 ⇒ 留下的是那份
+// 中和条目 ⇒ `/mcp/cloud/connect` 连不上任何东西,连兄弟云工具一起损失 —— 诚实的 fail-closed 降级。
+// 覆盖不到的只有 managed 目录与 MDM 托管偏好(引擎把它们排在 `OPENCODE_CONFIG_CONTENT` **之后**),
+// 那两个都是 root/管理员通道,不在用户威胁模型内 —— 事实由多源加载回归钉住,不谎称已关。
 //
 // 仍够不着的一条(诚实登记):`POST /mcp` 的 `add` 要求调用方**自带**完整 server 定义,所以它
 // 不是「复活已存在的定义」,而是新装一个 —— 拦它等于拦任意第三方 MCP,那要收编上游
-// `handlers/mcp.ts` / `mcp/index.ts`,不在本票范围。ext 在场时它照样撞上面那道工具闸。
+// `handlers/mcp.ts` / `mcp/index.ts`,不在本票范围。用**同一个名字** add 会替换掉已连的客户端,
+// 而上游没有任何接口把「当前活着的 server 定义」暴露给插件,所以从 ext 的视角它与原客户端不可
+// 分辨 —— 那条路装的正是「用户自己新装的第三方 MCP」,落在 R6 收窄掉的那一类里(见文件头)。
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 注入面告诉 ext「这个 MCP server 等你确认装载后才能装」的通道(ui-mac `cloud-web-search.ts` 同名同义)。 */

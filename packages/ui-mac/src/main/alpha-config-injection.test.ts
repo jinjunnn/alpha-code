@@ -28,7 +28,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { injectAlphaConfig } from "./alpha-config-injection"
 import { secretFilePath } from "./alpha-secret-files"
-import { CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV } from "./cloud-web-search"
+import { CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV, WITHHELD_CLOUD_MCP } from "./cloud-web-search"
 
 // 注入读到的每一个 env 输入 + 它自己写出的三个 env 输出:逐个快照/清空/还原,
 // 既隔离宿主机真实配置,也不把注入结果泄漏给同进程的其它测试文件。
@@ -348,8 +348,9 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
       expect(config.permission?.websearch).toBe("deny")
       expect(config.permission?.cloud_web_search).toBe("deny")
       expect(config.permission?.cloud_dispatch).toBeUndefined()
-      // 一个字节的可复活定义都不留:没有条目、没有 URL、没有 Authorization 头。
-      expect(config.mcp?.cloud).toBeUndefined()
+      // 一个字节的可复活定义都不留:配置里只有那份中和条目(#223 R6 Major:它必须在,
+      // 否则继承来源里的同名定义压根不会被覆盖),没有真 URL、没有 Authorization 头。
+      expect(config.mcp?.cloud).toEqual({ ...WITHHELD_CLOUD_MCP })
       expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("cloud.example")
       expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("Authorization")
       // 定义只在 env 里托管,ext 的 config 钩子跑起来才装。
@@ -365,27 +366,46 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
       expect(errors.flat().join("\n")).toContain("WITHHELD from the engine config")
     })
 
-  test("kill-switch:继承来的 OPENCODE_CONFIG_CONTENT 里的同名云条目被抹掉", () => {
+  // #223 R6 Major:R5 只从继承来的 OPENCODE_CONFIG_CONTENT 对象里删键,而引擎的深合并里
+  // 「缺少 cloud 键」不会删除 global / alpha.jsonc / 项目 / managed 里先前来源的定义。所以现在
+  // 写的是一份逐字段压过去的中和条目。多源那一半由
+  // packages/opencode/test/mcp/alpha-cloud-mcp-multisource.test.ts 用真实 Config 加载证。
+  test("kill-switch:继承来的同名云条目被中和条目逐字段压掉", () => {
     givenPlatformPaysUnderUmbrella()
     process.env.ALPHA_WEBSEARCH_DISABLE = "1"
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
-      mcp: { cloud: { type: "remote", url: "https://inherited.example/mcp", enabled: true } },
+      mcp: {
+        cloud: {
+          type: "remote",
+          url: "https://inherited.example/mcp",
+          enabled: true,
+          headers: { Authorization: "Bearer inherited" },
+        },
+      },
     })
 
     injectAlphaConfig(userData, undefined, "stable")
 
-    expect(injectedPermissions().mcp?.cloud).toBeUndefined()
+    expect(injectedPermissions().mcp?.cloud).toEqual({ ...WITHHELD_CLOUD_MCP })
     expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("inherited.example")
+    expect(process.env.OPENCODE_CONFIG_CONTENT).not.toContain("Bearer inherited")
   })
 
-  test("代付但无 kill-switch 时:云 server 直接可用,且不置位 arm/def 通道(不依赖 ext 装载)", () => {
+  test("代付但无 kill-switch 时:云 server 直接可用,只托管 def 身份、不置位 arm(不依赖 ext 装载)", () => {
     givenPlatformPaysUnderUmbrella()
 
     injectAlphaConfig(userData, undefined, "stable")
 
     expect(injectedPermissions().mcp?.cloud).toMatchObject({ type: "remote", enabled: true })
+    // ARM 不置位 ⇒ ext 的 installCloudMcp 什么都不装(ARM/DEF 必须成对)。
     expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
-    expect(process.env[CLOUD_MCP_DEF_ENV]).toBeUndefined()
+    // #223 R6 Blocker:治理豁免绑定的是 DEF 里那份定义的端点身份,所以代付两条分支都托管它。
+    expect(JSON.parse(process.env[CLOUD_MCP_DEF_ENV]!)).toMatchObject({
+      type: "remote",
+      url: "https://cloud.example/mcp",
+    })
+    expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("{file:")
+    expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("cloud-token")
     // 闸要能把「alpha 治理的云 server」与用户自带的 web-search MCP 区分开(R5 Blocker)。
     expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
   })
@@ -398,10 +418,11 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
     process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify({ type: "remote", url: "https://attacker.example/mcp" })
     process.env[CLOUD_MCP_SERVER_ENV] = "forged"
 
-    // ① 代付、无 kill-switch:两个握手变量都被删。
+    // ① 代付、无 kill-switch:ARM 被删,DEF/SERVER 被覆盖成 alpha 自己的值(伪造的 URL 不剩)。
     injectAlphaConfig(userData, undefined, "stable")
     expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
-    expect(process.env[CLOUD_MCP_DEF_ENV]).toBeUndefined()
+    expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("attacker.example")
+    expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("cloud.example")
     expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
 
     // ② kill-switch:被覆盖成 alpha 自己的名字与定义,伪造的 URL 一点不剩。

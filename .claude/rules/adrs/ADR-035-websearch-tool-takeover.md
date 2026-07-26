@@ -57,6 +57,13 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
    > **MCP 那一类的共同钳制点在本 ADR 的接管面之外**:alpha 自有包 `packages/ext` 的
    > `tool.execute.before` 钩子。本地主权判决已一并接到那里(见 [[ADR-009]] 裁决 (b) 的五次收口段),
    > 本 ADR 的接管面**不变**(仍是三个源文件),两条传输闸降为本地 `websearch` 工具的纵深。
+   >
+   > **范围更正(2026-07-26,#223 R6 Blocker)**:上一段说得像「MCP 那一类已被那个钩子收住」——
+   > **不成立**。那个钩子对 MCP web search 的判据只能看**工具名**,而工具名可以合法地不含任何可识别
+   > 词根(非 ASCII 名经 `McpCatalog.sanitize` 后只剩下划线)。[[ADR-009]] 已按 R6 裁决把保证范围
+   > 收窄为「alpha 治理的云 server(按端点身份识别)+ 本 ADR 接管的本地 `websearch` 两份副本」;
+   > **用户自配的第三方 web-search MCP 不在保证内**,那个钩子对它是尽力拦截。本 ADR 的接管面
+   > **仍然不变**(三个源文件)—— 收窄的是宣称,不是接管清单。
 3. **这两个文件当时的行为是两处失守**:`websearch.ts` 用
    `output: result ?? "No search results found…"` 把空/坏响应伪装成成功串;末尾
    `.pipe(Effect.orDie)` 把一切错误塌成匿名 defect(无类别、无状态、表现为工具崩溃)。
@@ -227,6 +234,10 @@ defect。这是本决策自带的 tripwire。
   用户配置里的通用 Remote MCP(`exa_web_search_exa`)两条都不经过。**本 ADR 的接管面不因此扩大**:
   MCP 那一类的钳制点在 alpha 自有的 `packages/ext`(`tool.execute.before`),不需要新收编任何上游文件。
   证据在 `packages/opencode/test/tool/alpha-mcp-websearch-gate.test.ts`(新增文件,对守卫是 `A`)。
+  **2026-07-26 四次更正(R6 Blocker)**:上一段隐含「MCP 那一类已经收住了」——**不成立**。那个钩子
+  按工具名分类,合法改名与非 ASCII 名都能绕过([[ADR-009]] 六次收口段有实测清单)。保证范围已收窄:
+  本 ADR 接管的两份本地 `websearch` 副本 + alpha 治理的云 server(按端点身份识别)是保证;第三方
+  web-search MCP 是尽力拦截。**接管清单仍不变**,不因此新收编任何上游文件。
 - ⚠️ **这些回归跑在 alpha 的合并闸之外**:`scripts/alpha-check.sh` 与 `alpha-ci.yml` 只跑
   contracts-consumer / ext / ui-mac 三个包的测试,`packages/core` 与 `packages/opencode` 的测试
   两处都不跑。因此本轮把**机制事实**(集合普查 + 闸的位置 + 上游次序前提 + 握手通道的两半)固化在

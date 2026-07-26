@@ -24,6 +24,33 @@ export const CLOUD_WEBSEARCH_DENY_ENV = "ALPHA_CLOUD_WEBSEARCH_DENY"
 export const CLOUD_MCP_SERVER_NAME = "cloud"
 
 /**
+ * kill-switch 下写进 `OPENCODE_CONFIG_CONTENT` 的**中和条目**(#223 R6 Major)。
+ *
+ * R5 只从继承来的 `OPENCODE_CONFIG_CONTENT` 对象里删掉 `mcp.cloud`,并据此声称「继承来的同名
+ * 条目一并抹掉」。R6 判该声称**不成立**:引擎还分别加载 XDG global、`OPENCODE_CONFIG`
+ * (alpha.jsonc)、项目目录与 managed 配置(`opencode/src/config/config.ts`),而深合并里
+ * 「缺少 cloud 键」**不会删除**先前来源的定义。于是那些来源里的一份完整 `cloud` 定义仍会自动
+ * 连接;写成 `enabled:false` 也没用 —— `MCP.connect()` 无条件复制成 `enabled:true`。
+ *
+ * 能压过先前来源的只有**逐字段覆盖**:`OPENCODE_CONFIG_CONTENT` 排在 global / `OPENCODE_CONFIG` /
+ * 项目 / `.opencode` 与 `OPENCODE_CONFIG_DIR` 目录**之后**,`type` 与 `url` 是标量,later-wins。
+ * URL 指向 `127.0.0.1:1`:**不做 DNS**、必然 ECONNREFUSED(端口 1 在类 Unix 上要 root 才能 bind),
+ * 于是即便有人经 `/mcp/cloud/connect` 强行翻开,TCP 握手就失败、一个字节都发不出去 —— 继承来的
+ * Authorization 头也就不会去到任何地方。
+ * ext 确认装载后由 `installCloudMcp()` 整条替换它(`packages/ext/src/cloud-websearch-kill.ts`)。
+ *
+ * **覆盖不到的两个来源(诚实登记)**:managed 目录与 macOS MDM 托管偏好排在
+ * `OPENCODE_CONFIG_CONTENT` 之后,能覆盖回去 —— 两者都需要 root/管理员,不在用户威胁模型内。
+ * 事实由 `packages/opencode/test/mcp/alpha-cloud-mcp-multisource.test.ts` 用真实多源加载钉住。
+ */
+export const WITHHELD_CLOUD_MCP = {
+  type: "remote" as const,
+  url: "http://127.0.0.1:1/alpha-cloud-withheld",
+  enabled: false as const,
+  oauth: false as const,
+}
+
+/**
  * 告诉 ext「哪个 MCP server 是 alpha 治理的云通道」(#223 R5)。
  *
  * ext 的 `tool.execute.before` 闸现在对**任何** MCP server 上的 web search 形态生效(用户自带的

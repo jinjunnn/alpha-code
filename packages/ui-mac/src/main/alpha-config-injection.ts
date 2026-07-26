@@ -24,6 +24,7 @@ import {
   CLOUD_MCP_DEF_ENV,
   CLOUD_MCP_SERVER_ENV,
   CLOUD_MCP_SERVER_NAME,
+  WITHHELD_CLOUD_MCP,
 } from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
@@ -302,30 +303,32 @@ export function injectAlphaConfig(
       // 公开为 `/mcp/:name/connect` 且产品 UI 真的在调,于是 ext 缺席时用户点一下就能把那份含
       // 完整 URL/header 的定义热连起来。`enabled:false` 从来不是「不可重开」。
       //
-      // R5 形态:**完整定义根本不进配置**,只经 env 托管给 ext。ext 缺席 ⇒ 配置里没有 `cloud`
-      // 条目 ⇒ `/connect` NotFound、无物可复活(连兄弟工具一起损失)—— 诚实降级,不是 AC4 的
-      // 「误杀」:AC4 管的是闸生效时的正常态。
+      // R5 形态:**完整定义根本不进配置**,只经 env 托管给 ext。
+      //
+      // #223 R6 Major:R5 只从继承来的 `OPENCODE_CONFIG_CONTENT` 对象里删掉 `mcp.cloud`,并据此
+      // 声称「继承来的同名条目一并抹掉」—— 不成立。引擎另外还加载 XDG global、`OPENCODE_CONFIG`
+      // (alpha.jsonc)、项目目录与 managed 配置,深合并里「缺少 cloud 键」**不会删除**先前来源的
+      // 定义(`opencode/src/config/config.ts`)。所以这里改为写一份**中和条目**
+      // (`WITHHELD_CLOUD_MCP`),用 later-wins 的标量覆盖把任何继承来的 `cloud` 逐字段压成一个
+      // 连不上的 `127.0.0.1:1` 端点 + `enabled:false`;ext 确认装载后由 `installCloudMcp()` 整条
+      // 替换它。ext 缺席 ⇒ 留下的是中和条目 ⇒ `/connect` 连不上任何东西(连兄弟工具一起损失)——
+      // 诚实降级,不是 AC4 的「误杀」:AC4 管的是闸生效时的正常态。
       const cloud = materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN"))
-      // ext 的闸靠它把「alpha 治理的云 server」与用户自带的 web-search MCP 区分开(R5 Blocker)。
+      // ext 的闸靠这两个变量核验「哪个 MCP server 真的是 alpha 治理的云通道」——
+      // #223 R6 Blocker:判据是 DEF 里那份定义的**端点身份**(URL),不再是名字前缀,所以 DEF 在
+      // 代付的两条分支上都置位(ARM 只在 kill-switch 分支置位;ARM/DEF 缺一 ext 什么都不装)。
       process.env[CLOUD_MCP_SERVER_ENV] = CLOUD_MCP_SERVER_NAME
+      process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify(cloud)
+      config.mcp = { ...(config.mcp ?? {}), [CLOUD_MCP_SERVER_NAME]: killSwitch ? { ...WITHHELD_CLOUD_MCP } : cloud }
+      injectedMcpNames.add(CLOUD_MCP_SERVER_NAME)
       if (killSwitch) {
-        // 继承来的 OPENCODE_CONFIG_CONTENT 若带着一个同名条目,这里一并抹掉:kill-switch 下
-        // 配置里不允许存在任何可被 connect 复活的云定义。
-        if (config.mcp && CLOUD_MCP_SERVER_NAME in config.mcp) {
-          const { [CLOUD_MCP_SERVER_NAME]: _inherited, ...rest } = config.mcp as Record<string, unknown>
-          config.mcp = rest
-        }
         process.env[CLOUD_MCP_ARM_ENV] = CLOUD_MCP_SERVER_NAME
-        process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify(cloud)
         console.error(
-          `[alpha-code#223] web search kill switch is set — the cloud MCP server definition is WITHHELD from the engine config; only a confirmed @alpha-code/ext load installs it via ${CLOUD_MCP_ARM_ENV}/${CLOUD_MCP_DEF_ENV}${extPluginPath ? "" : ", and no ext bundle path was resolved this fork so it will stay dark"}`,
+          `[alpha-code#223] web search kill switch is set — the cloud MCP server definition is WITHHELD from the engine config (a neutralised ${WITHHELD_CLOUD_MCP.url} entry overrides any inherited one); only a confirmed @alpha-code/ext load installs the real one via ${CLOUD_MCP_ARM_ENV}/${CLOUD_MCP_DEF_ENV}${extPluginPath ? "" : ", and no ext bundle path was resolved this fork so it will stay dark"}`,
         )
       } else {
         // 代付但无 kill-switch:云工具是权威通道,不需要闸,也就不该依赖 ext 是否装载。
         delete process.env[CLOUD_MCP_ARM_ENV]
-        delete process.env[CLOUD_MCP_DEF_ENV]
-        config.mcp = { ...(config.mcp ?? {}), [CLOUD_MCP_SERVER_NAME]: cloud }
-        injectedMcpNames.add(CLOUD_MCP_SERVER_NAME)
       }
     } else {
       delete process.env[CLOUD_MCP_ARM_ENV]

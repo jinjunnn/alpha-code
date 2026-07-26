@@ -219,19 +219,35 @@ describe("websearch 执行副本普查(#223 R3 · R4 起降为纵深)", () => {
     expect(install).toBeLessThan(firstReturn)
   })
 
-  // #223 R5 Major:注入面在 kill-switch 下**不许**把云 server 定义写进配置 —— `MCP.connect()` 会
-  // 无条件把 `enabled:false` 复制成 `enabled:true`(`/mcp/:name/connect` 公开、产品 UI 在调)。
-  // 行为证据在 packages/opencode/test/mcp/alpha-cloud-mcp-revival.test.ts;这里钉住静态形状。
-  test("kill-switch 分支不把云 server 写进 config.mcp,只经 ARM/DEF 托管", () => {
+  // #223 R5 Major:注入面在 kill-switch 下**不许**把真的云 server 定义写进配置 —— `MCP.connect()`
+  // 会无条件把 `enabled:false` 复制成 `enabled:true`(`/mcp/:name/connect` 公开、产品 UI 在调)。
+  // #223 R6 Major:但也不能只是「不写」—— 深合并里缺键不会删除 global / alpha.jsonc / 项目里
+  // 先前来源的同名定义。唯一允许写进去的是那份中和条目 `WITHHELD_CLOUD_MCP`。
+  // 行为证据在 packages/opencode/test/mcp/alpha-cloud-mcp-{revival,multisource}.test.ts;
+  // 这里钉住静态形状:kill-switch 下写进 config.mcp 的**只能**是中和条目。
+  test("kill-switch 分支写的是中和条目,真定义只经 ARM/DEF 托管", () => {
     const injection = read("packages/ui-mac/src/main/alpha-config-injection.ts")
+    const assign = injection.match(
+      /config\.mcp = \{ \.\.\.\(config\.mcp \?\? \{\}\), \[CLOUD_MCP_SERVER_NAME\]: killSwitch \? \{ \.\.\.WITHHELD_CLOUD_MCP \} : cloud \}/,
+    )
+    expect(assign).not.toBeNull()
     const branch = injection.indexOf("if (killSwitch) {")
     expect(branch).toBeGreaterThanOrEqual(0)
     const elseAt = injection.indexOf("\n      } else {", branch)
     expect(elseAt).toBeGreaterThan(branch)
     const body = injection.slice(branch, elseAt)
     expect(body).toContain(`process.env[CLOUD_MCP_ARM_ENV]`)
-    expect(body).toContain(`process.env[CLOUD_MCP_DEF_ENV]`)
-    // 这条分支只允许**删** config.mcp 里的同名条目,绝不允许写一个。
-    expect(body).not.toMatch(/config\.mcp\s*=\s*\{\s*\.\.\./)
+    // 这条分支绝不允许再往 config.mcp 里写第二次(真定义只走 ARM/DEF)。
+    expect(body).not.toMatch(/config\.mcp\s*=/)
+  })
+
+  // #223 R6 Blocker:治理豁免绑定端点身份,所以 DEF 必须在**代付的两条分支**上都置位;
+  // 而 ARM 只在 kill-switch 分支置位(ARM/DEF 缺一 ext 什么都不装,这条不变式仍在)。
+  test("DEF 在代付两条分支都置位,ARM 只在 kill-switch 分支置位", () => {
+    const injection = read("packages/ui-mac/src/main/alpha-config-injection.ts")
+    const branch = injection.indexOf("if (killSwitch) {")
+    const before = injection.slice(0, branch)
+    expect(before).toContain("process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify(cloud)")
+    expect(before.lastIndexOf("process.env[CLOUD_MCP_ARM_ENV] = ")).toBe(-1)
   })
 })

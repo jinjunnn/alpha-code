@@ -9,18 +9,55 @@ import {
   CLOUD_MCP_SERVER_ENV,
   CLOUD_WEBSEARCH_DENY_ENV,
   cloudWebSearchDenied,
+  computeMcpOwnership,
   installCloudMcp,
   isWebSearchToolId,
   LOCAL_WEBSEARCH_DENY_ENV,
   localWebSearchDenied,
+  type McpOwnership,
   WebSearchSovereigntyError,
 } from "./cloud-websearch-kill"
 
+/** alpha 自己写的那份云 server 定义的端点身份(注入面经 ALPHA_CLOUD_MCP_DEF 过河)。 */
+const CLOUD_URL = "https://cloud.example/mcp"
+const CLOUD_DEF = JSON.stringify({
+  type: "remote",
+  url: CLOUD_URL,
+  enabled: true,
+  headers: { Authorization: "Bearer {file:/tmp/alpha-cloud-token}" },
+  oauth: false,
+})
+
 /** kill-switch:云侧与本地侧同时置位(main 的 applyWebSearchSovereignty 就是这么写的)。 */
-const ON = { [CLOUD_WEBSEARCH_DENY_ENV]: "1", [LOCAL_WEBSEARCH_DENY_ENV]: "1", [CLOUD_MCP_SERVER_ENV]: "cloud" }
+const ON = {
+  [CLOUD_WEBSEARCH_DENY_ENV]: "1",
+  [LOCAL_WEBSEARCH_DENY_ENV]: "1",
+  [CLOUD_MCP_SERVER_ENV]: "cloud",
+  [CLOUD_MCP_DEF_ENV]: CLOUD_DEF,
+}
 /** 平台代付、无 kill-switch:只有本地侧置位,云工具是权威通道。 */
-const PLATFORM_PAYS = { [LOCAL_WEBSEARCH_DENY_ENV]: "1", [CLOUD_MCP_SERVER_ENV]: "cloud" }
+const PLATFORM_PAYS = {
+  [LOCAL_WEBSEARCH_DENY_ENV]: "1",
+  [CLOUD_MCP_SERVER_ENV]: "cloud",
+  [CLOUD_MCP_DEF_ENV]: CLOUD_DEF,
+}
 const OFF = {}
+
+/**
+ * 引擎**合并完成后**的配置形状:alpha 注入的云 server + 用户自带的若干第三方 server。
+ * ext 的 `config` 钩子拿到的就是这个对象,`computeMcpOwnership()` 从它核验端点身份。
+ */
+const engineConfig = (servers: Record<string, unknown> = {}) => ({
+  mcp: {
+    cloud: { type: "remote", url: CLOUD_URL, enabled: true },
+    exa: { type: "remote", url: "https://mcp.exa.ai/mcp" },
+    ...servers,
+  },
+})
+
+/** 生产路径的归属快照(`config` 钩子里 `recordMcpOwnership(cfg)` 算出来的同一个值)。 */
+const owned = (env: Record<string, string | undefined>, servers?: Record<string, unknown>): McpOwnership =>
+  computeMcpOwnership(engineConfig(servers), env)
 
 const siblingCloudTools = [
   "cloud_dispatch",
@@ -70,13 +107,45 @@ describe("cloud web search kill switch", () => {
       expect(isWebSearchToolId(tool)).toBe(false)
   })
 
+  // #223 R6 Blocker ①:R5 的判据只认 `web_search` 词根,下面四个**合法工具名**实测 denial:null。
+  test("R6 回归:合法改名 search_web / web-search / websearchTool / brave-search 都命中", () => {
+    for (const tool of [
+      "my_search_web",
+      "srv_web-search",
+      "srv_websearchTool",
+      "srv_brave-search",
+      "brave-search_brave_web_search",
+      "tavily_search",
+      "srv_searchWeb",
+    ])
+      expect([tool, isWebSearchToolId(tool)]).toEqual([tool, true])
+    // 误杀防线:带 search 但不是网页搜索的工具照常放行(AC4)。
+    for (const tool of [
+      "cloud_search_jobs",
+      "gdrive_search_files",
+      "code_search",
+      "srv_semantic_search",
+      "srv_search_replace",
+    ])
+      expect([tool, isWebSearchToolId(tool)]).toEqual([tool, false])
+  })
+
+  // #223 R6 Blocker ①(诚实登记的天花板):非 ASCII 工具名经 `McpCatalog.sanitize` 后只剩下划线,
+  // **任何**按名字的分类器都看不见它。ADR-009 已据此收窄宣称 —— 第三方 web-search MCP 不在保证内。
+  test("R6 回归(已登记的漏):sanitize 抹平的非 ASCII 名分类不出来", () => {
+    const sanitize = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "_")
+    const toolId = `srv_${sanitize("网页搜索")}`
+    expect(toolId).toBe("srv_____")
+    expect(isWebSearchToolId(toolId)).toBe(false)
+  })
+
   test("闸开时抛,闸关时全放行", () => {
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", ON)).toThrow(WebSearchSovereigntyError)
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", ON)).toThrow(/do not retry/)
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", OFF)).not.toThrow()
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", ON, owned(ON))).toThrow(WebSearchSovereigntyError)
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", ON, owned(ON))).toThrow(/do not retry/)
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", OFF, owned(OFF))).not.toThrow()
     for (const tool of siblingCloudTools) {
-      expect(() => assertWebSearchToolAllowed(tool, ON)).not.toThrow()
-      expect(() => assertWebSearchToolAllowed(tool, OFF)).not.toThrow()
+      expect(() => assertWebSearchToolAllowed(tool, ON, owned(ON))).not.toThrow()
+      expect(() => assertWebSearchToolAllowed(tool, OFF, owned(OFF))).not.toThrow()
     }
   })
 })
@@ -87,33 +156,107 @@ describe("第三方 MCP 上的 web search 同受主权判决(R5 Blocker)", () =>
 
   test("平台代付(无 kill-switch):第三方全关,alpha 治理的云工具**不**关", () => {
     for (const tool of thirdParty) {
-      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS)).toThrow(WebSearchSovereigntyError)
-      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS)).toThrow(/do not retry/)
+      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS, owned(PLATFORM_PAYS))).toThrow(
+        WebSearchSovereigntyError,
+      )
+      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS, owned(PLATFORM_PAYS))).toThrow(/do not retry/)
     }
     // AC4:平台代付时云工具是权威通道,闸不许误杀它,也不许误杀兄弟工具。
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS)).not.toThrow()
-    for (const tool of siblingCloudTools) expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS)).not.toThrow()
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, owned(PLATFORM_PAYS))).not.toThrow()
+    for (const tool of siblingCloudTools)
+      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS, owned(PLATFORM_PAYS))).not.toThrow()
   })
 
   test("kill-switch:第三方与云工具一起关", () => {
     for (const tool of [...thirdParty, "cloud_web_search"])
-      expect(() => assertWebSearchToolAllowed(tool, ON)).toThrow(WebSearchSovereigntyError)
-    for (const tool of siblingCloudTools) expect(() => assertWebSearchToolAllowed(tool, ON)).not.toThrow()
+      expect(() => assertWebSearchToolAllowed(tool, ON, owned(ON))).toThrow(WebSearchSovereigntyError)
+    for (const tool of siblingCloudTools) expect(() => assertWebSearchToolAllowed(tool, ON, owned(ON))).not.toThrow()
   })
 
   test("登出 / BYOK(两个信号都不置位):第三方 web search 照常可用", () => {
-    for (const tool of thirdParty) expect(() => assertWebSearchToolAllowed(tool, OFF)).not.toThrow()
+    for (const tool of thirdParty) expect(() => assertWebSearchToolAllowed(tool, OFF, owned(OFF))).not.toThrow()
   })
 
   test("治理例外只认注入面点名的那个 server,不写死 \"cloud\" 字面量", () => {
     const renamed = { ...PLATFORM_PAYS, [CLOUD_MCP_SERVER_ENV]: "alphacloud" }
-    expect(() => assertWebSearchToolAllowed("alphacloud_web_search", renamed)).not.toThrow()
-    // 名字没对上就不是治理通道 —— 一个自称 cloud 的第三方 server 拿不到豁免。
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", renamed)).toThrow(WebSearchSovereigntyError)
+    const config = { mcp: { alphacloud: { type: "remote", url: CLOUD_URL }, cloud: { type: "remote", url: CLOUD_URL } } }
+    const ownership = computeMcpOwnership(config, renamed)
+    expect(ownership).toEqual({ governed: ["alphacloud"], foreign: ["cloud"] })
+    expect(() => assertWebSearchToolAllowed("alphacloud_web_search", renamed, ownership)).not.toThrow()
+    // 名字没对上就不是治理通道 —— 一个自称 cloud、甚至照抄了 alpha URL 的第三方 server 拿不到豁免。
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", renamed, ownership)).toThrow(WebSearchSovereigntyError)
   })
 
   test("注入面没点名任何云 server 时(登出态误置信号)倒向 fail-closed", () => {
-    expect(() => assertWebSearchToolAllowed("cloud_web_search", { [LOCAL_WEBSEARCH_DENY_ENV]: "1" })).toThrow(
+    const env = { [LOCAL_WEBSEARCH_DENY_ENV]: "1" }
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", env, owned(env))).toThrow(WebSearchSovereigntyError)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #223 R6 Blocker ②:治理例外必须绑定**不可由 MCP 名称伪造的端点身份**。
+//
+// R5 的判据是 `tool.startsWith("${server}_")` —— 名字前缀,不是 server 身份。R6 实跑证明:
+// 一个叫 `cloud_attacker` 的用户 server 上的 `web_search` 因此被当成治理云工具直接放行。
+// 现在判据是「名字等于注入面点名的那个 **且** 配置里那条定义的 URL 与 alpha 自己写的逐字相同」,
+// 并且工具归属的**任何歧义**都倒向 fail-closed。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("治理豁免绑定端点身份,名字伪造不了(R6 Blocker)", () => {
+  test("端点身份核验:URL 对上才算治理 server", () => {
+    expect(owned(PLATFORM_PAYS)).toEqual({ governed: ["cloud"], foreign: ["exa"] })
+    // 同名但换了 URL(managed / MDM 之类的后置来源覆盖回去)⇒ 不再是治理 server,fail-closed。
+    const hijacked = computeMcpOwnership(
+      { mcp: { cloud: { type: "remote", url: "https://attacker.example/mcp" } } },
+      PLATFORM_PAYS,
+    )
+    expect(hijacked).toEqual({ governed: [], foreign: ["cloud"] })
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, hijacked)).toThrow(
+      WebSearchSovereigntyError,
+    )
+    // DEF 缺席 / 坏 JSON / 不是 remote ⇒ 没有可核验的身份,一个 server 都不治理。
+    for (const def of [undefined, "{not json", '"a string"', JSON.stringify({ type: "local", command: ["x"] })])
+      expect(owned({ ...PLATFORM_PAYS, [CLOUD_MCP_DEF_ENV]: def }).governed).toEqual([])
+  })
+
+  test("R6 回归:`cloud_attacker` 拿不到豁免(R5 下它被当成治理云工具放行)", () => {
+    const servers = { cloud_attacker: { type: "remote", url: "https://attacker.example/mcp" } }
+    const ownership = owned(PLATFORM_PAYS, servers)
+    expect(ownership.foreign).toContain("cloud_attacker")
+    expect(() => assertWebSearchToolAllowed("cloud_attacker_web_search", PLATFORM_PAYS, ownership)).toThrow(
+      WebSearchSovereigntyError,
+    )
+    // 真的治理云工具照常放行(闸没有因此变成一刀切)。
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, ownership)).not.toThrow()
+  })
+
+  test("R6 回归:`<server>_<tool>` 边界歧义倒向 fail-closed(cloud_web + search)", () => {
+    // 一个叫 `cloud_web` 的 server 上的 `search` 与治理 server 上的 `web_search` 拼出同一个 id。
+    const ownership = owned(PLATFORM_PAYS, { cloud_web: { type: "remote", url: "https://attacker.example/mcp" } })
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, ownership)).toThrow(
+      WebSearchSovereigntyError,
+    )
+  })
+
+  test("R6 回归:运行时 `POST /mcp` 新装的 server(配置里没有)一律拿不到豁免", () => {
+    const ownership = owned(PLATFORM_PAYS)
+    // 归属不在快照里 ⇒ 没有候选 ⇒ 豁免不给。
+    for (const tool of ["runtime_web_search", "cloudx_web_search", "cloud-2_web_search"])
+      expect(() => assertWebSearchToolAllowed(tool, PLATFORM_PAYS, ownership)).toThrow(WebSearchSovereigntyError)
+  })
+
+  // 诚实登记(R6 D-1 收窄后落在「用户自己新装的第三方 MCP」那一类):`POST /mcp` 用**同一个名字**
+  // 替换掉已连的客户端后,上游没有任何接口把「当前活着的 server 定义」暴露给插件 —— 配置快照
+  // 仍是 alpha 那份,ext 从名字上分辨不出来。收编它要动 handlers/mcp.ts / mcp/index.ts,不在本票范围。
+  test("残留(登记,非闭合):同名 `POST /mcp` add 替换客户端后,豁免仍按配置快照给", () => {
+    const ownership = owned(PLATFORM_PAYS)
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, ownership)).not.toThrow()
+    // 但 kill-switch 下它照样被关 —— 豁免的唯一效果是「代付态放行」,不是「越过 kill-switch」。
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", ON, owned(ON))).toThrow(WebSearchSovereigntyError)
+  })
+
+  test("config 钩子没跑过 ⇒ 没有任何治理 server(模块默认值 fail-closed)", () => {
+    // 不传 ownership:模块里还没有 recordMcpOwnership 的结果时,豁免一律不给。
+    expect(() => assertWebSearchToolAllowed("cloud_web_search", PLATFORM_PAYS, { governed: [], foreign: [] })).toThrow(
       WebSearchSovereigntyError,
     )
   })
@@ -128,10 +271,11 @@ describe("后置 allow / approved 覆盖不了 kill-switch", () => {
   /** `session/tools.ts` 与 `tool/code-mode.ts` 的共同骨架:先 trigger 钩子,再 ask,再 callTool。 */
   const engineChain = (env: Record<string, string | undefined>): Chain => {
     const calls: string[] = []
+    const ownership = owned(env)
     return {
       calls,
       run(tool) {
-        assertWebSearchToolAllowed(tool, env) // = plugin.trigger("tool.execute.before", ...)
+        assertWebSearchToolAllowed(tool, env, ownership) // = plugin.trigger("tool.execute.before", ...)
         // 最有利于绕过的 permission 状态:全局 deny 之后还有 agent wildcard allow、持久化到
         // session 的 allow、以及排在整个 ruleset 之后的 approved —— 三条都放行。
         const ruleset = [
@@ -323,9 +467,21 @@ describe("ext 缺席三态:云 MCP 定义根本不进配置(#223 R4→R5 云 kil
     else process.env[CLOUD_MCP_DEF_ENV] = savedDef
   })
 
-  /** 注入面在 kill-switch 下写出的配置:**没有** cloud 条目,一个字节都没有。 */
-  const injectedConfig = (): { mcp: Record<string, { enabled?: boolean; headers?: Record<string, string> }> } => ({
-    mcp: {},
+  /**
+   * 注入面在 kill-switch 下写出的配置(#223 R6 Major 后的真实形状):真定义不进配置,写的是
+   * 一份**中和条目** —— `ui-mac/src/main/cloud-web-search.ts` 的 `WITHHELD_CLOUD_MCP`。它存在的
+   * 唯一理由是压过继承来源(global / alpha.jsonc / 项目)里的同名定义;URL 不可解析、enabled:false。
+   */
+  const WITHHELD = {
+    type: "remote",
+    url: "http://127.0.0.1:1/alpha-cloud-withheld",
+    enabled: false,
+    oauth: false,
+  } as const
+  const injectedConfig = (): {
+    mcp: Record<string, { type?: string; url?: string; enabled?: boolean; headers?: Record<string, string> }>
+  } => ({
+    mcp: { cloud: { ...WITHHELD } },
   })
 
   const pluginInput = () => ({
@@ -381,15 +537,15 @@ describe("ext 缺席三态:云 MCP 定义根本不进配置(#223 R4→R5 云 kil
     expect(cfg.mcp.cloud!.headers).toEqual({ Authorization: "Bearer tok-live" })
   })
 
-  test("① OPENCODE_PURE:引擎整个跳过外部插件 ⇒ 配置里没有 cloud 条目", async () => {
+  test("① OPENCODE_PURE:引擎整个跳过外部插件 ⇒ 配置里只剩中和条目", async () => {
     const cfg = injectedConfig()
     const hooks = await engineLoadAndConfigure(cfg, { pure: true, specs: [realExt] })
 
     expect(hooks).toEqual([])
-    expect(cfg.mcp.cloud).toBeUndefined()
+    expect(cfg.mcp.cloud).toEqual({ ...WITHHELD })
   })
 
-  test("② bundle import 失败(log-and-continue)⇒ 配置里没有 cloud 条目", async () => {
+  test("② bundle import 失败(log-and-continue)⇒ 配置里只剩中和条目", async () => {
     const broken = join(root, "broken-bundle.mjs")
     writeFileSync(broken, 'throw new Error("bundle is corrupt")\n')
     const cfg = injectedConfig()
@@ -400,10 +556,10 @@ describe("ext 缺席三态:云 MCP 定义根本不进配置(#223 R4→R5 云 kil
     })
 
     expect(hooks).toEqual([])
-    expect(cfg.mcp.cloud).toBeUndefined()
+    expect(cfg.mcp.cloud).toEqual({ ...WITHHELD })
   })
 
-  test("③ 插件初始化抛错(log-and-continue)⇒ 配置里没有 cloud 条目", async () => {
+  test("③ 插件初始化抛错(log-and-continue)⇒ 配置里只剩中和条目", async () => {
     const failing = join(root, "init-throws.mjs")
     writeFileSync(failing, 'export default async () => { throw new Error("AlphaExt init failed") }\n')
     const cfg = injectedConfig()
@@ -414,16 +570,18 @@ describe("ext 缺席三态:云 MCP 定义根本不进配置(#223 R4→R5 云 kil
     })
 
     expect(hooks).toEqual([])
-    expect(cfg.mcp.cloud).toBeUndefined()
+    expect(cfg.mcp.cloud).toEqual({ ...WITHHELD })
   })
 
-  // ext 缺席 ⇒ 配置里没有可复活的定义。`MCP.connect()` 的复活路径由
-  // `packages/opencode/test/mcp/alpha-cloud-mcp-revival.test.ts` 用真实 MCP lifecycle + HTTP 断言。
-  test("ext 缺席时配置里连一个 URL / Authorization 头都不存在(R5 Major:热连无物可连)", async () => {
+  // ext 缺席 ⇒ 配置里没有可复活的定义,只有一个连不上任何东西的中和条目。`MCP.connect()` 的
+  // 复活路径与多源继承由 `packages/opencode/test/mcp/alpha-cloud-mcp-revival.test.ts` 与
+  // `packages/opencode/test/mcp/alpha-cloud-mcp-multisource.test.ts` 用真实 MCP lifecycle + HTTP 断言。
+  test("ext 缺席时配置里连一个真 URL / Authorization 头都不存在(R5 Major:热连无物可连)", async () => {
     const cfg = injectedConfig()
     await engineLoadAndConfigure(cfg, { pure: true, specs: [realExt] })
     expect(JSON.stringify(cfg)).not.toContain("cloud.example")
     expect(JSON.stringify(cfg)).not.toContain("Authorization")
+    expect(cfg.mcp.cloud).toEqual({ ...WITHHELD })
   })
 
   // 反向:握手通道没置位(= 注入面没走 kill-switch 路径)时,ext 装载也不该凭空装一个云 server。
@@ -431,14 +589,14 @@ describe("ext 缺席三态:云 MCP 定义根本不进配置(#223 R4→R5 云 kil
     delete process.env[CLOUD_MCP_ARM_ENV]
     const cfg = injectedConfig()
     await engineLoadAndConfigure(cfg, { pure: false, specs: [realExt] })
-    expect(cfg.mcp.cloud).toBeUndefined()
+    expect(cfg.mcp.cloud).toEqual({ ...WITHHELD })
   })
 
   test("只有 arm 没有 def(伪造半个通道)⇒ 什么也不装", async () => {
     delete process.env[CLOUD_MCP_DEF_ENV]
     const cfg = injectedConfig()
     await engineLoadAndConfigure(cfg, { pure: false, specs: [realExt] })
-    expect(cfg.mcp.cloud).toBeUndefined()
+    expect(cfg.mcp.cloud).toEqual({ ...WITHHELD })
   })
 })
 
