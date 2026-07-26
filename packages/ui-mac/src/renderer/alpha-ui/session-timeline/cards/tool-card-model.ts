@@ -482,6 +482,64 @@ export function extractHttpUrls(text: string): string[] {
   return result
 }
 
+// ── 工具级错误卡的标题行(#590,design §③ .errcard 帧) ─────────────────────
+/** 分类只扫错误文本开头一段(I7:超长错误体不整串扫)。 */
+export const TOOL_ERROR_SCAN_MAX_CHARS = 400
+
+/**
+ * 常见网关/接口失败的状态码 ↔ 标准原因短语。只认这张表:表外的状态码不猜原因、
+ * 表外的措辞不归类(fail-closed,与设计稿「未知错误代码按原样 mono 展示」同口径)。
+ */
+const HTTP_REASONS = new Map<number, string>([
+  [400, "Bad Request"],
+  [401, "Unauthorized"],
+  [402, "Payment Required"],
+  [403, "Forbidden"],
+  [404, "Not Found"],
+  [408, "Request Timeout"],
+  [429, "Too Many Requests"],
+  [500, "Internal Server Error"],
+  [502, "Bad Gateway"],
+  [503, "Service Unavailable"],
+  [504, "Gateway Timeout"],
+])
+
+/**
+ * 网关语境标记:这些词出现,才允许把错误归到「模型网关错误」类。
+ * 没有这道门,bash 的 `command not found` 会被原因短语误判成 404 —— 宁可退回
+ * 通用标题,也不给一个假的错误类别。
+ */
+const GATEWAY_CONTEXT =
+  /https?:\/\/|\b(?:api|http|gateway|upstream|proxy|baseurl|base_url|provider|endpoint)\b|网关|代理|接口/i
+
+export const TOOL_ERROR_TITLE_GATEWAY = "alpha.timeline.toolErrorGateway"
+export const TOOL_ERROR_TITLE_GENERIC = "alpha.timeline.toolErrorGeneric"
+
+export interface ToolErrorSummary {
+  /** 类别标题的 i18n key。 */
+  titleKey: string
+  /** mono 代码副标(如 `404 · Not Found`);识别不出即缺席,不编造。 */
+  code?: string
+}
+
+/** 错误文本 → 标题行模型(类别 + 代码)。纯函数,输入已是有界错误体。 */
+export function toolErrorSummaryOf(message: string): ToolErrorSummary {
+  const scan = message.slice(0, TOOL_ERROR_SCAN_MAX_CHARS)
+  if (!GATEWAY_CONTEXT.test(scan)) return { titleKey: TOOL_ERROR_TITLE_GENERIC }
+  // 先认独立出现的状态码(不吃 `v1.404`、`x404` 这类粘连片段),再认标准原因短语
+  // (网关常只回短语不回码);都认不出就只给类别标题,不给代码。
+  for (const match of scan.matchAll(/(?<![\w.])(\d{3})(?![\w.])/g)) {
+    const reason = HTTP_REASONS.get(Number(match[1]))
+    if (reason) return { titleKey: TOOL_ERROR_TITLE_GATEWAY, code: `${match[1]} · ${reason}` }
+  }
+  const lower = scan.toLowerCase()
+  for (const [status, reason] of HTTP_REASONS) {
+    if (lower.includes(reason.toLowerCase()))
+      return { titleKey: TOOL_ERROR_TITLE_GATEWAY, code: `${status} · ${reason}` }
+  }
+  return { titleKey: TOOL_ERROR_TITLE_GATEWAY }
+}
+
 // ── 「在面板打开」pill(T8):write/edit 卡头的文件目标 ──────────────────────
 /** 路径帽:超长路径不进 intent(截断的路径指向错误目标,fail-closed 无 pill)。 */
 export const OPEN_TARGET_MAX_CHARS = 1_024

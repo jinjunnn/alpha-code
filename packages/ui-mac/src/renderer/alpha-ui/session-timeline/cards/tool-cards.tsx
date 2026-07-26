@@ -23,6 +23,7 @@ import {
   taskCardInfoOf,
   toolCardBodyOf,
   toolCardHeadOf,
+  toolErrorSummaryOf,
   type ToolCardBody,
   type ToolCardHead,
 } from "./tool-card-model"
@@ -301,17 +302,61 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
           </div>
         )}
       </Show>
-      <Show when={error()}>
-        {(body) => (
-          <div class="a-tc-error-body" role="alert">
-            {body().message}
-            <Show when={body().truncated}>
-              <TruncatedNote />
-            </Show>
-          </div>
-        )}
-      </Show>
+      <Show when={error()}>{(body) => <ToolErrorBody message={body().message} truncated={body().truncated} />}</Show>
     </>
+  )
+}
+
+// ── 工具级错误卡(#590,design §③ .errcard 帧) ─────────────────────────────
+// 标题行 = 类别标题 + mono 错误代码 + 复制;正文仍是有界 mono 错误体。
+// 复制:剪贴板通道缺席即不渲染按钮(fail-closed),与回合末脚注同一口径。
+// 重试 / 换模型:**登记跳过** —— 工具重跑没有 typed 通道,模型选择器的开合是
+// composer 的私有状态(alpha-composer 的 useChip,无对外开启入口)。没有现成
+// 会话命令入口就不接,不为它们新建链路、也不放只会假装可用的按钮。
+function ToolErrorBody(props: { message: string; truncated: boolean }) {
+  const summary = createMemo(() => toolErrorSummaryOf(props.message))
+  const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard
+  const copy = () => {
+    try {
+      void navigator.clipboard.writeText(props.message).catch(() => {})
+    } catch {
+      // 剪贴板拒绝(权限/环境)→ 静默;不阻断时间线。
+    }
+  }
+  return (
+    <div class="a-tc-err" role="alert">
+      <div class="a-tc-err-head">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M4.9 4.9l14.2 14.2" />
+        </svg>
+        <b>{t(summary().titleKey as Parameters<typeof t>[0])}</b>
+        <Show when={summary().code}>
+          <span class="a-tc-err-code">{summary().code}</span>
+        </Show>
+        <Show when={canCopy}>
+          <button
+            type="button"
+            class="a-tc-err-copy"
+            data-alpha-tool-error-copy
+            title={t("alpha.timeline.copyError")}
+            aria-label={t("alpha.timeline.copyError")}
+            onClick={copy}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="9" y="9" width="11" height="11" rx="2" />
+              <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+            </svg>
+          </button>
+        </Show>
+      </div>
+      <div class="a-tc-error-body">
+        {props.message}
+        <Show when={props.truncated}>
+          <TruncatedNote />
+        </Show>
+      </div>
+    </div>
   )
 }
 

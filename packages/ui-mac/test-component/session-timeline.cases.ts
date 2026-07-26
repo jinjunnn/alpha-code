@@ -697,7 +697,14 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(done.querySelector(".a-tc-cursor")).toBeNull()
   })
 
-  test("未知工具 fail-closed:mono 工具名 + 有界纯文本体;error 态成工具级错误卡;超帽错误体默认收起", async () => {
+  test("未知工具 fail-closed:mono 工具名 + 有界纯文本体;error 态成工具级错误卡(标题行 + 复制);超帽错误体默认收起", async () => {
+    // 工具级错误卡的复制动作要真写剪贴板(CT #tools G4 帧的 .errcard-head 复制钮)。
+    const copied: string[] = []
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText: (text: string) => (copied.push(text), Promise.resolve()) },
+      configurable: true,
+    })
+    const gatewayError = '{"detail":"Not Found"} — 代理 baseURL 或模型 ID 不存在'
     const host = mount()
     runtime.setTimelineRows(
       assistantFixture([
@@ -722,6 +729,12 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
           error: "E".repeat(4_001),
           time: { start: 0, end: 1 },
         }),
+        toolPartFixture("prt_m4", "bash", {
+          status: "error",
+          input: { command: "curl gateway/models" },
+          error: gatewayError,
+          time: { start: 0, end: 1 },
+        }),
       ]),
     )
     await flush()
@@ -736,6 +749,9 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(failed.getAttribute("data-open")).toBe("true")
     expect(failed.querySelector(".a-tc-error-body")!.textContent).toContain("ENOTREACHABLE")
     expect(failed.textContent).toContain("失败")
+    // 非网关语境的错误退回通用标题,不出编造的错误代码。
+    expect(failed.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
+    expect(failed.querySelector(".a-tc-err-code")).toBeNull()
 
     const bigError = host.querySelector("[data-alpha-tool-card][data-tool='cloud_big']")!
     expect(bigError.getAttribute("data-status")).toBe("error")
@@ -743,6 +759,16 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     ;(bigError.querySelector(".a-tc-head") as HTMLButtonElement).click()
     await flush()
     expect(bigError.getAttribute("data-open")).toBe("true")
+
+    // G4 帧形态:「模型网关错误」标题 + mono 代码副标 + 可触发的复制钮。
+    const gateway = host.querySelector("[data-alpha-tool-card][data-tool='bash'][data-status='error']")!
+    expect(gateway.querySelector(".a-tc-err-head")!.textContent).toContain("模型网关错误")
+    expect(gateway.querySelector(".a-tc-err-code")!.textContent).toBe("404 · Not Found")
+    const copy = gateway.querySelector<HTMLButtonElement>("[data-alpha-tool-error-copy]")!
+    expect(copy.getAttribute("aria-label")).toBe("复制错误信息")
+    copy.click()
+    await flush()
+    expect(copied).toEqual([gatewayError])
   })
 
   test("edit diff 视图:jsdiff 行渲染 ±行号与 +/− 行;write 显示预览与总行数;补丁卡出徽章行", async () => {

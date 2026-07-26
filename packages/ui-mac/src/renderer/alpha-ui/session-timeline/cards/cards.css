@@ -301,14 +301,82 @@ button.a-tc-head:focus-visible {
   animation: a-tc-pulse 1.4s ease-in-out infinite;
 }
 
-/* 错误态:工具级错误卡(红边 + 错误底 + mono 错误体,无动作按钮)。 */
+/* 错误态:工具级错误卡(红边 + 错误底 + 标题行 + mono 错误体)。 */
 .a-tc[data-status="error"] {
   border-color: var(--a-error);
   background: var(--a-error-subtle);
 }
 
+/* 标题行(design ③ .errcard-head):错误图标 + 类别标题 + mono 代码 + 右端复制。 */
+.a-tc-err-head {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 9px 13px 0;
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+}
+
+.a-tc-err-head > svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--a-error);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-tc-err-head b {
+  font-weight: var(--a-weight-medium);
+}
+
+.a-tc-err-code {
+  color: var(--a-error);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-normal);
+}
+
+.a-tc-err-copy {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+}
+
+.a-tc-err-copy:hover {
+  background: var(--a-bg-subtle);
+  color: var(--a-text);
+}
+
+.a-tc-err-copy:focus-visible {
+  outline: none;
+  box-shadow: var(--a-ring-focus);
+}
+
+.a-tc-err-copy svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 正文缩进对齐标题文字(13px 内边距 + 15px 图标 + 9px 间距)。 */
 .a-tc-error-body {
-  padding: 10px 14px;
+  padding: 6px 14px 10px 37px;
   color: var(--a-error);
   font-family: var(--a-font-mono);
   font-size: var(--a-text-xs);

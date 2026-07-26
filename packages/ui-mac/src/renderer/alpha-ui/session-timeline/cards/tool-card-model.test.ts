@@ -23,10 +23,14 @@ import {
   TOOL_LIST_SCAN_MAX,
   TOOL_SCAN_MAX_CHARS,
   TOOL_URL_MAX_CHARS,
+  TOOL_ERROR_SCAN_MAX_CHARS,
+  TOOL_ERROR_TITLE_GATEWAY,
+  TOOL_ERROR_TITLE_GENERIC,
   toolCardBodyOf,
   toolCardHeadOf,
   toolCardKindOf,
   toolCardStatusOf,
+  toolErrorSummaryOf,
   type ToolCardKind,
 } from "./tool-card-model"
 import { DIFF_MAX_ROWS, DIFF_PATCH_MAX_CHARS, diffViewOf } from "./tool-diff"
@@ -542,5 +546,37 @@ describe("#568 审计修复:diagnostics 外层文件数扫描预算(Major-3)", (
       part("write", { input: { filePath: "C:\\ws\\win.ts" }, metadata: { diagnostics: small } }),
     )
     expect(normalized.rows).toHaveLength(1)
+  })
+})
+
+describe("#590 工具级错误卡标题行(toolErrorSummaryOf)", () => {
+  test("网关语境 + 标准原因短语 → 「模型网关错误」+ 代码副标(CT #tools G4 帧口径)", () => {
+    expect(toolErrorSummaryOf('{"detail":"Not Found"} — 代理 baseURL 或模型 ID 不存在')).toEqual({
+      titleKey: TOOL_ERROR_TITLE_GATEWAY,
+      code: "404 · Not Found",
+    })
+  })
+
+  test("独立状态码优先于原因短语;粘连片段(v1.404 / x429)不算状态码", () => {
+    expect(toolErrorSummaryOf("api error: HTTP 429 rate limited")).toEqual({
+      titleKey: TOOL_ERROR_TITLE_GATEWAY,
+      code: "429 · Too Many Requests",
+    })
+    // 粘连数字不认;短语也没有 → 只给类别标题,不编造代码。
+    expect(toolErrorSummaryOf("api call failed at proxy v1.404/x429")).toEqual({
+      titleKey: TOOL_ERROR_TITLE_GATEWAY,
+    })
+  })
+
+  test("表外状态码不猜原因;非网关语境一律退回通用标题(command not found 不误判成 404)", () => {
+    expect(toolErrorSummaryOf("gateway responded 418 teapot")).toEqual({ titleKey: TOOL_ERROR_TITLE_GATEWAY })
+    expect(toolErrorSummaryOf("bash: alphacli: command not found")).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
+    expect(toolErrorSummaryOf("ENOTREACHABLE")).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
+    expect(toolErrorSummaryOf("")).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
+  })
+
+  test("分类只扫开头一段:预算之外的网关线索不参与判定(I7)", () => {
+    const far = `${"x".repeat(TOOL_ERROR_SCAN_MAX_CHARS)} http 503 Service Unavailable`
+    expect(toolErrorSummaryOf(far)).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
   })
 })
