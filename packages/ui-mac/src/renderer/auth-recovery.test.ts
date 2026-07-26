@@ -5,9 +5,10 @@ import type { AuthState } from "../preload/types"
 import { reconcileAuthSnapshot, resetAuthRecoveryForTests, subscribeAuthState } from "./auth-recovery"
 
 // #604:auth fail-closed 的有界自证。三条退出条件 + auth-recovery.ts 顶部声明的八条不变量
-// (A 现值可重读且必广播 / B 绝不静默退场 / C 单 owner / D 至多一个在途读、欠账时乐观值
-//  须后读确认而保守值可先行采信 / E 送达逐个隔离 / F 分歧取保守值并纠正 /
-//  G 判据粒度不低于 main / H 证据持续到达时 owner 有产出且不热循环)各自有闸门。
+// (A 现值可重读且必广播 / B 绝不静默退场 / C 单 owner / D 至多一个在途读、欠账时 resolved 值
+//  须后读确认而保守值可先行采信 / E 送达逐个隔离 / F 分歧只呈现定序证据(unresolved 快照例外)
+//  并纠正 / G 判据粒度不低于 main / H 证据持续到达时 owner 有产出且不热循环)各自有闸门。
+// #612:定序覆盖全部 auth 形态(登录态轴)的四条退出条件见文末 describe。
 
 const drain = async () => {
   for (let index = 0; index < 20; index++) await Promise.resolve()
@@ -746,6 +747,181 @@ describe("auth fail-closed 的有界自证", () => {
 
     expect(seen).toEqual([recovering, ready])
     second()
+  })
+})
+
+// #612:定序覆盖全部 auth 形态。#604 的判据只在 platformStatus 轴上定序;登录态轴上
+// 「迟到旧快照覆盖更新的真相」是同一形态的缺陷 —— logged-out 与 logged-in/ready 都是
+// resolved 终态,谁都没有可证的新旧,分歧时只有 owner 视图(single-flight 序列化)可呈现。
+describe("#612 快照定序覆盖登录态轴", () => {
+  const loggedOut: AuthState = { status: "logged-out", mode: "platform" }
+
+  test("退出条件 1:视图 logged-out 时,迟到的 logged-in/ready 快照不得被呈现或广播", async () => {
+    vi.useFakeTimers()
+    const bridge = installBridge(async () => loggedOut)
+    bridge.replay = undefined
+    const seen: AuthState[] = []
+    const unsubscribe = subscribeAuthState((state) => seen.push(state))
+    await drain()
+    expect(seen).toEqual([loggedOut])
+    // logged-out 是 resolved 终态:owner 合法退场,不为它自探(票面明写,不扩大 unresolved)。
+    expect(vi.getTimerCount()).toBe(0)
+
+    // 消费侧交来登出前读到的旧快照:必须拿回 owner 视图,不得拿回 logged-in/ready。
+    expect(reconcileAuthSnapshot(ready)).toEqual(loggedOut)
+    // 分歧欠下的定夺自读读到现值仍是 logged-out:任何订阅者都不得看到 logged-in/ready。
+    vi.advanceTimersByTime(0)
+    await drain()
+    expect(bridge.calls).toBe(2)
+    expect(seen).toEqual([loggedOut])
+    expect(vi.getTimerCount()).toBe(0)
+    unsubscribe()
+  })
+
+  test("退出条件 2:视图 logged-in 时,迟到的 logged-out 快照同样不得覆盖", async () => {
+    vi.useFakeTimers()
+    const bridge = installBridge(async () => ready)
+    bridge.replay = undefined
+    const seen: AuthState[] = []
+    const unsubscribe = subscribeAuthState((state) => seen.push(state))
+    await drain()
+    expect(seen).toEqual([ready])
+
+    // 登录完成前发出的那次读现在才回来:不得把更新的登录视图翻成登出。
+    expect(reconcileAuthSnapshot(loggedOut)).toEqual(ready)
+    vi.advanceTimersByTime(0)
+    await drain()
+    expect(bridge.calls).toBe(2)
+    expect(seen).toEqual([ready])
+    unsubscribe()
+  })
+
+  test("退出条件 3:并行多订阅者 + 在途自读带回旧 ready,任何人都不得看到 logged-in/ready", async () => {
+    vi.useFakeTimers()
+    let held: ((state: AuthState) => void) | undefined
+    const bridge = installBridge(async (call) => {
+      // 第 2 次自读挂住:它发出于登出之前,回来时已是旧证据(③″2-8:自己发的读同样要定序)。
+      if (call === 2) return new Promise<AuthState>((resolve) => (held = resolve))
+      return loggedOut
+    })
+    bridge.replay = undefined
+    const first: AuthState[] = []
+    const unsubscribeFirst = subscribeAuthState((state) => first.push(state))
+    await drain()
+    expect(first).toEqual([loggedOut])
+
+    // 第二个订阅者挂载:回放走 owner 视图,同时发出的自读挂在途。
+    const second: AuthState[] = []
+    const unsubscribeSecond = subscribeAuthState((state) => second.push(state))
+    await drain()
+    expect(second).toEqual([loggedOut])
+    expect(held).toBeDefined()
+
+    // 在途期间,两个消费侧并行交来各自的迟到 ready 快照 —— 都只能拿回 logged-out。
+    expect(reconcileAuthSnapshot(ready)).toEqual(loggedOut)
+    expect(reconcileAuthSnapshot(ready)).toEqual(loggedOut)
+
+    // 挂住的自读带着更旧的 ready 回来:已有欠账,resolved 值不得定案,由后读定夺。
+    held!(ready)
+    await drain()
+    vi.advanceTimersByTime(0)
+    await drain()
+    expect(bridge.calls).toBe(3)
+    expect(first).toEqual([loggedOut])
+    expect(second).toEqual([loggedOut])
+    unsubscribeFirst()
+    unsubscribeSecond()
+  })
+
+  test("退出条件 3 反向:在途自读带回旧 logged-out,同样不得翻转任何订阅者的登录视图", async () => {
+    vi.useFakeTimers()
+    let held: ((state: AuthState) => void) | undefined
+    const bridge = installBridge(async (call) => {
+      if (call === 2) return new Promise<AuthState>((resolve) => (held = resolve))
+      return ready
+    })
+    bridge.replay = undefined
+    const first: AuthState[] = []
+    const unsubscribeFirst = subscribeAuthState((state) => first.push(state))
+    await drain()
+    expect(first).toEqual([ready])
+
+    const second: AuthState[] = []
+    const unsubscribeSecond = subscribeAuthState((state) => second.push(state))
+    await drain()
+    expect(second).toEqual([ready])
+    expect(held).toBeDefined()
+
+    expect(reconcileAuthSnapshot(loggedOut)).toEqual(ready)
+    expect(reconcileAuthSnapshot(loggedOut)).toEqual(ready)
+
+    held!(loggedOut)
+    await drain()
+    vi.advanceTimersByTime(0)
+    await drain()
+    expect(bridge.calls).toBe(3)
+    expect(first).toEqual([ready])
+    expect(second).toEqual([ready])
+    unsubscribeFirst()
+    unsubscribeSecond()
+  })
+
+  // rev2c ③″4-4 反向闸门:定序判据只延迟呈现,不得把「该拦的/该到的」吞掉 —— 快照不迟到
+  //(main 真的变了)时,真相必须在有界时间内经 owner 定夺落地。
+  test("反向闸门:真实登出不被定序判据吞掉,有界时间内广播落地", async () => {
+    vi.useFakeTimers()
+    let current: AuthState = ready
+    const bridge = installBridge(async () => current)
+    bridge.replay = undefined
+    const seen: AuthState[] = []
+    const unsubscribe = subscribeAuthState((state) => seen.push(state))
+    await drain()
+    expect(seen).toEqual([ready])
+
+    // main 真的登出;消费侧那次读先看到。呈现上先保住视图,但真相由定夺自读广播。
+    current = loggedOut
+    expect(reconcileAuthSnapshot(loggedOut)).toEqual(ready)
+    vi.advanceTimersByTime(0)
+    await drain()
+    expect(seen).toEqual([ready, loggedOut])
+    unsubscribe()
+  })
+
+  test("反向闸门:真实登录同样有界落地(保守呈现不得变成永久扣留)", async () => {
+    vi.useFakeTimers()
+    let current: AuthState = loggedOut
+    const bridge = installBridge(async () => current)
+    bridge.replay = undefined
+    const seen: AuthState[] = []
+    const unsubscribe = subscribeAuthState((state) => seen.push(state))
+    await drain()
+    expect(seen).toEqual([loggedOut])
+
+    current = ready
+    expect(reconcileAuthSnapshot(ready)).toEqual(loggedOut)
+    vi.advanceTimersByTime(0)
+    await drain()
+    expect(seen).toEqual([loggedOut, ready])
+    unsubscribe()
+  })
+
+  test("唯一例外:recovering 快照可先于 logged-out 视图呈现(只收紧权限),随后必被定夺纠正", async () => {
+    vi.useFakeTimers()
+    const bridge = installBridge(async () => loggedOut)
+    bridge.replay = undefined
+    const seen: AuthState[] = []
+    const unsubscribe = subscribeAuthState((state) => seen.push(state))
+    await drain()
+    expect(seen).toEqual([loggedOut])
+
+    // unresolved 快照是唯一例外:呈现它不放行任何能力,而且 owner 必然续跑定夺。
+    expect(reconcileAuthSnapshot(recovering)).toEqual(recovering)
+    vi.advanceTimersByTime(0)
+    await drain()
+    // 定夺读到 logged-out:签名与视图相同,divergedFromView 仍强制广播,把消费侧纠正回来。
+    expect(seen).toEqual([loggedOut, loggedOut])
+    expect(bridge.calls).toBe(2)
+    unsubscribe()
   })
 })
 

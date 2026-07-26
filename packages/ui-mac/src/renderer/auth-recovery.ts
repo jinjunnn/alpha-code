@@ -22,9 +22,10 @@ import { nextEngineRetryDelay } from "./alpha-ui/model-picker-logic"
 // 自读各自捕获同一个号,先返回的那次定案并作废另一次,较晚取到的真实 recovering 反而被丢掉
 // 且不留重试 => fail-open。编号治不了并行,**并行本身才是要消掉的东西**:
 //
-//   **至多一个在途读;有欠账时,乐观结果必须由后读确认,保守结果允许先行采信。**
+//   **至多一个在途读;有欠账时,只有保守结果允许先行采信,其余 resolved 结果必须由后读确认。**
 //   owner 同一时刻只允许一次自读在途(single-flight)。在途期间的任何新请求/新证据只记
-//   `owedRead`;该次读回来时若 owedRead 已置位,它就**可能更旧**:乐观值(ready)不采信,
+//   `owedRead`;该次读回来时若 owedRead 已置位,它就**可能更旧**:resolved 值不采信 ——
+//   ready 会放行能力,logged-out 会翻转登录视图,谁都不得由一次可能更旧的读定案(#612)——
 //   立刻补一次读由后读定夺;保守值(recovering / 未知)允许先行采信 —— 方向只会收紧权限,
 //   且保证 owner 一定有产出(不变量 H)。于是定案权永远落在**后发出**的那次读,不需要编号。
 //
@@ -33,7 +34,8 @@ import { nextEngineRetryDelay } from "./alpha-ui/model-picker-logic"
 //   - 与视图一致     -> 若有在途自读(已被本条证据作废),补一次自读;否则无事;
 //   - 与视图不一致   -> **不采信**,owner 立刻自读定夺。
 // 只有 owner 的自读会被接纳为视图。这条判据对所有入口一视同仁,所以迟到的陈旧快照既不会
-// 把已 ready 的能力打回 recovering,也不会把 recovering 放行成 ready(后者更危险)。
+// 把已 ready 的能力打回 recovering,也不会把 recovering 放行成 ready(后者更危险);
+// 登录态轴同理:迟到的 logged-in/logged-out 同样翻不动更新的视图(#612)。
 //
 // == fail-closed 判据依赖的不变量与各自的强制手段(基线 rev2c ③″1)==
 // 每条都写明「什么变异会让它转红」;答不出变异的不写进本表。
@@ -49,7 +51,7 @@ import { nextEngineRetryDelay } from "./alpha-ui/model-picker-logic"
 // C 「至多一个 owner:一条 timer、一条桥订阅」
 //   强制:模块级单例 + timer 幂等守卫;多消费侧共享例 + 入口枚举 ratchet。
 //   变异:桥订阅不再单例 -> 红。
-// D 「至多一个在途读;有欠账时,乐观结果必须由后读确认,保守结果允许先行采信」
+// D 「至多一个在途读;有欠账时,resolved 结果必须由后读确认,保守结果允许先行采信」
 //   —— 定案权落在最后发出的那次读,不依赖任何「先返回 = 更新」的假定。
 //   强制:reading 闸住并发;owedRead 记在途期间的欠账;回来先看 owedRead 再按方向决定采信。
 //   「引导 / 新订阅者不误伤在途读」同样由**补发**保证,不靠编号。
@@ -57,16 +59,20 @@ import { nextEngineRetryDelay } from "./alpha-ui/model-picker-logic"
 // E 「送达对单个订阅者抛错免疫」——广播与迟到订阅者的首值回放**同一条送达路径**。
 //   强制:deliver() 逐个 try/catch;广播抛错例 + 迟到订阅者回放抛错例。
 //   变异:deliver 去掉 try/catch / 回放绕过 deliver -> 各自转红。
-// F 「owner 定夺前,分歧一律呈现更保守的那份」(fail-closed 语义不得被乐观视图放行)
-//   强制:reconcileAuthSnapshot 分歧时返回 unresolved 的那一份,并记 divergedFromView,
-//   使下一次定夺**即使签名未变也广播**(否则消费侧永久停在保守值上)。
-//   变异:分歧时返回 lastState / 不记 divergedFromView -> 各自转红。
+// F 「分歧时只呈现有定序保证的证据:owner 视图;唯一例外是 unresolved 快照」(#612)
+//   强制:reconcileAuthSnapshot 分歧时返回视图;快照为 unresolved(recovering/未知)时才
+//   返回快照 —— 它只收紧权限,且 owner 必然续跑纠正。两侧都 resolved 的分歧(logged-out vs
+//   logged-in/ready)没有任何一侧可证更新,呈现快照就是允许迟到旧值覆盖视图。返回值不是
+//   视图时记 divergedFromView,使下一次定夺**即使签名未变也广播**(否则消费侧永久停在
+//   保守值上)。
+//   变异:两侧 resolved 分歧时返回 snapshot(回到 #612 修前)/ 快照 recovering 时返回
+//   lastState / 不记 divergedFromView -> 各自转红。
 // G 「广播的判据必须至少与 main 的 publish 判据一样细」
 //   强制:签名含 status/mode/platformStatus/email/**plan**(与 main publish 的身份签名对齐)。
 //   变异:签名去掉 plan -> 红(同邮箱 free->pro 被判一致而不广播)。
 //
 // H 「owner 必须有产出:证据持续到达时不得既不采信也不停手」
-//   强制:自读回来若已欠账,保守值先采信(owner 一定有产出),乐观值重读;
+//   强制:自读回来若已欠账,保守值先采信(owner 一定有产出),resolved 值重读;
 //   probeNow 在自读在途时是 no-op —— 两者合起来既不饿死也不热循环。
 //   变异:回到「一律丢弃」/ 保守值也丢弃 / probeNow 在途仍另排 -> 各自转红。
 //
@@ -94,7 +100,11 @@ const signatureOf = (state: AuthState) =>
     "\u0000",
   )
 
-/** owner 必须继续跑的两种视图:还不知道现值,或现值是 recovering。 */
+/**
+ * owner 必须继续跑的两种视图:还不知道现值,或现值是 recovering。也是分歧时唯一允许先于
+ * owner 视图呈现的形态(方向只收紧权限,见不变量 F)。**不要**把 logged-out 加进来:
+ * 它是终态不是恢复中态,对它自探没有意义 —— 它的定序保护走 reconcile 的「一律返回视图」(#612)。
+ */
 const unresolved = (state: AuthState | undefined) => state === undefined || state.platformStatus === "recovering"
 
 function cancelProbe() {
@@ -210,13 +220,14 @@ async function runRead() {
     // 把 owner 饿死:实测持续翻转下 201 次读取只广播 1 次,消费侧永远等不到更新 —— 这正是本票
     // 要消灭的「owner 不给答案」缺陷换了个触发条件(不变量 H)。按 fail-closed 方向拆开:
     //   保守值(recovering / 未知)即使可能更旧也先采信 —— 方向只会收紧权限,且保证有产出;
-    //   乐观值必须由后读确认,立刻重读(probeNow 在自读在途时是 no-op,不会热循环)。
+    //   resolved 值必须由后读确认(ready 会放行能力,logged-out 会翻转登录视图,谁都不得由
+    //   一次可能更旧的读定案,#612),立刻重读(probeNow 在自读在途时是 no-op,不会热循环)。
     if (unresolved(next)) {
       // 保守值即使可能更旧也先采信:方向安全,且保证 owner 一定有产出。
       accept(next)
       return
     }
-    // 乐观值不放行:立刻重读,由后一次读定夺(probeNow 在自读在途时是 no-op,不会热循环)。
+    // resolved 值不放行:立刻重读,由后一次读定夺(probeNow 在自读在途时是 no-op,不会热循环)。
     probeNow()
     return
   }
@@ -256,15 +267,21 @@ export function subscribeAuthState(listener: AuthListener): () => void {
 
 /**
  * 消费侧自己读到的一份 auth 快照:交给 owner 过同一条判据,并取回**可以据以推进业务**的现值。
- * 分歧时不返回 owner 的乐观视图 —— 两份证据无序,定夺之前一律呈现更保守的那份(不变量 F),
- * 「过期、未验证的 token 绝不呈现为可用」这条既有合同不因为 owner 恰好还没收到坏消息而破例。
+ * 两份证据无序,任何比当前证据更旧的快照都不得被呈现(#612 / 基线 rev2c ③″2-8),而快照
+ * 没有可证的新旧 —— 所以分歧时只呈现有定序保证的 owner 视图:迟到的 logged-in/ready 不得把
+ * logged-out 放行回已登录,迟到的 logged-out 也不得翻掉更新的登录视图。唯一例外是快照为
+ * unresolved(recovering/未知):它只收紧权限且必被随后的定夺纠正(不变量 F),「过期、未验证
+ * 的 token 绝不呈现为可用」这条既有合同不因为 owner 恰好还没收到坏消息而破例。
+ * 真伪不在这里裁决:ingestHint 已为分歧欠下一次自读,由后发出的读定夺并广播纠正。
  */
 export function reconcileAuthSnapshot(snapshot: AuthState): AuthState {
   ingestHint(snapshot)
   const view = lastState
   if (view === undefined) return snapshot
   if (signatureOf(view) === signatureOf(snapshot)) return view
-  const conservative = unresolved(snapshot) ? snapshot : unresolved(view) ? view : snapshot
+  // #612:两侧都 resolved 的分歧(如 logged-out vs logged-in/ready)不得采信快照 ——
+  // 它可能更旧,呈现即定序破坏;修前的 fall-through 正是在这里把迟到旧快照放了出去。
+  const conservative = unresolved(snapshot) ? snapshot : view
   // 给出去的答案不是 owner 视图:下次定夺必须广播,否则消费侧永久停在这个保守值上。
   if (signatureOf(conservative) !== signatureOf(view)) divergedFromView = true
   return conservative
