@@ -26,7 +26,7 @@
 
   --a-text: #18181b;               /* primary text */
   --a-text-secondary: #52525b;     /* labels, secondary */
-  --a-text-tertiary: #6a6b73;      /* placeholder, meta — C21 AC4 (#478): AA ≥4.5:1, worst 4.56 on --a-bg-muted */
+  --a-text-tertiary: #64656d;      /* placeholder, meta — C21 AC4: AA ≥4.5:1, worst 4.63 on --a-bg-inset */
   --a-text-disabled: #b3b6bd;
   --a-text-on-accent: #ffffff;
 
@@ -187,7 +187,7 @@
 
   --a-text: #fafafa;
   --a-text-secondary: #a1a1aa;
-  --a-text-tertiary: #86878f;      /* C21 AC4 (#478): AA ≥4.5:1, worst 4.97 on --a-surface-raised */
+  --a-text-tertiary: #86878f;      /* C21 AC4 (#478): AA ≥4.5:1, worst 4.57 on --a-bg-inset */
   --a-text-disabled: #4f5158;
   --a-text-on-accent: #ffffff;
 
@@ -244,7 +244,7 @@
     --a-border-strong: #34363c;
     --a-text: #fafafa;
     --a-text-secondary: #a1a1aa;
-    --a-text-tertiary: #86878f;    /* C21 AC4 (#478): AA ≥4.5:1 (OS-fallback dark block) */
+    --a-text-tertiary: #86878f;    /* C21 AC4 (#478): AA ≥4.5:1, worst 4.57 on --a-bg-inset (OS-fallback dark block) */
     --a-text-disabled: #4f5158;
     --a-overlay-hover: rgba(255, 255, 255, 0.055);
     --a-overlay-active: rgba(255, 255, 255, 0.09);

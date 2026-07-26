@@ -136,6 +136,47 @@ test("#577 健康探测超时 → 恰好一个 failed 终态,health 迟到 resol
   expect(published).toEqual([{ status: "failed", generation: 4, reason: "boot" }])
 })
 
+// #613 反向闸门(退出条件 1/3,链条第四环):健康通过但注入失败 → 终态必须是
+// "injection-failed" 而不是 "ready",且 main 侧 error 出声。把 settleBootHealth 的
+// injectionFailure 分支删掉(回退成一律发 ready),两条断言当场转红。
+test("#613 冷启动:健康通过但注入失败 → 恰好一个 injection-failed 终态,main 侧 error 可观测", async () => {
+  const published: SidecarGenerationState[] = []
+  const errors: string[] = []
+  const outcome = await armBootGenerationTerminal({
+    generation: 5,
+    spawning: Promise.resolve({
+      health: { wait: Promise.resolve() },
+      injectionFailure: { message: "ENOTDIR: mkdir userdata" },
+    }),
+    timeoutMs: 2_000,
+    publish: (state) => published.push(state),
+    log: () => {},
+    logError: (message) => errors.push(message),
+  })
+  expect(outcome).toBe("injection-failed")
+  expect(published).toEqual([{ status: "injection-failed", generation: 5, reason: "boot" }])
+  expect(errors.some((line) => line.includes("alpha config injection failed") && line.includes("ENOTDIR"))).toBe(true)
+})
+
+// #613:引擎未就绪支配注入失败 —— 引擎都不可达时「配置没注入」不是可行动的事实,
+// 终态仍是恰好一个 failed(不得发出第二个终态,也不得把 failed 换成 injection-failed)。
+test("#613 冷启动:健康失败 + 注入失败 → 仍是恰好一个 failed 终态", async () => {
+  const published: SidecarGenerationState[] = []
+  const outcome = await armBootGenerationTerminal({
+    generation: 6,
+    spawning: Promise.resolve({
+      health: { wait: Promise.reject(new Error("sidecar died")) },
+      injectionFailure: { message: "ENOTDIR: mkdir userdata" },
+    }),
+    timeoutMs: 2_000,
+    publish: (state) => published.push(state),
+    log: () => {},
+    logError: () => {},
+  })
+  expect(outcome).toBe("failed")
+  expect(published).toEqual([{ status: "failed", generation: 6, reason: "boot" }])
+})
+
 // #577 接线锚(R1 加固 + R2 位置加固:上面的 fiber 用例锁的是被 index.ts 调用的生产
 // 函数在监督生命周期下的行为;index.ts 本体是 electron main,无法在 bun test 里
 // import 执行,生产接线的最后一英里只能锁源码形状)。

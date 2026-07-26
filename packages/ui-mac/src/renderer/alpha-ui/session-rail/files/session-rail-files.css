@@ -184,6 +184,16 @@
   gap: 1px;
 }
 
+/* role="listitem" 的外包层(C21 AC2)。行本身仍是原生 <button>;这层只承担列表语义,
+   所以它必须完全透明地把原来的排布交回去:与 .a-srf-tree / .a-srf-indent 同为纵向 flex、
+   同样 1px 间距 —— 目录行与它展开的子层原本就是相邻的两个 flex 项。 */
+.a-srf-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
 .a-srf-row {
   display: flex;
   align-items: center;

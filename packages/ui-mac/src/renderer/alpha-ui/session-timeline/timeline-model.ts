@@ -36,8 +36,13 @@ export function boundedText(text: string, max: number): { text: string; truncate
 
 export interface TimelineSegment {
   text: string
-  kind?: "file" | "agent"
+  kind?: "file" | "agent" | "resource"
+  /** 连接器段(resource)的来源名 = ResourceSource.clientName;其余形态诚实缺席。 */
+  label?: string
 }
+
+/** 连接器来源名的字段帽(I7)。 */
+export const MENTION_LABEL_MAX_CHARS = 60
 
 export interface TimelineAttachment {
   partID: string
@@ -91,11 +96,15 @@ export const SLASH_ORIGINS_SCAN_MAX = 100
 
 /** 回合末富脚注(A6/A7)的数据快照;缺字段诚实缺席。 */
 export interface TimelineFootnote {
+  /** provider 图标的来源(providerID);缺席即无图标。 */
+  provider?: string
   agent?: string
   model?: string
   /** input+output+reasoning 合计;非有限或 ≤0 → 缺席。 */
   tokens?: number
   durationMs?: number
+  /** 效率段:本回合提示词的缓存命中率(0–100 整数);无缓存读取即缺席(见 footnoteOf)。 */
+  cacheHit?: number
 }
 
 /** 本回合改动汇总(S2)的一行;file = 服务端 git 相对路径(review 面板同一货币)。 */
@@ -222,7 +231,7 @@ export function commentOf(part: Part): TimelineComment | undefined {
 /** 按 file/agent part 的 source 区间把用户文本切成提及片段(区间越界/重叠即忽略,fail-closed)。 */
 export function segmentUserText(
   text: string,
-  spans: readonly { start: number; end: number; kind: "file" | "agent" }[],
+  spans: readonly { start: number; end: number; kind: "file" | "agent" | "resource"; label?: string }[],
 ): TimelineSegment[] {
   const ordered = [...spans]
     .filter((span) => Number.isFinite(span.start) && Number.isFinite(span.end))
@@ -233,7 +242,11 @@ export function segmentUserText(
   for (const span of ordered) {
     if (span.start < cursor) continue
     if (span.start > cursor) result.push({ text: text.slice(cursor, span.start) })
-    result.push({ text: text.slice(span.start, span.end), kind: span.kind })
+    result.push({
+      text: text.slice(span.start, span.end),
+      kind: span.kind,
+      ...(span.label ? { label: span.label } : {}),
+    })
     cursor = span.end
   }
   if (cursor < text.length) result.push({ text: text.slice(cursor) })
@@ -241,12 +254,27 @@ export function segmentUserText(
 }
 
 function mentionSpans(parts: readonly Part[]) {
-  const spans: { start: number; end: number; kind: "file" | "agent" }[] = []
+  const spans: { start: number; end: number; kind: "file" | "agent" | "resource"; label?: string }[] = []
   for (const part of parts) {
     if (part.type === "file" && !part.url.startsWith("data:")) {
-      const textSource = part.source?.text
-      if (textSource && textSource.start !== undefined && textSource.end !== undefined)
-        spans.push({ start: textSource.start, end: textSource.end, kind: "file" })
+      const source = part.source
+      const textSource = source?.text
+      if (!textSource || textSource.start === undefined || textSource.end === undefined) continue
+      const span = { start: textSource.start, end: textSource.end }
+      // 连接器提及(MCP 资源):来源名 = clientName;名字缺席则退回普通文件提及(fail-closed,
+      // 不出没有名字的 chip)。
+      //
+      // 上游数据面缺口登记(#588,审计 R1):这条 resource 分支当前在生产不可达 ——
+      // ① Alpha composer 只支持 file/agent 提及,V2 PromptInput 没有携带 clientName/uri 的
+      //    resource 身份;② 旧 V1 路径收到 resource part 后,在 packages/opencode/src/session/
+      //    prompt.ts(resolveUserPart,source.type==="resource" 分支,~L703)把原 part 替换成
+      //    synthetic text/blob part,不保留 source.type==="resource" 的原件。
+      // 按 #588 票面「上游数据面缺失则登记并保证组件可由模型构造」履约:本分支由模型可
+      // 构造性契约与组件/单元测试覆盖;上游补齐 resource part 持久化后无需改动即生效。
+      // 不在此伪造数据面、不改上游(跨票边界)。
+      if (source.type === "resource" && typeof source.clientName === "string" && source.clientName.length > 0)
+        spans.push({ ...span, kind: "resource", label: source.clientName.slice(0, MENTION_LABEL_MAX_CHARS) })
+      else spans.push({ ...span, kind: "file" })
       continue
     }
     if (part.type === "agent" && part.source)
@@ -380,6 +408,7 @@ export function footnoteOf(assistants: readonly AssistantMessage[]): TimelineFoo
   const source = assistants.at(-1)
   if (!source || typeof source.time.completed !== "number" || source.error) return undefined
   const footnote: TimelineFootnote = {}
+  footnote.provider = cappedField(source.providerID)
   footnote.agent = cappedField(source.agent)
   footnote.model = cappedField(source.modelID)
   const tokens = source.tokens
@@ -388,6 +417,18 @@ export function footnoteOf(assistants: readonly AssistantMessage[]): TimelineFoo
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
       .reduce((sum, value) => sum + value, 0)
     if (total > 0) footnote.tokens = total
+    // 效率段:本回合提示词的缓存命中率 = cache.read /(cache.read + cache.write + input)。
+    // 分母是完整提示词:session.ts getUsage 已把 tokens.input 规范化为「非缓存输入」
+    // (inputTokens − cacheRead − cacheWrite),read/write/input 三段互斥 —— 分母漏掉
+    // write 会把档位系统性算高(审计 R1 Blocker:input=500/read=200/write=300 曾显示
+    // 29%「中」,真实 200/1000=20%「低」)。cache.read 为 0 时无法区分「模型不支持缓存」
+    // 与「首轮冷启动」,一律缺席 —— 不拿零值装成「效率低」。
+    const cached = tokens.cache?.read
+    if (typeof cached === "number" && Number.isFinite(cached) && cached > 0) {
+      const nonCached = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0)
+      const prompt = cached + nonCached(tokens.cache?.write) + nonCached(tokens.input)
+      footnote.cacheHit = Math.round((cached / prompt) * 100)
+    }
   }
   const completed = source.time.completed
   if (typeof completed === "number" && Number.isFinite(source.time.created) && completed >= source.time.created)
@@ -565,7 +606,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         rev: [
           text,
           String(truncated),
-          segments.map((segment) => `${segment.kind ?? "t"}:${segment.text.length}`).join(","),
+          segments.map((segment) => `${segment.kind ?? "t"}:${segment.text.length}:${segment.label ?? ""}`).join(","),
           attachments.map((attachment) => attachment.partID).join(","),
           comments.map((comment) => comment.partID).join(","),
           slash ? `${slash.command} ${slash.arguments ?? ""}` : "",
@@ -723,7 +764,14 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
       rows.push({
         kind: "footnote",
         key: `footnote:${userMessage.id}`,
-        rev: [footnote.agent ?? "", footnote.model ?? "", footnote.tokens ?? "", footnote.durationMs ?? ""].join("§"),
+        rev: [
+          footnote.provider ?? "",
+          footnote.agent ?? "",
+          footnote.model ?? "",
+          footnote.cacheHit ?? "",
+          footnote.tokens ?? "",
+          footnote.durationMs ?? "",
+        ].join("§"),
         userMessageID: userMessage.id,
         footnote,
         copyText: () => turnCopyText(assistants, input.partsOf),

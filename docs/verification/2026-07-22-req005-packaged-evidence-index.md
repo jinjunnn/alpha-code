@@ -1,14 +1,35 @@
 ---
 title: REQ-005 re-anchor + residual packaged evidence index/harness
 kind: verification-plan
-status: active
+status: superseded
+superseded_by: 2026-07-24-req125-session-visual/matrix.md
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-25
 review_after: 2027-01-16
 ---
 
 # REQ-005 · re-anchor + residual packaged evidence index (harness)
+
+> **本档已作废(2026-07-25)。现行视觉取证总表 =
+> [`docs/verification/2026-07-24-req125-session-visual/matrix.md`](2026-07-24-req125-session-visual/matrix.md)**
+> (采集方法见同目录 `harness-plan.md`,功能/安全不变量见 `invariant-checks.md`)。
+>
+> 作废原因:本档 §2 的采集 harness 全部按「上游表面 × alpha CSS 覆盖度」口径编排,
+> 而该口径的被测对象已随 REQ-125 收官 commit `c70ee78a8`(PR#572,C8)物理删除——
+> 上游锚集从 `alive=172` 坍缩到今日实测 `alive=16`,重型面只剩 `component:terminal`
+> 一条。详见基线追加节
+> [`docs/audits/2026-07-12-req005-legacy-baseline.md`](../audits/2026-07-12-req005-legacy-baseline.md) §8。
+>
+> 承接关系:本档 §2.3 的「40 条 timeline 构件深浅色回归」已被上述矩阵末节
+> 「40 构件清单逐条映射(TL-01–TL-40 → 矩阵行)」逐条钉到新矩阵行(39 条落采集行,
+> TL-37 不适用)。**packaged 那一层的残余证据(§2.4 `ship:mac`、§2.1 PTY 面板、
+> §2.2 权限确认面与 question dock)归 REQ-125 #547 的 packaged 采集批次,
+> 不在 REQ-005 名下复活**;§2.2 留给 owner 的权限面归属裁决亦随之消解——该面已是
+> alpha 自有 `PermissionDialog`,证据归 REQ-090 / REQ-125 自身验证。
+>
+> 以下正文原样保留为历史记录,其 live-path 判定(§1 pin 849c2598、§2 触发步骤)
+> **不得**再作为今日取证口径。
 
 > 本档是 [alpha-code#214](https://github.com/jinjunnn/alpha-code/issues/214) 残项
 > 取证的**执行索引 + 采集 harness**。上游一次性静态基线是

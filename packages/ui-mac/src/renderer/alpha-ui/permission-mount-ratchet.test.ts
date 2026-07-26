@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import * as fs from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
 import { frontendSurfaceById } from "../../shared/frontend-surface-manifest"
 
@@ -99,7 +99,7 @@ describe("审批决定提交入口:单一引用面白名单棘轮(#619 R3 Blocke
   /** app + ui-mac 的全部生产 ts/tsx。排除仅测试文件与测试 harness 命名约定
    *  (*.test.* / *-test-runtime.* / *-stub.*)—— harness 里的对抗探针刻意携带提交调用。 */
   function* walkProduction(dir: string): Generator<string> {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.name === "node_modules" || entry.name.startsWith(".")) continue
       const p = join(dir, entry.name)
       if (entry.isDirectory()) {
@@ -138,7 +138,7 @@ describe("审批决定提交入口:单一引用面白名单棘轮(#619 R3 Blocke
     const seen = new Set<string>()
     for (const scanRoot of [resolve(root, "packages/app/src"), resolve(root, "packages/ui-mac/src")]) {
       for (const filePath of walkProduction(scanRoot)) {
-        const normalized = normalize(fs.readFileSync(filePath, "utf8"))
+        const normalized = normalize(readFileSync(filePath, "utf8"))
         for (const token of DECISION_ENTRY_TOKENS) {
           if (!normalized.includes(token)) continue
           const file = relative(root, filePath)

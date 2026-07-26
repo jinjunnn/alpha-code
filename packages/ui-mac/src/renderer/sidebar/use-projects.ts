@@ -583,6 +583,8 @@ export function useAlphaProjects(
       scheduleSelfProbe()
       return
     }
+    // ready 与 injection-failed(#613)都证明引擎可达 —— 注入失败只丢配置不丢引擎,
+    // 数据层照常连接;「配置未生效」的区分呈现归 picker 横幅。
     stopSelfProbe()
     if (!serverInfo) return
     // R1 Major1:同代已有 client 只在「权威连接」时跳过;自探建的 provisional 连接可能
@@ -599,7 +601,9 @@ export function useAlphaProjects(
       connect(serverInfo, 0)
       return
     }
-    if (runtimeState?.status === "ready") {
+    if (runtimeState?.status === "ready" || runtimeState?.status === "injection-failed") {
+      // #613:injection-failed = 引擎可达(健康线已过)但配置丢失 —— 数据层按可达连接,
+      // 否则「终态先到、server 后到」的窗口里 client 永不建立(自探已停、无新事件)。
       if (!client || runtimeState.generation !== connectedSidecarGeneration) {
         provisionalClient = false
         connect(serverInfo, runtimeState.generation)
