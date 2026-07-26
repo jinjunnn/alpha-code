@@ -25,6 +25,12 @@ export interface TimelineIntents {
   focusArtifact?: (intent: TimelineFocusArtifactIntent) => void
   openSession?: (sessionID: string) => void
   openFile?: (intent: TimelineOpenFileIntent) => void
+  /**
+   * 中断态「继续生成」:绑定层接现有会话发送入口(v2 session.prompt);缺席即中断行无续钮。
+   * 返回 Promise 时,拒绝 = 发送失败(admission 前不产生任何 session_status 事件,typed
+   * 通道呈现不了)—— 由中断行就地给出失败提示,不得静默吞掉。
+   */
+  continueTurn?: () => void | Promise<void>
 }
 
 export const TimelineIntentsContext = createContext<TimelineIntents>({})

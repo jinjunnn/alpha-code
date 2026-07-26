@@ -16,9 +16,15 @@ import {
   TurnDiffSummaryRow,
   TurnErrorCard,
 } from "./cards/tool-cards"
-import { TimelineIntentsContext, type TimelineIntents } from "./cards/timeline-intents"
+import { TimelineIntentsContext, type TimelineIntents, useTimelineIntents } from "./cards/timeline-intents"
 import { TimelineMarkdown } from "./timeline-markdown"
-import { boundedText, REASONING_MAX_CHARS, type TimelineComment, type TimelineRow } from "./timeline-model"
+import {
+  boundedText,
+  REASONING_MAX_CHARS,
+  type TimelineComment,
+  type TimelineRow,
+  type TimelineSegment,
+} from "./timeline-model"
 import { anchorDelta, createPrependCoordinator, isAtBottom, shouldLoadOlder } from "./timeline-scroll"
 import "./session-timeline.css"
 
@@ -317,9 +323,18 @@ function formatTokens(count: number): string {
   return String(count)
 }
 
+/** 效率档:命中率 ≥60% 高、≥25% 中、其余低(段本身只在有缓存读取时出现,见 footnoteOf)。 */
+function efficiencyLabel(percent: number): string {
+  if (percent >= 60) return t("alpha.timeline.efficiencyHigh")
+  if (percent >= 25) return t("alpha.timeline.efficiencyMedium")
+  return t("alpha.timeline.efficiencyLow")
+}
+
 function FootnoteRow(props: { row: Extract<TimelineRow, { kind: "footnote" }> }) {
   const footnote = () => props.row.footnote
-  // 复制动作:剪贴板通道缺席即不渲染按钮(fail-closed);重试/分支无 typed 通道,登记跳过。
+  // 复制动作:剪贴板通道缺席即不渲染按钮(fail-closed)。重试/分支钮按 owner 直令登记跳过:
+  // 引擎无「重试」操作(SDK 无对应端点),分支只有 v1 `session.fork`(建新会话 + 导航,
+  // 属另建链路)—— 两者均不在时间线的数据面内,不为凑形态伪造。
   const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard
   const copy = () => {
     try {
@@ -330,14 +345,23 @@ function FootnoteRow(props: { row: Extract<TimelineRow, { kind: "footnote" }> })
   }
   return (
     <div class="a-tl-row a-tl-footnote" data-alpha-timeline-row="footnote">
-      <Show when={footnote().agent}>
+      <Show when={footnote().provider || footnote().agent}>
         <span class="a-tl-fn-item a-tl-fn-agent">
-          <i aria-hidden="true">{footnote().agent!.slice(0, 1).toUpperCase()}</i>
+          <Show when={footnote().provider}>
+            <i class="a-tl-fn-prov" aria-hidden="true">
+              {footnote().provider!.slice(0, 1).toUpperCase()}
+            </i>
+          </Show>
           {footnote().agent}
         </span>
       </Show>
       <Show when={footnote().model}>
         <span class="a-tl-fn-item">{footnote().model}</span>
+      </Show>
+      <Show when={footnote().cacheHit !== undefined}>
+        <span class="a-tl-fn-item" title={t("alpha.timeline.cacheHit", { percent: footnote().cacheHit! })}>
+          {efficiencyLabel(footnote().cacheHit!)}
+        </span>
       </Show>
       <Show when={footnote().durationMs !== undefined}>
         <span class="a-tl-fn-item a-tl-fn-num">
@@ -375,6 +399,33 @@ function commentRange(comment: TimelineComment) {
   return t("alpha.timeline.commentLines", { start: comment.startLine, end: comment.endLine })
 }
 
+/** 连接器徽标:取来源名里的大写字母(GitHub → GH),不足两个则退回前两个字符。 */
+function connectorInitials(name: string): string {
+  const capitals = name.replace(/[^A-Z]/g, "").slice(0, 2)
+  return capitals.length >= 2 ? capitals : name.slice(0, 2).toUpperCase()
+}
+
+/** 用户正文片段:普通文本 / 文件·子代理提及 / 连接器 chip(TL-06)。 */
+function UserSegment(props: { segment: TimelineSegment }) {
+  const segment = props.segment
+  if (segment.kind === "resource") {
+    const name = segment.label ?? segment.text
+    return (
+      <span class="a-tl-conn" data-mention="resource">
+        <i aria-hidden="true">{connectorInitials(name)}</i>
+        {name}
+      </span>
+    )
+  }
+  if (segment.kind)
+    return (
+      <span class="a-tl-mention" data-mention={segment.kind}>
+        {segment.text}
+      </span>
+    )
+  return <span>{segment.text}</span>
+}
+
 function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }> }) {
   const meta = () => {
     const message = props.row.message
@@ -389,15 +440,7 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }> }) {
   const [promptOpen, setPromptOpen] = createSignal(false)
   const bubbleInner = () => (
     <>
-      <For each={props.row.segments}>
-        {(segment) => (
-          <Show when={segment.kind} fallback={<span>{segment.text}</span>}>
-            <span class="a-tl-mention" data-mention={segment.kind}>
-              {segment.text}
-            </span>
-          </Show>
-        )}
-      </For>
+      <For each={props.row.segments}>{(segment) => <UserSegment segment={segment} />}</For>
       <Show when={props.row.truncated}>
         <span class="a-tl-truncated-inline">{t("alpha.timeline.truncated")}</span>
       </Show>
@@ -585,11 +628,51 @@ function MarkdownRow(props: { row: Extract<TimelineRow, { kind: "markdown" }> })
 }
 
 function DividerRow(props: { row: Extract<TimelineRow, { kind: "divider" }> }) {
+  // label 随行身份定格(rev = label),两种形态互不重建。
+  if (props.row.label === "interrupted") return <InterruptedRow />
   return (
     <div class="a-tl-row a-tl-divider" data-alpha-timeline-row="divider" data-label={props.row.label}>
-      <span class="a-tl-divider-pill">
-        {props.row.label === "compaction" ? t("alpha.timeline.compacted") : t("alpha.timeline.interrupted")}
-      </span>
+      <span class="a-tl-divider-pill">{t("alpha.timeline.compacted")}</span>
+    </div>
+  )
+}
+
+// 中断态(design ② .interrupted 帧):左对齐安静行,不是居中告警 pill。
+// 「继续生成」经 continueTurn intent 接绑定层的现有会话发送入口;intent 缺席即只剩事实陈述
+// (fail-closed,不给一个点不动的按钮)。发送失败(admission 前被拒/网络断开)不产生任何
+// session_status 事件,typed 通道呈现不了 —— rejection 在此就地给出失败提示,再点即重试
+// (审计 R1 Major:此前同步与异步错误全被吞掉,用户点了没反应)。
+function InterruptedRow() {
+  const intents = useTimelineIntents()
+  const [sendFailed, setSendFailed] = createSignal(false)
+  return (
+    <div class="a-tl-row a-tl-interrupted" data-alpha-timeline-row="divider" data-label="interrupted">
+      <svg class="a-tl-int-stop" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="7" y="7" width="10" height="10" rx="2" />
+      </svg>
+      <span>{t("alpha.timeline.interrupted")}</span>
+      <Show when={intents.continueTurn}>
+        {(handler) => (
+          <>
+            <span class="a-tl-int-dot" aria-hidden="true" />
+            <button
+              type="button"
+              class="a-tl-int-continue"
+              onClick={() => {
+                setSendFailed(false)
+                void Promise.resolve(handler()()).catch(() => setSendFailed(true))
+              }}
+            >
+              {t("alpha.timeline.continueTurn")}
+            </button>
+            <Show when={sendFailed()}>
+              <span class="a-tl-int-failed" role="status">
+                {t("alpha.timeline.continueFailed")}
+              </span>
+            </Show>
+          </>
+        )}
+      </Show>
     </div>
   )
 }
