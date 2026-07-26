@@ -1,2 +1,8 @@
 packages/core/migration/**/snapshot.json linguist-generated
 packages/core/src/database/migration.gen.ts linguist-generated
+
+# The frontend SOT is a unified diff: context lines carry a leading space, so an EMPTY context
+# line is legitimately a line containing exactly one space. `git diff --check` must not read that
+# carrier format as trailing whitespace. The whitespace of the content it describes is checked at
+# its source (packages/app, packages/ui), never through this file.
+frontend/alpha-patches/*.patch -whitespace

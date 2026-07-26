@@ -3,7 +3,7 @@ title: REQ-089 Alpha route manifest 成为唯一路由组合真相 — 路由架
 kind: design
 status: active
 owners: [alpha-code product and design maintainers]
-last_reviewed: 2026-07-25
+last_reviewed: 2026-07-26
 review_after: 2027-01-16
 ---
 
@@ -312,9 +312,18 @@ wiring 部分 + 子票 3 内删 session 的 legacy flag)**排序在 #181 翻转�
 `decodeDeepLink()`,alpha main 解码后**只转发解码结果**(`DeepLinkDelivery` = deepLinkId /
 directory / prompt? / 清单派生的 route href),上游 renderer 侧退化为形状校验 + 分发的
 passthrough。事件名 `DEEP_LINK_EVENT` 归清单;packages/app 无法 import 清单,故其副本由
-`route-upstream-shape.test.ts` 的锚点钉住。ratchet(`route-authority-ratchet.test.ts`)新增
-扫描根 `packages/app/src/pages/layout/`,**只施加 deep-link codec 类规则**——该目录里上游自有
-侧栏合法地写自己的路由字面量,那一层由 A 的 path 形状契约管,不由 href 规则管。
+`route-upstream-shape.test.ts` 的锚点钉住。**整个消费端(含分发与导航目标)落在
+`packages/app/src/pages/layout/deep-links.ts` 一个模块内**,ratchet 对该文件施加**全套**规则
+(含「参数化 session href 归清单」);同目录其余文件是上游自有侧栏、合法写自己的路由字面量,
+只施加 deep-link codec 类规则,那一层由 A 的 path 形状契约管。`layout.tsx` 只留调用适配器,
+另有一条窄规则禁止它重新变回消费端(见下 §5.1 F7)。
+
+**B2. 投递恰好一次(AC4)** —— 队列仲裁抽到 `packages/ui-mac/src/main/deep-link-queue.ts`:
+renderer 首次 drain 之前(冷启动、首进程命令行、IPC 已订阅但初次 invoke 未回)一律入队;
+drain 之后由该 renderer 接管、直发不入队;renderer 开始新文档加载(sidecar structural respawn
+的 reload)则交还队列。renderer 侧 `deep-link-bridge.ts` 把事件降级为**无 payload 的唤醒信号**,
+buffer 是唯一队列 —— 消费只能靠 drain,drain 即清空,layout 重挂因此结构上无法重放。
+首进程 `process.argv` 现在也走同一条 `ingest`(Windows/Linux 冷启动唯一入口)。
 
 **C. legacy surface flag 硬切(§2「删 alias 层」落地,owner 2026-07-25 裁决)** ——
 `SurfaceMode`/`SurfaceReleaseState`/`SURFACE_RELEASE_STATES`、`ALPHA_SURFACE_*` env 覆盖、
@@ -326,10 +335,46 @@ userData pin、`surfaces.resolve` IPC、renderer 三处 `mode !== "alpha"` 闸�
 `docs/design/2026-07-24-session-seam-baseline.md` 中"`ALPHA_SURFACE_SESSION` / pin 是启动期
 逃生阀"的表述**自本次交付起作废**(该稿是当时事实的记录,不回改)。
 
-**明确未做(与计划的偏离)** —— `packages/desktop/src/main/index.ts` 的
-`setAsDefaultProtocolClient("opencode")` **保持不动**。`packages/desktop` 相对 `origin/dev`
-的 alpha delta 恒为 0(上游外壳的参照副本,alpha 出货的是 `packages/ui-mac`),它也不依赖
-ui-mac —— 让上游外壳反向 import alpha 清单是依赖倒置,且首次改动会在 `packages/{app,ui}` 的
-补丁 SOT 之外制造一处长期 sync 冲突面。alpha 真正出货的外壳
-(`packages/ui-mac/src/main/index.ts`)早已 `DEEP_LINK_SCHEMES.forEach(...)` 从清单派生,
-ratchet 也扫得到它。
+**D. 安装包协议清单从 manifest 派生** —— `packages/ui-mac/electron-builder.config.ts`
+三处 `schemes: ["opencode", "alpha-code"]` 改为 `[...DEEP_LINK_SCHEMES]`,`getConfig()` 改成
+接 channel 参数以便被断言执行。冷启动能不能把 deep link 交给应用取决于**安装包元数据**而非
+运行时注册,所以这条不是文本洁癖:清单改了而安装包没跟,操作系统根本不会把新协议交过来,
+而全部运行时测试照常绿。
+
+### §5.1 对抗审计驳回后的修正(2026-07-26)
+
+首轮实现被 Codex 对抗审计判 NOT-MERGE(7 Major + 1 Minor)。以下两条**推翻上一轮的声明**,
+其余为闸门有效性补强。
+
+- **F3 —— 上一轮「明确未做:desktop 保持不动」的判断错误,已撤销。** 该判断只看了
+  `packages/desktop` 与上游的 delta,漏了两个外壳**共用同一个
+  `@opencode-ai/app` renderer**:本票把该 renderer 的接收契约从 `__OPENCODE__.deepLinks`
+  (`string[]`)/`{urls}` 换成 `__alphaDeepLinks`(delivery)/无 payload 事件后,desktop 仍发旧
+  形状 = 它的 deep-link 链路被本 PR **静默打断**(可编译、必丢事件)。修法取「让 desktop 也产出
+  解码后的 delivery」:`packages/desktop/src/renderer/index.tsx` import 同一个 `decodeDeepLink`
+  与同一个 bridge。**代价如实记录**:这是 alpha 首次改动 `packages/desktop`(此前相对
+  `origin/dev` delta 恒为 0),制造了一处 sync 冲突面,且方向上是上游外壳依赖 alpha 外壳的模块。
+  取它而不取「app 侧同时容忍两种形状」,是因为后者会让**第二个解码真相**回到 renderer,与 AC2
+  直接冲突;取它而不取「删掉 desktop 的 deep-link 链路」,是因为删更大(5 个文件)且是净减功能。
+  AC2 仍然成立:全仓 URL→route 解码器只有 `route-manifest.ts` 一个,desktop 是它的调用方而非
+  第二个实现。三处 `__OPENCODE__.deepLinks` 声明(app / desktop / ui-mac)一并删除 —— 化石类型
+  正是让断链还能通过类型检查的东西。
+
+- **F5 —— 上一轮「应用补丁后与 HEAD 零 diff」的声明不成立,判据已改为可机械执行。**
+  `packages/app/vendor/opencode-ai-client-1.17.13.tgz` 在 pin 里不存在、被
+  `packages/session-ui/package.json` 以 `file:` 直接依赖,而普通 `git diff` 不携带二进制内容。
+  这不只是文档失真:`sync-upstream.yml` 的 `apply_alpha_frontend_delta` 会 `rm -rf packages/app`
+  再从 pin 取回,补丁没带二进制 = **每晚 sync 都会把这个包删掉**。SOT 已用
+  `git diff --binary` 重生(93.5KB → 195.8KB,含 1 处 `GIT binary patch`),`frontend/README.md`
+  的生成命令与 round-trip 判据同步改写为「从 pin 的 archive 建干净树 → apply → `diff -r` 零输出
+  且 tgz 存在」(**不能在本仓 `git checkout $PIN -- ...` 上验:它不会删掉 pin 里没有的文件,
+  会把缺口掩盖成绿**),sync workflow 加 `--binary` 与 tgz 存在性 loud-fail。
+
+- **F1/F2/F4/F6/F7** 见上文 B2 / D / A 的对应描述;**F8**(patch 的 17 处尾随空白卡
+  `git diff --check`)通过 `.gitattributes` 的 `frontend/alpha-patches/*.patch -whitespace` 解决 ——
+  unified diff 的空 context 行本就是「一个空格」,其内容的空白在 `packages/{app,ui}` 源头受检。
+
+**闸门有效性**:本轮三个新闸门(路由形状 / deep-link 消费端 / 协议清单)以及 exactly-once
+状态机,均按仓内 2026-07-25 固化的纪律**逐条实施绕过变异并确认变红**后才保留;变异清单与结果
+随 PR 记录。其中 F6 的形状比较从「全局集合」改为「按互斥 feature branch 分别比较」,正是因为
+全局集合看不见路由在两条分支之间搬家。

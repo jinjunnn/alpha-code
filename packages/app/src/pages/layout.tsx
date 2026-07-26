@@ -67,12 +67,7 @@ import {
   latestRootSession,
   sortedRootSessions,
 } from "./layout/helpers"
-import {
-  collectNewSessionDeepLinks,
-  collectOpenProjectDeepLinks,
-  deepLinkEvent,
-  drainPendingDeepLinks,
-} from "./layout/deep-links"
+import { applyDeepLinks, deepLinkEvent, drainPendingDeepLinks } from "./layout/deep-links"
 import { createInlineEditorController } from "./layout/inline-editor"
 import {
   LocalWorkspace,
@@ -1258,36 +1253,26 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   // The shell decodes deep links against its route manifest and forwards the result, including
-  // the destination href — nothing is parsed or route-shaped here.
-  const handleDeepLinks = (links: readonly unknown[]) => {
+  // the destination href. Dispatch lives in ./layout/deep-links so the route-authority ratchet can
+  // hold it to the full "no hand-assembled route" rule set; this is only the adapter.
+  const consumeDeepLinks = () => {
     if (!server.isLocal()) return
-
-    for (const link of collectOpenProjectDeepLinks(links)) {
-      void openProject(link.directory)
-    }
-
-    for (const link of collectNewSessionDeepLinks(links)) {
-      void openProject(link.directory, false)
-      if (link.prompt) {
-        setSessionHandoff(
-          SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(base64Encode(link.directory))),
-          { prompt: link.prompt },
-        )
-      }
-      navigateWithSidebarReset(link.href)
-    }
+    applyDeepLinks(drainPendingDeepLinks(window), {
+      openProject: (directory, navigate) => void openProject(directory, navigate),
+      navigate: navigateWithSidebarReset,
+      handoff: (directory, prompt) =>
+        setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(base64Encode(directory))), {
+          prompt,
+        }),
+    })
   }
 
   onMount(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ links?: unknown[] }>).detail
-      const links = detail?.links ?? []
-      if (links.length === 0) return
-      handleDeepLinks(links)
-    }
-
-    handleDeepLinks(drainPendingDeepLinks(window))
-    makeEventListener(window, deepLinkEvent, handler as EventListener)
+    // The shell's event is a wake-up signal with no payload: the buffer is the queue, so every
+    // path — mount, live event, remount — consumes by draining, and each delivery is acted on once.
+    // Subscribe before the first drain so a link landing in between is not stranded in the buffer.
+    makeEventListener(window, deepLinkEvent, consumeDeepLinks)
+    consumeDeepLinks()
   })
 
   async function renameProject(project: LocalProject, next: string) {

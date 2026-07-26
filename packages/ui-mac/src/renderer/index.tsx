@@ -45,7 +45,8 @@ import { AlphaNewSession } from "./alpha-ui/alpha-new-session"
 import { SurfaceBoundary } from "./alpha-ui/surface-boundary"
 import { RuntimeRecoveryHost } from "./alpha-ui/RuntimeRecoveryHost"
 import { UpstreamDialogHost } from "./alpha-ui/UpstreamDialogHost"
-import { DEEP_LINK_EVENT, type DeepLinkDelivery } from "../shared/route-manifest"
+import { type DeepLinkDelivery } from "../shared/route-manifest"
+import { publishDeepLinks } from "./deep-link-bridge"
 import { alphaSessionWorkspaceSurface } from "./alpha-ui/session-workspace/alpha-session-workspace" // REQ-088 T2
 import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { AlphaSettings } from "./alpha-ui/settings"
@@ -133,16 +134,12 @@ void initI18n()
 const [updaterState, setUpdaterState] = createSignal<UpdaterState>({ status: "disabled" })
 void window.api.updater.subscribe(setUpdaterState)
 
-// Deliveries arrive already decoded by the manifest (main). The buffer covers links that land
-// before the layout mounts; the event covers everything after. Both are read by the upstream
-// layout, which owns no codec of its own.
+// Deliveries arrive already decoded by the manifest (main). They go into the window buffer, which
+// is the queue; the event only wakes the layout up. See deep-link-bridge.ts for why the event
+// carries no payload — that is what makes double consumption impossible.
 const deepLinkBuffer = window as Window & { __alphaDeepLinks?: DeepLinkDelivery[] }
 
-const emitDeepLinks = (links: DeepLinkDelivery[]) => {
-  if (links.length === 0) return
-  deepLinkBuffer.__alphaDeepLinks = [...(deepLinkBuffer.__alphaDeepLinks ?? []), ...links]
-  window.dispatchEvent(new CustomEvent(DEEP_LINK_EVENT, { detail: { links } }))
-}
+const emitDeepLinks = (links: DeepLinkDelivery[]) => publishDeepLinks(deepLinkBuffer, links)
 
 const listenForDeepLinks = () => {
   void window.api.consumeInitialDeepLinks().then((links) => emitDeepLinks(links))

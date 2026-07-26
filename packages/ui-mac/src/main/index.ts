@@ -13,7 +13,8 @@ import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
-import { DEEP_LINK_SCHEMES, decodeDeepLink, isDeepLink, type DeepLinkDelivery } from "../shared/route-manifest"
+import { DEEP_LINK_SCHEMES, isDeepLink } from "../shared/route-manifest"
+import { createDeepLinkQueue } from "./deep-link-queue"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
@@ -161,7 +162,18 @@ const commitSidecarTokenGeneration = (forked: number, healthy: boolean) => {
 // 判断(它问的是继承事实,不是健康事实),与上面那个健康确认值刻意分开。
 let bootForkTokenGeneration = 0
 
-const pendingDeepLinks: DeepLinkDelivery[] = []
+// Deep-link ingress. The manifest DECODES here and only the decoded delivery crosses into the
+// arm's-length upstream renderer, so no second URL codec can exist downstream. Queue-vs-live
+// arbitration (exactly-once across cold start / live delivery / renderer reload) lives in
+// deep-link-queue.ts, where every timing is a unit test.
+const deepLinks = createDeepLinkQueue({
+  consumeAuth: (url) => handleAuthDeepLink(url),
+  deliver: (links) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false
+    sendDeepLinks(mainWindow, links)
+    return true
+  },
+})
 
 function useEnvProxy() {
   try {
@@ -171,21 +183,6 @@ function useEnvProxy() {
   } catch (error) {
     logger.warn("failed to load proxy environment", error)
   }
-}
-
-function emitDeepLinks(urls: string[]) {
-  // Auth transport is consumed by the PKCE module. Everything else is DECODED here, by the
-  // manifest, and only the decoded delivery crosses into the arm's-length upstream renderer —
-  // so no second URL codec can exist downstream. Anything the manifest rejects is dropped.
-  const forwarded = urls
-    .filter((url) => !handleAuthDeepLink(url))
-    .flatMap((url) => {
-      const delivery = decodeDeepLink(url)
-      return delivery ? [delivery] : []
-    })
-  if (forwarded.length === 0) return
-  pendingDeepLinks.push(...forwarded)
-  if (mainWindow) sendDeepLinks(mainWindow, forwarded)
 }
 
 async function killSidecar() {
@@ -577,7 +574,7 @@ const main = Effect.gen(function* () {
     const urls = argv.filter(isDeepLink)
     if (urls.length) {
       logger.log("deep link received via second-instance", { urls: urls.map(redactDeepLink) })
-      emitDeepLinks(urls)
+      deepLinks.ingest(argv)
     }
     if (mainWindow) {
       mainWindow.show()
@@ -588,7 +585,7 @@ const main = Effect.gen(function* () {
   app.on("open-url", (event: Event, url: string) => {
     event.preventDefault()
     logger.log("deep link received via open-url", { url: redactDeepLink(url) })
-    emitDeepLinks([url])
+    deepLinks.ingest([url])
     // Bring the app to the foreground. The auth callback arrives while the browser is focused;
     // unlike "second-instance", "open-url" does NOT auto-activate the app, so login would otherwise
     // complete silently in the background. steal:true overrides macOS focus-stealing prevention.
@@ -666,6 +663,16 @@ const main = Effect.gen(function* () {
     onRenewed: (result) => tokenRotation.accept(result, "renewal"),
     onChanged: () => authScheduler?.rearm("auth-change"),
   })
+  // Windows/Linux cold start: the OS launches the FIRST process with the link on its command
+  // line. That process wins the single-instance lock, so "second-instance" never fires, and there
+  // is no macOS "open-url" either — without this the link is lost outright. Deliberately AFTER
+  // initAuthEnv: an `alpha-code://auth/callback` can arrive this way too (browser wakes a closed
+  // app on Windows/Linux), and the PKCE exchange needs safeStorage, which is only usable now.
+  {
+    const urls = process.argv.filter(isDeepLink)
+    if (urls.length) logger.log("deep link received via first-process argv", { urls: urls.map(redactDeepLink) })
+    deepLinks.ingest(process.argv)
+  }
   // A′:过期 token 在恢复存储后立即开始续期和 1.2s hard grace，和迁移、配置预检、端口分配
   // 并行。到首 fork 点只消费这个已运行的 race，绝不重新起一段宽限。
   const storedTokenExpired = isStoredTokenExpired()
@@ -817,7 +824,7 @@ const main = Effect.gen(function* () {
       },
       (e) => Effect.runPromise(e),
     ),
-    consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
+    consumeInitialDeepLinks: () => deepLinks.consumeInitial(),
     getDefaultServerUrl: () => getDefaultServerUrl(),
     setDefaultServerUrl: (url) => setDefaultServerUrl(url),
     getDisplayBackend: async () => null,
@@ -1058,6 +1065,11 @@ const main = Effect.gen(function* () {
   yield* Deferred.await(serverReady).pipe(Effect.catch(() => Effect.sync(() => {})))
 
   mainWindow = createMainWindow()
+  // A renderer that starts a fresh document load (sidecar structural respawn reloads it) drops
+  // ownership of the deep-link stream: links that arrive from here on must be queued for the
+  // renderer that comes back, not shipped to the one that is going away. SPA route changes do
+  // not fire this event, so ownership only lapses on a real reload/navigation.
+  mainWindow.webContents.on("did-start-loading", () => deepLinks.rendererGone())
 
   // REQ-063 T4:全局存量一次性迁移门(发布闸)——default-deny 后 ~/.claude/~/.agents 存量不可见,
   // 首启必弹防「技能丢了」重演;fire-and-forget,不阻塞窗口;marker 记账不再弹。

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  applyDeepLinks,
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
   drainPendingDeepLinks,
@@ -78,6 +79,54 @@ describe("layout deep links", () => {
 
     expect(drainPendingDeepLinks(target)).toEqual([openProject])
     expect(drainPendingDeepLinks(target)).toEqual([])
+  })
+
+  test("a layout remount finds nothing to replay", () => {
+    // Mount and remount both consume by draining, so the buffer cannot serve the same delivery
+    // twice — the timing the shell's payload-free event exists to make impossible.
+    const target = { __alphaDeepLinks: [newSessionWithPrompt] } as unknown as Window
+    const acted: string[] = []
+    const handlers = {
+      openProject: () => {},
+      navigate: (href: string) => acted.push(href),
+      handoff: () => {},
+    }
+
+    applyDeepLinks(drainPendingDeepLinks(target), handlers) // first mount
+    applyDeepLinks(drainPendingDeepLinks(target), handlers) // remount
+
+    expect(acted).toEqual([newSessionWithPrompt.href])
+  })
+
+  test("navigates to the shell-decoded href verbatim, assembling no route of its own", () => {
+    const calls: { openProject: [string, boolean][]; navigate: string[]; handoff: [string, string][] } = {
+      openProject: [],
+      navigate: [],
+      handoff: [],
+    }
+    applyDeepLinks([openProject, newSession, newSessionWithPrompt], {
+      openProject: (directory, navigate) => calls.openProject.push([directory, navigate]),
+      navigate: (href) => calls.navigate.push(href),
+      handoff: (directory, prompt) => calls.handoff.push([directory, prompt]),
+    })
+
+    expect(calls.navigate).toEqual([newSession.href, newSessionWithPrompt.href])
+    expect(calls.openProject).toEqual([
+      ["/a", true],
+      ["/c", false],
+      ["/d", false],
+    ])
+    expect(calls.handoff).toEqual([["/d", "ship it"]])
+  })
+
+  test("a prompt-less new-session delivery seeds no handoff", () => {
+    const handoff: string[] = []
+    applyDeepLinks([newSession], {
+      openProject: () => {},
+      navigate: () => {},
+      handoff: (directory) => handoff.push(directory),
+    })
+    expect(handoff).toEqual([])
   })
 })
 

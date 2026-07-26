@@ -396,9 +396,6 @@ function UiI18nBridge(props: ParentProps) {
 
 declare global {
   interface Window {
-    __OPENCODE__?: {
-      deepLinks?: string[]
-    }
     api?: {
       setTitlebar?: (theme: { mode: "light" | "dark"; scheme?: "system" | "light" | "dark" }) => Promise<void>
       exportDebugLogs?: () => Promise<string>

@@ -17,7 +17,11 @@ const APP_SRC = join(import.meta.dir, "../../../app/src")
 const appTsx = readFileSync(join(APP_SRC, "app.tsx"), "utf8")
 const deepLinksTs = readFileSync(join(APP_SRC, "pages/layout/deep-links.ts"), "utf8")
 
-type RouteTag = { kind: "open" | "self"; path?: string } | { kind: "close" }
+type RouteTag =
+  | { kind: "open" | "self"; path?: string }
+  | { kind: "close" }
+  | { kind: "show-open" | "show-self"; guard: string }
+  | { kind: "show-close" }
 
 /** Find the `>` that closes an opening tag, skipping strings and `{…}` expression children. */
 function tagEnd(source: string, from: number): number {
@@ -40,20 +44,28 @@ function tagEnd(source: string, from: number): number {
   return -1
 }
 
+/** The next `<Route`/`</Route>`/`<Show`/`</Show>` at or after `from`, whichever comes first. */
+function nextMarker(source: string, from: number) {
+  const candidates = (["<Route", "</Route>", "<Show", "</Show>"] as const)
+    .map((token) => ({ token, at: source.indexOf(token, from) }))
+    .filter((entry) => entry.at !== -1)
+    .sort((a, b) => a.at - b.at)
+  return candidates[0]
+}
+
 function scanRouteTags(source: string): RouteTag[] {
   const tags: RouteTag[] = []
   let cursor = 0
   while (cursor < source.length) {
-    const open = source.indexOf("<Route", cursor)
-    const close = source.indexOf("</Route>", cursor)
-    if (open === -1 && close === -1) break
-    if (close !== -1 && (open === -1 || close < open)) {
-      tags.push({ kind: "close" })
-      cursor = close + "</Route>".length
+    const marker = nextMarker(source, cursor)
+    if (!marker) break
+    if (marker.token === "</Route>" || marker.token === "</Show>") {
+      tags.push({ kind: marker.token === "</Route>" ? "close" : "show-close" })
+      cursor = marker.at + marker.token.length
       continue
     }
-    const nameEnd = open + "<Route".length
-    // `<Routes …>` is the component that holds the tree, not a route.
+    const nameEnd = marker.at + marker.token.length
+    // `<Routes …>` is the component that holds the tree, not a route; same for `<ShowSomething>`.
     if (/[A-Za-z0-9_]/.test(source[nameEnd] ?? "")) {
       cursor = nameEnd
       continue
@@ -61,12 +73,31 @@ function scanRouteTags(source: string): RouteTag[] {
     const end = tagEnd(source, nameEnd)
     if (end === -1) break
     const tag = source.slice(nameEnd, end)
-    const path = /\bpath\s*=\s*"([^"]*)"/.exec(tag)?.[1]
     const selfClosing = /\/\s*$/.test(tag)
-    tags.push({ kind: selfClosing ? "self" : "open", ...(path === undefined ? {} : { path }) })
+    if (marker.token === "<Show") {
+      tags.push({ kind: selfClosing ? "show-self" : "show-open", guard: whenExpression(tag) })
+    } else {
+      const path = /\bpath\s*=\s*"([^"]*)"/.exec(tag)?.[1]
+      tags.push({ kind: selfClosing ? "self" : "open", ...(path === undefined ? {} : { path }) })
+    }
     cursor = end + 1
   }
   return tags
+}
+
+/** The `when={…}` expression text of a `<Show>` opening tag, brace-balanced. */
+function whenExpression(tag: string): string {
+  const at = /\bwhen\s*=\s*\{/.exec(tag)
+  if (!at) return ""
+  let index = at.index + at[0].length
+  let depth = 1
+  const start = index
+  while (index < tag.length && depth > 0) {
+    if (tag[index] === "{") depth += 1
+    else if (tag[index] === "}") depth -= 1
+    index += 1
+  }
+  return tag.slice(start, index - 1).trim()
 }
 
 function joinPath(prefix: string, path: string): string {
@@ -75,22 +106,57 @@ function joinPath(prefix: string, path: string): string {
   return `${base}${path}`
 }
 
-/** Leaf templates only: a `<Route>` with children matches through them, never on its own. */
-export function upstreamRoutePathTemplates(source: string): string[] {
-  const frames: { prefix: string; children: number }[] = []
+/**
+ * Feature flags a `<Show>` in the Route tree may branch on. Mutually exclusive branches are the
+ * reason a single global set of paths is not a contract: `newLayoutDesigns` publishes one `/` and
+ * the legacy branch publishes another, so losing one of them leaves the union untouched. Each
+ * branch is therefore extracted and compared on its own.
+ */
+export type RouteFeatureFlags = { newLayoutDesigns: boolean }
+
+/** Evaluate a `<Show when={…}>` guard under one flag assignment. Unknown guards throw: a new */
+/** feature branch must be declared here before it may gate a route. */
+function guardHolds(guard: string, flags: RouteFeatureFlags): boolean {
+  const negated = guard.startsWith("!")
+  const expression = (negated ? guard.slice(1) : guard).trim()
+  if (!/\bnewLayoutDesigns\s*\(\s*\)\s*$/.test(expression))
+    throw new Error(`unrecognised <Show> guard gating a Route: ${guard}`)
+  return negated ? !flags.newLayoutDesigns : flags.newLayoutDesigns
+}
+
+/**
+ * Leaf templates only: a `<Route>` with children matches through them, never on its own.
+ * Routes gated by a `<Show>` whose guard is false under `flags` are not published at all.
+ */
+export function upstreamRoutePathTemplates(source: string, flags: RouteFeatureFlags): string[] {
+  const frames: { prefix: string; children: number; visible: boolean }[] = []
+  const guards: string[] = []
   const templates: string[] = []
+  // A `<Show>` whose guard is false hides the routes inside it, but the JSX still has to be
+  // walked so the Route frames stay balanced — hence "hidden" rather than "skipped".
+  const visible = () => guards.every((guard) => guardHolds(guard, flags))
   for (const tag of scanRouteTags(source)) {
+    if (tag.kind === "show-open") {
+      guards.push(tag.guard)
+      continue
+    }
+    if (tag.kind === "show-close") {
+      guards.pop()
+      continue
+    }
+    if (tag.kind === "show-self") continue
     if (tag.kind === "close") {
       const frame = frames.pop()
-      if (frame && frame.children === 0) templates.push(frame.prefix)
+      if (frame && frame.children === 0 && frame.visible) templates.push(frame.prefix)
       continue
     }
     const parent = frames[frames.length - 1]
     const prefix = parent?.prefix ?? ""
     if (parent) parent.children += 1
     const resolved = tag.path === undefined ? prefix : joinPath(prefix, tag.path)
-    if (tag.kind === "open") frames.push({ prefix: resolved, children: 0 })
-    else if (tag.path !== undefined) templates.push(resolved)
+    const shown = visible()
+    if (tag.kind === "open") frames.push({ prefix: resolved, children: 0, visible: shown })
+    else if (tag.path !== undefined && shown) templates.push(resolved)
   }
   return templates
 }
@@ -111,12 +177,23 @@ function shapesOf(template: string): string[] {
   )
 }
 
-const manifestShapes = new Set(
-  ROUTE_MANIFEST.routes.flatMap((entry) => {
-    const template = manifestPathTemplate(entry)
-    return template === undefined ? [] : shapesOf(template)
-  }),
-)
+const manifestShapes = [
+  ...new Set(
+    ROUTE_MANIFEST.routes.flatMap((entry) => {
+      const template = manifestPathTemplate(entry)
+      return template === undefined ? [] : shapesOf(template)
+    }),
+  ),
+].sort()
+
+/** Every mutually exclusive feature branch the Route tree can be in. */
+const FEATURE_BRANCHES: { name: string; flags: RouteFeatureFlags }[] = [
+  { name: "legacy layout", flags: { newLayoutDesigns: false } },
+  { name: "new layout designs", flags: { newLayoutDesigns: true } },
+]
+
+const shapesFor = (source: string, flags: RouteFeatureFlags) =>
+  [...new Set(upstreamRoutePathTemplates(source, flags).flatMap(shapesOf))].sort()
 
 describe("upstream Route tree keeps the manifest's path shapes", () => {
   test("the extractor flattens nesting, optional params, and self-closing tags", () => {
@@ -132,7 +209,7 @@ describe("upstream Route tree keeps the manifest's path shapes", () => {
         <Route path="/new-session" component={Draft} />
       </Routes>
     `
-    expect(upstreamRoutePathTemplates(fixture).sort()).toEqual([
+    expect(upstreamRoutePathTemplates(fixture, { newLayoutDesigns: false }).sort()).toEqual([
       "/",
       "/:dir",
       "/:dir/session/:id?",
@@ -141,16 +218,50 @@ describe("upstream Route tree keeps the manifest's path shapes", () => {
     expect(shapesOf("/:dir/session/:id?")).toEqual(["/:param/session", "/:param/session/:param"])
   })
 
-  test("upstream path shapes equal the manifest's declared path shapes", () => {
-    const upstream = new Set(upstreamRoutePathTemplates(appTsx).flatMap(shapesOf))
-    expect([...upstream].sort()).toEqual([...manifestShapes].sort())
+  test("the extractor publishes only the routes of the active feature branch", () => {
+    const fixture = `
+      <Show when={!settings.general.newLayoutDesigns()}>
+        <Route path="/" component={LegacyHome} />
+      </Show>
+      <Show when={settings.general.newLayoutDesigns()}>
+        <Route path="/" component={Home} />
+        <Route path="/lab" component={Lab} />
+      </Show>
+    `
+    expect(upstreamRoutePathTemplates(fixture, { newLayoutDesigns: false })).toEqual(["/"])
+    expect(upstreamRoutePathTemplates(fixture, { newLayoutDesigns: true })).toEqual(["/", "/lab"])
+  })
+
+  test("a <Show> guard nobody declared cannot silently gate a route", () => {
+    const fixture = `
+      <Show when={settings.general.someNewExperiment()}>
+        <Route path="/" component={Home} />
+      </Show>
+    `
+    expect(() => upstreamRoutePathTemplates(fixture, { newLayoutDesigns: true })).toThrow(/unrecognised/)
+  })
+
+  test.each(FEATURE_BRANCHES)("$name publishes exactly the manifest's declared path shapes", ({ flags }) => {
+    // Per branch, not per union: a route that only one branch publishes must be present in that
+    // branch. Comparing the union would let a route move from one branch to the other unseen.
+    expect(shapesFor(appTsx, flags)).toEqual(manifestShapes)
   })
 
   test("the ratchet bites when upstream grows a path the manifest never declared", () => {
-    const drifted = new Set(
-      upstreamRoutePathTemplates(`${appTsx}\n<Route path="/experiment/:slug" component={X} />`).flatMap(shapesOf),
+    const drifted = `${appTsx}\n<Route path="/experiment/:slug" component={X} />`
+    for (const branch of FEATURE_BRANCHES) expect(shapesFor(drifted, branch.flags)).not.toEqual(manifestShapes)
+  })
+
+  test("the ratchet bites when a route moves between mutually exclusive branches", () => {
+    // The exact mutation a global path set could not see: the new-layout home route becomes
+    // /new-session, which the legacy branch and the draft route both still publish.
+    const moved = appTsx.replace(
+      '<Route path="/" component={HomeLeaf} />\n        <Route path="/:dir/session/:id" component={NewLayoutLegacySessionRedirect} />',
+      '<Route path="/new-session" component={HomeLeaf} />\n        <Route path="/:dir/session/:id" component={NewLayoutLegacySessionRedirect} />',
     )
-    expect([...drifted].sort()).not.toEqual([...manifestShapes].sort())
+    expect(moved).not.toEqual(appTsx) // the mutation actually applied
+    expect(shapesFor(moved, { newLayoutDesigns: false })).toEqual(manifestShapes)
+    expect(shapesFor(moved, { newLayoutDesigns: true })).not.toEqual(manifestShapes)
   })
 })
 

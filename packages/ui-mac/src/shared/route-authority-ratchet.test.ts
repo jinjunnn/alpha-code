@@ -4,12 +4,19 @@ import { join, relative } from "node:path"
 const packageRoot = join(import.meta.dir, "../..")
 const sourceRoot = join(packageRoot, "src")
 const workspaceRoot = join(packageRoot, "../..")
-// The upstream renderer is held at arm's length, but its deep-link module is a surface Alpha
-// owns end to end (the manifest decodes; that module only consumes). Scan it for the deep-link
-// codec class specifically — the general href rules do not apply there, because upstream's own
-// sidebar legitimately writes its own route literals; that layer is contracted by path SHAPE in
+// The upstream renderer is held at arm's length, but its deep-link module is a surface Alpha owns
+// end to end (the manifest decodes; that module only consumes — including the dispatch, which is
+// why it lives there and not inline in layout.tsx). Being Alpha's own module, it takes the FULL
+// rule set: a hand-assembled `/${…}/session` for a delivery is a violation there.
+const upstreamDeepLinkModule = join(workspaceRoot, "packages/app/src/pages/layout/deep-links.ts")
+// The rest of that directory is upstream's: its sidebar legitimately writes its own route
+// literals, so it takes only the deep-link codec rules. That layer is contracted by path SHAPE in
 // route-upstream-shape.test.ts instead.
-const upstreamDeepLinkRoot = join(workspaceRoot, "packages/app/src/pages/layout")
+const upstreamLayoutRoot = join(workspaceRoot, "packages/app/src/pages/layout")
+// layout.tsx is upstream's too, but it is where the deep-link consumer used to live. It may call
+// the module; it may not re-become the consumer, because then the hand-assembled href would be
+// back in a file the full rule set cannot police.
+const upstreamLayoutFile = join(workspaceRoot, "packages/app/src/pages/layout.tsx")
 const ratchetPath = join(import.meta.dir, "route-authority-ratchet.test.ts")
 const routeManifestPath = join(import.meta.dir, "route-manifest.ts")
 const surfaceLedgerPath = join(import.meta.dir, "frontend-surface-manifest.ts")
@@ -131,6 +138,25 @@ function deepLinkViolationsFor(file: SourceFile): Violation[] {
   }))
 }
 
+// Selecting deliveries is the first move of a consumer. Keeping that out of layout.tsx keeps the
+// consumer inside the module the full rule set polices: to hand-assemble a route from a delivery
+// in layout.tsx you must first pick the deliveries apart, and that is what this bites.
+const DEEP_LINK_CONSUMER_RULES = [
+  {
+    rule: "deep-link dispatch belongs in the ratcheted deep-links module",
+    pattern: /\bcollect(?:OpenProject|NewSession)DeepLinks\b|\bdeepLinkId\b/,
+  },
+] as const
+
+function consumerViolationsFor(file: SourceFile): Violation[] {
+  const source = withoutComments(file.source)
+  const path = relative(workspaceRoot, file.path)
+  return DEEP_LINK_CONSUMER_RULES.filter((entry) => entry.pattern.test(source)).map((entry) => ({
+    path,
+    rule: entry.rule,
+  }))
+}
+
 describe("Alpha route authority ratchet", () => {
   test.each(["main", "renderer"])("the detector bites on an out-of-manifest href and scheme parser in %s", (layer) => {
     const source = `
@@ -155,8 +181,8 @@ describe("Alpha route authority ratchet", () => {
     expect((await sourcesUnder(sourceRoot)).flatMap(violationsFor)).toEqual([])
   })
 
-  test("the upstream deep-link module stays a passthrough, not a second codec", async () => {
-    expect((await sourcesUnder(upstreamDeepLinkRoot)).flatMap(deepLinkViolationsFor)).toEqual([])
+  test("the upstream layout directory stays free of a second deep-link codec", async () => {
+    expect((await sourcesUnder(upstreamLayoutRoot)).flatMap(deepLinkViolationsFor)).toEqual([])
   })
 
   test("the deep-link detector bites on a revived upstream parser", () => {
@@ -165,7 +191,37 @@ describe("Alpha route authority ratchet", () => {
       if (url.hostname === "new-session") dispatch(url.searchParams.get("directory"))
     `
     expect(
-      deepLinkViolationsFor({ path: join(upstreamDeepLinkRoot, "fixture.ts"), source }).map((entry) => entry.rule),
+      deepLinkViolationsFor({ path: join(upstreamLayoutRoot, "fixture.ts"), source }).map((entry) => entry.rule),
     ).toEqual(["deep-link scheme literal outside the manifest", "deep-link URL codec outside the manifest"])
+  })
+
+  test("the deep-link consumer module assembles no route of its own", async () => {
+    const source = await Bun.file(upstreamDeepLinkModule).text()
+    expect(violationsFor({ path: upstreamDeepLinkModule, source })).toEqual([])
+  })
+
+  test("the full rule set bites on a hand-assembled session href in the consumer module", () => {
+    // The exact mutation the previous ratchet let through: rebuild the destination from the
+    // delivery's directory instead of navigating to the href the manifest decoded.
+    const source = "navigateWithSidebarReset(`/${base64Encode(link.directory)}/session`)"
+    expect(violationsFor({ path: upstreamDeepLinkModule, source }).map((entry) => entry.rule)).toEqual([
+      "parameterized session hrefs belong in the manifest",
+    ])
+  })
+
+  test("layout.tsx calls the consumer instead of being one", async () => {
+    const source = await Bun.file(upstreamLayoutFile).text()
+    expect(consumerViolationsFor({ path: upstreamLayoutFile, source })).toEqual([])
+  })
+
+  test("the consumer detector bites when dispatch moves back into layout.tsx", () => {
+    const source = `
+      for (const link of collectNewSessionDeepLinks(links)) {
+        navigateWithSidebarReset(\`/\${base64Encode(link.directory)}/session\`)
+      }
+    `
+    expect(consumerViolationsFor({ path: upstreamLayoutFile, source }).map((entry) => entry.rule)).toEqual([
+      "deep-link dispatch belongs in the ratcheted deep-links module",
+    ])
   })
 })
