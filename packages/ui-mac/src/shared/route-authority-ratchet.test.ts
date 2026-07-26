@@ -225,22 +225,83 @@ const CONSUMER_FACTORY = "createDeepLinkConsumer"
 const IMPORT_STATEMENT = String.raw`^[ \t]*import[\s{][\s\S]*?(?:from[ \t]*["'][^"']*["']|["'][^"']*["'])[ \t]*;?`
 
 /**
+ * The same offset-preserving whiteout as `withoutComments`, applied to the TEXT of string and
+ * template literals: delimiters, newlines and every offset stay where they are, so a span found in
+ * this view locates the very same characters in the source it came from.
+ *
+ * R8's false green: the statement shape above starts at any line-beginning `import {`, INCLUDING
+ * one written inside a template literal, and then runs on to the next quoted string — swallowing
+ * the real import that follows into the same span. A default import of any module at all then read
+ * as an unrenamed named specifier, because the `{` faked inside the template was never closed:
+ *
+ *     const parserBait = `
+ *     import {
+ *     `
+ *     import createDeepLinkConsumer from "./consumer-alias"
+ *
+ * Text inside a literal is data, never a statement, so it is blanked before the shape is looked for
+ * at all. A `${…}` substitution is code again, and nests. No parser is needed for that, only the
+ * lexer's own rule: a literal ends at its unescaped delimiter.
+ *
+ * Comments are already blanked at both call sites — an apostrophe in prose would otherwise open a
+ * literal here — and every way this can still go wrong (a desynced quote) blanks MORE, which loses
+ * spans and classifies mentions as `aliased`: a red, which is the direction this file errs in.
+ */
+function withoutLiteralText(source: string) {
+  const out = source.split("")
+  const blank = (at: number) => {
+    if (out[at] !== undefined && out[at] !== "\n") out[at] = " "
+  }
+  // `'` `"` `` ` `` — inside a literal; `}` — inside a substitution; `{` — a brace nested in one.
+  const open: string[] = []
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index]!
+    const inside = open[open.length - 1]
+    if (inside === "'" || inside === '"' || inside === "`") {
+      if (char === "\\") {
+        blank(index)
+        blank(index + 1)
+        index += 1
+      } else if (char === inside) open.pop()
+      else if (inside === "`" && char === "$" && source[index + 1] === "{") {
+        open.push("}")
+        index += 1
+      } else blank(index)
+      continue
+    }
+    if (char === "'" || char === '"' || char === "`") open.push(char)
+    else if (char === "{") open.push("{")
+    else if (char === "}" && (inside === "{" || inside === "}")) open.pop()
+  }
+  return out.join("")
+}
+
+/**
+ * The statements as spans, read from the lexical view so only a real statement can open one, and
+ * so a module specifier's own text cannot close one early. Offsets carry over unchanged, which is
+ * what lets a mention found in the source be attributed to the span it sits in.
+ */
+function importStatementsIn(source: string) {
+  const lexical = withoutLiteralText(source)
+  const pattern = new RegExp(IMPORT_STATEMENT, "gm")
+  const spans: { start: number; text: string }[] = []
+  for (let hit = pattern.exec(lexical); hit !== null; hit = pattern.exec(lexical))
+    spans.push({ start: hit.index, text: hit[0] })
+  return spans
+}
+
+/**
  * Blank out import statements, keeping every offset. Imports are the one place the factory's name
  * legitimately appears without being called, so they are removed before that rule is applied —
  * and an import that renames it (`… as buildConsumer`) then leaves zero calls, which is refused
  * by the same count.
  */
 function withoutImports(source: string) {
-  return source.replace(new RegExp(IMPORT_STATEMENT, "gm"), (text) => text.replace(/[^\n]/g, " "))
-}
-
-/** The same statements as spans, so a mention inside one can be read against its own text. */
-function importStatementsIn(source: string) {
-  const pattern = new RegExp(IMPORT_STATEMENT, "gm")
-  const spans: { start: number; text: string }[] = []
-  for (let hit = pattern.exec(source); hit !== null; hit = pattern.exec(source))
-    spans.push({ start: hit.index, text: hit[0] })
-  return spans
+  return importStatementsIn(source).reduce(
+    (text, span) =>
+      `${text.slice(0, span.start)}${span.text.replace(/[^\n]/g, " ")}${text.slice(span.start + span.text.length)}`,
+    source,
+  )
 }
 
 /**
@@ -819,6 +880,51 @@ describe("Alpha route authority ratchet", () => {
     // The other direction: the honest tree above must stay green, or the gate reddens on itself.
     expect(factoryMentionsIn(`import { ${CONSUMER_FACTORY}, deepLinkEvent } from "./layout/deep-links"`)).toEqual([
       "imported",
+    ])
+  })
+
+  test("an import faked inside a template literal cannot swallow the real one", () => {
+    // R8's false green. The statement span began at the template's line-beginning `import {` and ran
+    // on to the next quoted string, taking the real default import with it — which then read as an
+    // unrenamed named specifier, because the `{` faked inside the template was never closed. Any
+    // module's default export could wear the trusted name with every mention in the tree unchanged.
+    const source = [
+      "const parserBait = `",
+      "import {",
+      "`",
+      "void parserBait",
+      `import ${CONSUMER_FACTORY} from "./layout/consumer-alias"`,
+      `const consumeDeepLinks = ${CONSUMER_FACTORY}({${HONEST_DEPS}})`,
+      MOUNTED,
+    ].join("\n")
+
+    // Same as the other alias shapes: the call site reads as perfect, and the alias is caught where
+    // it is created.
+    expect(deepLinkWiringIn(source).usage).toEqual({ listener: true, invoked: true, singleBinding: true })
+    expect(factoryNameSites([{ path: upstreamLayoutFile, source }])).toEqual([
+      { path: "packages/app/src/pages/layout.tsx", mentions: ["aliased", "applied"] },
+    ])
+  })
+
+  test("import-shaped text inside a template — nested substitutions included — is text, not a statement", () => {
+    // And the other direction again: blanking literal text must not cost the honest tree a green.
+    // The inner statement sits inside a template nested in a `${…}` substitution, which is where a
+    // whiteout that does not follow the nesting would either stop early or run past the end.
+    const source = [
+      `import { ${CONSUMER_FACTORY} } from "./layout/deep-links"`,
+      "const doc = `",
+      'import { anything as somethingElse } from "./elsewhere"',
+      "${nested(`",
+      'import { deeper } from "./deeper"',
+      "`)}",
+      "`",
+      `const consumeDeepLinks = ${CONSUMER_FACTORY}({${HONEST_DEPS}})`,
+      MOUNTED,
+    ].join("\n")
+
+    expect(deepLinkWiringIn(source).usage).toEqual({ listener: true, invoked: true, singleBinding: true })
+    expect(factoryNameSites([{ path: upstreamLayoutFile, source }])).toEqual([
+      { path: "packages/app/src/pages/layout.tsx", mentions: ["imported", "applied"] },
     ])
   })
 

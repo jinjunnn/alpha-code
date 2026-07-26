@@ -636,3 +636,37 @@ R7 判 §5.5 的两条 park 修正(F1-a 代次隔离、F1-b 阻挡线自带上�
   `[aliased, applied]`);其中反向 alias 那棵被污染的树用 R6 的旧判据重放则**完全绿**——
   这条假绿是真的,现在被封住了。单测同时钉住反向:`import { createDeepLinkConsumer, deepLinkEvent }`
   仍分类为 `imported`,诚实树不会自伤。
+
+### §5.7 第八轮对抗审计(R8)驳回后的修正(2026-07-26)
+
+R8 判 §5.6 的分类修正落实(多行 import、注释穿插、相邻 `b as c`、模块字符串里的 `as`、
+`export { … } from` 均按预期分类;两处各自 `new RegExp`,不共享 `lastIndex`;合法但超出固定形状的
+import 可能误红属 fail-closed 的人工复核成本)。剩下一条:**语句跨度不认字符串边界**。
+
+- **F8 —— 模板字符串里的假 import 能吞掉后面那句真 import。** 语句正则从**任意行首**的
+  `import {` 起算,包括写在模板字符串**内容**里的那一行,然后一路懒惰匹配到下一个带引号的字符串
+  为止 —— 后面那句真正的默认导入被吞进同一个跨度。伪造的 `{` 从未闭合,于是
+  `importMentionKind()` 把默认导入读成「未改名的 named specifier」,分类回到
+  `[imported, applied]`,任意模块的默认导出又能穿上受信工厂的名字:
+
+  ```ts
+  const parserBait = `
+  import {
+  `
+  void parserBait
+  import createDeepLinkConsumer from "./consumer-alias"
+  ```
+
+  修法仍然纯词法,不引入 AST 或模块解析器:既然注释已经在做**保留偏移的抹白**,就用同一手法把
+  字符串与模板字面量的**文本**一并抹白(`withoutLiteralText()`)——只抹内容,定界符、换行与每一个
+  偏移原地不动,所以在这个词法视图里找到的跨度可以直接定位回原文。转义 `\` 连同它转义的那个字符
+  一起抹掉;`${…}` 代换里又是代码,并且可嵌套(代换里的模板、模板里的代换各自入栈)。
+  `importStatementsIn()` 改为在这个视图上取跨度,`withoutImports()` 改为按这些跨度抹白 ——
+  两条既有判据因此同时受益,判据本身一行未改。残余失配只可能**多抹**(引号失衡),多抹会丢跨度、
+  把 mention 归到 `aliased`,是红不是绿,与本文件一贯的 fail-closed 方向一致。
+
+  变异实测(种进真实 `packages/app/src/pages/layout.tsx`,跑完还原):上面那段 bait 原样种进去
+  **变红**(`layout.tsx` 变成 `[aliased, applied]`);同一棵被污染的树关掉抹白重放则**完全绿**——
+  这条假绿是真的,现在被封住了。反向变异:模板里放 `as` / `import` 诱饵(含嵌套 `${…}` 里再套一层
+  模板、里面还有一句行首 `import`)而接线诚实,**不误红**(仍是 `[imported, applied]`)。两条 bait
+  都经 Bun 转译确认语法合法。定向测试 39 pass / 0 fail;`bun test src` 2979 pass / 0 fail。
