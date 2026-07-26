@@ -12,27 +12,15 @@ describe("surface map model", () => {
     )
   })
 
-  test("reports release defaults separately from effective runtime resolution", () => {
+  test("route leaves report their single Alpha composition; other mounts report availability", () => {
     const home = frontendSurfaceById("route.home")
     const session = frontendSurfaceById("route.session")
-    if (!home || !session) throw new Error("surface fixture missing from canonical manifest")
-    const resolved = {
-      home: { mode: "alpha", reason: "release-default" },
-      newSession: { mode: "alpha", reason: "release-default" },
-      session: { mode: "alpha", reason: "release-default" },
-    } as const
+    const inspector = frontendSurfaceById("dev.surface-map")
+    if (!home || !session || !inspector) throw new Error("surface fixture missing from canonical manifest")
 
-    expect(surfaceRuntimeState(home, resolved)).toEqual({
-      mode: "Alpha",
-      detail: "release-default",
-      release: "alpha",
-    })
-    expect(surfaceRuntimeState(session, resolved)).toEqual({
-      mode: "Alpha",
-      detail: "release-default",
-      release: "alpha",
-    })
-    expect(surfaceRuntimeState(home, null).detail).toBe("resolver-error fallback")
+    expect(surfaceRuntimeState(home)).toEqual({ mode: "Alpha", detail: "home" })
+    expect(surfaceRuntimeState(session)).toEqual({ mode: "Alpha", detail: "session" })
+    expect(surfaceRuntimeState(inspector)).toEqual({ mode: "仅开发", detail: "development" })
   })
 
   test("marks the route, session inline mounts, and open overlays as active", () => {

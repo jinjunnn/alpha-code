@@ -5,6 +5,12 @@ import { promisify } from "node:util"
 
 import type { Configuration } from "electron-builder"
 
+// REQ-089 AC3: the OS protocol list has exactly one source. The installer metadata that makes a
+// cold-start deep link reach the app at all is derived from the same manifest the runtime
+// registers and decodes against — a second hardcoded list here would silently desynchronise the
+// packaged app from the running one.
+import { DEEP_LINK_SCHEMES } from "./src/shared/route-manifest"
+
 const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(packageDir, "../..")
@@ -26,7 +32,9 @@ async function signWindows(configuration: { path: string }) {
   )
 }
 
-const channel = (() => {
+export type Channel = "dev" | "beta" | "prod"
+
+const channel: Channel = (() => {
   const raw = process.env.OPENCODE_CHANNEL
   if (raw === "dev" || raw === "beta" || raw === "prod") return raw
   return "dev"
@@ -158,7 +166,7 @@ const getBase = (appId: string): Configuration => ({
   },
   protocols: {
     name: "alpha-code",
-    schemes: ["opencode", "alpha-code"],
+    schemes: [...DEEP_LINK_SCHEMES],
   },
   win: {
     icon: `resources/icons/icon.ico`,
@@ -189,11 +197,11 @@ const getBase = (appId: string): Configuration => ({
   },
 })
 
-function getConfig() {
-  const appId = APP_IDS[channel]
+export function getConfig(target: Channel = channel) {
+  const appId = APP_IDS[target]
   const base = getBase(appId)
 
-  switch (channel) {
+  switch (target) {
     case "dev": {
       return {
         ...base,
@@ -207,7 +215,7 @@ function getConfig() {
         ...base,
         appId,
         productName: "alpha-code Beta",
-        protocols: { name: "alpha-code Beta", schemes: ["opencode", "alpha-code"] },
+        protocols: { name: "alpha-code Beta", schemes: [...DEEP_LINK_SCHEMES] },
         // Own public release repo (jinjunnn/alpha-code) — NOT anomalyco/opencode, which would auto-
         // download upstream OpenCode over alpha (B9). `beta` channel = pre-release feed.
         publish: { provider: "github", owner: "jinjunnn", repo: "alpha-code", channel: "beta" },
@@ -219,7 +227,7 @@ function getConfig() {
         ...base,
         appId,
         productName: "alpha-code",
-        protocols: { name: "alpha-code", schemes: ["opencode", "alpha-code"] },
+        protocols: { name: "alpha-code", schemes: [...DEEP_LINK_SCHEMES] },
         // Own public release repo (jinjunnn/alpha-code) — NOT anomalyco/opencode (B9 wrong-owner feed,
         // which would auto-download upstream OpenCode over alpha). `latest` = stable feed.
         publish: { provider: "github", owner: "jinjunnn", repo: "alpha-code", channel: "latest" },

@@ -59,9 +59,13 @@ describe("manifest-derived production route composition", () => {
     expect(entry.match(/const productionRoutes = composeRoutes\(/g)).toHaveLength(1)
     expect(entry.match(/router=\{MemoryRouter\}/g)).toHaveLength(1)
     expect(entry.match(/surfaces=\{surfaceComponents\(\)\}/g)).toHaveLength(1)
-    expect(entry).toContain("surfaces[productionRoutes.home.surface] = home")
-    expect(entry).toContain('surfaces[productionRoutes["new-session"].surface] = newSession')
-    expect(entry).toContain("surfaces[productionRoutes.session.surface] = session")
+    // Each leaf is mounted unconditionally from the composition — no release gate can reappear
+    // between the manifest and the seam.
+    expect(entry).toContain("[productionRoutes.home.surface]: productionRoutes.home.mount(alphaProjects)")
+    expect(entry).toContain(
+      '[productionRoutes["new-session"].surface]: productionRoutes["new-session"].mount(alphaProjects)',
+    )
+    expect(entry).toContain("[productionRoutes.session.surface]: productionRoutes.session.mount(alphaProjects)")
     expect(entry).toContain("<SettingsSurface />")
     expect(entry).toContain("dialogHost={productionRoutes.dialog.mount}")
     expect(entry).toContain("<RecoverySurface />")

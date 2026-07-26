@@ -1436,7 +1436,6 @@ export const dict = {
   "alpha.surfaceMap.noMatchesDetail": "Clear filters or try another keyword.",
   "alpha.surfaceMap.mounted": "Mounted",
   "alpha.surfaceMap.runtime": "Runtime",
-  "alpha.surfaceMap.releaseDefault": "Release default",
   "alpha.surfaceMap.entrypoints": "Entrypoints",
   "alpha.surfaceMap.transitions": "Transitions",
   "alpha.surfaceMap.title": "Frontend Surface Map",
@@ -1450,6 +1449,5 @@ export const dict = {
   "alpha.surfaceMap.boot": "Boot",
   "alpha.surfaceMap.owner": "Owner",
   "alpha.surfaceMap.mount": "Mount",
-  "alpha.surfaceMap.fallback": "Fallback",
   "alpha.surfaceMap.source": "Source",
 }

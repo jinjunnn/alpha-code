@@ -1,4 +1,3 @@
-import { SURFACE_RELEASE_STATES, type ResolvedSurfaces } from "../../shared/alpha-surfaces"
 import {
   FRONTEND_SURFACE_MANIFEST,
   type FrontendSurfaceEntry,
@@ -35,28 +34,13 @@ export function filterSurfaceMap(
   })
 }
 
-export function surfaceRuntimeState(surface: FrontendSurfaceEntry, resolved?: ResolvedSurfaces | null) {
-  if (!surface.releaseSurface)
-    return {
-      mode:
-        surface.availability === "development"
-          ? "仅开发"
-          : surface.availability === "gated"
-            ? "门控"
-            : "静态挂载",
-      detail: surface.availability,
-      release: undefined,
-    }
-  if (!resolved)
-    return {
-      mode: "Legacy",
-      detail: "resolver-error fallback",
-      release: SURFACE_RELEASE_STATES[surface.releaseSurface],
-    }
+/** 每个路由叶恒组合它唯一的 Alpha surface —— 没有运行时模式可查,只报挂载事实。 */
+export function surfaceRuntimeState(surface: FrontendSurfaceEntry) {
+  if (surface.releaseSurface) return { mode: "Alpha", detail: surface.releaseSurface }
   return {
-    mode: resolved[surface.releaseSurface].mode === "alpha" ? "Alpha" : "Legacy",
-    detail: resolved[surface.releaseSurface].reason,
-    release: SURFACE_RELEASE_STATES[surface.releaseSurface],
+    mode:
+      surface.availability === "development" ? "仅开发" : surface.availability === "gated" ? "门控" : "静态挂载",
+    detail: surface.availability,
   }
 }
 

@@ -6,6 +6,7 @@ import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, sh
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
+import { trackDeepLinkRenderer } from "./deep-links"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import { cspPlatformEligible } from "./platform"
 import { corsRelaxAllowed, RENDERER_CSP } from "./renderer-security"
@@ -175,6 +176,10 @@ export function createMainWindow() {
 
   allowRendererPermissions(win)
   wireWindowRecovery(win, "main")
+  // Deep-link stream ownership (REQ-089 AC4). Wired HERE, not at the boot call site, because this
+  // function is also the `window.new` menu action's window factory: a renderer that could drain
+  // the queue but never report reload/crash/destruction would strand or lose links silently.
+  trackDeepLinkRenderer(win.webContents)
 
   // C1: keep the renderer boxed in our own origin. contextIsolation/sandbox don't gate IPC by origin,
   // so a navigation or window.open to hostile content would still run with the full preload bridge.

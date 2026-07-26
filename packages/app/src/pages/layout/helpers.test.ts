@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import {
+  applyDeepLinks,
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
   drainPendingDeepLinks,
-  parseDeepLink,
-  parseNewSessionDeepLink,
+  type DeepLinkDelivery,
 } from "./deep-links"
 import { type Session } from "@opencode-ai/sdk/v2/client"
 import {
@@ -37,76 +37,96 @@ const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
   }) as Session
 
 describe("layout deep links", () => {
-  test("parses open-project deep links", () => {
-    expect(parseDeepLink("opencode://open-project?directory=/tmp/demo")).toBe("/tmp/demo")
+  // The shell decodes deep links against its route manifest; this side only accepts the decoded
+  // deliveries, so the tests describe shape validation and dispatch, not URL parsing.
+  const openProject: DeepLinkDelivery = { deepLinkId: "open-project", directory: "/a", href: "/L2E" }
+  const newSession: DeepLinkDelivery = { deepLinkId: "new-session", directory: "/c", href: "/L2M/session" }
+  const newSessionWithPrompt: DeepLinkDelivery = {
+    deepLinkId: "new-session",
+    directory: "/d",
+    prompt: "ship it",
+    href: "/L2Q/session?prompt=ship%20it",
+  }
+
+  test("collects only open-project deliveries", () => {
+    expect(collectOpenProjectDeepLinks([openProject, newSession, newSessionWithPrompt])).toEqual([openProject])
   })
 
-  test("ignores non-project deep links", () => {
-    expect(parseDeepLink("opencode://other?directory=/tmp/demo")).toBeUndefined()
-    expect(parseDeepLink("https://example.com")).toBeUndefined()
+  test("collects only new-session deliveries, carrying the optional prompt", () => {
+    expect(collectNewSessionDeepLinks([openProject, newSession, newSessionWithPrompt])).toEqual([
+      newSession,
+      newSessionWithPrompt,
+    ])
   })
 
-  test("ignores malformed deep links safely", () => {
-    expect(() => parseDeepLink("opencode://open-project/%E0%A4%A%")).not.toThrow()
-    expect(parseDeepLink("opencode://open-project/%E0%A4%A%")).toBeUndefined()
-  })
-
-  test("parses links when URL.canParse is unavailable", () => {
-    const original = Object.getOwnPropertyDescriptor(URL, "canParse")
-    Object.defineProperty(URL, "canParse", { configurable: true, value: undefined })
-    try {
-      expect(parseDeepLink("opencode://open-project?directory=/tmp/demo")).toBe("/tmp/demo")
-    } finally {
-      if (original) Object.defineProperty(URL, "canParse", original)
-      if (!original) Reflect.deleteProperty(URL, "canParse")
-    }
-  })
-
-  test("ignores open-project deep links without directory", () => {
-    expect(parseDeepLink("opencode://open-project")).toBeUndefined()
-    expect(parseDeepLink("opencode://open-project?directory=")).toBeUndefined()
-  })
-
-  test("collects only valid open-project directories", () => {
-    const result = collectOpenProjectDeepLinks([
+  test("drops anything that is not a complete delivery", () => {
+    const malformed = [
       "opencode://open-project?directory=/a",
-      "opencode://other?directory=/b",
-      "opencode://open-project?directory=/c",
-    ])
-    expect(result).toEqual(["/a", "/c"])
+      null,
+      undefined,
+      42,
+      { deepLinkId: "open-project" },
+      { deepLinkId: "open-project", directory: "", href: "/" },
+      { deepLinkId: "open-project", directory: "/a", href: "" },
+      { deepLinkId: "open-project", directory: "/a", href: "/L2E", prompt: 7 },
+    ]
+    expect(collectOpenProjectDeepLinks(malformed)).toEqual([])
+    expect(collectNewSessionDeepLinks(malformed)).toEqual([])
   })
 
-  test("parses new-session deep links with optional prompt", () => {
-    expect(parseNewSessionDeepLink("opencode://new-session?directory=/tmp/demo")).toEqual({ directory: "/tmp/demo" })
-    expect(parseNewSessionDeepLink("opencode://new-session?directory=/tmp/demo&prompt=hello%20world")).toEqual({
-      directory: "/tmp/demo",
-      prompt: "hello world",
-    })
-  })
+  test("drains pending deliveries once", () => {
+    const target = { __alphaDeepLinks: [openProject] } as unknown as Window
 
-  test("ignores new-session deep links without directory", () => {
-    expect(parseNewSessionDeepLink("opencode://new-session")).toBeUndefined()
-    expect(parseNewSessionDeepLink("opencode://new-session?directory=")).toBeUndefined()
-  })
-
-  test("collects only valid new-session deep links", () => {
-    const result = collectNewSessionDeepLinks([
-      "opencode://new-session?directory=/a",
-      "opencode://open-project?directory=/b",
-      "opencode://new-session?directory=/c&prompt=ship%20it",
-    ])
-    expect(result).toEqual([{ directory: "/a" }, { directory: "/c", prompt: "ship it" }])
-  })
-
-  test("drains global deep links once", () => {
-    const target = {
-      __OPENCODE__: {
-        deepLinks: ["opencode://open-project?directory=/a"],
-      },
-    } as unknown as Window & { __OPENCODE__?: { deepLinks?: string[] } }
-
-    expect(drainPendingDeepLinks(target)).toEqual(["opencode://open-project?directory=/a"])
+    expect(drainPendingDeepLinks(target)).toEqual([openProject])
     expect(drainPendingDeepLinks(target)).toEqual([])
+  })
+
+  test("a layout remount finds nothing to replay", () => {
+    // Mount and remount both consume by draining, so the buffer cannot serve the same delivery
+    // twice — the timing the shell's payload-free event exists to make impossible.
+    const target = { __alphaDeepLinks: [newSessionWithPrompt] } as unknown as Window
+    const acted: string[] = []
+    const handlers = {
+      openProject: () => {},
+      navigate: (href: string) => acted.push(href),
+      handoff: () => {},
+    }
+
+    applyDeepLinks(drainPendingDeepLinks(target), handlers) // first mount
+    applyDeepLinks(drainPendingDeepLinks(target), handlers) // remount
+
+    expect(acted).toEqual([newSessionWithPrompt.href])
+  })
+
+  test("navigates to the shell-decoded href verbatim, assembling no route of its own", () => {
+    const calls: { openProject: [string, boolean][]; navigate: string[]; handoff: [string, string][] } = {
+      openProject: [],
+      navigate: [],
+      handoff: [],
+    }
+    applyDeepLinks([openProject, newSession, newSessionWithPrompt], {
+      openProject: (directory, navigate) => calls.openProject.push([directory, navigate]),
+      navigate: (href) => calls.navigate.push(href),
+      handoff: (directory, prompt) => calls.handoff.push([directory, prompt]),
+    })
+
+    expect(calls.navigate).toEqual([newSession.href, newSessionWithPrompt.href])
+    expect(calls.openProject).toEqual([
+      ["/a", true],
+      ["/c", false],
+      ["/d", false],
+    ])
+    expect(calls.handoff).toEqual([["/d", "ship it"]])
+  })
+
+  test("a prompt-less new-session delivery seeds no handoff", () => {
+    const handoff: string[] = []
+    applyDeepLinks([newSession], {
+      openProject: () => {},
+      navigate: () => {},
+      handoff: (directory) => handoff.push(directory),
+    })
+    expect(handoff).toEqual([])
   })
 })
 

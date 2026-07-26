@@ -4,6 +4,7 @@ import {
   type AuthState,
   type CloudArtifactProgress,
   type ContractFailure,
+  type DeepLinkBatch,
   type ElectronAPI,
   type HtmlPreviewClosedEvent,
   type RendererStartupMarkName,
@@ -133,10 +134,11 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener("menu-command", handler)
   },
   onDeepLink: (cb) => {
-    const handler = (_: unknown, urls: string[]) => cb(urls)
+    const handler = (_: unknown, batch: DeepLinkBatch) => cb(batch)
     ipcRenderer.on("deep-link", handler)
     return () => ipcRenderer.removeListener("deep-link", handler)
   },
+  acknowledgeDeepLinks: (batchId) => ipcRenderer.invoke("acknowledge-deep-links", batchId),
 
   openDirectoryPicker: (opts) => ipcRenderer.invoke("open-directory-picker", opts),
   workspaceDefaultDir: () => ipcRenderer.invoke("alpha-workspace-default"),
@@ -159,7 +161,6 @@ const api: ElectronAPI = {
   // REQ-098:环境快照只读通道 —— 刻意不传任何参数(环境由 main 从构建事实解析,renderer 零输入)。
   environment: () => ipcRenderer.invoke("alpha-environment"),
   surfaces: {
-    resolve: () => ipcRenderer.invoke("alpha-surfaces-resolve"),
     reportFailure: (payload) => ipcRenderer.invoke("alpha-surface-failure", payload),
   },
   getZoomFactor: () => ipcRenderer.invoke("get-zoom-factor"),

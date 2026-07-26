@@ -21,15 +21,16 @@ alpha-code 是 opencode 的 fork:`packages/ui-mac`(Electron 壳,alpha 自有)挂
 
 ## 一、替换是一条阶梯,不是一次翻新
 
-一个面从上游走到全 alpha,经由 [`patterns.md`](patterns.md) 的手法**逐级**推进,
-每级都保留"崩了回落上游叶子"的路径(`surface-boundary.tsx` +
-`SURFACE_RELEASE_STATES: legacy → auto-fallback → alpha`):
+一个面从上游走到全 alpha,经由 [`patterns.md`](patterns.md) 的手法**逐级**推进。
+每一级是一次合并,不是一个开关:上一级的上游实现在下一级落地时**被替换掉**,没有
+"崩了回落上游叶子"的发布态(REQ-089 硬切)。致命渲染错误走 `surface-boundary.tsx`
+进 Alpha Recovery:
 
 ```
 opencode(纯上游,零改)
   → reskin(CSS 重贴皮,lineage=partial)          只改样子,不碰逻辑/DOM 结构
   → takeover / injection(注入上游锚点,lineage=hybrid)  改行为,注入稳定锚点,不 fork 上游组件
-  → seam surface(AppSurfaces 接管,lineage=alpha-ized)   完全自有渲染,带 upstream 回退
+  → seam surface(AppSurfaces 接管,lineage=alpha-ized)   完全自有渲染,唯一组合
 ```
 
 规则(承 [`patterns.md`](patterns.md)):**reskin 不得长成逻辑 fork**;当一个面必须

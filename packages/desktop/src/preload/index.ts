@@ -56,7 +56,6 @@ const api: ElectronAPI = {
     check: () => ipcRenderer.invoke("updater-check"),
     install: () => ipcRenderer.invoke("updater-install"),
   },
-  consumeInitialDeepLinks: () => ipcRenderer.invoke("consume-initial-deep-links"),
   getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),
   setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
   isFirstLaunchOnboardingPending: () => ipcRenderer.invoke("is-first-launch-onboarding-pending"),
@@ -81,11 +80,6 @@ const api: ElectronAPI = {
     const handler = (_: unknown, id: string) => cb(id)
     ipcRenderer.on("menu-command", handler)
     return () => ipcRenderer.removeListener("menu-command", handler)
-  },
-  onDeepLink: (cb) => {
-    const handler = (_: unknown, urls: string[]) => cb(urls)
-    ipcRenderer.on("deep-link", handler)
-    return () => ipcRenderer.removeListener("deep-link", handler)
   },
 
   openDirectoryPicker: (opts) => ipcRenderer.invoke("open-directory-picker", opts),

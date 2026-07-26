@@ -20,13 +20,14 @@ Recovery, never the upstream leaf.
 ## Surface seam (replace an upstream leaf)
 
 Alpha swaps an upstream page through the typed `AppSurfaces` seam
-(`home` / `newSession` / `session`), gated by
+(`home` / `newSession` / `session`), whose ids live in
 `packages/ui-mac/src/shared/alpha-surfaces.ts`:
 
-- `SURFACE_RELEASE_STATES` = per-surface release default, `alpha` (ship the
-  alpha leaf) or `legacy` (ship upstream; alpha built but off). Resolution
-  happens once in main before the route tree mounts (env > pin > release
-  default) and never hot-switches at runtime.
+- Each route composes **exactly one** surface, resolved from the route manifest
+  by `renderer/route-composition.ts`. There is no release state, no env or pin
+  override, and no runtime switch: the alpha leaf is the only composition
+  (REQ-089 hard cut; the ratchet in `shared/route-authority-ratchet.test.ts`
+  keeps the flag machine from growing back).
 - A seam surface is a real alpha component; if it throws,
   `surface-boundary.tsx` records the crash once and admits **Alpha Recovery**
   (REQ-090 one-way door) — the failed region never reloads and never swaps to
@@ -67,9 +68,10 @@ and `main/db-safety-boot.ts` handles Electron-side boot recovery / DB safety.
 Design every alpha surface assuming it may be the thing that failed — provide an
 empty state, a loading state, and a degraded path.
 
-## Rollout is a state, not a flag day
+## Rollout is a sequence of merges, not a flag day
 
-A surface flips its release default `legacy → alpha` via `SURFACE_RELEASE_STATES`
-in `alpha-surfaces.ts`, not by deleting the upstream path; env/pin keep a
-per-deploy boot-time escape valve until the alpha surface is proven. This is why
-`../PAGE-MAP.md` marks a surface `partial` while its replacement is in flight.
+A surface is replaced by landing its alpha leaf as the route's single
+composition. There is no release flag and no boot-time escape valve: a fatal
+render goes to Alpha Recovery, never to an upstream leaf. Sequencing lives in
+Issues, and `../PAGE-MAP.md` marks a surface `partial` while its replacement is
+in flight.

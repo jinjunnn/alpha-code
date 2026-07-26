@@ -13,10 +13,16 @@ import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
-import { DEEP_LINK_SCHEMES, isDeepLink, parseDeepLink } from "../shared/route-manifest"
+import { DEEP_LINK_SCHEMES, isDeepLink } from "../shared/route-manifest"
+// Deep-link ingress. The manifest DECODES here and only the decoded delivery crosses into the
+// arm's-length upstream renderer, so no second URL codec can exist downstream. Queue-vs-live
+// arbitration (exactly-once across cold start, live delivery, renderer reload, renderer crash,
+// window close and `window.new`) lives in deep-link-queue.ts, where every timing is a unit test;
+// deep-links.ts is its one Electron adapter, shared with windows.ts so that every window is wired.
+import { deepLinks } from "./deep-links"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
-import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
+import { registerIpcHandlers, sendMenuCommand } from "./ipc"
 import { registerExtIpcHandlers } from "./ext-ipc"
 import { refreshRemoteCatalog } from "./remote-catalog"
 import { registerAccountIpcHandlers } from "./account-ipc"
@@ -108,7 +114,6 @@ import {
   getAuthRenewalTiming,
   getAuthState,
   getTokenGeneration,
-  handleAuthDeepLink,
   initAuthEnv,
   isStoredTokenExpired,
   logout as authLogout,
@@ -161,8 +166,6 @@ const commitSidecarTokenGeneration = (forked: number, healthy: boolean) => {
 // 判断(它问的是继承事实,不是健康事实),与上面那个健康确认值刻意分开。
 let bootForkTokenGeneration = 0
 
-const pendingDeepLinks: string[] = []
-
 function useEnvProxy() {
   try {
     // Electron 内置的 Node 领先于已发布的 @types/node —— setGlobalProxyFromEnv 运行时存在但类型
@@ -171,20 +174,6 @@ function useEnvProxy() {
   } catch (error) {
     logger.warn("failed to load proxy environment", error)
   }
-}
-
-function emitDeepLinks(urls: string[]) {
-  // Auth transport is consumed by the PKCE module. Application routes are validated and
-  // canonicalized by the manifest before the arm's-length upstream renderer receives them.
-  const forwarded = urls
-    .filter((url) => !handleAuthDeepLink(url))
-    .flatMap((url) => {
-      const navigation = parseDeepLink(url)
-      return navigation.ok ? [navigation.href] : []
-    })
-  if (forwarded.length === 0) return
-  pendingDeepLinks.push(...forwarded)
-  if (mainWindow) sendDeepLinks(mainWindow, forwarded)
 }
 
 async function killSidecar() {
@@ -576,7 +565,7 @@ const main = Effect.gen(function* () {
     const urls = argv.filter(isDeepLink)
     if (urls.length) {
       logger.log("deep link received via second-instance", { urls: urls.map(redactDeepLink) })
-      emitDeepLinks(urls)
+      deepLinks.ingest(argv)
     }
     if (mainWindow) {
       mainWindow.show()
@@ -587,7 +576,7 @@ const main = Effect.gen(function* () {
   app.on("open-url", (event: Event, url: string) => {
     event.preventDefault()
     logger.log("deep link received via open-url", { url: redactDeepLink(url) })
-    emitDeepLinks([url])
+    deepLinks.ingest([url])
     // Bring the app to the foreground. The auth callback arrives while the browser is focused;
     // unlike "second-instance", "open-url" does NOT auto-activate the app, so login would otherwise
     // complete silently in the background. steal:true overrides macOS focus-stealing prevention.
@@ -665,6 +654,16 @@ const main = Effect.gen(function* () {
     onRenewed: (result) => tokenRotation.accept(result, "renewal"),
     onChanged: () => authScheduler?.rearm("auth-change"),
   })
+  // Windows/Linux cold start: the OS launches the FIRST process with the link on its command
+  // line. That process wins the single-instance lock, so "second-instance" never fires, and there
+  // is no macOS "open-url" either — without this the link is lost outright. Deliberately AFTER
+  // initAuthEnv: an `alpha-code://auth/callback` can arrive this way too (browser wakes a closed
+  // app on Windows/Linux), and the PKCE exchange needs safeStorage, which is only usable now.
+  {
+    const urls = process.argv.filter(isDeepLink)
+    if (urls.length) logger.log("deep link received via first-process argv", { urls: urls.map(redactDeepLink) })
+    deepLinks.ingest(process.argv)
+  }
   // A′:过期 token 在恢复存储后立即开始续期和 1.2s hard grace，和迁移、配置预检、端口分配
   // 并行。到首 fork 点只消费这个已运行的 race，绝不重新起一段宽限。
   const storedTokenExpired = isStoredTokenExpired()
@@ -816,7 +815,8 @@ const main = Effect.gen(function* () {
       },
       (e) => Effect.runPromise(e),
     ),
-    consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
+    consumeInitialDeepLinks: (rendererId) => deepLinks.consumeInitial(rendererId),
+    acknowledgeDeepLinks: (rendererId, batchId) => deepLinks.acknowledge(rendererId, batchId),
     getDefaultServerUrl: () => getDefaultServerUrl(),
     setDefaultServerUrl: (url) => setDefaultServerUrl(url),
     getDisplayBackend: async () => null,
@@ -1056,6 +1056,8 @@ const main = Effect.gen(function* () {
   // matching the prior behavior.
   yield* Deferred.await(serverReady).pipe(Effect.catch(() => Effect.sync(() => {})))
 
+  // Deep-link stream ownership is attached inside createMainWindow — for this window and for every
+  // one the `window.new` menu action creates — so no window can exist unwired. See deep-links.ts.
   mainWindow = createMainWindow()
 
   // REQ-063 T4:全局存量一次性迁移门(发布闸)——default-deny 后 ~/.claude/~/.agents 存量不可见,

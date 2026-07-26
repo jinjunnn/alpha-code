@@ -13,6 +13,7 @@ import type {
   SidecarGenerationState,
   TitlebarTheme,
 } from "../preload/types"
+import type { DeepLinkBatch } from "./deep-link-queue"
 import { getAlphaEnvironment } from "./alpha-environment"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { alphaUserWorkspaceDir, ensureUserWorkspaceDir } from "./alpha-user-workspace"
@@ -40,7 +41,10 @@ type Deps = {
   sidecarGenerationState: () => SidecarGenerationState
   relaunch: () => void
   awaitInitialization: () => Promise<ServerReadyData>
-  consumeInitialDeepLinks: () => Promise<string[]> | string[]
+  /** `rendererId` is the invoking webContents id: deep-link ownership is keyed on that identity. */
+  consumeInitialDeepLinks: (rendererId: number) => Promise<DeepLinkBatch[]> | DeepLinkBatch[]
+  /** The renderer confirms one batch id landed; main may drop its copy. Same identity rule. */
+  acknowledgeDeepLinks: (rendererId: number, batchId: number) => void
   getDefaultServerUrl: () => Promise<string | null> | string | null
   setDefaultServerUrl: (url: string | null) => Promise<void> | void
   getDisplayBackend: () => Promise<string | null>
@@ -75,7 +79,15 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("sidecar-generation-state", () => deps.sidecarGenerationState())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
-  ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
+  ipcMain.handle("consume-initial-deep-links", (event: IpcMainInvokeEvent) =>
+    deps.consumeInitialDeepLinks(event.sender.id),
+  )
+  // The batch id comes from the renderer, so it is untrusted input: anything but an integer is
+  // dropped, and the queue itself only retires a batch that was handed to THIS webContents.
+  ipcMain.handle("acknowledge-deep-links", (event: IpcMainInvokeEvent, batchId: unknown) => {
+    if (typeof batchId !== "number" || !Number.isInteger(batchId)) return
+    deps.acknowledgeDeepLinks(event.sender.id, batchId)
+  })
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
   ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: string | null) =>
     deps.setDefaultServerUrl(url),
@@ -337,8 +349,4 @@ export function registerIpcHandlers(deps: Deps) {
 
 export function sendMenuCommand(win: BrowserWindow, id: string) {
   win.webContents.send("menu-command", id)
-}
-
-export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
-  win.webContents.send("deep-link", urls)
 }
