@@ -27,7 +27,7 @@ export function commitForkedTokenGeneration(current: number, forked: number, hea
 export function armRespawnGenerationTerminal(opts: {
   generation: number
   reason: SidecarRespawnReason
-  spawning: Promise<{ health: { wait: Promise<unknown> } }>
+  spawning: Promise<{ health: { wait: Promise<unknown> }; injectionFailure?: { message: string } }>
   timeoutMs: number
   publish: (state: SidecarGenerationState) => void
   logError: (message: string) => void
@@ -35,10 +35,13 @@ export function armRespawnGenerationTerminal(opts: {
   // R1 Major3:终态生产者不得因为 publish 抛出而变成 rejected promise —— 它常常无人 await
   // (spawn reject 路径),rejection 会变成 main 进程的 unhandled rejection;而 latch 侧收到
   // rejected respawn 就不会武装重试(无定时器终局)。发布失败只降级为一条日志。
-  const settle = (healthy: boolean) => {
+  // #613:健康通过但注入失败 → 终态 "injection-failed"(与 boot 侧 settleBootHealth 同构,
+  // 同代仍恰好一个终态)。返回值保持「健康线是否通过」:sidecar 真实可达、token 已随 fork
+  // 物化({file:} 通道不经注入),reload/token 记账语义不因注入丢失改变 —— 区分呈现归 renderer。
+  const settle = (healthy: boolean, injectionFailure?: { message: string }) => {
     try {
       opts.publish({
-        status: healthy ? "ready" : "failed",
+        status: healthy ? (injectionFailure ? "injection-failed" : "ready") : "failed",
         generation: opts.generation,
         reason: opts.reason,
       })
@@ -48,7 +51,7 @@ export function armRespawnGenerationTerminal(opts: {
     return healthy
   }
   return opts.spawning.then(
-    async ({ health }) => {
+    async ({ health, injectionFailure }) => {
       let timer: ReturnType<typeof setTimeout> | undefined
       const healthy = await Promise.race([
         health.wait.then(
@@ -62,7 +65,11 @@ export function armRespawnGenerationTerminal(opts: {
       clearTimeout(timer)
       // 日志指纹保留自 index.ts 原位。
       if (!healthy) opts.logError("sidecar respawned but health check failed — skipping renderer reload")
-      return settle(healthy)
+      else if (injectionFailure)
+        opts.logError(
+          `alpha config injection failed — sidecar respawned WITHOUT alpha config: ${injectionFailure.message}`,
+        )
+      return settle(healthy, injectionFailure)
     },
     () => {
       opts.logError("sidecar respawn failed before the health handshake")

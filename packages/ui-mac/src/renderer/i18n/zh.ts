@@ -938,6 +938,8 @@ export const dict = {
   "alpha.model.suspendedUnavailable": "对应节点或模型已不可用,已暂停",
   "alpha.model.catalogFailed": "模型目录加载失败",
   "alpha.model.catalogFailedDetail": "当前不提供推测列表。",
+  "alpha.model.engineConfigFailed": "模型配置未生效",
+  "alpha.model.engineConfigFailedDetail": "引擎已启动,但本机的模型配置没有加载成功,模型暂时无法使用。请重启应用;若反复出现,请联系支持并附上日志。",
   "alpha.model.engineConnecting": "正在连接引擎(可能正在重启)…",
   "alpha.model.engineConnectingDetail": "当前选择保持不变,模型列表稍后自动恢复。",
   "alpha.model.retryNow": "立即重试",

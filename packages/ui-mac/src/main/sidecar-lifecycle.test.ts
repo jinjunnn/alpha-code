@@ -156,6 +156,31 @@ describe("respawn generation terminal", () => {
     expect(sink.published).toEqual([{ status: "ready", generation: 10, reason: "token-only" }])
     expect(sink.errors).toEqual([])
   })
+
+  // #613 反向闸门(respawn 半场):健康通过但注入失败 → 终态必须是 injection-failed 而非 ready,
+  // 且 main 侧 error 出声;返回值保持「健康线通过」(reload/token 记账语义不变,sidecar 真实可达)。
+  // 把 settle 的 injectionFailure 分支删掉(回退成一律 ready),本用例转红。
+  test("#613 a healthy handshake with an injection failure publishes exactly one injection-failed", async () => {
+    const sink = collect()
+    const settled = await armRespawnGenerationTerminal({
+      generation: 12,
+      reason: "structural",
+      spawning: Promise.resolve({
+        health: { wait: Promise.resolve("ok") },
+        injectionFailure: { message: "ENOTDIR: mkdir userdata" },
+      }),
+      timeoutMs: 10,
+      publish: sink.publish,
+      logError: sink.logError,
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(settled).toBe(true)
+    expect(sink.published).toEqual([{ status: "injection-failed", generation: 12, reason: "structural" }])
+    expect(sink.errors.some((line) => line.includes("alpha config injection failed") && line.includes("ENOTDIR"))).toBe(
+      true,
+    )
+  })
 })
 
 // R3 新 Major:「活着的 sidecar 携带的 token 代」只能由**健康确认**推进,且必须单调。

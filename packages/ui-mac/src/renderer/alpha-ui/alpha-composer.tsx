@@ -1131,6 +1131,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         // 引擎真实可达时 list 成功,链自然回 ready。
         return
       }
+      // ready 与 injection-failed(#613)都证明引擎可达 —— 唤醒停跑的链不是伪造恢复信号;
+      // 「配置未生效」的区分呈现归 picker 横幅(alpha-composer-model),不在唤醒面。
       modelRetryWakeup.wake("generation-ready")
       if (modelChainState() === "recovering") setModelRetryEpoch((value) => value + 1)
       accountRetryWakeup.wake("generation-ready")

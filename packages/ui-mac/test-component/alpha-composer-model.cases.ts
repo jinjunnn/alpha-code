@@ -1035,6 +1035,48 @@ describe("ModelPickPop production component", () => {
     await waitFor(() => expect(selected?.id).toBe("real-custom-model"))
     mounted.dispose()
   })
+
+  // #613 反向闸门(退出条件 2/3,renderer 半场):「引擎未就绪」(failed)与「引擎就绪但注入失败」
+  // (injection-failed)必须呈现为两个不同的事实。把 injection-failed 并进 failed 的沉默分支
+  // (或删掉横幅),第二段断言当场转红;第一段锁住反向误判 —— 引擎未就绪不得谎报成配置问题。
+  test("#613 引擎未就绪与注入失败在 picker 中可区分:failed 无配置横幅,injection-failed 呈现配置横幅", async () => {
+    resetComposerModelProjection()
+    installApi()
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async () => {},
+        onPicked: () => {},
+      }),
+    )
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"]))
+
+    // 引擎未就绪终态:不得出现「模型配置未生效」——那是另一个事实的横幅
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", { detail: { status: "failed", generation: 3, reason: "boot" } }),
+    )
+    await flush()
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.engineConfigFailed"])
+
+    // 引擎就绪但注入失败:横幅必须出现
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "injection-failed", generation: 4, reason: "boot" },
+      }),
+    )
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.engineConfigFailed"]))
+
+    // 新一代 recovering 到来即撤下横幅(事实已翻篇,不粘滞)
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "recovering", generation: 5, reason: "structural" },
+      }),
+    )
+    await waitFor(() => expect(mounted.host.textContent).not.toContain(zh["alpha.model.engineConfigFailed"]))
+    mounted.dispose()
+  })
 })
 
 describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 2)", () => {
