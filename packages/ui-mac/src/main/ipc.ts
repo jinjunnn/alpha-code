@@ -41,7 +41,8 @@ type Deps = {
   sidecarGenerationState: () => SidecarGenerationState
   relaunch: () => void
   awaitInitialization: () => Promise<ServerReadyData>
-  consumeInitialDeepLinks: () => Promise<DeepLinkDelivery[]> | DeepLinkDelivery[]
+  /** `rendererId` is the invoking webContents id: deep-link ownership is keyed on that identity. */
+  consumeInitialDeepLinks: (rendererId: number) => Promise<DeepLinkDelivery[]> | DeepLinkDelivery[]
   getDefaultServerUrl: () => Promise<string | null> | string | null
   setDefaultServerUrl: (url: string | null) => Promise<void> | void
   getDisplayBackend: () => Promise<string | null>
@@ -76,7 +77,9 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("sidecar-generation-state", () => deps.sidecarGenerationState())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
-  ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
+  ipcMain.handle("consume-initial-deep-links", (event: IpcMainInvokeEvent) =>
+    deps.consumeInitialDeepLinks(event.sender.id),
+  )
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
   ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: string | null) =>
     deps.setDefaultServerUrl(url),
@@ -338,8 +341,4 @@ export function registerIpcHandlers(deps: Deps) {
 
 export function sendMenuCommand(win: BrowserWindow, id: string) {
   win.webContents.send("menu-command", id)
-}
-
-export function sendDeepLinks(win: BrowserWindow, links: DeepLinkDelivery[]) {
-  win.webContents.send("deep-link", links)
 }

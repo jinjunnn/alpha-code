@@ -14,10 +14,15 @@ import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
 import { DEEP_LINK_SCHEMES, isDeepLink } from "../shared/route-manifest"
-import { createDeepLinkQueue } from "./deep-link-queue"
+// Deep-link ingress. The manifest DECODES here and only the decoded delivery crosses into the
+// arm's-length upstream renderer, so no second URL codec can exist downstream. Queue-vs-live
+// arbitration (exactly-once across cold start, live delivery, renderer reload, renderer crash,
+// window close and `window.new`) lives in deep-link-queue.ts, where every timing is a unit test;
+// deep-links.ts is its one Electron adapter, shared with windows.ts so that every window is wired.
+import { deepLinks } from "./deep-links"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
-import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
+import { registerIpcHandlers, sendMenuCommand } from "./ipc"
 import { registerExtIpcHandlers } from "./ext-ipc"
 import { refreshRemoteCatalog } from "./remote-catalog"
 import { registerAccountIpcHandlers } from "./account-ipc"
@@ -109,7 +114,6 @@ import {
   getAuthRenewalTiming,
   getAuthState,
   getTokenGeneration,
-  handleAuthDeepLink,
   initAuthEnv,
   isStoredTokenExpired,
   logout as authLogout,
@@ -161,19 +165,6 @@ const commitSidecarTokenGeneration = (forked: number, healthy: boolean) => {
 // 「首个 fork **启动时**继承的 token 代」——只用于 boot 后那次「登录发生在 fork 之前吗」的
 // 判断(它问的是继承事实,不是健康事实),与上面那个健康确认值刻意分开。
 let bootForkTokenGeneration = 0
-
-// Deep-link ingress. The manifest DECODES here and only the decoded delivery crosses into the
-// arm's-length upstream renderer, so no second URL codec can exist downstream. Queue-vs-live
-// arbitration (exactly-once across cold start / live delivery / renderer reload) lives in
-// deep-link-queue.ts, where every timing is a unit test.
-const deepLinks = createDeepLinkQueue({
-  consumeAuth: (url) => handleAuthDeepLink(url),
-  deliver: (links) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return false
-    sendDeepLinks(mainWindow, links)
-    return true
-  },
-})
 
 function useEnvProxy() {
   try {
@@ -824,7 +815,7 @@ const main = Effect.gen(function* () {
       },
       (e) => Effect.runPromise(e),
     ),
-    consumeInitialDeepLinks: () => deepLinks.consumeInitial(),
+    consumeInitialDeepLinks: (rendererId) => deepLinks.consumeInitial(rendererId),
     getDefaultServerUrl: () => getDefaultServerUrl(),
     setDefaultServerUrl: (url) => setDefaultServerUrl(url),
     getDisplayBackend: async () => null,
@@ -1064,12 +1055,9 @@ const main = Effect.gen(function* () {
   // matching the prior behavior.
   yield* Deferred.await(serverReady).pipe(Effect.catch(() => Effect.sync(() => {})))
 
+  // Deep-link stream ownership is attached inside createMainWindow — for this window and for every
+  // one the `window.new` menu action creates — so no window can exist unwired. See deep-links.ts.
   mainWindow = createMainWindow()
-  // A renderer that starts a fresh document load (sidecar structural respawn reloads it) drops
-  // ownership of the deep-link stream: links that arrive from here on must be queued for the
-  // renderer that comes back, not shipped to the one that is going away. SPA route changes do
-  // not fire this event, so ownership only lapses on a real reload/navigation.
-  mainWindow.webContents.on("did-start-loading", () => deepLinks.rendererGone())
 
   // REQ-063 T4:全局存量一次性迁移门(发布闸)——default-deny 后 ~/.claude/~/.agents 存量不可见,
   // 首启必弹防「技能丢了」重演;fire-and-forget,不阻塞窗口;marker 记账不再弹。

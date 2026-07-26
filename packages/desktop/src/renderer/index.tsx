@@ -29,10 +29,6 @@ import { availableStartupServer, readyWslConnections } from "./wsl/connections"
 import "./styles.css"
 import { Splash } from "@opencode-ai/ui/logo"
 import { useTheme } from "@opencode-ai/ui/theme/context"
-// alpha fork: the one deep-link codec (packages/ui-mac/src/shared/route-manifest.ts) and the one
-// shell→renderer bridge. See emitDeepLinks below for why this shell reaches across.
-import { decodeDeepLink } from "../../../ui-mac/src/shared/route-manifest"
-import { publishDeepLinks } from "../../../ui-mac/src/renderer/deep-link-bridge"
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
@@ -69,24 +65,6 @@ void window.api.updater.subscribe(setUpdaterState)
 
 type DesktopWindowState = {
   id?: string
-}
-
-// alpha fork: the shared @opencode-ai/app renderer no longer parses deep-link URLs — the shell
-// decodes them against alpha's route manifest and forwards the decoded delivery (REQ-089 AC2:
-// exactly one URL→route codec in the repo). This shell therefore decodes with that same manifest
-// and publishes through the same bridge instead of forwarding raw URLs, which the renderer would
-// silently drop.
-const emitDeepLinks = (urls: string[]) => {
-  const links = urls.flatMap((url) => {
-    const delivery = decodeDeepLink(url)
-    return delivery ? [delivery] : []
-  })
-  publishDeepLinks(window, links)
-}
-
-const listenForDeepLinks = () => {
-  void window.api.consumeInitialDeepLinks().then((urls) => emitDeepLinks(urls))
-  return window.api.onDeepLink((urls) => emitDeepLinks(urls))
 }
 
 function windowLastActiveUrlKey(windowID: string) {
@@ -326,7 +304,6 @@ let menuTrigger = null as null | ((id: string) => void)
 window.api.onMenuCommand((id) => {
   menuTrigger?.(id)
 })
-listenForDeepLinks()
 
 function LoadingSplash() {
   return (

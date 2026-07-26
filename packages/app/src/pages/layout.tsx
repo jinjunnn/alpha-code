@@ -67,7 +67,7 @@ import {
   latestRootSession,
   sortedRootSessions,
 } from "./layout/helpers"
-import { applyDeepLinks, deepLinkEvent, drainPendingDeepLinks } from "./layout/deep-links"
+import { createDeepLinkConsumer, deepLinkEvent } from "./layout/deep-links"
 import { createInlineEditorController } from "./layout/inline-editor"
 import {
   LocalWorkspace,
@@ -1253,19 +1253,20 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   // The shell decodes deep links against its route manifest and forwards the result, including
-  // the destination href. Dispatch lives in ./layout/deep-links so the route-authority ratchet can
-  // hold it to the full "no hand-assembled route" rule set; this is only the adapter.
-  const consumeDeepLinks = () => {
-    if (!server.isLocal()) return
-    applyDeepLinks(drainPendingDeepLinks(window), {
-      openProject: (directory, navigate) => void openProject(directory, navigate),
-      navigate: navigateWithSidebarReset,
-      handoff: (directory, prompt) =>
-        setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(base64Encode(directory))), {
-          prompt,
-        }),
-    })
-  }
+  // the destination href. The consumer itself — drain, dispatch, navigation target — lives in
+  // ./layout/deep-links so the route-authority ratchet can hold it to the full "no hand-assembled
+  // route" rule set and a test can execute it end to end. Here we only hand over primitives this
+  // layout already owns; `navigate` is layout's own navigation function, passed through unwrapped.
+  const consumeDeepLinks = createDeepLinkConsumer({
+    enabled: () => server.isLocal(),
+    buffer: () => window,
+    openProject: (directory, navigate) => void openProject(directory, navigate),
+    navigate: navigateWithSidebarReset,
+    handoff: (directory, prompt) =>
+      setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(base64Encode(directory))), {
+        prompt,
+      }),
+  })
 
   onMount(() => {
     // The shell's event is a wake-up signal with no payload: the buffer is the queue, so every

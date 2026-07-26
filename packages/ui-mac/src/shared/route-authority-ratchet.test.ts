@@ -157,6 +157,32 @@ function consumerViolationsFor(file: SourceFile): Violation[] {
   }))
 }
 
+/**
+ * The two bindings layout.tsx hands the consumer, brace-balanced out of the call. Everything
+ * BETWEEN them and the navigation is executed and asserted in route-deep-link-consumer.test.ts;
+ * these two lines are the only stretch a test cannot reach into, because a wrapper here
+ * (`navigate: (href) => go(href + "/wrong")`) or a remapped input (`buffer: () => rewritten`)
+ * would retarget the navigation without any executed code changing. So they are pinned verbatim.
+ */
+function deepLinkWiringIn(source: string): string {
+  const clean = withoutComments(source)
+  const marker = "createDeepLinkConsumer({"
+  const calls = clean.split(marker).length - 1
+  if (calls !== 1) throw new Error(`expected exactly one createDeepLinkConsumer call, found ${calls}`)
+  let index = clean.indexOf(marker) + marker.length - 1
+  let depth = 0
+  const start = index
+  while (index < clean.length) {
+    if (clean[index] === "{") depth += 1
+    else if (clean[index] === "}") {
+      depth -= 1
+      if (depth === 0) return clean.slice(start, index + 1)
+    }
+    index += 1
+  }
+  throw new Error("unterminated createDeepLinkConsumer call")
+}
+
 describe("Alpha route authority ratchet", () => {
   test.each(["main", "renderer"])("the detector bites on an out-of-manifest href and scheme parser in %s", (layer) => {
     const source = `
@@ -212,6 +238,33 @@ describe("Alpha route authority ratchet", () => {
   test("layout.tsx calls the consumer instead of being one", async () => {
     const source = await Bun.file(upstreamLayoutFile).text()
     expect(consumerViolationsFor({ path: upstreamLayoutFile, source })).toEqual([])
+  })
+
+  test("layout.tsx hands the consumer its own primitives, unwrapped and unmapped", async () => {
+    // Fallback to the executable judgement, not a substitute for it: see route-deep-link-consumer.
+    const wiring = deepLinkWiringIn(await Bun.file(upstreamLayoutFile).text())
+    expect(wiring).toContain("navigate: navigateWithSidebarReset,")
+    expect(wiring).toContain("buffer: () => window,")
+  })
+
+  test("the wiring pin bites on a wrapped navigate and on a remapped buffer", () => {
+    const tampered = `
+      const consumeDeepLinks = createDeepLinkConsumer({
+        enabled: () => server.isLocal(),
+        buffer: () => rewritten(window),
+        openProject: (directory, navigate) => void openProject(directory, navigate),
+        navigate: (href) => navigateWithSidebarReset(href + "/wrong"),
+        handoff: (directory, prompt) => setSessionHandoff(directory, { prompt }),
+      })
+    `
+    const wiring = deepLinkWiringIn(tampered)
+    expect(wiring).not.toContain("navigate: navigateWithSidebarReset,")
+    expect(wiring).not.toContain("buffer: () => window,")
+  })
+
+  test("a second consumer call site is refused outright", () => {
+    const doubled = "createDeepLinkConsumer({ a: 1 })\ncreateDeepLinkConsumer({ b: 2 })"
+    expect(() => deepLinkWiringIn(doubled)).toThrow(/exactly one/)
   })
 
   test("the consumer detector bites when dispatch moves back into layout.tsx", () => {

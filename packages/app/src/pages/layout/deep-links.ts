@@ -85,3 +85,26 @@ export const applyDeepLinks = (links: readonly unknown[], handlers: DeepLinkHand
     handlers.navigate(link.href)
   }
 }
+
+export interface DeepLinkConsumerDeps extends DeepLinkHandlers {
+  /** Only a shell-hosted (local) server may act on the shell's deliveries. */
+  enabled: () => boolean
+  /** The window whose buffer the shell publishes into. */
+  buffer: () => Window
+}
+
+/**
+ * The WHOLE consumer, drain and dispatch included, as one function of layout's own primitives.
+ * It lives here rather than inline in layout.tsx for a reason the ratchet depends on: everything
+ * between "a delivery exists" and "the app navigates" is then inside the module the route-authority
+ * ratchet holds to the full rule set, and — because it is an ordinary exported function — the whole
+ * of it can be EXECUTED by a test that feeds in a real manifest-decoded delivery and observes the
+ * navigation target (`route-deep-link-consumer.test.ts`). Anything left in layout.tsx is a plain
+ * pass-through of primitives it already owns.
+ */
+export const createDeepLinkConsumer = (deps: DeepLinkConsumerDeps) => () => {
+  // Before the local server exists there is nothing to open the project in; return WITHOUT
+  // draining so the delivery is still there when the next wake-up signal arrives.
+  if (!deps.enabled()) return
+  applyDeepLinks(drainPendingDeepLinks(deps.buffer()), deps)
+}

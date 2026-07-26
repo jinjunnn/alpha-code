@@ -1,8 +1,9 @@
-// Composition ratchet for deep-link ingress (REQ-089 AC4). The queue's behaviour is proved in
-// deep-link-queue.test.ts; what cannot be executed under `bun test` is Electron's own wiring —
-// `app.on("second-instance")`, `app.on("open-url")`, the first process's argv, and the reload
-// that drops renderer ownership. This asserts those four wires exist and that nothing else may
-// reach the renderer transport, so deleting one is loud instead of silent.
+// Composition ratchet for deep-link ingress (REQ-089 AC4). The queue's behaviour AND the renderer
+// lifecycle wiring are now both EXECUTED for real in deep-link-queue.test.ts (the production
+// `trackRendererLifecycle` driven through a fake webContents). What remains here is only what
+// `bun test` cannot execute: Electron's own `app`-level events (`second-instance`, `open-url`),
+// the first process's argv, and the fact that ownership is attached inside the window factory
+// rather than at one call site.
 //
 // This is a source-shape assertion and therefore the weaker kind of gate: it proves the wire is
 // present, not that Electron delivers on it. Packaged verification stays the judge of that.
@@ -11,6 +12,8 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 const index = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
+const windows = readFileSync(join(import.meta.dir, "windows.ts"), "utf8")
+const adapter = readFileSync(join(import.meta.dir, "deep-links.ts"), "utf8")
 
 describe("REQ-089 deep-link ingress wiring ratchet", () => {
   test("every OS entry point feeds the one queue", () => {
@@ -26,10 +29,15 @@ describe("REQ-089 deep-link ingress wiring ratchet", () => {
   test("the queue is the only thing that reaches the renderer transport", () => {
     // One call site, inside the queue's `deliver` dependency — anything else would be a second
     // path that the exactly-once arbitration cannot see.
-    expect(index.match(/\bsendDeepLinks\(/g)).toHaveLength(1)
+    expect(adapter.match(/\.send\(\s*"deep-link"/g)).toHaveLength(1)
+    expect(index).not.toContain('"deep-link"')
   })
 
-  test("a reloading renderer drops ownership of the stream", () => {
-    expect(index).toContain('webContents.on("did-start-loading", () => deepLinks.rendererGone())')
+  test("ownership is attached by the window factory, so no window can exist unwired", () => {
+    // `window.new` (desktop-menu-actions) creates windows through this same factory; wiring at the
+    // boot call site instead would leave those renderers able to drain the queue but never able to
+    // release it — the hole this gate exists to keep closed.
+    expect(windows).toContain("trackDeepLinkRenderer(win.webContents)")
+    expect(index).not.toContain("trackDeepLinkRenderer")
   })
 })

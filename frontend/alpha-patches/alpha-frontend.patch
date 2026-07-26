@@ -1183,7 +1183,7 @@ index c6fed8f6d..4ce6fd511 100644
          <Suspense>{props.children}</Suspense>
        </main>
 diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
-index 812a479b2..e47509a58 100644
+index 812a479b2..a30ecde90 100644
 --- a/packages/app/src/pages/layout.tsx
 +++ b/packages/app/src/pages/layout.tsx
 @@ -67,12 +67,7 @@ import {
@@ -1196,7 +1196,7 @@ index 812a479b2..e47509a58 100644
 -  deepLinkEvent,
 -  drainPendingDeepLinks,
 -} from "./layout/deep-links"
-+import { applyDeepLinks, deepLinkEvent, drainPendingDeepLinks } from "./layout/deep-links"
++import { createDeepLinkConsumer, deepLinkEvent } from "./layout/deep-links"
  import { createInlineEditorController } from "./layout/inline-editor"
  import {
    LocalWorkspace,
@@ -1214,16 +1214,12 @@ index 812a479b2..e47509a58 100644
      const run = ++dialogRun
      const module = settings.general.newLayoutDesigns()
        ? import("@/components/settings-v2")
-@@ -1256,36 +1252,27 @@ export default function LegacyLayout(props: ParentProps) {
+@@ -1256,36 +1252,28 @@ export default function LegacyLayout(props: ParentProps) {
      if (navigate) return navigateToProject(directory)
    }
  
 -  const handleDeepLinks = (urls: string[]) => {
-+  // The shell decodes deep links against its route manifest and forwards the result, including
-+  // the destination href. Dispatch lives in ./layout/deep-links so the route-authority ratchet can
-+  // hold it to the full "no hand-assembled route" rule set; this is only the adapter.
-+  const consumeDeepLinks = () => {
-     if (!server.isLocal()) return
+-    if (!server.isLocal()) return
 -
 -    for (const directory of collectOpenProjectDeepLinks(urls)) {
 -      void openProject(directory)
@@ -1240,15 +1236,22 @@ index 812a479b2..e47509a58 100644
 -      const href = link.prompt ? `/${slug}/session?prompt=${encodeURIComponent(link.prompt)}` : `/${slug}/session`
 -      navigateWithSidebarReset(href)
 -    }
-+    applyDeepLinks(drainPendingDeepLinks(window), {
-+      openProject: (directory, navigate) => void openProject(directory, navigate),
-+      navigate: navigateWithSidebarReset,
-+      handoff: (directory, prompt) =>
-+        setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(base64Encode(directory))), {
-+          prompt,
-+        }),
-+    })
-   }
+-  }
++  // The shell decodes deep links against its route manifest and forwards the result, including
++  // the destination href. The consumer itself — drain, dispatch, navigation target — lives in
++  // ./layout/deep-links so the route-authority ratchet can hold it to the full "no hand-assembled
++  // route" rule set and a test can execute it end to end. Here we only hand over primitives this
++  // layout already owns; `navigate` is layout's own navigation function, passed through unwrapped.
++  const consumeDeepLinks = createDeepLinkConsumer({
++    enabled: () => server.isLocal(),
++    buffer: () => window,
++    openProject: (directory, navigate) => void openProject(directory, navigate),
++    navigate: navigateWithSidebarReset,
++    handoff: (directory, prompt) =>
++      setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(base64Encode(directory))), {
++        prompt,
++      }),
++  })
  
    onMount(() => {
 -    const handler = (event: Event) => {
@@ -1268,7 +1271,7 @@ index 812a479b2..e47509a58 100644
    })
  
    async function renameProject(project: LocalProject, next: string) {
-@@ -1348,7 +1335,7 @@ export default function LegacyLayout(props: ParentProps) {
+@@ -1348,7 +1336,7 @@ export default function LegacyLayout(props: ParentProps) {
      const run = ++dialogRun
      void import("@/components/dialog-edit-project").then((x) => {
        if (dialogDead || dialogRun !== run) return
@@ -1277,7 +1280,7 @@ index 812a479b2..e47509a58 100644
      })
    }
  
-@@ -1879,9 +1866,9 @@ export default function LegacyLayout(props: ParentProps) {
+@@ -1879,9 +1867,9 @@ export default function LegacyLayout(props: ParentProps) {
      workspaceExpanded: (directory, local) => store.workspaceExpanded[directory] ?? local,
      setWorkspaceExpanded: (directory, value) => setStore("workspaceExpanded", directory, value),
      showResetWorkspaceDialog: (root, directory) =>
@@ -1290,10 +1293,10 @@ index 812a479b2..e47509a58 100644
        if (!mobile) scrollContainerRef = el
      },
 diff --git a/packages/app/src/pages/layout/deep-links.ts b/packages/app/src/pages/layout/deep-links.ts
-index 5dca421f7..35a425d4b 100644
+index 5dca421f7..566391c28 100644
 --- a/packages/app/src/pages/layout/deep-links.ts
 +++ b/packages/app/src/pages/layout/deep-links.ts
-@@ -1,50 +1,87 @@
+@@ -1,50 +1,110 @@
 +// Deep links are decoded by the Alpha shell's route manifest before they ever reach this
 +// renderer. This module is the WHOLE receiving end: it validates the shape of the decoded
 +// deliveries, drains the buffer, and dispatches them. It owns no URL parsing, no scheme literal
@@ -1317,7 +1320,6 @@ index 5dca421f7..35a425d4b 100644
 -    return new URL(input)
 -  } catch {
 -    return
--  }
 +export interface DeepLinkDelivery {
 +  /** Which declared deep link this was — the shell's identity, not a hostname parsed here. */
 +  deepLinkId: string
@@ -1325,6 +1327,12 @@ index 5dca421f7..35a425d4b 100644
 +  prompt?: string
 +  /** Ready-to-use in-app route href, derived from the same manifest that decoded the link. */
 +  href: string
++}
++
++declare global {
++  interface Window {
++    __alphaDeepLinks?: DeepLinkDelivery[]
+   }
  }
  
 -export const parseDeepLink = (input: string) => {
@@ -1334,21 +1342,6 @@ index 5dca421f7..35a425d4b 100644
 -  const directory = url.searchParams.get("directory")
 -  if (!directory) return
 -  return directory
-+declare global {
-+  interface Window {
-+    __alphaDeepLinks?: DeepLinkDelivery[]
-+  }
- }
- 
--export const parseNewSessionDeepLink = (input: string) => {
--  const url = parseUrl(input)
--  if (!url) return
--  if (url.hostname !== "new-session") return
--  const directory = url.searchParams.get("directory")
--  if (!directory) return
--  const prompt = url.searchParams.get("prompt") || undefined
--  if (!prompt) return { directory }
--  return { directory, prompt }
 +const isDelivery = (value: unknown): value is DeepLinkDelivery => {
 +  if (typeof value !== "object" || value === null) return false
 +  const link = value as Record<string, unknown>
@@ -1362,24 +1355,22 @@ index 5dca421f7..35a425d4b 100644
 +  )
  }
  
--export const collectOpenProjectDeepLinks = (urls: string[]) =>
--  urls.map(parseDeepLink).filter((directory): directory is string => !!directory)
+-export const parseNewSessionDeepLink = (input: string) => {
+-  const url = parseUrl(input)
+-  if (!url) return
+-  if (url.hostname !== "new-session") return
+-  const directory = url.searchParams.get("directory")
+-  if (!directory) return
+-  const prompt = url.searchParams.get("prompt") || undefined
+-  if (!prompt) return { directory }
+-  return { directory, prompt }
 +const deliveriesFor = (deepLinkId: string, links: readonly unknown[]) =>
 +  links.filter(isDelivery).filter((link) => link.deepLinkId === deepLinkId)
- 
--export const collectNewSessionDeepLinks = (urls: string[]) =>
--  urls.map(parseNewSessionDeepLink).filter((link): link is { directory: string; prompt?: string } => !!link)
++
 +export const collectOpenProjectDeepLinks = (links: readonly unknown[]) => deliveriesFor("open-project", links)
- 
--type OpenCodeWindow = Window & {
--  __OPENCODE__?: {
--    deepLinks?: string[]
--  }
--}
++
 +export const collectNewSessionDeepLinks = (links: readonly unknown[]) => deliveriesFor("new-session", links)
- 
--export const drainPendingDeepLinks = (target: OpenCodeWindow) => {
--  const pending = target.__OPENCODE__?.deepLinks ?? []
++
 +/**
 + * Take everything the shell has buffered. The buffer is the queue and the shell's event carries
 + * no payload, so this is the single consumption point: whatever a second caller (a remounted
@@ -1387,12 +1378,13 @@ index 5dca421f7..35a425d4b 100644
 + */
 +export const drainPendingDeepLinks = (target: Window) => {
 +  const pending = target.__alphaDeepLinks ?? []
-   if (pending.length === 0) return []
--  if (target.__OPENCODE__) target.__OPENCODE__.deepLinks = []
++  if (pending.length === 0) return []
 +  target.__alphaDeepLinks = []
-   return pending
++  return pending
  }
-+
+ 
+-export const collectOpenProjectDeepLinks = (urls: string[]) =>
+-  urls.map(parseDeepLink).filter((directory): directory is string => !!directory)
 +export interface DeepLinkHandlers {
 +  /** Open (and by default navigate to) a project directory. */
 +  openProject: (directory: string, navigate: boolean) => void
@@ -1401,7 +1393,9 @@ index 5dca421f7..35a425d4b 100644
 +  /** Seed the session composer for a link that carried a prompt. */
 +  handoff: (directory: string, prompt: string) => void
 +}
-+
+ 
+-export const collectNewSessionDeepLinks = (urls: string[]) =>
+-  urls.map(parseNewSessionDeepLink).filter((link): link is { directory: string; prompt?: string } => !!link)
 +/**
 + * Dispatch decoded deliveries. The navigation target is `link.href` — produced by the manifest
 + * that decoded the link — and is passed through untouched; this side never assembles a route.
@@ -1410,13 +1404,44 @@ index 5dca421f7..35a425d4b 100644
 +  for (const link of collectOpenProjectDeepLinks(links)) {
 +    handlers.openProject(link.directory, true)
 +  }
-+
+ 
+-type OpenCodeWindow = Window & {
+-  __OPENCODE__?: {
+-    deepLinks?: string[]
 +  for (const link of collectNewSessionDeepLinks(links)) {
 +    handlers.openProject(link.directory, false)
 +    if (link.prompt) handlers.handoff(link.directory, link.prompt)
 +    handlers.navigate(link.href)
-+  }
+   }
+ }
+ 
+-export const drainPendingDeepLinks = (target: OpenCodeWindow) => {
+-  const pending = target.__OPENCODE__?.deepLinks ?? []
+-  if (pending.length === 0) return []
+-  if (target.__OPENCODE__) target.__OPENCODE__.deepLinks = []
+-  return pending
++export interface DeepLinkConsumerDeps extends DeepLinkHandlers {
++  /** Only a shell-hosted (local) server may act on the shell's deliveries. */
++  enabled: () => boolean
++  /** The window whose buffer the shell publishes into. */
++  buffer: () => Window
 +}
++
++/**
++ * The WHOLE consumer, drain and dispatch included, as one function of layout's own primitives.
++ * It lives here rather than inline in layout.tsx for a reason the ratchet depends on: everything
++ * between "a delivery exists" and "the app navigates" is then inside the module the route-authority
++ * ratchet holds to the full rule set, and — because it is an ordinary exported function — the whole
++ * of it can be EXECUTED by a test that feeds in a real manifest-decoded delivery and observes the
++ * navigation target (`route-deep-link-consumer.test.ts`). Anything left in layout.tsx is a plain
++ * pass-through of primitives it already owns.
++ */
++export const createDeepLinkConsumer = (deps: DeepLinkConsumerDeps) => () => {
++  // Before the local server exists there is nothing to open the project in; return WITHOUT
++  // draining so the delivery is still there when the next wake-up signal arrives.
++  if (!deps.enabled()) return
++  applyDeepLinks(drainPendingDeepLinks(deps.buffer()), deps)
+ }
 diff --git a/packages/app/src/pages/layout/helpers.test.ts b/packages/app/src/pages/layout/helpers.test.ts
 index df87ddfec..c18719130 100644
 --- a/packages/app/src/pages/layout/helpers.test.ts

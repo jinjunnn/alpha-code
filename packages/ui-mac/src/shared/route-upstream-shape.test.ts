@@ -114,14 +114,31 @@ function joinPath(prefix: string, path: string): string {
  */
 export type RouteFeatureFlags = { newLayoutDesigns: boolean }
 
-/** Evaluate a `<Show when={…}>` guard under one flag assignment. Unknown guards throw: a new */
-/** feature branch must be declared here before it may gate a route. */
+/**
+ * The complete set of guard expressions that may gate a Route, written out exactly as upstream
+ * writes them. This is a whitelist, not a pattern: matching a SUFFIX would read
+ * `someNewExperiment() && newLayoutDesigns()` as a plain `newLayoutDesigns()` guard and publish a
+ * branch that upstream does not, which is the failure mode this table exists to prevent.
+ */
+const DECLARED_GUARDS: Readonly<Record<string, keyof RouteFeatureFlags>> = {
+  "settings.general.newLayoutDesigns()": "newLayoutDesigns",
+}
+
+/**
+ * Evaluate a `<Show when={…}>` guard under one flag assignment. Only an exactly declared guard —
+ * optionally with a single leading `!` — resolves; every other expression, INCLUDING any `&&` /
+ * `||` / ternary combination that happens to mention a declared flag, throws. A new feature branch
+ * must be declared above before it may gate a route.
+ */
 function guardHolds(guard: string, flags: RouteFeatureFlags): boolean {
-  const negated = guard.startsWith("!")
-  const expression = (negated ? guard.slice(1) : guard).trim()
-  if (!/\bnewLayoutDesigns\s*\(\s*\)\s*$/.test(expression))
-    throw new Error(`unrecognised <Show> guard gating a Route: ${guard}`)
-  return negated ? !flags.newLayoutDesigns : flags.newLayoutDesigns
+  const trimmed = guard.trim()
+  const negated = trimmed.startsWith("!")
+  // Whitespace inside the call (`newLayoutDesigns ()`) is upstream's formatting, not a different
+  // guard; anything else must match the declared text character for character.
+  const expression = (negated ? trimmed.slice(1) : trimmed).replace(/\s+/g, "")
+  const flag = DECLARED_GUARDS[expression]
+  if (flag === undefined) throw new Error(`unrecognised <Show> guard gating a Route: ${guard}`)
+  return negated ? !flags[flag] : flags[flag]
 }
 
 /**
@@ -239,6 +256,40 @@ describe("upstream Route tree keeps the manifest's path shapes", () => {
       </Show>
     `
     expect(() => upstreamRoutePathTemplates(fixture, { newLayoutDesigns: true })).toThrow(/unrecognised/)
+  })
+
+  test.each([
+    "settings.general.someNewExperiment() && settings.general.newLayoutDesigns()",
+    "settings.general.newLayoutDesigns() && settings.general.someNewExperiment()",
+    "settings.general.newLayoutDesigns() || settings.general.someNewExperiment()",
+    "!settings.general.someNewExperiment() && settings.general.newLayoutDesigns()",
+    "settings.general.someNewExperiment() ? settings.general.newLayoutDesigns() : false",
+    "props.ready && settings.general.newLayoutDesigns()",
+    "settings.general.newLayoutDesigns() && !settings.general.newLayoutDesigns()",
+  ])("a guard combination is never read as the declared flag alone: %s", (guard) => {
+    // The mutation the previous suffix regex let through: a second, undeclared condition tacked
+    // onto a declared flag published a branch upstream may not publish, and the shape comparison
+    // stayed green. Undecidable ⇒ throw, never "close enough".
+    const fixture = `
+      <Show when={${guard}}>
+        <Route path="/experiment" component={X} />
+      </Show>
+    `
+    for (const branch of FEATURE_BRANCHES)
+      expect(() => upstreamRoutePathTemplates(fixture, branch.flags)).toThrow(/unrecognised/)
+  })
+
+  test("the declared guard still resolves in both polarities, whitespace and all", () => {
+    const fixture = `
+      <Show when={!settings.general.newLayoutDesigns()}>
+        <Route path="/legacy" component={LegacyHome} />
+      </Show>
+      <Show when={ settings.general.newLayoutDesigns() }>
+        <Route path="/next" component={Home} />
+      </Show>
+    `
+    expect(upstreamRoutePathTemplates(fixture, { newLayoutDesigns: false })).toEqual(["/legacy"])
+    expect(upstreamRoutePathTemplates(fixture, { newLayoutDesigns: true })).toEqual(["/next"])
   })
 
   test.each(FEATURE_BRANCHES)("$name publishes exactly the manifest's declared path shapes", ({ flags }) => {

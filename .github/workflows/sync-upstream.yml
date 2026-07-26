@@ -117,8 +117,15 @@ jobs:
             # 这一步刚 `rm -rf` 过 packages/app:pin 里没有、只存在于补丁里的**二进制**(vendored
             # client tgz,被 packages/session-ui 以 file: 直接依赖)必须由补丁重建出来。普通 git diff
             # 不携带二进制内容,漏了它 sync 会把这个包静默删掉 —— 所以在这里判死。
-            if ! ls packages/app/vendor/*.tgz >/dev/null 2>&1; then
-              echo "::error::vendored client tarball missing after applying alpha frontend delta — SOT 补丁没带二进制(须用 git diff --binary 重生)。Aborting sync."
+            # 判据钉「被 file: 直接依赖的那个精确文件」而非「有没有随便一个 tgz」:版本换名而补丁
+            # 还带着旧的,通配判据照样绿,bun install 却装不上。
+            VENDORED="$(sed -n 's|.*"file:\.\./app/\(vendor/[^"]*\.tgz\)".*|\1|p' packages/session-ui/package.json | head -1)"
+            if [ -z "$VENDORED" ]; then
+              echo "::error::packages/session-ui/package.json 没有 file: 指向 packages/app/vendor 的依赖 —— 本判据已失效,须随依赖变更更新。Aborting sync."
+              exit 1
+            fi
+            if [ ! -f "packages/app/$VENDORED" ]; then
+              echo "::error::packages/app/$VENDORED missing after applying alpha frontend delta — SOT 补丁没带二进制(须用 git diff --binary 重生)。Aborting sync."
               exit 1
             fi
             git add packages/app packages/ui

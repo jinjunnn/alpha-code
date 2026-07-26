@@ -320,10 +320,14 @@ passthrough。事件名 `DEEP_LINK_EVENT` 归清单;packages/app 无法 import �
 
 **B2. 投递恰好一次(AC4)** —— 队列仲裁抽到 `packages/ui-mac/src/main/deep-link-queue.ts`:
 renderer 首次 drain 之前(冷启动、首进程命令行、IPC 已订阅但初次 invoke 未回)一律入队;
-drain 之后由该 renderer 接管、直发不入队;renderer 开始新文档加载(sidecar structural respawn
-的 reload)则交还队列。renderer 侧 `deep-link-bridge.ts` 把事件降级为**无 payload 的唤醒信号**,
-buffer 是唯一队列 —— 消费只能靠 drain,drain 即清空,layout 重挂因此结构上无法重放。
-首进程 `process.argv` 现在也走同一条 `ingest`(Windows/Linux 冷启动唯一入口)。
+drain 之后由该 renderer 接管、直发不入队。**所有权钉在「哪个 webContents 实例 drain 过」这个身份
+上,不是「有没有窗口」**(见 §5.2 F1:布尔模型分不清崩溃后的 renderer 与活着的 renderer,而向
+死掉的渲染进程 `send` 既不抛错也不到达)。四条退出路径 —— reload / `render-process-gone` /
+`destroyed` / 被更新的窗口接管 —— 统一由 `trackRendererLifecycle` 在**窗口工厂**
+`createMainWindow` 内接线,所以 `window.new` 菜单造出的窗口也必然被接线。renderer 侧
+`deep-link-bridge.ts` 把事件降级为**无 payload 的唤醒信号**,buffer 是唯一队列 —— 消费只能靠
+drain,drain 即清空,layout 重挂因此结构上无法重放。首进程 `process.argv` 现在也走同一条
+`ingest`(Windows/Linux 冷启动唯一入口)。
 
 **C. legacy surface flag 硬切(§2「删 alias 层」落地,owner 2026-07-25 裁决)** ——
 `SurfaceMode`/`SurfaceReleaseState`/`SURFACE_RELEASE_STATES`、`ALPHA_SURFACE_*` env 覆盖、
@@ -350,15 +354,9 @@ userData pin、`surfaces.resolve` IPC、renderer 三处 `mode !== "alpha"` 闸�
   `packages/desktop` 与上游的 delta,漏了两个外壳**共用同一个
   `@opencode-ai/app` renderer**:本票把该 renderer 的接收契约从 `__OPENCODE__.deepLinks`
   (`string[]`)/`{urls}` 换成 `__alphaDeepLinks`(delivery)/无 payload 事件后,desktop 仍发旧
-  形状 = 它的 deep-link 链路被本 PR **静默打断**(可编译、必丢事件)。修法取「让 desktop 也产出
-  解码后的 delivery」:`packages/desktop/src/renderer/index.tsx` import 同一个 `decodeDeepLink`
-  与同一个 bridge。**代价如实记录**:这是 alpha 首次改动 `packages/desktop`(此前相对
-  `origin/dev` delta 恒为 0),制造了一处 sync 冲突面,且方向上是上游外壳依赖 alpha 外壳的模块。
-  取它而不取「app 侧同时容忍两种形状」,是因为后者会让**第二个解码真相**回到 renderer,与 AC2
-  直接冲突;取它而不取「删掉 desktop 的 deep-link 链路」,是因为删更大(5 个文件)且是净减功能。
-  AC2 仍然成立:全仓 URL→route 解码器只有 `route-manifest.ts` 一个,desktop 是它的调用方而非
-  第二个实现。三处 `__OPENCODE__.deepLinks` 声明(app / desktop / ui-mac)一并删除 —— 化石类型
-  正是让断链还能通过类型检查的东西。
+  形状 = 它的 deep-link 链路被本 PR **静默打断**(可编译、必丢事件)。三处
+  `__OPENCODE__.deepLinks` 声明(app / desktop / ui-mac)一并删除 —— 化石类型正是让断链还能通过
+  类型检查的东西。处置见 §5.2「desktop 的 deep-link 链路整条删除」。
 
 - **F5 —— 上一轮「应用补丁后与 HEAD 零 diff」的声明不成立,判据已改为可机械执行。**
   `packages/app/vendor/opencode-ai-client-1.17.13.tgz` 在 pin 里不存在、被
@@ -378,3 +376,49 @@ userData pin、`surfaces.resolve` IPC、renderer 三处 `mode !== "alpha"` 闸�
 状态机,均按仓内 2026-07-25 固化的纪律**逐条实施绕过变异并确认变红**后才保留;变异清单与结果
 随 PR 记录。其中 F6 的形状比较从「全局集合」改为「按互斥 feature branch 分别比较」,正是因为
 全局集合看不见路由在两条分支之间搬家。
+
+### §5.2 第二轮对抗审计(R2)驳回后的修正(2026-07-26)
+
+R2 判 §5.1 那一轮为 NOT-MERGE:R1 八条里 4 条仍未闭合,且修复增量自己引入一个 Major。本节
+**推翻 §5.1 关于 F3 的处置**,并记录另外四条的重做。
+
+- **desktop 的 deep-link 链路整条删除(owner 2026-07-26 裁决,推翻 §5.1 的 F3 修法)。**
+  §5.1 让 `packages/desktop` 也去调 alpha 的 `decodeDeepLink` 与同一个 bridge,代价是**上游外壳
+  依赖 alpha 外壳**的倒置。这笔账**第一天就到期了**:R2 在这条新链路上找到一个 Major(main 侧
+  `emitDeepLinks` 同时写 `pendingDeepLinks` 与直发 IPC,renderer reload 后
+  `consumeInitialDeepLinks()` 会把已消费的链接再放一次)。alpha 不出货 `packages/desktop`,
+  让这条链路活着 = alpha 从此要为一个自己不出货的外壳的正确性负责。因此删除:main 侧
+  `emitDeepLinks` / `pendingDeepLinks` / `consumeInitialDeepLinks` / `open-url` /
+  `second-instance` 的 deep-link 分支 / `setAsDefaultProtocolClient("opencode")`,ipc 与 preload
+  的 `consume-initial-deep-links`、`onDeepLink`、`sendDeepLinks`,以及 renderer 侧的消费与
+  §5.1 加的那两个跨包 import,全部移除(6 文件,净 −57 行)。那个 Major 随链路一起消失。
+  顺带消除的既有问题:开发机上 desktop 与 ui-mac 争抢 `opencode://` 协议注册。
+  **已接受的代价**:`sync-upstream.yml` 只 `rm -rf packages/app packages/ui`、**不擦
+  `packages/desktop`**,所以这次删除不会每晚被 sync 冲掉;但上游改动同一区域时会产生一次合并
+  冲突,由 sync 的 loud-fail 暴露、人工处置。
+
+- **F1 exactly-once —— 所有权模型从「有没有窗口」改为「哪个 webContents drain 过」。**
+  §5.1 的布尔所有权只在启动窗口的 `did-start-loading` 交还,漏两条真实路径:renderer 进程崩溃
+  (`render-process-gone`)后窗口仍在、`isDestroyed()` 为假,`webContents.send` 既不抛错也不到达
+  —— 链接被判定为已投递而实际丢失;`window.new` 菜单经 `createMainWindow` 造出的第二个 renderer
+  完全未接线。现在队列持有**已 drain 且仍活着的 renderer id 栈**,`consumeInitial(rendererId)` 取得
+  所有权,`deliver(rendererId, links)` 定向投递并在拒收时弹出该 owner 继续向下试,四条退出路径
+  (reload / crash / destroyed / 被更新窗口接管)由 `trackRendererLifecycle` 统一接线,且接线点在
+  **窗口工厂内部**,所以不存在「能 drain 却不会交还」的窗口。这些时序逐条是执行级测试。
+
+- **F5 README 逐字可执行。** R2 指出文档先 `cd packages/ui-mac`、后续却用根相对路径且
+  `REPO=$(pwd)`,照抄执行必失败。现每个命令块自带 `set -e` 与
+  `cd "$(git rev-parse --show-toplevel)"`,与当前工作目录无关;pin 由 `frontend-pin.lock` 读回,
+  块之间不靠 shell 变量传递。二进制判据从「有没有随便一个 `*.tgz`」收紧为「`packages/session-ui`
+  以 `file:` 直接依赖的那个精确文件存在」,README 与 `sync-upstream.yml` 同步。
+
+- **F6 未声明 guard 全部 fail-closed。** 尾缀正则会把
+  `someNewExperiment() && newLayoutDesigns()` 误读成纯 `newLayoutDesigns()`。改为**白名单精确
+  匹配**(去空白后与声明文本逐字相等,允许单个前导 `!`):任何 `&&` / `||` / 三元组合一律抛错。
+
+- **F7 消费端判据从文本改为执行。** 两轮收窄的文本规则仍被绕过(改 `navigate` 回调、或在传入
+  前改写 delivery),说明**断言源码文本的闸门不是闸门**。消费端整体(drain + 分发 + 导航目标)
+  抽成 `createDeepLinkConsumer(deps)` 留在受全套规则约束的 `deep-links.ts`;新增
+  `route-deep-link-consumer.test.ts` **执行生产代码**:清单编码 → 清单解码 → 真实 consumer,
+  断言观测到的导航目标 == 由清单独立派生的 href(并钉死字面值)。layout.tsx 里只剩 `navigate` 与
+  `buffer` 两行原语传递,是执行判据够不到的唯一一段,由括号配平抽出后**逐字钉死**作兜底。
