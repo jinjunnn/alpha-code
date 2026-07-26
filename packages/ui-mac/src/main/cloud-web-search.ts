@@ -1,6 +1,14 @@
 export const CLOUD_WEB_SEARCH_TOOL_ID = "cloud_web_search"
 /** 引擎内置的本地 keyless web search 工具 ID(`packages/opencode/src/tool/websearch.ts`)。 */
 export const LOCAL_WEB_SEARCH_TOOL_ID = "websearch"
+/**
+ * 主权判决送进 sidecar 的通道(#223 R2 Blocker 1)。permission 注入只能压平 **alpha 自己**注入的
+ * agent,压不住别的 config 源后加载的 agent wildcard、持久化到 session 的 permission、或
+ * `Permission.ask` 里排在 ruleset 之后的 `approved` —— 那三条都能把 deny 顶掉。最终闸因此落在
+ * 工具自身:`packages/opencode/src/tool/websearch.ts` 读本变量直接拒绝执行。
+ * 名字在两个包各写一份(ui-mac 不依赖 opencode),漂移由 `cloud-web-search.test.ts` 的字面量锁钉住。
+ */
+export const LOCAL_WEBSEARCH_DENY_ENV = "ALPHA_LOCAL_WEBSEARCH_DENY"
 
 type AgentConfig = { permission?: Record<string, unknown> }
 
@@ -35,6 +43,11 @@ export type WebSearchSovereignty = {
  * `merge(item.permission, fromConfig(value.permission))`,`Permission.evaluate` 取
  * `findLast`),所以 alpha 自己注入的三个 agent 里的 `websearch: "allow"` 会把全局 deny 顶掉
  * —— 必须一并压平,否则闸只对 build/plan 之类原生 agent 成立。
+ *
+ * **本函数不是主权保证,只是可用性**(#223 R2 Blocker 1 裁决):它够不着别的 config 源后加载的
+ * agent、够不着持久化到 session 的 permission、也够不着 `Permission.ask` 的 `approved`。它的作用
+ * 是让被 deny 的工具从模型工具表里消失(`Permission.disabled`),免得模型看见一个必失败的工具。
+ * 不可覆盖的最终规则在工具自身,由 `LOCAL_WEBSEARCH_DENY_ENV` 驱动(见上方注释)。
  */
 export function applyWebSearchDenies(
   config: EngineConfig,
@@ -59,9 +72,24 @@ export function applyWebSearchDenies(
       `[alpha-code#223] denying the local ${LOCAL_WEB_SEARCH_TOOL_ID} tool (${state.killSwitch ? "kill switch" : "platform pays"}) — the four keyless env flags cannot suppress it under OPENCODE_EXPERIMENTAL=1`,
     )
 
-  config.permission = { ...config.permission, ...Object.fromEntries(denied.map((id) => [id, "deny"])) }
+  config.permission = pinDeny({ ...config.permission }, denied)
   for (const agent of Object.values(config.agent ?? {})) {
-    if (!agent?.permission) continue
-    for (const id of denied) if (id in agent.permission) agent.permission[id] = "deny"
+    if (!agent) continue
+    // #223 R2:以前只改**已有**的精确 `websearch` 键 —— 一个只写 `"*": "allow"` 的 agent 因此
+    // 完全不被压平,而它的 wildcard 排在全局 deny 之后就赢。现在无条件写(并钉到末位)。
+    agent.permission = pinDeny({ ...(agent.permission ?? {}) }, denied)
   }
+}
+
+/**
+ * 把 deny 钉成表里的**最后一条**规则。`Permission.fromConfig` 按对象插入序展开、
+ * `Permission.evaluate` 取 `findLast`,所以「只改值不动位置」不够:写在前面的
+ * `websearch: "deny"` 会被同一张表里后面的 `"*": "allow"` 顶掉。删键再写回 = 移到末位。
+ */
+function pinDeny(permission: Record<string, unknown>, denied: string[]) {
+  for (const id of denied) {
+    delete permission[id]
+    permission[id] = "deny"
+  }
+  return permission
 }

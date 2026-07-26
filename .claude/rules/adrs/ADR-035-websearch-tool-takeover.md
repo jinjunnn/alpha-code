@@ -67,6 +67,13 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
 > `McpCatalog.convertTool` 链路**钉成回归基线(含一条反向断言:云错误**不是** `WebSearchFailure`、
 > 不带 status)。平台侧透传状态/补 402 `error.code` 归 **alpha-platform#105**;在它落地之前,
 > 本仓任何文档/代码都不得声称已消费云侧 402。
+>
+> **该反向断言的到期条件(2026-07-25 二轮登记,R2 B 项裁决)**:它是一条**硬编码的现状 fixture**
+> —— 断言的是「云错误里**没有**状态/码」。alpha-platform#105 修好之后它**不会自动变红**(测试喂的是
+> 手写的 402 薄壳产物,平台改了也喂不到这里),于是会从「事实基线」悄悄变成**误导性基线**:文档看着
+> 像仍未透传,实际早已透传。**#105 一旦落地,必须同步把这条改成 status/code 的正向断言**,并同时更新
+> 本 ADR 与 [[ADR-009]] 裁决 (d) 的消费面边界段。到期条件已写进
+> `test/tool/alpha-websearch-failure.test.ts` 该组的注释里。
 
 ### 2. 为何 L0–L2 不够用(§3 要件:低级别不可行的勘探证据)
 
@@ -123,10 +130,25 @@ defect。这是本决策自带的 tripwire。
 - ✅ 零命中与 provider error 的判定按结构化事实收口(#223 Major 5):`structuredContent` 进
   schema —— 「`content: []` + `results: []`」是**合法零命中成功**(原样交出 `structuredContent`,
   不编造 "No search results found");「200 + 未置 `isError` 但负载是 `{error:…}`」是**loud
-  provider error**(带 `error.code`),不再当搜索结果回给模型;200 的 HTML/非 JSON 错误页
-  在 `empty_result` 里附上原 body,可辨。
+  provider error**,不再当搜索结果回给模型;200 的 HTML/非 JSON 错误页在 `empty_result` 里
+  附上原 body,可辨。
+  **2026-07-25 二轮更正(R2 Major 5)**:初版这里写「带 `error.code`」——**对模型不成立**,已修。
+  `code` 当时只存在字段上,`WebSearchFailure.message` 仅在**有 HTTP status 时**才把它拼进去,而
+  工具边界只把 `failure.message` 交给模型(`websearch.ts` 的 `ToolFailure({ message })`)。现在
+  status 与 code 各自独立出现在 message 里,回归断言从**最终 `ToolFailure`** 面取(不是中间层)。
 - ✅ 传输有界(#223 Major 6):headers + body 读取在**同一个** timeout 内(此前 body 在期限外,
-  body 永不结束 = 无限等待且零失败),body 边读边计数、2MiB 处停手。
+  body 永不结束 = 无限等待且零失败),body 边读边计数。
+  **2026-07-25 二轮更正(R2 Major 6)**:初版这里写「2MiB 处停手」——**当时不成立**,已修。实现
+  先整块 `push(chunk)` 再判越界,上限只对「块小」的流有效:R2 喂入单个 3 MiB chunk,`Buffer.concat`
+  实收 **3,145,728** 字节而声明上限是 **2,097,152**。现在最后一块只保留「剩余可读字节」
+  (`subarray`),`MAX_BODY_BYTES` 是与块大小无关的**硬限**,由一条按字节精确断言的测试守住。
+- ✅ **主权 deny 的最终规则(#223 R2 Blocker 1)**:`websearch.ts` 的 `execute` 首行读
+  `ALPHA_LOCAL_WEBSEARCH_DENY`(由 `ui-mac` 的 `applyWebSearchSovereignty()` 每次 fork 前重算、
+  经 `sidecar-env.ts` 白名单进 sidecar)并直接以 `ToolFailure` 拒绝。它**不查 permission ruleset**,
+  因此 agent wildcard / 持久 session permission / `approved` 三条后置规则都覆盖不了它(裁决与
+  三条反向测试见 [[ADR-009]] 裁决 (b))。之所以落在本 ADR 已接管的文件里,是因为这是最窄的解:
+  零新增上游接管,不必改 `permission/index.ts` 的求值序,也不必改 `registry.ts` 的注册闸
+  (两者都在守卫内且是高 churn 的通用面)。本条**不扩大** §1 的接管范围。
 - ✅ 本地 `scripts/alpha-check.sh` 的 north-star 守卫与 CI 恢复 1:1,不再恒报假红。
 - ⚠️ **单向门**:两个文件脱离上游同步(含安全修复),re-freeze 是唯一吸收通道。
 - ⚠️ 接管面每多一处,「北极星」衡量的分母就小一点。本 ADR 的自限是**只收两个源文件**:云路径

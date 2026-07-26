@@ -47,8 +47,15 @@ export class WebSearchFailure extends Schema.TaggedErrorClass<WebSearchFailure>(
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message() {
-    const status = this.status === undefined ? "" : ` (HTTP ${this.status}${this.code ? ` ${this.code}` : ""})`
-    return `Web search failed: ${FAILURE_LABEL[this.kind]}${status}. Cause: ${this.detail}`
+    // #223 R2(Major 5):`code` 以前只在**有 HTTP status 时**才拼进 message,而工具边界只把
+    // `message` 交给模型(`websearch.ts` 的 `ToolFailure({ message: failure.message })`)——
+    // 于是 200 结构化错误(`provider_error`)的 `error.code` 只留在字段上,模型面永远看不到,
+    // 「带 code 所以可辨」这句声明对模型不成立。status 与 code 现在各自独立出现。
+    const marks: string[] = []
+    if (this.status !== undefined) marks.push(`HTTP ${this.status}`)
+    if (this.code) marks.push(this.code)
+    const suffix = marks.length === 0 ? "" : ` (${marks.join(" ")})`
+    return `Web search failed: ${FAILURE_LABEL[this.kind]}${suffix}. Cause: ${this.detail}`
   }
 }
 
@@ -151,7 +158,8 @@ const parsePayload = (payload: string) =>
       })
     // 200 + 未置 isError,但负载(文本或 structuredContent)本身是结构化 error:同样是 provider
     // 失败,不许把整个 error JSON 当搜索结果回给模型。
-    const structuredError = structuredErrorOf(structuredContent) ?? structuredErrorOf(text ? parseJson(text) : undefined)
+    const structuredError =
+      structuredErrorOf(structuredContent) ?? structuredErrorOf(text ? parseJson(text) : undefined)
     if (structuredError)
       return yield* new WebSearchFailure({
         kind: "provider_error",
@@ -204,13 +212,17 @@ export const ParallelSearchArgs = Schema.Struct({
 })
 
 /** MCP 搜索结果的合理上限。超出即停读 —— 与 webfetch 的 5MB 上限同一纪律,只是这里更小。 */
-const MAX_BODY_BYTES = 2 * 1024 * 1024
+export const MAX_BODY_BYTES = 2 * 1024 * 1024
 
 /**
  * 有界读取响应体:边读边计数,越界立刻停止拉流,绝不为了截断而先把整份缓冲进内存。
  * 越界读到的部分照常返回(带截断标记),让状态码分支与 parseResponse 仍能给出可辨失败。
+ *
+ * #223 R2(Major 6):初版**先整块 `push` 再判越界** —— 上限只对「块小」的流成立。R2 动态
+ * 复现:喂入单个 3 MiB chunk,`Buffer.concat` 实收 3,145,728 字节,而声明上限是 2,097,152。
+ * 现在最后一块只保留**剩余可读字节**(`subarray`),`MAX_BODY_BYTES` 是硬限,与块大小无关。
  */
-const readBoundedBody = Effect.fn("McpWebSearch.readBoundedBody")(function* (
+export const readBoundedBody = Effect.fn("McpWebSearch.readBoundedBody")(function* (
   response: HttpClientResponse.HttpClientResponse,
 ) {
   const chunks: Uint8Array[] = []
@@ -218,9 +230,16 @@ const readBoundedBody = Effect.fn("McpWebSearch.readBoundedBody")(function* (
   let truncated = false
   yield* Stream.runForEachWhile(response.stream, (chunk: Uint8Array) =>
     Effect.sync(() => {
-      chunks.push(chunk)
-      size += chunk.byteLength
-      if (size <= MAX_BODY_BYTES) return true
+      const remaining = MAX_BODY_BYTES - size
+      if (chunk.byteLength <= remaining) {
+        chunks.push(chunk)
+        size += chunk.byteLength
+        return true
+      }
+      if (remaining > 0) {
+        chunks.push(chunk.subarray(0, remaining))
+        size = MAX_BODY_BYTES
+      }
       truncated = true
       return false
     }),

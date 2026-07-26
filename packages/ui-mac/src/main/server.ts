@@ -5,6 +5,7 @@ import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { tryGetAlphaEnvironment } from "./alpha-environment"
+import { LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-search"
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
 import { hasSecretFile, syncSecretFiles } from "./alpha-secret-files"
 import { loadAlphaSecrets } from "./alpha-secrets"
@@ -110,8 +111,14 @@ export function applyWebSearchSovereignty(userDataPath: string) {
   const platformPays = Boolean(process.env.ALPHA_CLOUD_MCP_URL) && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")
   if (killSwitch || platformPays) {
     for (const key of KEYLESS_WEBSEARCH_FLAGS) process.env[key] = "0"
+    // #223 R2(Blocker 1):env force-off 压不住 umbrella,注入的 permission deny 又能被后置的
+    // agent wildcard / 持久 session permission / approved 顶掉(R2 动态探针三条路径全变 allow)。
+    // 这个变量把主权判决直接送到工具自身(`packages/opencode/src/tool/websearch.ts` 的最终闸),
+    // 它不查 ruleset,因而没有任何 permission 规则能覆盖。与四个 flag 同纪律:两个方向都写。
+    process.env[LOCAL_WEBSEARCH_DENY_ENV] = "1"
     return
   }
+  delete process.env[LOCAL_WEBSEARCH_DENY_ENV]
   for (const key of KEYLESS_WEBSEARCH_FLAGS) {
     const baseline = keylessWebSearchBaseline[key]
     if (baseline === undefined) delete process.env[key]

@@ -1,5 +1,12 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
-import { applyWebSearchDenies, CLOUD_WEB_SEARCH_TOOL_ID, LOCAL_WEB_SEARCH_TOOL_ID } from "./cloud-web-search"
+import {
+  applyWebSearchDenies,
+  CLOUD_WEB_SEARCH_TOOL_ID,
+  LOCAL_WEB_SEARCH_TOOL_ID,
+  LOCAL_WEBSEARCH_DENY_ENV,
+} from "./cloud-web-search"
 
 const siblingCloudTools = [
   "cloud_dispatch",
@@ -79,6 +86,44 @@ describe("web search sovereignty denies", () => {
     applyWebSearchDenies(config, { killSwitch: true, platformPays: true }, () => {})
     expect(config.agent["alpha-automation-standard"].permission.edit).toBe("allow")
     expect(config.agent["alpha-readonly"].permission.edit).toBe("deny")
+  })
+
+  // #223 R2 Blocker 1(路径 ①):`applyWebSearchDenies` 以前只改**已有的精确** `websearch` 键 ——
+  // 一个只写 `"*": "allow"` 的 agent 完全不被压平,而它的 wildcard 排在全局 deny 之后就赢
+  // (`Permission.fromConfig` 按插入序展开 + `evaluate` 取 `findLast`)。同一张表里的顺序也算数,
+  // 所以 deny 必须被钉到**末位**,不能只改值。
+  test("an agent wildcard cannot re-allow a denied web search tool", () => {
+    const config = {
+      permission: { [LOCAL_WEB_SEARCH_TOOL_ID]: "allow", "*": "allow" },
+      agent: {
+        "wildcard-only": { permission: { "*": "allow" } },
+        "wildcard-after-deny": { permission: { [LOCAL_WEB_SEARCH_TOOL_ID]: "allow", "*": "allow" } },
+        "no-permission-block": {},
+      },
+    }
+
+    applyWebSearchDenies(config, { killSwitch: false, platformPays: true }, () => {})
+
+    const lastRuleWins = (permission: Record<string, unknown>) => {
+      // 引擎语义的最小复刻:精确键与 `"*"` 都能匹配 `websearch`,取最后一条。
+      const matching = Object.keys(permission).filter((key) => key === LOCAL_WEB_SEARCH_TOOL_ID || key === "*")
+      return permission[matching[matching.length - 1]!]
+    }
+
+    expect(lastRuleWins(config.permission)).toBe("deny")
+    for (const agent of Object.values(config.agent) as { permission?: Record<string, unknown> }[]) {
+      expect(agent.permission?.[LOCAL_WEB_SEARCH_TOOL_ID]).toBe("deny")
+      expect(lastRuleWins(agent.permission!)).toBe("deny")
+    }
+  })
+
+  // 注入面够不着的三条绕过(别的 config 源后加载的 agent / 持久 session permission / approved)
+  // 由工具自身的最终闸兜底,判决靠这个 env 变量过河。两个包各写一份字面量 —— 这里钉住不许漂移。
+  test("the sovereignty env channel name matches the engine-side reader", () => {
+    expect(LOCAL_WEBSEARCH_DENY_ENV).toBe("ALPHA_LOCAL_WEBSEARCH_DENY")
+    const engine = readFileSync(join(import.meta.dir, "../../../opencode/src/tool/websearch.ts"), "utf8")
+    expect(engine).toContain(`export const LOCAL_WEBSEARCH_DENY_ENV = "${LOCAL_WEBSEARCH_DENY_ENV}"`)
+    expect(engine).toContain("if (localWebSearchDenied())")
   })
 
   test("logged-out/BYOK leaves cloud tool registration and existing permissions unchanged", () => {

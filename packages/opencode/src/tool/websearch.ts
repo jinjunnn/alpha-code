@@ -25,6 +25,26 @@ export const Parameters = Schema.Struct({
   }),
 })
 
+/**
+ * ADR-009 B1/B2 主权判决送进引擎进程的通道(#223 R2 Blocker 1)。
+ *
+ * main 的 `applyWebSearchSovereignty()`(`ui-mac/src/main/server.ts`)在**每次 fork 前**重算
+ * kill-switch / 平台代付,置位或删除本变量;`ui-mac/src/main/sidecar-env.ts` 的白名单把它带进
+ * sidecar。名字在两个包里各写一份(ui-mac 不依赖 opencode),漂移由
+ * `ui-mac/src/main/cloud-web-search.test.ts` 的字面量锁钉住。
+ */
+export const LOCAL_WEBSEARCH_DENY_ENV = "ALPHA_LOCAL_WEBSEARCH_DENY"
+
+/** fail-closed:除「缺省 / 空串 / `"0"`」外的任何取值都判为 deny。 */
+export function localWebSearchDenied(env: Record<string, string | undefined> = process.env) {
+  const value = env[LOCAL_WEBSEARCH_DENY_ENV]
+  return value !== undefined && value !== "" && value !== "0"
+}
+
+/** 模型可见的拒绝理由。明说「别重试」,否则模型会把它当成瞬时故障反复调用。 */
+export const LOCAL_WEBSEARCH_DENIED_MESSAGE =
+  "Web search is unavailable: the local keyless websearch tool is denied by alpha sovereignty (ADR-009 B1/B2 — the platform pays for search, or the web search kill switch is set). This is not a transient failure; do not retry. Use cloud_web_search if it is present, otherwise answer without web search and say so."
+
 const WebSearchProviderSchema = Schema.Literals(["exa", "parallel"])
 export type WebSearchProvider = Schema.Schema.Type<typeof WebSearchProviderSchema>
 
@@ -110,6 +130,27 @@ export const WebSearchTool = Tool.define(
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          // #223 R2 Blocker 1:主权 deny 必须是**最终**规则。permission ruleset 里任何排在
+          // 注入的全局 deny 之后的 allow 都能顶掉它,R2 的动态探针实测三条路径全部变 allow:
+          //   ① agent 的 `"*": "allow"`(`agent/agent.ts` 把 agent 规则并在全局之后,
+          //      `Permission.evaluate` 取 `findLast`);注入面只看得见 alpha 自己的 agent,
+          //      别的 config 源后加载的 agent 压不平。
+          //   ② `PromptInput.tools.websearch=true` 被**持久化**进 session permission
+          //      (`session/prompt.ts` → `sessions.setPermission`),`session/tools.ts` 再把它
+          //      并在 agent 规则之后,sidecar respawn 也带得回来。
+          //   ③ `Permission.ask` 里的 `approved` 排在整个 ruleset 之后(`permission/index.ts`)。
+          // 所以最终闸放在**工具自身**:它根本不查 ruleset,因而没有任何 permission 规则能覆盖。
+          // 注入面的 permission deny 继续留着 —— 那层负责把工具从模型工具表里滤掉
+          // (`tool/registry.ts` + `session/llm/request.ts` 的 `Permission.disabled`),
+          // 是可用性(别让模型看见一个必失败的工具),不是主权保证。
+          if (localWebSearchDenied())
+            return yield* Effect.die(
+              new ToolFailure({
+                message: LOCAL_WEBSEARCH_DENIED_MESSAGE,
+                metadata: { denied: "alpha-sovereignty", tool: "websearch" },
+              }),
+            )
+
           const provider = selectWebSearchProvider(ctx.sessionID, {
             exa: flags.enableExa,
             parallel: flags.enableParallel,

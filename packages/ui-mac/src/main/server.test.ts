@@ -213,6 +213,33 @@ describe("web search sovereignty at sidecar fork (#621)", () => {
 
     expect(keylessFlagsOf(await forkSidecar())).toEqual(keylessFlagsOf(await forkSidecar()))
   })
+
+  // #223 R2 Blocker 1:env force-off 与注入的 permission deny 都能被后置规则顶掉(agent wildcard /
+  // 持久 session permission / approved)。主权判决必须另有一条到得了**工具自身**的通道 —— 这条
+  // 断言走真实 fork,证明判决确实进了 sidecar 的 env(即 sidecar-env 白名单也放行了它)。
+  test("the sovereignty verdict reaches the sidecar so the tool itself can refuse", async () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    preferAppEnv(userDataPath)
+
+    expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+  })
+
+  test("platform pays also ships the sovereignty verdict to the sidecar", async () => {
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+
+    expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+  })
+
+  test("logout respawn clears the sovereignty verdict instead of leaving the tool dead", async () => {
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+    expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+
+    applyAuthEnvLikeLogout()
+
+    expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBeUndefined()
+  })
 })
 
 // #223 对抗审计 Major 3(2026-07-25):基线曾在**登录 shell env 合入之前**截取。上面那组用例
