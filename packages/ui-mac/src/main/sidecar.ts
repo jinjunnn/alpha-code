@@ -5,6 +5,9 @@ import * as tls from "node:tls"
 // #607:注入组合体住在自己的模块里 —— 本文件的第一个 import(registerHooks)与顶层
 // getParentPort() 让 sidecar.ts 无法被测试 import,注入因此长期零覆盖。见 alpha-config-injection.ts。
 import { injectAlphaConfig, type AlphaConfigInjectionResult } from "./alpha-config-injection"
+// #613 R1:ready 消息构造抽成 bun 可真执行的单元 —— 文本锚锁不住「值真的上车」,运行时闸门
+// 在 sidecar-ready-message.test.ts;本文件不得字面量构造 ready 消息(接线锚断言其不存在)。
+import { buildReadyMessage, type SidecarReadyMessage } from "./sidecar-ready-message"
 import type { ChannelName } from "./catalog-channels"
 
 // ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
@@ -61,8 +64,9 @@ type StopCommand = { type: "stop" }
 type SidecarCommand = StartCommand | StopCommand
 
 // #613:注入失败随 ready 上报(server.ts 持有同构镜像)——引擎照常起,但 main 必须知情。
+// ready 变体的形状与构造住在 sidecar-ready-message.ts(那里有真运行时闸门)。
 type SidecarMessage =
-  | { type: "ready"; injectionFailure?: { message: string; stack?: string } }
+  | SidecarReadyMessage
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
@@ -105,7 +109,7 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
-    parentPort.postMessage({ type: "ready", ...(injection.ok ? {} : { injectionFailure: injection.error }) })
+    parentPort.postMessage(buildReadyMessage(injection))
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
     setImmediate(() => process.exit(1))

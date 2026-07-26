@@ -45,8 +45,10 @@ import type { ChannelName } from "./catalog-channels"
 //      (单数键,见 opencode-config-v1-schema)数组,保留用户自己的 plugin 列表。zod 跨实例路径
 //      (ADR-006 caveat)的运行时证明 = alpha_ping 出现在工具表且能执行(真机批核验)。
 
-// #613:注入失败的可上报形态(结构化,可过 IPC)。爆炸半径 = 整份注入丢失
-// (OPENCODE_CONFIG_CONTENT / OPENCODE_CONFIG_DIR 双双缺席),用户可见症状 = 模型全灰。
+// #613:注入失败的可上报形态(结构化,可过 IPC)。爆炸半径随抛点而异:最早(identity mkdir)
+// = 整份注入丢失(OPENCODE_CONFIG_CONTENT / OPENCODE_CONFIG_DIR 双双缺席);最晚(v2 桥,
+// R1 Blocker 1)= v1 已写出、但 picker 唯一读取的 v2 目录缺席。两端的用户可见症状同为
+// 模型全灰,故一律 {ok:false} 上报 —— 不存在「可忽略的局部降级」。
 export type AlphaConfigInjectionFailure = { message: string; stack?: string }
 export type AlphaConfigInjectionResult = { ok: true } | { ok: false; error: AlphaConfigInjectionFailure }
 
@@ -339,34 +341,34 @@ export function injectAlphaConfig(
 //   opencode.jsonc ← { $schema, model, provider }(注入的 provider 表,后加载压过用户同名项)
 // 并设 OPENCODE_CONFIG_DIR 指向该 alpha 自有目录。v1 加载读的是 Global.Path.config 静态路径,
 // 不受此 env 影响;推理仍走 v1(有 {file:}/{env:} 解析),故 v2 文件一律剥掉 apiKey —— v2 无
-// 变量解析,catalog 可用性判定也不需要 key(no-integration 路径)。独立失败域:此桥再失败也
-// 只损失 v2 目录,绝不波及上方 v1 注入。
+// 变量解析,catalog 可用性判定也不需要 key(no-integration 路径)。
+// 失败不自吞(#613 R1 Blocker 1):picker 只经 v2 目录读模型,桥失败(磁盘满/权限/目录不可写)
+// = alpha/BYOK 模型全灰 = 票面事故症状,「只损失 v2 目录」不是可忽略的局部降级 —— 桥内不设
+// catch,抛错经 injectAlphaConfig 外层 catch 以 {ok:false} 离开进程。桥排在
+// OPENCODE_CONFIG_CONTENT 写出**之后**,抛错不撤销已就位的 v1 注入
+// (顺序由反向闸门锁死:alpha-config-injection.test.ts 的 v2 桥用例)。
 function materializeV2EngineConfig(userDataPath: string, config: { model?: unknown; provider?: unknown }) {
+  const dir = path.join(userDataPath, "alpha-engine-config")
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const userCopy = path.join(dir, "opencode.json")
   try {
-    const dir = path.join(userDataPath, "alpha-engine-config")
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-    const userCopy = path.join(dir, "opencode.json")
-    try {
-      fs.copyFileSync(alphaJsoncPath(), userCopy)
-    } catch {
-      fs.rmSync(userCopy, { force: true }) // 无真源(或读失败)则清掉旧拷贝,不留陈尸
-    }
-    const provider = Object.fromEntries(
-      Object.entries((config.provider ?? {}) as Record<string, { options?: Record<string, unknown> }>).map(
-        ([id, def]) => {
-          const { apiKey: _apiKey, ...options } = def.options ?? {}
-          return [id, { ...def, ...(Object.keys(options).length ? { options } : { options: undefined }) }]
-        },
-      ),
-    )
-    const v2 = {
-      $schema: "https://opencode.ai/config.json",
-      ...(typeof config.model === "string" ? { model: config.model } : {}),
-      provider,
-    }
-    fs.writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify(v2, null, 2), { mode: 0o600 })
-    process.env.OPENCODE_CONFIG_DIR = dir
-  } catch (error) {
-    console.error("[v2-config-bridge] materialize failed — v2 model catalog will lack alpha/BYOK providers", error)
+    fs.copyFileSync(alphaJsoncPath(), userCopy)
+  } catch {
+    fs.rmSync(userCopy, { force: true }) // 无真源(或读失败)则清掉旧拷贝,不留陈尸
   }
+  const provider = Object.fromEntries(
+    Object.entries((config.provider ?? {}) as Record<string, { options?: Record<string, unknown> }>).map(
+      ([id, def]) => {
+        const { apiKey: _apiKey, ...options } = def.options ?? {}
+        return [id, { ...def, ...(Object.keys(options).length ? { options } : { options: undefined }) }]
+      },
+    ),
+  )
+  const v2 = {
+    $schema: "https://opencode.ai/config.json",
+    ...(typeof config.model === "string" ? { model: config.model } : {}),
+    provider,
+  }
+  fs.writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify(v2, null, 2), { mode: 0o600 })
+  process.env.OPENCODE_CONFIG_DIR = dir
 }
