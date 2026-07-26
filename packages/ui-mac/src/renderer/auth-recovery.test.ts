@@ -5,10 +5,13 @@ import type { AuthState } from "../preload/types"
 import { reconcileAuthSnapshot, resetAuthRecoveryForTests, subscribeAuthState } from "./auth-recovery"
 
 // #604:auth fail-closed 的有界自证。三条退出条件 + auth-recovery.ts 顶部声明的八条不变量
-// (A 现值可重读且必广播 / B 绝不静默退场 / C 单 owner / D 至多一个在途读、欠账时 resolved 值
-//  须后读确认而保守值可先行采信 / E 送达逐个隔离 / F 分歧只呈现定序证据(unresolved 快照例外)
-//  并纠正 / G 判据粒度不低于 main / H 证据持续到达时 owner 有产出且不热循环)各自有闸门。
-// #612:定序覆盖全部 auth 形态(登录态轴)的四条退出条件见文末 describe。
+// (A 现值可重读且必广播 / B 绝不静默退场 / C 单 owner / D 至多一个在途读、欠账时只有呈现序
+//  ⊑ 视图的读可先行采信 / E 送达逐个隔离 / F 分歧只呈现定序证据(⊑ 视图的快照例外)并纠正 /
+//  G 判据粒度不低于 main / H 证据持续到达时 owner 有产出且不热循环)各自有闸门。
+// #612:定序覆盖全部 auth 形态(登录态轴)的四条退出条件 + R1 Blocker 复现见文末 describe。
+// 呈现序 ⊑ = 相对视图同身份(status/mode/email/plan)且仅把 platformStatus 收紧为 recovering;
+// 按 unresolved **形态**枚举分流呈现是 R1 Blocker(recovering 自带 logged-in/platform 身份,
+// AlphaOnboarding 凭 status、extension-hub cloudReady 凭 status+mode 放行,跨身份呈现即 fail-open)。
 
 const drain = async () => {
   for (let index = 0; index < 20; index++) await Promise.resolve()
@@ -381,8 +384,9 @@ describe("auth fail-closed 的有界自证", () => {
     await drain()
     vi.advanceTimersByTime(0)
     await drain()
-    // 丢弃-补发必须收敛:两个订阅者都拿到现值。保守值(recovering)直接采信,不必再读一次
-    // (不变量 H:owner 一定有产出),所以这里恰好一次自读。
+    // 丢弃-补发必须收敛:两个订阅者都拿到现值。视图未建立时欠账只可能来自挂载请求而非证据
+    // (任何证据都先经 ingestHint 建立视图),该读就是最新证据,recovering 允许引导,
+    // 不必再读一次(不变量 H:owner 一定有产出),所以这里恰好一次自读。
     expect(seen).toEqual([recovering, recovering])
     expect(bridge.calls).toBe(1)
 
@@ -432,8 +436,10 @@ describe("auth fail-closed 的有界自证", () => {
       await drain()
     }
 
-    // 产出:消费侧确实收到了更新,而不是被无限丢弃饿死(修前:201 次读取只广播 1 次)。
-    expect(seen.length).toBeGreaterThan(0)
+    // 产出:同身份、仅把 platformStatus 收紧为 recovering 的读(呈现序 ⊑ 视图)必须先行落地 ——
+    // 消费侧真的收到 recovering,而不是被无限丢弃饿死(修前:201 次读取只广播 1 次;
+    // 「⊑ 视图的读也一律拒绝」的变异在此转红:seen 只剩引导的 [ready])。
+    expect(seen).toEqual([ready, recovering])
     // 速率:200ms 内的读取次数必须远低于「每毫秒一次」(修前 = 201)。
     expect(calls).toBeLessThanOrEqual(5)
     // owner 仍在跑,没有因为降频而退场。
@@ -905,7 +911,10 @@ describe("#612 快照定序覆盖登录态轴", () => {
     unsubscribe()
   })
 
-  test("唯一例外:recovering 快照可先于 logged-out 视图呈现(只收紧权限),随后必被定夺纠正", async () => {
+  // R1 Blocker(reconcile 侧):recovering 只在 platformStatus 轴上「保守」,它的身份轴是
+  // logged-in/platform —— AlphaOnboarding 凭 status、extension-hub cloudReady 凭 status+mode
+  // 放行,跨身份呈现它就是 fail-open,不是「不放行任何能力」。呈现序例外只认同身份收紧。
+  test("R1 Blocker:视图 logged-out 时,跨身份的 logged-in/recovering 快照不得被呈现", async () => {
     vi.useFakeTimers()
     const bridge = installBridge(async () => loggedOut)
     bridge.replay = undefined
@@ -914,13 +923,110 @@ describe("#612 快照定序覆盖登录态轴", () => {
     await drain()
     expect(seen).toEqual([loggedOut])
 
-    // unresolved 快照是唯一例外:呈现它不放行任何能力,而且 owner 必然续跑定夺。
-    expect(reconcileAuthSnapshot(recovering)).toEqual(recovering)
+    // 消费侧交来登出前读到的旧 recovering:必须拿回 owner 视图 —— 它携带 logged-in 身份。
+    expect(reconcileAuthSnapshot(recovering)).toEqual(loggedOut)
     vi.advanceTimersByTime(0)
     await drain()
-    // 定夺读到 logged-out:签名与视图相同,divergedFromView 仍强制广播,把消费侧纠正回来。
-    expect(seen).toEqual([loggedOut, loggedOut])
+    // 定夺自读确认 logged-out;全程没有任何订阅者、任何返回值出现过 logged-in 形态。
+    expect(seen).toEqual([loggedOut])
     expect(bridge.calls).toBe(2)
+    unsubscribe()
+  })
+
+  test("R1 Blocker 复现:在途自读被更新的 logged-out 证据作废后带回 logged-in/recovering,不得广播给任何订阅者", async () => {
+    vi.useFakeTimers()
+    let held: ((state: AuthState) => void) | undefined
+    const bridge = installBridge(async (call) => {
+      if (call === 2) return new Promise<AuthState>((resolve) => (held = resolve))
+      return loggedOut
+    })
+    bridge.replay = undefined
+    // 1) 首个订阅者建立 logged-out 视图。
+    const first: AuthState[] = []
+    const unsubscribeFirst = subscribeAuthState((state) => first.push(state))
+    await drain()
+    expect(first).toEqual([loggedOut])
+
+    // 2) 第二个订阅者触发一条在途读(挂住)。
+    const second: AuthState[] = []
+    const unsubscribeSecond = subscribeAuthState((state) => second.push(state))
+    await drain()
+    expect(second).toEqual([loggedOut])
+    expect(held).toBeDefined()
+
+    // 3) 期间更新的 logged-out 证据令该读失效(与视图签名一致,但 reading 在途 -> 记欠账)。
+    bridge.emit(loggedOut)
+    await drain()
+
+    // 4) 旧读随后带回 {logged-in, platform, recovering} —— R1 实跑:修前两个订阅者都依次
+    //    收到 logged-out -> logged-in/recovering,消费侧凭 status/mode 当场放行 = fail-open。
+    held!(recovering)
+    await drain()
+    vi.advanceTimersByTime(0)
+    await drain()
+
+    expect(first).toEqual([loggedOut])
+    expect(second).toEqual([loggedOut])
+    // 被作废的读不定案,由补发的第 3 次读定夺(仍是 logged-out,签名一致故无新广播)。
+    expect(bridge.calls).toBe(3)
+    unsubscribeFirst()
+    unsubscribeSecond()
+  })
+
+  test("不变量 H:登录态轴风暴下读取有界、订阅者看不到翻转,风暴停后真相有界落地", async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    let emit: ((state: AuthState) => void) | undefined
+    let flip = false
+    let storm = true
+    // main 在每一次自读的往返窗口内都推一条**登录态轴**翻转事件 => owedRead 恒为真,
+    // 且读回的值相对视图跨身份(呈现序不允许先采)。修法若回到「无限 0ms 补发」,读取次数爆炸。
+    const read = () => {
+      calls++
+      if (!storm) return Promise.resolve(loggedOut)
+      queueMicrotask(() => {
+        flip = !flip
+        emit?.(flip ? ready : loggedOut)
+      })
+      return Promise.resolve(flip ? loggedOut : ready)
+    }
+    const api = {
+      auth: {
+        getState: read,
+        subscribe: (callback: (state: AuthState) => void) => {
+          emit = callback
+          return () => {}
+        },
+      },
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "window")
+    Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: { api } })
+    restoreWindow = () => {
+      if (descriptor) Object.defineProperty(globalThis, "window", descriptor)
+      else delete (globalThis as { window?: unknown }).window
+    }
+
+    const seen: AuthState[] = []
+    const unsubscribe = subscribeAuthState((state) => seen.push(state))
+    await drain()
+    for (let tick = 0; tick < 200; tick++) {
+      vi.advanceTimersByTime(1)
+      await drain()
+    }
+
+    // 跨身份的可能旧读一律不得呈现:订阅者最多看到引导那一次,绝不看到翻转序列。
+    expect(seen.length).toBeLessThanOrEqual(1)
+    // 连续被作废的读转入退避:200ms 内不得退化成每毫秒一读。
+    expect(calls).toBeLessThanOrEqual(5)
+    // owner 仍在跑,没有静默退场。
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+
+    // 风暴停止,main 稳定 logged-out:真相必须经退避在有界时间内落地(③″4-4 反向闸门:
+    // 收紧呈现判据不得把「该到的」吞掉)。
+    storm = false
+    vi.advanceTimersByTime(8_000)
+    await drain()
+    expect(seen[seen.length - 1]).toEqual(loggedOut)
     unsubscribe()
   })
 })
