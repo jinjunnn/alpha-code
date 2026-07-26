@@ -251,57 +251,12 @@
   color: var(--a-text-disabled);
 }
 
-.a-swk-approval {
-  border-color: var(--a-warning);
-  background: var(--a-warning-subtle);
-}
-
-.a-swk-approval-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: var(--a-text-sm);
-  font-weight: var(--a-weight-semibold);
-}
-
-.a-swk-approval-head svg {
-  flex: none;
-  width: 13px;
-  height: 13px;
-  fill: none;
-  stroke: var(--a-warning);
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.a-swk-approval-head code,
-.a-swk-approval-body code {
-  font-family: var(--a-font-mono);
-  font-size: var(--a-text-xs);
-  background: var(--a-bg-canvas);
-  border-radius: var(--a-radius-xs);
-  padding: 2px 6px;
-  overflow-wrap: anywhere;
-}
-
-.a-swk-approval-body {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0 12px;
-  font-size: var(--a-text-sm);
-  color: var(--a-text-secondary);
-}
-
-.a-swk-approval-actions,
 .a-swk-question-actions {
   display: flex;
   gap: 8px;
 }
 
-.a-swk-approval-error {
+.a-swk-question-error {
   margin: 8px 0 0;
   font-size: var(--a-text-xs);
   color: var(--a-error);

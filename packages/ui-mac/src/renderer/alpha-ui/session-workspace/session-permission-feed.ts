@@ -1,4 +1,4 @@
-// REQ-125 C7:会话审批 dock 的 PermissionV2 typed feed。
+// REQ-125 C7:会话审批的 PermissionV2 typed feed。
 //
 // 语义(基线 §③.4 / I3 / I8;Codex 审计 2026-07-24 Blocker-1 收紧):
 // - fail-closed:`ready` 仅在「最近一次 list 成功且尚无新拉取在途」时为 true。任何 load()
@@ -8,8 +8,9 @@
 //   不得覆盖新代次的状态。
 // - 回复绑 request ID:reply() 只接受「当前 ready 快照里仍然挂起」的请求,stale/重复/
 //   在途期的回复在客户端就被拒绝,不发往引擎(切会话/已决请求回错单的整类事故在此闸死)。
-// - 与 PermissionWatcher(独立 Permission surface)共用同一 feed 实现;watcher 保持
-//   全局兜底,seam 会话页经 session-approval-claim 声明接管时才停渲对话框。
+// - 与 PermissionWatcher(独立 Permission surface,审批呈现唯一路径)共用同一 feed
+//   实现;seam 会话页 dock 只用它驱动 composer 的审批挂起提示,不渲审批卡、不提交决定
+//   (owner 裁决 2026-07-25)。
 
 import type {
   PermissionV2DecisionCommand,

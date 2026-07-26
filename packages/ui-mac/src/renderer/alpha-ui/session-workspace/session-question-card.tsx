@@ -166,7 +166,7 @@ export function SessionQuestionCard(props: {
         </button>
       </div>
       <Show when={failed()}>
-        <p class="a-swk-approval-error" role="alert">
+        <p class="a-swk-question-error" role="alert">
           {t("alpha.session.questionFailed")}
         </p>
       </Show>

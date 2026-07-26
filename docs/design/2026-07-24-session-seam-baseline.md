@@ -4,7 +4,7 @@ kind: design
 status: frozen
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-07-24
+last_reviewed: 2026-07-25
 ---
 
 > 2026-07-24 rev2:Codex 开发前问询回写(GO with revisions);回落语义遵 REQ-090 单向门。
@@ -160,3 +160,14 @@ alpha 页。**不再逐点同步上游 DOM/CSS**;SDK schema、消息语义、pro
 并发编排:C1 先行独占(C1a → C1b 两段退出条件);此后 {C2, C3-files, C3-term, C4}、
 {C5→C6}、C7 三线可并行(本机 codex 并发上限 2);C8 收尾小票。V1 可攒批执行、
 不挡单票开发,但**阻断 REQ-125 关闭**。
+
+> **2026-07-25 owner 裁决(alpha-code#619)**:确认 C7 行的口径 ——「审批走独立
+> Permission surface,非 dock」为准;已批整页稿的「变体二 · 审批请求停靠」帧与交互
+> 契约表「审批停靠」条作废(已在稿内标注)。依据:dock 审批卡与 REQ-090 已交付的
+> PermissionDialog 并存意味着两套审批 UI + `session-approval-claim` 抢占机制的永久
+> 维护面;dock 卡仅呈现 2 栏(action/resources)而判定同源于 5 栏事实(scope/expiry
+> 被藏成盲签面);Dialog 为强模态 fail-closed(body inert + Esc 不可关)。dock 审批卡
+> 与 claim 机制随本裁决删除,反向闸门锁在
+> `packages/ui-mac/src/renderer/alpha-ui/takeover-adapter-coexistence.test.ts`。
+> 已知代价(owner 知悉并接受):强模态挡住时间线,审批时无法回看工具上下文;缓解 =
+> 拒绝成本低,可让 agent 重新发起。

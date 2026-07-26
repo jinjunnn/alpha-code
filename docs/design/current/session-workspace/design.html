@@ -1255,7 +1255,7 @@ table.spec{width:100%;border-collapse:collapse;margin-top:14px;font-size:var(--a
 
   <!-- ═══ 状态变体 ═══ -->
   <section class="sec" id="states">
-    <div class="sec-kicker">整页状态变体 · 右栏收起 / 审批停靠 / 运行中</div>
+    <div class="sec-kicker">整页状态变体 · 右栏收起 / 审批(独立 Permission surface) / 运行中</div>
     <h2 class="t">三个关键状态</h2>
 
     <div class="label">变体一 · 右栏收起(时间线回中)</div>
@@ -1307,26 +1307,8 @@ table.spec{width:100%;border-collapse:collapse;margin-top:14px;font-size:var(--a
     </div></div></div></div>
     <p class="cap">右栏整列让位;时间线列保持 760 上限居中,不满铺。顶栏右栏开关退为未激活。</p>
 
-    <div class="label">变体二 · 审批请求停靠在输入框上方</div>
-    <div class="frame" style="max-width:900px"><div style="background:var(--a-bg-canvas)">
-      <div class="chat-dock" style="border-top:0;padding-top:18px">
-        <div style="max-width:860px;margin:0 auto 10px">
-          <div class="perm-card"><div class="ph"><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-warning)"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批 · 工具执行</div><div class="pb">即将运行:<code>bun run typecheck</code></div><div class="pa"><button class="btn-primary">允许一次</button><button class="btn-ghost">总是允许</button><button class="btn-ghost">拒绝</button></div></div>
-        </div>
-        <div class="composer">
-          <div class="input empty">等待你的决定…</div>
-          <div class="toolbar">
-            <button class="chip iconbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-            <button class="chip" style="color:var(--a-warning)"><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-warning)"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>请求审批<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
-            <div class="grow"></div>
-            <button class="chip usage"><span class="ring"></span>41%</button>
-            <button class="chip"><span class="pico" style="background:#4f46e5">α</span>Opus 4.8<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
-            <button class="send"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
-          </div>
-        </div>
-      </div>
-    </div></div>
-    <p class="cap">审批卡(时间线稿既有形态)停靠在输入框正上方、同宽对齐;出现时输入框置灰提示语,焦点落到「允许一次」。审批中权限 chip 转琥珀提示当前模式。决定后卡片收回时间线原位留档。</p>
+    <div class="label">变体二 · 审批请求(已作废 → 独立 Permission surface)</div>
+    <div class="note warn"><b>本帧作废(owner 裁决 2026-07-25)</b>:审批请求不停靠在输入框上方 —— 统一由独立的权限确认对话框(Permission surface,已批的五栏强模态稿)呈现,打开期间页面其余部分不可操作,必须显式选择。原帧的「审批卡停靠 + 决定后收回时间线留档」形态不再实现。composer 侧仅保留审批挂起的提示:输入框置灰提示语、权限 chip 转琥珀。</div>
 
     <div class="label">变体三 · 会话运行中(顶栏 + 时间线尾部 + 停止键)</div>
     <div class="frame" style="max-width:900px"><div style="background:var(--a-bg-canvas)">
@@ -1371,7 +1353,7 @@ table.spec{width:100%;border-collapse:collapse;margin-top:14px;font-size:var(--a
       <tr><td>焦点次序</td><td>左栏 → 顶栏 → 时间线 → 输入框 → 右栏;右栏 tab 用左右方向键切换,面板内容为独立焦点区。全部控件可见焦点环(<code>--a-ring-focus</code>)。</td></tr>
       <tr><td>右栏开合</td><td>顶栏开关与右栏「›」等价;开启回到最后激活面板与记忆宽度;拖宽 320–560px,拖动中显示强调线。收起后时间线回中(760 上限)。</td></tr>
       <tr><td>面板联动</td><td>时间线「在面板打开」→ 审查面板对应文件卡展开;产物链接行 → 产物面板聚焦该文件(焦点移入,Esc 返回原行 —— 沿用既批联动合同);文件树带类别标的行 → 审查对应文件。</td></tr>
-      <tr><td>审批停靠</td><td>审批卡出现时焦点移入首个动作;Esc 等价「拒绝」不成立 —— 必须显式选择(fail-closed);读屏经 aria-live(assertive)播报请求内容。</td></tr>
+      <tr><td>审批呈现</td><td>统一走独立 Permission surface(权限确认对话框;「审批停靠」条已随变体二作废,owner 裁决 2026-07-25):强模态,打开期间页面其余部分不可操作;Esc 不可关闭 —— 必须显式选择(fail-closed);出现时焦点移入首个动作。composer 侧仅保留挂起提示(置灰提示语 + 琥珀权限 chip)。</td></tr>
       <tr><td>运行状态</td><td>顶栏状态胶囊 aria-live(polite);停止键有明确可达名称「停止生成」。</td></tr>
       <tr><td>动效</td><td>状态呼吸 / 进度扫线 / 流式光标均为装饰性,reduced-motion 下全部静止;面板开合无滑动动画,直接切换。</td></tr>
       <tr><td>降级</td><td>整页任何 alpha 渲染崩溃 → 恢复边界回落上游整页(既定恢复合同,不在本稿画)。</td></tr>

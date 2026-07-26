@@ -29,7 +29,6 @@ Bun.plugin({
 
 const runtime = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-test-runtime")
 const terminalPanelModule = await import("../src/renderer/alpha-ui/session-rail/terminal/terminal-rail-panel")
-const claim = await import("../src/renderer/alpha-ui/session-workspace/session-approval-claim")
 const disposers: Array<() => void> = []
 
 beforeEach(() => {
@@ -100,75 +99,6 @@ describe("REQ-125 session workspace real Solid mount", () => {
       "review",
     )
     expect(host.querySelector("[data-component]")).toBeNull()
-  })
-
-  test("approval claim hands over first-establish-then-yield: only a ready dock holds presentation", async () => {
-    claim.resetSessionApprovalClaim()
-    const [ready, setReady] = solid.createSignal(false)
-    const [sessionID, setSessionID] = solid.createSignal<string | undefined>("ses_a")
-    const dispose = solid.createRoot((dispose: () => void) => {
-      claim.bindSessionApprovalClaim({ sessionID, ready })
-      return dispose
-    })
-    await flush()
-
-    // list 在途/失败期不夺权 —— watcher 保持可呈现,无「两边都不呈现」窗口。
-    expect(claim.sessionApprovalDockClaimed("ses_a")).toBe(false)
-
-    setReady(true)
-    await flush()
-    expect(claim.sessionApprovalDockClaimed("ses_a")).toBe(true)
-
-    // 失去就绪(重连 refetch / 通道失败)同步让权。
-    setReady(false)
-    await flush()
-    expect(claim.sessionApprovalDockClaimed("ses_a")).toBe(false)
-
-    setReady(true)
-    await flush()
-    setSessionID("ses_b")
-    await flush()
-    expect(claim.sessionApprovalDockClaimed("ses_a")).toBe(false)
-    expect(claim.sessionApprovalDockClaimed("ses_b")).toBe(true)
-
-    dispose()
-    await flush()
-    expect(claim.sessionApprovalDockClaimed("ses_b")).toBe(false)
-    claim.resetSessionApprovalClaim()
-  })
-
-  test("same-session competing claims resolve to exactly one presenter (token ownership)", async () => {
-    claim.resetSessionApprovalClaim()
-    const [readyA, setReadyA] = solid.createSignal(false)
-    const [readyB, setReadyB] = solid.createSignal(false)
-    const dispose = solid.createRoot((dispose: () => void) => {
-      claim.bindSessionApprovalClaim({ sessionID: () => "ses_x", ready: readyA })
-      claim.bindSessionApprovalClaim({ sessionID: () => "ses_x", ready: readyB })
-      return dispose
-    })
-    await flush()
-    expect(claim.sessionApprovalDockClaimed("ses_x")).toBe(false)
-
-    setReadyA(true)
-    await flush()
-    expect(claim.sessionApprovalDockClaimed("ses_x")).toBe(true)
-
-    // 同会话第二个竞争者就绪:仍恰一个呈现者(owner 判定见 session-approval-claim/host 测试)。
-    setReadyB(true)
-    await flush()
-    expect(claim.sessionApprovalDockClaimed("ses_x")).toBe(true)
-
-    // 先立者退出:它的(迟到)释放只对自己的 token 生效 —— B 仍持权,watcher 不得恢复呈现。
-    setReadyA(false)
-    await flush()
-    expect(claim.sessionApprovalDockClaimed("ses_x")).toBe(true)
-
-    setReadyB(false)
-    await flush()
-    expect(claim.sessionApprovalDockClaimed("ses_x")).toBe(false)
-
-    dispose()
-    claim.resetSessionApprovalClaim()
   })
 
   test("terminal and rail controls only switch the placeholder host", async () => {

@@ -70,23 +70,46 @@ describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
     expect(css).not.toContain("data-alpha-usage-host")
   })
 
-  test("审批呈现权协调走进程内 claim(零 DOM):dock 仅在 feed 就绪时接管,watcher 让位并保持兜底", () => {
+  test("审批统一走独立 Permission surface(owner 裁决 2026-07-25):dock 审批呈现面删除后零引用(反向闸门)", () => {
+    // 若有人重新引入 dock 审批卡 / claim 抢占机制,本断言必须变红 —— 审批呈现的唯一
+    // 路径是 PermissionWatcher 的 PermissionDialog(REQ-090 合同面)。
+    // 本棘轮只是文本层的第一道闸(改名 + 新属性 + 方括号取值可绕过,R1 对抗审已证):
+    // 行为层闸门在 session-workspace/permission-single-surface.test.ts —— 同场真实挂载
+    // watcher 与生产 dock,任何等义改写的第二审批面在运行时 DOM/流量断言下必红。
+    expect(fs.existsSync(path.join(ALPHA_UI, "session-workspace", "session-approval-card.tsx"))).toBe(false)
+    expect(fs.existsSync(path.join(ALPHA_UI, "session-workspace", "session-approval-claim.ts"))).toBe(false)
+    const forbidden = [
+      "SessionApprovalCard",
+      "SessionApprovalHost",
+      "session-approval-card",
+      "session-approval-claim",
+      "claimSessionApprovalDock",
+      "bindSessionApprovalClaim",
+      "sessionApprovalDockClaimed",
+      "data-alpha-session-approval",
+      "a-swk-approval",
+    ]
+    const offenders: Array<{ file: string; token: string }> = []
+    for (const file of walkText(RENDERER)) {
+      const src = read(file)
+      for (const token of forbidden) {
+        if (src.includes(token)) offenders.push({ file: path.relative(RENDERER, file), token })
+      }
+    }
+    expect(offenders).toEqual([])
+    // 唯一路径本身在场且保持 Blocker-2 的 fail-closed 闸:呈现严格以 ready 为闸,
+    // 且不存在任何让位条件(claim 判断消失后 Show 条件只剩 ready × 队首请求)。
     const watcher = read(path.join(ALPHA_UI, "permission-watcher.tsx"))
-    expect(watcher).toContain("sessionApprovalDockClaimed(props.sessionID)")
-    // Blocker-2:兜底面与 dock 同一 fail-closed feed;呈现严格以 ready 为闸。
     expect(watcher).toContain("createPermissionV2Feed(")
-    expect(watcher).toContain("feed.state.ready &&")
+    expect(watcher).toContain("feed.state.ready && feed.state.requests[0]")
+    expect(watcher).toContain("<PermissionDialog")
+    // dock 侧无决定提交路径:feed 的 reply 是拒绝桩,不携带任何放行网络调用。
     const dock = read(path.join(ALPHA_UI, "session-workspace", "session-composer-dock.tsx"))
-    // Major:先立后破 + 唯一 owner —— claim 绑定在自身 feed 就绪上,审批卡只由当选 owner
-    // 的 SessionApprovalHost 渲染(多 dock 并存恰一份审批 DOM)。
-    expect(dock).toContain("<SessionApprovalHost")
-    expect(dock).toContain("ready={() => feed()?.state.ready ?? false}")
-    const host = read(path.join(ALPHA_UI, "session-workspace", "session-approval-card.tsx"))
-    expect(host).toContain("bindSessionApprovalClaim({")
-    expect(host).toContain("owns() ? props.approval() : undefined")
-    const claim = read(path.join(ALPHA_UI, "session-workspace", "session-approval-claim.ts"))
-    expect(claim).not.toContain("document")
-    expect(claim).not.toContain("querySelector")
+    expect(dock).toContain("approval decisions are submitted only via the permission surface")
+    expect(dock).not.toContain("session.permission.reply")
+  })
+
+  test("档位决策源棘轮:权威实时读 + 有界 GET(审计 R4/R5)", () => {
     // Major(R4:决策源):档位决策(needsSwitch/CAS/漂移)一律权威实时读(typed GET),
     // serverSync 缓存(不消费 v2 切档事件,永不更新)禁作决策源。
     const composerSrc = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
@@ -95,15 +118,16 @@ describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
     expect(composerSrc).toContain("client.v2.session.get({ sessionID }, { signal })")
     expect(composerSrc).toContain("AbortSignal.timeout(timeoutMs)")
     expect(composerSrc).not.toContain("sessionAgent()")
+    const dock = read(path.join(ALPHA_UI, "session-workspace", "session-composer-dock.tsx"))
     expect(dock).not.toContain("observeSessionAgent")
     expect(dock).not.toContain("sessionAgent")
   })
 
-  test("审计修复轮棘轮:always 项目身份取会话精确 projectID;停止键走已批稿 accent 令牌", () => {
+  test("审计修复轮棘轮:停止键走已批稿 accent 令牌;发送走 v2 durable 队列", () => {
+    // (原「always 项目身份取会话精确 projectID」棘轮随 dock 审批卡删除而失去主体:
+    // dock 已无任何放行动作;独立 Permission surface 的 always 项目身份由
+    // PermissionDialog 自身的 fail-closed 用例锁定。)
     const dock = read(path.join(ALPHA_UI, "session-workspace", "session-composer-dock.tsx"))
-    // Major:与独立 Permission surface 同源的当前项目身份(SessionV2Info.projectID,
-    // typed session info),不再用 worktree 目录猜测(sandbox 会话不可误禁 always)。
-    expect(dock).toContain("serverSync().session.data.info[bound.sessionID]?.projectID")
     expect(dock).not.toContain("project.worktree ===")
     // minor:停止键配色 = 已批稿 --a-accent 系;禁 --a-danger 与裸色回退。
     const css = read(path.join(ALPHA_UI, "alpha-composer.css"))

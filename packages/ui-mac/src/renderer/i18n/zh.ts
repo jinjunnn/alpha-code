@@ -1160,7 +1160,6 @@ export const dict = {
   "alpha.session.timelineHost": "会话时间线",
   "alpha.session.composerHost": "会话输入框",
   "alpha.session.railHost": "会话右栏",
-  "alpha.session.approvalTitle": "请求审批",
   "alpha.session.questionTitle": "提问",
   "alpha.session.questionSubmit": "提交回答",
   "alpha.session.questionDismiss": "暂不回答",
