@@ -307,7 +307,7 @@ button.a-tc-head:focus-visible {
   background: var(--a-error-subtle);
 }
 
-/* 标题行(design ③ .errcard-head):错误图标 + 类别标题 + mono 代码 + 右端复制。 */
+/* 标题行(design ③ .errcard-head):错误图标 + 固定标题 + 右端复制。 */
 .a-tc-err-head {
   display: flex;
   gap: 9px;
@@ -335,13 +335,6 @@ button.a-tc-head:focus-visible {
 /* 收起态(超帽错误)只剩常驻标题行:自补底边距(展开时由正文提供)。 */
 .a-tc:not([data-open="true"]) .a-tc-err-head {
   padding-bottom: 9px;
-}
-
-.a-tc-err-code {
-  color: var(--a-error);
-  font-family: var(--a-font-mono);
-  font-size: var(--a-text-xs);
-  font-weight: var(--a-weight-normal);
 }
 
 .a-tc-err-copy {

@@ -704,7 +704,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
       value: { writeText: (text: string) => (copied.push(text), Promise.resolve()) },
       configurable: true,
     })
-    const gatewayError = '{"detail":"Not Found"} — 代理 baseURL 或模型 ID 不存在'
+    const gatewayLookalikeError = '{"detail":"Not Found"} — 代理 baseURL 或模型 ID 不存在'
     const host = mount()
     runtime.setTimelineRows(
       assistantFixture([
@@ -729,15 +729,16 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
           error: "E".repeat(4_001),
           time: { start: 0, end: 1 },
         }),
-        // 结构门(R2 Blocker):网关标题只可能出现在 task 卡(唯一经模型网关的
-        // 工具)—— 子代理会话的模型调用失败沿 task 工具传为本卡错误文本。
+        // R3 Blocker:「模型网关错误」分类已整体移除(引擎无 typed gateway
+        // provenance,词面判据被证明无真阳性且有可达误报,见 ToolErrorHead 注释)。
+        // 网关味最浓的 task 错误文本也必须停在统一的「工具执行失败」标题。
         toolPartFixture("prt_m4", "task", {
           status: "error",
           input: { description: "诊断构建失败", subagent_type: "explore" },
-          error: gatewayError,
+          error: gatewayLookalikeError,
           time: { start: 0, end: 1 },
         }),
-        // 同样带 gateway 字样的 webfetch 失败(502 标准原因短语)必须停在通用标题。
+        // 带 gateway 字样的 webfetch 失败(502 标准原因短语)同样是通用标题。
         toolPartFixture("prt_m5", "webfetch", {
           status: "error",
           input: { url: "https://example.com" },
@@ -758,7 +759,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(failed.getAttribute("data-open")).toBe("true")
     expect(failed.querySelector(".a-tc-error-body")!.textContent).toContain("ENOTREACHABLE")
     expect(failed.textContent).toContain("失败")
-    // 非网关语境的错误退回通用标题,不出编造的错误代码。
+    // 错误卡标题统一为「工具执行失败」,没有分类、没有编造的错误代码副标。
     expect(failed.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
     expect(failed.querySelector(".a-tc-err-code")).toBeNull()
 
@@ -778,22 +779,21 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(bigError.getAttribute("data-open")).toBe("true")
     expect(bigError.querySelector(".a-tc-error-body")!.textContent).toContain("EEEE")
 
-    // G4 帧形态:「模型网关错误」标题 + mono 代码副标 + 可触发的复制钮。
-    // 代码副标只报文本里真实出现的短语,不把 Not Found 反推成 404(R1 Blocker)。
-    const gateway = host.querySelector("[data-alpha-tool-card][data-tool='task'][data-status='error']")!
-    expect(gateway.querySelector(".a-tc-err-head")!.textContent).toContain("模型网关错误")
-    expect(gateway.querySelector(".a-tc-err-code")!.textContent).toBe("Not Found")
-    const copy = gateway.querySelector<HTMLButtonElement>("[data-alpha-tool-error-copy]")!
+    // R3 Blocker 反例:网关味最浓的 task 错误(代理 baseURL/模型 ID/Not Found)
+    // 也是同一张通用错误卡 —— 标题「工具执行失败」、无代码副标、复制钮可触发。
+    const taskFail = host.querySelector("[data-alpha-tool-card][data-tool='task'][data-status='error']")!
+    expect(taskFail.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
+    expect(taskFail.querySelector(".a-tc-err-code")).toBeNull()
+    const copy = taskFail.querySelector<HTMLButtonElement>("[data-alpha-tool-error-copy]")!
     expect(copy.getAttribute("aria-label")).toBe("复制错误信息")
     copy.click()
     await flush()
-    expect(copied).toEqual(["E".repeat(4_000), gatewayError])
+    expect(copied).toEqual(["E".repeat(4_000), gatewayLookalikeError])
 
-    // R2 Blocker 结构门:webfetch 的 502 Bad Gateway(标准 HTTP 原因短语自带
-    // gateway 字样)停在通用标题,不编造代码副标。
+    // R3 Blocker 反例:webfetch 的 502 Bad Gateway(标准 HTTP 原因短语自带
+    // gateway 字样)同样是通用标题,不编造代码副标。
     const fetchFail = host.querySelector("[data-alpha-tool-card][data-tool='webfetch'][data-status='error']")!
     expect(fetchFail.querySelector(".a-tc-err-head")!.textContent).toContain("工具执行失败")
-    expect(fetchFail.querySelector(".a-tc-err-head")!.textContent).not.toContain("模型网关错误")
     expect(fetchFail.querySelector(".a-tc-err-code")).toBeNull()
   })
 

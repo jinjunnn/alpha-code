@@ -1188,7 +1188,6 @@ export const dict = {
   "alpha.timeline.toolRunning": "运行中",
   "alpha.timeline.toolCompleted": "完成",
   "alpha.timeline.toolError": "失败",
-  "alpha.timeline.toolErrorGateway": "模型网关错误",
   "alpha.timeline.toolErrorGeneric": "工具执行失败",
   "alpha.timeline.subtask": "子任务",
   "alpha.timeline.media": "媒体产物",

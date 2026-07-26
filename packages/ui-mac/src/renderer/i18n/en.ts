@@ -1199,7 +1199,6 @@ export const dict = {
   "alpha.timeline.toolRunning": "Running",
   "alpha.timeline.toolCompleted": "Done",
   "alpha.timeline.toolError": "Failed",
-  "alpha.timeline.toolErrorGateway": "Model gateway error",
   "alpha.timeline.toolErrorGeneric": "Tool run failed",
   "alpha.timeline.subtask": "Subtask",
   "alpha.timeline.media": "Media output",

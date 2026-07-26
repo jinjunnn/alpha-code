@@ -23,14 +23,10 @@ import {
   TOOL_LIST_SCAN_MAX,
   TOOL_SCAN_MAX_CHARS,
   TOOL_URL_MAX_CHARS,
-  TOOL_ERROR_SCAN_MAX_CHARS,
-  TOOL_ERROR_TITLE_GATEWAY,
-  TOOL_ERROR_TITLE_GENERIC,
   toolCardBodyOf,
   toolCardHeadOf,
   toolCardKindOf,
   toolCardStatusOf,
-  toolErrorSummaryOf,
   type ToolCardKind,
 } from "./tool-card-model"
 import { DIFF_MAX_ROWS, DIFF_PATCH_MAX_CHARS, diffViewOf } from "./tool-diff"
@@ -546,113 +542,5 @@ describe("#568 审计修复:diagnostics 外层文件数扫描预算(Major-3)", (
       part("write", { input: { filePath: "C:\\ws\\win.ts" }, metadata: { diagnostics: small } }),
     )
     expect(normalized.rows).toHaveLength(1)
-  })
-})
-
-describe("#590 工具级错误卡标题行(toolErrorSummaryOf)", () => {
-  test("task(唯一经模型网关的工具)+ 模型网关证据 + 原因短语 → 网关标题;短语不反推数字状态码(R1 Blocker)", () => {
-    expect(toolErrorSummaryOf("task", '{"detail":"Not Found"} — 代理 baseURL 或模型 ID 不存在')).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GATEWAY,
-      code: "Not Found",
-    })
-    expect(toolErrorSummaryOf("task", "模型网关返回 503,请稍后重试")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GATEWAY,
-      code: "503 · Service Unavailable",
-    })
-    expect(toolErrorSummaryOf("task", "model proxy returned 502 Bad Gateway")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GATEWAY,
-      code: "502 · Bad Gateway",
-    })
-  })
-
-  test("独立状态码优先于原因短语;粘连片段(v1.404 / x429)不算状态码", () => {
-    expect(toolErrorSummaryOf("task", "网关拒绝:HTTP 429 rate limited")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GATEWAY,
-      code: "429 · Too Many Requests",
-    })
-    // 粘连数字不认;短语也没有 → 只给类别标题,不编造代码。
-    expect(toolErrorSummaryOf("task", "模型代理 call failed at v1.404/x429")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GATEWAY,
-    })
-  })
-
-  test("表外状态码不猜原因;task 无词面证据仍退通用(两道门都要过,工具身份不免检)", () => {
-    expect(toolErrorSummaryOf("task", "gateway responded 418 teapot")).toEqual({ titleKey: TOOL_ERROR_TITLE_GATEWAY })
-    expect(toolErrorSummaryOf("task", "Task cancelled")).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
-    expect(toolErrorSummaryOf("task", "ENOTREACHABLE")).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
-    expect(toolErrorSummaryOf("task", "")).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
-  })
-
-  test("R2 Blocker 结构门:非白名单工具的失败结构上不可能是模型网关错误 —— 词面证据再强也不出网关标题(Codex R2 七反例)", () => {
-    // 前两条是致命面:502/504 的标准 HTTP 原因短语自带 gateway 字样,任何
-    // webfetch/curl 失败都可能带上 —— 只有工具类型门挡得住。
-    expect(toolErrorSummaryOf("webfetch", "webfetch https://example.com failed: HTTP 502 Bad Gateway")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GENERIC,
-    })
-    expect(toolErrorSummaryOf("bash", "curl https://example.com failed: HTTP 504 Gateway Timeout")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GENERIC,
-    })
-    expect(toolErrorSummaryOf("webfetch", "webfetch https://example.com/gateway failed: HTTP 404 Not Found")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GENERIC,
-    })
-    expect(toolErrorSummaryOf("read", "read /repo/gateway/config.ts failed: file not found")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GENERIC,
-    })
-    expect(toolErrorSummaryOf("bash", "bash: gateway: command not found")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GENERIC,
-    })
-    expect(toolErrorSummaryOf("bash", "git checkout model-proxy failed: pathspec not found")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GENERIC,
-    })
-    expect(toolErrorSummaryOf("bash", "provider model.json config parse failed")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GENERIC,
-    })
-  })
-
-  test("结构门全量扫:除 task 外全部登记工具 + 未知/MCP/敌意名,最强词面证据也不出网关标题", () => {
-    const strongest = "模型网关 model proxy returned 502 Bad Gateway"
-    const tools = [
-      "read",
-      "list",
-      "glob",
-      "grep",
-      "webfetch",
-      "websearch",
-      "bash",
-      "edit",
-      "write",
-      "apply_patch",
-      "skill",
-      "context7_query-docs",
-      "Task", // 大小写不同 = 不同工具名,fail-closed
-      "__proto__",
-      "constructor",
-      "",
-    ]
-    for (const tool of tools) {
-      expect(toolErrorSummaryOf(tool, strongest)).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
-    }
-  })
-
-  test("词面第二道门(R1 Blocker 五反例,以 task 身份跑):裸 URL/api/http/provider 不足以定类", () => {
-    // 全部用白名单工具 task 跑 —— 证明词面门独立于结构门仍然把关。
-    expect(toolErrorSummaryOf("task", "webfetch https://example.com/missing failed: HTTP 404 Not Found")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GENERIC,
-    })
-    expect(toolErrorSummaryOf("task", "curl https://example.com: 503 Service Unavailable")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GENERIC,
-    })
-    expect(toolErrorSummaryOf("task", "API docs file is missing")).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
-    expect(toolErrorSummaryOf("task", "provider config parse failed")).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
-    expect(toolErrorSummaryOf("task", "HTTP client initialization failed")).toEqual({
-      titleKey: TOOL_ERROR_TITLE_GENERIC,
-    })
-    // 模型词或路由层词单独出现也不够:证据 = 网关层词,或「模型 × 路由层」同现。
-    expect(toolErrorSummaryOf("task", "model file not found")).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
-  })
-
-  test("分类只扫开头一段:预算之外的网关线索不参与判定(I7)", () => {
-    const far = `${"x".repeat(TOOL_ERROR_SCAN_MAX_CHARS)} 模型网关 503 Service Unavailable`
-    expect(toolErrorSummaryOf("task", far)).toEqual({ titleKey: TOOL_ERROR_TITLE_GENERIC })
   })
 })
