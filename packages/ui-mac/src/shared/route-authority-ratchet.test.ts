@@ -77,7 +77,9 @@ function violationsFor(file: SourceFile) {
   // Every route composes exactly one Alpha surface. The release-state machine that once let a
   // route fall back to an upstream leaf (env override / userData pin / crash fallback) is gone
   // and must not grow back.
-  if (/\bSURFACE_RELEASE_STATES\b|\bALPHA_SURFACE_(?:HOME|NEW_SESSION|SESSION)\b|\balpha-surfaces-resolve\b/.test(source)) {
+  if (
+    /\bSURFACE_RELEASE_STATES\b|\bALPHA_SURFACE_(?:HOME|NEW_SESSION|SESSION)\b|\balpha-surfaces-resolve\b/.test(source)
+  ) {
     violations.push({ path, rule: "removed legacy surface release flag" })
   }
 
@@ -282,9 +284,9 @@ function deepLinkWiringIn(source: string): ConsumerWiring {
     entries,
     foreign,
     usage: {
-      listener: new RegExp(
-        `makeEventListener\\(\\s*window\\s*,\\s*deepLinkEvent\\s*,\\s*${binding}\\s*,?\\s*\\)`,
-      ).test(used),
+      listener: new RegExp(`makeEventListener\\(\\s*window\\s*,\\s*deepLinkEvent\\s*,\\s*${binding}\\s*,?\\s*\\)`).test(
+        used,
+      ),
       invoked: new RegExp(`(^|[^\\w$.])${binding}\\s*\\(\\s*\\)`).test(used),
     },
   }
@@ -305,14 +307,12 @@ describe("Alpha route authority ratchet", () => {
       if (parsed.hostname === "new-session") dispatch(parsed)
     `
 
-    expect(violationsFor({ path: join(sourceRoot, layer, "fixture.ts"), source }).map((entry) => entry.rule)).toEqual(
-      [
-        "href/to must use a manifest-derived href",
-        "new-session path literals belong in the manifest",
-        "deep-link scheme literal outside the manifest",
-        "new URL plus hostname deep-link dispatch outside the manifest",
-      ],
-    )
+    expect(violationsFor({ path: join(sourceRoot, layer, "fixture.ts"), source }).map((entry) => entry.rule)).toEqual([
+      "href/to must use a manifest-derived href",
+      "new-session path literals belong in the manifest",
+      "deep-link scheme literal outside the manifest",
+      "new URL plus hostname deep-link dispatch outside the manifest",
+    ])
   })
 
   test("Alpha sources do not reintroduce a parallel route or deep-link codec", async () => {
@@ -433,7 +433,9 @@ describe("Alpha route authority ratchet", () => {
     `)
 
     expect(depValue(wiring, "navigate")).toEqual(["navigateWithSidebarReset"]) // the text pin sees nothing
-    expect(wiring.foreign).toEqual(["...{ buffer: () => rewritten(window), navigate: (href) => navigateWithSidebarReset(rewrite(href)), }"])
+    expect(wiring.foreign).toEqual([
+      "...{ buffer: () => rewritten(window), navigate: (href) => navigateWithSidebarReset(rewrite(href)), }",
+    ])
   })
 
   test("the wiring pin bites on a duplicate key that overrides the honest one", () => {
@@ -447,13 +449,16 @@ describe("Alpha route authority ratchet", () => {
 
   test("the wiring pin bites on a correct consumer that is never mounted", () => {
     // The other R3 bypass: keep the honest call site, then hand `onMount` something else.
-    const wiring = wiringOf(HONEST_DEPS, `
+    const wiring = wiringOf(
+      HONEST_DEPS,
+      `
       const noop = () => {}
       onMount(() => {
         makeEventListener(window, deepLinkEvent, noop)
         noop()
       })
-    `)
+    `,
+    )
 
     expect(wiring.foreign).toEqual([])
     expect(depValue(wiring, "navigate")).toEqual(["navigateWithSidebarReset"])

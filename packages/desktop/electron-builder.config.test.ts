@@ -22,9 +22,7 @@ function schemeRegistrationsIn(value: unknown, path = "config"): string[] {
   if (typeof value === "string") return value.includes("x-scheme-handler") ? [path] : []
   if (typeof value !== "object" || value === null) return []
   return Object.entries(value).flatMap(([key, entry]) =>
-    key === "protocols" || key === "schemes"
-      ? [`${path}.${key}`]
-      : schemeRegistrationsIn(entry, `${path}.${key}`),
+    key === "protocols" || key === "schemes" ? [`${path}.${key}`] : schemeRegistrationsIn(entry, `${path}.${key}`),
   )
 }
 
