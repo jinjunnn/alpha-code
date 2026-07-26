@@ -4,6 +4,7 @@
 // `AlphaTerminalEngineChannel` 渲染;channel 缺席或未就绪 → fail-closed 空态。
 import { For, Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { t } from "../../../i18n"
+import { rovingKey, rovingTabIndex } from "../../roving-focus"
 import type { AlphaSessionIdentity } from "../../session-workspace/session-workspace-core"
 import {
   acceptedEngineChannel,
@@ -16,6 +17,7 @@ import { registerTerminalRunningPublisher } from "./terminal-rail-state"
 import "./terminal-rail.css"
 
 const STAGE_ID = "alpha-terminal-stage"
+const tabID = (instanceID: string) => `alpha-terminal-tab-${instanceID}`
 
 function PlusIcon() {
   return (
@@ -50,6 +52,13 @@ export function TerminalRailPanel(props: {
     if (!current || !channel) return undefined
     return channel.footStatus(current.id)
   })
+  // C21 AC2:role="tablist" 欠下的键盘契约 —— 方向键/Home/End 在实例页签间移动即切换,
+  // 组内只留一个 Tab 落点(关闭按钮保持原生可达,不因 roving 而失去键盘入口)。
+  const onTabKey = (event: KeyboardEvent) =>
+    rovingKey(event, instances(), active(), (instance) => {
+      engine()?.open(instance.id)
+      document.getElementById(tabID(instance.id))?.focus()
+    })
 
   return (
     <section
@@ -97,10 +106,13 @@ export function TerminalRailPanel(props: {
                     <button
                       type="button"
                       role="tab"
+                      id={tabID(instance.id)}
                       class="a-term-tab-open"
                       aria-selected={instance.id === current().id}
                       aria-controls={STAGE_ID}
+                      tabIndex={rovingTabIndex(instance.id === current().id)}
                       onClick={() => engine()?.open(instance.id)}
+                      onKeyDown={onTabKey}
                     >
                       <Show when={instance.running}>
                         <span class="a-term-rundot" aria-hidden="true" />

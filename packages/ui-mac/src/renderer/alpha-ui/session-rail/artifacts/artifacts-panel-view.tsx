@@ -17,6 +17,7 @@ import {
   type PreviewContext,
 } from "../../artifact-workbench/renderers/renderer-views"
 import type { OfficeStructurePresentation } from "../../artifact-workbench/renderers/office-structure"
+import { rovingKey, rovingTabIndex } from "../../roving-focus"
 import type { ArtifactsPhase } from "./artifacts-core"
 import "./session-rail-artifacts.css"
 
@@ -67,18 +68,11 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
     cardEls.get(key)?.focus()
   })
 
-  const onModeKey = (event: KeyboardEvent) => {
-    const index = MODES.indexOf(mode())
-    let next: number | null = null
-    if (event.key === "ArrowRight") next = (index + 1) % MODES.length
-    else if (event.key === "ArrowLeft") next = (index + MODES.length - 1) % MODES.length
-    else if (event.key === "Home") next = 0
-    else if (event.key === "End") next = MODES.length - 1
-    if (next === null) return
-    event.preventDefault()
-    setMode(MODES[next]!)
-    document.getElementById(`a-rart-tab-${MODES[next]!}`)?.focus()
-  }
+  const onModeKey = (event: KeyboardEvent) =>
+    rovingKey(event, MODES, mode(), (next) => {
+      setMode(next)
+      document.getElementById(`a-rart-tab-${next}`)?.focus()
+    })
 
   const onRootKey = (event: KeyboardEvent) => {
     if (event.key !== "Escape") return
@@ -199,7 +193,7 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
                           id={`a-rart-tab-${m}`}
                           aria-selected={mode() === m}
                           aria-controls="a-rart-panel"
-                          tabIndex={mode() === m ? 0 : -1}
+                          tabIndex={rovingTabIndex(mode() === m)}
                           data-on={mode() === m ? "" : undefined}
                           onClick={() => setMode(m)}
                         >

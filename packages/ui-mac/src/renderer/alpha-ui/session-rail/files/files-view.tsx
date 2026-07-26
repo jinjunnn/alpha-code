@@ -2,6 +2,11 @@
  * REQ-125 C3-files — presentational layer for the files panel (approved frame:
  * docs/design/current/session-workspace/design.html §文件面板). Context-free: everything
  * arrives through the FilesPanelState, so the real Solid mount tests drive it with fake IO.
+ *
+ * C21 AC2 —— 角色降级(owner 裁决):行层曾声明 role="tree"/"treeitem",却从未兑现 tree 欠下的
+ * 键盘契约(方向键跨层移动、Left 收起、Home/End)。面板今天的真实操作只有「Tab 到行 + 回车/空格
+ * 打开或展开」,靠原生 <button> 自洽,所以这里宣称 list/listitem —— 不再对 AT 许诺做不到的事。
+ * 将来真要做树操作(方向键漫游、层级跳转)时恢复 tree 语义并接 roving-focus:见 #622。
  */
 
 import { For, Show, type Accessor } from "solid-js"
@@ -82,8 +87,8 @@ function FileRow(props: { state: FilesPanelState; entry: TreeEntry }) {
         "a-srf-row--selected": isSelected(),
         "a-srf-row--ignored": props.entry.ignored,
       }}
-      role="treeitem"
-      aria-selected={isSelected()}
+      role="listitem"
+      aria-current={isSelected() ? "true" : undefined}
       data-alpha-srf-file={props.entry.path}
       title={kind() ? t("alpha.session.filesOpenInReview") : undefined}
       onClick={() => props.state.activateFile(props.entry.path)}
@@ -105,7 +110,7 @@ function DirRow(props: { state: FilesPanelState; entry: TreeEntry }) {
         type="button"
         class="a-srf-row a-srf-row--dir"
         classList={{ "a-srf-row--open": expanded() }}
-        role="treeitem"
+        role="listitem"
         aria-expanded={expanded()}
         data-alpha-srf-dir={props.entry.path}
         onClick={() => props.state.toggleDir(props.entry.path)}
@@ -117,7 +122,7 @@ function DirRow(props: { state: FilesPanelState; entry: TreeEntry }) {
         <span class="a-srf-name">{props.entry.name}</span>
       </button>
       <Show when={expanded()}>
-        <div class="a-srf-indent" role="group">
+        <div class="a-srf-indent" role="list">
           <Show when={!dir()?.error} fallback={<DirError state={props.state} path={props.entry.path} />}>
             <Show when={dir()?.entries} fallback={<LoadingRow />}>
               <TreeLevel state={props.state} path={props.entry.path} />
@@ -167,7 +172,7 @@ function WorkspaceTree(props: { state: FilesPanelState }) {
                 <EmptyState title={t("alpha.session.filesEmptyTitle")} detail={t("alpha.session.filesEmptyDetail")} />
               }
             >
-              <div class="a-srf-tree" role="tree" aria-label={t("alpha.session.filesWorkspace")}>
+              <div class="a-srf-tree" role="list" aria-label={t("alpha.session.filesWorkspace")}>
                 <TreeLevel state={props.state} path="" />
               </div>
             </Show>

@@ -20,6 +20,7 @@ import { parseRoute } from "../../../shared/route-manifest"
 import type { ArtifactReadRef, CloudArtifactMeta } from "../../../preload/types"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import { projectLabel } from "../../sidebar/route"
+import { rovingKey, rovingTabIndex } from "../roving-focus"
 import {
   cardPreviewable,
   deriveCards,
@@ -335,21 +336,13 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
     }
   })
 
-  // tablist 键盘语义(← → Home End;REQ-094 AC#6)
+  // tablist 键盘语义(REQ-094 AC#6)—— 键位表在 roving-focus,本处只给项集合与激活方式。
   const MODES: PreviewMode[] = ["preview", "source", "metadata"]
-  const onTabKey = (e: KeyboardEvent) => {
-    const idx = MODES.indexOf(mode())
-    let next: number | null = null
-    if (e.key === "ArrowRight") next = (idx + 1) % MODES.length
-    else if (e.key === "ArrowLeft") next = (idx + MODES.length - 1) % MODES.length
-    else if (e.key === "Home") next = 0
-    else if (e.key === "End") next = MODES.length - 1
-    if (next === null) return
-    e.preventDefault()
-    setMode(MODES[next])
-    const el = document.getElementById(`a-wb-tab-${MODES[next]}`)
-    el?.focus()
-  }
+  const onTabKey = (event: KeyboardEvent) =>
+    rovingKey(event, MODES, mode(), (next) => {
+      setMode(next)
+      document.getElementById(`a-wb-tab-${next}`)?.focus()
+    })
 
   const selectedRunUsage = createMemo(() => runs().find((r) => r.runId === selectedRun()) ?? null)
 
@@ -585,7 +578,7 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
                                 id={`a-wb-tab-${m}`}
                                 aria-selected={mode() === m}
                                 aria-controls="a-wb-panel"
-                                tabIndex={mode() === m ? 0 : -1}
+                                tabIndex={rovingTabIndex(mode() === m)}
                                 data-on={mode() === m ? "" : undefined}
                                 onClick={() => setMode(m)}
                               >

@@ -58,6 +58,7 @@ function mount(component: () => unknown) {
 
 const tab = (host: HTMLElement, id: string) => host.querySelector<HTMLElement>(`[data-alpha-terminal-tab="${id}"]`)
 const tabButton = (host: HTMLElement, id: string) => tab(host, id)?.querySelector<HTMLButtonElement>("[role='tab']")
+const key = (name: string) => new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })
 
 describe("REQ-125 terminal rail panel real Solid mount", () => {
   test("renders instance tabs, run indicators, engine output, and the foot from the channel", async () => {
@@ -96,6 +97,42 @@ describe("REQ-125 terminal rail panel real Solid mount", () => {
     expect(
       host.querySelector("[data-alpha-terminal-panel]")?.getAttribute("data-alpha-terminal-any-running"),
     ).toBeNull()
+  })
+
+  test("C21 AC2: the tablist honours arrow/Home/End and keeps one Tab landing point", async () => {
+    const host = mount(() => runtime.TerminalRailHarness())
+    await flush()
+
+    // roving tabIndex:整条页签条在 Tab 序列里只占一个落点 —— 激活页签。
+    expect(tabButton(host, "pty_1")?.tabIndex).toBe(0)
+    expect(tabButton(host, "pty_2")?.tabIndex).toBe(-1)
+
+    tabButton(host, "pty_1")!.focus()
+    tabButton(host, "pty_1")!.dispatchEvent(key("ArrowRight"))
+    await flush()
+
+    // 移动即激活:与点击同一条通道,且 DOM 焦点跟到新页签。
+    expect(runtime.channelCalls).toContain("open:pty_2")
+    expect(tabButton(host, "pty_2")?.getAttribute("aria-selected")).toBe("true")
+    expect(document.activeElement).toBe(tabButton(host, "pty_2"))
+    expect(tabButton(host, "pty_2")?.tabIndex).toBe(0)
+    expect(tabButton(host, "pty_1")?.tabIndex).toBe(-1)
+
+    // 环形移动 + Home/End 直达两端。
+    tabButton(host, "pty_2")!.dispatchEvent(key("ArrowRight"))
+    await flush()
+    expect(tabButton(host, "pty_1")?.getAttribute("aria-selected")).toBe("true")
+
+    tabButton(host, "pty_1")!.dispatchEvent(key("End"))
+    await flush()
+    expect(tabButton(host, "pty_2")?.getAttribute("aria-selected")).toBe("true")
+
+    // 非导航键不被页签条吞掉(Tab/Escape 仍归外层)。
+    const escape = key("Escape")
+    tabButton(host, "pty_2")!.dispatchEvent(escape)
+    await flush()
+    expect(escape.defaultPrevented).toBe(false)
+    expect(tabButton(host, "pty_2")?.getAttribute("aria-selected")).toBe("true")
   })
 
   test("switching tabs goes through the channel and remounts the engine output", async () => {

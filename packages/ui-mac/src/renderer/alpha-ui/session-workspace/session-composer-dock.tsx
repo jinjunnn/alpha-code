@@ -18,6 +18,7 @@ import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import type { ComposerSessionDockApi, ComposerSlashCapture } from "../alpha-composer"
 import { createModelContract } from "../model-contract"
+import { rovingKey, rovingTabIndex } from "../roving-focus"
 import { SessionApprovalHost } from "./session-approval-card"
 import { SessionComposerMount } from "./session-composer-mount"
 import {
@@ -279,6 +280,14 @@ function SessionQuestionCard(props: {
       }),
     )
   }
+  // C21 AC2:单选组的方向键 =「移动即选中」(radiogroup 契约),与点击的「再点取消」不同,
+  // 所以走独立的 select 而不是 toggle;当前项 = 已选项,未选时为首项(组内仍留一个 Tab 落点)。
+  const select = (questionIndex: number, label: string) =>
+    setSelections((previous) => previous.map((picked, index) => (index === questionIndex ? [label] : picked)))
+  const activeOption = (info: QuestionRequest["questions"][number], questionIndex: number) =>
+    info.options.find((option) => (selections()[questionIndex] ?? []).includes(option.label)) ?? info.options[0]
+  const optionID = (questionIndex: number, optionIndex: number) =>
+    `alpha-question-${props.request.id}-${questionIndex}-${optionIndex}`
 
   const answers = createMemo(() =>
     props.request.questions.map((info, index) => {
@@ -338,16 +347,26 @@ function SessionQuestionCard(props: {
             </header>
             <div class="a-swk-question-options" role={info.multiple ? "group" : "radiogroup"}>
               <For each={info.options}>
-                {(option) => (
+                {(option, optionIndex) => (
                   <button
                     type="button"
+                    id={optionID(index(), optionIndex())}
                     class="a-swk-option"
                     role={info.multiple ? "checkbox" : "radio"}
                     aria-checked={(selections()[index()] ?? []).includes(option.label)}
                     data-selected={(selections()[index()] ?? []).includes(option.label) ? "" : undefined}
                     title={option.description}
                     disabled={submitting()}
+                    tabIndex={info.multiple ? undefined : rovingTabIndex(activeOption(info, index()) === option)}
                     onClick={() => toggle(index(), option.label, info.multiple)}
+                    onKeyDown={(event) => {
+                      // 多选组是 group/checkbox:每个 checkbox 都在 Tab 序列里,不欠方向键。
+                      if (info.multiple) return
+                      rovingKey(event, info.options, activeOption(info, index()), (next) => {
+                        select(index(), next.label)
+                        document.getElementById(optionID(index(), info.options.indexOf(next)))?.focus()
+                      })
+                    }}
                   >
                     {option.label}
                   </button>

@@ -385,4 +385,33 @@ describe("REQ-125 session workspace real Solid mount", () => {
     await flush()
     expect(tab("artifacts").classList.contains("a-swk-rail-tab--on")).toBe(true)
   })
+
+  test("C21 AC2: the rail tablist roves on both axes and keeps one Tab landing point", async () => {
+    const host = mount()
+    await flush()
+    const tab = (kind: string) => host.querySelector<HTMLButtonElement>(`[data-alpha-session-rail-tab='${kind}']`)!
+    const key = (name: string) => new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })
+
+    // 纵向排布的页签条同样认 ↑↓ —— 键位表由 roving-focus 统一给,不再逐面板手抄。
+    tab("review").dispatchEvent(key("ArrowDown"))
+    await flush()
+    expect(tab("files").classList.contains("a-swk-rail-tab--on")).toBe(true)
+    expect(document.activeElement).toBe(tab("files"))
+
+    tab("files").dispatchEvent(key("ArrowUp"))
+    await flush()
+    expect(tab("review").classList.contains("a-swk-rail-tab--on")).toBe(true)
+
+    // 整条页签条在 Tab 序列里只占一个落点(禁用页签也不例外)。
+    const tabs = [...host.querySelectorAll<HTMLButtonElement>("[data-alpha-session-rail-tab]")]
+    expect(tabs.filter((element) => element.tabIndex === 0)).toEqual([tab("review")])
+    expect(tabs.filter((element) => element.tabIndex === -1)).toHaveLength(tabs.length - 1)
+
+    // 非导航键原样放行:页签条不得吞掉 Escape / Tab。
+    const escape = key("Escape")
+    tab("review").dispatchEvent(escape)
+    await flush()
+    expect(escape.defaultPrevented).toBe(false)
+    expect(tab("review").classList.contains("a-swk-rail-tab--on")).toBe(true)
+  })
 })

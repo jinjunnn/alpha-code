@@ -1,5 +1,8 @@
 // C21 AC4 (#478) contrast evidence — proves the LANDED tokens.css values pass WCAG AA on
 // every adjacent-background pairing. Run: `node ac4-contrast-check.mjs` (exits 1 on any FAIL).
+// This file is the one-off evidence trail and carries a COPY of the token values, so it can
+// drift from the source. The live gate is packages/ui-mac/src/renderer/alpha-ui/
+// contrast-ratchet.test.ts (#221): same math, but every value is read from tokens.css.
 // Text needs >=4.5:1; the focus indicator (non-text) needs >=3:1 (WCAG 1.4.11).
 // Values mirror packages/ui-mac/src/renderer/alpha-ui/tokens.css after #478.
 const hex = h => { h=h.replace('#',''); if(h.length===3)h=h.split('').map(c=>c+c).join(''); return [0,2,4].map(i=>parseInt(h.slice(i,i+2),16)); };

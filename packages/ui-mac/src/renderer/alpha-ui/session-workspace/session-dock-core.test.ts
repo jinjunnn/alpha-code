@@ -1,6 +1,8 @@
 // REQ-125 C7:dock 纯逻辑核 + 斜杠来源登记的契约。
 
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import type { Message, ModelV2Info, QuestionInfo, Session, Todo } from "@opencode-ai/sdk/v2/client"
 import { hrefFor } from "../../../shared/route-manifest"
 import {
@@ -113,6 +115,18 @@ describe("question:头部挂起请求与回答完备性", () => {
     expect(questionAnswersComplete([info({ custom: true })], [["自由回答"]])).toBe(true)
     expect(questionAnswersComplete([info({ custom: true })], [["  "]])).toBe(false)
     expect(questionAnswersComplete([], [])).toBe(false)
+  })
+
+  // C21 AC2:提问卡的选项组声明了 radiogroup/radio,就欠下方向键与单一 Tab 落点。
+  // 这里只钉两处不可从纯逻辑核看出、又最容易改回去的接线事实(行为语义由 roving-focus.test.ts 断言)。
+  test("单选组接的是 roving-focus,且方向键走 select 而非 toggle(移动即选中,不是再点取消)", () => {
+    const dock = readFileSync(join(import.meta.dir, "session-composer-dock.tsx"), "utf8")
+    expect(dock).toContain(`import { rovingKey, rovingTabIndex } from "../roving-focus"`)
+    expect(dock).toMatch(/rovingKey\(event, info\.options, activeOption\(info, index\(\)\), \(next\) => \{/)
+    expect(dock).toMatch(/rovingKey\([\s\S]{0,200}select\(index\(\), next\.label\)/)
+    // 多选组是 group/checkbox:每个 checkbox 各自留在 Tab 序列里,不套 roving。
+    expect(dock).toContain("tabIndex={info.multiple ? undefined : rovingTabIndex(activeOption(info, index()) === option)}")
+    expect(dock).toMatch(/onKeyDown=\{\(event\) => \{[\s\S]{0,160}if \(info\.multiple\) return/)
   })
 })
 
