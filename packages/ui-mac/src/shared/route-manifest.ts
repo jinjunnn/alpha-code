@@ -232,6 +232,17 @@ export interface DeepLinkDelivery {
   href: string
 }
 
+/**
+ * The wire envelope both deep-link transports (the live `deep-link` send and the initial drain)
+ * carry. `id` is what the renderer echoes back to acknowledge receipt: main keeps its copy of a
+ * batch until that ack arrives, because neither transport tells the sender the payload was
+ * actually received. See `main/deep-link-queue.ts` for the arbitration this id serves.
+ */
+export interface DeepLinkBatch {
+  id: number
+  links: DeepLinkDelivery[]
+}
+
 export interface RouteIdentity {
   manifestVersion: typeof ROUTE_MANIFEST_VERSION
   routeId: RouteId

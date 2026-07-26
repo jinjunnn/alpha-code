@@ -5,7 +5,6 @@ import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
-import type { Event } from "electron"
 import { app } from "electron"
 
 import { Deferred, Effect, Fiber } from "effect"

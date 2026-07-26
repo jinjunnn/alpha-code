@@ -11,12 +11,15 @@ import { handleAuthDeepLink } from "./alpha-auth"
 
 export const deepLinks = createDeepLinkQueue({
   consumeAuth: (url) => handleAuthDeepLink(url),
-  deliver: (rendererId, links) => {
+  deliver: (rendererId, batch) => {
     const contents = webContents.fromId(rendererId)
     // isCrashed() is the one that matters: sending to a dead render process neither throws nor
     // arrives, so without this the queue would believe a lost link was delivered.
     if (!contents || contents.isDestroyed() || contents.isCrashed()) return false
-    contents.send("deep-link", links)
+    // `send` is fire-and-forget — it returns before the renderer has run a line of code. So `true`
+    // here claims only that the transport took the batch; the queue keeps its copy until the
+    // renderer acknowledges the batch id, and re-queues it if that renderer dies first.
+    contents.send("deep-link", batch)
     return true
   },
 })

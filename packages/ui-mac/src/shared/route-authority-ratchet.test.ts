@@ -158,30 +158,142 @@ function consumerViolationsFor(file: SourceFile): Violation[] {
 }
 
 /**
- * The two bindings layout.tsx hands the consumer, brace-balanced out of the call. Everything
- * BETWEEN them and the navigation is executed and asserted in route-deep-link-consumer.test.ts;
- * these two lines are the only stretch a test cannot reach into, because a wrapper here
- * (`navigate: (href) => go(href + "/wrong")`) or a remapped input (`buffer: () => rewritten`)
- * would retarget the navigation without any executed code changing. So they are pinned verbatim.
+ * What layout.tsx hands the consumer, and what it then does with it. Everything BETWEEN those
+ * bindings and the navigation is executed and asserted in route-deep-link-consumer.test.ts; the
+ * call site itself is the only stretch a test cannot reach into, because a wrapper here
+ * (`navigate: (href) => go(href + "/wrong")`), a remapped input (`buffer: () => rewritten`), a
+ * later override (a spread or a repeated key) or a consumer that is built and then never wired
+ * would retarget — or silently disable — the navigation without any executed code changing.
+ *
+ * So this reads the call as STRUCTURE rather than as text: the deps are parsed into top-level
+ * entries, anything that is not a plain `key: value` (a spread, a computed key) is surfaced, and
+ * the binding is followed to its `onMount` uses. Whitespace and property order are therefore free;
+ * overriding and detaching are not. Deps assembled somewhere else and passed in as a variable are
+ * refused outright — they would put the wiring back out of reach, which is the thing this exists
+ * to prevent.
  */
-function deepLinkWiringIn(source: string): string {
+const CONSUMER_DEPS = ["enabled", "buffer", "openProject", "navigate", "handoff"] as const
+
+const normalize = (text: string) => text.replace(/\s+/g, " ").trim()
+
+/**
+ * Walk `body` outside strings and outside any bracket pair, reporting each top-level position.
+ * Property order and line breaks are invisible to this; nesting and quoting are not.
+ */
+function scanTopLevel(body: string, visit: (char: string, index: number) => void) {
+  let depth = 0
+  let quote: string | undefined
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index]!
+    if (quote) {
+      if (char === "\\") index += 1
+      else if (char === quote) quote = undefined
+      continue
+    }
+    if (char === '"' || char === "'" || char === "`") quote = char
+    else if ("([{".includes(char)) depth += 1
+    else if (")]}".includes(char)) depth -= 1
+    else if (depth === 0) visit(char, index)
+  }
+}
+
+/** Split on commas that are not inside brackets, parentheses, braces, or a string. */
+function splitTopLevel(body: string): string[] {
+  const cuts: number[] = []
+  scanTopLevel(body, (char, index) => {
+    if (char === ",") cuts.push(index)
+  })
+  const parts: string[] = []
+  let from = 0
+  for (const cut of [...cuts, body.length]) {
+    parts.push(normalize(body.slice(from, cut)))
+    from = cut + 1
+  }
+  return parts.filter((part) => part.length > 0)
+}
+
+/** The `key: value` separator, ignoring colons inside a type annotation, ternary, or string. */
+function topLevelColon(entry: string): number {
+  let at = -1
+  scanTopLevel(entry, (char, index) => {
+    if (char === ":" && at === -1) at = index
+  })
+  return at
+}
+
+interface ConsumerWiring {
+  /** The const the consumer is bound to — what `onMount` must actually use. */
+  binding: string
+  /** Top-level `key: value` deps, whitespace-normalized, in source order. */
+  entries: { key: string; value: string }[]
+  /** Everything that is not a plain named dep: spreads, computed keys, anything exotic. */
+  foreign: string[]
+  /** Where the binding is used: as the wake-up listener, and as the mount-time first drain. */
+  usage: { listener: boolean; invoked: boolean }
+}
+
+function deepLinkWiringIn(source: string): ConsumerWiring {
   const clean = withoutComments(source)
-  const marker = "createDeepLinkConsumer({"
+  const marker = "createDeepLinkConsumer("
   const calls = clean.split(marker).length - 1
   if (calls !== 1) throw new Error(`expected exactly one createDeepLinkConsumer call, found ${calls}`)
-  let index = clean.indexOf(marker) + marker.length - 1
+  const callAt = clean.indexOf(marker)
+
+  // A const, so the wiring `onMount` uses below cannot be reassigned out from under it.
+  const binding = /const\s+([A-Za-z_$][\w$]*)\s*=\s*$/.exec(clean.slice(0, callAt).trimEnd())?.[1]
+  if (!binding) throw new Error("the deep-link consumer must be bound to a const at its call site")
+
+  const open = clean.indexOf("{", callAt + marker.length)
+  const argumentEnd = open === -1 ? Math.min(clean.length, callAt + marker.length + 40) : open
+  const argument = normalize(clean.slice(callAt + marker.length, argumentEnd))
+  if (argument !== "") throw new Error(`the consumer deps must be an inline object literal, found "${argument}"`)
+
   let depth = 0
-  const start = index
-  while (index < clean.length) {
+  let end = -1
+  for (let index = open; index < clean.length; index += 1) {
     if (clean[index] === "{") depth += 1
     else if (clean[index] === "}") {
       depth -= 1
-      if (depth === 0) return clean.slice(start, index + 1)
+      if (depth === 0) {
+        end = index
+        break
+      }
     }
-    index += 1
   }
-  throw new Error("unterminated createDeepLinkConsumer call")
+  if (end === -1) throw new Error("unterminated createDeepLinkConsumer call")
+
+  const entries: ConsumerWiring["entries"] = []
+  const foreign: string[] = []
+  for (const part of splitTopLevel(clean.slice(open + 1, end))) {
+    const colon = topLevelColon(part)
+    const key = colon === -1 ? part : normalize(part.slice(0, colon))
+    if (!/^[A-Za-z_$][\w$]*$/.test(key)) {
+      foreign.push(part)
+      continue
+    }
+    entries.push({ key, value: colon === -1 ? key : normalize(part.slice(colon + 1)) })
+  }
+
+  // Line breaks and a trailing comma are free here too; what is pinned is that the very consumer
+  // built above is the one subscribed to the wake-up event AND drained once at mount.
+  const used = clean.slice(end)
+  return {
+    binding,
+    entries,
+    foreign,
+    usage: {
+      listener: new RegExp(
+        `makeEventListener\\(\\s*window\\s*,\\s*deepLinkEvent\\s*,\\s*${binding}\\s*,?\\s*\\)`,
+      ).test(used),
+      invoked: new RegExp(`(^|[^\\w$.])${binding}\\s*\\(\\s*\\)`).test(used),
+    },
+  }
 }
+
+/** The deps as a lookup, with duplicate keys kept visible rather than collapsed. */
+const depsOf = (wiring: ConsumerWiring) => wiring.entries.map((entry) => entry.key)
+const depValue = (wiring: ConsumerWiring, key: string) =>
+  wiring.entries.filter((entry) => entry.key === key).map((entry) => entry.value)
 
 describe("Alpha route authority ratchet", () => {
   test.each(["main", "renderer"])("the detector bites on an out-of-manifest href and scheme parser in %s", (layer) => {
@@ -240,26 +352,124 @@ describe("Alpha route authority ratchet", () => {
     expect(consumerViolationsFor({ path: upstreamLayoutFile, source })).toEqual([])
   })
 
+  const HONEST_DEPS = `
+    enabled: () => server.isLocal(),
+    buffer: () => window,
+    openProject: (directory, navigate) => void openProject(directory, navigate),
+    navigate: navigateWithSidebarReset,
+    handoff: (directory, prompt) => setSessionHandoff(directory, { prompt }),
+  `
+
+  const MOUNTED = `
+    onMount(() => {
+      makeEventListener(window, deepLinkEvent, consumeDeepLinks)
+      consumeDeepLinks()
+    })
+  `
+
+  const wiringOf = (deps: string, mount = MOUNTED) =>
+    deepLinkWiringIn(`const consumeDeepLinks = createDeepLinkConsumer({${deps}})\n${mount}`)
+
   test("layout.tsx hands the consumer its own primitives, unwrapped and unmapped", async () => {
     // Fallback to the executable judgement, not a substitute for it: see route-deep-link-consumer.
     const wiring = deepLinkWiringIn(await Bun.file(upstreamLayoutFile).text())
-    expect(wiring).toContain("navigate: navigateWithSidebarReset,")
-    expect(wiring).toContain("buffer: () => window,")
+
+    expect(wiring.foreign).toEqual([])
+    expect(depsOf(wiring).sort()).toEqual([...CONSUMER_DEPS].sort())
+    expect(depValue(wiring, "navigate")).toEqual(["navigateWithSidebarReset"])
+    expect(depValue(wiring, "buffer")).toEqual(["() => window"])
+  })
+
+  test("the consumer layout.tsx builds is the one it mounts", async () => {
+    // Otherwise the honest deps above can sit next to a consumer nothing ever calls.
+    const wiring = deepLinkWiringIn(await Bun.file(upstreamLayoutFile).text())
+    expect(wiring.usage).toEqual({ listener: true, invoked: true })
+  })
+
+  test("reformatting and reordering the same wiring is not a violation", () => {
+    // The judgement is structural, so equivalent source must stay green — a gate that reddens on
+    // a line break teaches people to route around it.
+    const wiring = wiringOf(`
+      navigate:
+        navigateWithSidebarReset,
+      handoff: (directory, prompt) =>
+        setSessionHandoff(SessionStateKey.from(server.scope(), SessionRouteKey.fromLegacy(base64Encode(directory))), {
+          prompt,
+        }),
+      buffer: () =>
+        window,
+      enabled: () => server.isLocal(),
+      openProject: (directory, navigate) => void openProject(directory, navigate),
+    `)
+
+    expect(wiring.foreign).toEqual([])
+    expect(depsOf(wiring).sort()).toEqual([...CONSUMER_DEPS].sort())
+    expect(depValue(wiring, "navigate")).toEqual(["navigateWithSidebarReset"])
+    expect(depValue(wiring, "buffer")).toEqual(["() => window"])
+    expect(wiring.usage).toEqual({ listener: true, invoked: true })
   })
 
   test("the wiring pin bites on a wrapped navigate and on a remapped buffer", () => {
-    const tampered = `
-      const consumeDeepLinks = createDeepLinkConsumer({
-        enabled: () => server.isLocal(),
+    const wiring = wiringOf(`
+      enabled: () => server.isLocal(),
+      buffer: () => rewritten(window),
+      openProject: (directory, navigate) => void openProject(directory, navigate),
+      navigate: (href) => navigateWithSidebarReset(href + "/wrong"),
+      handoff: (directory, prompt) => setSessionHandoff(directory, { prompt }),
+    `)
+
+    expect(depValue(wiring, "navigate")).not.toEqual(["navigateWithSidebarReset"])
+    expect(depValue(wiring, "buffer")).not.toEqual(["() => window"])
+  })
+
+  test("the wiring pin bites on a spread that overrides the honest deps", () => {
+    // The mutation a "does the source contain these two lines" pin waves through: both lines are
+    // still there, verbatim, and a later spread replaces what they bound.
+    const wiring = wiringOf(`${HONEST_DEPS},
+      ...{
         buffer: () => rewritten(window),
-        openProject: (directory, navigate) => void openProject(directory, navigate),
-        navigate: (href) => navigateWithSidebarReset(href + "/wrong"),
-        handoff: (directory, prompt) => setSessionHandoff(directory, { prompt }),
+        navigate: (href) => navigateWithSidebarReset(rewrite(href)),
+      },
+    `)
+
+    expect(depValue(wiring, "navigate")).toEqual(["navigateWithSidebarReset"]) // the text pin sees nothing
+    expect(wiring.foreign).toEqual(["...{ buffer: () => rewritten(window), navigate: (href) => navigateWithSidebarReset(rewrite(href)), }"])
+  })
+
+  test("the wiring pin bites on a duplicate key that overrides the honest one", () => {
+    const wiring = wiringOf(`${HONEST_DEPS},
+      navigate: (href) => navigateWithSidebarReset(rewrite(href)),
+    `)
+
+    expect(depValue(wiring, "navigate")).toHaveLength(2)
+    expect(depsOf(wiring).sort()).not.toEqual([...CONSUMER_DEPS].sort())
+  })
+
+  test("the wiring pin bites on a correct consumer that is never mounted", () => {
+    // The other R3 bypass: keep the honest call site, then hand `onMount` something else.
+    const wiring = wiringOf(HONEST_DEPS, `
+      const noop = () => {}
+      onMount(() => {
+        makeEventListener(window, deepLinkEvent, noop)
+        noop()
       })
-    `
-    const wiring = deepLinkWiringIn(tampered)
-    expect(wiring).not.toContain("navigate: navigateWithSidebarReset,")
-    expect(wiring).not.toContain("buffer: () => window,")
+    `)
+
+    expect(wiring.foreign).toEqual([])
+    expect(depValue(wiring, "navigate")).toEqual(["navigateWithSidebarReset"])
+    expect(wiring.usage).toEqual({ listener: false, invoked: false })
+  })
+
+  test("deps assembled somewhere else are refused, not waved through", () => {
+    // Accepted trade-off: hoisting the deps out would put the wiring back beyond reach, so it is
+    // a hard error rather than a silent pass. The refusal names the reason.
+    expect(() => deepLinkWiringIn("const consumeDeepLinks = createDeepLinkConsumer(deps)")).toThrow(
+      /inline object literal/,
+    )
+  })
+
+  test("a consumer that is not bound to a const is refused outright", () => {
+    expect(() => deepLinkWiringIn("register(createDeepLinkConsumer({ a: 1 }))")).toThrow(/bound to a const/)
   })
 
   test("a second consumer call site is refused outright", () => {

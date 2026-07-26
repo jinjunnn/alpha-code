@@ -73,10 +73,10 @@ const getBase = (appId: string): Configuration => ({
   dmg: {
     sign: true,
   },
-  protocols: {
-    name: "OpenCode",
-    schemes: ["opencode"],
-  },
+  // No `protocols` here, on purpose. The deep-link chain this shell used to carry is gone
+  // (baseline §5.2), so declaring a scheme would make the installer register a handler the app
+  // no longer has: the OS would wake the app and the URL would be dropped on the floor.
+  // Registration and handling are one decision; electron-builder.config.test.ts holds them to it.
   win: {
     icon: `resources/icons/icon.ico`,
     signtoolOptions: {
@@ -124,7 +124,6 @@ function getConfig() {
         ...base,
         appId,
         productName: "OpenCode Beta",
-        protocols: { name: "OpenCode Beta", schemes: ["opencode"] },
         publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
         rpm: { packageName: "opencode-beta" },
       }
@@ -134,7 +133,6 @@ function getConfig() {
         ...base,
         appId,
         productName: "OpenCode",
-        protocols: { name: "OpenCode", schemes: ["opencode"] },
         publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
         deb: { fpm: [legacyDesktopEntryFpm] },
         rpm: { packageName: "opencode", fpm: [legacyDesktopEntryFpm] },

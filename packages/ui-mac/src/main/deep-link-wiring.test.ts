@@ -33,6 +33,13 @@ describe("REQ-089 deep-link ingress wiring ratchet", () => {
     expect(index).not.toContain('"deep-link"')
   })
 
+  test("both halves of the retained-copy protocol are wired to the one queue", () => {
+    // The renderer's acknowledgement is what retires main's copy; without this wire every batch
+    // would sit in flight forever and every reload would replay it.
+    expect(index).toContain("deepLinks.consumeInitial(rendererId)")
+    expect(index).toContain("deepLinks.acknowledge(rendererId, batchId)")
+  })
+
   test("ownership is attached by the window factory, so no window can exist unwired", () => {
     // `window.new` (desktop-menu-actions) creates windows through this same factory; wiring at the
     // boot call site instead would leave those renderers able to drain the queue but never able to

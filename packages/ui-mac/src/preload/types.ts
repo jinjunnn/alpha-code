@@ -18,8 +18,8 @@ export type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wi
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 // Deep links reach the renderer already decoded by the route manifest — the wire carries the
 // delivery, never a URL, so no second codec can exist on the renderer side.
-import type { DeepLinkDelivery } from "../shared/route-manifest"
-export type { DeepLinkDelivery } from "../shared/route-manifest"
+import type { DeepLinkBatch } from "../shared/route-manifest"
+export type { DeepLinkBatch, DeepLinkDelivery } from "../shared/route-manifest"
 import type { SurfaceId } from "../shared/alpha-surfaces"
 import type { RecoveryAction, RecoveryActionResult, RecoveryIncidentWire } from "../shared/recovery"
 import type {
@@ -471,7 +471,7 @@ export type ElectronAPI = {
   awaitInitialization: () => Promise<ServerReadyData>
   wslServers: WslServersAPI
   updater: UpdaterAPI
-  consumeInitialDeepLinks: () => Promise<DeepLinkDelivery[]>
+  consumeInitialDeepLinks: () => Promise<DeepLinkBatch[]>
   getDefaultServerUrl: () => Promise<string | null>
   setDefaultServerUrl: (url: string | null) => Promise<void>
   getDisplayBackend: () => Promise<LinuxDisplayBackend | null>
@@ -500,7 +500,13 @@ export type ElectronAPI = {
 
   getWindowCount: () => Promise<number>
   onMenuCommand: (cb: (id: string) => void) => () => void
-  onDeepLink: (cb: (links: DeepLinkDelivery[]) => void) => () => void
+  onDeepLink: (cb: (batch: DeepLinkBatch) => void) => () => void
+  /**
+   * Tell main the batch is now in this renderer's hands. Until this arrives main keeps its copy
+   * and re-queues it if the renderer dies, so a payload lost in transit is redelivered rather than
+   * vanishing — see `main/deep-link-queue.ts`.
+   */
+  acknowledgeDeepLinks: (batchId: number) => Promise<void>
 
   openDirectoryPicker: (opts?: {
     multiple?: boolean

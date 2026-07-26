@@ -816,6 +816,7 @@ const main = Effect.gen(function* () {
       (e) => Effect.runPromise(e),
     ),
     consumeInitialDeepLinks: (rendererId) => deepLinks.consumeInitial(rendererId),
+    acknowledgeDeepLinks: (rendererId, batchId) => deepLinks.acknowledge(rendererId, batchId),
     getDefaultServerUrl: () => getDefaultServerUrl(),
     setDefaultServerUrl: (url) => setDefaultServerUrl(url),
     getDisplayBackend: async () => null,

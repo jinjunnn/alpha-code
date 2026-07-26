@@ -31,13 +31,28 @@ set -e
 cd "$(git rev-parse --show-toplevel)"
 NEWPIN=$(git rev-parse upstream/dev)   # 或换成一个近期稳定上游 SHA
 git checkout "$NEWPIN" -- packages/app packages/ui
-git apply --3way --whitespace=nowarn frontend/alpha-patches/alpha-frontend.patch
 echo "pin=$NEWPIN # $(date +%F)" > frontend/frontend-pin.lock
+git apply --3way --whitespace=nowarn frontend/alpha-patches/alpha-frontend.patch
 ```
 
-apply 冲突(尤其 app.tsx 高 churn 枢纽)时这一步会停:手动/codex 把 alpha 的叶注入 seam
-(createSessionRoute / createDraftRoute / AppSurfaces)重架到上游新路由,dialog/settings/permission
-seam 同理,解完再往下走。`frontend-pin.lock` 已写好,后面的块都从它读 pin,不依赖本块的变量。
+**pin 必须写在 apply 之前**:`git checkout "$NEWPIN"` 之后树已经是新 pin 的上游态,lock 就该说这件事。
+反过来(先 apply 后写 pin)有一条静默的坏路径:apply 冲突时 `set -e` 会跳过写 pin,而**块 4 从
+lock 读 pin**,于是补丁会以**旧 pin** 为基底重生 —— 里面裹上全部上游差异,round-trip 判据照样绿,
+月更实际没升 pin。
+
+apply 冲突(尤其 app.tsx 高 churn 枢纽)时这一步会停,此时 pin 已是新的、补丁尚未贴上:手动/codex
+把 alpha 的叶注入 seam(createSessionRoute / createDraftRoute / AppSurfaces)重架到上游新路由,
+dialog/settings/permission seam 同理。冲突文件在 `git status` 里,`git apply --3way` 已把能自动合的
+部分留在工作树、冲突处留 `<<<<<<<` 标记;解完(工作树里不再有冲突标记)直接进块 2,**不要重跑本块**
+——重跑会把已解的树再按上游覆盖一遍。后面的块都从 lock 读 pin,不依赖本块的变量。
+
+放弃本次 bump(回到上一个 pin,等价于什么都没做):
+
+```sh
+set -e
+cd "$(git rev-parse --show-toplevel)"
+git restore --source=HEAD --staged --worktree -- frontend/frontend-pin.lock packages/app packages/ui
+```
 
 **2) 重钉 L1 变换 + 锚点(上游改名/搬文件时)**
 

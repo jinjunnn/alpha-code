@@ -45,8 +45,8 @@ import { AlphaNewSession } from "./alpha-ui/alpha-new-session"
 import { SurfaceBoundary } from "./alpha-ui/surface-boundary"
 import { RuntimeRecoveryHost } from "./alpha-ui/RuntimeRecoveryHost"
 import { UpstreamDialogHost } from "./alpha-ui/UpstreamDialogHost"
-import { type DeepLinkDelivery } from "../shared/route-manifest"
-import { publishDeepLinks } from "./deep-link-bridge"
+import { type DeepLinkBatch, type DeepLinkDelivery } from "../shared/route-manifest"
+import { createDeepLinkPublisher } from "./deep-link-bridge"
 import { alphaSessionWorkspaceSurface } from "./alpha-ui/session-workspace/alpha-session-workspace" // REQ-088 T2
 import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { AlphaSettings } from "./alpha-ui/settings"
@@ -139,11 +139,18 @@ void window.api.updater.subscribe(setUpdaterState)
 // carries no payload — that is what makes double consumption impossible.
 const deepLinkBuffer = window as Window & { __alphaDeepLinks?: DeepLinkDelivery[] }
 
-const emitDeepLinks = (links: DeepLinkDelivery[]) => publishDeepLinks(deepLinkBuffer, links)
+const publishDeepLinks = createDeepLinkPublisher(deepLinkBuffer)
+
+// Acknowledge only AFTER the buffer holds the deliveries: until this returns to main, main keeps
+// its copy and re-queues it if this renderer reloads or crashes, so nothing is lost in transit.
+const acceptDeepLinks = (batch: DeepLinkBatch) => {
+  publishDeepLinks(batch)
+  void window.api.acknowledgeDeepLinks(batch.id)
+}
 
 const listenForDeepLinks = () => {
-  void window.api.consumeInitialDeepLinks().then((links) => emitDeepLinks(links))
-  return window.api.onDeepLink((links) => emitDeepLinks(links))
+  void window.api.consumeInitialDeepLinks().then((batches) => batches.forEach(acceptDeepLinks))
+  return window.api.onDeepLink(acceptDeepLinks)
 }
 
 const createPlatform = (): Platform => {

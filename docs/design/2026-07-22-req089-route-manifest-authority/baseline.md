@@ -390,8 +390,13 @@ R2 判 §5.1 那一轮为 NOT-MERGE:R1 八条里 4 条仍未闭合,且修复增�
   让这条链路活着 = alpha 从此要为一个自己不出货的外壳的正确性负责。因此删除:main 侧
   `emitDeepLinks` / `pendingDeepLinks` / `consumeInitialDeepLinks` / `open-url` /
   `second-instance` 的 deep-link 分支 / `setAsDefaultProtocolClient("opencode")`,ipc 与 preload
-  的 `consume-initial-deep-links`、`onDeepLink`、`sendDeepLinks`,以及 renderer 侧的消费与
-  §5.1 加的那两个跨包 import,全部移除(6 文件,净 −57 行)。那个 Major 随链路一起消失。
+  的 `consume-initial-deep-links`、`onDeepLink`、`sendDeepLinks`,renderer 侧的消费与 §5.1 加的
+  那两个跨包 import,以及 `electron-builder.config.ts` 三个 channel 的 `protocols`,全部移除
+  (6 文件,+6 / −68,净 −62 行)。那个 Major 随链路一起消失。
+  安装包元数据是最后一处:运行时处理删了而 `schemes: ["opencode"]` 留着 = 「OS 唤起、应用丢
+  URL」的新断链,而且它以**裸 scheme** 形态存在,`opencode://` 的 grep 看不见 —— 因此判据改成按
+  形状扫(任何 `protocols`/`schemes` 键、任何 `x-scheme-handler` 串),钉在三 channel 的
+  builder-config 测试里(+35 行)。
   顺带消除的既有问题:开发机上 desktop 与 ui-mac 争抢 `opencode://` 协议注册。
   **已接受的代价**:`sync-upstream.yml` 只 `rm -rf packages/app packages/ui`、**不擦
   `packages/desktop`**,所以这次删除不会每晚被 sync 冲掉;但上游改动同一区域时会产生一次合并
@@ -405,12 +410,27 @@ R2 判 §5.1 那一轮为 NOT-MERGE:R1 八条里 4 条仍未闭合,且修复增�
   所有权,`deliver(rendererId, links)` 定向投递并在拒收时弹出该 owner 继续向下试,四条退出路径
   (reload / crash / destroyed / 被更新窗口接管)由 `trackRendererLifecycle` 统一接线,且接线点在
   **窗口工厂内部**,所以不存在「能 drain 却不会交还」的窗口。这些时序逐条是执行级测试。
+  **所有权还不够:交给传输 ≠ renderer 拿到。**`webContents.send` 与 `invoke` 的回程都是异步的,
+  在这一段里 reload/crash 会把 payload 连同错误一起吞掉。因此投递单位改为**带 id 的 batch**,两条
+  传输(live send 与首次 drain)都**保留 main 侧副本直到该 renderer 回 ack**;持有者中途死亡 →
+  batch 回队并向仍在的 owner 重试。幂等靠三条:batch 恒定只在 `pending`/`inFlight` 其一;只有被
+  交付的那个 renderer 能 retire 它(伪 ack / 陈旧 ack 无效);ack 与 `rendererGone` 竞态时,晚到的
+  ack 同样 retire 已回队的副本,所以结果与两条消息的到达顺序无关。renderer 侧再按 batch id 做
+  **单文档去重**(reload 后新文档重新开始,所以该重投的仍会重投)。
+  **残余边界(明示)**:ack 发生在 deliveries 落入 window buffer 之后。buffer 是同步派发的,布局
+  已挂载时 ack 即等于「已消费」;若布局尚未挂载或 `enabled()` 仍为假,deliveries 停在 buffer 里,
+  此时 reload 仍会丢。再往前推需要让 `packages/app` 侧的 drain 回 ack —— 那要在上游文件里新开一条
+  跨包回线,本轮不做。
 
 - **F5 README 逐字可执行。** R2 指出文档先 `cd packages/ui-mac`、后续却用根相对路径且
   `REPO=$(pwd)`,照抄执行必失败。现每个命令块自带 `set -e` 与
   `cd "$(git rev-parse --show-toplevel)"`,与当前工作目录无关;pin 由 `frontend-pin.lock` 读回,
   块之间不靠 shell 变量传递。二进制判据从「有没有随便一个 `*.tgz`」收紧为「`packages/session-ui`
   以 `file:` 直接依赖的那个精确文件存在」,README 与 `sync-upstream.yml` 同步。
+  **写 pin 的位置本身是判据的一部分**:它必须排在**可能冲突的 `git apply --3way` 之前**。反过来
+  排,冲突时 `set -e` 会跳过写 pin,而块 4 从 lock 读 pin 重生补丁 —— 补丁以旧 pin 为基底、裹进全部
+  上游差异,round-trip 判据照样绿,月更却没升 pin。另补一个可复制的放弃块(`git restore
+  --source=HEAD -SW`)把树退回上一个 pin。
 
 - **F6 未声明 guard 全部 fail-closed。** 尾缀正则会把
   `someNewExperiment() && newLayoutDesigns()` 误读成纯 `newLayoutDesigns()`。改为**白名单精确
@@ -421,4 +441,10 @@ R2 判 §5.1 那一轮为 NOT-MERGE:R1 八条里 4 条仍未闭合,且修复增�
   抽成 `createDeepLinkConsumer(deps)` 留在受全套规则约束的 `deep-links.ts`;新增
   `route-deep-link-consumer.test.ts` **执行生产代码**:清单编码 → 清单解码 → 真实 consumer,
   断言观测到的导航目标 == 由清单独立派生的 href(并钉死字面值)。layout.tsx 里只剩 `navigate` 与
-  `buffer` 两行原语传递,是执行判据够不到的唯一一段,由括号配平抽出后**逐字钉死**作兜底。
+  `buffer` 两行原语传递,是执行判据够不到的唯一一段。
+  这段兜底一开始只是「源码含这两行」的文本断言,而那不是闸门:保留两行、再用后置 spread 或重复键
+  覆盖掉,或者把正确 consumer 晾着、另绑一个空函数给 `onMount`,都能绿。现在改为**结构判据**:
+  把 deps 对象按顶层逗号解析成条目,spread / 计算键落进 `foreign`(必须为空)、键集合必须恰好是那
+  五个(重复键因此暴露)、`navigate` 与 `buffer` 的值按归一化空白比对,并从调用点取出 `const` 绑定
+  名,要求**同一个名字**既订阅了唤醒事件又在 mount 时被调用一次。空白与属性顺序因此自由,覆盖与
+  脱钩不再自由;deps 若被提到别处组装则直接报错(那会把接线重新推出判据射程,是本判据存在的理由)。

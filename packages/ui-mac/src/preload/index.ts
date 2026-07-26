@@ -4,7 +4,7 @@ import {
   type AuthState,
   type CloudArtifactProgress,
   type ContractFailure,
-  type DeepLinkDelivery,
+  type DeepLinkBatch,
   type ElectronAPI,
   type HtmlPreviewClosedEvent,
   type RendererStartupMarkName,
@@ -134,10 +134,11 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener("menu-command", handler)
   },
   onDeepLink: (cb) => {
-    const handler = (_: unknown, links: DeepLinkDelivery[]) => cb(links)
+    const handler = (_: unknown, batch: DeepLinkBatch) => cb(batch)
     ipcRenderer.on("deep-link", handler)
     return () => ipcRenderer.removeListener("deep-link", handler)
   },
+  acknowledgeDeepLinks: (batchId) => ipcRenderer.invoke("acknowledge-deep-links", batchId),
 
   openDirectoryPicker: (opts) => ipcRenderer.invoke("open-directory-picker", opts),
   workspaceDefaultDir: () => ipcRenderer.invoke("alpha-workspace-default"),
