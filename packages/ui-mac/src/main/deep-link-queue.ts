@@ -39,11 +39,17 @@
 //   * ORDER. While a batch is parked, no NEWER batch may be handed to anyone. Otherwise batch 2
 //     reaches the window still on screen immediately and batch 1 follows it whenever the park
 //     resolves, and the app acts on the two links backwards. Parked batches therefore hold their
-//     place in the delivery order, and the wait is bounded by the same retention window.
-//     Known residual: two renderers parked AT ONCE (a sidecar respawn reloads every window) each
-//     keep their own batch, so a document that mounts under one of them takes its own batch back
-//     while the other park is still blocking older work. Ordering between two windows that both
-//     died mid-delivery is not pinned; ordering at any one renderer, for one park, is.
+//     place in the delivery order.
+//     That hold is ONE line, and its bound is on the line rather than on any park behind it: it is
+//     raised by the park that finds it down and lifts `RENDERER_RETENTION_MS` later, whoever is
+//     still parked by then. Bounding each park separately instead lets waits CHAIN — a park opened
+//     at t=0 hands the line to one opened at t=9s, which holds a batch queued at t=0 until t=19s,
+//     and every further window in flight extends it again. Lifting the line does not free anybody's
+//     batch: each park still keeps its own for its own full window, so nothing is handed out twice.
+//     What it costs is ORDER BETWEEN WINDOWS, which was never pinned anyway — two renderers parked
+//     at once each take their own batch back whenever their own document mounts. Ordering at any
+//     one renderer, for one park, is pinned; ordering across windows that both died mid-delivery is
+//     not, and after the line lifts newer batches go out ahead of what the parks still hold.
 //
 // `acknowledge` is idempotent and identity-checked, and the identity is the set of renderers the
 // batch has EVER been handed to, not whoever holds it now: a batch is in exactly one of `pending`
@@ -71,10 +77,11 @@ export interface DeepLinkQueueDeps {
    */
   deliver: (rendererId: number, batch: DeepLinkBatch) => boolean
   /**
-   * Run `expire` once, `delayMs` from now. The queue uses it for exactly one thing: ending a park.
-   * It is a dependency rather than a bare `setTimeout` because the park is what makes the retention
-   * safe — a queue that could not end one would hold a link forever — and a bound nothing can
-   * observe is a bound nobody tests.
+   * Run `expire` once, `delayMs` from now. The queue uses it for exactly one thing: ending the
+   * wait a park creates — the park itself, and the ordering line it raised. It is a dependency
+   * rather than a bare `setTimeout` because those deadlines are what make the retention safe — a
+   * queue that could not end one would hold a link forever — and a bound nothing can observe is a
+   * bound nobody tests.
    */
   schedule: (delayMs: number, expire: () => void) => void
 }
@@ -82,8 +89,11 @@ export interface DeepLinkQueueDeps {
 /**
  * How long a renderer that kept its id may keep batches nobody else can be given. Long enough to
  * cover a reload or a crash-and-reload (both are sub-second when they work at all), short enough
- * that a load which never mounts a document does not strand the user's link — or, because parks
- * hold their place in the delivery order, the links behind it.
+ * that a load which never mounts a document does not strand the user's link.
+ *
+ * It bounds the ordering line parks raise as well, and there the bound is on the LINE and not on
+ * each park: however many windows are parked and whenever each of them started, a batch queued
+ * behind them is offered to whoever is on screen within one of these windows of the line going up.
  */
 export const RENDERER_RETENTION_MS = 10_000
 
@@ -187,7 +197,16 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
   // Renderers that kept their id but have no live document: a park. Their unacknowledged batches
   // stay on their own books — nobody else may adopt them, because "it never got it" and "its ack is
   // still on the wire" are indistinguishable — until their next document drains or the park expires.
-  const parked = new Set<number>()
+  // Keyed to the GENERATION that opened it, because one renderer can park, come back, and park
+  // again while the first park's expiry timer is still armed. A timer that could not tell those two
+  // apart would end the SECOND park early and hand a batch the renderer may already have consumed
+  // to a different window — the duplicate this whole module exists to prevent.
+  const parked = new Map<number, number>()
+  let nextParkGeneration = 1
+  // The ordering line parks raise between them, and its own deadline. Bounded here rather than at
+  // each park so that staggered parks cannot chain their waits — see the header.
+  let blockadeGeneration = 0
+  let blockadeLifted = false
   let nextBatchId = 1
 
   const hand = (batch: HeldBatch, rendererId: number) => {
@@ -211,8 +230,13 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
    * The oldest parked batch — the line nothing newer may cross. A batch handed out ahead of it
    * would be acted on first and then followed by the older link when the park resolves, which is
    * the same delivery order the user's two clicks did NOT have.
+   *
+   * Once the line has been up for a whole retention window it is lifted and there is no line at
+   * all, however many parks are still standing behind it: after that long the user's link matters
+   * more than the order it arrives in relative to a window that is not on screen.
    */
   const parkedFloor = () => {
+    if (blockadeLifted) return Number.POSITIVE_INFINITY
     let floor = Number.POSITIVE_INFINITY
     for (const batch of inFlight) if (parked.has(batch.handedTo!) && batch.id < floor) floor = batch.id
     return floor
@@ -223,7 +247,8 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
     while (pending.length > 0 && owners.length > 0) {
       const rendererId = owners[owners.length - 1]!
       const batch = pending[0]!
-      // Blocked behind a park, and only ever for the length of one: bounded delay, never reordering.
+      // Blocked behind the parks, and only for as long as the line they raised stands: one
+      // retention window from the moment it went up, whoever is parked behind it by then.
       if (batch.id > parkedFloor()) return
       // A refusal means that renderer is not there any more — unreachable with no lifecycle event
       // is still gone. It stops being an owner AND gives back what it never acknowledged; leaving
@@ -243,12 +268,52 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
   /**
    * End a park the queue has waited long enough for. Stale timers are the norm — a park usually
    * ends because the next document drained or the window was destroyed — so only a park still
-   * standing gives anything back.
+   * standing gives anything back, and only the generation that armed the timer counts as standing:
+   * a renderer that parked, came back, and parked again is on its SECOND park, whose deadline has
+   * not arrived.
    */
-  const release = (rendererId: number) => {
-    if (!parked.delete(rendererId)) return
+  const release = (rendererId: number, generation: number) => {
+    if (parked.get(rendererId) !== generation) return
+    parked.delete(rendererId)
     reclaim(rendererId)
     flush()
+  }
+
+  /**
+   * Stop holding newer batches behind the parks. Nobody's batch is freed by this — each park keeps
+   * its own until its own deadline — so exactly-once is untouched; what ends is the WAIT the line
+   * imposes on everything queued behind it.
+   */
+  const lift = (generation: number) => {
+    if (generation !== blockadeGeneration || blockadeLifted) return
+    blockadeLifted = true
+    flush()
+  }
+
+  /**
+   * Open a park for a renderer that kept its id, and start the two clocks it owes: its own
+   * retention window, and — if it is the park that raises the ordering line — that line's.
+   */
+  const park = (rendererId: number) => {
+    const generation = nextParkGeneration++
+    // A line that is down (no parks, or one already lifted) is raised by this park and expires with
+    // it. A line already up is JOINED, never extended: that is what stops staggered parks chaining.
+    const raisesLine = parked.size === 0 || blockadeLifted
+    parked.set(rendererId, generation)
+    if (!raisesLine) {
+      deps.schedule(RENDERER_RETENTION_MS, () => release(rendererId, generation))
+      return
+    }
+    blockadeGeneration += 1
+    blockadeLifted = false
+    const line = blockadeGeneration
+    // One timer for both, so the two halves of the same deadline cannot be observed out of order:
+    // this park's own batch goes back to the queue BEFORE the line lifts, which is what keeps a
+    // single park's ordering guarantee intact at the exact moment it expires.
+    deps.schedule(RENDERER_RETENTION_MS, () => {
+      release(rendererId, generation)
+      lift(line)
+    })
   }
 
   const retire = (list: HeldBatch[], rendererId: number, batchId: number) => {
@@ -326,8 +391,7 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
         // It kept its id and still owes acknowledgements: park them for its next document, and
         // start the clock that ends the wait if that document never mounts. A second lifecycle
         // event (crash then reload) must not restart that clock — the bound is on the whole park.
-        parked.add(rendererId)
-        deps.schedule(RENDERER_RETENTION_MS, () => release(rendererId))
+        park(rendererId)
       }
       flush()
     },

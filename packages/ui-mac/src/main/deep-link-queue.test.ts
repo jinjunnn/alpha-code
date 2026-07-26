@@ -584,6 +584,77 @@ describe("a parked batch is neither adopted early nor stranded forever", () => {
     expect(h.consumed()).toHaveLength(2)
   })
 
+  test("a park that was replaced is not ended by the first one's timer", () => {
+    // The ABA: the same renderer parks, comes back, and parks again inside the first retention
+    // window. The first park's timer is still armed and — keyed on the renderer alone — cannot tell
+    // that what it is about to release is a DIFFERENT park, whose own deadline is ten seconds out.
+    // Ending it early hands batch 2 to another window while the renderer that already acted on it
+    // still has its acknowledgement on the wire, which is the duplicate consumption in person.
+    const h = harness()
+    const boot = h.open(BOOT)
+    boot.drain(h.queue)
+    const second = h.open(SECOND)
+    second.drain(h.queue) // the newer window owns the stream
+
+    h.queue.ingest([OPEN_PROJECT]) // batch 1, in flight to `second`
+    second.emit("did-start-loading", true) // park #1 opens; its timer is due a retention window out
+    second.drain(h.queue) // the next document mounts and ends park #1
+    expect(second.consumed).toHaveLength(1)
+
+    h.advance(RENDERER_RETENTION_MS - 1000) // …and one second before that timer comes due
+    h.queue.ingest([NEW_SESSION]) // batch 2, in flight to `second` again
+    const held = second.consumeHoldingAck() // acted on; the acknowledgement has not landed yet
+    second.emit("did-start-loading", true) // park #2 opens, with its own full window from HERE
+
+    h.advance(1000) // park #1's stale timer fires
+    boot.receive(h.queue)
+    expect(boot.consumed).toEqual([]) // park #2 still stands: nothing was re-handed
+
+    for (const batch of held) h.queue.acknowledge(SECOND, batch.id) // the late ack finally lands
+    second.drain(h.queue) // the reloaded document finds nothing left to replay
+    expect(h.consumed()).toHaveLength(2)
+  })
+
+  test("staggered parks do not chain: the line they raise lifts one window after it went up", () => {
+    // Two windows die mid-delivery nine seconds apart. Each park is entitled to its own retention
+    // window, so bounding the WAIT per park lets the second one inherit the first one's blockade
+    // and hold a batch queued at t=0 until t=19s — and a third in-flight window would extend it
+    // again. The bound therefore belongs to the line: it lifts one window after it went up, the
+    // parks behind it keep their own batches, and the user's newest link goes out.
+    const link = (n: number) => `opencode://open-project?directory=/tmp/p${n}`
+    const h = harness()
+    const boot = h.open(BOOT) // the window that stays on screen throughout
+    boot.drain(h.queue)
+    const second = h.open(SECOND)
+    second.drain(h.queue)
+
+    h.queue.ingest([link(1)]) // batch 1, in flight to `second`
+    const third = h.open(THIRD)
+    third.drain(h.queue) // a third window takes the stream; batch 1 stays with `second`
+
+    h.queue.ingest([link(2)]) // batch 2, in flight to `third`
+    third.emit("did-start-loading", true) // t=0: the line goes up behind park A
+    h.queue.ingest([link(3)]) // batch 3 is queued behind it
+    boot.receive(h.queue)
+    expect(boot.consumed).toEqual([])
+
+    h.advance(RENDERER_RETENTION_MS - 1000) // t=9s
+    second.emit("did-start-loading", true) // park B joins the standing line; it does not extend it
+    boot.receive(h.queue)
+    expect(boot.consumed).toEqual([])
+
+    h.advance(1000) // t=10s: one window after the line went up
+    boot.receive(h.queue)
+    expect(boot.consumed.map((delivery) => delivery.directory)).toEqual(["/tmp/p2", "/tmp/p3"])
+
+    // Park B was not cut short to buy that: its batch is still its own, and only its own deadline
+    // hands it back.
+    h.advance(RENDERER_RETENTION_MS - 1000) // t=19s
+    boot.receive(h.queue)
+    expect(boot.consumed.map((delivery) => delivery.directory)).toEqual(["/tmp/p2", "/tmp/p3", "/tmp/p1"])
+    expect(h.consumed()).toHaveLength(3)
+  })
+
   test("the next document arrives before the deadline: the expiry timer then releases nothing", () => {
     const h = harness()
     const boot = h.open(BOOT)

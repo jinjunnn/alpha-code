@@ -526,8 +526,10 @@ R5 判 desktop 门禁为 FIXED、A 项已由 [#633] 承接、B 项(`destroyed` �
     `release()`,把它还压着的 batch 交回队列重试。`schedule` 是依赖注入而不是裸 `setTimeout`,
     因为「有界」如果不可观测就等于没有 —— 测试用手动时钟推进它。
   - **顺序**:park 期间**没有更新的 batch 可以被交给任何人**(`flush` 与 `consumeInitial` 都按
-    `parkedFloor()` 卡住),等待时长因此被同一个 10s 上界兜住。领养条件同时补上
-    `parked.has(handedTo)`:活 owner 与 parked 持有者的 batch 都不可被第三方接管。
+    `parkedFloor()` 卡住)。领养条件同时补上 `parked.has(handedTo)`:活 owner 与 parked 持有者的
+    batch 都不可被第三方接管。(本轮写的「等待时长因此被同一个 10s 上界兜住」**不成立**:到期
+    时间当时属于各 renderer,错峰 park 会叠加等待 —— R6 复现,见 §5.5 F1-b,上界现由阻挡线自己
+    持有。)
   **明示残余**:两个 renderer **同时** park(sidecar respawn 会重载所有窗口)时,先挂载回来的
   那个仍会取回自己的 batch,而另一个 park 还在压着更旧的 —— 两个都死在投递中途的窗口之间的
   顺序不做保证;单个 park、单个 renderer 上的顺序做保证。执行测试两条:「新 document 先 drain、
@@ -551,3 +553,59 @@ R5 判 desktop 门禁为 FIXED、A 项已由 [#633] 承接、B 项(`destroyed` �
   (对象属性 / JSX 内联 / 别的组件)、模板字面量 `${…}` 内的接线;并声明它**故意**向假红一侧偏
   (`if (consumeDeepLinks) {` 会被读成再绑定)。继续追「对抗性不可绕」会把判据复杂化到无法维护,
   超出本票 AC。
+
+### §5.5 第六轮对抗审计(R6)驳回后的修正(2026-07-26)
+
+R6 判 park 的**单个 10s 折中**、`unref()`、同一 park 内 `release()` 与 `rendererGone("gone")` 的
+两种到达顺序、以及明示残余「两 renderer 同时 park 时跨窗口顺序不保证」**均可接受**;F7 的六种
+形参遮蔽写法**已封住**,有界立场本身也可接受(不要求 TS AST / 模块图 / 运行时单例)。剩下三条,
+两条是 park 状态机的真 bug,一条是判据的计数口径。
+
+- **F1-a —— park 的 ABA:旧 timer 会释放后继 park。** `consumeInitial()` 只删 `parked` 标志,
+  取消不了已排期的旧 timer;而 `release()` 与 timer 只带 renderer id,**没有 park 代次**。R6 实跑
+  时序:t=0 第一次 park(到期点 t=10s)→ 新 document 回来结束它 → t=9s 同一 renderer 再次 park
+  (正确到期点 t=19s)→ **t=10s 旧 timer 把第二次 park 释放**,batch 2 被改派给另一窗口;若原
+  renderer 已消费而 ack 未到,就是重复消费。现在 `parked` 从 `Set<rendererId>` 改成
+  `Map<rendererId, generation>`,每次开 park 取一个自增代次,timer 闭包捕获它,`release()` 只在
+  `parked.get(id) === generation` 时才动手 —— **timer 只能结束创建它的那一代 park**。
+
+- **F1-b —— 错峰多 park 叠加等待:10s 不是全局上界。** `parkedFloor()` 是**全局**阻挡线,而到期
+  时间当时属于**各 renderer**。R6 时序:renderer 1 在 t=0 park → 期间 batch 3 入队 → renderer 2
+  在 t=9s park → renderer 1 在 t=10s 释放 → batch 3 仍被 renderer 2 的 park 压住,**到 t=19s 才
+  交付**;更多在途窗口可继续延长。现在把上界**挂到阻挡线本身**而不是挂到每个 park:
+
+  - 阻挡线由「发现线没立起来」的那个 park **升起**(`parked` 为空,或线已放行),并在
+    `RENDERER_RETENTION_MS` 后**无条件放行**,此时还站着几个 park 都不影响;
+  - 后来的 park **加入**已站立的线,**不延长**它;
+  - 放行只是不再压住更新的 batch —— **没有任何 park 的 batch 被提前交出去**,每个 park 仍各自
+    保有完整 10s 的留存。所以 exactly-once 一点没动,**被牺牲的只有跨窗口顺序**,而那本就是
+    §5.4 已明示的残余(两个都死在投递中途的窗口之间不保证顺序)。
+
+  **由此得到的上界(与实现一致的声明)**:一个 batch 入队时,要么当时没有阻挡线(`flush` 当场
+  投递),要么线是在**不晚于此刻**升起的、并在升起后一个 `RENDERER_RETENTION_MS` 放行 —— 因此
+  **任何 batch 因 park 被压住的时长不超过 10s,与同时 park 的窗口数无关**;放行当场就 `flush`,
+  除非那一刻根本没有可投递的窗口(那是「没有窗口」而不是「被 park 压住」)。park 到期与阻挡线
+  放行由**同一个 timer 回调**依次执行(先 `release` 再放行),所以两者同刻到期时不会被观察到
+  乱序 —— 单个 park 的顺序保证在它到期那一刻仍然成立。
+
+  执行测试两条,各自单点回退变红:「park → 恢复 → 再次 park → 旧 timer 到期」(回退代次判定 →
+  batch 2 被改派到另一窗口)、「错峰双 park 手动时钟」(回退放行判定 → batch 3 等到 t=19s)。
+
+- **F7 —— 判据改成数「实际 mention」,不是数「文件」。** 原 `factoryNameSites()` 比较的是**包含
+  名字的文件集合**,于是在**允许的定义文件**里加一句 `export { createDeepLinkConsumer as
+  buildConsumer }`,文件集合逐字节不变;`withoutImports` 又会把 layout.tsx 里那句别名 import 抹白,
+  原来那次诚实调用仍满足 `deepLinkWiringIn()`;执行类测试只跑 factory 本身,看不见第二 consumer
+  的挂载。R6 的判词是对的:**同文件的便利别名是正常重构漂移,不必恶意构造**。现在改成逐次
+  mention 分类(仍然只用词法,不引入 AST、模块解析器或运行时单例):`declared`(名字前紧邻
+  `const/let/var/function/class`)、`applied`(名字后紧邻 `(`)、`imported`(落在 import 语句内且
+  **未**改名)、`aliased`(其余一切 —— `as X`、`const build = 工厂`、裸 `export { 工厂 }`)。
+  import 是**分类**而不是抹白,所以「本不该点名工厂的文件用改名 import 取走它」照样现形。真实树的
+  断言因此变成三次 mention:`layout.tsx = [imported, applied]`、`deep-links.ts = [declared]`。
+
+  变异实测:把那句 self re-export alias 真的种进 `packages/app/src/pages/layout/deep-links.ts`,
+  新判据变红(`deep-links.ts` 变成 `[declared, aliased]`);同一棵被污染的树用 R6 之前的文件集合
+  判据重放则**完全绿**(输出仍是那两个文件)—— 这条洞是真的,现在被封住了。
+
+  边界仍然停在 §5.4 写死的地方:这条 ratchet 防**漂移**,不防对抗性构造;主判据是执行类测试
+  `route-deep-link-consumer.test.ts`。R6 点到的「带括号的函数返回类型仍可绕过 `bodyIntroducingGroups`」
+  按同一条边界不门控,不再扩大。

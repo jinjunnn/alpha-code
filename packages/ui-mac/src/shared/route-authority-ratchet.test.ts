@@ -291,7 +291,7 @@ function bindingsOf(source: string, name: string) {
 }
 
 /**
- * Which files may spell the factory's name at all — its definition and its one call site.
+ * Where the factory's name is spelled, how often, and as WHAT.
  *
  * `withoutImports` blanks the statement that would reveal an alias, so a module re-exporting the
  * factory under a second name (`export { createDeepLinkConsumer as buildConsumer }`) is invisible
@@ -301,14 +301,43 @@ function bindingsOf(source: string, name: string) {
  * second exported name cannot come into existence without the factory's own name appearing in the
  * file that creates it.
  *
+ * Which is why comparing the SET OF FILES was not enough, and R6 walked it: put that same
+ * re-export in the definition file — a file that is ALLOWED to spell the name — and the set is
+ * bit-for-bit unchanged. So each mention is classified instead, and no module resolver is needed
+ * for that either:
+ *   * `declared` — the factory itself, `const`/`function`/`class` immediately before the name;
+ *   * `applied` — the name immediately followed by `(`: its one call;
+ *   * `imported` — inside an import statement and NOT renamed there;
+ *   * `aliased` — everything else, which is every way a second name is made: `as buildConsumer`,
+ *     `const build = createDeepLinkConsumer`, a bare `export { createDeepLinkConsumer }`.
+ * Imports are classified rather than blanked, so a renaming import in a file that has no business
+ * naming the factory at all still shows up here.
+ *
  * Bounded to `packages/app/src` and this package's `src` — see the header for what that leaves out.
  */
+function factoryMentionsIn(source: string) {
+  const clean = withoutComments(source)
+  // Same offsets, import statements blanked: a mention sits inside one iff it was blanked here.
+  const outsideImports = withoutImports(clean)
+  const pattern = new RegExp(`\\b${CONSUMER_FACTORY}\\b`, "g")
+  const kinds: string[] = []
+  for (let hit = pattern.exec(clean); hit !== null; hit = pattern.exec(clean)) {
+    const before = clean.slice(0, hit.index)
+    const after = clean.slice(hit.index + CONSUMER_FACTORY.length)
+    if (/\b(?:const|let|var|function|class)\s+$/.test(before)) kinds.push("declared")
+    else if (/^\s*\(/.test(after)) kinds.push("applied")
+    else if (outsideImports[hit.index] === " " && !/^\s*as\b/.test(after)) kinds.push("imported")
+    else kinds.push("aliased")
+  }
+  return kinds
+}
+
 function factoryNameSites(files: SourceFile[]) {
-  const mentions = new RegExp(`\\b${CONSUMER_FACTORY}\\b`)
   return files
-    .filter((file) => !/\.test\.[cm]?[jt]sx?$/.test(file.path) && mentions.test(withoutComments(file.source)))
-    .map((file) => relative(workspaceRoot, file.path))
-    .sort()
+    .filter((file) => !/\.test\.[cm]?[jt]sx?$/.test(file.path))
+    .map((file) => ({ path: relative(workspaceRoot, file.path), mentions: factoryMentionsIn(file.source) }))
+    .filter((site) => site.mentions.length > 0)
+    .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0))
 }
 
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim()
@@ -710,12 +739,26 @@ describe("Alpha route authority ratchet", () => {
     expect(shadowed.usage).toEqual({ listener: true, invoked: true, singleBinding: false })
   })
 
-  test("the consumer factory's name lives in exactly two files: its definition and its call site", async () => {
+  test("the factory's name is spelled three times in the tree: declared, imported, called", async () => {
+    // Two files, and inside them exactly the mentions the honest wiring needs. A count of FILES
+    // would leave room for a second exported name inside either of them.
     const sources = [...(await sourcesUnder(upstreamAppRoot)), ...(await sourcesUnder(sourceRoot))]
 
     expect(factoryNameSites(sources)).toEqual([
-      "packages/app/src/pages/layout.tsx",
-      "packages/app/src/pages/layout/deep-links.ts",
+      { path: "packages/app/src/pages/layout.tsx", mentions: ["imported", "applied"] },
+      { path: "packages/app/src/pages/layout/deep-links.ts", mentions: ["declared"] },
+    ])
+  })
+
+  test("a convenience alias exported from the definition file itself is seen", async () => {
+    // R6's bypass, and the reason the judgement counts mentions rather than files: the alias lives
+    // in a file that MAY name the factory, layout.tsx imports it under the second name (which
+    // `withoutImports` blanks), and the executed tests only ever run the factory itself. The file
+    // set is identical to the honest tree's; the mentions inside the definition file are not.
+    const source = `${await Bun.file(upstreamDeepLinkModule).text()}\nexport { createDeepLinkConsumer as buildConsumer }\n`
+
+    expect(factoryNameSites([{ path: upstreamDeepLinkModule, source }])).toEqual([
+      { path: "packages/app/src/pages/layout/deep-links.ts", mentions: ["declared", "aliased"] },
     ])
   })
 
@@ -744,7 +787,7 @@ describe("Alpha route authority ratchet", () => {
           source: `export { createDeepLinkConsumer as buildConsumer } from "./deep-links"`,
         },
       ]),
-    ).toEqual(["packages/app/src/pages/layout/consumer-alias.ts"])
+    ).toEqual([{ path: "packages/app/src/pages/layout/consumer-alias.ts", mentions: ["aliased"] }])
   })
 
   test("the consumer detector bites when dispatch moves back into layout.tsx", () => {
