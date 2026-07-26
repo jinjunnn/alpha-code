@@ -249,7 +249,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 审批挂起:权限 chip 转琥珀提示当前模式(已批稿「审批请求停靠」变体)── */
+/* ── 审批挂起:权限 chip 转琥珀提示当前模式(审批呈现走独立 Permission surface,
+      此处仅 composer 侧挂起提示;owner 裁决 2026-07-25,#619)── */
 .a-comp[data-approval] .a-chip-perm {
   color: var(--a-warning);
 }

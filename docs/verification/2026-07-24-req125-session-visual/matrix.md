@@ -230,11 +230,11 @@ FAIL 转 bug 票挂父票 #538。
 | I2 | 产物点击联动 · 可预览(office) | CT `#artifacts` frameD office 态 | #542 | | | 整页装配后归右栏产物面板(=A4/D8 语境) |
 | I3 | 产物点击联动 · 暂不支持预览(parquet) | CT `#artifacts` frameD other 态 | #542 | | | 文件信息+有界节选,不称"预览" |
 
-## J · dock 各状态(挂载位以 SW 为准;CT §③ 只定卡片形态)
+## J · 停靠区卡片各状态(挂载位以 SW 为准;CT §③ 只定卡片形态;审批不属 dock 集合,J1 走独立 Permission surface)
 
 | ID | 待采帧 | 对照稿锚点 | 实现票 | 浅 | 暗 | 备注 |
 |---|---|---|---|---|---|---|
-| J1 | 审批呈现(独立 Permission surface;非 dock) | REQ-090 已批 Dialog(`docs/verification/2026-07-21-req090-permission-l2/`) | #545 #619 | | | 裁决同 C2(owner 2026-07-25,#619):审批不属 dock 集合,dock 审批卡已删;判定按独立 Permission surface(恰一个 PermissionDialog),反向闸门在 `takeover-adapter-coexistence.test.ts` |
+| J1 | 审批呈现(独立 Permission surface;非 dock) | REQ-090 已批 Dialog(`docs/verification/2026-07-21-req090-permission-l2/`) | #545 #619 | | | 裁决同 C2(owner 2026-07-25,#619):审批不属 dock 集合,dock 审批卡已删;判定按独立 Permission surface(恰一个 PermissionDialog),反向闸门:文本棘轮 `takeover-adapter-coexistence.test.ts` + 行为级同场闸门 `session-workspace/permission-single-surface.test.ts`(watcher × 生产 dock 运行时) |
 | J2 | todo 任务清单卡(三态+进度) | CT `#tools` todos 帧(渲染位=dock) | #545 | | | HIDDEN_TOOLS 仅 todowrite,渲染在 dock |
 | J3 | question 提问卡(选项 A/B) | CT `#tools` qa 帧(渲染位=dock) | #545 | | | pending/running question 单独条件过滤进 dock |
 | J4 | followup dock 态 | **设计稿无帧**(CT §⑦ 索引无此类型;SW 只画审批停靠) | #558 | | | 按 #558 落地形态+文字合同判定;采集后作回归基线留档 |

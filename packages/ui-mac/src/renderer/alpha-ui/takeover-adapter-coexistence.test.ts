@@ -73,6 +73,9 @@ describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
   test("审批统一走独立 Permission surface(owner 裁决 2026-07-25):dock 审批呈现面删除后零引用(反向闸门)", () => {
     // 若有人重新引入 dock 审批卡 / claim 抢占机制,本断言必须变红 —— 审批呈现的唯一
     // 路径是 PermissionWatcher 的 PermissionDialog(REQ-090 合同面)。
+    // 本棘轮只是文本层的第一道闸(改名 + 新属性 + 方括号取值可绕过,R1 对抗审已证):
+    // 行为层闸门在 session-workspace/permission-single-surface.test.ts —— 同场真实挂载
+    // watcher 与生产 dock,任何等义改写的第二审批面在运行时 DOM/流量断言下必红。
     expect(fs.existsSync(path.join(ALPHA_UI, "session-workspace", "session-approval-card.tsx"))).toBe(false)
     expect(fs.existsSync(path.join(ALPHA_UI, "session-workspace", "session-approval-claim.ts"))).toBe(false)
     const forbidden = [
