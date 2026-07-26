@@ -1,6 +1,20 @@
 // Route-authority ratchet — a SOURCE-TEXT gate, and the boundary of what that can mean.
 //
-// WHAT THIS IS FOR. Drift: an upstream release that reshuffles layout.tsx, a later contributor who
+// THE PRIMARY JUDGEMENT IS NOT IN THIS FILE. `route-deep-link-consumer.test.ts` EXECUTES the real
+// production `createDeepLinkConsumer` over a real manifest-encoded-and-decoded delivery, and
+// asserts that the navigation target it observes IS the href the manifest derives independently.
+// Any change to what the app actually does — a rewritten target, a remapped delivery, a dropped or
+// re-ordered link, a consumer that acts twice — moves that assertion, whatever the source text
+// says. THAT is the gate on behaviour.
+//
+// This file covers only the one stretch that test cannot reach into: the glue in layout.tsx that
+// hands the consumer its primitives and mounts it — a wrapper (`navigate: (href) => go(href +
+// "/wrong")`), a remapped input, a later override, or a consumer built and never wired would
+// retarget the app without any executed code changing. And it covers that stretch as TEXT, which
+// makes it a DRIFT SIGNAL, not a security assertion. Read a green here as "nothing drifted",
+// never as "no second consumer can exist".
+//
+// WHAT DRIFT MEANS HERE. An upstream release that reshuffles layout.tsx, a later contributor who
 // moves the deep-link wiring without knowing why it is shaped this way, a revived parallel route or
 // URL codec. Those changes are made in the open, and reading the source catches them.
 //
@@ -21,13 +35,21 @@
 // It also errs the other way on purpose: `if (consumeDeepLinks) {` reads as a re-binding. A false
 // red is a conversation; a false green is what this file exists to avoid, and it has produced three.
 //
-// SO THE PRIMARY JUDGEMENT IS ELSEWHERE. `route-deep-link-consumer.test.ts` EXECUTES the real
-// production consumer over a real manifest-decoded delivery and asserts the observed navigation
-// target equals the href the manifest derives independently. Any change to what the app actually
-// does — a rewritten target, a remapped delivery, a dropped link — moves that assertion, whatever
-// the source text says. This file pins only the one stretch that test cannot reach into: layout.tsx
-// handing the consumer its primitives and mounting it. Read a green here as "nothing drifted",
-// never as "no second consumer can exist".
+// AND THE CEILING IS LEXICAL, WHICH IS WHY THE LIST ABOVE STOPS GROWING. Every judgement here reads
+// the source with a STRING lexer (`withoutLiteralText`). A string lexer cannot tell a regex literal
+// from a division, and cannot tell JSX text from code — both are decided by grammar it does not
+// have. Either mistake opens a phantom literal; the next real quote closes it; and the literal text
+// after that is handed back as CODE. R8's false green (an `import {` faked inside a literal that
+// swallows the real import behind it, so a default import of any module reads as an unrenamed named
+// specifier) then comes straight back. R9 verified three, all of which transpile as valid TSX and
+// all of which still report `[imported, applied]` today:
+//   * a regex literal carrying a quote — `/["]/` — plus a `\`-continued string;
+//   * a bare `"` in JSX text — `<p>6" of rope</p>` — plus the same continuation;
+//   * a regex `/}/` inside a `${…}`, which ends the substitution early, and a tagged template that
+//     then hands the lexer back out of the literal.
+// They are asserted at the bottom of this file so they cannot be mistaken for closed. They are NOT
+// a to-do list: closing them means a real JS/TSX lexer living inside a test file, and this is a
+// drift signal — the executable test above is the thing that judges behaviour.
 import { describe, expect, test } from "bun:test"
 import { join, relative } from "node:path"
 
@@ -244,8 +266,13 @@ const IMPORT_STATEMENT = String.raw`^[ \t]*import[\s{][\s\S]*?(?:from[ \t]*["'][
  * lexer's own rule: a literal ends at its unescaped delimiter.
  *
  * Comments are already blanked at both call sites — an apostrophe in prose would otherwise open a
- * literal here — and every way this can still go wrong (a desynced quote) blanks MORE, which loses
- * spans and classifies mentions as `aliased`: a red, which is the direction this file errs in.
+ * literal here — and that is where this function's honesty stops. It is a STRING lexer, not a
+ * JavaScript one: a regex literal reads as division, JSX text reads as code, and a quote inside
+ * either one opens a literal that is not there. A desync goes BOTH WAYS. It can blank MORE, which
+ * loses a span and classifies the mention `aliased` — a red. It can also blank LESS, handing the
+ * text of a real literal back as code, which is R8's false green restored from the other side of
+ * this whiteout. R9 constructed three that do exactly that; they are listed in the header and
+ * asserted at the bottom of this file, as known and deliberately open — not as a to-do.
  */
 function withoutLiteralText(source: string) {
   const out = source.split("")
@@ -976,6 +1003,35 @@ describe("Alpha route authority ratchet", () => {
     `
     expect(consumerViolationsFor({ path: upstreamLayoutFile, source }).map((entry) => entry.rule)).toEqual([
       "deep-link dispatch belongs in the ratcheted deep-links module",
+    ])
+  })
+
+  // KNOWN HOLES, asserted so a reader cannot mistake them for closed ones. Each construction feeds
+  // the literal whiteout a quote it cannot classify — a regex literal's, JSX text's, or a `${…}`
+  // ended early by a regex `/}/` — which desyncs it and hands real literal text back as code. R8's
+  // false green then returns intact: the faked `import {` opens a span, the span swallows the real
+  // DEFAULT import behind it, and a default import of any module at all reads as an unrenamed named
+  // specifier. R9 confirmed all three transpile as valid TSX.
+  //
+  // These deliberately EXPECT the wrong answer. An honest reading of every source below is
+  // `["aliased", "applied"]`; the ratchet says `["imported", "applied"]`. Closing the class needs a
+  // real JS/TSX lexer inside a test file — see the header for why that is not the trade being made,
+  // and `route-deep-link-consumer.test.ts` for the judgement that does not depend on any of this.
+  // If one of these ever reddens, the hole closed: drop the case and correct the header.
+  test.each([
+    ["a regex literal's quote", ['const quoted = /["]/', 'const bait = "\\', "import {\\", '"']],
+    ["a bare quote in JSX text", ['const note = <p>6" of rope</p>', 'const bait = "\\', "import {\\", '"']],
+    ["a regex `/}/` ending a substitution early", ["const bait = tag`${ /}/ , inner`", 'import { "', "` }`"]],
+  ])("KNOWN HOLE — %s desyncs the literal whiteout, and R8's false green comes back", (_shape, bait) => {
+    const source = [
+      ...bait,
+      `import ${CONSUMER_FACTORY} from "./layout/consumer-alias"`,
+      `const consumeDeepLinks = ${CONSUMER_FACTORY}({${HONEST_DEPS}})`,
+      MOUNTED,
+    ].join("\n")
+
+    expect(factoryNameSites([{ path: upstreamLayoutFile, source }])).toEqual([
+      { path: "packages/app/src/pages/layout.tsx", mentions: ["imported", "applied"] },
     ])
   })
 })
