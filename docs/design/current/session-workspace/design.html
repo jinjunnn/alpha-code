@@ -536,7 +536,7 @@ table.spec{width:100%;border-collapse:collapse;margin-top:14px;font-size:var(--a
       </div>
       <div class="note relcard"><span class="rt">与实机现状的关系</span>
         <ul>
-          <li>实机现状 = alpha 薄外框 + 上游内瓤;上游布局迁移后 alpha 注入落空,页面视觉整体回退。本稿即「彻底摆脱注入」的终态:整页 alpha 自渲染,崩溃时整页回落上游(恢复边界既定,不在本稿画)。</li>
+          <li>实机现状 = alpha 薄外框 + 上游内瓤;上游布局迁移后 alpha 注入落空,页面视觉整体回退。本稿即「彻底摆脱注入」的终态:整页 alpha 自渲染,崩溃时进入 Alpha Recovery(REQ-090 单向门合同,明文禁止回退上游;恢复边界既定,不在本稿画)。</li>
           <li>既定盘点里顶栏的双 header 叠加、右栏与左侧脱节两项缺陷,在本稿分别以「归并单一顶栏」「右栏四面板 alpha 化」回应。</li>
           <li>上游右栏(审查计数 / 统一拆分 / 每文件统计、文件树、终端)仅作为信息架构清单被继承 —— 能力不缺失,视觉不锚定。</li>
         </ul>
@@ -1356,7 +1356,7 @@ table.spec{width:100%;border-collapse:collapse;margin-top:14px;font-size:var(--a
       <tr><td>审批呈现</td><td>统一走独立 Permission surface(权限确认对话框;「审批停靠」条已随变体二作废,owner 裁决 2026-07-25):强模态,打开期间页面其余部分不可操作;Esc 不可关闭 —— 必须显式选择(fail-closed);出现时焦点移入首个动作。composer 侧仅保留挂起提示(置灰提示语 + 琥珀权限 chip)。</td></tr>
       <tr><td>运行状态</td><td>顶栏状态胶囊 aria-live(polite);停止键有明确可达名称「停止生成」。</td></tr>
       <tr><td>动效</td><td>状态呼吸 / 进度扫线 / 流式光标均为装饰性,reduced-motion 下全部静止;面板开合无滑动动画,直接切换。</td></tr>
-      <tr><td>降级</td><td>整页任何 alpha 渲染崩溃 → 恢复边界回落上游整页(既定恢复合同,不在本稿画)。</td></tr>
+      <tr><td>降级</td><td>整页任何 alpha 渲染崩溃 → 进入 <b>Alpha Recovery</b>(REQ-090 单向门合同:恢复边界呈现 Alpha 自持的恢复面,<b>明文禁止回退上游整页</b>;既定合同,不在本稿画),且不影响其他 surface。</td></tr>
     </table>
     <p class="cap" style="margin-top:16px">评审稿 · 基线 = shell-sidebar / conversation-timeline / composer / artifact-workbench 四份现行稿 + 产物链接行增量稿。帧内数据均为演示值。本地打开即可交互(主题切换 / 展开折叠 / tab 切换)。</p>
   </section>
