@@ -218,6 +218,12 @@ const CONSUMER_DEPS = ["enabled", "buffer", "openProject", "navigate", "handoff"
 
 const CONSUMER_FACTORY = "createDeepLinkConsumer"
 
+// One statement shape, read two ways: blanked (below) when the factory's name must be counted as
+// calls only, and kept as a span (further below) when the mention inside it has to be classified.
+// A fresh regex per use — a shared `g` regex carries `lastIndex` between a `replace` and an `exec`
+// loop, and a judgement that depends on call order is a judgement that will silently drift.
+const IMPORT_STATEMENT = String.raw`^[ \t]*import[\s{][\s\S]*?(?:from[ \t]*["'][^"']*["']|["'][^"']*["'])[ \t]*;?`
+
 /**
  * Blank out import statements, keeping every offset. Imports are the one place the factory's name
  * legitimately appears without being called, so they are removed before that rule is applied —
@@ -225,9 +231,37 @@ const CONSUMER_FACTORY = "createDeepLinkConsumer"
  * by the same count.
  */
 function withoutImports(source: string) {
-  return source.replace(/^[ \t]*import[\s{][\s\S]*?(?:from[ \t]*["'][^"']*["']|["'][^"']*["'])[ \t]*;?/gm, (text) =>
-    text.replace(/[^\n]/g, " "),
-  )
+  return source.replace(new RegExp(IMPORT_STATEMENT, "gm"), (text) => text.replace(/[^\n]/g, " "))
+}
+
+/** The same statements as spans, so a mention inside one can be read against its own text. */
+function importStatementsIn(source: string) {
+  const pattern = new RegExp(IMPORT_STATEMENT, "gm")
+  const spans: { start: number; text: string }[] = []
+  for (let hit = pattern.exec(source); hit !== null; hit = pattern.exec(source))
+    spans.push({ start: hit.index, text: hit[0] })
+  return spans
+}
+
+/**
+ * What an import statement does with the factory's name, read from BOTH sides of it.
+ *
+ * R7's false green: only the right-hand side was read, so `import { buildConsumer as
+ * createDeepLinkConsumer }` classified as an ordinary `imported` mention — any function at all
+ * could wear the trusted name while the tree assertion stayed bit-for-bit unchanged. `as` makes a
+ * second name whichever side it sits on, and a default / namespace / import-equals binding makes
+ * one too: none of them can be followed to what they actually bind without a module resolver.
+ */
+function importMentionKind(statement: string, at: number) {
+  const before = statement.slice(0, at)
+  const after = statement.slice(at + CONSUMER_FACTORY.length)
+  // `buildConsumer as NAME` and `* as NAME` put the `as` to the left; `NAME as buildConsumer` to
+  // the right. Either way the name here is not the name the module exports.
+  if (/\bas\s+$/.test(before) || /^\s*as\b/.test(after)) return "aliased"
+  // Only a named specifier — inside the import clause's braces — names the export itself. A
+  // default import (`import NAME from …`) or an import-equals (`import NAME = require(…)`) binds
+  // the name to whatever that module chose to hand back, which is a second name again.
+  return (before.match(/\{/g) ?? []).length > (before.match(/\}/g) ?? []).length ? "imported" : "aliased"
 }
 
 /**
@@ -307,26 +341,30 @@ function bindingsOf(source: string, name: string) {
  * for that either:
  *   * `declared` — the factory itself, `const`/`function`/`class` immediately before the name;
  *   * `applied` — the name immediately followed by `(`: its one call;
- *   * `imported` — inside an import statement and NOT renamed there;
- *   * `aliased` — everything else, which is every way a second name is made: `as buildConsumer`,
- *     `const build = createDeepLinkConsumer`, a bare `export { createDeepLinkConsumer }`.
+ *   * `imported` — an UNRENAMED named specifier inside an import statement, the only import shape
+ *     in which this name is the exported name;
+ *   * `aliased` — everything else, which is every way a second name is made: `as` on either side
+ *     of it, a default or namespace or import-equals binding, `const build =
+ *     createDeepLinkConsumer`, a bare `export { createDeepLinkConsumer }`.
  * Imports are classified rather than blanked, so a renaming import in a file that has no business
- * naming the factory at all still shows up here.
+ * naming the factory at all still shows up here — including R7's reverse alias, which renames some
+ * OTHER export into this name and would otherwise have read as an ordinary import.
  *
  * Bounded to `packages/app/src` and this package's `src` — see the header for what that leaves out.
  */
 function factoryMentionsIn(source: string) {
   const clean = withoutComments(source)
-  // Same offsets, import statements blanked: a mention sits inside one iff it was blanked here.
-  const outsideImports = withoutImports(clean)
+  const imports = importStatementsIn(clean)
   const pattern = new RegExp(`\\b${CONSUMER_FACTORY}\\b`, "g")
   const kinds: string[] = []
   for (let hit = pattern.exec(clean); hit !== null; hit = pattern.exec(clean)) {
-    const before = clean.slice(0, hit.index)
-    const after = clean.slice(hit.index + CONSUMER_FACTORY.length)
+    const at = hit.index
+    const before = clean.slice(0, at)
+    const after = clean.slice(at + CONSUMER_FACTORY.length)
+    const statement = imports.find((span) => at >= span.start && at < span.start + span.text.length)
     if (/\b(?:const|let|var|function|class)\s+$/.test(before)) kinds.push("declared")
     else if (/^\s*\(/.test(after)) kinds.push("applied")
-    else if (outsideImports[hit.index] === " " && !/^\s*as\b/.test(after)) kinds.push("imported")
+    else if (statement) kinds.push(importMentionKind(statement.text, at - statement.start))
     else kinds.push("aliased")
   }
   return kinds
@@ -747,6 +785,40 @@ describe("Alpha route authority ratchet", () => {
     expect(factoryNameSites(sources)).toEqual([
       { path: "packages/app/src/pages/layout.tsx", mentions: ["imported", "applied"] },
       { path: "packages/app/src/pages/layout/deep-links.ts", mentions: ["declared"] },
+    ])
+  })
+
+  // R7's false green, and the family it belongs to. The classification read only the RIGHT of the
+  // name, so an import that renames some OTHER export INTO the factory's name looked exactly like
+  // the honest `import { createDeepLinkConsumer }`: every mention in the tree stayed `imported` /
+  // `applied` / `declared`, and any `buildConsumer` could wear the trusted name. A default,
+  // namespace or import-equals binding is the same class — the name is this file's choice, not the
+  // module's export.
+  test.each([
+    ["a reverse alias", `import { buildConsumer as ${CONSUMER_FACTORY} } from "./layout/consumer-alias"`],
+    ["a default import", `import ${CONSUMER_FACTORY} from "./layout/consumer-alias"`],
+    ["a namespace import", `import * as ${CONSUMER_FACTORY} from "./layout/consumer-alias"`],
+    ["an import-equals", `import ${CONSUMER_FACTORY} = require("./layout/consumer-alias")`],
+  ])("%s that takes the factory's name is an alias, and the tree judgement reddens", (_shape, statement) => {
+    const source = `
+      ${statement}
+      const consumeDeepLinks = ${CONSUMER_FACTORY}({${HONEST_DEPS}})
+      ${MOUNTED}
+    `
+
+    // The wiring judgement reads this call site as perfect — `withoutImports` blanked the statement
+    // that renamed something else into the name — so, as with the R6 re-export, the alias has to be
+    // caught where it is CREATED.
+    expect(deepLinkWiringIn(source).usage).toEqual({ listener: true, invoked: true, singleBinding: true })
+    expect(factoryNameSites([{ path: upstreamLayoutFile, source }])).toEqual([
+      { path: "packages/app/src/pages/layout.tsx", mentions: ["aliased", "applied"] },
+    ])
+  })
+
+  test("an unrenamed named import is the one import shape that is not an alias", () => {
+    // The other direction: the honest tree above must stay green, or the gate reddens on itself.
+    expect(factoryMentionsIn(`import { ${CONSUMER_FACTORY}, deepLinkEvent } from "./layout/deep-links"`)).toEqual([
+      "imported",
     ])
   })
 

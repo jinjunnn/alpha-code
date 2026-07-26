@@ -609,3 +609,30 @@ R6 判 park 的**单个 10s 折中**、`unref()`、同一 park 内 `release()` �
   边界仍然停在 §5.4 写死的地方:这条 ratchet 防**漂移**,不防对抗性构造;主判据是执行类测试
   `route-deep-link-consumer.test.ts`。R6 点到的「带括号的函数返回类型仍可绕过 `bodyIntroducingGroups`」
   按同一条边界不门控,不再扩大。
+
+### §5.6 第七轮对抗审计(R7)驳回后的修正(2026-07-26)
+
+R7 判 §5.5 的两条 park 修正(F1-a 代次隔离、F1-b 阻挡线自带上界)**均为 FIXED**(代次数字回绕需
+单进程超过 `2^53` 次 park,不构成实际缺陷),F7 的有界立场与「带括号返回类型不门控」继续可接受。
+剩下一条:**mention 分类只读了名字的右侧**。
+
+- **F7-b —— 反向 import alias 被误判成正常 `imported`。** 旧判据先看名字后面有没有 `as`,于是
+  `import { buildConsumer as createDeepLinkConsumer } from "./other"` 的分类结果是
+  `[imported, applied]` —— 与真实 layout.tsx **逐字节相同**:任意 `buildConsumer` 都能穿上受信
+  工厂的名字,而 `withoutImports` 抹白了那句 import,`deepLinkWiringIn()` 依旧把那次调用读成诚实
+  接线(一次调用、一个绑定、订阅并 drain)。这**不属于 §5.4 明示的「不点名工厂」残余** —— 源码
+  明确点名了工厂,只是 `as` 站在名字左边。默认导入 / namespace / import-equals 属同一类:名字是
+  本文件挑的,不是模块导出的。
+
+  现在的分类(仍然纯词法,不引入 AST、模块解析器):import 语句内**只有「未改名的 named
+  specifier」**才是 `imported`;`as` 落在名字**左右任一侧**(`X as 工厂`、`* as 工厂`、`工厂 as X`)、
+  **默认导入**、**namespace**、**import-equals** 一律 `aliased`。判定读的是**该 import 语句自身的
+  文本**(`importStatementsIn()` 保留语句跨度,`withoutImports()` 仍负责抹白,两者共用同一条语句
+  正则、各自新建 regex,不共享 `lastIndex`)。
+
+  变异实测(每种单独种进真实 `packages/app/src/pages/layout.tsx` 的那句 import,跑
+  `bun test src/shared/route-authority-ratchet.test.ts -t "spelled three times"`,跑完还原):反向
+  alias、默认导入、namespace、import-equals **四种全部变红**(`layout.tsx` 变成
+  `[aliased, applied]`);其中反向 alias 那棵被污染的树用 R6 的旧判据重放则**完全绿**——
+  这条假绿是真的,现在被封住了。单测同时钉住反向:`import { createDeepLinkConsumer, deepLinkEvent }`
+  仍分类为 `imported`,诚实树不会自伤。
