@@ -18,6 +18,7 @@ const FailureKind = Schema.Literals([
   "provider_error",
   "empty_result",
   "invalid_response",
+  "sovereignty_denied",
 ])
 
 const FAILURE_LABEL: Record<Schema.Schema.Type<typeof FailureKind>, string> = {
@@ -32,7 +33,44 @@ const FAILURE_LABEL: Record<Schema.Schema.Type<typeof FailureKind>, string> = {
   provider_error: "the provider reported an error",
   empty_result: "no usable result",
   invalid_response: "invalid response",
+  sovereignty_denied: "denied by alpha sovereignty",
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADR-009 B1/B2 主权判决送进引擎进程的通道 —— **闸落在传输层**(#223 R4 Blocker 1)。
+//
+// R3 把闸放在每一份 `websearch` 工具叶子的 `execute` 首行,并用一张源码普查网(全仓「注册为
+// websearch 的文件集合」+「引用 Exa/Parallel 端点的文件集合」)兜底。R4 给出可执行反例:
+//
+//     const id = ["web", "search"].join("")
+//     Tool.define(id, /* 调用既有 McpWebSearch.call */)
+//
+// 计算出来的注册名对普查网不可见,而它**复用已白名单的本模块传输**,所以也不引入新 URL。
+// 于是新叶子既不读主权信号、也不被任何一张网看见 —— 逐叶子加闸 + 源码盘点不是类级规则。
+//
+// 类级规则只能落在**共同的执行边界**上。本地 keyless web search 要出网,只有两条出口:
+//   ① 本模块的 `call()` —— legacy 引擎(`packages/opencode/src/tool/websearch.ts`)唯一的传输;
+//   ② `packages/core/src/tool/websearch.ts` 的 `callMcp()` —— V2 Core 那份副本的传输。
+// 两条都已按 ADR-035 收编为 alpha 全所有权,两条现在都在**第一句**读同一个信号。任何复用其中
+// 之一的新叶子(不论注册名怎么算出来)在执行时撞闸,不需要被任何普查网看见。
+//
+// 穷尽性的诚实边界:这两条覆盖的是「复用现有传输」这一类。一个自带 HTTP 出口的**全新**副本
+// (upstream sync 带进来的新工具是现实里唯一见过的形态)仍要靠 `websearch-copies.test.ts` 的
+// 普查网发现 —— 那张网因此保留,但已从主判据降为纵深。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 主权判决通道。名字在 core / opencode / ui-mac / ext 四个包各写一份(无共用依赖边)。 */
+export const LOCAL_WEBSEARCH_DENY_ENV = "ALPHA_LOCAL_WEBSEARCH_DENY"
+
+/** fail-closed:除「缺省 / 空串 / `"0"`」外的任何取值都判为 deny。 */
+export function localWebSearchDenied(env: Record<string, string | undefined> = process.env) {
+  const value = env[LOCAL_WEBSEARCH_DENY_ENV]
+  return value !== undefined && value !== "" && value !== "0"
+}
+
+/** 模型可见的拒绝理由。明说「别重试」,否则模型会把它当成瞬时故障反复调用。 */
+export const LOCAL_WEBSEARCH_DENIED_MESSAGE =
+  "Web search is unavailable: the local keyless websearch tool is denied by alpha sovereignty (ADR-009 B1/B2 — the platform pays for search, or the web search kill switch is set). This is not a transient failure; do not retry. Use cloud_web_search if it is present, otherwise answer without web search and say so."
 
 /**
  * The single discernible web search failure. `message` is what the model sees, so it always names
@@ -47,6 +85,9 @@ export class WebSearchFailure extends Schema.TaggedErrorClass<WebSearchFailure>(
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message() {
+    // 主权拒绝不是一次「搜索失败」,它是能力被关掉。模型必须看到那句「别重试」的原文,
+    // 而不是 "Web search failed: …" 的通用外壳(否则模型会当成瞬时故障反复调用)。
+    if (this.kind === "sovereignty_denied") return LOCAL_WEBSEARCH_DENIED_MESSAGE
     // #223 R2(Major 5):`code` 以前只在**有 HTTP status 时**才拼进 message,而工具边界只把
     // `message` 交给模型(`websearch.ts` 的 `ToolFailure({ message: failure.message })`)——
     // 于是 200 结构化错误(`provider_error`)的 `error.code` 只留在字段上,模型面永远看不到,
@@ -269,6 +310,14 @@ export const call = <F extends Schema.Struct.Fields>(
   headers?: Record<string, string>,
 ) =>
   Effect.gen(function* () {
+    // #223 R4 Blocker 1:主权闸的**类级**落点。这是本引擎里 keyless web search 唯一的出网出口,
+    // 所以任何叶子 —— 包括注册名是算出来的、普查网看不见的那一份 —— 只要复用它就在这里被拒,
+    // 且拒绝发生在构造请求之前(零出网)。工具叶子首行那道闸保留为纵深,不是唯一防线。
+    if (localWebSearchDenied())
+      return yield* new WebSearchFailure({
+        kind: "sovereignty_denied",
+        detail: `${tool} is denied by ${LOCAL_WEBSEARCH_DENY_ENV}`,
+      })
     const request = yield* HttpClientRequest.post(url).pipe(
       HttpClientRequest.accept("application/json, text/event-stream"),
       HttpClientRequest.setHeaders(headers ?? {}),

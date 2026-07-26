@@ -18,7 +18,7 @@ import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { buildAlphaCapabilities, buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
-import { applyWebSearchDenies } from "./cloud-web-search"
+import { applyWebSearchDenies, CLOUD_MCP_ARM_ENV, CLOUD_MCP_SERVER_NAME } from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
 import { injectMcpDefaultDeny } from "./mcp-default-deny"
@@ -285,23 +285,31 @@ export function injectAlphaConfig(
     //      because we attach our own capability token and must skip OAuth auto-detection.
     const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
     if (mcpUrl && platformPays) {
-      // #223 R3 fail-closed:kill-switch 下 `cloud_web_search` 的**最终**闸住在 @alpha-code/ext 的
+      // #223 R4 fail-closed:kill-switch 下 `cloud_web_search` 的**最终**闸住在 @alpha-code/ext 的
       // tool.execute.before 钩子里(远端 MCP 无 per-tool 注册期过滤,permission deny 可被后置 allow
-      // 顶掉)。ext 没被装载时那个闸根本不存在,而引擎对插件装载失败是 log-and-continue
-      // (`opencode/src/plugin/index.ts`)—— 此时宁可整个云 server 不注册(连兄弟工具一起损失),
-      // 也不放一个活的 web_search 出去。这是诚实的降级,不是 AC4 的「误杀」:AC4 管的是闸生效时
-      // 的正常态。
-      if (killSwitch && !extPluginPath) {
+      // 顶掉)。R3 用「extPluginPath 路径是否存在」判 ext 在不在场 —— R4 证明那不成立:
+      // `OPENCODE_PURE=true` 让引擎整个跳过外部插件,bundle import 失败与插件初始化失败也都是
+      // log-and-continue,三种情形下路径都还在而钩子不存在。
+      //
+      // 改成握手:注入面只写一个 **disabled** 的云 server 并置位 arm 通道;把它打开的是 ext 自己的
+      // `config` 钩子(armCloudMcp)。钩子能跑 ⇒ 插件已返回 hooks ⇒ 同一对象上的闸确实注册了。
+      // ext 缺席则云 server 永远停在 disabled(连兄弟工具一起损失)—— 诚实降级,不是 AC4 的
+      // 「误杀」:AC4 管的是闸生效时的正常态。
+      const cloud = materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN"))
+      if (killSwitch) {
+        config.mcp = { ...(config.mcp ?? {}), [CLOUD_MCP_SERVER_NAME]: { ...cloud, enabled: false } }
+        process.env[CLOUD_MCP_ARM_ENV] = CLOUD_MCP_SERVER_NAME
         console.error(
-          "[alpha-code#223] web search kill switch is set but @alpha-code/ext is not loaded — refusing to register the cloud MCP server (its cloud_web_search would have no unbypassable gate); sibling cloud tools are unavailable this fork",
+          `[alpha-code#223] web search kill switch is set — the cloud MCP server is registered DISARMED (enabled:false); only a confirmed @alpha-code/ext load arms it via ${CLOUD_MCP_ARM_ENV}${extPluginPath ? "" : ", and no ext bundle path was resolved this fork so it will stay dark"}`,
         )
       } else {
-        config.mcp = {
-          ...(config.mcp ?? {}),
-          cloud: materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN")),
-        }
-        injectedMcpNames.add("cloud")
+        // 代付但无 kill-switch:云工具是权威通道,不需要闸,也就不该依赖 ext 是否装载。
+        delete process.env[CLOUD_MCP_ARM_ENV]
+        config.mcp = { ...(config.mcp ?? {}), [CLOUD_MCP_SERVER_NAME]: cloud }
       }
+      injectedMcpNames.add(CLOUD_MCP_SERVER_NAME)
+    } else {
+      delete process.env[CLOUD_MCP_ARM_ENV]
     }
 
     // Remote MCP config only toggles whole servers, but the engine's global permission layer filters

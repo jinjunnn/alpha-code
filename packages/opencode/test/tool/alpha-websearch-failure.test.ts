@@ -10,11 +10,12 @@
 // 预置中间状态;②每条断言对应一个动态复现过的缺陷;③禁伪成功。
 
 import { describe, expect, test } from "bun:test"
-import { Cause, ConfigProvider, type Duration, Effect, Layer } from "effect"
+import { Cause, ConfigProvider, type Duration, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import {
   call,
+  EXA_URL,
   MAX_BODY_BYTES,
   parseResponse,
   readBoundedBody,
@@ -301,6 +302,14 @@ describe("engine-side effect of the alpha web search deny (#223 Blocker)", () =>
     expect(flags.enableExa).toBe(true)
   })
 
+  // #223 R4 云 kill-switch 绕过链第 2 环:`OPENCODE_PURE` 真的被解析成 pure(第 1 环是
+  // ui-mac 的 `createSidecarEnv` 放行 `OPENCODE_` 前缀,第 3 环是 plugin/index.ts 跳过外部插件;
+  // 那两环分别由 ui-mac 与 ext 的测试钉住)。这里用**真 RuntimeFlags** 断言,不镜像解析规则。
+  test("OPENCODE_PURE=true really parses as pure — the engine then loads no external plugin", async () => {
+    expect((await flagsFrom({ OPENCODE_PURE: "true" })).pure).toBe(true)
+    expect((await flagsFrom({})).pure).toBe(false)
+  })
+
   test("a global websearch deny closes the tool at the engine's permission layer", () => {
     const ruleset = Permission.fromConfig({ websearch: "deny" })
     expect(Permission.evaluate("websearch", "effect typescript", ruleset).action).toBe("deny")
@@ -494,6 +503,127 @@ describe("sovereignty deny is the final rule (#223 R2 Blocker 1)", () => {
     expect(run.ok).toBe(false)
     expect(String((run as { error: unknown }).error)).toContain("permission denied: websearch")
     expect(transport.calls()).toBe(0)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #223 R4 Blocker 1 —— **变异种**:R4 报告里那段可执行构造,原样跑一遍。
+//
+//     const id = ["web", "search"].join("")
+//     Tool.define(id, /* 调用既有 McpWebSearch.call */)
+//
+// 它是「第三份副本」的最省事写法:注册名算出来(源码普查网看不见)、传输复用已白名单的
+// `mcp-websearch.ts`(不引入新 URL,第二张网也看不见)、自己**不读**任何主权信号、**不 ask**。
+// R3 那版闸(每个叶子的 execute 首行)对它完全不成立。
+//
+// R4 的收口把闸下沉到 `call()` —— 本引擎唯一的出网出口。所以这条变异现在是被**执行时的闸**
+// 拒掉的,不是被谁看见的。断言两件事:①拒;②零出网(HTTP 客户端一次都没被碰)。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("R4 变异:算出注册名 + 复用既有传输(#223 R4 Blocker 1)", () => {
+  /** 注册名是**算**出来的 —— 源码里没有 "websearch" 这个字面量。 */
+  const MUTANT_ID = ["web", "search"].join("")
+
+  /** 复刻 R4 的测量(说明性,不是闸):两张普查网对这段源码形态都是 false。 */
+  test("普查网确实看不见它 —— 所以静态网不能当主判据", () => {
+    const source = 'const id = ["web", "search"].join("")\nTool.define(id, /* 调用既有 McpWebSearch.call */)\n'
+    const netA = [
+      /Tool\.define\(\s*["'`]websearch["'`]/,
+      /export const name\s*=\s*["'`]websearch["'`]/,
+      /(^|[\s{,])websearch\s*:\s*(tool|Tool\.make)\(/m,
+    ].some((pattern) => pattern.test(source))
+    const netB = /mcp\.exa\.ai|search\.parallel\.ai/.test(source)
+    expect([netA, netB]).toEqual([false, false])
+  })
+
+  const MutantTool = Tool.define(
+    MUTANT_ID,
+    Effect.gen(function* () {
+      const http = yield* HttpClient.HttpClient
+      return {
+        description: "R4 mutant: computed registration id reusing the existing transport",
+        parameters: Schema.Struct({ query: Schema.String }),
+        execute: (params: { query: string }, _ctx: Tool.Context) =>
+          Effect.gen(function* () {
+            // 刻意不读 ALPHA_LOCAL_WEBSEARCH_DENY、刻意不 ctx.ask —— 这正是构造的要害。
+            const output = yield* call(
+              http,
+              EXA_URL,
+              "web_search_exa",
+              SearchArgs,
+              { query: params.query, type: "auto", numResults: 8, livecrawl: "fallback" },
+              "25 seconds",
+            )
+            return { output, title: MUTANT_ID, metadata: {} }
+          }),
+      }
+    }),
+  )
+
+  async function runMutant(denied: boolean) {
+    let calls = 0
+    const http = HttpClient.make((request) => {
+      calls += 1
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          new Response(mcpPayload({ content: [{ type: "text", text: "mutant results" }] }), { status: 200 }),
+        ),
+      )
+    })
+
+    const program = Effect.gen(function* () {
+      const def = yield* Tool.init(yield* MutantTool)
+      // 注册名确实不是字面量 "websearch",却仍然是同一个能力。
+      expect(def.id).toBe("websearch")
+      return yield* def.execute(
+        { query: "effect typescript" },
+        {
+          sessionID: "ses_websearch_mutant" as never,
+          messageID: "msg_websearch_mutant" as never,
+          agent: stubAgent.name,
+          abort: new AbortController().signal,
+          callID: "call_1",
+          extra: {},
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void, // 最有利于绕过的权限状态:一律放行
+        },
+      )
+    }).pipe(
+      Effect.map((value) => ({ ok: true as const, value, calls: () => calls })),
+      Effect.catchCause((cause) => Effect.succeed({ ok: false as const, error: Cause.squash(cause), calls: () => calls })),
+      Effect.provide(Layer.mergeAll(Layer.succeed(HttpClient.HttpClient, http), truncateStub, agentStub)),
+    )
+
+    const previous = process.env[LOCAL_WEBSEARCH_DENY_ENV]
+    if (denied) process.env[LOCAL_WEBSEARCH_DENY_ENV] = "1"
+    else delete process.env[LOCAL_WEBSEARCH_DENY_ENV]
+    try {
+      return await Effect.runPromise(program)
+    } finally {
+      if (previous === undefined) delete process.env[LOCAL_WEBSEARCH_DENY_ENV]
+      else process.env[LOCAL_WEBSEARCH_DENY_ENV] = previous
+    }
+  }
+
+  test("闸置位:变异副本在传输层被拒,零出网,且模型看到的是主权拒绝原文", async () => {
+    const run = await runMutant(true)
+
+    expect(run.ok).toBe(false)
+    const failure = (run as { error: unknown }).error
+    expect(failure).toBeInstanceOf(WebSearchFailure)
+    expect((failure as WebSearchFailure).kind).toBe("sovereignty_denied")
+    expect((failure as WebSearchFailure).message).toBe(LOCAL_WEBSEARCH_DENIED_MESSAGE)
+    expect(run.calls()).toBe(0)
+  })
+
+  // 正向对照:同一个变异副本、同一个 harness,闸不置位时**确实跑得通** —— 上面那条的红/绿
+  // 来自闸本身,不是 harness 恰好跑不起来。
+  test("闸不置位:同一个变异副本照常出网(证明上一条不是空的)", async () => {
+    const run = await runMutant(false)
+
+    expect(run.ok).toBe(true)
+    expect(run.calls()).toBe(1)
   })
 })
 

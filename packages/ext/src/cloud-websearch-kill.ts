@@ -70,3 +70,46 @@ export function assertWebSearchToolAllowed(tool: string, env: Record<string, str
   if (!cloudWebSearchDenied(env)) return
   throw new WebSearchKillSwitchError(tool)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ext 装载握手(#223 R4)。
+//
+// R3 的 fail-closed 判据是 main 侧「ext bundle 路径存不存在」。R4 给出三条路径仍在、钩子却不
+// 存在的真实情形,每一条都让 kill-switch 下的 `cloud_web_search` 重新活过来:
+//
+//   ① `OPENCODE_PURE=true` —— 经 `ui-mac/src/main/sidecar-env.ts` 的 `OPENCODE_` 前缀规则进
+//      sidecar,`opencode/src/effect/runtime-flags.ts` 解释为 pure,
+//      `opencode/src/plugin/index.ts` 的 `flags.pure ? [] : (cfg.plugin_origins ?? [])`
+//      于是**整个跳过**外部插件;
+//   ② bundle import 失败 —— `PluginLoader.loadExternal` 的 report.error 只 publish 一条错误;
+//   ③ `AlphaExt(input)` 初始化抛错 —— `Effect.tryPromise(...).pipe(Effect.catch(() => Effect.void))`,
+//      log-and-continue。
+//
+// 于是判据换成回执:注入面写一个 `enabled:false` 的云 server,只有本函数能把它打开。而本函数
+// 只在 `config` 钩子里被调用 —— 那个钩子跑得起来,等价于插件函数已经返回了 hooks 对象,也就
+// 等价于同一对象上的 `tool.execute.before`(闸)确实注册了。三种缺席情形下本函数一次都不会被
+// 调用,云 server 就停在 disabled(`opencode/src/mcp/index.ts`:`enabled === false` ⇒ 不建客户端、
+// 不注册任何工具),连兄弟云工具一起损失 —— 诚实的 fail-closed 降级。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 注入面告诉 ext「这个 MCP server 等你确认装载后才能开」的通道(ui-mac `cloud-web-search.ts` 同名同义)。 */
+export const CLOUD_MCP_ARM_ENV = "ALPHA_CLOUD_MCP_ARM"
+
+type ArmableConfig = { mcp?: Record<string, { enabled?: boolean } | undefined> }
+
+/**
+ * 把注入面留下的 disarmed 云 MCP server 打开。返回被打开的 server 名(没有可开的则 undefined)。
+ *
+ * 刻意只开**注入面点名**的那一个、且只在它当前确实是 `enabled:false` 时开:账本 disabled 覆盖
+ * (`ext-disabled-injection.ts`)与 XDG 默认拒绝(`mcp-default-deny.ts`)也写 `enabled:false`,
+ * 那些是别的治理判决,不归本握手管。
+ */
+export function armCloudMcp(cfg: unknown, env: Record<string, string | undefined> = process.env): string | undefined {
+  const name = env[CLOUD_MCP_ARM_ENV]
+  if (!name) return undefined
+  const server = (cfg as ArmableConfig | null | undefined)?.mcp?.[name]
+  if (!server || typeof server !== "object") return undefined
+  if (server.enabled !== false) return undefined
+  server.enabled = true
+  return name
+}

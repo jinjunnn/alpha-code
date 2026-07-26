@@ -1,24 +1,36 @@
-// #223 R3 —— 「第三份 websearch 副本」防线(类闸,不是实例修补)。
+// #223 R4 —— 本地 web search 主权闸的**类级**落点是传输层;本文件是它的静态半场 + 纵深普查。
 //
-// 本仓已经两次踩同一个病灶:引擎 v1/v2 断层让同一能力存在**多份并行注册**,alpha 的收口只覆盖
-// 了其中一份。R2 收了 legacy `packages/opencode/src/tool/websearch.ts`;R3 发现打包 sidecar 同时
-// 挂载 V2 Location 服务,`packages/core/src/tool/websearch.ts` 是**第二份活的**同名注册,不读主权
-// 信号、直接打 Exa/Parallel。逐实例修下去只会等第三份。
+// 演进史(写在这里免得下一轮又走回头路):
+//   R2 收了 legacy `packages/opencode/src/tool/websearch.ts` 的 `execute` 首行。
+//   R3 发现打包 sidecar 同时挂载 V2 Location 服务,`packages/core/src/tool/websearch.ts` 是第二份
+//      活的同名注册,于是给它也加了首行闸,并加了下面这两张源码普查网当兜底。
+//   R4 判普查网**可绕**,给出可执行构造:
+//          const id = ["web", "search"].join("")
+//          Tool.define(id, /* 调用既有 McpWebSearch.call */)
+//      注册名是算出来的(Net A 看不见),传输复用已白名单的 `mcp-websearch.ts`(Net B 也看不见
+//      新 URL),新叶子自然不读主权信号 —— 「两个已知实例加闸 + 源码盘点」不是类级规则。
 //
-// 于是这里做普查而不是断言某个文件:
-//   Net A —— 全仓「注册了一个叫 websearch 的工具」的源文件。集合本身被钉住:多一份、少一份都红。
-//            每一份都必须读同一个主权信号 `ALPHA_LOCAL_WEBSEARCH_DENY`,且闸在任何 permission
-//            交互/出网调用**之前**。
-//   Net B —— 全仓直接引用 Exa/Parallel 端点的源文件。它抓的是「换个名字接着打同一个后端」这一类
-//            绕法:命中项要么本身在 Net A(带闸),要么是被钉住的纯传输辅助模块。
+// R4 的收口:闸下沉到**共同的执行边界**。本地 keyless web search 要出网只有两条出口,
+// 两条都已按 ADR-035 收编为 alpha 全所有权,两条现在都在第一句读同一个信号:
 //
-// 两张网都只认源文件(排除 test/dist/node_modules)。任何一张网变化 = 有人加了新的 web search
-// 执行面,必须停下来分类,而不是让它静默上线。
+//   packages/opencode/src/tool/mcp-websearch.ts  → `call()`      (legacy 引擎唯一的传输)
+//   packages/core/src/tool/websearch.ts          → `callMcp()`   (V2 Core 那份副本的传输)
+//
+// 于是「换个注册名、复用传输」在**执行时**被拒,不需要被任何普查网看见。运行时证据(把 R4 那
+// 段构造当变异种真跑一遍)在两个引擎包的 alpha 自有测试里:
+//   packages/opencode/test/tool/alpha-websearch-failure.test.ts  · "R4 变异" 一组
+//   packages/core/test/alpha-websearch-sovereignty.test.ts       · "R4 变异" 一组
+//
+// 本文件因此分成两部分:
+//   ① 传输闸的位置锁(主判据的静态半场):两条出口的闸都必须排在构造请求之前。
+//   ② 普查网(**纵深,不再是主判据**):抓「自带全新 HTTP 出口的副本」这一类 —— 上游 sync 带进
+//      来的新工具是现实里唯一见过的形态,它会带字面量端点,两张网看得见。任何一张网变化 = 有人
+//      加了新的 web search 执行面,停下来分类,而不是让它静默上线。
 
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, resolve, sep } from "node:path"
 import { describe, expect, test } from "bun:test"
-import { CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-search"
+import { CLOUD_MCP_ARM_ENV, CLOUD_WEBSEARCH_DENY_ENV, LOCAL_WEBSEARCH_DENY_ENV } from "./cloud-web-search"
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..", "..")
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", ".git", "gen", "generated"])
@@ -52,6 +64,36 @@ function sourceFiles(): string[] {
 }
 
 const FILES = sourceFiles().map((path) => ({ path: relative(REPO_ROOT, path).split(sep).join("/"), body: readFileSync(path, "utf8") }))
+const read = (path: string) => readFileSync(join(REPO_ROOT, path), "utf8")
+
+/**
+ * 两条出网出口。`egress` = 该文件里发起 HTTP 请求的那个导出函数;闸必须排在它体内、
+ * 且在第一次构造请求之前。
+ */
+const GATED_TRANSPORTS = [
+  { path: "packages/opencode/src/tool/mcp-websearch.ts", egress: "export const call = " },
+  { path: "packages/core/src/tool/websearch.ts", egress: "export const callMcp = " },
+] as const
+
+describe("本地 web search 主权闸落在共同执行边界(#223 R4 主判据 · 静态半场)", () => {
+  for (const transport of GATED_TRANSPORTS)
+    test(`${transport.path}:闸是出网出口的第一句`, () => {
+      const body = read(transport.path)
+      const egress = body.indexOf(transport.egress)
+      expect(egress, `${transport.path} 找不到出网出口 ${transport.egress}`).toBeGreaterThanOrEqual(0)
+      const gate = body.indexOf("if (localWebSearchDenied())", egress)
+      const request = body.indexOf("HttpClientRequest.post(", egress)
+      expect(gate, `${transport.path} 的出网出口里没有主权闸`).toBeGreaterThan(egress)
+      expect(request, `${transport.path} 的出网出口里找不到请求构造`).toBeGreaterThan(egress)
+      expect(gate, `${transport.path}: 闸必须早于构造请求(零出网)`).toBeLessThan(request)
+    })
+
+  test("出网出口是导出的 —— 「复用传输」才是新副本的正确写法(复用即带闸)", () => {
+    for (const transport of GATED_TRANSPORTS) expect(read(transport.path)).toContain(transport.egress)
+  })
+})
+
+// ── 以下是纵深,不是主判据 ────────────────────────────────────────────────────
 
 /** 「注册了一个叫 websearch 的工具」的三种现行写法(legacy `Tool.define` / V2 模块名约定 / 插件工具表)。 */
 const REGISTRATION = [
@@ -64,11 +106,9 @@ const FIRST_EFFECT = [/permission\.assert\(/, /ctx\.ask\(/, /callMcp\(/, /callPr
 
 const registrations = FILES.filter((file) => REGISTRATION.some((pattern) => pattern.test(file.body)))
 const providerCallers = FILES.filter((file) => /mcp\.exa\.ai|search\.parallel\.ai/.test(file.body))
+const transportPaths = GATED_TRANSPORTS.map((transport) => transport.path as string)
 
-/** 纯传输辅助:自己不注册工具,只被带闸的注册方调用,因此允许不带闸。 */
-const TRANSPORT_ONLY = ["packages/opencode/src/tool/mcp-websearch.ts"]
-
-describe("websearch 执行副本普查(#223 R3 类闸)", () => {
+describe("websearch 执行副本普查(#223 R3 · R4 起降为纵深)", () => {
   test("全仓注册为 websearch 的工具恰好是这两份", () => {
     expect(registrations.map((file) => file.path).sort()).toEqual([
       "packages/core/src/tool/websearch.ts",
@@ -76,15 +116,14 @@ describe("websearch 执行副本普查(#223 R3 类闸)", () => {
     ])
   })
 
-  test("每一份注册都读同一个主权信号,且闸排在任何 permission 交互/出网调用之前", () => {
+  test("每一份注册的叶子闸(纵深)仍排在任何 permission 交互/出网调用之前", () => {
     expect(registrations.length).toBeGreaterThan(0)
     for (const file of registrations) {
-      expect(file.body).toContain(`export const LOCAL_WEBSEARCH_DENY_ENV = "${LOCAL_WEBSEARCH_DENY_ENV}"`)
       // 只在 execute 体内比较位置:文件顶部的辅助函数**定义**不是「做事」。
       const body = file.body.indexOf("execute:")
       expect(body, `${file.path} 没有可识别的 execute 入口`).toBeGreaterThanOrEqual(0)
       const gate = file.body.indexOf("if (localWebSearchDenied())", body)
-      expect(gate, `${file.path} 的 execute 里缺少主权最终闸`).toBeGreaterThanOrEqual(0)
+      expect(gate, `${file.path} 的 execute 里缺少主权闸(纵深那一道)`).toBeGreaterThanOrEqual(0)
       for (const pattern of FIRST_EFFECT) {
         const match = pattern.exec(file.body.slice(body))
         if (!match) continue
@@ -93,39 +132,56 @@ describe("websearch 执行副本普查(#223 R3 类闸)", () => {
     }
   })
 
-  test("直接引用 Exa/Parallel 端点的文件要么带闸,要么是被钉住的纯传输模块", () => {
-    const gated = new Set(registrations.map((file) => file.path))
-    expect(providerCallers.map((file) => file.path).sort()).toEqual(
-      ["packages/core/src/tool/websearch.ts", ...TRANSPORT_ONLY].sort(),
-    )
-    for (const file of providerCallers) {
-      if (TRANSPORT_ONLY.includes(file.path)) continue
-      expect(gated.has(file.path), `${file.path} 直接打 Exa/Parallel 却不在带闸的注册集合里`).toBe(true)
-    }
+  test("直接引用 Exa/Parallel 端点的文件恰好是两条带闸的传输(新增即分类)", () => {
+    expect(providerCallers.map((file) => file.path).sort()).toEqual([...transportPaths].sort())
   })
 
   test("主权信道名在四个包里逐字一致(没有共用依赖边,只能靠这条锁)", () => {
     expect(LOCAL_WEBSEARCH_DENY_ENV).toBe("ALPHA_LOCAL_WEBSEARCH_DENY")
     expect(CLOUD_WEBSEARCH_DENY_ENV).toBe("ALPHA_CLOUD_WEBSEARCH_DENY")
-    const read = (path: string) => readFileSync(join(REPO_ROOT, path), "utf8")
-    for (const path of ["packages/opencode/src/tool/websearch.ts", "packages/core/src/tool/websearch.ts"])
-      expect(read(path)).toContain(`export const LOCAL_WEBSEARCH_DENY_ENV = "${LOCAL_WEBSEARCH_DENY_ENV}"`)
+    expect(CLOUD_MCP_ARM_ENV).toBe("ALPHA_CLOUD_MCP_ARM")
+    // 本地信号的**声明点**已下沉到两条传输(叶子只转出),这条锁跟着下沉。
+    for (const transport of GATED_TRANSPORTS)
+      expect(read(transport.path)).toContain(`export const LOCAL_WEBSEARCH_DENY_ENV = "${LOCAL_WEBSEARCH_DENY_ENV}"`)
+    // legacy 叶子不再自己声明字面量,而是从传输转出 —— 转出丢了就等于两处漂移。
+    expect(read("packages/opencode/src/tool/websearch.ts")).toContain(
+      "export const LOCAL_WEBSEARCH_DENY_ENV = McpWebSearch.LOCAL_WEBSEARCH_DENY_ENV",
+    )
     expect(read("packages/ext/src/cloud-websearch-kill.ts")).toContain(
       `export const CLOUD_WEBSEARCH_DENY_ENV = "${CLOUD_WEBSEARCH_DENY_ENV}"`,
+    )
+    expect(read("packages/ext/src/cloud-websearch-kill.ts")).toContain(
+      `export const CLOUD_MCP_ARM_ENV = "${CLOUD_MCP_ARM_ENV}"`,
     )
     // 两条判决都必须真的过得了 sidecar 白名单,否则闸在打包态恒不置位。
     const allowlist = read("packages/ui-mac/src/main/sidecar-env.ts")
     expect(allowlist).toContain(`"${LOCAL_WEBSEARCH_DENY_ENV}"`)
     expect(allowlist).toContain(`"${CLOUD_WEBSEARCH_DENY_ENV}"`)
+    // arm 通道**刻意不在**白名单里:它由 sidecar 内的 injectAlphaConfig 自己置位,
+    // 外部 shell 伪造同名变量必须进不来(否则 ext 缺席也能把云 server 打开)。
+    expect(allowlist).not.toContain(`"${CLOUD_MCP_ARM_ENV}"`)
   })
 
   test("云侧最终闸是 ext 钩子的第一句(排在契约校验与 ctx.ask 之前)", () => {
-    const plugin = readFileSync(join(REPO_ROOT, "packages/ext/src/plugin.ts"), "utf8")
+    const plugin = read("packages/ext/src/plugin.ts")
     const hook = plugin.indexOf('"tool.execute.before"')
     expect(hook).toBeGreaterThanOrEqual(0)
     const gate = plugin.indexOf("assertWebSearchToolAllowed(hookInput.tool)", hook)
     const contract = plugin.indexOf("validateCloudToolInput(", hook)
     expect(gate).toBeGreaterThan(hook)
     expect(gate).toBeLessThan(contract)
+  })
+
+  // #223 R4:ext 装载回执必须是 config 钩子的第一句 —— 它后面那些项目配置分支有 early return,
+  // 排在它们之后会让「项目 alpha.jsonc 读不了」顺带把云工具一起关掉。
+  test("ext 装载回执是 config 钩子的第一句", () => {
+    const plugin = read("packages/ext/src/plugin.ts")
+    const hook = plugin.indexOf("async config(cfg) {")
+    expect(hook).toBeGreaterThanOrEqual(0)
+    const arm = plugin.indexOf("armCloudMcp(cfg)", hook)
+    // 只找**语句**形态的 return(行首缩进后紧跟 return),否则注释里的字眼会误判位置。
+    const firstReturn = hook + plugin.slice(hook).search(/\n\s*return[\s;]/)
+    expect(arm).toBeGreaterThan(hook)
+    expect(arm).toBeLessThan(firstReturn)
   })
 })

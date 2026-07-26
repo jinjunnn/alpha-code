@@ -121,9 +121,13 @@ describe("web search sovereignty denies", () => {
   // 由工具自身的最终闸兜底,判决靠这个 env 变量过河。两个包各写一份字面量 —— 这里钉住不许漂移。
   test("the sovereignty env channel name matches the engine-side reader", () => {
     expect(LOCAL_WEBSEARCH_DENY_ENV).toBe("ALPHA_LOCAL_WEBSEARCH_DENY")
-    const engine = readFileSync(join(import.meta.dir, "../../../opencode/src/tool/websearch.ts"), "utf8")
-    expect(engine).toContain(`export const LOCAL_WEBSEARCH_DENY_ENV = "${LOCAL_WEBSEARCH_DENY_ENV}"`)
-    expect(engine).toContain("if (localWebSearchDenied())")
+    // #223 R4:声明点下沉到 `mcp-websearch.ts`(本引擎唯一的出网出口),叶子只转出。
+    const transport = readFileSync(join(import.meta.dir, "../../../opencode/src/tool/mcp-websearch.ts"), "utf8")
+    expect(transport).toContain(`export const LOCAL_WEBSEARCH_DENY_ENV = "${LOCAL_WEBSEARCH_DENY_ENV}"`)
+    expect(transport).toContain("if (localWebSearchDenied())")
+    const leaf = readFileSync(join(import.meta.dir, "../../../opencode/src/tool/websearch.ts"), "utf8")
+    expect(leaf).toContain("export const LOCAL_WEBSEARCH_DENY_ENV = McpWebSearch.LOCAL_WEBSEARCH_DENY_ENV")
+    expect(leaf).toContain("if (localWebSearchDenied())")
   })
 
   test("logged-out/BYOK leaves cloud tool registration and existing permissions unchanged", () => {

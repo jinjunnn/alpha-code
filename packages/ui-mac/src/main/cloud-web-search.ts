@@ -20,6 +20,30 @@ export const LOCAL_WEBSEARCH_DENY_ENV = "ALPHA_LOCAL_WEBSEARCH_DENY"
  */
 export const CLOUD_WEBSEARCH_DENY_ENV = "ALPHA_CLOUD_WEBSEARCH_DENY"
 
+/** 注入面给云 MCP server 起的名字(工具 id 由此拼成 `cloud_*`)。 */
+export const CLOUD_MCP_SERVER_NAME = "cloud"
+
+/**
+ * ext 装载**握手**通道(#223 R4)。
+ *
+ * R3 的 fail-closed 判据是「`extPluginPath` 这个路径存不存在」——R4 证明那什么也证明不了:
+ * `OPENCODE_PURE=true`(经 `sidecar-env.ts` 的 `OPENCODE_` 前缀规则进 sidecar,
+ * `opencode/src/effect/runtime-flags.ts` 解释为 pure)会让 `opencode/src/plugin/index.ts` **整个
+ * 跳过外部插件**;bundle import 失败与 `AlphaExt` 初始化失败同样是 log-and-continue。三种情形下
+ * 路径都还在,钩子却根本不存在,云 `cloud_web_search` 于是带着一个可被后置 allow / approved
+ * 顶掉的 permission deny 活着。
+ *
+ * 所以 kill-switch 下的注册改成**两段式**:注入面只写一个 `enabled:false` 的云 server 并把本变量
+ * 置成 server 名;真正把它打开的是 `@alpha-code/ext` 自己的 `config` 钩子
+ * (`packages/ext/src/cloud-websearch-kill.ts` 的 `armCloudMcp`)。那个钩子能跑 = 插件函数已返回
+ * hooks 对象 = 同一个对象上的 `tool.execute.before` 闸确实注册了。ext 缺席则云 server 永远停在
+ * disabled,一个活的 web_search 都出不去 —— 这才是「确认装载」,不是「路径存在」。
+ *
+ * 本变量由 sidecar 内的 `injectAlphaConfig` 自己置位/删除;它不在 `sidecar-env.ts` 的白名单里,
+ * 因此外部 shell 伪造一个同名变量也进不来。
+ */
+export const CLOUD_MCP_ARM_ENV = "ALPHA_CLOUD_MCP_ARM"
+
 type AgentConfig = { permission?: Record<string, unknown> }
 
 type EngineConfig = {

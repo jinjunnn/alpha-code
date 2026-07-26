@@ -12,7 +12,7 @@ import { injectFactorySkillPaths } from "./factory-paths"
 import { injectSkillGenerationPaths } from "./gen-skill-paths"
 import { rebrandSystem } from "./prompt-rebrand"
 import { validateCloudToolInput, validateCloudToolOutput } from "./cloud-contract-hook"
-import { assertWebSearchToolAllowed } from "./cloud-websearch-kill"
+import { armCloudMcp, assertWebSearchToolAllowed } from "./cloud-websearch-kill"
 
 /**
  * alpha-code backend isolation extension.
@@ -65,6 +65,15 @@ export const AlphaExt: Plugin = async (input) => {
     // `.opencode`(零桥)。变异可见性由真机 spike 验(hook "Notify" 语义,T0 gate)。dispose 重建重
     // 触发 = 免重启。信任门(项目自带 mcp/plugin = 加载可执行物)= T1 后续,当前 spike 只验通道。
     async config(cfg) {
+      // #223 R4:ext 装载回执,必须是本钩子的**第一句** —— 下面的项目配置分支有多条 early
+      // return(身份漂移 / 读失败),排在它们之后就会让「项目配置读不了」顺带把云工具一起关掉。
+      // 本句能执行 = 插件已返回 hooks = 同一对象上的 `tool.execute.before` 闸已注册,
+      // 于是注入面留下的 disarmed 云 MCP server 现在可以安全打开(理由见 cloud-websearch-kill.ts)。
+      const armed = armCloudMcp(cfg)
+      if (armed)
+        console.log(
+          `[@alpha-code/ext] cloud MCP server "${armed}" armed — the web search kill-switch gate is registered in this engine process`,
+        )
       try {
         const project = projectRootFor(input.directory)
         if (project) {

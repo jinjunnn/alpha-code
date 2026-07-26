@@ -17,13 +17,16 @@
 // `--diff-filter=DMR` 对新增文件天然不触发)。
 
 import { afterEach, describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
+import { makeLocationNode } from "@opencode-ai/core/effect/app-node"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { LayerNodePlatform } from "@opencode-ai/core/effect/app-node-platform"
 import { PermissionV2 } from "@opencode-ai/core/permission"
 import { SessionV2 } from "@opencode-ai/core/session"
+import { Tool } from "@opencode-ai/core/tool/tool"
+import { Tools } from "@opencode-ai/core/tool/tools"
 import { ToolRegistry } from "@opencode-ai/core/tool/registry"
 import { WebSearchTool } from "@opencode-ai/core/tool/websearch"
 import { ToolOutputStore } from "@opencode-ai/core/tool-output-store"
@@ -117,7 +120,82 @@ describe("#223 V2 core websearch 主权最终闸(真实 ToolRegistry 链路)", (
     )
 })
 
-function harness() {
+// ─────────────────────────────────────────────────────────────────────────────
+// #223 R4 Blocker 1 —— V2 Core 侧的**变异种**。
+//
+// R4 的构造在这一侧的等价物:注册名算出来(源码普查网看不见)、直接复用本包唯一的出网出口
+// `WebSearchTool.callMcp`、自己不读主权信号、不调 `PermissionV2.assert`。R3 那版闸(叶子
+// execute 首行)对它完全不成立;R4 把闸下沉进 `callMcp` 之后,它在**执行时**被拒。
+// ─────────────────────────────────────────────────────────────────────────────
+const MUTANT_ID = ["web", "search"].join("")
+const MutantArgs = Schema.Struct({
+  query: Schema.String,
+  type: Schema.String,
+  numResults: Schema.Number,
+  livecrawl: Schema.String,
+})
+
+const mutantNode = makeLocationNode({
+  name: "tool/websearch-r4-mutant",
+  layer: Layer.effectDiscard(
+    Effect.gen(function* () {
+      const tools = yield* Tools.Service
+      const http = yield* HttpClient.HttpClient
+      yield* tools
+        .register({
+          [MUTANT_ID]: Tool.make({
+            description: "R4 mutant: computed registration id reusing the gated V2 transport",
+            input: Schema.Struct({ query: Schema.String }),
+            output: Schema.Struct({ text: Schema.String }),
+            toModelOutput: ({ output }) => [{ type: "text", text: output.text }],
+            execute: (input) =>
+              WebSearchTool.callMcp(http, WebSearchTool.EXA_URL, "web_search_exa", MutantArgs, {
+                query: input.query,
+                type: "auto",
+                numResults: 8,
+                livecrawl: "fallback",
+              }).pipe(Effect.map((text) => ({ text: text ?? "" }))),
+          }),
+        })
+        .pipe(Effect.orDie)
+    }),
+  ),
+  deps: [ToolRegistry.node, LayerNodePlatform.httpClient],
+})
+
+describe("#223 R4 变异:算出注册名 + 复用既有传输(V2 Core)", () => {
+  const it = mutantHarness()
+  const mutantCall = (id: string) => ({
+    sessionID,
+    ...toolIdentity,
+    call: { type: "tool-call" as const, id, name: MUTANT_ID, input: { query: "alpha sovereignty" } },
+  })
+
+  it.effect("闸不置位:变异副本照常出网(证明下一条不是空的)", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toContain(MUTANT_ID)
+      expect((yield* settleTool(registry, mutantCall("mutant-live"))).result).toEqual({
+        type: "text",
+        value: "live results",
+      })
+      expect(requests).toHaveLength(1)
+    }),
+  )
+
+  it.effect("闸置位:传输层拒掉它,零出网、零 permission 参与", () =>
+    Effect.gen(function* () {
+      process.env[WebSearchTool.LOCAL_WEBSEARCH_DENY_ENV] = "1"
+      const registry = yield* ToolRegistry.Service
+      const settled = yield* settleTool(registry, mutantCall("mutant-denied"))
+      expect(settled.result).toEqual({ type: "error", value: WebSearchTool.LOCAL_WEBSEARCH_DENIED_MESSAGE })
+      expect(requests).toEqual([])
+      expect(assertions).toEqual([])
+    }),
+  )
+})
+
+function harness(tools?: ReadonlyArray<Parameters<typeof LayerNode.group>[0][number]>) {
   const httpLayer = Layer.succeed(
     HttpClient.HttpClient,
     HttpClient.make((request) =>
@@ -144,7 +222,7 @@ function harness() {
   )
   return testEffect(
     AppNodeBuilder.build(
-      LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, WebSearchTool.configNode, WebSearchTool.node]),
+      LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, ...(tools ?? [WebSearchTool.configNode, WebSearchTool.node])]),
       [
         [PermissionV2.node, permission],
         [LayerNodePlatform.httpClient, httpLayer],
@@ -153,4 +231,9 @@ function harness() {
       ],
     ),
   )
+}
+
+/** 同一套替身,只把被注册的工具换成 R4 变异副本(真 ToolRegistry.materialize/settle 链路)。 */
+function mutantHarness() {
+  return harness([mutantNode])
 }

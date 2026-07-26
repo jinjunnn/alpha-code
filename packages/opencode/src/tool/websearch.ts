@@ -26,24 +26,23 @@ export const Parameters = Schema.Struct({
 })
 
 /**
- * ADR-009 B1/B2 主权判决送进引擎进程的通道(#223 R2 Blocker 1)。
+ * ADR-009 B1/B2 主权判决送进引擎进程的通道(#223 R2 Blocker 1 → R4 下沉)。
  *
  * main 的 `applyWebSearchSovereignty()`(`ui-mac/src/main/server.ts`)在**每次 fork 前**重算
  * kill-switch / 平台代付,置位或删除本变量;`ui-mac/src/main/sidecar-env.ts` 的白名单把它带进
- * sidecar。名字在两个包里各写一份(ui-mac 不依赖 opencode),漂移由
- * `ui-mac/src/main/cloud-web-search.test.ts` 的字面量锁钉住。
+ * sidecar。
+ *
+ * **声明点已下沉到 `mcp-websearch.ts`(本引擎唯一的 keyless web search 出网出口)**:R4 的反例
+ * 是「算出注册名 + 复用既有传输」——闸只放在工具叶子时,那份新副本谁也拦不住。这里只是转出,
+ * 不再自己声明,免得两处漂移。下面 `execute` 首行那道闸保留为纵深(早于 `ctx.ask`,连弹窗都省)。
  */
-export const LOCAL_WEBSEARCH_DENY_ENV = "ALPHA_LOCAL_WEBSEARCH_DENY"
+export const LOCAL_WEBSEARCH_DENY_ENV = McpWebSearch.LOCAL_WEBSEARCH_DENY_ENV
 
 /** fail-closed:除「缺省 / 空串 / `"0"`」外的任何取值都判为 deny。 */
-export function localWebSearchDenied(env: Record<string, string | undefined> = process.env) {
-  const value = env[LOCAL_WEBSEARCH_DENY_ENV]
-  return value !== undefined && value !== "" && value !== "0"
-}
+export const localWebSearchDenied = McpWebSearch.localWebSearchDenied
 
 /** 模型可见的拒绝理由。明说「别重试」,否则模型会把它当成瞬时故障反复调用。 */
-export const LOCAL_WEBSEARCH_DENIED_MESSAGE =
-  "Web search is unavailable: the local keyless websearch tool is denied by alpha sovereignty (ADR-009 B1/B2 — the platform pays for search, or the web search kill switch is set). This is not a transient failure; do not retry. Use cloud_web_search if it is present, otherwise answer without web search and say so."
+export const LOCAL_WEBSEARCH_DENIED_MESSAGE = McpWebSearch.LOCAL_WEBSEARCH_DENIED_MESSAGE
 
 const WebSearchProviderSchema = Schema.Literals(["exa", "parallel"])
 export type WebSearchProvider = Schema.Schema.Type<typeof WebSearchProviderSchema>

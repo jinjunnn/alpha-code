@@ -37,6 +37,15 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
    > `packages/ui-mac/src/main/websearch-copies.test.ts` 钉住「全仓注册为 `websearch` 的源文件集合」
    > 与「全仓直接引用 Exa/Parallel 端点的源文件集合」,并要求每一份注册都读同一个主权信号、
    > 且闸排在任何 permission 交互/出网调用之前。出现第四份副本时它变红。
+   >
+   > **事实更正(2026-07-26,#223 R4 Blocker 1)**:上一段把这条普查闸称为「类」级守法 ——
+   > **不成立,已作废**。R4 的可执行反例:`const id = ["web","search"].join("")` 之后
+   > `Tool.define(id, /* 调用既有 McpWebSearch.call */)` —— 注册名是算出来的,传输复用**本 ADR 已
+   > 接管**的 `mcp-websearch.ts`,于是两张网都看不见它(用测试里的原正则实测 `netA=false,
+   > netB=false`),而它自己不读主权信号。真正的类级落点是**共同的执行边界**:本地 keyless web
+   > search 的两条出网出口(`mcp-websearch.ts` 的 `call()`、`packages/core/src/tool/websearch.ts`
+   > 的 `callMcp()`,两条都在本 ADR 的接管面内)现在都在第一句读 `ALPHA_LOCAL_WEBSEARCH_DENY`。
+   > 普查闸保留,但只作**纵深**(抓自带全新 HTTP 出口的副本),不再是主判据,也不再声称穷尽。
 3. **这两个文件当时的行为是两处失守**:`websearch.ts` 用
    `output: result ?? "No search results found…"` 把空/坏响应伪装成成功串;末尾
    `.pipe(Effect.orDie)` 把一切错误塌成匿名 defect(无类别、无状态、表现为工具崩溃)。
@@ -53,10 +62,12 @@ issue: https://github.com/jinjunnn/alpha-code/issues/489
 ### 1. 被接管表面(退出上游同步集,alpha 全所有权 → L3)
 
 - `packages/opencode/src/tool/websearch.ts` —— 工具定义、provider 选路、失败结算。
-- `packages/opencode/src/tool/mcp-websearch.ts` —— MCP over HTTP 的请求/响应/失败映射。
+- `packages/opencode/src/tool/mcp-websearch.ts` —— MCP over HTTP 的请求/响应/失败映射,
+  **以及本引擎唯一的 keyless web search 出网出口**:`call()` 第一句就是主权闸(2026-07-26 R4)。
 - `packages/core/src/tool/websearch.ts` —— **第二份已挂载的同名注册**(2026-07-26 追加,#223 R3
   Blocker 1;同一裁决的延续,owner 2026-07-25 的「走 ADR-029 L3 文件级 exclude」口径不变)。
-  接管内容仅一处:`execute` 首行的主权最终闸(读同一个 `ALPHA_LOCAL_WEBSEARCH_DENY`)。
+  接管内容仅两处:`execute` 首行的主权闸(纵深),与 V2 侧唯一出网出口 `callMcp()` 首句的同一条闸
+  (2026-07-26 R4 追加;`callMcp` 同时被导出,使「复用传输」成为新副本的正确写法 —— 复用即带闸)。
 
   **为什么没有更窄的解**(逐条勘探,不是推断):
 
@@ -193,6 +204,13 @@ defect。这是本决策自带的 tripwire。
   (`packages/ui-mac/src/main/websearch-copies.test.ts`)。真实 V2 链路的回归证据在
   `packages/core/test/alpha-websearch-sovereignty.test.ts`(真 `ToolRegistry.materialize()` +
   `settle()`,含「显式 allow 的 ruleset 也顶不掉」与「permission 层根本没被咨询」两条)。
+  **2026-07-26 二次更正(R4 Blocker 1)**:上一段的「每一份副本的 execute 首行 + 普查闸 = 按类闭合」
+  **不成立,已作废** —— 算出注册名并复用已接管的传输,两张网都看不见(实测 `netA=false,
+  netB=false`)。闸已下沉到两条**出网出口**的第一句(`mcp-websearch.ts` 的 `call()`、
+  `core/src/tool/websearch.ts` 的 `callMcp()`);叶子首行那道降为纵深,普查闸降为纵深。R4 那段构造
+  已作为**变异种**在两个引擎包各跑一遍(「R4 变异」组,各带闸不置位时确实出网的正向对照),
+  断言:传输层拒 + 零出网 + 模型面拿到「别重试」原文。**不再声称穷尽**:自带全新出口且端点也算
+  出来的副本仍拦不住,那需要进程级出网拦截,不在本 ADR 范围。
 - ⚠️ **这两条回归跑在 alpha 的合并闸之外**:`scripts/alpha-check.sh` 与 `alpha-ci.yml` 只跑
   contracts-consumer / ext / ui-mac 三个包的测试,`packages/core` 与 `packages/opencode` 的测试
   两处都不跑。因此本轮把**机制事实**(集合普查 + 闸的位置 + 上游次序前提)固化在 ui-mac 与 ext

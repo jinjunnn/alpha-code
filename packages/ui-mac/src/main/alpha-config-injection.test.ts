@@ -28,6 +28,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { injectAlphaConfig } from "./alpha-config-injection"
 import { secretFilePath } from "./alpha-secret-files"
+import { CLOUD_MCP_ARM_ENV } from "./cloud-web-search"
 
 // 注入读到的每一个 env 输入 + 它自己写出的三个 env 输出:逐个快照/清空/还原,
 // 既隔离宿主机真实配置,也不把注入结果泄漏给同进程的其它测试文件。
@@ -49,6 +50,8 @@ const MANAGED = [
   "OPENCODE_ENABLE_EXA",
   "OPENCODE_EXPERIMENTAL",
   "ALPHA_CLOUD_MCP_URL",
+  // #223 R4:注入面自己置位/删除的 ext 装载握手通道(输出之一)。
+  "ALPHA_CLOUD_MCP_ARM",
   "ALPHA_BASE_URL",
   "ALPHA_DEFAULT_MODEL",
 ] as const
@@ -319,45 +322,52 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
       expect([name, agent.permission?.websearch]).toEqual([name, "deny"])
   })
 
-  test("kill-switch:本地与云两个 web search 都被 deny,兄弟云工具不受牵连", () => {
-    givenPlatformPaysUnderUmbrella()
-    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+  // #223 R4:kill-switch 下云 server 一律注册成 **disarmed**(`enabled:false`)+ 置位 arm 通道。
+  // 打开它的唯一途径是 @alpha-code/ext 的 config 钩子(见 packages/ext/src/cloud-websearch-kill.ts)。
+  // R3 那版按「ext bundle 路径是否存在」判在场 —— 路径存在 ≠ 插件装载,故 ext 在不在场都是 disarmed。
+  for (const [name, ext] of [
+    ["ext bundle 路径已解析", true],
+    ["ext bundle 路径缺席", false],
+  ] as const)
+    test(`kill-switch(${name}):云 server 注册但 disarmed,本地与云两个 web search 都被 deny`, () => {
+      givenPlatformPaysUnderUmbrella()
+      process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+      const errors: unknown[][] = []
+      const original = console.error
+      console.error = (...args: unknown[]) => void errors.push(args)
+      try {
+        injectAlphaConfig(userData, ext ? extPluginPath() : undefined, "stable")
+      } finally {
+        console.error = original
+      }
 
-    // #223 R3:kill-switch 下云工具的最终闸住在 ext 钩子里,所以云 server 只在 ext 在场时才注册。
-    injectAlphaConfig(userData, extPluginPath(), "stable")
+      const config = injectedPermissions()
+      expect(config.permission?.websearch).toBe("deny")
+      expect(config.permission?.cloud_web_search).toBe("deny")
+      expect(config.permission?.cloud_dispatch).toBeUndefined()
+      // 注册在册,但引擎会判 disabled(mcp/index.ts:`enabled === false` ⇒ 不建客户端、零工具)。
+      expect(config.mcp?.cloud).toMatchObject({ type: "remote", enabled: false })
+      expect(process.env[CLOUD_MCP_ARM_ENV]).toBe("cloud")
+      expect(errors.flat().join("\n")).toContain("registered DISARMED")
+    })
 
-    const config = injectedPermissions()
-    expect(config.permission?.websearch).toBe("deny")
-    expect(config.permission?.cloud_web_search).toBe("deny")
-    expect(config.permission?.cloud_dispatch).toBeUndefined()
-    expect(config.mcp?.cloud).toBeDefined()
-  })
-
-  // #223 R3 fail-closed:ext 没被装载 = 那条不可覆盖的最终闸不存在,而注入面的 permission deny
-  // 可被后置 agent/session allow 顶掉。此时宁可整个云 server 不注册(连兄弟工具一起损失),
-  // 也不放一个活的 web_search 出去。只在 kill-switch 下如此 —— 代付态的云工具是权威通道。
-  test("kill-switch 且 ext 未装载:云 server 整个不注册,并且出声", () => {
-    givenPlatformPaysUnderUmbrella()
-    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
-    const errors: unknown[][] = []
-    const original = console.error
-    console.error = (...args: unknown[]) => void errors.push(args)
-    try {
-      injectAlphaConfig(userData, undefined, "stable")
-    } finally {
-      console.error = original
-    }
-
-    expect(injectedPermissions().mcp?.cloud).toBeUndefined()
-    expect(errors.flat().join("\n")).toContain("refusing to register the cloud MCP server")
-  })
-
-  test("代付但无 kill-switch 时,ext 缺席不影响云 server 注册", () => {
+  test("代付但无 kill-switch 时:云 server 直接可用,且不置位 arm 通道(不依赖 ext 装载)", () => {
     givenPlatformPaysUnderUmbrella()
 
     injectAlphaConfig(userData, undefined, "stable")
 
-    expect(injectedPermissions().mcp?.cloud).toBeDefined()
+    expect(injectedPermissions().mcp?.cloud).toMatchObject({ type: "remote", enabled: true })
+    expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
+  })
+
+  // arm 通道是 sidecar 内部的握手,绝不能被外部 shell 伪造:注入面在非 kill-switch 路径上主动删。
+  test("外部伪造的 arm 变量被注入面清掉", () => {
+    givenPlatformPaysUnderUmbrella()
+    process.env[CLOUD_MCP_ARM_ENV] = "cloud"
+
+    injectAlphaConfig(userData, undefined, "stable")
+
+    expect(process.env[CLOUD_MCP_ARM_ENV]).toBeUndefined()
   })
 
   test("登出/BYOK:keyless 本地 websearch 保持可用(不误伤登出兜底)", () => {
