@@ -181,32 +181,51 @@ function declaredCompositeRoles(source: string) {
  * 一套接线 =
  * ① 一个 `rovingKey(` 调用 + 一个 `rovingTabIndex(` 调用 —— 缺一头就要么没方向键、要么留下
  *    一串 Tab 落点,所以取两者的较小值;
- * ② 一个真的 `aria-activedescendant` 属性;
- * ③ combobox 拥有的 listbox 常常跨文件:属性落在输入框那一侧,listbox 在这一侧。这一侧的
- *    兑现证据是「活动项访问器 + 选项带稳定 id」——`aria-activedescendant` 指的就是那个 id,
- *    两者缺一它就指不到任何东西。光有 `activeDescendant` 这个标识符不算,那正是能骗过
- *    上一版闸门的形态。
+ * ② 一个真的 `aria-activedescendant` 属性。
+ *
+ * 只认这两样。曾经还有第三条「活动项访问器 + `role="option"` + `id={`」的全仓通兑规则,已删:
+ * 三个字面量分别出现不等于它们互相关联,`const activeDescendant = () => undefined` 配上
+ * `<div role="option" id={Date.now()} />` 就能凑齐 —— 恒 undefined 的访问器、每帧都变的 id、
+ * 零键盘契约,却被判成已接线。跨文件的 combobox 改由下面的具名限额例外承接。
  */
 function keyboardContractBindings(source: string) {
   const stripped = code(source)
   const count = (pattern: RegExp) => (stripped.match(pattern) ?? []).length
   const rovingKeys = count(/\brovingKey\(/g)
   const rovingTabIndexes = count(/\brovingTabIndex\(/g)
-  const attributes = count(/aria-activedescendant=/g)
-  const ownsOptionIds =
-    /\bactiveDescendant\b/.test(stripped) && /role="option"/.test(stripped) && /\bid=\{/.test(stripped)
-  const activeDescendants = attributes + (ownsOptionIds ? 1 : 0)
+  const activeDescendants = count(/aria-activedescendant=/g)
   return { rovingKeys, rovingTabIndexes, activeDescendants, total: Math.min(rovingKeys, rovingTabIndexes) + activeDescendants }
+}
+
+/**
+ * 跨文件 combobox 的**限额例外**:按文件逐个开,每条写明额度与兑现证据。全仓只有一条 ——
+ * `composer-autocomplete.tsx` 的 listbox 走 APG 的另一条合法实现(combobox 的
+ * `aria-activedescendant`):属性挂在输入框那一侧(alpha-composer.tsx),listbox 在这一侧,
+ * 所以本文件的源码里永远不会出现那个属性,静态文本无从自证。
+ *
+ * 例外的正确性不由源码文本背书,由真实挂载测试背书:composer-a11y.test.ts 的
+ * 「combobox expanded state and active descendant track ArrowDown and ArrowUp」按下 ↑↓ 后读回
+ * `aria-activedescendant`,断言它指向的元素确实在这个 listbox 内、`role="option"`、
+ * `aria-selected="true"`,并在 Escape 后消失 —— 可执行判据,不是字面量计数。
+ *
+ * 额度写死为 1:这个文件里再多一个复合控件,闸门照样红。
+ */
+const CROSS_FILE_COMBOBOX_EXCEPTIONS: Readonly<Record<string, number>> = {
+  "composer-autocomplete.tsx": 1,
 }
 
 export function compositeRoleOffender(label: string, source: string) {
   const roles = declaredCompositeRoles(source)
   if (roles.length === 0) return undefined
   const bindings = keyboardContractBindings(source)
-  if (bindings.total >= roles.length) return undefined
+  const exception = CROSS_FILE_COMBOBOX_EXCEPTIONS[label] ?? 0
+  const total = bindings.total + exception
+  if (total >= roles.length) return undefined
   return (
-    `${label}: 声明了 ${roles.length} 处复合 role(${roles.join(", ")}),只接上 ${bindings.total} 套键盘契约` +
-    `(rovingKey ×${bindings.rovingKeys} / rovingTabIndex ×${bindings.rovingTabIndexes} / aria-activedescendant ×${bindings.activeDescendants})`
+    `${label}: 声明了 ${roles.length} 处复合 role(${roles.join(", ")}),只接上 ${total} 套键盘契约` +
+    `(rovingKey ×${bindings.rovingKeys} / rovingTabIndex ×${bindings.rovingTabIndexes} / aria-activedescendant ×${bindings.activeDescendants}` +
+    (exception ? ` / 跨文件 combobox 例外 ×${exception}` : "") +
+    `)`
   )
 }
 
@@ -248,15 +267,31 @@ describe("alpha-ui composite-role ratchet", () => {
     // 有访问器、选项却没有 id:aria-activedescendant 将来指不到任何东西 —— 不算兑现。
     const decoy = `const activeDescendant = () => rows()[0]?.id\n<div role="listbox"><div role="option" /></div>`
     expect(compositeRoleOffender("decoy.tsx", decoy)).toContain("只接上 0 套")
+    // 上一版第三 arm 的反例:三个字面量凑齐,访问器恒 undefined、id 每帧都变、零键盘契约。
+    const forgery = `const activeDescendant = () => undefined\n<div role="listbox"><div role="option" id={Date.now()} /></div>`
+    expect(compositeRoleOffender("forgery.tsx", forgery)).toContain("只接上 0 套")
+    // 连白名单文件的真实形态,换个文件名照样红 —— 兑现证据不在源码文本里。
+    const combobox = `const activeDescendant = createMemo(() => optionId(items()[active()]))
+      <div id={listboxId} role="listbox"><button id={optionId(item)} role="option" /></div>`
+    expect(compositeRoleOffender("copycat.tsx", combobox)).toContain("只接上 0 套")
     // 同一文件既挂属性又开 listbox:直接认。
     const attribute = `<textarea aria-activedescendant={auto.activeDescendant()} />\n<div role="listbox" />`
     expect(compositeRoleOffender("attribute.tsx", attribute)).toBeUndefined()
-    // combobox 跨文件的真实形态(本仓 composer-autocomplete):访问器 + 带 id 的选项。
-    const combobox = `const activeDescendant = createMemo(() => optionId(items()[active()]))
-      <div id={listboxId} role="listbox"><button id={optionId(item)} role="option" /></div>`
-    expect(compositeRoleOffender("combobox.tsx", combobox)).toBeUndefined()
-    // 但它只兑现一个 listbox:同文件第二个裸 listbox 照样红。
-    expect(compositeRoleOffender("combobox.tsx", `${combobox}\n<div role="listbox" />`)).toContain("只接上 1 套")
+  })
+
+  test("the cross-file combobox exception is one named file, capped at one widget", () => {
+    const listbox = `<div id={listboxId} role="listbox"><button id={optionId(item)} role="option" /></div>`
+    // 例外按文件名开,且只开给它一处:真实性由 composer-a11y.test.ts 的真实挂载测试背书。
+    expect(compositeRoleOffender("composer-autocomplete.tsx", listbox)).toBeUndefined()
+    // 同名文件换个目录、或任何别的文件,都拿不到这个额度(例外不是恒真)。
+    expect(compositeRoleOffender("session-workspace/composer-autocomplete.tsx", listbox)).toContain("只接上 0 套")
+    // 额度 1:白名单文件里的第二个复合控件必须自己接线。
+    expect(compositeRoleOffender("composer-autocomplete.tsx", `${listbox}\n<div role="radiogroup" />`)).toContain("只接上 1 套")
+    // 白名单也挡不住上面那条伪造形态:例外只给一个额度,第二个控件照样红。
+    const forged = `const activeDescendant = () => undefined
+      <div role="listbox"><div role="option" id={Date.now()} /></div>
+      <div role="listbox" />`
+    expect(compositeRoleOffender("composer-autocomplete.tsx", forged)).toContain("只接上 1 套")
   })
 
   test("a file with no composite role is not dragged into the gate at all", () => {

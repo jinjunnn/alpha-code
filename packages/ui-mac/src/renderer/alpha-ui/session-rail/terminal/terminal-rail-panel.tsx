@@ -91,7 +91,8 @@ export function TerminalRailPanel(props: {
       document.getElementById(tabID(instance.id))?.focus()
     })
   }
-  // 页签条外框 .a-term-tabbar 只为把新建按钮挪出 role="tablist" —— tablist 只拥有 tab。
+  // 页签条外框 .a-term-tabbar 只为把新建按钮挪出 role="tablist" —— 新建不是页签。
+  // 关闭按钮留在 tab 内(APG 可删除页签):它退出 Tab 序列,键盘入口是页签上的 Delete。
 
   return (
     <section

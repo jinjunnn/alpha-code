@@ -144,11 +144,13 @@ describe("REQ-125 terminal rail panel real Solid mount", () => {
     expect(tabButton(host, "pty_2")?.getAttribute("aria-selected")).toBe("true")
   })
 
-  test("C21 AC2: the tablist owns only tabs, and closing hands focus to a survivor", async () => {
+  test("C21 AC2: the new-terminal button sits outside the tablist, the close button leaves the Tab sequence, and closing hands focus to a survivor", async () => {
     const host = mount(() => runtime.TerminalRailHarness())
     await flush()
 
-    // role="tablist" 的直接子元素只能是 tab —— 新建按钮不是页签,已移出页签条。
+    // 新建按钮不是页签,已移出 role="tablist"。关闭按钮仍在页签子树内 —— 那是 APG 可删除页签的
+    // 形态(tab 是 tablist 的 required-owned,不是「只能拥有」):它退出 Tab 序列,键盘入口是
+    // 页签上的 Delete。所以这里断言的是「新建按钮在外」,不是「tablist 子树里只有 tab」。
     const tablist = host.querySelector<HTMLElement>("[role='tablist']")!
     expect(tablist.querySelector("[data-alpha-terminal-new]")).toBeNull()
     expect(host.querySelector("[data-alpha-terminal-new]")).not.toBeNull()

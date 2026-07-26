@@ -127,6 +127,11 @@ describe("composer accessibility behavior", () => {
     expect(document.activeElement).not.toBe(trigger)
   })
 
+  // 这条测试同时是 roving-focus.test.ts 里 `CROSS_FILE_COMBOBOX_EXCEPTIONS` 的兑现证据:
+  // composer-autocomplete.tsx 的 listbox 不走 roving tabIndex,而走 combobox 的
+  // aria-activedescendant —— 属性挂在这一侧的 textarea 上,静态闸门读不到关联,所以关联由这里
+  // 真实挂载后逐帧断言:活动 id 必须指向该 listbox 内一个 role="option" 且 aria-selected="true"
+  // 的元素,键盘移动后仍然如此,关闭后属性消失。
   test("combobox expanded state and active descendant track ArrowDown and ArrowUp", async () => {
     mount(() => runtime.AutocompleteHarness())
     const textarea = document.querySelector<HTMLTextAreaElement>("textarea[role='combobox']")!
@@ -138,7 +143,12 @@ describe("composer accessibility behavior", () => {
     const listbox = document.getElementById(textarea.getAttribute("aria-controls")!)!
     const initial = textarea.getAttribute("aria-activedescendant")!
     expect(listbox.getAttribute("role")).toBe("listbox")
-    expect(document.getElementById(initial)?.getAttribute("aria-selected")).toBe("true")
+    const activeOption = document.getElementById(initial)!
+    expect({
+      role: activeOption.getAttribute("role"),
+      selected: activeOption.getAttribute("aria-selected"),
+      insideListbox: listbox.contains(activeOption),
+    }).toEqual({ role: "option", selected: "true", insideListbox: true })
 
     const two = Array.from(listbox.querySelectorAll<HTMLElement>("[role='option']")).find((option) =>
       option.textContent?.includes("/two"),
@@ -149,7 +159,12 @@ describe("composer accessibility behavior", () => {
     await flush()
     const down = textarea.getAttribute("aria-activedescendant")!
     expect(down).not.toBe(initial)
-    expect(document.getElementById(down)?.getAttribute("aria-selected")).toBe("true")
+    const downOption = document.getElementById(down)!
+    expect({
+      role: downOption.getAttribute("role"),
+      selected: downOption.getAttribute("aria-selected"),
+      insideListbox: listbox.contains(downOption),
+    }).toEqual({ role: "option", selected: "true", insideListbox: true })
 
     keydown(textarea, "ArrowUp")
     await flush()
