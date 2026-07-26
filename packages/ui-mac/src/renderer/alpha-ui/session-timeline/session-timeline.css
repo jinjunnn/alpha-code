@@ -127,9 +127,54 @@
   font-size: var(--a-text-xs);
 }
 
-.a-tl-divider[data-label="interrupted"] .a-tl-divider-pill {
-  background: var(--a-warning-subtle);
-  color: var(--a-warning);
+/* 中断态(design ② .interrupted):左对齐安静行 + 续钮,不占用告警色底。 */
+.a-tl-interrupted {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  align-self: flex-start;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+
+.a-tl-int-stop {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--a-warning);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-tl-int-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-text-disabled);
+}
+
+.a-tl-int-continue {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--a-accent);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+}
+
+/* 明暗两档的 accent-hover 深浅方向相反,悬停只加下划线 —— 两个主题同一读法。 */
+.a-tl-int-continue:hover {
+  text-decoration: underline;
+}
+
+.a-tl-int-continue:focus-visible {
+  outline: none;
+  border-radius: var(--a-radius-xs);
+  box-shadow: var(--a-ring-focus);
 }
 
 /* ── 用户侧 ───────────────────────────────────────────────────────────── */
@@ -302,6 +347,34 @@
   color: var(--a-accent);
 }
 
+/* 连接器 chip(design ① .conn-chip):资源提及以「来源徽标 + 来源名」成 chip 内联在气泡里。 */
+.a-tl-conn {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  margin-right: 5px;
+  padding: 2px 9px 2px 5px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-canvas);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  vertical-align: middle;
+}
+
+.a-tl-conn i {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--a-radius-sm);
+  background: var(--a-text-secondary);
+  color: var(--a-bg-canvas);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: var(--a-weight-bold);
+}
+
 .a-tl-user-meta {
   padding-right: 2px;
   color: var(--a-text-disabled);
@@ -449,7 +522,8 @@ button.a-tl-cmd-chip:focus-visible {
   font-weight: var(--a-weight-medium);
 }
 
-.a-tl-fn-agent i {
+/* provider 图标(design ② .meta .pico):品牌色不在数据面内,统一用强调色实心底。 */
+.a-tl-fn-prov {
   display: grid;
   place-items: center;
   width: 14px;

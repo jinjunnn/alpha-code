@@ -25,6 +25,8 @@ export interface TimelineIntents {
   focusArtifact?: (intent: TimelineFocusArtifactIntent) => void
   openSession?: (sessionID: string) => void
   openFile?: (intent: TimelineOpenFileIntent) => void
+  /** 中断态「继续生成」:绑定层接现有会话发送入口(v2 session.prompt);缺席即中断行无续钮。 */
+  continueTurn?: () => void
 }
 
 export const TimelineIntentsContext = createContext<TimelineIntents>({})

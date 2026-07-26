@@ -25,7 +25,7 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("29 pass")
+    expect(output).toContain("33 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -61,9 +61,9 @@ describe("REQ-125 C5 I1 白名单静态棘轮", () => {
     }
   })
 
-  test("数据面只经公开 typed hooks(useServerSync)进入", () => {
+  test("数据面只经公开 typed hooks(useServerSync/useServerSDK)进入", () => {
     const binding = sources.get("session-timeline.tsx")!
-    expect(binding).toContain(`import { useServerSync } from "@opencode-ai/app"`)
+    expect(binding).toContain(`import { useServerSDK, useServerSync } from "@opencode-ai/app"`)
     const appImports = [...allSource.matchAll(/from "@opencode-ai\/app[^"]*"/g)].map((match) => match[0])
     expect(new Set(appImports)).toEqual(new Set([`from "@opencode-ai/app"`]))
   })

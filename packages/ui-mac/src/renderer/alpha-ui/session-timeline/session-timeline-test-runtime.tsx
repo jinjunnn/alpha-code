@@ -24,10 +24,12 @@ const intentLog: {
   focusArtifact: TimelineFocusArtifactIntent[]
   openSession: string[]
   openFile: TimelineOpenFileIntent[]
+  continueTurn: number
 } = {
   focusArtifact: [],
   openSession: [],
   openFile: [],
+  continueTurn: 0,
 }
 
 // 稳定对象 + 反应式 getter:开关翻转时,卡片内 <Show when={intents.x}> 立即重估
@@ -41,6 +43,9 @@ const harnessIntents = {
   },
   get openFile() {
     return intentsEnabled() ? (intent: TimelineOpenFileIntent) => intentLog.openFile.push(intent) : undefined
+  },
+  get continueTurn() {
+    return intentsEnabled() ? () => (intentLog.continueTurn += 1) : undefined
   },
 }
 
@@ -119,5 +124,6 @@ export function resetTimelineHarness() {
   intentLog.focusArtifact.length = 0
   intentLog.openSession.length = 0
   intentLog.openFile.length = 0
+  intentLog.continueTurn = 0
   resolvePendingLoads()
 }

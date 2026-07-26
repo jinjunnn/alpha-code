@@ -15,6 +15,7 @@ import {
   commentOf,
   footnoteOf,
   MARKDOWN_MAX_CHARS,
+  MENTION_LABEL_MAX_CHARS,
   projectTimelineRows,
   reuseTimelineRows,
   reviewPathOf,
@@ -509,6 +510,83 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
   })
 })
 
+// ═══════════════ #588 — 连接器 chip(TL-06) ═══════════════
+
+describe("#588 连接器提及(resource source → chip 段)", () => {
+  const resourceFile = (over: Partial<FilePart> = {}) =>
+    filePart("prt_res1", "msg_u1", {
+      mime: "text/plain",
+      filename: "issue-12",
+      url: "https://example.invalid/issue/12",
+      source: {
+        type: "resource",
+        clientName: "GitHub",
+        uri: "github://issue/12",
+        text: { value: "GitHub", start: 0, end: 6 },
+      },
+      ...over,
+    })
+
+  test("resource source → resource 段并携带来源名;file/agent 段不受影响", () => {
+    const rows = project([userMsg("msg_u1", 1000)], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "GitHub 对照 README.md 核对", {}), resourceFile()],
+    })
+    const user = rows[0]!
+    if (user.kind !== "user") throw new Error("expected user row")
+    expect(user.segments).toEqual([
+      { text: "GitHub", kind: "resource", label: "GitHub" },
+      { text: " 对照 README.md 核对" },
+    ])
+  })
+
+  test("来源名缺席 → 退回普通文件提及(不出没有名字的 chip)", () => {
+    const rows = project([userMsg("msg_u1", 1000)], {
+      msg_u1: [
+        textPart("prt_u1", "msg_u1", "GitHub 对照"),
+        resourceFile({
+          source: {
+            type: "resource",
+            clientName: "",
+            uri: "github://issue/12",
+            text: { value: "GitHub", start: 0, end: 6 },
+          } as never,
+        }),
+      ],
+    })
+    const user = rows[0]!
+    if (user.kind !== "user") throw new Error("expected user row")
+    expect(user.segments).toEqual([{ text: "GitHub", kind: "file" }, { text: " 对照" }])
+  })
+
+  test("I7:超长来源名按帽截断", () => {
+    const segments = segmentUserText("x", [
+      { start: 0, end: 1, kind: "resource", label: "n".repeat(MENTION_LABEL_MAX_CHARS) },
+    ])
+    expect(segments[0]).toMatchObject({ kind: "resource" })
+    expect((segments[0] as { label?: string }).label!.length).toBe(MENTION_LABEL_MAX_CHARS)
+  })
+})
+
+// ═══════════════ #591 — 富脚注 provider / 效率段 ═══════════════
+
+describe("#591 富脚注 provider 与效率段", () => {
+  const withTokens = (tokens: AssistantMessage["tokens"]) =>
+    footnoteOf([assistantMsg("msg_a1", "msg_u1", { tokens })])
+
+  test("provider 取 providerID;缺席即无图标来源", () => {
+    expect(footnoteOf([assistantMsg("msg_a1", "msg_u1")])?.provider).toBe("deepseek")
+    expect(footnoteOf([assistantMsg("msg_a1", "msg_u1", { providerID: "" as never })])?.provider).toBeUndefined()
+  })
+
+  test("效率段 = 缓存命中率;cache.read 为 0 时诚实缺席(不拿零值装「低」)", () => {
+    expect(withTokens({ input: 1000, output: 200, reasoning: 0, cache: { read: 3000, write: 0 } })?.cacheHit).toBe(75)
+    expect(withTokens({ input: 0, output: 200, reasoning: 0, cache: { read: 1200, write: 0 } })?.cacheHit).toBe(100)
+    const cold = { input: 1000, output: 200, reasoning: 0, cache: { read: 0, write: 0 } }
+    expect(withTokens(cold)?.cacheHit).toBeUndefined()
+    expect(withTokens({ ...cold, cache: { read: -5, write: 0 } } as never)?.cacheHit).toBeUndefined()
+  })
+})
+
 describe("REQ-125 C5 行复用:流式 delta 不重建行", () => {
   const messages = [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1", { time: { created: 10 } })]
   const streamingText = textPart("prt_t1", "msg_a1", "第一段")
@@ -556,7 +634,13 @@ describe("#568 回合末富脚注(A6)", () => {
     })
     const last = rows.at(-1)!
     if (last.kind !== "footnote") throw new Error("expected footnote row")
-    expect(last.footnote).toEqual({ agent: "build", model: "deepseek-reasoner", durationMs: 10, tokens: undefined })
+    expect(last.footnote).toEqual({
+      provider: "deepseek",
+      agent: "build",
+      model: "deepseek-reasoner",
+      durationMs: 10,
+      tokens: undefined,
+    })
     expect(last.copyText()).toBe("第一段\n\n第二段")
   })
 
