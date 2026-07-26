@@ -6,6 +6,7 @@ import {
   type DeepLinkBatch,
   type DeepLinkQueue,
   type DeepLinkQueueDeps,
+  type RendererExit,
   type RendererLifecycleEvent,
 } from "./deep-link-queue"
 import type { DeepLinkDelivery } from "../shared/route-manifest"
@@ -16,6 +17,7 @@ const OPEN_PROJECT = "opencode://open-project?directory=/tmp/demo"
 /** The boot window; `window.new` and reload-after-crash produce the other ids used below. */
 const BOOT = 1
 const SECOND = 2
+const THIRD = 3
 
 /**
  * A stand-in for Electron's WebContents, and deliberately NOT a synchronous ledger of deliveries.
@@ -267,7 +269,7 @@ describe("deep-link queue delivers each link exactly once", () => {
     const second = h.open(SECOND)
     second.drain(h.queue)
 
-    h.queue.rendererGone(BOOT) // the old window goes away; the newer one still owns the stream
+    h.queue.rendererGone(BOOT, "gone") // the old window goes away; the newer one still owns the stream
     h.queue.ingest([NEW_SESSION])
     second.receive(h.queue)
 
@@ -427,6 +429,73 @@ describe("a batch in flight survives the renderer dying before it arrives", () =
     expect(h.consumed()).toHaveLength(1)
   })
 
+  test("a reload with another window open does not hand the consumed batch to that window", () => {
+    // R4's timing, and the one a sidecar structural respawn produces on any machine with two
+    // windows open: the owner acted on the batch, its ack is still on the wire, and main sees the
+    // reload first. Retrying against the OTHER window there is a second consumption — in a window
+    // the user was not even working in — and the late ack can no longer stop it.
+    const h = harness()
+    const boot = h.open(BOOT)
+    boot.drain(h.queue)
+    const second = h.open(SECOND)
+    second.drain(h.queue) // the newer window owns the stream
+
+    h.queue.ingest([NEW_SESSION])
+    const held = second.consumeHoldingAck() // acted on; the acknowledgement has not landed yet
+    second.emit("did-start-loading", true) // main processes the reload first
+
+    boot.receive(h.queue)
+    expect(boot.consumed).toEqual([]) // nothing was pushed at the window still on screen
+
+    for (const batch of held) h.queue.acknowledge(SECOND, batch.id) // …and then the ack arrives
+    second.drain(h.queue) // the reloaded document finds nothing left to replay
+    expect(h.consumed()).toHaveLength(1)
+  })
+
+  test("a late ack retires the batch even after it was re-handed to another window", () => {
+    // The other half: `destroyed` DOES release the batch, because nothing will ever drain under
+    // that id again. The renderer that already consumed it must still be able to retire it once
+    // its ack lands, or the retry becomes a chain — every further window death hands it out again.
+    const h = harness()
+    const boot = h.open(BOOT)
+    boot.drain(h.queue)
+    const second = h.open(SECOND)
+    second.drain(h.queue)
+    const third = h.open(THIRD) // opened, not yet drained
+
+    h.queue.ingest([NEW_SESSION])
+    const held = second.consumeHoldingAck()
+    second.emit("destroyed") // gone for good: the batch is retried against the boot window
+    for (const batch of held) h.queue.acknowledge(SECOND, batch.id) // the late ack lands
+    boot.emit("destroyed") // …and the retry target dies without acknowledging anything
+
+    third.drain(h.queue)
+    expect(third.consumed).toEqual([])
+    expect(h.consumed()).toHaveLength(1)
+  })
+
+  test("a renderer that refuses a delivery gives back everything it never acknowledged", () => {
+    // Unreachable with no lifecycle event — the path `deliver` returning false exists for. Popping
+    // it as an owner is not enough: the batch it was already holding stays in `inFlight` against a
+    // renderer that will never drain again, so the window still on screen receives only the newer
+    // one and the older link is lost for the life of the process.
+    const h = harness()
+    const boot = h.open(BOOT)
+    boot.drain(h.queue)
+    const second = h.open(SECOND)
+    second.drain(h.queue) // the newer window owns the stream
+
+    h.queue.ingest([OPEN_PROJECT]) // batch 1: on the wire to the owner, never acknowledged
+    expect(second.transit).toHaveLength(1)
+    second.live = false // gone, and the lifecycle event never arrives
+    second.transit.length = 0 // …so nothing it was handed was ever consumed
+
+    h.queue.ingest([NEW_SESSION]) // batch 2 is what discovers the refusal
+    boot.receive(h.queue)
+
+    expect(boot.consumed.map((link) => link.deepLinkId)).toEqual(["open-project", "new-session"])
+  })
+
   test("order survives a requeue: the redelivered batch is consumed before the newer one", () => {
     const h = harness()
     const boot = h.open(BOOT)
@@ -444,14 +513,20 @@ describe("a batch in flight survives the renderer dying before it arrives", () =
 })
 
 describe("renderer lifecycle wiring drops ownership on every exit path", () => {
-  test("all three Electron events are subscribed for the renderer that was tracked", () => {
-    const gone: number[] = []
+  test("all three Electron events are subscribed, each with what it means for the batches held", () => {
+    // The reload/crash pair keeps the webContents id, so its unacknowledged batches wait for its
+    // next document; only `destroyed` retires the id and releases them to the other windows.
+    const gone: { id: number; exit: RendererExit }[] = []
     const win = renderer(7)
-    trackRendererLifecycle(win, { rendererGone: (id) => gone.push(id) })
+    trackRendererLifecycle(win, { rendererGone: (id, exit) => gone.push({ id, exit }) })
 
     for (const event of RENDERER_LIFECYCLE_EVENTS) win.emit(event)
 
-    expect(gone).toEqual([7, 7, 7])
+    expect(gone).toEqual([
+      { id: 7, exit: "reloading" },
+      { id: 7, exit: "reloading" },
+      { id: 7, exit: "gone" },
+    ])
   })
 
   test("each renderer reports its own id, so one window's exit cannot evict another", () => {

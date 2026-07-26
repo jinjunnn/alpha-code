@@ -143,6 +143,12 @@ const publishDeepLinks = createDeepLinkPublisher(deepLinkBuffer)
 
 // Acknowledge only AFTER the buffer holds the deliveries: until this returns to main, main keeps
 // its copy and re-queues it if this renderer reloads or crashes, so nothing is lost in transit.
+//
+// KNOWN GAP (#633, Major): the buffer holding them is not the layout having consumed them. On a
+// cold start the layout may not have mounted yet, and a reload in that window drops the buffer
+// after main has already been told the batch landed. Closing it means acknowledging from the
+// layout's drain instead — a new cross-package line back through `packages/app`, which is why it
+// is its own issue rather than part of this one.
 const acceptDeepLinks = (batch: DeepLinkBatch) => {
   publishDeepLinks(batch)
   void window.api.acknowledgeDeepLinks(batch.id)

@@ -14,14 +14,26 @@
 // So the queue owns TWO things. Ownership is keyed on the IDENTITY of the webContents that drained,
 // never on "is there a window": a link goes to the most recent renderer that accepts it, and only
 // when none does is it queued for whoever drains next. And every batch handed over — live send or
-// initial drain alike — is KEPT until that exact renderer acknowledges it. An unacknowledged batch
-// whose renderer goes away returns to the queue and is retried against whoever is still there;
-// `deliver` returning true only means the transport took it.
+// initial drain alike — is KEPT until that exact renderer acknowledges it. `deliver` returning true
+// only means the transport took it.
 //
-// `acknowledge` is idempotent and identity-checked: a batch is in exactly one of `pending` or
-// `inFlight`, an ack from a renderer the batch was never handed to is ignored, and an ack that
-// races its own renderer's death retires the requeued copy too. That is what stops the retry from
-// becoming a second consumption.
+// Where an unacknowledged batch goes when its renderer stops listening depends on WHY it stopped,
+// because "it never got it" and "it got it and its ack is still on the wire" are indistinguishable
+// from here:
+//   * reload and render-process crash keep the webContents id, and a NEW document will drain under
+//     it. The batch therefore stays on that renderer's own books and is re-handed to its next
+//     document. Pushing it into a different window that is already running — which is what an
+//     immediate retry does — hands the delivery out a second time whenever the ack was merely late,
+//     and sends it to a window the user was not even working in;
+//   * `destroyed` retires the id: nothing will drain under it again, so the batch does go back to
+//     the queue and is retried against the windows that are left. So does a batch held by a
+//     renderer that refuses a later delivery — unreachable with no lifecycle event is still gone.
+//
+// `acknowledge` is idempotent and identity-checked, and the identity is the set of renderers the
+// batch has EVER been handed to, not whoever holds it now: a batch is in exactly one of `pending`
+// or `inFlight`, an ack from a renderer the batch was never handed to is ignored, and an ack that
+// races its own renderer's death retires the copy wherever the race left it — requeued, or already
+// re-handed to another window. That is what stops one retry from becoming a chain of them.
 //
 // The module is pure state + injected effects so every timing above is a unit test
 // (`deep-link-queue.test.ts`), not a claim — including the lifecycle wiring itself
@@ -53,32 +65,53 @@ export interface DeepLinkQueue {
   ingest: (args: readonly string[]) => void
   /**
    * A renderer's initial drain, identified by its webContents id. Also transfers stream ownership
-   * to that exact renderer instance. The batches handed back stay on main's books until that
-   * renderer acknowledges them.
+   * to that exact renderer instance. A fresh document is the only thing that can take over a batch
+   * no LIVE owner is answerable for, so the drain also picks up what this renderer retained across
+   * a reload and anything a departed renderer left owing. The batches handed back stay on main's
+   * books until this renderer acknowledges them.
    */
   consumeInitial: (rendererId: number) => DeepLinkBatch[]
   /**
-   * That renderer now holds the batch: retire main's copy. Only the renderer the batch was handed
-   * to can retire it, and acknowledging twice — or acknowledging something already retired — is a
-   * no-op.
+   * That renderer now holds the batch: retire main's copy. Only a renderer the batch has been
+   * handed to at some point can retire it — including one it was since re-handed away from, whose
+   * ack was simply late — and acknowledging twice, or acknowledging something already retired, is
+   * a no-op.
    */
   acknowledge: (rendererId: number, batchId: number) => void
   /**
-   * That renderer instance stopped being a live consumer — reload, crash, or destruction. A stale
-   * id (already dropped, or never an owner) is a no-op for ownership; anything it never
-   * acknowledged goes back to the queue and is retried against the renderers still there.
+   * That renderer instance stopped being a live consumer. A stale id (already dropped, or never an
+   * owner) is a no-op for ownership. `exit` decides what happens to what it never acknowledged:
+   * `"reloading"` keeps it on that renderer's books for its next document, `"gone"` returns it to
+   * the queue for the renderers still there. See `RENDERER_EXIT_BY_EVENT` for why.
    */
-  rendererGone: (rendererId: number) => void
+  rendererGone: (rendererId: number, exit: RendererExit) => void
 }
 
 /**
- * Every way a renderer that has drained stops being able to receive links. All three must drop
- * ownership: `webContents.send` to a crashed or reloading renderer is silently discarded, so a
- * missing wire here loses the link with no error anywhere.
+ * Every way a renderer that has drained stops being able to receive links, and what each one says
+ * about the batches it has not acknowledged. All of them must drop ownership: `webContents.send`
+ * to a crashed or reloading renderer is silently discarded, so a missing wire here loses the link
+ * with no error anywhere. Where the unacknowledged batches go is the part that differs.
+ *
+ * `did-start-loading` (reload — sidecar structural respawn drives it) and `render-process-gone`
+ * both leave the webContents id in place, so a new document can still drain under it: the batch
+ * waits for that document rather than jumping to another window, because the renderer may already
+ * have acted on it with the ack still in transit.
+ *
+ * `destroyed` retires the id for good. Whatever that renderer did with the batch died with it, so
+ * the honest move is to retry it against the windows that are left.
  */
-export const RENDERER_LIFECYCLE_EVENTS = ["did-start-loading", "render-process-gone", "destroyed"] as const
+export const RENDERER_EXIT_BY_EVENT = {
+  "did-start-loading": "reloading",
+  "render-process-gone": "reloading",
+  destroyed: "gone",
+} as const
 
-export type RendererLifecycleEvent = (typeof RENDERER_LIFECYCLE_EVENTS)[number]
+export type RendererLifecycleEvent = keyof typeof RENDERER_EXIT_BY_EVENT
+
+export type RendererExit = (typeof RENDERER_EXIT_BY_EVENT)[RendererLifecycleEvent]
+
+export const RENDERER_LIFECYCLE_EVENTS = Object.keys(RENDERER_EXIT_BY_EVENT) as RendererLifecycleEvent[]
 
 export interface RendererLifecycleSource {
   /** The webContents id — the identity ownership is keyed on. */
@@ -95,13 +128,19 @@ export function trackRendererLifecycle(
   renderer: RendererLifecycleSource,
   queue: Pick<DeepLinkQueue, "rendererGone">,
 ): void {
-  const gone = () => queue.rendererGone(renderer.id)
-  for (const event of RENDERER_LIFECYCLE_EVENTS) renderer.on(event, gone)
+  for (const [event, exit] of Object.entries(RENDERER_EXIT_BY_EVENT))
+    renderer.on(event as RendererLifecycleEvent, () => queue.rendererGone(renderer.id, exit))
 }
 
-/** A batch plus the renderer currently answerable for it. `undefined` = nobody has been handed it. */
 interface HeldBatch extends DeepLinkBatch {
+  /** The renderer currently answerable for it. `undefined` = nobody has been handed it. */
   handedTo?: number
+  /**
+   * Every renderer this batch has been handed to. Retirement is keyed on this rather than on
+   * `handedTo`, so an ack that arrives after the batch was re-handed to another window still
+   * retires it instead of being dropped as a stranger's.
+   */
+  readonly heldBy: Set<number>
 }
 
 export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
@@ -115,24 +154,45 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
   const owners: number[] = []
   let nextBatchId = 1
 
+  const hand = (batch: HeldBatch, rendererId: number) => {
+    batch.handedTo = rendererId
+    batch.heldBy.add(rendererId)
+  }
+
+  /** Ids are monotonic, so sorting after any requeue restores delivery order. */
+  const inOrder = (batches: HeldBatch[]) => batches.sort((left, right) => left.id - right.id)
+
+  /** Take back everything one renderer still owes, for retry against whoever is left. */
+  const reclaim = (rendererId: number) => {
+    for (let index = inFlight.length - 1; index >= 0; index -= 1) {
+      if (inFlight[index]!.handedTo !== rendererId) continue
+      pending.push(inFlight.splice(index, 1)[0]!)
+    }
+    inOrder(pending)
+  }
+
   /** Push what is queued at the current owner, in order, until it refuses or nothing is left. */
   const flush = () => {
     while (pending.length > 0 && owners.length > 0) {
       const rendererId = owners[owners.length - 1]!
       const batch = pending[0]!
-      // A refusal means that renderer is not there any more, so it stops being an owner.
+      // A refusal means that renderer is not there any more — unreachable with no lifecycle event
+      // is still gone. It stops being an owner AND gives back what it never acknowledged; leaving
+      // that behind strands the older batch in `inFlight` for the life of the process while the
+      // next renderer receives only the newer ones.
       if (!deps.deliver(rendererId, { id: batch.id, links: batch.links })) {
         owners.pop()
+        reclaim(rendererId)
         continue
       }
-      batch.handedTo = rendererId
+      hand(batch, rendererId)
       pending.shift()
       inFlight.push(batch)
     }
   }
 
   const retire = (list: HeldBatch[], rendererId: number, batchId: number) => {
-    const at = list.findIndex((batch) => batch.id === batchId && batch.handedTo === rendererId)
+    const at = list.findIndex((batch) => batch.id === batchId && batch.heldBy.has(rendererId))
     if (at === -1) return false
     list.splice(at, 1)
     return true
@@ -150,16 +210,28 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
       if (links.length === 0) return
       // A batch lives in exactly one place at a time — queued, or in flight against one renderer.
       // That single-home rule is the exactly-once rule.
-      pending.push({ id: nextBatchId++, links })
+      pending.push({ id: nextBatchId++, links, heldBy: new Set() })
       flush()
     },
     consumeInitial(rendererId) {
       const at = owners.indexOf(rendererId)
       if (at !== -1) owners.splice(at, 1)
+      // A fresh document is the only thing that can take over a batch no live owner is answerable
+      // for: this renderer's own batches held across a reload or a crash, plus anything a departed
+      // renderer left owing that no surviving window could be given. What a LIVE owner still holds
+      // stays with it — that is the ownership rule, and taking it here would be the second
+      // consumption this queue exists to prevent.
+      const taken: HeldBatch[] = []
+      for (let index = inFlight.length - 1; index >= 0; index -= 1) {
+        const batch = inFlight[index]!
+        if (batch.handedTo !== rendererId && owners.includes(batch.handedTo!)) continue
+        taken.push(inFlight.splice(index, 1)[0]!)
+      }
+      taken.push(...pending.splice(0))
+      inOrder(taken)
       owners.push(rendererId)
-      const taken = pending.splice(0)
       for (const batch of taken) {
-        batch.handedTo = rendererId
+        hand(batch, rendererId)
         inFlight.push(batch)
       }
       // The reply travels back asynchronously too, so the drain path keeps its copy exactly like
@@ -168,21 +240,18 @@ export function createDeepLinkQueue(deps: DeepLinkQueueDeps): DeepLinkQueue {
     },
     acknowledge(rendererId, batchId) {
       if (retire(inFlight, rendererId, batchId)) return
-      // The ack/death race: a renderer that acknowledged and then immediately reloaded has already
-      // had its batch pushed back by `rendererGone`. Retire it there too, so the outcome does not
+      // The ack/death race: a renderer that acknowledged and then immediately died has already had
+      // its batch pushed back by `rendererGone`. Retire it there too, so the outcome does not
       // depend on which of the two messages main happened to process first — otherwise the retry
       // hands the same delivery out a second time.
       retire(pending, rendererId, batchId)
     },
-    rendererGone(rendererId) {
+    rendererGone(rendererId, exit) {
       const at = owners.indexOf(rendererId)
       if (at !== -1) owners.splice(at, 1)
-      for (let index = inFlight.length - 1; index >= 0; index -= 1) {
-        if (inFlight[index]!.handedTo !== rendererId) continue
-        pending.push(inFlight.splice(index, 1)[0]!)
-      }
-      // Ids are monotonic, so this restores delivery order after a requeue.
-      pending.sort((left, right) => left.id - right.id)
+      // A reloading or crashed renderer keeps its id and its books: its next document drains them
+      // back. Only a retired id hands them over, because only then is there no next document.
+      if (exit === "gone") reclaim(rendererId)
       flush()
     },
   }

@@ -173,8 +173,45 @@ function consumerViolationsFor(file: SourceFile): Violation[] {
  * overriding and detaching are not. Deps assembled somewhere else and passed in as a variable are
  * refused outright — they would put the wiring back out of reach, which is the thing this exists
  * to prevent.
+ *
+ * "The binding" has to mean a LEXICAL binding, not a name, or the whole judgement is a spelling
+ * check: take the factory under a second name, keep the honest call as decoration, and re-declare
+ * the same identifier inside `onMount` around a rewritten consumer — every name-based assertion
+ * above still passes while the mounted consumer is a different function. Hence two rules with no
+ * exceptions: the factory is only ever CALLED, never aliased, and the identifier it is bound to is
+ * declared exactly once in the file.
  */
 const CONSUMER_DEPS = ["enabled", "buffer", "openProject", "navigate", "handoff"] as const
+
+const CONSUMER_FACTORY = "createDeepLinkConsumer"
+
+/**
+ * Blank out import statements, keeping every offset. Imports are the one place the factory's name
+ * legitimately appears without being called, so they are removed before that rule is applied —
+ * and an import that renames it (`… as buildConsumer`) then leaves zero calls, which is refused
+ * by the same count.
+ */
+function withoutImports(source: string) {
+  return source.replace(/^[ \t]*import[\s{][\s\S]*?(?:from[ \t]*["'][^"']*["']|["'][^"']*["'])[ \t]*;?/gm, (text) =>
+    text.replace(/[^\n]/g, " "),
+  )
+}
+
+/**
+ * How many times `name` is BOUND in this source: a declaration, a function or arrow parameter, or
+ * a catch clause. More than one means the uses below cannot be attributed to the consumer, because
+ * two different variables answer to the same identifier. The parameter pattern requires the
+ * closing paren to be followed by `=>` or `{` so that passing the consumer as an argument
+ * (`makeEventListener(window, event, consumeDeepLinks)`) is not mistaken for re-binding it.
+ */
+function bindingsOf(source: string, name: string) {
+  const patterns = [
+    new RegExp(`\\b(?:const|let|var|function|class)\\s+${name}\\b`, "g"),
+    new RegExp(`\\((?:[^()]*,)?\\s*${name}\\s*(?:,[^()]*)?\\)\\s*(?:=>|\\{)`, "g"),
+    new RegExp(`\\bcatch\\s*\\(\\s*${name}\\b`, "g"),
+  ]
+  return patterns.reduce((total, pattern) => total + (source.match(pattern) ?? []).length, 0)
+}
 
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim()
 
@@ -230,15 +267,24 @@ interface ConsumerWiring {
   entries: { key: string; value: string }[]
   /** Everything that is not a plain named dep: spreads, computed keys, anything exotic. */
   foreign: string[]
-  /** Where the binding is used: as the wake-up listener, and as the mount-time first drain. */
-  usage: { listener: boolean; invoked: boolean }
+  /**
+   * Where the binding is used: as the wake-up listener, and as the mount-time first drain — plus
+   * whether those two uses can be attributed to it at all, which they cannot if the identifier is
+   * bound more than once in the file.
+   */
+  usage: { listener: boolean; invoked: boolean; singleBinding: boolean }
 }
 
 function deepLinkWiringIn(source: string): ConsumerWiring {
-  const clean = withoutComments(source)
-  const marker = "createDeepLinkConsumer("
+  const clean = withoutImports(withoutComments(source))
+  const marker = `${CONSUMER_FACTORY}(`
   const calls = clean.split(marker).length - 1
-  if (calls !== 1) throw new Error(`expected exactly one createDeepLinkConsumer call, found ${calls}`)
+  // Any mention of the factory that is not a call is an alias, and an alias is a second factory
+  // this judgement cannot see: `const build = createDeepLinkConsumer` puts the real construction
+  // beyond every rule below, including the count on this line.
+  const mentions = clean.split(new RegExp(`\\b${CONSUMER_FACTORY}\\b`)).length - 1
+  if (mentions !== calls) throw new Error(`${CONSUMER_FACTORY} must not be aliased, only called`)
+  if (calls !== 1) throw new Error(`expected exactly one ${CONSUMER_FACTORY} call, found ${calls}`)
   const callAt = clean.indexOf(marker)
 
   // A const, so the wiring `onMount` uses below cannot be reassigned out from under it.
@@ -288,6 +334,9 @@ function deepLinkWiringIn(source: string): ConsumerWiring {
         used,
       ),
       invoked: new RegExp(`(^|[^\\w$.])${binding}\\s*\\(\\s*\\)`).test(used),
+      // …and that both of those uses can only mean the const above, because nothing else in the
+      // file answers to that name.
+      singleBinding: bindingsOf(clean, binding) === 1,
     },
   }
 }
@@ -383,7 +432,7 @@ describe("Alpha route authority ratchet", () => {
   test("the consumer layout.tsx builds is the one it mounts", async () => {
     // Otherwise the honest deps above can sit next to a consumer nothing ever calls.
     const wiring = deepLinkWiringIn(await Bun.file(upstreamLayoutFile).text())
-    expect(wiring.usage).toEqual({ listener: true, invoked: true })
+    expect(wiring.usage).toEqual({ listener: true, invoked: true, singleBinding: true })
   })
 
   test("reformatting and reordering the same wiring is not a violation", () => {
@@ -406,7 +455,7 @@ describe("Alpha route authority ratchet", () => {
     expect(depsOf(wiring).sort()).toEqual([...CONSUMER_DEPS].sort())
     expect(depValue(wiring, "navigate")).toEqual(["navigateWithSidebarReset"])
     expect(depValue(wiring, "buffer")).toEqual(["() => window"])
-    expect(wiring.usage).toEqual({ listener: true, invoked: true })
+    expect(wiring.usage).toEqual({ listener: true, invoked: true, singleBinding: true })
   })
 
   test("the wiring pin bites on a wrapped navigate and on a remapped buffer", () => {
@@ -462,7 +511,7 @@ describe("Alpha route authority ratchet", () => {
 
     expect(wiring.foreign).toEqual([])
     expect(depValue(wiring, "navigate")).toEqual(["navigateWithSidebarReset"])
-    expect(wiring.usage).toEqual({ listener: false, invoked: false })
+    expect(wiring.usage).toEqual({ listener: false, invoked: false, singleBinding: true })
   })
 
   test("deps assembled somewhere else are refused, not waved through", () => {
@@ -480,6 +529,62 @@ describe("Alpha route authority ratchet", () => {
   test("a second consumer call site is refused outright", () => {
     const doubled = "createDeepLinkConsumer({ a: 1 })\ncreateDeepLinkConsumer({ b: 2 })"
     expect(() => deepLinkWiringIn(doubled)).toThrow(/exactly one/)
+  })
+
+  test("taking the factory under a second name is refused, so the count cannot be dodged", () => {
+    // Half of the R4 bypass: the alias is invisible to a count of `createDeepLinkConsumer(`, so
+    // the honest call above stays the only one this judgement can see while a second consumer is
+    // built from the same factory.
+    const aliased = `
+      const buildConsumer = createDeepLinkConsumer
+      const consumeDeepLinks = createDeepLinkConsumer({${HONEST_DEPS}})
+      onMount(() => {
+        const rewired = buildConsumer({ buffer: () => rewritten(window) })
+        makeEventListener(window, deepLinkEvent, rewired)
+        rewired()
+      })
+    `
+    expect(() => deepLinkWiringIn(aliased)).toThrow(/must not be aliased/)
+  })
+
+  test("importing the factory under a second name leaves nothing to judge, and says so", () => {
+    const renamed = `
+      import { createDeepLinkConsumer as buildConsumer } from "./layout/deep-links"
+      const consumeDeepLinks = buildConsumer({${HONEST_DEPS}})
+    `
+    expect(() => deepLinkWiringIn(renamed)).toThrow(/exactly one/)
+  })
+
+  test("re-declaring the same name inside onMount is a different binding, and is seen as one", () => {
+    // The other half: every name-based assertion still passes — the deps are honest, `foreign` is
+    // empty, and the identifier `onMount` subscribes and calls is spelled exactly right. It is
+    // simply a different variable, which is why the judgement counts bindings and not spellings.
+    const shadowed = deepLinkWiringIn(`
+      const consumeDeepLinks = createDeepLinkConsumer({${HONEST_DEPS}})
+      onMount(() => {
+        const consumeDeepLinks = () => elsewhere()
+        makeEventListener(window, deepLinkEvent, consumeDeepLinks)
+        consumeDeepLinks()
+      })
+    `)
+
+    expect(shadowed.foreign).toEqual([])
+    expect(depValue(shadowed, "navigate")).toEqual(["navigateWithSidebarReset"])
+    expect(shadowed.usage).toEqual({ listener: true, invoked: true, singleBinding: false })
+  })
+
+  test("a parameter that shadows the binding is a re-binding too", () => {
+    const shadowed = deepLinkWiringIn(`
+      const consumeDeepLinks = createDeepLinkConsumer({${HONEST_DEPS}})
+      onMount(() => {
+        withRewrittenBuffer((consumeDeepLinks) => {
+          makeEventListener(window, deepLinkEvent, consumeDeepLinks)
+          consumeDeepLinks()
+        })
+      })
+    `)
+
+    expect(shadowed.usage).toEqual({ listener: true, invoked: true, singleBinding: false })
   })
 
   test("the consumer detector bites when dispatch moves back into layout.tsx", () => {

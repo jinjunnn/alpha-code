@@ -420,7 +420,7 @@ R2 判 §5.1 那一轮为 NOT-MERGE:R1 八条里 4 条仍未闭合,且修复增�
   **残余边界(明示)**:ack 发生在 deliveries 落入 window buffer 之后。buffer 是同步派发的,布局
   已挂载时 ack 即等于「已消费」;若布局尚未挂载或 `enabled()` 仍为假,deliveries 停在 buffer 里,
   此时 reload 仍会丢。再往前推需要让 `packages/app` 侧的 drain 回 ack —— 那要在上游文件里新开一条
-  跨包回线,本轮不做。
+  跨包回线,本轮不做。**R4 把这条残余判为 Major(非 Blocker),已开窄票 #633 承接,见 §5.3。**
 
 - **F5 README 逐字可执行。** R2 指出文档先 `cd packages/ui-mac`、后续却用根相对路径且
   `REPO=$(pwd)`,照抄执行必失败。现每个命令块自带 `set -e` 与
@@ -448,3 +448,57 @@ R2 判 §5.1 那一轮为 NOT-MERGE:R1 八条里 4 条仍未闭合,且修复增�
   五个(重复键因此暴露)、`navigate` 与 `buffer` 的值按归一化空白比对,并从调用点取出 `const` 绑定
   名,要求**同一个名字**既订阅了唤醒事件又在 mount 时被调用一次。空白与属性顺序因此自由,覆盖与
   脱钩不再自由;deps 若被提到别处组装则直接报错(那会把接线重新推出判据射程,是本判据存在的理由)。
+
+### §5.3 第四轮对抗审计(R4)驳回后的修正(2026-07-26)
+
+R4 判 R3 那一轮为 NOT-MERGE。F5 已判 FIXED 不再改动;下列三条闭合各自的可执行假绿或新竞态,
+第四条是本轮**明确不做**的处置。
+
+- **F1 —— 「交还给谁」按退出原因分岔,retire 按投递历史而非当前持有者。** R3 的
+  `rendererGone()` 无论何种退出都立刻回队 + `flush()`,于是:owner 已消费、ack 还在路上时,main
+  先处理它的 reload/crash → batch 立刻被改派给**另一个还开着的窗口**并改写 `handedTo` → 迟到的
+  ack 因身份不匹配成为 no-op → 同一条链接被消费两次(R4 只读执行已观察到 batch 1 同时送到两个
+  窗口)。`deliver` 返回 false 的分支同样只 `owners.pop()`,不回收该 renderer 既有的 `inFlight`,
+  于是「不可达且 lifecycle 事件未到」时旧 batch 永久留在 `inFlight`,新 renderer 只拿到新的那批。
+  现在:
+  - reload(`did-start-loading`)与崩溃(`render-process-gone`)**保留 webContents id**,还会有
+    新 document 来 drain,因此未 ack 的 batch **留在该 renderer 名下**等它自己的下一个 document
+    —— 推给另一个正在运行的窗口既是重复消费,也把链接送进用户根本没在用的窗口;
+  - `destroyed` 才注销 id(不会再有 document 在它下面 drain),此时才回队并向仍在的窗口重试;
+    `deliver` 拒收视同 `destroyed`,回收它全部 `inFlight`;
+  - `consumeInitial(rendererId)` 除了取 `pending`,还接管**任何当前持有者已不是活 owner** 的
+    batch(含它自己跨 reload 留存的那些),所以留存不会变成滞留;
+  - retire 的身份判据从「当前 `handedTo`」改为「**曾经**被交付给谁」的历史集合,已被改派的那份
+    副本也能被原持有者的迟到 ack 关掉,一次重投不会变成一条重投链。
+  `rendererGone` 因此多一个 `exit` 参数,由 `RENDERER_EXIT_BY_EVENT` 在 `trackRendererLifecycle`
+  内部映射,调用方仍只有窗口工厂一处。三条时序各有一条执行级测试,并逐条单点回退确认变红。
+  **仍在射程外**:`destroyed` 那一支的迟到 ack 无法阻止已经发出的重投(传输已经交付,没有撤回
+  通道);该窗口连同它做过的事一起消失,所以重投是这一支的诚实选择,而不是可以两全的选择。
+
+- **desktop 门禁 —— 按形状扫的键面补齐,并写清哪些**不**在射程内。** R4 给出可执行假绿:
+  `mac.extendInfo.CFBundleURLTypes: [{ CFBundleURLSchemes: ["opencode"] }]` 是 electron-builder
+  官方支持的 macOS 注册写法,却完全不含 `protocols`/`schemes`/`opencode://`,原扫描全绿。现在
+  按形状扫的键集合为 `protocols` / `schemes` / `CFBundleURLTypes` / `CFBundleURLSchemes`(任意嵌套
+  深度)+ 任意含 `x-scheme-handler` 的字符串;另加一条源码级断言:`packages/desktop` 内不得出现
+  `setAsDefaultProtocolClient`(它绕过全部 config 元数据直接注册)。**明确记为本轮范围外**并写进
+  测试注释:`nsis.include` / `nsis.script` **脚本内容**(config 里只是文件路径,判它需要解析外部
+  脚本)、以及将来另一份经 `deb.fpm` / `rpm.fpm` 出货的 `.desktop` 内容(现只钉住既有那一份)。
+  两者都是「真出现那天再补」,现在声称覆盖就是这个函数存在的理由所反对的那种假绿。
+
+- **F7 —— 判据从「名字」改为「词法绑定」。** R3 的结构判据仍可绕:`const buildConsumer =
+  createDeepLinkConsumer` 取别名(`calls` 只数文本 `createDeepLinkConsumer(`,别名调用不计),
+  外层留一个 deps 完整、`foreign=[]` 的正确 consumer,`onMount` 内部再 `const consumeDeepLinks =
+  buildConsumer({ 被改写的 deps })` —— `usage` 只按名字正则匹配、不解析作用域,于是把内层那个
+  同名 const 误认成外层绑定。现在两条无例外的规则:工厂**只能被调用、不能被取别名**(import 段
+  先按位置抹白,剩下的每一次出现都必须是调用;`import { X as Y }` 则落到「调用数不等于一」被拒),
+  以及该 `const` 的标识符在**整份文件里只被绑定一次**(声明 / 函数与箭头形参 / catch 形参都算
+  绑定)。R4 的完整构造作为变异用例施加到真实 `layout.tsx` 上确认变红,别名与遮蔽两半也各自
+  单独确认。
+
+- **A(ack 早于消费)—— 判为 Major,本轮不做,已开窄票 [#633]。** R4 的判定是:这是用户可见的
+  静默功能失败(冷启动 deep link 在 layout 挂载前落进 window buffer,**仍立即 ack**,main 删副本,
+  随后 sidecar respawn 的 reload 把 buffer 一起丢掉,用户看到普通首页),但只发生在这个窗口内、
+  用户可重新触发、无持久数据破坏与安全问题,因此是 Major 而不是 Blocker。封死它要把 ack 推进到
+  `packages/app` 侧 drain 的出口 —— 一条落在上游文件里的**新跨包回传线**,和本票的 main 侧仲裁
+  是两件事。§5.2 末尾「残余边界(明示)」记的就是这条边界,现在它有了票号:#633,代码侧的注释
+  钉在 `packages/ui-mac/src/renderer/index.tsx` 的 `acceptDeepLinks` 上。
