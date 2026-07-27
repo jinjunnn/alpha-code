@@ -52,6 +52,9 @@ const UPSTREAMS = [
     files: [
       "contracts/web-identity/fixtures/consumers/alpha-code/endpoint-discovery.json",
       "contracts/web-account/fixtures/consumers/alpha-code/account-summary.json",
+      // The schema itself, so the account decoder's accepted key sets can be bound to the
+      // upstream property sets by test rather than restated as a hand-maintained constant.
+      "contracts/web-account/account-summary.v1.schema.json",
     ],
   },
 ] as const

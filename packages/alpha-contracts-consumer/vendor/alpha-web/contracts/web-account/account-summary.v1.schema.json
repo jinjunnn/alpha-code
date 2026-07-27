@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alphacodeone.com/contracts/web-account/account-summary.v1.schema.json",
+  "title": "alpha.web-account.summary.v1",
+  "description": "Alpha Web's account-summary display projection. Ledger entries and pages are not part of this schema. The producer is alpha-platform account-server (packages/gateway/src/account.ts summary()), which today emits neither the `schema_version`/`schema` discriminators nor `plan.name` on an inactive plan; those three are therefore optional and constrained-when-present rather than required, so this published contract accepts the wire that actually flows today. Making them required is the tightening tracked by the alpha-platform conformance ticket, and it is a v2 change.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["balanceFen", "walletUsedFen", "plan", "usage", "usageSeries"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "schema": { "const": "alpha.web-account.summary.v1" },
+    "balanceFen": { "type": "integer", "minimum": 0 },
+    "walletUsedFen": { "type": "integer", "minimum": 0 },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["active", "none"] },
+        "window5h": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["usedCredits", "limitCredits", "resetsInMin"],
+          "properties": {
+            "usedCredits": { "type": "integer", "minimum": 0 },
+            "limitCredits": { "type": "integer", "minimum": 0 },
+            "resetsInMin": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "window7d": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["usedCredits", "limitCredits", "resetsInMin"],
+          "properties": {
+            "usedCredits": { "type": "integer", "minimum": 0 },
+            "limitCredits": { "type": "integer", "minimum": 0 },
+            "resetsInMin": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "renewsAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "daysLeft": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["todayTokens", "weekTokens", "tasksThisMonth"],
+      "properties": {
+        "todayTokens": { "type": "integer", "minimum": 0 },
+        "weekTokens": { "type": "integer", "minimum": 0 },
+        "tasksThisMonth": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "usageSeries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["date", "tokens"],
+        "properties": {
+          "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+          "tokens": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  }
+}
