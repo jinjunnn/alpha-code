@@ -1,0 +1,88 @@
+{
+  "schema": "alpha-code/e7-packaged-live/v1",
+  "issue": "alpha-code#643",
+  "phase": "logged-in",
+  "capturedAt": "2026-07-27T09:53:30.056Z",
+  "finishedAt": "2026-07-27T09:53:30.142Z",
+  "blocked": "未登录,无法取证 (not logged in / no platform cloud token) — no evidence was collected",
+  "authObserved": {
+    "status": "logged-out",
+    "mode": "byok"
+  },
+  "checks": [
+    {
+      "id": "P0.1",
+      "ac": "preflight",
+      "title": "app under test is the build this evidence directory was cut for",
+      "status": "pass",
+      "criterion": "sha256(app.asar) === 8706d0c44e17d475ab136717ba9cbbbfad4c968ae34689ed377fdecc19fb43ff (alpha @ 94a76b669)",
+      "observed": {
+        "asarPath": "/Applications/alpha-code.app/Contents/Resources/app.asar",
+        "asarSha": "8706d0c44e17d475ab136717ba9cbbbfad4c968ae34689ed377fdecc19fb43ff",
+        "appMtime": "2026-07-27T09:29:35.418Z",
+        "pinnedCommit": "94a76b669"
+      },
+      "required": true,
+      "at": "2026-07-27T09:53:30.131Z"
+    },
+    {
+      "id": "P0.2",
+      "ac": "preflight",
+      "title": "CDP reachable on the packaged app",
+      "status": "pass",
+      "criterion": "http://127.0.0.1:9222/json lists a renderer page target",
+      "observed": {
+        "port": 9222
+      },
+      "required": true,
+      "at": "2026-07-27T09:53:30.136Z"
+    },
+    {
+      "id": "P0.3",
+      "ac": "preflight",
+      "title": "sidecar engine healthy",
+      "status": "pass",
+      "criterion": "GET /global/health → { healthy: true }",
+      "observed": {
+        "url": "http://127.0.0.1:57128",
+        "health": {
+          "healthy": true,
+          "version": "1.17.13"
+        }
+      },
+      "required": true,
+      "at": "2026-07-27T09:53:30.141Z"
+    },
+    {
+      "id": "P0.4",
+      "ac": "preflight",
+      "title": "登录态(平台代付)—— 取证的硬前提",
+      "status": "blocked",
+      "criterion": "auth.getState() === {status:\"logged-in\", mode:\"platform\"} AND <userData>/alpha-secrets/ALPHA_CLOUD_TOKEN exists",
+      "observed": {
+        "auth": {
+          "status": "logged-out",
+          "mode": "byok"
+        },
+        "cloudTokenFile": {
+          "path": "/Users/tide/Library/Application Support/ai.opencode.desktop.dev/alpha-secrets/ALPHA_CLOUD_TOKEN",
+          "present": false
+        },
+        "apiKeyFile": {
+          "path": "/Users/tide/Library/Application Support/ai.opencode.desktop.dev/alpha-secrets/ALPHA_API_KEY",
+          "present": false
+        },
+        "endpoints": {
+          "web": "https://alphacodeone.com",
+          "platform": "https://alpha-gateway.tidelabs.click",
+          "account": "https://account.alphacodeone.com",
+          "cloud": "https://alpha-cloud.tidelabs.click",
+          "mcp": "https://alpha-cloud.tidelabs.click/mcp"
+        }
+      },
+      "required": true,
+      "note": "未登录,无法取证 — log in inside the app (平台代付模式), then re-run this probe",
+      "at": "2026-07-27T09:53:30.142Z"
+    }
+  ]
+}
