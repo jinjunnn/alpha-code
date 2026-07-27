@@ -83,10 +83,18 @@ function decodePlan(value: unknown, version: Version): AccountPlan {
   // Inactive plan. The schema requires only { id, status } and permits every other plan property
   // here too; alpha-platform#106's emptyPlan() emits { id: "none", name: "None", status: "none" }.
   // The key set was already screened above, so this branch adds NO key restriction of its own: it
-  // keeps what the inactive `AccountPlan` variant can carry and lets the rest fall away. The
-  // discarded properties are deliberately not type-checked — they reach no consumer, and checking
-  // them could only turn a schema-valid payload into a rejection.
+  // keeps what the inactive `AccountPlan` variant can carry and lets the rest fall away.
+  //
+  // OPTIONAL IS NOT UNCONSTRAINED. The schema does not require these properties, but it does
+  // constrain their values, so they are validated with the same helpers the active branch uses and
+  // only then discarded. Discarding a value unvalidated would let a producer that violates the
+  // contract slip past `contract-incompatible` and past the contract-health alert — a silent pass
+  // in the one place this decoder exists to make loud.
   if (value.status === "none") {
+    if (value.window5h !== undefined) decodeWindow(value.window5h, version)
+    if (value.window7d !== undefined) decodeWindow(value.window7d, version)
+    if (value.renewsAt !== undefined && !isCalendarDate(value.renewsAt)) reject(version)
+    if (value.daysLeft !== undefined && !isCount(value.daysLeft)) reject(version)
     if (value.name === undefined) return { id: value.id, status: "none" }
     if (!isText(value.name)) reject(version)
     return { id: value.id, name: value.name, status: "none" }

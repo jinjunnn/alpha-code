@@ -64,13 +64,17 @@ whose shape those decoders reject therefore turns the merge gate red as soon as
 the pin is bumped. The account summary is decoded, not cast: a response the
 published contract does not describe raises `contract-incompatible` and the
 contract-health alert instead of reaching the renderer as a malformed summary.
-A payload the published schema allows is never rejected. Where that schema is
-looser than this repository's own types, the schema wins and the decoder discards
-what it cannot represent rather than refusing the response: an inactive plan is
-accepted with any non-empty `id`, an optional `name`, and any other plan property
-the schema permits, of which only `id` and `name` survive into `AccountPlan`. The
-one deliberate narrowing is the active branch, whose variant cannot be built
-without `name`, both credit windows, `renewsAt` and `daysLeft`.
+A payload the published schema allows is never rejected, and a payload it
+forbids never passes. Where that schema is looser than this repository's own
+types, the schema wins and the decoder discards what it cannot represent rather
+than refusing the response: an inactive plan is accepted with any non-empty `id`,
+an optional `name`, and any other plan property the schema permits, of which only
+`id` and `name` survive into `AccountPlan`. Optional is not unconstrained,
+however — the schema still constrains those values, so a discarded property is
+validated before it is dropped. Skipping that check would route a producer's
+contract violation around `contract-incompatible` and around the contract-health
+alert. The one deliberate narrowing is the active branch, whose variant cannot be
+built without `name`, both credit windows, `renewsAt` and `daysLeft`.
 
 Each object is screened once against the property set its schema declares, and
 those key sets are asserted equal to the vendored schema's `properties` by the

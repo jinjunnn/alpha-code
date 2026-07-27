@@ -141,6 +141,85 @@ describe("alpha-web account-summary consumer fixture", () => {
       expect(Object.keys(decoded.plan)).not.toContain(dropped)
   })
 
+  // Discarding is right; discarding UNVALIDATED is not. The schema does not require these plan
+  // properties on an inactive plan but it does constrain their values (schema.properties.plan), so
+  // a malformed one is a producer contract violation. Letting it through would route a violating
+  // payload around `contract-incompatible` and around the contract-health alert — a silent pass in
+  // the exact place this ticket exists to make loud.
+  const inactiveWire = (plan: Record<string, unknown>) =>
+    JSON.stringify({
+      balanceFen: 0,
+      walletUsedFen: 0,
+      plan: { id: "none", status: "none", ...plan },
+      usage: { todayTokens: 0, weekTokens: 0, tasksThisMonth: 0 },
+      usageSeries: [],
+    })
+
+  const violations: Array<[string, Record<string, unknown>]> = [
+    ["a window of the wrong type", { window5h: "bad" }],
+    ["a window carrying a negative credit count", { window7d: { usedCredits: -1, limitCredits: 2, resetsInMin: 3 } }],
+    ["a window carrying an undeclared key", { window5h: { usedCredits: 0, limitCredits: 0, resetsInMin: 0, x: 1 } }],
+    ["a renewsAt that is not a calendar date", { renewsAt: "tomorrow" }],
+    ["a fractional daysLeft", { daysLeft: 0.5 }],
+    ["a negative daysLeft", { daysLeft: -1 }],
+    // The key-set dimension must stay closed while the value dimension is added.
+    ["a plan property the schema does not declare", { trialEndsAt: "2026-09-01" }],
+  ]
+  for (const [label, plan] of violations)
+    test(`an inactive plan carrying ${label} is rejected, not silently discarded`, () => {
+      expect(() => decodeAccountSummary(inactiveWire(plan))).toThrow()
+      try {
+        decodeAccountSummary(inactiveWire(plan))
+      } catch (error) {
+        expect(isContractIncompatibleError(error)).toBe(true)
+      }
+    })
+
+  // The other side of the same judgement: tightening the value checks must not cost acceptance of
+  // anything the schema permits. Exhaustive over every optional-property subset — 2^5 plan subsets
+  // × 2^2 top-level discriminator subsets = 128 payloads, all schema-valid, all required to decode.
+  test("every inactive payload the schema permits still decodes (exhaustive optional-property matrix)", () => {
+    const planOptional: Array<[string, unknown]> = [
+      ["name", "None"],
+      ["window5h", { usedCredits: 0, limitCredits: 0, resetsInMin: 0 }],
+      ["window7d", { usedCredits: 1, limitCredits: 2, resetsInMin: 3 }],
+      ["renewsAt", "2026-09-01"],
+      ["daysLeft", 0],
+    ]
+    const topOptional: Array<[string, unknown]> = [
+      ["schema_version", 1],
+      ["schema", "alpha.web-account.summary.v1"],
+    ]
+    let checked = 0
+    for (let p = 0; p < 1 << planOptional.length; p++)
+      for (let t = 0; t < 1 << topOptional.length; t++) {
+        const plan: Record<string, unknown> = { id: "none", status: "none" }
+        planOptional.forEach(([key, sample], i) => {
+          if (p & (1 << i)) plan[key] = sample
+        })
+        const top: Record<string, unknown> = {}
+        topOptional.forEach(([key, sample], i) => {
+          if (t & (1 << i)) top[key] = sample
+        })
+        const decoded = decodeAccountSummary(
+          JSON.stringify({
+            ...top,
+            balanceFen: 0,
+            walletUsedFen: 0,
+            plan,
+            usage: { todayTokens: 0, weekTokens: 0, tasksThisMonth: 0 },
+            usageSeries: [],
+          }),
+        )
+        // Only what the inactive variant can represent survives; the validated rest is discarded.
+        expect(Object.keys(decoded.plan).sort(), JSON.stringify(plan)).toEqual(
+          plan.name === undefined ? ["id", "status"] : ["id", "name", "status"],
+        )
+        checked++
+      }
+    expect(checked).toBe(128)
+  })
+
   test("a breaking upstream rename of a published field is rejected by the same decoder", async () => {
     const { value } = await accountSummaryFixture()
     const { balanceFen, ...rest } = value as Record<string, unknown>
