@@ -248,19 +248,19 @@ jobs:
       - name: bun test (ui-mac)
         if: needs.detect.outputs.code == 'true'
         run: bash scripts/bun-test-floor.sh 3000 packages/ui-mac src
-      # #647 codex 第 1 轮之后追加:类级闸(禁 `Stream.runForEachWhile`)本身必须存在且真的跑过。
-      # 它被删除时整套 suite 只是从 3085 掉到 3077,远高于地板 —— 上面那一步照样全绿。
-      # 「一个能被静默删除的闸门不是闸门」,所以这里点名它。
-      - name: bun test (类级闸自身:Stream.runForEachWhile 禁令)
+      # ── 第二层:闸门文件逐个点名 ────────────────────────────────────────────
+      # 上面那些是**整包地板**,只抓灾难性丢失。它们抓不到「少了一个文件」——已两次实测:
+      #   ui-mac 删掉 stream-read-hygiene.test.ts → 3077 条 ≥ 地板 3000 → 全绿
+      #   ext    删掉 prompt-rebrand.test.ts      →  106 条 ≥ 地板  100 → 全绿
+      # 「闸门文件」= 删掉它就移除某条**具体保证**(而不只是减少覆盖率)。它们逐个登记在
+      # scripts/gate-files.tsv,由下面这一步逐个跑 + 逐个判下界。新增闸门文件忘了登记,会被
+      # packages/ui-mac/src/main/gate-file-registry.test.ts 判红(它自己也在登记簿里)。
+      #
+      # 这一步同时覆盖了 alpha 自有的 opencode web search 闸 —— 那份行为闸住在
+      # packages/opencode/test,而本 job 的整包地板都不覆盖 opencode(全量 opencode 测试不属 alpha)。
+      - name: assert gate files (逐个点名,整包地板抓不到单文件消失)
         if: needs.detect.outputs.code == 'true'
-        run: bash scripts/bun-test-floor.sh 6 packages/ui-mac src/main/stream-read-hygiene.test.ts
-      # #647:E7 web search 的**行为**闸住在 packages/opencode/test,而本 job 以前只跑
-      # contracts-consumer / ext / ui-mac —— 于是 ADR-035 收编面的断言一条都没被 CI 执行过
-      # (那份文件的抬头早就把这条盲区写下来了)。opencode 全量测试不属 alpha,只跑 alpha 自有的
-      # 那一份:readBoundedBody 读全 + MAX_BODY_BYTES 仍是硬限 + #489/#223 的失败诚实断言。
-      - name: bun test (alpha-owned opencode web search gates)
-        if: needs.detect.outputs.code == 'true'
-        run: bash scripts/bun-test-floor.sh 40 packages/opencode test/tool/alpha-websearch-failure.test.ts
+        run: bash scripts/assert-gate-files.sh
 
   seed-assets:
     name: seed assets present
