@@ -227,14 +227,15 @@ jobs:
       - name: verify immutable Alpha contract vendor lock
         if: needs.detect.outputs.code == 'true'
         run: bun run --cwd packages/alpha-contracts-consumer check:vendor
+      # 这两步与下面三步是**同一类**:`bun test` 对零用例退出 0,只看退出码会在 suite 被清空时
+      # 全绿(#647 codex 第 1 轮 Major ②)。既然机制已经有了,整类一起收口 —— 只修被点名的实例、
+      # 留着同类的其余实例,正是本 PR 在讲的那个故事。地板留大余量(当前 19 / 132)。
       - name: bun test (contracts consumer fixtures)
         if: needs.detect.outputs.code == 'true'
-        working-directory: packages/alpha-contracts-consumer
-        run: bun test
+        run: bash scripts/bun-test-floor.sh 15 packages/alpha-contracts-consumer
       - name: bun test (ext)
         if: needs.detect.outputs.code == 'true'
-        working-directory: packages/ext
-        run: bun test
+        run: bash scripts/bun-test-floor.sh 100 packages/ext
       # 下面三步都走 scripts/bun-test-floor.sh —— 它在 `bun test` 之外**断言实际执行的用例数**。
       # 理由(#647 codex 第 1 轮 Major ②):`bun test` 对「文件被清空 / 用例被条件注册成零条 /
       # 指定文件根本不存在」都会打印 `Ran 0 tests` 并**退出 0**。只看退出码的步骤因此在闸门消失

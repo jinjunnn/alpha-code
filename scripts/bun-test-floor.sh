@@ -17,8 +17,9 @@
 #     两层都要有:地板管灾难,点名管单个闸门。
 set -euo pipefail
 
-if [ "$#" -lt 3 ]; then
-  echo "usage: $0 <floor> <workdir> <bun test args...>" >&2
+# 参数可以只有 floor + workdir(整包跑,等价于原来的裸 `bun test`),也可以再带 bun test 的过滤参数。
+if [ "$#" -lt 2 ]; then
+  echo "usage: $0 <floor> <workdir> [bun test args...]" >&2
   exit 2
 fi
 
