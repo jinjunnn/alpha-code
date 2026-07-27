@@ -1,48 +1,71 @@
-# 闸门文件登记簿(#647)。每行:<下界> <TAB> <工作目录> <TAB> <测试文件> <TAB> <这道闸保证什么>
+# 闸门文件登记簿(#647)。
+# 每行五列,TAB 分隔:<下界> <工作目录> <测试文件> <delegates_to> <这道闸保证什么>
 #
 # 「闸门文件」的定义:一个测试文件,**删掉它就会移除某条具体保证**,而不只是减少覆盖率。
 # 操作性判据:它断言的是**自己模块之外**的东西 —— 仓库源码文本、vendored/生成的 fixture、
 # 上游文件、或一份钉住的清单/登记簿 —— 于是没有别的测试会因为它消失而变红。
 #
-# 为什么需要**两层**下界(这一轮的教训,别再只做一层):
-#   · 整包地板(workflow 里 `bun test (ui-mac)` 等步骤)抓的是**灾难性丢失** ——
-#     suite 加载失败、成片删除、runner 配错。它抓不到「少了一个文件」:
-#     实测 ui-mac 删掉 stream-read-hygiene.test.ts 后 3077 条 ≥ 地板 3000,**全绿**;
-#     实测 ext 删掉 prompt-rebrand.test.ts 后 106 条 ≥ 地板 100,**全绿**。
-#   · 本登记簿抓的是**单点消失**。每个闸门文件单独点名、单独判红。
-#   两层缺一不可 —— 「只上地板」这个错误本仓已经犯过两次(ui-mac 一次、ext 一次)。
+# ── delegates_to:**默认拒**,不许留空 ────────────────────────────────────────
+# 很多源码棘轮会在抬头写明「主判据不在本文件,由 X 执行」。那么删掉 X,保证就没了,而棘轮只
+# 守住「源码里有那段文字」—— 按本仓自己的定义,那就是**假闸门**。
+# 所以:凡本文件把主判据委派给别的测试文件,必须在这一列列出(逗号分隔,仓库相对路径),
+# 且**被委派的文件必须也在本登记簿里**。没有委派就显式写 `-`。留空 = 红。
 #
-# 下界怎么取:取当前条数往下留 ~20% 余量,只为吸收正常增删;它的作用是「文件还在且真的跑了」,
-# 不是精确计数。新增闸门文件必须登记 —— 未登记会被
-# packages/ui-mac/src/main/gate-file-registry.test.ts 判红。
+# 为什么不靠自动解析抬头来发现委派:自然语言的说法太多(「真实判据见」「行为层闸门在」
+# 「THE PRIMARY JUDGEMENT IS NOT IN THIS FILE」「移至」「由 X 断言」…),按措辞枚举与当初
+# 「按文件名枚举」是同一种缺陷 —— 说法不合的就隐形。因此**权威是这一列**(人显式声明,默认拒);
+# 抬头扫描只作为**发现用的绊线**:凡在闸门文件正文里出现的其它测试文件,必须已登记、
+# 或在 NOT_GATES、或在 REFERENCED_BUT_UNREGISTERED 里写明理由。三者皆无 = 红。
 #
-# floor	workdir	path	guarantee
+# ── 为什么需要**两层**下界(别再只做一层)────────────────────────────────────
+#   · 整包地板(workflow 的 `bun test (ui-mac)` 等)抓**灾难性丢失**:加载失败、成片删除、
+#     runner 配错。它抓不到「少了一个文件」——实测:
+#       ui-mac 删掉 stream-read-hygiene.test.ts → 3077 条 ≥ 地板 3000 → **全绿**
+#       ext    删掉 prompt-rebrand.test.ts      →  106 条 ≥ 地板  100 → **全绿**
+#   · 本登记簿抓**单点消失**:每个闸门文件单独点名、单独判下界。
+#   两层缺一不可 ——「只上地板」这个错误本仓已经犯过两次(ui-mac 一次、ext 一次)。
+#
+# 下界取当前条数往下留 ~20% 余量,只为吸收正常增删;它判的是「文件还在且真的跑了」。
+# 新增闸门文件忘了登记 → packages/ui-mac/src/main/gate-file-registry.test.ts 判红。
+#
+# floor	workdir	path	delegates_to	guarantee
 
 # ── contracts-consumer ────────────────────────────────────────────────────────
-15	packages/alpha-contracts-consumer	src/contracts.test.ts	vendored Alpha 契约的哈希锁:契约被改写/替换即红
+15	packages/alpha-contracts-consumer	src/contracts.test.ts	-	vendored Alpha 契约的哈希锁:契约被改写/替换即红
 
 # ── ext ──────────────────────────────────────────────────────────────────────
-20	packages/ext	src/prompt-rebrand.test.ts	REQ-062 prompt 改名 drift lock:上游 sync 重写基础 prompt 即红
-35	packages/ext	src/cloud-websearch-kill.test.ts	云 web search kill-switch 真能关(通用 Remote MCP 的钳制点)
-8	packages/ext	src/gen-skill-paths.test.ts	REQ-100 skill 注入门:只投影 main 派生的允许集
-2	packages/ext	src/cloud-contract-hook.test.ts	ext 侧契约解码钩子:契约不兼容必须 loud
+20	packages/ext	src/prompt-rebrand.test.ts	-	REQ-062 prompt 改名 drift lock:上游 sync 重写基础 prompt 即红
+35	packages/ext	src/cloud-websearch-kill.test.ts	-	云 web search kill-switch 真能关(通用 Remote MCP 的钳制点)
+8	packages/ext	src/gen-skill-paths.test.ts	packages/ui-mac/src/main/ext-receipt-v2.test.ts	REQ-100 skill 注入门:只投影 main 派生的允许集(decoder 强度用例已移至受托方)
+2	packages/ext	src/cloud-contract-hook.test.ts	-	ext 侧契约解码钩子:契约不兼容必须 loud
 
 # ── ui-mac ───────────────────────────────────────────────────────────────────
-6	packages/ui-mac	src/main/stream-read-hygiene.test.ts	#647 类级禁令:全仓禁用 Stream.runForEachWhile
-9	packages/ui-mac	src/main/websearch-copies.test.ts	本地 web search 主权闸位置锁 + 新副本普查网
-4	packages/ui-mac	src/main/extension-seed-snapshot.test.ts	REQ-102 packaged seed 快照漂移守卫(禁手编 seed)
-12	packages/ui-mac	src/main/alpha-web-contract-fixtures.test.ts	alpha-web 契约 fixture 锁:契约面变形即红
-1	packages/ui-mac	src/main/alpha-contract-health.test.ts	契约失败必须以持久 role=alert 横幅暴露(接线锚点)
-4	packages/ui-mac	src/renderer/alpha-ui/upstream-anchors.test.ts	REQ-012 上游 DOM 锚点契约:上游 sync 删/改名即红
-8	packages/ui-mac	src/renderer/alpha-ui/surface-seam-contract.test.ts	ADR-027 typed surface seam 存活:re-freeze 丢 seam 即红
-5	packages/ui-mac	src/renderer/alpha-ui/contrast-ratchet.test.ts	C21 AC4 对比度棘轮:改回 AA 以下即红
-12	packages/ui-mac	src/renderer/alpha-ui/takeover-adapter-coexistence.test.ts	REQ-125 遗留 DOM 接管件零引用棘轮
-5	packages/ui-mac	src/renderer/alpha-ui/session-timeline/cards/cards-contract.test.ts	REQ-125 C6 cards 静态棘轮(内容引擎/外链形态)
-4	packages/ui-mac	src/renderer/alpha-ui/permission-mount-ratchet.test.ts	permission 挂载面棘轮:挂载点扩散即红
-5	packages/ui-mac	src/renderer/alpha-ui/settings-surface-ratchet.test.ts	settings surface 清单棘轮(对 FRONTEND_SURFACE_MANIFEST)
-2	packages/ui-mac	src/renderer/alpha-ui/reduced-motion-ratchet.test.ts	reduced-motion 棘轮:新动效必须尊重降级偏好
-35	packages/ui-mac	src/shared/route-authority-ratchet.test.ts	route authority 源码棘轮(主判据在 route-deep-link-consumer)
-4	packages/ui-mac	src/main/gate-file-registry.test.ts	本登记簿自身的完备性闸:新增闸门文件未登记即红
+6	packages/ui-mac	src/main/stream-read-hygiene.test.ts	packages/opencode/test/tool/alpha-websearch-failure.test.ts	#647 类级禁令:全仓禁用 Stream.runForEachWhile(行为闸委派给受托方)
+9	packages/ui-mac	src/main/websearch-copies.test.ts	packages/opencode/test/tool/alpha-websearch-failure.test.ts,packages/core/test/alpha-websearch-sovereignty.test.ts,packages/ui-mac/src/main/sidecar-env.test.ts,packages/ui-mac/src/main/alpha-config-injection.test.ts	本地 web search 主权闸位置锁 + 新副本普查网(运行时证据与 env/注入判据均委派)
+4	packages/ui-mac	src/main/extension-seed-snapshot.test.ts	-	REQ-102 packaged seed 快照漂移守卫(禁手编 seed)
+12	packages/ui-mac	src/main/alpha-web-contract-fixtures.test.ts	-	alpha-web 契约 fixture 锁:契约面变形即红
+1	packages/ui-mac	src/main/alpha-contract-health.test.ts	-	契约失败必须以持久 role=alert 横幅暴露(接线锚点)
+4	packages/ui-mac	src/main/gate-file-registry.test.ts	-	本登记簿自身的完备性闸:新增闸门文件未登记即红
+45	packages/ui-mac	src/main/ext-receipt-v2.test.ts	-	受托:REQ-100 账本 decoder 强度 + 派生锁步(gen-skill-paths 的主判据)
+24	packages/ui-mac	src/main/sidecar-env.test.ts	-	受托:sidecar env 白名单真实判据(websearch-copies 的 env 半场)
+9	packages/ui-mac	src/main/alpha-config-injection.test.ts	packages/ui-mac/src/main/sidecar-ready-message.test.ts,packages/ui-mac/src/main/alpha-models.test.ts	受托:配置注入真实判据(websearch-copies 的注入半场);「失败值真的上车」与单件 model 组装再委派
+3	packages/ui-mac	src/main/sidecar-ready-message.test.ts	-	受托:buildReadyMessage 运行时闸 —— 纯文本锚曾被变异实证绕过,值上车的判据在这里
+18	packages/ui-mac	src/main/alpha-models.test.ts	-	受托:单件 buildAlphaModelConfig 锁(密钥只以 {file:} ref 进 content,明文永不进)
+4	packages/ui-mac	src/renderer/alpha-ui/upstream-anchors.test.ts	-	REQ-012 上游 DOM 锚点契约:上游 sync 删/改名即红
+8	packages/ui-mac	src/renderer/alpha-ui/surface-seam-contract.test.ts	-	ADR-027 typed surface seam 存活:re-freeze 丢 seam 即红
+5	packages/ui-mac	src/renderer/alpha-ui/contrast-ratchet.test.ts	-	C21 AC4 对比度棘轮:改回 AA 以下即红
+12	packages/ui-mac	src/renderer/alpha-ui/takeover-adapter-coexistence.test.ts	packages/ui-mac/src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts	REQ-125 遗留 DOM 接管件零引用棘轮(行为层闸委派)
+5	packages/ui-mac	src/renderer/alpha-ui/session-timeline/cards/cards-contract.test.ts	-	REQ-125 C6 cards 静态棘轮(内容引擎/外链形态)
+4	packages/ui-mac	src/renderer/alpha-ui/permission-mount-ratchet.test.ts	packages/ui-mac/src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts	permission 挂载面棘轮(运行时行为闸委派)
+2	packages/ui-mac	src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts	-	受托:单一审批面的**运行时**行为闸(两个棘轮的主判据)
+5	packages/ui-mac	src/renderer/alpha-ui/settings-surface-ratchet.test.ts	-	settings surface 清单棘轮(对 FRONTEND_SURFACE_MANIFEST)
+2	packages/ui-mac	src/renderer/alpha-ui/reduced-motion-ratchet.test.ts	-	reduced-motion 棘轮:新动效必须尊重降级偏好
+35	packages/ui-mac	src/shared/route-authority-ratchet.test.ts	packages/ui-mac/src/shared/route-deep-link-consumer.test.ts,packages/ui-mac/src/shared/route-upstream-shape.test.ts	route authority **源码**棘轮 —— 抬头自陈主判据不在本文件,故两个受托方必须在册
+7	packages/ui-mac	src/shared/route-deep-link-consumer.test.ts	-	受托:真跑 createDeepLinkConsumer,断言导航目标 == manifest 独立推导的 href(route authority 主判据)
+14	packages/ui-mac	src/shared/route-upstream-shape.test.ts	-	受托:上游 layout 目录的 deep-link 路径 SHAPE 契约
+
+# ── core(alpha 自有;本 job 的整包地板不覆盖 packages/core)──────────────────
+9	packages/core	test/alpha-websearch-sovereignty.test.ts	-	受托:V2 core 那份 websearch 副本的主权闸运行时证据(websearch-copies 的运行时半场)
 
 # ── opencode(仅 alpha 自有)────────────────────────────────────────────────
-40	packages/opencode	test/tool/alpha-websearch-failure.test.ts	#647 readBoundedBody 读全 + MAX_BODY_BYTES 硬限 + #489/#223 失败诚实
+40	packages/opencode	test/tool/alpha-websearch-failure.test.ts	packages/ui-mac/src/main/stream-read-hygiene.test.ts	#647 readBoundedBody 读全 + MAX_BODY_BYTES 硬限 + #489/#223 失败诚实

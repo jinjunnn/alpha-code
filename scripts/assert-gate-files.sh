@@ -16,11 +16,13 @@ MANIFEST="$ROOT/scripts/gate-files.tsv"
 failed=0
 checked=0
 
-while IFS=$'\t' read -r floor workdir path guarantee || [ -n "${floor:-}" ]; do
+while IFS=$'\t' read -r floor workdir path delegates guarantee || [ -n "${floor:-}" ]; do
   case "${floor:-}" in ''|\#*) continue ;; esac
   [ -n "${workdir:-}" ] && [ -n "${path:-}" ] || { echo "::error::登记簿格式错误:$floor $workdir $path"; failed=1; continue; }
+  # delegates_to 默认拒:没有委派也必须显式写 `-`,留空即红。
+  [ -n "${delegates:-}" ] || { echo "::error::$workdir/$path 的 delegates_to 列为空 —— 没有委派请显式写 '-'"; failed=1; continue; }
   checked=$((checked + 1))
-  echo "── [$checked] $workdir/$path (下界 $floor) — ${guarantee:-}"
+  echo "── [$checked] $workdir/$path (下界 $floor, 委派 ${delegates}) — ${guarantee:-}"
   if ! bash "$ROOT/scripts/bun-test-floor.sh" "$floor" "$workdir" "$path"; then
     echo "::error::闸门文件失守:$workdir/$path — ${guarantee:-}"
     failed=1
@@ -28,8 +30,8 @@ while IFS=$'\t' read -r floor workdir path guarantee || [ -n "${floor:-}" ]; do
 done < "$MANIFEST"
 
 # 空登记簿 / 解析全挂 = 本脚本自己变成空闸门。显式判红。
-if [ "$checked" -lt 15 ]; then
-  echo "::error::只检查了 $checked 个闸门文件(至少应有 15 个)——登记簿被清空或解析失败"
+if [ "$checked" -lt 25 ]; then
+  echo "::error::只检查了 $checked 个闸门文件(至少应有 25 个)——登记簿被清空或解析失败"
   exit 1
 fi
 
