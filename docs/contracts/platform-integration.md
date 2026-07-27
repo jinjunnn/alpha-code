@@ -63,10 +63,11 @@ whose shape those decoders reject therefore turns the merge gate red as soon as
 the pin is bumped. The account summary is decoded, not cast: a response the
 published contract does not describe raises `contract-incompatible` and the
 contract-health alert instead of reaching the renderer as a malformed summary.
-The accepted shape is that contract narrowed to what `AccountPlan` promises —
-an active plan must carry its name, both credit windows, `renewsAt` and
-`daysLeft`, which the published schema leaves optional because the producer omits
-them on an inactive plan.
+Where that published schema is looser than this repository's own types, the
+schema wins: an inactive plan is decoded with any non-empty `id` and an optional
+`name`, because that is what the producer is entitled to send. The one deliberate
+narrowing is the active branch, whose `AccountPlan` variant cannot be built
+without `name`, both credit windows, `renewsAt` and `daysLeft`.
 
 ## Authentication flow
 

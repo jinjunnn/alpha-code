@@ -27,6 +27,13 @@ target
 .scripts
 .direnv/
 
+# Staged upstream contract checkouts consumed by
+# packages/alpha-contracts-consumer/scripts/vendor-alpha-contracts.ts. Ephemeral working copies of a
+# pinned upstream commit — only the vendored bytes under vendor/ belong in this repository. Root
+# anchored and without a trailing slash so the rule also catches a symlink at that path.
+/.upstream-contracts
+/.upstream-web-contracts
+
 # Local dev files
 opencode-dev
 UPCOMING_CHANGELOG.md

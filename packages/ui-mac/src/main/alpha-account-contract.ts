@@ -5,11 +5,12 @@
 // broken `AccountSummary` (NaN balances, `undefined.usedCredits`), and no test could see it.
 //
 // The accepted shape is alpha-web's published contract
-// `alpha.web-account.summary.v1` (contracts/web-account/account-summary.v1.schema.json), narrowed
-// to what `AccountSummary`/`AccountPlan` actually promise their consumers: the schema keeps
-// `plan.name` and the windows optional because the producer omits them on an inactive plan, while
-// this type's active branch requires them. `schema_version`/`schema` are optional for the same
-// reason (the producer emits neither today) but are constrained when present.
+// `alpha.web-account.summary.v1` (contracts/web-account/account-summary.v1.schema.json). Where the
+// schema is looser than this repository's types, the SCHEMA wins: an inactive plan is decoded with
+// any non-empty `id` and an optional `name`, because that is what the producer is entitled to send.
+// The one deliberate narrowing is the ACTIVE branch, whose `AccountPlan` variant cannot be built
+// without `name`, both credit windows, `renewsAt` and `daysLeft`. `schema_version`/`schema` are
+// optional (the producer emits neither today) but are constrained when present.
 //
 // The pinned fixture that drives this decoder is vendored at
 // packages/alpha-contracts-consumer/vendor/alpha-web/contracts/web-account/fixtures/consumers/alpha-code/account-summary.json.
@@ -19,6 +20,7 @@ import type { AccountPlan, AccountSummary, AccountWindow } from "../preload/type
 
 const SUMMARY_KEYS = ["schema_version", "schema", "balanceFen", "walletUsedFen", "plan", "usage", "usageSeries"]
 const PLAN_KEYS = ["id", "name", "status", "window5h", "window7d", "renewsAt", "daysLeft"]
+const INACTIVE_PLAN_KEYS = ["id", "name", "status"]
 const WINDOW_KEYS = ["usedCredits", "limitCredits", "resetsInMin"]
 const USAGE_KEYS = ["todayTokens", "weekTokens", "tasksThisMonth"]
 const SERIES_KEYS = ["date", "tokens"]
@@ -65,11 +67,16 @@ function decodeUsage(value: unknown, version: Version): AccountSummary["usage"] 
 
 function decodePlan(value: unknown, version: Version): AccountPlan {
   if (!isRecord(value) || !onlyKeys(value, PLAN_KEYS) || !isText(value.id)) reject(version)
-  // The inactive branch of AccountPlan carries nothing beyond id/status; a payload that pairs
-  // `status: "none"` with plan detail is a shape this consumer cannot faithfully represent.
+  // Inactive plan: decode what the PUBLISHED contract allows, not the narrowest shape this
+  // repository's types could get away with — a consumer that refuses a conforming payload is the
+  // defect. The schema requires only { id, status }, leaves `name` optional and takes any non-empty
+  // `id`; alpha-platform#106's emptyPlan() emits { id: "none", name: "None", status: "none" }, so
+  // demanding a bare { id: "none", status: "none" } would fail every plan-less account closed.
   if (value.status === "none") {
-    if (value.id !== "none" || Object.keys(value).length !== 2) reject(version)
-    return { id: "none", status: "none" }
+    if (!onlyKeys(value, INACTIVE_PLAN_KEYS)) reject(version)
+    if (value.name === undefined) return { id: value.id, status: "none" }
+    if (!isText(value.name)) reject(version)
+    return { id: value.id, name: value.name, status: "none" }
   }
   if (value.status !== "active" || !isText(value.name) || !isCalendarDate(value.renewsAt) || !isCount(value.daysLeft))
     reject(version)

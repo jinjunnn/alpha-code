@@ -77,6 +77,30 @@ describe("alpha-web account-summary consumer fixture", () => {
     })
   })
 
+  // The consumer fixture alpha-web publishes only covers an ACTIVE plan, so the inactive branch of
+  // the decoder is not pinned by a vendored byte. alpha-platform#106 (emptyPlan(),
+  // packages/gateway/src/account.ts) emits the wire below for every user without a plan, and the
+  // published contract requires only { id, status } on a plan with `name` optional. Refusing it
+  // would turn every plan-less account's summary into contract-incompatible.
+  test("the inactive-plan wire alpha-platform#106 emits decodes", () => {
+    const wire = {
+      schema_version: 1,
+      schema: "alpha.web-account.summary.v1",
+      balanceFen: 0,
+      walletUsedFen: 0,
+      plan: { id: "none", name: "None", status: "none" },
+      usage: { todayTokens: 0, weekTokens: 0, tasksThisMonth: 0 },
+      usageSeries: [],
+    }
+    expect(decodeAccountSummary(JSON.stringify(wire))).toEqual({
+      balanceFen: 0,
+      walletUsedFen: 0,
+      plan: { id: "none", name: "None", status: "none" },
+      usage: { todayTokens: 0, weekTokens: 0, tasksThisMonth: 0 },
+      usageSeries: [],
+    })
+  })
+
   test("a breaking upstream rename of a published field is rejected by the same decoder", async () => {
     const { value } = await accountSummaryFixture()
     const { balanceFen, ...rest } = value as Record<string, unknown>
