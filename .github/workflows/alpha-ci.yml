@@ -242,10 +242,30 @@ jobs:
       # contracts-consumer / ext / ui-mac —— 于是 ADR-035 收编面的断言一条都没被 CI 执行过
       # (那份文件的抬头早就把这条盲区写下来了)。opencode 全量测试不属 alpha,只跑 alpha 自有的
       # 那一份:readBoundedBody 读全 + MAX_BODY_BYTES 仍是硬限 + #489/#223 的失败诚实断言。
+      # 断言**实际跑了多少条**,不只看退出码(#647 codex 第 1 轮 Major ②):`bun test` 对
+      # 「文件被清空 / 用例被条件注册成零条」会打印 `Ran 0 tests` 并**退出 0** —— 一个跑 0 个
+      # 用例还报绿的步骤,比没有这一步更坏。下界钉在 40(当前 45),低于它即红。
       - name: bun test (alpha-owned opencode web search gates)
         if: needs.detect.outputs.code == 'true'
         working-directory: packages/opencode
-        run: bun test test/tool/alpha-websearch-failure.test.ts
+        run: |
+          set +e
+          bun test test/tool/alpha-websearch-failure.test.ts 2>&1 | tee gate.log
+          status=${PIPESTATUS[0]}
+          set -e
+          pass="$(sed -n 's/^[[:space:]]*\([0-9][0-9]*\) pass$/\1/p' gate.log | tail -1)"
+          [ -z "$pass" ] && pass=0
+          rm -f gate.log
+          echo "bun exit=$status, parsed pass=$pass"
+          if [ "$status" -ne 0 ]; then
+            echo "::error::web search 闸门测试失败"
+            exit 1
+          fi
+          if [ "$pass" -lt 40 ]; then
+            echo "::error::只跑了 $pass 条 web search 闸门断言(下界 40)——闸门被清空或条件注册成零用例时,bun 会 Ran 0 tests 且退出 0"
+            exit 1
+          fi
+          echo "✓ $pass 条 web search 闸门断言真的执行了"
 
   seed-assets:
     name: seed assets present
