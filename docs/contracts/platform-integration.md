@@ -46,6 +46,28 @@ pinned producer release, while its code supplies strict decoders and safe
 and runs both producer and consumer fixtures. Missing, unknown, future, or
 otherwise invalid versions fail closed; no compatibility shim is selected.
 
+The same package holds a second, independent pin for the surfaces `alpha-web`
+owns. `alpha-web-contract.lock.json` pins repository `jinjunnn/alpha-web` at
+immutable commit `b597f0d548db9ffafc6d6301e548dbd323c810ad` and records the
+SHA-256 of the two consumer fixtures that repository publishes for this desktop:
+endpoint discovery (`alpha.web-identity.endpoint-discovery.v1`) and the account
+summary display projection (`alpha.web-account.summary.v1`). Both are vendored
+byte-identically under `vendor/alpha-web/`.
+
+Those fixtures are exercised through the shipped decoders, not through a second
+statement of the shape:
+[`alpha-web-contract-fixtures.test.ts`](../../packages/ui-mac/src/main/alpha-web-contract-fixtures.test.ts)
+feeds each fixture `value` into `decodeEndpointDiscovery()` and into the decode
+function `fetchAccountSummary()` passes to `createAuthedGet`. An upstream release
+whose shape those decoders reject therefore turns the merge gate red as soon as
+the pin is bumped. The account summary is decoded, not cast: a response the
+published contract does not describe raises `contract-incompatible` and the
+contract-health alert instead of reaching the renderer as a malformed summary.
+The accepted shape is that contract narrowed to what `AccountPlan` promises —
+an active plan must carry its name, both credit windows, `renewsAt` and
+`daysLeft`, which the published schema leaves optional because the producer omits
+them on an inactive plan.
+
 ## Authentication flow
 
 1. The main process creates PKCE S256 verifier/challenge and state, then opens

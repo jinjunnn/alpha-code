@@ -1,0 +1,14 @@
+{
+  "repo": "jinjunnn/alpha-web",
+  "commit": "b597f0d548db9ffafc6d6301e548dbd323c810ad",
+  "files": [
+    {
+      "path": "contracts/web-identity/fixtures/consumers/alpha-code/endpoint-discovery.json",
+      "sha256": "f07f328e1f6ec919065e6aca2f62787d211d42a67f89cd6fb6238b1cd8f1c134"
+    },
+    {
+      "path": "contracts/web-account/fixtures/consumers/alpha-code/account-summary.json",
+      "sha256": "e6698c00df0ce17d9bd40b1c2d36d988e24c71ba98b0392101ebe61c578cdbb4"
+    }
+  ]
+}

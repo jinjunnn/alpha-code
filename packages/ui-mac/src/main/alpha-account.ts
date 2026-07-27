@@ -19,6 +19,7 @@ import { getLogger } from "./logging"
 import { reportContractFailure } from "./alpha-contract-health"
 import type { AccountResult, AccountSummary, AccountTransaction } from "../preload/types"
 import { createAuthedGet } from "./alpha-account-request"
+import { decodeAccountSummary } from "./alpha-account-contract"
 
 // Resolved by alpha-endpoints (env ALPHA_ACCOUNT_URL > userData pin > login discovery > default).
 const accountBase = () => resolveEndpoints().account
@@ -40,8 +41,11 @@ const authedGet = createAuthedGet({
   reportContractFailure,
 })
 
+// #631: decoded, not cast — an account-server response the published contract does not describe
+// becomes `contract-incompatible` (reported to the renderer's contract-health alert) instead of a
+// structurally broken AccountSummary. See alpha-account-contract.ts.
 export const fetchAccountSummary = (): Promise<AccountResult<AccountSummary>> =>
-  authedGet(ALPHA_PATHS.accountSummary, "account.read", (text) => JSON.parse(text) as AccountSummary)
+  authedGet(ALPHA_PATHS.accountSummary, "account.read", decodeAccountSummary)
 
 export const fetchTransactions = (limit?: number): Promise<AccountResult<{ transactions: AccountTransaction[] }>> =>
   authedGet(
