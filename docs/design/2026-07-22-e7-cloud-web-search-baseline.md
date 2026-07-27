@@ -156,6 +156,26 @@ review_after: 2027-01-16
 > 棘轮**(forbidden-provider ratchet:断言打包端 provider 目录不含 `opencode`)守死,**无需**
 > 为它给 `webSearchEnabled` 打 patch。
 
+> **勘破更正(2026-07-27,alpha-code#642)**:上一块的两句都不成立,**本稿凡出现
+> 「`providerID==="opencode"` 打包端不可达 / 恒为死码 / 以禁用 provider 棘轮守死」之处
+> (§3a、票 3、票 3b、票 5),一律以本块为准**。
+>
+> - **那道棘轮从未存在**。按 forbidden-provider 与「provider 目录集合」两个方向普查全仓测试,
+>   零命中。它是一处**假闸门**:ADR 与本稿都声明了保证,却没有任何可执行判据钉住它。
+> - **该分支在用户面可达,不是死码**。注入面把用户自配的 provider id **无条件**并回硬白名单——
+>   `alpha-models.ts:115-117` 遍历 `readUserProviderIds()`(`ext-config.ts:784`,取
+>   `opencode.jsonc` 的 `provider` 键,零过滤)后 `enabled.push(id)`。用户写一条
+>   `{"provider":{"opencode":{…}}}`,`opencode` 即进 `enabled_providers`,
+>   `webSearchEnabled(ProviderV2.ID.opencode, …)` 恒真,**与 4 个 keyless flag 是否被 force-0
+>   无关**。所以它确实是一条复活面,只是复活的是**注册**,不是能力。
+> - **不变量不受影响,因为保证本来就不在注册闸上**。执行面撞 §3a 收口后的传输层最终闸
+>   (`ALPHA_LOCAL_WEBSEARCH_DENY`,`mcp-websearch.ts` 的 `call()` 与
+>   `packages/core/src/tool/websearch.ts` 的 `callMcp()` 各自第一句),调用被拒且零出网。
+>   与「被后置 allow 顶掉的 permission」同类残留:**能力真关,可见性是 cosmetic**。
+> - **裁决(照搬进 [[ADR-009]] 裁决 (c))**:不补棘轮(它守的是错的层),也不过滤该 id
+>   (登出/BYOK 态自带 Zen key 是决策 A 明示允许的形态,过滤会误伤);(c) 从「死码 + 棘轮」
+>   降级为「注册面可达、执行面被传输闸兜住」。「无需为它 patch 上游 `registry.ts`」这一半仍成立。
+
 **被否决**:
 - **重排/改名远端工具**:远端工具名与顺序归 platform 所有;要生效须 platform 回声 →
   红旗,否决。

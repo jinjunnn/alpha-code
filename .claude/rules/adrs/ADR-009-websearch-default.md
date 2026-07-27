@@ -3,7 +3,7 @@ id: ADR-009
 title: web search 默认策略 —— 登出/BYOK keyless 放开;登录态云优先权威 + 逃生开关跨本地/云
 status: amended
 date: 2026-06-18
-amended: 2026-07-25
+amended: 2026-07-27
 related: [ADR-002, ADR-005, ADR-006, ADR-018, ADR-029, ADR-035]
 supersedes_premise: "2026-06-18 的『桌面默认对所有 provider 放开 keyless websearch』现被登录态门控收窄为登出/BYOK 兜底"
 ---
@@ -90,7 +90,12 @@ opencode `websearch`(Exa/Parallel)默认只给官方 `opencode`(Zen)provider(`pa
   - **修法**:归属改存在**每个 `AlphaExt` 实例自己的闭包**里,在该实例**全部配置合并完成之后**(项目 `alpha.jsonc` 合并之后)才算,并显式传给该实例的 `tool.execute.before`;模块侧不再留任何可变状态,判决函数的默认实参恒为 `UNVERIFIED_MCP_OWNERSHIP`(没传 = fail-closed),合并中途抛错同样倒向它。
   - **同轮修掉的 Minor**:分类判据 ②(`search` + 具名搜索引擎词)此前实现按**词元集合同时出现**判,而本 ADR 与代码注释都写的是**相邻** —— 两张皮,且集合判会误杀 `brave_translate_and_search` / `internet_archive_search` 一类第三方工具(与 AC4 反向)。**改实现**为真正的相邻判定,与宣称对齐。
   - **证据**:`packages/ext/src/cloud-websearch-kill.test.ts` 的「跨实例隔离」组(两个并存 directory 的**真** `AlphaExt` 实例,同一个被缓存的模块 import 两次,证明 B 的 foreign server 改不动 A 的判决;修复前该用例复现误拒)与「R7 回归」相邻用例。
-- **(c) `providerID==="opencode"` Zen 分支打包端不可达**:产品不发布 `opencode`/Zen provider,`webSearchEnabled` 的该 OR 分支恒为死码。以**禁用 provider 棘轮**(forbidden-provider ratchet:断言打包端 provider 目录不含 `opencode`)守死,**无需**为它 patch 上游闸。
+- **(c) `providerID==="opencode"` Zen 分支打包端不可达**(原始表述,2026-07-22):产品不发布 `opencode`/Zen provider,`webSearchEnabled` 的该 OR 分支恒为死码。以**禁用 provider 棘轮**(forbidden-provider ratchet:断言打包端 provider 目录不含 `opencode`)守死,**无需**为它 patch 上游闸。
+  **2026-07-27 收口(#642;上一段的「以禁用 provider 棘轮守死」**不成立**,作废)**:两处都不成立。
+  - **那道棘轮不存在**。全仓没有任何断言「打包端 provider 目录不含 `opencode`」的测试(按 forbidden-provider / 目录集合两个方向普查,零命中)。它是被写进 ADR 的一道**假闸门** —— 声明了保证,但没有任何可执行判据钉住它,守卫在 #639 之后仍然只靠这句话。
+  - **即使补上那道棘轮,它守的也不是这条路**。`enabled_providers` 是硬白名单,但注入面把**用户自配的 provider id 无条件并回白名单**:`alpha-models.ts:115-117` 遍历 `readUserProviderIds()`(`ext-config.ts:784`,把 `opencode.jsonc` 的 `provider` 键**原样**取出、零过滤)`enabled.push(id)`。用户写一条 `{"provider":{"opencode":{…}}}`,`opencode` 就进了白名单,`webSearchEnabled(ProviderV2.ID.opencode, …)`(`registry.ts:58`)于是恒真 —— 与 4 个 keyless flag 是否被 force-0 无关。**「恒为死码」是错的**,该 OR 分支在用户面可达。
+  - **但主权判决不受影响 —— 因为保证本来就不在注册闸上**。这条路只让本地 `websearch` 工具**注册**;真正的最终闸在裁决 (b) 的传输层(`ALPHA_LOCAL_WEBSEARCH_DENY`,`mcp-websearch.ts` 的 `call()` 与 `packages/core/src/tool/websearch.ts` 的 `callMcp()` 各自第一句),它不查 provider、不查 permission ruleset。主权态下该工具可注册、可见,**调用一律被拒且零出网**。这与 (b) 已登记的残留同一类:**能力真关,可见性是 cosmetic**。
+  - **裁决**:不补那道棘轮(它守的是错的层,补了也只是把假闸门换成一道守不住东西的真测试),也**不**过滤用户自配的 `opencode` id —— 登出/BYOK 态下用户自带 Zen key 是决策 A 明示允许的形态,过滤它会误伤。**改为诚实登记**:(c) 从「死码 + 棘轮」降级为「注册面可达、执行面被 (b) 的传输闸兜住」。仍然**无需**为它 patch 上游 `registry.ts`,原结论的这一半成立。
 - **(d) host-tool 的真实失败集(2026-07-25 更正:402 与余额门**已上线**)**:本条 2026-07-22 的原始表述——「`POST /v1/tools/web_search` 无 `accountPreauth`、计费仅事后 settle,故该路径无 402/余额面」——**今天是错的**,照它实现会漏掉真实失败态。`alpha-platform#37` 的 web_search 切片已落地(`packages/gateway/src/worker.ts` @ `2fd1984`):路由已登记进 `BILLABLE_ROUTES`(`:92`,`reservePolicy: "fixed-web-search-unit"`)且由启动断言 `assertRegisteredBillableRoutes(app.routes)`(`:952`)双向核对,ADR-018「未登记的收费入口不得运行」对 `web_search` 已满足。`webSearchHandler`(`:849-871`)今天的失败集:
   - `401` 无 auth;
   - `403` **`error.code = "action_forbidden"`**(`:853-854`,`model.invoke` 未授权)—— 原稿写的 `scope_forbidden` 是**另一个 worker**(`packages/gateway/src/server.ts:59`)的码,不在这条链上;另有 `403 job_not_enforceable`(`:864`,per-job 预算不可强制);
@@ -113,6 +118,7 @@ opencode `websearch`(Exa/Parallel)默认只给官方 `opencode`(Zen)provider(`pa
   **2026-07-25 之前本条只有 permission 注入,声明「跨本地+云关掉」是超前的**:R3 判定云侧那一半当时可被后置授权顶掉(见裁决 (a) 的 2026-07-26 收口段)。
   **R4 的「disarmed 不可重开」也不成立**:`/mcp/:name/connect` 能把 `enabled:false` 无条件翻开,见裁决 (a) 的五次收口段。
 - ⚠️ **残留(a)**:云工具 catalog `listTools` 仍列 `cloud_web_search`,仅模型工具集不含——待引擎 remote 逐工具 deny。kill-switch 下调用一律被 ext 钩子拒(可见性是 cosmetic);**但**平台侧仍会接受并计费一个绕过引擎工具循环、直发的 `web_search` 调用 —— 服务端按 kill-switch 拒绝需要平台改动,不在本仓。
+- ⚠️ **残留(c)(2026-07-27 更正,#642;原「以禁用 provider 棘轮守死」是假闸门,作废)**:`providerID==="opencode"` 分支**不是死码**,且全仓没有任何棘轮守着它。用户在 `opencode.jsonc` 自配一个 id 为 `opencode` 的 provider,注入面就把它无条件并回 `enabled_providers`(`alpha-models.ts:115-117` ← `readUserProviderIds()`),`webSearchEnabled` 于是恒真,主权态下本地 `websearch` 工具照常**注册**。**能力仍关**:执行面撞裁决 (b) 的传输层最终闸(`ALPHA_LOCAL_WEBSEARCH_DENY`),调用被拒且零出网。与残留(b)同类 —— 可见性是 cosmetic。不补棘轮、不过滤该 id(登出/BYOK 态自带 Zen key 是决策 A 明示允许的形态),按现状登记。
 - ✅ **残留(b)已收口(2026-07-25 二轮 + 2026-07-26 三轮,#223)**:`export OPENCODE_EXPERIMENTAL=1` 的 env 层绕过由两层堵死 —— permission 注入(把工具从模型工具表滤掉)+ **工具自身的最终闸**(`ALPHA_LOCAL_WEBSEARCH_DENY`)。**只有第二层是主权保证**:R2 动态复现,单靠 permission 注入会被 agent wildcard / 持久 session permission / approved 三条后置规则覆盖(见裁决 (b) 的二次收口段)。
   **三轮更正**:二轮把最终闸只放进 legacy 一份副本,而同进程还挂着第二份 V2 Core 注册 —— 「已收口」当时**不成立**。现在两份都带闸,并加了防第四份副本的普查闸(见裁决 (b) 的三次收口段)。不碰 umbrella、不改上游 registry;新增上游接管**一个同类叶子**([[ADR-035]] §1)。缩小后的残留:被绕过的规则集下工具名仍可见,调用一律被拒。
   **四轮更正**:三轮把源码普查网称为「类闸」并据此声称按类闭合 —— R4 用「算出注册名 + 复用既有传输」的可执行构造证明其**不成立**,已作废。闸已下沉到两条传输出口,普查网降为纵深。不再声称穷尽:自带全新出口且端点也算出来的副本仍拦不住,见裁决 (b) 的四次收口段。**零新增上游接管**(本轮改的三个源文件都已在 [[ADR-035]] 的 exclude 清单内)。
