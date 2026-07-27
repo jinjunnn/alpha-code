@@ -227,17 +227,40 @@ jobs:
       - name: verify immutable Alpha contract vendor lock
         if: needs.detect.outputs.code == 'true'
         run: bun run --cwd packages/alpha-contracts-consumer check:vendor
+      # 这两步与下面三步是**同一类**:`bun test` 对零用例退出 0,只看退出码会在 suite 被清空时
+      # 全绿(#647 codex 第 1 轮 Major ②)。既然机制已经有了,整类一起收口 —— 只修被点名的实例、
+      # 留着同类的其余实例,正是本 PR 在讲的那个故事。地板留大余量(当前 19 / 132)。
       - name: bun test (contracts consumer fixtures)
         if: needs.detect.outputs.code == 'true'
-        working-directory: packages/alpha-contracts-consumer
-        run: bun test
+        run: bash scripts/bun-test-floor.sh 15 packages/alpha-contracts-consumer
       - name: bun test (ext)
         if: needs.detect.outputs.code == 'true'
-        working-directory: packages/ext
-        run: bun test
+        run: bash scripts/bun-test-floor.sh 100 packages/ext
+      # 下面三步都走 scripts/bun-test-floor.sh —— 它在 `bun test` 之外**断言实际执行的用例数**。
+      # 理由(#647 codex 第 1 轮 Major ②):`bun test` 对「文件被清空 / 用例被条件注册成零条 /
+      # 指定文件根本不存在」都会打印 `Ran 0 tests` 并**退出 0**。只看退出码的步骤因此在闸门消失
+      # 时全绿 —— 一个跑 0 个用例还报绿的步骤,比没有这一步更坏。
+      #
+      # 两层下界,各管各的(单靠整套 suite 的地板抓不到「少了一个文件」):
+      #   · 整套 ui-mac suite 取地板 3000(当前 3085)—— 抓灾难性丢失(suite 加载失败、成片删除、
+      #     runner 配错)。地板刻意留大余量:会随正常增删漂移的阈值早晚被调松或删掉。
+      #   · 单个闸门文件单独一步 —— 这一层才抓得到「某个闸门文件被删掉」。
       - name: bun test (ui-mac)
         if: needs.detect.outputs.code == 'true'
-        run: bun run --cwd packages/ui-mac test
+        run: bash scripts/bun-test-floor.sh 3000 packages/ui-mac src
+      # ── 第二层:闸门文件逐个点名 ────────────────────────────────────────────
+      # 上面那些是**整包地板**,只抓灾难性丢失。它们抓不到「少了一个文件」——已两次实测:
+      #   ui-mac 删掉 stream-read-hygiene.test.ts → 3077 条 ≥ 地板 3000 → 全绿
+      #   ext    删掉 prompt-rebrand.test.ts      →  106 条 ≥ 地板  100 → 全绿
+      # 「闸门文件」= 删掉它就移除某条**具体保证**(而不只是减少覆盖率)。它们逐个登记在
+      # scripts/gate-files.tsv,由下面这一步逐个跑 + 逐个判下界。新增闸门文件忘了登记,会被
+      # packages/ui-mac/src/main/gate-file-registry.test.ts 判红(它自己也在登记簿里)。
+      #
+      # 这一步同时覆盖了 alpha 自有的 opencode web search 闸 —— 那份行为闸住在
+      # packages/opencode/test,而本 job 的整包地板都不覆盖 opencode(全量 opencode 测试不属 alpha)。
+      - name: assert gate files (逐个点名,整包地板抓不到单文件消失)
+        if: needs.detect.outputs.code == 'true'
+        run: bash scripts/assert-gate-files.sh
 
   seed-assets:
     name: seed assets present
