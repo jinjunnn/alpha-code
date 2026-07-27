@@ -256,12 +256,29 @@ export const ParallelSearchArgs = Schema.Struct({
 export const MAX_BODY_BYTES = 2 * 1024 * 1024
 
 /**
+ * 触到 `MAX_BODY_BYTES` 时用来**中止上游流**的信号。它不是失败:唯一的处理方式是在 `runForEach`
+ * 的 pipe 上 `catchTag` 掉,已读到的部分照常返回。用 tagged error 而不是谓词,理由见下。
+ */
+class BodyCapReached extends Schema.TaggedErrorClass<BodyCapReached>()("BodyCapReached", {}) {}
+
+/**
  * 有界读取响应体:边读边计数,越界立刻停止拉流,绝不为了截断而先把整份缓冲进内存。
  * 越界读到的部分照常返回(带截断标记),让状态码分支与 parseResponse 仍能给出可辨失败。
  *
  * #223 R2(Major 6):初版**先整块 `push` 再判越界** —— 上限只对「块小」的流成立。R2 动态
  * 复现:喂入单个 3 MiB chunk,`Buffer.concat` 实收 3,145,728 字节,而声明上限是 2,097,152。
  * 现在最后一块只保留**剩余可读字节**(`subarray`),`MAX_BODY_BYTES` 是硬限,与块大小无关。
+ *
+ * ⚠️ 不要换回 `Stream.runForEachWhile`(#647,2026-07-27)。它**只消费第一个 chunk 就停**,
+ * 哪怕谓词恒返回 `true`。同一个请求的脱机实测:`runForEachWhile` 1 chunk / 4,090 字节,
+ * `runForEach` 3 chunks / 18,063 字节,`response.text` 18,034 字符。于是唯一的调用方 `call()`
+ * 拿到的是**截断的 JSON**,登出态 web search 真调报「invalid response … Unterminated string in
+ * JSON」——上游明明返回了成功。这是本仓第二次踩同一个 API:`tool/read.ts:143` 早在注释里写过
+ * 「we avoid Stream.runForEachWhile」,但注释拦不住另一个文件。类级的防复发闸(禁止该 API 再次
+ * 出现)在 `packages/ui-mac/src/main/stream-read-hygiene.test.ts`。
+ *
+ * 正确形态与 `read.ts:146` 同构:`runForEach` 读全 + tagged error 在**触限那一刻**中止上游 ——
+ * 不是「读完整条流再截断」,那会把 R2 的 DoS 洞放回来。
  */
 export const readBoundedBody = Effect.fn("McpWebSearch.readBoundedBody")(function* (
   response: HttpClientResponse.HttpClientResponse,
@@ -269,22 +286,23 @@ export const readBoundedBody = Effect.fn("McpWebSearch.readBoundedBody")(functio
   const chunks: Uint8Array[] = []
   let size = 0
   let truncated = false
-  yield* Stream.runForEachWhile(response.stream, (chunk: Uint8Array) =>
-    Effect.sync(() => {
+  yield* Stream.runForEach(response.stream, (chunk: Uint8Array) =>
+    Effect.gen(function* () {
       const remaining = MAX_BODY_BYTES - size
       if (chunk.byteLength <= remaining) {
         chunks.push(chunk)
         size += chunk.byteLength
-        return true
+        return
       }
       if (remaining > 0) {
         chunks.push(chunk.subarray(0, remaining))
         size = MAX_BODY_BYTES
       }
       truncated = true
-      return false
+      // 触限即中止:上游流在这里被拉断,后续 chunk 一个都不会被拉取。
+      return yield* new BodyCapReached()
     }),
-  )
+  ).pipe(Effect.catchTag("BodyCapReached", () => Effect.void))
   const body = Buffer.concat(chunks).toString("utf8")
   return truncated ? `${body}\n[truncated at ${MAX_BODY_BYTES} bytes]` : body
 })

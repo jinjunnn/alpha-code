@@ -207,6 +207,110 @@ describe("websearch transport bounds (#223 Major 6)", () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// #647(2026-07-27):`readBoundedBody` 只读**第一个 chunk** 就停 —— 已发版的静默截断回归。
+//
+// 病因:`Stream.runForEachWhile` 在谓词恒为 `true` 时仍在第一个 chunk 之后停止消费。同一个请求
+// 的脱机实测:runForEachWhile 1 chunk / 4,090 字节;runForEach 3 chunks / 18,063 字节;
+// `response.text` 18,034 字符。于是 `call()` 拿到截断的 JSON,登出态真调报
+// 「invalid response … Unterminated string in JSON」,而上游返回的其实是**成功**结果。
+//
+// 这是 #489(有界读取)引入的回归:#639 之前那里是 `const body = yield* response.text`。
+// 也是本仓**第二次**踩同一个 API —— `tool/read.ts:143` 早就把警告写进注释,但注释拦不住另一个
+// 文件。类级防复发闸见 `packages/ui-mac/src/main/stream-read-hygiene.test.ts`。
+//
+// 下面两条互为对抗:①证明读全了(否则退回截断);②证明「读全」不是靠把上限读没了 ——
+// 触限那一刻上游必须被**拉断**,不能读完整条流再截。任一条单独通过都不足以判修复成立。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("readBoundedBody reads to the end of the stream (#647)", () => {
+  /** 把一份 body 切成多个 chunk 后逐块入队 —— 真实传输就是这样交付的。 */
+  function chunked(body: string, chunkSize: number) {
+    const bytes = new TextEncoder().encode(body)
+    const parts: Uint8Array[] = []
+    for (let offset = 0; offset < bytes.byteLength; offset += chunkSize)
+      parts.push(bytes.slice(offset, offset + chunkSize))
+    return {
+      parts,
+      response: () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              for (const part of parts) controller.enqueue(part)
+              controller.close()
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    }
+  }
+
+  // 现场的 chunk 尺寸(4,090 = 实测里 runForEachWhile 唯一读到的那一块),body 明显跨多块。
+  const CHUNK = 4090
+  const payload = mcpPayload({ content: [{ type: "text", text: `RESULT_HEAD ${"x".repeat(14_000)} RESULT_TAIL` }] })
+
+  test("a multi-chunk body arrives whole — not just the first chunk", async () => {
+    const source = chunked(payload, CHUNK)
+    // 前提自检:这条 body 确实跨多块,否则本用例是空的(单块流对本缺陷不敏感)。
+    expect(source.parts.length).toBeGreaterThan(1)
+
+    const body = await Effect.runPromise(
+      Effect.gen(function* () {
+        const http = clientReturning(source.response())
+        return yield* readBoundedBody(yield* http.execute(HttpClientRequest.get("https://search.test/mcp")))
+      }),
+    )
+
+    // 回归形态:修复前这里恰好是第一块的 4,090 字节,且尾部缺失。
+    expect(Buffer.byteLength(body, "utf8")).toBe(Buffer.byteLength(payload, "utf8"))
+    expect(body).toBe(payload)
+    expect(body).toContain("RESULT_TAIL")
+    expect(body).not.toContain("[truncated at") // 远小于上限,不该带截断标记
+  })
+
+  test("the truncated multi-chunk JSON no longer breaks a real search call", async () => {
+    // 用户可见症状的直接断言:走真 `call()`,截断时是 invalid_response(Unterminated string in JSON)。
+    const source = chunked(payload, CHUNK)
+    const output = await Effect.runPromise(search(clientReturning(source.response())))
+
+    expect(output).toContain("RESULT_HEAD")
+    expect(output).toContain("RESULT_TAIL")
+  })
+
+  test("reading to the end did NOT relax the cap — the upstream is torn down at the limit", async () => {
+    // 8 × 3 MiB = 24 MiB 的有限流。第一块就已越过 2 MiB 上限:
+    //   修复正确 ⇒ 触限即中止,后面 7 块一个都不该被拉,且底层 source 收到 cancel。
+    //   若改成「读完再截」⇒ pulls 跑满 8、cancel 不触发(而且真把 24 MiB 拉进了进程)。
+    // 用**有限**流而不是无限流,是为了让退化形态确定性地转红而不是挂死。
+    const TOTAL_CHUNKS = 8
+    let pulls = 0
+    let cancelled = false
+    const oversized = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1
+        controller.enqueue(new Uint8Array(3 * 1024 * 1024).fill(120)) // 单块 3 MiB > 2 MiB 上限
+        if (pulls >= TOTAL_CHUNKS) controller.close()
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+
+    const body = await Effect.runPromise(
+      Effect.gen(function* () {
+        const http = clientReturning(new Response(oversized, { status: 200 }))
+        return yield* readBoundedBody(yield* http.execute(HttpClientRequest.get("https://search.test/mcp")))
+      }),
+    )
+
+    const marker = `\n[truncated at ${MAX_BODY_BYTES} bytes]`
+    expect(body.endsWith(marker)).toBe(true)
+    expect(Buffer.byteLength(body.slice(0, body.length - marker.length), "utf8")).toBe(MAX_BODY_BYTES)
+    // 「提前中止」的两个可观测结果,不是源码断言。
+    expect(pulls).toBeLessThan(TOTAL_CHUNKS)
+    expect(cancelled).toBe(true)
+  })
+})
+
 // #489:平台 `POST /v1/tools/web_search` 的真实失败集(alpha-platform `packages/gateway/src/worker.ts`)
 // —— 401 / 403 action_forbidden / 400 / 402(preauth 拒绝 与 per-job 超预算)/ 502,其余非 2xx 一律 LOUD。
 // 注意:本组走的是**本地 Exa/Parallel 直连**这条链(`websearch` 工具);登录态的 `cloud_web_search`

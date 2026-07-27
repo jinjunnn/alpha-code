@@ -238,6 +238,14 @@ jobs:
       - name: bun test (ui-mac)
         if: needs.detect.outputs.code == 'true'
         run: bun run --cwd packages/ui-mac test
+      # #647:E7 web search 的**行为**闸住在 packages/opencode/test,而本 job 以前只跑
+      # contracts-consumer / ext / ui-mac —— 于是 ADR-035 收编面的断言一条都没被 CI 执行过
+      # (那份文件的抬头早就把这条盲区写下来了)。opencode 全量测试不属 alpha,只跑 alpha 自有的
+      # 那一份:readBoundedBody 读全 + MAX_BODY_BYTES 仍是硬限 + #489/#223 的失败诚实断言。
+      - name: bun test (alpha-owned opencode web search gates)
+        if: needs.detect.outputs.code == 'true'
+        working-directory: packages/opencode
+        run: bun test test/tool/alpha-websearch-failure.test.ts
 
   seed-assets:
     name: seed assets present
