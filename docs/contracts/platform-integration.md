@@ -46,6 +46,43 @@ pinned producer release, while its code supplies strict decoders and safe
 and runs both producer and consumer fixtures. Missing, unknown, future, or
 otherwise invalid versions fail closed; no compatibility shim is selected.
 
+The same package holds a second, independent pin for the surfaces `alpha-web`
+owns. `alpha-web-contract.lock.json` pins repository `jinjunnn/alpha-web` at
+immutable commit `b597f0d548db9ffafc6d6301e548dbd323c810ad` and records the
+SHA-256 of the two consumer fixtures that repository publishes for this desktop —
+endpoint discovery (`alpha.web-identity.endpoint-discovery.v1`) and the account
+summary display projection (`alpha.web-account.summary.v1`) — plus the account
+summary schema itself. All three are vendored byte-identically under
+`vendor/alpha-web/`.
+
+Those fixtures are exercised through the shipped decoders, not through a second
+statement of the shape:
+[`alpha-web-contract-fixtures.test.ts`](../../packages/ui-mac/src/main/alpha-web-contract-fixtures.test.ts)
+feeds each fixture `value` into `decodeEndpointDiscovery()` and into the decode
+function `fetchAccountSummary()` passes to `createAuthedGet`. An upstream release
+whose shape those decoders reject therefore turns the merge gate red as soon as
+the pin is bumped. The account summary is decoded, not cast: a response the
+published contract does not describe raises `contract-incompatible` and the
+contract-health alert instead of reaching the renderer as a malformed summary.
+A payload the published schema allows is never rejected, and a payload it
+forbids never passes. Where that schema is looser than this repository's own
+types, the schema wins and the decoder discards what it cannot represent rather
+than refusing the response: an inactive plan is accepted with any non-empty `id`,
+an optional `name`, and any other plan property the schema permits, of which only
+`id` and `name` survive into `AccountPlan`. Optional is not unconstrained,
+however — the schema still constrains those values, so a discarded property is
+validated before it is dropped. Skipping that check would route a producer's
+contract violation around `contract-incompatible` and around the contract-health
+alert. The one deliberate narrowing is the active branch, whose variant cannot be
+built without `name`, both credit windows, `renewsAt` and `daysLeft`.
+
+Each object is screened once against the property set its schema declares, and
+those key sets are asserted equal to the vendored schema's `properties` by the
+same test file. An upstream release that adds an optional property therefore
+turns the merge gate red when the pin is bumped, instead of silently making the
+decoder over-strict — which is how it twice came to reject conforming
+inactive-plan payloads.
+
 ## Authentication flow
 
 1. The main process creates PKCE S256 verifier/challenge and state, then opens

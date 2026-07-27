@@ -1,0 +1,13 @@
+{
+  "kind": "schema",
+  "contract": "alpha.web-identity.endpoint-discovery.v1",
+  "expect": "valid",
+  "value": {
+    "schema_version": 1,
+    "web": "https://alphacodeone.com",
+    "platform": "https://alpha-gateway.tidelabs.click",
+    "account": "https://account.alphacodeone.com",
+    "cloud": "https://alpha-cloud.tidelabs.click",
+    "mcp": "https://alpha-cloud.tidelabs.click/mcp"
+  }
+}

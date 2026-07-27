@@ -1,0 +1,36 @@
+{
+  "kind": "schema",
+  "contract": "alpha.web-account.summary.v1",
+  "expect": "valid",
+  "note": "Synthetic values, real shape: the field set alpha-platform account-server summary() emits today for an active plan. It carries no schema_version/schema discriminator because the producer emits none; see contracts/web-account/CONTRACT.md.",
+  "value": {
+    "balanceFen": 18650,
+    "walletUsedFen": 4200,
+    "plan": {
+      "id": "pro",
+      "name": "Pro",
+      "status": "active",
+      "window5h": {
+        "usedCredits": 1300,
+        "limitCredits": 2000,
+        "resetsInMin": 92
+      },
+      "window7d": {
+        "usedCredits": 10400,
+        "limitCredits": 16000,
+        "resetsInMin": 5520
+      },
+      "renewsAt": "2026-08-22",
+      "daysLeft": 31
+    },
+    "usage": {
+      "todayTokens": 1900000,
+      "weekTokens": 25400000,
+      "tasksThisMonth": 47
+    },
+    "usageSeries": [
+      { "date": "2026-07-21", "tokens": 5300000 },
+      { "date": "2026-07-22", "tokens": 1900000 }
+    ]
+  }
+}
