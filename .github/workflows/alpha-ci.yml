@@ -235,37 +235,31 @@ jobs:
         if: needs.detect.outputs.code == 'true'
         working-directory: packages/ext
         run: bun test
+      # 下面三步都走 scripts/bun-test-floor.sh —— 它在 `bun test` 之外**断言实际执行的用例数**。
+      # 理由(#647 codex 第 1 轮 Major ②):`bun test` 对「文件被清空 / 用例被条件注册成零条 /
+      # 指定文件根本不存在」都会打印 `Ran 0 tests` 并**退出 0**。只看退出码的步骤因此在闸门消失
+      # 时全绿 —— 一个跑 0 个用例还报绿的步骤,比没有这一步更坏。
+      #
+      # 两层下界,各管各的(单靠整套 suite 的地板抓不到「少了一个文件」):
+      #   · 整套 ui-mac suite 取地板 3000(当前 3085)—— 抓灾难性丢失(suite 加载失败、成片删除、
+      #     runner 配错)。地板刻意留大余量:会随正常增删漂移的阈值早晚被调松或删掉。
+      #   · 单个闸门文件单独一步 —— 这一层才抓得到「某个闸门文件被删掉」。
       - name: bun test (ui-mac)
         if: needs.detect.outputs.code == 'true'
-        run: bun run --cwd packages/ui-mac test
+        run: bash scripts/bun-test-floor.sh 3000 packages/ui-mac src
+      # #647 codex 第 1 轮之后追加:类级闸(禁 `Stream.runForEachWhile`)本身必须存在且真的跑过。
+      # 它被删除时整套 suite 只是从 3085 掉到 3077,远高于地板 —— 上面那一步照样全绿。
+      # 「一个能被静默删除的闸门不是闸门」,所以这里点名它。
+      - name: bun test (类级闸自身:Stream.runForEachWhile 禁令)
+        if: needs.detect.outputs.code == 'true'
+        run: bash scripts/bun-test-floor.sh 6 packages/ui-mac src/main/stream-read-hygiene.test.ts
       # #647:E7 web search 的**行为**闸住在 packages/opencode/test,而本 job 以前只跑
       # contracts-consumer / ext / ui-mac —— 于是 ADR-035 收编面的断言一条都没被 CI 执行过
       # (那份文件的抬头早就把这条盲区写下来了)。opencode 全量测试不属 alpha,只跑 alpha 自有的
       # 那一份:readBoundedBody 读全 + MAX_BODY_BYTES 仍是硬限 + #489/#223 的失败诚实断言。
-      # 断言**实际跑了多少条**,不只看退出码(#647 codex 第 1 轮 Major ②):`bun test` 对
-      # 「文件被清空 / 用例被条件注册成零条」会打印 `Ran 0 tests` 并**退出 0** —— 一个跑 0 个
-      # 用例还报绿的步骤,比没有这一步更坏。下界钉在 40(当前 45),低于它即红。
       - name: bun test (alpha-owned opencode web search gates)
         if: needs.detect.outputs.code == 'true'
-        working-directory: packages/opencode
-        run: |
-          set +e
-          bun test test/tool/alpha-websearch-failure.test.ts 2>&1 | tee gate.log
-          status=${PIPESTATUS[0]}
-          set -e
-          pass="$(sed -n 's/^[[:space:]]*\([0-9][0-9]*\) pass$/\1/p' gate.log | tail -1)"
-          [ -z "$pass" ] && pass=0
-          rm -f gate.log
-          echo "bun exit=$status, parsed pass=$pass"
-          if [ "$status" -ne 0 ]; then
-            echo "::error::web search 闸门测试失败"
-            exit 1
-          fi
-          if [ "$pass" -lt 40 ]; then
-            echo "::error::只跑了 $pass 条 web search 闸门断言(下界 40)——闸门被清空或条件注册成零用例时,bun 会 Ran 0 tests 且退出 0"
-            exit 1
-          fi
-          echo "✓ $pass 条 web search 闸门断言真的执行了"
+        run: bash scripts/bun-test-floor.sh 40 packages/opencode test/tool/alpha-websearch-failure.test.ts
 
   seed-assets:
     name: seed assets present
