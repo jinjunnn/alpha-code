@@ -153,8 +153,14 @@ export function useSDK() {
 export function useSync() {
   return () => ({
     project: { id: HARNESS.projectID },
-    data: { message: { [HARNESS.sessionID]: messages } },
+    // 目录作用域 store 刻意留空 —— 生产接线点在这一份取不到消息时必须回落到 server 作用域
+    // 的那一份(#668 的 agent 还原双源),这条回落路径因此被闸门真的执行到。
+    data: { message: {} as Record<string, typeof messages> },
   })
+}
+
+export function useServerSync() {
+  return () => ({ session: { data: { message: { [HARNESS.sessionID]: messages } } } })
 }
 
 export function useParams() {

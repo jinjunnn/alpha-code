@@ -18,6 +18,7 @@ import type {
 import { type Component, Show } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { useSDK } from "@/context/sdk"
+import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import {
   createPermissionChannelSource,
@@ -45,10 +46,21 @@ export function createPermissionSurfaceMount(PermissionSurface?: PermissionSurfa
     const params = useParams()
     const sdk = useSDK()
     const sync = useSync()
+    const serverSync = useServerSync()
+    // agent 还原的消息来源取**两个 store 的并集**:目录作用域 store(本路由)与 server 作用域
+    // store(dock 读的那一份)。理由是可靠性而非洁癖 —— 取不到 agent ⇒ 请求事实核不实 ⇒
+    // PermissionDialog 按既有安全语义**自动拒绝**,用户看到的是一次没头没尾的拒绝。两份都是
+    // 同一条 SSE 流的投影,谁先有就用谁。
     const channels = createPermissionChannelSource({
       sessionID: () => params.id,
       sdk: () => sdk(),
-      messages: () => (params.id ? sync().data.message[params.id] : undefined),
+      messages: () => {
+        const id = params.id
+        if (!id) return undefined
+        const scoped = sync().data.message[id]
+        if (scoped?.length) return scoped
+        return serverSync().session.data.message[id]
+      },
     })
     const permissionClient: PermissionSurfaceClient = {
       list: () => channels.list(),

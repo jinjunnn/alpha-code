@@ -779,10 +779,10 @@ index 8fff6d70..7669217b 100644
      .find((item): item is boolean => item !== undefined)
 diff --git a/packages/app/src/context/permission-surface.tsx b/packages/app/src/context/permission-surface.tsx
 new file mode 100644
-index 00000000..734de042
+index 00000000..38243126
 --- /dev/null
 +++ b/packages/app/src/context/permission-surface.tsx
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,99 @@
 +// 审批呈现面的**唯一接线点**(#619 R3 Blocker-2 白名单登记面;#668 起同时喂两条通道)。
 +//
 +// 从 app.tsx 抽出来的原因不是整洁,是**可被闸门执行**:审批决定提交的接线点只有这一处,
@@ -803,6 +803,7 @@ index 00000000..734de042
 +import { type Component, Show } from "solid-js"
 +import { Dynamic } from "solid-js/web"
 +import { useSDK } from "@/context/sdk"
++import { useServerSync } from "@/context/server-sync"
 +import { useSync } from "@/context/sync"
 +import {
 +  createPermissionChannelSource,
@@ -830,10 +831,21 @@ index 00000000..734de042
 +    const params = useParams()
 +    const sdk = useSDK()
 +    const sync = useSync()
++    const serverSync = useServerSync()
++    // agent 还原的消息来源取**两个 store 的并集**:目录作用域 store(本路由)与 server 作用域
++    // store(dock 读的那一份)。理由是可靠性而非洁癖 —— 取不到 agent ⇒ 请求事实核不实 ⇒
++    // PermissionDialog 按既有安全语义**自动拒绝**,用户看到的是一次没头没尾的拒绝。两份都是
++    // 同一条 SSE 流的投影,谁先有就用谁。
 +    const channels = createPermissionChannelSource({
 +      sessionID: () => params.id,
 +      sdk: () => sdk(),
-+      messages: () => (params.id ? sync().data.message[params.id] : undefined),
++      messages: () => {
++        const id = params.id
++        if (!id) return undefined
++        const scoped = sync().data.message[id]
++        if (scoped?.length) return scoped
++        return serverSync().session.data.message[id]
++      },
 +    })
 +    const permissionClient: PermissionSurfaceClient = {
 +      list: () => channels.list(),

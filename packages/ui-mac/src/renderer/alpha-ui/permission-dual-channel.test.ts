@@ -37,6 +37,7 @@ await build({
       // 宿主上下文替身 —— 被测的接线点本体不动。
       { find: /^@\/context\/sdk$/, replacement: stub },
       { find: /^@\/context\/sync$/, replacement: stub },
+      { find: /^@\/context\/server-sync$/, replacement: stub },
       { find: /^@solidjs\/router$/, replacement: stub },
       // 适配器与 i18n 用真身(`@/` 在本次 build 里没有默认 alias,显式指过去)。
       { find: /^@\/context\/permission-v1-adapter$/, replacement: join(appSrc, "context/permission-v1-adapter.ts") },
