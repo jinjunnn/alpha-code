@@ -58,6 +58,13 @@ UPSTREAM_EXCLUDES=(
   # core 的 BuiltInTools 里是**第二份已挂载的同名 websearch 注册**。主权最终闸必须覆盖每一份
   # 执行副本,故同类叶子再收一个;接管面仅 execute 首行的闸。
   ':(exclude)packages/core/src/tool/websearch.ts'
+  # ADR-038(#668,2026-07-28):v1 审批请求的应答期限。上游 `Permission.ask` 的
+  # `Deferred.await` 无超时 ⇒ 无人应答即无限期挂起(ADR-036 把会话发送退回 v1 后成为
+  # 高频路径)。期限只能落在 Deferred 所在的这一处;L0 接缝只能改判定、壳侧看门狗会连带
+  # 拒绝同会话全部 pending、L1/L2 无法 loud-fail 承载安全语义(逐条证据见 ADR-038 §2)。
+  # 接管面刻意压到这一个文件;新增闸门落 alpha 自有的
+  # test/permission/alpha-ask-deadline.test.ts(新增文件不触发 --diff-filter=DMR)。
+  ':(exclude)packages/opencode/src/permission/index.ts'
 )
 fail=0
 

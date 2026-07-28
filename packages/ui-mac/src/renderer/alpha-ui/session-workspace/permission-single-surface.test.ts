@@ -255,6 +255,12 @@ function dockPermissionTraffic(): Set<string> {
 
 const FACTS = ["subject", "action", "resources", "scope", "expiry"] as const
 
+/** dock 侧被允许的审批类流量 —— **只读,零写**。
+ *  #668 起读面是 v1+v2 合并快照(两条 list 都必须成功,feed 才 ready),所以合法集合从
+ *  `{v2 list}` 扩成 `{v2 list, v1 list}`。判据的性质没有变化:任何 `reply`/`respond` 出现在
+ *  dock 的录音面上,这条断言立刻红。 */
+const SANCTIONED_DOCK_TRAFFIC = new Set(["v2.session.permission.list", "permission.list"])
+
 describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", () => {
   test("同一请求到达两个消费面:全文档呈现面差异收敛于 surface 子树(dock 增量差分基线);dock 仅既定提示增量;决定只到达 surface client", async () => {
     // ①′ 差分基线(R3 Major 改窄):先**只**挂生产 Permission surface(无 dock),同一请求下
@@ -342,7 +348,7 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
     await flush()
     expect(runtime.surfaceReplyCalls.map((call) => call.requestID)).toEqual([request.id])
     expect(runtime.surfaceReplyCalls[0]!.command.decision).toBe("once")
-    expect(dockPermissionTraffic()).toEqual(new Set(["v2.session.permission.list"]))
+    expect(dockPermissionTraffic()).toEqual(SANCTIONED_DOCK_TRAFFIC)
 
     // 收尾相位:收据按生产 SSE 扇出双投递 → dialog 关闭、dock 提示回落、**全文档**呈现面回到
     // 基线 —— 决定之后才现身的迟到搭车节点(如「审批结果」浮层)在这里同样红。
@@ -372,8 +378,8 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
     runtime.injectPermissionAsked(request)
     await flush()
     const dockCanonicalBefore = canonicalizeDock(dockHost)
-    // 前置:此刻闸③仍绿 —— 只有快照 list 一条合法流量。
-    expect(dockPermissionTraffic()).toEqual(new Set(["v2.session.permission.list"]))
+    // 前置:此刻闸③仍绿 —— 只有快照 list(两条通道)这类只读流量。
+    expect(dockPermissionTraffic()).toEqual(SANCTIONED_DOCK_TRAFFIC)
 
     runtime.submitDecisionViaFreshClient(request.id, request.fingerprint)
     await flush()
@@ -384,9 +390,7 @@ describe("审批单一呈现面:watcher × 生产 dock 同场运行时闸门", (
     expect(runtime.surfaceReplyCalls).toHaveLength(0)
 
     // 唯一抓住它的是闸③:新建 client 的提交进了录音面,合法集合被打破。
-    expect(dockPermissionTraffic()).toEqual(
-      new Set(["v2.session.permission.list", "v2.session.permission.reply"]),
-    )
-    expect(dockPermissionTraffic()).not.toEqual(new Set(["v2.session.permission.list"]))
+    expect(dockPermissionTraffic()).toEqual(new Set([...SANCTIONED_DOCK_TRAFFIC, "v2.session.permission.reply"]))
+    expect(dockPermissionTraffic()).not.toEqual(SANCTIONED_DOCK_TRAFFIC)
   })
 })

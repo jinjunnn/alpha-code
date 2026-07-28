@@ -156,6 +156,13 @@ jobs:
             # 再收一个;接管面仅 execute 首行的闸。防第四份副本的普查闸见
             # packages/ui-mac/src/main/websearch-copies.test.ts。
             ':(exclude)packages/core/src/tool/websearch.ts'
+            # ADR-038(#668,2026-07-28):v1 审批请求的应答期限。上游 `Permission.ask` 的
+            # `Deferred.await` 无超时 ⇒ 无人应答即无限期挂起(ADR-036 把会话发送退回 v1 后
+            # 成为高频路径:external_directory / read *.env* / doom_loop / 用户自配 ask)。
+            # 期限只能落在 Deferred 所在的这一处;L0 接缝(plugin permission.ask 只能改判定)、
+            # 壳侧看门狗(v1 reject 连带拒绝同会话全部 pending)、L1/L2 均不可行,逐条证据见
+            # ADR-038 §2。接管面刻意压到这一个文件。
+            ':(exclude)packages/opencode/src/permission/index.ts'
           )
           changed="$(git diff --diff-filter=DMR --name-only origin/dev...HEAD -- $UPSTREAM_PATHS "${excludes[@]}")"
           if [ -n "$changed" ]; then

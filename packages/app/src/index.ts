@@ -9,6 +9,19 @@ export {
   type PermissionSurfaceComponent,
   type PermissionSurfaceProps,
 } from "./app"
+// #668:v1+v2 双通道审批读面。alpha 的 composer 停靠区(ui-mac)与独立 Permission surface
+// 共用同一份适配与同一份 fail-closed 语义 —— 两个消费面不得各写一份。
+export {
+  adaptPermissionV1Receipt,
+  adaptPermissionV1Request,
+  createPermissionChannelSource,
+  isPermissionV1Fingerprint,
+  permissionV1Fingerprint,
+  resolvePermissionV1Agent,
+  type PermissionAgentSource,
+  type PermissionChannelListeners,
+  type PermissionChannelSource,
+} from "./context/permission-v1-adapter"
 export { useLayout } from "./context/layout"
 export { useServerSDK } from "./context/server-sdk"
 export { useServerSync } from "./context/server-sync"

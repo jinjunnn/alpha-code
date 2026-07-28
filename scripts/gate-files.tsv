@@ -60,8 +60,10 @@
 12	packages/ui-mac	src/renderer/alpha-ui/takeover-adapter-coexistence.test.ts	packages/ui-mac/src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts,packages/ui-mac/src/renderer/alpha-ui/session-workspace/session-second-send.test.ts	REQ-125 遗留 DOM 接管件零引用棘轮 + #652 单一代次棘轮(行为层闸委派)
 1	packages/ui-mac	src/renderer/alpha-ui/session-workspace/session-second-send.test.ts	-	#652 受托:同一会话连发三条,生产 composer+timeline 真挂载,断言渲染出的回复(源码棘轮的行为判据)
 5	packages/ui-mac	src/renderer/alpha-ui/session-timeline/cards/cards-contract.test.ts	-	REQ-125 C6 cards 静态棘轮(内容引擎/外链形态)
-4	packages/ui-mac	src/renderer/alpha-ui/permission-mount-ratchet.test.ts	packages/ui-mac/src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts	permission 挂载面棘轮(运行时行为闸委派)
+4	packages/ui-mac	src/renderer/alpha-ui/permission-mount-ratchet.test.ts	packages/ui-mac/src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts,packages/ui-mac/src/renderer/alpha-ui/permission-dual-channel.test.ts	permission 挂载面棘轮 + 决定提交入口白名单(#668 起白名单含一个 v1 入口;运行时行为闸委派)
 2	packages/ui-mac	src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts	-	受托:单一审批面的**运行时**行为闸(两个棘轮的主判据)
+8	packages/ui-mac	src/renderer/alpha-ui/permission-dual-channel.test.ts	-	受托:#668 双通道审批的端到端行为闸 —— v1 `permission.asked` 真的弹出审批面、真能批准/拒绝(断言真实发出的请求落在哪条通道),且 v2 读写两侧无回归
+5	packages/ui-mac	src/renderer/alpha-ui/permission-auto-approve-switch.test.ts	-	#668:`permissions.autoApprove` 不是死开关 —— 关(默认)时任何 autoAccept 配置都不自动放行(生产判定权威全矩阵)
 5	packages/ui-mac	src/renderer/alpha-ui/settings-surface-ratchet.test.ts	-	settings surface 清单棘轮(对 FRONTEND_SURFACE_MANIFEST)
 2	packages/ui-mac	src/renderer/alpha-ui/reduced-motion-ratchet.test.ts	-	reduced-motion 棘轮:新动效必须尊重降级偏好
 7	packages/ui-mac	src/renderer/alpha-ui/alpha-session-search.test.ts	-	REQ-126 CODE-F:真实壳里 command.palette 确实被注册且侧栏按钮真能触发,跳转 href 带结果来源 server 身份
@@ -76,3 +78,4 @@
 
 # ── opencode(仅 alpha 自有)────────────────────────────────────────────────
 40	packages/opencode	test/tool/alpha-websearch-failure.test.ts	packages/ui-mac/src/main/stream-read-hygiene.test.ts	#647 readBoundedBody 读全 + MAX_BODY_BYTES 硬限 + #489/#223 失败诚实
+4	packages/opencode	test/permission/alpha-ask-deadline.test.ts	-	ADR-038/#668:v1 审批请求无人应答时在期限内**具名失败**(Exit 必须 failure = 绝不到点自动放行)+ 广播 reject 回执 + pending 清空 + 默认期限不被调成无期限

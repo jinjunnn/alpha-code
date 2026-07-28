@@ -1353,7 +1353,7 @@ export const dict = {
   "alpha.settings.fontSizeDesc": "Base interface font size, from 8 to 72.",
   "alpha.settings.notificationsPermissions": "Notifications & permissions",
   "alpha.settings.autoApprove": "Auto-approve permissions",
-  "alpha.settings.autoApproveDesc": "Only for requests allowed by an existing permission contract; off by default.",
+  "alpha.settings.autoApproveDesc": "Off (default) means every approval request needs your decision — nothing is ever auto-approved. On lets requests matched by an auto-accept rule through without showing the approval dialog.",
   "alpha.settings.notifyAgent": "Agent completion notifications",
   "alpha.settings.notifyPermission": "Permission request notifications",
   "alpha.settings.notifyError": "Error notifications",
