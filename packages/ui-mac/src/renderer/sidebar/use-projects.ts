@@ -89,6 +89,10 @@ export interface AlphaProjectsApi {
   deleteSession(id: string): Promise<boolean>
   /** Fetch the session's messages and format them as markdown text for copy-to-clipboard. */
   copySession(id: string): Promise<string | undefined>
+  /** REQ-071/ADR-025 的 lazy 供给,目标 = 默认对话目录 `~/Alpha` 时才有效(其它路径 main 侧
+   *  一律 no-op 返回 false)。返回**是否真的建成**:底层 IPC 失败时返回 `{ ok:false }` 而不
+   *  throw,所以调用方必须看返回值,否则失败静默(REQ-126 不变量 5)。 */
+  ensureDefaultWorkspace(worktree: string): Promise<boolean>
 }
 
 type Client = ReturnType<typeof createOpencodeClient>
@@ -281,13 +285,34 @@ export function useAlphaProjects(
     })
   }
 
-  // REQ-071/ADR-025 lazy 供给:目标是默认工作目录 ~/Alpha 时先建它(main 侧只对默认目录生效,
-  // 其他路径 no-op)。失败不拦——session.create 会对不存在的目录如实报错。
-  async function ensureDefaultWorkspace(worktree: string): Promise<void> {
+  // REQ-071/ADR-025 lazy 供给:目标是默认工作目录 ~/Alpha 时先建它。
+  //
+  // REQ-126 不变量 5(#656):这条 IPC **不 throw** —— 失败返回 `{ ok:false }`(main/ipc.ts 的
+  // alpha-workspace-ensure)。旧实现只有 try/catch、连返回值都不看,于是"目录没建成"这件事在渲染侧
+  // 完全不可见;而引擎侧并没有兜底 —— `session.create` 不做目录存在性校验(opencode 直接拿路由目录
+  // 组装并发布 session),照样会建出一个开在不存在目录上的坏会话。
+  //
+  // 但 `{ok:false}` 有**两种**含义:main 的 ensureUserWorkspaceDir 对**非默认路径**一律 no-op 返回
+  // null(合法,不是失败)。所以先比对默认对话目录:不是它就是「无需供给」的成功,是它才真调供给并
+  // 如实回报结果。调用方于是可以无差别地「false 就别往下走」。
+  //
+  // 两次 IPC 的失败**必须分开处理**,不能共用一个 try(收敛轮的真 bug:合在一起时,查询 reject 会
+  // 落到同一个 catch 返回 false,把**普通项目**的会话创建也一起挡掉):
+  //   · 查询失败 → 无从判断"是不是默认目录",分类不了就不拦(return true),放行普通路径;
+  //   · 已确认目标就是默认对话目录、供给失败 → 必须拦(return false),由调用方 toast。
+  async function ensureDefaultWorkspace(worktree: string): Promise<boolean> {
+    let defaultDir: string | undefined
     try {
-      await window.api.workspaceEnsureDefault(worktree)
+      defaultDir = await window.api.workspaceDefaultDir()
     } catch {
-      /* 供给是 best-effort;引擎侧错误仍会 loud */
+      return true
+    }
+    if (!defaultDir || worktree !== defaultDir) return true
+    try {
+      const result = await window.api.workspaceEnsureDefault(worktree)
+      return result?.ok === true
+    } catch {
+      return false
     }
   }
 
@@ -295,7 +320,9 @@ export function useAlphaProjects(
     const c = client
     if (!c) return undefined
     try {
-      await ensureDefaultWorkspace(worktree)
+      // 供给失败就不要建会话:引擎不校验目录存在性,建出来的是一个开在不存在目录上的坏会话。
+      // 调用方(侧栏「+」)已有 toast。
+      if (!(await ensureDefaultWorkspace(worktree))) return undefined
       const { data, error } = await c.session.create({ directory: worktree } as any)
       if (error || !data) return undefined
       // Make sure the project is expanded-able / present, then insert immediately (don't wait for
@@ -326,7 +353,8 @@ export function useAlphaProjects(
     const c = client
     if (!c) return undefined
     try {
-      await ensureDefaultWorkspace(worktree)
+      // 同上:供给失败不建会话,由 AlphaComposer 的 `alpha.composer.sendFailed` toast 呈现。
+      if (!(await ensureDefaultWorkspace(worktree))) return undefined
       const { data, error } = await c.session.create({
         directory: worktree,
         ...(opts?.model ? { model: opts.model } : {}),
@@ -639,5 +667,6 @@ export function useAlphaProjects(
     shareSession,
     deleteSession,
     copySession,
+    ensureDefaultWorkspace,
   }
 }

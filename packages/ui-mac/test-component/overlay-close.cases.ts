@@ -62,8 +62,19 @@ mock.module("@opencode-ai/ui/v2/project-avatar-v2", () => ({ ProjectAvatar: () =
 mock.module("@opencode-ai/ui/theme/context", () => ({
   useTheme: () => ({ colorScheme: () => "dark", setColorScheme: () => {} }),
 }))
+// useTabs / useServer 是 REQ-126 CODE-C 起侧栏建 draft 用的上游 authority(同属 ADR-016 借用面)。
+// 本闸门不测"建出什么 draft",只测"点下去覆盖层当场消失",所以给最小替身;`newDraft` 故意**保持
+// 未决**,与「点项目行的 +」那格同理 —— 立即 resolve 会把「关闭写在 await 之后」的缺陷藏掉。
 mock.module("../src/renderer/alpha-ui/providers", () => ({
   useCommand: () => ({ options: [], trigger: () => {}, show: () => {}, hide: () => {} }),
+  // 侧栏用 `ServerConnection.key` 派生内嵌 sidecar 的稳定 key(不硬编码字面量);这里给同结果的
+  // 最小替身,与下面 useServer 的 key 对齐,否则同源判定会把本闸门的 server 当成"别的 server"。
+  ServerConnection: { key: () => "sidecar" },
+  useTabs: () => ({
+    ready: Object.assign(() => true, { promise: undefined }),
+    newDraft: () => new Promise<void>(() => {}),
+  }),
+  useServer: () => ({ key: "sidecar", isLocal: () => true, projects: { list: () => [] } }),
   useContractHealth: () => () => null,
   ContractHealthProvider: (props: { children?: unknown }) => props.children,
 }))

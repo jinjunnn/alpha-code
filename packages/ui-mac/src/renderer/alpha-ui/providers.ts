@@ -7,11 +7,15 @@
 //
 // 当前借用面(新增须附上游落点注释):
 // - useCommand — packages/app/src/context/command.tsx(命令面板触发,冻结树 ADR-020)
+// - useTabs    — packages/app/src/context/tabs.tsx(draft/tab authority;REQ-126 CODE-C 建 draft)
+// - useServer / ServerConnection — packages/app/src/context/server.tsx(当前 server 身份 + 该
+//                server 的项目列表;REQ-126 不变量 4 的同源判定用 `ServerConnection.key` 派生
+//                内嵌 sidecar 的稳定 key,而不是硬编码字符串)
 
 import type { ContractFailure } from "@alpha-code/contracts-consumer"
 import { createComponent, createContext, createSignal, onCleanup, onMount, useContext, type JSX } from "solid-js"
 
-export { useCommand } from "@opencode-ai/app"
+export { ServerConnection, useCommand, useServer, useTabs } from "@opencode-ai/app"
 export type { PermissionSurfaceProps } from "@opencode-ai/app"
 
 const ContractHealthContext = createContext<() => ContractFailure | null>(() => null)

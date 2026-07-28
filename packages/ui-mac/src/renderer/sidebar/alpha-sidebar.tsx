@@ -5,10 +5,11 @@
 // keyed off body[data-alpha-sidebar]. Single flat column: brand → nav → projects(→sessions),
 // the Codex information architecture.
 
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createRoot, createSignal, For, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLocation, useNavigate, type NavigateOptions } from "@solidjs/router"
-import { useCommand } from "../alpha-ui/providers"
+import { ServerConnection, useCommand, useServer, useTabs } from "../alpha-ui/providers"
+import { createDefaultWorkspaceDir } from "../alpha-ui/default-workspace"
 import { ProjectAvatar, type ProjectAvatarVariant } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
 import { useTheme } from "@opencode-ai/ui/theme/context"
@@ -18,7 +19,7 @@ import { Mark } from "../logo-alpha"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
 import { subscribeAuthState } from "../auth-recovery"
-import { homeHref, newSessionHref, projectLabel, sessionHref } from "./route"
+import { homeHref, projectLabel, sessionHref } from "./route"
 import { parseRoute } from "../../shared/route-manifest"
 import {
   clearHiddenProjects,
@@ -128,9 +129,44 @@ function sessionDisplayTitle(title: string): string {
 // REQ-126 AC2(#655):当前**已登记**的全页覆盖层就这两个(产物工作台已随 #654 下线)。
 // 刻意不建 overlay union 状态机(方案基线 S2:rev1 的设计已被审计判过度工程并撤销)——
 // 新增覆盖层时把它加进这里,漏加由 overlay-close 闸门的参数化矩阵判红,不假装架构能挡。
+/** 内嵌 sidecar 的稳定 server key,由上游自己的 `ServerConnection.key` 派生 —— 不硬编码
+ *  "sidecar" 这个字面量,上游改 key 算法时这里跟着变(改没了则 typecheck 红)。 */
+const EMBEDDED_SIDECAR_KEY = ServerConnection.key({ type: "sidecar", variant: "base", http: { url: "" } })
+
 function closeAllOverlays(): void {
   setExtHubOpen(false)
   setAutomationOpen(false)
+}
+
+/** 等一个响应式条件成真(一次性 effect,不轮询、不猜时长),返回 `[promise, cancel]`。
+ *
+ *  两处都需要它,而且都**不能**用现成的 promise 顶替:
+ *  · `tabs.ready` 虽然挂了 `.promise`,但同步水合时它是 `undefined`(utils/persist.ts)——
+ *    `await undefined` 会在 ready 仍为 false 时放行;
+ *  · `createResource` 的 promise 根本不外露,而「还没解析出来」与「解析完了但没有」必须分开
+ *    (default-workspace.ts 抬头写明的要害:未解析时拿别的目录顶上去,会话就开在用户从没选过的
+ *    项目里)。
+ *
+ *  `cancel` 存在的理由:条件永不成真、或组件先卸下时,这个 root 会一直挂着;更糟的是它日后一旦
+ *  成真,一条早已作废的 startDraft 还会继续往下走并导航一个已经不存在的壳。调用方在卸载时
+ *  cancel,`cancel` 同时拆掉 root 并让 promise 落定,由调用方据条件真假决定是否继续。 */
+function until(condition: () => boolean): { promise: Promise<void>; cancel: () => void } {
+  if (condition()) return { promise: Promise.resolve(), cancel: () => {} }
+  let cancel = () => {}
+  const promise = new Promise<void>((resolve) => {
+    createRoot((dispose) => {
+      cancel = () => {
+        dispose()
+        resolve()
+      }
+      createEffect(() => {
+        if (!condition()) return
+        resolve()
+        dispose()
+      })
+    })
+  })
+  return { promise, cancel }
 }
 
 export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
@@ -138,6 +174,31 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   const routerNavigate = useNavigate()
   const location = useLocation()
   const command = useCommand()
+  // REQ-126 CODE-C(#656):建 draft 的两个上游 authority,经 alpha-ui/providers 转口(ADR-016)。
+  const tabs = useTabs()
+  const server = useServer()
+  // 默认对话目录 `~/Alpha` 的唯一解析点(ADR-025 / CODE-D 抽出);这里只**消费**,不另写一份。
+  const defaultWorkspaceDir = createDefaultWorkspaceDir()
+
+  // 侧栏卸下时把所有还在等的条件一起取消(见 until 抬头):否则条件晚到会让一条早已作废的
+  // startDraft 继续往下走。`wait` 返回「等到了且还活着」——false 一律直接返回,不再往下。
+  let sidebarAlive = true
+  const pendingWaits = new Set<() => void>()
+  onCleanup(() => {
+    sidebarAlive = false
+    for (const cancel of pendingWaits) cancel()
+    pendingWaits.clear()
+  })
+  const wait = async (condition: () => boolean): Promise<boolean> => {
+    const { promise, cancel } = until(condition)
+    pendingWaits.add(cancel)
+    try {
+      await promise
+    } finally {
+      pendingWaits.delete(cancel)
+    }
+    return sidebarAlive && condition()
+  }
 
   // REQ-126 AC2 主轨(#655):覆盖层的关闭挂在侧栏导航的**咽喉点**,而不是逐个按钮的 onClick。
   // 旧代码把互斥只写在两个 nav 按钮的内联 onClick 里 —— 逐点枚举对**新入口默认放行**,于是
@@ -564,9 +625,10 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   })
 
   // The most-recently-active CONCRETE project directory (a real worktree, never the bare global "/"
-  // bucket). This is what the home composer should default to — a draft for "/" renders the wrong
-  // "New project" screen (see newChat). Reads displayProjects so the per-directory split of the
-  // global bucket (e.g. a loose "workspace" folder) is eligible too.
+  // bucket). Since the ADR-025 2026-07-28 revision this is only the LAST-RESORT fallback for a new
+  // chat (default conversation directory first); it still backs the home composer's own defaulting.
+  // Reads displayProjects so the per-directory split of the global bucket (e.g. a loose "workspace"
+  // folder) is eligible too.
   const mostRecentConcreteDir = (): string | undefined => {
     let best: string | undefined
     let bestTime = -1
@@ -581,19 +643,89 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     return best
   }
 
-  // On app launch, land on the home composer (首页, Image #11: ALPHA CODE wordmark + prompt box with
-  // the project switcher BELOW it) — not whatever opencode restores (it reopens the last session),
-  // and not the recent-sessions search grid that bare "/" renders. That composer is opencode's
-  // new-session DRAFT for a concrete project: `newSessionHref(dir)` with `dir` = a real worktree
-  // (verified: this is exactly what opencode's own "新建会话" button produces). Fires once, after the
-  // project list loads (so we have a directory), with `replace` so Back doesn't bounce to the
-  // restored session. Falls back to the home grid only if there is no concrete project at all.
+  // REQ-126 不变量 4(#656):`{server, directory}` 必须**同源**,取不到就 fail-closed。
+  //
+  // 默认对话目录 `~/Alpha` 是主进程在**宿主机**上供给的(main/alpha-user-workspace.ts),侧栏那份
+  // 项目列表也来自**本地 sidecar** 的 SDK client(renderer/index.tsx 的 sidebarServer)。当前 server
+  // 却可能是 WSL / remote(wsl/connections.ts)——把宿主机路径配到远端 server 上,会开出一个那台
+  // 机器上根本不存在的目录。所以别的 server 只认**该 server 自己**已知的项目;一个都没有就要求
+  // 用户显式选择,而不是猜。
+  //
+  // 判据刻意**不用** `server.isLocal()`:上游把「loopback 的 http 连接」也算 local
+  // (context/server.tsx 的 ServerConnection.local),而一条 127.0.0.1 的 http 连接完全可能是 SSH
+  // 隧道或远端反代 —— 那台机器上没有宿主机的 `~/Alpha`。只认内嵌 sidecar 的稳定身份
+  // (`ServerConnection.key`:base sidecar 恒为 "sidecar",WSL 是 `wsl:*`、SSH 是 `ssh:*`),
+  // 它不随随机端口漂移,也不会把隧道误判成本机。
+  type DraftTarget = { directory: string; isDefaultWorkspace: boolean }
+  const resolveDraftTarget = async (): Promise<DraftTarget | undefined> => {
+    if (server.key !== EMBEDDED_SIDECAR_KEY) {
+      const known = server.projects.list()[0]?.worktree
+      return known ? { directory: known, isDefaultWorkspace: false } : undefined
+    }
+    // ADR-025 修订(2026-07-28):未显式选择目录时一律落默认对话目录,不再「上次使用优先」——
+    // owner 报的正是新对话开在 alpha-code 而不是 ~/Alpha。项目只做兜底。
+    if (!(await wait(() => !defaultWorkspaceDir.loading))) return undefined
+    const preferred = defaultWorkspaceDir()
+    if (preferred) return { directory: preferred, isDefaultWorkspace: true }
+    const fallback = mostRecentConcreteDir()
+    return fallback ? { directory: fallback, isDefaultWorkspace: false } : undefined
+  }
+
+  // REQ-126 AC1/AC5(#656):alpha 新对话的**唯一**入口 —— 直接建 draft,不再借上游 legacy
+  // admission 路由。
+  //
+  // 旧写法是 `navigate(newSessionHref(dir))` → `/<b64dir>/session`。那条路由在两种 layout 下都挂在
+  // 上游 `LegacyServerLayout` 之下(packages/app/src/app.tsx),于是先整套挂起上游自己的左栏
+  // (pages/layout.tsx 的 SidebarContent)与会话叶,叶再在 createEffect 里调 `tabs.newDraft` 跳到
+  // `/new-session?draftId=…` —— 一次「新对话」挂两套壳再被替换,这就是 owner 报的闪烁与「最左侧
+  // 闪出不该出现的内容」。这里直接调 newDraft(它自带跳转),admission 那一跳整个消失。
+  //
+  // `/:dir/session` 路由本身**保留**给深链兼容(pages/layout/deep-links.ts 仍导航到它),本票只保证
+  // alpha 自己的入口不再进它。
+  let draftInFlight = false
+  const startDraft = async (): Promise<void> => {
+    // 关闭覆盖层属于导航**意图**,不属于导航结果(REQ-126 AC2 / #655 审计 Major):这里之后全是
+    // await,等结果就等于让覆盖层继续压在目标页面上。
+    closeAllOverlays()
+    // AC4 最小 in-flight 去重:建 draft 全程异步(等 tabs 水合 → 等默认目录落定 → ensure 供给 →
+    // newDraft 自己的 startTransition),双击的第二下正落在这个窗口里。它只挡"上一次还没落地"的
+    // 重入,不是"一个会话只准有一个 draft"的锁。
+    if (draftInFlight) return
+    draftInFlight = true
+    try {
+      // 上游 tabs 是 persisted store:水合完成前写进去的 tab 会被随后的读盘结果覆盖,
+      // draft 连同它的目录一起消失。
+      if (!(await wait(() => tabs.ready()))) return
+      const target = await resolveDraftTarget()
+      if (!sidebarAlive) return
+      if (!target) {
+        pushToast({ kind: "error", title: t("alpha.sidebar.newChatNoWorkspace") })
+        return
+      }
+      // 不变量 5:目标是默认对话目录时,必须在**建 draft 之前**真的供给成功。这条 IPC 失败返回
+      // `{ok:false}` 而不 throw,不看返回值 = 把会话开在一个不存在的目录上,而建 draft 又不碰引擎
+      // (没有"引擎会如实报错"这层兜底),所以只能在这里拦。
+      if (target.isDefaultWorkspace && !(await props.projects.ensureDefaultWorkspace(target.directory))) {
+        pushToast({ kind: "error", title: t("alpha.sidebar.newChatWorkspaceFailed") })
+        return
+      }
+      await tabs.newDraft({ server: server.key, directory: target.directory })
+    } finally {
+      draftInFlight = false
+    }
+  }
+
+  // On app launch, land on a fresh draft (首页 composer 形态:ALPHA CODE wordmark + prompt box) —
+  // not whatever opencode restores (it reopens the last session), and not the recent-sessions search
+  // grid that bare "/" renders. Fires once, after the project list loads. Goes through the same
+  // startDraft as the sidebar button (REQ-126 §4 序 3, one entry point), so cold start no longer mounts the
+  // legacy shell either. No `replace` needed any more: the router already starts at "/", so Back
+  // lands on home rather than bouncing through the admission route.
   let didLaunchNav = false
   createEffect(() => {
     if (didLaunchNav || !store.ready) return
     didLaunchNav = true
-    const dir = mostRecentConcreteDir()
-    navigate(dir ? newSessionHref(dir) : homeHref(), { replace: true })
+    void startDraft()
   })
 
   // Mount our chrome INSIDE #root (not <body>). opencode's draggable-region CSS is scoped to
@@ -619,26 +751,17 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     closeAllOverlays()
     setProjectExpanded(worktree, true)
     const id = await createSession(worktree)
+    // REQ-126 不变量 1(#656):失败**不再**回退到 `newSessionHref(worktree)` —— 那个 href 就是
+    // legacy admission 路由(sidebar/route.ts 的 directorySession),回退等于给 alpha 自己留了
+    // 第二条进 admission 的入口。失败就如实说失败,不假装"已经给你开了个草稿"。
     if (id) navigate(sessionHref(worktree, id))
-    else {
-      // B11 复扫行14:创建失败不再静默 —— 草稿回退仍可用(composer 照常),但把失败说出来
-      pushToast({ kind: "error", title: t("alpha.sidebar.newChatFailed") })
-      navigate(newSessionHref(worktree))
-    }
+    else pushToast({ kind: "error", title: t("alpha.sidebar.newChatFailed") })
   }
 
-  // "新对话" lands on the home composer (Image #11: ALPHA CODE wordmark + prompt box with the project
-  // switcher BELOW it). That is opencode's new-session DRAFT for a CONCRETE project directory —
-  // `newSessionHref(dir)` → SessionRoute → a draft tab → the NewSession composer (exactly what
-  // opencode's own "新建会话" produces). The one hard rule: `dir` must be a real worktree, never the
-  // bare global "/", because a draft for "/" renders the picker INSIDE the box reading "New project"
-  // (Image #9, the screen the user flagged as wrong). Prefer the project the user is currently in,
-  // else the most-recent real directory; with no project at all fall back to the home grid.
-  const newChat = () => {
-    const active = activeProject()?.worktree
-    const dir = active && active !== "/" ? active : mostRecentConcreteDir()
-    navigate(dir ? newSessionHref(dir) : homeHref())
-  }
+  // "新对话" — 单一入口(见 startDraft)。此前它挑的目录是「当前项目 → 最近项目」,这既是
+  // owner 报的"开在 alpha-code 而不是 ~/Alpha"(ADR-025 2026-07-28 修订推翻了该优先级),也是
+  // 走 legacy admission 路由的那个入口本身。
+  const newChat = () => void startDraft()
 
   const archiveProject = (worktree: string) => {
     dismissMenu(() => setMenuFor(null), projectMenuTrigger)
@@ -921,7 +1044,12 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
           </header>
 
           <nav class="alpha-sidebar-nav">
-            <button type="button" class="alpha-sidebar-nav-item" onClick={() => newChat()}>
+            <button
+              type="button"
+              class="alpha-sidebar-nav-item"
+              data-alpha-sidebar-nav="new-chat"
+              onClick={() => newChat()}
+            >
               <Icon name="plus" class="alpha-sidebar-nav-icon" />
               <span>{t("alpha.sidebar.newChat")}</span>
             </button>
