@@ -52,7 +52,11 @@ route and be dead on another.
 shell-level registration it carried — inherit (re-register in the Alpha shell),
 retire (delete the entry as well), or restore. Alpha's UI must not contain a
 clickable entry pointing at an unregistered command. The judgement is enumerated
-**per entry**, not per command, so a new entry is covered by construction.
+**per entry**, not per command — but that enumeration is a **hand-maintained list
+of known entries**, not something the gates derive. Nothing here discovers a new
+non-menu UI entry on its own: the Settings shortcut table (the 11th class) was
+found by a human reading the code, not by a gate going red. Adding a UI control
+that points at a command means adding it to the table below and to the gate.
 
 Current disposition (REQ-126 AC7):
 
@@ -73,15 +77,25 @@ Current disposition (REQ-126 AC7):
 Gates are runtime, not source text.
 `packages/ui-mac/src/renderer/sidebar/shell-commands.test.ts` mounts the real
 shell (production `AlphaSidebar` + `AlphaSettings` + `AlphaSessionSearch`) and,
-for the entries listed above, clicks the real control and asserts an observable
-result — settings surface in the DOM, the directory picker actually called, the
-real router moving, the retired DOM absent while its container is still present.
+for **some** of the entries above, clicks the real control and asserts an
+observable result — settings surface in the DOM, the directory picker actually
+called, the real router moving, the retired DOM absent while its container is
+still present. Which entries get a click, and which only get a weaker assertion,
+is listed below rather than left to be assumed.
 `packages/ui-mac/src/main/desktop-menu-publication.test.ts` builds the real
 native menu and clicks **every** item, asserting the set of command ids it can
 emit is exactly the published set.
 
 Known not covered by those gates, stated rather than implied:
 
+- A **new** UI entry pointing at a command is not discovered by anything. The
+  shell gate walks a hand-written list of known entries; a control added
+  elsewhere in Alpha's UI is simply absent from it and stays green.
+- The sidebar back / forward buttons have **no behavioural case**. The gate only
+  asserts the top-left toolbar exists with its three buttons; nothing clicks
+  them and observes navigation. (An earlier attempt was removed: upstream's
+  persisted tab state leaks across test files, so the route it navigated to
+  bounced back to `/` depending on which tests ran before it.)
 - Keyboard accelerators are asserted only as registration (a registered option
   carries the keybind); no gate presses the physical chord end to end.
 - The desktop-menu gate stops at `deps.trigger(id)` in the main process. The IPC

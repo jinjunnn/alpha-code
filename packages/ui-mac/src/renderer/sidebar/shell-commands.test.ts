@@ -312,9 +312,10 @@ describe("桌面菜单:发布面上的每一条在真实壳里都接得住", () 
     expect(runtime.navigationIntents().slice(before)).toContain(newSessionHref(runtime.FIXTURE_DIRECTORY))
   })
 
-  // common.goBack / common.goForward 没有单独的运行时用例,理由写在这里而不是省略:
-  // 侧栏左上角那对后退/前进**按钮**从来不经命令总线(它们直接 `navigate(±1)`),所以它们不属于
-  // 「指向未注册命令的入口」这一类,本票没有改动它们;桌面菜单那两条的义务是「有人注册」,由上面
-  // 「发布面全注册」逐条判。刻意不按 `trigger` 断言位置变化:上游 titlebar 在首页/新对话页也注册
-  // 同名 id(语义相同,都是历史前后移动),谁先挂载谁赢 —— 那样的断言判的是挂载顺序,不是产品。
+  // common.goBack / common.goForward 已从桌面菜单**退休**(shared/desktop-menu-policy.ts),
+  // 所以这里没有它们的用例:上游 Titlebar 在首页/新对话页抢先注册同名 id 并走只有 `["/"]` 的私有
+  // history —— 那不是「语义相同、谁赢都行」,是同一菜单项在不同路由两种行为、其中一种还是空转。
+  // 侧栏左上角那对**按钮**保留(直连 `navigate(±1)`,从不经命令总线),但本文件**没有**为它们写
+  // 行为用例:只在退休那两条用例里断言过左上工具簇仍有 3 个按钮,从未点击并观察导航。这是刻意的
+  // 诚实分层,已在 docs/architecture/upstream-integration.md 的「Known not covered」列明。
 })
