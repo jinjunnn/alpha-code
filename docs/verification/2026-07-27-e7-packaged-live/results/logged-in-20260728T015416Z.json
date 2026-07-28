@@ -2,8 +2,8 @@
   "schema": "alpha-code/e7-packaged-live/v1",
   "issue": "alpha-code#643",
   "phase": "logged-in",
-  "capturedAt": "2026-07-28T01:37:13.042Z",
-  "finishedAt": "2026-07-28T01:37:13.142Z",
+  "capturedAt": "2026-07-28T01:54:16.386Z",
+  "finishedAt": "2026-07-28T01:54:16.498Z",
   "blocked": "未登录,无法取证 (not logged in / no platform cloud token) — no evidence was collected",
   "authObserved": {
     "status": "logged-out",
@@ -23,7 +23,7 @@
         "pinnedCommit": "e578e00ae"
       },
       "required": true,
-      "at": "2026-07-28T01:37:13.126Z"
+      "at": "2026-07-28T01:54:16.465Z"
     },
     {
       "id": "P0.2",
@@ -35,7 +35,7 @@
         "port": 9222
       },
       "required": true,
-      "at": "2026-07-28T01:37:13.132Z"
+      "at": "2026-07-28T01:54:16.482Z"
     },
     {
       "id": "P0.3",
@@ -51,7 +51,7 @@
         }
       },
       "required": true,
-      "at": "2026-07-28T01:37:13.139Z"
+      "at": "2026-07-28T01:54:16.495Z"
     },
     {
       "id": "P0.4",
@@ -82,7 +82,7 @@
       },
       "required": true,
       "note": "未登录,无法取证 — log in inside the app (平台代付模式), then re-run this probe",
-      "at": "2026-07-28T01:37:13.141Z"
+      "at": "2026-07-28T01:54:16.498Z"
     }
   ]
 }

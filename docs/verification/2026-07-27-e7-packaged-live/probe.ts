@@ -605,7 +605,7 @@ record({
   required: true,
   note:
     derivedEngineId && derivedEngineId !== "cloud_web_search"
-      ? `MISMATCH: alpha pins "cloud_web_search" but the engine will register "${derivedEngineId}" — every alpha gate keyed on the pinned id needs re-checking (see README §已知风险)`
+      ? `MISMATCH: alpha pins "cloud_web_search" but the engine will register "${derivedEngineId}" — every alpha gate keyed on the pinned id is currently an EMPTY gate (it watches a tool id the engine never registers). Re-check each one against the real id and open a CODE ticket; README §7 lists them and the judgement method.`
       : undefined,
 })
 
@@ -882,18 +882,61 @@ record({
   required: false,
 })
 
+// ── P3.7 402 / 余额 ──────────────────────────────────────────────────────────
+// owner 2026-07-27 在 #643 上裁定「**采**」(多采一项没有害处,漏采要再叫 owner 一次);#643 正文
+// 原写 out-of-scope,已按裁决改成与基线稿票 6 的 2026-07-25 更正一致。这里**真打**已部署 gateway,
+// 按当天账户形态判定可产生性 —— 不预设结论,也不用余额去"推断"结果:发一次真请求,看它真的回什么。
+//
+// 平台侧只有两条臂能出 402(alpha-platform `packages/gateway/src/worker.ts` webSearchHandler):
+//
+//   A. **per-job 预算耗尽**(`perJobPrecall` → `kind:"over"`)—— 需 `auth.via === "job"`,即一枚
+//      `JOB_TOKEN_SECRET` 签发、claims 带 `job_id` 的 job token(`lib/tenant-auth.ts:114-123`,
+//      且只在显式 opt-in 的模型面被接受)。桌面端登录拿到的是 route-purpose 绑定的 JWT
+//      (`via:"jwt"`),`auth.jobId` 恒为空 ⇒ `perJobPrecall` 直接返回 `{kind:"pass",enforced:false}`。
+//      **这条臂从桌面端不可达**,理由与 P3.4 同源:桌面端铸不出那个形状的凭证。
+//
+//   B. **accountPreauth 拒绝** —— 账户服务回 `{ok:false}`(「超出会员额度且钱包余额不足」,
+//      `worker.ts:243`)。预估价是路由常量(`BILLABLE_ROUTES["/v1/tools/web_search"].estimatedCostUsd`),
+//      客户端**没有任何调价/调额杠杆**,请求体只有 `{query,max_results}`。所以这条臂只在账户
+//      **余额与会员额度双空**时才产生;把它打空是对 owner 计费状态的破坏性变更,而且会连带
+//      让同一轮的 P2.1/P2.2/P2.3(真调 + 计费)一起失败 —— 两者不可能在同一个账户形态下同时取到。
+//
+// 判读:402 ⇒ 真拿到了(pass);200 ⇒ 账户被预授权通过,**这本身就是「今天产生不了 402」的可观测
+// 证据**(not-producible,带实测余额);其它状态 ⇒ 意外,必须 LOUD(fail)。
+//
+// 注意:这一条在账户有额度时会**真的成功搜一次**,即多一笔 web-search 计费流水。它发生在 P2.3
+// 量完钱之后,不影响 P2.3 的差分;但读账本时会看到 3 笔而非 2 笔 web-search,第 3 笔就是这里。
+const p402 = await gatewayProbe(bearer, JSON.stringify({ query: `alpha-code e7 402 preauth probe ${runAt}` }))
+const p402Observed = {
+  ...p402,
+  accountShape: {
+    balanceFen: summaryAfter?.balanceFen,
+    walletUsedFen: summaryAfter?.walletUsedFen,
+    plan: summaryAfter?.plan?.id ? { id: summaryAfter.plan.id, status: summaryAfter.plan.status } : undefined,
+  },
+  armA: "unreachable by construction — the desktop holds a route-purpose JWT (via:\"jwt\"), never a job token, so perJobPrecall returns pass/enforced:false",
+  armB:
+    p402.status === 402
+      ? "fired — accountPreauth rejected this call"
+      : "did not fire — the account was preauthorised, i.e. it is not out of quota+wallet today",
+  coveredAtL1:
+    "packages/opencode/test/tool/alpha-websearch-failure.test.ts (402 → payment_required, both arms: 预授权拒绝 and per-job budget exceeded)",
+}
 record({
   id: "P3.7",
-  ac: "#643 out-of-scope",
-  title: "402 / 余额证据",
-  status: "out-of-scope",
-  criterion: "not collected — #643 边界 explicitly excludes it",
-  observed: {
-    issueText: "#643 out-of-scope: 不采集 402/余额证据 —— 该路径今天不产生,402 证据归 alpha-platform#37 入册后",
-    conflict:
-      "docs/design/2026-07-22-e7-cloud-web-search-baseline.md 票 6 的 2026-07-25 更正说相反(402 已是可采集的真实失败态,失败集须含 402)。owner 裁决前按 Issue 正文执行。",
-  },
-  required: false,
+  ac: "AC3 真实失败集 402",
+  title: "402 / 余额(accountPreauth 余额或额度不足臂)",
+  status: p402.status === 402 ? "pass" : p402.status === 200 ? "not-producible" : "fail",
+  criterion:
+    "POST /v1/tools/web_search with a valid bearer → HTTP 402 when the account is out of quota+wallet; a 200 proves the account is funded (402 not producible today without draining the owner's balance, which would also invalidate P2.1/P2.2/P2.3); any other status is unexpected and loud",
+  observed: redact(p402Observed),
+  required: p402.status !== 200,
+  note:
+    p402.status === 402
+      ? undefined
+      : p402.status === 200
+        ? "not-producible today — 不是绿,也不是跳过:账户有额度/余额,402 的唯一可达臂(accountPreauth)不会触发。要真采 402 需把账户打到余额+额度双空,那是破坏性计费变更且与本轮 AC1/计费证据互斥。映射本身由 L1 覆盖。"
+        : "unexpected status on the 402 probe — investigate before accepting this run",
 })
 
 // defect 消失: the local keyless tool is denied under platform-pays. Invoking it must yield a

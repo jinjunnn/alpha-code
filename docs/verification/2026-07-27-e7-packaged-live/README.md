@@ -120,7 +120,7 @@ cd ~/app/alpha-code && bun docs/verification/2026-07-27-e7-packaged-live/probe.t
 | P3.4 | AC3 | **403** —— `not-producible`(桌面端只持有 `model.invoke` / `cloud.dispatch` 两个 route-purpose 绑定令牌,造不出 scope 不足的令牌);映射由 L1 `alpha-websearch-failure.test.ts` 覆盖 | ☐ |
 | P3.5 | AC3 | **502** —— `not-producible`(需已部署 gateway 同时缺 `TAVILY_API_KEY`/`BRAVE_API_KEY`;两把钥匙都在位,拆生产配置不在探针权限内) | ☐ |
 | P3.6 | AC3 | **意外状态 LOUD** —— `not-producible`(桌面端够得着的请求形态都落在 {400,401,402,403,502} 内);映射由 L1 覆盖 | ☐ |
-| P3.7 | — | **402 / 余额** —— `out-of-scope`,见 §6 分歧 | ☐ |
+| P3.7 | AC3 | **402 / 余额**:带真 bearer 打 `/v1/tools/web_search` → 402(账户额度+余额双空时);200 ⇒ 账户被预授权通过 = 今天产生不了,记 `not-producible`;其它状态 LOUD。见 §6 | ☐ |
 | P3.8 | AC3 | **defect 消失**:代付态下调用被 deny 的本地 `websearch`,模型拿到的是可辨 tool error(含「denied by alpha sovereignty」或以 `Web search failed:` 开头),不是崩溃 | ☐ |
 | P3.9 | AC3 | 云侧失败 loud 但**不可分类**(平台薄壳丢弃 `r.status`)—— 已登记缺口 `alpha-platform#105` | ☐ |
 
@@ -136,12 +136,13 @@ cd ~/app/alpha-code && bun docs/verification/2026-07-27-e7-packaged-live/probe.t
 | K1.5 | AC2 | **keyless 真调**:真实模型轮次产出 `websearch` tool part,`status==="completed"` 且输出非空 | ☑ **pass** —— 见 §5 |
 | K1.6 | AC3 | keyless 失败也必须是可辨错误(不是匿名 defect) | ☑ pass(本次 `completed`,无失败可辨) |
 
-登出态相位整体 **exit 0,10/10 必需项通过**。
+登出态相位整体 **exit 0,10/10 必需项通过**,且在新产物上**独立跑了两遍**都是 10/10
+(K1.5 不是一次侥幸):
+[`results/keyless-20260728T013721Z.json`](results/keyless-20260728T013721Z.json)、
+[`results/keyless-20260728T015424Z.json`](results/keyless-20260728T015424Z.json)(后者由**本次提交的**探针跑出)。
 
-原始记录(新产物 `e578e00ae` / `60589c59c…`):
-[`results/keyless-20260728T013721Z.json`](results/keyless-20260728T013721Z.json)。
 两条**反向** fail-closed 自检也在新产物上复验过:
-[`results/logged-in-20260728T013713Z.json`](results/logged-in-20260728T013713Z.json)(登出态跑登录态相位 → `blocked` + exit 2)、
+[`results/logged-in-20260728T015416Z.json`](results/logged-in-20260728T015416Z.json)(登出态跑登录态相位 → `blocked` + exit 2)、
 [`results/keyless-20260728T013532Z.json`](results/keyless-20260728T013532Z.json)(登录态跑 `--keyless` → `blocked` + exit 2)。
 两者都只记了 P0.1–P0.3 的前置,**零证据产出**。
 
@@ -189,16 +190,37 @@ commit `e578e00ae`:`readBoundedBody` 换成 `Stream.runForEach` 读全 + `BodyCa
 副作用(当时的判断,仍成立):登录态相位的 P2.1 走的是云 MCP 客户端(`mcp/catalog.ts`),
 **不经**这条传输;P3.8 的本地 deny 路径同样不经它(闸在请求构造之前)。
 
-## 6. 需要 owner 裁决的分歧:402 采不采
+## 6. 402 / 余额 —— 裁决「采」,以及它今天能不能产生
 
-- **#643 正文**(2026-07-27 写)明说 out-of-scope:「不采集 402/余额证据 —— 该路径今天不产生」,
-  退出条件还写「失败集证据**无 402 项**」。
-- **基线票 6 的 2026-07-25 更正**说的正相反:平台侧 `accountPreauth` 与 per-job 预算 precall 都已上线,
-  402 是**可采集的真实失败态**,「失败集证据**须含** 402 项」。
+**冲突已消。** #643 正文原写 out-of-scope(「不采集 402/余额证据」,退出条件「失败集证据无 402 项」),
+与基线票 6 的 2026-07-25 更正(「须含 402 项」)相反。owner 2026-07-27 在 #643 上**裁定:采** ——
+理由是多采一项证据没有害处,漏采则要再叫 owner 一次。**#643 正文已按裁决改写**,不再留这处矛盾。
 
-探针按 **Issue 正文**执行(P3.7 记为 `out-of-scope`,并在 JSON 里同时记下这段冲突),不擅自扩范围。
-若 owner 判以基线为准,402 可以用「把账户余额打到不足」或「per-job 预算压到 0」的真实路径采集,
-届时给探针加一项即可。
+探针的 P3.7 因此变成一条**真打**的判据(不再是 `out-of-scope` 跳过),并且**不预设结论**:
+它发一次带真 bearer 的 `POST /v1/tools/web_search`,看它真的回什么。
+
+### 平台侧只有两条臂能出 402
+
+依据 alpha-platform `packages/gateway/src/worker.ts` 的 `webSearchHandler`:
+
+| 臂 | 触发条件 | 桌面端可达? |
+| --- | --- | --- |
+| **A. per-job 预算耗尽**(`perJobPrecall` → `kind:"over"`) | `auth.via === "job"`,即一枚 `JOB_TOKEN_SECRET` 签发、claims 带 `job_id` 的 job token(`lib/tenant-auth.ts:114-123`) | **不可达**。桌面端登录拿到的是 route-purpose 绑定的 JWT(`via:"jwt"`),`auth.jobId` 恒空 ⇒ `perJobPrecall` 直接 `{kind:"pass",enforced:false}`。与 P3.4 同源:桌面端铸不出那个形状的凭证 |
+| **B. `accountPreauth` 拒绝** | 账户服务回 `{ok:false}`(「超出会员额度且钱包余额不足」,`worker.ts:243`) | **仅当账户余额与会员额度双空**。预估价是路由常量(`BILLABLE_ROUTES[…].estimatedCostUsd`),请求体只有 `{query,max_results}`,客户端**没有任何调价/调额杠杆** |
+
+### 判读规则(写在探针里,运行前定好)
+
+| 观测 | 记法 | 含义 |
+| --- | --- | --- |
+| HTTP **402** | ☑ `pass`(required) | 真拿到了 402 证据 |
+| HTTP **200** | `not-producible`(非 required) | 账户被预授权通过 —— **这本身就是「今天产生不了 402」的可观测证据**,不是绿、也不是静默跳过。JSON 里带实测 `balanceFen`/`walletUsedFen`/`plan` 作为理由 |
+| 其它状态 | ☒ `fail`(required) | 意外状态必须 LOUD,先查清再接受这一轮 |
+
+**为什么不主动把账户打空去凑 402**:那是对 owner 计费状态的破坏性变更,而且会连带让同一轮的
+P2.1/P2.2(真调)与 P2.3(计费)一起失败 —— 402 证据与 AC1/计费证据**不可能在同一个账户形态下同时取到**。
+所以 owner **不需要**为 402 做任何额外操作;探针会照实记录当天的账户形态。
+映射本身(两条臂 → `payment_required`)由 L1 覆盖:
+`packages/opencode/test/tool/alpha-websearch-failure.test.ts`。
 
 ## 7. 已知风险:云工具在引擎里的真实 id 可能不是 `cloud_web_search`
 
@@ -209,15 +231,33 @@ commit `e578e00ae`:`readBoundedBody` 换成 `Stream.runForEach` 读全 + `BodyCa
 `cloud_cloud_web_search` —— 全仓 grep `cloud_cloud` 零命中,说明这条从未被观测过
 (此前两次取证用的都是裸 MCP 客户端,不经引擎)。
 
-P1.3/P1.4 就是为此设计的:探针**记录**远端真实名并**推导**引擎侧 id,不假定。若两者不一致,
-P1.4 会带 `MISMATCH` note —— 那意味着所有按 `cloud_web_search` 字面量下的闸
-(permission deny、ext 的 `tool.execute.before`)需要按真实 id 重核,应另开一张 CODE 票。
+P1.3/P1.4 就是为此设计的:探针**记录**远端真实名并**推导**引擎侧 id,不假定。
+
+### 看到 `MISMATCH` 之后该做什么(判读方法)
+
+P1.4 的 `observed` 里有三个字段:`remoteName`(worker 实测返回的远端工具名)、
+`derivedEngineId`(按上面的拼名规则推导出的引擎侧 id)、`alphaPinnedId`(alpha 全仓钉的字面量
+`cloud_web_search`);不一致时 `note` 以 `MISMATCH:` 开头。
+
+- **没有 `MISMATCH`** ⇒ 引擎侧 id 与全仓字面量一致,下面这些闸不需要动。
+- **出现 `MISMATCH`** ⇒ 说明**所有按 `cloud_web_search` 字面量下的闸都下错了位置**,
+  它们盯的是一个引擎里并不存在的工具名 —— 也就是说这些闸**当前是空闸门**(闸在,但永不命中)。
+  必须按 `derivedEngineToolId` 逐个重核,**另开一张 CODE 票**,不要在本 VERIFY 票里改源码:
+
+  | 要重核的闸 | 位置 | 下错了会怎样 |
+  | --- | --- | --- |
+  | permission deny(云优先时抑制本地 keyless) | `packages/ui-mac/src/main/cloud-web-search.ts` 注入的 `permission.websearch` / 云工具 id | 抑制不生效或误伤,P1.5/P1.7 的绿变成假绿 |
+  | ext 的 `tool.execute.before` 钩子 | `packages/ext/src/`(云 websearch kill-switch 与主权闸) | kill-switch(#223 AC4)拦不住真实工具名 = 关不掉 |
+  | 引擎侧工具枚举/展示 | `packages/opencode/src/mcp/catalog.ts:117-119` 的拼名 | 名字对不上,模型看到的工具与闸盯的工具不是同一个 |
+
+  重核判据不是「grep 到字面量」,而是**用真实 id 跑一遍这三个闸并确认它们真的命中**
+  —— 本仓的教训是「闸门是假的」比逻辑错更常见(见 `AGENTS.md` / 闸门四形态)。
 
 ## 8. 边界(本目录**不**证明什么)
 
 1. **不做平台侧单测** —— 平台仓自证(#643 out-of-scope)。
 2. **不覆盖 kill-switch(`ALPHA_WEBSEARCH_DISABLE`)** —— 那是 #223 AC4,不在 #643 三条 AC 内;
    它的判据在 `packages/ext/src/cloud-websearch-kill.test.ts` 等 L1 套件里。
-3. **P3.4/P3.5/P3.6 是 `not-producible`,不是 pass** —— 结果 JSON 里如实标注理由与 L1 覆盖位置。
-   把造不出来的失败态记成绿色就是假闸门。
+3. **P3.4/P3.5/P3.6 是 `not-producible`,不是 pass**;**P3.7 在账户有额度时同样记 `not-producible`**
+   —— 结果 JSON 里如实标注理由与 L1 覆盖位置。把造不出来的失败态记成绿色就是假闸门。
 4. **单次采样不是分布** —— 本目录给的是「这条链在这个构建上真的通/不通」,不是稳定性或 P95。
