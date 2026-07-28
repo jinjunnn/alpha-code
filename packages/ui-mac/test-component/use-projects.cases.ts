@@ -138,7 +138,7 @@ const { useAlphaProjects } = await import("../src/renderer/sidebar/use-projects"
 const { replayRuntimeRecoveryState, subscribeRuntimeRecovery } = await import("../src/renderer/runtime-recovery")
 const { AlphaComposerRuntime } = await import("../src/renderer/alpha-ui/alpha-composer")
 const { ModelPickPop } = await import("../src/renderer/alpha-ui/alpha-composer-model")
-const { composerModel, setComposerModel, setComposerAgent, resetPushedAgents, resetComposerModelProjection } =
+const { composerModel, setComposerModel, setComposerAgent, resetComposerModelProjection } =
   await import("../src/renderer/alpha-ui/composer-state")
 
 const serverInfo: ServerInfo = { baseUrl: "http://127.0.0.1:19099", username: "u", password: "p" }
@@ -183,7 +183,6 @@ afterEach(() => {
   document.body.replaceChildren()
   setComposerModel(null)
   setComposerAgent(null)
-  resetPushedAgents()
   resetComposerModelProjection()
 })
 afterAll(() => GlobalRegistrator.unregister())

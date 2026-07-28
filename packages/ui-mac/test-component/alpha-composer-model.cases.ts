@@ -65,11 +65,10 @@ const {
   composerModel,
   composerModelProjection,
   composerModelSuspended,
-  observeSessionAgent,
   resetComposerModelProjection,
-  resetPushedAgents,
   setComposerAgent,
   setComposerModel,
+  setComposerPerm,
 } = await import(
   "../src/renderer/alpha-ui/composer-state"
 )
@@ -229,7 +228,6 @@ afterEach(() => {
   document.body.replaceChildren()
   setComposerModel(null)
   setComposerAgent(null)
-  resetPushedAgents()
   resetComposerModelProjection()
 })
 afterAll(() => GlobalRegistrator.unregister())
@@ -1079,26 +1077,26 @@ describe("ModelPickPop production component", () => {
   })
 })
 
-describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 2)", () => {
+describe("#652 会话发送走 v1 promptAsync(与首页同一条)+ 停止键诚实", () => {
   const readyContract = (): ModelContract => ({
     list: async () => platformModels,
     current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
     switch: async () => {},
   })
 
+  /** 两条发送端点都在的假 sidecar:v1 记账并可控失败,v2 记账只为断言「一次都没被走过」。 */
   function fakeSessionSdk(overrides?: { abort?: () => Promise<unknown>; promptError?: () => boolean }) {
-    const prompts: Array<Record<string, unknown>> = []
-    const promptAsyncCalls: unknown[] = []
+    const promptAsyncCalls: Array<Record<string, unknown>> = []
+    const v2Prompts: Array<Record<string, unknown>> = []
     const agentSwitches: Array<{ sessionID: string; agent: string }> = []
+    const v2Gets: string[] = []
     const abortCalls: unknown[] = []
-    // 引擎侧会话档回声:switchAgent 落档后,typed session info 会读到它(sessionAgent 基准)。
-    let engineAgent: string | undefined
     const client = {
       command: { list: async () => ({ data: [] }) },
       session: {
-        promptAsync: async (args: unknown) => {
+        promptAsync: async (args: Record<string, unknown>) => {
           promptAsyncCalls.push(args)
-          return {}
+          return overrides?.promptError?.() ? { error: { status: 500 } } : {}
         },
         abort: async (args: unknown) => {
           abortCalls.push(args)
@@ -1107,23 +1105,22 @@ describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 
       },
       v2: {
         session: {
-          get: async (args: { sessionID: string }) => ({
-            data: { data: { id: args.sessionID, agent: engineAgent } },
-          }),
+          get: async (args: { sessionID: string }) => {
+            v2Gets.push(args.sessionID)
+            return { data: { data: { id: args.sessionID, agent: undefined } } }
+          },
           prompt: async (args: Record<string, unknown>) => {
-            prompts.push(args)
-            if (overrides?.promptError?.()) return { error: { status: 500 } }
-            return { data: { id: "msg_admitted", admittedSeq: prompts.length, delivery: args.delivery ?? "steer" } }
+            v2Prompts.push(args)
+            return { data: { id: "msg_admitted", admittedSeq: v2Prompts.length } }
           },
           switchAgent: async (args: { sessionID: string; agent: string }) => {
             agentSwitches.push(args)
-            engineAgent = args.agent
             return {}
           },
         },
       },
     }
-    return { client, prompts, promptAsyncCalls, agentSwitches, abortCalls }
+    return { client, promptAsyncCalls, v2Prompts, agentSwitches, v2Gets, abortCalls }
   }
 
   function sessionMount(sdk: ReturnType<typeof fakeSessionSdk>, running: () => boolean) {
@@ -1156,35 +1153,61 @@ describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 
     textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
   }
 
-  test("会话发送走 v2 durable 队列:空闲省略 delivery,运行中 delivery=queue(Enter 同路径),promptAsync 退役", async () => {
+  async function waitReady(host: HTMLElement, text: string) {
+    const textarea = typeText(host, text)
+    await waitFor(() => expect(host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    return textarea
+  }
+
+  test("空闲与运行中都走 session.promptAsync;v2 durable 端点一次都不碰", async () => {
     installApi()
     const sdk = fakeSessionSdk()
     const [running, setRunning] = createSignal(false)
     const mounted = sessionMount(sdk, running)
     await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
 
-    const textarea = typeText(mounted.host, "跑一下测试")
-    await waitFor(() =>
-      expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false),
-    )
+    const textarea = await waitReady(mounted.host, "跑一下测试")
     pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
-    expect(sdk.prompts[0]).toMatchObject({ sessionID: "A", prompt: { text: "跑一下测试" } })
-    expect("delivery" in sdk.prompts[0]!).toBe(false)
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(sdk.promptAsyncCalls[0]).toMatchObject({
+      sessionID: "A",
+      directory: "/A",
+      parts: [{ type: "text", text: "跑一下测试" }],
+    })
 
-    // 运行中:发送键换停止形态,Enter 仍发送且必须走 delivery:"queue"(文案「发送后排队」的真实语义)。
+    // 运行中:发送键换停止形态,Enter 仍是同一条 v1 路径(引擎侧 ensureRunning 把这条消息
+    // 并进正在跑的 loop —— 占位文案「发送后排队」在 v1 上同样成立,不需要 delivery 档位)。
     setRunning(true)
     await waitFor(() => expect(mounted.host.querySelector(".a-comp-stop")).not.toBeNull())
     pressEnter(typeText(mounted.host, "补一个用例"))
-    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
-    expect(sdk.prompts[1]).toMatchObject({
-      sessionID: "A",
-      delivery: "queue",
-      prompt: { text: "补一个用例" },
-    })
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
+    expect(sdk.promptAsyncCalls[1]).toMatchObject({ sessionID: "A", parts: [{ type: "text", text: "补一个用例" }] })
+    expect("delivery" in sdk.promptAsyncCalls[1]!).toBe(false)
 
-    expect(sdk.promptAsyncCalls).toEqual([])
-    expect(sdk.agentSwitches).toEqual([]) // 默认档(无 plan/readonly)不动会话 agent
+    // #652 的核心:新引擎那条链一次都不被碰 —— 它没有 MCP、没有 alpha 插件钩子、且拿不到凭证。
+    expect(sdk.v2Prompts).toEqual([])
+    // 发送前不再有任何「先读会话档 / 先切会话档」的往返 —— 那两步曾各自是一个新的发送拦截点。
+    expect(sdk.v2Gets).toEqual([])
+    expect(sdk.agentSwitches).toEqual([])
+    mounted.dispose()
+  })
+
+  test("引擎把这条发送装进 { error } 信封时如实失败:正文保留,可原地重发", async () => {
+    installApi()
+    let failing = true
+    const sdk = fakeSessionSdk({ promptError: () => failing })
+    const mounted = sessionMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+
+    const textarea = await waitReady(mounted.host, "会失败的一条")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    await waitFor(() => expect((mounted.host.querySelector("textarea") as HTMLTextAreaElement).value).toBe("会失败的一条"))
+
+    failing = false
+    pressEnter(mounted.host.querySelector("textarea") as HTMLTextAreaElement)
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
+    await waitFor(() => expect((mounted.host.querySelector("textarea") as HTMLTextAreaElement).value).toBe(""))
     mounted.dispose()
   })
 
@@ -1203,415 +1226,50 @@ describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 
     mounted.dispose()
     toastHost.dispose()
   })
-})
 
-describe("AlphaComposer 档位协议 (REQ-125 C7 audit round 3)", () => {
-  const readyContract = (): ModelContract => ({
-    list: async () => platformModels,
-    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
-    switch: async () => {},
-  })
-
-  function fakeSessionSdk(overrides?: { promptError?: () => boolean }) {
-    const prompts: Array<Record<string, unknown>> = []
-    const agentSwitches: Array<{ sessionID: string; agent: string }> = []
-    let engineAgent: string | undefined
-    const client = {
-      command: { list: async () => ({ data: [] }) },
-      session: {
-        promptAsync: async () => ({}),
-        abort: async () => ({}),
-      },
-      v2: {
-        session: {
-          get: async (args: { sessionID: string }) => ({
-            data: { data: { id: args.sessionID, agent: engineAgent } },
-          }),
-          prompt: async (args: Record<string, unknown>) => {
-            prompts.push(args)
-            if (overrides?.promptError?.()) return { error: { status: 500 } }
-            return { data: { id: "msg_admitted", admittedSeq: prompts.length } }
-          },
-          switchAgent: async (args: { sessionID: string; agent: string }) => {
-            agentSwitches.push(args)
-            engineAgent = args.agent
-            return {}
-          },
-        },
-      },
-    }
-    return { client, prompts, agentSwitches, sessionAgent: () => engineAgent }
-  }
-
-  function agentMount(sdk: ReturnType<typeof fakeSessionSdk>, running: () => boolean) {
-    const sessionProjects = { ...projects, sdk: () => sdk.client as never } satisfies AlphaProjectsApi
-    return mount(() =>
-      createComponent(AlphaComposerRuntime, {
-        mode: "session",
-        projects: sessionProjects,
-        directory: () => "/A",
-        sessionID: () => "A",
-        command,
-        modelContract: readyContract(),
-        sessionDock: {
-          running,
-          contextUsage: () => null,
-          approvalPending: () => false,
-        },
-      }),
-    )
-  }
-
-  function typeText(host: HTMLElement, value: string) {
-    const textarea = host.querySelector("textarea")!
-    textarea.value = value
-    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
-    return textarea
-  }
-
-  function pressEnter(textarea: HTMLTextAreaElement) {
-    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
-  }
-
-  async function waitReady(host: HTMLElement, text: string) {
-    const textarea = typeText(host, text)
-    await waitFor(() => expect(host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
-    return textarea
-  }
-
-  test("prompt 提交失败:档位切换立即回滚,会话档不残留(症状①)", async () => {
-    installApi()
-    let failPrompt = true
-    const sdk = fakeSessionSdk({ promptError: () => failPrompt })
-    const mounted = agentMount(sdk, () => false)
-    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
-    setComposerAgent("plan")
-
-    const textarea = await waitReady(mounted.host, "按计划来")
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
-    // 先切 plan,提交失败后立即滚回默认档 —— 会话档位与发送前一致。
-    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"]))
-    expect(sdk.sessionAgent()).toBe("build")
-    // 失败不吞输入:正文保留,可修正重发。
-    expect((mounted.host.querySelector("textarea") as HTMLTextAreaElement).value).toBe("按计划来")
-
-    // 修复后重发:重新落 plan 档并提交成功。
-    failPrompt = false
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
-    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build", "plan"]))
-    mounted.dispose()
-  })
-
-  test("运行中需要改档的发送如实拒绝:零切档零提交,当前 drain 档位不被污染(症状②)", async () => {
-    installApi()
-    const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
-    const sdk = fakeSessionSdk()
-    const mounted = agentMount(sdk, () => true)
-    const toastHost = mount(() => createComponent(ToastViewport, {}))
-    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
-    setComposerAgent("plan")
-
-    const textarea = typeText(mounted.host, "排队执行")
-    pressEnter(textarea)
-    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.composer.agentQueueBlocked"]))
-    expect(sdk.agentSwitches).toEqual([])
-    expect(sdk.prompts).toEqual([])
-
-    // 无档位变化的排队发送不受影响:delivery=queue 且依旧零切档。
-    setComposerAgent(null)
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
-    expect(sdk.prompts[0]).toMatchObject({ delivery: "queue" })
-    expect(sdk.agentSwitches).toEqual([])
-    mounted.dispose()
-    toastHost.dispose()
-  })
-
-  test("退出 plan 后首次发送把会话档收回默认;账本只回滚自己推送的档(症状③)", async () => {
+  test("档位随每条消息走:plan / 只读 / 默认档各自落在 promptAsync 的 agent 字段上,零切档", async () => {
     installApi()
     const sdk = fakeSessionSdk()
-    const mounted = agentMount(sdk, () => false)
+    const mounted = sessionMount(sdk, () => false)
     await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
 
     setComposerAgent("plan")
-    let textarea = await waitReady(mounted.host, "先按计划来")
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
-    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+    pressEnter(await waitReady(mounted.host, "先按计划来"))
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(sdk.promptAsyncCalls[0]).toMatchObject({ agent: "plan" })
 
-    // 退出 plan:下一次普通发送先把会话档收回引擎默认,旧档不残留。
+    // 退出 plan:下一条就是默认档 —— 不带 agent 字段(v1 引擎自己回落到默认 agent),
+    // 也不需要「把会话档收回默认」的补偿写入,因为 v1 根本没有会话级档位这个中间状态。
     setComposerAgent(null)
-    textarea = await waitReady(mounted.host, "普通消息")
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
-    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"])
+    pressEnter(await waitReady(mounted.host, "普通消息"))
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
+    expect("agent" in sdk.promptAsyncCalls[1]!).toBe(false)
 
-    // 已在默认档:再次普通发送零切档(幂等,不打扰用户在别处设置的档)。
-    textarea = await waitReady(mounted.host, "再来一条")
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(3))
-    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"])
+    // 只读档:真载体是 alpha-readonly agent(静态权限档),同样按条走。
+    setComposerPerm("readonly")
+    pressEnter(await waitReady(mounted.host, "只看不改"))
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(3))
+    expect(sdk.promptAsyncCalls[2]).toMatchObject({ agent: "alpha-readonly" })
+    setComposerPerm("ask")
+
+    expect(sdk.agentSwitches).toEqual([])
+    expect(sdk.v2Gets).toEqual([])
+    expect(sdk.v2Prompts).toEqual([])
     mounted.dispose()
   })
-})
 
-describe("AlphaComposer 档位决策权威读 (REQ-125 C7 audit round 5)", () => {
-  const readyContract = (): ModelContract => ({
-    list: async () => platformModels,
-    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
-    switch: async () => {},
-  })
-
-  function fakeAgentSdk() {
-    const prompts: Array<Record<string, unknown>> = []
-    const agentSwitches: Array<{ sessionID: string; agent: string }> = []
-    const pendingGates: Array<(value: unknown) => void> = []
-    // engineAgent = 服务端权威档;syncAgent = serverSync 式滞后缓存(生产中不消费 v2 切档
-    // 事件、可无限落后)——协议不得消费它,本 fake 供「滞后两拍」对照断言。
-    let engineAgent: string | undefined
-    let syncAgent: string | undefined
-    let gateNext = false
-    let failGets = false
-    let hangGets = false
-    let getCalls = 0
-    const client = {
-      command: { list: async () => ({ data: [] }) },
-      session: { promptAsync: async () => ({}), abort: async () => ({}) },
-      v2: {
-        session: {
-          get: (args: { sessionID: string }) => {
-            getCalls++
-            // 悬挂模式:永不 settle 且无视 signal —— 复现 SDK 关闭默认超时下的挂死传输。
-            if (hangGets) return new Promise(() => {})
-            if (failGets) return Promise.resolve({ error: { status: 503 } })
-            return Promise.resolve({ data: { data: { id: args.sessionID, agent: engineAgent } } })
-          },
-          prompt: (args: Record<string, unknown>) => {
-            prompts.push(args)
-            if (gateNext) {
-              gateNext = false
-              return new Promise((resolve) => pendingGates.push(resolve))
-            }
-            return Promise.resolve({ data: { id: "msg_admitted", admittedSeq: prompts.length } })
-          },
-          switchAgent: async (args: { sessionID: string; agent: string }) => {
-            agentSwitches.push(args)
-            engineAgent = args.agent
-            return {}
-          },
-        },
-      },
-    }
-    return {
-      client,
-      prompts,
-      agentSwitches,
-      engineAgent: () => engineAgent,
-      syncAgent: () => syncAgent,
-      /** 服务端权威档直接变更(模拟用户在别处改档;滞后缓存刻意不动)。 */
-      setEngineAgent: (agent: string | undefined) => {
-        engineAgent = agent
-      },
-      /** 滞后缓存单独推进(永远可以落后服务端任意拍)。 */
-      setSyncAgent: (agent: string | undefined) => {
-        syncAgent = agent
-      },
-      setFailGets: (value: boolean) => {
-        failGets = value
-      },
-      setHangGets: (value: boolean) => {
-        hangGets = value
-      },
-      gateNextPrompt: () => {
-        gateNext = true
-      },
-      resolveGatedPrompt: (value: unknown) => {
-        pendingGates.shift()?.(value)
-      },
-      getCalls: () => getCalls,
-    }
-  }
-
-  function agentMount(
-    sdk: ReturnType<typeof fakeAgentSdk>,
-    running: () => boolean,
-    agentReadTimeoutMs?: number,
-  ) {
-    const sessionProjects = { ...projects, sdk: () => sdk.client as never } satisfies AlphaProjectsApi
-    return mount(() =>
-      createComponent(AlphaComposerRuntime, {
-        mode: "session",
-        projects: sessionProjects,
-        directory: () => "/A",
-        sessionID: () => "A",
-        command,
-        modelContract: readyContract(),
-        agentReadTimeoutMs,
-        sessionDock: {
-          running,
-          contextUsage: () => null,
-          approvalPending: () => false,
-        },
-      }),
-    )
-  }
-
-  function typeText(host: HTMLElement, value: string) {
-    const textarea = host.querySelector("textarea")!
-    textarea.value = value
-    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
-    return textarea
-  }
-
-  function pressEnter(textarea: HTMLTextAreaElement) {
-    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
-  }
-
-  async function waitReady(host: HTMLElement, text: string) {
-    const textarea = typeText(host, text)
-    await waitFor(() => expect(host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
-    return textarea
-  }
-
-  test("权威读悬挂(永不 settle 且无视 signal):有界超时后如实发送失败,sending 复位可重试(审计 R5)", async () => {
+  test("运行中切 plan 档照常发送:v1 的 agent 是消息级的,不影响正在跑的那一回合", async () => {
     installApi()
-    const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
-    const sdk = fakeAgentSdk()
-    sdk.setEngineAgent("build")
-    const mounted = agentMount(sdk, () => false, 40)
-    const toastHost = mount(() => createComponent(ToastViewport, {}))
-    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
-
-    sdk.setHangGets(true)
-    const textarea = await waitReady(mounted.host, "发一条")
-    pressEnter(textarea)
-    // 悬挂 GET 在有界时间内按失败 settle:如实提示发送失败,零提交,正文保留。
-    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.composer.sendFailed"]))
-    expect(sdk.prompts).toHaveLength(0)
-    expect((mounted.host.querySelector("textarea") as HTMLTextAreaElement).value).toBe("发一条")
-    // sending 复位:发送键回到可用态(不锁死,无需重建页面)。
-    await waitFor(() => expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
-
-    // 传输恢复后同一输入可直接重试成功。
-    sdk.setHangGets(false)
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
-    mounted.dispose()
-    toastHost.dispose()
-  })
-
-  test("CAS 弃权:sync 缓存滞后两拍下,失败回滚决策仍以权威读为准(用户并发 review 不被覆盖)", async () => {
-    installApi()
-    const sdk = fakeAgentSdk()
-    sdk.setEngineAgent("build")
-    // 滞后缓存停在两拍前的状态,协议不得消费它。
-    sdk.setSyncAgent(undefined)
-    const mounted = agentMount(sdk, () => false)
+    const sdk = fakeSessionSdk()
+    const mounted = sessionMount(sdk, () => true)
     await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
     setComposerAgent("plan")
 
-    const textarea = await waitReady(mounted.host, "按计划来")
-    sdk.gateNextPrompt()
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"]))
-    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
-
-    // prompt 未决期间用户在别处把服务端档切到 review;滞后缓存依旧停在 undefined(落后两拍)。
-    sdk.setEngineAgent("review")
-    expect(sdk.syncAgent()).toBeUndefined()
-    sdk.resolveGatedPrompt({ error: { status: 500 } })
-    await flush()
-    await flush()
-
-    // CAS 权威读到第三值 review → 弃权不覆盖;零回滚写入。
-    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
-    expect(sdk.engineAgent()).toBe("review")
-    expect(sdk.getCalls()).toBeGreaterThanOrEqual(2) // 发送前读 + CAS 核验读,均权威
-
-    // 弃权后随后的普通发送不会把 review 收回默认档。
+    pressEnter(typeText(mounted.host, "排队执行"))
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(sdk.promptAsyncCalls[0]).toMatchObject({ agent: "plan" })
+    expect(sdk.agentSwitches).toEqual([])
     setComposerAgent(null)
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
-    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
-    expect(sdk.engineAgent()).toBe("review")
-    mounted.dispose()
-  })
-
-  test("CAS 回滚:权威读仍是 composer 刚设的 desired → 回滚生效(sync 缓存全程无关)", async () => {
-    installApi()
-    const sdk = fakeAgentSdk()
-    sdk.setEngineAgent("build")
-    const mounted = agentMount(sdk, () => false)
-    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
-    setComposerAgent("plan")
-
-    const textarea = await waitReady(mounted.host, "按计划来")
-    sdk.gateNextPrompt()
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
-    sdk.resolveGatedPrompt({ error: { status: 500 } })
-    await flush()
-    await flush()
-
-    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"]))
-    expect(sdk.engineAgent()).toBe("build")
-    mounted.dispose()
-  })
-
-  test("CAS 权威读不可得:不盲写回滚(宁留 desired 也不冒覆盖并发用户改档的险)", async () => {
-    installApi()
-    const sdk = fakeAgentSdk()
-    sdk.setEngineAgent("build")
-    const mounted = agentMount(sdk, () => false)
-    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
-    setComposerAgent("plan")
-
-    const textarea = await waitReady(mounted.host, "按计划来")
-    sdk.gateNextPrompt()
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
-    sdk.setFailGets(true) // 失败窗口内权威读也不可得
-    sdk.resolveGatedPrompt({ error: { status: 500 } })
-    await flush()
-    await flush()
-
-    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"]) // 零盲回滚
-    sdk.setFailGets(false)
-    mounted.dispose()
-  })
-
-  test("账本漂移弃权:服务端档被他处改写后,普通发送经权威读弃权、零重置(sync 缓存滞后无影响)", async () => {
-    installApi()
-    const sdk = fakeAgentSdk()
-    sdk.setEngineAgent("build")
-    const mounted = agentMount(sdk, () => false)
-    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
-
-    setComposerAgent("plan")
-    let textarea = await waitReady(mounted.host, "先按计划来")
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
-    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
-
-    // 用户在别处把服务端档改为 review;滞后缓存(两拍前)从未反映任何变化。
-    sdk.setEngineAgent("review")
-    expect(sdk.syncAgent()).toBeUndefined()
-
-    // 退出 plan 的普通发送:权威读到 review ≠ 账本 plan → 弃权,不重置用户选择。
-    setComposerAgent(null)
-    textarea = await waitReady(mounted.host, "普通消息")
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
-    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
-    expect(sdk.engineAgent()).toBe("review")
-
-    // 弃权后再次普通发送依旧零切档(不重新认领他人设置)。
-    textarea = await waitReady(mounted.host, "再来一条")
-    pressEnter(textarea)
-    await waitFor(() => expect(sdk.prompts).toHaveLength(3))
-    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
     mounted.dispose()
   })
 })
@@ -1764,23 +1422,23 @@ describe("REQ-125 C558 SessionComposerMount 按身份 keyed:切会话草稿正�
 // REQ-125 C558 复审第5-6轮 Major:v2 durable 发送(session.prompt)在途期间切会话,composer 卸载不能把
 // **正在发送的文本**当草稿捕获(否则翻回「复活」→ 重复发送);在途被改成新草稿则照常捕获(不丢)。修:
 // onCleanup 仅当 sending() 且 text()===submittedText(在途未编辑)才跳过。这里驱动真实 durable 发送验。
-describe("REQ-125 C558 发送在途与草稿捕获互斥(v2 durable)", () => {
+describe("REQ-125 C558 发送在途与草稿捕获互斥(#652 起 = v1 promptAsync)", () => {
   const readyContract = (): ModelContract => ({
     list: async () => platformModels,
     current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
     switch: async () => {},
   })
-  // 最小假 sdk:session.get 供 readSessionAgent(权威档读),session.prompt 可控(挂起/失败)。
+  // 最小假 sdk:唯一的发送端点 session.promptAsync 可控(挂起/失败)。
   const fakeSdk = (prompt: (args: Record<string, unknown>) => Promise<unknown>) =>
     ({
       command: { list: async () => ({ data: [] }) },
-      session: { promptAsync: async () => ({}), abort: async () => ({}) },
+      session: { promptAsync: prompt, abort: async () => ({}) },
       v2: {
         session: {
           get: async ({ sessionID }: { sessionID: string }) => ({
             data: { data: { id: sessionID, agent: undefined } },
           }),
-          prompt,
+          prompt: async () => ({ data: {} }),
           switchAgent: async () => ({}),
         },
       },
@@ -1815,7 +1473,7 @@ describe("REQ-125 C558 发送在途与草稿捕获互斥(v2 durable)", () => {
     await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
     const el = typeInto(mounted.host, "in-flight message")
     await waitFor(() => expect(sendDisabled(mounted.host)).toBe(false))
-    enter(el) // 发起 durable 发送 → sending=true,session.prompt 挂起
+    enter(el) // 发起发送 → sending=true,session.promptAsync 挂起
     await waitFor(() => expect(sendDisabled(mounted.host)).toBe(true))
     mounted.dispose() // 在途中卸载(切走会话)
     expect(captured).toEqual([]) // 在途文本未被当草稿捕获 → 翻回不复活、不重发
@@ -1846,7 +1504,7 @@ describe("REQ-125 C558 发送在途与草稿捕获互斥(v2 durable)", () => {
     await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
     const el = typeInto(mounted.host, "will fail")
     await waitFor(() => expect(sendDisabled(mounted.host)).toBe(false))
-    enter(el) // durable prompt 返回 error → 失败,文本保留(既有失败路径)
+    enter(el) // promptAsync 返回 { error } → 失败,文本保留(既有失败路径)
     await waitFor(() => expect(el.value).toBe("will fail"))
     await waitFor(() => expect(sendDisabled(mounted.host)).toBe(false)) // sending 落回 false
     mounted.dispose() // 失败后卸载 → capture 拿到保留文本

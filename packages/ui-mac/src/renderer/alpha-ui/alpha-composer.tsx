@@ -26,7 +26,7 @@ import { Portal } from "solid-js/web"
 import { useCommand } from "./providers"
 import { setExtHubOpen } from "../extensions/ext-hub-state"
 import { createComposerAutocomplete } from "./composer-autocomplete"
-import { buildMentionParts, buildPromptInput, type MentionPart } from "./composer-autocomplete-core"
+import { buildMentionParts, type MentionPart } from "./composer-autocomplete-core"
 import {
   ATTACH_ACCEPT,
   ATTACH_MAX_COUNT,
@@ -51,11 +51,8 @@ import {
   composerModelProjection,
   composerModelSuspended,
   composerPerm,
-  DEFAULT_AGENT,
   failComposerModelProjection,
   invalidateComposerModelProjection,
-  pushedAgentFor,
-  recordPushedAgent,
   resetComposerModelProjection,
   resolveComposerModelProjection,
   routeSlash,
@@ -585,33 +582,9 @@ const readState = <T,>(promise: Promise<T>): Promise<ReadState<T>> =>
     () => ({ status: "error" }),
   )
 
-/** 权威档位读的有界超时(审计第 5 轮 Major:SDK client 关闭默认超时,无界 GET 悬挂会把
- *  sending 永锁 —— 每次发送都暴露在该风险下)。 */
-export const SESSION_AGENT_READ_TIMEOUT_MS = 5_000
-
-/** 会话档位的权威实时读(审计第 4 轮 Major):档位决策(needsSwitch / CAS 回滚 / 账本
- *  漂移)一律经 typed SDK GET 直读服务端 —— serverSync 缓存不消费 v2 切档事件、永不更新,
- *  只可作 UI 展示,禁作决策源。
- *  有界(审计第 5 轮 Major):signal 同时交给 SDK(网络层中止)并在本地竞速(即使传输层
- *  忽略 signal,悬挂请求也在超时后按失败 settle)——超时/中止走既有诚实失败路径。 */
-async function readSessionAgent(
-  client: NonNullable<ReturnType<AlphaProjectsApi["sdk"]>>,
-  sessionID: string,
-  timeoutMs = SESSION_AGENT_READ_TIMEOUT_MS,
-): Promise<{ ok: true; agent: string | undefined } | { ok: false }> {
-  try {
-    const signal = AbortSignal.timeout(timeoutMs)
-    const call = client.v2.session.get({ sessionID }, { signal })
-    const result = await new Promise<Awaited<typeof call>>((resolve, reject) => {
-      signal.addEventListener("abort", () => reject(new Error("session agent read timed out")), { once: true })
-      call.then(resolve, reject)
-    })
-    if (result.error !== undefined || !result.data) return { ok: false }
-    return { ok: true, agent: result.data.data.agent }
-  } catch {
-    return { ok: false }
-  }
-}
+/* #652:会话档位的权威实时读(readSessionAgent / SESSION_AGENT_READ_TIMEOUT_MS)随 v2
+   durable 发送一起退役 —— v1 promptAsync 每条消息自带 agent,不存在「会话档」这个需要
+   先读后 CAS 的中间状态。 */
 
 export function AlphaComposer(props: AlphaComposerProps) {
   return <AlphaComposerRuntime {...props} command={useCommand()} />
@@ -621,8 +594,6 @@ export type AlphaComposerRuntimeProps = AlphaComposerProps & {
   command: CommandApi
   /** 生产默认走 createModelContract；组件级 contract 驱动测试从同一接缝注入确定性实现。 */
   modelContract?: ModelContract
-  /** 权威档位读的超时上界(测试接缝;生产默认 SESSION_AGENT_READ_TIMEOUT_MS)。 */
-  agentReadTimeoutMs?: number
 }
 
 export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
@@ -1324,83 +1295,29 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           return
         }
       }
-      // REQ-125 C7:会话发送走 v2 durable 输入队列(session.prompt + delivery),直连
-      // promptAsync 退役。运行中 = "queue"(与占位文案「发送后排队」一致,含 Enter 路径);
-      // 空闲省略 delivery(引擎默认 steer,行为等价即时执行)。
+      // #652(owner 裁决 2026-07-28):会话内发送回到与首页 startChat 完全同一条 v1 路径
+      // (session.promptAsync)。REQ-125 C7 曾把「后续消息」改路由到 v2 durable 队列
+      // (c.v2.session.prompt),于是同一个会话里第一条走旧引擎、第二条起走新引擎 ——
+      // 而新引擎那条链拿不到 provider 凭证(全库受理 8 次、started 8 次、failed 8 次,零成功),
+      // 表现为「只能发第一条」。更根本的是:新引擎(上游 packages/core)**没有 MCP 运行时**,
+      // 也**没有 alpha ext 插件的钩子挂载点**(tool.execute.before/after、
+      // experimental.chat.system.transform),而 alpha 的整个主权层 —— 云搜索、kill switch、
+      // prompt 接管、工厂拒绝、skill 注入 —— 全建在旧引擎的钩子上。「一半迁移」才是半成品;
+      // 回到单一代次是干净状态。迁移推迟到上游补齐 MCP 与插件钩子之后,另立需求。
       //
-      // 档位协议(审计第 2-5 轮:可逆、原子、不污染 durable 队列,决策源=权威实时读):
-      // ① 空闲:发送前把会话档切到本次期望档;prompt 提交失败经 CAS 权威核验后回滚,
-      //   不留下已改档的会话。
-      // ② 运行中:切档会立刻作用于正在 drain 的回合 —— 需要改档的排队发送如实拒绝
-      //   (提示等当前任务结束);无档位变化的发送正常排队。
-      // ③ 退出 plan/readonly:期望档回空时,若会话档仍是本 composer 推送的档,切回引擎
-      //   默认档(账本只回滚自己写过的,不碰用户在别处设置的档)。
-      // 发送前:权威实时读当前会话档(决策源;serverSync 缓存禁用于决策 —— 见 readSessionAgent)。
-      // 读不到 = 无法安全决策档位,按发送失败如实拦下(正文保留)。
-      const agentRead = await readSessionAgent(c, sid, props.agentReadTimeoutMs)
+      // 档位随每条消息走(v1 PromptInput.agent,与 startChat 同一个字段):v1 引擎不读会话的
+      // agent 列(SessionPrompt.createUserMessage 只认 input.agent,缺省即引擎默认档),
+      // 因此 v2 的档位协议(switchAgent 落会话档 + 权威实时读 + CAS 回滚 + 本地推送账本)
+      // 随 v2 发送一起退役 —— 留着它只会在每次发送前多两次网络往返,并把「读不到会话档」
+      // 变成一个新的发送拦截点。
+      const { error } = await c.session.promptAsync({
+        sessionID: sid,
+        directory: dir,
+        parts: req.parts,
+        ...(req.agent ? { agent: req.agent } : {}),
+      } as any)
       if (interrupted()) return
-      if (!agentRead.ok) {
-        pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
-        return
-      }
-      const agentNow = agentRead.agent
-      let entryBefore = pushedAgentFor(sid)
-      if (entryBefore !== undefined && agentNow !== entryBefore) {
-        // 权威漂移判定:会话档已被他处改写 → 弃权,不重新认领(含用户改回默认的情形)。
-        recordPushedAgent(sid, null)
-        entryBefore = undefined
-      }
-      const desiredAgent = req.agent ?? (entryBefore !== undefined ? DEFAULT_AGENT : undefined)
-      const needsAgentSwitch = desiredAgent !== undefined && desiredAgent !== (agentNow ?? DEFAULT_AGENT)
-      if (needsAgentSwitch && running()) {
-        pushToast({
-          kind: "info",
-          title: t("alpha.composer.agentQueueBlocked"),
-          detail: t("alpha.composer.agentQueueBlockedDetail"),
-        })
-        return
-      }
-      let rollbackAgent: string | undefined
-      if (needsAgentSwitch) {
-        const switched = await c.v2.session
-          .switchAgent({ sessionID: sid, agent: desiredAgent })
-          .catch(() => ({ error: new Error("switch agent failed") }))
-        if (interrupted()) return
-        if ((switched as { error?: unknown } | undefined)?.error !== undefined) {
-          pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
-          return
-        }
-        rollbackAgent = agentNow ?? DEFAULT_AGENT
-        recordPushedAgent(sid, desiredAgent === DEFAULT_AGENT ? null : desiredAgent)
-      }
-      const admitted = await c.v2.session
-        .prompt({
-          sessionID: sid,
-          prompt: buildPromptInput({ text: body, mentions: mentions(), attachments: attachments() }),
-          ...(running() ? { delivery: "queue" as const } : {}),
-        })
-        .catch(() => undefined)
-      if (interrupted()) return
-      if (admitted === undefined || admitted.error !== undefined || !admitted.data) {
-        if (rollbackAgent !== undefined) {
-          // CAS 回滚(审计第 3-5 轮 Major):回滚决策前经 typed SDK **权威实时读**当前会话档
-          // (不经 serverSync 缓存)——仍等于 composer 刚设的 desired 才回滚;读到其它值 =
-          // 用户并发改档,不覆盖用户选择,只放弃自己的账本;权威读不可得时不盲写回滚
-          // (宁可留下 desired 也不冒覆盖用户并发选择的险),账本保持与引擎最后受理状态一致,
-          // 后续发送经权威读自愈。发送失败本身已如实提示。
-          const verify = await readSessionAgent(c, sid, props.agentReadTimeoutMs)
-          if (interrupted()) return
-          if (verify.ok && verify.agent === desiredAgent) {
-            const rolled = await c.v2.session
-              .switchAgent({ sessionID: sid, agent: rollbackAgent })
-              .catch(() => ({ error: new Error("switch agent rollback failed") }))
-            if ((rolled as { error?: unknown } | undefined)?.error === undefined) {
-              recordPushedAgent(sid, entryBefore ?? null)
-            }
-          } else if (verify.ok) {
-            recordPushedAgent(sid, null)
-          }
-        }
+      if (error) {
         pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
         return
       }

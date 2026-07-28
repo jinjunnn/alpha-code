@@ -109,21 +109,26 @@ describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
     expect(dock).not.toContain("session.permission.reply")
   })
 
-  test("档位决策源棘轮:权威实时读 + 有界 GET(审计 R4/R5)", () => {
-    // Major(R4:决策源):档位决策(needsSwitch/CAS/漂移)一律权威实时读(typed GET),
-    // serverSync 缓存(不消费 v2 切档事件,永不更新)禁作决策源。
-    const composerSrc = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
-    expect(composerSrc).toContain("async function readSessionAgent(")
-    // R5:权威读必须有界(signal 交给 SDK + 本地竞速),无界 GET 悬挂会把 sending 永锁。
-    expect(composerSrc).toContain("client.v2.session.get({ sessionID }, { signal })")
-    expect(composerSrc).toContain("AbortSignal.timeout(timeoutMs)")
-    expect(composerSrc).not.toContain("sessionAgent()")
+  test("#652 单一代次棘轮:会话发送与续钮都不得再碰 v2 durable 端点", () => {
+    // 这一条是**源码棘轮**,只防「悄悄改回去」。THE PRIMARY JUDGEMENT IS NOT IN THIS FILE:
+    // 行为判据由 session-workspace/session-second-send.test.ts 执行(连发三条,生产 composer +
+    // timeline 真挂载,断言**渲染出来的回复**),它登记在 scripts/gate-files.tsv 的 delegates_to。
+    const composer = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
+    expect(composer).toContain("c.session.promptAsync({")
+    expect(composer).not.toMatch(/c\.v2\.session\s*\.prompt\(\{/)
+    // 档位是消息级字段,不再经会话级 switchAgent 落档;发送前也不再有「权威读会话档」那一跳
+    // (它自己就是一个新的发送拦截点:读不到 = 发不出)。
+    expect(composer).not.toMatch(/c\.v2\.session\s*\.switchAgent\(/)
+    expect(composer).not.toContain("readSessionAgent(")
+    const timeline = read(path.join(ALPHA_UI, "session-timeline", "session-timeline.tsx"))
+    expect(timeline).toContain("client.session.promptAsync({")
+    expect(timeline).not.toContain("client.v2.session.prompt(")
     const dock = read(path.join(ALPHA_UI, "session-workspace", "session-composer-dock.tsx"))
     expect(dock).not.toContain("observeSessionAgent")
     expect(dock).not.toContain("sessionAgent")
   })
 
-  test("审计修复轮棘轮:停止键走已批稿 accent 令牌;发送走 v2 durable 队列", () => {
+  test("审计修复轮棘轮:停止键走已批稿 accent 令牌", () => {
     // (原「always 项目身份取会话精确 projectID」棘轮随 dock 审批卡删除而失去主体:
     // dock 已无任何放行动作;独立 Permission surface 的 always 项目身份由
     // PermissionDialog 自身的 fail-closed 用例锁定。)
@@ -135,11 +140,6 @@ describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
     expect(css).toMatch(
       /\.a-comp-stop\[data-ready\] \{\s*background: var\(--a-accent-subtle\);\s*color: var\(--a-accent\);\s*border: 1px solid var\(--a-accent-border\);/,
     )
-    // Major:会话发送走 v2 durable 队列 delivery 契约;直连 promptAsync 调用全量退役(注释可提及)。
-    const composer = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
-    expect(composer).not.toContain(".promptAsync(")
-    expect(composer).toMatch(/c\.v2\.session\s*\.prompt\(\{/)
-    expect(composer).toContain('delivery: "queue"')
   })
 
   test("会话 composer 由 seam 会话页直挂:session-workspace 源码零 Portal/零上游选择器/零收养", () => {
