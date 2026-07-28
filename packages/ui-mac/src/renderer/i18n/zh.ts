@@ -1336,7 +1336,7 @@ export const dict = {
   "alpha.settings.fontSizeDesc": "界面基础字号,允许 8–72。",
   "alpha.settings.notificationsPermissions": "通知与权限",
   "alpha.settings.autoApprove": "自动批准权限",
-  "alpha.settings.autoApproveDesc": "仅用于已有权限合同允许的请求;默认关闭。",
+  "alpha.settings.autoApproveDesc": "关闭(默认)时,任何审批请求都必须你亲自决定 —— 不存在任何自动放行。开启后,已被自动接受规则命中的请求会在不弹出审批对话框的情况下直接放行。",
   "alpha.settings.notifyAgent": "Agent 完成通知",
   "alpha.settings.notifyPermission": "权限请求通知",
   "alpha.settings.notifyError": "错误通知",

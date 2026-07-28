@@ -9,7 +9,7 @@
 // - live status / 上下文用量 / 斜杠命令捕获经 ComposerSessionDockApi 注入 composer;
 // - 一切异步结果绑定 serverKey+directory+sessionID(C1 live context 原语,I8)。
 
-import { useServerSDK, useServerSync } from "@opencode-ai/app"
+import { createPermissionChannelSource, useServerSDK, useServerSync } from "@opencode-ai/app"
 import type { ModelV2Info, Todo } from "@opencode-ai/sdk/v2/client"
 import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
@@ -51,10 +51,13 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
     return bound ? serverSDK().ensureDirSdkContext(bound.directory) : undefined
   })
 
-  /* ── PermissionV2 feed:随会话身份重建;身份失效的结果一律丢弃(I8)。
+  /* ── 审批 feed:随会话身份重建;身份失效的结果一律丢弃(I8)。
         审批呈现与决定提交都不在 dock(owner 裁决 2026-07-25,统一走独立 Permission
         surface);feed 只为 composer 的审批挂起提示(placeholder + 权限 chip)供事实,
-        与 PermissionWatcher 同一 fail-closed 实现 —— 未就绪 = 无审批挂起。 ─────────── */
+        与 PermissionWatcher 同一 fail-closed 实现 —— 未就绪 = 无审批挂起。
+        #668:读面是 **v1 + v2 两条通道的合并**(createPermissionChannelSource,与 Permission
+        surface 同一实现)。此前只订 v2,而 ADR-036 之后真正在跑的是 v1 —— 于是 v1 的每一次
+        审批请求既不弹卡也不亮 chip,回合无声挂起。dock 仍**无任何决定提交路径**。 ────────── */
   const [feed, setFeed] = createSignal<PermissionV2Feed | undefined>(undefined)
   createEffect(
     on(
@@ -65,31 +68,32 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
         const sdk = dirSDK()
         if (!bound || !sdk) return
         const accepted = () => props.live.accepts(bound)
+        const channels = createPermissionChannelSource({
+          sessionID: () => bound.sessionID,
+          sdk: () => sdk,
+          messages: () => serverSync().session.data.message[bound.sessionID],
+          accepts: accepted,
+        })
         const nextFeed = createPermissionV2Feed({
-          list: () =>
-            sdk.client.v2.session.permission.list({ sessionID: bound.sessionID }).then((result) => {
-              if (!accepted()) throw new Error("session identity changed during permission list")
-              if (!result.data) throw new Error("Permission list response is missing data")
-              return result.data.data
-            }),
+          list: () => channels.list(),
           // dock 无决定提交路径:审批决定只能经独立 Permission surface 提交。
           reply: () => Promise.reject(new Error("approval decisions are submitted only via the permission surface")),
         })
-        const stopAsked = sdk.event.on("permission.v2.asked", (event) => {
-          if (event.properties.sessionID !== bound.sessionID || !accepted()) return
-          nextFeed.apply({ type: "asked", request: event.properties })
+        const stopChannels = channels.subscribe({
+          asked: (request) => {
+            if (!accepted()) return
+            nextFeed.apply({ type: "asked", request })
+          },
+          replied: (receipt) => {
+            if (!accepted()) return
+            nextFeed.apply({ type: "replied", receipt })
+          },
+          connected: () => nextFeed.load(),
         })
-        const stopReplied = sdk.event.on("permission.v2.replied", (event) => {
-          if (event.properties.sessionID !== bound.sessionID || !accepted()) return
-          nextFeed.apply({ type: "replied", receipt: event.properties })
-        })
-        const stopConnected = sdk.event.on("server.connected", () => nextFeed.load())
         nextFeed.load()
         setFeed(nextFeed)
         onCleanup(() => {
-          stopAsked()
-          stopReplied()
-          stopConnected()
+          stopChannels()
           nextFeed.dispose()
         })
       },

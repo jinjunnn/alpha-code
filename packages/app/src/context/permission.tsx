@@ -187,6 +187,9 @@ type PermissionState = ReturnType<typeof createServerPermissionState>
 type PermissionEvent = Parameters<Parameters<ServerSDK["event"]["listen"]>[0]>[0]
 
 function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }) {
+  // #668:自动放行总闸的读点。本函数在 `createRoot(..., owner)` 下建立,owner 链上有
+  // SettingsProvider,因此这里读得到设置。
+  const settings = useSettings()
   const [store, setStore, _, ready] = persisted(
     {
       ...Persist.serverGlobal(input.sdk.scope, "permission", ["permission.v3"]),
@@ -270,7 +273,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   function isAutoAccepting(sessionID: string, directory?: string) {
-    return autoRespondsPermission(store.autoAccept, sessions(directory), { sessionID }, directory)
+    return autoRespondsPermission(store.autoAccept, sessions(directory), { sessionID }, directory, autoRespondOptions())
   }
 
   function isAutoAcceptingDirectory(directory: string) {
@@ -278,7 +281,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
-    return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory)
+    return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory, autoRespondOptions())
   }
 
   function isPending(permission: PermissionRequest) {
@@ -287,7 +290,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   async function shouldAutoRespondResolved(permission: PermissionRequest, directory?: string) {
-    const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
+    const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory, autoRespondOptions())
     if (override !== undefined) return override
     if (input.sync.session.lineage.peek(permission.sessionID)) return shouldAutoRespond(permission, directory)
     const lineage = await input.sync.session.lineage.resolve(permission.sessionID).catch(() => undefined)
@@ -295,14 +298,39 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     return shouldAutoRespond(permission, directory)
   }
 
+  /**
+   * #668:`permissions.autoApprove` 的接线点 —— 在此之前它是一个**死开关**(全仓只有定义、
+   * UI 绑定、main 侧透传三处引用,切换不改变任何行为)。它显示为"自动批准权限"并默认关闭,
+   * 于是用户会以为自己已经关掉了某种自动放行;而真正活着的自动应答器就是本文件 —— 它在
+   * `permission.asked` 上以 `"once"` 自动批准,且 alpha 已经删掉了 v1 的审批呈现面
+   * (`session-permission-dock.tsx`,由 permission-mount-ratchet 钉死),所以它一旦被 enable
+   * 就是**零 UI 放行**。
+   *
+   * 处置(owner 2026-07-28 "要么接线要么删"):接线成**单向 kill switch**。
+   * - 关(默认)= 真的没有任何自动放行,与开关名字承诺的一致;
+   * - 开 = 保持上游既有语义(按目录/会话的 autoAccept 自动应答)。
+   * 它**不新增**任何自动放行能力(那正是 owner 否决候选 D 的理由),只是把唯一存在的那条
+   * 自动放行路径交到用户手上。
+   */
+  function autoApproveAllowed() {
+    return settings.permissions.autoApprove()
+  }
+
+  /** 传给纯判定函数的总闸(参数必填 ⇒ 新增调用点忘了传是类型错误,不是静默绕过)。 */
+  function autoRespondOptions() {
+    return { autoApprove: autoApproveAllowed() }
+  }
+
   async function respondPending(
     permission: PermissionRequest,
     directory?: string,
     current: () => boolean = () => true,
   ) {
+    if (!autoApproveAllowed()) return
     if (!current() || !isPending(permission)) return
     if (!(await shouldAutoRespondResolved(permission, directory))) return
     if (meta.disposed || !current() || !isPending(permission)) return
+    if (!autoApproveAllowed()) return
     respondOnce(permission, directory)
   }
 

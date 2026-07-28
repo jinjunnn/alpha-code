@@ -21,11 +21,6 @@ import {
   useSearchParams,
 } from "@solidjs/router"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-import type {
-  PermissionV2DecisionCommand,
-  PermissionV2DecisionReceipt,
-  PermissionV2Request,
-} from "@opencode-ai/sdk/v2/client"
 import { Effect } from "effect"
 import {
   type Component,
@@ -62,7 +57,10 @@ import { ServerConnection, ServerProvider, serverName, useServer } from "@/conte
 import { SettingsProvider, useSettings } from "@/context/settings"
 import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
 import { SDKProvider, useSDK } from "@/context/sdk"
-import { useSync } from "@/context/sync"
+import {
+  createPermissionSurfaceMount,
+  type PermissionSurfaceComponent,
+} from "@/context/permission-surface"
 import { WslServersProvider } from "@/wsl/context"
 import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
 import LegacyLayout from "@/pages/layout"
@@ -102,86 +100,19 @@ export interface DraftSurfaceProps {
 
 export type DraftSurfaceComponent = Component<DraftSurfaceProps> & { preload?: () => void }
 
-export interface PermissionSurfaceClient {
-  list: () => Promise<PermissionV2Request[]>
-  reply: (requestID: string, command: PermissionV2DecisionCommand) => Promise<PermissionV2DecisionReceipt>
-  subscribe: (listeners: {
-    asked: (request: PermissionV2Request) => void
-    replied: (receipt: PermissionV2DecisionReceipt) => void
-    connected: () => void
-  }) => () => void
-}
-
-export interface PermissionSurfaceProps {
-  sessionID: string
-  projectID?: string
-  client: PermissionSurfaceClient
-}
-
-export type PermissionSurfaceComponent = Component<PermissionSurfaceProps>
+// #668:审批呈现面的接线(list/subscribe 两条通道合并、reply 按指纹路由)已抽到
+// `@/context/permission-surface` —— 那份才是闸门真正挂载的生产代码。此处只做再导出与装配。
+export type {
+  PermissionSurfaceClient,
+  PermissionSurfaceProps,
+  PermissionSurfaceComponent,
+} from "@/context/permission-surface"
 
 export interface AppSurfaces {
   home?: MaybePreloadableComponent
   newSession?: DraftSurfaceComponent
   session?: MaybePreloadableComponent
   permission?: PermissionSurfaceComponent
-}
-
-function createPermissionSurfaceMount(PermissionSurface?: PermissionSurfaceComponent) {
-  return function PermissionSurfaceMount() {
-    const params = useParams()
-    const sdk = useSDK()
-    const sync = useSync()
-    const permissionClient: PermissionSurfaceClient = {
-      list: () =>
-        sdk()
-          .client.v2.session.permission.list({ sessionID: params.id! })
-          .then((result) => {
-            if (!result.data) throw new Error("Permission list response is missing data")
-            return result.data.data
-          }),
-      reply: (requestID, command) =>
-        sdk()
-          .client.v2.session.permission.reply({
-            sessionID: params.id!,
-            requestID,
-            permissionV2DecisionCommand: command,
-          })
-          .then((result) => {
-            if (!result.data) throw new Error("Permission reply response is missing DecisionReceipt")
-            return result.data.data
-          }),
-      subscribe: (listeners) => {
-        const stopAsked = sdk().event.on("permission.v2.asked", (event) => {
-          if (event.properties.sessionID !== params.id) return
-          listeners.asked(event.properties)
-        })
-        const stopReplied = sdk().event.on("permission.v2.replied", (event) => {
-          if (event.properties.sessionID !== params.id) return
-          listeners.replied(event.properties)
-        })
-        const stopConnected = sdk().event.on("server.connected", listeners.connected)
-        return () => {
-          stopAsked()
-          stopReplied()
-          stopConnected()
-        }
-      },
-    }
-
-    return (
-      <Show when={PermissionSurface && params.id} keyed>
-        {(sessionID) => (
-          <Dynamic
-            component={PermissionSurface}
-            sessionID={sessionID}
-            projectID={sync().project?.id}
-            client={permissionClient}
-          />
-        )}
-      </Show>
-    )
-  }
 }
 
 function createSessionRoute(Leaf: MaybePreloadableComponent, PermissionSurface?: PermissionSurfaceComponent) {

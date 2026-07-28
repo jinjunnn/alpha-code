@@ -16,6 +16,9 @@ const composerReskin = await Bun.file(
 ).text()
 const renderer = await Bun.file(resolve(root, "packages/ui-mac/src/renderer/index.tsx")).text()
 const app = await Bun.file(resolve(root, "packages/app/src/app.tsx")).text()
+// #668:PermissionSurfaceClient 工厂从 app.tsx 抽成模块(闸门要挂载生产接线点,见下方白名单
+// 注释)。挂载唯一性的判据因此在两份文件上一起数,不是换个地方就不数了。
+const permissionSurface = await Bun.file(resolve(root, "packages/app/src/context/permission-surface.tsx")).text()
 const watcher = await Bun.file(
   resolve(root, "packages/ui-mac/src/renderer/alpha-ui/permission-watcher.tsx"),
 ).text()
@@ -42,7 +45,8 @@ describe("Alpha Permission unique-mount ratchet", () => {
     expect(renderer.match(/<PermissionWatcher\b/g)).toHaveLength(1)
     expect(renderer).toContain("permission: (props) =>")
     expect(app).toContain("props.surfaces?.permission")
-    expect(app.match(/component=\{PermissionSurface\}/g)).toHaveLength(1)
+    expect(`${app}${permissionSurface}`.match(/component=\{PermissionSurface\}/g)).toHaveLength(1)
+    expect(app).toContain("createPermissionSurfaceMount")
     expect(watcher).not.toContain("createOpencodeClient")
     expect(watcher).not.toContain("global.event")
     expect(frontendSurfaceById("inline.permission")).toMatchObject({
@@ -122,14 +126,44 @@ describe("审批决定提交入口:单一引用面白名单棘轮(#619 R3 Blocke
 
   const DECISION_ENTRY_TOKENS = ["permission.reply", "permission.respond"] as const
 
-  /** 白名单 = 今天真实存在的引用面,一文件一 token,精确到形态:
-   *  - app.tsx:PermissionSurfaceClient 工厂 —— 把 typed `v2.session.permission.reply`
-   *    接给独立 Permission surface(PermissionWatcher)的唯一生产接线点;
-   *  - context/permission.tsx:上游 legacy v1 `permission.respond` 通道的现存量登记
-   *    (监听 legacy `permission.asked`,不在 V2 射程)。新增任何引用面都必须先动这份
-   *    清单 —— 那是一次显式的架构决策,不是顺手的代码改动。 */
+  /** 白名单 = 今天真实存在的引用面,一文件一 token,精确到形态。
+   *
+   *  ── #668 显式更新(owner 2026-07-28 裁决半场 A;这条棘轮是刻意设的,悄悄绕过它是本仓
+   *     最常见的失败形态,所以下面写清"为什么这次放行是对的")──────────────────────
+   *
+   *  变更:`packages/app/src/app.tsx` 退场,换成两个文件;新增一个 v1 提交入口。
+   *
+   *  1) `context/permission-surface.tsx` 顶替 app.tsx 持有 `permission.reply`。
+   *     这**不是**新增入口,是同一个入口原样搬家:app.tsx 里那段 PermissionSurfaceClient
+   *     工厂被整体抽成模块,app.tsx 只剩一行 `createPermissionSurfaceMount(...)`。抽出来的
+   *     动机是闸门可执行性(ADR-037 决策 4):#668 的行为闸要在真实 DOM 里挂载**生产**接线点、
+   *     点真的按钮、看真的 SDK 出口 —— app.tsx 整棵路由树挂不动。入口总数不变。
+   *
+   *  2) `context/permission-v1-adapter.ts` 新增 v1 `permission.reply`(即
+   *     `/permission/{requestID}/reply`)。这是本票要修的缺陷本身:ADR-036 之后真正在跑的是
+   *     v1 引擎,它发 `permission.asked`,而 alpha 的审批面只订 v2 —— 于是审批请求既不呈现
+   *     也无人应答,回合无限期挂起(#668 实测)。呈现面要能应答 v1,就必须有一个 v1 提交入口;
+   *     owner 否决了 B(引擎侧桥接)与 C(恢复上游 v1 呈现面),A 的定义就是"审批面同时消费
+   *     两条通道"。
+   *
+   *  为什么这次放行不破坏这条棘轮要守的东西:棘轮守的是"审批决定只能从**被登记的**接线点
+   *  提交",不是"只能有一个通道"。放行后:
+   *   - 呈现面仍然只有一个(PermissionDialog / PermissionWatcher),棘轮上半场的单一挂载断言
+   *     一字未改、照常执行;
+   *   - 两个 reply 引用面都在同一个模块对(surface + adapter)里,由**同一个** Permission
+   *     surface client 调用;dock/composer 依旧零提交路径(运行时闸③ 逐条断言,#668 后它的
+   *     合法流量集合从 `{v2 list}` 扩成 `{v2 list, v1 list}` —— 仍然只有读,没有写);
+   *   - v1 提交路径带**指纹绑定**:只有携带 `engine-v1:<id>` 指纹的命令会被路由到 v1,
+   *     其余照旧走 v2;陈旧/错单在客户端即被拒。
+   *
+   *  3) `context/permission.tsx` 的 `permission.respond` 登记不变(上游 legacy 自动应答器),
+   *     但它在 #668 里被接上了 `permissions.autoApprove` 这个此前的死开关:关(默认)= 该
+   *     入口不会提交任何决定。登记保留,因为引用面确实还在。
+   *
+   *  新增任何引用面都必须先动这份清单 —— 那是一次显式的架构决策,不是顺手的代码改动。 */
   const SANCTIONED_ENTRY_HOLDERS = [
-    { file: "packages/app/src/app.tsx", token: "permission.reply" },
+    { file: "packages/app/src/context/permission-surface.tsx", token: "permission.reply" },
+    { file: "packages/app/src/context/permission-v1-adapter.ts", token: "permission.reply" },
     { file: "packages/app/src/context/permission.tsx", token: "permission.respond" },
   ] as const
 

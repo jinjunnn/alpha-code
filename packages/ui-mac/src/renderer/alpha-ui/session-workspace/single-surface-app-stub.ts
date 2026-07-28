@@ -12,6 +12,11 @@
 // - 其余端点一律返回永不 settle 的 promise —— 模型链/用量环等消费方停在 loading 态,
 //   两次 DOM 快照之间零无关状态翻转,也不会产生未处理拒绝。
 
+// #668:dock 的审批读面来自 `@opencode-ai/app` 的双通道适配器。这里**按相对路径再导出真身**
+// (而不是重写一个替身)—— 否则 harness 测的就不是生产适配逻辑了。alias 只替换 barrel 的
+// 那些 context hook,适配器本体照旧被打进 bundle。
+export { createPermissionChannelSource } from "../../../../../app/src/context/permission-v1-adapter"
+
 export type RecordedClientCall = { path: string; args: unknown[] }
 
 /** dock/composer 侧全部 SDK 出口的运行时调用记录(路径按属性访问链拼接)。 */
@@ -19,11 +24,15 @@ export const dockClientCalls: RecordedClientCall[] = []
 
 const askedHandlers = new Set<(event: unknown) => void>()
 const repliedHandlers = new Set<(event: unknown) => void>()
+const askedV1Handlers = new Set<(event: unknown) => void>()
+const repliedV1Handlers = new Set<(event: unknown) => void>()
 
 export function resetSingleSurfaceStub() {
   dockClientCalls.splice(0)
   askedHandlers.clear()
   repliedHandlers.clear()
+  askedV1Handlers.clear()
+  repliedV1Handlers.clear()
 }
 
 function makeRecorder(path: string[]): unknown {
@@ -37,6 +46,8 @@ function makeRecorder(path: string[]): unknown {
       const joined = path.join(".")
       dockClientCalls.push({ path: joined, args })
       if (joined === "v2.session.permission.list") return Promise.resolve({ data: { data: [] } })
+      // #668:dock 的读面变成 v1+v2 合并快照,两条 list 都必须成功 feed 才 ready(fail-closed)。
+      if (joined === "permission.list") return Promise.resolve({ data: [] })
       return new Promise(() => {})
     },
   })
@@ -54,6 +65,15 @@ export function emitDockPermissionReplied(properties: unknown) {
   for (const handler of [...repliedHandlers]) handler({ properties })
 }
 
+/** #668:v1 通道的生产相位注入(dock 现在同时订阅 `permission.asked`)。 */
+export function emitDockPermissionV1Asked(properties: unknown) {
+  for (const handler of [...askedV1Handlers]) handler({ properties })
+}
+
+export function emitDockPermissionV1Replied(properties: unknown) {
+  for (const handler of [...repliedV1Handlers]) handler({ properties })
+}
+
 const dirSdkContext = {
   client: recordingClient,
   event: {
@@ -66,6 +86,14 @@ const dirSdkContext = {
       if (type === "permission.v2.replied") {
         repliedHandlers.add(listener)
         return () => repliedHandlers.delete(listener)
+      }
+      if (type === "permission.asked") {
+        askedV1Handlers.add(listener)
+        return () => askedV1Handlers.delete(listener)
+      }
+      if (type === "permission.replied") {
+        repliedV1Handlers.add(listener)
+        return () => repliedV1Handlers.delete(listener)
       }
       return () => {}
     },

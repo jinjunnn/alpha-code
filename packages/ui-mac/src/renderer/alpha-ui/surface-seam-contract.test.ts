@@ -10,6 +10,11 @@ import { join } from "node:path"
 const APP_SRC = join(import.meta.dir, "../../../../app/src")
 const appTsx = readFileSync(join(APP_SRC, "app.tsx"), "utf8")
 const indexTs = readFileSync(join(APP_SRC, "index.ts"), "utf8")
+// #668:Permission seam 的**实现**从 app.tsx 抽成两个模块(接线点 + 双通道适配),
+// 好让闸门能真的挂载它(ADR-037 决策 4)。seam 的**公开面**不变:类型仍从 app.tsx 导出、
+// 仍经 `@opencode-ai/app` barrel 出去。锚点因此跟着搬,不是消失。
+const permissionSurfaceTsx = readFileSync(join(APP_SRC, "context/permission-surface.tsx"), "utf8")
+const permissionAdapterTs = readFileSync(join(APP_SRC, "context/permission-v1-adapter.ts"), "utf8")
 
 describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
   test("seam types exist", () => {
@@ -17,12 +22,26 @@ describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
     expect(appTsx).toContain("export type MaybePreloadableComponent")
     expect(appTsx).toContain("export interface DraftSurfaceProps")
     expect(appTsx).toContain("export type DraftSurfaceComponent")
-    expect(appTsx).toContain("export interface PermissionSurfaceProps")
-    expect(appTsx).toContain("export interface PermissionSurfaceClient")
+    expect(permissionSurfaceTsx).toContain("export interface PermissionSurfaceProps")
+    expect(permissionSurfaceTsx).toContain("export interface PermissionSurfaceClient")
+    // seam 的公开面仍在 app.tsx 上(ui-mac 从 `@opencode-ai/app` 拿的就是这两个名字)。
+    expect(appTsx).toContain("PermissionSurfaceClient")
+    expect(appTsx).toContain("PermissionSurfaceProps")
+    expect(appTsx).toContain('from "@/context/permission-surface"')
   })
 
   test("permission surface reuses the existing SSE reconnect signal", () => {
-    expect(appTsx).toContain('sdk().event.on("server.connected", listeners.connected)')
+    expect(permissionAdapterTs).toContain('sdk.event.on("server.connected", listeners.connected)')
+  })
+
+  test("permission seam consumes BOTH engine generations (#668)", () => {
+    // ADR-036 之后真正在跑的是 v1 引擎。审批面只订 v2 = 请求无人呈现、回合静默挂起(#668)。
+    // 这四个订阅缺任何一个,行为闸(permission-dual-channel.test.ts)也会红 —— 此处是搬家/
+    // re-freeze 时先于运行时红的锚点。
+    expect(permissionAdapterTs).toContain('sdk.event.on("permission.v2.asked"')
+    expect(permissionAdapterTs).toContain('sdk.event.on("permission.v2.replied"')
+    expect(permissionAdapterTs).toContain('sdk.event.on("permission.asked"')
+    expect(permissionAdapterTs).toContain('sdk.event.on("permission.replied"')
   })
 
   test("AppInterface accepts surfaces and resolves leaves once before route mount", () => {
@@ -51,6 +70,30 @@ describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
     expect(indexTs).toContain("type AppSurfaces")
     expect(indexTs).toContain("type DraftSurfaceProps")
     expect(indexTs).not.toMatch(/export \* from ["']\.\/context/)
+  })
+
+  test("#668 双通道适配器是 barrel 上**逐个点名**的窄导出,不得悄悄长大", () => {
+    // ui-mac 的 composer 停靠区与独立 Permission surface 共用同一份审批读面(不允许各写一份),
+    // 所以适配器必须经 barrel 出去。窄面判据同 ADR-027:逐符号钉死,加符号必须动这份清单。
+    const block = indexTs.slice(
+      indexTs.indexOf('export {\n  adaptPermissionV1Receipt'),
+      indexTs.indexOf('} from "./context/permission-v1-adapter"'),
+    )
+    const symbols = block
+      .split("\n")
+      .map((line) => line.trim().replace(/,$/, ""))
+      .filter((line) => line && !line.startsWith("export {"))
+    expect(symbols).toEqual([
+      "adaptPermissionV1Receipt",
+      "adaptPermissionV1Request",
+      "createPermissionChannelSource",
+      "isPermissionV1Fingerprint",
+      "permissionV1Fingerprint",
+      "resolvePermissionV1Agent",
+      "type PermissionAgentSource",
+      "type PermissionChannelListeners",
+      "type PermissionChannelSource",
+    ])
   })
 
   test("narrow session-leaf channel survives (REQ-088 C1, frontend-freeze-base-3)", () => {

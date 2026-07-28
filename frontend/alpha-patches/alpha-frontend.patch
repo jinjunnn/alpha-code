@@ -1,5 +1,5 @@
 diff --git a/packages/app/package.json b/packages/app/package.json
-index faf019446..98b795648 100644
+index faf01944..98b79564 100644
 --- a/packages/app/package.json
 +++ b/packages/app/package.json
 @@ -9,7 +9,9 @@
@@ -14,7 +14,7 @@ index faf019446..98b795648 100644
    "scripts": {
      "typecheck": "tsgo -b",
 diff --git a/packages/app/src/app.tsx b/packages/app/src/app.tsx
-index b4496ba7d..78d978bd3 100644
+index b4496ba7..324f5adb 100644
 --- a/packages/app/src/app.tsx
 +++ b/packages/app/src/app.tsx
 @@ -1,7 +1,8 @@
@@ -27,29 +27,26 @@ index b4496ba7d..78d978bd3 100644
  import { FileComponentProvider } from "@opencode-ai/ui/context/file"
  import { MarkedProvider } from "@opencode-ai/ui/context/marked"
  import { File } from "@opencode-ai/session-ui/file"
-@@ -20,8 +21,12 @@ import {
-   useSearchParams,
+@@ -21,7 +22,6 @@ import {
  } from "@solidjs/router"
  import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-+import type {
-+  PermissionV2DecisionCommand,
-+  PermissionV2DecisionReceipt,
-+  PermissionV2Request,
-+} from "@opencode-ai/sdk/v2/client"
  import { Effect } from "effect"
 -import { base64Encode } from "@opencode-ai/core/util/encode"
  import {
    type Component,
    createEffect,
-@@ -57,6 +62,7 @@ import { ServerConnection, ServerProvider, serverName, useServer } from "@/conte
+@@ -57,6 +57,10 @@ import { ServerConnection, ServerProvider, serverName, useServer } from "@/conte
  import { SettingsProvider, useSettings } from "@/context/settings"
  import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
  import { SDKProvider, useSDK } from "@/context/sdk"
-+import { useSync } from "@/context/sync"
++import {
++  createPermissionSurfaceMount,
++  type PermissionSurfaceComponent,
++} from "@/context/permission-surface"
  import { WslServersProvider } from "@/wsl/context"
  import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
  import LegacyLayout from "@/pages/layout"
-@@ -66,44 +72,175 @@ import { useCheckServerHealth } from "./utils/server-health"
+@@ -66,44 +70,108 @@ import { useCheckServerHealth } from "./utils/server-health"
  import { legacySessionHref, legacySessionServer, requireServerKey, sessionHref } from "./utils/session-route"
  import { createSessionLineage } from "@/pages/session/session-lineage"
  
@@ -80,104 +77,24 @@ index b4496ba7d..78d978bd3 100644
 +  // upstream Titlebar on session routes. Absent marker = upstream Titlebar unchanged.
 +  ownsTitlebar?: boolean
 +}
-+
+ 
+-  if (params.id && settings.general.newLayoutDesigns()) {
+-    const sessionID = params.id
+-    return (
+-      <Show when={tabs.ready()}>
+-        {(_) => {
+-          const persisted = tabs.store.filter((item) => item.type === "session")
+-          return <Navigate href={sessionHref(legacySessionServer(persisted, sessionID, server.key), sessionID)} />
+-        }}
+-      </Show>
+-    )
+-  }
 +// The newSession leaf owns the draft page UI but not the draft lifecycle: the wrapper
 +// keeps tab/draft semantics (target server, tab swap, persisted-draft cleanup) and
 +// hands the leaf this narrow, context-free contract.
 +export interface DraftSurfaceProps {
 +  draftId: string
 +  promoteDraft: (session: { directory: string; sessionId: string }) => void
-+}
-+
-+export type DraftSurfaceComponent = Component<DraftSurfaceProps> & { preload?: () => void }
-+
-+export interface PermissionSurfaceClient {
-+  list: () => Promise<PermissionV2Request[]>
-+  reply: (requestID: string, command: PermissionV2DecisionCommand) => Promise<PermissionV2DecisionReceipt>
-+  subscribe: (listeners: {
-+    asked: (request: PermissionV2Request) => void
-+    replied: (receipt: PermissionV2DecisionReceipt) => void
-+    connected: () => void
-+  }) => () => void
-+}
-+
-+export interface PermissionSurfaceProps {
-+  sessionID: string
-+  projectID?: string
-+  client: PermissionSurfaceClient
-+}
-+
-+export type PermissionSurfaceComponent = Component<PermissionSurfaceProps>
-+
-+export interface AppSurfaces {
-+  home?: MaybePreloadableComponent
-+  newSession?: DraftSurfaceComponent
-+  session?: MaybePreloadableComponent
-+  permission?: PermissionSurfaceComponent
-+}
-+
-+function createPermissionSurfaceMount(PermissionSurface?: PermissionSurfaceComponent) {
-+  return function PermissionSurfaceMount() {
-+    const params = useParams()
-+    const sdk = useSDK()
-+    const sync = useSync()
-+    const permissionClient: PermissionSurfaceClient = {
-+      list: () =>
-+        sdk()
-+          .client.v2.session.permission.list({ sessionID: params.id! })
-+          .then((result) => {
-+            if (!result.data) throw new Error("Permission list response is missing data")
-+            return result.data.data
-+          }),
-+      reply: (requestID, command) =>
-+        sdk()
-+          .client.v2.session.permission.reply({
-+            sessionID: params.id!,
-+            requestID,
-+            permissionV2DecisionCommand: command,
-+          })
-+          .then((result) => {
-+            if (!result.data) throw new Error("Permission reply response is missing DecisionReceipt")
-+            return result.data.data
-+          }),
-+      subscribe: (listeners) => {
-+        const stopAsked = sdk().event.on("permission.v2.asked", (event) => {
-+          if (event.properties.sessionID !== params.id) return
-+          listeners.asked(event.properties)
-+        })
-+        const stopReplied = sdk().event.on("permission.v2.replied", (event) => {
-+          if (event.properties.sessionID !== params.id) return
-+          listeners.replied(event.properties)
-+        })
-+        const stopConnected = sdk().event.on("server.connected", listeners.connected)
-+        return () => {
-+          stopAsked()
-+          stopReplied()
-+          stopConnected()
-+        }
-+      },
-+    }
- 
--  if (params.id && settings.general.newLayoutDesigns()) {
--    const sessionID = params.id
-     return (
--      <Show when={tabs.ready()}>
--        {(_) => {
--          const persisted = tabs.store.filter((item) => item.type === "session")
--          return <Navigate href={sessionHref(legacySessionServer(persisted, sessionID, server.key), sessionID)} />
--        }}
-+      <Show when={PermissionSurface && params.id} keyed>
-+        {(sessionID) => (
-+          <Dynamic
-+            component={PermissionSurface}
-+            sessionID={sessionID}
-+            projectID={sync().project?.id}
-+            client={permissionClient}
-+          />
-+        )}
-       </Show>
-     )
-   }
 +}
  
 -  // When the new layout is enabled, the legacy new-session route (/:dir/session with no id)
@@ -188,6 +105,23 @@ index b4496ba7d..78d978bd3 100644
 -    if (!tabs.ready() || !sdk().directory) return
 -    tabs.newDraft({ server: server.key, directory: sdk().directory }, search.prompt)
 -  })
++export type DraftSurfaceComponent = Component<DraftSurfaceProps> & { preload?: () => void }
++
++// #668:审批呈现面的接线(list/subscribe 两条通道合并、reply 按指纹路由)已抽到
++// `@/context/permission-surface` —— 那份才是闸门真正挂载的生产代码。此处只做再导出与装配。
++export type {
++  PermissionSurfaceClient,
++  PermissionSurfaceProps,
++  PermissionSurfaceComponent,
++} from "@/context/permission-surface"
++
++export interface AppSurfaces {
++  home?: MaybePreloadableComponent
++  newSession?: DraftSurfaceComponent
++  session?: MaybePreloadableComponent
++  permission?: PermissionSurfaceComponent
++}
++
 +function createSessionRoute(Leaf: MaybePreloadableComponent, PermissionSurface?: PermissionSurfaceComponent) {
 +  const PermissionSurfaceMount = createPermissionSurfaceMount(PermissionSurface)
 +  return Object.assign(
@@ -219,7 +153,7 @@ index b4496ba7d..78d978bd3 100644
 +        if (!tabs.ready() || !sdk().directory) return
 +        tabs.newDraft({ server: server.key, directory: sdk().directory }, search.prompt)
 +      })
-+
+ 
 +      return (
 +        <SessionRouteErrorBoundary sessionID={params.id}>
 +          <SessionProviders>
@@ -238,7 +172,7 @@ index b4496ba7d..78d978bd3 100644
 +    },
 +  )
 +}
- 
++
 +function HomeRoute() {
 +  const settings = useSettings()
    return (
@@ -251,7 +185,7 @@ index b4496ba7d..78d978bd3 100644
    )
  }
  
-@@ -127,11 +264,20 @@ function TargetServerRoute(props: ParentProps) {
+@@ -127,11 +195,20 @@ function TargetServerRoute(props: ParentProps) {
    )
  }
  
@@ -277,7 +211,7 @@ index b4496ba7d..78d978bd3 100644
  
  function LegacyTargetSessionRoute() {
    const params = useParams<{ serverKey: string; id: string }>()
-@@ -182,53 +328,65 @@ function LegacyServerLayout(props: ParentProps<{ serverScoped?: JSX.Element }>)
+@@ -182,53 +259,65 @@ function LegacyServerLayout(props: ParentProps<{ serverScoped?: JSX.Element }>)
    )
  }
  
@@ -388,7 +322,7 @@ index b4496ba7d..78d978bd3 100644
  }
  
  function UiI18nBridge(props: ParentProps) {
-@@ -238,9 +396,6 @@ function UiI18nBridge(props: ParentProps) {
+@@ -238,9 +327,6 @@ function UiI18nBridge(props: ParentProps) {
  
  declare global {
    interface Window {
@@ -398,7 +332,7 @@ index b4496ba7d..78d978bd3 100644
      api?: {
        setTitlebar?: (theme: { mode: "light" | "dark"; scheme?: "system" | "light" | "dark" }) => Promise<void>
        exportDebugLogs?: () => Promise<string>
-@@ -338,11 +493,11 @@ function LegacyServerScopedShell(props: ServerScopedShellProps) {
+@@ -338,11 +424,11 @@ function LegacyServerScopedShell(props: ServerScopedShellProps) {
    )
  }
  
@@ -412,7 +346,7 @@ index b4496ba7d..78d978bd3 100644
        </ServerScopedProviders>
      </SelectedServerProviders>
    )
-@@ -360,7 +515,7 @@ function DraftProviders(props: ParentProps) {
+@@ -360,7 +446,7 @@ function DraftProviders(props: ParentProps) {
    )
  }
  
@@ -421,7 +355,7 @@ index b4496ba7d..78d978bd3 100644
    return (
      <MetaProvider>
        <Font />
-@@ -379,7 +534,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
+@@ -379,7 +465,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
              >
                <QueryProvider>
                  <WslServersProvider>
@@ -430,7 +364,7 @@ index b4496ba7d..78d978bd3 100644
                      <MarkedProvider>
                        <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
                      </MarkedProvider>
-@@ -530,7 +685,19 @@ export function AppInterface(props: {
+@@ -530,7 +616,19 @@ export function AppInterface(props: {
    disableHealthCheck?: boolean
    startup?: Promise<void>
    serverScoped?: JSX.Element
@@ -450,7 +384,7 @@ index b4496ba7d..78d978bd3 100644
    // The visual new layout lives in the router root so it remains mounted across
    // route changes. Draft and session routes override only their server-bound data
    // providers beneath it.
-@@ -561,7 +728,9 @@ export function AppInterface(props: {
+@@ -561,7 +659,9 @@ export function AppInterface(props: {
                        <NotificationProvider>
                          <ServerShell>
                            <Show when={useSettings().general.newLayoutDesigns()} fallback={routerProps.children}>
@@ -461,7 +395,7 @@ index b4496ba7d..78d978bd3 100644
                            </Show>
                          </ServerShell>
                        </NotificationProvider>
-@@ -569,7 +738,13 @@ export function AppInterface(props: {
+@@ -569,7 +669,13 @@ export function AppInterface(props: {
                    </TabsProvider>
                  )}
                >
@@ -476,7 +410,7 @@ index b4496ba7d..78d978bd3 100644
                </Dynamic>
              </Show>
            </ConnectionGate>
-@@ -579,8 +754,18 @@ export function AppInterface(props: {
+@@ -579,8 +685,18 @@ export function AppInterface(props: {
    )
  }
  
@@ -496,7 +430,7 @@ index b4496ba7d..78d978bd3 100644
  
    return (
      <>
-@@ -592,7 +777,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+@@ -592,7 +708,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
          <Show when={!settings.general.newLayoutDesigns()}>
            {
              <>
@@ -505,7 +439,7 @@ index b4496ba7d..78d978bd3 100644
                <Route path="/server/:serverKey/session/:id" component={LegacyTargetSessionRoute} />
              </>
            }
-@@ -603,7 +788,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+@@ -603,7 +719,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
          </Route>
        </Route>
        <Show when={settings.general.newLayoutDesigns()}>
@@ -515,7 +449,7 @@ index b4496ba7d..78d978bd3 100644
          <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
        </Show>
 diff --git a/packages/app/src/components/dialog-release-notes.tsx b/packages/app/src/components/dialog-release-notes.tsx
-index d0a35b71b..a0b3b8515 100644
+index d0a35b71..a0b3b851 100644
 --- a/packages/app/src/components/dialog-release-notes.tsx
 +++ b/packages/app/src/components/dialog-release-notes.tsx
 @@ -43,12 +43,6 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
@@ -540,7 +474,7 @@ index d0a35b71b..a0b3b8515 100644
        fit
        class="w-[min(calc(100vw-40px),720px)] h-[min(calc(100vh-40px),400px)] -mt-20 min-h-0 overflow-hidden"
 diff --git a/packages/app/src/components/dialog-select-file.tsx b/packages/app/src/components/dialog-select-file.tsx
-index 905abe1e2..b3a9cffbb 100644
+index 905abe1e..b3a9cffb 100644
 --- a/packages/app/src/components/dialog-select-file.tsx
 +++ b/packages/app/src/components/dialog-select-file.tsx
 @@ -104,7 +104,7 @@ function DialogSelectFileLegacy(props: { filesOnly: () => boolean; onOpenFile?:
@@ -553,7 +487,7 @@ index 905abe1e2..b3a9cffbb 100644
          class="px-3"
          search={{
 diff --git a/packages/app/src/components/directory-picker.tsx b/packages/app/src/components/directory-picker.tsx
-index 31b15b7a6..bc25db15d 100644
+index 31b15b7a..bc25db15 100644
 --- a/packages/app/src/components/directory-picker.tsx
 +++ b/packages/app/src/components/directory-picker.tsx
 @@ -37,9 +37,9 @@ export function useDirectoryPicker() {
@@ -569,7 +503,7 @@ index 31b15b7a6..bc25db15d 100644
    }
  }
 diff --git a/packages/app/src/components/prompt-input.tsx b/packages/app/src/components/prompt-input.tsx
-index bcc5acc0b..a20656ea3 100644
+index bcc5acc0..a20656ea 100644
 --- a/packages/app/src/components/prompt-input.tsx
 +++ b/packages/app/src/components/prompt-input.tsx
 @@ -1489,7 +1489,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
@@ -584,7 +518,7 @@ index bcc5acc0b..a20656ea3 100644
            onRemove={removeAttachment}
            removeLabel={language.t("prompt.attachment.remove")}
 diff --git a/packages/app/src/components/settings-dialog.tsx b/packages/app/src/components/settings-dialog.tsx
-index 46dd89ade..3637c7536 100644
+index 46dd89ad..3637c753 100644
 --- a/packages/app/src/components/settings-dialog.tsx
 +++ b/packages/app/src/components/settings-dialog.tsx
 @@ -2,10 +2,12 @@ import { useParams } from "@solidjs/router"
@@ -609,7 +543,7 @@ index 46dd89ade..3637c7536 100644
      const sessionID = params.id
      void import("@/components/settings-v2").then((module) => {
 diff --git a/packages/app/src/components/status-popover-body.tsx b/packages/app/src/components/status-popover-body.tsx
-index 68a3f6b22..1b3814aba 100644
+index 68a3f6b2..1b3814ab 100644
 --- a/packages/app/src/components/status-popover-body.tsx
 +++ b/packages/app/src/components/status-popover-body.tsx
 @@ -161,7 +161,7 @@ export function StatusPopoverServerBody() {
@@ -631,7 +565,7 @@ index 68a3f6b22..1b3814aba 100644
                    }}
                  >
 diff --git a/packages/app/src/components/terminal.tsx b/packages/app/src/components/terminal.tsx
-index c512e782c..266572533 100644
+index c512e782..26657253 100644
 --- a/packages/app/src/components/terminal.tsx
 +++ b/packages/app/src/components/terminal.tsx
 @@ -28,6 +28,14 @@ export interface TerminalProps extends ComponentProps<"div"> {
@@ -681,7 +615,7 @@ index c512e782c..266572533 100644
    const scheduleFit = () => {
      if (disposed) return
 diff --git a/packages/app/src/context/highlights.tsx b/packages/app/src/context/highlights.tsx
-index 058f7cc4b..761b46f69 100644
+index 058f7cc4..761b46f6 100644
 --- a/packages/app/src/context/highlights.tsx
 +++ b/packages/app/src/context/highlights.tsx
 @@ -195,7 +195,7 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
@@ -693,8 +627,568 @@ index 058f7cc4b..761b46f69 100644
            }, 500)
          })
          .catch(() => undefined)
+diff --git a/packages/app/src/context/permission-auto-respond.test.ts b/packages/app/src/context/permission-auto-respond.test.ts
+index 794e03ae..683c41a3 100644
+--- a/packages/app/src/context/permission-auto-respond.test.ts
++++ b/packages/app/src/context/permission-auto-respond.test.ts
+@@ -3,6 +3,10 @@ import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
+ import { base64Encode } from "@opencode-ai/core/util/encode"
+ import { autoRespondsPermission, isDirectoryAutoAccepting, sessionAutoAccept } from "./permission-auto-respond"
+ 
++// #668:总闸 `permissions.autoApprove`。本文件断的是**开启后**的既有语义(一字未改);
++// 总闸关闭时的矩阵在 packages/ui-mac/src/renderer/alpha-ui/permission-auto-approve-switch.test.ts。
++const ON = { autoApprove: true }
++
+ const session = (input: { id: string; parentID?: string }) =>
+   ({
+     id: input.id,
+@@ -22,13 +26,13 @@ describe("autoRespondsPermission", () => {
+       [`${base64Encode(directory)}/root`]: true,
+     }
+ 
+-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(true)
++    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory, ON)).toBe(true)
+   })
+ 
+   test("uses a parent session's legacy auto-accept key", () => {
+     const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
+ 
+-    expect(autoRespondsPermission({ root: true }, sessions, permission("child"), "/tmp/project")).toBe(true)
++    expect(autoRespondsPermission({ root: true }, sessions, permission("child"), "/tmp/project", ON)).toBe(true)
+   })
+ 
+   test("defaults to requiring approval when no lineage override exists", () => {
+@@ -37,7 +41,7 @@ describe("autoRespondsPermission", () => {
+       other: true,
+     }
+ 
+-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), "/tmp/project")).toBe(false)
++    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), "/tmp/project", ON)).toBe(false)
+   })
+ 
+   test("inherits a parent session's false override", () => {
+@@ -47,7 +51,7 @@ describe("autoRespondsPermission", () => {
+       [`${base64Encode(directory)}/root`]: false,
+     }
+ 
+-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(false)
++    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory, ON)).toBe(false)
+   })
+ 
+   test("prefers a child override over parent override", () => {
+@@ -58,7 +62,7 @@ describe("autoRespondsPermission", () => {
+       [`${base64Encode(directory)}/child`]: true,
+     }
+ 
+-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(true)
++    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory, ON)).toBe(true)
+   })
+ 
+   test("falls back to directory-level auto-accept", () => {
+@@ -68,8 +72,8 @@ describe("autoRespondsPermission", () => {
+       [`${base64Encode(directory)}/*`]: true,
+     }
+ 
+-    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directory)).toBe(true)
+-    expect(sessionAutoAccept(autoAccept, sessions, permission("root"), directory)).toBeUndefined()
++    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directory, ON)).toBe(true)
++    expect(sessionAutoAccept(autoAccept, sessions, permission("root"), directory, ON)).toBeUndefined()
+   })
+ 
+   test("session-level override takes precedence over directory-level", () => {
+@@ -80,7 +84,7 @@ describe("autoRespondsPermission", () => {
+       [`${base64Encode(directory)}/root`]: false,
+     }
+ 
+-    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directory)).toBe(false)
++    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directory, ON)).toBe(false)
+   })
+ 
+   test("parent false override takes precedence over directory-level auto-accept", () => {
+@@ -91,7 +95,7 @@ describe("autoRespondsPermission", () => {
+       [`${base64Encode(directory)}/root`]: false,
+     }
+ 
+-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(false)
++    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory, ON)).toBe(false)
+   })
+ 
+   test("parent true override takes precedence over disabled directory fallback", () => {
+@@ -102,7 +106,7 @@ describe("autoRespondsPermission", () => {
+       [`${base64Encode(directory)}/root`]: true,
+     }
+ 
+-    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(true)
++    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory, ON)).toBe(true)
+   })
+ })
+ 
+diff --git a/packages/app/src/context/permission-auto-respond.ts b/packages/app/src/context/permission-auto-respond.ts
+index 8fff6d70..7669217b 100644
+--- a/packages/app/src/context/permission-auto-respond.ts
++++ b/packages/app/src/context/permission-auto-respond.ts
+@@ -37,13 +37,33 @@ function sessionLineage(session: { id: string; parentID?: string }[], sessionID:
+   return ids
+ }
+ 
++/**
++ * 自动放行的总闸(#668)。
++ *
++ * `permissions.autoApprove` 在此之前是一个**死开关** —— 全仓只有定义、settings UI 绑定、main
++ * 侧透传三处引用,切换不改变任何行为。它叫"自动批准权限"并默认关闭,于是用户会以为自己关掉了
++ * 某种自动放行;而真正活着的自动应答器(`context/permission.tsx`)照旧会在 `permission.asked`
++ * 上以 `"once"` 批准 —— 而且 alpha 已经删掉了 v1 的审批呈现面,所以那是**零 UI 放行**。
++ *
++ * owner 2026-07-28 裁决"要么接线要么删",此处选择接线,形态是**单向 kill switch**:
++ *   - 关(默认)⇒ 无论 autoAccept 里写了什么、会话谱系与目录怎么配,一律不自动放行;
++ *   - 开       ⇒ 保持上游既有语义,一字未改。
++ * 它**不新增**任何自动放行能力(那正是 owner 否决候选 D 的理由),只是把唯一存在的那条自动
++ * 放行路径交到用户手上,并让开关的名字变成真的。
++ *
++ * `options` 刻意**必填**:新增调用点忘了传 = 类型错误,而不是悄悄绕过总闸。
++ */
++export type AutoRespondOptions = { autoApprove: boolean }
++
+ export function autoRespondsPermission(
+   autoAccept: Record<string, boolean>,
+   session: { id: string; parentID?: string }[],
+   permission: { sessionID: string },
+-  directory?: string,
++  directory: string | undefined,
++  options: AutoRespondOptions,
+ ) {
+-  const value = sessionAutoAccept(autoAccept, session, permission, directory)
++  if (!options.autoApprove) return false
++  const value = sessionAutoAccept(autoAccept, session, permission, directory, options)
+   if (value !== undefined) return value
+   return directory ? isDirectoryAutoAccepting(autoAccept, directory) : false
+ }
+@@ -52,8 +72,12 @@ export function sessionAutoAccept(
+   autoAccept: Record<string, boolean>,
+   session: { id: string; parentID?: string }[],
+   permission: { sessionID: string },
+-  directory?: string,
++  directory: string | undefined,
++  options: AutoRespondOptions,
+ ) {
++  // 显式 false(而不是 undefined):调用方把"未配置"当作"继续往下查",总闸关闭时必须是一个
++  // 确定的"不放行",不能让它落回目录级 fallback。
++  if (!options.autoApprove) return false
+   return sessionLineage(session, permission.sessionID)
+     .map((id) => accepted(autoAccept, id, directory))
+     .find((item): item is boolean => item !== undefined)
+diff --git a/packages/app/src/context/permission-surface.tsx b/packages/app/src/context/permission-surface.tsx
+new file mode 100644
+index 00000000..734de042
+--- /dev/null
++++ b/packages/app/src/context/permission-surface.tsx
+@@ -0,0 +1,87 @@
++// 审批呈现面的**唯一接线点**(#619 R3 Blocker-2 白名单登记面;#668 起同时喂两条通道)。
++//
++// 从 app.tsx 抽出来的原因不是整洁,是**可被闸门执行**:审批决定提交的接线点只有这一处,
++// 而闸门要能在真实 DOM 里挂载它、点真的按钮、看真的 SDK 出口(ADR-037 决策 4)。抽成模块后
++// `packages/ui-mac/src/renderer/alpha-ui/permission-dual-channel.test.ts` 挂的就是这份生产代码,
++// 而不是测试里重写一遍的等价物。app.tsx 只保留一行 `createPermissionSurfaceMount(...)` 调用。
++//
++// #668:list / subscribe 走 permission-v1-adapter 的合并源(v1 `permission.asked` +
++// v2 `permission.v2.asked`);reply 按请求 fingerprint 路由回各自的通道。v2 读侧的形状、
++// fail-closed 语义与错误文案一字未动。
++
++import { useParams } from "@solidjs/router"
++import type {
++  PermissionV2DecisionCommand,
++  PermissionV2DecisionReceipt,
++  PermissionV2Request,
++} from "@opencode-ai/sdk/v2/client"
++import { type Component, Show } from "solid-js"
++import { Dynamic } from "solid-js/web"
++import { useSDK } from "@/context/sdk"
++import { useSync } from "@/context/sync"
++import {
++  createPermissionChannelSource,
++  isPermissionV1Fingerprint,
++  replyPermissionV1,
++  type PermissionChannelListeners,
++} from "@/context/permission-v1-adapter"
++
++export interface PermissionSurfaceClient {
++  list: () => Promise<PermissionV2Request[]>
++  reply: (requestID: string, command: PermissionV2DecisionCommand) => Promise<PermissionV2DecisionReceipt>
++  subscribe: (listeners: PermissionChannelListeners) => () => void
++}
++
++export interface PermissionSurfaceProps {
++  sessionID: string
++  projectID?: string
++  client: PermissionSurfaceClient
++}
++
++export type PermissionSurfaceComponent = Component<PermissionSurfaceProps>
++
++export function createPermissionSurfaceMount(PermissionSurface?: PermissionSurfaceComponent) {
++  return function PermissionSurfaceMount() {
++    const params = useParams()
++    const sdk = useSDK()
++    const sync = useSync()
++    const channels = createPermissionChannelSource({
++      sessionID: () => params.id,
++      sdk: () => sdk(),
++      messages: () => (params.id ? sync().data.message[params.id] : undefined),
++    })
++    const permissionClient: PermissionSurfaceClient = {
++      list: () => channels.list(),
++      reply: (requestID, command) => {
++        // 通道路由:v1 投影出来的请求带 engine-v1 指纹,决定回 v1 `/permission/{id}/reply`;
++        // 其余照旧走 v2 typed 端点(v2 读写两侧一字未改)。
++        if (isPermissionV1Fingerprint(command.requestFingerprint))
++          return replyPermissionV1(sdk(), { sessionID: params.id!, requestID, command })
++        return sdk()
++          .client.v2.session.permission.reply({
++            sessionID: params.id!,
++            requestID,
++            permissionV2DecisionCommand: command,
++          })
++          .then((result) => {
++            if (!result.data) throw new Error("Permission reply response is missing DecisionReceipt")
++            return result.data.data
++          })
++      },
++      subscribe: (listeners) => channels.subscribe(listeners),
++    }
++
++    return (
++      <Show when={PermissionSurface && params.id} keyed>
++        {(sessionID) => (
++          <Dynamic
++            component={PermissionSurface}
++            sessionID={sessionID}
++            projectID={sync().project?.id}
++            client={permissionClient}
++          />
++        )}
++      </Show>
++    )
++  }
++}
+diff --git a/packages/app/src/context/permission-v1-adapter.ts b/packages/app/src/context/permission-v1-adapter.ts
+new file mode 100644
+index 00000000..0c5ff0ff
+--- /dev/null
++++ b/packages/app/src/context/permission-v1-adapter.ts
+@@ -0,0 +1,230 @@
++// #668 半场 A —— alpha 审批面同时消费 v1 与 v2 两条审批通道。
++//
++// 背景(#668 实测):两套 permission 栈完全独立、零桥接。v1 引擎(ADR-036 之后会话发送真正
++// 跑的那一条)发 `permission.asked`,alpha 的审批呈现面(PermissionWatcher / PermissionDialog)
++// 与 composer 停靠区的审批提示只订阅 `permission.v2.asked` —— 于是 v1 的每一次 `ask` 都没有
++// 任何界面呈现,回合无限期挂起。
++//
++// owner 2026-07-28 裁决:**A(审批面同时订阅两条通道)**,且 v2 读侧不得被破坏。
++// 否决了 B(引擎侧桥接,要动上游)与 C(恢复上游 v1 呈现面,重复 UI)。
++//
++// 本模块是那条订阅的**唯一实现**,同时供:
++//   - 独立 Permission surface 的 client(`packages/app/src/context/permission-surface.tsx`,
++//     app.tsx 唯一接线点);
++//   - seam 会话页 composer 停靠区的审批挂起提示(`packages/ui-mac/.../session-composer-dock.tsx`)。
++// 两个消费面共用同一份适配与同一份 fail-closed 语义,不允许各写一份。
++//
++// 纯模块:不 import solid、不 import 路由、不建 client —— 只做形状适配与订阅编排,
++// 因此可以被闸门 harness 原样加载。
++
++import type {
++  PermissionRequest as PermissionV1Request,
++  PermissionV2DecisionCommand,
++  PermissionV2DecisionReceipt,
++  PermissionV2Request,
++} from "@opencode-ai/sdk/v2/client"
++import type { DirectorySDK } from "./sdk"
++
++/**
++ * v1 请求被投影进审批面时携带的 fingerprint 前缀。
++ *
++ * v1 wire 上**没有** fingerprint(v2 的 fingerprint 是请求事实的 sha256,用于原子决定与 409)。
++ * 这里铸的不是密码学指纹,而是一个**通道标记 + 陈旧绑定**:
++ *   - 通道标记:决定提交时据此路由回 v1 `/permission/{id}/reply`,不需要额外的 id 表;
++ *   - 陈旧绑定:提交前校验命令里的 requestFingerprint 与当前请求一致,切会话/已决请求回错单
++ *     在客户端就被拒。
++ * 命名刻意不像 sha256(64 位十六进制),这样它不可能被误当成 v2 指纹送进 v2 端点。
++ */
++export const PERMISSION_V1_FINGERPRINT_PREFIX = "engine-v1:"
++
++export function permissionV1Fingerprint(requestID: string): string {
++  return `${PERMISSION_V1_FINGERPRINT_PREFIX}${requestID}`
++}
++
++export function isPermissionV1Fingerprint(fingerprint: string | undefined): boolean {
++  return typeof fingerprint === "string" && fingerprint.startsWith(PERMISSION_V1_FINGERPRINT_PREFIX)
++}
++
++/** 会话消息的最小读形状(store 里的 v1 message 联合的子集)。 */
++export type PermissionAgentSource = ReadonlyArray<{ id: string; role: string; agent?: string }> | undefined
++
++/**
++ * 还原发起审批的 agent。
++ *
++ * v1 的 `permission.asked` wire 上没有 agent —— 但 v2 的 `subject` 事实要求它,而
++ * PermissionDialog 的严格核验(`permissionRequestFacts`)在事实核不实时会**自动拒绝**。
++ * 所以必须给一个**真的**答案,不能编:v1 请求携带 `tool.messageID`,那条 assistant 消息
++ * 的 `agent` 字段就是发起这次工具调用的档位本身,来自同一条 SSE 流、同一个 store。
++ *
++ * 兜底顺序:精确消息 → 会话内最后一条带 agent 的 assistant 消息(同一回合正在跑的档位)。
++ * 两者都取不到时返回 undefined —— 呈现面据此把请求判为"核不实"并 fail-closed 拒绝,
++ * 而**不是**把请求丢掉(丢掉就退回 #668 的静默挂起)。
++ */
++export function resolvePermissionV1Agent(messages: PermissionAgentSource, messageID?: string): string | undefined {
++  if (!messages?.length) return undefined
++  const named = (value: { role: string; agent?: string }) =>
++    value.role === "assistant" && typeof value.agent === "string" && !!value.agent.trim()
++  if (messageID) {
++    const exact = messages.find((message) => message.id === messageID)
++    if (exact && named(exact)) return exact.agent
++  }
++  for (let index = messages.length - 1; index >= 0; index--) {
++    const message = messages[index]!
++    if (named(message)) return message.agent
++  }
++  return undefined
++}
++
++/**
++ * v1 请求 → 审批面消费的请求形状。
++ *
++ * 逐字段的真实来源(没有一项是编出来的):
++ * - `action`  ← v1 `permission`(external_directory / read / bash / …),就是被请求的能力;
++ * - `resources` ← v1 `patterns`,就是具体的路径/命令 glob;
++ * - `scope`   ← 请求所属会话;
++ * - `expiresAt` = null —— v1 请求本身不带过期,与 v2 引擎给自己请求写的值相同;
++ * - `source`  ← v1 `tool`(messageID/callID),形状与 v2 的 `{type:"tool"}` 完全一致;
++ * - `subject` ← 上面的 agent 还原。
++ *
++ * **`save` 刻意不投影**,因此对话框的「始终允许」对 v1 请求保持禁用:v1 的 `always` 只是把规则
++ * 推进引擎进程内存里的 approved ruleset(重启即失),而「始终允许」在 alpha 的文案里明确承诺的是
++ * "为当前项目创建永久授权(grantExpiresAt = null)"。宁可少一个按钮,也不要在授权持久性上说谎。
++ * 需要长期放行请写进 permission 规则(config)。
++ */
++export function adaptPermissionV1Request(
++  request: PermissionV1Request,
++  agentID: string | undefined,
++): PermissionV2Request {
++  return {
++    id: request.id,
++    sessionID: request.sessionID,
++    fingerprint: permissionV1Fingerprint(request.id),
++    subject: { kind: "agent", id: agentID ?? "" },
++    action: request.permission,
++    resources: [...request.patterns],
++    scope: { kind: "session", sessionID: request.sessionID },
++    expiresAt: null,
++    ...(request.metadata ? { metadata: request.metadata } : {}),
++    ...(request.tool ? { source: { type: "tool" as const, ...request.tool } } : {}),
++  }
++}
++
++/** v1 应答 → 审批面消费的收据形状(feed 只据 requestID / resolvedRequestIDs 收卡)。 */
++export function adaptPermissionV1Receipt(input: {
++  sessionID: string
++  requestID: string
++  reply: "once" | "always" | "reject"
++  decisionID?: string
++}): PermissionV2DecisionReceipt {
++  return {
++    requestID: input.requestID,
++    sessionID: input.sessionID,
++    requestFingerprint: permissionV1Fingerprint(input.requestID),
++    decisionID: input.decisionID ?? `pdec_v1_${input.requestID}`,
++    decision: input.reply,
++    committedAt: Date.now(),
++    resolvedRequestIDs: [input.requestID],
++  }
++}
++
++export type PermissionChannelListeners = {
++  asked: (request: PermissionV2Request) => void
++  replied: (receipt: PermissionV2DecisionReceipt) => void
++  connected: () => void
++}
++
++export type PermissionChannelSource = {
++  /** 两条通道的挂起快照合并。**任一通道读不到就整体失败** —— feed 据此保持 not-ready(零呈现、
++   *  零放行)。半边成功半边静默丢弃正是 #668 的形态,不能作为"降级"重新引入。 */
++  list: () => Promise<PermissionV2Request[]>
++  subscribe: (listeners: PermissionChannelListeners) => () => void
++}
++
++export type PermissionChannelDeps = {
++  sessionID: () => string | undefined
++  sdk: () => DirectorySDK
++  /** 当前会话的消息(用于 agent 还原);拿不到就给 undefined。 */
++  messages: () => PermissionAgentSource
++  /** 结果落地前的身份校验(会话切走后到达的结果一律丢弃)。默认恒真。 */
++  accepts?: () => boolean
++}
++
++function assertAccepted(deps: PermissionChannelDeps) {
++  if (deps.accepts && !deps.accepts()) throw new Error("session identity changed during permission list")
++}
++
++/** 两条通道的合并读 + 合并订阅。决定提交不在这里(见 permission-surface.tsx)。 */
++export function createPermissionChannelSource(deps: PermissionChannelDeps): PermissionChannelSource {
++  const listV2 = async () => {
++    const sessionID = deps.sessionID()
++    if (!sessionID) return []
++    const result = await deps.sdk().client.v2.session.permission.list({ sessionID })
++    assertAccepted(deps)
++    if (!result.data) throw new Error("Permission list response is missing data")
++    return result.data.data
++  }
++
++  const listV1 = async () => {
++    const sessionID = deps.sessionID()
++    if (!sessionID) return []
++    const result = await deps.sdk().client.permission.list()
++    assertAccepted(deps)
++    if (!result.data) throw new Error("Permission (v1) list response is missing data")
++    const messages = deps.messages()
++    return result.data
++      .filter((request) => request.sessionID === sessionID)
++      .map((request) => adaptPermissionV1Request(request, resolvePermissionV1Agent(messages, request.tool?.messageID)))
++  }
++
++  return {
++    list: () => Promise.all([listV2(), listV1()]).then(([v2, v1]) => [...v2, ...v1]),
++    subscribe: (listeners) => {
++      const sdk = deps.sdk()
++      const stopAskedV2 = sdk.event.on("permission.v2.asked", (event) => {
++        if (event.properties.sessionID !== deps.sessionID()) return
++        listeners.asked(event.properties)
++      })
++      const stopRepliedV2 = sdk.event.on("permission.v2.replied", (event) => {
++        if (event.properties.sessionID !== deps.sessionID()) return
++        listeners.replied(event.properties)
++      })
++      const stopAskedV1 = sdk.event.on("permission.asked", (event) => {
++        if (event.properties.sessionID !== deps.sessionID()) return
++        listeners.asked(
++          adaptPermissionV1Request(
++            event.properties,
++            resolvePermissionV1Agent(deps.messages(), event.properties.tool?.messageID),
++          ),
++        )
++      })
++      const stopRepliedV1 = sdk.event.on("permission.replied", (event) => {
++        if (event.properties.sessionID !== deps.sessionID()) return
++        listeners.replied(adaptPermissionV1Receipt(event.properties))
++      })
++      const stopConnected = sdk.event.on("server.connected", listeners.connected)
++      return () => {
++        stopAskedV2()
++        stopRepliedV2()
++        stopAskedV1()
++        stopRepliedV1()
++        stopConnected()
++      }
++    },
++  }
++}
++
++/** 决定提交的通道路由:v1 指纹 → v1 `/permission/{id}/reply`;其余 → v2 原路。 */
++export async function replyPermissionV1(
++  sdk: DirectorySDK,
++  input: { sessionID: string; requestID: string; command: PermissionV2DecisionCommand },
++): Promise<PermissionV2DecisionReceipt> {
++  if (input.command.requestFingerprint !== permissionV1Fingerprint(input.requestID))
++    throw new Error(`stale permission reply rejected: ${input.requestID}`)
++  await sdk.client.permission.reply({ requestID: input.requestID, reply: input.command.decision })
++  return adaptPermissionV1Receipt({
++    sessionID: input.sessionID,
++    requestID: input.requestID,
++    reply: input.command.decision,
++    decisionID: input.command.decisionID,
++  })
++}
+diff --git a/packages/app/src/context/permission.tsx b/packages/app/src/context/permission.tsx
+index 496d1ab4..92da5272 100644
+--- a/packages/app/src/context/permission.tsx
++++ b/packages/app/src/context/permission.tsx
+@@ -187,6 +187,9 @@ type PermissionState = ReturnType<typeof createServerPermissionState>
+ type PermissionEvent = Parameters<Parameters<ServerSDK["event"]["listen"]>[0]>[0]
+ 
+ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }) {
++  // #668:自动放行总闸的读点。本函数在 `createRoot(..., owner)` 下建立,owner 链上有
++  // SettingsProvider,因此这里读得到设置。
++  const settings = useSettings()
+   const [store, setStore, _, ready] = persisted(
+     {
+       ...Persist.serverGlobal(input.sdk.scope, "permission", ["permission.v3"]),
+@@ -270,7 +273,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+   }
+ 
+   function isAutoAccepting(sessionID: string, directory?: string) {
+-    return autoRespondsPermission(store.autoAccept, sessions(directory), { sessionID }, directory)
++    return autoRespondsPermission(store.autoAccept, sessions(directory), { sessionID }, directory, autoRespondOptions())
+   }
+ 
+   function isAutoAcceptingDirectory(directory: string) {
+@@ -278,7 +281,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+   }
+ 
+   function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
+-    return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory)
++    return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory, autoRespondOptions())
+   }
+ 
+   function isPending(permission: PermissionRequest) {
+@@ -287,7 +290,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+   }
+ 
+   async function shouldAutoRespondResolved(permission: PermissionRequest, directory?: string) {
+-    const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
++    const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory, autoRespondOptions())
+     if (override !== undefined) return override
+     if (input.sync.session.lineage.peek(permission.sessionID)) return shouldAutoRespond(permission, directory)
+     const lineage = await input.sync.session.lineage.resolve(permission.sessionID).catch(() => undefined)
+@@ -295,14 +298,39 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+     return shouldAutoRespond(permission, directory)
+   }
+ 
++  /**
++   * #668:`permissions.autoApprove` 的接线点 —— 在此之前它是一个**死开关**(全仓只有定义、
++   * UI 绑定、main 侧透传三处引用,切换不改变任何行为)。它显示为"自动批准权限"并默认关闭,
++   * 于是用户会以为自己已经关掉了某种自动放行;而真正活着的自动应答器就是本文件 —— 它在
++   * `permission.asked` 上以 `"once"` 自动批准,且 alpha 已经删掉了 v1 的审批呈现面
++   * (`session-permission-dock.tsx`,由 permission-mount-ratchet 钉死),所以它一旦被 enable
++   * 就是**零 UI 放行**。
++   *
++   * 处置(owner 2026-07-28 "要么接线要么删"):接线成**单向 kill switch**。
++   * - 关(默认)= 真的没有任何自动放行,与开关名字承诺的一致;
++   * - 开 = 保持上游既有语义(按目录/会话的 autoAccept 自动应答)。
++   * 它**不新增**任何自动放行能力(那正是 owner 否决候选 D 的理由),只是把唯一存在的那条
++   * 自动放行路径交到用户手上。
++   */
++  function autoApproveAllowed() {
++    return settings.permissions.autoApprove()
++  }
++
++  /** 传给纯判定函数的总闸(参数必填 ⇒ 新增调用点忘了传是类型错误,不是静默绕过)。 */
++  function autoRespondOptions() {
++    return { autoApprove: autoApproveAllowed() }
++  }
++
+   async function respondPending(
+     permission: PermissionRequest,
+     directory?: string,
+     current: () => boolean = () => true,
+   ) {
++    if (!autoApproveAllowed()) return
+     if (!current() || !isPending(permission)) return
+     if (!(await shouldAutoRespondResolved(permission, directory))) return
+     if (meta.disposed || !current() || !isPending(permission)) return
++    if (!autoApproveAllowed()) return
+     respondOnce(permission, directory)
+   }
+ 
 diff --git a/packages/app/src/context/platform.tsx b/packages/app/src/context/platform.tsx
-index cf343bfa7..6bb9ae19a 100644
+index cf343bfa..6bb9ae19 100644
 --- a/packages/app/src/context/platform.tsx
 +++ b/packages/app/src/context/platform.tsx
 @@ -5,6 +5,7 @@ import type { DesktopMenuAction } from "../desktop-menu"
@@ -719,7 +1213,7 @@ index cf343bfa7..6bb9ae19a 100644
    updater?: UpdaterPlatform
  
 diff --git a/packages/app/src/context/settings.tsx b/packages/app/src/context/settings.tsx
-index c2b568041..ed440ade9 100644
+index c2b56804..ed440ade 100644
 --- a/packages/app/src/context/settings.tsx
 +++ b/packages/app/src/context/settings.tsx
 @@ -1,5 +1,5 @@
@@ -1071,10 +1565,10 @@ index c2b568041..ed440ade9 100644
        },
      }
 diff --git a/packages/app/src/index.ts b/packages/app/src/index.ts
-index d18e05fc9..cd1d08ac6 100644
+index d18e05fc..b89f68a3 100644
 --- a/packages/app/src/index.ts
 +++ b/packages/app/src/index.ts
-@@ -1,4 +1,14 @@
+@@ -1,4 +1,27 @@
 -export { AppBaseProviders, AppInterface } from "./app"
 +export {
 +  AppBaseProviders,
@@ -1087,10 +1581,23 @@ index d18e05fc9..cd1d08ac6 100644
 +  type PermissionSurfaceComponent,
 +  type PermissionSurfaceProps,
 +} from "./app"
++// #668:v1+v2 双通道审批读面。alpha 的 composer 停靠区(ui-mac)与独立 Permission surface
++// 共用同一份适配与同一份 fail-closed 语义 —— 两个消费面不得各写一份。
++export {
++  adaptPermissionV1Receipt,
++  adaptPermissionV1Request,
++  createPermissionChannelSource,
++  isPermissionV1Fingerprint,
++  permissionV1Fingerprint,
++  resolvePermissionV1Agent,
++  type PermissionAgentSource,
++  type PermissionChannelListeners,
++  type PermissionChannelSource,
++} from "./context/permission-v1-adapter"
  export { useLayout } from "./context/layout"
  export { useServerSDK } from "./context/server-sdk"
  export { useServerSync } from "./context/server-sync"
-@@ -8,6 +18,11 @@ export { useTabs } from "./context/tabs"
+@@ -8,6 +31,11 @@ export { useTabs } from "./context/tabs"
  export { useProviders } from "./hooks/use-providers"
  export { ACCEPTED_FILE_EXTENSIONS, ACCEPTED_FILE_TYPES, filePickerFilters } from "./constants/file-picker"
  export { useCommand } from "./context/command"
@@ -1103,7 +1610,7 @@ index d18e05fc9..cd1d08ac6 100644
  export { useWslServers } from "./wsl/context"
  export { type DisplayBackend, type FatalRendererErrorLog, type Platform, PlatformProvider } from "./context/platform"
 diff --git a/packages/app/src/pages/home.tsx b/packages/app/src/pages/home.tsx
-index 215696d7d..ca677b349 100644
+index 215696d7..ca677b34 100644
 --- a/packages/app/src/pages/home.tsx
 +++ b/packages/app/src/pages/home.tsx
 @@ -553,7 +553,7 @@ export function NewHome() {
@@ -1125,7 +1632,7 @@ index 215696d7d..ca677b349 100644
          <div
            classList={{
 diff --git a/packages/app/src/pages/layout-new.tsx b/packages/app/src/pages/layout-new.tsx
-index c6fed8f6d..4ce6fd511 100644
+index c6fed8f6..4ce6fd51 100644
 --- a/packages/app/src/pages/layout-new.tsx
 +++ b/packages/app/src/pages/layout-new.tsx
 @@ -1,19 +1,26 @@
@@ -1183,7 +1690,7 @@ index c6fed8f6d..4ce6fd511 100644
          <Suspense>{props.children}</Suspense>
        </main>
 diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
-index 812a479b2..a30ecde90 100644
+index 812a479b..a30ecde9 100644
 --- a/packages/app/src/pages/layout.tsx
 +++ b/packages/app/src/pages/layout.tsx
 @@ -67,12 +67,7 @@ import {
@@ -1293,7 +1800,7 @@ index 812a479b2..a30ecde90 100644
        if (!mobile) scrollContainerRef = el
      },
 diff --git a/packages/app/src/pages/layout/deep-links.ts b/packages/app/src/pages/layout/deep-links.ts
-index 5dca421f7..566391c28 100644
+index 5dca421f..566391c2 100644
 --- a/packages/app/src/pages/layout/deep-links.ts
 +++ b/packages/app/src/pages/layout/deep-links.ts
 @@ -1,50 +1,110 @@
@@ -1443,7 +1950,7 @@ index 5dca421f7..566391c28 100644
 +  applyDeepLinks(drainPendingDeepLinks(deps.buffer()), deps)
  }
 diff --git a/packages/app/src/pages/layout/helpers.test.ts b/packages/app/src/pages/layout/helpers.test.ts
-index df87ddfec..c18719130 100644
+index df87ddfe..c1871913 100644
 --- a/packages/app/src/pages/layout/helpers.test.ts
 +++ b/packages/app/src/pages/layout/helpers.test.ts
 @@ -1,10 +1,10 @@
@@ -1611,7 +2118,7 @@ index df87ddfec..c18719130 100644
  })
  
 diff --git a/packages/app/src/pages/session.tsx b/packages/app/src/pages/session.tsx
-index 3ce284167..02f4c33c7 100644
+index 3ce28416..02f4c33c 100644
 --- a/packages/app/src/pages/session.tsx
 +++ b/packages/app/src/pages/session.tsx
 @@ -15,6 +15,7 @@ import {
@@ -1689,7 +2196,7 @@ index 3ce284167..02f4c33c7 100644
      <TerminalProvider>
        <FileProvider>
 diff --git a/packages/app/src/pages/session/composer/session-composer-region.tsx b/packages/app/src/pages/session/composer/session-composer-region.tsx
-index 600ff41e3..4c8581e03 100644
+index 600ff41e..4c8581e0 100644
 --- a/packages/app/src/pages/session/composer/session-composer-region.tsx
 +++ b/packages/app/src/pages/session/composer/session-composer-region.tsx
 @@ -1,7 +1,6 @@
@@ -1723,7 +2230,7 @@ index 600ff41e3..4c8581e03 100644
            <Show when={controller.dock()}>
              <div
 diff --git a/packages/app/src/pages/session/composer/session-composer-state.ts b/packages/app/src/pages/session/composer/session-composer-state.ts
-index 45f5e4cb2..7f757a98a 100644
+index 45f5e4cb..7f757a98 100644
 --- a/packages/app/src/pages/session/composer/session-composer-state.ts
 +++ b/packages/app/src/pages/session/composer/session-composer-state.ts
 @@ -1,14 +1,10 @@
@@ -1819,7 +2326,7 @@ index 45f5e4cb2..7f757a98a 100644
        store.sessionID === params.id
 diff --git a/packages/app/src/pages/session/composer/session-permission-dock.tsx b/packages/app/src/pages/session/composer/session-permission-dock.tsx
 deleted file mode 100644
-index 35a62f75c..000000000
+index 35a62f75..00000000
 --- a/packages/app/src/pages/session/composer/session-permission-dock.tsx
 +++ /dev/null
 @@ -1,74 +0,0 @@
@@ -1898,7 +2405,7 @@ index 35a62f75c..000000000
 -  )
 -}
 diff --git a/packages/app/src/pages/session/session-side-panel.tsx b/packages/app/src/pages/session/session-side-panel.tsx
-index 571428e29..26ad6fdc6 100644
+index 571428e2..26ad6fdc 100644
 --- a/packages/app/src/pages/session/session-side-panel.tsx
 +++ b/packages/app/src/pages/session/session-side-panel.tsx
 @@ -458,7 +458,11 @@ export function SessionSidePanel(props: {
@@ -1915,7 +2422,7 @@ index 571428e29..26ad6fdc6 100644
                                      }}
                                      aria-label={language.t("command.file.open")}
 diff --git a/packages/app/src/pages/session/timeline/message-timeline.tsx b/packages/app/src/pages/session/timeline/message-timeline.tsx
-index 2959e9f8a..21ad01c06 100644
+index 2959e9f8..21ad01c0 100644
 --- a/packages/app/src/pages/session/timeline/message-timeline.tsx
 +++ b/packages/app/src/pages/session/timeline/message-timeline.tsx
 @@ -1562,7 +1562,9 @@ export function MessageTimeline(props: {
@@ -1943,7 +2450,7 @@ index 2959e9f8a..21ad01c06 100644
                                </MenuV2.Item>
                              </MenuV2.Content>
 diff --git a/packages/app/src/pages/session/usage-exceeded-dialogs.tsx b/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
-index d56fa3d1f..fd38b0dd1 100644
+index d56fa3d1..fd38b0dd 100644
 --- a/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
 +++ b/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
 @@ -66,38 +66,46 @@ export function useUsageExceededDialogs() {
@@ -2025,7 +2532,7 @@ index d56fa3d1f..fd38b0dd1 100644
      }),
    )
 diff --git a/packages/app/src/pages/session/use-session-commands.tsx b/packages/app/src/pages/session/use-session-commands.tsx
-index 275e6ec4b..bb4a5bc79 100644
+index 275e6ec4..bb4a5bc7 100644
 --- a/packages/app/src/pages/session/use-session-commands.tsx
 +++ b/packages/app/src/pages/session/use-session-commands.tsx
 @@ -234,7 +234,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
@@ -2057,7 +2564,7 @@ index 275e6ec4b..bb4a5bc79 100644
  
 diff --git a/packages/app/src/surface/terminal.ts b/packages/app/src/surface/terminal.ts
 new file mode 100644
-index 000000000..5d279ad62
+index 00000000..5d279ad6
 --- /dev/null
 +++ b/packages/app/src/surface/terminal.ts
 @@ -0,0 +1,11 @@
@@ -3531,7 +4038,7 @@ literal 0
 HcmV?d00001
 
 diff --git a/packages/ui/src/components/dialog.tsx b/packages/ui/src/components/dialog.tsx
-index 981e3f45d..79fc55712 100644
+index 981e3f45..79fc5571 100644
 --- a/packages/ui/src/components/dialog.tsx
 +++ b/packages/ui/src/components/dialog.tsx
 @@ -1,6 +1,8 @@
@@ -3571,7 +4078,7 @@ index 981e3f45d..79fc55712 100644
    return (
      <div
 diff --git a/packages/ui/src/components/image-preview.tsx b/packages/ui/src/components/image-preview.tsx
-index 8462ce256..944dacd72 100644
+index 8462ce25..944dacd7 100644
 --- a/packages/ui/src/components/image-preview.tsx
 +++ b/packages/ui/src/components/image-preview.tsx
 @@ -1,6 +1,8 @@
@@ -3609,7 +4116,7 @@ index 8462ce256..944dacd72 100644
      <div data-component="image-preview">
        <div data-slot="image-preview-container">
 diff --git a/packages/ui/src/context/dialog.tsx b/packages/ui/src/context/dialog.tsx
-index 39ef8ea1c..343854e94 100644
+index 39ef8ea1..343854e9 100644
 --- a/packages/ui/src/context/dialog.tsx
 +++ b/packages/ui/src/context/dialog.tsx
 @@ -7,6 +7,7 @@ import {
@@ -3771,7 +4278,7 @@ index 39ef8ea1c..343854e94 100644
 +  return useContext(HostContext)
 +}
 diff --git a/packages/ui/src/v2/components/dialog-v2.tsx b/packages/ui/src/v2/components/dialog-v2.tsx
-index b9dd2521e..cd6a501a0 100644
+index b9dd2521..cd6a501a 100644
 --- a/packages/ui/src/v2/components/dialog-v2.tsx
 +++ b/packages/ui/src/v2/components/dialog-v2.tsx
 @@ -1,5 +1,7 @@
