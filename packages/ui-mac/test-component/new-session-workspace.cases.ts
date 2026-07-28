@@ -50,8 +50,13 @@ Bun.plugin({
    about *what the page asked for*, not about internal calls. */
 type DraftRecord = { server: string; directory: string }
 const [draft, setDraft] = createSignal<DraftRecord>({ server: "sidecar", directory: "/ws/a" })
+// 上游 tabs.store 的最小形状:哪些 draft 还活着(关掉 = 从这里消失)。
+const [liveDrafts, setLiveDrafts] = createSignal<string[]>(["draft-1"])
 const updateDraftCalls: Array<{ draftID: string; patch: Partial<DraftRecord> }> = []
 const tabs = {
+  get store() {
+    return liveDrafts().map((draftID) => ({ type: "draft", draftID }))
+  },
   draft: () => draft(),
   updateDraft: (draftID: string, patch: Partial<DraftRecord>) => {
     updateDraftCalls.push({ draftID, patch })
@@ -165,6 +170,8 @@ function projectsApi(projects: AlphaProject[]): AlphaProjectsApi {
 
 let pickedDirectory: string | undefined
 const pickerCalls: number[] = []
+/** 默认对话目录的解析可控:undefined = 立即返回;否则返回一个测试自己 resolve 的 promise。 */
+let defaultWorkspaceGate: { promise: Promise<string>; resolve: (dir: string) => void } | undefined
 function installApi() {
   Object.defineProperty(window, "api", {
     configurable: true,
@@ -172,7 +179,7 @@ function installApi() {
       endpoints: async () => null,
       openLink: () => {},
       openPath: () => {},
-      workspaceDefaultDir: async () => DEFAULT_WORKSPACE,
+      workspaceDefaultDir: () => defaultWorkspaceGate?.promise ?? Promise.resolve(DEFAULT_WORKSPACE),
       openDirectoryPicker: async () => {
         pickerCalls.push(1)
         return pickedDirectory
@@ -238,6 +245,7 @@ class PendingFileReader {
   static pending: PendingFileReader[] = []
   onload: (() => void) | null = null
   onerror: (() => void) | null = null
+  onabort: (() => void) | null = null
   error: unknown = null
   result: string | null = null
   readAsDataURL() {
@@ -247,6 +255,15 @@ class PendingFileReader {
     this.result = url
     this.onload?.()
   }
+  abort() {
+    this.onabort?.()
+  }
+}
+function gateDefaultWorkspace() {
+  let resolve!: (dir: string) => void
+  const promise = new Promise<string>((next) => (resolve = next))
+  defaultWorkspaceGate = { promise, resolve }
+  return defaultWorkspaceGate
 }
 function pasteFile(el: HTMLTextAreaElement, file: File) {
   const event = new Event("paste", { bubbles: true, cancelable: true })
@@ -278,6 +295,8 @@ beforeEach(() => {
   startChatCalls.splice(0)
   pickerCalls.splice(0)
   pickedDirectory = undefined
+  defaultWorkspaceGate = undefined
+  setLiveDrafts(["draft-1"])
   setDraft({ server: "sidecar", directory: "/ws/a" })
   document.body.replaceChildren()
 })
@@ -454,6 +473,53 @@ describe("REQ-126 CODE-D 切目录不吞内容(真重挂)", () => {
     }
   })
 
+  test("附件读取被 abort 后,工作区切换必须恢复可用(不能永久锁死)", async () => {
+    mountToasts()
+    const realFileReader = globalThis.FileReader
+    ;(globalThis as { FileReader: unknown }).FileReader = PendingFileReader
+    try {
+      const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }))
+      await flush()
+      const before = textarea(host)!
+      type(before, "读到一半被取消")
+      pasteFile(before, new File(["png-bytes"], "shot.png", { type: "image/png" }))
+      await flush()
+      expect(PendingFileReader.pending).toHaveLength(1)
+
+      PendingFileReader.pending.splice(0)[0]!.abort() // 只触发 onabort,不 load 不 error
+      await flush()
+      await flush()
+
+      await openChipAndPick(host, "beta") // 计数必须已归零,否则这里被永久拦住
+      expect(updateDraftCalls).toEqual([{ draftID: "draft-1", patch: { directory: "/ws/b" } }])
+      expect(draft().directory).toBe("/ws/b")
+      expect(textarea(host)!.value).toBe("读到一半被取消") // 文本照常保住
+    } finally {
+      ;(globalThis as { FileReader: unknown }).FileReader = realFileReader
+      PendingFileReader.pending.splice(0)
+    }
+  })
+
+  test("关掉的 draft 不再永久占着暂存(按 tabs 里还活着的 draft 剪枝)", async () => {
+    const api = projectsApi([project("alpha-code", "/ws/a")])
+    setLiveDrafts(["draft-1", "draft-2"])
+    for (const draftId of ["draft-1", "draft-2"]) {
+      const host = mount(() => createComponent(DraftLeaf, { projects: api, draftId }))
+      await flush()
+      type(textarea(host)!, `${draftId} 的内容`)
+      await flush()
+      disposers.pop()!()
+    }
+    // 用户把 draft-1 关掉(上游只清 tabs,不通知暂存)
+    setLiveDrafts(["draft-2"])
+
+    // 回到还活着的 draft-2:它自己的内容必须在,而 draft-1 的条目已被剪掉。
+    const host = mount(() => createComponent(DraftLeaf, { projects: api, draftId: "draft-2" }))
+    await flush()
+    expect(textarea(host)!.value).toBe("draft-2 的内容")
+    expect(newSessionDraftStash.restore("draft-1")).toBeUndefined()
+  })
+
   test("9 个 draft 依次输入后回到第 1 个,内容还在(暂存不得有容量帽)", async () => {
     const api = projectsApi([project("alpha-code", "/ws/a")])
     for (let i = 1; i <= 9; i++) {
@@ -516,6 +582,34 @@ describe("REQ-126 CODE-D 首页:chip 抽取行为保持 + 默认落 ~/Alpha", ()
     for (let i = 0; i < 20 && startChatCalls.length === 0; i++) await flush()
 
     // 判据是**真实提交目标**,不只是 chip 显示:显示对了而提交仍落旧项目才是最坏的假绿。
+    expect(startChatCalls).toHaveLength(1)
+    expect(startChatCalls[0]!.directory).toBe(DEFAULT_WORKSPACE)
+  })
+
+  test("默认目录还没解析出来时:不得拿第一个项目当提交目标(AC5 时序缺口)", async () => {
+    mountToasts()
+    const gate = gateDefaultWorkspace() // workspaceDefaultDir 保持未决
+    const host = mount(() =>
+      createComponent(AlphaHome, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }),
+    )
+    await flush()
+    await flush()
+    expect(chipButton(host).textContent).not.toContain("alpha-code")
+
+    type(textarea(host)!, "别开错项目")
+    await flush()
+    textarea(host)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    for (let i = 0; i < 20; i++) await flush()
+
+    // 判据是**真实提交目标**:未解析期间一条都不许发出去,且用户看得到「需要工作区」提示。
+    expect(startChatCalls).toEqual([])
+    expect(toastTitles()).toContain(zh["alpha.home.workspaceRequired"])
+
+    // 解析回来后照常可发,落点是默认对话目录。
+    gate.resolve(DEFAULT_WORKSPACE)
+    for (let i = 0; i < 20; i++) await flush()
+    textarea(host)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    for (let i = 0; i < 20 && startChatCalls.length === 0; i++) await flush()
     expect(startChatCalls).toHaveLength(1)
     expect(startChatCalls[0]!.directory).toBe(DEFAULT_WORKSPACE)
   })

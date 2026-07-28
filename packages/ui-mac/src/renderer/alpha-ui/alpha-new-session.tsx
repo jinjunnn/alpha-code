@@ -49,9 +49,17 @@ export function AlphaNewSession(props: {
     if (text) setSearchParams({ ...searchParams, prompt: undefined }, { replace: true })
     return text
   })
+  // 上游关闭 draft 不通知暂存(tabs.tsx 的 removeTab 只清 tabs/persisted draft,只读不改),
+  // 所以每次读写都按「tabs 里还活着的 draft」剪一次 —— 关掉的 draft 不会永久占着内容。
+  const liveDraftIds = () =>
+    tabs.store.filter((tab: { type: string }) => tab.type === "draft").map((tab: { draftID: string }) => tab.draftID)
+
   // 切目录 = 整叶重挂,composer 的文本/mention/附件是组件本地信号 —— 取回叶外暂存(按 draftID
   // keyed,跨目录稳定;取回即消费)。首次挂载无暂存时才用 deep link 的预填。
-  const stashed = untrack(() => newSessionDraftStash.restore(props.draftId))
+  const stashed = untrack(() => {
+    newSessionDraftStash.prune(liveDraftIds())
+    return newSessionDraftStash.restore(props.draftId)
+  })
 
   // 切目录会重挂整叶。附件还在 FileReader 里的那段窗口,内容既不在 composer 的信号里、也无处
   // 可捕获(旧实例 cleanup 先跑,读完的回调写不回任何地方)—— 这时**拦下切换并明说**,读完再放
@@ -95,7 +103,10 @@ export function AlphaNewSession(props: {
                 initialText={stashed?.text ?? initialPrompt}
                 initialMentions={stashed?.mentions}
                 initialAttachments={stashed?.attachments}
-                onDraftSnapshot={(draft) => newSessionDraftStash.capture(props.draftId, draft)}
+                onDraftSnapshot={(draft) => {
+                  newSessionDraftStash.capture(props.draftId, draft)
+                  newSessionDraftStash.prune(liveDraftIds())
+                }}
                 onAttachmentReadPending={setAttachmentReadPending}
                 onSubmitted={(id) => {
                   // 已经发出去了,没有回访可言:晋升前清掉这条 draft 的暂存。

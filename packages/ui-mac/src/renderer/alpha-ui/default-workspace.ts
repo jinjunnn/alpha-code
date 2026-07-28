@@ -8,7 +8,7 @@
 // (`workspaceEnsureDefault`)与它 `{ok:false}` 的 loud 处置归 use-projects(REQ-126 不变量 5),
 // 本模块不吞不装:查询失败 = `undefined`,由调用方决定怎么降级。
 
-import { createResource } from "solid-js"
+import { createResource, type Resource } from "solid-js"
 
 async function readDefaultWorkspaceDir(): Promise<string | undefined> {
   try {
@@ -19,8 +19,10 @@ async function readDefaultWorkspaceDir(): Promise<string | undefined> {
   }
 }
 
-/** Solid 侧的读取:解析完成前返回 `undefined`(调用方自行决定占位/降级)。 */
-export function createDefaultWorkspaceDir(): () => string | undefined {
+/** Solid 侧的读取:返回 resource 访问器本身,调用方据 `.loading` 区分「**还没解析出来**」与
+ *  「解析完了但没有」。这个区分是 AC5 的要害 —— 未解析时**不得**拿别的目录顶上去当提交目标,
+ *  否则用户在默认目录返回之前回车,会话就真的开在了他从没选过的项目里。 */
+export function createDefaultWorkspaceDir(): Resource<string | undefined> {
   const [dir] = createResource(readDefaultWorkspaceDir)
-  return () => dir()
+  return dir
 }

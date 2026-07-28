@@ -14,8 +14,11 @@
 // 不会让新实例先于旧 cleanup 取暂存 —— 所以这条次序可以依赖。
 //
 // **这里刻意没有任何容量帽和长度帽**:两者都是「静默丢用户内容」,正是本票要消灭的东西。
-// 生命周期靠取回即消费 + draft 晋升成会话时 `forget()` 收敛;draft 被关掉而从未回访会留下一条,
-// 属有界残留(每个未回访 draft 一条),不换成静默淘汰。
+// 生命周期改由**存在性**收敛:取回即消费 + 晋升即 `forget()` + 每次读写按「tabs 里还活着的
+// draftID」`prune()`。上游关闭 draft 的路径只清 tabs/persisted draft、不通知这里
+// (`packages/app/src/context/tabs.tsx` 的 `removeTab`,上游只读不改),所以剪枝是唯一能让
+// 「建 draft → 输入 → 关掉」重复做不至于无界堆积(单条还可能挂着附件 dataURL)的收口点。
+// 剪掉的只可能是**已经不存在的 draft**,不是还活着的用户内容 —— 与被否掉的静默 LRU 不同。
 
 import type { ComposerAttachment } from "./composer-attachments-core"
 import type { MentionPart } from "./composer-autocomplete-core"
@@ -51,6 +54,11 @@ export const newSessionDraftStash = {
   /** draft 晋升成会话(或显式丢弃)时清理 —— 内容已经发出去了,没有回访可言。 */
   forget(draftID: string) {
     if (draftID) drafts.delete(draftID)
+  },
+  /** 丢掉 tabs 里已不存在的 draft 的暂存(关掉的 draft 永远不会再回访)。 */
+  prune(liveDraftIDs: Iterable<string>) {
+    const live = new Set(liveDraftIDs)
+    for (const draftID of [...drafts.keys()]) if (!live.has(draftID)) drafts.delete(draftID)
   },
   /** 测试隔离用。 */
   resetForTests() {

@@ -43,9 +43,22 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
   // 拍板推翻,首页与新对话页同一口径(路径查询不建目录;lazy 供给在真正开会话时由 use-projects
   // 经 workspaceEnsureDefault 触发)。要别的目录就在 chip 里显式选。
   const defaultWs = createDefaultWorkspaceDir()
-  const activeWs = createMemo(() => chosenWs() ?? defaultWs() ?? visibleProjects()[0]?.worktree)
+  // 默认目录**还在解析**时一个工作区都不给:此刻拿第一个项目顶上去,用户在默认目录返回之前
+  // 回车就把会话真开在了他没选过的项目里(AC5 的实测破绽)。给 undefined ⇒ composer 走既有
+  // 「需要工作区」路径(拦下 + 弹选择器 + 提示),不新增加载态设计。
+  const activeWs = createMemo(() =>
+    chosenWs() ?? (defaultWs.loading ? undefined : (defaultWs() ?? visibleProjects()[0]?.worktree)),
+  )
   const activeWsSource = createMemo<"chosen" | "project" | "default" | "none">(() =>
-    chosenWs() ? "chosen" : defaultWs() ? "default" : visibleProjects()[0]?.worktree ? "project" : "none",
+    chosenWs()
+      ? "chosen"
+      : defaultWs.loading
+        ? "none"
+        : defaultWs()
+          ? "default"
+          : visibleProjects()[0]?.worktree
+            ? "project"
+            : "none",
   )
   // REQ-109/110 启动探针:首页先显示一个临时工作区、随后换成真正的那个 —— 这段可感知跳变仍然
   // 存在,只是方向随上面的改判翻了个个儿(过去是 default→project,现在是 project→default,取决
@@ -64,7 +77,9 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
       previousWorkspace.value !== current.value
     )
       markStartupTimeline("renderer.home.workspace.provisional_to_real", {
-        candidate: "A",
+        // 语义已变:旧口径的 candidate A = `default → 真实项目`(见 REQ-109 T1 证据文档),
+        // 改判后是任意方向。换掉标识,免得按候选聚合的既有口径把两种方向混成一桶。
+        candidate: "A-any-direction",
         from: previousWorkspace.value,
         to: current.value,
         fromSource: previousWorkspace.source,

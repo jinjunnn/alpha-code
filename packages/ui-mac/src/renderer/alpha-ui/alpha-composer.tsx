@@ -667,6 +667,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       const r = new FileReader()
       r.onload = () => (typeof r.result === "string" ? resolve(r.result) : reject(new Error("read")))
       r.onerror = () => reject(r.error ?? new Error("read"))
+      // abort 也必须 settle:漏了它,读取计数永不归零,工作区切换从此被永久拦住。
+      r.onabort = () => reject(new Error("attachment read aborted"))
       r.readAsDataURL(f)
     })
   const readFilesInto = async (list: ArrayLike<File>) => {
