@@ -1,13 +1,16 @@
 {
   "schema": "alpha-code/e7-packaged-live/v1",
   "issue": "alpha-code#643",
-  "phase": "logged-in",
-  "capturedAt": "2026-07-28T01:37:13.042Z",
-  "finishedAt": "2026-07-28T01:37:13.142Z",
-  "blocked": "未登录,无法取证 (not logged in / no platform cloud token) — no evidence was collected",
+  "phase": "keyless",
+  "capturedAt": "2026-07-28T01:35:32.809Z",
+  "finishedAt": "2026-07-28T01:35:32.906Z",
+  "blocked": "仍处登录态,无法采集登出态 keyless 证据 (still logged in) — no evidence was collected",
   "authObserved": {
-    "status": "logged-out",
-    "mode": "byok"
+    "status": "logged-in",
+    "mode": "platform",
+    "account": {},
+    "expiresAt": 1785203044468,
+    "platformStatus": "ready"
   },
   "checks": [
     {
@@ -23,7 +26,7 @@
         "pinnedCommit": "e578e00ae"
       },
       "required": true,
-      "at": "2026-07-28T01:37:13.126Z"
+      "at": "2026-07-28T01:35:32.891Z"
     },
     {
       "id": "P0.2",
@@ -35,7 +38,7 @@
         "port": 9222
       },
       "required": true,
-      "at": "2026-07-28T01:37:13.132Z"
+      "at": "2026-07-28T01:35:32.899Z"
     },
     {
       "id": "P0.3",
@@ -51,26 +54,29 @@
         }
       },
       "required": true,
-      "at": "2026-07-28T01:37:13.139Z"
+      "at": "2026-07-28T01:35:32.904Z"
     },
     {
-      "id": "P0.4",
+      "id": "K0.4",
       "ac": "preflight",
-      "title": "登录态(平台代付)—— 取证的硬前提",
+      "title": "登出态 —— keyless 兜底取证的硬前提",
       "status": "blocked",
-      "criterion": "auth.getState() === {status:\"logged-in\", mode:\"platform\"} AND <userData>/alpha-secrets/ALPHA_CLOUD_TOKEN exists",
+      "criterion": "auth.getState().status === \"logged-out\" AND <userData>/alpha-secrets/ALPHA_CLOUD_TOKEN is absent",
       "observed": {
         "auth": {
-          "status": "logged-out",
-          "mode": "byok"
+          "status": "logged-in",
+          "mode": "platform",
+          "account": {},
+          "expiresAt": 1785203044468,
+          "platformStatus": "ready"
         },
         "cloudTokenFile": {
           "path": "/Users/tide/Library/Application Support/ai.opencode.desktop.dev/alpha-secrets/ALPHA_CLOUD_TOKEN",
-          "present": false
+          "present": true
         },
         "apiKeyFile": {
           "path": "/Users/tide/Library/Application Support/ai.opencode.desktop.dev/alpha-secrets/ALPHA_API_KEY",
-          "present": false
+          "present": true
         },
         "endpoints": {
           "web": "https://alphacodeone.com",
@@ -81,8 +87,8 @@
         }
       },
       "required": true,
-      "note": "未登录,无法取证 — log in inside the app (平台代付模式), then re-run this probe",
-      "at": "2026-07-28T01:37:13.141Z"
+      "note": "仍处登录态,无法采集登出态证据 — log out inside the app, then re-run with --keyless",
+      "at": "2026-07-28T01:35:32.906Z"
     }
   ]
 }

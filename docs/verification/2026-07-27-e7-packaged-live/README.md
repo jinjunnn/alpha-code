@@ -16,7 +16,7 @@ review_after: 2026-10-27
 验的是**前提**(worker 已部署、匿名 `tools/list` 有 `cloud_web_search`、gateway 规范路径 fail-closed),
 且比 #639 旧,不能支撑本票任何一条 AC。
 
-**本目录目前只完成了「取证准备」。** 登录态那一半需要 owner 本人在真机上登录后执行
+**本目录目前完成了「取证准备 + 登出态那一半」。** 登录态那一半需要 owner 本人在真机上登录后执行
 [`probe.ts`](probe.ts);未登录时探针**拒绝产出证据**并以非零退出(见 §4)。
 
 ## 1. 被测件
@@ -24,9 +24,9 @@ review_after: 2026-10-27
 | 项 | 值 |
 | --- | --- |
 | 应用 | `/Applications/alpha-code.app`(`ship:mac` 装机版,非 `dist/` 直跑) |
-| 构建时间 | 2026-07-27T05:29:35 -0400 |
-| 基线 commit | `94a76b669`(`alpha`,工作树干净) |
-| `sha256(Contents/Resources/app.asar)` | `8706d0c44e17d475ab136717ba9cbbbfad4c968ae34689ed377fdecc19fb43ff` |
+| 构建时间 | 2026-07-27T21:31:42 -0400(= 2026-07-28T01:31:42Z) |
+| 基线 commit | `e578e00ae`(`alpha`,工作树干净) |
+| `sha256(Contents/Resources/app.asar)` | `60589c59c58e44ac0daede93fc7397a8a04365f5345eac4312e205a0d8f48e44` |
 | CFBundleShortVersionString | `0.1.2` |
 | 引擎版本 | `1.17.13` |
 | userData | `~/Library/Application Support/ai.opencode.desktop.dev` |
@@ -34,10 +34,22 @@ review_after: 2026-10-27
 `app.asar` 的 sha256 被钉进 `probe.ts`(`PINNED_ASAR_SHA256`)。探针第一件事就是重算它并比对 ——
 **在错的构建上跑出来的绿是假绿**,这条判据把它挡住。重新打包后必须同时更新此处与 `probe.ts` 的常量。
 
-真机启动已验:`open -a` 后主进程 / renderer / GPU / network / NodeService(sidecar)五个进程齐备,
-窗口打开,`main.log` 有 `server ready { url: 'http://127.0.0.1:…' }`,`crash.log` 无崩溃。
+### 为什么重打了一次
+
+上一份装机产物是 `94a76b669` / `8706d0c4…`(2026-07-27T05:29:35 -0400),**早于**
+`e578e00ae`(PR #648,`readBoundedBody` 读全响应体)。在那份产物上登出态 keyless 真调
+必然被截断的 JSON 打红(见 §5),**AC2 不可能转绿** —— 所以不是「重跑一次试试」,
+是被测件本身不合格。本目录的指纹与 `probe.ts` 的两个常量已同步换成新产物;
+旧产物的原始记录保留在 `results/*20260727T0952*.json`,作为缺陷发现时的证据不改动。
+
+真机启动已验(新产物,2026-07-27T21:32):`ALPHA_CDP=1 open -a` 后
+主进程 / renderer / GPU / NetworkService / NodeService(sidecar)五个进程齐备,
+CDP 列出 `oc://renderer/index.html` 的 page target(窗口真的打开),
+`logs/20260728T013220/main.log` 有 `server ready { url: 'http://127.0.0.1:50360' }`,
+同目录 `crash.log` 只有 `crash reporter started`、无崩溃。
 (本仓两个打包坑 —— source-only `contracts-consumer` 被 externalize 后 asar 里留原始 `.ts`、
-eager ajv `new Function` 撞 renderer CSP —— 本次均未复现。)
+eager ajv `new Function` 撞 renderer CSP —— 本次均未复现:`renderer.log` 只有既有的
+`connect-src` 源列表告警,无 eval 被拒;启动无崩溃。)
 
 ## 2. 探针覆盖了什么
 
@@ -54,19 +66,24 @@ eager ajv `new Function` 撞 renderer CSP —— 本次均未复现。)
 
 ## 3. 复现步骤(owner 照敲)
 
+**登出态那一半(⑤)已经跑完并通过**,机器现在停在:新产物已装、`ALPHA_CDP=1` 已开、应用**处于登出态**
+(为跑 keyless 相位而登出;走的是应用自己的「退出登录」路径,BYOK 钥匙没动)。
+所以 owner 只需要 ②③ 两步;①④⑤ 留作完整复现记录。
+
 ```bash
 # ① 用本仓标准 CDP 口子重启打包应用(这是拿到 sidecar 凭证的唯一通道)
+#    —— 应用此刻已在 CDP 下运行;只有当它被关掉时才需要这一步
 pkill -f "/Applications/alpha-code.app" ; sleep 2
 ALPHA_CDP=1 open -a /Applications/alpha-code.app
 
-# ② 在应用里登录(平台代付模式),等模型目录出来
+# ② 在应用里登录(平台代付模式),等模型目录出来   ← owner 从这里开始
 
 # ③ 登录态取证 —— 一条命令跑完
 cd ~/app/alpha-code && bun docs/verification/2026-07-27-e7-packaged-live/probe.ts
 
 # ④ 在应用里登出(设置 → 退出登录)
 
-# ⑤ 登出态 keyless 兜底取证
+# ⑤ 登出态 keyless 兜底取证 —— 已在 2026-07-28T01:37Z 跑过,exit 0
 cd ~/app/alpha-code && bun docs/verification/2026-07-27-e7-packaged-live/probe.ts --keyless
 ```
 
@@ -77,13 +94,13 @@ cd ~/app/alpha-code && bun docs/verification/2026-07-27-e7-packaged-live/probe.t
 ## 4. 逐项判据与结果
 
 `AC` 列对应 #643 正文三条。`结果` 列由探针填(`results/latest-<phase>.json` 是真源);
-下表中已填的两行来自准备阶段的真实运行,其余待 owner 执行。
+下表中已填的行来自新产物(`e578e00ae` / `60589c59c…`)上的真实运行,登录态那一半待 owner 执行。
 
 ### 登录态相位(默认)
 
 | 项 | AC | 判据 | 结果 |
 | --- | --- | --- | --- |
-| P0.1 | 前置 | `sha256(app.asar)` 等于本文件钉的值 | ☑ pass(2026-07-27T09:53Z) |
+| P0.1 | 前置 | `sha256(app.asar)` 等于本文件钉的值 | ☑ pass(2026-07-28T01:37Z) |
 | P0.2 | 前置 | CDP 端口列出 renderer page target | ☑ pass |
 | P0.3 | 前置 | `GET /global/health` → `{healthy:true}` | ☑ pass |
 | P0.4 | 前置 | `auth.getState()` 为 `{status:"logged-in",mode:"platform"}` **且** `alpha-secrets/ALPHA_CLOUD_TOKEN` 在位 | ☐ 待 owner(未登录时已实测 `blocked`+exit 2) |
@@ -111,20 +128,34 @@ cd ~/app/alpha-code && bun docs/verification/2026-07-27-e7-packaged-live/probe.t
 
 | 项 | AC | 判据 | 结果 |
 | --- | --- | --- | --- |
-| K0.4 | 前置 | `auth.getState().status === "logged-out"` 且无 `ALPHA_CLOUD_TOKEN` 文件 | ☑ pass(2026-07-27T09:52Z) |
+| K0.4 | 前置 | `auth.getState().status === "logged-out"` 且无 `ALPHA_CLOUD_TOKEN` 文件 | ☑ pass(2026-07-28T01:37Z) |
 | K1.1 | AC2 | `GET /mcp` 无 `cloud` 键(登出态云暗) | ☑ pass |
 | K1.2 | AC2 | `config.mcp.cloud` 不存在,且 `config.permission.websearch !== "deny"`(keyless 还原) | ☑ pass |
-| K1.3 | AC2 | 存在非网关 provider 的 `toolcall` 模型 | ☑ pass |
+| K1.3 | AC2 | 存在非网关 provider 的 `toolcall` 模型 | ☑ pass(`deepseek-byok` / `deepseek-v4-flash`) |
 | K1.4 | AC2 | `GET /experimental/tool?provider&model` **含** `websearch` | ☑ pass |
-| K1.5 | AC2 | **keyless 真调**:真实模型轮次产出 `websearch` tool part,`status==="completed"` 且输出非空 | ☒ **fail** —— 见 §5 |
-| K1.6 | AC3 | keyless 失败也必须是可辨错误(不是匿名 defect) | ☑ pass |
+| K1.5 | AC2 | **keyless 真调**:真实模型轮次产出 `websearch` tool part,`status==="completed"` 且输出非空 | ☑ **pass** —— 见 §5 |
+| K1.6 | AC3 | keyless 失败也必须是可辨错误(不是匿名 defect) | ☑ pass(本次 `completed`,无失败可辨) |
 
-原始记录:[`results/keyless-20260727T095253Z.json`](results/keyless-20260727T095253Z.json)、
-[`results/logged-in-20260727T095330Z.json`](results/logged-in-20260727T095330Z.json)(未登录 fail-closed 自检)。
+登出态相位整体 **exit 0,10/10 必需项通过**。
 
-## 5. 准备阶段发现的阻断项 —— keyless 真调在 `94a76b669` 上是坏的
+原始记录(新产物 `e578e00ae` / `60589c59c…`):
+[`results/keyless-20260728T013721Z.json`](results/keyless-20260728T013721Z.json)。
+两条**反向** fail-closed 自检也在新产物上复验过:
+[`results/logged-in-20260728T013713Z.json`](results/logged-in-20260728T013713Z.json)(登出态跑登录态相位 → `blocked` + exit 2)、
+[`results/keyless-20260728T013532Z.json`](results/keyless-20260728T013532Z.json)(登录态跑 `--keyless` → `blocked` + exit 2)。
+两者都只记了 P0.1–P0.3 的前置,**零证据产出**。
 
-K1.5 在打包应用上稳定复现:真实 `websearch` 调用返回
+旧产物(`94a76b669` / `8706d0c4…`,缺陷发现时)的记录保留不动:
+[`results/keyless-20260727T095253Z.json`](results/keyless-20260727T095253Z.json)、
+[`results/logged-in-20260727T095330Z.json`](results/logged-in-20260727T095330Z.json)。
+
+## 5. 曾经的阻断项 —— keyless 真调在 `94a76b669` 上是坏的,`e578e00ae` 上已修复
+
+**状态:已解除。** 下面是缺陷本身的记录;修复(PR #648,commit `e578e00ae`)已在新产物上
+实测转绿 —— K1.5 在 `60589c59c…` 上 `status === "completed"`,输出是真实搜索结果
+(`Title: … URL: https://github.com/…`),不再是截断 JSON。
+
+K1.5 曾在旧打包应用上稳定复现:真实 `websearch` 调用返回
 `Web search failed: invalid response. Cause: {…} — SchemaError(SyntaxError: Unterminated string in JSON …)`。
 上游 Exa 返回的是**成功**的搜索结果,客户端把它读**截断**了。
 
@@ -132,7 +163,7 @@ K1.5 在打包应用上稳定复现:真实 `websearch` 调用返回
 
 | 读法 | chunk 数 | 收到字节 |
 | --- | --- | --- |
-| `Stream.runForEachWhile`(即 `readBoundedBody` 现在的写法) | 1 | 4,090 |
+| `Stream.runForEachWhile`(旧 `readBoundedBody` 的写法) | 1 | 4,090 |
 | `Stream.runForEach` | 3 | 18,063 |
 | `response.text` | — | 18,034 字符 |
 
@@ -144,9 +175,19 @@ K1.5 在打包应用上稳定复现:真实 `websearch` 调用返回
 本仓其实**已经记过这个 API 的雷**:`packages/opencode/src/tool/read.ts:143-145`
 ——「we also avoid `Stream.runForEachWhile` (it currently swallows the final unterminated line …)」。
 
-处置:不在本票(VERIFY)里改源码。修复归一张 CODE 票,#643 的 AC2 在修好并重新打包前不可能转绿。
-副作用:登录态相位的 P2.1 走的是云 MCP 客户端(`mcp/catalog.ts`),**不经**这条传输,所以大概率不受影响;
-但 P3.8 的本地 deny 路径同样不经它(闸在请求构造之前),也不受影响。
+处置:没有在本票(VERIFY)里改源码。修复走了独立的 CODE 票 —— `alpha-code#647` / PR #648,
+commit `e578e00ae`:`readBoundedBody` 换成 `Stream.runForEach` 读全 + `BodyCapReached` tagged error
+在触限那一刻中止上游流,`MAX_BODY_BYTES` 这条 DoS 硬限与 `truncated` 语义都不变
+(同构于 `packages/opencode/src/tool/read.ts:146` 早就记过的写法)。
+
+**修复在打包版里生效已被两条独立判据确认**,不是「源码合了就假定」:
+
+1. 解包 `app.asar` 后,`out/main/chunks/node-*.js` 里的 `McpWebSearch.readBoundedBody`
+   确为 `Stream.runForEach` + `catchTag("BodyCapReached")` —— 打进去的是修好的那份。
+2. 真机跑 `--keyless`:K1.5 `completed`,拿到完整的多 chunk 搜索结果。
+
+副作用(当时的判断,仍成立):登录态相位的 P2.1 走的是云 MCP 客户端(`mcp/catalog.ts`),
+**不经**这条传输;P3.8 的本地 deny 路径同样不经它(闸在请求构造之前)。
 
 ## 6. 需要 owner 裁决的分歧:402 采不采
 

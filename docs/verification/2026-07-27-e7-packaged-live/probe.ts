@@ -29,9 +29,11 @@ const USER_DATA =
 const CDP_PORT = Number(process.env.ALPHA_E7_CDP_PORT ?? 9222)
 const OUT_DIR = path.join(import.meta.dir, "results")
 
-/** The build this evidence directory was cut for: alpha @ 94a76b669, ship:mac 2026-07-27T05:29:35Z. */
-const PINNED_ASAR_SHA256 = "8706d0c44e17d475ab136717ba9cbbbfad4c968ae34689ed377fdecc19fb43ff"
-const PINNED_COMMIT = "94a76b669"
+/** The build this evidence directory was cut for: alpha @ e578e00ae, ship:mac 2026-07-28T01:31:42Z.
+ *  Re-pinned from 94a76b669 / 8706d0c0… — that build predated the `readBoundedBody` fix (#648),
+ *  on which K1.5 (keyless 真调) could not pass. See README §1 and §5. */
+const PINNED_ASAR_SHA256 = "60589c59c58e44ac0daede93fc7397a8a04365f5345eac4312e205a0d8f48e44"
+const PINNED_COMMIT = "e578e00ae"
 
 /** `packages/ui-mac/src/main/cloud-web-search.ts` — the two ids alpha pins. */
 const CLOUD_MCP_SERVER_NAME = "cloud"
