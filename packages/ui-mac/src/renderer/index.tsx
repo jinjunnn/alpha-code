@@ -55,7 +55,6 @@ import { setSettingsOpen, settingsOpen } from "./alpha-ui/settings-state"
 import { ExtensionHub } from "./extensions/extension-hub"
 import { extHubOpen, setExtHubOpen } from "./extensions/ext-hub-state"
 import { AutomationPanel } from "./automations/automation-panel"
-import { ArtifactWorkbench } from "./alpha-ui/artifact-workbench/artifact-workbench"
 import { Splash } from "./logo-alpha"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { ALPHA_THEME, ALPHA_THEME_ID } from "./theme-alpha"
@@ -507,10 +506,7 @@ render(() => {
               <AlphaBoundary name="AutomationPanel">
                 <AutomationPanel />
               </AlphaBoundary>
-              {/* REQ-094(#186):Artifact Workbench —— run 发现 + 产物卡片 + renderer registry 预览 */}
-              <AlphaBoundary name="ArtifactWorkbench">
-                <ArtifactWorkbench projects={alphaProjects} />
-              </AlphaBoundary>
+              {/* REQ-126 AC3(#654):产物工作台不再全页挂载 —— 产物只经会话右栏 artifacts 面板到达。 */}
               {/* REQ-125 C7/C8:会话页 composer = AlphaComposer 经 seam 会话页直挂(session surface
                   内部,零 Portal/零选择器),时间线为 session surface 内自持 typed leaf —— 旧的
                   composer/时间线 DOM 接管注入件已全部删除。 */}

@@ -85,7 +85,8 @@ describe("REQ-125 C4 verbatim workbench embed (I5) and channel discipline", () =
     expect(wiring).toContain("window.api.runArtifacts.list(")
     expect(wiring).toMatch(/window\.api\.runArtifacts\s*\.verify\(/)
     expect(wiring).toContain("window.api.runArtifacts.read(")
-    // No write/download/open channels from the rail (they stay in the workbench page).
+    // No write/download/open channels from the rail. Since REQ-126 AC3 (#654) retired the
+    // full-page workbench, these are offered nowhere — not relocated (follow-up #660).
     const forbidden = ["downloadArtifact", "openExternal", "quickLook", "openPath", "htmlPreview.open"]
     forbidden.forEach((token) => expect(wiring).not.toContain(token))
     // The view is channel-free — the harness mounts it without any preload bridge.

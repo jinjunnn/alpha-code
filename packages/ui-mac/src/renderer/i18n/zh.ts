@@ -689,7 +689,6 @@ export const dict = {
   "alpha.ext.grantedNone": "该扩展未请求任何能力。",
   "alpha.ext.grantedMeta": "授权于 {{date}} · 事务 {{tx}} · 记录随安装提交生效、随卸载删除;能力变更时经确认框重新授权。",
   // ── Artifact Workbench(REQ-094/#186 + REQ-095/#187)──
-  "alpha.sidebar.workbench": "产物",
   "alpha.wb.title": "产物工作台",
   "alpha.wb.project": "项目",
   "alpha.wb.noProject": "还没有项目 —— 打开一个项目后可查看其云任务产物。",

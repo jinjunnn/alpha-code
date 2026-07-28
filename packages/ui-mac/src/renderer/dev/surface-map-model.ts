@@ -46,7 +46,7 @@ export function surfaceRuntimeState(surface: FrontendSurfaceEntry) {
 
 export function activeSurfaceIds(
   route: FrontendSurfaceId | undefined,
-  overlays: { extensions: boolean; automations: boolean; artifacts: boolean; inspector: boolean },
+  overlays: { extensions: boolean; automations: boolean; inspector: boolean },
 ) {
   const ids = new Set<string>(["shell.sidebar", "inline.surface-recovery"])
   if (route) ids.add(route)
@@ -57,7 +57,6 @@ export function activeSurfaceIds(
   }
   if (overlays.extensions) ids.add("overlay.extensions")
   if (overlays.automations) ids.add("overlay.automations")
-  if (overlays.artifacts) ids.add("overlay.artifacts")
   if (overlays.inspector) ids.add("dev.surface-map")
   return ids
 }

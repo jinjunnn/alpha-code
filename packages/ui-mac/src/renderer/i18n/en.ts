@@ -689,7 +689,6 @@ export const dict = {
   "alpha.ext.grantedNone": "This extension requested no capabilities.",
   "alpha.ext.grantedMeta": "Granted {{date}} \u00b7 transaction {{tx}} \u00b7 recorded on committed install, removed on uninstall; changes re-confirm via the authorization dialog.",
   // ── Artifact Workbench(REQ-094/#186 + REQ-095/#187)──
-  "alpha.sidebar.workbench": "Artifacts",
   "alpha.wb.title": "Artifact Workbench",
   "alpha.wb.project": "Project",
   "alpha.wb.noProject": "No project yet — open a project to see its cloud run artifacts.",
