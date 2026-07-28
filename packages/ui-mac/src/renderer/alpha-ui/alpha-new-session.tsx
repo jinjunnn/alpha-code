@@ -51,8 +51,7 @@ export function AlphaNewSession(props: {
   })
   // 上游关闭 draft 不通知暂存(tabs.tsx 的 removeTab 只清 tabs/persisted draft,只读不改),
   // 所以每次读写都按「tabs 里还活着的 draft」剪一次 —— 关掉的 draft 不会永久占着内容。
-  const liveDraftIds = () =>
-    tabs.store.filter((tab: { type: string }) => tab.type === "draft").map((tab: { draftID: string }) => tab.draftID)
+  const liveDraftIds = () => tabs.store.flatMap((tab) => (tab.type === "draft" ? [tab.draftID] : []))
 
   // 切目录 = 整叶重挂,composer 的文本/mention/附件是组件本地信号 —— 取回叶外暂存(按 draftID
   // keyed,跨目录稳定;取回即消费)。首次挂载无暂存时才用 deep link 的预填。
