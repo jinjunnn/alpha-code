@@ -42,6 +42,7 @@ import { AlphaSidebar } from "./sidebar/alpha-sidebar"
 import { type AlphaProjectsApi, useAlphaProjects } from "./sidebar/use-projects"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
 import { AlphaNewSession } from "./alpha-ui/alpha-new-session"
+import { AlphaSessionSearch } from "./alpha-ui/alpha-session-search"
 import { SurfaceBoundary } from "./alpha-ui/surface-boundary"
 import { RuntimeRecoveryHost } from "./alpha-ui/RuntimeRecoveryHost"
 import { UpstreamDialogHost } from "./alpha-ui/UpstreamDialogHost"
@@ -467,6 +468,17 @@ render(() => {
     // instance instead of each running its own (was ×2 project.list / ×2N session.list + an extra SSE).
     const alphaProjects = useAlphaProjects(sidebarServer)
 
+    // REQ-126 CODE-F(#659):会话搜索结果的 server 身份。搜索只读 `alphaProjects` 那一份
+    // store,而它连的是 `sidebarServer` 那个 baseUrl —— 所以 href 里的 serverKey 必须由**同一个
+    // baseUrl** 反查出的连接算出,而不是"当前 active server"。当前 server 是 WSL/remote 时,后者
+    // 会把本地 sidecar 的结果导向错误的服务器(legacy `sessionHref` 正是这么坏的)。
+    const searchServerKey = createMemo(() => {
+      const baseUrl = sidebarServer()?.baseUrl
+      if (!baseUrl) return undefined
+      const connection = servers().find((candidate) => candidate.http.url === baseUrl)
+      return connection ? ServerConnection.key(connection) : undefined
+    })
+
     // 每个叶页面经 typed surface seam 注入(单一 page root,upstream 叶不挂载)。surface 组件
     // 经 SurfaceBoundary 兜致命 render 错误(main 建立稳定 incident + Alpha Recovery)。
     const surfaceComponents = createMemo<AppSurfaces>(() => ({
@@ -498,6 +510,12 @@ render(() => {
                   (见上方 surfaceComponents);legacy 模式下 upstream Home 原样呈现。 */}
               <AlphaBoundary name="AlphaOnboarding">
                 <AlphaOnboarding />
+              </AlphaBoundary>
+              {/* REQ-126 CODE-F(#659):`command.palette` 的**唯一**注册点。挂在壳上而不是叶上 ——
+                  上游三处注册全在已被 alpha 顶替的叶里,注册随叶一起蒸发,侧栏「搜索」才成了静默
+                  no-op。放在这里,它与路由无关地常驻,侧栏按钮与 mod+k 都落到它。 */}
+              <AlphaBoundary name="AlphaSessionSearch">
+                <AlphaSessionSearch projects={alphaProjects} serverKey={searchServerKey} />
               </AlphaBoundary>
               <SettingsSurface />
               <AlphaBoundary name="ExtensionHub">

@@ -806,6 +806,11 @@ export const dict = {
   "alpha.common.close": "关闭",
   "alpha.common.remove": "移除",
   "alpha.common.retry": "重试",
+  // REQ-126 CODE-F:alpha 自有会话搜索面板(壳注册 command.palette)。
+  "alpha.search.title": "搜索会话",
+  "alpha.search.placeholder": "按标题搜索会话…",
+  "alpha.search.hint": "输入关键词搜索会话",
+  "alpha.search.empty": "没有标题匹配的会话",
   "alpha.engine.starting": "正在启动引擎…",
   "alpha.error.reloadRegion": "重载此区域",
   "alpha.error.regionStopped": "{{name}} 区域已停止运行",

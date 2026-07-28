@@ -65,7 +65,7 @@ is alpha-authored. "opencode" below means the surface is rendered by an upstream
 | Boot / Surface recovery / 恢复 | alpha-ized | `ui-mac/src/main/db-safety-boot.ts` + `renderer/alpha-ui/surface-boundary.tsx` | — | req090-alpha-surfaces (Recovery); #334。两面(boot.recovery / inline.surface-recovery)manifest lineage 均 = alpha;Alpha Recovery 单向门,不回落 legacy |
 | Session workspace / 会话工作区 | alpha-ized | `ui-mac/src/renderer/alpha-ui/session-workspace/alpha-session-workspace.tsx` | [`current/session-workspace/`](current/session-workspace/design.html) | composer-model-redesign; req090; 2026-07-24-session-seam-baseline (REQ-125). release default = alpha,零消费上游 session 叶(时间线/右栏四面板已自持;composer 接线随 C7),manifest lineage = alpha |
 | Toast | alpha-new | `ui-mac/src/renderer/alpha-ui/Toast.tsx` | — (primitive, no mock) | — |
-| Command palette (Cmd-K) | opencode | `app/src/context/command.tsx` (upstream) | — | not reskinned by alpha |
+| Command palette (Cmd-K) / 会话搜索 | alpha-new | `ui-mac/src/renderer/alpha-ui/alpha-session-search.tsx` | — (**no UI mock — gap**) | REQ-126 CODE-F(#659)。命令**总线**仍是上游 `app/src/context/command.tsx`;`command.palette` 的注册与面板本体归 alpha 壳(上游三处注册随被顶替的叶一起消失)。承诺面只有「按标题搜会话 + 按结果来源 server 跳转」,不含文件搜索/命令执行/跨服务器检索 |
 
 ## Gaps
 
@@ -80,6 +80,7 @@ gaps.)
 **Implementation without design** (alpha surface, no mock):
 - **Automations panel** — alpha-new full page, no mock.
 - **Onboarding** — alpha-new overlay, no UI mock.
+- **Command palette / 会话搜索** — alpha-new overlay, no UI mock（最小实现:输入框 + 结果列表）。
 - **New session** — alpha leaf, relies on composer mock only.
 
 Active delivery state for these gaps belongs in GitHub Issues, not this file.
