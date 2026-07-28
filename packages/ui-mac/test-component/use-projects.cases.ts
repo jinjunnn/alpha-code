@@ -96,10 +96,28 @@ const summary: AccountSummary = {
   usageSeries: [],
 }
 
+// REQ-126 不变量 5(#656):`alpha-workspace-ensure` **不 throw**,失败以 `{ok:false}` 回来;而
+// main 对**非默认路径**同样返回 `{ok:false}`(那是合法的 no-op,不是失败)。用例逐条设定默认目录
+// 与这个回复(Error 实例 = 桥本身炸了),并记录 ensure 到底被调了几次。
+const DEFAULT_WORKSPACE_DIR = "/Users/tester/Alpha"
+let ensureReply: unknown = { ok: true }
+let ensureCalls = 0
+/** 默认目录**查询**这条 IPC 的回复;Error 实例 = 查询桥本身炸了(与供给桥炸了是两回事)。 */
+let defaultDirReply: unknown = DEFAULT_WORKSPACE_DIR
+
 Object.defineProperty(window, "api", {
   configurable: true,
   value: {
     endpoints: async () => null,
+    workspaceDefaultDir: async () => {
+      if (defaultDirReply instanceof Error) throw defaultDirReply
+      return defaultDirReply
+    },
+    workspaceEnsureDefault: async () => {
+      ensureCalls++
+      if (ensureReply instanceof Error) throw ensureReply
+      return ensureReply
+    },
     openLink: () => {},
     models: { catalog: async () => catalog },
     auth: { getState: async () => loggedIn, subscribe: () => () => {}, start: async () => {} },
@@ -403,4 +421,56 @@ test("R1 闩死点三收口:真实点击「立即重试」→ client 重建 + �
   await waitFor(() => expect(rows().some((row) => !row.disabled)).toBe(true))
   expect(retryCurrentCalls).toBeGreaterThan(0)
   expect(buttonByText(host, zh["alpha.model.retryNow"])).toBeUndefined()
+})
+
+test("REQ-126 不变量5:默认对话目录的供给结果必须如实回报,非默认路径不当成失败", async () => {
+  const { api } = mountHook(0)
+
+  // 非默认路径:main 侧本就不代建任意路径(合法 no-op),不能当失败 —— 否则所有普通项目的会话
+  // 创建会被一起挡掉。而且**根本不该发起供给**。
+  ensureCalls = 0
+  expect(await api.ensureDefaultWorkspace("/repos/alpha-code")).toBe(true)
+  expect(ensureCalls).toBe(0)
+
+  ensureReply = { ok: true, dir: DEFAULT_WORKSPACE_DIR }
+  expect(await api.ensureDefaultWorkspace(DEFAULT_WORKSPACE_DIR)).toBe(true)
+  expect(ensureCalls).toBe(1)
+
+  // 默认目录建不出来(同名被文件占用 / mkdir 失败)—— IPC **不抛**,只回 {ok:false}。
+  ensureReply = { ok: false }
+  expect(await api.ensureDefaultWorkspace(DEFAULT_WORKSPACE_DIR)).toBe(false)
+
+  // 桥本身炸了(preload 缺失/通道断)同样算没供给成功。
+  ensureReply = new Error("bridge down")
+  expect(await api.ensureDefaultWorkspace(DEFAULT_WORKSPACE_DIR)).toBe(false)
+
+  ensureReply = { ok: true }
+})
+
+test("REQ-126 不变量5:默认目录**查询**桥炸了不得连坐 —— 普通项目照常能创建会话", async () => {
+  // 收敛轮抓到的真 bug:查询与供给曾共用一个 try,查询 reject 会落到同一个 catch 返回 false,
+  // 于是 createSession/startChat 在"分类不了"时把**所有普通项目**的会话创建一起挡掉。
+  // 判据不停在 helper 的布尔上:直接跑真实 createSession,看它到底有没有被这道闸挡下。
+  healthReachable = true
+  const { api } = mountHook(0)
+  bridgeCb!({ status: "recovering", generation: 1, reason: "boot" })
+  await waitFor(() => expect(api.sdk()).toBeDefined())
+
+  defaultDirReply = new Error("default-dir bridge down")
+  ensureCalls = 0
+
+  // ① helper 层:分类不了 → 放行,且**不发起供给**。
+  expect(await api.ensureDefaultWorkspace("/repos/alpha-code")).toBe(true)
+  expect(ensureCalls).toBe(0)
+
+  // ② 真实调用层:createSession 必须越过这道闸,进到 session.create(harness 里引擎请求悬挂,
+  //    所以"仍未 settle"= 它真的在等引擎;被闸挡下则会立刻 resolve 成 undefined)。
+  const pending = Symbol("pending")
+  const outcome = await Promise.race([
+    api.createSession("/repos/alpha-code"),
+    tick(50).then(() => pending),
+  ])
+  expect(outcome).toBe(pending)
+
+  defaultDirReply = DEFAULT_WORKSPACE_DIR
 })

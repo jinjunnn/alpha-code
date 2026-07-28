@@ -10,6 +10,7 @@
     "component:prompt-input-v2",
     "component:prompt-variant-control",
     "component:provider-icon",
+    "component:sidebar-rail",
     "component:tabs",
     "component:terminal",
     "slot:dialog-footer",
