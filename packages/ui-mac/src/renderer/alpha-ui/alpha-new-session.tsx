@@ -60,9 +60,10 @@ export function AlphaNewSession(props: {
     return newSessionDraftStash.restore(props.draftId)
   })
 
-  // 切目录会重挂整叶。附件还在 FileReader 里的那段窗口,内容既不在 composer 的信号里、也无处
-  // 可捕获(旧实例 cleanup 先跑,读完的回调写不回任何地方)—— 这时**拦下切换并明说**,读完再放
-  // 行。宁可让用户等一下,也不能让附件无声消失(基线不变量 6)。
+  // 切目录会重挂整叶。附件还在 FileReader 里的那段窗口,内容还不在 composer 的信号里 —— 这时
+  // **拦下切换并明说**,读完再放行。宁可让用户等一下,也不能让附件无声消失(基线不变量 6)。
+  // (#663 起在途读盘会随暂存移交,切过去其实也能取回;这条拦截仍是 #657 的行为契约:让用户
+  // 知道刚粘的东西还没就位,而不是切完盯着一个暂时空着的附件区。)
   const selectWorkspace = (dir: string) => {
     if (attachmentReadPending()) {
       pushToast({ kind: "info", title: t("alpha.newSession.attachmentReadPending") })
@@ -102,6 +103,9 @@ export function AlphaNewSession(props: {
                 initialText={stashed?.text ?? initialPrompt}
                 initialMentions={stashed?.mentions}
                 initialAttachments={stashed?.attachments}
+                // #663:离开 draft 时还没读完的附件,其在途工单也随暂存往返 —— 新实例接手,读完
+                // 并进它自己的列表。只还 attachments 就等于把「正在读的那些」留在已卸载的实例里。
+                initialPendingReads={stashed?.pendingReads}
                 onDraftSnapshot={(draft) => {
                   newSessionDraftStash.capture(props.draftId, draft)
                   newSessionDraftStash.prune(liveDraftIds())

@@ -35,7 +35,9 @@ import {
   IMAGE_MAX_BYTES,
   mergeAttachments,
   PDF_MAX_BYTES,
+  type AttachmentReadResult,
   type ComposerAttachment,
+  type PendingAttachmentRead,
 } from "./composer-attachments-core"
 import { pathHitsPopover } from "./popover-hit"
 import { pushToast } from "./Toast"
@@ -541,21 +543,32 @@ export type AlphaComposerProps = {
   /** REQ-126:与 `initialText` 同期一次性注入的 mention / 附件(新对话页切目录重挂后的还原)。 */
   initialMentions?: readonly MentionPart[]
   initialAttachments?: readonly ComposerAttachment[]
+  /** #663:上一实例交下来的在途读盘工单。挂载即接手 —— settle 后并入本实例的附件列表,本实例
+   *  再卸载时把还没 settle 的继续交出去。这样「读盘中的附件」跟着 draft 走,而不是跟着实例死。 */
+  initialPendingReads?: readonly PendingAttachmentRead[]
   /** REQ-125 C558:卸载时回报当前草稿(seam dock per-identity 暂存用);门翻转卸载 composer
    *  时据此捕获正在输入的草稿,门翻回时经 `initialText` 注入,使卸载不等于不可恢复的丢失。 */
   onDraftCapture?: (text: string) => void
   /** REQ-126:卸载时回报**完整**草稿(文本 + mention + 附件)。与 `onDraftCapture` 同一时机、
-   *  同一份 sending 判据,只是内容更全 —— 新对话页切目录会重挂整叶,只留文本仍然是丢内容。 */
+   *  同一份 sending 判据,只是内容更全 —— 新对话页切目录会重挂整叶,只留文本仍然是丢内容。
+   *  #663:`pendingReads` = 卸载这一刻还没读完的附件。宿主必须把它连同快照一起存,并在下次挂载
+   *  时经 `initialPendingReads` 交回去 —— 只存 `attachments` 就等于丢掉正在读的那些。 */
   onDraftSnapshot?: (draft: {
     text: string
     mentions: readonly MentionPart[]
     attachments: readonly ComposerAttachment[]
+    pendingReads: readonly PendingAttachmentRead[]
   }) => void
-  /** REQ-126:附件正在被 FileReader 读取。读取未完成时 composer 里还没有这份附件,此刻重挂
-   *  必丢(旧实例的 cleanup 已跑完,读完的回调写不回任何地方)。宿主据此**拦住**会导致重挂的
-   *  操作(切目录)并明确提示,而不是让它静默消失。 */
+  /** REQ-126:附件正在被 FileReader 读取。读取未完成时 composer 里还没有这份附件 —— 宿主据此
+   *  **拦住**会导致重挂的操作(切目录)并明确提示,而不是让用户对着一个暂时空着的附件区发愣。
+   *  (#663 起内容本身不会因重挂而丢:在途工单随草稿快照移交,见 `initialPendingReads`。) */
   onAttachmentReadPending?: (pending: boolean) => void
 }
+
+// 附件 id 在**渲染进程内**唯一。#663 起读盘工单可跨实例移交,两个实例各自从 1 开始编号就会撞 id
+// (removeAttachment 按 id 过滤,撞了会一次删掉两个)。id 只对内,不进请求。
+let attachmentSeq = 0
+const nextAttachmentId = () => `att-${++attachmentSeq}`
 
 type ReadState<T> = { status: "ready"; data: T } | { status: "error" }
 const readState = <T,>(promise: Promise<T>): Promise<ReadState<T>> =>
@@ -581,6 +594,8 @@ export type AlphaComposerRuntimeProps = AlphaComposerProps & {
 export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const command = props.command
   const modelContract = props.modelContract ?? createModelContract(props.projects.sdk)
+  // #663:本实例是否已卸载。异步读盘 settle 时据此让位 —— 已卸载的实例不写暂存、不弹 toast。
+  let disposed = false
   const [text, setText] = createSignal(props.initialText ?? "")
   const [sending, setSending] = createSignal(false)
   // 提交发起时记录的已提交文本快照:区分「在途未编辑(=正在交付)」与「在途被改成新草稿」。
@@ -589,11 +604,21 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   // 仅当发送在途**且文本仍等于已提交快照**(未编辑,正在交付)才跳过——否则切走再翻回会「复活」
   // 已发送文本、用户再发 = 重复发送。textarea 在途仍可编辑:改成不同内容即新草稿,照常捕获(不丢)。
   // 失败保留走既有失败路径(sending 落回 false 后一律捕获,text 留在 composer 信号供原地重试)。
-  // 注:mentions / attachments 在下方声明;cleanup 只在 dispose 时执行,那时两者早已初始化。
+  // 注:mentions / attachments / inflightReads 在下方声明;cleanup 只在 dispose 时执行,那时三者
+  // 早已初始化。
   onCleanup(() => {
+    // #663:卸载后本实例**不再动任何东西** —— 读完的工单由接手方处理(见 trackRead)。已死的实例
+    // 继续往暂存里写整份快照,会把活着那个实例的快照覆盖掉,那正是「回来得比读完早」时丢附件的路。
+    disposed = true
     if (sending() && text() === submittedText) return
     props.onDraftCapture?.(text())
-    props.onDraftSnapshot?.({ text: text(), mentions: mentions(), attachments: attachments() })
+    props.onDraftSnapshot?.({
+      text: text(),
+      mentions: mentions(),
+      attachments: attachments(),
+      // #663:还没读完的那些随快照一起移交 —— 读盘结果属于这条 draft,不属于发起读取的实例。
+      pendingReads: [...inflightReads],
+    })
   })
   const [modelChainState, setModelChainState] = createSignal<"loading" | "recovering" | "ready" | "error">(
     "loading",
@@ -613,8 +638,11 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   // 也无处可存 —— 宿主据此拦住会触发重挂的操作(见 onAttachmentReadPending)。
   const [attachmentReads, setAttachmentReads] = createSignal(0)
   createEffect(() => props.onAttachmentReadPending?.(attachmentReads() > 0))
+  // #663:本实例名下还没 settle 的读盘工单(自己发起的 + 从上一实例接手的)。卸载时随快照交出去。
+  const inflightReads = new Set<PendingAttachmentRead>()
   let fileInputRef: HTMLInputElement | undefined
-  let attSeq = 0
+  // 「粘贴的附件 N」这个**显示名**按本实例计数(用户看到的是这次输入里的第几个)。
+  let pasteSeq = 0
   const readAsDataUrl = (f: File) =>
     new Promise<string>((resolve, reject) => {
       const r = new FileReader()
@@ -624,11 +652,13 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       r.onabort = () => reject(new Error("attachment read aborted"))
       r.readAsDataURL(f)
     })
-  const readFilesInto = async (list: ArrayLike<File>) => {
+  // 读一批文件,**不碰任何实例状态** —— 并入谁、由谁报拒绝,交给 trackRead 里那个「settle 时还
+  // 活着的实例」决定(#663)。这是工单可以跨实例移交的前提。
+  const readFiles = async (list: ArrayLike<File>): Promise<AttachmentReadResult> => {
     const rejected: Array<{ name: string; reason: string }> = []
     const accepted: ComposerAttachment[] = []
     for (const f of Array.from(list)) {
-      const name = f.name || t("alpha.composer.pastedAttachment", { count: attSeq + 1 })
+      const name = f.name || t("alpha.composer.pastedAttachment", { count: ++pasteSeq })
       const c = classifyAttachment({ name, type: f.type, size: f.size })
       if (!c.ok) {
         rejected.push({ name, reason: c.reason })
@@ -636,31 +666,49 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       }
       try {
         const url = await readAsDataUrl(f)
-        accepted.push({ id: `att-${++attSeq}`, name, mime: f.type, kind: c.kind, size: f.size, url })
+        accepted.push({ id: nextAttachmentId(), name, mime: f.type, kind: c.kind, size: f.size, url })
       } catch {
         rejected.push({ name, reason: t("alpha.composer.attachmentReadFailed") })
       }
     }
-    const merged = mergeAttachments(attachments(), accepted)
-    setAttachments(merged.next)
-    const bad = [...rejected, ...merged.rejected]
-    if (bad.length)
-      pushToast({
-        kind: "error",
-        title: t("alpha.composer.attachmentsRejected"),
-        detail: bad.map((item) => `${item.name}: ${attachmentReason(item.reason)}`).join("; "),
-      })
+    return { accepted, rejected }
   }
-  const addFiles = async (list: ArrayLike<File> | null | undefined) => {
-    if (!list || list.length === 0) return
+  /** 认领一份读盘工单:挂起计数 +1,settle 时并入**当时活着的这个实例**并如实 toast 拒绝。
+   *  已卸载则原地让位 —— 结果已经随工单交给了接手方,这里再写就是覆盖活人的状态。 */
+  const trackRead = (read: PendingAttachmentRead) => {
     // 计数(不是布尔):并发的多次粘贴/拖拽各自 settle,最后一个读完才算不再挂起。
     setAttachmentReads((n) => n + 1)
-    try {
-      await readFilesInto(list)
-    } finally {
+    inflightReads.add(read)
+    void read.then((result) => {
+      inflightReads.delete(read)
       setAttachmentReads((n) => n - 1)
-    }
+      if (disposed) return
+      const merged = mergeAttachments(attachments(), result.accepted)
+      setAttachments(merged.next)
+      const bad = [...result.rejected, ...merged.rejected]
+      if (bad.length)
+        pushToast({
+          kind: "error",
+          title: t("alpha.composer.attachmentsRejected"),
+          detail: bad.map((item) => `${item.name}: ${attachmentReason(item.reason)}`).join("; "),
+        })
+    })
   }
+  const addFiles = (list: ArrayLike<File> | null | undefined) => {
+    if (!list || list.length === 0) return
+    // 工单**必须** settle:不 settle 则挂起计数永不归零,工作区切换从此被永久拦住。每文件的读失败
+    // readFiles 内部已转成 rejected,这里只兜意料外的抛错 —— 兜也如实报出来,不静默吞(C28)。
+    const names = Array.from(list).map((f, i) => f.name || t("alpha.composer.pastedAttachment", { count: i + 1 }))
+    trackRead(
+      readFiles(list).catch(() => ({
+        accepted: [],
+        rejected: names.map((name) => ({ name, reason: t("alpha.composer.attachmentReadFailed") })),
+      })),
+    )
+  }
+  // #663:接手上一实例交下来的在途工单(离开 draft 时随草稿快照移交)。已经 settle 的照接 ——
+  // promise 记着结果,接手即并入;「读完时正好没人活着」因此不再是丢失,只是晚一点并进来。
+  props.initialPendingReads?.forEach(trackRead)
   const removeAttachment = (id: string) => setAttachments((xs) => xs.filter((a) => a.id !== id))
   const hasDragFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files")
 

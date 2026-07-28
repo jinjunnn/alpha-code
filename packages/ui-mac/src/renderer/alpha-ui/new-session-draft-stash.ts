@@ -9,7 +9,10 @@
 // `server\0directory` 正是被切掉的那把钥匙。
 //
 // 形制 = 会话页那份 `session-workspace/session-dock-core.ts` 的 remount stash:**卸载时捕获、
-// 取回即消费**。Solid 1.9.10(本仓锁定版本)上 keyed `Show` 的次序经独立探针确认为
+// 取回即消费**。#663 起还捎带**在途读盘工单**:附件读盘是异步的,读完的结果属于这条 draft,不属于
+// 发起读取的那个组件实例 —— 工单跟着草稿往返,接手的实例读完并进自己的列表。已卸载的实例因此
+// 不需要(也不许)再往这里写:那会覆盖掉当前活着那个实例的快照。
+// Solid 1.9.10(本仓锁定版本)上 keyed `Show` 的次序经独立探针确认为
 // 「旧 cleanup → 新实例 create → 新实例 mount」,`startTransition` 只影响旧 DOM 何时不再可见,
 // 不会让新实例先于旧 cleanup 取暂存 —— 所以这条次序可以依赖。
 //
@@ -20,19 +23,26 @@
 // 「建 draft → 输入 → 关掉」重复做不至于无界堆积(单条还可能挂着附件 dataURL)的收口点。
 // 剪掉的只可能是**已经不存在的 draft**,不是还活着的用户内容 —— 与被否掉的静默 LRU 不同。
 
-import type { ComposerAttachment } from "./composer-attachments-core"
+import type { ComposerAttachment, PendingAttachmentRead } from "./composer-attachments-core"
 import type { MentionPart } from "./composer-autocomplete-core"
 
 export type ComposerDraftSnapshot = {
   text: string
   mentions: readonly MentionPart[]
   attachments: readonly ComposerAttachment[]
+  /** #663:卸载那一刻还没读完的附件。跟着 draft 走 —— 下一个实例接手,读完并进它的列表。 */
+  pendingReads: readonly PendingAttachmentRead[]
 }
 
 const drafts = new Map<string, ComposerDraftSnapshot>()
 
+// 还有读盘没落地 = 这条 draft 有内容(只是还看不见)。漏了这条判断,「粘贴后立刻离开」会因为
+// 文本为空被当成空草稿删掉,正在读的附件跟着蒸发。
 const isEmpty = (draft: ComposerDraftSnapshot) =>
-  draft.text.length === 0 && draft.mentions.length === 0 && draft.attachments.length === 0
+  draft.text.length === 0 &&
+  draft.mentions.length === 0 &&
+  draft.attachments.length === 0 &&
+  draft.pendingReads.length === 0
 
 export const newSessionDraftStash = {
   /** 卸载时捕获;空快照 = 清除(用户自己清空了,不该在重挂后复活)。不截断、不淘汰。 */
@@ -42,7 +52,12 @@ export const newSessionDraftStash = {
       drafts.delete(draftID)
       return
     }
-    drafts.set(draftID, { text: draft.text, mentions: [...draft.mentions], attachments: [...draft.attachments] })
+    drafts.set(draftID, {
+      text: draft.text,
+      mentions: [...draft.mentions],
+      attachments: [...draft.attachments],
+      pendingReads: [...draft.pendingReads],
+    })
   },
   /** 取回即消费(与会话页 stash 同语义):重挂后新实例拿走,不留副本。 */
   restore(draftID: string): ComposerDraftSnapshot | undefined {
