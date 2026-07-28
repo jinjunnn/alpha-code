@@ -8,7 +8,9 @@
 // 矩阵 = 每个**已登记覆盖层** × 每类**导航路径**:
 //   主轨(侧栏点击,与目标是否等于当前路由无关)
 //     · 点当前正在看的那个会话 ← owner 报的动作;**URL 不变**,只靠 route effect 永远关不掉
-//     · 点另一个会话 / 点「新对话」/ 点首页 / 点项目行的「+」
+//     · 点另一个会话 / 点「新对话」/ 点首页
+//     · 点项目行的「+」——这一格的会话创建**保持未决**:关闭是导航**意图**的一部分,不能等
+//       异步结果;用立即 resolve 的桩会把「关闭写在 await 之后」这个缺陷藏掉
 //   兜底轨(不经侧栏点击)
 //     · 程序化导航(深链、面板内回跳)
 //     · 同 pathname 换 search(`/new-session?draftId=…` 的 draft 切换)—— 只看 pathname 会漏
@@ -118,7 +120,7 @@ const DIR = "/Users/tester/proj-a"
 const CURRENT_SESSION = "ses-current"
 const OTHER_SESSION = "ses-other"
 
-function makeProjects(): AlphaProjectsApi {
+function makeProjects(overrides?: { createSession?: () => Promise<string | undefined> }): AlphaProjectsApi {
   const project: AlphaProject = {
     id: "prj-a",
     worktree: DIR,
@@ -133,7 +135,7 @@ function makeProjects(): AlphaProjectsApi {
   return {
     store: { projects: [project], ready: true, error: false },
     reload: async () => {},
-    createSession: async () => "ses-created",
+    createSession: overrides?.createSession ?? (async () => "ses-created"),
     startChat: async () => "ses-created",
     sdk: () => undefined,
     renameSession: async () => true,
@@ -177,12 +179,12 @@ afterEach(() =>
 afterAll(() => GlobalRegistrator.unregister())
 
 /** 挂真实组合体,并把位置摆到 `startPath`(冷启动落地 effect 自己会 navigate 一次,故挂完再摆)。 */
-async function mount(startPath: string) {
+async function mount(startPath: string, projectOverrides?: Parameters<typeof makeProjects>[0]) {
   const history = runtime.createMemoryHistory()
   history.set({ value: startPath })
   const host = document.getElementById("root")!
   disposers.push(
-    solidWeb.render(() => runtime.OverlayCloseHarness({ history, projects: makeProjects() }), host),
+    solidWeb.render(() => runtime.OverlayCloseHarness({ history, projects: makeProjects(projectOverrides) }), host),
   )
   await flush()
   history.set({ value: startPath })
@@ -227,10 +229,14 @@ const OTHER_HREF = sessionHref(DIR, OTHER_SESSION)
 const DRAFT_A = hrefFor.newSession("draft-a")
 const DRAFT_B = hrefFor.newSession("draft-b")
 
-/** 导航路径矩阵的另一维。`act` 拿到 history 以便执行**不经侧栏**的程序化导航。 */
+/**
+ * 导航路径矩阵的另一维。`act` 拿到 history 以便执行**不经侧栏**的程序化导航;
+ * `projects` 覆盖数据层桩,用来钉住"关闭必须发生在导航**意图**处、不等异步结果"。
+ */
 const NAVIGATIONS: Array<{
   name: string
   track: "click" | "route"
+  projects?: Parameters<typeof makeProjects>[0]
   act: (history: ReturnType<typeof runtime.createMemoryHistory>) => void
 }> = [
   // 主轨:侧栏点击。第一格是本票的核心缺口 —— 目标 == 当前路由,URL 一个字符都不变。
@@ -238,7 +244,15 @@ const NAVIGATIONS: Array<{
   { name: "点另一个会话", track: "click", act: () => click(query(`a.alpha-session[href="${OTHER_HREF}"]`)) },
   { name: "点「新对话」", track: "click", act: () => click(navItem(zh["alpha.sidebar.newChat"])) },
   { name: "点首页(品牌区)", track: "click", act: () => click(query(".alpha-sidebar-brand-mark")) },
-  { name: "点项目行的新对话「+」", track: "click", act: () => click(query(".alpha-project-add")) },
+  // 会话创建**保持未决**:生产 startChat 的导航在 `await createSession(...)` 之后,而真实创建是
+  // 多个 await(use-projects.ts:294-307)。用立即 resolve 的桩会把「关闭发生在 await 之后」这个
+  // 缺陷藏掉(#655 审计 Major 就是这么漏的)——所以这一格断言的是**点下去当场就关**,不等 resolve。
+  {
+    name: "点项目行的新对话「+」(会话创建未决 → 必须当场关,不等结果)",
+    track: "click",
+    projects: { createSession: () => new Promise<string | undefined>(() => {}) },
+    act: () => click(query(".alpha-project-add")),
+  },
   // 兜底轨:不经侧栏点击(深链、程序化导航、自动化面板内「回跳会话」)。
   { name: "程序化导航到首页(深链/面板内回跳)", track: "route", act: (history) => history.set({ value: hrefFor.home() }) },
   { name: "同 pathname 换 search(draft 之间切换)", track: "route", act: (history) => history.set({ value: DRAFT_B }) },
@@ -267,7 +281,7 @@ describe("REQ-126 AC2:覆盖层随导航关闭(真实宿主 × 真实点击)", (
   for (const overlay of OVERLAYS) {
     for (const nav of NAVIGATIONS) {
       test(`${overlay.name} × ${nav.name} → 覆盖层 DOM 消失`, async () => {
-        const history = await mount(nav.name.includes("draft") ? DRAFT_A : CURRENT_HREF)
+        const history = await mount(nav.name.includes("draft") ? DRAFT_A : CURRENT_HREF, nav.projects)
 
         await open(overlay)
         // 前提自检:没先打开就断言"消失"是空闸门。

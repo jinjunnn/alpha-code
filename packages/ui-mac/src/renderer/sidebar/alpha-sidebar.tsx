@@ -612,6 +612,11 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   // sidebar) so the new conversation appears in the project immediately, then navigate into it.
   // If creation fails we fall back to opencode's draft route.
   const startChat = async (worktree: string) => {
+    // REQ-126 AC2(#655 审计 Major):这条路径的导航发生在 `await createSession(...)` **之后**,
+    // 而真实创建是多个 await(use-projects.ts:294-307)。只靠下面 navigate 里的咽喉点,慢请求
+    // 或未决请求期间覆盖层会一直压在目标页面上 —— owner 报的原始症状在这条路径上照样复现。
+    // 关闭属于**导航意图**,不属于导航结果,所以提到第一个 await 之前。
+    closeAllOverlays()
     setProjectExpanded(worktree, true)
     const id = await createSession(worktree)
     if (id) navigate(sessionHref(worktree, id))
