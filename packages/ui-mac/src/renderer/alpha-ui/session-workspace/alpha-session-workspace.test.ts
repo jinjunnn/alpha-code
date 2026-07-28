@@ -111,10 +111,12 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
     // 顶栏即窗口拖拽区;交互件全部从拖拽区挖出。
     expect(css.match(/\.a-swk-topbar \{[^}]*\}/)?.[0]).toContain("app-region: drag")
     expect(css).toMatch(/\.a-swk-topbar :is\([^)]*button[^)]*\) \{[^}]*app-region: no-drag/)
-    // 浮动终端/审查开关(上游命令,alpha 会话面死控件)在工作区挂载时隐藏;
-    // 侧栏折叠时顶栏左侧让位红绿灯 + 浮动工具簇。
+    // REQ-126 AC7(#658):浮动终端/审查开关整块退休 —— 原来 #574 只是用 CSS 把它在会话页
+    // **遮**掉(命令随上游 session 叶退役,新对话页那份照样可见且无效)。控件没了,遮它的规则
+    // 也必须没有:留着一条指向已删控件的隐藏规则,下次有人复活控件时会以为它还被管着。
+    // 顶栏本身的行为闸(真挂载 + 真点)在 shell-commands.test.ts。
     const sidebarCss = readFileSync(join(import.meta.dir, "../../sidebar/sidebar.css"), "utf8")
-    expect(sidebarCss).toContain("body:has([data-alpha-session-workspace]) .alpha-topbar-right")
+    expect(sidebarCss.replace(/\/\*[\s\S]*?\*\//g, "")).not.toContain("alpha-topbar-right")
     expect(sidebarCss).toContain('body[data-alpha-sidebar="collapsed"] .a-swk-topbar')
   })
 

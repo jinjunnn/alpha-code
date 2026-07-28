@@ -68,6 +68,8 @@
 2	packages/ui-mac	src/renderer/alpha-ui/reduced-motion-ratchet.test.ts	-	reduced-motion 棘轮:新动效必须尊重降级偏好
 7	packages/ui-mac	src/renderer/alpha-ui/alpha-session-search.test.ts	-	REQ-126 CODE-F:真实壳里 command.palette 确实被注册且侧栏按钮真能触发,跳转 href 带结果来源 server 身份
 12	packages/ui-mac	src/renderer/sidebar/start-draft.test.ts	-	REQ-126 AC1/AC4/AC5:新对话与冷启动落地都不再经上游 legacy admission 路由。挂真实 AppInterface + 生产 AlphaSidebar,点真实「新对话」,以 MutationObserver + 每轮采样断言「出现 data-alpha-new-session 之前,上游左栏与 alpha 会话工作区一次都没挂过」;首条用例是控制组(直接进 /<dir>/session 断言两者确实会出现),没有它后面全是空绿。另含同源 fail-closed(WSL / loopback http 隧道)与两处等待的 barrier 用例。下界 = 实际条数 12,不留余量:留余量则删一格仍能过
+10	packages/ui-mac	src/renderer/sidebar/shell-commands.test.ts	-	REQ-126 AC7:真实壳里逐入口触发 —— 保留/改接入口断言可观察结果(设置面 DOM / 目录选择 / 真实路由),退休入口断言 DOM 不存在,桌面菜单发布面逐条要求真注册。下界=实际条数,删任一格即红
+1	packages/ui-mac	src/main/desktop-menu-publication.test.ts	-	REQ-126 AC7:起子进程跑 test-component/desktop-menu-publication.cases.ts(mock electron 跑真 createMenu,把真原生菜单**整个**点一遍,发出的命令 id 集必须恰好等于发布面 shared/desktop-menu-policy)。本文件直接执行判据并钉住子进程用例条数下界 11,故 delegates_to = '-'
 1	packages/ui-mac	src/renderer/sidebar/overlay-close.test.ts	-	REQ-126 AC2 覆盖层随导航关闭:挂真实覆盖层宿主 × 真实侧栏点击的参数化矩阵(含「点当前正在看的那个会话」这条 URL 不变的路径)。判据在 test-component/overlay-close.cases.ts,由本文件起子进程**直接执行**并钉住条数下界 —— 不是委派,故 delegates_to = '-'
 35	packages/ui-mac	src/shared/route-authority-ratchet.test.ts	packages/ui-mac/src/shared/route-deep-link-consumer.test.ts,packages/ui-mac/src/shared/route-upstream-shape.test.ts	route authority **源码**棘轮 —— 抬头自陈主判据不在本文件,故两个受托方必须在册
 7	packages/ui-mac	src/shared/route-deep-link-consumer.test.ts	-	受托:真跑 createDeepLinkConsumer,断言导航目标 == manifest 独立推导的 href(route authority 主判据)

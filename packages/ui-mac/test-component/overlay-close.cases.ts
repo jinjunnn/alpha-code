@@ -66,7 +66,9 @@ mock.module("@opencode-ai/ui/theme/context", () => ({
 // 本闸门不测"建出什么 draft",只测"点下去覆盖层当场消失",所以给最小替身;`newDraft` 故意**保持
 // 未决**,与「点项目行的 +」那格同理 —— 立即 resolve 会把「关闭写在 await 之后」的缺陷藏掉。
 mock.module("../src/renderer/alpha-ui/providers", () => ({
-  useCommand: () => ({ options: [], trigger: () => {}, show: () => {}, hide: () => {} }),
+  // `register` 是侧栏挂载期真会调的(REQ-126 AC7 的壳级命令注册);这里的替身只需存在,
+  // 注册本身的真实判据在 src/renderer/sidebar/shell-commands.test.ts(真实命令总线)。
+  useCommand: () => ({ options: [], register: () => {}, trigger: () => {}, show: () => {}, hide: () => {} }),
   // 侧栏用 `ServerConnection.key` 派生内嵌 sidecar 的稳定 key(不硬编码字面量);这里给同结果的
   // 最小替身,与下面 useServer 的 key 对齐,否则同源判定会把本闸门的 server 当成"别的 server"。
   ServerConnection: { key: () => "sidecar" },

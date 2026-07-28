@@ -182,11 +182,6 @@ const Chevron = () => (
     <path d="M6 9l6 6 6-6" />
   </svg>
 )
-const ShieldSolid = () => (
-  <svg class="a-ic a-ic-sm" viewBox={ico} style={{ fill: "currentColor", stroke: "none" }}>
-    <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
-  </svg>
-)
 const ShieldAsk = () => (
   <svg class="a-ic a-ic-sm" viewBox={ico}>
     <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
@@ -244,21 +239,20 @@ function AddButton(props: { onOpen: () => void; expanded: boolean }) {
   )
 }
 
-/* ── 权限 chip:full/ask 驱动引擎 autoaccept 命令;readonly = 提交时 agent 参数 ── */
-const permLabel = (mode: PermMode) => mode === "full" ? t("alpha.composer.permFull") : mode === "ask" ? t("alpha.composer.permAsk") : t("alpha.composer.permReadonly")
+/* ── 权限 chip:ask = 引擎默认(命中权限就弹审批);readonly = 提交时强制只读 agent ──
+ * REQ-126 AC7(#658):第三档「全自动」已退休。它发的 `permissions.autoaccept.enable/.disable`
+ * 两个 id 上游根本没有(上游只有单个 `permissions.autoaccept`,且注册处随 session 叶退役),而
+ * 提交层只对 `readonly` 分支 —— 于是「全自动」与「询问」产出完全相同的请求。留着它就是界面上
+ * 一个点了不算数的开关。真正的自动放行要接权限引擎,是新能力,另立需求。 */
+const permLabel = (mode: PermMode) => (mode === "ask" ? t("alpha.composer.permAsk") : t("alpha.composer.permReadonly"))
 
 type CommandApi = ReturnType<typeof useCommand>
 
-export function PermChip(props: { command: CommandApi }) {
+export function PermChip() {
   const { isOpen, toggle, close } = useChip()
   let btn: HTMLButtonElement | undefined
   const pick = (m: PermMode) => {
     setComposerPerm(m)
-    try {
-      props.command.trigger(m === "full" ? "permissions.autoaccept.enable" : "permissions.autoaccept.disable")
-    } catch {
-      /* command may be unregistered on home — perm 仍是提交参数的真源 */
-    }
     close()
   }
   return (
@@ -272,9 +266,6 @@ export function PermChip(props: { command: CommandApi }) {
         onClick={(e) => (stop(e), toggle())}
       >
         <Switch fallback={<ShieldAsk />}>
-          <Match when={composerPerm() === "full"}>
-            <ShieldSolid />
-          </Match>
           <Match when={composerPerm() === "readonly"}>
             <ShieldEye />
           </Match>
@@ -285,15 +276,6 @@ export function PermChip(props: { command: CommandApi }) {
       <Show when={isOpen()}>
         <ChipPopover anchor={btn} align="left" minWidth={230} role="menu" onEscape={close}>
           <div class="a-pop-label" role="presentation">{t("alpha.composer.permissions")}</div>
-          <button
-            class="a-pop-item"
-            classList={{ "is-on": composerPerm() === "full" }}
-            role="menuitemradio"
-            aria-checked={composerPerm() === "full"}
-            onClick={() => pick("full")}
-          >
-            <ShieldSolid /> {t("alpha.composer.permFull")} <span class="a-pop-desc">{t("alpha.composer.permFullHint")}</span>
-          </button>
           <button
             class="a-pop-item"
             classList={{ "is-on": composerPerm() === "ask" }}
@@ -1462,7 +1444,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       </Show>
       <div class="a-comp-bar">
         <AddButton expanded={auto.assembleOpen()} onOpen={() => auto.toggleAssemble()} />
-        <PermChip command={command} />
+        <PermChip />
         <PlanChip />
         <div class="a-comp-grow" />
         {/* 上下文用量 ring(session:sessionDock 从 typed 通道计算注入;事实不足 = null 不渲染;

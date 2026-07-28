@@ -37,8 +37,6 @@ export const dict = {
   "alpha.sidebar.home": "Home",
   "alpha.sidebar.back": "Back",
   "alpha.sidebar.forward": "Forward",
-  "alpha.sidebar.terminal": "Terminal",
-  "alpha.sidebar.review": "Review",
   "alpha.sidebar.plugins": "Extension Hub",
   "alpha.sidebar.automation": "Automation",
   "alpha.sidebar.automationSoon": "Automation — coming soon",
@@ -1019,8 +1017,6 @@ export const dict = {
 
   "alpha.composer.assemble": "Assemble: references · attachments · mode (same menu as @)",
   "alpha.composer.permissions": "Runtime permissions",
-  "alpha.composer.permFull": "Full access",
-  "alpha.composer.permFullHint": "Allow all",
   "alpha.composer.permAsk": "Ask for approval",
   "alpha.composer.permAskHint": "Ask each time",
   "alpha.composer.permReadonly": "Read-only",

@@ -4,11 +4,7 @@ import { closeChips, PermChip } from "./alpha-composer"
 export { render }
 
 export function PermChipHarness() {
-  const command = {
-    options: [],
-    trigger() {},
-  } as unknown as Parameters<typeof PermChip>[0]["command"]
-  return <PermChip command={command} />
+  return <PermChip />
 }
 
 // combobox(textarea ↔ autocomplete Menu)的无障碍证据**不在这里**:harness 自建的 textarea

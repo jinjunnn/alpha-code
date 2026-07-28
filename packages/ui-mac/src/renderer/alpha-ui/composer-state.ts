@@ -20,7 +20,12 @@ export type ComposerModel = ModelRef & {
 
 export type ComposerAgent = { name: string; description?: string }
 
-export type PermMode = "full" | "ask" | "readonly"
+/** REQ-126 AC7(#658):曾经还有第三档 `full`(「全自动」)。它是**空承诺** —— 提交层
+ *  (buildPromptRequest)只对 `readonly` 分支,`full` 与 `ask` 产出**逐字节相同**的请求;chip 唯一
+ *  的"生效"路径是发上游 `permissions.autoaccept.enable/.disable`,而上游只有单个
+ *  `permissions.autoaccept`,这两个 id 从来不存在,且其注册处随 session 叶一起退役。真做「全自动」
+ *  = 接权限引擎自动放行,是新能力,不在本票射程内 → 退休该档,不留一个点了不算数的开关。 */
+export type PermMode = "ask" | "readonly"
 
 /** 只读档的真载体(REQ-028:静态权限档 edit/bash deny 的引擎 agent)。 */
 export const READONLY_AGENT = "alpha-readonly"
