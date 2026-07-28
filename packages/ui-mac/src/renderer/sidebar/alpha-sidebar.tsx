@@ -7,7 +7,7 @@
 
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { useLocation, useNavigate } from "@solidjs/router"
+import { useLocation, useNavigate, type NavigateOptions } from "@solidjs/router"
 import { useCommand } from "../alpha-ui/providers"
 import { ProjectAvatar, type ProjectAvatarVariant } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
@@ -36,7 +36,7 @@ import {
 } from "./sidebar-state"
 import { type AlphaProject, type AlphaSession, type AlphaProjectsApi } from "./use-projects"
 import type { AuthState, AccountSummary } from "../../preload/types"
-import { extHubOpen, setExtHubOpen, toggleExtHub } from "../extensions/ext-hub-state"
+import { setExtHubOpen, toggleExtHub } from "../extensions/ext-hub-state"
 import { setAutomationOpen, toggleAutomation } from "../automations/automation-state"
 import { dismissMenu, dismissMenuOnEscape, focusFirstMenuItem } from "./menu-a11y"
 
@@ -125,11 +125,30 @@ function sessionDisplayTitle(title: string): string {
   return title
 }
 
+// REQ-126 AC2(#655):当前**已登记**的全页覆盖层就这两个(产物工作台已随 #654 下线)。
+// 刻意不建 overlay union 状态机(方案基线 S2:rev1 的设计已被审计判过度工程并撤销)——
+// 新增覆盖层时把它加进这里,漏加由 overlay-close 闸门的参数化矩阵判红,不假装架构能挡。
+function closeAllOverlays(): void {
+  setExtHubOpen(false)
+  setAutomationOpen(false)
+}
+
 export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   const { store, reload, createSession, renameSession, shareSession, deleteSession, copySession } = props.projects
-  const navigate = useNavigate()
+  const routerNavigate = useNavigate()
   const location = useLocation()
   const command = useCommand()
+
+  // REQ-126 AC2 主轨(#655):覆盖层的关闭挂在侧栏导航的**咽喉点**,而不是逐个按钮的 onClick。
+  // 旧代码把互斥只写在两个 nav 按钮的内联 onClick 里 —— 逐点枚举对**新入口默认放行**,于是
+  // 会话行 / 新对话 / 首页 / 项目行都绕过了它。侧栏一切「要去某处」都经这一个 navigate,所以
+  // 在这里关一次即可,且**与目标是否等于当前路由无关**:点当前正在看的那个会话 URL 不变,
+  // 下面那条 route effect 根本不触发 —— owner 报的正是这个动作。
+  const navigate = (to: string | number, options?: Partial<NavigateOptions>): void => {
+    closeAllOverlays()
+    if (typeof to === "number") routerNavigate(to)
+    else routerNavigate(to, options)
+  }
 
   // Platform auth state, pushed from main (alpha-auth.ts). The footer button reflects it: signed
   // out → start the browser OAuth flow; signed in → show the account and sign out. web is the
@@ -422,16 +441,18 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     return {}
   })
 
-  // The customization hub (定制中心) is a full-content overlay. The user expects the sidebar to
-  // "win": clicking any sidebar item that navigates (a project, a session, new chat, home) should
-  // dismiss the hub and land on that target. We watch the raw pathname (not the reduced route()
-  // memo, which collapses home and new-session to the same value) and close the hub whenever it
-  // changes, guarded so the mount run and same-location re-renders never close a freshly-opened hub.
-  let lastNavPath: string | undefined
+  // REQ-126 AC2 兜底轨(#655):非点击的导航 —— 深链、程序化导航、自动化面板内「回跳会话」——
+  // 不经上面那个 navigate 咽喉点,靠这条 effect 收口。两点订正:
+  //   · 从「只关定制中心」扩到关**全部**已登记覆盖层(自动化以前根本没人关);
+  //   · 监听键从 pathname 扩到 pathname + search —— 新对话是 `/new-session?draftId=…`,
+  //     只看 pathname 会漏掉 draft 之间的切换。
+  // 用 raw location(而不是收敛过的 route() memo,后者把 home 与 new-session 折成同一个值)。
+  // 首帧那次运行不算导航(guard `!== undefined`),否则刚打开的覆盖层会被自己关掉。
+  let lastNavKey: string | undefined
   createEffect(() => {
-    const path = location.pathname
-    if (lastNavPath !== undefined && path !== lastNavPath && extHubOpen()) setExtHubOpen(false)
-    lastNavPath = path
+    const key = `${location.pathname}${location.search}`
+    if (lastNavKey !== undefined && key !== lastNavKey) closeAllOverlays()
+    lastNavKey = key
   })
 
   // Keep the open session marked "viewed" at its latest activity, so it never shows its own unread
