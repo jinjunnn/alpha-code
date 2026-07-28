@@ -13,6 +13,11 @@
   owner approval for that exact mutation.
 - Runtime-loaded `.claude/rules/` is an execution asset, not ordinary docs.
   Report conflicts with code/contracts; do not silently rewrite the rules.
+- Repointing any production path from one engine generation's API to another
+  (v1 `session.*` ↔ v2 `v2.session.*`, config channels, permission events, and
+  the rest) is its own Issue, its own PR, its own ADR, and its own behavioral
+  gate — never a rider on a feature change. Rules and per-clause PR checks:
+  [`.claude/rules/adrs/ADR-037-engine-generation-switch-is-its-own-change.md`](.claude/rules/adrs/ADR-037-engine-generation-switch-is-its-own-change.md).
 - `.remember/` is ignored local state with zero authority and must not be
   committed. Do not delete a user's local memory unless explicitly requested.
 
