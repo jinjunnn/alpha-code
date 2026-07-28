@@ -20,6 +20,7 @@ import { createDefaultWorkspaceDir } from "./default-workspace"
 import { newSessionDraftStash } from "./new-session-draft-stash"
 import { AlphaWorkspaceChip, visibleWorkspaces, workspaceLabel } from "./workspace-chip"
 import { Banner } from "./Banner"
+import { pushToast } from "./Toast"
 import { t } from "../i18n"
 import "./home.css"
 
@@ -40,6 +41,7 @@ export function AlphaNewSession(props: {
   const activeWs = createMemo(() => directory() || defaultWs())
   const wsLabel = createMemo(() => (activeWs() ? workspaceLabel(projects(), activeWs()) : ""))
   const [wsOpen, setWsOpen] = createSignal(false)
+  const [attachmentReadPending, setAttachmentReadPending] = createSignal(false)
 
   // deep link `?prompt=` 只预填一次:挂载时取值即从 URL 清除,reload 不重复消费(REQ-086 AC#4)。
   const initialPrompt = untrack(() => {
@@ -48,8 +50,19 @@ export function AlphaNewSession(props: {
     return text
   })
   // 切目录 = 整叶重挂,composer 的文本/mention/附件是组件本地信号 —— 取回叶外暂存(按 draftID
-  // keyed,跨目录稳定)。首次挂载无暂存时才用 deep link 的预填。
+  // keyed,跨目录稳定;取回即消费)。首次挂载无暂存时才用 deep link 的预填。
   const stashed = untrack(() => newSessionDraftStash.restore(props.draftId))
+
+  // 切目录会重挂整叶。附件还在 FileReader 里的那段窗口,内容既不在 composer 的信号里、也无处
+  // 可捕获(旧实例 cleanup 先跑,读完的回调写不回任何地方)—— 这时**拦下切换并明说**,读完再放
+  // 行。宁可让用户等一下,也不能让附件无声消失(基线不变量 6)。
+  const selectWorkspace = (dir: string) => {
+    if (attachmentReadPending()) {
+      pushToast({ kind: "info", title: t("alpha.newSession.attachmentReadPending") })
+      return
+    }
+    tabs.updateDraft(props.draftId, { directory: dir })
+  }
 
   return (
     <div class="a-ui a-home a-home--page" data-alpha-new-session>
@@ -82,8 +95,13 @@ export function AlphaNewSession(props: {
                 initialText={stashed?.text ?? initialPrompt}
                 initialMentions={stashed?.mentions}
                 initialAttachments={stashed?.attachments}
-                onDraftChange={(draft) => newSessionDraftStash.capture(props.draftId, draft)}
-                onSubmitted={(id) => props.promoteDraft({ directory: dir, sessionId: id })}
+                onDraftSnapshot={(draft) => newSessionDraftStash.capture(props.draftId, draft)}
+                onAttachmentReadPending={setAttachmentReadPending}
+                onSubmitted={(id) => {
+                  // 已经发出去了,没有回访可言:晋升前清掉这条 draft 的暂存。
+                  newSessionDraftStash.forget(props.draftId)
+                  props.promoteDraft({ directory: dir, sessionId: id })
+                }}
               />
             )}
           </Show>
@@ -95,7 +113,7 @@ export function AlphaNewSession(props: {
             value={activeWs()}
             open={wsOpen()}
             onOpenChange={setWsOpen}
-            onSelect={(dir) => tabs.updateDraft(props.draftId, { directory: dir })}
+            onSelect={selectWorkspace}
           />
         </div>
       </div>

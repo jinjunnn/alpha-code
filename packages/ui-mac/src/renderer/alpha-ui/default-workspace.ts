@@ -10,7 +10,7 @@
 
 import { createResource } from "solid-js"
 
-export async function readDefaultWorkspaceDir(): Promise<string | undefined> {
+async function readDefaultWorkspaceDir(): Promise<string | undefined> {
   try {
     const dir = await window.api.workspaceDefaultDir()
     return dir || undefined

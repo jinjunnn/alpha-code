@@ -837,6 +837,7 @@ export const dict = {
   "alpha.newSession.title": "New session",
   "alpha.newSession.directoryPending": "Draft directory is not ready",
   "alpha.newSession.directoryLoading": "Waiting for the draft state",
+  "alpha.newSession.attachmentReadPending": "An attachment is still loading — switching workspaces would discard it. Try again in a moment.",
 
   "alpha.onboarding.title": "Welcome to alpha-code",
   "alpha.onboarding.subtitle": "Start your first project in three steps",

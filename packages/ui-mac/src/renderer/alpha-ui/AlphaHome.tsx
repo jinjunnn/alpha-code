@@ -38,22 +38,27 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
   const [chosenWs, setChosenWs] = createSignal<string | undefined>(undefined)
   const [wsOpen, setWsOpen] = createSignal(false)
 
-  // REQ-071/ADR-025:无项目/未选时默认落 ~/Alpha(路径查询不建目录;lazy 供给在真正开会话时
-  // 由 use-projects 经 workspaceEnsureDefault 触发)。既有用户有项目照旧(仍第一个项目优先)。
-  // ⚠️ ADR-025 的 2026-07-28 修订已把「新对话未显式选择 ⇒ ~/Alpha」定为规则,首页这条优先级与
-  // 之同向冲突但**本次未改**(改它会连带动启动期解析时序与 provisional_to_real 探针,属
-  // REQ-109/110 面)。已在该修订的「落点与残留」里登记,别当成已收口。
+  // REQ-071/ADR-025(2026-07-28 修订):未显式选择 ⇒ **默认对话目录 `~/Alpha` 权威**。原先是
+  // 「第一个项目优先、默认目录兜底」,即新对话的落点由一个用户从未选过的历史值决定 —— owner
+  // 拍板推翻,首页与新对话页同一口径(路径查询不建目录;lazy 供给在真正开会话时由 use-projects
+  // 经 workspaceEnsureDefault 触发)。要别的目录就在 chip 里显式选。
   const defaultWs = createDefaultWorkspaceDir()
-  const activeWs = createMemo(() => chosenWs() ?? visibleProjects()[0]?.worktree ?? defaultWs())
+  const activeWs = createMemo(() => chosenWs() ?? defaultWs() ?? visibleProjects()[0]?.worktree)
   const activeWsSource = createMemo<"chosen" | "project" | "default" | "none">(() =>
-    chosenWs() ? "chosen" : visibleProjects()[0]?.worktree ? "project" : defaultWs() ? "default" : "none",
+    chosenWs() ? "chosen" : defaultWs() ? "default" : visibleProjects()[0]?.worktree ? "project" : "none",
   )
+  // REQ-109/110 启动探针:首页先显示一个临时工作区、随后换成真正的那个 —— 这段可感知跳变仍然
+  // 存在,只是方向随上面的改判翻了个个儿(过去是 default→project,现在是 project→default,取决
+  // 于项目列表与默认目录哪个先到)。所以探针**保留但改成方向无关**:任何「已解析出的工作区又
+  // 换了身份」都记一次,并把 from/to 的来源一并带上,让分析侧自己分辨是哪一种。
+  // (钉死旧方向 = 留一个永不触发的死探针,那正是本 REQ 在清的「说谎的拓扑」。)
   let previousWorkspace: { value: string | undefined; source: ReturnType<typeof activeWsSource> } | undefined
   createEffect(() => {
     const current = { value: activeWs(), source: activeWsSource() }
     if (
-      previousWorkspace?.source === "default" &&
-      current.source === "project" &&
+      previousWorkspace &&
+      previousWorkspace.source !== "chosen" &&
+      current.source !== "chosen" &&
       previousWorkspace.value &&
       current.value &&
       previousWorkspace.value !== current.value
@@ -62,7 +67,9 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
         candidate: "A",
         from: previousWorkspace.value,
         to: current.value,
-        trigger: "projects-ready",
+        fromSource: previousWorkspace.source,
+        toSource: current.source,
+        trigger: "workspace-resolved",
       })
     previousWorkspace = current
   })

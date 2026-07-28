@@ -8,14 +8,14 @@
 // 为什么按 draftID keyed:draftID 跨目录切换稳定(`updateDraft` 只改 directory),而
 // `server\0directory` 正是被切掉的那把钥匙。
 //
-// 为什么是**写穿**(每次变更即存)而不是会话页那种「卸载时捕获」
-// (`session-workspace/session-dock-core.ts` 的 createComposerDraftStash):会话页的重挂由 alpha
-// 自己的 `<Show keyed>` 驱动,卸载先于挂载成立;这里的重挂由**上游**在 `startTransition` 里改
-// store 触发,新旧实例的 dispose/mount 次序不是我们能保证的事实。写穿 + 取回不消费 ⇒ 两种次序
-// 下结果相同,不押注一个没验过的时序。
+// 形制 = 会话页那份 `session-workspace/session-dock-core.ts` 的 remount stash:**卸载时捕获、
+// 取回即消费**。Solid 1.9.10(本仓锁定版本)上 keyed `Show` 的次序经独立探针确认为
+// 「旧 cleanup → 新实例 create → 新实例 mount」,`startTransition` 只影响旧 DOM 何时不再可见,
+// 不会让新实例先于旧 cleanup 取暂存 —— 所以这条次序可以依赖。
 //
-// 取回不消费的代价是条目会留下:容量 LRU 上限收着;draft 晋升成会话后该 draftID 不再出现,
-// 陈旧条目自然被淘汰。
+// **这里刻意没有任何容量帽和长度帽**:两者都是「静默丢用户内容」,正是本票要消灭的东西。
+// 生命周期靠取回即消费 + draft 晋升成会话时 `forget()` 收敛;draft 被关掉而从未回访会留下一条,
+// 属有界残留(每个未回访 draft 一条),不换成静默淘汰。
 
 import type { ComposerAttachment } from "./composer-attachments-core"
 import type { MentionPart } from "./composer-autocomplete-core"
@@ -26,37 +26,33 @@ export type ComposerDraftSnapshot = {
   attachments: readonly ComposerAttachment[]
 }
 
-const CAPACITY = 8
-const MAX_TEXT_LENGTH = 20_000
-
-function isEmpty(draft: ComposerDraftSnapshot) {
-  return draft.text.length === 0 && draft.mentions.length === 0 && draft.attachments.length === 0
-}
-
 const drafts = new Map<string, ComposerDraftSnapshot>()
 
+const isEmpty = (draft: ComposerDraftSnapshot) =>
+  draft.text.length === 0 && draft.mentions.length === 0 && draft.attachments.length === 0
+
 export const newSessionDraftStash = {
-  /** 变更即写;空快照 = 清除该 draft 的暂存(用户自己清空了,不该在重挂后复活)。 */
+  /** 卸载时捕获;空快照 = 清除(用户自己清空了,不该在重挂后复活)。不截断、不淘汰。 */
   capture(draftID: string, draft: ComposerDraftSnapshot) {
     if (!draftID) return
-    drafts.delete(draftID) // 重插到队尾:Map 保持插入序 → 队首=最旧,用作 LRU
-    if (isEmpty(draft)) return
-    drafts.set(draftID, {
-      text: draft.text.length > MAX_TEXT_LENGTH ? draft.text.slice(0, MAX_TEXT_LENGTH) : draft.text,
-      mentions: [...draft.mentions],
-      attachments: [...draft.attachments],
-    })
-    while (drafts.size > CAPACITY) {
-      const oldest = drafts.keys().next().value
-      if (oldest === undefined) break
-      drafts.delete(oldest)
+    if (isEmpty(draft)) {
+      drafts.delete(draftID)
+      return
     }
+    drafts.set(draftID, { text: draft.text, mentions: [...draft.mentions], attachments: [...draft.attachments] })
   },
-  /** 取回**不消费**:新实例可能先于旧实例的 dispose 挂载,消费会让后来的 dispose 无从写回。 */
+  /** 取回即消费(与会话页 stash 同语义):重挂后新实例拿走,不留副本。 */
   restore(draftID: string): ComposerDraftSnapshot | undefined {
-    return draftID ? drafts.get(draftID) : undefined
+    if (!draftID) return undefined
+    const draft = drafts.get(draftID)
+    if (draft !== undefined) drafts.delete(draftID)
+    return draft
   },
-  /** 测试隔离用;生产无调用点(容量 LRU 负责回收)。 */
+  /** draft 晋升成会话(或显式丢弃)时清理 —— 内容已经发出去了,没有回访可言。 */
+  forget(draftID: string) {
+    if (draftID) drafts.delete(draftID)
+  },
+  /** 测试隔离用。 */
   resetForTests() {
     drafts.clear()
   },

@@ -565,14 +565,17 @@ export type AlphaComposerProps = {
   /** REQ-125 C558:卸载时回报当前草稿(seam dock per-identity 暂存用);门翻转卸载 composer
    *  时据此捕获正在输入的草稿,门翻回时经 `initialText` 注入,使卸载不等于不可恢复的丢失。 */
   onDraftCapture?: (text: string) => void
-  /** REQ-126:草稿**变更即回报**(文本 + mention + 附件)。给「重挂次序不可控」的宿主用 ——
-   *  新对话页切目录由上游在 startTransition 里重挂整叶,卸载与挂载谁先谁后不是可依赖的事实,
-   *  所以那里不能像会话页一样只在卸载时捕获。宿主未传即无开销。 */
-  onDraftChange?: (draft: {
+  /** REQ-126:卸载时回报**完整**草稿(文本 + mention + 附件)。与 `onDraftCapture` 同一时机、
+   *  同一份 sending 判据,只是内容更全 —— 新对话页切目录会重挂整叶,只留文本仍然是丢内容。 */
+  onDraftSnapshot?: (draft: {
     text: string
     mentions: readonly MentionPart[]
     attachments: readonly ComposerAttachment[]
   }) => void
+  /** REQ-126:附件正在被 FileReader 读取。读取未完成时 composer 里还没有这份附件,此刻重挂
+   *  必丢(旧实例的 cleanup 已跑完,读完的回调写不回任何地方)。宿主据此**拦住**会导致重挂的
+   *  操作(切目录)并明确提示,而不是让它静默消失。 */
+  onAttachmentReadPending?: (pending: boolean) => void
 }
 
 type ReadState<T> = { status: "ready"; data: T } | { status: "error" }
@@ -633,9 +636,11 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   // 仅当发送在途**且文本仍等于已提交快照**(未编辑,正在交付)才跳过——否则切走再翻回会「复活」
   // 已发送文本、用户再发 = 重复发送。textarea 在途仍可编辑:改成不同内容即新草稿,照常捕获(不丢)。
   // 失败保留走既有失败路径(sending 落回 false 后一律捕获,text 留在 composer 信号供原地重试)。
+  // 注:mentions / attachments 在下方声明;cleanup 只在 dispose 时执行,那时两者早已初始化。
   onCleanup(() => {
     if (sending() && text() === submittedText) return
     props.onDraftCapture?.(text())
+    props.onDraftSnapshot?.({ text: text(), mentions: mentions(), attachments: attachments() })
   })
   const [modelChainState, setModelChainState] = createSignal<"loading" | "recovering" | "ready" | "error">(
     "loading",
@@ -651,10 +656,10 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
      不合规(类型/超限)如实 toast 拒绝,绝不静默丢(C28 —— 旧「文件和文件夹」行正是静默吞)。 */
   const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([...(props.initialAttachments ?? [])])
   const [dragOver, setDragOver] = createSignal(false)
-  // REQ-126:草稿写穿(宿主传了才建这个 effect)。提交成功后三者被清空 → 自然写出空快照,
-  // 宿主据此清除暂存,已发出的内容不会在重挂后复活。
-  if (props.onDraftChange)
-    createEffect(() => props.onDraftChange?.({ text: text(), mentions: mentions(), attachments: attachments() }))
+  // REQ-126:有附件正在读盘(FileReader 未 settle)。这段窗口里内容既不在 attachments() 里、
+  // 也无处可存 —— 宿主据此拦住会触发重挂的操作(见 onAttachmentReadPending)。
+  const [attachmentReads, setAttachmentReads] = createSignal(0)
+  createEffect(() => props.onAttachmentReadPending?.(attachmentReads() > 0))
   let fileInputRef: HTMLInputElement | undefined
   let attSeq = 0
   const readAsDataUrl = (f: File) =>
@@ -664,8 +669,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       r.onerror = () => reject(r.error ?? new Error("read"))
       r.readAsDataURL(f)
     })
-  const addFiles = async (list: ArrayLike<File> | null | undefined) => {
-    if (!list || list.length === 0) return
+  const readFilesInto = async (list: ArrayLike<File>) => {
     const rejected: Array<{ name: string; reason: string }> = []
     const accepted: ComposerAttachment[] = []
     for (const f of Array.from(list)) {
@@ -691,6 +695,16 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         title: t("alpha.composer.attachmentsRejected"),
         detail: bad.map((item) => `${item.name}: ${attachmentReason(item.reason)}`).join("; "),
       })
+  }
+  const addFiles = async (list: ArrayLike<File> | null | undefined) => {
+    if (!list || list.length === 0) return
+    // 计数(不是布尔):并发的多次粘贴/拖拽各自 settle,最后一个读完才算不再挂起。
+    setAttachmentReads((n) => n + 1)
+    try {
+      await readFilesInto(list)
+    } finally {
+      setAttachmentReads((n) => n - 1)
+    }
   }
   const removeAttachment = (id: string) => setAttachments((xs) => xs.filter((a) => a.id !== id))
   const hasDragFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files")

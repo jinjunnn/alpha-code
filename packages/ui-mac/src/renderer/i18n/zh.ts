@@ -836,6 +836,7 @@ export const dict = {
   "alpha.newSession.title": "新会话",
   "alpha.newSession.directoryPending": "草稿目录未就绪",
   "alpha.newSession.directoryLoading": "等待草稿状态加载",
+  "alpha.newSession.attachmentReadPending": "附件还在读取,此刻切换工作区会丢掉它 —— 稍等一下再切",
   "alpha.onboarding.title": "欢迎来到 alpha-code",
   "alpha.onboarding.subtitle": "三步开始你的第一个项目",
   "alpha.onboarding.signIn": "登录账号",

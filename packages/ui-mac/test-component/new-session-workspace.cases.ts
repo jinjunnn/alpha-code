@@ -73,6 +73,8 @@ mock.module("../src/renderer/alpha-ui/providers", () => ({
 const { AlphaNewSession } = await import("../src/renderer/alpha-ui/alpha-new-session")
 const { AlphaHome } = await import("../src/renderer/alpha-ui/AlphaHome")
 const { newSessionDraftStash } = await import("../src/renderer/alpha-ui/new-session-draft-stash")
+const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
+const { dict: zh } = await import("../src/renderer/i18n/zh")
 const { resetComposerModelProjection, setComposerAgent, setComposerModel } = await import(
   "../src/renderer/alpha-ui/composer-state"
 )
@@ -224,7 +226,35 @@ const attachment = (id: string, name: string): ComposerAttachment => ({
 })
 const mention: MentionPart = { type: "file", path: "src/a.ts", content: "@src/a.ts" }
 
-function DraftLeaf(props: { projects: AlphaProjectsApi }) {
+const toastTitles = () => Array.from(document.querySelectorAll(".a-toast-body b")).map((el) => el.textContent)
+function mountToasts() {
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(render(() => createComponent(ToastViewport, {}) as never, host))
+}
+
+/** 可控 FileReader:readAsDataURL 挂起,直到测试显式 release —— 复刻「附件还在读盘」那段窗口。 */
+class PendingFileReader {
+  static pending: PendingFileReader[] = []
+  onload: (() => void) | null = null
+  onerror: (() => void) | null = null
+  error: unknown = null
+  result: string | null = null
+  readAsDataURL() {
+    PendingFileReader.pending.push(this)
+  }
+  release(url: string) {
+    this.result = url
+    this.onload?.()
+  }
+}
+function pasteFile(el: HTMLTextAreaElement, file: File) {
+  const event = new Event("paste", { bubbles: true, cancelable: true })
+  Object.defineProperty(event, "clipboardData", { value: { files: [file] } })
+  el.dispatchEvent(event)
+}
+
+function DraftLeaf(props: { projects: AlphaProjectsApi; draftId?: string }) {
   // 上游 createDraftRoute 的 keyed 包装(packages/app/src/app.tsx):directory 变 ⇒ 整叶重挂。
   return createComponent(solid.Show, {
     get when() {
@@ -234,7 +264,7 @@ function DraftLeaf(props: { projects: AlphaProjectsApi }) {
     get children() {
       return createComponent(AlphaNewSession, {
         projects: props.projects,
-        draftId: "draft-1",
+        draftId: props.draftId ?? "draft-1",
         promoteDraft: () => {},
       })
     },
@@ -366,6 +396,94 @@ describe("REQ-126 CODE-D 切目录不吞内容(真重挂)", () => {
     ])
   })
 
+  test("20,001 字切目录后一字不少(暂存不得有任何长度帽)", async () => {
+    const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }))
+    await flush()
+    const long = "字".repeat(20_001)
+    const before = textarea(host)!
+    type(before, long)
+    await flush()
+
+    await openChipAndPick(host, "beta")
+
+    const after = textarea(host)!
+    expect(after).not.toBe(before) // 真重挂
+    expect(after.value.length).toBe(20_001) // 先报长度:截断时的失败信息才读得懂
+    expect(after.value).toBe(long)
+  })
+
+  test("附件还在读盘时切目录被拦下并明确提示;读完再切,附件跟着走", async () => {
+    mountToasts()
+    const realFileReader = globalThis.FileReader
+    ;(globalThis as { FileReader: unknown }).FileReader = PendingFileReader
+    try {
+      const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }))
+      await flush()
+      const before = textarea(host)!
+      type(before, "看这张图")
+      pasteFile(before, new File(["png-bytes"], "shot.png", { type: "image/png" }))
+      await flush()
+      expect(PendingFileReader.pending).toHaveLength(1) // 读取真的挂起了
+      expect(attachmentNames(host)).toEqual([]) // 此刻附件还不在 composer 里
+
+      // 挂起期间切目录:必须被拦下(draft 目录没变、没重挂),且用户看得到原因。
+      chipButton(host).click()
+      await flush()
+      popItems(host).find((button) => (button.textContent ?? "").includes("beta"))!.click()
+      await flush()
+      await flush()
+      expect(updateDraftCalls).toEqual([])
+      expect(draft().directory).toBe("/ws/a")
+      expect(textarea(host)).toBe(before) // 没重挂
+      expect(toastTitles()).toContain(zh["alpha.newSession.attachmentReadPending"])
+
+      // 读完 → 附件落位 → 再切,这次放行且附件随之走。
+      PendingFileReader.pending.splice(0)[0]!.release("data:image/png;base64,shot")
+      await flush()
+      await flush()
+      expect(attachmentNames(host)).toEqual(["shot.png"])
+
+      await openChipAndPick(host, "beta")
+      expect(draft().directory).toBe("/ws/b")
+      expect(textarea(host)).not.toBe(before)
+      expect(textarea(host)!.value).toBe("看这张图")
+      expect(attachmentNames(host)).toEqual(["shot.png"])
+    } finally {
+      ;(globalThis as { FileReader: unknown }).FileReader = realFileReader
+      PendingFileReader.pending.splice(0)
+    }
+  })
+
+  test("9 个 draft 依次输入后回到第 1 个,内容还在(暂存不得有容量帽)", async () => {
+    const api = projectsApi([project("alpha-code", "/ws/a")])
+    for (let i = 1; i <= 9; i++) {
+      const host = mount(() => createComponent(DraftLeaf, { projects: api, draftId: `draft-${i}` }))
+      await flush()
+      type(textarea(host)!, `第 ${i} 个草稿`)
+      await flush()
+      disposers.pop()!() // 离开这个 draft(卸载 = 捕获)
+    }
+    const revisit = mount(() => createComponent(DraftLeaf, { projects: api, draftId: "draft-1" }))
+    await flush()
+    expect(textarea(revisit)!.value).toBe("第 1 个草稿")
+  })
+
+  test("发出去之后不复活:提交成功再回到同一个 draft,composer 是空的", async () => {
+    const api = projectsApi([project("alpha-code", "/ws/a")])
+    const host = mount(() => createComponent(DraftLeaf, { projects: api }))
+    await flush()
+    type(textarea(host)!, "这条已经发出去了")
+    await flush()
+    textarea(host)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    for (let i = 0; i < 20 && startChatCalls.length === 0; i++) await flush()
+    expect(startChatCalls).toHaveLength(1)
+
+    disposers.pop()!() // 晋升 = 叶被换掉(卸载)
+    const revisit = mount(() => createComponent(DraftLeaf, { projects: api }))
+    await flush()
+    expect(textarea(revisit)!.value).toBe("")
+  })
+
   test("用户自己清空 ⇒ 切目录后仍然是空的(暂存不复活已删内容)", async () => {
     newSessionDraftStash.capture("draft-1", { text: "早先输入的", mentions: [], attachments: [] })
     const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }))
@@ -380,22 +498,43 @@ describe("REQ-126 CODE-D 切目录不吞内容(真重挂)", () => {
   })
 })
 
-describe("REQ-126 CODE-D chip 抽取后首页行为不变", () => {
-  test("首页 chip 仍列出默认工作区 + 项目 + 打开项目…,选中即改 composer 的提交目标", async () => {
+describe("REQ-126 CODE-D 首页:chip 抽取行为保持 + 默认落 ~/Alpha", () => {
+  test("未显式选择 ⇒ chip 与真实提交目标都是默认对话目录(不是第一个项目)", async () => {
     const host = mount(() =>
       createComponent(AlphaHome, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }),
     )
     await flush()
     await flush()
 
-    expect(chipButton(host).textContent).toContain("alpha-code") // 既有优先级:第一个项目
+    // ADR-025 2026-07-28 改判:有项目的既有用户也一样,未显式选 ⇒ ~/Alpha。
+    expect(chipButton(host).textContent).toContain("Alpha")
+    expect(chipButton(host).textContent).not.toContain("alpha-code")
+
+    type(textarea(host)!, "开工")
+    await flush()
+    textarea(host)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    for (let i = 0; i < 20 && startChatCalls.length === 0; i++) await flush()
+
+    // 判据是**真实提交目标**,不只是 chip 显示:显示对了而提交仍落旧项目才是最坏的假绿。
+    expect(startChatCalls).toHaveLength(1)
+    expect(startChatCalls[0]!.directory).toBe(DEFAULT_WORKSPACE)
+  })
+
+  test("chip 抽取行为保持:仍列默认工作区 + 项目 + 打开项目…,显式选中即改提交目标", async () => {
+    const host = mount(() =>
+      createComponent(AlphaHome, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }),
+    )
+    await flush()
+    await flush()
 
     chipButton(host).click()
     await flush()
     const labels = popItems(host).map((button) => button.textContent ?? "")
     expect(labels[0]).toContain("Alpha") // 默认工作区常驻首项(未注册为项目)
+    expect(popItems(host)[0]?.className).toContain("is-on") // 未选时选中态在它身上
     expect(labels.some((label) => label.includes("alpha-code"))).toBe(true)
     expect(labels.some((label) => label.includes("beta"))).toBe(true)
+    expect(labels.at(-1)).toContain(zh["alpha.home.openProjectEllipsis"]) // 「打开项目…」仍在末位
 
     popItems(host).find((button) => (button.textContent ?? "").includes("beta"))!.click()
     await flush()
@@ -407,6 +546,6 @@ describe("REQ-126 CODE-D chip 抽取后首页行为不变", () => {
     for (let i = 0; i < 20 && startChatCalls.length === 0; i++) await flush()
 
     expect(startChatCalls).toHaveLength(1)
-    expect(startChatCalls[0]!.directory).toBe("/ws/b") // 选中的工作区,不是第一个项目
+    expect(startChatCalls[0]!.directory).toBe("/ws/b") // 显式所选压过默认目录
   })
 })
