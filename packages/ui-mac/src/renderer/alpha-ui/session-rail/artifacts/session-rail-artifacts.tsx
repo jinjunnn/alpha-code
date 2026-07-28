@@ -3,8 +3,10 @@
 // Read-only embed of the REQ-093/094 run-artifact channels for the session's project
 // directory: run discovery = runArtifacts.projectUsage (manifest truth), cards =
 // runArtifacts.list ∘ deriveCards, verify-before-open = runArtifacts.verify (REQ-093 AC#4).
-// The rail shows the latest run — a quick look at what this session's work produced; run
-// management, cloud download, and cross-run browsing stay in the artifact workbench page.
+// The rail shows the latest run — a quick look at what this session's work produced. Run
+// management, cloud download, and cross-run browsing are NOT offered anywhere: REQ-126 AC3
+// (#654) retired the full-page artifact workbench, so those are unbuilt capabilities tracked
+// on follow-up #660, not features living somewhere else.
 // I8: the panel is keyed on the session identity triple, so a session/workspace/server
 // switch remounts it and every in-flight async result dies with the old mount. The
 // timeline→artifacts linkage mount point consumes `rail.artifactTarget` (focusArtifact),
@@ -75,8 +77,9 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
   const cards = createMemo<ArtifactCard[]>(() => {
     const list = listRes()
     if (!list || !list.ok) return []
-    // No cloud merge in the rail: local manifest truth only ("看一眼"); cloud listing,
-    // download, and cross-run management stay in the workbench page.
+    // No cloud merge in the rail: local manifest truth only ("看一眼"). Cloud listing,
+    // download, and cross-run management are not provided at all — the full-page workbench
+    // that used to carry them is retired (REQ-126 AC3 / #654); see follow-up #660.
     return deriveCards({ entries: list.entries, legacyFiles: list.legacyFiles })
   })
 

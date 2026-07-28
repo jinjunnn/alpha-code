@@ -137,7 +137,6 @@ export const FRONTEND_SURFACE_MANIFEST = [
       { label: "新会话", target: "route.session-admission" },
       { label: "定制中心", target: "overlay.extensions" },
       { label: "自动化", target: "overlay.automations" },
-      { label: "产物", target: "overlay.artifacts" },
     ],
   },
   {
@@ -182,19 +181,9 @@ export const FRONTEND_SURFACE_MANIFEST = [
       { label: "打开运行会话", target: "route.session" },
     ],
   },
-  {
-    id: "overlay.artifacts",
-    label: "产物工作台",
-    description: "Alpha 自有全页 Portal；在当前路由之上浏览 run 与 artifact。",
-    owner: "alpha.artifact-workbench",
-    lineage: "alpha",
-    target: "alpha",
-    mount: { kind: "overlay", host: "alpha-artifact-workbench-root" },
-    availability: "default",
-    source: "packages/ui-mac/src/renderer/alpha-ui/artifact-workbench/artifact-workbench.tsx",
-    entrypoints: ["侧栏产物", "产物通知"],
-    transitions: [{ label: "关闭", target: "current-route" }],
-  },
+  // REQ-126 AC3（#654）：`overlay.artifacts`（全页产物工作台）已下线 —— 侧栏入口与全页挂载都删了，
+  // 它不再是一个可组合的 surface。产物只经会话右栏 artifacts 面板到达，那属于 route.session 的组合，
+  // 与其余三个右栏面板一样不单列条目。
   {
     id: "inline.composer",
     label: "会话 Composer",

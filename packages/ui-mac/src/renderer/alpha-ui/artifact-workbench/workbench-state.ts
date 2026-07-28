@@ -1,35 +1,21 @@
-// Artifact Workbench 的会话级开合/badge/选中状态 — REQ-094(#186)。
+// Artifact Workbench 的会话级开合/选中状态 — REQ-094(#186)。
 // 开合镜像 ext-hub-state.ts / automation-state.ts:模块级单例信号,不落盘(启动恒关闭)。
-// badge:cloud run 回流落盘(CloudRunWatcher)→ +1;打开 Workbench 即清零 —— 发现不抢焦点
-// (REQ-094 AC#2:用户正在看别的内容时不被强制切换,只有 badge + toast)。
 // 选中(run/artifact)按项目目录持久化到 localStorage(REQ-094 AC#3:重启后从 REQ-093 manifest
 // 恢复同一 run/artifact —— 存的只是 id,真相仍来自 manifest,恢复时校验存在性)。
+//
+// REQ-126 AC3(#654):badge 通道已删除。侧栏「产物」入口与全页挂载下线后,再没有能让 badge
+// 归零的入口 —— CloudRunWatcher 继续喂它就是一个永不归零的计数,故连同 toggle 一起退休。
 
 import { createSignal } from "solid-js"
 
 const [open, setOpen] = createSignal(false)
-const [badge, setBadge] = createSignal(0)
 
 export function workbenchOpen(): boolean {
   return open()
 }
 
 export function setWorkbenchOpen(value: boolean): void {
-  if (value) setBadge(0)
   setOpen(value)
-}
-
-export function toggleWorkbench(): void {
-  setWorkbenchOpen(!open())
-}
-
-export function workbenchBadge(): number {
-  return badge()
-}
-
-/** CloudRunWatcher 在 run 回流落盘成功后调用:Workbench 未打开时 badge +1(打开着 = 已在看)。 */
-export function notifyWorkbenchRunSaved(): void {
-  if (!open()) setBadge((n) => n + 1)
 }
 
 // ---------------------------------------------------------------------------
