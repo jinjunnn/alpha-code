@@ -90,6 +90,8 @@ mock.module("@opencode-ai/session-ui/markdown", () => ({
 // session-timeline.test.ts spawn 在独立 bun 子进程运行,module mock 不泄漏进主进程。
 const BINDING_SESSION_ID = "ses_live"
 const sdkPromptCalls: unknown[] = []
+/** #652:v2 durable 端点保留在假 sidecar 上,只为断言「续钮一次都没走过它」。 */
+const v2PromptCalls: unknown[] = []
 let sdkPromptImpl: () => Promise<unknown> = () => Promise.resolve({})
 const bindingData: {
   message: Record<string, unknown[]>
@@ -100,11 +102,18 @@ const bindingData: {
 mock.module("@opencode-ai/app", () => ({
   useServerSDK: () => () => ({
     client: {
+      // #652:续钮与 composer 共用同一条发送入口 = v1 session.promptAsync。
+      session: {
+        promptAsync: (args: unknown) => {
+          sdkPromptCalls.push(args)
+          return sdkPromptImpl()
+        },
+      },
       v2: {
         session: {
           prompt: (args: unknown) => {
-            sdkPromptCalls.push(args)
-            return sdkPromptImpl()
+            v2PromptCalls.push(args)
+            return Promise.resolve({ data: {} })
           },
         },
       },
@@ -1643,9 +1652,10 @@ describe("#589 真实继续生成闸门(生产绑定层挂载,SDK 层观察)", (
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
 
-  test("续钮执行生产 handler:v2.session.prompt 收到本会话 ID 与继续文案", async () => {
+  test("续钮执行生产 handler:v1 session.promptAsync 收到本会话 ID 与继续文案(#652)", async () => {
     primeInterruptedBinding()
     sdkPromptImpl = () => Promise.resolve({})
+    v2PromptCalls.length = 0
     const host = mountBinding()
     await settle()
 
@@ -1654,8 +1664,27 @@ describe("#589 真实继续生成闸门(生产绑定层挂载,SDK 层观察)", (
     cont!.click()
     await settle()
 
-    expect(sdkPromptCalls).toEqual([{ sessionID: BINDING_SESSION_ID, prompt: { text: "继续" } }])
+    expect(sdkPromptCalls).toEqual([
+      { sessionID: BINDING_SESSION_ID, parts: [{ type: "text", text: "继续" }] },
+    ])
+    // 续写与 composer 同代次:新引擎那条链一次都不碰。
+    expect(v2PromptCalls).toEqual([])
     expect(host.querySelector(".a-tl-int-failed")).toBeNull()
+  })
+
+  test("续发被引擎装进 { error } 信封时不当成功:就地失败提示(#652)", async () => {
+    primeInterruptedBinding()
+    // v1 SDK 对 HTTP 失败不 reject,而是回 { error } —— 不翻译成 rejection 就又是一次静默。
+    sdkPromptImpl = () => Promise.resolve({ error: { status: 404 } })
+    const host = mountBinding()
+    await settle()
+
+    host.querySelector<HTMLButtonElement>(".a-tl-int-continue")!.click()
+    await settle()
+
+    const failed = host.querySelector(".a-tl-int-failed")
+    expect(failed).not.toBeNull()
+    expect(failed!.textContent).toBe("发送失败,请重试")
   })
 
   test("续发失败(admission 前拒绝,无任何 session_status 事件)不再静默:就地失败提示,重试成功即清除", async () => {

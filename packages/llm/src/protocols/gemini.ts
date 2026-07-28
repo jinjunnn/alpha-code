@@ -1,6 +1,5 @@
 import { Effect, Schema } from "effect"
 import { Route } from "../route/client"
-import { Auth } from "../route/auth"
 import { Endpoint } from "../route/endpoint"
 import { Framing } from "../route/framing"
 import { Protocol } from "../route/protocol"
@@ -505,7 +504,9 @@ export const route = Route.make({
   endpoint: Endpoint.path(({ request }) => `/models/${request.model.id}:streamGenerateContent?alt=sse`, {
     baseURL: DEFAULT_BASE_URL,
   }),
-  auth: Auth.none,
+  // alpha-code#652: the base template declares no credential of its own. Falling through to
+  // the route default (Auth.unset) makes an unconfigured deployment refuse before the socket
+  // opens instead of emitting a headerless request the remote answers with 401.
   framing: Framing.sse,
 })
 

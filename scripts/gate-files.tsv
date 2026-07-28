@@ -39,6 +39,9 @@
 8	packages/ext	src/gen-skill-paths.test.ts	packages/ui-mac/src/main/ext-receipt-v2.test.ts	REQ-100 skill 注入门:只投影 main 派生的允许集(decoder 强度用例已移至受托方)
 2	packages/ext	src/cloud-contract-hook.test.ts	-	ext 侧契约解码钩子:契约不兼容必须 loud
 
+# ── llm(路由/凭证层;CI 不整包跑上游 llm 测试,只点名 alpha 自有的闸)────────────
+3	packages/llm	test/auth-fail-closed.test.ts	-	#652 凭证 fail-closed:未声明 auth 的 route 不得裸奔(0 次 HTTP + 具名失败),显式 Auth.none 仍放行
+
 # ── ui-mac ───────────────────────────────────────────────────────────────────
 6	packages/ui-mac	src/main/stream-read-hygiene.test.ts	packages/opencode/test/tool/alpha-websearch-failure.test.ts	#647 类级禁令:全仓禁用 Stream.runForEachWhile(行为闸委派给受托方)
 9	packages/ui-mac	src/main/websearch-copies.test.ts	packages/opencode/test/tool/alpha-websearch-failure.test.ts,packages/core/test/alpha-websearch-sovereignty.test.ts,packages/ui-mac/src/main/sidecar-env.test.ts,packages/ui-mac/src/main/alpha-config-injection.test.ts	本地 web search 主权闸位置锁 + 新副本普查网(运行时证据与 env/注入判据均委派)
@@ -54,7 +57,8 @@
 4	packages/ui-mac	src/renderer/alpha-ui/upstream-anchors.test.ts	-	REQ-012 上游 DOM 锚点契约:上游 sync 删/改名即红
 8	packages/ui-mac	src/renderer/alpha-ui/surface-seam-contract.test.ts	-	ADR-027 typed surface seam 存活:re-freeze 丢 seam 即红
 5	packages/ui-mac	src/renderer/alpha-ui/contrast-ratchet.test.ts	-	C21 AC4 对比度棘轮:改回 AA 以下即红
-12	packages/ui-mac	src/renderer/alpha-ui/takeover-adapter-coexistence.test.ts	packages/ui-mac/src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts	REQ-125 遗留 DOM 接管件零引用棘轮(行为层闸委派)
+12	packages/ui-mac	src/renderer/alpha-ui/takeover-adapter-coexistence.test.ts	packages/ui-mac/src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts,packages/ui-mac/src/renderer/alpha-ui/session-workspace/session-second-send.test.ts	REQ-125 遗留 DOM 接管件零引用棘轮 + #652 单一代次棘轮(行为层闸委派)
+1	packages/ui-mac	src/renderer/alpha-ui/session-workspace/session-second-send.test.ts	-	#652 受托:同一会话连发三条,生产 composer+timeline 真挂载,断言渲染出的回复(源码棘轮的行为判据)
 5	packages/ui-mac	src/renderer/alpha-ui/session-timeline/cards/cards-contract.test.ts	-	REQ-125 C6 cards 静态棘轮(内容引擎/外链形态)
 4	packages/ui-mac	src/renderer/alpha-ui/permission-mount-ratchet.test.ts	packages/ui-mac/src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts	permission 挂载面棘轮(运行时行为闸委派)
 2	packages/ui-mac	src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts	-	受托:单一审批面的**运行时**行为闸(两个棘轮的主判据)

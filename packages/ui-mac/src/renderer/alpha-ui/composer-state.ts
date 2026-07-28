@@ -29,43 +29,10 @@ export const READONLY_AGENT = "alpha-readonly"
  *  它们仍可被程序化 prompt(调度器/只读档),隐藏只影响列表。 */
 export const INTERNAL_AGENTS = new Set(["alpha-automation", "alpha-automation-standard", READONLY_AGENT])
 
-/* ── 会话档位推送账本(REQ-125 C7 审计轮:switchAgent 可逆性)──────────────────
- * v2 引擎无 per-prompt agent(SessionInput 只存 prompt+delivery),档位是会话级属性;
- * composer 在发送前经 typed switchAgent 落档。本账本只记「composer 自己推送的非默认档」,
- * 退出 plan/readonly 时据此把会话档收回默认 —— 只回滚自己写过的,不碰用户在别处设置的档。
- *
- * 决策源纪律(审计第 4 轮 Major):账本比对与 CAS 判定一律以**权威实时读**为准
- * (typed SDK `v2.session.get`,见 alpha-composer readSessionAgent)——serverSync 缓存
- * 不消费 `session.next.agent.switched` 事件,永不更新,只可作 UI 展示,禁作决策源。
- * 权威读到与账本不同的档 = 他处改档 → 立即弃权删条目。残余边界(已登记):v2 未暴露
- * 档位变更版本号,两次发送之间的 out-and-back 同名改档(A→B→A)客户端不可判;当前
- * alpha 会话页 composer 是唯一改档 surface,该窗口无真实写入方;引擎侧补版本号后收紧。
- * 有界(I7):超限丢最旧。 */
-
-/** 引擎默认档(core agents.select 的最终回退;composer 的 null 档语义即它)。 */
-export const DEFAULT_AGENT = "build"
-
-const pushedAgents = new Map<string, string>()
-const PUSHED_AGENT_LIMIT = 32
-
-export function recordPushedAgent(sessionID: string, agent: string | null): void {
-  pushedAgents.delete(sessionID)
-  if (agent === null || agent === DEFAULT_AGENT) return
-  pushedAgents.set(sessionID, agent)
-  if (pushedAgents.size > PUSHED_AGENT_LIMIT) {
-    const oldest = pushedAgents.keys().next().value
-    if (oldest !== undefined) pushedAgents.delete(oldest)
-  }
-}
-
-export function pushedAgentFor(sessionID: string): string | undefined {
-  return pushedAgents.get(sessionID)
-}
-
-/** 测试隔离用。 */
-export function resetPushedAgents(): void {
-  pushedAgents.clear()
-}
+/* #652:会话档位推送账本(recordPushedAgent / pushedAgentFor / DEFAULT_AGENT)随 v2 durable
+ * 发送一起退役。它只为「v2 引擎无 per-prompt agent、档位是会话级属性」而存在:composer 发送前
+ * 经 switchAgent 落档、失败再 CAS 回滚。回到 v1 promptAsync 后,agent 是**每条消息自带的字段**
+ * (SessionPrompt.PromptInput.agent),会话上没有需要被推送与回滚的中间状态,账本无主体。 */
 
 /* ── signals(模块级 = 所有渲染面共享)──────────────────────────────────────── */
 

@@ -25,7 +25,7 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("36 pass")
+    expect(output).toContain("37 pass")
     expect(output).toContain("0 fail")
   })
 })

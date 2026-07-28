@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Schema, Stream } from "effect"
 import { LLM, LLMResponse } from "../src"
-import { Route, Endpoint, LLMClient, Protocol, type FramingDef } from "../src/route"
+import { Auth, Route, Endpoint, LLMClient, Protocol, type FramingDef } from "../src/route"
 import { Model } from "../src/schema"
 import { testEffect } from "./lib/effect"
 import { dynamicResponse } from "./lib/http"
@@ -71,6 +71,8 @@ const fake = Route.make({
   id: "fake",
   protocol: fakeProtocol,
   endpoint: Endpoint.path("/chat"),
+  // alpha-code#652: a credential-free deployment is now an explicit declaration, not a default.
+  auth: Auth.none,
   framing: fakeFraming,
 })
 const configuredFake = fake.with({ endpoint: { baseURL: "https://fake.local" } })
@@ -79,6 +81,7 @@ const gemini = Route.make({
   id: "gemini-fake",
   protocol: fakeProtocol,
   endpoint: Endpoint.path("/chat"),
+  auth: Auth.none,
   framing: fakeFraming,
 })
 const configuredGemini = gemini.with({ endpoint: { baseURL: "https://fake.local" } })
@@ -158,6 +161,7 @@ describe("llm route", () => {
           },
         }),
         endpoint: Endpoint.path("/chat", { baseURL: "https://fake.local" }),
+        auth: Auth.none,
         framing: fakeFraming,
       })
 

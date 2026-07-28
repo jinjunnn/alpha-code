@@ -93,7 +93,42 @@ export const config = (name: string) => credentialFromSecret(Config.redacted(nam
 
 export const effect = (load: Effect.Effect<Redacted.Redacted, CredentialError>) => credential(load)
 
+/**
+ * Explicitly declared "this deployment takes no credential". Sending a headerless
+ * request is a *decision*, so it has to be written down: only a provider that names
+ * `auth: Auth.none` gets one.
+ */
 export const none = auth((input) => Effect.succeed(input.headers))
+
+/**
+ * The fail-closed default for a route whose deployment never declared an auth
+ * (alpha-code#652, owner ruling 2026-07-28).
+ *
+ * Previously the default was `none`, which turned "we could not obtain a credential"
+ * into "send an unauthenticated request". The request then leaves the process, the
+ * remote answers 401, and the real fault — a credential channel that went dark — is
+ * reported as a remote rejection at the far end of the pipeline. That is how a whole
+ * class of silent credential regressions stayed invisible.
+ *
+ * Refusing before the socket opens keeps the failure named (`MissingCredentialError`
+ * → `AuthenticationReason{kind:"missing"}`) and local. Known and accepted cost: a
+ * local unauthenticated provider (ollama and friends) must declare `auth: Auth.none`
+ * to work.
+ */
+export const unset = auth((input) => {
+  const model = input.request.model as { id?: unknown; provider?: unknown; route?: { id?: unknown } } | undefined
+  const where = [
+    typeof model?.provider === "string" ? `provider "${model.provider}"` : undefined,
+    typeof model?.route?.id === "string" ? `route "${model.route.id}"` : undefined,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(" ")
+  return Effect.fail(
+    new MissingCredentialError(
+      `no auth declared for ${where || "this route"} — refusing to send an unauthenticated request (declare Auth.none to opt in)`,
+    ),
+  )
+})
 
 export const headers = (input: Headers.Input) =>
   auth((inputAuth) => Effect.succeed(Headers.setAll(inputAuth.headers, input)))

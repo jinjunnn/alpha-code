@@ -1,6 +1,5 @@
 import { Effect, Schema } from "effect"
 import { Route } from "../route/client"
-import { Auth } from "../route/auth"
 import { Endpoint } from "../route/endpoint"
 import { HttpTransport, WebSocketTransport } from "../route/transport"
 import { Protocol } from "../route/protocol"
@@ -977,7 +976,9 @@ export const protocol = Protocol.make({
 })
 
 const endpoint = Endpoint.path<OpenAIResponsesBody>(PATH, { baseURL: DEFAULT_BASE_URL })
-const auth = Auth.none
+// alpha-code#652: the base template declares no credential of its own. Falling through to
+// the route default (Auth.unset) makes an unconfigured deployment refuse before the socket
+// opens instead of emitting a headerless request the remote answers with 401.
 
 export const httpTransport = HttpTransport.sseJson.with<OpenAIResponsesBody>()
 
@@ -986,7 +987,6 @@ export const route = Route.make({
   provider: "openai",
   protocol,
   endpoint,
-  auth,
   transport: httpTransport,
   defaults: { providerOptions: { openai: { store: false } } },
 })
@@ -1014,7 +1014,6 @@ export const webSocketRoute = Route.make({
   provider: "openai",
   protocol,
   endpoint,
-  auth,
   transport: webSocketTransport,
   defaults: { providerOptions: { openai: { store: false } } },
 })

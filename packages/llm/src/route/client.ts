@@ -250,7 +250,9 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
       provider: routeInput.provider === undefined ? undefined : ProviderID.make(routeInput.provider),
       protocol: protocol.id,
       endpoint: routeInput.endpoint,
-      auth: routeInput.auth ?? Auth.none,
+      // alpha-code#652: an undeclared auth fails closed. Sending headerless because no
+      // credential could be resolved is a downgrade, not a fallback — see Auth.unset.
+      auth: routeInput.auth ?? Auth.unset,
       transport: routeInput.transport,
       defaults: routeInput.defaults ?? {},
       body: protocol.body,
@@ -272,7 +274,7 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
           body,
           request,
           endpoint: routeInput.endpoint,
-          auth: routeInput.auth ?? Auth.none,
+          auth: routeInput.auth ?? Auth.unset,
           encodeBody,
           headers: routeInput.headers,
         }),

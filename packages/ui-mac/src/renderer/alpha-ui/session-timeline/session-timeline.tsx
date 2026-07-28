@@ -8,8 +8,8 @@
 // epoch,天然满足 I8;focusArtifact/openFile 接 C4 SessionRailApi(#568 真接线),rail
 // 缺席时两者 undefined → 行/pill 降级纯展示(fail-closed)。rail api 内部以 live 身份
 // 铸造 target 并在会话切换时作废(I8 归 shell)。
-// continueTurn(中断态续钮)接 composer 同一条会话发送入口(v2 durable 输入队列
-// session.prompt),不另建通道;写入面因此需要 typed SDK 客户端(useServerSDK)。
+// continueTurn(中断态续钮)接 composer 同一条会话发送入口(#652 起 = v1
+// session.promptAsync),不另建通道;写入面因此需要 typed SDK 客户端(useServerSDK)。
 import { useServerSDK, useServerSync } from "@opencode-ai/app"
 import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, on } from "solid-js"
@@ -141,16 +141,25 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
         rail.jumpToReview(relative)
       }
     },
-    // 中断态「继续生成」:走 composer 同一条 v2 durable 发送入口。会话不空闲(还在跑/重试)
-    // 时零动作 —— 续写只对已经停下的回合成立,不往在跑的回合里塞输入(fail-closed)。
+    // 中断态「继续生成」:走 composer 同一条发送入口。#652 起那条入口是 v1 session.promptAsync
+    // (与首页 startChat 同一条),不再是 v2 durable 队列 —— 理由见 alpha-composer 的送出段。
+    // 会话不空闲(还在跑/重试)时零动作 —— 续写只对已经停下的回合成立,不往在跑的回合里塞输入
+    // (fail-closed)。
     // 发送失败(SDK 不可得/网络断开/admission 前被拒)不产生任何 session_status 事件,
     // typed 通道呈现不了 —— rejection 原样交给视图,由中断行就地给出失败提示,不静默
-    // 吞掉(审计 R1 Major;async 函数把同步抛错一并折算成 rejection)。
+    // 吞掉(审计 R1 Major;async 函数把同步抛错一并折算成 rejection)。v1 SDK 把 HTTP 失败
+    // 装进 `{ error }` 信封而不是 reject,所以信封必须显式翻译成 rejection —— 否则「引擎拒了」
+    // 会被当成成功,又是一次静默。
     continueTurn: async () => {
       const id = sessionID()
       if (!id) return
       if ((session().data.session_status[id]?.type ?? "idle") !== "idle") return
-      await serverSDK().client.v2.session.prompt({ sessionID: id, prompt: { text: t("alpha.timeline.continuePrompt") } })
+      const result = await serverSDK().client.session.promptAsync({
+        sessionID: id,
+        parts: [{ type: "text", text: t("alpha.timeline.continuePrompt") }],
+      } as never)
+      if ((result as { error?: unknown } | undefined)?.error !== undefined)
+        throw new Error("continue turn was rejected by the engine")
     },
   }
 

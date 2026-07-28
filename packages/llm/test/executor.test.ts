@@ -3,7 +3,7 @@ import { Effect, Fiber, Layer, Random, Ref } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import { Headers, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { LLM, LLMError } from "../src"
-import { LLMClient, RequestExecutor } from "../src/route"
+import { Auth, LLMClient, RequestExecutor } from "../src/route"
 import * as OpenAIChat from "../src/protocols/openai-chat"
 import { dynamicResponse } from "./lib/http"
 import { deltaChunk } from "./lib/openai-chunks"
@@ -429,7 +429,9 @@ describe("RequestExecutor", () => {
     Effect.gen(function* () {
       const attempts = yield* Ref.make(0)
       const model = OpenAIChat.route
-        .with({ endpoint: { baseURL: "https://api.openai.test/v1" } })
+        // alpha-code#652: the bare protocol template no longer defaults to a headerless
+        // request — a fixture that actually executes has to declare its credential.
+        .with({ endpoint: { baseURL: "https://api.openai.test/v1" }, auth: Auth.bearer("fixture") })
         .model({ id: "gpt-4o-mini" })
       const error = yield* LLMClient.generate(LLM.request({ model, prompt: "Say hello." })).pipe(
         Effect.provide(
