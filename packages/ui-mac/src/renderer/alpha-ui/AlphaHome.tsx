@@ -5,11 +5,13 @@
 // 不再 Portal 覆盖 upstream Home(alpha 模式下 upstream Home 叶不挂载,单一 page root);
 // data + send go through the SDK (useAlphaProjects)。
 
-import { createEffect, createMemo, createResource, createSignal, For, Show, onCleanup } from "solid-js"
+import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { type AlphaProjectsApi } from "../sidebar/use-projects"
-import { sessionHref, projectLabel } from "../sidebar/route"
+import { sessionHref } from "../sidebar/route"
 import { AlphaComposer } from "./alpha-composer"
+import { createDefaultWorkspaceDir } from "./default-workspace"
+import { AlphaWorkspaceChip, visibleWorkspaces } from "./workspace-chip"
 import { pushToast } from "./Toast"
 import { Banner } from "./Banner"
 import { useConfigHealth } from "./use-config-health"
@@ -31,20 +33,17 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
   const { store } = props.projects
   const configHealth = useConfigHealth()
 
-  const visibleProjects = createMemo(() => store.projects.filter((p) => p.worktree !== "/"))
+  const visibleProjects = createMemo(() => visibleWorkspaces(store.projects))
 
   const [chosenWs, setChosenWs] = createSignal<string | undefined>(undefined)
   const [wsOpen, setWsOpen] = createSignal(false)
 
   // REQ-071/ADR-025:无项目/未选时默认落 ~/Alpha(路径查询不建目录;lazy 供给在真正开会话时
   // 由 use-projects 经 workspaceEnsureDefault 触发)。既有用户有项目照旧(仍第一个项目优先)。
-  const [defaultWs] = createResource(async () => {
-    try {
-      return await window.api.workspaceDefaultDir()
-    } catch {
-      return undefined
-    }
-  })
+  // ⚠️ ADR-025 的 2026-07-28 修订已把「新对话未显式选择 ⇒ ~/Alpha」定为规则,首页这条优先级与
+  // 之同向冲突但**本次未改**(改它会连带动启动期解析时序与 provisional_to_real 探针,属
+  // REQ-109/110 面)。已在该修订的「落点与残留」里登记,别当成已收口。
+  const defaultWs = createDefaultWorkspaceDir()
   const activeWs = createMemo(() => chosenWs() ?? visibleProjects()[0]?.worktree ?? defaultWs())
   const activeWsSource = createMemo<"chosen" | "project" | "default" | "none">(() =>
     chosenWs() ? "chosen" : visibleProjects()[0]?.worktree ? "project" : defaultWs() ? "default" : "none",
@@ -67,20 +66,6 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
       })
     previousWorkspace = current
   })
-  const activeWsLabel = createMemo(() => {
-    const w = activeWs()
-    const p = visibleProjects().find((x) => x.worktree === w)
-    return p?.name ?? (w ? projectLabel(w) : t("alpha.home.chooseWorkspace"))
-  })
-
-  const onDoc = (e: MouseEvent) => {
-    const target = e.target as Element | null
-    if (target && target.closest(".a-pop-wrap")) return
-    setWsOpen(false)
-  }
-  document.addEventListener("click", onDoc)
-  onCleanup(() => document.removeEventListener("click", onDoc))
-  const stop = (e: Event) => e.stopPropagation()
 
   return (
     <div class="a-ui a-home a-home--page" data-alpha-home>
@@ -126,96 +111,17 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
             }}
           />
 
-          {/* workspace chip */}
-          <div class="a-home-ws">
-            <div class="a-pop-wrap">
-              <button
-                class="a-ws-chip"
-                onClick={(e) => {
-                  stop(e)
-                  setWsOpen(!wsOpen())
-                }}
-              >
-                <FolderIcon /> {activeWsLabel()}
-                <Chevron />
-              </button>
-              <Show when={wsOpen()}>
-                <div class="a-pop a-pop-up" onClick={stop} style={{ "min-width": "240px" }}>
-                  <div class="a-pop-label">{t("alpha.home.workspace")}</div>
-                  {/* REQ-071:默认工作目录 ~/Alpha 常驻可选(未注册为项目时也在) */}
-                  <Show when={defaultWs() && !visibleProjects().some((p) => p.worktree === defaultWs())}>
-                    <button
-                      class="a-pop-item"
-                      classList={{ "is-on": activeWs() === defaultWs() }}
-                      onClick={() => (setChosenWs(defaultWs()), setWsOpen(false))}
-                    >
-                      <span class="a-pico" style={{ background: "var(--a-accent)" }}>
-                        A
-                      </span>
-                      {t("alpha.brand.short")}
-                      <span class="a-pop-desc">{t("alpha.home.defaultWorkspace")}</span>
-                    </button>
-                  </Show>
-                  <For each={visibleProjects()}>
-                    {(p) => (
-                      <button
-                        class="a-pop-item"
-                        classList={{ "is-on": activeWs() === p.worktree }}
-                        onClick={() => (setChosenWs(p.worktree), setWsOpen(false))}
-                      >
-                        <span class="a-pico" style={{ background: p.color || "var(--a-accent)" }}>
-                          {p.name.slice(0, 1).toUpperCase()}
-                        </span>
-                        {p.name}
-                      </button>
-                    )}
-                  </For>
-                  <div class="a-pop-sep" />
-                  <button
-                    class="a-pop-item"
-                    onClick={() => {
-                      setWsOpen(false)
-                      // REQ-068:不再借上游 project.open —— 它只把目录加进上游 layout 的项目列表,
-                      // 而本工作区列表读引擎 project.list(两套不通),观感=选完没反应。改为 alpha
-                      // 自己选目录并**立即切换工作区**;项目在首条消息 startChat(directory) 时由
-                      // 引擎正式注册(chip 标签对未注册目录有 projectLabel 兜底)。取消 = 静默。
-                      void (async () => {
-                        try {
-                          const dir = await window.api.openDirectoryPicker({ title: t("alpha.home.openProject") })
-                          const picked = Array.isArray(dir) ? dir[0] : dir
-                          if (typeof picked === "string" && picked) setChosenWs(picked)
-                        } catch {
-                          pushToast({ kind: "error", title: t("alpha.home.openProjectFailed") })
-                        }
-                      })()
-                    }}
-                  >
-                    <Plus /> {t("alpha.home.openProjectEllipsis")}
-                  </button>
-                </div>
-              </Show>
-            </div>
-          </div>
+          {/* workspace chip —— 与新对话页同源的受控组件(REQ-126 CODE-D) */}
+          <AlphaWorkspaceChip
+            projects={visibleProjects()}
+            defaultWorkspace={defaultWs()}
+            value={activeWs()}
+            open={wsOpen()}
+            onOpenChange={setWsOpen}
+            onSelect={setChosenWs}
+          />
         </div>
       </div>
     </div>
   )
 }
-
-/* ── inline icons ─────────────────────────────────────────────────────────── */
-const ico = "0 0 24 24"
-const Plus = () => (
-  <svg class="a-ic" viewBox={ico}>
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-)
-const Chevron = () => (
-  <svg class="a-ic a-chev" viewBox={ico}>
-    <path d="M6 9l6 6 6-6" />
-  </svg>
-)
-const FolderIcon = () => (
-  <svg class="a-ic a-ic-sm" viewBox={ico}>
-    <path d="M3 7l2-3h5l2 3h7a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" />
-  </svg>
-)

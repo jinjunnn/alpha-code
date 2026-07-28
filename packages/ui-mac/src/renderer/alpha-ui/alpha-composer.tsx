@@ -559,9 +559,20 @@ export type AlphaComposerProps = {
   onSubmitted?: (sessionID: string) => void
   /** REQ-086:一次性预填文本(deep link `?prompt=`),仅初始化时注入,不覆盖用户后续输入。 */
   initialText?: string
+  /** REQ-126:与 `initialText` 同期一次性注入的 mention / 附件(新对话页切目录重挂后的还原)。 */
+  initialMentions?: readonly MentionPart[]
+  initialAttachments?: readonly ComposerAttachment[]
   /** REQ-125 C558:卸载时回报当前草稿(seam dock per-identity 暂存用);门翻转卸载 composer
    *  时据此捕获正在输入的草稿,门翻回时经 `initialText` 注入,使卸载不等于不可恢复的丢失。 */
   onDraftCapture?: (text: string) => void
+  /** REQ-126:草稿**变更即回报**(文本 + mention + 附件)。给「重挂次序不可控」的宿主用 ——
+   *  新对话页切目录由上游在 startTransition 里重挂整叶,卸载与挂载谁先谁后不是可依赖的事实,
+   *  所以那里不能像会话页一样只在卸载时捕获。宿主未传即无开销。 */
+  onDraftChange?: (draft: {
+    text: string
+    mentions: readonly MentionPart[]
+    attachments: readonly ComposerAttachment[]
+  }) => void
 }
 
 type ReadState<T> = { status: "ready"; data: T } | { status: "error" }
@@ -629,7 +640,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const [modelChainState, setModelChainState] = createSignal<"loading" | "recovering" | "ready" | "error">(
     "loading",
   )
-  const [mentions, setMentions] = createSignal<MentionPart[]>([])
+  const [mentions, setMentions] = createSignal<MentionPart[]>([...(props.initialMentions ?? [])])
   const [composing, setComposing] = createSignal(false)
   let taRef: HTMLTextAreaElement | undefined
   const isImeComposing = (e: KeyboardEvent) => e.isComposing || composing() || e.keyCode === 229
@@ -638,8 +649,12 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   /* ── 附件真通道(REQ-078 T2:图片/PDF → dataUrl FilePart;纯核 = composer-attachments-core)──
      入口三通道:弹窗「添加附件」→ 隐藏 <input type=file>;textarea 粘贴;整框拖拽。
      不合规(类型/超限)如实 toast 拒绝,绝不静默丢(C28 —— 旧「文件和文件夹」行正是静默吞)。 */
-  const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([])
+  const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([...(props.initialAttachments ?? [])])
   const [dragOver, setDragOver] = createSignal(false)
+  // REQ-126:草稿写穿(宿主传了才建这个 effect)。提交成功后三者被清空 → 自然写出空快照,
+  // 宿主据此清除暂存,已发出的内容不会在重挂后复活。
+  if (props.onDraftChange)
+    createEffect(() => props.onDraftChange?.({ text: text(), mentions: mentions(), attachments: attachments() }))
   let fileInputRef: HTMLInputElement | undefined
   let attSeq = 0
   const readAsDataUrl = (f: File) =>
