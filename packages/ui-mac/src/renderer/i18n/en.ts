@@ -806,6 +806,11 @@ export const dict = {
   "alpha.common.close": "Close",
   "alpha.common.remove": "Remove",
   "alpha.common.retry": "Retry",
+  // REQ-126 CODE-F:alpha 自有会话搜索面板(壳注册 command.palette)。
+  "alpha.search.title": "Search chats",
+  "alpha.search.placeholder": "Search chats by title…",
+  "alpha.search.hint": "Type to search your chats",
+  "alpha.search.empty": "No chats match that title",
   "alpha.engine.starting": "Starting engine…",
   "alpha.error.reloadRegion": "Reload this area",
   "alpha.error.regionStopped": "{{name}} stopped running",

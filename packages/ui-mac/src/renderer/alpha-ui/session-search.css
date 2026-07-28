@@ -1,0 +1,63 @@
+/* alpha 会话搜索面板。只消费 --a-* tokens,视觉沿用既有 Dialog/Input 体系。 */
+@import "./tokens.css";
+
+.a-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--a-space-3);
+  font-family: var(--a-font-sans);
+}
+
+.a-search-empty {
+  margin: 0;
+  padding: var(--a-space-4) var(--a-space-2);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-sm);
+  text-align: center;
+}
+
+.a-search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.a-search-result {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--a-space-3);
+  padding: var(--a-space-2) var(--a-space-3);
+  border-radius: var(--a-radius-md);
+  color: var(--a-text);
+  text-decoration: none;
+}
+
+.a-search-result:hover {
+  background: var(--a-overlay-hover);
+}
+
+.a-search-result:focus-visible {
+  outline: none;
+  box-shadow: var(--a-ring-focus);
+}
+
+.a-search-result-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--a-text-base);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a-search-result-project {
+  flex: 0 0 auto;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}

@@ -899,7 +899,12 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
               <Icon name="plus" class="alpha-sidebar-nav-icon" />
               <span>{t("alpha.sidebar.newChat")}</span>
             </button>
-            <button type="button" class="alpha-sidebar-nav-item" onClick={() => command.show()}>
+            <button
+              type="button"
+              class="alpha-sidebar-nav-item"
+              data-alpha-sidebar-nav="search"
+              onClick={() => command.show()}
+            >
               <Icon name="magnifying-glass" class="alpha-sidebar-nav-icon" />
               <span>{t("alpha.sidebar.search")}</span>
             </button>

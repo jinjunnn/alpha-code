@@ -238,6 +238,23 @@ export const FRONTEND_SURFACE_MANIFEST = [
     transitions: [{ label: "返回应用", target: "current-route" }],
   },
   {
+    id: "overlay.session-search",
+    label: "会话搜索",
+    description:
+      "Alpha 自有会话搜索；壳内唯一的 command.palette 注册点，按标题过滤已加载会话并按结果来源 server 跳转。",
+    owner: "alpha.session-search",
+    lineage: "alpha",
+    target: "alpha",
+    mount: { kind: "overlay", host: "app-root" },
+    availability: "default",
+    source: "packages/ui-mac/src/renderer/alpha-ui/alpha-session-search.tsx",
+    entrypoints: ["侧栏搜索", "命令面板快捷键"],
+    transitions: [
+      { label: "打开搜到的会话", target: "route.session" },
+      { label: "关闭", target: "current-route" },
+    ],
+  },
+  {
     id: "inline.permission",
     label: "权限确认",
     description: "Alpha 自有确认面读取公开 PermissionV2 请求，并通过 Alpha Dialog 原子提交三态决定。",
