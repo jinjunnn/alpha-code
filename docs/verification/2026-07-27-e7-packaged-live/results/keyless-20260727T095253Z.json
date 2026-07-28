@@ -1,0 +1,207 @@
+{
+  "schema": "alpha-code/e7-packaged-live/v1",
+  "issue": "alpha-code#643",
+  "phase": "keyless",
+  "capturedAt": "2026-07-27T09:52:53.094Z",
+  "finishedAt": "2026-07-27T09:52:58.659Z",
+  "build": {
+    "app": "/Applications/alpha-code.app",
+    "asarSha256": "8706d0c44e17d475ab136717ba9cbbbfad4c968ae34689ed377fdecc19fb43ff",
+    "appMtime": "2026-07-27T09:29:35.418Z",
+    "pinnedCommit": "94a76b669",
+    "appVersion": "1.17.13"
+  },
+  "engine": {
+    "url": "http://127.0.0.1:57128",
+    "version": "1.17.13"
+  },
+  "auth": {
+    "status": "logged-out",
+    "mode": "byok"
+  },
+  "endpoints": {
+    "web": "https://alphacodeone.com",
+    "platform": "https://alpha-gateway.tidelabs.click",
+    "account": "https://account.alphacodeone.com",
+    "cloud": "https://alpha-cloud.tidelabs.click",
+    "mcp": "https://alpha-cloud.tidelabs.click/mcp"
+  },
+  "checks": [
+    {
+      "id": "P0.1",
+      "ac": "preflight",
+      "title": "app under test is the build this evidence directory was cut for",
+      "status": "pass",
+      "criterion": "sha256(app.asar) === 8706d0c44e17d475ab136717ba9cbbbfad4c968ae34689ed377fdecc19fb43ff (alpha @ 94a76b669)",
+      "observed": {
+        "asarPath": "/Applications/alpha-code.app/Contents/Resources/app.asar",
+        "asarSha": "8706d0c44e17d475ab136717ba9cbbbfad4c968ae34689ed377fdecc19fb43ff",
+        "appMtime": "2026-07-27T09:29:35.418Z",
+        "pinnedCommit": "94a76b669"
+      },
+      "required": true,
+      "at": "2026-07-27T09:52:53.165Z"
+    },
+    {
+      "id": "P0.2",
+      "ac": "preflight",
+      "title": "CDP reachable on the packaged app",
+      "status": "pass",
+      "criterion": "http://127.0.0.1:9222/json lists a renderer page target",
+      "observed": {
+        "port": 9222
+      },
+      "required": true,
+      "at": "2026-07-27T09:52:53.169Z"
+    },
+    {
+      "id": "P0.3",
+      "ac": "preflight",
+      "title": "sidecar engine healthy",
+      "status": "pass",
+      "criterion": "GET /global/health → { healthy: true }",
+      "observed": {
+        "url": "http://127.0.0.1:57128",
+        "health": {
+          "healthy": true,
+          "version": "1.17.13"
+        }
+      },
+      "required": true,
+      "at": "2026-07-27T09:52:53.175Z"
+    },
+    {
+      "id": "K0.4",
+      "ac": "preflight",
+      "title": "登出态 —— keyless 兜底取证的硬前提",
+      "status": "pass",
+      "criterion": "auth.getState().status === \"logged-out\" AND <userData>/alpha-secrets/ALPHA_CLOUD_TOKEN is absent",
+      "observed": {
+        "auth": {
+          "status": "logged-out",
+          "mode": "byok"
+        },
+        "cloudTokenFile": {
+          "path": "/Users/tide/Library/Application Support/ai.opencode.desktop.dev/alpha-secrets/ALPHA_CLOUD_TOKEN",
+          "present": false
+        },
+        "apiKeyFile": {
+          "path": "/Users/tide/Library/Application Support/ai.opencode.desktop.dev/alpha-secrets/ALPHA_API_KEY",
+          "present": false
+        },
+        "endpoints": {
+          "web": "https://alphacodeone.com",
+          "platform": "https://alpha-gateway.tidelabs.click",
+          "account": "https://account.alphacodeone.com",
+          "cloud": "https://alpha-cloud.tidelabs.click",
+          "mcp": "https://alpha-cloud.tidelabs.click/mcp"
+        }
+      },
+      "required": true,
+      "at": "2026-07-27T09:52:53.177Z"
+    },
+    {
+      "id": "K1.1",
+      "ac": "AC2 登出态云暗",
+      "title": "no alpha cloud MCP server is registered while logged out",
+      "criterion": "GET /mcp has no \"cloud\" key",
+      "required": true,
+      "status": "pass",
+      "observed": {},
+      "at": "2026-07-27T09:52:53.178Z"
+    },
+    {
+      "id": "K1.2",
+      "ac": "AC2 登出态 keyless 恢复",
+      "title": "the local keyless websearch is no longer denied once the platform stops paying",
+      "criterion": "config.mcp.cloud absent AND config.permission.websearch !== \"deny\"",
+      "required": true,
+      "status": "pass",
+      "observed": {
+        "mcpKeys": []
+      },
+      "at": "2026-07-27T09:52:53.182Z"
+    },
+    {
+      "id": "K1.3",
+      "ac": "AC2 登出态 keyless 兜底",
+      "title": "a BYOK tool-calling model is available to drive the keyless call",
+      "status": "pass",
+      "criterion": "/config/providers has a non-gateway provider with at least one capabilities.toolcall model",
+      "observed": {
+        "providerID": "deepseek-byok",
+        "modelID": "deepseek-v4-flash",
+        "providerIDs": [
+          "deepseek-byok",
+          "zhipuai-byok"
+        ]
+      },
+      "required": true,
+      "at": "2026-07-27T09:52:53.184Z"
+    },
+    {
+      "id": "K1.4",
+      "ac": "AC2 登出态 keyless 兜底",
+      "title": "the local keyless websearch tool is offered to the model again",
+      "criterion": "GET /experimental/tool?provider&model contains \"websearch\"",
+      "required": true,
+      "status": "pass",
+      "observed": {
+        "builtinToolIDs": [
+          "invalid",
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "edit",
+          "write",
+          "task",
+          "webfetch",
+          "todowrite",
+          "websearch",
+          "skill",
+          "alpha_reload",
+          "alpha_register",
+          "alpha_echo",
+          "alpha_ping"
+        ]
+      },
+      "at": "2026-07-27T09:52:53.187Z"
+    },
+    {
+      "id": "K1.5",
+      "ac": "AC2 登出态 keyless 真调",
+      "title": "a real keyless web search actually returns results",
+      "criterion": "a real model turn produces a \"websearch\" tool part with state.status === \"completed\" and a non-empty output",
+      "required": true,
+      "status": "fail",
+      "observed": {
+        "sessionID": "ses_05d02263bffeWz5LaxkucyCeYO",
+        "toolPartsSeen": [
+          {
+            "tool": "websearch",
+            "status": "error"
+          }
+        ],
+        "status": "error",
+        "outputHead": "",
+        "errorHead": "Web search failed: invalid response. Cause: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Title: 7dad00e feat(opencode): Phase 4 — native adlc_gate tool + live keyless bridge, hardened through a 6-round cross-model review loop (#119)\\nURL: https://github.com/voodootikigod/adlc/commit/7dad00e00084993fb3072669649b99b6ecb21e15\\nPublished: N/A\\nAuthor: N/A\\nHighlights:\\n# 7dad00e feat(opencode): Phase 4 — native adlc_gate tool + live keyless bridge, hardened through a 6-round cross-model review loop (#119)\\n...\\nfeat(opencode): Phase 4 — native adlc_gate tool + live keyless bridge, hardened through"
+      },
+      "at": "2026-07-27T09:52:58.659Z"
+    },
+    {
+      "id": "K1.6",
+      "ac": "AC3 defect 消失",
+      "title": "if the keyless call fails, the failure reaches the model as a discernible error",
+      "status": "pass",
+      "criterion": "the tool part either completed, or carries a model-visible message starting with \"Web search failed:\" (a typed WebSearchFailure, not an anonymous defect)",
+      "observed": {
+        "status": "error",
+        "messageHead": "Web search failed: invalid response. Cause: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Title: 7dad00e feat(opencode): Phase 4 — native adlc_gate tool + live keyless bridge, hardened through a 6-round cross-model review loop (#119)\\nURL: https://github.com/voodootikigod/adlc/commit/7dad00e00084993f"
+      },
+      "required": true,
+      "at": "2026-07-27T09:52:58.659Z"
+    }
+  ]
+}

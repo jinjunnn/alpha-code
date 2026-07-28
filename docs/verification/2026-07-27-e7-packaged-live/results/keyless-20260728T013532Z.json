@@ -1,0 +1,94 @@
+{
+  "schema": "alpha-code/e7-packaged-live/v1",
+  "issue": "alpha-code#643",
+  "phase": "keyless",
+  "capturedAt": "2026-07-28T01:35:32.809Z",
+  "finishedAt": "2026-07-28T01:35:32.906Z",
+  "blocked": "仍处登录态,无法采集登出态 keyless 证据 (still logged in) — no evidence was collected",
+  "authObserved": {
+    "status": "logged-in",
+    "mode": "platform",
+    "account": {},
+    "expiresAt": 1785203044468,
+    "platformStatus": "ready"
+  },
+  "checks": [
+    {
+      "id": "P0.1",
+      "ac": "preflight",
+      "title": "app under test is the build this evidence directory was cut for",
+      "status": "pass",
+      "criterion": "sha256(app.asar) === 60589c59c58e44ac0daede93fc7397a8a04365f5345eac4312e205a0d8f48e44 (alpha @ e578e00ae)",
+      "observed": {
+        "asarPath": "/Applications/alpha-code.app/Contents/Resources/app.asar",
+        "asarSha": "60589c59c58e44ac0daede93fc7397a8a04365f5345eac4312e205a0d8f48e44",
+        "appMtime": "2026-07-28T01:31:42.882Z",
+        "pinnedCommit": "e578e00ae"
+      },
+      "required": true,
+      "at": "2026-07-28T01:35:32.891Z"
+    },
+    {
+      "id": "P0.2",
+      "ac": "preflight",
+      "title": "CDP reachable on the packaged app",
+      "status": "pass",
+      "criterion": "http://127.0.0.1:9222/json lists a renderer page target",
+      "observed": {
+        "port": 9222
+      },
+      "required": true,
+      "at": "2026-07-28T01:35:32.899Z"
+    },
+    {
+      "id": "P0.3",
+      "ac": "preflight",
+      "title": "sidecar engine healthy",
+      "status": "pass",
+      "criterion": "GET /global/health → { healthy: true }",
+      "observed": {
+        "url": "http://127.0.0.1:50360",
+        "health": {
+          "healthy": true,
+          "version": "1.17.13"
+        }
+      },
+      "required": true,
+      "at": "2026-07-28T01:35:32.904Z"
+    },
+    {
+      "id": "K0.4",
+      "ac": "preflight",
+      "title": "登出态 —— keyless 兜底取证的硬前提",
+      "status": "blocked",
+      "criterion": "auth.getState().status === \"logged-out\" AND <userData>/alpha-secrets/ALPHA_CLOUD_TOKEN is absent",
+      "observed": {
+        "auth": {
+          "status": "logged-in",
+          "mode": "platform",
+          "account": {},
+          "expiresAt": 1785203044468,
+          "platformStatus": "ready"
+        },
+        "cloudTokenFile": {
+          "path": "/Users/tide/Library/Application Support/ai.opencode.desktop.dev/alpha-secrets/ALPHA_CLOUD_TOKEN",
+          "present": true
+        },
+        "apiKeyFile": {
+          "path": "/Users/tide/Library/Application Support/ai.opencode.desktop.dev/alpha-secrets/ALPHA_API_KEY",
+          "present": true
+        },
+        "endpoints": {
+          "web": "https://alphacodeone.com",
+          "platform": "https://alpha-gateway.tidelabs.click",
+          "account": "https://account.alphacodeone.com",
+          "cloud": "https://alpha-cloud.tidelabs.click",
+          "mcp": "https://alpha-cloud.tidelabs.click/mcp"
+        }
+      },
+      "required": true,
+      "note": "仍处登录态,无法采集登出态证据 — log out inside the app, then re-run with --keyless",
+      "at": "2026-07-28T01:35:32.906Z"
+    }
+  ]
+}

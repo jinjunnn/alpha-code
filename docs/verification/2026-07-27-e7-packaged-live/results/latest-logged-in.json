@@ -1,0 +1,442 @@
+{
+  "schema": "alpha-code/e7-packaged-live/v1",
+  "issue": "alpha-code#643",
+  "phase": "logged-in",
+  "capturedAt": "2026-07-28T02:05:45.876Z",
+  "finishedAt": "2026-07-28T02:06:07.248Z",
+  "build": {
+    "app": "/Applications/alpha-code.app",
+    "asarSha256": "60589c59c58e44ac0daede93fc7397a8a04365f5345eac4312e205a0d8f48e44",
+    "appMtime": "2026-07-28T01:31:42.882Z",
+    "pinnedCommit": "e578e00ae",
+    "appVersion": "1.17.13"
+  },
+  "engine": {
+    "url": "http://127.0.0.1:50360",
+    "version": "1.17.13"
+  },
+  "auth": {
+    "status": "logged-in",
+    "mode": "platform",
+    "account": {},
+    "expiresAt": 1785205182135,
+    "platformStatus": "ready"
+  },
+  "endpoints": {
+    "web": "https://alphacodeone.com",
+    "platform": "https://alpha-gateway.tidelabs.click",
+    "account": "https://account.alphacodeone.com",
+    "cloud": "https://alpha-cloud.tidelabs.click",
+    "mcp": "https://alpha-cloud.tidelabs.click/mcp"
+  },
+  "cloudMcpUrl": "https://alpha-cloud.tidelabs.click/mcp",
+  "remoteWebSearchToolName": "cloud_web_search",
+  "derivedEngineToolId": "cloud_cloud_web_search",
+  "checks": [
+    {
+      "id": "P0.1",
+      "ac": "preflight",
+      "title": "app under test is the build this evidence directory was cut for",
+      "status": "pass",
+      "criterion": "sha256(app.asar) === 60589c59c58e44ac0daede93fc7397a8a04365f5345eac4312e205a0d8f48e44 (alpha @ e578e00ae)",
+      "observed": {
+        "asarPath": "/Applications/alpha-code.app/Contents/Resources/app.asar",
+        "asarSha": "60589c59c58e44ac0daede93fc7397a8a04365f5345eac4312e205a0d8f48e44",
+        "appMtime": "2026-07-28T01:31:42.882Z",
+        "pinnedCommit": "e578e00ae"
+      },
+      "required": true,
+      "at": "2026-07-28T02:05:45.967Z"
+    },
+    {
+      "id": "P0.2",
+      "ac": "preflight",
+      "title": "CDP reachable on the packaged app",
+      "status": "pass",
+      "criterion": "http://127.0.0.1:9222/json lists a renderer page target",
+      "observed": {
+        "port": 9222
+      },
+      "required": true,
+      "at": "2026-07-28T02:05:45.987Z"
+    },
+    {
+      "id": "P0.3",
+      "ac": "preflight",
+      "title": "sidecar engine healthy",
+      "status": "pass",
+      "criterion": "GET /global/health → { healthy: true }",
+      "observed": {
+        "url": "http://127.0.0.1:50360",
+        "health": {
+          "healthy": true,
+          "version": "1.17.13"
+        }
+      },
+      "required": true,
+      "at": "2026-07-28T02:05:45.995Z"
+    },
+    {
+      "id": "P0.4",
+      "ac": "preflight",
+      "title": "登录态(平台代付)—— 取证的硬前提",
+      "status": "pass",
+      "criterion": "auth.getState() === {status:\"logged-in\", mode:\"platform\"} AND <userData>/alpha-secrets/ALPHA_CLOUD_TOKEN exists",
+      "observed": {
+        "auth": {
+          "status": "logged-in",
+          "mode": "platform",
+          "account": {},
+          "expiresAt": 1785205182135,
+          "platformStatus": "ready"
+        },
+        "cloudTokenFile": {
+          "path": "/Users/tide/Library/Application Support/ai.opencode.desktop.dev/alpha-secrets/ALPHA_CLOUD_TOKEN",
+          "present": true
+        },
+        "apiKeyFile": {
+          "path": "/Users/tide/Library/Application Support/ai.opencode.desktop.dev/alpha-secrets/ALPHA_API_KEY",
+          "present": true
+        },
+        "endpoints": {
+          "web": "https://alphacodeone.com",
+          "platform": "https://alpha-gateway.tidelabs.click",
+          "account": "https://account.alphacodeone.com",
+          "cloud": "https://alpha-cloud.tidelabs.click",
+          "mcp": "https://alpha-cloud.tidelabs.click/mcp"
+        }
+      },
+      "required": true,
+      "at": "2026-07-28T02:05:45.997Z"
+    },
+    {
+      "id": "P1.1",
+      "ac": "AC1 packaged 登录态 listTools",
+      "title": "engine registered the alpha cloud MCP server and it is connected",
+      "criterion": "GET /mcp → [\"cloud\"].status === \"connected\"",
+      "required": true,
+      "status": "pass",
+      "observed": {
+        "cloud": {
+          "status": "connected"
+        }
+      },
+      "at": "2026-07-28T02:05:48.103Z"
+    },
+    {
+      "id": "P1.2",
+      "ac": "AC1 packaged 登录态 listTools",
+      "title": "cloud MCP definition points at the app-resolved URL and carries the token by {file:} reference only",
+      "criterion": "config.mcp.cloud.url === \"https://alpha-cloud.tidelabs.click/mcp\" AND headers.Authorization matches /^Bearer \\{file:.*ALPHA_CLOUD_TOKEN\\}$/",
+      "required": true,
+      "status": "fail",
+      "observed": {
+        "expectedMcpUrl": "https://alpha-cloud.tidelabs.click/mcp",
+        "cloudDef": {
+          "type": "remote",
+          "url": "https://alpha-cloud.tidelabs.click/mcp",
+          "enabled": true,
+          "headers": {
+            "Authorization": "Bearer <redacted:secret>"
+          },
+          "oauth": false
+        }
+      },
+      "at": "2026-07-28T02:05:48.125Z"
+    },
+    {
+      "id": "P1.3",
+      "ac": "AC1 packaged 登录态 listTools",
+      "title": "LIVE-PATH GATE ① — deployed cloud worker lists a web-search tool for this account",
+      "criterion": "MCP tools/list on the app-resolved endpoint (app's own bearer) contains a tool matching /web[_-]?search/",
+      "required": true,
+      "status": "pass",
+      "observed": {
+        "httpStatus": 200,
+        "remoteToolNames": [
+          "cloud_dispatch",
+          "cloud_status",
+          "cloud_await",
+          "cloud_artifacts",
+          "cloud_schedule_create",
+          "cloud_schedule_list",
+          "cloud_web_search",
+          "cloud_schedule_delete"
+        ],
+        "matched": "cloud_web_search"
+      },
+      "at": "2026-07-28T02:05:48.768Z"
+    },
+    {
+      "id": "P1.4",
+      "ac": "AC1 packaged 登录态 listTools",
+      "title": "engine-visible id for the cloud web-search tool (MCP catalog prefixes the server name)",
+      "status": "pass",
+      "criterion": "engine id = sanitize(\"cloud\") + \"_\" + sanitize(<remote tool name>) per packages/opencode/src/mcp/catalog.ts:117-119 — record it, do not assume \"cloud_web_search\"",
+      "observed": {
+        "remoteName": "cloud_web_search",
+        "derivedEngineId": "cloud_cloud_web_search",
+        "alphaPinnedId": "cloud_web_search"
+      },
+      "required": true,
+      "note": "MISMATCH: alpha pins \"cloud_web_search\" but the engine will register \"cloud_cloud_web_search\" — every alpha gate keyed on the pinned id is currently an EMPTY gate (it watches a tool id the engine never registers). Re-check each one against the real id and open a CODE ticket; README §7 lists them and the judgement method.",
+      "at": "2026-07-28T02:05:48.768Z"
+    },
+    {
+      "id": "P1.5",
+      "ac": "AC1 云优先(本地 keyless 被抑制)",
+      "title": "platform-pays denies the local keyless websearch globally and on every injected agent",
+      "criterion": "config.permission.websearch === \"deny\" AND every config.agent[*].permission.websearch === \"deny\"",
+      "required": true,
+      "status": "fail",
+      "observed": {
+        "globalPermission": "deny",
+        "agentsMissingDeny": [
+          "general",
+          "explore"
+        ],
+        "agents": [
+          "general",
+          "explore",
+          "alpha-automation",
+          "alpha-readonly",
+          "alpha-automation-standard"
+        ]
+      },
+      "at": "2026-07-28T02:05:48.768Z"
+    },
+    {
+      "id": "P1.6",
+      "ac": "AC1 packaged 真调",
+      "title": "a platform-gateway model with tool-calling is available for the real call",
+      "status": "pass",
+      "criterion": "/config/providers has a provider whose options.baseURL starts with https://alpha-gateway.tidelabs.click and at least one model with capabilities.toolcall",
+      "observed": {
+        "platformProviderID": "alpha",
+        "platformModelID": "deepseek-v4-flash",
+        "providerIDs": [
+          "deepseek-byok",
+          "zhipuai-byok",
+          "alpha"
+        ]
+      },
+      "required": true,
+      "at": "2026-07-28T02:05:48.773Z"
+    },
+    {
+      "id": "P1.7",
+      "ac": "AC1 云优先(本地 keyless 被抑制)",
+      "title": "the built-in tool set offered for a platform model no longer contains the local websearch",
+      "criterion": "GET /experimental/tool?provider&model does NOT contain \"websearch\"",
+      "required": true,
+      "status": "pass",
+      "observed": {
+        "builtinToolIDs": [
+          "invalid",
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "edit",
+          "write",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "alpha_reload",
+          "alpha_register",
+          "alpha_echo",
+          "alpha_ping"
+        ]
+      },
+      "at": "2026-07-28T02:05:48.788Z"
+    },
+    {
+      "id": "P2.1",
+      "ac": "AC1 packaged 真调返回 {query,results}",
+      "title": "the packaged app really invoked the cloud web-search tool through its own engine",
+      "criterion": "a real model turn produced a tool part whose id is the cloud web-search tool, state.status === \"completed\", and whose output parses to an object with `query` and `results`",
+      "required": true,
+      "status": "fail",
+      "observed": {
+        "sessionID": "ses_05987684effeq6UCQ4kjJ5WxQg",
+        "toolPartsSeen": [
+          {
+            "tool": "cloud_cloud_web_search",
+            "status": "error"
+          }
+        ],
+        "calledTool": "cloud_cloud_web_search",
+        "state": "error",
+        "error": "{\"error\":\"forbidden\"}"
+      },
+      "at": "2026-07-28T02:05:55.594Z"
+    },
+    {
+      "id": "P2.2",
+      "ac": "AC1 packaged 真调返回 {query,results}",
+      "title": "LIVE-PATH GATE ② — one real call on the app-resolved endpoint returns {query, results}",
+      "criterion": "MCP tools/call with the app's own cloud bearer returns isError !== true and a text payload parsing to an object with `query` and `results`",
+      "required": true,
+      "status": "fail",
+      "observed": {
+        "httpStatus": 200,
+        "isError": true,
+        "payloadKeys": [
+          "error"
+        ]
+      },
+      "at": "2026-07-28T02:05:55.850Z"
+    },
+    {
+      "id": "P2.3",
+      "ac": "AC3 计费(ledger/settle)证据",
+      "title": "the real web-search calls are billed to this tenant's ledger",
+      "criterion": "account summary walletUsedFen increased OR balanceFen decreased OR a new usage transaction appeared between the pre-call and post-call snapshots",
+      "required": true,
+      "status": "fail",
+      "observed": {
+        "walletUsedFenBefore": 0,
+        "walletUsedFenAfter": 0,
+        "balanceFenBefore": 100000,
+        "balanceFenAfter": 100000,
+        "walletDelta": 0,
+        "balanceDelta": 0,
+        "newTransactions": []
+      },
+      "at": "2026-07-28T02:05:59.928Z"
+    },
+    {
+      "id": "P3.1",
+      "ac": "AC3 真实失败集 401",
+      "title": "gateway web_search is fail-closed without a bearer",
+      "criterion": "POST /v1/tools/web_search with no Authorization → HTTP 401",
+      "required": true,
+      "status": "pass",
+      "observed": {
+        "status": 401,
+        "body": "{\"error\":{\"message\":\"unauthorized\"}}"
+      },
+      "at": "2026-07-28T02:06:00.570Z"
+    },
+    {
+      "id": "P3.2",
+      "ac": "AC3 真实失败集 400",
+      "title": "gateway web_search rejects a missing query with 400",
+      "criterion": "POST /v1/tools/web_search with a valid bearer and body {} → HTTP 400",
+      "required": true,
+      "status": "pass",
+      "observed": {
+        "status": 400,
+        "body": "{\"error\":{\"message\":\"query required\"}}"
+      },
+      "at": "2026-07-28T02:06:01.090Z"
+    },
+    {
+      "id": "P3.3",
+      "ac": "AC3 真实失败集 400",
+      "title": "gateway web_search rejects malformed JSON with 400",
+      "criterion": "POST /v1/tools/web_search with a valid bearer and a malformed body → HTTP 400",
+      "required": true,
+      "status": "pass",
+      "observed": {
+        "status": 400,
+        "body": "{\"error\":{\"message\":\"invalid json\"}}"
+      },
+      "at": "2026-07-28T02:06:01.298Z"
+    },
+    {
+      "id": "P3.4",
+      "ac": "AC3 真实失败集 403",
+      "title": "403 (action_forbidden / job_not_enforceable)",
+      "status": "not-producible",
+      "criterion": "would require a token whose scope excludes model.invoke, or a non-enforceable job — neither is mintable from a normal desktop login",
+      "observed": {
+        "reason": "the desktop only ever holds route-purpose-bound tokens for model.invoke and cloud.dispatch",
+        "coveredAtL1": "packages/opencode/test/tool/alpha-websearch-failure.test.ts (403 → forbidden, error.code preserved)"
+      },
+      "required": false,
+      "at": "2026-07-28T02:06:01.298Z"
+    },
+    {
+      "id": "P3.5",
+      "ac": "AC3 真实失败集 502",
+      "title": "502 (no search backend configured)",
+      "status": "not-producible",
+      "criterion": "would require the deployed gateway to have neither TAVILY_API_KEY nor BRAVE_API_KEY",
+      "observed": {
+        "reason": "both secrets are configured on the deployed gateway (docs/verification/2026-07-22-e7-deploy-probe.md §4); removing them is a production mutation, out of bounds for a probe",
+        "coveredAtL1": "packages/opencode/test/tool/alpha-websearch-failure.test.ts (502 → upstream)"
+      },
+      "required": false,
+      "at": "2026-07-28T02:06:01.298Z"
+    },
+    {
+      "id": "P3.6",
+      "ac": "AC3 真实失败集 意外状态 LOUD",
+      "title": "unexpected non-2xx status maps to a loud, discernible failure",
+      "status": "not-producible",
+      "criterion": "would require the deployed gateway to emit a status outside {400,401,402,403,502} on this route",
+      "observed": {
+        "reason": "no request shape reachable from the desktop elicits one; the mapping itself is exercised at L1",
+        "coveredAtL1": "packages/opencode/test/tool/alpha-websearch-failure.test.ts (statusKind default → unexpected_status)"
+      },
+      "required": false,
+      "at": "2026-07-28T02:06:01.298Z"
+    },
+    {
+      "id": "P3.7",
+      "ac": "AC3 真实失败集 402",
+      "title": "402 / 余额(accountPreauth 余额或额度不足臂)",
+      "status": "not-producible",
+      "criterion": "POST /v1/tools/web_search with a valid bearer → HTTP 402 when the account is out of quota+wallet; a 200 proves the account is funded (402 not producible today without draining the owner's balance, which would also invalidate P2.1/P2.2/P2.3); any other status is unexpected and loud",
+      "observed": {
+        "status": 200,
+        "body": "{\"query\":\"alpha-code e7 402 preauth probe 2026-07-28T02:05:45.876Z\",\"results\":\"[tavily] alpha-code e7 402 preauth probe 2026-07-28T02:05:45.876Z\\n- 2026-01-01 Health Care Services Requiring Preauthorization (https://senderohealth.com/files/Health%20Care%20Services%20Requiring%20Preauthorization%20-%20Effective%2001012026.pdf)\\n  Description Effective Date 2026-01-01 Health Care Services Requiring Preauthorization Code Policy/Guideline 2 Policy/Guideline 1 Comment Evidence of Coverage (EOC, Plan coverage document) InterQual® Evidence-Based Criteria & Guidelines 0031U CYP1A2 (CYTOCHROME P450 FAM",
+        "accountShape": {
+          "balanceFen": 100000,
+          "walletUsedFen": 0,
+          "plan": {
+            "id": "pro",
+            "status": "active"
+          }
+        },
+        "armA": "unreachable by construction — the desktop holds a route-purpose JWT (via:\"jwt\"), never a job token, so perJobPrecall returns pass/enforced:false",
+        "armB": "did not fire — the account was preauthorised, i.e. it is not out of quota+wallet today",
+        "coveredAtL1": "packages/opencode/test/tool/alpha-websearch-failure.test.ts (402 → payment_required, both arms: 预授权拒绝 and per-job budget exceeded)"
+      },
+      "required": false,
+      "note": "not-producible today — 不是绿,也不是跳过:账户有额度/余额,402 的唯一可达臂(accountPreauth)不会触发。要真采 402 需把账户打到余额+额度双空,那是破坏性计费变更且与本轮 AC1/计费证据互斥。映射本身由 L1 覆盖。",
+      "at": "2026-07-28T02:06:03.204Z"
+    },
+    {
+      "id": "P3.8",
+      "ac": "AC3 defect 消失 / 主权拒绝 LOUD",
+      "title": "the denied local websearch surfaces a discernible tool error, not a crash",
+      "status": "fail",
+      "criterion": "the tool part exists with state.status === \"error\" and a model-visible message containing \"denied by alpha sovereignty\" (or starting with \"Web search failed:\") — no unhandled defect",
+      "observed": {
+        "sessionID": "ses_059873039ffeOlmHFCJDINoHn5",
+        "toolPartsSeen": [],
+        "message": ""
+      },
+      "required": true,
+      "note": "the model declined to call the denied tool — re-run; the check needs the tool to actually be attempted",
+      "at": "2026-07-28T02:06:07.246Z"
+    },
+    {
+      "id": "P3.9",
+      "ac": "AC3 已登记缺口",
+      "title": "cloud-side failures are loud but not classifiable (alpha-platform#105)",
+      "status": "not-producible",
+      "criterion": "the cloud MCP shell drops r.status (packages/gateway/src/cloud-mcp.ts), so a cloud failure reaches the client with no HTTP status and no error.code",
+      "observed": {
+        "registeredGap": "alpha-platform#105",
+        "baseline": "docs/design/2026-07-22-e7-cloud-web-search-baseline.md §1 二次更正 (2026-07-25)"
+      },
+      "required": false,
+      "at": "2026-07-28T02:06:07.246Z"
+    }
+  ]
+}
