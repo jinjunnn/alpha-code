@@ -39,6 +39,7 @@ import { type AlphaProject, type AlphaSession, type AlphaProjectsApi } from "./u
 import type { AuthState, AccountSummary } from "../../preload/types"
 import { setExtHubOpen, toggleExtHub } from "../extensions/ext-hub-state"
 import { setAutomationOpen, toggleAutomation } from "../automations/automation-state"
+import { setSettingsOpen } from "../alpha-ui/settings-state"
 import { dismissMenu, dismissMenuOnEscape, focusFirstMenuItem } from "./menu-a11y"
 
 // Replicate opencode's getProjectAvatarVariant (context/layout.tsx) for projects that already
@@ -332,9 +333,15 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
       <button
         type="button"
         class="alpha-acct-item"
+        data-alpha-acct-item="settings"
         onClick={() => {
           setMenuOpen(false)
-          command.trigger("settings.open")
+          // REQ-126 AC7(#658):这里以前发 `settings.open`。那个命令**按路由分裂** —— 上游只在
+          // 已被 alpha 顶替的三叶、legacy layout 与 canonical session 路由的
+          // `TargetSessionSettingsCommand` 里注册,于是同一个菜单项在会话页能开、首页/新对话页
+          // 静默 no-op(上游 `run()` 对未注册 id 直接返回)。alpha 早就自己拥有设置面,直接开它:
+          // 与路由无关,也不再经过一个可能没人接的命令总线。
+          setSettingsOpen(true)
         }}
       >
         <span class="alpha-acct-ic">⚙</span>{t("alpha.sidebar.settings")}
@@ -531,10 +538,6 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     }
   })
 
-  // True whenever we're inside a project workspace (a session OR a new-chat draft), i.e. not the
-  // bare home grid. Drives the top-right terminal/review toolbar's visibility.
-  const inWorkspace = createMemo(() => parseRoute(location.pathname).kind !== "home")
-
   // Reflect sidebar visibility onto <body> so sidebar.css can shift opencode's content.
   createEffect(() => {
     document.body.dataset.alphaSidebar = sidebarCollapsed() ? "collapsed" : "open"
@@ -543,32 +546,19 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     delete document.body.dataset.alphaSidebar
   })
 
-  // Responsive auto-collapse. As the window narrows, the two side panels would otherwise crush the
-  // chat column, so fold them in priority order: the right review panel first, then (narrower still)
-  // our own left sidebar. Crucially this is REVERSIBLE — folding on the downward crossing of a
-  // threshold and restoring on the upward crossing — so a narrow→wide resize never strands a panel
-  // hidden. We only ever undo OUR OWN auto-action: the sidebar override is transient (it leaves the
-  // user's persisted preference alone, see setSidebarAutoCollapsed), and the review panel is only
-  // re-opened if we were the one who closed it (`autoClosedReview`). A panel the user collapsed by
-  // hand therefore stays as they left it.
+  // Responsive auto-collapse of OUR OWN left sidebar. Reversible by construction — folding on the
+  // downward crossing of the threshold and restoring on the upward crossing — so a narrow→wide
+  // resize never strands it hidden. The override is transient (it leaves the user's persisted
+  // preference alone, see setSidebarAutoCollapsed), so a manual collapse underneath is preserved.
   //
-  // The review panel is opencode's; we can't read its store (the @opencode-ai/app export whitelist
-  // blocks deep-importing useLayout — ADR-008), so we read its open state from the ARIA contract on
-  // the header toggle (`[aria-controls="review-panel"][aria-expanded]`) and toggle it via the public
-  // `review.toggle` command. Coupling = that ARIA pair; a rename only disables this nicety.
-  const REVIEW_COLLAPSE_W = 1100 // below this, fold the right review panel
-  const SIDEBAR_COLLAPSE_W = 768 // below this, also collapse the left sidebar (opencode's own
+  // REQ-126 AC7(#658):这里以前还自动折叠上游的右侧 review 面板 —— 读
+  // `[aria-controls="review-panel"][aria-expanded]` 这对 ARIA、经 `review.toggle` 开关。两端都已
+  // 随上游 session 叶退役:alpha 会话工作区的右栏是自己的(`aria-controls="alpha-session-rail-host"`),
+  // 命令没有任何注册处 → 那段代码永远读不到 true、永远 no-op。连同下面的浮动终端/审查按钮一起退休。
+  const SIDEBAR_COLLAPSE_W = 768 // below this, collapse the left sidebar (opencode's own
   // desktop panels disappear under 768 too, so the two breakpoints stay coherent)
 
-  const reviewPanelOpen = () => {
-    for (const el of document.querySelectorAll('[aria-controls="review-panel"][aria-expanded]')) {
-      if (el.getAttribute("aria-expanded") === "true") return true
-    }
-    return false
-  }
-
   let prevWidth = window.innerWidth
-  let autoClosedReview = false
   let resizeScheduled = false
   const onResize = () => {
     if (resizeScheduled) return
@@ -576,17 +566,6 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     requestAnimationFrame(() => {
       resizeScheduled = false
       const w = window.innerWidth
-
-      // Right review panel: close on narrow, reopen (only if WE closed it) on wide.
-      if (inWorkspace()) {
-        if (prevWidth >= REVIEW_COLLAPSE_W && w < REVIEW_COLLAPSE_W && reviewPanelOpen()) {
-          command.trigger("review.toggle")
-          autoClosedReview = true
-        } else if (prevWidth < REVIEW_COLLAPSE_W && w >= REVIEW_COLLAPSE_W && autoClosedReview) {
-          if (!reviewPanelOpen()) command.trigger("review.toggle")
-          autoClosedReview = false
-        }
-      }
 
       // Left sidebar: fold on narrow, restore on wide. The override is transient, so a manual
       // collapse underneath is preserved and a manual open returns when we clear it.
@@ -762,6 +741,43 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   // owner 报的"开在 alpha-code 而不是 ~/Alpha"(ADR-025 2026-07-28 修订推翻了该优先级),也是
   // 走 legacy admission 路由的那个入口本身。
   const newChat = () => void startDraft()
+
+  // REQ-126 AC7(#658)「打开项目」。以前发上游 `project.open`,它只在 legacy layout
+  // (`pages/layout.tsx`)注册 —— alpha 路由下只有 admission 那一跳短暂挂载过 → 空项目态那个按钮
+  // 基本上永远点不动。而且就算接上,上游那条命令只把目录加进**上游 layout 自己的**项目列表,与
+  // 侧栏读的引擎 project.list 是两套(REQ-068 已经为首页 chip 记过同一课)。所以改走 alpha 自己的
+  // 路径:选目录 → 直接在该目录开一段对话(项目由引擎在首条消息时正式注册)。取消 = 静默。
+  const openProject = async () => {
+    let picked: string | string[] | null = null
+    try {
+      picked = await window.api.openDirectoryPicker({ title: t("alpha.sidebar.openProject") })
+    } catch {
+      pushToast({ kind: "error", title: t("alpha.home.openProjectFailed") })
+      return
+    }
+    const directory = Array.isArray(picked) ? picked[0] : picked
+    if (typeof directory !== "string" || !directory) return
+    await startChat(directory)
+  }
+
+  // REQ-126 AC7(#658)壳级命令注册。桌面菜单(`main/menu.ts` → `sendMenuCommand` → 渲染进程
+  // `cmd.trigger(id)`)发的这几个 id,上游的注册处全在已被 alpha 顶替的叶或 legacy layout 里 ——
+  // 于是 Cmd+, / Cmd+O / Shift+Cmd+S / Cmd+B 在 alpha 的路由上按下去什么都不发生。
+  // 侧栏本来就是这几件事的所有者(设置、新对话、打开项目、折叠),所以由它承接:挂载点与路由
+  // 无关,注册也就与路由无关。键位沿用上游原值,免得抢注册反而把快捷键抹掉。
+  // `hidden` = 不进命令面板列表(alpha 的「搜索」是会话搜索,不列命令)。
+  //
+  // **刻意不含 `common.goBack` / `common.goForward`**:上游 Titlebar 在首页/新对话页也注册同名
+  // id,而重复 id 保留第一项 + Titlebar 先挂载 → 那两条路由永远是它赢,且它走的是只有 `["/"]`
+  // 的私有 history(静默 no-op)。同一菜单项在不同路由两种行为,不是"语义相同"。这两条已在
+  // `shared/desktop-menu-policy.ts` 显式退休;左上角那对按钮直连 `navigate(±1)`,始终有效。
+  // 其余**退休**的菜单项同理,都从那份发布面直接删掉。
+  command.register("alpha.shell", () => [
+    { id: "settings.open", title: t("alpha.sidebar.settings"), keybind: "mod+comma", hidden: true, onSelect: () => setSettingsOpen(true) },
+    { id: "session.new", title: t("alpha.sidebar.newChat"), keybind: "mod+shift+s", hidden: true, onSelect: () => newChat() },
+    { id: "project.open", title: t("alpha.sidebar.openProject"), keybind: "mod+o", hidden: true, onSelect: () => void openProject() },
+    { id: "sidebar.toggle", title: t("alpha.sidebar.hide"), keybind: "mod+b", hidden: true, onSelect: () => toggleSidebar() },
+  ])
 
   const archiveProject = (worktree: string) => {
     dismissMenu(() => setMenuFor(null), projectMenuTrigger)
@@ -988,44 +1004,12 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
         </button>
       </div>
 
-      {/* Top-right toolbar (only inside a session): terminal toggle + review/审查 toggle. We render
-          our own pair (wired to opencode's commands) and hide opencode's faint titlebar review
-          toggle below, so both are clearly visible and clickable. */}
-      <Show when={inWorkspace()}>
-        <div class="alpha-topbar-right">
-          <button
-            type="button"
-            class="alpha-topbar-btn"
-            title={t("alpha.sidebar.terminal")}
-            aria-label={t("alpha.sidebar.terminal")}
-            onClick={() => command.trigger("terminal.toggle")}
-          >
-            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect x="2" y="3" width="12" height="10" rx="1.6" stroke="currentColor" stroke-width="1.3" />
-              <path
-                d="M4.8 6.4 6.8 8.4 4.8 10.4"
-                stroke="currentColor"
-                stroke-width="1.3"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path d="M8.3 10.6h2.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            class="alpha-topbar-btn"
-            title={t("alpha.sidebar.review")}
-            aria-label={t("alpha.sidebar.review")}
-            onClick={() => command.trigger("review.toggle")}
-          >
-            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect x="2" y="3" width="12" height="10" rx="1.6" stroke="currentColor" stroke-width="1.3" />
-              <path d="M10.4 3v10" stroke="currentColor" stroke-width="1.3" />
-            </svg>
-          </button>
-        </div>
-      </Show>
+      {/* REQ-126 AC7(#658):右上角浮动的「终端 / 审查」两个按钮已退休。它们发的
+          `terminal.toggle` / `review.toggle` 只在上游 session 叶注册,而那片叶已被 alpha 会话
+          工作区顶替 → 命令无人接、点了静默无事。会话页 CSS 曾把这一对藏起来
+          (`body:has([data-alpha-session-workspace])`),但 `inWorkspace()` 在**新对话页**也为真,
+          于是新对话页上它们既可见又无效 —— 而那一页根本没有终端/审查能力。会话页要用的同类开关
+          在工作区自己的 46px 顶栏上(session-workspace-shell.tsx),那两个是活的,不受影响。 */}
 
       <Show when={!sidebarCollapsed()}>
         <aside class="alpha-sidebar" aria-label={t("alpha.sidebar.projects")}>
@@ -1271,7 +1255,8 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                 <button
                   type="button"
                   class="alpha-sidebar-open-project"
-                  onClick={() => command.trigger("project.open")}
+                  data-alpha-sidebar-open-project
+                  onClick={() => void openProject()}
                 >
                   {t("alpha.sidebar.openProject")}
                 </button>

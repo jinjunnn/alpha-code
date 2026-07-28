@@ -1,14 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron"
 import type { MenuItemConstructorOptions } from "electron"
 import { join } from "node:path"
-import {
-  DESKTOP_MENU,
-  desktopMenuVisible,
-  type DesktopMenuEntry,
-  type DesktopMenuPlatform,
-  type DesktopMenuRole,
-} from "@opencode-ai/app/desktop-menu"
+import { type DesktopMenuEntry, type DesktopMenuPlatform, type DesktopMenuRole } from "@opencode-ai/app/desktop-menu"
 
+import { alphaDesktopMenu } from "../shared/desktop-menu-policy"
 import { UPDATER_ENABLED } from "./constants"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { menuPlatform } from "./platform"
@@ -30,15 +25,14 @@ export function createMenu(deps: Deps) {
   const target = menuPlatform()
   if (!target) return
 
-  const template: MenuItemConstructorOptions[] = DESKTOP_MENU.filter((menu) =>
-    desktopMenuVisible(menu, target),
-  ).map((menu) => {
+  // REQ-126 AC7(#658):发布面来自 `shared/desktop-menu-policy`,不再直接铺开上游 DESKTOP_MENU ——
+  // 随上游叶退役的命令必须显式处置(承接或退休),退休项在那里剔除,渲染进程的运行时闸门按同一份
+  // 发布面逐个要求「真注册且可触发」。平台可见性过滤已在策略里做过,这里不再重复。
+  const template: MenuItemConstructorOptions[] = alphaDesktopMenu(target).map((menu) => {
     if (menu.role) return { role: nativeRole(menu.role) }
     return {
       label: menu.label,
-      submenu: menu.items
-        ?.filter((entry) => desktopMenuVisible(entry, target))
-        .map((entry) => nativeItem(entry, deps, target)),
+      submenu: menu.items?.map((entry) => nativeItem(entry, deps, target)),
     }
   })
 

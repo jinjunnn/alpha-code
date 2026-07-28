@@ -616,9 +616,7 @@ svg[viewBox="0 0 720.002 129.001"] {
  * click. With everything no-drag (and the sidebar strip no-drag), there is simply nothing to
  * intercept the click. !important beats the prefixed/unprefixed aliasing. */
 .alpha-topbar,
-.alpha-topbar *,
-.alpha-topbar-right,
-.alpha-topbar-right * {
+.alpha-topbar * {
   -webkit-app-region: no-drag !important;
   app-region: no-drag !important;
 }
@@ -650,26 +648,12 @@ svg[viewBox="0 0 720.002 129.001"] {
   background: var(--a-border);
 }
 
-/* top-RIGHT toolbar (terminal + review toggles), only inside a session */
-.alpha-topbar-right {
-  position: fixed;
-  top: 8px;
-  right: 12px;
-  z-index: 42;
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  /* drag handled by base.css via data-tauri-drag-region (buttons auto no-drag) */
-}
-
-/* #574 单一顶栏(alpha 会话工作区挂载时):
- * 1) 这对浮动开关触发的 terminal.toggle / review.toggle 由上游 session 叶注册,alpha 会话面
- *    该叶不挂载 = 死控件;工作区 46px 顶栏自带活的终端/右栏开关(session-workspace-shell),
- *    浮动对隐藏,避免叠在唯一顶栏上。上游面(legacy session)不含工作区节点,零回归。 */
-body:has([data-alpha-session-workspace]) .alpha-topbar-right {
-  display: none;
-}
-/* 2) 侧栏折叠时,工作区顶栏成为窗口最上沿:左侧让位 macOS 红绿灯(trafficLightPosition
+/* REQ-126 AC7(#658):`.alpha-topbar-right`(浮动的终端 + 审查开关)整块已删。#574 曾用
+ * `body:has([data-alpha-session-workspace])` 把它在会话页藏起来 —— 但那只是**遮**:命令
+ * `terminal.toggle` / `review.toggle` 随上游 session 叶退役后全应用无人注册,而 `inWorkspace()`
+ * 在**新对话页**同样为真,那一页的这对按钮既可见又无效。控件本身退休,遮它的规则一并作废。
+ *
+ * #574 单一顶栏的另一半仍然有效:侧栏折叠时,工作区顶栏成为窗口最上沿,左侧让位 macOS 红绿灯(trafficLightPosition
  *    x:12,windows.ts)与本文件的浮动工具簇(其右缘 = sidebar 宽 − 10px)。内容起点对齐
  *    侧栏展开态(sidebar 宽 + 顶栏自身 14px 左 padding),折叠/展开切换不跳字。 */
 body[data-alpha-sidebar="collapsed"] .a-swk-topbar {

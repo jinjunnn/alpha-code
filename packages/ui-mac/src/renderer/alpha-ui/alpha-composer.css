@@ -175,10 +175,6 @@
 .a-chip-model {
   padding-left: 6px;
 }
-.a-chip-perm[data-mode="full"],
-.a-chip-perm[data-mode="full"] .a-ic {
-  color: var(--a-warning);
-}
 .a-chip-perm[data-mode="readonly"],
 .a-chip-perm[data-mode="readonly"] .a-ic {
   color: var(--a-accent);

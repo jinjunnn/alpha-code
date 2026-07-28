@@ -36,8 +36,9 @@ const SHORTCUTS = [
   { id: "command.palette", label: "alpha.settings.shortcutCommands", fallback: "⌘K" },
   { id: "project.open", label: "alpha.settings.shortcutOpenProject", fallback: "⌘O" },
   { id: "session.new", label: "alpha.settings.shortcutNewSession", fallback: "⌘N" },
-  { id: "session.previous", label: "alpha.settings.shortcutPrevious", fallback: "⌥↑" },
-  { id: "session.next", label: "alpha.settings.shortcutNext", fallback: "⌥↓" },
+  // REQ-126 AC7(#658):`session.previous` / `session.next` 已随上游 session 叶与 legacy layout
+  // 一起退休(见 shared/desktop-menu-policy.ts)。上游只对**已注册**的 option 应用自定义键位
+  // (context/command.tsx),所以把它们留在这张表里 = 用户改得了、存得下、按下去什么都不发生。
 ] as const
 
 const STORAGE_FAILURE: ExtensionStorageResult = {

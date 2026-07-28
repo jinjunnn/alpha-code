@@ -44,7 +44,7 @@ describe("buildPromptRequest", () => {
     expect(r.agent).toBe(READONLY_AGENT)
   })
   test("非只读 + 手选 agent → 透传", () => {
-    const r = buildPromptRequest({ text: "hi", model: null, effort: null, perm: "full", agent: "plan" })
+    const r = buildPromptRequest({ text: "hi", model: null, effort: null, perm: "ask", agent: "plan" })
     expect(r.agent).toBe("plan")
   })
   test("extraParts(@ 提及)追加在 text part 之后", () => {
