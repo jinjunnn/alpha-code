@@ -762,18 +762,21 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
 
   // REQ-126 AC7(#658)壳级命令注册。桌面菜单(`main/menu.ts` → `sendMenuCommand` → 渲染进程
   // `cmd.trigger(id)`)发的这几个 id,上游的注册处全在已被 alpha 顶替的叶或 legacy layout 里 ——
-  // 于是 Cmd+, / Cmd+O / Shift+Cmd+S / Cmd+B / Cmd+[ / Cmd+] 在 alpha 的路由上按下去什么都不发生。
-  // 侧栏本来就是这几件事的所有者(设置、新对话、打开项目、折叠、前进后退),所以由它承接:
-  // 挂载点与路由无关,注册也就与路由无关。键位沿用上游原值,免得抢注册反而把快捷键抹掉。
+  // 于是 Cmd+, / Cmd+O / Shift+Cmd+S / Cmd+B 在 alpha 的路由上按下去什么都不发生。
+  // 侧栏本来就是这几件事的所有者(设置、新对话、打开项目、折叠),所以由它承接:挂载点与路由
+  // 无关,注册也就与路由无关。键位沿用上游原值,免得抢注册反而把快捷键抹掉。
   // `hidden` = 不进命令面板列表(alpha 的「搜索」是会话搜索,不列命令)。
-  // **退休**的菜单项不在这里 —— 它们从 `shared/desktop-menu-policy.ts` 的发布面直接删掉。
+  //
+  // **刻意不含 `common.goBack` / `common.goForward`**:上游 Titlebar 在首页/新对话页也注册同名
+  // id,而重复 id 保留第一项 + Titlebar 先挂载 → 那两条路由永远是它赢,且它走的是只有 `["/"]`
+  // 的私有 history(静默 no-op)。同一菜单项在不同路由两种行为,不是"语义相同"。这两条已在
+  // `shared/desktop-menu-policy.ts` 显式退休;左上角那对按钮直连 `navigate(±1)`,始终有效。
+  // 其余**退休**的菜单项同理,都从那份发布面直接删掉。
   command.register("alpha.shell", () => [
     { id: "settings.open", title: t("alpha.sidebar.settings"), keybind: "mod+comma", hidden: true, onSelect: () => setSettingsOpen(true) },
     { id: "session.new", title: t("alpha.sidebar.newChat"), keybind: "mod+shift+s", hidden: true, onSelect: () => newChat() },
     { id: "project.open", title: t("alpha.sidebar.openProject"), keybind: "mod+o", hidden: true, onSelect: () => void openProject() },
     { id: "sidebar.toggle", title: t("alpha.sidebar.hide"), keybind: "mod+b", hidden: true, onSelect: () => toggleSidebar() },
-    { id: "common.goBack", title: t("alpha.sidebar.back"), keybind: "mod+[", hidden: true, onSelect: () => navigate(-1) },
-    { id: "common.goForward", title: t("alpha.sidebar.forward"), keybind: "mod+]", hidden: true, onSelect: () => navigate(1) },
   ])
 
   const archiveProject = (worktree: string) => {

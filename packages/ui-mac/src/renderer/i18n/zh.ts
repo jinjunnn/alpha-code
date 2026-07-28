@@ -1392,8 +1392,6 @@ export const dict = {
   "alpha.settings.shortcutCommands": "打开命令面板",
   "alpha.settings.shortcutOpenProject": "打开项目",
   "alpha.settings.shortcutNewSession": "新建会话",
-  "alpha.settings.shortcutPrevious": "上一个会话",
-  "alpha.settings.shortcutNext": "下一个会话",
   "alpha.settings.storageCached": "缓存项目",
   "alpha.settings.storageSweepable": "可安全回收",
   "alpha.settings.storageSwept": "已回收",

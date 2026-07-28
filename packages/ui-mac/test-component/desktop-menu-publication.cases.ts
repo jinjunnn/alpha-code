@@ -164,17 +164,13 @@ describe("alpha 桌面菜单只发布接得住的命令", () => {
       "session.next",
       "project.previous",
       "project.next",
-    ])
-      expect(published).not.toContain(gone)
-    for (const kept of [
-      "settings.open",
-      "session.new",
-      "project.open",
-      "sidebar.toggle",
+      // 后退/前进:上游 Titlebar 抢注同名 id 且走只有 ["/"] 的私有 history,菜单项在首页/新对话页
+      // 静默 no-op、在会话页才落到别人手上 —— 同一项两种行为。入口改由侧栏左上角那对直连按钮承担。
       "common.goBack",
       "common.goForward",
-      "logs.export",
     ])
+      expect(published).not.toContain(gone)
+    for (const kept of ["settings.open", "session.new", "project.open", "sidebar.toggle", "logs.export"])
       expect(published).toContain(kept)
   })
 })

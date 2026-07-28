@@ -2,7 +2,8 @@
 //
 // 挂的是**真实 alpha 壳**:上游 `PlatformProvider → AppBaseProviders → AppInterface`(与
 // renderer/index.tsx 同一条 provider 链、同一个 MemoryRouter),children 里挂真实生产
-// `AlphaSidebar` 与真实生产 `AlphaSettings`(接法与 renderer/index.tsx 的 settings surface 一致)。
+// `AlphaSidebar`、真实生产 `AlphaSettings` 与真实生产 `AlphaSessionSearch` —— 壳组成与
+// renderer/index.tsx 一致。少挂其中任何一件,「某条命令没人注册」就会被误判成产品缺陷。
 // 于是命令总线是真的、注册是生产代码真跑的、触发是**点真实按钮**、判据落在真实 DOM 与真实路由上。
 //
 // 替身只剩最外围:`window.api`(Electron preload 桥)、`globalThis.fetch`(壳会去连引擎,闸门不
@@ -18,11 +19,13 @@ import { createEffect, createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import { AlphaSidebar } from "./alpha-sidebar"
 import { AlphaSettings } from "../alpha-ui/settings"
+import { AlphaSessionSearch } from "../alpha-ui/alpha-session-search"
 import { setSettingsOpen, settingsOpen } from "../alpha-ui/settings-state"
 import { PermChip } from "../alpha-ui/alpha-composer"
 import { READONLY_AGENT, buildPromptRequest, composerPerm, setComposerPerm } from "../alpha-ui/composer-state"
 import { setSidebarCollapsed } from "./sidebar-state"
 import type { AlphaProject, AlphaProjectsApi } from "./use-projects"
+import { ALPHA_SETTINGS_DEFAULTS } from "../../shared/settings-adapters"
 import type { SettingsSurfaceApi } from "../alpha-ui/settings-authority-client"
 
 export { render }
@@ -58,6 +61,9 @@ const [routerPath, setRouterPath] = createSignal("")
 /** 真实 router 收到的每一次导航请求(见 RouteProbe 的注释:为什么不能只看最终 location)。 */
 const [navigationIntents, setNavigationIntents] = createSignal<string[]>([])
 export { pickerCalls, createdIn, exportedLogs, routerPath, navigationIntents }
+
+/** 该连接的 canonical serverKey(会话搜索结果的来源身份)。 */
+const SERVER_KEY = ServerConnection.key(connection)
 
 /** 目录选择器的下一次返回值:`null` = 用户取消。 */
 const [pickerResult, setPickerResult] = createSignal<string | null>(PICKED_DIRECTORY)
@@ -129,10 +135,16 @@ const platform: Platform = {
 /** 叶不在本闸门射程内:给最小标记件,免得把三棵叶子树一起拖进来。 */
 const leaf = (name: string) => () => <div data-harness-leaf={name} />
 
-/** 设置**内容**不是本票命题:read/snapshot 永不落定,面板停在加载态即可 —— DOM 出现就是判据。 */
+/**
+ * 设置面的**权威读**必须真的落定:设置页里那张快捷键表也是一批「指向命令」的入口(用户能改、
+ * 能存),而上游只对**已注册**的命令应用自定义键位 —— 表里留一条已退休的 id,就是又一个
+ * 「改完保存、按下去没反应」。让内容真渲染出来,这一格才不是空的(第一版让 read 永不落定,
+ * 设置内容从未渲染,那格实际上什么也没判)。
+ * 写路径不是本票命题,保持不落定。
+ */
 const settingsApi = {
   settings: {
-    read: () => new Promise(() => {}),
+    read: async () => ({ ok: true, value: structuredClone(ALPHA_SETTINGS_DEFAULTS), revision: "harness-rev" }),
     validate: () => new Promise(() => {}),
     write: () => new Promise(() => {}),
   },
@@ -214,6 +226,10 @@ function Shell(props: { sidebar?: boolean; legacySettingsEntry?: boolean }) {
           {props.sidebar === false ? null : <AlphaSidebar projects={projects} />}
           {/* 与 renderer/index.tsx 的 settings surface 同一接法。 */}
           <AlphaSettings open={settingsOpen()} onClose={() => setSettingsOpen(false)} api={settingsApi} />
+          {/* `command.palette` 的唯一注册点(#659)。壳组成必须与 renderer/index.tsx 一致 ——
+              设置页快捷键表里就有这一条,少挂它会把「产品少注册了一条」误判成真。
+              负对照那个壳同样不挂它(它复现的正是「alpha 壳级注册还不存在」的世界)。 */}
+          {props.sidebar === false ? null : <AlphaSessionSearch projects={projects} serverKey={() => SERVER_KEY} />}
           {props.legacySettingsEntry ? <LegacySettingsEntry /> : null}
         </AppInterface>
       </AppBaseProviders>

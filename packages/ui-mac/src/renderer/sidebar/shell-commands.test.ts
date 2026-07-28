@@ -23,7 +23,7 @@ import { pathToFileURL } from "node:url"
 import { build } from "vite"
 import type { render } from "solid-js/web"
 import type * as Runtime from "./shell-commands-test-runtime"
-import { publishedMenuCommands } from "../../shared/desktop-menu-policy"
+import { RETIRED_MENU_COMMANDS, publishedMenuCommands } from "../../shared/desktop-menu-policy"
 import { homeHref, newSessionHref, sessionHref } from "./route"
 
 type TestRuntime = typeof Runtime & { render: typeof render }
@@ -132,6 +132,30 @@ describe("侧栏账户菜单「设置」:改接 alpha 自有设置面,与路由�
 
     expect(settingsSurface()).not.toBeNull()
     expect(settingsSurface()!.getAttribute("role")).toBe("dialog")
+  })
+
+  test("设置页的快捷键表里,一条已退休的命令 id 都不许出现", async () => {
+    // 这也是一批**指向命令的入口**:每行都能改键位、能保存,而上游只对已注册的命令应用自定义
+    // 键位 —— 留一条退休 id 在表里,就是又一个「改完保存、按下去什么都不发生」。
+    // 判据落在真渲染出来的 DOM 上(必须先真把设置内容加载出来,否则这一格是空的)。
+    runtime.setHasProjects(false)
+    await mountShell(() => runtime.AlphaShell())
+    await openAccountMenu()
+    settingsItem()!.click()
+    await settle()
+
+    document.querySelector<HTMLButtonElement>("[data-settings-section='shortcuts']")!.click()
+    await settle()
+
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(".alpha-settings-shortcut-row code"))
+    const ids = rows.map((row) => row.textContent)
+    // 前提自检:表真的渲染出来了(否则下面的 not.toContain 是空绿)。
+    expect(ids.length).toBeGreaterThan(0)
+    expect(ids).toContain("settings.open")
+    for (const retired of RETIRED_MENU_COMMANDS) expect(ids).not.toContain(retired)
+    // 反过来也要真:表里每一条都得在真实壳里确实注册,否则它同样是个改了不生效的输入框。
+    const registered = new Set(runtime.registeredCommands())
+    expect(ids.filter((id) => !registered.has(id!))).toEqual([])
   })
 
   test("负对照:回到本票之前那个世界(无 alpha 壳级注册),同一条命令点了什么都不发生", async () => {

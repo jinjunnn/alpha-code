@@ -34,6 +34,15 @@ export const RETIRED_MENU_COMMANDS: ReadonlySet<string> = new Set([
   "session.next",
   "project.previous",
   "project.next",
+  // 后退 / 前进:上游注册在 `components/titlebar.tsx`,而 `AppInterface` 先渲染注入 children、
+  // 再渲染路由壳,重复 id **保留第一项** —— 于是首页/新对话页是 Titlebar 赢、会话页 Titlebar
+  // 卸载后才轮到别人。更糟的是 Titlebar 走的是**私有 history**(`titlebar-history.ts`):从会话
+  // 回到首页后它新建的栈只有 `["/"]`,菜单里的「后退」静默 no-op。同一个菜单项在不同路由是两种
+  // 行为、其中一种还是空转 —— 那正是本 REQ 要消灭的形状,而不是可以"语义相同"糊过去的。
+  // alpha 侧栏左上角那对后退/前进按钮**从不经命令总线**(直接 `navigate(±1)`),始终有效,
+  // 是这项能力真正的入口;要给菜单接活得先把 Titlebar 的私有 history 收编,那是另一件事。
+  "common.goBack",
+  "common.goForward",
 ])
 
 /** 该 platform 下 alpha 实际发布的菜单(退休项已剔除,分隔符已收拢)。 */

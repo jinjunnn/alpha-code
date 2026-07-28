@@ -1407,8 +1407,6 @@ export const dict = {
   "alpha.settings.shortcutCommands": "Open command palette",
   "alpha.settings.shortcutOpenProject": "Open project",
   "alpha.settings.shortcutNewSession": "New session",
-  "alpha.settings.shortcutPrevious": "Previous session",
-  "alpha.settings.shortcutNext": "Next session",
   "alpha.settings.storageCached": "Cached items",
   "alpha.settings.storageSweepable": "Safe to reclaim",
   "alpha.settings.storageSwept": "Reclaimed",
