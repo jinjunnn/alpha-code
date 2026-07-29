@@ -366,6 +366,7 @@ describe("REQ-126 CODE-D 切目录不吞内容(真重挂)", () => {
       text: "看下 @src/a.ts",
       mentions: [mention],
       attachments: [attachment("att-1", "one.png"), attachment("att-2", "two.png")],
+      pendingReads: [],
     })
     const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }))
     await flush()
@@ -393,6 +394,7 @@ describe("REQ-126 CODE-D 切目录不吞内容(真重挂)", () => {
       text: "看下 @src/a.ts",
       mentions: [mention],
       attachments: [attachment("att-1", "one.png")],
+      pendingReads: [],
     })
     const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }))
     await flush()
@@ -500,6 +502,107 @@ describe("REQ-126 CODE-D 切目录不吞内容(真重挂)", () => {
     }
   })
 
+  test("#663 读盘未完成时**离开 draft**:读完的附件仍随这条 draft 一起取回", async () => {
+    // 与上一条的区别就是本票的全部内容:那条走工作区 chip(有拦截),这条**根本不碰 chip**,
+    // 直接离开 draft 去另一条 draft —— 导航拦不住,只能让读完的结果自己找回 draft。
+    const realFileReader = globalThis.FileReader
+    ;(globalThis as { FileReader: unknown }).FileReader = PendingFileReader
+    try {
+      const api = projectsApi([project("alpha-code", "/ws/a")])
+      setLiveDrafts(["draft-1", "draft-2"])
+      const host = mount(() => createComponent(DraftLeaf, { projects: api, draftId: "draft-1" }))
+      await flush()
+      const before = textarea(host)!
+      type(before, "读盘中的附件")
+      pasteFile(before, new File(["png-bytes"], "lost.png", { type: "image/png" }))
+      await flush()
+      expect(PendingFileReader.pending).toHaveLength(1) // 读取真的挂起了
+      expect(attachmentNames(host)).toEqual([]) // 此刻附件还不在 composer 里
+
+      // 离开 draft-1(切到 draft-2):叶被卸载,cleanup 这一刻只看得见文本。
+      disposers.pop()!()
+      const other = mount(() => createComponent(DraftLeaf, { projects: api, draftId: "draft-2" }))
+      await flush()
+      expect(textarea(other)!.value).toBe("") // 另一条 draft 不该串味
+      expect(attachmentNames(other)).toEqual([])
+
+      // 读盘现在才完成 —— 只有已卸载的那个实例在等它。
+      PendingFileReader.pending.splice(0)[0]!.release("data:image/png;base64,lost")
+      await flush()
+      await flush()
+      expect(attachmentNames(other)).toEqual([]) // 迟到的结果不许漏进别的 draft
+
+      // 回到 draft-1:文本和附件都必须在。
+      disposers.pop()!()
+      const revisit = mount(() => createComponent(DraftLeaf, { projects: api, draftId: "draft-1" }))
+      await flush()
+      expect(textarea(revisit)!.value).toBe("读盘中的附件")
+      expect(attachmentNames(revisit)).toEqual(["lost.png"])
+
+      // 判据不止「框里看得见」:真提交一次,断言这份附件真的随请求发出去了。
+      textarea(revisit)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+      for (let i = 0; i < 20 && startChatCalls.length === 0; i++) await flush()
+      expect(startChatCalls).toHaveLength(1)
+      expect(startChatCalls[0]!.parts).toEqual([
+        { type: "file", mime: "image/png", url: "data:image/png;base64,lost", filename: "lost.png" },
+      ])
+    } finally {
+      ;(globalThis as { FileReader: unknown }).FileReader = realFileReader
+      PendingFileReader.pending.splice(0)
+    }
+  })
+
+  test("#663 读盘期间「离开 → 读完前就回来 → 再离开 → 再回来」:附件一次都不许丢", async () => {
+    // 上一条覆盖的是「读完之后才回来」。这条是它的对偶:回来得**比读完早**。此时新实例已经把
+    // 暂存取走了 —— 若读盘结果只会写回发起它的那个(已卸载的)实例,它就永远追不上活着的这个,
+    // 下一次离开时活实例那份「没有附件」的快照会把它覆盖掉,于是永久静默丢失。
+    const realFileReader = globalThis.FileReader
+    ;(globalThis as { FileReader: unknown }).FileReader = PendingFileReader
+    try {
+      const api = projectsApi([project("alpha-code", "/ws/a")])
+      const host = mount(() => createComponent(DraftLeaf, { projects: api, draftId: "draft-1" }))
+      await flush()
+      const before = textarea(host)!
+      type(before, "读盘中的附件")
+      pasteFile(before, new File(["png-bytes"], "lost.png", { type: "image/png" }))
+      await flush()
+      expect(PendingFileReader.pending).toHaveLength(1)
+      expect(attachmentNames(host)).toEqual([])
+
+      // ① 离开 draft-1(读盘仍挂起)
+      disposers.pop()!()
+      // ② 读完**之前**就回到 draft-1:新实例接手这条 draft,文本回来了、附件还在路上。
+      const back = mount(() => createComponent(DraftLeaf, { projects: api, draftId: "draft-1" }))
+      await flush()
+      expect(textarea(back)!.value).toBe("读盘中的附件")
+      expect(attachmentNames(back)).toEqual([])
+
+      // ③ 现在才读完:结果必须落到**当前活着的这个实例**,而不是那个已卸载的发起者。
+      PendingFileReader.pending.splice(0)[0]!.release("data:image/png;base64,lost")
+      await flush()
+      await flush()
+      expect(attachmentNames(back)).toEqual(["lost.png"])
+
+      // ④ 再离开、⑤ 再回来:附件仍在(活实例的快照本来就含它,没有谁来覆盖)。
+      disposers.pop()!()
+      const revisit = mount(() => createComponent(DraftLeaf, { projects: api, draftId: "draft-1" }))
+      await flush()
+      expect(textarea(revisit)!.value).toBe("读盘中的附件")
+      expect(attachmentNames(revisit)).toEqual(["lost.png"])
+
+      // 判据不止「框里看得见」:真提交一次,断言这份附件真的随请求发出去了。
+      textarea(revisit)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+      for (let i = 0; i < 20 && startChatCalls.length === 0; i++) await flush()
+      expect(startChatCalls).toHaveLength(1)
+      expect(startChatCalls[0]!.parts).toEqual([
+        { type: "file", mime: "image/png", url: "data:image/png;base64,lost", filename: "lost.png" },
+      ])
+    } finally {
+      ;(globalThis as { FileReader: unknown }).FileReader = realFileReader
+      PendingFileReader.pending.splice(0)
+    }
+  })
+
   test("关掉的 draft 不再永久占着暂存(按 tabs 里还活着的 draft 剪枝)", async () => {
     const api = projectsApi([project("alpha-code", "/ws/a")])
     setLiveDrafts(["draft-1", "draft-2"])
@@ -551,7 +654,7 @@ describe("REQ-126 CODE-D 切目录不吞内容(真重挂)", () => {
   })
 
   test("用户自己清空 ⇒ 切目录后仍然是空的(暂存不复活已删内容)", async () => {
-    newSessionDraftStash.capture("draft-1", { text: "早先输入的", mentions: [], attachments: [] })
+    newSessionDraftStash.capture("draft-1", { text: "早先输入的", mentions: [], attachments: [], pendingReads: [] })
     const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }))
     await flush()
     expect(textarea(host)!.value).toBe("早先输入的")
