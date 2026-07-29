@@ -1,10 +1,10 @@
 {
   "repo": "jinjunnn/alpha-platform",
-  "commit": "bcc60bbf4870dd23ea5a63c9dca3107aa7a4b990",
+  "commit": "2fe1d0103b7c3f68acb98c44d13ed0fcfe8bf196",
   "files": [
     {
       "path": "contracts/v1/alpha-wire-contracts.schema.json",
-      "sha256": "422ed794f09bd7b2706e5edec6651dc39e49ca754e771bc9b180c89e62c35928"
+      "sha256": "ac7b325470995d9b23f0fe02aa4d86311b6a775354ef6b44397ca611573f0cba"
     },
     {
       "path": "contracts/v1/artifact-descriptor.schema.json",
@@ -32,7 +32,7 @@
     },
     {
       "path": "contracts/v1/fixtures/producer/ledger-page.json",
-      "sha256": "751a0b8e32822d0f7d6f0ff054cbbc5849c2c3e2808c5a9579fd2216beb2824a"
+      "sha256": "fd03726647c8864248e244c2d8ea753fee0a0466cdf29a6ef723213850fa8a66"
     },
     {
       "path": "contracts/v1/fixtures/producer/model-catalog.json",

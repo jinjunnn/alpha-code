@@ -19,12 +19,16 @@ import {
 const root = resolve(import.meta.dir, "..")
 const vendor = resolve(root, "vendor/alpha-platform")
 const fixture = async (path: string) => Bun.file(resolve(vendor, path)).json()
+// #640: the LedgerPageV1 consumer pin this repository authors and submits to alpha-platform's
+// cutover gate (contracts/v1/consumer-cutover-required.json). It lives outside vendor/ because
+// vendor/ is hash-locked to upstream bytes; these are ours until upstream vendors them back.
+const authored = async (path: string) => Bun.file(resolve(root, "fixtures", path)).json()
 
 describe("immutable Alpha contract pin", () => {
   test("contract lock resolves to the exact immutable alpha-platform commit", async () => {
     const lock = await Bun.file(resolve(root, "alpha-platform-contract.lock.json")).json()
     expect(lock.repo).toBe("jinjunnn/alpha-platform")
-    expect(lock.commit).toBe("bcc60bbf4870dd23ea5a63c9dca3107aa7a4b990")
+    expect(lock.commit).toBe("2fe1d0103b7c3f68acb98c44d13ed0fcfe8bf196")
     expect(ALPHA_CONTRACT_VERSION).toBe(1)
   })
 
@@ -121,8 +125,58 @@ describe("identity, account, and artifact fail closed", () => {
 
   test("alpha account rejects an incompatible LedgerPageV1 without cached success", async () => {
     const value = structuredClone((await fixture("contracts/v1/fixtures/producer/ledger-page.json")).value)
-    value.transactions[0].status = "pending"
+    // A fact kind this build does not know is drift, not a row to render blank.
+    value.transactions[0].kind = "usage_settled_v2"
     expect(() => decodeContract("LedgerPageV1", value, "account")).toThrow(ContractIncompatibleError)
+  })
+
+  // #640 hard cut: the pre-cut row shape must be *rejected*, not silently tolerated. If this ever
+  // passes, a compatibility shim has grown back and the account surface would render a page whose
+  // amounts it cannot attribute to a domain.
+  test("alpha account rejects the pre-cut ledger row shape at an unchanged schema_version", () => {
+    const legacy = {
+      schema_version: 1,
+      transactions: [
+        {
+          schema_version: 1,
+          id: "tx_1",
+          type: "usage",
+          title: "模型调用",
+          amount_fen: -1250,
+          created_at: "2026-07-29T00:00:00.000Z",
+          status: "success",
+        },
+      ],
+    }
+    expect(() => decodeContract("LedgerPageV1", legacy, "account")).toThrow(ContractIncompatibleError)
+  })
+
+  // The other half of #640: the consumer pin alpha-platform's cutover gate reads is decoded here by
+  // the *shipped* decoder, so "alpha-code is on the new shape" is executed, not asserted in prose.
+  test("the #640 consumer pin decodes through the shipped strict LedgerPageV1 decoder", async () => {
+    const pin = await authored("consumers/alpha-code-640/ledger-page.json")
+    expect(pin.contract).toBe("LedgerPageV1")
+    expect(pin.consumer).toBe("alpha-code")
+    expect(pin.expect).toBe("valid")
+    expect(validateFixture(pin)).toBe(true)
+
+    // decodeJsonContract is the exact call fetchTransactions makes on the account response body.
+    const page = decodeJsonContract("LedgerPageV1", JSON.stringify(pin.value), "account")
+    expect(page.transactions.map((entry) => entry.seq)).toEqual([1042, 1041, 1040, 1039])
+    // The pin must exercise what the account surface has to survive: both balance domains, both
+    // amount signs, and each optional field the wire may carry.
+    expect(new Set(page.transactions.map((entry) => entry.domain))).toEqual(new Set(["wallet", "allowance"]))
+    expect(page.transactions.some((entry) => entry.amount > 0)).toBe(true)
+    expect(page.transactions.some((entry) => entry.amount < 0)).toBe(true)
+    expect(page.transactions.some((entry) => entry.window_id !== undefined)).toBe(true)
+    expect(page.transactions.some((entry) => entry.external_ref !== undefined)).toBe(true)
+    expect(page.transactions.every((entry) => Number.isInteger(entry.created_at))).toBe(true)
+  })
+
+  test("the #640 consumer pin declares the shipped desktop version the cutover gate pins to", async () => {
+    const pin = await authored("consumers/alpha-code-640/ledger-page.json")
+    const shipped = await Bun.file(resolve(root, "../ui-mac/package.json")).json()
+    expect(pin.consumer_version).toBe(shipped.version)
   })
 
   test("rejects legacy inline artifact metadata without fallback", async () => {

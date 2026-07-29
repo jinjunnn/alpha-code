@@ -2,6 +2,8 @@ import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { AlphaEndpoints } from "../shared/alpha-config"
+// Type-only (erased at build): the IPC row must not restate the wire's kind enum and drift from it.
+import type { LedgerFactKindV1 } from "@alpha-code/contracts-consumer"
 import type {
   AuthorizationConfirmationWire,
   CapabilityDiffWire,
@@ -176,13 +178,21 @@ export type AccountSummary = {
   usage: { todayTokens: number; weekTokens: number; tasksThisMonth: number }
   usageSeries: Array<{ date: string; tokens: number }>
 }
+// #640 Ledger V1 hard cut: one row = one append-only ledger fact, mirroring LedgerEntryV1 1:1.
+// There is no `status` (a fact already happened) and no `title` (the wire carries no display copy —
+// rendering is the reader's job). `amount` is signed and its unit follows `domain`: wallet is fen,
+// allowance is credits, so the two domains must never be added together. `createdAt` is epoch ms.
 export type AccountTransaction = {
-  id: string
-  type: "recharge" | "subscription" | "usage" | "bonus"
-  title: string
-  amountFen: number
-  createdAt: string
-  status: "success" | "failed"
+  seq: number
+  opId: string
+  kind: LedgerFactKindV1
+  domain: "wallet" | "allowance"
+  amount: number
+  actionId?: string
+  reservationId?: string
+  windowId?: string
+  externalRef?: string
+  createdAt: number
 }
 /** Result envelope: the payload, or an error code (not-authenticated / unauthorized / http-NNN / network). */
 export type AccountResult<T> = T | { error: string }

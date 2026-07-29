@@ -53,17 +53,42 @@ export type UploadConsentClaimsV1 = {
   egress: EgressDeclarationV1[]
 }
 
+// #640 / platform#101 Ledger V1 hard cut. A ledger entry is now an append-only *fact* from
+// ledger_facts, not a mutable transaction row: facts are never amended, so there is no `status`
+// and no display `title` on the wire. `amount` is signed (positive = credited, negative = debited)
+// and its unit is chosen by `domain` — wallet counts fen, allowance counts credits, so the two are
+// never summed. `seq` is the page cursor (descending, `before=seq` reaches all history);
+// `created_at` is integer epoch milliseconds, not an ISO string.
+export type LedgerFactKindV1 =
+  | "payment_credited"
+  | "bonus_credited"
+  | "subscription_activated"
+  | "reservation_created"
+  | "reservation_settled"
+  | "reservation_expired"
+  | "usage_settled"
+  | "allowance_consumed"
+  | "allowance_window_rolled"
+  | "allowance_expired"
+  | "debt_incurred"
+  | "refund_applied"
+  | "correction"
+
 export type LedgerEntryV1 = {
   schema_version: 1
-  id: string
-  type: "usage" | "recharge" | "bonus" | "subscription"
-  title: string
-  amount_fen: number
-  created_at: string
-  status: "success" | "failed"
-  key_id?: string
+  seq: number
+  op_id: string
+  kind: LedgerFactKindV1
+  domain: "wallet" | "allowance"
+  amount: number
+  action_id?: string
+  reservation_id?: string
+  window_id?: string
+  external_ref?: string
+  created_at: number
 }
 
+/** One page, bounded at 500 entries upstream (LEDGER_PAGE_MAX); older facts are reached by cursor. */
 export type LedgerPageV1 = { schema_version: 1; transactions: LedgerEntryV1[] }
 
 export type ModelCatalogV1 = {
