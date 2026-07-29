@@ -20,7 +20,7 @@ Desktop 当前从 `/v1/models` 解码 `ModelCatalogV1`，但该契约只携带 m
 补价格；未被本地快照收录的线上模型又会被合成为 `tier: "std"`。结果是平台代理目录虽然来自
 线上，计价主张仍来自客户端，而且最贵的新模型可能被显示成 `1×`。
 
-REQ-127 需要在生产入口加入必填的双倍数、basis 和 price-book revision。这是
+REQ-127 需要在生产入口加入必填的双倍数和 basis。这是
 `ModelCatalogV1` 不允许的 breaking change。按 [ADR-037](ADR-037-engine-generation-switch-is-its-own-change.md)，
 生产路径的协议代际替换必须拥有独立 Issue、PR、能力清单和可反向验证的行为闸，不能夹进
 renderer 功能修复。
@@ -45,8 +45,8 @@ Desktop 为该 artifact 建立独立 immutable pin/decoder；现有 V1 bundle �
 
 ### 2. 一个严格 V2 snapshot 贯穿 fetch、cache、IPC 与执行配置
 
-成功响应必须先由 V2 schema 完整验证，再原子写入带明确 schema version 的 LKG。basis、
-pricing revision 和每个 model 的 input/output pair 属于同一个不可拆 snapshot。known model
+成功响应必须先由 V2 schema 完整验证，再原子替换 LKG；cache 不建立自己的版本字段，旧形状
+因缺 basis/pair 自然无效。basis 和每个 model 的 input/output pair 属于同一个不可拆 snapshot。known model
 只允许从本地补 name、reasoning、web 和 variants 等展示元数据，不能覆盖平台字段。
 
 读取时，renderer picker 与 sidecar/engine config 消费同一份 validated projection。
@@ -56,8 +56,10 @@ pricing revision 和每个 model 的 input/output pair 属于同一个不可拆 
 
 ### 3. 平台拥有计算，客户端只拥有展示
 
-V2 必须携带固定 reference model、价格单位、rounding、decimal places、可追溯
-pricing revision，以及每个 model 的 input/output 两个定点十进制 multiplier。客户端：
+V2 只新增固定 `pricing_basis_model_id`，以及每个 model 的 input/output 两个 numeric
+multiplier。未缓存 token 单价、平台 half-up 到一位小数是契约固定语义，不在每次响应重复编码。
+价格完整性继续只由平台 #102 的 fingerprint/countersign gate 承担，不新增 price-book revision。
+客户端：
 
 - 不读取原始 USD 价格；
 - 不做价格除法、rounding、加权或 route 选择；
@@ -95,7 +97,7 @@ V2 fetch → decoder → LKG → effective projection 的结果，并记录一�
   让同一用户流出现半迁移，且恢复了本地价格主权。
 - **继续 pin 整个 V1 bundle 并塞入 V2**：无关 Token/Cloud/Artifact 消费者被 model catalog
   变化耦合；capability-scoped artifact 更小且边界更清楚。
-- **客户端读取原始价格后计算倍数**：basis、rounding 和 price-book revision 会在消费端漂移。
+- **客户端读取原始价格后计算倍数**：basis 与 rounding 会在消费端漂移。
 - **把 generation switch 与 #679 合并**：违反 ADR-037，也让协议切换无法独立 inversion。
 
 ## 后果
