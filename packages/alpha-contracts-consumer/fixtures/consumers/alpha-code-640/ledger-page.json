@@ -1,0 +1,55 @@
+{
+  "kind": "schema",
+  "contract": "LedgerPageV1",
+  "consumer": "alpha-code",
+  "consumer_version": "0.1.2",
+  "expect": "valid",
+  "value": {
+    "schema_version": 1,
+    "transactions": [
+      {
+        "schema_version": 1,
+        "seq": 1042,
+        "op_id": "op_settle_01j9wq7f3k",
+        "kind": "usage_settled",
+        "domain": "wallet",
+        "amount": -1250,
+        "action_id": "act_01j9wq7f3k",
+        "reservation_id": "rsv_01j9wq7f3k",
+        "created_at": 1784678400000
+      },
+      {
+        "schema_version": 1,
+        "seq": 1041,
+        "op_id": "op_settle_01j9wq7f3k",
+        "kind": "allowance_consumed",
+        "domain": "allowance",
+        "amount": -8,
+        "action_id": "act_01j9wq7f3k",
+        "reservation_id": "rsv_01j9wq7f3k",
+        "window_id": "5h:1784660400000",
+        "created_at": 1784678400000
+      },
+      {
+        "schema_version": 1,
+        "seq": 1040,
+        "op_id": "op_roll_5h_1784660400000",
+        "kind": "allowance_window_rolled",
+        "domain": "allowance",
+        "amount": 500,
+        "window_id": "5h:1784678400000",
+        "created_at": 1784678400000
+      },
+      {
+        "schema_version": 1,
+        "seq": 1039,
+        "op_id": "op_wxpay_4200002181",
+        "kind": "payment_credited",
+        "domain": "wallet",
+        "amount": 20000,
+        "external_ref": "4200002181202607290000000042",
+        "created_at": 1784592000000
+      }
+    ]
+  }
+}

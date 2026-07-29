@@ -52,13 +52,20 @@ export const fetchTransactions = (limit?: number): Promise<AccountResult<{ trans
     limit ? `${ALPHA_PATHS.transactions}?limit=${limit}` : ALPHA_PATHS.transactions,
     "account.read",
     (text) => ({
+      // #640: the page is append-only ledger facts (platform#101 hard cut). Carried through
+      // verbatim — no display copy is synthesised here and no domain arithmetic is done, because
+      // wallet amounts are fen and allowance amounts are credits.
       transactions: decodeJsonContract("LedgerPageV1", text, "account").transactions.map((entry) => ({
-        id: entry.id,
-        type: entry.type,
-        title: entry.title,
-        amountFen: entry.amount_fen,
+        seq: entry.seq,
+        opId: entry.op_id,
+        kind: entry.kind,
+        domain: entry.domain,
+        amount: entry.amount,
+        actionId: entry.action_id,
+        reservationId: entry.reservation_id,
+        windowId: entry.window_id,
+        externalRef: entry.external_ref,
         createdAt: entry.created_at,
-        status: entry.status,
       })),
     }),
   )

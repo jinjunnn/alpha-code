@@ -28,6 +28,9 @@
       "$ref": "#/$defs/ReservationResultV1"
     },
     {
+      "$ref": "#/$defs/PriceSnapshotV1"
+    },
+    {
       "$ref": "#/$defs/SettlementRequestV1"
     },
     {
@@ -1097,6 +1100,14 @@
           "minLength": 1,
           "maxLength": 256
         },
+        "action_id": {
+          "type": "string",
+          "enum": [
+            "model.invoke.chat",
+            "model.invoke.messages",
+            "tool.web_search"
+          ]
+        },
         "model_id": {
           "type": "string",
           "minLength": 1,
@@ -1107,9 +1118,53 @@
           "minLength": 1,
           "maxLength": 256
         },
-        "estimated_cost_usd": {
-          "type": "number",
-          "minimum": 0
+        "route_providers": {
+          "minItems": 1,
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "requested_max_tokens": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "server_tools": {
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "cap": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 1000
+              }
+            },
+            "required": [
+              "tool",
+              "cap"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "beta_features": {
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
         },
         "job_id": {
           "type": "string",
@@ -1125,9 +1180,9 @@
       "required": [
         "schema_version",
         "tenant_id",
+        "action_id",
         "model_id",
-        "reservation_id",
-        "estimated_cost_usd"
+        "reservation_id"
       ],
       "additionalProperties": false
     },
@@ -1145,11 +1200,258 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 2048
+        },
+        "route_providers": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
         }
       },
       "required": [
         "schema_version",
         "ok"
+      ],
+      "additionalProperties": false
+    },
+    "PriceSnapshotV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "formula_version": {
+          "type": "string",
+          "const": "rev10"
+        },
+        "action_id": {
+          "type": "string",
+          "enum": [
+            "model.invoke.chat",
+            "model.invoke.messages",
+            "tool.web_search"
+          ]
+        },
+        "model_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "price_source": {
+          "type": "string",
+          "enum": [
+            "model-route-pricing",
+            "web-search-unit"
+          ]
+        },
+        "sell_fen_per_usd": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "beta_feature_set": {
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "modifier_set": {
+          "maxItems": 0,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "routes": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "upstream_model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "wire": {
+                "type": "string",
+                "enum": [
+                  "openai",
+                  "anthropic"
+                ]
+              },
+              "in_usd_per_mtok": {
+                "type": "number",
+                "minimum": 0
+              },
+              "out_usd_per_mtok": {
+                "type": "number",
+                "minimum": 0
+              },
+              "cache_read_usd_per_mtok": {
+                "type": "number",
+                "minimum": 0
+              },
+              "cache_write_usd_per_mtok": {
+                "type": "number",
+                "minimum": 0
+              },
+              "context_window_tokens": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "max_out_tokens": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "n_iter": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 16000
+              },
+              "server_tool_caps": {
+                "maxItems": 16,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "tool": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "cap": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 1000
+                    },
+                    "per_call_usd": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "tool",
+                    "cap",
+                    "per_call_usd"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "bound_usd": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "provider",
+              "upstream_model",
+              "wire",
+              "in_usd_per_mtok",
+              "out_usd_per_mtok",
+              "context_window_tokens",
+              "max_out_tokens",
+              "n_iter",
+              "server_tool_caps",
+              "bound_usd"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "web_search_usd_per_call": {
+          "type": "number",
+          "minimum": 0
+        },
+        "hold_fen": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "allocation": {
+          "type": "object",
+          "properties": {
+            "model_component_fen": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "tool_component_fen": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "allowance_leg_credits": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "wallet_leg_fen": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "window5_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "window7_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "model_component_fen",
+            "tool_component_fen",
+            "allowance_leg_credits",
+            "wallet_leg_fen",
+            "window5_id",
+            "window7_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "formula_version",
+        "action_id",
+        "model_id",
+        "price_source",
+        "sell_fen_per_usd",
+        "beta_feature_set",
+        "modifier_set",
+        "routes",
+        "hold_fen",
+        "allocation"
       ],
       "additionalProperties": false
     },
@@ -1165,6 +1467,14 @@
           "minLength": 1,
           "maxLength": 256
         },
+        "action_id": {
+          "type": "string",
+          "enum": [
+            "model.invoke.chat",
+            "model.invoke.messages",
+            "tool.web_search"
+          ]
+        },
         "model_id": {
           "type": "string",
           "minLength": 1,
@@ -1174,6 +1484,14 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "usage_source": {
+          "type": "string",
+          "enum": [
+            "authoritative",
+            "absent_upstream",
+            "absent_client_disconnect"
+          ]
         },
         "tokens_in": {
           "type": "integer",
@@ -1200,6 +1518,30 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "server_tool_requests": {
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "requests": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "tool",
+              "requests"
+            ],
+            "additionalProperties": false
+          }
+        },
         "job_id": {
           "type": "string",
           "minLength": 1,
@@ -1214,13 +1556,20 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "upstream_model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
         }
       },
       "required": [
         "schema_version",
         "tenant_id",
+        "action_id",
         "model_id",
         "reservation_id",
+        "usage_source",
         "tokens_in",
         "tokens_out",
         "cache_read_tokens",
@@ -1306,56 +1655,80 @@
           "type": "number",
           "const": 1
         },
-        "id": {
+        "seq": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "op_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 256
         },
-        "type": {
+        "kind": {
           "type": "string",
           "enum": [
-            "usage",
-            "recharge",
-            "bonus",
-            "subscription"
+            "payment_credited",
+            "bonus_credited",
+            "subscription_activated",
+            "reservation_created",
+            "reservation_settled",
+            "reservation_expired",
+            "usage_settled",
+            "allowance_consumed",
+            "allowance_window_rolled",
+            "allowance_expired",
+            "debt_incurred",
+            "refund_applied",
+            "correction"
           ]
         },
-        "title": {
+        "domain": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 1024
+          "enum": [
+            "wallet",
+            "allowance"
+          ]
         },
-        "amount_fen": {
+        "amount": {
           "type": "integer",
           "minimum": -9007199254740991,
           "maximum": 9007199254740991
         },
-        "created_at": {
+        "action_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "reservation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "window_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 64
         },
-        "status": {
-          "type": "string",
-          "enum": [
-            "success",
-            "failed"
-          ]
-        },
-        "key_id": {
+        "external_ref": {
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "created_at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
         "schema_version",
-        "id",
-        "type",
-        "title",
-        "amount_fen",
-        "created_at",
-        "status"
+        "seq",
+        "op_id",
+        "kind",
+        "domain",
+        "amount",
+        "created_at"
       ],
       "additionalProperties": false
     },
@@ -1367,7 +1740,7 @@
           "const": 1
         },
         "transactions": {
-          "maxItems": 1000,
+          "maxItems": 500,
           "type": "array",
           "items": {
             "type": "object",
@@ -1376,56 +1749,80 @@
                 "type": "number",
                 "const": 1
               },
-              "id": {
+              "seq": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "op_id": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
               },
-              "type": {
+              "kind": {
                 "type": "string",
                 "enum": [
-                  "usage",
-                  "recharge",
-                  "bonus",
-                  "subscription"
+                  "payment_credited",
+                  "bonus_credited",
+                  "subscription_activated",
+                  "reservation_created",
+                  "reservation_settled",
+                  "reservation_expired",
+                  "usage_settled",
+                  "allowance_consumed",
+                  "allowance_window_rolled",
+                  "allowance_expired",
+                  "debt_incurred",
+                  "refund_applied",
+                  "correction"
                 ]
               },
-              "title": {
+              "domain": {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 1024
+                "enum": [
+                  "wallet",
+                  "allowance"
+                ]
               },
-              "amount_fen": {
+              "amount": {
                 "type": "integer",
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
               },
-              "created_at": {
+              "action_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "reservation_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "window_id": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 64
               },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "success",
-                  "failed"
-                ]
-              },
-              "key_id": {
+              "external_ref": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "created_at": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": [
               "schema_version",
-              "id",
-              "type",
-              "title",
-              "amount_fen",
-              "created_at",
-              "status"
+              "seq",
+              "op_id",
+              "kind",
+              "domain",
+              "amount",
+              "created_at"
             ],
             "additionalProperties": false
           }

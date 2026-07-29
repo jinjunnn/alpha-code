@@ -4,15 +4,39 @@
   "expect": "valid",
   "value": {
     "schema_version": 1,
-    "transactions": [{
-      "schema_version": 1,
-      "id": "ledger_fixture1",
-      "type": "usage",
-      "title": "Cloud job usage",
-      "amount_fen": -12,
-      "created_at": "2026-07-22T00:00:00Z",
-      "status": "success",
-      "key_id": "key_fixture"
-    }]
+    "transactions": [
+      {
+        "schema_version": 1,
+        "seq": 42,
+        "op_id": "reservation_fixture",
+        "kind": "usage_settled",
+        "domain": "wallet",
+        "amount": -12,
+        "reservation_id": "reservation_fixture",
+        "external_ref": "key_fixture",
+        "created_at": 1784678400000
+      },
+      {
+        "schema_version": 1,
+        "seq": 41,
+        "op_id": "reservation_fixture",
+        "kind": "allowance_consumed",
+        "domain": "allowance",
+        "amount": -12,
+        "reservation_id": "reservation_fixture",
+        "window_id": "5h:1784660400000",
+        "created_at": 1784678400000
+      },
+      {
+        "schema_version": 1,
+        "seq": 40,
+        "op_id": "wx_fixture_order",
+        "kind": "payment_credited",
+        "domain": "wallet",
+        "amount": 10000,
+        "external_ref": "4200000000000000000000000001",
+        "created_at": 1784592000000
+      }
+    ]
   }
 }

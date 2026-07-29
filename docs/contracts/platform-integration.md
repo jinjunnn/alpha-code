@@ -36,9 +36,31 @@ The desktop consumes Alpha Platform v1 through
 `packages/alpha-contracts-consumer`. Its
 `alpha-platform-contract.lock.json` pins repository
 `jinjunnn/alpha-platform` at immutable commit
-`bcc60bbf4870dd23ea5a63c9dca3107aa7a4b990` and records the SHA-256 of every
+`2fe1d0103b7c3f68acb98c44d13ed0fcfe8bf196` and records the SHA-256 of every
 vendored schema, limit document, producer fixture, consumer fixture, and
 negative fixture. This pin is independent of `bun.lock`.
+
+### Ledger V1 hard cut
+
+That pin carries the `LedgerPageV1` hard cut (`alpha-platform#101`). A ledger
+entry is now an append-only *fact* — `seq` (descending page cursor), `op_id`,
+`kind`, `domain`, a signed `amount`, and `created_at` in epoch milliseconds —
+replacing the former mutable `{id, type, title, amount_fen, status}` row at an
+unchanged `schema_version`. The change is deliberately breaking in place: no
+dual-shape decoder exists, and a pre-cut page now fails closed.
+
+Two consequences bind on readers of this surface. `amount` carries its sign, so
+a credit and a debit are distinguished by the value and never by a separate
+status. Its unit is chosen by `domain` — `wallet` counts fen, `allowance`
+counts credits — so amounts from the two domains must never be summed.
+
+The desktop's side of the platform deploy gate
+(`contracts/v1/consumer-cutover-required.json`) is the consumer pin
+[`fixtures/consumers/alpha-code-640/ledger-page.json`](../../packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-640/ledger-page.json),
+which declares the released `ui-mac` version and is decoded by the shipped
+strict decoder in this repository's own gate. It lives outside `vendor/`
+because `vendor/` is hash-locked to upstream bytes and this fixture is authored
+here.
 
 The package is a consumer only: its schemas and fixtures are byte copies of the
 pinned producer release, while its code supplies strict decoders and safe

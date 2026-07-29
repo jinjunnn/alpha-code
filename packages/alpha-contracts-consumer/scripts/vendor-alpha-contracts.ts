@@ -11,8 +11,12 @@ import { fileURLToPath } from "node:url"
 // bytes against the lock and, when a staged checkout is present, against the upstream bytes too.
 const UPSTREAMS = [
   {
+    // #640 / platform#101: bumped off bcc60bbf for the Ledger V1 hard cut. `LedgerEntryV1` is now the
+    // append-only ledger fact (seq/op_id/kind/domain/signed amount/created_at ms); the old mutable
+    // {id,type,title,amount_fen,status} row is gone at an unchanged schema_version — a breaking
+    // in-place cut with no compatibility shim, so this pin and the desktop decoder move together.
     repo: "jinjunnn/alpha-platform",
-    commit: "bcc60bbf4870dd23ea5a63c9dca3107aa7a4b990",
+    commit: "2fe1d0103b7c3f68acb98c44d13ed0fcfe8bf196",
     lock: "alpha-platform-contract.lock.json",
     vendor: "vendor/alpha-platform",
     sourceEnv: "ALPHA_PLATFORM_CONTRACT_SOURCE",
