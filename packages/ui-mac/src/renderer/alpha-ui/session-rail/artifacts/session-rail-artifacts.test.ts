@@ -26,7 +26,7 @@ describe("REQ-125 C4 artifacts panel real Solid mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("18 pass")
+    expect(output).toContain("19 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -80,25 +80,32 @@ describe("REQ-125 C4 verbatim workbench embed (I5) and channel discipline", () =
     expect(css).not.toContain(".a-wb")
   })
 
-  test("data flows through the read-only run-artifact channels plus the #660 cloud face, in the container", () => {
-    expect(wiring).toContain("window.api.runArtifacts.projectUsage(")
-    expect(wiring).toContain("window.api.runArtifacts.list(")
-    expect(wiring).toMatch(/window\.api\.runArtifacts\s*\.verify\(/)
-    expect(wiring).toContain("window.api.runArtifacts.read(")
-    // #660 — deliberate ratchet update, owner-decided (issue #660 裁决记录 A1/B1/E): the
-    // container now ALSO consumes exactly these cloud channels — platform listing (honest
-    // degradation when unreachable), single-item download + progress + cancel (the proven
-    // downloadReducer), and the run-saved push event (A1). Nothing else was admitted.
-    expect(wiring).toContain("window.api.cloud.artifacts(")
-    expect(wiring).toMatch(/window\.api\.cloud\s*\.downloadArtifact\(/)
-    expect(wiring).toContain("window.api.cloud.cancelArtifactDownload(")
-    expect(wiring).toContain("window.api.cloud.onArtifactProgress(")
-    expect(wiring).toContain("window.api.cloud.onRunSaved(")
-    // Still forbidden: open/preview escapes, and any run-level write or refetch face —
-    // decision E keeps delete/GC out, and saveRun stays main-driven (the watcher), never
-    // the rail. The #660 closure must not be read as having delivered run management.
-    const forbidden = ["openExternal", "quickLook", "openPath", "htmlPreview.open", "saveRun", "removeArtifact"]
-    forbidden.forEach((token) => expect(wiring).not.toContain(token))
+  test("data flows through EXACTLY the read-only run-artifact channels plus the #660 cloud face, in the container", () => {
+    // #660 — deliberate ratchet update, owner-decided (issue #660 裁决记录 A1/B1/E), asserted
+    // as SET EQUALITY (audit item 4: existence + blocklist is not a whitelist — an unlisted
+    // channel such as cloud.dispatch would slip through). Every `window.api.<face>.<method>`
+    // call in the container is extracted and must equal the sanctioned set exactly:
+    //   runArtifacts — the read-only quartet (REQ-093/094/095);
+    //   cloud — platform listing (honest degradation when unreachable), single-item
+    //   download + progress + cancel (the proven downloadReducer), and the A1 run-saved
+    //   push. Nothing else is admitted: no saveRun (main/watcher-driven, never the rail),
+    //   no delete/GC (decision E — #660's closure must not be read as run management),
+    //   no open/preview escapes (openExternal/quickLook/openPath/htmlPreview).
+    const callsOf = (face: string) =>
+      [...wiring.matchAll(new RegExp(`window\\.api\\.${face}\\s*\\.\\s*(\\w+)\\(`, "g"))]
+        .map((match) => match[1]!)
+        .sort()
+    expect([...new Set(callsOf("runArtifacts"))]).toEqual(["list", "projectUsage", "read", "verify"])
+    expect([...new Set(callsOf("cloud"))]).toEqual([
+      "artifacts",
+      "cancelArtifactDownload",
+      "downloadArtifact",
+      "onArtifactProgress",
+      "onRunSaved",
+    ])
+    // And no third face at all: every window.api usage in the container is one of the two.
+    const faces = [...wiring.matchAll(/window\.api\.(\w+)/g)].map((match) => match[1]!)
+    expect([...new Set(faces)].sort()).toEqual(["cloud", "runArtifacts"])
     // The view is channel-free — the harness mounts it without any preload bridge.
     expect(view).not.toContain("window.api")
   })

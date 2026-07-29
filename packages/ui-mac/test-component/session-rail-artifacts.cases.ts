@@ -288,7 +288,7 @@ describe("REQ-125 C4 artifacts view real Solid mount", () => {
 })
 
 describe("#660 retrieval and empty states (view harness)", () => {
-  test("取回四态渲染诚实:下载 / 进度+取消 / 已验证 / 失败+重试", async () => {
+  test("取回四态渲染诚实:下载 / 进度+取消 / 已取回(同一张卡,不可再点)/ 失败+重试", async () => {
     const harness = runtime.createArtifactsViewHarness()
     const cloudCard = runtime.fakeCard({
       key: "art-cloud",
@@ -300,34 +300,53 @@ describe("#660 retrieval and empty states (view harness)", () => {
     harness.setCards([cloudCard, runtime.fakeCard({ key: "art-ok", name: "竞品扫描.docx" })])
     harness.setRuns([runtime.fakeRunRow({ runId: "job_r1", ordinal: "latest" })])
     harness.setSelectedRunId("job_r1")
+    // 选中同一张云卡:详情区(尚未落盘 fallback)的下载入口也要逐态核对(审计 Major-3)。
+    harness.setSelectedKey("art-cloud")
     const host = mount(harness.View)
     await flush()
 
-    // ① 未取回:主按钮「下载」,无进度、无错误痕迹;已验证卡片没有任何动作区。
+    // ① 未取回:主按钮「下载」,无进度、无错误痕迹;详情区也有「下载」;已验证卡片无动作区。
     const actions = () => host.querySelector("[data-artifact-card='art-cloud']")!.closest(".alpha-wb-card")!
+    const detailBtn = () => host.querySelector<HTMLButtonElement>(".alpha-wb-empty .a-wb-btn")
     expect(actions().querySelector(".alpha-wb-card-actions .a-wb-btn")!.textContent).toBe(i18n.t("alpha.wb.download"))
     expect(actions().querySelector(".alpha-wb-progress")).toBeNull()
+    expect(detailBtn()).not.toBeNull()
     expect(host.querySelector("[data-artifact-card='art-ok']")!.closest(".alpha-wb-card")!.querySelector(".alpha-wb-card-actions")).toBeNull()
 
-    host.querySelector<HTMLButtonElement>(".alpha-wb-card-actions .a-wb-btn")!.click()
+    actions().querySelector<HTMLButtonElement>(".alpha-wb-card-actions .a-wb-btn")!.click()
     expect(harness.calls.download).toEqual(["art-cloud"])
 
-    // ② 取回中:百分比 + 取消,aria-live 播报,不打断。
+    // ② 取回中:百分比 + 取消,aria-live 播报,不打断;详情区下载入口消失。
     harness.setDownloadPhases({ "art-cloud": { status: "downloading", bytes: 43, total: 100, percent: 43 } })
     await flush()
     expect(actions().querySelector(".alpha-wb-progress")!.textContent).toBe("43%")
     const cancelBtn = actions().querySelector<HTMLButtonElement>(".alpha-wb-card-actions .a-wb-btn")!
     expect(cancelBtn.textContent).toBe(i18n.t("alpha.wb.cancel"))
     expect(host.querySelector(".alpha-wb-live")!.textContent).toContain("43%")
+    expect(detailBtn()).toBeNull()
     cancelBtn.click()
     expect(harness.calls.cancelDownload).toEqual(["art-cloud"])
 
-    // ④ 失败:行内红 chip + 「重试」+ 列表下方详情通知 —— 不弹框。
+    // ③ 已取回(审计 Major-3:必须是**同一张卡**置 done,不许拿旁边的本地卡冒充):
+    //    动作区只剩不可点的「已验证」chip,行上与详情区都没有任何再下载入口。
+    harness.setDownloadPhases({ "art-cloud": { status: "done" } })
+    await flush()
+    const doneChip = actions().querySelector("[data-download-done]")
+    expect(doneChip).not.toBeNull()
+    expect(doneChip!.textContent).toBe(i18n.t("alpha.wb.state.verified"))
+    expect(doneChip!.tagName).not.toBe("BUTTON")
+    expect(actions().querySelector(".alpha-wb-card-actions .a-wb-btn")).toBeNull()
+    expect(detailBtn()).toBeNull()
+    const downloadsBefore = harness.calls.download.length
+
+    // ④ 失败:行内红 chip + 「重试」+ 列表下方详情通知 —— 不弹框;详情区入口恢复。
     harness.setDownloadPhases({ "art-cloud": { status: "error", message: "network(offline)" } })
     await flush()
     expect(actions().querySelector("[data-download-error]")).not.toBeNull()
     expect(actions().querySelector(".alpha-wb-card-actions .a-wb-btn")!.textContent).toBe(i18n.t("alpha.wb.retry"))
     expect(host.querySelector("[data-download-failure]")!.textContent).toContain("network(offline)")
+    expect(detailBtn()).not.toBeNull()
+    expect(harness.calls.download.length).toBe(downloadsBefore) // done 期间没有任何再触发
   })
 
   test("取消不留错误痕迹:cancelled 回到「下载」,无错误 chip、无失败通知", async () => {
@@ -669,6 +688,39 @@ describe("#660 cross-run browsing and the run-saved push (real shell)", () => {
     expect(cloudCard.querySelector(".alpha-wb-card-actions .a-wb-btn")!.textContent).toBe(i18n.t("alpha.wb.download"))
   })
 
+  test("本地为空+云端未答:不宣称空(loading);本地为空+云端失败:只说平台不可用(Major-2)", async () => {
+    // ① 云端 pending:phase 停在 loading,绝无「这次没有产生文件」。
+    let resolveCloud!: (value: unknown) => void
+    const pendingCloud = new Promise((resolve) => (resolveCloud = resolve))
+    installFakeRunArtifacts({ job_1: [] }, { cloudArtifacts: () => pendingCloud })
+    let shell = runtime.createArtifactsShellHarness()
+    let host = mount(shell.Shell)
+    await openArtifactsTab(host)
+    await flushTimers()
+    const phaseAttr = () => host.querySelector("[data-alpha-session-artifacts]")!.getAttribute("data-artifacts-phase")
+    expect(phaseAttr()).toBe("loading")
+    expect(host.querySelector("[data-artifacts-empty-run]")).toBeNull()
+    // 平台答复「确实没有」之后,才允许 empty-run 的断言出现。
+    resolveCloud({ schema_version: 1, job_id: "job_1", status: "completed", artifacts: [], artifact_ids: [], result: null })
+    await flushTimers()
+    expect(phaseAttr()).toBe("empty-run")
+    expect(host.querySelector("[data-artifacts-empty-run]")).not.toBeNull()
+    unmountAll()
+    delete (window as never as Record<string, unknown>).api
+
+    // ② 云端失败:只渲染「平台列表不可用」,不渲染任何空态断言;条留着可换走。
+    installFakeRunArtifacts({ job_1: [] }) // 默认 cloud.artifacts = {error}
+    shell = runtime.createArtifactsShellHarness()
+    host = mount(shell.Shell)
+    await openArtifactsTab(host)
+    await flushTimers()
+    expect(phaseAttr()).toBe("empty-unknown")
+    expect(host.querySelector("[data-cloud-unavailable]")).not.toBeNull()
+    expect(host.querySelector("[data-artifacts-empty-run]")).toBeNull()
+    expect(host.querySelector("[data-artifacts-empty]")).toBeNull()
+    expect(host.querySelector("[data-artifacts-runbar]")).not.toBeNull()
+  })
+
   test("换次之后复核闸门仍在字节之前:新 run 的 verify 未过,一个字节都不读", async () => {
     let resolveB!: (value: unknown) => void
     const gateB = new Promise((resolve) => (resolveB = resolve))
@@ -712,7 +764,7 @@ describe("#660 cross-run browsing and the run-saved push (real shell)", () => {
     let resolveDownload!: (value: unknown) => void
     const pending = new Promise((resolve) => (resolveDownload = resolve))
     const entriesByRun: Record<string, unknown[]> = { job_1: [manifestEntry("art-1", "架构说明.md")] }
-    const { calls, emitProgress } = installFakeRunArtifacts(entriesByRun, {
+    const { calls, emitProgress, emitRunSaved } = installFakeRunArtifacts(entriesByRun, {
       cloudArtifacts: () => ({
         schema_version: 1,
         job_id: "job_1",
@@ -743,13 +795,27 @@ describe("#660 cross-run browsing and the run-saved push (real shell)", () => {
     await flush()
     expect(calls.cancel).toEqual(["art_cloud_9"])
 
-    // The download settles ok → the manifest was written back in main; the panel re-reads
-    // the list instead of optimistically flipping the chip.
+    // The download settles ok while the reread still returns the OLD list (entries unchanged):
+    // Major-3 window — the SAME card holds {status:"done"}: a non-clickable 已验证 chip,
+    // no 「下载」 anywhere on it, and no way to fire a second downloadArtifact.
     const listBefore = calls.list.length
-    entriesByRun["job_1"] = [manifestEntry("art-1", "架构说明.md"), manifestEntry("art_cloud_9", "云端附录.pdf")]
     resolveDownload({ ok: true, path: "x", bytes: 9, sha256: "0".repeat(64), verification: "verified", via: "stream" })
     await flushTimers()
     await flushTimers()
-    expect(calls.list.length).toBeGreaterThan(listBefore)
+    expect(calls.list.length).toBeGreaterThan(listBefore) // re-read happened (not an optimistic flip)
+    expect(cloudCard().querySelector("[data-download-done]")).not.toBeNull()
+    expect(cloudCard().querySelector(".alpha-wb-card-actions .a-wb-btn")).toBeNull()
+    expect(calls.download).toEqual(["job_1:art_cloud_9"]) // exactly one download, ever
+
+    // The manifest reread finally lands the verified local card → the cloud-only card is
+    // replaced, the transient done phase is cleared with it.
+    entriesByRun["job_1"] = [manifestEntry("art-1", "架构说明.md"), manifestEntry("art_cloud_9", "云端附录.pdf")]
+    emitRunSaved({ directory: DIR, runId: "job_1" })
+    await flushTimers()
+    await flushTimers()
+    const landed = host.querySelector("[data-artifact-card='art_cloud_9']")!.closest(".alpha-wb-card")!
+    expect(landed.getAttribute("data-state")).toBe("verified")
+    expect(landed.querySelector("[data-download-done]")).toBeNull()
+    expect(landed.querySelector(".alpha-wb-card-actions")).toBeNull()
   })
 })

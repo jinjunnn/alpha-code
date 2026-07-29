@@ -14,17 +14,29 @@ function card(input: Partial<ArtifactCard> & { key: string }): ArtifactCard {
 }
 
 describe("REQ-125 C4 artifacts phase (fail-closed)", () => {
+  const base = { usage: { ok: true }, runId: "job_1", list: { ok: true }, cloud: { ok: true } }
+
   test("nothing proven readable renders as loading, failures as error", () => {
-    expect(artifactsPhaseOf({ usage: undefined, runId: undefined, list: undefined, cardCount: 0 })).toBe("loading")
-    expect(artifactsPhaseOf({ usage: { ok: false }, runId: undefined, list: undefined, cardCount: 0 })).toBe("error")
-    expect(artifactsPhaseOf({ usage: { ok: true }, runId: "job_1", list: undefined, cardCount: 0 })).toBe("loading")
-    expect(artifactsPhaseOf({ usage: { ok: true }, runId: "job_1", list: { ok: false }, cardCount: 0 })).toBe("error")
+    expect(artifactsPhaseOf({ usage: undefined, runId: undefined, list: undefined, cloud: undefined, cardCount: 0 })).toBe("loading")
+    expect(artifactsPhaseOf({ usage: { ok: false }, runId: undefined, list: undefined, cloud: undefined, cardCount: 0 })).toBe("error")
+    expect(artifactsPhaseOf({ ...base, list: undefined, cloud: undefined, cardCount: 0 })).toBe("loading")
+    expect(artifactsPhaseOf({ ...base, list: { ok: false }, cardCount: 0 })).toBe("error")
   })
 
-  test("两种空是两个相位:没有任何 run = empty;这一次没有产物 = empty-run(#660)", () => {
-    expect(artifactsPhaseOf({ usage: { ok: true }, runId: undefined, list: undefined, cardCount: 0 })).toBe("empty")
-    expect(artifactsPhaseOf({ usage: { ok: true }, runId: "job_1", list: { ok: true }, cardCount: 0 })).toBe("empty-run")
-    expect(artifactsPhaseOf({ usage: { ok: true }, runId: "job_1", list: { ok: true }, cardCount: 2 })).toBe("cards")
+  test("两种空是两个相位:没有任何 run = empty;这一次已证实没有产物 = empty-run(#660)", () => {
+    expect(artifactsPhaseOf({ usage: { ok: true }, runId: undefined, list: undefined, cloud: undefined, cardCount: 0 })).toBe("empty")
+    expect(artifactsPhaseOf({ ...base, cardCount: 0 })).toBe("empty-run")
+    expect(artifactsPhaseOf({ ...base, cardCount: 2 })).toBe("cards")
+  })
+
+  test("run 级空断言必须等平台答复(#660 审计 Major-2):pending = loading,失败 = empty-unknown", () => {
+    // 本地为空、平台尚未回答 → 还不知道,不许宣称空。
+    expect(artifactsPhaseOf({ ...base, cloud: undefined, cardCount: 0 })).toBe("loading")
+    // 本地为空、平台取不到 → 只说平台不可用,永不说「这次没有产生文件」。
+    expect(artifactsPhaseOf({ ...base, cloud: { ok: false }, cardCount: 0 })).toBe("empty-unknown")
+    // 本地已有卡片时不用等平台 —— 显示的是真实本地事实,云端到了就地合并,无假断言。
+    expect(artifactsPhaseOf({ ...base, cloud: undefined, cardCount: 2 })).toBe("cards")
+    expect(artifactsPhaseOf({ ...base, cloud: { ok: false }, cardCount: 2 })).toBe("cards")
   })
 })
 

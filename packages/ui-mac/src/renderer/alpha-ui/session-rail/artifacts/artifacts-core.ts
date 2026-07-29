@@ -9,18 +9,24 @@ import type { AlphaSessionIdentity } from "../../session-workspace/session-works
 
 /**
  * #660:两种空是两个事实,不得合并 —— `empty` = 这个项目一次云任务都没有(连切换条都不画,
- * 只能选空集的选择器是噪音);`empty-run` = 选中的这一次确实没有产物(条留着,用户得能换走)。
+ * 只能选空集的选择器是噪音);`empty-run` = 选中的这一次**已证实**没有产物(条留着,用户得能换走)。
+ * `empty-unknown`(审计 Major-2)= 本地为空、平台侧取不到 —— 只说「平台列表不可用」,
+ * **绝不宣称这一次是空的**:没拿到平台的答案之前,「这次没有产生文件」是一句没有根据的断言,
+ * 正是本票要消灭的那类毛病。
  */
-export type ArtifactsPhase = "loading" | "error" | "empty" | "empty-run" | "cards"
+export type ArtifactsPhase = "loading" | "error" | "empty" | "empty-run" | "empty-unknown" | "cards"
 
 /**
- * Honest panel phase from the two read channels. Fail-closed: anything not proven readable
- * renders as loading/error, never as an optimistic empty.
+ * Honest panel phase from the three read channels. Fail-closed: anything not proven readable
+ * renders as loading/error, never as an optimistic empty — and the run-level empty claim
+ * additionally requires the platform listing to have answered (cloud ok + merged result empty).
  */
 export function artifactsPhaseOf(input: {
   usage: { ok: boolean } | undefined
   runId: string | undefined
   list: { ok: boolean } | undefined
+  /** 平台列表:undefined = 尚未回答(pending);ok:false = 取不到(离线/未登录)。 */
+  cloud: { ok: boolean } | undefined
   cardCount: number
 }): ArtifactsPhase {
   if (input.usage === undefined) return "loading"
@@ -28,7 +34,9 @@ export function artifactsPhaseOf(input: {
   if (input.runId === undefined) return "empty"
   if (input.list === undefined) return "loading"
   if (!input.list.ok) return "error"
-  return input.cardCount === 0 ? "empty-run" : "cards"
+  if (input.cardCount > 0) return "cards"
+  if (input.cloud === undefined) return "loading"
+  return input.cloud.ok ? "empty-run" : "empty-unknown"
 }
 
 // ---------------------------------------------------------------------------

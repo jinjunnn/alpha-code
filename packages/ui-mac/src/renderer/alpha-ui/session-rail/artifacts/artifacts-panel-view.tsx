@@ -169,28 +169,42 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
     <Show when={card.downloadable}>
       <span class="alpha-wb-card-actions">
         <Show
-          when={downloadBusy(phaseOf(card))}
+          when={phaseOf(card).status === "done"}
           fallback={
-            <button type="button" class="a-wb-btn" data-variant="primary" onClick={() => props.onDownload(card)}>
-              {phaseOf(card).status === "error" ? t("alpha.wb.retry") : t("alpha.wb.download")}
-            </button>
+            <>
+              <Show
+                when={downloadBusy(phaseOf(card))}
+                fallback={
+                  <button type="button" class="a-wb-btn" data-variant="primary" onClick={() => props.onDownload(card)}>
+                    {phaseOf(card).status === "error" ? t("alpha.wb.retry") : t("alpha.wb.download")}
+                  </button>
+                }
+              >
+                <span class="alpha-wb-progress">
+                  {(() => {
+                    const phase = phaseOf(card)
+                    return phase.status === "downloading" && phase.percent !== undefined
+                      ? `${phase.percent}%`
+                      : t("alpha.wb.downloading")
+                  })()}
+                </span>
+                <button type="button" class="a-wb-btn" onClick={() => props.onCancelDownload(card)}>
+                  {t("alpha.wb.cancel")}
+                </button>
+              </Show>
+              <Show when={phaseOf(card).status === "error"}>
+                <span class="a-wb-chip" data-kind="error" data-download-error>
+                  {t("alpha.wb.downloadFailed")}
+                </span>
+              </Show>
+            </>
           }
         >
-          <span class="alpha-wb-progress">
-            {(() => {
-              const phase = phaseOf(card)
-              return phase.status === "downloading" && phase.percent !== undefined
-                ? `${phase.percent}%`
-                : t("alpha.wb.downloading")
-            })()}
-          </span>
-          <button type="button" class="a-wb-btn" onClick={() => props.onCancelDownload(card)}>
-            {t("alpha.wb.cancel")}
-          </button>
-        </Show>
-        <Show when={phaseOf(card).status === "error"}>
-          <span class="a-wb-chip" data-kind="error" data-download-error>
-            {t("alpha.wb.downloadFailed")}
+          {/* Major-3: bytes landed, manifest reread in flight — a non-clickable 已验证,
+              never a second 「下载」. The container resets this phase once the reread
+              replaces the card with the local verified one. */}
+          <span class="a-wb-chip" data-state="verified" data-download-done>
+            {t("alpha.wb.state.verified")}
           </span>
         </Show>
       </span>
@@ -354,8 +368,9 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
         </div>
       </Show>
       <Show when={props.phase === "empty-run"}>
-        {/* Proven empty at run level: THIS run produced nothing. The bar stays — the user
-            must be able to switch away from here (never merged with the project empty). */}
+        {/* PROVEN empty at run level: local list AND the platform listing both answered and
+            the merged result is empty. The bar stays — the user must be able to switch away
+            from here (never merged with the project empty). */}
         <div class="a-rart-empty" data-artifacts-empty-run>
           <span class="a-rart-empty-ic" aria-hidden="true">
             <svg viewBox="0 0 24 24">
@@ -366,11 +381,13 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
           <b>{t("alpha.session.artifactsRunEmptyTitle")}</b>
           <p>{t("alpha.session.artifactsRunEmptyDetail")}</p>
         </div>
-        <Show when={props.cloudUnavailable}>
-          <div class="a-rart-status">
-            <div class="a-wb-notice" data-cloud-unavailable>{t("alpha.wb.cloudListFailed")}</div>
-          </div>
-        </Show>
+      </Show>
+      <Show when={props.phase === "empty-unknown"}>
+        {/* Major-2: local shows nothing and the platform listing is unreachable — say only
+            that, never claim the run is empty. The bar stays so the user can switch away. */}
+        <div class="a-rart-status" data-artifacts-cloud-unknown>
+          <div class="a-wb-notice" data-cloud-unavailable>{t("alpha.wb.cloudListFailed")}</div>
+        </div>
       </Show>
       <Show when={props.phase === "cards"}>
         <div class="a-rart-scroll">
@@ -541,7 +558,9 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
                     fallback={
                       <div class="alpha-wb-empty">
                         <p>{card().state === "cloud-only" ? t("alpha.wb.notDownloaded") : t("alpha.wb.fileMissing")}</p>
-                        <Show when={card().downloadable && !downloadBusy(phaseOf(card()))}>
+                        {/* Major-3: the detail-area entry obeys the same rule — no 「下载」
+                            while busy AND none after done (the bytes are already local). */}
+                        <Show when={card().downloadable && !downloadBusy(phaseOf(card())) && phaseOf(card()).status !== "done"}>
                           <button type="button" class="a-wb-btn" data-variant="primary" onClick={() => props.onDownload(card())}>
                             {t("alpha.wb.download")}
                           </button>

@@ -133,7 +133,15 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
   })
 
   const phase = createMemo(() =>
-    artifactsPhaseOf({ usage: usageRes(), runId: runId(), list: runId() ? listRes() : undefined, cardCount: cards().length }),
+    artifactsPhaseOf({
+      usage: usageRes(),
+      runId: runId(),
+      list: runId() ? listRes() : undefined,
+      // Major-2: the run-level empty claim also needs the platform's answer — cloud pending
+      // keeps the phase at loading, cloud failure renders "platform unavailable", never "empty".
+      cloud: runId() ? cloudRes() : undefined,
+      cardCount: cards().length,
+    }),
   )
 
   // #660 A1: the "run landed" push event. Same directory only; the event carries no data —
@@ -192,7 +200,9 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
   const startDownload = (card: ArtifactCard) => {
     const run = runId()
     const id = downloadIdOf(card)
-    if (!run || !id || !card.downloadPayload || downloadBusy(phaseOf(id))) return
+    // Major-3: `done` is not a re-entry point — the bytes already landed; until the manifest
+    // reread replaces the card (which resets the phase below), firing again would download twice.
+    if (!run || !id || !card.downloadPayload || downloadBusy(phaseOf(id)) || phaseOf(id).status === "done") return
     dispatch(id, { type: "start" })
     void window.api.cloud
       .downloadArtifact(identity.directory, run, card.downloadPayload)
@@ -216,6 +226,16 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
     const id = downloadIdOf(card)
     if (id) void window.api.cloud.cancelArtifactDownload(id)
   }
+  // Major-3: once the reread lands the verified local card, the transient `done` phase has
+  // served its purpose — clear it so the id is fresh if the artifact ever goes missing again.
+  createEffect(() => {
+    const list = cards()
+    for (const [id, phase] of Object.entries(phases())) {
+      if (phase.status !== "done") continue
+      const stillDownloadable = list.some((card) => downloadIdOf(card) === id && card.downloadable)
+      if (!stillDownloadable) dispatch(id, { type: "reset" })
+    }
+  })
 
   // Selection: auto-select the first card once cards arrive; keep a user selection while
   // it still exists in the refreshed list.
