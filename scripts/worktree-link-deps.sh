@@ -61,10 +61,15 @@ link_dir() {
 }
 
 link_dir ""
-for pkg in "$MAIN"/packages/*/; do
-  [ -d "$pkg/node_modules" ] || continue
-  link_dir "packages/$(basename "$pkg")"
-done
+# 走**任意深度**,不是只走 packages/*/ 一层:仓里真实存在两层的包
+# (packages/sdk/js、packages/console/*、packages/stats/*)。只走一层会让这些包在
+# worktree 里没有 node_modules,于是 tsconfck 解析不到 @tsconfig/* ,报成
+# `TSConfckParseError` —— 看上去像 4 条测试真红,实为环境缺失(2026-07-28 实际踩到)。
+# `-not -path "*/node_modules/*"` 是为了不进 node_modules 内部再找嵌套的 node_modules。
+while IFS= read -r nm; do
+  rel="${nm#"$MAIN"/}"
+  link_dir "${rel%/node_modules}"
+done < <(find "$MAIN/packages" -type d -name node_modules -not -path "*/node_modules/*" | sort)
 
 echo "linked: $WT"
 echo -n "  @opencode-ai/app → "
