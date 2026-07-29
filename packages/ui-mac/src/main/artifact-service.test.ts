@@ -326,6 +326,8 @@ describe("byte accounting", () => {
     const a = seedArtifact("report.md", "# hi") // 4 bytes,登记
     registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest })
     fs.writeFileSync(path.join(artifactsDir(), "stray.bin"), "12345678") // 8 bytes,未登记
+    const manifest = readArtifactManifest(projectDir, RUN)
+    const writtenAt = manifest.ok ? manifest.manifest!.updatedAt : "unreadable"
     const res = runArtifactUsage(projectDir, RUN)
     expect(res.ok).toBe(true)
     if (!res.ok) return
@@ -337,6 +339,7 @@ describe("byte accounting", () => {
       legacyBytes: 8,
       missingCount: 0,
       readOnly: false,
+      updatedAt: writtenAt,
     })
   })
 
@@ -381,6 +384,45 @@ describe("byte accounting", () => {
     expect(res.usage.readOnly).toBe(true)
     expect(res.usage.diskBytes).toBe(5)
     expect(res.usage.recordedBytes).toBe(0)
+  })
+
+  // #660 裁决 B1:manifest 的 updatedAt 原样透出,而且必须穿过 projectArtifactUsage 的
+  // 转存(将来有人在那里做投影,静默丢字段就在这里变红)。
+  test("updatedAt surfaces the manifest value verbatim through run AND project usage", () => {
+    const a = seedArtifact("report.md", "# hi")
+    registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest })
+    const manifest = readArtifactManifest(projectDir, RUN)
+    expect(manifest.ok).toBe(true)
+    const writtenAt = manifest.ok ? manifest.manifest!.updatedAt : "unreadable"
+    expect(typeof writtenAt).toBe("string")
+
+    const run = runArtifactUsage(projectDir, RUN)
+    expect(run.ok && run.usage.updatedAt).toBe(writtenAt)
+
+    const project = projectArtifactUsage(projectDir)
+    expect(project.ok).toBe(true)
+    if (!project.ok) return
+    expect(project.usage.runs.find((r) => r.runId === RUN)?.updatedAt).toBe(writtenAt)
+  })
+
+  // #660 裁决 B1 的失败关闭面:读不出 manifest 就没有时刻 —— null,绝不回落目录 mtime
+  // 冒充「这次任务的时刻」。corrupt 与未来版本两条路径都要如此。
+  test("corrupt / future-version manifest → updatedAt is null (never an invented time)", () => {
+    fs.writeFileSync(path.join(artifactsDir(), "x.bin"), "12345")
+
+    fs.writeFileSync(manifestPath(), JSON.stringify({ schemaVersion: 99 }))
+    const future = runArtifactUsage(projectDir, RUN)
+    expect(future.ok).toBe(true)
+    if (!future.ok) return
+    expect(future.usage.updatedAt).toBeNull()
+    expect(future.usage.readOnly).toBe(true)
+
+    fs.writeFileSync(manifestPath(), "{not json")
+    const corrupt = runArtifactUsage(projectDir, RUN)
+    expect(corrupt.ok).toBe(true)
+    if (!corrupt.ok) return
+    expect(corrupt.usage.updatedAt).toBeNull()
+    expect(corrupt.usage.readOnly).toBe(true)
   })
 
   test("no runs dir yet → zero usage, not an error", () => {

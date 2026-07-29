@@ -191,6 +191,14 @@ export function registerCloudIpcHandlers() {
       const mirrored = mirrorRunArtifacts(directory, runId, saved)
       if (!mirrored.ok && mirrored.reason !== "not the user workspace" && mirrored.reason !== "no files")
         getLogger().warn(`cloud: outputs mirror failed for ${runId}: ${mirrored.reason}`)
+      // #660 裁决 A1:落盘 settle(镜像也跑完)之后,向「全部存活窗口」广播一条最小提示事件。
+      // 刻意不同于 cloud-artifact-progress 的单窗口 wc.send:CloudRunWatcher 只活在某一个窗口,
+      // 关心这次结果的产物面板可能在另一个窗口 —— 单窗口发送会漏掉跨窗口那一半。
+      // 载荷只有 directory + runId:这是「去重读」的提示,不是数据源(面板收到后仍走
+      // projectUsage / list 重新取真相),多带任何字段都会变成第二份会漂移的真相。
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.webContents.isDestroyed()) win.webContents.send("cloud-run-saved", { directory, runId })
+      }
     }
     return saved
   })

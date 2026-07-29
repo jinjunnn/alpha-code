@@ -1556,6 +1556,12 @@ export type RunArtifactUsage = {
   missingCount: number
   /** manifest 未知版本/corrupt(数字只来自盘上 stat)。 */
   readOnly: boolean
+  /**
+   * manifest 原样记录的 `updatedAt`(#660 裁决 B1)。没有可读 manifest 时为 `null` ——
+   * 刻意不回落目录 mtime:mtime 是「最后一次动盘」这另一个事实,冒充「这次任务的时刻」
+   * 会造出永远不会被发现的错值。界面对 `null` 失败关闭,回落显示编号。
+   */
+  updatedAt: string | null
 }
 
 export type RunUsageResult = { ok: true; usage: RunArtifactUsage } | { ok: false; reason: string }
@@ -1579,6 +1585,7 @@ export function runArtifactUsage(projectDir: string, runId: string): RunUsageRes
         legacyBytes: diskBytes,
         missingCount: 0,
         readOnly: true,
+        updatedAt: null,
       },
     }
   }
@@ -1596,6 +1603,7 @@ export function runArtifactUsage(projectDir: string, runId: string): RunUsageRes
       legacyBytes,
       missingCount: entries.filter((e) => !onDisk.has(e.local.savedPath)).length,
       readOnly: false,
+      updatedAt: read.manifest?.updatedAt ?? null,
     },
   }
 }

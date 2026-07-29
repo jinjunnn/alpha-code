@@ -347,6 +347,9 @@ export type CloudArtifactDownloadResult =
       via: "stream"
     }
   | { ok: false; error: string; detail?: string }
+/** #660 裁决 A1:run 回流落盘 settle 后 main 向全部窗口广播的最小提示事件。只有这两个字段 ——
+ *  它是「去重读」的提示,不是数据源;消费端收到后仍走 projectUsage / list 重新取真相。 */
+export type CloudRunSavedEvent = { directory: string; runId: string }
 /** B3/ADR-019 artifact 回流:写 <projectDir>/.alpha/runs/<runId>/ 的结果清单(main 侧 alpha-workdir.ts)。 */
 export type CloudRunManifest =
   | { ok: true; dir: string; files: string[]; warnings: string[] }
@@ -884,6 +887,8 @@ export type ElectronAPI = {
     onArtifactProgress: (cb: (p: CloudArtifactProgress) => void) => () => void
     // B3/ADR-019 回流:终态后把 run(status/contract/artifacts)写进 <directory>/.alpha/runs/<runId>/。
     saveRun: (directory: string, runId: string, contract?: CloudJobEnvelope) => Promise<CloudRunManifest>
+    /** #660 A1:订阅「run 回流已落盘」最小提示事件(全窗口广播;返回退订函数)。 */
+    onRunSaved: (cb: (e: CloudRunSavedEvent) => void) => () => void
     // 订阅 SSE 进度:main 流式 /events → 推 cloud-job-event。onEvent 注册监听,返回取消函数。
     subscribe: (jobId: string) => Promise<{ ok: boolean }>
     unsubscribe: (jobId: string) => Promise<{ ok: boolean }>

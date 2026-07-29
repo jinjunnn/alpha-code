@@ -13,6 +13,10 @@ import type {
 import type { ArtifactDescriptor } from "../../../shared/cloud-artifact-descriptor"
 import { validateArtifactDescriptor } from "../../../shared/cloud-artifact-descriptor"
 
+// #660:session-rail 的纯值层(artifacts-core)也消费 run 摘要;从这里转售 type,
+// 免得它再开第二条爬出 alpha-ui 的 preload 类型通道(import 白名单棘轮只认一条)。
+export type { RunArtifactUsage } from "../../../preload/types"
+
 // ---------------------------------------------------------------------------
 // 卡片派生
 // ---------------------------------------------------------------------------
@@ -151,9 +155,33 @@ export function downloadBusy(state: DownloadPhase): boolean {
 // run 摘要 + 格式化
 // ---------------------------------------------------------------------------
 
-/** run 列表排序:runId 降序(job_<hex> 无内嵌时间戳可用;倒序≈新在前,且完全确定)。 */
+/** `updatedAt` 的可比毫秒值;缺失或不可解析 → null(失败关闭,不给假时间排序)。 */
+function runUsageTime(run: RunArtifactUsage): number | null {
+  if (!run.updatedAt) return null
+  const ms = Date.parse(run.updatedAt)
+  return Number.isNaN(ms) ? null : ms
+}
+
+/**
+ * run 列表排序:按 manifest `updatedAt` 时间倒序(#660 裁决 B1)。旧实现按 runId 字典序倒序
+ * 只是「倒序≈新在前」的近似 —— job_<hex> 里没有时间戳,编号生成规则一变顺序就静默错乱,
+ * 这里是缺陷修复不是加功能。
+ *
+ * 时间缺失(corrupt/未来版本 manifest → null)的裁决(#660 审计 Major-1):
+ * 有真实时间的一律排在没有的前面 —— 「该比较回落编号」的旧写法会让一个大编号的坏
+ * manifest 反超真正最新的 run 抢到「最近一次」,且混合比较不可传递。现规则:
+ * 双方都有时间 → 时间倒序;恰一方有 → 有时间者在前;双方都没有 → 编号倒序;
+ * 时间相同 → 编号倒序垫底。全序、传递、确定;corrupt run 沉底但不消失。
+ */
 export function sortRunUsages(runs: readonly RunArtifactUsage[]): RunArtifactUsage[] {
-  return [...runs].sort((a, b) => (a.runId < b.runId ? 1 : a.runId > b.runId ? -1 : 0))
+  return [...runs].sort((a, b) => {
+    const ta = runUsageTime(a)
+    const tb = runUsageTime(b)
+    if (ta !== null && tb !== null && ta !== tb) return tb - ta
+    if (ta !== null && tb === null) return -1
+    if (ta === null && tb !== null) return 1
+    return a.runId < b.runId ? 1 : a.runId > b.runId ? -1 : 0
+  })
 }
 
 export function formatBytes(n: number | null | undefined): string {

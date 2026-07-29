@@ -3,6 +3,7 @@ import {
   type AuthErrorCode,
   type AuthState,
   type CloudArtifactProgress,
+  type CloudRunSavedEvent,
   type ContractFailure,
   type DeepLinkBatch,
   type ElectronAPI,
@@ -272,6 +273,11 @@ const api: ElectronAPI = {
       return () => ipcRenderer.removeListener("cloud-artifact-progress", h)
     },
     saveRun: (directory, runId, contract) => ipcRenderer.invoke("cloud-save-run", directory, runId, contract),
+    onRunSaved: (cb) => {
+      const h = (_e: unknown, e: CloudRunSavedEvent) => cb(e)
+      ipcRenderer.on("cloud-run-saved", h)
+      return () => ipcRenderer.removeListener("cloud-run-saved", h)
+    },
     subscribe: (jobId) => ipcRenderer.invoke("cloud-subscribe", jobId),
     unsubscribe: (jobId) => ipcRenderer.invoke("cloud-unsubscribe", jobId),
     gitDiff: (directory) => ipcRenderer.invoke("cloud-git-diff", directory),

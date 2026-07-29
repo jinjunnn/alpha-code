@@ -6,7 +6,7 @@
  */
 
 import { createSignal } from "solid-js"
-import type { ArtifactCard } from "../../artifact-workbench/workbench-core"
+import type { ArtifactCard, DownloadPhase } from "../../artifact-workbench/workbench-core"
 import type { PreviewContext } from "../../artifact-workbench/renderers/renderer-views"
 import {
   sameSessionIdentity,
@@ -17,12 +17,25 @@ import {
   type AlphaSessionLiveContext,
   type SessionRailApi,
 } from "../../session-workspace/session-workspace-shell"
-import type { ArtifactsPhase } from "./artifacts-core"
+import type { ArtifactsPhase, RunRowModel } from "./artifacts-core"
 import { SessionRailArtifactsView } from "./artifacts-panel-view"
 import { SessionRailArtifacts } from "./session-rail-artifacts"
 
 export function fakeCard(input: Partial<ArtifactCard> & { key: string; name: string }): ArtifactCard {
   return { state: "verified", bytes: 1024, warnings: [], downloadable: false, ...input }
+}
+
+/** #660: run row with honest defaults; pass `moment: null` to exercise the id fallback. */
+export function fakeRunRow(input: Partial<RunRowModel> & { runId: string }): RunRowModel {
+  return {
+    moment: { kind: "today", time: "15:02" },
+    ordinal: undefined,
+    artifactCount: 1,
+    diskBytes: 1024,
+    missingCount: 0,
+    readOnly: false,
+    ...input,
+  }
 }
 
 export function createArtifactsViewHarness() {
@@ -32,12 +45,42 @@ export function createArtifactsViewHarness() {
   const [previewCtx, setPreviewCtx] = createSignal<PreviewContext | null>(null)
   const [focusSeq, setFocusSeq] = createSignal(0)
   const [errorReason, setErrorReason] = createSignal<string | undefined>()
-  const calls = { select: [] as string[], retry: 0, escape: 0 }
+  const [runs, setRuns] = createSignal<readonly RunRowModel[]>([])
+  const [selectedRunId, setSelectedRunId] = createSignal<string | undefined>()
+  const [newRunHint, setNewRunHint] = createSignal(false)
+  const [quota, setQuota] = createSignal<{ usedBytes: number; maxBytes: number } | undefined>()
+  const [cloudUnavailable, setCloudUnavailable] = createSignal(false)
+  const [downloadPhases, setDownloadPhases] = createSignal<Record<string, DownloadPhase>>({})
+  const calls = {
+    select: [] as string[],
+    retry: 0,
+    escape: 0,
+    selectRun: [] as string[],
+    refresh: 0,
+    viewNewRun: 0,
+    download: [] as string[],
+    cancelDownload: [] as string[],
+  }
 
   const View = () => (
     <SessionRailArtifactsView
       phase={phase()}
       errorReason={errorReason()}
+      runs={runs()}
+      selectedRunId={selectedRunId()}
+      onSelectRun={(runId) => {
+        calls.selectRun.push(runId)
+        setSelectedRunId(runId)
+      }}
+      onRefresh={() => {
+        calls.refresh += 1
+      }}
+      newRunHint={newRunHint()}
+      onViewNewRun={() => {
+        calls.viewNewRun += 1
+      }}
+      quota={quota()}
+      cloudUnavailable={cloudUnavailable()}
       cards={cards()}
       selectedKey={selectedKey()}
       onSelect={(key) => {
@@ -53,10 +96,32 @@ export function createArtifactsViewHarness() {
       onEscape={() => {
         calls.escape += 1
       }}
+      downloadPhases={downloadPhases()}
+      onDownload={(card) => {
+        calls.download.push(card.key)
+      }}
+      onCancelDownload={(card) => {
+        calls.cancelDownload.push(card.key)
+      }}
     />
   )
 
-  return { View, calls, setPhase, setCards, setSelectedKey, setPreviewCtx, setFocusSeq, setErrorReason }
+  return {
+    View,
+    calls,
+    setPhase,
+    setCards,
+    setSelectedKey,
+    setPreviewCtx,
+    setFocusSeq,
+    setErrorReason,
+    setRuns,
+    setSelectedRunId,
+    setNewRunHint,
+    setQuota,
+    setCloudUnavailable,
+    setDownloadPhases,
+  }
 }
 
 function snapshotFor(sessionID: string): AlphaSessionLiveSnapshot {
