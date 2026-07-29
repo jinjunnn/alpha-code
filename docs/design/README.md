@@ -4,13 +4,13 @@ kind: design
 status: active
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-07-21
+last_reviewed: 2026-07-29
 review_after: 2027-01-16
 ---
 
 # Design assets
 
-This directory holds alpha-code's product design in **two layers** plus a map
+This directory holds alpha-code's product design in **three layers** plus a map
 that ties them together. Current *behavior* is still decided by code, tests,
 accepted ADRs, and active contracts; GitHub Issues own remaining work. These
 files decide *design intent*, not runtime truth.
@@ -19,12 +19,19 @@ Start at **[`PAGE-MAP.md`](PAGE-MAP.md)** — it lists every real product surfac
 whether that surface is still inherited from upstream opencode or has been
 alpha-ized, and where its current design lives.
 
-## The two layers
+## The three layers
 
 | Layer | Path | What it is | Mutable? |
 | --- | --- | --- | --- |
-| **Current** | [`current/<page>/design.html`](current/) | The living design for one page. Edit this in place when a page gains or changes content. One file per surface. | Yes — this is the working copy. |
+| **Current** | [`current/<page>/design.html`](current/) + `design.css` | The living design for one page. Edit this in place when a page gains or changes content. One page, one file. | Yes — this is the working copy. |
+| **Components** | `current/<page>/components.md` | One row per component on that page: its anchor, the increment that introduced it, approval date, implementation issue, landed date, code entry. | Yes — a ledger, appended and completed. |
 | **History** | dated dirs (`2026-…/`), `debates/`, top-level `*.md` | Frozen snapshots and proposals — the decision record of how each surface reached its current form. | No — append-only. |
+
+Markup and styling are split: `design.html` carries the frames, `design.css`
+carries that page's styles, linked from the same directory. Read the markup
+without paying for the stylesheet; editing a frame rarely needs the CSS at all.
+The split is positional only — the `<link>` sits exactly where the old `<style>`
+did, so the cascade is unchanged.
 
 A `current/<page>/design.html` is seeded from the latest approved dated snapshot
 and then edited forward. The dated snapshot it came from stays frozen: it is the
@@ -45,6 +52,60 @@ today — that is what `current/` is for.
 Some latest drafts may be in flight in another repo/worktree and not yet
 committed here — `PAGE-MAP.md` marks those so `current/` is never seeded from
 unlanded work.
+
+## Adding a component to an existing page
+
+The workflow above covers whole pages. Most real work is smaller: one new
+component on a page that already has a design. Copying the whole page into a
+dated snapshot to show one new row wastes both the reviewer's attention and the
+repository (REQ-124 spent 41 KB duplicating the timeline to introduce a single
+artifact row). Do this instead:
+
+1. **`PAGE-MAP.md` does not change.** A leaf control is not a surface — the
+   surface manifest deliberately refuses to enumerate popovers, tabs, and leaf
+   controls, and this file follows it.
+2. **Add the row to `current/<page>/components.md` first**, status `设计中`, and
+   settle its anchor id there. Everything downstream points at that anchor, so it
+   has to exist before anything can reference it.
+3. **Draft the increment as that component only** —
+   `2026-…-<req>-<component>/frame.html`, a few KB, plus a short `design.md` when
+   the rationale runs longer than a screen. Do not restate the page.
+4. **On approval**, merge the frame into the matching section of
+   `current/<page>/design.html` carrying the anchor from step 2, and fill the
+   ledger's approval column. The dated directory freezes as-is — that is the
+   archival record, and it is never edited afterwards.
+5. **When the implementation issue closes**, the same PR fills the ledger's
+   landed and code-entry columns. A component whose ledger row still reads
+   `设计中` after its issue closed is the drift this layer exists to surface.
+
+### `components.md` fields
+
+| Field | Meaning |
+| --- | --- |
+| 组件 | The name used in review conversation. |
+| 锚 | `#id` in `design.html`. Must resolve — a ledger pointing at a missing anchor is worse than no ledger. |
+| 增量稿 | The dated directory that introduced it, or `—` if it predates this layer. |
+| 设计定稿 | Date the frame merged into the living draft. |
+| 实现票 | `repo#number`. |
+| 落地 | Date the implementation merged, or `—` while open. **Derived from the issue, not asserted by hand** — a hand-kept column goes stale and then reads as truth. |
+| 代码入口 | Path under `packages/…` that renders it. |
+
+**A page's design is aligned with its implementation when its ledger has no row
+still open.** That is the only definition of "is `current/` current?" this
+directory offers; before the ledger existed, the question had no answer.
+
+## Known open decision: token drift
+
+The eleven living drafts do not agree on the design system. Of 105 distinct
+custom properties, 16 appear in all eleven, and 27 that appear in four or more
+drafts carry conflicting values — `--a-warning` is both `#b45309` and `#d97706`,
+`--a-text-tertiary` both `#71727a` and `#7c7d85`, `--a-error-subtle` has three
+alpha values.
+
+Converging them changes how some approved drafts look, which is a design
+decision and not a cleanup. Until it is taken, treat
+`2026-06-25-cool-graphite-visual-system.md` as the intent and each draft's
+`design.css` as what that draft actually asserts.
 
 ## Design history families
 
