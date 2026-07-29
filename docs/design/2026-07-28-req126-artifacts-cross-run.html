@@ -235,7 +235,9 @@ td code { white-space:nowrap; }
 }
 .rart-runhead:hover { background:var(--a-bg-muted); }
 .rart-runhead[aria-expanded="true"] { border-color:var(--a-accent-border);background:var(--a-accent-subtle); }
-.rart-runhead .lb { flex:none;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);white-space:nowrap; }
+.rart-runhead .tm { flex:none;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);white-space:nowrap;font-variant-numeric:tabular-nums; }
+.rart-runhead .lb { flex:none;padding:1px 7px;border-radius:var(--a-radius-full);background:var(--a-bg-muted);color:var(--a-text-secondary);font-size:var(--a-text-2xs);font-weight:var(--a-weight-medium);white-space:nowrap; }
+.rart-runhead .lb:empty,.rart-runrow-t .nm:empty { display:none; }
 .rart-runhead .id { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text-tertiary); }
 .rart-runhead .chev { flex:none;width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;color:var(--a-text-tertiary);transition:transform var(--a-dur-fast) var(--a-ease-out); }
 .rart-runhead[aria-expanded="true"] .chev { transform:rotate(180deg);color:var(--a-accent); }
@@ -252,7 +254,8 @@ td code { white-space:nowrap; }
 .rart-runrow:hover { background:var(--a-overlay-hover); }
 .rart-runrow[data-active] { background:var(--a-overlay-selected);border-color:var(--a-accent-border); }
 .rart-runrow-t { display:flex;align-items:center;gap:7px;min-width:0; }
-.rart-runrow-t .nm { flex:none;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium); }
+.rart-runrow-t .tm { flex:none;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);font-variant-numeric:tabular-nums; }
+.rart-runrow-t .nm { flex:none;padding:1px 7px;border-radius:var(--a-radius-full);background:var(--a-bg-muted);color:var(--a-text-secondary);font-size:var(--a-text-2xs);font-weight:var(--a-weight-medium);white-space:nowrap; }
 .rart-runrow-t .id { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text-tertiary);text-align:right; }
 .rart-runrow-m { display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:var(--a-text-xs);color:var(--a-text-tertiary); }
 .rart-runfoot { display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--a-border-faint);background:var(--a-bg-subtle);font-size:var(--a-text-xs);color:var(--a-text-secondary); }
@@ -330,7 +333,7 @@ td code { white-space:nowrap; }
     <a href="#edge">空态与失败</a>
     <a href="#dark">深色</a>
     <a href="#a11y">交互契约</a>
-    <a href="#open">待裁决</a>
+    <a href="#open">裁决记录</a>
     <a href="#scope">不做的</a>
   </nav>
   <div class="reviewtools">
@@ -356,7 +359,8 @@ td code { white-space:nowrap; }
       <div class="status-line"><span>新增 CSS 家族</span><b>1(云任务条)</b></div>
       <div class="status-line"><span>新增 token</span><b>0</b></div>
       <div class="status-line"><span>新增页面 / 覆盖层</span><b>0</b></div>
-      <div class="status-line"><span>需要新增的主进程通道</span><b>1 项待裁决</b></div>
+      <div class="status-line"><span>新增主进程通道</span><b>1(已裁决)</b></div>
+      <div class="status-line"><span>裁决状态</span><b>A–E 全部已定</b></div>
     </div>
   </section>
 
@@ -427,7 +431,7 @@ td code { white-space:nowrap; }
           <tr>
             <td>小标题写着「本回合产物」</td>
             <td><code>artifacts-panel-view.tsx:118</code> 固定渲染 <code>alpha.session.artifactsTurn</code>。</td>
-            <td><b>这是一句超卖</b>:数据是按<b>项目目录</b>取的,最新一次云任务可能来自同项目的另一个会话,和「本回合」无关。切换器落地后这行字必须换掉。</td>
+            <td><b>这是一句不成立的断言 —— 一个真缺陷,不是措辞问题。</b>数据按<b>项目目录</b>取,选的是排序后的第 0 个,它完全可能来自同项目的<b>另一个会话</b>。用会话级说法罩住项目级数据,用户据此以为「这是我刚才这轮的产出」。切换器把标题换成选中那一次的自述,顺带消掉它。</td>
           </tr>
           <tr>
             <td>没有云端合并</td>
@@ -510,15 +514,15 @@ td code { white-space:nowrap; }
           </tr>
           <tr>
             <td>回流落盘后<b>通知界面</b></td>
-            <td>——</td>
-            <td><span class="tag err">没有</span></td>
-            <td>渲染进程<b>没有任何</b>「run 已保存」推送通道;watcher 落盘后只弹 toast。这是本稿唯一需要裁决的新通道(见「待裁决 A」)。</td>
+            <td>新增一条最小推送事件(只带项目目录 + 任务编号)</td>
+            <td><span class="tag info">已裁决新增</span></td>
+            <td>渲染进程此前<b>没有任何</b>「已保存」推送通道,watcher 落盘后只弹 toast。owner 裁决 <b>A1</b>:加这一条通道 —— 一个事件、零轮询,提示与事实严格同步。故提示条是<b>已定形态</b>,不是备选。</td>
           </tr>
           <tr>
-            <td>某次云任务的<b>时间</b></td>
-            <td>——</td>
-            <td><span class="tag err">没有</span></td>
-            <td><code>RunArtifactUsage</code> 全字段里没有任何时间。盘上其实有(<code>artifacts.json</code> 的 <code>updatedAt</code>),但 <code>projectUsage</code> 没把它带出来。见「待裁决 B」。</td>
+            <td>某次云任务的<b>时间</b>与<b>排序</b></td>
+            <td><code>artifacts.json</code> 的 <code>updatedAt</code>,经 <code>RunArtifactUsage</code> 带出</td>
+            <td><span class="tag info">已裁决带出</span></td>
+            <td>时间<b>本来就在盘上</b>,只是 <code>projectUsage</code> 没读、没带。owner 裁决 <b>B1</b>:加这一个字段(不新增 IPC)。行上因此显示真实时刻,<b>排序也从字典序改成真正按时间</b> —— 现役那句「按编号倒序 ≈ 新在前」是缺陷,不是设计。</td>
           </tr>
           <tr>
             <td>某次云任务的<b>成败</b></td>
@@ -535,16 +539,16 @@ td code { white-space:nowrap; }
           <tr>
             <td>删除 / 清理某次云任务</td>
             <td>——</td>
-            <td><span class="tag err">没有</span></td>
-            <td>产物 IPC <b>刻意无写面</b>(<code>preload/types.ts:897-898</code>:保留策略未定前不暴露删除)。故「run 级管理动作」整体划出本稿范围。</td>
+            <td><span class="tag err">没有,且已裁决不做</span></td>
+            <td>产物 IPC <b>刻意无写面</b>(<code>preload/types.ts:897-898</code>:保留策略未定前不暴露删除)。做它意味着开一个写面,外加不可逆动作确认与误删防护 —— 与验收句真正点名的两件事(跨次切换 + 取回云端结果)是两回事。owner 裁决:<b>整体推迟,不属本票</b>。</td>
           </tr>
         </tbody>
       </table>
     </div>
     <div class="note" data-tone="info" style="margin-top:16px">
-      <strong>一句话结论:</strong>「跨云任务浏览」和「单件取回」<b>今天就能做,零新通道</b>;
-      「落盘即刷新」需要一个新的推送通道或一次退让(见待裁决 A);
-      「行上显示时间」需要在现有结构上多带一个字段(见待裁决 B)。
+      <strong>一句话结论(裁决后):</strong>「跨云任务浏览」与「单件取回」<b>零新通道即可交付</b>;
+      「落盘即刷新」加<b>一条</b>最小推送事件(A1);「行上显示时间」加<b>一个</b>结构字段、不加 IPC(B1)。
+      三样合计:新增 IPC 事件 1、新增结构字段 1、新增页面 0。
     </div>
   </section>
 
@@ -558,8 +562,9 @@ td code { white-space:nowrap; }
         <thead><tr><th style="width:22%">内部词</th><th style="width:26%">界面说法</th><th>纪律</th></tr></thead>
         <tbody>
           <tr><td>run</td><td>云任务</td><td>沿用面板既有说法,不另造词。切换器标题即「云任务」。</td></tr>
-          <tr><td>runId</td><td>(不翻译,以等宽短号呈现)</td><td>它是这次任务唯一稳定的身份,像单号一样呈现:靠右、次要色、等宽、截断中段。<b>不给它加标签</b>,不说「ID」。</td></tr>
-          <tr><td>最新的一次</td><td>最近一次</td><td>只给排序后的第一行挂这枚标记。<b>其余行不排名次</b> —— 排序只按编号倒序,声称「第 2 新」是超卖。</td></tr>
+          <tr><td>updatedAt</td><td>时刻(今天 15:02 / 昨天 18:20 / 7月26日 11:05)</td><td><b>时间是用户认「哪一次」的主要抓手</b>,故在条上与行上都占主位。当天用「今天/昨天 + 时:分」,更早用「月日 + 时:分」。</td></tr>
+          <tr><td>runId</td><td>(不翻译,以等宽短号呈现)</td><td>时间到位后它退居<b>次要身份</b>:只在条上常驻一处(靠右、次要色、等宽、截断中段),行上不再重复。<b>不给它加标签</b>,不说「ID」。</td></tr>
+          <tr><td>最新的一次</td><td>最近一次 / 上一次</td><td>排序改为<b>真正按时间</b>后,这两枚标记是可证实的,挂在前两行。再往下不排名次 —— 用时间本身足够定位,序数只会添噪音。</td></tr>
           <tr><td>manifest 只读 / corrupt</td><td>记录不可读</td><td>现役 chip 文案是「manifest 只读」——<b>这是内部词,本稿改掉它</b>。</td></tr>
           <tr><td>cloud-only</td><td>未下载</td><td>沿用现役文案。</td></tr>
           <tr><td>verify / 打开前复核</td><td>核对中… / 打开前核对失败</td><td>沿用现役语义,措辞去掉「复核」的公文腔。</td></tr>
@@ -655,6 +660,7 @@ td code { white-space:nowrap; }
     <p class="section-copy">
       收起态占一行,替掉原来的小标题,并把「这是哪一次」明说出来。右侧一枚刷新按钮 —— 面板此前连手动刷新都没有。
       展开态就地下推一张列表,不是浮层:右栏本来就是一根滚动柱,浮层在 400 宽里既容易被裁切,也和右栏其余面板的展开语汇不一致。
+      列表按<b>时间</b>倒序 —— 不是按编号。
     </p>
     <div class="frameset">
 
@@ -670,8 +676,7 @@ td code { white-space:nowrap; }
             <div class="rail-panel">
               <div class="rart-runbar">
                 <button class="rart-runhead" type="button" aria-expanded="false">
-                  <span class="lb">最近一次</span>
-                  <span class="id">job_7f3a…c21e</span>
+                  <span class="tm">今天 15:02</span><span class="lb">最近一次</span><span class="id">job_7f3a…c21e</span>
                   <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
                 </button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新">
@@ -709,9 +714,9 @@ td code { white-space:nowrap; }
           </div>
         </div>
         <p class="cap">
-          <b>帧外标注 ——</b> 「最近一次」只在选中的确实是排序第一位时出现;编号靠右、次要色、等宽,
-          中段截断,悬停出完整值。刷新按钮转一圈即完成,不换布局。此帧对应真实数据:
-          <code>projectUsage().runs</code> 排序后取第 0 个。
+          <b>帧外标注 ——</b> 时刻是主标,「最近一次」是可证实的小标记(只在选中的确实是时间最新那一次时出现);
+          编号退到最右、次要色、等宽、中段截断,悬停出完整值 —— 它仍是唯一稳定身份,但不再是用户认路的东西。
+          刷新按钮转一圈即完成,不换布局。此帧对应真实数据:<code>projectUsage().runs</code> 按时间排序后取第一个。
         </p>
       </div>
 
@@ -727,8 +732,7 @@ td code { white-space:nowrap; }
             <div class="rail-panel">
               <div class="rart-runbar">
                 <button class="rart-runhead" type="button" aria-expanded="true">
-                  <span class="lb">最近一次</span>
-                  <span class="id">job_7f3a…c21e</span>
+                  <span class="tm">今天 15:02</span><span class="lb">最近一次</span><span class="id">job_7f3a…c21e</span>
                   <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
                 </button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新">
@@ -738,23 +742,23 @@ td code { white-space:nowrap; }
               <div class="rart-runsheet">
                 <ul class="rart-runlist">
                   <li><button class="rart-runrow" type="button" data-active>
-                    <span class="rart-runrow-t"><span class="nm">最近一次</span><span class="id">job_7f3a…c21e</span></span>
+                    <span class="rart-runrow-t"><span class="tm">今天 15:02</span><span class="nm">最近一次</span></span>
                     <span class="rart-runrow-m">2 个产物 · 24.5 KiB</span>
                   </button></li>
                   <li><button class="rart-runrow" type="button">
-                    <span class="rart-runrow-t"><span class="nm">上一次</span><span class="id">job_5d90…88aa</span></span>
+                    <span class="rart-runrow-t"><span class="tm">今天 09:41</span><span class="nm">上一次</span></span>
                     <span class="rart-runrow-m">5 个产物 · 1.2 MiB <span class="chip" data-k="warn">2 个缺失</span></span>
                   </button></li>
                   <li><button class="rart-runrow" type="button">
-                    <span class="rart-runrow-t"><span class="nm"></span><span class="id">job_2c14…40b7</span></span>
+                    <span class="rart-runrow-t"><span class="tm">昨天 18:20</span><span class="nm"></span></span>
                     <span class="rart-runrow-m">3 个产物 · 388 KiB</span>
                   </button></li>
                   <li><button class="rart-runrow" type="button">
-                    <span class="rart-runrow-t"><span class="nm"></span><span class="id">job_9ab6…1e05</span></span>
+                    <span class="rart-runrow-t"><span class="tm">7月26日 11:05</span><span class="nm"></span></span>
                     <span class="rart-runrow-m">1 个产物 · 62 KiB <span class="chip" data-k="warn">记录不可读</span></span>
                   </button></li>
                   <li><button class="rart-runrow" type="button">
-                    <span class="rart-runrow-t"><span class="nm"></span><span class="id">job_0f47…d3c8</span></span>
+                    <span class="rart-runrow-t"><span class="tm">7月24日 16:33</span><span class="nm"></span></span>
                     <span class="rart-runrow-m">7 个产物 · 4.9 MiB</span>
                   </button></li>
                 </ul>
@@ -783,9 +787,10 @@ td code { white-space:nowrap; }
           </div>
         </div>
         <p class="cap">
-          <b>帧外标注 ——</b> 行上只放能证实的事实:件数、体积,以及缺失/记录不可读两枚 chip。
-          <b>没有时间、没有成败、没有标题</b> —— 这三样今天的数据里都没有(见「数据通道真相」),
-          所以行上一个都不画。「最近一次 / 上一次」只到第二行为止,再往下不排名次。
+          <b>帧外标注 ——</b> 行上只放能证实的事实:时刻(主)、件数、体积,以及缺失/记录不可读两枚 chip。
+          时刻来自每次任务记录里本就存在的更新时刻,<b>排序按它,不按编号</b>。
+          <b>成败与标题仍然不画</b> —— 这两样今天的数据里确实没有(见「数据通道真相」),画上去就是编的。
+          「最近一次 / 上一次」只到第二行为止,再往下靠时刻本身定位。
           底部用量条与下线的全页工作台左栏底部同源同算法。列表超过五行内部滚动,面板其余部分不移位。
         </p>
       </div>
@@ -802,8 +807,7 @@ td code { white-space:nowrap; }
             <div class="rail-panel">
               <div class="rart-runbar">
                 <button class="rart-runhead" type="button" aria-expanded="false">
-                  <span class="lb">上一次</span>
-                  <span class="id">job_5d90…88aa</span>
+                  <span class="tm">今天 09:41</span><span class="lb">上一次</span><span class="id">job_5d90…88aa</span>
                   <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
                 </button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新" data-alert>
@@ -846,9 +850,10 @@ td code { white-space:nowrap; }
           </div>
         </div>
         <p class="cap">
-          <b>帧外标注 ——</b> 停在历史一次时,标题换成那一行的名字,<b>不再出现「最近一次」</b>。
+          <b>帧外标注 ——</b> 停在历史一次时,条上显示那一次的时刻,<b>不再出现「最近一次」</b>。
           新结果落地只在条上加一条可点提示 + 刷新按钮上一颗点:<b>不抢焦点、不自动跳走</b> ——
-          用户可能正在读历史结果。点「查看」= 跳到那次并收起提示。这条提示依赖一个今天不存在的通知通道,见「待裁决 A」。
+          用户可能正在读历史结果。点「查看」= 跳到那次并收起提示。
+          驱动它的是一条<b>已裁决新增</b>的最小推送事件(只带项目目录 + 任务编号),不是轮询。
         </p>
       </div>
 
@@ -888,7 +893,7 @@ td code { white-space:nowrap; }
             </div>
             <div class="rail-panel">
               <div class="rart-runbar">
-                <button class="rart-runhead" type="button" aria-expanded="false"><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                <button class="rart-runhead" type="button" aria-expanded="false"><span class="tm">今天 09:41</span><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 5v6h-6"/></svg></button>
               </div>
               <div class="rart-scroll" style="padding-top:2px">
@@ -932,7 +937,7 @@ td code { white-space:nowrap; }
             </div>
             <div class="rail-panel">
               <div class="rart-runbar">
-                <button class="rart-runhead" type="button" aria-expanded="false"><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                <button class="rart-runhead" type="button" aria-expanded="false"><span class="tm">今天 09:41</span><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 5v6h-6"/></svg></button>
               </div>
               <div class="rart-scroll" style="padding-top:2px">
@@ -974,7 +979,7 @@ td code { white-space:nowrap; }
             </div>
             <div class="rail-panel">
               <div class="rart-runbar">
-                <button class="rart-runhead" type="button" aria-expanded="false"><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                <button class="rart-runhead" type="button" aria-expanded="false"><span class="tm">今天 09:41</span><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 5v6h-6"/></svg></button>
               </div>
               <div class="rart-scroll" style="padding-top:2px">
@@ -1018,7 +1023,7 @@ td code { white-space:nowrap; }
             </div>
             <div class="rail-panel">
               <div class="rart-runbar">
-                <button class="rart-runhead" type="button" aria-expanded="false"><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                <button class="rart-runhead" type="button" aria-expanded="false"><span class="tm">今天 09:41</span><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 5v6h-6"/></svg></button>
               </div>
               <div class="rart-scroll" style="padding-top:2px">
@@ -1097,7 +1102,7 @@ td code { white-space:nowrap; }
             </div>
             <div class="rail-panel">
               <div class="rart-runbar">
-                <button class="rart-runhead" type="button" aria-expanded="false"><span class="lb"></span><span class="id">job_9ab6…1e05</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                <button class="rart-runhead" type="button" aria-expanded="false"><span class="tm">7月26日 11:05</span><span class="lb"></span><span class="id">job_9ab6…1e05</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 5v6h-6"/></svg></button>
               </div>
               <div class="rart-empty">
@@ -1122,7 +1127,7 @@ td code { white-space:nowrap; }
             </div>
             <div class="rail-panel">
               <div class="rart-runbar">
-                <button class="rart-runhead" type="button" aria-expanded="false"><span class="lb">最近一次</span><span class="id">job_7f3a…c21e</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                <button class="rart-runhead" type="button" aria-expanded="false"><span class="tm">今天 15:02</span><span class="lb">最近一次</span><span class="id">job_7f3a…c21e</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 5v6h-6"/></svg></button>
               </div>
               <div class="rart-status">
@@ -1146,7 +1151,7 @@ td code { white-space:nowrap; }
             </div>
             <div class="rail-panel">
               <div class="rart-runbar">
-                <button class="rart-runhead" type="button" aria-expanded="false"><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                <button class="rart-runhead" type="button" aria-expanded="false"><span class="tm">今天 09:41</span><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 5v6h-6"/></svg></button>
               </div>
               <div class="rart-scroll" style="padding-top:2px">
@@ -1194,25 +1199,25 @@ td code { white-space:nowrap; }
             </div>
             <div class="rail-panel">
               <div class="rart-runbar">
-                <button class="rart-runhead" type="button" aria-expanded="true"><span class="lb">最近一次</span><span class="id">job_7f3a…c21e</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                <button class="rart-runhead" type="button" aria-expanded="true"><span class="tm">今天 15:02</span><span class="lb">最近一次</span><span class="id">job_7f3a…c21e</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 5v6h-6"/></svg></button>
               </div>
               <div class="rart-runsheet">
                 <ul class="rart-runlist">
                   <li><button class="rart-runrow" type="button" data-active>
-                    <span class="rart-runrow-t"><span class="nm">最近一次</span><span class="id">job_7f3a…c21e</span></span>
+                    <span class="rart-runrow-t"><span class="tm">今天 15:02</span><span class="nm">最近一次</span></span>
                     <span class="rart-runrow-m">2 个产物 · 24.5 KiB</span>
                   </button></li>
                   <li><button class="rart-runrow" type="button">
-                    <span class="rart-runrow-t"><span class="nm">上一次</span><span class="id">job_5d90…88aa</span></span>
+                    <span class="rart-runrow-t"><span class="tm">今天 09:41</span><span class="nm">上一次</span></span>
                     <span class="rart-runrow-m">5 个产物 · 1.2 MiB <span class="chip" data-k="warn">2 个缺失</span></span>
                   </button></li>
                   <li><button class="rart-runrow" type="button">
-                    <span class="rart-runrow-t"><span class="nm"></span><span class="id">job_2c14…40b7</span></span>
+                    <span class="rart-runrow-t"><span class="tm">昨天 18:20</span><span class="nm"></span></span>
                     <span class="rart-runrow-m">3 个产物 · 388 KiB</span>
                   </button></li>
                   <li><button class="rart-runrow" type="button">
-                    <span class="rart-runrow-t"><span class="nm"></span><span class="id">job_9ab6…1e05</span></span>
+                    <span class="rart-runrow-t"><span class="tm">7月26日 11:05</span><span class="nm"></span></span>
                     <span class="rart-runrow-m">1 个产物 · 62 KiB <span class="chip" data-k="warn">记录不可读</span></span>
                   </button></li>
                 </ul>
@@ -1253,7 +1258,7 @@ td code { white-space:nowrap; }
             </div>
             <div class="rail-panel">
               <div class="rart-runbar">
-                <button class="rart-runhead" type="button" aria-expanded="false"><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                <button class="rart-runhead" type="button" aria-expanded="false"><span class="tm">今天 09:41</span><span class="lb">上一次</span><span class="id">job_5d90…88aa</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
                 <button class="rart-iconbtn" type="button" aria-label="刷新" data-alert><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 5v6h-6"/></svg></button>
               </div>
               <div class="rart-newrun">
@@ -1327,56 +1332,79 @@ td code { white-space:nowrap; }
     </div>
   </section>
 
-  <!-- ═══════════════════ 待裁决 ═══════════════════ -->
+  <!-- ═══════════════════ 裁决记录 ═══════════════════ -->
   <section class="section" id="open" aria-labelledby="open-title">
     <p class="kicker">11</p>
-    <h2 id="open-title">待裁决</h2>
-    <p class="section-copy">三项,都不阻塞切换器本身;A 与 B 影响面板能不能做到「结果一落地就看得见」和「行上有没有时间」。</p>
+    <h2 id="open-title">裁决记录 <span class="tag ok" style="vertical-align:6px">2026-07-28 · 全部已定</span></h2>
+    <p class="section-copy">五项全部由 owner 拍板。上面所有帧<b>已按裁决后的形态绘制</b>,不再有备选分支。</p>
 
     <div class="decision">
       <div class="decision-head">
-        <h3>A · 云任务结果落地后,面板怎么知道 <span class="tag warn" style="vertical-align:2px">需要裁决</span></h3>
-        <p>今天没有任何「已保存」推送到界面。三条路,代价与诚实度不同。</p>
+        <h3>A · 云任务结果落地后,面板怎么知道 <span class="tag ok" style="vertical-align:2px">已裁决 · A1</span></h3>
+        <p>此前渲染进程没有任何「已保存」推送。裁决:<b>加一条最小推送事件</b>。</p>
       </div>
       <div class="choice recommended">
         <span class="letter">A1</span>
-        <div><b>加一条最小推送通道</b>
-        <p>回流落盘成功后,主进程推一条只带项目目录与任务编号的事件;面板收到即显示提示条。<b>一条通道、一个事件、零轮询</b>,提示与事实严格同步。代价:新增一个 IPC 通道并登记。</p></div>
+        <div><b>采纳 · 加一条最小推送通道</b>
+        <p>回流落盘成功后,主进程推一条<b>只带项目目录与任务编号</b>的事件;面板收到即显示提示条。一条通道、一个事件、零轮询,提示与事实严格同步。<b>提示条因此是已定形态,不是备选。</b></p></div>
       </div>
       <div class="choice">
         <span class="letter">A2</span>
-        <div><b>面板重新可见时自己重取</b>
-        <p>切回产物面板 / 窗口重新聚焦时重取一次。<b>零新通道</b>,但用户盯着面板不动时结果落地了也不会动 —— 提示条这个形态就得砍掉,退回「手动刷新按钮」一件。</p></div>
+        <div><b>未采纳 · 面板重新可见时自己重取</b>
+        <p>零新通道,但用户盯着面板不动时结果落地了也不会动 —— 提示条那一件就得砍掉,验收句里的「取到云端回流的 run」只能靠用户主动点。</p></div>
       </div>
       <div class="choice">
         <span class="letter">A3</span>
-        <div><b>定时轮询</b>
-        <p>面板可见时每隔几秒重取。不推荐:反复走磁盘遍历,而且「几秒」是个凭空的数,依然不准。</p></div>
+        <div><b>未采纳 · 定时轮询</b>
+        <p>反复走磁盘遍历,且「几秒」是个凭空的数,依然不准。</p></div>
       </div>
     </div>
 
     <div class="decision">
       <div class="decision-head">
-        <h3>B · 行上要不要有时间 <span class="tag warn" style="vertical-align:2px">需要裁决</span></h3>
-        <p>本稿画的是没有时间的版本 —— 因为现有通道确实取不到。但时间其实<b>已经在盘上</b>。</p>
+        <h3>B · 行上要不要有时间 <span class="tag ok" style="vertical-align:2px">已裁决 · B1</span></h3>
+        <p>裁决:<b>把盘上本来就有的时刻带出来</b>,并让排序真的按时间。</p>
       </div>
       <div class="choice recommended">
         <span class="letter">B1</span>
-        <div><b>把已有的时间带出来</b>
-        <p>每次云任务的记录里本来就有一个更新时刻,只是没被带进项目统计。带出来之后,行上就能显示「今天 15:02」这类人能读的东西,排序也能从「按编号倒序」改成<b>真正按时间</b>。改动集中在一处结构与其填充,不新增 IPC。</p></div>
+        <div><b>采纳 · 带出已有的时刻,排序改为按时间</b>
+        <p>每次云任务的记录里本来就有一个更新时刻,只是没被带进项目统计。带出来之后行上显示人能读的时刻,<b>排序从「按编号倒序」改成真正按时间</b>。不新增 IPC,改动集中在一处结构与其填充。<br />
+        <b>顺带订正一个缺陷:</b>现役排序按编号字典序倒序,代码注释自陈「≈ 新在前」—— 那是一个<b>近似</b>,不是设计意图。任务编号里没有时间戳,一旦编号生成规则变化,顺序就会静默错乱且没有任何东西会报警。B1 把它从近似换成事实。</p></div>
       </div>
       <div class="choice">
         <span class="letter">B2</span>
-        <div><b>就按本稿画的来,只有编号</b>
-        <p>零改动、绝对诚实,但用户要靠编号认「哪一次是我要的那次」,并且排序永远只是<b>近似</b>按新旧。</p></div>
+        <div><b>未采纳 · 只有短号</b>
+        <p>零改动,但用户要靠编号认「哪一次是我要的那次」,且排序永远只是近似。</p></div>
       </div>
     </div>
 
     <div class="decision">
       <div class="decision-head">
-        <h3>C · 「记录不可读」这枚 chip 的措辞 <span class="tag info" style="vertical-align:2px">建议直接采纳</span></h3>
-        <p>现役文案是「manifest 只读」—— 内部词上了界面。本稿改为「记录不可读」。若 owner 另有偏好的说法,在这里定,一并改掉。</p>
+        <h3>C · 状态 chip 的措辞 <span class="tag ok" style="vertical-align:2px">已裁决 · 采纳</span></h3>
+        <p>现役文案是内部词,已确认改为 <b>「记录不可读」</b>,上方各帧已按此绘制。</p>
       </div>
+    </div>
+
+    <div class="decision">
+      <div class="decision-head">
+        <h3>D · 面板顶部那行字 <span class="tag ok" style="vertical-align:2px">已裁决 · 替换</span></h3>
+        <p>固定小标题<b>替换</b>为选中那一次的自述(时刻 + 标记),不保留。理由见下方缺陷记录。</p>
+      </div>
+    </div>
+
+    <div class="decision">
+      <div class="decision-head">
+        <h3>E · run 级管理动作(删除 / 清理) <span class="tag muted" style="vertical-align:2px">已裁决 · 推迟</span></h3>
+        <p>票面提到过,但<b>明确不属本次交付</b>。理由:产物通道刻意没有写面,做它意味着开一个写面,外加不可逆动作确认与误删防护 —— 与验收句真正点名的两件事(跨次切换 + 取回云端结果)是两回事。<b>本票关闭不代表它已交付。</b></p>
+      </div>
+    </div>
+
+    <div class="note" data-tone="err" style="margin-top:16px">
+      <strong>一并记录的缺陷:面板顶部那句「本回合产物」今天是假的。</strong>
+      面板的数据按<b>项目目录</b>取(<code>projectUsage(identity.directory)</code>),选的是排序后的第 0 个 —— 它完全可能来自同项目的<b>另一个会话</b>。
+      用会话级说法("本回合")罩住项目级数据,用户会据此以为「这是我刚才这轮的产出」。
+      切换器把这行字换成选中那一次的自述,<b>顺带把它消掉</b>。
+      纪律随之定死:<b>本面板的任何文案都不得再对项目级数据作会话级断言</b> —— 包括未来给「产物」页签加计数徽标时,那个数也是项目级的,不能叫「本回合产物数」。
     </div>
   </section>
 
@@ -1384,11 +1412,11 @@ td code { white-space:nowrap; }
   <section class="section" id="scope" aria-labelledby="scope-title">
     <p class="kicker">12</p>
     <h2 id="scope-title">不做的</h2>
-    <p class="section-copy">明确划在外面,免得实现时顺手长回去。</p>
+    <p class="section-copy">明确划在外面,免得实现时顺手长回去 —— 也免得日后把本票的关闭读成「这些都做了」。</p>
     <ul class="scopelist">
       <li><b>全页产物页面</b>不以任何形式回来 —— 不做新路由、不做覆盖层、不做「在新窗口打开」。产物只经会话右栏到达。</li>
       <li><b>项目选择器</b>不进右栏。右栏的项目由当前会话决定。</li>
-      <li><b>删除 / 清理某次云任务</b>不做。产物通道刻意没有写面,保留策略未定前不暴露删除;这也意味着用量条只能看,不能在这里清。</li>
+      <li><b>删除 / 清理某次云任务</b>不做(owner 已裁决推迟)。产物通道刻意没有写面;做它要开写面 + 不可逆动作确认 + 误删防护,与本次验收句点名的两件事是两回事。用量条因此只能看,不能在这里清。<b>本票交付不含这一项。</b></li>
       <li><b>行上显示成败</b>不做。回流写下的状态今天没有任何读取通道,画上去就是编的。</li>
       <li><b>跨次搜索 / 过滤产物</b>不做。先把「能到达」解决,过滤是它之上的另一层。</li>
       <li><b>预览器本身</b>一行不改。Office 结构检查、隔离 HTML 预览、快速查看各归各的交付。</li>
