@@ -1,26 +1,37 @@
 // REQ-125 C4 — right-rail artifacts host, typed data container.
 //
-// Read-only embed of the REQ-093/094 run-artifact channels for the session's project
-// directory: run discovery = runArtifacts.projectUsage (manifest truth), cards =
-// runArtifacts.list ∘ deriveCards, verify-before-open = runArtifacts.verify (REQ-093 AC#4).
-// The rail shows the latest run — a quick look at what this session's work produced. Run
-// management, cloud download, and cross-run browsing are NOT offered anywhere: REQ-126 AC3
-// (#654) retired the full-page artifact workbench, so those are unbuilt capabilities tracked
-// on follow-up #660, not features living somewhere else.
+// Read-only run-artifact channels for the session's project directory: run discovery =
+// runArtifacts.projectUsage (manifest truth), cards = runArtifacts.list ∘ deriveCards,
+// verify-before-open = runArtifacts.verify (REQ-093 AC#4).
+//
+// #660 (owner-decided A1/B1/D/E): the panel additionally consumes the cloud read + single-item
+// download channels — cloud.artifacts merges platform-only cards in (honest degradation when
+// unreachable), cloud.downloadArtifact/cancelArtifactDownload/onArtifactProgress drive the
+// proven downloadReducer, and cloud.onRunSaved (the A1 minimal push event) tells the panel a
+// run has landed on disk so it can re-read the truth. Run-level management (delete/GC) stays
+// deliberately absent (decision E) — no write-side IPC exists and none is opened here.
 // I8: the panel is keyed on the session identity triple, so a session/workspace/server
 // switch remounts it and every in-flight async result dies with the old mount. The
 // timeline→artifacts linkage mount point consumes `rail.artifactTarget` (focusArtifact),
 // selecting and DOM-focusing the matching card; Esc returns focus to the stored origin.
-import { createEffect, createMemo, createResource, createSignal, Show, untrack } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, onCleanup, Show, untrack } from "solid-js"
 import type { ArtifactReadRef } from "../../../../preload/types"
-import { deriveCards, sortRunUsages, type ArtifactCard } from "../../artifact-workbench/workbench-core"
+import {
+  deriveCards,
+  downloadBusy,
+  downloadReducer,
+  sortRunUsages,
+  type ArtifactCard,
+  type DownloadEvent,
+  type DownloadPhase,
+} from "../../artifact-workbench/workbench-core"
 import { detectOoxmlContainer, OOXML_LIMITS } from "../../artifact-workbench/renderers/ooxml"
 import { routeArtifact, shouldDetectOoxml } from "../../artifact-workbench/renderers/registry"
 import { presentOfficeStructure } from "../../artifact-workbench/renderers/office-structure"
 import { cardPreviewable } from "../../artifact-workbench/workbench-core"
 import type { PreviewContext } from "../../artifact-workbench/renderers/renderer-views"
 import type { AlphaSessionLiveContext, SessionRailApi } from "../../session-workspace/session-workspace-shell"
-import { artifactsIdentityKeyOf, artifactsPhaseOf, findArtifactCard } from "./artifacts-core"
+import { artifactsIdentityKeyOf, artifactsPhaseOf, findArtifactCard, runRowModelOf } from "./artifacts-core"
 import { SessionRailArtifactsView } from "./artifacts-panel-view"
 
 export function SessionRailArtifacts(props: { live: AlphaSessionLiveContext; rail: SessionRailApi }) {
@@ -45,7 +56,7 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
   }
 
   // Fetchers never throw (value semantics — an error becomes an honest phase, not a crash).
-  const [usageRes] = createResource(
+  const [usageRes, { refetch: refetchUsage }] = createResource(
     () => tick(),
     async () => {
       try {
@@ -56,10 +67,27 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
       }
     },
   )
+  // #660 B1: genuinely chronological order (sortRunUsages sorts by manifest updatedAt).
+  const sortedRuns = createMemo(() => {
+    const usage = usageRes()
+    return usage?.ok ? sortRunUsages(usage.usage.runs) : []
+  })
+  // #660: the shown run is the user's pick while it still exists; default = the latest.
+  const [pickedRunId, setPickedRunId] = createSignal<string | null>(null)
   const runId = createMemo(() => {
+    const runs = sortedRuns()
+    const picked = pickedRunId()
+    if (picked !== null && runs.some((run) => run.runId === picked)) return picked
+    return runs[0]?.runId
+  })
+  const runRows = createMemo(() => {
+    const now = new Date()
+    return sortedRuns().map((usage, index) => runRowModelOf(usage, index, now))
+  })
+  const quota = createMemo(() => {
     const usage = usageRes()
     if (!usage?.ok) return undefined
-    return sortRunUsages(usage.usage.runs)[0]?.runId
+    return { usedBytes: usage.usage.totalDiskBytes, maxBytes: usage.usage.limits.projectMaxBytes }
   })
 
   const [listRes, { refetch: refetchList }] = createResource(
@@ -74,18 +102,120 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
       }
     },
   )
+  // #660: platform-side listing for the shown run. Unreachable (offline / signed out) is an
+  // honest degradation — local cards still render, plus the stock notice; never an empty lie.
+  const [cloudRes] = createResource(
+    () => (runId() ? { run: runId()!, tick: tick() } : null),
+    async (key) => {
+      try {
+        const result = await window.api.cloud.artifacts(key.run)
+        if (result && typeof result === "object" && !("error" in result))
+          return { ok: true as const, artifacts: result.artifacts }
+        return { ok: false as const }
+      } catch {
+        return { ok: false as const }
+      }
+    },
+  )
+  const cloudUnavailable = createMemo(() => {
+    const cloud = cloudRes()
+    return cloud !== undefined && !cloud.ok
+  })
   const cards = createMemo<ArtifactCard[]>(() => {
     const list = listRes()
     if (!list || !list.ok) return []
-    // No cloud merge in the rail: local manifest truth only ("看一眼"). Cloud listing,
-    // download, and cross-run management are not provided at all — the full-page workbench
-    // that used to carry them is retired (REQ-126 AC3 / #654); see follow-up #660.
-    return deriveCards({ entries: list.entries, legacyFiles: list.legacyFiles })
+    const cloud = cloudRes()
+    return deriveCards({
+      entries: list.entries,
+      legacyFiles: list.legacyFiles,
+      cloudArtifacts: cloud?.ok ? cloud.artifacts : undefined,
+    })
   })
 
   const phase = createMemo(() =>
     artifactsPhaseOf({ usage: usageRes(), runId: runId(), list: runId() ? listRes() : undefined, cardCount: cards().length }),
   )
+
+  // #660 A1: the "run landed" push event. Same directory only; the event carries no data —
+  // the panel re-reads the truth. A foreign run shows the prompt (never steals focus, never
+  // auto-switches — the current view is latched first so the refreshed sort cannot swap it);
+  // the currently shown run re-reads silently (the user is already looking at it).
+  const [newRunHint, setNewRunHint] = createSignal<string | null>(null)
+  onCleanup(
+    window.api.cloud.onRunSaved((event) => {
+      if (event.directory !== identity.directory) return
+      const current = untrack(runId)
+      if (current === undefined) {
+        // Nothing shown yet — the landed run simply becomes the panel's content.
+        void refetchUsage()
+        return
+      }
+      if (event.runId === current) {
+        void refetchUsage()
+        void refetchList()
+        return
+      }
+      if (untrack(pickedRunId) === null) setPickedRunId(current)
+      setNewRunHint(event.runId)
+      void refetchUsage()
+    }),
+  )
+  // The hint retires itself the moment the hinted run is the one on screen (view button,
+  // run-sheet row, or a refresh that lands there — all the same fact).
+  createEffect(() => {
+    const hint = newRunHint()
+    if (hint !== null && runId() === hint) setNewRunHint(null)
+  })
+  const viewNewRun = () => {
+    const hint = newRunHint()
+    if (hint !== null) setPickedRunId(hint)
+    setNewRunHint(null)
+  }
+
+  // #660: single-item retrieval — the proven downloadReducer over the cloud download channel.
+  // Keyed by the ORIGINAL artifact id (descriptor/meta id): progress frames arrive by that id,
+  // and cancel must address main's in-flight ledger by it — never card.key (§② known trap:
+  // legacy card keys are "legacy:<savedPath>").
+  const [phases, setPhases] = createSignal<Record<string, DownloadPhase>>({})
+  const phaseOf = (id: string): DownloadPhase => phases()[id] ?? { status: "idle" }
+  const dispatch = (id: string, event: DownloadEvent) =>
+    setPhases((prev) => ({ ...prev, [id]: downloadReducer(prev[id] ?? { status: "idle" }, event) }))
+  const downloadIdOf = (card: ArtifactCard): string | undefined => {
+    const payload = card.downloadPayload
+    return payload && typeof payload.id === "string" ? payload.id : card.descriptor?.id
+  }
+  onCleanup(
+    window.api.cloud.onArtifactProgress((p) => {
+      dispatch(p.artifactId, { type: "progress", bytes: p.bytes, total: p.total, percent: p.percent })
+    }),
+  )
+  const startDownload = (card: ArtifactCard) => {
+    const run = runId()
+    const id = downloadIdOf(card)
+    if (!run || !id || !card.downloadPayload || downloadBusy(phaseOf(id))) return
+    dispatch(id, { type: "start" })
+    void window.api.cloud
+      .downloadArtifact(identity.directory, run, card.downloadPayload)
+      .then((result) => {
+        if (result.ok) {
+          dispatch(id, { type: "success" })
+          // Not an optimistic update: the download wrote the manifest back; re-read it.
+          void refetchList()
+          void refetchUsage()
+        } else if (result.error === "cancelled") {
+          dispatch(id, { type: "cancelled" })
+        } else {
+          dispatch(id, { type: "failure", message: result.detail ? `${result.error}(${result.detail})` : result.error })
+        }
+      })
+      .catch(() => {
+        dispatch(id, { type: "failure", message: "ipc" })
+      })
+  }
+  const cancelDownload = (card: ArtifactCard) => {
+    const id = downloadIdOf(card)
+    if (id) void window.api.cloud.cancelArtifactDownload(id)
+  }
 
   // Selection: auto-select the first card once cards arrive; keep a user selection while
   // it still exists in the refreshed list.
@@ -253,6 +383,14 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
     <SessionRailArtifactsView
       phase={phase()}
       errorReason={errorReasonOf(usageRes(), listRes())}
+      runs={runRows()}
+      selectedRunId={runId()}
+      onSelectRun={(run) => setPickedRunId(run)}
+      onRefresh={retry}
+      newRunHint={newRunHint() !== null}
+      onViewNewRun={viewNewRun}
+      quota={quota()}
+      cloudUnavailable={cloudUnavailable()}
       cards={cards()}
       selectedKey={selectedKey()}
       onSelect={setSelectedKey}
@@ -262,6 +400,9 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
       previewCtx={previewCtx()}
       focusSeq={focusSeq()}
       onEscape={onEscape}
+      downloadPhases={phases()}
+      onDownload={startDownload}
+      onCancelDownload={cancelDownload}
     />
   )
 }

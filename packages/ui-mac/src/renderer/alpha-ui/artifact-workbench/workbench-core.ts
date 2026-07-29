@@ -13,6 +13,10 @@ import type {
 import type { ArtifactDescriptor } from "../../../shared/cloud-artifact-descriptor"
 import { validateArtifactDescriptor } from "../../../shared/cloud-artifact-descriptor"
 
+// #660:session-rail 的纯值层(artifacts-core)也消费 run 摘要;从这里转售 type,
+// 免得它再开第二条爬出 alpha-ui 的 preload 类型通道(import 白名单棘轮只认一条)。
+export type { RunArtifactUsage } from "../../../preload/types"
+
 // ---------------------------------------------------------------------------
 // 卡片派生
 // ---------------------------------------------------------------------------
@@ -151,9 +155,26 @@ export function downloadBusy(state: DownloadPhase): boolean {
 // run 摘要 + 格式化
 // ---------------------------------------------------------------------------
 
-/** run 列表排序:runId 降序(job_<hex> 无内嵌时间戳可用;倒序≈新在前,且完全确定)。 */
+/** `updatedAt` 的可比毫秒值;缺失或不可解析 → null(失败关闭,不给假时间排序)。 */
+function runUsageTime(run: RunArtifactUsage): number | null {
+  if (!run.updatedAt) return null
+  const ms = Date.parse(run.updatedAt)
+  return Number.isNaN(ms) ? null : ms
+}
+
+/**
+ * run 列表排序:按 manifest `updatedAt` 时间倒序(#660 裁决 B1)。旧实现按 runId 字典序倒序
+ * 只是「倒序≈新在前」的近似 —— job_<hex> 里没有时间戳,编号生成规则一变顺序就静默错乱,
+ * 这里是缺陷修复不是加功能。任一侧拿不到时间时,该比较回落编号倒序:corrupt run
+ * 既不置顶也不消失,且结果对同一输入完全确定。
+ */
 export function sortRunUsages(runs: readonly RunArtifactUsage[]): RunArtifactUsage[] {
-  return [...runs].sort((a, b) => (a.runId < b.runId ? 1 : a.runId > b.runId ? -1 : 0))
+  return [...runs].sort((a, b) => {
+    const ta = runUsageTime(a)
+    const tb = runUsageTime(b)
+    if (ta !== null && tb !== null && ta !== tb) return tb - ta
+    return a.runId < b.runId ? 1 : a.runId > b.runId ? -1 : 0
+  })
 }
 
 export function formatBytes(n: number | null | undefined): string {

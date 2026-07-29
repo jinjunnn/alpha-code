@@ -1,8 +1,10 @@
 /* REQ-125 C4 — right-rail artifacts host chrome.
- * Only the embedding context is styled here (scroll column, caption, quiet empty state);
+ * Only the embedding context is styled here (scroll column, run bar, quiet empty states);
  * every card/chip/tab/preview inside comes verbatim from artifact-workbench.css (I5 — the
  * embedded engine keeps its internal language, this file never redefines a workbench
- * selector). Tokens: --a-* only. */
+ * selector). Tokens: --a-* only.
+ * issue 660 adds the one new CSS family: .a-rart-runbar / -runhead / -runsheet / -runlist /
+ * -runrow / -runfoot / -newrun (+ the icon button the bar carries). */
 
 .a-rart-root {
   display: flex;
@@ -21,13 +23,272 @@
   overflow-y: auto;
 }
 
-.a-rart-caption {
-  padding: 2px 2px 0;
-  color: var(--a-text-tertiary);
+/* ── issue 660 云任务条(收起态一行;时刻主标、位次标记、编号第三顺位)── */
+
+.a-rart-runbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px 8px;
+}
+
+.a-rart-runhead {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  background: none;
+  color: var(--a-text);
+  text-align: left;
+}
+
+.a-rart-runhead:hover {
+  background: var(--a-bg-muted);
+}
+
+.a-rart-runhead[aria-expanded="true"] {
+  border-color: var(--a-accent-border);
+  background: var(--a-accent-subtle);
+}
+
+.a-rart-runhead-tm {
+  flex: none;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.a-rart-runhead-lb,
+.a-rart-runrow-nm {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
   font-size: var(--a-text-2xs);
-  font-weight: var(--a-weight-semibold);
-  letter-spacing: var(--a-tracking-wide);
-  text-transform: uppercase;
+  font-weight: var(--a-weight-medium);
+  white-space: nowrap;
+}
+
+.a-rart-runhead-id {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--a-text-tertiary);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a-rart-runhead-chev {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--a-text-tertiary);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+  transition: transform var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-rart-runhead[aria-expanded="true"] .a-rart-runhead-chev {
+  color: var(--a-accent);
+  transform: rotate(180deg);
+}
+
+.a-rart-iconbtn {
+  display: grid;
+  position: relative;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  background: none;
+  color: var(--a-text-secondary);
+}
+
+.a-rart-iconbtn:hover {
+  background: var(--a-bg-muted);
+}
+
+.a-rart-iconbtn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+/* A1 提示点:有新结果落地时刷新按钮带一颗点(与提示条同进退)。 */
+.a-rart-iconbtn[data-alert]::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-accent-solid);
+}
+
+/* ── issue 660 展开态:就地下推的历次列表(不是浮层)── */
+
+.a-rart-runsheet {
+  flex: none;
+  margin: 0 12px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-shadow-sm);
+  overflow: hidden;
+}
+
+.a-rart-runlist {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 210px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.a-rart-runrow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--a-radius-md);
+  background: none;
+  color: var(--a-text);
+  text-align: left;
+}
+
+.a-rart-runrow:hover {
+  background: var(--a-overlay-hover);
+}
+
+.a-rart-runrow[data-active] {
+  border-color: var(--a-accent-border);
+  background: var(--a-overlay-selected);
+}
+
+.a-rart-runrow-t {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.a-rart-runrow-tm {
+  flex: none;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.a-rart-runrow-m {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+
+.a-rart-runfoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--a-border-faint);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+}
+
+.a-rart-runfoot-bar {
+  flex: 1;
+  max-width: 120px;
+  height: 4px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-inset);
+  overflow: hidden;
+}
+
+.a-rart-runfoot-bar i {
+  display: block;
+  height: 100%;
+  border-radius: var(--a-radius-full);
+  background: var(--a-accent-solid);
+}
+
+/* ── issue 660 A1 新结果落地提示条(不抢焦点、不自动跳走)── */
+
+.a-rart-newrun {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  margin: 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--a-accent-border);
+  border-radius: var(--a-radius-md);
+  background: var(--a-accent-subtle);
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  line-height: var(--a-leading-snug);
+}
+
+.a-rart-newrun svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--a-accent);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.a-rart-newrun-tx {
+  flex: 1;
+  min-width: 0;
+}
+
+.a-rart-newrun-lk {
+  flex: none;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  background: var(--a-accent-solid);
+  color: var(--a-text-on-accent);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .a-rart-runhead-chev {
+    transition: none;
+  }
 }
 
 .a-rart-preview {

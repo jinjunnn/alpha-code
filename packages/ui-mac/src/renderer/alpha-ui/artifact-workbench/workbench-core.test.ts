@@ -142,10 +142,48 @@ describe("downloadReducer 状态机", () => {
   })
 })
 
+// #660 B1:真实完整对象,不再 `as RunArtifactUsage` 强转 —— cast 会让类型层对新增字段
+// 的缺失保持沉默(⑦-3 点名的隐藏坑)。
+function usageOf(runId: string, updatedAt: string | null): RunArtifactUsage {
+  return {
+    runId,
+    artifactCount: 1,
+    recordedBytes: 12,
+    diskBytes: 12,
+    legacyBytes: 0,
+    missingCount: 0,
+    readOnly: updatedAt === null,
+    updatedAt,
+  }
+}
+
 describe("排序 / 格式化", () => {
-  test("run 按 runId 降序(确定性)", () => {
-    const runs = [{ runId: "job_a" }, { runId: "job_c" }, { runId: "job_b" }] as RunArtifactUsage[]
-    expect(sortRunUsages(runs).map((r) => r.runId)).toEqual(["job_c", "job_b", "job_a"])
+  test("run 按 updatedAt 时间倒序 —— fixture 的编号序与时间序互相矛盾(B1 缺陷修复)", () => {
+    // 编号最小的 job_a 时间最新、编号最大的 job_z 时间最旧:
+    // 字典序倒序(旧缺陷)给 [job_z, job_m, job_a],按时间必须给 [job_a, job_m, job_z]。
+    const runs = [
+      usageOf("job_z", "2026-07-26T10:00:00.000Z"),
+      usageOf("job_a", "2026-07-28T10:00:00.000Z"),
+      usageOf("job_m", "2026-07-27T10:00:00.000Z"),
+    ]
+    expect(sortRunUsages(runs).map((r) => r.runId)).toEqual(["job_a", "job_m", "job_z"])
+  })
+
+  test("updatedAt 缺失/不可解析 → 该比较回落编号倒序(确定,corrupt 不置顶也不消失)", () => {
+    // 全 null:纯编号倒序。
+    expect(
+      sortRunUsages([usageOf("job_a", null), usageOf("job_c", null), usageOf("job_b", null)]).map((r) => r.runId),
+    ).toEqual(["job_c", "job_b", "job_a"])
+    // 不可解析的时间字符串 = 缺失(失败关闭),不得被 Date.parse 的 NaN 搅乱顺序。
+    expect(
+      sortRunUsages([usageOf("job_a", "not-a-timestamp"), usageOf("job_b", null)]).map((r) => r.runId),
+    ).toEqual(["job_b", "job_a"])
+    // 时间完全相同 → 编号倒序垫底裁决,输出仍完全确定。
+    const same = "2026-07-28T10:00:00.000Z"
+    expect(sortRunUsages([usageOf("job_a", same), usageOf("job_b", same)]).map((r) => r.runId)).toEqual([
+      "job_b",
+      "job_a",
+    ])
   })
   test("formatBytes", () => {
     expect(formatBytes(0)).toBe("0 B")

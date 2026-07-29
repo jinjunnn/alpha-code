@@ -26,7 +26,7 @@ describe("REQ-125 C4 artifacts panel real Solid mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("8 pass")
+    expect(output).toContain("18 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -80,14 +80,24 @@ describe("REQ-125 C4 verbatim workbench embed (I5) and channel discipline", () =
     expect(css).not.toContain(".a-wb")
   })
 
-  test("data flows only through the read-only run-artifact channels, in the container", () => {
+  test("data flows through the read-only run-artifact channels plus the #660 cloud face, in the container", () => {
     expect(wiring).toContain("window.api.runArtifacts.projectUsage(")
     expect(wiring).toContain("window.api.runArtifacts.list(")
     expect(wiring).toMatch(/window\.api\.runArtifacts\s*\.verify\(/)
     expect(wiring).toContain("window.api.runArtifacts.read(")
-    // No write/download/open channels from the rail. Since REQ-126 AC3 (#654) retired the
-    // full-page workbench, these are offered nowhere — not relocated (follow-up #660).
-    const forbidden = ["downloadArtifact", "openExternal", "quickLook", "openPath", "htmlPreview.open"]
+    // #660 — deliberate ratchet update, owner-decided (issue #660 裁决记录 A1/B1/E): the
+    // container now ALSO consumes exactly these cloud channels — platform listing (honest
+    // degradation when unreachable), single-item download + progress + cancel (the proven
+    // downloadReducer), and the run-saved push event (A1). Nothing else was admitted.
+    expect(wiring).toContain("window.api.cloud.artifacts(")
+    expect(wiring).toMatch(/window\.api\.cloud\s*\.downloadArtifact\(/)
+    expect(wiring).toContain("window.api.cloud.cancelArtifactDownload(")
+    expect(wiring).toContain("window.api.cloud.onArtifactProgress(")
+    expect(wiring).toContain("window.api.cloud.onRunSaved(")
+    // Still forbidden: open/preview escapes, and any run-level write or refetch face —
+    // decision E keeps delete/GC out, and saveRun stays main-driven (the watcher), never
+    // the rail. The #660 closure must not be read as having delivered run management.
+    const forbidden = ["openExternal", "quickLook", "openPath", "htmlPreview.open", "saveRun", "removeArtifact"]
     forbidden.forEach((token) => expect(wiring).not.toContain(token))
     // The view is channel-free — the harness mounts it without any preload bridge.
     expect(view).not.toContain("window.api")
