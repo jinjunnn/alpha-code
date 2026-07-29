@@ -13,7 +13,7 @@
 // 形制沿用 alpha-session-search-test-runtime.tsx(含 `window.api` 必须用 defineProperty 而不是
 // 裸赋值 —— 整包跑时先跑的测试可能已把它定义成只读属性)。
 
-import { AppBaseProviders, AppInterface, PlatformProvider, ServerConnection, useCommand, type Platform } from "@opencode-ai/app"
+import { AppBaseProviders, AppInterface, PlatformProvider, ServerConnection, useCommand, useTabs, type Platform } from "@opencode-ai/app"
 import { MemoryRouter, useBeforeLeave, useLocation } from "@solidjs/router"
 import { createEffect, createSignal } from "solid-js"
 import { render } from "solid-js/web"
@@ -26,6 +26,7 @@ import { READONLY_AGENT, buildPromptRequest, composerPerm, setComposerPerm } fro
 import { setSidebarCollapsed } from "./sidebar-state"
 import type { AlphaProject, AlphaProjectsApi } from "./use-projects"
 import { ALPHA_SETTINGS_DEFAULTS } from "../../shared/settings-adapters"
+import { hrefFor } from "../../shared/route-manifest"
 import type { SettingsSurfaceApi } from "../alpha-ui/settings-authority-client"
 
 export { render }
@@ -97,6 +98,15 @@ function RouteProbe() {
 const [registeredCommands, setRegisteredCommands] = createSignal<string[]>([])
 export { registeredCommands }
 
+/** 上游 tabs store 里当前活着的 draft。`session.new` 的判据落在这上面(真实 store 多出一个新
+ *  draft)+ 真实 router 收到去它的导航 —— 而不是某个替身记了一次调用。 */
+export type DraftRecord = { draftID: string; server: string; directory: string }
+const [draftTabs, setDraftTabs] = createSignal<DraftRecord[]>([])
+export { draftTabs }
+/** 新 draft 的落地 href,取自 alpha 路由契约的唯一事实源(route-manifest 的 `hrefFor.newSession`,
+ *  与上游 `context/tabs.tsx` 的 `draftHref` 同形;route-authority ratchet 禁止在别处复刻该 URL)。 */
+export const draftHref = (draftID: string) => hrefFor.newSession(draftID)
+
 let triggerCommand: ((id: string) => void) | undefined
 /** 用真实命令总线触发一个 id(桌面菜单点一下走的就是这条路)。 */
 export function trigger(id: string) {
@@ -106,14 +116,39 @@ export function trigger(id: string) {
 
 function CommandProbe() {
   const command = useCommand()
+  const tabs = useTabs()
   triggerCommand = (id) => command.trigger(id)
   createEffect(() => setRegisteredCommands(command.options.map((option) => option.id)))
+  createEffect(() =>
+    setDraftTabs(
+      tabs.store.flatMap((tab) =>
+        tab.type === "draft" ? [{ draftID: tab.draftID, server: tab.server as string, directory: tab.directory }] : [],
+      ),
+    ),
+  )
   return null
 }
+
+// 上游 persist 在 `platform.storage` 存在时走**异步**存储路径(utils/persist.ts),存储落在本模块
+// 的 Map 里而不是 localStorage —— 顺带绕开 persist 的**模块级**内存缓存,每个用例的 tabs 都从空
+// 起步。没有这层隔离,前一条用例建过的 draft/session tab 会在下一条用例挂载时被水合回来,上游
+// 随即恢复"上次的 tab" —— 壳一挂载就自行导航,后面的断言全在测残留而不是测命令。
+const storageCells = new Map<string, string>()
+
+const harnessStorage = (name = "default") => ({
+  getItem: async (key: string) => storageCells.get(`${name}:${key}`) ?? null,
+  setItem: async (key: string, value: string) => {
+    storageCells.set(`${name}:${key}`, value)
+  },
+  removeItem: async (key: string) => {
+    storageCells.delete(`${name}:${key}`)
+  },
+})
 
 const platform: Platform = {
   platform: "desktop",
   os: "macos",
+  storage: harnessStorage,
   openLink: () => {},
   restart: async () => {},
   back: () => {},
@@ -182,8 +217,36 @@ export function installPreloadStub() {
   Object.defineProperty(globalThis, "fetch", {
     configurable: true,
     writable: true,
-    value: (() => new Promise(() => {})) as typeof fetch,
+    value: ((input: RequestInfo | URL) => {
+      const url = String(typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url)
+      const path = new URL(url).pathname
+      // 事件流保持挂起(闸门不跑服务器);其余给**形状正确**的空响应。第一版让所有请求
+      // 永远挂起,结果是:一旦某条用例把真实路由带进一个会 Suspense 的上游分支(project.open
+      // 那条最终 navigate 进会话路由),Solid **全局**的 transition 就永远悬着 —— 此后每一次
+      // startTransition(含 `tabs.newDraft` 内部的导航)都并进这个悬置事务,永不提交。症状是
+      // 下一条用例整个壳"点了没反应"且随用例顺序漂移:单跑绿、全文件红。
+      if (path.endsWith("/event")) return new Promise(() => {})
+      const body = path in FETCH_FIXTURES ? FETCH_FIXTURES[path] : {}
+      return Promise.resolve(
+        new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } }),
+      )
+    }) as unknown as typeof fetch,
   })
+}
+
+/** 上游按端点解析响应;形状不对会触发重试退避,叶被 Suspense 压住,"看起来没挂载"。 */
+const FETCH_FIXTURES: Record<string, unknown> = {
+  "/provider": { all: [], connected: [], default: {} },
+  "/path": { state: "", config: "", worktree: FIXTURE_DIRECTORY, directory: FIXTURE_DIRECTORY, home: "/Users/tester" },
+  "/project": [],
+  "/project/current": { id: "prj_default", worktree: FIXTURE_DIRECTORY },
+  "/session": [],
+  "/agent": [],
+  "/command": [],
+  "/question": [],
+  "/permission": [],
+  "/experimental/resource": [],
+  "/api/reference": [],
 }
 
 /** 侧栏把自己的 chrome Portal 挂到 `#root`;没有它,侧栏 DOM 不会进 document。 */
@@ -195,6 +258,7 @@ export function installRootHost() {
 }
 
 export function resetHarness() {
+  storageCells.clear()
   setPickerCalls(0)
   setCreatedIn([])
   setExportedLogs(0)
@@ -207,6 +271,7 @@ export function resetHarness() {
   setSettingsOpen(false)
   setComposerPerm("ask")
   setRegisteredCommands([])
+  setDraftTabs([])
   triggerCommand = undefined
 }
 
