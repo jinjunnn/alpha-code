@@ -96,6 +96,16 @@ async function settle() {
   for (let i = 0; i < 40; i++) await Promise.resolve()
 }
 
+/** 等某件事**出现**:轮流 settle 到条件成立为止(有界,等不到就红)。只用于正向断言 ——
+ *  "不该出现"那一侧仍然是 settle 后直接断言,不能靠等待把它等没。 */
+async function waitFor(check: () => boolean, label: string) {
+  for (let round = 0; round < 20; round++) {
+    if (check()) return
+    await settle()
+  }
+  throw new Error(`等不到:${label}`)
+}
+
 async function mountShell(component: () => unknown) {
   const host = document.createElement("div")
   document.body.append(host)
@@ -302,14 +312,32 @@ describe("桌面菜单:发布面上的每一条在真实壳里都接得住", () 
   })
 
   test("session.new 真的把壳送去新对话(侧栏「新对话」按钮同一条路径)", async () => {
+    // 初版在这里断言 `newSessionHref(dir)`(legacy admission 路由)—— 那是 #656 之前的世界:
+    // #656(不变量 1)把新对话唯一入口改成了直接建 draft,这个入口**不得再**产生那个 href。
+    // 现行保证:触发 = 上游 tabs store 真的多一个同源 draft + 壳真的落到它的新对话页。
     await mountShell(() => runtime.AlphaShell())
+    // 启动即落新草稿(#656 的启动导航)。先等它落地再触发:AC4 的 in-flight 去重会吞掉与启动
+    // 并发的第二次 startDraft —— 不等就触发,测到的是去重,不是命令。
+    await waitFor(() => runtime.draftTabs().length > 0 && runtime.routerPath() === runtime.draftHref(runtime.draftTabs().at(-1)!.draftID), "启动草稿落地")
+    const draftsBefore = new Set(runtime.draftTabs().map((draft) => draft.draftID))
     const before = runtime.navigationIntents().length
 
     runtime.trigger("session.new")
-    await settle()
+    await waitFor(() => runtime.draftTabs().some((draft) => !draftsBefore.has(draft.draftID)), "触发后建出新 draft")
 
-    // 侧栏「新对话」按钮点出来的是同一个 href;这里断言命令真的走到了那条路径。
-    expect(runtime.navigationIntents().slice(before)).toContain(newSessionHref(runtime.FIXTURE_DIRECTORY))
+    // 可观察结果 1:真实 tabs store 多出**一个新的** draft,目录/服务器同源(不是复用启动那个)。
+    const added = runtime.draftTabs().filter((draft) => !draftsBefore.has(draft.draftID))
+    expect(added).toHaveLength(1)
+    expect(added[0]!.directory).toBe(runtime.FIXTURE_DIRECTORY)
+    expect(added[0]!.server).toBe("sidecar")
+
+    // 可观察结果 2:真实 router 收到**去这个新 draft** 的导航,且壳真的落在了那页。
+    await waitFor(() => runtime.routerPath() === runtime.draftHref(added[0]!.draftID), "壳落在新草稿页")
+    expect(runtime.navigationIntents().slice(before)).toContain(runtime.draftHref(added[0]!.draftID))
+
+    // 不变量 1(#656)反向闸:这个入口从此不得再借 legacy admission 路由 —— 初版断言以它为
+    // **期望**,正是把回归当成了正确答案。
+    expect(runtime.navigationIntents()).not.toContain(newSessionHref(runtime.FIXTURE_DIRECTORY))
   })
 
   // common.goBack / common.goForward 已从桌面菜单**退休**(shared/desktop-menu-policy.ts),
