@@ -17,7 +17,7 @@
 <div class="wrap">
   <div class="sec-kicker">P0 · 时间线全量重做</div>
   <h2 class="t">把整条时间线统一成一套克制、信息密度高的 alpha 卡片语言</h2>
-  <p class="lede">本稿覆盖经真机 DOM 核对的 <b>全部 ~52 个构件</b>(取代旧稿只覆盖 1/3)。设计取向:开发者工具应当<strong>安静、可扫读、密而不噪</strong> —— 中性灰底 + 单一克制 indigo 强调,工具按类型着色,运动只用在状态变化的高价值瞬间。每块都标注了真机 <span class="mono">data-component/data-slot</span> 钩子 + 接缝 + 现状(<span class="badge-st done" style="margin:0">已优化</span> / <span class="badge-st part" style="margin:0">部分</span> / <span class="badge-st gap" style="margin:0">裸样式</span>),因此它也是落地 spec。详见同目录 <span class="mono">audit.md</span> / <span class="mono">tasks.md</span>。</p>
+  <p class="lede">本稿覆盖经真机 DOM 核对的 <b>全部 ~52 个构件</b>(取代旧稿只覆盖 1/3)。设计取向:开发者工具应当<strong>安静、可扫读、密而不噪</strong> —— 中性灰底 + 单一克制 indigo 强调,工具按类型着色,运动只用在状态变化的高价值瞬间。每块都标注了真机 <span class="mono">data-component/data-slot</span> 钩子 + 接缝 + 现状(<span class="badge-st done" style="margin:0">已优化</span> / <span class="badge-st part" style="margin:0">部分</span> / <span class="badge-st gap" style="margin:0">裸样式</span>),因此它也是落地 spec。</p>
   <div class="note"><b>本稿同时是时间线组件的全量活稿</b>:组件帧按 ①–⑤ 分区陈列;已批的「产物链接行与右栏预览联动」增量已并入 ⑥ 节(帧 verbatim 引自增量稿);各消息类型的帧覆盖情况与缺帧待补,见 ⑦「<a href="#inventory">组件索引与待补</a>」。整页装配(单一顶栏 / 右栏四面板 / 输入框停靠)见 <a href="../session-workspace/design.html">session-workspace 整页稿</a>;本稿只管时间线行类型本身,两稿表述冲突时组件形态以本稿为准。<br><b>2026-07-23 补帧更新</b>:新增回合级错误卡(②)、匹配文件卡(③)、用户消息内联代码评论卡(①)三帧;附件卡与子任务卡重锚 v2 形态(帧外注记「由 v1 形态更新」);渲染位 / 回合分隔 / 右栏历史参照三处帧外注记修正;待补清单同步。<br><b>2026-07-24 补帧更新</b>:新增 bash 流式输出帧(③)、文件行徽章六态一览(③)、助手侧媒体预览行(②)、会话内空态帧(④)四帧;待补仅剩「消息导航(代码未接线)」一项。</div>
 
   <!-- ════════════════ USER INPUT ════════════════ -->
@@ -446,9 +446,9 @@ admission · 阈值边界 …<span class="cur"></span></div></div></div>
 
   <!-- ════════════════ MAP ════════════════ -->
   <div class="sec-kicker" id="map" style="margin-top:40px">实现接缝表 · 现状 → 钩子 → 接缝</div>
-  <h2 class="t">40 项优化:CSS 36 · INJECT 3 · ENGINE 1(口径见 tasks.md)</h2>
+  <h2 class="t">40 项优化:CSS 36 · INJECT 3 · ENGINE 1</h2>
   <div class="note"><b>Superseded(2026-07-24)</b>:本节接缝口径(CSS/INJECT/ENGINE 落 <span class="mono">timeline-reskin.css</span> / <span class="mono">timeline-inject.tsx</span>)已被 <b>REQ-125 方案基线</b>(<span class="mono">docs/design/2026-07-24-session-seam-baseline.md</span>)取代:时间线整体升 seam surface,alpha 自持整页渲染,不再按 CSS/INJECT 注入落地。下表仅作 <b>40 构件完备性清单与历史参照</b>使用。</div>
-  <p class="lede">完整逐条见 <span class="mono">audit.md</span>。下表是高优先(P0/P1)摘要。<span style="color:var(--a-success);font-weight:600">CSS</span>=零改源码;<span style="color:var(--a-warning);font-weight:600">INJECT</span>=复用 timeline-inject 加层;<span style="color:var(--a-text-tertiary);font-weight:600">ENGINE</span>=上游引擎只换外框。</p>
+  <p class="lede">下表是高优先(P0/P1)摘要。<span style="color:var(--a-success);font-weight:600">CSS</span>=零改源码;<span style="color:var(--a-warning);font-weight:600">INJECT</span>=复用 timeline-inject 加层;<span style="color:var(--a-text-tertiary);font-weight:600">ENGINE</span>=上游引擎只换外框。</p>
   <table class="imap">
     <thead><tr><th>构件</th><th>真机钩子</th><th>现状</th><th>接缝</th><th>优先级</th></tr></thead>
     <tbody>
