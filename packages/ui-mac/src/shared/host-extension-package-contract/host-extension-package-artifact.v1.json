@@ -1,31 +1,31 @@
 {
   "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
-  "artifactSha256": "388301ea431a6a4c1d121d52c6eabdfe418c6cfa1d0ff11f4d160cecb41a4f1a",
+  "artifactSha256": "c3c53e0580782884d441ed04064e31020949bef87ae01b4a0403f8576e3fd483",
   "files": [
     {
-      "bytes": 3816,
+      "bytes": 4213,
       "path": "CONTRACT.md",
-      "sha256": "1bde52b2c820e17b153048930ddc0d747c07b928f87afc58896bb872c2abfd95"
+      "sha256": "07bc7899756356ffff35883d08bb2e27c98a0baf657e74e6833f427722a7c437"
     },
     {
-      "bytes": 3581,
+      "bytes": 3608,
       "path": "alpha-package-envelope-v1.schema.json",
-      "sha256": "8ebf4b26fcb4cce7c365fa4f7e139d8619f2711d0a7e01bbcb4c672cdd79e879"
+      "sha256": "f85bcbb3fb7b1432686caf0b6b5710ca75fe82c372032cb11bc22bcfcab1972f"
     },
     {
-      "bytes": 29561,
+      "bytes": 24821,
       "path": "decoder.ts",
-      "sha256": "eb551b84838f52fe513819da2dd5bc0ba06545119fbae9a05643499a33cd9260"
+      "sha256": "9c9246bf20b33f7caf5f2275fe579c2af08f9eb0ee359f8520d2458abf3ed554"
     },
     {
-      "bytes": 9907,
+      "bytes": 9300,
       "path": "generate-artifact.ts",
-      "sha256": "ea92156251bf92a1ff09646aac33e777796f1ab6c868cfbeb34be6fd4b927290"
+      "sha256": "bdd317c786749dba372e1c6db735dd7db4459de861a471b8a82a3c43432768c2"
     },
     {
-      "bytes": 1832,
+      "bytes": 1339,
       "path": "host-extension-package.registry.v1.json",
-      "sha256": "aa511d421286451e2dedc5f8142ea50018b97b55563e6b3df689ba5f8ae80ae7"
+      "sha256": "898ad4edffaf5fde0502009253e8e7099498856b2bec45390e2bf3a81f77a421"
     },
     {
       "bytes": 1369,
@@ -33,19 +33,14 @@
       "sha256": "5d3c42e55b14875a7f8ff9954bdacdc4ef4fe27e50b04e47ff54a4a548c0bdd5"
     },
     {
-      "bytes": 2215,
-      "path": "profiles/cloud.v1.schema.json",
-      "sha256": "c435daf3d8bcb60714fa504c7e24ba09c3529f9da6d5cb7a56464e67ae55feaa"
-    },
-    {
-      "bytes": 1324,
+      "bytes": 1355,
       "path": "profiles/mcp-local.v1.schema.json",
-      "sha256": "fddfaaa28465e93b823f687093b83d6947a704cce6a1d8e4689b4bb6eae399f8"
+      "sha256": "51681a0ab12e5a4f9d2dc4d46353accf4fc5befe95aa92e133e0ca2626dd7923"
     },
     {
-      "bytes": 1365,
+      "bytes": 1343,
       "path": "profiles/mcp-remote.v1.schema.json",
-      "sha256": "c7bbd7b0dcbeaff5ad5d8cfb5316594910389f89a6ec2b80f4aaefc78f199697"
+      "sha256": "b80ef7ad8fb04525abcf2618c0d8a68bc871a46801663daaaa6d87d4bb2cf749"
     },
     {
       "bytes": 1369,
@@ -53,19 +48,19 @@
       "sha256": "0727dade9871c18d2b2a598ae34844d1afe6d43c381f931e729e653cd625805a"
     },
     {
-      "bytes": 2668,
+      "bytes": 2484,
       "path": "registry.ts",
-      "sha256": "30910c17c717b77958bbc4b1e3afcd02e771198570bed484b46fc3bde4398083"
+      "sha256": "ed9ecdb5755370d935a26501ad8753fc28eadf04a2337627217102dd44b0279f"
     },
     {
-      "bytes": 3372,
+      "bytes": 3237,
       "path": "synthetic-decoder.ts",
-      "sha256": "2c74e6c26428a15c17a3c85ca37ed8fa537076ecf8697d3010a831bb09ce8f6b"
+      "sha256": "bf06906277fcebf56b376ceab26ed4a7abd9ee78b7780306834a76b2dafe39ce"
     },
     {
-      "bytes": 11602,
+      "bytes": 9754,
       "path": "testvectors/decoder-corpus.v1.json",
-      "sha256": "7d515cf1c6c49aa36ce898d23a742d6c45ad151a926ad3fe6a97682d34860add"
+      "sha256": "9d416c008b1b4408d8cbe1c4a27f7b8b9bd40ba389daced47b284bd088d51443"
     }
   ],
   "schema": "alpha.host-extension-package.artifact.v1"

@@ -1,3 +1,4 @@
+// v0.1.1/v0.1.2 的 saneCatalog() 与今天逐字相同，故本测试是忠实代理；v0.1.0 尚无此文件。
 import { generateKeyPairSync, sign } from "node:crypto"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -11,7 +12,7 @@ const publicKey = keys.publicKey.export({ type: "spki", format: "der" }).toStrin
 
 afterAll(() => roots.forEach((root) => rmSync(root, { recursive: true, force: true })))
 
-describe("v0.1.x Catalog shallow-shell compatibility", () => {
+describe("Catalog 浅壳解析：新增同级键与空 entries", () => {
   test("non-empty entries remain valid when a sibling packages array is added", async () => {
     const catalog = {
       version: "2026-07-30.1",
@@ -24,7 +25,7 @@ describe("v0.1.x Catalog shallow-shell compatibility", () => {
     expect(cached?.catalog).toEqual(catalog)
   })
 
-  test("entries[] is never empty even when packages[] is non-empty", async () => {
+  test("读端会拒绝空 entries，即使 packages 非空", async () => {
     const root = await signedCache({
       version: "2026-07-30.1",
       entries: [],

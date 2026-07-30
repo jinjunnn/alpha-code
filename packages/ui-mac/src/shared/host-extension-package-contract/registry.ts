@@ -1,10 +1,7 @@
 import registryJson from "./host-extension-package.registry.v1.json"
 
-export type PackageProfileIdV1 = "skill" | "agent" | "mcp-local" | "mcp-remote" | "cloud"
-export type PackageCapabilityV1 =
-  | "alpha.connection-prerequisite.v1"
-  | "alpha.mcp-oauth.v1"
-  | "alpha.secret-prerequisite.v1"
+export type PackageProfileIdV1 = "skill" | "agent" | "mcp-local" | "mcp-remote"
+export type PackageCapabilityV1 = "alpha.secret-prerequisite.v1"
 
 export type PackageProfileRegistrationV1 = {
   profileId: PackageProfileIdV1
@@ -58,16 +55,9 @@ export function assertHostExtensionPackageRegistryV1(): void {
   if (registry.schema !== HOST_EXTENSION_PACKAGE_REGISTRY_SCHEMA_V1)
     throw new Error(`registry schema must be ${HOST_EXTENSION_PACKAGE_REGISTRY_SCHEMA_V1}`)
   const profiles = PROFILE_REGISTRY_V1.map((profile) => `${profile.profileId}@${profile.profileVersion}`)
-  if (profiles.join("\n") !== ["agent@1", "cloud@1", "mcp-local@1", "mcp-remote@1", "skill@1"].join("\n"))
+  if (profiles.join("\n") !== ["agent@1", "mcp-local@1", "mcp-remote@1", "skill@1"].join("\n"))
     throw new Error("profile registry must contain the sorted Phase 1 profile set exactly once")
   const capabilities = CAPABILITY_REGISTRY_V1.map((capability) => capability.token)
-  if (
-    capabilities.join("\n") !==
-    [
-      "alpha.connection-prerequisite.v1",
-      "alpha.mcp-oauth.v1",
-      "alpha.secret-prerequisite.v1",
-    ].join("\n")
-  )
+  if (capabilities.join("\n") !== ["alpha.secret-prerequisite.v1"].join("\n"))
     throw new Error("capability registry must contain the sorted Phase 1 vocabulary exactly once")
 }

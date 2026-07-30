@@ -18,7 +18,6 @@ export const HOST_EXTENSION_PACKAGE_ARTIFACT_FILES = [
   "generate-artifact.ts",
   "host-extension-package.registry.v1.json",
   "profiles/agent.v1.schema.json",
-  "profiles/cloud.v1.schema.json",
   "profiles/mcp-local.v1.schema.json",
   "profiles/mcp-remote.v1.schema.json",
   "profiles/skill.v1.schema.json",
@@ -96,29 +95,14 @@ export function decoderCorpusBytesV1(): Uint8Array {
     createCase(
       "mcp-remote-v1",
       "mcp-remote",
-      ["alpha.mcp-oauth.v1"],
+      [],
       {
         schema: "alpha.host-extension-package.payload.mcp-remote.v1",
         behavior: {
           url: "https://mcp.example.invalid/service",
           headersTemplate: {},
           requiredSecrets: [],
-          auth: "oauth",
-        },
-      },
-    ),
-    createCase(
-      "cloud-v1",
-      "cloud",
-      ["alpha.connection-prerequisite.v1"],
-      {
-        schema: "alpha.host-extension-package.payload.cloud.v1",
-        behavior: {
-          pipelineKind: "research",
-          inputContract: [{ field: "query", description: "Research question", required: true }],
-          budgetDefaults: { max_iter: 3, max_tokens: 2000, max_wall_clock_sec: 60 },
-          budgetLimits: { max_iter: 10, max_tokens: 10000, max_wall_clock_sec: 300 },
-          connection: "required",
+          auth: "none",
         },
       },
     ),

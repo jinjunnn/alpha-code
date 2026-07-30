@@ -3,7 +3,11 @@ import { cpSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 import { afterAll, describe, expect, test } from "bun:test"
-import { canonicalPackagePreludeBytesV1 } from "./decoder"
+import {
+  canonicalPackagePreludeBytesV1,
+  derivePayloadCapabilitiesV1,
+  type PackageProfilePayloadV1,
+} from "./decoder"
 import {
   HOST_EXTENSION_PACKAGE_ARTIFACT_FILES,
   HOST_EXTENSION_PACKAGE_ARTIFACT_MANIFEST,
@@ -27,14 +31,11 @@ describe("HostExtensionPackageV1 artifact", () => {
     assertHostExtensionPackageRegistryV1()
     expect(PROFILE_REGISTRY_V1.map((profile) => profile.profileId)).toEqual([
       "agent",
-      "cloud",
       "mcp-local",
       "mcp-remote",
       "skill",
     ])
     expect(CAPABILITY_REGISTRY_V1.map((capability) => capability.token)).toEqual([
-      "alpha.connection-prerequisite.v1",
-      "alpha.mcp-oauth.v1",
       "alpha.secret-prerequisite.v1",
     ])
 
@@ -109,6 +110,60 @@ describe("HostExtensionPackageV1 artifact", () => {
     expect(JSON.stringify(PROFILE_REGISTRY_V1)).not.toContain("bundle")
   })
 
+  test("every schema-reachable behavior derives exactly the registered capability vocabulary", async () => {
+    const corpus = (await Bun.file(resolve(import.meta.dir, HOST_EXTENSION_PACKAGE_CORPUS)).json()) as {
+      cases: Array<{
+        expect: string
+        envelope: { components: Array<{ profileId: string }> }
+        payload: Record<string, unknown> | null
+      }>
+    }
+    const derived = await Promise.all(
+      PROFILE_REGISTRY_V1.map(async (profile) => {
+        const schema = (await Bun.file(resolve(import.meta.dir, profile.schemaPath)).json()) as {
+          properties?: {
+            behavior?: {
+              properties?: Record<string, { enum?: unknown[] }>
+            }
+          }
+        }
+        const payload = corpus.cases.find(
+          (item) =>
+            item.expect === "accepted" &&
+            item.envelope.components[0]?.profileId === profile.profileId,
+        )?.payload
+        if (!payload) throw new Error(`missing accepted corpus payload for ${profile.profileId}`)
+        const behavior = payload.behavior as Record<string, unknown>
+        const dimensions = Object.entries(schema.properties?.behavior?.properties ?? {}).flatMap(
+          ([key, definition]) => {
+            if (key === "requiredSecrets")
+              return [{ key, values: [[], ["SCHEMA_ENUM_PROBE"]] as unknown[] }]
+            if (Array.isArray(definition.enum)) return [{ key, values: definition.enum }]
+            return []
+          },
+        )
+        return dimensions
+          .reduce<Record<string, unknown>[]>(
+            (variants, dimension) =>
+              variants.flatMap((variant) =>
+                dimension.values.map((value) => ({ ...variant, [dimension.key]: value })),
+              ),
+            [behavior],
+          )
+          .flatMap((variant) =>
+            derivePayloadCapabilitiesV1({
+              ...payload,
+              behavior: variant,
+            } as unknown as PackageProfilePayloadV1),
+          )
+      }),
+    )
+    const vocabulary = CAPABILITY_REGISTRY_V1.map((capability) => capability.token)
+    const reachable = [...new Set(derived.flat())].sort()
+    expect(reachable.every((capability) => vocabulary.includes(capability))).toBe(true)
+    expect(reachable).toEqual(vocabulary)
+  })
+
   test("generator --check is clean and detects a copied artifact drift", async () => {
     const child = Bun.spawn([process.execPath, resolve(import.meta.dir, "generate-artifact.ts"), "--check"], {
       cwd: import.meta.dir,
@@ -122,7 +177,7 @@ describe("HostExtensionPackageV1 artifact", () => {
 
     cpSync(import.meta.dir, driftRoot, { recursive: true })
     await Bun.write(resolve(driftRoot, "CONTRACT.md"), "drift\n")
-    expect(checkHostExtensionPackageArtifact(driftRoot)).rejects.toThrow(
+    await expect(checkHostExtensionPackageArtifact(driftRoot)).rejects.toThrow(
       "path/SHA drift detected",
     )
   })

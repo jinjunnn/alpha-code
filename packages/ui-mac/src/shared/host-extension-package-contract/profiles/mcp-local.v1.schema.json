@@ -45,6 +45,7 @@
         "requiredSecrets": {
           "type": "array",
           "maxItems": 16,
+          "uniqueItems": true,
           "items": {
             "type": "string",
             "pattern": "^[A-Z_][A-Z0-9_]{0,127}$"

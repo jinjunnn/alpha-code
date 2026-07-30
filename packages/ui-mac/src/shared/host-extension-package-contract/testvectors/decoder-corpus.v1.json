@@ -139,20 +139,16 @@
     },
     {
       "envelope": {
-        "capabilities": [
-          "alpha.mcp-oauth.v1"
-        ],
+        "capabilities": [],
         "components": [
           {
-            "capabilities": [
-              "alpha.mcp-oauth.v1"
-            ],
+            "capabilities": [],
             "dependencies": [],
             "id": "mcp-remote:mcp-remote-v1",
             "payloadRef": {
-              "bytes": 214,
+              "bytes": 213,
               "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-              "sha256": "9e9b02b1bef2e9006d4eb25e96e2a24d6c87cd8ed36982a9b06413f9e25fdc8b",
+              "sha256": "765cc8b1de58b6dfe528fab55742f59dce1daf82457bd5cbdcff87679da90b96",
               "url": "https://example.invalid/packages/mcp-remote.json"
             },
             "profileId": "mcp-remote",
@@ -174,72 +170,12 @@
       "name": "mcp-remote-v1",
       "payload": {
         "behavior": {
-          "auth": "oauth",
+          "auth": "none",
           "headersTemplate": {},
           "requiredSecrets": [],
           "url": "https://mcp.example.invalid/service"
         },
         "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
-      }
-    },
-    {
-      "envelope": {
-        "capabilities": [
-          "alpha.connection-prerequisite.v1"
-        ],
-        "components": [
-          {
-            "capabilities": [
-              "alpha.connection-prerequisite.v1"
-            ],
-            "dependencies": [],
-            "id": "cloud:cloud-v1",
-            "payloadRef": {
-              "bytes": 506,
-              "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
-              "sha256": "2a67c7ac8d8c1eb425c071f5925d6b11910fb10dded0e0f067eb22607d8d98d8",
-              "url": "https://example.invalid/packages/cloud.json"
-            },
-            "profileId": "cloud",
-            "profileVersion": 1,
-            "required": true
-          }
-        ],
-        "prelude": {
-          "packageId": "cloud:cloud-v1",
-          "version": "1.0.0"
-        },
-        "presentation": {
-          "description": "Synthetic cloud decoder case",
-          "displayName": "cloud-v1"
-        },
-        "schema": "alpha.host-extension-package.v1"
-      },
-      "expect": "accepted",
-      "name": "cloud-v1",
-      "payload": {
-        "behavior": {
-          "budgetDefaults": {
-            "max_iter": 3,
-            "max_tokens": 2000,
-            "max_wall_clock_sec": 60
-          },
-          "budgetLimits": {
-            "max_iter": 10,
-            "max_tokens": 10000,
-            "max_wall_clock_sec": 300
-          },
-          "connection": "required",
-          "inputContract": [
-            {
-              "description": "Research question",
-              "field": "query",
-              "required": true
-            }
-          ],
-          "pipelineKind": "research"
-        },
-        "schema": "alpha.host-extension-package.payload.cloud.v1"
       }
     },
     {

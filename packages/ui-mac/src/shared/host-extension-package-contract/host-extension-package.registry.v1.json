@@ -8,12 +8,6 @@
       "schemaPath": "profiles/agent.v1.schema.json"
     },
     {
-      "profileId": "cloud",
-      "profileVersion": 1,
-      "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
-      "schemaPath": "profiles/cloud.v1.schema.json"
-    },
-    {
       "profileId": "mcp-local",
       "profileVersion": 1,
       "mediaType": "application/vnd.alpha.host-extension-package.mcp-local.v1+json",
@@ -33,14 +27,6 @@
     }
   ],
   "capabilities": [
-    {
-      "token": "alpha.connection-prerequisite.v1",
-      "semantic": "Resolve and bind a registered Alpha Connection before planning."
-    },
-    {
-      "token": "alpha.mcp-oauth.v1",
-      "semantic": "Run the host-owned MCP OAuth attempt and bind its result before planning."
-    },
     {
       "token": "alpha.secret-prerequisite.v1",
       "semantic": "Resolve declared secret references without placing secret values in package bytes."

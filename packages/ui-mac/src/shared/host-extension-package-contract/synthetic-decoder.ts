@@ -14,7 +14,6 @@ export type SyntheticDecoderEffectsV1<Plan> = {
     capabilities: AlphaPackageEnvelopeV1["capabilities"],
   ) => PackageProfilePayloadDecodeV1
   resolveSecrets: () => Promise<void>
-  beginOAuth: () => Promise<void>
   plan: (payload: PackageProfilePayloadV1) => Promise<Plan>
 }
 
@@ -35,7 +34,7 @@ export type SyntheticDecoderResultV1<Plan> =
 
 /**
  * Executable Phase 1 ordering corpus. This is deliberately not production Catalog wiring: every
- * effect is supplied by the caller, and the module itself has no Electron, network, secret, OAuth,
+ * effect is supplied by the caller, and the module itself has no Electron, network, secret,
  * planner, or disk implementation.
  */
 export async function runSyntheticPackageDecoderV1<Plan>(
@@ -88,7 +87,6 @@ export async function runSyntheticPackageDecoderV1<Plan>(
 
   if (header.envelope.capabilities.includes("alpha.secret-prerequisite.v1"))
     await effects.resolveSecrets()
-  if (header.envelope.capabilities.includes("alpha.mcp-oauth.v1")) await effects.beginOAuth()
   return {
     ok: true,
     status: "accepted",

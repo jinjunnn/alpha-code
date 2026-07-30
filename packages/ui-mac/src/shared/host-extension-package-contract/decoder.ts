@@ -62,18 +62,7 @@ export type McpRemotePayloadV1 = {
     url: string
     headersTemplate: Record<string, string>
     requiredSecrets: string[]
-    auth: "none" | "oauth" | "alpha-connection"
-  }
-}
-
-export type CloudPayloadV1 = {
-  schema: "alpha.host-extension-package.payload.cloud.v1"
-  behavior: {
-    pipelineKind: "research" | "code-review" | "docs"
-    inputContract: Array<{ field: string; description: string; required: boolean }>
-    budgetDefaults: { max_iter: number; max_tokens: number; max_wall_clock_sec: number }
-    budgetLimits: { max_iter: number; max_tokens: number; max_wall_clock_sec: number }
-    connection: "required"
+    auth: "none"
   }
 }
 
@@ -82,7 +71,6 @@ export type PackageProfilePayloadV1 =
   | AgentPayloadV1
   | McpLocalPayloadV1
   | McpRemotePayloadV1
-  | CloudPayloadV1
 
 export type PackageEnvelopeHeaderDecodeV1 =
   | {
@@ -119,15 +107,6 @@ const PAYLOAD_KEYS = new Set(["schema", "behavior"])
 const MARKDOWN_BEHAVIOR_KEYS = new Set(["targetDir", "asset"])
 const MCP_LOCAL_BEHAVIOR_KEYS = new Set(["command", "environment", "requiredSecrets"])
 const MCP_REMOTE_BEHAVIOR_KEYS = new Set(["url", "headersTemplate", "requiredSecrets", "auth"])
-const CLOUD_BEHAVIOR_KEYS = new Set([
-  "pipelineKind",
-  "inputContract",
-  "budgetDefaults",
-  "budgetLimits",
-  "connection",
-])
-const INPUT_FIELD_KEYS = new Set(["field", "description", "required"])
-const BUDGET_KEYS = new Set(["max_iter", "max_tokens", "max_wall_clock_sec"])
 
 const PACKAGE_ID_RE = /^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$/
 const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/
@@ -136,7 +115,6 @@ const CAPABILITY_RE = /^[a-z][a-z0-9.-]{0,95}$/
 const HEX64_RE = /^[0-9a-f]{64}$/
 const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]{0,127}$/
 const HEADER_NAME_RE = /^[A-Za-z0-9-]{1,128}$/
-const INPUT_FIELD_RE = /^[a-z][a-z0-9_]{0,63}$/
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\x00-\x1f\x7f]/
 const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"])
@@ -199,9 +177,7 @@ export function decodePackageProfilePayloadV1(
         ? decodeAgentPayload(parsed.value)
         : profileId === "mcp-local"
           ? decodeMcpLocalPayload(parsed.value)
-          : profileId === "mcp-remote"
-            ? decodeMcpRemotePayload(parsed.value)
-            : decodeCloudPayload(parsed.value)
+          : decodeMcpRemotePayload(parsed.value)
   if (!decoded.ok) return decoded
   const expected = derivePayloadCapabilitiesV1(decoded.payload)
   if (expected.join("\n") !== capabilities.join("\n"))
@@ -222,17 +198,6 @@ export function derivePayloadCapabilitiesV1(payload: PackageProfilePayloadV1): P
     payload.behavior.requiredSecrets.length
   )
     capabilities.push("alpha.secret-prerequisite.v1")
-  if (
-    payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1" &&
-    payload.behavior.auth === "oauth"
-  )
-    capabilities.push("alpha.mcp-oauth.v1")
-  if (
-    (payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1" &&
-      payload.behavior.auth === "alpha-connection") ||
-    payload.schema === "alpha.host-extension-package.payload.cloud.v1"
-  )
-    capabilities.push("alpha.connection-prerequisite.v1")
   return capabilities.sort()
 }
 
@@ -583,8 +548,7 @@ function decodeMcpRemotePayload(value: unknown): PackageProfilePayloadDecodeV1 {
     errors,
   )
   const auth = decodeString(behavior.auth, "payload.behavior.auth", errors, { max: 32 })
-  if (auth && !["none", "oauth", "alpha-connection"].includes(auth))
-    errors.push('payload.behavior.auth: expected one of [none, oauth, alpha-connection]')
+  if (auth && auth !== "none") errors.push('payload.behavior.auth: expected "none"')
   if (errors.length || !url || !headersTemplate || !auth) return { ok: false, errors }
   return {
     ok: true,
@@ -595,48 +559,6 @@ function decodeMcpRemotePayload(value: unknown): PackageProfilePayloadDecodeV1 {
         headersTemplate,
         requiredSecrets,
         auth: auth as McpRemotePayloadV1["behavior"]["auth"],
-      },
-    },
-  }
-}
-
-function decodeCloudPayload(value: unknown): PackageProfilePayloadDecodeV1 {
-  const errors: string[] = []
-  const behavior = decodePayloadRoot(
-    value,
-    "alpha.host-extension-package.payload.cloud.v1",
-    CLOUD_BEHAVIOR_KEYS,
-    errors,
-  )
-  if (!behavior) return { ok: false, errors }
-  const pipelineKind = decodeString(behavior.pipelineKind, "payload.behavior.pipelineKind", errors, {
-    max: 32,
-  })
-  if (pipelineKind && !["research", "code-review", "docs"].includes(pipelineKind))
-    errors.push("payload.behavior.pipelineKind: expected one of [research, code-review, docs]")
-  const inputContract = decodeInputContract(behavior.inputContract, errors)
-  const budgetDefaults = decodeBudget(behavior.budgetDefaults, "payload.behavior.budgetDefaults", errors)
-  const budgetLimits = decodeBudget(behavior.budgetLimits, "payload.behavior.budgetLimits", errors)
-  if (behavior.connection !== "required")
-    errors.push('payload.behavior.connection: expected "required"')
-  if (
-    errors.length ||
-    !pipelineKind ||
-    !budgetDefaults ||
-    !budgetLimits ||
-    behavior.connection !== "required"
-  )
-    return { ok: false, errors }
-  return {
-    ok: true,
-    payload: {
-      schema: "alpha.host-extension-package.payload.cloud.v1",
-      behavior: {
-        pipelineKind: pipelineKind as CloudPayloadV1["behavior"]["pipelineKind"],
-        inputContract,
-        budgetDefaults,
-        budgetLimits,
-        connection: "required",
       },
     },
   }
@@ -660,52 +582,6 @@ function decodePayloadRoot(
   }
   rejectUnknownKeys(value.behavior, behaviorKeys, "payload.behavior", errors)
   return value.behavior
-}
-
-function decodeInputContract(value: unknown, errors: string[]): CloudPayloadV1["behavior"]["inputContract"] {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 16) {
-    errors.push("payload.behavior.inputContract: required array with 1..16 items")
-    return []
-  }
-  return value.flatMap((field, index) => {
-    const at = `payload.behavior.inputContract[${index}]`
-    if (!isObject(field)) {
-      errors.push(`${at}: must be an object`)
-      return []
-    }
-    rejectUnknownKeys(field, INPUT_FIELD_KEYS, at, errors)
-    const name = decodeString(field.field, `${at}.field`, errors, {
-      max: 64,
-      pattern: INPUT_FIELD_RE,
-    })
-    const description = decodeString(field.description, `${at}.description`, errors, { max: 300 })
-    if (typeof field.required !== "boolean") errors.push(`${at}.required: required boolean`)
-    if (!name || !description || typeof field.required !== "boolean") return []
-    return [{ field: name, description, required: field.required }]
-  })
-}
-
-function decodeBudget(
-  value: unknown,
-  at: string,
-  errors: string[],
-): CloudPayloadV1["behavior"]["budgetDefaults"] | undefined {
-  if (!isObject(value)) {
-    errors.push(`${at}: required object`)
-    return
-  }
-  rejectUnknownKeys(value, BUDGET_KEYS, at, errors)
-  const keys = ["max_iter", "max_tokens", "max_wall_clock_sec"] as const
-  keys.forEach((key) => {
-    if (typeof value[key] !== "number" || !Number.isInteger(value[key]) || value[key] < 1)
-      errors.push(`${at}.${key}: required positive integer`)
-  })
-  if (keys.every((key) => typeof value[key] === "number" && Number.isInteger(value[key]) && value[key] >= 1))
-    return {
-      max_iter: value.max_iter as number,
-      max_tokens: value.max_tokens as number,
-      max_wall_clock_sec: value.max_wall_clock_sec as number,
-    }
 }
 
 function decodeStringArray(
