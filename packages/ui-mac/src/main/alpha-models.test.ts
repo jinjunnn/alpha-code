@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { writeLiveAllowlist } from "./alpha-live-allowlist"
+import { writeCatalogSnapshot } from "./alpha-live-allowlist"
 import { buildAlphaModelConfig, getModelCatalog } from "./alpha-models"
 import { secretFilePath, syncSecretFiles } from "./alpha-secret-files"
 import { persistProviderAndRefresh, setProviderLifecycleDeps } from "./provider-lifecycle"
@@ -213,14 +213,16 @@ describe("buildAlphaModelConfig — default model + user providers", () => {
   })
 })
 
-describe("buildAlphaModelConfig — REQ-001 edition 白名单(live 缓存)", () => {
-  const liveBase = { fetchedAt: "2026-07-03T00:00:00Z", edition: "cn" }
+describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () => {
+  // #681:快照硬切 V2 —— basis 与逐行 pair 是同一份不可拆 snapshot 的一部分,写侧会按同一判据校验。
+  const liveBase = { fetchedAt: "2026-07-03T00:00:00Z", edition: "cn", pricingBasisModelId: "deepseek-v4-flash" }
+  const pair = { input: 1, output: 1 }
 
   // REQ-109 #595(owner 裁决):live allowlist 不再收窄 BYOK —— 注入只看本地目录 + 本地 KEY 文件。
   test("#595 退出条件 4:live 清单只列 deepseek,zhipu 的 keyed 节点照样注入(平台无权收窄 BYOK)", () => {
     plantSecret("DEEPSEEK_API_KEY", "sk-1")
     plantSecret("ZHIPU_API_KEY", "sk-2")
-    writeLiveAllowlist(userData, { ...liveBase, models: [{ id: "deepseek-v4-flash" }] })
+    writeCatalogSnapshot(userData, { ...liveBase, models: [{ id: "deepseek-v4-flash", pricing: pair }] })
     const cfg = buildAlphaModelConfig(userData)!
     expect(cfg.enabled_providers).toContain("deepseek-byok")
     expect(cfg.provider["zhipuai-byok"]).toBeDefined()
@@ -242,9 +244,12 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(live 缓存)", () 
   test("平台模型以 live 清单为准:snapshot 名称富化,未知 id 诚实用 id 本名", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
-    writeLiveAllowlist(userData, {
+    writeCatalogSnapshot(userData, {
       ...liveBase,
-      models: [{ id: "deepseek-v4-flash" }, { id: "brand-new-model" }],
+      models: [
+        { id: "deepseek-v4-flash", pricing: pair },
+        { id: "brand-new-model", pricing: { input: 2.5, output: 7.5 } },
+      ],
     })
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
     expect(Object.keys(p.models).sort()).toEqual(["brand-new-model", "deepseek-v4-flash"])
@@ -265,16 +270,19 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(live 缓存)", () 
     expect(p.models["deepseek-v4-flash"].variants).toBeUndefined()
   })
 
+  // #681:这条断言一字未改,而它现在证明的东西更强了 —— 空清单在**写侧**就被拒(合法 LKG 不被
+  // 覆盖),读侧因此看到「无快照」,于是引擎配置回退静态 snapshot。此前 picker 与 sidecar 各写一份
+  // 判据,空缓存时一边 0 行、一边静态 9 行;分叉被消灭后两侧同为静态全量。
   test("live models 空数组 → 回退 snapshot(空白名单按坏配置处理,fail-open 不出空目录)", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")
-    writeLiveAllowlist(userData, { ...liveBase, models: [] })
+    writeCatalogSnapshot(userData, { ...liveBase, models: [] })
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
     expect(Object.keys(p.models).length).toBe(getModelCatalog().platformModels.length)
   })
 
   test("用户自定义 provider 不受白名单约束(2026-07-03 拍板:目录跟随 edition,自定义不拦)", () => {
-    writeLiveAllowlist(userData, { ...liveBase, models: [] })
+    writeCatalogSnapshot(userData, { ...liveBase, models: [] })
     fs.writeFileSync(
       path.join(tmp, "opencode.jsonc"),
       JSON.stringify({ provider: { myco: { npm: "@ai-sdk/openai-compatible", options: {} } } }),

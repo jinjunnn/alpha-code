@@ -30,7 +30,6 @@ const UPSTREAMS = [
       "contracts/v1/fixtures/producer/cloud-job-request.json",
       "contracts/v1/fixtures/producer/cloud-job-status.json",
       "contracts/v1/fixtures/producer/ledger-page.json",
-      "contracts/v1/fixtures/producer/model-catalog.json",
       "contracts/v1/fixtures/consumers/alpha-code-224/cloud-and-artifact.json",
       "contracts/v1/fixtures/consumers/alpha-web-22/platform-access-claims.json",
       "contracts/v1/fixtures/invalid/artifact-inline-content.json",
@@ -41,6 +40,26 @@ const UPSTREAMS = [
       "contracts/v1/fixtures/limits/payload-max-exact.json",
       "contracts/v1/fixtures/limits/payload-max-plus-one.json",
     ],
+  },
+  {
+    // #681 / platform#138 / ADR-039: ModelCatalogV2 ships as its own capability-scoped artifact, so it
+    // gets its own pin even though the publisher repository is the same. `GET /v1/models` now returns
+    // ModelCatalogV2 only — the V1 bundle above no longer carries a model-catalog fixture, and bumping
+    // the catalog generation must not force alpha-web (or the Token/Cloud/Artifact consumers) to
+    // re-pin the V1 bundle. Same repo, separate commit / lock / vendor subtree / staged-source dir:
+    // the loops below key on the entry, never on `repo`, so the two alpha-platform pins move apart.
+    //
+    // ⚠️ 未换真 pin。`commit` 是**哨兵字符串而不是 sha**:platform#138 尚未发布 contracts/v2,
+    // 下面 vendored 的两份字节是本仓按已批基线(alpha-platform docs/design/2026-07-29-req127-model-
+    // pricing-multipliers.md §2.3)自制的占位。真 artifact 发布后:staged checkout → `bun run vendor`
+    // → 换 `commit` 常量 → 更新 model-catalog-v2-consumer.test.ts 的 commit 断言。**换完才可合并。**
+    repo: "jinjunnn/alpha-platform",
+    commit: "pending-alpha-platform-138-model-catalog-v2-publish",
+    lock: "alpha-platform-model-catalog.lock.json",
+    vendor: "vendor/alpha-platform-model-catalog",
+    sourceEnv: "ALPHA_PLATFORM_MODEL_CATALOG_SOURCE",
+    sourceDefault: ".upstream-model-catalog-contracts",
+    files: ["contracts/v2/model-catalog.schema.json", "contracts/v2/fixtures/producer/model-catalog.json"],
   },
   {
     // alpha-web publishes the consumer fixtures for alpha-code's two web-owned surfaces

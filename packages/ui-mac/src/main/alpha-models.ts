@@ -24,7 +24,7 @@
 import catalog from "./alpha-models.json"
 import type { AlphaModelCatalog } from "../shared/alpha-model-types"
 import { byokEngineId } from "../shared/alpha-model-types"
-import { readLiveAllowlist } from "./alpha-live-allowlist"
+import { projectPlatformModels, readCatalogSnapshot } from "./alpha-live-allowlist"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
 import { readUserProviderIds } from "./ext-config"
 // NOTE: this module is loaded by the SIDECAR (utilityProcess) via buildAlphaModelConfig, so it must
@@ -50,11 +50,11 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   const provider: Record<string, unknown> = {}
   const enabled: string[] = []
 
-  // REQ-001:B 网关 edition 白名单(main 经 syncLiveAllowlist 同步的本地缓存;缺失/损坏 → 不限制,
-  // 内置 snapshot 兜底,fail-open)。约束对象**只有平台模型清单**;用户自定义节点(下方
+  // REQ-001:B 网关 edition 白名单(main 经 syncLiveAllowlist 同步的本地 catalog LKG;缺失/损坏/旧代
+  // → 不限制,内置 snapshot 兜底,fail-open)。约束对象**只有平台模型清单**;用户自定义节点(下方
   // readUserProviderIds)不受限;BYOK 目录自 REQ-109 #595 起也不受限 —— owner 裁决 BYOK 走全主权,
   // 本地 alpha-models.json 即权威,平台不得远程干预(契约 docs/contracts/byok-availability.md)。
-  const live = readLiveAllowlist(userDataPath)
+  const snapshot = readCatalogSnapshot(userDataPath)
 
   // (1) BYOK 直连节点 (方案 C): inject each catalog provider that HAS a key (opt-in) as a FULL custom
   // provider — npm/baseURL/models come from the catalog (alpha-code defines them, independent of
@@ -86,17 +86,14 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   // id 本名),无缓存 → 静态 snapshot(原行为)。
   if (process.env.ALPHA_BASE_URL && hasSecretFile(userDataPath, "ALPHA_API_KEY")) {
     const pp = CATALOG.platformProvider
-    const nameById = new Map(CATALOG.platformModels.map((m) => [m.id, m.name]))
-    // REQ-029:variants(推理档)按 snapshot 配置随模型下发 —— 引擎 request 层 merge 进 options
-    // (echo 实验实锤 reasoningEffort→reasoning_effort / reasoning:{effort} 原样透传,网关 spread 透传)。
-    const variantsById = new Map(CATALOG.platformModels.map((m) => [m.id, (m as { variants?: Record<string, Record<string, unknown>> }).variants]))
-    const source = live?.models.length
-      ? live.models.map((m) => ({ id: m.id, name: nameById.get(m.id) ?? m.id }))
-      : CATALOG.platformModels
+    // REQ-127 #681:平台段走与 picker 完全相同的那一份投影。此前这里自制 nameById/variantsById/source
+    // 三段装配,于是「什么算有效缓存」有两份定义 —— 空缓存时 picker 给 0 行、引擎配置给静态 9 行。
+    // REQ-029:variants(推理档)随投影下发 —— 引擎 request 层 merge 进 options(echo 实验实锤
+    // reasoningEffort→reasoning_effort / reasoning:{effort} 原样透传,网关 spread 透传)。
+    // 引擎配置**不写 pricing**:那是展示用的,不进 opencode 的 provider 契约。
     const models: Record<string, { name: string; variants?: Record<string, Record<string, unknown>> }> = {}
-    for (const m of source) {
-      const variants = variantsById.get(m.id)
-      models[m.id] = { name: m.name, ...(variants ? { variants } : {}) }
+    for (const m of projectPlatformModels(CATALOG.platformModels, snapshot)) {
+      models[m.id] = { name: m.name, ...(m.variants ? { variants: m.variants } : {}) }
     }
     provider[pp.id] = {
       npm: pp.npm,

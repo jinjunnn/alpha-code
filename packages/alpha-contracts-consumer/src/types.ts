@@ -91,17 +91,26 @@ export type LedgerEntryV1 = {
 /** One page, bounded at 500 entries upstream (LEDGER_PAGE_MAX); older facts are reached by cursor. */
 export type LedgerPageV1 = { schema_version: 1; transactions: LedgerEntryV1[] }
 
-export type ModelCatalogV1 = {
-  schema_version: 1
+// #681 / platform#138 / ADR-039: `GET /v1/models` hard-cut to ModelCatalogV2 — the URL's `v1` is the
+// HTTP namespace, this number is the payload generation. Every model now carries both multipliers, and
+// the catalog carries the reference model they are relative to. Two things the shape deliberately does
+// NOT say, because they are fixed contract semantics rather than per-response data: the unit
+// (uncached input/output USD-per-Mtok ratio) and the rounding (platform half-ups to one decimal).
+// `pricing_basis_model_id` is that unit's definition, **not** a membership claim — an edition whose
+// allowlist filters the reference model out still publishes it, so never assume it appears in `data`.
+export type ModelCatalogV2 = {
+  schema_version: 2
   object: "list"
   data: Array<{
     id: string
     object: "model"
     provider: "deepseek" | "openai" | "openrouter" | "anthropic" | "zhipu" | "alibaba"
     min_plan: "free" | "member"
+    pricing_multiplier: { input: number; output: number }
   }>
   edition: string
   byok_providers: string[] | null
+  pricing_basis_model_id: string
 }
 
 export type ArtifactDescriptorV1 = {
@@ -181,7 +190,7 @@ export type ContractValues = {
   TokenClaimsV1: TokenClaimsV1
   UploadManifestV1: UploadManifestV1
   LedgerPageV1: LedgerPageV1
-  ModelCatalogV1: ModelCatalogV1
+  ModelCatalogV2: ModelCatalogV2
   CloudJobRequestV1: CloudJobRequestV1
   CloudJobAcceptedV1: CloudJobAcceptedV1
   CloudJobStatusV1: CloudJobStatusV1

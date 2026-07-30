@@ -35,10 +35,6 @@
       "sha256": "fd03726647c8864248e244c2d8ea753fee0a0466cdf29a6ef723213850fa8a66"
     },
     {
-      "path": "contracts/v1/fixtures/producer/model-catalog.json",
-      "sha256": "95dd3d09ed0783ce0bb773963ffd874ca4bce41ad7015769b6cf76a63c560ce4"
-    },
-    {
       "path": "contracts/v1/fixtures/consumers/alpha-code-224/cloud-and-artifact.json",
       "sha256": "72293a4c1883a356a56c9df1c25766cc656ca8ac67406e7346491f0c916fd501"
     },

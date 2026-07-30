@@ -69,16 +69,35 @@ authentication evidence.
 ## Model edition discovery
 
 `GET /v1/models` is the executable source for the signed-in model catalog. In
-addition to OpenAI list fields, Alpha Platform returns `edition` and
-`byok_providers`. `data` contains platform-proxy models allowed for the resolved
-edition; `byok_providers` limits only the built-in BYOK catalog and does not
-block user-created providers. The gateway enforces the edition again on model
-calls, so client filtering is presentation, not authorization.
+addition to OpenAI list fields, Alpha Platform returns `edition`,
+`byok_providers`, a `pricing_multiplier` pair per model, and the
+`pricing_basis_model_id` those multipliers are relative to. `data` contains
+platform-proxy models allowed for the resolved edition; `byok_providers` limits
+only the built-in BYOK catalog and does not block user-created providers. The
+gateway enforces the edition again on model calls, so client filtering is
+presentation, not authorization.
 
-`alpha-code` strictly decodes `ModelCatalogV1` from the pinned Alpha Platform v1
-contract before updating `<userData>/alpha-live-models.json`. A transient
-network failure may retain the last response that was already validated as v1.
-A contract mismatch is different: it raises the persistent contract-health
-failure and blocks cache/static catalog fallback for that process. Active model
-IDs and edition rules come from the current Alpha Platform registry and tests,
-not from examples in this document.
+The URL keeps its `v1` HTTP namespace, but the payload is `ModelCatalogV2`
+(REQ-127 / alpha-code#681 / ADR-039). `alpha-code` strictly decodes
+`ModelCatalogV2` from a **separately pinned** capability-scoped artifact
+(`contracts/v2/model-catalog.schema.json`, its own lock and vendor subtree) —
+the v1 bundle keeps serving every other v1 wire and is not re-pinned by a
+catalog generation change. Two rules the JSON Schema cannot express are enforced
+next to the decoder: `pricing_basis_model_id` must be non-empty, and every
+multiplier must be finite, positive and on the 0.1 grid the platform rounds to.
+The basis is a **unit definition, not a membership claim** — an edition that
+filters the reference model out still publishes it, so consumers must not assume
+it appears in `data`.
+
+A validated response replaces `<userData>/alpha-live-models.json` atomically.
+The cache carries no version field of its own: a pre-cut V1 cache is missing the
+basis and the per-row pairs, so the one snapshot validator — used by both the
+write and the read — rejects it. That validator also treats an **empty model
+list as invalid**, so a legitimate-but-empty catalog response cannot overwrite a
+good last-known-good. A transient network failure may keep serving the last
+validated V2 snapshot, marked `cache`. A contract mismatch is different: it
+raises the persistent contract-health failure, writes nothing, and the platform
+segment falls back to the bundled snapshot **with no pricing claim at all** —
+never to V1 and never to a locally-invented price. Active model IDs, multipliers
+and edition rules come from the current Alpha Platform registry and tests, not
+from examples in this document.
