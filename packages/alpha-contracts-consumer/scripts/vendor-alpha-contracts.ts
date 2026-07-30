@@ -119,7 +119,20 @@ if (check) {
       const source = new Uint8Array(await sourceFile.arrayBuffer())
       if (sha256(source) !== entry.sha256) throw new Error(`staged contract hash mismatch: ${path}`)
     }
-    console.log(`verified ${upstream.files.length} contract artifacts from ${upstream.repo}@${upstream.commit}`)
+    // 只说自己真的验过的事。有 staged checkout 时三方比对(lock ↔ vendored 字节 ↔ 上游字节)成立,
+    // 说 "from …@<sha>" 才是真的;**没有**时,本次只证明了本仓自洽(lock ↔ vendored 字节),
+    // 「这些字节来自那个 commit」根本没被检查过 —— 那是 lock 的**声称**,不是本次的结论。
+    // 无源时仍打印 "verified … from …@<sha>" 就是宣称一件自己没验证的事(假闸门的标准形态):
+    // 拿一个陈旧/错误的目录跑一次 vendor,脚本照收并重写 lock,CI 随后照样说"来自那个 commit"。
+    // 无源不判红 —— CI 没有上游 checkout 是常态,不是错误;错的只是措辞。
+    console.log(
+      hasStagedSource
+        ? `verified ${upstream.files.length} contract artifacts from ${upstream.repo}@${upstream.commit}` +
+            ` (lock + staged upstream bytes)`
+        : `checked ${upstream.files.length} contract artifacts against ${upstream.lock}` +
+            ` — lock ↔ vendored bytes OK; PROVENANCE NOT VERIFIED this run` +
+            ` (no staged checkout of ${upstream.repo}@${upstream.commit}; these bytes are not proven to come from it)`,
+    )
   }
   process.exit(0)
 }
