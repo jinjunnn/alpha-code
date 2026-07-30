@@ -468,7 +468,7 @@ describe("manifest synthesis & pre-disk refusal (AC#1)", () => {
 // ── MCP:grants 校验 + main 重建配置 ────────────────────────────────────────────────────────────
 
 describe("MCP install — #395 默认关(第三方 source)", () => {
-  test("Codex r8 M4:official source MCP 默认关 —— 落 enabled:false + 不发 liveMcp + 标 installedDisabled", async () => {
+  test("Codex r8 M4:official source MCP 默认关 —— 落 enabled:false + 标 installedDisabled", async () => {
     const officialMcp: CatalogEntry = { ...mcpEntry, source: "official" }
     const { deps } = makeDeps({ entries: [officialMcp] })
     const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "s" } } }, deps)
@@ -476,7 +476,7 @@ describe("MCP install — #395 默认关(第三方 source)", () => {
     if (!r.ok) return
     expect(r.kind).toBe("mcp")
     expect(r.installedDisabled).toBe(true) // renderer 据此报「已装未启用」而非 kind 漂移失败
-    expect(r.liveMcp).toBeUndefined() // 装 ≠ 连
+    expect(Object.keys(r)).not.toContain("live" + "Mcp") // 装 ≠ 连
     expect(mcpLeafOnDisk("markitdown")?.enabled).toBe(false) // 引擎消费键落盘
     expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("disabled")
   })
@@ -489,8 +489,8 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    // live config(renderer 拿去 sdk.mcp.add)含密钥真值 —— 该值本就来自 renderer
-    expect(r.liveMcp?.config).toEqual({ type: "local", command: ["uvx", "markitdown-mcp@0.0.1a4"], environment: { API_KEY: "sekret-value" } })
+    expect(Object.keys(r)).not.toContain("live" + "Mcp")
+    expect(JSON.stringify(r)).not.toContain("sekret-value")
     // durable leaf 真实落盘(引擎 config action;名字来自 catalog):密钥 = 版本化引用,零明文
     const leaf = mcpLeafOnDisk("markitdown")
     expect(leaf?.command).toEqual(["uvx", "markitdown-mcp@0.0.1a4"])
@@ -516,7 +516,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     expect(record!.transaction?.state).toBe("committed")
   })
 
-  test("REQ-099 #305 + #378:liveMcp = 策略后派生 —— 含 main 策略注入字段,{file:} 引用换回密钥真值", async () => {
+  test("REQ-099 #305 + #378:策略后 durable config 只保留策略字段与 {file:} 引用", async () => {
     const { deps } = makeDeps({
       installers: {
         // 模拟策略闸口:main 策略原地注入受管字段(如 Excel EXCEL_FILES_PATH)
@@ -530,16 +530,13 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    const env = recOf(r.liveMcp?.config.environment)
-    expect(env.MANAGED_ROOT).toBe("/managed/root") // 策略字段进 live(早克隆会漏)
-    expect(env.API_KEY).toBe("sekret-value") // {file:} 引用换回 renderer 交来的真值
-    // durable leaf 同样带策略字段 + 引用(live 从策略后 durable 派生)
     const durableEnv = recOf(mcpLeafOnDisk("markitdown")?.environment)
     expect(durableEnv.MANAGED_ROOT).toBe("/managed/root")
     expect(strOf(durableEnv.API_KEY)).toMatch(/^\{file:/)
+    expect(JSON.stringify(r)).not.toContain("sekret-value")
   })
 
-  test("REQ-099 #305(阻断项回归锁)+ #378:remote MCP header 密钥走版本化 {file:} 通道 —— durable 无明文,live 带真值", async () => {
+  test("REQ-099 #305(阻断项回归锁)+ #378:remote MCP header 密钥走版本化 {file:} 通道且 result 无明文", async () => {
     const { deps } = makeDeps()
     const r = await installAuthorized({ catalogId: "mcp:linear", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
     expect(r.ok).toBe(true)
@@ -548,7 +545,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     const durableAuth = strOf(recOf(durable?.headers).Authorization)
     expect(durableAuth).toMatch(/^Bearer \{file:.+API_KEY\}$/) // 引用,非明文
     expect(JSON.stringify(durable)).not.toContain("sekret-value")
-    expect(recOf(r.liveMcp?.config.headers).Authorization).toBe("Bearer sekret-value") // live 真值(renderer 拿去 mcp.add)
+    expect(JSON.stringify(r)).not.toContain("sekret-value")
     const refPath = durableAuth.replace(/^Bearer \{file:/, "").replace(/\}$/, "")
     expect(fs.readFileSync(refPath, "utf8")).toBe("sekret-value") // 密钥文件落位(版本化路径)
   })
@@ -643,7 +640,12 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     const r = await installAuthorized({ catalogId: "mcp:linear", scope: { scope: "global" }, grants: { secrets: { API_KEY: "tok" } } }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.liveMcp?.config).toEqual({ type: "remote", url: "https://mcp.linear.app/sse", headers: { Authorization: "Bearer tok" } })
+    expect(mcpLeafOnDisk("linear")).toEqual({
+      type: "remote",
+      url: "https://mcp.linear.app/sse",
+      headers: { Authorization: expect.stringMatching(/^Bearer \{file:.+API_KEY\}$/) },
+    })
+    expect(JSON.stringify(r)).not.toContain("tok")
   })
 
   test("cnMirror env values are main-side constants (renderer only expresses the preference)", async () => {

@@ -258,9 +258,7 @@ export type CatalogInstallOutcome =
       name: string
       files?: string[]
       manifestDigest?: string
-      /** MCP:renderer 用于 live sdk.mcp.add 的完整配置(含用户刚输入的密钥真值 —— 该值本就来自 renderer)。 */
-      liveMcp?: { name: string; config: Record<string, unknown> }
-      /** #395(Codex r8 M4):MCP 因**默认关/当前 disabled** 故意不发 liveMcp —— 装成功但不激活连接。
+      /** #395(Codex r8 M4):MCP 因**默认关/当前 disabled** 安装成功但不激活连接。
        *  renderer 据此与「kind 漂移(装错类型)」区分:前者是成功的「装 ≠ 跑」,后者才是失败。 */
       installedDisabled?: true
       /** bundle:main 已验证(存在性/循环依赖/平台)的有序子条目 id。 */
@@ -1966,7 +1964,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         if (!ledger.ok) return { ok: false, reason: `refusing mcp install: ${ledger.reason}` }
         // Codex r9 B2:desiredState 漂移钉死(镜像 plugin replacement)—— config edit 与 live outcome
         // 都用 plan 期 mcpReceipt.desiredState;plan 快照与加锁之间的合法启停(用户 disable)不得被旧
-        // 快照静默覆盖(否则账本 disabled 但 config 无 enabled:false + 返回 liveMcp → 运行面复活)。
+        // 快照静默覆盖(否则账本 disabled 但 config 无 enabled:false → 运行面复活)。
         // 漂移即拒,重试重读 desiredState 后按新态重建 config/outcome。fresh 装无 prior,不进此支。
         // #397 r3:forced(session-grant)场景计划值恒 disabled ≠ prior 不是漂移(政策强制,写点
         // 例外落 disabled)—— 基线改用计划期观测的 prior 态,只拦真正的并发变化。
@@ -2066,31 +2064,15 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     ;(deps.transaction ?? passthroughTx).commit(tx.txId)
     // 提交成功:收未被当前 leaf 引用且过宽限的旧版本/flat/快照残留(锁内对账;busy 跳过)。
     const gc = deps.installers.gcMcpSecrets(entry.name)
-    // live = 策略后配置 + 密钥真值回填({file:} 引用换回本次 grants 真值;契约:绝不回传任何
-    // main/keychain 来源的密钥)。
-    const liveCfg = structuredClone(durable)
-    const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
-    for (const [varName, ref] of Object.entries(refs)) {
-      const real = secretMap[varName]
-      if (typeof real !== "string") continue
-      const liveEnv = liveCfg.environment
-      if (isRec(liveEnv) && liveEnv[varName] === ref) liveEnv[varName] = real
-      const liveHeaders = liveCfg.headers
-      if (isRec(liveHeaders)) {
-        for (const [hk, hv] of Object.entries(liveHeaders)) {
-          if (typeof hv === "string" && hv.includes(ref)) liveHeaders[hk] = hv.split(ref).join(real)
-        }
-      }
-    }
     const mcpWarnings = [...result.warnings, ...gc.warnings]
     return {
       ok: true,
       kind: "mcp",
       name: entry.name,
       manifestDigest,
-      // #395:默认关的 MCP 不发 live 段(装 ≠ 连;config 已带 enabled:false),显式标 installedDisabled
-      // 供 renderer 与 kind 漂移区分(Codex r8 M4)。
-      ...(mcpReceipt.desiredState === "disabled" ? { installedDisabled: true as const } : { liveMcp: { name: entry.name, config: liveCfg } }),
+      ...(mcpReceipt.desiredState === "disabled"
+        ? { installedDisabled: true as const }
+        : {}),
       ...(mcpWarnings.length ? { warning: mcpWarnings.join("; ") } : {}),
     }
   } else if (entry.type === "plugin") {
@@ -3558,11 +3540,10 @@ async function installSeedMcp(args: {
     return { ok: false, reason: result.reason, ...(result.stage ? { stage: result.stage } : {}) }
   }
   ;(deps.transaction ?? passthroughTx).commit(args.txId)
-  // liveMcp(裁决 B):renderer 据此 live sdk.mcp.add;seed 无密钥 → live = durable 原样。
-  // #395:默认关的安装不发 live 段 —— 装 ≠ 连;config 已带 enabled:false,引擎跳过连接。
-  // Codex r8 M4:显式标 installedDisabled 供 renderer 与 kind 漂移区分(装成功 ≠ 装错类型)。
+  // #395:默认关的安装显式标 installedDisabled 供 renderer 与 kind 漂移区分。
+  // 启用态由 ext-ipc 在 durable commit 后让 engine 重新加载配置并返回 reference + status。
   if (receiptTemplate.desiredState === "disabled") return { ok: true, kind: "mcp", name: entry.name, manifestDigest, installedDisabled: true }
-  return { ok: true, kind: "mcp", name: entry.name, manifestDigest, liveMcp: { name: entry.name, config: derived.config } }
+  return { ok: true, kind: "mcp", name: entry.name, manifestDigest }
 }
 
 /**

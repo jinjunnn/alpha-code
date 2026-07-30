@@ -3,10 +3,9 @@
 // SDK (mcp.status) — alpha keeps NO separate persisted install store (ADR-014 §4). The browsable
 // catalog comes from the bundled resources/alpha-catalog.json.
 //
-// MCP install = persist to the user's opencode.jsonc via the main process (window.api.ext.persistMcp,
-// durable) THEN sdk.mcp.add + connect (live, no restart). Both are needed: opencode reads config
-// once and caches it (core/config.ts), so writing the file alone won't apply live; mcp.add applies
-// live but is in-memory only.
+// Catalog MCP install persists through main, then main reloads the authenticated engine so its
+// `{file:}` references resolve without returning secret plaintext to renderer. The uncatalogued
+// custom-MCP path still uses renderer SDK add/connect with the values the user just entered.
 
 // C14③ 契约锚(sync 时 `grep -n "as any"` 复核本文件):本文件全部 `as any` 都是同一类——
 // SDK v2 生成类型与 server 实际接受/返回形状的已知偏斜(directory/scope/roots 扩展参数、data
@@ -83,9 +82,9 @@ export interface ExtensionsApi {
   store: ExtensionsStore
   refresh(): Promise<void>
   /**
-   * Persist (durable) + live add + connect an MCP catalog entry. `secrets` fills requiredEnvVars and
-   * is routed to the {file:} channel on disk (never plaintext); `env` is non-secret substitution
-   * (headers/workspace). Live add uses the real secret values (in-memory, just typed).
+   * Persist and activate an MCP catalog entry through main. `secrets` fills requiredEnvVars and is
+   * routed to the {file:} channel on disk (never plaintext); `env` is non-secret substitution
+   * (headers/workspace). Renderer receives only activation status.
    */
   addMcp(
     entry: CatalogEntry,
@@ -329,7 +328,7 @@ export function useExtensions(
     // REQ-099 #305:catalog MCP 切 main-owned installCatalog —— name/config 由 main 从已验签 catalog
     // 派生,renderer 只交 grants(secrets/env/workspace)+ cnMirror 偏好(镜像 env 值为 main 侧常量,
     // 顶替此前 renderer 侧的 CN_MIRROR_ENV 注入)。durable 落盘含 {file:} 引用与 main 策略(如 Excel
-    // 受管根);live 配置由 main 回传(策略后 + 密钥真值)再 mcp.add 免重启连接。
+    // 受管根);durable commit 后由 main 经已认证 engine route 重载 `{file:}` 引用并返回状态。
     const secretsClean = secrets ? Object.fromEntries(Object.entries(secrets).filter(([, v]) => (v ?? "").length > 0)) : {}
     const grants = {
       ...(Object.keys(secretsClean).length ? { secrets: secretsClean } : {}),
@@ -344,22 +343,23 @@ export function useExtensions(
       ...(authorization ? { authorization } : {}),
     })
     if (!r.ok) return r
-    // #395(Codex r8 M4):第三方 MCP 默认关 —— main 故意不发 liveMcp 并标 installedDisabled。这是成功的
-    // 「装 ≠ 跑」(config 已带 enabled:false,引擎跳过连接),不是失败。刷新列表后如实回「已装未启用」。
+    // #395(Codex r8 M4):第三方 MCP 默认关。这是成功的「装 ≠ 跑」,不是失败。
     if (r.installedDisabled) {
       await Promise.all([loadStatus(), loadInstalls()])
       return { ok: true, reason: "installed-disabled" }
     }
-    // Codex review #350:除默认关外,MCP 成功结果必须带 liveMcp —— 缺失 = main 已按其它 kind 落盘
-    // (catalog 漂移),静默 ok 会装错类型还报成功;显式失败并如实说明已落盘事实。
-    if (!r.liveMcp) {
+    if (r.kind !== "mcp") {
       await Promise.all([loadStatus(), loadInstalls()])
       return { ok: false, reason: `catalog kind mismatch: expected mcp, got "${r.kind}"(条目已按实际类型落盘,未激活连接)` }
     }
-    return liveAddAndConnect(r.liveMcp.name, r.liveMcp.config)
+    await Promise.all([loadStatus(), loadInstalls()])
+    if (r.mcpActivation?.status === "connected") return { ok: true }
+    if (r.mcpActivation?.status === "disabled") return { ok: true, reason: "installed-disabled" }
+    if (r.mcpActivation?.status === "reload-pending") return { ok: true, reason: "reload-pending" }
+    return { ok: false, reason: "MCP 已安装，但即时连接失败" }
   }
 
-  // mcp.add + connect 的共享 live 段(config 已持久化在先;catalog 与自定义连接器同路径)。
+  // 未策展自定义连接器的 live 段;catalog 连接器由 main 重载 `{file:}` 引用。
   async function liveAddAndConnect(name: string, config: unknown): Promise<ActionResult> {
     const c = client
     if (!c) return { ok: false, reason: "no server" }
