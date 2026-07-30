@@ -620,24 +620,24 @@ point 且必须顺序合并，不再为纯机械切片建管理票。
 | Host contract (`alpha-code#694`) | 发布/校验 `HostExtensionPackageV1`：shallow Envelope、payload profiles、正交 capabilities、legacy oracle/transform/testvectors；只含 synthetic decoder tests，不接生产 UI/IPC | 本基线 |
 | Web declaration/compiler (`alpha-web#95`) | PR A：web-owned Declaration/Report、pin host artifact、纯 validator/compiler、`validate/preview`；PR B：NormalizedPackageBuildRecord、`build-catalog` merge、package-only curation/stable gate、唯一 legacy projection、runbook | #694 |
 | Web OpenAI adapter (`alpha-web#96`) | commit-pinned legacy `.codex-plugin` curated profile、恶意 corpus、确定性 report | #95 |
-| Web Claude adapter（新 CODE） | manifest-present curated profile、显式 supported/blocked fields、恶意 corpus | #95 |
-| Web managed Plugin producer（新 CODE） | 离线 captured exact npm tarball/closure → pure-JS ESM content-addressed artifact、SBOM/provenance；build 零网络/零脚本 | #95 |
+| Web Claude adapter (`alpha-web#98`) | manifest-present curated profile、显式 supported/blocked fields、恶意 corpus | #95 |
+| Web managed Plugin producer (`alpha-web#99`) | 离线 captured exact npm tarball/closure → pure-JS ESM content-addressed artifact、SBOM/provenance；build 零网络/零脚本 | #95 |
 | Web producer artifact (`alpha-web#97`) | generic+provider+managed-plugin profile/rules/input/report vectors，path+SHA+producer commit、generator drift 与 bump runbook；不声称下游已接线 | #96、Claude adapter、managed Plugin producer |
-| 单一兼容接线（新 CODE） | pin #97；`evaluatePackageForHost()` 接 Catalog refresh/browse/detail/install preflight，输出冻结 safe view，main 重判 | #694、#97 |
+| 单一兼容接线 (`alpha-code#702`) | pin #97；`evaluatePackageForHost()` 接 Catalog refresh/browse/detail/install preflight，输出冻结 safe view，main 重判 | #694、#97 |
 | 通用详情页 (`alpha-code#695`) | 复用现有 detail/card；三值 verdict + optional/prerequisite 组合、pairwise L2 matrix；v1 无 gallery | 单一兼容接线 |
 | Secret prerequisite (`alpha-code#696`) | Envelope prerequisite decode、main-owned store/reference、消除 `liveMcp` 回显、replacement/uninstall/stale negatives | #694 |
-| MCP OAuth prerequisite（新 CODE） | main attempt/binding + authenticated engine OAuth route、required/optional 与外部 consent 诚实语义 | #694 |
-| Alpha Connection prerequisite（新 CODE） | static handler、main-owned records/reuse/status/disconnect、unknown handler fail | #694 |
-| Bundle builder/probe enabling（新 CODE） | 行为零变化抽 builder/router + 明确拒 nested；unit/wiring parity，不做 mixed activation | 本基线 |
-| V3 repository cutover（新 CODE） | `PackageLedgerMutationV1`、all-writer V3 cutover、graphs/claims、direct uninstall、migration/downgrade/rollout gate | #694、builder enabling |
-| MCP secret prepared resource（新 CODE） | 类型化 `mcp-secret-version` journal/recovery 与 workspace policy；复用 merged reference resolver | Secret prerequisite、builder enabling |
-| Package admission coordinator（新 CODE） | digest-bound capability authorization → OAuth/Connection → transient secret → revalidation → transaction/V3 mutation | 单一兼容接线、V3 repository、builder enabling、Secret、MCP OAuth、Alpha Connection |
+| MCP OAuth prerequisite (`alpha-code#703`) | main attempt/binding + authenticated engine OAuth route、required/optional 与外部 consent 诚实语义 | #694 |
+| Alpha Connection prerequisite (`alpha-code#704`) | static handler、main-owned records/reuse/status/disconnect、unknown handler fail | #694 |
+| Bundle builder/probe enabling (`alpha-code#705`) | 行为零变化抽 builder/router + 明确拒 nested；unit/wiring parity，不做 mixed activation | 本基线 |
+| V3 repository cutover (`alpha-code#706`) | `PackageLedgerMutationV1`、all-writer V3 cutover、graphs/claims、direct uninstall、migration/downgrade/rollout gate | #694、#705 |
+| MCP secret prepared resource (`alpha-code#712`) | 类型化 `mcp-secret-version` journal/recovery 与 workspace policy；复用 merged reference resolver | #696、#705 |
+| Package admission coordinator (`alpha-code#713`) | digest-bound capability authorization → OAuth/Connection → transient secret → revalidation → transaction/V3 mutation | #702、#706、#705、#696、#703、#704 |
 | Managed Plugin (`alpha-code#699`) | signed managed artifact → CAS strict wrapper；authorization 后的 pre-switch packaged engine probe、double-load/ABI/integrity gates | admission、#97、Web managed Plugin producer |
 | Mixed Bundle activation (`alpha-code#697`) | Agent + managed Plugin + secret/workspace MCP 走一个 admission/transaction/V3 mutation；canonical fault/crash evidence | builder enabling、V3 repository、prepared resource、#699、admission |
 | Bundle lifecycle (`alpha-code#698`) | graph diff、update/uninstall、claim release、managed GC、fault recovery | #697 |
 | Local import parent (`alpha-code#215`) | 保留 REQ-034 身份，拆下面两条 CODE；本期 directory+archive，无 URL import | declaration/report contract |
-| Local pure adapter（新 CODE） | normalized file snapshot → declaration/report；消费 #97 的 OpenAI/Claude profile/rules/corpus | #97 |
-| Local prepared-plan/import（新 CODE） | `compilePreparedLocalPackageForHost()` 只调 host decoders/builders，`source=user-imported`；picker/capture → digest preview → admission/transaction；Skill/Agent/MCP/flat Bundle，hooks/Plugin/Alpha Connection blocked | local pure adapter、builder enabling、prepared resource、MCP OAuth、admission、#697 |
+| Local pure adapter (`alpha-code#714`) | normalized file snapshot → declaration/report；消费 #97 的 OpenAI/Claude profile/rules/corpus | #97 |
+| Local prepared-plan/import (`alpha-code#715`) | `compilePreparedLocalPackageForHost()` 只调 host decoders/builders，`source=user-imported`；picker/capture → digest preview → admission/transaction；Skill/Agent/MCP/flat Bundle，hooks/Plugin/Alpha Connection blocked | #714、#705、#712、#703、#713、#697 |
 | Capability VERIFY (`alpha-code#700`) | contract corpus + pairwise canonical harness 可先做；依赖合并后统一 packaged RC | 本基线；最终结果等待所有 CODE |
 
 关键路径：
