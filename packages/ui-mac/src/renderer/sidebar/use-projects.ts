@@ -17,11 +17,7 @@ import type { SidecarGenerationState } from "../../preload/types"
 import { projectLabel } from "./route"
 import { hiddenProjects } from "./sidebar-state"
 import { isUnderSkippedWorktree, shouldSkipWorktree } from "./worktree-filter"
-import {
-  hasRuntimeRecoveryBridge,
-  notifySseReconnected,
-  subscribeRuntimeRecovery,
-} from "../runtime-recovery"
+import { hasRuntimeRecoveryBridge, notifySseReconnected, subscribeRuntimeRecovery } from "../runtime-recovery"
 import { nextEngineRetryDelay } from "../alpha-ui/model-picker-logic"
 
 export interface ServerInfo {
@@ -122,6 +118,9 @@ function sortSessions(list: AlphaSession[]): AlphaSession[] {
   return [...list].sort((a, b) => b.updated - a.updated)
 }
 
+const GLOBAL_WORKTREE = "/"
+const GLOBAL_SESSION_PAGE_SIZE = 200
+
 export function useAlphaProjects(
   server: Accessor<ServerInfo | undefined>,
   // #594 测试注入口:自探节奏与探测器。生产走默认(/global/health + 1s/2s/4s/8s 封顶退避)。
@@ -177,6 +176,55 @@ export function useAlphaProjects(
     }
   }
 
+  // opencode assigns every non-Git directory to one internal project (`worktree: "/"`), while
+  // retaining the user's real directory on each session. We must never call session.list for `/`:
+  // that endpoint creates a root Instance and restores the recursive watcher/git/skills scan B4
+  // removed. The experimental global index is database-backed and gives us the same root-session
+  // metadata without instantiating `/`; page it completely, then retain only this internal project.
+  async function loadGlobalSessions(projectID: string) {
+    const c = client
+    if (!c) return
+    const gen = generation
+    const sessions: AlphaSession[] = []
+    const seenCursors = new Set<number>()
+    let cursor: number | undefined
+    try {
+      for (;;) {
+        const result = await c.experimental.session.list({
+          roots: true,
+          limit: GLOBAL_SESSION_PAGE_SIZE,
+          ...(cursor === undefined ? {} : { cursor }),
+        })
+        if (gen !== generation || result.error || !result.data) return
+        for (const raw of result.data) {
+          if (raw.projectID !== projectID) continue
+          if (isUnderSkippedWorktree(raw.directory, hiddenProjects())) continue
+          const session = toSession(raw)
+          if (session) sessions.push(session)
+        }
+        const header = result.response.headers.get("x-next-cursor")
+        if (!header) break
+        const next = Number(header)
+        if (!Number.isFinite(next) || seenCursors.has(next)) return
+        seenCursors.add(next)
+        cursor = next
+      }
+      if (gen !== generation) return
+      const i = store.projects.findIndex((p) => p.id === projectID && p.worktree === GLOBAL_WORKTREE)
+      if (i < 0) return
+      setStore(
+        "projects",
+        i,
+        produce((p: AlphaProject) => {
+          p.sessions = sortSessions(sessions)
+          p.loaded = true
+        }),
+      )
+    } catch {
+      /* leave previous sessions in place on transient failure */
+    }
+  }
+
   async function loadProjects() {
     const c = client
     if (!c) return
@@ -191,11 +239,13 @@ export function useAlphaProjects(
         setStore("error", true)
         return
       }
-      // B4(S17 T5)数据层过滤:垃圾("/"、macOS home 根)与用户归档(hidden)的 worktree 不进
-      // store —— 渲染与 per-project session.list 双零请求,引擎侧也少建对应 Instance(watcher/git/
-      // skills 扫描随之消失)。谓词与语义见 worktree-filter.ts。
+      // B4(S17 T5)数据层过滤:macOS home 根与用户归档(hidden)的 worktree 不进 store。
+      // "/" 是唯一例外:只保留成内部哨兵,以承接非 Git 会话的真实 directory;它不走
+      // per-project session.list,也不直接渲染。谓词与语义见 worktree-filter.ts。
       const incoming = (data as any[]).filter(
-        (p) => typeof p?.worktree === "string" && !shouldSkipWorktree(p.worktree, hiddenProjects()),
+        (p) =>
+          typeof p?.worktree === "string" &&
+          (p.worktree === GLOBAL_WORKTREE || !shouldSkipWorktree(p.worktree, hiddenProjects())),
       )
       // Reconcile: keep existing session lists for projects that persist, add new ones.
       setStore("projects", (prev) => {
@@ -215,8 +265,12 @@ export function useAlphaProjects(
       })
       setStore("ready", true)
       setStore("error", false)
-      // "/" 及其它垃圾/hidden worktree 已在 incoming 层剔除(B4)——这里对留下的全量取会话。
-      await Promise.all(incoming.map((raw) => loadSessions(raw.worktree)))
+      // 普通项目沿用 project scope;全局哨兵只查数据库级全局索引,绝不实例化根目录 `/`。
+      await Promise.all(
+        incoming.map((raw) =>
+          raw.worktree === GLOBAL_WORKTREE ? loadGlobalSessions(raw.id) : loadSessions(raw.worktree),
+        ),
+      )
     } catch {
       if (gen === generation) setStore("error", true)
     }
@@ -228,9 +282,16 @@ export function useAlphaProjects(
   // project list, which both surfaces the new project and reloads its sessions.
   async function reloadForSession(projectID?: string, directory?: string) {
     const i = indexByProjectID(projectID)
-    if (i >= 0) return loadSessions(store.projects[i].worktree)
+    if (i >= 0) {
+      const project = store.projects[i]
+      if (project.worktree === GLOBAL_WORKTREE && isUnderSkippedWorktree(directory, hiddenProjects())) return
+      return project.worktree === GLOBAL_WORKTREE ? loadGlobalSessions(project.id) : loadSessions(project.worktree)
+    }
     const j = indexByDirectory(directory)
-    if (j >= 0) return loadSessions(store.projects[j].worktree)
+    if (j >= 0) {
+      const project = store.projects[j]
+      return project.worktree === GLOBAL_WORKTREE ? loadGlobalSessions(project.id) : loadSessions(project.worktree)
+    }
     // B4:被剔除(垃圾/hidden)项目的会话事件不得触发 loadProjects —— load 会再次剔除,否则每个
     // 事件都白打一次 project.list(循环)。
     if (isUnderSkippedWorktree(directory, hiddenProjects())) return
@@ -253,6 +314,10 @@ export function useAlphaProjects(
       void loadProjects()
       return
     }
+    // The global sentinel is shared by every loose directory, so projectID alone would otherwise
+    // bypass the existing hidden/root event guard and repopulate an archived or unsafe directory.
+    if (store.projects[i].worktree === GLOBAL_WORKTREE && isUnderSkippedWorktree(session.directory, hiddenProjects()))
+      return
     setStore(
       "projects",
       i,
