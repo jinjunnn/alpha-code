@@ -1,6 +1,6 @@
 {
   "repo": "jinjunnn/alpha-platform",
-  "commit": "pending-alpha-platform-138-model-catalog-v2-publish",
+  "commit": "7fd62d3edcb0d21f429ce06cadc2528fc5b0ab5c",
   "files": [
     {
       "path": "contracts/v2/model-catalog.schema.json",

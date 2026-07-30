@@ -49,14 +49,8 @@ const UPSTREAMS = [
     // re-pin the V1 bundle. Same repo, separate commit / lock / vendor subtree / staged-source dir:
     // the loops below key on the entry, never on `repo`, so the two alpha-platform pins move apart.
     //
-    // ⚠️ 未换真 pin。`commit` 是**哨兵字符串而不是 sha**:platform#138 尚未发布 contracts/v2,
-    // 下面 vendored 的两份字节是本仓按已批基线(alpha-platform docs/design/2026-07-29-req127-model-
-    // pricing-multipliers.md §2.3)自制的占位。**这个占位由机器拦着**:
-    // model-catalog-v2-consumer.test.ts 要求每一份 lock 的 commit 都是 40 位 hex 的真 sha,所以
-    // 分支现在是红的 —— 那是正确状态,不是待修的失败。真 artifact 发布后两步转绿:
-    // staged checkout → `bun run vendor`(重写 vendored 字节与 lock)→ 把下面的 `commit` 换成真 sha。
     repo: "jinjunnn/alpha-platform",
-    commit: "pending-alpha-platform-138-model-catalog-v2-publish",
+    commit: "7fd62d3edcb0d21f429ce06cadc2528fc5b0ab5c",
     lock: "alpha-platform-model-catalog.lock.json",
     vendor: "vendor/alpha-platform-model-catalog",
     sourceEnv: "ALPHA_PLATFORM_MODEL_CATALOG_SOURCE",

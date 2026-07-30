@@ -8,10 +8,10 @@
 //   3. 本仓提交给平台 cutover gate 的 consumer pin,是被**出货 decoder** 真解过一遍的,
 //      不是一份声称兼容的散文。
 //
-// ⚠️ 未换真 pin(2026-07-29):platform#138 尚未发布 contracts/v2,vendor/ 下两份字节是本仓
-// 按已批基线自制的占位,`commit` 是哨兵字符串而非 sha。**下面第一条用例因此现在就是红的,那是
-// 有意的** —— 占位 pin 必须由机器拦住,而不是靠 PR 描述里一句话。真 artifact 发布后:staged
-// checkout → `bun run vendor` → 换脚本里的 `commit` 常量,这条自然转绿。
+// 真 pin 已落地(2026-07-29):alpha-platform#138 合并后,vendored 字节经 `bun run vendor` 从
+// `jinjunnn/alpha-platform@7fd62d3e` 逐字节复制而来,lock 由 vendor 流程重写。此前占位期这里是
+// **红**的(第一条用例拒绝 `pending-` 哨兵),换上真 sha 后自然转绿 —— 这条判据继续守着下一次:
+// 任何 pin 只要不是 40 位 hex 的 immutable sha 就判红。
 
 import { createHash } from "node:crypto"
 import { readdirSync } from "node:fs"
