@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "profiles/cloud.v1.schema.json",
+  "title": "HostExtensionPackage Cloud Payload V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "behavior"
+  ],
+  "properties": {
+    "schema": {
+      "const": "alpha.host-extension-package.payload.cloud.v1"
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pipelineKind",
+        "inputContract",
+        "budgetDefaults",
+        "budgetLimits",
+        "connection"
+      ],
+      "properties": {
+        "pipelineKind": {
+          "enum": [
+            "research",
+            "code-review",
+            "docs"
+          ]
+        },
+        "inputContract": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "description",
+              "required"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "required": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "budgetDefaults": {
+          "$ref": "#/$defs/budget"
+        },
+        "budgetLimits": {
+          "$ref": "#/$defs/budget"
+        },
+        "connection": {
+          "const": "required"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_iter",
+        "max_tokens",
+        "max_wall_clock_sec"
+      ],
+      "properties": {
+        "max_iter": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_wall_clock_sec": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

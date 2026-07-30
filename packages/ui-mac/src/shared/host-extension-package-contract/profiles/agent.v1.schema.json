@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "profiles/agent.v1.schema.json",
+  "title": "HostExtensionPackage Agent Payload V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "behavior"
+  ],
+  "properties": {
+    "schema": {
+      "const": "alpha.host-extension-package.payload.agent.v1"
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetDir",
+        "asset"
+      ],
+      "properties": {
+        "targetDir": {
+          "enum": [
+            "alpha-agents",
+            "global"
+          ]
+        },
+        "asset": {
+          "$ref": "#/$defs/markdownAsset"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "markdownAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "bytes",
+        "mediaType",
+        "url"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5242880
+        },
+        "mediaType": {
+          "const": "text/markdown"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "maxLength": 2048
+        }
+      }
+    }
+  }
+}

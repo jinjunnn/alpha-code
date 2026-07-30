@@ -1,0 +1,59 @@
+{
+  "schema": "alpha.host-extension-package.registry.v1",
+  "profiles": [
+    {
+      "profileId": "agent",
+      "profileVersion": 1,
+      "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
+      "schemaPath": "profiles/agent.v1.schema.json"
+    },
+    {
+      "profileId": "cloud",
+      "profileVersion": 1,
+      "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+      "schemaPath": "profiles/cloud.v1.schema.json"
+    },
+    {
+      "profileId": "mcp-local",
+      "profileVersion": 1,
+      "mediaType": "application/vnd.alpha.host-extension-package.mcp-local.v1+json",
+      "schemaPath": "profiles/mcp-local.v1.schema.json"
+    },
+    {
+      "profileId": "mcp-remote",
+      "profileVersion": 1,
+      "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+      "schemaPath": "profiles/mcp-remote.v1.schema.json"
+    },
+    {
+      "profileId": "skill",
+      "profileVersion": 1,
+      "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+      "schemaPath": "profiles/skill.v1.schema.json"
+    }
+  ],
+  "capabilities": [
+    {
+      "token": "alpha.connection-prerequisite.v1",
+      "semantic": "Resolve and bind a registered Alpha Connection before planning."
+    },
+    {
+      "token": "alpha.mcp-oauth.v1",
+      "semantic": "Run the host-owned MCP OAuth attempt and bind its result before planning."
+    },
+    {
+      "token": "alpha.secret-prerequisite.v1",
+      "semantic": "Resolve declared secret references without placing secret values in package bytes."
+    }
+  ],
+  "limits": {
+    "maxEnvelopeBytes": 65536,
+    "maxHeaderDepth": 6,
+    "maxHeaderNodes": 128,
+    "maxStringBytes": 4096,
+    "maxCapabilities": 16,
+    "maxPayloadBytes": 1048576,
+    "maxPayloadDepth": 8,
+    "maxPayloadNodes": 512
+  }
+}

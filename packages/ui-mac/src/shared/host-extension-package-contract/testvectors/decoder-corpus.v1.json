@@ -1,0 +1,382 @@
+{
+  "cases": [
+    {
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "skill:skill-v1",
+            "payloadRef": {
+              "bytes": 333,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
+              "url": "https://example.invalid/packages/skill.json"
+            },
+            "profileId": "skill",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "skill:skill-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic skill decoder case",
+          "displayName": "skill-v1"
+        },
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "skill-v1",
+      "payload": {
+        "behavior": {
+          "asset": {
+            "bytes": 12,
+            "mediaType": "text/markdown",
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "url": "https://example.invalid/assets/skill.md"
+          },
+          "targetDir": "alpha-skills"
+        },
+        "schema": "alpha.host-extension-package.payload.skill.v1"
+      }
+    },
+    {
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "agent:agent-v1",
+            "payloadRef": {
+              "bytes": 333,
+              "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
+              "sha256": "c11476758739f16a6d8dd061635241ed4a6c102343f235e46cfd7a7b0faa0f73",
+              "url": "https://example.invalid/packages/agent.json"
+            },
+            "profileId": "agent",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "agent:agent-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic agent decoder case",
+          "displayName": "agent-v1"
+        },
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "agent-v1",
+      "payload": {
+        "behavior": {
+          "asset": {
+            "bytes": 12,
+            "mediaType": "text/markdown",
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "url": "https://example.invalid/assets/agent.md"
+          },
+          "targetDir": "alpha-agents"
+        },
+        "schema": "alpha.host-extension-package.payload.agent.v1"
+      }
+    },
+    {
+      "envelope": {
+        "capabilities": [
+          "alpha.secret-prerequisite.v1"
+        ],
+        "components": [
+          {
+            "capabilities": [
+              "alpha.secret-prerequisite.v1"
+            ],
+            "dependencies": [],
+            "id": "mcp-local:mcp-local-v1",
+            "payloadRef": {
+              "bytes": 217,
+              "mediaType": "application/vnd.alpha.host-extension-package.mcp-local.v1+json",
+              "sha256": "b730d0942cb431283ccd50a0541acb0724242efca764111938a87adf9c55d14c",
+              "url": "https://example.invalid/packages/mcp-local.json"
+            },
+            "profileId": "mcp-local",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "mcp-local:mcp-local-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic mcp-local decoder case",
+          "displayName": "mcp-local-v1"
+        },
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "mcp-local-v1",
+      "payload": {
+        "behavior": {
+          "command": [
+            "bunx",
+            "example-mcp"
+          ],
+          "environment": {},
+          "requiredSecrets": [
+            "API_KEY"
+          ]
+        },
+        "schema": "alpha.host-extension-package.payload.mcp-local.v1"
+      }
+    },
+    {
+      "envelope": {
+        "capabilities": [
+          "alpha.mcp-oauth.v1"
+        ],
+        "components": [
+          {
+            "capabilities": [
+              "alpha.mcp-oauth.v1"
+            ],
+            "dependencies": [],
+            "id": "mcp-remote:mcp-remote-v1",
+            "payloadRef": {
+              "bytes": 214,
+              "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+              "sha256": "9e9b02b1bef2e9006d4eb25e96e2a24d6c87cd8ed36982a9b06413f9e25fdc8b",
+              "url": "https://example.invalid/packages/mcp-remote.json"
+            },
+            "profileId": "mcp-remote",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "mcp-remote:mcp-remote-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic mcp-remote decoder case",
+          "displayName": "mcp-remote-v1"
+        },
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "mcp-remote-v1",
+      "payload": {
+        "behavior": {
+          "auth": "oauth",
+          "headersTemplate": {},
+          "requiredSecrets": [],
+          "url": "https://mcp.example.invalid/service"
+        },
+        "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+      }
+    },
+    {
+      "envelope": {
+        "capabilities": [
+          "alpha.connection-prerequisite.v1"
+        ],
+        "components": [
+          {
+            "capabilities": [
+              "alpha.connection-prerequisite.v1"
+            ],
+            "dependencies": [],
+            "id": "cloud:cloud-v1",
+            "payloadRef": {
+              "bytes": 506,
+              "mediaType": "application/vnd.alpha.host-extension-package.cloud.v1+json",
+              "sha256": "2a67c7ac8d8c1eb425c071f5925d6b11910fb10dded0e0f067eb22607d8d98d8",
+              "url": "https://example.invalid/packages/cloud.json"
+            },
+            "profileId": "cloud",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "cloud:cloud-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic cloud decoder case",
+          "displayName": "cloud-v1"
+        },
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "cloud-v1",
+      "payload": {
+        "behavior": {
+          "budgetDefaults": {
+            "max_iter": 3,
+            "max_tokens": 2000,
+            "max_wall_clock_sec": 60
+          },
+          "budgetLimits": {
+            "max_iter": 10,
+            "max_tokens": 10000,
+            "max_wall_clock_sec": 300
+          },
+          "connection": "required",
+          "inputContract": [
+            {
+              "description": "Research question",
+              "field": "query",
+              "required": true
+            }
+          ],
+          "pipelineKind": "research"
+        },
+        "schema": "alpha.host-extension-package.payload.cloud.v1"
+      }
+    },
+    {
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "skill:skill-v1",
+            "payloadRef": {
+              "bytes": 333,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
+              "url": "https://example.invalid/packages/skill.json"
+            },
+            "profileId": "future",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "skill:skill-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic skill decoder case",
+          "displayName": "skill-v1"
+        },
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "blocked",
+      "name": "unknown-profile-required",
+      "payload": null
+    },
+    {
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "skill:skill-v1",
+            "payloadRef": {
+              "bytes": 333,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
+              "url": "https://example.invalid/packages/skill.json"
+            },
+            "profileId": "future",
+            "profileVersion": 1,
+            "required": false
+          }
+        ],
+        "prelude": {
+          "packageId": "skill:skill-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic skill decoder case",
+          "displayName": "skill-v1"
+        },
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "skipped",
+      "name": "unknown-profile-optional",
+      "payload": null
+    },
+    {
+      "envelope": {
+        "capabilities": [
+          "alpha.future.v1"
+        ],
+        "components": [
+          {
+            "capabilities": [
+              "alpha.future.v1"
+            ],
+            "dependencies": [],
+            "id": "skill:skill-v1",
+            "payloadRef": {
+              "bytes": 333,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
+              "url": "https://example.invalid/packages/skill.json"
+            },
+            "profileId": "skill",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "skill:skill-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic skill decoder case",
+          "displayName": "skill-v1"
+        },
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "blocked",
+      "name": "unknown-capability-required",
+      "payload": null
+    },
+    {
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "skill:skill-v1",
+            "payloadRef": {
+              "bytes": 333,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
+              "url": "https://example.invalid/packages/skill.json"
+            },
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "skill:skill-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic skill decoder case",
+          "displayName": "skill-v1"
+        },
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "blocked",
+      "name": "missing-profile-required",
+      "payload": null
+    }
+  ],
+  "schema": "alpha.host-extension-package.decoder-corpus.v1"
+}

@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "alpha-package-envelope-v1.schema.json",
+  "title": "AlphaPackageEnvelopeV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "prelude",
+    "presentation",
+    "components",
+    "capabilities"
+  ],
+  "properties": {
+    "schema": {
+      "const": "alpha.host-extension-package.v1"
+    },
+    "prelude": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "version"
+      ],
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$",
+          "maxLength": 160
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$",
+          "maxLength": 64
+        }
+      }
+    },
+    "presentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "displayName",
+        "description"
+      ],
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "required",
+          "dependencies",
+          "profileId",
+          "profileVersion",
+          "capabilities",
+          "payloadRef"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$",
+            "maxLength": 160
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "dependencies": {
+            "type": "array",
+            "maxItems": 0,
+            "items": {
+              "type": "string"
+            }
+          },
+          "profileId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,31}$",
+            "maxLength": 32
+          },
+          "profileVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "capabilities": {
+            "$ref": "#/$defs/capabilities"
+          },
+          "payloadRef": {
+            "$ref": "#/$defs/payloadRef"
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "$ref": "#/$defs/capabilities"
+    }
+  },
+  "$defs": {
+    "capabilities": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9.-]{0,95}$",
+        "maxLength": 96
+      }
+    },
+    "payloadRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "bytes",
+        "mediaType",
+        "url"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "mediaType": {
+          "type": "string",
+          "pattern": "^application/vnd[.]alpha[.]host-extension-package[.][a-z-]+[.]v1[+]json$",
+          "maxLength": 128
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "maxLength": 2048
+        }
+      }
+    }
+  }
+}

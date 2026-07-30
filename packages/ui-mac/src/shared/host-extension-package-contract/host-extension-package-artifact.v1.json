@@ -1,0 +1,72 @@
+{
+  "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
+  "artifactSha256": "388301ea431a6a4c1d121d52c6eabdfe418c6cfa1d0ff11f4d160cecb41a4f1a",
+  "files": [
+    {
+      "bytes": 3816,
+      "path": "CONTRACT.md",
+      "sha256": "1bde52b2c820e17b153048930ddc0d747c07b928f87afc58896bb872c2abfd95"
+    },
+    {
+      "bytes": 3581,
+      "path": "alpha-package-envelope-v1.schema.json",
+      "sha256": "8ebf4b26fcb4cce7c365fa4f7e139d8619f2711d0a7e01bbcb4c672cdd79e879"
+    },
+    {
+      "bytes": 29561,
+      "path": "decoder.ts",
+      "sha256": "eb551b84838f52fe513819da2dd5bc0ba06545119fbae9a05643499a33cd9260"
+    },
+    {
+      "bytes": 9907,
+      "path": "generate-artifact.ts",
+      "sha256": "ea92156251bf92a1ff09646aac33e777796f1ab6c868cfbeb34be6fd4b927290"
+    },
+    {
+      "bytes": 1832,
+      "path": "host-extension-package.registry.v1.json",
+      "sha256": "aa511d421286451e2dedc5f8142ea50018b97b55563e6b3df689ba5f8ae80ae7"
+    },
+    {
+      "bytes": 1369,
+      "path": "profiles/agent.v1.schema.json",
+      "sha256": "5d3c42e55b14875a7f8ff9954bdacdc4ef4fe27e50b04e47ff54a4a548c0bdd5"
+    },
+    {
+      "bytes": 2215,
+      "path": "profiles/cloud.v1.schema.json",
+      "sha256": "c435daf3d8bcb60714fa504c7e24ba09c3529f9da6d5cb7a56464e67ae55feaa"
+    },
+    {
+      "bytes": 1324,
+      "path": "profiles/mcp-local.v1.schema.json",
+      "sha256": "fddfaaa28465e93b823f687093b83d6947a704cce6a1d8e4689b4bb6eae399f8"
+    },
+    {
+      "bytes": 1365,
+      "path": "profiles/mcp-remote.v1.schema.json",
+      "sha256": "c7bbd7b0dcbeaff5ad5d8cfb5316594910389f89a6ec2b80f4aaefc78f199697"
+    },
+    {
+      "bytes": 1369,
+      "path": "profiles/skill.v1.schema.json",
+      "sha256": "0727dade9871c18d2b2a598ae34844d1afe6d43c381f931e729e653cd625805a"
+    },
+    {
+      "bytes": 2668,
+      "path": "registry.ts",
+      "sha256": "30910c17c717b77958bbc4b1e3afcd02e771198570bed484b46fc3bde4398083"
+    },
+    {
+      "bytes": 3372,
+      "path": "synthetic-decoder.ts",
+      "sha256": "2c74e6c26428a15c17a3c85ca37ed8fa537076ecf8697d3010a831bb09ce8f6b"
+    },
+    {
+      "bytes": 11602,
+      "path": "testvectors/decoder-corpus.v1.json",
+      "sha256": "7d515cf1c6c49aa36ce898d23a742d6c45ad151a926ad3fe6a97682d34860add"
+    }
+  ],
+  "schema": "alpha.host-extension-package.artifact.v1"
+}
