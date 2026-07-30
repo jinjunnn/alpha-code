@@ -1,5 +1,5 @@
 import type { ModelRef, ModelV2Info } from "@opencode-ai/sdk/v2/client"
-import type { EffectiveCatalog, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
+import type { EffectiveCatalog, PricingMultiplier, ProviderKeyStatus } from "../../shared/alpha-model-types"
 import { byokEngineId } from "../../shared/alpha-model-types"
 import type { ComposerModel } from "./composer-state"
 import { t } from "../i18n"
@@ -15,8 +15,10 @@ export type ModelPickerRow = {
   model: ComposerModel
   providerName: string
   pico: { letter: string; color: string }
-  tier?: Tier
-  mult?: string
+  /** #679:平台下发的双倍数,**只在平台组的行上出现**(BYOK / 自定义节点走用户自己的 KEY,
+   *  与代理计价无关)。缺失 = 平台段没有有效 V2/LKG,该行渲染「计价信息暂不可用」而不是数字。
+   *  客户端不做除法、不 rounding、不分桶、不折叠成单一 scalar —— 值就是平台原值。 */
+  pricing?: PricingMultiplier
   reasoning: boolean
   /** **picker 可选择性**,不是引擎执行证明(契约 docs/contracts/byok-availability.md)。 */
   availability: ModelAvailability
@@ -25,6 +27,28 @@ export type ModelPickerRow = {
    *  (`listState` / `model.list` 内容 / `readyListEpoch`)不得否定它。只有内置 BYOK 目录行带此标记;
    *  平台代理行与从引擎清单派生的自定义节点行都不带。点击层据此跳过引擎清单 membership 检查。 */
   engineIndependent?: true
+}
+
+/** 平台已把倍数 half-up 到一位小数(契约 docs/contracts,`isTrustedPair` 拒绝不落在 0.1 网格上的值),
+ *  所以 `toFixed(1)` 是**本地化**不是 rounding:它只决定 `1` 要不要写成 `1.0`,不会改变任何数值。 */
+const formatMultiplier = (value: number) => value.toFixed(1)
+
+/**
+ * #679:一行的**计价状态**,两态且只有两态。
+ *
+ *  · 平台组 + 有可信 pair → `输入 71.4× · 输出 178.6×`(双倍数,永不折叠成一个数);
+ *  · 平台组 + 无 pair     → `计价信息暂不可用`(不含任何数字与档位词)——「没有可信价格」必须
+ *    说出来,合成一个便宜的档位比不说更坏,那正是本票删掉的东西;
+ *  · 非平台组             → `null`。BYOK 与自定义节点用用户自己的 KEY 直连,代理倍数对它们
+ *    没有意义,给一个数字或给一句「暂不可用」都是在暗示它们参与代理计价。
+ */
+export function pricingStatusText(row: Pick<ModelPickerRow, "group" | "pricing">): string | null {
+  if (row.group !== "platform") return null
+  if (!row.pricing) return t("alpha.model.pricingUnavailable")
+  return t("alpha.model.pricingPair", {
+    input: formatMultiplier(row.pricing.input),
+    output: formatMultiplier(row.pricing.output),
+  })
 }
 
 export function modelRefOf(model: ComposerModel): ModelRef {
@@ -86,8 +110,7 @@ export function buildModelPickerRows(input: {
       },
       providerName: input.catalog.platformProvider.name,
       pico: input.catalog.platformProvider.pico,
-      tier: model.tier,
-      mult: input.catalog.tiers[model.tier]?.mult,
+      ...(model.pricing ? { pricing: model.pricing } : {}),
       reasoning: !!model.reasoning,
       availability: availability.kind,
       reason: availability.reason,

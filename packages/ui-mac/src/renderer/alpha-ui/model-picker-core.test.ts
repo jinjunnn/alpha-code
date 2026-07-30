@@ -2,8 +2,14 @@ import { describe, expect, test } from "bun:test"
 import type { ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { EffectiveCatalog, ProviderKeyStatus } from "../../shared/alpha-model-types"
 import { byokEngineId } from "../../shared/alpha-model-types"
-import { t } from "../i18n"
-import { buildModelPickerRows, composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
+import { setLocale, t } from "../i18n"
+import {
+  buildModelPickerRows,
+  composerModelFromRef,
+  modelRefOf,
+  pricingStatusText,
+  withModelVariant,
+} from "./model-picker-core"
 
 const catalog = {
   ...(await Bun.file(new URL("../../main/alpha-models.json", import.meta.url)).json()),
@@ -58,7 +64,7 @@ const rows = (over: Partial<Parameters<typeof buildModelPickerRows>[0]> = {}) =>
   })
 
 describe("真实 alpha-models.json → picker 两组", () => {
-  test("平台代理模型、供应商与档位逐项取自目录，不发明 id", () => {
+  test("平台代理模型与供应商逐项取自目录，不发明 id", () => {
     const actual = rows()
     const platform = actual.filter((row) => row.group === "platform")
     const byok = actual.filter((row) => row.group === "byok")
@@ -241,5 +247,126 @@ describe("BYOK 可选择性脱离登录 / 平台 / 引擎清单(#595)", () => {
     )
     expect(actual.find((row) => row.model.providerID === "my-endpoint")?.engineIndependent).toBeUndefined()
     expect(actual.find((row) => row.group === "platform")?.engineIndependent).toBeUndefined()
+  })
+})
+
+// ── REQ-127 #679:计价倍数是平台的,选择器只呈现,不发明 ─────────────────────────────────────
+// 删掉的是本地那套写死档位(标准/高级/旗舰 → ×1/×3/×8)。它同时错两次:①对已收录的模型给的是
+// 一个与真实倍数无关的数;②对平台刚上线、本地还没收录的模型一律合成最便宜的一档。真实差距是
+// claude-fable-5 的 输入 71.4× / 输出 178.6×,而它当时显示「标准 ×1」。
+describe("#679 平台计价二态:要么两个真倍数,要么明说不可用", () => {
+  /** 带远端 pair 的目录:一个本地收录的模型 + 一个本地快照根本没听说过的模型。 */
+  const priced = {
+    ...catalog,
+    pricingBasisModelId: "deepseek-v4-flash",
+    platformModels: [
+      ...catalog.platformModels.map((model) =>
+        model.id === "claude-fable-5" ? { ...model, pricing: { input: 71.4, output: 178.6 } } : model,
+      ),
+      { id: "future-model-9", name: "future-model-9", pricing: { input: 2.5, output: 7.5 } },
+      { id: "unit-model", name: "Unit", pricing: { input: 1, output: 1 } },
+    ],
+  } as EffectiveCatalog
+  const pricedRows = (over: Partial<Parameters<typeof buildModelPickerRows>[0]> = {}) =>
+    rows({
+      catalog: priced,
+      models: [
+        ...priced.platformModels.map((model) => info(priced.platformProvider.id, model.id)),
+        ...priced.byokProviders.flatMap((provider) => provider.models.map((id) => info(byokEngineId(provider.id), id))),
+      ],
+      ...over,
+    })
+  const rowOf = (id: string, over: Partial<Parameters<typeof buildModelPickerRows>[0]> = {}) =>
+    pricedRows(over).find((row) => row.group === "platform" && row.model.id === id)!
+
+  test("平台行原样带上双倍数,且行上不留任何本地档位字段", () => {
+    const fable = rowOf("claude-fable-5")
+    expect(fable.pricing).toEqual({ input: 71.4, output: 178.6 })
+    // 本地快照没收录的线上模型:pair 照样是平台原值,**不合成、不 1×**。
+    expect(rowOf("future-model-9").pricing).toEqual({ input: 2.5, output: 7.5 })
+    // 结构级:行上不能再冒出任何档位轴 —— 有的话下一次就会有人拿它算价。
+    for (const row of pricedRows().filter((entry) => entry.group === "platform"))
+      expect(Object.keys(row)).not.toContain("tier")
+    for (const row of pricedRows().filter((entry) => entry.group === "platform"))
+      expect(Object.keys(row)).not.toContain("mult")
+  })
+
+  test("文案是两个倍数、两种语言都是,而且 1 渲染成 1.0(不折叠、不省略)", () => {
+    const fable = rowOf("claude-fable-5")
+    const unit = rowOf("unit-model")
+    try {
+      setLocale("zh")
+      expect(pricingStatusText(fable)).toBe("输入 71.4× · 输出 178.6×")
+      // 折叠成单一 scalar 对至少一侧必然错 —— 两个数必须都在。
+      expect(pricingStatusText(fable)).toContain("178.6")
+      expect(pricingStatusText(unit)).toBe("输入 1.0× · 输出 1.0×")
+      setLocale("en")
+      expect(pricingStatusText(fable)).toBe("In 71.4× · Out 178.6×")
+      expect(pricingStatusText(unit)).toBe("In 1.0× · Out 1.0×")
+    } finally {
+      setLocale("zh")
+    }
+  })
+
+  test("没有可信 pair → 明说不可用,文案里一个数字、一个档位词都不许有", () => {
+    // 静态目录(无 V2/LKG):basis 为 null,逐行也没有 pricing。
+    const bare = rows().filter((row) => row.group === "platform")
+    expect(bare.length).toBeGreaterThan(0)
+    for (const row of bare) {
+      const text = pricingStatusText(row)!
+      expect(text).toBe(t("alpha.model.pricingUnavailable"))
+      expect(text).not.toMatch(/\d/)
+      expect(text).not.toMatch(/标准|高级|旗舰|×/)
+    }
+    try {
+      setLocale("en")
+      for (const row of bare) {
+        const text = pricingStatusText(row)!
+        expect(text).not.toMatch(/\d/)
+        expect(text).not.toMatch(/\b(?:std|pro|flag)\b|×/i)
+      }
+    } finally {
+      setLocale("zh")
+    }
+  })
+
+  test("BYOK 与自定义节点没有代理计价,两态一个都不给(给「不可用」也是在暗示它们参与代理计价)", () => {
+    const custom = info("my-endpoint", "real-custom-model")
+    const all = pricedRows({
+      keyStatus: { ...keys, "my-endpoint": { configured: true, source: "config" } },
+      models: [
+        ...priced.platformModels.map((model) => info(priced.platformProvider.id, model.id)),
+        ...priced.byokProviders.flatMap((provider) => provider.models.map((id) => info(byokEngineId(provider.id), id))),
+        custom,
+      ],
+    })
+    const nonPlatform = all.filter((row) => row.group !== "platform")
+    expect(nonPlatform.length).toBeGreaterThan(0)
+    for (const row of nonPlatform) expect(pricingStatusText(row)).toBeNull()
+    // 反面:平台组一行都不许是 null —— 两态之一必须给得出来。
+    for (const row of all.filter((entry) => entry.group === "platform")) expect(pricingStatusText(row)).not.toBeNull()
+  })
+
+  test("平台行带 operational reason 时,计价二态仍然给得出来(二态不被运行态遮住)", () => {
+    // needs-credit / loading / unavailable 的平台行都**有** reason。旧实现是 `reason ?? 档位`,
+    // 于是这些行两态都不显示。计价与运行态是两件独立的事,这里逐状态钉死。
+    const states = ["empty", "loading", "recovering", "failed"] as const
+    for (const accountState of states) {
+      const platform = pricedRows({ accountState }).filter((row) => row.group === "platform")
+      expect(platform.length, accountState).toBeGreaterThan(0)
+      for (const row of platform) {
+        expect(row.reason, `${accountState} ${row.model.id}`).toBeTruthy()
+        expect(pricingStatusText(row), `${accountState} ${row.model.id}`).not.toBeNull()
+      }
+      expect(pricingStatusText(platform.find((row) => row.model.id === "claude-fable-5")!)).toContain("178.6")
+    }
+    // 引擎侧的失败态同理。
+    for (const listState of ["loading", "recovering", "failed"] as const) {
+      const platform = pricedRows({ listState, models: [] }).filter((row) => row.group === "platform")
+      for (const row of platform) {
+        expect(row.reason, `${listState} ${row.model.id}`).toBeTruthy()
+        expect(pricingStatusText(row), `${listState} ${row.model.id}`).not.toBeNull()
+      }
+    }
   })
 })

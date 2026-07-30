@@ -3,7 +3,7 @@
 
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js"
 import type { AccountSummary, AuthState } from "../../preload/types"
-import type { EffectiveCatalog, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
+import type { EffectiveCatalog, ProviderKeyStatus } from "../../shared/alpha-model-types"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
 import {
@@ -14,7 +14,13 @@ import {
 } from "./composer-state"
 import { ENGINE_FETCH_TIMEOUT_MS, nextEngineRetryDelay } from "./model-picker-logic"
 import type { ModelContract } from "./model-contract"
-import { buildModelPickerRows, type AccountState, type ModelListState, type ModelPickerRow } from "./model-picker-core"
+import {
+  buildModelPickerRows,
+  pricingStatusText,
+  type AccountState,
+  type ModelListState,
+  type ModelPickerRow,
+} from "./model-picker-core"
 import { AddProvider } from "./model-picker-add"
 import { accountResultState } from "./model-recovery"
 import { t } from "../i18n"
@@ -351,6 +357,16 @@ export function ModelPickPop(props: {
   })
   const platformRows = createMemo(() => rows().filter((row) => row.group === "platform"))
   const byokRows = createMemo(() => rows().filter((row) => row.group === "byok"))
+  // #679:倍数是**相对量**,不说清相对谁就是半句话。基准由平台下发(pricingBasisModelId),
+  // 客户端不硬编码 —— 平台换基准,这行字跟着变才是诚实的。基准模型可能被 edition 白名单筛掉
+  // (平台明说它是「单位定义,不是目录成员」),那时退回展示裸 id。
+  // basis 缺席 ⇒ **整条不渲染**:没有「基准未知」这种半真陈述。
+  const pricingBasisName = createMemo(() => {
+    const current = catalog()
+    const basis = current?.pricingBasisModelId
+    if (!current || !basis) return null
+    return current.platformModels.find((model) => model.id === basis)?.name ?? basis
+  })
   const memberPlanName = createMemo(() => {
     const current = summary()
     const plan = current.status === "ready" ? current.data?.plan : undefined
@@ -549,6 +565,9 @@ export function ModelPickPop(props: {
       <div class="a-mpp-scroll">
         <Show when={platformRows().length}>
           <div class="a-pop-label">{t("alpha.model.platformGroup")}</div>
+          <Show when={pricingBasisName()}>
+            {(basis) => <div class="a-mpp-basis">{t("alpha.model.pricingBasisNote", { model: basis() })}</div>}
+          </Show>
           <For each={platformRows()}>
             {(row) => (
               <ModelRow
@@ -557,7 +576,6 @@ export function ModelPickPop(props: {
                 switching={switching}
                 selectionBlocked={selectionBlocked}
                 onPick={pick}
-                tierLabel={tierLabel(catalog())}
               />
             )}
           </For>
@@ -572,7 +590,6 @@ export function ModelPickPop(props: {
                 switching={switching}
                 selectionBlocked={selectionBlocked}
                 onPick={pick}
-                tierLabel={tierLabel(catalog())}
               />
             )}
           </For>
@@ -623,7 +640,6 @@ function ModelRow(props: {
   /** row-aware(#595):本行是否被选择门阻断 —— 传本行,不要传空。 */
   selectionBlocked: (row: ModelPickerRow) => boolean
   onPick: (row: ModelPickerRow) => Promise<void>
-  tierLabel: (tier?: Tier) => string
 }) {
   const selected = () => {
     const current = props.selected()
@@ -634,8 +650,15 @@ function ModelRow(props: {
   // #595 Minor:视觉必须跟着可点性走。availability "available" 但被选择门阻断(如 session 恢复中的
   // BYOK 行、epoch 陈旧的平台行)时,行同样置灰 —— 否则用户看到一条正常亮行却点不动。
   const dimmed = () => props.row.availability !== "available" || props.selectionBlocked(props.row)
-  const status = () =>
-    props.row.reason ?? (props.row.tier ? `${props.tierLabel(props.row.tier)} ${props.row.mult ?? ""}`.trim() : "")
+  // #679:一行的行尾状态是**两件独立的事**,不是二选一。
+  //   · `reason` = 运行态(需登录 / 余额不足 / 引擎重启中 / 正在同步 …),平台行在这些状态下**有值**;
+  //   · 计价二态 = 这一行要花多少钱,平台行**任何状态下都必须看得到**其中一态。
+  // 此前这里写的是 `reason ?? 档位`,于是 needs-credit / loading 的平台行两态都不显示。
+  // 现在两者按顺序拼成**同一个来源** `statusParts()`:可见 DOM 与 aria-label 都从它派生,
+  // 不存在「看得到但读屏读不到」的缝(构造级保证,不是两处各写一遍)。
+  const statusParts = (): string[] =>
+    [props.row.reason, pricingStatusText(props.row)].filter((part): part is string => !!part)
+  const statusLabel = () => statusParts().join(" · ")
   return (
     <button
       type="button"
@@ -648,8 +671,12 @@ function ModelRow(props: {
       }}
       aria-current={selected() ? "true" : undefined}
       aria-label={
-        status()
-          ? t("alpha.model.rowLabel", { model: props.row.model.name, provider: props.row.providerName, status: status() })
+        statusLabel()
+          ? t("alpha.model.rowLabel", {
+              model: props.row.model.name,
+              provider: props.row.providerName,
+              status: statusLabel(),
+            })
           : t("alpha.model.rowLabelNoStatus", { model: props.row.model.name, provider: props.row.providerName })
       }
       disabled={disabled()}
@@ -668,11 +695,7 @@ function ModelRow(props: {
       <Show when={props.row.reasoning}>
         <span class="a-mpp-dot" />
       </Show>
-      <Show when={status()}>{(label) => <span class="a-pop-desc">{label()}</span>}</Show>
+      <For each={statusParts()}>{(part) => <span class="a-pop-desc">{part}</span>}</For>
     </button>
   )
-}
-
-function tierLabel(catalog: EffectiveCatalog | null) {
-  return (tier?: Tier) => (tier ? (catalog?.tiers[tier]?.label ?? tier) : "")
 }

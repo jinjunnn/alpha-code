@@ -17,11 +17,14 @@ test(
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    // 判据只有「子进程绿」:钉总数会在别人合法新增一条用例时误红,而 `toContain("0 fail")`
-    // 反过来能被 "10 fail" 匹配上 —— 取回真实数字再比,并要求至少跑过一条。
+    // 判据是「子进程绿」+「子进程真的跑了那么多条」。钉**总数**会在别人合法新增一条用例时误红,
+    // 而 `toContain("0 fail")` 反过来能被 "10 fail" 匹配上 —— 取回真实数字再比。
+    // #679:本文件已作为受托方登记进 scripts/gate-files.tsv,而 `pass > 0` 对受托方太松:
+    // 把 cases 文件删到只剩一条,本闸照样绿,委派方就成了假闸门。改成**下界**(当前 45,留 ~11%
+    // 余量吸收正常增删) —— 抓成片消失,不抓少一条。
     const fail = output.match(/(\d+) fail\b/)?.[1]
     const pass = Number(output.match(/(\d+) pass\b/)?.[1] ?? 0)
-    expect({ fail, ran: pass > 0 }).toEqual({ fail: "0", ran: true })
+    expect({ fail, ranAtLeast40: pass >= 40 }, `子进程只跑了 ${pass} 条`).toEqual({ fail: "0", ranAtLeast40: true })
   },
   60_000,
 )

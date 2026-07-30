@@ -133,8 +133,8 @@ describe("write → read 回路(写侧与读侧共用同一个校验函数)", ()
 
 describe("projectPlatformModels —— 平台段的唯一投影", () => {
   const local: PlatformModel[] = [
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", tier: "std" },
-    { id: "claude-opus-4.8", name: "Claude Opus 4.8", tier: "flag", reasoning: true, variants: { 高: { x: 1 } } },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    { id: "claude-opus-4.8", name: "Claude Opus 4.8", reasoning: true, variants: { 高: { x: 1 } } },
   ]
 
   test("无快照 → 原样本地目录,且**不声称任何价格**", () => {
@@ -147,7 +147,7 @@ describe("projectPlatformModels —— 平台段的唯一投影", () => {
     const snapshot = valid()
     snapshot.models = [{ id: "deepseek-v4-flash", pricing: { input: 9.9, output: 9.9 } }]
     const [row] = projectPlatformModels(
-      [{ id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", tier: "std", pricing: { input: 1, output: 1 } }],
+      [{ id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", pricing: { input: 1, output: 1 } }],
       snapshot,
     )
     expect(row!.pricing).toEqual({ input: 9.9, output: 9.9 })
@@ -164,16 +164,15 @@ describe("projectPlatformModels —— 平台段的唯一投影", () => {
     expect(rows[0]).toEqual({
       id: "claude-opus-4.8",
       name: "Claude Opus 4.8",
-      tier: "flag",
       reasoning: true,
       variants: { 高: { x: 1 } },
       pricing: { input: 35.7, output: 89.3 },
     })
-    // #679 会删掉 tier;在本票它仍是必填字段,未知模型仍合成 "std"。
+    // #679:未知模型只降级 name(用 id 本名),**不再合成任何价格轴**。逐字段全等,所以
+    // 悄悄加回一个档位字段(哪怕默认值)在这里就是红的。
     expect(rows[1]).toEqual({
       id: "brand-new-model",
       name: "brand-new-model",
-      tier: "std",
       pricing: { input: 2.5, output: 7.5 },
     })
   })

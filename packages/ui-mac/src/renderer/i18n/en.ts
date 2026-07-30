@@ -976,6 +976,9 @@ export const dict = {
   "alpha.model.listLoading": "Models loading",
   "alpha.model.listUnavailable": "Model list unavailable",
   "alpha.model.syncing": "Syncing…",
+  "alpha.model.pricingPair": "In {{input}}× · Out {{output}}×",
+  "alpha.model.pricingUnavailable": "Pricing unavailable",
+  "alpha.model.pricingBasisNote": "Multipliers are relative to {{model}} uncached token pricing",
 
   "alpha.provider.customEndpoint": "Custom endpoint",
   "alpha.provider.addTitle": "Add endpoint / provider",

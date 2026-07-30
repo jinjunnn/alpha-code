@@ -204,7 +204,7 @@ describe("#681:fetch → LKG → 投影 全程只认 ModelCatalogV2", () => {
 
   test("本地永远覆盖不了远端 pricing(直测唯一投影)", () => {
     const [row] = projectPlatformModels(
-      [{ id: "deepseek-v4-flash", name: "本地名", tier: "std", pricing: { input: 1, output: 1 } }],
+      [{ id: "deepseek-v4-flash", name: "本地名", pricing: { input: 1, output: 1 } }],
       {
         fetchedAt: "2026-07-29T00:00:00Z",
         pricingBasisModelId: "deepseek-v4-flash",

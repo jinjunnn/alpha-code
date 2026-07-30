@@ -149,6 +149,7 @@ h2.sec .n{font-family:var(--a-font-mono); font-size:13px; color:var(--a-accent);
 .mp-scroll::-webkit-scrollbar{width:8px}
 .mp-scroll::-webkit-scrollbar-thumb{background:var(--a-border); border-radius:99px; border:2px solid var(--a-surface)}
 .mp-group{margin-top:8px}
+.mp-basis{padding:0 10px 6px; font-size:var(--a-text-2xs); line-height:1.45; color:var(--a-text-tertiary)}
 .mp-ghead{display:flex; align-items:center; gap:8px; padding:7px 8px 5px}
 .mp-ghead .gt{font-size:var(--a-text-2xs); letter-spacing:var(--a-tracking-wide); text-transform:uppercase; color:var(--a-text-tertiary); font-weight:600}
 .mp-tag{font-size:9.5px; font-weight:600; letter-spacing:.02em; padding:2px 6px; border-radius:var(--a-radius-full); background:var(--a-accent-subtle); color:var(--a-accent)}
@@ -169,11 +170,10 @@ h2.sec .n{font-family:var(--a-font-mono); font-size:13px; color:var(--a-accent);
 .mp-name .nm{display:block; font-size:var(--a-text-base); font-weight:500; color:var(--a-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .mp-name .sb{display:block; font-family:var(--a-font-mono); font-size:var(--a-text-2xs); color:var(--a-text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .mp-dot{flex:none; width:6px; height:6px; border-radius:50%; background:var(--a-accent); opacity:.8}
-.mp-tier{flex:none; font-size:var(--a-text-2xs); font-weight:600; padding:2px 7px; border-radius:var(--a-radius-full)}
-.mp-tier.flag{background:var(--a-warning-subtle); color:var(--a-warning)}
-.mp-tier.pro{background:var(--a-bg-inset); color:var(--a-text-secondary)}
-.mp-tier.std{background:var(--a-bg-muted); color:var(--a-text-tertiary)}
-.mp-mult{flex:none; font-family:var(--a-font-mono); font-size:var(--a-text-2xs); color:var(--a-text-tertiary); min-width:20px; text-align:right}
+/* REQ-127 #679:档位 chip(旗舰/高级/标准)与单一倍率已删。取而代之的是一个计价元素,
+   两态:双倍数 或「暂不可用」。它比档位串长得多,所以永不换行、永不被挤压 —— 挤压让给模型名。 */
+.mp-price{flex:none; white-space:nowrap; font-family:var(--a-font-mono); font-size:var(--a-text-2xs); color:var(--a-text-tertiary)}
+.mp-price.is-unknown{font-family:var(--a-font-sans)}
 .mp-keychip{flex:none; font-size:9.5px; font-weight:600; padding:3px 8px; border-radius:var(--a-radius-full); border:1px dashed var(--a-border-strong); color:var(--a-text-secondary); background:transparent}
 .mp-row:hover .mp-keychip{border-color:var(--a-accent-border); color:var(--a-accent)}
 .mp-empty{padding:34px 16px; text-align:center; color:var(--a-text-tertiary); font-size:var(--a-text-sm)}

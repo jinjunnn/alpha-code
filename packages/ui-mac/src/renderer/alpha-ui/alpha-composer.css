@@ -354,11 +354,33 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* #679:行尾的计价二态比档位串长得多(`输入 71.4× · 输出 178.6×` vs 旧的 `旗舰 ×8`)。
+     让名字这一列吃掉挤压 —— 数字一位都不许被截,名字截了还能从下面的 id 行认出来。 */
+  overflow: hidden;
+  white-space: nowrap;
 }
 .a-mpp-name small {
   color: var(--a-text-tertiary);
   font-size: var(--a-text-2xs);
   font-family: var(--a-font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* #679:一行可能同时挂运行态(需登录 / 引擎重启中 …)与计价二态。两段都靠右、都不换行;
+   只有第一段吃掉自由空间(`.a-pop-desc` 的 margin-left:auto),后面的紧跟着排。 */
+.a-mpp-row .a-pop-desc {
+  flex: none;
+  white-space: nowrap;
+}
+.a-mpp-row .a-pop-desc ~ .a-pop-desc {
+  margin-left: 6px;
+}
+/* #679:组级基准说明 —— 倍数相对谁。它是一句话,不是一行可选项,所以排版跟着组头走。 */
+.a-mpp-basis {
+  padding: 0 10px 6px;
+  font-size: var(--a-text-2xs);
+  line-height: 1.45;
+  color: var(--a-text-tertiary);
 }
 .a-mpp-dot {
   width: 6px;

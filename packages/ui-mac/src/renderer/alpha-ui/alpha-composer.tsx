@@ -1058,7 +1058,13 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         platformProviderId: pid,
         configuredProviders: configuredEngineProviders,
         localKeyedByokProviders,
-        catalog: { defaultModel: cat.data.defaultModel, platformModels: cat.data.platformModels },
+        // #679:`defaultPlatformModel` 必须真的传下去 —— 漏了它,平台自动默认会**静默消失**
+        // (解析链已不再有任何兜底挑选,那是本票刻意去掉的)。
+        catalog: {
+          defaultModel: cat.data.defaultModel,
+          defaultPlatformModel: cat.data.defaultPlatformModel,
+          platformModels: cat.data.platformModels,
+        },
         engineModels,
       }
       // 平台当前选择只有在账户事实已验证后才可挂起；恢复窗口不把未知误写成业务否定。

@@ -20,6 +20,11 @@ import { readConfiguredProviderKeys } from "../src/main/ext-config"
 import { alphaJsoncPath } from "../src/main/engine-config-truth"
 import { persistProviderAndRefresh, setProviderLifecycleDeps } from "../src/main/provider-lifecycle"
 import { dict as zh } from "../src/renderer/i18n/zh"
+import { dict as enDict } from "../src/renderer/i18n/en"
+// ⚠️ `../src/renderer/i18n`(index)**不能**静态 import:它在模块求值期就 import 了 "solid-js",
+// 而 ESM 静态 import 早于下面的 `mock.module("solid-js", …)` —— 于是整个文件拿到 Solid 的
+// **server** 构建,45 条用例一起挂在 `getNextContextId cannot be used under non-hydrating context`。
+// 两份 dict 是纯对象,静态 import 无害;setLocale 走下面的动态 import。
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
@@ -74,6 +79,7 @@ const {
 )
 const { byokEngineId } = await import("../src/shared/alpha-model-types")
 const { resetAuthRecoveryForTests } = await import("../src/renderer/auth-recovery")
+const { setLocale } = await import("../src/renderer/i18n")
 
 const catalog = {
   ...(await Bun.file(new URL("../src/main/alpha-models.json", import.meta.url)).json()),
@@ -1974,5 +1980,208 @@ describe("AlphaComposer 生产 combobox 无障碍绑定", () => {
     expect(textarea.getAttribute("aria-expanded")).toBe("false")
     expect(textarea.hasAttribute("aria-activedescendant")).toBe(false)
     mounted.dispose()
+  })
+})
+
+// ── REQ-127 #679:选择器上那两个数字是平台的真值,不是本地编的 ────────────────────────────
+// 用户能看到的变化只在这一票:claude-fable-5 从「标准 ×1」变成「输入 71.4× · 输出 178.6×」。
+// 因此每条断言都同时验 **可见 DOM** 与 **aria-label** —— 看得见和听得见必须是同一件事。
+describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
+  const BASIS = "deepseek-v4-flash"
+  /** 平台真实倍数(与 producer fixture 一致):最长串出现在 claude-fable-5 上。 */
+  const REMOTE_PRICING: Record<string, { input: number; output: number }> = {
+    "deepseek-v4-flash": { input: 1, output: 1 },
+    "deepseek-v4-pro": { input: 3.1, output: 3.1 },
+    "glm-5.2": { input: 5.4, output: 8.5 },
+    "glm-5-turbo": { input: 8.6, output: 14.3 },
+    "qwen3.7-max": { input: 10.5, output: 15.8 },
+    "qwen3.7-plus": { input: 2.3, output: 4.6 },
+    "gpt-5.4-mini": { input: 5.4, output: 16.1 },
+    "gpt-5.4-nano": { input: 1.4, output: 4.5 },
+    "claude-haiku-4.5": { input: 7.1, output: 17.9 },
+    "claude-sonnet-5": { input: 21.4, output: 53.6 },
+    "claude-fable-5": { input: 71.4, output: 178.6 },
+    "claude-opus-4.8": { input: 35.7, output: 89.3 },
+  }
+  /** 有效 V2/LKG 的目录视图(= getEffectiveCatalog 在 live 时返回的形状)。 */
+  const pricedCatalog = {
+    ...catalog,
+    pricingBasisModelId: BASIS,
+    platformModels: catalog.platformModels.map((model) => ({
+      ...model,
+      ...(REMOTE_PRICING[model.id] ? { pricing: REMOTE_PRICING[model.id] } : {}),
+    })),
+  } as EffectiveCatalog
+  /** 基准名从目录里取 —— 平台换基准,UI 跟着变才是诚实的,所以断言也不许硬编码。 */
+  const basisName = pricedCatalog.platformModels.find((model) => model.id === BASIS)!.name
+
+  const rowFor = (id: string) =>
+    [...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((row) =>
+      row.querySelector(".a-mpp-name small")?.textContent?.startsWith(id),
+    )!
+  /** 一行的两种可读形态:看见的文本 与 读屏听见的 label。任何断言都必须同时过这两关。 */
+  const bothReadings = (row: HTMLButtonElement) => [row.textContent ?? "", row.getAttribute("aria-label") ?? ""]
+
+  const openPicker = async (fixture: ApiFixture = {}) => {
+    resetComposerModelProjection()
+    installApi({ catalog: async () => pricedCatalog, ...fixture })
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async () => {},
+        onPicked: () => {},
+      }),
+    )
+    // 等待判据必须与 locale 无关 —— 用文案等会在英文用例里永远等不到,而那是**测试的**缺陷,
+    // 不是产品的。等的是「平台组的行真的渲染出来了」。
+    await waitFor(() => {
+      expect(document.body.querySelectorAll('.a-mpp-row[data-group="platform"]').length).toBe(
+        pricedCatalog.platformModels.length,
+      )
+      expect(rowFor("claude-fable-5")).toBeInstanceOf(HTMLButtonElement)
+    })
+    return mounted
+  }
+
+  test("平台行把两个真倍数同时写进可见文本与 aria-label(最长串:输入 71.4× · 输出 178.6×)", async () => {
+    const mounted = await openPicker()
+
+    const expected = "输入 71.4× · 输出 178.6×"
+    for (const reading of bothReadings(rowFor("claude-fable-5"))) expect(reading).toContain(expected)
+    // 不是只有那一行:每个平台行都带自己的那一对,而且**两个数都在**(折叠成一个 scalar 即红)。
+    for (const [id, pair] of Object.entries(REMOTE_PRICING)) {
+      const text = `输入 ${pair.input.toFixed(1)}× · 输出 ${pair.output.toFixed(1)}×`
+      for (const reading of bothReadings(rowFor(id))) expect(reading, id).toContain(text)
+    }
+    // 基准说明就在平台组头下面,名字取自目录。
+    const basis = document.body.querySelector(".a-mpp-basis")!
+    expect(basis).toBeInstanceOf(HTMLElement)
+    expect(basis.textContent).toContain(basisName)
+    expect(basis.textContent).toBe(zh["alpha.model.pricingBasisNote"].replace("{{model}}", basisName))
+
+    // BYOK 行走用户自己的 KEY,与代理计价无关:两种读法里都不许出现倍号或「不可用」文案。
+    const byokRows = [...document.body.querySelectorAll<HTMLButtonElement>('.a-mpp-row[data-group="byok"]')]
+    expect(byokRows.length).toBeGreaterThan(0)
+    for (const row of byokRows)
+      for (const reading of bothReadings(row)) {
+        expect(reading).not.toContain("×")
+        expect(reading).not.toContain(zh["alpha.model.pricingUnavailable"])
+      }
+    mounted.dispose()
+  })
+
+  test("没有有效 V2/LKG 时明说不可用,两种读法里都没有数字、没有档位词、也没有基准说明", async () => {
+    // 静态目录(内置 snapshot):basis 为 null、逐行无 pricing —— 这正是今天冷启动的常态。
+    resetComposerModelProjection()
+    installApi()
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async () => {},
+        onPicked: () => {},
+      }),
+    )
+    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.model.platformGroup"]))
+    await waitFor(() => expect(rowFor("claude-fable-5")).toBeInstanceOf(HTMLButtonElement))
+
+    const platformRows = [...document.body.querySelectorAll<HTMLButtonElement>('.a-mpp-row[data-group="platform"]')]
+    expect(platformRows.length).toBe(catalog.platformModels.length)
+    for (const row of platformRows)
+      for (const reading of bothReadings(row)) {
+        expect(reading).toContain(zh["alpha.model.pricingUnavailable"])
+        // 「不可用」不能顺手带出一个数字或一个档位 —— 合成价格比不说更坏。
+        expect(reading).not.toMatch(/\d+(?:\.\d+)?\s*×|×\s*\d/)
+        expect(reading).not.toMatch(/标准|高级|旗舰/)
+      }
+    // basis 缺席 ⇒ 整条不渲染。没有「基准未知」这种半真陈述。
+    expect(document.body.querySelector(".a-mpp-basis")).toBeNull()
+    mounted.dispose()
+  })
+
+  test("平台行同时有运行态时,计价二态**仍然**看得见(旧实现在这里两态都不显示)", async () => {
+    // 余额为零 ⇒ 每个平台行都有 reason(「余额不足」)。旧实现是 `reason ?? 档位`,于是价格消失。
+    const mounted = await openPicker({
+      account: async () => ({ ...summary, balanceFen: 0, plan: { ...summary.plan!, status: "expired" } }),
+    })
+    const row = rowFor("claude-fable-5")
+    await waitFor(() => expect(row.textContent).toContain(zh["alpha.model.needsCredit"]))
+    for (const reading of bothReadings(row)) {
+      expect(reading).toContain(zh["alpha.model.needsCredit"])
+      expect(reading).toContain("输入 71.4× · 输出 178.6×")
+    }
+    mounted.dispose()
+  })
+
+  test("英文 locale 下两态与基准说明都跟着换,数字一位不差", async () => {
+    setLocale("en")
+    try {
+      const mounted = await openPicker()
+      const row = rowFor("claude-fable-5")
+      for (const reading of bothReadings(row)) expect(reading).toContain("In 71.4× · Out 178.6×")
+      expect(document.body.querySelector(".a-mpp-basis")!.textContent).toBe(
+        enDict["alpha.model.pricingBasisNote"].replace("{{model}}", basisName),
+      )
+      mounted.dispose()
+    } finally {
+      setLocale("zh")
+    }
+  })
+
+  test("真实 AlphaComposer wiring 里 defaultPlatformModel 被传下去并真的选中(不是只测 helper)", async () => {
+    // 删掉档位兜底之后,自动默认只剩这一个旋钮。composer 那一处 ctx 漏传 —— 默认会**静默消失**,
+    // 而没有任何类型错误会提醒你。所以判据放在真实组件挂载之后的 composerModel() 上。
+    resetComposerModelProjection()
+    installApi({ catalog: async () => pricedCatalog })
+    const first = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+      }),
+    )
+    await waitFor(() => expect(composerModel()?.id).toBe(pricedCatalog.defaultPlatformModel))
+    expect(composerModel()?.providerID).toBe(pricedCatalog.platformProvider.id)
+    first.dispose()
+
+    // 换一个声明就换一个默认 —— 证明选中的是这个字段,不是顺序、不是最便宜的那个。
+    setComposerModel(null)
+    resetComposerModelProjection()
+    installApi({ catalog: async () => ({ ...pricedCatalog, defaultPlatformModel: "claude-fable-5" }) })
+    const second = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+      }),
+    )
+    await waitFor(() => expect(composerModel()?.id).toBe("claude-fable-5"))
+    second.dispose()
+
+    // 声明缺席 ⇒ 绝不回落到任何平台模型(也不挑最便宜的那个)。
+    setComposerModel(null)
+    resetComposerModelProjection()
+    installApi({ catalog: async () => ({ ...pricedCatalog, defaultPlatformModel: null }) })
+    const third = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+      }),
+    )
+    await waitFor(() => expect(document.body.textContent).toBeTruthy())
+    await flush()
+    await flush()
+    expect(composerModel()).toBeNull()
+    third.dispose()
   })
 })

@@ -21,6 +21,7 @@
     <span><b>诉求②</b> 国内四模型 + 自定义输入</span>
     <span><b>诉求③</b> 完整交互规格</span>
     <span><b>规格</b> spec.md</span>
+    <span><b>与上一稿的关系</b> 2026-07-30 / REQ-127 #679:代理行的档位 chip(旗舰/高级/标准)与单一倍率 ×8/×3/×1 <b>已删</b>,换成网关下发的输入/输出双倍数 + 一句组级基准说明;无可信数据时明说「计价信息暂不可用」。其余 IA 不动。</span>
   </div>
 </header>
 
@@ -85,18 +86,23 @@
    Data
    ============================================================ */
 // proxy: each row = one model id (友好名 + id 副标题). 经 ALPHA 代理 由组标题统一表达。
+// REQ-127 #679:倍数是网关 GET /v1/models 下发的真值(相对基准模型的未缓存 token 单价),
+// 本地不再有档位表。下面这些数就是平台目录里的那一份。
+const PRICING_BASIS = 'DeepSeek V4 Flash';
 const PROXY = [
-  {prov:'alpha',letter:'α',color:'#4f46e5',name:'Claude Opus 4.8',sub:'claude-opus-4.8',tier:'flag',mult:'×8',reason:true,proxy:true},
-  {prov:'alpha',letter:'α',color:'#4f46e5',name:'Claude Sonnet 4.6',sub:'claude-sonnet-4.6',tier:'pro',mult:'×3',reason:true,proxy:true},
-  {prov:'alpha',letter:'α',color:'#4f46e5',name:'GPT-5.4 Search',sub:'gpt-5.4-search',tier:'flag',mult:'×8',reason:true,proxy:true},
-  {prov:'alpha',letter:'α',color:'#4f46e5',name:'DeepSeek V4 Pro',sub:'deepseek-v4-pro',tier:'pro',mult:'×3',reason:true,proxy:true},
-  {prov:'alpha',letter:'α',color:'#4f46e5',name:'Claude Haiku 4.5',sub:'claude-haiku-4.5',tier:'pro',mult:'×3',reason:false,proxy:true},
+  {prov:'alpha',letter:'α',color:'#4f46e5',name:'Claude Opus 4.8',sub:'claude-opus-4.8',pricing:{input:35.7,output:89.3},reason:true,proxy:true},
+  {prov:'alpha',letter:'α',color:'#4f46e5',name:'Claude Fable 5',sub:'claude-fable-5',pricing:{input:71.4,output:178.6},proxy:true},
+  {prov:'alpha',letter:'α',color:'#4f46e5',name:'Claude Sonnet 5',sub:'claude-sonnet-5',pricing:{input:21.4,output:53.6},proxy:true},
+  {prov:'alpha',letter:'α',color:'#4f46e5',name:'DeepSeek V4 Pro',sub:'deepseek-v4-pro',pricing:{input:3.1,output:3.1},reason:true,proxy:true},
+  {prov:'alpha',letter:'α',color:'#4f46e5',name:'DeepSeek V4 Flash',sub:'deepseek-v4-flash',pricing:{input:1,output:1},proxy:true},
+  // 平台目录暂不可用(无有效 V2/LKG)时,每一行都是这个样子 —— 绝不合成一个便宜的数字。
+  {prov:'alpha',letter:'α',color:'#4f46e5',name:'Claude Haiku 4.5',sub:'claude-haiku-4.5',proxy:true},
 ];
 // BYOK: 只列「已配置」的 model id,一个 model id 一行(name=id, sub=供应商)。未配置的供应商不在此显示,去「添加节点」接入。
 let DOMESTIC = [
-  {prov:'deepseek',letter:'D',color:'#2563eb',name:'deepseek-chat',sub:'DeepSeek',tier:'pro'},
-  {prov:'deepseek',letter:'D',color:'#2563eb',name:'deepseek-reasoner',sub:'DeepSeek · 推理',tier:'pro',reason:true},
-  {prov:'zhipuai',letter:'智',color:'#16a34a',name:'glm-5',sub:'智谱 GLM',tier:'pro'},
+  {prov:'deepseek',letter:'D',color:'#2563eb',name:'deepseek-chat',sub:'DeepSeek'},
+  {prov:'deepseek',letter:'D',color:'#2563eb',name:'deepseek-reasoner',sub:'DeepSeek · 推理',reason:true},
+  {prov:'zhipuai',letter:'智',color:'#16a34a',name:'glm-5',sub:'智谱 GLM'},
 ];
 const PRESETS = [
   {prov:'deepseek',letter:'D',color:'#2563eb',name:'DeepSeek',compat:'OpenAI 兼容',baseURL:'https://api.deepseek.com/v1',models:['deepseek-chat','deepseek-reasoner']},
@@ -135,11 +141,12 @@ function locked(state){return state==='out'||state==='empty'}
 
 function rowHTML(m,state){
   const isLocked = m.proxy && locked(state);
-  const tierName = {flag:'旗舰',pro:'高级',std:'标准'}[m.tier];
   let right='';
   if(m.reason) right+='<span class="mp-dot" title="支持推理"></span>';
-  right+=`<span class="mp-tier ${m.tier}">${tierName}</span>`;
-  if(m.proxy) right+=`<span class="mp-mult">${m.mult}</span>`;
+  // 计价二态,只在代理组出现:要么两个真倍数,要么明说不可用(BYOK 自付,不参与代理计价)。
+  if(m.proxy) right += m.pricing
+    ? `<span class="mp-price">输入 ${m.pricing.input.toFixed(1)}× · 输出 ${m.pricing.output.toFixed(1)}×</span>`
+    : `<span class="mp-price is-unknown">计价信息暂不可用</span>`;
   return `<div class="mp-row" data-locked="${isLocked}" data-kind="${m.proxy?'proxy':'domestic'}" ${m.sel?'data-selected="true"':''}>
     <span class="mp-pico" style="background:${m.color}">${m.letter}</span>
     <span class="mp-name"><span class="nm">${esc(m.name)}</span><span class="sb">${esc(m.sub)}</span></span>
@@ -165,6 +172,8 @@ function listHTML(state,query){
   if(proxy.length){
     const lk=locked(state);
     html+=`<div class="mp-group"><div class="mp-ghead"><span class="gt">代理节点 · 经 ALPHA 代理</span><span class="mp-tag">推荐</span>${lk?`<span class="mp-lock">${I.lock} 已锁定</span>`:''}</div>`;
+    // 倍数是相对量,不说清相对谁就是半句话。基准由平台下发;基准缺席时整条不渲染(不做「基准未知」的半真陈述)。
+    html+=`<div class="mp-basis">计价倍数相对 ${PRICING_BASIS} 的未缓存 token 单价</div>`;
     if(lk){
       const cta = state==='out' ? '登录后解锁 8+ 旗舰代理模型 →' : '充值后继续使用代理模型 →';
       html+=`<div class="mp-cta" data-act="${state==='out'?'login':'recharge'}">${I.lock} ${cta}</div>`;
@@ -305,7 +314,7 @@ function handleAct(mp,act,e){
       const meta = idx>=0 ? PRESETS[idx] : {letter:'⚙',color:'#52525b'};
       const provName = idx>=0 ? PRESETS[idx].name : (mp.querySelector('[data-f="name"]').value||'自定义端点');
       // 每个 model id 落成「国内直连 / 自定义」里的一行(诉求:N 个 id → N 行)
-      ids.forEach(id=> DOMESTIC.push({prov:'custom',letter:meta.letter,color:meta.color,name:id,sub:provName,tier:'std'}));
+      ids.forEach(id=> DOMESTIC.push({prov:'custom',letter:meta.letter,color:meta.color,name:id,sub:provName}));
       toast(`→ window.api.providers.add()  已保存 ${ids.length} 个模型 · provider.add 即时生效`);
       mp.classList.remove('step2','adding'); mp.querySelector('[data-addfoot]').style.display='none';
       relist(mp);
@@ -397,7 +406,7 @@ document.getElementById('legend').innerHTML=[
   ['②','账户 banner','登录态唯一行动入口:登录/充值/订阅;四态 member·balance·empty·out。'],
   ['③','代理组 · 经 ALPHA 代理','组标题统一表达「这些经 ALPHA 代理」,行内不再重复「经代理」;永远可见,未登录/余额不足时 dim + 点行触发登录/充值。'],
   ['④','国内直连(只显已配置)','一个 model id 一行,便于切换;未配置的供应商不在此显示,经底部入口接入。'],
-  ['⑤','tier + 倍率','旗舰×8/高级×3/标准×1 规则化;仅代理显倍率(BYOK 自付不计)。'],
+  ['⑤','计价倍数(平台下发)','代理行显示网关下发的输入/输出**双倍数**,相对基准模型的未缓存 token 单价;没有可信数据时明说「计价信息暂不可用」,绝不合成。BYOK 自付,不显示任何倍数。'],
   ['⑥','自定义 + 测试','已知供应商只填 Key——模型由内置目录(provider→id 映射)自动列出,无需手输;只有自定义端点才手填 model id;支持「测试连接」;保存后每个 id 一行。'],
 ].map(([n,t,d])=>`<div class="lg"><span class="num">${n}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('');
 
