@@ -356,7 +356,9 @@ export function useExtensions(
     if (r.mcpActivation?.status === "connected") return { ok: true }
     if (r.mcpActivation?.status === "disabled") return { ok: true, reason: "installed-disabled" }
     if (r.mcpActivation?.status === "reload-pending") return { ok: true, reason: "reload-pending" }
-    return { ok: false, reason: "MCP 已安装，但即时连接失败" }
+    // 返回稳定 reason code 而非文案:本 hook 不持有 i18n(全文件零 `t()`),
+    // 文案由 extension-hub 映射,与 installed-disabled / slow / reload-pending 同形态。
+    return { ok: false, reason: "connect-failed" }
   }
 
   // 未策展自定义连接器的 live 段;catalog 连接器由 main 重载 `{file:}` 引用。
