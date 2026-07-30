@@ -34,20 +34,22 @@ review_after: 2026-10-29
 ```
 $ bun test ./src/main/models-catalog-v2.wiring.cases.ts     # (packages/ui-mac)
  4 pass
- 3 fail
+ 4 fail
 exit=1
 ```
 
-三条红,以及它们各自证明的东西:
+四条红,以及它们各自证明的东西:
 
 - `production IPC refreshes through the V2 fetch decoder and returns the persisted projection`
   —— `expect(live.error).toBeUndefined()` 收到 `"contract-incompatible"`:V1 decoder 拒了真实的 V2 响应,
   于是**生产入口再也拿不到平台的价格**。
+- `提交给平台 cutover gate 的 consumer pin,经生产入口跑通全链` —— 同因:本仓声称已切到 V2 的那份 pin,
+  在 V1 生产入口下跑不通。
 - `已有合法 LKG 时,一次 V1 响应也不得把它降级` —— `ENOENT … alpha-live-models.json`:根本没有 LKG
   被写出来。
 - `有效 LKG:两侧 id 列表逐项相等` —— 引擎配置退回本地静态 9 行,而不是平台的 12 行。
 
-复原后重跑,`7 pass / 0 fail`;`git status` 干净(三份文件按备份逐字节还原,无残留)。
+复原后重跑,`8 pass / 0 fail`;三份文件按备份逐字节还原,`git diff` 无残留。
 
 ## 这次 inversion 没有覆盖的
 

@@ -28,8 +28,6 @@ import * as fs from "node:fs"
 import { writeFileAtomicSync } from "./ext-atomic-fs"
 import type { PlatformModel, PricingMultiplier } from "../shared/alpha-model-types"
 
-export type { PricingMultiplier }
-
 /** 快照里的一行:id 与 pricing 是远端权威,展示元数据一律不进快照。 */
 export type CatalogSnapshotModel = {
   id: string

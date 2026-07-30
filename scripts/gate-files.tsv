@@ -32,7 +32,7 @@
 
 # ── contracts-consumer ────────────────────────────────────────────────────────
 15	packages/alpha-contracts-consumer	src/contracts.test.ts	-	vendored Alpha 契约的哈希锁:契约被改写/替换即红
-8	packages/alpha-contracts-consumer	src/model-catalog-v2-consumer.test.ts	-	#681:ModelCatalogV2 独立 pin 的哈希锁 + 「V1 catalog decoder 已不存在」的机械证据 + 提交给平台 cutover gate 的 consumer pin 真经出货 decoder 解过
+10	packages/alpha-contracts-consumer	src/model-catalog-v2-consumer.test.ts	-	#681:契约 pin 只接受 40 位 hex 的真 sha(占位 sentinel 判红,枚举全部 lock)+ ModelCatalogV2 独立 pin 的哈希锁 + 「V1 catalog decoder 已不存在」的机械证据。下界=实际条数 10,不留余量:留余量则删一格仍能过
 
 # ── ext ──────────────────────────────────────────────────────────────────────
 20	packages/ext	src/prompt-rebrand.test.ts	-	REQ-062 prompt 改名 drift lock:上游 sync 重写基础 prompt 即红
@@ -49,7 +49,7 @@
 4	packages/ui-mac	src/main/extension-seed-snapshot.test.ts	-	REQ-102 packaged seed 快照漂移守卫(禁手编 seed)
 12	packages/ui-mac	src/main/alpha-web-contract-fixtures.test.ts	-	alpha-web 契约 fixture 锁:契约面变形即红
 1	packages/ui-mac	src/main/alpha-contract-health.test.ts	-	契约失败必须以持久 role=alert 横幅暴露(接线锚点)
-1	packages/ui-mac	src/main/models-catalog-v2.wiring.test.ts	-	#681/ADR-039 §4:起子进程跑 models-catalog-v2.wiring.cases.ts(mock electron 跑真 registerModelsIpcHandlers),从真实 models-catalog / models-platform-live 入口观察 V2 fetch→decoder→原子 LKG→投影,含「喂 V1 响应必须无 basis 无 pricing」的持久 negative gate 与 sidecar/IPC 反分叉。本文件直接执行判据并钉住子进程用例条数下界 7,故 delegates_to = '-'
+1	packages/ui-mac	src/main/models-catalog-v2.wiring.test.ts	-	#681/ADR-039 §4:起子进程跑 models-catalog-v2.wiring.cases.ts(mock electron 跑真 registerModelsIpcHandlers),从真实 models-catalog / models-platform-live 入口观察 V2 fetch→decoder→原子 LKG→投影,含「喂 V1 响应必须无 basis 无 pricing」的持久 negative gate 与 sidecar/IPC 反分叉。另含「consumer pin 必须经生产入口跑通全链」(schema 不表达 0.1 网格,只验 schema 会让平台闸接受一份 Desktop 跑不动的 pin)。本文件直接执行判据并钉住子进程用例条数下界 8,故 delegates_to = '-'
 4	packages/ui-mac	src/main/gate-file-registry.test.ts	-	本登记簿自身的完备性闸:新增闸门文件未登记即红
 45	packages/ui-mac	src/main/ext-receipt-v2.test.ts	-	受托:REQ-100 账本 decoder 强度 + 派生锁步(gen-skill-paths 的主判据)
 24	packages/ui-mac	src/main/sidecar-env.test.ts	-	受托:sidecar env 白名单真实判据(websearch-copies 的 env 半场)

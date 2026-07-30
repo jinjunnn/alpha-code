@@ -8,6 +8,8 @@
 // 判据必须从真实 IPC 用户入口出发。子进程里有一条**持久 negative gate**(V1 响应 → 无 basis、
 // 无 pricing、contract-health 亮),把 alpha-platform-models.ts 的 decodeJsonContract 改回
 // ModelCatalogV1 会让本闸变红;2026-07-29 实测过一次(docs/verification/2026-07-29-req127-681-v2-cutover/)。
+// 子进程里还有一条:本仓提交给平台 cutover gate 的 consumer pin 必须**经生产入口跑通全链** ——
+// schema 不表达「倍数落在 0.1 网格」,只验 schema 会让平台闸接受一份 Desktop 实际跑不动的 pin。
 import { expect, test } from "bun:test"
 import { join } from "node:path"
 
@@ -19,6 +21,6 @@ test("production IPC refreshes through the V2 fetch decoder and returns the pers
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain("7 pass")
+  expect(output).toContain("8 pass")
   expect(output).toContain("0 fail")
 })

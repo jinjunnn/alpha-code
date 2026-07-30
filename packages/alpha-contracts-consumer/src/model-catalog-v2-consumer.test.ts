@@ -9,10 +9,12 @@
 //      不是一份声称兼容的散文。
 //
 // ⚠️ 未换真 pin(2026-07-29):platform#138 尚未发布 contracts/v2,vendor/ 下两份字节是本仓
-// 按已批基线自制的占位,`commit` 是哨兵字符串而非 sha。真 artifact 发布后重跑 vendor 并
-// 更新下面的 commit 断言 —— **换完才可合并**(PR 描述里写死这条)。
+// 按已批基线自制的占位,`commit` 是哨兵字符串而非 sha。**下面第一条用例因此现在就是红的,那是
+// 有意的** —— 占位 pin 必须由机器拦住,而不是靠 PR 描述里一句话。真 artifact 发布后:staged
+// checkout → `bun run vendor` → 换脚本里的 `commit` 常量,这条自然转绿。
 
 import { createHash } from "node:crypto"
+import { readdirSync } from "node:fs"
 import { resolve } from "node:path"
 import { describe, expect, test } from "bun:test"
 import { ContractIncompatibleError, decodeContract, decodeJsonContract, validateFixture } from "./index"
@@ -20,7 +22,6 @@ import { ContractIncompatibleError, decodeContract, decodeJsonContract, validate
 const root = resolve(import.meta.dir, "..")
 const vendor = resolve(root, "vendor/alpha-platform-model-catalog")
 const LOCK = "alpha-platform-model-catalog.lock.json"
-const PENDING_COMMIT = "pending-alpha-platform-138-model-catalog-v2-publish"
 const PRODUCER = "contracts/v2/fixtures/producer/model-catalog.json"
 
 const vendored = async (path: string) => Bun.file(resolve(vendor, path)).json()
@@ -30,6 +31,26 @@ const wire = (value: unknown) => JSON.stringify(value)
 const producerValue = async () => structuredClone((await vendored(PRODUCER)).value)
 
 describe("ModelCatalogV2 的独立 immutable pin", () => {
+  // 占位 pin 必须由**机器**拦住。此前这里断言 `commit === "pending-…"`,于是整条 CI 对着一个哨兵
+  // 字符串报绿 —— 闸门正向接受了它要拦的东西,只剩 PR 描述里一句话防误合。判据因此反过来:pin 只
+  // 接受 40 位 hex 的 immutable sha。
+  //
+  // **枚举全部 lock,而不是点名两个**:新增一份 pin 默认被这条覆盖,不依赖谁记得来加一行。
+  test("每一份契约 pin 都解析到真实 immutable commit —— 占位 sentinel 一律判红", async () => {
+    const locks = readdirSync(root).filter((name) => name.endsWith(".lock.json")).sort()
+    // 前提自检:glob 坏掉/锁被删光时,本条必须红而不是空绿。
+    expect(locks.length, "契约 lock 文件枚举为空 —— 本闸变成了空闸").toBeGreaterThanOrEqual(3)
+    for (const name of locks) {
+      const { commit } = (await Bun.file(resolve(root, name)).json()) as { commit: string }
+      expect(commit, `${name}:占位 pin 未换成真 sha —— 上游 artifact 尚未发布,**不得合并**`).not.toStartWith(
+        "pending-",
+      )
+      expect(commit, `${name}:pin 的 commit 必须是 40 位 hex 的 immutable sha,实际是 "${commit}"`).toMatch(
+        /^[0-9a-f]{40}$/,
+      )
+    }
+  })
+
   test("catalog pin 与 V1 bundle 是两条独立的锁,且逐文件哈希对得上", async () => {
     const lock = (await Bun.file(resolve(root, LOCK)).json()) as {
       repo: string
@@ -37,7 +58,6 @@ describe("ModelCatalogV2 的独立 immutable pin", () => {
       files: Array<{ path: string; sha256: string }>
     }
     expect(lock.repo).toBe("jinjunnn/alpha-platform")
-    expect(lock.commit).toBe(PENDING_COMMIT)
     expect(lock.files.map((file) => file.path).sort()).toEqual([PRODUCER, "contracts/v2/model-catalog.schema.json"])
     for (const file of lock.files) {
       const bytes = new Uint8Array(await Bun.file(resolve(vendor, file.path)).arrayBuffer())

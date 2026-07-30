@@ -4,11 +4,11 @@
   "files": [
     {
       "path": "contracts/v2/model-catalog.schema.json",
-      "sha256": "0d860c23d5de7e0df0d27879dc49df71b9ec1eb95d1fbdda196b765696769bcf"
+      "sha256": "152232c6aa266f30b2c78aefadbf00f32e4f93d574e6afd9f1b97bb8e763587e"
     },
     {
       "path": "contracts/v2/fixtures/producer/model-catalog.json",
-      "sha256": "85f257fc71311b5034846e5ffbb9e7981314d3252acd18e22e36510bf1f1f271"
+      "sha256": "5b706b78a0efc6321c954a1440710e2d01c636650366e24e9edd92a8a2175c39"
     }
   ]
 }

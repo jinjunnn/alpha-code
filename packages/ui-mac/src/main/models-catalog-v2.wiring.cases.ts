@@ -94,6 +94,14 @@ const PRODUCER_FIXTURE = join(
   "../../../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v2/fixtures/producer/model-catalog.json",
 )
 const catalogV2 = (): any => structuredClone(JSON.parse(readFileSync(PRODUCER_FIXTURE, "utf8")).value)
+// 本仓提交给平台 cutover gate 的 consumer pin。它必须能真的**跑通生产链路**,而不只是过 schema:
+// schema 表达不了「倍数落在 0.1 网格」,所以一份 5.45 这样的 pin 可以 schema 合法、被平台闸接受,
+// 却被 Desktop 的 isTrustedPair 整份拒绝 —— 那时闸就是假的。下面那条用例把它当 fetch body 走完整链。
+const CONSUMER_PIN = join(
+  import.meta.dir,
+  "../../../alpha-contracts-consumer/fixtures/consumers/alpha-code-681/model-catalog-v2.json",
+)
+const consumerPin = (): any => structuredClone(JSON.parse(readFileSync(CONSUMER_PIN, "utf8")).value)
 const CATALOG_V1 = {
   schema_version: 1,
   object: "list",
@@ -172,6 +180,26 @@ describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持�
     expect(after.platformModels.some((m) => m.pricing!.input !== m.pricing!.output)).toBe(true)
     // BYOK 段照旧完整(#595 失败域隔离不因代际切换退化)。
     expect(after.byokProviders.map((p) => p.id)).toEqual(getModelCatalog().byokProviders.map((p) => p.id))
+  })
+
+  // 提交给平台 cutover gate 的那份 pin,必须**真的能被这台 Desktop 跑起来**。只断言它过 schema
+  // 是不够的:schema 不表达「倍数落在 0.1 网格」,一份 `5.45` 的 pin 会过 decoder、过既有 pin 断言,
+  // 却在生产的 isTrustedPair 上被整份拒绝 —— 平台闸于是接受了一份 Desktop 跑不动的 pin。
+  // 这条把 pin 当真实响应体喂进生产入口,走完 fetch → decoder → 后置语义校验 → LKG → 投影。
+  test("提交给平台 cutover gate 的 consumer pin,经生产入口跑通全链(schema 之外的语义也过)", async () => {
+    stubFetch(consumerPin())
+    const live = await invokePlatformLive()
+    expect(live.error, "consumer pin 被生产链路拒绝 —— 这份 pin 不能提交给平台 cutover gate").toBeUndefined()
+    expect(existsSync(liveAllowlistPath(userData))).toBe(true)
+
+    const catalog = invokeCatalog()
+    expect(catalog.pricingBasisModelId).toBe("deepseek-v4-flash")
+    expect(catalog.platformModels.length).toBe(12)
+    // 每一行都带着平台的 pair 落到 IPC —— 少一行都说明 pin 里有生产跑不动的数据。
+    expect(catalog.platformModels.every((model) => model.pricing !== undefined)).toBe(true)
+    // pin 的每一行倍数逐字段原样穿过整条链(不 rounding、不折叠)。
+    const wire = new Map<string, unknown>(consumerPin().data.map((m: any) => [m.id, m.pricing_multiplier]))
+    for (const model of catalog.platformModels) expect(model.pricing, model.id).toEqual(wire.get(model.id))
   })
 
   // ── 反向闸(持久 negative gate)。把生产入口改回 V1,这条必须红。 ──────────────────────

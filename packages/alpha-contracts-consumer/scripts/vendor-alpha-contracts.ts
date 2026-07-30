@@ -51,8 +51,10 @@ const UPSTREAMS = [
     //
     // ⚠️ 未换真 pin。`commit` 是**哨兵字符串而不是 sha**:platform#138 尚未发布 contracts/v2,
     // 下面 vendored 的两份字节是本仓按已批基线(alpha-platform docs/design/2026-07-29-req127-model-
-    // pricing-multipliers.md §2.3)自制的占位。真 artifact 发布后:staged checkout → `bun run vendor`
-    // → 换 `commit` 常量 → 更新 model-catalog-v2-consumer.test.ts 的 commit 断言。**换完才可合并。**
+    // pricing-multipliers.md §2.3)自制的占位。**这个占位由机器拦着**:
+    // model-catalog-v2-consumer.test.ts 要求每一份 lock 的 commit 都是 40 位 hex 的真 sha,所以
+    // 分支现在是红的 —— 那是正确状态,不是待修的失败。真 artifact 发布后两步转绿:
+    // staged checkout → `bun run vendor`(重写 vendored 字节与 lock)→ 把下面的 `commit` 换成真 sha。
     repo: "jinjunnn/alpha-platform",
     commit: "pending-alpha-platform-138-model-catalog-v2-publish",
     lock: "alpha-platform-model-catalog.lock.json",
