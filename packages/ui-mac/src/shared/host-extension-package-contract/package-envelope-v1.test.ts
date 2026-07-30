@@ -403,6 +403,9 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       expect(calls.fetch, item.name).toBe(1)
       expect(calls.decoder, item.name).toBe(1)
       expect(calls.planner, item.name).toBe(1)
+      // CONTRACT.md 把 secret 前置作为固定顺序第 5 步公开承诺,而它只应在 package 真的派生出
+      // alpha.secret-prerequisite.v1 时触发。少了这条断言,整个 secret 阶段可以被删掉而全绿。
+      expect(calls.secret, item.name).toBe(item.name === "mcp-local-v1" ? 1 : 0)
     }
   })
 
