@@ -10,10 +10,11 @@ import {
 const PLATFORM = "alpha"
 const CATALOG: ModelResolveCtx["catalog"] = {
   defaultModel: null,
+  defaultPlatformModel: "deepseek-v4-flash",
   platformModels: [
-    { id: "claude-fable-5", name: "Claude Fable 5", tier: "flag", variants: { 高: {} } },
-    { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6", tier: "pro", variants: { 低: {}, 中: {}, 高: {} } },
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", tier: "std" },
+    { id: "claude-fable-5", name: "Claude Fable 5", variants: { 高: {} } },
+    { id: "claude-sonnet-5", name: "Claude Sonnet 5", variants: { 低: {}, 中: {}, 高: {} } },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
   ],
 }
 
@@ -28,11 +29,12 @@ const ctx = (over: Partial<ModelResolveCtx>): ModelResolveCtx => ({
   ...over,
 })
 
-const proxyModel = { providerID: PLATFORM, id: "claude-sonnet-4.6" }
+const proxyModel = { providerID: PLATFORM, id: "claude-sonnet-5" }
 const dsModel = { providerID: "deepseek", id: "deepseek-chat" }
 const engineWithProxy = [
-  { providerID: PLATFORM, id: "claude-sonnet-4.6" },
+  { providerID: PLATFORM, id: "claude-sonnet-5" },
   { providerID: PLATFORM, id: "claude-fable-5" },
+  { providerID: PLATFORM, id: "deepseek-v4-flash" },
 ]
 const engineWithDs = [{ providerID: "deepseek", id: "deepseek-chat" }]
 
@@ -94,19 +96,78 @@ describe("resolveDefaultModel(第②③④级:自动默认)", () => {
   test("引擎未就绪(空表)→ wait(调用方有界重试)", () => {
     expect(resolveDefaultModel(ctx({ loggedIn: true, accountUsable: true })).kind).toBe("wait")
   })
-  test("② 登录+可用+代理已注册 → catalog 默认档(defaultModel 空 → 非旗舰带档位,绝不 ×8)", () => {
+  test("② 登录+可用+代理已注册 → 目录显式声明的那个平台模型(而不是顺序或价格挑出来的)", () => {
     const r = resolveDefaultModel(ctx({ loggedIn: true, accountUsable: true, engineModels: engineWithProxy }))
     expect(r).toEqual({
       kind: "model",
-      model: { providerID: PLATFORM, id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6", variants: ["低", "中", "高"] },
+      model: { providerID: PLATFORM, id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", variants: [] },
     })
   })
-  test("② defaultModel 显式指定且带档位 → 按指定选", () => {
-    const cat = { ...CATALOG!, defaultModel: "claude-fable-5" }
+  test("② 换一个声明就换一个默认(声明是唯一旋钮;带 variants 的照样能当默认)", () => {
+    const cat = { ...CATALOG!, defaultPlatformModel: "claude-fable-5" }
     const r = resolveDefaultModel(
       ctx({ loggedIn: true, accountUsable: true, engineModels: engineWithProxy, catalog: cat }),
     )
-    expect(r.kind === "model" && r.model.id).toBe("claude-fable-5")
+    expect(r).toEqual({
+      kind: "model",
+      model: { providerID: PLATFORM, id: "claude-fable-5", name: "Claude Fable 5", variants: ["高"] },
+    })
+  })
+
+  // #679 —— 这一组是本票的核心不变量:**默认解析不得看见价格,也不得看见顺序**。
+  // 本地档位删除前,第 ② 级是「非旗舰的第一个带档位的模型」;那既是价格判断,也是顺序判断。
+  describe("#679:默认解析与价格、与目录顺序都无关", () => {
+    const declared = (over: Partial<NonNullable<ModelResolveCtx["catalog"]>> = {}) =>
+      resolveDefaultModel(
+        ctx({
+          loggedIn: true,
+          accountUsable: true,
+          engineModels: engineWithProxy,
+          catalog: { ...CATALOG!, ...over },
+        }),
+      )
+    const pickedId = (r: ReturnType<typeof resolveDefaultModel>) => (r.kind === "model" ? r.model.id : r.kind)
+
+    test("目录顺序反过来,选中的还是同一个", () => {
+      expect(pickedId(declared({ platformModels: [...CATALOG!.platformModels].reverse() }))).toBe("deepseek-v4-flash")
+    })
+
+    test("给声明的那个模型挂上全场最贵的倍数,结论不变(解析链根本读不到 pricing)", () => {
+      // 刻意把 pricing 塞进目录条目 —— ctx 的类型里没有它,所以这是「万一将来漏进来」的实测。
+      const priced = CATALOG!.platformModels.map((model) => ({
+        ...model,
+        pricing: model.id === "deepseek-v4-flash" ? { input: 71.4, output: 178.6 } : { input: 1, output: 1 },
+      })) as NonNullable<ModelResolveCtx["catalog"]>["platformModels"]
+      expect(pickedId(declared({ platformModels: priced }))).toBe("deepseek-v4-flash")
+      expect(pickedId(declared({ platformModels: [...priced].reverse() }))).toBe("deepseek-v4-flash")
+    })
+
+    test("声明缺席(null)→ 不回落到任何平台模型,直接降级", () => {
+      expect(declared({ defaultPlatformModel: null }).kind).toBe("none")
+    })
+
+    test("声明的 id 不在生效目录中(被 edition 白名单筛掉)→ 同样不回落,反序也一样", () => {
+      expect(declared({ defaultPlatformModel: "model-that-edition-filtered-out" }).kind).toBe("none")
+      expect(
+        declared({
+          defaultPlatformModel: "model-that-edition-filtered-out",
+          platformModels: [...CATALOG!.platformModels].reverse(),
+        }).kind,
+      ).toBe("none")
+    })
+
+    test("声明缺席时仍老实降级到已配 KEY 的 BYOK(不默认平台 ≠ 什么都不给)", () => {
+      const r = resolveDefaultModel(
+        ctx({
+          loggedIn: true,
+          accountUsable: true,
+          engineModels: [...engineWithProxy, ...engineWithDs],
+          configuredProviders: ["deepseek"],
+          catalog: { ...CATALOG!, defaultPlatformModel: null },
+        }),
+      )
+      expect(r.kind === "model" && r.model.providerID).toBe("deepseek")
+    })
   })
   test("未登录 → 绝不默认平台模型;有已配 KEY 的 BYOK → 降级第③级(报障核心验收)", () => {
     const r = resolveDefaultModel(

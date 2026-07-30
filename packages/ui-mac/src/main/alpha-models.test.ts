@@ -266,7 +266,9 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
     expect(opus.variants["高"]).toEqual({ reasoning: { effort: "high" } }) // OR 统一 reasoning 对象
     const mini = p.models["gpt-5.4-mini"]
     expect(mini.variants["低"]).toEqual({ reasoningEffort: "low" }) // 原生 → reasoning_effort
-    expect(p.models["claude-opus-4.8-direct"].variants).toBeUndefined() // anthropic-wire 不映射 → 诚实不定义
+    // anthropic-wire 不映射 → 诚实不定义(#679 把非规范 id `claude-opus-4.8-direct` 从本地快照
+    // 移除后,同类的取样换成仍在册的 claude-sonnet-5)。
+    expect(p.models["claude-sonnet-5"].variants).toBeUndefined()
     expect(p.models["deepseek-v4-flash"].variants).toBeUndefined()
   })
 

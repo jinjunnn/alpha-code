@@ -293,7 +293,8 @@ export function installPreloadStub() {
     "models.catalog": async () => ({
       version: "harness",
       defaultModel: null,
-      tiers: {},
+      // #679:本地目录没有价格轴了;平台自动默认的唯一依据是这个显式声明(harness 不需要默认)。
+      defaultPlatformModel: null,
       platformProvider: { id: "alpha", name: "Alpha", npm: "", pico: { letter: "A", color: "#f60" } },
       platformModels: [],
       byokProviders: [],

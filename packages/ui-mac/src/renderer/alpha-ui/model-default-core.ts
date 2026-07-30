@@ -7,8 +7,10 @@
 //
 // 解析链(REQ-069 需求档,每级不满足才降级):
 //   1. 当前 session 选择 —— 先过 checkSelectedModel;不可用 → 挂起并如实说明。
-//   2. 已登录 + 账户可用 + 代理已注册 → catalog 默认档(REQ-056 语义原样保留,含单测锁定的
-//      「绝不默认到 ×8 旗舰」兜底)。
+//   2. 已登录 + 账户可用 + 代理已注册 → 目录**显式声明**的那个平台模型(catalog.defaultPlatformModel)。
+//      REQ-127 #679:这一级此前按本地档位挑「非旗舰的第一个」,而本地档位已被删除 —— 解析链不再
+//      看得见任何价格,也不许再看见。声明缺席、或声明的 id 不在生效目录中 ⇒ **不默认平台模型**,
+//      直接降级。绝不「挑一个便宜的」或「挑第一个」:客户端没有价格权威,任何挑选都是在重新发明它。
 //   3. 已配 KEY 的 BYOK provider → 其引擎注册的第一个模型(「上次使用」排序由第 1 级承担,MVP 不重复)。
 //   4. 全无 → none:composer 保持引导占位,picker 内登录/配 KEY 双出口,发送前 preflight 拦截。
 
@@ -36,7 +38,10 @@ export type ModelResolveCtx = {
   localKeyedByokProviders: string[]
   catalog: {
     defaultModel: string | null
-    platformModels: Array<{ id: string; name: string; tier: string; variants?: Record<string, unknown> }>
+    /** #679:平台代理自动默认的**唯一**依据,裸 model id。null / 不在 platformModels 中 ⇒ 不默认。 */
+    defaultPlatformModel: string | null
+    /** 刻意**不含** pricing:解析链根本不该看见价格 —— 看得见就迟早会拿它排序。 */
+    platformModels: Array<{ id: string; name: string; variants?: Record<string, unknown> }>
   } | null
 }
 
@@ -68,17 +73,16 @@ export type DefaultResolution = { kind: "model"; model: ResolvedModel } | { kind
 export function resolveDefaultModel(ctx: ModelResolveCtx): DefaultResolution {
   if (!ctx.engineModels.length) return { kind: "wait" }
 
-  // ② 代理默认(REQ-056 原样):登录 + 账户可用 + 代理 provider 已在引擎注册
+  // ② 代理默认:登录 + 账户可用 + 代理 provider 已在引擎注册
   const cat = ctx.catalog
   if (cat && ctx.platformProviderId && ctx.loggedIn && ctx.accountUsable) {
     const pid = ctx.platformProviderId
     if (ctx.engineModels.some((e) => e.providerID === pid)) {
-      const hasTiers = (m: (typeof cat.platformModels)[number]) => !!m.variants && Object.keys(m.variants).length > 0
-      // 偏好显式钉死:生效 catalog 的模型顺序随网关 live 清单漂移,不能拿"第一个"当默认。
-      const pick =
-        cat.platformModels.find((m) => m.id === (cat.defaultModel ?? "claude-sonnet-4.6") && hasTiers(m)) ??
-        cat.platformModels.find((m) => m.tier !== "flag" && hasTiers(m)) ?? // 兜底:非旗舰带档位,绝不默认到 ×8
-        cat.platformModels.find(hasTiers)
+      // 偏好显式钉死,且**只有**这一条路径:生效 catalog 的模型顺序随网关 live 清单漂移,
+      // 拿「第一个」当默认是拿顺序冒充偏好;拿价格挑更糟 —— 那需要一个客户端不再拥有的权威。
+      // 声明的 id 被 edition 白名单筛掉时同样落空,于是老实降级(第 ③/④ 级),不替平台做主。
+      const declared = cat.defaultPlatformModel
+      const pick = declared ? cat.platformModels.find((m) => m.id === declared) : undefined
       if (pick)
         return {
           kind: "model",

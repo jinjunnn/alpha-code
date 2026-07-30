@@ -108,13 +108,14 @@ export function writeCatalogSnapshot(userDataPath: string, snapshot: CatalogSnap
 
 /** 平台段的**唯一**投影。picker(getEffectiveCatalog)与 sidecar(buildAlphaModelConfig)必须都走这里。
  *
- *  远端 authority:id 与 pricing 一律来自快照;本地只补 name/tier/reasoning/web/variants 这些展示元数据。
+ *  远端 authority:id 与 pricing 一律来自快照;本地只补 name/reasoning/web/variants 这些展示元数据。
  *  逐字段显式构造 —— 本地对象**从不**被 spread 进来,结构上无法覆盖远端字段。
  *
  *  `local` 由调用方传入(本模块不 import alpha-models.ts,避免循环依赖)。
  *
- *  [#681 定稿边界] `tier` 在本票**照旧构造**(未知模型仍 "std")—— 它当前是必填字段,而 renderer
- *  仍在读 `catalog.tiers[model.tier]`。删掉本地档位与未知模型 std 兜底是 #679 的职责。 */
+ *  [#679] 本地目录里**已经没有任何价格轴**。此前这里为快照里没被本地收录的模型合成一个最便宜的
+ *  档位,于是「平台刚上线的 71.4×/178.6× 模型」在选择器上显示成「标准 ×1」—— 合成一个价格主张
+ *  比不显示更坏。现在未知模型只降级 `name`(用 id 本名),价格仍是平台原值。 */
 export function projectPlatformModels(
   local: readonly PlatformModel[],
   snapshot: CatalogSnapshot | null,
@@ -126,7 +127,6 @@ export function projectPlatformModels(
     return {
       id: remote.id,
       name: meta?.name ?? remote.id,
-      tier: meta?.tier ?? ("std" as const), // ← #679 删这一行
       ...(meta?.reasoning ? { reasoning: true } : {}),
       ...(meta?.web ? { web: true } : {}),
       ...(meta?.variants ? { variants: meta.variants } : {}),

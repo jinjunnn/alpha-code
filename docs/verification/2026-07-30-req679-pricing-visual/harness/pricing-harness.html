@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REQ-127 #679 · 模型选择器计价二态 视觉 harness</title>
+
+<!--
+  静态 harness。**逐字加载现役生产 CSS**(相对路径直指 packages/ui-mac/src/renderer/…),
+  不复制、不改写 —— 复制一份 CSS 来截图,截的就不是产品了。
+  DOM 逐节点复刻 ModelPickPop 的行结构(alpha-composer-model.tsx 的 <ModelRow/> + 组头 + 基准说明):
+      .a-mpp > .a-pop-label
+             > .a-mpp-basis
+             > button.a-pop-item.a-mpp-row[data-group]
+                 > span.a-pico
+                 > span.a-mpp-name > small
+                 > span.a-mpp-dot            (reasoning)
+                 > span.a-pop-desc *         (statusParts():reason? + 计价二态)
+  只要生产 CSS 或类名变了,这份 harness 会跟着变形 —— 那正是它该有的行为。
+
+  用法(**由主 session 在本机执行,严禁在沙箱里起浏览器**):
+      file://…/pricing-harness.html?theme=light&state=available
+  参数:
+      theme  = light | dark
+      state  = available | unavailable | mixed | reason | narrow
+      locale = zh | en
+-->
+<link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/alpha-ui/tokens.css">
+<link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/alpha-ui/base.css">
+<link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/alpha-ui/home.css">
+<link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/alpha-ui/alpha-composer.css">
+<style>
+  /* harness 自身的排版 —— 与被测样式无交集(前缀 hz-),且绝不覆盖任何 a-* 选择器。 */
+  body { margin: 0; background: var(--a-bg); color: var(--a-text); font-family: var(--a-font-sans); }
+  .hz-stage { padding: 24px; display: flex; flex-direction: column; gap: 20px; align-items: flex-start; }
+  .hz-cap { font-size: 12px; color: var(--a-text-tertiary); font-family: var(--a-font-mono); }
+  /* 弹层在生产里是 absolute 定位的浮层;截图时让它静态排布,尺寸约束照抄生产值。 */
+  .hz-pop { position: static !important; animation: none !important; }
+  .hz-narrow { max-width: 360px; }
+</style>
+</head>
+<body>
+<div class="hz-stage" id="stage"></div>
+
+<script>
+const params = new URLSearchParams(location.search)
+const theme = params.get("theme") === "dark" ? "dark" : "light"
+const state = params.get("state") || "available"
+const locale = params.get("locale") === "en" ? "en" : "zh"
+document.documentElement.dataset.colorScheme = theme
+
+// 文案逐字取自 src/renderer/i18n/{zh,en}.ts 的 alpha.model.* —— harness 不自己发明文案。
+const T = {
+  zh: {
+    platformGroup: "代理节点 · 经 Alpha 代理",
+    byokGroup: "国内直连 · 自带 KEY(BYOK)",
+    basis: (m) => `计价倍数相对 ${m} 的未缓存 token 单价`,
+    pair: (i, o) => `输入 ${i}× · 输出 ${o}×`,
+    unavailable: "计价信息暂不可用",
+    needsCredit: "余额不足",
+    keyMissing: "未配置 KEY · 点击配置",
+  },
+  en: {
+    platformGroup: "Proxy models · via Alpha",
+    byokGroup: "Direct providers · your own key (BYOK)",
+    basis: (m) => `Multipliers are relative to ${m} uncached token pricing`,
+    pair: (i, o) => `In ${i}× · Out ${o}×`,
+    unavailable: "Pricing unavailable",
+    needsCredit: "Insufficient balance",
+    keyMissing: "No key configured · click to configure",
+  },
+}[locale]
+
+const BASIS = "DeepSeek V4 Flash"
+// 平台目录真值(= contracts 的 producer fixture)。最长串在 claude-fable-5 上。
+const PLATFORM = [
+  { name: "Claude Opus 4.8", id: "claude-opus-4.8", reasoning: true, pricing: [35.7, 89.3] },
+  { name: "Claude Fable 5", id: "claude-fable-5", pricing: [71.4, 178.6] },
+  { name: "Claude Sonnet 5", id: "claude-sonnet-5", pricing: [21.4, 53.6] },
+  { name: "Claude Haiku 4.5", id: "claude-haiku-4.5", pricing: [7.1, 17.9] },
+  { name: "GPT-5.4 Mini", id: "gpt-5.4-mini", reasoning: true, pricing: [5.4, 16.1] },
+  { name: "GPT-5.4 Nano", id: "gpt-5.4-nano", pricing: [1.4, 4.5] },
+  { name: "DeepSeek V4 Pro", id: "deepseek-v4-pro", reasoning: true, pricing: [3.1, 3.1] },
+  { name: "DeepSeek V4 Flash", id: "deepseek-v4-flash", pricing: [1, 1] },
+  { name: "GLM-5.2", id: "glm-5.2", pricing: [5.4, 8.5] },
+  { name: "GLM-5 Turbo", id: "glm-5-turbo", pricing: [8.6, 14.3] },
+  { name: "Qwen3.7 Max", id: "qwen3.7-max", pricing: [10.5, 15.8] },
+  { name: "Qwen3.7 Plus", id: "qwen3.7-plus", pricing: [2.3, 4.6] },
+]
+const BYOK = [
+  { name: "DeepSeek V4 Flash", id: "deepseek-v4-flash", provider: "DeepSeek", letter: "D", color: "#2563eb" },
+  { name: "DeepSeek V4 Pro", id: "deepseek-v4-pro", provider: "DeepSeek", letter: "D", color: "#2563eb" },
+  { name: "智谱 GLM", id: "glm-5.2", provider: "智谱 GLM", letter: "智", color: "#16a34a", reason: T.keyMissing },
+]
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))
+const fixed = (n) => n.toFixed(1)
+
+/** statusParts() 的 harness 复刻:reason 在前、计价二态在后,两段各自一个 .a-pop-desc。 */
+function rowHTML(model, group, opts) {
+  const parts = []
+  if (opts.reason) parts.push(opts.reason)
+  if (group === "platform") parts.push(opts.pricing ? T.pair(fixed(opts.pricing[0]), fixed(opts.pricing[1])) : T.unavailable)
+  const label = parts.join(" · ")
+  const aria = label
+    ? `${model.name}${locale === "zh" ? "," : ", "}${opts.providerName}${locale === "zh" ? "," : ", "}${label}`
+    : `${model.name}${locale === "zh" ? "," : ", "}${opts.providerName}`
+  return `<button type="button" class="a-pop-item a-mpp-row${opts.locked ? " locked" : ""}${opts.selected ? " selected" : ""}"
+    data-group="${group}" aria-label="${esc(aria)}">
+    <span class="a-pico" style="background:${opts.color}">${esc(opts.letter)}</span>
+    <span class="a-mpp-name">${esc(model.name)}<small>${esc(model.id)}${group === "byok" ? " · " + esc(opts.providerName) : ""}</small></span>
+    ${model.reasoning ? '<span class="a-mpp-dot"></span>' : ""}
+    ${parts.map((part) => `<span class="a-pop-desc">${esc(part)}</span>`).join("")}
+  </button>`
+}
+
+function pop({ withPricing, basis, reason, narrow, includeByok }) {
+  const platform = PLATFORM.map((model, index) =>
+    rowHTML(model, "platform", {
+      color: "#4f46e5",
+      letter: "α",
+      providerName: "ALPHA",
+      pricing: withPricing ? model.pricing : undefined,
+      reason,
+      locked: !!reason,
+      selected: index === 1,
+    }),
+  ).join("")
+  const byok = includeByok
+    ? `<div class="a-pop-label">${esc(T.byokGroup)}</div>` +
+      BYOK.map((model) =>
+        rowHTML(model, "byok", {
+          color: model.color,
+          letter: model.letter,
+          providerName: model.provider,
+          reason: model.reason,
+          locked: !!model.reason,
+        }),
+      ).join("")
+    : ""
+  return `<div class="a-pop a-mpp hz-pop${narrow ? " hz-narrow" : ""}">
+    <div class="a-mpp-scroll">
+      <div class="a-pop-label">${esc(T.platformGroup)}</div>
+      ${basis ? `<div class="a-mpp-basis">${esc(T.basis(BASIS))}</div>` : ""}
+      ${platform}
+      ${byok}
+    </div>
+  </div>`
+}
+
+const FRAMES = {
+  // 有效 V2/LKG:双倍数全在,含最长串(输入 71.4× · 输出 178.6×)与最长模型名。
+  available: { caption: "available · 平台双倍数 + 基准说明", html: () => pop({ withPricing: true, basis: true }) },
+  // 无有效 V2/LKG:逐行「计价信息暂不可用」,基准说明整条不渲染。
+  unavailable: { caption: "unavailable · 无可信 pair,基准说明缺席", html: () => pop({ withPricing: false, basis: false }) },
+  // 平台组与 BYOK 组同屏:验 BYOK 行完全没有倍数、也没有「不可用」。
+  mixed: { caption: "mixed · 平台 + BYOK 同屏(BYOK 无任何计价)", html: () => pop({ withPricing: true, basis: true, includeByok: true }) },
+  // operational reason 与计价二态同时在一行上 —— 本票的 MINOR 修复点。
+  reason: { caption: "reason · 余额不足 + 计价二态同行", html: () => pop({ withPricing: true, basis: true, reason: T.needsCredit }) },
+  // 最窄弹层(生产 min-width:360px)下的挤压行为:数字不许被截,名字先让。
+  narrow: { caption: "narrow · 360px 下最长串不被截断", html: () => pop({ withPricing: true, basis: true, narrow: true }) },
+}
+
+const frame = FRAMES[state] || FRAMES.available
+document.getElementById("stage").innerHTML =
+  `<div class="hz-cap">${esc(`theme=${theme} · state=${state} · locale=${locale} — ${frame.caption}`)}</div>` + frame.html()
+</script>
+</body>
+</html>

@@ -3,9 +3,13 @@
 // imports between main and preload — only the (erased) types travel.
 //
 // Single source of truth for the catalog DATA is main/alpha-models.json (ADR-014 "config-driven,
-// no hardcode"). Edit the JSON to add/retire models, retune tier/倍率, or change presets — no code.
-
-export type Tier = "flag" | "pro" | "std"
+// no hardcode"). Edit the JSON to add/retire models, retune 展示元数据(显示名 / reasoning / web /
+// variants), or change presets — no code.
+//
+// REQ-127 #679 / ADR-039:本地目录**没有价格轴**。平台代理的计价倍数只由网关 `GET /v1/models`
+// 下发(`PlatformModel.pricing` + `EffectiveCatalog.pricingBasisModelId`);此前那套本地写死的
+// `tiers`(标准/高级/旗舰)与逐模型 `tier` 是**第二个价格权威**,并且对未收录的线上模型一律合成
+// 最便宜的一档 —— 它已被删除,不得以任何形式回来。
 
 /** A BYOK (自带 Key) provider. `builtin` ones ride opencode's models.dev catalog (whitelist only);
  *  non-builtin ones are presets surfaced in the "添加节点" flow (provider.add writes a full def). */
@@ -50,7 +54,6 @@ export type PricingMultiplier = { input: number; output: number }
 export type PlatformModel = {
   id: string
   name: string
-  tier: Tier
   /** #681:平台目录给的双倍数,**远端权威**;缺失 = 没有有效 V2/LKG,该行不得声称任何价格。
    *  本地 alpha-models.json 永远不产出它(那正是 REQ-127 要消灭的本地价格主张)。 */
   pricing?: PricingMultiplier
@@ -63,9 +66,15 @@ export type PlatformModel = {
 
 export type AlphaModelCatalog = {
   version: string
-  /** default selection "<providerID>/<modelID>" or null (null = don't force a default). */
+  /** default selection "<providerID>/<modelID>" or null (null = don't force a default).
+   *  这是**引擎 config 的 `model` 字段**(opencode 原生契约),与下面的 `defaultPlatformModel`
+   *  不是同一根轴 —— 别把两者混用。 */
   defaultModel: string | null
-  tiers: Record<Tier, { label: string; mult: string }>
+  /** #679:renderer 自动默认平台代理模型时唯一允许的依据,值是**裸 model id**(如
+   *  `"deepseek-v4-flash"`),不是 `defaultModel` 的 `"<providerID>/<modelID>"` 形态。
+   *  `null` 或该 id 不在生效目录中 ⇒ **不自动默认任何平台模型**(降级到 BYOK / 空态)。
+   *  绝不允许「挑一个便宜的」或「挑第一个」:客户端已经没有价格权威,任何挑选都是在重新发明它。 */
+  defaultPlatformModel: string | null
   /** the alpha-platform gateway provider shell (models come from platformModels). */
   platformProvider: { id: string; name: string; npm: string; pico: { letter: string; color: string } }
   platformModels: PlatformModel[]

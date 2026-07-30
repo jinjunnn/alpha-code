@@ -216,11 +216,10 @@ svg{display:block}
 .m-row .nm b{font-weight:var(--a-weight-medium);font-size:var(--a-text-sm);color:var(--a-text)}
 .m-row .nm small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
 .m-row .right{margin-left:auto;display:flex;align-items:center;gap:7px;flex:none}
-.tier{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:2px 7px;border-radius:var(--a-radius-full)}
-.tier.flag{background:rgba(217,119,6,.14);color:var(--a-warning)}  /* 唯一带色的等级 = 旗舰 */
-.tier.pro{background:var(--a-bg-inset);color:var(--a-text-secondary)}
-.tier.std{background:var(--a-bg-muted);color:var(--a-text-tertiary)}
-.mult{font-size:var(--a-text-2xs);color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
+/* REQ-127 #679:档位 chip 已删(本地没有价格轴了)。行尾只剩一个计价元素,两态:双倍数
+   或「计价信息暂不可用」。它比档位串长,所以永不换行 —— 挤压让给模型名。 */
+.mult{flex:none;white-space:nowrap;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
+.mp-basis{padding:0 8px 6px;font-size:var(--a-text-2xs);line-height:1.45;color:var(--a-text-tertiary)}
 .m-row .check{color:var(--a-accent)}
 .m-row .reason-dot{width:6px;height:6px;border-radius:50%;background:var(--a-accent);opacity:.7}
 

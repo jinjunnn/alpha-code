@@ -1,22 +1,9 @@
 {
-  "version": "2026-07-09.2",
+  "version": "2026-07-30.1",
   "_byokNote": "BYOK 目录一律用 OpenAI 兼容端点(compat:openai)。引擎机制(provider.ts apiNpm 链,S34 真机实锤):models.dev 合并进来的模型保留 models.dev 的 npm(@ai-sdk/openai-compatible),只有本目录 declared 的模型用我们的 npm——若目录配 anthropic 端点,合并模型会以 openai 拼法打 anthropic baseURL(四不像 URL)。anthropic compat 仅供用户自定义节点(自担模型清单)。",
-  "_note": "Single source of truth for alpha's model catalog (ADR-014 config-driven). Edit here to add/retire models, retune tier/倍率, or change presets — no code change. Consumed by main/alpha-models.ts (opencode config injection) and the renderer model picker (via window.api.models.catalog).",
+  "_note": "Single source of truth for alpha's model catalog (ADR-014 config-driven). Edit here to add/retire models, retune 展示元数据(显示名 / reasoning / web / variants), or change presets — no code change. Consumed by main/alpha-models.ts (opencode config injection) and the renderer model picker (via window.api.models.catalog). REQ-127 #679:平台代理的计价倍数由网关 GET /v1/models 下发(ADR-039),本文件不得出现任何价格主张。",
   "defaultModel": null,
-  "tiers": {
-    "flag": {
-      "label": "旗舰",
-      "mult": "×8"
-    },
-    "pro": {
-      "label": "高级",
-      "mult": "×3"
-    },
-    "std": {
-      "label": "标准",
-      "mult": "×1"
-    }
-  },
+  "defaultPlatformModel": "deepseek-v4-flash",
   "platformProvider": {
     "id": "alpha",
     "name": "ALPHA",
@@ -30,8 +17,8 @@
     {
       "id": "claude-opus-4.8",
       "name": "Claude Opus 4.8",
-      "tier": "flag",
       "reasoning": true,
+      "web": true,
       "variants": {
         "低": {
           "reasoning": {
@@ -51,50 +38,23 @@
       }
     },
     {
-      "id": "claude-opus-4.8-direct",
-      "name": "Claude Opus 4.8 · 直连",
-      "tier": "flag",
-      "reasoning": true
+      "id": "claude-fable-5",
+      "name": "Claude Fable 5",
+      "web": true
     },
     {
-      "id": "claude-sonnet-4.6",
-      "name": "Claude Sonnet 4.6",
-      "tier": "pro",
-      "reasoning": true,
-      "variants": {
-        "低": {
-          "reasoning": {
-            "effort": "low"
-          }
-        },
-        "中": {
-          "reasoning": {
-            "effort": "medium"
-          }
-        },
-        "高": {
-          "reasoning": {
-            "effort": "high"
-          }
-        }
-      }
+      "id": "claude-sonnet-5",
+      "name": "Claude Sonnet 5",
+      "web": true
     },
     {
       "id": "claude-haiku-4.5",
       "name": "Claude Haiku 4.5",
-      "tier": "pro"
-    },
-    {
-      "id": "gpt-5.4-search",
-      "name": "GPT-5.4 · 联网",
-      "tier": "flag",
-      "reasoning": true,
       "web": true
     },
     {
       "id": "gpt-5.4-mini",
       "name": "GPT-5.4 Mini",
-      "tier": "pro",
       "reasoning": true,
       "variants": {
         "低": {
@@ -110,19 +70,32 @@
     },
     {
       "id": "gpt-5.4-nano",
-      "name": "GPT-5.4 Nano",
-      "tier": "std"
+      "name": "GPT-5.4 Nano"
     },
     {
       "id": "deepseek-v4-pro",
       "name": "DeepSeek V4 Pro",
-      "tier": "pro",
       "reasoning": true
     },
     {
       "id": "deepseek-v4-flash",
-      "name": "DeepSeek V4 Flash",
-      "tier": "std"
+      "name": "DeepSeek V4 Flash"
+    },
+    {
+      "id": "glm-5.2",
+      "name": "GLM-5.2"
+    },
+    {
+      "id": "glm-5-turbo",
+      "name": "GLM-5 Turbo"
+    },
+    {
+      "id": "qwen3.7-max",
+      "name": "Qwen3.7 Max"
+    },
+    {
+      "id": "qwen3.7-plus",
+      "name": "Qwen3.7 Plus"
     }
   ],
   "byokProviders": [

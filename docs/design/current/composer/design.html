@@ -219,7 +219,7 @@
     <div class="sec-head">
       <div class="sec-kicker">05 · 模型选择器 ★ 核心</div>
       <h2>三层模型 · 登录解锁代理节点</h2>
-      <p class="lede">用顶部账号态开关(会员 / 仅余额 / 余额不足 / 未登录)观察差异。<strong>代理节点</strong>来自 alpha-platform(带等级 + 积分倍率),顶部有账号横幅;<strong>未登录</strong>整段硬锁引导登录,<strong>余额不足</strong>软锁引导充值/订阅。<strong>国内直连</strong>填 Key 即用(Base URL 后台托管)。<strong>自定义节点</strong>解决 OpenRouter:一个端点下挂多个自定义模型(只贴模型 ID,等级自动识别)。</p>
+      <p class="lede">用顶部账号态开关(会员 / 仅余额 / 余额不足 / 未登录)观察差异。<strong>代理节点</strong>来自 alpha-platform(带网关下发的输入/输出双倍数),顶部有账号横幅;<strong>未登录</strong>整段硬锁引导登录,<strong>余额不足</strong>软锁引导充值/订阅。<strong>国内直连</strong>填 Key 即用(Base URL 后台托管)。<strong>自定义节点</strong>解决 OpenRouter:一个端点下挂多个自定义模型(只贴模型 ID;自付 Key,不显示代理计价)。</p>
     </div>
     <div class="row">
       <div style="width:360px">
@@ -234,11 +234,12 @@
               <div class="acct-banner balance"><svg class="ic sm" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/></svg>钱包余额 ¥48.00 · 未订阅,按量扣费</div>
               <div class="acct-banner empty lockbar"><svg class="ic sm" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/></svg>余额不足 · 充值后解锁<span class="bbs"><button class="bb"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>充值</button><button class="bb ghost">订阅</button></span></div>
               <div class="acct-banner out lockbar"><svg class="ic sm" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>登录解锁代理节点 · 平台计费<button class="bb"><svg class="ic" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5M15 12H3"/></svg>登录</button></div>
-              <div class="m-row sel"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>Claude Opus 4.8</b><small>经代理 · 旗舰</small></div><div class="right"><span class="tier flag">旗舰</span><span class="mult">×8</span><svg class="ic sm check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div></div>
-              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>GPT-5.5</b><small>经代理 · 旗舰</small></div><div class="right"><span class="reason-dot" title="支持推理"></span><span class="tier flag">旗舰</span><span class="mult">×8</span></div></div>
-              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>Claude Sonnet 4.6</b><small>经代理 · 高级</small></div><div class="right"><span class="tier pro">高级</span><span class="mult">×3</span></div></div>
-              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>Gemini 3 Pro</b><small>经代理 · 高级</small></div><div class="right"><span class="tier pro">高级</span><span class="mult">×3</span></div></div>
-              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>DeepSeek V3.2</b><small>经代理 · 标准</small></div><div class="right"><span class="tier std">标准</span><span class="mult">×1</span></div></div>
+              <div class="mp-basis">计价倍数相对 DeepSeek V4 Flash 的未缓存 token 单价</div>
+              <div class="m-row sel"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>Claude Opus 4.8</b><small>经代理</small></div><div class="right"><span class="mult">输入 35.7× · 输出 89.3×</span><svg class="ic sm check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div></div>
+              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>Claude Fable 5</b><small>经代理</small></div><div class="right"><span class="reason-dot" title="支持推理"></span><span class="mult">输入 71.4× · 输出 178.6×</span></div></div>
+              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>Claude Sonnet 5</b><small>经代理</small></div><div class="right"><span class="mult">输入 21.4× · 输出 53.6×</span></div></div>
+              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>GPT-5.4 Mini</b><small>经代理</small></div><div class="right"><span class="mult">输入 5.4× · 输出 16.1×</span></div></div>
+              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>DeepSeek V4 Flash</b><small>经代理</small></div><div class="right"><span class="mult">输入 1.0× · 输出 1.0×</span></div></div>
               <!-- locked states now use the compact top banner (.acct-banner.lockbar) above; model list stays readable -->
               <p class="lock-hint" data-lockhint>登录 / 充值后可用 · 上方列表为登录后可用模型</p>
             </div>
@@ -247,8 +248,8 @@
             <div class="mp-group">
               <div class="mp-group-head"><span class="t">国内直连 · 自带 Key</span></div>
               <div class="prov-row"><span class="pico" style="background:#3b6cf6">D</span><span class="nm">DeepSeek</span><span class="st on"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>已连接 · 2 个模型</span></div>
-              <div class="m-row" style="margin-left:8px"><span class="pico" style="background:#3b6cf6">D</span><div class="nm"><b>deepseek-chat</b></div><div class="right"><span class="tier std">标准</span></div></div>
-              <div class="m-row" style="margin-left:8px"><span class="pico" style="background:#3b6cf6">D</span><div class="nm"><b>deepseek-reasoner</b></div><div class="right"><span class="reason-dot"></span><span class="tier pro">高级</span></div></div>
+              <div class="m-row" style="margin-left:8px"><span class="pico" style="background:#3b6cf6">D</span><div class="nm"><b>deepseek-chat</b></div><div class="right"></div></div>
+              <div class="m-row" style="margin-left:8px"><span class="pico" style="background:#3b6cf6">D</span><div class="nm"><b>deepseek-reasoner</b></div><div class="right"><span class="reason-dot"></span></div></div>
               <div class="prov-row"><span class="pico" style="background:#1f7a4d">智</span><span class="nm">智谱 GLM</span><span class="st off" data-pop2="setupKey">+ 添加 Key</span></div>
               <div class="prov-row"><span class="pico" style="background:#111">K</span><span class="nm">Kimi (Moonshot)</span><span class="st off" data-pop2="setupKey">+ 添加 Key</span></div>
               <div class="prov-row"><span class="pico" style="background:#7c3aed">通</span><span class="nm">通义千问 Qwen</span><span class="st off" data-pop2="setupKey">+ 添加 Key</span></div>
@@ -257,8 +258,8 @@
             <!-- custom -->
             <div class="mp-group">
               <div class="mp-group-head"><span class="t">自定义节点 · Base URL + Key</span><span class="act" data-pop2="setupCustom">+ 添加</span></div>
-              <div class="m-row"><span class="pico" style="background:#0b0b0b">OR</span><div class="nm"><b>OpenRouter · Opus 4.1</b><small class="mono">anthropic/claude-opus-4.1</small></div><div class="right"><span class="reason-dot"></span><span class="tier flag">旗舰</span></div></div>
-              <div class="m-row"><span class="pico" style="background:#0b0b0b">OR</span><div class="nm"><b>OpenRouter · Llama 4</b><small class="mono">meta-llama/llama-4-maverick</small></div><div class="right"><span class="tier std">标准</span></div></div>
+              <div class="m-row"><span class="pico" style="background:#0b0b0b">OR</span><div class="nm"><b>OpenRouter · Opus 4.1</b><small class="mono">anthropic/claude-opus-4.1</small></div><div class="right"><span class="reason-dot"></span></div></div>
+              <div class="m-row"><span class="pico" style="background:#0b0b0b">OR</span><div class="nm"><b>OpenRouter · Llama 4</b><small class="mono">meta-llama/llama-4-maverick</small></div><div class="right"></div></div>
             </div>
           </div>
           <div class="mp-foot">
@@ -268,7 +269,7 @@
       </div>
 
       <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:14px">
-        <div class="note"><b>等级(等级标签)</b>:代理模型由后台给出 <span class="mono">旗舰/高级/标准</span> 与积分倍率(×N);倍率乘进会话消耗(对接 <span class="mono">/v1/account/summary</span> 的 credits)。</div>
+        <div class="note"><b>计价倍数(REQ-127 #679 改写)</b>:代理模型的计价由网关 <span class="mono">GET /v1/models</span> 下发,形状是<strong>每个模型两个倍数</strong>(输入 / 输出),相对基准模型的未缓存 token 单价 —— <strong>不是</strong>「旗舰/高级/标准 + 单一 ×N」那种档位表,本地也不再保存任何价格。原稿那句是明确的错误设计主张:折叠成一个 scalar 对输入或输出至少有一侧必然错(claude-fable-5 是 输入 71.4× / 输出 178.6×)。没有可信数据时行内明说「计价信息暂不可用」,绝不合成一个便宜的数字。</div>
         <div class="note"><b>推理点(蓝点)</b>:标记该模型支持 effort(来自 <span class="mono">model.variants</span>);只有带点的模型,effort 控件才可用。</div>
         <div class="note warn"><b>四种账号态</b>(顶部切换,对接 <span class="mono">/v1/account/summary</span>):① <strong>会员</strong> 额度充足直接用;② <strong>仅余额</strong> 未订阅、按钱包余额按量扣;③ <strong>余额不足</strong> 软锁,提示充值/订阅;④ <strong>未登录</strong> 硬锁,提示登录。代理段随账号态变,<strong>国内直连 / 自定义始终可用</strong>(BYOK 不受影响)。</div>
         <div class="note"><b>实现说明</b>:数据来自 <span class="mono">useProviders()/useModels()</span>;代理段需在 <span class="mono">alpha-models.ts</span> 把当前单个 <span class="mono">alpha-default</span> 扩成<strong>带等级的多模型注册</strong>(已知小缺口,属构建项)。弹层为新增 alpha 组件,替换现 <span class="mono">dialog-select-model.tsx</span> 的观感。</div>
@@ -334,20 +335,19 @@
             <div class="added-model" style="margin-bottom:8px">
               <span class="pico" style="width:22px;height:22px;border-radius:6px;background:#0b0b0b;color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700">OR</span>
               <div style="display:flex;flex-direction:column;min-width:0"><b style="font-size:var(--a-text-sm)">Opus 4.1</b><span class="mono">anthropic/claude-opus-4.1</span></div>
-              <div style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="tier flag">旗舰</span><span class="reason-dot" title="支持 effort · 运行时在输入框调"></span><span style="font-size:10px;color:var(--a-text-tertiary)">effort ✓</span><button title="移除" style="width:24px;height:24px;border:0;background:transparent;color:var(--a-text-tertiary);border-radius:6px;display:grid;place-items:center"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+              <div style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="reason-dot" title="支持 effort · 运行时在输入框调"></span><span style="font-size:10px;color:var(--a-text-tertiary)">effort ✓</span><button title="移除" style="width:24px;height:24px;border:0;background:transparent;color:var(--a-text-tertiary);border-radius:6px;display:grid;place-items:center"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
             </div>
             <div class="added-model" style="margin-bottom:8px">
               <span class="pico" style="width:22px;height:22px;border-radius:6px;background:#0b0b0b;color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700">OR</span>
               <div style="display:flex;flex-direction:column;min-width:0"><b style="font-size:var(--a-text-sm)">Sonnet 4</b><span class="mono">anthropic/claude-sonnet-4</span></div>
-              <div style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="tier pro">高级</span><span class="reason-dot" title="支持 effort · 运行时在输入框调"></span><span style="font-size:10px;color:var(--a-text-tertiary)">effort ✓</span><button title="移除" style="width:24px;height:24px;border:0;background:transparent;color:var(--a-text-tertiary);border-radius:6px;display:grid;place-items:center"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+              <div style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="reason-dot" title="支持 effort · 运行时在输入框调"></span><span style="font-size:10px;color:var(--a-text-tertiary)">effort ✓</span><button title="移除" style="width:24px;height:24px;border:0;background:transparent;color:var(--a-text-tertiary);border-radius:6px;display:grid;place-items:center"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
             </div>
-            <!-- add model sub-form — 零配置:贴 ID → 自动识别 等级 + 是否支持 effort -->
+            <!-- add model sub-form — 零配置:贴 ID → 自动识别 是否支持 effort(REQ-127 #679:不再识别任何「等级」) -->
             <div style="display:flex;flex-direction:column;gap:10px;padding:12px;background:var(--a-bg-subtle);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md)">
               <div class="inp" style="background:var(--a-surface)"><span style="color:var(--a-text-tertiary);font-size:11px;white-space:nowrap">模型 ID</span><input class="mono" placeholder="provider/model-id" value="anthropic/claude-haiku-4"/></div>
               <div class="inp" style="background:var(--a-surface)"><span style="color:var(--a-text-tertiary);font-size:11px;white-space:nowrap">显示名</span><input placeholder="可留空,自动取" value="Haiku 4"/></div>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:var(--a-text-xs);color:var(--a-text-tertiary)">
                 <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-accent)"><path d="M5 12l5 5L20 7"/></svg>按 ID 自动识别:
-                <span class="tier std">标准</span>
                 <span style="display:inline-flex;align-items:center;gap:4px;opacity:.5"><span class="reason-dot" style="background:var(--a-text-tertiary)"></span>不支持 effort</span>
                 <a style="color:var(--a-accent);cursor:pointer;margin-left:2px">调整</a>
               </div>
@@ -359,7 +359,7 @@
         <div class="dlg-f"><button class="btn-ghost">取消</button><button class="btn-primary">保存节点</button></div>
       </div>
     </div>
-    <div class="note"><b>回答你的两个问题</b>:① <strong>effort 不在这里配</strong> —— 它是运行时、按任务变的选择,只在输入框的 effort 控件里调;注册表只自动记录「该模型<strong>是否支持</strong> effort」。② <strong>等级不用手填</strong> —— 按模型 ID 自动识别(opus=旗舰、sonnet=高级、其它=标准),绑定该模型、只读;BYOK 自定义的等级只是<strong>标签</strong>(不计费,区别于代理节点)。③ 运行时只做两件事:输入框下拉<strong>换模型</strong>(等级随之带出)+ effort 控件<strong>换强度</strong>;<strong>一个 Key 配多次 = 多个模型 ID</strong>,全进「自定义」分组随点随切。</div>
+    <div class="note"><b>回答你的两个问题</b>:① <strong>effort 不在这里配</strong> —— 它是运行时、按任务变的选择,只在输入框的 effort 控件里调;注册表只自动记录「该模型<strong>是否支持</strong> effort」。② <strong>没有「等级」这回事(REQ-127 #679 改写)</strong> —— 原稿说「按模型 ID 自动识别 opus=旗舰、sonnet=高级、其它=标准」,那是**猜价格**:按名字猜出来的档位与真实倍数无关,而对没见过的模型一律落到最便宜的一档。自定义节点走用户自己的 Key,压根不参与代理计价,因此<strong>不显示任何倍数</strong>;代理节点的倍数只由网关下发。③ 运行时只做两件事:输入框下拉<strong>换模型</strong>(计价随之带出)+ effort 控件<strong>换强度</strong>;<strong>一个 Key 配多次 = 多个模型 ID</strong>,全进「自定义」分组随点随切。</div>
     <div class="note" style="max-width:none"><b>落地</b>:写入用户 <span class="mono">opencode.jsonc</span> 的 <span class="mono">provider["openrouter"] = { npm:"@ai-sdk/openai-compatible", options:{ baseURL, apiKey }, models:{…} }</span>(与现有 alpha provider 同机制);每个自定义模型的 effort 写进其 <span class="mono">variants</span>。Key 入 keychain,只读注入。</div>
   </section>
 

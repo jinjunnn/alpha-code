@@ -4,7 +4,8 @@
 //
 // CONFIG-DRIVEN (ADR-014): the catalog DATA lives in ./alpha-models.json — the single source of
 // truth. This file only READS that JSON and assembles opencode's native config. Add/retire models,
-// retune tier/倍率, or change presets by editing the JSON, NOT this code.
+// retune 展示元数据(显示名 / reasoning / web / variants), or change presets by editing the JSON,
+// NOT this code. 计价倍数不在其中:它由网关 /v1/models 下发(REQ-127 #679 / ADR-039)。
 //
 // The four native levers (runtime: packages/opencode/src/provider/provider.ts):
 //   - enabled_providers: HARD allowlist. When set, ONLY these provider ids are visible.
