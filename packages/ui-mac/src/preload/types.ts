@@ -695,8 +695,7 @@ export type ElectronAPI = {
     /** 未策展 npm 插件通道(REQ-099 #305:不收 meta,同 persistMcp 理由;catalog 插件走 installCatalog)。 */
     installPlugin: (pkg: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     /** REQ-100 #311 / REQ-099 #305:main-owned catalog 安装唯一入口(mcp/plugin/skill/agent/cloud/bundle)。
-     *  liveMcp = 策略后配置 + 密钥真值(真值只可能是 renderer 本次 grants 交来的 —— 契约:main 绝不
-     *  经此回传 keychain/main 侧来源的密钥),renderer 拿去 sdk.mcp.add 免重启连接。 */
+     *  MCP durable commit 后由 main 让 engine 重载 `{file:}` 引用；result 只带 reference + status。 */
     installCatalog: (
       intent:
         | {
@@ -725,7 +724,10 @@ export type ElectronAPI = {
           kind: string
           name: string
           manifestDigest?: string
-          liveMcp?: { name: string; config: Record<string, unknown> }
+          mcpActivation?: {
+            reference: string
+            status: "connected" | "disabled" | "failed" | "reload-pending"
+          }
           installedDisabled?: true
           installed?: string[]
           skipped?: Array<{ id: string; reason: string }>

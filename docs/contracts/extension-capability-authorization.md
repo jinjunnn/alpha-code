@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-17
+last_reviewed: 2026-07-30
 review_after: 2026-10-13
 ---
 
@@ -164,6 +164,22 @@ current、不写 config/receipt/grants/授权收据;已验证载荷可能留在�
 - 存量兼容:当前环境 root 内既有 legacy flat 引用(`<server>/<VAR>`)继续
   可读;仅在被当前 leaf 不再引用且过宽限后被 GC。未策展通道(`ext-persist-mcp`)与 catalog
   事务共用同一版本化原语,skip 语义(已有引用/空值)保持未策展既有 posture。
+- catalog MCP 提交成功后不再从 `ext-install-planner`/preload 回传可执行 config 或 secret
+  真值。`ext-ipc` 复用 main 已有的 authenticated v2 client(`serverReady` 的
+  `url/username/password`)，先 `POST /global/dispose`，再 `GET /mcp` 触发实例按 durable
+  config 重建；`ConfigVariable` 在 engine 装载期解析 `{file:}`。preload result 只携带
+  MCP reference 与 `connected/disabled/failed/reload-pending` status。正常路径仍立即可用；
+  `awaitServer`/dispose 受 5 秒上界、冷启 status 受 10 秒上界；route 不可用或任一上界
+  到期时显式返回 `reload-pending`，不谎称已热连，也不无限占住串行写窗口。
+- 尚未接线的 package 安装入口声明形状：package secret prerequisite 只消费 host-owned
+  `AlphaPackageEnvelopeV1` 与严格 payload decoder 的产物，不 decode web Declaration；
+  稳定 prerequisite ID、MCP environment/header target 与 store reference 均从 signed
+  component/profile 派生；renderer 提交只能携带短生命周期的
+  `{prerequisiteId,value}`。持久/结果形状只记录 reference 与
+  `ready/cancelled/replaced/uninstalled` status，不记录值或值 digest；cancel、replacement、
+  uninstall、missing/stale reference 均应 fail closed。Phase 1 的运行期入口链由
+  `#702`（evaluator 接线）与 `#713`（admission）交付；在此之前
+  `alpha.secret-prerequisite.v1` 仅是声明形状，运行期尚未兑现。
 - 残余窗口(如实记录):密钥文件写入发生在事务外(userData 与事务根不同卷/不同圈禁域,
   file action 收不进)。崩溃于「版本目录已写、事务未提交」时留下无引用孤儿目录(0600,
   内容为用户本次亲自提交的值),等待 GC —— 不构成对既有安装的破坏面。

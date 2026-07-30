@@ -163,3 +163,21 @@ describe("真根集成:真实 gate × 真盘 journal × 表构造通道", () => 
     }
   })
 })
+
+test("真实 catalog MCP 写通道结果只公开状态且不回显提交的 secret canary", () => {
+  const result = Bun.spawnSync({
+    cmd: [
+      process.execPath,
+      "test",
+      path.resolve(import.meta.dir, "../../test-component/ext-install-catalog-result.cases.ts"),
+    ],
+    cwd: path.resolve(import.meta.dir, "../.."),
+    env: process.env,
+  })
+  const output = `${result.stdout.toString()}${result.stderr.toString()}`
+  if (result.exitCode !== 0) throw new Error(output)
+  // 用词边界而非 toContain:`"11 pass"` 含 `"1 pass"`、`"10 fail"` 含 `"0 fail"`,
+  // 子串匹配会在用例数增减时假绿。两条子用例分别守 enabled 与 installedDisabled 两条返回分支。
+  expect(output).toMatch(/\b2 pass\b/)
+  expect(output).toMatch(/\b0 fail\b/)
+}, 120_000)

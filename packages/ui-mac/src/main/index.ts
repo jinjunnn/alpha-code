@@ -847,6 +847,7 @@ const main = Effect.gen(function* () {
   const { ledgerReady: extLedgerReady, ecosystemGlobalSkillInstaller } = registerExtIpcHandlers(
     app.getPath("userData"),
     registryChannel,
+    () => Effect.runPromise(Deferred.await(serverReady)),
   )
   // REQ-032:启动预热远端 catalog(ETag 缓存;失败静默回退,进 hub 时再刷)
   void refreshRemoteCatalog(app.getPath("userData"), registryChannel).catch(() => {})

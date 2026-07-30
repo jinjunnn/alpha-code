@@ -13,13 +13,14 @@ import { toolProbe } from "./platform"
 import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
 import { assertProjectAlphaRootIdentity, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import { projectIpcHandler, resolveProjectIpcEntry, withProjectIpcEntryIdentity } from "./ext-project-entry"
-import type { InstallTarget } from "../preload/types"
+import type { InstallTarget, ServerReadyData } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
 import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath } from "./ext-config"
 import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
+import { reloadInstalledMcp } from "./ext-mcp-activation"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, resourcesRoot } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
@@ -80,6 +81,7 @@ function checkRuntime(tool: string): Promise<{ ok: boolean }> {
 export function registerExtIpcHandlers(
   userDataPath: string,
   registryChannel: "stable" | "preview" | "dev",
+  awaitServer: () => Promise<ServerReadyData>,
   homeDir: string = homedir(),
 ) {
   assertAlphaEnvironmentIdentity()
@@ -793,7 +795,14 @@ export function registerExtIpcHandlers(
       projectDir: (projectDir: unknown) => resolveProjectEntry(projectDir),
     },
     bodies: {
-      installCatalog: (intent) => installCatalog(intent, plannerDeps()),
+      installCatalog: async (intent) => {
+        const result = await installCatalog(intent, plannerDeps())
+        if (!result.ok || result.kind !== "mcp" || result.installedDisabled) return result
+        return {
+          ...result,
+          mcpActivation: await reloadInstalledMcp(result.name, awaitServer),
+        }
+      },
       uninstallV2: (intent) => uninstallByKey(intent, plannerDeps()),
       rollback: async (intent, genId) => rollbackGenerationByKey(intent, genId, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) }),
       setInstallState: setInstallStateBody,

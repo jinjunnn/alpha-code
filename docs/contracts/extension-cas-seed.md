@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-30
 review_after: 2026-10-13
 ---
 
@@ -130,8 +130,9 @@ CAS 补充语义:
    无 grants 通道 —— secret-bearing(requiredEnvVars)/ workspace 占位 / Excel 族一律拒;
    纯 validator(`validateServer`,零写盘)在 plan 生成前跑命令头/inline-eval/URL/危险 env
    安全门。锁内门 = 账本写前探测 + 版本门(kind 泛化:downgrade/不可比拒,同版本幂等)+
-   无账 config 叶拒认领 + 形状异常 fail-closed。成功 outcome 返回 `liveMcp`(renderer 据此
-   live `sdk.mcp.add`;无密钥 → live = durable 原样)。事务内绝不触 `persistMcp`/
+   无账 config 叶拒认领 + 形状异常 fail-closed。成功 outcome 不回传 config；main 在 durable
+   commit 后经 authenticated v2 client `POST /global/dispose` → `GET /mcp` 让 engine
+   重载并即时建连，preload 只返回 MCP reference + status。事务内绝不触 `persistMcp`/
    `withConfigWriteLock`(非重入自锁)。
    **plugin seed(#359,r1 review 结构性修正)**:CAS 字节 = 离线运行载荷(payload 必含顶层
    `plugin.js`;npm plugin 显式拒 —— 无 seed blob 保证的离线运行语义;名称含 `--` 拒,同 agent
@@ -264,7 +265,7 @@ CAS 补充语义:
 | seed 严格解码 + S5–S11 负向 + 提升两遍式 | `packages/ui-mac/src/main/ext-seed.test.ts` |
 | GC mark 根/互斥/宽限/用户数据不可触 | `packages/ui-mac/src/main/ext-cas-gc.test.ts` |
 | 快照漂移(S13 A 侧)+ catalog 互钉 + 真链冒烟 | `packages/ui-mac/src/main/extension-seed-snapshot.test.ts` |
-| seed 安装生产链(#317:e2e / 双真源漂移拒绝矩阵 / CAS 注错 abort / XOR / downgrade 门;#358:agent e2e / authorize 单 key / fresh-only 三态 / 装约定拒绝矩阵 / 卸载清授权账;#359:mcp e2e+liveMcp / 纯 validator 负测 / secret·workspace·Excel 拒 / plugin 确定性 staging / #352 三态矩阵 / npm 拒 / 篡改拒) | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
+| seed 安装生产链(#317:e2e / 双真源漂移拒绝矩阵 / CAS 注错 abort / XOR / downgrade 门;#358:agent e2e / authorize 单 key / fresh-only 三态 / 装约定拒绝矩阵 / 卸载清授权账;#359:mcp e2e+零 config 回显 / 纯 validator 负测 / secret·workspace·Excel 拒 / plugin 确定性 staging / #352 三态矩阵 / npm 拒 / 篡改拒) | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
 | file action 引擎语义(#358:file+config 原子 / 缺席≠零字节 / 崩溃恢复前滚·回滚 / 旁路改写 fail-closed) | `packages/ui-mac/src/main/ext-transaction-file.test.ts` |
 | GC 生产触发(#318:调度语义 / 权威配置取值点 / outcome 分类;promote 窗口 mtime 回归在 gc.test。#367:worker 事件终态矩阵(fake 驱动)+ workerData/摘要严格解码矩阵 + 真 worker 冒烟 + 构建入口 wiring 守卫) | `packages/ui-mac/src/main/ext-cas-gc-scheduler.test.ts` |
 | Settings/CAS-GC typed adapter(#432:校验、revision CAS、失败恢复、脱敏、手动轮次与 renderer 聚合白名单) | `packages/ui-mac/src/main/settings-adapters.test.ts` |
@@ -296,5 +297,6 @@ CAS 补充语义:
 
 seed(随包 first-run)与目录单装同一 fresh-intake 分类器:以**已验 bundled CatalogEntry 的
 `source`** 为权威(随 app 打包 ≠ 第一方;official/community seed 一律默认 disabled,仅
-`source==="alpha"` 默认 enabled)。默认关的 seed MCP 不发 `liveMcp` 段(装 ≠ 连);持久化投影直接写 disabled 态(mcp 叶
-`enabled:false`;plugin 从 `plugin[]` 缺席),config 自持 disabled 态。
+`source==="alpha"` 默认 enabled)。默认关的 seed MCP 不触发 main→engine reload(装 ≠ 连);
+持久化投影直接写 disabled 态(mcp 叶 `enabled:false`;plugin 从 `plugin[]` 缺席),config
+自持 disabled 态。

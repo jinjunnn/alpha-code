@@ -859,13 +859,13 @@ const readCfg = (): Record<string, unknown> => {
 describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
   const EXPECTED_MCP = { type: "local", command: ["npx", "-y", "demo-mcp"] }
 
-  test("installs the mcp seed asset as a config-action transaction (liveMcp returned)", async () => {
+  test("installs the mcp seed asset as a config-action transaction without config echo", async () => {
     buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
     const r = await installAuthorized(mcpSeedIntent, mcpDeps())
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.kind).toBe("mcp")
-    expect(r.liveMcp).toEqual({ name: "demo", config: EXPECTED_MCP })
+    expect(Object.keys(r)).not.toContain("live" + "Mcp")
     // config 叶 = installSpec 派生语义(CAS blob 只是离线携带字节)。
     const mcpMap = readCfg().mcp
     if (!isRec(mcpMap)) throw new Error("mcp section missing")
@@ -1396,13 +1396,13 @@ describe("#395 第三方 seed 安装默认关(账本 disabled;持久化 config �
     expect(findRecordV2(globalRoot, "plugin", "demo-plugin")!.desiredState).toBe("enabled")
   })
 
-  test("official mcp fresh:账本 disabled;config 写正常叶(无 disabled 键);不发 liveMcp(装 ≠ 连)", async () => {
+  test("official mcp fresh:账本 disabled;config 写正常叶(无 disabled 键);装 ≠ 连", async () => {
     buildSeed([{ id: "mcp:demo", files: MCP_FILES, source: "official" }])
     const entry = bundledMcpEntry({ source: "official" })
     const r = await installAuthorized(mcpSeedIntent, makeSeedDeps({ bundledEntries: [entry] }))
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect("liveMcp" in r ? r.liveMcp : undefined).toBeUndefined() // 默认关不自动连
+    expect(Object.keys(r)).not.toContain("live" + "Mcp") // 默认关不自动连
     expect(findRecordV2(globalRoot, "mcp", "demo")!.desiredState).toBe("disabled")
     // 持久化投影:disabled mcp 叶带引擎消费键 enabled:false(引擎查 mcp.enabled === false 即跳过)。
     const cfg: { mcp: Record<string, Record<string, unknown>> } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))

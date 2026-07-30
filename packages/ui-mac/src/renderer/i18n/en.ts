@@ -319,6 +319,7 @@ export const dict = {
   "alpha.ext.addedPendingReload": "Installed, but the engine refresh failed — takes effect after an app restart",
   "alpha.ext.installSlow": "Saved — first connect is slow (downloading deps); finishing in the background",
   "alpha.ext.installedDisabled": "Installed but off — turn it on with the row switch when you want to use it",
+  "alpha.ext.mcpConnectFailed": "Installed, but the immediate connection failed — check the row status",
   "alpha.ext.pickWorkspace": "Pick a directory this connector can access",
   "alpha.ext.cancelled": "Cancelled",
   "alpha.ext.confirmTitle": "Install \"{{name}}\"?",

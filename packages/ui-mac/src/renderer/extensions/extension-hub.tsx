@@ -882,9 +882,19 @@ export function ExtensionHub(props: {
         }
         setStageFor(e.id, "installing")
         const res = await addMcpEntry(e, secrets, true, authorization)
-        if (!res.ok) return failOr(res)
+        if (!res.ok) {
+          // hook 返回稳定 reason code,文案在这一层映射(hook 不持有 i18n)。
+          if (res.reason === "connect-failed") {
+            setErrFor(e.id, t("alpha.ext.mcpConnectFailed"))
+            return null
+          }
+          return failOr(res)
+        }
         // #395(Codex r8 M4):第三方 MCP 默认关 —— 装成功但未激活连接,如实提示「已装未启用」。
         if (res.reason === "installed-disabled") flash(t("alpha.ext.installedDisabled"))
+        // #696:main 侧引擎重载有上界(5s/5s/10s),超时落 reload-pending —— 如实说"要重启",
+        // 不要报"已添加"。skill/agent 分支早有这条映射,catalog MCP 此前走不到该状态。
+        else if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
         else if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
         else addedFlash("alpha.ext.added")
       } else if (e.type === "skill") {
