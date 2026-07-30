@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "profiles/mcp-remote.v1.schema.json",
+  "title": "HostExtensionPackage Remote MCP Payload V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "behavior"
+  ],
+  "properties": {
+    "schema": {
+      "const": "alpha.host-extension-package.payload.mcp-remote.v1"
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url",
+        "headersTemplate",
+        "requiredSecrets",
+        "auth"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "maxLength": 2048
+        },
+        "headersTemplate": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9-]{1,128}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "requiredSecrets": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]{0,127}$"
+          }
+        },
+        "auth": {
+          "enum": [
+            "none"
+          ]
+        }
+      }
+    }
+  }
+}

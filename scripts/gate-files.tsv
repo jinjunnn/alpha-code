@@ -51,6 +51,9 @@
 1	packages/ui-mac	src/main/alpha-contract-health.test.ts	-	契约失败必须以持久 role=alert 横幅暴露(接线锚点)
 1	packages/ui-mac	src/main/models-catalog-v2.wiring.test.ts	-	#681/ADR-039 §4:起子进程跑 models-catalog-v2.wiring.cases.ts(mock electron 跑真 registerModelsIpcHandlers),从真实 models-catalog / models-platform-live 入口观察 V2 fetch→decoder→原子 LKG→投影,含「喂 V1 响应必须无 basis 无 pricing」的持久 negative gate 与 sidecar/IPC 反分叉。另含「consumer pin 必须经生产入口跑通全链」(schema 不表达 0.1 网格,只验 schema 会让平台闸接受一份 Desktop 跑不动的 pin)。本文件直接执行判据并钉住子进程用例条数下界 8,故 delegates_to = '-'
 4	packages/ui-mac	src/main/gate-file-registry.test.ts	-	本登记簿自身的完备性闸:新增闸门文件未登记即红
+6	packages/ui-mac	src/shared/host-extension-package-contract/host-extension-package-artifact.test.ts	-	#694 HostExtensionPackageV1 发布路径、registry/schema 闭包、逐文件 SHA 与 aggregate SHA 漂移即红
+40	packages/ui-mac	src/shared/host-extension-package-contract/package-envelope-v1.test.ts	-	#694 HostExtensionPackageV1 header/payload 严格解码、fail-closed 顺序与 payload 语义检查变异即红
+2	packages/ui-mac	src/shared/host-extension-package-contract/catalog-package-legacy-compat.test.ts	-	#694 Catalog 浅壳读端兼容:新增 packages 同级键仍可读、空 entries 仍拒绝
 45	packages/ui-mac	src/main/ext-receipt-v2.test.ts	-	受托:REQ-100 账本 decoder 强度 + 派生锁步(gen-skill-paths 的主判据)
 24	packages/ui-mac	src/main/sidecar-env.test.ts	-	受托:sidecar env 白名单真实判据(websearch-copies 的 env 半场)
 9	packages/ui-mac	src/main/alpha-config-injection.test.ts	packages/ui-mac/src/main/sidecar-ready-message.test.ts,packages/ui-mac/src/main/alpha-models.test.ts	受托:配置注入真实判据(websearch-copies 的注入半场);「失败值真的上车」与单件 model 组装再委派

@@ -11,6 +11,25 @@ review_after: 2026-10-30
 
 # REQ-128 方案基线
 
+> **⚠️ 2026-07-30 owner 分期裁决：本基线的交付相位已被推翻，两处技术内容已过期。**
+>
+> 裁决记录：[`alpha-work#49`](https://github.com/jinjunnn/alpha-work/issues/49#issuecomment-5129919188)
+> 与[勘误](https://github.com/jinjunnn/alpha-work/issues/49#issuecomment-5129969450)。
+> 本基线的其余部分仍然有效，仍是各实现票的方案权威；把它当下一轮 review 的对照物时，
+> 请连同本框一起读。
+>
+> 1. **21 张票不一次交付**，分四相。本期只做 Phase 1，且**只支持单组件 package**
+>    （`skill` / `agent` / `mcp-local` / `mcp-remote`），不含 Bundle。
+> 2. **§2.3 的 legacy projection 半场作废**：`compileLegacyProjection()`、三版 old-host
+>    oracle、canonical projection bytes、`legacyProjectionDigest` 绑定、同 ID shadow /
+>    no-fallback / LKG 规则全部不做。`packages[]` 为新宿主专用。
+> 3. **§2.9 的自缚作废**："V3 落地前不广告 `alpha.install.package.v1`" —— 单组件 package
+>    没有 graph、没有共享 claim，现有 `InstallRecordV2` + 现有单装事务已够。
+> 4. **§6 的 `package-mcp-oauth.wiring.test.ts` 与 `package-alpha-connection.test.ts`
+>    随 `#703`/`#704` 移入 Phase 2**；`cloud` profile 与 `alpha.mcp-oauth.v1` /
+>    `alpha.connection-prerequisite.v1` 两个 capability token 已在 `#694` 交付中删除
+>    （词表在 host decoder 里就是白名单，声明未实现的 token = 对外超卖支持）。
+
 本基线回答一个产品问题：发布者新增 Skill、Agent、MCP/Connection、OpenCode
 Plugin 或它们的 Bundle 时，怎样在不发布新版 Alpha App 的前提下，让已经兼容的
 宿主安全发现、授权、安装、更新和卸载；怎样把 OpenAI/Codex 与 Claude Code 的
