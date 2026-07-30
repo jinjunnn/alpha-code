@@ -1,5 +1,5 @@
 // #594/#577 回归锁(独立进程运行:隔离仓内其他测试预先缓存的 Solid server 条件导出)。
-// 锁「不依赖事件必达」的恢复语义(R1 修复轮扩到 8 条):
+// 锁「不依赖事件必达」的恢复语义(R1 修复轮扩到 8 条),并覆盖 #692 非 Git 侧栏项目:
 //   1. 闩死点一:recovering 后 ready 永不到达(#577 producer 事故)且引擎实际可达
 //      → 有界自探必须重建 client。
 //   2. recovering → ready 正常路径回归保持,自探不抢跑。
@@ -142,24 +142,115 @@ Object.defineProperty(window, "api", {
   },
 })
 
-// —— 引擎 stub:/global/health 按开关回答,其余(SDK project.list / global.event)悬挂 ——
+// —— 引擎 stub:/global/health 按开关回答;#692 用例按需启用完整 project/session/SSE 路由 ——
 let healthReachable = false
 let healthProbes = 0
+let sidebarScenario = false
+let experimentalPageRequests = 0
+const projectSessionDirectories: string[] = []
+let globalEventController: ReadableStreamDefaultController<Uint8Array> | undefined
+const encoder = new TextEncoder()
+
+const jsonResponse = (body: unknown, headers?: Record<string, string>) =>
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json", ...headers },
+  })
+
 globalThis.fetch = ((input: unknown) => {
   const url = String(input instanceof URL ? input.href : ((input as { url?: string })?.url ?? input))
   if (url.includes("/global/health")) {
     healthProbes++
     return Promise.resolve(new Response("{}", { status: healthReachable ? 200 : 503 }))
   }
+  if (sidebarScenario) {
+    const parsed = new URL(url)
+    if (parsed.pathname === "/project") {
+      return Promise.resolve(
+        jsonResponse([
+          { id: "global", name: "global", worktree: "/", sandboxes: [] },
+          { id: "git-alpha", name: "alpha-code", worktree: "/repos/alpha-code", sandboxes: [] },
+        ]),
+      )
+    }
+    if (parsed.pathname === "/session") {
+      projectSessionDirectories.push(parsed.searchParams.get("directory") ?? "")
+      return Promise.resolve(jsonResponse([]))
+    }
+    if (parsed.pathname === "/experimental/session") {
+      experimentalPageRequests++
+      const cursor = parsed.searchParams.get("cursor")
+      if (!cursor) {
+        return Promise.resolve(
+          jsonResponse(
+            [
+              {
+                id: "ses-documents",
+                title: "Greeting",
+                directory: "/Users/tester/Documents",
+                projectID: "global",
+                time: { created: 100, updated: 100 },
+                project: { id: "global", name: "global", worktree: "/" },
+              },
+              {
+                id: "ses-root",
+                title: "Must stay hidden",
+                directory: "/",
+                projectID: "global",
+                time: { created: 95, updated: 95 },
+                project: { id: "global", name: "global", worktree: "/" },
+              },
+              {
+                id: "ses-other-project",
+                title: "Not global",
+                directory: "/repos/elsewhere",
+                projectID: "git-elsewhere",
+                time: { created: 90, updated: 90 },
+                project: { id: "git-elsewhere", name: "elsewhere", worktree: "/repos/elsewhere" },
+              },
+            ],
+            { "x-next-cursor": "90" },
+          ),
+        )
+      }
+      return Promise.resolve(
+        jsonResponse([
+          {
+            id: "ses-desktop",
+            title: "Loose notes",
+            directory: "/Users/tester/Desktop",
+            projectID: "global",
+            time: { created: 80, updated: 80 },
+            project: { id: "global", name: "global", worktree: "/" },
+          },
+        ]),
+      )
+    }
+    if (parsed.pathname === "/global/event") {
+      return Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              globalEventController = controller
+              controller.enqueue(encoder.encode(": connected\n\n"))
+            },
+          }),
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        ),
+      )
+    }
+  }
   return new Promise(() => {})
 }) as typeof fetch
 
 const { useAlphaProjects } = await import("../src/renderer/sidebar/use-projects")
+const { projectSidebarGroups } = await import("../src/renderer/sidebar/project-display")
 const { replayRuntimeRecoveryState, subscribeRuntimeRecovery } = await import("../src/renderer/runtime-recovery")
 const { AlphaComposerRuntime } = await import("../src/renderer/alpha-ui/alpha-composer")
 const { ModelPickPop } = await import("../src/renderer/alpha-ui/alpha-composer-model")
-const { composerModel, setComposerModel, setComposerAgent, resetComposerModelProjection } =
-  await import("../src/renderer/alpha-ui/composer-state")
+const { composerModel, setComposerModel, setComposerAgent, resetComposerModelProjection } = await import(
+  "../src/renderer/alpha-ui/composer-state"
+)
 
 const serverInfo: ServerInfo = { baseUrl: "http://127.0.0.1:19099", username: "u", password: "p" }
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -201,6 +292,10 @@ const buttonByText = (host: HTMLElement, text: string) =>
 afterEach(() => {
   activeDisposals.splice(0).forEach((dispose) => dispose())
   document.body.replaceChildren()
+  sidebarScenario = false
+  experimentalPageRequests = 0
+  projectSessionDirectories.splice(0)
+  globalEventController = undefined
   setComposerModel(null)
   setComposerAgent(null)
   resetComposerModelProjection()
@@ -468,11 +563,57 @@ test("REQ-126 不变量5:默认目录**查询**桥炸了不得连坐 —— 普�
   // ② 真实调用层:createSession 必须越过这道闸,进到 session.create(harness 里引擎请求悬挂,
   //    所以"仍未 settle"= 它真的在等引擎;被闸挡下则会立刻 resolve 成 undefined)。
   const pending = Symbol("pending")
-  const outcome = await Promise.race([
-    api.createSession("/repos/alpha-code"),
-    tick(50).then(() => pending),
-  ])
+  const outcome = await Promise.race([api.createSession("/repos/alpha-code"), tick(50).then(() => pending)])
   expect(outcome).toBe(pending)
 
   defaultDirReply = DEFAULT_WORKSPACE_DIR
+})
+
+test("#692 非 Git 会话冷加载与 SSE 新建都进入真实目录项目,且从不实例化或显示根目录", async () => {
+  sidebarScenario = true
+  const { api } = mountHook(60_000)
+
+  // runtime-recovery 会向新订阅者回放上一条 ready;等待真实 project.list + 两页全局索引完成。
+  await waitFor(() => {
+    const global = api.store.projects.find((project) => project.id === "global")
+    expect(global?.loaded).toBe(true)
+    expect(global?.sessions.map((session) => session.id).sort()).toEqual(["ses-desktop", "ses-documents"])
+  })
+  expect(experimentalPageRequests).toBe(2)
+  expect(projectSessionDirectories).toEqual(["/repos/alpha-code"])
+  expect(projectSessionDirectories).not.toContain("/")
+
+  // 生产 display transform 按真实目录拆成侧栏项目,内部 "/" 会话不留下「全局」残桶。
+  let groups = projectSidebarGroups(api.store.projects)
+  expect(groups.map((project) => project.worktree)).toContain("/Users/tester/Documents")
+  expect(groups.map((project) => project.worktree)).toContain("/Users/tester/Desktop")
+  expect(groups.map((project) => project.worktree)).not.toContain("/")
+  expect(groups.find((project) => project.worktree === "/Users/tester/Documents")?.sessions[0]?.title).toBe("Greeting")
+
+  // 新会话不等 reload:global SSE 事件按 projectID 命中内部哨兵,立刻生成真实目录分组。
+  await waitFor(() => expect(globalEventController).toBeDefined())
+  globalEventController!.enqueue(
+    encoder.encode(
+      `data: ${JSON.stringify({
+        directory: "/Users/tester/Downloads",
+        project: "global",
+        payload: {
+          type: "session.created",
+          properties: {
+            info: {
+              id: "ses-live",
+              title: "Live loose chat",
+              directory: "/Users/tester/Downloads",
+              projectID: "global",
+              time: { created: 110, updated: 110 },
+            },
+          },
+        },
+      })}\n\n`,
+    ),
+  )
+  await waitFor(() => {
+    groups = projectSidebarGroups(api.store.projects)
+    expect(groups.find((project) => project.worktree === "/Users/tester/Downloads")?.sessions[0]?.id).toBe("ses-live")
+  })
 })

@@ -36,6 +36,7 @@ import {
   toggleSidebar,
 } from "./sidebar-state"
 import { type AlphaProject, type AlphaSession, type AlphaProjectsApi } from "./use-projects"
+import { projectSidebarGroups } from "./project-display"
 import type { AuthState, AccountSummary } from "../../preload/types"
 import { setExtHubOpen, toggleExtHub } from "../extensions/ext-hub-state"
 import { setAutomationOpen, toggleAutomation } from "../automations/automation-state"
@@ -428,51 +429,9 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     setMenuFor(worktree)
   }
 
-  // opencode folds EVERY non-git directory into a single "global" project (worktree "/"), so chats
-  // started in different loose folders all collapse into one 全局 bucket — exactly the bug the user
-  // hit ("发起对话全跑到全局，没生成新项目"). But each global session keeps its REAL path in
-  // session.directory (verified live: a chat in /Users/tide/Documents/workspace has directory set to
-  // that path while projectID is "global"). So we split the global bucket back apart by directory at
-  // render time: every distinct real directory becomes its own project group (named by basename),
-  // and only sessions with no real directory (directory "/") remain under 全局. This is purely a
-  // display transform — the data layer still sees opencode's single global project, so nothing
-  // upstream changes and the worktree we synthesize (= the real directory) is what new chats use.
-  const displayProjects = createMemo<AlphaProject[]>(() => {
-    const result: AlphaProject[] = []
-    for (const p of store.projects) {
-      if (p.worktree !== "/") {
-        result.push(p)
-        continue
-      }
-      const groups = new Map<string, AlphaSession[]>()
-      for (const s of p.sessions) {
-        const dir = s.directory && s.directory !== "/" ? s.directory : "/"
-        const list = groups.get(dir)
-        if (list) list.push(s)
-        else groups.set(dir, [s])
-      }
-      // Real directories first (most-recently-active first), then the residual 全局 bucket last.
-      const entries = [...groups.entries()].sort((a, b) => {
-        if (a[0] === "/") return 1
-        if (b[0] === "/") return -1
-        return (b[1][0]?.updated ?? 0) - (a[1][0]?.updated ?? 0)
-      })
-      for (const [dir, sessions] of entries) {
-        if (dir === "/") result.push({ ...p, sessions })
-        else
-          result.push({
-            id: `global:${dir}`,
-            worktree: dir,
-            name: projectLabel(dir),
-            color: undefined,
-            directories: [dir],
-            sessions,
-            loaded: p.loaded,
-          })
-      }
-    }
-    return result
-  })
+  // The data layer keeps opencode's internal "/" project only as a live-update sentinel. Project
+  // its sessions back to their real non-Git directories; the root bucket itself is never visible.
+  const displayProjects = createMemo<AlphaProject[]>(() => projectSidebarGroups(store.projects))
 
   // Projects visible in the sidebar = all known projects minus the ones the user archived/removed.
   const visibleProjects = createMemo(() => displayProjects().filter((p) => !isProjectHidden(p.worktree)))
