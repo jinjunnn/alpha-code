@@ -23,12 +23,17 @@ const root = resolve(import.meta.dir, "..")
 const vendor = resolve(root, "vendor/alpha-platform-model-catalog")
 const LOCK = "alpha-platform-model-catalog.lock.json"
 const PRODUCER = "contracts/v2/fixtures/producer/model-catalog.json"
+/** 上游发布的 V1 形状 negative fixture。**V1 wire 一律取自这份字节,本文件不手写 V1 样例** ——
+ *  手写一份别人文法的替身是本仓最贵的返工来源;要么消费对方的决定,要么直接拒绝该输入。 */
+const INVALID_V1_SHAPED = "contracts/v2/fixtures/invalid/v1-shaped-catalog.json"
 
 const vendored = async (path: string) => Bun.file(resolve(vendor, path)).json()
 const authored = async (path: string) => Bun.file(resolve(root, "fixtures", path)).json()
 /** 生产响应体的形状:`decodeJsonContract` 收到的是 `value`,不是包装 fixture 的整份文件。 */
 const wire = (value: unknown) => JSON.stringify(value)
 const producerValue = async () => structuredClone((await vendored(PRODUCER)).value)
+/** 上游那份 V1 形状载荷本身(同样只取 `.value`,整份包装对象喂给生产 decoder 会得到假红)。 */
+const v1ShapedValue = async () => structuredClone((await vendored(INVALID_V1_SHAPED)).value)
 
 describe("ModelCatalogV2 的独立 immutable pin", () => {
   // 占位 pin 必须由**机器**拦住。此前这里断言 `commit === "pending-…"`,于是整条 CI 对着一个哨兵
@@ -58,7 +63,11 @@ describe("ModelCatalogV2 的独立 immutable pin", () => {
       files: Array<{ path: string; sha256: string }>
     }
     expect(lock.repo).toBe("jinjunnn/alpha-platform")
-    expect(lock.files.map((file) => file.path).sort()).toEqual([PRODUCER, "contracts/v2/model-catalog.schema.json"])
+    expect(lock.files.map((file) => file.path).sort()).toEqual([
+      INVALID_V1_SHAPED,
+      PRODUCER,
+      "contracts/v2/model-catalog.schema.json",
+    ])
     for (const file of lock.files) {
       const bytes = new Uint8Array(await Bun.file(resolve(vendor, file.path)).arrayBuffer())
       expect(createHash("sha256").update(bytes).digest("hex"), file.path).toBe(file.sha256)
@@ -81,22 +90,24 @@ describe("ModelCatalogV2 的独立 immutable pin", () => {
 })
 
 describe("生产 decoder 只认 V2", () => {
-  test("vendored producer fixture 经出货 decoder 解开", async () => {
+  test("vendored 的两份 fixture 都经出货 decoder 判定,且与上游声明的 expect 一致", async () => {
+    // producer:上游说 valid,我们的 decoder 必须解得开。
     expect(validateFixture(await vendored(PRODUCER))).toBe(true)
+    // negative:上游说 invalid,我们的 decoder 必须拒。validateFixture 对 `expect:"invalid"` 的判据
+    // 就是「校验器确实拒了」——所以这里同样是 true,而它证明的是**双方对同一份字节的判断一致**。
+    const invalid = await vendored(INVALID_V1_SHAPED)
+    expect(invalid.contract).toBe("ModelCatalogV2")
+    expect(invalid.expect).toBe("invalid")
+    expect(validateFixture(invalid)).toBe(true)
   })
 
   test("validates the independently pinned V2 producer fixture and rejects V1", async () => {
     const v2 = await producerValue()
     expect(decodeJsonContract("ModelCatalogV2", wire(v2), "model-catalog").schema_version).toBe(2)
 
-    // 真实的 V1 wire(平台今天还在发的那一份),必须整份被拒。
-    const v1 = {
-      schema_version: 1,
-      object: "list",
-      data: [{ id: "deepseek-v4-flash", object: "model", provider: "deepseek", min_plan: "free" }],
-      edition: "cn",
-      byok_providers: ["deepseek"],
-    }
+    // V1 wire 取自**上游发布的 negative fixture**,不是本文件手写的替身。
+    const v1 = await v1ShapedValue()
+    expect(v1.schema_version).toBe(1)
     expect(() => decodeJsonContract("ModelCatalogV2", wire(v1), "model-catalog")).toThrow(ContractIncompatibleError)
     try {
       decodeJsonContract("ModelCatalogV2", wire(v1), "model-catalog")
@@ -116,19 +127,11 @@ describe("生产 decoder 只认 V2", () => {
     // validateFixture 按名字查 validator 表;查不到即 false。这是「V1 catalog 解码器已从出货代码里
     // 消失」的机械证据 —— 恢复它就是 ADR-039 §4 要求的那次 inversion。
     expect(validateFixture({ kind: "schema", contract: "ModelCatalogV1", expect: "valid", value: {} })).toBe(false)
-    const v1 = {
-      kind: "schema",
-      contract: "ModelCatalogV1",
-      expect: "valid",
-      value: {
-        schema_version: 1,
-        object: "list",
-        data: [{ id: "deepseek-v4-flash", object: "model", provider: "deepseek", min_plan: "free" }],
-        edition: "cn",
-        byok_providers: null,
-      },
-    }
-    expect(validateFixture(v1)).toBe(false)
+    // 载荷仍取自上游字节;这里唯一由本仓提供的是 `contract` 这个**注册表键名**(它本来就是我们自己的
+    // 类型注册表,不是上游文法的一部分)。
+    expect(
+      validateFixture({ kind: "schema", contract: "ModelCatalogV1", expect: "valid", value: await v1ShapedValue() }),
+    ).toBe(false)
   })
 })
 

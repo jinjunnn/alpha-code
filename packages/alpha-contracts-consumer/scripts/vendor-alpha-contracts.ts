@@ -55,7 +55,15 @@ const UPSTREAMS = [
     vendor: "vendor/alpha-platform-model-catalog",
     sourceEnv: "ALPHA_PLATFORM_MODEL_CATALOG_SOURCE",
     sourceDefault: ".upstream-model-catalog-contracts",
-    files: ["contracts/v2/model-catalog.schema.json", "contracts/v2/fixtures/producer/model-catalog.json"],
+    // 第三份是上游发布的 **negative fixture**(V1 形状的目录,`expect: "invalid"`)。钉它是为了让
+    // 「拒绝 V1 形状」这条判据消费**上游自己的字节**,而不是我们手写一份别人文法的替身 ——
+    // 手写替身是本仓最贵的返工来源(见 alpha-work CLAUDE.md「勘破先于闸门设计」第 2 条:
+    // 要么消费对方的决定,要么直接拒绝该输入,不要解释它)。
+    files: [
+      "contracts/v2/model-catalog.schema.json",
+      "contracts/v2/fixtures/producer/model-catalog.json",
+      "contracts/v2/fixtures/invalid/v1-shaped-catalog.json",
+    ],
   },
   {
     // alpha-web publishes the consumer fixtures for alpha-code's two web-owned surfaces

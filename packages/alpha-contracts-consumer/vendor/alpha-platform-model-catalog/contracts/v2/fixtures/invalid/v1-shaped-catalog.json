@@ -1,0 +1,12 @@
+{
+  "kind": "schema",
+  "contract": "ModelCatalogV2",
+  "expect": "invalid",
+  "value": {
+    "schema_version": 1,
+    "object": "list",
+    "data": [{ "id": "deepseek-v4-flash", "object": "model", "provider": "deepseek", "min_plan": "free" }],
+    "edition": "cn",
+    "byok_providers": ["deepseek"]
+  }
+}

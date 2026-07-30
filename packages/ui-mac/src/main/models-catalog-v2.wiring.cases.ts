@@ -102,16 +102,14 @@ const CONSUMER_PIN = join(
   "../../../alpha-contracts-consumer/fixtures/consumers/alpha-code-681/model-catalog-v2.json",
 )
 const consumerPin = (): any => structuredClone(JSON.parse(readFileSync(CONSUMER_PIN, "utf8")).value)
-const CATALOG_V1 = {
-  schema_version: 1,
-  object: "list",
-  data: [
-    { id: "deepseek-v4-flash", object: "model", provider: "deepseek", min_plan: "free" },
-    { id: "claude-opus-4.8", object: "model", provider: "anthropic", min_plan: "member" },
-  ],
-  edition: "cn",
-  byok_providers: null,
-}
+// V1 wire 取自**上游发布的 negative fixture**(`expect: "invalid"`),不是本文件手写的替身:
+// 手写别人文法的替身是本仓最贵的返工来源,能消费对方的决定就不要解释它。
+// ⚠️ 同样是 `{kind,contract,expect,value}` 包装对象 —— 取 `.value` 再 stringify。
+const INVALID_V1_SHAPED = join(
+  import.meta.dir,
+  "../../../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v2/fixtures/invalid/v1-shaped-catalog.json",
+)
+const catalogV1 = (): any => structuredClone(JSON.parse(readFileSync(INVALID_V1_SHAPED, "utf8")).value)
 
 const realFetch = globalThis.fetch
 let userData = ""
@@ -204,7 +202,7 @@ describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持�
 
   // ── 反向闸(持久 negative gate)。把生产入口改回 V1,这条必须红。 ──────────────────────
   test("同一生产入口喂 V1 响应 → 无 basis、无 pricing、contract-health 亮 model-catalog", async () => {
-    stubFetch(CATALOG_V1)
+    stubFetch(catalogV1())
     expect(await invokePlatformLive()).toEqual({ error: "contract-incompatible" })
 
     const failure = getContractFailure()
@@ -225,7 +223,7 @@ describe("#681 生产 wiring:models-catalog IPC 经真实 V2 decoder 返回持�
     await invokePlatformLive()
     const bytes = readFileSync(liveAllowlistPath(userData))
 
-    stubFetch(CATALOG_V1)
+    stubFetch(catalogV1())
     expect(await invokePlatformLive()).toEqual({ error: "contract-incompatible" })
     expect(readFileSync(liveAllowlistPath(userData)).equals(bytes)).toBe(true)
 

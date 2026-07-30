@@ -76,6 +76,12 @@ const PRODUCER_FIXTURE = join(
   "../../../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v2/fixtures/producer/model-catalog.json",
 )
 const catalogV2 = (): any => structuredClone(JSON.parse(readFileSync(PRODUCER_FIXTURE, "utf8")).value)
+// V1 wire 同样取自**上游发布的 negative fixture**,不手写替身(同为包装对象,取 `.value`)。
+const INVALID_V1_SHAPED = join(
+  import.meta.dir,
+  "../../../alpha-contracts-consumer/vendor/alpha-platform-model-catalog/contracts/v2/fixtures/invalid/v1-shaped-catalog.json",
+)
+const catalogV1 = (): any => structuredClone(JSON.parse(readFileSync(INVALID_V1_SHAPED, "utf8")).value)
 const stubFetch = (body: unknown) => {
   globalThis.fetch = (async () =>
     new Response(typeof body === "string" ? body : JSON.stringify(body))) as unknown as typeof fetch
@@ -227,13 +233,7 @@ describe("#681:fetch → LKG → 投影 全程只认 ModelCatalogV2", () => {
   })
 
   test("V1 wire(平台还没部署 V2)→ 整份拒绝,不回退 V1、不回退本地价格", async () => {
-    stubFetch({
-      schema_version: 1,
-      object: "list",
-      data: [{ id: "deepseek-v4-flash", object: "model", provider: "deepseek", min_plan: "free" }],
-      edition: "cn",
-      byok_providers: ["deepseek"],
-    })
+    stubFetch(catalogV1())
     expect(await syncLiveAllowlist(userData)).toEqual({ error: "contract-incompatible" })
     expect(getContractFailure()?.received_version).toBe(1)
     expect(getContractFailure()?.expected_version).toBe(2)
