@@ -1982,10 +1982,13 @@ describe("AlphaComposer 生产 combobox 无障碍绑定", () => {
     mounted.dispose()
   })
 })
-
 // ── REQ-127 #679:选择器上那两个数字是平台的真值,不是本地编的 ────────────────────────────
 // 用户能看到的变化只在这一票:claude-fable-5 从「标准 ×1」变成「输入 71.4× · 输出 178.6×」。
-// 因此每条断言都同时验 **可见 DOM** 与 **aria-label** —— 看得见和听得见必须是同一件事。
+//
+// 判据一律是**白名单**,不是「不含 × / 不含档位词」那种黑名单。R1 审计用一个 `1x`
+// (拉丁字母 x,不是 `×`)当探针证明过:黑名单对新成员默认放行 —— 一个伪造倍率可以同时出现在
+// 可见文本与读屏标签里,而全部门保持绿。所以下面锁的是**完整值**:行尾状态元素的有序完整列表、
+// 整行可见文本的完整拼接、`aria-label` 的完整值。多一个元素、多一个字符都不等。
 describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
   const BASIS = "deepseek-v4-flash"
   /** 平台真实倍数(与 producer fixture 一致):最长串出现在 claude-fable-5 上。 */
@@ -2014,174 +2017,246 @@ describe("#679 生产 picker 呈现平台双倍数 / 不可用两态", () => {
   } as EffectiveCatalog
   /** 基准名从目录里取 —— 平台换基准,UI 跟着变才是诚实的,所以断言也不许硬编码。 */
   const basisName = pricedCatalog.platformModels.find((model) => model.id === BASIS)!.name
+  /** 已配 KEY 的 BYOK 供应商(fixture 里只有 deepseek)与它的模型 —— BYOK 行的期望值从目录推。 */
+  const keyedByok = catalog.byokProviders.find((provider) => provider.id === "deepseek")!
+  const unkeyedByok = catalog.byokProviders.filter((provider) => provider.id !== "deepseek")
+  const CUSTOM = { providerID: "my-endpoint", id: "real-custom-model", name: "Real Custom Model" }
 
-  const rowFor = (id: string) =>
-    [...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((row) =>
-      row.querySelector(".a-mpp-name small")?.textContent?.startsWith(id),
-    )!
-  /** 一行的两种可读形态:看见的文本 与 读屏听见的 label。任何断言都必须同时过这两关。 */
-  const bothReadings = (row: HTMLButtonElement) => [row.textContent ?? "", row.getAttribute("aria-label") ?? ""]
+  const pair = (id: string, dict: Record<string, string>) => {
+    const p = REMOTE_PRICING[id]!
+    return dict["alpha.model.pricingPair"]!
+      .replace("{{input}}", p.input.toFixed(1))
+      .replace("{{output}}", p.output.toFixed(1))
+  }
+
+  const rows = (group?: "platform" | "byok") =>
+    [...document.body.querySelectorAll<HTMLButtonElement>(group ? `.a-mpp-row[data-group="${group}"]` : ".a-mpp-row")]
+  const rowFor = (id: string, group: "platform" | "byok" = "platform") =>
+    rows(group).find((row) => row.querySelector(".a-mpp-name small")?.textContent?.startsWith(id))!
+
+  /** 行尾状态元素的**有序完整列表**。生产里它们由同一个 statusParts() 渲染成 .a-pop-desc。 */
+  const descTexts = (row: HTMLButtonElement) =>
+    [...row.querySelectorAll<HTMLElement>(".a-pop-desc")].map((el) => el.textContent ?? "")
+
+  const ariaFor = (dict: Record<string, string>, model: string, provider: string, parts: string[]) =>
+    parts.length
+      ? dict["alpha.model.rowLabel"]!
+          .replace("{{model}}", model)
+          .replace("{{provider}}", provider)
+          .replace("{{status}}", parts.join(" · "))
+      : dict["alpha.model.rowLabelNoStatus"]!.replace("{{model}}", model).replace("{{provider}}", provider)
+
+  /**
+   * 一行的三处**同时**锁死为完整值:
+   *   ① 行尾状态元素的有序完整列表(多一个 span 就不等);
+   *   ② 整行可见文本的完整拼接(状态被塞进别的元素、或塞进名字里,同样不等);
+   *   ③ aria-label 的完整值(看得见的和听得见的必须逐字符同源)。
+   * 这就是"咽喉":对没见过的新成员默认拒绝,而不是等我们想起来往正则里加一条。
+   */
+  const expectRowExactly = (
+    row: HTMLButtonElement,
+    dict: Record<string, string>,
+    spec: { letter: string; name: string; id: string; providerName: string; group: "platform" | "byok"; parts: string[] },
+  ) => {
+    const where = `${spec.group}/${spec.id}`
+    expect(descTexts(row), `${where} 行尾状态元素列表`).toEqual(spec.parts)
+    const suffix = spec.group === "byok" ? ` · ${spec.providerName}` : ""
+    expect(row.textContent, `${where} 整行可见文本`).toBe(
+      `${spec.letter}${spec.name}${spec.id}${suffix}${spec.parts.join("")}`,
+    )
+    expect(row.getAttribute("aria-label"), `${where} aria-label`).toBe(
+      ariaFor(dict, spec.name, spec.providerName, spec.parts),
+    )
+  }
+
+  /** 平台行的完整期望 —— parts 由调用方给定(available / unavailable / 带 reason 三种形态)。 */
+  const expectPlatformRows = (dict: Record<string, string>, partsOf: (id: string) => string[]) => {
+    const platform = rows("platform")
+    expect(platform.length, "平台行数").toBe(pricedCatalog.platformModels.length)
+    for (const model of pricedCatalog.platformModels) {
+      expectRowExactly(rowFor(model.id), dict, {
+        letter: "α",
+        name: model.name,
+        id: model.id,
+        providerName: pricedCatalog.platformProvider.name,
+        group: "platform",
+        parts: partsOf(model.id),
+      })
+    }
+  }
+
+  /** BYOK 与自定义节点:代理计价与它们无关 —— 行尾要么空,要么只有那条运行态,**没有第三种可能**。 */
+  const expectNonPlatformRowsCarryNoPricing = (dict: Record<string, string>) => {
+    for (const id of keyedByok.models) {
+      const display = catalog.platformModels.find((model) => model.id === id)
+      expectRowExactly(rowFor(id, "byok"), dict, {
+        letter: keyedByok.pico.letter,
+        name: display?.name ?? id,
+        id,
+        providerName: keyedByok.name,
+        group: "byok",
+        parts: [],
+      })
+    }
+    for (const provider of unkeyedByok) {
+      // 未配 KEY 的供应商只有一行占位,展示名是**供应商名**(model-picker-core 的 needs-key 分支),
+      // 不是模型名 —— 期望值照生产写,不照直觉写。
+      expectRowExactly(rowFor(provider.models[0]!, "byok"), dict, {
+        letter: provider.pico.letter,
+        name: provider.name,
+        id: provider.models[0]!,
+        providerName: provider.name,
+        group: "byok",
+        parts: [dict["alpha.model.keyMissing"]!],
+      })
+    }
+    expectRowExactly(rowFor(CUSTOM.id, "byok"), dict, {
+      letter: CUSTOM.providerID.slice(0, 1).toUpperCase(),
+      name: CUSTOM.name,
+      id: CUSTOM.id,
+      providerName: CUSTOM.providerID,
+      group: "byok",
+      parts: [],
+    })
+  }
+
+  const engineModels = () => [
+    ...platformModels,
+    ...keyedByok.models.map((id) => info(byokEngineId(keyedByok.id), id)),
+    info(CUSTOM.providerID, CUSTOM.id, CUSTOM.name),
+  ]
 
   const openPicker = async (fixture: ApiFixture = {}) => {
     resetComposerModelProjection()
-    installApi({ catalog: async () => pricedCatalog, ...fixture })
+    installApi({
+      catalog: async () => pricedCatalog,
+      keyStatus: async () => ({ ...keys, [CUSTOM.providerID]: { configured: true, source: "config" } }),
+      ...fixture,
+    })
     const mounted = mount(() =>
       createComponent(ModelPickPop, {
-        contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+        contract: { list: async () => engineModels(), current: async () => undefined, switch: async () => {} },
         directory: () => "/workspace",
         selected: () => null,
         onSelect: async () => {},
         onPicked: () => {},
       }),
     )
-    // 等待判据必须与 locale 无关 —— 用文案等会在英文用例里永远等不到,而那是**测试的**缺陷,
-    // 不是产品的。等的是「平台组的行真的渲染出来了」。
+    // 等待判据必须与 locale 无关 —— 用文案等会在英文用例里永远等不到,而那是**测试的**缺陷。
     await waitFor(() => {
-      expect(document.body.querySelectorAll('.a-mpp-row[data-group="platform"]').length).toBe(
-        pricedCatalog.platformModels.length,
-      )
-      expect(rowFor("claude-fable-5")).toBeInstanceOf(HTMLButtonElement)
+      expect(rows("platform").length).toBe(pricedCatalog.platformModels.length)
+      expect(rowFor(CUSTOM.id, "byok")).toBeInstanceOf(HTMLButtonElement)
     })
     return mounted
   }
 
-  test("平台行把两个真倍数同时写进可见文本与 aria-label(最长串:输入 71.4× · 输出 178.6×)", async () => {
+  test("有可信 pair:每个平台行的可见文本与 aria-label 都恰好是那一对倍数,一个字符不多", async () => {
     const mounted = await openPicker()
-
-    const expected = "输入 71.4× · 输出 178.6×"
-    for (const reading of bothReadings(rowFor("claude-fable-5"))) expect(reading).toContain(expected)
-    // 不是只有那一行:每个平台行都带自己的那一对,而且**两个数都在**(折叠成一个 scalar 即红)。
-    for (const [id, pair] of Object.entries(REMOTE_PRICING)) {
-      const text = `输入 ${pair.input.toFixed(1)}× · 输出 ${pair.output.toFixed(1)}×`
-      for (const reading of bothReadings(rowFor(id))) expect(reading, id).toContain(text)
-    }
-    // 基准说明就在平台组头下面,名字取自目录。
+    expectPlatformRows(zh, (id) => [pair(id, zh)])
+    // 最长串单独点名一次,免得整表断言绿了却没人看见它长什么样。
+    expect(descTexts(rowFor("claude-fable-5"))).toEqual(["输入 71.4× · 输出 178.6×"])
+    // 基准说明:完整值,基准名取自目录。
     const basis = document.body.querySelector(".a-mpp-basis")!
-    expect(basis).toBeInstanceOf(HTMLElement)
-    expect(basis.textContent).toContain(basisName)
     expect(basis.textContent).toBe(zh["alpha.model.pricingBasisNote"].replace("{{model}}", basisName))
-
-    // BYOK 行走用户自己的 KEY,与代理计价无关:两种读法里都不许出现倍号或「不可用」文案。
-    const byokRows = [...document.body.querySelectorAll<HTMLButtonElement>('.a-mpp-row[data-group="byok"]')]
-    expect(byokRows.length).toBeGreaterThan(0)
-    for (const row of byokRows)
-      for (const reading of bothReadings(row)) {
-        expect(reading).not.toContain("×")
-        expect(reading).not.toContain(zh["alpha.model.pricingUnavailable"])
-      }
+    // BYOK / 自定义节点:行尾没有第二个状态元素的位置。
+    expectNonPlatformRowsCarryNoPricing(zh)
     mounted.dispose()
   })
 
-  test("没有有效 V2/LKG 时明说不可用,两种读法里都没有数字、没有档位词、也没有基准说明", async () => {
-    // 静态目录(内置 snapshot):basis 为 null、逐行无 pricing —— 这正是今天冷启动的常态。
-    resetComposerModelProjection()
-    installApi()
-    const mounted = mount(() =>
-      createComponent(ModelPickPop, {
-        contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
-        directory: () => "/workspace",
-        selected: () => null,
-        onSelect: async () => {},
-        onPicked: () => {},
-      }),
-    )
-    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.model.platformGroup"]))
-    await waitFor(() => expect(rowFor("claude-fable-5")).toBeInstanceOf(HTMLButtonElement))
-
-    const platformRows = [...document.body.querySelectorAll<HTMLButtonElement>('.a-mpp-row[data-group="platform"]')]
-    expect(platformRows.length).toBe(catalog.platformModels.length)
-    for (const row of platformRows)
-      for (const reading of bothReadings(row)) {
-        expect(reading).toContain(zh["alpha.model.pricingUnavailable"])
-        // 「不可用」不能顺手带出一个数字或一个档位 —— 合成价格比不说更坏。
-        expect(reading).not.toMatch(/\d+(?:\.\d+)?\s*×|×\s*\d/)
-        expect(reading).not.toMatch(/标准|高级|旗舰/)
-      }
-    // basis 缺席 ⇒ 整条不渲染。没有「基准未知」这种半真陈述。
+  test("没有有效 V2/LKG:每个平台行恰好只有「计价信息暂不可用」,基准说明整条不渲染", async () => {
+    // 静态目录(内置 snapshot):basis 为 null、逐行无 pricing —— 冷启动常态。
+    const mounted = await openPicker({ catalog: async () => catalog })
+    expectPlatformRows(zh, () => [zh["alpha.model.pricingUnavailable"]])
     expect(document.body.querySelector(".a-mpp-basis")).toBeNull()
+    expectNonPlatformRowsCarryNoPricing(zh)
     mounted.dispose()
   })
 
-  test("平台行同时有运行态时,计价二态**仍然**看得见(旧实现在这里两态都不显示)", async () => {
-    // 余额为零 ⇒ 每个平台行都有 reason(「余额不足」)。旧实现是 `reason ?? 档位`,于是价格消失。
+  test("平台行同时有运行态时,行尾恰好是 [运行态, 计价二态] 两段,有序且不多不少", async () => {
+    // 余额为零 ⇒ 每个平台行都有 reason。旧实现是 `reason ?? 档位`,于是价格整个消失。
     const mounted = await openPicker({
       account: async () => ({ ...summary, balanceFen: 0, plan: { ...summary.plan!, status: "expired" } }),
     })
-    const row = rowFor("claude-fable-5")
-    await waitFor(() => expect(row.textContent).toContain(zh["alpha.model.needsCredit"]))
-    for (const reading of bothReadings(row)) {
-      expect(reading).toContain(zh["alpha.model.needsCredit"])
-      expect(reading).toContain("输入 71.4× · 输出 178.6×")
-    }
+    await waitFor(() => expect(rowFor("claude-fable-5").textContent).toContain(zh["alpha.model.needsCredit"]))
+    expectPlatformRows(zh, (id) => [zh["alpha.model.needsCredit"], pair(id, zh)])
+    expectNonPlatformRowsCarryNoPricing(zh)
     mounted.dispose()
   })
 
-  test("英文 locale 下两态与基准说明都跟着换,数字一位不差", async () => {
+  test("英文 locale 下三处完整值全部跟着换,数字一位不差", async () => {
     setLocale("en")
     try {
       const mounted = await openPicker()
-      const row = rowFor("claude-fable-5")
-      for (const reading of bothReadings(row)) expect(reading).toContain("In 71.4× · Out 178.6×")
+      expectPlatformRows(enDict, (id) => [pair(id, enDict)])
+      expect(descTexts(rowFor("claude-fable-5"))).toEqual(["In 71.4× · Out 178.6×"])
       expect(document.body.querySelector(".a-mpp-basis")!.textContent).toBe(
         enDict["alpha.model.pricingBasisNote"].replace("{{model}}", basisName),
       )
+      expectNonPlatformRowsCarryNoPricing(enDict)
       mounted.dispose()
     } finally {
       setLocale("zh")
     }
   })
 
-  test("真实 AlphaComposer wiring 里 defaultPlatformModel 被传下去并真的选中(不是只测 helper)", async () => {
-    // 删掉档位兜底之后,自动默认只剩这一个旋钮。composer 那一处 ctx 漏传 —— 默认会**静默消失**,
-    // 而没有任何类型错误会提醒你。所以判据放在真实组件挂载之后的 composerModel() 上。
-    resetComposerModelProjection()
-    installApi({ catalog: async () => pricedCatalog })
-    const first = mount(() =>
-      createComponent(AlphaComposerRuntime, {
-        mode: "home",
-        projects,
-        directory: () => "/workspace",
-        command,
-        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
-      }),
-    )
-    await waitFor(() => expect(composerModel()?.id).toBe(pricedCatalog.defaultPlatformModel))
-    expect(composerModel()?.providerID).toBe(pricedCatalog.platformProvider.id)
-    first.dispose()
+  // ── 默认解析:必须在**真实 AlphaComposer 链路**上证明,不能只测 helper ────────────────────
+  // R1 审计的第二个可达绕过:把 alpha-composer.tsx 的 ctx 改成只把带 pricing 的模型交给 resolver。
+  // 那个文件不在源码棘轮的扫描清单里,helper 层单测也看不到 —— 而**真实的静态目录本来就没有
+  // pricing**(首次同步前 / LKG 失效后的常态),于是价格数据缺失时平台默认会静默消失。
+  // 下表第 1、2 行就是那个状态;第 3 行是控制组(证明这套 barrier 真能观察到解析结果),
+  // 有它在,第 5 行的 null 才不是空绿。
+  describe("#679 defaultPlatformModel 经真实 AlphaComposer wiring 生效", () => {
+    const reversed = (source: EffectiveCatalog) =>
+      ({ ...source, platformModels: [...source.platformModels].reverse() }) as EffectiveCatalog
 
-    // 换一个声明就换一个默认 —— 证明选中的是这个字段,不是顺序、不是最便宜的那个。
-    setComposerModel(null)
-    resetComposerModelProjection()
-    installApi({ catalog: async () => ({ ...pricedCatalog, defaultPlatformModel: "claude-fable-5" }) })
-    const second = mount(() =>
-      createComponent(AlphaComposerRuntime, {
-        mode: "home",
-        projects,
-        directory: () => "/workspace",
-        command,
-        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
-      }),
-    )
-    await waitFor(() => expect(composerModel()?.id).toBe("claude-fable-5"))
-    second.dispose()
+    const settle = async (fixture: EffectiveCatalog) => {
+      setComposerModel(null)
+      resetComposerModelProjection()
+      let listReads = 0
+      installApi({ catalog: async () => fixture })
+      const mounted = mount(() =>
+        createComponent(AlphaComposerRuntime, {
+          mode: "home",
+          projects,
+          directory: () => "/workspace",
+          command,
+          modelContract: {
+            list: async () => {
+              listReads++
+              return platformModels
+            },
+            current: async () => undefined,
+            switch: async () => {},
+          },
+        }),
+      )
+      await waitFor(() => expect(listReads).toBeGreaterThan(0))
+      for (let attempt = 0; attempt < 20; attempt++) await flush()
+      return mounted
+    }
 
-    // 声明缺席 ⇒ 绝不回落到任何平台模型(也不挑最便宜的那个)。
-    setComposerModel(null)
-    resetComposerModelProjection()
-    installApi({ catalog: async () => ({ ...pricedCatalog, defaultPlatformModel: null }) })
-    const third = mount(() =>
-      createComponent(AlphaComposerRuntime, {
-        mode: "home",
-        projects,
-        directory: () => "/workspace",
-        command,
-        modelContract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
-      }),
-    )
-    await waitFor(() => expect(document.body.textContent).toBeTruthy())
-    await flush()
-    await flush()
-    expect(composerModel()).toBeNull()
-    third.dispose()
+    test.each([
+      ["静态目录:逐行都没有 pricing(首次同步前 / LKG 失效后的常态)", () => catalog, "deepseek-v4-flash"],
+      ["静态目录 + 目录顺序反过来", () => reversed(catalog), "deepseek-v4-flash"],
+      ["控制组:有 pricing 的目录,顺序原样", () => pricedCatalog, "deepseek-v4-flash"],
+      [
+        "声明的默认就是全场最贵那个(价格不参与挑选,贵的照样能当默认)",
+        () => ({ ...pricedCatalog, defaultPlatformModel: "claude-fable-5" }) as EffectiveCatalog,
+        "claude-fable-5",
+      ],
+      [
+        "声明的 id 不在生效目录中(被 edition 白名单筛掉)→ 不回落到任何平台模型",
+        () => ({ ...pricedCatalog, defaultPlatformModel: "model-that-edition-filtered-out" }) as EffectiveCatalog,
+        null,
+      ],
+    ] as Array<[string, () => EffectiveCatalog, string | null]>)("%s", async (_name, fixture, expected) => {
+      const mounted = await settle(fixture())
+      if (expected === null) expect(composerModel()).toBeNull()
+      else {
+        expect(composerModel()?.id).toBe(expected)
+        expect(composerModel()?.providerID).toBe(catalog.platformProvider.id)
+      }
+      mounted.dispose()
+    })
   })
 })

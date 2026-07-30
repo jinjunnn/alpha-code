@@ -47,7 +47,7 @@ file://<repo>/docs/verification/2026-07-30-req679-pricing-visual/harness/pricing
 | --- | --- | --- | --- | --- | --- |
 | V1-available-light | light | zh | available | 12 行各自显示自己那一对倍数;`claude-fable-5` 完整显示 `输入 71.4× · 输出 178.6×` 无截断无换行;组头下方一行基准说明,基准名为 `DeepSeek V4 Flash` | **PASS** |
 | V2-available-dark | dark | zh | available | 同 V1;暗色下计价文本与基准说明的对比度不低于原档位 chip | **PASS** |
-| V3-unavailable-light | light | zh | unavailable | 每行行尾均为 `计价信息暂不可用`;**画面内不出现任何数字与档位词**;基准说明整条不存在 | **PASS** |
+| V3-unavailable-light | light | zh | unavailable | 每行行尾均为 `计价信息暂不可用`;**计价列/行尾状态不含任何倍率数字与档位词**(模型名与 id 本身的数字如 `4.8` 不在此列 —— 它们不是价格主张);基准说明整条不存在 | **PASS** |
 | V4-unavailable-dark | dark | zh | unavailable | 同 V3 | **PASS** |
 | V5-mixed-light | light | zh | mixed | 平台组与 BYOK 组同屏;**BYOK 行行尾既无倍号也无「计价信息暂不可用」**;未配 KEY 的行仍是「未配置 KEY · 点击配置」 | **PASS** |
 | V6-mixed-dark | dark | zh | mixed | 同 V5 | **未采**(见下"覆盖裁剪") |
@@ -73,6 +73,12 @@ file://<repo>/docs/verification/2026-07-30-req679-pricing-visual/harness/pricing
   gpt-5.4-nano 1.4/4.5 · haiku-4.5 7.1/17.9 · sonnet-5 21.4/53.6 · **fable-5 71.4/178.6** ·
   opus-4.8 35.7/89.3);基准行自身显示 `1.0×` 而非 `1`。
 - **V3**:计价列内零数字、零档位词;**基准说明整条不渲染**(不做"基准未知"的半真陈述)。
+  ⚠️ 判据只覆盖**计价列**:模型名与 id 本身含数字(`claude-opus-4.8`),那不是价格主张。
+  本行初稿曾写成"画面内不出现任何数字",**那是证据文档超卖**,已更正(R1 MINOR)。
+- **V8 与 V1 的图逐字节相同,这是事实不是失误**:生产弹层恒定贴着 `min-width: 360px`,
+  所以"默认"就是"最窄"。窄态成立的证据**不是这张图**,而是上面那条实测
+  (`hasNarrowClass: true` + content-box 实测 360px + 逐元素 `scrollWidth > clientWidth` 全 false)。
+  图留档,但**不要把它当作独立的窄屏证据**。
 
 ### 覆盖裁剪(明写,不静默)
 

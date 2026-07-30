@@ -308,26 +308,31 @@ describe("#679 平台计价二态:要么两个真倍数,要么明说不可用", 
     }
   })
 
-  test("没有可信 pair → 明说不可用,文案里一个数字、一个档位词都不许有", () => {
-    // 静态目录(无 V2/LKG):basis 为 null,逐行也没有 pricing。
-    const bare = rows().filter((row) => row.group === "platform")
-    expect(bare.length).toBeGreaterThan(0)
-    for (const row of bare) {
-      const text = pricingStatusText(row)!
-      expect(text).toBe(t("alpha.model.pricingUnavailable"))
-      expect(text).not.toMatch(/\d/)
-      expect(text).not.toMatch(/标准|高级|旗舰|×/)
-    }
+  test("平台行的计价文案只有两个合法取值,没有第三种(白名单,不是「不含 × 与档位词」)", () => {
+    // 黑名单挡不住新成员:R1 审计用 `1x`(拉丁字母 x)证明过,一个伪造倍率能同时躲开
+    // 「含 ×」与「含档位词」两条。所以这里锁的是**取值本身** —— 平台行的计价文案要么逐字符
+    // 等于那一对倍数、要么逐字符等于不可用文案,别的一律不合法。
+    const allowed = (row: (typeof mixed)[number]) =>
+      row.pricing
+        ? t("alpha.model.pricingPair", {
+            input: row.pricing.input.toFixed(1),
+            output: row.pricing.output.toFixed(1),
+          })
+        : t("alpha.model.pricingUnavailable")
+    // 静态目录(无 V2/LKG,逐行无 pricing)与有 pair 的目录一起过同一条判据。
+    const mixed = [...rows(), ...pricedRows()].filter((row) => row.group === "platform")
+    expect(mixed.length).toBeGreaterThan(0)
     try {
-      setLocale("en")
-      for (const row of bare) {
-        const text = pricingStatusText(row)!
-        expect(text).not.toMatch(/\d/)
-        expect(text).not.toMatch(/\b(?:std|pro|flag)\b|×/i)
+      for (const locale of ["zh", "en"] as const) {
+        setLocale(locale)
+        for (const row of mixed) expect(pricingStatusText(row), `${locale} ${row.model.id}`).toBe(allowed(row))
       }
     } finally {
       setLocale("zh")
     }
+    // 前提自检:两种形态都真的出现在样本里,否则上面那圈可能只验了其中一种。
+    expect(mixed.some((row) => !row.pricing)).toBe(true)
+    expect(mixed.some((row) => row.pricing)).toBe(true)
   })
 
   test("BYOK 与自定义节点没有代理计价,两态一个都不给(给「不可用」也是在暗示它们参与代理计价)", () => {

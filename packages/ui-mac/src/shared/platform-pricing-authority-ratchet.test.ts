@@ -34,6 +34,14 @@
 // as enumerating gates by filename. Read a green here as "the deleted axis did not come back under
 // its own name", never as "no local price claim can exist".
 //
+// THE `1x` PROBE, AND WHERE IT IS ACTUALLY CLOSED. R1 appended `1x` — a LATIN x, not `×` — to an
+// unavailable platform row. Nothing here fires, and nothing here ever will: every rule below is an
+// enumeration, and an enumeration lets new members through by default. Extending the regex would
+// only move the boundary one member outward. The class is closed at the throat instead, in the
+// behavioural delegates, by pinning the COMPLETE value rather than forbidding shapes: the row's
+// status elements are an exact ordered list, the row's whole visible text is an exact string, and
+// the `aria-label` is an exact string. A fabricated multiplier of any spelling changes all three.
+//
 // COMMENTS ARE STRIPPED before the code rules run (`.ts` / `.tsx` only). This gate judges code and
 // data, not prose: a comment explaining WHY there is no local tier — this one included — must not
 // be a red light. `alpha-models.json` has no comment syntax, so it is read whole, `_note` included,
