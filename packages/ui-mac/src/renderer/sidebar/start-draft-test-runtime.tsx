@@ -299,6 +299,8 @@ export function installPreloadStub() {
       byokProviders: [],
       presetIds: [],
       liveSync: { status: "static" },
+      // #681:没有有效 V2/LKG ⇒ 平台段计价不可用,basis 为 null。
+      pricingBasisModelId: null,
     }),
     "providers.keyStatus": async () => ({}),
   }

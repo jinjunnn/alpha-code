@@ -36,7 +36,9 @@ describe("immutable Alpha contract pin", () => {
     const lock = (await Bun.file(resolve(root, "alpha-platform-contract.lock.json")).json()) as {
       files: Array<{ path: string; sha256: string }>
     }
-    expect(lock.files.length).toBe(18)
+    // 17, not 18: #681 moved the model-catalog producer fixture out of the V1 bundle and onto its own
+    // capability-scoped pin (see model-catalog-v2-consumer.test.ts).
+    expect(lock.files.length).toBe(17)
     for (const file of lock.files) {
       const bytes = new Uint8Array(await Bun.file(resolve(vendor, file.path)).arrayBuffer())
       expect(createHash("sha256").update(bytes).digest("hex"), file.path).toBe(file.sha256)
@@ -52,7 +54,6 @@ describe("producer and consumer fixtures", () => {
       "contracts/v1/fixtures/producer/cloud-job-request.json",
       "contracts/v1/fixtures/producer/cloud-job-status.json",
       "contracts/v1/fixtures/producer/ledger-page.json",
-      "contracts/v1/fixtures/producer/model-catalog.json",
     ]
     for (const path of paths) expect(validateFixture(await fixture(path)), path).toBe(true)
   })
@@ -77,17 +78,8 @@ describe("producer and consumer fixtures", () => {
     expect(() => decodeContract("CloudJobRequestV1", invalid.value, "cloud-http")).toThrow(ContractIncompatibleError)
   })
 
-  test("rejects a mutated v1 enum without coercion", async () => {
-    const value = structuredClone((await fixture("contracts/v1/fixtures/producer/model-catalog.json")).value)
-    value.data[0].provider = "DeepSeek"
-    expect(() => decodeContract("ModelCatalogV1", value, "model-catalog")).toThrow(ContractIncompatibleError)
-  })
-
-  test("model catalog rejects incompatible v1 data without static fallback", async () => {
-    const value = structuredClone((await fixture("contracts/v1/fixtures/producer/model-catalog.json")).value)
-    delete value.byok_providers
-    expect(() => decodeContract("ModelCatalogV1", value, "model-catalog")).toThrow(ContractIncompatibleError)
-  })
+  // The model-catalog enum/required-field rejections moved with the contract: they now live in
+  // model-catalog-v2-consumer.test.ts, against the independently pinned V2 artifact.
 
   test("rejects unknown CloudJobStatus.status instead of mapping it to running", async () => {
     const value = structuredClone((await fixture("contracts/v1/fixtures/producer/cloud-job-status.json")).value)
@@ -250,8 +242,12 @@ describe("published byte limits", () => {
     const plusOne = await fixture("contracts/v1/fixtures/limits/payload-max-plus-one.json")
     expect(exact.wire_bytes).toBe(NON_STREAMING_PAYLOAD_MAX_BYTES)
     expect(plusOne.wire_bytes).toBe(NON_STREAMING_PAYLOAD_MAX_BYTES + 1)
-    expect(() => decodeJsonContract("ModelCatalogV1", " ".repeat(plusOne.wire_bytes), "model-catalog")).toThrow(
-      expect.objectContaining({ failure: expect.objectContaining({ reason: "size-limit" }) }),
+    expect(() => decodeJsonContract("ModelCatalogV2", " ".repeat(plusOne.wire_bytes), "model-catalog")).toThrow(
+      expect.objectContaining({
+        // The size-limit branch must also report the contract's own generation — reporting "expected v1"
+        // for a V2 wire would send a maintainer looking at the wrong producer.
+        failure: expect.objectContaining({ reason: "size-limit", expected_version: 2 }),
+      }),
     )
   })
 })

@@ -41,6 +41,7 @@ import type {
 import type {
   AlphaModelCatalog,
   EffectiveCatalog,
+  PricingMultiplier,
   ProviderInput,
   ProviderKeyStatus,
   ProviderResult,
@@ -127,7 +128,8 @@ export type FatalRendererError = {
 export type ContractFailure = {
   code: "contract-incompatible"
   surface: "identity" | "endpoint-discovery" | "account" | "model-catalog" | "cloud-http" | "cloud-mcp" | "artifact"
-  expected_version: 1
+  /** #681:代际是**逐契约**的 —— `/v1/models` 期望 ModelCatalogV2,其余 wire 仍是第 1 代。 */
+  expected_version: 1 | 2
   received_version: number | "missing" | "unknown"
   reason: "schema-validation" | "size-limit" | "route-purpose-mismatch"
 }
@@ -400,7 +402,9 @@ export type CloudUploadResult =
         | "upload-main-gate-required"
     }
 /** B gateway /v1/models 的一条 live 模型(真相源 allowlist)。 */
-export type PlatformLiveModel = { id: string; provider?: string; minPlan?: string }
+/** #681 / ADR-039:`pricing` 是**必填**的 —— ModelCatalogV2 每一行都携带双倍数,一行没有 pair 的
+ *  目录不是「少了点数据」,而是整份不兼容(fetch 侧就整份拒绝了,不会到这里)。 */
+export type PlatformLiveModel = { id: string; provider?: string; minPlan?: string; pricing: PricingMultiplier }
 
 // REQ-093(#185):run artifact manifest 只读查询面的共享形状。真源在 main 侧 electron-free 模块
 // (artifact-manifest / artifact-service);type-only 引入,renderer 拿到 descriptor + 本地状态

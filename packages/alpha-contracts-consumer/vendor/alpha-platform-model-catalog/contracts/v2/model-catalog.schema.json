@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "model-catalog.schema.json",
+  "title": "ModelCatalogV2",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "number",
+      "const": 2
+    },
+    "object": {
+      "type": "string",
+      "const": "list"
+    },
+    "data": {
+      "maxItems": 512,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "object": {
+            "type": "string",
+            "const": "model"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "deepseek",
+              "openai",
+              "openrouter",
+              "anthropic",
+              "zhipu",
+              "alibaba"
+            ]
+          },
+          "min_plan": {
+            "type": "string",
+            "enum": [
+              "free",
+              "member"
+            ]
+          },
+          "pricing_multiplier": {
+            "type": "object",
+            "properties": {
+              "input": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "output": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "input",
+              "output"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "provider",
+          "min_plan",
+          "pricing_multiplier"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "edition": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "byok_providers": {
+      "anyOf": [
+        {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pricing_basis_model_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  },
+  "required": [
+    "schema_version",
+    "object",
+    "data",
+    "edition",
+    "byok_providers",
+    "pricing_basis_model_id"
+  ],
+  "additionalProperties": false
+}

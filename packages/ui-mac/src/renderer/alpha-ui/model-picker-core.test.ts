@@ -8,6 +8,8 @@ import { buildModelPickerRows, composerModelFromRef, modelRefOf, withModelVarian
 const catalog = {
   ...(await Bun.file(new URL("../../main/alpha-models.json", import.meta.url)).json()),
   liveSync: { status: "static" },
+  // #681:平台段没有有效 V2/LKG 时 basis 为 null(该 stub 不带远端目录)。
+  pricingBasisModelId: null,
 } as EffectiveCatalog
 
 const info = (

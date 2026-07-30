@@ -30,7 +30,6 @@ const UPSTREAMS = [
       "contracts/v1/fixtures/producer/cloud-job-request.json",
       "contracts/v1/fixtures/producer/cloud-job-status.json",
       "contracts/v1/fixtures/producer/ledger-page.json",
-      "contracts/v1/fixtures/producer/model-catalog.json",
       "contracts/v1/fixtures/consumers/alpha-code-224/cloud-and-artifact.json",
       "contracts/v1/fixtures/consumers/alpha-web-22/platform-access-claims.json",
       "contracts/v1/fixtures/invalid/artifact-inline-content.json",
@@ -40,6 +39,30 @@ const UPSTREAMS = [
       "contracts/v1/fixtures/limits/envelope-max-plus-one.json",
       "contracts/v1/fixtures/limits/payload-max-exact.json",
       "contracts/v1/fixtures/limits/payload-max-plus-one.json",
+    ],
+  },
+  {
+    // #681 / platform#138 / ADR-039: ModelCatalogV2 ships as its own capability-scoped artifact, so it
+    // gets its own pin even though the publisher repository is the same. `GET /v1/models` now returns
+    // ModelCatalogV2 only — the V1 bundle above no longer carries a model-catalog fixture, and bumping
+    // the catalog generation must not force alpha-web (or the Token/Cloud/Artifact consumers) to
+    // re-pin the V1 bundle. Same repo, separate commit / lock / vendor subtree / staged-source dir:
+    // the loops below key on the entry, never on `repo`, so the two alpha-platform pins move apart.
+    //
+    repo: "jinjunnn/alpha-platform",
+    commit: "7fd62d3edcb0d21f429ce06cadc2528fc5b0ab5c",
+    lock: "alpha-platform-model-catalog.lock.json",
+    vendor: "vendor/alpha-platform-model-catalog",
+    sourceEnv: "ALPHA_PLATFORM_MODEL_CATALOG_SOURCE",
+    sourceDefault: ".upstream-model-catalog-contracts",
+    // 第三份是上游发布的 **negative fixture**(V1 形状的目录,`expect: "invalid"`)。钉它是为了让
+    // 「拒绝 V1 形状」这条判据消费**上游自己的字节**,而不是我们手写一份别人文法的替身 ——
+    // 手写替身是本仓最贵的返工来源(见 alpha-work CLAUDE.md「勘破先于闸门设计」第 2 条:
+    // 要么消费对方的决定,要么直接拒绝该输入,不要解释它)。
+    files: [
+      "contracts/v2/model-catalog.schema.json",
+      "contracts/v2/fixtures/producer/model-catalog.json",
+      "contracts/v2/fixtures/invalid/v1-shaped-catalog.json",
     ],
   },
   {
@@ -96,7 +119,20 @@ if (check) {
       const source = new Uint8Array(await sourceFile.arrayBuffer())
       if (sha256(source) !== entry.sha256) throw new Error(`staged contract hash mismatch: ${path}`)
     }
-    console.log(`verified ${upstream.files.length} contract artifacts from ${upstream.repo}@${upstream.commit}`)
+    // 只说自己真的验过的事。有 staged checkout 时三方比对(lock ↔ vendored 字节 ↔ 上游字节)成立,
+    // 说 "from …@<sha>" 才是真的;**没有**时,本次只证明了本仓自洽(lock ↔ vendored 字节),
+    // 「这些字节来自那个 commit」根本没被检查过 —— 那是 lock 的**声称**,不是本次的结论。
+    // 无源时仍打印 "verified … from …@<sha>" 就是宣称一件自己没验证的事(假闸门的标准形态):
+    // 拿一个陈旧/错误的目录跑一次 vendor,脚本照收并重写 lock,CI 随后照样说"来自那个 commit"。
+    // 无源不判红 —— CI 没有上游 checkout 是常态,不是错误;错的只是措辞。
+    console.log(
+      hasStagedSource
+        ? `verified ${upstream.files.length} contract artifacts from ${upstream.repo}@${upstream.commit}` +
+            ` (lock + staged upstream bytes)`
+        : `checked ${upstream.files.length} contract artifacts against ${upstream.lock}` +
+            ` — lock ↔ vendored bytes OK; PROVENANCE NOT VERIFIED this run` +
+            ` (no staged checkout of ${upstream.repo}@${upstream.commit}; these bytes are not proven to come from it)`,
+    )
   }
   process.exit(0)
 }

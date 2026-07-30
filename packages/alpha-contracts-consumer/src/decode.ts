@@ -3,6 +3,9 @@ import addFormats from "ajv-formats"
 import artifactDescriptorSchema from "../vendor/alpha-platform/contracts/v1/artifact-descriptor.schema.json"
 import wireSchema from "../vendor/alpha-platform/contracts/v1/alpha-wire-contracts.schema.json"
 import limits from "../vendor/alpha-platform/contracts/v1/limits.json"
+// #681 / ADR-039: ModelCatalogV2 rides its own capability-scoped pin (vendor/alpha-platform-model-catalog),
+// not the V1 bundle. Bumping the catalog generation therefore does not re-pin any other V1 wire.
+import modelCatalogV2Schema from "../vendor/alpha-platform-model-catalog/contracts/v2/model-catalog.schema.json"
 import { ContractIncompatibleError, type ContractSurface } from "./error"
 import type { ContractValues, RoutePurpose, TokenClaimsV1, UploadConsentClaimsV1 } from "./types"
 
@@ -20,11 +23,16 @@ function buildValidators() {
   addFormats(ajv)
   ajv.addSchema(artifactDescriptorSchema)
   ajv.addSchema(wireSchema)
+  ajv.addSchema(modelCatalogV2Schema)
   return {
     TokenClaimsV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/TokenClaimsV1" }),
     UploadManifestV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/UploadManifestV1" }),
     LedgerPageV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/LedgerPageV1" }),
-    ModelCatalogV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/ModelCatalogV1" }),
+    // #681 hard cut: there is **no** ModelCatalogV1 validator any more. The V1 bundle still carries the
+    // `$defs/ModelCatalogV1` definition (upstream bytes, untouched), but nothing in this package can
+    // compile it — so "the desktop no longer decodes V1 catalogs" is a mechanical property of this
+    // object, not a claim in a comment. Restoring the old line is the inversion ADR-039 §4 asks for.
+    ModelCatalogV2: ajv.compile({ $ref: "model-catalog.schema.json" }),
     CloudJobRequestV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobRequestV1" }),
     CloudJobAcceptedV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobAcceptedV1" }),
     CloudJobStatusV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobStatusV1" }),
@@ -40,6 +48,13 @@ function getValidators() {
 
 export type ContractName = keyof ContractValues
 
+// #681: a contract's generation is now per-contract, so the reported `expected_version` has to be too —
+// otherwise a rejected V1 catalog would be reported as "expected v1, received 1", which reads as if the
+// producer were fine. Anything not listed here is still generation 1. Always resolved to a defined value
+// (never spread as `undefined`), so the failure record can't silently lose the field.
+const EXPECTED_VERSION: Partial<Record<ContractName, 1 | 2>> = { ModelCatalogV2: 2 }
+const expectedVersionOf = (contract: ContractName): 1 | 2 => EXPECTED_VERSION[contract] ?? 1
+
 export function decodeContract<Name extends ContractName>(
   contract: Name,
   value: unknown,
@@ -48,6 +63,7 @@ export function decodeContract<Name extends ContractName>(
   if (!getValidators()[contract](value)) {
     throw new ContractIncompatibleError({
       surface,
+      expected_version: expectedVersionOf(contract),
       received_version: receivedVersion(value, contract === "ArtifactDescriptorV1" ? "schemaVersion" : "schema_version"),
       reason: "schema-validation",
     })
@@ -55,6 +71,7 @@ export function decodeContract<Name extends ContractName>(
   if (contract === "UploadManifestV1" && !uploadManifestInvariants(value)) {
     throw new ContractIncompatibleError({
       surface,
+      expected_version: expectedVersionOf(contract),
       received_version: receivedVersion(value, "schema_version"),
       reason: "schema-validation",
     })
@@ -68,13 +85,23 @@ export function decodeJsonContract<Name extends ContractName>(
   surface: ContractSurface,
 ): ContractValues[Name] {
   if (new TextEncoder().encode(text).byteLength > NON_STREAMING_PAYLOAD_MAX_BYTES) {
-    throw new ContractIncompatibleError({ surface, received_version: "unknown", reason: "size-limit" })
+    throw new ContractIncompatibleError({
+      surface,
+      expected_version: expectedVersionOf(contract),
+      received_version: "unknown",
+      reason: "size-limit",
+    })
   }
   try {
     return decodeContract(contract, JSON.parse(text), surface)
   } catch (error) {
     if (error instanceof ContractIncompatibleError) throw error
-    throw new ContractIncompatibleError({ surface, received_version: "unknown", reason: "schema-validation" })
+    throw new ContractIncompatibleError({
+      surface,
+      expected_version: expectedVersionOf(contract),
+      received_version: "unknown",
+      reason: "schema-validation",
+    })
   }
 }
 

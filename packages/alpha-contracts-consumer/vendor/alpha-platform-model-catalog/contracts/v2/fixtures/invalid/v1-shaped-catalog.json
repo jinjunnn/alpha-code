@@ -1,7 +1,7 @@
 {
   "kind": "schema",
-  "contract": "ModelCatalogV1",
-  "expect": "valid",
+  "contract": "ModelCatalogV2",
+  "expect": "invalid",
   "value": {
     "schema_version": 1,
     "object": "list",

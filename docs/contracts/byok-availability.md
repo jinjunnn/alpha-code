@@ -103,9 +103,9 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
 
 - gateway `/v1/models` 的 `byok_providers` 字段在 alpha-code 侧**没有任何策略消费方**:
   **不作策略消费、不缓存、不记录、不经 IPC 传播**(REQ-109 #595,owner 裁决 2026-07-24)。
-  **它仍被解码与校验** —— `ModelCatalogV1` 把 `byok_providers` 列为 required,缺字段会判
-  `contract-incompatible`;`decodeJsonContract` 照旧解出完整信封,只是本仓不再读取该字段。
-  wire/schema 侧的字段删除另票处理,不影响本契约。
+  **它仍被解码与校验** —— `ModelCatalogV2`(REQ-127 #681 / ADR-039 起的目录代际)同样把
+  `byok_providers` 列为 required,缺字段会判 `contract-incompatible`;`decodeJsonContract` 照旧解出
+  完整信封,只是本仓不再读取该字段。wire/schema 侧的字段删除另票处理,不影响本契约。
 - live allowlist 仍然收窄**平台代理模型清单**(edition-scoped),这一半不变。
 - 因此 BYOK 段没有远程 kill-switch。已接受的代价:供应商破坏性改鉴权/URL/协议、模型
   下架或改名、供应商安全事故、法务/制裁要求下架、错误 baseURL 或计费语义变化,都只能
@@ -120,8 +120,10 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
   `reportContractFailure` 走独立通道上报(`alpha-contract-health` IPC +
   `alpha-contract-failure` 推送 → renderer `a-contract-failure` 面),**不得**让整个
   `models-catalog` 失败 —— 那会连本地 BYOK 一起阵亡。
-- 平台不可达 / 缓存缺失 / 缓存损坏 → 平台段回退 last-known 或内置 snapshot
-  (`liveSync.status` 如实标 `cache` / `static`),BYOK 段原样返回。
+- 平台不可达 / 缓存缺失 / 缓存损坏 / **旧代 V1 缓存** → 平台段回退 last-known 或内置 snapshot
+  (`liveSync.status` 如实标 `cache` / `static`),BYOK 段原样返回。REQ-127 #681 起,平台段在没有
+  有效 V2 快照时**额外**放弃一切价格主张(`pricingBasisModelId` 为 `null`、每行无 `pricing`);
+  BYOK 段不受影响 —— 它本来就不经平台目录。
 
 ## 实现锚点
 

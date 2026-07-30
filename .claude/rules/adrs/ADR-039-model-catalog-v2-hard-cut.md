@@ -77,6 +77,32 @@ V2 fetch → decoder → LKG → effective projection 的结果，并记录一�
 该检查变红的 inversion。类型检查、fixture 单测、HTTP 200、源码字符串或全套测试绿色不能替代
 这个证据。
 
+## 实现落点（alpha-code#681）
+
+| 决策 | 代码 |
+| --- | --- |
+| 独立 pin | `packages/alpha-contracts-consumer/alpha-platform-model-catalog.lock.json`、`vendor/alpha-platform-model-catalog/contracts/v2/` |
+| 严格 decoder（无 V1 catalog validator） | `packages/alpha-contracts-consumer/src/decode.ts` |
+| fetch 只解 V2 + schema 外语义校验 | `packages/ui-mac/src/main/alpha-platform-models.ts` |
+| 一份快照校验 + 唯一投影 | `packages/ui-mac/src/main/alpha-live-allowlist.ts` |
+| sidecar 走同一投影 | `packages/ui-mac/src/main/alpha-models.ts` |
+| 生产 wiring 闸 + 持久 negative gate | `packages/ui-mac/src/main/models-catalog-v2.wiring.{test,cases}.ts` |
+
+JSON Schema 表达不了的两条语义落在客户端：`pricing_basis_model_id` 非空、每行 pair 落在 0.1 网格
+（`isTrustedPair`）。倍数判据只能证明「落在 0.1 网格」，证明不了「恰好一位小数」——JSON 解码后
+`1` 与 `1.0` 是同一个 number。
+
+**空目录当无效**：一次合法但 `data: []` 的响应不得覆盖磁盘上的合法 LKG（`every` 对空数组恒真，
+是可达的数据丢失路径）。写侧与读侧因此调用同一个 `isValidCatalogSnapshot`。
+
+**不加后台刷新**：`models.catalog()` 不只被 picker 调用，composer 模型链也在调且挂着会重跑的响应式
+依赖；在 IPC handler 里挂 fire-and-forget refresh 会变成请求风暴，且先发后到的旧响应会覆盖新快照
+（原子写不防乱序）。刷新点仍是启动与登录后 respawn 前两处。「picker 打开从不刷新目录」是既存缺陷，
+本 ADR 不主张它已修好。
+
+**basis 不硬编码**：客户端不校验 `pricing_basis_model_id === "deepseek-v4-flash"`。那是让客户端替平台
+做决定，正是本需求要消灭的形态；平台换基准，展示跟着变才诚实。
+
 ## Capability inventory disposition
 
 代际切换 Issue 必须逐项记录凭证、tool runtime、plugin hook、event/projection、persistence
@@ -103,7 +129,15 @@ V2 fetch → decoder → LKG → effective projection 的结果，并记录一�
 ## 后果
 
 - `/v1/models` response 与 Desktop decoder 的 hard cut 需要协调发布；任一时刻不保留双代兼容窗口。
+  **平台先部署 V2，Desktop 签名版本后发。**
+- **硬切后、平台未部署 V2 期间**：Desktop decode 失败 → 不写 LKG → 平台段回落本地静态全量、无 pricing，
+  且顶部 `a-contract-failure` Banner 常驻。已接受，处置就是上面那条发布顺序。**不做**：不加 V1 双读、
+  不加「契约失败静默不报」开关、不给 Banner 加白名单。
 - 无 V2/LKG 时平台代理价格声明会暂时不可用，但不会再谎报便宜档位。
+- **无有效 LKG 时平台段 = 本地静态全量** ⇒ edition 收窄的失效窗口变宽（cn 用户可能看到并选中网关会拒的
+  模型）。已接受：picker 可选择性 ≠ 可执行性，网关仍是最终裁判。
 - 未来若 V2 发生必填性、单位或语义 breaking change，必须产生新 generation，不能原地改写。
+- 两个**不夹带**的既存缺陷，记在这里免得下次当成本次回归：`models-platform-live` 没有 renderer 调用方；
+  `alpha-models.json` 的 `defaultModel` 被两处以不同语义消费。
 - REQ-127 的跨仓方案与验收由
   [alpha-work#45](https://github.com/jinjunnn/alpha-work/issues/45) 统一追踪。

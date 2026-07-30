@@ -41,11 +41,19 @@ export const byokEngineId = (id: string): string => `${id}-byok`
  *  it does not depend on platform login/entitlement or on the engine's model list being loaded". */
 export const isByokEngineId = (providerID: string): boolean => providerID.endsWith("-byok")
 
+/** #681 / ADR-039:平台下发的**双倍数**。相对基准模型(`EffectiveCatalog.pricingBasisModelId`)
+ *  未缓存 token 单价之比;平台已 half-up 到一位小数。客户端只本地化展示 —— 不做除法、不 rounding、
+ *  不加权、不折叠成单一 scalar(折叠对至少一侧必然错)。 */
+export type PricingMultiplier = { input: number; output: number }
+
 /** A model fronted by the alpha-platform proxy (代理节点). Visible always (locked when logged-out). */
 export type PlatformModel = {
   id: string
   name: string
   tier: Tier
+  /** #681:平台目录给的双倍数,**远端权威**;缺失 = 没有有效 V2/LKG,该行不得声称任何价格。
+   *  本地 alpha-models.json 永远不产出它(那正是 REQ-127 要消灭的本地价格主张)。 */
+  pricing?: PricingMultiplier
   reasoning?: boolean
   web?: boolean
   /** 推理档位表(alpha-models.json variants:档名 → 引擎 request 参数)。REQ-055:AlphaComposer 的
@@ -79,7 +87,14 @@ export type LiveSyncInfo = {
 /** window.api.models.catalog() 实际返回:catalog 的**平台段**经 edition 清单过滤后的视图 + 来源标注。
  *  platformModels 已按网关清单收窄(真实 registry id);**byokProviders 原样透出** —— REQ-109 #595
  *  撤销了 edition 收窄,BYOK 目录只由本地 alpha-models.json 决定(docs/contracts/byok-availability.md)。 */
-export type EffectiveCatalog = AlphaModelCatalog & { liveSync: LiveSyncInfo }
+export type EffectiveCatalog = AlphaModelCatalog & {
+  liveSync: LiveSyncInfo
+  /** #681 / ADR-039:`PlatformModel.pricing` 那些倍数相对的基准模型 id;`null` = 没有有效 V2/LKG,
+   *  平台段计价状态为 unavailable。**基准是单位定义,不是目录成员** —— 平台明确声明消费方不得假设
+   *  它出现在 platformModels 里(edition 白名单可以把它筛掉)。基准由平台下发,客户端不硬编码:
+   *  平台换基准,展示跟着变才是诚实的。 */
+  pricingBasisModelId: string | null
+}
 
 // ── custom-provider add/test IPC (window.api.providers.*) ───────────────────────────────────────
 

@@ -1,0 +1,18 @@
+{
+  "repo": "jinjunnn/alpha-platform",
+  "commit": "7fd62d3edcb0d21f429ce06cadc2528fc5b0ab5c",
+  "files": [
+    {
+      "path": "contracts/v2/model-catalog.schema.json",
+      "sha256": "152232c6aa266f30b2c78aefadbf00f32e4f93d574e6afd9f1b97bb8e763587e"
+    },
+    {
+      "path": "contracts/v2/fixtures/producer/model-catalog.json",
+      "sha256": "5b706b78a0efc6321c954a1440710e2d01c636650366e24e9edd92a8a2175c39"
+    },
+    {
+      "path": "contracts/v2/fixtures/invalid/v1-shaped-catalog.json",
+      "sha256": "f9113e384cd7f36d5c7307b4460c5910a7ac10e1339f2a04c43cb598f6227189"
+    }
+  ]
+}

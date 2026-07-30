@@ -1,0 +1,134 @@
+{
+  "kind": "schema",
+  "contract": "ModelCatalogV2",
+  "expect": "valid",
+  "value": {
+    "schema_version": 2,
+    "object": "list",
+    "data": [
+      {
+        "id": "deepseek-v4-flash",
+        "object": "model",
+        "provider": "deepseek",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 1,
+          "output": 1
+        }
+      },
+      {
+        "id": "deepseek-v4-pro",
+        "object": "model",
+        "provider": "deepseek",
+        "min_plan": "member",
+        "pricing_multiplier": {
+          "input": 3.1,
+          "output": 3.1
+        }
+      },
+      {
+        "id": "glm-5.2",
+        "object": "model",
+        "provider": "zhipu",
+        "min_plan": "member",
+        "pricing_multiplier": {
+          "input": 5.4,
+          "output": 8.5
+        }
+      },
+      {
+        "id": "glm-5-turbo",
+        "object": "model",
+        "provider": "zhipu",
+        "min_plan": "member",
+        "pricing_multiplier": {
+          "input": 8.6,
+          "output": 14.3
+        }
+      },
+      {
+        "id": "qwen3.7-max",
+        "object": "model",
+        "provider": "openrouter",
+        "min_plan": "member",
+        "pricing_multiplier": {
+          "input": 10.5,
+          "output": 15.8
+        }
+      },
+      {
+        "id": "qwen3.7-plus",
+        "object": "model",
+        "provider": "openrouter",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 2.3,
+          "output": 4.6
+        }
+      },
+      {
+        "id": "gpt-5.4-mini",
+        "object": "model",
+        "provider": "openai",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 5.4,
+          "output": 16.1
+        }
+      },
+      {
+        "id": "gpt-5.4-nano",
+        "object": "model",
+        "provider": "openai",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 1.4,
+          "output": 4.5
+        }
+      },
+      {
+        "id": "claude-haiku-4.5",
+        "object": "model",
+        "provider": "anthropic",
+        "min_plan": "free",
+        "pricing_multiplier": {
+          "input": 7.1,
+          "output": 17.9
+        }
+      },
+      {
+        "id": "claude-sonnet-5",
+        "object": "model",
+        "provider": "anthropic",
+        "min_plan": "member",
+        "pricing_multiplier": {
+          "input": 21.4,
+          "output": 53.6
+        }
+      },
+      {
+        "id": "claude-fable-5",
+        "object": "model",
+        "provider": "anthropic",
+        "min_plan": "member",
+        "pricing_multiplier": {
+          "input": 71.4,
+          "output": 178.6
+        }
+      },
+      {
+        "id": "claude-opus-4.8",
+        "object": "model",
+        "provider": "anthropic",
+        "min_plan": "member",
+        "pricing_multiplier": {
+          "input": 35.7,
+          "output": 89.3
+        }
+      }
+    ],
+    "edition": "intl",
+    "byok_providers": null,
+    "pricing_basis_model_id": "deepseek-v4-flash"
+  }
+}
