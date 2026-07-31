@@ -1,7 +1,7 @@
 // ADR-030(REQ-098 #372)wiring 合同:六个第一方生产动作(MCP / skill / plugin / agent / cloud /
 // bundle)传给 window.api.ext.installCatalog 的 intent 必须 scope=global —— project 受管安装已收回。
 // 强制层在 main(planner decode 后 policy guard,ext-install-planner.test.ts 的运行时拒绝用例);
-// 本测试锁第一方调用图:renderer 不发注定被拒的 project intent,新增第 7 个调用点或改动既有
+// 本测试锁第一方调用图:renderer 不发注定被拒的 project intent,新增第 8 个调用点或改动既有
 // scope 字面量都会在此显形。hook 挂载依赖引擎 client + Solid 运行时,bun test 下不可复现
 //(use-extensions-ipc.test.ts 同款约束),故按源文本逐调用点断言。
 import { describe, expect, test } from "bun:test"
@@ -43,14 +43,14 @@ describe("ADR-030 wiring: 第一方 installCatalog 调用全部 scope=global", (
     for (const args of calls) expect(args).not.toContain(`"project"`)
   })
 
-  test("extension-hub.tsx:bundle 动作", () => {
+  test("extension-hub.tsx:package 与 bundle 动作", () => {
     const calls = installCatalogCallArgs(read("extension-hub.tsx"))
-    expect(calls).toHaveLength(1)
-    expect(calls[0]).toContain(`scope: { scope: "global" }`)
-    expect(calls[0]).not.toContain(`"project"`)
+    expect(calls).toHaveLength(2)
+    for (const args of calls) expect(args).toContain(`scope: { scope: "global" }`)
+    for (const args of calls) expect(args).not.toContain(`"project"`)
   })
 
-  test("整个 renderer 树无其它 installCatalog 调用文件(第 7 个入口必须显式登记)", () => {
+  test("整个 renderer 树无其它 installCatalog 调用文件(第 8 个入口必须显式登记)", () => {
     const rendererRoot = path.resolve(here, "..")
     const withCalls: string[] = []
     const walk = (dir: string): void => {

@@ -385,6 +385,35 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
 .alpha-ext-card-foot .alpha-ext-add {
   margin-left: auto;
 }
+[data-package-card] .alpha-ext-card-foot {
+  flex-wrap: wrap;
+}
+.alpha-ext-package-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 21px;
+  padding: 2px 8px;
+  border-radius: var(--a-radius-sm);
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  white-space: nowrap;
+}
+.alpha-ext-package-state[data-verdict="compatible"],
+.alpha-ext-package-state[data-prerequisite="ready"] {
+  background: var(--a-success-subtle);
+  color: var(--a-success);
+}
+.alpha-ext-package-state[data-verdict="update-required"],
+.alpha-ext-package-state[data-prerequisite="required-action"] {
+  background: color-mix(in srgb, var(--a-warning) 14%, transparent);
+  color: var(--a-warning);
+}
+.alpha-ext-package-state[data-verdict="blocked"] {
+  background: color-mix(in srgb, var(--a-error) 12%, transparent);
+  color: var(--a-error);
+}
 
 /* ── Add / action button ────────────────────────────────────────────────────── */
 .alpha-ext-add {
