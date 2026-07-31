@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
 
-test("package safe view traverses the production ExtensionHub card and ExtensionDetail path", () => {
+test("package safe view and admission traverse the production ExtensionHub card and ExtensionDetail paths", () => {
   const result = Bun.spawnSync({
     cmd: [
       process.execPath,
@@ -13,7 +13,7 @@ test("package safe view traverses the production ExtensionHub card and Extension
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain(" 3 pass")
+  expect(output).toContain(" 8 pass")
   expect(output).toContain(" 0 fail")
-  expect(output).toMatch(/Ran 3 tests across 1 file/)
+  expect(output).toMatch(/Ran 8 tests across 1 file/)
 })

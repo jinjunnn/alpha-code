@@ -238,6 +238,9 @@ export function ExtensionDetail(props: {
             >
               {t(presentation().actionKey)}
             </button>
+            <Show when={props.errorFor?.(view().catalogId)}>
+              {(error) => <p class="alpha-ext-card-err" role="alert">{error()}</p>}
+            </Show>
           </div>
         </Section>
       </div>
