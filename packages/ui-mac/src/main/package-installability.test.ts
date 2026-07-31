@@ -126,6 +126,23 @@ describe("package installability authority", () => {
         version: "1.0.0",
       },
     })
+
+    // 上面那三个值恰好等于 corpus 的值,所以单靠它杀不掉「把 presentation 写死成常量」——
+    // 全仓 package 语料只有这一个 presentation,没有任何断言能区分「取的是这个包自己的」
+    // 和「取的是一个常量」。再评一次、换一份 presentation,断言它真的跟着变。
+    const other = await corpus()
+    ;(other.envelope.components[0] as { profileId: string }).profileId = "future-profile"
+    other.envelope.presentation = {
+      displayName: "Second Corpus Package",
+      description: "A different description, so a hard-coded value cannot pass.",
+    }
+    const second = await evaluatePackageForHost(other.envelope)
+    expect(second.verdict).toBe("update-required")
+    expect(second.presentation).toEqual({
+      displayName: "Second Corpus Package",
+      description: "A different description, so a hard-coded value cannot pass.",
+      version: "1.0.0",
+    })
   })
 
   test.each([
