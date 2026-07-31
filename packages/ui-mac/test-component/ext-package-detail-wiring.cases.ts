@@ -165,7 +165,14 @@ const packageFixture = async () => {
     via: "channel-stable",
     channel: "stable",
   }
-  let prerequisiteEvaluations = 0
+  // 显式状态,**不要**用调用计数表达「已解决」。R2 审计实测:原来的
+  // `prerequisiteEvaluations === 1` 只有一次调用的裕度 —— 将来谁在详情打开前多加或少加
+  // 一次 refresh,「已解决」就会静默翻面,而失败信息("Expected ready / Received
+  // required-action")完全指不到真因。这正是三个月后没人解释得清的 flaky 的来源。
+  let prerequisiteResolved = false
+  const resolvePrerequisite = () => {
+    prerequisiteResolved = true
+  }
   const evaluator = (envelope: unknown) => {
     const packageId = (envelope as AlphaPackageEnvelopeV1).prelude.packageId
     if (packageId !== prerequisite.envelope.prelude.packageId)
@@ -173,8 +180,7 @@ const packageFixture = async () => {
         fetchPayload: async () => payloads.get(packageId) ?? new Uint8Array(),
       })
 
-    prerequisiteEvaluations++
-    if (prerequisiteEvaluations === 1)
+    if (!prerequisiteResolved)
       return evaluatePackageForHost(envelope, {
         fetchPayload: async () => payloads.get(packageId) ?? new Uint8Array(),
       })
@@ -190,7 +196,7 @@ const packageFixture = async () => {
       fetchPayload: async () => resolvedBytes,
     })
   }
-  return { raw, evaluator }
+  return { raw, evaluator, resolvePrerequisite }
 }
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown
@@ -281,6 +287,8 @@ async function mountHarness() {
     browseResults,
     detailResults,
     installIntents,
+    // 让用例显式表达「用户已经把前置条件解决了」,而不是靠数 evaluator 被调了几次。
+    resolvePrerequisite: fixture.resolvePrerequisite,
     updateChecks: () => updateChecks,
   }
 }
@@ -491,15 +499,33 @@ describe("package detail production renderer path", () => {
     click(readyAction)
     await waitFor(() => expect(harness.installIntents.length).toBe(1))
 
+    // 先看**未解决**的样子:这一半让 data-* 属性不能被钉成常量 ——
+    // 只断言一个值时,把属性写死成那个值照样通过。前后两个不同的值才杀得掉。
+    click(packageCard("package:renderer-prerequisite"))
+    const beforeDetail = document.querySelector(
+      "[data-package-detail='package:renderer-prerequisite']",
+    )
+    expect(beforeDetail).toBeInstanceOf(HTMLElement)
+    expect(beforeDetail?.querySelector(".alpha-ext-dtool code")?.textContent).toBe("A_KEY")
+    expect(beforeDetail?.querySelector(".alpha-ext-dtool span")?.textContent).toBe(
+      zh["alpha.ext.packageRequired"],
+    )
+    await waitFor(() =>
+      expect({
+        prerequisite: beforeDetail?.querySelector("[data-prerequisite]")?.getAttribute("data-prerequisite"),
+        verdict: beforeDetail?.querySelector("[data-verdict]")?.getAttribute("data-verdict"),
+      }).toEqual({ prerequisite: "required-action", verdict: "compatible" }),
+    )
+    click(beforeDetail?.querySelector(".alpha-ext-crumb-link") ?? null)
+    await waitFor(() => expect(document.querySelector("[data-package-detail]")).toBeNull())
+
+    // 用户在别处补齐了密钥;重新打开时 main 重判应当读到「已就绪」。
+    harness.resolvePrerequisite()
     click(packageCard("package:renderer-prerequisite"))
     const prerequisiteDetail = document.querySelector(
       "[data-package-detail='package:renderer-prerequisite']",
     )
     expect(prerequisiteDetail).toBeInstanceOf(HTMLElement)
-    expect(prerequisiteDetail?.querySelector(".alpha-ext-dtool code")?.textContent).toBe("A_KEY")
-    expect(prerequisiteDetail?.querySelector(".alpha-ext-dtool span")?.textContent).toBe(
-      zh["alpha.ext.packageRequired"],
-    )
     await waitFor(() =>
       expect(
         prerequisiteDetail
@@ -555,6 +581,10 @@ describe("package detail production renderer path", () => {
         document.querySelector("[data-package-detail='package:renderer-update']"),
       ).toBeInstanceOf(HTMLElement),
     )
+    // 第二个不同的 verdict 值:与用例 2 的 "compatible" 一起,让 data-verdict 钉不成常量。
+    expect(
+      document.querySelector("[data-package-detail] [data-verdict]")?.getAttribute("data-verdict"),
+    ).toBe("update-required")
     click(document.querySelector("[data-package-detail] .alpha-ext-dsub button"))
     await waitFor(() => expect(harness.updateChecks()).toBe(1))
     expect(harness.installIntents).toEqual([])
