@@ -448,6 +448,35 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     })
   })
 
+  test("support failure returns the strictly decoded presentation", () => {
+    const envelope = structuredClone(corpus.cases[0]!.envelope)
+    envelope.presentation = {
+      displayName: "Next Profile Tooling",
+      description: "A bounded presentation retained after the support gate rejects the profile.",
+    }
+    componentOf(envelope).profileVersion = 2
+
+    expect(decodePackageEnvelopeHeaderV1(jsonBytes(envelope))).toMatchObject({
+      ok: false,
+      status: "blocked",
+      stage: "support",
+      presentation: envelope.presentation,
+    })
+  })
+
+  test("header failure does not return presentation", () => {
+    const envelope = structuredClone(corpus.cases[0]!.envelope)
+    envelope.presentation = {
+      displayName: "Valid Presentation",
+      description: "This remains valid while a different header field fails strict decoding.",
+    }
+    ;(envelope.prelude as Record<string, unknown>).version = "-1"
+    const result = decodePackageEnvelopeHeaderV1(jsonBytes(envelope))
+
+    expect(result).toMatchObject({ ok: false, status: "blocked", stage: "header" })
+    expect("presentation" in result).toBe(false)
+  })
+
   test("known payload with an unknown behavior key is strictly rejected before prerequisites/planner", async () => {
     const item = structuredClone(corpus.cases.find((entry) => entry.name === "mcp-remote-v1")!)
     ;(item.payload!.behavior as Record<string, unknown>).executeScript = true

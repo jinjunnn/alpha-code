@@ -130,6 +130,13 @@ const packageFixture = async () => {
   const update = await producerCorpus()
   update.envelope.prelude.packageId = "package:renderer-update"
   ;(update.envelope.components[0] as { profileId: string }).profileId = "future-profile"
+  // 与 corpus 不同的 presentation:五个夹具都克隆自同一份 producer corpus,只改了 packageId,
+  // 于是 displayName 全是 "Generic Remote MCP" —— 那样断言杀不掉「回落成 packageId」「写死常量」
+  // 「取错包」任何一种。update-required 是本票新产生的那一支,给它一份独有的值。
+  update.envelope.presentation = {
+    displayName: "Renderer Update Package",
+    description: "Only this fixture carries this description.",
+  }
 
   const blocked = await producerCorpus()
   blocked.envelope.prelude.packageId = "package:renderer-blocked"
@@ -585,6 +592,15 @@ describe("package detail production renderer path", () => {
     expect(
       document.querySelector("[data-package-detail] [data-verdict]")?.getAttribute("data-verdict"),
     ).toBe("update-required")
+    // 本票要修的就是这两行看得见的东西:update-required 以前把裸 package id 当标题、简介为空。
+    // 夹具的 presentation 与 corpus 不同 ⇒ 这两条同时杀掉「回落」「写死常量」「取错包」三种形状。
+    {
+      const detail = document.querySelector("[data-package-detail]")!
+      expect(detail.querySelector("h2")?.textContent).toBe("Renderer Update Package")
+      expect(detail.querySelector(".alpha-ext-dabout")?.textContent).toBe(
+        "Only this fixture carries this description.",
+      )
+    }
     click(document.querySelector("[data-package-detail] .alpha-ext-dsub button"))
     await waitFor(() => expect(harness.updateChecks()).toBe(1))
     expect(harness.installIntents).toEqual([])

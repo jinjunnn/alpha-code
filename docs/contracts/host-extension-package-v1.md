@@ -16,7 +16,7 @@ profile, capability, and strict-decoder contract.
 The authoritative self-contained copy is
 [`packages/ui-mac/src/shared/host-extension-package-contract/CONTRACT.md`](../../packages/ui-mac/src/shared/host-extension-package-contract/CONTRACT.md).
 Its current aggregate artifact SHA-256 is
-`c3c53e0580782884d441ed04064e31020949bef87ae01b4a0403f8576e3fd483`.
+`1ed320e4ccf455576b41d30f4fbba22b5cafb37563c56cee55e40b8c574ff2bb`.
 
 The `alpha-web#95` consumer pins an immutable `alpha-code` commit, the fixed
 artifact path `packages/ui-mac/src/shared/host-extension-package-contract`, and

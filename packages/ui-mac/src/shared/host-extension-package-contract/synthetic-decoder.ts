@@ -30,6 +30,13 @@ export type SyntheticDecoderResultV1<Plan> =
       status: "blocked" | "skipped"
       stage: "header" | "support" | "payload"
       errors: string[]
+      /**
+       * Present only for `stage: "support"`, where the header decoder has already accepted and
+       * bounded the presentation before rejecting the component. Declared here because this module
+       * returns the header decode result verbatim; omitting it made the published type narrower
+       * than the runtime shape.
+       */
+      presentation?: AlphaPackageEnvelopeV1["presentation"]
     }
 
 /**

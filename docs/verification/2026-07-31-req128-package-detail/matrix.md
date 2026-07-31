@@ -22,9 +22,9 @@ file://<repo>/docs/verification/2026-07-31-req128-package-detail/harness/package
 五态输入是构造的 safe view 视觉夹具；随包 catalog 当前没有 package。它们证明五种
 canonical state 的排版与交互状态，不声称当前线上 catalog 已有对应条目。renderer
 真实数据链与返回值键白名单由 `ext-package-detail-wiring.test.ts` 单独验证。
-其中 update-required 是 support gate 在读取 presentation 前产生的 safe view，因此不带
-presentation：名称回退为 `package:next-profile-agent`，简介为空。空简介章节是否隐藏仍是
-owner 看过真实帧后的设计决定，本 harness 不预判。
+其中 update-required 使用真 evaluator 可复现的 support-stage 失败夹具：
+`package:generic-remote-mcp` / `Generic Remote MCP` / `1.0.0`。support gate 返回已严格解码、
+有界的 presentation，卡片与详情页消费同一份 safe view，都会展示真实名称和简介。
 
 静态 `file://` harness 没有构建步骤，中文文案仍以字面量复刻；这是它的已知限制。
 `ext-package-presentation.test.ts` 逐项把 harness 中会渲染的中文与现役 `zh.ts` 对照，
@@ -44,11 +44,19 @@ owner 看过真实帧后的设计决定，本 harness 不预判。
 SVG 或媒体代理。light/dark、长文本、无源 icon、键盘焦点均以 pairwise 方式覆盖，
 没有跑完整乘积。
 
-采集环境（已采，2026-07-31）：Playwright + Chromium，视口 1100×900，`fullPage`，CSS 像素。
+采集环境（2026-07-31）：Playwright + Chromium，视口 1100×900，`fullPage`，CSS 像素。
 harness 经本地静态服务加载（`file://` 被浏览器协议策略拒绝），现役 `tokens.css` / `base.css` /
 `extension-hub.css` 均以 200 返回，非内联复制。
 
+**P3 已于本票落地后重采**，采集脚本同时读回帧内容以证明拍到的是修复后的形状，而不是
+靠肉眼判断：`h2 = "Generic Remote MCP"`（修复前是裸的 `package:generic-remote-mcp`）、
+`.alpha-ext-dabout = "Generic Phase 1 compiler corpus input."`（修复前是空串）、
+动作按钮 `检查更新`、焦点落在面包屑 `推荐`（首个 tab stop）。裸标识符现在只出现在代码 chip 一处。
+
 ## 采集时实测记录
+
+> P1/P2/P4/P5 的记录量自首次采集;**P3 已在本票落地后重采并复核**,下列关于 P3 的两条
+> 在新帧上仍然成立(结构未变,首字母占位图的字母从 `p` 变为 `G`)。
 
 - 五帧的章节标题顺序：`简介 → 可安装性 → 组件与前置条件 → 原因 → 动作`（五帧目视一致）。
 - 五帧均使用首字母占位图，未加载任何远程图片 / SVG / 媒体代理。
@@ -63,13 +71,18 @@ harness 经本地静态服务加载（`file://` 被浏览器协议策略拒绝�
 - 认证协议、远程媒体、Plugin 与 Bundle 页面不属于本票。
 - installability 真值与点击后 main 重判由生产链测试覆盖，不由静态视觉 harness 代替。
 
-## P3 记录到的一处产品问题（已开票，不由本票修）
+## P3 · update-required presentation
 
-P3 帧显示：`update-required` 的 safe view 不带 presentation，于是页面上
-**同一个标识符 `package:next-profile-agent` 出现三次**（面包屑、标题、代码 chip），
-且「简介」一节**标题在、内容为空**，只剩一条分隔线。
+修复前的 P3 中，presentation 回落到 package ID，使完整标识符在详情页出现四次：
+面包屑、标题、代码 chip、组件行；首字母占位还另外显示一次首字符。这个计数对应
+`extension-detail.tsx` 的四个完整渲染点，不是先前记录的三次。
 
-这是真实生产形状（`package-installability.ts` 的 support gate 在读取 presentation 前
-就产生了该 safe view），不是 harness 造的。owner 已裁决改行为而非隐藏空节，
-见 [`alpha-code#729`](https://github.com/jinjunnn/alpha-code/issues/729)。
-**该票落地后，P3 需重采并更新本矩阵。**
+本票改为由 decoder 在 support 失败时返回已经通过严格边界校验的 presentation，
+`package-installability.ts` 将它投影到 `update-required` safe view。P3 因而显示
+`Generic Remote MCP` 与非空简介；package ID 只保留在代码 chip。浏览卡片同样渲染
+这份 presentation，所以名称与简介也一起受益。header-stage 失败仍保留原回落行为，
+空简介章节是否隐藏仍是独立设计决定，不在本票范围内。
+
+P3 已由主会话在本票落地后重采（实现方按验证约束未在沙箱启动浏览器，交接给主会话执行）。
+采集脚本在截图的同一次页面加载里读回 `h2`、`.alpha-ext-dabout` 与动作按钮文案，
+所以「拍到的是修复后的帧」有可执行证据，不靠肉眼比对。
