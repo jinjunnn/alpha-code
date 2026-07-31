@@ -149,6 +149,7 @@ type Engine = {
   auth: string
   get: (p: string) => Promise<any>
   post: (p: string, b: unknown) => Promise<any>
+  delete: (p: string) => Promise<any>
 }
 
 /** A model turn can run for minutes; anything longer than this is a hang, and a hung probe is
@@ -182,6 +183,7 @@ function makeEngine(base: string, auth: string): Engine {
     auth,
     get: (p) => call("GET", p),
     post: (p, b) => call("POST", p, b),
+    delete: (p) => call("DELETE", p),
   }
 }
 
@@ -259,92 +261,111 @@ function localWebSearchIsHidden(toolIDs: string[] | undefined) {
   return toolIDs !== undefined && !toolIDs.includes(LOCAL_WEB_SEARCH_TOOL_ID)
 }
 
-function newSettledWebSearchFacts(facts: LedgerFact[], before: Set<number>) {
-  return facts.filter(
-    (fact) => !before.has(fact.seq) && fact.kind === "usage_settled" && fact.actionId === "tool.web_search",
+function newWebSearchSettlements(facts: LedgerFact[], before: Set<number>) {
+  const fresh = facts.filter((fact) => !before.has(fact.seq))
+  const reservations = fresh.filter(
+    (fact) =>
+      fact.kind === "reservation_created" &&
+      fact.actionId === "tool.web_search" &&
+      typeof fact.reservationId === "string",
   )
+  return Array.from(new Set(reservations.map((fact) => fact.reservationId!))).map((reservationId) => ({
+    reservationId,
+    reservations: reservations.filter((fact) => fact.reservationId === reservationId),
+    usage: fresh.filter((fact) => fact.reservationId === reservationId && fact.kind === "usage_settled"),
+    terminal: fresh.filter((fact) => fact.reservationId === reservationId && fact.kind === "reservation_settled"),
+  }))
 }
 
-/** `ps eww` is a source-side observation: unlike GET /config, it sees the sidecar's raw
- *  OPENCODE_CONFIG_CONTENT before ConfigVariable substitutes `{file:...}`. Parse only the balanced
- *  JSON value and never retain or print the rest of the process environment. */
-function extractJsonEnvironment(line: string, name: string) {
-  const marker = `${name}=`
-  const start = line.indexOf(marker)
-  if (start < 0) return undefined
-  const valueStart = start + marker.length
-  if (line[valueStart] !== "{") return undefined
-  let depth = 0
-  let quoted = false
-  let escaped = false
-  for (let index = valueStart; index < line.length; index++) {
-    const char = line[index]!
-    if (escaped) {
-      escaped = false
-      continue
-    }
-    if (quoted && char === "\\") {
-      escaped = true
-      continue
-    }
-    if (char === '"') {
-      quoted = !quoted
-      continue
-    }
-    if (quoted) continue
-    if (char === "{") depth++
-    if (char !== "}") continue
-    depth--
-    if (depth !== 0) continue
-    try {
-      return JSON.parse(line.slice(valueStart, index + 1)) as { mcp?: Record<string, CloudDefinition> }
-    } catch {
-      return undefined
-    }
-  }
-  return undefined
+type ConfigSourceObservation = {
+  present: boolean
+  parsed: boolean
+  urlMatches: boolean
+  authorizationMatchesFileReference: boolean
 }
 
-function readPackagedSidecarConfigSource(expectedUrl: string) {
-  // Resolve only the packaged NodeService PID without environments first. Asking `ps eww -ax`
-  // would unnecessarily copy unrelated processes' environments into this probe.
-  const processList = Bun.spawnSync(["ps", "-axo", "pid=,command="])
-  if (processList.exitCode !== 0)
-    return {
-      config: undefined,
-      packagedCandidates: 0,
-      error: processList.stderr.toString().trim().slice(0, 300) || `ps exited ${processList.exitCode}`,
-    }
-  const sidecarPids = processList.stdout
-    .toString()
-    .split("\n")
-    .filter(
-      (line) =>
-        line.includes(APP) &&
-        line.includes("--type=utility") &&
-        line.includes("--utility-sub-type=node.mojom.NodeService"),
-    )
-    .flatMap((line) => {
-      const pid = line.trim().match(/^(\d+)\s/)?.[1]
-      return pid ? [pid] : []
+/** Spawn a short-lived child through the packaged engine's own PTY API. Pty.Service merges the
+ * engine's current `process.env` into every child, so this observes raw OPENCODE_CONFIG_CONTENT
+ * before ConfigVariable resolves `{file:...}`. The child prints only booleans; neither the config
+ * nor either credential can reach stdout/evidence. */
+async function observePackagedConfigSource(
+  engine: Engine,
+  expectedUrl: string,
+  expectedSecretFile: string,
+): Promise<{ observation?: ConfigSourceObservation; error?: string }> {
+  const marker = "ALPHA_E7_P1_2="
+  const child = [
+    "const result = { present: false, parsed: false, urlMatches: false, authorizationMatchesFileReference: false };",
+    "const raw = process.env.OPENCODE_CONFIG_CONTENT;",
+    'result.present = typeof raw === "string" && raw.length > 0;',
+    "try {",
+    '  const config = JSON.parse(raw ?? "{}");',
+    "  result.parsed = true;",
+    `  const definition = config?.mcp?.[${JSON.stringify(CLOUD_MCP_SERVER_NAME)}];`,
+    "  result.urlMatches = definition?.url === process.argv[1];",
+    '  result.authorizationMatchesFileReference = definition?.headers?.Authorization === "Bearer {file:" + process.argv[2] + "}";',
+    "} catch {}",
+    `console.log(${JSON.stringify(marker)} + JSON.stringify(result));`,
+    "await Bun.sleep(5000);",
+  ].join("\n")
+
+  let ptyID: string | undefined
+  let socket: WebSocket | undefined
+  try {
+    const created = await engine.post("/pty", {
+      command: process.execPath,
+      args: ["-e", child, expectedUrl, expectedSecretFile],
+      cwd: import.meta.dir,
+      title: "Alpha E7 config-source probe",
     })
-  const configs = sidecarPids
-    .map((pid) => Bun.spawnSync(["ps", "eww", "-p", pid, "-o", "command="]))
-    .filter((result) => result.exitCode === 0)
-    .map((result) => result.stdout.toString())
-    .flatMap((line) => {
-      const config = extractJsonEnvironment(line, "OPENCODE_CONFIG_CONTENT")
-      return config ? [config] : []
+    ptyID = created?.id
+    if (!ptyID) return { error: "engine PTY create returned no id" }
+
+    const next = new URL(`${engine.base}/pty/${encodeURIComponent(ptyID)}/connect`)
+    next.protocol = next.protocol === "https:" ? "wss:" : "ws:"
+    next.searchParams.set("cursor", "0")
+    next.searchParams.set("auth_token", engine.auth.replace(/^Basic\s+/i, ""))
+    const result = await new Promise<{ observation?: ConfigSourceObservation; error?: string }>((resolve) => {
+      let output = ""
+      let settled = false
+      const finish = (value: { observation?: ConfigSourceObservation; error?: string }) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(value)
+      }
+      const timer = setTimeout(() => finish({ error: "timed out waiting for sanitized PTY observation" }), 10_000)
+      socket = new WebSocket(next)
+      socket.onmessage = (event) => {
+        const data =
+          typeof event.data === "string"
+            ? event.data
+            : event.data instanceof ArrayBuffer
+              ? new TextDecoder().decode(event.data)
+              : ""
+        if (data.charCodeAt(0) === 0) return
+        output += data
+        const markerIndex = output.indexOf(marker)
+        if (markerIndex < 0) return
+        const tail = output.slice(markerIndex + marker.length)
+        const lineEnd = tail.search(/\r?\n/)
+        if (lineEnd < 0) return
+        const line = tail.slice(0, lineEnd)
+        try {
+          finish({ observation: JSON.parse(line) as ConfigSourceObservation })
+        } catch {
+          finish({ error: "sanitized PTY observation was not valid JSON" })
+        }
+      }
+      socket.onerror = () => finish({ error: "PTY websocket failed" })
+      socket.onclose = () => finish({ error: "PTY closed before emitting the sanitized observation" })
     })
-  return {
-    config: configs.find((config) => config.mcp?.[CLOUD_MCP_SERVER_NAME]?.url === expectedUrl),
-    packagedCandidates: configs.length,
-    error:
-      sidecarPids.length === 0
-        ? "no packaged NodeService sidecar process found"
-        : configs.length === 0
-          ? `OPENCODE_CONFIG_CONTENT was not observable on ${sidecarPids.length} packaged sidecar process(es)`
-          : undefined,
+    return result
+  } catch (error) {
+    return { error: String(error).slice(0, 400) }
+  } finally {
+    socket?.close()
+    if (ptyID) await engine.delete(`/pty/${encodeURIComponent(ptyID)}`).catch(() => undefined)
   }
 }
 
@@ -359,17 +380,38 @@ function runCriterionSelfTests() {
       },
     },
   }
-  const extractedSource = extractJsonEnvironment(
-    `sidecar OPENCODE_CONFIG_CONTENT=${JSON.stringify(goodSource)} OTHER_ENV=1`,
-    "OPENCODE_CONFIG_CONTENT",
-  )
   const denied = [{ permission: "websearch", pattern: "*", action: "deny" }]
+  const goodLedger: LedgerFact[] = [
+    {
+      seq: 2,
+      kind: "reservation_created",
+      domain: "wallet",
+      amount: 15,
+      actionId: "tool.web_search",
+      reservationId: "reservation-good",
+      createdAt: 1,
+    },
+    {
+      seq: 3,
+      kind: "usage_settled",
+      domain: "wallet",
+      amount: -15,
+      reservationId: "reservation-good",
+      createdAt: 2,
+    },
+    {
+      seq: 4,
+      kind: "reservation_settled",
+      domain: "wallet",
+      amount: 0,
+      reservationId: "reservation-good",
+      createdAt: 2,
+    },
+  ]
   const tests = [
     {
       name: "P1.2 accepts the source-side file reference",
-      ok:
-        cloudDefinitionUsesFileReference(goodSource, expectedUrl, expectedSecret) &&
-        cloudDefinitionUsesFileReference(extractedSource, expectedUrl, expectedSecret),
+      ok: cloudDefinitionUsesFileReference(goodSource, expectedUrl, expectedSecret),
     },
     {
       name: "P1.2 rejects an inlined bearer bypass",
@@ -399,34 +441,20 @@ function runCriterionSelfTests() {
       ok: localWebSearchIsHidden(["read"]) && !localWebSearchIsHidden(["read", "websearch"]),
     },
     {
-      name: "P2.3 requires a new settled web-search ledger fact",
-      ok:
-        newSettledWebSearchFacts(
-          [
-            {
-              seq: 2,
-              kind: "usage_settled",
-              domain: "wallet",
-              amount: -1,
-              actionId: "tool.web_search",
-              createdAt: 1,
-            },
-          ],
+      name: "P2.3 correlates reservation and settlement facts by reservationId",
+      ok: (() => {
+        const [complete] = newWebSearchSettlements(goodLedger, new Set([1]))
+        const [mismatched] = newWebSearchSettlements(
+          goodLedger.map((fact) => (fact.kind === "usage_settled" ? { ...fact, reservationId: "other" } : fact)),
           new Set([1]),
-        ).length === 1 &&
-        newSettledWebSearchFacts(
-          [
-            {
-              seq: 2,
-              kind: "reservation_created",
-              domain: "wallet",
-              amount: -1,
-              actionId: "tool.web_search",
-              createdAt: 1,
-            },
-          ],
-          new Set([1]),
-        ).length === 0,
+        )
+        return (
+          complete?.usage.length === 1 &&
+          complete.terminal.length === 1 &&
+          mismatched?.usage.length === 0 &&
+          mismatched.terminal.length === 1
+        )
+      })(),
     },
   ]
   for (const test of tests) console.log(`[${test.ok ? "PASS" : "FAIL"}] ${test.name}`)
@@ -814,12 +842,12 @@ const engineConfig = (await engine.get("/config")) as {
 }
 const cloudDef = engineConfig.mcp?.[CLOUD_MCP_SERVER_NAME]
 const expectedMcpUrl = endpoints.mcp ?? `${endpoints.cloud}/mcp`
-const sourceConfig = readPackagedSidecarConfigSource(expectedMcpUrl)
-const sourceUsesFileReference = cloudDefinitionUsesFileReference(
-  sourceConfig.config,
-  expectedMcpUrl,
-  secretFile("ALPHA_CLOUD_TOKEN"),
-)
+const sourceConfig = await observePackagedConfigSource(engine, expectedMcpUrl, secretFile("ALPHA_CLOUD_TOKEN"))
+const sourceUsesFileReference =
+  sourceConfig.observation?.present === true &&
+  sourceConfig.observation.parsed === true &&
+  sourceConfig.observation.urlMatches === true &&
+  sourceConfig.observation.authorizationMatchesFileReference === true
 const resolvedAuthorizationMatchesSecret = cloudDef?.headers?.Authorization === `Bearer ${cloudToken}`
 assertCheck(
   {
@@ -827,7 +855,7 @@ assertCheck(
     ac: "AC1 packaged 登录态 listTools",
     title: "the source-side cloud MCP definition uses a {file:} token reference and resolves to the expected endpoint",
     criterion:
-      `the packaged sidecar's raw OPENCODE_CONFIG_CONTENT has mcp.${CLOUD_MCP_SERVER_NAME}.url === "${expectedMcpUrl}" ` +
+      `a short-lived child spawned by the packaged engine inherits raw OPENCODE_CONFIG_CONTENT with mcp.${CLOUD_MCP_SERVER_NAME}.url === "${expectedMcpUrl}" ` +
       `AND Authorization === "Bearer {file:<userData>/alpha-secrets/ALPHA_CLOUD_TOKEN}"; ` +
       "GET /config separately resolves that definition to the same URL and the secret-file value",
     required: true,
@@ -835,8 +863,8 @@ assertCheck(
   sourceUsesFileReference && cloudDef?.url === expectedMcpUrl && resolvedAuthorizationMatchesSecret,
   {
     expectedMcpUrl,
-    sourceProcessCandidates: sourceConfig.packagedCandidates,
     sourceObservationError: sourceConfig.error,
+    sourceObservation: sourceConfig.observation,
     sourceUsesFileReference,
     resolvedUrl: cloudDef?.url,
     resolvedAuthorizationMatchesSecret,
@@ -1058,12 +1086,14 @@ assertCheck(
 const settlementPollStartedAt = Date.now()
 let summaryAfter = await cdp!.eval<any>("window.api.account.summary()")
 let txAfter = await cdp!.eval<any>("window.api.account.transactions(50)")
-let settledWebSearchFacts = newSettledWebSearchFacts(txAfter?.transactions ?? [], txSeqBefore)
-while (settledWebSearchFacts.length === 0 && Date.now() - settlementPollStartedAt < BILLING_SETTLE_TIMEOUT_MS) {
+let webSearchSettlements = newWebSearchSettlements(txAfter?.transactions ?? [], txSeqBefore)
+const settlementComplete = () =>
+  webSearchSettlements.some((settlement) => settlement.usage.length > 0 && settlement.terminal.length > 0)
+while (!settlementComplete() && Date.now() - settlementPollStartedAt < BILLING_SETTLE_TIMEOUT_MS) {
   await sleep(1000)
   summaryAfter = await cdp!.eval<any>("window.api.account.summary()")
   txAfter = await cdp!.eval<any>("window.api.account.transactions(50)")
-  settledWebSearchFacts = newSettledWebSearchFacts(txAfter?.transactions ?? [], txSeqBefore)
+  webSearchSettlements = newWebSearchSettlements(txAfter?.transactions ?? [], txSeqBefore)
 }
 const newFacts = ((txAfter?.transactions ?? []) as LedgerFact[]).filter((fact) => !txSeqBefore.has(fact.seq))
 const walletDelta = Number(summaryAfter?.walletUsedFen ?? 0) - Number(summaryBefore?.walletUsedFen ?? 0)
@@ -1074,11 +1104,11 @@ assertCheck(
     ac: "AC3 计费(ledger/settle)证据",
     title: "waitUntil-backed web-search settlement reaches this tenant's append-only ledger",
     criterion:
-      `within ${BILLING_SETTLE_TIMEOUT_MS}ms after the real calls, the account ledger appends a fact with ` +
-      'kind="usage_settled" AND actionId="tool.web_search" and a seq absent from the pre-call page',
+      `within ${BILLING_SETTLE_TIMEOUT_MS}ms after the real calls, the account ledger appends ` +
+      'reservation_created(actionId="tool.web_search"), usage_settled, and reservation_settled facts sharing one new reservationId',
     required: true,
   },
-  settledWebSearchFacts.length > 0,
+  settlementComplete(),
   {
     settlementObservedAfterMs: Date.now() - settlementPollStartedAt,
     settlementTimeoutMs: BILLING_SETTLE_TIMEOUT_MS,
@@ -1088,14 +1118,12 @@ assertCheck(
     balanceFenAfter: summaryAfter?.balanceFen,
     walletDelta,
     balanceDelta,
-    settledWebSearchFacts: settledWebSearchFacts.map((fact) => ({
-      seq: fact.seq,
-      kind: fact.kind,
-      domain: fact.domain,
-      amount: fact.amount,
-      actionId: fact.actionId,
-      reservationId: fact.reservationId,
-      createdAt: fact.createdAt,
+    webSearchSettlements: webSearchSettlements.map((settlement) => ({
+      reservationId: settlement.reservationId,
+      reservationSeqs: settlement.reservations.map((fact) => fact.seq),
+      usageSeqs: settlement.usage.map((fact) => fact.seq),
+      terminalSeqs: settlement.terminal.map((fact) => fact.seq),
+      amountSettled: settlement.usage.reduce((sum, fact) => sum + fact.amount, 0),
     })),
     newLedgerFacts: newFacts.map((fact) => ({
       seq: fact.seq,
