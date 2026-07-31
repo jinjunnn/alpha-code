@@ -1,0 +1,67 @@
+{
+  "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
+  "artifactSha256": "c3c53e0580782884d441ed04064e31020949bef87ae01b4a0403f8576e3fd483",
+  "files": [
+    {
+      "bytes": 4213,
+      "path": "CONTRACT.md",
+      "sha256": "07bc7899756356ffff35883d08bb2e27c98a0baf657e74e6833f427722a7c437"
+    },
+    {
+      "bytes": 3608,
+      "path": "alpha-package-envelope-v1.schema.json",
+      "sha256": "f85bcbb3fb7b1432686caf0b6b5710ca75fe82c372032cb11bc22bcfcab1972f"
+    },
+    {
+      "bytes": 24821,
+      "path": "decoder.ts",
+      "sha256": "9c9246bf20b33f7caf5f2275fe579c2af08f9eb0ee359f8520d2458abf3ed554"
+    },
+    {
+      "bytes": 9300,
+      "path": "generate-artifact.ts",
+      "sha256": "bdd317c786749dba372e1c6db735dd7db4459de861a471b8a82a3c43432768c2"
+    },
+    {
+      "bytes": 1339,
+      "path": "host-extension-package.registry.v1.json",
+      "sha256": "898ad4edffaf5fde0502009253e8e7099498856b2bec45390e2bf3a81f77a421"
+    },
+    {
+      "bytes": 1369,
+      "path": "profiles/agent.v1.schema.json",
+      "sha256": "5d3c42e55b14875a7f8ff9954bdacdc4ef4fe27e50b04e47ff54a4a548c0bdd5"
+    },
+    {
+      "bytes": 1355,
+      "path": "profiles/mcp-local.v1.schema.json",
+      "sha256": "51681a0ab12e5a4f9d2dc4d46353accf4fc5befe95aa92e133e0ca2626dd7923"
+    },
+    {
+      "bytes": 1343,
+      "path": "profiles/mcp-remote.v1.schema.json",
+      "sha256": "b80ef7ad8fb04525abcf2618c0d8a68bc871a46801663daaaa6d87d4bb2cf749"
+    },
+    {
+      "bytes": 1369,
+      "path": "profiles/skill.v1.schema.json",
+      "sha256": "0727dade9871c18d2b2a598ae34844d1afe6d43c381f931e729e653cd625805a"
+    },
+    {
+      "bytes": 2484,
+      "path": "registry.ts",
+      "sha256": "ed9ecdb5755370d935a26501ad8753fc28eadf04a2337627217102dd44b0279f"
+    },
+    {
+      "bytes": 3237,
+      "path": "synthetic-decoder.ts",
+      "sha256": "bf06906277fcebf56b376ceab26ed4a7abd9ee78b7780306834a76b2dafe39ce"
+    },
+    {
+      "bytes": 9754,
+      "path": "testvectors/decoder-corpus.v1.json",
+      "sha256": "9d416c008b1b4408d8cbe1c4a27f7b8b9bd40ba389daced47b284bd088d51443"
+    }
+  ],
+  "schema": "alpha.host-extension-package.artifact.v1"
+}

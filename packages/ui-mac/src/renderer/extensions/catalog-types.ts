@@ -3,6 +3,8 @@
 // ConfigV2.MCP (packages/core/src/config/mcp.ts): the discriminant is "local" | "remote"
 // (NOT stdio/sse), local carries `command`+`environment`, remote carries `url`+`headers`.
 
+import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
+
 export type CatalogType = "mcp" | "skill" | "plugin" | "bundle" | "agent" | "cloud"
 export type CatalogSource = "official" | "community" | "alpha" | "user"
 
@@ -134,6 +136,8 @@ export interface CatalogEntry {
 export interface Catalog {
   version: string
   entries: CatalogEntry[]
+  /** REQ-128:main-owned safe views; raw package envelopes/payload refs never cross IPC. */
+  packages?: CatalogPackageViewV1[]
 }
 
 /** Live install state of one extension, derived from SDK truth (NOT persisted by alpha). */

@@ -32,6 +32,7 @@ import {
   type ChannelClientDeps,
   type TrustDoc,
 } from "./catalog-channels"
+import { validateCatalogPackageShape } from "./package-installability"
 
 const NOW = Date.parse("2026-07-13T12:00:00.000Z")
 const BASE = "https://channels.test/catalog/v1"
@@ -352,6 +353,61 @@ describe("拒绝矩阵(合成 ed25519 宇宙)", () => {
     expect(r2.version).toBe("2.0.0")
     expect(r2.error).toBeUndefined()
     expect(second.calls.some((u) => u.includes("/releases/"))).toBe(false) // payload 未重拉
+  })
+
+  test("package prelude 消费门在落 LKG 前拒新快照,也不采信历史坏 LKG", async () => {
+    const consume = (catalog: unknown) => {
+      const result = validateCatalogPackageShape(catalog)
+      return result.ok ? { ok: true as const } : result
+    }
+    const k1 = genKey()
+    await seedLkg(k1)
+    const malformed = JSON.stringify(
+      {
+        version: "3.0.0",
+        entries: [{ id: "skill:new" }],
+        packages: [{ prelude: { packageId: "mcp:not-a-package-root", version: "1.0.0" } }],
+      },
+      null,
+      2,
+    )
+    const trust = trustDoc(k1)
+    const doc = channelDoc(k1, malformed, { sequence: 6 })
+    const rejected = await refreshChannelCatalog(
+      dir,
+      "stable",
+      depsOf(serve(worldRoutes(trust, doc, malformed, k1)).fetchImpl, k1),
+      consume,
+    )
+    expect(rejected.source).toBe("cache")
+    if (rejected.source !== "cache") throw new Error("unreachable")
+    expect(rejected.version).toBe("2.0.0")
+    expect(rejected.error ?? "").toContain("package consumption rejected")
+
+    const historicalDir = fs.mkdtempSync(path.join(os.tmpdir(), "catalog-package-lkg-"))
+    try {
+      const historicalDoc = channelDoc(k1, malformed)
+      expect(
+        (
+          await refreshChannelCatalog(
+            historicalDir,
+            "stable",
+            depsOf(serve(worldRoutes(trust, historicalDoc, malformed, k1)).fetchImpl, k1),
+          )
+        ).source,
+      ).toBe("remote")
+      const unavailable = await refreshChannelCatalog(
+        historicalDir,
+        "stable",
+        depsOf(serve({}).fetchImpl, k1),
+        consume,
+      )
+      expect(unavailable.source).toBe("none")
+      if (unavailable.source !== "none") throw new Error("unreachable")
+      expect(unavailable.error).toContain("R13 snapshot fetch failed")
+    } finally {
+      fs.rmSync(historicalDir, { recursive: true, force: true })
+    }
   })
 
   test("R1:channel 文档字节被篡改 → 拒,无缓存则 source=none", async () => {

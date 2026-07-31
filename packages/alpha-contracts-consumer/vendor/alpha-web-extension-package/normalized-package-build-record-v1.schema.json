@@ -1,0 +1,206 @@
+{
+  "$id": "normalized-package-build-record-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "component": {
+      "additionalProperties": false,
+      "properties": {
+        "assetDirectory": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        },
+        "assetManifestSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capabilities": {
+          "items": {
+            "const": "alpha.secret-prerequisite.v1"
+          },
+          "maxItems": 1,
+          "type": "array"
+        },
+        "dependencies": {
+          "maxItems": 0,
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "payloadRef": {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "maximum": 1048576,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "mediaType": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "url": {
+              "maxLength": 2048,
+              "pattern": "^https://",
+              "type": "string"
+            }
+          },
+          "required": [
+            "sha256",
+            "bytes",
+            "mediaType",
+            "url"
+          ],
+          "type": "object"
+        },
+        "profileId": {
+          "enum": [
+            "skill",
+            "agent",
+            "mcp-local",
+            "mcp-remote"
+          ]
+        },
+        "profileVersion": {
+          "const": 1
+        },
+        "required": {
+          "const": true
+        },
+        "version": {
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "required",
+        "dependencies",
+        "assetDirectory",
+        "assetManifestSha256",
+        "profileId",
+        "profileVersion",
+        "capabilities",
+        "payloadRef"
+      ],
+      "type": "object"
+    },
+    "root": {
+      "additionalProperties": false,
+      "properties": {
+        "compatibility": {
+          "additionalProperties": false,
+          "properties": {
+            "reportSha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "verdict": {
+              "enum": [
+                "compatible",
+                "review-required",
+                "blocked"
+              ]
+            }
+          },
+          "required": [
+            "verdict",
+            "reportSha256"
+          ],
+          "type": "object"
+        },
+        "declarationSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "packageId": {
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "presentation": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "displayName": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "displayName",
+            "description"
+          ],
+          "type": "object"
+        },
+        "source": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "alpha-native"
+            },
+            "publisher": {
+              "enum": [
+                "alpha",
+                "official",
+                "community"
+              ]
+            },
+            "redistributable": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "publisher",
+            "redistributable"
+          ],
+          "type": "object"
+        },
+        "version": {
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "packageId",
+        "version",
+        "presentation",
+        "source",
+        "declarationSha256",
+        "compatibility"
+      ],
+      "type": "object"
+    },
+    "schema": {
+      "const": "alpha.normalized-package-build-record.v1"
+    }
+  },
+  "required": [
+    "schema",
+    "root",
+    "component"
+  ],
+  "title": "NormalizedPackageBuildRecordV1",
+  "type": "object"
+}

@@ -29,6 +29,13 @@ import {
   type ChannelName,
   type FailureClass,
 } from "./catalog-channels"
+import {
+  evaluateCatalogPackagesForHost,
+  validateCatalogPackageShape,
+  type PackageEvaluator,
+  type PackageInstallabilityDeps,
+} from "./package-installability"
+import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 
 export { catalogVersionLess } // 既有导出面保持(版本比较实现移居 catalog-channels,逐字未变)
 
@@ -55,8 +62,83 @@ export type RemoteCatalogResult =
       channel: ChannelName
       /** #314:非 remote 结果的失败类(security 失败绝不借道 v1;消费方据此决定激活面,#315)。 */
       reasonClass?: FailureClass
+      /** main-only compatibility projection; raw package envelopes remain inside catalog. */
+      packageViews?: CatalogPackageViewV1[]
     }
   | { source: "none"; error: string; reasonClass: FailureClass }
+
+export type RemoteCatalogDeps = ChannelClientDeps & {
+  packageEvaluator?: PackageEvaluator
+  packageInstallability?: PackageInstallabilityDeps
+}
+
+export const PACKAGE_DETAIL_IPC_CHANNEL = "ext-package-detail"
+
+export function registerPackageCatalogReadIpcHandlers(
+  register: (channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) => void,
+  refresh: () => Promise<RemoteCatalogResult>,
+) {
+  register("ext-remote-catalog", () => refresh().then(projectRemoteCatalogForRenderer))
+  register(PACKAGE_DETAIL_IPC_CHANNEL, (_event, catalogId) =>
+    typeof catalogId !== "string"
+      ? Promise.resolve(null)
+      : refresh().then((result) =>
+          result.source === "none"
+            ? null
+            : (result.packageViews?.find((view) => view.catalogId === catalogId) ?? null),
+        ),
+  )
+}
+
+export function projectRemoteCatalogForRenderer(
+  result: RemoteCatalogResult,
+):
+  | {
+      source: "remote" | "cache"
+      catalog: { version: string; entries: unknown[]; packages?: CatalogPackageViewV1[] }
+      version: string
+      fetchedAt: string
+      error?: string
+      via: string
+      channel: ChannelName
+    }
+  | { source: "none"; error: string } {
+  if (result.source === "none") return { source: "none", error: result.error }
+  const catalog = result.catalog as { version: string; entries: unknown[] }
+  return {
+    source: result.source,
+    catalog: {
+      version: catalog.version,
+      entries: catalog.entries,
+      ...(result.packageViews ? { packages: result.packageViews } : {}),
+    },
+    version: result.version,
+    fetchedAt: result.fetchedAt,
+    ...(result.error ? { error: result.error } : {}),
+    via: result.via,
+    channel: result.channel,
+  }
+}
+
+export async function evaluateRemoteCatalogPackages(
+  result: RemoteCatalogResult,
+  deps: Pick<RemoteCatalogDeps, "packageEvaluator" | "packageInstallability"> = {},
+): Promise<RemoteCatalogResult> {
+  if (result.source === "none") return result
+  const evaluated = await evaluateCatalogPackagesForHost(
+    result.catalog,
+    deps.packageInstallability,
+    deps.packageEvaluator,
+  )
+  if (!evaluated.ok)
+    return {
+      source: "none",
+      error: `package consumption rejected verified catalog: ${evaluated.error}`,
+      reasonClass: "security",
+    }
+  if (evaluated.views.length === 0) return result
+  return { ...result, packageViews: evaluated.views }
+}
 
 const cachePath = (userDataPath: string) => path.join(userDataPath, "remote-catalog.json")
 
@@ -131,18 +213,31 @@ const inflightRefresh = new Map<string, Promise<RemoteCatalogResult>>()
  *   通道语义混淆,会进一步污染安装与 receipt;要复用内容应由发布侧签发指向同 payload 的
  *   channel doc)。deps 仅测试注入,缺省 = 生产。
  */
-export async function refreshRemoteCatalog(userDataPath: string, channel: ChannelName, deps: ChannelClientDeps = {}): Promise<RemoteCatalogResult> {
+export async function refreshRemoteCatalog(
+  userDataPath: string,
+  channel: ChannelName,
+  deps: RemoteCatalogDeps = {},
+): Promise<RemoteCatalogResult> {
   const key = JSON.stringify([userDataPath, channel])
   const existing = inflightRefresh.get(key)
   if (existing) return existing
-  const p = refreshRemoteCatalogUncoalesced(userDataPath, channel, deps).finally(() => inflightRefresh.delete(key))
+  const p = refreshRemoteCatalogUncoalesced(userDataPath, channel, deps)
+    .then((result) => evaluateRemoteCatalogPackages(result, deps))
+    .finally(() => inflightRefresh.delete(key))
   inflightRefresh.set(key, p)
   return p
 }
 
-async function refreshRemoteCatalogUncoalesced(userDataPath: string, channel: ChannelName, deps: ChannelClientDeps): Promise<RemoteCatalogResult> {
+async function refreshRemoteCatalogUncoalesced(
+  userDataPath: string,
+  channel: ChannelName,
+  deps: RemoteCatalogDeps,
+): Promise<RemoteCatalogResult> {
   const via = `channel-${channel}` as const
-  const ch = await refreshChannelCatalog(userDataPath, channel, deps)
+  const ch = await refreshChannelCatalog(userDataPath, channel, deps, (catalog) => {
+    const validation = validateCatalogPackageShape(catalog)
+    return validation.ok ? { ok: true } : validation
+  })
   if (ch.source === "remote")
     return { source: "remote", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, ...(ch.error ? { error: ch.error } : {}) }
 
@@ -185,7 +280,7 @@ async function refreshRemoteCatalogUncoalesced(userDataPath: string, channel: Ch
  */
 async function refreshRemoteCatalogV1(
   userDataPath: string,
-  deps: ChannelClientDeps,
+  deps: RemoteCatalogDeps,
   identity: { version: string; sha256: string },
 ): Promise<RemoteCatalogResult> {
   const fetchImpl = deps.fetchImpl ?? fetch

@@ -217,6 +217,7 @@ const api: ElectronAPI = {
     importAgentPreview: (token, filePath) => ipcRenderer.invoke("ext-import-agent-preview", token, filePath),
     importAgentConfirm: (previewId) => ipcRenderer.invoke("ext-import-agent-confirm", previewId),
     remoteCatalog: () => ipcRenderer.invoke("ext-remote-catalog"),
+    packageDetail: (catalogId) => ipcRenderer.invoke("ext-package-detail", catalogId),
     curationBlob: (catalogId, kind) => ipcRenderer.invoke("ext-curation-blob", catalogId, kind),
     browseSeed: () => ipcRenderer.invoke("ext-seed-browse"),
     installPlugin: (pkg) => ipcRenderer.invoke("ext-install-plugin", pkg),

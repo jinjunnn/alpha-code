@@ -1,0 +1,32 @@
+{
+  "packageId": "package:generic-remote-mcp",
+  "presentation": {
+    "description": "Generic Phase 1 compiler corpus input.",
+    "displayName": "Generic Remote MCP"
+  },
+  "root": {
+    "component": {
+      "behavior": {
+        "auth": "none",
+        "headersTemplate": {},
+        "requiredSecrets": [
+          "B_TOKEN",
+          "A_KEY",
+          "B_TOKEN"
+        ],
+        "url": "https://user:pass@mcp.example.com"
+      },
+      "id": "mcp:generic-remote",
+      "kind": "mcp",
+      "transport": "remote",
+      "version": "1.0.0"
+    }
+  },
+  "schema": "alpha.package-declaration.v1",
+  "source": {
+    "kind": "alpha-native",
+    "publisher": "official",
+    "redistributable": true
+  },
+  "version": "1.0.0"
+}

@@ -64,6 +64,13 @@ mock.module("../src/main/remote-catalog", () => ({
     reason: "unexpected remote asset download",
   }),
   readCachedCatalog: () => null,
+  registerPackageCatalogReadIpcHandlers: (
+    register: (channel: string, handler: IpcHandler) => void,
+    refresh: () => Promise<unknown>,
+  ) => {
+    register("ext-remote-catalog", () => refresh())
+    register("ext-package-detail", () => null)
+  },
   refreshRemoteCatalog: async () => ({
     source: "remote",
     catalog: { version: bundledCatalog.version, entries: [entry, disabledEntry] },
@@ -152,6 +159,43 @@ test("真实 ext-install-catalog 返回值只含公开状态且不回显 canary"
     JSON.stringify(result),
   ).toBe(true)
   expect(JSON.stringify(result)).not.toContain(canary)
+})
+
+// REQ-128 #702 R1 审计 B1:package 的两条 IPC 生产接线必须真的在 registerExtIpcHandlers 里。
+// 原 wiring 用例自己调 registerPackageCatalogReadIpcHandlers / runCatalogInstallWithPackagePreflight,
+// 于是 `ext-ipc.ts` 退回裸 ipcMain.handle / 裸 installCatalog 之后全量仍全绿。
+// 本文件起的是**真的** registerExtIpcHandlers,所以这两条断言删接线即红。
+test("REQ-128:真 registerExtIpcHandlers 注册了 package detail 通道", () => {
+  expect(handlers.has("ext-package-detail")).toBe(true)
+})
+
+test("REQ-128:`package:` 意图走 package 预检,不落 legacy planner", async () => {
+  const install = handlers.get("ext-install-catalog")
+  if (!install) throw new Error("ext-install-catalog handler was not registered")
+  const result = await install(
+    { sender: { id: 1 } },
+    { catalogId: "package:not-in-this-catalog", scope: { scope: "global" } },
+  )
+  // preflight 在场:package 权威接手,给 package 形状的 blocked 结果。
+  // preflight 被摘掉:意图掉进不懂 package 的 legacy planner,返回值没有 `package` 字段。
+  //
+  // `reason` 不能省:preflight 的**每一条**失败分支都产出 verdict:"blocked",
+  // 只断言 verdict 分辨不出「真的重取了已签 catalog」与「根本没取」——
+  // 把 loadVerifiedCatalog 换成恒返回 {source:"none"} 的常量(即摘掉 REQ-128 的核心反篡改
+  // 性质「main 重取已签事实重判」)时,只有这一行会红。
+  expect(result).toMatchObject({
+    ok: false,
+    reason: "package preflight: catalogId not found in verified Catalog",
+    package: { verdict: "blocked" },
+  })
+})
+
+test("REQ-128:browse 通道的数据源是真的 refreshRemoteCatalog", async () => {
+  const browse = (await handlers.get("ext-remote-catalog")!({ sender: { id: 1 } })) as {
+    version?: string
+  } | null
+  // 把 registerPackageCatalogReadIpcHandlers 的 refresh 实参换成不刷新的桩时,本行变红。
+  expect(browse?.version).toBe(bundledCatalog.version)
 })
 
 // 这一条守的是 `ext-ipc.ts` 里 `installedDisabled` 的**提前返回**分支 —— 真实 catalog 里
