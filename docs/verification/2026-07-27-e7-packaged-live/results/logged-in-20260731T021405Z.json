@@ -2,8 +2,8 @@
   "schema": "alpha-code/e7-packaged-live/v1",
   "issue": "alpha-code#643",
   "phase": "logged-in",
-  "capturedAt": "2026-07-31T02:20:38.799Z",
-  "finishedAt": "2026-07-31T02:20:56.635Z",
+  "capturedAt": "2026-07-31T02:14:05.752Z",
+  "finishedAt": "2026-07-31T02:15:11.405Z",
   "build": {
     "app": "/Applications/alpha-code.app",
     "asarSha256": "dded6b38f023e2bbaba3c152032a857f80221d280949c6838374741aea6f42b9",
@@ -46,7 +46,7 @@
         "pinnedCommit": "b8f030e0c"
       },
       "required": true,
-      "at": "2026-07-31T02:20:38.908Z"
+      "at": "2026-07-31T02:14:05.873Z"
     },
     {
       "id": "P0.2",
@@ -58,7 +58,7 @@
         "port": 9222
       },
       "required": true,
-      "at": "2026-07-31T02:20:38.923Z"
+      "at": "2026-07-31T02:14:05.897Z"
     },
     {
       "id": "P0.3",
@@ -74,7 +74,7 @@
         }
       },
       "required": true,
-      "at": "2026-07-31T02:20:38.943Z"
+      "at": "2026-07-31T02:14:05.909Z"
     },
     {
       "id": "P0.4",
@@ -107,7 +107,7 @@
         }
       },
       "required": true,
-      "at": "2026-07-31T02:20:38.948Z"
+      "at": "2026-07-31T02:14:05.912Z"
     },
     {
       "id": "P1.1",
@@ -121,30 +121,26 @@
           "status": "connected"
         }
       },
-      "at": "2026-07-31T02:20:38.960Z"
+      "at": "2026-07-31T02:14:07.920Z"
     },
     {
       "id": "P1.2",
       "ac": "AC1 packaged 登录态 listTools",
       "title": "the source-side cloud MCP definition uses a {file:} token reference and resolves to the expected endpoint",
-      "criterion": "a short-lived child spawned by the packaged engine inherits raw OPENCODE_CONFIG_CONTENT with mcp.cloud.url === \"https://alpha-cloud.tidelabs.click/mcp\" AND Authorization === \"Bearer {file:<userData>/alpha-secrets/ALPHA_CLOUD_TOKEN}\"; GET /config separately resolves that definition to the same URL and the secret-file value",
+      "criterion": "the packaged sidecar's raw OPENCODE_CONFIG_CONTENT has mcp.cloud.url === \"https://alpha-cloud.tidelabs.click/mcp\" AND Authorization === \"Bearer {file:<userData>/alpha-secrets/ALPHA_CLOUD_TOKEN}\"; GET /config separately resolves that definition to the same URL and the secret-file value",
       "required": true,
-      "status": "pass",
+      "status": "fail",
       "observed": {
         "expectedMcpUrl": "https://alpha-cloud.tidelabs.click/mcp",
-        "sourceObservation": {
-          "present": true,
-          "parsed": true,
-          "urlMatches": true,
-          "authorizationMatchesFileReference": true
-        },
-        "sourceUsesFileReference": true,
+        "sourceProcessCandidates": 0,
+        "sourceObservationError": "OPENCODE_CONFIG_CONTENT was not observable on 1 packaged sidecar process(es)",
+        "sourceUsesFileReference": false,
         "resolvedUrl": "https://alpha-cloud.tidelabs.click/mcp",
         "resolvedAuthorizationMatchesSecret": true,
         "secretFileMode": "600",
         "secretDirectoryMode": "700"
       },
-      "at": "2026-07-31T02:20:39.045Z"
+      "at": "2026-07-31T02:14:08.105Z"
     },
     {
       "id": "P1.3",
@@ -169,7 +165,7 @@
         "accountBound": false,
         "accountBoundGate": "P2.2 tools/call with the app-issued cloud bearer"
       },
-      "at": "2026-07-31T02:20:40.100Z"
+      "at": "2026-07-31T02:14:08.722Z"
     },
     {
       "id": "P1.4",
@@ -184,7 +180,7 @@
       },
       "required": true,
       "note": "MISMATCH: alpha pins \"cloud_web_search\" but the engine will register \"cloud_cloud_web_search\" — every alpha gate keyed on the pinned id is currently an EMPTY gate (it watches a tool id the engine never registers). Re-check each one against the real id and open a CODE ticket; README §7 lists them and the judgement method.",
-      "at": "2026-07-31T02:20:40.100Z"
+      "at": "2026-07-31T02:14:08.722Z"
     },
     {
       "id": "P1.5",
@@ -298,7 +294,7 @@
           }
         ]
       },
-      "at": "2026-07-31T02:20:40.108Z"
+      "at": "2026-07-31T02:14:08.740Z"
     },
     {
       "id": "P1.6",
@@ -316,7 +312,7 @@
         ]
       },
       "required": true,
-      "at": "2026-07-31T02:20:40.111Z"
+      "at": "2026-07-31T02:14:08.742Z"
     },
     {
       "id": "P1.7",
@@ -345,7 +341,7 @@
           "alpha_ping"
         ]
       },
-      "at": "2026-07-31T02:20:40.115Z"
+      "at": "2026-07-31T02:14:08.756Z"
     },
     {
       "id": "P2.1",
@@ -355,7 +351,7 @@
       "required": true,
       "status": "pass",
       "observed": {
-        "sessionID": "ses_04a06ba39ffezzNQSdJIUR6r1K",
+        "sessionID": "ses_04a0cb2b6ffeS25KmUqLQWJAU5",
         "toolPartsSeen": [
           {
             "tool": "cloud_cloud_web_search",
@@ -369,7 +365,7 @@
           "results"
         ]
       },
-      "at": "2026-07-31T02:20:49.163Z"
+      "at": "2026-07-31T02:14:17.891Z"
     },
     {
       "id": "P2.2",
@@ -386,299 +382,275 @@
           "results"
         ]
       },
-      "at": "2026-07-31T02:20:51.851Z"
+      "at": "2026-07-31T02:14:21.962Z"
     },
     {
       "id": "P2.3",
       "ac": "AC3 计费(ledger/settle)证据",
       "title": "waitUntil-backed web-search settlement reaches this tenant's append-only ledger",
-      "criterion": "within 45000ms after the real calls, the account ledger appends reservation_created(actionId=\"tool.web_search\"), usage_settled, and reservation_settled facts sharing one new reservationId",
+      "criterion": "within 45000ms after the real calls, the account ledger appends a fact with kind=\"usage_settled\" AND actionId=\"tool.web_search\" and a seq absent from the pre-call page",
       "required": true,
-      "status": "pass",
+      "status": "fail",
       "observed": {
-        "settlementObservedAfterMs": 75,
+        "settlementObservedAfterMs": 45537,
         "settlementTimeoutMs": 45000,
-        "walletUsedFenBefore": 45,
-        "walletUsedFenAfter": 75,
-        "balanceFenBefore": 99955,
-        "balanceFenAfter": 99925,
+        "walletUsedFenBefore": 0,
+        "walletUsedFenAfter": 30,
+        "balanceFenBefore": 100000,
+        "balanceFenAfter": 99970,
         "walletDelta": 30,
         "balanceDelta": 30,
-        "webSearchSettlements": [
-          {
-            "reservationId": "6b5b9c7a-a5bb-4d54-ba24-ad9d32ff3cdc",
-            "reservationSeqs": [
-              155,
-              154,
-              153
-            ],
-            "usageSeqs": [
-              156
-            ],
-            "terminalSeqs": [
-              157
-            ],
-            "amountSettled": -15
-          },
-          {
-            "reservationId": "cb5ae08a-fe3e-482c-a13d-e8212cf93e8d",
-            "reservationSeqs": [
-              141,
-              140,
-              139
-            ],
-            "usageSeqs": [
-              142
-            ],
-            "terminalSeqs": [
-              143
-            ],
-            "amountSettled": -15
-          }
-        ],
+        "settledWebSearchFacts": [],
         "newLedgerFacts": [
           {
-            "seq": 157,
+            "seq": 124,
             "kind": "reservation_settled",
             "domain": "wallet",
             "amount": 0,
-            "reservationId": "6b5b9c7a-a5bb-4d54-ba24-ad9d32ff3cdc",
-            "createdAt": 1785464456677
+            "reservationId": "a0eca739-e6f2-4c73-8be7-865756a53832",
+            "createdAt": 1785464066781
           },
           {
-            "seq": 156,
+            "seq": 123,
             "kind": "usage_settled",
             "domain": "wallet",
             "amount": -15,
-            "reservationId": "6b5b9c7a-a5bb-4d54-ba24-ad9d32ff3cdc",
-            "createdAt": 1785464456677
+            "reservationId": "a0eca739-e6f2-4c73-8be7-865756a53832",
+            "createdAt": 1785464066781
           },
           {
-            "seq": 155,
+            "seq": 122,
             "kind": "reservation_created",
             "domain": "allowance",
             "amount": 0,
             "actionId": "tool.web_search",
-            "reservationId": "6b5b9c7a-a5bb-4d54-ba24-ad9d32ff3cdc",
-            "createdAt": 1785464454448
+            "reservationId": "a0eca739-e6f2-4c73-8be7-865756a53832",
+            "createdAt": 1785464063583
           },
           {
-            "seq": 154,
+            "seq": 121,
             "kind": "reservation_created",
             "domain": "allowance",
             "amount": 0,
             "actionId": "tool.web_search",
-            "reservationId": "6b5b9c7a-a5bb-4d54-ba24-ad9d32ff3cdc",
-            "createdAt": 1785464454448
+            "reservationId": "a0eca739-e6f2-4c73-8be7-865756a53832",
+            "createdAt": 1785464063583
           },
           {
-            "seq": 153,
+            "seq": 120,
             "kind": "reservation_created",
             "domain": "wallet",
             "amount": 15,
             "actionId": "tool.web_search",
-            "reservationId": "6b5b9c7a-a5bb-4d54-ba24-ad9d32ff3cdc",
-            "createdAt": 1785464454448
+            "reservationId": "a0eca739-e6f2-4c73-8be7-865756a53832",
+            "createdAt": 1785464063583
           },
           {
-            "seq": 152,
+            "seq": 119,
             "kind": "reservation_settled",
             "domain": "wallet",
             "amount": 0,
-            "reservationId": "72383d9e-12f0-4c67-8bc8-0cb75bbc5ca0",
-            "createdAt": 1785464453963
+            "reservationId": "f4d5f923-fa73-4940-8627-2659422d4f95",
+            "createdAt": 1785464062712
           },
           {
-            "seq": 151,
+            "seq": 118,
             "kind": "allowance_consumed",
             "domain": "allowance",
             "amount": -3,
-            "reservationId": "72383d9e-12f0-4c67-8bc8-0cb75bbc5ca0",
-            "createdAt": 1785464453963
+            "reservationId": "f4d5f923-fa73-4940-8627-2659422d4f95",
+            "createdAt": 1785464062712
           },
           {
-            "seq": 150,
+            "seq": 117,
             "kind": "allowance_consumed",
             "domain": "allowance",
             "amount": -3,
-            "reservationId": "72383d9e-12f0-4c67-8bc8-0cb75bbc5ca0",
-            "createdAt": 1785464453962
+            "reservationId": "f4d5f923-fa73-4940-8627-2659422d4f95",
+            "createdAt": 1785464062712
           },
           {
-            "seq": 149,
-            "kind": "reservation_settled",
-            "domain": "wallet",
-            "amount": 0,
-            "reservationId": "78a6c08b-7a92-4578-8614-62453b11a46c",
-            "createdAt": 1785464452538
-          },
-          {
-            "seq": 148,
-            "kind": "allowance_consumed",
-            "domain": "allowance",
-            "amount": -1,
-            "reservationId": "78a6c08b-7a92-4578-8614-62453b11a46c",
-            "createdAt": 1785464452538
-          },
-          {
-            "seq": 147,
-            "kind": "allowance_consumed",
-            "domain": "allowance",
-            "amount": -1,
-            "reservationId": "78a6c08b-7a92-4578-8614-62453b11a46c",
-            "createdAt": 1785464452538
-          },
-          {
-            "seq": 146,
+            "seq": 116,
             "kind": "reservation_created",
             "domain": "allowance",
             "amount": 224,
             "actionId": "model.invoke.chat",
-            "reservationId": "72383d9e-12f0-4c67-8bc8-0cb75bbc5ca0",
-            "createdAt": 1785464452360
+            "reservationId": "f4d5f923-fa73-4940-8627-2659422d4f95",
+            "createdAt": 1785464060894
           },
           {
-            "seq": 145,
+            "seq": 115,
             "kind": "reservation_created",
             "domain": "allowance",
             "amount": 224,
             "actionId": "model.invoke.chat",
-            "reservationId": "72383d9e-12f0-4c67-8bc8-0cb75bbc5ca0",
-            "createdAt": 1785464452359
+            "reservationId": "f4d5f923-fa73-4940-8627-2659422d4f95",
+            "createdAt": 1785464060894
           },
           {
-            "seq": 144,
+            "seq": 114,
             "kind": "reservation_created",
             "domain": "wallet",
             "amount": 0,
             "actionId": "model.invoke.chat",
-            "reservationId": "72383d9e-12f0-4c67-8bc8-0cb75bbc5ca0",
-            "createdAt": 1785464452359
+            "reservationId": "f4d5f923-fa73-4940-8627-2659422d4f95",
+            "createdAt": 1785464060894
           },
           {
-            "seq": 143,
+            "seq": 113,
             "kind": "reservation_settled",
             "domain": "wallet",
             "amount": 0,
-            "reservationId": "cb5ae08a-fe3e-482c-a13d-e8212cf93e8d",
-            "createdAt": 1785464452040
+            "reservationId": "41b5ac3f-a26f-4cae-abce-fbc3ff4cb15e",
+            "createdAt": 1785464060238
           },
           {
-            "seq": 142,
+            "seq": 112,
+            "kind": "allowance_consumed",
+            "domain": "allowance",
+            "amount": -1,
+            "reservationId": "41b5ac3f-a26f-4cae-abce-fbc3ff4cb15e",
+            "createdAt": 1785464060238
+          },
+          {
+            "seq": 111,
+            "kind": "allowance_consumed",
+            "domain": "allowance",
+            "amount": -1,
+            "reservationId": "41b5ac3f-a26f-4cae-abce-fbc3ff4cb15e",
+            "createdAt": 1785464060238
+          },
+          {
+            "seq": 110,
+            "kind": "reservation_settled",
+            "domain": "wallet",
+            "amount": 0,
+            "reservationId": "9aef1613-dfa3-40e7-af48-5f40a9a104a7",
+            "createdAt": 1785464060223
+          },
+          {
+            "seq": 109,
             "kind": "usage_settled",
             "domain": "wallet",
             "amount": -15,
-            "reservationId": "cb5ae08a-fe3e-482c-a13d-e8212cf93e8d",
-            "createdAt": 1785464452040
+            "reservationId": "9aef1613-dfa3-40e7-af48-5f40a9a104a7",
+            "createdAt": 1785464060223
           },
           {
-            "seq": 141,
+            "seq": 108,
             "kind": "reservation_created",
             "domain": "allowance",
             "amount": 0,
             "actionId": "tool.web_search",
-            "reservationId": "cb5ae08a-fe3e-482c-a13d-e8212cf93e8d",
-            "createdAt": 1785464449976
+            "reservationId": "9aef1613-dfa3-40e7-af48-5f40a9a104a7",
+            "createdAt": 1785464057802
           },
           {
-            "seq": 140,
+            "seq": 107,
             "kind": "reservation_created",
             "domain": "allowance",
             "amount": 0,
             "actionId": "tool.web_search",
-            "reservationId": "cb5ae08a-fe3e-482c-a13d-e8212cf93e8d",
-            "createdAt": 1785464449976
+            "reservationId": "9aef1613-dfa3-40e7-af48-5f40a9a104a7",
+            "createdAt": 1785464057802
           },
           {
-            "seq": 139,
+            "seq": 106,
             "kind": "reservation_created",
             "domain": "wallet",
             "amount": 15,
             "actionId": "tool.web_search",
-            "reservationId": "cb5ae08a-fe3e-482c-a13d-e8212cf93e8d",
-            "createdAt": 1785464449976
+            "reservationId": "9aef1613-dfa3-40e7-af48-5f40a9a104a7",
+            "createdAt": 1785464057802
           },
           {
-            "seq": 138,
+            "seq": 105,
             "kind": "reservation_settled",
             "domain": "wallet",
             "amount": 0,
-            "reservationId": "87b0706d-d865-46f7-af6c-61dc21b5c5bf",
-            "createdAt": 1785464448601
+            "reservationId": "bd873c0b-ac82-4461-b0b5-e449c79b28f8",
+            "createdAt": 1785464057160
           },
           {
-            "seq": 137,
+            "seq": 104,
             "kind": "allowance_consumed",
             "domain": "allowance",
             "amount": -3,
-            "reservationId": "87b0706d-d865-46f7-af6c-61dc21b5c5bf",
-            "createdAt": 1785464448600
+            "reservationId": "bd873c0b-ac82-4461-b0b5-e449c79b28f8",
+            "createdAt": 1785464057160
           },
           {
-            "seq": 136,
+            "seq": 103,
             "kind": "allowance_consumed",
             "domain": "allowance",
             "amount": -3,
-            "reservationId": "87b0706d-d865-46f7-af6c-61dc21b5c5bf",
-            "createdAt": 1785464448600
+            "reservationId": "bd873c0b-ac82-4461-b0b5-e449c79b28f8",
+            "createdAt": 1785464057160
           },
           {
-            "seq": 135,
+            "seq": 102,
             "kind": "reservation_created",
             "domain": "allowance",
             "amount": 224,
             "actionId": "model.invoke.chat",
-            "reservationId": "78a6c08b-7a92-4578-8614-62453b11a46c",
-            "createdAt": 1785464446655
+            "reservationId": "41b5ac3f-a26f-4cae-abce-fbc3ff4cb15e",
+            "createdAt": 1785464055347
           },
           {
-            "seq": 134,
+            "seq": 101,
             "kind": "reservation_created",
             "domain": "allowance",
             "amount": 224,
             "actionId": "model.invoke.chat",
-            "reservationId": "78a6c08b-7a92-4578-8614-62453b11a46c",
-            "createdAt": 1785464446655
+            "reservationId": "41b5ac3f-a26f-4cae-abce-fbc3ff4cb15e",
+            "createdAt": 1785464055347
           },
           {
-            "seq": 133,
+            "seq": 100,
             "kind": "reservation_created",
             "domain": "wallet",
             "amount": 0,
             "actionId": "model.invoke.chat",
-            "reservationId": "78a6c08b-7a92-4578-8614-62453b11a46c",
-            "createdAt": 1785464446655
+            "reservationId": "41b5ac3f-a26f-4cae-abce-fbc3ff4cb15e",
+            "createdAt": 1785464055347
           },
           {
-            "seq": 132,
+            "seq": 99,
             "kind": "reservation_created",
             "domain": "allowance",
             "amount": 224,
             "actionId": "model.invoke.chat",
-            "reservationId": "87b0706d-d865-46f7-af6c-61dc21b5c5bf",
-            "createdAt": 1785464446433
+            "reservationId": "bd873c0b-ac82-4461-b0b5-e449c79b28f8",
+            "createdAt": 1785464055109
           },
           {
-            "seq": 131,
+            "seq": 98,
             "kind": "reservation_created",
             "domain": "allowance",
             "amount": 224,
             "actionId": "model.invoke.chat",
-            "reservationId": "87b0706d-d865-46f7-af6c-61dc21b5c5bf",
-            "createdAt": 1785464446433
+            "reservationId": "bd873c0b-ac82-4461-b0b5-e449c79b28f8",
+            "createdAt": 1785464055109
           },
           {
-            "seq": 130,
+            "seq": 97,
             "kind": "reservation_created",
             "domain": "wallet",
             "amount": 0,
             "actionId": "model.invoke.chat",
-            "reservationId": "87b0706d-d865-46f7-af6c-61dc21b5c5bf",
-            "createdAt": 1785464446433
+            "reservationId": "bd873c0b-ac82-4461-b0b5-e449c79b28f8",
+            "createdAt": 1785464055109
+          },
+          {
+            "seq": 96,
+            "kind": "allowance_window_rolled",
+            "domain": "allowance",
+            "amount": 3,
+            "createdAt": 1785464055108
           }
         ]
       },
-      "at": "2026-07-31T02:20:51.926Z"
+      "at": "2026-07-31T02:15:07.500Z"
     },
     {
       "id": "P3.1",
@@ -691,7 +663,7 @@
         "status": 401,
         "body": "{\"error\":{\"message\":\"unauthorized\"}}"
       },
-      "at": "2026-07-31T02:20:52.669Z"
+      "at": "2026-07-31T02:15:08.207Z"
     },
     {
       "id": "P3.2",
@@ -704,7 +676,7 @@
         "status": 400,
         "body": "{\"error\":{\"message\":\"query required\"}}"
       },
-      "at": "2026-07-31T02:20:52.904Z"
+      "at": "2026-07-31T02:15:08.425Z"
     },
     {
       "id": "P3.3",
@@ -717,7 +689,7 @@
         "status": 400,
         "body": "{\"error\":{\"message\":\"invalid json\"}}"
       },
-      "at": "2026-07-31T02:20:53.200Z"
+      "at": "2026-07-31T02:15:08.638Z"
     },
     {
       "id": "P3.4",
@@ -730,7 +702,7 @@
         "coveredAtL1": "packages/opencode/test/tool/alpha-websearch-failure.test.ts (403 → forbidden, error.code preserved)"
       },
       "required": false,
-      "at": "2026-07-31T02:20:53.200Z"
+      "at": "2026-07-31T02:15:08.638Z"
     },
     {
       "id": "P3.5",
@@ -743,7 +715,7 @@
         "coveredAtL1": "packages/opencode/test/tool/alpha-websearch-failure.test.ts (502 → upstream)"
       },
       "required": false,
-      "at": "2026-07-31T02:20:53.200Z"
+      "at": "2026-07-31T02:15:08.638Z"
     },
     {
       "id": "P3.6",
@@ -756,7 +728,7 @@
         "coveredAtL1": "packages/opencode/test/tool/alpha-websearch-failure.test.ts (statusKind default → unexpected_status)"
       },
       "required": false,
-      "at": "2026-07-31T02:20:53.200Z"
+      "at": "2026-07-31T02:15:08.638Z"
     },
     {
       "id": "P3.7",
@@ -766,10 +738,10 @@
       "criterion": "POST /v1/tools/web_search with a valid bearer → HTTP 402 when the account is out of quota+wallet; a 200 proves the account is funded (402 not producible today without draining the owner's balance, which would also invalidate P2.1/P2.2/P2.3); any other status is unexpected and loud",
       "observed": {
         "status": 200,
-        "body": "{\"query\":\"alpha-code e7 402 preauth probe 2026-07-31T02:20:38.799Z\",\"results\":\"[tavily] alpha-code e7 402 preauth probe 2026-07-31T02:20:38.799Z\\n- New Prior Authorization Requirement for Certain Procedure Codes (https://www.fostercaretx.com/newsroom/eff-04012026-new-pa-auth-req-for-certain-procedure-codes-12232025.html)\\n  | Q5117 | INJECTION TRASTUZUMAB-ANNS BIOSIMILAR 10 MG |\\n| Q5118 | INJECTION BEVACIZUMAB-BVZR BIOSIMILAR 10 MG |\\n| Q5120 | INJ PEGFILGRASTIM-BMEZ BIOSIMLR ZIEXTENZO 0.5 MG |\\n| Q5122 | INJECTION PEGFILGRASTIM APGF BIOSIMILAR 0.5 MG |\\n| Q5126 | INJ BEVACIZUMAB-MALY BIOSIMI",
+        "body": "{\"query\":\"alpha-code e7 402 preauth probe 2026-07-31T02:14:05.752Z\",\"results\":\"[tavily] alpha-code e7 402 preauth probe 2026-07-31T02:14:05.752Z\\n- Effective 4/1/26: New Prior Authorization Requirement for Certain Procedure Codes (https://www.fostercaretx.com/newsroom/eff-04012026-new-pa-auth-req-for-certain-procedure-codes-12232025.html)\\n  | 22848 | PELVIC FIXATION OTHER THAN SACRUM |\\n| 22849 | REINSERTION SPINAL FIXA DEVICE |\\n| 25447 | ARTHROPLAS INTERPOSIT-INTERCARP/CARPOMETACARP JT |\\n| 27702 | ARTHROPLASTY ANK; W/IMPLNT (TOT ANK) |\\n| 28285 | CORRECT HAMMERTOE |\\n| 28296 | CORRECTION H",
         "accountShape": {
-          "balanceFen": 99925,
-          "walletUsedFen": 75,
+          "balanceFen": 99970,
+          "walletUsedFen": 30,
           "plan": {
             "id": "pro",
             "status": "active"
@@ -781,7 +753,7 @@
       },
       "required": false,
       "note": "not-producible today — 不是绿,也不是跳过:账户有额度/余额,402 的唯一可达臂(accountPreauth)不会触发。要真采 402 需把账户打到余额+额度双空,那是破坏性计费变更且与本轮 AC1/计费证据互斥。映射本身由 L1 覆盖。",
-      "at": "2026-07-31T02:20:56.635Z"
+      "at": "2026-07-31T02:15:11.403Z"
     },
     {
       "id": "P3.8",
@@ -814,7 +786,7 @@
         "coveredAtL1": "packages/opencode/test/tool/alpha-websearch-failure.test.ts"
       },
       "required": true,
-      "at": "2026-07-31T02:20:56.635Z"
+      "at": "2026-07-31T02:15:11.403Z"
     },
     {
       "id": "P3.9",
@@ -827,7 +799,7 @@
         "baseline": "docs/design/2026-07-22-e7-cloud-web-search-baseline.md §1 二次更正 (2026-07-25)"
       },
       "required": false,
-      "at": "2026-07-31T02:20:56.635Z"
+      "at": "2026-07-31T02:15:11.403Z"
     }
   ]
 }
