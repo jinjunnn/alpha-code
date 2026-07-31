@@ -29,11 +29,11 @@ const USER_DATA =
 const CDP_PORT = Number(process.env.ALPHA_E7_CDP_PORT ?? 9222)
 const OUT_DIR = path.join(import.meta.dir, "results")
 
-/** The build this evidence directory was cut for: alpha @ e578e00ae, ship:mac 2026-07-28T01:31:42Z.
- *  Re-pinned from 94a76b669 / 8706d0c0… — that build predated the `readBoundedBody` fix (#648),
- *  on which K1.5 (keyless 真调) could not pass. See README §1 and §5. */
-const PINNED_ASAR_SHA256 = "60589c59c58e44ac0daede93fc7397a8a04365f5345eac4312e205a0d8f48e44"
-const PINNED_COMMIT = "e578e00ae"
+/** The build this evidence directory is cut for: alpha @ b8f030e0c, ship:mac
+ *  2026-07-31T02:12:02Z. Re-pinned after correcting the #651 criteria and Ledger V1 settlement
+ *  observation; earlier evidence remains immutable under results/. See README §1. */
+const PINNED_ASAR_SHA256 = "dded6b38f023e2bbaba3c152032a857f80221d280949c6838374741aea6f42b9"
+const PINNED_COMMIT = "b8f030e0c"
 
 /** `packages/ui-mac/src/main/cloud-web-search.ts` — the two ids alpha pins. */
 const CLOUD_MCP_SERVER_NAME = "cloud"

@@ -24,9 +24,9 @@ review_after: 2026-10-27
 | 项                                    | 值                                                                 |
 | ------------------------------------- | ------------------------------------------------------------------ |
 | 应用                                  | `/Applications/alpha-code.app`(`ship:mac` 装机版,非 `dist/` 直跑)  |
-| 构建时间                              | 2026-07-27T21:31:42 -0400(= 2026-07-28T01:31:42Z)                  |
-| 基线 commit                           | `e578e00ae`(`alpha`,工作树干净)                                    |
-| `sha256(Contents/Resources/app.asar)` | `60589c59c58e44ac0daede93fc7397a8a04365f5345eac4312e205a0d8f48e44` |
+| 构建时间                              | 2026-07-30T22:12:02 -0400(= 2026-07-31T02:12:02Z)                  |
+| 基线 commit                           | `b8f030e0c`(`e7-probe-refresh`,工作树干净)                         |
+| `sha256(Contents/Resources/app.asar)` | `dded6b38f023e2bbaba3c152032a857f80221d280949c6838374741aea6f42b9` |
 | CFBundleShortVersionString            | `0.1.2`                                                            |
 | 引擎版本                              | `1.17.13`                                                          |
 | userData                              | `~/Library/Application Support/ai.opencode.desktop.dev`            |
@@ -34,7 +34,16 @@ review_after: 2026-10-27
 `app.asar` 的 sha256 被钉进 `probe.ts`(`PINNED_ASAR_SHA256`)。探针第一件事就是重算它并比对 ——
 **在错的构建上跑出来的绿是假绿**,这条判据把它挡住。重新打包后必须同时更新此处与 `probe.ts` 的常量。
 
-### 为什么重打了一次
+### 2026-07-30 为什么再次重钉
+
+`alpha-code#651` 修正了登录态探针的四个错误观测点,本次又发现旧 P2.3 仍按 Ledger V1
+硬切前的 `transaction.id` 做差分,因此永远看不到新流水。先在干净提交 `b8f030e0c`
+完成判据修正、自测、类型检查与文档校验,再从该提交执行标准 `ship:mac`;
+`/Applications/alpha-code.app` 的新指纹为 `dded6b38…` 且通过 `codesign --verify --deep --strict`。
+产品源码相对 `origin/alpha` 没有额外修改,但被测包与判据现在共同指向一个可追踪提交。
+旧结果及其旧指纹均保留不改。
+
+### 2026-07-27 为什么重打了一次
 
 上一份装机产物是 `94a76b669` / `8706d0c4…`(2026-07-27T05:29:35 -0400),**早于**
 `e578e00ae`(PR #648,`readBoundedBody` 读全响应体)。在那份产物上登出态 keyless 真调
