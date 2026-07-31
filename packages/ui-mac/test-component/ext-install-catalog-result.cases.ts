@@ -178,7 +178,24 @@ test("REQ-128:`package:` 意图走 package 预检,不落 legacy planner", async 
   )
   // preflight 在场:package 权威接手,给 package 形状的 blocked 结果。
   // preflight 被摘掉:意图掉进不懂 package 的 legacy planner,返回值没有 `package` 字段。
-  expect(result).toMatchObject({ ok: false, package: { verdict: "blocked" } })
+  //
+  // `reason` 不能省:preflight 的**每一条**失败分支都产出 verdict:"blocked",
+  // 只断言 verdict 分辨不出「真的重取了已签 catalog」与「根本没取」——
+  // 把 loadVerifiedCatalog 换成恒返回 {source:"none"} 的常量(即摘掉 REQ-128 的核心反篡改
+  // 性质「main 重取已签事实重判」)时,只有这一行会红。
+  expect(result).toMatchObject({
+    ok: false,
+    reason: "package preflight: catalogId not found in verified Catalog",
+    package: { verdict: "blocked" },
+  })
+})
+
+test("REQ-128:browse 通道的数据源是真的 refreshRemoteCatalog", async () => {
+  const browse = (await handlers.get("ext-remote-catalog")!({ sender: { id: 1 } })) as {
+    version?: string
+  } | null
+  // 把 registerPackageCatalogReadIpcHandlers 的 refresh 实参换成不刷新的桩时,本行变红。
+  expect(browse?.version).toBe(bundledCatalog.version)
 })
 
 // 这一条守的是 `ext-ipc.ts` 里 `installedDisabled` 的**提前返回**分支 —— 真实 catalog 里

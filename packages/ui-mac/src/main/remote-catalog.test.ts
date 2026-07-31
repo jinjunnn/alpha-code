@@ -483,4 +483,29 @@ describe("#302 环境通道路由", () => {
     expect(r.packageViews?.map((v) => v.catalogId)).toEqual([envelope.prelude.packageId])
     expect(r.packageViews?.[0]?.verdict).toBe("compatible")
   })
+
+  // R2 审计 Major-2:守的是**生产调用点** —— `refreshRemoteCatalog` 必须把 package 消费门
+  // 作为第四参交给 `refreshChannelCatalog`。那个形参默认值是 fail-open 的 `() => ({ok:true})`,
+  // 实参一旦删掉,坏候选会被当成健康快照落盘成新 LKG,`:225` 只能把整份结果打成 none ——
+  // 健康 LKG 就此丢失,断网后仍空白,违反本文件抬头的「永不空白」。
+  //
+  // 构造要点(编排者踩过一次):候选 channel doc 的 sequence 必须**单调前进**。`channelBody`
+  // 的缺省 sequence 恒为 5,与 seed 那份相同 ⇒ 候选先被 R5 replay 规则拒掉、走不到消费门,
+  // 于是删不删实参都绿 —— 那是假闸门。末尾那条 error 断言就是用来钉死「绿的理由是消费门」。
+  test("REQ-128:生产调用点必须传 package 消费门 —— 坏候选拒在落 LKG 之前,健康 LKG 继续服务", async () => {
+    const k = genKey()
+    await seedStableLkg(k, payloadOf("2026-07-13.1"))
+    const poisoned = JSON.stringify(
+      { version: "2026-07-13.2", entries: [{ id: "skill:m" }], packages: [{ nope: 1 }] },
+      null,
+      2,
+    )
+    const { fetchImpl } = serve(channelRoutes(k, poisoned, { docOver: { sequence: 6 } }))
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
+    expect(r.source).toBe("cache")
+    if (r.source === "none") throw new Error("unreachable")
+    expect(r.version).toBe("2026-07-13.1")
+    // 承重断言:绿的理由必须是消费门,不是 R5/R11 之类先一步生效的规则。
+    expect(r.error ?? "").toContain("package consumption rejected candidate catalog")
+  })
 })

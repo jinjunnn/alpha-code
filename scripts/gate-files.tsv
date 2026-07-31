@@ -54,7 +54,7 @@
 4	packages/ui-mac	src/main/gate-file-registry.test.ts	-	本登记簿自身的完备性闸:新增闸门文件未登记即红
 14	packages/ui-mac	src/main/package-installability.test.ts	-	REQ-128 唯一 evaluator 的 header/support→payload→strict decoder→secret safe projection 顺序、Phase 1 URL/auth 负向、0-call 与 reason/action 穷举
 4	packages/ui-mac	src/main/package-installability.wiring.test.ts	packages/ui-mac/src/main/catalog-channels.test.ts,packages/ui-mac/src/main/remote-catalog.test.ts	REQ-128 refresh/browse/detail/install-preflight 同一 evaluator、main 重取重判、renderer 篡改无效、真实注册 IPC 返回值递归键白名单与第零问生产空实例证明；候选快照/LKG 拒绝判据委派给已登记受托方
-17	packages/ui-mac	src/main/remote-catalog.test.ts	-	#702 受托:package 消费必须挂在**生产**刷新链上 —— 驱动真的 refreshRemoteCatalog,断言已签快照里的 package 被评估并投影 safe view。摘掉 remote-catalog.ts 的 evaluateRemoteCatalogPackages 接线即红(已反向验证)。
+18	packages/ui-mac	src/main/remote-catalog.test.ts	-	#702 受托:package 消费必须挂在**生产**刷新链上 —— 驱动真的 refreshRemoteCatalog,断言已签快照里的 package 被评估并投影 safe view。摘掉 remote-catalog.ts 的 evaluateRemoteCatalogPackages 接线即红(已反向验证)。
 45	packages/ui-mac	src/main/catalog-channels.test.ts	-	受托:签名 Catalog package prelude 消费门在 coherent-set 落盘前拒新候选并回健康 LKG，历史坏 LKG 同样不采信；并保留既有 R1–R14 信任链行为门
 6	packages/ui-mac	src/shared/host-extension-package-contract/host-extension-package-artifact.test.ts	-	#694 HostExtensionPackageV1 发布路径、registry/schema 闭包、逐文件 SHA 与 aggregate SHA 漂移即红
 40	packages/ui-mac	src/shared/host-extension-package-contract/package-envelope-v1.test.ts	-	#694 HostExtensionPackageV1 header/payload 严格解码、fail-closed 顺序与 payload 语义检查变异即红
