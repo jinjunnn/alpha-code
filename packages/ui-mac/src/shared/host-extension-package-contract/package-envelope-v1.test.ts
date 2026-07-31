@@ -54,7 +54,7 @@ const noCalls = (): Calls => ({ fetch: 0, decoder: 0, secret: 0, planner: 0 })
 
 type NegativeCase = {
   name: string
-  source: "skill-v1" | "mcp-local-v1" | "mcp-remote-v1"
+  source: "skill-v1" | "agent-v1" | "mcp-local-v1" | "mcp-remote-v1"
   mode: "header" | "payload" | "package"
   error: string
   mutateEnvelope?: (envelope: Record<string, unknown>) => void
@@ -63,6 +63,24 @@ type NegativeCase = {
 }
 
 const negativeCases: NegativeCase[] = [
+  {
+    name: "agent blocked: missing asset object",
+    source: "agent-v1",
+    mode: "package",
+    error: "payload.behavior.asset: required object",
+    mutatePayload: (payload) => {
+      delete behaviorOf(payload).asset
+    },
+  },
+  {
+    name: "agent malicious: targetDir path traversal",
+    source: "agent-v1",
+    mode: "package",
+    error: "payload.behavior.targetDir: expected one of [alpha-agents, global]",
+    mutatePayload: (payload) => {
+      behaviorOf(payload).targetDir = "../../.claude/agents"
+    },
+  },
   {
     name: "payload depth limit",
     source: "skill-v1",
@@ -520,6 +538,19 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       "prototype-pollution",
     )
     expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+  })
+
+  // Phase 1 的四个 profile 每个都必须有负向语料。#700 之前 `agent` 的负向覆盖是 **0 条**,
+  // 而没有任何东西会因此变红 —— 一个 profile 悄悄失去全部负向覆盖是可能的。
+  // 钉住这一类,而不是钉两个具体用例名:后者删掉再补两条无关的就绕过去了。
+  test("every Phase 1 profile carries at least one negative case", () => {
+    const bySource = new Map<string, number>()
+    for (const negative of negativeCases)
+      bySource.set(negative.source, (bySource.get(negative.source) ?? 0) + 1)
+    const uncovered = (["skill-v1", "agent-v1", "mcp-local-v1", "mcp-remote-v1"] as const).filter(
+      (source) => (bySource.get(source) ?? 0) === 0,
+    )
+    expect(uncovered, "a Phase 1 profile lost all negative coverage").toEqual([])
   })
 
   test.each(negativeCases)("$name", async (negative) => {

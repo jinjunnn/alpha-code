@@ -173,6 +173,21 @@ describe("package installability authority", () => {
       },
       "package-host-update-required",
     ],
+    [
+      "unknown profileVersion",
+      (envelope: AlphaPackageEnvelopeV1) => {
+        ;(envelope.components[0] as { profileVersion: number }).profileVersion = 2
+      },
+      "package-host-update-required",
+    ],
+    [
+      "profile mediaType mismatch",
+      (envelope: AlphaPackageEnvelopeV1) => {
+        envelope.components[0].payloadRef.mediaType =
+          "application/vnd.alpha.host-extension-package.skill.v1+json"
+      },
+      "package-host-update-required",
+    ],
   ])("%s returns before payload fetch/decoder/secret/planner", async (_name, mutate, reasonCode) => {
     const { envelope } = await corpus()
     mutate(envelope)
