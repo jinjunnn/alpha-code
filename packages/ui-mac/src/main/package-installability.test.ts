@@ -91,6 +91,10 @@ describe("package installability authority", () => {
     if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
       throw new Error("producer corpus profile drifted")
     payload.behavior.requiredSecrets = []
+    // headersTemplate 必须一起清:宿主的规则是双向的(每个 {NAME} 占位必须被声明),
+    // 只清 requiredSecrets 会造出一个自相矛盾的夹具。旧 corpus 的 headersTemplate 恰好是空的,
+    // 所以这一点直到 alpha-web#101 把消费闸补进语料、re-vendor 之后才暴露。
+    payload.behavior.headersTemplate = {}
     envelope.capabilities = []
     envelope.components[0].capabilities = []
     const bytes = bindPayload(envelope, payload)

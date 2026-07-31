@@ -91,7 +91,7 @@ const UPSTREAMS = [
     // older optional staged fixtures above, an unavailable checkout or missing commit is a hard
     // failure:provenance cannot be proved by a self-consistent replacement lock.
     repo: "jinjunnn/alpha-web",
-    commit: "b71748103ce65f97e3e5c8ac03f08152a0a1456f",
+    commit: "83acf3a513cdda2da9fadddfea1a4ee837e197d2",
     lock: "alpha-web-extension-package.lock.json",
     vendor: "vendor/alpha-web-extension-package",
     sourceEnv: "ALPHA_WEB_EXTENSION_PACKAGE_SOURCE",
@@ -99,7 +99,7 @@ const UPSTREAMS = [
     sourceFallback: "../../../alpha-web",
     sourcePrefix: "contracts/extension-package/artifact",
     artifactPath: "contracts/extension-package/artifact",
-    artifactSha256: "ae9f43cc2a7cf279ff06d2846ff45f39cbb0fdd2fd0c4c5d91718968692e4887",
+    artifactSha256: "98f89f0e5d4da21f8d677b5c007f2bcc0fca3ebc02f517b9db5c2943b8f14555",
     commitBound: true,
     files: [
       "alpha-package-compatibility-report-v1.schema.json",

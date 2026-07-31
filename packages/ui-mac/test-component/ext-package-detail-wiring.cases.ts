@@ -120,6 +120,8 @@ const packageFixture = async () => {
   if (ready.payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
     throw new Error("producer corpus profile drifted")
   ready.payload.behavior.requiredSecrets = []
+  // 与 requiredSecrets 一起清:宿主规则双向,留着 {NAME} 占位而不声明它 = 自相矛盾的夹具。
+  ready.payload.behavior.headersTemplate = {}
   ready.envelope.capabilities = []
   ready.envelope.components[0].capabilities = []
 

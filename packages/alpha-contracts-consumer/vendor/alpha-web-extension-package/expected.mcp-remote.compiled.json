@@ -11,10 +11,10 @@
         "dependencies": [],
         "id": "mcp:generic-remote",
         "payloadRef": {
-          "bytes": 238,
+          "bytes": 320,
           "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-          "sha256": "3174f61c7718f37189cbbba5ca6f45ce91b1f496d722115489be6225e9bf8116",
-          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/3174f61c7718f37189cbbba5ca6f45ce91b1f496d722115489be6225e9bf8116.json"
+          "sha256": "3acf65ec3045f99a91d2b3cc5dfd633d59a15f8bbef5921862cb3ffa62d87745",
+          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/3acf65ec3045f99a91d2b3cc5dfd633d59a15f8bbef5921862cb3ffa62d87745.json"
         },
         "profileId": "mcp-remote",
         "profileVersion": 1,
@@ -41,10 +41,10 @@
       "dependencies": [],
       "id": "mcp:generic-remote",
       "payloadRef": {
-        "bytes": 238,
+        "bytes": 320,
         "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-        "sha256": "3174f61c7718f37189cbbba5ca6f45ce91b1f496d722115489be6225e9bf8116",
-        "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/3174f61c7718f37189cbbba5ca6f45ce91b1f496d722115489be6225e9bf8116.json"
+        "sha256": "3acf65ec3045f99a91d2b3cc5dfd633d59a15f8bbef5921862cb3ffa62d87745",
+        "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/3acf65ec3045f99a91d2b3cc5dfd633d59a15f8bbef5921862cb3ffa62d87745.json"
       },
       "profileId": "mcp-remote",
       "profileVersion": 1,
@@ -53,10 +53,10 @@
     },
     "root": {
       "compatibility": {
-        "reportSha256": "90e07dc0e194b56344b45f80ef6b4b672587af84b7802395973871383a90bdff",
+        "reportSha256": "c0dc0de876280e8e8f53182db0b37015792cc1d14e253b44ee2fdb97412167ea",
         "verdict": "compatible"
       },
-      "declarationSha256": "af07a95ca32cb3ccf8c372ded68d0503d2b1d53935dc648e7d8271a65e6b8fbf",
+      "declarationSha256": "feb308d61e482b1d4781dcb1d3e1e534404335c1e4f550b9eb544d3247db32c8",
       "packageId": "package:generic-remote-mcp",
       "presentation": {
         "description": "Generic Phase 1 compiler corpus input.",
@@ -74,7 +74,10 @@
   "payload": {
     "behavior": {
       "auth": "none",
-      "headersTemplate": {},
+      "headersTemplate": {
+        "Authorization": "Bearer {A_KEY}",
+        "X-Remote-Token": "{B_TOKEN}"
+      },
       "requiredSecrets": [
         "A_KEY",
         "B_TOKEN"

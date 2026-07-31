@@ -8,7 +8,10 @@
     "component": {
       "behavior": {
         "auth": "oauth",
-        "headersTemplate": {},
+        "headersTemplate": {
+          "Authorization": "Bearer {A_KEY}",
+          "X-Remote-Token": "{B_TOKEN}"
+        },
         "requiredSecrets": [
           "B_TOKEN",
           "A_KEY",
