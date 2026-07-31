@@ -1,7 +1,6 @@
 # REQ-128 Phase 1 capability evidence matrix. Package fixtures are deterministic and constructed.
 # scope_note current-host-sibling-key-tolerance: cut — 无真实用户,不做向后兼容(owner 直令 2026-07-31)
 # fixture_boundary: the signed bundled Catalog has no packages key; a real package load is deferred → alpha-web#108.
-# evidence_boundary: alpha-code#737 is a known defect in the host-owned contract-grammar substitute and weakens foundation-host-gate-order evidence.
 phase1_item	producer_fixture	consumer_entrypoint	expected_verdict	reason_code	evidence_gate_file	evidence_test_name
 producer-to-signed-catalog	alpha-web extension package artifact lock	consumer artifact byte pin	pinned	producer-artifact-immutable	packages/alpha-contracts-consumer/src/extension-package-artifact.test.ts	pins the containing commit, artifact path, aggregate, and all 22 exact files
 producer-to-signed-catalog	alpha-web extension package artifact lock	consumer aggregate recomputation	pinned	producer-aggregate-bound	packages/alpha-contracts-consumer/src/extension-package-artifact.test.ts	recomputes the producer aggregate and enforces the non-self-referential commit binding
