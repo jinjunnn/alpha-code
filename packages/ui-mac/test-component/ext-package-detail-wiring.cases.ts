@@ -484,11 +484,15 @@ const waitForPackageAuthorization = (catalogId: string) =>
     ),
   )
 
+/** 用户把 canary 打进去的那**一个**输入框。canary 扫描只准对这个元素致盲,见 expectNoCanaryAnywhere。 */
+let filledSecretInput: HTMLInputElement | null = null
+
 function fillPackageSecret(value: string) {
   const input = packageAuthorizationDialog().querySelector<HTMLInputElement>(".alpha-ext-key-input")
   expect(input).toBeInstanceOf(HTMLInputElement)
   input!.value = value
   input!.dispatchEvent(new Event("input", { bubbles: true }))
+  filledSecretInput = input!
 }
 
 function confirmPackageAuthorization() {
@@ -525,27 +529,39 @@ function captureConsole() {
   }
 }
 
-function ownScalarValues(value: unknown): string[] {
+/**
+ * 展开成可扫描的字符串。带深度预算继续下潜 —— 只看一层的话,
+ * `console.debug("intent", { catalogId, grants: { secrets } })` 这种最像真实回归的形状会整个溜掉。
+ * `Error` 取 message:`console.error(new Error(secret))` 同理不能漏。
+ */
+function ownScalarValues(value: unknown, depth = 4): string[] {
   if (value === null || value === undefined) return []
   if (typeof value !== "object") return typeof value === "function" ? [] : [String(value)]
+  if (depth <= 0) return []
+  if (value instanceof Error) return [value.message, ...ownScalarValues({ ...value }, depth - 1)]
+  if (value instanceof Map)
+    return Array.from(value.entries()).flatMap(([k, v]) => [
+      ...ownScalarValues(k, depth - 1),
+      ...ownScalarValues(v, depth - 1),
+    ])
+  if (value instanceof Set) return Array.from(value).flatMap((v) => ownScalarValues(v, depth - 1))
   if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype) return []
   return Reflect.ownKeys(value).flatMap((key) => {
     const descriptor = Object.getOwnPropertyDescriptor(value, key)
     if (!descriptor || !("value" in descriptor)) return [String(key)]
-    return typeof descriptor.value === "object" || typeof descriptor.value === "function"
-      ? [String(key)]
-      : [String(key), ...ownScalarValues(descriptor.value)]
+    return [String(key), ...ownScalarValues(descriptor.value, depth - 1)]
   })
 }
 
 function expectNoCanaryAnywhere(canary: string, consoleOutput: unknown[]) {
-  const secretInputs = Array.from(
-    document.querySelectorAll<HTMLInputElement>(".alpha-ext-key-input[type='password']"),
-    (input) => ({ input, value: input.value }),
-  )
-  secretInputs.forEach((item) => {
-    item.input.value = ""
-  })
+  // 遮蔽是必要的:用户刚打进去的 canary 就在那个框里,不遮蔽会自己撞自己。
+  // 但只准遮蔽**用户真正写入的那一个元素**,不能按 `.alpha-ext-key-input[type=password]`
+  // 选择器一刀切 —— 那恰好是唯一合法装密钥的 class,生产若把明文渲进第二个同 class 的框,
+  // 扫描器会先把它一并清空,泄漏就此隐形(「破坏它 = 破坏观测它」)。
+  // 按身份遮蔽之后,任何**别的**元素带着 canary 都会被下面的属性/value 扫描抓到。
+  const masked = filledSecretInput?.isConnected ? filledSecretInput : null
+  const maskedValue = masked?.value
+  if (masked) masked.value = ""
   try {
     document.querySelectorAll("*").forEach((element) => {
       Array.from(element.attributes).forEach((attribute) =>
@@ -567,9 +583,7 @@ function expectNoCanaryAnywhere(canary: string, consoleOutput: unknown[]) {
       ).not.toContain(canary)
     })
   } finally {
-    secretInputs.forEach((item) => {
-      item.input.value = item.value
-    })
+    if (masked && maskedValue !== undefined) masked.value = maskedValue
   }
 }
 
