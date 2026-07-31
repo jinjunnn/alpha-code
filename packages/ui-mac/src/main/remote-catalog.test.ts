@@ -447,4 +447,40 @@ describe("#302 环境通道路由", () => {
     expect(a.version).toBe(b.version)
     expect(calls.filter((u) => u.endsWith("/channels/trust.json")).length).toBe(1)
   })
+
+  // REQ-128 #702 R1 审计 B1:package 消费必须挂在**生产**刷新链上。
+  // 原 wiring 用例自己拼 refresh 闭包,`remote-catalog.ts:225` 那处真实接线删掉后全量仍全绿。
+  // 本用例驱动的是真的 `refreshRemoteCatalog`,摘掉接线即红(已反向验证)。
+  //
+  // 已知冗余(留痕,非缺口):`refreshChannelCatalog` 的候选消费门与 `:225` 的最终评估
+  // 对任何可构造输入都互为冗余 —— 摘掉任一条,另一条都会拦住同样的坏 package。
+  // 因此候选门是纵深防御而非承重闸,不为它单造用例。
+  test("REQ-128:真 refreshRemoteCatalog 会评估已签快照里的 package 并投影 safe view", async () => {
+    const artifactDir = path.resolve(import.meta.dir, "../../../alpha-contracts-consumer/vendor/alpha-web-extension-package")
+    const compiled = (await Bun.file(path.resolve(artifactDir, "expected.mcp-remote.compiled.json")).json()) as {
+      envelope: Record<string, any>
+      payload: Record<string, any>
+    }
+    const envelope = structuredClone(compiled.envelope)
+    const payload = structuredClone(compiled.payload)
+    // 语料那份 compiled 示例声明了 requiredSecrets 却给空 headersTemplate,宿主判
+    // package-prerequisite-invalid。此处补消费占位符,使本用例测的是「生产链有没有评估」。
+    // 那份夹具本身的自洽性问题属 producer 侧,已单独留痕。
+    payload.behavior.headersTemplate = { Authorization: "Bearer {A_KEY}", "X-Token": "{B_TOKEN}" }
+    const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
+    envelope.components[0].payloadRef.bytes = bytes.byteLength
+    envelope.components[0].payloadRef.sha256 = crypto.createHash("sha256").update(bytes).digest("hex")
+
+    const k = genKey()
+    const body = JSON.stringify({ version: "2026-07-13.1", entries: [{ id: "skill:m" }], packages: [envelope] }, null, 2)
+    const { fetchImpl } = serve(channelRoutes(k, body))
+    const r = await refreshRemoteCatalog(dir, "stable", {
+      ...depsOf(fetchImpl, k),
+      packageInstallability: { fetchPayload: async () => bytes },
+    })
+    expect(r.source).toBe("remote")
+    if (r.source === "none") throw new Error("unreachable")
+    expect(r.packageViews?.map((v) => v.catalogId)).toEqual([envelope.prelude.packageId])
+    expect(r.packageViews?.[0]?.verdict).toBe("compatible")
+  })
 })

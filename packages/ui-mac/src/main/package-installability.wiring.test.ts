@@ -42,9 +42,10 @@ const producerPackage = async () => {
   return { envelope, bytes }
 }
 
-const rawResult = (envelope: AlphaPackageEnvelopeV1): RemoteCatalogResult => ({
+// 变参:detail 那条闸必须能分辨「按 id 查找」与「恒取第一个」——单条夹具下两者不可分辨。
+const rawResult = (...envelopes: AlphaPackageEnvelopeV1[]): RemoteCatalogResult => ({
   source: "remote",
-  catalog: { version: "2026-07-30", entries: [{}], packages: [envelope] },
+  catalog: { version: "2026-07-30", entries: [{}], packages: envelopes },
   version: "2026-07-30",
   fetchedAt: "2026-07-30T00:00:00.000Z",
   via: "channel-stable",
@@ -62,13 +63,21 @@ const registeredHandlers = (refresh: () => Promise<RemoteCatalogResult>) => {
 describe("package installability production wiring", () => {
   test("refresh, browse, detail, and install preflight use the same evaluator reference", async () => {
     const { envelope, bytes } = await producerPackage()
-    const raw = rawResult(envelope)
+    // 第二个 package:让 detail 的「按 id 查找」与「恒取 packageViews[0]」可分辨。
+    const second = await producerPackage()
+    second.envelope.prelude.packageId = "package:generic-remote-mcp-second"
+    const raw = rawResult(envelope, second.envelope)
+    const payloadFor = new Map<string, Uint8Array>([
+      [envelope.prelude.packageId, bytes],
+      [second.envelope.prelude.packageId, second.bytes],
+    ])
     const calls: string[] = []
     const evaluator: PackageEvaluator = async (input, deps) => {
       calls.push("evaluatePackageForHost")
+      const id = (input as AlphaPackageEnvelopeV1).prelude?.packageId
       return evaluatePackageForHost(input, {
         ...deps,
-        fetchPayload: async () => bytes,
+        fetchPayload: async () => payloadFor.get(id) ?? bytes,
       })
     }
     const refresh = () => evaluateRemoteCatalogPackages(raw, { packageEvaluator: evaluator })
@@ -76,7 +85,12 @@ describe("package installability production wiring", () => {
     await refresh()
     const handlers = registeredHandlers(refresh)
     await handlers.get("ext-remote-catalog")!(undefined)
-    await handlers.get(PACKAGE_DETAIL_IPC_CHANNEL)!(undefined, envelope.prelude.packageId)
+    // 取**第二个**:恒回 packageViews[0] 的实现会在这里被抓住。
+    const detailSecond = (await handlers.get(PACKAGE_DETAIL_IPC_CHANNEL)!(
+      undefined,
+      second.envelope.prelude.packageId,
+    )) as { catalogId?: string } | null
+    expect(detailSecond?.catalogId).toBe(second.envelope.prelude.packageId)
     const canary = "REQ128_SECRET_CANARY_82ebda31"
     const preflight = await runCatalogInstallWithPackagePreflight(
       {
@@ -95,12 +109,9 @@ describe("package installability production wiring", () => {
       },
     )
 
-    expect(calls).toEqual([
-      "evaluatePackageForHost",
-      "evaluatePackageForHost",
-      "evaluatePackageForHost",
-      "evaluatePackageForHost",
-    ])
+    // 2(refresh 评两个 package)+ 2(browse 再 refresh)+ 2(detail 再 refresh)+ 1(preflight 只评命中的那个)
+    // = 7。四条入口若有任何一条改调独立副本,副本不会 push 进 calls,这里就短。
+    expect(calls).toEqual(Array(7).fill("evaluatePackageForHost"))
     expect(preflight).toMatchObject({
       ok: false,
       package: {
@@ -233,6 +244,29 @@ describe("package installability production wiring", () => {
       package: { verdict: "blocked" },
     })
     expect(legacyPlannerCalls).toBe(0)
+
+    // 两条失败分支必须 fail-closed:catalog 取不到 / catalog 形状非法时,`package:` 意图
+    // 不得掉进完全不懂 package 的 legacy planner(R1 审计 M2:把 matched:true 改 false 曾全绿)。
+    for (const [name, catalog] of [
+      ["catalog 不可用", { source: "none" as const }],
+      [
+        "catalog 形状非法",
+        { source: "remote" as const, catalog: { version: "2026-07-30", entries: [{}], packages: "not-an-array" } },
+      ],
+    ] as const) {
+      const failed = await runCatalogInstallWithPackagePreflight(
+        { catalogId: first.envelope.prelude.packageId, scope: { scope: "global" } },
+        {
+          loadVerifiedCatalog: async () => catalog as never,
+          installLegacy: async () => {
+            legacyPlannerCalls++
+            return { ok: true }
+          },
+        },
+      )
+      expect(failed, name).toMatchObject({ ok: false, package: { verdict: "blocked" } })
+      expect(legacyPlannerCalls, name).toBe(0)
+    }
   })
 
   test("the real bundled Catalog has no package instance; this gate marks its constructed reachability", () => {

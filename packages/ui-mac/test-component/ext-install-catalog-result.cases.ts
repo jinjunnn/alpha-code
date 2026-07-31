@@ -161,6 +161,26 @@ test("真实 ext-install-catalog 返回值只含公开状态且不回显 canary"
   expect(JSON.stringify(result)).not.toContain(canary)
 })
 
+// REQ-128 #702 R1 审计 B1:package 的两条 IPC 生产接线必须真的在 registerExtIpcHandlers 里。
+// 原 wiring 用例自己调 registerPackageCatalogReadIpcHandlers / runCatalogInstallWithPackagePreflight,
+// 于是 `ext-ipc.ts` 退回裸 ipcMain.handle / 裸 installCatalog 之后全量仍全绿。
+// 本文件起的是**真的** registerExtIpcHandlers,所以这两条断言删接线即红。
+test("REQ-128:真 registerExtIpcHandlers 注册了 package detail 通道", () => {
+  expect(handlers.has("ext-package-detail")).toBe(true)
+})
+
+test("REQ-128:`package:` 意图走 package 预检,不落 legacy planner", async () => {
+  const install = handlers.get("ext-install-catalog")
+  if (!install) throw new Error("ext-install-catalog handler was not registered")
+  const result = await install(
+    { sender: { id: 1 } },
+    { catalogId: "package:not-in-this-catalog", scope: { scope: "global" } },
+  )
+  // preflight 在场:package 权威接手,给 package 形状的 blocked 结果。
+  // preflight 被摘掉:意图掉进不懂 package 的 legacy planner,返回值没有 `package` 字段。
+  expect(result).toMatchObject({ ok: false, package: { verdict: "blocked" } })
+})
+
 // 这一条守的是 `ext-ipc.ts` 里 `installedDisabled` 的**提前返回**分支 —— 真实 catalog 里
 // 每一次首装走的都是它(8 条 MCP 全非 alpha 源)。上一条用例改了 source 才够得着另一条分支,
 // 所以两条缺一不可。

@@ -35,10 +35,18 @@ consumer lock supplies that commit and the vendor check must resolve and read
 the exact Git object; an unavailable checkout or commit is a failure, not a
 skipped provenance check.
 
-The byte lock is not a semantic oracle. Consumer tests also execute the
-published negative declaration vectors and the production host decoder,
-including the Phase 1 profile/capability closure, HTTPS and credential rules,
-remote MCP `auth: "none"`, and rejection of author-supplied derived fields.
+The byte lock is not a semantic oracle. Consumer tests additionally execute the
+published declaration schema against the published negative vectors, and assert
+the Phase 1 profile/capability closure (four profiles, one capability, `cloud`
+and Alpha Connection absent).
+
+The **runtime host decoder** judgement is not in the consumer package — it cannot
+import across packages. It is delegated to `packages/ui-mac/src/main/package-installability.test.ts`
+(evaluator behaviour) and `packages/ui-mac/src/shared/host-extension-package-contract/package-envelope-v1.test.ts`
+(decoder negatives). Note also that some producer-side rules — HTTPS and
+credential rejection among them — are enforced by the alpha-web compiler
+(`E_URL_HTTPS` / `E_URL_CREDENTIALS`) rather than by the published schema, so the
+schema alone accepts those negative vectors.
 
 ## Desktop consumption
 
