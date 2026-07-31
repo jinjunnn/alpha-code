@@ -233,6 +233,7 @@ type Handler = (event: unknown, ...args: unknown[]) => unknown
 async function mountHarness(options?: {
   preauthorized?: boolean
   failConfirmationOnce?: boolean
+  failPreviewOnce?: boolean
   rejectPreviewOnce?: boolean
 }) {
   const fixture = await packageFixture()
@@ -278,6 +279,7 @@ async function mountHarness(options?: {
   const installIntents: unknown[] = []
   const installResults: unknown[] = []
   let failConfirmation = options?.failConfirmationOnce ?? false
+  let failPreview = options?.failPreviewOnce ?? false
   let rejectPreview = options?.rejectPreviewOnce ?? false
   let updateChecks = 0
   Object.defineProperty(window, "api", {
@@ -312,6 +314,17 @@ async function mountHarness(options?: {
           ) {
             rejectPreview = false
             throw new Error("package renderer transport failed")
+          }
+          if (
+            failPreview &&
+            typeof intent === "object" &&
+            intent !== null &&
+            !("authorization" in intent)
+          ) {
+            failPreview = false
+            const result = { ok: false as const, reason: "package renderer preview unavailable" }
+            installResults.push(result)
+            return result
           }
           const result = await runCatalogInstallWithPackagePreflight(intent, {
             loadVerifiedCatalog: async () => ({
@@ -437,6 +450,33 @@ function packageAuthorizationDialog() {
   return dialog!
 }
 
+function expectDialogContract(
+  dialog: HTMLElement,
+  expected: { capabilities: string[]; prerequisite?: string },
+) {
+  expect(
+    Array.from(dialog.querySelectorAll(".alpha-ext-authz-id"), (item) => item.textContent),
+  ).toEqual(expected.capabilities)
+  expect(
+    Array.from(dialog.querySelectorAll("[data-kind='new']"), (item) => item.textContent),
+  ).toEqual(expected.capabilities.map(() => zh["alpha.ext.authz.chipNew"]))
+  const input = dialog.querySelector<HTMLInputElement>(".alpha-ext-key-input")
+  const button = dialog.querySelector<HTMLButtonElement>(".a-dialog-footer .a-btn:last-child")
+  expect(button).toBeInstanceOf(HTMLButtonElement)
+  if (!expected.prerequisite) {
+    expect(input).toBeNull()
+    expect(button!.disabled).toBe(false)
+    return
+  }
+  expect(dialog.querySelector(".alpha-ext-key-name")?.textContent).toBe(expected.prerequisite)
+  expect(input).toBeInstanceOf(HTMLInputElement)
+  expect(input!.type).toBe("password")
+  expect(button!.disabled).toBe(true)
+  input!.value = "dialog-contract-secret"
+  input!.dispatchEvent(new Event("input", { bubbles: true }))
+  expect(button!.disabled).toBe(false)
+}
+
 const waitForPackageAuthorization = (catalogId: string) =>
   waitFor(() =>
     expect(document.querySelector(`[data-package-authorization='${catalogId}']`)).toBeInstanceOf(
@@ -452,14 +492,85 @@ function fillPackageSecret(value: string) {
 }
 
 function confirmPackageAuthorization() {
-  const button = packageAuthorizationDialog().querySelector<HTMLButtonElement>(".a-dialog-footer .a-btn:last-child")
+  const dialog = packageAuthorizationDialog()
+  const button = dialog.querySelector<HTMLButtonElement>(".a-dialog-footer .a-btn:last-child")
   expect(button).toBeInstanceOf(HTMLButtonElement)
   expect(button!.disabled).toBe(false)
   click(button)
+  expect(dialog.getAttribute("aria-busy")).toBe("true")
+  expect(button!.disabled).toBe(true)
+  expect(dialog.querySelector(".a-dialog-close")).toBeNull()
 }
 
 function cancelPackageAuthorization() {
   click(packageAuthorizationDialog().querySelector(".a-dialog-footer .a-btn:first-child"))
+}
+
+const consoleMethods = ["log", "warn", "error", "info", "debug"] as const
+
+function captureConsole() {
+  const output: unknown[] = []
+  const originals = consoleMethods.map((method) => console[method])
+  consoleMethods.forEach((method) => {
+    console[method] = (...values: unknown[]) => {
+      output.push(...values)
+    }
+  })
+  return {
+    output,
+    restore: () =>
+      consoleMethods.forEach((method, index) => {
+        console[method] = originals[index]!
+      }),
+  }
+}
+
+function ownScalarValues(value: unknown): string[] {
+  if (value === null || value === undefined) return []
+  if (typeof value !== "object") return typeof value === "function" ? [] : [String(value)]
+  if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype) return []
+  return Reflect.ownKeys(value).flatMap((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (!descriptor || !("value" in descriptor)) return [String(key)]
+    return typeof descriptor.value === "object" || typeof descriptor.value === "function"
+      ? [String(key)]
+      : [String(key), ...ownScalarValues(descriptor.value)]
+  })
+}
+
+function expectNoCanaryAnywhere(canary: string, consoleOutput: unknown[]) {
+  const secretInputs = Array.from(
+    document.querySelectorAll<HTMLInputElement>(".alpha-ext-key-input[type='password']"),
+    (input) => ({ input, value: input.value }),
+  )
+  secretInputs.forEach((item) => {
+    item.input.value = ""
+  })
+  try {
+    document.querySelectorAll("*").forEach((element) => {
+      Array.from(element.attributes).forEach((attribute) =>
+        expect(attribute.value).not.toContain(canary),
+      )
+      const value = Reflect.get(element, "value")
+      if (typeof value === "string") expect(value).not.toContain(canary)
+    })
+    expect(document.body.innerHTML).not.toContain(canary)
+    consoleOutput.forEach((value) =>
+      expect(ownScalarValues(value).join("\n")).not.toContain(canary),
+    )
+    Reflect.ownKeys(globalThis).forEach((key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(globalThis, key)
+      expect(
+        descriptor && "value" in descriptor
+          ? [String(key), ...ownScalarValues(descriptor.value)].join("\n")
+          : String(key),
+      ).not.toContain(canary)
+    })
+  } finally {
+    secretInputs.forEach((item) => {
+      item.input.value = item.value
+    })
+  }
 }
 
 function expectSafeView(value: unknown) {
@@ -643,7 +754,7 @@ describe("package detail production renderer path", () => {
     await waitForPackageAuthorization("package:renderer-ready")
     expect(packageAuthorizationDialog().querySelector(".alpha-ext-install-nm")?.textContent).toBe("generic-remote")
     expect(packageAuthorizationDialog().querySelector(".alpha-ext-install-k")?.textContent).toBeTruthy()
-    expect(packageAuthorizationDialog().querySelectorAll(".alpha-ext-key-input")).toHaveLength(0)
+    expectDialogContract(packageAuthorizationDialog(), { capabilities: [] })
     confirmPackageAuthorization()
 
     await waitFor(() => expect(harness.installResults).toHaveLength(2))
@@ -663,46 +774,53 @@ describe("package detail production renderer path", () => {
   })
 
   test("card resolve-prerequisite button collects prerequisiteId secret, writes it 0600, and refreshes the card", async () => {
-    const harness = await mountHarness()
-    const card = packageCard("package:renderer-prerequisite")
-    expect(card.querySelector("[data-prerequisite]")?.getAttribute("data-prerequisite")).toBe("required-action")
-    click(card.querySelector("button"))
-    await waitForPackageAuthorization("package:renderer-prerequisite")
-    expect(packageAuthorizationDialog().querySelector(".alpha-ext-key-name")?.textContent).toBe("A_KEY")
-    expect(packageAuthorizationDialog().querySelector<HTMLInputElement>(".alpha-ext-key-input")?.type).toBe("password")
-    fillPackageSecret(secretCanary)
-    expect(document.body.textContent).not.toContain(secretCanary)
-    confirmPackageAuthorization()
+    const consoleCapture = captureConsole()
+    try {
+      const harness = await mountHarness()
+      const card = packageCard("package:renderer-prerequisite")
+      expect(card.querySelector("[data-prerequisite]")?.getAttribute("data-prerequisite")).toBe("required-action")
+      click(card.querySelector("button"))
+      await waitForPackageAuthorization("package:renderer-prerequisite")
+      expectDialogContract(packageAuthorizationDialog(), {
+        capabilities: ["alpha.secret-prerequisite.v1"],
+        prerequisite: "A_KEY",
+      })
+      fillPackageSecret(secretCanary)
+      expectNoCanaryAnywhere(secretCanary, consoleCapture.output)
+      confirmPackageAuthorization()
 
-    await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true }))
-    const secretFile = join(harness.userData, "alpha-mcp-secrets", "generic-remote", "v-0badcafe", "A_KEY")
-    expect(readFileSync(secretFile, "utf8")).toBe(secretCanary)
-    expect(statSync(secretFile).mode & 0o777).toBe(0o600)
-    expect(readdirSync(join(harness.userData, "alpha-mcp-secrets", "generic-remote"))).toEqual(["v-0badcafe"])
-    expect(readFileSync(join(harness.globalRoot, "alpha.jsonc"), "utf8")).not.toContain(secretCanary)
-    expect(JSON.stringify(harness.installResults)).not.toContain(secretCanary)
-    expect(document.body.textContent).not.toContain(secretCanary)
-    await waitFor(() =>
-      expect((harness.detailResults.at(-1) as CatalogPackageViewV1).prerequisites.status).toBe("ready"),
-    )
-    await waitFor(() =>
-      expect({
-        prerequisite: packageCard("package:renderer-prerequisite").querySelector("[data-prerequisite]")?.getAttribute("data-prerequisite"),
-        text: packageCard("package:renderer-prerequisite").querySelector("[data-prerequisite]")?.textContent,
-      }).toEqual({ prerequisite: "ready", text: zh["alpha.ext.packagePrerequisiteReady"] }),
-    )
+      await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true }))
+      const secretFile = join(harness.userData, "alpha-mcp-secrets", "generic-remote", "v-0badcafe", "A_KEY")
+      expect(readFileSync(secretFile, "utf8")).toBe(secretCanary)
+      expect(statSync(secretFile).mode & 0o777).toBe(0o600)
+      expect(readdirSync(join(harness.userData, "alpha-mcp-secrets", "generic-remote"))).toEqual(["v-0badcafe"])
+      expect(readFileSync(join(harness.globalRoot, "alpha.jsonc"), "utf8")).not.toContain(secretCanary)
+      expect(JSON.stringify(harness.installResults)).not.toContain(secretCanary)
+      expectNoCanaryAnywhere(secretCanary, consoleCapture.output)
+      await waitFor(() =>
+        expect((harness.detailResults.at(-1) as CatalogPackageViewV1).prerequisites.status).toBe("ready"),
+      )
+      await waitFor(() =>
+        expect({
+          prerequisite: packageCard("package:renderer-prerequisite").querySelector("[data-prerequisite]")?.getAttribute("data-prerequisite"),
+          text: packageCard("package:renderer-prerequisite").querySelector("[data-prerequisite]")?.textContent,
+        }).toEqual({ prerequisite: "ready", text: zh["alpha.ext.packagePrerequisiteReady"] }),
+      )
 
-    const first = harness.installIntents[0] as Record<string, unknown>
-    const second = harness.installIntents[1] as {
-      attemptId: unknown
-      grants: { secrets: Record<string, string> }
-      authorization: { confirmed: Record<string, string[]> }
+      const first = harness.installIntents[0] as Record<string, unknown>
+      const second = harness.installIntents[1] as {
+        attemptId: unknown
+        grants: { secrets: Record<string, string> }
+        authorization: { confirmed: Record<string, string[]> }
+      }
+      expect(Object.keys(first).sort()).toEqual(["attemptId", "catalogId", "scope"])
+      expect(first).not.toHaveProperty("grants")
+      expect(second.attemptId).toBe(first.attemptId)
+      expect(Object.keys(second.grants.secrets)).toEqual(["mcp:generic-remote#A_KEY"])
+      expect(Object.keys(second.authorization.confirmed)).toEqual(["mcp--generic-remote"])
+    } finally {
+      consoleCapture.restore()
     }
-    expect(Object.keys(first).sort()).toEqual(["attemptId", "catalogId", "scope"])
-    expect(first).not.toHaveProperty("grants")
-    expect(second.attemptId).toBe(first.attemptId)
-    expect(Object.keys(second.grants.secrets)).toEqual(["mcp:generic-remote#A_KEY"])
-    expect(Object.keys(second.authorization.confirmed)).toEqual(["mcp--generic-remote"])
   })
 
   test("preauthorized capability still submits every preview diff key", async () => {
@@ -785,13 +903,26 @@ describe("package detail production renderer path", () => {
     expect(packageCard("package:renderer-prerequisite").querySelector("[role='alert']")).toBeNull()
   })
 
-  test("rejected install IPC is caught and rendered inline without an unhandled rejection", async () => {
-    const harness = await mountHarness({ rejectPreviewOnce: true })
-    const card = packageCard("package:renderer-ready")
-    click(card.querySelector("button"))
-    await waitFor(() => expect(card.querySelector("[role='alert']")?.textContent).toContain("transport failed"))
+  test("preview throw and failure render inline on detail and card without an unhandled rejection", async () => {
+    const harness = await mountHarness({ failPreviewOnce: true, rejectPreviewOnce: true })
+    click(packageCard("package:renderer-ready"))
+    await waitFor(() =>
+      expect(document.querySelector("[data-package-detail='package:renderer-ready']")).toBeInstanceOf(HTMLElement),
+    )
+    click(document.querySelector("[data-package-detail] .alpha-ext-dsub button"))
+    await waitFor(() =>
+      expect(document.querySelector("[data-package-detail] [role='alert']")?.textContent).toContain("transport failed"),
+    )
     expect(document.querySelector("[data-package-authorization]")).toBeNull()
-    expect(harness.installIntents).toHaveLength(1)
+    click(document.querySelector(".alpha-ext-crumb-link"))
+    await waitFor(() => expect(document.querySelector("[data-package-detail]")).toBeNull())
+    click(packageCard("package:renderer-prerequisite").querySelector("button"))
+    await waitFor(() =>
+      expect(packageCard("package:renderer-prerequisite").querySelector("[role='alert']")?.textContent)
+        .toContain("preview unavailable"),
+    )
+    expect(document.querySelector("[data-package-authorization]")).toBeNull()
+    expect(harness.installIntents).toHaveLength(2)
   })
 
   test("update-required checks for an app update and both blocked reasons stay off install IPC", async () => {
