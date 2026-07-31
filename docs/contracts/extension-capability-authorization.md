@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-30
+last_reviewed: 2026-07-31
 review_after: 2026-10-13
 ---
 
@@ -34,6 +34,9 @@ diff 与暂停、renderer 如何确认与重驱、授权账/收据如何落盘�
   - 单装 **cloud**(#378):receipt action 单 item(零盘副作用,capabilities/receipt 挂
     `cloud--<name>`;重装显式继承 `desiredState`,disabled 不被静默写回 enabled);
   - atomic bundle(其 skill / 无密钥 MCP-config / cloud-receipt 子项)。
+  - REQ-128 单组件 package：`ext-install-catalog` 先经 main-owned
+    `PackageAdmissionCoordinator`，再复用同一个 `runExtensionTransaction`、授权账、
+    InstallRecordV2 与受限 MCP secret store；不另建同意系统或 package 专用授权账。
 
   catalog remote 资产的 authorize 确认重驱复用 CAS(`tryReuseCasPayload` 逐 blob 读取重验),
   绝不二次下载。renderer 侧的拦截与重驱参数透传按类型无关写法落地(#348/PR #377)。
@@ -69,9 +72,11 @@ diff 与暂停、renderer 如何确认与重驱、授权账/收据如何落盘�
   已验证载荷可能留在可回收共享 CAS(见 §6)。
 - 确认语义 = **整集覆盖**(`requested ⊆ confirmed[key]`,展示什么确认什么,防 TOCTOU);
   无逐能力开关、bundle 无按项拒绝 —— 部分拒绝 = 取消整个安装。
-- 引擎兜住的是**授权集合 TOCTOU**(锁内重读最新 grants 重算 diff;扩张 → 重新弹),
-  不是 catalog 快照身份 TOCTOU(若未来要求「确认的正是同一版本/清单」需把 digest 绑进
-  decision,不属本契约)。
+- 引擎兜住的是**授权集合 TOCTOU**(锁内重读最新 grants 重算 diff;扩张 → 重新弹)。
+  legacy catalog/seed 路径仍不把 Catalog 身份写进 transaction decision；REQ-128 package
+  在进入引擎前另由同一 production IPC 的 admission attempt 精确绑定四组 digest：
+  coherent signed snapshot、严格解码后的 Envelope、逐 item manifest 与 exact capability
+  set。main 确认重驱时重取并重算四组；任一变化即消费并作废 attempt，transaction 调用数为零。
 
 ## 4. IPC wire 契约(`src/shared/ext-capability-authorization.ts`)
 
@@ -79,6 +84,10 @@ diff 与暂停、renderer 如何确认与重驱、授权账/收据如何落盘�
   —— authorize 必带 diff,任何中间层不得把 stage 折叠进 reason 字符串丢数据。
 - 重驱 = 带 `authorization: { confirmed: Record<itemKey, string[]> }` 重发**同一**
   `ext-install-catalog` 意图(catalog 与 seed 形态均接受该字段)。
+- REQ-128 package 重驱还必须原样带回
+  `binding:{snapshotDigest,envelopeDigest,itemDigests,capabilityDigest}` 与同一
+  `attemptId`。首次返回的 `packageAuthorization.plan` 是完整、无 secret value 的单组件
+  写入预览；密钥只在该预览和 capability 确认之后，以 signed prerequisite ID 为键瞬时提交。
 - `decidedAt` 是授权收据的审计事实,**由 main 打戳**;renderer 无通道提供(意图解码把
   `decidedAt` 当未知键整体拒绝)。
 - 意图解码边界(ADR-028 严格解码):`authorization` 只收 `confirmed`;`confirmed` ≤64 项、
@@ -143,7 +152,10 @@ current、不写 config/receipt/grants/授权收据;已验证载荷可能留在�
 `ext-authz-wiring.test.ts`(renderer 承接合同)、`ext-transaction.test.ts`
 (引擎闸/整集覆盖/崩溃前滚,先于本票;**#336 授权投影 fail-closed 组:grants/收据写失败 →
 `ok:true + authorizationPending` + journal 停 `authorizing`、恢复只前滚重试直至 `committed`、
-`after-authorizing` 崩溃点并入 AC1 矩阵、恢复报告携带最终 state 供 `recoveryClean` 判净**)。
+`after-authorizing` 崩溃点并入 AC1 矩阵、恢复报告携带最终 state 供 `recoveryClean` 判净**)；
+`package-admission.wiring.test.ts` 从真实 `ext-install-catalog` IPC 与真实 Ed25519 coherent
+snapshot 两条入口执行 package preview、四组 binding、main 重取重验、既有 transaction
+终闸、prepared secret populate/probe、config switch 与 InstallRecordV2/grants 落账。
 
 ## 9. MCP 密钥版本化布局(#378,Codex 裁决 Q1)
 
@@ -171,15 +183,17 @@ current、不写 config/receipt/grants/授权收据;已验证载荷可能留在�
   MCP reference 与 `connected/disabled/failed/reload-pending` status。正常路径仍立即可用；
   `awaitServer`/dispose 受 5 秒上界、冷启 status 受 10 秒上界；route 不可用或任一上界
   到期时显式返回 `reload-pending`，不谎称已热连，也不无限占住串行写窗口。
-- 尚未接线的 package 安装入口声明形状：package secret prerequisite 只消费 host-owned
+- main/IPC 入口当前有效的 package 安装行为：package secret prerequisite 只消费 host-owned
   `AlphaPackageEnvelopeV1` 与严格 payload decoder 的产物，不 decode web Declaration；
   稳定 prerequisite ID、MCP environment/header target 与 store reference 均从 signed
   component/profile 派生；renderer 提交只能携带短生命周期的
-  `{prerequisiteId,value}`。持久/结果形状只记录 reference 与
-  `ready/cancelled/replaced/uninstalled` status，不记录值或值 digest；cancel、replacement、
-  uninstall、missing/stale reference 均应 fail closed。Phase 1 的运行期入口链由
-  `#702`（evaluator 接线）与 `#713`（admission）交付；在此之前
-  `alpha.secret-prerequisite.v1` 仅是声明形状，运行期尚未兑现。
+  `{prerequisiteId,value}`。main 重验 signed snapshot/Envelope/item/capability binding 后，
+  既有 transaction 授权终闸先执行；随后 prepared populate 才把值写入
+  `<userData>/alpha-mcp-secrets/<server>/<verId>/<VAR>`，probe 通过后才切 config 与落账。
+  持久/结果形状不记录值或值 digest；cancel、undeclared、tamper、stale、replay 均在
+  transaction 或 secret 写入前 fail closed。`alpha.secret-prerequisite.v1` 因而已在
+  Phase 1 main/IPC 入口兑现；renderer 的 attempt/preview/密钥采集入口由
+  [`alpha-code#732`](https://github.com/jinjunnn/alpha-code/issues/732) 交付，当前不宣称已全链兑现。
 - 残余窗口(如实记录):密钥文件写入发生在事务外(userData 与事务根不同卷/不同圈禁域,
   file action 收不进)。崩溃于「版本目录已写、事务未提交」时留下无引用孤儿目录(0600,
   内容为用户本次亲自提交的值),等待 GC —— 不构成对既有安装的破坏面。

@@ -8,7 +8,9 @@ import type {
 import {
   decodePackageEnvelopeHeaderV1,
   decodePackageProfilePayloadV1,
+  type AlphaPackageEnvelopeV1,
   type PackagePayloadRefV1,
+  type PackageProfilePayloadV1,
 } from "../shared/host-extension-package-contract/decoder"
 import {
   decodePackageSecretPrerequisiteProfileV1,
@@ -17,6 +19,7 @@ import {
 
 const PACKAGE_ID = /^package:[a-z0-9][a-z0-9._-]{0,127}$/
 const VERSION = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/
+const ATTEMPT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\x00-\x1f\x7f]/
 const PRELUDE_KEYS = new Set(["packageId", "version"])
@@ -43,9 +46,16 @@ export type PackageInstallabilityDeps = {
   fetchPayload?: (ref: PackagePayloadRefV1) => Promise<Uint8Array>
   decodePayload?: typeof decodePackageProfilePayloadV1
   decodeSecretPrerequisite?: typeof decodePackageSecretPrerequisiteProfileV1
+  accepted?: (facts: PackageAcceptedFactsV1) => void
 }
 
 export type PackageEvaluator = (envelope: unknown, deps?: PackageInstallabilityDeps) => Promise<CatalogPackageViewV1>
+
+export type PackageAcceptedFactsV1 = {
+  envelope: AlphaPackageEnvelopeV1
+  payload: PackageProfilePayloadV1
+  prerequisite: Extract<PackageSecretPrerequisiteProfileDecodeV1, { ok: true }>["profile"]
+}
 
 export type CatalogPackageShapeValidation =
   | { ok: true; packages: Array<{ envelope: unknown; prelude: PackagePreludeV1 }> }
@@ -181,26 +191,40 @@ export async function evaluatePackageForHost(
       displayName: header.envelope.presentation.displayName,
       description: header.envelope.presentation.description,
     })
+  deps.accepted?.({
+    envelope: header.envelope,
+    payload: decoded.payload,
+    prerequisite: prerequisite.profile,
+  })
   return compatibleView(header.envelope, prerequisite)
 }
 
 /**
  * Package-aware install routing. The renderer supplies only intent, never a safe-view verdict or
- * execution payload. Main reloads the verified Catalog and evaluates the selected raw envelope
- * again; package admission/execution belongs to #713, so this slice stops after the preflight.
- * Legacy/seed intents remain on the existing planner unchanged.
+ * execution payload. Package attempts delegate to the main-owned admission coordinator, which
+ * reloads the verified Catalog and evaluates the selected raw envelope again. Legacy/seed intents
+ * remain on the existing planner unchanged.
  */
-export async function runCatalogInstallWithPackagePreflight<T>(
+export async function runCatalogInstallWithPackagePreflight<T, P = never>(
   rawIntent: unknown,
   deps: {
     loadVerifiedCatalog: () => Promise<
       { source: "none"; error: string } | { source: "remote" | "cache"; catalog: unknown }
     >
     installLegacy: (intent: unknown) => Promise<T>
+    installPackage?: (intent: unknown) => Promise<P>
     evaluator?: PackageEvaluator
     installability?: PackageInstallabilityDeps
   },
-): Promise<T | PackagePreflightOutcome> {
+): Promise<T | P | PackagePreflightOutcome> {
+  if (
+    deps.installPackage &&
+    isObject(rawIntent) &&
+    typeof rawIntent.catalogId === "string" &&
+    rawIntent.catalogId.startsWith("package:") &&
+    typeof rawIntent.attemptId === "string"
+  )
+    return deps.installPackage(rawIntent)
   const preflight = await preflightPackageInstall(rawIntent, deps)
   if (!preflight.matched) return deps.installLegacy(rawIntent)
   return preflight.outcome
@@ -381,7 +405,7 @@ function decodePackagePreflightIntent(input: Record<string, unknown>): { ok: tru
     return { ok: false, reason: "package preflight: invalid scope" }
   if (
     input.attemptId !== undefined &&
-    (typeof input.attemptId !== "string" || input.attemptId.length === 0 || input.attemptId.length > 128)
+    (typeof input.attemptId !== "string" || !ATTEMPT_ID.test(input.attemptId))
   )
     return { ok: false, reason: "package preflight: invalid attemptId" }
   if (input.grants !== undefined && !isObject(input.grants))
@@ -396,12 +420,15 @@ function decodePackagePreflightIntent(input: Record<string, unknown>): { ok: tru
   return { ok: true }
 }
 
-async function fetchPackagePayload(ref: PackagePayloadRefV1): Promise<Uint8Array> {
+export async function fetchPackagePayload(
+  ref: PackagePayloadRefV1,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Uint8Array> {
   if (ref.bytes > MAX_PACKAGE_PAYLOAD_BYTES) throw new Error("package payload exceeds host limit")
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), PAYLOAD_TIMEOUT_MS)
   try {
-    const response = await fetch(ref.url, {
+    const response = await fetchImpl(ref.url, {
       signal: controller.signal,
       redirect: "error",
     })

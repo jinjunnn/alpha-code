@@ -11,6 +11,7 @@ import {
 import { decodePackageSecretPrerequisiteProfileV1 } from "../shared/package-secret-prerequisite"
 import {
   evaluatePackageForHost,
+  fetchPackagePayload,
   packageActionForReason,
   runCatalogInstallWithPackagePreflight,
   validateCatalogPackageShape,
@@ -245,6 +246,115 @@ describe("package installability authority", () => {
     })
     expect(result.action.reasonCode).toBe("package-payload-integrity")
     expect(calls).toEqual({ decode: 0, secret: 0 })
+  })
+
+  test("payload fetch failure has the package-payload-unavailable behavior code", async () => {
+    const { envelope } = await corpus()
+    const result = await evaluatePackageForHost(envelope, {
+      fetchPayload: async () => {
+        throw new Error("offline")
+      },
+    })
+    expect(result.action.reasonCode).toBe("package-payload-unavailable")
+  })
+
+  test("secret prerequisite decoder refusal has the package-prerequisite-invalid behavior code", async () => {
+    const { envelope, payload } = await corpus()
+    const bytes = bindPayload(envelope, payload)
+    const result = await evaluatePackageForHost(envelope, {
+      fetchPayload: async () => bytes,
+      decodeSecretPrerequisite: () => ({
+        ok: false,
+        state: "blocked",
+        reasonCode: "secret-profile-invalid",
+        errors: ["injected refusal"],
+      }),
+    })
+    expect(result.action.reasonCode).toBe("package-prerequisite-invalid")
+  })
+
+  test("default payload fetch refuses the declared byte limit before network", async () => {
+    let calls = 0
+    await expect(
+      fetchPackagePayload(
+        {
+          sha256: "a".repeat(64),
+          bytes: 1024 * 1024 + 1,
+          mediaType: "application/json",
+          url: "https://example.com/payload",
+        },
+        (async () => {
+          calls++
+          return new Response()
+        }) as typeof fetch,
+      ),
+    ).rejects.toThrow("exceeds host limit")
+    expect(calls).toBe(0)
+  })
+
+  test('default payload fetch sets redirect:"error"', async () => {
+    let redirect: RequestRedirect | undefined
+    const bytes = await fetchPackagePayload(
+      {
+        sha256: "a".repeat(64),
+        bytes: 1,
+        mediaType: "application/json",
+        url: "https://example.com/payload",
+      },
+      (async (_input, init) => {
+        redirect = init?.redirect
+        return new Response(new Uint8Array([1]), { status: 200 })
+      }) as typeof fetch,
+    )
+    expect(redirect).toBe("error")
+    expect(bytes).toEqual(new Uint8Array([1]))
+  })
+
+  test("default payload fetch rejects a non-success HTTP status", async () => {
+    await expect(
+      fetchPackagePayload(
+        {
+          sha256: "a".repeat(64),
+          bytes: 1,
+          mediaType: "application/json",
+          url: "https://example.com/payload",
+        },
+        (async () => new Response("unavailable", { status: 503 })) as typeof fetch,
+      ),
+    ).rejects.toThrow("HTTP 503")
+  })
+
+  test("default payload fetch rejects actual bytes above the host limit", async () => {
+    await expect(
+      fetchPackagePayload(
+        {
+          sha256: "a".repeat(64),
+          bytes: 1,
+          mediaType: "application/json",
+          url: "https://example.com/payload",
+        },
+        (async () =>
+          new Response(new Uint8Array(1024 * 1024 + 1), {
+            status: 200,
+          })) as typeof fetch,
+      ),
+    ).rejects.toThrow("exceeds host limit")
+  })
+
+  test("default payload fetch rejects a non-HTTPS final response URL", async () => {
+    const response = new Response(new Uint8Array([1]), { status: 200 })
+    Object.defineProperty(response, "url", { value: "http://example.com/payload" })
+    await expect(
+      fetchPackagePayload(
+        {
+          sha256: "a".repeat(64),
+          bytes: 1,
+          mediaType: "application/json",
+          url: "https://example.com/payload",
+        },
+        (async () => response) as typeof fetch,
+      ),
+    ).rejects.toThrow("redirected outside HTTPS")
   })
 
   test("unsafe or duplicate preludes reject the whole candidate snapshot", async () => {

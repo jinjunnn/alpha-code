@@ -64,6 +64,8 @@ export type RemoteCatalogResult =
       reasonClass?: FailureClass
       /** main-only compatibility projection; raw package envelopes remain inside catalog. */
       packageViews?: CatalogPackageViewV1[]
+      /** 已验 coherent-set snapshot 文档的精确 SHA-256；只供 main package admission。 */
+      snapshotDigest?: string
     }
   | { source: "none"; error: string; reasonClass: FailureClass }
 
@@ -239,12 +241,12 @@ async function refreshRemoteCatalogUncoalesced(
     return validation.ok ? { ok: true } : validation
   })
   if (ch.source === "remote")
-    return { source: "remote", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, ...(ch.error ? { error: ch.error } : {}) }
+    return { source: "remote", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, ...(ch.snapshotDigest ? { snapshotDigest: ch.snapshotDigest } : {}), ...(ch.error ? { error: ch.error } : {}) }
 
   const cls: FailureClass = ch.reasonClass ?? "security" // 未分类按最严处理
   const serveLkg = (): RemoteCatalogResult =>
     ch.source === "cache"
-      ? { source: "cache", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, error: ch.error, reasonClass: cls }
+      ? { source: "cache", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, ...(ch.snapshotDigest ? { snapshotDigest: ch.snapshotDigest } : {}), error: ch.error, reasonClass: cls }
       : { source: "none", error: ch.error ?? `channel ${channel} unavailable`, reasonClass: cls }
 
   if (channel !== "stable") {
@@ -267,7 +269,11 @@ async function refreshRemoteCatalogUncoalesced(
   }
   // availability + 已验证身份:v1 允许作可用性镜像(内容身份必须与 LKG 精确相等,否则弃用)。
   console.error(`[remote-catalog] stable channel unavailable (${ch.error ?? "?"}) [availability] — trying legacy v1 as identity-pinned mirror`)
-  const legacy = await refreshRemoteCatalogV1(userDataPath, deps, { version: ch.version, sha256: ch.sha256 })
+  const legacy = await refreshRemoteCatalogV1(userDataPath, deps, {
+    version: ch.version,
+    sha256: ch.sha256,
+    snapshotDigest: ch.snapshotDigest,
+  })
   if (legacy.source !== "none") return legacy // v1 面已带 via=v1 + channel=stable(身份已钉死)
   return serveLkg()
 }
@@ -281,7 +287,7 @@ async function refreshRemoteCatalogUncoalesced(
 async function refreshRemoteCatalogV1(
   userDataPath: string,
   deps: RemoteCatalogDeps,
-  identity: { version: string; sha256: string },
+  identity: { version: string; sha256: string; snapshotDigest?: string },
 ): Promise<RemoteCatalogResult> {
   const fetchImpl = deps.fetchImpl ?? fetch
   const pubKeyB64 = deps.builtinKeyB64 ?? CATALOG_PUBKEY_B64
@@ -306,13 +312,15 @@ async function refreshRemoteCatalogV1(
   type V1Partial = { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string } | { source: "none"; error: string }
   // v1 面 = stable-only 遗产:传输 via=v1,内容通道恒 stable(成功分支必带,review #364 类型收紧)。
   const withVia = (r: V1Partial): RemoteCatalogResult =>
-    r.source === "none" ? { ...r, reasonClass: "availability" } : { ...r, via: "v1", channel: "stable" }
+    r.source === "none"
+      ? { ...r, reasonClass: "availability" }
+      : { ...r, via: "v1", channel: "stable", ...(identity.snapshotDigest ? { snapshotDigest: identity.snapshotDigest } : {}) }
   const fallback = (error: string): RemoteCatalogResult => {
     if (!cached) return withVia({ source: "none", error })
     // 身份校验针对 readCachedCatalog 返回的**同一份已验 body**(单次读取,无 TOCTOU)。
     const idv = matchesIdentity(cached.body)
     if (!idv.ok) return withVia({ source: "none", error: `${error}; ${idv.error}` })
-    return { source: "cache", catalog: cached.catalog, version: idv.version, fetchedAt: cached.fetchedAt, error, via: "v1", channel: "stable", reasonClass: "availability" }
+    return { source: "cache", catalog: cached.catalog, version: idv.version, fetchedAt: cached.fetchedAt, error, via: "v1", channel: "stable", ...(identity.snapshotDigest ? { snapshotDigest: identity.snapshotDigest } : {}), reasonClass: "availability" }
   }
 
   let resp: Response
