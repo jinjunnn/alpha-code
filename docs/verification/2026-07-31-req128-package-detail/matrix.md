@@ -108,3 +108,15 @@ P6 已由主 session 采集（实现方按验证约束未在沙箱启动浏览�
 P3 已由主会话在本票落地后重采（实现方按验证约束未在沙箱启动浏览器，交接给主会话执行）。
 采集脚本在截图的同一次页面加载里读回 `h2`、`.alpha-ext-dabout` 与动作按钮文案，
 所以「拍到的是修复后的帧」有可执行证据，不靠肉眼比对。
+
+## #743 补记：package 密钥必填说明
+
+上方 P6 行、PNG 与采集观察是 #743 修复前的点时证据，保留原文，不用新内容覆盖。
+因 `ext-package-presentation.test.ts` 以硬编码路径读取 harness，
+`harness/package-detail-harness.html` 按 #743 约束原地更新为现役 package 语义：
+标题与 placeholder 都明示必填，空态显示「全部密钥均为必填;填写完整后才能确认安装。」
+
+当前交互证据不从该历史 PNG 推断。`ext-package-detail-wiring.test.ts` 通过真 Solid DOM +
+生产 `ExtensionHub` 断言：空/纯空白时上述原因在 DOM 中可见且确认按钮禁用，
+填入非空后原因消失且按钮恢复；legacy MCP 的原文与空值可确认行为有独立断言。
+全局 `.a-btn:disabled` 样式未改；package 现在不再只靠透明度解释禁用原因。
