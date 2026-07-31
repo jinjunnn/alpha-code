@@ -4,7 +4,7 @@ kind: verification
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-27
+last_reviewed: 2026-07-30
 review_after: 2026-10-27
 ---
 
@@ -16,25 +16,35 @@ review_after: 2026-10-27
 验的是**前提**(worker 已部署、匿名 `tools/list` 有 `cloud_web_search`、gateway 规范路径 fail-closed),
 且比 #639 旧,不能支撑本票任何一条 AC。
 
-**本目录目前完成了「取证准备 + 登出态那一半」。** 登录态那一半需要 owner 本人在真机上登录后执行
-[`probe.ts`](probe.ts);未登录时探针**拒绝产出证据**并以非零退出(见 §4)。
+**本目录的登录态与登出态取证均已完成。** 2026-07-31 在重钉产物上用真实登录态执行
+[`probe.ts`](probe.ts),23 项、0 个必需失败;此前同一套探针的登出态相位为 10/10。
+探针仍对错误登录态 fail-closed:前置不满足时拒绝产出证据并以非零退出(见 §4)。
 
 ## 1. 被测件
 
-| 项 | 值 |
-| --- | --- |
-| 应用 | `/Applications/alpha-code.app`(`ship:mac` 装机版,非 `dist/` 直跑) |
-| 构建时间 | 2026-07-27T21:31:42 -0400(= 2026-07-28T01:31:42Z) |
-| 基线 commit | `e578e00ae`(`alpha`,工作树干净) |
-| `sha256(Contents/Resources/app.asar)` | `60589c59c58e44ac0daede93fc7397a8a04365f5345eac4312e205a0d8f48e44` |
-| CFBundleShortVersionString | `0.1.2` |
-| 引擎版本 | `1.17.13` |
-| userData | `~/Library/Application Support/ai.opencode.desktop.dev` |
+| 项                                    | 值                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| 应用                                  | `/Applications/alpha-code.app`(`ship:mac` 装机版,非 `dist/` 直跑)  |
+| 构建时间                              | 2026-07-30T22:12:02 -0400(= 2026-07-31T02:12:02Z)                  |
+| 基线 commit                           | `b8f030e0c`(`e7-probe-refresh`,工作树干净)                         |
+| `sha256(Contents/Resources/app.asar)` | `dded6b38f023e2bbaba3c152032a857f80221d280949c6838374741aea6f42b9` |
+| CFBundleShortVersionString            | `0.1.2`                                                            |
+| 引擎版本                              | `1.17.13`                                                          |
+| userData                              | `~/Library/Application Support/ai.opencode.desktop.dev`            |
 
 `app.asar` 的 sha256 被钉进 `probe.ts`(`PINNED_ASAR_SHA256`)。探针第一件事就是重算它并比对 ——
 **在错的构建上跑出来的绿是假绿**,这条判据把它挡住。重新打包后必须同时更新此处与 `probe.ts` 的常量。
 
-### 为什么重打了一次
+### 2026-07-30 为什么再次重钉
+
+`alpha-code#651` 修正了登录态探针的四个错误观测点,本次又发现旧 P2.3 仍按 Ledger V1
+硬切前的 `transaction.id` 做差分,因此永远看不到新流水。先在干净提交 `b8f030e0c`
+完成判据修正、自测、类型检查与文档校验,再从该提交执行标准 `ship:mac`;
+`/Applications/alpha-code.app` 的新指纹为 `dded6b38…` 且通过 `codesign --verify --deep --strict`。
+产品源码相对 `origin/alpha` 没有额外修改,但被测包与判据现在共同指向一个可追踪提交。
+旧结果及其旧指纹均保留不改。
+
+### 2026-07-27 为什么重打了一次
 
 上一份装机产物是 `94a76b669` / `8706d0c4…`(2026-07-27T05:29:35 -0400),**早于**
 `e578e00ae`(PR #648,`readBoundedBody` 读全响应体)。在那份产物上登出态 keyless 真调
@@ -58,6 +68,8 @@ eager ajv `new Function` 撞 renderer CSP —— 本次均未复现:`renderer.lo
 
 - 默认(无参数)= **登录态**相位:未登录即 `blocked` + exit 2。
 - `--keyless` = **登出态**相位:仍在登录态即 `blocked` + exit 2。
+- `--self-test` = **判据反向闸**:不连应用、不发网络请求,逐条证明 #651 修正后的
+  P1.2/P1.3/P1.5/P3.8 与 Ledger V1 计费判据在对应绕过下会变红。
 
 每一项都写死了**运行前就定好的判据**(结果 JSON 里的 `criterion` 字段),输出机器可读 JSON 到
 [`results/`](results),带采集时刻、被验 commit、asar 指纹、应用版本。
@@ -66,9 +78,8 @@ eager ajv `new Function` 撞 renderer CSP —— 本次均未复现:`renderer.lo
 
 ## 3. 复现步骤(owner 照敲)
 
-**登出态那一半(⑤)已经跑完并通过**,机器现在停在:新产物已装、`ALPHA_CDP=1` 已开、应用**处于登出态**
-(为跑 keyless 相位而登出;走的是应用自己的「退出登录」路径,BYOK 钥匙没动)。
-所以 owner 只需要 ②③ 两步;①④⑤ 留作完整复现记录。
+**两相位均已有通过证据。** 机器现在停在:重钉产物已装、`ALPHA_CDP=1` 已开、应用处于
+真实登录态。①–⑤ 留作完整复现记录;再次执行默认相位会产生真实 web-search 调用与计费。
 
 ```bash
 # ① 用本仓标准 CDP 口子重启打包应用(这是拿到 sidecar 凭证的唯一通道)
@@ -76,14 +87,14 @@ eager ajv `new Function` 撞 renderer CSP —— 本次均未复现:`renderer.lo
 pkill -f "/Applications/alpha-code.app" ; sleep 2
 ALPHA_CDP=1 open -a /Applications/alpha-code.app
 
-# ② 在应用里登录(平台代付模式),等模型目录出来   ← owner 从这里开始
+# ② 在应用里登录(平台代付模式),等模型目录出来
 
 # ③ 登录态取证 —— 一条命令跑完
 cd ~/app/alpha-code && bun docs/verification/2026-07-27-e7-packaged-live/probe.ts
 
 # ④ 在应用里登出(设置 → 退出登录)
 
-# ⑤ 登出态 keyless 兜底取证 —— 已在 2026-07-28T01:37Z 跑过,exit 0
+# ⑤ 登出态 keyless 兜底取证 —— 已在 2026-07-28 跑过,exit 0
 cd ~/app/alpha-code && bun docs/verification/2026-07-27-e7-packaged-live/probe.ts --keyless
 ```
 
@@ -94,47 +105,48 @@ cd ~/app/alpha-code && bun docs/verification/2026-07-27-e7-packaged-live/probe.t
 ## 4. 逐项判据与结果
 
 `AC` 列对应 #643 正文三条。`结果` 列由探针填(`results/latest-<phase>.json` 是真源);
-下表中已填的行来自新产物(`e578e00ae` / `60589c59c…`)上的真实运行,登录态那一半待 owner 执行。
+登录态结果来自重钉产物 `b8f030e0c` / `dded6b38…` 的
+[`logged-in-20260731T022038Z.json`](results/logged-in-20260731T022038Z.json)。
 
 ### 登录态相位(默认)
 
-| 项 | AC | 判据 | 结果 |
-| --- | --- | --- | --- |
-| P0.1 | 前置 | `sha256(app.asar)` 等于本文件钉的值 | ☑ pass(2026-07-28T01:37Z) |
-| P0.2 | 前置 | CDP 端口列出 renderer page target | ☑ pass |
-| P0.3 | 前置 | `GET /global/health` → `{healthy:true}` | ☑ pass |
-| P0.4 | 前置 | `auth.getState()` 为 `{status:"logged-in",mode:"platform"}` **且** `alpha-secrets/ALPHA_CLOUD_TOKEN` 在位 | ☐ 待 owner(未登录时已实测 `blocked`+exit 2) |
-| P1.1 | AC1 | `GET /mcp` 里 `cloud` 的 `status === "connected"` | ☐ |
-| P1.2 | AC1 | `config.mcp.cloud.url` 等于应用解析出的 mcp 端点,且 `headers.Authorization` 形如 `Bearer {file:…ALPHA_CLOUD_TOKEN}`(token 不进配置) | ☐ |
-| P1.3 | AC1 | **LIVE-PATH GATE ①** 用应用自己的 cloud token 对已部署端点做 `tools/list`,存在匹配 `/web[_-]?search/` 的工具 | ☐ |
-| P1.4 | AC1 | 记录引擎侧真实工具 id(`sanitize("cloud")+"_"+sanitize(<远端名>)`),**不假定**是 `cloud_web_search` | ☐ |
-| P1.5 | AC1 | `config.permission.websearch === "deny"`,且每个注入 agent 的 `permission.websearch === "deny"` | ☐ |
-| P1.6 | AC1 | `/config/providers` 里存在网关 provider 且有 `capabilities.toolcall` 模型 | ☐ |
-| P1.7 | AC1 | `GET /experimental/tool?provider&model` **不含** `websearch`(本地 keyless 被抑制) | ☐ |
-| P2.1 | AC1 | **打包真调**:一次真实模型轮次产出该云工具的 tool part,`status==="completed"`,输出解析出 `{query,results}` | ☐ |
-| P2.2 | AC1 | **LIVE-PATH GATE ②** 用应用自己的 token 直接 `tools/call`,返回 `{query,results}` 且 `isError !== true` | ☐ |
-| P2.3 | AC3 | **计费**:两次真调前后 `account.summary()` 的 `walletUsedFen` 上升 / `balanceFen` 下降,或出现新的 usage 流水 | ☐ |
-| P3.1 | AC3 | **401**:无 Authorization 打 `POST {platform}/v1/tools/web_search` → 401 | ☐ |
-| P3.2 | AC3 | **400**:带真 bearer、body `{}` → 400 | ☐ |
-| P3.3 | AC3 | **400**:带真 bearer、坏 JSON → 400 | ☐ |
-| P3.4 | AC3 | **403** —— `not-producible`(桌面端只持有 `model.invoke` / `cloud.dispatch` 两个 route-purpose 绑定令牌,造不出 scope 不足的令牌);映射由 L1 `alpha-websearch-failure.test.ts` 覆盖 | ☐ |
-| P3.5 | AC3 | **502** —— `not-producible`(需已部署 gateway 同时缺 `TAVILY_API_KEY`/`BRAVE_API_KEY`;两把钥匙都在位,拆生产配置不在探针权限内) | ☐ |
-| P3.6 | AC3 | **意外状态 LOUD** —— `not-producible`(桌面端够得着的请求形态都落在 {400,401,402,403,502} 内);映射由 L1 覆盖 | ☐ |
-| P3.7 | AC3 | **402 / 余额**:带真 bearer 打 `/v1/tools/web_search` → 402(账户额度+余额双空时);200 ⇒ 账户被预授权通过 = 今天产生不了,记 `not-producible`;其它状态 LOUD。见 §6 | ☐ |
-| P3.8 | AC3 | **defect 消失**:代付态下调用被 deny 的本地 `websearch`,模型拿到的是可辨 tool error(含「denied by alpha sovereignty」或以 `Web search failed:` 开头),不是崩溃 | ☐ |
-| P3.9 | AC3 | 云侧失败 loud 但**不可分类**(平台薄壳丢弃 `r.status`)—— 已登记缺口 `alpha-platform#105` | ☐ |
+| 项   | AC   | 判据                                                                                                                                                                             | 结果                                     |
+| ---- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| P0.1 | 前置 | `sha256(app.asar)` 等于本文件钉的值                                                                                                                                              | ☑ pass(2026-07-31T02:20Z)               |
+| P0.2 | 前置 | CDP 端口列出 renderer page target                                                                                                                                                | ☑ pass                                  |
+| P0.3 | 前置 | `GET /global/health` → `{healthy:true}`                                                                                                                                          | ☑ pass                                  |
+| P0.4 | 前置 | `auth.getState()` 为 `{status:"logged-in",mode:"platform"}` **且** `alpha-secrets/ALPHA_CLOUD_TOKEN` 在位                                                                        | ☑ pass                                  |
+| P1.1 | AC1  | `GET /mcp` 里 `cloud` 的 `status === "connected"`                                                                                                                                | ☑ pass                                  |
+| P1.2 | AC1  | 由打包引擎创建短命 PTY 子进程,从继承的原始 `OPENCODE_CONFIG_CONTENT` 只输出布尔断言 URL + `Bearer {file:…ALPHA_CLOUD_TOKEN}`;`GET /config` 另证替换后 URL/值与密钥文件一致       | ☑ pass                                  |
+| P1.3 | AC1  | **LIVE-PATH catalog gate**:已部署端点的匿名 `tools/list` 存在匹配 `/web[_-]?search/` 的工具;本项不再冒充账户授权证据,账户绑定由 P2.2 证明                                        | ☑ pass                                  |
+| P1.4 | AC1  | 记录引擎侧真实工具 id(`sanitize("cloud")+"_"+sanitize(<远端名>)`),**不假定**是 `cloud_web_search`                                                                                | ☑ pass:`cloud_cloud_web_search`(`#650`) |
+| P1.5 | AC1  | 对 `GET /agent` 每个运行时 agent 按引擎 `Wildcard.match + findLast` 语义计算 `websearch` 有效判决,要求全部为 `deny`;后置用户 agent allow 会使本项变红                            | ☑ pass                                  |
+| P1.6 | AC1  | `/config/providers` 里存在网关 provider 且有 `capabilities.toolcall` 模型                                                                                                        | ☑ pass                                  |
+| P1.7 | AC1  | `GET /experimental/tool?provider&model` **不含** `websearch`(本地 keyless 被抑制)                                                                                                | ☑ pass                                  |
+| P2.1 | AC1  | **打包真调**:一次真实模型轮次产出该云工具的 tool part,`status==="completed"`,输出解析出 `{query,results}`                                                                        | ☑ pass                                  |
+| P2.2 | AC1  | **LIVE-PATH GATE ②** 用应用自己的 token 直接 `tools/call`,返回 `{query,results}` 且 `isError !== true`                                                                           | ☑ pass:HTTP 200                         |
+| P2.3 | AC3  | **计费**:有界轮询 `waitUntil` 后台结算,要求 Ledger V1 新增 `reservation_created(actionId=tool.web_search) → usage_settled → reservation_settled`,三者共享新 `reservationId`      | ☑ pass:2 笔各 15 分,总差分 30 分        |
+| P3.1 | AC3  | **401**:无 Authorization 打 `POST {platform}/v1/tools/web_search` → 401                                                                                                          | ☑ pass                                  |
+| P3.2 | AC3  | **400**:带真 bearer、body `{}` → 400                                                                                                                                             | ☑ pass                                  |
+| P3.3 | AC3  | **400**:带真 bearer、坏 JSON → 400                                                                                                                                               | ☑ pass                                  |
+| P3.4 | AC3  | **403** —— `not-producible`(桌面端只持有 `model.invoke` / `cloud.dispatch` 两个 route-purpose 绑定令牌,造不出 scope 不足的令牌);映射由 L1 `alpha-websearch-failure.test.ts` 覆盖 | ◇ not-producible                         |
+| P3.5 | AC3  | **502** —— `not-producible`(需已部署 gateway 同时缺 `TAVILY_API_KEY`/`BRAVE_API_KEY`;两把钥匙都在位,拆生产配置不在探针权限内)                                                    | ◇ not-producible                         |
+| P3.6 | AC3  | **意外状态 LOUD** —— `not-producible`(桌面端够得着的请求形态都落在 {400,401,402,403,502} 内);映射由 L1 覆盖                                                                      | ◇ not-producible                         |
+| P3.7 | AC3  | **402 / 余额**:带真 bearer 打 `/v1/tools/web_search` → 402(账户额度+余额双空时);200 ⇒ 账户被预授权通过 = 今天产生不了,记 `not-producible`;其它状态 LOUD。见 §6                   | ◇ not-producible:当前账户有余额,HTTP 200 |
+| P3.8 | AC3  | **defect 消失**:平台模型工具表不含本地 `websearch`,所以模型不可能尝试它;直接拒绝的可辨文案留给既有 L1 `alpha-websearch-failure.test.ts`                                          | ☑ pass                                  |
+| P3.9 | AC3  | 云侧失败 loud 但**不可分类**(平台薄壳丢弃 `r.status`)—— 已登记缺口 `alpha-platform#105`                                                                                          | ◇ not-producible / 已登记 `#105`         |
 
 ### 登出态相位(`--keyless`)
 
-| 项 | AC | 判据 | 结果 |
-| --- | --- | --- | --- |
-| K0.4 | 前置 | `auth.getState().status === "logged-out"` 且无 `ALPHA_CLOUD_TOKEN` 文件 | ☑ pass(2026-07-28T01:37Z) |
-| K1.1 | AC2 | `GET /mcp` 无 `cloud` 键(登出态云暗) | ☑ pass |
-| K1.2 | AC2 | `config.mcp.cloud` 不存在,且 `config.permission.websearch !== "deny"`(keyless 还原) | ☑ pass |
-| K1.3 | AC2 | 存在非网关 provider 的 `toolcall` 模型 | ☑ pass(`deepseek-byok` / `deepseek-v4-flash`) |
-| K1.4 | AC2 | `GET /experimental/tool?provider&model` **含** `websearch` | ☑ pass |
-| K1.5 | AC2 | **keyless 真调**:真实模型轮次产出 `websearch` tool part,`status==="completed"` 且输出非空 | ☑ **pass** —— 见 §5 |
-| K1.6 | AC3 | keyless 失败也必须是可辨错误(不是匿名 defect) | ☑ pass(本次 `completed`,无失败可辨) |
+| 项   | AC   | 判据                                                                                      | 结果                                           |
+| ---- | ---- | ----------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| K0.4 | 前置 | `auth.getState().status === "logged-out"` 且无 `ALPHA_CLOUD_TOKEN` 文件                   | ☑ pass(2026-07-28T01:37Z)                     |
+| K1.1 | AC2  | `GET /mcp` 无 `cloud` 键(登出态云暗)                                                      | ☑ pass                                        |
+| K1.2 | AC2  | `config.mcp.cloud` 不存在,且 `config.permission.websearch !== "deny"`(keyless 还原)       | ☑ pass                                        |
+| K1.3 | AC2  | 存在非网关 provider 的 `toolcall` 模型                                                    | ☑ pass(`deepseek-byok` / `deepseek-v4-flash`) |
+| K1.4 | AC2  | `GET /experimental/tool?provider&model` **含** `websearch`                                | ☑ pass                                        |
+| K1.5 | AC2  | **keyless 真调**:真实模型轮次产出 `websearch` tool part,`status==="completed"` 且输出非空 | ☑ **pass** —— 见 §5                           |
+| K1.6 | AC3  | keyless 失败也必须是可辨错误(不是匿名 defect)                                             | ☑ pass(本次 `completed`,无失败可辨)           |
 
 登出态相位整体 **exit 0,10/10 必需项通过**,且在新产物上**独立跑了两遍**都是 10/10
 (K1.5 不是一次侥幸):
@@ -150,6 +162,41 @@ cd ~/app/alpha-code && bun docs/verification/2026-07-27-e7-packaged-live/probe.t
 [`results/keyless-20260727T095253Z.json`](results/keyless-20260727T095253Z.json)、
 [`results/logged-in-20260727T095330Z.json`](results/logged-in-20260727T095330Z.json)。
 
+### 2026-07-30 判据校正(#651)
+
+2026-07-28 的登录态结果暴露出三条假红与一条空绿。此次只修探针和判读文档,不改产品代码,
+也不改任何旧 `results/` 原始证据:
+
+1. P1.2 不再在已经完成 `{file:}` 替换的 `GET /config` 上找引用。打包引擎经自己的 PTY API
+   创建短命子进程;该进程继承引擎运行时的原始 `OPENCODE_CONFIG_CONTENT`,但只输出 URL/文件引用
+   是否匹配的布尔值,不输出配置或令牌。`GET /config` 只另证替换后的 URL 与密钥文件一致。
+2. P1.5 不再要求每份配置对象都显式带 deny,改按 `/agent` 的最终 ruleset 算有效判决。
+3. P1.3 明确是匿名 catalog 可用性,不再写“for this account”;P2.2 的真 `tools/call`
+   才是账户绑定的 LIVE-PATH gate。
+4. P3.8 不再要求模型调用一项已被 P1.7 从工具表移除的工具;它与 P1.7 共用可观察事实,
+   可辨拒绝文案由 L1 负责。
+5. 计费差分同步适配 Ledger V1:`id` 已不存在,以 `seq` 判断新事实,并轮询等待 Workers
+   `waitUntil` 结算出现 `reservation_created(actionId=tool.web_search)` 及同一
+   `reservationId` 下的 `usage_settled`、`reservation_settled`。`actionId` 属于预留事实,
+   结算事实不重复携带它;探针不再错误要求该字段。
+
+第一次真实登录态运行
+[`logged-in-20260731T021405Z.json`](results/logged-in-20260731T021405Z.json)
+被原探针自身打出 P1.2/P2.3 两条假红,但同一份记录已经显示:
+替换后配置命中密钥文件,且两笔 web-search 都有完整结算链、余额合计扣 30 分。
+该失败记录保留不改,用于证明判据为何必须修正。修正后的
+[`logged-in-20260731T022038Z.json`](results/logged-in-20260731T022038Z.json)
+在同一 `app.asar` 上 23 项、0 个必需失败;两次调用继续产生两笔各 15 分的精确结算。
+P3.7 为证明有余额账户真实返回 200,会在 P2.3 测量窗口之后再调用一次,因此每次完整相位
+实际为 3 笔 / 45 分。保留的假红运行与最终运行合计 6 笔 / 90 分;最终只读账户摘要为
+`walletUsedFen=90`、`balanceFen=99910`(运行前为 100000)。P2.3 表中的 30 分是它刻意圈定的
+两条 AC 路径差分,不是整轮总费用。
+
+本次生产被测端点对应部署版本:
+
+- `alpha-gateway`: `8c42c99b-c8d7-4414-b63f-f197e042c36f`
+- `alpha-cloud`: `06b278d4-a7e3-4d32-bca4-4520010dbdd8`
+
 ## 5. 曾经的阻断项 —— keyless 真调在 `94a76b669` 上是坏的,`e578e00ae` 上已修复
 
 **状态:已解除。** 下面是缺陷本身的记录;修复(PR #648,commit `e578e00ae`)已在新产物上
@@ -162,11 +209,11 @@ K1.5 曾在旧打包应用上稳定复现:真实 `websearch` 调用返回
 
 用引擎自身的传输写法脱机复现(同一请求,三种读法):
 
-| 读法 | chunk 数 | 收到字节 |
-| --- | --- | --- |
-| `Stream.runForEachWhile`(旧 `readBoundedBody` 的写法) | 1 | 4,090 |
-| `Stream.runForEach` | 3 | 18,063 |
-| `response.text` | — | 18,034 字符 |
+| 读法                                                  | chunk 数 | 收到字节    |
+| ----------------------------------------------------- | -------- | ----------- |
+| `Stream.runForEachWhile`(旧 `readBoundedBody` 的写法) | 1        | 4,090       |
+| `Stream.runForEach`                                   | 3        | 18,063      |
+| `response.text`                                       | —        | 18,034 字符 |
 
 `Stream.runForEachWhile` 在谓词恒为 `true` 时仍在第一个 chunk 后停止 ——
 `packages/opencode/src/tool/mcp-websearch.ts` 的 `readBoundedBody` 因此把**任何超过一个 chunk 的
@@ -203,18 +250,18 @@ commit `e578e00ae`:`readBoundedBody` 换成 `Stream.runForEach` 读全 + `BodyCa
 
 依据 alpha-platform `packages/gateway/src/worker.ts` 的 `webSearchHandler`:
 
-| 臂 | 触发条件 | 桌面端可达? |
-| --- | --- | --- |
+| 臂                                                       | 触发条件                                                                                                           | 桌面端可达?                                                                                                                                                                           |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A. per-job 预算耗尽**(`perJobPrecall` → `kind:"over"`) | `auth.via === "job"`,即一枚 `JOB_TOKEN_SECRET` 签发、claims 带 `job_id` 的 job token(`lib/tenant-auth.ts:114-123`) | **不可达**。桌面端登录拿到的是 route-purpose 绑定的 JWT(`via:"jwt"`),`auth.jobId` 恒空 ⇒ `perJobPrecall` 直接 `{kind:"pass",enforced:false}`。与 P3.4 同源:桌面端铸不出那个形状的凭证 |
-| **B. `accountPreauth` 拒绝** | 账户服务回 `{ok:false}`(「超出会员额度且钱包余额不足」,`worker.ts:243`) | **仅当账户余额与会员额度双空**。预估价是路由常量(`BILLABLE_ROUTES[…].estimatedCostUsd`),请求体只有 `{query,max_results}`,客户端**没有任何调价/调额杠杆** |
+| **B. `accountPreauth` 拒绝**                             | 账户服务回 `{ok:false}`(「超出会员额度且钱包余额不足」,`worker.ts:243`)                                            | **仅当账户余额与会员额度双空**。预估价是路由常量(`BILLABLE_ROUTES[…].estimatedCostUsd`),请求体只有 `{query,max_results}`,客户端**没有任何调价/调额杠杆**                              |
 
 ### 判读规则(写在探针里,运行前定好)
 
-| 观测 | 记法 | 含义 |
-| --- | --- | --- |
-| HTTP **402** | ☑ `pass`(required) | 真拿到了 402 证据 |
+| 观测         | 记法                          | 含义                                                                                                                                                  |
+| ------------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HTTP **402** | ☑ `pass`(required)           | 真拿到了 402 证据                                                                                                                                     |
 | HTTP **200** | `not-producible`(非 required) | 账户被预授权通过 —— **这本身就是「今天产生不了 402」的可观测证据**,不是绿、也不是静默跳过。JSON 里带实测 `balanceFen`/`walletUsedFen`/`plan` 作为理由 |
-| 其它状态 | ☒ `fail`(required) | 意外状态必须 LOUD,先查清再接受这一轮 |
+| 其它状态     | ☒ `fail`(required)            | 意外状态必须 LOUD,先查清再接受这一轮                                                                                                                  |
 
 **为什么不主动把账户打空去凑 402**:那是对 owner 计费状态的破坏性变更,而且会连带让同一轮的
 P2.1/P2.2(真调)与 P2.3(计费)一起失败 —— 402 证据与 AC1/计费证据**不可能在同一个账户形态下同时取到**。
@@ -244,11 +291,11 @@ P1.4 的 `observed` 里有三个字段:`remoteName`(worker 实测返回的远端
   它们盯的是一个引擎里并不存在的工具名 —— 也就是说这些闸**当前是空闸门**(闸在,但永不命中)。
   必须按 `derivedEngineToolId` 逐个重核,**另开一张 CODE 票**,不要在本 VERIFY 票里改源码:
 
-  | 要重核的闸 | 位置 | 下错了会怎样 |
-  | --- | --- | --- |
-  | permission deny(云优先时抑制本地 keyless) | `packages/ui-mac/src/main/cloud-web-search.ts` 注入的 `permission.websearch` / 云工具 id | 抑制不生效或误伤,P1.5/P1.7 的绿变成假绿 |
-  | ext 的 `tool.execute.before` 钩子 | `packages/ext/src/`(云 websearch kill-switch 与主权闸) | kill-switch(#223 AC4)拦不住真实工具名 = 关不掉 |
-  | 引擎侧工具枚举/展示 | `packages/opencode/src/mcp/catalog.ts:117-119` 的拼名 | 名字对不上,模型看到的工具与闸盯的工具不是同一个 |
+  | 要重核的闸                                | 位置                                                                                     | 下错了会怎样                                    |
+  | ----------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------- |
+  | permission deny(云优先时抑制本地 keyless) | `packages/ui-mac/src/main/cloud-web-search.ts` 注入的 `permission.websearch` / 云工具 id | 抑制不生效或误伤,P1.5/P1.7 的绿变成假绿         |
+  | ext 的 `tool.execute.before` 钩子         | `packages/ext/src/`(云 websearch kill-switch 与主权闸)                                   | kill-switch(#223 AC4)拦不住真实工具名 = 关不掉  |
+  | 引擎侧工具枚举/展示                       | `packages/opencode/src/mcp/catalog.ts:117-119` 的拼名                                    | 名字对不上,模型看到的工具与闸盯的工具不是同一个 |
 
   重核判据不是「grep 到字面量」,而是**用真实 id 跑一遍这三个闸并确认它们真的命中**
   —— 本仓的教训是「闸门是假的」比逻辑错更常见(见 `AGENTS.md` / 闸门四形态)。
