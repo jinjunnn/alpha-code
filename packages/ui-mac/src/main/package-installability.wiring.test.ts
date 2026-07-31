@@ -169,6 +169,7 @@ describe("package installability production wiring", () => {
       {
         catalogId: changed.envelope.prelude.packageId,
         scope: { scope: "global" },
+        attemptId: "reevaluate-attempt",
       },
       {
         loadVerifiedCatalog: async () => {
@@ -201,6 +202,7 @@ describe("package installability production wiring", () => {
       {
         catalogId: first.envelope.prelude.packageId,
         scope: { scope: "global" },
+        attemptId: "forged-attempt",
         verdict: "compatible",
         action: visible.action,
       },
@@ -226,6 +228,7 @@ describe("package installability production wiring", () => {
       {
         catalogId: "package:not-in-the-verified-catalog",
         scope: { scope: "global" },
+        attemptId: "absent-attempt",
       },
       {
         loadVerifiedCatalog: async () => ({
@@ -245,7 +248,7 @@ describe("package installability production wiring", () => {
     })
     expect(legacyPlannerCalls).toBe(0)
 
-    // 两条失败分支必须 fail-closed:catalog 取不到 / catalog 形状非法时,`package:` 意图
+    // 两条失败分支必须 fail-closed:catalog 取不到 / catalog 形状非法时,带 attempt identity 的意图
     // 不得掉进完全不懂 package 的 legacy planner(R1 审计 M2:把 matched:true 改 false 曾全绿)。
     for (const [name, catalog] of [
       ["catalog 不可用", { source: "none" as const }],
@@ -255,7 +258,11 @@ describe("package installability production wiring", () => {
       ],
     ] as const) {
       const failed = await runCatalogInstallWithPackagePreflight(
-        { catalogId: first.envelope.prelude.packageId, scope: { scope: "global" } },
+        {
+          catalogId: first.envelope.prelude.packageId,
+          scope: { scope: "global" },
+          attemptId: `failed-attempt-${name}`,
+        },
         {
           loadVerifiedCatalog: async () => catalog as never,
           installLegacy: async () => {

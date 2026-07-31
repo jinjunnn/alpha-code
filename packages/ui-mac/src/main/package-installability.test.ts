@@ -39,7 +39,202 @@ const bindPayload = (envelope: AlphaPackageEnvelopeV1, payload: PackageProfilePa
   return bytes
 }
 
+const packageWithComponentName = (
+  profileId: "skill" | "agent" | "mcp-local" | "mcp-remote",
+  name: string,
+  requiredSecrets: string[] = [],
+) => {
+  const payload =
+    profileId === "skill" || profileId === "agent"
+      ? {
+          schema: `alpha.host-extension-package.payload.${profileId}.v1`,
+          behavior: {
+            targetDir: profileId === "skill" ? "alpha-skills" : "alpha-agents",
+            asset: {
+              sha256: "a".repeat(64),
+              bytes: 1,
+              mediaType: "text/markdown",
+              url: "https://example.invalid/extension.md",
+            },
+          },
+        }
+      : profileId === "mcp-local"
+        ? {
+            schema: "alpha.host-extension-package.payload.mcp-local.v1",
+            behavior: { command: ["demo"], environment: {}, requiredSecrets },
+          }
+        : {
+            schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+            behavior: {
+              url: "https://mcp.example.invalid/service",
+              headersTemplate: Object.fromEntries(
+                requiredSecrets.map((variable, index) => [`X-Secret-${index}`, `{${variable}}`]),
+              ),
+              requiredSecrets,
+              auth: "none",
+            },
+          }
+  const bytes = canonicalBytes(payload)
+  const capabilities = requiredSecrets.length ? ["alpha.secret-prerequisite.v1"] : []
+  return {
+    envelope: {
+      schema: "alpha.host-extension-package.v1",
+      prelude: { packageId: `package:${profileId}-name-boundary`, version: "1.0.0" },
+      presentation: { displayName: profileId, description: "Host name boundary case" },
+      components: [
+        {
+          id: `${profileId}:${name}`,
+          required: true,
+          dependencies: [],
+          profileId,
+          profileVersion: 1,
+          capabilities,
+          payloadRef: {
+            sha256: createHash("sha256").update(bytes).digest("hex"),
+            bytes: bytes.byteLength,
+            mediaType: `application/vnd.alpha.host-extension-package.${profileId}.v1+json`,
+            url: "https://example.invalid/payload.json",
+          },
+        },
+      ],
+      capabilities,
+    },
+    bytes,
+  }
+}
+
 describe("package installability authority", () => {
+  test.each(["skill:demo-package", `${"n".repeat(31)}:${"a".repeat(128)}`])(
+    "the contract-accepted package ID %s is not narrowed by the host",
+    async (packageId) => {
+      const { envelope, payload } = await corpus()
+      if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+        throw new Error("producer corpus profile drifted")
+      envelope.prelude = { packageId, version: "v".repeat(64) }
+      payload.behavior.requiredSecrets = []
+      envelope.capabilities = []
+      envelope.components[0].capabilities = []
+      const bytes = bindPayload(envelope, payload)
+
+      expect(decodePackageEnvelopeHeaderV1(canonicalBytes(envelope))).toMatchObject({
+        ok: true,
+        status: "accepted",
+      })
+      expect(validateCatalogPackageShape({ packages: [envelope] })).toMatchObject({
+        ok: true,
+        packages: [{ prelude: { packageId, version: "v".repeat(64) } }],
+      })
+      expect(
+        await evaluatePackageForHost(envelope, {
+          fetchPayload: async () => bytes,
+        }),
+      ).toMatchObject({
+        catalogId: packageId,
+        verdict: "compatible",
+        action: { enabled: true },
+      })
+    },
+  )
+
+  test("a package ID rejected by the contract remains blocked by the host", async () => {
+    const { envelope } = await corpus()
+    envelope.prelude.packageId = "Skill:demo-package"
+
+    expect(decodePackageEnvelopeHeaderV1(canonicalBytes(envelope))).toMatchObject({ ok: false })
+    expect(validateCatalogPackageShape({ packages: [envelope] })).toMatchObject({ ok: false })
+    expect(await evaluatePackageForHost(envelope)).toMatchObject({
+      catalogId: "package:invalid",
+      verdict: "blocked",
+      action: { enabled: false, reasonCode: "package-invalid" },
+    })
+  })
+
+  test("a contract-accepted namespace reaches package admission instead of the legacy planner", async () => {
+    const calls = { package: 0, legacy: 0, catalog: 0 }
+    const result = await runCatalogInstallWithPackagePreflight(
+      {
+        catalogId: "skill:demo-package",
+        scope: { scope: "global" },
+        attemptId: "attempt-1",
+      },
+      {
+        loadVerifiedCatalog: async () => {
+          calls.catalog++
+          return { source: "none", error: "must not load before admission" }
+        },
+        installLegacy: async () => {
+          calls.legacy++
+          return { route: "legacy" }
+        },
+        installPackage: async () => {
+          calls.package++
+          return { route: "package" }
+        },
+      },
+    )
+
+    expect(result).toEqual({ route: "package" })
+    expect(calls).toEqual({ package: 1, legacy: 0, catalog: 0 })
+  })
+
+  test.each(["skill", "agent"] as const)(
+    "%s with an unrepresentable component name is disabled during installability",
+    async (profileId) => {
+      const item = packageWithComponentName(profileId, "a".repeat(65))
+      expect(decodePackageEnvelopeHeaderV1(canonicalBytes(item.envelope))).toMatchObject({ ok: true })
+      expect(
+        await evaluatePackageForHost(item.envelope, {
+          fetchPayload: async () => item.bytes,
+        }),
+      ).toMatchObject({
+        verdict: "blocked",
+        action: { enabled: false, reasonCode: "package-invalid" },
+      })
+    },
+  )
+
+  test.each(["mcp-local", "mcp-remote"] as const)(
+    "%s with an unrepresentable secret-store name is disabled even without secrets",
+    async (profileId) => {
+      const item = packageWithComponentName(profileId, "a".repeat(65))
+      expect(decodePackageEnvelopeHeaderV1(canonicalBytes(item.envelope))).toMatchObject({ ok: true })
+      expect(
+        await evaluatePackageForHost(item.envelope, {
+          fetchPayload: async () => item.bytes,
+        }),
+      ).toMatchObject({
+        verdict: "blocked",
+        action: { enabled: false, reasonCode: "package-prerequisite-invalid" },
+      })
+    },
+  )
+
+  test.each(["skill", "agent", "mcp-local", "mcp-remote"] as const)(
+    "%s consumes the shared host-name decision at the 64-character boundary",
+    async (profileId) => {
+      const item = packageWithComponentName(profileId, "a".repeat(64))
+      expect(
+        await evaluatePackageForHost(item.envelope, {
+          fetchPayload: async () => item.bytes,
+        }),
+      ).toMatchObject({ verdict: "compatible", action: { enabled: true } })
+    },
+  )
+
+  test("decoded maximum-length secret names are not reinterpreted by prerequisite projection", async () => {
+    const variable = "A".repeat(128)
+    const item = packageWithComponentName("mcp-local", "secret-boundary", [variable])
+    expect(
+      await evaluatePackageForHost(item.envelope, {
+        fetchPayload: async () => item.bytes,
+      }),
+    ).toMatchObject({
+      verdict: "compatible",
+      action: { enabled: true, reasonCode: "package-prerequisite-required" },
+      prerequisites: { items: [{ prerequisiteId: `mcp-local:secret-boundary#${variable}` }] },
+    })
+  })
+
   test("projects required secret summaries without exposing their signed injection targets", async () => {
     const { envelope, payload } = await corpus()
     if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
@@ -197,6 +392,7 @@ describe("package installability authority", () => {
       {
         catalogId: envelope.prelude.packageId,
         scope: { scope: "global" },
+        attemptId: "preflight-attempt",
       },
       {
         loadVerifiedCatalog: async () => ({
@@ -419,7 +615,7 @@ describe("package installability authority", () => {
     const unsafe = structuredClone(envelope) as unknown as {
       prelude: { packageId: string }
     }
-    unsafe.prelude.packageId = "mcp:not-a-package-root"
+    unsafe.prelude.packageId = "Skill:not-a-package-root"
     expect(
       validateCatalogPackageShape({
         version: "1",

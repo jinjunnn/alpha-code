@@ -169,24 +169,24 @@ test("REQ-128:真 registerExtIpcHandlers 注册了 package detail 通道", () =>
   expect(handlers.has("ext-package-detail")).toBe(true)
 })
 
-test("REQ-128:`package:` 意图走 package 预检,不落 legacy planner", async () => {
+test("REQ-128:带 attempt identity 的意图走 package admission,不落 legacy planner", async () => {
   const install = handlers.get("ext-install-catalog")
   if (!install) throw new Error("ext-install-catalog handler was not registered")
   const result = await install(
     { sender: { id: 1 } },
-    { catalogId: "package:not-in-this-catalog", scope: { scope: "global" } },
+    {
+      catalogId: "skill:not-in-this-catalog",
+      scope: { scope: "global" },
+      attemptId: "missing-package-attempt",
+    },
   )
-  // preflight 在场:package 权威接手,给 package 形状的 blocked 结果。
-  // preflight 被摘掉:意图掉进不懂 package 的 legacy planner,返回值没有 `package` 字段。
+  // admission 在场:package 权威接手,在本组件桩缺少 verified snapshot digest 时 fail-closed。
+  // package 路由被摘掉:意图掉进不懂 package 的 legacy planner,返回另一条错误。
   //
-  // `reason` 不能省:preflight 的**每一条**失败分支都产出 verdict:"blocked",
-  // 只断言 verdict 分辨不出「真的重取了已签 catalog」与「根本没取」——
-  // 把 loadVerifiedCatalog 换成恒返回 {source:"none"} 的常量(即摘掉 REQ-128 的核心反篡改
-  // 性质「main 重取已签事实重判」)时,只有这一行会红。
+  // `reason` 不能省:它区分 admission 的已签快照重取边界与 legacy catalog lookup。
   expect(result).toMatchObject({
     ok: false,
-    reason: "package preflight: catalogId not found in verified Catalog",
-    package: { verdict: "blocked" },
+    reason: "package admission: verified Catalog snapshot digest unavailable",
   })
 })
 

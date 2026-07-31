@@ -10,6 +10,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | Need                                                                 | Canonical source                                                     |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | System structure and upstream boundary                               | [`architecture/`](architecture/)                                     |
+| Host extension package contract/host decision boundary               | [`architecture/host-extension-package-contract-boundary.md`](architecture/host-extension-package-contract-boundary.md) |
 | Platform and endpoint integration                                    | [`contracts/`](contracts/)                                           |
 | Session tool permission DTOs and decision receipts                   | [`contracts/session-permission.md`](contracts/session-permission.md) |
 | Build, distribution, CI, uninstall, and Settings recovery operations | [`runbooks/`](runbooks/)                                             |

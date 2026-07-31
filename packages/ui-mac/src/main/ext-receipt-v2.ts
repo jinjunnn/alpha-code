@@ -23,6 +23,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import type { InstallReceipt, InstallReceiptOrigin, InstallReceiptType } from "../preload/types"
+import { isExtensionName } from "../shared/extension-name"
 import type { AppEnvironment } from "./alpha-environment"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { validateReceipt } from "./alpha-installs"
@@ -79,7 +80,6 @@ const ORIGINS = new Set<string>(["catalog", "created", "imported", "imported-cla
 const ENVIRONMENTS = new Set<string>(["prod", "beta", "dev"])
 const DESIRED = new Set<string>(["enabled", "disabled"])
 const TX_STATES = new Set<string>(["committed", "pending", "rolled-back"])
-const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const DIGEST_RE = /^sha256:[0-9a-f]{64}$/
 
 const RECORD_KEYS = new Set([
@@ -141,7 +141,8 @@ export function decodeRecordV2(input: unknown): RecordDecode {
     return v
   }
   const id = str(input.id, "record.id", true)
-  const name = str(input.name, "record.name", true, SAFE_NAME)
+  const name = str(input.name, "record.name", true)
+  if (name && !isExtensionName(name)) errors.push("record.name: invalid format")
   const kind = str(input.kind, "record.kind", true)
   if (kind && !KINDS.has(kind)) errors.push(`record.kind: "${kind}" not a known kind`)
   const environment = str(input.environment, "record.environment", true)
@@ -317,7 +318,7 @@ function attemptCorruptKey(entry: unknown): string | null {
   const rawKind = entry.kind
   const rawName = entry.name
   if (typeof rawKind !== "string" || !KINDS.has(rawKind)) return null
-  if (typeof rawName !== "string" || rawName.length === 0 || rawName.length > 512 || !SAFE_NAME.test(rawName)) return null
+  if (typeof rawName !== "string" || rawName.length === 0 || rawName.length > 512 || !isExtensionName(rawName)) return null
   return key(rawKind, rawName)
 }
 

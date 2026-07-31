@@ -12,13 +12,13 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import type { InstallLedgerView, InstallReceipt } from "../preload/types"
+import { isExtensionName } from "../shared/extension-name"
 import { resolveAlphaGlobalRoot } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
 import { writeFileAtomicSync } from "./ext-atomic-fs"
 
 const LEDGER_FILE = "installs.json"
 const LEDGER_VERSION = 1
-const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const RECEIPT_TYPES = new Set(["mcp", "skill", "agent", "command", "plugin", "bundle", "cloud"])
 const RECEIPT_SCOPES = new Set(["global", "project"])
 // REQ-063:imported-claude / imported-agents = 外部生态(.claude / .agents)转换导入,来源可溯
@@ -45,7 +45,7 @@ export function validateReceipt(receipt: InstallReceipt): string | null {
   if (typeof receipt.id !== "string" || !receipt.id || receipt.id.length > 200) return "invalid id"
   // eslint-disable-next-line no-control-regex
   if (/[\x00-\x1f\x7f]/.test(receipt.id)) return "invalid id"
-  if (typeof receipt.name !== "string" || !SAFE_NAME.test(receipt.name)) return "invalid name"
+  if (typeof receipt.name !== "string" || !isExtensionName(receipt.name)) return "invalid name"
   if (!RECEIPT_TYPES.has(receipt.type)) return "invalid type"
   if (!RECEIPT_SCOPES.has(receipt.scope)) return "invalid scope"
   if (!RECEIPT_ORIGINS.has(receipt.origin)) return "invalid origin"

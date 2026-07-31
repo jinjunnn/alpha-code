@@ -14,6 +14,7 @@ import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withE
 import { assertProjectAlphaRootIdentity, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import { projectIpcHandler, resolveProjectIpcEntry, withProjectIpcEntryIdentity } from "./ext-project-entry"
 import type { InstallTarget, ServerReadyData } from "../preload/types"
+import { isExtensionName } from "../shared/extension-name"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
@@ -664,7 +665,7 @@ export function registerExtIpcHandlers(
         downloadRemoteAsset,
         // REQ-100 #310:builtin skill 载荷收集(随包目录 → generation 事务 populate;不落 flat 目录)。
         collectBuiltinSkillPayload: (builtinAssetKey: string, name: string) => {
-          if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name)) return { ok: false as const, reason: "invalid skill name" }
+          if (!isExtensionName(name)) return { ok: false as const, reason: "invalid skill name" }
           if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$/.test(builtinAssetKey)) return { ok: false as const, reason: "invalid asset key" }
           const srcDir = path.join(resourcesRoot(), builtinAssetKey)
           if (!fs.existsSync(path.join(srcDir, "SKILL.md"))) return { ok: false as const, reason: "技能内容未随此版本打包" }

@@ -27,6 +27,7 @@ import { randomUUID } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import type { InstallReceiptType } from "../preload/types"
 import type { CatalogEntry, McpInstallSpec } from "../renderer/extensions/catalog-types"
+import { isExtensionName } from "../shared/extension-name"
 import type { AppEnvironment } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
 import type { AdvisoryGate } from "./ext-advisory-gate"
@@ -278,7 +279,6 @@ export type CatalogInstallOutcome =
 export type UninstallOutcome = { ok: true; files?: string[]; warning?: string } | { ok: false; reason: string }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
-const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const RECEIPT_TYPES = new Set<string>(["mcp", "skill", "agent", "command", "plugin", "bundle", "cloud"])
 
 function decodeStringMap(v: unknown, at: string): { ok: true; map: Record<string, string> } | { ok: false; reason: string } {
@@ -419,7 +419,7 @@ export function decodeUninstallIntent(input: unknown): { ok: true; intent: Unins
       return { ok: false, reason: `uninstall intent: unknown key "${key}" — renderer-supplied receipts/paths are refused (ADR-028 §1)` }
   }
   if (typeof input.type !== "string" || !RECEIPT_TYPES.has(input.type)) return { ok: false, reason: "intent.type: not a known type" }
-  if (typeof input.name !== "string" || !SAFE_NAME.test(input.name)) return { ok: false, reason: "intent.name: invalid name" }
+  if (typeof input.name !== "string" || !isExtensionName(input.name)) return { ok: false, reason: "intent.name: invalid name" }
   if (input.scope === "global") {
     if (input.projectDir !== undefined) return { ok: false, reason: "intent.projectDir: not allowed for global scope" }
     return { ok: true, intent: { type: input.type as InstallReceiptType, name: input.name, scope: "global" } }
@@ -2321,7 +2321,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       rollback("agent identity drift")
       return { ok: false, reason: `catalog entry id "${entry.id}" ≠ "agent:${entry.name}" — refusing (identity drift)` }
     }
-    // #361 裁决缺口 2(边界禁用):manifest SAFE_NAME 允许 "--",但事务 key 方案
+    // #361 裁决缺口 2(边界禁用):manifest extension name 允许 "--",但事务 key 方案
     // (agent--<name>[--config])对其歧义 —— 与载体拒绝同源,在 catalog 边界显式拒。
     if (entry.name.includes("--")) {
       rollback("ambiguous agent name")
@@ -2674,7 +2674,7 @@ export async function installUncuratedAgentImport(
   deps: UncuratedImportDeps,
   opts: { origin: UncuratedOrigin },
 ): Promise<UncuratedImportOutcome> {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid agent name" }
   if (name.includes("--"))
     return { ok: false, reason: `agent name "${name}" contains "--" — ambiguous with the transaction key scheme; refused` }
   const root = deps.globalRoot()
@@ -2782,11 +2782,11 @@ function seedPluginDirName(name: string, payloadDigest: string): string {
 }
 
 /** 严格的 plugin 载荷 item key 形状(review r2 Minor:前后缀宽匹配会放行非法名/内嵌 "--" 的 key):
- *  plugin--<name>--f<i>,name 过 SAFE_NAME 且不含 "--"(与 installSeedPlugin 的名称拒绝对齐)。 */
+ *  plugin--<name>--f<i>,name 过 extension name 且不含 "--"(与 installSeedPlugin 的名称拒绝对齐)。 */
 function isSeedPluginItemKey(key: string): boolean {
   const m = /^plugin--(.+)--f\d+$/.exec(key)
   const name = m?.[1]
-  return typeof name === "string" && SAFE_NAME.test(name) && !name.includes("--")
+  return typeof name === "string" && isExtensionName(name) && !name.includes("--")
 }
 
 /** plugin 载荷 file item 的类型化探测(#359;对标 agentFileProbe 的 generic 形态):digest 走引擎

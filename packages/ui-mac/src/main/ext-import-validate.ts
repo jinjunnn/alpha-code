@@ -2,7 +2,7 @@
 // 外来内容纪律(PR #73 教训):只解析 frontmatter,绝不执行导入内容;解析器刻意极简
 // (只认顶层 `key: value` 行),不引 YAML 解析器,不解析嵌套 —— 少一个解析器面。
 
-export const SAFE_IMPORT_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
+import { isExtensionName } from "../shared/extension-name"
 
 export function parseSkillFrontmatter(
   text: string,
@@ -18,7 +18,7 @@ export function parseSkillFrontmatter(
   }
   const name = fields["name"] ?? ""
   const description = fields["description"] ?? ""
-  if (!SAFE_IMPORT_NAME.test(name)) return { ok: false, reason: `非法 frontmatter:name 缺失或不合法(${name || "空"})` }
+  if (!isExtensionName(name)) return { ok: false, reason: `非法 frontmatter:name 缺失或不合法(${name || "空"})` }
   if (!description) return { ok: false, reason: "非法 frontmatter:description 缺失" }
   return { ok: true, name, description }
 }
@@ -78,7 +78,7 @@ export function parseAgentImport(text: string): AgentImportPreview {
     if (m) fields[m[1].toLowerCase()] = m[2].trim().replace(/^["']|["']$/g, "")
   }
   const name = fields["name"] ?? ""
-  if (!SAFE_IMPORT_NAME.test(name)) return { ok: false, reason: `name 缺失或不合法(${name || "空"})` }
+  if (!isExtensionName(name)) return { ok: false, reason: `name 缺失或不合法(${name || "空"})` }
   if (!fields["description"]) return { ok: false, reason: "description 缺失" }
 
   // 格式识别:有 opencode 专属键(mode/temperature/permission)→ 原生直入;

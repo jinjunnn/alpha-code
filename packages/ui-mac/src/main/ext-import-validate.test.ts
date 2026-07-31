@@ -1,6 +1,17 @@
 // REQ-019 T6:导入校验纯函数单测(非法 frontmatter 拒绝路径 = 验收③的一半;另一半真机 UI 走查)。
 import { describe, expect, test } from "bun:test"
+import { isExtensionName } from "../shared/extension-name"
 import { parseSkillFrontmatter, validGitUrl } from "./ext-import-validate"
+
+describe("shared extension name", () => {
+  test.each(["a", "A_1.test-name", "x".repeat(64)])("accepts %s", (name) => {
+    expect(isExtensionName(name)).toBe(true)
+  })
+
+  test.each(["", ".hidden", "a/b", "x".repeat(65)])("rejects %s", (name) => {
+    expect(isExtensionName(name)).toBe(false)
+  })
+})
 
 describe("parseSkillFrontmatter (T6 导入校验)", () => {
   test("合法 frontmatter → name/description", () => {

@@ -48,10 +48,8 @@ import type {
 import type { TxStageNonAuthorizeWire } from "../shared/ext-capability-authorization"
 import { evaluatePackageSecretSubmissionV1, packageSecretReferenceV1 } from "../shared/package-secret-prerequisite"
 
-const PACKAGE_ID = /^package:[a-z0-9][a-z0-9._-]{0,127}$/
 const ATTEMPT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const DIGEST = /^[a-f0-9]{64}$/
-const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const TX_ITEM_KEY = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
 const MAX_ASSET_BYTES = 5 * 1024 * 1024
 const MAX_ATTEMPTS = 64
@@ -293,8 +291,6 @@ async function resolvePreparedPackage(
   const facts = accepted
   const component = facts.envelope.components[0]
   const name = component.id.slice(component.id.indexOf(":") + 1)
-  if (!SAFE_NAME.test(name))
-    return { ok: false, reason: "package admission: component identity cannot be installed safely", package: view }
   const kind = component.profileId === "skill" ? "skill" : component.profileId === "agent" ? "agent" : "mcp"
   const key = kind === "skill" ? skillGenerationKey(name) : kind === "agent" ? agentInstallKey(name) : `mcp--${name}`
   const assetRef =
@@ -630,7 +626,7 @@ function decodePackageAdmissionIntent(
   if (!isObject(input)) return { ok: false, reason: "package admission: intent must be an object" }
   const unknown = Object.keys(input).find((key) => !INTENT_KEYS.has(key))
   if (unknown) return { ok: false, reason: `package admission: renderer-supplied key "${unknown}" is refused` }
-  if (typeof input.catalogId !== "string" || !PACKAGE_ID.test(input.catalogId))
+  if (typeof input.catalogId !== "string")
     return { ok: false, reason: "package admission: invalid catalogId" }
   const scope = decodeScope(input.scope)
   if (!scope.ok) return scope

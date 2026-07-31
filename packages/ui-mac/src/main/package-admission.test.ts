@@ -91,7 +91,7 @@ describe("package admission", () => {
     [
       "uppercase catalogId",
       (intent: Record<string, unknown>) => ({ ...intent, catalogId: "package:Generic-remote-mcp" }),
-      "invalid catalogId",
+      "tampered or is stale",
     ],
     [
       "non-hex authorization binding",
@@ -142,6 +142,33 @@ describe("package admission", () => {
 
     expect(result).toMatchObject({ ok: false, reason: expect.stringContaining(reason) })
     expect(transactionCalls).toBe(0)
+  })
+
+  test("coordinator correlates a non-package namespace through decoded catalog identity", async () => {
+    const { envelope, bytes } = await fixture()
+    envelope.prelude.packageId = "skill:contract-package"
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      environment: () => "dev",
+      installability: { fetchPayload: async () => bytes },
+    })
+
+    const preview = await admit({
+      catalogId: "skill:contract-package",
+      scope: { scope: "global" },
+      attemptId: "attempt-contract-package",
+    })
+    expect(preview).toMatchObject({
+      ok: false,
+      stage: "authorize",
+      packageAuthorization: { plan: { packageId: "skill:contract-package" } },
+    })
   })
 
   test("actual transaction writes the signed secret prerequisite into the restricted version directory", async () => {

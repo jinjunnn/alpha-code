@@ -32,8 +32,8 @@ import { findRecordV2, upsertRecordsV2, upsertRecordV2, type ScopeIdentity, type
 import { nextDesiredState } from "./ext-install-policy"
 import { parseSkillFrontmatter } from "./ext-import-validate"
 import type { InstallReceiptOrigin } from "../preload/types"
+import { isExtensionName } from "../shared/extension-name"
 
-const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const STORE_DIR = "ext-store"
 
 /** fs-safe 扩展 key(引擎按此建 generation 目录)。 */
@@ -86,7 +86,7 @@ export async function rollbackSkillGeneration(
   name: string,
   targetGenId: string,
 ): Promise<{ ok: true; previous: string | null } | { ok: false; reason: string }> {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: `invalid skill name: ${name}` }
+  if (!isExtensionName(name)) return { ok: false, reason: `invalid skill name: ${name}` }
   const key = skillGenerationKey(name)
   return rollbackGenerationTransaction(root, key, targetGenId, {
     probe: skillGenerationProbe,
@@ -237,7 +237,7 @@ export type SkillGenerationResult =
  * (REQ-100 #336:账本写失败绝不谎报成功)。成功后清除同名 flat 安装(supersede,防双真源)。
  */
 export async function installSkillGeneration(root: string, spec: SkillGenerationInstall): Promise<SkillGenerationResult> {
-  if (!SAFE_NAME.test(spec.name)) return { ok: false, reason: `invalid skill name: ${spec.name}` }
+  if (!isExtensionName(spec.name)) return { ok: false, reason: `invalid skill name: ${spec.name}` }
   // 唯一内容源 = 验证共享 CAS(REQ-098 #303);casFiles 畸形(null / specs 非数组 / casBaseRoot
   // 非法)= 结构化拒绝,不抛未捕获异常。
   const cas = spec.casFiles as unknown
