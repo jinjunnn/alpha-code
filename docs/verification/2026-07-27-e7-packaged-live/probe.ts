@@ -108,8 +108,7 @@ async function connectCdp(): Promise<Cdp> {
     url: string
     webSocketDebuggerUrl: string
   }>
-  const target =
-    list.find((t) => t.type === "page" && t.url.startsWith("oc://")) ?? list.find((t) => t.type === "page")
+  const target = list.find((t) => t.type === "page" && t.url.startsWith("oc://")) ?? list.find((t) => t.type === "page")
   if (!target) throw new Error("no renderer page target on the CDP port")
   const ws = new WebSocket(target.webSocketDebuggerUrl)
   await new Promise<void>((resolve, reject) => {
@@ -145,11 +144,19 @@ async function connectCdp(): Promise<Cdp> {
 
 // ── engine HTTP (through the packaged app's own sidecar credential) ──────────
 
-type Engine = { base: string; auth: string; get: (p: string) => Promise<any>; post: (p: string, b: unknown) => Promise<any> }
+type Engine = {
+  base: string
+  auth: string
+  get: (p: string) => Promise<any>
+  post: (p: string, b: unknown) => Promise<any>
+}
 
 /** A model turn can run for minutes; anything longer than this is a hang, and a hung probe is
  *  worse than a failed one — the owner would sit and wait instead of reading a red line. */
 const TURN_TIMEOUT_MS = Number(process.env.ALPHA_E7_TURN_TIMEOUT_MS ?? 240_000)
+/** Gateway settlement deliberately runs under Workers `waitUntil`; poll the account truth instead
+ *  of assuming a fixed four-second delay is enough. */
+const BILLING_SETTLE_TIMEOUT_MS = Number(process.env.ALPHA_E7_BILLING_SETTLE_TIMEOUT_MS ?? 45_000)
 
 function makeEngine(base: string, auth: string): Engine {
   const call = async (method: string, p: string, body?: unknown) => {
@@ -192,6 +199,240 @@ function readSecret(name: string): string | undefined {
   return registerSecret(value) && value ? value : undefined
 }
 
+type CloudDefinition = {
+  type?: string
+  url?: string
+  enabled?: boolean
+  headers?: Record<string, string>
+}
+
+type PermissionRule = {
+  permission: string
+  pattern: string
+  action: string
+}
+
+type LedgerFact = {
+  seq: number
+  kind: string
+  domain: string
+  amount: number
+  actionId?: string
+  reservationId?: string
+  createdAt: number
+}
+
+function cloudDefinitionUsesFileReference(
+  config: { mcp?: Record<string, CloudDefinition> } | undefined,
+  expectedUrl: string,
+  expectedSecretFile: string,
+) {
+  const definition = config?.mcp?.[CLOUD_MCP_SERVER_NAME]
+  return definition?.url === expectedUrl && definition.headers?.Authorization === `Bearer {file:${expectedSecretFile}}`
+}
+
+function wildcardMatch(value: string, pattern: string) {
+  const normalizedValue = value.replaceAll("\\", "/")
+  const normalizedPattern = pattern.replaceAll("\\", "/")
+  let escaped = normalizedPattern
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*")
+    .replace(/\?/g, ".")
+  if (escaped.endsWith(" .*")) escaped = escaped.slice(0, -3) + "( .*)?"
+  return new RegExp(`^${escaped}$`, process.platform === "win32" ? "si" : "s").test(normalizedValue)
+}
+
+function effectivePermission(rules: PermissionRule[], permission: string, pattern: string) {
+  const index = rules.findLastIndex(
+    (rule) => wildcardMatch(permission, rule.permission) && wildcardMatch(pattern, rule.pattern),
+  )
+  return index < 0
+    ? { action: "ask", index, rule: { permission, pattern: "*", action: "ask" } }
+    : { action: rules[index]!.action, index, rule: rules[index]! }
+}
+
+function hasRemoteWebSearch(tools: Array<{ name: string }>) {
+  return tools.find((tool) => /web[_-]?search/i.test(tool.name))
+}
+
+function localWebSearchIsHidden(toolIDs: string[] | undefined) {
+  return toolIDs !== undefined && !toolIDs.includes(LOCAL_WEB_SEARCH_TOOL_ID)
+}
+
+function newSettledWebSearchFacts(facts: LedgerFact[], before: Set<number>) {
+  return facts.filter(
+    (fact) => !before.has(fact.seq) && fact.kind === "usage_settled" && fact.actionId === "tool.web_search",
+  )
+}
+
+/** `ps eww` is a source-side observation: unlike GET /config, it sees the sidecar's raw
+ *  OPENCODE_CONFIG_CONTENT before ConfigVariable substitutes `{file:...}`. Parse only the balanced
+ *  JSON value and never retain or print the rest of the process environment. */
+function extractJsonEnvironment(line: string, name: string) {
+  const marker = `${name}=`
+  const start = line.indexOf(marker)
+  if (start < 0) return undefined
+  const valueStart = start + marker.length
+  if (line[valueStart] !== "{") return undefined
+  let depth = 0
+  let quoted = false
+  let escaped = false
+  for (let index = valueStart; index < line.length; index++) {
+    const char = line[index]!
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (quoted && char === "\\") {
+      escaped = true
+      continue
+    }
+    if (char === '"') {
+      quoted = !quoted
+      continue
+    }
+    if (quoted) continue
+    if (char === "{") depth++
+    if (char !== "}") continue
+    depth--
+    if (depth !== 0) continue
+    try {
+      return JSON.parse(line.slice(valueStart, index + 1)) as { mcp?: Record<string, CloudDefinition> }
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+function readPackagedSidecarConfigSource(expectedUrl: string) {
+  // Resolve only the packaged NodeService PID without environments first. Asking `ps eww -ax`
+  // would unnecessarily copy unrelated processes' environments into this probe.
+  const processList = Bun.spawnSync(["ps", "-axo", "pid=,command="])
+  if (processList.exitCode !== 0)
+    return {
+      config: undefined,
+      packagedCandidates: 0,
+      error: processList.stderr.toString().trim().slice(0, 300) || `ps exited ${processList.exitCode}`,
+    }
+  const sidecarPids = processList.stdout
+    .toString()
+    .split("\n")
+    .filter(
+      (line) =>
+        line.includes(APP) &&
+        line.includes("--type=utility") &&
+        line.includes("--utility-sub-type=node.mojom.NodeService"),
+    )
+    .flatMap((line) => {
+      const pid = line.trim().match(/^(\d+)\s/)?.[1]
+      return pid ? [pid] : []
+    })
+  const configs = sidecarPids
+    .map((pid) => Bun.spawnSync(["ps", "eww", "-p", pid, "-o", "command="]))
+    .filter((result) => result.exitCode === 0)
+    .map((result) => result.stdout.toString())
+    .flatMap((line) => {
+      const config = extractJsonEnvironment(line, "OPENCODE_CONFIG_CONTENT")
+      return config ? [config] : []
+    })
+  return {
+    config: configs.find((config) => config.mcp?.[CLOUD_MCP_SERVER_NAME]?.url === expectedUrl),
+    packagedCandidates: configs.length,
+    error:
+      sidecarPids.length === 0
+        ? "no packaged NodeService sidecar process found"
+        : configs.length === 0
+          ? `OPENCODE_CONFIG_CONTENT was not observable on ${sidecarPids.length} packaged sidecar process(es)`
+          : undefined,
+  }
+}
+
+function runCriterionSelfTests() {
+  const expectedUrl = "https://cloud.example/mcp"
+  const expectedSecret = "/tmp/ALPHA_CLOUD_TOKEN"
+  const goodSource = {
+    mcp: {
+      cloud: {
+        url: expectedUrl,
+        headers: { Authorization: `Bearer {file:${expectedSecret}}` },
+      },
+    },
+  }
+  const extractedSource = extractJsonEnvironment(
+    `sidecar OPENCODE_CONFIG_CONTENT=${JSON.stringify(goodSource)} OTHER_ENV=1`,
+    "OPENCODE_CONFIG_CONTENT",
+  )
+  const denied = [{ permission: "websearch", pattern: "*", action: "deny" }]
+  const tests = [
+    {
+      name: "P1.2 accepts the source-side file reference",
+      ok:
+        cloudDefinitionUsesFileReference(goodSource, expectedUrl, expectedSecret) &&
+        cloudDefinitionUsesFileReference(extractedSource, expectedUrl, expectedSecret),
+    },
+    {
+      name: "P1.2 rejects an inlined bearer bypass",
+      ok: !cloudDefinitionUsesFileReference(
+        { mcp: { cloud: { url: expectedUrl, headers: { Authorization: "Bearer inline-token" } } } },
+        expectedUrl,
+        expectedSecret,
+      ),
+    },
+    {
+      name: "P1.5 accepts an effective final deny",
+      ok: effectivePermission(denied, "websearch", "*").action === "deny",
+    },
+    {
+      name: "P1.5 rejects a later user-agent allow bypass",
+      ok:
+        effectivePermission([...denied, { permission: "websearch", pattern: "*", action: "allow" }], "websearch", "*")
+          .action !== "deny",
+    },
+    {
+      name: "P1.3 fails when the catalog drops web search",
+      ok:
+        Boolean(hasRemoteWebSearch([{ name: "cloud_web_search" }])) && !hasRemoteWebSearch([{ name: "cloud_status" }]),
+    },
+    {
+      name: "P3.8 fails when local websearch returns to the model tool set",
+      ok: localWebSearchIsHidden(["read"]) && !localWebSearchIsHidden(["read", "websearch"]),
+    },
+    {
+      name: "P2.3 requires a new settled web-search ledger fact",
+      ok:
+        newSettledWebSearchFacts(
+          [
+            {
+              seq: 2,
+              kind: "usage_settled",
+              domain: "wallet",
+              amount: -1,
+              actionId: "tool.web_search",
+              createdAt: 1,
+            },
+          ],
+          new Set([1]),
+        ).length === 1 &&
+        newSettledWebSearchFacts(
+          [
+            {
+              seq: 2,
+              kind: "reservation_created",
+              domain: "wallet",
+              amount: -1,
+              actionId: "tool.web_search",
+              createdAt: 1,
+            },
+          ],
+          new Set([1]),
+        ).length === 0,
+    },
+  ]
+  for (const test of tests) console.log(`[${test.ok ? "PASS" : "FAIL"}] ${test.name}`)
+  process.exit(tests.every((test) => test.ok) ? 0 : 1)
+}
+
 /** MCP Streamable-HTTP one-shot. Returns the parsed JSON-RPC envelope plus the raw HTTP status. */
 async function mcpCall(url: string, bearer: string, method: string, params: unknown, timeoutMs = 45_000) {
   const controller = new AbortController()
@@ -209,7 +450,12 @@ async function mcpCall(url: string, bearer: string, method: string, params: unkn
     })
     const body = await res.text()
     let envelope: any
-    const line = body.startsWith("{") ? body : body.split("\n").find((l) => l.startsWith("data: "))?.slice(6)
+    const line = body.startsWith("{")
+      ? body
+      : body
+          .split("\n")
+          .find((l) => l.startsWith("data: "))
+          ?.slice(6)
     try {
       envelope = line ? JSON.parse(line) : undefined
     } catch {
@@ -267,7 +513,8 @@ async function pickModel(engine: Engine, platformBase: string, want: "platform" 
   for (const provider of candidates) {
     const model = Object.values(provider.models ?? {}).find((m: any) => m?.capabilities?.toolcall)
     // Never let a provider record (it carries plaintext BYOK keys) escape this function.
-    if (model?.id) return { providerID: provider.id, modelID: model.id as string, providerIDs: raw.providers.map((p) => p.id) }
+    if (model?.id)
+      return { providerID: provider.id, modelID: model.id as string, providerIDs: raw.providers.map((p) => p.id) }
   }
   return { providerID: undefined, modelID: undefined, providerIDs: raw.providers.map((p) => p.id) }
 }
@@ -278,6 +525,7 @@ async function pickModel(engine: Engine, platformBase: string, want: "platform" 
  *  auto-detect: a probe that silently switches phases can never report "未登录,无法取证",
  *  and a gate you cannot see fail is not a gate. */
 const MODE: "logged-in" | "keyless" = process.argv.includes("--keyless") ? "keyless" : "logged-in"
+if (process.argv.includes("--self-test")) runCriterionSelfTests()
 
 const runAt = new Date().toISOString()
 let cdp: Cdp | undefined
@@ -471,9 +719,11 @@ if (MODE === "keyless") {
   })
 
   if (byok.providerID && byok.modelID) {
-    const toolIDs = ((await engine.get(
-      `/experimental/tool?provider=${encodeURIComponent(byok.providerID)}&model=${encodeURIComponent(byok.modelID)}`,
-    )) as Array<{ id: string }>).map((t) => t.id)
+    const toolIDs = (
+      (await engine.get(
+        `/experimental/tool?provider=${encodeURIComponent(byok.providerID)}&model=${encodeURIComponent(byok.modelID)}`,
+      )) as Array<{ id: string }>
+    ).map((t) => t.id)
     assertCheck(
       {
         id: "K1.4",
@@ -564,33 +814,59 @@ const engineConfig = (await engine.get("/config")) as {
 }
 const cloudDef = engineConfig.mcp?.[CLOUD_MCP_SERVER_NAME]
 const expectedMcpUrl = endpoints.mcp ?? `${endpoints.cloud}/mcp`
+const sourceConfig = readPackagedSidecarConfigSource(expectedMcpUrl)
+const sourceUsesFileReference = cloudDefinitionUsesFileReference(
+  sourceConfig.config,
+  expectedMcpUrl,
+  secretFile("ALPHA_CLOUD_TOKEN"),
+)
+const resolvedAuthorizationMatchesSecret = cloudDef?.headers?.Authorization === `Bearer ${cloudToken}`
 assertCheck(
   {
     id: "P1.2",
     ac: "AC1 packaged 登录态 listTools",
-    title: "cloud MCP definition points at the app-resolved URL and carries the token by {file:} reference only",
-    criterion: `config.mcp.${CLOUD_MCP_SERVER_NAME}.url === "${expectedMcpUrl}" AND headers.Authorization matches /^Bearer \\{file:.*ALPHA_CLOUD_TOKEN\\}$/`,
+    title: "the source-side cloud MCP definition uses a {file:} token reference and resolves to the expected endpoint",
+    criterion:
+      `the packaged sidecar's raw OPENCODE_CONFIG_CONTENT has mcp.${CLOUD_MCP_SERVER_NAME}.url === "${expectedMcpUrl}" ` +
+      `AND Authorization === "Bearer {file:<userData>/alpha-secrets/ALPHA_CLOUD_TOKEN}"; ` +
+      "GET /config separately resolves that definition to the same URL and the secret-file value",
     required: true,
   },
-  cloudDef?.url === expectedMcpUrl &&
-    /^Bearer \{file:.*ALPHA_CLOUD_TOKEN\}$/.test(String(cloudDef?.headers?.Authorization ?? "")),
-  { expectedMcpUrl, cloudDef },
+  sourceUsesFileReference && cloudDef?.url === expectedMcpUrl && resolvedAuthorizationMatchesSecret,
+  {
+    expectedMcpUrl,
+    sourceProcessCandidates: sourceConfig.packagedCandidates,
+    sourceObservationError: sourceConfig.error,
+    sourceUsesFileReference,
+    resolvedUrl: cloudDef?.url,
+    resolvedAuthorizationMatchesSecret,
+    secretFileMode: (statSync(secretFile("ALPHA_CLOUD_TOKEN")).mode & 0o777).toString(8),
+    secretDirectoryMode: (statSync(path.dirname(secretFile("ALPHA_CLOUD_TOKEN"))).mode & 0o777).toString(8),
+  },
 )
 
-// LIVE-PATH GATE ①: listTools against the deployed worker, with the app's own cloud token.
+// LIVE-PATH catalog gate: tools/list is intentionally anonymous on alpha-cloud. It proves transport
+// catalog availability only; the account-bound authorization claim belongs to P2.2 tools/call.
 const listed = await mcpCall(expectedMcpUrl, cloudToken!, "tools/list", {})
 const remoteTools: Array<{ name: string }> = listed.envelope?.result?.tools ?? []
-const remoteWebSearch = remoteTools.find((t) => /web[_-]?search/i.test(t.name))
+const remoteWebSearch = hasRemoteWebSearch(remoteTools)
 assertCheck(
   {
     id: "P1.3",
     ac: "AC1 packaged 登录态 listTools",
-    title: "LIVE-PATH GATE ① — deployed cloud worker lists a web-search tool for this account",
-    criterion: "MCP tools/list on the app-resolved endpoint (app's own bearer) contains a tool matching /web[_-]?search/",
+    title: "LIVE-PATH catalog gate — the deployed cloud worker advertises a web-search tool",
+    criterion:
+      "MCP tools/list on the app-resolved endpoint contains a tool matching /web[_-]?search/; this anonymous catalog check makes no account-authorization claim (P2.2 does)",
     required: true,
   },
   Boolean(remoteWebSearch),
-  { httpStatus: listed.status, remoteToolNames: remoteTools.map((t) => t.name), matched: remoteWebSearch?.name },
+  {
+    httpStatus: listed.status,
+    remoteToolNames: remoteTools.map((t) => t.name),
+    matched: remoteWebSearch?.name,
+    accountBound: false,
+    accountBoundGate: "P2.2 tools/call with the app-issued cloud bearer",
+  },
 )
 
 const derivedEngineId = remoteWebSearch ? engineToolId(remoteWebSearch.name) : undefined
@@ -609,20 +885,34 @@ record({
       : undefined,
 })
 
-const permWebsearch = engineConfig.permission?.[LOCAL_WEB_SEARCH_TOOL_ID]
-const agentsMissingDeny = Object.entries(engineConfig.agent ?? {})
-  .filter(([, a]) => a && a.permission?.[LOCAL_WEB_SEARCH_TOOL_ID] !== "deny")
-  .map(([name]) => name)
+const agents = (await engine.get("/agent")) as Array<{ name: string; permission: PermissionRule[] }>
+const agentDecisions = agents.map((agent) => ({
+  name: agent.name,
+  ...effectivePermission(agent.permission, LOCAL_WEB_SEARCH_TOOL_ID, "*"),
+}))
+const agentsWithoutEffectiveDeny = agentDecisions
+  .filter((decision) => decision.action !== "deny")
+  .map((decision) => decision.name)
 assertCheck(
   {
     id: "P1.5",
     ac: "AC1 云优先(本地 keyless 被抑制)",
-    title: "platform-pays denies the local keyless websearch globally and on every injected agent",
-    criterion: `config.permission.${LOCAL_WEB_SEARCH_TOOL_ID} === "deny" AND every config.agent[*].permission.${LOCAL_WEB_SEARCH_TOOL_ID} === "deny"`,
+    title: "every runtime agent's effective permission decision denies local keyless websearch",
+    criterion:
+      `for every GET /agent entry, Permission.evaluate("${LOCAL_WEB_SEARCH_TOOL_ID}", "*", ruleset) ` +
+      "using engine-equivalent Wildcard.match + findLast semantics returns action=deny; a later user-agent allow must make this gate fail",
     required: true,
   },
-  permWebsearch === "deny" && agentsMissingDeny.length === 0,
-  { globalPermission: permWebsearch, agentsMissingDeny, agents: Object.keys(engineConfig.agent ?? {}) },
+  agentDecisions.length > 0 && agentsWithoutEffectiveDeny.length === 0,
+  {
+    agentsWithoutEffectiveDeny,
+    decisions: agentDecisions.map((decision) => ({
+      name: decision.name,
+      action: decision.action,
+      matchedRuleIndex: decision.index,
+      matchedRule: decision.rule,
+    })),
+  },
 )
 
 // Pick a platform-gateway model with tool-calling, so the real turn below runs on the paid path.
@@ -641,11 +931,13 @@ record({
   required: true,
 })
 
+let platformModelToolIDs: string[] | undefined
 if (platform.providerID && platform.modelID) {
-  const modelTools = (await engine.get(
-    `/experimental/tool?provider=${encodeURIComponent(platform.providerID)}&model=${encodeURIComponent(platform.modelID)}`,
-  )) as Array<{ id: string }>
-  const ids = modelTools.map((t) => t.id)
+  platformModelToolIDs = (
+    (await engine.get(
+      `/experimental/tool?provider=${encodeURIComponent(platform.providerID)}&model=${encodeURIComponent(platform.modelID)}`,
+    )) as Array<{ id: string }>
+  ).map((tool) => tool.id)
   assertCheck(
     {
       id: "P1.7",
@@ -654,8 +946,8 @@ if (platform.providerID && platform.modelID) {
       criterion: `GET /experimental/tool?provider&model does NOT contain "${LOCAL_WEB_SEARCH_TOOL_ID}"`,
       required: true,
     },
-    !ids.includes(LOCAL_WEB_SEARCH_TOOL_ID),
-    { builtinToolIDs: ids },
+    localWebSearchIsHidden(platformModelToolIDs),
+    { builtinToolIDs: platformModelToolIDs },
   )
 }
 
@@ -663,7 +955,7 @@ if (platform.providerID && platform.modelID) {
 
 const summaryBefore = await cdp!.eval<any>("window.api.account.summary()")
 const txBefore = await cdp!.eval<any>("window.api.account.transactions(50)")
-const txIdsBefore = new Set<string>((txBefore?.transactions ?? []).map((t: any) => t.id))
+const txSeqBefore = new Set<number>((txBefore?.transactions ?? []).map((fact: LedgerFact) => fact.seq))
 
 let realCall: { sessionID: string; parts: ToolPart[] } | undefined
 let cloudToolPart: ToolPart | undefined
@@ -760,37 +1052,59 @@ assertCheck(
   },
 )
 
-// 计费 (ledger/settle): the same two real calls above must move the account ledger.
-await sleep(4000)
-const summaryAfter = await cdp!.eval<any>("window.api.account.summary()")
-const txAfter = await cdp!.eval<any>("window.api.account.transactions(50)")
-const newTx = ((txAfter?.transactions ?? []) as any[]).filter((t) => !txIdsBefore.has(t.id))
+// 计费 (ledger/settle): settlement is intentionally scheduled through Cloudflare `waitUntil`.
+// Poll the account ledger's append-only truth until the exact web-search settlement appears; a
+// fixed sleep is not a valid assertion about background-task completion.
+const settlementPollStartedAt = Date.now()
+let summaryAfter = await cdp!.eval<any>("window.api.account.summary()")
+let txAfter = await cdp!.eval<any>("window.api.account.transactions(50)")
+let settledWebSearchFacts = newSettledWebSearchFacts(txAfter?.transactions ?? [], txSeqBefore)
+while (settledWebSearchFacts.length === 0 && Date.now() - settlementPollStartedAt < BILLING_SETTLE_TIMEOUT_MS) {
+  await sleep(1000)
+  summaryAfter = await cdp!.eval<any>("window.api.account.summary()")
+  txAfter = await cdp!.eval<any>("window.api.account.transactions(50)")
+  settledWebSearchFacts = newSettledWebSearchFacts(txAfter?.transactions ?? [], txSeqBefore)
+}
+const newFacts = ((txAfter?.transactions ?? []) as LedgerFact[]).filter((fact) => !txSeqBefore.has(fact.seq))
 const walletDelta = Number(summaryAfter?.walletUsedFen ?? 0) - Number(summaryBefore?.walletUsedFen ?? 0)
 const balanceDelta = Number(summaryBefore?.balanceFen ?? 0) - Number(summaryAfter?.balanceFen ?? 0)
 assertCheck(
   {
     id: "P2.3",
     ac: "AC3 计费(ledger/settle)证据",
-    title: "the real web-search calls are billed to this tenant's ledger",
+    title: "waitUntil-backed web-search settlement reaches this tenant's append-only ledger",
     criterion:
-      "account summary walletUsedFen increased OR balanceFen decreased OR a new usage transaction appeared between the pre-call and post-call snapshots",
+      `within ${BILLING_SETTLE_TIMEOUT_MS}ms after the real calls, the account ledger appends a fact with ` +
+      'kind="usage_settled" AND actionId="tool.web_search" and a seq absent from the pre-call page',
     required: true,
   },
-  walletDelta > 0 || balanceDelta > 0 || newTx.length > 0,
+  settledWebSearchFacts.length > 0,
   {
+    settlementObservedAfterMs: Date.now() - settlementPollStartedAt,
+    settlementTimeoutMs: BILLING_SETTLE_TIMEOUT_MS,
     walletUsedFenBefore: summaryBefore?.walletUsedFen,
     walletUsedFenAfter: summaryAfter?.walletUsedFen,
     balanceFenBefore: summaryBefore?.balanceFen,
     balanceFenAfter: summaryAfter?.balanceFen,
     walletDelta,
     balanceDelta,
-    newTransactions: newTx.map((t) => ({
-      id: t.id,
-      type: t.type,
-      title: t.title,
-      amountFen: t.amountFen,
-      status: t.status,
-      createdAt: t.createdAt,
+    settledWebSearchFacts: settledWebSearchFacts.map((fact) => ({
+      seq: fact.seq,
+      kind: fact.kind,
+      domain: fact.domain,
+      amount: fact.amount,
+      actionId: fact.actionId,
+      reservationId: fact.reservationId,
+      createdAt: fact.createdAt,
+    })),
+    newLedgerFacts: newFacts.map((fact) => ({
+      seq: fact.seq,
+      kind: fact.kind,
+      domain: fact.domain,
+      amount: fact.amount,
+      actionId: fact.actionId,
+      reservationId: fact.reservationId,
+      createdAt: fact.createdAt,
     })),
   },
 )
@@ -799,7 +1113,11 @@ assertCheck(
 
 const gateway = `${endpoints.platform}/v1/tools/web_search`
 async function gatewayProbe(headers: Record<string, string>, body: string) {
-  const res = await fetch(gateway, { method: "POST", headers: { "content-type": "application/json", ...headers }, body })
+  const res = await fetch(gateway, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body,
+  })
   return { status: res.status, body: (await res.text()).slice(0, 600) }
 }
 
@@ -848,7 +1166,8 @@ record({
   ac: "AC3 真实失败集 403",
   title: "403 (action_forbidden / job_not_enforceable)",
   status: "not-producible",
-  criterion: "would require a token whose scope excludes model.invoke, or a non-enforceable job — neither is mintable from a normal desktop login",
+  criterion:
+    "would require a token whose scope excludes model.invoke, or a non-enforceable job — neither is mintable from a normal desktop login",
   observed: {
     reason: "the desktop only ever holds route-purpose-bound tokens for model.invoke and cloud.dispatch",
     coveredAtL1: "packages/opencode/test/tool/alpha-websearch-failure.test.ts (403 → forbidden, error.code preserved)",
@@ -863,7 +1182,8 @@ record({
   status: "not-producible",
   criterion: "would require the deployed gateway to have neither TAVILY_API_KEY nor BRAVE_API_KEY",
   observed: {
-    reason: "both secrets are configured on the deployed gateway (docs/verification/2026-07-22-e7-deploy-probe.md §4); removing them is a production mutation, out of bounds for a probe",
+    reason:
+      "both secrets are configured on the deployed gateway (docs/verification/2026-07-22-e7-deploy-probe.md §4); removing them is a production mutation, out of bounds for a probe",
     coveredAtL1: "packages/opencode/test/tool/alpha-websearch-failure.test.ts (502 → upstream)",
   },
   required: false,
@@ -914,7 +1234,7 @@ const p402Observed = {
     walletUsedFen: summaryAfter?.walletUsedFen,
     plan: summaryAfter?.plan?.id ? { id: summaryAfter.plan.id, status: summaryAfter.plan.status } : undefined,
   },
-  armA: "unreachable by construction — the desktop holds a route-purpose JWT (via:\"jwt\"), never a job token, so perJobPrecall returns pass/enforced:false",
+  armA: 'unreachable by construction — the desktop holds a route-purpose JWT (via:"jwt"), never a job token, so perJobPrecall returns pass/enforced:false',
   armB:
     p402.status === 402
       ? "fired — accountPreauth rejected this call"
@@ -939,42 +1259,27 @@ record({
         : "unexpected status on the 402 probe — investigate before accepting this run",
 })
 
-// defect 消失: the local keyless tool is denied under platform-pays. Invoking it must yield a
-// model-visible, discernible tool error — not an unhandled defect.
-let denialPart: ToolPart | undefined
-if (platform.providerID && platform.modelID) {
-  const denial = await realTurn(
-    engine,
-    { providerID: platform.providerID, modelID: platform.modelID },
-    `Call the \`${LOCAL_WEB_SEARCH_TOOL_ID}\` tool exactly once with the query "alpha-code e7 denial probe". Do not call any other tool.`,
-    { [LOCAL_WEB_SEARCH_TOOL_ID]: true },
-    "You are an evidence probe. When told to call a tool, call exactly that tool once, then stop.",
-  )
-  denialPart = denial.parts.find((p) => p.tool === LOCAL_WEB_SEARCH_TOOL_ID)
-  const message = String(denialPart?.state?.error ?? "")
-  record({
-    id: "P3.8",
-    ac: "AC3 defect 消失 / 主权拒绝 LOUD",
-    title: "the denied local websearch surfaces a discernible tool error, not a crash",
-    status: denialPart
-      ? message.includes(SOVEREIGNTY_DENIED_MARK) || message.startsWith(FAILURE_PREFIX)
-        ? "pass"
-        : "fail"
-      : "fail",
-    criterion: `the tool part exists with state.status === "error" and a model-visible message containing "${SOVEREIGNTY_DENIED_MARK}" (or starting with "${FAILURE_PREFIX}") — no unhandled defect`,
-    observed: redact({
-      sessionID: denial.sessionID,
-      toolPartsSeen: denial.parts.map((p) => ({ tool: p.tool, status: p.state?.status })),
-      status: denialPart?.state?.status,
-      message: message.slice(0, 600),
-      metadata: denialPart?.state?.metadata,
-    }),
-    required: true,
-    note: denialPart
-      ? undefined
-      : "the model declined to call the denied tool — re-run; the check needs the tool to actually be attempted",
-  })
-}
+// defect 消失: P1.7 proves the permission filter removes local websearch before model execution.
+// A user `tools: {websearch:true}` map can only turn offered tools off; it cannot resurrect one
+// filtered out by Permission.disabled. Requiring an impossible tool part made the old P3.8
+// permanently red. The model-visible typed-failure wording remains covered at L1.
+record({
+  id: "P3.8",
+  ac: "AC3 defect 消失 / 主权拒绝",
+  title: "platform-pays makes the denied local websearch impossible for the model to attempt",
+  status: localWebSearchIsHidden(platformModelToolIDs) ? "pass" : "fail",
+  criterion:
+    `GET /experimental/tool for the selected platform model omits "${LOCAL_WEB_SEARCH_TOOL_ID}"; ` +
+    "the user tools map cannot add an omitted tool, while discernible direct-denial wording remains an L1 responsibility",
+  observed: {
+    platformProviderID: platform.providerID,
+    platformModelID: platform.modelID,
+    builtinToolIDs: platformModelToolIDs,
+    modelCanAttemptLocalWebSearch: platformModelToolIDs?.includes(LOCAL_WEB_SEARCH_TOOL_ID),
+    coveredAtL1: "packages/opencode/test/tool/alpha-websearch-failure.test.ts",
+  },
+  required: true,
+})
 
 record({
   id: "P3.9",
