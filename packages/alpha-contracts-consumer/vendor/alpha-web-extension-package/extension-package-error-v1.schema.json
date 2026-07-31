@@ -1,0 +1,32 @@
+{
+  "$id": "extension-package-error-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "at": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "type": "string"
+    },
+    "code": {
+      "maxLength": 96,
+      "pattern": "^E_[A-Z0-9_]+$",
+      "type": "string"
+    },
+    "details": {
+      "type": "object"
+    },
+    "message": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "code",
+    "at",
+    "message"
+  ],
+  "title": "ExtensionPackageErrorV1",
+  "type": "object"
+}

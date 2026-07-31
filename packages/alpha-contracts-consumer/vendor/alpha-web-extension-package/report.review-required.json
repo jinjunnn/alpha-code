@@ -1,0 +1,20 @@
+{
+  "findings": [
+    {
+      "code": "alpha.generic.manual-review",
+      "disposition": "review-required",
+      "path": "$.root.component"
+    }
+  ],
+  "hostContract": {
+    "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
+    "artifactSha256": "c3c53e0580782884d441ed04064e31020949bef87ae01b4a0403f8576e3fd483",
+    "commit": "55890367df5a4fdf0eb05859eee8051e24309f44",
+    "repo": "jinjunnn/alpha-code"
+  },
+  "inputSha256": "af07a95ca32cb3ccf8c372ded68d0503d2b1d53935dc648e7d8271a65e6b8fbf",
+  "packageId": "package:generic-remote-mcp",
+  "schema": "alpha.package-compatibility-report.v1",
+  "verdict": "review-required",
+  "version": "1.0.0"
+}

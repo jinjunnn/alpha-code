@@ -1,0 +1,96 @@
+{
+  "repo": "jinjunnn/alpha-web",
+  "commit": "b71748103ce65f97e3e5c8ac03f08152a0a1456f",
+  "artifactPath": "contracts/extension-package/artifact",
+  "artifactSha256": "ae9f43cc2a7cf279ff06d2846ff45f39cbb0fdd2fd0c4c5d91718968692e4887",
+  "files": [
+    {
+      "path": "alpha-package-compatibility-report-v1.schema.json",
+      "sha256": "598047b472e77d5f0af7e0d530e1d3202a3e736ebc3c776e2c9744037ff2e2fe"
+    },
+    {
+      "path": "alpha-package-declaration-v1.schema.json",
+      "sha256": "a9a3ee6e51603f5e1687912e3c577d312dfd260ebc7301596b34cbd2ed19c75f"
+    },
+    {
+      "path": "expected.mcp-remote.compiled.json",
+      "sha256": "8d42c26bae1ffc2739148a07106e0fe99b8ff8dca9d8b8b0441ef604631807ab"
+    },
+    {
+      "path": "extension-package-error-v1.schema.json",
+      "sha256": "2e8f682c2f005d1b07b3309f9117fa541ad283cf4f64a040df79f4998f04a53d"
+    },
+    {
+      "path": "extension-package-producer-artifact.v1.json",
+      "sha256": "46e862c785a3c4c5f6edd3544c879974c906f31767339a31d1617e598a14e5e5"
+    },
+    {
+      "path": "generic-profiles.v1.json",
+      "sha256": "ba1d718f2878cbe7bfb73855c673e2a0a20fb2e5627239b6d9e72c1c092b9076"
+    },
+    {
+      "path": "generic-rules.v1.json",
+      "sha256": "bd744de1473072e81d474b07cf83750308b8f89798c50456b1e7180f14c95872"
+    },
+    {
+      "path": "host-contract-pin.v1.json",
+      "sha256": "23060d7d9be436deb79dedfc4d880d3dec9ef1aa164004f5c6af44d611f3ac01"
+    },
+    {
+      "path": "host-extension-package-artifact.v1.json",
+      "sha256": "4655b9b2afb168762c09c3feeab4da073f2db17e3439ba130325def13ee45630"
+    },
+    {
+      "path": "host-extension-package.registry.v1.json",
+      "sha256": "898ad4edffaf5fde0502009253e8e7099498856b2bec45390e2bf3a81f77a421"
+    },
+    {
+      "path": "input.author-capabilities.invalid.json",
+      "sha256": "7bdb9f0cf88bcb19e02fac0a02ea896191e60e7c1745910b4d873eb3942b76a3"
+    },
+    {
+      "path": "input.author-secret-value.invalid.json",
+      "sha256": "2525374bc4b10641ef855b1121fe6a14cdb7b9b3ce2d7c6bba7b41432c1060d6"
+    },
+    {
+      "path": "input.cloud-profile.invalid.json",
+      "sha256": "109732d47f7be4ca7a509e93d4d1401806adf644b3c9f41f7cd03c23a977ed28"
+    },
+    {
+      "path": "input.mcp-remote.valid.json",
+      "sha256": "af07a95ca32cb3ccf8c372ded68d0503d2b1d53935dc648e7d8271a65e6b8fbf"
+    },
+    {
+      "path": "input.remote-http.invalid.json",
+      "sha256": "6034cf058c832dbe8fde2cee30e347b8da6c07d4a20c90fa49abd43982247af1"
+    },
+    {
+      "path": "input.remote-oauth.invalid.json",
+      "sha256": "49195fe9153be87f492f23499139543e817e2fcec2f6beb50b236ab6caefefe7"
+    },
+    {
+      "path": "input.remote-userinfo.invalid.json",
+      "sha256": "f58ee6b3d48177ba675d4f0ef91ce3e97e3ce4fb8b5f25570cd34760f05f811c"
+    },
+    {
+      "path": "normalized-package-build-record-v1.schema.json",
+      "sha256": "c5e705702467bc08e4966d4d6e168ba65815b69eec8a3f957d1bf286f7325981"
+    },
+    {
+      "path": "report.blocked.json",
+      "sha256": "56ab42288feaf9fc948047b87122a82f65e5b58c7716c807e7de0c2383dbb0ec"
+    },
+    {
+      "path": "report.compatible.json",
+      "sha256": "90e07dc0e194b56344b45f80ef6b4b672587af84b7802395973871383a90bdff"
+    },
+    {
+      "path": "report.review-required.json",
+      "sha256": "89974797478eb3ab3a0a6ba734e2f1e4f7f2594950e07376e95b46d7cc34e79e"
+    },
+    {
+      "path": "vectors.v1.json",
+      "sha256": "1dac0aaa18aa74deca269d4c0438c8257773500feba1eb02f44f0e16e6863d1c"
+    }
+  ]
+}

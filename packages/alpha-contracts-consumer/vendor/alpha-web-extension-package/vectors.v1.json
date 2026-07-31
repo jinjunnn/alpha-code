@@ -1,0 +1,50 @@
+{
+  "invalid": [
+    {
+      "errorCode": "E_URL_HTTPS",
+      "input": "input.remote-http.invalid.json"
+    },
+    {
+      "errorCode": "E_URL_CREDENTIALS",
+      "input": "input.remote-userinfo.invalid.json"
+    },
+    {
+      "errorCode": "E_AUTH_UNSUPPORTED",
+      "input": "input.remote-oauth.invalid.json"
+    },
+    {
+      "errorCode": "E_PROFILE_UNSUPPORTED",
+      "input": "input.cloud-profile.invalid.json"
+    },
+    {
+      "errorCode": "E_AUTHOR_DERIVED_FIELD",
+      "input": "input.author-capabilities.invalid.json"
+    },
+    {
+      "errorCode": "E_AUTHOR_DERIVED_FIELD",
+      "input": "input.author-secret-value.invalid.json"
+    }
+  ],
+  "reports": [
+    {
+      "file": "report.compatible.json",
+      "verdict": "compatible"
+    },
+    {
+      "file": "report.review-required.json",
+      "verdict": "review-required"
+    },
+    {
+      "file": "report.blocked.json",
+      "verdict": "blocked"
+    }
+  ],
+  "schema": "alpha.extension-package.testvectors.v1",
+  "valid": [
+    {
+      "expected": "expected.mcp-remote.compiled.json",
+      "input": "input.mcp-remote.valid.json",
+      "report": "report.compatible.json"
+    }
+  ]
+}

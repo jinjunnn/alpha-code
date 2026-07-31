@@ -1,0 +1,7 @@
+{
+  "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
+  "artifactSha256": "c3c53e0580782884d441ed04064e31020949bef87ae01b4a0403f8576e3fd483",
+  "commit": "55890367df5a4fdf0eb05859eee8051e24309f44",
+  "repo": "jinjunnn/alpha-code",
+  "schema": "alpha.host-extension-package.pin.v1"
+}

@@ -1,0 +1,316 @@
+{
+  "$defs": {
+    "agentComponent": {
+      "additionalProperties": false,
+      "properties": {
+        "behavior": {
+          "$ref": "#/$defs/markdownBehavior"
+        },
+        "id": {
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "agent"
+        },
+        "version": {
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "kind",
+        "behavior"
+      ],
+      "type": "object"
+    },
+    "markdownBehavior": {
+      "additionalProperties": false,
+      "properties": {
+        "assetPath": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        },
+        "targetDir": {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "targetDir",
+        "assetPath"
+      ],
+      "type": "object"
+    },
+    "mcpLocalComponent": {
+      "additionalProperties": false,
+      "properties": {
+        "behavior": {
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "items": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "environment": {
+              "additionalProperties": {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              "maxProperties": 32,
+              "propertyNames": {
+                "pattern": "^[A-Z_][A-Z0-9_]{0,127}$"
+              },
+              "type": "object"
+            },
+            "requiredSecrets": {
+              "items": {
+                "maxLength": 128,
+                "pattern": "^[A-Z_][A-Z0-9_]{0,127}$",
+                "type": "string"
+              },
+              "maxItems": 64,
+              "type": "array"
+            }
+          },
+          "required": [
+            "command",
+            "environment",
+            "requiredSecrets"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "mcp"
+        },
+        "transport": {
+          "const": "local"
+        },
+        "version": {
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "kind",
+        "transport",
+        "behavior"
+      ],
+      "type": "object"
+    },
+    "mcpRemoteComponent": {
+      "additionalProperties": false,
+      "properties": {
+        "behavior": {
+          "additionalProperties": false,
+          "properties": {
+            "auth": {
+              "const": "none"
+            },
+            "headersTemplate": {
+              "additionalProperties": {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              "maxProperties": 32,
+              "propertyNames": {
+                "pattern": "^[A-Za-z0-9-]{1,128}$"
+              },
+              "type": "object"
+            },
+            "requiredSecrets": {
+              "items": {
+                "maxLength": 128,
+                "pattern": "^[A-Z_][A-Z0-9_]{0,127}$",
+                "type": "string"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            "url": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "url",
+            "headersTemplate",
+            "requiredSecrets",
+            "auth"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "mcp"
+        },
+        "transport": {
+          "const": "remote"
+        },
+        "version": {
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "kind",
+        "transport",
+        "behavior"
+      ],
+      "type": "object"
+    },
+    "skillComponent": {
+      "additionalProperties": false,
+      "properties": {
+        "behavior": {
+          "$ref": "#/$defs/markdownBehavior"
+        },
+        "id": {
+          "maxLength": 160,
+          "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "skill"
+        },
+        "version": {
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "kind",
+        "behavior"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "alpha-package-declaration-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "packageId": {
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "presentation": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "displayName": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "displayName",
+        "description"
+      ],
+      "type": "object"
+    },
+    "root": {
+      "additionalProperties": false,
+      "properties": {
+        "component": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/skillComponent"
+            },
+            {
+              "$ref": "#/$defs/agentComponent"
+            },
+            {
+              "$ref": "#/$defs/mcpLocalComponent"
+            },
+            {
+              "$ref": "#/$defs/mcpRemoteComponent"
+            }
+          ]
+        }
+      },
+      "required": [
+        "component"
+      ],
+      "type": "object"
+    },
+    "schema": {
+      "const": "alpha.package-declaration.v1"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "alpha-native"
+        },
+        "publisher": {
+          "enum": [
+            "alpha",
+            "official",
+            "community"
+          ]
+        },
+        "redistributable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "publisher",
+        "redistributable"
+      ],
+      "type": "object"
+    },
+    "version": {
+      "maxLength": 64,
+      "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "packageId",
+    "version",
+    "presentation",
+    "source",
+    "root"
+  ],
+  "title": "AlphaPackageDeclarationV1",
+  "type": "object"
+}

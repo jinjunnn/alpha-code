@@ -18,6 +18,7 @@ import type {
 // #408:preload/index.ts 只许 import "./types"(ext-security-boundaries AC4③ 装载路径钉)—— wire 类型经此转口。
 export type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
+import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 // Deep links reach the renderer already decoded by the route manifest — the wire carries the
 // delivery, never a URL, so no second codec can exist on the renderer side.
 import type { DeepLinkBatch } from "../shared/route-manifest"
@@ -651,7 +652,11 @@ export type ElectronAPI = {
     remoteCatalog: () => Promise<
       | {
           source: "remote" | "cache"
-          catalog: unknown
+          catalog: {
+            version: string
+            entries: unknown[]
+            packages?: CatalogPackageViewV1[]
+          }
           version: string
           fetchedAt: string
           error?: string
@@ -660,6 +665,8 @@ export type ElectronAPI = {
         }
       | { source: "none"; error: string }
     >
+    /** REQ-128:main 从已签 Catalog 重新投影单包详情；renderer 只给 catalogId。 */
+    packageDetail: (catalogId: string) => Promise<CatalogPackageViewV1 | null>
     /** REQ-104 #397:SBOM(kind="sbom")/ 来源溯源(kind="provenance")blob 按需拉取。
      *  合同 §7.3 采信前置全在 main(bytes/sha256 精确匹配 + canonical 字节复验 + 剖面校验,
      *  拒重定向,5MiB 帽);renderer 零 URL/digest 输入权。失败不影响货架/启用判定,详情面
@@ -707,6 +714,8 @@ export type ElectronAPI = {
               workspace?: string
               cnMirror?: boolean
             }
+            /** REQ-128 package preflight attempt identity; ignored/rejected by legacy planner. */
+            attemptId?: string
             /** #348:stage="authorize" 确认后的重驱决定(只交 confirmed;decidedAt 由 main 打戳)。 */
             authorization?: AuthorizationConfirmationWire
           }
@@ -736,6 +745,11 @@ export type ElectronAPI = {
       /** #348:capability 授权闸 —— 零权威副作用暂停,带逐 item diff;确认后带 authorization 重驱同一通道。
        *  真判别联合(review minor):非 authorize 分支的 stage 类型排除 "authorize",中间层丢 diff 过不了类型检查。 */
       | { ok: false; stage: "authorize"; reason: string; authorization: CapabilityDiffWire[] }
+      | {
+          ok: false
+          reason: string
+          package: CatalogPackageViewV1
+        }
       | { ok: false; reason: string; stage?: TxStageNonAuthorizeWire }
     >
     // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 256KB 帽;未打包时诚实失败)

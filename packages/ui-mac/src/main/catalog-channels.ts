@@ -113,6 +113,8 @@ export type ChannelClientDeps = {
   builtinKeyB64?: string
 }
 
+export type CatalogConsumptionGate = (catalog: unknown) => { ok: true } | { ok: false; error: string }
+
 export type ChannelCatalogResult =
   | {
       source: "remote" | "cache"
@@ -798,6 +800,7 @@ export async function refreshChannelCatalog(
   userDataPath: string,
   channel: ChannelName,
   deps: ChannelClientDeps = {},
+  consumeCatalog: CatalogConsumptionGate = () => ({ ok: true }),
 ): Promise<ChannelCatalogResult> {
   const fetchImpl = deps.fetchImpl ?? fetch
   const nowMs = (deps.now ?? Date.now)()
@@ -844,7 +847,11 @@ export async function refreshChannelCatalog(
   const trustBody = trustBodyUsed
 
   // last-known-good(对照基线 + 回退目标;读取即全量重验,revoked 钥/撤销 digest 的缓存已被剔除)。
-  const lkg = readChannelLastKnownGood(userDataPath, channel, trust, nowMs)
+  const lkgCandidate = readChannelLastKnownGood(userDataPath, channel, trust, nowMs)
+  const lkgConsumption = lkgCandidate ? consumeCatalog(lkgCandidate.catalog) : { ok: true as const }
+  if (!lkgConsumption.ok)
+    loud(`cached ${channel} catalog failed package consumption gate — discarding LKG (${lkgConsumption.error})`)
+  const lkg = lkgConsumption.ok ? lkgCandidate : null
   const fallback = (error: string, reasonClass: FailureClass): ChannelCatalogResult => {
     loud(`${error} [${reasonClass}] — ${lkg ? "falling back to last-known-good" : "NO last-known-good available"}`)
     if (!lkg) return { source: "none", channel, error, reasonClass }
@@ -988,6 +995,9 @@ export async function refreshChannelCatalog(
   }
   const payloadV = verifyPayloadBytes(payloadBody, payloadSig, doc.target, trust, nowMs, { requireUnexpired: true, requireWindow: true })
   if (!payloadV.ok) return fallback(payloadV.error, "security")
+  const consumption = consumeCatalog(payloadV.catalog)
+  if (!consumption.ok)
+    return fallback(`package consumption rejected candidate catalog: ${consumption.error}`, "security")
 
   // 5) 全过 → coherent set 一次原子落缓存(doc/payload/snapshot 同写;trust 已先行持久化)。
   const fetchedAt = new Date(nowMs).toISOString()

@@ -31,7 +31,7 @@ import { agentFileProbe, recoveryReceiptInputs } from "./ext-agent-install"
 import { randomUUID } from "node:crypto"
 import { pickedFiles } from "./ipc"
 import { factorySkillIds } from "./factory-skills"
-import { downloadRemoteAsset, refreshRemoteCatalog } from "./remote-catalog"
+import { downloadRemoteAsset, refreshRemoteCatalog, registerPackageCatalogReadIpcHandlers } from "./remote-catalog"
 import { applyBuiltinPolicy, effectiveFactoryDenied, normalizeBuiltinPolicy, protectionInfo, readBuiltinPolicy, resetBuiltinPolicy } from "./alpha-builtin-policy"
 import {
   detectExternal,
@@ -59,6 +59,7 @@ import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedge
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
 import { recoverExtensionTransactions, recoverExtensionTransactionsInHeldLock, recoveryClean, type RecoverOptions } from "./ext-transaction"
 import { getLogger } from "./logging"
+import { runCatalogInstallWithPackagePreflight } from "./package-installability"
 
 // REQ-076 T2(阻断②):原实现硬编码 `which` + `:` 拼接的 unix PATH,Windows 上恒报「未安装」
 // (MCP 安装预检全线误报)。改经 platform seam:posix = which + 补包管理器目录(原 mac 行为
@@ -169,7 +170,10 @@ export function registerExtIpcHandlers(
     return r
   }
 
-  ipcMain.handle("ext-remote-catalog", () => refreshRemoteCatalog(userDataPath, registryChannel))
+  registerPackageCatalogReadIpcHandlers(
+    (channel, handler) => ipcMain.handle(channel, handler),
+    () => refreshRemoteCatalog(userDataPath, registryChannel),
+  )
   // REQ-102 #316:packaged seed 浏览面 —— 纯读安全投影(零绝对路径/blob 布局/url;seedDir 由
   // main 派生,renderer 无输入)。选装走 ext-install-catalog 的 seed 意图(#317);UI 归 REQ-103。
   ipcMain.handle("ext-seed-browse", () => {
@@ -796,7 +800,15 @@ export function registerExtIpcHandlers(
     },
     bodies: {
       installCatalog: async (intent) => {
-        const result = await installCatalog(intent, plannerDeps())
+        const result = await runCatalogInstallWithPackagePreflight(intent, {
+          loadVerifiedCatalog: async () => {
+            const loaded = await refreshRemoteCatalog(userDataPath, registryChannel)
+            return loaded.source === "none"
+              ? { source: "none", error: loaded.error }
+              : { source: loaded.source, catalog: loaded.catalog }
+          },
+          installLegacy: (legacyIntent) => installCatalog(legacyIntent, plannerDeps()),
+        })
         if (!result.ok || result.kind !== "mcp" || result.installedDisabled) return result
         return {
           ...result,

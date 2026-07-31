@@ -64,6 +64,13 @@ mock.module("../src/main/remote-catalog", () => ({
     reason: "unexpected remote asset download",
   }),
   readCachedCatalog: () => null,
+  registerPackageCatalogReadIpcHandlers: (
+    register: (channel: string, handler: IpcHandler) => void,
+    refresh: () => Promise<unknown>,
+  ) => {
+    register("ext-remote-catalog", () => refresh())
+    register("ext-package-detail", () => null)
+  },
   refreshRemoteCatalog: async () => ({
     source: "remote",
     catalog: { version: bundledCatalog.version, entries: [entry, disabledEntry] },
