@@ -463,9 +463,9 @@ describe("#302 环境通道路由", () => {
     }
     const envelope = structuredClone(compiled.envelope)
     const payload = structuredClone(compiled.payload)
-    // 语料那份 compiled 示例声明了 requiredSecrets 却给空 headersTemplate,宿主判
-    // package-prerequisite-invalid。此处补消费占位符,使本用例测的是「生产链有没有评估」。
-    // 那份夹具本身的自洽性问题属 producer 侧,已单独留痕。
+    // #738 re-vendor 之后语料自己已经自洽(alpha-web#101 的消费闸把 headersTemplate 补进了
+    // producer corpus),所以这里不再是「给坏夹具打补丁」。保留显式赋值只为把本用例要测的东西
+    // 钉在原地:两个占位符都被声明,于是评估结果只取决于「生产链有没有真的评估」。
     payload.behavior.headersTemplate = { Authorization: "Bearer {A_KEY}", "X-Token": "{B_TOKEN}" }
     const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
     envelope.components[0].payloadRef.bytes = bytes.byteLength
