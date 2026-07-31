@@ -456,20 +456,45 @@ describe("#302 环境通道路由", () => {
   // 对任何可构造输入都互为冗余 —— 摘掉任一条,另一条都会拦住同样的坏 package。
   // 因此候选门是纵深防御而非承重闸,不为它单造用例。
   test("REQ-128:真 refreshRemoteCatalog 会评估已签快照里的 package 并投影 safe view", async () => {
-    const artifactDir = path.resolve(import.meta.dir, "../../../alpha-contracts-consumer/vendor/alpha-web-extension-package")
-    const compiled = (await Bun.file(path.resolve(artifactDir, "expected.mcp-remote.compiled.json")).json()) as {
-      envelope: Record<string, any>
-      payload: Record<string, any>
+    // 宿主自持的 v2 信封,沿用 producer 语料的身份。vendored producer 产物本身没有 `root`,
+    // 在 v2 合同下应当被拒 —— 那道过渡闸在 package-installability{,.wiring}.test.ts。
+    // 本用例要测的是「生产链有没有真的评估」,所以夹具本身必须是合法的。
+    const payload: Record<string, any> = {
+      schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+      behavior: {
+        url: "https://mcp.example.com/",
+        headersTemplate: { Authorization: "Bearer {A_KEY}", "X-Token": "{B_TOKEN}" },
+        requiredSecrets: ["A_KEY", "B_TOKEN"],
+        auth: "none",
+      },
     }
-    const envelope = structuredClone(compiled.envelope)
-    const payload = structuredClone(compiled.payload)
-    // #738 re-vendor 之后语料自己已经自洽(alpha-web#101 的消费闸把 headersTemplate 补进了
-    // producer corpus),所以这里不再是「给坏夹具打补丁」。保留显式赋值只为把本用例要测的东西
-    // 钉在原地:两个占位符都被声明,于是评估结果只取决于「生产链有没有真的评估」。
-    payload.behavior.headersTemplate = { Authorization: "Bearer {A_KEY}", "X-Token": "{B_TOKEN}" }
     const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
-    envelope.components[0].payloadRef.bytes = bytes.byteLength
-    envelope.components[0].payloadRef.sha256 = crypto.createHash("sha256").update(bytes).digest("hex")
+    const envelope: Record<string, any> = {
+      schema: "alpha.host-extension-package.v1",
+      prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
+      presentation: {
+        displayName: "Generic Remote MCP",
+        description: "Generic Phase 1 compiler corpus input.",
+      },
+      root: "mcp:generic-remote",
+      components: [
+        {
+          id: "mcp:generic-remote",
+          required: true,
+          dependencies: [],
+          profileId: "mcp-remote",
+          profileVersion: 1,
+          capabilities: ["alpha.secret-prerequisite.v1"],
+          payloadRef: {
+            sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+            bytes: bytes.byteLength,
+            mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+            url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
+          },
+        },
+      ],
+      capabilities: ["alpha.secret-prerequisite.v1"],
+    }
 
     const k = genKey()
     const body = JSON.stringify({ version: "2026-07-13.1", entries: [{ id: "skill:m" }], packages: [envelope] }, null, 2)

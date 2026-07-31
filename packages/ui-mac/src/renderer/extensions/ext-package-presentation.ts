@@ -22,6 +22,7 @@ const REASON_KEYS = {
   "package-compatible": "alpha.ext.packageReasonCompatible",
   "package-prerequisite-required": "alpha.ext.packageReasonPrerequisiteRequired",
   "package-host-update-required": "alpha.ext.packageReasonHostUpdateRequired",
+  "package-bundle-activation-pending": "alpha.ext.packageReasonBundleActivationPending",
   "package-invalid": "alpha.ext.packageReasonInvalid",
   "package-payload-unavailable": "alpha.ext.packageReasonPayloadUnavailable",
   "package-payload-integrity": "alpha.ext.packageReasonPayloadIntegrity",

@@ -96,16 +96,47 @@ const secretCanary = "REQ128_RENDERER_SECRET_CANARY_64f91d"
 const canonicalBytes = (value: unknown) =>
   new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`)
 
-const producerCorpus = async () => {
-  const compiled = (await Bun.file(resolve(artifact, "expected.mcp-remote.compiled.json")).json()) as {
-    envelope: AlphaPackageEnvelopeV1
-    payload: PackageProfilePayloadV1
-  }
-  return {
-    envelope: structuredClone(compiled.envelope),
-    payload: structuredClone(compiled.payload),
-  }
-}
+/**
+ * 宿主自持的 v2 信封,沿用 producer 语料的身份与呈现。vendored producer 产物本身没有 `root`,
+ * 在 v2 合同下应当被拒 —— 那道过渡闸在 package-installability{,.wiring}.test.ts,不在这里重述。
+ */
+const producerCorpus = async () => ({
+  envelope: {
+    schema: "alpha.host-extension-package.v1",
+    prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
+    presentation: {
+      displayName: "Generic Remote MCP",
+      description: "Generic Phase 1 compiler corpus input.",
+    },
+    root: "mcp:generic-remote",
+    components: [
+      {
+        id: "mcp:generic-remote",
+        required: true,
+        dependencies: [],
+        profileId: "mcp-remote",
+        profileVersion: 1,
+        capabilities: ["alpha.secret-prerequisite.v1"],
+        payloadRef: {
+          sha256: "0".repeat(64),
+          bytes: 1,
+          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
+        },
+      },
+    ],
+    capabilities: ["alpha.secret-prerequisite.v1"],
+  } as unknown as AlphaPackageEnvelopeV1,
+  payload: {
+    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+    behavior: {
+      url: "https://mcp.example.com/",
+      headersTemplate: { Authorization: "Bearer {A_KEY}", "X-Remote-Token": "{B_TOKEN}" },
+      requiredSecrets: ["A_KEY", "B_TOKEN"],
+      auth: "none",
+    },
+  } as unknown as PackageProfilePayloadV1,
+})
 
 const bindPayload = (envelope: AlphaPackageEnvelopeV1, payload: PackageProfilePayloadV1) => {
   const bytes = canonicalBytes(payload)
@@ -608,10 +639,19 @@ function expectSafeView(value: unknown) {
   expect(Object.keys(view).sort()).toEqual([
     "action",
     "catalogId",
+    "components",
     "prerequisites",
     "presentation",
     "verdict",
   ])
+  for (const component of view.components)
+    expect(Object.keys(component).sort()).toEqual([
+      "componentId",
+      "included",
+      "required",
+      "role",
+      "skipReasonCode",
+    ])
   expect(Object.keys(view.action).sort()).toEqual(["enabled", "kind", "reasonCode"])
   expect(Object.keys(view.prerequisites).sort()).toEqual(["items", "status"])
   for (const item of view.prerequisites.items)

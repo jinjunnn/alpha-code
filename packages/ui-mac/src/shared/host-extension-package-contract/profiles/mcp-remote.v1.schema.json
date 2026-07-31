@@ -48,8 +48,70 @@
           }
         },
         "auth": {
-          "enum": [
-            "none"
+          "oneOf": [
+            {
+              "const": "none"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "prerequisiteId",
+                "required"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "mcp-oauth"
+                },
+                "prerequisiteId": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,63}$",
+                  "maxLength": 64
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "prerequisiteId",
+                "required",
+                "connectionHandlerId"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "alpha-connection"
+                },
+                "prerequisiteId": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,63}$",
+                  "maxLength": 64
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "connectionHandlerId": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,63}$",
+                  "maxLength": 64
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              }
+            }
           ]
         }
       }

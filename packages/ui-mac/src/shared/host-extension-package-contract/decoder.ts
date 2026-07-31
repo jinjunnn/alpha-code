@@ -16,22 +16,40 @@ export type PackagePayloadRefV1 = {
   url: string
 }
 
+/**
+ * A component exactly as the producer signed it. `profileId`, `profileVersion`, and `capabilities`
+ * are deliberately *not* narrowed to the host registry: a skipped leaf is part of the signed
+ * envelope precisely because this host does not recognise its profile or capability, and typing it
+ * as recognised would be a lie that survives into every consumer. Only
+ * `PackageSupportedComponentV1` — produced solely by the support gate — carries the narrow types.
+ */
+export type PackageComponentV1 = {
+  id: string
+  required: boolean
+  dependencies: string[]
+  profileId: string
+  profileVersion: number
+  capabilities: string[]
+  payloadRef: PackagePayloadRefV1
+}
+
+export type PackageSupportedComponentV1 = PackageComponentV1 & {
+  profileId: PackageProfileIdV1
+  profileVersion: 1
+  capabilities: PackageCapabilityV1[]
+}
+
 export type AlphaPackageEnvelopeV1 = {
   schema: typeof HOST_EXTENSION_PACKAGE_SCHEMA_V1
   prelude: { packageId: string; version: string }
   presentation: { displayName: string; description: string }
-  components: [
-    {
-      id: string
-      required: boolean
-      dependencies: []
-      profileId: PackageProfileIdV1
-      profileVersion: 1
-      capabilities: PackageCapabilityV1[]
-      payloadRef: PackagePayloadRefV1
-    },
-  ]
-  capabilities: PackageCapabilityV1[]
+  root: string
+  components: PackageComponentV1[]
+  /**
+   * The producer's signed union over **every** component, skipped ones included. It can therefore
+   * legitimately contain a token this host does not know, so it is not narrowed.
+   */
+  capabilities: string[]
 }
 
 export type MarkdownAssetRefV1 = {
@@ -56,14 +74,40 @@ export type McpLocalPayloadV1 = {
   behavior: { command: string[]; environment: Record<string, string>; requiredSecrets: string[] }
 }
 
+/**
+ * The remote-MCP authorization shape is frozen here, not merely tokenised. A capability token by
+ * itself only says that some authorization exists; it does not say which bytes a producer may ship,
+ * so a later ticket could invent its own field names and this decoder would wave them through.
+ *
+ * `auth` is therefore a discriminated union rather than a bare enum: each arm names its own
+ * required fields and refuses unknown ones, so there is exactly one legal spelling per kind.
+ *
+ * `connectionHandlerId`'s **grammar** lives here and nowhere else. Main is only ever allowed to
+ * look the finished id up in a static allowlist — never to re-derive meaning from its prefix,
+ * segments, or namespace. That is the `#737` discipline: one place decides what a token may look
+ * like, and everyone downstream consumes that decision instead of re-implementing it.
+ */
+export type McpRemoteAuthV1 =
+  | "none"
+  | { kind: "mcp-oauth"; prerequisiteId: string; required: boolean; label?: string }
+  | {
+      kind: "alpha-connection"
+      prerequisiteId: string
+      required: boolean
+      connectionHandlerId: string
+      label?: string
+    }
+
+export type McpRemoteBehaviorV1 = {
+  url: string
+  headersTemplate: Record<string, string>
+  requiredSecrets: string[]
+  auth: McpRemoteAuthV1
+}
+
 export type McpRemotePayloadV1 = {
   schema: "alpha.host-extension-package.payload.mcp-remote.v1"
-  behavior: {
-    url: string
-    headersTemplate: Record<string, string>
-    requiredSecrets: string[]
-    auth: "none"
-  }
+  behavior: McpRemoteBehaviorV1
 }
 
 export type PackageProfilePayloadV1 =
@@ -72,16 +116,45 @@ export type PackageProfilePayloadV1 =
   | McpLocalPayloadV1
   | McpRemotePayloadV1
 
+/**
+ * A curated component this host cannot serve is skipped, never silently dropped. The reason token
+ * is produced here once and consumed verbatim by every downstream surface (the safe view today;
+ * plan preview and receipt when they land), so the user is told the same thing at every step.
+ */
+export const PACKAGE_COMPONENT_SKIP_REASONS_V1 = [
+  "component-capability-unsupported",
+  "component-media-type-mismatch",
+  "component-profile-unsupported",
+] as const
+
+export type PackageComponentSkipReasonV1 = (typeof PACKAGE_COMPONENT_SKIP_REASONS_V1)[number]
+
+export type PackageComponentDecodeV1 =
+  | {
+      component: PackageSupportedComponentV1
+      role: "root" | "leaf"
+      status: "supported"
+      profile: PackageProfileRegistrationV1
+    }
+  | {
+      component: PackageComponentV1
+      role: "leaf"
+      status: "skipped"
+      reasonCode: PackageComponentSkipReasonV1
+    }
+
 export type PackageEnvelopeHeaderDecodeV1 =
   | {
       ok: true
       status: "accepted"
       envelope: AlphaPackageEnvelopeV1
+      /** The root component's profile. Every leaf carries its own inside `components`. */
       profile: PackageProfileRegistrationV1
+      components: PackageComponentDecodeV1[]
     }
   | {
       ok: false
-      status: "blocked" | "skipped"
+      status: "blocked"
       stage: "header" | "support"
       errors: string[]
       presentation?: AlphaPackageEnvelopeV1["presentation"]
@@ -91,7 +164,14 @@ export type PackageProfilePayloadDecodeV1 =
   | { ok: true; payload: PackageProfilePayloadV1 }
   | { ok: false; errors: string[] }
 
-const ENVELOPE_KEYS = new Set(["schema", "prelude", "presentation", "components", "capabilities"])
+const ENVELOPE_KEYS = new Set([
+  "schema",
+  "prelude",
+  "presentation",
+  "root",
+  "components",
+  "capabilities",
+])
 const PRELUDE_KEYS = new Set(["packageId", "version"])
 const PRESENTATION_KEYS = new Set(["displayName", "description"])
 const COMPONENT_KEYS = new Set([
@@ -108,6 +188,15 @@ const PAYLOAD_KEYS = new Set(["schema", "behavior"])
 const MARKDOWN_BEHAVIOR_KEYS = new Set(["targetDir", "asset"])
 const MCP_LOCAL_BEHAVIOR_KEYS = new Set(["command", "environment", "requiredSecrets"])
 const MCP_REMOTE_BEHAVIOR_KEYS = new Set(["url", "headersTemplate", "requiredSecrets", "auth"])
+const MCP_REMOTE_AUTH_KINDS = ["alpha-connection", "mcp-oauth"] as const
+const MCP_OAUTH_AUTH_KEYS = new Set(["kind", "prerequisiteId", "required", "label"])
+const ALPHA_CONNECTION_AUTH_KEYS = new Set([
+  "kind",
+  "prerequisiteId",
+  "required",
+  "connectionHandlerId",
+  "label",
+])
 
 const PACKAGE_ID_RE = /^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$/
 const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/
@@ -116,6 +205,8 @@ const CAPABILITY_RE = /^[a-z][a-z0-9.-]{0,95}$/
 const HEX64_RE = /^[0-9a-f]{64}$/
 const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]{0,127}$/
 const HEADER_NAME_RE = /^[A-Za-z0-9-]{1,128}$/
+const PREREQUISITE_ID_RE = /^[a-z][a-z0-9-]{0,63}$/
+const CONNECTION_HANDLER_RE = /^[a-z][a-z0-9-]{0,63}$/
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\x00-\x1f\x7f]/
 const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"])
@@ -199,7 +290,14 @@ export function derivePayloadCapabilitiesV1(payload: PackageProfilePayloadV1): P
     payload.behavior.requiredSecrets.length
   )
     capabilities.push("alpha.secret-prerequisite.v1")
-  return capabilities.sort()
+  if (
+    payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1" &&
+    payload.behavior.auth !== "none"
+  ) {
+    if (payload.behavior.auth.kind === "mcp-oauth") capabilities.push("alpha.mcp-oauth.v1")
+    if (payload.behavior.auth.kind === "alpha-connection") capabilities.push("alpha.connection.v1")
+  }
+  return [...new Set(capabilities)].sort()
 }
 
 function decodeEnvelopeObject(value: unknown): PackageEnvelopeHeaderDecodeV1 {
@@ -224,60 +322,127 @@ function decodeEnvelopeObject(value: unknown): PackageEnvelopeHeaderDecodeV1 {
   rejectUnknownKeys(value, ENVELOPE_KEYS, "envelope", errors)
   const prelude = decodePrelude(value.prelude, errors)
   const presentation = decodePresentation(value.presentation, errors)
-  const component = decodeSingleComponent(value.components, errors)
+  const root = decodeString(value.root, "envelope.root", errors, {
+    max: 160,
+    pattern: PACKAGE_ID_RE,
+  })
+  const components = decodeComponentGraph(value.components, root, errors)
   const capabilities = decodeCapabilities(value.capabilities, "envelope.capabilities", errors)
-  if (
-    component &&
-    capabilities.join("\n") !== component.capabilities.join("\n")
-  )
+  if (components && capabilities.join("\n") !== unionCapabilities(components).join("\n"))
     errors.push(
-      "envelope.capabilities: must equal the sorted union of component capabilities (Phase 1 has exactly one component)",
+      "envelope.capabilities: must equal the sorted union of every component's capabilities",
     )
-  if (errors.length || !prelude || !presentation || !component)
+  if (errors.length || !prelude || !presentation || !root || !components)
     return { ok: false, status: "blocked", stage: "header", errors }
 
   const supportErrors: string[] = []
-  const profile = findPackageProfileV1(component.profileId, component.profileVersion)
-  if (!profile)
-    supportErrors.push(
-      `envelope.components[0]: unsupported profile ${component.profileId}@${component.profileVersion}`,
-    )
-  component.capabilities.forEach((capability) => {
-    if (!isPackageCapabilityV1(capability))
-      supportErrors.push(`envelope.components[0].capabilities: unsupported capability "${capability}"`)
-  })
-  if (profile && profile.mediaType !== component.payloadRef.mediaType)
-    supportErrors.push(
-      `envelope.components[0].payloadRef.mediaType: expected "${profile.mediaType}" for ${profile.profileId}@${profile.profileVersion}`,
-    )
+  const decoded: PackageComponentDecodeV1[] = []
+  for (const [index, component] of components.entries()) {
+    const support = supportComponent(component, index)
+    if (support.ok) {
+      decoded.push({
+        component: narrowComponent(component),
+        role: component.id === root ? "root" : "leaf",
+        status: "supported",
+        profile: support.profile,
+      })
+      continue
+    }
+    // §4.1 条件 1 保证 root 一定是 required,所以 root 的支持失败必然落进这一支,
+    // 也就是说「root 不受支持」永远是整包 blocked,不会退化成一个被跳过的叶子。
+    if (component.required) {
+      supportErrors.push(...support.errors)
+      continue
+    }
+    decoded.push({
+      component,
+      role: "leaf",
+      status: "skipped",
+      reasonCode: support.reasonCode,
+    })
+  }
   if (supportErrors.length)
     return {
       ok: false,
-      status: component.required ? "blocked" : "skipped",
+      status: "blocked",
       stage: "support",
       errors: supportErrors,
+      presentation,
+    }
+
+  const rootDecoded = decoded.find((entry) => entry.role === "root")
+  if (!rootDecoded || rootDecoded.status !== "supported")
+    return {
+      ok: false,
+      status: "blocked",
+      stage: "support",
+      errors: [`envelope.root: the root component "${root}" must be supported`],
       presentation,
     }
 
   return {
     ok: true,
     status: "accepted",
-    profile: profile!,
+    profile: rootDecoded.profile,
+    components: decoded,
     envelope: {
       schema: HOST_EXTENSION_PACKAGE_SCHEMA_V1,
       prelude,
       presentation,
-      components: [
-        {
-          ...component,
-          profileId: component.profileId as PackageProfileIdV1,
-          profileVersion: 1,
-          capabilities: component.capabilities as PackageCapabilityV1[],
-        },
-      ],
-      capabilities: capabilities as PackageCapabilityV1[],
+      root,
+      components: decoded.map((entry) => entry.component),
+      capabilities,
     },
   }
+}
+
+function supportComponent(
+  component: DecodedComponent,
+  index: number,
+):
+  | { ok: true; profile: PackageProfileRegistrationV1 }
+  | { ok: false; reasonCode: PackageComponentSkipReasonV1; errors: string[] } {
+  const at = `envelope.components[${index}]`
+  const profile = findPackageProfileV1(component.profileId, component.profileVersion)
+  if (!profile)
+    return {
+      ok: false,
+      reasonCode: "component-profile-unsupported",
+      errors: [`${at}: unsupported profile ${component.profileId}@${component.profileVersion}`],
+    }
+  const unsupported = component.capabilities.filter(
+    (capability) => !isPackageCapabilityV1(capability),
+  )
+  if (unsupported.length)
+    return {
+      ok: false,
+      reasonCode: "component-capability-unsupported",
+      errors: unsupported.map(
+        (capability) => `${at}.capabilities: unsupported capability "${capability}"`,
+      ),
+    }
+  if (profile.mediaType !== component.payloadRef.mediaType)
+    return {
+      ok: false,
+      reasonCode: "component-media-type-mismatch",
+      errors: [
+        `${at}.payloadRef.mediaType: expected "${profile.mediaType}" for ${profile.profileId}@${profile.profileVersion}`,
+      ],
+    }
+  return { ok: true, profile }
+}
+
+function narrowComponent(component: DecodedComponent): PackageSupportedComponentV1 {
+  return {
+    ...component,
+    profileId: component.profileId as PackageProfileIdV1,
+    profileVersion: 1,
+    capabilities: component.capabilities as PackageCapabilityV1[],
+  }
+}
+
+function unionCapabilities(components: DecodedComponent[]): string[] {
+  return [...new Set(components.flatMap((component) => component.capabilities))].sort()
 }
 
 function decodePrelude(
@@ -318,73 +483,156 @@ function decodePresentation(
   if (displayName && description) return { displayName, description }
 }
 
-type DecodedComponent = {
-  id: string
-  required: boolean
-  dependencies: []
-  profileId: string
-  profileVersion: number
-  capabilities: string[]
-  payloadRef: PackagePayloadRefV1
+type DecodedComponent = PackageComponentV1
+
+/**
+ * The only definition of a legal component graph. It is stated as an equality rather than as a
+ * traversal, because a traversal invites "one more rule" patches: R1 found a graph that satisfied
+ * unique-id + closure + acyclic + depth-1 and still contained a second, orphaned root.
+ *
+ *   1. `root` names a component of this envelope, and that component is `required`;
+ *   2. the root's `dependencies` are exactly the set of every non-root id — no duplicate, no
+ *      omission (an omitted id is an orphan), no id from outside the envelope, no self-reference;
+ *   3. every non-root component declares an empty `dependencies` array;
+ *   4. component ids are globally unique.
+ *
+ * Together these already imply acyclic, depth 1, no orphan, and exactly one root, so none of those
+ * is checked separately.
+ */
+function decodeComponentGraph(
+  value: unknown,
+  root: string | undefined,
+  errors: string[],
+): DecodedComponent[] | undefined {
+  if (!Array.isArray(value)) {
+    errors.push("envelope.components: required array")
+    return
+  }
+  if (value.length < 1 || value.length > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents) {
+    errors.push(
+      `envelope.components: requires 1..${HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents} components`,
+    )
+    return
+  }
+  const before = errors.length
+  const components = value.map((component, index) => decodeComponent(component, index, errors))
+  if (errors.length !== before || components.some((component) => !component)) return
+  const decoded = components as DecodedComponent[]
+
+  const ids = decoded.map((component) => component.id)
+  const duplicates = [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))]
+  duplicates.forEach((id) => errors.push(`envelope.components: duplicate component id "${id}"`))
+  if (duplicates.length) return
+
+  if (!root) return
+  const rootIndex = ids.indexOf(root)
+  if (rootIndex === -1) {
+    errors.push(`envelope.root: "${root}" is not one of envelope.components[].id`)
+    return
+  }
+  const rootComponent = decoded[rootIndex]!
+  if (!rootComponent.required)
+    errors.push(`envelope.root: the root component "${root}" must be required`)
+
+  const rootAt = `envelope.components[${rootIndex}].dependencies`
+  const declared = new Set<string>()
+  rootComponent.dependencies.forEach((dependency, index) => {
+    if (declared.has(dependency)) {
+      errors.push(`${rootAt}[${index}]: duplicate id "${dependency}"`)
+      return
+    }
+    declared.add(dependency)
+    if (dependency === root) {
+      errors.push(`${rootAt}[${index}]: the root component must not depend on itself`)
+      return
+    }
+    if (!ids.includes(dependency))
+      errors.push(`${rootAt}[${index}]: "${dependency}" is not a component of this package`)
+  })
+  ids
+    .filter((id) => id !== root && !declared.has(id))
+    .forEach((id) =>
+      errors.push(`${rootAt}: component "${id}" is not depended on by the root (orphan)`),
+    )
+
+  decoded.forEach((component, index) => {
+    if (component.id === root || component.dependencies.length === 0) return
+    errors.push(
+      `envelope.components[${index}].dependencies: only the root component may declare dependencies`,
+    )
+  })
+
+  if (errors.length !== before) return
+  return decoded
 }
 
-function decodeSingleComponent(value: unknown, errors: string[]): DecodedComponent | undefined {
-  if (!Array.isArray(value) || value.length !== 1) {
-    errors.push("envelope.components: Phase 1 requires exactly one component")
+function decodeComponent(
+  value: unknown,
+  index: number,
+  errors: string[],
+): DecodedComponent | undefined {
+  const at = `envelope.components[${index}]`
+  if (!isObject(value)) {
+    errors.push(`${at}: must be an object`)
     return
   }
-  const component = value[0]
-  if (!isObject(component)) {
-    errors.push("envelope.components[0]: must be an object")
-    return
-  }
-  rejectUnknownKeys(component, COMPONENT_KEYS, "envelope.components[0]", errors)
-  const id = decodeString(component.id, "envelope.components[0].id", errors, {
+  rejectUnknownKeys(value, COMPONENT_KEYS, at, errors)
+  const id = decodeString(value.id, `${at}.id`, errors, {
     max: 160,
     pattern: PACKAGE_ID_RE,
   })
-  if (typeof component.required !== "boolean")
-    errors.push("envelope.components[0].required: required boolean")
-  if (!Array.isArray(component.dependencies) || component.dependencies.length !== 0)
-    errors.push("envelope.components[0].dependencies: Phase 1 requires an empty array")
-  const profileId = decodeString(component.profileId, "envelope.components[0].profileId", errors, {
+  if (typeof value.required !== "boolean") errors.push(`${at}.required: required boolean`)
+  const dependencies = decodeDependencies(value.dependencies, `${at}.dependencies`, errors)
+  const profileId = decodeString(value.profileId, `${at}.profileId`, errors, {
     max: 32,
     pattern: PROFILE_ID_RE,
   })
   if (
-    typeof component.profileVersion !== "number" ||
-    !Number.isInteger(component.profileVersion) ||
-    component.profileVersion < 1 ||
-    component.profileVersion > 2147483647
+    typeof value.profileVersion !== "number" ||
+    !Number.isInteger(value.profileVersion) ||
+    value.profileVersion < 1 ||
+    value.profileVersion > 2147483647
   )
-    errors.push("envelope.components[0].profileVersion: required positive 32-bit integer")
-  const capabilities = decodeCapabilities(
-    component.capabilities,
-    "envelope.components[0].capabilities",
-    errors,
-  )
-  const payloadRef = decodePayloadRef(component.payloadRef, "envelope.components[0].payloadRef", errors)
+    errors.push(`${at}.profileVersion: required positive 32-bit integer`)
+  const capabilities = decodeCapabilities(value.capabilities, `${at}.capabilities`, errors)
+  const payloadRef = decodePayloadRef(value.payloadRef, `${at}.payloadRef`, errors)
   if (
     id &&
-    typeof component.required === "boolean" &&
-    Array.isArray(component.dependencies) &&
-    component.dependencies.length === 0 &&
+    typeof value.required === "boolean" &&
+    dependencies &&
     profileId &&
-    typeof component.profileVersion === "number" &&
-    Number.isInteger(component.profileVersion) &&
-    component.profileVersion >= 1 &&
-    component.profileVersion <= 2147483647 &&
+    typeof value.profileVersion === "number" &&
+    Number.isInteger(value.profileVersion) &&
+    value.profileVersion >= 1 &&
+    value.profileVersion <= 2147483647 &&
     payloadRef
   )
     return {
       id,
-      required: component.required,
-      dependencies: [],
+      required: value.required,
+      dependencies,
       profileId,
-      profileVersion: component.profileVersion,
+      profileVersion: value.profileVersion,
       capabilities,
       payloadRef,
     }
+}
+
+function decodeDependencies(value: unknown, at: string, errors: string[]): string[] | undefined {
+  if (!Array.isArray(value)) {
+    errors.push(`${at}: required array`)
+    return
+  }
+  const max = HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents - 1
+  if (value.length > max) {
+    errors.push(`${at}: exceeds ${max} items`)
+    return
+  }
+  const decoded = value.map((item, index) =>
+    decodeString(item, `${at}[${index}]`, errors, { max: 160, pattern: PACKAGE_ID_RE }),
+  )
+  if (decoded.some((item) => item === undefined)) return
+  return decoded as string[]
 }
 
 function decodeCapabilities(value: unknown, at: string, errors: string[]): string[] {
@@ -470,7 +718,7 @@ function decodeMarkdownPayload(
   if (targetDir && !targets.includes(targetDir))
     errors.push(`payload.behavior.targetDir: expected one of [${targets.join(", ")}]`)
   const asset = decodePayloadRef(behavior.asset, "payload.behavior.asset", errors, {
-    maxBytes: 5 * 1024 * 1024,
+    maxBytes: HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes,
     mediaType: "text/markdown",
   })
   if (errors.length || !targetDir || !asset) return { ok: false, errors }
@@ -549,21 +797,111 @@ function decodeMcpRemotePayload(value: unknown): PackageProfilePayloadDecodeV1 {
     ENV_NAME_RE,
     errors,
   )
-  const auth = decodeString(behavior.auth, "payload.behavior.auth", errors, { max: 32 })
-  if (auth && auth !== "none") errors.push('payload.behavior.auth: expected "none"')
+  const auth = decodeMcpRemoteAuth(behavior.auth, errors)
+  if (auth && auth !== "none" && headersTemplate)
+    checkMcpRemoteAuthInvariantsV1(auth, headersTemplate, requiredSecrets, errors)
   if (errors.length || !url || !headersTemplate || !auth) return { ok: false, errors }
   return {
     ok: true,
     payload: {
       schema: "alpha.host-extension-package.payload.mcp-remote.v1",
-      behavior: {
-        url,
-        headersTemplate,
-        requiredSecrets,
-        auth: auth as McpRemotePayloadV1["behavior"]["auth"],
-      },
+      behavior: { url, headersTemplate, requiredSecrets, auth },
     },
   }
+}
+
+function decodeMcpRemoteAuth(value: unknown, errors: string[]): McpRemoteAuthV1 | undefined {
+  if (value === "none") return "none"
+  if (!isObject(value)) {
+    errors.push('payload.behavior.auth: required "none" or an authorization object')
+    return
+  }
+  const kind = decodeString(value.kind, "payload.behavior.auth.kind", errors, { max: 32 })
+  if (!kind) return
+  if (kind !== "mcp-oauth" && kind !== "alpha-connection") {
+    errors.push(`payload.behavior.auth.kind: expected one of [${MCP_REMOTE_AUTH_KINDS.join(", ")}]`)
+    return
+  }
+  rejectUnknownKeys(
+    value,
+    kind === "mcp-oauth" ? MCP_OAUTH_AUTH_KEYS : ALPHA_CONNECTION_AUTH_KEYS,
+    "payload.behavior.auth",
+    errors,
+  )
+  const prerequisiteId = decodeString(
+    value.prerequisiteId,
+    "payload.behavior.auth.prerequisiteId",
+    errors,
+    { max: 64, pattern: PREREQUISITE_ID_RE },
+  )
+  if (typeof value.required !== "boolean")
+    errors.push("payload.behavior.auth.required: required boolean")
+  const hasLabel = Object.hasOwn(value, "label")
+  const label = hasLabel
+    ? decodeString(value.label, "payload.behavior.auth.label", errors, { max: 120 })
+    : undefined
+  if (!prerequisiteId || typeof value.required !== "boolean" || (hasLabel && !label)) return
+  if (kind === "mcp-oauth")
+    return { kind, prerequisiteId, required: value.required, ...(label ? { label } : {}) }
+  const connectionHandlerId = decodeString(
+    value.connectionHandlerId,
+    "payload.behavior.auth.connectionHandlerId",
+    errors,
+    { max: 64, pattern: CONNECTION_HANDLER_RE },
+  )
+  if (!connectionHandlerId) return
+  return {
+    kind,
+    prerequisiteId,
+    required: value.required,
+    connectionHandlerId,
+    ...(label ? { label } : {}),
+  }
+}
+
+/**
+ * Cross-field invariants the payload decoder owns outright. Main must not restate them: a rule
+ * enforced in two places is a rule that drifts, and the second copy is always the one that forgets
+ * a case.
+ *
+ * 1. `mcp-oauth` forbids an `Authorization` header template, case-insensitively. Token injection
+ *    belongs to the engine's token store; a publisher shipping its own `Authorization` template is
+ *    routing around it. HTTP header names are case-insensitive, so `authorization` is the same
+ *    bypass spelled differently and must fail the same way.
+ * 2. A component's prerequisites must stay distinguishable to the person approving them. The
+ *    authorization prerequisite is compared against the secret prerequisites after folding case
+ *    and `_`/`-`, because `A_KEY` and `a-key` render as the same row in the approval list even
+ *    though they are different byte strings.
+ *
+ * Note what is deliberately *not* here: `auth !== "none"` does not exempt `requiredSecrets`. OAuth
+ * plus an extra API key is a legitimate shape, and both prerequisites must be collected.
+ */
+function checkMcpRemoteAuthInvariantsV1(
+  auth: Exclude<McpRemoteAuthV1, "none">,
+  headersTemplate: Record<string, string>,
+  requiredSecrets: string[],
+  errors: string[],
+): void {
+  if (auth.kind === "mcp-oauth")
+    Object.keys(headersTemplate)
+      .filter((header) => header.toLowerCase() === "authorization")
+      .forEach((header) =>
+        errors.push(
+          `payload.behavior.headersTemplate: "${header}" is refused when auth.kind is "mcp-oauth" — the engine owns token injection`,
+        ),
+      )
+  const folded = foldPrerequisiteTokenV1(auth.prerequisiteId)
+  requiredSecrets
+    .filter((variable) => foldPrerequisiteTokenV1(variable) === folded)
+    .forEach((variable) =>
+      errors.push(
+        `payload.behavior.auth.prerequisiteId: "${auth.prerequisiteId}" collides with requiredSecrets entry "${variable}" after case/separator folding`,
+      ),
+    )
+}
+
+function foldPrerequisiteTokenV1(token: string): string {
+  return token.toLowerCase().replaceAll("_", "-")
 }
 
 function decodePayloadRoot(

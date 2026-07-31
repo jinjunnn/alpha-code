@@ -33,20 +33,48 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
 })
 
+/**
+ * A host-owned v2 package reusing the producer corpus's identity. The vendored producer artifact
+ * itself carries no `root` and is refused under the v2 contract until P2-B′ re-vendors it; that
+ * transition is gated in package-installability{,.wiring}.test.ts, not restated here.
+ */
 async function fixture() {
-  const compiled = (await Bun.file(artifact).json()) as {
-    envelope: AlphaPackageEnvelopeV1
-    payload: PackageProfilePayloadV1
-  }
-  const envelope = structuredClone(compiled.envelope)
-  const payload = structuredClone(compiled.payload)
-  if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
-    throw new Error("producer corpus profile drifted")
-  payload.behavior.requiredSecrets = ["A_KEY"]
-  payload.behavior.headersTemplate = { Authorization: "Bearer {A_KEY}" }
+  const payload = {
+    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+    behavior: {
+      url: "https://mcp.example.com/",
+      headersTemplate: { Authorization: "Bearer {A_KEY}" },
+      requiredSecrets: ["A_KEY"],
+      auth: "none",
+    },
+  } as unknown as PackageProfilePayloadV1
   const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
-  envelope.components[0].payloadRef.bytes = bytes.byteLength
-  envelope.components[0].payloadRef.sha256 = createHash("sha256").update(bytes).digest("hex")
+  const envelope = {
+    schema: "alpha.host-extension-package.v1",
+    prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
+    presentation: {
+      displayName: "Generic Remote MCP",
+      description: "Generic Phase 1 compiler corpus input.",
+    },
+    root: "mcp:generic-remote",
+    components: [
+      {
+        id: "mcp:generic-remote",
+        required: true,
+        dependencies: [],
+        profileId: "mcp-remote",
+        profileVersion: 1,
+        capabilities: ["alpha.secret-prerequisite.v1"],
+        payloadRef: {
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          bytes: bytes.byteLength,
+          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
+        },
+      },
+    ],
+    capabilities: ["alpha.secret-prerequisite.v1"],
+  } as unknown as AlphaPackageEnvelopeV1
   return { envelope, bytes }
 }
 

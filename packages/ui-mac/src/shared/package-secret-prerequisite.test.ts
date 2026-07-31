@@ -66,6 +66,7 @@ function decodedPackage(
     schema: "alpha.host-extension-package.v1",
     prelude: { packageId: `${profileId}:demo`, version: "1.0.0" },
     presentation: { displayName: "Demo", description: "Demo MCP" },
+    root: `${profileId}:demo`,
     components: [
       {
         id: `${profileId}:demo`,
@@ -86,18 +87,20 @@ function decodedPackage(
   }
   const header = decodePackageEnvelopeHeaderV1(jsonBytes(envelope))
   if (!header.ok) throw new Error(header.errors.join("; "))
+  const rootEntry = header.components.find((entry) => entry.role === "root")
+  if (rootEntry?.status !== "supported") throw new Error("root component is not supported")
   const decoded = decodePackageProfilePayloadV1(
-    header.envelope.components[0].profileId,
+    rootEntry.component.profileId,
     bytes,
-    header.envelope.capabilities,
+    rootEntry.component.capabilities,
   )
   if (!decoded.ok) throw new Error(decoded.errors.join("; "))
-  return { envelope: header.envelope, payload: decoded.payload }
+  return { component: rootEntry.component, payload: decoded.payload }
 }
 
 function profileOf(profileId: "mcp-local" | "mcp-remote" = "mcp-local"): PackageSecretPrerequisiteProfileV1 {
   const decoded = decodedPackage(profileId)
-  const result = decodePackageSecretPrerequisiteProfileV1(decoded.envelope, decoded.payload)
+  const result = decodePackageSecretPrerequisiteProfileV1(decoded.component, decoded.payload)
   if (!result.ok) throw new Error(result.errors.join("; "))
   return result.profile
 }
@@ -130,11 +133,11 @@ describe("package secret prerequisite", () => {
     const payload = structuredClone(decoded.payload)
     if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1") throw new Error("wrong fixture")
     payload.behavior.headersTemplate.Authorization = "Bearer {OTHER_TOKEN}"
-    const result = decodePackageSecretPrerequisiteProfileV1(decoded.envelope, payload)
+    const result = decodePackageSecretPrerequisiteProfileV1(decoded.component, payload)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.errors.join("; ")).toContain('undeclared secret placeholder "OTHER_TOKEN"')
     payload.behavior.headersTemplate.Authorization = "Bearer {lowercase}"
-    const invalidPlaceholder = decodePackageSecretPrerequisiteProfileV1(decoded.envelope, payload)
+    const invalidPlaceholder = decodePackageSecretPrerequisiteProfileV1(decoded.component, payload)
     expect(invalidPlaceholder.ok).toBe(false)
   })
 

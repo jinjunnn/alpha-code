@@ -19,23 +19,76 @@ import {
 
 const artifact = resolve(import.meta.dir, "../../../alpha-contracts-consumer/vendor/alpha-web-extension-package")
 
-const corpus = async () => {
-  const compiled = (await Bun.file(resolve(artifact, "expected.mcp-remote.compiled.json")).json()) as {
-    envelope: AlphaPackageEnvelopeV1
-    payload: PackageProfilePayloadV1
-  }
-  return {
-    envelope: structuredClone(compiled.envelope),
-    payload: structuredClone(compiled.payload),
-  }
-}
-
 const canonicalBytes = (value: unknown) => new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`)
+
+/**
+ * The **pinned producer output**, exactly as vendored. Under the v2 host contract it is missing
+ * `root`, so it is now expected to be *refused* — see the §5.1 transition gate below. It is
+ * deliberately never patched into compliance here: silently adding `root` would make this suite
+ * green even when the real compiler still emits an incompatible envelope, which is precisely the
+ * false gate the transition rule exists to prevent.
+ */
+const vendoredProducerEnvelope = async () =>
+  structuredClone(
+    (
+      (await Bun.file(resolve(artifact, "expected.mcp-remote.compiled.json")).json()) as {
+        envelope: AlphaPackageEnvelopeV1
+      }
+    ).envelope,
+  )
+
+/**
+ * A host-owned v2 envelope carrying the same identity and presentation the producer corpus uses.
+ * This is *not* a claim about producer output — it is the shape this host's contract accepts, so
+ * the evaluator's semantics can be exercised while the cross-repo producer catches up (P2-B/P2-B′).
+ */
+const corpus = async () => {
+  const payload = {
+    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+    behavior: {
+      url: "https://mcp.example.com/",
+      headersTemplate: {
+        Authorization: "Bearer {A_KEY}",
+        "X-Remote-Token": "{B_TOKEN}",
+      },
+      requiredSecrets: ["A_KEY", "B_TOKEN"],
+      auth: "none",
+    },
+  } as unknown as PackageProfilePayloadV1
+  const bytes = canonicalBytes(payload)
+  const envelope = {
+    schema: "alpha.host-extension-package.v1",
+    prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
+    presentation: {
+      displayName: "Generic Remote MCP",
+      description: "Generic Phase 1 compiler corpus input.",
+    },
+    root: "mcp:generic-remote",
+    components: [
+      {
+        id: "mcp:generic-remote",
+        required: true,
+        dependencies: [],
+        profileId: "mcp-remote",
+        profileVersion: 1,
+        capabilities: ["alpha.secret-prerequisite.v1"],
+        payloadRef: {
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          bytes: bytes.byteLength,
+          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
+        },
+      },
+    ],
+    capabilities: ["alpha.secret-prerequisite.v1"],
+  } as unknown as AlphaPackageEnvelopeV1
+  return { envelope, payload }
+}
 
 const bindPayload = (envelope: AlphaPackageEnvelopeV1, payload: PackageProfilePayloadV1) => {
   const bytes = canonicalBytes(payload)
-  envelope.components[0].payloadRef.bytes = bytes.byteLength
-  envelope.components[0].payloadRef.sha256 = createHash("sha256").update(bytes).digest("hex")
+  envelope.components[0]!.payloadRef.bytes = bytes.byteLength
+  envelope.components[0]!.payloadRef.sha256 = createHash("sha256").update(bytes).digest("hex")
   return bytes
 }
 
@@ -81,6 +134,7 @@ const packageWithComponentName = (
       schema: "alpha.host-extension-package.v1",
       prelude: { packageId: `package:${profileId}-name-boundary`, version: "1.0.0" },
       presentation: { displayName: profileId, description: "Host name boundary case" },
+      root: `${profileId}:${name}`,
       components: [
         {
           id: `${profileId}:${name}`,
@@ -260,6 +314,15 @@ describe("package installability authority", () => {
         enabled: true,
         reasonCode: "package-prerequisite-required",
       },
+      components: [
+        {
+          componentId: "mcp:generic-remote",
+          role: "root",
+          required: true,
+          included: true,
+          skipReasonCode: null,
+        },
+      ],
       prerequisites: {
         status: "required-action",
         items: [
@@ -322,6 +385,9 @@ describe("package installability authority", () => {
         enabled: true,
         reasonCode: "package-host-update-required",
       },
+      // 支持闸在 header 阶段就拒了整包,宿主此时还没有一份可信的逐组件判定 ——
+      // 于是 leaf 列表为空,而不是猜一个出来。
+      components: [],
       prerequisites: { status: "ready", items: [] },
       presentation: {
         displayName: "Generic Remote MCP",
@@ -670,6 +736,12 @@ describe("package installability authority", () => {
         enabled: true,
         reasonCode: "package-host-update-required",
       },
+      // §5.1 门二:Bundle 在 #697 落地前一律不给可点的安装动作。
+      "package-bundle-activation-pending": {
+        kind: "none",
+        enabled: false,
+        reasonCode: "package-bundle-activation-pending",
+      },
       "package-invalid": {
         kind: "none",
         enabled: false,
@@ -715,5 +787,168 @@ describe("package installability authority", () => {
       stage: "support",
       status: "blocked",
     })
+  })
+
+  // ── §5.1 门一:跨仓过渡期 ──────────────────────────────────────────────────
+  // 本票合并后,旧的 vendored producer 产物在新合同下**应当被拒**。这是正确行为,不是回归。
+  // 这条用例故意直接读那份 pinned 产物、**不做任何结构补丁** —— 手工给它补上 `root` 会让
+  // 「真实 compiler 仍然产不出 v2 信封」这件事静默全绿,那正是假闸门。
+  // P2-B′ re-vendor 之后这条会响亮地红,届时由那张票翻成正向。
+  test("the pinned producer artifact is refused until the compiler emits a v2 envelope", async () => {
+    const envelope = await vendoredProducerEnvelope()
+    expect(Object.hasOwn(envelope, "root"), "pinned producer已经产出 root 了,请翻转本闸").toBe(
+      false,
+    )
+
+    const decoded = decodePackageEnvelopeHeaderV1(canonicalBytes(envelope))
+    expect(decoded.ok).toBe(false)
+    expect(decoded.ok ? "" : decoded.errors.join("\n")).toContain("envelope.root")
+
+    let fetches = 0
+    const view = await evaluatePackageForHost(envelope, {
+      fetchPayload: async () => {
+        fetches++
+        return new Uint8Array()
+      },
+    })
+    expect(view.verdict).toBe("blocked")
+    expect(view.action).toEqual({
+      kind: "none",
+      enabled: false,
+      reasonCode: "package-invalid",
+    })
+    expect(fetches, "拒绝必须发生在取 payload 之前").toBe(0)
+  })
+
+  // ── §5.1 门二 + §4.3 ────────────────────────────────────────────────────────
+
+  const bundle = (leaf: { supported: boolean }) => {
+    const rootPayload = {
+      schema: "alpha.host-extension-package.payload.skill.v1",
+      behavior: {
+        targetDir: "alpha-skills",
+        asset: {
+          sha256: "a".repeat(64),
+          bytes: 1,
+          mediaType: "text/markdown",
+          url: "https://example.invalid/root.md",
+        },
+      },
+    }
+    const leafPayload = {
+      schema: "alpha.host-extension-package.payload.agent.v1",
+      behavior: {
+        targetDir: "alpha-agents",
+        asset: {
+          sha256: "b".repeat(64),
+          bytes: 1,
+          mediaType: "text/markdown",
+          url: "https://example.invalid/leaf.md",
+        },
+      },
+    }
+    const rootBytes = canonicalBytes(rootPayload)
+    const leafBytes = canonicalBytes(leafPayload)
+    const leafCapabilities = leaf.supported ? [] : ["alpha.future.v1"]
+    const componentOf = (
+      id: string,
+      profileId: string,
+      required: boolean,
+      capabilities: string[],
+      bytes: Uint8Array,
+      mediaProfile: string,
+      dependencies: string[] = [],
+    ) => ({
+      id,
+      required,
+      dependencies,
+      profileId,
+      profileVersion: 1,
+      capabilities,
+      payloadRef: {
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        bytes: bytes.byteLength,
+        mediaType: `application/vnd.alpha.host-extension-package.${mediaProfile}.v1+json`,
+        url: "https://example.invalid/payload.json",
+      },
+    })
+    return {
+      rootBytes,
+      leafBytes,
+      envelope: {
+        schema: "alpha.host-extension-package.v1",
+        prelude: { packageId: "package:bundle-case", version: "1.0.0" },
+        presentation: { displayName: "Bundle", description: "Two-component bundle" },
+        root: "skill:bundle-root",
+        components: [
+          componentOf("skill:bundle-root", "skill", true, [], rootBytes, "skill", [
+            "agent:bundle-leaf",
+          ]),
+          componentOf(
+            "agent:bundle-leaf",
+            leaf.supported ? "agent" : "future",
+            false,
+            leafCapabilities,
+            leafBytes,
+            "agent",
+          ),
+        ],
+        capabilities: [...leafCapabilities].sort(),
+      } as unknown as AlphaPackageEnvelopeV1,
+    }
+  }
+
+  test("a Bundle whose leaves really install is refused until #697 wires admission to the graph", async () => {
+    const item = bundle({ supported: true })
+    const view = await evaluatePackageForHost(item.envelope, {
+      fetchPayload: async (ref) =>
+        ref.mediaType.includes(".skill.") ? item.rootBytes : item.leafBytes,
+    })
+    // 合同已经接受它,但 admission 还只处理一个组件 —— 放行 = 用户点了安装只装到第一个组件。
+    expect(view.verdict).toBe("blocked")
+    expect(view.action).toEqual({
+      kind: "none",
+      enabled: false,
+      reasonCode: "package-bundle-activation-pending",
+    })
+    // leaf 列表仍然如实呈现两个组件:闸门挡住的是动作,不是可见性。
+    expect(view.components.map((entry) => [entry.componentId, entry.included])).toEqual([
+      ["skill:bundle-root", true],
+      ["agent:bundle-leaf", true],
+    ])
+  })
+
+  test("a curated but unsupported optional child is skipped verbatim and reaches no effect", async () => {
+    const item = bundle({ supported: false })
+    const fetched: string[] = []
+    const view = await evaluatePackageForHost(item.envelope, {
+      fetchPayload: async (ref) => {
+        fetched.push(ref.mediaType)
+        return ref.mediaType.includes(".skill.") ? item.rootBytes : item.leafBytes
+      },
+    })
+
+    // ① 有效安装图只剩 root ⇒ 整包仍然可安装,门二不适用。
+    expect(view.verdict).toBe("compatible")
+    expect(view.action.enabled).toBe(true)
+
+    // ② 被跳过的 child:零 fetch、零 prerequisite。
+    expect(fetched.every((mediaType) => mediaType.includes(".skill."))).toBe(true)
+    expect(fetched.length).toBe(1)
+    expect(view.prerequisites.items).toEqual([])
+
+    // ③ 原因码逐字来自 decoder,不是 safe view 自己另起的一套措辞。
+    const decoded = decodePackageEnvelopeHeaderV1(canonicalBytes(item.envelope))
+    expect(decoded.ok).toBe(true)
+    if (!decoded.ok) return
+    const decodedSkip = decoded.components.find((entry) => entry.status === "skipped")
+    expect(decodedSkip?.status).toBe("skipped")
+    const viewLeaf = view.components.find((entry) => entry.componentId === "agent:bundle-leaf")!
+    expect(viewLeaf.included).toBe(false)
+    expect(viewLeaf.skipReasonCode).toBe(
+      decodedSkip?.status === "skipped" ? decodedSkip.reasonCode : "MISMATCH",
+    )
+    // 签名并集仍然含着该 child 的 capability —— 它是发布方的签名事实。
+    expect(decoded.envelope.capabilities).toEqual(["alpha.future.v1"])
   })
 })

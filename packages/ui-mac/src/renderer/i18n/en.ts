@@ -602,6 +602,8 @@ export const dict = {
     "Complete the required prerequisites before installing this package.",
   "alpha.ext.packageReasonHostUpdateRequired":
     "This package needs capabilities provided by a newer version of Alpha.",
+  "alpha.ext.packageReasonBundleActivationPending":
+    "This package contains several components and cannot be installed together yet.",
   "alpha.ext.packageReasonInvalid": "The package metadata did not pass validation.",
   "alpha.ext.packageReasonPayloadUnavailable": "The package content could not be retrieved. Try again later.",
   "alpha.ext.packageReasonPayloadIntegrity":

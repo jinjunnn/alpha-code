@@ -18,16 +18,48 @@ import {
 } from "./generate-artifact"
 import {
   CAPABILITY_REGISTRY_V1,
+  HOST_EXTENSION_PACKAGE_LIMITS_V1,
   PROFILE_REGISTRY_V1,
   assertHostExtensionPackageRegistryV1,
 } from "./registry"
+
+type SchemaNode = {
+  type?: string
+  const?: unknown
+  enum?: unknown[]
+  oneOf?: SchemaNode[]
+  required?: string[]
+  properties?: Record<string, SchemaNode>
+}
+
+/**
+ * One probe value per `oneOf` arm, built from the arm's own `const`/`required` declarations rather
+ * than from a hand-written list. A hand-written list is the same defect the repository keeps
+ * paying for: it silently stops covering an arm the moment someone adds one.
+ */
+function schemaArmProbe(arm: SchemaNode): unknown {
+  if (arm.const !== undefined) return arm.const
+  if (arm.enum?.length) return arm.enum[0]
+  return Object.fromEntries(
+    (arm.required ?? []).map((key) => [key, schemaSampleValue(arm.properties?.[key])]),
+  )
+}
+
+function schemaSampleValue(node: SchemaNode | undefined): unknown {
+  if (!node) return "schema-probe"
+  if (node.const !== undefined) return node.const
+  if (node.enum?.length) return node.enum[0]
+  if (node.type === "boolean") return true
+  if (node.type === "array") return []
+  return "schema-probe"
+}
 
 const driftRoot = mkdtempSync(resolve(tmpdir(), "alpha-host-contract-drift-"))
 
 afterAll(() => rmSync(driftRoot, { recursive: true, force: true }))
 
 describe("HostExtensionPackageV1 artifact", () => {
-  test("publishes the fixed path, sorted Phase 1 registries, and exact per-file SHA-256", async () => {
+  test("publishes the fixed path, sorted registries, and exact per-file SHA-256", async () => {
     assertHostExtensionPackageRegistryV1()
     expect(PROFILE_REGISTRY_V1.map((profile) => profile.profileId)).toEqual([
       "agent",
@@ -36,8 +68,26 @@ describe("HostExtensionPackageV1 artifact", () => {
       "skill",
     ])
     expect(CAPABILITY_REGISTRY_V1.map((capability) => capability.token)).toEqual([
+      "alpha.connection.v1",
+      "alpha.mcp-oauth.v1",
       "alpha.secret-prerequisite.v1",
     ])
+    // 界也是合同。#737 的 5 MiB 残留就是「界只活在某个源文件里的字面量」造成的,
+    // 所以每一条界都必须在 registry 里,而不是散落在 decoder / main 的常量上。
+    expect(Object.keys(HOST_EXTENSION_PACKAGE_LIMITS_V1).sort()).toEqual([
+      "maxCapabilities",
+      "maxComponents",
+      "maxEnvelopeBytes",
+      "maxHeaderDepth",
+      "maxHeaderNodes",
+      "maxMarkdownAssetBytes",
+      "maxPayloadBytes",
+      "maxPayloadDepth",
+      "maxPayloadNodes",
+      "maxStringBytes",
+    ])
+    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).toBe(16)
+    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes).toBe(5 * 1024 * 1024)
 
     const manifest = (await Bun.file(
       resolve(import.meta.dir, HOST_EXTENSION_PACKAGE_ARTIFACT_MANIFEST),
@@ -114,31 +164,36 @@ describe("HostExtensionPackageV1 artifact", () => {
     const corpus = (await Bun.file(resolve(import.meta.dir, HOST_EXTENSION_PACKAGE_CORPUS)).json()) as {
       cases: Array<{
         expect: string
-        envelope: { components: Array<{ profileId: string }> }
-        payload: Record<string, unknown> | null
+        envelope: { root: string; components: Array<{ id: string; profileId: string }> }
+        components: Array<{ id: string; payload: Record<string, unknown> | null }>
       }>
     }
     const derived = await Promise.all(
       PROFILE_REGISTRY_V1.map(async (profile) => {
         const schema = (await Bun.file(resolve(import.meta.dir, profile.schemaPath)).json()) as {
-          properties?: {
-            behavior?: {
-              properties?: Record<string, { enum?: unknown[] }>
-            }
-          }
+          properties?: { behavior?: { properties?: Record<string, SchemaNode> } }
         }
-        const payload = corpus.cases.find(
-          (item) =>
-            item.expect === "accepted" &&
-            item.envelope.components[0]?.profileId === profile.profileId,
-        )?.payload
+        const payload = corpus.cases
+          .filter((item) => item.expect === "accepted")
+          .flatMap((item) =>
+            item.envelope.components.flatMap((component) =>
+              component.profileId === profile.profileId
+                ? [item.components.find((entry) => entry.id === component.id)?.payload]
+                : [],
+            ),
+          )
+          .find((candidate): candidate is Record<string, unknown> => !!candidate)
         if (!payload) throw new Error(`missing accepted corpus payload for ${profile.profileId}`)
         const behavior = payload.behavior as Record<string, unknown>
+        // 维度直接从 schema 读。auth 现在是 oneOf 判别联合(rev3 修订 B),所以枚举必须
+        // 认识 oneOf —— 只认 `enum` 的版本会让「新增一个 auth 分支却忘了写派生」静默全绿。
         const dimensions = Object.entries(schema.properties?.behavior?.properties ?? {}).flatMap(
           ([key, definition]) => {
             if (key === "requiredSecrets")
               return [{ key, values: [[], ["SCHEMA_ENUM_PROBE"]] as unknown[] }]
             if (Array.isArray(definition.enum)) return [{ key, values: definition.enum }]
+            if (Array.isArray(definition.oneOf))
+              return [{ key, values: definition.oneOf.map(schemaArmProbe) }]
             return []
           },
         )

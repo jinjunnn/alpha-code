@@ -1,6 +1,6 @@
 import type {
-  AlphaPackageEnvelopeV1,
   PackageProfilePayloadV1,
+  PackageSupportedComponentV1,
 } from "./host-extension-package-contract/decoder"
 import { isExtensionName } from "./extension-name"
 
@@ -83,15 +83,18 @@ const REFERENCE_KEYS = new Set([
 ])
 
 /**
- * Consume only the host-owned, already strictly decoded #694 Envelope and payload. The web-owned
+ * Consume only the host-owned, already strictly decoded component and its payload. The web-owned
  * Declaration is intentionally absent from this API. Target and stable prerequisite identity are
  * derived from signed host fields; the renderer never supplies either.
+ *
+ * The component is passed explicitly rather than dug out of the envelope: a package now carries a
+ * graph, so "the component" is a caller decision, and `components[0]` silently meaning "whichever
+ * one the producer happened to list first" is exactly the bug this signature removes.
  */
 export function decodePackageSecretPrerequisiteProfileV1(
-  envelope: AlphaPackageEnvelopeV1,
+  component: PackageSupportedComponentV1,
   payload: PackageProfilePayloadV1,
 ): PackageSecretPrerequisiteProfileDecodeV1 {
-  const component = envelope.components[0]
   const errors: string[] = []
   const suffix = component.id.slice(component.id.indexOf(":") + 1)
 

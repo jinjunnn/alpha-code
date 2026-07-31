@@ -4,13 +4,13 @@ kind: contract
 status: active
 owners:
   - alpha-code
-last_reviewed: 2026-07-30
+last_reviewed: 2026-07-31
 review_after: 2027-01-26
 ---
 
 # HostExtensionPackageV1
 
-This directory is the host-owned Phase 1 contract artifact for
+This directory is the host-owned contract artifact for
 `AlphaPackageEnvelopeV1`. A consumer pins the repository commit, artifact path,
 and aggregate `artifactSha256`, then verifies the paths, byte counts, and
 per-file SHA-256 values in
@@ -18,11 +18,11 @@ per-file SHA-256 values in
 
 ## Envelope
 
-`alpha-package-envelope-v1.schema.json` defines a bounded, shallow header.
-Phase 1 packages contain exactly one component. The component has an empty
-`dependencies` array and carries only identity, required/optional disposition,
-profile gate data, compiler-derived capabilities, and a content-addressed
-`payloadRef`.
+`alpha-package-envelope-v1.schema.json` defines a bounded, shallow header. A
+package carries `1..16` components and names exactly one of them in the
+required `root` field. Each component carries only identity, required/optional
+disposition, its dependency list, profile gate data, compiler-derived
+capabilities, and a content-addressed `payloadRef`.
 
 `payloadRef` is exactly `{sha256, bytes, mediaType, url}`. `sha256` is 64
 lowercase hexadecimal characters, `bytes` is the exact positive payload byte
@@ -31,8 +31,7 @@ must be a canonical HTTPS URL without userinfo credentials: its bytes must
 equal `new URL(url).href` exactly, including a lowercase hostname and the
 trailing slash on a bare origin. Inline payload content is not a legal envelope
 field. Canonicalization is the producer's responsibility (including the
-`alpha-web#95` compiler); package authors should not see this transport
-constraint.
+alpha-web compiler); package authors should not see this transport constraint.
 
 The prelude is exactly `{packageId, version}`. Its canonical bytes are UTF-8
 for the following JSON, with this fixed member order, no insignificant
@@ -42,46 +41,121 @@ whitespace, and one trailing LF:
 {"packageId":"<packageId>","version":"<version>"}\n
 ```
 
+## Component graph
+
+A legal graph is stated as an equality, not as a traversal, so there is no
+"one more traversal rule" to patch later. All four conditions must hold:
+
+1. `root` names a component of this envelope, and that component is `required`;
+2. the root's `dependencies` are exactly the set of every non-root component
+   id — no duplicate, no omission, no id from outside the envelope, and no
+   self-reference;
+3. every non-root component declares an empty `dependencies` array;
+4. component ids are globally unique.
+
+Together these already imply acyclic, depth 1, no orphan, and exactly one root.
+An envelope that omits a non-root id from the root's dependencies declares an
+orphan and is refused, even though every other property holds.
+
 ## Profiles and capabilities
 
-`host-extension-package.registry.v1.json` is the static registry. The v1
-Phase 1 profiles are exactly `agent`, `mcp-local`, `mcp-remote`, and `skill`,
-all at profile version 1. Each registry entry binds a profile/version pair to
-one strict payload schema and one media type.
+`host-extension-package.registry.v1.json` is the static registry: profiles,
+capability vocabulary, and every numeric limit the decoder enforces. The v1
+profiles are exactly `agent`, `mcp-local`, `mcp-remote`, and `skill`, all at
+profile version 1. Each registry entry binds a profile/version pair to one
+strict payload schema and one media type.
 
-The Phase 1 capability vocabulary contains exactly:
+The capability vocabulary contains exactly:
 
+- `alpha.connection.v1`
+- `alpha.mcp-oauth.v1`
 - `alpha.secret-prerequisite.v1`
 
-Any profile or capability absent from this registry is blocked fail-closed.
-
 The compiler, not an author declaration, derives component capabilities from
-the strict payload behavior. The envelope package capability list must be the
-sorted, unique union of component capabilities. Because Phase 1 has one
-component, the package and component lists are byte-for-byte equal. Payload
-decoding checks the same derivation rule again after fetching. `capabilities`
-and each payload's `requiredSecrets` must be unique and sorted in byte order.
+the strict payload behavior. Payload decoding checks the same derivation rule
+again after fetching. `capabilities` and each payload's `requiredSecrets` must
+be unique and sorted in byte order.
+
+`envelope.capabilities` is the sorted, unique union over **every** component,
+skipped ones included: it is the producer's signed fact and does not depend on
+what this host happens to support. It can therefore legitimately contain a
+token this host does not know, which is why it is not narrowed to the
+vocabulary above.
+
+## Remote MCP authorization
+
+`profiles/mcp-remote.v1.schema.json` freezes the whole authorization payload
+shape, not just a capability token. `behavior.auth` is a discriminated union,
+not a string enum: either the literal `"none"`, or an object whose `kind`
+selects the arm and whose own `required` list names every field that arm needs.
+Each arm refuses unknown properties, so there is exactly one legal spelling per
+kind.
+
+| `auth` | required fields | optional | derived capability |
+| --- | --- | --- | --- |
+| `"none"` | — | — | — |
+| `{kind: "mcp-oauth"}` | `prerequisiteId`, `required` | `label` | `alpha.mcp-oauth.v1` |
+| `{kind: "alpha-connection"}` | `prerequisiteId`, `required`, `connectionHandlerId` | `label` | `alpha.connection.v1` |
+
+`prerequisiteId` and `connectionHandlerId` both match `^[a-z][a-z0-9-]{0,63}$`.
+
+Five cross-field invariants belong to the decoder, and main must not restate
+them:
+
+1. `alpha-connection` requires `connectionHandlerId` (enforced by the schema).
+2. `mcp-oauth` forbids an `Authorization` entry in `headersTemplate`,
+   case-insensitively. Token injection belongs to the engine's token store, so a
+   publisher shipping its own `Authorization` template is routing around it —
+   and because HTTP header names are case-insensitive, `authorization` is the
+   same bypass spelled differently.
+3. Within one component, the authorization `prerequisiteId` may not collide with
+   a `requiredSecrets` entry after folding case and `_`/`-`. Two prerequisites
+   that render as the same row in the approval list are not distinguishable to
+   the person approving them.
+4. Every `{VAR}` placeholder in `headersTemplate` must appear in
+   `requiredSecrets`, for all three auth kinds alike.
+5. A non-`none` `auth` does **not** exempt `requiredSecrets`. OAuth plus an
+   extra API key is legitimate, and both prerequisites are collected.
+
+`connectionHandlerId`'s grammar lives in the decoder and nowhere else. Main is
+only ever allowed to look a finished id up in a static allowlist — never to
+re-derive meaning from its prefix, segments, or namespace.
+
+`mcp-local` has no `auth` field: a local subprocess has no OAuth semantics.
 
 ## Decoder order
 
 `decoder.ts` performs header byte/depth/node/string/control-character and
-prototype-key limits first, then strict envelope decoding, then static
-profile/version/capability lookup. No payload bytes are requested by that pure
-decoder.
+prototype-key limits first, then strict envelope decoding, then the component
+graph, then static per-component profile/version/capability/media-type lookup.
+No payload bytes are requested by that pure decoder.
 
-`synthetic-decoder.ts` is the executable ordering corpus. It calls its injected
-stages only in this order:
+An unsupported **required** component blocks the whole package. An unsupported
+**optional** component is `skipped`, with exactly one reason token from:
 
-1. decode and limit the envelope header;
-2. gate profile/version and every capability;
-3. fetch and verify exact payload bytes and SHA-256;
-4. dispatch the selected strict payload decoder;
-5. invoke the required synthetic secret stage;
-6. invoke the synthetic planner.
+- `component-profile-unsupported`
+- `component-capability-unsupported`
+- `component-media-type-mismatch`
 
-An unsupported required component is `blocked`; an unsupported optional
-component is exactly `skipped`. Header or support failure returns before every
-injected payload, secret, or planner stage.
+Because the root must be `required`, an unsupported root is always a blocked
+package and never a skipped component. A skipped component reaches no payload
+fetch, no payload decoder, no secret stage, and no planner — this is executable
+in `synthetic-decoder.ts` through the caller's own call counters, not asserted
+in prose.
+
+`synthetic-decoder.ts` is the executable ordering corpus. Per supported
+component — the root first, then each supported leaf in envelope order — it
+calls its injected stages only in this order:
+
+1. decode and limit the envelope header, the graph, and every component's
+   profile/version/capability;
+2. fetch and verify exact payload bytes and SHA-256;
+3. dispatch the selected strict payload decoder;
+4. invoke the required synthetic secret stage;
+5. invoke the synthetic planner.
+
+Header or support failure returns before every injected payload, secret, or
+planner stage.
 
 ## Artifact generation
 
@@ -103,4 +177,5 @@ bytes of `{artifactPath, files}` and therefore has no self-hash.
 
 This artifact contains no production Catalog wiring, Electron/IPC code,
 network or disk implementation, legacy projection/oracle, same-ID shadow
-policy, Bundle semantics, or managed OpenCode Plugin profile.
+policy, nested (depth > 1) graphs, version solving, or managed OpenCode Plugin
+profile.
