@@ -112,6 +112,10 @@ describe("package installability authority", () => {
         throw new Error("producer corpus profile drifted")
       envelope.prelude = { packageId, version: "v".repeat(64) }
       payload.behavior.requiredSecrets = []
+      // headersTemplate 必须一起清:宿主规则是双向的(每个 {NAME} 占位必须被声明)。
+      // #738 re-vendor 之后 producer corpus 带上了真实 headersTemplate,只清一半就成了
+      // 自相矛盾的夹具 —— 本仓已在三处踩过这个坑,判据是「两个字段一起改,别只改一个」。
+      payload.behavior.headersTemplate = {}
       envelope.capabilities = []
       envelope.components[0].capabilities = []
       const bytes = bindPayload(envelope, payload)
