@@ -5,25 +5,22 @@ import type {
   CatalogPackageReasonCodeV1,
   CatalogPackageViewV1,
 } from "../shared/catalog-package-view"
+import { isExtensionName } from "../shared/extension-name"
 import {
   decodePackageEnvelopeHeaderV1,
   decodePackageProfilePayloadV1,
+  HOST_EXTENSION_PACKAGE_SCHEMA_V1,
   type AlphaPackageEnvelopeV1,
   type PackagePayloadRefV1,
   type PackageProfilePayloadV1,
 } from "../shared/host-extension-package-contract/decoder"
+import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "../shared/host-extension-package-contract/registry"
 import {
   decodePackageSecretPrerequisiteProfileV1,
   type PackageSecretPrerequisiteProfileDecodeV1,
 } from "../shared/package-secret-prerequisite"
 
-const PACKAGE_ID = /^package:[a-z0-9][a-z0-9._-]{0,127}$/
-const VERSION = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/
 const ATTEMPT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
-// eslint-disable-next-line no-control-regex
-const CONTROL = /[\x00-\x1f\x7f]/
-const PRELUDE_KEYS = new Set(["packageId", "version"])
-const MAX_PACKAGE_PAYLOAD_BYTES = 1024 * 1024
 const PAYLOAD_TIMEOUT_MS = 8000
 
 const ACTION_BY_REASON = {
@@ -148,6 +145,15 @@ export async function evaluatePackageForHost(
   }
 
   const component = header.envelope.components[0]
+  const name = component.id.slice(component.id.indexOf(":") + 1)
+  if (
+    (component.profileId === "skill" || component.profileId === "agent") &&
+    !isExtensionName(name)
+  )
+    return blockedView(header.envelope.prelude, "package-invalid", {
+      displayName: header.envelope.presentation.displayName,
+      description: header.envelope.presentation.description,
+    })
   if (!component.required)
     return blockedView(header.envelope.prelude, "package-invalid", {
       displayName: header.envelope.presentation.displayName,
@@ -221,9 +227,7 @@ export async function runCatalogInstallWithPackagePreflight<T, P = never>(
   if (
     deps.installPackage &&
     isObject(rawIntent) &&
-    typeof rawIntent.catalogId === "string" &&
-    rawIntent.catalogId.startsWith("package:") &&
-    typeof rawIntent.attemptId === "string"
+    Object.hasOwn(rawIntent, "attemptId")
   )
     return deps.installPackage(rawIntent)
   const preflight = await preflightPackageInstall(rawIntent, deps)
@@ -241,18 +245,9 @@ export async function preflightPackageInstall(
     installability?: PackageInstallabilityDeps
   },
 ): Promise<PackageInstallPreflightResult> {
-  if (!isObject(rawIntent) || typeof rawIntent.catalogId !== "string" || !rawIntent.catalogId.startsWith("package:"))
+  if (!isObject(rawIntent) || !Object.hasOwn(rawIntent, "attemptId"))
     return { matched: false }
-  if (!PACKAGE_ID.test(rawIntent.catalogId))
-    return {
-      matched: true,
-      outcome: {
-        ok: false,
-        reason: "package preflight: invalid catalogId",
-        package: blockedView({ packageId: "package:invalid", version: "unknown" }, "package-invalid"),
-      },
-    }
-
+  const catalogId = typeof rawIntent.catalogId === "string" ? rawIntent.catalogId : "package:invalid"
   const loaded = await deps.loadVerifiedCatalog()
   if (loaded.source === "none")
     return {
@@ -260,7 +255,7 @@ export async function preflightPackageInstall(
       outcome: {
         ok: false,
         reason: "package-catalog-unavailable",
-        package: blockedView({ packageId: rawIntent.catalogId, version: "unknown" }, "package-payload-unavailable"),
+        package: blockedView({ packageId: catalogId, version: "unknown" }, "package-payload-unavailable"),
       },
     }
   const validated = validateCatalogPackageShape(loaded.catalog)
@@ -270,17 +265,17 @@ export async function preflightPackageInstall(
       outcome: {
         ok: false,
         reason: "package-catalog-invalid",
-        package: blockedView({ packageId: rawIntent.catalogId, version: "unknown" }, "package-invalid"),
+        package: blockedView({ packageId: catalogId, version: "unknown" }, "package-invalid"),
       },
     }
-  const selected = validated.packages.find((item) => item.prelude.packageId === rawIntent.catalogId)
+  const selected = validated.packages.find((item) => item.prelude.packageId === catalogId)
   if (!selected)
     return {
       matched: true,
       outcome: {
         ok: false,
         reason: "package preflight: catalogId not found in verified Catalog",
-        package: blockedView({ packageId: rawIntent.catalogId, version: "unknown" }, "package-invalid"),
+        package: blockedView({ packageId: catalogId, version: "unknown" }, "package-invalid"),
       },
     }
 
@@ -365,24 +360,33 @@ function view(
 }
 
 function decodeSafePrelude(envelope: unknown): { ok: true; prelude: PackagePreludeV1 } | { ok: false; error: string } {
-  if (!isObject(envelope) || !isObject(envelope.prelude)) return { ok: false, error: "required object" }
-  if (
-    Object.keys(envelope.prelude).some((key) => !PRELUDE_KEYS.has(key)) ||
-    typeof envelope.prelude.packageId !== "string" ||
-    typeof envelope.prelude.version !== "string" ||
-    !PACKAGE_ID.test(envelope.prelude.packageId) ||
-    !VERSION.test(envelope.prelude.version) ||
-    CONTROL.test(envelope.prelude.packageId) ||
-    CONTROL.test(envelope.prelude.version)
-  )
-    return { ok: false, error: "invalid packageId/version binding" }
-  return {
-    ok: true,
-    prelude: {
-      packageId: envelope.prelude.packageId,
-      version: envelope.prelude.version,
-    },
-  }
+  if (!isObject(envelope)) return { ok: false, error: "required object" }
+  const bytes = encodeEnvelope({
+    schema: HOST_EXTENSION_PACKAGE_SCHEMA_V1,
+    prelude: envelope.prelude,
+    presentation: { displayName: "Prelude probe", description: "Contract decoder probe" },
+    components: [
+      {
+        id: "package:prelude-probe",
+        required: true,
+        dependencies: [],
+        profileId: "skill",
+        profileVersion: 1,
+        capabilities: [],
+        payloadRef: {
+          sha256: "0".repeat(64),
+          bytes: 1,
+          mediaType: "application/vnd.alpha.host-extension-package.skill.v1+json",
+          url: "https://example.invalid/prelude-probe.json",
+        },
+      },
+    ],
+    capabilities: [],
+  })
+  if (!bytes) return { ok: false, error: "cannot encode prelude probe" }
+  const decoded = decodePackageEnvelopeHeaderV1(bytes)
+  if (!decoded.ok) return { ok: false, error: decoded.errors.join("; ") }
+  return { ok: true, prelude: decoded.envelope.prelude }
 }
 
 function decodePackagePreflightIntent(input: Record<string, unknown>): { ok: true } | { ok: false; reason: string } {
@@ -393,7 +397,7 @@ function decodePackagePreflightIntent(input: Record<string, unknown>): { ok: tru
       ok: false,
       reason: `package preflight: renderer-supplied key "${unknown}" is refused`,
     }
-  if (typeof input.catalogId !== "string" || !PACKAGE_ID.test(input.catalogId))
+  if (typeof input.catalogId !== "string" || input.catalogId.length > 160)
     return { ok: false, reason: "package preflight: invalid catalogId" }
   if (
     !isObject(input.scope) ||
@@ -425,7 +429,8 @@ export async function fetchPackagePayload(
   ref: PackagePayloadRefV1,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Uint8Array> {
-  if (ref.bytes > MAX_PACKAGE_PAYLOAD_BYTES) throw new Error("package payload exceeds host limit")
+  if (ref.bytes > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxPayloadBytes)
+    throw new Error("package payload exceeds host limit")
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), PAYLOAD_TIMEOUT_MS)
   try {
@@ -440,7 +445,8 @@ export async function fetchPackagePayload(
         throw new Error("package payload redirected outside HTTPS")
     }
     const bytes = new Uint8Array(await response.arrayBuffer())
-    if (bytes.byteLength > MAX_PACKAGE_PAYLOAD_BYTES) throw new Error("package payload exceeds host limit")
+    if (bytes.byteLength > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxPayloadBytes)
+      throw new Error("package payload exceeds host limit")
     return bytes
   } finally {
     clearTimeout(timer)

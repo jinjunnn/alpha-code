@@ -10,6 +10,7 @@
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { isExtensionName } from "../shared/extension-name"
 
 export type BridgeKind = "skills" | "agents" | "commands"
 export type BridgeResult =
@@ -24,8 +25,6 @@ export type BridgeResult =
 export function opencodeHomeDir(): string {
   return process.env.ALPHA_OPENCODE_HOME || path.join(os.homedir(), ".opencode")
 }
-
-const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 
 // Skills are directories (skills/<name>/SKILL.md); agents/commands are single markdown files.
 function itemRelPath(kind: BridgeKind, name: string): string {
@@ -49,7 +48,7 @@ function realpathOrNull(p: string): string | null {
  * The shared dir-link is bridge infrastructure — uninstall must NOT remove it (only item links).
  */
 export function bridgeItem(alphaDir: string, opencodeDir: string, kind: BridgeKind, name: string): BridgeResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid name" }
   const truthDir = path.join(alphaDir, kind)
   const bridgePath = path.join(opencodeDir, kind)
   try {
@@ -111,7 +110,7 @@ export function bridgeItem(alphaDir: string, opencodeDir: string, kind: BridgeKi
  * A shared kind-level dir-link is infrastructure and is never removed here.
  */
 export function unbridgeItem(alphaDir: string, opencodeDir: string, kind: BridgeKind, name: string): { removed: string[] } {
-  if (!SAFE_NAME.test(name)) return { removed: [] }
+  if (!isExtensionName(name)) return { removed: [] }
   const itemLink = path.join(opencodeDir, kind, itemRelPath(kind, name))
   try {
     const stat = fs.lstatSync(itemLink)

@@ -2,6 +2,7 @@ import type {
   AlphaPackageEnvelopeV1,
   PackageProfilePayloadV1,
 } from "./host-extension-package-contract/decoder"
+import { isExtensionName } from "./extension-name"
 
 export const PACKAGE_SECRET_PREREQUISITE_PROFILE_V1 = "alpha.secret-prerequisite.v1" as const
 
@@ -68,8 +69,6 @@ export type PackageSecretPrerequisiteProfileDecodeV1 =
       errors: string[]
     }
 
-const SAFE_SERVER = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
-const SAFE_VARIABLE = /^[A-Z_][A-Z0-9_]{0,127}$/
 const SAFE_VERSION = /^v-[a-f0-9]{8,16}$/
 const SUBMISSION_KEYS = new Set(["decision", "secrets"])
 const SUBMITTED_SECRET_KEYS = new Set(["prerequisiteId", "value"])
@@ -93,18 +92,12 @@ export function decodePackageSecretPrerequisiteProfileV1(
   payload: PackageProfilePayloadV1,
 ): PackageSecretPrerequisiteProfileDecodeV1 {
   const component = envelope.components[0]
-  const hasCapability = component.capabilities.includes(PACKAGE_SECRET_PREREQUISITE_PROFILE_V1)
   const errors: string[] = []
   const suffix = component.id.slice(component.id.indexOf(":") + 1)
 
   if (payload.schema === "alpha.host-extension-package.payload.mcp-local.v1") {
-    if (!SAFE_SERVER.test(suffix))
+    if (!isExtensionName(suffix))
       errors.push("secret prerequisite component id cannot be represented by the existing MCP secret store")
-    if (component.profileId !== "mcp-local")
-      errors.push(`secret prerequisite payload/profile mismatch: ${component.profileId}`)
-    validateRequiredSecrets(payload.behavior.requiredSecrets, errors)
-    if (hasCapability !== (payload.behavior.requiredSecrets.length > 0))
-      errors.push("secret prerequisite capability does not match requiredSecrets")
     if (errors.length) return invalidProfile(errors)
     return {
       ok: true,
@@ -124,17 +117,14 @@ export function decodePackageSecretPrerequisiteProfileV1(
   }
 
   if (payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1") {
-    if (!SAFE_SERVER.test(suffix))
+    if (!isExtensionName(suffix))
       errors.push("secret prerequisite component id cannot be represented by the existing MCP secret store")
-    if (component.profileId !== "mcp-remote")
-      errors.push(`secret prerequisite payload/profile mismatch: ${component.profileId}`)
-    validateRequiredSecrets(payload.behavior.requiredSecrets, errors)
     const declared = new Set(payload.behavior.requiredSecrets)
     const placeholders = Object.values(payload.behavior.headersTemplate).flatMap((template) =>
       [...template.matchAll(/\{([^{}]+)\}/g)].map((match) => match[1]!),
     )
     placeholders
-      .filter((variable) => !SAFE_VARIABLE.test(variable) || !declared.has(variable))
+      .filter((variable) => !declared.has(variable))
       .forEach((variable) =>
         errors.push(`payload.behavior.headersTemplate: undeclared secret placeholder "${variable}"`),
       )
@@ -150,8 +140,6 @@ export function decodePackageSecretPrerequisiteProfileV1(
       .forEach((target) =>
         errors.push(`payload.behavior.requiredSecrets: "${target.variable}" has no header target`),
       )
-    if (hasCapability !== (payload.behavior.requiredSecrets.length > 0))
-      errors.push("secret prerequisite capability does not match requiredSecrets")
     if (errors.length) return invalidProfile(errors)
     return {
       ok: true,
@@ -174,9 +162,6 @@ export function decodePackageSecretPrerequisiteProfileV1(
     }
   }
 
-  if (hasCapability)
-    errors.push(`secret prerequisite capability is unsupported by payload ${payload.schema}`)
-  if (errors.length) return invalidProfile(errors)
   return {
     ok: true,
     profile: {
@@ -272,17 +257,6 @@ export function evaluatePackageSecretReferenceV1(
     return blocked("secret-reference-stale", [prerequisiteId])
   if (!filePresent) return blocked("secret-reference-missing", [prerequisiteId])
   return { state: "ready", reasonCode: "secret-ready", prerequisiteIds: [prerequisiteId] }
-}
-
-function validateRequiredSecrets(requiredSecrets: string[], errors: string[]) {
-  if (
-    requiredSecrets.some(
-      (variable, index) =>
-        !SAFE_VARIABLE.test(variable) ||
-        (index > 0 && variable <= requiredSecrets[index - 1]!),
-    )
-  )
-    errors.push("payload.behavior.requiredSecrets: must be safe, unique, and byte-order sorted")
 }
 
 function invalidProfile(errors: string[]): PackageSecretPrerequisiteProfileDecodeV1 {

@@ -91,7 +91,7 @@ describe("package admission", () => {
     [
       "uppercase catalogId",
       (intent: Record<string, unknown>) => ({ ...intent, catalogId: "package:Generic-remote-mcp" }),
-      "invalid catalogId",
+      "tampered or is stale",
     ],
     [
       "non-hex authorization binding",
@@ -142,6 +142,62 @@ describe("package admission", () => {
 
     expect(result).toMatchObject({ ok: false, reason: expect.stringContaining(reason) })
     expect(transactionCalls).toBe(0)
+  })
+
+  // 长度界消费契约的值(decoder 对 packageId 的 max 是 160)。它必须在**第一趟**就拒 ——
+  // attempt 正是在第一趟被放进有界的 attempts Map 的,那里才是被攻陷 renderer 的着力点。
+  test("coordinator refuses a catalogId beyond the contract bound on the first round", async () => {
+    const { envelope, bytes } = await fixture()
+    let transactionCalls = 0
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      environment: () => "dev",
+      installability: { fetchPayload: async () => bytes },
+      transaction: async (...args) => {
+        transactionCalls++
+        return runExtensionTransaction(...args)
+      },
+    })
+    const result = await admit({
+      catalogId: `package:${"a".repeat(200)}`,
+      scope: { scope: "global" as const },
+      attemptId: "attempt-catalogid-bound",
+    })
+    expect(result).toMatchObject({ ok: false, reason: expect.stringContaining("invalid catalogId") })
+    expect(transactionCalls).toBe(0)
+  })
+
+  test("coordinator correlates a non-package namespace through decoded catalog identity", async () => {
+    const { envelope, bytes } = await fixture()
+    envelope.prelude.packageId = "skill:contract-package"
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      environment: () => "dev",
+      installability: { fetchPayload: async () => bytes },
+    })
+
+    const preview = await admit({
+      catalogId: "skill:contract-package",
+      scope: { scope: "global" },
+      attemptId: "attempt-contract-package",
+    })
+    expect(preview).toMatchObject({
+      ok: false,
+      stage: "authorize",
+      packageAuthorization: { plan: { packageId: "skill:contract-package" } },
+    })
   })
 
   test("actual transaction writes the signed secret prerequisite into the restricted version directory", async () => {
