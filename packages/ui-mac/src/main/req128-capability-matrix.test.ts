@@ -98,12 +98,11 @@ describe("REQ-128 Phase 1 capability evidence matrix", () => {
         reason_code: "deferred-alpha-web-108",
       }),
     )
-    // #737 钉在注释行,不钉成一格。
-    // 原来那格的 evidence 指向的测试**一行都没碰替身**(它驱动的是契约正本 decodePackageProfilePayloadV1),
-    // #737 修好或恶化,那条测试结果都不会变 —— 验收方读那行会以为有证据兜着,实际没有。
-    // 用一格假指针记录一个已知缺陷,比不记录更坏。这里改钉那句边界说明本身。
-    // ⚠️ 不要为它新写一条断言替身分歧的测试 —— 那是 #737 自己的射程。
-    expect(MATRIX_BODY).toContain("# evidence_boundary: alpha-code#737")
+    // #737 已合并(1b808f23):宿主的契约文法替身已删除并收口到 shared/extension-name.ts,
+    // 那条 known-defect 边界不再成立,连同它的钉子一起撤。
+    // ⚠️ 保留这段注释是为了说明**为什么这里现在什么都不钉** —— 一条已解决的 known-defect
+    // 若留在矩阵里,读的人会以为还有个洞;而留一格假指针指向无关的绿测试更坏(那正是 R1 的 M-2)。
+    expect(MATRIX_BODY).not.toContain("known-defect")
     expect(MATRIX_BODY).not.toContain("alpha-code#738")
   })
 
