@@ -168,13 +168,22 @@ describe("package safe-view presentation", () => {
       "alpha.ext.packageActionNone",
       "alpha.ext.confirmInstall",
       "alpha.ext.cancel",
-      "alpha.ext.confirmEnv",
-      "alpha.ext.keyPlaceholder",
+      "alpha.ext.packageConfirmEnv",
+      "alpha.ext.packageKeyPlaceholder",
+      "alpha.ext.packageKeysRequired",
       "alpha.ext.keyHint",
       "alpha.ext.confirmNote",
       "alpha.ext.authz.chipNew",
       "alpha.ext.authz.note",
     ] as const
+    // 先钉非空,再钉漂移:下面那条是子串包含判据,而 `includes("")` 恒真 ——
+    // 把任一 key 的值清空,漂移闸与 cases 里的同源断言(`toBe(zh[key])`,`"" === ""`)
+    // 会**同时**退化,三条闸全绿,而用户看到的是一个空的解释段。
+    // 审计实测三个新 key 各自清空都零红存活,这一行把 36 个 key 一次罩住。
+    expect(
+      keys.filter((key) => zh[key].trim() === "" || en[key].trim() === ""),
+      "every rendered key must have non-empty copy in both locales",
+    ).toEqual([])
     expect(
       keys.filter((key) => !harness.includes(zh[key])),
       "visual harness contains Chinese literals, so every rendered phrase must track zh.ts",

@@ -473,9 +473,23 @@ function expectDialogContract(
   expect(dialog.querySelector(".alpha-ext-key-name")?.textContent).toBe(expected.prerequisite)
   expect(input).toBeInstanceOf(HTMLInputElement)
   expect(input!.type).toBe("password")
+  expect(input!.placeholder).toBe(zh["alpha.ext.packageKeyPlaceholder"])
+  expect(dialog.querySelector(".alpha-ext-confirm-keys .alpha-ext-confirm-line")?.textContent).toBe(
+    zh["alpha.ext.packageConfirmEnv"],
+  )
+  expect(dialog.querySelector(".alpha-ext-confirm-keys [role='status']")?.textContent).toBe(
+    zh["alpha.ext.packageKeysRequired"],
+  )
   expect(button!.disabled).toBe(true)
-  input!.value = "dialog-contract-secret"
+  input!.value = "   "
   input!.dispatchEvent(new Event("input", { bubbles: true }))
+  expect(dialog.querySelector(".alpha-ext-confirm-keys [role='status']")?.textContent).toBe(
+    zh["alpha.ext.packageKeysRequired"],
+  )
+  expect(button!.disabled).toBe(true)
+  input!.value = " dialog-contract-secret "
+  input!.dispatchEvent(new Event("input", { bubbles: true }))
+  expect(dialog.querySelector(".alpha-ext-confirm-keys [role='status']")).toBeNull()
   expect(button!.disabled).toBe(false)
 }
 
@@ -801,13 +815,14 @@ describe("package detail production renderer path", () => {
         capabilities: ["alpha.secret-prerequisite.v1"],
         prerequisite: "A_KEY",
       })
-      fillPackageSecret(secretCanary)
+      const submittedSecret = ` ${secretCanary} `
+      fillPackageSecret(submittedSecret)
       expectNoCanaryAnywhere(secretCanary, consoleCapture.output)
       confirmPackageAuthorization()
 
       await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true }))
       const secretFile = join(harness.userData, "alpha-mcp-secrets", "generic-remote", "v-0badcafe", "A_KEY")
-      expect(readFileSync(secretFile, "utf8")).toBe(secretCanary)
+      expect(readFileSync(secretFile, "utf8")).toBe(submittedSecret)
       expect(statSync(secretFile).mode & 0o777).toBe(0o600)
       expect(readdirSync(join(harness.userData, "alpha-mcp-secrets", "generic-remote"))).toEqual(["v-0badcafe"])
       expect(readFileSync(join(harness.globalRoot, "alpha.jsonc"), "utf8")).not.toContain(secretCanary)
@@ -833,6 +848,7 @@ describe("package detail production renderer path", () => {
       expect(first).not.toHaveProperty("grants")
       expect(second.attemptId).toBe(first.attemptId)
       expect(Object.keys(second.grants.secrets)).toEqual(["mcp:generic-remote#A_KEY"])
+      expect(second.grants.secrets["mcp:generic-remote#A_KEY"]).toBe(submittedSecret)
       expect(Object.keys(second.authorization.confirmed)).toEqual(["mcp--generic-remote"])
     } finally {
       consoleCapture.restore()
@@ -994,5 +1010,30 @@ describe("package detail production renderer path", () => {
         zh["alpha.ext.packageReasonPayloadIntegrity"],
       ),
     )
+  })
+
+  test("legacy MCP keeps optional-key copy and allows confirmation with an empty value", async () => {
+    await mountHarness()
+    setHubSection("connectors")
+    await waitFor(() =>
+      expect(document.querySelector(".alpha-ext-card-name b[title='github']")).toBeInstanceOf(
+        HTMLElement,
+      ),
+    )
+    const card = document.querySelector(".alpha-ext-card-name b[title='github']")!.closest(".alpha-ext-card")!
+    click(card.querySelector(".alpha-ext-add"))
+    const keys = document.querySelector<HTMLElement>(".alpha-ext-confirm-keys")
+    expect(keys).toBeInstanceOf(HTMLElement)
+    const dialog = keys!.closest<HTMLElement>("[role='dialog']")
+    expect(dialog).toBeInstanceOf(HTMLElement)
+    expect(dialog!.querySelector("[data-package-authorization]")).toBeNull()
+    expect(zh["alpha.ext.confirmEnv"]).toBe("需要密钥(留空则装好后再配)")
+    expect(zh["alpha.ext.keyPlaceholder"]).toBe("粘贴密钥…(可留空)")
+    expect(keys!.querySelector(".alpha-ext-confirm-line")?.textContent).toBe(zh["alpha.ext.confirmEnv"])
+    const input = keys!.querySelector<HTMLInputElement>(".alpha-ext-key-input")
+    expect(input).toBeInstanceOf(HTMLInputElement)
+    expect(input!.placeholder).toBe(zh["alpha.ext.keyPlaceholder"])
+    expect(input!.value).toBe("")
+    expect(dialog!.querySelector<HTMLButtonElement>(".a-dialog-footer .a-btn:last-child")?.disabled).toBe(false)
   })
 })

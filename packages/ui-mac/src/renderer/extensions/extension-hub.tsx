@@ -2521,7 +2521,7 @@ export function ExtensionHub(props: {
                 />
                 <Show when={packagePrerequisites().length > 0}>
                   <div class="alpha-ext-confirm-keys">
-                    <div class="alpha-ext-confirm-line">{t("alpha.ext.confirmEnv")}</div>
+                    <div class="alpha-ext-confirm-line">{t("alpha.ext.packageConfirmEnv")}</div>
                     <For each={packagePrerequisites()}>
                       {(item) => (
                         <label class="alpha-ext-key-field">
@@ -2532,7 +2532,7 @@ export function ExtensionHub(props: {
                             autocomplete="off"
                             spellcheck={false}
                             required
-                            placeholder={t("alpha.ext.keyPlaceholder")}
+                            placeholder={t("alpha.ext.packageKeyPlaceholder")}
                             value={envValues()[item.prerequisiteId] ?? ""}
                             onInput={(event) =>
                               setEnvValues((current) => ({
@@ -2544,6 +2544,9 @@ export function ExtensionHub(props: {
                         </label>
                       )}
                     </For>
+                    <Show when={!packageSecretsComplete()}>
+                      <p class="alpha-ext-key-hint" role="status">{t("alpha.ext.packageKeysRequired")}</p>
+                    </Show>
                     <p class="alpha-ext-key-hint">{t("alpha.ext.keyHint")}</p>
                   </div>
                 </Show>
