@@ -341,38 +341,20 @@ describe("package installability authority", () => {
     ).rejects.toThrow("exceeds host limit")
   })
 
-  test.each([
-    ["scope", { scope: { scope: "global", projectDir: "/tmp" } }],
-    ["attemptId", { attemptId: " leading-space" }],
-    ["grants whitelist", { grants: { secrets: {}, extra: true } }],
-  ])("preflight refuses invalid %s values before evaluation", async (_name, changed) => {
-    const { envelope } = await corpus()
-    let evaluations = 0
-    const result = await runCatalogInstallWithPackagePreflight(
-      {
-        catalogId: envelope.prelude.packageId,
-        scope: { scope: "global" },
-        attemptId: "attempt-valid",
-        grants: { secrets: {} },
-        ...changed,
-      },
-      {
-        loadVerifiedCatalog: async () => ({
-          source: "remote",
-          catalog: { version: "1", entries: [{}], packages: [envelope] },
-        }),
-        installLegacy: async () => ({ ok: true }),
-        evaluator: async () => {
-          evaluations++
-          throw new Error("must not evaluate invalid preflight values")
+  test("default payload fetch rejects a non-HTTPS final response URL", async () => {
+    const response = new Response(new Uint8Array([1]), { status: 200 })
+    Object.defineProperty(response, "url", { value: "http://example.com/payload" })
+    await expect(
+      fetchPackagePayload(
+        {
+          sha256: "a".repeat(64),
+          bytes: 1,
+          mediaType: "application/json",
+          url: "https://example.com/payload",
         },
-      },
-    )
-    expect(result).toMatchObject({
-      ok: false,
-      reason: expect.stringContaining("invalid"),
-    })
-    expect(evaluations).toBe(0)
+        (async () => response) as typeof fetch,
+      ),
+    ).rejects.toThrow("redirected outside HTTPS")
   })
 
   test("unsafe or duplicate preludes reject the whole candidate snapshot", async () => {

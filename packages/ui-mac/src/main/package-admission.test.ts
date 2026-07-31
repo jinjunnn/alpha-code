@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
@@ -61,6 +61,89 @@ function confirmation(preview: {
 }
 
 describe("package admission", () => {
+  test.each([
+    [
+      "top-level keys such as decidedAt",
+      (intent: Record<string, unknown>) => ({ ...intent, decidedAt: "2026-07-31T12:00:00.000Z" }),
+      "renderer-supplied key",
+    ],
+    [
+      "attemptId with a leading space",
+      (intent: Record<string, unknown>) => ({ ...intent, attemptId: " attempt-invalid" }),
+      "invalid attemptId",
+    ],
+    [
+      "grants with an extra key",
+      (intent: Record<string, unknown>) => ({
+        ...intent,
+        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary }, extra: true },
+      }),
+      "invalid grants",
+    ],
+    [
+      "global scope with an extra projectDir",
+      (intent: Record<string, unknown>) => ({
+        ...intent,
+        scope: { scope: "global", projectDir: "/tmp/not-global" },
+      }),
+      "invalid scope",
+    ],
+    [
+      "uppercase catalogId",
+      (intent: Record<string, unknown>) => ({ ...intent, catalogId: "package:Generic-remote-mcp" }),
+      "invalid catalogId",
+    ],
+    [
+      "non-hex authorization binding",
+      (intent: Record<string, unknown>) => {
+        const changed = structuredClone(intent)
+        ;(
+          changed.authorization as {
+            binding: { snapshotDigest: string }
+          }
+        ).binding.snapshotDigest = "g".repeat(64)
+        return changed
+      },
+      "invalid authorization binding",
+    ],
+  ])("coordinator rejects %s before the transaction", async (_name, mutate, reason) => {
+    const { envelope, bytes } = await fixture()
+    let transactionCalls = 0
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      environment: () => "dev",
+      installability: { fetchPayload: async () => bytes },
+      transaction: async (...args) => {
+        transactionCalls++
+        return runExtensionTransaction(...args)
+      },
+    })
+    const intent = {
+      catalogId: envelope.prelude.packageId,
+      scope: { scope: "global" as const },
+      attemptId: `attempt-decode-${_name.replaceAll(" ", "-")}`,
+    }
+    const preview = await admit(intent)
+    if (preview.ok || preview.stage !== "authorize") throw new Error("expected package authorization preview")
+
+    const result = await admit(
+      mutate({
+        ...intent,
+        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        authorization: confirmation(preview),
+      }),
+    )
+
+    expect(result).toMatchObject({ ok: false, reason: expect.stringContaining(reason) })
+    expect(transactionCalls).toBe(0)
+  })
+
   test("actual transaction writes the signed secret prerequisite into the restricted version directory", async () => {
     const { envelope, bytes } = await fixture()
     let transactionCalls = 0
@@ -304,5 +387,147 @@ describe("package admission", () => {
     expect(
       readdirSync(join(userData, "alpha-mcp-secrets", "generic-remote")).filter((name) => name.startsWith("v-")),
     ).toHaveLength(1)
+  })
+
+  test("prepared secret failures abort and remove every unreferenced version", async () => {
+    const { envelope, bytes } = await fixture()
+    const secretRoot = join(userData, "alpha-mcp-secrets", "generic-remote")
+    const dependencies = {
+      loadVerifiedCatalog: async () => ({
+        source: "remote" as const,
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      environment: () => "dev" as const,
+      installability: { fetchPayload: async () => bytes },
+    }
+
+    const populateFailure = createPackageAdmissionCoordinator({
+      ...dependencies,
+      secretVersionId: () => "v-deadbeef",
+      transaction: (...args) =>
+        runExtensionTransaction(args[0], args[1], {
+          ...args[2],
+          populatePrepared: async () => {
+            await args[2].populatePrepared?.()
+            throw new Error("injected prepared secret write failure")
+          },
+        }),
+    })
+    const populateIntent = {
+      catalogId: envelope.prelude.packageId,
+      scope: { scope: "global" as const },
+      attemptId: "attempt-populate-failure",
+    }
+    const populatePreview = await populateFailure(populateIntent)
+    if (populatePreview.ok || populatePreview.stage !== "authorize")
+      throw new Error("expected package authorization preview")
+    expect(
+      await populateFailure({
+        ...populateIntent,
+        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        authorization: confirmation(populatePreview),
+      }),
+    ).toMatchObject({ ok: false })
+    expect(readdirSync(secretRoot)).toEqual([])
+
+    const unhealthyProbe = createPackageAdmissionCoordinator({
+      ...dependencies,
+      secretVersionId: () => "v-cafebabe",
+      transaction: (...args) =>
+        runExtensionTransaction(args[0], args[1], {
+          ...args[2],
+          probePrepared: () => ({ healthy: false, reason: "injected unhealthy prepared secret" }),
+        }),
+    })
+    const probeIntent = {
+      catalogId: envelope.prelude.packageId,
+      scope: { scope: "global" as const },
+      attemptId: "attempt-unhealthy-probe",
+    }
+    const probePreview = await unhealthyProbe(probeIntent)
+    if (probePreview.ok || probePreview.stage !== "authorize") throw new Error("expected package authorization preview")
+    expect(
+      await unhealthyProbe({
+        ...probeIntent,
+        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        authorization: confirmation(probePreview),
+      }),
+    ).toMatchObject({ ok: false })
+    expect(readdirSync(secretRoot)).toEqual([])
+  })
+
+  test("preexisting and lock-raced handwritten MCP config is never adopted or overwritten", async () => {
+    const { envelope, bytes } = await fixture()
+    const configPath = join(root, "alpha.jsonc")
+    const handwritten =
+      '{\n  // user-owned MCP leaf\n  "mcp": {\n    "generic-remote": { "type": "remote", "url": "https://user.example/mcp" }\n  }\n}\n'
+    const dependencies = {
+      loadVerifiedCatalog: async () => ({
+        source: "remote" as const,
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      environment: () => "dev" as const,
+      installability: { fetchPayload: async () => bytes },
+    }
+
+    writeFileSync(configPath, handwritten)
+    let transactionCalls = 0
+    const preexisting = createPackageAdmissionCoordinator({
+      ...dependencies,
+      transaction: async (...args) => {
+        transactionCalls++
+        return runExtensionTransaction(...args)
+      },
+    })
+    const preexistingIntent = {
+      catalogId: envelope.prelude.packageId,
+      scope: { scope: "global" as const },
+      attemptId: "attempt-preexisting-mcp",
+    }
+    const preexistingPreview = await preexisting(preexistingIntent)
+    if (preexistingPreview.ok || preexistingPreview.stage !== "authorize")
+      throw new Error("expected package authorization preview")
+    expect(
+      await preexisting({
+        ...preexistingIntent,
+        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        authorization: confirmation(preexistingPreview),
+      }),
+    ).toMatchObject({ ok: false })
+    expect(transactionCalls).toBe(0)
+    expect(readFileSync(configPath, "utf8")).toBe(handwritten)
+
+    writeFileSync(configPath, "{}\n")
+    const raced = createPackageAdmissionCoordinator({
+      ...dependencies,
+      secretVersionId: () => "v-feedface",
+      transaction: async (...args) => {
+        transactionCalls++
+        writeFileSync(configPath, handwritten)
+        return runExtensionTransaction(...args)
+      },
+    })
+    const racedIntent = {
+      catalogId: envelope.prelude.packageId,
+      scope: { scope: "global" as const },
+      attemptId: "attempt-raced-mcp",
+    }
+    const racedPreview = await raced(racedIntent)
+    if (racedPreview.ok || racedPreview.stage !== "authorize") throw new Error("expected package authorization preview")
+    expect(
+      await raced({
+        ...racedIntent,
+        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        authorization: confirmation(racedPreview),
+      }),
+    ).toMatchObject({ ok: false })
+    expect(transactionCalls).toBe(1)
+    expect(readFileSync(configPath, "utf8")).toBe(handwritten)
   })
 })

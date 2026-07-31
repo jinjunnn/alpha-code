@@ -183,7 +183,7 @@ snapshot 两条入口执行 package preview、四组 binding、main 重取重验
   MCP reference 与 `connected/disabled/failed/reload-pending` status。正常路径仍立即可用；
   `awaitServer`/dispose 受 5 秒上界、冷启 status 受 10 秒上界；route 不可用或任一上界
   到期时显式返回 `reload-pending`，不谎称已热连，也不无限占住串行写窗口。
-- 当前有效的 package 安装行为：package secret prerequisite 只消费 host-owned
+- main/IPC 入口当前有效的 package 安装行为：package secret prerequisite 只消费 host-owned
   `AlphaPackageEnvelopeV1` 与严格 payload decoder 的产物，不 decode web Declaration；
   稳定 prerequisite ID、MCP environment/header target 与 store reference 均从 signed
   component/profile 派生；renderer 提交只能携带短生命周期的
@@ -191,8 +191,9 @@ snapshot 两条入口执行 package preview、四组 binding、main 重取重验
   既有 transaction 授权终闸先执行；随后 prepared populate 才把值写入
   `<userData>/alpha-mcp-secrets/<server>/<verId>/<VAR>`，probe 通过后才切 config 与落账。
   持久/结果形状不记录值或值 digest；cancel、undeclared、tamper、stale、replay 均在
-  transaction 或 secret 写入前 fail closed。`alpha.secret-prerequisite.v1` 因而已是
-  Phase 1 生产入口的当前运行行为，不再只是声明形状。
+  transaction 或 secret 写入前 fail closed。`alpha.secret-prerequisite.v1` 因而已在
+  Phase 1 main/IPC 入口兑现；renderer 的 attempt/preview/密钥采集入口由
+  [`alpha-code#732`](https://github.com/jinjunnn/alpha-code/issues/732) 交付，当前不宣称已全链兑现。
 - 残余窗口(如实记录):密钥文件写入发生在事务外(userData 与事务根不同卷/不同圈禁域,
   file action 收不进)。崩溃于「版本目录已写、事务未提交」时留下无引用孤儿目录(0600,
   内容为用户本次亲自提交的值),等待 GC —— 不构成对既有安装的破坏面。
