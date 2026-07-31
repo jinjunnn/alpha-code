@@ -1017,6 +1017,7 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   font-family: var(--a-font-mono);
   font-size: 11.5px;
   color: var(--a-text-secondary);
+  overflow-wrap: anywhere;
 }
 .alpha-ext-key-input {
   width: 100%;

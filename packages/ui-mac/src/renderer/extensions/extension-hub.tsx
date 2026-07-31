@@ -60,6 +60,7 @@ import {
 import { findSessionGrant, sessionGrantKeyOf, sessionRefusalRoute, sessionToggleView } from "./ext-session-toggle"
 import { curationActivationFacts, type Curation, type CurationStatus } from "../../shared/catalog-curation"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
+import type { PackageAdmissionPreviewV1 } from "../../shared/package-admission"
 import { packagePresentation } from "./ext-package-presentation"
 import "./extension-hub.css"
 
@@ -385,6 +386,25 @@ export function ExtensionHub(props: {
     diffs: CapabilityDiffWire[]
   }
   const [authz, setAuthz] = createSignal<AuthzState | null>(null)
+  type PackageAuthzState = {
+    view: CatalogPackageViewV1
+    preview: PackageAdmissionPreviewV1
+    finish: (view: CatalogPackageViewV1) => void
+  }
+  const [packageAuthz, setPackageAuthz] = createSignal<PackageAuthzState | null>(null)
+  const packagePrerequisites = createMemo(() => {
+    const preview = packageAuthz()?.preview
+    if (!preview) return []
+    return Array.from(
+      new Map(
+        preview.plan.items
+          .flatMap((item) => item.prerequisites)
+          .map((item) => [item.prerequisiteId, item]),
+      ).values(),
+    )
+  })
+  const packageSecretsComplete = () =>
+    packagePrerequisites().every((item) => (envValues()[item.prerequisiteId] ?? "").trim().length > 0)
   const [confirmBusy, setConfirmBusy] = createSignal(false)
   const [authzBusy, setAuthzBusy] = createSignal(false)
   // REQ-036:创建表单已移除(创建走技能:skill-creator/agent-creator 出厂注入),原表单 state 随之下线。
@@ -462,6 +482,7 @@ export function ExtensionHub(props: {
   const runPackageAction = async (input: CatalogPackageViewV1) => {
     const view = currentPackageView(input)
     if (!view.action.enabled || busy() === view.catalogId) return view
+    setErrFor(view.catalogId, null)
     setBusy(view.catalogId)
     try {
       if (view.verdict !== "compatible") {
@@ -471,15 +492,33 @@ export function ExtensionHub(props: {
         return latest ?? view
       }
       if (view.action.kind !== "install" && view.action.kind !== "resolve-prerequisite") return view
+      // package 首驱只带全新的 attempt identity；密钥与 authorization 必须等 preview 后再提交。
       const result = await window.api.ext.installCatalog({
         catalogId: view.catalogId,
         scope: { scope: "global" },
+        attemptId: `renderer-${globalThis.crypto.randomUUID()}`,
       })
-      const latest = !result.ok && "package" in result
-        ? result.package
-        : await window.api.ext.packageDetail(view.catalogId)
+      if (
+        !result.ok &&
+        "stage" in result &&
+        result.stage === "authorize" &&
+        "packageAuthorization" in result &&
+        result.packageAuthorization
+      ) {
+        const preview = result.packageAuthorization
+        setEnvValues({})
+        return await new Promise<CatalogPackageViewV1>((finish) =>
+          setPackageAuthz({ view, preview, finish }),
+        )
+      }
+      if (!result.ok) setErrFor(view.catalogId, result.reason)
+      const latest =
+        !result.ok && "package" in result ? result.package : await window.api.ext.packageDetail(view.catalogId)
       if (latest) rememberPackageView(latest)
       return latest ?? view
+    } catch (error) {
+      setErrFor(view.catalogId, error instanceof Error ? error.message : String(error))
+      return view
     } finally {
       setBusy(null)
     }
@@ -494,6 +533,12 @@ export function ExtensionHub(props: {
   // 关闭时重置,重开回到当前分区的列表(review 发现:详情页上点 ✕ 关闭再开会残留 stale 详情)。
   createEffect(() => {
     if (!props.open()) {
+      const pending = packageAuthz()
+      if (pending && !authzBusy()) {
+        pending.finish(pending.view)
+        setPackageAuthz(null)
+        setEnvValues({})
+      }
       setDetail(null)
       setQuery("")
     } else {
@@ -983,6 +1028,56 @@ export function ExtensionHub(props: {
     setConfirming(null)
     setEnvValues({})
   }
+  const closePackageAuthz = () => {
+    const pending = packageAuthz()
+    if (!pending || authzBusy()) return
+    pending.finish(pending.view)
+    setPackageAuthz(null)
+    setEnvValues({})
+  }
+  const confirmPackageAuthz = async () => {
+    const pending = packageAuthz()
+    if (!pending || authzBusy() || !packageSecretsComplete()) return
+    // prerequisiteId 是 main 校验的身份；required=false 的签名前置条件也必须完整提交。
+    const secrets = Object.fromEntries(
+      packagePrerequisites().map((item) => [item.prerequisiteId, envValues()[item.prerequisiteId]!]),
+    )
+    setAuthzBusy(true)
+    try {
+      const result = await window.api.ext.installCatalog({
+        catalogId: pending.view.catalogId,
+        scope: { scope: "global" },
+        attemptId: pending.preview.attemptId,
+        ...(packagePrerequisites().length > 0 ? { grants: { secrets } } : {}),
+        authorization: {
+          // package confirmation 精确覆盖 preview 全部 diff key，不能沿用 legacy 的需确认项过滤。
+          confirmed: Object.fromEntries(pending.preview.items.map((item) => [item.key, item.requested])),
+          binding: pending.preview.binding,
+        },
+      })
+      if (!result.ok) {
+        const latest = "package" in result ? result.package : pending.view
+        if ("package" in result) rememberPackageView(result.package)
+        setErrFor(pending.view.catalogId, result.reason)
+        pending.finish(latest)
+        setPackageAuthz(null)
+        setEnvValues({})
+        return
+      }
+      const latest = await window.api.ext.packageDetail(pending.view.catalogId)
+      if (latest) rememberPackageView(latest)
+      pending.finish(latest ?? pending.view)
+      setPackageAuthz(null)
+      setEnvValues({})
+    } catch (error) {
+      setErrFor(pending.view.catalogId, error instanceof Error ? error.message : String(error))
+      pending.finish(pending.view)
+      setPackageAuthz(null)
+      setEnvValues({})
+    } finally {
+      setAuthzBusy(false)
+    }
+  }
   const cancelAuthz = () => {
     if (authzBusy() || confirmBusy()) return
     closeAuthz()
@@ -1394,6 +1489,9 @@ export function ExtensionHub(props: {
             {t(presentation().actionKey)}
           </button>
         </div>
+        <Show when={cardErr()[view().catalogId]}>
+          <p class="alpha-ext-card-err" role="alert">{cardErr()[view().catalogId]}</p>
+        </Show>
       </div>
     )
   }
@@ -2332,22 +2430,38 @@ export function ExtensionHub(props: {
           }
         />
         <Dialog
-          open={!!confirming()}
-          onClose={closeAuthz}
+          open={!!confirming() || !!packageAuthz()}
+          onClose={() => packageAuthz() ? closePackageAuthz() : closeAuthz()}
           dismissible={!confirmBusy() && !authzBusy()}
           busy={confirmBusy() || authzBusy()}
           besideSidebar
           size="sm"
           title={
-            authz()?.host === "confirm"
-              ? authzTitle()
-              : confirming()
-                ? t("alpha.ext.confirmTitle", { name: confirming()!.displayName })
-                : ""
+            packageAuthz()
+              ? t("alpha.ext.confirmTitle", { name: packageAuthz()!.view.presentation.displayName })
+              : authz()?.host === "confirm"
+                ? authzTitle()
+                : confirming()
+                  ? t("alpha.ext.confirmTitle", { name: confirming()!.displayName })
+                  : ""
           }
           restoreFocus={() => hubCloseButton}
           footer={
-            authz()?.host === "confirm" ? (
+            packageAuthz() ? (
+              <>
+                <Button variant="ghost" autofocus disabled={authzBusy()} onClick={closePackageAuthz}>
+                  {t("alpha.ext.cancel")}
+                </Button>
+                <Button
+                  variant="primary"
+                  loading={authzBusy()}
+                  disabled={!packageSecretsComplete()}
+                  onClick={() => void confirmPackageAuthz()}
+                >
+                  {t("alpha.ext.confirmInstall")}
+                </Button>
+              </>
+            ) : authz()?.host === "confirm" ? (
               authzFooter()
             ) : (
               <>
@@ -2385,10 +2499,62 @@ export function ExtensionHub(props: {
             )
           }
         >
+          <Show when={packageAuthz()}>
+            {(state) => (
+              <div class="alpha-ext-confirm" data-package-authorization={state().view.catalogId}>
+                <p class="alpha-ext-confirm-desc">{state().view.presentation.description}</p>
+                <div class="alpha-ext-install-box">
+                  <For each={state().preview.plan.items}>
+                    {(item) => (
+                      <div class="alpha-ext-install-row">
+                        <span class="alpha-ext-install-nm">{item.name}</span>
+                        <span class="alpha-ext-install-k">{typeLabel(item.kind)}</span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+                <ExtAuthzView
+                  name={state().view.presentation.displayName}
+                  isBundle={state().preview.plan.items.length > 1}
+                  mode="install"
+                  diffs={state().preview.items}
+                />
+                <Show when={packagePrerequisites().length > 0}>
+                  <div class="alpha-ext-confirm-keys">
+                    <div class="alpha-ext-confirm-line">{t("alpha.ext.confirmEnv")}</div>
+                    <For each={packagePrerequisites()}>
+                      {(item) => (
+                        <label class="alpha-ext-key-field">
+                          <span class="alpha-ext-key-name">{item.label}</span>
+                          <input
+                            class="alpha-ext-key-input"
+                            type="password"
+                            autocomplete="off"
+                            spellcheck={false}
+                            required
+                            placeholder={t("alpha.ext.keyPlaceholder")}
+                            value={envValues()[item.prerequisiteId] ?? ""}
+                            onInput={(event) =>
+                              setEnvValues((current) => ({
+                                ...current,
+                                [item.prerequisiteId]: event.currentTarget.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      )}
+                    </For>
+                    <p class="alpha-ext-key-hint">{t("alpha.ext.keyHint")}</p>
+                  </div>
+                </Show>
+                <p class="alpha-ext-confirm-note">{t("alpha.ext.confirmNote")}</p>
+              </div>
+            )}
+          </Show>
           <Show when={authz()?.host === "confirm"}>
             <ExtAuthzView name={authz()!.entry.displayName} isBundle={authz()!.entry.type === "bundle"} mode={authz()!.mode} diffs={authz()!.diffs} />
           </Show>
-          <Show when={authz()?.host !== "confirm" && confirming()}>
+          <Show when={!packageAuthz() && authz()?.host !== "confirm" && confirming()}>
             {(entry) => (
               <div class="alpha-ext-confirm">
                 <div class="alpha-ext-confirm-meta">

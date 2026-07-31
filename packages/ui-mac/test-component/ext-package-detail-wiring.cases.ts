@@ -8,7 +8,9 @@ import presetTypescript from "@babel/preset-typescript"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import presetSolid from "babel-preset-solid"
 import { createHash } from "node:crypto"
-import { resolve } from "node:path"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 import bundledCatalog from "../src/renderer/extensions/alpha-catalog.json"
 import type { CatalogPackageViewV1 } from "../src/shared/catalog-package-view"
 import type {
@@ -16,6 +18,8 @@ import type {
   PackageProfilePayloadV1,
 } from "../src/shared/host-extension-package-contract/decoder"
 import { evaluatePackageForHost, runCatalogInstallWithPackagePreflight } from "../src/main/package-installability"
+import { createPackageAdmissionCoordinator } from "../src/main/package-admission"
+import { writeCapabilityGrantSync } from "../src/main/ext-capability-grants"
 import {
   evaluateRemoteCatalogPackages,
   PACKAGE_DETAIL_IPC_CHANNEL,
@@ -87,6 +91,7 @@ const { setHubSection } = await import("../src/renderer/extensions/ext-hub-state
 
 const artifact = resolve(import.meta.dir, "../../alpha-contracts-consumer/vendor/alpha-web-extension-package")
 const disposals: Array<() => void> = []
+const secretCanary = "REQ128_RENDERER_SECRET_CANARY_64f91d"
 
 const canonicalBytes = (value: unknown) =>
   new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`)
@@ -124,7 +129,7 @@ const packageFixture = async () => {
     throw new Error("producer corpus profile drifted")
   prerequisite.payload.behavior.requiredSecrets = ["A_KEY"]
   prerequisite.payload.behavior.headersTemplate = {
-    Authorization: "Bearer {A_KEY}; target=REQ128_RENDERER_SECRET_CANARY",
+    Authorization: "Bearer {A_KEY}; target=REQ128_RENDERER_PAYLOAD_CANARY",
   }
 
   const update = await producerCorpus()
@@ -145,13 +150,16 @@ const packageFixture = async () => {
   const payloadBlocked = await producerCorpus()
   payloadBlocked.envelope.prelude.packageId = "package:renderer-payload-blocked"
 
+  const readyBytes = bindPayload(ready.envelope, ready.payload)
+  const prerequisiteBytes = bindPayload(prerequisite.envelope, prerequisite.payload)
   const payloads = new Map<string, Uint8Array>([
-    [ready.envelope.prelude.packageId, bindPayload(ready.envelope, ready.payload)],
-    [
-      prerequisite.envelope.prelude.packageId,
-      bindPayload(prerequisite.envelope, prerequisite.payload),
-    ],
+    [ready.envelope.prelude.packageId, readyBytes],
+    [prerequisite.envelope.prelude.packageId, prerequisiteBytes],
     [payloadBlocked.envelope.prelude.packageId, new TextEncoder().encode("{}\n")],
+  ])
+  const payloadsByDigest = new Map([
+    [ready.envelope.components[0].payloadRef.sha256, readyBytes],
+    [prerequisite.envelope.components[0].payloadRef.sha256, prerequisiteBytes],
   ])
   const envelopes = [
     ready.envelope,
@@ -177,15 +185,24 @@ const packageFixture = async () => {
   // 一次 refresh,「已解决」就会静默翻面,而失败信息("Expected ready / Received
   // required-action")完全指不到真因。这正是三个月后没人解释得清的 flaky 的来源。
   let prerequisiteResolved = false
-  const resolvePrerequisite = () => {
-    prerequisiteResolved = true
+  let readyInstalled = false
+  const complete = (catalogId: string) => {
+    if (catalogId === prerequisite.envelope.prelude.packageId) prerequisiteResolved = true
+    if (catalogId === ready.envelope.prelude.packageId) readyInstalled = true
   }
-  const evaluator = (envelope: unknown) => {
+  const evaluator = async (envelope: unknown) => {
     const packageId = (envelope as AlphaPackageEnvelopeV1).prelude.packageId
-    if (packageId !== prerequisite.envelope.prelude.packageId)
-      return evaluatePackageForHost(envelope, {
+    if (packageId !== prerequisite.envelope.prelude.packageId) {
+      const view = await evaluatePackageForHost(envelope, {
         fetchPayload: async () => payloads.get(packageId) ?? new Uint8Array(),
       })
+      if (!readyInstalled || packageId !== ready.envelope.prelude.packageId) return view
+      return {
+        ...view,
+        action: { kind: "none" as const, enabled: false, reasonCode: "package-compatible" as const },
+        presentation: { ...view.presentation, version: `${view.presentation.version}-installed` },
+      }
+    }
 
     if (!prerequisiteResolved)
       return evaluatePackageForHost(envelope, {
@@ -203,13 +220,49 @@ const packageFixture = async () => {
       fetchPayload: async () => resolvedBytes,
     })
   }
-  return { raw, evaluator, resolvePrerequisite }
+  return {
+    raw,
+    evaluator,
+    complete,
+    fetchPayload: async (ref: { sha256: string }) => payloadsByDigest.get(ref.sha256) ?? new Uint8Array(),
+  }
 }
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown
 
-async function mountHarness() {
+async function mountHarness(options?: {
+  preauthorized?: boolean
+  failConfirmationOnce?: boolean
+  rejectPreviewOnce?: boolean
+}) {
   const fixture = await packageFixture()
+  const tmp = mkdtempSync(join(tmpdir(), "package-renderer-wiring-"))
+  const globalRoot = join(tmp, "root")
+  const userData = join(tmp, "user-data")
+  mkdirSync(globalRoot, { recursive: true })
+  const previousRoot = process.env.ALPHA_GLOBAL_DIR
+  process.env.ALPHA_GLOBAL_DIR = globalRoot
+  if (options?.preauthorized)
+    writeCapabilityGrantSync(globalRoot, {
+      v: 1,
+      key: "mcp--generic-remote",
+      capabilities: ["alpha.secret-prerequisite.v1"],
+      txId: "preauthorized",
+      grantedAt: "2026-07-31T00:00:00.000Z",
+    })
+  const admitPackage = createPackageAdmissionCoordinator({
+    loadVerifiedCatalog: async () => ({
+      source: "remote",
+      catalog: fixture.raw.source === "none" ? {} : fixture.raw.catalog,
+      snapshotDigest: "a".repeat(64),
+    }),
+    root: () => globalRoot,
+    userDataPath: userData,
+    environment: () => "dev",
+    installability: { fetchPayload: fixture.fetchPayload },
+    secretVersionId: () => "v-0badcafe",
+    now: () => new Date("2026-07-31T12:00:00.000Z"),
+  })
   const handlers = new Map<string, Handler>()
   const refresh = () =>
     evaluateRemoteCatalogPackages(fixture.raw, {
@@ -223,6 +276,9 @@ async function mountHarness() {
   const browseResults: unknown[] = []
   const detailResults: unknown[] = []
   const installIntents: unknown[] = []
+  const installResults: unknown[] = []
+  let failConfirmation = options?.failConfirmationOnce ?? false
+  let rejectPreview = options?.rejectPreviewOnce ?? false
   let updateChecks = 0
   Object.defineProperty(window, "api", {
     configurable: true,
@@ -248,7 +304,16 @@ async function mountHarness() {
         },
         installCatalog: async (intent: unknown) => {
           installIntents.push(intent)
-          return runCatalogInstallWithPackagePreflight(intent, {
+          if (
+            rejectPreview &&
+            typeof intent === "object" &&
+            intent !== null &&
+            !("authorization" in intent)
+          ) {
+            rejectPreview = false
+            throw new Error("package renderer transport failed")
+          }
+          const result = await runCatalogInstallWithPackagePreflight(intent, {
             loadVerifiedCatalog: async () => ({
               source: "remote",
               catalog: fixture.raw.source === "none" ? {} : fixture.raw.catalog,
@@ -256,8 +321,39 @@ async function mountHarness() {
             installLegacy: async () => {
               throw new Error("package renderer intent fell through to legacy planner")
             },
+            installPackage: async (packageIntent) => {
+              if (
+                failConfirmation &&
+                typeof packageIntent === "object" &&
+                packageIntent !== null &&
+                "authorization" in packageIntent
+              ) {
+                failConfirmation = false
+                const broken = structuredClone(packageIntent) as {
+                  authorization: { binding: unknown }
+                }
+                return admitPackage({
+                  ...broken,
+                  authorization: { binding: broken.authorization.binding, confirmed: {} },
+                })
+              }
+              return admitPackage(packageIntent)
+            },
             evaluator: fixture.evaluator,
           })
+          installResults.push(result)
+          if (
+            typeof result === "object" &&
+            result !== null &&
+            "ok" in result &&
+            result.ok === true &&
+            typeof intent === "object" &&
+            intent !== null &&
+            "catalogId" in intent &&
+            typeof intent.catalogId === "string"
+          )
+            fixture.complete(intent.catalogId)
+          return result
         },
         inventoryView: async () => undefined,
         advisoryActive: async () => ({ ids: [], fresh: true }),
@@ -285,6 +381,11 @@ async function mountHarness() {
     root,
   )
   disposals.push(dispose)
+  disposals.push(() => {
+    if (previousRoot === undefined) delete process.env.ALPHA_GLOBAL_DIR
+    else process.env.ALPHA_GLOBAL_DIR = previousRoot
+    rmSync(tmp, { recursive: true, force: true })
+  })
   await waitFor(() =>
     expect(
       document.querySelectorAll("[data-package-card]").length,
@@ -294,8 +395,9 @@ async function mountHarness() {
     browseResults,
     detailResults,
     installIntents,
-    // 让用例显式表达「用户已经把前置条件解决了」,而不是靠数 evaluator 被调了几次。
-    resolvePrerequisite: fixture.resolvePrerequisite,
+    installResults,
+    globalRoot,
+    userData,
     updateChecks: () => updateChecks,
   }
 }
@@ -325,6 +427,39 @@ function packageCard(catalogId: string) {
 function click(element: Element | null) {
   expect(element).toBeInstanceOf(HTMLElement)
   ;(element as HTMLElement).click()
+}
+
+function packageAuthorizationDialog() {
+  const body = document.querySelector<HTMLElement>("[data-package-authorization]")
+  expect(body).toBeInstanceOf(HTMLElement)
+  const dialog = body!.closest<HTMLElement>("[role='dialog']")
+  expect(dialog).toBeInstanceOf(HTMLElement)
+  return dialog!
+}
+
+const waitForPackageAuthorization = (catalogId: string) =>
+  waitFor(() =>
+    expect(document.querySelector(`[data-package-authorization='${catalogId}']`)).toBeInstanceOf(
+      HTMLElement,
+    ),
+  )
+
+function fillPackageSecret(value: string) {
+  const input = packageAuthorizationDialog().querySelector<HTMLInputElement>(".alpha-ext-key-input")
+  expect(input).toBeInstanceOf(HTMLInputElement)
+  input!.value = value
+  input!.dispatchEvent(new Event("input", { bubbles: true }))
+}
+
+function confirmPackageAuthorization() {
+  const button = packageAuthorizationDialog().querySelector<HTMLButtonElement>(".a-dialog-footer .a-btn:last-child")
+  expect(button).toBeInstanceOf(HTMLButtonElement)
+  expect(button!.disabled).toBe(false)
+  click(button)
+}
+
+function cancelPackageAuthorization() {
+  click(packageAuthorizationDialog().querySelector(".a-dialog-footer .a-btn:first-child"))
 }
 
 function expectSafeView(value: unknown) {
@@ -446,6 +581,7 @@ describe("package detail production renderer path", () => {
       "headersTemplate",
       "requiredSecrets",
       "REQ128_RENDERER_SECRET_CANARY",
+      "REQ128_RENDERER_PAYLOAD_CANARY",
       "https://",
     ])
       expect(safeWire).not.toContain(forbidden)
@@ -492,92 +628,170 @@ describe("package detail production renderer path", () => {
       ),
     ])
 
-    const installCount = harness.installIntents.length
-    click(detail.querySelector(".alpha-ext-dsub button"))
-    await waitFor(() =>
-      expect(harness.installIntents.length).toBe(installCount + 1),
-    )
   })
 
-  test("compatible install and prerequisite actions send only intent keys and reach main preflight", async () => {
+  test("detail install button drives preview and confirmation through real package admission, then adopts the new view", async () => {
     const harness = await mountHarness()
-    const readyAction = packageCard("package:renderer-ready").querySelector<HTMLButtonElement>("button")!
-    expect(readyAction.disabled).toBe(false)
-    click(readyAction)
-    await waitFor(() => expect(harness.installIntents.length).toBe(1))
-
-    // 先看**未解决**的样子:这一半让 data-* 属性不能被钉成常量 ——
-    // 只断言一个值时,把属性写死成那个值照样通过。前后两个不同的值才杀得掉。
-    click(packageCard("package:renderer-prerequisite"))
-    const beforeDetail = document.querySelector(
-      "[data-package-detail='package:renderer-prerequisite']",
+    click(packageCard("package:renderer-ready"))
+    await waitFor(() =>
+      expect(document.querySelector("[data-package-detail='package:renderer-ready']")).toBeInstanceOf(HTMLElement),
     )
-    expect(beforeDetail).toBeInstanceOf(HTMLElement)
-    expect(beforeDetail?.querySelector(".alpha-ext-dtool code")?.textContent).toBe("A_KEY")
-    expect(beforeDetail?.querySelector(".alpha-ext-dtool span")?.textContent).toBe(
-      zh["alpha.ext.packageRequired"],
+    const detail = document.querySelector<HTMLElement>("[data-package-detail='package:renderer-ready']")!
+    expect(detail.querySelector(".alpha-ext-dhead-meta span")?.textContent).toContain("1.0.0")
+
+    click(detail.querySelector(".alpha-ext-dsub button"))
+    await waitForPackageAuthorization("package:renderer-ready")
+    expect(packageAuthorizationDialog().querySelector(".alpha-ext-install-nm")?.textContent).toBe("generic-remote")
+    expect(packageAuthorizationDialog().querySelector(".alpha-ext-install-k")?.textContent).toBeTruthy()
+    expect(packageAuthorizationDialog().querySelectorAll(".alpha-ext-key-input")).toHaveLength(0)
+    confirmPackageAuthorization()
+
+    await waitFor(() => expect(harness.installResults).toHaveLength(2))
+    expect(harness.installResults.at(-1)).toMatchObject({ ok: true })
+    await waitFor(() =>
+      expect(detail.querySelector(".alpha-ext-dhead-meta span")?.textContent).toContain("1.0.0-installed"),
+    )
+    expect(harness.installIntents).toHaveLength(2)
+    const first = harness.installIntents[0] as Record<string, unknown>
+    const second = harness.installIntents[1] as Record<string, unknown>
+    expect(Object.keys(first).sort()).toEqual(["attemptId", "catalogId", "scope"])
+    expect(first).not.toHaveProperty("grants")
+    expect(first).not.toHaveProperty("authorization")
+    expect(second.attemptId).toBe(first.attemptId)
+    expect(Object.keys(second).sort()).toEqual(["attemptId", "authorization", "catalogId", "scope"])
+    expect(JSON.stringify(harness.installResults)).not.toContain(secretCanary)
+  })
+
+  test("card resolve-prerequisite button collects prerequisiteId secret, writes it 0600, and refreshes the card", async () => {
+    const harness = await mountHarness()
+    const card = packageCard("package:renderer-prerequisite")
+    expect(card.querySelector("[data-prerequisite]")?.getAttribute("data-prerequisite")).toBe("required-action")
+    click(card.querySelector("button"))
+    await waitForPackageAuthorization("package:renderer-prerequisite")
+    expect(packageAuthorizationDialog().querySelector(".alpha-ext-key-name")?.textContent).toBe("A_KEY")
+    expect(packageAuthorizationDialog().querySelector<HTMLInputElement>(".alpha-ext-key-input")?.type).toBe("password")
+    fillPackageSecret(secretCanary)
+    expect(document.body.textContent).not.toContain(secretCanary)
+    confirmPackageAuthorization()
+
+    await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true }))
+    const secretFile = join(harness.userData, "alpha-mcp-secrets", "generic-remote", "v-0badcafe", "A_KEY")
+    expect(readFileSync(secretFile, "utf8")).toBe(secretCanary)
+    expect(statSync(secretFile).mode & 0o777).toBe(0o600)
+    expect(readdirSync(join(harness.userData, "alpha-mcp-secrets", "generic-remote"))).toEqual(["v-0badcafe"])
+    expect(readFileSync(join(harness.globalRoot, "alpha.jsonc"), "utf8")).not.toContain(secretCanary)
+    expect(JSON.stringify(harness.installResults)).not.toContain(secretCanary)
+    expect(document.body.textContent).not.toContain(secretCanary)
+    await waitFor(() =>
+      expect((harness.detailResults.at(-1) as CatalogPackageViewV1).prerequisites.status).toBe("ready"),
     )
     await waitFor(() =>
       expect({
-        prerequisite: beforeDetail?.querySelector("[data-prerequisite]")?.getAttribute("data-prerequisite"),
-        verdict: beforeDetail?.querySelector("[data-verdict]")?.getAttribute("data-verdict"),
-      }).toEqual({ prerequisite: "required-action", verdict: "compatible" }),
+        prerequisite: packageCard("package:renderer-prerequisite").querySelector("[data-prerequisite]")?.getAttribute("data-prerequisite"),
+        text: packageCard("package:renderer-prerequisite").querySelector("[data-prerequisite]")?.textContent,
+      }).toEqual({ prerequisite: "ready", text: zh["alpha.ext.packagePrerequisiteReady"] }),
     )
-    click(beforeDetail?.querySelector(".alpha-ext-crumb-link") ?? null)
-    await waitFor(() => expect(document.querySelector("[data-package-detail]")).toBeNull())
 
-    // 用户在别处补齐了密钥;重新打开时 main 重判应当读到「已就绪」。
-    harness.resolvePrerequisite()
-    click(packageCard("package:renderer-prerequisite"))
-    const prerequisiteDetail = document.querySelector(
-      "[data-package-detail='package:renderer-prerequisite']",
+    const first = harness.installIntents[0] as Record<string, unknown>
+    const second = harness.installIntents[1] as {
+      attemptId: unknown
+      grants: { secrets: Record<string, string> }
+      authorization: { confirmed: Record<string, string[]> }
+    }
+    expect(Object.keys(first).sort()).toEqual(["attemptId", "catalogId", "scope"])
+    expect(first).not.toHaveProperty("grants")
+    expect(second.attemptId).toBe(first.attemptId)
+    expect(Object.keys(second.grants.secrets)).toEqual(["mcp:generic-remote#A_KEY"])
+    expect(Object.keys(second.authorization.confirmed)).toEqual(["mcp--generic-remote"])
+  })
+
+  test("preauthorized capability still submits every preview diff key", async () => {
+    const harness = await mountHarness({ preauthorized: true })
+    click(packageCard("package:renderer-prerequisite").querySelector("button"))
+    await waitFor(() => expect(harness.installResults).toHaveLength(1))
+    expect(harness.installResults[0]).toMatchObject({
+      ok: false,
+      stage: "authorize",
+      authorization: [{ key: "mcp--generic-remote", requiresConfirmation: false }],
+    })
+    fillPackageSecret(secretCanary)
+    confirmPackageAuthorization()
+    await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true }))
+    const submitted = harness.installIntents[1] as {
+      authorization: { confirmed: Record<string, string[]> }
+    }
+    expect(submitted.authorization.confirmed).toEqual({
+      "mcp--generic-remote": ["alpha.secret-prerequisite.v1"],
+    })
+  })
+
+  test("cancel clears transient secrets and retry issues a different attemptId without writing", async () => {
+    const harness = await mountHarness()
+    click(packageCard("package:renderer-prerequisite").querySelector("button"))
+    await waitForPackageAuthorization("package:renderer-prerequisite")
+    fillPackageSecret(secretCanary)
+    cancelPackageAuthorization()
+    await waitFor(() => expect(document.querySelector("[data-package-authorization]")).toBeNull())
+    expect(existsSync(join(harness.userData, "alpha-mcp-secrets"))).toBe(false)
+    expect(existsSync(join(harness.globalRoot, "alpha.jsonc"))).toBe(false)
+    expect(document.body.textContent).not.toContain(secretCanary)
+
+    click(packageCard("package:renderer-prerequisite").querySelector("button"))
+    await waitForPackageAuthorization("package:renderer-prerequisite")
+    expect(harness.installIntents).toHaveLength(2)
+    expect((harness.installIntents[1] as { attemptId: string }).attemptId).not.toBe(
+      (harness.installIntents[0] as { attemptId: string }).attemptId,
     )
-    expect(prerequisiteDetail).toBeInstanceOf(HTMLElement)
+    expect(packageAuthorizationDialog().querySelector<HTMLInputElement>(".alpha-ext-key-input")?.value).toBe("")
+    cancelPackageAuthorization()
+  })
+
+  test("consumed failed attempt shows inline error and successful retry uses a new attemptId", async () => {
+    const harness = await mountHarness({ failConfirmationOnce: true })
+    const card = packageCard("package:renderer-prerequisite")
+    click(card.querySelector("button"))
+    await waitForPackageAuthorization("package:renderer-prerequisite")
+    fillPackageSecret(secretCanary)
+    confirmPackageAuthorization()
+    await waitFor(() => expect(harness.installResults).toHaveLength(2))
+    expect(harness.installResults.at(-1)).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("confirmed capability set"),
+    })
     await waitFor(() =>
       expect(
-        prerequisiteDetail
-          ?.querySelector("[data-prerequisite]")
-          ?.getAttribute("data-prerequisite"),
-      ).toBe("ready"),
-    )
-
-    click(prerequisiteDetail?.querySelector(".alpha-ext-dsub button") ?? null)
-    await waitFor(() => expect(harness.installIntents.length).toBe(2))
-    click(prerequisiteDetail?.querySelector(".alpha-ext-crumb-link") ?? null)
-    await waitFor(() => expect(document.querySelector("[data-package-detail]")).toBeNull())
-    await waitFor(() =>
-      expect({
-        prerequisite: packageCard("package:renderer-prerequisite")
-          .querySelector("[data-prerequisite]")
-          ?.getAttribute("data-prerequisite"),
-        text: packageCard("package:renderer-prerequisite")
-          .querySelector("[data-prerequisite]")
+        document.querySelector("[data-package-card='package:renderer-prerequisite'] [role='alert']")
           ?.textContent,
-      }).toEqual({
-        prerequisite: "ready",
-        text: zh["alpha.ext.packagePrerequisiteReady"],
-      }),
+      ).toContain("confirmed capability set"),
     )
+    expect(existsSync(join(harness.userData, "alpha-mcp-secrets"))).toBe(false)
+    const failedAttempt = (harness.installIntents[0] as { attemptId: string }).attemptId
 
-    expect(harness.installIntents).toEqual([
-      {
-        catalogId: "package:renderer-ready",
-        scope: { scope: "global" },
-      },
-      {
-        catalogId: "package:renderer-prerequisite",
-        scope: { scope: "global" },
-      },
-    ])
-    for (const intent of harness.installIntents) {
-      expect(Object.keys(intent as Record<string, unknown>).sort()).toEqual([
-        "catalogId",
-        "scope",
-      ])
-      expect(JSON.stringify(intent)).not.toMatch(
-        /verdict|action|reasonCode|payload|url|config|secret/i,
-      )
-    }
+    await waitFor(() =>
+      expect(
+        packageCard("package:renderer-prerequisite").querySelector<HTMLButtonElement>("button")
+          ?.disabled,
+      ).toBe(false),
+    )
+    click(packageCard("package:renderer-prerequisite").querySelector("button"))
+    await waitForPackageAuthorization("package:renderer-prerequisite")
+    expect(harness.installIntents).toHaveLength(3)
+    const retryAttempt = (harness.installIntents[2] as { attemptId: string }).attemptId
+    expect(retryAttempt).not.toBe(failedAttempt)
+    fillPackageSecret(secretCanary)
+    confirmPackageAuthorization()
+    await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true }))
+    expect((harness.installIntents[3] as { attemptId: string }).attemptId).toBe(retryAttempt)
+    expect(packageCard("package:renderer-prerequisite").querySelector("[role='alert']")).toBeNull()
+  })
+
+  test("rejected install IPC is caught and rendered inline without an unhandled rejection", async () => {
+    const harness = await mountHarness({ rejectPreviewOnce: true })
+    const card = packageCard("package:renderer-ready")
+    click(card.querySelector("button"))
+    await waitFor(() => expect(card.querySelector("[role='alert']")?.textContent).toContain("transport failed"))
+    expect(document.querySelector("[data-package-authorization]")).toBeNull()
+    expect(harness.installIntents).toHaveLength(1)
   })
 
   test("update-required checks for an app update and both blocked reasons stay off install IPC", async () => {

@@ -166,10 +166,25 @@ describe("package safe-view presentation", () => {
       "alpha.ext.packageActionUpdateAlpha",
       "alpha.ext.packageActionResolvePrerequisite",
       "alpha.ext.packageActionNone",
+      "alpha.ext.confirmInstall",
+      "alpha.ext.cancel",
+      "alpha.ext.confirmEnv",
+      "alpha.ext.keyPlaceholder",
+      "alpha.ext.keyHint",
+      "alpha.ext.confirmNote",
+      "alpha.ext.authz.chipNew",
+      "alpha.ext.authz.note",
     ] as const
     expect(
       keys.filter((key) => !harness.includes(zh[key])),
       "visual harness contains Chinese literals, so every rendered phrase must track zh.ts",
+    ).toEqual([])
+    expect(
+      [
+        zh["alpha.ext.confirmTitle"].replace("{{name}}", "${esc(view.name)}"),
+        zh["alpha.ext.authz.introFirst"].replace("{{name}}", "${esc(view.name)}"),
+      ].filter((copy) => !harness.includes(copy)),
+      "visual harness interpolated Chinese copy must track zh.ts",
     ).toEqual([])
   })
 })
