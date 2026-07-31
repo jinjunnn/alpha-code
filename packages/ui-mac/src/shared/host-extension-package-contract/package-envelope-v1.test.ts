@@ -54,7 +54,7 @@ const noCalls = (): Calls => ({ fetch: 0, decoder: 0, secret: 0, planner: 0 })
 
 type NegativeCase = {
   name: string
-  source: "skill-v1" | "mcp-local-v1" | "mcp-remote-v1"
+  source: "skill-v1" | "agent-v1" | "mcp-local-v1" | "mcp-remote-v1"
   mode: "header" | "payload" | "package"
   error: string
   mutateEnvelope?: (envelope: Record<string, unknown>) => void
@@ -63,6 +63,24 @@ type NegativeCase = {
 }
 
 const negativeCases: NegativeCase[] = [
+  {
+    name: "agent blocked: missing asset object",
+    source: "agent-v1",
+    mode: "package",
+    error: "payload.behavior.asset: required object",
+    mutatePayload: (payload) => {
+      delete behaviorOf(payload).asset
+    },
+  },
+  {
+    name: "agent malicious: targetDir path traversal",
+    source: "agent-v1",
+    mode: "package",
+    error: "payload.behavior.targetDir: expected one of [alpha-agents, global]",
+    mutatePayload: (payload) => {
+      behaviorOf(payload).targetDir = "../../.claude/agents"
+    },
+  },
   {
     name: "payload depth limit",
     source: "skill-v1",

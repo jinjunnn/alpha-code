@@ -1,0 +1,201 @@
+import { readFileSync } from "node:fs"
+import { join, resolve } from "node:path"
+import { describe, expect, test } from "bun:test"
+
+const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..", "..")
+const MATRIX_PATH = join(
+  REPO_ROOT,
+  "docs/verification/2026-07-31-req128-capability-matrix/matrix.tsv",
+)
+const MATRIX_BODY = readFileSync(MATRIX_PATH, "utf8")
+const COLUMNS = [
+  "phase1_item",
+  "producer_fixture",
+  "consumer_entrypoint",
+  "expected_verdict",
+  "reason_code",
+  "evidence_gate_file",
+  "evidence_test_name",
+] as const
+const PHASE1_ITEMS = [
+  "producer-to-signed-catalog",
+  "current-host-sibling-key-tolerance",
+  "foundation-host-gate-order",
+  "safe-view-and-reevaluation",
+  "secret-prerequisite-lifecycle",
+  "single-component-admission",
+  "user-reachable-install-path",
+] as const
+
+type MatrixRow = Record<(typeof COLUMNS)[number], string>
+
+const rows = parseMatrix()
+const registeredGates = new Set(
+  readFileSync(join(REPO_ROOT, "scripts/gate-files.tsv"), "utf8")
+    .split("\n")
+    .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
+    .map((line) => {
+      const [, workdir, path] = line.split("\t")
+      return `${workdir}/${path}`
+    }),
+)
+
+describe("REQ-128 Phase 1 capability evidence matrix", () => {
+  test("covers all seven Phase 1 items and pins the scoped boundaries", () => {
+    const unknown = rows
+      .map((row) => row.phase1_item)
+      .filter((item) => !PHASE1_ITEMS.includes(item as (typeof PHASE1_ITEMS)[number]))
+    expect(unknown, "matrix must not reserve Phase 2/3/4 rows").toEqual([])
+    for (const item of PHASE1_ITEMS)
+      expect(
+        rows.filter((row) => row.phase1_item === item).length,
+        `${item} has no evidence cell`,
+      ).toBeGreaterThan(0)
+    expect(rows.every((row) => COLUMNS.every((column) => row[column].length > 0))).toBe(true)
+    expect(MATRIX_BODY).toContain(
+      "cut — 无真实用户,不做向后兼容(owner 直令 2026-07-31)",
+    )
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        phase1_item: "current-host-sibling-key-tolerance",
+        reason_code: "cut-owner-directed-current-host-only",
+      }),
+    )
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        phase1_item: "producer-to-signed-catalog",
+        expected_verdict: "deferred",
+        reason_code: "deferred-alpha-web-108",
+      }),
+    )
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        phase1_item: "foundation-host-gate-order",
+        expected_verdict: "known-defect",
+        reason_code: "known-defect-alpha-code-737",
+      }),
+    )
+    expect(MATRIX_BODY).not.toContain("alpha-code#738")
+  })
+
+  test("every evidence gate file is registered", () => {
+    const unregistered = rows
+      .map((row) => row.evidence_gate_file)
+      .filter((path, index, paths) => !registeredGates.has(path) && paths.indexOf(path) === index)
+    expect(unregistered, "matrix points at evidence outside scripts/gate-files.tsv").toEqual([])
+  })
+
+  test("every evidence test name is a declared test or test.each title", () => {
+    const missing = rows.flatMap((row) => {
+      if (!registeredGates.has(row.evidence_gate_file)) return []
+      return declaredTestNames(
+        readFileSync(join(REPO_ROOT, row.evidence_gate_file), "utf8"),
+      ).has(row.evidence_test_name)
+        ? []
+        : [`${row.evidence_gate_file} :: ${row.evidence_test_name}`]
+    })
+    expect(
+      missing,
+      "an evidence name must be the first string argument of test(...) or the title call after test.each(...); ordinary source strings do not count",
+    ).toEqual([])
+  })
+})
+
+function parseMatrix(): MatrixRow[] {
+  const lines = MATRIX_BODY.split("\n").filter(
+    (line) => line.trim() && !line.trimStart().startsWith("#"),
+  )
+  const [header, ...body] = lines
+  if (header !== COLUMNS.join("\t")) throw new Error("matrix.tsv column header drifted")
+  return body.map((line, index) => {
+    const fields = line.split("\t")
+    if (fields.length !== COLUMNS.length)
+      throw new Error(
+        `matrix.tsv row ${index + 2} has ${fields.length} fields; expected ${COLUMNS.length}`,
+      )
+    return Object.fromEntries(
+      COLUMNS.map((column, field) => [column, fields[field]!]),
+    ) as MatrixRow
+  })
+}
+
+function declaredTestNames(source: string) {
+  const names = new Set<string>()
+  for (const match of source.matchAll(/\btest\s*\(/g)) {
+    const name = stringArgumentAt(source, match.index + match[0].lastIndexOf("(") + 1)
+    if (name !== undefined) names.add(name)
+  }
+  for (const match of source.matchAll(/\btest\.each\s*\(/g)) {
+    const opening = match.index + match[0].lastIndexOf("(")
+    const closing = closingParenthesis(source, opening)
+    if (closing === undefined) continue
+    const titleCall = source.indexOf("(", closing + 1)
+    if (titleCall === -1 || source.slice(closing + 1, titleCall).trim()) continue
+    const name = stringArgumentAt(source, titleCall + 1)
+    if (name !== undefined) names.add(name)
+  }
+  return names
+}
+
+function stringArgumentAt(source: string, start: number) {
+  const opening = source.slice(start).search(/\S/)
+  if (opening === -1) return
+  const index = start + opening
+  const quote = source[index]
+  if (quote !== '"' && quote !== "'" && quote !== "`") return
+  for (let cursor = index + 1; cursor < source.length; cursor++) {
+    if (source[cursor] === "\\") {
+      cursor++
+      continue
+    }
+    if (source[cursor] === quote) return source.slice(index + 1, cursor)
+  }
+}
+
+function closingParenthesis(source: string, opening: number) {
+  let depth = 0
+  let quote = ""
+  let lineComment = false
+  let blockComment = false
+  for (let index = opening; index < source.length; index++) {
+    const char = source[index]!
+    const next = source[index + 1]
+    if (lineComment) {
+      if (char === "\n") lineComment = false
+      continue
+    }
+    if (blockComment) {
+      if (char === "*" && next === "/") {
+        blockComment = false
+        index++
+      }
+      continue
+    }
+    if (quote) {
+      if (char === "\\") {
+        index++
+        continue
+      }
+      if (char === quote) quote = ""
+      continue
+    }
+    if (char === "/" && next === "/") {
+      lineComment = true
+      index++
+      continue
+    }
+    if (char === "/" && next === "*") {
+      blockComment = true
+      index++
+      continue
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char
+      continue
+    }
+    if (char === "(") depth++
+    if (char !== ")") continue
+    depth--
+    if (depth === 0) return index
+  }
+}
