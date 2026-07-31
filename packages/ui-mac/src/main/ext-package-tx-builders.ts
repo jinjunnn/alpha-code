@@ -1,0 +1,288 @@
+// ext-package-tx-builders — REQ-128 #705:把「一个已接受的 package 组件 → 一次事务里的那几条 item」
+// 从 package-admission 的执行体里抽成**纯计划构造**。
+//
+// 为什么:Bundle(#697)要把 skill + agent + mcp 的 item 拼进**同一次** runExtensionTransaction。
+// 单装时代这三段构造内联在 executePreparedPackage 里,与「执行」纠缠在同一个函数(构造 → 立即跑事务
+// → 立即判结果)。若 Bundle 另写一套构造,就会出现两套 plan 真源:同一个组件单装与在 Bundle 里装
+// 出来的 item / receipt / probe 不同,而这种偏差只在真机重启后以「装得上但恢复期判不健康」现身。
+//
+// 本模块只回答「计划长什么样」:items、receipt(引擎透传的账本模板)、populate(把内容写进 staging)、
+// precondition(锁内业务前置)、probe(唯一 typed probe router)、以及受限 prepared resource 的
+// 类型化描述符(MCP 版本化密钥)。**不执行**:锁、授权闸、staging、switch、账本提交仍只归
+// runExtensionTransaction 与调用方。#712 会把 prepared descriptor 落进 journal,形状在此先定。
+//
+// 纪律:构造期的读盘(账本在册判定、live MCP 叶 strict 读、server 形状校验)保持与单装同序同点位 ——
+// 它们决定 requireAbsent / 拒绝理由,挪位就是行为变化。
+
+import { createHash } from "node:crypto"
+import { lstatSync, writeFileSync } from "node:fs"
+import { join, posix } from "node:path"
+import {
+  claimMcpSecretVersionDir,
+  mcpSecretVersionedRef,
+  writeMcpSecretVersioned,
+} from "./alpha-mcp-secrets"
+import { readMcpLeafStrict, validateServer } from "./ext-config"
+import { agentConfigItemKey } from "./ext-agent-install"
+import { extensionHealthProbeRouter } from "./ext-health-probe-router"
+import { findRecordV2, probeLedgerForWrite, type UpsertInput } from "./ext-receipt-v2"
+import type { HealthProbe, HealthVerdict, TxPlanItem } from "./ext-transaction"
+import type { PackageProfilePayloadV1 } from "../shared/host-extension-package-contract/decoder"
+import {
+  packageSecretReferenceV1,
+  type PackageSecretPrerequisiteProfileV1,
+} from "../shared/package-secret-prerequisite"
+
+/** 受限 prepared resource 的类型化描述符(#705 定形状;#712 落 journal)。
+ *  identity 三元组(store/server/version)+ 落点文件;value 永不进描述符。 */
+export type PreparedMcpSecretVersionV1 = {
+  kind: "mcp-secret-version"
+  store: "alpha-mcp-secrets"
+  server: string
+  version: string
+  /** 版本目录内的密钥文件绝对路径(引用回填与失败清理共用)。 */
+  files: string[]
+  /** 授权终闸之后、任何 live switch 之前填充(引擎 populatePrepared)。失败抛错 = 零 live 变更。 */
+  populate: () => void
+  /** 候选探测(引擎 probePrepared);失败同样发生在 switch 之前。 */
+  probe: () => HealthVerdict
+}
+
+/** 一个组件在事务里的完整计划面。调用方只负责拼进 TxPlan 并执行。 */
+export type PackageTxBuildV1 = {
+  items: TxPlanItem[]
+  /** 与 items 中主 item 共享同一对象(引擎透传进 journal;builder 会补 files/configKey)。 */
+  receipt: UpsertInput
+  populate: (item: TxPlanItem, stagingDir: string) => void
+  precondition: () => { ok: true } | { ok: false; reason: string }
+  probe: HealthProbe
+  prepared?: PreparedMcpSecretVersionV1
+}
+
+export type PackageTxBuildResultV1 = { ok: true; build: PackageTxBuildV1 } | { ok: false; reason: string }
+
+type CommonInput = {
+  root: string
+  /** fs-safe 事务 key(授权账/journal/store 同键)。 */
+  key: string
+  name: string
+  capabilities: string[]
+  /** `sha256:<hex>`,本层不解释、只透传。 */
+  manifestDigest: string
+  /** 账本模板(调用方按已验事实构造;builder 只补 files / configKey)。 */
+  receipt: UpsertInput
+}
+
+export type SkillTxBuildInputV1 = CommonInput & { asset?: Buffer }
+export type AgentTxBuildInputV1 = CommonInput & { asset?: Buffer; agentEntry?: Record<string, unknown> }
+export type McpTxBuildInputV1 = CommonInput & {
+  userDataPath: string
+  payload: PackageProfilePayloadV1
+  prerequisite: PackageSecretPrerequisiteProfileV1
+  /** 用户本次提交的密钥明文(只在 populate 闭包内用,不进描述符、不进 receipt)。 */
+  secretValues: Record<string, string>
+  /** 版本号发生器(注入以便测试固定;生产 = newMcpSecretVersionId)。 */
+  newSecretVersionId: () => string
+}
+
+/** 计划无法构造(缺资产/缺解析结果)时的统一理由 —— 与 #705 之前 planItems 为空的落点逐字相同。 */
+const NO_PLAN = "package profile could not produce a transaction plan"
+
+/** skill:单 generation item(SKILL.md 写进 staging;probe 验 frontmatter 与 key 一致)。 */
+export function buildSkillTxItems(input: SkillTxBuildInputV1): PackageTxBuildResultV1 {
+  const asset = input.asset
+  if (!asset) return { ok: false, reason: NO_PLAN }
+  const items: TxPlanItem[] = [
+    {
+      key: input.key,
+      files: [
+        {
+          path: "SKILL.md",
+          sha256: createHash("sha256").update(asset).digest("hex"),
+          size: asset.byteLength,
+        },
+      ],
+      manifestDigest: input.manifestDigest,
+      capabilities: input.capabilities,
+      receipt: input.receipt,
+    },
+  ]
+  return {
+    ok: true,
+    build: {
+      items,
+      receipt: input.receipt,
+      populate: (_item, stagingDir) => writeFileSync(join(stagingDir, "SKILL.md"), asset),
+      precondition: () => probeLedgerForWrite(input.root),
+      probe: extensionHealthProbeRouter(input.root),
+    },
+  }
+}
+
+/** agent:file(md 内容真源)+ config(`agent.<name>` 生效叶)双 item 单事务;授权与账本只挂主 item。 */
+export function buildAgentTxItems(input: AgentTxBuildInputV1): PackageTxBuildResultV1 {
+  const asset = input.asset
+  const agentEntry = input.agentEntry
+  if (!asset || !agentEntry) return { ok: false, reason: NO_PLAN }
+  const receipt = input.receipt
+  const relTarget = posix.join("agents", `${input.name}.md`)
+  receipt.files = [join(input.root, relTarget)]
+  receipt.configKey = `agent.${input.name}`
+  const items: TxPlanItem[] = [
+    {
+      key: input.key,
+      action: "file",
+      file: {
+        relTarget,
+        next: asset,
+        // fresh-only:在册才允许带前像覆盖(锁内 requireAbsent 断言,封锁外 TOCTOU)。
+        requireAbsent: findRecordV2(input.root, "agent", input.name) === null,
+      },
+      manifestDigest: input.manifestDigest,
+      capabilities: input.capabilities,
+      receipt,
+    },
+    {
+      key: agentConfigItemKey(input.name),
+      action: "config",
+      config: {
+        target: join(input.root, "alpha.jsonc"),
+        edits: [
+          {
+            keyPath: ["agent", input.name],
+            value: receipt.desiredState === "disabled" ? { ...agentEntry, disable: true } : agentEntry,
+          },
+        ],
+      },
+    },
+  ]
+  return {
+    ok: true,
+    build: {
+      items,
+      receipt,
+      populate: () => {},
+      precondition: () => probeLedgerForWrite(input.root),
+      probe: extensionHealthProbeRouter(input.root),
+    },
+  }
+}
+
+/** mcp:单 config item + 版本化密钥 prepared resource;live 叶未在册即拒(不认领、不覆盖)。 */
+export function buildMcpTxItems(input: McpTxBuildInputV1): PackageTxBuildResultV1 {
+  const receipt = input.receipt
+  const secretVersion = input.prerequisite.items.length ? input.newSecretVersionId() : undefined
+  const refs = Object.fromEntries(
+    input.prerequisite.items.map((item) => [
+      item.target.variable,
+      mcpSecretVersionedRef(input.userDataPath, input.prerequisite.server, secretVersion!, item.target.variable),
+    ]),
+  )
+  const config =
+    input.payload.schema === "alpha.host-extension-package.payload.mcp-local.v1"
+      ? {
+          type: "local",
+          command: input.payload.behavior.command,
+          environment: { ...input.payload.behavior.environment, ...refs },
+        }
+      : input.payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1"
+        ? {
+            type: "remote",
+            url: input.payload.behavior.url,
+            headers: Object.fromEntries(
+              Object.entries(input.payload.behavior.headersTemplate).map(([header, template]) => [
+                header,
+                input.prerequisite.items.reduce(
+                  (value, item) => value.replaceAll(`{${item.target.variable}}`, refs[item.target.variable]!),
+                  template,
+                ),
+              ]),
+            ),
+          }
+        : undefined
+  if (!config) return { ok: false, reason: "profile cannot build an MCP transaction" }
+  const valid = validateServer(config)
+  if (!valid.ok) return { ok: false, reason: valid.reason }
+  receipt.configKey = `mcp.${input.name}`
+  const items: TxPlanItem[] = [
+    {
+      key: input.key,
+      action: "config",
+      config: {
+        target: join(input.root, "alpha.jsonc"),
+        edits: [
+          {
+            keyPath: ["mcp", input.name],
+            value: receipt.desiredState === "disabled" ? { ...config, enabled: false } : config,
+          },
+        ],
+      },
+      manifestDigest: input.manifestDigest,
+      capabilities: input.capabilities,
+      receipt,
+    },
+  ]
+  const secretFiles = Object.values(refs).map((ref) => ref.slice("{file:".length, -1))
+
+  const existing = readMcpLeafStrict(input.name)
+  if (!existing.ok) return { ok: false, reason: existing.reason }
+  if (existing.value && !findRecordV2(input.root, "mcp", input.name))
+    return { ok: false, reason: "unregistered MCP config is not adopted or overwritten" }
+
+  const prepared: PreparedMcpSecretVersionV1 | undefined = secretVersion
+    ? {
+        kind: "mcp-secret-version",
+        store: "alpha-mcp-secrets",
+        server: input.prerequisite.server,
+        version: secretVersion,
+        files: secretFiles,
+        populate: () => {
+          const claimed = claimMcpSecretVersionDir(input.userDataPath, input.prerequisite.server, secretVersion)
+          if (!claimed.ok) throw new Error(claimed.reason)
+          for (const item of input.prerequisite.items) {
+            const reference = packageSecretReferenceV1(input.prerequisite, item.prerequisiteId, secretVersion)
+            if (!reference) throw new Error(`invalid secret reference for ${item.prerequisiteId}`)
+            const written = writeMcpSecretVersioned(
+              input.userDataPath,
+              reference.server,
+              reference.version,
+              reference.variable,
+              input.secretValues[item.prerequisiteId]!,
+            )
+            if (!written.ok) throw new Error(written.reason)
+          }
+        },
+        probe: () => ({
+          healthy: secretFiles.every((file) => {
+            try {
+              return lstatSync(file).isFile()
+            } catch {
+              return false
+            }
+          }),
+          reason: "prepared secret file is missing",
+        }),
+      }
+    : undefined
+
+  return {
+    ok: true,
+    build: {
+      items,
+      receipt,
+      populate: () => {},
+      // 锁内重读:账本可写 + live 叶仍未被未登记配置占用(封死锁外读的 TOCTOU)。
+      precondition: () => {
+        const ledger = probeLedgerForWrite(input.root)
+        if (!ledger.ok) return ledger
+        const current = readMcpLeafStrict(input.name)
+        if (!current.ok) return current
+        if (current.value && !findRecordV2(input.root, "mcp", input.name))
+          return { ok: false, reason: "unregistered MCP config appeared before commit" }
+        return { ok: true }
+      },
+      probe: extensionHealthProbeRouter(input.root),
+      ...(prepared ? { prepared } : {}),
+    },
+  }
+}
