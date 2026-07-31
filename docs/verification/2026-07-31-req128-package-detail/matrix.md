@@ -43,7 +43,7 @@ file://<repo>/docs/verification/2026-07-31-req128-package-detail/harness/package
 | P3-update-required-focus-light | update-required | light | 键盘焦点、无源 icon | “需要更新 Alpha”与原因一致；焦点环可见；按钮是“检查更新”而非安装 | [P3](shots/P3-update-required-focus-light.png) |
 | P4-blocked-safety-dark | blocked / package-invalid | dark | disabled、无源 icon | 安全拒绝原因可读；“不可用”按钮为真实 disabled | [P4](shots/P4-blocked-safety-dark.png) |
 | P5-blocked-payload-light | blocked / package-payload-integrity | light | disabled、不同 reason、无源 icon | payload 完整性文案与 P4 明确不同；按钮为真实 disabled | [P5](shots/P5-blocked-payload-light.png) |
-| P6-secret-collection-dark | admission preview / secret collection | dark | Dialog、能力差异、长 prerequisite label、password、空值 disabled | 组件事实与能力差异先于密钥；label 完整换行；password 输入焦点可见；未填密钥时确认按钮禁用 | 主 session 待采 |
+| P6-secret-collection-dark | admission preview / secret collection | dark | Dialog、能力差异、长 prerequisite label、password、空值 disabled | 组件事实与能力差异先于密钥；label 完整换行；password 输入焦点可见；未填密钥时确认按钮禁用 | [P6](shots/P6-secret-collection-dark.png) |
 
 “无源 icon”指 safe view 没有 icon 字段，页面使用既有首字母占位，不加载远程图片、
 SVG 或媒体代理。light/dark、长文本、无源 icon、键盘焦点均以 pairwise 方式覆盖，
@@ -52,7 +52,23 @@ SVG 或媒体代理。light/dark、长文本、无源 icon、键盘焦点均以 
 采集环境（2026-07-31）：Playwright + Chromium，视口 1100×900，`fullPage`，CSS 像素。
 harness 经本地静态服务加载（`file://` 被浏览器协议策略拒绝），现役 `tokens.css` / `base.css` /
 `button.css` / `dialog.css` / `extension-hub.css` 均以 200 返回，非内联复制。
-P6 harness 帧已登记，截图由主 session 采集；本 worktree 未启动浏览器或 Playwright。
+P6 已由主 session 采集（实现方按验证约束未在沙箱启动浏览器）。采集脚本在同一次页面加载里
+读回：能力 ID `alpha.secret-prerequisite.v1`、`新增` chip、密钥名
+`ORGANIZATION_RESEARCH_WORKSPACE_ACCESS_TOKEN`、输入框 `type=password`、
+**未填密钥时确认按钮 `disabled === true`** —— 判据可执行，不靠肉眼。
+
+### P6 采集时的两处观察（提交 owner 判断，非本票缺陷）
+
+1. **无词汇表条目的能力，token 会在同一行渲染两次。** `ext-authz.tsx:139/146`：
+   `.alpha-ext-authz-nm > b` 在 `vocab()` 缺失时回退成 `props.cap`，而 `.alpha-ext-authz-id`
+   本来就渲染 `props.cap`。`alpha.secret-prerequisite.v1` 今天没有词汇表条目，于是同一串
+   出现两次且左侧 `<b>` 被压窄换行。harness 是忠实复刻（同结构同回退），**这是生产真实形状**。
+   要消除它得给该 capability 增加词汇表条目（label / desc / icon / tier）——那是产品文案决定，
+   不由实现方预判。
+2. **禁用态只靠 `button.css:32` 的 `opacity: 0.5` 表达**，深色背景下 primary 按钮的
+   禁用观感与可用态差别不大。DOM 判据（`disabled === true`）已验证成立；
+   「这个观感够不够清楚」是设计判断。与 R1 审计记录的「文案说可留空、按钮却是灰的且无解释」
+   属同一处用户困惑，已另开 P2 文案票。
 
 **P3 已于本票落地后重采**，采集脚本同时读回帧内容以证明拍到的是修复后的形状，而不是
 靠肉眼判断：`h2 = "Generic Remote MCP"`（修复前是裸的 `package:generic-remote-mcp`）、
