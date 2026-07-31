@@ -107,6 +107,27 @@ describe("package installability authority", () => {
     expect(result.prerequisites).toEqual({ status: "ready", items: [] })
   })
 
+  test("update-required safe view preserves the decoded package presentation", async () => {
+    const { envelope } = await corpus()
+    ;(envelope.components[0] as { profileId: string }).profileId = "future-profile"
+
+    expect(await evaluatePackageForHost(envelope)).toEqual({
+      catalogId: "package:generic-remote-mcp",
+      verdict: "update-required",
+      action: {
+        kind: "update-alpha",
+        enabled: true,
+        reasonCode: "package-host-update-required",
+      },
+      prerequisites: { status: "ready", items: [] },
+      presentation: {
+        displayName: "Generic Remote MCP",
+        description: "Generic Phase 1 compiler corpus input.",
+        version: "1.0.0",
+      },
+    })
+  })
+
   test.each([
     [
       "unknown profile",

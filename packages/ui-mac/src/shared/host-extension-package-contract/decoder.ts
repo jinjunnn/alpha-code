@@ -84,6 +84,7 @@ export type PackageEnvelopeHeaderDecodeV1 =
       status: "blocked" | "skipped"
       stage: "header" | "support"
       errors: string[]
+      presentation?: AlphaPackageEnvelopeV1["presentation"]
     }
 
 export type PackageProfilePayloadDecodeV1 =
@@ -255,6 +256,7 @@ function decodeEnvelopeObject(value: unknown): PackageEnvelopeHeaderDecodeV1 {
       status: component.required ? "blocked" : "skipped",
       stage: "support",
       errors: supportErrors,
+      presentation,
     }
 
   return {

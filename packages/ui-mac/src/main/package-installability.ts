@@ -142,7 +142,8 @@ export async function evaluatePackageForHost(
   if (!bytes) return blockedView(prelude.prelude, "package-invalid")
   const header = decodePackageEnvelopeHeaderV1(bytes)
   if (!header.ok) {
-    if (header.stage === "support") return view(prelude.prelude, "update-required", "package-host-update-required")
+    if (header.stage === "support")
+      return view(prelude.prelude, "update-required", "package-host-update-required", header.presentation)
     return blockedView(prelude.prelude, "package-invalid")
   }
 
