@@ -36,7 +36,7 @@ canonical state 的排版与交互状态，不声称当前线上 catalog 已有�
 | --- | --- | --- | --- | --- | --- |
 | P1-compatible-ready-light | compatible + ready | light | 无源 icon | 名称/简介/版本/来源 → 兼容 → 组件/已就绪 → 原因 → 安装；主动作清晰 | [P1](shots/P1-compatible-ready-light.png) |
 | P2-compatible-required-dark | compatible + required-action | dark | 长名称、长说明、长 prerequisite、无源 icon | 长文本不横向溢出；两个必需项完整换行；“处理前置条件”可用 | [P2](shots/P2-compatible-required-dark.png) |
-| P3-update-required-focus-light | update-required | light | 键盘焦点、无源 icon | “需要更新 Alpha”与原因一致；焦点环可见；按钮是“检查更新”而非安装 | 未重采；现存 PNG 是修复前历史帧 |
+| P3-update-required-focus-light | update-required | light | 键盘焦点、无源 icon | “需要更新 Alpha”与原因一致；焦点环可见；按钮是“检查更新”而非安装 | [P3](shots/P3-update-required-focus-light.png) |
 | P4-blocked-safety-dark | blocked / package-invalid | dark | disabled、无源 icon | 安全拒绝原因可读；“不可用”按钮为真实 disabled | [P4](shots/P4-blocked-safety-dark.png) |
 | P5-blocked-payload-light | blocked / package-payload-integrity | light | disabled、不同 reason、无源 icon | payload 完整性文案与 P4 明确不同；按钮为真实 disabled | [P5](shots/P5-blocked-payload-light.png) |
 
@@ -44,16 +44,19 @@ canonical state 的排版与交互状态，不声称当前线上 catalog 已有�
 SVG 或媒体代理。light/dark、长文本、无源 icon、键盘焦点均以 pairwise 方式覆盖，
 没有跑完整乘积。
 
-既有帧采集环境（2026-07-31）：Playwright + Chromium，视口 1100×900，`fullPage`，CSS 像素。
+采集环境（2026-07-31）：Playwright + Chromium，视口 1100×900，`fullPage`，CSS 像素。
 harness 经本地静态服务加载（`file://` 被浏览器协议策略拒绝），现役 `tokens.css` / `base.css` /
-`extension-hub.css` 均以 200 返回，非内联复制。P3 的现存 PNG 记录修复前行为，不作为
-本票修复后的视觉证据；当前 harness 与生产测试是修复后真值。
+`extension-hub.css` 均以 200 返回，非内联复制。
+
+**P3 已于本票落地后重采**，采集脚本同时读回帧内容以证明拍到的是修复后的形状，而不是
+靠肉眼判断：`h2 = "Generic Remote MCP"`（修复前是裸的 `package:generic-remote-mcp`）、
+`.alpha-ext-dabout = "Generic Phase 1 compiler corpus input."`（修复前是空串）、
+动作按钮 `检查更新`、焦点落在面包屑 `推荐`（首个 tab stop）。裸标识符现在只出现在代码 chip 一处。
 
 ## 采集时实测记录
 
-> ⚠️ 这一节是在**采集当时**的五帧上量的,其中 **P3 是修复前的帧**(本票让 update-required
-> 带上真实名称与简介之前)。下列结论在修复后仍然成立 —— 结构没变,只有首字母占位图的字母
-> 从 `p` 变成 `G` —— 但 P3 那两条的**测量对象**是修复前帧,重采后需复核。
+> P1/P2/P4/P5 的记录量自首次采集;**P3 已在本票落地后重采并复核**,下列关于 P3 的两条
+> 在新帧上仍然成立(结构未变,首字母占位图的字母从 `p` 变为 `G`)。
 
 - 五帧的章节标题顺序：`简介 → 可安装性 → 组件与前置条件 → 原因 → 动作`（五帧目视一致）。
 - 五帧均使用首字母占位图，未加载任何远程图片 / SVG / 媒体代理。
@@ -78,5 +81,8 @@ harness 经本地静态服务加载（`file://` 被浏览器协议策略拒绝�
 `package-installability.ts` 将它投影到 `update-required` safe view。P3 因而显示
 `Generic Remote MCP` 与非空简介；package ID 只保留在代码 chip。浏览卡片同样渲染
 这份 presentation，所以名称与简介也一起受益。header-stage 失败仍保留原回落行为，
-空简介章节是否隐藏仍是独立设计决定，不在本票范围内。主会话本次没有可用浏览器，
-且按验证约束未在沙箱启动 Playwright 或浏览器进程，因此没有把旧 PNG 冒充为修复后截图。
+空简介章节是否隐藏仍是独立设计决定，不在本票范围内。
+
+P3 已由主会话在本票落地后重采（实现方按验证约束未在沙箱启动浏览器，交接给主会话执行）。
+采集脚本在截图的同一次页面加载里读回 `h2`、`.alpha-ext-dabout` 与动作按钮文案，
+所以「拍到的是修复后的帧」有可执行证据，不靠肉眼比对。
