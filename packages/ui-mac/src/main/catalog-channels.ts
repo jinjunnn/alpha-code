@@ -122,6 +122,8 @@ export type ChannelCatalogResult =
       catalog: unknown
       version: string
       sha256: string
+      /** 已验 coherent-set snapshot 文档的精确字节 SHA-256；pre-R13 grandfather LKG 可缺。 */
+      snapshotDigest?: string
       fetchedAt: string
       error?: string
       /** source="cache" 时:本轮落到 LKG 的失败类(#314;remote 成功分支无此字段)。 */
@@ -660,6 +662,7 @@ export function channelStateVersion(userDataPath: string): number {
 export type ChannelLastKnownGood = {
   doc: ChannelDoc
   catalog: { version: string; entries: unknown[] }
+  snapshotDigest?: string
   docBody: string
   docSig: string
   payloadBody: string
@@ -715,6 +718,7 @@ export function readChannelLastKnownGood(
   return {
     doc: docV.doc,
     catalog: payloadV.catalog,
+    ...(cachedSnap.status === "valid" ? { snapshotDigest: sha256Hex(cachedSnap.body) } : {}),
     docBody: entry.doc.body,
     docSig: entry.doc.sig,
     payloadBody: entry.payload.body,
@@ -861,6 +865,7 @@ export async function refreshChannelCatalog(
       catalog: lkg.catalog,
       version: lkg.doc.target.catalogVersion,
       sha256: lkg.doc.target.sha256,
+      ...(lkg.snapshotDigest ? { snapshotDigest: lkg.snapshotDigest } : {}),
       fetchedAt: lkg.fetchedAt,
       error: `${error}${lkg.stale ? " (WARNING: last-known-good is past its expires — stale)" : ""}`,
       reasonClass,
@@ -1017,6 +1022,7 @@ export async function refreshChannelCatalog(
     catalog: payloadV.catalog,
     version: doc.target.catalogVersion,
     sha256: doc.target.sha256,
+    snapshotDigest: sha256Hex(snapBody),
     fetchedAt,
     ...(notices.length ? { error: notices.join("; ") } : {}),
   }

@@ -223,6 +223,10 @@ export class ExtTxCrashError extends Error {
 export type TxHooks = {
   /** 把 item 载荷写进 stagingDir(下载/解包/复制由调用方实现;本层只管事务语义)。 */
   populate: (item: TxPlanItem, stagingDir: string) => void | Promise<void>
+  /** 事务授权终闸之后、switch 之前填充受限 prepared resource(例如版本化 MCP 密钥)。 */
+  populatePrepared?: () => void | Promise<void>
+  /** prepared resource 的候选探测；失败发生在任何 live switch 之前。 */
+  probePrepared?: () => HealthVerdict | Promise<HealthVerdict>
   /** 类型化健康探测(可注入):pre-switch 失败 → abort+隔离(current 不动);post-switch 失败 → 回滚+隔离。 */
   probe?: HealthProbe
   /** 锁内业务前置(REQ-102 #317:如 downgrade 门):持 Bundle 锁后、任何写盘(journal/staging)前
@@ -1270,6 +1274,17 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   writeJournalSync(root, journal)
   crash("after-journal")
 
+  // package admission 的受限 prepared resource 必须晚于锁内授权终闸、早于任何 live switch。
+  // 失败沿现有 pre-switch abort 收敛；调用方负责清理事务根之外的未引用资源。
+  if (hooks.populatePrepared) {
+    try {
+      await hooks.populatePrepared()
+    } catch (error) {
+      if (error instanceof ExtTxCrashError) throw error
+      return abortPreSwitch("staging", `prepared resource populate failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   // ① staging:一切写入先落 staging(live 零接触)。generation → populate 文件树;config → 落
   //    preimage/nextimage(内容进受保护 staging);receipt → 无 staging 副作用。
   try {
@@ -1312,6 +1327,18 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   }
   advance("staged")
   crash("after-staged")
+
+  if (hooks.probePrepared) {
+    let verdict: HealthVerdict
+    try {
+      verdict = await hooks.probePrepared()
+    } catch (error) {
+      if (error instanceof ExtTxCrashError) throw error
+      verdict = { healthy: false, reason: error instanceof Error ? error.message : "prepared resource probe threw" }
+    }
+    if (!verdict.healthy)
+      return abortPreSwitch("pre-switch-probe", `prepared resource health probe failed: ${verdict.reason}`)
+  }
 
   // ③ materialize:generation → staging 目录单次 rename 进 generations/<genId>;config/receipt 不
   //    materialize(config 的 next-image 已在 staging 待命,live alpha.jsonc 未动)。

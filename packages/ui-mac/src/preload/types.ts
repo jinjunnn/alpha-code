@@ -19,6 +19,10 @@ import type {
 export type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
+import type {
+  PackageAdmissionAuthorizationV1,
+  PackageAdmissionPreviewV1,
+} from "../shared/package-admission"
 // Deep links reach the renderer already decoded by the route manifest — the wire carries the
 // delivery, never a URL, so no second codec can exist on the renderer side.
 import type { DeepLinkBatch } from "../shared/route-manifest"
@@ -714,10 +718,10 @@ export type ElectronAPI = {
               workspace?: string
               cnMirror?: boolean
             }
-            /** REQ-128 package preflight attempt identity; ignored/rejected by legacy planner. */
+            /** REQ-128 package admission attempt identity; package intents require it. */
             attemptId?: string
-            /** #348:stage="authorize" 确认后的重驱决定(只交 confirmed;decidedAt 由 main 打戳)。 */
-            authorization?: AuthorizationConfirmationWire
+            /** package 重驱还必须原样带回四组 digest binding；legacy 仍只交 confirmed。 */
+            authorization?: AuthorizationConfirmationWire | PackageAdmissionAuthorizationV1
           }
         /** REQ-102 #317:选中随包 seed 资产安装(skill/global-only 首期);字节从共享 CAS 事务物化,
          *  seedDir/清单/版本/receipt 语义全 main-owned。 */
@@ -744,7 +748,13 @@ export type ElectronAPI = {
         }
       /** #348:capability 授权闸 —— 零权威副作用暂停,带逐 item diff;确认后带 authorization 重驱同一通道。
        *  真判别联合(review minor):非 authorize 分支的 stage 类型排除 "authorize",中间层丢 diff 过不了类型检查。 */
-      | { ok: false; stage: "authorize"; reason: string; authorization: CapabilityDiffWire[] }
+      | {
+          ok: false
+          stage: "authorize"
+          reason: string
+          authorization: CapabilityDiffWire[]
+          packageAuthorization?: PackageAdmissionPreviewV1
+        }
       | {
           ok: false
           reason: string
