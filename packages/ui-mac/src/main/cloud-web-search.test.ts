@@ -181,8 +181,33 @@ describe("#650 云 web search 闸按引擎真实 id 命中", () => {
     expect(CLOUD_WEB_SEARCH_TOOL_ID).not.toBe(CLOUD_WEB_SEARCH_REMOTE_TOOL)
   })
 
-  /** 引擎注册的全部云工具 id(远端名逐个过 `McpCatalog.toolName`)+ 两个非云对照。 */
-  const registeredTools = () => [...registeredCloudTools, LOCAL_WEB_SEARCH_TOOL_ID, "bash"]
+  // 远端工具名的**真源**是已部署的 worker,不是这个仓里的任何一处字面量。#643 的真机探针把
+  // 「worker advertise 的名字」与「引擎据此算出的 id」都写进了取证产物 —— 拿它当锚,平台改名
+  // 而这里没跟上时,下一次取证跑完就红。锚缺失也判红:没有真源 = 这两个常量无人担保。
+  test("远端名与引擎 id 与最近一次真机取证一致(#643)", () => {
+    const evidence = JSON.parse(
+      readFileSync(
+        join(import.meta.dir, "../../../../docs/verification/2026-07-27-e7-packaged-live/results/latest-logged-in.json"),
+        "utf8",
+      ),
+    ) as { schema?: string; phase?: string; remoteWebSearchToolName?: string; derivedEngineToolId?: string }
+    expect([evidence.schema, evidence.phase]).toEqual(["alpha-code/e7-packaged-live/v1", "logged-in"])
+    expect(evidence.remoteWebSearchToolName).toBe(CLOUD_WEB_SEARCH_REMOTE_TOOL)
+    expect(evidence.derivedEngineToolId).toBe(CLOUD_WEB_SEARCH_TOOL_ID)
+  })
+
+  /**
+   * 引擎**真正注册**的云工具 id。刻意**不**取 `CLOUD_WEB_SEARCH_TOOL_ID` —— 那是被测方写的值,
+   * 拿它当期望值就等于让判据跟着缺陷一起动(变异实测:那样写时把生产常量改回远端名,下面两条
+   * 行为断言仍然全绿)。这里一律走引擎自己的 `McpCatalog.toolName`,再加两个非云对照。
+   */
+  const registeredTools = () => [
+    ...[CLOUD_WEB_SEARCH_REMOTE_TOOL, ...siblingRemoteTools].map(engineToolId),
+    LOCAL_WEB_SEARCH_TOOL_ID,
+    "bash",
+  ]
+  /** 期望被隐藏的那个 id,同样从远端名推导。 */
+  const cloudWebSearchEngineId = () => engineToolId(CLOUD_WEB_SEARCH_REMOTE_TOOL)
 
   test("kill-switch:引擎真的把云 web search 滤出模型工具表,兄弟云工具一个不少", () => {
     const config: { permission: Record<string, unknown>; agent: ReturnType<typeof alphaAgents> } = {
@@ -193,7 +218,7 @@ describe("#650 云 web search 闸按引擎真实 id 命中", () => {
 
     // 判据 = 引擎自己算出来的隐藏集(`session/tools.ts` 经 `Permission.visibleTools` 消费同一个函数)。
     const hidden = Permission.disabled(registeredTools(), Permission.fromConfig(config.permission as never))
-    expect([...hidden].sort()).toEqual([CLOUD_WEB_SEARCH_TOOL_ID, LOCAL_WEB_SEARCH_TOOL_ID].sort())
+    expect([...hidden].sort()).toEqual([cloudWebSearchEngineId(), LOCAL_WEB_SEARCH_TOOL_ID].sort())
   })
 
   test("kill-switch:alpha 注入的 agent 也压得住(agent 规则排在全局之后,取 findLast)", () => {
@@ -210,7 +235,7 @@ describe("#650 云 web search 闸按引擎真实 id 命中", () => {
         Permission.fromConfig(agent.permission as never),
       )
       const hidden = Permission.disabled(registeredTools(), ruleset)
-      expect([name, hidden.has(CLOUD_WEB_SEARCH_TOOL_ID)]).toEqual([name, true])
+      expect([name, hidden.has(cloudWebSearchEngineId())]).toEqual([name, true])
       expect([name, hidden.has(McpCatalog.toolName(CLOUD_MCP_SERVER_NAME, "cloud_dispatch"))]).toEqual([name, false])
     }
   })
