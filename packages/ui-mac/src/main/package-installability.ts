@@ -397,7 +397,7 @@ function decodePackagePreflightIntent(input: Record<string, unknown>): { ok: tru
       ok: false,
       reason: `package preflight: renderer-supplied key "${unknown}" is refused`,
     }
-  if (typeof input.catalogId !== "string")
+  if (typeof input.catalogId !== "string" || input.catalogId.length > 160)
     return { ok: false, reason: "package preflight: invalid catalogId" }
   if (
     !isObject(input.scope) ||

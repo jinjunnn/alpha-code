@@ -626,7 +626,9 @@ function decodePackageAdmissionIntent(
   if (!isObject(input)) return { ok: false, reason: "package admission: intent must be an object" }
   const unknown = Object.keys(input).find((key) => !INTENT_KEYS.has(key))
   if (unknown) return { ok: false, reason: `package admission: renderer-supplied key "${unknown}" is refused` }
-  if (typeof input.catalogId !== "string")
+  // 长度界消费契约的值(decoder 对 packageId 的 max 是 160),不是重写文法。
+  // 没有它,被攻陷的 renderer 可以把任意长度字符串塞进有界的 attempts Map。
+  if (typeof input.catalogId !== "string" || input.catalogId.length > 160)
     return { ok: false, reason: "package admission: invalid catalogId" }
   const scope = decodeScope(input.scope)
   if (!scope.ok) return scope

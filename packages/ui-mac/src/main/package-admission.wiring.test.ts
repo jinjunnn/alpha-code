@@ -41,6 +41,6 @@ test("admission decoder, secret failure, MCP adoption, tamper, cancel, stale, an
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toMatch(/\b11 pass\b/)
+  expect(output).toMatch(/\b12 pass\b/)
   expect(output).toMatch(/\b0 fail\b/)
 }, 120_000)

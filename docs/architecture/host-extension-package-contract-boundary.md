@@ -38,12 +38,12 @@ The inventory was taken at base `bbff1ea8` with four independent axes:
    `cannot be installed safely`, and
    `cannot be represented by the existing MCP secret store`.
 
-The byte axis matters. A normal text-mode search reports the 15 files described
+The byte axis matters. A normal text-mode search reports the 16 files described
 in the original incident, while `rg -a` reports two more production files:
 `alpha-builtin-policy.ts` and `ext-manifest-v2.ts`. Both files contain NUL bytes
 outside the name rule, so a text-mode tool may classify them as binary and
 silently omit them. The literal axis also finds two unnamed copies:
-`ext-config.ts:1125` and `ext-ipc.ts:667`; a file-level comparison against named
+`ext-config.ts:1125`, `ext-ipc.ts:667`, and `use-extensions.ts:420`; a file-level comparison against named
 constants exposes only the latter because `ext-config.ts` also has a named
 copy.
 
@@ -59,7 +59,7 @@ copy.
 | `src/shared/package-secret-prerequisite.ts:103-107,129-154` | Payload/profile and derived-capability agreement from `decodePackageProfilePayloadV1` | No at this revision | Equal duplicate | Consume the decoded discriminant and derived capability decision; retain only secret-projection semantics absent from the package decoder |
 | `src/main/package-admission.ts:54,293-299` | No package rule: component suffix must fit existing skill/agent/config/transaction names | Yes relative to the package grammar | Host representation is narrower: 64 characters versus the package suffix's 128 | Keep as a host constraint, but decide installability before exposing an enabled action |
 | `src/shared/package-secret-prerequisite.ts:71,95-128` | No package rule: MCP component suffix becomes an existing secret-store server directory | Yes relative to the package grammar | Host representation is narrower: 64 characters versus the package suffix's 128 | Keep as a secret-store constraint; it applies even when `requiredSecrets` is empty |
-| `src/main/package-admission.ts:56,618-624` | Markdown asset decoder's 5 MiB declared limit | No at this revision | Same number, different observation | Retain the actual HTTP response allocation bound as a host I/O constraint; the signed ref was already decoded |
+| `src/main/package-admission.ts:56,618-624` | Markdown asset decoder's 5 MiB declared limit | No at this revision | The contract does not expose this bound: the decoder hard-codes 5 MiB at `decoder.ts:473` and `registry.v1.json` publishes only `maxPayloadBytes`. It therefore remains a hand-copied number — a residual member of this class, not a separate constraint. | Retain for now and log the drift risk. Consuming it needs the bound lifted into the registry, which moves the artifact aggregate SHA and the producer pin — out of scope for this ticket. |
 
 The remaining schema-string branches in admission and prerequisite projection
 consume decoded discriminants; they do not parse an unknown package shape.
@@ -68,8 +68,8 @@ marker, not a package-ID prefix.
 
 ## The 64-character lookalike class
 
-The raw-byte axis finds the same base token language in 17 production files.
-Sixteen instances govern extension names or an extension name embedded in an
+The raw-byte axis finds the same base token language in 18 production files.
+Seventeen instances govern extension names or an extension name embedded in an
 asset key. They are one host-owned representation rule and should consume one
 host predicate. `alpha-automations.ts` governs a persisted automation task ID;
 it is a separate constraint that merely has the same current spelling and must
@@ -88,6 +88,7 @@ not be coupled to extension naming.
 | `src/main/ext-import-validate.ts:5` | imported skill/plugin declared name | No; import/filesystem representation | Consume the host extension-name predicate |
 | `src/main/ext-install-planner.ts:281` | planned extension name | No; planner/transaction representation | Consume the host extension-name predicate |
 | `src/main/ext-ipc.ts:667` | generated skill name | No; IPC to filesystem representation | Consume the host extension-name predicate; this is the unnamed copy missed by the symbol axis |
+| `src/renderer/extensions/use-extensions.ts:420` | manually added MCP server name (`addCustomMcp`) | No; renderer pre-check ahead of the authoritative main-side `persistMcp` | Consume the host extension-name predicate. **This was the eighteenth member, missed by the first enumeration and found by the R1 audit's byte-aware axis.** A renderer copy that drifts from the chokepoint either rejects names main accepts (silent feature loss) or accepts names main rejects (failure only after the click). |
 | `src/main/ext-manifest-v2.ts:76` | legacy extension manifest name | No; legacy manifest contract | Consume the host extension-name predicate |
 | `src/main/ext-receipt-v2.ts:82` | extension receipt name | No; receipt contract | Consume the host extension-name predicate |
 | `src/main/ext-skill-generations.ts:36` | skill generation name | No; generation-store representation | Consume the host extension-name predicate |

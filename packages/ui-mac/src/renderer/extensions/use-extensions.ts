@@ -17,6 +17,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerInfo } from "../sidebar/use-projects"
 import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCheck } from "./catalog-types"
 import type { InstallReceipt, SetStateRefusalCodeWire, UninstallKeyIntent } from "../../preload/types"
+import { isExtensionName } from "../../shared/extension-name"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
 import type { SessionGrantRefusalCode, SessionGrantWire } from "../../shared/ext-session-grant-wire"
 import { connectOutcome, grantsToReassert, sessionGrantKeyOf } from "./ext-session-toggle"
@@ -417,7 +418,10 @@ export function useExtensions(
     env: Record<string, string>,
     secrets: Record<string, string>,
   ): Promise<ActionResult> {
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name)) return { ok: false, reason: "名称只能含字母数字 . _ -(1-64 位)" }
+    // 消费共享谓词,不再手抄一份 —— 这一处是 R1 审计用 byte-aware 检索抓出的第 18 个成员,
+    // 它与 main 侧 persistMcp 的判定必须同源:分叉后收紧则 renderer 放行 main 拒绝的名字
+    // (用户点了才失败),放宽则 renderer 拒掉 main 接受的名字(功能静默丢失)。
+    if (!isExtensionName(name)) return { ok: false, reason: "名称只能含字母数字 . _ -(1-64 位)" }
     const spec: McpInstallSpec =
       input.mcpType === "remote"
         ? { kind: "mcp", mcpType: "remote", url: input.url ?? "", requiredEnvVars: [] }
