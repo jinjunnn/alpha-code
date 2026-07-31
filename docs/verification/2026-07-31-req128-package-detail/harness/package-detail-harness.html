@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Package detail visual harness</title>
+
+<!--
+  静态 L2 harness：逐字加载现役 tokens/base/extension-hub CSS。
+  DOM 复刻 extension-detail.tsx 的 package 分支；hz-* 只负责给截图提供画布，
+  不覆盖任何生产选择器。
+
+  file://…/package-detail-harness.html?theme=<light|dark>&state=<state>
+  state = compatible-ready | compatible-required | update-required |
+          blocked-safety | blocked-payload
+-->
+<link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/alpha-ui/tokens.css">
+<link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/alpha-ui/base.css">
+<link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/extensions/extension-hub.css">
+<style>
+  body {
+    margin: 0;
+    min-width: 720px;
+    background: var(--a-bg-canvas);
+  }
+  .hz-stage {
+    min-height: 100vh;
+    padding: 30px 24px 56px;
+    background: var(--a-bg-canvas);
+  }
+  .hz-frame {
+    max-width: 880px;
+    margin-inline: auto;
+  }
+</style>
+</head>
+<body class="a-ui">
+<main class="hz-stage">
+  <div class="hz-frame" id="frame"></div>
+</main>
+
+<script>
+const params = new URLSearchParams(location.search)
+const theme = params.get("theme") === "dark" ? "dark" : "light"
+const state = params.get("state") || "compatible-ready"
+document.documentElement.dataset.colorScheme = theme
+
+const STATES = {
+  "compatible-ready": {
+    catalogId: "package:remote-mcp-starter",
+    name: "Remote MCP Starter",
+    description: "Connect a verified remote MCP service to Alpha.",
+    version: "1.0.0",
+    verdict: "compatible",
+    verdictText: "兼容",
+    prerequisite: "ready",
+    prerequisiteText: "已就绪",
+    prerequisites: [],
+    reason: "此扩展包与当前 Alpha 版本兼容。",
+    action: "安装",
+    actionKind: "install",
+    enabled: true,
+  },
+  "compatible-required": {
+    catalogId: "package:research-workspace-connector-with-a-long-identifier",
+    name: "Research Workspace Connector with Verified Enterprise Access",
+    description:
+      "连接研究工作区、索引服务与团队知识库；安装前需要提供由组织管理员签发的访问密钥。此长文案用于验证窄屏下说明、组件状态与动作区仍保持既定顺序。",
+    version: "2026.7.31-enterprise",
+    verdict: "compatible",
+    verdictText: "兼容",
+    prerequisite: "required-action",
+    prerequisiteText: "需要先处理",
+    prerequisites: [
+      "ORGANIZATION_RESEARCH_WORKSPACE_ACCESS_TOKEN",
+      "TEAM_KNOWLEDGE_INDEX_SIGNING_KEY",
+    ],
+    reason: "安装此扩展包前,请先完成必需的前置条件。",
+    action: "处理前置条件",
+    actionKind: "resolve-prerequisite",
+    enabled: true,
+  },
+  "update-required": {
+    catalogId: "package:next-profile-agent",
+    name: "package:next-profile-agent",
+    description: "",
+    version: "2.4.0",
+    verdict: "update-required",
+    verdictText: "需要更新 Alpha",
+    prerequisite: "ready",
+    prerequisiteText: "已就绪",
+    prerequisites: [],
+    reason: "此扩展包需要较新 Alpha 版本提供的能力。",
+    action: "检查更新",
+    actionKind: "update-alpha",
+    enabled: true,
+    focus: true,
+  },
+  "blocked-safety": {
+    catalogId: "package:unverified-local-agent",
+    name: "Unverified Local Agent",
+    description: "The host rejected this package before installation.",
+    version: "0.8.0",
+    verdict: "blocked",
+    verdictText: "已阻止",
+    prerequisite: "ready",
+    prerequisiteText: "已就绪",
+    prerequisites: [],
+    reason: "扩展包元数据未通过验证。",
+    action: "不可用",
+    actionKind: "none",
+    enabled: false,
+  },
+  "blocked-payload": {
+    catalogId: "package:remote-tools-integrity-mismatch",
+    name: "Remote Tools",
+    description: "The verified package record is available, but its downloaded content cannot be trusted.",
+    version: "3.1.4",
+    verdict: "blocked",
+    verdictText: "已阻止",
+    prerequisite: "ready",
+    prerequisiteText: "已就绪",
+    prerequisites: [],
+    reason: "扩展包内容与已验证的完整性记录不一致。",
+    action: "不可用",
+    actionKind: "none",
+    enabled: false,
+  },
+}
+
+const view = STATES[state] || STATES["compatible-ready"]
+const esc = (value) =>
+  String(value).replace(/[&<>"]/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+  })[char])
+const fact = (label, value) => `
+  <div class="alpha-ext-dfact">
+    <span class="alpha-ext-dfact-l">${esc(label)}</span>
+    <span class="alpha-ext-dfact-v">${value}</span>
+  </div>`
+const section = (title, content) => `
+  <section class="alpha-ext-dsec">
+    <h3 class="alpha-ext-dsec-t">${esc(title)}</h3>
+    ${content}
+  </section>`
+const prerequisiteItems = view.prerequisites.length === 0
+  ? ""
+  : `<div class="alpha-ext-dtools">${view.prerequisites.map((label) => `
+      <div class="alpha-ext-dtool">
+        <code>${esc(label)}</code>
+        <span>必需</span>
+      </div>`).join("")}
+    </div>`
+
+document.getElementById("frame").innerHTML = `
+  <div class="alpha-ext-detail" data-package-detail="${esc(view.catalogId)}">
+    <nav class="alpha-ext-crumbs" aria-label="返回">
+      <button class="alpha-ext-crumb-link">
+        <svg class="alpha-ic alpha-ic-sm" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 6l-6 6 6 6"></path>
+        </svg>
+        推荐
+      </button>
+      <span class="alpha-ext-crumb-sep">/</span>
+      <span class="alpha-ext-crumb-cur">${esc(view.name)}</span>
+    </nav>
+
+    <header class="alpha-ext-dhead">
+      <span class="alpha-ext-dhead-ic" style="background:var(--a-accent-solid)">
+        ${esc(view.name[0] || "?")}
+      </span>
+      <div class="alpha-ext-dhead-body">
+        <div class="alpha-ext-dhead-t">
+          <h2>${esc(view.name)}</h2>
+          <span class="alpha-ext-chip" data-source="alpha">已验证的远程目录</span>
+          <span class="alpha-ext-type-pill">扩展包</span>
+        </div>
+        <div class="alpha-ext-dhead-meta">
+          <code class="alpha-ext-dhead-id">${esc(view.catalogId)}</code>
+          <span>版本 ${esc(view.version)}</span>
+        </div>
+      </div>
+    </header>
+
+    ${section("简介", `<p class="alpha-ext-dabout">${esc(view.description)}</p>`)}
+    ${section("可安装性", fact(
+      "可安装性",
+      `<span class="alpha-ext-package-state" data-verdict="${esc(view.verdict)}">${esc(view.verdictText)}</span>`,
+    ))}
+    ${section("组件与前置条件", [
+      fact("组件", `${esc(view.name)} · ${esc(view.version)}`),
+      fact(
+        "前置条件",
+        `<span class="alpha-ext-package-state" data-prerequisite="${esc(view.prerequisite)}">${esc(view.prerequisiteText)}</span>`,
+      ),
+      prerequisiteItems,
+    ].join(""))}
+    ${section("原因", `<p class="alpha-ext-dboundary">${esc(view.reason)}</p>`)}
+    ${section("动作", `
+      <div class="alpha-ext-dsub">
+        <button class="alpha-ext-add"
+          ${view.actionKind === "install" ? 'data-variant="primary"' : ""}
+          data-size="lg"
+          ${view.enabled ? "" : "disabled"}>
+          ${esc(view.action)}
+        </button>
+      </div>`)}
+  </div>`
+
+if (view.focus) {
+  const button = document.querySelector(".alpha-ext-dsub .alpha-ext-add")
+  button.focus()
+  button.dataset.visualFocus = "true"
+}
+</script>
+</body>
+</html>

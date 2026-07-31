@@ -20,11 +20,18 @@ import { EXCEL_MCP_PIN, officeAdvisoryFor, type OfficeAdvisory } from "../../sha
 import { CAPABILITY_LABEL_KEYS, SHELF_CHIP_KEYS, curatedOf, foldDomains, isArchived, isExpired, isSessionGrant } from "./ext-curation-view"
 import type { SessionToggleView } from "./ext-session-toggle"
 import type { CurationStatus } from "../../shared/catalog-curation"
+import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
+import { packagePresentation } from "./ext-package-presentation"
 
-/** What the detail page shows: a catalog entry, an engine agent (no catalog identity), or the
- *  injected platform cloud connector (REQ-020 T3 — not a catalog entry, not installable). */
+/** What the detail page shows: a legacy catalog entry, a host-projected package, an engine agent
+ *  (no catalog identity), or the injected platform cloud connector. */
 export type DetailTarget =
   | { kind: "entry"; entry: CatalogEntry }
+  | {
+      kind: "package"
+      view: CatalogPackageViewV1
+      source: "builtin" | "cache" | "remote"
+    }
   | { kind: "agent"; agent: HubAgent }
   | { kind: "cloud-connector" }
 
@@ -96,6 +103,8 @@ export function ExtensionDetail(props: {
   onBack: () => void
   /** Stage the entry in the hub's install-confirm dialog (same flow as the card 添加). */
   onInstall: (e: CatalogEntry) => void
+  /** Execute only the host-supplied package action; install/resolve intents contain catalogId+scope. */
+  onPackageAction: (view: CatalogPackageViewV1) => Promise<CatalogPackageViewV1 | undefined>
   onUninstall: (receipt: InstallReceipt) => void
   /** Navigate the detail page to another entry (bundle item click). */
   onOpenEntry: (e: CatalogEntry) => void
@@ -127,6 +136,114 @@ export function ExtensionDetail(props: {
   sessionBusyFor: (catalogId: string) => boolean
   onSessionToggle: (args: { catalogId: string; name: string; on: boolean }) => Promise<void>
 }) {
+  if (props.target.kind === "package") {
+    const initial = props.target.view
+    const source = props.target.source
+    const [packageDetail, { mutate: setPackageDetail }] = createResource(
+      () => initial.catalogId,
+      (catalogId) => window.api.ext.packageDetail(catalogId),
+    )
+    const view = () => packageDetail() ?? initial
+    const presentation = () => packagePresentation(view())
+    const sourceKey =
+      source === "remote"
+        ? "alpha.ext.packageSourceRemote"
+        : source === "cache"
+          ? "alpha.ext.packageSourceCache"
+          : "alpha.ext.packageSourceBuiltin"
+    const runAction = async () => {
+      const latest = await props.onPackageAction(view())
+      if (latest) setPackageDetail(latest)
+    }
+
+    return (
+      <div class="alpha-ext-detail" data-package-detail={view().catalogId}>
+        <nav class="alpha-ext-crumbs" aria-label={t("alpha.ext.back")}>
+          <button class="alpha-ext-crumb-link" onClick={() => props.onBack()}>
+            <Svg class="alpha-ic alpha-ic-sm" d="M14 6l-6 6 6 6" />
+            {props.crumb}
+          </button>
+          <span class="alpha-ext-crumb-sep">/</span>
+          <span class="alpha-ext-crumb-cur">{view().presentation.displayName}</span>
+        </nav>
+
+        <header class="alpha-ext-dhead">
+          <span class="alpha-ext-dhead-ic" style={{ background: "var(--a-accent-solid)" }}>
+            {(view().presentation.displayName[0] ?? "?").toUpperCase()}
+          </span>
+          <div class="alpha-ext-dhead-body">
+            <div class="alpha-ext-dhead-t">
+              <h2>{view().presentation.displayName}</h2>
+              <span class="alpha-ext-chip" data-source="alpha">{t(sourceKey)}</span>
+              <span class="alpha-ext-type-pill">{t("alpha.ext.packageType")}</span>
+            </div>
+            <div class="alpha-ext-dhead-meta">
+              <code class="alpha-ext-dhead-id">{view().catalogId}</code>
+              <span>
+                {t("alpha.ext.detailVersion")} {view().presentation.version}
+              </span>
+            </div>
+          </div>
+        </header>
+
+        <Section title={t("alpha.ext.detailAbout")}>
+          <p class="alpha-ext-dabout">{view().presentation.description}</p>
+        </Section>
+
+        <Section title={t("alpha.ext.packageInstallability")}>
+          <FactRow label={t("alpha.ext.packageInstallability")}>
+            <span class="alpha-ext-package-state" data-verdict={view().verdict}>
+              {t(presentation().verdictKey)}
+            </span>
+          </FactRow>
+        </Section>
+
+        <Section title={t("alpha.ext.packageComponentsTitle")}>
+          <FactRow label={t("alpha.ext.packageComponent")}>
+            {view().presentation.displayName} · {view().presentation.version}
+          </FactRow>
+          <FactRow label={t("alpha.ext.packagePrerequisiteStatus")}>
+            <span class="alpha-ext-package-state" data-prerequisite={view().prerequisites.status}>
+              {t(presentation().prerequisiteKey)}
+            </span>
+          </FactRow>
+          <Show when={view().prerequisites.items.length > 0}>
+            <div class="alpha-ext-dtools">
+              <For each={view().prerequisites.items}>
+                {(item) => (
+                  <div class="alpha-ext-dtool">
+                    <code>{item.label}</code>
+                    <Show when={item.required}>
+                      <span>{t("alpha.ext.packageRequired")}</span>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </Section>
+
+        <Section title={t("alpha.ext.packageReasonTitle")}>
+          <p class="alpha-ext-dboundary">{t(presentation().reasonKey)}</p>
+        </Section>
+
+        <Section title={t("alpha.ext.packageActions")}>
+          <div class="alpha-ext-dsub">
+            <button
+              class="alpha-ext-add"
+              data-variant={view().action.kind === "install" ? "primary" : undefined}
+              data-size="lg"
+              disabled={!view().action.enabled || props.busy() === view().catalogId}
+              onClick={() => void runAction()}
+            >
+              {t(presentation().actionKey)}
+            </button>
+          </div>
+        </Section>
+      </div>
+    )
+  }
+
   const entry = () => (props.target.kind === "entry" ? props.target.entry : undefined)
   const agent = () => (props.target.kind === "agent" ? props.target.agent : undefined)
   const isCloudConnector = () => props.target.kind === "cloud-connector"

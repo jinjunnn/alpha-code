@@ -59,6 +59,8 @@ import {
 // #408 PR-C:会话开关纯派生层(状态机 / 拒绝码路由;真源 = main grant 登记 + 本地连接结果)。
 import { findSessionGrant, sessionGrantKeyOf, sessionRefusalRoute, sessionToggleView } from "./ext-session-toggle"
 import { curationActivationFacts, type Curation, type CurationStatus } from "../../shared/catalog-curation"
+import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
+import { packagePresentation } from "./ext-package-presentation"
 import "./extension-hub.css"
 
 
@@ -333,6 +335,10 @@ export function ExtensionHub(props: {
   // T7/T9:安装阶段(粗粒度状态机:checking→installing)与逐条行内错误(B11:失败不裸 toast)。
   const [stage, setStage] = createSignal<Record<string, "checking" | "installing">>({})
   const [cardErr, setCardErr] = createSignal<Record<string, string>>({})
+  const [packageResults, setPackageResults] = createSignal<Record<string, CatalogPackageViewV1>>({})
+  const currentPackageView = (view: CatalogPackageViewV1) => packageResults()[view.catalogId] ?? view
+  const rememberPackageView = (view: CatalogPackageViewV1) =>
+    setPackageResults((current) => ({ ...current, [view.catalogId]: view }))
   const setStageFor = (id: string, s: "checking" | "installing" | null) =>
     setStage((prev) => {
       const next = { ...prev }
@@ -450,7 +456,34 @@ export function ExtensionHub(props: {
     setHubSection(key)
   }
   const openEntryDetail = (e: CatalogEntry) => setDetail({ kind: "entry", entry: e })
+  const openPackageDetail = (view: CatalogPackageViewV1) =>
+    setDetail({ kind: "package", view: currentPackageView(view), source: catalogSource() })
   const openAgentDetail = (a: HubAgent) => setDetail({ kind: "agent", agent: a })
+  const runPackageAction = async (input: CatalogPackageViewV1) => {
+    const view = currentPackageView(input)
+    if (!view.action.enabled || busy() === view.catalogId) return view
+    setBusy(view.catalogId)
+    try {
+      if (view.verdict !== "compatible") {
+        if (view.action.kind === "update-alpha") await window.api.updater.check()
+        const latest = await window.api.ext.packageDetail(view.catalogId)
+        if (latest) rememberPackageView(latest)
+        return latest ?? view
+      }
+      if (view.action.kind !== "install" && view.action.kind !== "resolve-prerequisite") return view
+      const result = await window.api.ext.installCatalog({
+        catalogId: view.catalogId,
+        scope: { scope: "global" },
+      })
+      const latest = !result.ok && "package" in result
+        ? result.package
+        : await window.api.ext.packageDetail(view.catalogId)
+      if (latest) rememberPackageView(latest)
+      return latest ?? view
+    } finally {
+      setBusy(null)
+    }
+  }
   const sectionLabel = () => {
     const tab = TABS.find((x) => x.key === section())
     return tab ? t(tab.labelKey as never) : t("alpha.ext.hub")
@@ -573,6 +606,13 @@ export function ExtensionHub(props: {
     if (!q) return true
     return `${e.displayName} ${e.name} ${e.description}`.toLowerCase().includes(q)
   }
+  const matchesPackage = (view: CatalogPackageViewV1) => {
+    const q = query().trim().toLowerCase()
+    if (!q) return true
+    return `${view.presentation.displayName} ${view.catalogId} ${view.presentation.description}`
+      .toLowerCase()
+      .includes(q)
+  }
   const byType = (type: CatalogEntry["type"]) => catalog().entries.filter((e) => e.type === type)
   // 浏览区/搜索共用的筛选视图(T7/E11:来源+许可证)。
   const byTypeF = (type: CatalogEntry["type"]) => byType(type).filter(filterMatch)
@@ -590,6 +630,9 @@ export function ExtensionHub(props: {
     }
     return groups
   })
+  const searchPackages = createMemo(() =>
+    searching() ? (catalog().packages ?? []).filter(matchesPackage) : [],
+  )
   // REQ-079 curation:浏览/搜索面只出现「自建」agent;引擎原生内置(build/plan/general/…)
   // 不再平铺 —— 其查看与管理唯一入口 = 已安装 → 内置 治理面板(governance-panel)。
   const ownAgents = createMemo(() => ext.store.agents.filter((a) => !a.native))
@@ -1303,6 +1346,64 @@ export function ExtensionHub(props: {
     </div>
   )
 
+  const PackageCard = (cp: { view: CatalogPackageViewV1 }) => {
+    const view = () => currentPackageView(cp.view)
+    const presentation = () => packagePresentation(view())
+    const sourceKey = () =>
+      catalogSource() === "remote"
+        ? "alpha.ext.packageSourceRemote"
+        : catalogSource() === "cache"
+          ? "alpha.ext.packageSourceCache"
+          : "alpha.ext.packageSourceBuiltin"
+    return (
+      <div
+        class="alpha-ext-card"
+        data-clickable=""
+        data-package-card={view().catalogId}
+        onClick={() => openPackageDetail(view())}
+      >
+        <div class="alpha-ext-card-top">
+          <span class="alpha-ext-card-ic" style={{ background: "var(--a-accent-solid)" }}>
+            {(view().presentation.displayName[0] ?? "?").toUpperCase()}
+          </span>
+          <div class="alpha-ext-card-hd">
+            <div class="alpha-ext-card-name">
+              <b title={view().catalogId}>{view().presentation.displayName}</b>
+              <span class="alpha-ext-chip" data-source="alpha">{t(sourceKey())}</span>
+            </div>
+          </div>
+        </div>
+        <p class="alpha-ext-card-desc">{view().presentation.description}</p>
+        <div class="alpha-ext-card-foot">
+          <span class="alpha-ext-meta">{view().presentation.version}</span>
+          <span class="alpha-ext-package-state" data-verdict={view().verdict}>
+            {t(presentation().verdictKey)}
+          </span>
+          <span class="alpha-ext-package-state" data-prerequisite={view().prerequisites.status}>
+            {t(presentation().prerequisiteKey)}
+          </span>
+          <button
+            class="alpha-ext-add"
+            data-variant={view().action.kind === "install" ? "primary" : "ghost"}
+            disabled={!view().action.enabled || busy() === view().catalogId}
+            onClick={(event) => {
+              event.stopPropagation()
+              void runPackageAction(view())
+            }}
+          >
+            {t(presentation().actionKey)}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const PackageGrid = (cp: { items: CatalogPackageViewV1[] }) => (
+    <div class="alpha-ext-grid">
+      <For each={cp.items}>{(view) => <PackageCard view={view} />}</For>
+    </div>
+  )
+
   // #397 改动二:「未分级」尾组(未策展 + fail-closed 同呈现;组头一行诚实说明 ——
   // 可安装,走默认关闭的保守规则;无分级 chip = 缺席即身份,不发明「未知级」徽章)。
   const UngradedGroup = (cp: { items: CatalogEntry[] }) => (
@@ -1674,6 +1775,7 @@ export function ExtensionHub(props: {
                     errorFor={(id) => cardErr()[id]}
                     onBack={() => setDetail(null)}
                     onInstall={(e) => stageInstallFromDetail(e)}
+                    onPackageAction={runPackageAction}
                     onUninstall={(r) => void onUninstall(r)}
                     onOpenEntry={(e) => openEntryDetail(e)}
                     cloudReady={cloudReady}
@@ -1708,9 +1810,13 @@ export function ExtensionHub(props: {
                 {/* ░░ GLOBAL SEARCH RESULTS ░░ */}
                 <Show when={searching() && BROWSE_SECTIONS.includes(section())}>
                   <Show
-                    when={searchGroups().length > 0 || searchAgents().length > 0}
+                    when={searchGroups().length > 0 || searchPackages().length > 0 || searchAgents().length > 0}
                     fallback={<EmptyState title={t("alpha.ext.noResults")} />}
                   >
+                    <Show when={searchPackages().length > 0}>
+                      <SecRow label={t("alpha.ext.packageType")} count={searchPackages().length} />
+                      <PackageGrid items={searchPackages()} />
+                    </Show>
                     <For each={searchGroups()}>
                       {(g) => (
                         <>
@@ -1769,6 +1875,11 @@ export function ExtensionHub(props: {
                           }}
                         </For>
                       </div>
+                    </Show>
+
+                    <Show when={(catalog().packages ?? []).length > 0}>
+                      <SecRow label={t("alpha.ext.packageType")} count={catalog().packages!.length} />
+                      <PackageGrid items={catalog().packages!} />
                     </Show>
 
                     {/* #397 改动一:推荐 = 甄选驱动四货架(固定序 核心→精选→接入→实验室;空货架
