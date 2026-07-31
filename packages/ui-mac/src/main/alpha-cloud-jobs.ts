@@ -131,10 +131,15 @@ export const cancelCloudJob = (jobId: string): Promise<CloudResult<{ job_id: str
     (text) => JSON.parse(text) as { job_id: string; status: string },
   )
 
+// #727:artifact 列表端点要求的 action 是 artifact.read,不是 cloud.read
+// (alpha-platform packages/gateway/src/routes/cloud-jobs.ts 的 `/artifacts` 路由)。
+// 判权是 `claims.purpose !== request.action → 403`,而 token 按 purpose 分张签发 ⇒
+// 拿 cloud.read 那张来列产物,是每个有效登录用户都吃的结构性 403,不是权益不足。
+// 内容字节仍走 downloadCloudArtifactTo 的独立传输契约(同样 artifact.read)。
 export const listCloudArtifacts = (jobId: string): Promise<CloudResult<CloudArtifactList>> =>
   authed(
     `${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}/artifacts`,
-    "cloud.read",
+    "artifact.read",
     undefined,
     (text) => decodeJsonContract("ArtifactListV1", text, "artifact"),
   )
