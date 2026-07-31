@@ -44,7 +44,7 @@ export function localWebSearchDenied(env: Record<string, string | undefined> = p
 
 /** 模型可见的拒绝理由。明说「别重试」,否则模型会把它当成瞬时故障反复调用。 */
 export const LOCAL_WEBSEARCH_DENIED_MESSAGE =
-  "Web search is unavailable: the local keyless websearch tool is denied by alpha sovereignty (ADR-009 B1/B2 — the platform pays for search, or the web search kill switch is set). This is not a transient failure; do not retry. Use cloud_web_search if it is present, otherwise answer without web search and say so."
+  "Web search is unavailable: the local keyless websearch tool is denied by alpha sovereignty (ADR-009 B1/B2 — the platform pays for search, or the web search kill switch is set). This is not a transient failure; do not retry. Use cloud_cloud_web_search if it is present, otherwise answer without web search and say so."
 
 /**
  * 传输层闸的失败值。刻意用 canonical 的 `ToolFailure` 而不是自定义 Error:

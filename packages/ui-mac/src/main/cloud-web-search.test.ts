@@ -1,14 +1,21 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
+// #650:工具 id 一律从**引擎自己的**拼名规则推导。手喂字面量正是让这道闸空了整整一个需求的原因,
+// 所以这里装的是真的 `McpCatalog` 与真的 `Permission`,不是替身。
+import { McpCatalog } from "../../../opencode/src/mcp/catalog"
+import { Permission } from "../../../opencode/src/permission/index"
 import {
   applyWebSearchDenies,
+  CLOUD_MCP_SERVER_NAME,
+  CLOUD_WEB_SEARCH_REMOTE_TOOL,
   CLOUD_WEB_SEARCH_TOOL_ID,
   LOCAL_WEB_SEARCH_TOOL_ID,
   LOCAL_WEBSEARCH_DENY_ENV,
 } from "./cloud-web-search"
 
-const siblingCloudTools = [
+/** 云 worker **自己** advertise 的远端工具名(#643 P1.3 实测 `remoteToolNames`)。 */
+const siblingRemoteTools = [
   "cloud_dispatch",
   "cloud_status",
   "cloud_await",
@@ -17,6 +24,9 @@ const siblingCloudTools = [
   "cloud_schedule_list",
   "cloud_schedule_delete",
 ] as const
+/** 远端名 → 引擎 id,走引擎自己的 `McpCatalog.toolName`(#650:不得手写第二份)。 */
+const engineToolId = (remoteName: string) => McpCatalog.toolName(CLOUD_MCP_SERVER_NAME, remoteName)
+const siblingCloudTools = siblingRemoteTools.map(engineToolId)
 const registeredCloudTools = [CLOUD_WEB_SEARCH_TOOL_ID, ...siblingCloudTools]
 
 /** alpha 注入的三个 agent 都显式 `websearch: "allow"`(alpha-config-injection.ts)。 */
@@ -146,5 +156,84 @@ describe("web search sovereignty denies", () => {
       agent: alphaAgents(),
     })
     expect(diagnostics).toEqual([])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #650 —— 这道 permission deny 曾是**空闸门**,而上面每一条用例都全绿。
+//
+// 原因不是逻辑写错,是**数据模型错**:注入面把「远端 server 自己 advertise 的工具名」当成了
+// 「引擎里的工具 id」。引擎按 `McpCatalog.toolName(server, remote)` 拼名,而云 worker 的远端名
+// 本身就叫 `cloud_web_search`,拼上 server 名 `cloud` 之后真实 id 是 `cloud_cloud_web_search`
+// (#643 P2.1 实测 `calledTool`)。写进 config 的 `cloud_web_search` 经 `Wildcard.match` 编成
+// `^cloud_web_search$`,对真实 id 恒不匹配 —— kill-switch 下云工具从来没有从模型工具表里消失过。
+//
+// 上面那些用例抓不到它,是因为它们**手喂** id:两边喂同一个错值,断言自然成立。所以本组的
+// 纪律是两条:
+//   ① id 只从**引擎自己的** `McpCatalog.toolName` 推导(改 server 名或远端名 ⇒ 期望值跟着变);
+//   ② 判据是**引擎自己的** `Permission.fromConfig` + `Permission.disabled` 的返回值,
+//      不是「config 里那个键等于某字符串」—— 后者正是当初全绿的那种断言。
+// ─────────────────────────────────────────────────────────────────────────────
+describe("#650 云 web search 闸按引擎真实 id 命中", () => {
+  test("生产常量 = 引擎的拼名规则算出来的 id,而不是远端工具名", () => {
+    expect(CLOUD_WEB_SEARCH_TOOL_ID).toBe(McpCatalog.toolName(CLOUD_MCP_SERVER_NAME, CLOUD_WEB_SEARCH_REMOTE_TOOL))
+    // 远端名自带 `cloud_` 前缀,两者长得几乎一样 —— 正是这一点让缺陷活了一个需求。
+    expect(CLOUD_WEB_SEARCH_TOOL_ID).not.toBe(CLOUD_WEB_SEARCH_REMOTE_TOOL)
+  })
+
+  /** 引擎注册的全部云工具 id(远端名逐个过 `McpCatalog.toolName`)+ 两个非云对照。 */
+  const registeredTools = () => [...registeredCloudTools, LOCAL_WEB_SEARCH_TOOL_ID, "bash"]
+
+  test("kill-switch:引擎真的把云 web search 滤出模型工具表,兄弟云工具一个不少", () => {
+    const config: { permission: Record<string, unknown>; agent: ReturnType<typeof alphaAgents> } = {
+      permission: { bash: "allow" },
+      agent: alphaAgents(),
+    }
+    applyWebSearchDenies(config, { killSwitch: true, platformPays: false }, () => {})
+
+    // 判据 = 引擎自己算出来的隐藏集(`session/tools.ts` 经 `Permission.visibleTools` 消费同一个函数)。
+    const hidden = Permission.disabled(registeredTools(), Permission.fromConfig(config.permission as never))
+    expect([...hidden].sort()).toEqual([CLOUD_WEB_SEARCH_TOOL_ID, LOCAL_WEB_SEARCH_TOOL_ID].sort())
+  })
+
+  test("kill-switch:alpha 注入的 agent 也压得住(agent 规则排在全局之后,取 findLast)", () => {
+    const config: { permission: Record<string, unknown>; agent: ReturnType<typeof alphaAgents> } = {
+      permission: {},
+      agent: alphaAgents(),
+    }
+    applyWebSearchDenies(config, { killSwitch: true, platformPays: false }, () => {})
+
+    for (const [name, agent] of Object.entries(config.agent)) {
+      // `agent/agent.ts`:自定义 agent 的规则接在全局之后,`evaluate`/`disabled` 都取 findLast。
+      const ruleset = Permission.merge(
+        Permission.fromConfig(config.permission as never),
+        Permission.fromConfig(agent.permission as never),
+      )
+      const hidden = Permission.disabled(registeredTools(), ruleset)
+      expect([name, hidden.has(CLOUD_WEB_SEARCH_TOOL_ID)]).toEqual([name, true])
+      expect([name, hidden.has(McpCatalog.toolName(CLOUD_MCP_SERVER_NAME, "cloud_dispatch"))]).toEqual([name, false])
+    }
+  })
+
+  test("代付但无 kill-switch:云工具是权威通道,引擎不许把它藏起来", () => {
+    const config: { permission: Record<string, unknown>; agent: ReturnType<typeof alphaAgents> } = {
+      permission: {},
+      agent: alphaAgents(),
+    }
+    applyWebSearchDenies(config, { killSwitch: false, platformPays: true }, () => {})
+
+    const hidden = Permission.disabled(registeredTools(), Permission.fromConfig(config.permission as never))
+    expect([...hidden]).toEqual([LOCAL_WEB_SEARCH_TOOL_ID])
+  })
+
+  // 模型看得见的那句话里点名的工具必须真的存在,否则拒绝文案本身就是错误指路。
+  // 两个包都不依赖 ui-mac,只能靠这条锁 —— 但锁的**期望值是推导出来的**,不是第二份字面量。
+  test("两份拒绝文案指向的是引擎真实 id", () => {
+    for (const path of ["../../../opencode/src/tool/mcp-websearch.ts", "../../../core/src/tool/websearch.ts"]) {
+      const body = readFileSync(join(import.meta.dir, path), "utf8")
+      expect([path, body.includes(`Use ${CLOUD_WEB_SEARCH_TOOL_ID} if it is present`)]).toEqual([path, true])
+      // 远端名单独出现 = 有人把 id 写回了远端名。
+      expect([path, body.includes(`Use ${CLOUD_WEB_SEARCH_REMOTE_TOOL} if it is present`)]).toEqual([path, false])
+    }
   })
 })

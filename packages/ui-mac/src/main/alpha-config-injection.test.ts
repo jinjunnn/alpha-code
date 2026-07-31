@@ -28,7 +28,17 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { injectAlphaConfig } from "./alpha-config-injection"
 import { secretFilePath } from "./alpha-secret-files"
-import { CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV, WITHHELD_CLOUD_MCP } from "./cloud-web-search"
+import {
+  CLOUD_MCP_ARM_ENV,
+  CLOUD_MCP_DEF_ENV,
+  CLOUD_MCP_SERVER_ENV,
+  CLOUD_WEB_SEARCH_TOOL_ID,
+  cloudMcpToolId,
+  WITHHELD_CLOUD_MCP,
+} from "./cloud-web-search"
+// #650:云工具 id 从远端工具名**推导**(引擎按 `McpCatalog.toolName(server, remote)` 拼)。
+// 这里以前手写 `cloud_web_search` / `cloud_dispatch` 字面量,与生产代码同错,于是恒绿。
+const CLOUD_DISPATCH_TOOL_ID = cloudMcpToolId("cloud_dispatch")
 
 // 注入读到的每一个 env 输入 + 它自己写出的三个 env 输出:逐个快照/清空/还原,
 // 既隔离宿主机真实配置,也不把注入结果泄漏给同进程的其它测试文件。
@@ -317,7 +327,7 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
     const config = injectedPermissions()
     expect(config.permission?.websearch).toBe("deny")
     // 云工具是代付态的权威 web search —— 不许被顺手关掉。
-    expect(config.permission?.cloud_web_search).toBeUndefined()
+    expect(config.permission?.[CLOUD_WEB_SEARCH_TOOL_ID]).toBeUndefined()
     expect(config.mcp?.cloud).toBeDefined()
     // agent 级规则排在全局之后:三个 alpha agent 若还写着 allow,全局 deny 对它们无效。
     for (const [name, agent] of Object.entries(config.agent ?? {}))
@@ -346,8 +356,8 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
 
       const config = injectedPermissions()
       expect(config.permission?.websearch).toBe("deny")
-      expect(config.permission?.cloud_web_search).toBe("deny")
-      expect(config.permission?.cloud_dispatch).toBeUndefined()
+      expect(config.permission?.[CLOUD_WEB_SEARCH_TOOL_ID]).toBe("deny")
+      expect(config.permission?.[CLOUD_DISPATCH_TOOL_ID]).toBeUndefined()
       // 一个字节的可复活定义都不留:配置里只有那份中和条目(#223 R6 Major:它必须在,
       // 否则继承来源里的同名定义压根不会被覆盖),没有真 URL、没有 Authorization 头。
       expect(config.mcp?.cloud).toEqual({ ...WITHHELD_CLOUD_MCP })

@@ -195,9 +195,22 @@ export function isWebSearchToolId(tool: string): boolean {
 /** alpha 自己注册的云 MCP server 名(注入面经 `ALPHA_CLOUD_MCP_SERVER` 告知,见 ui-mac 同名常量)。 */
 export const CLOUD_MCP_SERVER_ENV = "ALPHA_CLOUD_MCP_SERVER"
 
-/** `McpCatalog.sanitize`(`opencode/src/mcp/catalog.ts`)逐字同义 —— 工具 id 的前缀就是它的产物。 */
+/** `McpCatalog.sanitize`(`opencode/src/mcp/catalog.ts:117`)逐字同义 —— 工具 id 的前缀就是它的产物。 */
 function sanitizeMcpName(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_")
+}
+
+/**
+ * 引擎给远端 MCP 工具起的 id,`McpCatalog.toolName`(`opencode/src/mcp/catalog.ts:119`)逐字同义:
+ * `sanitize(server) + "_" + sanitize(remote)`。
+ *
+ * **#650**:`remoteName` 是远端 server **自己** advertise 的名字,不是引擎里的 id。云 worker 的
+ * 远端名自带 `cloud_` 前缀(`cloud_web_search` / `cloud_dispatch` …),拼上 server 名 `cloud` 之后
+ * 真实 id 是 `cloud_cloud_*` —— 把远端名当 id 用过的地方,闸一次都没生效过。ext 不依赖 opencode,
+ * 拼法只能在这里再写一份;漂移由 `cloud-contract-hook.test.ts` 用**真的** `McpCatalog.toolName` 钉住。
+ */
+export function mcpEngineToolId(server: string, remoteName: string): string {
+  return `${sanitizeMcpName(server)}_${sanitizeMcpName(remoteName)}`
 }
 
 /**
