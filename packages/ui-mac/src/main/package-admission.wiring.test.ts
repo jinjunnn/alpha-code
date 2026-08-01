@@ -33,7 +33,7 @@ test("signed Catalog snapshot carries the Envelope prerequisite into the real se
   expect(output).toMatch(/\b0 fail\b/)
 }, 120_000)
 
-test("admission decoder, secret failure, MCP adoption, tamper, cancel, stale, replay, graph-digest, and signed-Bundle gates remain active", () => {
+test("admission decoder, secret failure, MCP adoption, tamper, cancel, stale, replay, graph-digest, and mixed-Bundle gates remain active", () => {
   const result = Bun.spawnSync({
     cmd: [process.execPath, "test", resolve(import.meta.dir, "package-admission.test.ts")],
     cwd: resolve(import.meta.dir, "../.."),
