@@ -34,11 +34,18 @@
 // 「图还在(用户看得见这个包)+ 若干实物已经不在」,用户再点一次「移除」就收敛 —— 这与今天
 // skill/agent 直接卸载的失败语义**逐字相同**(那条路径同样没有 journal)。
 //
-// **已知残余窗口**(如实登记,不假装不存在):① 与 ③ 之间账本若被**另一个进程**改动,③ 仍可能拒,
-// 而此时实物已删。进程内这条路走 gated write 的 per-root 互斥,不会自我交错;跨进程与今天
-// `uninstallByKey` 的暴露面相同,属既有类而非本票新增。反过来(先 ③ 后 ②)不能选:图一旦消失,
-// 就再也算不出该删哪些 child —— update 能那样做是因为 journal 还留着 `childRemovals`,
-// 而卸载没有 journal,残留会从「可重试」变成「卡死」。
+// **已知残余窗口**(review R2 更正了我上一版的说法,那版是错的):
+// ② 与 ③ 之间**不需要任何其它进程参与**就可能失败 —— ③ 里 `writeLedgerFile` 会先收窄 skill 允许集
+// (pre-shrink),再做 tmp→rename 的原子写,这两步都可能因 I/O 或权限失败。届时盘面是
+// **实物已缺失、旧账本尚存**。我上一版把触发条件写成「另一个进程改了账本」,不属实。
+//
+// 为什么仍然选这个顺序:反过来(先 ③ 后 ②)的失败态更差。图一旦消失就再也算不出该删哪些 child,
+// 而残留的 `mcp.<name>` 配置会让一个没人认领的 server 继续跑 —— 从「可重试」变成「卡死且在跑」。
+// 现在这个方向的残留是「实物没了、账本还在」:用户再点一次「移除」就收敛(① 与 ② 都幂等)。
+// 今天的 `uninstallByKey` 对 skill/agent 走的是同一顺序、同一暴露面。
+//
+// update 之所以能做得更好,是因为它有事务:那里的 config 清除是普通事务项,由 before-image 回滚
+// 兜底(见 `buildDepartingChildConfigItemsV1`)。卸载没有事务,所以这条不是纪律问题,是结构差异。
 
 import * as fs from "node:fs"
 import { agentConfigItemKey, agentInstallKey } from "./ext-agent-install"

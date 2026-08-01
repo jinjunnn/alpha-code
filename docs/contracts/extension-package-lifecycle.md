@@ -71,13 +71,60 @@ Otherwise the child is **retained** with a named reason
 (`shared-with-package` / `user-installed` / `legacy-protected` / `unmanaged`),
 and not one artifact is touched.
 
-## Order: destroy is always the last thing, never the first
+## Removing a departing component: split by "can it still run?"
 
-The rule both paths obey is **destruction happens after the last check that could
-still change the decision** — not "both use the same sequence". They do not, and
-they must not, because only one of them has a transaction.
+When an update drops a component, its removal is **not** one action. It is split by
+whether the thing being removed can still *execute*, and the two halves land in
+different places for reasons that are structural, not stylistic.
 
-**Uninstall** (no transaction):
+**The half that can still run — the config key — is an ordinary transaction plan
+item.** `agent.<name>` and `mcp.<name>` are deleted by a normal `config` action
+(`buildDepartingChildConfigItemsV1`), in the *same* transaction that installs the
+new components. `ConfigEdit` already carries `value: undefined` as "delete this
+key" (`ext-config.ts` names the idiom `ConfigLeafEdit`), and `prepareConfigTx`
+collapses edits into whole-file pre/next images **in-process at planning time** —
+the journal stores only digests, so `undefined` never has to survive JSON. Apply
+happens at switch; rollback restores the before-image.
+
+A skill contributes no config item: its activation surface is the derived
+allow-list, which `writeLedgerFile` recomputes from records inside the same
+`applyPackageMutation`. Emitting a config item for it would create a second source
+of truth for one fact.
+
+**The half that cannot run — content files, generation stores, capability grants —
+is cleaned up after the transaction returns.** By then the engine has released the
+bundle lock, and this path touches no configuration at all
+(`removeFsInstallFilesOnly`, `skipConfig`), so it *cannot* re-enter
+`withConfigWriteLock`. That matters: `withConfigWriteLock` takes the **same,
+non-reentrant** bundle lock the transaction holds. An earlier version of this
+contract put the whole cleanup inside `commitReceipt`, i.e. inside that lock —
+which made agent/MCP cleanup fail every time, while the ledger was already durable
+and the failure was swallowed into a warning that still reported success.
+
+### Consequences, in full
+
+| When it fails | Result |
+| --- | --- |
+| lock / precondition / staging / probe / switch / receipt commit / any crash point | config key restored from the before-image, file cleanup never ran — **all old** |
+| the ledger mutation itself | throws → engine rolls back — **all old** |
+| file cleanup, after the transaction committed | update **succeeds** with a named warning; the component is already unloadable (no config key, no record, not in the allow-list) and what remains is inert disk residue |
+
+"All old or all new" is a statement about the board **after recovery**, not about
+the instant of a crash: a crash between switch and receipt commit legitimately
+leaves a non-terminal journal, and recovery resolves it in both directions. The
+crash matrix therefore runs the real recovery before asserting.
+
+A cleanup failure must never be reported as a failed update — the ledger already
+says the new version is installed, and saying otherwise would tell the user the old
+version is still there when it is not.
+
+**This residue is not automatically retried.** The journal is terminal by then, so
+nothing sweeps it. It is inert, and it is recorded here rather than described as
+"recoverable", which an earlier version of this document incorrectly claimed.
+
+## Uninstall keeps a different order, and cannot borrow this one
+
+Uninstall has no transaction, so its sequence stays:
 
 1. **decide** — read the ledger **once** and run the *same* checks the write path
    runs: `validateV3State` (inside `readPackageLedgerStateV1`) and
@@ -86,44 +133,20 @@ they must not, because only one of them has a transaction.
 3. **commit** — exactly one root `PackageLedgerMutationV1`.
 
 Every ledger state `applyPackageMutation` would reject is therefore already
-rejected in step 1, with zero artifact calls. A failure in 1 or 2 leaves the
-ledger byte-for-byte unchanged and the user's retry converges.
+rejected in step 1, with zero artifact calls.
 
-**Update** (has a transaction): the departing children's artifacts are removed
-inside `commitTransactionLedger`, **after** the ledger mutation succeeds.
+**Known residual window**, stated correctly: step 3 can still fail **without any
+other process being involved** — `writeLedgerFile` shrinks the skill allow-list
+before its atomic rename, and either write can fail on I/O or permissions. The
+board is then *artifacts gone, old ledger intact*. An earlier version of this
+document blamed a concurrent process; that was wrong.
 
-The engine can still `rollbackAll` at the pre-switch probe and at receipt commit;
-only once receipt commit has succeeded does it cross into forward-only territory
-(`ext-transaction.ts`: "receipt 已 durable = 越过可回滚点"). Removing before the
-transaction — as the first version of this contract did — produces the state this
-whole design exists to prevent: the update reports failure, the old graph, claims
-and records are all intact, **and the departing component's files are gone**.
-
-Consequences, in full:
-
-| When it fails | Result |
-| --- | --- |
-| lock / precondition / staging / probe / switch / any crash point | seam never reached — **zero deletion**, ledger old |
-| the ledger mutation itself | throws → engine rolls back — **zero deletion**, ledger old |
-| cleanup, after the ledger is durable | update **succeeds** with a named warning; a residual file remains |
-| crash between the mutation and the cleanup | journal is non-terminal → recovery re-runs `commitTransactionLedger` → mutation replays exactly, cleanup repeats idempotently |
-
-A cleanup failure must never be reported as a failed update: the ledger already
-says the new version is installed, and claiming otherwise would tell the user the
-old version is still there when it is not. That is also why the cleanup seam is
-never allowed to throw — throwing would roll the live tree back to a state the
-durable ledger no longer describes.
-
-Uninstall cannot use the update ordering. Once the graph is gone there is nothing
-left to compute the departing set from; update gets away with it only because the
-journal still carries `childRemovals`. Uninstall has no journal, so a residual
-would go from "retry converges" to "stuck".
-
-**Known residual window**, recorded rather than hidden: if another *process*
-changes the ledger between uninstall's steps 1 and 3, step 3 can still refuse
-after step 2 has deleted. In-process this path is serialised by the gated-write
-per-root mutex; cross-process the exposure is identical to today's
-`uninstallByKey`, i.e. a pre-existing class rather than something introduced here.
+The reverse order is still not the answer. Once the graph is gone there is nothing
+left to compute the departing set from, and a surviving `mcp.<name>` key would keep
+an unowned server running — turning "retry converges" into "stuck and running".
+Update escapes this only because it has a transaction whose before-image covers the
+config half. This is a structural difference between the two paths, not a rule one
+of them forgot to follow.
 
 ## Conflicts refused at planning time
 
@@ -168,5 +191,5 @@ per-child mechanism and are not a package rollback channel.
 | --- | --- |
 | Diff, claim transfer, removal verdicts, conflicts; fixed-seed bounded model test | `packages/ui-mac/src/main/ext-package-lifecycle.test.ts` |
 | Canonical permutations, ordering, tampered/dangling/overreaching mutations | `packages/ui-mac/src/main/ext-package-lifecycle-permutations.test.ts` |
-| Update through real admission, transaction and ledger; planning-time conflict | `packages/ui-mac/src/main/package-update.test.ts` |
+| Update through real admission, transaction and ledger; planning-time conflict; the crash matrix under real recovery; and the **real production cleanup seam run while the bundle lock is held** (with the full seam's `config busy` failure as its discrimination proof) | `packages/ui-mac/src/main/package-update.test.ts` |
 | User-reachable removal (hub card → detail → production main) | `packages/ui-mac/src/renderer/extensions/ext-package-detail-wiring.test.ts` |
