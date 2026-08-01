@@ -1,24 +1,14 @@
 import { createHash } from "node:crypto"
-import { isAbsolute, resolve } from "node:path"
+import { isAbsolute } from "node:path"
 import type { AppEnvironment } from "./alpha-environment"
-import {
-  collectMcpFileRefPaths,
-  newMcpSecretVersionId,
-  removeMcpSecretVersionDir,
-  resolveMcpRefPath,
-} from "./alpha-mcp-secrets"
+import { newMcpSecretVersionId } from "./alpha-mcp-secrets"
 import { agentMdToEntry } from "./agent-md-entry"
-import { readMcpLeafStrict } from "./ext-config"
+import { releasePreparedTxResources } from "./ext-config"
 import { evaluateBundleAuthorization, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
 import { agentInstallKey, recoveryReceiptInputs } from "./ext-agent-install"
 import { nextDesiredState } from "./ext-install-policy"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
-import {
-  buildAgentTxItems,
-  buildMcpTxItems,
-  buildSkillTxItems,
-  type PreparedMcpSecretVersionV1,
-} from "./ext-package-tx-builders"
+import { buildAgentTxItems, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
 import { computeGrantDigest, upsertRecordsV2, type UpsertInput } from "./ext-receipt-v2"
 import { skillGenerationKey } from "./ext-skill-generations"
 import {
@@ -26,6 +16,7 @@ import {
   type TxCommitRecord,
   type TxPlan,
   type TxPlanItem,
+  type TxPreparedResourceV1,
   type TxResult,
 } from "./ext-transaction"
 import {
@@ -408,26 +399,41 @@ async function executePreparedPackage(
   if (!built.ok) return { ok: false, reason: `package admission: ${built.reason}` }
   const build = built.build
 
-  const result = await (deps.transaction ?? runExtensionTransaction)(root, packagePlan(build.items, intent, now), {
-    populate: build.populate,
-    ...(build.prepared
-      ? { populatePrepared: build.prepared.populate, probePrepared: build.prepared.probe }
-      : {}),
-    probe: build.probe,
-    precondition: build.precondition,
-    commitReceipt: (records) => commitPackageReceipts(root, records),
-  })
-  if (!result.ok && build.prepared) cleanupUnreferencedSecretVersion(prepared, build.prepared, deps)
+  // #712:受限密钥版本以**类型化 descriptor** 进计划(→ journal),不再只是一对匿名闭包。
+  // 释放归引擎调度(abort/rollback 前),恢复期对同一条 journal 做同一件事 —— 单一真源。
+  const result = await (deps.transaction ?? runExtensionTransaction)(
+    root,
+    packagePlan(build.items, intent, now, build.prepared?.descriptor),
+    {
+      populate: build.populate,
+      ...(build.prepared
+        ? {
+            populatePrepared: build.prepared.populate,
+            probePrepared: build.prepared.probe,
+            releasePrepared: (resources) => releasePreparedTxResources(deps.userDataPath, resources),
+          }
+        : {}),
+      probe: build.probe,
+      precondition: build.precondition,
+      commitReceipt: (records) => commitPackageReceipts(root, records),
+    },
+  )
   return transactionOutcome(result, prepared, manifestDigest, receipt.desiredState)
 }
 
-function packagePlan(items: TxPlanItem[], intent: PackageIntent, decidedAt: string): TxPlan {
+function packagePlan(
+  items: TxPlanItem[],
+  intent: PackageIntent,
+  decidedAt: string,
+  prepared?: TxPreparedResourceV1,
+): TxPlan {
   return {
     items,
     authorization: {
       confirmed: intent.authorization!.confirmed,
       decidedAt,
     },
+    ...(prepared ? { prepared: [prepared] } : {}),
   }
 }
 
@@ -455,18 +461,6 @@ function transactionOutcome(
     ...(prepared.kind === "mcp" && desiredState === "disabled" ? { installedDisabled: true as const } : {}),
     ...(result.warnings.length ? { warning: result.warnings.join("; ") } : {}),
   }
-}
-
-function cleanupUnreferencedSecretVersion(
-  prepared: PreparedPackage,
-  secret: PreparedMcpSecretVersionV1,
-  deps: PackageAdmissionDeps,
-) {
-  const live = readMcpLeafStrict(prepared.name)
-  if (!live.ok) return
-  const referenced = new Set(collectMcpFileRefPaths(live.value).map((ref) => resolveMcpRefPath(ref, deps.root())))
-  if (secret.files.some((file) => referenced.has(resolve(file)))) return
-  removeMcpSecretVersionDir(deps.userDataPath, secret.server, secret.version)
 }
 
 function confirmationMatches(diffs: CapabilityDiff[], confirmed: Record<string, string[]>) {

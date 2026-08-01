@@ -18,7 +18,14 @@ import type { ProviderInput } from "../shared/alpha-model-types"
 import { isExtensionName } from "../shared/extension-name"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
-import { collectMcpFileRefPaths, gcMcpSecretVersionsLocked, pathIdentity, resolveMcpRefPath } from "./alpha-mcp-secrets"
+import {
+  collectMcpFileRefPaths,
+  gcMcpSecretVersionsLocked,
+  pathIdentity,
+  removeUnreferencedMcpSecretVersion,
+  resolveMcpRefPath,
+} from "./alpha-mcp-secrets"
+import type { TxPreparedResourceV1 } from "./ext-transaction"
 import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { findRecordV2 } from "./ext-receipt-v2"
 import { alphaJsoncPath } from "./engine-config-truth"
@@ -641,27 +648,91 @@ export function collectLegacyMcpRefPathsStrict(name: string): { ok: true; refs: 
 export function gcMcpSecretsAgainstConfig(userDataPath: string, name: string): { removed: string[]; warnings: string[] } {
   if (!isExtensionName(name)) return { removed: [], warnings: [`invalid server name: ${name}`] }
   const r = withConfigWriteLock(() => {
-    const leaf = readMcpLeafStrict(name)
-    if (!leaf.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${leaf.reason}`] }
-    if (leaf.value === undefined)
-      return { removed: [], warnings: [`secret gc skipped for ${name}: mcp leaf absent — refusing a zero-reference sweep`] }
-    // r4/r5 Major:引用集按引擎解析语义规范化(resolveMcpRefPath:先展开 ~/,再按 config
-    // 文件所在目录 resolve 相对)—— 任何等价形态被误判未引用都会删掉在用密钥。
-    const configDir = path.dirname(mcpPluginTargetPath())
-    const referenced = collectMcpFileRefPaths(leaf.value).map((p) => resolveMcpRefPath(p, configDir))
-    // r7 Blocker:引擎在主配置之后还合并 retained home(~/.opencode)/XDG 等 legacy 源 ——
-    // 其 mcp.<name> leaf 可能仍引用更旧的版本目录或 flat 密钥;引用集漏掉它们,GC 会删掉
-    // 合并视图仍在用的凭证。任一 legacy 源不可读/解析失败 = 引用集不可信,整轮安全退出。
-    const legacyRefs = collectLegacyMcpRefPathsStrict(name)
-    if (!legacyRefs.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${legacyRefs.reason}`] }
-    referenced.push(...legacyRefs.refs)
+    // #712:合并引用集(主 leaf + retained legacy,任一来源不可信即整体失败)抽进
+    // collectMergedMcpRefPathsStrict —— GC 与 prepared resource 释放消费同一份解析器。
+    // GC 额外要求 leaf 在场(刚成功的安装不可能缺席;缺席即拒绝零引用清扫)。
+    const merged = collectMergedMcpRefPathsStrict(name, { requireLeafPresent: true })
+    if (!merged.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${merged.reason}`] }
     // r8 Major:兄弟备份活体排除 —— 在册名读不出 = 引用集同源不可信,整轮安全退出。
     const live = listConfiguredMcpServerNamesStrict()
     if (!live.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${live.reason}`] }
     const liveNames = new Set(live.names)
-    return gcMcpSecretVersionsLocked(userDataPath, name, referenced, (cand) => liveNames.has(cand))
+    return gcMcpSecretVersionsLocked(userDataPath, name, merged.refs, (cand) => liveNames.has(cand))
   })
   return "removed" in r ? r : { removed: [], warnings: [r.reason] }
+}
+
+/**
+ * #712:**合并视图**的 `{file:}` 引用集 —— 主配置 `mcp.<name>` leaf(strict)+ 引擎随后合并的
+ * 全部 retained legacy 源(strict),各按其 config 文件所在目录以引擎解析语义归一
+ * (`~/` 展开 + 相对解析,resolveMcpRefPath)。任一来源不可读 / 语法损坏 / 形状异常 =
+ * 引用集不可信,整体失败 —— 调用方一律 fail-closed 不删。
+ *
+ * `requireLeafPresent`:GC 用(刚成功的安装不可能缺席,缺席即拒绝零引用清扫);
+ * prepared resource 释放**不用**——失败/回滚后 leaf 本就应当缺席,那正是可以释放的证据。
+ */
+export function collectMergedMcpRefPathsStrict(
+  name: string,
+  opts: { requireLeafPresent?: boolean } = {},
+): { ok: true; refs: string[] } | { ok: false; reason: string } {
+  if (!isExtensionName(name)) return { ok: false, reason: `invalid server name: ${name}` }
+  const leaf = readMcpLeafStrict(name)
+  if (!leaf.ok) return { ok: false, reason: leaf.reason }
+  if (opts.requireLeafPresent && leaf.value === undefined)
+    return { ok: false, reason: "mcp leaf absent — refusing a zero-reference sweep" }
+  // r4/r5 Major:引用集按引擎解析语义规范化(resolveMcpRefPath:先展开 ~/,再按 config
+  // 文件所在目录 resolve 相对)—— 任何等价形态被误判未引用都会删掉在用密钥。
+  const configDir = path.dirname(mcpPluginTargetPath())
+  const refs = collectMcpFileRefPaths(leaf.value).map((p) => resolveMcpRefPath(p, configDir))
+  // r7 Blocker:引擎在主配置之后还合并 retained home(~/.opencode)/XDG 等 legacy 源 ——
+  // 其 mcp.<name> leaf 可能仍引用更旧的版本目录或 flat 密钥;引用集漏掉它们就会删掉
+  // 合并视图仍在用的凭证。任一 legacy 源不可读/解析失败 = 引用集不可信,整体失败。
+  const legacy = collectLegacyMcpRefPathsStrict(name)
+  if (!legacy.ok) return legacy
+  refs.push(...legacy.refs)
+  return { ok: true, refs }
+}
+
+/**
+ * #712:释放一个**未提交事务准备的**密钥版本目录。合并视图仍引用它 / 任一来源不可读 /
+ * 路径身份不可判 → 一律保留(retained),绝不误删在用密钥。
+ *
+ * 不取任何锁:`withConfigWriteLock` 取的是与扩展事务**同一把**环境级 bundle 锁,而本函数的两个
+ * 调用点(事务失败路径、崩溃恢复)都已经持着它 —— 重取必然 busy。读侧全部走 strict 原语。
+ */
+export function releasePreparedMcpSecretVersion(
+  userDataPath: string,
+  server: string,
+  verId: string,
+): { ok: true; state: "removed" | "referenced" | "absent" } | { ok: false; reason: string } {
+  const merged = collectMergedMcpRefPathsStrict(server)
+  if (!merged.ok) return merged
+  return removeUnreferencedMcpSecretVersion(userDataPath, server, verId, merged.refs)
+}
+
+/**
+ * #712:prepared resource 释放接缝的**唯一**实现 —— 安装路径(`TxHooks.releasePrepared`)与崩溃
+ * 恢复(`RecoverOptions.releasePrepared`)共用,两处各写一份就会在「什么算仍被引用」上漂移。
+ *
+ * 未登记的 kind/store 一律拒绝:引擎不认识别人的 store 布局,更不许猜。任何一条没能释放(含
+ * 「仍被引用」)即抛错 —— 引擎把它如实收进 warnings / 恢复日志,资源保留在盘上等下一轮。
+ */
+export function releasePreparedTxResources(
+  userDataPath: string,
+  resources: readonly TxPreparedResourceV1[],
+): void {
+  const retained: string[] = []
+  for (const resource of resources) {
+    if (resource.kind !== "mcp-secret-version" || resource.store !== "alpha-mcp-secrets") {
+      retained.push(`no release seam for prepared resource "${String(resource.store)}/${String(resource.kind)}" — refused`)
+      continue
+    }
+    const released = releasePreparedMcpSecretVersion(userDataPath, resource.server, resource.version)
+    if (!released.ok) retained.push(`${resource.server}/${resource.version}: ${released.reason}`)
+    else if (released.state === "referenced")
+      retained.push(`${resource.server}/${resource.version}: still referenced by the merged config view — retained`)
+  }
+  if (retained.length > 0) throw new Error(retained.join("; "))
 }
 
 /** 读 agent.<name> 当前条目(writeAgent 覆盖/补偿用 before-image)。 */
