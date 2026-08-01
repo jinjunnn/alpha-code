@@ -27,6 +27,7 @@ import {
   buildPackageUpdatePreviewV1,
   diffPackageGraphsV1,
   packageChildTxKeyV1,
+  packageVersionFromRecordsV1,
   planPackageChildConflictsV1,
   planPackageChildRemovalsV1,
   planPackageClaimTransferV1,
@@ -203,6 +204,37 @@ describe("REQ-128 #698 —— claim 转移", () => {
     const mutations = planPackageClaimTransferV1(diff)
     expect(mutations).toHaveLength(3)
     expect(mutations.every((mutation) => mutation.op === "release" && mutation.owner === OWNER)).toBe(true)
+  })
+})
+
+// ── ①.5 「当前版本」的派生(`#764`)─────────────────────────────────────────────────────────────
+
+describe("REQ-128 #764 —— 已安装版本由 root 组件的 record 派生,不另存一份", () => {
+  // 每条记录带**不同**的版本号,而且 root 那条**不在第一个** —— 「读数组第一项」或「随便找一条」
+  // 都必须红。账本里没有 package 级记录,所以这里读错一行就等于对用户报错一个版本。
+  const records = [
+    { kind: "skill", name: "kit-skill", version: "9.9.9-leaf" },
+    { kind: "agent", name: "other-root", version: "7.7.7-other" },
+    { kind: "agent", name: "kit-root", version: "1.2.3-root" },
+    { kind: "mcp", name: "kit-mcp", version: "8.8.8-leaf" },
+  ]
+
+  test("取的是 root 的 (kind,name) 那一条,不是任意一条同名或同类的", () => {
+    expect(packageVersionFromRecordsV1(BASE, records)).toBe("1.2.3-root")
+  })
+
+  test("kind 与 name 都要对上:同名不同 kind、同 kind 不同名都不算", () => {
+    expect(packageVersionFromRecordsV1(BASE, [{ kind: "skill", name: "kit-root", version: "nope" }])).toBeNull()
+    expect(packageVersionFromRecordsV1(BASE, [{ kind: "agent", name: "kit-rootx", version: "nope" }])).toBeNull()
+  })
+
+  test("那一代信封没声明版本 ⇒ null(如实「没有」,不是拿别人的顶上)", () => {
+    expect(packageVersionFromRecordsV1(BASE, [{ kind: "agent", name: "kit-root" }, ...records.slice(0, 1)])).toBeNull()
+  })
+
+  test("换一张图就换一个答案 —— 它读的是这张图的 root,不是某个全局唯一的东西", () => {
+    const other = graph({ packageId: "package:other", root: node("agent:other-root", "agent", "other-root", true, D_B), children: [] })
+    expect(packageVersionFromRecordsV1(other, records)).toBe("7.7.7-other")
   })
 })
 

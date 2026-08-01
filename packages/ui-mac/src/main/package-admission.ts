@@ -20,6 +20,7 @@ import {
   buildPackageUpdatePreviewV1,
   diffPackageGraphsV1,
   packageChildTxKeyV1,
+  packageVersionFromRecordsV1,
   planPackageChildConflictsV1,
   planPackageChildRemovalsV1,
   planPackageClaimTransferV1,
@@ -683,7 +684,7 @@ async function executePreparedPackage(
     }
   const items = [
     ...planned.map((item, index) =>
-      index === rootItemIndex ? { ...item, packageMutation: packageMutationEnvelope(lifecycle, prepared, now) } : item,
+      index === rootItemIndex ? { ...item, packageMutation: packageMutationEnvelope(lifecycle) } : item,
     ),
     // 离场 child 的 config 清除排在最后:同一 target 上的 image 按 item 顺序链式累积
     // (`prepareConfigTx(target, edits, accumulatedText)`),放在安装项之后语义最直白。
@@ -828,7 +829,12 @@ function resolvePackageLifecyclePlan(
   const state = readPackageLedgerStateV1(root)
   if (!state.ok) return { ok: false, reason: state.reason }
   const before = state.packageGraphs.find((candidate) => candidate.packageId === graph.packageId) ?? null
-  const diffed = diffPackageGraphsV1(before, graph, { after: prepared.facts.envelope.prelude.version })
+  // `#764`:「当前版本」取自上一代 root 组件的 v2 record —— 与图、claim 同一次账本读。账本没有
+  // package 级记录,所以这里也不去问一个不存在的东西;之前这一栏根本没被填,preview 恒 null。
+  const diffed = diffPackageGraphsV1(before, graph, {
+    before: before ? packageVersionFromRecordsV1(before, state.records) : null,
+    after: prepared.facts.envelope.prelude.version,
+  })
   if (!diffed.ok) return diffed
   const departing = diffed.diff.changes
     .filter((change) => change.change === "removed")
@@ -932,19 +938,10 @@ function packageGraphOf(prepared: PreparedPackage, rootManifestDigest: string): 
  *  owner token 就跟着变 —— 旧 owner 若不释放,账本里每一条旧 claim 都会成为「孤儿 owner」
  *  (`validateV3State`:claim 指名一张这本账里没有的图),整次写盘被拒。换句话说,`#697` 之后
  *  「装第二个版本」在结构上是**装不上**的,而这正是本票要修的第一件事。 */
-function packageMutationEnvelope(plan: PackageLifecyclePlanV1, prepared: PreparedPackage, now: string): PackageMutationEnvelopeV1 {
+function packageMutationEnvelope(plan: PackageLifecyclePlanV1): PackageMutationEnvelopeV1 {
   const graph = plan.graph
   return {
     operation: plan.before ? "update" : "install",
-    packageRecord: {
-      packageId: graph.packageId,
-      envelopeDigest: graph.envelopeDigest,
-      graphDigest: graph.graphDigest,
-      ...(prepared.facts.envelope.prelude.version ? { version: prepared.facts.envelope.prelude.version } : {}),
-      // 占位:计划期还没有 txId(事务自产)。`commitTransactionLedger` 在提交点统一覆盖成真值。
-      transactionId: "tx-assigned-at-commit",
-      installedAt: now,
-    },
     graphBeforeDigest: plan.before?.graphDigest ?? null,
     graphAfter: graph,
     // 释放全部旧 owner 在前、获取全部新 owner 在后(集合代数按序施加,反过来会把刚获取的抹掉)。

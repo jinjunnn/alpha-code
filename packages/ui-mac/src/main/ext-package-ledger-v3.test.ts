@@ -25,7 +25,6 @@ import {
   decodePackageClaimV1,
   decodePackageGraphV1,
   decodePackageMutationEnvelopeV1,
-  decodePackageRecordV1,
   directUninstallVerdict,
   parseOwnerToken,
   standaloneOwner,
@@ -181,25 +180,10 @@ describe("REQ-128 #706 — 严格解码", () => {
       expect(decodePackageClaimV1(bad).ok, JSON.stringify(bad)).toBe(false)
   })
 
-  test("packageRecord:未知键 / 非法 digest / 非法 txId / 非法时间戳", () => {
-    const rec = { packageId: "skill:demo", envelopeDigest: D1, graphDigest: D2, transactionId: "tx-1", installedAt: "2026-07-31T00:00:00.000Z" }
-    expect(decodePackageRecordV1(rec).ok).toBe(true)
-    for (const bad of [
-      { ...rec, extra: 1 },
-      { ...rec, graphDigest: "nope" },
-      { ...rec, transactionId: "tx/1" },
-      { ...rec, installedAt: "not-a-date" },
-      { ...rec, version: "" },
-    ])
-      expect(decodePackageRecordV1(bad).ok, JSON.stringify(bad)).toBe(false)
-  })
-
-  test("mutation envelope:install/update 必须图与记录成对且 digest 互绑;uninstall 必须两者皆 null", () => {
+  test("mutation envelope:install/update 必须带 after 图;uninstall 必须没有", () => {
     const g = graph()
-    const rec = { packageId: g.packageId, envelopeDigest: g.envelopeDigest, graphDigest: g.graphDigest, transactionId: "tx-1", installedAt: "2026-07-31T00:00:00.000Z" }
     const ok = decodePackageMutationEnvelopeV1({
       operation: "install",
-      packageRecord: rec,
       graphBeforeDigest: null,
       graphAfter: g,
       claimMutations: [{ op: "acquire", kind: "skill", name: "demo", owner: bundleOwner(g.packageId, D2) }],
@@ -209,26 +193,34 @@ describe("REQ-128 #706 — 严格解码", () => {
     // 每条负向只坏**一处**,其余字段一律合法 —— 少写一个新增的必填键会让整组「因为缺字段」而红,
     // 那时这道闸测的就不再是它抬头写的东西了(`#698` 加 `childRemovals` 时正是这个陷阱)。
     for (const bad of [
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: null, claimMutations: [], childRemovals: [] },
-      { operation: "install", packageRecord: null, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [] },
-      { operation: "uninstall", packageRecord: rec, graphBeforeDigest: g.graphDigest, graphAfter: g, claimMutations: [], childRemovals: [] },
-      { operation: "install", packageRecord: { ...rec, graphDigest: D3 }, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [] },
-      { operation: "install", packageRecord: { ...rec, packageId: "skill:other" }, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [] },
-      { operation: "bogus", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [] },
-      { operation: "install", packageRecord: rec, graphBeforeDigest: "nope", graphAfter: g, claimMutations: [], childRemovals: [] },
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [{ op: "acquire", kind: "skill", name: "demo", owner: "junk" }], childRemovals: [] },
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [], extra: 1 },
-      // `#698` childRemovals 自身的负向:缺字段 / 未知 kind / 非法 name / 未知键 / 重复项。
-      // 重复项刻意**不放第一个**,并且前面有一个合法项 —— 「只看第一个」时必须红。
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [] },
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: {} },
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "skill" }] },
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "wat", name: "demo" }] },
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "skill", name: "../escape" }] },
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "skill", name: "demo", extra: 1 }] },
+      { operation: "install", graphBeforeDigest: null, graphAfter: null, claimMutations: [], childRemovals: [] },
+      { operation: "uninstall", graphBeforeDigest: g.graphDigest, graphAfter: g, claimMutations: [], childRemovals: [] },
+      { operation: "install", graphBeforeDigest: null, graphAfter: { ...g, graphDigest: D3 }, claimMutations: [], childRemovals: [] },
+      { operation: "bogus", graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [] },
+      { operation: "install", graphBeforeDigest: "nope", graphAfter: g, claimMutations: [], childRemovals: [] },
+      { operation: "install", graphBeforeDigest: null, graphAfter: g, claimMutations: [{ op: "acquire", kind: "skill", name: "demo", owner: "junk" }], childRemovals: [] },
+      { operation: "install", graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [], extra: 1 },
+      // `#764`:`packageRecord` 曾经是这个信封的必填键,现在它是**未知键**。这一条钉的是
+      // 「删掉之后没有任何地方还在假装它存在」的另一半 —— 旧构建写下的 journal 半场必须被响亮
+      // 拒绝,而不是被忽略后照着一份少了字段的 mutation 前滚。
       {
         operation: "install",
-        packageRecord: rec,
+        graphBeforeDigest: null,
+        graphAfter: g,
+        claimMutations: [],
+        childRemovals: [],
+        packageRecord: { packageId: g.packageId, envelopeDigest: g.envelopeDigest, graphDigest: g.graphDigest, transactionId: "tx-1", installedAt: "2026-07-31T00:00:00.000Z" },
+      },
+      // `#698` childRemovals 自身的负向:缺字段 / 未知 kind / 非法 name / 未知键 / 重复项。
+      // 重复项刻意**不放第一个**,并且前面有一个合法项 —— 「只看第一个」时必须红。
+      { operation: "install", graphBeforeDigest: null, graphAfter: g, claimMutations: [] },
+      { operation: "install", graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: {} },
+      { operation: "install", graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "skill" }] },
+      { operation: "install", graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "wat", name: "demo" }] },
+      { operation: "install", graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "skill", name: "../escape" }] },
+      { operation: "install", graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "skill", name: "demo", extra: 1 }] },
+      {
+        operation: "install",
         graphBeforeDigest: null,
         graphAfter: g,
         claimMutations: [],

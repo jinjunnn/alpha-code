@@ -1115,7 +1115,16 @@ export function readPackageGraphs(root: string): PackageGraphV1[] {
 }
 
 export type PackageLedgerStateReadV1 =
-  | { ok: true; packageGraphs: PackageGraphV1[]; claims: PackageClaimV1[]; recordKeys: ReadonlySet<string> }
+  | {
+      ok: true
+      packageGraphs: PackageGraphV1[]
+      claims: PackageClaimV1[]
+      recordKeys: ReadonlySet<string>
+      /** REQ-128 `#764`:child record 本体。判决期要读的不只是「有没有」,还有「上面写的版本是什么」
+       *  —— 那是 update preview 里「你正在从哪个版本升上来」的唯一来源,而它必须与图、claim 出自
+       *  **同一次** parseLedger,否则「当前版本」会取自另一个时刻的账本。 */
+      records: InstallRecordV2[]
+    }
   | { ok: false; reason: string }
 
 /**
@@ -1140,7 +1149,7 @@ export function readPackageLedgerStateV1(root: string): PackageLedgerStateReadV1
   const invariants = validateV3State({ recordKeys, packageGraphs: parsed.packageGraphs, claims: parsed.claims })
   if (!invariants.ok)
     return { ok: false, reason: `ledger state is not self-consistent: ${invariants.reason}; inspect ${ledgerPath(root)}` }
-  return { ok: true, packageGraphs: parsed.packageGraphs, claims: parsed.claims, recordKeys }
+  return { ok: true, packageGraphs: parsed.packageGraphs, claims: parsed.claims, recordKeys, records: parsed.records }
 }
 
 /** desiredState 翻转(Hub 项目上下文「禁用」的 main 侧真源;引擎生效面由消费方处理)。
@@ -1346,8 +1355,11 @@ export function applyPackageMutation(root: string, mutation: PackageLedgerMutati
   if (!inbound.ok)
     return { ok: false, reason: `refusing package mutation: ledger state is not self-consistent: ${inbound.reason}; inspect ${ledgerPath(root)}` }
 
-  const existingGraph = mutation.packageRecord
-    ? (parsed.packageGraphs.find((g) => g.packageId === mutation.packageRecord!.packageId) ?? null)
+  // `#764`:install/update 按 **packageId** 找上一代(一个 packageId 只有一张图),uninstall 按
+  // before-image 的 digest 找。判据是 `graphAfter` —— 它就是这次 mutation 的 package 身份;
+  // 此前这里问的是 `packageRecord`,而 `packageRecord.packageId` 只是 `graphAfter.packageId` 的抄本。
+  const existingGraph = mutation.graphAfter
+    ? (parsed.packageGraphs.find((g) => g.packageId === mutation.graphAfter!.packageId) ?? null)
     : (mutation.graphBeforeDigest ? (parsed.packageGraphs.find((g) => g.graphDigest === mutation.graphBeforeDigest) ?? null) : null)
   // graphBefore 对不上 = 有人在我们计划之后改过账本(或这是一次陈旧重放)。拒。
   const beforeDigest = existingGraph?.graphDigest ?? null
@@ -1423,8 +1435,8 @@ export function applyPackageMutation(root: string, mutation: PackageLedgerMutati
   // 同一份 mutation 会撞上既有的 dangling-claim 闸并整次拒写:claim 必须由 release **显式**清空,
   // 「owner set 空才删」因此成为写盘前的判据,而不是一句纪律。
 
-  const nextGraphs = mutation.packageRecord
-    ? [...parsed.packageGraphs.filter((g) => g.packageId !== mutation.packageRecord!.packageId), mutation.graphAfter!]
+  const nextGraphs = mutation.graphAfter
+    ? [...parsed.packageGraphs.filter((g) => g.packageId !== mutation.graphAfter!.packageId), mutation.graphAfter]
     : parsed.packageGraphs.filter((g) => g.graphDigest !== mutation.graphBeforeDigest)
 
   const nextRecords = [...recordsByKey.values(), ...parsed.rawCorruptRecords]

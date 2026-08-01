@@ -191,14 +191,9 @@ describe("REQ-128 #705 single-install builder parity", () => {
         packageMutation: {
           operation: "install",
           graphBeforeDigest: null,
-          packageRecord: {
-            packageId: "package:parity-skill",
-            envelopeDigest: (plan.items[0]!.packageMutation as { packageRecord: { envelopeDigest: string } }).packageRecord.envelopeDigest,
-            graphDigest: (plan.items[0]!.packageMutation as { packageRecord: { graphDigest: string } }).packageRecord.graphDigest,
-            version: "1.0.0",
-            transactionId: "tx-assigned-at-commit",
-            installedAt: "2026-07-31T00:00:00.000Z",
-          },
+          // `#764`:这里**没有** package 级记录。它曾经是 `graphAfter` 的逐字抄本(packageId /
+          // envelopeDigest / graphDigest)加上一份与组件 record 相同的 `version` —— 从未落过盘,
+          // 也没有任何消费方。逐字钉死这份计划面就是为了让它再长回来时红。
           graphAfter: {
             packageId: "package:parity-skill",
             envelopeDigest: (plan.items[0]!.packageMutation as { graphAfter: { envelopeDigest: string } }).graphAfter.envelopeDigest,
@@ -223,9 +218,8 @@ describe("REQ-128 #705 single-install builder parity", () => {
       },
     ])
     // 图/记录的 digest 不是自由字符串:重算一遍必须逐字相同(篡改任一节点 → 解码期就红)。
-    const mutation = plan.items[0]!.packageMutation as { graphAfter: PackageGraphV1; packageRecord: { graphDigest: string } }
+    const mutation = plan.items[0]!.packageMutation as { graphAfter: PackageGraphV1 }
     expect(computeGraphDigest(mutation.graphAfter)).toBe(mutation.graphAfter.graphDigest)
-    expect(mutation.packageRecord.graphDigest).toBe(mutation.graphAfter.graphDigest)
     expect(plan.authorization).toEqual({ confirmed: { "skill--demo": [] }, decidedAt: "2026-07-31T00:00:00.000Z" })
     const staging = join(tmp, "staging")
     mkdirSync(staging, { recursive: true })

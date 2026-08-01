@@ -177,6 +177,20 @@ committed grant. Departing components appear too, carrying the capabilities they
 are giving up. Claim decisions are listed with their named retain reasons, so
 "why is that skill still here?" has an answer on screen rather than in a log.
 
+The preview also names the two versions — the one installed now and the one being
+installed. **The current version is derived, not stored.** The ledger holds no
+package-level record; at install time every component of a package receives the
+same envelope `prelude.version` in its own v2 install record, and the graph names
+the root component's `(kind, name)`. So "which version is installed" is one lookup
+(`packageVersionFromRecordsV1`) against the *same* single ledger read that produced
+the graph and the claims.
+
+There is deliberately no second copy. `validateV3State` guarantees every node in a
+graph has a claim and every claim has an install record, so the root's record is
+always present whenever the graph is — a stored duplicate would add no fact, only a
+second answer that can disagree with the record. A field that is declared and never
+written is worse than an absent one: it reads as a fact and is always `null`.
+
 ## Recovery and generations
 
 A transaction that has not committed, or whose candidate probe fails, rolls back
@@ -189,7 +203,7 @@ per-child mechanism and are not a package rollback channel.
 
 | Guarantee | Gate |
 | --- | --- |
-| Diff, claim transfer, removal verdicts, conflicts; fixed-seed bounded model test | `packages/ui-mac/src/main/ext-package-lifecycle.test.ts` |
+| Diff, claim transfer, removal verdicts, conflicts, current-version derivation; fixed-seed bounded model test | `packages/ui-mac/src/main/ext-package-lifecycle.test.ts` |
 | Canonical permutations, ordering, tampered/dangling/overreaching mutations | `packages/ui-mac/src/main/ext-package-lifecycle-permutations.test.ts` |
 | Update through real admission, transaction and ledger; planning-time conflict; the crash matrix under real recovery; and the **real production cleanup seam run while the bundle lock is held** (with the full seam's `config busy` failure as its discrimination proof) | `packages/ui-mac/src/main/package-update.test.ts` |
 | User-reachable removal (hub card → detail → production main) | `packages/ui-mac/src/renderer/extensions/ext-package-detail-wiring.test.ts` |

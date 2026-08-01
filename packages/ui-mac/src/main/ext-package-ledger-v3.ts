@@ -45,7 +45,6 @@ const DIGEST_RE = /^sha256:[0-9a-f]{64}$/
 export const PACKAGE_ID_RE = /^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$/
 /** 组件 id 与 package id 同文法。 */
 const COMPONENT_ID_RE = PACKAGE_ID_RE
-const TX_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const LEGACY_PROTECTED = "legacy-protected"
 
 export type PackageChildRefV1 = { kind: InstallReceiptType; name: string }
@@ -70,16 +69,19 @@ export type PackageGraphV1 = {
   children: PackageGraphNodeV1[]
 }
 
-/** 「这个 package 装过,当前这一代长这样」。删除 package 时连同它的图一起消失。 */
-export type PackageRecordV1 = {
-  packageId: string
-  envelopeDigest: string
-  graphDigest: string
-  version?: string
-  transactionId: string
-  installedAt: string
-  updatedAt?: string
-}
+// REQ-128 `#764`:这里**没有** package 级记录类型,这是一个决定,不是遗漏。
+//
+// 曾经有过一个 `PackageRecordV1{packageId, envelopeDigest, graphDigest, version, transactionId,
+// installedAt}`。它每一个字段都是别处已有事实的抄本:前三个由 `PackageGraphV1` 持有(一个
+// packageId 只有一张图,`validateV3State` 拒重复),`version` 与 `installedAt` 由这个包**每一个**
+// 组件的 v2 record 持有(`package-admission` 写的是同一个信封 prelude version),`transactionId`
+// 与 `PackageLedgerMutationV1.transactionId` 逐字相同。它从未被 `writeLedgerFile` 落过盘,也没有
+// 任何消费方读它 —— 唯一"用"它的地方是拿它判 install/update 还是 uninstall,而 `graphAfter`
+// 回答的是同一个问题。
+//
+// 抄本不是冗余保险,是第二个会漂移的答案:它一旦落盘,「这个包是哪个版本」就有两处可查,
+// 而两处不一致时没有任何判据说哪一处对。所以「当前版本」由 root 组件的 record 派生
+// (`packageVersionFromRecordsV1`),不另存一份。
 
 /** 一个 child 的 owner 集合。`owners` 排序去重且**非空** —— 空集不是「没人要」,
  *  空集根本不该落盘(该删 claim 了)。 */
@@ -106,7 +108,6 @@ export type ClaimMutationV1 = {
 export type PackageLedgerMutationV1 = {
   transactionId: string
   operation: "install" | "update" | "uninstall"
-  packageRecord: PackageRecordV1 | null
   graphBeforeDigest: string | null
   graphAfter: PackageGraphV1 | null
   childRecordMutations: ChildRecordMutationV1[]
@@ -167,7 +168,6 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 const GRAPH_NODE_KEYS = new Set(["componentId", "kind", "name", "required", "manifestDigest"])
 const GRAPH_KEYS = new Set(["packageId", "envelopeDigest", "graphDigest", "root", "children"])
 const CLAIM_KEYS = new Set(["kind", "name", "owners"])
-const PACKAGE_RECORD_KEYS = new Set(["packageId", "envelopeDigest", "graphDigest", "version", "transactionId", "installedAt", "updatedAt"])
 
 export type Decoded<T> = { ok: true; value: T } | { ok: false; errors: string[] }
 
@@ -287,34 +287,7 @@ export function decodePackageClaimV1(input: unknown): Decoded<PackageClaimV1> {
   return { ok: true, value: { kind: kind as InstallReceiptType, name: name as string, owners: [...owners].sort() } }
 }
 
-export function decodePackageRecordV1(input: unknown): Decoded<PackageRecordV1> {
-  const errors: string[] = []
-  if (!isObj(input)) return { ok: false, errors: ["packageRecord: must be an object"] }
-  for (const k of Object.keys(input)) if (!PACKAGE_RECORD_KEYS.has(k)) errors.push(`packageRecord: unknown key "${k}" — refused (strict schema)`)
-  const { packageId, envelopeDigest, graphDigest, version, transactionId, installedAt, updatedAt } = input
-  if (typeof packageId !== "string" || !PACKAGE_ID_RE.test(packageId)) errors.push("packageRecord.packageId: invalid")
-  if (typeof envelopeDigest !== "string" || !DIGEST_RE.test(envelopeDigest)) errors.push("packageRecord.envelopeDigest: invalid")
-  if (typeof graphDigest !== "string" || !DIGEST_RE.test(graphDigest)) errors.push("packageRecord.graphDigest: invalid")
-  if (version !== undefined && (typeof version !== "string" || version.length === 0 || version.length > 128)) errors.push("packageRecord.version: invalid")
-  if (typeof transactionId !== "string" || !TX_ID_RE.test(transactionId)) errors.push("packageRecord.transactionId: invalid")
-  if (typeof installedAt !== "string" || Number.isNaN(Date.parse(installedAt))) errors.push("packageRecord.installedAt: invalid")
-  if (updatedAt !== undefined && (typeof updatedAt !== "string" || Number.isNaN(Date.parse(updatedAt)))) errors.push("packageRecord.updatedAt: invalid")
-  if (errors.length > 0) return { ok: false, errors }
-  return {
-    ok: true,
-    value: {
-      packageId: packageId as string,
-      envelopeDigest: envelopeDigest as string,
-      graphDigest: graphDigest as string,
-      ...(version !== undefined ? { version: version as string } : {}),
-      transactionId: transactionId as string,
-      installedAt: installedAt as string,
-      ...(updatedAt !== undefined ? { updatedAt: updatedAt as string } : {}),
-    },
-  }
-}
-
-const ENVELOPE_KEYS = new Set(["operation", "packageRecord", "graphBeforeDigest", "graphAfter", "claimMutations", "childRemovals"])
+const ENVELOPE_KEYS = new Set(["operation", "graphBeforeDigest", "graphAfter", "claimMutations", "childRemovals"])
 
 /** journal 里那半场的严格解码(不含 transactionId / childRecordMutations —— 那两样在
  *  commit 时由事务与 commit records 提供,不接受调用方自带)。 */
@@ -324,12 +297,6 @@ export function decodePackageMutationEnvelopeV1(input: unknown): Decoded<Package
   for (const k of Object.keys(input)) if (!ENVELOPE_KEYS.has(k)) errors.push(`packageMutation: unknown key "${k}" — refused (strict schema)`)
   const operation = input.operation
   if (operation !== "install" && operation !== "update" && operation !== "uninstall") errors.push("packageMutation.operation: invalid")
-  let packageRecord: PackageRecordV1 | null = null
-  if (input.packageRecord !== null) {
-    const decoded = decodePackageRecordV1(input.packageRecord)
-    if (!decoded.ok) errors.push(...decoded.errors)
-    else packageRecord = decoded.value
-  }
   let graphAfter: PackageGraphV1 | null = null
   if (input.graphAfter !== null) {
     const decoded = decodePackageGraphV1(input.graphAfter)
@@ -387,26 +354,18 @@ export function decodePackageMutationEnvelopeV1(input: unknown): Decoded<Package
     }
   }
   if (errors.length > 0) return { ok: false, errors }
-  // packageRecord 与 graphAfter 必须互相绑定:install/update 两者都在且 digest 一致;
-  // uninstall 两者都为 null。半套 = 「child 已 durable 但 graph 缺失」的另一种写法。
+  // operation 与 graphAfter 必须自洽:uninstall 没有 after 图,install/update 必须有。
+  // `graphAfter` 就是这次 mutation 的**唯一** package 身份来源(`#764` 之前还有一份 packageRecord
+  // 抄本,以及三条「抄本要等于原件」的校验 —— 抄本没了,那三条也就无处可漂)。
   if (operation === "uninstall") {
-    if (packageRecord !== null || graphAfter !== null)
-      return { ok: false, errors: ["packageMutation: uninstall must carry packageRecord=null and graphAfter=null"] }
-  } else {
-    if (packageRecord === null || graphAfter === null)
-      return { ok: false, errors: ["packageMutation: install/update must carry both packageRecord and graphAfter"] }
-    if (packageRecord.graphDigest !== graphAfter.graphDigest)
-      return { ok: false, errors: ["packageMutation: packageRecord.graphDigest does not match graphAfter.graphDigest"] }
-    if (packageRecord.packageId !== graphAfter.packageId)
-      return { ok: false, errors: ["packageMutation: packageRecord.packageId does not match graphAfter.packageId"] }
-    if (packageRecord.envelopeDigest !== graphAfter.envelopeDigest)
-      return { ok: false, errors: ["packageMutation: packageRecord.envelopeDigest does not match graphAfter.envelopeDigest"] }
+    if (graphAfter !== null) return { ok: false, errors: ["packageMutation: uninstall must carry graphAfter=null"] }
+  } else if (graphAfter === null) {
+    return { ok: false, errors: ["packageMutation: install/update must carry graphAfter"] }
   }
   return {
     ok: true,
     value: {
       operation: operation as "install" | "update" | "uninstall",
-      packageRecord,
       graphBeforeDigest: (graphBeforeDigest ?? null) as string | null,
       graphAfter,
       claimMutations,

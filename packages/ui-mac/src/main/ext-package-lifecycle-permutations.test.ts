@@ -118,14 +118,6 @@ function installMutation(graph: PackageGraphV1, children: Child[], owner: string
   return {
     transactionId: `tx-${graph.packageId}`,
     operation: "install",
-    packageRecord: {
-      packageId: graph.packageId,
-      envelopeDigest: graph.envelopeDigest,
-      graphDigest: graph.graphDigest,
-      version: "1.0.0",
-      transactionId: `tx-${graph.packageId}`,
-      installedAt: "2026-08-01T00:00:00.000Z",
-    },
     graphBeforeDigest: null,
     graphAfter: graph,
     childRecordMutations: children.map((child) => ({ op: "upsert" as const, input: upsertInput(child, digest) })),
@@ -301,13 +293,6 @@ describe("REQ-128 #698 —— canonical permutations", () => {
     const applied = applyPackageMutation(root, {
       transactionId: "tx-legacy-adopt",
       operation: "update",
-      packageRecord: {
-        packageId: PKG_A,
-        envelopeDigest: ENVELOPE_A,
-        graphDigest: GRAPH_A.graphDigest,
-        transactionId: "tx-legacy-adopt",
-        installedAt: "2026-08-01T00:00:00.000Z",
-      },
       graphBeforeDigest: GRAPH_A.graphDigest,
       graphAfter: GRAPH_A,
       childRecordMutations: [],
@@ -550,7 +535,6 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     const base = (): PackageLedgerMutationV1 => ({
       transactionId: "tx-scope",
       operation: "uninstall",
-      packageRecord: null,
       graphBeforeDigest: GRAPH_A.graphDigest,
       graphAfter: null,
       childRecordMutations: [],
@@ -578,13 +562,6 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     const stillPresent: PackageLedgerMutationV1 = {
       transactionId: "tx-scope",
       operation: "update",
-      packageRecord: {
-        packageId: PKG_A,
-        envelopeDigest: ENVELOPE_A,
-        graphDigest: GRAPH_A.graphDigest,
-        transactionId: "tx-scope",
-        installedAt: "2026-08-01T00:00:00.000Z",
-      },
       graphBeforeDigest: GRAPH_A.graphDigest,
       graphAfter: GRAPH_A,
       childRecordMutations: [{ op: "remove", kind: "skill", name: "a-only" }],
@@ -611,7 +588,6 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     const wrong: PackageLedgerMutationV1 = {
       transactionId: "tx-overreach",
       operation: "uninstall",
-      packageRecord: null,
       graphBeforeDigest: GRAPH_A.graphDigest,
       graphAfter: null,
       // 只释放 A 的 owner(合法),却把 B 仍在用的 shared 一起去账(算错)。违规项不在第一个。
@@ -636,13 +612,6 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     const wrongOwner: PackageLedgerMutationV1 = {
       transactionId: "tx-scope",
       operation: "update",
-      packageRecord: {
-        packageId: PKG_A,
-        envelopeDigest: ENVELOPE_A,
-        graphDigest: after.graphDigest,
-        transactionId: "tx-scope",
-        installedAt: "2026-08-01T00:00:00.000Z",
-      },
       graphBeforeDigest: GRAPH_A.graphDigest,
       graphAfter: after,
       childRecordMutations: [],
