@@ -378,6 +378,39 @@ describe("REQ-128 #706 —— 真实卸载:**只有** Bundle owner(用户从没�
     })
   }
 
+  // `removeRecordV2` 里那道 claim-aware 闸是**最后一道**(正常路径由 `planDirectUninstall` 先挡)。
+  // 实测:把它整段删掉,`bun test src` 一条都不红 —— 也就是说它此前是一道没人看着的闸,可以被
+  // 静默删除。它值得被看着,因为 `refuse` 一支若无人消费就会掉进 `delete`:record 与整条 claim
+  // 一起没了,而那个 Bundle 的图还指着它 —— 从此这个 package 无法正确卸载。
+  test("removeRecordV2 的最后一道闸:仍被 Bundle 拥有的 child 去不了账(两支都拒,且字节零改动)", () => {
+    seedV3Ledger()
+    // ① 纯 Bundle 拥有(refuse 支)。违规项不取集合首位。
+    const bundleOnly = SHARED[SHARED.length - 1]!
+    expect(packageClaimOwners(root, bundleOnly.kind, bundleOnly.name)).toEqual([OWNER])
+    let before = readRaw()
+    const refused = removeRecordV2(root, bundleOnly.kind, bundleOnly.name)
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.reason).toContain("no standalone install to release")
+    expect(readRaw()).toBe(before)
+    expect(findRecordV2(root, bundleOnly.kind, bundleOnly.name)).not.toBeNull()
+    expect(packageClaimOwners(root, bundleOnly.kind, bundleOnly.name)).toEqual([OWNER])
+
+    // ② standalone + Bundle 并存(release-claim-only 支)—— 同样不得去账。
+    const shared = SHARED[1]!
+    expect(upsertRecordsV2(root, [upsertInput(shared.kind, shared.name)]).ok).toBe(true)
+    before = readRaw()
+    const alsoRefused = removeRecordV2(root, shared.kind, shared.name)
+    expect(alsoRefused.ok).toBe(false)
+    if (!alsoRefused.ok) expect(alsoRefused.reason).toContain("release the standalone claim instead of dropping the record")
+    expect(readRaw()).toBe(before)
+    expect(findRecordV2(root, shared.kind, shared.name)).not.toBeNull()
+
+    // ③ 对照:没有 Bundle 拥有的 solo child 照样去得了账 —— 这道闸不是「一律拒」。
+    const solo = SOLO[SOLO.length - 1]!
+    expect(removeRecordV2(root, solo.kind, solo.name).ok).toBe(true)
+    expect(findRecordV2(root, solo.kind, solo.name)).toBeNull()
+  })
+
   test("releaseStandaloneClaim 被直接调用时同样拒绝(没有可释放的 owner ⇒ 不写盘)", () => {
     seedV3Ledger()
     // 违规项不放第一个:取 SHARED 的最后一个 child,且账本里同时有一堆合法的 solo claim。
