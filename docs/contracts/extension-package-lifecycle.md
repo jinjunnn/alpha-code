@@ -44,6 +44,31 @@ never left the package.
 Two graphs with different `packageId` are a caller error and fail loudly. They
 are never aligned positionally.
 
+### Two graph digests, and they are never equal
+
+One install produces **two** digests over "the graph", and they answer different
+questions. They are named apart on purpose — an earlier revision called both
+`graphDigest`, which made "should these two match?" a recurring review question
+with the counter-intuitive answer *no*.
+
+| Field | Owner | Covers | Computed |
+| --- | --- | --- | --- |
+| `PackageAdmissionBindingV1.graphDigest` | `src/shared/package-admission.ts` | the **planned** graph the envelope declares: root plus every unskipped leaf, each with `required`, `profileId`, `profileVersion`, `payloadSha256` | **before** install, for the authorization binding and its re-verification |
+| `PackageGraphV1.installedGraphDigest` | `src/main/ext-package-ledger-v3.ts` | the **installed** graph the ledger holds: `packageId` + `envelopeDigest` + per-node `componentId` / `kind` / `name` / `required` / `manifestDigest` | **after** install, as the ledger's tamper gate and the value `graphBeforeDigest` / `graphAfterDigest` carry |
+
+The two hash disjoint input sets, and the ledger value additionally carries a
+`sha256:` prefix the binding value does not. They cannot coincide, and a change
+that made them coincide would mean one of them stopped covering its own facts.
+The claim is executable, not prose: `package-admission.wiring.cases.ts` reads
+both out of **one** real install and asserts they differ.
+
+`installedGraphDigest` is an on-disk key. Renaming it was a breaking ledger
+change taken **without a migration**: a ledger still carrying the old
+`graphDigest` key is refused by `decodePackageGraphV1`'s strict schema, which
+makes every package operation fail loudly with the offending key named, rather
+than degrade into "no graph found" — the state in which an installed package
+renders as not installed and its claims answer to nobody.
+
 ## Ownership: the owner token moves with the root
 
 A package's owner token is `bundle:<packageId>@<root manifestDigest>`. Updating

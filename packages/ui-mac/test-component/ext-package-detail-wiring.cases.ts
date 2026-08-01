@@ -455,7 +455,7 @@ async function mountHarness(options?: {
           return {
             installed: true as const,
             packageId: graph.packageId,
-            graphDigest: graph.graphDigest,
+            installedGraphDigest: graph.installedGraphDigest,
             components: [graph.root, ...graph.children].map((node) => ({
               componentId: node.componentId,
               kind: node.kind as string,

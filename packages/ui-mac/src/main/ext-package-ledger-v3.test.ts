@@ -21,7 +21,7 @@ import {
   PACKAGE_LEDGER_KINDS,
   blockingOwners,
   bundleOwner,
-  computeGraphDigest,
+  computeInstalledGraphDigest,
   decodePackageClaimV1,
   decodePackageGraphV1,
   decodePackageMutationEnvelopeV1,
@@ -41,7 +41,7 @@ const D1 = `sha256:${"1".repeat(64)}`
 const D2 = `sha256:${"2".repeat(64)}`
 const D3 = `sha256:${"3".repeat(64)}`
 
-const graph = (over: Partial<Omit<PackageGraphV1, "graphDigest">> = {}): PackageGraphV1 => {
+const graph = (over: Partial<Omit<PackageGraphV1, "installedGraphDigest">> = {}): PackageGraphV1 => {
   const base = {
     packageId: "skill:demo",
     envelopeDigest: D1,
@@ -49,7 +49,7 @@ const graph = (over: Partial<Omit<PackageGraphV1, "graphDigest">> = {}): Package
     children: [],
     ...over,
   }
-  return { ...base, graphDigest: computeGraphDigest(base) }
+  return { ...base, installedGraphDigest: computeInstalledGraphDigest(base) }
 }
 
 const claim = (kind: string, name: string, owners: string[]): PackageClaimV1 =>
@@ -131,13 +131,29 @@ describe("REQ-128 #706 — owner token 解析", () => {
 })
 
 describe("REQ-128 #706 — 严格解码", () => {
-  test("graph 往返 + graphDigest 篡改响亮失败", () => {
+  test("graph 往返 + installedGraphDigest 篡改响亮失败", () => {
     const g = graph()
     expect(decodePackageGraphV1(g)).toEqual({ ok: true, value: g })
     const tampered = { ...g, root: { ...g.root, name: "other" } }
     const bad = decodePackageGraphV1(tampered)
     expect(bad.ok).toBe(false)
     if (!bad.ok) expect(bad.errors[0]).toContain("does not match the graph contents")
+  })
+
+  // `#758`:落盘键从 `graphDigest` 改名为 `installedGraphDigest`,**不迁移**。旧账本必须
+  // 响亮拒绝而不是被默默读成「没有图」——「没有图」会让一个装好的包显示成没装、claim 随之
+  // 无人认领。严格 schema 已经给出这个行为,这条断言把它钉住:未知键 + 缺必填键,两条都报。
+  test("旧键 `graphDigest` 的账本:响亮拒绝,不迁移", () => {
+    const g = graph()
+    const { installedGraphDigest, ...rest } = g
+    const legacy = { ...rest, graphDigest: installedGraphDigest }
+    const decoded = decodePackageGraphV1(legacy)
+    expect(decoded.ok).toBe(false)
+    if (!decoded.ok) {
+      const joined = decoded.errors.join(" | ")
+      expect(joined).toContain('unknown key "graphDigest"')
+      expect(joined).toContain("packageGraph.installedGraphDigest: invalid")
+    }
   })
 
   test("graph 负向集:未知键 / 非 required root / 重复 componentId / 重复 (kind,name) / 非法 digest", () => {
@@ -156,14 +172,14 @@ describe("REQ-128 #706 — 严格解码", () => {
       root: { componentId: "skill:demo", kind: "skill", name: "demo", required: true, manifestDigest: D2 },
       children: [{ componentId: "skill:demo", kind: "agent", name: "other", required: false, manifestDigest: D3 }],
     }
-    expect(decodePackageGraphV1({ ...dupComponent, graphDigest: computeGraphDigest(dupComponent as never) }).ok).toBe(false)
+    expect(decodePackageGraphV1({ ...dupComponent, installedGraphDigest: computeInstalledGraphDigest(dupComponent as never) }).ok).toBe(false)
     const dupChild = {
       packageId: "skill:demo",
       envelopeDigest: D1,
       root: { componentId: "skill:demo", kind: "skill", name: "demo", required: true, manifestDigest: D2 },
       children: [{ componentId: "skill:other-id", kind: "skill", name: "demo", required: false, manifestDigest: D3 }],
     }
-    expect(decodePackageGraphV1({ ...dupChild, graphDigest: computeGraphDigest(dupChild as never) }).ok).toBe(false)
+    expect(decodePackageGraphV1({ ...dupChild, installedGraphDigest: computeInstalledGraphDigest(dupChild as never) }).ok).toBe(false)
   })
 
   test("claim:空 owner 集 / 未知 owner / 重复 owner / 张冠李戴的 standalone owner 一律拒", () => {
@@ -194,8 +210,8 @@ describe("REQ-128 #706 — 严格解码", () => {
     // 那时这道闸测的就不再是它抬头写的东西了(`#698` 加 `childRemovals` 时正是这个陷阱)。
     for (const bad of [
       { operation: "install", graphBeforeDigest: null, graphAfter: null, claimMutations: [], childRemovals: [] },
-      { operation: "uninstall", graphBeforeDigest: g.graphDigest, graphAfter: g, claimMutations: [], childRemovals: [] },
-      { operation: "install", graphBeforeDigest: null, graphAfter: { ...g, graphDigest: D3 }, claimMutations: [], childRemovals: [] },
+      { operation: "uninstall", graphBeforeDigest: g.installedGraphDigest, graphAfter: g, claimMutations: [], childRemovals: [] },
+      { operation: "install", graphBeforeDigest: null, graphAfter: { ...g, installedGraphDigest: D3 }, claimMutations: [], childRemovals: [] },
       { operation: "bogus", graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [] },
       { operation: "install", graphBeforeDigest: "nope", graphAfter: g, claimMutations: [], childRemovals: [] },
       { operation: "install", graphBeforeDigest: null, graphAfter: g, claimMutations: [{ op: "acquire", kind: "skill", name: "demo", owner: "junk" }], childRemovals: [] },
@@ -209,7 +225,7 @@ describe("REQ-128 #706 — 严格解码", () => {
         graphAfter: g,
         claimMutations: [],
         childRemovals: [],
-        packageRecord: { packageId: g.packageId, envelopeDigest: g.envelopeDigest, graphDigest: g.graphDigest, transactionId: "tx-1", installedAt: "2026-07-31T00:00:00.000Z" },
+        packageRecord: { packageId: g.packageId, envelopeDigest: g.envelopeDigest, installedGraphDigest: g.installedGraphDigest, transactionId: "tx-1", installedAt: "2026-07-31T00:00:00.000Z" },
       },
       // `#698` childRemovals 自身的负向:缺字段 / 未知 kind / 非法 name / 未知键 / 重复项。
       // 重复项刻意**不放第一个**,并且前面有一个合法项 —— 「只看第一个」时必须红。
