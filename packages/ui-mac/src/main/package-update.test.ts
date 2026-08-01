@@ -288,6 +288,61 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
    * 残留,而不是一次失败。这里绝不能报 `ok:false` —— 那会让用户以为旧版本还在,而账本上是新的。
    * 恢复会重跑 `commitTransactionLedger`(exact replay + 幂等删除)把残留收掉。
    */
+  /**
+   * R1 Blocker 1 的直接回归。**这条曾在 R1 的一次块替换里被我静默删掉**(替换区间的起点落在它
+   * 前面一条用例上,把它一起吞了),而两轮审计都没抓到 —— 抓到它的是「改了生产判据却没有用例变红」
+   * 的绕过实验。所以它现在的断言写成对**两个半场**都成立:
+   *   · 文件清理接缝零调用(受 `result.ok` 那道判据保护);
+   *   · 离场组件的 config 叶**原样还在**(受事务 before-image 回滚保护)。
+   * 少任何一半,「更新失败 ⇒ 旧版本完好」都不成立。
+   */
+  test("事务失败 ⇒ 离场 child 一个字节都没被碰过(文件零调用 + config 叶原样)", async () => {
+    const base = (await Bun.file(corpus).json()) as Corpus
+    const v1 = generation(base, { agentBody: AGENT_V1, keepMcp: true, addSkill: false })
+    const v2 = generation(base, { agentBody: AGENT_V2, keepMcp: false, addSkill: true })
+    const removed: Array<Array<{ kind: string; name: string }>> = []
+    let failNextTransaction = false
+    let index = 0
+    const current = () => [v1, v2][Math.min(index, 1)]!
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [current().envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      environment: () => "dev",
+      installability: { fetchPayload: async (ref) => current().payloadByDigest.get(ref.sha256)! },
+      fetchAsset: async (ref) => current().assetByDigest.get(ref.sha256)!,
+      // 在**可回滚阶段**失败(lock 与 probe 同侧:都在 receipt commit 之前)。
+      transaction: async (...args) =>
+        failNextTransaction
+          ? { ok: false as const, stage: "lock" as const, reason: "injected pre-commit failure", warnings: [] }
+          : runExtensionTransaction(...args),
+      removePackageChildArtifacts: (children) => {
+        removed.push(children.map((child) => ({ kind: child.kind, name: child.name })))
+        return { ok: true, removed: [], warnings: [] }
+      },
+    })
+
+    expect((await install(admit, "attempt-v1", secretsFor(v1))).result.ok).toBe(true)
+    const graphBefore = readPackageGraphs(root)
+    index = 1
+    failNextTransaction = true
+    const second = await install(admit, "attempt-v2")
+
+    expect(second.result.ok).toBe(false)
+    // ① 文件清理接缝零调用。
+    expect(removed).toEqual([])
+    // ② 离场组件的 config 叶原样还在 ⇒ 旧版本仍然完整可跑。
+    expect(mcpConfigKeys()).toEqual(["generic-bundle-remote"])
+    // ③ 账本全旧。
+    expect(readPackageGraphs(root)).toEqual(graphBefore)
+    expect(findRecordV2(root, "mcp", "generic-bundle-remote")).not.toBeNull()
+    expect(findRecordV2(root, "skill", "generic-bundle-extra")).toBeNull()
+  }, 60_000)
+
   test("事务成功后清理失败 ⇒ 更新成功 + 具名 warning(离场组件已不可加载,剩下的是惰性残留)", async () => {
     const base = (await Bun.file(corpus).json()) as Corpus
     const v1 = generation(base, { agentBody: AGENT_V1, keepMcp: true, addSkill: false })
