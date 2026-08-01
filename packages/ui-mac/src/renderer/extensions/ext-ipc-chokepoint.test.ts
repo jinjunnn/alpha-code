@@ -68,8 +68,10 @@ describe("`#765` 扩展 IPC 咽喉", () => {
 
   test("咽喉文件自己确实接上了呈现(不是个空壳转发)", () => {
     const source = readFileSync(join(RENDERER_ROOT, CHOKEPOINT), "utf8")
-    expect(source).toContain("warningPresentingExt")
-    expect(source).toContain("pushToast")
+    // `toContain("pushToast")` 不够:把呈现函数换成 `() => {}` 之后 import 行还在,这条照样绿
+    // (实测过)。判据得是「真的**调**了它」,所以要求出现在调用位。
+    expect(source).toMatch(/pushToast\s*\(/)
+    expect(source).toMatch(/warningPresentingExt\s*</)
   })
 
   // 反向自检:闸门自己得能开火。用真实文本喂一遍正则,而不是相信它「看起来对」。
