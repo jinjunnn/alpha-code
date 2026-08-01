@@ -253,16 +253,39 @@ describe("alpha connection allowlist", () => {
   })
 })
 
-describe("unknown handler is answered before any external interaction", () => {
-  test("the production evaluator returns update-required and never touches a handler", async () => {
+describe("unknown handler is answered before any handler / auth / browser / store interaction", () => {
+  /**
+   * Deliberately *not* "before any external interaction". The connection declaration lives inside
+   * the component payload, so the evaluator fetches that payload first and looks the handler id up
+   * afterwards: by the time `update-required` comes back, the payload host has already been
+   * contacted, and a payload fetch that fails surfaces as `package-payload-unavailable` instead of
+   * this verdict. What is pinned here is the narrower — and true — fact: no handler runs, no auth
+   * or browser window opens, nothing reaches the connection store, and that one payload request is
+   * the only outbound call.
+   */
+  test("the production evaluator returns update-required after exactly one payload fetch and never touches a handler", async () => {
     const { envelope, bytes } = fixture()
     const calls: HandlerCalls = { begin: 0, status: 0, disconnect: [] }
     fakeHandler(calls)
-    const view = await evaluatePackageForHost(envelope, { fetchPayload: async () => bytes })
+    let fetchCalls = 0
+    const view = await evaluatePackageForHost(envelope, {
+      fetchPayload: async () => {
+        fetchCalls++
+        return bytes
+      },
+    })
     expect(view.verdict).toBe("update-required")
     expect(view.action).toEqual({ kind: "update-alpha", enabled: true, reasonCode: "package-host-update-required" })
     expect(view.prerequisites).toEqual({ status: "ready", items: [] })
+    // An exact count, not "at least one": a second fetch inserted before the lookup, or the single
+    // fetch moved after it, both have to turn this red — otherwise the ordering above is prose the
+    // gate never measures.
+    expect(fetchCalls).toBe(1)
+    // Zero handler calls is structural in this build (the shipped table above is empty, so there is
+    // nothing to call); the populated-table counter-case is the next test. Nothing is written to the
+    // connection store either — refusing costs the user no persisted state.
     expect(calls).toEqual({ begin: 0, status: 0, disconnect: [] })
+    expect(readAlphaConnectionRecordsV1(scope)).toEqual({ ok: true, records: [] })
   })
 
   /**

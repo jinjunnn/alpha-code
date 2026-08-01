@@ -20,9 +20,12 @@ import type {
  *
  * **The table is empty in this build, and that is the shipped behaviour, not a stub.** Concrete
  * provider connectors are out of scope for `#704`; until one is reviewed and added here, every
- * `alpha-connection` package resolves to `update-required` before any external interaction — which
- * is exactly the fail-closed default the contract asks for. `package-alpha-connection.test.ts`
- * pins this key set, so adding a handler cannot happen as a side effect of some other change.
+ * `alpha-connection` package resolves to `update-required` before any handler, auth, browser or
+ * store interaction — which is exactly the fail-closed default the contract asks for. Not before
+ * *any* outbound call: the connection is declared inside the component payload, so that payload has
+ * already been fetched when the lookup runs. `package-alpha-connection.test.ts` pins this key set
+ * and that exact fetch count, so adding a handler — or an extra call ahead of the lookup — cannot
+ * happen as a side effect of some other change.
  */
 export const ALPHA_CONNECTION_HANDLERS_V1: AlphaConnectionHandlerTableV1 = Object.freeze(
   Object.create(null) as Record<string, AlphaConnectionHandlerV1>,

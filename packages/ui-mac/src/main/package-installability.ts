@@ -244,10 +244,15 @@ export async function evaluatePackageForHost(
     if (!prerequisite.ok) return refuse("package-prerequisite-invalid")
 
     // Alpha Connection is answered here, in the browse/detail evaluator, which is the earliest
-    // point at which the host knows a signed package wants one. An id this build has no handler
-    // for becomes `update-required` now — before a payload of the *connection* is ever fetched,
-    // before a handler runs, before the install button is enabled. The lookup is a table hit and
-    // nothing else: main never reads structure out of the id (`#737` discipline).
+    // point at which the host knows a signed package wants one: the declaration lives inside the
+    // component payload fetched just above, so this is the first line that can see it. An id this
+    // build has no handler for becomes `update-required` now — before a handler runs, before an
+    // auth/browser window opens, before anything reaches the connection store, before the install
+    // button is enabled. It is *not* before every outbound call: that one payload request has
+    // already gone out, and if it had failed the user would see `package-payload-unavailable`
+    // instead. `package-alpha-connection.test.ts` pins the verdict and that fetch count at exactly
+    // one. The lookup itself is a table hit and nothing else: main never reads structure out of the
+    // id (`#737` discipline).
     const connection = decodePackageConnectionPrerequisiteProfileV1(component, decoded.payload)
     const unknownHandler = connection.items.find(
       (item) =>

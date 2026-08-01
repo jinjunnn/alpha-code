@@ -85,9 +85,11 @@ export function createAlphaConnectionCoordinator(deps: AlphaConnectionCoordinato
     const resolved = await resolveSignedPrerequisite(intent.values.catalogId!, intent.values.prerequisiteId!, deps, table)
     if (!resolved.ok) return refuse(resolved.reasonCode, resolved.reason)
 
-    // Unknown handler is answered here, before a single external interaction: no handler call, no
-    // browser window, no store write. The signed package can name any id it likes; only this table
-    // decides whether the id means anything, and it never parses the id to find out.
+    // Unknown handler is answered here: no handler call, no browser window, no store write. Not
+    // before every outbound call — resolving the signed prerequisite above already fetched the
+    // component payload, which is where the connection declaration lives. The signed package can
+    // name any id it likes; only this table decides whether the id means anything, and it never
+    // parses the id to find out.
     const handler = lookupAlphaConnectionHandlerV1(resolved.item.handlerId, table)
     if (!handler.ok)
       return refuse(
