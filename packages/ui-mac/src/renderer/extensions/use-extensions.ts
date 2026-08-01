@@ -21,6 +21,7 @@ import { isExtensionName } from "../../shared/extension-name"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
 import type { SessionGrantRefusalCode, SessionGrantWire } from "../../shared/ext-session-grant-wire"
 import { connectOutcome, grantsToReassert, sessionGrantKeyOf } from "./ext-session-toggle"
+import { extIpc } from "./ext-ipc"
 
 // Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
 
@@ -67,9 +68,14 @@ export type SessionGrantAction =
 /** #348:真判别联合(Codex 裁决 D1 + review minor)—— authorize 分支强制携带 diff,
  *  非 authorize 分支的 stage 类型排除 "authorize":中间包装层折叠丢数据过不了类型检查。 */
 export type ActionResult =
-  /** warning = 安装成功但携带 loud 诊断信号(CAS 自愈、授权账写失败等,#361 review r1)——
-   *  调用方必须呈现,不得静默吞掉。projectionLag(#336 r1)= 账本已 durable 但 skills 允许集
-   *  发布失败(本次未注入,重启自愈)—— UI 据此给「重启后生效」级用户提示。 */
+  /** warning = 安装成功但携带 loud 诊断信号(CAS 自愈、授权账写失败等,#361 review r1)。
+   *  **`#765`:呈现不再是调用方的责任** —— `extIpc` 在 IPC 包装层对任何带具名 warning 的
+   *  返回值统一推 toast。这里继续把它带上来只为数据保真(调用方可据此走别的分支);
+   *  **调用方不要再自己 flash 一次**,那会让用户看到两条一模一样的提示。
+   *  从前这条注释写的是「调用方必须呈现,不得静默吞掉」—— 六个调用点里只有一个照做,
+   *  三次事故都出在这句话身上:一条类型注释管不住新增的调用点。
+   *  projectionLag(#336 r1)= 账本已 durable 但 skills 允许集发布失败(本次未注入,重启自愈)
+   *  —— UI 据此给「重启后生效」级用户提示,那**仍然**是调用方的事(它决定文案,不是原样透传)。 */
   | { ok: true; reason?: string; warning?: string; projectionLag?: string }
   | { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string }
   | { ok: false; reason?: string; stage?: TxStageNonAuthorizeWire; code?: SetStateRefusalCodeWire }
@@ -263,7 +269,7 @@ export function useExtensions(
   async function loadInstalls() {
     const dir = projectDir?.()
     try {
-      const view = await window.api.ext.listInstalls(dir)
+      const view = await extIpc.listInstalls(dir)
       setStore("receipts", view.global)
       if ((projectDir?.() ?? undefined) === (dir ?? undefined)) setStore("projectReceipts", dir ? view.project : [])
     } catch {
@@ -337,7 +343,7 @@ export function useExtensions(
       ...(workspace ? { workspace } : {}),
       ...(IS_CN ? { cnMirror: true } : {}),
     }
-    const r = await window.api.ext.installCatalog({
+    const r = await extIpc.installCatalog({
       catalogId: entry.id,
       scope: { scope: "global" },
       ...(Object.keys(grants).length ? { grants } : {}),
@@ -376,7 +382,7 @@ export function useExtensions(
     // fail-closed,查询成功但行缺席/unknown 时 activation=undefined 仍照连 → 已禁 MCP 被激活)。
     let activation: string | undefined
     try {
-      const inv = await window.api.ext.inventoryView()
+      const inv = await extIpc.inventoryView()
       // Codex r11 B7:选**已安装 global 行**(scope==="global"),不落未安装浏览行(scope=null)。
       activation = inv.rows.find((r) => r.kind === "mcp" && r.name === name && r.scope === "global")?.activation
     } catch {
@@ -405,7 +411,7 @@ export function useExtensions(
     // Durable first: write the alpha-owned config. If this fails, never touch the live server —
     // avoids a "live but not persisted" state that vanishes on restart. Main file-ifies the
     // secretVars → opencode.jsonc gets {file:} refs, never the plaintext secret.
-    const persisted = await window.api.ext.persistMcp(name, config as unknown as Record<string, unknown>, secretVars)
+    const persisted = await extIpc.persistMcp(name, config as unknown as Record<string, unknown>, secretVars)
     if (!persisted.ok) return { ok: false, reason: persisted.reason }
     return liveAddAndConnect(name, config)
   }
@@ -462,7 +468,7 @@ export function useExtensions(
 
   async function loadSessionGrants(): Promise<void> {
     try {
-      const r = await window.api.ext.sessionGrants()
+      const r = await extIpc.sessionGrants()
       setStore("sessionGrants", Array.isArray(r?.grants) ? r.grants : [])
     } catch {
       /* IPC 瞬断:保留现值,下一次事件/操作再同步 */
@@ -489,7 +495,7 @@ export function useExtensions(
     directory: string,
     opts?: { confirmExpiredReview?: boolean },
   ): Promise<SessionGrantAction> {
-    const r = await window.api.ext.sessionGrant({
+    const r = await extIpc.sessionGrant({
       catalogId,
       directory,
       ...(opts?.confirmExpiredReview ? { confirmExpiredReview: true } : {}),
@@ -506,7 +512,7 @@ export function useExtensions(
   }
 
   async function revokeSession(catalogId: string, directory: string, name: string): Promise<ActionResult> {
-    const r = await window.api.ext.sessionGrantRevoke({ catalogId, directory })
+    const r = await extIpc.sessionGrantRevoke({ catalogId, directory })
     if (!r.ok) return { ok: false, reason: r.reason }
     // 撤销后断连(best-effort;grant 已撤,注入/重建面不会复活它 —— 断连失败只影响本实例余温)。
     await connectSessionMcp(name, directory, false)
@@ -521,7 +527,7 @@ export function useExtensions(
   async function reassertSessionGrants(disposedDirectory: string | undefined): Promise<void> {
     const plan = grantsToReassert(store.sessionGrants, disposedDirectory)
     for (const g of plan) {
-      const r = await window.api.ext.sessionGrant({ catalogId: g.id, directory: g.directory }).catch(() => null)
+      const r = await extIpc.sessionGrant({ catalogId: g.id, directory: g.directory }).catch(() => null)
       const connected = r?.ok ? await connectSessionMcp(g.name, g.directory, true) : false
       setStore("sessionLink", sessionGrantKeyOf(g.id, g.directory), r?.ok ? (connected ? "connected" : "failed") : undefined!)
     }
@@ -530,7 +536,7 @@ export function useExtensions(
 
   async function removeMcp(name: string): Promise<ActionResult> {
     const c = client
-    const res = await window.api.ext.removeMcp(name)
+    const res = await extIpc.removeMcp(name)
     // Codex review #351:失败(含事务在途 busy)不 disconnect —— 否则留下「已装但被断连」的半拆态。
     if (res.ok && c) await c.mcp.disconnect({ name } as any).catch(() => {})
     await loadStatus()
@@ -566,7 +572,7 @@ export function useExtensions(
       return removeMcp(receipt.name)
     const built = uninstallIntentFor(receipt, projectDir?.())
     if (!built.ok) return { ok: false, reason: built.reason }
-    const res = await window.api.ext.uninstallV2(built.intent)
+    const res = await extIpc.uninstallV2(built.intent)
     if (res.ok && receipt.type === "mcp") await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
     await Promise.all([loadStatus(), loadInstalls()])
     // fs/plugin removal needs a rescan;cloud 只动账本(引擎无状态)无需 dispose。
@@ -584,7 +590,7 @@ export function useExtensions(
     opts?: { confirmExpiredReview?: boolean },
   ): Promise<ActionResult> {
     if (receipt.scope === "project") return { ok: false, reason: "project-scoped records have no enable switch (read-only group)" }
-    const res = await window.api.ext.setInstallState({
+    const res = await extIpc.setInstallState({
       type: receipt.type,
       name: receipt.name,
       scope: "global",
@@ -620,7 +626,7 @@ export function useExtensions(
   async function checkRuntime(tools: string[] | undefined): Promise<RuntimeCheck> {
     if (!tools || tools.length === 0) return { ok: true }
     for (const tool of tools) {
-      const r = await window.api.ext.checkRuntime(tool)
+      const r = await extIpc.checkRuntime(tool)
       if (!r.ok) return { ok: false, missing: tool }
     }
     return { ok: true }
@@ -683,7 +689,7 @@ export function useExtensions(
   // 会话开关归位(respawn 后 renderer reload 会重查到空集 = 双保险);toast 提示由 hub 订阅同
   // 一事件自行呈现(多监听允许)。
   onCleanup(
-    window.api.ext.onSessionGrantsEnded(() => {
+    extIpc.onSessionGrantsEnded(() => {
       setStore("sessionGrants", [])
       setStore("sessionLink", {})
     }),
@@ -691,7 +697,7 @@ export function useExtensions(
 
   // REQ-036:出厂技能名单(一次取回缓存;失败诚实为空 = 不显「出厂内置」徽标,条目退回可安装态)。
   const [factoryIds, setFactoryIds] = createSignal<string[]>([])
-  void window.api.ext
+  void extIpc
     .factorySkillIds()
     .then((ids) => setFactoryIds(Array.isArray(ids) ? ids : []))
     .catch(() => {})
@@ -705,7 +711,7 @@ export function useExtensions(
     // 通道。「内容未随版本打包」的诚实失败由 planner 原样上抛。
     // #348:首驱可返回 stage="authorize" + diff(原样透传给 hub 弹授权框);确认后带 authorization
     // 重驱同一意图 —— 引擎按整集覆盖判定,decidedAt 由 main 打戳。
-    const r = await window.api.ext.installCatalog({
+    const r = await extIpc.installCatalog({
       catalogId: entry.id,
       scope: { scope: "global" },
       ...(authorization ? { authorization } : {}),
@@ -722,7 +728,7 @@ export function useExtensions(
     // REQ-099 #305:catalog 插件切 installCatalog(vendored/npm 分支由 planner 从已验签条目裁决)。
     // dispose 触发实例重建 → 引擎立刻装载(vendored=本地即读;npm=后台下载);失败不降级为错误,
     // config 已落盘、下次重建自然装载。
-    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
+    const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
     if (r.ok) {
       await loadInstalls()
       await refreshEngine()
@@ -735,7 +741,7 @@ export function useExtensions(
   async function installAgentEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "agent") return { ok: false, reason: "not an agent entry" }
-    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
+    const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
     if (!r.ok) return r
     await loadInstalls()
     const refreshed = await refreshEngine()
@@ -749,7 +755,7 @@ export function useExtensions(
   // 由 hub 行内呈现(B11)。npm 导入 = 复用 persistPlugin 通道(白名单校验在主进程)。
   async function importSkillFolder(): Promise<ActionResult & { name?: string; canceled?: boolean }> {
     // REQ-098 #255:main 自弹目录选择器,renderer 不再传 srcDir。
-    const r = await window.api.ext.importSkillFolder()
+    const r = await extIpc.importSkillFolder()
     if (!r.ok) return r
     await loadInstalls()
     // #336 r1:warning/projectionLag 端到端透传(此前重建 {ok,name} 把降级信号吞掉)。
@@ -758,7 +764,7 @@ export function useExtensions(
     return { ok: true, name: r.name, ...carry }
   }
   async function importSkillGit(url: string): Promise<ActionResult & { name?: string }> {
-    const r = await window.api.ext.importSkillGit(url)
+    const r = await extIpc.importSkillGit(url)
     if (!r.ok) return r
     await loadInstalls()
     const carry = { ...(r.warning ? { warning: r.warning } : {}), ...(r.projectionLag ? { projectionLag: r.projectionLag } : {}) }
@@ -766,7 +772,7 @@ export function useExtensions(
     return { ok: true, name: r.name, ...carry }
   }
   async function importNpmPlugin(pkg: string): Promise<ActionResult> {
-    const r = await window.api.ext.installPlugin(pkg)
+    const r = await extIpc.installPlugin(pkg)
     if (!r.ok) return r
     await loadInstalls()
     await refreshEngine()
@@ -777,7 +783,7 @@ export function useExtensions(
    *  分支同语义:不触达引擎/文件系统,只落账)。 */
   async function enableCloud(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
     if (entry.type !== "cloud") return { ok: false, reason: "not a cloud entry" }
-    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
+    const r = await extIpc.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
     if (!r.ok) return r // #348:不折叠 —— stage/authorization 原样透传(cloud 未来入事务时自然接上)
     await loadInstalls()
     return { ok: true }
