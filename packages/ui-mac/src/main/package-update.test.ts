@@ -20,7 +20,7 @@ import type { PackageAdmissionPreviewV1 } from "../shared/package-admission"
 import { createPackageAdmissionCoordinator } from "./package-admission"
 import { bundleOwner } from "./ext-package-ledger-v3"
 import { findRecordV2, packageClaimOwners, readPackageGraphs, readPackageLedgerStateV1 } from "./ext-receipt-v2"
-import { runExtensionTransaction } from "./ext-transaction"
+import { runExtensionTransaction, TX_CRASH_POINTS, type TxCrashPoint } from "./ext-transaction"
 import type { PackageArtifactRemovalV1 } from "./ext-package-uninstall"
 
 const corpus = resolve(
@@ -272,29 +272,86 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     expect(state.ok).toBe(true)
   }, 60_000)
 
-  test("离场 child 的实物删不掉 ⇒ 整次更新失败,账本停在旧版本(全旧)", async () => {
+  /**
+   * 越过可回滚点**之后**清理失败,是另一种语义:更新已经成功(账本 durable),留下的是一份
+   * 残留,而不是一次失败。这里绝不能报 `ok:false` —— 那会让用户以为旧版本还在,而账本上是新的。
+   * 恢复会重跑 `commitTransactionLedger`(exact replay + 幂等删除)把残留收掉。
+   */
+  test("账本已 durable 之后清理失败 ⇒ 更新成功 + 具名 warning,账本是新版本(不是谎报失败)", async () => {
     const base = (await Bun.file(corpus).json()) as Corpus
     const v1 = generation(base, { agentBody: AGENT_V1, keepMcp: true, addSkill: false })
     const v2 = generation(base, { agentBody: AGENT_V2, keepMcp: false, addSkill: true })
     const removed: Array<Array<{ kind: string; name: string }>> = []
-    const { admit, select } = coordinatorFor([v1, v2], removed, () => ({
-      ok: false,
-      reason: "injected artifact removal failure",
-      removed: [],
-      warnings: [],
-    }))
+    // 接缝被调用的**那一刻**,账本必须已经是新图 —— 这条断言钉住的正是「destroy 在 decide 之后」。
+    const graphWhenCalled: string[] = []
+    const { admit, select } = coordinatorFor([v1, v2], removed, () => {
+      graphWhenCalled.push(readPackageGraphs(root)[0]?.graphDigest ?? "<none>")
+      return { ok: false, reason: "injected artifact removal failure", removed: [], warnings: [] }
+    })
+
+    expect((await install(admit, "attempt-v1", secretsFor(v1))).result.ok).toBe(true)
+    select(1)
+    const second = await install(admit, "attempt-v2")
+
+    expect(second.result.ok, JSON.stringify(second.result).slice(0, 300)).toBe(true)
+    if (!second.result.ok) return
+    expect(second.result.warning).toContain("could not be cleaned up")
+    // 账本是**新**版本,离场 child 已去账 —— 清理失败不回退这些。
+    const graphs = readPackageGraphs(root)
+    expect(graphs).toHaveLength(1)
+    expect(findRecordV2(root, "mcp", "generic-bundle-remote")).toBeNull()
+    expect(findRecordV2(root, "skill", "generic-bundle-extra")).not.toBeNull()
+    // 接缝被调用时看到的就是这张新图(= 它跑在 mutation 之后)。
+    expect(graphWhenCalled).toEqual([graphs[0]!.graphDigest])
+  }, 60_000)
+
+  /**
+   * BLOCKER 1 的**全量**形态:引擎每一个崩溃点各来一次。不变量只有一条 ——
+   * **绝不出现「账本还是旧的、而离场 child 的实物已经被删」**。
+   * 崩在 receipt commit 之前 ⇒ 零删除;越过之后 ⇒ 账本是新的。两者之外没有第三种合法盘面。
+   */
+  test.each(TX_CRASH_POINTS)("crash at %s:盘面恒「全旧且零删除」或「全新」,绝无中间态", async (point) => {
+    const base = (await Bun.file(corpus).json()) as Corpus
+    const v1 = generation(base, { agentBody: AGENT_V1, keepMcp: true, addSkill: false })
+    const v2 = generation(base, { agentBody: AGENT_V2, keepMcp: false, addSkill: true })
+    const removed: Array<Array<{ kind: string; name: string }>> = []
+    let crashAt: TxCrashPoint | undefined
+    let index = 0
+    const current = () => [v1, v2][Math.min(index, 1)]!
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [current().envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      environment: () => "dev",
+      installability: { fetchPayload: async (ref) => current().payloadByDigest.get(ref.sha256)! },
+      fetchAsset: async (ref) => current().assetByDigest.get(ref.sha256)!,
+      transaction: (txRoot, plan, hooks) => runExtensionTransaction(txRoot, plan, { ...hooks, ...(crashAt ? { crashAt } : {}) }),
+      removePackageChildArtifacts: (children) => {
+        removed.push(children.map((child) => ({ kind: child.kind, name: child.name })))
+        return { ok: true, removed: [], warnings: [] }
+      },
+    })
 
     expect((await install(admit, "attempt-v1", secretsFor(v1))).result.ok).toBe(true)
     const graphBefore = readPackageGraphs(root)
+    index = 1
+    crashAt = point
+    await install(admit, `attempt-${point}`).catch(() => undefined)
 
-    select(1)
-    const second = await install(admit, "attempt-v2")
-    expect(second.result.ok).toBe(false)
-    if (!second.result.ok) expect(second.result.reason).toContain("the ledger is unchanged")
-    // 全旧:图、claim、record 一律停在 v1;新组件没进账。
-    expect(readPackageGraphs(root)).toEqual(graphBefore)
-    expect(findRecordV2(root, "mcp", "generic-bundle-remote")).not.toBeNull()
-    expect(findRecordV2(root, "skill", "generic-bundle-extra")).toBeNull()
+    const graphNow = readPackageGraphs(root)
+    const ledgerIsOld = JSON.stringify(graphNow) === JSON.stringify(graphBefore)
+    if (ledgerIsOld) {
+      // 全旧 ⇒ 一次删除都不许发生。这是本条唯一有区分度的断言。
+      expect(removed, `crash ${point}: ledger is old but artifacts were removed`).toEqual([])
+      expect(findRecordV2(root, "mcp", "generic-bundle-remote")).not.toBeNull()
+    } else {
+      // 全新 ⇒ 离场 child 已去账(删除是否已完成由恢复前滚负责)。
+      expect(findRecordV2(root, "mcp", "generic-bundle-remote")).toBeNull()
+    }
   }, 60_000)
 
   test("没有实物删除接缝而确实有 child 要离场 ⇒ 响亮拒绝(不装作删过)", async () => {

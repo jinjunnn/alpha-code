@@ -71,31 +71,59 @@ Otherwise the child is **retained** with a named reason
 (`shared-with-package` / `user-installed` / `legacy-protected` / `unmanaged`),
 and not one artifact is touched.
 
-## Order: decide, then destroy, then commit once
+## Order: destroy is always the last thing, never the first
 
-Both update and uninstall run in this order, and the order is the contract:
+The rule both paths obey is **destruction happens after the last check that could
+still change the decision** — not "both use the same sequence". They do not, and
+they must not, because only one of them has a transaction.
 
-1. **decide** — read the ledger once, compute every claim verdict. Read-only.
+**Uninstall** (no transaction):
+
+1. **decide** — read the ledger **once** and run the *same* checks the write path
+   runs: `validateV3State` (inside `readPackageLedgerStateV1`) and
+   `validatePackageMutationScopeV1`. Read-only.
 2. **destroy** — remove the artifacts of the children judged `delete`. Idempotent.
-3. **commit** — exactly one root `PackageLedgerMutationV1`: claim transfer,
-   departing records, and the graph itself, in one validated write.
+3. **commit** — exactly one root `PackageLedgerMutationV1`.
 
-Any failure in 1 or 2 leaves the ledger **byte-for-byte unchanged**; the user
-retries and the operation converges (every removal is idempotent and the plan is
-recomputed from the ledger, which still holds the graph).
+Every ledger state `applyPackageMutation` would reject is therefore already
+rejected in step 1, with zero artifact calls. A failure in 1 or 2 leaves the
+ledger byte-for-byte unchanged and the user's retry converges.
 
-The reverse order is wrong here and not merely riskier: once the graph is gone
-there is no way left to compute which children should have been removed, and a
-leftover MCP configuration keeps a server running that the ledger no longer knows
-about.
+**Update** (has a transaction): the departing children's artifacts are removed
+inside `commitTransactionLedger`, **after** the ledger mutation succeeds.
 
-Package uninstall deliberately does **not** use the engine's per-key uninstall
-journal. That engine holds the bundle lock while removing artifacts, and the agent
-and MCP configuration writers take the *same*, non-reentrant lock — a whole-package
-uninstall would fail with `config busy`. Wrapping each child in its own journalled
-uninstall reinstates the shape V3 removed: one lock, one journal and one ledger
-write per child. The replacement invariant is the one stated above: the ledger is
-the recovery point.
+The engine can still `rollbackAll` at the pre-switch probe and at receipt commit;
+only once receipt commit has succeeded does it cross into forward-only territory
+(`ext-transaction.ts`: "receipt 已 durable = 越过可回滚点"). Removing before the
+transaction — as the first version of this contract did — produces the state this
+whole design exists to prevent: the update reports failure, the old graph, claims
+and records are all intact, **and the departing component's files are gone**.
+
+Consequences, in full:
+
+| When it fails | Result |
+| --- | --- |
+| lock / precondition / staging / probe / switch / any crash point | seam never reached — **zero deletion**, ledger old |
+| the ledger mutation itself | throws → engine rolls back — **zero deletion**, ledger old |
+| cleanup, after the ledger is durable | update **succeeds** with a named warning; a residual file remains |
+| crash between the mutation and the cleanup | journal is non-terminal → recovery re-runs `commitTransactionLedger` → mutation replays exactly, cleanup repeats idempotently |
+
+A cleanup failure must never be reported as a failed update: the ledger already
+says the new version is installed, and claiming otherwise would tell the user the
+old version is still there when it is not. That is also why the cleanup seam is
+never allowed to throw — throwing would roll the live tree back to a state the
+durable ledger no longer describes.
+
+Uninstall cannot use the update ordering. Once the graph is gone there is nothing
+left to compute the departing set from; update gets away with it only because the
+journal still carries `childRemovals`. Uninstall has no journal, so a residual
+would go from "retry converges" to "stuck".
+
+**Known residual window**, recorded rather than hidden: if another *process*
+changes the ledger between uninstall's steps 1 and 3, step 3 can still refuse
+after step 2 has deleted. In-process this path is serialised by the gated-write
+per-root mutex; cross-process the exposure is identical to today's
+`uninstallByKey`, i.e. a pre-existing class rather than something introduced here.
 
 ## Conflicts refused at planning time
 

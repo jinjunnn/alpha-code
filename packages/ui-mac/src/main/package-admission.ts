@@ -10,7 +10,7 @@ import { nextDesiredState } from "./ext-install-policy"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { buildAgentTxItems, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
 import { computeGrantDigest, readPackageLedgerStateV1, type UpsertInput } from "./ext-receipt-v2"
-import { commitTransactionLedger } from "./ext-package-ledger-commit"
+import { commitTransactionLedger, type PackageChildArtifactSeamV1 } from "./ext-package-ledger-commit"
 import {
   computeGraphDigest,
   type PackageGraphV1,
@@ -592,24 +592,24 @@ async function executePreparedPackage(
   const root = deps.root()
   const now = (deps.now?.() ?? new Date()).toISOString()
 
-  // `#698` update 的删除半场。顺序是**判决 → 删实物 → 一次账本 mutation**,与整包卸载逐字同形
-  // (`ext-package-uninstall` 的抬头写清了为什么反过来是错的:图一消失就再也算不出该删谁)。
-  // 这一步失败即整次尝试失败,而**账本一个字节都没动** —— 重试会重新算出同一份判决,已删掉的
-  // 部分幂等。没有接缝而又确实有东西要删时**响亮拒绝**,绝不装作删过:那会留下一个跑着的
-  // MCP server 而账本上已经没有它。
+  // `#698`(review R1 Blocker 1):update 的删除半场**不在这里执行**。
+  //
+  // 上一版在事务开始之前就把离场 child 的实物删了,而事务直到 pre-switch probe 与 receipt commit
+  // 都还会回滚 —— 更新失败时旧图/旧 claim/旧 record 全在,而实物已经没了。真正的执行点在
+  // `commitTransactionLedger`:账本 mutation 成功之后、引擎越过可回滚点的那一侧(理由写在那里)。
+  //
+  // 这里只保留**计划期的接缝在场检查**:确实有东西要删而接缝没接线时,连事务都不开。
+  // 早拒比晚拒好,而 `commitTransactionLedger` 里那道同款检查是咽喉(恢复路径也走它)。
   const doomed = lifecycle.verdicts.filter((verdict) => verdict.decision === "delete")
-  if (doomed.length > 0) {
-    if (!deps.removePackageChildArtifacts)
-      return {
-        ok: false,
-        reason: `package admission: this update removes ${doomed
-          .map((verdict) => `${verdict.kind}:${verdict.name}`)
-          .join(", ")}, but no artifact-removal seam is wired — refusing (fail closed)`,
-      }
-    const removal = deps.removePackageChildArtifacts(doomed.map((verdict) => ({ kind: verdict.kind, name: verdict.name })))
-    if (!removal.ok)
-      return { ok: false, reason: `package admission: ${removal.reason} — the ledger is unchanged; retry (idempotent)` }
-  }
+  if (doomed.length > 0 && !deps.removePackageChildArtifacts)
+    return {
+      ok: false,
+      reason: `package admission: this update removes ${doomed
+        .map((verdict) => `${verdict.kind}:${verdict.name}`)
+        .join(", ")}, but no artifact-removal seam is wired — refusing (fail closed)`,
+    }
+  // 越过可回滚点之后的清理失败只能上报。收集在这里,折进用户可见的 warning。
+  const ledgerWarnings: string[] = []
   const builds: Array<{ component: PreparedComponent; build: PackageTxBuildV1; desiredState: "enabled" | "disabled" }> = []
 
   for (const component of prepared.components) {
@@ -738,7 +738,17 @@ async function executePreparedPackage(
         }
         return { ok: true }
       },
-      commitReceipt: (records) => commitPackageReceipts(root, records),
+      commitReceipt: (records) =>
+        commitPackageReceipts(
+          root,
+          records,
+          deps.removePackageChildArtifacts
+            ? {
+                remove: (children) => deps.removePackageChildArtifacts!(children.map((child) => ({ kind: child.kind, name: child.name }))),
+                warnings: ledgerWarnings,
+              }
+            : undefined,
+        ),
     },
   )
   return transactionOutcome(
@@ -747,7 +757,7 @@ async function executePreparedPackage(
     rootManifestDigest,
     builds,
     connection,
-    bindConnectionsAfterCommit(result, connection, deps),
+    [bindConnectionsAfterCommit(result, connection, deps), ...ledgerWarnings].filter((entry): entry is string => !!entry).join("; ") || undefined,
   )
 }
 
@@ -943,8 +953,8 @@ function packageMutationEnvelope(plan: PackageLifecyclePlanV1, prepared: Prepare
   }
 }
 
-function commitPackageReceipts(root: string, records: TxCommitRecord[]) {
-  commitTransactionLedger(root, records)
+function commitPackageReceipts(root: string, records: TxCommitRecord[], seam?: PackageChildArtifactSeamV1) {
+  commitTransactionLedger(root, records, seam)
 }
 
 function transactionOutcome(

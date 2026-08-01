@@ -490,7 +490,15 @@ export function registerExtIpcHandlers(
     // REQ-128 `#706`:前滚与主提交共用 `commitTransactionLedger` —— journal 里带着 package
     // mutation 的事务在恢复期也必须重建**同一份** V3 mutation,否则前滚会写出一本没有
     // graph/claims 的账本(而 child records 已 durable),owner 集合从此失据。
-    commitReceipt: (recs) => commitTransactionLedger(root, recs),
+    // `#698`(review R1 Blocker 1):前滚也必须带上离场 child 的实物清除接缝。崩在「账本已 durable、
+    // 实物还没删」之间时,journal 仍是非终态,恢复重跑本函数 —— `applyPackageMutation` 判 exact
+    // replay,删除幂等重放。不传接缝的话,那条 journal 会因「有 childRemovals 却没有接缝」永远
+    // 前滚不完。warnings 只作日志:恢复期没有用户可见的返回通道。
+    commitReceipt: (recs) => {
+      const warnings: string[] = []
+      commitTransactionLedger(root, recs, { remove: (children) => packageChildArtifactRemoval(children), warnings })
+      for (const warning of warnings) getLogger().log(`[req128-package-cleanup] ${warning}`)
+    },
     // #336 r3(r2 Major 1):receipt durable 证伪 —— 恢复进入任何回滚分支前读账本判定。
     // valid + 同 txId = durable(**任一** item 在账即禁回滚,防半批分叉);absent/v1/异 txId =
     // 确证未落(允许回滚);corrupt/ledger-corrupt = 无法证伪 → 抛错(引擎 fail-closed 保留

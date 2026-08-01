@@ -323,6 +323,42 @@ describe("REQ-128 #698 —— canonical permutations", () => {
     expect(calls.filter((call) => call.includes("ancient"))).toEqual([])
   })
 
+  /**
+   * BLOCKER 3 的直接回归,而且是这三条里唯一会**销毁用户自己装的东西**的那条。
+   *
+   * 顺序很关键:用户**先**单装 skill:shared(此时 V3 还没激活 ⇒ 账本里有 record、没有 claim),
+   * **然后**装第一个含同名 child 的 Bundle。V3 收编发生在 `applyPackageMutation` 里,而它跳过
+   * 「本次 mutation 也 upsert 了的」key —— 于是这条存量拿不到 `legacy-protected`,owner 集合里
+   * 只剩 Bundle。卸掉这个 Bundle,用户原来那个独立安装的 Skill 被一起销毁。
+   *
+   * 既有的 standalone 用例避开了这一格:它先用**另一个包**激活 V3,于是 `upsertRecordsV2` 走的是
+   * 「V3 已激活 ⇒ 自带 standalone claim」那条路。首包碰撞是另一格。
+   */
+  test("首个 V3 Bundle 与用户既有同名安装碰撞:那份存量必须拿到 legacy 保护,卸包时一件都不许动", () => {
+    // ① V3 尚未激活:用户自己装的 skill:shared 在账上,没有任何 claim。
+    expect(upsertRecordsV2(root, [upsertInput(A_CHILDREN[2]!, DIGEST_A)]).ok).toBe(true)
+    materialise([A_CHILDREN[2]!])
+    expect(JSON.parse(readRaw()).v).toBe(2)
+    expect(packageClaimOwners(root, "skill", "shared")).toEqual([])
+
+    // ② 第一个 Bundle 进来,含同名 child。
+    seedPackage(GRAPH_A, A_CHILDREN, OWNER_A, DIGEST_A)
+    expect(packageClaimOwners(root, "skill", "shared").sort()).toEqual([LEGACY_PROTECTED_OWNER, OWNER_A].sort())
+
+    // ③ 卸掉这个 Bundle:用户那份存量一件都不许动。
+    const calls: Calls = []
+    const outcome = uninstallPackageV1(PKG_A, { globalRoot: () => root, installers: installers(calls) })
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.retained).toEqual([
+      { kind: "skill", name: "shared", decision: "retain", remainingOwners: [LEGACY_PROTECTED_OWNER], reasonCode: "legacy-protected" },
+    ])
+    expect(calls.filter((call) => call.includes("shared"))).toEqual([])
+    expect(fs.existsSync(artifactPath("skill", "shared"))).toBe(true)
+    expect(findRecordV2(root, "skill", "shared")).not.toBeNull()
+    expect(packageClaimOwners(root, "skill", "shared")).toEqual([LEGACY_PROTECTED_OWNER])
+  })
+
   test("unmanaged(账本里没有 v2 record)的图节点:判决是留,不是删", () => {
     seedPackage(GRAPH_A, A_CHILDREN, OWNER_A, DIGEST_A)
     const planned = planPackageUninstallV1(root, PKG_A, "tx-probe")
@@ -420,7 +456,8 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     expect(readRaw()).toBe(before)
   })
 
-  test("dangling claim(claim 指向一个没有 record 的 child)⇒ 卸载拒绝写盘,字节零改动", () => {
+  test("dangling claim(claim 指向一个没有 record 的 child)⇒ **计划期**拒绝:零删除调用、实物全在", () => {
+    // 违规项追加在 claims 集合的**末尾** —— 「只检查第一个」必须红。
     const before = mutate((ledger) => {
       const claims = ledger.claims as PackageClaimV1[]
       claims.push({ kind: "skill", name: "never-installed", owners: [standaloneOwner("skill", "never-installed")] })
@@ -428,11 +465,19 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     const calls: Calls = []
     const outcome = uninstallPackageV1(PKG_A, { globalRoot: () => root, installers: installers(calls) })
     expect(outcome.ok).toBe(false)
-    if (!outcome.ok) expect(outcome.reason).toContain("dangling claim")
+    if (!outcome.ok) {
+      expect(outcome.reason).toContain("dangling claim")
+      // 拒绝必须发生在**判决期**,不是在实物已经删完之后的写盘期。
+      expect(outcome.stage).toBe("plan")
+    }
+    // 唯一有区分度的两条:删除接缝零调用 + 实物仍在。
+    // 「账本字节没变」在这条路径上本来就成立(拒绝发生在写盘处),断言它等于没断言。
+    expect(calls).toEqual([])
+    for (const child of A_CHILDREN) expect(fs.existsSync(artifactPath(child.kind, child.name)), `${child.kind}:${child.name}`).toBe(true)
     expect(readRaw()).toBe(before)
   })
 
-  test("认不出的 owner token(混在合法 owner 后面)⇒ 卸载拒绝,字节零改动", () => {
+  test("认不出的 owner token(混在合法 owner 后面)⇒ 计划期拒绝:零删除调用、实物全在", () => {
     const before = mutate((ledger) => {
       const claims = ledger.claims as PackageClaimV1[]
       claims[claims.length - 1]!.owners = [OWNER_A, "bundle:evil"] // 违规项在第二位
@@ -440,6 +485,58 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     const calls: Calls = []
     const outcome = uninstallPackageV1(PKG_A, { globalRoot: () => root, installers: installers(calls) })
     expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.stage).toBe("plan")
+    expect(calls).toEqual([])
+    for (const child of A_CHILDREN) expect(fs.existsSync(artifactPath(child.kind, child.name)), `${child.kind}:${child.name}`).toBe(true)
+    expect(readRaw()).toBe(before)
+  })
+
+  /**
+   * 把「账本自身不自洽」当成**一类**枚举,而不是逐个实例打补丁(review R1 Blocker 2 的类形态)。
+   *
+   * 判据是同一条:`applyPackageMutation` 会拒的每一种账本状态,`planPackageUninstallV1` 都必须在
+   * **删任何实物之前**拒掉。所以每一格断言的都是 `stage === "plan"` + 删除接缝零调用 + 实物全在,
+   * 而**不是**「账本字节没变」—— 后者在拒绝发生于写盘处时也成立,等于没断言。
+   */
+  test.each([
+    [
+      "dangling claim(集合末尾)",
+      (ledger: Record<string, unknown>) =>
+        (ledger.claims as PackageClaimV1[]).push({
+          kind: "skill",
+          name: "never-installed",
+          owners: [standaloneOwner("skill", "never-installed")],
+        }),
+    ],
+    [
+      "unknown child(图里的第三个节点没人认领)",
+      (ledger: Record<string, unknown>) => {
+        const victim = A_CHILDREN[2]!
+        ledger.claims = (ledger.claims as PackageClaimV1[]).filter((c) => !(c.kind === victim.kind && c.name === victim.name))
+      },
+    ],
+    [
+      "孤儿 bundle owner(claim 指名一张账本里没有的图)",
+      (ledger: Record<string, unknown>) => {
+        const claims = ledger.claims as PackageClaimV1[]
+        const last = claims[claims.length - 1]!
+        last.owners = [...last.owners, bundleOwner("package:ghost", DIGEST_B)]
+      },
+    ],
+    [
+      "被篡改的 graph 节点(第二个 child)",
+      (ledger: Record<string, unknown>) => {
+        ;(ledger.packageGraphs as PackageGraphV1[])[0]!.children[1]!.name = "hijacked"
+      },
+    ],
+  ])("账本不自洽的每一种形态:%s ⇒ 计划期拒、零删除调用、实物全在", (_label, edit) => {
+    const before = mutate(edit)
+    const calls: Calls = []
+    const outcome = uninstallPackageV1(PKG_A, { globalRoot: () => root, installers: installers(calls) })
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.stage).toBe("plan")
+    expect(calls).toEqual([])
+    for (const child of A_CHILDREN) expect(fs.existsSync(artifactPath(child.kind, child.name)), `${child.kind}:${child.name}`).toBe(true)
     expect(readRaw()).toBe(before)
   })
 

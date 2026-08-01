@@ -7,12 +7,20 @@
 //
 // ── 顺序(这是本模块唯一重要的东西)──────────────────────────────────────────────────────────
 //
-//   ① **判决**(`planPackageUninstallV1`):读账本,逐 child 算「释放本包 owner 之后还剩谁」。
-//      `#706` R2 Blocker 的形状是「先删实物、再问账本」—— 账本拒绝时东西已经没了。所以判决
-//      永远在最前面,而且**只读**。
+//   ① **判决**(`planPackageUninstallV1`):读**一次**账本,跑与写盘期**同一条**校验
+//      (`readPackageLedgerStateV1` 里的 `validateV3State` + `validatePackageMutationScopeV1`),
+//      逐 child 算「释放本包 owner 之后还剩谁」。只读。
 //   ② **删实物**(`removePackageChildArtifactsV1`):只删判决为 `delete` 的那些,幂等。
-//   ③ **一次** root `PackageLedgerMutationV1`:释放全部 claim、去掉 delete 集的 record、
-//      删掉这张图。中途任何失败都发生在 ③ 之前,**账本一个字节都不动**。
+//   ③ **一次** root `PackageLedgerMutationV1`。
+//
+// review R1 Blocker 2 修正的正是 ①:此前判决期只解析不校验,于是一本带 dangling claim /
+// unknown child / 孤儿 owner 的账本会让计划顺利通过、实物被真删,直到 ③ 才拒 —— 「先动实物、
+// 后做判决」。现在 `applyPackageMutation` 会拒的每一种账本状态,①都已经拒过了。
+//
+// **update 的顺序与这里不同,而且必须不同**:它有事务。离场 child 的实物删除挂在
+// `commitTransactionLedger` 里、账本 mutation 成功之后 —— 因为引擎在 receipt commit 之前
+// 都还会 `rollbackAll`,在那之前删就会造出「事务回滚了、实物却没了」。两条路径的共同规则是
+// **destroy 一律晚于那条路径上最后一个可能改变判决的检查**,而不是「都写成同一个顺序」。
 //
 // ── 崩溃语义:账本自己就是恢复点 ─────────────────────────────────────────────────────────────
 //
@@ -22,11 +30,15 @@
 // 把每个 child 的实物删除各自包一次 `uninstallExtensionTransaction` 又回到 `#706` 消灭掉的形状:
 // 各自一把锁、各自一份 journal、各自一次去账。
 //
-// 代替它的不变量是:**账本在 ③ 之前逐字不变,而 ① 与 ② 都幂等**。于是任何时刻崩溃 / 失败,
-// 盘面都是「图还在(用户看得见这个包)+ 若干实物已经不在」,用户再点一次「移除」就收敛 ——
-// 这与今天 skill/agent 直接卸载的失败语义**逐字相同**(那条路径同样没有 journal)。
-// 反过来(先改账本再删实物)在这里是错的:图一旦消失,就再也算不出该删哪些 child,
-// 残留的 MCP 配置会让一个没人认领的 server 继续跑。
+// 代替它的不变量是:**账本在 ③ 之前逐字不变,而 ① 与 ② 都幂等**。于是 ② 失败时盘面是
+// 「图还在(用户看得见这个包)+ 若干实物已经不在」,用户再点一次「移除」就收敛 —— 这与今天
+// skill/agent 直接卸载的失败语义**逐字相同**(那条路径同样没有 journal)。
+//
+// **已知残余窗口**(如实登记,不假装不存在):① 与 ③ 之间账本若被**另一个进程**改动,③ 仍可能拒,
+// 而此时实物已删。进程内这条路走 gated write 的 per-root 互斥,不会自我交错;跨进程与今天
+// `uninstallByKey` 的暴露面相同,属既有类而非本票新增。反过来(先 ③ 后 ②)不能选:图一旦消失,
+// 就再也算不出该删哪些 child —— update 能那样做是因为 journal 还留着 `childRemovals`,
+// 而卸载没有 journal,残留会从「可重试」变成「卡死」。
 
 import * as fs from "node:fs"
 import { agentConfigItemKey, agentInstallKey } from "./ext-agent-install"
@@ -39,7 +51,7 @@ import {
   planPackageClaimTransferV1,
   type PackageChildRemovalVerdictV1,
 } from "./ext-package-lifecycle"
-import type { PackageGraphV1, PackageLedgerMutationV1 } from "./ext-package-ledger-v3"
+import { validatePackageMutationScopeV1, type PackageGraphV1, type PackageLedgerMutationV1 } from "./ext-package-ledger-v3"
 import { applyPackageMutation, readPackageLedgerStateV1 } from "./ext-receipt-v2"
 
 /** 实物删除需要的注入面。刻意是 `PlannerInstallers` 的**子集**(同名同签名)—— 生产接线传的就是
@@ -151,24 +163,23 @@ export function planPackageUninstallV1(root: string, packageId: string, transact
     claims: state.claims,
     recordKeys: state.recordKeys,
   })
-  return {
-    ok: true,
-    packageId,
-    graph,
-    owner,
-    verdicts,
-    mutation: {
-      transactionId,
-      operation: "uninstall",
-      packageRecord: null,
-      graphBeforeDigest: graph.graphDigest,
-      graphAfter: null,
-      childRecordMutations: verdicts
-        .filter((verdict) => verdict.decision === "delete")
-        .map((verdict) => ({ op: "remove" as const, kind: verdict.kind, name: verdict.name })),
-      claimMutations: planPackageClaimTransferV1(diff),
-    },
+  const mutation: PackageLedgerMutationV1 = {
+    transactionId,
+    operation: "uninstall",
+    packageRecord: null,
+    graphBeforeDigest: graph.graphDigest,
+    graphAfter: null,
+    childRecordMutations: verdicts
+      .filter((verdict) => verdict.decision === "delete")
+      .map((verdict) => ({ op: "remove" as const, kind: verdict.kind, name: verdict.name })),
+    claimMutations: planPackageClaimTransferV1(diff),
   }
+  // review R1 Blocker 2 的第二半:把写盘期会跑的作用域闸**提前到判决期**跑一遍(同一个函数,
+  // 不是另写一份等价判据)。这样「这份 mutation 会不会被账本拒」在删任何实物之前就有答案;
+  // 留到写盘期才发现,实物已经没了而账本还是旧的。
+  const scope = validatePackageMutationScopeV1(mutation, graph)
+  if (!scope.ok) return { ok: false, reason: `package uninstall: ${scope.reason}` }
+  return { ok: true, packageId, graph, owner, verdicts, mutation }
 }
 
 export type PackageUninstallOutcomeV1 =
