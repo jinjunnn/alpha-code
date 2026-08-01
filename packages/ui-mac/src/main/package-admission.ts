@@ -12,7 +12,7 @@ import { buildAgentTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, b
 import { computeGrantDigest, readPackageLedgerStateV1, type UpsertInput } from "./ext-receipt-v2"
 import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import {
-  computeGraphDigest,
+  computeInstalledGraphDigest,
   type PackageGraphV1,
   type PackageMutationEnvelopeV1,
 } from "./ext-package-ledger-v3"
@@ -896,8 +896,8 @@ function packageUpdatePreview(
   )
   return buildPackageUpdatePreviewV1({
     diff: plan.diff,
-    graphBeforeDigest: plan.before?.graphDigest ?? null,
-    graphAfterDigest: plan.graph.graphDigest,
+    graphBeforeDigest: plan.before?.installedGraphDigest ?? null,
+    graphAfterDigest: plan.graph.installedGraphDigest,
     claims: plan.verdicts,
     prerequisiteIdsByKey,
     capabilityDiffByKey,
@@ -927,7 +927,7 @@ function packageGraphOf(prepared: PreparedPackage, rootManifestDigest: string): 
     root: { ...graphNodeOf(prepared.root), required: true, manifestDigest: rootManifestDigest },
     children: prepared.components.slice(1).map(graphNodeOf),
   }
-  return { ...withoutDigest, graphDigest: computeGraphDigest(withoutDigest) }
+  return { ...withoutDigest, installedGraphDigest: computeInstalledGraphDigest(withoutDigest) }
 }
 
 /** 挂在 root package item 上的静态半场:图、package 记录、claim mutation 与 child 删除集。
@@ -942,7 +942,7 @@ function packageMutationEnvelope(plan: PackageLifecyclePlanV1): PackageMutationE
   const graph = plan.graph
   return {
     operation: plan.before ? "update" : "install",
-    graphBeforeDigest: plan.before?.graphDigest ?? null,
+    graphBeforeDigest: plan.before?.installedGraphDigest ?? null,
     graphAfter: graph,
     // 释放全部旧 owner 在前、获取全部新 owner 在后(集合代数按序施加,反过来会把刚获取的抹掉)。
     claimMutations: planPackageClaimTransferV1(plan.diff),

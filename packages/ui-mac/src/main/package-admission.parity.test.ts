@@ -17,7 +17,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { agentFileProbe } from "./ext-agent-install"
 import { extensionHealthProbeRouter, seedPluginFileProbe } from "./ext-health-probe-router"
-import { computeGraphDigest, type PackageGraphV1 } from "./ext-package-ledger-v3"
+import { computeInstalledGraphDigest, type PackageGraphV1 } from "./ext-package-ledger-v3"
 import { skillGenerationProbe } from "./ext-skill-generations"
 import { runExtensionTransaction, type HealthProbe, type TxPlanItem } from "./ext-transaction"
 import { createPackageAdmissionCoordinator } from "./package-admission"
@@ -192,12 +192,12 @@ describe("REQ-128 #705 single-install builder parity", () => {
           operation: "install",
           graphBeforeDigest: null,
           // `#764`:这里**没有** package 级记录。它曾经是 `graphAfter` 的逐字抄本(packageId /
-          // envelopeDigest / graphDigest)加上一份与组件 record 相同的 `version` —— 从未落过盘,
+          // envelopeDigest / installedGraphDigest)加上一份与组件 record 相同的 `version` —— 从未落过盘,
           // 也没有任何消费方。逐字钉死这份计划面就是为了让它再长回来时红。
           graphAfter: {
             packageId: "package:parity-skill",
             envelopeDigest: (plan.items[0]!.packageMutation as { graphAfter: { envelopeDigest: string } }).graphAfter.envelopeDigest,
-            graphDigest: (plan.items[0]!.packageMutation as { graphAfter: { graphDigest: string } }).graphAfter.graphDigest,
+            installedGraphDigest: (plan.items[0]!.packageMutation as { graphAfter: { installedGraphDigest: string } }).graphAfter.installedGraphDigest,
             root: {
               componentId: "skill:demo",
               kind: "skill",
@@ -219,7 +219,7 @@ describe("REQ-128 #705 single-install builder parity", () => {
     ])
     // 图/记录的 digest 不是自由字符串:重算一遍必须逐字相同(篡改任一节点 → 解码期就红)。
     const mutation = plan.items[0]!.packageMutation as { graphAfter: PackageGraphV1 }
-    expect(computeGraphDigest(mutation.graphAfter)).toBe(mutation.graphAfter.graphDigest)
+    expect(computeInstalledGraphDigest(mutation.graphAfter)).toBe(mutation.graphAfter.installedGraphDigest)
     expect(plan.authorization).toEqual({ confirmed: { "skill--demo": [] }, decidedAt: "2026-07-31T00:00:00.000Z" })
     const staging = join(tmp, "staging")
     mkdirSync(staging, { recursive: true })

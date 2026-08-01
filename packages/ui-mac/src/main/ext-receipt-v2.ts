@@ -1360,16 +1360,16 @@ export function applyPackageMutation(root: string, mutation: PackageLedgerMutati
   // 此前这里问的是 `packageRecord`,而 `packageRecord.packageId` 只是 `graphAfter.packageId` 的抄本。
   const existingGraph = mutation.graphAfter
     ? (parsed.packageGraphs.find((g) => g.packageId === mutation.graphAfter!.packageId) ?? null)
-    : (mutation.graphBeforeDigest ? (parsed.packageGraphs.find((g) => g.graphDigest === mutation.graphBeforeDigest) ?? null) : null)
+    : (mutation.graphBeforeDigest ? (parsed.packageGraphs.find((g) => g.installedGraphDigest === mutation.graphBeforeDigest) ?? null) : null)
   // graphBefore 对不上 = 有人在我们计划之后改过账本(或这是一次陈旧重放)。拒。
-  const beforeDigest = existingGraph?.graphDigest ?? null
-  if ((mutation.graphBeforeDigest ?? null) !== beforeDigest && !(existingGraph && mutation.graphAfter && existingGraph.graphDigest === mutation.graphAfter.graphDigest))
+  const beforeDigest = existingGraph?.installedGraphDigest ?? null
+  if ((mutation.graphBeforeDigest ?? null) !== beforeDigest && !(existingGraph && mutation.graphAfter && existingGraph.installedGraphDigest === mutation.graphAfter.installedGraphDigest))
     return {
       ok: false,
       reason: `refusing package mutation: ledger graph digest ${beforeDigest ?? "<absent>"} does not match the expected before-image ${mutation.graphBeforeDigest ?? "<absent>"}`,
     }
   // exact replay:图已经是目标态 ⇒ 这次提交此前已 durable,原样返回(绝不重放 claim mutation)。
-  if (existingGraph && mutation.graphAfter && existingGraph.graphDigest === mutation.graphAfter.graphDigest)
+  if (existingGraph && mutation.graphAfter && existingGraph.installedGraphDigest === mutation.graphAfter.installedGraphDigest)
     return { ok: true, replayed: true, warnings }
 
   // REQ-128 `#698`:作用域闸 —— 这次 mutation 只准动**自己的 owner、自己图里的 child、离场的 child**。
@@ -1437,7 +1437,7 @@ export function applyPackageMutation(root: string, mutation: PackageLedgerMutati
 
   const nextGraphs = mutation.graphAfter
     ? [...parsed.packageGraphs.filter((g) => g.packageId !== mutation.graphAfter!.packageId), mutation.graphAfter]
-    : parsed.packageGraphs.filter((g) => g.graphDigest !== mutation.graphBeforeDigest)
+    : parsed.packageGraphs.filter((g) => g.installedGraphDigest !== mutation.graphBeforeDigest)
 
   const nextRecords = [...recordsByKey.values(), ...parsed.rawCorruptRecords]
   const nextReceipts = [

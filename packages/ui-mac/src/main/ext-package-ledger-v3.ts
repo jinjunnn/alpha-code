@@ -58,20 +58,27 @@ export type PackageGraphNodeV1 = {
   manifestDigest: string
 }
 
-/** 一个 package 的**有效安装图**:root 一个、leaf 若干(本期 leaf 恒空,`#697` 起非空)。
- *  `graphDigest` 覆盖 packageId + envelopeDigest + root + children,是 preview / 重验 /
- *  claim mutation 三者共用的绑定值(篡改任一节点 → digest 不符 → 响亮失败)。 */
+/** 一个 package 的**已安装图**:root 一个、leaf 若干(本期 leaf 恒空,`#697` 起非空)。
+ *  `installedGraphDigest` 覆盖 packageId + envelopeDigest + root + children,是 preview / 重验 /
+ *  claim mutation 三者共用的绑定值(篡改任一节点 → digest 不符 → 响亮失败)。
+ *
+ *  `#758`:这个名字里的 `installed` 是承重的。授权侧另有一个
+ *  `PackageAdmissionBindingV1.graphDigest`(`shared/package-admission.ts`),它覆盖的是安装**前**
+ *  由信封声明的**计划**安装图 —— 输入集不同(那边是 componentId/profileId/profileVersion/
+ *  payloadSha256,这边是 componentId/kind/name/required/manifestDigest),连字面格式都不同
+ *  (那边裸 hex,这边带 `sha256:` 前缀)。**两者恒不相等,也不该相等。**
+ *  可执行判据:`test-component/package-admission.wiring.cases.ts` 在同一次真实安装里同时取两个值。 */
 export type PackageGraphV1 = {
   packageId: string
   envelopeDigest: string
-  graphDigest: string
+  installedGraphDigest: string
   root: PackageGraphNodeV1
   children: PackageGraphNodeV1[]
 }
 
 // REQ-128 `#764`:这里**没有** package 级记录类型,这是一个决定,不是遗漏。
 //
-// 曾经有过一个 `PackageRecordV1{packageId, envelopeDigest, graphDigest, version, transactionId,
+// 曾经有过一个 `PackageRecordV1{packageId, envelopeDigest, installedGraphDigest, version, transactionId,
 // installedAt}`。它每一个字段都是别处已有事实的抄本:前三个由 `PackageGraphV1` 持有(一个
 // packageId 只有一张图,`validateV3State` 拒重复),`version` 与 `installedAt` 由这个包**每一个**
 // 组件的 v2 record 持有(`package-admission` 写的是同一个信封 prelude version),`transactionId`
@@ -166,7 +173,7 @@ export function parseOwnerToken(token: unknown): OwnerToken | null {
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
 
 const GRAPH_NODE_KEYS = new Set(["componentId", "kind", "name", "required", "manifestDigest"])
-const GRAPH_KEYS = new Set(["packageId", "envelopeDigest", "graphDigest", "root", "children"])
+const GRAPH_KEYS = new Set(["packageId", "envelopeDigest", "installedGraphDigest", "root", "children"])
 const CLAIM_KEYS = new Set(["kind", "name", "owners"])
 
 export type Decoded<T> = { ok: true; value: T } | { ok: false; errors: string[] }
@@ -197,9 +204,9 @@ function decodeGraphNode(input: unknown, at: string, errors: string[]): PackageG
   }
 }
 
-/** graphDigest 的计算口径:packageId + envelopeDigest + root + children(children 按
+/** installedGraphDigest 的计算口径:packageId + envelopeDigest + root + children(children 按
  *  componentId 排序)。**digest 本身不参与计算** —— 否则自指。 */
-export function computeGraphDigest(graph: Omit<PackageGraphV1, "graphDigest">): string {
+export function computeInstalledGraphDigest(graph: Omit<PackageGraphV1, "installedGraphDigest">): string {
   return `sha256:${sha256Hex(
     canonicalJson({
       packageId: graph.packageId,
@@ -216,10 +223,10 @@ export function decodePackageGraphV1(input: unknown): Decoded<PackageGraphV1> {
   for (const k of Object.keys(input)) if (!GRAPH_KEYS.has(k)) errors.push(`packageGraph: unknown key "${k}" — refused (strict schema)`)
   const packageId = input.packageId
   const envelopeDigest = input.envelopeDigest
-  const graphDigest = input.graphDigest
+  const installedGraphDigest = input.installedGraphDigest
   if (typeof packageId !== "string" || !PACKAGE_ID_RE.test(packageId)) errors.push("packageGraph.packageId: invalid")
   if (typeof envelopeDigest !== "string" || !DIGEST_RE.test(envelopeDigest)) errors.push("packageGraph.envelopeDigest: invalid")
-  if (typeof graphDigest !== "string" || !DIGEST_RE.test(graphDigest)) errors.push("packageGraph.graphDigest: invalid")
+  if (typeof installedGraphDigest !== "string" || !DIGEST_RE.test(installedGraphDigest)) errors.push("packageGraph.installedGraphDigest: invalid")
   const root = decodeGraphNode(input.root, "packageGraph.root", errors)
   if (!Array.isArray(input.children)) errors.push("packageGraph.children: must be an array")
   const children: PackageGraphNodeV1[] = []
@@ -244,14 +251,14 @@ export function decodePackageGraphV1(input: unknown): Decoded<PackageGraphV1> {
   const value: PackageGraphV1 = {
     packageId: packageId as string,
     envelopeDigest: envelopeDigest as string,
-    graphDigest: graphDigest as string,
+    installedGraphDigest: installedGraphDigest as string,
     root,
     children,
   }
   // 篡改闸:任何节点被改过 → 重算 digest 不符 → 拒。
-  const recomputed = computeGraphDigest(value)
-  if (recomputed !== value.graphDigest)
-    return { ok: false, errors: [`packageGraph.graphDigest: does not match the graph contents (expected ${recomputed})`] }
+  const recomputed = computeInstalledGraphDigest(value)
+  if (recomputed !== value.installedGraphDigest)
+    return { ok: false, errors: [`packageGraph.installedGraphDigest: does not match the graph contents (expected ${recomputed})`] }
   return { ok: true, value }
 }
 
@@ -522,7 +529,7 @@ export type V3State = {
  * 2. **unknown child**:图里的 leaf 没有对应 claim —— 这个 leaf 归谁没人知道。
  * 3. **孤儿 bundle owner**:claim 里写着某个 `bundle:pkg@digest`,但账本里没有这张图 ——
  *    那个 owner 永远不会被释放,child 从此不可回收。
- * 4. **packageId / graphDigest 重复**:一个 package 两张图 = 两个真相。
+ * 4. **packageId / installedGraphDigest 重复**:一个 package 两张图 = 两个真相。
  */
 export function validateV3State(state: V3State): { ok: true } | { ok: false; reason: string } {
   const seenPackages = new Set<string>()

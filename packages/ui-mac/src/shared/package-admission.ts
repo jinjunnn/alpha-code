@@ -9,10 +9,16 @@ export type PackageAdmissionBindingV1 = {
   snapshotDigest: string
   envelopeDigest: string
   /**
-   * Binds the **effective** install graph: the root plus every leaf that is actually going to be
+   * Binds the **planned** install graph: the root plus every leaf that is actually going to be
    * installed, each with the required flag and payload digest that decision was made from.
    * `envelopeDigest` alone cannot express this — two hosts reading the same signed envelope can
    * legitimately produce different effective graphs when one of them skips a curated component.
+   *
+   * `#758`: this is computed **before** anything is installed, over what the envelope declares
+   * (`PackageEffectiveInstallGraphV1`). It is **not** the ledger's `installedGraphDigest`
+   * (`main/ext-package-ledger-v3.ts`), which covers the graph as actually installed, per-node
+   * `manifestDigest` included, and carries a `sha256:` prefix this one does not. The two values
+   * are never equal and are not supposed to be.
    */
   graphDigest: string
   itemDigests: Record<string, string>

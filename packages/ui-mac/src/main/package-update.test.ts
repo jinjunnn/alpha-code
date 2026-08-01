@@ -370,7 +370,7 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     // 接缝被调用的**那一刻**,账本必须已经是新图 —— 这条断言钉住的正是「destroy 在 decide 之后」。
     const graphWhenCalled: string[] = []
     const { admit, select } = coordinatorFor([v1, v2], removed, () => {
-      graphWhenCalled.push(readPackageGraphs(root)[0]?.graphDigest ?? "<none>")
+      graphWhenCalled.push(readPackageGraphs(root)[0]?.installedGraphDigest ?? "<none>")
       return { ok: false, reason: "injected artifact removal failure", removed: [], warnings: [] }
     })
 
@@ -388,7 +388,7 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     expect(findRecordV2(root, "mcp", "generic-bundle-remote")).toBeNull()
     expect(findRecordV2(root, "skill", "generic-bundle-extra")).not.toBeNull()
     // 接缝被调用时看到的就是这张新图(= 它跑在 mutation 之后)。
-    expect(graphWhenCalled).toEqual([graphs[0]!.graphDigest])
+    expect(graphWhenCalled).toEqual([graphs[0]!.installedGraphDigest])
   }, 60_000)
 
   /**
