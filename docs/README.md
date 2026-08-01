@@ -11,6 +11,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | System structure and upstream boundary                               | [`architecture/`](architecture/)                                     |
 | Host extension package contract/host decision boundary               | [`architecture/host-extension-package-contract-boundary.md`](architecture/host-extension-package-contract-boundary.md) |
+| Alpha Connection record lifetime and handler allowlist               | [`architecture/alpha-connection-lifetime.md`](architecture/alpha-connection-lifetime.md) |
 | Platform and endpoint integration                                    | [`contracts/`](contracts/)                                           |
 | Session tool permission DTOs and decision receipts                   | [`contracts/session-permission.md`](contracts/session-permission.md) |
 | Build, distribution, CI, uninstall, and Settings recovery operations | [`runbooks/`](runbooks/)                                             |
