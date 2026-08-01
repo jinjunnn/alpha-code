@@ -453,11 +453,15 @@ function packagePlan(
 }
 
 /**
- * REQ-128 `#706`:package 安装的**有效安装图**。本期合同只允许单组件,所以 root 就是唯一
- * 组件、`children` 为空;`#697` 放开多组件后本函数换成逐组件构造,图文法与 digest 口径不变。
+ * REQ-128 `#706`:package 安装的**有效安装图**。本期只装 root 一个组件,所以 `children` 为空;
+ * `#697` 放开多组件后本函数换成逐组件构造,图文法与 digest 口径不变。
+ *
+ * root 走 `rootComponentOf`(声明的 `role`),**不是 `components[0]`** —— 后者是生产者随手排的
+ * 顺序,把它当 root 就是把一个排版约定升级成承重不变量。这个 componentId 会直接进 owner token
+ * 的派生链,认错了 = claim 归属认错人。`#749` 刚在隔壁把同一处缺陷删掉,别在这里再种一次。
  */
 function packageGraphOf(prepared: PreparedPackage, manifestDigest: string): PackageGraphV1 {
-  const component = prepared.facts.envelope.components[0]!
+  const component = rootComponentOf(prepared.facts)
   const withoutDigest = {
     packageId: prepared.facts.envelope.prelude.packageId,
     envelopeDigest: `sha256:${prepared.binding.envelopeDigest}`,
