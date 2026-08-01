@@ -742,6 +742,8 @@ export type ElectronAPI = {
             status: "connected" | "disabled" | "failed" | "reload-pending"
           }
           installedDisabled?: true
+          /** `#704`:已安装,但可选的 Alpha Connection 未建立 —— 与「装完默认关」是两回事。 */
+          connectionUnavailable?: true
           installed?: string[]
           skipped?: Array<{ id: string; reason: string }>
           warning?: string

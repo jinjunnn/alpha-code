@@ -291,6 +291,7 @@ function makeDeps(opts: {
     },
     removeMcpConfigInLock: record("removeMcpConfigInLock", { ok: true as const }),
     removeMcpSecretsStrict: record("removeMcpSecretsStrict", { ok: true as const }),
+    releaseAlphaConnectionBindings: record("releaseAlphaConnectionBindings", { ok: true as const }),
     removePlugin: record("removePlugin", { ok: true as const }),
     // #378:vendored 载荷采集(CAS 摄取源;真 plugin.js 字节供引擎 file items 全链)。
     collectVendoredPluginPayload: (key: string, name: string) => {

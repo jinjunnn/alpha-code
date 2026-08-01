@@ -26,6 +26,12 @@ import {
   decodePackageSecretPrerequisiteProfileV1,
   type PackageSecretPrerequisiteProfileDecodeV1,
 } from "../shared/package-secret-prerequisite"
+import {
+  decodePackageConnectionPrerequisiteProfileV1,
+  type AlphaConnectionHandlerTableV1,
+  type PackageConnectionPrerequisiteProfileV1,
+} from "../shared/package-alpha-connection"
+import { lookupAlphaConnectionHandlerV1, ALPHA_CONNECTION_HANDLERS_V1 } from "./alpha-connection-handlers"
 
 const ATTEMPT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const PAYLOAD_TIMEOUT_MS = 8000
@@ -51,6 +57,8 @@ export type PackageInstallabilityDeps = {
   fetchPayload?: (ref: PackagePayloadRefV1) => Promise<Uint8Array>
   decodePayload?: typeof decodePackageProfilePayloadV1
   decodeSecretPrerequisite?: typeof decodePackageSecretPrerequisiteProfileV1
+  /** The static Alpha Connection allowlist. Production default is the compiled-in table. */
+  connectionHandlers?: AlphaConnectionHandlerTableV1
   accepted?: (facts: PackageAcceptedFactsV1) => void
 }
 
@@ -61,6 +69,8 @@ export type PackageAcceptedComponentV1 = {
   role: "root" | "leaf"
   payload: PackageProfilePayloadV1
   prerequisite: Extract<PackageSecretPrerequisiteProfileDecodeV1, { ok: true }>["profile"]
+  /** Alpha Connection prerequisites declared by this component. Empty for every other profile. */
+  connection: PackageConnectionPrerequisiteProfileV1
 }
 
 export type PackageAcceptedFactsV1 = {
@@ -73,6 +83,8 @@ export type PackageAcceptedFactsV1 = {
   payload: PackageProfilePayloadV1
   /** The root component's secret prerequisite profile. Same note as `payload`. */
   prerequisite: Extract<PackageSecretPrerequisiteProfileDecodeV1, { ok: true }>["profile"]
+  /** The root component's Alpha Connection prerequisite profile. Same note as `payload`. */
+  connection: PackageConnectionPrerequisiteProfileV1
 }
 
 export type CatalogPackageShapeValidation =
@@ -230,7 +242,32 @@ export async function evaluatePackageForHost(
       decoded.payload,
     )
     if (!prerequisite.ok) return refuse("package-prerequisite-invalid")
-    accepted.push({ component, role: entry.role, payload: decoded.payload, prerequisite: prerequisite.profile })
+
+    // Alpha Connection is answered here, in the browse/detail evaluator, which is the earliest
+    // point at which the host knows a signed package wants one. An id this build has no handler
+    // for becomes `update-required` now — before a payload of the *connection* is ever fetched,
+    // before a handler runs, before the install button is enabled. The lookup is a table hit and
+    // nothing else: main never reads structure out of the id (`#737` discipline).
+    const connection = decodePackageConnectionPrerequisiteProfileV1(component, decoded.payload)
+    const unknownHandler = connection.items.find(
+      (item) =>
+        !lookupAlphaConnectionHandlerV1(item.handlerId, deps.connectionHandlers ?? ALPHA_CONNECTION_HANDLERS_V1).ok,
+    )
+    if (unknownHandler)
+      return view(
+        header.envelope.prelude,
+        "update-required",
+        "package-host-update-required",
+        componentViews,
+        presentation,
+      )
+    accepted.push({
+      component,
+      role: entry.role,
+      payload: decoded.payload,
+      prerequisite: prerequisite.profile,
+      connection,
+    })
   }
 
   const graph = packageEffectiveInstallGraphV1(
@@ -245,6 +282,7 @@ export async function evaluatePackageForHost(
     graph,
     payload: rootAccepted.payload,
     prerequisite: rootAccepted.prerequisite,
+    connection: rootAccepted.connection,
   })
   return compatibleView(header.envelope, componentViews, accepted)
 }
@@ -364,8 +402,15 @@ function compatibleView(
   accepted: PackageAcceptedComponentV1[],
 ): CatalogPackageViewV1 {
   // 授权集只含「受支持且未跳过」的组件(§4.3):被跳过的子件不会安装,就不该要用户为它授权。
+  // Connection prerequisites join the secret ones on the same channel and are ordered after them
+  // per component: the safe view says *what must be satisfied*, and readiness is main's answer at
+  // admission time, exactly as it already is for secrets — the browse surface has no store access
+  // and must not be the place that decides a package is ready.
   const items = accepted.flatMap((entry) =>
-    entry.prerequisite.items.map((item) => ({
+    [
+      ...entry.prerequisite.items,
+      ...entry.connection.items,
+    ].map((item) => ({
       prerequisiteId: item.prerequisiteId,
       label: item.label,
       required: item.required,

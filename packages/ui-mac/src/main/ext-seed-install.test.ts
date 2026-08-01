@@ -192,6 +192,7 @@ function forbiddenInstallers(): PlannerInstallers {
     readMcpLeafStrict: forbid("readMcpLeafStrict"),
     removeMcpConfigInLock: forbid("removeMcpConfigInLock"),
     removeMcpSecretsStrict: forbid("removeMcpSecretsStrict"),
+    releaseAlphaConnectionBindings: forbid("releaseAlphaConnectionBindings"),
     findPluginBaseConflictStrict: forbid("findPluginBaseConflictStrict"),
     readPluginArrayStrict: forbid("readPluginArrayStrict"),
     // #378 r6:legacy XDG 合并视图检查是 seed plugin 路径的**合法只读消费**(同名路径双载门 +
@@ -974,6 +975,10 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
         return { ok: true }
       },
       removeMcpSecretsStrict: (_name) => ({ ok: true }),
+      // `#704`:MCP 卸载路径**必须**释放 Alpha Connection 绑定(不 disconnect)。基表里它是
+      // forbid —— 摘掉 ext-install-planner 里那次生产调用,这一行就是多余的;把这一行删掉,
+      // 生产调用会撞上 forbid 而红。两个方向都咬人。
+      releaseAlphaConnectionBindings: (_componentId) => ({ ok: true }),
     }
     const un = await uninstallByKey({ type: "mcp", name: "demo", scope: "global" }, { ...deps, installers })
     expect(un.ok).toBe(true)
