@@ -184,7 +184,7 @@ export function planPackageUninstallV1(root: string, packageId: string, transact
   const mutation: PackageLedgerMutationV1 = {
     transactionId,
     operation: "uninstall",
-    graphBeforeDigest: graph.graphDigest,
+    graphBeforeDigest: graph.installedGraphDigest,
     graphAfter: null,
     childRecordMutations: verdicts
       .filter((verdict) => verdict.decision === "delete")

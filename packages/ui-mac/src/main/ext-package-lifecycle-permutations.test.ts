@@ -24,7 +24,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import {
   bundleOwner,
-  computeGraphDigest,
+  computeInstalledGraphDigest,
   standaloneOwner,
   validatePackageMutationScopeV1,
   LEGACY_PROTECTED_OWNER,
@@ -108,7 +108,7 @@ function graphOf(packageId: string, envelopeDigest: string, rootDigest: string, 
       manifestDigest: child.name === "shared" ? SHARED_DIGEST : rootDigest,
     })),
   }
-  return { ...withoutDigest, graphDigest: computeGraphDigest(withoutDigest) }
+  return { ...withoutDigest, installedGraphDigest: computeInstalledGraphDigest(withoutDigest) }
 }
 
 const GRAPH_A = graphOf(PKG_A, ENVELOPE_A, DIGEST_A, A_CHILDREN)
@@ -293,7 +293,7 @@ describe("REQ-128 #698 —— canonical permutations", () => {
     const applied = applyPackageMutation(root, {
       transactionId: "tx-legacy-adopt",
       operation: "update",
-      graphBeforeDigest: GRAPH_A.graphDigest,
+      graphBeforeDigest: GRAPH_A.installedGraphDigest,
       graphAfter: GRAPH_A,
       childRecordMutations: [],
       claimMutations: [],
@@ -535,7 +535,7 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     const base = (): PackageLedgerMutationV1 => ({
       transactionId: "tx-scope",
       operation: "uninstall",
-      graphBeforeDigest: GRAPH_A.graphDigest,
+      graphBeforeDigest: GRAPH_A.installedGraphDigest,
       graphAfter: null,
       childRecordMutations: [],
       claimMutations: A_CHILDREN.map((child) => ({ op: "release" as const, kind: child.kind, name: child.name, owner: OWNER_A })),
@@ -562,7 +562,7 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     const stillPresent: PackageLedgerMutationV1 = {
       transactionId: "tx-scope",
       operation: "update",
-      graphBeforeDigest: GRAPH_A.graphDigest,
+      graphBeforeDigest: GRAPH_A.installedGraphDigest,
       graphAfter: GRAPH_A,
       childRecordMutations: [{ op: "remove", kind: "skill", name: "a-only" }],
       claimMutations: [],
@@ -588,7 +588,7 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     const wrong: PackageLedgerMutationV1 = {
       transactionId: "tx-overreach",
       operation: "uninstall",
-      graphBeforeDigest: GRAPH_A.graphDigest,
+      graphBeforeDigest: GRAPH_A.installedGraphDigest,
       graphAfter: null,
       // 只释放 A 的 owner(合法),却把 B 仍在用的 shared 一起去账(算错)。违规项不在第一个。
       childRecordMutations: [
@@ -612,7 +612,7 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     const wrongOwner: PackageLedgerMutationV1 = {
       transactionId: "tx-scope",
       operation: "update",
-      graphBeforeDigest: GRAPH_A.graphDigest,
+      graphBeforeDigest: GRAPH_A.installedGraphDigest,
       graphAfter: after,
       childRecordMutations: [],
       claimMutations: [

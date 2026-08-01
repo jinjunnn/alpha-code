@@ -8,7 +8,7 @@ import type {
   PackageProfilePayloadV1,
 } from "../src/shared/host-extension-package-contract/decoder"
 import type { PackageAdmissionPreviewV1 } from "../src/shared/package-admission"
-import { computeGraphDigest, type PackageGraphV1 } from "../src/main/ext-package-ledger-v3"
+import { computeInstalledGraphDigest, type PackageGraphV1 } from "../src/main/ext-package-ledger-v3"
 
 type IpcHandler = (event: { sender: { id: number } }, ...args: unknown[]) => unknown
 
@@ -266,7 +266,7 @@ test("real ext-install-catalog IPC binds preview, revalidates, then commits thro
     {
       packageId: envelope.prelude.packageId,
       envelopeDigest: `sha256:${preview.packageAuthorization.binding.envelopeDigest}`,
-      graphDigest: ledger.packageGraphs[0]!.graphDigest,
+      installedGraphDigest: ledger.packageGraphs[0]!.installedGraphDigest,
       root: {
         componentId: envelope.components[0].id,
         kind: "mcp",
@@ -277,9 +277,34 @@ test("real ext-install-catalog IPC binds preview, revalidates, then commits thro
       children: [],
     },
   ])
-  // graphDigest 不是自由字符串:重算必须逐字相同(账本被改一个字节就解不开)。
-  expect(computeGraphDigest(ledger.packageGraphs[0]!)).toBe(ledger.packageGraphs[0]!.graphDigest)
+  // installedGraphDigest 不是自由字符串:重算必须逐字相同(账本被改一个字节就解不开)。
+  expect(computeInstalledGraphDigest(ledger.packageGraphs[0]!)).toBe(ledger.packageGraphs[0]!.installedGraphDigest)
   expect(childRecord.manifestDigest).toBe(itemDigest)
+
+  // `#758`:同一次安装里有**两个**图摘要,名字不同、值也不同 —— 这条断言存在的唯一目的,
+  // 是让「它们应该相等吗」这个问题以后不必再被提出一次。答案是不,而且结构上做不到相等:
+  //   · `binding.graphDigest`(授权侧,`shared/package-admission.ts`)—— 安装**前**对信封声明的
+  //     计划安装图,输入是 componentId/required/profileId/profileVersion/payloadSha256,裸 hex;
+  //   · `installedGraphDigest`(账本侧,`main/ext-package-ledger-v3.ts`)—— 安装**后**对已装图,
+  //     输入是 packageId/envelopeDigest 与逐节点 componentId/kind/name/required/manifestDigest,
+  //     带 `sha256:` 前缀。
+  // 落盘键名单独断言:改名一旦被回退,下面第一条就红(值断言本身不足以杀掉回退 —— 回退后
+  // 读到的是 undefined,而 undefined 与任何 hex 也「不相等」)。
+  const installedGraph = ledger.packageGraphs[0]!
+  expect(Object.keys(installedGraph).sort()).toEqual([
+    "children",
+    "envelopeDigest",
+    "installedGraphDigest",
+    "packageId",
+    "root",
+  ])
+  expect(installedGraph.installedGraphDigest).toMatch(/^sha256:[0-9a-f]{64}$/)
+  expect(preview.packageAuthorization.binding.graphDigest).toMatch(/^[0-9a-f]{64}$/)
+  expect(installedGraph.installedGraphDigest).not.toBe(preview.packageAuthorization.binding.graphDigest)
+  // 去掉前缀也仍然不同 —— 差别不是字面格式,是两者覆盖的事实不同。
+  expect(installedGraph.installedGraphDigest.slice("sha256:".length)).not.toBe(
+    preview.packageAuthorization.binding.graphDigest,
+  )
   expect(ledger.claims).toEqual([
     { kind: "mcp", name: "generic-remote", owners: [`bundle:${envelope.prelude.packageId}@${itemDigest}`] },
   ])

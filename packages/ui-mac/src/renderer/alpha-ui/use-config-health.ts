@@ -3,6 +3,7 @@
 // (5min —— 配置文件只在用户手编或定制中心写入时变化,写入路径各自会再触发一次)。
 
 import { createSignal, onCleanup, onMount, type Accessor } from "solid-js"
+import { extIpc } from "../extensions/ext-ipc"
 
 export type ConfigHealth = { broken: boolean; reason?: string; path?: string }
 
@@ -11,7 +12,7 @@ let started = false
 
 export async function refreshConfigHealth(): Promise<void> {
   try {
-    setHealth(await window.api.ext.configHealth())
+    setHealth(await extIpc.configHealth())
   } catch {
     /* IPC 不可用时保持上次值,不误报 */
   }

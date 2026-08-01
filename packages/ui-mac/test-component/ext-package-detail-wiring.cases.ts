@@ -290,10 +290,14 @@ const packageFixture = async () => {
 type Handler = (event: unknown, ...args: unknown[]) => unknown
 
 let injectInstallWarning: string | null = null
+let injectUninstallWarning: string | null = null
 
 async function mountHarness(options?: {
   /** `#698` R3:给真实 admission 成功响应挂一条具名 warning,验证它到达用户面。 */
   injectInstallWarning?: string
+  /** `#765`:同样的把戏挂在**另一条** IPC 上(整包卸载)。这条路径在生产代码里
+   *  **没有任何一行 warning 呈现** —— 它绿,只可能是因为咽喉在 IPC 包装层干了活。 */
+  injectUninstallWarning?: string
   preauthorized?: boolean
   failConfirmationOnce?: boolean
   failPreviewOnce?: boolean
@@ -339,6 +343,7 @@ async function mountHarness(options?: {
   )
 
   injectInstallWarning = options?.injectInstallWarning ?? null
+  injectUninstallWarning = options?.injectUninstallWarning ?? null
   const browseResults: unknown[] = []
   const detailResults: unknown[] = []
   const installIntents: unknown[] = []
@@ -450,7 +455,7 @@ async function mountHarness(options?: {
           return {
             installed: true as const,
             packageId: graph.packageId,
-            graphDigest: graph.graphDigest,
+            installedGraphDigest: graph.installedGraphDigest,
             components: [graph.root, ...graph.children].map((node) => ({
               componentId: node.componentId,
               kind: node.kind as string,
@@ -459,8 +464,8 @@ async function mountHarness(options?: {
             })),
           }
         },
-        uninstallPackage: async (packageId: string) =>
-          uninstallPackageV1(packageId, {
+        uninstallPackage: async (packageId: string) => {
+          const result = await uninstallPackageV1(packageId, {
             globalRoot: () => globalRoot,
             installers: {
               removeFsInstall: () => ({ ok: true as const, files: [] }),
@@ -469,7 +474,12 @@ async function mountHarness(options?: {
               releaseAlphaConnectionBindings: () => ({ ok: true as const }),
               removeInstallGrants: () => ({ ok: true as const, removed: [] }),
             },
-          }),
+          })
+          // `#765`:真实成功响应 + 一条具名 warning(生产里就是「连接绑定没释放干净」那种)。
+          return injectUninstallWarning && result.ok
+            ? { ...result, warning: injectUninstallWarning }
+            : result
+        },
         inventoryView: async () => undefined,
         advisoryActive: async () => ({ ids: [], fresh: true }),
         migrateScan: async () => ({
@@ -534,6 +544,13 @@ async function waitFor(assertion: () => void) {
     }
   }
   throw failure
+}
+
+/** 用户真读得到的 toast 里,提到这条 canary 的有几条。判「恰好一条」用它,不判「有没有」。 */
+function toastsContaining(canary: string): number {
+  return Array.from(document.querySelectorAll(".a-toast"), (node) => node.textContent ?? "").filter((text) =>
+    text.includes(canary),
+  ).length
 }
 
 function packageCard(catalogId: string) {
@@ -997,12 +1014,44 @@ describe("package detail production renderer path", () => {
     await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true, warning: canary }))
 
     // 用户面:toast 视口里真的出现了那条具名 warning。
+    await waitFor(() => expect(toastsContaining(canary)).toBe(1))
+    // `#765`:**恰好一条**。呈现搬进 IPC 包装层之后,调用点再自己 flash 一次就会出现两条
+    // 一模一样的提示 —— 那是本次重构最容易留下的尾巴,所以这里判等而不是判「有」。
+    await flush()
+    expect(toastsContaining(canary), "the same warning was presented more than once").toBe(1)
+  })
+
+  /**
+   * `#765`:同一条保证,换一条**没有任何呈现代码**的路径。
+   *
+   * 整包卸载走 extension-detail 的 `removePackage` → `uninstallPackage` IPC。生产代码在这条路径上
+   * 一行 warning 呈现都没有(`#698` 当时写的那行已经删掉)。它仍然到得了 `.a-toast`,只可能是
+   * 因为咽喉在 IPC 包装层做了事 —— 这正是「新调用点默认被覆盖」的可执行证据,而不是一句声明。
+   */
+  test("a named warning on package uninstall reaches the user surface with no presentation code on that path", async () => {
+    const canary = "CHOKEPOINT_UNINSTALL_WARNING_7f31ac"
+    const harness = await mountHarness({ injectUninstallWarning: canary })
+    click(packageCard(MIXED_BUNDLE_PACKAGE_ID))
     await waitFor(() =>
-      expect(
-        Array.from(document.querySelectorAll(".a-toast"), (node) => node.textContent ?? "").some((text) => text.includes(canary)),
-        "the named warning never reached any toast the user can read",
-      ).toBe(true),
+      expect(document.querySelector(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeInstanceOf(HTMLElement),
     )
+    const detail = () => document.querySelector<HTMLElement>(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)!
+    click(detail().querySelector(".alpha-ext-dsub button"))
+    await waitForPackageAuthorization(MIXED_BUNDLE_PACKAGE_ID)
+    fillPackageSecret(secretCanary)
+    confirmPackageAuthorization()
+    await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true }))
+    await waitFor(() =>
+      expect(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeInstanceOf(HTMLElement),
+    )
+    // 装的时候没有注入 warning —— 卸载前的 toast 里不该已经有这条 canary(否则下面判的是别人)。
+    expect(toastsContaining(canary)).toBe(0)
+
+    click(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`))
+    await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual([]))
+    await waitFor(() => expect(toastsContaining(canary)).toBe(1))
+    await flush()
+    expect(toastsContaining(canary), "the same warning was presented more than once").toBe(1)
   })
 
   test("installing a Bundle reveals the remove-package action, and pressing it removes it through production main", async () => {

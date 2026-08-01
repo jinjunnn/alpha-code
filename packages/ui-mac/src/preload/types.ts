@@ -827,7 +827,7 @@ export type ElectronAPI = {
       | {
           installed: true
           packageId: string
-          graphDigest: string
+          installedGraphDigest: string
           components: Array<{ componentId: string; kind: string; name: string; required: boolean }>
         }
       | { ok: false; reason: string }

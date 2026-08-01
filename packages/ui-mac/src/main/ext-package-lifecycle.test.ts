@@ -14,7 +14,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   bundleOwner,
-  computeGraphDigest,
+  computeInstalledGraphDigest,
   standaloneOwner,
   LEGACY_PROTECTED_OWNER,
   withOwner,
@@ -62,7 +62,7 @@ const graph = (input: {
     root: input.root,
     children: input.children,
   }
-  return { ...withoutDigest, graphDigest: computeGraphDigest(withoutDigest) }
+  return { ...withoutDigest, installedGraphDigest: computeInstalledGraphDigest(withoutDigest) }
 }
 
 const ROOT = node("agent:kit-root", "agent", "kit-root", true, D_A)
@@ -154,7 +154,7 @@ describe("REQ-128 #698 —— 图 diff 只用 exact digest 回答", () => {
     const dup = {
       packageId: "package:kit",
       envelopeDigest: D_ENV,
-      graphDigest: D_A,
+      installedGraphDigest: D_A,
       root: ROOT,
       children: [LEAF_SKILL, LEAF_MCP, node("skill:dup", "skill", "kit-skill", false, D_C)],
     }
@@ -376,8 +376,8 @@ describe("REQ-128 #698 —— update preview 摆出 capability / prerequisite / 
     if (!diffed.ok) return
     const preview = buildPackageUpdatePreviewV1({
       diff: diffed.diff,
-      graphBeforeDigest: BASE.graphDigest,
-      graphAfterDigest: after.graphDigest,
+      graphBeforeDigest: BASE.installedGraphDigest,
+      graphAfterDigest: after.installedGraphDigest,
       claims: [{ kind: "mcp", name: "kit-mcp", decision: "delete", remainingOwners: [], reasonCode: null }],
       prerequisiteIdsByKey: new Map([[packageChildTxKeyV1("agent", "kit-root"), ["kit-root:token"]]]),
       capabilityDiffByKey: new Map([
@@ -406,8 +406,8 @@ describe("REQ-128 #698 —— update preview 摆出 capability / prerequisite / 
     if (!diffed.ok) return
     const preview = buildPackageUpdatePreviewV1({
       diff: diffed.diff,
-      graphBeforeDigest: BASE.graphDigest,
-      graphAfterDigest: BASE.graphDigest,
+      graphBeforeDigest: BASE.installedGraphDigest,
+      graphAfterDigest: BASE.installedGraphDigest,
       claims: [],
       prerequisiteIdsByKey: new Map(),
       capabilityDiffByKey: new Map([

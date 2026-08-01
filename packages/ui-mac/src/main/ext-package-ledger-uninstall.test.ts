@@ -32,7 +32,7 @@ import * as path from "node:path"
 import { addReceipt, readLedger } from "./alpha-installs"
 import {
   bundleOwner,
-  computeGraphDigest,
+  computeInstalledGraphDigest,
   standaloneOwner,
   LEGACY_PROTECTED_OWNER,
   type PackageClaimV1,
@@ -128,7 +128,7 @@ const packageGraph = (): PackageGraphV1 => {
     root: { componentId: head!.componentId, kind: head!.kind, name: head!.name, required: true, manifestDigest: ROOT_DIGEST },
     children: rest.map((c) => ({ componentId: c.componentId, kind: c.kind, name: c.name, required: false, manifestDigest: ROOT_DIGEST })),
   }
-  return { ...withoutDigest, graphDigest: computeGraphDigest(withoutDigest) }
+  return { ...withoutDigest, installedGraphDigest: computeInstalledGraphDigest(withoutDigest) }
 }
 
 const packageMutation = (): PackageLedgerMutationV1 => ({
@@ -593,7 +593,7 @@ describe("REQ-128 #706 —— 篡改的 V3 账本:所有写路径拒绝且字节
     seedV3Ledger()
     const before = readRaw()
     const updated = { ...packageGraph(), envelopeDigest: `sha256:${"c".repeat(64)}` }
-    const updatedGraph: PackageGraphV1 = { ...updated, graphDigest: computeGraphDigest(updated) }
+    const updatedGraph: PackageGraphV1 = { ...updated, installedGraphDigest: computeInstalledGraphDigest(updated) }
     const stale: PackageLedgerMutationV1 = {
       ...packageMutation(),
       operation: "update",

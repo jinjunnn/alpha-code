@@ -5,6 +5,11 @@ import { existsSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
+// #754: every git call below targets a *sibling* repository, so none of them may inherit this
+// repository's git environment. `git push` exports GIT_DIR into the hook process and GIT_DIR beats
+// `-C` — see git-cross-repo.ts for the measurement and why the variable list is git's, not ours.
+import { gitInRepository } from "./git-cross-repo"
+
 // One entry per upstream contract publisher. Each pins an immutable commit and owns its own lock
 // file, vendor subtree, and staged-source directory. `vendor` re-copies bytes from a staged checkout
 // of the pinned commit and rewrites that lock; `--check` (the merge gate) re-hashes the vendored
@@ -160,7 +165,7 @@ const sourceRootOf = (upstream: (typeof UPSTREAMS)[number]) => {
 }
 const sourceBytes = async (upstream: (typeof UPSTREAMS)[number], sourceRoot: string, path: string) => {
   if (!("commitBound" in upstream)) return new Uint8Array(await Bun.file(resolve(sourceRoot, path)).arrayBuffer())
-  const result = Bun.spawnSync(["git", "-C", sourceRoot, "show", `${upstream.commit}:${upstream.sourcePrefix}/${path}`])
+  const result = gitInRepository(sourceRoot, ["show", `${upstream.commit}:${upstream.sourcePrefix}/${path}`])
   if (result.exitCode !== 0)
     throw new Error(
       `cannot read pinned source ${upstream.repo}@${upstream.commit}:${upstream.sourcePrefix}/${path}: ${result.stderr.toString().trim()}`,
@@ -185,7 +190,7 @@ if (check) {
     if ("commitBound" in upstream && !hasStagedSource)
       throw new Error(`required producer checkout is unavailable: ${sourceRoot}`)
     if ("commitBound" in upstream) {
-      const resolved = Bun.spawnSync(["git", "-C", sourceRoot, "rev-parse", `${upstream.commit}^{commit}`])
+      const resolved = gitInRepository(sourceRoot, ["rev-parse", `${upstream.commit}^{commit}`])
       if (resolved.exitCode !== 0 || resolved.stdout.toString().trim() !== upstream.commit)
         throw new Error(
           `required producer commit does not resolve exactly: ${upstream.repo}@${upstream.commit} in ${sourceRoot}`,
@@ -283,7 +288,7 @@ for (const upstream of UPSTREAMS) {
     continue
   }
   if ("commitBound" in upstream) {
-    const resolved = Bun.spawnSync(["git", "-C", sourceRoot, "rev-parse", `${upstream.commit}^{commit}`])
+    const resolved = gitInRepository(sourceRoot, ["rev-parse", `${upstream.commit}^{commit}`])
     if (resolved.exitCode !== 0 || resolved.stdout.toString().trim() !== upstream.commit)
       throw new Error(
         `required producer commit does not resolve exactly: ${upstream.repo}@${upstream.commit} in ${sourceRoot}`,

@@ -22,6 +22,7 @@ import type { SessionToggleView } from "./ext-session-toggle"
 import type { CurationStatus } from "../../shared/catalog-curation"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
 import { packageComponentPresentation, packagePresentation, packageRetainedReasonKey } from "./ext-package-presentation"
+import { extIpc } from "./ext-ipc"
 
 /** What the detail page shows: a legacy catalog entry, a host-projected package, an engine agent
  *  (no catalog identity), or the injected platform cloud connector. */
@@ -141,7 +142,7 @@ export function ExtensionDetail(props: {
     const source = props.target.source
     const [packageDetail, { mutate: setPackageDetail }] = createResource(
       () => initial.catalogId,
-      (catalogId) => window.api.ext.packageDetail(catalogId),
+      (catalogId) => extIpc.packageDetail(catalogId),
     )
     const view = () => packageDetail() ?? initial
     const presentation = () => packagePresentation(view())
@@ -154,7 +155,7 @@ export function ExtensionDetail(props: {
     // `#698`:这个包在本机装没装 —— main 从**它自己的账本图**回答;renderer 不推断、不缓存。
     const [installed, { refetch: refetchInstalled }] = createResource(
       () => initial.catalogId,
-      (catalogId) => window.api.ext.packageInstalled(catalogId),
+      (catalogId) => extIpc.packageInstalled(catalogId),
     )
     const [removing, setRemoving] = createSignal(false)
     const [packageError, setPackageError] = createSignal<string | undefined>()
@@ -165,7 +166,7 @@ export function ExtensionDetail(props: {
       setRemoving(true)
       setPackageError(undefined)
       try {
-        const result = await window.api.ext.uninstallPackage(view().catalogId)
+        const result = await extIpc.uninstallPackage(view().catalogId)
         if (!result.ok) {
           // 失败就说失败。`ok` 之外的任何东西都不许被读成「已移除」——「空操作 + ok」正是
           // `#706` review 抓到的那种谎报(Hub 只看 ok)。
@@ -173,9 +174,8 @@ export function ExtensionDetail(props: {
           return
         }
         setRetained(result.retained.map((entry) => ({ kind: entry.kind, name: entry.name, reasonCode: entry.reasonCode })))
-        // `#698`:成功但带具名 warning(连接绑定没释放掉、残留没清干净等)必须呈现 —— 这是我
-        // 自己在同一批改动里犯的第四处「诚实只诚实到 IPC 边界」。用与失败同一个可见位置。
-        if (result.warning) setPackageError(result.warning)
+        // 成功但带具名 warning(连接绑定没释放掉、残留没清干净等)的呈现归 `extIpc`(`#765`):
+        // 上面那次调用返回时就已经推了 toast,这里不再往行内错误位塞一份。
         await refetchInstalled()
       } finally {
         setRemoving(false)
@@ -385,7 +385,7 @@ export function ExtensionDetail(props: {
       if (spec?.kind === "agent") return spec.builtinAssetKey || undefined
       return undefined
     },
-    (key) => window.api.ext.readBuiltinSkill(key),
+    (key) => extIpc.readBuiltinSkill(key),
   )
 
   // ── #397:策展采信(整段真源切换的判定;fail-closed —— invalid 走未策展保守面 + 一行上报)──
@@ -404,14 +404,14 @@ export function ExtensionDetail(props: {
       const e = entry()
       return e && curated() ? e.id : undefined
     },
-    (id) => window.api.ext.curationBlob(id, "sbom"),
+    (id) => extIpc.curationBlob(id, "sbom"),
   )
   const [provBlob, { refetch: refetchProv }] = createResource(
     () => {
       const e = entry()
       return e && curated() ? e.id : undefined
     },
-    (id) => window.api.ext.curationBlob(id, "provenance"),
+    (id) => extIpc.curationBlob(id, "provenance"),
   )
   const sbomComponents = createMemo((): { name: string; version: string }[] => {
     const r = sbomBlob()
@@ -479,7 +479,7 @@ export function ExtensionDetail(props: {
     async (src) => {
       const results: { dep: string; ok: boolean }[] = []
       for (const dep of src.deps) {
-        const r = await window.api.ext.checkRuntime(dep)
+        const r = await extIpc.checkRuntime(dep)
         results.push({ dep, ok: r.ok })
       }
       return results

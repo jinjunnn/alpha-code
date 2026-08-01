@@ -4,6 +4,7 @@
 import { createSignal } from "solid-js"
 import catalogJson from "./alpha-catalog.json"
 import type { Catalog, CatalogEntry } from "./catalog-types"
+import { extIpc } from "./ext-ipc"
 
 const BUNDLED = catalogJson as unknown as Catalog
 
@@ -21,7 +22,7 @@ export function refreshCatalog(): Promise<void> {
   if (inflight) return inflight
   inflight = (async () => {
     try {
-      const r = await window.api.ext.remoteCatalog()
+      const r = await extIpc.remoteCatalog()
       if (r.source !== "none" && r.catalog && Array.isArray((r.catalog as Catalog).entries)) {
         setCatalogSig(r.catalog as Catalog)
         setSourceSig(r.source)
