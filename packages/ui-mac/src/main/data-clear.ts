@@ -59,6 +59,16 @@ export const CREDENTIAL_ITEMS: ManifestItem[] = [
   { id: "mcp-secrets", root: "userData", rel: "alpha-mcp-secrets", desc: "连接器密钥({file:} 通道)" },
   { id: "alpha-env", root: "userData", rel: "alpha.env", desc: "手写密钥 env 文件(alpha.env)" },
   { id: "engine-auth", root: "engineData", rel: "auth.json", desc: "引擎凭证存储(与 opencode CLI 共享)", shared: true },
+  // #752:MCP 服务的 OAuth 令牌。引擎写在 Global.Path.data/mcp-auth.json
+  // (packages/opencode/src/mcp/auth.ts),而 Global.Path.data = xdg-basedir 的 xdgData + "/opencode"
+  // = $XDG_DATA_HOME || ~/.local/share + "/opencode" —— 与 engineDataDir() 同一推导,故走 engineData 根。
+  {
+    id: "engine-mcp-auth",
+    root: "engineData",
+    rel: "mcp-auth.json",
+    desc: "MCP 服务登录令牌(OAuth,与 opencode CLI 共享)",
+    shared: true,
+  },
 ]
 
 export type PlanItem = ManifestItem & { path: string; present: boolean; bytes: number }
