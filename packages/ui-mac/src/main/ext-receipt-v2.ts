@@ -378,7 +378,28 @@ export function probeLedgerForWrite(root: string): { ok: true } | { ok: false; r
     return { ok: false, reason: `install ledger corrupt (non-array records/receipts) — refusing to write; inspect ${ledgerPath(root)}` }
   const v3 = envelopeV3Sections(raw as Record<string, unknown>, ledgerPath(root))
   if (!v3.ok) return { ok: false, reason: `${v3.reason} — refusing to write` }
+  // REQ-128 `#706`:**预检也要判 V3 整体不变量,和落盘那一刻用同一个判据**。这个探针是各安装
+  // 路径在动任何实物之前问的那一句「我等下记得下来吗」;只验信封而不验不变量,就会出现
+  //「探针放行 → 文件/配置/密钥全写完 → writeLedgerFile 拒 → 装了但记不下来」——
+  // 与本票要消灭的「先删实物、后判决」是同一形态,只是发生在安装侧。
+  const invariants = validateV3State({
+    recordKeys: recordKeysOf(Array.isArray((raw as { records?: unknown }).records) ? ((raw as { records: unknown[] }).records) : []),
+    packageGraphs: v3.packageGraphs,
+    claims: v3.claims,
+  })
+  if (!invariants.ok) return { ok: false, reason: `refusing ledger write: ${invariants.reason}; inspect ${ledgerPath(root)}` }
   return { ok: true }
+}
+
+/** claim 能指向哪些 child 的唯一判据 —— 探针与落盘共用一份,不许各算各的
+ *  (两份判据 = 预检放行而提交拒绝,正是本票在消灭的那种半态)。损坏条目不替 claim 背书。 */
+function recordKeysOf(records: readonly unknown[]): Set<string> {
+  const keys = new Set<string>()
+  for (const r of records) {
+    const rec = r as { kind?: unknown; name?: unknown; schemaVersion?: unknown }
+    if (typeof rec?.kind === "string" && typeof rec?.name === "string" && rec.schemaVersion === RECORD_SCHEMA_VERSION) keys.add(key(rec.kind, rec.name))
+  }
+  return keys
 }
 
 /** REQ-128 `#706`:V3 段的信封级严格读取。**任何一条解不开就整本拒** ——
@@ -654,13 +675,7 @@ function writeLedgerFile(
 ): { ok: true; projectionLag?: string } | { ok: false; reason: string } {
   // REQ-128 `#706`:V3 不变量在**落盘之前**判 —— 一次校验、一次 rename。dangling claim /
   // unknown child / 孤儿 owner 一旦 durable 就再也无法自证,所以这里宁可整次拒写。
-  // recordKeys 只认已解码的 record(损坏条目由各闸单独拒绝,不能替 claim 背书)。
-  const recordKeys = new Set<string>()
-  for (const r of records) {
-    const rec = r as { kind?: unknown; name?: unknown; schemaVersion?: unknown }
-    if (typeof rec?.kind === "string" && typeof rec?.name === "string" && rec.schemaVersion === RECORD_SCHEMA_VERSION) recordKeys.add(key(rec.kind, rec.name))
-  }
-  const invariants = validateV3State({ recordKeys, packageGraphs: v3.packageGraphs, claims: v3.claims })
+  const invariants = validateV3State({ recordKeys: recordKeysOf(records), packageGraphs: v3.packageGraphs, claims: v3.claims })
   if (!invariants.ok) return { ok: false, reason: `refusing ledger write: ${invariants.reason}` }
   try {
     fs.mkdirSync(root, { recursive: true })
@@ -1275,6 +1290,13 @@ export function applyPackageMutation(root: string, mutation: PackageLedgerMutati
   const warnings: string[] = [...parsed.recordWarnings, ...parsed.receiptWarnings]
   if (parsed.corruptRecords.unattributable)
     return { ok: false, reason: `refusing package mutation: ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
+  // REQ-128 `#706`:**入账前先验账本自身**,而且要在 exact-replay 短路**之前**。
+  // 否则一本被篡改成 dangling claim / unknown child / 孤儿 owner 的账本,只要图恰好已是目标态,
+  // 崩溃前滚就会拿到 `replayed: true` —— 事务 journal 就此转终态,而这本账此后任何写都会被拒。
+  // 「我什么都没做所以我成功了」是 owner 集合最贵的一种谎报。
+  const inbound = validateV3State({ recordKeys: recordKeysOf(parsed.records), packageGraphs: parsed.packageGraphs, claims: parsed.claims })
+  if (!inbound.ok)
+    return { ok: false, reason: `refusing package mutation: ledger state is not self-consistent: ${inbound.reason}; inspect ${ledgerPath(root)}` }
 
   const existingGraph = mutation.packageRecord
     ? (parsed.packageGraphs.find((g) => g.packageId === mutation.packageRecord!.packageId) ?? null)
