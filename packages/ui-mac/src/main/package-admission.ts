@@ -38,8 +38,13 @@ import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "../shared/host-extension-packa
 import type {
   PackageAdmissionAuthorizationV1,
   PackageAdmissionBindingV1,
+  PackageAdmissionPlanItemV1,
   PackageAdmissionPreviewV1,
 } from "../shared/package-admission"
+import type { PackageComponentSkipReasonV1 } from "../shared/host-extension-package-contract/decoder"
+import type { HealthProbe, HealthVerdict } from "./ext-transaction"
+import type { PackageTxBuildV1 } from "./ext-package-tx-builders"
+import type { PackageAcceptedComponentV1 } from "./package-installability"
 import type { TxStageNonAuthorizeWire } from "../shared/ext-capability-authorization"
 import { evaluatePackageSecretSubmissionV1 } from "../shared/package-secret-prerequisite"
 import {
@@ -96,9 +101,16 @@ type VerifiedCatalogLoad =
 export type PackageAdmissionOutcome =
   | {
       ok: true
+      /** The **root** component's kind/name. Leaves are enumerated in `installed`. */
       kind: "skill" | "agent" | "mcp"
       name: string
       manifestDigest: string
+      /** Every component id this transaction actually installed, root first. */
+      installed: string[]
+      /** Curated components this host refused to install, with the decoder's own reason token. */
+      skipped: Array<{ id: string; reason: PackageComponentSkipReasonV1 }>
+      /** MCP component names that landed `enabled` and therefore need one live reload each. */
+      activateMcp: string[]
       installedDisabled?: true
       /**
        * Installed, but an optional Alpha Connection is not established. Distinct from
@@ -136,25 +148,45 @@ export type PackageAdmissionDeps = {
 }
 
 /**
- * `envelope.components[0]` is whichever component the producer listed first, which is not the root
- * in general. Reading `facts.components[0]` instead only moves the same defect one layer up: it
- * turns an **ordering convention** into a load-bearing invariant while the type already carries the
- * fact (`role`). Read the declared role. (`#697` replaces this whole single-component shape with
- * the graph.)
+ * One accepted component, resolved down to everything the transaction needs. `#697` replaced the
+ * old single-component `PreparedPackage` with a list of these: `envelope.components[0]` (and its
+ * one-layer-up twin `facts.components[0]`) turned a producer's array order into a load-bearing
+ * invariant, and the type already carries the fact (`role`).
  */
-function rootComponentOf(facts: PackageAcceptedFactsV1) {
-  return facts.components.find((entry) => entry.role === "root")!.component
-}
-
-type PreparedPackage = {
-  facts: PackageAcceptedFactsV1
+type PreparedComponent = {
+  accepted: PackageAcceptedComponentV1
   key: string
   kind: "skill" | "agent" | "mcp"
   name: string
   asset?: Buffer
   agentEntry?: Record<string, unknown>
   itemDigest: string
+}
+
+/** A curated component this host will not install, carrying the decoder's own token verbatim. */
+type SkippedComponent = { componentId: string; skipReasonCode: PackageComponentSkipReasonV1 }
+
+type PreparedPackage = {
+  facts: PackageAcceptedFactsV1
+  /** Root first, then every included leaf **sorted by component id**. */
+  components: PreparedComponent[]
+  root: PreparedComponent
+  /** Sorted by component id. */
+  skipped: SkippedComponent[]
   binding: PackageAdmissionBindingV1
+}
+
+const byComponentId = <T extends { id: string }>(left: T, right: T) =>
+  left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+
+/**
+ * The transaction key a skipped component gets inside the journal / authorization receipt. The
+ * engine's `skippedOptional.key` must be fs-safe (`SAFE_KEY`) and component ids carry a colon, so
+ * identity travels as a digest of the id rather than as a hand-rolled re-spelling of it. The
+ * *reason* is never re-spelled: it is the decoder's token, byte for byte.
+ */
+export function packageSkippedTxKeyV1(componentId: string): string {
+  return `skipped--${sha256Hex(componentId).slice(0, 24)}`
 }
 
 type Attempt = {
@@ -185,12 +217,15 @@ export function createPackageAdmissionCoordinator(deps: PackageAdmissionDeps) {
         return { ok: false, reason: "package admission: attemptId was already issued or replayed" }
       const resolved = await resolvePreparedPackage(intent.catalogId, deps)
       if (!resolved.ok) return resolved
-      const authorization = evaluateBundleAuthorization(deps.root(), [
-        {
-          key: resolved.prepared.key,
-          capabilities: rootComponentOf(resolved.prepared.facts).capabilities,
-        },
-      ]).items
+      // 一次展示、一次授权:Bundle 的每个**将被安装**的组件各出一条 diff。被跳过的组件不出现
+      // (§4.3:不该要用户为一个不会安装的东西授权),但它仍在 plan 里如实可见。
+      const authorization = evaluateBundleAuthorization(
+        deps.root(),
+        resolved.prepared.components.map((component) => ({
+          key: component.key,
+          capabilities: component.accepted.component.capabilities,
+        })),
+      ).items
       attempts.set(intent.attemptId, {
         catalogId: intent.catalogId,
         scope: intent.scope,
@@ -231,25 +266,33 @@ export function createPackageAdmissionCoordinator(deps: PackageAdmissionDeps) {
     if (canonicalJson(revalidated.prepared.binding) !== canonicalJson(attempt.binding))
       return { ok: false, reason: "package admission: signed package facts changed; preview is stale" }
 
-    const profile = revalidated.prepared.facts.prerequisite
-    const expectedSecretKeys = profile.items.map((item) => item.prerequisiteId).sort()
+    // 密钥面按**组件**分区。prerequisiteId 自带 componentId 前缀,所以一张扁平的 secrets map
+    // 分区是无歧义的;每个组件用**它自己的** profile 判定(store server 是逐组件的)。
+    // 「提交集恰等于声明集」的整包断言留在分区之前 —— 否则一个多余的、属于任何组件的 id
+    // 都可以躲进「不属于我」的缝里。
+    const profiles = revalidated.prepared.components.map((component) => component.accepted.prerequisite)
+    const expectedSecretKeys = profiles
+      .flatMap((profile) => profile.items.map((item) => item.prerequisiteId))
+      .sort()
     const submittedSecretKeys = Object.keys(intent.grants?.secrets ?? {}).sort()
     if (intent.grants?.secrets && canonicalJson(expectedSecretKeys) !== canonicalJson(submittedSecretKeys))
       return { ok: false, reason: "package admission: secret-undeclared" }
-    const submitted =
-      profile.items.length === 0
-        ? { decision: "submit", secrets: [] }
-        : intent.grants?.secrets
-          ? {
-              decision: "submit",
-              secrets: profile.items.map((item) => ({
-                prerequisiteId: item.prerequisiteId,
-                value: intent.grants?.secrets?.[item.prerequisiteId],
-              })),
-            }
-          : { decision: "cancel" }
-    const prerequisite = evaluatePackageSecretSubmissionV1(profile, submitted)
-    if (prerequisite.state !== "ready") return { ok: false, reason: `package admission: ${prerequisite.reasonCode}` }
+    for (const profile of profiles) {
+      const submitted =
+        profile.items.length === 0
+          ? { decision: "submit", secrets: [] }
+          : intent.grants?.secrets
+            ? {
+                decision: "submit",
+                secrets: profile.items.map((item) => ({
+                  prerequisiteId: item.prerequisiteId,
+                  value: intent.grants?.secrets?.[item.prerequisiteId],
+                })),
+              }
+            : { decision: "cancel" }
+      const prerequisite = evaluatePackageSecretSubmissionV1(profile, submitted)
+      if (prerequisite.state !== "ready") return { ok: false, reason: `package admission: ${prerequisite.reasonCode}` }
+    }
     if (
       intent.grants &&
       (intent.grants.env !== undefined || intent.grants.workspace !== undefined || intent.grants.cnMirror !== undefined)
@@ -287,7 +330,9 @@ function resolveConnectionBinding(
   prepared: PreparedPackage,
   deps: PackageAdmissionDeps,
 ): ResolvedPackageConnectionV1 | { ok: false; reasonCode: string } {
-  const items = prepared.facts.connection.items
+  // 逐组件:Bundle 里任何一个将被安装的组件都可能声明连接前置。required 未就绪 = 整包拒
+  // (全有或全无),optional 未就绪 = 整包落 disabled 并如实说明。
+  const items = prepared.components.flatMap((component) => component.accepted.connection.items)
   if (items.length === 0) return { ok: true, references: [], unavailable: false }
   const scope = connectionScope(deps)
   const stored = readAlphaConnectionRecordsV1(scope)
@@ -322,37 +367,54 @@ function connectionScope(deps: PackageAdmissionDeps): AlphaConnectionStoreScope 
   return { userDataPath: deps.userDataPath, extensionRoot: deps.root() }
 }
 
+function componentOperations(component: PreparedComponent) {
+  return component.kind === "skill"
+    ? (["write-generation", "write-install-record", "write-capability-grant"] as const)
+    : component.kind === "agent"
+      ? (["write-file", "update-config", "write-install-record", "write-capability-grant"] as const)
+      : component.accepted.prerequisite.items.length > 0
+        ? (["write-secret-version", "update-config", "write-install-record", "write-capability-grant"] as const)
+        : (["update-config", "write-install-record", "write-capability-grant"] as const)
+}
+
+/**
+ * The **authorization screen** is a preview too, and it is the one the user actually presses
+ * "confirm" on. It therefore lists every signed component, not just the ones being installed:
+ * without the skipped rows the user confirms an install while being told nothing about the part of
+ * the package that will silently not arrive.
+ */
 function packagePlanPreview(prepared: PreparedPackage): PackageAdmissionPreviewV1["plan"] {
-  const component = rootComponentOf(prepared.facts)
-  const operations =
-    prepared.kind === "skill"
-      ? (["write-generation", "write-install-record", "write-capability-grant"] as const)
-      : prepared.kind === "agent"
-        ? (["write-file", "update-config", "write-install-record", "write-capability-grant"] as const)
-        : prepared.facts.prerequisite.items.length > 0
-          ? (["write-secret-version", "update-config", "write-install-record", "write-capability-grant"] as const)
-          : (["update-config", "write-install-record", "write-capability-grant"] as const)
+  const installed: PackageAdmissionPlanItemV1[] = prepared.components.map((component) => ({
+    included: true,
+    componentId: component.accepted.component.id,
+    role: component.accepted.role,
+    required: component.accepted.component.required,
+    key: component.key,
+    kind: component.kind,
+    name: component.name,
+    manifestDigest: `sha256:${component.itemDigest}`,
+    payloadDigest: `sha256:${component.accepted.component.payloadRef.sha256}`,
+    capabilities: [...component.accepted.component.capabilities].sort(),
+    prerequisites: component.accepted.prerequisite.items.map((item) => ({
+      prerequisiteId: item.prerequisiteId,
+      label: item.label,
+      required: item.required,
+    })),
+    operations: [...componentOperations(component)],
+  }))
+  const skipped: PackageAdmissionPlanItemV1[] = prepared.skipped.map((entry) => ({
+    included: false,
+    componentId: entry.componentId,
+    role: "leaf",
+    required: false,
+    // 逐字来自 decoder(经安全视图透传),不是在这里重新措辞。
+    skipReasonCode: entry.skipReasonCode,
+  }))
   return {
     packageId: prepared.facts.envelope.prelude.packageId,
     version: prepared.facts.envelope.prelude.version,
     scope: { scope: "global" },
-    items: [
-      {
-        componentId: component.id,
-        key: prepared.key,
-        kind: prepared.kind,
-        name: prepared.name,
-        manifestDigest: `sha256:${prepared.itemDigest}`,
-        payloadDigest: `sha256:${component.payloadRef.sha256}`,
-        capabilities: [...component.capabilities].sort(),
-        prerequisites: prepared.facts.prerequisite.items.map((item) => ({
-          prerequisiteId: item.prerequisiteId,
-          label: item.label,
-          required: item.required,
-        })),
-        operations: [...operations],
-      },
-    ],
+    items: [...installed, ...skipped],
   }
 }
 
@@ -380,60 +442,116 @@ async function resolvePreparedPackage(
   if (!accepted || view.verdict !== "compatible") return { ok: false, reason: view.action.reasonCode, package: view }
 
   const facts = accepted
-  const component = rootComponentOf(facts)
-  const name = component.id.slice(component.id.indexOf(":") + 1)
-  const kind = component.profileId === "skill" ? "skill" : component.profileId === "agent" ? "agent" : "mcp"
-  const key = kind === "skill" ? skillGenerationKey(name) : kind === "agent" ? agentInstallKey(name) : `mcp--${name}`
-  const assetRef =
-    facts.payload.schema === "alpha.host-extension-package.payload.skill.v1" ||
-    facts.payload.schema === "alpha.host-extension-package.payload.agent.v1"
-      ? facts.payload.behavior.asset
-      : undefined
-  const asset = assetRef
-    ? Buffer.from(await (deps.fetchAsset ?? fetchPackageAsset)(assetRef).catch(() => new Uint8Array()))
-    : undefined
-  if (
-    assetRef &&
-    (!asset ||
-      asset.byteLength !== assetRef.bytes ||
-      createHash("sha256").update(asset).digest("hex") !== assetRef.sha256)
-  )
-    return { ok: false, reason: "package admission: package asset unavailable or failed integrity", package: view }
-  const agentEntry =
-    facts.payload.schema === "alpha.host-extension-package.payload.agent.v1" && asset
-      ? agentMdToEntry(asset.toString("utf8"))
-      : undefined
-  if (agentEntry && !agentEntry.ok)
-    return { ok: false, reason: `package admission: agent payload invalid (${agentEntry.reason})`, package: view }
+  // 固定顺序:root 先,其余按**组件 id** 排序。生产者重排 `components[]` 不得改变 admission
+  // 的任何一步 —— 顺序是排版约定,不是不变量。
+  const rootAccepted = facts.components.find((entry) => entry.role === "root")!
+  const ordered = [
+    rootAccepted,
+    ...facts.components
+      .filter((entry) => entry.role === "leaf")
+      .sort((left, right) => byComponentId(left.component, right.component)),
+  ]
 
-  const itemDigest = sha256Hex(
-    canonicalJson({
-      component,
-      payload: facts.payload,
-      ...(assetRef ? { asset: { sha256: assetRef.sha256, bytes: assetRef.bytes } } : {}),
-    }),
-  )
-  return {
-    ok: true,
-    prepared: {
-      facts,
+  const components: PreparedComponent[] = []
+  for (const entry of ordered) {
+    const component = entry.component
+    const name = component.id.slice(component.id.indexOf(":") + 1)
+    const kind = component.profileId === "skill" ? "skill" : component.profileId === "agent" ? "agent" : "mcp"
+    const key = kind === "skill" ? skillGenerationKey(name) : kind === "agent" ? agentInstallKey(name) : `mcp--${name}`
+    const assetRef =
+      entry.payload.schema === "alpha.host-extension-package.payload.skill.v1" ||
+      entry.payload.schema === "alpha.host-extension-package.payload.agent.v1"
+        ? entry.payload.behavior.asset
+        : undefined
+    const asset = assetRef
+      ? Buffer.from(await (deps.fetchAsset ?? fetchPackageAsset)(assetRef).catch(() => new Uint8Array()))
+      : undefined
+    if (
+      assetRef &&
+      (!asset ||
+        asset.byteLength !== assetRef.bytes ||
+        createHash("sha256").update(asset).digest("hex") !== assetRef.sha256)
+    )
+      return { ok: false, reason: "package admission: package asset unavailable or failed integrity", package: view }
+    const agentEntry =
+      entry.payload.schema === "alpha.host-extension-package.payload.agent.v1" && asset
+        ? agentMdToEntry(asset.toString("utf8"))
+        : undefined
+    if (agentEntry && !agentEntry.ok)
+      return { ok: false, reason: `package admission: agent payload invalid (${agentEntry.reason})`, package: view }
+
+    components.push({
+      accepted: entry,
       key,
       kind,
       name,
       ...(asset ? { asset } : {}),
       ...(agentEntry?.ok ? { agentEntry: agentEntry.entry } : {}),
-      itemDigest,
+      itemDigest: sha256Hex(
+        canonicalJson({
+          component,
+          payload: entry.payload,
+          ...(assetRef ? { asset: { sha256: assetRef.sha256, bytes: assetRef.bytes } } : {}),
+        }),
+      ),
+    })
+  }
+
+  // 一个 Bundle 里两个组件解析到同一条 fs 记录(同 kind 同名)= 两条 item 争同一个 live 叶。
+  // 引擎的 duplicate-key 闸只看 item key,而 skill 与 agent 的 key 前缀不同 —— 所以这一条要在
+  // 这里判,且判的是 (kind,name),即账本与 claim 的真身份。
+  const identities = new Set<string>()
+  for (const component of components) {
+    const identity = `${component.kind}:${component.name}`
+    if (identities.has(identity))
+      return {
+        ok: false,
+        reason: `package admission: package installs ${identity} twice — refusing (one child, one owner)`,
+        package: view,
+      }
+    identities.add(identity)
+  }
+
+  // 被跳过的组件**不重新推导**:直接消费安全视图那一份,于是详情页、确认屏、收据拿到的是
+  // 同一个字符串,而不是三处各算一遍的三个答案(§4.3 闸 ③)。
+  const skipped: SkippedComponent[] = view.components
+    .filter((entry): entry is typeof entry & { skipReasonCode: PackageComponentSkipReasonV1 } =>
+      !entry.included && entry.skipReasonCode !== null,
+    )
+    .map((entry) => ({ componentId: entry.componentId, skipReasonCode: entry.skipReasonCode }))
+    .sort((left, right) => (left.componentId < right.componentId ? -1 : left.componentId > right.componentId ? 1 : 0))
+
+  return {
+    ok: true,
+    prepared: {
+      facts,
+      components,
+      root: components[0]!,
+      skipped,
       binding: {
         snapshotDigest: loaded.snapshotDigest,
         envelopeDigest: sha256Hex(canonicalJson(facts.envelope)),
         graphDigest: sha256Hex(canonicalJson(facts.graph)),
-        itemDigests: { [component.id]: itemDigest },
-        capabilityDigest: sha256Hex(canonicalJson({ [key]: component.capabilities })),
+        itemDigests: Object.fromEntries(
+          components.map((component) => [component.accepted.component.id, component.itemDigest]),
+        ),
+        capabilityDigest: sha256Hex(
+          canonicalJson(
+            Object.fromEntries(
+              components.map((component) => [component.key, component.accepted.component.capabilities]),
+            ),
+          ),
+        ),
       },
     },
   }
 }
 
+/**
+ * Build every component's plan, then run **one** transaction over all of it. The whole point of the
+ * Bundle is that there is no per-child commit: required children are all-or-nothing, and the ledger
+ * sees exactly one `PackageLedgerMutationV1` carried on the root item.
+ */
 async function executePreparedPackage(
   prepared: PreparedPackage,
   intent: PackageIntent,
@@ -441,92 +559,143 @@ async function executePreparedPackage(
   connection: ResolvedPackageConnectionV1,
 ): Promise<PackageAdmissionOutcome> {
   const root = deps.root()
-  const component = rootComponentOf(prepared.facts)
-  const manifestDigest = `sha256:${prepared.itemDigest}`
   const now = (deps.now?.() ?? new Date()).toISOString()
-  const receipt: UpsertInput = {
-    id: component.id,
-    name: prepared.name,
-    kind: prepared.kind,
-    environment: deps.environment(),
-    scope: { kind: "global" },
-    version: prepared.facts.envelope.prelude.version,
-    manifestDigest,
-    payloadDigest: `sha256:${component.payloadRef.sha256}`,
-    grantDigest: computeGrantDigest(intent.grants),
-    desiredState: nextDesiredState(root, prepared.kind, prepared.name, { origin: "catalog" }),
-    origin: "catalog",
-    installedAt: now,
+  const builds: Array<{ component: PreparedComponent; build: PackageTxBuildV1; desiredState: "enabled" | "disabled" }> = []
+
+  for (const component of prepared.components) {
+    const manifestDigest = `sha256:${component.itemDigest}`
+    const receipt: UpsertInput = {
+      id: component.accepted.component.id,
+      name: component.name,
+      kind: component.kind,
+      environment: deps.environment(),
+      scope: { kind: "global" },
+      version: prepared.facts.envelope.prelude.version,
+      manifestDigest,
+      payloadDigest: `sha256:${component.accepted.component.payloadRef.sha256}`,
+      grantDigest: computeGrantDigest(intent.grants),
+      desiredState: nextDesiredState(root, component.kind, component.name, { origin: "catalog" }),
+      origin: "catalog",
+      installedAt: now,
+    }
+    // "Installed but unavailable" is not a new state — it is the existing disabled desired-state,
+    // reached for one more reason, so the runtime, the detail page and the enable toggle already
+    // know what to do with it. It is a real override, not a coincidence with today's default: a
+    // package with a prior `enabled` record would otherwise come back enabled with no connection
+    // behind it. A Bundle's connection prerequisite belongs to the package, so it lands on every
+    // component: half a package running against a connection that is not there is worse than none.
+    //
+    // It has to stay *above* `common`: since #705 the ledger template is handed to the builders, so
+    // this is the last point at which one write reaches every builder and every item they emit.
+    if (connection.unavailable) receipt.desiredState = "disabled"
+    // #705:计划构造归 builders(Bundle 与单装同一真源),本函数只负责执行与结果映射。
+    const common = {
+      root,
+      key: component.key,
+      name: component.name,
+      capabilities: component.accepted.component.capabilities,
+      manifestDigest,
+      receipt,
+    }
+    const built =
+      component.kind === "skill"
+        ? buildSkillTxItems({ ...common, ...(component.asset ? { asset: component.asset } : {}) })
+        : component.kind === "agent"
+          ? buildAgentTxItems({
+              ...common,
+              ...(component.asset ? { asset: component.asset } : {}),
+              ...(component.agentEntry ? { agentEntry: component.agentEntry } : {}),
+            })
+          : buildMcpTxItems({
+              ...common,
+              userDataPath: deps.userDataPath,
+              payload: component.accepted.payload,
+              prerequisite: component.accepted.prerequisite,
+              secretValues: intent.grants?.secrets ?? {},
+              newSecretVersionId: deps.secretVersionId ?? newMcpSecretVersionId,
+            })
+    if (!built.ok) return { ok: false, reason: `package admission: ${built.reason}` }
+    builds.push({ component, build: built.build, desiredState: receipt.desiredState })
   }
-  // "Installed but unavailable" is not a new state — it is the existing disabled desired-state,
-  // reached for one more reason, so the runtime, the detail page and the enable toggle already know
-  // what to do with it. It is a real override, not a coincidence with today's default: a package
-  // with a prior `enabled` record would otherwise come back enabled with no connection behind it.
-  //
-  // It has to stay *above* `common`: since #705 the ledger template is handed to the builders, so
-  // this is the last point at which one write reaches every builder and every item they emit.
-  if (connection.unavailable) receipt.desiredState = "disabled"
-  // #705:计划构造归 builders(Bundle 与单装同一真源),本函数只负责执行与结果映射。
-  const common = {
-    root,
-    key: prepared.key,
-    name: prepared.name,
-    capabilities: component.capabilities,
-    manifestDigest,
-    receipt,
-  }
-  const built =
-    prepared.kind === "skill"
-      ? buildSkillTxItems({ ...common, ...(prepared.asset ? { asset: prepared.asset } : {}) })
-      : prepared.kind === "agent"
-        ? buildAgentTxItems({
-            ...common,
-            ...(prepared.asset ? { asset: prepared.asset } : {}),
-            ...(prepared.agentEntry ? { agentEntry: prepared.agentEntry } : {}),
-          })
-        : buildMcpTxItems({
-            ...common,
-            userDataPath: deps.userDataPath,
-            payload: prepared.facts.payload,
-            prerequisite: prepared.facts.prerequisite,
-            secretValues: intent.grants?.secrets ?? {},
-            newSecretVersionId: deps.secretVersionId ?? newMcpSecretVersionId,
-          })
-  if (!built.ok) return { ok: false, reason: `package admission: ${built.reason}` }
-  const build = built.build
-  // REQ-128 `#706`:V3 mutation 只挂在 root package item 上(本期单组件 ⇒ root = `prepared.key`)。
-  // 挂错 item 或挂多份都会被 `validatePlan` 在写盘前拒掉。
-  const rootItemIndex = build.items.findIndex((item) => item.key === prepared.key)
+
+  const rootManifestDigest = `sha256:${prepared.root.itemDigest}`
+  const planned = builds.flatMap((entry) => entry.build.items)
+  // REQ-128 `#706`:V3 mutation 只挂在 **root** package item 上。挂错 item 或挂多份都会被
+  // `validatePlan` / `commitTransactionLedger` 在写盘前拒掉。
+  const rootItemIndex = planned.findIndex((item) => item.key === prepared.root.key)
   if (rootItemIndex < 0)
-    return { ok: false, reason: `package admission: planning builder produced no root item for "${prepared.key}" — refusing (no ledger mutation carrier)` }
-  const items = build.items.map((item, index) =>
-    index === rootItemIndex ? { ...item, packageMutation: packageMutationEnvelope(root, prepared, manifestDigest, now) } : item,
+    return {
+      ok: false,
+      reason: `package admission: planning builder produced no root item for "${prepared.root.key}" — refusing (no ledger mutation carrier)`,
+    }
+  const items = planned.map((item, index) =>
+    index === rootItemIndex
+      ? { ...item, packageMutation: packageMutationEnvelope(root, prepared, rootManifestDigest, now) }
+      : item,
   )
+
+  // 每条 item 路由回**产它的那个 builder** 的 populate/probe。不共用一个「反正三种都返回同一个
+  // router」的巧合:那是把一条今天成立的等式当成不变量。未登记的 key 一律 fail-closed。
+  const populateByKey = new Map<string, PackageTxBuildV1["populate"]>()
+  const probeByKey = new Map<string, HealthProbe>()
+  for (const entry of builds)
+    for (const item of entry.build.items) {
+      populateByKey.set(item.key, entry.build.populate)
+      probeByKey.set(item.key, entry.build.probe)
+    }
+
+  const preparedResources = builds.flatMap((entry) => (entry.build.prepared ? [entry.build.prepared] : []))
 
   // #712:受限密钥版本以**类型化 descriptor** 进计划(→ journal),不再只是一对匿名闭包。
   // 释放归引擎调度(abort/rollback 前),恢复期对同一条 journal 做同一件事 —— 单一真源。
   const result = await (deps.transaction ?? runExtensionTransaction)(
     root,
-    packagePlan(items, intent, now, build.prepared?.descriptor),
+    packagePlan(items, prepared, intent, now, preparedResources.map((entry) => entry.descriptor)),
     {
-      populate: build.populate,
-      ...(build.prepared
+      populate: (item, stagingDir) => {
+        const populate = populateByKey.get(item.key)
+        if (!populate) throw new Error(`no populate seam for transaction item "${item.key}" — refusing (fail closed)`)
+        return populate(item, stagingDir)
+      },
+      ...(preparedResources.length
         ? {
-            populatePrepared: build.prepared.populate,
-            probePrepared: build.prepared.probe,
+            populatePrepared: () => {
+              for (const entry of preparedResources) entry.populate()
+            },
+            // 逐个探,第一个不健康即返回。健康时**原样透传**最后一个裁决对象而不是重造一个
+            // `{healthy:true}` —— 单资源时与 `#705` 抽取前逐字同形(parity 用例冻结了这一点)。
+            probePrepared: (): HealthVerdict => {
+              let verdict: HealthVerdict = { healthy: true }
+              for (const entry of preparedResources) {
+                verdict = entry.probe()
+                if (!verdict.healthy) return verdict
+              }
+              return verdict
+            },
             releasePrepared: (resources) => releasePreparedTxResources(deps.userDataPath, resources),
           }
         : {}),
-      probe: build.probe,
-      precondition: build.precondition,
+      probe: async (input) => {
+        const probe = probeByKey.get(input.key)
+        if (!probe)
+          return { healthy: false, reason: `no health probe for transaction item "${input.key}" — refusing (fail closed)` }
+        return probe(input)
+      },
+      precondition: () => {
+        for (const entry of builds) {
+          const verdict = entry.build.precondition()
+          if (!verdict.ok) return verdict
+        }
+        return { ok: true }
+      },
       commitReceipt: (records) => commitPackageReceipts(root, records),
     },
   )
   return transactionOutcome(
     result,
     prepared,
-    manifestDigest,
-    receipt.desiredState,
+    rootManifestDigest,
+    builds,
     connection,
     bindConnectionsAfterCommit(result, connection, deps),
   )
@@ -534,9 +703,10 @@ async function executePreparedPackage(
 
 function packagePlan(
   items: TxPlanItem[],
+  prepared: PreparedPackage,
   intent: PackageIntent,
   decidedAt: string,
-  prepared?: TxPreparedResourceV1,
+  preparedResources: TxPreparedResourceV1[],
 ): TxPlan {
   return {
     items,
@@ -544,31 +714,42 @@ function packagePlan(
       confirmed: intent.authorization!.confirmed,
       decidedAt,
     },
-    ...(prepared ? { prepared: [prepared] } : {}),
+    // §4.3 闸 ③ 的第三个面:被跳过的组件进 journal,并由引擎落进 Bundle 授权收据。
+    // `reason` 是 decoder 的 token 本身 —— 与安全视图、确认屏逐字相同。
+    ...(prepared.skipped.length
+      ? {
+          skippedOptional: prepared.skipped.map((entry) => ({
+            key: packageSkippedTxKeyV1(entry.componentId),
+            reason: entry.skipReasonCode,
+          })),
+        }
+      : {}),
+    ...(preparedResources.length ? { prepared: preparedResources } : {}),
   }
 }
 
+const graphNodeOf = (component: PreparedComponent) => ({
+  componentId: component.accepted.component.id,
+  kind: component.kind,
+  name: component.name,
+  required: component.accepted.component.required,
+  manifestDigest: `sha256:${component.itemDigest}`,
+})
+
 /**
- * REQ-128 `#706`:package 安装的**有效安装图**。本期只装 root 一个组件,所以 `children` 为空;
- * `#697` 放开多组件后本函数换成逐组件构造,图文法与 digest 口径不变。
+ * REQ-128 `#706`:package 安装的**有效安装图** —— root 加上每一个真的会被装的 leaf。被跳过的
+ * 组件按构造不在图里(§4.3),所以两台宿主对同一个签名信封可以合法地得到不同的图。
  *
- * root 走 `rootComponentOf`(声明的 `role`),**不是 `components[0]`** —— 后者是生产者随手排的
- * 顺序,把它当 root 就是把一个排版约定升级成承重不变量。这个 componentId 会直接进 owner token
- * 的派生链,认错了 = claim 归属认错人。`#749` 刚在隔壁把同一处缺陷删掉,别在这里再种一次。
+ * root 走**声明的 `role`**,不是 `components[0]` —— 后者是生产者随手排的顺序,把它当 root 就是
+ * 把一个排版约定升级成承重不变量。这个 componentId 直接进 owner token 的派生链,认错了 =
+ * claim 归属认错人。
  */
-function packageGraphOf(prepared: PreparedPackage, manifestDigest: string): PackageGraphV1 {
-  const component = rootComponentOf(prepared.facts)
+function packageGraphOf(prepared: PreparedPackage, rootManifestDigest: string): PackageGraphV1 {
   const withoutDigest = {
     packageId: prepared.facts.envelope.prelude.packageId,
     envelopeDigest: `sha256:${prepared.binding.envelopeDigest}`,
-    root: {
-      componentId: component.id,
-      kind: prepared.kind,
-      name: prepared.name,
-      required: true,
-      manifestDigest,
-    },
-    children: [],
+    root: { ...graphNodeOf(prepared.root), required: true, manifestDigest: rootManifestDigest },
+    children: prepared.components.slice(1).map(graphNodeOf),
   }
   return { ...withoutDigest, graphDigest: computeGraphDigest(withoutDigest) }
 }
@@ -576,9 +757,18 @@ function packageGraphOf(prepared: PreparedPackage, manifestDigest: string): Pack
 /** 挂在 root package item 上的静态半场:图、package 记录与 claim mutation。
  *  child record mutation 在提交时由 commit records 派生(`commitTransactionLedger`),
  *  所以主提交与崩溃前滚算出的是同一份 mutation。 */
-function packageMutationEnvelope(root: string, prepared: PreparedPackage, manifestDigest: string, now: string): PackageMutationEnvelopeV1 {
-  const graph = packageGraphOf(prepared, manifestDigest)
+function packageMutationEnvelope(
+  root: string,
+  prepared: PreparedPackage,
+  rootManifestDigest: string,
+  now: string,
+): PackageMutationEnvelopeV1 {
+  const graph = packageGraphOf(prepared, rootManifestDigest)
   const before = readPackageGraphs(root).find((g) => g.packageId === graph.packageId) ?? null
+  // owner token 对**整个 package** 只有一个,派生自 root 的 manifestDigest —— `validateV3State`
+  // 正是按 `bundleOwner(packageId, graph.root.manifestDigest)` 反查每个节点的 claim。逐 leaf 用
+  // 自己的 digest 造 owner,会让每个 leaf 的 claim 都成为「孤儿 owner」而被账本拒写。
+  const owner = bundleOwner(graph.packageId, rootManifestDigest)
   return {
     operation: before ? "update" : "install",
     packageRecord: {
@@ -592,7 +782,12 @@ function packageMutationEnvelope(root: string, prepared: PreparedPackage, manife
     },
     graphBeforeDigest: before?.graphDigest ?? null,
     graphAfter: graph,
-    claimMutations: [{ op: "acquire", kind: prepared.kind, name: prepared.name, owner: bundleOwner(graph.packageId, manifestDigest) }],
+    claimMutations: prepared.components.map((component) => ({
+      op: "acquire" as const,
+      kind: component.kind,
+      name: component.name,
+      owner,
+    })),
   }
 }
 
@@ -603,8 +798,8 @@ function commitPackageReceipts(root: string, records: TxCommitRecord[]) {
 function transactionOutcome(
   result: TxResult,
   prepared: PreparedPackage,
-  manifestDigest: string,
-  desiredState: "enabled" | "disabled",
+  rootManifestDigest: string,
+  builds: Array<{ component: PreparedComponent; desiredState: "enabled" | "disabled" }>,
   connection: ResolvedPackageConnectionV1,
   connectionWarning?: string,
 ): PackageAdmissionOutcome {
@@ -614,12 +809,25 @@ function transactionOutcome(
     return { ok: false, reason: result.reason, stage: result.stage }
   }
   const warnings = [...result.warnings, ...(connectionWarning ? [connectionWarning] : [])]
+  const rootBuild = builds[0]!
   return {
     ok: true,
-    kind: prepared.kind,
-    name: prepared.name,
-    manifestDigest,
-    ...(prepared.kind === "mcp" && desiredState === "disabled" ? { installedDisabled: true as const } : {}),
+    kind: prepared.root.kind,
+    name: prepared.root.name,
+    manifestDigest: rootManifestDigest,
+    installed: prepared.components.map((component) => component.accepted.component.id),
+    skipped: prepared.skipped.map((entry) => ({ id: entry.componentId, reason: entry.skipReasonCode })),
+    // 每个落 `enabled` 的 MCP 组件报**一次**,去重后排序 —— 调用方据此各重载一次,不多不少。
+    activateMcp: [
+      ...new Set(
+        builds
+          .filter((entry) => entry.component.kind === "mcp" && entry.desiredState === "enabled")
+          .map((entry) => entry.component.name),
+      ),
+    ].sort(),
+    ...(rootBuild.component.kind === "mcp" && rootBuild.desiredState === "disabled"
+      ? { installedDisabled: true as const }
+      : {}),
     ...(connection.unavailable ? { connectionUnavailable: true as const } : {}),
     ...(warnings.length ? { warning: warnings.join("; ") } : {}),
   }

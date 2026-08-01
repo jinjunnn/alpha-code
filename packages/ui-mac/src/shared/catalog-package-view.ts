@@ -4,7 +4,6 @@ export const CATALOG_PACKAGE_REASON_CODES = [
   "package-compatible",
   "package-prerequisite-required",
   "package-host-update-required",
-  "package-bundle-activation-pending",
   "package-invalid",
   "package-payload-unavailable",
   "package-payload-integrity",

@@ -190,7 +190,10 @@ test("real ext-install-catalog IPC binds preview, revalidates, then commits thro
     scope: { scope: "global" },
     items: [
       {
+        included: true,
         componentId: "mcp:generic-remote",
+        role: "root",
+        required: true,
         key: "mcp--generic-remote",
         kind: "mcp",
         name: "generic-remote",

@@ -592,18 +592,25 @@ export const dict = {
   "alpha.ext.packageVerdictBlocked": "Blocked",
   "alpha.ext.packageComponentsTitle": "Components and prerequisites",
   "alpha.ext.packageComponent": "Component",
+  "alpha.ext.packageComponentRoot": "Main",
+  "alpha.ext.packageComponentLeaf": "Included",
+  "alpha.ext.packageComponentIncluded": "Will be installed",
+  "alpha.ext.packageComponentSkipped": "Will not be installed",
+  "alpha.ext.packageSkipCapabilityUnsupported":
+    "This part needs a capability this version of Alpha does not have.",
+  "alpha.ext.packageSkipMediaTypeMismatch": "This part is published in a format Alpha cannot read.",
+  "alpha.ext.packageSkipProfileUnsupported": "This version of Alpha does not support this kind of part.",
   "alpha.ext.packagePrerequisiteStatus": "Prerequisites",
   "alpha.ext.packagePrerequisiteReady": "Ready",
   "alpha.ext.packagePrerequisiteRequired": "Action required",
   "alpha.ext.packageRequired": "Required",
+  "alpha.ext.packageOptional": "Optional",
   "alpha.ext.packageReasonTitle": "Why",
   "alpha.ext.packageReasonCompatible": "This package is compatible with this version of Alpha.",
   "alpha.ext.packageReasonPrerequisiteRequired":
     "Complete the required prerequisites before installing this package.",
   "alpha.ext.packageReasonHostUpdateRequired":
     "This package needs capabilities provided by a newer version of Alpha.",
-  "alpha.ext.packageReasonBundleActivationPending":
-    "This package contains several components and cannot be installed together yet.",
   "alpha.ext.packageReasonInvalid": "The package metadata did not pass validation.",
   "alpha.ext.packageReasonPayloadUnavailable": "The package content could not be retrieved. Try again later.",
   "alpha.ext.packageReasonPayloadIntegrity":

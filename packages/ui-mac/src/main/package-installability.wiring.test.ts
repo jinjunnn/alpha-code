@@ -10,7 +10,7 @@ import { createHash } from "node:crypto"
 import { resolve } from "node:path"
 import { describe, expect, test } from "bun:test"
 import bundledCatalog from "../renderer/extensions/alpha-catalog.json"
-import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
+import { CATALOG_PACKAGE_REASON_CODES, type CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import type { AlphaPackageEnvelopeV1, PackageProfilePayloadV1 } from "../shared/host-extension-package-contract/decoder"
 import {
   evaluatePackageForHost,
@@ -411,13 +411,11 @@ describe("package installability production wiring", () => {
   })
 
   /**
-   * 同一份产物的 Bundle 语料(root agent + skill leaf + optional mcp leaf)。合同 v2 已经**接受**
-   * 这张图 —— 三个组件全部 supported、leaf 列表完整 —— 但 §5.1 门二仍站着:admission 尚未按图
-   * 安装,放行等于「用户点了只装第一个组件」。所以终态是**具名的** `package-bundle-activation-pending`,
-   * 不是 `package-invalid`。这两者的区别正是本票的判据:re-vendor 之前它是后者(信封没有 root)。
-   * 翻开门二是 `#697` 的活,判据是它自己的生产 wiring test。
+   * 同一份产物的 Bundle 语料(root agent + skill leaf + optional mcp leaf)。`#697` 翻开了 §5.1
+   * 门二:这张图现在必须一路走到**可点的安装动作**,并且每个组件的 payload 都真的被按签名 digest
+   * 取过 —— 门二时代这里是零 fetch,所以「取过几次」正是翻开与否的判据,不是装饰。
    */
-  test("the pinned Bundle artifact decodes into a complete leaf list and stops only at 门二", async () => {
+  test("the pinned Bundle artifact reaches an enabled install action with every leaf fetched", async () => {
     const { envelope, payloadByDigest, publishedVerdict } = await vendoredProducerPackage(
       "expected.bundle.compiled.json",
     )
@@ -440,11 +438,9 @@ describe("package installability production wiring", () => {
       envelope.prelude.packageId,
     )) as CatalogPackageViewV1
 
-    expect(detail.action).toEqual({
-      kind: "none",
-      enabled: false,
-      reasonCode: "package-bundle-activation-pending",
-    })
+    expect(detail.verdict).toBe("compatible")
+    expect(detail.action.enabled).toBe(true)
+    expect(detail.action.kind).toBe("resolve-prerequisite")
     // 图被合同接受:每个组件都在列表里,root/leaf 角色正确,零 skip。若 re-vendor 没做对,
     // 这里会是 `package-invalid` 且 components 为空。
     expect(detail.components).toEqual(
@@ -457,8 +453,14 @@ describe("package installability production wiring", () => {
       })),
     )
     expect(detail.components.filter((component) => component.role === "root")).toHaveLength(1)
-    // 门二在取 payload 之前:永不安装的包不产生任何网络请求。
-    expect(fetched).toEqual([])
+    // 每个组件的 payload 都取过(去重后 = 签名里声明的那一组 digest)。
+    expect([...new Set(fetched)].sort()).toEqual(
+      envelope.components.map((component) => component.payloadRef.sha256).sort(),
+    )
+    // 门二已经删掉,而不是换成一个更弱的谓词:整个仓里不该再有那个理由码。
+    expect(CATALOG_PACKAGE_REASON_CODES as readonly string[]).not.toContain(
+      "package-bundle-activation-pending",
+    )
   })
 
   /**

@@ -12,7 +12,6 @@ import { dict as zh } from "../i18n/zh"
 import { packagePresentation } from "./ext-package-presentation"
 
 const blockedReasons = [
-  "package-bundle-activation-pending",
   "package-invalid",
   "package-payload-unavailable",
   "package-payload-integrity",
@@ -74,7 +73,7 @@ const legalViews: CatalogPackageViewV1[] = [
 
 describe("package safe-view presentation", () => {
   test("exhausts every legal verdict/action/reason/prerequisite combination", () => {
-    expect(legalViews).toHaveLength(9)
+    expect(legalViews).toHaveLength(8)
     expect([...new Set(legalViews.map((view) => view.verdict))].sort()).toEqual(
       ["blocked", "compatible", "update-required"] satisfies CatalogPackageVerdictV1[],
     )
@@ -112,7 +111,6 @@ describe("package safe-view presentation", () => {
         verdictKey: "alpha.ext.packageVerdictBlocked" as const,
         actionKey: "alpha.ext.packageActionNone" as const,
         reasonKey: {
-          "package-bundle-activation-pending": "alpha.ext.packageReasonBundleActivationPending",
           "package-invalid": "alpha.ext.packageReasonInvalid",
           "package-payload-unavailable": "alpha.ext.packageReasonPayloadUnavailable",
           "package-payload-integrity": "alpha.ext.packageReasonPayloadIntegrity",

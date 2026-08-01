@@ -1,6 +1,7 @@
 import type { CapabilityDiffWire } from "./ext-capability-authorization"
 import type {
   AlphaPackageEnvelopeV1,
+  PackageComponentSkipReasonV1,
   PackageSupportedComponentV1,
 } from "./host-extension-package-contract/decoder"
 
@@ -61,32 +62,55 @@ export function packageEffectiveInstallGraphV1(
   }
 }
 
+/**
+ * One row per **signed** component on the authorization screen — including the ones this host is
+ * not going to install. `included` is the discriminator, and a skipped row carries the decoder's
+ * own `skipReasonCode` verbatim: the safe view, this preview, and the durable authorization
+ * receipt must all name the same reason with the same characters, or "the user is told the same
+ * thing at every step" is a claim nothing enforces (§4.3).
+ *
+ * A skipped component has no transaction key, no digest and no operations — it is not going to be
+ * installed — so this is a real union rather than an included-row with nulled fields.
+ */
+export type PackageAdmissionPlanItemV1 =
+  | {
+      included: true
+      componentId: string
+      role: "root" | "leaf"
+      required: boolean
+      key: string
+      kind: "skill" | "agent" | "mcp"
+      name: string
+      manifestDigest: string
+      payloadDigest: string
+      capabilities: string[]
+      prerequisites: Array<{
+        prerequisiteId: string
+        label: string
+        required: boolean
+      }>
+      operations: Array<
+        | "write-generation"
+        | "write-file"
+        | "write-secret-version"
+        | "update-config"
+        | "write-install-record"
+        | "write-capability-grant"
+      >
+    }
+  | {
+      included: false
+      componentId: string
+      role: "leaf"
+      required: false
+      skipReasonCode: PackageComponentSkipReasonV1
+    }
+
 export type PackageAdmissionPlanV1 = {
   packageId: string
   version: string
   scope: { scope: "global" }
-  items: Array<{
-    componentId: string
-    key: string
-    kind: "skill" | "agent" | "mcp"
-    name: string
-    manifestDigest: string
-    payloadDigest: string
-    capabilities: string[]
-    prerequisites: Array<{
-      prerequisiteId: string
-      label: string
-      required: boolean
-    }>
-    operations: Array<
-      | "write-generation"
-      | "write-file"
-      | "write-secret-version"
-      | "update-config"
-      | "write-install-record"
-      | "write-capability-grant"
-    >
-  }>
+  items: PackageAdmissionPlanItemV1[]
 }
 
 export type PackageAdmissionPreviewV1 = {
