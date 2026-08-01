@@ -27,6 +27,15 @@ import {
   type RemoteCatalogResult,
 } from "../src/main/remote-catalog"
 import { dict as zh } from "../src/renderer/i18n/zh"
+import {
+  EXPECTED_SKIP_REASON,
+  LEAF_MCP_ID,
+  LEAF_SKILL_ID,
+  LEAF_UNSUPPORTED_ID,
+  MIXED_BUNDLE_PACKAGE_ID,
+  mixedBundleFixture,
+  ROOT_AGENT_ID,
+} from "./package-mixed-bundle.fixture"
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
@@ -183,6 +192,10 @@ const packageFixture = async () => {
   const payloadBlocked = await producerCorpus()
   payloadBlocked.envelope.prelude.packageId = "package:renderer-payload-blocked"
 
+  // `#697` 第 5 跳:canonical mixed Bundle 走**同一条**生产 renderer 路径。它带一个已策展但
+  // 宿主不支持的 optional leaf,所以详情页必须逐组件出行,并对那一条给出具名原因。
+  const bundle = mixedBundleFixture()
+
   const readyBytes = bindPayload(ready.envelope, ready.payload)
   const prerequisiteBytes = bindPayload(prerequisite.envelope, prerequisite.payload)
   const payloads = new Map<string, Uint8Array>([
@@ -190,16 +203,19 @@ const packageFixture = async () => {
     [prerequisite.envelope.prelude.packageId, prerequisiteBytes],
     [payloadBlocked.envelope.prelude.packageId, new TextEncoder().encode("{}\n")],
   ])
-  const payloadsByDigest = new Map([
+  const payloadsByDigest = new Map<string, Uint8Array>([
     [ready.envelope.components[0].payloadRef.sha256, readyBytes],
     [prerequisite.envelope.components[0].payloadRef.sha256, prerequisiteBytes],
   ])
+  for (const [digest, bytes] of bundle.payloadByDigest) payloadsByDigest.set(digest, bytes)
   const envelopes = [
     ready.envelope,
     prerequisite.envelope,
     update.envelope,
     blocked.envelope,
     payloadBlocked.envelope,
+    // 违规/异常项放**最后**:只看第一个元素的实现要能被抓住。
+    bundle.envelope,
   ]
   const raw: RemoteCatalogResult = {
     source: "remote",
@@ -225,6 +241,10 @@ const packageFixture = async () => {
   }
   const evaluator = async (envelope: unknown) => {
     const packageId = (envelope as AlphaPackageEnvelopeV1).prelude.packageId
+    if (packageId === MIXED_BUNDLE_PACKAGE_ID)
+      return evaluatePackageForHost(envelope, {
+        fetchPayload: async (ref) => bundle.payloadByDigest.get(ref.sha256) ?? new Uint8Array(),
+      })
     if (packageId !== prerequisite.envelope.prelude.packageId) {
       const view = await evaluatePackageForHost(envelope, {
         fetchPayload: async () => payloads.get(packageId) ?? new Uint8Array(),
@@ -258,6 +278,7 @@ const packageFixture = async () => {
     evaluator,
     complete,
     fetchPayload: async (ref: { sha256: string }) => payloadsByDigest.get(ref.sha256) ?? new Uint8Array(),
+    fetchAsset: async (ref: { sha256: string }) => bundle.assetByDigest.get(ref.sha256) ?? new Uint8Array(),
   }
 }
 
@@ -294,6 +315,7 @@ async function mountHarness(options?: {
     userDataPath: userData,
     environment: () => "dev",
     installability: { fetchPayload: fixture.fetchPayload },
+    fetchAsset: fixture.fetchAsset,
     secretVersionId: () => "v-0badcafe",
     now: () => new Date("2026-07-31T12:00:00.000Z"),
   })
@@ -435,7 +457,7 @@ async function mountHarness(options?: {
   await waitFor(() =>
     expect(
       document.querySelectorAll("[data-package-card]").length,
-    ).toBe(5),
+    ).toBe(6),
   )
   return {
     browseResults,
@@ -717,6 +739,12 @@ describe("package detail production renderer path", () => {
         prerequisite: "ready",
         action: zh["alpha.ext.packageActionNone"],
       },
+      {
+        catalogId: MIXED_BUNDLE_PACKAGE_ID,
+        verdict: "compatible",
+        prerequisite: "required-action",
+        action: zh["alpha.ext.packageActionResolvePrerequisite"],
+      },
     ]) {
       const card = packageCard(expected.catalogId)
       expect({
@@ -741,7 +769,7 @@ describe("package detail production renderer path", () => {
     search!.value = ""
     search!.dispatchEvent(new Event("input", { bubbles: true }))
     await waitFor(() =>
-      expect(document.querySelectorAll("[data-package-card]").length).toBe(5),
+      expect(document.querySelectorAll("[data-package-card]").length).toBe(6),
     )
 
     click(packageCard("package:renderer-ready"))
@@ -809,6 +837,86 @@ describe("package detail production renderer path", () => {
       ),
     ])
 
+  })
+
+  /**
+   * `#697` 第 5 跳 + 第二个 preview 面。`#749` 让安全视图带上了逐组件的 `components[]`
+   * (含 `skipReasonCode`),但在此之前 renderer **一处都没渲染**:`rg skipReasonCode
+   * packages/ui-mac/src/renderer` 零命中,三个 skip token 在 en/zh 里没有任何文案。于是
+   * 「让用户在每一步被告知同一件事」在任何一步都没兑现。
+   *
+   * 这条用例走的是生产 ExtensionHub → ExtensionDetail → 授权确认屏,断言的是**用户看得到的
+   * 那句话**:不会安装的组件出现在详情页与确认屏,并带着同一个具名原因。
+   */
+  test("the detail page and the confirm screen both list every component and name why one is skipped", async () => {
+    const harness = await mountHarness()
+    click(packageCard(MIXED_BUNDLE_PACKAGE_ID))
+    await waitFor(() =>
+      expect(document.querySelector(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeInstanceOf(HTMLElement),
+    )
+    const detail = document.querySelector<HTMLElement>(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)!
+
+    // ① 逐组件一行,root 与三个 leaf 全在,顺序即签名顺序。
+    const rows = Array.from(detail.querySelectorAll<HTMLElement>("[data-package-component]"))
+    expect(rows.map((row) => row.getAttribute("data-package-component"))).toEqual([
+      ROOT_AGENT_ID,
+      LEAF_SKILL_ID,
+      LEAF_MCP_ID,
+      LEAF_UNSUPPORTED_ID,
+    ])
+    expect(rows.map((row) => row.getAttribute("data-included"))).toEqual(["true", "true", "true", "false"])
+
+    // ② 「会装 / 不会装」是**用户能读到的中文**,不是一个 data 属性(属性可以在没有任何文案的
+    //    情况下写对 —— 那正是 `#749` 之后的现状)。
+    const stateText = (row: HTMLElement) =>
+      row.querySelector(".alpha-ext-package-component-state")?.textContent
+    expect(rows.map(stateText)).toEqual([
+      zh["alpha.ext.packageComponentIncluded"],
+      zh["alpha.ext.packageComponentIncluded"],
+      zh["alpha.ext.packageComponentIncluded"],
+      zh["alpha.ext.packageComponentSkipped"],
+    ])
+    expect(rows.map((row) => row.querySelector(".alpha-ext-package-component-req")?.textContent)).toEqual([
+      zh["alpha.ext.packageRequired"],
+      zh["alpha.ext.packageRequired"],
+      zh["alpha.ext.packageOptional"],
+      zh["alpha.ext.packageOptional"],
+    ])
+
+    // ③ 被跳过的那一行有**具名原因**,且原因文案非空、来自 decoder 的 token。
+    const why = rows[3]!.querySelector<HTMLElement>(".alpha-ext-package-component-why")
+    expect(why).toBeInstanceOf(HTMLElement)
+    expect(why!.getAttribute("data-skip-reason")).toBe(EXPECTED_SKIP_REASON)
+    expect(why!.textContent).toBe(zh["alpha.ext.packageSkipCapabilityUnsupported"])
+    expect(why!.textContent!.trim()).not.toBe("")
+    // 会安装的三行不得出现任何原因段(「所有行都显示原因」是另一种假绿)。
+    expect(rows.slice(0, 3).map((row) => row.querySelector(".alpha-ext-package-component-why"))).toEqual([
+      null,
+      null,
+      null,
+    ])
+
+    // ④ 授权确认屏是第二个 preview 面:会装的三条 + 不会装的一条(带同一句原因)。
+    click(detail.querySelector(".alpha-ext-dsub button"))
+    await waitForPackageAuthorization(MIXED_BUNDLE_PACKAGE_ID)
+    const dialog = packageAuthorizationDialog()
+    const included = Array.from(dialog.querySelectorAll<HTMLElement>("[data-plan-component][data-included='true']"))
+    expect(included.map((row) => row.getAttribute("data-plan-component"))).toEqual([
+      ROOT_AGENT_ID,
+      LEAF_MCP_ID,
+      LEAF_SKILL_ID,
+    ])
+    const skippedRows = Array.from(dialog.querySelectorAll<HTMLElement>("[data-plan-component][data-included='false']"))
+    expect(skippedRows.map((row) => row.getAttribute("data-plan-component"))).toEqual([LEAF_UNSUPPORTED_ID])
+    expect(skippedRows[0]!.getAttribute("data-skip-reason")).toBe(EXPECTED_SKIP_REASON)
+    expect(skippedRows[0]!.querySelector(".alpha-ext-install-k")?.textContent).toBe(
+      zh["alpha.ext.packageSkipCapabilityUnsupported"],
+    )
+    // 详情页与确认屏对同一个组件给出的是**同一句话**。
+    expect(skippedRows[0]!.querySelector(".alpha-ext-install-k")?.textContent).toBe(why!.textContent)
+
+    cancelPackageAuthorization()
+    expect(JSON.stringify(harness.installResults)).not.toContain(secretCanary)
   })
 
   test("detail install button drives preview and confirmation through real package admission, then adopts the new view", async () => {
