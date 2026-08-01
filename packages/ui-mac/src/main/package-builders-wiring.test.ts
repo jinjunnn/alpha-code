@@ -13,6 +13,6 @@ test("single-install and recovery both really go through the builders and the he
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toMatch(/\b3 pass\b/)
+  expect(output).toMatch(/\b4 pass\b/)
   expect(output).toMatch(/\b0 fail\b/)
 }, 120_000)
