@@ -397,7 +397,23 @@ function resolveRootsReadonly(target: InstallTarget | undefined): Roots | { erro
  * (ALPHA_LEGACY_INSTALL_ROOT era, no bridge/receipt) are removed from the old XDG root by name.
  * Missing target = already-gone success (idempotent).
  */
+/**
+ * `#698`(review R2 Blocker 1):**只删内容文件,绝不碰配置**。
+ *
+ * update 路径把离场 child 的 `agent.<name>` 配置删除交给了事务自己的 config item(在引擎的锁与
+ * before-image 回滚体系内)。剩下的内容文件必须在事务**返回之后**清理,而那一步绝不能再去取
+ * 配置写锁 —— `withConfigWriteLock` 与事务共用同一把非重入的 bundle 锁。走这个入口,重入在
+ * **构造上**不可能发生,而不是靠调用方记得。
+ */
+export function removeFsInstallFilesOnly(type: "skill" | "agent", name: string, target?: InstallTarget): FsResult {
+  return removeFsInstallImpl(type, name, target, true)
+}
+
 export function removeFsInstall(type: "skill" | "agent", name: string, target?: InstallTarget): FsResult {
+  return removeFsInstallImpl(type, name, target, false)
+}
+
+function removeFsInstallImpl(type: "skill" | "agent", name: string, target: InstallTarget | undefined, filesOnly: boolean): FsResult {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid name" }
   const removed: string[] = []
   // legacy XDG location (best-effort, pre-migration installs)
@@ -418,7 +434,8 @@ export function removeFsInstall(type: "skill" | "agent", name: string, target?: 
   // REQ-059 T3b:agent 条目净除(alpha.jsonc 的 agent.<name>;存量桥装的 agent 无条目 → no-op 幂等)。
   // Codex review #351:配置删除(可因配置写锁 busy 失败)必须在删内容文件**之前**——否则 busy 会把
   // 操作报失败却已不可逆地拆掉真源文件(半拆态)。
-  if (type === "agent") {
+  // filesOnly:配置那一半已由调用方以事务 config item 的形式处理(见 removeFsInstallFilesOnly)。
+  if (type === "agent" && !filesOnly) {
     const entryTarget = roots.scope === "project" ? path.join(roots.alphaDir, "alpha.jsonc") : undefined
     const r = removeAgentEntry(name, entryTarget)
     if (!r.ok) return { ok: false, reason: `agent config entry removal failed: ${r.reason}` }

@@ -79,6 +79,12 @@ export function removePackageChildArtifactsV1(
   root: string,
   children: ReadonlyArray<{ kind: string; name: string }>,
   installers: PackageArtifactInstallersV1,
+  /**
+   * `#698`(review R2):**update** 传 `skipConfig: true` —— 那条路径上离场 child 的 config 键
+   * 已由事务自己的 config item 删掉(在引擎的锁与 before-image 回滚里),这里再去碰配置就会
+   * 重入 `withConfigWriteLock`。整包卸载不传:它没有事务,配置删除本来就归它,且它在锁外跑。
+   */
+  options?: { skipConfig?: boolean },
 ): PackageArtifactRemovalV1 {
   const removed: string[] = []
   const warnings: string[] = []
@@ -111,8 +117,10 @@ export function removePackageChildArtifactsV1(
     }
     if (child.kind === "mcp") {
       // 顺序与 `uninstallByKey` 的 MCP 分支同:config 先消失(残留密钥不可达),再吊销密钥。
-      const cfg = installers.removeMcpConfig(child.name)
-      if (!cfg.ok) return { ok: false, reason: `mcp:${child.name}: ${cfg.reason}`, removed, warnings }
+      if (!options?.skipConfig) {
+        const cfg = installers.removeMcpConfig(child.name)
+        if (!cfg.ok) return { ok: false, reason: `mcp:${child.name}: ${cfg.reason}`, removed, warnings }
+      }
       const sec = installers.removeMcpSecretsStrict(child.name)
       if (!sec.ok) return { ok: false, reason: `mcp:${child.name}: ${sec.reason}`, removed, warnings }
       const grants = installers.removeInstallGrants(root, [packageChildTxKeyV1("mcp", child.name)])

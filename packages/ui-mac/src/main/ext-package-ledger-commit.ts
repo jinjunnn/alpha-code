@@ -9,39 +9,15 @@
 // 也就无从谈起 —— 前滚会写出与主提交不同的账本,而两边都自认为成功。
 
 import { recoveryReceiptInputs } from "./ext-agent-install"
-import { decodePackageMutationEnvelopeV1, type PackageChildRefV1, type PackageLedgerMutationV1 } from "./ext-package-ledger-v3"
+import { decodePackageMutationEnvelopeV1, type PackageLedgerMutationV1 } from "./ext-package-ledger-v3"
 import { applyPackageMutation, upsertRecordsV2 } from "./ext-receipt-v2"
 import type { TxCommitRecord } from "./ext-transaction"
-
-/**
- * `#698`(review R1 Blocker 1):离场 child 的实物清除接缝。
- *
- * **为什么挂在这里,而不是在事务之前。** 上一版在 `runExtensionTransaction` 开始**之前**就把离场
- * child 的实物删了,而事务直到 pre-switch probe(`ext-transaction.ts:1553`)与 receipt commit
- * (`:1591`)都还会 `rollbackAll`。于是「更新失败」时盘面是:旧图、旧 claim、旧 record 全在,
- * **而离场组件的实物已经没了** —— 正是 `#706` 刚消灭的「先动实物、后做判决」。
- *
- * 引擎在 receipt commit **成功之后**明确越过可回滚点(`:1595` 起「从此一切失败只前滚,绝不抛出、
- * 绝不回滚」)。所以唯一安全的destroy窗口就是本函数里、`applyPackageMutation` 成功之后:
- *   · 任何提交前的失败(锁 / precondition / staging / probe / switch / 崩溃)都到不了这里 ⇒ 零删除;
- *   · 账本 mutation 自己失败 ⇒ 照旧 throw ⇒ 引擎回滚 ⇒ 零删除;
- *   · 账本已 durable 而删除失败 ⇒ **绝不 throw**(throw 会让引擎回滚 live,而账本已经是新的 ——
- *     那是引擎自己点名禁止的「receipt durable + live 回旧」分叉),如实记 warning;
- *   · 崩在两者之间 ⇒ journal 非终态,恢复期重跑本函数:`applyPackageMutation` 判为 exact replay,
- *     删除幂等重放 ⇒ **可恢复**。这也是删除必须由 envelope 的 `childRemovals` 驱动的理由:
- *     账本已经不认识那些 child 了,只有 journal 还记得。
- */
-export type PackageChildArtifactSeamV1 = {
-  remove: (children: PackageChildRefV1[]) => { ok: boolean; reason?: string }
-  /** 越过可回滚点之后的失败只能上报,不能改变事务结果。调用方把它折进用户可见的 warning。 */
-  warnings: string[]
-}
 
 /**
  * 提交一次事务的账本副作用。失败一律 **throw** —— 事务层据此把 journal 保持在非终态,
  * 下次启动前滚重试;吞掉错误会把「账没写」写成 committed。
  */
-export function commitTransactionLedger(root: string, records: TxCommitRecord[], seam?: PackageChildArtifactSeamV1): void {
+export function commitTransactionLedger(root: string, records: TxCommitRecord[]): void {
   const carriers = records.filter((rec) => rec.packageMutation !== undefined)
   if (carriers.length > 1)
     throw new Error(`transaction carries ${carriers.length} package ledger mutations — only the root package item may carry one`)
@@ -61,7 +37,10 @@ export function commitTransactionLedger(root: string, records: TxCommitRecord[],
   // 占位;真值在这里统一覆盖,包括写进 packageRecord 的那份。
   // `#698`:child mutation 有两个半场,来源不同,不可互相顶替 ——
   //   · **upsert** 由本次事务的 commit records 派生(装了什么,事务自己知道);
-  //   · **remove** 由 envelope 携带(被删掉的 child 这次不产生任何 item,commit records 里没有它)。
+  //   · **remove** 由 envelope 携带(被删掉的 child 的 record 这次不产生 commit record)。
+//     注意「不产生 commit record」不等于「不在计划里」——`#698` review R2 起,离场 child 的
+//     **config 清除**是一条普通的事务 config item(见 `buildDepartingChildConfigItemsV1`),
+//     只是它不带 receipt,所以 `recoveryReceiptInputs` 看不到它。
   // remove 排在 upsert 之前:同一个 key 若两边都出现,那是调用方算错了,而「先删后写」会把它
   // 静默变成一次 upsert。所以下面显式拒绝这种交集,不靠顺序把矛盾抹平。
   const { childRemovals, ...envelope } = decoded.value
@@ -81,27 +60,6 @@ export function commitTransactionLedger(root: string, records: TxCommitRecord[],
       ...upserts,
     ],
   }
-  // 接缝缺席而确实有东西要删 ⇒ 在**写账本之前**拒绝。这一步仍在可回滚区里,拒绝是安全的;
-  // 放到写完之后再发现,就只剩「账本说没了、实物还在跑」一条路。
-  if (childRemovals.length > 0 && !seam)
-    throw new Error(
-      `package ledger mutation rejected (fail closed): ${childRemovals
-        .map((child) => `${child.kind}:${child.name}`)
-        .join(", ")} must be removed from disk, but no artifact seam was supplied`,
-    )
   const written = applyPackageMutation(root, mutation)
   if (!written.ok) throw new Error(`package ledger mutation commit failed: ${written.reason}`)
-  if (childRemovals.length === 0 || !seam) return
-  // 越过可回滚点。从这里开始只前滚:失败记 warning,绝不抛。
-  try {
-    const removal = seam.remove(childRemovals)
-    if (!removal.ok)
-      seam.warnings.push(
-        `package children were removed from the ledger but their files/config could not be cleaned up: ${removal.reason ?? "unknown"} — recovery will retry`,
-      )
-  } catch (error) {
-    seam.warnings.push(
-      `package child artifact cleanup threw after the ledger was durable: ${error instanceof Error ? error.message : String(error)} — recovery will retry`,
-    )
-  }
 }

@@ -23,7 +23,7 @@ import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { reloadInstalledMcp } from "./ext-mcp-activation"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
-import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, resourcesRoot } from "./ext-fs-installer"
+import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, removeFsInstallFilesOnly, resourcesRoot } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
 import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
 import { listRetainedJournals, retireTransactionJournal, type JournalRootRef } from "./ext-journal-retire"
@@ -202,7 +202,7 @@ export function registerExtIpcHandlers(
     // `#698`:update 把 child 踢出图时,那个 child 的实物由这条接缝删 —— 与整包卸载**同一份**
     // 实现。接缝缺席时 admission 响亮拒绝该次更新(见 executePreparedPackage),不会留下
     // 「账本说没了、MCP server 还在跑」。
-    removePackageChildArtifacts: (children) => packageChildArtifactRemoval(children),
+    removePackageChildArtifacts: (children) => packageChildFileCleanup(children),
   })
   // REQ-128 `#698`:某个 package 在本机装没装(**只读**,不进写通道注册表)。详情页据此决定
   // 要不要显示「移除此扩展包」。只回安全投影:componentId / kind / name / required 与图摘要 ——
@@ -490,15 +490,7 @@ export function registerExtIpcHandlers(
     // REQ-128 `#706`:前滚与主提交共用 `commitTransactionLedger` —— journal 里带着 package
     // mutation 的事务在恢复期也必须重建**同一份** V3 mutation,否则前滚会写出一本没有
     // graph/claims 的账本(而 child records 已 durable),owner 集合从此失据。
-    // `#698`(review R1 Blocker 1):前滚也必须带上离场 child 的实物清除接缝。崩在「账本已 durable、
-    // 实物还没删」之间时,journal 仍是非终态,恢复重跑本函数 —— `applyPackageMutation` 判 exact
-    // replay,删除幂等重放。不传接缝的话,那条 journal 会因「有 childRemovals 却没有接缝」永远
-    // 前滚不完。warnings 只作日志:恢复期没有用户可见的返回通道。
-    commitReceipt: (recs) => {
-      const warnings: string[] = []
-      commitTransactionLedger(root, recs, { remove: (children) => packageChildArtifactRemoval(children), warnings })
-      for (const warning of warnings) getLogger().log(`[req128-package-cleanup] ${warning}`)
-    },
+    commitReceipt: (recs) => commitTransactionLedger(root, recs),
     // #336 r3(r2 Major 1):receipt durable 证伪 —— 恢复进入任何回滚分支前读账本判定。
     // valid + 同 txId = durable(**任一** item 在账即禁回滚,防半批分叉);absent/v1/异 txId =
     // 确证未落(允许回滚);corrupt/ledger-corrupt = 无法证伪 → 抛错(引擎 fail-closed 保留
@@ -644,8 +636,15 @@ export function registerExtIpcHandlers(
       releaseAlphaConnectionBindingsV1({ userDataPath, extensionRoot: alphaGlobalRoot() }, componentId, new Date().toISOString()),
     removeInstallGrants,
   })
-  const packageChildArtifactRemoval = (children: Array<{ kind: string; name: string }>): PackageArtifactRemovalV1 =>
-    removePackageChildArtifactsV1(alphaGlobalRoot(), children, packageArtifactInstallers())
+  /**
+   * `#698`(review R2):**update** 的离场 child 清理 —— 只清内容文件 / generation store / 授权账。
+   * 它们的 config 键由事务自己的 config item 删掉(在引擎的锁与 before-image 回滚里),所以这条
+   * 路径按构造不碰配置,**不可能**重入 `withConfigWriteLock`(R2 Blocker 1 正是那次重入)。
+   */
+  const packageChildFileCleanup = (children: Array<{ kind: string; name: string }>): PackageArtifactRemovalV1 =>
+    removePackageChildArtifactsV1(alphaGlobalRoot(), children, { ...packageArtifactInstallers(), removeFsInstall: removeFsInstallFilesOnly }, {
+      skipConfig: true,
+    })
 
   const plannerDeps = (): PlannerDeps => {
     // 每次调用解析一次 effective catalog(bundle 会对逐子条目调 resolveEntry —— 不重复打网络)。

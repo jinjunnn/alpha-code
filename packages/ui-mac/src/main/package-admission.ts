@@ -8,9 +8,9 @@ import { evaluateBundleAuthorization, evaluateCapabilityDiff, isSafeCapability, 
 import { recoveryReceiptInputs } from "./ext-agent-install"
 import { nextDesiredState } from "./ext-install-policy"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
-import { buildAgentTxItems, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
+import { buildAgentTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
 import { computeGrantDigest, readPackageLedgerStateV1, type UpsertInput } from "./ext-receipt-v2"
-import { commitTransactionLedger, type PackageChildArtifactSeamV1 } from "./ext-package-ledger-commit"
+import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import {
   computeGraphDigest,
   type PackageGraphV1,
@@ -592,14 +592,19 @@ async function executePreparedPackage(
   const root = deps.root()
   const now = (deps.now?.() ?? new Date()).toISOString()
 
-  // `#698`(review R1 Blocker 1):update 的删除半场**不在这里执行**。
+  // `#698`(review R2):离场 child 的清除**一分为二**,依据是「它还能不能跑」。
   //
-  // 上一版在事务开始之前就把离场 child 的实物删了,而事务直到 pre-switch probe 与 receipt commit
-  // 都还会回滚 —— 更新失败时旧图/旧 claim/旧 record 全在,而实物已经没了。真正的执行点在
-  // `commitTransactionLedger`:账本 mutation 成功之后、引擎越过可回滚点的那一侧(理由写在那里)。
+  //   · **能跑的那一半 = config 键**(`agent.<name>` / `mcp.<name>`)⇒ 普通的事务 config item,
+  //     与安装侧的 config 编辑在同一次事务、同一把锁、同一套 before-image 回滚里。不需要第二把锁
+  //     (R1 那版把删除搬进 commitReceipt,而引擎正持着 root bundle 锁,配置写要取同一把
+  //     非重入锁 ⇒ Agent/MCP 清理必然失败);skill 的启用面是账本派生允许集,随同一次
+  //     `applyPackageMutation` 一起变,所以它不出 config item。
+  //   · **不能跑的那一半 = 内容文件 / generation store / 授权账**⇒ 事务**返回之后**清理。
+  //     那时锁已释放,而且这条路径按构造不碰任何配置(`removeFsInstallFilesOnly`),重入不可能发生。
   //
-  // 这里只保留**计划期的接缝在场检查**:确实有东西要删而接缝没接线时,连事务都不开。
-  // 早拒比晚拒好,而 `commitTransactionLedger` 里那道同款检查是咽喉(恢复路径也走它)。
+  // 事务失败时:config 由 before-image 回旧,文件清理根本没跑 ⇒ 全旧。事务成功后文件清理失败:
+  // 离场 child 已经**不可能被加载**(config 键没了、record 没了、不在允许集里),剩下的是惰性
+  // 磁盘残留 —— 如实报 warning。**不声称可恢复**:journal 此时已终态,没有任何东西会重试它。
   const doomed = lifecycle.verdicts.filter((verdict) => verdict.decision === "delete")
   if (doomed.length > 0 && !deps.removePackageChildArtifacts)
     return {
@@ -608,8 +613,6 @@ async function executePreparedPackage(
         .map((verdict) => `${verdict.kind}:${verdict.name}`)
         .join(", ")}, but no artifact-removal seam is wired — refusing (fail closed)`,
     }
-  // 越过可回滚点之后的清理失败只能上报。收集在这里,折进用户可见的 warning。
-  const ledgerWarnings: string[] = []
   const builds: Array<{ component: PreparedComponent; build: PackageTxBuildV1; desiredState: "enabled" | "disabled" }> = []
 
   for (const component of prepared.components) {
@@ -678,11 +681,14 @@ async function executePreparedPackage(
       ok: false,
       reason: `package admission: planning builder produced no root item for "${prepared.root.key}" — refusing (no ledger mutation carrier)`,
     }
-  const items = planned.map((item, index) =>
-    index === rootItemIndex
-      ? { ...item, packageMutation: packageMutationEnvelope(lifecycle, prepared, now) }
-      : item,
-  )
+  const items = [
+    ...planned.map((item, index) =>
+      index === rootItemIndex ? { ...item, packageMutation: packageMutationEnvelope(lifecycle, prepared, now) } : item,
+    ),
+    // 离场 child 的 config 清除排在最后:同一 target 上的 image 按 item 顺序链式累积
+    // (`prepareConfigTx(target, edits, accumulatedText)`),放在安装项之后语义最直白。
+    ...buildDepartingChildConfigItemsV1({ root, children: doomed.map((verdict) => ({ kind: verdict.kind, name: verdict.name })) }),
+  ]
 
   // 每条 item 路由回**产它的那个 builder** 的 populate/probe。不共用一个「反正三种都返回同一个
   // router」的巧合:那是把一条今天成立的等式当成不变量。未登记的 key 一律 fail-closed。
@@ -738,26 +744,25 @@ async function executePreparedPackage(
         }
         return { ok: true }
       },
-      commitReceipt: (records) =>
-        commitPackageReceipts(
-          root,
-          records,
-          deps.removePackageChildArtifacts
-            ? {
-                remove: (children) => deps.removePackageChildArtifacts!(children.map((child) => ({ kind: child.kind, name: child.name }))),
-                warnings: ledgerWarnings,
-              }
-            : undefined,
-        ),
+      commitReceipt: (records) => commitPackageReceipts(root, records),
     },
   )
+  // 事务返回之后 = 锁已释放。惰性残留在这里清,失败只报不改结果(离场 child 此刻已不可能被加载)。
+  const cleanupWarnings: string[] = []
+  if (result.ok && doomed.length > 0 && deps.removePackageChildArtifacts) {
+    const removal = deps.removePackageChildArtifacts(doomed.map((verdict) => ({ kind: verdict.kind, name: verdict.name })))
+    if (!removal.ok)
+      cleanupWarnings.push(
+        `removed package components are no longer active, but their leftover files could not be deleted: ${removal.reason} — they are inert; nothing retries this automatically`,
+      )
+  }
   return transactionOutcome(
     result,
     prepared,
     rootManifestDigest,
     builds,
     connection,
-    [bindConnectionsAfterCommit(result, connection, deps), ...ledgerWarnings].filter((entry): entry is string => !!entry).join("; ") || undefined,
+    [bindConnectionsAfterCommit(result, connection, deps), ...cleanupWarnings].filter((entry): entry is string => !!entry).join("; ") || undefined,
   )
 }
 
@@ -953,8 +958,8 @@ function packageMutationEnvelope(plan: PackageLifecyclePlanV1, prepared: Prepare
   }
 }
 
-function commitPackageReceipts(root: string, records: TxCommitRecord[], seam?: PackageChildArtifactSeamV1) {
-  commitTransactionLedger(root, records, seam)
+function commitPackageReceipts(root: string, records: TxCommitRecord[]) {
+  commitTransactionLedger(root, records)
 }
 
 function transactionOutcome(

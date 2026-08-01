@@ -11,7 +11,7 @@
 // 提供「同一个包的下一版」。
 
 import { createHash } from "node:crypto"
-import { mkdirSync, mkdtempSync, existsSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, existsSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
@@ -20,7 +20,9 @@ import type { PackageAdmissionPreviewV1 } from "../shared/package-admission"
 import { createPackageAdmissionCoordinator } from "./package-admission"
 import { bundleOwner } from "./ext-package-ledger-v3"
 import { findRecordV2, packageClaimOwners, readPackageGraphs, readPackageLedgerStateV1 } from "./ext-receipt-v2"
-import { runExtensionTransaction, TX_CRASH_POINTS, type TxCrashPoint } from "./ext-transaction"
+import { recoverExtensionTransactions, runExtensionTransaction, TX_CRASH_POINTS, type TxCrashPoint } from "./ext-transaction"
+import { extensionHealthProbeRouter } from "./ext-health-probe-router"
+import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import type { PackageArtifactRemovalV1 } from "./ext-package-uninstall"
 
 const corpus = resolve(
@@ -47,6 +49,13 @@ afterEach(() => {
   else process.env.ALPHA_GLOBAL_DIR = previousRoot
   rmSync(tmp, { recursive: true, force: true })
 })
+
+/** live 配置里还有没有这个 mcp 叶 —— 「离场组件还能不能跑」的直接观测点。 */
+const mcpConfigKeys = (): string[] => {
+  const file = join(root, "alpha.jsonc")
+  if (!existsSync(file)) return []
+  return Object.keys((JSON.parse(readFileSync(file, "utf8")) as { mcp?: Record<string, unknown> }).mcp ?? {})
+}
 
 const sha = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex")
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text)
@@ -247,7 +256,9 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     ])
     expect(second.result.ok, JSON.stringify(second.result).slice(0, 300)).toBe(true)
 
-    // 离场 child 的实物**真的**经生产接缝删了一次,而且只删它。
+    // 离场 child 的**config 叶**由事务自己删掉 —— 这是「它还能不能跑」的直接观测点。
+    expect(mcpConfigKeys()).toEqual([])
+    // 内容文件那一半经生产接缝清理了一次,而且只清它。
     expect(removed).toEqual([[{ kind: "mcp", name: "generic-bundle-remote" }]])
 
     // 账本:一张图、新 owner、旧 owner 一条不剩、离场 child 去账、新 child 进账。
@@ -277,7 +288,7 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
    * 残留,而不是一次失败。这里绝不能报 `ok:false` —— 那会让用户以为旧版本还在,而账本上是新的。
    * 恢复会重跑 `commitTransactionLedger`(exact replay + 幂等删除)把残留收掉。
    */
-  test("账本已 durable 之后清理失败 ⇒ 更新成功 + 具名 warning,账本是新版本(不是谎报失败)", async () => {
+  test("事务成功后清理失败 ⇒ 更新成功 + 具名 warning(离场组件已不可加载,剩下的是惰性残留)", async () => {
     const base = (await Bun.file(corpus).json()) as Corpus
     const v1 = generation(base, { agentBody: AGENT_V1, keepMcp: true, addSkill: false })
     const v2 = generation(base, { agentBody: AGENT_V2, keepMcp: false, addSkill: true })
@@ -295,7 +306,8 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
 
     expect(second.result.ok, JSON.stringify(second.result).slice(0, 300)).toBe(true)
     if (!second.result.ok) return
-    expect(second.result.warning).toContain("could not be cleaned up")
+    expect(second.result.warning).toContain("no longer active")
+    expect(second.result.warning).toContain("nothing retries this automatically")
     // 账本是**新**版本,离场 child 已去账 —— 清理失败不回退这些。
     const graphs = readPackageGraphs(root)
     expect(graphs).toHaveLength(1)
@@ -342,15 +354,32 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     crashAt = point
     await install(admit, `attempt-${point}`).catch(() => undefined)
 
+    // 崩溃点之后的盘面**不是**终态判据 —— 引擎的合同是「**恢复之后**全旧或全新」。跑真实恢复,
+    // 接缝与生产 `recoveryOpts` 同源(同一个 probe router、同一个 commitTransactionLedger)。
+    // 不跑恢复就断言,等于把「journal 停在 switched」当成终局,那是对引擎合同的误读。
+    const recovered = await recoverExtensionTransactions(root, {
+      probe: extensionHealthProbeRouter(root),
+      commitReceipt: (recs) => commitTransactionLedger(root, recs),
+      // 崩溃注入**故意**不释放锁(进程猝死就是这样),但本进程还活着 ⇒ 生产恢复看到的是一把
+      // 「持有者仍在跑」的锁,永远不会接管。把 pid 探活换成「都死了」,盘面才真的长成崩溃后的样子;
+      // 收敛逻辑本身仍是生产的那一份(`#697` 的 wiring case 用改写 lock 文件 pid 达到同一效果)。
+      pidAlive: () => false,
+    })
+    expect(recovered.ok, `crash ${point}: recovery itself failed`).toBe(true)
+
     const graphNow = readPackageGraphs(root)
     const ledgerIsOld = JSON.stringify(graphNow) === JSON.stringify(graphBefore)
     if (ledgerIsOld) {
-      // 全旧 ⇒ 一次删除都不许发生。这是本条唯一有区分度的断言。
-      expect(removed, `crash ${point}: ledger is old but artifacts were removed`).toEqual([])
+      // 全旧 ⇒ 一次文件清理都不许发生,且离场组件的 config 叶必须还在(它还能跑 = 旧版本完好)。
+      expect(removed, `crash ${point}: ledger is old but files were cleaned up`).toEqual([])
       expect(findRecordV2(root, "mcp", "generic-bundle-remote")).not.toBeNull()
+      expect(mcpConfigKeys(), `crash ${point}: ledger is old but the departing config leaf is gone`).toEqual([
+        "generic-bundle-remote",
+      ])
     } else {
-      // 全新 ⇒ 离场 child 已去账(删除是否已完成由恢复前滚负责)。
+      // 全新 ⇒ 离场 child 已去账、config 叶已消失(两者同属一次事务)。
       expect(findRecordV2(root, "mcp", "generic-bundle-remote")).toBeNull()
+      expect(mcpConfigKeys()).toEqual([])
     }
   }, 60_000)
 
@@ -448,3 +477,67 @@ test("REQ-128 #698 —— 夹具自证:v1 安装确实在盘上留下了 agent �
   expect(existsSync(join(root, "agents", "generic-bundle-agent.md"))).toBe(true)
   expect(existsSync(join(root, "ext-store", "skill--generic-bundle-skill"))).toBe(true)
 }, 60_000)
+
+// ── R2 Blocker 1 的根因闸:**走真实生产删除接缝**,而不是注入的假 seam ────────────────────────
+//
+// Blocker 1 之所以逃掉,是因为 update 的用例全部注入假 seam:真实接缝对 Agent/MCP 会取
+// `withConfigWriteLock`,而它与事务共用同一把**非重入**的 root bundle 锁 —— 放在事务里必然失败。
+// 下面两条**持着那把锁**跑真实生产函数,一正一负:
+//   · update 用的 files-only 接缝必须成功(它按构造不碰配置);
+//   · 整包卸载用的完整接缝必须**失败**,失败理由点名 config busy。
+// 后者是前者的区分度证明:没有它,「files-only 能过」可能只是因为这把锁根本不起作用。
+
+import { tryAcquireBundleLock } from "./ext-bundle-lock"
+import { removeFsInstall, removeFsInstallFilesOnly } from "./ext-fs-installer"
+import { removeInstallGrants } from "./ext-install-planner"
+import { removePackageChildArtifactsV1, type PackageArtifactInstallersV1 } from "./ext-package-uninstall"
+import { removeMcpConfigInLock, withConfigWriteLock } from "./ext-config"
+import { mkdirSync as mkdirSync2, writeFileSync as writeFileSync2 } from "node:fs"
+
+/** 生产接线的两个变体,与 `ext-ipc.ts` 逐字同源(只是这里不需要 userDataPath 相关的两条)。 */
+const productionInstallers = (): PackageArtifactInstallersV1 => ({
+  removeFsInstall,
+  removeMcpConfig: (name) => withConfigWriteLock(() => removeMcpConfigInLock(name)),
+  removeMcpSecretsStrict: () => ({ ok: true as const }),
+  releaseAlphaConnectionBindings: () => ({ ok: true as const }),
+  removeInstallGrants,
+})
+
+function materialiseDepartingAgent(): void {
+  mkdirSync2(join(root, "agents"), { recursive: true })
+  writeFileSync2(join(root, "agents", "departing-agent.md"), "---\ndescription: d\n---\nsys")
+}
+
+test("R2 Blocker 1:持 root bundle 锁时,update 的 files-only 生产接缝必须成功(结构上碰不到配置锁)", () => {
+  materialiseDepartingAgent()
+  const held = tryAcquireBundleLock(root, { txId: "probe-files-only" })
+  expect(held.ok).toBe(true)
+  if (!held.ok) return
+  try {
+    const outcome = removePackageChildArtifactsV1(
+      root,
+      [{ kind: "agent", name: "departing-agent" }],
+      { ...productionInstallers(), removeFsInstall: removeFsInstallFilesOnly },
+      { skipConfig: true },
+    )
+    expect(outcome.ok, JSON.stringify(outcome).slice(0, 300)).toBe(true)
+    expect(existsSync(join(root, "agents", "departing-agent.md"))).toBe(false)
+  } finally {
+    held.lock.release()
+  }
+})
+
+test("R2 Blocker 1 的区分度:同一把锁下,整包卸载用的**完整**接缝会因 config busy 失败", () => {
+  materialiseDepartingAgent()
+  const held = tryAcquireBundleLock(root, { txId: "probe-full-seam" })
+  expect(held.ok).toBe(true)
+  if (!held.ok) return
+  try {
+    const outcome = removePackageChildArtifactsV1(root, [{ kind: "agent", name: "departing-agent" }], productionInstallers())
+    // 这正是 R1 那版把删除搬进 commitReceipt 之后会发生的事 —— 而当时它被 warning 吞掉、报成功。
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.reason).toContain("busy")
+  } finally {
+    held.lock.release()
+  }
+})
