@@ -225,9 +225,9 @@ export function applyBuiltinPolicy(gov: BuiltinPolicy, visibleAgents: string[], 
   const prevHidden = prev.keys.filter((k) => k[0] === "agent" && k[2] === "hidden").map((k) => k[1])
   const knownAgents = [...new Set([...visibleAgents, ...prevHidden])]
   const desired = materializeEdits(gov, knownAgents)
-  const desiredKeys = new Set(desired.map((e) => e.path.join(" ")))
+  const desiredKeys = new Set(desired.map((e) => e.path.join("\u0000")))
   const stale: BuiltinPolicyEdit[] = prev.keys
-    .filter((k) => !desiredKeys.has(k.join(" ")))
+    .filter((k) => !desiredKeys.has(k.join("\u0000")))
     .map((k) => ({ path: k, value: undefined }))
 
   // codex M1:记账先行(prev ∪ desired 超集)再写 jsonc —— jsonc 写成功而记账失败的孤儿叶子不可清;

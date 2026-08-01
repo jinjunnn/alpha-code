@@ -291,8 +291,8 @@ export function planPackageChildConflictsV1(input: {
       })
     }
   return conflicts.sort((left, right) => {
-    const a = `${identityKey(left.kind, left.name)} ${left.holderPackageId}`
-    const b = `${identityKey(right.kind, right.name)} ${right.holderPackageId}`
+    const a = `${identityKey(left.kind, left.name)}\u0000${left.holderPackageId}`
+    const b = `${identityKey(right.kind, right.name)}\u0000${right.holderPackageId}`
     return a < b ? -1 : a > b ? 1 : 0
   })
 }

@@ -4531,7 +4531,7 @@ export function reconcileDesiredStateAtBoot(
       if (!proj.edit) continue
       if (effState === "disabled" && record.kind === "plugin") pluginDisableEdited.push(`plugin ${record.name}`)
       setAtKeyPath(working, proj.edit.keyPath, proj.edit.value)
-      byPath.set(proj.edit.keyPath.join(" "), proj.edit)
+      byPath.set(proj.edit.keyPath.join("\u0000"), proj.edit)
       applied.push(`${record.kind}:${record.name}→${effState}`)
     }
     if (byPath.size === 0) return done({ ok: true, applied, warnings })
