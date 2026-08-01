@@ -33,7 +33,18 @@ diff 与暂停、renderer 如何确认与重驱、授权账/收据如何落盘�
     (capabilities/authorization 在 plan 上,载荷分支按新 entry spec 选);
   - 单装 **cloud**(#378):receipt action 单 item(零盘副作用,capabilities/receipt 挂
     `cloud--<name>`;重装显式继承 `desiredState`,disabled 不被静默写回 enabled);
-  - atomic bundle(其 skill / 无密钥 MCP-config / cloud-receipt 子项)。
+  - atomic bundle(其 skill / 无密钥 MCP-config / cloud-receipt 子项)。**嵌套 Bundle 不受理**
+    (#705):直接子项自身是 bundle、或自身还带子项者,在任何载荷下载 / 密钥写入 / 事务开启
+    **之前**明确拒绝(具名理由 `nested bundle refused: …`),Desktop 不递归展平包图。此前是
+    解析整张传递闭包却只装 direct child —— required 嵌套子项整单失败、**optional 嵌套子项
+    静默跳过**,而两种命运对用户都显示为「装好了」。
+- **一次事务一个 typed probe,组合点只有一处**(#705):`extensionHealthProbeRouter` 按 action
+  与 item key 路由(generation → skill 探针、`agent--*` file → agent 探针、其余 file → plugin
+  载荷探针),安装路径与启动恢复消费**同一个** router。未登记的 file item 一律 fail-closed
+  判不健康 —— 新增 file 消费方必须在 router 里登记探针。组合若有第二份,漂移只会在真机
+  现身:装得上,重启恢复期却被判不健康回滚。计划构造(items / receipt 模板 / precondition /
+  prepared resource 描述符 / probe)归 `ext-package-tx-builders.ts`,执行仍只归
+  `runExtensionTransaction`。
   - REQ-128 单组件 package：`ext-install-catalog` 先经 main-owned
     `PackageAdmissionCoordinator`，再复用同一个 `runExtensionTransaction`、授权账、
     InstallRecordV2 与受限 MCP secret store；不另建同意系统或 package 专用授权账。
