@@ -106,5 +106,7 @@
 # ── opencode(仅 alpha 自有)────────────────────────────────────────────────
 40	packages/opencode	test/tool/alpha-websearch-failure.test.ts	packages/ui-mac/src/main/stream-read-hygiene.test.ts	#647 readBoundedBody 读全 + MAX_BODY_BYTES 硬限 + #489/#223 失败诚实
 4	packages/opencode	test/permission/alpha-ask-deadline.test.ts	-	ADR-038/#668:v1 审批请求无人应答时在期限内**具名失败**(Exit 必须 failure = 绝不到点自动放行)+ 广播 reject 回执 + pending 清空 + 默认期限不被调成无期限
-34	packages/ui-mac	src/main/ext-package-ledger-uninstall.test.ts	-	#706:直接卸载的 claim-aware 判决 —— bundle-only(无 standalone claim 可释放)必须写盘前拒绝而不是谎报 ok,双 owner 只释放 standalone,legacy-protected 永不 GC;并钉住 removeRecordV2 的三形状(拒绝支/只释放支/solo 仍去得了账)。下界=实际条数 34,不留余量:留余量则删一格仍能过
+34	packages/ui-mac	src/main/ext-package-ledger-uninstall.test.ts	packages/ui-mac/src/main/ext-fs-installer.test.ts,packages/ui-mac/src/main/ext-config.test.ts	#706:直接卸载的 claim-aware 判决 —— bundle-only(无 standalone claim 可释放)必须写盘前拒绝而不是谎报 ok,双 owner 只释放 standalone,legacy-protected 永不 GC;并钉住 removeRecordV2 的三形状(拒绝支/只释放支/solo 仍去得了账)。下界=实际条数 34,不留余量:留余量则删一格仍能过
 20	packages/ui-mac	src/main/ext-package-ledger-v3.test.ts	-	#706:V3 账本的严格解码与 owner 集合代数 —— owner token 三类、claim 派生 refcount、图/claim 篡改响亮失败、降级 fail-closed。下界=实际条数 20,不留余量
+39	packages/ui-mac	src/main/ext-fs-installer.test.ts	-	#706 受托方:内层 receipt 副作用的字节零改动钉子 —— 卸载实物的那一层不得再碰账本。删掉它,「内层副作用被接回来」就无人看着(账本闸只数落盘次数,数不出幂等 no-op)。下界=实际条数 39,不留余量
+93	packages/ui-mac	src/main/ext-config.test.ts	-	#706 受托方:配置写器(removeMcp/removePlugin/removePluginPath)的字节零改动钉子 —— 撤 config 与去账彻底分家。同上,删掉即失去该保证。下界=实际条数 93,不留余量
