@@ -1,0 +1,186 @@
+{
+  "envelope": {
+    "capabilities": [
+      "alpha.secret-prerequisite.v1"
+    ],
+    "components": [
+      {
+        "capabilities": [],
+        "dependencies": [
+          "skill:generic-bundle-skill",
+          "mcp:generic-bundle-remote"
+        ],
+        "id": "agent:generic-bundle-agent",
+        "payloadRef": {
+          "bytes": 375,
+          "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
+          "sha256": "736b6f029d01caa88261552dfcbaf25e5c04cace794618b615a14ce3e97f2e60",
+          "url": "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/736b6f029d01caa88261552dfcbaf25e5c04cace794618b615a14ce3e97f2e60.json"
+        },
+        "profileId": "agent",
+        "profileVersion": 1,
+        "required": true
+      },
+      {
+        "capabilities": [],
+        "dependencies": [],
+        "id": "skill:generic-bundle-skill",
+        "payloadRef": {
+          "bytes": 375,
+          "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+          "sha256": "6228388d90f72c6000c3d19f5d411e5527ecb38cf283d24b9e56fe3872819b8f",
+          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/6228388d90f72c6000c3d19f5d411e5527ecb38cf283d24b9e56fe3872819b8f.json"
+        },
+        "profileId": "skill",
+        "profileVersion": 1,
+        "required": true
+      },
+      {
+        "capabilities": [
+          "alpha.secret-prerequisite.v1"
+        ],
+        "dependencies": [],
+        "id": "mcp:generic-bundle-remote",
+        "payloadRef": {
+          "bytes": 270,
+          "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          "sha256": "0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961",
+          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-bundle-remote/1.0.0/alpha-package/0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961.json"
+        },
+        "profileId": "mcp-remote",
+        "profileVersion": 1,
+        "required": false
+      }
+    ],
+    "prelude": {
+      "packageId": "package:generic-bundle",
+      "version": "1.0.0"
+    },
+    "presentation": {
+      "description": "Generic flat Bundle corpus input: one agent root and two leaves.",
+      "displayName": "Generic Bundle"
+    },
+    "root": "agent:generic-bundle-agent",
+    "schema": "alpha.host-extension-package.v1"
+  },
+  "normalizedRecord": {
+    "components": [
+      {
+        "assetDirectory": "catalog-src/assets/agent.generic-bundle-agent/1.0.0",
+        "assetManifestSha256": "b1b61778df88b86639a291b08fb39abfe3cd8c50ecc49523905524892dafedb5",
+        "capabilities": [],
+        "dependencies": [
+          "skill:generic-bundle-skill",
+          "mcp:generic-bundle-remote"
+        ],
+        "id": "agent:generic-bundle-agent",
+        "payloadRef": {
+          "bytes": 375,
+          "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
+          "sha256": "736b6f029d01caa88261552dfcbaf25e5c04cace794618b615a14ce3e97f2e60",
+          "url": "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/736b6f029d01caa88261552dfcbaf25e5c04cace794618b615a14ce3e97f2e60.json"
+        },
+        "profileId": "agent",
+        "profileVersion": 1,
+        "required": true,
+        "version": "1.0.0"
+      },
+      {
+        "assetDirectory": "catalog-src/assets/skill.generic-bundle-skill/1.0.0",
+        "assetManifestSha256": "939f0b57e2e3f65f6f0b4b089c547ad210b295235013090a9c2971b2ecdac9c2",
+        "capabilities": [],
+        "dependencies": [],
+        "id": "skill:generic-bundle-skill",
+        "payloadRef": {
+          "bytes": 375,
+          "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+          "sha256": "6228388d90f72c6000c3d19f5d411e5527ecb38cf283d24b9e56fe3872819b8f",
+          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/6228388d90f72c6000c3d19f5d411e5527ecb38cf283d24b9e56fe3872819b8f.json"
+        },
+        "profileId": "skill",
+        "profileVersion": 1,
+        "required": true,
+        "version": "1.0.0"
+      },
+      {
+        "assetDirectory": "catalog-src/assets/mcp.generic-bundle-remote/1.0.0",
+        "assetManifestSha256": null,
+        "capabilities": [
+          "alpha.secret-prerequisite.v1"
+        ],
+        "dependencies": [],
+        "id": "mcp:generic-bundle-remote",
+        "payloadRef": {
+          "bytes": 270,
+          "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          "sha256": "0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961",
+          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-bundle-remote/1.0.0/alpha-package/0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961.json"
+        },
+        "profileId": "mcp-remote",
+        "profileVersion": 1,
+        "required": false,
+        "version": "1.0.0"
+      }
+    ],
+    "root": {
+      "compatibility": {
+        "reportSha256": "2a0faedb2a4b47b618fe9c25597bf7c625ed697e6954637f1b683d8d3d08311e",
+        "verdict": "compatible"
+      },
+      "componentId": "agent:generic-bundle-agent",
+      "declarationSha256": "d28fcbeb143049ffdd9f7be2fa332b649652e4084f0beeda2830b37c728c3189",
+      "packageId": "package:generic-bundle",
+      "presentation": {
+        "description": "Generic flat Bundle corpus input: one agent root and two leaves.",
+        "displayName": "Generic Bundle"
+      },
+      "source": {
+        "kind": "alpha-native",
+        "publisher": "official",
+        "redistributable": true
+      },
+      "version": "1.0.0"
+    },
+    "schema": "alpha.normalized-package-build-record.v1"
+  },
+  "payloads": {
+    "agent:generic-bundle-agent": {
+      "behavior": {
+        "asset": {
+          "bytes": 52,
+          "mediaType": "text/markdown",
+          "sha256": "81353065800f69d14b7c1f8c4f6996473fa8a1bb74864478743d22057037e513",
+          "url": "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/AGENT.md"
+        },
+        "targetDir": "alpha-agents"
+      },
+      "schema": "alpha.host-extension-package.payload.agent.v1"
+    },
+    "mcp:generic-bundle-remote": {
+      "behavior": {
+        "auth": "none",
+        "headersTemplate": {
+          "X-Bundle-Token": "{C_TOKEN}"
+        },
+        "requiredSecrets": [
+          "C_TOKEN"
+        ],
+        "url": "https://bundle.example.com/mcp"
+      },
+      "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+    },
+    "skill:generic-bundle-skill": {
+      "behavior": {
+        "asset": {
+          "bytes": 52,
+          "mediaType": "text/markdown",
+          "sha256": "d3e1d121b0317d8cc1a53b9a5c9d9e2c53fdad364bafd6d8144e01e8707b76f8",
+          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/SKILL.md"
+        },
+        "targetDir": "alpha-skills"
+      },
+      "schema": "alpha.host-extension-package.payload.skill.v1"
+    }
+  },
+  "schema": "alpha.extension-package.compiled-vector.v1"
+}

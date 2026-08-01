@@ -1,0 +1,59 @@
+{
+  "packageId": "package:generic-bundle",
+  "presentation": {
+    "description": "Generic flat Bundle corpus input: one agent root and two leaves.",
+    "displayName": "Generic Bundle"
+  },
+  "root": {
+    "component": {
+      "behavior": {
+        "assetPath": "AGENT.md",
+        "targetDir": "alpha-agents"
+      },
+      "id": "agent:generic-bundle-agent",
+      "kind": "agent",
+      "version": "1.0.0"
+    },
+    "leaves": [
+      {
+        "component": {
+          "behavior": {
+            "assetPath": "SKILL.md",
+            "targetDir": "alpha-skills"
+          },
+          "id": "skill:generic-bundle-skill",
+          "kind": "skill",
+          "version": "1.0.0"
+        },
+        "required": true
+      },
+      {
+        "component": {
+          "behavior": {
+            "auth": "none",
+            "headersTemplate": {
+              "X-Bundle-Token": "{C_TOKEN}"
+            },
+            "requiredSecrets": [
+              "C_TOKEN"
+            ],
+            "url": "https://bundle.example.com/mcp"
+          },
+          "dependencies": [],
+          "id": "mcp:generic-bundle-remote",
+          "kind": "mcp",
+          "transport": "remote",
+          "version": "1.0.0"
+        },
+        "required": false
+      }
+    ]
+  },
+  "schema": "alpha.package-declaration.v1",
+  "source": {
+    "kind": "alpha-native",
+    "publisher": "official",
+    "redistributable": true
+  },
+  "version": "1.0.0"
+}

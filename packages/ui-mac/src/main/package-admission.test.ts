@@ -42,48 +42,50 @@ afterEach(() => {
 })
 
 /**
- * A host-owned v2 package reusing the producer corpus's identity. The vendored producer artifact
- * itself carries no `root` and is refused under the v2 contract until P2-B′ re-vendors it; that
- * transition is gated in package-installability{,.wiring}.test.ts, not restated here.
+ * The **vendored producer output**, unpatched (`#759`). `#749` had to replace this with an inline
+ * envelope literal because the then-pinned artifact predated the v2 contract and was refused by
+ * design; a hand-built stand-in drifts with the contract and never goes red when it does, which is
+ * exactly the `#737` class and is the last thing this — the admission chain — should carry.
+ *
+ * Nothing is patched. The payload bytes are re-serialised from the corpus's own `payloads` map and
+ * must reproduce the digest the *signed envelope* declares; corrupt the artifact file and this
+ * throws (or, further down the chain, the host's own integrity gate refuses the package) instead
+ * of quietly passing.
  */
 async function fixture() {
-  const payload = {
-    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
-    behavior: {
-      url: "https://mcp.example.com/",
-      headersTemplate: { Authorization: "Bearer {A_KEY}" },
-      requiredSecrets: ["A_KEY"],
-      auth: "none",
-    },
-  } as unknown as PackageProfilePayloadV1
+  const compiled = (await Bun.file(artifact).json()) as {
+    envelope: AlphaPackageEnvelopeV1
+    payloads: Record<string, PackageProfilePayloadV1>
+  }
+  const envelope = structuredClone(compiled.envelope)
+  const rootComponent = envelope.components.find((component) => component.id === envelope.root)
+  if (!rootComponent) throw new Error("producer corpus has no component matching its own root")
+  const payload = structuredClone(compiled.payloads[rootComponent.id])
+  if (payload?.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+    throw new Error("producer corpus profile drifted")
   const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
-  const envelope = {
-    schema: "alpha.host-extension-package.v1",
-    prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
-    presentation: {
-      displayName: "Generic Remote MCP",
-      description: "Generic Phase 1 compiler corpus input.",
+  if (
+    bytes.byteLength !== rootComponent.payloadRef.bytes ||
+    createHash("sha256").update(bytes).digest("hex") !== rootComponent.payloadRef.sha256
+  )
+    throw new Error("producer corpus payload bytes do not reproduce their own signed payloadRef")
+  return { envelope, bytes, payload }
+}
+
+/**
+ * 授权集从**产物自己声明的** `requiredSecrets` 推出来,不是手打一个常量列表 —— 上游改密钥集时
+ * 这些用例跟着走,而不是各自漂。前缀 `<componentId>#<NAME>` 是宿主 prerequisiteId 的构造规则。
+ */
+async function secretGrants(value: string, extra: Record<string, string> = {}) {
+  const { envelope, payload } = await fixture()
+  const behavior = payload.behavior as { requiredSecrets: string[] }
+  if (behavior.requiredSecrets.length === 0) throw new Error("producer corpus declares no secrets")
+  return {
+    secrets: {
+      ...Object.fromEntries(behavior.requiredSecrets.map((name) => [`${envelope.root}#${name}`, value])),
+      ...extra,
     },
-    root: "mcp:generic-remote",
-    components: [
-      {
-        id: "mcp:generic-remote",
-        required: true,
-        dependencies: [],
-        profileId: "mcp-remote",
-        profileVersion: 1,
-        capabilities: ["alpha.secret-prerequisite.v1"],
-        payloadRef: {
-          sha256: createHash("sha256").update(bytes).digest("hex"),
-          bytes: bytes.byteLength,
-          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-          url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
-        },
-      },
-    ],
-    capabilities: ["alpha.secret-prerequisite.v1"],
-  } as unknown as AlphaPackageEnvelopeV1
-  return { envelope, bytes }
+  }
 }
 
 function confirmation(preview: {
@@ -110,9 +112,11 @@ describe("package admission", () => {
     ],
     [
       "grants with an extra key",
+      // 违规项是 `extra`,在 grants 形状解码阶段就被拒 —— secrets 里装的是什么与本条无关,
+      // 所以这里不走 `secretGrants`(mutate 是同步的,拿不到它)。
       (intent: Record<string, unknown>) => ({
         ...intent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary }, extra: true },
+        grants: { secrets: { ...(intent.grants as { secrets: object }).secrets }, extra: true },
       }),
       "invalid grants",
     ],
@@ -171,7 +175,7 @@ describe("package admission", () => {
     const result = await admit(
       mutate({
         ...intent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(preview),
       }),
     )
@@ -237,7 +241,7 @@ describe("package admission", () => {
   })
 
   test("actual transaction writes the signed secret prerequisite into the restricted version directory", async () => {
-    const { envelope, bytes } = await fixture()
+    const { envelope, bytes, payload } = await fixture()
     let transactionCalls = 0
     let payloadFetches = 0
     const order: string[] = []
@@ -292,7 +296,7 @@ describe("package admission", () => {
     expect(
       await admit({
         ...intent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
       }),
     ).toMatchObject({
       ok: false,
@@ -309,7 +313,7 @@ describe("package admission", () => {
 
     const second = await admit({
       ...intent,
-      grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+      grants: await secretGrants(secretCanary),
       authorization: confirmation(first),
     })
     expect(second).toMatchObject({
@@ -319,11 +323,19 @@ describe("package admission", () => {
       installedDisabled: true,
     })
     expect(transactionCalls).toBe(1)
-    const secretFile = join(userData, "alpha-mcp-secrets", "generic-remote", "v-12345678", "A_KEY")
-    expect(readFileSync(secretFile, "utf8")).toBe(secretCanary)
-    expect(statSync(secretFile).mode & 0o777).toBe(0o600)
+    // 语料声明了几个密钥就要落几个。只钉第一个名字的话,宿主静默丢掉第二个密钥仍然全绿 ——
+    // 而用户拿到的是一个连不上的 MCP。名字来自**产物自己**,不是这里手打的常量。
+    const versionDir = join(userData, "alpha-mcp-secrets", "generic-remote", "v-12345678")
+    const declaredSecrets = (payload.behavior as { requiredSecrets: string[] }).requiredSecrets
+    expect(declaredSecrets.length).toBeGreaterThan(1)
+    expect(readdirSync(versionDir).sort()).toEqual([...declaredSecrets].sort())
     const config = readFileSync(join(root, "alpha.jsonc"), "utf8")
-    expect(config).toContain(`{file:${secretFile}}`)
+    for (const name of declaredSecrets) {
+      const secretFile = join(versionDir, name)
+      expect(readFileSync(secretFile, "utf8"), name).toBe(secretCanary)
+      expect(statSync(secretFile).mode & 0o777, name).toBe(0o600)
+      expect(config, name).toContain(`{file:${secretFile}}`)
+    }
     expect(config).not.toContain(secretCanary)
     expect(existsSync(join(root, "installs.json"))).toBe(true)
     expect(existsSync(join(root, "ext-store", "mcp--generic-remote", "grants.json"))).toBe(true)
@@ -400,12 +412,9 @@ describe("package admission", () => {
         catalogId: envelope.prelude.packageId,
         scope: { scope: "global" },
         attemptId: "attempt-secret-undeclared",
-        grants: {
-          secrets: {
-            "mcp:generic-remote#A_KEY": secretCanary,
-            "mcp:generic-remote#B_KEY": "not-signed",
-          },
-        },
+        // 签名声明的全部密钥都给足,**外加**一个没人签名的 —— 违规项排在排序后的中间,
+        // 「只看第一个/最后一个」的实现要能被抓住。
+        grants: await secretGrants(secretCanary, { "mcp:generic-remote#B_KEY": "not-signed" }),
         authorization: confirmation(undeclared),
       }),
     ).toMatchObject({ ok: false, reason: expect.stringContaining("secret-undeclared") })
@@ -416,7 +425,7 @@ describe("package admission", () => {
         catalogId: envelope.prelude.packageId,
         scope: { scope: "global" },
         attemptId: "attempt-capability-tamper",
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: {
           ...confirmation(capabilityTamper),
           confirmed: { "mcp--generic-remote": [] },
@@ -450,7 +459,7 @@ describe("package admission", () => {
           catalogId: envelope.prelude.packageId,
           scope: { scope: "global" },
           attemptId,
-          grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+          grants: await secretGrants(secretCanary),
           authorization: { ...confirmation(first), binding },
         }),
       ).toMatchObject({ ok: false, reason: expect.stringContaining("tampered") })
@@ -464,7 +473,7 @@ describe("package admission", () => {
         catalogId: envelope.prelude.packageId,
         scope: { scope: "global" },
         attemptId: "attempt-stale",
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(stale),
       }),
     ).toMatchObject({ ok: false, reason: expect.stringContaining("facts changed") })
@@ -478,7 +487,7 @@ describe("package admission", () => {
       catalogId: envelope.prelude.packageId,
       scope: { scope: "global" },
       attemptId: "attempt-replay",
-      grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+      grants: await secretGrants(secretCanary),
       authorization: confirmation(replay),
     }
     expect((await admit(authorized)).ok).toBe(true)
@@ -531,7 +540,7 @@ describe("package admission", () => {
       const intent = { catalogId: envelope.prelude.packageId, scope: { scope: "global" as const }, attemptId }
       const preview = await admit(intent)
       if (preview.ok || preview.stage !== "authorize") throw new Error("expected package authorization preview")
-      return admit({ ...intent, grants: { secrets: { "mcp:generic-remote#A_KEY": secret } }, authorization: confirmation(preview) })
+      return admit({ ...intent, grants: await secretGrants(secret), authorization: confirmation(preview) })
     }
 
     // ① 成功装一次(密钥进版本目录,config 只拿 {file:} 引用)。
@@ -635,7 +644,7 @@ describe("package admission", () => {
     expect(
       await populateFailure({
         ...populateIntent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(populatePreview),
       }),
     ).toMatchObject({ ok: false })
@@ -660,7 +669,7 @@ describe("package admission", () => {
     expect(
       await unhealthyProbe({
         ...probeIntent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(probePreview),
       }),
     ).toMatchObject({ ok: false })
@@ -704,7 +713,7 @@ describe("package admission", () => {
     expect(
       await preexisting({
         ...preexistingIntent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(preexistingPreview),
       }),
     ).toMatchObject({ ok: false })
@@ -731,7 +740,7 @@ describe("package admission", () => {
     expect(
       await raced({
         ...racedIntent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(racedPreview),
       }),
     ).toMatchObject({ ok: false })

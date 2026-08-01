@@ -1,42 +1,51 @@
 {
   "canonicalization": {
-    "capabilities": "compiler-derived unique UTF-8 byte-order sorted union",
+    "capabilities": "compiler-derived unique UTF-8 byte-order sorted union over every component",
     "json": "recursive UTF-8 key order, NFC strings, two spaces, LF, one trailing LF",
     "requiredSecrets": "compiler emits unique UTF-8 byte-order sorted names",
     "urls": "compiler emits new URL(value).href after HTTPS/hostname/no-userinfo validation"
   },
   "capabilities": [
+    "alpha.connection.v1",
+    "alpha.mcp-oauth.v1",
     "alpha.secret-prerequisite.v1"
   ],
-  "componentCount": 1,
-  "dependencies": [],
   "excluded": [
-    "bundle",
     "cloud",
     "legacy-projection",
     "managed-plugin",
+    "nested-bundle",
     "provider-adapter",
     "publish-wrapper"
   ],
+  "graph": {
+    "leafDependencies": [],
+    "maxComponents": 16,
+    "nested": false,
+    "rootDependencies": "exactly the set of every non-root component id",
+    "shape": "flat"
+  },
   "hostContract": {
     "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
-    "artifactSha256": "1ed320e4ccf455576b41d30f4fbba22b5cafb37563c56cee55e40b8c574ff2bb",
-    "commit": "284916c736ea97b83497f1f313ba8e1faec422e7",
+    "artifactSha256": "8a191b3375876c2016c725dfb6cb1f8348ef2001abdac8cc9f4e0f20db1695d1",
+    "commit": "74af30d1b995c14ede4fa1cfc2a9cca4c39dd4b3",
     "repo": "jinjunnn/alpha-code"
   },
   "limits": {
-    "maxCapabilities": 16,
     "maxDeclarationBytes": 65536,
     "maxEnvelopeBytes": 65536,
     "maxFileBytes": 16777216,
     "maxFilesPerComponent": 512,
     "maxJsonDepth": 64,
-    "maxMarkdownAssetBytes": 5242880,
     "maxPackageBytes": 67108864,
     "maxPathDepth": 32,
     "maxPayloadBytes": 1048576,
     "maxReportBytes": 65536
   },
-  "phase": 1,
+  "remoteAuthKinds": [
+    "none",
+    "mcp-oauth",
+    "alpha-connection"
+  ],
   "schema": "alpha.extension-package.generic-rules.v1"
 }

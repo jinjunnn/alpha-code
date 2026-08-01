@@ -26,40 +26,44 @@
       "version": "1.0.0"
     },
     "presentation": {
-      "description": "Generic Phase 1 compiler corpus input.",
+      "description": "Generic compiler corpus input.",
       "displayName": "Generic Remote MCP"
     },
+    "root": "mcp:generic-remote",
     "schema": "alpha.host-extension-package.v1"
   },
   "normalizedRecord": {
-    "component": {
-      "assetDirectory": "catalog-src/assets/mcp.generic-remote/1.0.0",
-      "assetManifestSha256": null,
-      "capabilities": [
-        "alpha.secret-prerequisite.v1"
-      ],
-      "dependencies": [],
-      "id": "mcp:generic-remote",
-      "payloadRef": {
-        "bytes": 320,
-        "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
-        "sha256": "3acf65ec3045f99a91d2b3cc5dfd633d59a15f8bbef5921862cb3ffa62d87745",
-        "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/3acf65ec3045f99a91d2b3cc5dfd633d59a15f8bbef5921862cb3ffa62d87745.json"
-      },
-      "profileId": "mcp-remote",
-      "profileVersion": 1,
-      "required": true,
-      "version": "1.0.0"
-    },
+    "components": [
+      {
+        "assetDirectory": "catalog-src/assets/mcp.generic-remote/1.0.0",
+        "assetManifestSha256": null,
+        "capabilities": [
+          "alpha.secret-prerequisite.v1"
+        ],
+        "dependencies": [],
+        "id": "mcp:generic-remote",
+        "payloadRef": {
+          "bytes": 320,
+          "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          "sha256": "3acf65ec3045f99a91d2b3cc5dfd633d59a15f8bbef5921862cb3ffa62d87745",
+          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/3acf65ec3045f99a91d2b3cc5dfd633d59a15f8bbef5921862cb3ffa62d87745.json"
+        },
+        "profileId": "mcp-remote",
+        "profileVersion": 1,
+        "required": true,
+        "version": "1.0.0"
+      }
+    ],
     "root": {
       "compatibility": {
-        "reportSha256": "c0dc0de876280e8e8f53182db0b37015792cc1d14e253b44ee2fdb97412167ea",
+        "reportSha256": "6fbd9d9c2df8565f5c335457df0b887772a90fae530e49a380dc7da1417df38c",
         "verdict": "compatible"
       },
-      "declarationSha256": "feb308d61e482b1d4781dcb1d3e1e534404335c1e4f550b9eb544d3247db32c8",
+      "componentId": "mcp:generic-remote",
+      "declarationSha256": "ba5e55d84930546f798c8d4488dd139c79b61bffbf00064b3daa0bf0211133fa",
       "packageId": "package:generic-remote-mcp",
       "presentation": {
-        "description": "Generic Phase 1 compiler corpus input.",
+        "description": "Generic compiler corpus input.",
         "displayName": "Generic Remote MCP"
       },
       "source": {
@@ -71,20 +75,22 @@
     },
     "schema": "alpha.normalized-package-build-record.v1"
   },
-  "payload": {
-    "behavior": {
-      "auth": "none",
-      "headersTemplate": {
-        "Authorization": "Bearer {A_KEY}",
-        "X-Remote-Token": "{B_TOKEN}"
+  "payloads": {
+    "mcp:generic-remote": {
+      "behavior": {
+        "auth": "none",
+        "headersTemplate": {
+          "Authorization": "Bearer {A_KEY}",
+          "X-Remote-Token": "{B_TOKEN}"
+        },
+        "requiredSecrets": [
+          "A_KEY",
+          "B_TOKEN"
+        ],
+        "url": "https://mcp.example.com/"
       },
-      "requiredSecrets": [
-        "A_KEY",
-        "B_TOKEN"
-      ],
-      "url": "https://mcp.example.com/"
-    },
-    "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+      "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+    }
   },
   "schema": "alpha.extension-package.compiled-vector.v1"
 }
