@@ -449,6 +449,80 @@ export function collectMcpFileRefPaths(value: unknown): string[] {
   return out
 }
 
+export type McpSecretRefIndex = {
+  /** 候选文件是否被引用集引用(双形态命中);候选自身身份不可判 = 视为被引用(不删)。 */
+  isReferencedFile: (abs: string) => boolean
+}
+
+/**
+ * 引用集 → **删除守卫索引**(#712)。GC 与 prepared resource 释放共用同一判据 —— 两处各写一份
+ * 就会漂移,而漂移的方向是「一处删掉在用密钥」。
+ *
+ * 任一引用路径的文件系统身份不可判(非缺席类 fs 错误,如暂时的 EACCES/EIO)= 整个索引不可信,
+ * 返回失败;调用方必须 fail-closed 不删(fail-open 会把活体别名引用判成未引用而删掉在用密钥)。
+ */
+export function buildMcpSecretRefIndex(
+  referencedPaths: string[],
+): { ok: true; index: McpSecretRefIndex } | { ok: false; reason: string } {
+  const referenced = new Set<string>()
+  for (const rp of referencedPaths) {
+    const ident = pathIdentity(rp)
+    if (!ident.certain)
+      return { ok: false, reason: "a reference path's filesystem identity is unresolvable (non-absence fs error)" }
+    for (const form of ident.forms) referenced.add(form)
+  }
+  return {
+    ok: true,
+    index: {
+      isReferencedFile: (abs: string): boolean => {
+        if (referenced.has(path.resolve(abs))) return true
+        try {
+          return referenced.has(fs.realpathSync(abs))
+        } catch (e) {
+          return !isAbsenceError(e) // 候选文件身份不可判 = 视为被引用(不删);确证缺席才允许判未引用
+        }
+      },
+    },
+  }
+}
+
+/**
+ * #712:释放**一次未提交事务准备的**版本目录。宽限期不适用 —— 调用方(事务失败路径 / 崩溃恢复)
+ * 知道这个版本属于一次没有提交的事务,而 config/receipt/reference 才是原子权威,版本目录只是
+ * provisioning。删除前仍用与 GC 同一份引用判据复核:
+ *   · 任一引用路径身份不可判 → 不删(`ok:false`);
+ *   · 目录内任一文件仍被引用 → 不删(`state:"referenced"`);
+ *   · 目录缺席 → 幂等成功(`state:"absent"`,恢复重放会走到这里)。
+ * 路径由固定 store 根 + **校验过的** (server, verId) 派生 —— 绝不接受调用方给的绝对删除路径。
+ */
+export function removeUnreferencedMcpSecretVersion(
+  userDataPath: string,
+  server: string,
+  verId: string,
+  referencedPaths: string[],
+): { ok: true; state: "removed" | "referenced" | "absent" } | { ok: false; reason: string } {
+  if (!isExtensionName(server)) return { ok: false, reason: `invalid server name: ${server}` }
+  if (!SAFE_SECRET_VER.test(verId)) return { ok: false, reason: `invalid secret version id: ${verId}` }
+  const built = buildMcpSecretRefIndex(referencedPaths)
+  if (!built.ok) return built
+  const dir = path.join(serverDir(userDataPath, server), verId)
+  let files: string[]
+  try {
+    files = fs.readdirSync(dir)
+  } catch (error) {
+    // 确证缺席 = 从未落盘或已释放(幂等);其余(EACCES/EIO)= 内容不可枚举,不删。
+    if (isAbsenceError(error)) return { ok: true, state: "absent" }
+    return {
+      ok: false,
+      reason: `secret version dir unreadable: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+  if (files.some((name) => built.index.isReferencedFile(path.join(dir, name))))
+    return { ok: true, state: "referenced" }
+  const removed = removeMcpSecretVersionDir(userDataPath, server, verId)
+  return removed.ok ? { ok: true, state: "removed" } : removed
+}
+
 /**
  * 提交后版本 GC(#378)。**调用方必须持配置写锁**(referencedPaths 从锁内读出的当前 mcp.<server>
  * leaf 收集 —— 锁保证引用集与 config 现状一致;命名合同对标 gcVendoredPluginDirLocked)。
@@ -471,22 +545,10 @@ export function gcMcpSecretVersionsLocked(
   // (realpath;引用目标缺席时保留词法形态)。候选文件比较时同样双形态查询。
   // r15 Major:非缺席类 realpath 失败 = 身份不可判 —— 本轮整体不删(fail-closed,宽限期后重试),
   // 否则暂时 EIO/EACCES 的活体别名引用会被判成未引用而删掉在用密钥。
-  const referenced = new Set<string>()
-  let identityUnprovable = false
-  for (const rp of referencedPaths) {
-    const ident = pathIdentity(rp)
-    if (!ident.certain) identityUnprovable = true
-    for (const form of ident.forms) referenced.add(form)
-  }
-  if (identityUnprovable) return { removed, warnings: [`gc skipped for ${server}: a reference path's filesystem identity is unresolvable (non-absence fs error) — retrying next gc`] }
-  const isReferencedFile = (abs: string): boolean => {
-    if (referenced.has(path.resolve(abs))) return true
-    try {
-      return referenced.has(fs.realpathSync(abs))
-    } catch (e) {
-      return !isAbsenceError(e) // 候选文件身份不可判 = 视为被引用(不删);确证缺席才允许判未引用
-    }
-  }
+  // #712:判据本体抽进 buildMcpSecretRefIndex —— prepared resource 释放消费同一份,不另写一遍。
+  const built = buildMcpSecretRefIndex(referencedPaths)
+  if (!built.ok) return { removed, warnings: [`gc skipped for ${server}: ${built.reason} — retrying next gc`] }
+  const isReferencedFile = built.index.isReferencedFile
   const cutoff = Date.now() - SECRET_GC_GRACE_MS
   const olderThanGrace = (p: string): boolean => {
     try {

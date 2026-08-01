@@ -109,6 +109,7 @@ type Hooks = {
   populate?: (item: unknown, dir: string) => void
   populatePrepared?: () => void
   probePrepared?: () => unknown
+  releasePrepared?: (resources: unknown[]) => void
   precondition?: () => unknown
   probe?: HealthProbe
   commitReceipt?: unknown
@@ -117,7 +118,9 @@ type Hooks = {
 /** 跑到「引擎入口」为止:拦下事务,交出计划与 hook 面。 */
 async function captureBuild(kind: "skill" | "agent" | "mcp") {
   const { envelope, payloadBytes, assetBytes } = envelopeFor(kind)
-  let captured: { root: string; plan: { items: TxPlanItem[]; authorization?: unknown }; hooks: Hooks } | undefined
+  let captured:
+    | { root: string; plan: { items: TxPlanItem[]; authorization?: unknown; prepared?: unknown }; hooks: Hooks }
+    | undefined
   const admit = createPackageAdmissionCoordinator({
     loadVerifiedCatalog: async () => ({
       source: "remote",
@@ -237,6 +240,9 @@ describe("REQ-128 #705 single-install builder parity", () => {
 
   test("mcp: config item, secret refs, prepared resource and precondition are unchanged", async () => {
     const { plan, hooks } = await captureBuild("mcp")
+    // #712 是这份 parity 冻结面上**唯一**一处有意的偏离:hook 面多出 releasePrepared,plan 多出
+    // 类型化 prepared descriptor(见下)。#705 冻结的其余各项(item 形状/账本模板/populate 产物/
+    // precondition 判决/probe 判决)保持逐字不变。
     expect(Object.keys(hooks).sort()).toEqual([
       "commitReceipt",
       "populate",
@@ -244,6 +250,11 @@ describe("REQ-128 #705 single-install builder parity", () => {
       "precondition",
       "probe",
       "probePrepared",
+      "releasePrepared",
+    ])
+    // 计划里的 prepared 面 = **只有身份**。多一个字段(files/明文/摘要)引擎 validatePlan 就拒。
+    expect(plan.prepared).toEqual([
+      { kind: "mcp-secret-version", store: "alpha-mcp-secrets", server: "demo", version: SECRET_VERSION },
     ])
     expect(plan.items).toHaveLength(1)
     const item = plan.items[0]!

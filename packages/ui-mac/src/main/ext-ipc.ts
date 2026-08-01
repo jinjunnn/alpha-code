@@ -18,7 +18,7 @@ import { isExtensionName } from "../shared/extension-name"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath } from "./ext-config"
+import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath } from "./ext-config"
 import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { reloadInstalledMcp } from "./ext-mcp-activation"
@@ -496,6 +496,10 @@ export function registerExtIpcHandlers(
       const grants = removeInstallGrants(root, [key])
       if (!grants.ok) throw new Error(grants.reason)
     },
+    // #712:崩溃在 populatePrepared 之后、提交之前 —— 受限密钥版本已在盘上而 live config 从未
+    // 指向它。恢复把 journal 收敛成 aborted/rolled-back 时按 journal 里的类型化身份释放它,
+    // 与安装路径同一份实现(合并引用视图复核:仍被引用/来源不可读/身份不可判一律不删)。
+    releasePrepared: (resources) => releasePreparedTxResources(userDataPath, resources),
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
   })
   assertAlphaEnvironmentIdentity()

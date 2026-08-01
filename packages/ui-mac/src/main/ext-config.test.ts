@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
+import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, persistMcp, persistPlugin, persistProvider, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
+import { newMcpSecretVersionId, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
 import { upsertRecordV2 } from "./ext-receipt-v2"
@@ -664,5 +665,178 @@ describe("#395 r6 M1 disabled plugin 换钉版", () => {
     const r = persistPlugin("@y/q@2.0.0")
     expect(r).toEqual({ ok: true, changed: false, projectedDisabled: true })
     expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc"))).toBe(false)
+  })
+})
+
+// ── #712:prepared 密钥版本的释放 —— 合并视图(主 + retained legacy)是唯一判据 ────────────────
+// 这里的每一格都是「误删在用密钥」的一种真实到达方式:引擎在主配置之后还合并 retained legacy 源,
+// 而引用可以写成 `~/`、相对路径、或经 symlink 别名。任一来源读不出可信引用集就一律不删。
+describe("releasePreparedMcpSecretVersion — #712 合并引用视图", () => {
+  const server = "relmcp"
+  let userData = ""
+  let vid = ""
+  let file = ""
+  let decoyFile = ""
+
+  beforeEach(() => {
+    userData = path.join(alphaTmp, "user-data")
+    vid = newMcpSecretVersionId()
+    // 目标版本目录里放**两个**密钥文件,而 config 只引用**非首个**的那一个 ——
+    // 「只看目录里第一个文件」的削弱必须转红(readdir 序 A_DECOY 在前)。
+    for (const [name, value] of [
+      ["A_DECOY", "PREPARED_SECRET_DECOY"],
+      ["Z_TOK", "PREPARED_SECRET_CANARY"],
+    ] as const) {
+      const written = writeMcpSecretVersioned(userData, server, vid, name, value)
+      if (!written.ok) throw new Error(written.reason)
+    }
+    file = path.join(userData, "alpha-mcp-secrets", server, vid, "Z_TOK")
+    // 另一个版本目录:引用集里恒排在目标之前,且必须**始终**零接触。
+    const decoyVid = newMcpSecretVersionId()
+    const decoy = writeMcpSecretVersioned(userData, server, decoyVid, "TOK", "OTHER_VERSION")
+    if (!decoy.ok) throw new Error(decoy.reason)
+    decoyFile = path.join(userData, "alpha-mcp-secrets", server, decoyVid, "TOK")
+  })
+
+  const writeRaw = (target: string, text: string) => {
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, text)
+  }
+  const legacyPath = () => path.join(homeTmp, "opencode.jsonc")
+  const writeLegacy = (value: unknown) => writeRaw(legacyPath(), JSON.stringify(value, null, 2))
+  /** 引用**永远不放在第一位**:前面先垫一个指向别的版本的引用,再垫一个非密钥引用。 */
+  const leaf = (...refs: string[]) => ({
+    mcp: {
+      [server]: {
+        type: "remote",
+        url: "https://x.invalid",
+        environment: { OTHER_VERSION: `{file:${decoyFile}}`, UNRELATED: `{file:${path.join(alphaTmp, "unrelated")}}` },
+        headers: Object.fromEntries(refs.map((ref, i) => [`X-Auth-${i}`, `Bearer {file:${ref}}`])),
+      },
+    },
+  })
+
+  test("没有任何来源引用它 → 删(这是失败/回滚后的正常情形:leaf 本就缺席)", () => {
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "removed" })
+    expect(fs.existsSync(file)).toBe(false)
+    expect(fs.existsSync(decoyFile)).toBe(true) // 别的版本零接触
+  })
+
+  test("主 leaf 引用集里含它(非首位)→ 保留", () => {
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret"), file))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test("主 leaf 用 `~/` 形态引用 → 按引擎语义展开 home 后命中,保留", () => {
+    // os.homedir() 在 bun 里进程启动后不再随 HOME 变,所以这里用一条**真的**以 `~/` 开头的引用:
+    // 相对段从真实 home 走到临时目录。判据不变 —— 不展开 `~` 就命不中,活密钥当场被删。
+    const fromHome = `~/${path.relative(os.homedir(), file)}`
+    expect(fromHome.startsWith("~/")).toBe(true)
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret"), fromHome))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test("主 leaf 用 `./` 相对形态引用 → 按 config 文件所在目录解析,保留", () => {
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret"), `./${path.relative(alphaTmp, file)}`))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test("只有 retained legacy 源引用它(主 leaf 在场但不引用)→ 保留", () => {
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret")))
+    writeLegacy(leaf(path.join(homeTmp, "not-a-secret"), file))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test("legacy 源用相对路径引用(按自己所在目录解析)→ 保留", () => {
+    writeLegacy(leaf("not-a-secret", path.relative(homeTmp, file)))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test("symlink 别名引用 → realpath 命中,保留", () => {
+    const alias = path.join(alphaTmp, "alias-TOK")
+    fs.symlinkSync(file, alias)
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret"), alias))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test.each([
+    [
+      "legacy 源语法损坏",
+      () => {
+        writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret")))
+        writeRaw(legacyPath(), '{ "mcp": { "relmcp": { "type": "remote" ')
+      },
+      "legacy config unparseable",
+    ],
+    [
+      "主配置语法损坏",
+      () => {
+        writeLegacy({})
+        writeRaw(path.join(alphaTmp, "alpha.jsonc"), '{ "mcp": { "relmcp": { "type": "remote"  // 少一个括号\n')
+      },
+      "unparseable",
+    ],
+    [
+      "主 leaf 形状异常(数组)",
+      () => {
+        writeLegacy({})
+        writeAlphaConfig({ mcp: { [server]: ["not", "an", "object"] } })
+      },
+      "unexpected shape",
+    ],
+    [
+      "legacy 源的 mcp 键形状异常",
+      () => {
+        writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret")))
+        writeLegacy({ mcp: ["not", "an", "object"] })
+      },
+      "unexpected shape",
+    ],
+  ])("%s → 引用集不可信,拒绝释放(绝不当作零引用)", (_name, setup, expectedReason) => {
+    setup()
+    const r = releasePreparedMcpSecretVersion(userData, server, vid)
+    expect(r.ok).toBe(false)
+    expect(!r.ok && r.reason).toContain(expectedReason)
+    expect(fs.existsSync(file)).toBe(true)
+    expect(fs.existsSync(decoyFile)).toBe(true)
+  })
+
+  test("releasePreparedTxResources:逐条处置 —— 未登记 kind/store 拒绝,合法条目照常释放", () => {
+    const other = newMcpSecretVersionId()
+    const otherWritten = writeMcpSecretVersioned(userData, server, other, "TOK", "SECOND_ORPHAN")
+    if (!otherWritten.ok) throw new Error(otherWritten.reason)
+    const otherFile = path.join(userData, "alpha-mcp-secrets", server, other, "TOK")
+    // 主 leaf 引用目标版本,不引用另外两个 —— 一批里同时有「必须保留」「必须删」「必须拒」。
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret"), file))
+    expect(() =>
+      releasePreparedTxResources(userData, [
+        // 合法且未被引用 → 应删(排在第一位:违规项不占首位)
+        { kind: "mcp-secret-version", store: "alpha-mcp-secrets", server, version: other },
+        // 未登记 kind → 拒(不猜别人的布局)
+        { kind: "ssh-key", store: "alpha-mcp-secrets", server, version: other } as never,
+        // 未登记 store → 拒
+        { kind: "mcp-secret-version", store: "somewhere-else", server, version: other } as never,
+        // 合法但仍被引用 → 保留并如实抛出
+        { kind: "mcp-secret-version", store: "alpha-mcp-secrets", server, version: vid },
+      ]),
+    ).toThrow(/no release seam.*no release seam.*still referenced/s)
+    expect(fs.existsSync(otherFile)).toBe(false) // 批里合法的那条真的删了
+    expect(fs.existsSync(file)).toBe(true) // 被引用的那条真的保住了
+    expect(fs.existsSync(decoyFile)).toBe(true)
+
+    // 引用撤掉后再释放同一条 → 真的删,且不抛。
+    writeAlphaConfig({})
+    expect(() =>
+      releasePreparedTxResources(userData, [
+        { kind: "mcp-secret-version", store: "alpha-mcp-secrets", server, version: vid },
+      ]),
+    ).not.toThrow()
+    expect(fs.existsSync(file)).toBe(false)
   })
 })
