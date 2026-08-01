@@ -212,6 +212,12 @@ function makeDeps(calls: Calls): PlannerDeps {
       calls.push(`removeMcpSecretsStrict:${name}`)
       return { ok: true }
     },
+    // #704:卸载路径会释放该组件的 Alpha Connection 绑定(共享 connection 本身保留)。
+    // 记进 calls 账而不是 refuse —— 这是卸载的正当动作,不是 install-only。
+    releaseAlphaConnectionBindings: (componentId: string) => {
+      calls.push(`releaseAlphaConnectionBindings:${componentId}`)
+      return { ok: true }
+    },
     findPluginBaseConflictStrict: refuse("findPluginBaseConflictStrict"),
     readPluginArrayStrict: refuse("readPluginArrayStrict"),
     readLegacyPluginArrayStrict: refuse("readLegacyPluginArrayStrict"),
