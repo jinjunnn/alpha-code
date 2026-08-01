@@ -28,6 +28,14 @@
   ],
   "capabilities": [
     {
+      "token": "alpha.connection.v1",
+      "semantic": "Complete a host-owned Alpha Connection handshake through a statically registered handler before the component is installed."
+    },
+    {
+      "token": "alpha.mcp-oauth.v1",
+      "semantic": "Complete an engine-owned MCP OAuth authorization before the component is installed; no token material ever appears in package bytes."
+    },
+    {
       "token": "alpha.secret-prerequisite.v1",
       "semantic": "Resolve declared secret references without placing secret values in package bytes."
     }
@@ -35,9 +43,11 @@
   "limits": {
     "maxEnvelopeBytes": 65536,
     "maxHeaderDepth": 6,
-    "maxHeaderNodes": 128,
+    "maxHeaderNodes": 512,
     "maxStringBytes": 4096,
     "maxCapabilities": 16,
+    "maxComponents": 16,
+    "maxMarkdownAssetBytes": 5242880,
     "maxPayloadBytes": 1048576,
     "maxPayloadDepth": 8,
     "maxPayloadNodes": 512

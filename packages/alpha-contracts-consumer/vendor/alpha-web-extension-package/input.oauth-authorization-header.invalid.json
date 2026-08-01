@@ -1,0 +1,38 @@
+{
+  "packageId": "package:generic-remote-oauth",
+  "presentation": {
+    "description": "Generic compiler corpus input with engine-owned MCP OAuth.",
+    "displayName": "Generic Remote MCP (OAuth)"
+  },
+  "root": {
+    "component": {
+      "behavior": {
+        "auth": {
+          "kind": "mcp-oauth",
+          "label": "Connect the generic workspace",
+          "prerequisiteId": "generic-oauth",
+          "required": true
+        },
+        "headersTemplate": {
+          "X-Workspace": "{WORKSPACE_ID}",
+          "authorization": "Bearer {WORKSPACE_ID}"
+        },
+        "requiredSecrets": [
+          "WORKSPACE_ID"
+        ],
+        "url": "https://oauth.example.com/mcp"
+      },
+      "id": "mcp:generic-remote-oauth",
+      "kind": "mcp",
+      "transport": "remote",
+      "version": "1.0.0"
+    }
+  },
+  "schema": "alpha.package-declaration.v1",
+  "source": {
+    "kind": "alpha-native",
+    "publisher": "official",
+    "redistributable": true
+  },
+  "version": "1.0.0"
+}

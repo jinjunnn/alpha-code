@@ -4,7 +4,7 @@
 // production traffic already exercises it.
 //
 // The one place the *actual* vendored producer bytes are read is the §5.1 transition gate at the
-// bottom, which asserts they are refused until the compiler emits a v2 envelope.
+// bottom, which now asserts the re-vendored v2 artifact is accepted end to end (`#759`).
 
 import { createHash } from "node:crypto"
 import { resolve } from "node:path"
@@ -27,18 +27,29 @@ import {
 const artifact = resolve(import.meta.dir, "../../../alpha-contracts-consumer/vendor/alpha-web-extension-package")
 
 /**
- * The pinned producer output exactly as vendored. Under the v2 host contract it carries no `root`,
- * so it is expected to be **refused** until P2-B′ re-vendors a v2 compiler artifact. It is never
- * patched into compliance here — see the transition gate at the bottom of this file.
+ * The pinned producer output exactly as vendored — envelope and component payloads both.
+ *
+ * **Nothing here is patched.** The payload bytes are re-serialised from the corpus's own
+ * `payloads` map and keyed by the digest the *signed envelope* declares, so a corpus whose
+ * payload bytes do not reproduce its own `payloadRef` misses the lookup (or fails the host's
+ * digest gate) and turns this file red instead of quietly passing. Adding a field to make the
+ * envelope decode would be the false gate the §5.1 transition rule exists to prevent.
  */
-const vendoredProducerEnvelope = async () =>
-  structuredClone(
-    (
-      (await Bun.file(resolve(artifact, "expected.mcp-remote.compiled.json")).json()) as {
-        envelope: AlphaPackageEnvelopeV1
-      }
-    ).envelope,
+const vendoredProducerPackage = async (file: string) => {
+  const compiled = (await Bun.file(resolve(artifact, file)).json()) as {
+    envelope: AlphaPackageEnvelopeV1
+    payloads: Record<string, unknown>
+    normalizedRecord: { root: { compatibility: { verdict: string } } }
+  }
+  const envelope = structuredClone(compiled.envelope)
+  const payloadByDigest = new Map<string, Uint8Array>(
+    envelope.components.map((component) => [
+      component.payloadRef.sha256,
+      new TextEncoder().encode(`${JSON.stringify(compiled.payloads[component.id], null, 2)}\n`),
+    ]),
   )
+  return { envelope, payloadByDigest, publishedVerdict: compiled.normalizedRecord.root.compatibility.verdict }
+}
 
 /**
  * A host-owned v2 package used to drive the production wiring. It reuses the producer corpus's
@@ -336,18 +347,90 @@ describe("package installability production wiring", () => {
     }
   })
 
-  // §5.1 门一。旧 vendored producer 产物在 v2 合同下应当被拒 —— 这是正确行为,不是回归。
-  // 这里走的是**真实** refresh/detail 生产链,不是直接调解码器,所以它同时证明拒绝会一路
-  // 传到 renderer 能看到的 safe view。P2-B′ re-vendor 之后本条会红,由那张票翻成正向。
-  test("the pinned producer artifact is refused end-to-end through the real read path", async () => {
-    const envelope = await vendoredProducerEnvelope()
-    expect(Object.hasOwn(envelope, "root"), "producer 已产出 root,请翻转 §5.1 门一").toBe(false)
+  // §5.1 门一,**已翻正向**(`#759` re-vendor 到 alpha-web@6e0db57d)。
+  // 走的是真实 refresh → browse → detail 生产链,不是直接调解码器:它同时证明这个结论会一路
+  // 传到 renderer 能看到的 safe view。信封与 payload 都是产物原字节,零结构补丁 —— 上游哪天
+  // 产出宿主拒收的信封,这条会响亮地红,而不是被一行手工补丁掩盖。
+  test("the pinned producer artifact is accepted end-to-end through the real read path", async () => {
+    const { envelope, payloadByDigest, publishedVerdict } = await vendoredProducerPackage(
+      "expected.mcp-remote.compiled.json",
+    )
+    expect(Object.hasOwn(envelope, "root"), "producer 必须已经产出 root").toBe(true)
 
+    const fetched: string[] = []
     const refresh = () =>
       evaluateRemoteCatalogPackages(rawResult(envelope), {
         packageInstallability: {
-          fetchPayload: async () => {
-            throw new Error("payload must never be fetched for a refused envelope")
+          fetchPayload: async (ref) => {
+            fetched.push(ref.sha256)
+            const payload = payloadByDigest.get(ref.sha256)
+            if (!payload) throw new Error(`producer corpus has no payload for ${ref.sha256}`)
+            return payload
+          },
+        },
+      })
+    const handlers = registeredHandlers(refresh)
+    const browse = (await handlers.get("ext-remote-catalog")!(undefined)) as {
+      catalog: { packages: CatalogPackageViewV1[] }
+    }
+    const detail = (await handlers.get(PACKAGE_DETAIL_IPC_CHANNEL)!(
+      undefined,
+      envelope.prelude.packageId,
+    )) as CatalogPackageViewV1
+
+    // 宿主的判决必须与**发布端自己发布的判决**一致 —— 判据来自上游,不是我们这边另写一份。
+    expect(publishedVerdict).toBe("compatible")
+    expect(browse.catalog.packages.map((view) => view.verdict)).toEqual([publishedVerdict])
+    expect(detail.verdict).toBe(publishedVerdict)
+    expect(detail.action).toEqual({
+      kind: "resolve-prerequisite",
+      enabled: true,
+      reasonCode: "package-prerequisite-required",
+    })
+    // leaf 列表完整:签名信封的每一个组件都在,且全部 included、零 skip。
+    expect(detail.components).toEqual(
+      envelope.components.map((component) => ({
+        componentId: component.id,
+        role: component.id === envelope.root ? "root" : "leaf",
+        required: component.required,
+        included: true,
+        skipReasonCode: null,
+      })),
+    )
+    // payload 真的按签名 digest 取过 —— 拒绝路径是 0 次,这条必须非 0,否则「接受」只是没走到。
+    // (browse 与 detail 各自 refresh 一次,所以按去重集合比对。)
+    expect([...new Set(fetched)]).toEqual(envelope.components.map((component) => component.payloadRef.sha256))
+    expect(fetched.length).toBeGreaterThan(0)
+    // 签名的密钥前置一路传到 safe view,而注入目标(headersTemplate)不上线。
+    expect(detail.prerequisites.status).toBe("required-action")
+    expect(detail.prerequisites.items.map((item) => item.prerequisiteId).sort()).toEqual([
+      "mcp:generic-remote#A_KEY",
+      "mcp:generic-remote#B_TOKEN",
+    ])
+    expect(JSON.stringify(detail)).not.toContain("headersTemplate")
+  })
+
+  /**
+   * 同一份产物的 Bundle 语料(root agent + skill leaf + optional mcp leaf)。合同 v2 已经**接受**
+   * 这张图 —— 三个组件全部 supported、leaf 列表完整 —— 但 §5.1 门二仍站着:admission 尚未按图
+   * 安装,放行等于「用户点了只装第一个组件」。所以终态是**具名的** `package-bundle-activation-pending`,
+   * 不是 `package-invalid`。这两者的区别正是本票的判据:re-vendor 之前它是后者(信封没有 root)。
+   * 翻开门二是 `#697` 的活,判据是它自己的生产 wiring test。
+   */
+  test("the pinned Bundle artifact decodes into a complete leaf list and stops only at 门二", async () => {
+    const { envelope, payloadByDigest, publishedVerdict } = await vendoredProducerPackage(
+      "expected.bundle.compiled.json",
+    )
+    expect(envelope.components.length).toBeGreaterThan(1)
+    expect(publishedVerdict).toBe("compatible")
+
+    const fetched: string[] = []
+    const refresh = () =>
+      evaluateRemoteCatalogPackages(rawResult(envelope), {
+        packageInstallability: {
+          fetchPayload: async (ref) => {
+            fetched.push(ref.sha256)
+            return payloadByDigest.get(ref.sha256) ?? new Uint8Array()
           },
         },
       })
@@ -356,8 +439,66 @@ describe("package installability production wiring", () => {
       undefined,
       envelope.prelude.packageId,
     )) as CatalogPackageViewV1
-    expect(detail.verdict).toBe("blocked")
-    expect(detail.action).toEqual({ kind: "none", enabled: false, reasonCode: "package-invalid" })
+
+    expect(detail.action).toEqual({
+      kind: "none",
+      enabled: false,
+      reasonCode: "package-bundle-activation-pending",
+    })
+    // 图被合同接受:每个组件都在列表里,root/leaf 角色正确,零 skip。若 re-vendor 没做对,
+    // 这里会是 `package-invalid` 且 components 为空。
+    expect(detail.components).toEqual(
+      envelope.components.map((component) => ({
+        componentId: component.id,
+        role: component.id === envelope.root ? "root" : "leaf",
+        required: component.required,
+        included: true,
+        skipReasonCode: null,
+      })),
+    )
+    expect(detail.components.filter((component) => component.role === "root")).toHaveLength(1)
+    // 门二在取 payload 之前:永不安装的包不产生任何网络请求。
+    expect(fetched).toEqual([])
+  })
+
+  /**
+   * §4.3:optional 且**宿主不支持**的 leaf 必须精确标 skipped,并带 decoder 自己的原因码。
+   * 语料里没有这样的组件(上游只发布宿主支持的 profile),所以从**真实 Bundle 字节**派生一个
+   * 负向:把最后一个 optional leaf 的 capability 换成本 build 不认识的 token,并同步签名并集
+   * (§4.3 第一层要求并集含全部组件)。这是**把语料变坏**,不是补字段让它通过。
+   * 违规项放在集合最后一个 —— 「只看第一个元素」的实现要能被抓住。
+   */
+  test("an optional leaf this build cannot support is marked skipped, verbatim from the decoder", async () => {
+    const { envelope, payloadByDigest } = await vendoredProducerPackage("expected.bundle.compiled.json")
+    const optional = envelope.components.filter((component) => !component.required)
+    expect(optional.length, "语料需要至少一个 optional leaf").toBeGreaterThan(0)
+    const target = optional.at(-1)!
+    expect(envelope.components.at(-1)!.id, "违规项必须不是第一个元素").toBe(target.id)
+    ;(target as { capabilities: string[] }).capabilities = ["alpha.future-unsupported.v1"]
+    ;(envelope as { capabilities: string[] }).capabilities = [
+      ...new Set(envelope.components.flatMap((component) => component.capabilities)),
+    ].sort()
+
+    const refresh = () =>
+      evaluateRemoteCatalogPackages(rawResult(envelope), {
+        packageInstallability: {
+          fetchPayload: async (ref) => payloadByDigest.get(ref.sha256) ?? new Uint8Array(),
+        },
+      })
+    const handlers = registeredHandlers(refresh)
+    const detail = (await handlers.get(PACKAGE_DETAIL_IPC_CHANNEL)!(
+      undefined,
+      envelope.prelude.packageId,
+    )) as CatalogPackageViewV1
+
+    const skipped = detail.components.find((component) => component.componentId === target.id)!
+    expect(skipped.included).toBe(false)
+    expect(skipped.skipReasonCode).toBe("component-capability-unsupported")
+    // 精确:**只有**它被跳过,其余组件照常在列。
+    expect(detail.components.filter((component) => !component.included).map((c) => c.componentId)).toEqual([
+      target.id,
+    ])
+    expect(detail.components).toHaveLength(envelope.components.length)
   })
 
   test("the real bundled Catalog has no package instance; this gate marks its constructed reachability", () => {

@@ -22,20 +22,29 @@ const artifact = resolve(import.meta.dir, "../../../alpha-contracts-consumer/ven
 const canonicalBytes = (value: unknown) => new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`)
 
 /**
- * The **pinned producer output**, exactly as vendored. Under the v2 host contract it is missing
- * `root`, so it is now expected to be *refused* — see the §5.1 transition gate below. It is
- * deliberately never patched into compliance here: silently adding `root` would make this suite
- * green even when the real compiler still emits an incompatible envelope, which is precisely the
- * false gate the transition rule exists to prevent.
+ * The **pinned producer output**, exactly as vendored — envelope and component payloads both, with
+ * no structural patch of any kind. The payload bytes are re-serialised from the corpus's own
+ * `payloads` map and keyed by the digest the *signed envelope* declares, so bytes that do not
+ * reproduce their own `payloadRef` fail the host's digest gate instead of quietly passing.
+ * Patching the corpus into compliance would make this suite green even when the real compiler
+ * emits an envelope this host refuses — precisely the false gate the §5.1 transition rule exists
+ * to prevent.
  */
-const vendoredProducerEnvelope = async () =>
-  structuredClone(
-    (
-      (await Bun.file(resolve(artifact, "expected.mcp-remote.compiled.json")).json()) as {
-        envelope: AlphaPackageEnvelopeV1
-      }
-    ).envelope,
+const vendoredProducerPackage = async (file: string) => {
+  const compiled = (await Bun.file(resolve(artifact, file)).json()) as {
+    envelope: AlphaPackageEnvelopeV1
+    payloads: Record<string, unknown>
+    normalizedRecord: { root: { compatibility: { verdict: string } } }
+  }
+  const envelope = structuredClone(compiled.envelope)
+  const payloadByDigest = new Map<string, Uint8Array>(
+    envelope.components.map((component) => [
+      component.payloadRef.sha256,
+      canonicalBytes(compiled.payloads[component.id]),
+    ]),
   )
+  return { envelope, payloadByDigest, publishedVerdict: compiled.normalizedRecord.root.compatibility.verdict }
+}
 
 /**
  * A host-owned v2 envelope carrying the same identity and presentation the producer corpus uses.
@@ -789,35 +798,44 @@ describe("package installability authority", () => {
     })
   })
 
-  // ── §5.1 门一:跨仓过渡期 ──────────────────────────────────────────────────
-  // 本票合并后,旧的 vendored producer 产物在新合同下**应当被拒**。这是正确行为,不是回归。
-  // 这条用例故意直接读那份 pinned 产物、**不做任何结构补丁** —— 手工给它补上 `root` 会让
-  // 「真实 compiler 仍然产不出 v2 信封」这件事静默全绿,那正是假闸门。
-  // P2-B′ re-vendor 之后这条会响亮地红,届时由那张票翻成正向。
-  test("the pinned producer artifact is refused until the compiler emits a v2 envelope", async () => {
-    const envelope = await vendoredProducerEnvelope()
-    expect(Object.hasOwn(envelope, "root"), "pinned producer已经产出 root 了,请翻转本闸").toBe(
-      false,
+  // ── §5.1 门一:跨仓过渡期,**已翻正向**(`#759`)──────────────────────────────
+  // re-vendor 到 alpha-web@6e0db57d 之后,pinned producer 产物在 v2 合同下必须被**接受**。
+  // 这条用例直接读那份产物、**不做任何结构补丁** —— 手工补字段会让「真实 compiler 又产出了
+  // 宿主拒收的信封」静默全绿,那正是假闸门。上游哪天回退,这条响亮地红。
+  test("the pinned producer artifact is accepted now that the compiler emits a v2 envelope", async () => {
+    const { envelope, payloadByDigest, publishedVerdict } = await vendoredProducerPackage(
+      "expected.mcp-remote.compiled.json",
     )
+    expect(Object.hasOwn(envelope, "root"), "pinned producer 必须已经产出 root").toBe(true)
 
     const decoded = decodePackageEnvelopeHeaderV1(canonicalBytes(envelope))
-    expect(decoded.ok).toBe(false)
-    expect(decoded.ok ? "" : decoded.errors.join("\n")).toContain("envelope.root")
+    expect(decoded.ok ? "" : (decoded as { errors: string[] }).errors.join("\n")).toBe("")
+    expect(decoded.ok).toBe(true)
+    if (!decoded.ok) return
+    expect(decoded.components.every((entry) => entry.status === "supported")).toBe(true)
 
-    let fetches = 0
+    const fetched: string[] = []
     const view = await evaluatePackageForHost(envelope, {
-      fetchPayload: async () => {
-        fetches++
-        return new Uint8Array()
+      fetchPayload: async (ref) => {
+        fetched.push(ref.sha256)
+        const payload = payloadByDigest.get(ref.sha256)
+        if (!payload) throw new Error(`producer corpus has no payload for ${ref.sha256}`)
+        return payload
       },
     })
-    expect(view.verdict).toBe("blocked")
+    // 宿主判决 = 发布端自己发布的判决。这一边不另写一份期望值。
+    expect(publishedVerdict).toBe("compatible")
+    expect(view.verdict).toBe(publishedVerdict)
     expect(view.action).toEqual({
-      kind: "none",
-      enabled: false,
-      reasonCode: "package-invalid",
+      kind: "resolve-prerequisite",
+      enabled: true,
+      reasonCode: "package-prerequisite-required",
     })
-    expect(fetches, "拒绝必须发生在取 payload 之前").toBe(0)
+    // 字节真的按签名 digest 取过并通过了完整性闸 —— 拒绝路径这里会是 0 次。
+    expect(fetched).toEqual(envelope.components.map((component) => component.payloadRef.sha256))
+    expect(view.components.every((component) => component.included && component.skipReasonCode === null)).toBe(
+      true,
+    )
   })
 
   // ── §5.1 门二 + §4.3 ────────────────────────────────────────────────────────

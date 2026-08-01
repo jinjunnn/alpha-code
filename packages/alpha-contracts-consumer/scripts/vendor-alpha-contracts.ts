@@ -91,7 +91,7 @@ const UPSTREAMS = [
     // older optional staged fixtures above, an unavailable checkout or missing commit is a hard
     // failure:provenance cannot be proved by a self-consistent replacement lock.
     repo: "jinjunnn/alpha-web",
-    commit: "83acf3a513cdda2da9fadddfea1a4ee837e197d2",
+    commit: "6e0db57d6c7d9867a450fccf6db5453e417dc58e",
     lock: "alpha-web-extension-package.lock.json",
     vendor: "vendor/alpha-web-extension-package",
     sourceEnv: "ALPHA_WEB_EXTENSION_PACKAGE_SOURCE",
@@ -99,12 +99,21 @@ const UPSTREAMS = [
     sourceFallback: "../../../alpha-web",
     sourcePrefix: "contracts/extension-package/artifact",
     artifactPath: "contracts/extension-package/artifact",
-    artifactSha256: "98f89f0e5d4da21f8d677b5c007f2bcc0fca3ebc02f517b9db5c2943b8f14555",
+    artifactSha256: "d229717f895fcfb9a75bc6fdcc6ab2338f057ef1778db15e8720c31a1affc446",
     commitBound: true,
+    // #759 / alpha-web#109:producer 追平宿主合同 v2。语料从 22 个文件长到 36 个 —— 新增的是
+    // flat Bundle 正/负向、OAuth 与 Alpha Connection 的正向语料(旧的 `input.remote-oauth.invalid.json`
+    // 随之消失,它在 v2 下是**合法**输入),外加 Bundle 组件引用的两份 markdown 资产。
+    // 这两份 `.md` 是本清单里第一批非 JSON 字节,vendor 循环的 JSON 语法自检因此按扩展名分流。
     files: [
       "alpha-package-compatibility-report-v1.schema.json",
       "alpha-package-declaration-v1.schema.json",
+      "asset.generic-bundle-agent.md",
+      "asset.generic-bundle-skill.md",
+      "expected.bundle.compiled.json",
       "expected.mcp-remote.compiled.json",
+      "expected.remote-connection.compiled.json",
+      "expected.remote-oauth.compiled.json",
       "extension-package-error-v1.schema.json",
       "extension-package-producer-artifact.v1.json",
       "generic-profiles.v1.json",
@@ -113,11 +122,20 @@ const UPSTREAMS = [
       "host-extension-package-artifact.v1.json",
       "host-extension-package.registry.v1.json",
       "input.author-capabilities.invalid.json",
+      "input.author-dependencies.invalid.json",
       "input.author-secret-value.invalid.json",
+      "input.bundle-duplicate-component.invalid.json",
+      "input.bundle-overflow.invalid.json",
+      "input.bundle-root-leaf-collision.invalid.json",
+      "input.bundle.valid.json",
       "input.cloud-profile.invalid.json",
       "input.mcp-remote.valid.json",
+      "input.oauth-authorization-header.invalid.json",
+      "input.oauth-prerequisite-collision.invalid.json",
+      "input.remote-auth-unknown.invalid.json",
+      "input.remote-connection.valid.json",
       "input.remote-http.invalid.json",
-      "input.remote-oauth.invalid.json",
+      "input.remote-oauth.valid.json",
       "input.remote-userinfo.invalid.json",
       "normalized-package-build-record-v1.schema.json",
       "report.blocked.json",
@@ -278,7 +296,9 @@ for (const upstream of UPSTREAMS) {
     if (!("commitBound" in upstream) && !(await source.exists()))
       throw new Error(`approved contract artifact is missing: ${path}`)
     const data = await sourceBytes(upstream, sourceRoot, path)
-    JSON.parse(new TextDecoder().decode(data))
+    // 语法自检只对 JSON 成立。Bundle 语料引用的 markdown 资产同样按 pin 的 git object 逐字节
+    // 取回并入 lock —— provenance 由哈希三方比对保证,不由「能不能 JSON.parse」保证。
+    if (path.endsWith(".json")) JSON.parse(new TextDecoder().decode(data))
     await Bun.write(resolve(vendorRoot, path), data, { createPath: true })
     files.push({ path, sha256: sha256(data) })
   }
