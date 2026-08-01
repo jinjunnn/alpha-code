@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url"
 import { opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
 import { agentMdToEntry } from "./agent-md-entry"
 import { persistAgentEntry, readAgentEntry, readAgentEntryStrict, removeAgentEntry } from "./ext-config"
-import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
+import { alphaGlobalRoot } from "./alpha-installs"
 import { tryGetAlphaEnvironment } from "./alpha-environment"
 import { projectScopeIdentity, type ScopeIdentity } from "./ext-receipt-v2"
 import { checkUncuratedConflict, recordUncuratedInstall, type UncuratedOrigin } from "./ext-uncurated-record"
@@ -392,9 +392,10 @@ function resolveRootsReadonly(target: InstallTarget | undefined): Roots | { erro
 }
 
 /**
- * Uninstall a skill/agent: remove its truth dir/file under .alpha, unbridge its .opencode link, and
- * drop the receipt. Legacy installs (ALPHA_LEGACY_INSTALL_ROOT era, no bridge/receipt) are removed
- * from the old XDG root by name. Missing target = already-gone success (idempotent).
+ * Uninstall a skill/agent: remove its truth dir/file under .alpha and unbridge its .opencode link.
+ * REQ-128 `#706`:**不动账本** —— 去账只归外层单点提交。Legacy installs
+ * (ALPHA_LEGACY_INSTALL_ROOT era, no bridge/receipt) are removed from the old XDG root by name.
+ * Missing target = already-gone success (idempotent).
  */
 export function removeFsInstall(type: "skill" | "agent", name: string, target?: InstallTarget): FsResult {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid name" }
@@ -431,7 +432,11 @@ export function removeFsInstall(type: "skill" | "agent", name: string, target?: 
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to remove" }
   }
-  removeReceipt(roots.alphaDir, type, name)
+  // REQ-128 `#706`:这里**不再**碰账本。原先内层 `removeReceipt` 有两个真问题:
+  //   ① 它走的是 v1 物理写器,会把账本重写成 v:2 —— V3 的 packageGraphs/claims 静默蒸发;
+  //   ② 它在删完实物之后跑、返回值被忽略 —— 账本拒写时用户看到「卸载失败」而东西已经没了。
+  // 账本只由外层单点提交(uninstallByKey / 恢复期的 commitUninstall),claim-aware 判决则在
+  // 删任何实物之前就做完(planDirectUninstall)。
   return { ok: true, files: removed }
 }
 

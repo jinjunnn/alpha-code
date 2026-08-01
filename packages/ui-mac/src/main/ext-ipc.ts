@@ -57,7 +57,8 @@ import { grantSessionGrant, revokeSessionGrant, sessionGrantRegistry } from "./e
 import { adoptProjectLedger } from "./ext-project-adopt"
 import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS } from "./ext-write-channels"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
-import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
+import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedgerV2, removeRecordV2 } from "./ext-receipt-v2"
+import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
 import { releaseAlphaConnectionBindingsV1 } from "./alpha-connection-store"
 import { recoverExtensionTransactions, recoverExtensionTransactionsInHeldLock, recoveryClean, type RecoverOptions } from "./ext-transaction"
@@ -452,10 +453,10 @@ export function registerExtIpcHandlers(
     // 按 key 路由到各自类型化探针(#358 agent / #359 plugin payload);两者对各自方案外的 key
     // 均 fail-closed —— 未知 file item 绝不静默放行。组合有第二份 = 恢复与安装的健康判据会漂移。
     probe: extensionHealthProbeRouter(root),
-    commitReceipt: (recs) => {
-      const written = upsertRecordsV2(root, recoveryReceiptInputs(recs))
-      if (!written.ok) throw new Error(`recovery receipt commit failed: ${written.reason}`)
-    },
+    // REQ-128 `#706`:前滚与主提交共用 `commitTransactionLedger` —— journal 里带着 package
+    // mutation 的事务在恢复期也必须重建**同一份** V3 mutation,否则前滚会写出一本没有
+    // graph/claims 的账本(而 child records 已 durable),owner 集合从此失据。
+    commitReceipt: (recs) => commitTransactionLedger(root, recs),
     // #336 r3(r2 Major 1):receipt durable 证伪 —— 恢复进入任何回滚分支前读账本判定。
     // valid + 同 txId = durable(**任一** item 在账即禁回滚,防半批分叉);absent/v1/异 txId =
     // 确证未落(允许回滚);corrupt/ledger-corrupt = 无法证伪 → 抛错(引擎 fail-closed 保留

@@ -17,6 +17,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { agentFileProbe } from "./ext-agent-install"
 import { extensionHealthProbeRouter, seedPluginFileProbe } from "./ext-health-probe-router"
+import { computeGraphDigest, type PackageGraphV1 } from "./ext-package-ledger-v3"
 import { skillGenerationProbe } from "./ext-skill-generations"
 import { runExtensionTransaction, type HealthProbe, type TxPlanItem } from "./ext-transaction"
 import { createPackageAdmissionCoordinator } from "./package-admission"
@@ -185,8 +186,42 @@ describe("REQ-128 #705 single-install builder parity", () => {
           origin: "catalog",
           installedAt: "2026-07-31T00:00:00.000Z",
         },
+        // REQ-128 `#706`:root item 多带一份 V3 mutation 静态半场。这是 `#705` parity 之后
+        // **唯一**的计划面增量,所以在这里逐字钉死 —— 形状漂了就红。
+        packageMutation: {
+          operation: "install",
+          graphBeforeDigest: null,
+          packageRecord: {
+            packageId: "package:parity-skill",
+            envelopeDigest: (plan.items[0]!.packageMutation as { packageRecord: { envelopeDigest: string } }).packageRecord.envelopeDigest,
+            graphDigest: (plan.items[0]!.packageMutation as { packageRecord: { graphDigest: string } }).packageRecord.graphDigest,
+            version: "1.0.0",
+            transactionId: "tx-assigned-at-commit",
+            installedAt: "2026-07-31T00:00:00.000Z",
+          },
+          graphAfter: {
+            packageId: "package:parity-skill",
+            envelopeDigest: (plan.items[0]!.packageMutation as { graphAfter: { envelopeDigest: string } }).graphAfter.envelopeDigest,
+            graphDigest: (plan.items[0]!.packageMutation as { graphAfter: { graphDigest: string } }).graphAfter.graphDigest,
+            root: {
+              componentId: "skill:demo",
+              kind: "skill",
+              name: "demo",
+              required: true,
+              manifestDigest: plan.items[0]!.manifestDigest,
+            },
+            children: [],
+          },
+          claimMutations: [
+            { op: "acquire", kind: "skill", name: "demo", owner: `bundle:package:parity-skill@${plan.items[0]!.manifestDigest}` },
+          ],
+        },
       },
     ])
+    // 图/记录的 digest 不是自由字符串:重算一遍必须逐字相同(篡改任一节点 → 解码期就红)。
+    const mutation = plan.items[0]!.packageMutation as { graphAfter: PackageGraphV1; packageRecord: { graphDigest: string } }
+    expect(computeGraphDigest(mutation.graphAfter)).toBe(mutation.graphAfter.graphDigest)
+    expect(mutation.packageRecord.graphDigest).toBe(mutation.graphAfter.graphDigest)
     expect(plan.authorization).toEqual({ confirmed: { "skill--demo": [] }, decidedAt: "2026-07-31T00:00:00.000Z" })
     const staging = join(tmp, "staging")
     mkdirSync(staging, { recursive: true })
