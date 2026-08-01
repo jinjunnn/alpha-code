@@ -65,6 +65,8 @@ const envelope = (
 ) => ({
   schema: "alpha.host-extension-package.v1",
   prelude: { packageId, version: "1.0.0" },
+  // #749 合同 v2:信封新增必填 `root`。本夹具是单组件,root 即该组件自身。
+  root: componentId,
   presentation: { displayName: componentId, description: "REQ-128 #705 wiring fixture" },
   components: [
     {

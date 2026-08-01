@@ -81,6 +81,8 @@ function envelopeFor(kind: "skill" | "agent" | "mcp") {
     envelope: {
       schema: "alpha.host-extension-package.v1",
       prelude: { packageId: `package:parity-${profileId}`, version: "1.0.0" },
+      // #749 合同 v2:信封新增必填 `root`。本夹具是单组件,root 即该组件自身。
+      root: `${kind}:demo`,
       presentation: { displayName: profileId, description: "REQ-128 #705 parity fixture" },
       components: [
         {
