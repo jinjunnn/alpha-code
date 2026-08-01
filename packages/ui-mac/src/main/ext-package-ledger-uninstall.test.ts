@@ -173,10 +173,17 @@ const artifactPath = (kind: string, name: string): string =>
       ? path.join(root, "agents", `${name}.md`)
       : path.join(root, "plugins", name)
 
-/** 生产写器造账本:①单装 5 个 shared child ②applyPackageMutation 激活 V3 ③V3 之后再单装 5 个 solo。 */
+/**
+ * 生产写器造账本:①applyPackageMutation 装包(child record 由 mutation 自己带来,这正是
+ * `commitTransactionLedger` 从 commit records 派生 upsert 的形状)②V3 之后再单装 5 个 solo。
+ *
+ * `#698` review R1 Blocker 3 修正:此前这里**先** `upsertRecordsV2(SHARED)` 再 apply。那让 5 个
+ * child 变成「V3 之前就在账上、且没人认领」的存量 —— 也就是「用户自己先装过」的语义,而本组用例
+ * 通篇自称测的是 **fresh package 安装后的默认形状**。当时之所以还能绿,是因为收编循环会跳过本次
+ * mutation 碰过的 key(那正是 Blocker 3);判据修正之后,那一步会如实给它们打上 `legacy-protected`。
+ * 换句话说:这个夹具当初是**靠着那个缺陷**才表达出它想表达的意思。真正的 fresh 形状不需要预热。
+ */
 function seedV3Ledger(): void {
-  const first = upsertRecordsV2(root, SHARED.map((c) => upsertInput(c.kind, c.name)))
-  if (!first.ok) throw new Error(`fixture: seeding shared children failed: ${first.reason}`)
   const applied = applyPackageMutation(root, packageMutation())
   if (!applied.ok) throw new Error(`fixture: activating V3 failed: ${applied.reason}`)
   const second = upsertRecordsV2(root, SOLO.map((c) => upsertInput(c.kind, c.name)))

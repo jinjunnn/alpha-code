@@ -617,6 +617,15 @@ export const dict = {
   "alpha.ext.packageActionUpdateAlpha": "检查更新",
   "alpha.ext.packageActionResolvePrerequisite": "处理前置条件",
   "alpha.ext.packageActionNone": "不可用",
+  // REQ-128 `#698`:装过之后,这一屏是把整个扩展包拿掉的唯一入口。
+  "alpha.ext.packageActionUninstall": "移除此扩展包",
+  "alpha.ext.packageInstalledHere": "已安装在这台 Mac 上",
+  "alpha.ext.packageRemoved": "扩展包已移除",
+  "alpha.ext.packageRemoveFailed": "无法移除此扩展包",
+  "alpha.ext.packageKeptShared": "保留(另一个扩展包仍在使用)",
+  "alpha.ext.packageKeptUserInstalled": "保留(你自己也单独装过它)",
+  "alpha.ext.packageKeptLegacy": "保留(在 Alpha 开始记录扩展包之前就装了)",
+  "alpha.ext.packageKeptUnmanaged": "保留(这一项不由 Alpha 管理)",
   "alpha.ext.verifyPending": "待核实",
   "alpha.ext.verifyNoteTitle": "待核实事项",
   // REQ-105(#197):归档连接器诚实警示 + Excel 审计锁定

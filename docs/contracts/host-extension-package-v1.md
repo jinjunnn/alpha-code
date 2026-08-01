@@ -80,3 +80,9 @@ summaries; and bounded presentation. Raw envelopes, payload references, URLs,
 commands, header templates, secret values, and secret injection targets do
 not cross the IPC boundary. Phase 1 has one required component, so the wire
 does not reserve optional-child or Alpha Connection states.
+
+## Beyond the first install
+
+Update, uninstall, shared-child claims and the planning-time exact-digest
+conflict gate are stated in
+[`extension-package-lifecycle.md`](extension-package-lifecycle.md).

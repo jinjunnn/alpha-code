@@ -73,6 +73,47 @@ type CommonInput = {
   receipt: UpsertInput
 }
 
+/**
+ * `#698`(review R2):离场 child 的 **config 清除**,表达成普通的事务计划项。
+ *
+ * 为什么是这个形状,而不是提交后的一条接缝(前两版都被证伪):
+ *   · 放事务**外**(R1 前)⇒ 事务回滚时实物已删,半态;
+ *   · 放事务**内的 commitReceipt**(R1 后)⇒ 引擎正持着 root bundle 锁,而 agent/MCP 的配置删除
+ *     内部要取**同一把非重入锁**(`ext-config.ts` `withConfigWriteLock`)⇒ Agent/MCP 清理必然失败,
+ *     而账本已 durable ⇒ 吞掉 warning 报成功。
+ *
+ * config 编辑本来就是事务自己的东西:`prepareConfigTx` 在**计划期、进程内**把 edits 塌缩成
+ * pre/next 整文件 image(journal 只落 digest,`value: undefined` 不需要活过 JSON),apply 在 switch
+ * 阶段、restore 走 before-image。所以离场 child 的 config 清除不需要第二把锁、不需要提交后接缝,
+ * 原子性由构造保证。已执行验证:同一 target 上「新增 + 删除」两条 item 提交后键消失且无关键不动;
+ * receipt commit 失败回滚后被删的键**逐字回来**。
+ *
+ * skill 不出 config item:它的启用面是账本派生的允许集(`writeLedgerFile` 按 records 重算),
+ * 随同一次 `applyPackageMutation` 一起变 —— 再造一条 config item 就是第二个真源。
+ */
+export function buildDepartingChildConfigItemsV1(input: {
+  root: string
+  children: ReadonlyArray<{ kind: string; name: string }>
+}): TxPlanItem[] {
+  const items: TxPlanItem[] = []
+  for (const child of input.children) {
+    // keyPath 与 target 与**安装侧逐字同源**(见上面两个 builder):写第二份就是替配置文法造替身。
+    if (child.kind === "agent")
+      items.push({
+        key: `${agentConfigItemKey(child.name)}--departing`,
+        action: "config",
+        config: { target: join(input.root, "alpha.jsonc"), edits: [{ keyPath: ["agent", child.name], value: undefined }] },
+      })
+    else if (child.kind === "mcp")
+      items.push({
+        key: `mcp--${child.name}--departing`,
+        action: "config",
+        config: { target: join(input.root, "alpha.jsonc"), edits: [{ keyPath: ["mcp", child.name], value: undefined }] },
+      })
+  }
+  return items
+}
+
 export type SkillTxBuildInputV1 = CommonInput & { asset?: Buffer }
 export type AgentTxBuildInputV1 = CommonInput & { asset?: Buffer; agentEntry?: Record<string, unknown> }
 export type McpTxBuildInputV1 = CommonInput & {

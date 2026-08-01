@@ -20,6 +20,8 @@ import type {
 import { evaluatePackageForHost, runCatalogInstallWithPackagePreflight } from "../src/main/package-installability"
 import { createPackageAdmissionCoordinator } from "../src/main/package-admission"
 import { writeCapabilityGrantSync } from "../src/main/ext-capability-grants"
+import { readPackageGraphs, readPackageLedgerStateV1 } from "../src/main/ext-receipt-v2"
+import { uninstallPackageV1 } from "../src/main/ext-package-uninstall"
 import {
   evaluateRemoteCatalogPackages,
   PACKAGE_DETAIL_IPC_CHANNEL,
@@ -96,6 +98,9 @@ mock.module("../src/renderer/alpha-ui/Banner", () => ({
 const { createComponent } = solid
 const { render } = solidWeb
 const { ExtensionHub } = await import("../src/renderer/extensions/extension-hub")
+// 必须**动态** import:静态 import 会在 registrator 之前牵出 solid-js,整个文件拿到 server 构建
+// (指纹 = 报错与改动无关且全文件一起挂)。这条纪律写在 CLAUDE.md 的《本机验证陷阱》里。
+const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
 const { setHubSection } = await import("../src/renderer/extensions/ext-hub-state")
 
 const artifact = resolve(import.meta.dir, "../../alpha-contracts-consumer/vendor/alpha-web-extension-package")
@@ -284,7 +289,11 @@ const packageFixture = async () => {
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown
 
+let injectInstallWarning: string | null = null
+
 async function mountHarness(options?: {
+  /** `#698` R3:给真实 admission 成功响应挂一条具名 warning,验证它到达用户面。 */
+  injectInstallWarning?: string
   preauthorized?: boolean
   failConfirmationOnce?: boolean
   failPreviewOnce?: boolean
@@ -329,6 +338,7 @@ async function mountHarness(options?: {
     refresh,
   )
 
+  injectInstallWarning = options?.injectInstallWarning ?? null
   const browseResults: unknown[] = []
   const detailResults: unknown[] = []
   const installIntents: unknown[] = []
@@ -409,7 +419,14 @@ async function mountHarness(options?: {
             },
             evaluator: fixture.evaluator,
           })
-          installResults.push(result)
+          // `#698` R3:把一条具名 warning 挂在**真实** admission 成功响应上,验证它一路到达用户面。
+          // 后端此刻已经诚实(离场组件停用了、残留没删掉会带 warning),但 hub 曾把它整个丢掉 ——
+          // 「诚实只诚实到 IPC 边界」对用户不成立。
+          const withWarning =
+            injectInstallWarning && typeof result === "object" && result !== null && "ok" in result && result.ok === true
+              ? { ...result, warning: injectInstallWarning }
+              : result
+          installResults.push(withWarning)
           if (
             typeof result === "object" &&
             result !== null &&
@@ -421,8 +438,38 @@ async function mountHarness(options?: {
             typeof intent.catalogId === "string"
           )
             fixture.complete(intent.catalogId)
-          return result
+          return withWarning
         },
+        // `#698`:详情页的「移除此扩展包」由这两条读/写决定是否出现、按下去做什么。两条都接
+        // **生产实现**(不是常量桩):否则「装完之后按钮会出现」就成了一句没人验证的话。
+        packageInstalled: async (catalogId: string) => {
+          const state = readPackageLedgerStateV1(globalRoot)
+          if (!state.ok) return { ok: false as const, reason: state.reason }
+          const graph = state.packageGraphs.find((candidate) => candidate.packageId === catalogId)
+          if (!graph) return { installed: false as const }
+          return {
+            installed: true as const,
+            packageId: graph.packageId,
+            graphDigest: graph.graphDigest,
+            components: [graph.root, ...graph.children].map((node) => ({
+              componentId: node.componentId,
+              kind: node.kind as string,
+              name: node.name,
+              required: node.required,
+            })),
+          }
+        },
+        uninstallPackage: async (packageId: string) =>
+          uninstallPackageV1(packageId, {
+            globalRoot: () => globalRoot,
+            installers: {
+              removeFsInstall: () => ({ ok: true as const, files: [] }),
+              removeMcpConfig: () => ({ ok: true as const }),
+              removeMcpSecretsStrict: () => ({ ok: true as const }),
+              releaseAlphaConnectionBindings: () => ({ ok: true as const }),
+              removeInstallGrants: () => ({ ok: true as const, removed: [] }),
+            },
+          }),
         inventoryView: async () => undefined,
         advisoryActive: async () => ({ ids: [], fresh: true }),
         migrateScan: async () => ({
@@ -439,6 +486,9 @@ async function mountHarness(options?: {
   root.id = "root"
   root.className = "a-ui"
   document.body.append(root)
+  // 真实的 toast 视口 —— `flash()` 走 pushToast,不挂视口就什么都渲染不出来。
+  // 断言必须落在**用户真能看到的 DOM** 上,而不是「hub 调过 flash」这种内部事实。
+  disposals.push(render(() => createComponent(ToastViewport, {}), document.body.appendChild(document.createElement("div"))))
   const dispose = render(
     () =>
       createComponent(ExtensionHub, {
@@ -917,6 +967,79 @@ describe("package detail production renderer path", () => {
 
     cancelPackageAuthorization()
     expect(JSON.stringify(harness.installResults)).not.toContain(secretCanary)
+  })
+
+  /**
+   * `#698` 的**用户可达路径闭合**。`#706` 之后,属于 Bundle 的单个部件被单独移除会被响亮拒绝
+   * (「它还属于这个包」)—— 而在这颗按钮之前,那句拒绝指向的地方并不存在:用户装完一个扩展包
+   * 就再也删不掉它。这条从「装上」一路走到「移除」,每一跳都是生产件:真 ExtensionHub 卡片 →
+   * 真 ExtensionDetail → 真 admission → 真事务 → 真 V3 账本 → 真 `uninstallPackageV1`。
+   */
+  /**
+   * `#698` R3 Major:后端诚实到 IPC 边界还不够 —— 用户得**真的看见**。
+   *
+   * 这条走真实 ExtensionHub + 真实 ToastViewport:admission 的成功响应带一条具名 warning
+   * (update 后「离场组件已停用、但残留文件没删掉」正是这条),断言它出现在用户能读到的 DOM 里。
+   * 把 hub 里那行呈现删掉,本条立刻变红 —— 这就是它与「hub 调过 flash」之类内部断言的区别。
+   */
+  test("a named warning on a successful install reaches the user surface, not just the IPC boundary", async () => {
+    const canary = "R3_NAMED_WARNING_ba17c2"
+    const harness = await mountHarness({ injectInstallWarning: canary })
+    click(packageCard(MIXED_BUNDLE_PACKAGE_ID))
+    await waitFor(() =>
+      expect(document.querySelector(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeInstanceOf(HTMLElement),
+    )
+    const detail = document.querySelector<HTMLElement>(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)!
+    click(detail.querySelector(".alpha-ext-dsub button"))
+    await waitForPackageAuthorization(MIXED_BUNDLE_PACKAGE_ID)
+    fillPackageSecret(secretCanary)
+    confirmPackageAuthorization()
+    await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true, warning: canary }))
+
+    // 用户面:toast 视口里真的出现了那条具名 warning。
+    await waitFor(() =>
+      expect(
+        Array.from(document.querySelectorAll(".a-toast"), (node) => node.textContent ?? "").some((text) => text.includes(canary)),
+        "the named warning never reached any toast the user can read",
+      ).toBe(true),
+    )
+  })
+
+  test("installing a Bundle reveals the remove-package action, and pressing it removes it through production main", async () => {
+    const harness = await mountHarness()
+    click(packageCard(MIXED_BUNDLE_PACKAGE_ID))
+    await waitFor(() =>
+      expect(document.querySelector(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeInstanceOf(HTMLElement),
+    )
+    const detail = () => document.querySelector<HTMLElement>(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)!
+    // 装之前:没有「移除此扩展包」这颗按钮(它不是常显的)。
+    expect(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeNull()
+
+    click(detail().querySelector(".alpha-ext-dsub button"))
+    await waitForPackageAuthorization(MIXED_BUNDLE_PACKAGE_ID)
+    fillPackageSecret(secretCanary)
+    confirmPackageAuthorization()
+    await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true }))
+    // 账本里真的有这张图 —— 按钮出现的依据是 main 的账本,不是 renderer 记得自己点过安装。
+    await waitFor(() =>
+      expect(readPackageLedgerStateV1(harness.globalRoot)).toMatchObject({ ok: true, packageGraphs: [{ packageId: MIXED_BUNDLE_PACKAGE_ID }] }),
+    )
+
+    // 留在同一张详情页上:装完之后按钮必须**当场**出现,不需要退出再进来。
+    await waitFor(() =>
+      expect(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeInstanceOf(HTMLElement),
+    )
+    const remove = detail().querySelector<HTMLElement>(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)!
+    expect(remove.textContent?.trim()).toBe(zh["alpha.ext.packageActionUninstall"])
+
+    click(remove)
+    // 移除之后:图没了(main 说的),按钮跟着消失(renderer 重新问了 main,而不是自己乐观翻转)。
+    await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual([]))
+    await waitFor(() =>
+      expect(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeNull(),
+    )
+    // 没有任何 child 被保留(这个包没和别人共享),所以不显示保留清单。
+    expect(detail().querySelector(".alpha-ext-package-retained")).toBeNull()
   })
 
   test("detail install button drives preview and confirmation through real package admission, then adopts the new view", async () => {

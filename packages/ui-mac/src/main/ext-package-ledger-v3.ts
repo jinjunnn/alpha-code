@@ -113,9 +113,15 @@ export type PackageLedgerMutationV1 = {
   claimMutations: ClaimMutationV1[]
 }
 
-/** journal 里持久化的静态半场(childRecordMutations 在 commit 时由 commit records 派生,
- *  主提交与崩溃前滚同源 —— 两条路径算出同一份 mutation 才谈得上 exact replay)。 */
-export type PackageMutationEnvelopeV1 = Omit<PackageLedgerMutationV1, "transactionId" | "childRecordMutations">
+/** journal 里持久化的静态半场(childRecordMutations 的 **upsert** 半场在 commit 时由 commit records
+ *  派生,主提交与崩溃前滚同源 —— 两条路径算出同一份 mutation 才谈得上 exact replay)。
+ *
+ *  `#698`:**remove 半场没有 commit record 可派生**(被删掉的 child 这次不会产生任何 item),
+ *  所以它必须随 envelope 进 journal。少了它,崩溃前滚会算出一份「只加不减」的 mutation ——
+ *  update 删掉的 child 会在前滚后复活成一条没人认领的 record。 */
+export type PackageMutationEnvelopeV1 = Omit<PackageLedgerMutationV1, "transactionId" | "childRecordMutations"> & {
+  childRemovals: PackageChildRefV1[]
+}
 
 // ── owner token ────────────────────────────────────────────────────────────────────────────────
 
@@ -308,7 +314,7 @@ export function decodePackageRecordV1(input: unknown): Decoded<PackageRecordV1> 
   }
 }
 
-const ENVELOPE_KEYS = new Set(["operation", "packageRecord", "graphBeforeDigest", "graphAfter", "claimMutations"])
+const ENVELOPE_KEYS = new Set(["operation", "packageRecord", "graphBeforeDigest", "graphAfter", "claimMutations", "childRemovals"])
 
 /** journal 里那半场的严格解码(不含 transactionId / childRecordMutations —— 那两样在
  *  commit 时由事务与 commit records 提供,不接受调用方自带)。 */
@@ -355,6 +361,31 @@ export function decodePackageMutationEnvelopeV1(input: unknown): Decoded<Package
           owner: raw.owner as string,
         })
     }
+  // `#698` child removal 半场:严格解码 + 去重。**不接受**指向未知 kind / 非法 name 的删除请求,
+  // 也不接受同一个 child 出现两次(两次 remove 读起来像「删得更彻底」,实际是调用方算错了)。
+  const childRemovals: PackageChildRefV1[] = []
+  if (!Array.isArray(input.childRemovals)) errors.push("packageMutation.childRemovals: must be an array")
+  else {
+    const seen = new Set<string>()
+    for (let i = 0; i < input.childRemovals.length; i++) {
+      const raw = input.childRemovals[i]
+      if (!isObj(raw)) {
+        errors.push(`packageMutation.childRemovals[${i}]: must be an object`)
+        continue
+      }
+      for (const k of Object.keys(raw)) if (k !== "kind" && k !== "name") errors.push(`packageMutation.childRemovals[${i}]: unknown key "${k}"`)
+      if (typeof raw.kind !== "string" || !PACKAGE_LEDGER_KINDS.has(raw.kind)) errors.push(`packageMutation.childRemovals[${i}].kind: invalid`)
+      if (typeof raw.name !== "string" || !isExtensionName(raw.name)) errors.push(`packageMutation.childRemovals[${i}].name: invalid`)
+      if (errors.length > 0) continue
+      const k = `${String(raw.kind)}:${String(raw.name)}`
+      if (seen.has(k)) {
+        errors.push(`packageMutation.childRemovals: duplicate ${k}`)
+        continue
+      }
+      seen.add(k)
+      childRemovals.push({ kind: raw.kind as InstallReceiptType, name: raw.name as string })
+    }
+  }
   if (errors.length > 0) return { ok: false, errors }
   // packageRecord 与 graphAfter 必须互相绑定:install/update 两者都在且 digest 一致;
   // uninstall 两者都为 null。半套 = 「child 已 durable 但 graph 缺失」的另一种写法。
@@ -379,6 +410,7 @@ export function decodePackageMutationEnvelopeV1(input: unknown): Decoded<Package
       graphBeforeDigest: (graphBeforeDigest ?? null) as string | null,
       graphAfter,
       claimMutations,
+      childRemovals,
     },
   }
 }
@@ -444,6 +476,75 @@ export function withoutOwner(claims: readonly PackageClaimV1[], kind: string, na
 /** 整条 claim 拿掉(用户显式直接卸载走这条:连 legacy-protected 一起走,因为 record 也没了)。 */
 export const withoutClaim = (claims: readonly PackageClaimV1[], kind: string, name: string): PackageClaimV1[] =>
   claims.filter((c) => claimKey(c.kind, c.name) !== claimKey(kind, name))
+
+// ── 一次 mutation 的作用域闸(`#698`)───────────────────────────────────────────────────────────
+
+/**
+ * 一个 package mutation **允许触碰什么**。
+ *
+ * 这是 update/uninstall 唯一新增的咽喉。planner 会先算一份判决,但 planner 算错、被绕过、或将来
+ * 多一个调用方时,唯一还站着的就是这里。三条判据各自封一个**账本自身查不出来的**洞:
+ *
+ *   ① **只准动自己的 owner。** 一次 package mutation 里的 `release` 只能释放**本 package 前一代**
+ *      的 owner token,`acquire` 只能获取**本次这一代**的。放开这一条,一个 mutation 就能
+ *      `release` 掉 `standalone:skill:foo`(用户自己装的)或 `legacy-protected`(V3 之前的存量)——
+ *      owner 集合随即变空,record 与实物合法地被删掉,而 `validateV3State` 全绿:它检查的是
+ *      「claim 与 record/graph 互相对得上」,对得上的**空集**是完全自洽的。用户会看到自己单装的
+ *      东西在别人更新一个包时消失。
+ *
+ *   ② **只准动自己图里的 child。** claim mutation 指名的 `(kind,name)` 必须出现在前后两张图之一。
+ *      放开这一条,一个包可以对任意 child `acquire` 自己的 owner —— 那个 child 从此被
+ *      `directUninstallVerdict` 判为「被 Bundle 拥有」,用户再也卸不掉它,而账本层面同样全绿
+ *      (`validateV3State` 只查「bundle owner 有没有对应的图」,不查反向)。
+ *
+ *   ③ **只准删离场的 child。** `remove` 必须指名前一代图里有、这一代图里没有的节点。
+ *
+ * 三条都在**写盘之前**判,拒绝即整次 mutation 作废、账本一个字节不动。
+ */
+export function validatePackageMutationScopeV1(
+  mutation: PackageLedgerMutationV1,
+  graphBefore: PackageGraphV1 | null,
+): { ok: true } | { ok: false; reason: string } {
+  const after = mutation.graphAfter
+  const ownerAfter = after ? bundleOwner(after.packageId, after.root.manifestDigest) : null
+  const ownerBefore = graphBefore ? bundleOwner(graphBefore.packageId, graphBefore.root.manifestDigest) : null
+  const nodeKeys = (graph: PackageGraphV1 | null): Set<string> =>
+    new Set(graph ? [graph.root, ...graph.children].map((node) => `${node.kind}:${node.name}`) : [])
+  const beforeKeys = nodeKeys(graphBefore)
+  const afterKeys = nodeKeys(after)
+
+  for (const cm of mutation.claimMutations) {
+    const k = `${cm.kind}:${cm.name}`
+    if (!beforeKeys.has(k) && !afterKeys.has(k))
+      return {
+        ok: false,
+        reason: `refusing package mutation: claim ${cm.op} names ${k}, which is in neither the before nor the after graph of "${
+          after?.packageId ?? graphBefore?.packageId ?? "<unknown>"
+        }" — a package may only claim its own children`,
+      }
+    const expected = cm.op === "acquire" ? ownerAfter : ownerBefore
+    if (expected === null)
+      return {
+        ok: false,
+        reason: `refusing package mutation: claim ${cm.op} for ${k} has no ${cm.op === "acquire" ? "after" : "before"} graph to derive an owner from`,
+      }
+    if (cm.owner !== expected)
+      return {
+        ok: false,
+        reason: `refusing package mutation: claim ${cm.op} for ${k} names owner ${cm.owner}, but this mutation may only ${cm.op} ${expected} — a package must not touch another owner's claim`,
+      }
+  }
+
+  for (const child of mutation.childRecordMutations) {
+    if (child.op !== "remove") continue
+    const k = `${child.kind}:${child.name}`
+    if (!beforeKeys.has(k))
+      return { ok: false, reason: `refusing package mutation: child removal names ${k}, which the before graph does not contain` }
+    if (afterKeys.has(k))
+      return { ok: false, reason: `refusing package mutation: child removal names ${k}, which is still part of the after graph` }
+  }
+  return { ok: true }
+}
 
 // ── 不变量 ─────────────────────────────────────────────────────────────────────────────────────
 

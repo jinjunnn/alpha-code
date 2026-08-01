@@ -38,6 +38,7 @@ import {
   findClaim,
   isV3Active,
   standaloneOwner,
+  validatePackageMutationScopeV1,
   validateV3State,
   withOwner,
   withoutClaim,
@@ -1113,6 +1114,35 @@ export function readPackageGraphs(root: string): PackageGraphV1[] {
   return parseLedger(root).parsed.packageGraphs
 }
 
+export type PackageLedgerStateReadV1 =
+  | { ok: true; packageGraphs: PackageGraphV1[]; claims: PackageClaimV1[]; recordKeys: ReadonlySet<string> }
+  | { ok: false; reason: string }
+
+/**
+ * REQ-128 `#698`:update/uninstall 判决所需的**一次**账本读。
+ *
+ * 图、claim、record 键必须来自**同一次** `parseLedger`:分三次读会让判决建立在三个时刻的账本上,
+ * 而「这个 child 还有没有别的 owner」正是那种在两次读之间会变的事实。读失败 / 账本损坏一律
+ * 响亮失败 —— 空账本与读不出来是两回事,折叠成「没有图」会把整包卸载变成一次静默的 no-op。
+ *
+ * review R1 Blocker 2:**整体不变量也在这里判**,而不是留给写盘期的 `applyPackageMutation`。
+ * 判决期只解析不校验时,一本带 dangling claim / unknown child / 孤儿 owner 的账本会让计划顺利
+ * 通过、实物被真删,直到最后一步写盘才拒 —— 那正是本票要消灭的「先动实物、后做判决」。
+ * 判据必须与写盘期**同一条**(`validateV3State`),否则两处会各自漂移。
+ */
+export function readPackageLedgerStateV1(root: string): PackageLedgerStateReadV1 {
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to plan a package operation` }
+  if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to plan a package operation` }
+  if (parsed.corruptRecords.unattributable)
+    return { ok: false, reason: `ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
+  const recordKeys = recordKeysOf(parsed.records)
+  const invariants = validateV3State({ recordKeys, packageGraphs: parsed.packageGraphs, claims: parsed.claims })
+  if (!invariants.ok)
+    return { ok: false, reason: `ledger state is not self-consistent: ${invariants.reason}; inspect ${ledgerPath(root)}` }
+  return { ok: true, packageGraphs: parsed.packageGraphs, claims: parsed.claims, recordKeys }
+}
+
 /** desiredState 翻转(Hub 项目上下文「禁用」的 main 侧真源;引擎生效面由消费方处理)。
  *  #336:ok 臂携带 projectionLag(skill enable 后派生允许集发布失败 = 账本已 durable、注入待
  *  boot 自愈)—— 用户可见开关入口必须呈现。 */
@@ -1330,6 +1360,22 @@ export function applyPackageMutation(root: string, mutation: PackageLedgerMutati
   if (existingGraph && mutation.graphAfter && existingGraph.graphDigest === mutation.graphAfter.graphDigest)
     return { ok: true, replayed: true, warnings }
 
+  // REQ-128 `#698`:作用域闸 —— 这次 mutation 只准动**自己的 owner、自己图里的 child、离场的 child**。
+  // 判据与理由都在 `validatePackageMutationScopeV1`(三个洞各自为什么账本自身查不出来,见那里)。
+  const scope = validatePackageMutationScopeV1(mutation, existingGraph)
+  if (!scope.ok) return scope
+
+  // REQ-128 `#698`(review R1 Blocker 3):**在施加任何 child mutation 之前**把「已经在账上、
+  // 但没有任何 claim 认领」的 record 快照下来。
+  //
+  // 这些就是 V3 之前的存量 —— 典型的一份是**用户自己单装的东西**。下面的收编循环原先在
+  // `recordsByKey` 被 upsert 改写之后才跑,并且明确跳过本次 mutation 碰过的 key(`touched`),
+  // 于是「用户先单装 skill:foo,再装第一个含同名 child 的 Bundle」这一格拿不到 `legacy-protected`:
+  // owner 集合里只剩 Bundle,卸掉这个 Bundle 就把用户原来那份一起销毁。判据必须取自**动之前**的
+  // 账本,而不是取自动完之后还剩什么 —— 这正是本票要消灭的那类顺序错误。
+  const preexistingUnclaimed = new Set<string>()
+  for (const rec of parsed.records) if (!findClaim(parsed.claims, rec.kind, rec.name)) preexistingUnclaimed.add(key(rec.kind, rec.name))
+
   // child record:先按批量 upsert 的同一语义在内存里算好,再与图/claim 一起一次写盘。
   const recordsByKey = new Map(parsed.records.map((r) => [key(r.kind, r.name), r]))
   const receiptKeys = new Set(parsed.receipts.map((r) => key(r.type, r.name)))
@@ -1359,16 +1405,23 @@ export function applyPackageMutation(root: string, mutation: PackageLedgerMutati
     touched.add(k)
   }
 
-  // 存量收编:V3 第一次落地时,账本里已有的、没人认领的 record 一律 `legacy-protected`。
+  // 存量收编:账本里**本来就在、且没人认领**的 record 一律 `legacy-protected`。判据取自
+  // `preexistingUnclaimed`(动之前的快照),**不看** `touched` —— 本次 mutation 恰好也 upsert 了
+  // 同名 child,并不能证明那条存量原本属于这个包;「不猜」正是 legacy 保护存在的理由。
+  // 仍然活着的 record 才收编:同一次 mutation 里被 remove 掉的 key 不该凭空长出一条 claim。
   let claims: PackageClaimV1[] = [...parsed.claims]
-  for (const rec of recordsByKey.values())
-    if (!touched.has(key(rec.kind, rec.name)) && !findClaim(claims, rec.kind, rec.name)) claims = withOwner(claims, rec.kind, rec.name, LEGACY_PROTECTED_OWNER)
+  for (const k of preexistingUnclaimed) {
+    const rec = recordsByKey.get(k)
+    if (rec && !findClaim(claims, rec.kind, rec.name)) claims = withOwner(claims, rec.kind, rec.name, LEGACY_PROTECTED_OWNER)
+  }
   for (const cm of mutation.claimMutations)
     claims = cm.op === "acquire" ? withOwner(claims, cm.kind, cm.name, cm.owner) : withoutOwner(claims, cm.kind, cm.name, cm.owner)
-  for (const k of removedKeys) {
-    const [kind, ...rest] = k.split(":")
-    claims = withoutClaim(claims, kind!, rest.join(":"))
-  }
+  // REQ-128 `#698`:这里**不再**为被删除的 child 做 `withoutClaim`。
+  // 那一行看起来是清理,实际是唯一能让「删掉一个还有别人在用的 child」通过写盘的通道:它会把
+  // 剩余 owner(用户自己的 standalone 安装、`legacy-protected` 存量、另一个 Bundle)连同 claim
+  // 一起抹掉,于是 `validateV3State` 眼里一切自洽 —— record 没了、claim 也没了。删掉这一行之后,
+  // 同一份 mutation 会撞上既有的 dangling-claim 闸并整次拒写:claim 必须由 release **显式**清空,
+  // 「owner set 空才删」因此成为写盘前的判据,而不是一句纪律。
 
   const nextGraphs = mutation.packageRecord
     ? [...parsed.packageGraphs.filter((g) => g.packageId !== mutation.packageRecord!.packageId), mutation.graphAfter!]

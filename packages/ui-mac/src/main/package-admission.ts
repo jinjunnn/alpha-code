@@ -4,20 +4,31 @@ import type { AppEnvironment } from "./alpha-environment"
 import { newMcpSecretVersionId } from "./alpha-mcp-secrets"
 import { agentMdToEntry } from "./agent-md-entry"
 import { releasePreparedTxResources } from "./ext-config"
-import { evaluateBundleAuthorization, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
-import { agentInstallKey, recoveryReceiptInputs } from "./ext-agent-install"
+import { evaluateBundleAuthorization, evaluateCapabilityDiff, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
+import { recoveryReceiptInputs } from "./ext-agent-install"
 import { nextDesiredState } from "./ext-install-policy"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
-import { buildAgentTxItems, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
-import { computeGrantDigest, readPackageGraphs, type UpsertInput } from "./ext-receipt-v2"
+import { buildAgentTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
+import { computeGrantDigest, readPackageLedgerStateV1, type UpsertInput } from "./ext-receipt-v2"
 import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import {
-  bundleOwner,
   computeGraphDigest,
   type PackageGraphV1,
   type PackageMutationEnvelopeV1,
 } from "./ext-package-ledger-v3"
-import { skillGenerationKey } from "./ext-skill-generations"
+import {
+  buildPackageUpdatePreviewV1,
+  diffPackageGraphsV1,
+  packageChildTxKeyV1,
+  planPackageChildConflictsV1,
+  planPackageChildRemovalsV1,
+  planPackageClaimTransferV1,
+  type PackageChildConflictV1,
+  type PackageChildRemovalVerdictV1,
+  type PackageGraphDiffV1,
+  type PackageUpdatePreviewV1,
+} from "./ext-package-lifecycle"
+import type { PackageArtifactRemovalV1 } from "./ext-package-uninstall"
 import {
   runExtensionTransaction,
   type TxCommitRecord,
@@ -145,6 +156,12 @@ export type PackageAdmissionDeps = {
   transaction?: typeof runExtensionTransaction
   secretVersionId?: () => string
   now?: () => Date
+  /**
+   * `#698`:update 时**离场 child** 的实物清除接缝(生产接线 = `removePackageChildArtifactsV1`
+   * 配同一组 installer)。可选,但**不是可跳过**:真有东西要删而接缝缺席时 admission 响亮拒绝,
+   * 绝不让「账本说没了、实物还在跑」这种状态发生。
+   */
+  removePackageChildArtifacts?: (children: Array<{ kind: string; name: string }>) => PackageArtifactRemovalV1
 }
 
 /**
@@ -217,6 +234,10 @@ export function createPackageAdmissionCoordinator(deps: PackageAdmissionDeps) {
         return { ok: false, reason: "package admission: attemptId was already issued or replayed" }
       const resolved = await resolvePreparedPackage(intent.catalogId, deps)
       if (!resolved.ok) return resolved
+      // `#698`:计划期判决 —— 与执行期调用同一个函数,所以确认屏与真正提交的 mutation 同源。
+      const lifecycle = resolvePackageLifecyclePlan(deps.root(), resolved.prepared)
+      if (!lifecycle.ok) return { ok: false, reason: `package admission: ${lifecycle.reason}` }
+      if (lifecycle.plan.conflicts.length > 0) return { ok: false, reason: conflictReason(lifecycle.plan.conflicts) }
       // 一次展示、一次授权:Bundle 的每个**将被安装**的组件各出一条 diff。被跳过的组件不出现
       // (§4.3:不该要用户为一个不会安装的东西授权),但它仍在 plan 里如实可见。
       const authorization = evaluateBundleAuthorization(
@@ -245,6 +266,7 @@ export function createPackageAdmissionCoordinator(deps: PackageAdmissionDeps) {
           binding: resolved.prepared.binding,
           plan: packagePlanPreview(resolved.prepared),
           items: authorization,
+          update: packageUpdatePreview(deps.root(), resolved.prepared, lifecycle.plan, authorization),
         },
       }
     }
@@ -309,7 +331,13 @@ export function createPackageAdmissionCoordinator(deps: PackageAdmissionDeps) {
     const connection = resolveConnectionBinding(revalidated.prepared, deps)
     if (!connection.ok) return { ok: false, reason: `package admission: ${connection.reasonCode}` }
 
-    return executePreparedPackage(revalidated.prepared, intent, deps, connection)
+    // `#698`:判决在**执行期重算**,不吃 preview 时那份。两次之间账本可能被别的操作改过
+    // (另一个包装了同一个 child、用户单装了它、另一版本落了地),而这里算错的后果是删错东西。
+    const lifecycle = resolvePackageLifecyclePlan(deps.root(), revalidated.prepared)
+    if (!lifecycle.ok) return { ok: false, reason: `package admission: ${lifecycle.reason}` }
+    if (lifecycle.plan.conflicts.length > 0) return { ok: false, reason: conflictReason(lifecycle.plan.conflicts) }
+
+    return executePreparedPackage(revalidated.prepared, intent, deps, connection, lifecycle.plan)
   }
 }
 
@@ -457,7 +485,9 @@ async function resolvePreparedPackage(
     const component = entry.component
     const name = component.id.slice(component.id.indexOf(":") + 1)
     const kind = component.profileId === "skill" ? "skill" : component.profileId === "agent" ? "agent" : "mcp"
-    const key = kind === "skill" ? skillGenerationKey(name) : kind === "agent" ? agentInstallKey(name) : `mcp--${name}`
+    // 事务 key 只此一处派生(`packageChildTxKeyV1`)—— 卸载时清授权账用的是同一个函数。
+    // 两处各写一遍 ternary,偏差只会在「装得上但卸载后 grants.json 还在」时现身。
+    const key = packageChildTxKeyV1(kind, name)
     const assetRef =
       entry.payload.schema === "alpha.host-extension-package.payload.skill.v1" ||
       entry.payload.schema === "alpha.host-extension-package.payload.agent.v1"
@@ -557,9 +587,32 @@ async function executePreparedPackage(
   intent: PackageIntent,
   deps: PackageAdmissionDeps,
   connection: ResolvedPackageConnectionV1,
+  lifecycle: PackageLifecyclePlanV1,
 ): Promise<PackageAdmissionOutcome> {
   const root = deps.root()
   const now = (deps.now?.() ?? new Date()).toISOString()
+
+  // `#698`(review R2):离场 child 的清除**一分为二**,依据是「它还能不能跑」。
+  //
+  //   · **能跑的那一半 = config 键**(`agent.<name>` / `mcp.<name>`)⇒ 普通的事务 config item,
+  //     与安装侧的 config 编辑在同一次事务、同一把锁、同一套 before-image 回滚里。不需要第二把锁
+  //     (R1 那版把删除搬进 commitReceipt,而引擎正持着 root bundle 锁,配置写要取同一把
+  //     非重入锁 ⇒ Agent/MCP 清理必然失败);skill 的启用面是账本派生允许集,随同一次
+  //     `applyPackageMutation` 一起变,所以它不出 config item。
+  //   · **不能跑的那一半 = 内容文件 / generation store / 授权账**⇒ 事务**返回之后**清理。
+  //     那时锁已释放,而且这条路径按构造不碰任何配置(`removeFsInstallFilesOnly`),重入不可能发生。
+  //
+  // 事务失败时:config 由 before-image 回旧,文件清理根本没跑 ⇒ 全旧。事务成功后文件清理失败:
+  // 离场 child 已经**不可能被加载**(config 键没了、record 没了、不在允许集里),剩下的是惰性
+  // 磁盘残留 —— 如实报 warning。**不声称可恢复**:journal 此时已终态,没有任何东西会重试它。
+  const doomed = lifecycle.verdicts.filter((verdict) => verdict.decision === "delete")
+  if (doomed.length > 0 && !deps.removePackageChildArtifacts)
+    return {
+      ok: false,
+      reason: `package admission: this update removes ${doomed
+        .map((verdict) => `${verdict.kind}:${verdict.name}`)
+        .join(", ")}, but no artifact-removal seam is wired — refusing (fail closed)`,
+    }
   const builds: Array<{ component: PreparedComponent; build: PackageTxBuildV1; desiredState: "enabled" | "disabled" }> = []
 
   for (const component of prepared.components) {
@@ -618,7 +671,7 @@ async function executePreparedPackage(
     builds.push({ component, build: built.build, desiredState: receipt.desiredState })
   }
 
-  const rootManifestDigest = `sha256:${prepared.root.itemDigest}`
+  const rootManifestDigest = lifecycle.rootManifestDigest
   const planned = builds.flatMap((entry) => entry.build.items)
   // REQ-128 `#706`:V3 mutation 只挂在 **root** package item 上。挂错 item 或挂多份都会被
   // `validatePlan` / `commitTransactionLedger` 在写盘前拒掉。
@@ -628,11 +681,14 @@ async function executePreparedPackage(
       ok: false,
       reason: `package admission: planning builder produced no root item for "${prepared.root.key}" — refusing (no ledger mutation carrier)`,
     }
-  const items = planned.map((item, index) =>
-    index === rootItemIndex
-      ? { ...item, packageMutation: packageMutationEnvelope(root, prepared, rootManifestDigest, now) }
-      : item,
-  )
+  const items = [
+    ...planned.map((item, index) =>
+      index === rootItemIndex ? { ...item, packageMutation: packageMutationEnvelope(lifecycle, prepared, now) } : item,
+    ),
+    // 离场 child 的 config 清除排在最后:同一 target 上的 image 按 item 顺序链式累积
+    // (`prepareConfigTx(target, edits, accumulatedText)`),放在安装项之后语义最直白。
+    ...buildDepartingChildConfigItemsV1({ root, children: doomed.map((verdict) => ({ kind: verdict.kind, name: verdict.name })) }),
+  ]
 
   // 每条 item 路由回**产它的那个 builder** 的 populate/probe。不共用一个「反正三种都返回同一个
   // router」的巧合:那是把一条今天成立的等式当成不变量。未登记的 key 一律 fail-closed。
@@ -691,13 +747,22 @@ async function executePreparedPackage(
       commitReceipt: (records) => commitPackageReceipts(root, records),
     },
   )
+  // 事务返回之后 = 锁已释放。惰性残留在这里清,失败只报不改结果(离场 child 此刻已不可能被加载)。
+  const cleanupWarnings: string[] = []
+  if (result.ok && doomed.length > 0 && deps.removePackageChildArtifacts) {
+    const removal = deps.removePackageChildArtifacts(doomed.map((verdict) => ({ kind: verdict.kind, name: verdict.name })))
+    if (!removal.ok)
+      cleanupWarnings.push(
+        `removed package components are no longer active, but their leftover files could not be deleted: ${removal.reason} — they are inert; nothing retries this automatically`,
+      )
+  }
   return transactionOutcome(
     result,
     prepared,
     rootManifestDigest,
     builds,
     connection,
-    bindConnectionsAfterCommit(result, connection, deps),
+    [bindConnectionsAfterCommit(result, connection, deps), ...cleanupWarnings].filter((entry): entry is string => !!entry).join("; ") || undefined,
   )
 }
 
@@ -737,6 +802,111 @@ const graphNodeOf = (component: PreparedComponent) => ({
 })
 
 /**
+ * REQ-128 `#698`:一次 package 操作在**账本层面**的完整判决。install / update 共用一份 ——
+ * 「这是第一次装」只是 `before === null` 的那一格,不是另一条代码路径。
+ */
+type PackageLifecyclePlanV1 = {
+  rootManifestDigest: string
+  graph: PackageGraphV1
+  before: PackageGraphV1 | null
+  diff: PackageGraphDiffV1
+  /** 离场 child 的逐个判决(claim-aware)。`before === null` 时恒空。 */
+  verdicts: PackageChildRemovalVerdictV1[]
+  conflicts: PackageChildConflictV1[]
+}
+
+/**
+ * 判决在**动任何东西之前**算完,而且 preview 与执行调用的是同一个函数 —— 用户确认屏上看到的
+ * 「谁会被删、谁会留下」与真正提交的那份 mutation 因此不可能分叉。
+ */
+function resolvePackageLifecyclePlan(
+  root: string,
+  prepared: PreparedPackage,
+): { ok: true; plan: PackageLifecyclePlanV1 } | { ok: false; reason: string } {
+  const rootManifestDigest = `sha256:${prepared.root.itemDigest}`
+  const graph = packageGraphOf(prepared, rootManifestDigest)
+  const state = readPackageLedgerStateV1(root)
+  if (!state.ok) return { ok: false, reason: state.reason }
+  const before = state.packageGraphs.find((candidate) => candidate.packageId === graph.packageId) ?? null
+  const diffed = diffPackageGraphsV1(before, graph, { after: prepared.facts.envelope.prelude.version })
+  if (!diffed.ok) return diffed
+  const departing = diffed.diff.changes
+    .filter((change) => change.change === "removed")
+    .map((change) => ({ kind: change.kind, name: change.name }))
+  return {
+    ok: true,
+    plan: {
+      rootManifestDigest,
+      graph,
+      before,
+      diff: diffed.diff,
+      verdicts: diffed.diff.ownerBefore
+        ? planPackageChildRemovalsV1({
+            departing,
+            ownerBefore: diffed.diff.ownerBefore,
+            claims: state.claims,
+            recordKeys: state.recordKeys,
+          })
+        : [],
+      // 别的 package 已经拥有同名 child 且 digest 不同 ⇒ 装下去会覆盖它的内容,而它的图仍指着
+      // 旧 digest。这必须在**计划期**拒(票面 Development plan 6),不是等写盘时被一句
+      // 「graph mismatch」拦下 —— 那时用户已经点过确认了。
+      conflicts: planPackageChildConflictsV1({ graphs: state.packageGraphs, candidate: graph }),
+    },
+  }
+}
+
+/**
+ * `#698` 的 update preview(票面 Development plan 2:显示 capability / prerequisite / claim 变化)。
+ *
+ * 三栏各有各的真源,一栏都不许重新推导:
+ *   · **capability** ← 已提交的授权账(`grants.json`)与本次请求集的 diff。`requiresConfirmation`
+ *     为真就必须重新确认 —— 「扩大能力必须重授权」因此不是新开关,而是把既有的授权账 diff 摆进
+ *     update 语境。**离场组件**也出现在这里(请求集为空集 ⇒ `removed` = 它此前被授过的全部能力),
+ *     否则用户在一次更新里看不到自己正在放弃什么。
+ *   · **prerequisite** ← 本次将被采集的前置 id(after 侧)。`unchanged` 组件的 manifestDigest 逐字
+ *     未变 ⇒ 它声明的前置按构造也未变,所以「变了没有」由 `change` 那一栏回答,不另编一套。
+ *   · **claim** ← 离场 child 的逐个判决(删 / 留 + 具名理由)。
+ */
+function packageUpdatePreview(
+  root: string,
+  prepared: PreparedPackage,
+  plan: PackageLifecyclePlanV1,
+  authorization: CapabilityDiff[],
+): PackageUpdatePreviewV1 {
+  const capabilityDiffByKey = new Map(authorization.map((diff) => [diff.key, diff]))
+  // 离场组件不在本次授权集里(它不会被安装),但它**有**一份已提交的授权账。空请求集与那份账
+  // 的 diff 就是「这次会放弃哪些能力」。
+  for (const change of plan.diff.changes) {
+    if (change.change !== "removed") continue
+    const key = packageChildTxKeyV1(change.kind as "skill" | "agent" | "mcp", change.name)
+    if (!capabilityDiffByKey.has(key)) capabilityDiffByKey.set(key, evaluateCapabilityDiff(root, key, []))
+  }
+  const prerequisiteIdsByKey = new Map(
+    prepared.components.map((component) => [
+      component.key,
+      component.accepted.prerequisite.items.map((item) => item.prerequisiteId),
+    ]),
+  )
+  return buildPackageUpdatePreviewV1({
+    diff: plan.diff,
+    graphBeforeDigest: plan.before?.graphDigest ?? null,
+    graphAfterDigest: plan.graph.graphDigest,
+    claims: plan.verdicts,
+    prerequisiteIdsByKey,
+    capabilityDiffByKey,
+  })
+}
+
+const conflictReason = (conflicts: PackageChildConflictV1[]): string =>
+  `package admission: package-child-conflict — ${conflicts
+    .map(
+      (conflict) =>
+        `${conflict.kind}:${conflict.name} is already installed by "${conflict.holderPackageId}" at ${conflict.holderDigest}, this package wants ${conflict.candidateDigest}`,
+    )
+    .join("; ")}`
+
+/**
  * REQ-128 `#706`:package 安装的**有效安装图** —— root 加上每一个真的会被装的 leaf。被跳过的
  * 组件按构造不在图里(§4.3),所以两台宿主对同一个签名信封可以合法地得到不同的图。
  *
@@ -754,23 +924,18 @@ function packageGraphOf(prepared: PreparedPackage, rootManifestDigest: string): 
   return { ...withoutDigest, graphDigest: computeGraphDigest(withoutDigest) }
 }
 
-/** 挂在 root package item 上的静态半场:图、package 记录与 claim mutation。
- *  child record mutation 在提交时由 commit records 派生(`commitTransactionLedger`),
- *  所以主提交与崩溃前滚算出的是同一份 mutation。 */
-function packageMutationEnvelope(
-  root: string,
-  prepared: PreparedPackage,
-  rootManifestDigest: string,
-  now: string,
-): PackageMutationEnvelopeV1 {
-  const graph = packageGraphOf(prepared, rootManifestDigest)
-  const before = readPackageGraphs(root).find((g) => g.packageId === graph.packageId) ?? null
-  // owner token 对**整个 package** 只有一个,派生自 root 的 manifestDigest —— `validateV3State`
-  // 正是按 `bundleOwner(packageId, graph.root.manifestDigest)` 反查每个节点的 claim。逐 leaf 用
-  // 自己的 digest 造 owner,会让每个 leaf 的 claim 都成为「孤儿 owner」而被账本拒写。
-  const owner = bundleOwner(graph.packageId, rootManifestDigest)
+/** 挂在 root package item 上的静态半场:图、package 记录、claim mutation 与 child 删除集。
+ *  child record 的 **upsert** 半场在提交时由 commit records 派生(`commitTransactionLedger`),
+ *  所以主提交与崩溃前滚算出的是同一份 mutation。
+ *
+ *  `#698`:claim mutation 不再是「给每个组件 acquire 一次」。update 时 root 的 manifestDigest 一变,
+ *  owner token 就跟着变 —— 旧 owner 若不释放,账本里每一条旧 claim 都会成为「孤儿 owner」
+ *  (`validateV3State`:claim 指名一张这本账里没有的图),整次写盘被拒。换句话说,`#697` 之后
+ *  「装第二个版本」在结构上是**装不上**的,而这正是本票要修的第一件事。 */
+function packageMutationEnvelope(plan: PackageLifecyclePlanV1, prepared: PreparedPackage, now: string): PackageMutationEnvelopeV1 {
+  const graph = plan.graph
   return {
-    operation: before ? "update" : "install",
+    operation: plan.before ? "update" : "install",
     packageRecord: {
       packageId: graph.packageId,
       envelopeDigest: graph.envelopeDigest,
@@ -780,14 +945,16 @@ function packageMutationEnvelope(
       transactionId: "tx-assigned-at-commit",
       installedAt: now,
     },
-    graphBeforeDigest: before?.graphDigest ?? null,
+    graphBeforeDigest: plan.before?.graphDigest ?? null,
     graphAfter: graph,
-    claimMutations: prepared.components.map((component) => ({
-      op: "acquire" as const,
-      kind: component.kind,
-      name: component.name,
-      owner,
-    })),
+    // 释放全部旧 owner 在前、获取全部新 owner 在后(集合代数按序施加,反过来会把刚获取的抹掉)。
+    claimMutations: planPackageClaimTransferV1(plan.diff),
+    // 只有判决为 `delete` 的离场 child 才去账。judgment 为 `retain` 的(还有别的包在用 / 用户自己
+    // 也装过 / legacy 存量 / 不受管)一件都不动 —— 账本的 `validatePackageMutationScopeV1` 与
+    // dangling-claim 闸会在写盘前把算错的那种拦下。
+    childRemovals: plan.verdicts
+      .filter((verdict) => verdict.decision === "delete")
+      .map((verdict) => ({ kind: verdict.kind, name: verdict.name })),
   }
 }
 

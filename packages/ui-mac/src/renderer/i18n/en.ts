@@ -623,6 +623,16 @@ export const dict = {
   "alpha.ext.packageActionUpdateAlpha": "Check for updates",
   "alpha.ext.packageActionResolvePrerequisite": "Resolve prerequisites",
   "alpha.ext.packageActionNone": "Unavailable",
+  // REQ-128 `#698`:装过之后,这一屏是把整个扩展包拿掉的唯一入口 —— 属于扩展包的单个部件
+  // 被单独移除时会被拒绝(它还属于这个包),而在此之前那句拒绝指向的地方并不存在。
+  "alpha.ext.packageActionUninstall": "Remove this package",
+  "alpha.ext.packageInstalledHere": "Installed on this Mac",
+  "alpha.ext.packageRemoved": "Package removed",
+  "alpha.ext.packageRemoveFailed": "Could not remove this package",
+  "alpha.ext.packageKeptShared": "Kept (still used by another package)",
+  "alpha.ext.packageKeptUserInstalled": "Kept (you also installed it on its own)",
+  "alpha.ext.packageKeptLegacy": "Kept (installed before Alpha tracked packages)",
+  "alpha.ext.packageKeptUnmanaged": "Kept (Alpha does not manage this item)",
   "alpha.ext.verifyPending": "Unverified",
   "alpha.ext.verifyNoteTitle": "Pending verification",
   // REQ-105 (#197): archived-connector advisory + Excel audited pin
