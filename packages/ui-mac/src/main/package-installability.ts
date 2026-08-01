@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { isAbsolute } from "node:path"
 import type {
   CatalogPackageActionV1,
+  CatalogPackageComponentV1,
   CatalogPackageReasonCodeV1,
   CatalogPackageViewV1,
 } from "../shared/catalog-package-view"
@@ -11,10 +12,16 @@ import {
   decodePackageProfilePayloadV1,
   HOST_EXTENSION_PACKAGE_SCHEMA_V1,
   type AlphaPackageEnvelopeV1,
+  type PackageComponentDecodeV1,
   type PackagePayloadRefV1,
   type PackageProfilePayloadV1,
+  type PackageSupportedComponentV1,
 } from "../shared/host-extension-package-contract/decoder"
 import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "../shared/host-extension-package-contract/registry"
+import {
+  packageEffectiveInstallGraphV1,
+  type PackageEffectiveInstallGraphV1,
+} from "../shared/package-admission"
 import {
   decodePackageSecretPrerequisiteProfileV1,
   type PackageSecretPrerequisiteProfileDecodeV1,
@@ -30,6 +37,7 @@ const ACTION_BY_REASON = {
     enabled: true,
   },
   "package-host-update-required": { kind: "update-alpha", enabled: true },
+  "package-bundle-activation-pending": { kind: "none", enabled: false },
   "package-invalid": { kind: "none", enabled: false },
   "package-payload-unavailable": { kind: "none", enabled: false },
   "package-payload-integrity": { kind: "none", enabled: false },
@@ -48,9 +56,22 @@ export type PackageInstallabilityDeps = {
 
 export type PackageEvaluator = (envelope: unknown, deps?: PackageInstallabilityDeps) => Promise<CatalogPackageViewV1>
 
+export type PackageAcceptedComponentV1 = {
+  component: PackageSupportedComponentV1
+  role: "root" | "leaf"
+  payload: PackageProfilePayloadV1
+  prerequisite: Extract<PackageSecretPrerequisiteProfileDecodeV1, { ok: true }>["profile"]
+}
+
 export type PackageAcceptedFactsV1 = {
   envelope: AlphaPackageEnvelopeV1
+  /** Every supported component, root first. */
+  components: PackageAcceptedComponentV1[]
+  /** Root plus every leaf that will actually be installed; skipped components are absent. */
+  graph: PackageEffectiveInstallGraphV1
+  /** The root component's payload. Convenience for single-component admission; `#697` generalises. */
   payload: PackageProfilePayloadV1
+  /** The root component's secret prerequisite profile. Same note as `payload`. */
   prerequisite: Extract<PackageSecretPrerequisiteProfileDecodeV1, { ok: true }>["profile"]
 }
 
@@ -125,8 +146,10 @@ export async function evaluateCatalogPackagesForHost(
 
 /**
  * The only host compatibility authority for one signed package envelope. Ordering is fixed:
- * bounded header/support gate → exact payload fetch/digest → strict profile decoder → safe
- * prerequisite projection. No payload/secret stage is reachable after a header/support failure.
+ * bounded header/graph/support gate → §5.1 门二(signed Bundle) → per supported component (exact
+ * payload fetch/digest → strict profile decoder → safe prerequisite projection). No payload/secret
+ * stage is reachable after a header/support/Bundle failure, and a skipped component reaches none of
+ * them at all.
  */
 export async function evaluatePackageForHost(
   envelope: unknown,
@@ -140,70 +163,90 @@ export async function evaluatePackageForHost(
   const header = decodePackageEnvelopeHeaderV1(bytes)
   if (!header.ok) {
     if (header.stage === "support")
-      return view(prelude.prelude, "update-required", "package-host-update-required", header.presentation)
+      return view(prelude.prelude, "update-required", "package-host-update-required", [], header.presentation)
     return blockedView(prelude.prelude, "package-invalid")
   }
 
-  const component = header.envelope.components[0]
-  const name = component.id.slice(component.id.indexOf(":") + 1)
-  if (
-    (component.profileId === "skill" || component.profileId === "agent") &&
-    !isExtensionName(name)
-  )
-    return blockedView(header.envelope.prelude, "package-invalid", {
-      displayName: header.envelope.presentation.displayName,
-      description: header.envelope.presentation.description,
-    })
-  if (!component.required)
-    return blockedView(header.envelope.prelude, "package-invalid", {
-      displayName: header.envelope.presentation.displayName,
-      description: header.envelope.presentation.description,
-    })
-  const fetched = await (deps.fetchPayload ?? fetchPackagePayload)(component.payloadRef).then(
-    (payloadBytes) => ({ ok: true as const, payloadBytes }),
-    () => ({ ok: false as const }),
-  )
-  if (!fetched.ok)
-    return blockedView(header.envelope.prelude, "package-payload-unavailable", {
-      displayName: header.envelope.presentation.displayName,
-      description: header.envelope.presentation.description,
-    })
-  const payloadBytes = fetched.payloadBytes
-  if (
-    payloadBytes.byteLength !== component.payloadRef.bytes ||
-    createHash("sha256").update(payloadBytes).digest("hex") !== component.payloadRef.sha256
-  )
-    return blockedView(header.envelope.prelude, "package-payload-integrity", {
-      displayName: header.envelope.presentation.displayName,
-      description: header.envelope.presentation.description,
-    })
+  const presentation = {
+    displayName: header.envelope.presentation.displayName,
+    description: header.envelope.presentation.description,
+  }
+  const componentViews = safeComponentViews(header.components)
+  const refuse = (reason: Exclude<CatalogPackageReasonCodeV1, "package-compatible" | "package-prerequisite-required" | "package-host-update-required">) =>
+    blockedView(header.envelope.prelude, reason, componentViews, presentation)
 
-  const decoded = (deps.decodePayload ?? decodePackageProfilePayloadV1)(
-    component.profileId,
-    payloadBytes,
-    component.capabilities,
-  )
-  if (!decoded.ok)
-    return blockedView(header.envelope.prelude, "package-payload-invalid", {
-      displayName: header.envelope.presentation.displayName,
-      description: header.envelope.presentation.description,
-    })
+  const rootEntry = header.components.find((entry) => entry.role === "root")
+  // §4.1 条件 1 已经在 decoder 里把 non-required root 判成 header 失败;这里保留原来的单组件
+  // 判据作为第二道 fail-closed —— decoder 一旦回归,安装动作不会因此静默变成可点。
+  if (!rootEntry || rootEntry.status !== "supported" || !rootEntry.component.required)
+    return refuse("package-invalid")
 
-  const prerequisite = (deps.decodeSecretPrerequisite ?? decodePackageSecretPrerequisiteProfileV1)(
+  // §5.1 门二。合同已经接受多组件,但 admission 还只处理一个组件 —— 放行就等于「用户点了安装,
+  // 只装到第一个组件」。判据是**签名事实**(信封声明了几个组件),不是有效安装图:有效图已经
+  // 排除了被 skip 的子件,拿它判会让「root + 一个不受支持的 optional leaf」绕过这道闸,装出一个
+  // 半装的包。签名事实含全部组件,有效图只含未 skip 的(§4.3);门二问的是「这是不是一个
+  // Bundle」,那是签名事实。闸在取 payload 之前 —— 永不安装的包不该产生任何网络请求。
+  // 翻开这道闸是 `#697` 的活,判据是它自己的生产 wiring test。单组件 package 完全不受影响。
+  if (header.envelope.components.length > 1) return refuse("package-bundle-activation-pending")
+
+  const supported = [
+    ...header.components.filter((entry) => entry.role === "root" && entry.status === "supported"),
+    ...header.components.filter((entry) => entry.role === "leaf" && entry.status === "supported"),
+  ] as Extract<PackageComponentDecodeV1, { status: "supported" }>[]
+
+  for (const entry of supported) {
+    const name = entry.component.id.slice(entry.component.id.indexOf(":") + 1)
+    if (
+      (entry.component.profileId === "skill" || entry.component.profileId === "agent") &&
+      !isExtensionName(name)
+    )
+      return refuse("package-invalid")
+  }
+
+  const accepted: PackageAcceptedComponentV1[] = []
+  for (const entry of supported) {
+    const component = entry.component
+    const fetched = await (deps.fetchPayload ?? fetchPackagePayload)(component.payloadRef).then(
+      (payloadBytes) => ({ ok: true as const, payloadBytes }),
+      () => ({ ok: false as const }),
+    )
+    if (!fetched.ok) return refuse("package-payload-unavailable")
+    const payloadBytes = fetched.payloadBytes
+    if (
+      payloadBytes.byteLength !== component.payloadRef.bytes ||
+      createHash("sha256").update(payloadBytes).digest("hex") !== component.payloadRef.sha256
+    )
+      return refuse("package-payload-integrity")
+
+    const decoded = (deps.decodePayload ?? decodePackageProfilePayloadV1)(
+      component.profileId,
+      payloadBytes,
+      component.capabilities,
+    )
+    if (!decoded.ok) return refuse("package-payload-invalid")
+
+    const prerequisite = (deps.decodeSecretPrerequisite ?? decodePackageSecretPrerequisiteProfileV1)(
+      component,
+      decoded.payload,
+    )
+    if (!prerequisite.ok) return refuse("package-prerequisite-invalid")
+    accepted.push({ component, role: entry.role, payload: decoded.payload, prerequisite: prerequisite.profile })
+  }
+
+  const graph = packageEffectiveInstallGraphV1(
     header.envelope,
-    decoded.payload,
+    accepted.map((entry) => entry.component),
   )
-  if (!prerequisite.ok)
-    return blockedView(header.envelope.prelude, "package-prerequisite-invalid", {
-      displayName: header.envelope.presentation.displayName,
-      description: header.envelope.presentation.description,
-    })
+
+  const rootAccepted = accepted.find((entry) => entry.role === "root")!
   deps.accepted?.({
     envelope: header.envelope,
-    payload: decoded.payload,
-    prerequisite: prerequisite.profile,
+    components: accepted,
+    graph,
+    payload: rootAccepted.payload,
+    prerequisite: rootAccepted.prerequisite,
   })
-  return compatibleView(header.envelope, prerequisite)
+  return compatibleView(header.envelope, componentViews, accepted)
 }
 
 /**
@@ -294,6 +337,8 @@ export async function preflightPackageInstall(
     matched: true,
     outcome: {
       ok: false,
+      // `verdict === "compatible"` 只从 `compatibleView` 来,它的两个 reason 都是 enabled ⇒
+      // 再 `&& action.enabled` 是恒真的死代码,会被误读成第二道闸。判据只留真的那两条。
       reason:
         evaluated.verdict === "compatible" && evaluated.prerequisites.status === "ready"
           ? "package-admission-not-implemented"
@@ -303,20 +348,35 @@ export async function preflightPackageInstall(
   }
 }
 
-function compatibleView(
-  envelope: Extract<Awaited<ReturnType<typeof decodePackageEnvelopeHeaderV1>>, { ok: true }>["envelope"],
-  prerequisite: Extract<PackageSecretPrerequisiteProfileDecodeV1, { ok: true }>,
-): CatalogPackageViewV1 {
-  const items = prerequisite.profile.items.map((item) => ({
-    prerequisiteId: item.prerequisiteId,
-    label: item.label,
-    required: item.required,
+function safeComponentViews(components: PackageComponentDecodeV1[]): CatalogPackageComponentV1[] {
+  return components.map((entry) => ({
+    componentId: entry.component.id,
+    role: entry.role,
+    required: entry.component.required,
+    included: entry.status === "supported",
+    skipReasonCode: entry.status === "skipped" ? entry.reasonCode : null,
   }))
+}
+
+function compatibleView(
+  envelope: AlphaPackageEnvelopeV1,
+  components: CatalogPackageComponentV1[],
+  accepted: PackageAcceptedComponentV1[],
+): CatalogPackageViewV1 {
+  // 授权集只含「受支持且未跳过」的组件(§4.3):被跳过的子件不会安装,就不该要用户为它授权。
+  const items = accepted.flatMap((entry) =>
+    entry.prerequisite.items.map((item) => ({
+      prerequisiteId: item.prerequisiteId,
+      label: item.label,
+      required: item.required,
+    })),
+  )
   const reason = items.length > 0 ? "package-prerequisite-required" : "package-compatible"
   return {
     catalogId: envelope.prelude.packageId,
     verdict: "compatible",
     action: packageActionForReason(reason),
+    components,
     prerequisites: {
       status: items.length > 0 ? "required-action" : "ready",
       items,
@@ -335,21 +395,24 @@ function blockedView(
     CatalogPackageReasonCodeV1,
     "package-compatible" | "package-prerequisite-required" | "package-host-update-required"
   >,
+  components: CatalogPackageComponentV1[] = [],
   presentation?: { displayName: string; description: string },
 ) {
-  return view(prelude, "blocked", reason, presentation)
+  return view(prelude, "blocked", reason, components, presentation)
 }
 
 function view(
   prelude: PackagePreludeV1,
   verdict: "update-required" | "blocked",
   reason: CatalogPackageReasonCodeV1,
+  components: CatalogPackageComponentV1[],
   presentation?: { displayName: string; description: string },
 ): CatalogPackageViewV1 {
   return {
     catalogId: prelude.packageId,
     verdict,
     action: packageActionForReason(reason),
+    components,
     prerequisites: { status: "ready", items: [] },
     presentation: {
       displayName: presentation?.displayName ?? prelude.packageId,
@@ -365,6 +428,7 @@ function decodeSafePrelude(envelope: unknown): { ok: true; prelude: PackagePrelu
     schema: HOST_EXTENSION_PACKAGE_SCHEMA_V1,
     prelude: envelope.prelude,
     presentation: { displayName: "Prelude probe", description: "Contract decoder probe" },
+    root: "package:prelude-probe",
     components: [
       {
         id: "package:prelude-probe",

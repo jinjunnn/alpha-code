@@ -1,6 +1,6 @@
 import type {
-  AlphaPackageEnvelopeV1,
   PackageProfilePayloadV1,
+  PackageSupportedComponentV1,
 } from "./host-extension-package-contract/decoder"
 import { isExtensionName } from "./extension-name"
 
@@ -83,15 +83,18 @@ const REFERENCE_KEYS = new Set([
 ])
 
 /**
- * Consume only the host-owned, already strictly decoded #694 Envelope and payload. The web-owned
+ * Consume only the host-owned, already strictly decoded component and its payload. The web-owned
  * Declaration is intentionally absent from this API. Target and stable prerequisite identity are
  * derived from signed host fields; the renderer never supplies either.
+ *
+ * The component is passed explicitly rather than dug out of the envelope: a package now carries a
+ * graph, so "the component" is a caller decision, and `components[0]` silently meaning "whichever
+ * one the producer happened to list first" is exactly the bug this signature removes.
  */
 export function decodePackageSecretPrerequisiteProfileV1(
-  envelope: AlphaPackageEnvelopeV1,
+  component: PackageSupportedComponentV1,
   payload: PackageProfilePayloadV1,
 ): PackageSecretPrerequisiteProfileDecodeV1 {
-  const component = envelope.components[0]
   const errors: string[] = []
   const suffix = component.id.slice(component.id.indexOf(":") + 1)
 
@@ -119,15 +122,9 @@ export function decodePackageSecretPrerequisiteProfileV1(
   if (payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1") {
     if (!isExtensionName(suffix))
       errors.push("secret prerequisite component id cannot be represented by the existing MCP secret store")
-    const declared = new Set(payload.behavior.requiredSecrets)
-    const placeholders = Object.values(payload.behavior.headersTemplate).flatMap((template) =>
-      [...template.matchAll(/\{([^{}]+)\}/g)].map((match) => match[1]!),
-    )
-    placeholders
-      .filter((variable) => !declared.has(variable))
-      .forEach((variable) =>
-        errors.push(`payload.behavior.headersTemplate: undeclared secret placeholder "${variable}"`),
-      )
+    // 「headersTemplate 里的每个 {VAR} 都必须在 requiredSecrets 里声明」是 CONTRACT.md 不变量 4,
+    // 归 decoder 独占(`decodeMcpRemotePayload`)。这里曾经复述过一遍 —— 那正是 `#737` 那一类:
+    // 宿主替契约做决定。同一条规则写在两处就会漂移,而漂移的总是第二份。
     const targets = payload.behavior.requiredSecrets.map((variable) => ({
       variable,
       headers: Object.entries(payload.behavior.headersTemplate)

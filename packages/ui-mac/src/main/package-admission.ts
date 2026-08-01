@@ -36,6 +36,7 @@ import {
 } from "./package-installability"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import type { MarkdownAssetRefV1 } from "../shared/host-extension-package-contract/decoder"
+import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "../shared/host-extension-package-contract/registry"
 import type {
   PackageAdmissionAuthorizationV1,
   PackageAdmissionBindingV1,
@@ -47,12 +48,17 @@ import { evaluatePackageSecretSubmissionV1 } from "../shared/package-secret-prer
 const ATTEMPT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const DIGEST = /^[a-f0-9]{64}$/
 const TX_ITEM_KEY = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
-const MAX_ASSET_BYTES = 5 * 1024 * 1024
 const MAX_ATTEMPTS = 64
 const INTENT_KEYS = new Set(["catalogId", "scope", "attemptId", "grants", "authorization"])
 const GRANT_KEYS = new Set(["secrets", "env", "workspace", "cnMirror"])
 const AUTHORIZATION_KEYS = new Set(["confirmed", "binding"])
-const BINDING_KEYS = new Set(["snapshotDigest", "envelopeDigest", "itemDigests", "capabilityDigest"])
+const BINDING_KEYS = new Set([
+  "snapshotDigest",
+  "envelopeDigest",
+  "graphDigest",
+  "itemDigests",
+  "capabilityDigest",
+])
 
 type PackageScope = { scope: "global" } | { scope: "project"; projectDir: string }
 type PackageGrants = {
@@ -113,6 +119,17 @@ export type PackageAdmissionDeps = {
   now?: () => Date
 }
 
+/**
+ * `envelope.components[0]` is whichever component the producer listed first, which is not the root
+ * in general. Reading `facts.components[0]` instead only moves the same defect one layer up: it
+ * turns an **ordering convention** into a load-bearing invariant while the type already carries the
+ * fact (`role`). Read the declared role. (`#697` replaces this whole single-component shape with
+ * the graph.)
+ */
+function rootComponentOf(facts: PackageAcceptedFactsV1) {
+  return facts.components.find((entry) => entry.role === "root")!.component
+}
+
 type PreparedPackage = {
   facts: PackageAcceptedFactsV1
   key: string
@@ -155,7 +172,7 @@ export function createPackageAdmissionCoordinator(deps: PackageAdmissionDeps) {
       const authorization = evaluateBundleAuthorization(deps.root(), [
         {
           key: resolved.prepared.key,
-          capabilities: resolved.prepared.facts.envelope.components[0].capabilities,
+          capabilities: rootComponentOf(resolved.prepared.facts).capabilities,
         },
       ]).items
       attempts.set(intent.attemptId, {
@@ -228,7 +245,7 @@ export function createPackageAdmissionCoordinator(deps: PackageAdmissionDeps) {
 }
 
 function packagePlanPreview(prepared: PreparedPackage): PackageAdmissionPreviewV1["plan"] {
-  const component = prepared.facts.envelope.components[0]
+  const component = rootComponentOf(prepared.facts)
   const operations =
     prepared.kind === "skill"
       ? (["write-generation", "write-install-record", "write-capability-grant"] as const)
@@ -285,7 +302,7 @@ async function resolvePreparedPackage(
   if (!accepted || view.verdict !== "compatible") return { ok: false, reason: view.action.reasonCode, package: view }
 
   const facts = accepted
-  const component = facts.envelope.components[0]
+  const component = rootComponentOf(facts)
   const name = component.id.slice(component.id.indexOf(":") + 1)
   const kind = component.profileId === "skill" ? "skill" : component.profileId === "agent" ? "agent" : "mcp"
   const key = kind === "skill" ? skillGenerationKey(name) : kind === "agent" ? agentInstallKey(name) : `mcp--${name}`
@@ -331,6 +348,7 @@ async function resolvePreparedPackage(
       binding: {
         snapshotDigest: loaded.snapshotDigest,
         envelopeDigest: sha256Hex(canonicalJson(facts.envelope)),
+        graphDigest: sha256Hex(canonicalJson(facts.graph)),
         itemDigests: { [component.id]: itemDigest },
         capabilityDigest: sha256Hex(canonicalJson({ [key]: component.capabilities })),
       },
@@ -344,7 +362,7 @@ async function executePreparedPackage(
   deps: PackageAdmissionDeps,
 ): Promise<PackageAdmissionOutcome> {
   const root = deps.root()
-  const component = prepared.facts.envelope.components[0]
+  const component = rootComponentOf(prepared.facts)
   const manifestDigest = `sha256:${prepared.itemDigest}`
   const now = (deps.now?.() ?? new Date()).toISOString()
   const receipt: UpsertInput = {
@@ -460,11 +478,13 @@ function confirmationMatches(diffs: CapabilityDiff[], confirmed: Record<string, 
 }
 
 async function fetchPackageAsset(ref: MarkdownAssetRefV1): Promise<Uint8Array> {
-  if (ref.bytes > MAX_ASSET_BYTES) throw new Error("package asset exceeds host limit")
+  if (ref.bytes > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes)
+    throw new Error("package asset exceeds host limit")
   const response = await fetch(ref.url, { redirect: "error" })
   if (!response.ok) throw new Error(`package asset HTTP ${response.status}`)
   const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > MAX_ASSET_BYTES) throw new Error("package asset exceeds host limit")
+  if (bytes.byteLength > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes)
+    throw new Error("package asset exceeds host limit")
   return bytes
 }
 
@@ -566,6 +586,8 @@ function decodeBinding(input: unknown): PackageAdmissionBindingV1 | undefined {
     !DIGEST.test(input.envelopeDigest) ||
     typeof input.capabilityDigest !== "string" ||
     !DIGEST.test(input.capabilityDigest) ||
+    typeof input.graphDigest !== "string" ||
+    !DIGEST.test(input.graphDigest) ||
     !isObject(input.itemDigests)
   )
     return
@@ -578,6 +600,7 @@ function decodeBinding(input: unknown): PackageAdmissionBindingV1 | undefined {
   return {
     snapshotDigest: input.snapshotDigest,
     envelopeDigest: input.envelopeDigest,
+    graphDigest: input.graphDigest,
     itemDigests,
     capabilityDigest: input.capabilityDigest,
   }

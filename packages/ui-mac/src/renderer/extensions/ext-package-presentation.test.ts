@@ -12,6 +12,7 @@ import { dict as zh } from "../i18n/zh"
 import { packagePresentation } from "./ext-package-presentation"
 
 const blockedReasons = [
+  "package-bundle-activation-pending",
   "package-invalid",
   "package-payload-unavailable",
   "package-payload-integrity",
@@ -24,6 +25,7 @@ const legalViews: CatalogPackageViewV1[] = [
     catalogId: "package:ready",
     verdict: "compatible",
     action: { kind: "install", enabled: true, reasonCode: "package-compatible" },
+    components: [],
     prerequisites: { status: "ready", items: [] },
     presentation: { displayName: "Ready", description: "Ready package", version: "1.0.0" },
   },
@@ -35,6 +37,7 @@ const legalViews: CatalogPackageViewV1[] = [
       enabled: true,
       reasonCode: "package-prerequisite-required",
     },
+    components: [],
     prerequisites: {
       status: "required-action",
       items: [{ prerequisiteId: "component#TOKEN", label: "TOKEN", required: true }],
@@ -53,6 +56,7 @@ const legalViews: CatalogPackageViewV1[] = [
       enabled: true,
       reasonCode: "package-host-update-required",
     },
+    components: [],
     prerequisites: { status: "ready", items: [] },
     presentation: { displayName: "Update", description: "Update package", version: "1.0.0" },
   },
@@ -61,6 +65,7 @@ const legalViews: CatalogPackageViewV1[] = [
       catalogId: `package:${reasonCode}`,
       verdict: "blocked",
       action: { kind: "none", enabled: false, reasonCode },
+      components: [],
       prerequisites: { status: "ready", items: [] },
       presentation: { displayName: reasonCode, description: "Blocked package", version: "1.0.0" },
     }),
@@ -69,7 +74,7 @@ const legalViews: CatalogPackageViewV1[] = [
 
 describe("package safe-view presentation", () => {
   test("exhausts every legal verdict/action/reason/prerequisite combination", () => {
-    expect(legalViews).toHaveLength(8)
+    expect(legalViews).toHaveLength(9)
     expect([...new Set(legalViews.map((view) => view.verdict))].sort()).toEqual(
       ["blocked", "compatible", "update-required"] satisfies CatalogPackageVerdictV1[],
     )
@@ -107,6 +112,7 @@ describe("package safe-view presentation", () => {
         verdictKey: "alpha.ext.packageVerdictBlocked" as const,
         actionKey: "alpha.ext.packageActionNone" as const,
         reasonKey: {
+          "package-bundle-activation-pending": "alpha.ext.packageReasonBundleActivationPending",
           "package-invalid": "alpha.ext.packageReasonInvalid",
           "package-payload-unavailable": "alpha.ext.packageReasonPayloadUnavailable",
           "package-payload-integrity": "alpha.ext.packageReasonPayloadIntegrity",

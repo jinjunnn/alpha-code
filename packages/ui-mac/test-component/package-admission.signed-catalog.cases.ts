@@ -57,24 +57,44 @@ function fetchFrom(routes: Record<string, string>) {
 }
 
 test("verified signed snapshot and Envelope secret prerequisite reach the restricted version directory", async () => {
-  const corpus = (await Bun.file(
-    resolve(
-      import.meta.dir,
-      "../../alpha-contracts-consumer/vendor/alpha-web-extension-package/expected.mcp-remote.compiled.json",
-    ),
-  ).json()) as {
-    envelope: AlphaPackageEnvelopeV1
-    payload: PackageProfilePayloadV1
-  }
-  const envelope = structuredClone(corpus.envelope)
-  const payload = structuredClone(corpus.payload)
-  if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
-    throw new Error("producer corpus profile drifted")
-  payload.behavior.requiredSecrets = ["A_KEY"]
-  payload.behavior.headersTemplate = { Authorization: "Bearer {A_KEY}" }
+  const payload = {
+    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+    behavior: {
+      url: "https://mcp.example.com/",
+      headersTemplate: { Authorization: "Bearer {A_KEY}" },
+      requiredSecrets: ["A_KEY"],
+      auth: "none",
+    },
+  } as unknown as PackageProfilePayloadV1
   const payloadBytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
-  envelope.components[0].payloadRef.bytes = payloadBytes.byteLength
-  envelope.components[0].payloadRef.sha256 = createHash("sha256").update(payloadBytes).digest("hex")
+  // 宿主自持的 v2 信封,沿用 producer 语料的身份。vendored producer 产物本身没有 `root`,
+  // 在 v2 合同下应当被拒 —— 那道过渡闸在 package-installability{,.wiring}.test.ts,不在这里重述。
+  const envelope = {
+    schema: "alpha.host-extension-package.v1",
+    prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
+    presentation: {
+      displayName: "Generic Remote MCP",
+      description: "Generic Phase 1 compiler corpus input.",
+    },
+    root: "mcp:generic-remote",
+    components: [
+      {
+        id: "mcp:generic-remote",
+        required: true,
+        dependencies: [],
+        profileId: "mcp-remote",
+        profileVersion: 1,
+        capabilities: ["alpha.secret-prerequisite.v1"],
+        payloadRef: {
+          sha256: createHash("sha256").update(payloadBytes).digest("hex"),
+          bytes: payloadBytes.byteLength,
+          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
+        },
+      },
+    ],
+    capabilities: ["alpha.secret-prerequisite.v1"],
+  } as unknown as AlphaPackageEnvelopeV1
 
   const key = signingKey()
   const catalogBody = JSON.stringify({

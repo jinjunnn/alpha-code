@@ -599,6 +599,7 @@ export const dict = {
   "alpha.ext.packageReasonCompatible": "此扩展包与当前 Alpha 版本兼容。",
   "alpha.ext.packageReasonPrerequisiteRequired": "安装此扩展包前,请先完成必需的前置条件。",
   "alpha.ext.packageReasonHostUpdateRequired": "此扩展包需要较新 Alpha 版本提供的能力。",
+  "alpha.ext.packageReasonBundleActivationPending": "此扩展包包含多个组件,当前版本还不能一次装齐。",
   "alpha.ext.packageReasonInvalid": "扩展包元数据未通过验证。",
   "alpha.ext.packageReasonPayloadUnavailable": "暂时无法取得扩展包内容,请稍后重试。",
   "alpha.ext.packageReasonPayloadIntegrity": "扩展包内容与已验证的完整性记录不一致。",

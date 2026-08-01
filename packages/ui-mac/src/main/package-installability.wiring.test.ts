@@ -1,7 +1,10 @@
 // REQ-128 production wiring gate. The repository's shipped Catalog currently has no packages[]
-// instances, so every package below is an explicit producer-shaped construction from the pinned
-// alpha-web corpus. This is a reachability harness for the new path, not a claim that production
-// traffic already exercises it.
+// instances, so the packages below are explicit host-owned constructions that reuse the pinned
+// alpha-web corpus's identity. This is a reachability harness for the new path, not a claim that
+// production traffic already exercises it.
+//
+// The one place the *actual* vendored producer bytes are read is the §5.1 transition gate at the
+// bottom, which asserts they are refused until the compiler emits a v2 envelope.
 
 import { createHash } from "node:crypto"
 import { resolve } from "node:path"
@@ -23,22 +26,65 @@ import {
 
 const artifact = resolve(import.meta.dir, "../../../alpha-contracts-consumer/vendor/alpha-web-extension-package")
 
+/**
+ * The pinned producer output exactly as vendored. Under the v2 host contract it carries no `root`,
+ * so it is expected to be **refused** until P2-B′ re-vendors a v2 compiler artifact. It is never
+ * patched into compliance here — see the transition gate at the bottom of this file.
+ */
+const vendoredProducerEnvelope = async () =>
+  structuredClone(
+    (
+      (await Bun.file(resolve(artifact, "expected.mcp-remote.compiled.json")).json()) as {
+        envelope: AlphaPackageEnvelopeV1
+      }
+    ).envelope,
+  )
+
+/**
+ * A host-owned v2 package used to drive the production wiring. It reuses the producer corpus's
+ * identity and presentation so the reachability claim stays comparable, but its shape is this
+ * host's contract, not a claim about what the compiler emits today.
+ */
 const producerPackage = async () => {
-  const compiled = (await Bun.file(resolve(artifact, "expected.mcp-remote.compiled.json")).json()) as {
-    envelope: AlphaPackageEnvelopeV1
-    payload: PackageProfilePayloadV1
-  }
-  const envelope = structuredClone(compiled.envelope)
-  const payload = structuredClone(compiled.payload)
-  if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
-    throw new Error("producer corpus profile drifted")
-  payload.behavior.headersTemplate = {
-    Authorization: "Bearer {A_KEY}",
-    "X-Token": "{B_TOKEN}",
-  }
+  const payload = {
+    schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+    behavior: {
+      url: "https://mcp.example.com/",
+      headersTemplate: {
+        Authorization: "Bearer {A_KEY}",
+        "X-Token": "{B_TOKEN}",
+      },
+      requiredSecrets: ["A_KEY", "B_TOKEN"],
+      auth: "none",
+    },
+  } as unknown as PackageProfilePayloadV1
   const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
-  envelope.components[0].payloadRef.bytes = bytes.byteLength
-  envelope.components[0].payloadRef.sha256 = createHash("sha256").update(bytes).digest("hex")
+  const envelope = {
+    schema: "alpha.host-extension-package.v1",
+    prelude: { packageId: "package:generic-remote-mcp", version: "1.0.0" },
+    presentation: {
+      displayName: "Generic Remote MCP",
+      description: "Generic Phase 1 compiler corpus input.",
+    },
+    root: "mcp:generic-remote",
+    components: [
+      {
+        id: "mcp:generic-remote",
+        required: true,
+        dependencies: [],
+        profileId: "mcp-remote",
+        profileVersion: 1,
+        capabilities: ["alpha.secret-prerequisite.v1"],
+        payloadRef: {
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          bytes: bytes.byteLength,
+          mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          url: "https://alphacodeone.com/catalog/assets/mcp.generic-remote/1.0.0/alpha-package/payload.json",
+        },
+      },
+    ],
+    capabilities: ["alpha.secret-prerequisite.v1"],
+  } as unknown as AlphaPackageEnvelopeV1
   return { envelope, bytes }
 }
 
@@ -139,7 +185,21 @@ describe("package installability production wiring", () => {
 
     expect(Object.keys(browse).sort()).toEqual(["catalog", "channel", "fetchedAt", "source", "version", "via"])
     expect(Object.keys(browse.catalog).sort()).toEqual(["entries", "packages", "version"])
-    expect(Object.keys(detail).sort()).toEqual(["action", "catalogId", "prerequisites", "presentation", "verdict"])
+    expect(Object.keys(detail).sort()).toEqual([
+      "action",
+      "catalogId",
+      "components",
+      "prerequisites",
+      "presentation",
+      "verdict",
+    ])
+    expect(Object.keys(detail.components[0]!).sort()).toEqual([
+      "componentId",
+      "included",
+      "required",
+      "role",
+      "skipReasonCode",
+    ])
     expect(Object.keys(detail.action).sort()).toEqual(["enabled", "kind", "reasonCode"])
     expect(Object.keys(detail.prerequisites).sort()).toEqual(["items", "status"])
     expect(Object.keys(detail.prerequisites.items[0]!).sort()).toEqual(["label", "prerequisiteId", "required"])
@@ -274,6 +334,30 @@ describe("package installability production wiring", () => {
       expect(failed, name).toMatchObject({ ok: false, package: { verdict: "blocked" } })
       expect(legacyPlannerCalls, name).toBe(0)
     }
+  })
+
+  // §5.1 门一。旧 vendored producer 产物在 v2 合同下应当被拒 —— 这是正确行为,不是回归。
+  // 这里走的是**真实** refresh/detail 生产链,不是直接调解码器,所以它同时证明拒绝会一路
+  // 传到 renderer 能看到的 safe view。P2-B′ re-vendor 之后本条会红,由那张票翻成正向。
+  test("the pinned producer artifact is refused end-to-end through the real read path", async () => {
+    const envelope = await vendoredProducerEnvelope()
+    expect(Object.hasOwn(envelope, "root"), "producer 已产出 root,请翻转 §5.1 门一").toBe(false)
+
+    const refresh = () =>
+      evaluateRemoteCatalogPackages(rawResult(envelope), {
+        packageInstallability: {
+          fetchPayload: async () => {
+            throw new Error("payload must never be fetched for a refused envelope")
+          },
+        },
+      })
+    const handlers = registeredHandlers(refresh)
+    const detail = (await handlers.get(PACKAGE_DETAIL_IPC_CHANNEL)!(
+      undefined,
+      envelope.prelude.packageId,
+    )) as CatalogPackageViewV1
+    expect(detail.verdict).toBe("blocked")
+    expect(detail.action).toEqual({ kind: "none", enabled: false, reasonCode: "package-invalid" })
   })
 
   test("the real bundled Catalog has no package instance; this gate marks its constructed reachability", () => {
