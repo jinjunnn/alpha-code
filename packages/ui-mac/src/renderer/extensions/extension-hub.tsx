@@ -846,7 +846,10 @@ export function ExtensionHub(props: {
     setUpdBusy(r.id)
     try {
       const res = await ext.updateEntry(target)
-      if (res.ok) flash(t("alpha.ext.updated"), "success")
+      if (res.ok) {
+        flash(t("alpha.ext.updated"), "success")
+        if (res.warning) flash(res.warning)
+      }
       else if (isAuthzRequired(res)) {
         // #348:扩权 → 授权框(mode=update,场景化文案);调用方据返回值中止批量循环。
         setAuthz({ entry: target, mode: "update", host: "standalone", diffs: res.authorization })
@@ -873,6 +876,7 @@ export function ExtensionHub(props: {
       const res = await ext.updateEntry(target, authorization)
       if (res.ok) {
         flash(t("alpha.ext.updated"), "success")
+        if (res.warning) flash(res.warning)
         return null
       }
       if (isAuthzRequired(res)) return res.authorization
@@ -931,7 +935,10 @@ export function ExtensionHub(props: {
     const skippedCount = r.skipped?.length ?? 0
     if (skippedCount > 0) setErrFor(e.id, t("alpha.ext.bundlePartialFail", { ok: okCount, fail: skippedCount }))
     else flash(t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.added"), "success")
-    return { ok: true }
+    // `#698`:成功响应里的具名 warning 必须原样带出去(`ActionResult` 的定义写着「调用方必须呈现,
+    // 不得静默吞掉」)。package 更新的「离场组件已停用、但残留文件没删掉」正是走这条 —— 丢了它,
+    // 用户看到的就只有「更新成功」,而盘上还留着东西。呈现由 addDirect 的单点出口统一做。
+    return { ok: true, ...(r.warning ? { warning: r.warning } : {}) }
   }
 
   // T7(B11)+T9:失败一律行内(卡片错误行 / 详情页同款),toast 只报成功;安装阶段粗状态机
@@ -965,6 +972,11 @@ export function ExtensionHub(props: {
     const addedFlash = (fallbackKey: "alpha.ext.added" | "alpha.ext.addedLive" | "alpha.ext.pluginRestart") =>
       flash(willBeDisabled ? t("alpha.ext.addedDisabled") : t(fallbackKey), "success")
     try {
+      // `#698`:成功响应携带的具名 warning 在**这一个出口**呈现,不再逐分支各写一次。
+      // 此前只有 agent 分支写了这行,mcp/skill/plugin/bundle/cloud 五条全都把 warning 丢了 ——
+      // 而 `ActionResult` 的定义明写「调用方必须呈现」。逐分支写 = 新增分支默认漏,单点出口 =
+      // 新增分支默认覆盖。
+      let outcome: { ok: true; reason?: string; warning?: string; projectionLag?: string } | null = null
       if (e.type === "mcp") {
         setStageFor(e.id, "checking")
         const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
@@ -975,6 +987,7 @@ export function ExtensionHub(props: {
         }
         setStageFor(e.id, "installing")
         const res = await addMcpEntry(e, secrets, true, authorization)
+        if (res.ok) outcome = res
         if (!res.ok) {
           // hook 返回稳定 reason code,文案在这一层映射(hook 不持有 i18n)。
           if (res.reason === "connect-failed") {
@@ -994,32 +1007,37 @@ export function ExtensionHub(props: {
         setStageFor(e.id, "installing")
         const res = await ext.installSkill(e, authorization)
         if (!res.ok) return failOr(res)
+        outcome = res
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
         else addedFlash("alpha.ext.addedLive")
       } else if (e.type === "agent") {
         setStageFor(e.id, "installing")
         const res = await ext.installAgentEntry(e, authorization)
         if (!res.ok) return failOr(res)
+        outcome = res
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
         else addedFlash("alpha.ext.addedLive")
-        // 成功但携带 loud 诊断(CAS 自愈/授权账写失败等,#361 review r1):原样呈现,不吞。
-        if (res.warning) flash(res.warning)
       } else if (e.type === "plugin") {
         setStageFor(e.id, "installing")
         const res = await ext.installPlugin(e, authorization)
         if (!res.ok) return failOr(res)
+        outcome = res
         addedFlash("alpha.ext.pluginRestart")
       } else if (e.type === "bundle") {
         setStageFor(e.id, "installing")
         const res = await installBundle(e, authorization)
         if (!res.ok) return failOr(res)
+        outcome = res
       } else if (e.type === "cloud") {
         // REQ-020 T4:「启用」= receipts-only(账本可用列表);门控在按钮层(!cloudReady 禁用)。
         setStageFor(e.id, "installing")
         const res = await ext.enableCloud(e, authorization)
         if (!res.ok) return failOr(res)
+        outcome = res
         flash(t("alpha.ext.cloudEnabled"), "success")
       }
+      // 成功但携带 loud 诊断(CAS 自愈 / 授权账写失败 / `#698` 更新后的惰性残留等):原样呈现,不吞。
+      if (outcome?.warning) flash(outcome.warning)
       return null
     } finally {
       setBusy(null)
@@ -1069,6 +1087,10 @@ export function ExtensionHub(props: {
         setEnvValues({})
         return
       }
+      // `#698`:package 装/更新成功携带的具名 warning 必须呈现。这条路径(确认屏 → 二次
+      // installCatalog)是 package 更新真正走的那条,而它此前**连成功 toast 都没有**,
+      // warning 自然也就没有落点 —— 「离场组件已停用、但残留文件没删掉」用户完全看不到。
+      if (result.warning) flash(result.warning)
       const latest = await window.api.ext.packageDetail(pending.view.catalogId)
       if (latest) rememberPackageView(latest)
       pending.finish(latest ?? pending.view)
@@ -1153,6 +1175,9 @@ export function ExtensionHub(props: {
       res.ok ? t("alpha.ext.removed") : `${t("alpha.ext.removeFailed")}${res.reason ? `: ${res.reason}` : ""}`,
       res.ok ? "success" : "error",
     )
+    // `#706` 的「它还属于某个扩展包 —— 只移除了你的独立安装,文件保留」正是走这条 warning。
+    // 丢掉它,用户点了移除、看到「已移除」,而文件还在盘上、条目还在列表里。
+    if (res.ok && res.warning) flash(res.warning)
   }
 
   // T3:开 hub 时扫描旧 XDG 根,匹配 catalog(只迁 alpha 自己装的,不碰用户自建内容,ADR-019 §4)。

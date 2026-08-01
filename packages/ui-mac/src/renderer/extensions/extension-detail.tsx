@@ -173,6 +173,9 @@ export function ExtensionDetail(props: {
           return
         }
         setRetained(result.retained.map((entry) => ({ kind: entry.kind, name: entry.name, reasonCode: entry.reasonCode })))
+        // `#698`:成功但带具名 warning(连接绑定没释放掉、残留没清干净等)必须呈现 —— 这是我
+        // 自己在同一批改动里犯的第四处「诚实只诚实到 IPC 边界」。用与失败同一个可见位置。
+        if (result.warning) setPackageError(result.warning)
         await refetchInstalled()
       } finally {
         setRemoving(false)
