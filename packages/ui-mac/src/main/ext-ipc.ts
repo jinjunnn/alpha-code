@@ -18,7 +18,7 @@ import { isExtensionName } from "../shared/extension-name"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath } from "./ext-config"
+import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, withConfigWriteLock } from "./ext-config"
 import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { reloadInstalledMcp } from "./ext-mcp-activation"
@@ -49,6 +49,12 @@ import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { assertAlphaEnvironmentIdentity, environmentMutableRoot, getAlphaEnvironment } from "./alpha-environment"
 import { createInventoryQuery } from "./ext-inventory"
+import {
+  removePackageChildArtifactsV1,
+  uninstallPackageV1,
+  type PackageArtifactInstallersV1,
+  type PackageArtifactRemovalV1,
+} from "./ext-package-uninstall"
 import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, installUncuratedAgentImport, installUncuratedSkillImport, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { fetchCurationBlob } from "./curation-blobs"
 import { makeRecoveryGate, runVerifiedMutation } from "./ext-recovery-gate"
@@ -57,7 +63,7 @@ import { grantSessionGrant, revokeSessionGrant, sessionGrantRegistry } from "./e
 import { adoptProjectLedger } from "./ext-project-adopt"
 import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS } from "./ext-write-channels"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
-import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedgerV2, removeRecordV2 } from "./ext-receipt-v2"
+import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedgerV2, readPackageLedgerStateV1, removeRecordV2 } from "./ext-receipt-v2"
 import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
 import { releaseAlphaConnectionBindingsV1 } from "./alpha-connection-store"
@@ -193,6 +199,34 @@ export function registerExtIpcHandlers(
     root: alphaGlobalRoot,
     userDataPath,
     environment: () => getAlphaEnvironment().environment,
+    // `#698`:update 把 child 踢出图时,那个 child 的实物由这条接缝删 —— 与整包卸载**同一份**
+    // 实现。接缝缺席时 admission 响亮拒绝该次更新(见 executePreparedPackage),不会留下
+    // 「账本说没了、MCP server 还在跑」。
+    removePackageChildArtifacts: (children) => packageChildArtifactRemoval(children),
+  })
+  // REQ-128 `#698`:某个 package 在本机装没装(**只读**,不进写通道注册表)。详情页据此决定
+  // 要不要显示「移除此扩展包」。只回安全投影:componentId / kind / name / required 与图摘要 ——
+  // 绝无路径、绝无 owner token(owner 里带着别的包的 id,那不是这个面该说的事)。
+  ipcMain.handle("ext-package-installed", (_event: IpcMainInvokeEvent, catalogId: unknown) => {
+    if (typeof catalogId !== "string" || catalogId.length === 0 || catalogId.length > 160)
+      return { ok: false as const, reason: "invalid catalogId" }
+    const state = readPackageLedgerStateV1(alphaGlobalRoot())
+    // 「读不出来」与「没装」不是一回事:折叠成 installed:false 会让用户在一本损坏的账本上
+    // 看到一个装好的包显示成没装,而「移除」按钮随之消失。
+    if (!state.ok) return { ok: false as const, reason: state.reason }
+    const graph = state.packageGraphs.find((candidate) => candidate.packageId === catalogId)
+    if (!graph) return { installed: false as const }
+    return {
+      installed: true as const,
+      packageId: graph.packageId,
+      graphDigest: graph.graphDigest,
+      components: [graph.root, ...graph.children].map((node) => ({
+        componentId: node.componentId,
+        kind: node.kind as string,
+        name: node.name,
+        required: node.required,
+      })),
+    }
   })
   // REQ-102 #316:packaged seed 浏览面 —— 纯读安全投影(零绝对路径/blob 布局/url;seedDir 由
   // main 派生,renderer 无输入)。选装走 ext-install-catalog 的 seed 意图(#317);UI 归 REQ-103。
@@ -581,6 +615,30 @@ export function registerExtIpcHandlers(
     const bundled = bundledCatalogJson as unknown as Catalog
     return { entries: bundled.entries, channel: "bundled" as const, version: bundled.version }
   }
+  /**
+   * `#698`:整包卸载 / update 离场 child 的实物删除接缝。
+   *
+   * 与 `plannerDeps().installers` 用的是**同一批实现** —— 「在 Bundle 里装的」和「单装的」删的
+   * 必须是同一堆东西,两套实现的偏差只会在卸载之后现身。唯一的差别是 MCP 配置那一条:整包卸载
+   * 不在引擎的 bundle 锁内跑(agent/MCP 的配置写自己要取那把非重入的锁),所以这里用
+   * `withConfigWriteLock(removeMcpConfigInLock)` —— 零账本副作用的那个原语,外面自己包一把锁。
+   */
+  const packageArtifactInstallers = (): PackageArtifactInstallersV1 => ({
+    removeFsInstall,
+    removeMcpConfig: (name) => withConfigWriteLock(() => removeMcpConfigInLock(name)),
+    removeMcpSecretsStrict: (name) => {
+      const live = listConfiguredMcpServerNamesStrict()
+      if (!live.ok) return { ok: false as const, reason: `secret revocation blocked: ${live.reason}` }
+      const names = new Set(live.names)
+      return removeMcpServerSecretsStrict(userDataPath, name, (cand) => names.has(cand))
+    },
+    releaseAlphaConnectionBindings: (componentId) =>
+      releaseAlphaConnectionBindingsV1({ userDataPath, extensionRoot: alphaGlobalRoot() }, componentId, new Date().toISOString()),
+    removeInstallGrants,
+  })
+  const packageChildArtifactRemoval = (children: Array<{ kind: string; name: string }>): PackageArtifactRemovalV1 =>
+    removePackageChildArtifactsV1(alphaGlobalRoot(), children, packageArtifactInstallers())
+
   const plannerDeps = (): PlannerDeps => {
     // 每次调用解析一次 effective catalog(bundle 会对逐子条目调 resolveEntry —— 不重复打网络)。
     let effective: Promise<{ entries: Catalog["entries"]; channel: "remote" | "cache" | "bundled"; version: string }> | null = null
@@ -856,6 +914,10 @@ export function registerExtIpcHandlers(
         return rootActivation ? { ...wire, mcpActivation: rootActivation } : wire
       },
       uninstallV2: (intent) => uninstallByKey(intent, plannerDeps()),
+      // `#698`:整包卸载。renderer 只运输 packageId —— 删什么、能不能删,全部由 main 从自己的
+      // 账本图重算(与 `uninstallV2` 同一信任边界)。
+      uninstallPackage: async (packageId) =>
+        uninstallPackageV1(packageId, { globalRoot: alphaGlobalRoot, installers: packageArtifactInstallers() }),
       rollback: async (intent, genId) => rollbackGenerationByKey(intent, genId, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) }),
       setInstallState: setInstallStateBody,
       // #347:清理前先经 gate 对项目根做显式恢复收敛(ADR-030「先显式恢复再清理」);clean 自身
@@ -892,6 +954,7 @@ export function registerExtIpcHandlers(
     }
   ipcMain.handle(GATED_WRITE_CHANNELS.installCatalog, barrier(gatedWrite.installCatalog))
   ipcMain.handle(GATED_WRITE_CHANNELS.uninstallV2, barrier(gatedWrite.uninstallV2))
+  ipcMain.handle(GATED_WRITE_CHANNELS.uninstallPackage, barrier(gatedWrite.uninstallPackage))
   ipcMain.handle(GATED_WRITE_CHANNELS.rollback, barrier(gatedWrite.rollback))
   ipcMain.handle(GATED_WRITE_CHANNELS.setInstallState, barrier(gatedWrite.setInstallState))
   ipcMain.handle(GATED_WRITE_CHANNELS.projectResidualsClean, barrier(gatedWrite.projectResidualsClean))

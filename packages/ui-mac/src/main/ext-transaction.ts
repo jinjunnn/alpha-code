@@ -1783,6 +1783,27 @@ function deleteOwnedGenerationStore(root: string, key: string, removed: string[]
   return { hardFailure }
 }
 
+/**
+ * REQ-128 `#698`:同一个删除原语的**锁内**导出面。
+ *
+ * Bundle 卸载要在**一次**锁 / 一份 journal 里删掉若干个 child 的实物,再提交**一个** root
+ * 账本 mutation。走 `uninstallExtensionTransaction` 逐 child 各来一次 = 各自一把锁、各自一份
+ * journal、各自一次去账 —— 正是 `#706` 花了一轮才消灭的形状。所以这里把删除原语本身导出,
+ * 由 package 卸载在自己那把锁内调用。**它自己不取锁**:调用方必须已经持有 bundle 锁。
+ */
+export function removeOwnedGenerationStoreInLock(
+  root: string,
+  key: string,
+): { ok: true; removed: string[]; warnings: string[] } | { ok: false; reason: string; removed: string[]; warnings: string[] } {
+  const removed: string[] = []
+  const warnings: string[] = []
+  if (!SAFE_KEY.test(key)) return { ok: false, reason: `invalid key: ${key}`, removed, warnings }
+  const { hardFailure } = deleteOwnedGenerationStore(root, key, removed, warnings)
+  return hardFailure
+    ? { ok: false, reason: `generation store removal incomplete for ${key}: ${warnings.join("; ")}`, removed, warnings }
+    : { ok: true, removed, warnings }
+}
+
 export type UninstallHooks = {
   /** 账本删除接缝(artifact 删完、锁内调用):REQ-100 #313 store-first, ledger-second。抛错 → journal
    *  保持 uninstalling,恢复据此前滚补删账。 */

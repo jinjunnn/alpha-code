@@ -113,9 +113,54 @@ export type PackageAdmissionPlanV1 = {
   items: PackageAdmissionPlanItemV1[]
 }
 
+/**
+ * `#698`:同一个 packageId 已经装过时,这一屏要回答的不是「会装什么」而是「会**变**什么」。
+ * 每一行的判据都是 exact 值(manifestDigest / componentId / required),没有 semver、没有
+ * 「差不多是同一个」。`change` 的五个取值穷举了一个 `(kind,name)` 位置能发生的全部事:
+ * 新增 / 消失 / 换了内容 / 只翻了 required / 一个字节都没变。
+ */
+export type PackageUpdateChangeWireV1 = "added" | "removed" | "replaced" | "optional-changed" | "unchanged"
+
+export type PackageUpdateComponentWireV1 = {
+  componentId: string | null
+  kind: string
+  name: string
+  key: string
+  change: PackageUpdateChangeWireV1
+  requiredBefore: boolean | null
+  requiredAfter: boolean | null
+  prerequisiteIds: string[]
+  capabilities: { previous: string[] | null; requested: string[]; added: string[]; removed: string[] }
+}
+
+/** 离场 child 的判决。`retain` 一定带具名理由 —— 「你的东西为什么没跟着包一起消失」是用户会问的。 */
+export type PackageUpdateClaimWireV1 = {
+  kind: string
+  name: string
+  decision: "delete" | "retain"
+  remainingOwners: string[]
+  reasonCode: "shared-with-package" | "user-installed" | "legacy-protected" | "unmanaged" | null
+}
+
+export type PackageUpdatePreviewWireV1 = {
+  operation: "install" | "update" | "uninstall"
+  packageId: string
+  versionBefore: string | null
+  versionAfter: string | null
+  graphBeforeDigest: string | null
+  graphAfterDigest: string | null
+  /** root 的 manifestDigest 变了 ⇒ owner token 变了 ⇒ 每个留下来的 child 都要换 owner。 */
+  ownerChanged: boolean
+  components: PackageUpdateComponentWireV1[]
+  claims: PackageUpdateClaimWireV1[]
+  capabilityExpansion: boolean
+}
+
 export type PackageAdmissionPreviewV1 = {
   attemptId: string
   binding: PackageAdmissionBindingV1
   plan: PackageAdmissionPlanV1
   items: CapabilityDiffWire[]
+  /** 首次安装时 `operation: "install"` 且每一行都是 `added` —— 同一个形状,不另出一个可选分支。 */
+  update: PackageUpdatePreviewWireV1
 }

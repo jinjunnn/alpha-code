@@ -215,6 +215,10 @@ describe("REQ-128 #705 single-install builder parity", () => {
           claimMutations: [
             { op: "acquire", kind: "skill", name: "demo", owner: `bundle:package:parity-skill@${plan.items[0]!.manifestDigest}` },
           ],
+          // REQ-128 `#698`:child 删除半场随 envelope 进 journal(commit records 里没有「被删掉的
+          // 那个」可派生)。首装恒空 —— 但它必须**在场**:缺席时崩溃前滚会算出一份「只加不减」的
+          // mutation,update 删掉的 child 会在前滚后复活成一条没人认领的 record。
+          childRemovals: [],
         },
       },
     ])

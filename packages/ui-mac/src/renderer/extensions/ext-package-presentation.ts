@@ -67,6 +67,27 @@ export function packageComponentPresentation(component: CatalogPackageComponentV
   }
 }
 
+/**
+ * `#698`:整包移除之后,有些部件会**留下来**。用户看到「移除成功」却发现某个技能还在,如果
+ * 系统说不出为什么,那和一个 bug 没有区别。四个 token 各对一句话:还有别的扩展包在用它 /
+ * 你自己也单独装过它 / 它比 Alpha 开始记录扩展包还早 / 它不由 Alpha 管理。
+ *
+ * `satisfies Record<…>` 只在**编译期**挡漏项,而 bun 直接剥类型 —— 新增一个 token 时运行期
+ * 拿到的是 `undefined`,`t(undefined)` 会渲染出空白。所以真正的判据是
+ * `ext-package-presentation.test.ts` 里那条穷举:它遍历本表并对每个 key 断言 en/zh 都存在且非空。
+ */
+const RETAINED_REASON_KEYS = {
+  "shared-with-package": "alpha.ext.packageKeptShared",
+  "user-installed": "alpha.ext.packageKeptUserInstalled",
+  "legacy-protected": "alpha.ext.packageKeptLegacy",
+  unmanaged: "alpha.ext.packageKeptUnmanaged",
+} as const satisfies Record<"shared-with-package" | "user-installed" | "legacy-protected" | "unmanaged", string>
+
+export const PACKAGE_RETAINED_REASONS_V1 = ["shared-with-package", "user-installed", "legacy-protected", "unmanaged"] as const
+
+export const packageRetainedReasonKey = (reason: string): string | undefined =>
+  (RETAINED_REASON_KEYS as Record<string, string | undefined>)[reason]
+
 export function packagePresentation(view: CatalogPackageViewV1) {
   return {
     verdictKey: VERDICT_KEYS[view.verdict],

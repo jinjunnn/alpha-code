@@ -20,6 +20,8 @@ import type {
 import { evaluatePackageForHost, runCatalogInstallWithPackagePreflight } from "../src/main/package-installability"
 import { createPackageAdmissionCoordinator } from "../src/main/package-admission"
 import { writeCapabilityGrantSync } from "../src/main/ext-capability-grants"
+import { readPackageGraphs, readPackageLedgerStateV1 } from "../src/main/ext-receipt-v2"
+import { uninstallPackageV1 } from "../src/main/ext-package-uninstall"
 import {
   evaluateRemoteCatalogPackages,
   PACKAGE_DETAIL_IPC_CHANNEL,
@@ -423,6 +425,36 @@ async function mountHarness(options?: {
             fixture.complete(intent.catalogId)
           return result
         },
+        // `#698`:详情页的「移除此扩展包」由这两条读/写决定是否出现、按下去做什么。两条都接
+        // **生产实现**(不是常量桩):否则「装完之后按钮会出现」就成了一句没人验证的话。
+        packageInstalled: async (catalogId: string) => {
+          const state = readPackageLedgerStateV1(globalRoot)
+          if (!state.ok) return { ok: false as const, reason: state.reason }
+          const graph = state.packageGraphs.find((candidate) => candidate.packageId === catalogId)
+          if (!graph) return { installed: false as const }
+          return {
+            installed: true as const,
+            packageId: graph.packageId,
+            graphDigest: graph.graphDigest,
+            components: [graph.root, ...graph.children].map((node) => ({
+              componentId: node.componentId,
+              kind: node.kind as string,
+              name: node.name,
+              required: node.required,
+            })),
+          }
+        },
+        uninstallPackage: async (packageId: string) =>
+          uninstallPackageV1(packageId, {
+            globalRoot: () => globalRoot,
+            installers: {
+              removeFsInstall: () => ({ ok: true as const, files: [] }),
+              removeMcpConfig: () => ({ ok: true as const }),
+              removeMcpSecretsStrict: () => ({ ok: true as const }),
+              releaseAlphaConnectionBindings: () => ({ ok: true as const }),
+              removeInstallGrants: () => ({ ok: true as const, removed: [] }),
+            },
+          }),
         inventoryView: async () => undefined,
         advisoryActive: async () => ({ ids: [], fresh: true }),
         migrateScan: async () => ({
@@ -917,6 +949,49 @@ describe("package detail production renderer path", () => {
 
     cancelPackageAuthorization()
     expect(JSON.stringify(harness.installResults)).not.toContain(secretCanary)
+  })
+
+  /**
+   * `#698` 的**用户可达路径闭合**。`#706` 之后,属于 Bundle 的单个部件被单独移除会被响亮拒绝
+   * (「它还属于这个包」)—— 而在这颗按钮之前,那句拒绝指向的地方并不存在:用户装完一个扩展包
+   * 就再也删不掉它。这条从「装上」一路走到「移除」,每一跳都是生产件:真 ExtensionHub 卡片 →
+   * 真 ExtensionDetail → 真 admission → 真事务 → 真 V3 账本 → 真 `uninstallPackageV1`。
+   */
+  test("installing a Bundle reveals the remove-package action, and pressing it removes it through production main", async () => {
+    const harness = await mountHarness()
+    click(packageCard(MIXED_BUNDLE_PACKAGE_ID))
+    await waitFor(() =>
+      expect(document.querySelector(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeInstanceOf(HTMLElement),
+    )
+    const detail = () => document.querySelector<HTMLElement>(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)!
+    // 装之前:没有「移除此扩展包」这颗按钮(它不是常显的)。
+    expect(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeNull()
+
+    click(detail().querySelector(".alpha-ext-dsub button"))
+    await waitForPackageAuthorization(MIXED_BUNDLE_PACKAGE_ID)
+    fillPackageSecret(secretCanary)
+    confirmPackageAuthorization()
+    await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true }))
+    // 账本里真的有这张图 —— 按钮出现的依据是 main 的账本,不是 renderer 记得自己点过安装。
+    await waitFor(() =>
+      expect(readPackageLedgerStateV1(harness.globalRoot)).toMatchObject({ ok: true, packageGraphs: [{ packageId: MIXED_BUNDLE_PACKAGE_ID }] }),
+    )
+
+    // 留在同一张详情页上:装完之后按钮必须**当场**出现,不需要退出再进来。
+    await waitFor(() =>
+      expect(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeInstanceOf(HTMLElement),
+    )
+    const remove = detail().querySelector<HTMLElement>(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)!
+    expect(remove.textContent?.trim()).toBe(zh["alpha.ext.packageActionUninstall"])
+
+    click(remove)
+    // 移除之后:图没了(main 说的),按钮跟着消失(renderer 重新问了 main,而不是自己乐观翻转)。
+    await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual([]))
+    await waitFor(() =>
+      expect(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeNull(),
+    )
+    // 没有任何 child 被保留(这个包没和别人共享),所以不显示保留清单。
+    expect(detail().querySelector(".alpha-ext-package-retained")).toBeNull()
   })
 
   test("detail install button drives preview and confirmation through real package admission, then adopts the new view", async () => {

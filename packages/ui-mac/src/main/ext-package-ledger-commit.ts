@@ -35,11 +35,27 @@ export function commitTransactionLedger(root: string, records: TxCommitRecord[])
   // 同一份 commit records 在主提交与前滚两条路上算出的 mutation 因此逐字相同。
   // 计划期还不知道事务会分到哪个 txId(`runExtensionTransaction` 自产),envelope 里那个是
   // 占位;真值在这里统一覆盖,包括写进 packageRecord 的那份。
+  // `#698`:child mutation 有两个半场,来源不同,不可互相顶替 ——
+  //   · **upsert** 由本次事务的 commit records 派生(装了什么,事务自己知道);
+  //   · **remove** 由 envelope 携带(被删掉的 child 这次不产生任何 item,commit records 里没有它)。
+  // remove 排在 upsert 之前:同一个 key 若两边都出现,那是调用方算错了,而「先删后写」会把它
+  // 静默变成一次 upsert。所以下面显式拒绝这种交集,不靠顺序把矛盾抹平。
+  const { childRemovals, ...envelope } = decoded.value
+  const upserts = recoveryReceiptInputs(records).map((input) => ({ op: "upsert" as const, input }))
+  const upsertKeys = new Set(upserts.map((entry) => `${entry.input.kind}:${entry.input.name}`))
+  const collision = childRemovals.find((child) => upsertKeys.has(`${child.kind}:${child.name}`))
+  if (collision)
+    throw new Error(
+      `package ledger mutation rejected (fail closed): ${collision.kind}:${collision.name} is both installed and removed by the same transaction`,
+    )
   const mutation: PackageLedgerMutationV1 = {
-    ...decoded.value,
+    ...envelope,
     transactionId: carrier.txId,
-    ...(decoded.value.packageRecord ? { packageRecord: { ...decoded.value.packageRecord, transactionId: carrier.txId } } : {}),
-    childRecordMutations: recoveryReceiptInputs(records).map((input) => ({ op: "upsert" as const, input })),
+    ...(envelope.packageRecord ? { packageRecord: { ...envelope.packageRecord, transactionId: carrier.txId } } : {}),
+    childRecordMutations: [
+      ...childRemovals.map((child) => ({ op: "remove" as const, kind: child.kind, name: child.name })),
+      ...upserts,
+    ],
   }
   const written = applyPackageMutation(root, mutation)
   if (!written.ok) throw new Error(`package ledger mutation commit failed: ${written.reason}`)

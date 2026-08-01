@@ -795,6 +795,43 @@ export type ElectronAPI = {
     uninstallV2: (
       intent: UninstallKeyIntent,
     ) => Promise<{ ok: true; files?: string[]; warning?: string } | { ok: false; reason: string }>
+    /** REQ-128 `#698`:整包卸载。renderer 只运输 packageId —— 要删哪些 child、哪些必须留下
+     *  (还有别的包在用 / 用户自己也装过 / legacy 存量),全部由 main 从**它自己的账本图**重算。
+     *  这是 `#706` 之后唯一能把一个 Bundle 拿掉的通道:属于 Bundle 的 child 被单独卸载会被
+     *  响亮拒绝,而在此之前它指向的「the package」根本没有入口。 */
+    uninstallPackage: (
+      packageId: string,
+    ) => Promise<
+      | {
+          ok: true
+          packageId: string
+          removed: Array<{ kind: string; name: string }>
+          retained: Array<{
+            kind: string
+            name: string
+            decision: "delete" | "retain"
+            remainingOwners: string[]
+            reasonCode: "shared-with-package" | "user-installed" | "legacy-protected" | "unmanaged" | null
+          }>
+          files: string[]
+          warning?: string
+        }
+      | { ok: false; reason: string; stage?: "plan" | "artifacts" | "ledger" }
+    >
+    /** REQ-128 `#698`:某个 packageId 在本机的安装事实(只读)。详情页据此决定要不要显示
+     *  「移除此扩展包」。`installed:false` 与「装了但图读不出来」是两件事,后者响亮报错。 */
+    packageInstalled: (
+      catalogId: string,
+    ) => Promise<
+      | { installed: false }
+      | {
+          installed: true
+          packageId: string
+          graphDigest: string
+          components: Array<{ componentId: string; kind: string; name: string; required: boolean }>
+        }
+      | { ok: false; reason: string }
+    >
     /** REQ-104 #395:key-based 启停 —— main 按账本自查。写序 = 账本翻转 + alpha.jsonc config 投影
      *  (两次写 + 失败补偿,非单事务);mcp/agent 的禁用**权威由 sidecar 注入 OPENCODE_CONFIG_CONTENT
      *  保证**(引擎最后加载 override),alpha.jsonc 投影仅 consistency;plugin 禁用 = 从 alpha.jsonc

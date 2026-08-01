@@ -41,6 +41,10 @@ function makeHarness(admit: boolean) {
   const bodies: WriteChannelBodies = {
     installCatalog: body("installCatalog"),
     uninstallV2: body("uninstallV2"),
+    // `#698`:整包卸载。**必须逐条列在下面三处枚举里** —— `WriteChannelBodies` 是编译期类型,
+    // 而测试文件不进 typecheck 且 bun 直接剥类型:漏掉它时 body 是 undefined,而
+    // 「键集一一对应」那条仍然全绿(builder 照样吐出这个键)。判据只能是显式枚举。
+    uninstallPackage: body("uninstallPackage"),
     rollback: body("rollback"),
     setInstallState: body("setInstallState"),
     projectResidualsClean: body("projectResidualsClean"),
@@ -67,11 +71,12 @@ describe("GATED_WRITE_CHANNELS — 表完整性", () => {
 })
 
 describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", () => {
-  test("放行:全部 11 通道 body 收到原实参,gate 收到该通道的解析 root", async () => {
+  test("放行:全部 12 通道 body 收到原实参,gate 收到该通道的解析 root", async () => {
     const h = makeHarness(true)
     const w = buildGatedWriteChannels(h)
     await w.installCatalog({ catalogId: "x" })
     await w.uninstallV2("proj")
+    await w.uninstallPackage("package:kit")
     await w.rollback({ type: "skill" }, "gen-000001-abcdef12")
     await w.setInstallState("proj")
     await w.projectResidualsClean("/some/project")
@@ -84,6 +89,7 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
     expect(h.bodyLog.map((b) => b.key)).toEqual([
       "installCatalog",
       "uninstallV2",
+      "uninstallPackage",
       "rollback",
       "setInstallState",
       "projectResidualsClean",
@@ -95,19 +101,21 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
       "importSkillGit",
     ])
     // root 断言:global 面 / intent 定根 / 项目面 / 导入 target 定根
-    expect(h.gateLog).toEqual([GLOBAL, PROJECT, GLOBAL, PROJECT, PROJECT, GLOBAL, GLOBAL, GLOBAL, GLOBAL, PROJECT, GLOBAL])
+    expect(h.gateLog).toEqual([GLOBAL, PROJECT, GLOBAL, GLOBAL, PROJECT, PROJECT, GLOBAL, GLOBAL, GLOBAL, GLOBAL, PROJECT, GLOBAL])
     // 实参透传抽查
-    expect(h.bodyLog[6]?.args).toEqual(["m", { type: "local" }, ["K"]])
-    expect(h.bodyLog[2]?.args).toEqual([{ type: "skill" }, "gen-000001-abcdef12"])
-    expect(h.bodyLog[9]?.args).toEqual(["/picked/dir", { scope: "project", projectDir: "/p" }])
+    expect(h.bodyLog[7]?.args).toEqual(["m", { type: "local" }, ["K"]])
+    expect(h.bodyLog[3]?.args).toEqual([{ type: "skill" }, "gen-000001-abcdef12"])
+    expect(h.bodyLog[10]?.args).toEqual(["/picked/dir", { scope: "project", projectDir: "/p" }])
+    expect(h.bodyLog[2]?.args).toEqual(["package:kit"])
   })
 
-  test("gate 拒绝:全部 11 通道 body 零调用,拒因原样返回", async () => {
+  test("gate 拒绝:全部 12 通道 body 零调用,拒因原样返回", async () => {
     const h = makeHarness(false)
     const w = buildGatedWriteChannels(h)
     const results = await Promise.all([
       w.installCatalog({}),
       w.uninstallV2({}),
+      w.uninstallPackage("package:kit"),
       w.rollback({}, "g"),
       w.setInstallState({}),
       w.projectResidualsClean("/p"),
@@ -119,7 +127,7 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
       w.importSkillGit("u", undefined),
     ])
     expect(h.bodyLog).toEqual([])
-    expect(h.gateLog).toHaveLength(11)
+    expect(h.gateLog).toHaveLength(12)
     for (const r of results) expect(r).toEqual({ ok: false, reason: "gate refused" })
   })
 

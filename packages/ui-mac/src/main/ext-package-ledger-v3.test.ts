@@ -203,18 +203,41 @@ describe("REQ-128 #706 — 严格解码", () => {
       graphBeforeDigest: null,
       graphAfter: g,
       claimMutations: [{ op: "acquire", kind: "skill", name: "demo", owner: bundleOwner(g.packageId, D2) }],
+      childRemovals: [],
     })
     expect(ok.ok).toBe(true)
+    // 每条负向只坏**一处**,其余字段一律合法 —— 少写一个新增的必填键会让整组「因为缺字段」而红,
+    // 那时这道闸测的就不再是它抬头写的东西了(`#698` 加 `childRemovals` 时正是这个陷阱)。
     for (const bad of [
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: null, claimMutations: [] },
-      { operation: "install", packageRecord: null, graphBeforeDigest: null, graphAfter: g, claimMutations: [] },
-      { operation: "uninstall", packageRecord: rec, graphBeforeDigest: g.graphDigest, graphAfter: g, claimMutations: [] },
-      { operation: "install", packageRecord: { ...rec, graphDigest: D3 }, graphBeforeDigest: null, graphAfter: g, claimMutations: [] },
-      { operation: "install", packageRecord: { ...rec, packageId: "skill:other" }, graphBeforeDigest: null, graphAfter: g, claimMutations: [] },
-      { operation: "bogus", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [] },
-      { operation: "install", packageRecord: rec, graphBeforeDigest: "nope", graphAfter: g, claimMutations: [] },
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [{ op: "acquire", kind: "skill", name: "demo", owner: "junk" }] },
-      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], extra: 1 },
+      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: null, claimMutations: [], childRemovals: [] },
+      { operation: "install", packageRecord: null, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [] },
+      { operation: "uninstall", packageRecord: rec, graphBeforeDigest: g.graphDigest, graphAfter: g, claimMutations: [], childRemovals: [] },
+      { operation: "install", packageRecord: { ...rec, graphDigest: D3 }, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [] },
+      { operation: "install", packageRecord: { ...rec, packageId: "skill:other" }, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [] },
+      { operation: "bogus", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [] },
+      { operation: "install", packageRecord: rec, graphBeforeDigest: "nope", graphAfter: g, claimMutations: [], childRemovals: [] },
+      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [{ op: "acquire", kind: "skill", name: "demo", owner: "junk" }], childRemovals: [] },
+      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [], extra: 1 },
+      // `#698` childRemovals 自身的负向:缺字段 / 未知 kind / 非法 name / 未知键 / 重复项。
+      // 重复项刻意**不放第一个**,并且前面有一个合法项 —— 「只看第一个」时必须红。
+      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [] },
+      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: {} },
+      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "skill" }] },
+      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "wat", name: "demo" }] },
+      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "skill", name: "../escape" }] },
+      { operation: "install", packageRecord: rec, graphBeforeDigest: null, graphAfter: g, claimMutations: [], childRemovals: [{ kind: "skill", name: "demo", extra: 1 }] },
+      {
+        operation: "install",
+        packageRecord: rec,
+        graphBeforeDigest: null,
+        graphAfter: g,
+        claimMutations: [],
+        childRemovals: [
+          { kind: "agent", name: "legit" },
+          { kind: "skill", name: "demo" },
+          { kind: "skill", name: "demo" },
+        ],
+      },
     ])
       expect(decodePackageMutationEnvelopeV1(bad).ok, JSON.stringify(bad).slice(0, 90)).toBe(false)
   })

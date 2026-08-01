@@ -25,6 +25,10 @@ export type RootResolution = { ok: true; root: string } | { ok: false; reason: s
 export const GATED_WRITE_CHANNELS = {
   installCatalog: "ext-install-catalog",
   uninstallV2: "ext-uninstall-v2",
+  /** `#698`:整包卸载。与 `uninstallV2` 分开是因为**意图形状不同** —— 这里传的是 packageId,
+   *  而 main 要删什么完全由它自己的账本图算出;把它塞进 key-based 卸载会让 renderer 的一次
+   *  点击可以指名某个 child 而实际删掉一整个包。 */
+  uninstallPackage: "ext-uninstall-package",
   rollback: "ext-rollback",
   setInstallState: "ext-set-install-state",
   projectResidualsClean: "ext-project-residuals-clean",
@@ -52,6 +56,7 @@ export type WriteChannelRoots = {
 export type WriteChannelBodies = {
   installCatalog: (intent: unknown) => Promise<unknown>
   uninstallV2: (intent: unknown) => Promise<unknown>
+  uninstallPackage: (packageId: unknown) => Promise<unknown>
   rollback: (intent: unknown, genId: unknown) => Promise<unknown>
   setInstallState: (intent: unknown) => Promise<unknown>
   projectResidualsClean: (projectDir: unknown) => Promise<unknown>
@@ -73,6 +78,8 @@ export function buildGatedWriteChannels(deps: { gate: RecoveryGate; roots: Write
   return {
     installCatalog: gatedWriteHandler(gate, roots.global, bodies.installCatalog),
     uninstallV2: gatedWriteHandler(gate, roots.uninstallIntent, bodies.uninstallV2),
+    // package 恒全局面(admission 只接受 global scope),定根与 catalog 安装同一个。
+    uninstallPackage: gatedWriteHandler(gate, roots.global, bodies.uninstallPackage),
     rollback: gatedWriteHandler(gate, roots.global, bodies.rollback),
     setInstallState: gatedWriteHandler(gate, roots.setStateIntent, bodies.setInstallState),
     projectResidualsClean: gatedWriteHandler(gate, roots.projectDir, bodies.projectResidualsClean),
