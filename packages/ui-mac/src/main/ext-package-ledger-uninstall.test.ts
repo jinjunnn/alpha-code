@@ -12,6 +12,12 @@
 //   ② **每条路径只有一次 ledger mutation。** 用 `spyOn(fs.renameSync)` 数落到 installs.json 的
 //      原子换名 —— `writeFileAtomicSync` 每次提交恰好一次 rename,所以这是对物理提交次数的直接
 //      测量,不是对最终内容的推断(内容对幂等的重复写不敏感,数不出双写)。
+//      **它抓得到什么、抓不到什么(实测,别高估它)**:在卸载尾部插一次 `releaseStandaloneClaim`
+//      再 `removeRecordV2`,skill/agent 两条立刻红 —— 两次真写它数得出来。但再插一次
+//      `removeRecordV2` 它**不红**:record 已经没了,第二次是幂等 no-op,一个字节都不写。
+//      也就是说这道闸管的是「重复落盘」,不是「重复调用」。**内层 receipt 副作用有没有被接回来**
+//      不归它管 —— 那由 `ext-fs-installer.test.ts` / `ext-config.test.ts` 里的字节零改动钉子看着
+//      (本文件用的是注入的假 installer,production 的那几个函数根本不在这条链上)。
 //
 //   ③ **篡改/悬空/冲突一律响亮失败且字节零改动。** 负向夹具里违规项**从不放在第一个**,并且集合里
 //      同时有合法项 —— 「检查每一个」写成「检查第一个」时必须红。
@@ -288,9 +294,12 @@ describe("REQ-128 #706 —— 真实卸载:仍有 Bundle owner ⇒ 实物一件�
       const writes = countLedgerWrites()
       const outcome = await uninstallByKey({ type: kind, name, scope: "global" }, makeDeps(calls))
 
-      expect(outcome).toMatchObject({ ok: true, retainedForOwners: [OWNER] })
+      // 实物先判:把 `planDirectUninstall` 拿掉时,生产代码自己会说
+      // 「ledger removal failed … artifacts already removed; retry (idempotent)」—— 而重试永远
+      // 不会成功(Bundle owner 不会自己消失)。所以这两行是本票 Blocker 的直接回归。
       expect(calls).toEqual([]) // 没有任何 installer 被调用 = 一件实物都没动
       if (artifactExisted) expect(fs.existsSync(artifact)).toBe(true)
+      expect(outcome).toMatchObject({ ok: true, retainedForOwners: [OWNER] })
       expect(writes()).toBe(1) // 只有「释放 claim」这一次提交
       // 账本:record 仍在(它还属于这个 package)、图逐字不变、claim 只少了用户那一份。
       expect(findRecordV2(root, kind, name)).not.toBeNull()

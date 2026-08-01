@@ -516,6 +516,28 @@ describe("removePluginPath — 主+legacy 全源净除,引擎语义匹配,strict
     expect(pluginsOf(homeCfg())).toEqual([]) // legacy file:// 等价形态同扫
   })
 
+  // REQ-128 `#706`:第三个配置写器同样**不碰账本**。前两条(removeMcp / removePlugin)已各有
+  // 字节零改动的钉子;这一条补上 vendored-path 那支 —— 少了它,把内层 `removeReceipt` 接回
+  // `removePluginPathUnlocked` 一处,整仓没有任何测试会红。
+  test("REQ-128 #706:撤 vendored plugin 路径条目与账本彻底分家 —— installs.json 字节零改动", () => {
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    const target = jsOf("vp@cccc")
+    fs.writeFileSync(mainCfg(), JSON.stringify({ plugin: [target] }))
+    addReceipt(alphaTmp, {
+      id: "plugin:vp",
+      name: "vp",
+      type: "plugin",
+      scope: "global",
+      installedAt: new Date().toISOString(),
+      origin: "catalog",
+      configKey: `plugin-path:${target}`,
+    })
+    const before = fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")
+    expect(removePluginPath("vp", target).ok).toBe(true)
+    expect(fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")).toBe(before)
+    expect(readLedger(alphaTmp).receipts.some((x) => x.name === "vp")).toBe(true)
+  })
+
   test("语法损坏 / 非对象根 / plugin 非数组 → fail-closed 拒(不删条目也不谎报成功)", () => {
     fs.mkdirSync(alphaTmp, { recursive: true })
     const target = jsOf("vp@bbbb")
