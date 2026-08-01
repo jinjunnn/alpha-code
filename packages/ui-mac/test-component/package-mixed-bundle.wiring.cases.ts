@@ -6,7 +6,7 @@
 //
 // 这里的每一条 fault 都可达:
 //   · download   —— 资产 HTTP 失败(签名 digest 对不上 ⇒ 完整性拒);
-//   · secret     —— 密钥 store 根不可写 ⇒ populatePrepared 抛错(授权终闸后、switch 前);
+//   · secret     —— 版本目录认领不下来 ⇒ populatePrepared 抛错(授权终闸后、switch 前);
 //   · config     —— live 出现未登记的 mcp 叶 ⇒ 锁内 precondition 拒;
 //   · probe      —— skill 资产 frontmatter name 与组件名不符 ⇒ pre-switch probe 判不健康;
 //   · receipt    —— 账本提交接缝抛错 ⇒ journal 保持非终态,由生产恢复收敛;
@@ -16,7 +16,7 @@
 // 图 / claim / 密钥版本目录),不是返回值。半装 = 其中任意一项与其余不一致。
 
 import { createHash } from "node:crypto"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, expect, mock, test } from "bun:test"
@@ -50,6 +50,7 @@ let fixture: MixedBundleFixture = mixedBundleFixture()
 let failAssetUrlContaining: string | null = null
 let payloadFetches = 0
 let assetFetches = 0
+const fetchedUrls: string[] = []
 
 // `crashAt` 是引擎自带的故障注入点,生产不传。下面(electron 等基础 mock 之后)会把
 // ext-transaction 包一层再让 ext-ipc 装载它。
@@ -98,25 +99,27 @@ mock.module("../src/main/ext-advisory-gate", () => ({
   makeAdvisoryGate: () => () => ({ allowed: true }),
 }))
 
+// remote-catalog:只替换**网络那一段**(`refreshRemoteCatalog`)。目录读通道的注册与安全视图
+// 投影仍走真实现 —— 详情页那一面必须是生产投影出来的,否则「三个面逐字相同」里的第一个面
+// 就是本用例自己造的。函数值同样在 mock 之前抓下来(见上面 ext-transaction 的同款陷阱)。
+const realRemoteCatalog = await import("../src/main/remote-catalog")
+const realRegisterPackageCatalogReadIpcHandlers = realRemoteCatalog.registerPackageCatalogReadIpcHandlers
+const realEvaluateRemoteCatalogPackages = realRemoteCatalog.evaluateRemoteCatalogPackages
 mock.module("../src/main/remote-catalog", () => ({
+  ...realRemoteCatalog,
   downloadRemoteAsset: async () => ({ ok: false, reason: "unexpected remote asset download" }),
   readCachedCatalog: () => null,
-  registerPackageCatalogReadIpcHandlers: (
-    register: (channel: string, handler: IpcHandler) => void,
-    refresh: () => Promise<unknown>,
-  ) => {
-    register("ext-remote-catalog", () => refresh())
-    register("ext-package-detail", () => null)
-  },
-  refreshRemoteCatalog: async () => ({
-    source: "remote",
-    catalog: { version: "2026-08-01", entries: [{}], packages: [fixture.envelope] },
-    version: "2026-08-01",
-    fetchedAt: "2026-08-01T00:00:00.000Z",
-    via: "channel-dev",
-    channel: "dev",
-    snapshotDigest,
-  }),
+  registerPackageCatalogReadIpcHandlers: realRegisterPackageCatalogReadIpcHandlers,
+  refreshRemoteCatalog: async () =>
+    realEvaluateRemoteCatalogPackages({
+      source: "remote",
+      catalog: { version: "2026-08-01", entries: [{}], packages: [fixture.envelope] },
+      version: "2026-08-01",
+      fetchedAt: "2026-08-01T00:00:00.000Z",
+      via: "channel-dev",
+      channel: "dev",
+      snapshotDigest,
+    } as never),
 }))
 
 const reloadedMcp: string[] = []
@@ -131,6 +134,7 @@ const originalFetch = globalThis.fetch
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   expect(init?.redirect).toBe("error")
   const url = String(input)
+  fetchedUrls.push(url)
   if (failAssetUrlContaining && url.includes(failAssetUrlContaining))
     return new Response("nope", { status: 503 })
   // payload 的 url 都带 `/alpha-package/payload.json`;markdown 资产不带。
@@ -154,12 +158,16 @@ const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("he
 // `runExtensionTransaction` 包一层再交给 ext-ipc。走的仍是真 `registerExtIpcHandlers` → 真
 // admission → 真事务,只多了一个注入的死亡点 / 提交失败点;其余导出(恢复、journal 读取)原样透传。
 const realTransactionModule = await import("../src/main/ext-transaction")
+// **函数值**要在 mock 之前抓下来。`mock.module` 会就地改写模块命名空间对象,所以
+// `realTransactionModule.runExtensionTransaction` 在注册之后指的是包装器本身 —— 直接调它
+// 就是无限自递归(实测:计划被反复重建,事务一步都没跑,进程活着但永不返回)。
+const realRunExtensionTransaction = realTransactionModule.runExtensionTransaction
 mock.module("../src/main/ext-transaction", () => ({
   ...realTransactionModule,
   runExtensionTransaction: (root: string, plan: TxPlan, hooks: TxHooks) => {
     lastPlan = plan
     const commitReceipt = hooks.commitReceipt
-    return realTransactionModule.runExtensionTransaction(root, plan, {
+    return realRunExtensionTransaction(root, plan, {
       ...hooks,
       ...(crashAt ? { crashAt } : {}),
       ...(commitReceipt
@@ -177,6 +185,7 @@ mock.module("../src/main/ext-transaction", () => ({
   },
 }))
 
+const { readBundleAuthorizationReceipt } = realTransactionModule
 const { initAlphaEnvironment, getAlphaEnvironment } = await import("../src/main/alpha-environment")
 const { registerExtIpcHandlers } = await import("../src/main/ext-ipc")
 
@@ -215,6 +224,7 @@ function resetDisk() {
   lastPlan = undefined
   payloadFetches = 0
   assetFetches = 0
+  fetchedUrls.length = 0
   reloadedMcp.length = 0
   logLines.length = 0
 }
@@ -402,9 +412,20 @@ test("the production ext-install-catalog channel activates a mixed Bundle in one
   expect(staged.packageAuthorization!.binding.graphDigest).not.toBe(
     staged.packageAuthorization!.binding.envelopeDigest,
   )
-  // 被跳过的组件**零字节**:三个 payload、两个资产,没有第四个。
-  expect(payloadFetches).toBe(3)
-  expect(assetFetches).toBe(2)
+  // 被跳过的组件**零字节**。判据是取过的 URL 集合,不是次数:preview 与确认各重验一次
+  // (main 每次绑定都重读签名事实),次数会随重验轮数变,而「哪些东西被取过」不会。
+  expect([...new Set(fetchedUrls)].sort()).toEqual(
+    [
+      ...fixture.envelope.components
+        .filter((component) => component.id !== LEAF_UNSUPPORTED_ID)
+        .map((component) => component.payloadRef.url),
+      "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/AGENT.md",
+      "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/SKILL.md",
+    ].sort(),
+  )
+  expect(fetchedUrls.filter((url) => url.includes("generic-bundle-future"))).toEqual([])
+  expect(payloadFetches).toBeGreaterThan(0)
+  expect(assetFetches).toBeGreaterThan(0)
 
   expect(result).toMatchObject({ ok: true, kind: "agent", name: "generic-bundle-agent" })
   const outcome = result as { installed: string[]; skipped: Array<{ id: string; reason: string }> }
@@ -452,16 +473,35 @@ test("the production ext-install-catalog channel activates a mixed Bundle in one
   expect(logLines.join("\n")).not.toContain(secretCanary)
 
   // ── §4.3 闸 ③:三个面对同一个被跳过的组件给出**逐字相同**的原因。
-  const detailView = staged.packageAuthorization!.plan // 已断言过确认屏那一面
-  void detailView
-  const safeView = (await handlers.get("ext-remote-catalog")!({ sender: { id: 1 } })) as unknown
-  void safeView
+  //
+  // 三个值分别来自三条独立的生产路径:详情页读的是 `ext-remote-catalog` 投影出来的安全视图,
+  // 确认屏读的是 admission 的 plan preview,收据读的是引擎写在盘上的 Bundle 授权收据。
+  // 断言的不是「都非空」,是**同一个字符串**,而且还要等于 decoder 的那个 token —— 只比较三者
+  // 相等的话,三处一起变成 `""` 仍然全绿。
+  const browse = (await handlers.get("ext-remote-catalog")!({ sender: { id: 1 } })) as {
+    catalog: { packages: Array<{ catalogId: string; components: Array<{ componentId: string; skipReasonCode: string | null }> }> }
+  }
+  const safeViewLeaf = browse.catalog.packages
+    .find((view) => view.catalogId === MIXED_BUNDLE_PACKAGE_ID)!
+    .components.find((component) => component.componentId === LEAF_UNSUPPORTED_ID)!
   const skippedKey = `skipped--${createHash("sha256").update(LEAF_UNSUPPORTED_ID).digest("hex").slice(0, 24)}`
-  expect(lastPlan?.skippedOptional).toEqual([{ key: skippedKey, reason: EXPECTED_SKIP_REASON }])
-  const receipt = JSON.parse(
-    readFileSync(join(root(), "ext-tx", "authorization", `${journals[0]!.replace(".json", "")}.json`), "utf8"),
-  ) as { skippedOptional: Array<{ key: string; reason: string }> }
-  expect(receipt.skippedOptional).toEqual([{ key: skippedKey, reason: EXPECTED_SKIP_REASON }])
+  const receipt = readBundleAuthorizationReceipt(root(), journals[0]!.replace(".json", ""))
+  expect(receipt, "Bundle 授权收据必须落盘").not.toBeNull()
+
+  const faces = {
+    safeView: safeViewLeaf.skipReasonCode,
+    confirmScreen: skippedRow.skipReasonCode,
+    receipt: receipt!.skippedOptional.find((entry) => entry.key === skippedKey)?.reason,
+  }
+  expect(faces).toEqual({
+    safeView: EXPECTED_SKIP_REASON,
+    confirmScreen: EXPECTED_SKIP_REASON,
+    receipt: EXPECTED_SKIP_REASON,
+  })
+  // 收据里只该有这一条被跳过的组件(会装的三个都不该混进 skippedOptional)。
+  expect(receipt!.skippedOptional).toEqual([{ key: skippedKey, reason: EXPECTED_SKIP_REASON }])
+  // 计划面与收据面同源:引擎落的就是 admission 交上去的那份。
+  expect(lastPlan?.skippedOptional).toEqual(receipt!.skippedOptional)
 })
 
 // ── ② 具名 fault:download / secret / config / probe / receipt ────────────────────────────────
@@ -475,13 +515,15 @@ test("named production faults leave the disk entirely old", async () => {
   expect(download.result).toMatchObject({ ok: false })
   expect(expectAllOldOrAllNew("download fault")).toBe("old")
 
-  // secret populate —— 密钥 store 根不可写(授权终闸之后、任何 live switch 之前)。
+  // secret populate —— 版本目录认领不下来(授权终闸之后、任何 live switch 之前)。
+  // 到达方式是「该是目录的位置上是一个普通文件」:`claimMcpSecretVersionDir` 的 `ensureRealDir`
+  // 因此拒绝。用它而不是 chmod:目录权限对目录所有者不总是拦得住(实测 0500 仍能建子目录),
+  // 那种夹具会安静地变成「什么都没注入」。
   resetDisk()
   fixture = mixedBundleFixture()
   mkdirSync(join(userData, "alpha-mcp-secrets"), { recursive: true })
-  chmodSync(join(userData, "alpha-mcp-secrets"), 0o500)
+  writeFileSync(join(userData, "alpha-mcp-secrets", "generic-bundle-remote"), "not a directory\n")
   const secretFault = await installBundle("mixed-bundle-secret", grants())
-  chmodSync(join(userData, "alpha-mcp-secrets"), 0o700)
   expect(secretFault.result).toMatchObject({ ok: false })
   expect(expectAllOldOrAllNew("secret populate fault")).toBe("old")
   expect(secretVersions()).toEqual([])
@@ -524,6 +566,7 @@ test("every TX_CRASH_POINT converges through the real ext-ipc recovery to all-ol
   const points = realTransactionModule.TX_CRASH_POINTS
   expect(points.length).toBeGreaterThan(10)
   const outcomes: Record<string, string> = {}
+  const fired: string[] = []
   for (const point of points) {
     resetDisk()
     fixture = mixedBundleFixture()
@@ -532,11 +575,15 @@ test("every TX_CRASH_POINT converges through the real ext-ipc recovery to all-ol
       preview: undefined,
       result: { ok: false, reason: String(error) },
     }))
-    void crashed
     crashAt = undefined
-    // 崩溃真的到达过:journal 在盘上,而锁没被释放(进程猝死的样子)。
-    expect(existsSync(join(root(), "ext-tx", "journal")), `crash at ${point}: 没有 journal 说明注入没生效`).toBe(true)
-    expect(makeLockHolderDead(), `crash at ${point}: 崩溃后锁应当仍被持有`).toBe(true)
+    // 注入是否真的生效:调用没返回成功,且锁**仍被持有**(crashAt 刻意不做任何清理,这正是
+    // 进程猝死的样子)。判据放在锁上而不是 journal 上 —— 第一个点 `after-lock` 早于 journal,
+    // 拿 journal 判会把「崩得更早」误报成「没崩」。
+    const injected = (crashed.result as { ok?: unknown }).ok !== true
+    if (injected) {
+      expect(makeLockHolderDead(), `crash at ${point}: 崩溃后锁应当仍被持有`).toBe(true)
+      fired.push(point)
+    }
     // 生产恢复:下一次任何受闸写通道调用都先经 recoveryGate.withRecoveredWrite(真 recoveryOpts)。
     await preview(`mixed-bundle-crash-${point}-recover`)
     outcomes[point] = expectAllOldOrAllNew(`crash at ${point}`)
@@ -551,4 +598,13 @@ test("every TX_CRASH_POINT converges through the real ext-ipc recovery to all-ol
   }
   // 两端都要真的出现过 —— 全是 "old" 说明注入根本没跑到提交,全是 "new" 说明崩溃没生效。
   expect(new Set(Object.values(outcomes)), JSON.stringify(outcomes)).toEqual(new Set(["old", "new"]))
+  // 哪些点**没**在这张计划上生效,要显式点名,不能默默当成「都测过了」。
+  // `mid-materialize` 只在 `journal.items[0]` 本身是 generation 时才抛(materialize 循环对非
+  // generation item 先 `continue`),而 canonical mixed Bundle 的第一条 item 是 agent 的 file
+  // action。这是引擎的结构事实,不是本用例的取舍;将来它变得可达(或某个现在会生效的点悄悄
+  // 不生效了),下面这条就会红。
+  expect(
+    points.filter((point) => !fired.includes(point)),
+    "在这张计划上未生效的崩溃点必须逐个具名",
+  ).toEqual(["mid-materialize"])
 }, 300_000)
