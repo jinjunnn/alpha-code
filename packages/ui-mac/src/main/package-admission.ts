@@ -1,30 +1,26 @@
 import { createHash } from "node:crypto"
-import { lstatSync, writeFileSync } from "node:fs"
-import { isAbsolute, join, posix, resolve } from "node:path"
+import { isAbsolute, resolve } from "node:path"
 import type { AppEnvironment } from "./alpha-environment"
 import {
-  claimMcpSecretVersionDir,
   collectMcpFileRefPaths,
-  mcpSecretVersionedRef,
   newMcpSecretVersionId,
   removeMcpSecretVersionDir,
   resolveMcpRefPath,
-  writeMcpSecretVersioned,
 } from "./alpha-mcp-secrets"
 import { agentMdToEntry } from "./agent-md-entry"
-import { readMcpLeafStrict, validateServer } from "./ext-config"
+import { readMcpLeafStrict } from "./ext-config"
 import { evaluateBundleAuthorization, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
-import { agentConfigItemKey, agentFileProbe, agentInstallKey, recoveryReceiptInputs } from "./ext-agent-install"
+import { agentInstallKey, recoveryReceiptInputs } from "./ext-agent-install"
 import { nextDesiredState } from "./ext-install-policy"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import {
-  computeGrantDigest,
-  findRecordV2,
-  probeLedgerForWrite,
-  upsertRecordsV2,
-  type UpsertInput,
-} from "./ext-receipt-v2"
-import { commitInputFromRecord, skillGenerationKey, skillGenerationProbe } from "./ext-skill-generations"
+  buildAgentTxItems,
+  buildMcpTxItems,
+  buildSkillTxItems,
+  type PreparedMcpSecretVersionV1,
+} from "./ext-package-tx-builders"
+import { computeGrantDigest, upsertRecordsV2, type UpsertInput } from "./ext-receipt-v2"
+import { skillGenerationKey } from "./ext-skill-generations"
 import {
   runExtensionTransaction,
   type TxCommitRecord,
@@ -47,7 +43,7 @@ import type {
   PackageAdmissionPreviewV1,
 } from "../shared/package-admission"
 import type { TxStageNonAuthorizeWire } from "../shared/ext-capability-authorization"
-import { evaluatePackageSecretSubmissionV1, packageSecretReferenceV1 } from "../shared/package-secret-prerequisite"
+import { evaluatePackageSecretSubmissionV1 } from "../shared/package-secret-prerequisite"
 import {
   evaluatePackageConnectionPrerequisiteV1,
   packageConnectionReferenceV1,
@@ -468,200 +464,49 @@ async function executePreparedPackage(
   // reached for one more reason, so the runtime, the detail page and the enable toggle already know
   // what to do with it. It is a real override, not a coincidence with today's default: a package
   // with a prior `enabled` record would otherwise come back enabled with no connection behind it.
+  //
+  // It has to stay *above* `common`: since #705 the ledger template is handed to the builders, so
+  // this is the last point at which one write reaches every builder and every item they emit.
   if (connection.unavailable) receipt.desiredState = "disabled"
-  const planItems: TxPlanItem[] = []
-  let populate = (_item: TxPlanItem, _stagingDir: string) => {}
-  let probe = undefined as Parameters<typeof runExtensionTransaction>[2]["probe"]
-
-  if (prepared.kind === "skill" && prepared.asset) {
-    planItems.push({
-      key: prepared.key,
-      files: [
-        {
-          path: "SKILL.md",
-          sha256: createHash("sha256").update(prepared.asset).digest("hex"),
-          size: prepared.asset.byteLength,
-        },
-      ],
-      manifestDigest,
-      capabilities: component.capabilities,
-      receipt,
-    })
-    populate = (_item, stagingDir) => writeFileSync(join(stagingDir, "SKILL.md"), prepared.asset!)
-    probe = skillGenerationProbe
-  }
-  if (prepared.kind === "agent" && prepared.asset && prepared.agentEntry) {
-    const relTarget = posix.join("agents", `${prepared.name}.md`)
-    receipt.files = [join(root, relTarget)]
-    receipt.configKey = `agent.${prepared.name}`
-    planItems.push(
-      {
-        key: prepared.key,
-        action: "file",
-        file: {
-          relTarget,
-          next: prepared.asset,
-          requireAbsent: findRecordV2(root, "agent", prepared.name) === null,
-        },
-        manifestDigest,
-        capabilities: component.capabilities,
-        receipt,
-      },
-      {
-        key: agentConfigItemKey(prepared.name),
-        action: "config",
-        config: {
-          target: join(root, "alpha.jsonc"),
-          edits: [
-            {
-              keyPath: ["agent", prepared.name],
-              value:
-                receipt.desiredState === "disabled" ? { ...prepared.agentEntry, disable: true } : prepared.agentEntry,
-            },
-          ],
-        },
-      },
-    )
-    probe = agentFileProbe(root)
-  }
-
-  let secretVersion: string | undefined
-  let secretFiles: string[] = []
-  if (prepared.kind === "mcp") {
-    secretVersion = prepared.facts.prerequisite.items.length
-      ? (deps.secretVersionId ?? newMcpSecretVersionId)()
-      : undefined
-    const secretValues = intent.grants?.secrets ?? {}
-    const refs = Object.fromEntries(
-      prepared.facts.prerequisite.items.map((item) => [
-        item.target.variable,
-        mcpSecretVersionedRef(
-          deps.userDataPath,
-          prepared.facts.prerequisite.server,
-          secretVersion!,
-          item.target.variable,
-        ),
-      ]),
-    )
-    const config =
-      prepared.facts.payload.schema === "alpha.host-extension-package.payload.mcp-local.v1"
-        ? {
-            type: "local",
-            command: prepared.facts.payload.behavior.command,
-            environment: { ...prepared.facts.payload.behavior.environment, ...refs },
-          }
-        : prepared.facts.payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1"
-          ? {
-              type: "remote",
-              url: prepared.facts.payload.behavior.url,
-              headers: Object.fromEntries(
-                Object.entries(prepared.facts.payload.behavior.headersTemplate).map(([header, template]) => [
-                  header,
-                  prepared.facts.prerequisite.items.reduce(
-                    (value, item) => value.replaceAll(`{${item.target.variable}}`, refs[item.target.variable]!),
-                    template,
-                  ),
-                ]),
-              ),
-            }
-          : undefined
-    if (!config) return { ok: false, reason: "package admission: profile cannot build an MCP transaction" }
-    const valid = validateServer(config)
-    if (!valid.ok) return { ok: false, reason: `package admission: ${valid.reason}` }
-    receipt.configKey = `mcp.${prepared.name}`
-    planItems.push({
-      key: prepared.key,
-      action: "config",
-      config: {
-        target: join(root, "alpha.jsonc"),
-        edits: [
-          {
-            keyPath: ["mcp", prepared.name],
-            value: receipt.desiredState === "disabled" ? { ...config, enabled: false } : config,
-          },
-        ],
-      },
-      manifestDigest,
-      capabilities: component.capabilities,
-      receipt,
-    })
-    secretFiles = Object.values(refs).map((ref) => ref.slice("{file:".length, -1))
-
-    const existing = readMcpLeafStrict(prepared.name)
-    if (!existing.ok) return { ok: false, reason: `package admission: ${existing.reason}` }
-    if (existing.value && !findRecordV2(root, "mcp", prepared.name))
-      return { ok: false, reason: "package admission: unregistered MCP config is not adopted or overwritten" }
-
-    const result = await (deps.transaction ?? runExtensionTransaction)(root, packagePlan(planItems, intent, now), {
-      populate,
-      populatePrepared: secretVersion
-        ? () => {
-            const claimed = claimMcpSecretVersionDir(
-              deps.userDataPath,
-              prepared.facts.prerequisite.server,
-              secretVersion!,
-            )
-            if (!claimed.ok) throw new Error(claimed.reason)
-            for (const item of prepared.facts.prerequisite.items) {
-              const reference = packageSecretReferenceV1(
-                prepared.facts.prerequisite,
-                item.prerequisiteId,
-                secretVersion!,
-              )
-              if (!reference) throw new Error(`invalid secret reference for ${item.prerequisiteId}`)
-              const written = writeMcpSecretVersioned(
-                deps.userDataPath,
-                reference.server,
-                reference.version,
-                reference.variable,
-                secretValues[item.prerequisiteId]!,
-              )
-              if (!written.ok) throw new Error(written.reason)
-            }
-          }
-        : undefined,
-      probePrepared: secretVersion
-        ? () => ({
-            healthy: secretFiles.every((file) => {
-              try {
-                return lstatSync(file).isFile()
-              } catch {
-                return false
-              }
-            }),
-            reason: "prepared secret file is missing",
-          })
-        : undefined,
-      precondition: () => {
-        const ledger = probeLedgerForWrite(root)
-        if (!ledger.ok) return ledger
-        const current = readMcpLeafStrict(prepared.name)
-        if (!current.ok) return current
-        if (current.value && !findRecordV2(root, "mcp", prepared.name))
-          return { ok: false, reason: "unregistered MCP config appeared before commit" }
-        return { ok: true }
-      },
-      commitReceipt: (records) => commitPackageReceipts(root, records),
-    })
-    if (!result.ok && secretVersion) cleanupUnreferencedSecretVersion(prepared, secretVersion, secretFiles, deps)
-    return transactionOutcome(
-    result,
-    prepared,
+  // #705:计划构造归 builders(Bundle 与单装同一真源),本函数只负责执行与结果映射。
+  const common = {
+    root,
+    key: prepared.key,
+    name: prepared.name,
+    capabilities: component.capabilities,
     manifestDigest,
-    receipt.desiredState,
-    connection,
-    bindConnectionsAfterCommit(result, connection, deps),
-  )
+    receipt,
   }
+  const built =
+    prepared.kind === "skill"
+      ? buildSkillTxItems({ ...common, ...(prepared.asset ? { asset: prepared.asset } : {}) })
+      : prepared.kind === "agent"
+        ? buildAgentTxItems({
+            ...common,
+            ...(prepared.asset ? { asset: prepared.asset } : {}),
+            ...(prepared.agentEntry ? { agentEntry: prepared.agentEntry } : {}),
+          })
+        : buildMcpTxItems({
+            ...common,
+            userDataPath: deps.userDataPath,
+            payload: prepared.facts.payload,
+            prerequisite: prepared.facts.prerequisite,
+            secretValues: intent.grants?.secrets ?? {},
+            newSecretVersionId: deps.secretVersionId ?? newMcpSecretVersionId,
+          })
+  if (!built.ok) return { ok: false, reason: `package admission: ${built.reason}` }
+  const build = built.build
 
-  if (planItems.length === 0)
-    return { ok: false, reason: "package admission: package profile could not produce a transaction plan" }
-  const result = await (deps.transaction ?? runExtensionTransaction)(root, packagePlan(planItems, intent, now), {
-    populate,
-    ...(probe ? { probe } : {}),
-    precondition: () => probeLedgerForWrite(root),
+  const result = await (deps.transaction ?? runExtensionTransaction)(root, packagePlan(build.items, intent, now), {
+    populate: build.populate,
+    ...(build.prepared
+      ? { populatePrepared: build.prepared.populate, probePrepared: build.prepared.probe }
+      : {}),
+    probe: build.probe,
+    precondition: build.precondition,
     commitReceipt: (records) => commitPackageReceipts(root, records),
   })
+  if (!result.ok && build.prepared) cleanupUnreferencedSecretVersion(prepared, build.prepared, deps)
   return transactionOutcome(
     result,
     prepared,
@@ -734,15 +579,14 @@ function bindConnectionsAfterCommit(
 
 function cleanupUnreferencedSecretVersion(
   prepared: PreparedPackage,
-  version: string,
-  secretFiles: string[],
+  secret: PreparedMcpSecretVersionV1,
   deps: PackageAdmissionDeps,
 ) {
   const live = readMcpLeafStrict(prepared.name)
   if (!live.ok) return
   const referenced = new Set(collectMcpFileRefPaths(live.value).map((ref) => resolveMcpRefPath(ref, deps.root())))
-  if (secretFiles.some((file) => referenced.has(resolve(file)))) return
-  removeMcpSecretVersionDir(deps.userDataPath, prepared.facts.prerequisite.server, version)
+  if (secret.files.some((file) => referenced.has(resolve(file)))) return
+  removeMcpSecretVersionDir(deps.userDataPath, secret.server, secret.version)
 }
 
 function confirmationMatches(diffs: CapabilityDiff[], confirmed: Record<string, string[]>) {

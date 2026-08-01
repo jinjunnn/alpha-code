@@ -27,8 +27,9 @@ import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, co
 import { parseAgentImport } from "./ext-import-validate"
 import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
 import { listRetainedJournals, retireTransactionJournal, type JournalRootRef } from "./ext-journal-retire"
-import { collectSkillPayloadFromDir, skillGenerationProbe } from "./ext-skill-generations"
-import { agentFileProbe, recoveryReceiptInputs } from "./ext-agent-install"
+import { collectSkillPayloadFromDir } from "./ext-skill-generations"
+import { recoveryReceiptInputs } from "./ext-agent-install"
+import { extensionHealthProbeRouter } from "./ext-health-probe-router"
 import { randomUUID } from "node:crypto"
 import { pickedFiles } from "./ipc"
 import { factorySkillIds } from "./factory-skills"
@@ -48,7 +49,7 @@ import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { assertAlphaEnvironmentIdentity, environmentMutableRoot, getAlphaEnvironment } from "./alpha-environment"
 import { createInventoryQuery } from "./ext-inventory"
-import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, installUncuratedAgentImport, installUncuratedSkillImport, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, seedPluginFileProbe, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
+import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, installUncuratedAgentImport, installUncuratedSkillImport, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { fetchCurationBlob } from "./curation-blobs"
 import { makeRecoveryGate, runVerifiedMutation } from "./ext-recovery-gate"
 // #408:session-grant 会话级启用(main 内存登记 + 栅栏;生命周期接线在 index.ts)。
@@ -446,18 +447,11 @@ export function registerExtIpcHandlers(
   // generation + agent file 组合(未知 file item 由 agentFileProbe fail-closed 拒),receipt
   // 前滚经 recoveryReceiptInputs 过滤无 receipt 的副 item(与安装路径同一过滤;裸 map 会让
   // config 副 item 缺 kind/name 导致重放永久失败 → 回滚却留下已写 receipt 的双真源分叉)。
-  const recoveryOpts = (root: string): RecoverOptions => {
-    const agentProbe = agentFileProbe(root)
-    const pluginProbe = seedPluginFileProbe()
-    return {
-    // file item 按 key 路由到各自类型化探针(#358 agent / #359 plugin payload);两者对
-    // 各自方案外的 key 均 fail-closed —— 未知 file item 绝不静默放行。
-    probe: async (input) => {
-      const gen = await skillGenerationProbe(input)
-      if (!gen.healthy) return gen
-      if (input.action !== "file") return { healthy: true }
-      return input.key.startsWith("agent--") ? agentProbe(input) : pluginProbe(input)
-    },
+  const recoveryOpts = (root: string): RecoverOptions => ({
+    // #705:probe 组合只此一份 —— extensionHealthProbeRouter(安装路径消费同一个)。file item
+    // 按 key 路由到各自类型化探针(#358 agent / #359 plugin payload);两者对各自方案外的 key
+    // 均 fail-closed —— 未知 file item 绝不静默放行。组合有第二份 = 恢复与安装的健康判据会漂移。
+    probe: extensionHealthProbeRouter(root),
     commitReceipt: (recs) => {
       const written = upsertRecordsV2(root, recoveryReceiptInputs(recs))
       if (!written.ok) throw new Error(`recovery receipt commit failed: ${written.reason}`)
@@ -503,8 +497,7 @@ export function registerExtIpcHandlers(
       if (!grants.ok) throw new Error(grants.reason)
     },
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
-    }
-  }
+  })
   assertAlphaEnvironmentIdentity()
   const txRecovery = recoverExtensionTransactions(alphaGlobalRoot(), recoveryOpts(alphaGlobalRoot()))
   // #347:写方事务准入 gate —— 每次写操作前恢复收敛 + 终态探测放行(进程内 per-root mutex

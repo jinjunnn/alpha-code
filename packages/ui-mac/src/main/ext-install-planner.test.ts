@@ -914,13 +914,64 @@ describe("other kinds — derivation & records", () => {
     if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
   })
 
-  test("bundle: dependency cycle refused at plan time (AC#1)", async () => {
-    const bundleA: CatalogEntry = { ...bundleEntry, id: "bundle:a", name: "a", bundleItems: [{ catalogEntryId: "bundle:b", optional: false, installOrder: 1 }] }
-    const bundleB: CatalogEntry = { ...bundleEntry, id: "bundle:b", name: "b", bundleItems: [{ catalogEntryId: "bundle:a", optional: false, installOrder: 1 }] }
-    const { deps } = makeDeps({ entries: [bundleA, bundleB] })
-    const r = await installAuthorized({ catalogId: "bundle:a", scope: { scope: "global" } }, deps)
+  // REQ-128 #705:嵌套 Bundle 门前拒(此前:解析整张传递闭包、只装 direct child ——
+  // required 嵌套子包整单失败,**optional 嵌套子包静默跳过**,两种命运同一句「装好了」)。
+  // 三条 case 覆盖 required / optional / 自指;每条都断言拒绝发生在下载、密钥、事务之前。
+  test.each([
+    ["required nested child", false],
+    ["optional nested child", true],
+  ])("bundle: %s refused at the door — zero download / secret / transaction", async (_name, optional) => {
+    const inner: CatalogEntry = { ...bundleEntry, id: "bundle:inner", name: "inner", bundleItems: [{ catalogEntryId: "skill:demo", optional: false, installOrder: 1 }] }
+    const outer: CatalogEntry = { ...bundleEntry, id: "bundle:outer", name: "outer", bundleItems: [
+      { catalogEntryId: "bundle:inner", optional, installOrder: 1 },
+      { catalogEntryId: "cloud:research", optional: false, installOrder: 2 },
+    ] }
+    let txBegins = 0
+    const { deps, calls } = makeDeps({
+      entries: [...ALL_ENTRIES, inner, outer],
+      transaction: {
+        begin: (meta) => {
+          txBegins++
+          return { txId: `tx-${txBegins}`, ...meta }
+        },
+        commit: () => {},
+        rollback: () => {},
+      },
+    })
+    const r = await installAuthorized({ catalogId: "bundle:outer", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("dependency cycle refused")
+    if (!r.ok) expect(r.reason).toContain('nested bundle refused: child "bundle:inner"')
+    // 下载 0:CAS promotion / remote asset 一次都没发生。
+    expect(called(calls, "downloadRemoteAsset")).toHaveLength(0)
+    expect(fs.existsSync(path.join(tmp, "cas-base"))).toBe(false)
+    // 密钥 0:版本目录既没 claim 也没写。
+    expect(called(calls, "claimMcpSecretVersionDir")).toHaveLength(0)
+    expect(called(calls, "writeMcpSecretVersioned")).toHaveLength(0)
+    // 事务 0:planner 的事务钩子没被 begin,引擎的 journal 目录不存在。
+    expect(txBegins).toBe(0)
+    expect(fs.existsSync(path.join(globalRoot, "ext-tx"))).toBe(false)
+    // 半装的反面:没有任何 child 落账(optional 形态下的静默跳过会让 cloud:research 装进去)。
+    expect(findRecordV2(globalRoot, "cloud", "research")).toBeNull()
+    expect(findRecordV2(globalRoot, "skill", "demo")).toBeNull()
+  })
+
+  test("bundle: self-referencing bundle refused at the door", async () => {
+    const selfRef: CatalogEntry = { ...bundleEntry, id: "bundle:self", name: "selfb", bundleItems: [{ catalogEntryId: "bundle:self", optional: false, installOrder: 1 }] }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, selfRef] })
+    const r = await installAuthorized({ catalogId: "bundle:self", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("lists itself as a child")
+    expect(fs.existsSync(path.join(globalRoot, "ext-tx"))).toBe(false)
+  })
+
+  test("bundle: non-bundle child that carries its own children is refused too (graph is graph)", async () => {
+    // 第二条判据轴:type 不是 "bundle",但自带 bundleItems —— 声明面同样是一张图。
+    const graphSkill: CatalogEntry = { ...skillBuiltinEntry, id: "skill:graphy", name: "graphy", bundleItems: [{ catalogEntryId: "cloud:research", optional: false, installOrder: 1 }] }
+    const outer: CatalogEntry = { ...bundleEntry, id: "bundle:graphy", name: "graphyb", bundleItems: [{ catalogEntryId: "skill:graphy", optional: true, installOrder: 1 }] }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, graphSkill, outer] })
+    const r = await installAuthorized({ catalogId: "bundle:graphy", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain('nested bundle refused: child "skill:graphy"')
   })
 
   test("bundle: missing item refused", async () => {

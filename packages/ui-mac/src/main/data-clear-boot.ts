@@ -168,7 +168,8 @@ export function createDataClearAction(opts: {
       detail:
         (present.length ? `${listing}\n\n` : "当前未发现凭证文件。\n\n") +
         "会话数据不受影响。连接器(MCP)已采集的密钥将一并删除,再次使用需在定制中心重新填写;" +
-        "引擎凭证 auth.json 与独立安装的 opencode CLI 共享,删除后 CLI 侧也需重新登录。",
+        "引擎凭证 auth.json 与 MCP 登录令牌 mcp-auth.json 与独立安装的 opencode CLI 共享," +
+        "删除后 CLI 侧也需重新登录、各连接器需重新授权。",
       buttons: ["清除并登出", "取消"],
       defaultId: 1,
       cancelId: 1,

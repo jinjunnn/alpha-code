@@ -2,7 +2,7 @@
 
 > 单一真源声明:本清单与 app 内「数据 ▸ 清除数据…」的清除引擎同源
 > (`packages/ui-mac/src/main/data-clear.ts` 的 manifest/planClear)。改引擎清单必须同步本文档。
-> 最后更新:2026-07-19(#428)。
+> 最后更新:2026-07-31(#752)。
 
 拖 app 进废纸篓**只删除应用本体**,不清除任何数据(macOS 无标准卸载 hook)。完整卸载 = 两步:
 
@@ -24,6 +24,7 @@
 | `~/Library/Application Support/alpha-code/alpha-mcp-secrets/` | 连接器(MCP)密钥({file:} 通道) |
 | `~/Library/Application Support/alpha-code/alpha.env` | 手写密钥 env 文件 |
 | `~/.local/share/opencode/auth.json`(或 `$XDG_DATA_HOME/opencode/auth.json`) | 引擎凭证存储 —— **与独立安装的 opencode CLI 共享**,删除后 CLI 侧需重新登录 |
+| `~/.local/share/opencode/mcp-auth.json`(或 `$XDG_DATA_HOME/opencode/mcp-auth.json`) | MCP 服务登录令牌(OAuth access/refresh token 与客户端注册)—— **与独立安装的 opencode CLI 共享**,删除后需重新授权各连接器 |
 
 ### 「全部数据」级(为卸载做准备;含上表全部)
 
