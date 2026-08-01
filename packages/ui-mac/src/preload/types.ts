@@ -744,7 +744,9 @@ export type ElectronAPI = {
           installedDisabled?: true
           /** `#704`:已安装,但可选的 Alpha Connection 未建立 —— 与「装完默认关」是两回事。 */
           connectionUnavailable?: true
+          /** Bundle:实际装上的成员(package 走 component id,legacy planner 走 entry id)。 */
           installed?: string[]
+          /** Bundle:被跳过的成员与**逐字**的原因 token(package 走 decoder 的 skipReasonCode)。 */
           skipped?: Array<{ id: string; reason: string }>
           warning?: string
         }

@@ -834,11 +834,26 @@ export function registerExtIpcHandlers(
           installLegacy: (legacyIntent) => installCatalog(legacyIntent, plannerDeps()),
           installPackage: admitPackage,
         })
-        if (!result.ok || result.kind !== "mcp" || result.installedDisabled) return result
-        return {
-          ...result,
-          mcpActivation: await reloadInstalledMcp(result.name, awaitServer),
+        if (!result.ok) return result
+        // legacy planner(catalog entry 意图):一次只装一个 live MCP,判据与 `#697` 之前逐字相同。
+        if (!("activateMcp" in result)) {
+          if (result.kind !== "mcp" || result.installedDisabled) return result
+          return { ...result, mcpActivation: await reloadInstalledMcp(result.name, awaitServer) }
         }
+        // `#697` package 图:一个 Bundle 可以带**多个** MCP 组件,而 live 重载的对象是组件不是包。
+        // admission 报的是「哪些 MCP 组件落了 enabled」(已去重排序),这里逐个重载**一次**;
+        // 按 root 的 kind/name 判会让叶 MCP 永远不被重载,并把根组件的名字当成整包的名字。
+        // 单组件 package 的 `activateMcp` 恰是 `[name]` 或 `[]`,行为逐字不变。
+        //
+        // `activateMcp` 是 main 内部的重载指令,不是 renderer 事实:剥掉再过线,免得一个内部
+        // 指令变成半个公开契约。
+        const { activateMcp, ...wire } = result
+        if (activateMcp.length === 0) return wire
+        const activations = await Promise.all(activateMcp.map((name) => reloadInstalledMcp(name, awaitServer)))
+        // 渲染层的连接状态面是 root-scoped(`r.kind !== "mcp"` 就不看它),所以 `mcpActivation`
+        // 仍然只报 root 那一条;叶子的重载是副作用,不改这个契约。
+        const rootActivation = activations.find((entry) => entry.reference === result.name)
+        return rootActivation ? { ...wire, mcpActivation: rootActivation } : wire
       },
       uninstallV2: (intent) => uninstallByKey(intent, plannerDeps()),
       rollback: async (intent, genId) => rollbackGenerationByKey(intent, genId, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) }),

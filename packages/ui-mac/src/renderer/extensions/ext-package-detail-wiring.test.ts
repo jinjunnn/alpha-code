@@ -13,7 +13,7 @@ test("package safe view and admission traverse the production ExtensionHub card 
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain(" 9 pass")
+  expect(output).toContain(" 10 pass")
   expect(output).toContain(" 0 fail")
-  expect(output).toMatch(/Ran 9 tests across 1 file/)
+  expect(output).toMatch(/Ran 10 tests across 1 file/)
 })

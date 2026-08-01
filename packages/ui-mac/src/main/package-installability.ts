@@ -43,7 +43,6 @@ const ACTION_BY_REASON = {
     enabled: true,
   },
   "package-host-update-required": { kind: "update-alpha", enabled: true },
-  "package-bundle-activation-pending": { kind: "none", enabled: false },
   "package-invalid": { kind: "none", enabled: false },
   "package-payload-unavailable": { kind: "none", enabled: false },
   "package-payload-integrity": { kind: "none", enabled: false },
@@ -75,16 +74,15 @@ export type PackageAcceptedComponentV1 = {
 
 export type PackageAcceptedFactsV1 = {
   envelope: AlphaPackageEnvelopeV1
-  /** Every supported component, root first. */
+  /**
+   * Every supported component, root first. `#697` removed the root-only `payload` / `prerequisite`
+   * / `connection` convenience fields that used to sit beside this list: a Bundle has one of each
+   * *per component*, and a root-shaped shortcut is how "we only ever looked at the first one"
+   * survives a graph landing.
+   */
   components: PackageAcceptedComponentV1[]
   /** Root plus every leaf that will actually be installed; skipped components are absent. */
   graph: PackageEffectiveInstallGraphV1
-  /** The root component's payload. Convenience for single-component admission; `#697` generalises. */
-  payload: PackageProfilePayloadV1
-  /** The root component's secret prerequisite profile. Same note as `payload`. */
-  prerequisite: Extract<PackageSecretPrerequisiteProfileDecodeV1, { ok: true }>["profile"]
-  /** The root component's Alpha Connection prerequisite profile. Same note as `payload`. */
-  connection: PackageConnectionPrerequisiteProfileV1
 }
 
 export type CatalogPackageShapeValidation =
@@ -193,13 +191,13 @@ export async function evaluatePackageForHost(
   if (!rootEntry || rootEntry.status !== "supported" || !rootEntry.component.required)
     return refuse("package-invalid")
 
-  // §5.1 门二。合同已经接受多组件,但 admission 还只处理一个组件 —— 放行就等于「用户点了安装,
-  // 只装到第一个组件」。判据是**签名事实**(信封声明了几个组件),不是有效安装图:有效图已经
-  // 排除了被 skip 的子件,拿它判会让「root + 一个不受支持的 optional leaf」绕过这道闸,装出一个
-  // 半装的包。签名事实含全部组件,有效图只含未 skip 的(§4.3);门二问的是「这是不是一个
-  // Bundle」,那是签名事实。闸在取 payload 之前 —— 永不安装的包不该产生任何网络请求。
-  // 翻开这道闸是 `#697` 的活,判据是它自己的生产 wiring test。单组件 package 完全不受影响。
-  if (header.envelope.components.length > 1) return refuse("package-bundle-activation-pending")
+  // §5.1 门二在 `#697` 翻开:admission 现在把**整张有效安装图**放进一次事务,所以 Bundle 不再
+  // 需要被拦在这里。翻开的判据不是「读起来像装得下」,而是 `package-mixed-bundle.wiring.cases.ts`
+  // 里那条走真 IPC、真事务、真恢复的生产接线用例 —— 它装的正是 canonical mixed Bundle。
+  //
+  // 这里刻意**没有**换成「有效图长度 > 1 就拒」之类的替代闸:那正是审计抓到的漏洞形态
+  // ——「root + 一个不受支持的 optional leaf」的有效图长度是 1,会绕过去装出半装包。门二的
+  // 正确终结方式是让 admission 真的能装完整张图,而不是换一个更弱的谓词。
 
   const supported = [
     ...header.components.filter((entry) => entry.role === "root" && entry.status === "supported"),
@@ -280,15 +278,7 @@ export async function evaluatePackageForHost(
     accepted.map((entry) => entry.component),
   )
 
-  const rootAccepted = accepted.find((entry) => entry.role === "root")!
-  deps.accepted?.({
-    envelope: header.envelope,
-    components: accepted,
-    graph,
-    payload: rootAccepted.payload,
-    prerequisite: rootAccepted.prerequisite,
-    connection: rootAccepted.connection,
-  })
+  deps.accepted?.({ envelope: header.envelope, components: accepted, graph })
   return compatibleView(header.envelope, componentViews, accepted)
 }
 

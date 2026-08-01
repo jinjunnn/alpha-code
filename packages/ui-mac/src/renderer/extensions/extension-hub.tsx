@@ -61,7 +61,7 @@ import { findSessionGrant, sessionGrantKeyOf, sessionRefusalRoute, sessionToggle
 import { curationActivationFacts, type Curation, type CurationStatus } from "../../shared/catalog-curation"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
 import type { PackageAdmissionPreviewV1 } from "../../shared/package-admission"
-import { packagePresentation } from "./ext-package-presentation"
+import { packagePresentation, packageSkipReasonKey } from "./ext-package-presentation"
 import "./extension-hub.css"
 
 
@@ -398,11 +398,16 @@ export function ExtensionHub(props: {
     return Array.from(
       new Map(
         preview.plan.items
-          .flatMap((item) => item.prerequisites)
+          .flatMap((item) => (item.included ? item.prerequisites : []))
           .map((item) => [item.prerequisiteId, item]),
       ).values(),
     )
   })
+  /** 确认屏上「会装什么」与「不会装什么」两段 —— 同一个 items[],由 `included` 分开。 */
+  const packagePlanIncluded = () =>
+    packageAuthz()?.preview.plan.items.flatMap((item) => (item.included ? [item] : [])) ?? []
+  const packagePlanSkipped = () =>
+    packageAuthz()?.preview.plan.items.flatMap((item) => (item.included ? [] : [item])) ?? []
   const packageSecretsComplete = () =>
     packagePrerequisites().every((item) => (envValues()[item.prerequisiteId] ?? "").trim().length > 0)
   const [confirmBusy, setConfirmBusy] = createSignal(false)
@@ -2504,18 +2509,40 @@ export function ExtensionHub(props: {
               <div class="alpha-ext-confirm" data-package-authorization={state().view.catalogId}>
                 <p class="alpha-ext-confirm-desc">{state().view.presentation.description}</p>
                 <div class="alpha-ext-install-box">
-                  <For each={state().preview.plan.items}>
+                  <For each={packagePlanIncluded()}>
                     {(item) => (
-                      <div class="alpha-ext-install-row">
+                      <div class="alpha-ext-install-row" data-plan-component={item.componentId} data-included="true">
                         <span class="alpha-ext-install-nm">{item.name}</span>
                         <span class="alpha-ext-install-k">{typeLabel(item.kind)}</span>
                       </div>
                     )}
                   </For>
                 </div>
+                {/* 确认屏也是一个 preview:被跳过的组件必须在**用户按下确认之前**就说清楚,
+                    并且用与详情页、收据逐字相同的原因 token。 */}
+                <Show when={packagePlanSkipped().length > 0}>
+                  <div class="alpha-ext-install-box" data-plan-skipped="true">
+                    <div class="alpha-ext-confirm-line">{t("alpha.ext.packageComponentSkipped")}</div>
+                    <For each={packagePlanSkipped()}>
+                      {(item) => (
+                        <div
+                          class="alpha-ext-install-row"
+                          data-plan-component={item.componentId}
+                          data-included="false"
+                          data-skip-reason={item.included ? undefined : item.skipReasonCode}
+                        >
+                          <span class="alpha-ext-install-nm">{item.componentId}</span>
+                          <span class="alpha-ext-install-k">
+                            {item.included ? "" : t(packageSkipReasonKey(item.skipReasonCode) as never)}
+                          </span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
                 <ExtAuthzView
                   name={state().view.presentation.displayName}
-                  isBundle={state().preview.plan.items.length > 1}
+                  isBundle={packagePlanIncluded().length > 1}
                   mode="install"
                   diffs={state().preview.items}
                 />

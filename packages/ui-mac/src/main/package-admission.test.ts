@@ -803,12 +803,12 @@ describe("package admission", () => {
   })
 
   /**
-   * §5.1 门二 at the real entry point. The gate reads the **signed** component count, not the
-   * effective graph: a Bundle whose only unsupported child is optional has an effective graph of
-   * length 1, so an effective-length gate lets it through and installs the root alone — a half
-   * installed package the user can see. Nothing may reach the transaction.
+   * §5.1 门二在 `#697` 翻开,而它当初挡的正是这个形状:一个 optional child 不受支持的 Bundle,
+   * 有效安装图长度回到 1。旧闸按**签名**组件数拒绝整包;新行为不是「换个更弱的谓词放行」,而是
+   * admission 真的把整张有效图放进一次事务,并且把那个不会安装的组件在**用户按下确认之前**
+   * 就如实说出来。这条用例钉住那句话:预览到达、组件逐条可见、跳过原因逐字来自安全视图。
    */
-  test("a signed two-component Bundle is refused before any payload fetch or transaction", async () => {
+  test("an optional-unsupported Bundle reaches the preview, installs the effective graph, and names the skip", async () => {
     const { envelope, bytes } = await fixture()
     const leafPayload = {
       schema: "alpha.host-extension-package.payload.agent.v1",
@@ -831,7 +831,7 @@ describe("package admission", () => {
       dependencies: [],
       profileId: "agent",
       profileVersion: 1,
-      // 未知 capability ⇒ optional leaf 被 skip ⇒ 有效图长度回到 1。审计方正是从这里绕过去的。
+      // 未知 capability ⇒ optional leaf 被 skip ⇒ 有效图长度回到 1。
       capabilities: ["alpha.future.v1"],
       payloadRef: {
         sha256: createHash("sha256").update(leafBytes).digest("hex"),
@@ -864,22 +864,56 @@ describe("package admission", () => {
         return runExtensionTransaction(...args)
       },
     })
-    const refused = await admit({
+    const preview = await admit({
       catalogId: bundle.prelude.packageId,
       scope: { scope: "global" },
-      attemptId: "attempt-signed-bundle",
+      attemptId: "attempt-optional-skip-bundle",
     })
-    expect(refused).toMatchObject({ ok: false, reason: "package-bundle-activation-pending" })
-    if (refused.ok || refused.stage === "authorize") throw new Error("Bundle must never reach the preview")
-    expect(refused.package?.verdict).toBe("blocked")
-    expect(refused.package?.action.enabled).toBe(false)
-    // 挡住的是动作,不是可见性:被跳过的子件仍如实呈现,原因码逐字来自 decoder。
-    expect(refused.package?.components.map((entry) => [entry.componentId, entry.included])).toEqual([
-      ["mcp:generic-remote", true],
-      ["agent:bundle-leaf", false],
-    ])
-    expect(fetches, "永不安装的包不该产生任何网络请求").toBe(0)
+    if (preview.ok || preview.stage !== "authorize")
+      throw new Error(`expected the authorization preview, got ${JSON.stringify(preview)}`)
+    // 被跳过的组件**一个字节都不取**:只有 root 的 payload 被请求过。
+    expect(fetches).toBe(1)
     expect(transactionCalls).toBe(0)
-    expect(existsSync(join(userData, "alpha-mcp-secrets"))).toBe(false)
+
+    const plan = preview.packageAuthorization.plan
+    const skippedRow = plan.items.find((item) => !item.included)
+    if (!skippedRow || skippedRow.included) throw new Error("确认屏必须带着被跳过的组件")
+    expect(skippedRow.componentId).toBe("agent:bundle-leaf")
+    // §4.3 闸 ③ 的前两个面:安全视图与确认屏对同一个组件给出**同一个字符串**。
+    const safeLeaf = preview.package === undefined
+      ? undefined
+      : preview.package.components.find((entry) => entry.componentId === "agent:bundle-leaf")
+    expect(skippedRow.skipReasonCode).toBe("component-capability-unsupported")
+    expect(safeLeaf?.skipReasonCode ?? skippedRow.skipReasonCode).toBe(skippedRow.skipReasonCode)
+    // 授权集只含会安装的组件:没人被要求为一个不会到货的东西授权。
+    expect(preview.authorization.map((item) => item.key)).toEqual(["mcp--generic-remote"])
+    expect(plan.items.filter((item) => item.included).map((item) => item.componentId)).toEqual([
+      "mcp:generic-remote",
+    ])
+
+    const installed = await admit({
+      catalogId: bundle.prelude.packageId,
+      scope: { scope: "global" },
+      attemptId: "attempt-optional-skip-bundle",
+      grants: await secretGrants(secretCanary),
+      authorization: confirmation(preview),
+    })
+    expect(installed).toMatchObject({ ok: true, kind: "mcp", name: "generic-remote" })
+    if (!installed.ok) throw new Error("expected the effective graph to install")
+    expect(installed.installed).toEqual(["mcp:generic-remote"])
+    expect(installed.skipped).toEqual([
+      { id: "agent:bundle-leaf", reason: "component-capability-unsupported" },
+    ])
+    expect(transactionCalls).toBe(1)
+    // 半装包的判据不是「没红」,是**盘上没有那个 agent**:跳过的组件零文件、零配置叶。
+    expect(existsSync(join(root, "agents", "bundle-leaf.md"))).toBe(false)
+    expect(readFileSync(join(root, "alpha.jsonc"), "utf8")).not.toContain("bundle-leaf")
+    const ledger = JSON.parse(readFileSync(join(root, "installs.json"), "utf8")) as {
+      packageGraphs: Array<{ children: unknown[] }>
+      claims: Array<{ kind: string; name: string }>
+    }
+    expect(ledger.packageGraphs).toHaveLength(1)
+    expect(ledger.packageGraphs[0]!.children).toEqual([])
+    expect(ledger.claims.map((claim) => `${claim.kind}:${claim.name}`)).toEqual(["mcp:generic-remote"])
   })
 })

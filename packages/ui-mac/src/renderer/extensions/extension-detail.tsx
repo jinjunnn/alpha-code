@@ -21,7 +21,7 @@ import { CAPABILITY_LABEL_KEYS, SHELF_CHIP_KEYS, curatedOf, foldDomains, isArchi
 import type { SessionToggleView } from "./ext-session-toggle"
 import type { CurationStatus } from "../../shared/catalog-curation"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
-import { packagePresentation } from "./ext-package-presentation"
+import { packageComponentPresentation, packagePresentation } from "./ext-package-presentation"
 
 /** What the detail page shows: a legacy catalog entry, a host-projected package, an engine agent
  *  (no catalog identity), or the injected platform cloud connector. */
@@ -199,9 +199,38 @@ export function ExtensionDetail(props: {
         </Section>
 
         <Section title={t("alpha.ext.packageComponentsTitle")}>
-          <FactRow label={t("alpha.ext.packageComponent")}>
-            {view().presentation.displayName} · {view().presentation.version}
-          </FactRow>
+          {/* `#697` 第 5 跳:逐组件一行(root + 各 leaf),被跳过的组件带**具名原因**。
+              以前这里写死一行「包名 · 版本」—— 安全视图早就带着 components[] 与 skipReasonCode,
+              而用户在任何一步都看不到「这个包里有一件东西不会被装」。 */}
+          <For each={view().components}>
+            {(component) => {
+              const shown = packageComponentPresentation(component)
+              return (
+                <div
+                  class="alpha-ext-package-component"
+                  data-package-component={component.componentId}
+                  data-included={component.included ? "true" : "false"}
+                >
+                  <FactRow label={t(shown.roleKey as never)}>
+                    <code class="alpha-ext-package-component-id">{component.componentId}</code>
+                    <span class="alpha-ext-package-component-req" data-required={component.required ? "true" : "false"}>
+                      {t(shown.requirementKey as never)}
+                    </span>
+                    <span class="alpha-ext-package-component-state" data-included={component.included ? "true" : "false"}>
+                      {t(shown.stateKey as never)}
+                    </span>
+                  </FactRow>
+                  <Show when={shown.skipReasonKey}>
+                    {(reasonKey) => (
+                      <p class="alpha-ext-package-component-why" data-skip-reason={component.skipReasonCode}>
+                        {t(reasonKey() as never)}
+                      </p>
+                    )}
+                  </Show>
+                </div>
+              )
+            }}
+          </For>
           <FactRow label={t("alpha.ext.packagePrerequisiteStatus")}>
             <span class="alpha-ext-package-state" data-prerequisite={view().prerequisites.status}>
               {t(presentation().prerequisiteKey)}

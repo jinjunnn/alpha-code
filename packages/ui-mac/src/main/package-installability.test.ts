@@ -745,12 +745,6 @@ describe("package installability authority", () => {
         enabled: true,
         reasonCode: "package-host-update-required",
       },
-      // §5.1 门二:Bundle 在 #697 落地前一律不给可点的安装动作。
-      "package-bundle-activation-pending": {
-        kind: "none",
-        enabled: false,
-        reasonCode: "package-bundle-activation-pending",
-      },
       "package-invalid": {
         kind: "none",
         enabled: false,
@@ -916,27 +910,34 @@ describe("package installability authority", () => {
     }
   }
 
-  test("a Bundle whose leaves really install is refused until #697 wires admission to the graph", async () => {
+  /**
+   * §5.1 门二在 `#697` 翻开。它曾经是「签名组件数 > 1 就拒」,而拒绝理由已经随之删除 —— 一条没有
+   * 生产者的 reason code 留在枚举里,读的人会以为闸还在。这条用例是翻开之后的**正向**判据:
+   * 一个 leaf 真会安装的 Bundle 现在必须拿到可点的安装动作,并且逐组件如实呈现。
+   */
+  test("a Bundle whose leaves really install is compatible and lists every component", async () => {
     const item = bundle({ supported: true })
     const view = await evaluatePackageForHost(item.envelope, {
       fetchPayload: async (ref) =>
         ref.mediaType.includes(".skill.") ? item.rootBytes : item.leafBytes,
     })
-    // 合同已经接受它,但 admission 还只处理一个组件 —— 放行 = 用户点了安装只装到第一个组件。
-    expect(view.verdict).toBe("blocked")
+    expect(view.verdict).toBe("compatible")
     expect(view.action).toEqual({
-      kind: "none",
-      enabled: false,
-      reasonCode: "package-bundle-activation-pending",
+      kind: "install",
+      enabled: true,
+      reasonCode: "package-compatible",
     })
-    // leaf 列表仍然如实呈现两个组件:闸门挡住的是动作,不是可见性。
     expect(view.components.map((entry) => [entry.componentId, entry.included])).toEqual([
       ["skill:bundle-root", true],
       ["agent:bundle-leaf", true],
     ])
+    // 已删的过渡理由码不得以任何形式复活(枚举里没有它 = 结构上产不出来)。
+    expect(CATALOG_PACKAGE_REASON_CODES as readonly string[]).not.toContain(
+      "package-bundle-activation-pending",
+    )
   })
 
-  test("a Bundle whose only unsupported child is optional is refused too — 门二 reads the signed count", async () => {
+  test("a Bundle whose only unsupported child is optional installs the rest and names the skip", async () => {
     const item = bundle({ supported: false })
     const fetched: string[] = []
     const view = await evaluatePackageForHost(item.envelope, {
@@ -946,17 +947,18 @@ describe("package installability authority", () => {
       },
     })
 
-    // ① 有效安装图只剩 root,但签名事实仍然是两个组件 ⇒ 门二照样挡。按有效图长度判会让这个
-    //    形状绕过去,装出一个「只装了 root」的半装包 —— 用户点得动、也看得见。
-    expect(view.verdict).toBe("blocked")
+    // ① 有效安装图只剩 root,整包仍可安装 —— optional child 不支持 = 跳过,不是拒绝整包。
+    expect(view.verdict).toBe("compatible")
     expect(view.action).toEqual({
-      kind: "none",
-      enabled: false,
-      reasonCode: "package-bundle-activation-pending",
+      kind: "install",
+      enabled: true,
+      reasonCode: "package-compatible",
     })
 
-    // ② 闸在取 payload 之前:永不安装的包不产生任何网络请求,也不收任何 prerequisite。
-    expect(fetched).toEqual([])
+    // ② 被跳过的组件**一个字节都不取**:它不会安装,就不该产生网络请求或收 prerequisite。
+    expect(fetched).toEqual([
+      "application/vnd.alpha.host-extension-package.skill.v1+json",
+    ])
     expect(view.prerequisites.items).toEqual([])
 
     // ③ 原因码逐字来自 decoder,不是 safe view 自己另起的一套措辞。
