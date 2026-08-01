@@ -41,6 +41,7 @@ test("admission decoder, secret failure, MCP adoption, tamper, cancel, stale, re
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toMatch(/\b14 pass\b/)
+  // 14 → 15:#712 加了泄漏扫描闸(明文/摘要/绝对密钥路径的正面扫描)。
+  expect(output).toMatch(/\b15 pass\b/)
   expect(output).toMatch(/\b0 fail\b/)
 }, 120_000)

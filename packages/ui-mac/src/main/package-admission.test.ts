@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { join, resolve, sep } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import type {
   AlphaPackageEnvelopeV1,
@@ -494,6 +494,107 @@ describe("package admission", () => {
     expect(
       readdirSync(join(userData, "alpha-mcp-secrets", "generic-remote")).filter((name) => name.startsWith("v-")),
     ).toHaveLength(1)
+  })
+
+  // #712 退出门(正面断言,不是「我们没写」):把安装成功与安装失败两条路径跑完之后,**扫描**
+  // 事务根下的每一个文件 + 引擎/恢复吐出的每一条日志 + 回给 renderer 的结果对象,断言
+  //   ① 密钥明文一次都不出现;② 明文的 sha256 一次都不出现(摘要同样是泄露);
+  //   ③ 密钥 store 的绝对路径**只**出现在 live config 里(它是引用通道),journal / 账本 /
+  //      授权收据 / 日志 / IPC 结果里一次都不出现 —— journal 里绝不留任意绝对删除路径。
+  test("no secret value, value digest, or absolute secret path leaves the reference channel", async () => {
+    const { envelope, bytes } = await fixture()
+    const okCanary = "REQ128_712_SCAN_OK_1f4c7a"
+    const failCanary = "REQ128_712_SCAN_FAIL_9b2e50"
+    const digest = (v: string) => createHash("sha256").update(v).digest("hex")
+    const logs: string[] = []
+    const dependencies = {
+      loadVerifiedCatalog: async () => ({
+        source: "remote" as const,
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      environment: () => "dev" as const,
+      installability: { fetchPayload: async () => bytes },
+    }
+    const withLogCapture =
+      (extra: Record<string, unknown> = {}) =>
+      (...args: Parameters<typeof runExtensionTransaction>) =>
+        runExtensionTransaction(args[0], args[1], {
+          ...args[2],
+          log: (event, detail) => logs.push(`${event} ${JSON.stringify(detail)}`),
+          ...extra,
+        })
+
+    const install = async (admit: ReturnType<typeof createPackageAdmissionCoordinator>, attemptId: string, secret: string) => {
+      const intent = { catalogId: envelope.prelude.packageId, scope: { scope: "global" as const }, attemptId }
+      const preview = await admit(intent)
+      if (preview.ok || preview.stage !== "authorize") throw new Error("expected package authorization preview")
+      return admit({ ...intent, grants: { secrets: { "mcp:generic-remote#A_KEY": secret } }, authorization: confirmation(preview) })
+    }
+
+    // ① 成功装一次(密钥进版本目录,config 只拿 {file:} 引用)。
+    const okOutcome = await install(
+      createPackageAdmissionCoordinator({ ...dependencies, secretVersionId: () => "v-1111aaaa", transaction: withLogCapture() }),
+      "attempt-scan-ok",
+      okCanary,
+    )
+    expect(okOutcome).toMatchObject({ ok: true, kind: "mcp" })
+
+    // ② 再走一次失败路径(prepared probe 不健康 → abort + 释放),让失败面的痕迹也进扫描。
+    const failOutcome = await install(
+      createPackageAdmissionCoordinator({
+        ...dependencies,
+        secretVersionId: () => "v-2222bbbb",
+        transaction: withLogCapture({ probePrepared: () => ({ healthy: false, reason: "injected for the scan gate" }) }),
+      }),
+      "attempt-scan-fail",
+      failCanary,
+    )
+    expect(failOutcome).toMatchObject({ ok: false })
+    expect(existsSync(join(userData, "alpha-mcp-secrets", "generic-remote", "v-2222bbbb"))).toBe(false)
+
+    const secretStore = join(userData, "alpha-mcp-secrets")
+    const liveConfig = join(root, "alpha.jsonc")
+    const files: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) walk(full)
+        else if (entry.isFile()) files.push(full)
+      }
+    }
+    walk(root)
+    expect(files.length).toBeGreaterThan(2) // 扫描面非空(journal + 账本 + config 至少三件)
+    const journals = files.filter((f) => f.includes(`${sep}ext-tx${sep}journal${sep}`))
+    expect(journals.length).toBeGreaterThan(0) // 本用例真的产生了 journal —— 否则下面的断言是空的
+
+    const carriesSecretPath: string[] = []
+    for (const file of files) {
+      const text = readFileSync(file, "utf8")
+      for (const canary of [okCanary, failCanary]) {
+        expect(text).not.toContain(canary)
+        expect(text).not.toContain(digest(canary))
+      }
+      if (text.includes(secretStore)) carriesSecretPath.push(file)
+    }
+    // 绝对密钥路径**只**存在于 live config(引用通道);journal / installs.json / grants.json 一律没有。
+    expect(carriesSecretPath).toEqual([liveConfig])
+    for (const journal of journals) {
+      const text = readFileSync(journal, "utf8")
+      expect(text).not.toContain(secretStore)
+      expect(text).toContain("mcp-secret-version") // 身份确实在 journal 里(否则上一条是空断言)
+    }
+
+    // 日志与回给 renderer 的结果对象同样干净。
+    expect(logs.length).toBeGreaterThan(0)
+    const wire = `${logs.join("\n")}\n${JSON.stringify(okOutcome)}\n${JSON.stringify(failOutcome)}`
+    for (const canary of [okCanary, failCanary]) {
+      expect(wire).not.toContain(canary)
+      expect(wire).not.toContain(digest(canary))
+    }
+    expect(wire).not.toContain(secretStore)
   })
 
   test("prepared secret failures abort and remove every unreferenced version", async () => {

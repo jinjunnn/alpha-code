@@ -26,21 +26,21 @@ import { readMcpLeafStrict, validateServer } from "./ext-config"
 import { agentConfigItemKey } from "./ext-agent-install"
 import { extensionHealthProbeRouter } from "./ext-health-probe-router"
 import { findRecordV2, probeLedgerForWrite, type UpsertInput } from "./ext-receipt-v2"
-import type { HealthProbe, HealthVerdict, TxPlanItem } from "./ext-transaction"
+import type { HealthProbe, HealthVerdict, TxPlanItem, TxPreparedResourceV1 } from "./ext-transaction"
 import type { PackageProfilePayloadV1 } from "../shared/host-extension-package-contract/decoder"
 import {
   packageSecretReferenceV1,
   type PackageSecretPrerequisiteProfileV1,
 } from "../shared/package-secret-prerequisite"
 
-/** 受限 prepared resource 的类型化描述符(#705 定形状;#712 落 journal)。
- *  identity 三元组(store/server/version)+ 落点文件;value 永不进描述符。 */
+/** 受限 prepared resource 的计划面(#705 定形状;#712 落 journal)。
+ *
+ *  `descriptor` 是**唯一**会被持久化的东西:类型化身份(store/server/version),进事务 journal,
+ *  崩溃恢复据它释放。`files` 与两个闭包只活在本进程内 —— 明文、绝对路径都不进 journal/receipt/log。 */
 export type PreparedMcpSecretVersionV1 = {
-  kind: "mcp-secret-version"
-  store: "alpha-mcp-secrets"
-  server: string
-  version: string
-  /** 版本目录内的密钥文件绝对路径(引用回填与失败清理共用)。 */
+  /** 进 journal 的类型化身份(引擎 TxPlan.prepared;只此四字段,多一个字段引擎就拒计划)。 */
+  descriptor: TxPreparedResourceV1
+  /** 版本目录内的密钥文件绝对路径 —— **仅进程内**服务 populate/probe;绝不进 journal。 */
   files: string[]
   /** 授权终闸之后、任何 live switch 之前填充(引擎 populatePrepared)。失败抛错 = 零 live 变更。 */
   populate: () => void
@@ -231,10 +231,12 @@ export function buildMcpTxItems(input: McpTxBuildInputV1): PackageTxBuildResultV
 
   const prepared: PreparedMcpSecretVersionV1 | undefined = secretVersion
     ? {
-        kind: "mcp-secret-version",
-        store: "alpha-mcp-secrets",
-        server: input.prerequisite.server,
-        version: secretVersion,
+        descriptor: {
+          kind: "mcp-secret-version",
+          store: "alpha-mcp-secrets",
+          server: input.prerequisite.server,
+          version: secretVersion,
+        },
         files: secretFiles,
         populate: () => {
           const claimed = claimMcpSecretVersionDir(input.userDataPath, input.prerequisite.server, secretVersion)

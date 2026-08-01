@@ -135,6 +135,65 @@ export type TxAuthorizationDecision = {
 /** Bundle 内被跳过的 optional child(AC2:跳过必须在授权与 receipt 中可见)。 */
 export type TxSkippedOptional = { key: string; reason?: string }
 
+/**
+ * REQ-128 #712:事务在**事务根之外**准备的受限资源的**类型化身份**(今天只有版本化 MCP 密钥)。
+ *
+ * journal 只落这四个字段 —— **绝不落 value、绝不落 value 摘要,也绝不落任意绝对删除路径**。
+ * 释放方按固定 store 根 + 自己的名字文法重新派生路径;引擎不解释别人的文法,只加一道通用的
+ * 「单个安全路径段」界(见 validatePreparedResources),畸形 journal 因此构造不出任何路径。
+ *
+ * 为什么必须进 journal:populate 发生在授权终闸之后、任何 live switch 之前,资源此刻已在盘上
+ * 而 live 尚未改变。若身份只活在进程内的闭包里,进程一死就没有任何东西知道它存在 —— 恢复既
+ * 无从保留也无从清理。journal 先于 populate 落盘,崩溃后恢复据此做与在线失败路径同一件事。
+ */
+export type TxPreparedResourceV1 = {
+  kind: "mcp-secret-version"
+  store: "alpha-mcp-secrets"
+  /** store 内的所有者标识(单个安全路径段;真正的文法由 store 拥有者在释放接缝里再验一次)。 */
+  server: string
+  /** store 内的版本标识(同上)。 */
+  version: string
+}
+
+/** 已登记的 prepared resource 种类 / store。未登记者一律拒绝(咽喉对新成员默认拒绝)。 */
+const PREPARED_KINDS = new Set<string>(["mcp-secret-version"])
+const PREPARED_STORES = new Set<string>(["alpha-mcp-secrets"])
+/** 通用界:单个安全路径段(无分隔符/NUL/相对段,有界)。isExtensionName 与密钥版本名都是其真子集。 */
+const SAFE_PREPARED_SEGMENT = /^[A-Za-z0-9._-]{1,128}$/
+const PREPARED_FIELDS = new Set(["kind", "store", "server", "version"])
+
+/**
+ * prepared resource 的形状闸(#712)。写入侧(validatePlan)与恢复侧(diagnose / 释放前)同一真源。
+ * 「多余字段一律拒」是结构性的:今后若有人往描述符里加 `files` / `valueDigest`,计划**在写盘前**
+ * 就被拒绝,而不是靠人记得「不要把值写进 journal」。
+ */
+export function validatePreparedResources(prepared: unknown): string | null {
+  if (prepared === undefined) return null
+  if (!Array.isArray(prepared)) return "invalid prepared resources"
+  if (prepared.length > 16) return "prepared resources exceed 16 entries"
+  const seen = new Set<string>()
+  for (const entry of prepared) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return "invalid prepared resource"
+    const res = entry as Record<string, unknown>
+    if (typeof res.kind !== "string" || !PREPARED_KINDS.has(res.kind))
+      return `unknown prepared resource kind: ${String(res.kind)}`
+    if (typeof res.store !== "string" || !PREPARED_STORES.has(res.store))
+      return `unknown prepared resource store: ${String(res.store)}`
+    for (const field of ["server", "version"] as const) {
+      const value = res[field]
+      if (typeof value !== "string" || value === "." || value === ".." || !SAFE_PREPARED_SEGMENT.test(value))
+        return `prepared resource ${field} is not a safe path segment: ${String(value)}`
+    }
+    const extra = Object.keys(res).find((key) => !PREPARED_FIELDS.has(key))
+    if (extra !== undefined)
+      return `prepared resource carries an unexpected field "${extra}" — refused (identity only, never values or paths)`
+    const identity = `${res.store} ${res.server} ${res.version}`
+    if (seen.has(identity)) return `duplicate prepared resource: ${res.store}/${res.server}/${res.version}`
+    seen.add(identity)
+  }
+  return null
+}
+
 export type TxPlan = {
   /** 可选调用方提供(须匹配 TX_ID 格式);缺省自动生成。 */
   txId?: string
@@ -144,6 +203,8 @@ export type TxPlan = {
   authorization?: TxAuthorizationDecision
   /** planner 决定跳过的 optional child;进 journal + 授权收据,审计可见。 */
   skippedOptional?: TxSkippedOptional[]
+  /** #712:本事务在事务根之外准备的受限资源身份(进 journal;未提交时据此释放)。 */
+  prepared?: TxPreparedResourceV1[]
 }
 
 export type HealthVerdict = { healthy: true } | { healthy: false; reason: string }
@@ -227,6 +288,11 @@ export type TxHooks = {
   populatePrepared?: () => void | Promise<void>
   /** prepared resource 的候选探测；失败发生在任何 live switch 之前。 */
   probePrepared?: () => HealthVerdict | Promise<HealthVerdict>
+  /** #712:释放未提交事务准备的受限资源(与 journal 的 prepared 同一真源)。**同步** —— 在
+   *  abort / rollback 终态化之前调用一次;抛错 = 未能释放,如实进 warnings(资源留在盘上,
+   *  它此刻不被任何 live config 引用,恢复期与提交后 GC 都会再试)。绝不阻断终态化:资源不可达,
+   *  而把整条 journal 挂成非终态会连带封死后续全部扩展写。 */
+  releasePrepared?: (resources: TxPreparedResourceV1[]) => void
   /** 类型化健康探测(可注入):pre-switch 失败 → abort+隔离(current 不动);post-switch 失败 → 回滚+隔离。 */
   probe?: HealthProbe
   /** 锁内业务前置(REQ-102 #317:如 downgrade 门):持 Bundle 锁后、任何写盘(journal/staging)前
@@ -324,6 +390,9 @@ export type TxJournal = {
   reason?: string
   items: TxJournalItem[]
   authorization?: TxJournalAuthorization
+  /** #712:事务根之外准备的受限资源身份。**populate 之前**落盘 —— 崩溃后这是唯一能让恢复
+   *  知道「盘上多了一个受限资源」的东西。只含身份,不含 value / 摘要 / 绝对路径。 */
+  prepared?: TxPreparedResourceV1[]
 }
 
 export const KEEP_GENERATIONS_DEFAULT = 3
@@ -673,6 +742,10 @@ function validatePlan(root: string, plan: TxPlan): string | null {
         return `skippedOptional "${entry.key}": invalid reason`
     }
   }
+  // #712:prepared resource 在**写盘前**过形状闸 —— 未登记的 kind/store、非安全路径段、
+  // 或任何超出身份的多余字段(value / 摘要 / 绝对路径)一律零副作用拒绝。
+  const preparedInvalid = validatePreparedResources(plan.prepared)
+  if (preparedInvalid) return preparedInvalid
   return null
 }
 
@@ -1125,6 +1198,11 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       items: authz.items,
       skippedOptional: (plan.skippedOptional ?? []).map((s) => ({ key: s.key, reason: s.reason ?? "" })),
     },
+    // #712:身份**先于** populatePrepared 落盘(下面这次 writeJournalSync 就是它的持久化点)——
+    // 顺序反过来就等于「资源已在盘上而无人知道」,正是本票要消灭的状态。
+    ...(plan.prepared?.length
+      ? { prepared: plan.prepared.map((r) => ({ kind: r.kind, store: r.store, server: r.server, version: r.version })) }
+      : {}),
   }
 
   const advance = (state: TxState, reason?: string): void => {
@@ -1218,6 +1296,24 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     return { fileBlocked }
   }
 
+  /** #712:未提交事务的 prepared resource 释放 —— abort / rollback 终态化**之前**调用一次。
+   *  此刻 live 已确定不指向本事务的载荷(abort = 从未翻转;rollback = 前像已复原),资源无引用。
+   *  接缝缺失或抛错只入 warnings:资源本就不可达,而把 journal 挂成非终态会连带封死后续全部
+   *  扩展写。恢复期对同一条 journal 会再释放一次(幂等),提交后 GC 是最后一道兜底。 */
+  const releasePreparedResources = (): void => {
+    const resources = journal.prepared
+    if (!resources?.length) return
+    if (!hooks.releasePrepared) {
+      warnings.push("prepared resources declared without a releasePrepared seam — retained on disk")
+      return
+    }
+    try {
+      hooks.releasePrepared(resources)
+    } catch (error) {
+      warnings.push(`prepared resource release failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   /** switch 之前的失败:current 全量不变。quarantineFailed=true(探测失败)→ 隔离;否则删未引用残留。 */
   const abortPreSwitch = (stage: TxStage, reason: string, quarantineFailed = false): TxResult => {
     let quarantined: string[] | undefined
@@ -1230,6 +1326,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       }
     }
     removeDirGuarded(root, txStagingDir(root, txId), warnings)
+    releasePreparedResources()
     advance("aborted", reason)
     log("tx-aborted", { txId, stage, reason })
     lock.release()
@@ -1265,6 +1362,8 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     }
     const quarantined = quarantineGenerations(root, txId, genEntries(), reason, "post-switch-rollback", now, warnings)
     removeDirGuarded(root, txStagingDir(root, txId), warnings)
+    // 前像已复原(受阻分支上面已提前返回,不会走到这里)→ 本事务的 prepared resource 无引用。
+    releasePreparedResources()
     advance("rolled-back", reason)
     log("tx-rolled-back", { txId, stage, reason })
     lock.release()
@@ -1848,7 +1947,7 @@ export type TxJournalDiagnosis = { verdict: "malformed"; reason: string } | { ve
 
 /** #375:诊断入参的最弱结构面 —— 允许把 JSON.parse 的产物(经 txId 判据后)直接送诊,
  *  不需要任何 cast;TxJournal 结构性满足本形状。 */
-export type TxJournalShape = { txId?: unknown; op?: unknown; state?: unknown; items?: unknown }
+export type TxJournalShape = { txId?: unknown; op?: unknown; state?: unknown; items?: unknown; prepared?: unknown }
 
 const isRecShape = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
 
@@ -1859,6 +1958,10 @@ const isRecShape = (v: unknown): v is Record<string, unknown> => !!v && typeof v
 export function diagnoseTransactionJournal(journal: TxJournalShape): TxJournalDiagnosis {
   if (typeof journal.state !== "string") return { verdict: "malformed", reason: "malformed journal (state missing)" }
   if (!Array.isArray(journal.items)) return { verdict: "malformed", reason: "malformed journal (items is not an array)" }
+  // #712:prepared 面与写入侧同一形状闸 —— 畸形描述符在 dispatch 之前就转保留态,绝不进
+  // 释放路径(那里会据它派生要删的目录)。合法件由 validatePlan 保证必过,零回归。
+  const preparedInvalid = validatePreparedResources(journal.prepared)
+  if (preparedInvalid) return { verdict: "malformed", reason: `malformed journal (${preparedInvalid})` }
   const items: unknown[] = journal.items
   if (journal.op === "uninstall") {
     const item = items[0]
@@ -1951,6 +2054,11 @@ export type RecoverOptions = {
   /** #346:config 卸载恢复的 artifact 删除接缝(config-leaf + 密钥,幂等)。**恢复锁内调用** ——
    *  实现只准用 in-lock 原语,绝不重取 bundle 锁。缺失时 config 卸载 journal 保持非终态。 */
   uninstallArtifacts?: (key: string) => void | Promise<void>
+  /** #712:未提交事务的 prepared resource 释放接缝(**恢复锁内**调用 —— 实现只准用 in-lock
+   *  原语,绝不重取 bundle 锁)。只在 journal 收敛为 aborted / rolled-back 时调用;前滚到
+   *  committed 时**绝不**调用(那时资源已被 live config 引用)。抛错 = 未释放,如实记日志后
+   *  仍终态化:资源不可达,而挂着非终态 journal 会封死后续全部扩展写。 */
+  releasePrepared?: (resources: TxPreparedResourceV1[]) => void
   log?: TxLog
   now?: () => Date
   pidAlive?: (pid: number) => boolean
@@ -2231,6 +2339,27 @@ async function recoverOne(
 ): Promise<TxRecoveryReport> {
   const txId = journal.txId
   const warnings: string[] = []
+  // #712:未提交收敛(aborted / rolled-back)前释放本事务准备的受限资源 —— 它在 populate 之后
+  // 就已在盘上,而 journal 是唯一知道它存在的东西。**只在不提交的分支调用**;前滚到 committed
+  // 时 live config 已引用它,释放会当场制造悬空引用。
+  //
+  // journal 是不可信输入,但形状闸不在这里重复一遍:非终态 journal 一律先过
+  // diagnoseTransactionJournal(与 validatePlan 同一份 validatePreparedResources),畸形件在
+  // dispatch 之前就转 retained,根本到不了这里 —— 在此再判一次等于一道永远咬不到人的假门。
+  // 第二道线在 store 拥有者自己那边:释放接缝按自己的名字文法再验一次才派生路径。
+  const releasePreparedResources = (): void => {
+    const resources = journal.prepared
+    if (!resources?.length) return
+    if (!opts.releasePrepared) {
+      warnings.push("prepared resources declared without a releasePrepared seam — retained on disk")
+      return
+    }
+    try {
+      opts.releasePrepared(resources)
+    } catch (error) {
+      warnings.push(`prepared resource release failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
   const finish = (state: TxState, reason: string): void => {
     writeJournalSync(root, { ...journal, state, reason, updatedAt: now().toISOString() })
   }
@@ -2283,6 +2412,7 @@ async function recoverOne(
       if (fs.existsSync(dir)) removeDirGuarded(root, dir, warnings)
     }
     const reason = "crash recovery: transaction interrupted before switch — no changes applied; retry the install"
+    releasePreparedResources() // switch 从未发生 → 受限资源零引用
     finish("aborted", reason)
     log("recovery-aborted", { txId, priorState: journal.state, warnings })
     return { txId, state: journal.state, action: "aborted", detail: reason }
@@ -2649,6 +2779,7 @@ async function recoverOne(
     warnings,
   )
   removeDirGuarded(root, staleStaging, warnings)
+  releasePreparedResources() // 前像已复原(受阻分支上面已返回)→ 受限资源零引用
   finish("rolled-back", reason)
   log("recovery-rolled-back", { txId, priorState: journal.state, reason, warnings })
   return { txId, state: journal.state, action: "rolled-back", detail: reason }
