@@ -3,9 +3,17 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import type { AlphaPackageEnvelopeV1, PackageProfilePayloadV1 } from "../shared/host-extension-package-contract/decoder"
-import type { PackageAdmissionBindingV1 } from "../shared/package-admission"
+import type {
+  AlphaPackageEnvelopeV1,
+  PackageProfilePayloadV1,
+  PackageSupportedComponentV1,
+} from "../shared/host-extension-package-contract/decoder"
+import {
+  packageEffectiveInstallGraphV1,
+  type PackageAdmissionBindingV1,
+} from "../shared/package-admission"
 import { createPackageAdmissionCoordinator } from "./package-admission"
+import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { runExtensionTransaction } from "./ext-transaction"
 
 const artifact = resolve(
@@ -416,7 +424,22 @@ describe("package admission", () => {
       }),
     ).toMatchObject({ ok: false, reason: expect.stringContaining("does not exactly match") })
 
-    for (const field of ["snapshotDigest", "envelopeDigest", "itemDigests", "capabilityDigest"] as const) {
+    // 枚举必须覆盖 binding 的**每一个**字段。漏掉一个 = 那个字段的绑定可以被 renderer 改写而
+    // 无人发现,闸门对它就是假的。`graphDigest` 之前恰好不在这条枚举里。
+    expect(Object.keys(cancelled.packageAuthorization.binding).sort()).toEqual([
+      "capabilityDigest",
+      "envelopeDigest",
+      "graphDigest",
+      "itemDigests",
+      "snapshotDigest",
+    ])
+    for (const field of [
+      "snapshotDigest",
+      "envelopeDigest",
+      "graphDigest",
+      "itemDigests",
+      "capabilityDigest",
+    ] as const) {
       const attemptId = `attempt-tamper-${field}`
       const first = await preview(attemptId)
       const binding = structuredClone(first.packageAuthorization.binding)
@@ -613,5 +636,140 @@ describe("package admission", () => {
     ).toMatchObject({ ok: false })
     expect(transactionCalls).toBe(1)
     expect(readFileSync(configPath, "utf8")).toBe(handwritten)
+  })
+
+  /**
+   * `graphDigest` claims to bind the effective install graph independently. A key-shape assertion
+   * cannot tell that claim from a constant: replacing the production computation with
+   * `"0".repeat(64)` used to leave the whole suite green. So assert the **value**, derived from the
+   * signed envelope through the shared graph builder, for two packages whose graphs differ — one
+   * value alone can always be hard-coded.
+   */
+  test("graphDigest is the canonical hash of the effective install graph, and two graphs never share one", async () => {
+    const { envelope, bytes } = await fixture()
+    const other = structuredClone(envelope)
+    const otherPayload = JSON.parse(new TextDecoder().decode(bytes)) as PackageProfilePayloadV1
+    if (otherPayload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+      throw new Error("producer corpus profile drifted")
+    otherPayload.behavior.url = `${otherPayload.behavior.url}other/`
+    const otherBytes = new TextEncoder().encode(`${JSON.stringify(otherPayload, null, 2)}\n`)
+    other.components[0].payloadRef.bytes = otherBytes.byteLength
+    other.components[0].payloadRef.sha256 = createHash("sha256").update(otherBytes).digest("hex")
+
+    const bindingOf = async (signed: AlphaPackageEnvelopeV1, payloadBytes: Uint8Array, attemptId: string) => {
+      const admit = createPackageAdmissionCoordinator({
+        loadVerifiedCatalog: async () => ({
+          source: "remote",
+          catalog: { version: "1", entries: [{}], packages: [signed] },
+          snapshotDigest,
+        }),
+        root: () => root,
+        userDataPath: userData,
+        environment: () => "dev",
+        installability: { fetchPayload: async () => payloadBytes },
+      })
+      const preview = await admit({ catalogId: signed.prelude.packageId, scope: { scope: "global" }, attemptId })
+      if (preview.ok || preview.stage !== "authorize") throw new Error(`expected preview: ${JSON.stringify(preview)}`)
+      return preview.packageAuthorization.binding
+    }
+    // 期望值从**签名信封**独立推出来,不是从生产的 facts.graph 抄一份。
+    const expected = (signed: AlphaPackageEnvelopeV1) =>
+      sha256Hex(
+        canonicalJson(
+          packageEffectiveInstallGraphV1(signed, [
+            signed.components[0] as unknown as PackageSupportedComponentV1,
+          ]),
+        ),
+      )
+
+    const first = await bindingOf(envelope, bytes, "attempt-graph-digest-1")
+    const second = await bindingOf(other, otherBytes, "attempt-graph-digest-2")
+    expect(first.graphDigest).toBe(expected(envelope))
+    expect(second.graphDigest).toBe(expected(other))
+    expect(first.graphDigest).not.toBe(second.graphDigest)
+    // 不是把 envelopeDigest 换个名字放第二遍 —— 那样它绑的就不是这条闸门声称的东西。
+    expect(first.graphDigest).not.toBe(first.envelopeDigest)
+    expect(first.graphDigest).not.toBe(first.itemDigests[envelope.components[0].id])
+  })
+
+  /**
+   * §5.1 门二 at the real entry point. The gate reads the **signed** component count, not the
+   * effective graph: a Bundle whose only unsupported child is optional has an effective graph of
+   * length 1, so an effective-length gate lets it through and installs the root alone — a half
+   * installed package the user can see. Nothing may reach the transaction.
+   */
+  test("a signed two-component Bundle is refused before any payload fetch or transaction", async () => {
+    const { envelope, bytes } = await fixture()
+    const leafPayload = {
+      schema: "alpha.host-extension-package.payload.agent.v1",
+      behavior: {
+        targetDir: "alpha-agents",
+        asset: {
+          sha256: "b".repeat(64),
+          bytes: 1,
+          mediaType: "text/markdown",
+          url: "https://example.invalid/leaf.md",
+        },
+      },
+    }
+    const leafBytes = new TextEncoder().encode(`${JSON.stringify(leafPayload, null, 2)}\n`)
+    const bundle = structuredClone(envelope)
+    bundle.components[0].dependencies = ["agent:bundle-leaf"]
+    bundle.components.push({
+      id: "agent:bundle-leaf",
+      required: false,
+      dependencies: [],
+      profileId: "agent",
+      profileVersion: 1,
+      // 未知 capability ⇒ optional leaf 被 skip ⇒ 有效图长度回到 1。审计方正是从这里绕过去的。
+      capabilities: ["alpha.future.v1"],
+      payloadRef: {
+        sha256: createHash("sha256").update(leafBytes).digest("hex"),
+        bytes: leafBytes.byteLength,
+        mediaType: "application/vnd.alpha.host-extension-package.agent.v1+json",
+        url: "https://example.invalid/leaf-payload.json",
+      },
+    } as unknown as (typeof bundle.components)[number])
+    bundle.capabilities = ["alpha.future.v1", "alpha.secret-prerequisite.v1"]
+
+    let fetches = 0
+    let transactionCalls = 0
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [bundle] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      environment: () => "dev",
+      installability: {
+        fetchPayload: async (ref) => {
+          fetches++
+          return ref.mediaType.includes(".agent.") ? leafBytes : bytes
+        },
+      },
+      transaction: async (...args) => {
+        transactionCalls++
+        return runExtensionTransaction(...args)
+      },
+    })
+    const refused = await admit({
+      catalogId: bundle.prelude.packageId,
+      scope: { scope: "global" },
+      attemptId: "attempt-signed-bundle",
+    })
+    expect(refused).toMatchObject({ ok: false, reason: "package-bundle-activation-pending" })
+    if (refused.ok || refused.stage === "authorize") throw new Error("Bundle must never reach the preview")
+    expect(refused.package?.verdict).toBe("blocked")
+    expect(refused.package?.action.enabled).toBe(false)
+    // 挡住的是动作,不是可见性:被跳过的子件仍如实呈现,原因码逐字来自 decoder。
+    expect(refused.package?.components.map((entry) => [entry.componentId, entry.included])).toEqual([
+      ["mcp:generic-remote", true],
+      ["agent:bundle-leaf", false],
+    ])
+    expect(fetches, "永不安装的包不该产生任何网络请求").toBe(0)
+    expect(transactionCalls).toBe(0)
+    expect(existsSync(join(userData, "alpha-mcp-secrets"))).toBe(false)
   })
 })

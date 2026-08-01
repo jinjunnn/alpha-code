@@ -798,6 +798,7 @@ function decodeMcpRemotePayload(value: unknown): PackageProfilePayloadDecodeV1 {
     errors,
   )
   const auth = decodeMcpRemoteAuth(behavior.auth, errors)
+  if (headersTemplate) checkMcpRemotePlaceholdersV1(headersTemplate, requiredSecrets, errors)
   if (auth && auth !== "none" && headersTemplate)
     checkMcpRemoteAuthInvariantsV1(auth, headersTemplate, requiredSecrets, errors)
   if (errors.length || !url || !headersTemplate || !auth) return { ok: false, errors }
@@ -857,6 +858,30 @@ function decodeMcpRemoteAuth(value: unknown, errors: string[]): McpRemoteAuthV1 
     connectionHandlerId,
     ...(label ? { label } : {}),
   }
+}
+
+/**
+ * Invariant 4: every `{VAR}` placeholder in `headersTemplate` must be declared in
+ * `requiredSecrets`, **for all three auth kinds alike** — an undeclared placeholder is a header the
+ * host would ship with a literal `{VAR}` in it, and nobody would ever be asked for the value.
+ *
+ * This lives here and only here. Main used to restate it while projecting the secret prerequisite
+ * profile, which is the `#737` class exactly: the host deciding what the contract's grammar means.
+ * Declaring the rule here also subsumes the malformed-name case for free — `requiredSecrets` entries
+ * are already `ENV_NAME_RE`, so `{lowercase}` cannot be declared and is therefore refused.
+ */
+function checkMcpRemotePlaceholdersV1(
+  headersTemplate: Record<string, string>,
+  requiredSecrets: string[],
+  errors: string[],
+): void {
+  const declared = new Set(requiredSecrets)
+  for (const [header, template] of Object.entries(headersTemplate))
+    for (const match of template.matchAll(/\{([^{}]+)\}/g))
+      if (!declared.has(match[1]!))
+        errors.push(
+          `payload.behavior.headersTemplate: "${header}" references undeclared secret placeholder "${match[1]!}"`,
+        )
 }
 
 /**

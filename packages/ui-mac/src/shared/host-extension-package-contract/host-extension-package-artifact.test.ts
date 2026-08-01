@@ -88,6 +88,12 @@ describe("HostExtensionPackageV1 artifact", () => {
     ])
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).toBe(16)
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes).toBe(5 * 1024 * 1024)
+    // DoS 边界必须钉住值,不能只钉住「这个键存在」—— 键存在的断言拦不住悄悄放宽。
+    // v2 把 maxHeaderNodes 从 128 提到 512:16 组件的信封本身就有几百个节点,128 会拒载合法
+    // 多组件包。放宽 4× 的兜底是 maxEnvelopeBytes 仍为 64 KiB —— 所以它也一起钉住,
+    // 否则「兜底还在」只是散文断言。
+    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxHeaderNodes).toBe(512)
+    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxEnvelopeBytes).toBe(64 * 1024)
 
     const manifest = (await Bun.file(
       resolve(import.meta.dir, HOST_EXTENSION_PACKAGE_ARTIFACT_MANIFEST),

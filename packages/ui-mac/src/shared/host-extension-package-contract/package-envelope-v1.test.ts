@@ -615,6 +615,60 @@ const negativeCases: NegativeCase[] = [
       ;(behaviorOf(payload).auth as Record<string, unknown>).prerequisiteId = "tenant-id"
     },
   },
+  // 不变量 4 —— 每个 `{VAR}` 都必须在 requiredSecrets 里声明。三个 auth 档位各来一条:规则对
+  // 三者一视同仁,只覆盖其中一个就等于让另外两个档位无声地失去这条闸。这条规则以前活在 main 的
+  // 前置投影里(`#737` 那一类),现在归 decoder 独占,所以判据也必须在 decoder 这一侧。
+  {
+    name: "auth none refuses an undeclared headersTemplate placeholder",
+    source: "mcp-remote-v1",
+    mode: "package",
+    error: 'references undeclared secret placeholder "TENANT_ID"',
+    mutatePayload: (payload) => {
+      behaviorOf(payload).headersTemplate = { "X-Tenant": "{TENANT_ID}" }
+    },
+  },
+  {
+    // 两处刻意:①头名是 Z-Region 而不是 Authorization,否则这条会被 oauth 的 Authorization 闸
+    // 顺手挡掉,看起来绿其实测的是另一条规则;②违规的头排在**最后**(插入序与字节序都是),
+    // 否则「只看第一个头」的实现照样全绿 —— 这一条正是自查绕过时抓到的空闸。
+    name: "mcp-oauth refuses an undeclared placeholder in a non-first header",
+    source: "mcp-remote-oauth-v1",
+    mode: "package",
+    error: 'references undeclared secret placeholder "REGION_ID"',
+    mutatePayload: (payload) => {
+      behaviorOf(payload).headersTemplate = { "A-Tenant": "{TENANT_ID}", "Z-Region": "{REGION_ID}" }
+    },
+  },
+  {
+    // 同一个头里的**第二个**占位符 —— 「每个头只看第一个 match」的实现会在这里露出来。
+    name: "a second placeholder inside one header is checked too",
+    source: "mcp-remote-oauth-v1",
+    mode: "package",
+    error: 'references undeclared secret placeholder "REGION_ID"',
+    mutatePayload: (payload) => {
+      behaviorOf(payload).headersTemplate = { "X-Tenant": "{TENANT_ID}/{REGION_ID}" }
+    },
+  },
+  {
+    name: "alpha-connection refuses an undeclared headersTemplate placeholder",
+    source: "mcp-remote-connection-v1",
+    mode: "package",
+    error: 'references undeclared secret placeholder "TENANT_ID"',
+    mutatePayload: (payload) => {
+      behaviorOf(payload).headersTemplate = { "X-Tenant": "{TENANT_ID}" }
+    },
+  },
+  {
+    // 声明不出来的名字就永远是「未声明」:requiredSecrets 只收 ENV_NAME_RE,所以这条规则
+    // 顺带把畸形占位符也关掉了,不需要第二条平行规则。
+    name: "a malformed placeholder name can never be declared and is refused",
+    source: "mcp-remote-oauth-v1",
+    mode: "package",
+    error: 'references undeclared secret placeholder "lowercase"',
+    mutatePayload: (payload) => {
+      behaviorOf(payload).headersTemplate = { "A-Tenant": "{TENANT_ID}", "Z-Region": "{lowercase}" }
+    },
+  },
   {
     name: "targetDir enum",
     source: "skill-v1",

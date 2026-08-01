@@ -918,7 +918,7 @@ describe("package installability authority", () => {
     ])
   })
 
-  test("a curated but unsupported optional child is skipped verbatim and reaches no effect", async () => {
+  test("a Bundle whose only unsupported child is optional is refused too — 门二 reads the signed count", async () => {
     const item = bundle({ supported: false })
     const fetched: string[] = []
     const view = await evaluatePackageForHost(item.envelope, {
@@ -928,13 +928,17 @@ describe("package installability authority", () => {
       },
     })
 
-    // ① 有效安装图只剩 root ⇒ 整包仍然可安装,门二不适用。
-    expect(view.verdict).toBe("compatible")
-    expect(view.action.enabled).toBe(true)
+    // ① 有效安装图只剩 root,但签名事实仍然是两个组件 ⇒ 门二照样挡。按有效图长度判会让这个
+    //    形状绕过去,装出一个「只装了 root」的半装包 —— 用户点得动、也看得见。
+    expect(view.verdict).toBe("blocked")
+    expect(view.action).toEqual({
+      kind: "none",
+      enabled: false,
+      reasonCode: "package-bundle-activation-pending",
+    })
 
-    // ② 被跳过的 child:零 fetch、零 prerequisite。
-    expect(fetched.every((mediaType) => mediaType.includes(".skill."))).toBe(true)
-    expect(fetched.length).toBe(1)
+    // ② 闸在取 payload 之前:永不安装的包不产生任何网络请求,也不收任何 prerequisite。
+    expect(fetched).toEqual([])
     expect(view.prerequisites.items).toEqual([])
 
     // ③ 原因码逐字来自 decoder,不是 safe view 自己另起的一套措辞。

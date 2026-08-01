@@ -113,7 +113,10 @@ them:
    that render as the same row in the approval list are not distinguishable to
    the person approving them.
 4. Every `{VAR}` placeholder in `headersTemplate` must appear in
-   `requiredSecrets`, for all three auth kinds alike.
+   `requiredSecrets`, for all three auth kinds alike. A name that cannot be
+   spelled in `requiredSecrets` therefore cannot be declared at all, so this one
+   rule also refuses a malformed placeholder — there is no parallel grammar rule
+   for placeholders, and main does not restate either.
 5. A non-`none` `auth` does **not** exempt `requiredSecrets`. OAuth plus an
    extra API key is legitimate, and both prerequisites are collected.
 

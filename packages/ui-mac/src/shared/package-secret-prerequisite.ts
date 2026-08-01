@@ -122,15 +122,9 @@ export function decodePackageSecretPrerequisiteProfileV1(
   if (payload.schema === "alpha.host-extension-package.payload.mcp-remote.v1") {
     if (!isExtensionName(suffix))
       errors.push("secret prerequisite component id cannot be represented by the existing MCP secret store")
-    const declared = new Set(payload.behavior.requiredSecrets)
-    const placeholders = Object.values(payload.behavior.headersTemplate).flatMap((template) =>
-      [...template.matchAll(/\{([^{}]+)\}/g)].map((match) => match[1]!),
-    )
-    placeholders
-      .filter((variable) => !declared.has(variable))
-      .forEach((variable) =>
-        errors.push(`payload.behavior.headersTemplate: undeclared secret placeholder "${variable}"`),
-      )
+    // 「headersTemplate 里的每个 {VAR} 都必须在 requiredSecrets 里声明」是 CONTRACT.md 不变量 4,
+    // 归 decoder 独占(`decodeMcpRemotePayload`)。这里曾经复述过一遍 —— 那正是 `#737` 那一类:
+    // 宿主替契约做决定。同一条规则写在两处就会漂移,而漂移的总是第二份。
     const targets = payload.behavior.requiredSecrets.map((variable) => ({
       variable,
       headers: Object.entries(payload.behavior.headersTemplate)

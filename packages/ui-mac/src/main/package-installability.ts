@@ -146,9 +146,10 @@ export async function evaluateCatalogPackagesForHost(
 
 /**
  * The only host compatibility authority for one signed package envelope. Ordering is fixed:
- * bounded header/graph/support gate → per supported component (exact payload fetch/digest →
- * strict profile decoder → safe prerequisite projection). No payload/secret stage is reachable
- * after a header/support failure, and a skipped component reaches none of them at all.
+ * bounded header/graph/support gate → §5.1 门二(signed Bundle) → per supported component (exact
+ * payload fetch/digest → strict profile decoder → safe prerequisite projection). No payload/secret
+ * stage is reachable after a header/support/Bundle failure, and a skipped component reaches none of
+ * them at all.
  */
 export async function evaluatePackageForHost(
   envelope: unknown,
@@ -179,6 +180,14 @@ export async function evaluatePackageForHost(
   // 判据作为第二道 fail-closed —— decoder 一旦回归,安装动作不会因此静默变成可点。
   if (!rootEntry || rootEntry.status !== "supported" || !rootEntry.component.required)
     return refuse("package-invalid")
+
+  // §5.1 门二。合同已经接受多组件,但 admission 还只处理一个组件 —— 放行就等于「用户点了安装,
+  // 只装到第一个组件」。判据是**签名事实**(信封声明了几个组件),不是有效安装图:有效图已经
+  // 排除了被 skip 的子件,拿它判会让「root + 一个不受支持的 optional leaf」绕过这道闸,装出一个
+  // 半装的包。签名事实含全部组件,有效图只含未 skip 的(§4.3);门二问的是「这是不是一个
+  // Bundle」,那是签名事实。闸在取 payload 之前 —— 永不安装的包不该产生任何网络请求。
+  // 翻开这道闸是 `#697` 的活,判据是它自己的生产 wiring test。单组件 package 完全不受影响。
+  if (header.envelope.components.length > 1) return refuse("package-bundle-activation-pending")
 
   const supported = [
     ...header.components.filter((entry) => entry.role === "root" && entry.status === "supported"),
@@ -228,10 +237,6 @@ export async function evaluatePackageForHost(
     header.envelope,
     accepted.map((entry) => entry.component),
   )
-  // §5.1 门二。合同已经接受多组件,但 admission 还只处理一个组件 —— 放行就等于「用户点了安装,
-  // 只装到第一个组件」。在 `#697` 把 admission 走通之前,Bundle 一律不给可点的安装动作;
-  // 单组件 package 完全不受影响。翻开这道闸是 `#697` 的活,判据是它自己的生产 wiring test。
-  if (graph.components.length > 1) return refuse("package-bundle-activation-pending")
 
   const rootAccepted = accepted.find((entry) => entry.role === "root")!
   deps.accepted?.({
@@ -332,10 +337,10 @@ export async function preflightPackageInstall(
     matched: true,
     outcome: {
       ok: false,
+      // `verdict === "compatible"` 只从 `compatibleView` 来,它的两个 reason 都是 enabled ⇒
+      // 再 `&& action.enabled` 是恒真的死代码,会被误读成第二道闸。判据只留真的那两条。
       reason:
-        evaluated.verdict === "compatible" &&
-        evaluated.action.enabled &&
-        evaluated.prerequisites.status === "ready"
+        evaluated.verdict === "compatible" && evaluated.prerequisites.status === "ready"
           ? "package-admission-not-implemented"
           : evaluated.action.reasonCode,
       package: evaluated,

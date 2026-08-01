@@ -125,11 +125,13 @@ export type PackageAdmissionDeps = {
 
 /**
  * `envelope.components[0]` is whichever component the producer listed first, which is not the root
- * in general. The evaluator already ordered its accepted components root-first, so read the root
- * from there. (`#697` replaces this whole single-component shape with the graph.)
+ * in general. Reading `facts.components[0]` instead only moves the same defect one layer up: it
+ * turns an **ordering convention** into a load-bearing invariant while the type already carries the
+ * fact (`role`). Read the declared role. (`#697` replaces this whole single-component shape with
+ * the graph.)
  */
 function rootComponentOf(facts: PackageAcceptedFactsV1) {
-  return facts.components[0]!.component
+  return facts.components.find((entry) => entry.role === "root")!.component
 }
 
 type PreparedPackage = {

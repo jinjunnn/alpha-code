@@ -123,7 +123,12 @@ describe("package secret prerequisite", () => {
     })
   })
 
-  test("strictly derives remote header targets and rejects undeclared placeholders", () => {
+  /**
+   * The `{VAR}`-must-be-declared rule moved to the decoder (CONTRACT.md invariant 4), so it is
+   * asserted there and not restated here. What main still owns is the other direction: a declared
+   * secret that no header consumes would be a prompt for a value nothing ever uses.
+   */
+  test("strictly derives remote header targets and refuses a declared secret with no header target", () => {
     expect(profileOf("mcp-remote").items[0]?.target).toEqual({
       kind: "mcp-remote-headers",
       headers: ["Authorization"],
@@ -132,13 +137,10 @@ describe("package secret prerequisite", () => {
     const decoded = decodedPackage("mcp-remote")
     const payload = structuredClone(decoded.payload)
     if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1") throw new Error("wrong fixture")
-    payload.behavior.headersTemplate.Authorization = "Bearer {OTHER_TOKEN}"
+    payload.behavior.headersTemplate = { "X-Unrelated": "static" }
     const result = decodePackageSecretPrerequisiteProfileV1(decoded.component, payload)
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.errors.join("; ")).toContain('undeclared secret placeholder "OTHER_TOKEN"')
-    payload.behavior.headersTemplate.Authorization = "Bearer {lowercase}"
-    const invalidPlaceholder = decodePackageSecretPrerequisiteProfileV1(decoded.component, payload)
-    expect(invalidPlaceholder.ok).toBe(false)
+    if (!result.ok) expect(result.errors.join("; ")).toContain('"API_TOKEN" has no header target')
   })
 
   test("renderer cannot add an undeclared secret", () => {
