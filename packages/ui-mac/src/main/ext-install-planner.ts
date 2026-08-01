@@ -190,7 +190,9 @@ import {
   computeGrantDigest,
   findRecordV2,
   lookupForUninstall,
+  planDirectUninstall,
   projectScopeIdentity,
+  releaseStandaloneClaim,
   removeRecordV2,
   setDesiredStateV2,
   probeLedgerForWrite,
@@ -276,7 +278,11 @@ export type CatalogInstallOutcome =
   | { ok: false; stage: "authorize"; reason: string; authorization: CapabilityDiff[] }
   | { ok: false; reason: string; stage?: Exclude<TxStage, "authorize"> }
 
-export type UninstallOutcome = { ok: true; files?: string[]; warning?: string } | { ok: false; reason: string }
+/** REQ-128 `#706`:`retainedForOwners` = 实物没删,因为它还属于这些 owner(仍在册的 Bundle);
+ *  用户自己那份 standalone claim 已释放。缺省 = 走了正常的删实物 + 去账。 */
+export type UninstallOutcome =
+  | { ok: true; files?: string[]; warning?: string; retainedForOwners?: string[] }
+  | { ok: false; reason: string }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
 const RECEIPT_TYPES = new Set<string>(["mcp", "skill", "agent", "command", "plugin", "bundle", "cloud"])
@@ -3825,6 +3831,22 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
     if (!verified.ok) return verified // 项目被移动/identity 不符 → 拒绝,绝不退化为 global 卸载(AC#4)
   }
   const configKey = record?.configKey ?? v1?.configKey
+
+  // REQ-128 `#706`(R2 Blocker 的直接修法):claim-aware 判决必须在**删任何实物之前**做完。
+  // 这条路径的形状是「先删实物、再去账」,而 V3 的 repository 会在仍有 Bundle owner 时拒写 ——
+  // 判决放在后面,用户就会看到「卸载失败」而东西真的已经没了。
+  // 仍有 Bundle 在用 ⇒ 一件实物都不动,只把用户自己那份 standalone claim 释放掉。
+  const claimPlan = planDirectUninstall(root, intent.type, intent.name)
+  if (!claimPlan.ok) return { ok: false, reason: claimPlan.reason }
+  if (claimPlan.decision === "release-claim-only") {
+    const released = releaseStandaloneClaim(root, intent.type, intent.name)
+    if (!released.ok) return { ok: false, reason: `${intent.type} uninstall: ${released.reason}` }
+    return {
+      ok: true,
+      retainedForOwners: released.remainingOwners,
+      warning: `${intent.type}:${intent.name} is still part of ${released.remainingOwners.join(", ")} — removed your standalone claim and kept the files`,
+    }
+  }
 
   const tx = (deps.transaction ?? passthroughTx).begin({ op: "uninstall", kind: intent.type, name: intent.name, scope: intent.scope })
   const rollback = (reason: string): void => (deps.transaction ?? passthroughTx).rollback(tx.txId, reason)

@@ -26,7 +26,7 @@ import {
   resolveMcpRefPath,
 } from "./alpha-mcp-secrets"
 import type { TxPreparedResourceV1 } from "./ext-transaction"
-import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
+import { alphaGlobalRoot } from "./alpha-installs"
 import { findRecordV2 } from "./ext-receipt-v2"
 import { alphaJsoncPath } from "./engine-config-truth"
 import { commandHeadBase } from "./platform"
@@ -254,10 +254,6 @@ function applyBuiltinPolicyEditsUnlocked(edits: BuiltinPolicyEdit[]): BuiltinPol
     }
     return { ok: false, reason: error instanceof Error ? error.message : "failed to write config" }
   }
-}
-
-function receiptsActive(): boolean {
-  return process.env.ALPHA_LEGACY_INSTALL_ROOT !== "1"
 }
 
 /** 纯校验(零写盘;REQ-102 #359 裁决 B:seed MCP 走 config action 时在 plan 生成前复用本门 ——
@@ -821,7 +817,8 @@ function removeMcpUnlocked(name: string): ConfigResult {
       /* unreadable legacy config → nothing to remove there */
     }
   }
-  if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "mcp", name)
+  // REQ-128 `#706`:账本副作用已从配置写器里删掉(v1 物理写器会抹掉 V3 的 packageGraphs/claims,
+  // 且发生在实物变更之后、返回值被忽略)。去账只归外层单点提交。
   return { ok: true }
 }
 
@@ -1175,7 +1172,8 @@ function removePluginUnlocked(pkg: string): ConfigResult {
     const r = dropFrom(legacy)
     if (!r.ok) return r
   }
-  if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "plugin", base.replace(/^@/, "").replace("/", "__"))
+  // REQ-128 `#706`:账本副作用已从配置写器里删掉(v1 物理写器会抹掉 V3 的 packageGraphs/claims,
+  // 且发生在实物变更之后、返回值被忽略)。去账只归外层单点提交。
   return { ok: true }
 }
 
@@ -1278,7 +1276,8 @@ function removePluginPathUnlocked(name: string, absJsPath: string): ConfigResult
       return { ok: false, reason: `config unreadable (fail closed): ${file}: ${error instanceof Error ? error.message : String(error)}` }
     }
   }
-  if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "plugin", name)
+  // REQ-128 `#706`:账本副作用已从配置写器里删掉(v1 物理写器会抹掉 V3 的 packageGraphs/claims,
+  // 且发生在实物变更之后、返回值被忽略)。去账只归外层单点提交。
   return { ok: true }
 }
 

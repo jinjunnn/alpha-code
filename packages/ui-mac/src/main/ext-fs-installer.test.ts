@@ -21,7 +21,7 @@ mock.module("electron", () => ({
 }))
 
 const { agentInstallPresent, collectBuiltinAgentPayload, collectVendoredPluginPayload, installBuiltinSkill, removeFsInstall, resourcesRoot, stageVendoredPluginVersioned, writeAgent, writeSkill } = await import("./ext-fs-installer")
-const { readLedger } = await import("./alpha-installs")
+const { addReceipt, readLedger } = await import("./alpha-installs")
 
 let base = ""
 let alphaDir = ""
@@ -163,23 +163,47 @@ describe("installBuiltinSkill — name + asset-key guards", () => {
   })
 })
 
-describe("removeFsInstall — deletes truth, unbridges, drops receipt (T6)", () => {
-  test("uninstalling a skill removes truth dir, .opencode item, and receipt", () => {
+// REQ-128 `#706`:`removeFsInstall` **不再碰账本**。它原先在删完实物之后调 v1 `removeReceipt`
+// 且忽略返回值 —— 那条路会把账本重写成 v:2(V3 的 packageGraphs/claims 静默蒸发),而且失败
+// 不可见。去账现在只归外层单点提交,claim-aware 判决在删实物之前就做完。
+describe("removeFsInstall — deletes truth and unbridges; the ledger is NOT its business (T6 / #706)", () => {
+  test("uninstalling a skill removes truth dir and .opencode item, and leaves the ledger untouched", () => {
     writeSkill("gone-skill", "d", "b")
+    addReceipt(alphaDir, {
+      id: "skill:gone-skill",
+      name: "gone-skill",
+      type: "skill",
+      scope: "global",
+      installedAt: new Date().toISOString(),
+      origin: "catalog",
+    })
+    const before = fs.readFileSync(path.join(alphaDir, "installs.json"), "utf8")
     expect(fs.existsSync(path.join(alphaDir, "skills", "gone-skill", "SKILL.md"))).toBe(true)
     const r = removeFsInstall("skill", "gone-skill")
     expect(r.ok).toBe(true)
     expect(fs.existsSync(path.join(alphaDir, "skills", "gone-skill"))).toBe(false)
     expect(fs.existsSync(path.join(opencodeDir, "skills", "gone-skill"))).toBe(false)
-    expect(readLedger(alphaDir).receipts.some((x) => x.name === "gone-skill")).toBe(false)
+    // 账本字节零改动 —— 把内层副作用接回来会让这一行立刻变红。
+    expect(fs.readFileSync(path.join(alphaDir, "installs.json"), "utf8")).toBe(before)
+    expect(readLedger(alphaDir).receipts.some((x) => x.name === "gone-skill")).toBe(true)
   })
 
-  test("uninstalling an agent removes the md and receipt", () => {
+  test("uninstalling an agent removes the md and leaves the ledger untouched", () => {
     writeAgent("gone-agent", "---\ndescription: d\n---\nsys")
+    addReceipt(alphaDir, {
+      id: "agent:gone-agent",
+      name: "gone-agent",
+      type: "agent",
+      scope: "global",
+      installedAt: new Date().toISOString(),
+      origin: "catalog",
+    })
+    const before = fs.readFileSync(path.join(alphaDir, "installs.json"), "utf8")
     const r = removeFsInstall("agent", "gone-agent")
     expect(r.ok).toBe(true)
     expect(fs.existsSync(path.join(alphaDir, "agents", "gone-agent.md"))).toBe(false)
-    expect(readLedger(alphaDir).receipts.some((x) => x.name === "gone-agent")).toBe(false)
+    expect(fs.readFileSync(path.join(alphaDir, "installs.json"), "utf8")).toBe(before)
+    expect(readLedger(alphaDir).receipts.some((x) => x.name === "gone-agent")).toBe(true)
   })
 
   test("uninstalling a missing item is idempotent success", () => {

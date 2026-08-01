@@ -126,7 +126,34 @@ function readCarriedRecords(root: string): unknown[] {
   }
 }
 
+/**
+ * REQ-128 `#706`:V3 信封在场时,这个 v1 写器**必须拒写**。
+ *
+ * 它是账本的第二个物理写器,重写时只认得 `receipts` 与(透传的)`records` 两个键 ——
+ * V3 新增的 `packageGraphs` / `claims` 是新的顶层键,写一次就静默蒸发,而 claim 恰恰是
+ * 「这个 child 还有没有别人在用」的唯一凭据。生产调用方已在 `#706` 里全部删除;这道闸
+ * 挡的是「以后有人再把它接回来」和「旧构建拿到 V3 账本」两种情况(基线 §2.9:downgrade
+ * 必须 fail-closed,不能悄悄抹掉 claims)。
+ */
+function refuseIfV3(root: string): string | null {
+  let raw: unknown
+  try {
+    raw = JSON.parse(fs.readFileSync(ledgerPath(root), "utf8"))
+  } catch {
+    return null // 缺席 / 损坏:v1 写路径的既有语义(quarantine)照旧
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null
+  const envelope = raw as { v?: unknown; packageGraphs?: unknown; claims?: unknown }
+  const hasV3Sections =
+    (Array.isArray(envelope.packageGraphs) && envelope.packageGraphs.length > 0) || (Array.isArray(envelope.claims) && envelope.claims.length > 0)
+  if (envelope.v === 3 || hasV3Sections)
+    return `install ledger is envelope v3 (package graphs/claims present) — the v1 writer would silently drop them; use the V3 repository (ext-receipt-v2): ${ledgerPath(root)}`
+  return null
+}
+
 function writeLedger(root: string, receipts: InstallReceipt[]): LedgerWriteResult {
+  const v3 = refuseIfV3(root)
+  if (v3) return { ok: false, reason: v3 }
   try {
     fs.mkdirSync(root, { recursive: true })
     const file = ledgerPath(root)

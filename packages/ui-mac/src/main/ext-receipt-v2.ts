@@ -28,6 +28,24 @@ import type { AppEnvironment } from "./alpha-environment"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { validateReceipt } from "./alpha-installs"
 import { writeFileAtomicSync } from "./ext-atomic-fs"
+import {
+  LEGACY_PROTECTED_OWNER,
+  PACKAGE_LEDGER_ENVELOPE_VERSION,
+  bundleOwner,
+  decodePackageClaimV1,
+  decodePackageGraphV1,
+  directUninstallVerdict,
+  findClaim,
+  isV3Active,
+  standaloneOwner,
+  validateV3State,
+  withOwner,
+  withoutClaim,
+  withoutOwner,
+  type PackageClaimV1,
+  type PackageGraphV1,
+  type PackageLedgerMutationV1,
+} from "./ext-package-ledger-v3"
 
 export const RECORD_SCHEMA_VERSION = 2 as const
 
@@ -76,6 +94,8 @@ export interface InstallRecordV2 {
 
 const LEDGER_FILE = "installs.json"
 const KINDS = new Set<string>(["mcp", "skill", "agent", "command", "plugin", "bundle", "cloud"])
+/** V3 的 claim/graph 只能指向这些 kind。导出供 `ext-package-ledger-v3.test.ts` 双向对齐断言。 */
+export const RECORD_KINDS: ReadonlySet<string> = KINDS
 const ORIGINS = new Set<string>(["catalog", "created", "imported", "imported-claude", "imported-agents"])
 const ENVIRONMENTS = new Set<string>(["prod", "beta", "dev"])
 const DESIRED = new Set<string>(["enabled", "disabled"])
@@ -309,6 +329,9 @@ type ParsedLedger = {
    *  操作仍被各闸拒绝;保全只保证证据不因无关写入蒸发。 */
   rawInvalidReceipts: unknown[]
   rawCorruptRecords: unknown[]
+  /** REQ-128 `#706`:V3 段。空 = 本账本还没装过 package(信封仍写 v:2)。 */
+  packageGraphs: PackageGraphV1[]
+  claims: PackageClaimV1[]
 }
 
 /** 从损坏 record 原始对象里独立提取 kind:name(不经严格 decoder)。两者都是合法字符串且 kind 已知
@@ -346,14 +369,50 @@ export function probeLedgerForWrite(root: string): { ok: true } | { ok: false; r
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     return { ok: false, reason: `install ledger corrupt (non-object root) — refusing to write; inspect ${ledgerPath(root)}` }
   // r22 Major:提交面同样收信封 —— 未来版本拒写(读不懂的数据不得重建);records/receipts
-  // 非数组 = 损坏,拒(quarantine 不是提交路径)。
-  if ("v" in raw && raw.v !== undefined && raw.v !== 1 && raw.v !== 2) {
+  // 非数组 = 损坏,拒(quarantine 不是提交路径)。REQ-128 `#706`:v:3 是本构建的 V3 信封。
+  if ("v" in raw && raw.v !== undefined && raw.v !== 1 && raw.v !== 2 && raw.v !== PACKAGE_LEDGER_ENVELOPE_VERSION) {
     const vLabel = typeof raw.v === "number" || typeof raw.v === "string" ? raw.v : "unknown"
     return { ok: false, reason: `install ledger envelope version ${vLabel} is newer than this build understands — refusing to write; inspect ${ledgerPath(root)}` }
   }
   if (("records" in raw && raw.records !== undefined && !Array.isArray(raw.records)) || ("receipts" in raw && raw.receipts !== undefined && !Array.isArray(raw.receipts)))
     return { ok: false, reason: `install ledger corrupt (non-array records/receipts) — refusing to write; inspect ${ledgerPath(root)}` }
+  const v3 = envelopeV3Sections(raw as Record<string, unknown>, ledgerPath(root))
+  if (!v3.ok) return { ok: false, reason: `${v3.reason} — refusing to write` }
   return { ok: true }
+}
+
+/** REQ-128 `#706`:V3 段的信封级严格读取。**任何一条解不开就整本拒** ——
+ *  claim 决定「这个 child 还能不能删」,解不开的 claim 无法证明它说的不是当前这个 child,
+ *  所以这里没有「排除坏条目继续用」这条路(那正是 owner 集合被悄悄削弱的方式)。
+ *  `v` 与 V3 段必须自洽:v:1/v:2 却带着非空 packageGraphs/claims = 被改过或被半写过。 */
+function envelopeV3Sections(
+  raw: Record<string, unknown>,
+  file: string,
+): { ok: true; packageGraphs: PackageGraphV1[]; claims: PackageClaimV1[] } | { ok: false; reason: string } {
+  const rawGraphs = raw.packageGraphs
+  const rawClaims = raw.claims
+  if (rawGraphs !== undefined && !Array.isArray(rawGraphs)) return { ok: false, reason: `install ledger corrupt (packageGraphs is not an array): ${file}` }
+  if (rawClaims !== undefined && !Array.isArray(rawClaims)) return { ok: false, reason: `install ledger corrupt (claims is not an array): ${file}` }
+  const graphList = Array.isArray(rawGraphs) ? rawGraphs : []
+  const claimList = Array.isArray(rawClaims) ? rawClaims : []
+  if (isV3Active(graphList, claimList) && raw.v !== PACKAGE_LEDGER_ENVELOPE_VERSION)
+    return {
+      ok: false,
+      reason: `install ledger declares envelope v${String(raw.v)} but carries package graphs/claims (V3 sections require v${PACKAGE_LEDGER_ENVELOPE_VERSION}): ${file}`,
+    }
+  const packageGraphs: PackageGraphV1[] = []
+  for (const entry of graphList) {
+    const decoded = decodePackageGraphV1(entry)
+    if (!decoded.ok) return { ok: false, reason: `install ledger package graph rejected (fail closed): ${decoded.errors[0]}: ${file}` }
+    packageGraphs.push(decoded.value)
+  }
+  const claims: PackageClaimV1[] = []
+  for (const entry of claimList) {
+    const decoded = decodePackageClaimV1(entry)
+    if (!decoded.ok) return { ok: false, reason: `install ledger claim rejected (fail closed): ${decoded.errors[0]}: ${file}` }
+    claims.push(decoded.value)
+  }
+  return { ok: true, packageGraphs, claims }
 }
 
 /** r19 Major:readError = 文件在场但读失败(EIO/EACCES 等瞬时故障)—— 绝不折叠成「健康空账」,
@@ -368,6 +427,8 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; re
     corruptRecords: { corruptKeys: new Set(), unattributable: false },
     rawInvalidReceipts: [],
     rawCorruptRecords: [],
+    packageGraphs: [],
+    claims: [],
   }
   let text: string
   try {
@@ -387,12 +448,16 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; re
   // r22 Major:信封收口 —— 未来版本信封(v 非 1/2)拒触碰(不是损坏,是本构建读不懂的数据,
   // 重建 = 摧毁);records/receipts 非数组不得折叠成「空」(下一次 upsert 整文件重建会连同
   // 所有权证据一起抹掉)—— 按损坏文件处理(写路径 quarantine 保字节 + 响亮警告)。
-  if (raw.v !== undefined && raw.v !== 1 && raw.v !== 2) {
+  if (raw.v !== undefined && raw.v !== 1 && raw.v !== 2 && raw.v !== PACKAGE_LEDGER_ENVELOPE_VERSION) {
     const vLabel = typeof raw.v === "number" || typeof raw.v === "string" ? raw.v : "unknown"
     return { parsed: empty, corrupt: false, readError: `install ledger envelope version ${vLabel} is newer than this build understands — refusing to touch it: ${ledgerPath(root)}` }
   }
   if ((raw.records !== undefined && !Array.isArray(raw.records)) || (raw.receipts !== undefined && !Array.isArray(raw.receipts)))
     return { parsed: empty, corrupt: true }
+  // REQ-128 `#706`:V3 段解不开 = readError(不是 corrupt)—— 文件原样不动、所有写路径拒绝。
+  // 走 quarantine 会把 owner 事实连同证据一起搬走,而 claim 恰恰是「这东西还能不能删」的唯一凭据。
+  const v3 = envelopeV3Sections(raw, ledgerPath(root))
+  if (!v3.ok) return { parsed: empty, corrupt: false, readError: v3.reason }
   const receipts: InstallReceipt[] = []
   const receiptWarnings: string[] = []
   const rawInvalidReceipts: unknown[] = []
@@ -457,7 +522,17 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; re
     }
   }
   return {
-    parsed: { receipts, records, recordWarnings, receiptWarnings, corruptRecords: { corruptKeys, unattributable }, rawInvalidReceipts, rawCorruptRecords },
+    parsed: {
+      receipts,
+      records,
+      recordWarnings,
+      receiptWarnings,
+      corruptRecords: { corruptKeys, unattributable },
+      rawInvalidReceipts,
+      rawCorruptRecords,
+      packageGraphs: v3.packageGraphs,
+      claims: v3.claims,
+    },
     corrupt: false,
   }
 }
@@ -574,8 +649,19 @@ function writeLedgerFile(
   root: string,
   receipts: readonly unknown[],
   records: readonly unknown[],
+  v3: { packageGraphs: readonly PackageGraphV1[]; claims: readonly PackageClaimV1[] },
   publishFinal: SkillsFinalPublish = writeFileAtomicSync,
 ): { ok: true; projectionLag?: string } | { ok: false; reason: string } {
+  // REQ-128 `#706`:V3 不变量在**落盘之前**判 —— 一次校验、一次 rename。dangling claim /
+  // unknown child / 孤儿 owner 一旦 durable 就再也无法自证,所以这里宁可整次拒写。
+  // recordKeys 只认已解码的 record(损坏条目由各闸单独拒绝,不能替 claim 背书)。
+  const recordKeys = new Set<string>()
+  for (const r of records) {
+    const rec = r as { kind?: unknown; name?: unknown; schemaVersion?: unknown }
+    if (typeof rec?.kind === "string" && typeof rec?.name === "string" && rec.schemaVersion === RECORD_SCHEMA_VERSION) recordKeys.add(key(rec.kind, rec.name))
+  }
+  const invariants = validateV3State({ recordKeys, packageGraphs: v3.packageGraphs, claims: v3.claims })
+  if (!invariants.ok) return { ok: false, reason: `refusing ledger write: ${invariants.reason}` }
   try {
     fs.mkdirSync(root, { recursive: true })
     const file = ledgerPath(root)
@@ -600,7 +686,14 @@ function writeLedgerFile(
         return { ok: false, reason: `refusing ledger write: could not shrink skills allow-list first (a stale entry may still enable a disabled skill): ${error instanceof Error ? error.message : String(error)}` }
       }
     }
-    writeFileAtomicSync(file, JSON.stringify({ v: 2, receipts, records }, null, 2) + "\n") // 账本 durable
+    // 信封版本 = V3 段是否非空。没装过 package 的账本继续写 v:2,老构建照常可读可写;
+    // 一旦有图/claim 就写 v:3,而只懂 V2 的构建对 v:3 早已 fail-closed(downgrade 不会
+    // 悄悄把 claims 抹掉,它压根不敢动这个文件)。
+    const active = isV3Active(v3.packageGraphs, v3.claims)
+    const payload = active
+      ? { v: PACKAGE_LEDGER_ENVELOPE_VERSION, receipts, records, packageGraphs: v3.packageGraphs, claims: v3.claims }
+      : { v: 2, receipts, records }
+    writeFileAtomicSync(file, JSON.stringify(payload, null, 2) + "\n") // 账本 durable
     // 完整 next 发布(新增在账本之后):absent 首建、pre 后补新增、纯扩容都需要;已相等则跳过。
     const alreadyFinal = preKeys === null && Array.isArray(cur) && cur.length === nextKeys.length && cur.every((k) => nextKeys.includes(k))
     if (!alreadyFinal) {
@@ -783,7 +876,13 @@ export function upsertRecordV2(root: string, input: UpsertInput, publishFinal?: 
   if (!check.ok) return { ok: false, reason: `refusing to write invalid record: ${check.errors.join("; ")}` }
   const nextRecords = [...parsed.records.filter((r) => key(r.kind, r.name) !== k), check.record, ...parsed.rawCorruptRecords]
   const nextReceipts = [...parsed.receipts.filter((r) => key(r.type, r.name) !== k), toV1Receipt(check.record), ...parsed.rawInvalidReceipts]
-  const written = writeLedgerFile(root, nextReceipts, nextRecords, publishFinal)
+  const written = writeLedgerFile(
+    root,
+    nextReceipts,
+    nextRecords,
+    { packageGraphs: parsed.packageGraphs, claims: ensureStandaloneClaims(parsed.claims, [check.record]) },
+    publishFinal,
+  )
   if (!written.ok) return written
   return { ok: true, record: check.record, warnings, ...(written.projectionLag ? { projectionLag: written.projectionLag } : {}) }
 }
@@ -857,9 +956,31 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[], publishFina
     ...[...committedKeys].map((k) => toV1Receipt(recordsByKey.get(k)!)),
     ...parsed.rawInvalidReceipts,
   ]
-  const written = writeLedgerFile(root, finalReceipts, finalRecords, publishFinal)
+  const written = writeLedgerFile(
+    root,
+    finalReceipts,
+    finalRecords,
+    { packageGraphs: parsed.packageGraphs, claims: ensureStandaloneClaims(parsed.claims, committed) },
+    publishFinal,
+  )
   if (!written.ok) return written
   return { ok: true, records: committed, warnings, ...(written.projectionLag ? { projectionLag: written.projectionLag } : {}) }
+}
+
+/**
+ * REQ-128 `#706`:standalone 安装写 standalone claim —— 但**只在 V3 已激活时**。
+ *
+ * 为什么带这个条件:claim 存在的意义是「这东西还有别人在用吗」。一个从没装过 package 的
+ * 账本里不可能有共享,给每条 record 都造一个 claim 只会把所有人的信封提前推成 v:3、
+ * 换不来任何保护。V3 一旦激活(第一次 package 安装),`applyPackageMutation` 会把当时
+ * 已在册、没有 claim 的存量一律标成 `legacy-protected`(不猜历史),此后新装的 standalone
+ * 才带上自己的 owner —— 从那一刻起 owner 集合是完备的。
+ */
+function ensureStandaloneClaims(claims: readonly PackageClaimV1[], records: readonly InstallRecordV2[]): PackageClaimV1[] {
+  if (claims.length === 0) return [...claims]
+  let next = [...claims]
+  for (const rec of records) next = withOwner(next, rec.kind, rec.name, standaloneOwner(rec.kind, rec.name))
+  return next
 }
 
 /** Remove by (kind, name) from BOTH views. Missing = ok(idempotent), removed record returned for teardown对账。 */
@@ -888,16 +1009,75 @@ export function removeRecordV2(root: string, kind: InstallReceiptType, name: str
     return { ok: false, reason: `refusing to remove ${k}: ledger holds a corrupt v2 record for this key (fail closed — inspect ${ledgerPath(root)})` }
   if (parsed.corruptRecords.unattributable)
     return { ok: false, reason: `refusing to remove ${k}: ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
+  // REQ-128 `#706`:仍被某个 Bundle 拥有的 child 不能去账 —— 去了账,claim 就指向一个不存在的
+  // record(dangling),而那个 Bundle 从此无法正确卸载。调用方必须先问 `planDirectUninstall`,
+  // 它会在**删任何实物之前**给出「只释放 claim」的判决;走到这里还被拒 = 调用方漏问了。
+  const claim = findClaim(parsed.claims, kind, name)
+  const verdict = directUninstallVerdict(claim, kind, name)
+  if (verdict.decision === "release-claim-only")
+    return {
+      ok: false,
+      reason: `refusing to remove ${k}: still owned by ${verdict.remainingOwners.join(", ")} — release the standalone claim instead of dropping the record`,
+    }
   const removed = parsed.records.find((r) => key(r.kind, r.name) === k) ?? null
   const hadReceipt = parsed.receipts.some((r) => key(r.type, r.name) === k)
-  if (!removed && !hadReceipt && !corrupt) return { ok: true, removed: null }
+  if (!removed && !hadReceipt && !corrupt && !claim) return { ok: true, removed: null }
   const written = writeLedgerFile(
     root,
     [...parsed.receipts.filter((r) => key(r.type, r.name) !== k), ...parsed.rawInvalidReceipts],
     [...parsed.records.filter((r) => key(r.kind, r.name) !== k), ...parsed.rawCorruptRecords],
+    // record 没了,claim 整条跟着走(含 legacy-protected:用户显式卸载是他自己的决定,
+    // legacy 保护挡的是**自动回收**,不是用户)。留着就是 dangling。
+    { packageGraphs: parsed.packageGraphs, claims: withoutClaim(parsed.claims, kind, name) },
   )
   if (!written.ok) return written
   return { ok: true, removed }
+}
+
+export type DirectUninstallPlan =
+  | { ok: true; decision: "delete" }
+  | { ok: true; decision: "release-claim-only"; remainingOwners: string[] }
+  | { ok: false; reason: string }
+
+/**
+ * REQ-128 `#706`(R2 Blocker 的直接修法):claim-aware 判决**前移到删实物之前**。
+ *
+ * 卸载编排今天的形状是「先删实物、再去账」。V3 的 repository 会在仍有 Bundle owner 时拒写,
+ * 而那时实物已经没了 —— 用户看到「卸载失败」但东西真没了。所以决定必须在这里先做出来:
+ * 还有 Bundle 要用 ⇒ **一件实物都不动**,只把 standalone claim 释放掉。
+ */
+export function planDirectUninstall(root: string, kind: InstallReceiptType, name: string): DirectUninstallPlan {
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to uninstall` }
+  if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to uninstall` }
+  const verdict = directUninstallVerdict(findClaim(parsed.claims, kind, name), kind, name)
+  return verdict.decision === "delete" ? { ok: true, decision: "delete" } : { ok: true, decision: "release-claim-only", remainingOwners: verdict.remainingOwners }
+}
+
+/** 只释放这个 child 的 standalone claim,实物与 record 原样保留(仍有 Bundle 在用)。 */
+export function releaseStandaloneClaim(root: string, kind: InstallReceiptType, name: string): { ok: true; remainingOwners: string[] } | { ok: false; reason: string } {
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to write` }
+  if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to write` }
+  const claims = withoutOwner(parsed.claims, kind, name, standaloneOwner(kind, name))
+  const written = writeLedgerFile(
+    root,
+    [...parsed.receipts, ...parsed.rawInvalidReceipts],
+    [...parsed.records, ...parsed.rawCorruptRecords],
+    { packageGraphs: parsed.packageGraphs, claims },
+  )
+  if (!written.ok) return written
+  return { ok: true, remainingOwners: findClaim(claims, kind, name)?.owners ?? [] }
+}
+
+/** 只读:某个 child 当前的 owner 集合(空 = 无 claim)。 */
+export function packageClaimOwners(root: string, kind: string, name: string): string[] {
+  return findClaim(parseLedger(root).parsed.claims, kind, name)?.owners ?? []
+}
+
+/** 只读:账本里的 package 图(渲染/诊断面;`#698` 的 diff 消费同一真源)。 */
+export function readPackageGraphs(root: string): PackageGraphV1[] {
+  return parseLedger(root).parsed.packageGraphs
 }
 
 /** desiredState 翻转(Hub 项目上下文「禁用」的 main 侧真源;引擎生效面由消费方处理)。
@@ -922,10 +1102,12 @@ export function setDesiredStateV2(
   const rec = parsed.records.find((r) => key(r.kind, r.name) === k)
   if (!rec) return { ok: false, reason: `no v2 record for ${k} — fail closed (v1-only installs have no desired-state channel)` }
   const next: InstallRecordV2 = { ...rec, desiredState: state, updatedAt: new Date().toISOString() }
+  // Bundle 只拥有**安装** claim,不拥有用户的启停 —— desiredState 翻转对 V3 段是纯透传。
   const written = writeLedgerFile(
     root,
     [...parsed.receipts, ...parsed.rawInvalidReceipts],
     [...parsed.records.filter((r) => key(r.kind, r.name) !== k), next, ...parsed.rawCorruptRecords],
+    { packageGraphs: parsed.packageGraphs, claims: parsed.claims },
     publishFinal,
   )
   return written.ok ? { ok: true, ...(written.projectionLag ? { projectionLag: written.projectionLag } : {}) } : written
@@ -998,9 +1180,9 @@ export function migrateV1Ledger(
   try {
     const raw = JSON.parse(fs.readFileSync(ledgerPath(root), "utf8")) as Record<string, unknown>
     for (const k of Object.keys(raw))
-      if (k !== "v" && k !== "receipts" && k !== "records")
+      if (k !== "v" && k !== "receipts" && k !== "records" && k !== "packageGraphs" && k !== "claims")
         return { ok: false, reason: `refusing migration: unknown ledger envelope key "${k}" — not this build's ledger shape (file left untouched)` }
-    if (raw.v !== 1 && raw.v !== 2)
+    if (raw.v !== 1 && raw.v !== 2 && raw.v !== PACKAGE_LEDGER_ENVELOPE_VERSION)
       return { ok: false, reason: `refusing migration: unsupported ledger version ${JSON.stringify(raw.v)} (file left untouched)` }
     if (raw.receipts !== undefined && !Array.isArray(raw.receipts))
       return { ok: false, reason: "refusing migration: ledger receipts is not an array (file left untouched)" }
@@ -1048,10 +1230,123 @@ export function migrateV1Ledger(
     }
   }
   if (adopted.length === 0) return { ok: true, migrated: 0, retained, warnings }
-  const written = writeLedgerFile(root, [...parsed.receipts, ...parsed.rawInvalidReceipts], [...parsed.records, ...adopted, ...parsed.rawCorruptRecords])
+  // REQ-128 `#706`(基线 §2.9):v1 存量收编进 V3 一律 `legacy-protected` —— **不猜**它是不是
+  // 某个历史 Bundle 的一部分。legacy 保护挡的是自动回收,不挡用户自己的显式卸载。
+  const written = writeLedgerFile(
+    root,
+    [...parsed.receipts, ...parsed.rawInvalidReceipts],
+    [...parsed.records, ...adopted, ...parsed.rawCorruptRecords],
+    { packageGraphs: parsed.packageGraphs, claims: legacyProtectAll(parsed.claims, adopted) },
+  )
   if (!written.ok) return written
   return { ok: true, migrated: adopted.length, retained, warnings }
 }
+
+/** 给还没有 claim 的 record 打上 `legacy-protected`。V3 未激活(claims 为空)时是 no-op ——
+ *  没有共享就没有需要保护的对象,凭空造 claim 只会提前把信封推成 v:3。 */
+function legacyProtectAll(claims: readonly PackageClaimV1[], records: readonly InstallRecordV2[]): PackageClaimV1[] {
+  if (claims.length === 0) return [...claims]
+  let next = [...claims]
+  for (const rec of records) if (!findClaim(next, rec.kind, rec.name)) next = withOwner(next, rec.kind, rec.name, LEGACY_PROTECTED_OWNER)
+  return next
+}
+
+// ── V3 repository:唯一的 package mutation 提交面 ────────────────────────────────────────────────
+
+export type PackageMutationWrite =
+  | { ok: true; replayed: boolean; warnings: string[] }
+  | { ok: false; reason: string }
+
+/**
+ * REQ-128 `#706`:把一个 `PackageLedgerMutationV1` 一次校验、一次 rename 落盘。
+ *
+ * 「一次」是这里唯一重要的词。child record、package 图与 claim 集必须**同生同死** ——
+ * 分两次写就会存在「child 已 durable 但没人认领」的窗口,而在那个窗口里崩溃,owner 集合
+ * 永远无法自证(不知道那个 child 是谁装的,于是既不敢删也不敢共享)。
+ *
+ * exact replay(基线 §2.9):同一个 transactionId 重放时,若 package 记录与图逐字相同就
+ * 直接返回 —— 崩溃恢复会重放 `commitReceipt`,重复施加 claim mutation 会把 acquire 做两次
+ * (集合幂等,无害)但 release 做两次可能把别人的 owner 也带走。所以判等在先。
+ */
+export function applyPackageMutation(root: string, mutation: PackageLedgerMutationV1): PackageMutationWrite {
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to write` }
+  if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to write a package mutation` }
+  const warnings: string[] = [...parsed.recordWarnings, ...parsed.receiptWarnings]
+  if (parsed.corruptRecords.unattributable)
+    return { ok: false, reason: `refusing package mutation: ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
+
+  const existingGraph = mutation.packageRecord
+    ? (parsed.packageGraphs.find((g) => g.packageId === mutation.packageRecord!.packageId) ?? null)
+    : (mutation.graphBeforeDigest ? (parsed.packageGraphs.find((g) => g.graphDigest === mutation.graphBeforeDigest) ?? null) : null)
+  // graphBefore 对不上 = 有人在我们计划之后改过账本(或这是一次陈旧重放)。拒。
+  const beforeDigest = existingGraph?.graphDigest ?? null
+  if ((mutation.graphBeforeDigest ?? null) !== beforeDigest && !(existingGraph && mutation.graphAfter && existingGraph.graphDigest === mutation.graphAfter.graphDigest))
+    return {
+      ok: false,
+      reason: `refusing package mutation: ledger graph digest ${beforeDigest ?? "<absent>"} does not match the expected before-image ${mutation.graphBeforeDigest ?? "<absent>"}`,
+    }
+  // exact replay:图已经是目标态 ⇒ 这次提交此前已 durable,原样返回(绝不重放 claim mutation)。
+  if (existingGraph && mutation.graphAfter && existingGraph.graphDigest === mutation.graphAfter.graphDigest)
+    return { ok: true, replayed: true, warnings }
+
+  // child record:先按批量 upsert 的同一语义在内存里算好,再与图/claim 一起一次写盘。
+  const recordsByKey = new Map(parsed.records.map((r) => [key(r.kind, r.name), r]))
+  const receiptKeys = new Set(parsed.receipts.map((r) => key(r.type, r.name)))
+  const touched = new Set<string>()
+  const removedKeys = new Set<string>()
+  for (const child of mutation.childRecordMutations) {
+    if (child.op === "remove") {
+      removedKeys.add(key(child.kind, child.name))
+      recordsByKey.delete(key(child.kind, child.name))
+      continue
+    }
+    const k = key(child.input.kind, child.input.name)
+    if (parsed.corruptRecords.corruptKeys.has(k))
+      return { ok: false, reason: `refusing package mutation: ledger holds a corrupt v2 record for ${k} (fail closed — inspect ${ledgerPath(root)})` }
+    const prev = recordsByKey.get(k) ?? null
+    const { sessionGrantEnforced, ...inputBare } = child.input
+    const record: InstallRecordV2 = {
+      ...inputBare,
+      schemaVersion: RECORD_SCHEMA_VERSION,
+      generation: child.input.generation ?? (prev ? prev.generation + 1 : receiptKeys.has(k) ? 2 : 1),
+      ...(child.input.previousDigest ? { previousDigest: child.input.previousDigest } : prev?.manifestDigest ? { previousDigest: prev.manifestDigest } : {}),
+      desiredState: sessionGrantEnforced === true ? "disabled" : prev ? prev.desiredState : child.input.desiredState,
+    }
+    const check = decodeRecordV2(record)
+    if (!check.ok) return { ok: false, reason: `refusing package mutation: invalid child record ${k}: ${check.errors.join("; ")}` }
+    recordsByKey.set(k, check.record)
+    touched.add(k)
+  }
+
+  // 存量收编:V3 第一次落地时,账本里已有的、没人认领的 record 一律 `legacy-protected`。
+  let claims: PackageClaimV1[] = [...parsed.claims]
+  for (const rec of recordsByKey.values())
+    if (!touched.has(key(rec.kind, rec.name)) && !findClaim(claims, rec.kind, rec.name)) claims = withOwner(claims, rec.kind, rec.name, LEGACY_PROTECTED_OWNER)
+  for (const cm of mutation.claimMutations)
+    claims = cm.op === "acquire" ? withOwner(claims, cm.kind, cm.name, cm.owner) : withoutOwner(claims, cm.kind, cm.name, cm.owner)
+  for (const k of removedKeys) {
+    const [kind, ...rest] = k.split(":")
+    claims = withoutClaim(claims, kind!, rest.join(":"))
+  }
+
+  const nextGraphs = mutation.packageRecord
+    ? [...parsed.packageGraphs.filter((g) => g.packageId !== mutation.packageRecord!.packageId), mutation.graphAfter!]
+    : parsed.packageGraphs.filter((g) => g.graphDigest !== mutation.graphBeforeDigest)
+
+  const nextRecords = [...recordsByKey.values(), ...parsed.rawCorruptRecords]
+  const nextReceipts = [
+    ...parsed.receipts.filter((r) => !touched.has(key(r.type, r.name)) && !removedKeys.has(key(r.type, r.name))),
+    ...[...touched].map((k) => toV1Receipt(recordsByKey.get(k)!)),
+    ...parsed.rawInvalidReceipts,
+  ]
+  const written = writeLedgerFile(root, nextReceipts, nextRecords, { packageGraphs: nextGraphs, claims })
+  if (!written.ok) return written
+  return { ok: true, replayed: false, warnings }
+}
+
+/** package 图对应的 owner token(claim mutation 与 graph 用同一个派生口径,不许各算各的)。 */
+export const packageOwnerToken = (graph: PackageGraphV1): string => bundleOwner(graph.packageId, graph.root.manifestDigest)
 
 // ── grant digest ────────────────────────────────────────────────────────────────────────────────
 

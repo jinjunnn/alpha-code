@@ -118,6 +118,11 @@ export type TxPlanItem = {
   /** receipt 模板(不透明透传:本层不解释)。持久化进 journal + commit record,使崩溃恢复能自足
    *  前滚提交 receipt(REQ-100 #312:recovery 用同一 probe 判健康后落账,而非 health-by-assumption)。 */
   receipt?: unknown
+  /** REQ-128 `#706`:package 账本 mutation 的静态半场(不透明透传,本层不解释)。**只挂在 root
+   *  package item 上** —— child item 各自持 capabilities/probe,但不独立驱动落账;否则会出现
+   *  「child records 已 durable、graph/claims 缺失」这种谁也无法自证的半态(基线 §2.9)。
+   *  与 receipt 同样持久化进 journal + commit record,主提交与崩溃前滚据此算出同一份 mutation。 */
+  packageMutation?: unknown
 }
 
 /** 判别式取值(缺省 generation)。 */
@@ -246,6 +251,8 @@ export type TxCommitRecord = {
   fileTarget?: string
   /** receipt 模板(不透明透传;commitReceipt 消费方据此落账,恢复前滚同源)。 */
   receipt?: unknown
+  /** REQ-128 `#706`:package mutation 静态半场(不透明透传;落账方据此提交唯一 root mutation)。 */
+  packageMutation?: unknown
   committedAt: string
 }
 
@@ -365,6 +372,8 @@ export type TxJournalItem = {
   file?: { relTarget: string; slot: number; preDigest: string; nextDigest: string; preAbsent: boolean; requireAbsent: boolean; applied?: boolean }
   /** receipt 模板(不透明透传;恢复前滚据此重建 InstallRecordV2,无需 caller 上下文)。 */
   receipt?: unknown
+  /** REQ-128 `#706`:package mutation 静态半场(不透明透传;恢复前滚据此重建同一份 mutation)。 */
+  packageMutation?: unknown
   manifestDigest?: string
   /** committed 后写授权账用(恢复前滚也要写,故持久化在 journal 里)。 */
   capabilities?: string[]
@@ -464,7 +473,10 @@ function removeReceiptSnapshot(root: string, key: string, genId: string): void {
 
 /** 从 journal item 构造 commit record(主提交与恢复前滚同源;透传 receipt 模板 REQ-100 #312)。 */
 function buildCommitRecord(root: string, txId: string, it: TxJournalItem, committedAt: string): TxCommitRecord {
-  const receipt = it.receipt !== undefined ? { receipt: it.receipt } : {}
+  const receipt = {
+    ...(it.receipt !== undefined ? { receipt: it.receipt } : {}),
+    ...(it.packageMutation !== undefined ? { packageMutation: it.packageMutation } : {}),
+  }
   const kind = actionOf(it)
   if (kind === "generation")
     return {
@@ -637,6 +649,11 @@ function validatePlan(root: string, plan: TxPlan): string | null {
   if (plan.txId !== undefined && !TX_ID_RE.test(plan.txId)) return `invalid txId: ${plan.txId}`
   if (plan.items.length === 0) return "plan has no items"
   if (plan.items.length > 64) return "plan exceeds 64 items"
+  // REQ-128 `#706`(基线 §2.9):**只有 root package item 携带 mutation**。两个就意味着一次
+  // 事务里有两个 package 真相,提交顺序会决定谁赢 —— 在写盘之前拒,零副作用。
+  const mutationCarriers = plan.items.filter((it) => it && typeof it === "object" && it.packageMutation !== undefined)
+  if (mutationCarriers.length > 1)
+    return `plan carries ${mutationCarriers.length} package ledger mutations (${mutationCarriers.map((it) => it.key).join(", ")}) — only the root package item may carry one`
   const keys = new Set<string>()
   // #378 r13 Major:同一物理 config 文件的**别名 target**(/a/alpha.jsonc 与 /a/sub/../alpha.jsonc)
   // 在 prepare 期按原始字符串各自成链(第二条覆盖第一条的写),恢复期按 resolve 归一又当同一条
@@ -1191,6 +1208,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         : {}),
       manifestDigest: item.manifestDigest,
       ...(item.receipt !== undefined ? { receipt: item.receipt } : {}),
+      ...(item.packageMutation !== undefined ? { packageMutation: item.packageMutation } : {}),
       capabilities: item.capabilities,
     })),
     authorization: {

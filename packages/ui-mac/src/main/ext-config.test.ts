@@ -382,10 +382,13 @@ describe("receipts on persist/remove (T6)", () => {
   test("#354:persistMcp 不再 eager 落 v1(账本所有权归 planner v2 upsert);removeMcp 仍清 legacy receipt", () => {
     expect(persistMcp("markitdown", { type: "local", command: ["uvx", "markitdown-mcp"] }, { catalogId: "mcp:markitdown", version: "1" }).ok).toBe(true)
     expect(readLedger(alphaTmp).receipts.find((x) => x.type === "mcp" && x.name === "markitdown")).toBeUndefined()
-    // legacy receipt(历史安装)仍由 removeMcp 清理 —— 卸载语义不变。
+    // REQ-128 `#706`:配置写器**不再**碰账本。原先内层 removeReceipt 走 v1 物理写器,会把
+    // 账本重写成 v:2 并抹掉 V3 的 packageGraphs/claims;去账只归外层单点提交。
     addReceipt(alphaTmp, { id: "mcp:markitdown", name: "markitdown", type: "mcp", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "mcp.markitdown" })
+    const before = fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")
     expect(removeMcp("markitdown").ok).toBe(true)
-    expect(readLedger(alphaTmp).receipts.find((x) => x.name === "markitdown")).toBeUndefined()
+    expect(fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")).toBe(before) // 账本字节零改动
+    expect(readLedger(alphaTmp).receipts.find((x) => x.name === "markitdown")).toBeDefined()
   })
 
   test("#354:persistPlugin 不再 eager 落 v1;removePlugin 撤 config[] 并清 legacy receipt", () => {
@@ -393,9 +396,12 @@ describe("receipts on persist/remove (T6)", () => {
     expect(readConfig().plugin).toContain("opencode-notify@0.3.1")
     expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(false)
     addReceipt(alphaTmp, { id: "plugin:opencode-notify", name: "opencode-notify", type: "plugin", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "plugin:opencode-notify@0.3.1" })
+    const before = fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")
     expect(removePlugin("opencode-notify@0.3.1").ok).toBe(true)
     expect(readConfig().plugin ?? []).not.toContain("opencode-notify@0.3.1")
-    expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(false)
+    // REQ-128 `#706`:同上 —— 撤 config[] 与去账彻底分家,账本字节零改动。
+    expect(fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")).toBe(before)
+    expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(true)
   })
 
   test("removePlugin on an absent package is a no-op success", () => {
