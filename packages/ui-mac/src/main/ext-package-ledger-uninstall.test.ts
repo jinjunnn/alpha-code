@@ -334,6 +334,72 @@ describe("REQ-128 #706 —— 真实卸载:没有别的 owner ⇒ 正常删,且 
   }
 })
 
+describe("REQ-128 #706 —— 真实卸载:**只有** Bundle owner(用户从没单装过)⇒ 响亮失败", () => {
+  // 这是 fresh package 安装后的**默认**形状:`packageMutationEnvelope` 只 acquire 一个
+  // `bundle:` owner,standalone owner 要等用户自己再单装一次才会出现。上一版把「有 Bundle
+  // owner」直接当成「释放 standalone claim」,而那份 claim 根本不存在 —— `withoutOwner` 原样
+  // 返回、`releaseStandaloneClaim` 照旧提交一次、planner 回 `ok:true`,Hub 只看 `ok` ⇒ 显示
+  // 「已移除」,而文件、record、图、claim 一件没动。用户刷新后条目还在。
+  //
+  // 四条断言各钉一件事:失败(不是 ok:true)/ 零落盘(字节与 rename 次数)/ 零实物副作用 /
+  // Hub 拿不到会显示「已移除」的结果。
+  for (const { kind, name } of SHARED) {
+    test(`${kind}:${name} —— ok:false、字节零改动、零实物副作用、claim 原样`, async () => {
+      seedV3Ledger()
+      // 前置事实:这就是 fresh 安装的形状 —— owner 集合里只有 Bundle。
+      expect(packageClaimOwners(root, kind, name)).toEqual([OWNER])
+      const before = readRaw()
+      const graphsBefore = readPackageGraphs(root)
+      const artifact = artifactPath(kind, name)
+      const artifactExisted = fs.existsSync(artifact)
+
+      const calls: Calls = []
+      const writes = countLedgerWrites()
+      const outcome = await uninstallByKey({ type: kind, name, scope: "global" }, makeDeps(calls))
+
+      // ① 失败,且理由说得出「由 Bundle 拥有、没有可释放的独立安装」。
+      expect(outcome.ok).toBe(false)
+      if (!outcome.ok) {
+        expect(outcome.reason).toContain(OWNER)
+        expect(outcome.reason).toContain("no standalone install to release")
+      }
+      // ② Hub 只读 `ok`(extension-hub.tsx `onUninstall`):ok:false ⇒ 只可能显示失败。
+      expect((outcome as { retainedForOwners?: string[] }).retainedForOwners).toBeUndefined()
+      // ③ 零落盘:一次 rename 都没有,且文件逐字节不变。
+      expect(writes()).toBe(0)
+      expect(readRaw()).toBe(before)
+      // ④ 零实物副作用:没有任何 installer 被调用,实物仍在。
+      expect(calls).toEqual([])
+      if (artifactExisted) expect(fs.existsSync(artifact)).toBe(true)
+      // 账本语义面同样原样:record 在、图逐字不变、claim 一个 owner 都没少。
+      expect(findRecordV2(root, kind, name)).not.toBeNull()
+      expect(readPackageGraphs(root)).toEqual(graphsBefore)
+      expect(packageClaimOwners(root, kind, name)).toEqual([OWNER])
+    })
+  }
+
+  test("releaseStandaloneClaim 被直接调用时同样拒绝(没有可释放的 owner ⇒ 不写盘)", () => {
+    seedV3Ledger()
+    // 违规项不放第一个:取 SHARED 的最后一个 child,且账本里同时有一堆合法的 solo claim。
+    const victim = SHARED[SHARED.length - 1]!
+    const before = readRaw()
+    const writes = countLedgerWrites()
+
+    const released = releaseStandaloneClaim(root, victim.kind, victim.name)
+
+    expect(released.ok).toBe(false)
+    if (!released.ok) expect(released.reason).toContain("no standalone claim to release")
+    expect(writes()).toBe(0)
+    expect(readRaw()).toBe(before)
+    expect(packageClaimOwners(root, victim.kind, victim.name)).toEqual([OWNER])
+    // 合法的那一支不受影响:solo child 的 standalone claim 照样释放得掉。
+    const solo = SOLO[SOLO.length - 1]!
+    const ok = releaseStandaloneClaim(root, solo.kind, solo.name)
+    expect(ok.ok).toBe(true)
+    expect(packageClaimOwners(root, solo.kind, solo.name)).toEqual([])
+  })
+})
+
 describe("REQ-128 #706 —— 只有一次 mutation:v:2 账本上的内层副作用探测器", () => {
   // V3 未激活时,`alpha-installs` 的 v1 写器不会被 `refuseIfV3` 挡住 —— 于是「内层 removeReceipt
   // 有没有被接回来」在这里是**可见的**:它会多出一次 rename。v:3 夹具上测不出这一条(v1 写器被
@@ -542,9 +608,14 @@ describe("REQ-128 #706 —— legacy / unmanaged 内容永不 GC", () => {
     if (migrated.ok) expect(migrated.migrated).toBe(1)
     expect(packageClaimOwners(root, "skill", "from-v1")).toEqual([LEGACY_PROTECTED_OWNER])
 
-    // 释放「用户那一份」对 legacy-protected 是空操作 —— 保护不会被顺手摘掉。
+    // 释放「用户那一份」摘不掉 legacy 保护。review #757 Major 之后这不再是**静默成功的空操作**:
+    // 没有可释放的 owner 就在写盘之前响亮失败(空操作 + ok 正是「谎报已移除」的燃料)。
+    // 用户真要卸载它走的是另一支:legacy-protected 不是 Bundle,不阻挡显式直接卸载。
+    const before = readRaw()
     const released = releaseStandaloneClaim(root, "skill", "from-v1")
-    expect(released.ok).toBe(true)
+    expect(released.ok).toBe(false)
+    if (!released.ok) expect(released.reason).toContain("no standalone claim to release")
+    expect(readRaw()).toBe(before)
     expect(packageClaimOwners(root, "skill", "from-v1")).toEqual([LEGACY_PROTECTED_OWNER])
   })
 })

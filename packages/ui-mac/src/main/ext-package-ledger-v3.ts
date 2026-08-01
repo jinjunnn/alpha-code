@@ -399,14 +399,28 @@ export const blockingOwners = (owners: readonly string[], excluding: string): st
 export type DirectUninstallVerdict =
   | { decision: "delete"; releasedOwner: string | null }
   | { decision: "release-claim-only"; remainingOwners: string[] }
+  | { decision: "refuse"; reason: string }
 
 /** 直接(用户发起的)卸载判决。**必须在删任何实物之前调用** —— repository 事后拒绝时实物
- *  已经没了,用户看到「卸载失败」而东西是真没了,这正是 V3 要消灭的那种半态。 */
+ *  已经没了,用户看到「卸载失败」而东西是真没了,这正是 V3 要消灭的那种半态。
+ *
+ *  三支互斥,**「有 Bundle owner」不等于「有 standalone claim 可释放」**(review #757 Major):
+ *  fresh package 安装只 acquire 一个 `bundle:` owner(`package-admission` 的 claimMutations),
+ *  standalone owner 要等用户自己再单装一次才出现。把这两件事混成一支 ⇒ 用户对一个纯 Bundle
+ *  child 点卸载,系统释放一份根本不存在的 claim、照旧提交一次写、回 ok ⇒ Hub 显示「已移除」
+ *  而文件/record/图/claim 全在。所以这里必须拆出第三支:**没有可释放的东西就响亮拒绝**。 */
 export function directUninstallVerdict(claim: PackageClaimV1 | null, kind: string, name: string): DirectUninstallVerdict {
   if (!claim) return { decision: "delete", releasedOwner: null }
   const own = standaloneOwner(kind, name)
   const blocking = blockingOwners(claim.owners, own)
-  if (blocking.length > 0) return { decision: "release-claim-only", remainingOwners: [...claim.owners.filter((o) => o !== own)].sort() }
+  if (blocking.length > 0) {
+    if (!claim.owners.includes(own))
+      return {
+        decision: "refuse",
+        reason: `${kind}:${name} is owned by ${[...blocking].sort().join(", ")} and has no standalone install to release — uninstall the package instead`,
+      }
+    return { decision: "release-claim-only", remainingOwners: [...claim.owners.filter((o) => o !== own)].sort() }
+  }
   return { decision: "delete", releasedOwner: claim.owners.includes(own) ? own : null }
 }
 

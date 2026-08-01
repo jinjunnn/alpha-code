@@ -1029,6 +1029,9 @@ export function removeRecordV2(root: string, kind: InstallReceiptType, name: str
   // 它会在**删任何实物之前**给出「只释放 claim」的判决;走到这里还被拒 = 调用方漏问了。
   const claim = findClaim(parsed.claims, kind, name)
   const verdict = directUninstallVerdict(claim, kind, name)
+  // review #757 Major:`refuse`(只有 Bundle owner、没有 standalone claim)同样不得去账 ——
+  // 去了账,claim 依旧指着一个不存在的 record。只有 `delete` 一支能往下走。
+  if (verdict.decision === "refuse") return { ok: false, reason: `refusing to remove ${k}: ${verdict.reason}` }
   if (verdict.decision === "release-claim-only")
     return {
       ok: false,
@@ -1066,6 +1069,10 @@ export function planDirectUninstall(root: string, kind: InstallReceiptType, name
   if (readError) return { ok: false, reason: `${readError} — refusing to uninstall` }
   if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to uninstall` }
   const verdict = directUninstallVerdict(findClaim(parsed.claims, kind, name), kind, name)
+  // review #757 Major:纯 Bundle 拥有(用户从没单装过)⇒ 这里没有任何可释放的东西,必须在
+  // 写盘之前失败。上一版把它折进 `release-claim-only`,于是卸载在什么都没发生的情况下回 ok,
+  // 而 Hub 只看 `ok` ⇒ 显示「已移除」。
+  if (verdict.decision === "refuse") return { ok: false, reason: verdict.reason }
   return verdict.decision === "delete" ? { ok: true, decision: "delete" } : { ok: true, decision: "release-claim-only", remainingOwners: verdict.remainingOwners }
 }
 
@@ -1074,7 +1081,18 @@ export function releaseStandaloneClaim(root: string, kind: InstallReceiptType, n
   const { parsed, corrupt, readError } = parseLedger(root)
   if (readError) return { ok: false, reason: `${readError} — refusing to write` }
   if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to write` }
-  const claims = withoutOwner(parsed.claims, kind, name, standaloneOwner(kind, name))
+  // review #757 Major:释放一份不存在的 claim 曾经**照旧提交一次写**并回 ok —— 调用方据此
+  // 报告「已移除」。上一轮以「`release-claim-only` 分支保证 claim 必然存在」为由没堵这个口子,
+  // 而那个前提是假的(fresh package 只有 Bundle owner)。这里独立成闸:没有可释放的 owner
+  // 就在写盘之前失败,不依赖任何调用方先做对判决。
+  const own = standaloneOwner(kind, name)
+  const existing = findClaim(parsed.claims, kind, name)
+  if (!existing?.owners.includes(own))
+    return {
+      ok: false,
+      reason: `no standalone claim to release for ${kind}:${name} (owners: ${existing ? existing.owners.join(", ") : "none"}) — refusing to write`,
+    }
+  const claims = withoutOwner(parsed.claims, kind, name, own)
   const written = writeLedgerFile(
     root,
     [...parsed.receipts, ...parsed.rawInvalidReceipts],

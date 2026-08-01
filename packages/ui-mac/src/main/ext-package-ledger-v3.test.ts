@@ -249,6 +249,24 @@ describe("REQ-128 #706 — claim 集合代数与直接卸载判决", () => {
       directUninstallVerdict(claim("skill", "demo", [standaloneOwner("skill", "demo"), bundleOwner("skill:demo", D2)]), "skill", "demo"),
     ).toEqual({ decision: "release-claim-only", remainingOwners: [bundleOwner("skill:demo", D2)] })
   })
+
+  // review #757 Major:上一版只覆盖「standalone + Bundle」,而 fresh package 安装产出的是
+  // **只有 Bundle owner**(`package-admission` 的 claimMutations 只 acquire 一个 `bundle:`)。
+  // 那个形状被判成 `release-claim-only` ⇒ 上层去释放一份不存在的 claim ⇒ 谎报卸载成功。
+  test("直接卸载判决:**只有** Bundle owner(没有 standalone claim 可释放)⇒ refuse,不是 release-claim-only", () => {
+    // 违规形状不放在 owner 集合的第一位:多个 Bundle owner 在场,自己那份自始至终不存在。
+    const verdict = directUninstallVerdict(claim("skill", "demo", [bundleOwner("kit:a", D1), bundleOwner("kit:b", D2)]), "skill", "demo")
+    expect(verdict.decision).toBe("refuse")
+    if (verdict.decision === "refuse") {
+      expect(verdict.reason).toContain(bundleOwner("kit:a", D1))
+      expect(verdict.reason).toContain(bundleOwner("kit:b", D2))
+      expect(verdict.reason).toContain("no standalone install to release")
+    }
+    // legacy-protected 混在 Bundle owner 里同样不是「自己那份」—— 仍然 refuse。
+    expect(directUninstallVerdict(claim("skill", "demo", [LEGACY_PROTECTED_OWNER, bundleOwner("skill:demo", D2)]), "skill", "demo").decision).toBe(
+      "refuse",
+    )
+  })
 })
 
 describe("REQ-128 #706 — 落盘前的整体不变量", () => {
