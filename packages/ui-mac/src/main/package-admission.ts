@@ -9,7 +9,14 @@ import { agentInstallKey, recoveryReceiptInputs } from "./ext-agent-install"
 import { nextDesiredState } from "./ext-install-policy"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { buildAgentTxItems, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
-import { computeGrantDigest, upsertRecordsV2, type UpsertInput } from "./ext-receipt-v2"
+import { computeGrantDigest, readPackageGraphs, type UpsertInput } from "./ext-receipt-v2"
+import { commitTransactionLedger } from "./ext-package-ledger-commit"
+import {
+  bundleOwner,
+  computeGraphDigest,
+  type PackageGraphV1,
+  type PackageMutationEnvelopeV1,
+} from "./ext-package-ledger-v3"
 import { skillGenerationKey } from "./ext-skill-generations"
 import {
   runExtensionTransaction,
@@ -398,12 +405,20 @@ async function executePreparedPackage(
           })
   if (!built.ok) return { ok: false, reason: `package admission: ${built.reason}` }
   const build = built.build
+  // REQ-128 `#706`:V3 mutation 只挂在 root package item 上(本期单组件 ⇒ root = `prepared.key`)。
+  // 挂错 item 或挂多份都会被 `validatePlan` 在写盘前拒掉。
+  const rootItemIndex = build.items.findIndex((item) => item.key === prepared.key)
+  if (rootItemIndex < 0)
+    return { ok: false, reason: `package admission: planning builder produced no root item for "${prepared.key}" — refusing (no ledger mutation carrier)` }
+  const items = build.items.map((item, index) =>
+    index === rootItemIndex ? { ...item, packageMutation: packageMutationEnvelope(root, prepared, manifestDigest, now) } : item,
+  )
 
   // #712:受限密钥版本以**类型化 descriptor** 进计划(→ journal),不再只是一对匿名闭包。
   // 释放归引擎调度(abort/rollback 前),恢复期对同一条 journal 做同一件事 —— 单一真源。
   const result = await (deps.transaction ?? runExtensionTransaction)(
     root,
-    packagePlan(build.items, intent, now, build.prepared?.descriptor),
+    packagePlan(items, intent, now, build.prepared?.descriptor),
     {
       populate: build.populate,
       ...(build.prepared
@@ -437,9 +452,56 @@ function packagePlan(
   }
 }
 
+/**
+ * REQ-128 `#706`:package 安装的**有效安装图**。本期只装 root 一个组件,所以 `children` 为空;
+ * `#697` 放开多组件后本函数换成逐组件构造,图文法与 digest 口径不变。
+ *
+ * root 走 `rootComponentOf`(声明的 `role`),**不是 `components[0]`** —— 后者是生产者随手排的
+ * 顺序,把它当 root 就是把一个排版约定升级成承重不变量。这个 componentId 会直接进 owner token
+ * 的派生链,认错了 = claim 归属认错人。`#749` 刚在隔壁把同一处缺陷删掉,别在这里再种一次。
+ */
+function packageGraphOf(prepared: PreparedPackage, manifestDigest: string): PackageGraphV1 {
+  const component = rootComponentOf(prepared.facts)
+  const withoutDigest = {
+    packageId: prepared.facts.envelope.prelude.packageId,
+    envelopeDigest: `sha256:${prepared.binding.envelopeDigest}`,
+    root: {
+      componentId: component.id,
+      kind: prepared.kind,
+      name: prepared.name,
+      required: true,
+      manifestDigest,
+    },
+    children: [],
+  }
+  return { ...withoutDigest, graphDigest: computeGraphDigest(withoutDigest) }
+}
+
+/** 挂在 root package item 上的静态半场:图、package 记录与 claim mutation。
+ *  child record mutation 在提交时由 commit records 派生(`commitTransactionLedger`),
+ *  所以主提交与崩溃前滚算出的是同一份 mutation。 */
+function packageMutationEnvelope(root: string, prepared: PreparedPackage, manifestDigest: string, now: string): PackageMutationEnvelopeV1 {
+  const graph = packageGraphOf(prepared, manifestDigest)
+  const before = readPackageGraphs(root).find((g) => g.packageId === graph.packageId) ?? null
+  return {
+    operation: before ? "update" : "install",
+    packageRecord: {
+      packageId: graph.packageId,
+      envelopeDigest: graph.envelopeDigest,
+      graphDigest: graph.graphDigest,
+      ...(prepared.facts.envelope.prelude.version ? { version: prepared.facts.envelope.prelude.version } : {}),
+      // 占位:计划期还没有 txId(事务自产)。`commitTransactionLedger` 在提交点统一覆盖成真值。
+      transactionId: "tx-assigned-at-commit",
+      installedAt: now,
+    },
+    graphBeforeDigest: before?.graphDigest ?? null,
+    graphAfter: graph,
+    claimMutations: [{ op: "acquire", kind: prepared.kind, name: prepared.name, owner: bundleOwner(graph.packageId, manifestDigest) }],
+  }
+}
+
 function commitPackageReceipts(root: string, records: TxCommitRecord[]) {
-  const written = upsertRecordsV2(root, recoveryReceiptInputs(records))
-  if (!written.ok) throw new Error(`package receipt commit failed: ${written.reason}`)
+  commitTransactionLedger(root, records)
 }
 
 function transactionOutcome(

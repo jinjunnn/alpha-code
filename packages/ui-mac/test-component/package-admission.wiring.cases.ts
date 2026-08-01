@@ -8,6 +8,7 @@ import type {
   PackageProfilePayloadV1,
 } from "../src/shared/host-extension-package-contract/decoder"
 import type { PackageAdmissionPreviewV1 } from "../src/shared/package-admission"
+import { computeGraphDigest, type PackageGraphV1 } from "../src/main/ext-package-ledger-v3"
 
 type IpcHandler = (event: { sender: { id: number } }, ...args: unknown[]) => unknown
 
@@ -243,6 +244,42 @@ test("real ext-install-catalog IPC binds preview, revalidates, then commits thro
   expect(config).not.toContain(secretCanary)
   expect(existsSync(join(root, "installs.json"))).toBe(true)
   expect(existsSync(join(root, "ext-store", "mcp--generic-remote", "grants.json"))).toBe(true)
+
+  // REQ-128 `#706`:**生产接线** —— 真 IPC + 真事务提交后,账本必须是 V3 信封,且带着这个
+  // package 的图与 claim。没有这一段,把 `package-admission` 里挂 `packageMutation` 的那行删掉
+  // 之后一切照绿(`commitTransactionLedger` 会静默走回 V2 的 upsert 分支)—— 那正是「闸门没测
+  // 生产接线」的形状。判据:删掉那行生产调用,下面五条一起红。
+  const ledger = JSON.parse(readFileSync(join(root, "installs.json"), "utf8")) as {
+    v: number
+    records: Array<{ kind: string; name: string; manifestDigest: string }>
+    packageGraphs: PackageGraphV1[]
+    claims: Array<{ kind: string; name: string; owners: string[] }>
+  }
+  const childRecord = ledger.records.find((r) => r.kind === "mcp" && r.name === "generic-remote")
+  if (!childRecord) throw new Error("expected an InstallRecordV2 for mcp:generic-remote")
+  const itemDigest = `sha256:${preview.packageAuthorization.binding.itemDigests["mcp:generic-remote"]}`
+  expect(ledger.v).toBe(3)
+  expect(ledger.packageGraphs).toEqual([
+    {
+      packageId: envelope.prelude.packageId,
+      envelopeDigest: `sha256:${preview.packageAuthorization.binding.envelopeDigest}`,
+      graphDigest: ledger.packageGraphs[0]!.graphDigest,
+      root: {
+        componentId: envelope.components[0].id,
+        kind: "mcp",
+        name: "generic-remote",
+        required: true,
+        manifestDigest: itemDigest,
+      },
+      children: [],
+    },
+  ])
+  // graphDigest 不是自由字符串:重算必须逐字相同(账本被改一个字节就解不开)。
+  expect(computeGraphDigest(ledger.packageGraphs[0]!)).toBe(ledger.packageGraphs[0]!.graphDigest)
+  expect(childRecord.manifestDigest).toBe(itemDigest)
+  expect(ledger.claims).toEqual([
+    { kind: "mcp", name: "generic-remote", owners: [`bundle:${envelope.prelude.packageId}@${itemDigest}`] },
+  ])
   const journals = readdirSync(join(root, "ext-tx", "journal"))
   expect(journals).toHaveLength(1)
   expect(JSON.parse(readFileSync(join(root, "ext-tx", "journal", journals[0]!), "utf8")).state).toBe("committed")
