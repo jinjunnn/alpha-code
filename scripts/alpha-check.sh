@@ -2,7 +2,7 @@
 # alpha-check — run the exact gates alpha-ci enforces, LOCALLY, before you push.
 #
 # Standard: local-first (see docs/runbooks/ci.md). CI is the enforcing backstop, not the place
-# you first discover a failure. This mirrors alpha-ci's three jobs 1:1 and runs in seconds.
+# you first discover a failure. This mirrors alpha-ci's jobs 1:1 and runs in seconds.
 #
 #   bash scripts/alpha-check.sh
 #
@@ -68,7 +68,7 @@ UPSTREAM_EXCLUDES=(
 )
 fail=0
 
-echo "▶ [1/3] north-star guard (zero upstream edits)"
+echo "▶ [1/4] north-star guard (zero upstream edits)"
 git fetch --no-tags origin dev --quiet 2>/dev/null || echo "    (warn: could not fetch origin/dev — comparing against last-known origin/dev)"
 # committed delta (mirrors CI) ∪ working-tree edits (earlier local feedback)
 committed="$(git diff --diff-filter=DMR --name-only origin/dev...HEAD -- $UPSTREAM_PATHS "${UPSTREAM_EXCLUDES[@]}" 2>/dev/null || true)"
@@ -83,7 +83,19 @@ else
   echo "    ✓ zero upstream package edits"
 fi
 
-echo "▶ [2/3] typecheck (alpha packages: contracts-consumer + ext + ui-mac)"
+echo "▶ [2/4] no literal NUL bytes in version-controlled files"
+# #760:字面 NUL 不会让运行时出错,它坏的是**验证手段** —— BSD grep / rg / file(1) 看到 NUL 就把
+# 整个文件判成二进制并静默返回空,于是「我 grep 过了,没有」变成假话。本仓 CLAUDE.md 要求
+# 「大文件 Edit 后 grep + git show 双验」,而在这些文件上 grep 会安静地说「没有」。
+# 已实证四次(#737 枚举被修正两次、#704 一轮两个实例、建 #760 时命令又混进一个、
+# alpha-web#109 差点据零命中断定「测试被删了」)。枚举对新成员默认放行,所以这里立的是咽喉。
+if python3 scripts/assert-no-nul-bytes.py; then
+  echo "    ✓ no literal NUL bytes"
+else
+  echo "    ✗ literal NUL bytes found"; fail=1
+fi
+
+echo "▶ [3/4] typecheck (alpha packages: contracts-consumer + ext + ui-mac)"
 # REQ-027:flag 必须在 `run` 之后 —— `bun --cwd X run Y` 在 bun 1.3.x 打印 usage 后静默退出 0(不执行脚本)。
 if bun run --cwd packages/alpha-contracts-consumer typecheck \
   && bun run --cwd packages/ext typecheck \
@@ -93,7 +105,7 @@ else
   echo "    ✗ typecheck failed"; fail=1
 fi
 
-echo "▶ [3/3] contract lock + unit tests (contracts-consumer + ext + ui-mac)"
+echo "▶ [4/4] contract lock + unit tests (contracts-consumer + ext + ui-mac)"
 # REQ-062:ext 测试入门 —— 其中 prompt-rebrand drift 锁逐条断言转写子串仍在上游底座原文,
 # 上游 sync 改写底座即红(ADR-015 合并验证的机械化)。
 if bun run --cwd packages/alpha-contracts-consumer check:vendor \

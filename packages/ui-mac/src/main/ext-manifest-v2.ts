@@ -307,7 +307,7 @@ export function computeManifestDigest(manifest: ExtensionManifestV2): string {
  *  (REQ-098 #303,一致性标识而非上游真实性证明)。 */
 export function aggregateFilesDigest(files: Array<{ path: string; sha256: string }>): string {
   const lines = files
-    .map((f) => `${f.path} ${f.sha256}`)
+    .map((f) => `${f.path}\u0000${f.sha256}`)
     .sort()
     .join("\n")
   return `sha256:${sha256Hex(lines)}`

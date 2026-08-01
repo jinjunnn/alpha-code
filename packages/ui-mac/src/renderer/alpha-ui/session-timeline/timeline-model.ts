@@ -609,7 +609,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           segments.map((segment) => `${segment.kind ?? "t"}:${segment.text.length}:${segment.label ?? ""}`).join(","),
           attachments.map((attachment) => attachment.partID).join(","),
           comments.map((comment) => comment.partID).join(","),
-          slash ? `${slash.command} ${slash.arguments ?? ""}` : "",
+          slash ? `${slash.command}\u0000${slash.arguments ?? ""}` : "",
         ].join("§"),
         message: userMessage,
         text,

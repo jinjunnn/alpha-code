@@ -192,7 +192,7 @@ export function validatePreparedResources(prepared: unknown): string | null {
     const extra = Object.keys(res).find((key) => !PREPARED_FIELDS.has(key))
     if (extra !== undefined)
       return `prepared resource carries an unexpected field "${extra}" — refused (identity only, never values or paths)`
-    const identity = `${res.store} ${res.server} ${res.version}`
+    const identity = `${res.store}\u0000${res.server}\u0000${res.version}`
     if (seen.has(identity)) return `duplicate prepared resource: ${res.store}/${res.server}/${res.version}`
     seen.add(identity)
   }

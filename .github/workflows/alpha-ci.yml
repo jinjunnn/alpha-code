@@ -10,11 +10,16 @@
 # were --admin-merged with zero gating (broken relative links shipped silently).
 #
 #   detect          — classify the diff (code vs docs-only), collect changed Markdown.
-#   upstream-guard  — mechanically enforces the north star (冲突文件数 = 0, ADR-004/B10): fail if this
-#                     branch MODIFIES/DELETES/RENAMES any upstream package file relative to dev. Uses a
+#   upstream-guard  — two source-hygiene assertions over the checkout.
+#                     ① north star (冲突文件数 = 0, ADR-004/B10): fail if this branch
+#                     MODIFIES/DELETES/RENAMES any upstream package file relative to dev. Uses a
 #                     merge-base three-dot diff so it measures alpha's OWN delta and stays green when
 #                     dev is merely ahead. New files under packages/ext|ui-mac are alpha's and ignored;
 #                     root bun.lock (allowlisted) + .gitignore aren't under the guarded paths.
+#                     ② no literal NUL bytes anywhere under version control (#760) — a NUL makes
+#                     grep/rg/file classify the whole file as binary and return **nothing**, so
+#                     "I grepped, there is none" becomes a lie. Runs on docs-only PRs too, hence
+#                     this job's checkout is unconditional.
 #   typecheck       — tsgo on the Alpha packages a PR can actually touch.
 #   test            — vendored contract hashes/fixtures plus alpha package unit tests.
 #   seed-assets     — B7: asserts electron-builder extraResources (REQ-023 vendored agent/plugin,
@@ -101,11 +106,18 @@ jobs:
     needs: detect
     runs-on: ubuntu-latest
     steps:
+      # checkout 刻意**无条件**跑(#760):同 job 里的 NUL 字节闸对 docs-only PR 也必须生效 ——
+      # 一个 .md 里的字面 NUL 让 grep 对整个文件失明,与 .ts 里的完全一样。checkout 约 5 秒。
       - name: Checkout (full history for merge-base)
-        if: needs.detect.outputs.code == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # #760:源码里的字面 NUL 让 grep 静默失明 —— 危害不是漏看,是给出一个假的「没有」让人
+      # 据此下结论(alpha-web#109 的实现方 `grep "secret"` 得 0 命中,差点断定「测试被删了」)。
+      # 这是**兜底**,真正的门是本地 scripts/alpha-check.sh 第 [2/4] 步(docs/runbooks/ci.md §6)。
+      # 刻意不新开 job:按本仓纪律,新增检查 = 往 bin/check 加一步,CI 只镜像它。
+      - name: No literal NUL bytes in version-controlled files
+        run: python3 scripts/assert-no-nul-bytes.py
       - name: Ensure origin/dev is available
         if: needs.detect.outputs.code == 'true'
         run: git fetch --no-tags origin dev

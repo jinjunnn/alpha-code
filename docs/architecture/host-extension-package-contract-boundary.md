@@ -4,7 +4,7 @@ kind: architecture
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-01
 review_after: 2027-01-27
 ---
 
@@ -38,11 +38,36 @@ The inventory was taken at base `bbff1ea8` with four independent axes:
    `cannot be installed safely`, and
    `cannot be represented by the existing MCP secret store`.
 
-The byte axis matters. A normal text-mode search reports the 16 files described
-in the original incident, while `rg -a` reports two more production files:
-`alpha-builtin-policy.ts` and `ext-manifest-v2.ts`. Both files contain NUL bytes
-outside the name rule, so a text-mode tool may classify them as binary and
-silently omit them. The literal axis also finds two unnamed copies:
+The byte axis mattered when this inventory was taken, and the reason it mattered
+has since been removed at the source. At `bbff1ea8` a normal text-mode search
+reported the 16 files described in the original incident, while `rg -a` reported
+two more production files: `alpha-builtin-policy.ts` and `ext-manifest-v2.ts`.
+Both contained literal NUL bytes outside the name rule, so a text-mode tool
+classified them as binary and silently omitted them — the inventory is complete
+only because the byte axis was run.
+
+`#760` closed that hole as a gate rather than a cleanup.
+`scripts/assert-no-nul-bytes.py` scans every version-controlled file and fails on
+any literal NUL; it runs as step `[2/4]` of `scripts/alpha-check.sh` (the
+pre-push hook) and is mirrored in `alpha-ci`'s `upstream-guard` job. The 13
+pre-existing occurrences across 9 files were rewritten to the `\u0000` escape,
+which is byte-identical at runtime and visible to a plain `grep`.
+
+So the discipline's justification has changed. `rg -a` is no longer what makes a
+search over this repository's tracked files complete — the gate is. Keeping `-a`
+is defensive redundancy, and it is retained deliberately, because the gate's
+scope is narrower than a search's:
+
+- it covers version-controlled files only — untracked scratch files, build
+  output, and `node_modules` are outside it;
+- it does not cover *streams*. `git diff` output carries the NUL bytes of the
+  pre-image, so piping a diff that removes a NUL into a plain `grep` still
+  returns nothing (observed while landing `#760`);
+- it is per-repository. `alpha-web` carries the same class at
+  `tests/package-compiler.test.mjs` and has no such gate yet
+  (`alpha-web#109`), so cross-repository searches still need the byte axis.
+
+The literal axis also finds two unnamed copies:
 `ext-config.ts:1125`, `ext-ipc.ts:667`, and `use-extensions.ts:420`; a file-level comparison against named
 constants exposes only the latter because `ext-config.ts` also has a named
 copy.
