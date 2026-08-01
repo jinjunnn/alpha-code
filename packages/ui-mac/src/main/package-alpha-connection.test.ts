@@ -341,7 +341,7 @@ describe("handler results are untrusted input", () => {
     ],
     ["a missing reuse key", { serviceIdentity: { serviceId: "example", accountLabel: "u@e.com" } }],
     ["an uppercase service id", { ...readyResult(), serviceIdentity: { serviceId: "Example", accountLabel: "u" } }],
-    ["a control character in the label", { ...readyResult(), serviceIdentity: { serviceId: "example", accountLabel: "u e" } }],
+    ["a control character in the label", { ...readyResult(), serviceIdentity: { serviceId: "example", accountLabel: "u\u0000e" } }],
     ["a reuse key with a path separator", { ...readyResult("../../escape") }],
     ["a non-ISO expiry", { ...readyResult(), expiresAt: "tomorrow" }],
   ])("%s is refused", (_name, value) => {
