@@ -103,7 +103,16 @@ describe("planClear · credentials", () => {
     const fs = seed()
     const plan = DataClear.planClear(fs.deps(), "credentials", ROOTS)
     const ids = plan.items.map((i) => i.id)
-    expect(ids).toEqual(["alpha-auth", "alpha-pkce", "byok-keys", "secret-files", "mcp-secrets", "alpha-env", "engine-auth"])
+    expect(ids).toEqual([
+      "alpha-auth",
+      "alpha-pkce",
+      "byok-keys",
+      "secret-files",
+      "mcp-secrets",
+      "alpha-env",
+      "engine-auth",
+      "engine-mcp-auth",
+    ])
     const byId = Object.fromEntries(plan.items.map((i) => [i.id, i]))
     expect(byId["alpha-pkce"]!.present).toBe(false)
     expect(byId["alpha-auth"]!.bytes).toBe(100)
@@ -123,6 +132,60 @@ describe("planClear · credentials", () => {
     // 非 shared 凭证已删
     expect(fs.deps().exists("/ud/alpha-auth.json")).toBe(false)
     expect(fs.deps().exists("/ud/alpha-secrets")).toBe(false)
+  })
+})
+
+// #752 回归:MCP OAuth 登录令牌(引擎写在 Global.Path.data/mcp-auth.json)必须进凭证级清单。
+// 删掉 CREDENTIAL_ITEMS 里的 engine-mcp-auth 一行,本组用例即变红。
+describe("planClear · credentials · MCP 登录令牌(#752)", () => {
+  test("凭证级清除删掉 mcp-auth.json(第三方 MCP 授权令牌不得留盘)", () => {
+    const fs = seed()
+    fs.addFile("/home/.local/share/opencode/mcp-auth.json", 120)
+    const deps = fs.deps()
+    const plan = DataClear.planClear(deps, "credentials", ROOTS)
+    const item = plan.items.find((i) => i.id === "engine-mcp-auth")
+    expect(item).toBeDefined()
+    expect(item!.path).toBe("/home/.local/share/opencode/mcp-auth.json")
+    expect(item!.present).toBe(true)
+    expect(item!.bytes).toBe(120)
+
+    const results = DataClear.executeClear(deps, plan, ROOTS, { includeShared: true })
+    expect(results.find((r) => r.id === "engine-mcp-auth")?.outcome).toBe("ok")
+    expect(deps.exists("/home/.local/share/opencode/mcp-auth.json")).toBe(false)
+  })
+
+  test("路径由 engineData 根派生,不是写死的 ~/.local/share(改道 XDG_DATA_HOME 跟着改道)", () => {
+    const roots: DataClear.ClearRoots = {
+      ...ROOTS,
+      engineData: DataClear.engineDataDir({ XDG_DATA_HOME: "/xdg" }, "/home/u"),
+    }
+    const fs = new MemFs()
+    fs.mkdirs("/ud")
+    fs.mkdirs(ROOTS.alphaGlobal)
+    fs.addFile("/xdg/opencode/mcp-auth.json", 42)
+    // 默认推导位置上的同名文件:改道后它不属于本环境,必须留着(写死路径的实现会连它一起删)
+    fs.addFile("/home/u/.local/share/opencode/mcp-auth.json", 42)
+    const deps = fs.deps()
+
+    const plan = DataClear.planClear(deps, "credentials", roots)
+    expect(plan.items.find((i) => i.id === "engine-mcp-auth")!.path).toBe("/xdg/opencode/mcp-auth.json")
+    // 整张凭证清单都不许出现默认推导段 —— 杀掉任何字面量实现
+    expect(plan.items.filter((i) => i.path.includes("/.local/share/"))).toEqual([])
+
+    const results = DataClear.executeClear(deps, plan, roots, { includeShared: true })
+    expect(results.find((r) => r.id === "engine-mcp-auth")?.outcome).toBe("ok")
+    expect(deps.exists("/xdg/opencode/mcp-auth.json")).toBe(false)
+    expect(deps.exists("/home/u/.local/share/opencode/mcp-auth.json")).toBe(true)
+  })
+
+  test("与 engine-auth 同为共享面:includeShared=false 时 skipped(不静默)", () => {
+    const fs = seed()
+    fs.addFile("/home/.local/share/opencode/mcp-auth.json", 120)
+    const deps = fs.deps()
+    const plan = DataClear.planClear(deps, "credentials", ROOTS)
+    const results = DataClear.executeClear(deps, plan, ROOTS, { includeShared: false })
+    expect(results.find((r) => r.id === "engine-mcp-auth")?.outcome).toBe("skipped")
+    expect(deps.exists("/home/.local/share/opencode/mcp-auth.json")).toBe(true)
   })
 })
 

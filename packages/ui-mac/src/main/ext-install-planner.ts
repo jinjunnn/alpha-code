@@ -49,6 +49,8 @@ import {
 } from "./ext-transaction"
 import { capabilityGrantPath, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
 import { agentConfigItemKey, agentInstallKey, installAgentFromCas, recoveryReceiptInputs } from "./ext-agent-install"
+// #705:plugin 载荷 file 探针与 agent/skill 探针同住 ext-health-probe-router —— 组合点只有一份。
+import { seedPluginFileProbe } from "./ext-health-probe-router"
 import { collectMcpFileRefPaths, isAbsenceError, newMcpSecretVersionId, pathIdentity, resolveMcpRefPath, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
 
 /** `{file:<abs>}` 引用 → 文件路径(非引用形状 = null;#378 r1 锁内在场门与失败清理共用)。 */
@@ -177,10 +179,8 @@ import {
   aggregateFilesDigest,
   computeManifestDigest,
   decodeManifestV2,
-  findDependencyCycle,
   sha256Hex,
   MANIFEST_SCHEMA_VERSION,
-  type DependencyNode,
   type ExtensionManifestV2,
   type ManifestCapability,
   type ManifestKind,
@@ -1559,25 +1559,34 @@ async function installBundleAtomic(
   if (intent.scope.scope !== "global")
     return { ok: false, reason: "bundle install is global-scoped only (project bundles rejected — single-root atomicity)" }
 
-  // 解析整张(传递闭包)依赖图:存在性 + 循环依赖在计划期拒绝(AC#1)。
-  const nodes: DependencyNode[] = []
+  // 直接子项解析 + 嵌套 Bundle 门前拒(REQ-128 #705)。
+  //
+  // 此前这里解析的是**整张传递闭包**:沿嵌套子包逐层回表目录建图、查环,但真正装的只有 direct
+  // child —— 嵌套子包在 classifyBundleChild 被判 `type "bundle" not supported`,required 时整单失败、
+  // optional 时**静默跳过**。于是同一个嵌套包有两种命运,而用户看到的都是「装好了」,少的那层
+  // 只在事后翻账本才看得见。Desktop 不递归 flatten:图就是图,拒绝比半装诚实。
+  //
+  // 位置是这道门的一半:它落在任何载荷下载(promotePayloadToCas / downloadRemoteAsset)、任何
+  // 密钥写入、任何 runExtensionTransaction 之前 —— 被拒的嵌套包在磁盘上零足迹。
+  const directItems = verified.entry.bundleItems ?? []
   const resolved = new Map<string, VerifiedCatalogEntry>([[verified.entry.id, verified]])
-  const queue = [verified.entry.id]
-  while (queue.length > 0) {
-    const id = queue.shift()!
-    const current = resolved.get(id)!
-    const deps2 = (current.entry.bundleItems ?? []).map((it) => it.catalogEntryId)
-    nodes.push({ id, deps: deps2 })
-    for (const depId of deps2) {
-      if (resolved.has(depId)) continue
-      const sub = await deps.resolveEntry(depId)
-      if (!sub) return { ok: false, reason: `bundle item not in verified catalog: ${depId}` }
-      resolved.set(depId, sub)
-      queue.push(depId)
-    }
+  for (const it of directItems) {
+    if (it.catalogEntryId === verified.entry.id)
+      return {
+        ok: false,
+        reason: `nested bundle refused: "${verified.entry.id}" lists itself as a child — Desktop does not flatten package graphs`,
+      }
+    if (resolved.has(it.catalogEntryId)) continue
+    const sub = await deps.resolveEntry(it.catalogEntryId)
+    if (!sub) return { ok: false, reason: `bundle item not in verified catalog: ${it.catalogEntryId}` }
+    // 判据取两条互相独立的轴:声明的 type,以及「自己是否还带子项」。任一成立即是图。
+    if (sub.entry.type === "bundle" || (sub.entry.bundleItems ?? []).length > 0)
+      return {
+        ok: false,
+        reason: `nested bundle refused: child "${sub.entry.id}" carries its own children — Desktop does not flatten package graphs (install it on its own)`,
+      }
+    resolved.set(it.catalogEntryId, sub)
   }
-  const cycle = findDependencyCycle(nodes)
-  if (cycle) return { ok: false, reason: `dependency cycle refused: ${cycle.join(" → ")}` }
 
   // bundle 自身 manifest 校验(组件 = 逐子条目 runsIn;capability = 子项并集)。
   const items = (verified.entry.bundleItems ?? []).slice().sort((a, b) => a.installOrder - b.installOrder)
@@ -2779,36 +2788,6 @@ function mcpSeedGate(root: string, name: string, configTarget: string, seedVersi
 function seedPluginDirName(name: string, payloadDigest: string): string {
   const hex = payloadDigest.startsWith("sha256:") ? payloadDigest.slice("sha256:".length) : payloadDigest
   return `${name}@${hex.slice(0, 16)}`
-}
-
-/** 严格的 plugin 载荷 item key 形状(review r2 Minor:前后缀宽匹配会放行非法名/内嵌 "--" 的 key):
- *  plugin--<name>--f<i>,name 过 extension name 且不含 "--"(与 installSeedPlugin 的名称拒绝对齐)。 */
-function isSeedPluginItemKey(key: string): boolean {
-  const m = /^plugin--(.+)--f\d+$/.exec(key)
-  const name = m?.[1]
-  return typeof name === "string" && isExtensionName(name) && !name.includes("--")
-}
-
-/** plugin 载荷 file item 的类型化探测(#359;对标 agentFileProbe 的 generic 形态):digest 走引擎
- *  透传的 journal 真源(fileDigest)。非本方案 key 的 file item = fail-closed 不健康(与 #358
- *  agentFileProbe 同纪律:file 消费方必须自带探针,绝不静默放行)。 */
-export function seedPluginFileProbe(): HealthProbe {
-  return (input) => {
-    if (input.action !== "file") return { healthy: true }
-    if (!isSeedPluginItemKey(input.key))
-      return { healthy: false, reason: `no typed probe for file item "${input.key}" — refusing (fail closed)` }
-    const p = input.phase === "pre-switch" ? input.stagedFile : input.fileTarget
-    if (!p) return { healthy: false, reason: `plugin payload probe: path missing from probe input (${input.key})` }
-    let data: Buffer
-    try {
-      data = fs.readFileSync(p)
-    } catch {
-      return { healthy: false, reason: `plugin payload file not readable (${input.key})` }
-    }
-    if (input.fileDigest && crypto.createHash("sha256").update(data).digest("hex") !== input.fileDigest)
-      return { healthy: false, reason: `plugin payload digest mismatch (${input.key})` }
-    return { healthy: true }
-  }
 }
 
 /** 引擎单事务 64 item 上限 → 载荷文件 ≤63(+1 个 config item)。策展 seed 现实远小于此;
