@@ -181,6 +181,20 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   必须 loud log**(写点统一 `console.error`);整体仍 `ok:true`(账本才是真源 —— 改 `ok:false`
   会经 commitReceipt throw 让引擎回滚 live 与已 durable 账本分叉)。
 
+### 5.1 warning 谁来呈现(`#765`)
+
+上一条说「用户可见写入口必须呈现」。**那句话曾经是靠人记得**:呈现是每个调用点各写一行,
+而 REQ-128 Phase 2 期间连着三次发现调用点没写 —— 六个里只有一个照做,最后一处还是闸门逼出来的
+(详情页装扩展包走确认屏,压根不经过此前那个「单点出口」)。
+
+现在呈现收在 renderer 的 **IPC 包装层**:`renderer/extensions/ext-ipc.ts` 的 `extIpc` 是生产代码
+够到 `window.api.ext` 的唯一入口,凡是返回值里带一条非空 `warning` 字符串的调用,由它统一推 toast。
+判据看**返回值**不看方法名 —— 明天新加的 IPC 通道默认被覆盖,不需要来这里登记。
+
+对 main 侧写入口的要求因此没有变化(照旧把 loud 信号放进 `warning`),对 renderer 调用点的要求
+则**反过来了**:不要再自己呈现一次,那会让用户读到两条一模一样的提示。复数 `warnings`
+(`InstallLedgerView` / `projectResidualsCheck`)不走这条通道 —— 它们是成批清单,各有各的呈现位置。
+
 ## 6. 证据
 
 `ext-boot-reconcile.test.ts`(#395 startup reconcile:双向重投影/幂等零写盘/锁忙与损坏

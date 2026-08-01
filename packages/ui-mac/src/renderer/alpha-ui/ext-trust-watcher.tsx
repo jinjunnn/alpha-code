@@ -16,6 +16,7 @@ import { parseRoute } from "../../shared/route-manifest"
 import type { ServerInfo } from "../sidebar/use-projects"
 import { pushToast } from "./Toast"
 import { t } from "../i18n"
+import { extIpc } from "../extensions/ext-ipc"
 
 function authHeaders(info: ServerInfo): Record<string, string> | undefined {
   if (!info.username && !info.password) return undefined
@@ -39,7 +40,7 @@ export function ExtTrustWatcher(props: { server: Accessor<ServerInfo | undefined
     checked.add(dir)
     void (async () => {
       try {
-        const r = await window.api.ext.trustCheck(dir)
+        const r = await extIpc.trustCheck(dir)
         if (r.persistError) {
           pushToast({ kind: "error", title: t("alpha.ext.trustPersistFailed"), detail: r.persistError })
           checked.delete(dir) // 未留痕 = 未决,允许本会话稍后重试
@@ -53,7 +54,7 @@ export function ExtTrustWatcher(props: { server: Accessor<ServerInfo | undefined
         }
         // REQ-063:外部生态导入门(.claude/.agents skills + CLAUDE.md)——信任门之后串行,
         // 避免两个原生对话框叠弹;导入成功同走 dispose 免重启链。
-        const ext = await window.api.ext.externalCheck(dir)
+        const ext = await extIpc.externalCheck(dir)
         if (ext.persistError) pushToast({ kind: "error", title: t("alpha.ext.trustPersistFailed"), detail: ext.persistError })
         if (ext.prompted && ext.imported) {
           const c = createOpencodeClient({ baseUrl: info.baseUrl, headers: authHeaders(info) })

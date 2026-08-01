@@ -2,7 +2,7 @@
 // 内置管理位)。列原生 agent / 内置 skill / 内置 command,逐项 隐藏·禁用·重写;保护项灰显并说明
 // 原因(C28 诚实控件);denylist/allowlist 可切;「重置治理」全量净除。
 //
-// 数据流:window.api.ext.builtinRead/builtinApply/builtinReset(main 校验+物化 home jsonc 受控叶子)→
+// 数据流:extIpc.builtinRead/builtinApply/builtinReset(main 校验+物化 home jsonc 受控叶子)→
 // props.refreshEngine()(POST /global/dispose)→ 下一条消息热生效 → props.reloadAgents() 刷新列表。
 // 泄漏诚实声明:skill deny 后引擎 GET /skill 与斜杠菜单仍会列出该技能(上游行为),但执行被拒 +
 // 斜杠命中的是 alpha 占位模板 —— 面板文案如实说明,不谎称彻底移除。
@@ -11,6 +11,7 @@ import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import type { AlphaBuiltinPolicy } from "../../preload/types"
 import type { HubAgent } from "./use-extensions"
 import { t } from "../i18n"
+import { extIpc } from "./ext-ipc"
 
 /** 引擎内置 skill / command(REQ-037 机制核实面;上游冻结,变更随 sync retro 复核)。 */
 const BUILTIN_SKILLS = ["customize-opencode"]
@@ -40,7 +41,7 @@ export function BuiltinControlsPanel(props: {
   const [agentEdit, setAgentEdit] = createSignal<{ name: string; prompt: string } | null>(null)
 
   onMount(() => {
-    void window.api.ext.builtinRead().then((r) => {
+    void extIpc.builtinRead().then((r) => {
       setGov(r.gov)
       setProtection(r.protection)
     }).catch(() => {
@@ -71,7 +72,7 @@ export function BuiltinControlsPanel(props: {
     setBusy(true)
     setErr("")
     try {
-      const r = await window.api.ext.builtinApply(next, visibleAgentNames(), confirmBuild)
+      const r = await extIpc.builtinApply(next, visibleAgentNames(), confirmBuild)
       if (!r.ok) {
         setErr(r.reason ?? "apply failed")
         props.flash(r.reason ?? t("alpha.builtin.applyFailed"), "error")
@@ -158,7 +159,7 @@ export function BuiltinControlsPanel(props: {
     if (!window.confirm(t("alpha.builtin.resetConfirm"))) return
     setBusy(true)
     try {
-      const r = await window.api.ext.builtinReset()
+      const r = await extIpc.builtinReset()
       if (!r.ok) {
         setErr(r.reason ?? "reset failed")
         return

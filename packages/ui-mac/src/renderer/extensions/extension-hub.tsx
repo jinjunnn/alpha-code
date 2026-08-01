@@ -62,6 +62,7 @@ import { curationActivationFacts, type Curation, type CurationStatus } from "../
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
 import type { PackageAdmissionPreviewV1 } from "../../shared/package-admission"
 import { packagePresentation, packageSkipReasonKey } from "./ext-package-presentation"
+import { extIpc } from "./ext-ipc"
 import "./extension-hub.css"
 
 
@@ -199,7 +200,7 @@ export function ExtensionHub(props: {
       props.open()
         ? `${receiptFingerprint(ext.store.receipts)}:${receiptFingerprint(ext.store.projectReceipts)}:${projectDir() ?? ""}`
         : null,
-    () => window.api.ext.inventoryView(projectDir()),
+    () => extIpc.inventoryView(projectDir()),
   )
   // REQ-020 T2:云门控。subscribe 会立即回放当前态(preload 内置 getState),再跟增量推送。
   // 云可用 ⟺ 已登录且 platform 模式(mcp.cloud 由 sidecar 在该态注入,ADR-013/ADR-016)。
@@ -291,7 +292,7 @@ export function ExtensionHub(props: {
     }
   }
   // #408:会话结束事件(sidecar 停止/崩溃)→ 开关已由数据层归位,此处如实提示(v6:行保留、开关归位)。
-  onCleanup(window.api.ext.onSessionGrantsEnded(() => pushToast({ kind: "info", title: t("alpha.ext.sessionEndedToast") })))
+  onCleanup(extIpc.onSessionGrantsEnded(() => pushToast({ kind: "info", title: t("alpha.ext.sessionEndedToast") })))
   const runStateToggle = async (args: {
     receipt: InstallReceipt
     type: string
@@ -492,13 +493,13 @@ export function ExtensionHub(props: {
     try {
       if (view.verdict !== "compatible") {
         if (view.action.kind === "update-alpha") await window.api.updater.check()
-        const latest = await window.api.ext.packageDetail(view.catalogId)
+        const latest = await extIpc.packageDetail(view.catalogId)
         if (latest) rememberPackageView(latest)
         return latest ?? view
       }
       if (view.action.kind !== "install" && view.action.kind !== "resolve-prerequisite") return view
       // package 首驱只带全新的 attempt identity；密钥与 authorization 必须等 preview 后再提交。
-      const result = await window.api.ext.installCatalog({
+      const result = await extIpc.installCatalog({
         catalogId: view.catalogId,
         scope: { scope: "global" },
         attemptId: `renderer-${globalThis.crypto.randomUUID()}`,
@@ -518,7 +519,7 @@ export function ExtensionHub(props: {
       }
       if (!result.ok) setErrFor(view.catalogId, result.reason)
       const latest =
-        !result.ok && "package" in result ? result.package : await window.api.ext.packageDetail(view.catalogId)
+        !result.ok && "package" in result ? result.package : await extIpc.packageDetail(view.catalogId)
       if (latest) rememberPackageView(latest)
       return latest ?? view
     } catch (error) {
@@ -592,7 +593,7 @@ export function ExtensionHub(props: {
     if (!picked || !picked.files?.length) return
     setAgentBusy(true)
     try {
-      const r = await window.api.ext.importAgentPreview(picked.token, picked.files[0].path)
+      const r = await extIpc.importAgentPreview(picked.token, picked.files[0].path)
       if (!r.ok) {
         setAgentErr(r.reason)
         return
@@ -607,7 +608,7 @@ export function ExtensionHub(props: {
     if (!pv || agentBusy()) return
     setAgentBusy(true)
     try {
-      const r = await window.api.ext.importAgentConfirm(pv.previewId)
+      const r = await extIpc.importAgentConfirm(pv.previewId)
       if (!r.ok) {
         setAgentErr(r.reason)
         return
@@ -699,7 +700,7 @@ export function ExtensionHub(props: {
   // 与 main 闸「advisories 不可验即拒激活」同向 fail-closed。fetcher 自吞异常归一为不可判定态。
   const [advisoryFacts] = createResource(
     () => (props.open() ? "open" : null),
-    () => window.api.ext.advisoryActive().catch((): { ids: string[]; fresh: boolean } => ({ ids: [], fresh: false })),
+    () => extIpc.advisoryActive().catch((): { ids: string[]; fresh: boolean } => ({ ids: [], fresh: false })),
   )
   const advisoryState = createMemo<"loading" | "unavailable" | "ready">(() => {
     if (advisoryFacts.loading) return "loading"
@@ -846,10 +847,8 @@ export function ExtensionHub(props: {
     setUpdBusy(r.id)
     try {
       const res = await ext.updateEntry(target)
-      if (res.ok) {
-        flash(t("alpha.ext.updated"), "success")
-        if (res.warning) flash(res.warning)
-      }
+      // `#765`:具名 warning 不在这里呈现 —— `extIpc` 在 IPC 包装层已经呈现过。
+      if (res.ok) flash(t("alpha.ext.updated"), "success")
       else if (isAuthzRequired(res)) {
         // #348:扩权 → 授权框(mode=update,场景化文案);调用方据返回值中止批量循环。
         setAuthz({ entry: target, mode: "update", host: "standalone", diffs: res.authorization })
@@ -875,8 +874,8 @@ export function ExtensionHub(props: {
     try {
       const res = await ext.updateEntry(target, authorization)
       if (res.ok) {
+        // `#765`:同 runUpdateOne —— warning 归 `extIpc`,这里只报「已更新」。
         flash(t("alpha.ext.updated"), "success")
-        if (res.warning) flash(res.warning)
         return null
       }
       if (isAuthzRequired(res)) return res.authorization
@@ -925,7 +924,7 @@ export function ExtensionHub(props: {
     // REQ-100 #311:bundle = 一次 main-owned 原子事务(required 全提交或全回滚),renderer 只发一次
     // 请求。归档连接器/不支持子项的跳过决策由 main planner 落 skipped(带审计);此处只呈现结果。
     // #348:一次展示、一次授权、一次 commit —— authorize 失败原样上抛给 onAdd 统一拦截。
-    const r = await window.api.ext.installCatalog({
+    const r = await extIpc.installCatalog({
       catalogId: e.id,
       scope: { scope: "global" },
       ...(authorization ? { authorization } : {}),
@@ -935,9 +934,7 @@ export function ExtensionHub(props: {
     const skippedCount = r.skipped?.length ?? 0
     if (skippedCount > 0) setErrFor(e.id, t("alpha.ext.bundlePartialFail", { ok: okCount, fail: skippedCount }))
     else flash(t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.added"), "success")
-    // `#698`:成功响应里的具名 warning 必须原样带出去(`ActionResult` 的定义写着「调用方必须呈现,
-    // 不得静默吞掉」)。package 更新的「离场组件已停用、但残留文件没删掉」正是走这条 —— 丢了它,
-    // 用户看到的就只有「更新成功」,而盘上还留着东西。呈现由 addDirect 的单点出口统一做。
+    // 具名 warning 原样带出去(数据保真);**呈现**已由 `extIpc` 在上面那次调用里做完(`#765`)。
     return { ok: true, ...(r.warning ? { warning: r.warning } : {}) }
   }
 
@@ -972,11 +969,9 @@ export function ExtensionHub(props: {
     const addedFlash = (fallbackKey: "alpha.ext.added" | "alpha.ext.addedLive" | "alpha.ext.pluginRestart") =>
       flash(willBeDisabled ? t("alpha.ext.addedDisabled") : t(fallbackKey), "success")
     try {
-      // `#698`:成功响应携带的具名 warning 在**这一个出口**呈现,不再逐分支各写一次。
-      // 此前只有 agent 分支写了这行,mcp/skill/plugin/bundle/cloud 五条全都把 warning 丢了 ——
-      // 而 `ActionResult` 的定义明写「调用方必须呈现」。逐分支写 = 新增分支默认漏,单点出口 =
-      // 新增分支默认覆盖。
-      let outcome: { ok: true; reason?: string; warning?: string; projectionLag?: string } | null = null
+      // `#765`:这里**不再**有 warning 呈现。`#698` 把它收成本函数的单点出口,但那只覆盖一个
+      // 函数 —— 详情页装 package 走确认屏,压根不经过这里。现在呈现在 `extIpc`(IPC 包装层),
+      // 对**任何**返回具名 warning 的调用默认生效,不必逐入口登记。
       if (e.type === "mcp") {
         setStageFor(e.id, "checking")
         const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
@@ -987,7 +982,6 @@ export function ExtensionHub(props: {
         }
         setStageFor(e.id, "installing")
         const res = await addMcpEntry(e, secrets, true, authorization)
-        if (res.ok) outcome = res
         if (!res.ok) {
           // hook 返回稳定 reason code,文案在这一层映射(hook 不持有 i18n)。
           if (res.reason === "connect-failed") {
@@ -1007,37 +1001,30 @@ export function ExtensionHub(props: {
         setStageFor(e.id, "installing")
         const res = await ext.installSkill(e, authorization)
         if (!res.ok) return failOr(res)
-        outcome = res
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
         else addedFlash("alpha.ext.addedLive")
       } else if (e.type === "agent") {
         setStageFor(e.id, "installing")
         const res = await ext.installAgentEntry(e, authorization)
         if (!res.ok) return failOr(res)
-        outcome = res
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
         else addedFlash("alpha.ext.addedLive")
       } else if (e.type === "plugin") {
         setStageFor(e.id, "installing")
         const res = await ext.installPlugin(e, authorization)
         if (!res.ok) return failOr(res)
-        outcome = res
         addedFlash("alpha.ext.pluginRestart")
       } else if (e.type === "bundle") {
         setStageFor(e.id, "installing")
         const res = await installBundle(e, authorization)
         if (!res.ok) return failOr(res)
-        outcome = res
       } else if (e.type === "cloud") {
         // REQ-020 T4:「启用」= receipts-only(账本可用列表);门控在按钮层(!cloudReady 禁用)。
         setStageFor(e.id, "installing")
         const res = await ext.enableCloud(e, authorization)
         if (!res.ok) return failOr(res)
-        outcome = res
         flash(t("alpha.ext.cloudEnabled"), "success")
       }
-      // 成功但携带 loud 诊断(CAS 自愈 / 授权账写失败 / `#698` 更新后的惰性残留等):原样呈现,不吞。
-      if (outcome?.warning) flash(outcome.warning)
       return null
     } finally {
       setBusy(null)
@@ -1067,7 +1054,7 @@ export function ExtensionHub(props: {
     )
     setAuthzBusy(true)
     try {
-      const result = await window.api.ext.installCatalog({
+      const result = await extIpc.installCatalog({
         catalogId: pending.view.catalogId,
         scope: { scope: "global" },
         attemptId: pending.preview.attemptId,
@@ -1087,11 +1074,10 @@ export function ExtensionHub(props: {
         setEnvValues({})
         return
       }
-      // `#698`:package 装/更新成功携带的具名 warning 必须呈现。这条路径(确认屏 → 二次
-      // installCatalog)是 package 更新真正走的那条,而它此前**连成功 toast 都没有**,
-      // warning 自然也就没有落点 —— 「离场组件已停用、但残留文件没删掉」用户完全看不到。
-      if (result.warning) flash(result.warning)
-      const latest = await window.api.ext.packageDetail(pending.view.catalogId)
+      // `#698` 在这里手写过一行 warning 呈现 —— 这条路径(确认屏 → 二次 installCatalog)是
+      // package 更新真正走的那条,而它当时**连成功 toast 都没有**。`#765` 之后这行没了:
+      // 上面那次 `extIpc.installCatalog` 自己就把 warning 呈现掉了,不靠人记得写。
+      const latest = await extIpc.packageDetail(pending.view.catalogId)
       if (latest) rememberPackageView(latest)
       pending.finish(latest ?? pending.view)
       setPackageAuthz(null)
@@ -1175,9 +1161,8 @@ export function ExtensionHub(props: {
       res.ok ? t("alpha.ext.removed") : `${t("alpha.ext.removeFailed")}${res.reason ? `: ${res.reason}` : ""}`,
       res.ok ? "success" : "error",
     )
-    // `#706` 的「它还属于某个扩展包 —— 只移除了你的独立安装,文件保留」正是走这条 warning。
-    // 丢掉它,用户点了移除、看到「已移除」,而文件还在盘上、条目还在列表里。
-    if (res.ok && res.warning) flash(res.warning)
+    // `#706` 的「它还属于某个扩展包 —— 只移除了你的独立安装,文件保留」正是走这条 warning;
+    // `#765` 之后它由 `extIpc` 在 uninstallV2 返回时呈现,这里不再重复(重复会出两条同样的 toast)。
   }
 
   // T3:开 hub 时扫描旧 XDG 根,匹配 catalog(只迁 alpha 自己装的,不碰用户自建内容,ADR-019 §4)。
@@ -1207,7 +1192,7 @@ export function ExtensionHub(props: {
   }
   const scanMigration = async () => {
     try {
-      const { enabled, inventory } = await window.api.ext.migrateScan()
+      const { enabled, inventory } = await extIpc.migrateScan()
       if (!enabled) return setMigrateCandidates([])
       const skillNames = new Set(inventory.skills)
       const mcpNames = new Set(inventory.mcp.map((m) => m.name))
@@ -1219,7 +1204,7 @@ export function ExtensionHub(props: {
         return false
       })
       const requests = named.map(provenanceRequest).filter((r): r is ProvenanceRequest => r !== null)
-      const verdicts = requests.length ? await window.api.ext.migrateVerify(requests) : []
+      const verdicts = requests.length ? await extIpc.migrateVerify(requests) : []
       const passed = new Set(verdicts.filter((v) => v.verified).map((v) => `${v.type}:${v.name}`))
       setMigrateCandidates(named.filter((e) => passed.has(`${e.type}:${e.name}`)))
     } catch {
@@ -1247,7 +1232,7 @@ export function ExtensionHub(props: {
           continue
         }
         const legacyName = e.type === "plugin" && e.installSpec?.kind === "plugin" ? e.installSpec.package : e.name
-        await window.api.ext.removeLegacy(e.type as "skill" | "mcp" | "plugin", legacyName)
+        await extIpc.removeLegacy(e.type as "skill" | "mcp" | "plugin", legacyName)
         ok++
       }
       flash(fail ? `${t("alpha.ext.migrated", { count: ok })} · ${fail} 失败` : t("alpha.ext.migrated", { count: ok }), fail ? "error" : "success")
