@@ -78,8 +78,9 @@ const SKILL_NEW = "---\nname: generic-bundle-extra\ndescription: new leaf\n---\n
  * 从 producer 产物派生一代信封。`agentBody` 换内容 ⇒ root 的 payloadRef 变 ⇒ root manifestDigest 变
  * ⇒ **owner token 变**,这正是 update 最容易漏掉的一步。
  */
-function generation(base: Corpus, options: { agentBody: string; keepMcp: boolean; addSkill: boolean }): Generation {
+function generation(base: Corpus, options: { agentBody: string; keepMcp: boolean; addSkill: boolean; version?: string }): Generation {
   const envelope = structuredClone(base.envelope)
+  if (options.version !== undefined) envelope.prelude = { ...envelope.prelude, version: options.version }
   const rootId = envelope.root
   const skillId = "skill:generic-bundle-skill"
   const mcpId = "mcp:generic-bundle-remote"
@@ -219,8 +220,10 @@ const secretsFor = (generation: Generation): Record<string, string> => {
 describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
   test("add / remove / replace 一次跑完:owner token 转移、离场 child 去账并删实物、一次 root mutation", async () => {
     const base = (await Bun.file(corpus).json()) as Corpus
-    const v1 = generation(base, { agentBody: AGENT_V1, keepMcp: true, addSkill: false })
-    const v2 = generation(base, { agentBody: AGENT_V2, keepMcp: false, addSkill: true })
+    // `#764`:两代**版本号也不同**。版本是 update preview 里「你正在从哪个版本升上来」的唯一
+    // 来源,而两代同版本会让「取到了真值」与「取到了写死的那个值」看起来一样。
+    const v1 = generation(base, { agentBody: AGENT_V1, keepMcp: true, addSkill: false, version: "1.0.0-req764a" })
+    const v2 = generation(base, { agentBody: AGENT_V2, keepMcp: false, addSkill: true, version: "2.0.0-req764b" })
     const removed: Array<Array<{ kind: string; name: string }>> = []
     const { admit, select } = coordinatorFor([v1, v2], removed)
 
@@ -235,6 +238,9 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     const ownerV1 = bundleOwner("package:generic-bundle", graphV1.root.manifestDigest)
     expect(packageClaimOwners(root, "skill", "generic-bundle-skill")).toEqual([ownerV1])
     expect(findRecordV2(root, "mcp", "generic-bundle-remote")).not.toBeNull()
+    // `#764`:v2 提交之后这条 record 会被覆盖成新版本,所以「装完 v1 时账上写的是什么」必须
+    // 在这里取,不能等 update 跑完再回头读。
+    const rootRecordVersionV1 = findRecordV2(root, "agent", "generic-bundle-agent")!.version
 
     // ── v2:root 换内容(replaced)、mcp 离场(removed)、多一个 skill(added)。
     select(1)
@@ -243,6 +249,16 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     const update = second.preview.update
     expect(update.operation).toBe("update")
     expect(update.ownerChanged).toBe(true)
+    // `#764`:「当前版本」必须是**真值**。账本从来没有 package 级记录 —— 它由这个包 root 组件的
+    // v2 record 派生,而 `validateV3State` 保证图里每个节点都有 claim、每条 claim 都有 record,
+    // 所以只要图在,root 的 record 就一定在。这里同时钉三条:
+    //   ① 等于这一代信封声明的版本(不是任何写死的常量);
+    //   ② 与账本里那条 record 逐字相同(派生点没有第二个答案);
+    //   ③ 与 versionAfter 不同(否则「显示了旧版本」和「显示了新版本」分不开)。
+    expect(update.versionBefore).toBe("1.0.0-req764a")
+    expect(update.versionBefore).toBe(rootRecordVersionV1)
+    expect(update.versionAfter).toBe("2.0.0-req764b")
+    expect(update.versionBefore).not.toBe(update.versionAfter)
     expect(
       Object.fromEntries(update.components.map((component) => [`${component.kind}:${component.name}`, component.change])),
     ).toEqual({
@@ -477,6 +493,10 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     const preview = previewOf(staged)
     expect(preview.update.operation).toBe("install")
     expect(preview.update.graphBeforeDigest).toBeNull()
+    // `#764`:首装**没有**「当前版本」,所以这里必须是 null 而 versionAfter 有值。它与上面
+    // update 用例里「versionBefore 恰是上一代那个版本」互为反例:一个写死的常量满足不了两边。
+    expect(preview.update.versionBefore).toBeNull()
+    expect(preview.update.versionAfter).toBe("1.0.0")
     expect(preview.update.components.every((component) => component.change === "added")).toBe(true)
     expect(preview.update.claims).toEqual([])
     // 首装没有已提交的授权账 ⇒ 每个组件都是「从无到有」,必须重新授权。

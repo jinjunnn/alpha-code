@@ -33,8 +33,8 @@ export function commitTransactionLedger(root: string, records: TxCommitRecord[])
   if (!decoded.ok) throw new Error(`package ledger mutation rejected (fail closed): ${decoded.errors.join("; ")}`)
   // transactionId 与 child 集合都来自**事务自己**,不接受 journal 里自带的副本 ——
   // 同一份 commit records 在主提交与前滚两条路上算出的 mutation 因此逐字相同。
-  // 计划期还不知道事务会分到哪个 txId(`runExtensionTransaction` 自产),envelope 里那个是
-  // 占位;真值在这里统一覆盖,包括写进 packageRecord 的那份。
+  // 计划期还不知道事务会分到哪个 txId(`runExtensionTransaction` 自产),所以 envelope 压根
+  // 不带 txId,真值只在这里出现一次(`#764` 之前还要再往 packageRecord 里写一份同样的值)。
   // `#698`:child mutation 有两个半场,来源不同,不可互相顶替 ——
   //   · **upsert** 由本次事务的 commit records 派生(装了什么,事务自己知道);
   //   · **remove** 由 envelope 携带(被删掉的 child 的 record 这次不产生 commit record)。
@@ -54,7 +54,6 @@ export function commitTransactionLedger(root: string, records: TxCommitRecord[])
   const mutation: PackageLedgerMutationV1 = {
     ...envelope,
     transactionId: carrier.txId,
-    ...(envelope.packageRecord ? { packageRecord: { ...envelope.packageRecord, transactionId: carrier.txId } } : {}),
     childRecordMutations: [
       ...childRemovals.map((child) => ({ op: "remove" as const, kind: child.kind, name: child.name })),
       ...upserts,

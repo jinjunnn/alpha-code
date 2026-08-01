@@ -143,6 +143,24 @@ export function diffPackageGraphsV1(
   }
 }
 
+/**
+ * REQ-128 `#764`:一个**已安装** package 当前落在账本上的版本。
+ *
+ * 账本里没有 package 级的版本存储,也不需要有:安装时 `package-admission` 把信封 prelude 的
+ * 同一个 version 写进这个包**每一个**组件的 v2 record,而 root 组件的 `(kind, name)` 由图给出。
+ * 于是「当前版本」是一次查表,不是第二份真源 —— 多存一份就多一个会和 record 分叉的答案。
+ *
+ * root 的 record **必然在场**:`validateV3State` 要求图里每个节点都有 claim、每条 claim 都有
+ * install record,而账本的读与写两侧都跑这条判据。因此返回 null 只有一个含义 —— 那一代信封
+ * 本来就没声明版本(`version` 是信封里的可选字段),不是「查不到」。
+ */
+export function packageVersionFromRecordsV1(
+  graph: PackageGraphV1,
+  records: ReadonlyArray<{ kind: string; name: string; version?: string }>,
+): string | null {
+  return records.find((record) => record.kind === graph.root.kind && record.name === graph.root.name)?.version ?? null
+}
+
 /** 卸载 = 「after 图为空」的 diff。同一份代数,不另写一套 —— 两套会各自漂移。 */
 export function uninstallDiffV1(graph: PackageGraphV1, version?: string | null): PackageGraphDiffV1 {
   const owner = bundleOwner(graph.packageId, graph.root.manifestDigest)

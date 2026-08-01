@@ -134,14 +134,6 @@ const packageGraph = (): PackageGraphV1 => {
 const packageMutation = (): PackageLedgerMutationV1 => ({
   transactionId: "tx-shared-kit-1",
   operation: "install",
-  packageRecord: {
-    packageId: PACKAGE_ID,
-    envelopeDigest: ENVELOPE_DIGEST,
-    graphDigest: packageGraph().graphDigest,
-    version: "1.0.0",
-    transactionId: "tx-shared-kit-1",
-    installedAt: "2026-07-31T00:00:00.000Z",
-  },
   graphBeforeDigest: null,
   graphAfter: packageGraph(),
   childRecordMutations: SHARED.map((c) => ({ op: "upsert" as const, input: upsertInput(c.kind, c.name) })),
@@ -607,11 +599,6 @@ describe("REQ-128 #706 —— 篡改的 V3 账本:所有写路径拒绝且字节
       operation: "update",
       graphBeforeDigest: `sha256:${"f".repeat(64)}`, // 账本上根本不是这张图
       graphAfter: updatedGraph,
-      packageRecord: {
-        ...packageMutation().packageRecord!,
-        envelopeDigest: updatedGraph.envelopeDigest,
-        graphDigest: updatedGraph.graphDigest,
-      },
     }
     const applied = applyPackageMutation(root, stale)
     expect(applied.ok).toBe(false)

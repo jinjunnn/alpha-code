@@ -53,6 +53,7 @@ import { removeOwnedGenerationStoreInLock } from "./ext-transaction"
 import { skillGenerationKey, skillStorePaths } from "./ext-skill-generations"
 import {
   packageChildTxKeyV1,
+  packageVersionFromRecordsV1,
   planPackageChildRemovalsV1,
   uninstallDiffV1,
   planPackageClaimTransferV1,
@@ -170,7 +171,9 @@ export function planPackageUninstallV1(root: string, packageId: string, transact
   if (!state.ok) return { ok: false, reason: `package uninstall: ${state.reason}` }
   const graph = state.packageGraphs.find((candidate) => candidate.packageId === packageId)
   if (!graph) return { ok: false, reason: `package uninstall: "${packageId}" is not installed in this ledger` }
-  const diff = uninstallDiffV1(graph)
+  // `#764`:整包卸载的 diff 也带上「正在卸的是哪个版本」。来源与 update preview 同一条 ——
+  // root 组件的 v2 record,同一次账本读。留空会让这里长出第二个恒 null 的版本栏。
+  const diff = uninstallDiffV1(graph, packageVersionFromRecordsV1(graph, state.records))
   const owner = diff.ownerBefore!
   const verdicts = planPackageChildRemovalsV1({
     departing: diff.changes.map((change) => ({ kind: change.kind, name: change.name })),
@@ -181,7 +184,6 @@ export function planPackageUninstallV1(root: string, packageId: string, transact
   const mutation: PackageLedgerMutationV1 = {
     transactionId,
     operation: "uninstall",
-    packageRecord: null,
     graphBeforeDigest: graph.graphDigest,
     graphAfter: null,
     childRecordMutations: verdicts
