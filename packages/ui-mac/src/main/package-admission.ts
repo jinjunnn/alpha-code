@@ -42,6 +42,17 @@ import type {
 } from "../shared/package-admission"
 import type { TxStageNonAuthorizeWire } from "../shared/ext-capability-authorization"
 import { evaluatePackageSecretSubmissionV1 } from "../shared/package-secret-prerequisite"
+import {
+  evaluatePackageConnectionPrerequisiteV1,
+  packageConnectionReferenceV1,
+  type PackageConnectionReferenceV1,
+} from "../shared/package-alpha-connection"
+import { lookupAlphaConnectionHandlerV1, ALPHA_CONNECTION_HANDLERS_V1 } from "./alpha-connection-handlers"
+import {
+  bindAlphaConnectionPackageV1,
+  readAlphaConnectionRecordsV1,
+  type AlphaConnectionStoreScope,
+} from "./alpha-connection-store"
 
 const ATTEMPT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const DIGEST = /^[a-f0-9]{64}$/
@@ -89,6 +100,13 @@ export type PackageAdmissionOutcome =
       name: string
       manifestDigest: string
       installedDisabled?: true
+      /**
+       * Installed, but an optional Alpha Connection is not established. Distinct from
+       * `installedDisabled`, which is true for every catalog install under the current activation
+       * policy: this one says *why* the thing will not work, so the user is told "connect an
+       * account" rather than "turn it on".
+       */
+      connectionUnavailable?: true
       warning?: string
     }
   | {
@@ -238,8 +256,70 @@ export function createPackageAdmissionCoordinator(deps: PackageAdmissionDeps) {
     )
       return { ok: false, reason: "package admission: only signed secret prerequisites accept grants in Phase 1" }
 
-    return executePreparedPackage(revalidated.prepared, intent, deps)
+    // §2.7 puts "required Alpha Connection ready" between capability authorization and the local
+    // transaction, and this is that step. It runs on the *revalidated* facts and reads the
+    // main-owned store directly — the renderer cannot name a connection at all, so there is no
+    // supplied value to distrust, and re-resolving here (rather than remembering what the preview
+    // decided) is what makes "main re-verifies on every bind" true rather than aspirational.
+    //
+    // A required connection that is not ready ends the attempt here, with zero transaction calls.
+    const connection = resolveConnectionBinding(revalidated.prepared, deps)
+    if (!connection.ok) return { ok: false, reason: `package admission: ${connection.reasonCode}` }
+
+    return executePreparedPackage(revalidated.prepared, intent, deps, connection)
   }
+}
+
+export type ResolvedPackageConnectionV1 = {
+  ok: true
+  references: PackageConnectionReferenceV1[]
+  /** An optional connection that is not ready: install, but land disabled and say so. */
+  unavailable: boolean
+}
+
+/**
+ * Answer the connection question for one prepared package from signed facts plus the main-owned
+ * store. Required and optional diverge on exactly one point: a required prerequisite that is not
+ * ready refuses the install, an optional one lets it land in the "installed, not connected" state
+ * the baseline asks for — visible, honest, and reconnectable without reinstalling.
+ */
+function resolveConnectionBinding(
+  prepared: PreparedPackage,
+  deps: PackageAdmissionDeps,
+): ResolvedPackageConnectionV1 | { ok: false; reasonCode: string } {
+  const items = prepared.facts.connection.items
+  if (items.length === 0) return { ok: true, references: [], unavailable: false }
+  const scope = connectionScope(deps)
+  const stored = readAlphaConnectionRecordsV1(scope)
+  if (!stored.ok) return { ok: false, reasonCode: `connection store unreadable (${stored.reason})` }
+  const now = deps.now?.() ?? new Date()
+  const table = deps.installability?.connectionHandlers ?? ALPHA_CONNECTION_HANDLERS_V1
+
+  const references: PackageConnectionReferenceV1[] = []
+  let unavailable = false
+  for (const item of items) {
+    const known = lookupAlphaConnectionHandlerV1(item.handlerId, table).ok
+    const evaluated = evaluatePackageConnectionPrerequisiteV1(item, stored.records, known, now)
+    if (evaluated.state !== "ready") {
+      if (item.required) return { ok: false, reasonCode: evaluated.reasonCode }
+      unavailable = true
+      continue
+    }
+    const record = stored.records.find((candidate) => candidate.connectionId === evaluated.connectionId)
+    const reference = record ? packageConnectionReferenceV1(item, record) : undefined
+    if (!reference) return { ok: false, reasonCode: "connection-result-invalid" }
+    references.push(reference)
+  }
+  return { ok: true, references, unavailable }
+}
+
+/**
+ * The store scope is derived, never injected: `extensionRoot` has to be the *real* transaction root
+ * for the independence guard to mean anything, and a caller-supplied one could be made to agree
+ * with a bad layout.
+ */
+function connectionScope(deps: PackageAdmissionDeps): AlphaConnectionStoreScope {
+  return { userDataPath: deps.userDataPath, extensionRoot: deps.root() }
 }
 
 function packagePlanPreview(prepared: PreparedPackage): PackageAdmissionPreviewV1["plan"] {
@@ -358,6 +438,7 @@ async function executePreparedPackage(
   prepared: PreparedPackage,
   intent: PackageIntent,
   deps: PackageAdmissionDeps,
+  connection: ResolvedPackageConnectionV1,
 ): Promise<PackageAdmissionOutcome> {
   const root = deps.root()
   const component = rootComponentOf(prepared.facts)
@@ -377,6 +458,14 @@ async function executePreparedPackage(
     origin: "catalog",
     installedAt: now,
   }
+  // "Installed but unavailable" is not a new state — it is the existing disabled desired-state,
+  // reached for one more reason, so the runtime, the detail page and the enable toggle already know
+  // what to do with it. It is a real override, not a coincidence with today's default: a package
+  // with a prior `enabled` record would otherwise come back enabled with no connection behind it.
+  //
+  // It has to stay *above* `common`: since #705 the ledger template is handed to the builders, so
+  // this is the last point at which one write reaches every builder and every item they emit.
+  if (connection.unavailable) receipt.desiredState = "disabled"
   // #705:计划构造归 builders(Bundle 与单装同一真源),本函数只负责执行与结果映射。
   const common = {
     root,
@@ -433,7 +522,14 @@ async function executePreparedPackage(
       commitReceipt: (records) => commitPackageReceipts(root, records),
     },
   )
-  return transactionOutcome(result, prepared, manifestDigest, receipt.desiredState)
+  return transactionOutcome(
+    result,
+    prepared,
+    manifestDigest,
+    receipt.desiredState,
+    connection,
+    bindConnectionsAfterCommit(result, connection, deps),
+  )
 }
 
 function packagePlan(
@@ -509,21 +605,46 @@ function transactionOutcome(
   prepared: PreparedPackage,
   manifestDigest: string,
   desiredState: "enabled" | "disabled",
+  connection: ResolvedPackageConnectionV1,
+  connectionWarning?: string,
 ): PackageAdmissionOutcome {
   if (!result.ok) {
     if (result.stage === "authorize")
       return { ok: false, reason: "package admission: transaction authorization changed; start a new attempt" }
     return { ok: false, reason: result.reason, stage: result.stage }
   }
+  const warnings = [...result.warnings, ...(connectionWarning ? [connectionWarning] : [])]
   return {
     ok: true,
     kind: prepared.kind,
     name: prepared.name,
     manifestDigest,
     ...(prepared.kind === "mcp" && desiredState === "disabled" ? { installedDisabled: true as const } : {}),
-    ...(result.warnings.length ? { warning: result.warnings.join("; ") } : {}),
+    ...(connection.unavailable ? { connectionUnavailable: true as const } : {}),
+    ...(warnings.length ? { warning: warnings.join("; ") } : {}),
   }
 }
+
+/**
+ * Record the package→connection edge after the transaction is durable, never before. A failure here
+ * is reported, not fatal: the install really did happen, and an unrecorded binding only makes the
+ * connection look less used than it is — which errs toward keeping it, the safe direction.
+ */
+function bindConnectionsAfterCommit(
+  result: TxResult,
+  connection: ResolvedPackageConnectionV1,
+  deps: PackageAdmissionDeps,
+): string | undefined {
+  if (!result.ok || connection.references.length === 0) return
+  const scope = connectionScope(deps)
+  const now = (deps.now?.() ?? new Date()).toISOString()
+  const failures = connection.references.flatMap((reference) => {
+    const bound = bindAlphaConnectionPackageV1(scope, reference.connectionId, reference.componentId, now)
+    return bound.ok ? [] : [bound.reason]
+  })
+  return failures.length ? `connection binding not recorded: ${failures.join("; ")}` : undefined
+}
+
 
 function confirmationMatches(diffs: CapabilityDiff[], confirmed: Record<string, string[]>) {
   const requested = Object.fromEntries(diffs.map((diff) => [diff.key, [...diff.requested].sort()]))

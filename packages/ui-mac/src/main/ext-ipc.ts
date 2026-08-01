@@ -60,6 +60,7 @@ import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedgerV2, removeRecordV2 } from "./ext-receipt-v2"
 import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
+import { releaseAlphaConnectionBindingsV1 } from "./alpha-connection-store"
 import { recoverExtensionTransactions, recoverExtensionTransactionsInHeldLock, recoveryClean, type RecoverOptions } from "./ext-transaction"
 import { getLogger } from "./logging"
 import { runCatalogInstallWithPackagePreflight } from "./package-installability"
@@ -640,6 +641,14 @@ export function registerExtIpcHandlers(
           const names = new Set(live.names)
           return removeMcpServerSecretsStrict(userDataPath, name, (cand) => names.has(cand))
         },
+        // #704:卸载只释放 Alpha Connection 绑定,不 disconnect —— store 在 userData 下,
+        // 与事务根互斥(独立性由 store 自己的守卫强制,不靠这里记得)。
+        releaseAlphaConnectionBindings: (componentId) =>
+          releaseAlphaConnectionBindingsV1(
+            { userDataPath, extensionRoot: alphaGlobalRoot() },
+            componentId,
+            new Date().toISOString(),
+          ),
         // #354:写前 strict 前像读(产品早拒 + 锁内 precondition 重验)。
         readMcpLeafStrict,
         // #378(裁决 Q5):npm plugin 跨源(主 + legacy XDG)同 base 严格检查。

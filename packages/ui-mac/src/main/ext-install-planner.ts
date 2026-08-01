@@ -570,6 +570,11 @@ export type PlannerInstallers = {
   /** #346:严格密钥吊销 —— 失败可观察(journal 据此保持非终态);目录缺失 = 幂等成功。
    *  整 server 目录删除,天然覆盖 #378 的全部版本目录 + legacy flat。 */
   removeMcpSecretsStrict(name: string): { ok: true } | { ok: false; reason: string }
+  /** `#704`:卸载时**只释放**这个组件对 Alpha Connection 的绑定,绝不 disconnect/revoke。
+   *  连接是共享的、且真实副作用在 provider 那边,所以「最后一个绑定消失」不是删除条件 ——
+   *  它只是「当前没有已安装的包在用」。释放失败不阻断卸载(陈旧绑定只会让连接被多留一会儿,
+   *  那是安全的方向);删除只有显式 disconnect 一条路。 */
+  releaseAlphaConnectionBindings(componentId: string): { ok: true } | { ok: false; reason: string }
   /** #378(Codex 裁决 Q5):npm plugin 跨配置源(主 + legacy XDG)同 base 严格检查 —— 任一侧
    *  在场都不是 fresh;任一侧不可读即拒(不能当不存在)。计划前与锁内 precondition 双调。 */
   findPluginBaseConflictStrict(pkg: string): { ok: true; existing: { spec: string; source: "main" | "legacy" } | undefined } | { ok: false; reason: string }
@@ -3901,6 +3906,11 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
         // journal 保持 uninstalling 前滚;恢复 seam 同步此语义)。
         const grants = removeInstallGrants(root, [`mcp--${intent.name}`])
         if (!grants.ok) throw new Error(grants.reason)
+        // #704:这里是最容易顺手写错的一行 —— 密钥与授权账都是**本次安装拥有**的东西,清掉是对的;
+        // Alpha Connection 不是。它是共享的、跨安装的,真实撤销发生在 provider 侧。所以这里
+        // **只释放绑定**,而且**不抛错**:释放失败最多让连接看起来还被人用着(保守方向),
+        // 而抛错会把一个成功的卸载卡在 uninstalling 上。
+        deps.installers.releaseAlphaConnectionBindings(`mcp:${intent.name}`)
       },
       commitLedger: () => {
         const rm = removeRecordV2(root, "mcp", intent.name)
