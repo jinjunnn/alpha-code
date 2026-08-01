@@ -442,7 +442,7 @@ export function withPackageBindingV1(
     current.add(componentId)
   } else current.delete(componentId)
   const packageBindings = [...current].sort()
-  if (packageBindings.join(" ") === record.packageBindings.join(" ")) return record
+  if (packageBindings.join("\u0000") === record.packageBindings.join("\u0000")) return record
   return { ...record, packageBindings, updatedAt: now }
 }
 
