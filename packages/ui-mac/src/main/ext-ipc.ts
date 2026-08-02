@@ -24,6 +24,7 @@ import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { reloadInstalledMcp } from "./ext-mcp-activation"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, removeFsInstallFilesOnly, resourcesRoot } from "./ext-fs-installer"
+import { intakeImportDir } from "./claude-plugin-intake"
 import { parseAgentImport } from "./ext-import-validate"
 import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
 import { listRetainedJournals, retireTransactionJournal, type JournalRootRef } from "./ext-journal-retire"
@@ -974,6 +975,23 @@ export function registerExtIpcHandlers(
     await ledgerReady
     const picked = await pickImportSkillDir()
     if (!picked.ok) return picked
+    // REQ-128 Phase 3 `[T1-intake]`(#780):**main 侧**分流点,在 picker 之后、写之前。
+    // 用户选的若是一个 Claude 插件目录,今天会一路落到 `collectImportSkillPayload`,报一句
+    // 「文件夹内没有 SKILL.md」—— 与真因毫无关系,用户据它做不出任何正确动作。
+    // 这里改成:**纯读**清点一遍,把认出来的东西如实说清。零写盘。
+    // 确认通道与预览屏分别归 `[T3-channel]` / `[T4-renderer]`,本期只到「说清楚」为止。
+    // 不是插件目录 ⇒ 原路走既有单技能导入,行为逐字不变。
+    const intake = intakeImportDir(picked.srcDir)
+    if (intake.route === "local-claude-plugin") {
+      const p = intake.preview
+      return {
+        ok: false,
+        reason:
+          `这是一个 Claude 插件目录「${p.name}」:共 ${p.limits.skillCandidates} 个技能,` +
+          `其中 ${p.installableCount} 个本版本可以装。插件包的确认界面还没上线,本次没有做任何改动。`,
+        localPluginPreview: p,
+      }
+    }
     return gatedWrite.importSkillFolder(picked.srcDir, target)
   })
   ipcMain.handle(GATED_WRITE_CHANNELS.importSkillGit, barrier(gatedWrite.importSkillGit))

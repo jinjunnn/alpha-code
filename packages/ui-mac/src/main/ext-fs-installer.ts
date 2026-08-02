@@ -467,6 +467,11 @@ const IMPORT_MAX_ENTRIES = 500
 const SKILL_MD_MAX = 256 * 1024
 
 
+/** collector 静默跳过的目录名。**唯一真源** —— REQ-128 Phase 3(基线 §14 R2-a)的 intake
+ *  用同一份做具名 preview 拒绝:collector 必定跳过它们,而独立 lstat 扫描看得见 ⇒ 两处各写一份
+ *  就是「手写替身」,一旦漂移就出现「预览接受、装完缺件」。改这里 = 同时改判定与采集。 */
+export const IMPORT_EXCLUDED_DIR_NAMES: readonly string[] = [".git", "node_modules", "__pycache__"]
+
 // 递归收集可复制文件(拒 symlink、跳 .git/node_modules、计数与体积帽)。返回相对路径列表。
 function collectImportFiles(srcDir: string): { ok: true; files: string[] } | { ok: false; reason: string } {
   const files: string[] = []
@@ -475,7 +480,7 @@ function collectImportFiles(srcDir: string): { ok: true; files: string[] } | { o
     const abs = path.join(srcDir, rel)
     const entries = fs.readdirSync(abs, { withFileTypes: true })
     for (const entry of entries) {
-      if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "__pycache__") continue
+      if (IMPORT_EXCLUDED_DIR_NAMES.includes(entry.name)) continue
       const childRel = rel ? path.join(rel, entry.name) : entry.name
       if (entry.isSymbolicLink()) continue // 不跟随、不复制(防逃逸/防内容偷换)
       if (entry.isDirectory()) {
