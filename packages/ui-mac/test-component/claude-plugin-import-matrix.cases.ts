@@ -188,13 +188,22 @@ describe("AC7 `.bak` 目录与普通目录**逐字段同待**", () => {
   // 但**判定**一旦依赖这个前提就是错的。没有这条回归,加一句 `if (name.endsWith(".bak")) skip`
   // 不会让任何用例变红。
 
-  test("插件根改名成 `<name>.bak` ⇒ 预览逐字段不变", () => {
+  test("插件根改名成 `<name>.bak` ⇒ **分流与预览**逐字段不变", () => {
+    // ⚠️ 必须走 `intakeImportDir`(生产入口)而不是 `previewLocalClaudePlugin`(内层)。
+    // 实测教训:第一版这条用 `previewLocalClaudePlugin`,而最像样的绕过
+    // (`if (basename.endsWith(".bak")) return { route: "single-skill" }`)落在**分流层** ——
+    // 于是那次绕过实验里这条**照样绿**,只有下面那条 marketplace 用例变红。
+    // 断言内层函数名字盲 ≠ 断言用户选到 `.bak` 时行为不变。
     const donor = path.join(corpus.root, "tide-plugin")
-    const before = previewLocalClaudePlugin(donor)
+    const beforeIntake = intakeImportDir(donor)
+    expect(beforeIntake.route).toBe("local-claude-plugin")
+    const before = (beforeIntake as { preview: LocalPackagePreviewV1 }).preview
     const renamed = `${donor}.bak`
     fs.renameSync(donor, renamed)
     try {
-      const after = previewLocalClaudePlugin(renamed)
+      const afterIntake = intakeImportDir(renamed)
+      expect(afterIntake.route).toBe("local-claude-plugin")
+      const after = (afterIntake as { preview: LocalPackagePreviewV1 }).preview
       expect(after.name).toBe(before.name)
       expect(after.packageId).toBe(before.packageId)
       expect(after.disposition).toBe(before.disposition)
