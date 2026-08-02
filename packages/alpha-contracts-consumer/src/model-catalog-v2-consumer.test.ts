@@ -78,7 +78,7 @@ describe("ModelCatalogV2 的独立 immutable pin", () => {
       commit: string
       files: Array<{ path: string }>
     }
-    expect(v1.commit).toBe("2fe1d0103b7c3f68acb98c44d13ed0fcfe8bf196")
+    expect(v1.commit).toBe("62c7aa6de5589cfcf2af00ecab69f1d3d176512b")
     expect(v1.files.some((file) => file.path.includes("model-catalog"))).toBe(false)
   })
 

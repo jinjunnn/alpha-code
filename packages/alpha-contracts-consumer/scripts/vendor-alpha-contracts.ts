@@ -20,8 +20,15 @@ const UPSTREAMS = [
     // append-only ledger fact (seq/op_id/kind/domain/signed amount/created_at ms); the old mutable
     // {id,type,title,amount_fen,status} row is gone at an unchanged schema_version — a breaking
     // in-place cut with no compatibility shim, so this pin and the desktop decoder move together.
+    //
+    // platform#177: bumped again for the one-shot token-contract change. `TokenClaimsV1` gained a
+    // sixth `oneOf` branch (`mcp_access`, issued to third-party MCP clients) and a new
+    // `account.keys.manage` purpose. Only the schema file's bytes move; nothing this repository
+    // decodes changes shape. This repository is a CONSUMER of the new branch in one direction
+    // only — it must keep rejecting it (see src/contracts.test.ts), because `decodeTokenClaims`
+    // is the desktop's own credential path and an `mcp_access` token is not one of ours.
     repo: "jinjunnn/alpha-platform",
-    commit: "2fe1d0103b7c3f68acb98c44d13ed0fcfe8bf196",
+    commit: "62c7aa6de5589cfcf2af00ecab69f1d3d176512b",
     lock: "alpha-platform-contract.lock.json",
     vendor: "vendor/alpha-platform",
     sourceEnv: "ALPHA_PLATFORM_CONTRACT_SOURCE",

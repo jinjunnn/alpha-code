@@ -1,10 +1,10 @@
 {
   "repo": "jinjunnn/alpha-platform",
-  "commit": "2fe1d0103b7c3f68acb98c44d13ed0fcfe8bf196",
+  "commit": "62c7aa6de5589cfcf2af00ecab69f1d3d176512b",
   "files": [
     {
       "path": "contracts/v1/alpha-wire-contracts.schema.json",
-      "sha256": "ac7b325470995d9b23f0fe02aa4d86311b6a775354ef6b44397ca611573f0cba"
+      "sha256": "1ecc74c5cad009dcea1d448728dc5fb49a11131fd1041e6375dd6f2a35c23f0d"
     },
     {
       "path": "contracts/v1/artifact-descriptor.schema.json",
