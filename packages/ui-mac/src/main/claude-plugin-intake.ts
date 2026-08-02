@@ -26,7 +26,7 @@ import path from "node:path"
 
 import { collectImportSkillPayload, IMPORT_EXCLUDED_DIR_NAMES, readImportFileBounded } from "./ext-fs-installer"
 import { parseSkillFrontmatter, SKILL_CONTROL_FIELD_KEYS } from "./ext-import-validate"
-import { PACKAGE_ID_RE } from "./ext-package-ledger-v3"
+import { PACKAGE_DISPLAY_NAME_MAX, PACKAGE_ID_RE, isValidPackageDisplayName } from "./ext-package-ledger-v3"
 
 /** 事务的**真界**(`ext-transaction.ts:650` 的 `plan.items.length > 64`)。
  *  刻意**不是**发布端的 `maxComponents: 16` —— 本路根本不过 decoder,拿 16 立闸是前提为假的闸。 */
@@ -187,6 +187,19 @@ export type LocalPackagePreviewV1 = {
   /** `local:<slug>`。manifest 读不出时为 null(此时 disposition 恒 blocked)。 */
   readonly packageId: string | null
   readonly name: string
+  /**
+   * `#784` R2:装进账本、在列表里显示的那个名字。**判定发生在这里(预览期),不留到 commit。**
+   *
+   * `name` 是 manifest 里的原样值,可能超长或带控制字符 —— 那样的值账本存不下
+   * (`isValidPackageDisplayName`)。此时这一栏为 `null`,呈现层回退到 root 组件名,
+   * 而 `displayNameNotice` 把这件事**在确认之前**告诉用户。
+   *
+   * **它绝不会让安装失败**:显示名是可选的、只管显示的。之前它能让整个事务在 receipt commit
+   * 那一刻回滚 —— 预览说能装、点了确认却失败,那是「界面说的和实际发生的不是同一件事」。
+   */
+  readonly displayName: string | null
+  /** 显示名被丢掉时的人话说明(零票号、零开发术语);正常时为 `null`。 */
+  readonly displayNameNotice: string | null
   /** **选填** —— 真实语料 27/62 的 manifest 没有它,当必填会拒掉 44% 的插件。 */
   readonly version: string | null
   readonly description: string
@@ -578,10 +591,22 @@ export function previewLocalClaudePlugin(root: string, options: LocalPackageInta
       ? "这个插件已经装过了。要更新它,请先移除整包,再重新导入。"
       : null
 
+  // `#784` R2:显示名在**预览期**定案。判据消费账本那**唯一一份**谓词 —— 不在这里另抄一条,
+  // 因为「同一条文法写两遍、两遍不一致」正是这条缺陷的起因。
+  const rawName = manifest?.name ?? null
+  const displayName = isValidPackageDisplayName(rawName) ? rawName : null
+  const displayNameNotice =
+    rawName !== null && displayName === null
+      ? `这个插件的名字这一版显示不了(超过 ${PACKAGE_DISPLAY_NAME_MAX} 个字,或含有特殊字符)。` +
+        `装好之后,列表里会用它第一个技能的名字来称呼它。`
+      : null
+
   return {
     schema: "local-claude-plugin-preview/v1",
     packageId,
     name: manifest?.name ?? path.basename(root),
+    displayName,
+    displayNameNotice,
     version: manifest?.version ?? null,
     description: manifest?.description ?? "",
     disposition: blockedReasonCode ? "blocked" : "installable",

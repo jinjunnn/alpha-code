@@ -357,6 +357,25 @@ const soloPlugin = writePlugin("solo", (dir) => writeSkill(dir, "solo-skill"), {
   name: "solo",
   description: "no version on purpose",
 })
+/**
+ * `#784` R2 Major 的两个夹具:**账本存不下的插件名**。
+ *
+ * 129 个 `a`:`mintPackageId` 会把它**截成合法的 128 字符 ID**,于是这个插件照样进
+ * installable 预览 —— 而显示名带的是**原始 129 字符**。修复之前,它在 receipt commit
+ * 那一刻被拒、整个事务回滚:预览说能装,点了确认却失败。
+ *
+ * ⚠️ 控制字符一律 `String.fromCharCode(1)` 现造,**不写转义字面量** ——
+ * 本轮已三次把「转义的 NUL」落盘成真的 NUL 字节,而 NUL 闸会抓到。
+ * `JSON.stringify` 会把它转义进 plugin.json,落盘的仍是纯 ASCII。
+ */
+const longNamePlugin = writePlugin("long-name-dir", (dir) => writeSkill(dir, "long-alpha"), {
+  name: "a".repeat(129),
+  description: "name longer than the ledger can hold",
+})
+const controlNamePlugin = writePlugin("control-name-dir", (dir) => writeSkill(dir, "control-alpha"), {
+  name: `tide${String.fromCharCode(1)}plugin`,
+  description: "name with a control character",
+})
 /** 非插件目录**而且导入会失败**(R1 Major 3):没有 `.claude-plugin/`、SKILL.md 的
  *  frontmatter 读不出来 ⇒ main 回 `{ok:false, reason}` 且**不带 `route`**。
  *  这个夹具存在的唯一理由:只覆盖成功路径的回归用例,杀不掉「把任何失败都当成插件目录」
@@ -923,6 +942,53 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     // 用户自己关掉它。
     click(removal!.querySelector("[data-dismiss-removal]"))
     await waitFor(() => expect(q('[data-package-removal="local:pack-a"]')).toBeNull())
+  })
+
+  test("R2 Major:名字账本存不下(超长)⇒ **预览期具名告知,确认照样装成**", async () => {
+    clearToasts()
+    await openImportFolder(longNamePlugin)
+    await waitFor(() => expect(previewDialog()).toBeInstanceOf(HTMLElement))
+    // ① 预览期就说清楚 —— 在按确认**之前**。
+    const notice = q("[data-display-name-notice]")
+    expect(notice).toBeInstanceOf(HTMLElement)
+    expect(notice!.textContent ?? "").toContain("显示不了")
+    // ② 它**不影响能不能装**:确认键照常可用,数量照常写在键面上。
+    const confirmButton = q<HTMLButtonElement>(".a-dialog-footer .a-btn:last-child")!
+    expect(confirmButton.disabled).toBe(false)
+
+    // ③ **确认之后必须真的装成**。修复之前这里会在 receipt commit 那一刻整个回滚。
+    click(confirmButton)
+    await waitFor(() => expect(packCard("local:" + "a".repeat(128))).toBeInstanceOf(HTMLElement))
+    expect(ledgerSkillNames()).toContain("long-alpha")
+    // ④ 装成之后列表**回退到 root 组件名**,不显示半截名字、不显示 undefined。
+    const label = q(`[data-package-label="local:${"a".repeat(128)}"]`)!
+    expect(label.textContent).toBe("long-alpha")
+    expect(label.textContent).not.toContain("undefined")
+    // ⑤ 账本里那张图**根本没有** displayName 这个字段(缺席合法,不是存了个截断值)。
+    const state = readPackageLedgerStateV1(globalRoot)
+    expect(state.ok).toBe(true)
+    const graph = state.ok ? state.packageGraphs.find((g) => g.packageId === "local:" + "a".repeat(128)) : undefined
+    expect(graph).toBeDefined()
+    expect(graph && "displayName" in graph).toBe(false)
+
+    click(q(`[data-package-remove="local:${"a".repeat(128)}"]`))
+    await waitFor(() => expect(packCard("local:" + "a".repeat(128))).toBeNull())
+  })
+
+  test("R2 Major:名字含控制字符 ⇒ 同样是预览期告知 + 确认装成(不是 commit 期回滚)", async () => {
+    clearToasts()
+    await openImportFolder(controlNamePlugin)
+    await waitFor(() => expect(previewDialog()).toBeInstanceOf(HTMLElement))
+    expect(q("[data-display-name-notice]")).toBeInstanceOf(HTMLElement)
+    click(q<HTMLButtonElement>(".a-dialog-footer .a-btn:last-child"))
+    await waitFor(() => expect(packCard("local:tide-plugin")).toBeInstanceOf(HTMLElement))
+    expect(ledgerSkillNames()).toContain("control-alpha")
+    expect(q('[data-package-label="local:tide-plugin"]')?.textContent).toBe("control-alpha")
+    // 控制字符一个都没进账本(它连字段都没进)。
+    const raw = readFileSync(join(globalRoot, "installs.json"), "utf8")
+    expect(raw.includes(String.fromCharCode(1))).toBe(false)
+    click(q('[data-package-remove="local:tide-plugin"]'))
+    await waitFor(() => expect(packCard("local:tide-plugin")).toBeNull())
   })
 
   test("非插件目录**导入失败**时:保持原行内错误,**不进插件预览**(R1 Major 3)", async () => {

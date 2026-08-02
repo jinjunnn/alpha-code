@@ -113,6 +113,26 @@ export type PackageGraphV1 = {
 /** 显示名的长度帽。够长到装得下真实插件名(本机语料最长 31),短到不能被当成一个载荷通道。 */
 export const PACKAGE_DISPLAY_NAME_MAX = 128
 
+/**
+ * 显示名合不合法。**这是这条约束的唯一真源** —— decoder 与 intake 都消费它,谁都不许再抄一份。
+ *
+ * 为什么必须只有一份(`#784` R2 Major,实测事故):intake 那边只要求插件名非空,
+ * 而 `mintPackageId` 会把超长名字**截成合法 ID**,于是一个 129 字符的插件名**照样进 installable
+ * 预览**;安装器把**原始 129 字符**写进 `displayName`,decoder 在 **receipt commit 那一刻**拒绝,
+ * 整个事务回滚。用户看到的是「预览说能装,点了确认却失败」。
+ *
+ * 一个**只管显示、而且明确可选**的字段,反向破坏了安装路径 —— 起因就是同一条文法写了两遍,
+ * 两遍不一致。所以它在这里,只此一份。
+ */
+export function isValidPackageDisplayName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= PACKAGE_DISPLAY_NAME_MAX &&
+    !/[\u0000-\u001f\u007f]/.test(value)
+  )
+}
+
 // REQ-128 `#764`:这里**没有** package 级记录类型,这是一个决定,不是遗漏。
 //
 // 曾经有过一个 `PackageRecordV1{packageId, envelopeDigest, installedGraphDigest, version, transactionId,
@@ -281,12 +301,9 @@ export function decodePackageGraphV1(input: unknown): Decoded<PackageGraphV1> {
   // 而它不该靠 renderer 去兜。**注意方向**:这里拒的是「写进来的显示名不合形状」,
   // 不是「没有显示名」—— 后者一律放行。
   const displayName = input.displayName
-  if (displayName !== undefined) {
-    if (typeof displayName !== "string") errors.push("packageGraph.displayName: must be a string when present")
-    else if (displayName.length === 0 || displayName.length > PACKAGE_DISPLAY_NAME_MAX)
-      errors.push(`packageGraph.displayName: must be 1..${PACKAGE_DISPLAY_NAME_MAX} characters`)
-    else if (/[\u0000-\u001f\u007f]/.test(displayName)) errors.push("packageGraph.displayName: must not contain control characters")
-  }
+  // **消费唯一真源**,不在这里另写一份判据(R2 Major 的起因就是同一条文法写了两遍)。
+  if (displayName !== undefined && !isValidPackageDisplayName(displayName))
+    errors.push(`packageGraph.displayName: must be a 1..${PACKAGE_DISPLAY_NAME_MAX} character string without control characters`)
   const root = decodeGraphNode(input.root, "packageGraph.root", errors)
   if (!Array.isArray(input.children)) errors.push("packageGraph.children: must be an array")
   const children: PackageGraphNodeV1[] = []

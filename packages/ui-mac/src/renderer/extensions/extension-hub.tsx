@@ -3231,6 +3231,16 @@ export function ExtensionHub(props: {
                 <p class="alpha-ext-verify-note" data-unreviewed="" role="note">
                   {t("alpha.ext.localPackageUnreviewed")}
                 </p>
+                {/* `#784` R2:名字显示不了(超长 / 带特殊字符)⇒ 在**按确认之前**说清它会怎么显示。
+                    它**不影响能不能装** —— 显示名是可选的、只管显示的;之前它能让整个事务在
+                    落账那一刻回滚,那是「预览说能装、点了确认却失败」。 */}
+                <Show when={pv().preview.displayNameNotice}>
+                  {(notice) => (
+                    <p class="alpha-ext-verify-note" data-display-name-notice="" role="note">
+                      {notice()}
+                    </p>
+                  )}
+                </Show>
                 {/* K19:重复导入必须在**按确认之前**说清。说得晚就从提示变成了失败。 */}
                 <Show when={pv().preview.duplicateImportNotice}>
                   {(notice) => (
