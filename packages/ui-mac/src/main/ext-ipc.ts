@@ -13,7 +13,7 @@ import { toolProbe } from "./platform"
 import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
 import { assertProjectAlphaRootIdentity, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import { projectIpcHandler, resolveProjectIpcEntry, withProjectIpcEntryIdentity } from "./ext-project-entry"
-import type { InstallTarget, ServerReadyData } from "../preload/types"
+import type { InstalledPackagesResultV1, InstallTarget, ServerReadyData } from "../preload/types"
 import { isExtensionName } from "../shared/extension-name"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
@@ -300,7 +300,10 @@ export function registerExtIpcHandlers(
   //   · 「账本读不出来」与「没装」**不许折叠** —— 折叠会让用户在一本损坏的账本上看到
   //     「什么都没装」,而「移除」入口随之消失(`ext-package-installed` 同款语义)。
   //   · 来源一律从 child record 的 `origin` 读,**绝不从 packageId 前缀读**(基线 §8 纪律 2,`#737`)。
-  ipcMain.handle(LOCAL_PACKAGE_READ_CHANNELS.listInstalledPackages, async () => {
+  //
+  // 返回值**按 wire 类型标注**(`#784`):main 的投影与 renderer 的读法是同一份契约,
+  // 少一栏 / 改一个名字必须是一条类型错误,而不是「Hub 那边少画一个开关」这种静默退化。
+  ipcMain.handle(LOCAL_PACKAGE_READ_CHANNELS.listInstalledPackages, async (): Promise<InstalledPackagesResultV1> => {
     await ledgerReady
     const state = readPackageLedgerStateV1(alphaGlobalRoot())
     if (!state.ok) {
@@ -322,7 +325,10 @@ export function registerExtIpcHandlers(
       packages: state.packageGraphs.map((graph) => ({
         packageId: graph.packageId,
         installedGraphDigest: graph.installedGraphDigest,
-        // 账本里**没有**「包显示名」这个事实 —— 不造一个。有的是 root 组件的名字,如实这么叫。
+        // `#784`(owner 裁决):插件作者自己声明的显示名。存量图没有这个字段 ⇒ `null`,
+        // 由呈现层回退到 root 组件名。**这一栏只管显示**,任何判定都不许读它。
+        displayName: graph.displayName ?? null,
+        // 回退用的 root 组件名。它**是**一个技能的名字,不是包名 —— 只在没有显示名时才用。
         rootComponentName: graph.root.name,
         version: packageVersionFromRecordsV1(graph, state.records),
         origin: recordOf(graph.root.kind, graph.root.name)?.origin ?? null,

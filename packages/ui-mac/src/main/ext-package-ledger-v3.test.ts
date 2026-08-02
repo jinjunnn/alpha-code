@@ -10,10 +10,12 @@
 //   ③ **不变量是落盘前的整体判据**,不是逐条字段校验:dangling claim / unknown child /
 //      孤儿 owner —— 三者都是「owner 集合从此无法自证」的具体形态。
 
-import { resolve } from "node:path"
+import { readFileSync, readdirSync } from "node:fs"
+import { join, resolve } from "node:path"
 import { describe, expect, test } from "bun:test"
 import { decodePackageEnvelopeHeaderV1 } from "../shared/host-extension-package-contract/decoder"
 import { HOST_EXTENSION_PACKAGE_CORPUS } from "../shared/host-extension-package-contract/generate-artifact"
+import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { RECORD_KINDS } from "./ext-receipt-v2"
 import {
   LEGACY_PROTECTED_OWNER,
@@ -22,6 +24,7 @@ import {
   blockingOwners,
   bundleOwner,
   computeInstalledGraphDigest,
+  PACKAGE_DISPLAY_NAME_MAX,
   decodePackageClaimV1,
   decodePackageGraphV1,
   decodePackageMutationEnvelopeV1,
@@ -413,5 +416,104 @@ describe("REQ-128 #781 — `envelopeDigest` 名不副实,且它不承载任何�
         claims: [claim("skill", "premarket", [owner])],
       }),
     ).toEqual({ ok: true })
+  })
+})
+
+// REQ-128 Phase 3 `#784`(owner 裁决):`displayName` —— **可选,只管显示**。
+//
+// 加这个字段的理由是可达性,不是打磨:不加的话,用户导入 `tide` 之后在列表里看到的是
+// `postmarket-review`(包里某个技能的名字),这条竖线名义上闭合了而**用户看不懂自己装了什么**。
+//
+// 裁决里的四条约束在这里逐条钉住,**不靠注释成立**。
+describe("REQ-128 #784 — 包显示名:可选、只管显示、不承载任何判决", () => {
+  const NAME = "tide"
+  const withName = graph({ packageId: "local:tide", displayName: NAME })
+  const withoutName = graph({ packageId: "local:tide" })
+
+  test("缺席合法:存量图没有这个字段照样解得开(**绝不因为缺字段就拒载真实配置**)", () => {
+    expect("displayName" in withoutName).toBe(false)
+    const decoded = decodePackageGraphV1(withoutName)
+    expect(decoded).toEqual({ ok: true, value: withoutName })
+    expect(decoded.ok && decoded.value.displayName).toBeUndefined()
+  })
+
+  test("兼容性契约的**前提本身**:canonicalJson 丢弃 undefined 键", () => {
+    // 这条不是形式主义:上面那条「摘要没变」真正靠的就是它,而它住在**另一个模块**里。
+    // 实测过 —— 把 `computeInstalledGraphDigest` 里的条件展开改成无条件,全部用例仍然绿,
+    // 因为 undefined 在这里就被丢掉了。所以要钉的是这条前提,不是那个条件展开。
+    expect(canonicalJson({ a: 1, b: undefined })).toBe(canonicalJson({ a: 1 }))
+    // 而**填占位**(而不是省略)会真的改掉口径 —— 这才是会让存量图集体拒载的那个改法。
+    expect(canonicalJson({ a: 1, b: "" })).not.toBe(canonicalJson({ a: 1 }))
+  })
+
+  test("兼容性契约:**没有这个字段的图,摘要与加字段之前逐字节相同**", () => {
+    // 判据不是「解得开」——那在无条件写 `displayName: undefined` 时也成立。判据是**摘要口径没变**:
+    // 摘要一变,全部存量图会在下一次读取时被判成「被篡改过」而拒载。所以这里手算旧口径去比。
+    const legacyDigest = `sha256:${sha256Hex(
+      canonicalJson({
+        packageId: withoutName.packageId,
+        envelopeDigest: withoutName.envelopeDigest,
+        root: withoutName.root,
+        children: [],
+      }),
+    )}`
+    expect(withoutName.installedGraphDigest).toBe(legacyDigest)
+  })
+
+  test("在场时被篡改闸覆盖:改一个字的显示名 ⇒ digest 不符 ⇒ 拒", () => {
+    expect(decodePackageGraphV1(withName)).toEqual({ ok: true, value: withName })
+    expect(withName.installedGraphDigest).not.toBe(withoutName.installedGraphDigest)
+    expect(decodePackageGraphV1({ ...withName, displayName: "tide-x" }).ok).toBe(false)
+  })
+
+  test("在场时形状必须合法:空串 / 超长 / 控制字符一律拒(呈现事故不该由 renderer 去兜)", () => {
+    const bad = (value: unknown) => decodePackageGraphV1({ ...withName, displayName: value })
+    expect(bad("").ok).toBe(false)
+    expect(bad("x".repeat(PACKAGE_DISPLAY_NAME_MAX + 1)).ok).toBe(false)
+    expect(bad(`a\u0007b`).ok).toBe(false)
+    expect(bad(`two\nlines`).ok).toBe(false)
+    expect(bad(42).ok).toBe(false)
+    // 合法边界:恰好帽长可以过 —— 判据是 `> MAX`,不是 `>= MAX`。
+    expect(decodePackageGraphV1(graph({ packageId: "local:tide", displayName: "x".repeat(PACKAGE_DISPLAY_NAME_MAX) })).ok).toBe(true)
+  })
+
+  test("**它不承载任何判决**:显示名换成一句谎话,本模块的每一个判决逐字不变", () => {
+    // 判据不是「我没在判决里写它」—— 那是一句声明。判据是:把它换成一个**最容易被误读成
+    // provenance** 的值(「官方目录」),再把两张图喂给全部判决函数,结果必须逐字相等。
+    const honest = graph({ packageId: "local:tide", displayName: NAME })
+    const lying = graph({ packageId: "local:tide", displayName: "official-catalog-package" })
+    const owner = bundleOwner(honest.packageId, honest.root.manifestDigest)
+    const stateOf = (g: PackageGraphV1) =>
+      validateV3State({ recordKeys: new Set(["skill:demo"]), packageGraphs: [g], claims: [claim("skill", "demo", [owner])] })
+    expect(stateOf(honest)).toEqual(stateOf(lying))
+    expect(stateOf(lying)).toEqual({ ok: true })
+    expect(directUninstallVerdict(claim("skill", "demo", [owner]), "skill", "demo").decision).toBe("refuse")
+    // 身份完全不受它影响 —— 身份是 packageId,显示名不参与 owner token 的铸造。
+    expect(bundleOwner(lying.packageId, lying.root.manifestDigest)).toBe(owner)
+  })
+
+  test("枚举闸(**减速带,不是安全边界**):账本模块之外只有一个地方读得到 graph.displayName", () => {
+    // 诚实降级:这条判的是**源码文本**,把读法换个写法(先解构、先转存)就绕得过去。
+    // 它拦的是「顺手在某个判定里读了显示名」,不是「有人存心躲」。真正的行为闸是上面那条
+    // 「换成谎话判决不变」,以及 `local-package-renderer.cases.ts` 里「来源标只由 origin 决定」。
+    const roots = [resolve(import.meta.dir, "."), resolve(import.meta.dir, "../renderer"), resolve(import.meta.dir, "../preload")]
+    const hits: string[] = []
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const abs = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          if (entry.name !== "node_modules") walk(abs)
+          continue
+        }
+        if (!/\.tsx?$/.test(entry.name) || /\.(test|cases)\.tsx?$/.test(entry.name)) continue
+        // 只找**图上的**那一个 —— `CatalogEntry.displayName` 是同名不同物,全仓几十处。
+        if (/\bgraph\s*\.\s*displayName\b/.test(readFileSync(abs, "utf8"))) hits.push(entry.name)
+      }
+    }
+    for (const dir of roots) walk(dir)
+    // 前提自检:走查真的看到了文件 —— 空树会让「无违规」变成假绿。
+    expect(hits.length).toBeGreaterThan(0)
+    // `ext-package-ledger-v3.ts` = 账本模块自己(类型/解码/摘要);`ext-ipc.ts` = 只读投影。
+    expect(hits.sort()).toEqual(["ext-ipc.ts", "ext-package-ledger-v3.ts"])
   })
 })

@@ -216,6 +216,13 @@ const api: ElectronAPI = {
     builtinReset: () => ipcRenderer.invoke("builtin-reset"),
     importAgentPreview: (token, filePath) => ipcRenderer.invoke("ext-import-agent-preview", token, filePath),
     importAgentConfirm: (previewId) => ipcRenderer.invoke("ext-import-agent-confirm", previewId),
+    // REQ-128 Phase 3:本地 Claude 插件包。通道名与 main 的 `LOCAL_PACKAGE_READ_CHANNELS` /
+    // `GATED_WRITE_CHANNELS` 逐字一致(preview / cancel / 列表纯读,只有 confirm 过写闸);
+    // 三条读通道**必须**在这里暴露,否则第 3/6 跳在 renderer 结构上到不了。
+    importClaudePluginPreview: (previewId) => ipcRenderer.invoke("ext-import-claude-plugin-preview", previewId),
+    importClaudePluginCancel: (previewId) => ipcRenderer.invoke("ext-import-claude-plugin-cancel", previewId),
+    importClaudePluginConfirm: (previewId) => ipcRenderer.invoke("ext-import-claude-plugin-confirm", previewId),
+    installedPackages: () => ipcRenderer.invoke("ext-installed-packages"),
     remoteCatalog: () => ipcRenderer.invoke("ext-remote-catalog"),
     packageDetail: (catalogId) => ipcRenderer.invoke("ext-package-detail", catalogId),
     curationBlob: (catalogId, kind) => ipcRenderer.invoke("ext-curation-blob", catalogId, kind),

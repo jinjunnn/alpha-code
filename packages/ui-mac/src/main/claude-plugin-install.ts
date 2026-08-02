@@ -47,6 +47,7 @@ import {
   PACKAGE_ID_RE,
   type ClaimMutationV1,
   type PackageGraphNodeV1,
+  isValidPackageDisplayName,
   type PackageGraphV1,
   type PackageMutationEnvelopeV1,
 } from "./ext-package-ledger-v3"
@@ -224,6 +225,12 @@ export function buildLocalPackageInstallPlanV1(
   // 铸造侧的命名空间校验(G8 的第一个方向)。**只是校验**,不是行为判据。
   if (!packageId.startsWith(LOCAL_PACKAGE_ID_PREFIX) || !PACKAGE_ID_RE.test(packageId))
     return refuse("invalid-input", `本地扩展包的标识必须是 "local:<name>" 形态,收到 ${JSON.stringify(packageId)}`)
+  // R2 Major 的兜底:preview 交上来一个账本存不下的显示名 ⇒ **在这里**具名拒绝(零写盘、
+  // 事务函数根本不会被调用),而不是让它一路走到 receipt commit 再整个回滚。
+  // 正常路径上这一条永远不会命中(preview 已经用同一个谓词定过案了)—— 它存在的意义是:
+  // 万一将来有人绕过 intake 直接构造 preview,失败也发生在**动任何东西之前**。
+  if (preview.displayName !== null && !isValidPackageDisplayName(preview.displayName))
+    return refuse("invalid-input", "这个插件的名字这一版显示不了,请重新预览一次")
 
   // ── ② 由**同一个 accepted 数组**开始(G15 的源头)──
   //     preview 的 install 组件按**组件名字典序**取,root 因此是确定的(基线 §12 风险 3)。
@@ -324,6 +331,15 @@ export function buildLocalPackageInstallPlanV1(
     // D3(编排者裁决 F):字段名保留,装的是**本地规范化载荷摘要**。见 `ext-package-ledger-v3.ts`
     // 的字段注释与 `ext-package-ledger-v3.test.ts` 里钉住这件事的那条用例。
     envelopeDigest: `sha256:${preview.snapshotDigest}`,
+    // `#784`(owner 裁决):列表里显示的是**插件作者自己写的名字**,不是包里某个技能的名字,
+    // 也**不是**从 packageId 前缀反推的(`#737`)。
+    //
+    // R2 Major:这里**只透传 preview 已经定好的那一个值**,不再自己从 `preview.name` 派生。
+    // 派生就是第二份文法 —— 而 `preview.name` 是 manifest 的原样值,可能超长/带控制字符,
+    // 账本存不下,于是「预览说能装、点了确认在 receipt commit 那一刻整个回滚」。
+    // 名字显示不了是**呈现问题**,不该让安装失败:此时 preview 已把它定成 `null` 并在
+    // 确认之前告知用户,这里就干脆不写这个字段(缺席合法,呈现层回退 root 组件名)。
+    ...(preview.displayName === null ? {} : { displayName: preview.displayName }),
     // G14:root 必须是一个**真被装的 skill**。合成的 `kind:"plugin"` root 装得上,但
     // `removePackageChildArtifactsV1` 对 skill/agent/mcp 之外 fail-closed ⇒ 装得上、卸不掉。
     root: graphNodeOf(accepted[0]!),

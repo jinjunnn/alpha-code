@@ -1883,3 +1883,56 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
 .alpha-ext-ghostbtn:hover {
   background: var(--a-overlay-hover);
 }
+
+/* ── REQ-128 Phase 3 `#784`:已装扩展包区块 + 单独移除被拒的行内呈现 ──────────────────────
+   控件版式全部现役(.alpha-ext-man / .alpha-ext-sw / .alpha-ext-add),这里只给「一个包
+   是一件东西」这层容器:包头 + 引导条 + 包内技能行。 */
+.alpha-ext-pack {
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-edge-light);
+  padding: 13px 15px;
+  margin-bottom: 10px;
+}
+.alpha-ext-pack-h {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+/* 装完默认全关是产品裁决 ⇒「什么都没发生」是默认路径,这条引导条是它唯一的解释位。 */
+.alpha-ext-pack-lead {
+  margin: 10px 0 0;
+  padding: 8px 11px;
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+}
+.alpha-ext-pack-cs {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.alpha-ext-pack-c {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 9px 11px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+}
+/* 第 8 跳:单独移除被拒 —— 拒绝 + 正确的下一步,留在行上而不是只飞一条 toast。 */
+.alpha-ext-man-refusal {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+/* 预览屏里「不会安装」的条目压暗 —— 语气是陈述不是报错。 */
+.alpha-ext-man[data-dim] {
+  opacity: 0.72;
+}

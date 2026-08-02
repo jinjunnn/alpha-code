@@ -20,6 +20,7 @@ import {
   type LocalPackagePreviewV1,
   type LocalPackageSkipCode,
 } from "./claude-plugin-intake"
+import { PACKAGE_DISPLAY_NAME_MAX } from "./ext-package-ledger-v3"
 import { parseSkillFrontmatter } from "./ext-import-validate"
 
 // ── 合成夹具工具 ──────────────────────────────────────────────────────────────────────────
@@ -101,6 +102,25 @@ describe("AC1 真实语料全量(仓内夹具,不依赖本机路径)", () => {
     // 基线 §3.6 记的 135 = 162 − 27,即把**三份异常布局的 SKILL.md 也算进了分母**。
     // 那三份由 G18 具名为「不支持的布局」,结构上装不了 ⇒ 真正可装的是 132。
     expect(skillMdFilesIn(corpus.root).length - rejected.length).toBe(135)
+  })
+
+  // `#784` R2:显示名的判据是**新加的**,所以必须反向验一遍它没有误伤正常输入 ——
+  // 「前提为假的闸门比没有闸门更贵」的反向检查。真实语料 62 个插件,一个都不该被它碰到。
+  test("显示名判据对真实语料**零误伤**:每个有 manifest 的插件都拿得到显示名,且没有一条告知", () => {
+    const withManifest = previews.filter((p) => p.packageId !== null)
+    expect(withManifest.length).toBeGreaterThan(0)
+    // 一个都没被丢名字(丢了就会有 notice)。
+    expect(withManifest.filter((p) => p.displayName === null)).toEqual([])
+    expect(withManifest.filter((p) => p.displayNameNotice !== null)).toEqual([])
+    // 而且显示名就是 manifest 里那个名字**原样** —— 没有被截断、没有被改写。
+    expect(withManifest.every((p) => p.displayName === p.name)).toBe(true)
+    // 可装总数不受影响 —— 与上面那条 132 是同一份语料、同一次清点。
+    expect(previews.reduce((n, p) => n + p.installableCount, 0)).toBe(132)
+    // 长度帽的**取值依据**:实测最长的真实插件名是 27 字(`claude-for-msft-365-install`),
+    // 帽是 128 —— 4.7 倍余量。钉住这个数,是因为「够用」这句话必须有个可检验的分母:
+    // 语料换了、或者有人把帽收到真实值以下,这里先红,而不是在用户机器上红。
+    expect(Math.max(...withManifest.map((p) => p.name.length))).toBe(27)
+    expect(PACKAGE_DISPLAY_NAME_MAX).toBeGreaterThan(27)
   })
 
   test("组件类型逐类具名:22 commands / 20 agents / 12 hooks / 22 .mcp.json(G9)", () => {

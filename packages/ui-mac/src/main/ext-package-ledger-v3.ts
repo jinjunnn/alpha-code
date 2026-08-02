@@ -85,9 +85,56 @@ export type PackageGraphV1 = {
    * (`#737` 明令)。这条不靠注释成立:`ext-package-ledger-v3.test.ts` 里有一条用例钉住它。
    */
   envelopeDigest: string
+  /**
+   * **这个包在界面上叫什么。可选,且只管显示。**(REQ-128 Phase 3 `#784`,owner 裁决)
+   *
+   * 它**是**什么:安装期由**插件作者自己声明**的名字原样存下来 —— 本地 Claude 插件包填的是
+   * `.claude-plugin/plugin.json` 的 `name`。那是作者写的事实,不是我们推断出来的。
+   *
+   * 它**不是**什么:①**不是** provenance —— 「这个包是不是策展来的」只有一个答案,
+   * child record 的 `origin`(catalog vs `imported-claude`);②**不是**身份 —— 身份是
+   * `packageId`,而且**不许**从 packageId 前缀反推显示名(`#737`:禁止从 id 里读结构);
+   * ③**不是**任何判定的输入 —— 没有任何一处逻辑读它来做决定。
+   *
+   * **谁可以读它**:只有呈现层(Hub 的已装扩展包区块)。这一条不靠注释成立 ——
+   * `ext-package-ledger-v3.test.ts` 有一条用例钉住「没有任何判定读它」,
+   * `test-component/local-package-renderer.cases.ts` 有一条钉住「显示名再怎么撒谎,
+   * 来源标仍由 origin 决定」。
+   *
+   * **缺席是合法的**:存量图没有这个字段,读到 `undefined` 时呈现层回退到 root 组件名。
+   * 绝不因为缺字段就拒载 —— 前提为假的闸门比没有闸门更贵(它拒的是真实配置)。
+   */
+  displayName?: string
   installedGraphDigest: string
   root: PackageGraphNodeV1
   children: PackageGraphNodeV1[]
+}
+
+/** 显示名的长度帽。够长到装得下真实插件名,短到不能被当成一个载荷通道。
+ *  **取值依据是实测,不是拍的**:本机 62 个插件的 manifest name 最长 **27**
+ *  (`claude-for-msft-365-install`),128 是它的 4.7 倍。这个数由
+ *  `claude-plugin-intake.test.ts` 钉住 —— 此前这行注释写的是「最长 31」,那是一句
+ *  没跑过就写下的散文断言,实测把它推翻了。 */
+export const PACKAGE_DISPLAY_NAME_MAX = 128
+
+/**
+ * 显示名合不合法。**这是这条约束的唯一真源** —— decoder 与 intake 都消费它,谁都不许再抄一份。
+ *
+ * 为什么必须只有一份(`#784` R2 Major,实测事故):intake 那边只要求插件名非空,
+ * 而 `mintPackageId` 会把超长名字**截成合法 ID**,于是一个 129 字符的插件名**照样进 installable
+ * 预览**;安装器把**原始 129 字符**写进 `displayName`,decoder 在 **receipt commit 那一刻**拒绝,
+ * 整个事务回滚。用户看到的是「预览说能装,点了确认却失败」。
+ *
+ * 一个**只管显示、而且明确可选**的字段,反向破坏了安装路径 —— 起因就是同一条文法写了两遍,
+ * 两遍不一致。所以它在这里,只此一份。
+ */
+export function isValidPackageDisplayName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= PACKAGE_DISPLAY_NAME_MAX &&
+    !/[\u0000-\u001f\u007f]/.test(value)
+  )
 }
 
 // REQ-128 `#764`:这里**没有** package 级记录类型,这是一个决定,不是遗漏。
@@ -187,7 +234,7 @@ export function parseOwnerToken(token: unknown): OwnerToken | null {
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
 
 const GRAPH_NODE_KEYS = new Set(["componentId", "kind", "name", "required", "manifestDigest"])
-const GRAPH_KEYS = new Set(["packageId", "envelopeDigest", "installedGraphDigest", "root", "children"])
+const GRAPH_KEYS = new Set(["packageId", "envelopeDigest", "displayName", "installedGraphDigest", "root", "children"])
 const CLAIM_KEYS = new Set(["kind", "name", "owners"])
 
 export type Decoded<T> = { ok: true; value: T } | { ok: false; errors: string[] }
@@ -219,12 +266,24 @@ function decodeGraphNode(input: unknown, at: string, errors: string[]): PackageG
 }
 
 /** installedGraphDigest 的计算口径:packageId + envelopeDigest + root + children(children 按
- *  componentId 排序)。**digest 本身不参与计算** —— 否则自指。 */
+ *  componentId 排序)。**digest 本身不参与计算** —— 否则自指。
+ *
+ *  `displayName` **在场才进摘要**(`#784`)。兼容性契约:存量图没有这个字段 ⇒ canonical JSON
+ *  与加字段之前**逐字节相同** ⇒ 它们已经落盘的 digest 照旧通过篡改闸。摘要口径一变,
+ *  全部存量图会在下一次读取时被判成「被篡改过」而拒载 —— 那不是少拦一个坏输入,是拒载真实配置。
+ *
+ *  ⚠️ **这条契约真正靠的是 `canonicalJson` 丢弃 `undefined` 键**(`ext-manifest-v2.ts`),
+ *  不是靠下面这个条件展开 —— 实测:改成无条件 `displayName: graph.displayName` 之后全部用例
+ *  仍然绿。条件展开是**冗余的防御**,留着是因为那条前提在另一个模块里、会被别人改。
+ *  前提本身由 `ext-package-ledger-v3.test.ts` 直接钉住(`canonicalJson({a,b:undefined})` 必须
+ *  等于 `canonicalJson({a})`);真正会变红的绕过是**给缺席值填一个占位**(`?? ""`)。
+ *  三条用例:①前提本身;②无字段图的 digest 与手算旧口径逐字相等;③改一个字的显示名 ⇒ digest 变。 */
 export function computeInstalledGraphDigest(graph: Omit<PackageGraphV1, "installedGraphDigest">): string {
   return `sha256:${sha256Hex(
     canonicalJson({
       packageId: graph.packageId,
       envelopeDigest: graph.envelopeDigest,
+      ...(graph.displayName === undefined ? {} : { displayName: graph.displayName }),
       root: graph.root,
       children: [...graph.children].sort((a, b) => (a.componentId < b.componentId ? -1 : a.componentId > b.componentId ? 1 : 0)),
     }),
@@ -241,6 +300,14 @@ export function decodePackageGraphV1(input: unknown): Decoded<PackageGraphV1> {
   if (typeof packageId !== "string" || !PACKAGE_ID_RE.test(packageId)) errors.push("packageGraph.packageId: invalid")
   if (typeof envelopeDigest !== "string" || !DIGEST_RE.test(envelopeDigest)) errors.push("packageGraph.envelopeDigest: invalid")
   if (typeof installedGraphDigest !== "string" || !DIGEST_RE.test(installedGraphDigest)) errors.push("packageGraph.installedGraphDigest: invalid")
+  // `#784` 显示名:**可选**。缺席合法(存量图),在场则必须是一个非空、有界、单行的字符串。
+  // 在场时校验得比缺席严:一个空串 / 一整页文本 / 带换行的名字进了列表就是一次呈现事故,
+  // 而它不该靠 renderer 去兜。**注意方向**:这里拒的是「写进来的显示名不合形状」,
+  // 不是「没有显示名」—— 后者一律放行。
+  const displayName = input.displayName
+  // **消费唯一真源**,不在这里另写一份判据(R2 Major 的起因就是同一条文法写了两遍)。
+  if (displayName !== undefined && !isValidPackageDisplayName(displayName))
+    errors.push(`packageGraph.displayName: must be a 1..${PACKAGE_DISPLAY_NAME_MAX} character string without control characters`)
   const root = decodeGraphNode(input.root, "packageGraph.root", errors)
   if (!Array.isArray(input.children)) errors.push("packageGraph.children: must be an array")
   const children: PackageGraphNodeV1[] = []
@@ -265,6 +332,10 @@ export function decodePackageGraphV1(input: unknown): Decoded<PackageGraphV1> {
   const value: PackageGraphV1 = {
     packageId: packageId as string,
     envelopeDigest: envelopeDigest as string,
+    // **在场就必须带出去**。只校验不携带 = 下面重算摘要时少了这一项 ⇒ 一张合法的、带显示名的图
+    // 会被篡改闸判成「被改过」而拒载。这条在本票开发中真实发生过一次(测试当场变红)——
+    // 它正是「前提为假的闸门比没有闸门更贵」的最小实例:拒的不是坏输入,是我们自己刚写的配置。
+    ...(displayName === undefined ? {} : { displayName: displayName as string }),
     installedGraphDigest: installedGraphDigest as string,
     root,
     children,
