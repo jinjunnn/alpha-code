@@ -462,8 +462,11 @@ function removeFsInstallImpl(type: "skill" | "agent", name: string, target: Inst
 // 绝不执行导入内容;git 先浅克隆到临时目录、校验通过才入 .alpha;symlink 一律不跟随不复制。
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
-const IMPORT_MAX_TOTAL = 10 * 1024 * 1024 // 整个技能目录 10MB 帽
-const IMPORT_MAX_ENTRIES = 500
+/** **单个技能目录**的体积/条数帽。导出的理由(REQ-128 `#782`):包级预算必须**夹在**
+ *  这两个数与事务真界之间 —— 包帽低于单技能帽,一个单技能插件就会比直接导入同一个技能
+ *  更容易被拒(拿闸门制造回归)。那条关系写在注释里只是散文,导出之后它是一条可跑的断言。 */
+export const IMPORT_MAX_TOTAL = 10 * 1024 * 1024 // 整个技能目录 10MB 帽
+export const IMPORT_MAX_ENTRIES = 500
 const SKILL_MD_MAX = 256 * 1024
 
 

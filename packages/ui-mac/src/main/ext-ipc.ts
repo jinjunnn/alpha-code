@@ -24,7 +24,9 @@ import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { reloadInstalledMcp } from "./ext-mcp-activation"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, removeFsInstallFilesOnly, resourcesRoot } from "./ext-fs-installer"
-import { intakeImportDir } from "./claude-plugin-intake"
+import { intakeImportDir, type LocalPackagePreviewV1 } from "./claude-plugin-intake"
+import { collectRetainedPayloads, localPackagePreviews, previewWireV1 } from "./local-package-preview"
+import { installLocalClaudePlugin } from "./local-package-install-port"
 import { parseAgentImport } from "./ext-import-validate"
 import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
 import { listRetainedJournals, retireTransactionJournal, type JournalRootRef } from "./ext-journal-retire"
@@ -62,7 +64,8 @@ import { makeRecoveryGate, runVerifiedMutation } from "./ext-recovery-gate"
 // #408:session-grant 会话级启用(main 内存登记 + 栅栏;生命周期接线在 index.ts)。
 import { grantSessionGrant, revokeSessionGrant, sessionGrantRegistry } from "./ext-session-grants"
 import { adoptProjectLedger } from "./ext-project-adopt"
-import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS } from "./ext-write-channels"
+import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS, LOCAL_PACKAGE_READ_CHANNELS } from "./ext-write-channels"
+import { packageVersionFromRecordsV1 } from "./ext-package-lifecycle"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedgerV2, readPackageLedgerStateV1, removeRecordV2 } from "./ext-receipt-v2"
 import { commitTransactionLedger } from "./ext-package-ledger-commit"
@@ -181,6 +184,160 @@ export function registerExtIpcHandlers(
     if (r.ok) issuedAgentImports.delete(previewId as string)
     return r
   }
+
+  // REQ-128 Phase 3 `[T3-channel]`(`#782`):本地 Claude 插件包的两段式通道。
+  //
+  // 形状照抄上面 REQ-033 的 agent 导入(preview 期把字节留在 main、confirm 只收 previewId),
+  // 规模不同的地方另立 G19 的预算(见 `local-package-preview.ts` 的取值依据)。
+  //
+  // **签发点为什么不是一条独立通道**:用户只有一个「从文件夹导入」按钮,而目录选择器必须留在
+  // main(`#255`:renderer 不得持有可回传的绝对路径)。若再给 preview 一条会自己弹窗的通道,
+  // 用户在单技能路径上要选两次目录;若让它收 renderer 传来的路径,`#255` 就白关了。
+  // 所以签发发生在既有 `ext-import-skill-folder` 的分流点上(picker 之后、写之前、gate 之外),
+  // 而 `ext-import-claude-plugin-preview` 是**纯读**的取件面 —— 它不写、不弹窗、不进写表。
+  const localPreviewLifecycleHooked = new Set<number>()
+  /**
+   * renderer 走人时释放留存。**三个事件,不是一个**(R1 Major 2)——
+   * 这三条在 electron 42.3.3 的 `electron.d.ts` 里是**各自独立**的,本轮逐条实读确认:
+   *   · `destroyed`(:16247)          「Emitted when `webContents` is destroyed.」
+   *   · `render-process-gone`(:17244)「Emitted when the renderer process unexpectedly
+   *                                    disappears. This is normally because it was crashed or killed.」
+   *     ⇒ **崩溃不会触发 `destroyed`**。只听 `destroyed` 的话,renderer 崩了之后最多 32MB
+   *       还留着,而且**旧 previewId 仍然可以确认** —— 泄漏是次要的,那个「仍可确认」才是洞。
+   *   · `did-navigate`(:16602)      「Emitted when a main frame navigation is done. This event
+   *                                    is **not** emitted for in-page navigations…」
+   *     ⇒ 正好是「文档被换掉了」这件事本身。刻意**不用** `did-start-navigation`(它连
+   *       in-page 一起报,SPA 换路由就会把用户正在看的预览释放掉 —— 那是拿修复制造回归)。
+   * cleanup 幂等(`releaseSender` 对空集返回 false),所以三条重复触发无副作用。
+   */
+  const hookLocalPreviewLifecycle = (
+    sender: { on?: (name: string, listener: () => void) => void; once?: (name: string, listener: () => void) => void },
+    senderId: number,
+  ): void => {
+    // 每个 sender 只挂一次 —— 逐次挂会在用户连点预览时堆满监听器。
+    if (localPreviewLifecycleHooked.has(senderId)) return
+    if (typeof sender.on !== "function" || typeof sender.once !== "function") return
+    localPreviewLifecycleHooked.add(senderId)
+    const release = () => localPackagePreviews.releaseSender(senderId)
+    sender.on("render-process-gone", release)
+    sender.on("did-navigate", release)
+    sender.once("destroyed", () => {
+      // WebContents 真没了才摘登记:这个 id 之后不会再有预览。
+      localPreviewLifecycleHooked.delete(senderId)
+      release()
+    })
+  }
+  const issueLocalPluginPreview = (
+    event: IpcMainInvokeEvent,
+    srcDir: string,
+    preview: LocalPackagePreviewV1,
+  ): { ok: true; previewId: string } | { ok: false; reason: string; reasonCode: string } => {
+    // 没有 sender 身份 ⇒ **不留任何字节**。留存的生命周期(一个 renderer 一条、窗口销毁即释放)
+    // 全部挂在这个 id 上;认不出身份还照留,就是留下一份永远没人释放、也没人能确认的字节。
+    // fail-closed 而不是抛异常:IPC handler 因为畸形 event 崩掉,比拒绝这一次预览更糟。
+    const sender = event?.sender as unknown as
+      | { id?: unknown; on?: (name: string, listener: () => void) => void; once?: (name: string, listener: () => void) => void }
+      | undefined
+    const senderId = sender !== undefined && typeof sender.id === "number" ? sender.id : null
+    if (sender === undefined || senderId === null)
+      return { ok: false, reason: "这次预览没能建立起来,请重新选择文件夹。", reasonCode: "preview-no-sender-identity" }
+    // 预算是**硬停**:超了就整包拒,并且**什么都不留**(此时 store 里根本没登记过这一条)。
+    const collected = collectRetainedPayloads(srcDir, preview)
+    if (!collected.ok) return { ok: false, reason: collected.reason, reasonCode: collected.reasonCode }
+    const issued = localPackagePreviews.issue({
+      senderId,
+      srcDir,
+      preview,
+      payloads: collected.payloads,
+      byteCount: collected.byteCount,
+      fileCount: collected.fileCount,
+    })
+    // 上一次安装还在跑 ⇒ 拒绝签发(中止不了的字节不许被第二份挤掉,见 store 的 `issue`)。
+    if (!issued.ok) return { ok: false, reason: issued.reason, reasonCode: issued.reasonCode }
+    hookLocalPreviewLifecycle(sender, senderId)
+    return { ok: true, previewId: issued.issued.previewId }
+  }
+  // 纯读取件面:按 previewId 取回**安全投影**(无绝对路径、无字节)。绑 sender —— 读面有 event,
+  // 就该把身份绑上(`pickedFiles.read` 同款)。
+  ipcMain.handle(LOCAL_PACKAGE_READ_CHANNELS.importClaudePluginPreview, (event: IpcMainInvokeEvent, previewId: unknown) => {
+    const issued = typeof previewId === "string" ? localPackagePreviews.read(event.sender.id, previewId) : undefined
+    if (!issued) return { ok: false as const, reason: "预览已失效,请重新选择文件夹" }
+    return { ok: true as const, ...previewWireV1(issued) }
+  })
+  // 显式取消 ⇒ **立即**释放留存字节(G19)。刻意不过恢复 gate:账本待恢复时也必须放得掉。
+  // **中止不了就说中止不了**:安装已经在跑时,这里返回 `ok:false` + `install-in-flight`,
+  // 绝不返回一个好看的 `released: true` —— 那会让用户以为东西没装进去(R1 Major 1)。
+  ipcMain.handle(LOCAL_PACKAGE_READ_CHANNELS.importClaudePluginCancel, (event: IpcMainInvokeEvent, previewId: unknown) => {
+    if (typeof previewId !== "string") return { ok: true as const, released: false }
+    return localPackagePreviews.cancel(event.sender.id, previewId)
+  })
+  // confirm:**只收 previewId**。写入内容取自 main 侧留存的 preview 产物,renderer 全程给不出;
+  // 且**写成功才消费**(`#351`)—— 写锁 busy 等可重试失败之后,用户重点确认必须还能用同一份预览。
+  //
+  // 先 claim 再装(R1 Major 1):claim 把这一条原子地置成 `installing`,取消/替换于是**看得见**
+  // 有一次安装在飞,只能如实拒绝。`finally` 结算 —— 安装器抛异常时 `wrote` 仍是 false,
+  // 那一条回到 `ready` 供重点确认,不会卡死在 `installing`。
+  const importClaudePluginConfirmBody = async (previewId: unknown) => {
+    if (typeof previewId !== "string") return { ok: false, reason: "预览已失效,请重新选择文件夹" }
+    const claimed = localPackagePreviews.claimForInstall(previewId)
+    if (!claimed.ok) return { ok: false, reason: claimed.reason, reasonCode: claimed.reasonCode }
+    let wrote = false
+    try {
+      const r = await installLocalClaudePlugin(claimed.issued)
+      wrote = r.ok === true
+      return r
+    } finally {
+      localPackagePreviews.settleInstall(previewId, wrote)
+    }
+  }
+  // 本机已装扩展包的**只读**投影。今天 renderer 结构上看不见任何已装包:唯一入口
+  // `extension-detail.tsx` 的 `kind === "package"` 分支只由远程 catalog 进得去,而 main 侧
+  // `ext-package-installed` 是**按单个 packageId 查**,没有「列出全部」。
+  //
+  // 两条纪律,逐条对齐既有面:
+  //   · 安全投影 —— 无绝对路径、无 owner token(claims 的 owner 里带着别的包的 id,
+  //     那不是这个面该说的事,`ext-package-installed` 已确立);
+  //   · 「账本读不出来」与「没装」**不许折叠** —— 折叠会让用户在一本损坏的账本上看到
+  //     「什么都没装」,而「移除」入口随之消失(`ext-package-installed` 同款语义)。
+  //   · 来源一律从 child record 的 `origin` 读,**绝不从 packageId 前缀读**(基线 §8 纪律 2,`#737`)。
+  ipcMain.handle(LOCAL_PACKAGE_READ_CHANNELS.listInstalledPackages, async () => {
+    await ledgerReady
+    const state = readPackageLedgerStateV1(alphaGlobalRoot())
+    if (!state.ok) {
+      // reader 的失败理由里**内嵌着 `installs.json` 的绝对路径**(`ext-receipt-v2.ts` 的
+      // `readPackageLedgerStateV1`)。原样过线就违反本面自己那条安全投影 AC —— 而
+      // 「读不出」这个**事实**必须过线(不许折叠成「没装」)。两者不冲突:
+      // 过线的是**稳定原因码 + 一句人话**,路径只写 main 日志。
+      getLogger().error(`[req128-local-packages] package ledger unreadable: ${state.reason}`)
+      return {
+        ok: false as const,
+        reasonCode: "ledger-unreadable" as const,
+        reason: "本机的已安装清单这次读不出来,所以这里暂时列不出已装的扩展包 —— 这不代表没装。",
+      }
+    }
+    const recordOf = (kind: string, name: string) =>
+      state.records.find((record) => record.kind === kind && record.name === name)
+    return {
+      ok: true as const,
+      packages: state.packageGraphs.map((graph) => ({
+        packageId: graph.packageId,
+        installedGraphDigest: graph.installedGraphDigest,
+        // 账本里**没有**「包显示名」这个事实 —— 不造一个。有的是 root 组件的名字,如实这么叫。
+        rootComponentName: graph.root.name,
+        version: packageVersionFromRecordsV1(graph, state.records),
+        origin: recordOf(graph.root.kind, graph.root.name)?.origin ?? null,
+        components: [graph.root, ...graph.children].map((node) => ({
+          componentId: node.componentId,
+          kind: node.kind as string,
+          name: node.name,
+          required: node.required,
+          // 裁决 B 之后本地包装完默认 `disabled` ⇒ 这个面必须交出开关的当前值,
+          // 否则 Hub 画不出「已安装但未启用」,用户装完拿不到任何东西。
+          desiredState: recordOf(node.kind, node.name)?.desiredState ?? null,
+        })),
+      })),
+    }
+  })
 
   registerPackageCatalogReadIpcHandlers(
     (channel, handler) => ipcMain.handle(channel, handler),
@@ -935,6 +1092,7 @@ export function registerExtIpcHandlers(
       persistMcp: (name, server, secretVars) => persistMcpBody(name as string, server as Record<string, unknown>, secretVars as string[] | undefined),
       installPlugin: (pkg) => installPluginBody(pkg as string),
       importAgentConfirm: importAgentConfirmBody,
+      importClaudePluginConfirm: importClaudePluginConfirmBody,
       // #390:global 未策展技能导入走 planner 的 CAS + generation 事务(取代 flat copy 的崩溃半成品窗);
       // project scope 维持 `<project>/.alpha/skills` sanctioned flat 路径(ADR-030,不 reopen project generation)。
       // 生产 renderer 从 hub 导入恒 global(不传 target);project 仅经 ecosystem-import 通道,不走本 body。
@@ -970,8 +1128,9 @@ export function registerExtIpcHandlers(
   ipcMain.handle(GATED_WRITE_CHANNELS.persistMcp, barrier(gatedWrite.persistMcp))
   ipcMain.handle(GATED_WRITE_CHANNELS.installPlugin, barrier(gatedWrite.installPlugin))
   ipcMain.handle(GATED_WRITE_CHANNELS.importAgentConfirm, barrier(gatedWrite.importAgentConfirm))
+  ipcMain.handle(GATED_WRITE_CHANNELS.importClaudePluginConfirm, barrier(gatedWrite.importClaudePluginConfirm))
   // 目录选择在 gate 外(mutex 不横跨用户交互);持久化阶段过表。
-  ipcMain.handle(GATED_WRITE_CHANNELS.importSkillFolder, async (_event: IpcMainInvokeEvent, target?: InstallTarget) => {
+  ipcMain.handle(GATED_WRITE_CHANNELS.importSkillFolder, async (event: IpcMainInvokeEvent, target?: InstallTarget) => {
     await ledgerReady
     const picked = await pickImportSkillDir()
     if (!picked.ok) return picked
@@ -979,7 +1138,6 @@ export function registerExtIpcHandlers(
     // 用户选的若是一个 Claude 插件目录,今天会一路落到 `collectImportSkillPayload`,报一句
     // 「文件夹内没有 SKILL.md」—— 与真因毫无关系,用户据它做不出任何正确动作。
     // 这里改成:**纯读**清点一遍,把认出来的东西如实说清。零写盘。
-    // 确认通道与预览屏分别归 `[T3-channel]` / `[T4-renderer]`,本期只到「说清楚」为止。
     // 不是插件目录 ⇒ 原路走既有单技能导入,行为逐字不变。
     //
     // owner 裁决 D / K19 要在**确认之前**说清「你已经有一个同名技能了」与「这个包已经装过了」,
@@ -998,16 +1156,29 @@ export function registerExtIpcHandlers(
     const installedPackageIds = new Set(graphState.ok ? graphState.packageGraphs.map((g) => g.packageId) : [])
     const ledgerUnreadable = !graphState.ok || ledgerV2.hasExcludedRecords
     const intake = intakeImportDir(picked.srcDir, { installedSkillNames, installedPackageIds })
+    // `[T3-channel]`(#782):清点完就**签发预览** —— 把这一包的字节留在 main,回一个一次性
+    // previewId。**本分支到此为止,一个字节都不写盘**(签发在 `gatedWrite.importSkillFolder`
+    // 之外,写只发生在 `ext-import-claude-plugin-confirm` 里)。
+    // 预览屏与「确认」按钮归 `[T4-renderer]`;它按 `route` 分流,不判目录形态、不传路径。
     if (intake.route === "local-claude-plugin") {
       const p = intake.preview
+      // T1 已确立的两条如实呈现,原样保留:重复导入提示、以及「已安装清单读不出来」不折叠。
+      const headline =
+        `这是一个 Claude 插件目录「${p.name}」:共 ${p.limits.skillCandidates} 个技能,` +
+        `其中 ${p.installableCount} 个本版本可以装。` +
+        (p.duplicateImportNotice ? `${p.duplicateImportNotice}` : "") +
+        (ledgerUnreadable ? "(注意:已安装清单这次读不出来,重名提示可能不全。)" : "")
+      // 一个都装不上 ⇒ 具名终态,不签发预览(没有字节可留,也没有确认动作可做)。
+      if (p.disposition === "blocked")
+        return { ok: false, route: "local-claude-plugin" as const, reason: `${headline}${p.blockedReason ?? ""}`, localPluginPreview: p }
+      const issued = issueLocalPluginPreview(event, picked.srcDir, p)
+      if (!issued.ok)
+        return { ok: false, route: "local-claude-plugin" as const, reason: `${headline}${issued.reason}`, reasonCode: issued.reasonCode, localPluginPreview: p }
       return {
         ok: false,
-        reason:
-          `这是一个 Claude 插件目录「${p.name}」:共 ${p.limits.skillCandidates} 个技能,` +
-          `其中 ${p.installableCount} 个本版本可以装。插件包的确认界面还没上线,本次没有做任何改动。` +
-          (p.duplicateImportNotice ? `${p.duplicateImportNotice}` : "") +
-          // 「读不出来」与「没装」不许折叠(对齐 `ext-ipc.ts` 只读投影的既有纪律)。
-          (ledgerUnreadable ? "(注意:已安装清单这次读不出来,重名提示可能不全。)" : ""),
+        route: "local-claude-plugin" as const,
+        previewId: issued.previewId,
+        reason: headline,
         localPluginPreview: p,
       }
     }

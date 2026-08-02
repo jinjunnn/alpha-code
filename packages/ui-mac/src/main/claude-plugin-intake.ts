@@ -448,6 +448,16 @@ function sha256(data: Buffer | string): string {
   return crypto.createHash("sha256").update(data).digest("hex")
 }
 
+/** 一个技能载荷的内容摘要:逐文件 `path\0sha256(bytes)`,排序后再哈希。
+ *
+ *  **导出的唯一理由**(REQ-128 `[T3-channel]` #782):T3 在签发预览时把同一批字节留在 main,
+ *  并断言「留下来的字节」与「预览判过的字节」摘要逐字相同。那个断言若拿一份**重写**的
+ *  同名公式来比,比的就是自己和自己 —— 基线 §8 纪律 1 的「不给别人的文法造替身」在这里
+ *  同样成立,只不过被替身的是我们自己上一跳的文法。 */
+export function localSkillContentDigest(files: ReadonlyArray<{ path: string; data: Buffer }>): string {
+  return sha256(files.map((f) => `${f.path}\u0000${sha256(f.data)}`).sort().join("\n"))
+}
+
 // ── 分流点 ────────────────────────────────────────────────────────────────────────────────
 
 /** 用户选的目录是不是一个 Claude 插件包?
@@ -652,7 +662,7 @@ function judgeSkill(root: string, dirRel: string, dirName: string, installedSkil
   if (codes.length > 0) return skipped(fm.name, dirRel, codes)
 
   const byteCount = payload.files.reduce((n, f) => n + f.data.length, 0)
-  const contentDigest = sha256(payload.files.map((f) => `${f.path}\u0000${sha256(f.data)}`).sort().join("\n"))
+  const contentDigest = localSkillContentDigest(payload.files)
   return {
     kind: "skill",
     name: fm.name,

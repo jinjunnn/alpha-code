@@ -45,6 +45,7 @@ import {
   type PackageInstallabilityDeps,
 } from "./package-installability"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
+import { isLocalPackageId, LOCAL_PACKAGE_ID_PREFIX } from "../shared/local-package-namespace"
 import type { MarkdownAssetRefV1 } from "../shared/host-extension-package-contract/decoder"
 import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "../shared/host-extension-package-contract/registry"
 import type {
@@ -460,6 +461,23 @@ async function resolvePreparedPackage(
   if (!validated.ok) return { ok: false, reason: `package admission: ${validated.error}` }
   const selected = validated.packages.find((item) => item.prelude.packageId === catalogId)
   if (!selected) return { ok: false, reason: "package admission: catalogId not found in verified Catalog" }
+  // REQ-128 Phase 3 `#782` G8②:`local:` 是**本地导入**保留的 packageId 命名空间(基线 §5
+  // 显式让给本票的**唯一一处** admission 改动)。这是一条**更严的拒绝**,不是在 admission 上
+  // 开本地入口 —— 方向与 admission 的既有姿态一致。
+  //
+  // **为什么只做铸造侧的单向闸等于没做**:本机「这个包装没装」的唯一判据是
+  // `ext-package-installed`(`ext-ipc.ts`),它**纯按字符串查 V3 图、不问来源**。一个 packageId
+  // 为 `local:x` 的已验签信封装上之后,远程 catalog 详情页会命中本地包的图,当场长出
+  // 「移除此扩展包」——用户在一个远程包的页面上,一键卸掉自己手动导入的插件。
+  //
+  // 可达性(第零问):envelope decoder 的 `PACKAGE_ID_RE` 与账本的那条**逐字相同**
+  // (`^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$`),两侧都接受 `local:x` ⇒ 这个状态
+  // 走我们自己的解码链到得了,不是合成夹具里才成立的。
+  if (isLocalPackageId(selected.prelude.packageId))
+    return {
+      ok: false,
+      reason: `package admission: packageId namespace "${LOCAL_PACKAGE_ID_PREFIX}" is reserved for locally imported packages and must not appear in a verified Catalog`,
+    }
 
   let accepted: PackageAcceptedFactsV1 | undefined
   const view = await evaluatePackageForHost(selected.envelope, {
