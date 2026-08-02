@@ -244,11 +244,16 @@ function decodeGraphNode(input: unknown, at: string, errors: string[]): PackageG
 /** installedGraphDigest 的计算口径:packageId + envelopeDigest + root + children(children 按
  *  componentId 排序)。**digest 本身不参与计算** —— 否则自指。
  *
- *  `displayName` **在场才进摘要**(`#784`)。这不是「看情况的文法」,是一条可检验的兼容性契约:
- *  存量图没有这个字段 ⇒ canonical JSON 与加字段之前**逐字节相同** ⇒ 它们已经落盘的 digest 照旧
- *  通过篡改闸。若无条件写 `displayName: undefined`,`canonicalJson` 的处理方式一旦不是「原样丢弃」,
+ *  `displayName` **在场才进摘要**(`#784`)。兼容性契约:存量图没有这个字段 ⇒ canonical JSON
+ *  与加字段之前**逐字节相同** ⇒ 它们已经落盘的 digest 照旧通过篡改闸。摘要口径一变,
  *  全部存量图会在下一次读取时被判成「被篡改过」而拒载 —— 那不是少拦一个坏输入,是拒载真实配置。
- *  两条用例钉死:①无字段图的 digest 与手算的旧口径逐字相等;②改一个字的显示名 ⇒ digest 变。 */
+ *
+ *  ⚠️ **这条契约真正靠的是 `canonicalJson` 丢弃 `undefined` 键**(`ext-manifest-v2.ts`),
+ *  不是靠下面这个条件展开 —— 实测:改成无条件 `displayName: graph.displayName` 之后全部用例
+ *  仍然绿。条件展开是**冗余的防御**,留着是因为那条前提在另一个模块里、会被别人改。
+ *  前提本身由 `ext-package-ledger-v3.test.ts` 直接钉住(`canonicalJson({a,b:undefined})` 必须
+ *  等于 `canonicalJson({a})`);真正会变红的绕过是**给缺席值填一个占位**(`?? ""`)。
+ *  三条用例:①前提本身;②无字段图的 digest 与手算旧口径逐字相等;③改一个字的显示名 ⇒ digest 变。 */
 export function computeInstalledGraphDigest(graph: Omit<PackageGraphV1, "installedGraphDigest">): string {
   return `sha256:${sha256Hex(
     canonicalJson({

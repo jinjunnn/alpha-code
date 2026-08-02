@@ -437,6 +437,15 @@ describe("REQ-128 #784 — 包显示名:可选、只管显示、不承载任何�
     expect(decoded.ok && decoded.value.displayName).toBeUndefined()
   })
 
+  test("兼容性契约的**前提本身**:canonicalJson 丢弃 undefined 键", () => {
+    // 这条不是形式主义:上面那条「摘要没变」真正靠的就是它,而它住在**另一个模块**里。
+    // 实测过 —— 把 `computeInstalledGraphDigest` 里的条件展开改成无条件,全部用例仍然绿,
+    // 因为 undefined 在这里就被丢掉了。所以要钉的是这条前提,不是那个条件展开。
+    expect(canonicalJson({ a: 1, b: undefined })).toBe(canonicalJson({ a: 1 }))
+    // 而**填占位**(而不是省略)会真的改掉口径 —— 这才是会让存量图集体拒载的那个改法。
+    expect(canonicalJson({ a: 1, b: "" })).not.toBe(canonicalJson({ a: 1 }))
+  })
+
   test("兼容性契约:**没有这个字段的图,摘要与加字段之前逐字节相同**", () => {
     // 判据不是「解得开」——那在无条件写 `displayName: undefined` 时也成立。判据是**摘要口径没变**:
     // 摘要一变,全部存量图会在下一次读取时被判成「被篡改过」而拒载。所以这里手算旧口径去比。
