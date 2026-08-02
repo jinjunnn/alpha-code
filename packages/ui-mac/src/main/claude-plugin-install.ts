@@ -324,6 +324,11 @@ export function buildLocalPackageInstallPlanV1(
     // D3(编排者裁决 F):字段名保留,装的是**本地规范化载荷摘要**。见 `ext-package-ledger-v3.ts`
     // 的字段注释与 `ext-package-ledger-v3.test.ts` 里钉住这件事的那条用例。
     envelopeDigest: `sha256:${preview.snapshotDigest}`,
+    // `#784`(owner 裁决):列表里显示的是**插件作者自己写的名字**,不是包里某个技能的名字。
+    // `preview.name` 在这条路上恒等于 `.claude-plugin/plugin.json` 的 `name` —— 因为 manifest
+    // 读不出 name 时 `readManifest` 返回 null ⇒ `packageId` 为 null ⇒ 上面第 ① 段就已经
+    // `preview-not-installable` 拒掉了,根本走不到这里。**不是从 packageId 前缀反推的**(`#737`)。
+    displayName: preview.name,
     // G14:root 必须是一个**真被装的 skill**。合成的 `kind:"plugin"` root 装得上,但
     // `removePackageChildArtifactsV1` 对 skill/agent/mcp 之外 fail-closed ⇒ 装得上、卸不掉。
     root: graphNodeOf(accepted[0]!),

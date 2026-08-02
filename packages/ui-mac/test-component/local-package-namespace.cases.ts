@@ -217,8 +217,12 @@ test("只读列表通道:装成之后的 `origin` 来自 child record,不是从 
   expect(wire).not.toContain(tmp)
   expect(wire).not.toContain("bundle:")
   expect(wire).not.toContain("owners")
+  // `#784`:catalog 包的图没有 `displayName`(那个字段本期只由本地插件包填)⇒ 这里恒 `null`,
+  // 呈现层据此回退到 root 组件名。**这一栏只管显示**:上面那条 `origin` 断言才是来源的答案。
+  expect(entry.displayName).toBeNull()
   expect(Object.keys(entry).sort()).toEqual([
     "components",
+    "displayName",
     "installedGraphDigest",
     "origin",
     "packageId",

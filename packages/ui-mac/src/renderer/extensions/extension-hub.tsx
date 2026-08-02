@@ -224,6 +224,16 @@ export function ExtensionHub(props: {
     () => (props.open() && section() === "installed" ? `${receiptFingerprint(ext.store.receipts)}` : null),
     () => ext.listInstalledPackages(),
   )
+  /** 这个包在界面上叫什么。**`#784` owner 裁决**:显示插件作者自己声明的名字;
+   *  存量图没有这个字段时才回退到 root 组件名(那是包里某个技能的名字,不是包名)。
+   *  空白 / 只有空格一律当缺席 —— 用户绝不该看到一张没有名字的卡。 */
+  const packLabel = (pack: { displayName: string | null; rootComponentName: string }): string =>
+    (pack.displayName ?? "").trim() || pack.rootComponentName
+  /** 已装扩展包清单**读不出来**(与「一个都没装」是两件事)。 */
+  const packagesUnreadable = () => {
+    const state = installedPackages()
+    return !!state && !state.ok
+  }
   /** 一个 `kind:name` 属不属于某个已装扩展包 —— 属于就不能被单独移除(第 8 跳)。
    *  真源是 main 的包图投影,**不是**从名字或 id 前缀猜的。 */
   const packageOwnerOf = createMemo(() => {
@@ -232,7 +242,7 @@ export function ExtensionHub(props: {
     if (!state || !state.ok) return owners
     for (const pack of state.packages)
       for (const component of pack.components)
-        owners.set(`${component.kind}:${component.name}`, { packageId: pack.packageId, label: pack.rootComponentName })
+        owners.set(`${component.kind}:${component.name}`, { packageId: pack.packageId, label: packLabel(pack) })
     return owners
   })
   // REQ-020 T2:云门控。subscribe 会立即回放当前态(preload 内置 getState),再跟增量推送。
@@ -487,9 +497,16 @@ export function ExtensionHub(props: {
   const [highlightPackage, setHighlightPackage] = createSignal<string | null>(null)
   const [packBusy, setPackBusy] = createSignal<string | null>(null)
   const [packErr, setPackErr] = createSignal<Record<string, string>>({})
-  const [packRetained, setPackRetained] = createSignal<
-    Record<string, Array<{ kind: string; name: string; reasonCode: string | null }>>
-  >({})
+  /** 上一次整包移除**留下了什么、为什么**。
+   *
+   *  它**不能**挂在包卡里:移除成功之后那张卡当场就没了(包图没了),挂在卡里的解释会跟着
+   *  一起消失 —— 用户看见技能还在,却再也拿不到原因。所以它是一条**区块级**的结果,
+   *  由用户自己关掉。 */
+  const [packRemoval, setPackRemoval] = createSignal<{
+    packageId: string
+    label: string
+    retained: Array<{ kind: string; name: string; reasonCode: string | null }>
+  } | null>(null)
   /** 第 8 跳:对属于扩展包的单个组件点了「移除」之后的**拒绝**呈现(逐行,key = `kind:name`)。
    *  这条必须留在行上,不能只发一条 toast:用户要的是「那我该怎么办」,而答案是「移除整个包」。 */
   const [rowRefusal, setRowRefusal] = createSignal<Record<string, string>>({})
@@ -577,6 +594,10 @@ export function ExtensionHub(props: {
   // ── `#784` 第 7 跳:整包移除 ─────────────────────────────────────────────────────────────
   const runRemovePackage = async (packageId: string): Promise<void> => {
     if (packBusy() === packageId) return
+    // 名字要在**移除之前**取:成功之后这个包就从投影里消失了,再取只能拿到空。
+    const state = installedPackages()
+    const target = state && state.ok ? state.packages.find((pack) => pack.packageId === packageId) : undefined
+    const label = target ? packLabel(target) : packageId
     setPackBusy(packageId)
     setPackErr((prev) => ({ ...prev, [packageId]: "" }))
     try {
@@ -588,11 +609,9 @@ export function ExtensionHub(props: {
         return
       }
       // 留下来的部件必须说得出理由:用户点了移除却发现某个技能还在、而系统说不出为什么,
-      // 那和一个缺陷没有区别。
-      setPackRetained((prev) => ({
-        ...prev,
-        [packageId]: r.retained.map((entry) => ({ kind: entry.kind, name: entry.name, reasonCode: entry.reasonCode })),
-      }))
+      // 那和一个缺陷没有区别。**落在区块级结果上**,因为包卡马上就要消失了。
+      const retained = r.retained.map((entry) => ({ kind: entry.kind, name: entry.name, reasonCode: entry.reasonCode }))
+      setPackRemoval(retained.length > 0 ? { packageId, label, retained } : null)
       await refetchPackages()
       flash(
         r.reloadPending ? t("alpha.ext.packageRemovedPendingReload") : t("alpha.ext.packageRemoved"),
@@ -1876,14 +1895,35 @@ export function ExtensionHub(props: {
       if (!s || !s.ok) return []
       const top = highlightPackage()
       return [...s.packages].sort((a, b) =>
-        a.packageId === top ? -1 : b.packageId === top ? 1 : a.rootComponentName < b.rootComponentName ? -1 : 1,
+        a.packageId === top ? -1 : b.packageId === top ? 1 : packLabel(a) < packLabel(b) ? -1 : 1,
       )
     })
     return (
       <>
+        {/* 上一次移除留下了什么。**故意放在包卡之外** —— 卡会随着包图消失,解释不能跟着走。 */}
+        <Show when={packRemoval()}>
+          {(removal) => (
+            <div class="alpha-ext-verify-note" data-package-removal={removal().packageId} role="status">
+              <b>{t("alpha.ext.packageRemovedWithRetained", { pack: removal().label, count: String(removal().retained.length) })}</b>
+              <ul class="alpha-ext-package-retained">
+                <For each={removal().retained}>
+                  {(entry) => (
+                    <li data-package-retained={`${entry.kind}:${entry.name}`} data-retained-reason={entry.reasonCode ?? ""}>
+                      <code>{entry.name}</code>
+                      <span>{entry.reasonCode ? (t(packageRetainedReasonKey(entry.reasonCode) as never) as string) : ""}</span>
+                    </li>
+                  )}
+                </For>
+              </ul>
+              <button class="alpha-ext-updbtn" data-dismiss-removal="" onClick={() => setPackRemoval(null)}>
+                {t("alpha.ext.gotIt")}
+              </button>
+            </div>
+          )}
+        </Show>
         {/* 「读不出」与「没装」**永远分开**:折叠成一句「暂无扩展包」会让用户以为东西丢了,
             于是去重装 —— 而重装会撞上同名拒绝。 */}
-        <Show when={state() && !state()!.ok}>
+        <Show when={packagesUnreadable()}>
           <SecRow label={t("alpha.ext.packagesSection")} />
           <div class="alpha-ext-verify-note" data-packages-unreadable="" role="alert">
             <b>{t("alpha.ext.packagesUnreadableTitle")}</b>
@@ -1899,14 +1939,15 @@ export function ExtensionHub(props: {
           <For each={ordered()}>
             {(pack) => {
               const enabledCount = () => pack.components.filter((c) => c.desiredState === "enabled").length
+              // 来源**只从 child record 的 `origin` 读**(基线 §8 纪律 2)。显示名再怎么写,
+              // 都不参与这个判定 —— `#737`:不从 id 读结构,同理不从展示字段读身份。
               const local = () => pack.origin === "imported-claude" || pack.origin === "imported-agents"
-              const removed = () => packRetained()[pack.packageId]
               return (
                 <div class="alpha-ext-pack" data-installed-package={pack.packageId}>
                   <div class="alpha-ext-pack-h">
                     <div class="alpha-ext-man-body">
                       <div class="alpha-ext-man-nm">
-                        <b>{pack.rootComponentName}</b>
+                        <b data-package-label={pack.packageId}>{packLabel(pack)}</b>
                         <span class="alpha-ext-type-pill">{t("alpha.ext.packageType")}</span>
                         <span class="alpha-ext-type-pill" data-off="" data-package-origin={pack.origin ?? ""}>
                           {local() ? t("alpha.ext.packageFromLocalFolder") : t("alpha.ext.packageFromCatalog")}
@@ -1946,18 +1987,6 @@ export function ExtensionHub(props: {
                         {error()}
                       </p>
                     )}
-                  </Show>
-                  <Show when={removed() && removed()!.length > 0}>
-                    <ul class="alpha-ext-package-retained">
-                      <For each={removed()}>
-                        {(entry) => (
-                          <li data-package-retained={`${entry.kind}:${entry.name}`} data-retained-reason={entry.reasonCode ?? ""}>
-                            <code>{`${entry.kind}:${entry.name}`}</code>
-                            <span>{entry.reasonCode ? (t(packageRetainedReasonKey(entry.reasonCode) as never) as string) : ""}</span>
-                          </li>
-                        )}
-                      </For>
-                    </ul>
                   </Show>
                 </div>
               )
@@ -2578,7 +2607,11 @@ export function ExtensionHub(props: {
                     <Show
                       when={installedAll().length > 0}
                       fallback={
-                        <Show when={ext.store.ready}>
+                        // `#784` R1 Major:账本损坏时**不许**同时喊「读不出」和「尚未安装任何扩展」。
+                        // 两条互相矛盾的信息摆在一起,用户会当成「东西丢了」而去重装 —— 而重装会
+                        // 撞上同名拒绝。已装扩展包清单读不出来 ⇒ 已装列表**本身**也未必是真的空,
+                        // 通用空态在这一刻是一句没有依据的断言,不许说。
+                        <Show when={ext.store.ready && !packagesUnreadable()}>
                         <EmptyState
                           title={t("alpha.ext.empty")}
                           sub={t("alpha.ext.emptySub")}

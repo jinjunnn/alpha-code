@@ -669,12 +669,18 @@ export function useExtensions(
   // POST /global/dispose 8ms 返回,下一请求 ~100-300ms 惰性重建并重扫,经 symlink 桥的
   // skill/agent 立即可见;系统提示与工具集每条消息重组 → 当前会话下一条消息即可用。残余风险
   // (dispose 打断活跃流)在 T8 真机批验证;失败兜底 =「待重载」态(receipts ⨝ SDK,T6)。
+  // `#784` R1 Major:**HTTP 错误不会抛**。SDK v2 client 默认 `throwOnError: false` ——
+  // 503 / 404 会以 `{error, response, …}` **正常 resolve**。此前这里只拒超时与异常,
+  // 于是「引擎拒绝了这次重载」被当成成功:界面宣称已生效 / 已移除,而旧引擎实例继续暴露旧技能。
+  // 判据复用**既有**的 `connectOutcome`(`ext-session-toggle.ts`)—— 同一个问题
+  //(「这次 SDK 调用真的成功了吗」)在本文件里已经有一个答案,不再写第二个。
   async function refreshEngine(): Promise<boolean> {
     const c = client
     if (!c) return false
     try {
       const r = await withTimeout((c as any).global.dispose() as Promise<unknown>, 5000)
-      return r !== TIMED_OUT
+      if (r === TIMED_OUT) return false
+      return connectOutcome(r as { error?: unknown } | null | undefined)
     } catch {
       return false
     }

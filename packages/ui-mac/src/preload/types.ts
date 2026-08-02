@@ -491,7 +491,12 @@ export type InstalledPackageComponentV1 = {
 export type InstalledPackageV1 = {
   packageId: string
   installedGraphDigest: string
-  /** 账本里**没有**「包显示名」这个事实 —— 不造一个。有的是 root 组件的名字,如实这么叫。 */
+  /** `#784`:插件作者在 `.claude-plugin/plugin.json` 里自己声明的名字。
+   *  `null` = 这张图是加这个字段之前落的(存量)⇒ 呈现层回退到 `rootComponentName`。
+   *  **只管显示**:不是 provenance(那是 child record 的 `origin`)、不是身份(那是 `packageId`),
+   *  也不是任何判定的输入。 */
+  displayName: string | null
+  /** 回退名。它**是**包里某个技能的名字,不是包名 —— 只在 `displayName` 缺席时才用。 */
   rootComponentName: string
   version: string | null
   /** 来源一律从 child record 的 `origin` 读,**绝不从 packageId 前缀读**(基线 §8 纪律 2,`#737`)。

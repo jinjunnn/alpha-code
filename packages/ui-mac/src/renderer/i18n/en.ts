@@ -652,6 +652,10 @@ export const dict = {
   "alpha.ext.localPackageInstalled": "{{count}} skills installed · all still off; turn a switch on to use them",
   "alpha.ext.localPackageInstalledPendingReload":
     "{{count}} skills installed · the engine could not reload right now; restarting Alpha will apply it",
+  // `#784` R1 Major: the pack card is gone once removal succeeds — what was kept, and why,
+  // has to live outside the card, or the user sees leftovers with no explanation.
+  "alpha.ext.packageRemovedWithRetained": "Removed package “{{pack}}” · {{count}} item(s) kept",
+  "alpha.ext.gotIt": "Got it",
   "alpha.ext.packagesSection": "Packages",
   "alpha.ext.packagesGroupNote": "Skills inside a package belong to that package and can only be removed with it.",
   // "Cannot read" and "nothing installed" are different facts; folding them makes users think

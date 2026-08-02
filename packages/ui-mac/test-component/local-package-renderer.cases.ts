@@ -40,12 +40,21 @@ import { join, resolve } from "node:path"
 // ── ① 引擎客户端替身(G20 的断言对象)────────────────────────────────────────────────────
 //     函数值先存 const,再 mock.module。
 let disposeCalls = 0
-let disposeFails = false
+/**
+ * dispose 的失败形态。**两种,不是一种**(R1 Major):
+ *   · `"throw"` —— 传输层炸了(旧夹具只有这一种);
+ *   · `"error"` —— **SDK 正常 resolve 成 `{error, response}`**。v2 client 默认
+ *     `throwOnError: false`,503 / 404 走的就是这条,`try/catch` 一个字都碰不到。
+ * 只模拟 throw 的夹具会让「把 HTTP 错误当成功」这个实现全绿 —— 而用户那一刻看到的是
+ *「已生效 / 已移除」,旧引擎实例还在暴露旧技能。
+ */
+let disposeFailure: "none" | "throw" | "error" = "none"
 const engineClient = {
   global: {
     dispose: async () => {
       disposeCalls++
-      if (disposeFails) throw new Error("engine dispose refused (fixture)")
+      if (disposeFailure === "throw") throw new Error("engine dispose refused (fixture)")
+      if (disposeFailure === "error") return { data: undefined, error: { message: "refused" }, response: { status: 503 } }
       return { data: {} }
     },
     event: async () => ({ stream: (async function* () {})() }),
@@ -169,7 +178,11 @@ const { alphaGlobalRoot } = await import("../src/main/alpha-installs")
 const { GATED_WRITE_CHANNELS, LOCAL_PACKAGE_READ_CHANNELS } = await import("../src/main/ext-write-channels")
 const { localPackagePreviews } = await import("../src/main/local-package-preview")
 const { readLedgerV2, readPackageLedgerStateV1, skillsEnabledPath } = await import("../src/main/ext-receipt-v2")
+const { applyPackageMutation } = await import("../src/main/ext-receipt-v2")
+const { bundleOwner, computeInstalledGraphDigest } = await import("../src/main/ext-package-ledger-v3")
 const { registerExtIpcHandlers } = await import("../src/main/ext-ipc")
+// **生产**引擎插件。第 9 跳的判据必须穿过它,不能停在「我读了它会读的那个文件」。
+const { AlphaExt } = await import("../../ext/src/plugin")
 
 delete process.env.ALPHA_GLOBAL_DIR
 initAlphaEnvironment({
@@ -186,6 +199,9 @@ registerExtIpcHandlers(
   join(tmp, "home"),
 )
 const globalRoot = alphaGlobalRoot()
+/** `AlphaExt` 需要一个真实存在的项目目录。 */
+const engineProject = join(tmp, "engine-project")
+mkdirSync(engineProject, { recursive: true })
 
 /**
  * preload 暴露的通道名。**逐字抄自 `src/preload/index.ts`**,并由本文件最后一条用例证明
@@ -321,7 +337,9 @@ function writePlugin(slug: string, build: (root: string) => void, manifest?: Rec
 }
 
 /** 主夹具:两个能装、一个因「带我们兑现不了的调用设置」被具名跳过,外加 commands/ 与 agents/。 */
-const tidePlugin = writePlugin("tide", (dir) => {
+// ⚠️ **目录名刻意不等于 manifest 里的 name**:目录叫 `tide-folder-name`,插件叫 `tide`。
+// 一个把显示名实现成「目录名」的错误实现会在卡片上写出 `tide-folder-name` —— 那必须变红。
+const tidePlugin = writePlugin("tide-folder-name", (dir) => {
   writeSkill(dir, "premarket-briefing")
   writeSkill(dir, "postmarket-review")
   writeSkill(dir, "manual-only", "user-invocable: true\n")
@@ -329,7 +347,7 @@ const tidePlugin = writePlugin("tide", (dir) => {
   writeFileSync(join(dir, "commands", "review.md"), "# a slash command\n", "utf8")
   mkdirSync(join(dir, "agents"), { recursive: true })
   writeFileSync(join(dir, "agents", "helper.md"), "# a sub agent\n", "utf8")
-})
+}, { name: "tide", version: "0.1.0", description: "tide fixture" })
 /** 一个都装不上:三个技能全部声明了调用控制设置(真实语料 10/40 个插件是这个结局)。 */
 const blockedPlugin = writePlugin("codex-like", (dir) => {
   for (const name of ["cli-runtime", "result-handling", "prompting"]) writeSkill(dir, name, "user-invocable: true\n")
@@ -339,6 +357,16 @@ const soloPlugin = writePlugin("solo", (dir) => writeSkill(dir, "solo-skill"), {
   name: "solo",
   description: "no version on purpose",
 })
+/** 非插件目录**而且导入会失败**(R1 Major 3):没有 `.claude-plugin/`、SKILL.md 的
+ *  frontmatter 读不出来 ⇒ main 回 `{ok:false, reason}` 且**不带 `route`**。
+ *  这个夹具存在的唯一理由:只覆盖成功路径的回归用例,杀不掉「把任何失败都当成插件目录」
+ *  这个更现实的错误实现(`isLocalPluginRoute` 写成 `!result.ok`)。 */
+const brokenSkillDir = (() => {
+  const dir = join(tmp, "broken-skill")
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, "SKILL.md"), "no frontmatter here at all\n", "utf8")
+  return realpathSync(dir)
+})()
 /** 非插件目录:根级 SKILL.md、没有 `.claude-plugin/` ⇒ 必须**逐字不变**走既有单技能导入。 */
 const plainSkillDir = (() => {
   const dir = join(tmp, "plain-skill")
@@ -349,11 +377,13 @@ const plainSkillDir = (() => {
 
 // ── ⑦ DOM 驱动小工具 ───────────────────────────────────────────────────────────────────
 const flush = () => new Promise((r) => setTimeout(r, 0))
-async function waitFor(assertion: () => void): Promise<void> {
+/** ⚠️ 必须 `await assertion()`:传一个 **async** 断言进来而不 await,它的拒绝会变成
+ *  unhandled rejection,而 `waitFor` **立刻返回成功** —— 一条永远绿的假闸。本文件踩过一次。 */
+async function waitFor(assertion: () => void | Promise<void>): Promise<void> {
   let failure: unknown
   for (let attempt = 0; attempt < 200; attempt++) {
     try {
-      assertion()
+      await assertion()
       return
     } catch (error) {
       failure = error
@@ -373,12 +403,52 @@ const clearToasts = (): void => qa(".a-toast").forEach((node) => node.remove())
 const previewDialog = () => q("[data-local-package-preview]")
 const packCard = (packageId: string) => q(`[data-installed-package="${packageId}"]`)
 
-/** 引擎注入门实际读的允许集(`packages/ext/src/gen-skill-paths.ts`)。 */
+/** 引擎注入门实际读的允许集(`packages/ext/src/gen-skill-paths.ts`)。**这是次要事实**——
+ *  主判据是下面那个真跑生产 hook 的函数,原因见它的注释。 */
 function engineAllowSet(): string[] {
   const file = skillsEnabledPath(globalRoot)
   if (!existsSync(file)) return []
   return (JSON.parse(readFileSync(file, "utf8")) as { keys?: string[] }).keys ?? []
 }
+
+/**
+ * **跑真正的引擎注入链**,返回它注入进 `cfg.skills.paths` 的目录。
+ *
+ * R1 Blocker 的教训:**读「引擎会读的那个文件」≠ 跑「引擎的读」。**
+ * 之前这里只 `JSON.parse` 了 `skills-enabled.json` —— 而生产链在那之后还要
+ * 校验 `v === 1`、过 `SAFE_KEY`、读 `ext-store/<key>/current.json` 取 live generation、
+ * `statSync` 确认目录在,**然后才**把路径塞进 `cfg.skills.paths`(`gen-skill-paths.ts`),
+ * 而这一整段是由 `AlphaExt` 的 `config` hook 调起来的(`plugin.ts`)。
+ * 删掉那个 hook、或让 `current.json` 失效,旧断言**照样全绿**,而用户开了开关、
+ * dispose 也调了,下一条消息里依然找不到技能。
+ *
+ * 所以这里跑的是**生产的 `AlphaExt`**,一行替身都没有。
+ */
+async function engineInjectedSkillPaths(): Promise<string[]> {
+  const previous = process.env.ALPHA_GLOBAL_DIR
+  process.env.ALPHA_GLOBAL_DIR = globalRoot
+  try {
+    const hooks = (await AlphaExt({
+      directory: engineProject,
+      worktree: engineProject,
+      client: { instance: { dispose: async () => {} } },
+    } as never)) as unknown as { config: (cfg: Record<string, unknown>) => Promise<void> }
+    const cfg: Record<string, unknown> = {}
+    await hooks.config(cfg)
+    const skills = cfg.skills as { paths?: unknown } | undefined
+    return Array.isArray(skills?.paths) ? (skills.paths as string[]) : []
+  } finally {
+    if (previous === undefined) delete process.env.ALPHA_GLOBAL_DIR
+    else process.env.ALPHA_GLOBAL_DIR = previous
+  }
+}
+
+/** 生产链注入的路径 → 技能名(路径形状 `<root>/ext-store/skill--<name>/generations/<gen>`)。 */
+const injectedSkillNames = (paths: readonly string[]): string[] =>
+  paths
+    .map((dir) => /ext-store\/skill--([^/]+)\/generations\//.exec(dir)?.[1])
+    .filter((name): name is string => !!name)
+    .sort()
 function ledgerSkillNames(): string[] {
   return readLedgerV2(globalRoot)
     .records.filter((record) => record.kind === "skill")
@@ -396,6 +466,59 @@ async function gotoInstalled(): Promise<void> {
   await waitFor(() => expect(q(".alpha-ext-page")?.textContent ?? "").toContain(zh["alpha.ext.tabInstalled"]))
 }
 
+/**
+ * 用**生产写器**在账本里种一张包图。
+ *
+ * 为什么必须是种的:「两个包共享同一个 child」与「存量图没有显示名」这两个状态,
+ * 走本地导入路径**结构上到不了** —— 同名会被 fresh 闸拒掉,而存量图按定义早于本票。
+ * 但它们都是真实可达的(目录包共享 child 是 `ext-package-lifecycle-permutations` 的现役场景)。
+ * 所以这里不手搓 JSON,而是喂 `applyPackageMutation` —— 与生产落账**同一个**写器。
+ */
+function seedPackage(input: {
+  packageId: string
+  displayName?: string
+  children: Array<{ name: string; origin?: string }>
+}): void {
+  const digest = (seed: string) => `sha256:${seed.repeat(64).slice(0, 64)}`
+  const nodes = input.children.map((child) => ({
+    componentId: `user:${child.name}`,
+    kind: "skill" as const,
+    name: child.name,
+    required: true,
+    manifestDigest: digest("a"),
+  }))
+  const withoutDigest = {
+    packageId: input.packageId,
+    envelopeDigest: digest("b"),
+    ...(input.displayName === undefined ? {} : { displayName: input.displayName }),
+    root: nodes[0]!,
+    children: nodes.slice(1),
+  }
+  const graph = { ...withoutDigest, installedGraphDigest: computeInstalledGraphDigest(withoutDigest) }
+  const owner = bundleOwner(graph.packageId, graph.root.manifestDigest)
+  const applied = applyPackageMutation(globalRoot, {
+    transactionId: `tx-seed-${input.packageId}`,
+    operation: "install",
+    graphBeforeDigest: null,
+    graphAfter: graph,
+    childRecordMutations: input.children.map((child) => ({
+      op: "upsert" as const,
+      input: {
+        id: `user:${child.name}`,
+        name: child.name,
+        kind: "skill" as const,
+        environment: "dev" as const,
+        scope: { kind: "global" as const },
+        desiredState: "disabled" as const,
+        origin: (child.origin ?? "imported-claude") as never,
+        installedAt: "2026-08-02T00:00:00.000Z",
+      },
+    })),
+    claimMutations: input.children.map((child) => ({ op: "acquire" as const, kind: "skill" as const, name: child.name, owner })),
+  })
+  if (!applied.ok) throw new Error(`fixture: seeding ${input.packageId} failed: ${applied.reason}`)
+}
+
 /** 走生产路径打开预览屏:切到导入页 → 点「文件夹」卡。**不直接调 IPC**。 */
 async function openImportFolder(dir: string): Promise<void> {
   pickDir = dir
@@ -409,6 +532,35 @@ async function openImportFolder(dir: string): Promise<void> {
 // ═══════════════════════════════════════════════════════════════════════════════════════
 
 describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端)", () => {
+  // ⚠️ 这一条**必须排第一**:它要的是「一条 receipt 都还没有」的冷启动状态。
+  // 放在安装用例之后就只能测到「已经有东西之后账本才坏」,而那条杀不掉通用空态 ——
+  // 那时 `installedAll()` 非空,空态本来就不渲染(R1 Major 4 的原话)。
+  test("冷启动账本就是坏的 ⇒ 说「读不出」,**同时不许**再说「尚未安装任何扩展」", async () => {
+    const ledgerFile = join(globalRoot, "installs.json")
+    mkdirSync(globalRoot, { recursive: true })
+    writeFileSync(ledgerFile, "{ this is not json", "utf8")
+    try {
+      await gotoInstalled()
+      await waitFor(() => expect(q("[data-packages-unreadable]")).toBeInstanceOf(HTMLElement))
+      const banner = q("[data-packages-unreadable]")!
+      expect(banner.textContent).toContain(zh["alpha.ext.packagesUnreadableTitle"])
+      expect(banner.textContent).toContain("不代表没装")
+      // reader 的原始理由里内嵌着 installs.json 的绝对路径 —— 它不许过 wire。
+      expect(banner.textContent ?? "").not.toContain(globalRoot)
+      // **这一句是本条的要害**:两条互相矛盾的信息不许同时摆给用户。
+      // 「读不出」+「尚未安装任何扩展」放在一起,用户会当成东西丢了而去重装,
+      // 而重装会撞上同名拒绝。
+      expect(document.body.textContent ?? "").not.toContain(zh["alpha.ext.empty"])
+      expect(q("[data-installed-package]")).toBeNull()
+    } finally {
+      rmSync(ledgerFile, { force: true })
+      setHubSection("featured")
+      await flush()
+      await gotoInstalled()
+      await waitFor(() => expect(q("[data-packages-unreadable]")).toBeNull())
+    }
+  })
+
   test("第 1→3 跳:同一张「文件夹」卡 ⇒ main 分流 ⇒ 预览屏逐条列出装 / 不装 / 具名原因 / 不支持类型", async () => {
     await openImportFolder(tidePlugin)
     await waitFor(() => expect(previewDialog()).toBeInstanceOf(HTMLElement))
@@ -471,11 +623,18 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     expect(ledgerSkillNames()).toEqual(["postmarket-review", "premarket-briefing"])
     expect(ledgerPackageIds()).toEqual(["local:tide"])
 
-    // 裁决 B:装完默认**关**。判据是**引擎注入门实际读的那个文件**,不是「我查了账本」。
+    // 裁决 B:装完默认**关**。判据是**跑一遍生产引擎的注入链** —— 不是「我查了账本」,
+    // 也不是「我读了那个文件」(R1 Blocker:读文件 ≠ 跑那条读)。
+    expect(await engineInjectedSkillPaths()).toEqual([])
     expect(engineAllowSet()).toEqual([])
 
     // 界面上必须看得见「已安装 · 未启用」,而且每个技能各有开关。
     const card = packCard("local:tide")!
+    // `#784` owner 裁决:卡上写的是**插件作者自己声明的名字**(`plugin.json` 的 `name`),
+    // 既不是包里某个技能的名字(`postmarket-review`),也不是目录名(`tide-folder-name`)。
+    expect(card.querySelector('[data-package-label="local:tide"]')?.textContent).toBe("tide")
+    expect(card.textContent).not.toContain("tide-folder-name")
+    expect(card.querySelector('[data-package-label="local:tide"]')?.textContent).not.toBe("postmarket-review")
     expect(card.textContent).toContain(zh["alpha.ext.packageAllOffLead"])
     expect(qa('[data-package-switch^="local:tide/"]').map((n) => n.getAttribute("data-package-switch")).sort()).toEqual([
       "local:tide/postmarket-review",
@@ -494,13 +653,21 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
 
   test("第 9 跳:显示未启用 → 用户拨开关 → **引擎允许集里当场出现它** → 引擎重载", async () => {
     disposeCalls = 0
-    expect(engineAllowSet()).toEqual([])
+    expect(await engineInjectedSkillPaths()).toEqual([])
     click(q('[data-package-switch="local:tide/premarket-briefing"]'))
 
-    // 「下一条消息里技能真可用」在无头进程里可判的最强形式:引擎注入门读的允许集。
-    await waitFor(() => expect(engineAllowSet()).toEqual(["skill--premarket-briefing"]))
+    // 「下一条消息里技能真可用」在无头进程里可判的最强形式:**跑生产引擎的 config hook**,
+    // 看它到底往 `cfg.skills.paths` 里注入了什么。这条链包含允许集版本闸、SAFE_KEY、
+    // live generation 指针与目录存在性 —— 全部真跑,不是「我读了那个文件」。
+    await waitFor(async () => expect(injectedSkillNames(await engineInjectedSkillPaths())).toEqual(["premarket-briefing"]))
+    const injected = await engineInjectedSkillPaths()
+    // 注入的是**这个技能的 live generation 目录**,不是随便一个存在的路径。
+    expect(injected).toHaveLength(1)
+    expect(injected[0]).toContain(join(globalRoot, "ext-store", "skill--premarket-briefing", "generations"))
+    expect(existsSync(injected[0]!)).toBe(true)
     // 另一个仍然是关的 —— 界面**没有**「贴心地」替用户多打开一个。
-    expect(engineAllowSet()).not.toContain("skill--postmarket-review")
+    expect(injectedSkillNames(injected)).not.toContain("postmarket-review")
+    expect(engineAllowSet()).toEqual(["skill--premarket-briefing"])
     // 拨开关同时让引擎重载(`use-extensions.setInstallState` 的既有路径)。
     expect(disposeCalls).toBeGreaterThan(0)
 
@@ -514,7 +681,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
   test("第 8 跳:包内单个技能点「移除」⇒ **明确拒绝 + 指向整包移除**,实物一个字节不动", async () => {
     clearToasts()
     const beforeSkills = ledgerSkillNames()
-    const beforeAllow = engineAllowSet()
+    const beforeInjected = await engineInjectedSkillPaths()
     const row = qa(".alpha-ext-man").find((node) => node.textContent?.includes("premarket-briefing"))
     expect(row).toBeInstanceOf(HTMLElement)
     // 这一行必须先标出「属于扩展包 X」—— 否则那句拒绝毫无来由。
@@ -523,17 +690,16 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
 
     await waitFor(() => expect(q('[data-row-refusal="skill:premarket-briefing"]')).toBeInstanceOf(HTMLElement))
     const refusal = q('[data-row-refusal="skill:premarket-briefing"]')!
-    // 包在界面上的名字 = **root 组件名**(账本里没有「包显示名」这个事实,不造一个;
-    // 组件按名字字典序取 root ⇒ postmarket-review < premarket-briefing,结果确定)。
-    // 写死这个值是刻意的:从 projection 里现算一个期望值,等于让错误实现自己给自己打分。
-    expect(refusal.textContent).toContain(zh["alpha.ext.componentOwnedByPackage"].replace("{{pack}}", "postmarket-review"))
+    // 包在界面上的名字 = **插件作者声明的名字**(`#784`)。写死这个值是刻意的:
+    // 从 projection 里现算一个期望值,等于让错误实现自己给自己打分。
+    expect(refusal.textContent).toContain(zh["alpha.ext.componentOwnedByPackage"].replace("{{pack}}", "tide"))
     // 「怎么办」必须给得出来。
     expect(refusal.querySelector("[data-goto-package]")?.getAttribute("data-goto-package")).toBe("local:tide")
     // **不是假成功**:没有任何一条 toast 说「已移除」。
     expect(toasts().join("\n")).not.toContain(zh["alpha.ext.removed"])
     // 实物没动。
     expect(ledgerSkillNames()).toEqual(beforeSkills)
-    expect(engineAllowSet()).toEqual(beforeAllow)
+    expect(await engineInjectedSkillPaths()).toEqual(beforeInjected)
     expect(ledgerPackageIds()).toEqual(["local:tide"])
   })
 
@@ -557,7 +723,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
   test("第 7 跳(+ G20 后半):整包移除 ⇒ 卡消失、账本清零、**引擎允许集清空**、引擎重载", async () => {
     clearToasts()
     disposeCalls = 0
-    expect(engineAllowSet()).toEqual(["skill--premarket-briefing"])
+    expect(injectedSkillNames(await engineInjectedSkillPaths())).toEqual(["premarket-briefing"])
     click(q('[data-package-remove="local:tide"]'))
 
     await waitFor(() => expect(packCard("local:tide")).toBeNull())
@@ -565,14 +731,14 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     expect(ledgerSkillNames()).toEqual([])
     // 卸完之后引擎**当场**不再暴露它 —— 在这一行之前,整包移除只刷新列表、不重载引擎,
     // 于是技能一直能用到下次重启。这就是 G20 钉的那条接线。
-    expect(engineAllowSet()).toEqual([])
+    expect(await engineInjectedSkillPaths()).toEqual([])
     expect(disposeCalls).toBeGreaterThan(0)
     expect(toasts().join("\n")).toContain(zh["alpha.ext.packageRemoved"])
   })
 
   test("引擎这次没重载成功 ⇒ 如实说「待重载」,不谎报已生效", async () => {
     clearToasts()
-    disposeFails = true
+    disposeFailure = "error"
     try {
       await openImportFolder(soloPlugin)
       await waitFor(() => expect(previewDialog()).toBeInstanceOf(HTMLElement))
@@ -583,7 +749,7 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
       expect(toasts().join("\n")).toContain("没能让引擎立即重新加载")
       expect(toasts().join("\n")).not.toContain(zh["alpha.ext.localPackageInstalled"].replace("{{count}}", "1"))
     } finally {
-      disposeFails = false
+      disposeFailure = "none"
     }
   })
 
@@ -696,7 +862,80 @@ describe("REQ-128 Phase 3 第 1→9 跳(生产 renderer × 生产 main,端到端
     expect(toasts().join("\n")).toContain(zh["alpha.ext.imported"].replace("{{name}}", "plain-skill"))
     expect(ledgerSkillNames()).toContain("plain-skill")
     // 单个本地 skill **维持 `enabled`**(裁决 B 只把「本地包」改成默认关)。
-    expect(engineAllowSet()).toContain("skill--plain-skill")
+    expect(injectedSkillNames(await engineInjectedSkillPaths())).toContain("plain-skill")
+  })
+
+  test("存量图没有显示名 ⇒ **回退到 root 组件名**,不显示 undefined 也不空白", async () => {
+    seedPackage({ packageId: "local:legacy-pack", children: [{ name: "legacy-alpha" }, { name: "legacy-beta" }] })
+    setHubSection("featured")
+    await flush()
+    await gotoInstalled()
+    await waitFor(() => expect(packCard("local:legacy-pack")).toBeInstanceOf(HTMLElement))
+    const label = q('[data-package-label="local:legacy-pack"]')!
+    // 缺字段**不许拒载**,也不许把 `undefined` 画到用户脸上。
+    expect(label.textContent).toBe("legacy-alpha")
+    expect(label.textContent).not.toContain("undefined")
+    expect((label.textContent ?? "").trim().length).toBeGreaterThan(0)
+  })
+
+  test("显示名再怎么撒谎,**来源标仍然只由 child record 的 `origin` 决定**", async () => {
+    // 这是行为闸,不是源码文本闸:把显示名写成最容易被误读成 provenance 的值,
+    // 而这个包的 child record 的 origin 是 `imported-claude` ⇒ 界面必须说「来自本地文件夹」。
+    seedPackage({
+      packageId: "local:liar",
+      displayName: "official-catalog-package",
+      children: [{ name: "liar-skill", origin: "imported-claude" }],
+    })
+    setHubSection("featured")
+    await flush()
+    await gotoInstalled()
+    await waitFor(() => expect(packCard("local:liar")).toBeInstanceOf(HTMLElement))
+    const card = packCard("local:liar")!
+    expect(q('[data-package-label="local:liar"]')?.textContent).toBe("official-catalog-package")
+    expect(card.textContent).toContain(zh["alpha.ext.packageFromLocalFolder"])
+    expect(card.textContent).not.toContain(zh["alpha.ext.packageFromCatalog"])
+    expect(card.querySelector("[data-package-origin]")?.getAttribute("data-package-origin")).toBe("imported-claude")
+  })
+
+  test("整包移除后,「留下了什么、为什么」**不随包卡一起消失**(R1 Major 5)", async () => {
+    // 两个包共享同一个 child —— 移除其中一个,那个 child 必须被保留并说得出理由。
+    seedPackage({ packageId: "local:pack-a", displayName: "pack-a", children: [{ name: "a-only" }, { name: "shared-skill" }] })
+    seedPackage({ packageId: "local:pack-b", displayName: "pack-b", children: [{ name: "b-only" }, { name: "shared-skill" }] })
+    setHubSection("featured")
+    await flush()
+    await gotoInstalled()
+    await waitFor(() => expect(packCard("local:pack-a")).toBeInstanceOf(HTMLElement))
+
+    click(q('[data-package-remove="local:pack-a"]'))
+    // 包卡确实没了(移除成功)。
+    await waitFor(() => expect(packCard("local:pack-a")).toBeNull())
+    // **而解释还在。** 挂在包卡内部的实现会在这一行变红:卡一消失,原因跟着消失,
+    // 用户看见 `shared-skill` 还在却拿不到任何理由。
+    const removal = q('[data-package-removal="local:pack-a"]')
+    expect(removal).toBeInstanceOf(HTMLElement)
+    expect(removal!.textContent).toContain("pack-a")
+    expect(removal!.querySelector('[data-package-retained="skill:shared-skill"]')).toBeInstanceOf(HTMLElement)
+    expect(removal!.querySelector("[data-retained-reason]")?.getAttribute("data-retained-reason")).toBe("shared-with-package")
+    expect(removal!.textContent).toContain(zh["alpha.ext.packageKeptShared"])
+    // 独占的那个真的没了,共享的那个真的还在 —— 解释与事实一致,不是一句安慰话。
+    expect(ledgerSkillNames()).not.toContain("a-only")
+    expect(ledgerSkillNames()).toContain("shared-skill")
+    // 用户自己关掉它。
+    click(removal!.querySelector("[data-dismiss-removal]"))
+    await waitFor(() => expect(q('[data-package-removal="local:pack-a"]')).toBeNull())
+  })
+
+  test("非插件目录**导入失败**时:保持原行内错误,**不进插件预览**(R1 Major 3)", async () => {
+    clearToasts()
+    await openImportFolder(brokenSkillDir)
+    // 行内红字出现 = main 走的是既有单技能路径并诚实失败了。
+    await waitFor(() => expect(q(".alpha-ext-import-err")).toBeInstanceOf(HTMLElement))
+    // **预览屏一次都不许出现**。只覆盖成功路径的用例杀不掉「把任何失败都当成插件目录」——
+    // 那个实现会在这里弹一个 preview 为 undefined 的弹窗(或直接炸)。
+    expect(previewDialog()).toBeNull()
+    expect(q(".alpha-ext-import-err")!.textContent ?? "").not.toBe("")
+    // 也没有任何东西被装进去。
+    expect(ledgerSkillNames()).not.toContain("broken-skill")
   })
 
   test("preload 暴露的通道名与 main 的常量逐字一致(写错一个字母 = 功能死掉且什么都不红)", () => {

@@ -325,7 +325,10 @@ export function registerExtIpcHandlers(
       packages: state.packageGraphs.map((graph) => ({
         packageId: graph.packageId,
         installedGraphDigest: graph.installedGraphDigest,
-        // 账本里**没有**「包显示名」这个事实 —— 不造一个。有的是 root 组件的名字,如实这么叫。
+        // `#784`(owner 裁决):插件作者自己声明的显示名。存量图没有这个字段 ⇒ `null`,
+        // 由呈现层回退到 root 组件名。**这一栏只管显示**,任何判定都不许读它。
+        displayName: graph.displayName ?? null,
+        // 回退用的 root 组件名。它**是**一个技能的名字,不是包名 —— 只在没有显示名时才用。
         rootComponentName: graph.root.name,
         version: packageVersionFromRecordsV1(graph, state.records),
         origin: recordOf(graph.root.kind, graph.root.name)?.origin ?? null,

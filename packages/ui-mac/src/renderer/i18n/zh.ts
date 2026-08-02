@@ -642,6 +642,10 @@ export const dict = {
   "alpha.ext.localPackageCancelNote": "取消不会在这台电脑上留下任何东西。",
   "alpha.ext.localPackageInstalled": "已装好 {{count}} 个技能 · 都还没启用,打开开关后生效",
   "alpha.ext.localPackageInstalledPendingReload": "已装好 {{count}} 个技能 · 这次没能让引擎立即重新加载,重启 Alpha 后一定生效",
+  // `#784` R1 Major:整包移除成功后包卡就消失了 —— 留下了什么、为什么,必须落在**卡之外**,
+  // 否则用户看见技能还在却再也拿不到原因。
+  "alpha.ext.packageRemovedWithRetained": "已移除扩展包「{{pack}}」· 有 {{count}} 项留了下来",
+  "alpha.ext.gotIt": "知道了",
   "alpha.ext.packagesSection": "扩展包",
   "alpha.ext.packagesGroupNote": "一个扩展包里的技能属于这个包,只能整包移除。",
   // 「读不出」和「一个都没装」是两件事:合并成一句「暂无扩展包」会让用户以为东西丢了。

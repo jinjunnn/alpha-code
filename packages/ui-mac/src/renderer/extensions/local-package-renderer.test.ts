@@ -18,7 +18,7 @@ test("REQ-128 Phase 3 第 1→9 跳在生产 renderer × 生产 main 上端到�
   if (result.exitCode !== 0) throw new Error(output)
   // 这个数**先确认新用例真的跑起来了**才同步上来 —— 反过来用它去确认新增,会在
   // 「块替换吞掉前一条 + 新增一条」时净数对上而两轮审计都看不见。
-  expect(output).toContain(" 15 pass")
+  expect(output).toContain(" 20 pass")
   expect(output).toContain(" 0 fail")
-  expect(output).toMatch(/Ran 15 tests across 1 file/)
+  expect(output).toMatch(/Ran 20 tests across 1 file/)
 })
