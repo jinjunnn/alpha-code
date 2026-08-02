@@ -110,7 +110,11 @@ export type PackageGraphV1 = {
   children: PackageGraphNodeV1[]
 }
 
-/** 显示名的长度帽。够长到装得下真实插件名(本机语料最长 31),短到不能被当成一个载荷通道。 */
+/** 显示名的长度帽。够长到装得下真实插件名,短到不能被当成一个载荷通道。
+ *  **取值依据是实测,不是拍的**:本机 62 个插件的 manifest name 最长 **27**
+ *  (`claude-for-msft-365-install`),128 是它的 4.7 倍。这个数由
+ *  `claude-plugin-intake.test.ts` 钉住 —— 此前这行注释写的是「最长 31」,那是一句
+ *  没跑过就写下的散文断言,实测把它推翻了。 */
 export const PACKAGE_DISPLAY_NAME_MAX = 128
 
 /**

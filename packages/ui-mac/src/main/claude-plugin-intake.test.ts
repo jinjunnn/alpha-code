@@ -20,6 +20,7 @@ import {
   type LocalPackagePreviewV1,
   type LocalPackageSkipCode,
 } from "./claude-plugin-intake"
+import { PACKAGE_DISPLAY_NAME_MAX } from "./ext-package-ledger-v3"
 import { parseSkillFrontmatter } from "./ext-import-validate"
 
 // ── 合成夹具工具 ──────────────────────────────────────────────────────────────────────────
@@ -115,6 +116,11 @@ describe("AC1 真实语料全量(仓内夹具,不依赖本机路径)", () => {
     expect(withManifest.every((p) => p.displayName === p.name)).toBe(true)
     // 可装总数不受影响 —— 与上面那条 132 是同一份语料、同一次清点。
     expect(previews.reduce((n, p) => n + p.installableCount, 0)).toBe(132)
+    // 长度帽的**取值依据**:实测最长的真实插件名是 27 字(`claude-for-msft-365-install`),
+    // 帽是 128 —— 4.7 倍余量。钉住这个数,是因为「够用」这句话必须有个可检验的分母:
+    // 语料换了、或者有人把帽收到真实值以下,这里先红,而不是在用户机器上红。
+    expect(Math.max(...withManifest.map((p) => p.name.length))).toBe(27)
+    expect(PACKAGE_DISPLAY_NAME_MAX).toBeGreaterThan(27)
   })
 
   test("组件类型逐类具名:22 commands / 20 agents / 12 hooks / 22 .mcp.json(G9)", () => {

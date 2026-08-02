@@ -103,3 +103,56 @@ review_after: 2026-11-02
 
 `waitFor` 没有 `await` 断言 ⇒ 传一个 **async** 断言进去时,它的拒绝变成 unhandled rejection,
 而 `waitFor` **立刻返回成功**。第 9 跳换成异步的引擎 hook 之后正好踩上:那一条一度是永远绿的。
+
+## 第三轮:R2 Major —— 显示名反向破坏了安装路径
+
+**缺陷本身先复现过**(不是推断):插件名 129 个 `a` ⇒ `readManifest` 只要求非空、
+`mintPackageId` 把它**截成合法的 128 字符 ID** ⇒ 照样进 `installable` 预览;
+安装器把**原始 129 字符**写进 `displayName` ⇒ decoder 在 **receipt commit 那一刻**拒绝:
+
+```
+[ext-transaction] tx-rolled-back {"stage":"receipt-commit",
+  "reason":"receipt commit failed: package ledger mutation rejected (fail closed):
+            packageGraph.displayName: must be 1..128 characters"}
+```
+
+含控制字符的名字同理(`must not contain control characters`)。
+**一个只管显示、而且明确可选的字段,反向破坏了安装路径** —— 起因是同一条文法写了两遍,
+intake 一份(只要求非空)、decoder 一份(长度 + 控制字符),两份不一致。
+
+**绿基线:22 pass / 0 fail(renderer 竖线)、52 pass / 0 fail(真实语料 intake)。**
+
+| # | 闸 | 改坏了什么(生产代码) | 结果 |
+| --- | --- | --- | --- |
+| M1 | 超长名字:预览期定案 | 去掉 intake 的判定(= 修复前的行为) | **3 fail** |
+| M2 | 控制字符那一臂单独也被覆盖 | 只放宽控制字符那一臂,长度臂保留 | **2 fail** |
+| M3b | 真实语料零误伤 | 判据收到 26 字(< 实测最长 27) | **1 fail** |
+| M3c | 长度帽的取值依据 | 帽收到 20(< 27) | **1 fail** |
+| M4 | 安装器不许自己派生 | 改回 `displayName: preview.name` | **3 fail** |
+| M5 | 预览期告知不许省 | 去掉 `displayNameNotice` | **3 fail** |
+
+### 第四条没变红的配方,以及它揭出的一个真问题
+
+**M3 原配方**「把判据收到 30 字」⇒ **52 pass,仍然绿**。
+
+我以为 30 会误伤,依据是我在代码注释里写的「本机语料最长 31」。**实测:最长是 27**
+(`claude-for-msft-365-install`)。那句「31」是我**没跑就写下的散文断言** ——
+而它当时还被我用来论证「128 够长」。
+
+处置:①注释改成实测值并写明是实测;②把这个数**钉进测试**
+(`Math.max(...names.length) === 27` 且 `PACKAGE_DISPLAY_NAME_MAX > 27`),
+于是语料换了、或有人把帽收到真实值以下,先在这里红;③绕过配方换成 26 与 20,两条都当场变红。
+
+**四次同一形态。** 前三次是配方改错了地方;这一次不同 ——
+**配方是照着一句假事实设计的**。判据仍然是那一条:能执行就别推断。
+
+### 修法(两条约束逐条对照)
+
+1. **唯一真源**:`isValidPackageDisplayName` 出在 `ext-package-ledger-v3.ts`,
+   decoder 与 intake **都消费它**。
+2. **判定发生在预览期**:`LocalPackagePreviewV1` 新增 `displayName` / `displayNameNotice`;
+   intake 定案,安装器**只透传**。名字存不下 ⇒ 预览期具名告知、**安装照常成功**,
+   账本里那张图**根本没有** displayName 字段(缺席合法)。
+   **不偷偷截断** —— 截断会把作者写的名字改写成我们编的名字。
+   安装器另留一条**事务前**的具名拒绝兜底:绕过 intake 直接构造 preview 时,
+   失败也发生在动任何东西之前,而不是 commit 期回滚。
