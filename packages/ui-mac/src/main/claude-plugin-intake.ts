@@ -24,7 +24,7 @@ import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 
-import { collectImportSkillPayload, IMPORT_EXCLUDED_DIR_NAMES } from "./ext-fs-installer"
+import { collectImportSkillPayload, IMPORT_EXCLUDED_DIR_NAMES, readImportFileBounded } from "./ext-fs-installer"
 import { parseSkillFrontmatter, SKILL_CONTROL_FIELD_KEYS } from "./ext-import-validate"
 import { PACKAGE_ID_RE } from "./ext-package-ledger-v3"
 
@@ -77,6 +77,17 @@ export type LocalPackageSkipCode =
   | "not-self-contained-outside-reference"
   /** SKILL.md 用 `../` 引用了目录之外(常见:引用兄弟技能)。 */
   | "not-self-contained-parent-reference"
+  /** 独立 lstat 扫描本身失败(读不动 / 层级过深)⇒ **fail-closed**。
+   *  这一条不许省:扫描失败时「没看见 symlink / 没看见可执行位」不是「没有」,是**没看**。 */
+  | "self-containment-scan-failed"
+  /** 技能目录本身是符号链接,或它的 SKILL.md 是符号链接 ⇒ 具名拒绝。
+   *  **不许**因此把它从候选集里悄悄漏掉 —— 那会让预览说成「这个插件没有能装的技能」。 */
+  | "skill-entry-not-regular"
+  /** 本机已经有一个同名技能(owner 裁决 D:碰撞即跳过 + 显式告知)。
+   *  ⚠️ 这是**预览期告知**,不是安装期裁决:最终判决归安装期锁内的 fresh-only 闸。 */
+  | "name-collision-installed"
+  /** 同一个包里两个目录解析出同一个 frontmatter name ⇒ 全部具名跳过(不挑赢家)。 */
+  | "name-collision-in-package"
   /** 整包组件数超过事务真界 64 ⇒ 在 preview 期就拒,一条都不装。 */
   | "package-component-limit-exceeded"
 
@@ -98,6 +109,10 @@ const SKIP_DETAIL: Record<LocalPackageSkipCode, string> = {
   "not-self-contained-plugin-root-variable": "这个技能要用到整个插件目录里的东西,单独装过去会缺件",
   "not-self-contained-outside-reference": "这个技能引用了它自己文件夹以外的文件,装过去会缺件",
   "not-self-contained-parent-reference": "这个技能引用了同一插件里的别的技能,装过去会缺件",
+  "self-containment-scan-failed": "这个技能的文件夹我们检查不了(读不动或层级太深),为安全起见不装",
+  "skill-entry-not-regular": "这个技能是用快捷方式(符号链接)摆的,我们读不了它",
+  "name-collision-installed": "你已经有一个同名技能了,这个不装",
+  "name-collision-in-package": "这个插件里有两个技能重名,都不装",
   "package-component-limit-exceeded": "这一包技能太多,一次装不下",
 }
 
@@ -120,8 +135,12 @@ const UNSUPPORTED_COMPONENT_DETAIL: Record<LocalPackageUnsupportedComponentType,
 /** 原因码的固定优先级 —— 决定 preview 里哪一条当标题。顺序固定 = 结果确定,不随文件系统枚举顺序变。 */
 const SKIP_PRIORITY: readonly LocalPackageSkipCode[] = [
   "package-component-limit-exceeded",
+  "skill-entry-not-regular",
+  "self-containment-scan-failed",
   "frontmatter-unreadable",
   "payload-unreadable",
+  "name-collision-in-package",
+  "name-collision-installed",
   "control-field-unsupported",
   "not-self-contained-symlink",
   "not-self-contained-excluded-directory",
@@ -193,6 +212,12 @@ export type ImportDirIntakeV1 =
 export type LocalPackageIntakeOptions = {
   /** 已装的本地包 id 集合(由调用方从 V3 账本读)。命中即在确认之前给出「先移除整包」。 */
   readonly installedPackageIds?: ReadonlySet<string>
+  /** 本机**已占用的技能名**(由调用方从 v2 账本读)。命中 ⇒ 该组件具名跳过(owner 裁决 D)。
+   *
+   *  ⚠️ 这是**预览期告知**,不是安装期裁决。最终判决归安装期锁内的 fresh-only 闸
+   *  (`uncuratedSkillFreshGate`,`[T2-install]` 的 G4)—— 预览到确认之间状态还会变,
+   *  这里读到的只是「拍照那一刻」。**不许**把这里的结果当成安装期的授权依据。 */
+  readonly installedSkillNames?: ReadonlySet<string>
 }
 
 // ── 独立 lstat 扫描(**不是** collector 的输出)────────────────────────────────────────────
@@ -305,8 +330,15 @@ function isRegularFile(p: string): boolean {
   }
 }
 
-/** `<dir>/<sub>/<n>/SKILL.md` 形态的技能目录名(排序后返回,结果确定)。 */
-function skillDirNamesUnder(root: string, sub: string): string[] {
+/** `<sub>/` 下的技能候选条目。
+ *
+ *  **关键:symlink 目录 / symlink `SKILL.md` 不是「不算候选」,是「候选但具名拒绝」。**
+ *  前一版把它们在枚举期就滤掉了,后果是预览对一个用 symlink 摆技能的插件说
+ *  「这个插件没有能装的技能」—— 把一条具名原因悄悄降级成了一句错误的终态。
+ *  `regular` 为 false 的条目照样进候选集,只是 disposition 恒 skip。 */
+type SkillEntry = { name: string; regular: boolean }
+
+function skillEntriesUnder(root: string, sub: string): SkillEntry[] {
   const base = path.join(root, sub)
   if (!isDir(base)) return []
   let entries: fs.Dirent[]
@@ -315,10 +347,29 @@ function skillDirNamesUnder(root: string, sub: string): string[] {
   } catch {
     return []
   }
-  return entries
-    .filter((e) => !e.isSymbolicLink() && e.isDirectory() && isRegularFile(path.join(base, e.name, "SKILL.md")))
-    .map((e) => e.name)
-    .sort()
+  const out: SkillEntry[] = []
+  for (const e of entries) {
+    if (e.isSymbolicLink()) {
+      // 目录本身是 symlink:跟着走可能落到树外,不跟;但**必须让用户看见它**。
+      out.push({ name: e.name, regular: false })
+      continue
+    }
+    if (!e.isDirectory()) continue
+    let smd: fs.Stats | null = null
+    try {
+      smd = fs.lstatSync(path.join(base, e.name, "SKILL.md"))
+    } catch {
+      smd = null
+    }
+    if (!smd) continue // 目录里根本没有 SKILL.md ⇒ 它不是一个技能,不是「被拒的技能」
+    out.push({ name: e.name, regular: smd.isFile() })
+  }
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+}
+
+/** 只要名字(布局普查用)。 */
+function skillDirNamesUnder(root: string, sub: string): string[] {
+  return skillEntriesUnder(root, sub).map((e) => e.name)
 }
 
 /** 除 `skills/` 与 `.claude/skills/` 之外,还有哪些顶层目录里藏着 `<n>/SKILL.md`。
@@ -342,19 +393,30 @@ function nonStandardSkillDirs(root: string): string[] {
 
 type Manifest = { name: string; version: string | null; description: string; declaresSkillsField: boolean }
 
-/** 只消费三个标量 + 一个存在性判断。**不解析别人的文法**:结构不对就当没有 manifest。 */
+/** manifest 的字节上限。它是第三方目录里的文件,和技能载荷一样不可信 ——
+ *  裸 `readFileSync` 对一个 2GB 的 `plugin.json` 会把 Electron main 读死。 */
+const MANIFEST_MAX_BYTES = 256 * 1024
+
+/** 只消费三个标量 + 一个存在性判断。**不解析别人的文法**:结构不对就当没有 manifest。
+ *
+ *  读取走**与技能载荷同一份**硬化原语 `readImportFileBounded`(realpath 圈禁 + `O_NOFOLLOW`
+ *  + `O_NONBLOCK` + fstat 前置帽 + 定长读 + 增长探测)。此前这里是裸 `readFileSync`:
+ *  **同一个目录里,技能文件走硬化路径而 manifest 走裸读** —— 那不是纵深,那是一个旁路。 */
 function readManifest(root: string): Manifest | null {
-  const p = path.join(root, ".claude-plugin", "plugin.json")
+  const dir = path.join(root, ".claude-plugin")
+  const p = path.join(dir, "plugin.json")
   if (!isRegularFile(p)) return null
-  let raw: string
+  let realBase: string
   try {
-    raw = fs.readFileSync(p, "utf8")
+    realBase = fs.realpathSync(dir)
   } catch {
     return null
   }
+  const read = readImportFileBounded(p, realBase, MANIFEST_MAX_BYTES)
+  if (!read.ok) return null
   let parsed: unknown
   try {
-    parsed = JSON.parse(raw)
+    parsed = JSON.parse(read.data.toString("utf8"))
   } catch {
     return null
   }
@@ -430,7 +492,7 @@ export function previewLocalClaudePlugin(root: string, options: LocalPackageInta
   }
 
   // ── 布局普查:每一类不支持的摆法都要具名落地,一条都不静默 ──
-  const standardNames = skillDirNamesUnder(root, STANDARD_SKILL_DIR)
+  const standardEntries = skillEntriesUnder(root, STANDARD_SKILL_DIR)
   if (!manifest) {
     if (isRegularFile(path.join(root, ".claude-plugin", "marketplace.json"))) layout("marketplace-json-only", ".claude-plugin/marketplace.json")
     else layout("manifestless-plugin-dir", "")
@@ -452,17 +514,32 @@ export function previewLocalClaudePlugin(root: string, options: LocalPackageInta
   namedComponent("mcp-config", ".mcp.json", isRegularFile(path.join(root, ".mcp.json")))
 
   // ── G11:整包组件数超过事务真界 64 ⇒ **preview 期**整包拒,一条都不装 ──
-  const overLimit = standardNames.length > LOCAL_PACKAGE_MAX_COMPONENTS
+  // 判据是 `> 64`,不是 `=== 65` —— 66 / 200 一样必须拒(闸的表驱动用例覆盖 63/64/65/66/200)。
+  const overLimit = standardEntries.length > LOCAL_PACKAGE_MAX_COMPONENTS
 
-  const components: LocalPackageComponentV1[] = []
-  for (const name of standardNames) {
-    const dirRel = `${STANDARD_SKILL_DIR}/${name}`
+  const judged: LocalPackageComponentV1[] = []
+  for (const entry of standardEntries) {
+    const dirRel = `${STANDARD_SKILL_DIR}/${entry.name}`
     if (overLimit) {
-      components.push(skipped(name, dirRel, ["package-component-limit-exceeded"]))
+      judged.push(skipped(entry.name, dirRel, ["package-component-limit-exceeded"]))
       continue
     }
-    components.push(judgeSkill(root, dirRel, name))
+    // 技能目录本身是 symlink、或它的 SKILL.md 是 symlink ⇒ **具名拒绝**,不是从候选集里消失。
+    if (!entry.regular) {
+      judged.push(skipped(entry.name, dirRel, ["skill-entry-not-regular"]))
+      continue
+    }
+    judged.push(judgeSkill(root, dirRel, entry.name, options.installedSkillNames))
   }
+
+  // ── 包内重名(owner 裁决 D 的另一半):两个目录解析出同一个 frontmatter name ⇒ **都不装**。
+  // 不挑赢家 —— 挑赢家意味着「装进去的是哪一个」取决于目录枚举顺序,那是个没人能预期的结果。
+  // 只在**通过判定**的组件之间算:已经被拒的不参与,否则会给用户一条与真因无关的原因。
+  const nameCount = new Map<string, number>()
+  for (const c of judged) if (c.disposition === "install") nameCount.set(c.name, (nameCount.get(c.name) ?? 0) + 1)
+  const components: LocalPackageComponentV1[] = judged.map((c) =>
+    c.disposition === "install" && (nameCount.get(c.name) ?? 0) > 1 ? skipped(c.name, c.dir, ["name-collision-in-package"]) : c,
+  )
 
   const installable = components.filter((c) => c.disposition === "install")
   const packageId = manifest ? mintPackageId(manifest.name) : null
@@ -474,7 +551,7 @@ export function previewLocalClaudePlugin(root: string, options: LocalPackageInta
 
   const blockedReason =
     blockedReasonCode === "package-component-limit-exceeded"
-      ? `这一包有 ${standardNames.length} 个技能,超过一次能装的上限(${LOCAL_PACKAGE_MAX_COMPONENTS} 个),本版本不装`
+      ? `这一包有 ${standardEntries.length} 个技能,超过一次能装的上限(${LOCAL_PACKAGE_MAX_COMPONENTS} 个),本版本不装`
       : blockedReasonCode === "manifest-unreadable"
         ? "这个文件夹的插件说明我们读不出来,认不出它是哪个插件"
         : blockedReasonCode === "no-installable-component"
@@ -506,7 +583,7 @@ export function previewLocalClaudePlugin(root: string, options: LocalPackageInta
     unsupportedLayouts: layouts,
     snapshotDigest,
     duplicateImportNotice,
-    limits: { maxComponents: LOCAL_PACKAGE_MAX_COMPONENTS, skillCandidates: standardNames.length },
+    limits: { maxComponents: LOCAL_PACKAGE_MAX_COMPONENTS, skillCandidates: standardEntries.length },
   }
 }
 
@@ -527,12 +604,15 @@ function skipped(name: string, dir: string, codes: LocalPackageSkipCode[]): Loca
 
 /** 判一个技能目录能不能装。**命中的全部原因一起交出**,不是只报第一条 ——
  *  真实语料里 3 个技能同时踩自包含与控制字段两类,只报一条会让用户以为改掉它就能装。 */
-function judgeSkill(root: string, dirRel: string, dirName: string): LocalPackageComponentV1 {
+function judgeSkill(root: string, dirRel: string, dirName: string, installedSkillNames?: ReadonlySet<string>): LocalPackageComponentV1 {
   const skillDir = path.join(root, dirRel)
   const codes: LocalPackageSkipCode[] = []
 
   // ① 独立 lstat 扫描(**不是** collector 的输出):symlink / 可执行位 / 被排除目录。
   const scan = independentLstatScan(skillDir)
+  // **fail-closed**:扫描失败时「没看见 symlink / 没看见可执行位」不是「没有」,是**没看**。
+  // 从前这个字段产出了却没有任何消费点 —— 那就是 fail-open:扫不动的目录一路走成「可装」。
+  if (scan.failed !== null) return skipped(dirName, dirRel, ["self-containment-scan-failed"])
   if (scan.symlinks.length > 0) codes.push("not-self-contained-symlink")
   if (scan.excludedDirs.length > 0) codes.push("not-self-contained-excluded-directory")
   if (scan.files.some((f) => (f.mode & 0o111) !== 0)) codes.push("not-self-contained-executable-bit")
@@ -557,6 +637,11 @@ function judgeSkill(root: string, dirRel: string, dirName: string): LocalPackage
     return skipped(dirName, dirRel, codes)
   }
   if (fm.keys.some((k) => SKILL_CONTROL_FIELD_KEYS.includes(k))) codes.push("control-field-unsupported")
+
+  // ③b 与本机已有技能重名(owner 裁决 D:碰撞即跳过 + 显式告知)。
+  // 判据用 frontmatter 的 name —— 那才是落盘的键(`ext-skill-generations.ts` 要求两者逐字相等),
+  // 目录名只是显示用。**预览期告知,不是安装期裁决**(见 LocalPackageIntakeOptions 的注)。
+  if (installedSkillNames?.has(fm.name)) codes.push("name-collision-installed")
 
   // ④ 外部引用(启发式,方向保守 —— 不保证自包含,只保证命中这几类特征即拒)。
   const refs = scanSkillReferences(text, skillDir, root)

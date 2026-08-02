@@ -508,7 +508,7 @@ function collectImportFiles(srcDir: string): { ok: true; files: string[] } | { o
 /** #390:未策展技能导入 byte-exact 单文件读 —— realpath 圈禁(父目录 symlink 逃逸)+ O_NOFOLLOW
  *  开(末段 symlink 换内容)+ fstat 前置帽 + 定长读 + 增长探测(帽/身份都以实际字节为准,不信 walk 期
  *  stat 快照;review r1 Major 3/4)。data.length 即最终帽依据,调用方据此累计真实总量。 */
-function readImportFileBounded(
+export function readImportFileBounded(
   abs: string,
   realBase: string,
   capBytes: number,

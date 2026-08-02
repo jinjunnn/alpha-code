@@ -7,7 +7,7 @@
 //     **只带块式控制字段的技能(0)**。
 //     拿「真实语料全过」当这些闸绿了 = 假闸形态⑨(期望值恰好等于可硬编码的常量)。
 
-import { describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -48,6 +48,7 @@ function codesOf(preview: LocalPackagePreviewV1, dirName: string): readonly Loca
 
 describe("AC1 真实语料全量(仓内夹具,不依赖本机路径)", () => {
   const corpus = materializeCorpus()
+  afterAll(corpus.cleanup) // 否则每次绿灯运行都在临时目录留下 888 个文件(约 7.9MB)
   const pluginRoots = pluginRootsIn(corpus.root)
   const previews = pluginRoots.map((r) => previewLocalClaudePlugin(r))
   const allComponents = previews.flatMap((p) => p.components)
@@ -399,6 +400,33 @@ describe("G17 调用控制字段具名跳过", () => {
 // ══════════════════════════════════════════════════════════════════════════════════════════
 
 describe("G11 组件数上限 = 事务真界 64", () => {
+  // 表驱动:只有 64/65 两点的闸,一个写死 `count === 65` 的错误实现可以全绿 ——
+  // 66 个照报可装,到确认才撞事务硬上限(假闸形态⑨)。故正边界与负向各取多点。
+  test.each([
+    [1, "installable"],
+    [63, "installable"],
+    [64, "installable"],
+    [65, "blocked"],
+    [66, "blocked"],
+    [200, "blocked"],
+  ] as const)("%i 个技能 ⇒ %s", (count, expected) => {
+    const root = tmp(`bound${count}`)
+    writeManifest(root, `bound${count}`)
+    for (let i = 0; i < count; i++) writeSkill(path.join(root, "skills", `s${i}`), `s${i}`)
+    const preview = previewLocalClaudePlugin(root)
+    expect(preview.limits.skillCandidates).toBe(count)
+    expect(preview.disposition).toBe(expected)
+    if (expected === "blocked") {
+      expect(preview.blockedReasonCode).toBe("package-component-limit-exceeded")
+      expect(preview.installableCount).toBe(0)
+      expect(preview.components.length).toBe(count) // 不是 slice(0, 64)
+      for (const c of preview.components) expect(c.reasonCodes).toEqual(["package-component-limit-exceeded"])
+    } else {
+      expect(preview.installableCount).toBe(count)
+    }
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
   test("65 个技能 ⇒ preview 期整包具名拒绝,且**一个技能都没被采集**", () => {
     const root = tmp("limit")
     writeManifest(root, "toobig")
@@ -416,14 +444,48 @@ describe("G11 组件数上限 = 事务真界 64", () => {
     for (const c of preview.components) expect(c.reasonCodes).toEqual(["package-component-limit-exceeded"])
     fs.rmSync(root, { recursive: true, force: true })
   })
+})
 
-  test("64 个技能仍然可装(界是 64,不是 16)", () => {
-    const root = tmp("atlimit")
-    writeManifest(root, "exactly")
-    for (let i = 0; i < 64; i++) writeSkill(path.join(root, "skills", `s${i}`), `s${i}`)
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// owner 裁决 D — 重名(纯函数半场;生产可达性由 claude-plugin-intake.ipc.test.ts 钉)
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+describe("owner 裁决 D 重名", () => {
+  test("与本机已装技能重名 ⇒ 具名跳过(判据用 frontmatter 的 name,不是目录名)", () => {
+    const root = tmp("collide")
+    writeManifest(root, "collide")
+    // 目录名 dirname-differs,frontmatter name = taken —— 落盘的键是后者。
+    writeSkill(path.join(root, "skills", "dirname-differs"), "taken")
+    writeSkill(path.join(root, "skills", "free"), "free")
+    const preview = previewLocalClaudePlugin(root, { installedSkillNames: new Set(["taken"]) })
+    expect(codesOf(preview, "dirname-differs")).toContain("name-collision-installed")
+    expect(codesOf(preview, "free")).toEqual([])
+    expect(preview.installableCount).toBe(1)
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  test("包内两个目录解析出同一个 name ⇒ **两个都跳过**(不挑赢家)", () => {
+    const root = tmp("dupname")
+    writeManifest(root, "dupname")
+    writeSkill(path.join(root, "skills", "alpha-dir"), "same-name")
+    writeSkill(path.join(root, "skills", "beta-dir"), "same-name")
+    writeSkill(path.join(root, "skills", "unique"), "unique")
     const preview = previewLocalClaudePlugin(root)
-    expect(preview.disposition).toBe("installable")
-    expect(preview.installableCount).toBe(64)
+    expect(codesOf(preview, "alpha-dir")).toEqual(["name-collision-in-package"])
+    expect(codesOf(preview, "beta-dir")).toEqual(["name-collision-in-package"])
+    expect(preview.installableCount).toBe(1)
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  test("已被别的原因拒掉的组件不参与包内重名计数(不给与真因无关的原因)", () => {
+    const root = tmp("dupskip")
+    writeManifest(root, "dupskip")
+    writeSkill(path.join(root, "skills", "ok-one"), "twin")
+    writeSkill(path.join(root, "skills", "ctrl-one"), "twin", "user-invocable: false\n")
+    const preview = previewLocalClaudePlugin(root)
+    expect(codesOf(preview, "ctrl-one")).toEqual(["control-field-unsupported"])
+    expect(codesOf(preview, "ok-one")).toEqual([]) // 另一个已被拒 ⇒ 这个不再算重名
+    expect(preview.installableCount).toBe(1)
     fs.rmSync(root, { recursive: true, force: true })
   })
 })
@@ -463,6 +525,51 @@ describe("G12 敌意夹具(枚举一律 -a;这些文件在运行期生成,不进
     fs.rmSync(root, { recursive: true, force: true })
   })
 
+  test("**杀掉硬化读取旁路**:SKILL.md frontmatter 正常闭合但文件超 256KB ⇒ 必须被拒", () => {
+    // 这一条是 G12 里唯一真能杀掉「把技能读取换成裸 readFileSync」的用例:
+    // 裸读会成功、frontmatter 也解析得出来 ⇒ 判成可装;只有走 collector 的 256KB 帽才会拒。
+    // (另外三例杀不掉它:symlink 被独立扫描先拒、NUL 对裸读同样保真、超长 frontmatter 由解析器拒。)
+    const root = tmp("oversize")
+    writeManifest(root, "oversize")
+    const dir = path.join(root, "skills", "big")
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, "SKILL.md"), `---\nname: big\ndescription: d\n---\n\n${"x".repeat(300 * 1024)}`)
+    const preview = previewLocalClaudePlugin(root)
+    expect(codesOf(preview, "big")).toEqual(["payload-unreadable"])
+    expect(preview.installableCount).toBe(0)
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  test("**超大 plugin.json** ⇒ 认不出这个插件,而不是把它整份读进 main 内存", () => {
+    // manifest 是第三方目录里的文件,和技能载荷一样不可信。此前它走的是裸 readFileSync(无上限)。
+    const root = tmp("bigmanifest")
+    fs.mkdirSync(path.join(root, ".claude-plugin"), { recursive: true })
+    fs.writeFileSync(
+      path.join(root, ".claude-plugin", "plugin.json"),
+      JSON.stringify({ name: "huge", description: "d", pad: "y".repeat(400 * 1024) }),
+    )
+    writeSkill(path.join(root, "skills", "s"), "s")
+    const preview = previewLocalClaudePlugin(root)
+    expect(preview.packageId).toBeNull()
+    expect(preview.blockedReasonCode).toBe("manifest-unreadable")
+    expect(preview.limits.skillCandidates).toBe(1) // 仍看得见有技能,不是「空目录」
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  test("plugin.json 是 symlink ⇒ 不跟随(与技能载荷同一份硬化原语)", () => {
+    const outside = tmp("outside4")
+    fs.writeFileSync(path.join(outside, "real.json"), JSON.stringify({ name: "sneak", description: "d" }))
+    const root = tmp("manifestlink")
+    fs.mkdirSync(path.join(root, ".claude-plugin"), { recursive: true })
+    fs.symlinkSync(path.join(outside, "real.json"), path.join(root, ".claude-plugin", "plugin.json"))
+    writeSkill(path.join(root, "skills", "s"), "s")
+    const preview = previewLocalClaudePlugin(root)
+    expect(preview.packageId).toBeNull()
+    expect(preview.blockedReasonCode).toBe("manifest-unreadable")
+    fs.rmSync(root, { recursive: true, force: true })
+    fs.rmSync(outside, { recursive: true, force: true })
+  })
+
   test("超长 frontmatter(>8192)⇒ frontmatter-unreadable,不是一句泛化失败", () => {
     const root = tmp("longfm")
     writeManifest(root, "longfm")
@@ -473,7 +580,9 @@ describe("G12 敌意夹具(枚举一律 -a;这些文件在运行期生成,不进
     fs.rmSync(root, { recursive: true, force: true })
   })
 
-  test("SKILL.md 本身是 symlink ⇒ 拒(collector 的 lstat 门 + 独立扫描双保险)", () => {
+  test("SKILL.md 本身是 symlink ⇒ **具名拒绝**,不是从候选集里消失", () => {
+    // 前一版这条断言的是 `skillCandidates === 0` —— 那是**把 bug 写成了期望**:
+    // 用户会看到「这个插件没有能装的技能」,而真因是「你用快捷方式摆了技能」。
     const outside = tmp("outside2")
     fs.writeFileSync(path.join(outside, "real.md"), "---\nname: sneaky\ndescription: d\n---\n")
     const root = tmp("smdlink")
@@ -481,12 +590,46 @@ describe("G12 敌意夹具(枚举一律 -a;这些文件在运行期生成,不进
     const dir = path.join(root, "skills", "sneaky")
     fs.mkdirSync(dir, { recursive: true })
     fs.symlinkSync(path.join(outside, "real.md"), path.join(dir, "SKILL.md"))
-    // 该目录不构成 `skills/<n>/SKILL.md`(SKILL.md 不是常规文件)⇒ 不进候选集,也不静默成 0-skill。
     const preview = previewLocalClaudePlugin(root)
-    expect(preview.limits.skillCandidates).toBe(0)
-    expect(preview.blockedReasonCode).toBe("no-installable-component")
+    expect(preview.limits.skillCandidates).toBe(1)
+    expect(codesOf(preview, "sneaky")).toEqual(["skill-entry-not-regular"])
+    expect(preview.installableCount).toBe(0)
     fs.rmSync(root, { recursive: true, force: true })
     fs.rmSync(outside, { recursive: true, force: true })
+  })
+
+  test("技能目录本身是 symlink ⇒ **具名拒绝**(不跟随、也不静默漏掉)", () => {
+    const outside = tmp("outside3")
+    fs.mkdirSync(path.join(outside, "realskill"), { recursive: true })
+    fs.writeFileSync(path.join(outside, "realskill", "SKILL.md"), "---\nname: linked\ndescription: d\n---\n")
+    const root = tmp("dirlink")
+    writeManifest(root, "dirlink")
+    fs.mkdirSync(path.join(root, "skills"), { recursive: true })
+    fs.symlinkSync(path.join(outside, "realskill"), path.join(root, "skills", "linked"))
+    const preview = previewLocalClaudePlugin(root)
+    expect(preview.limits.skillCandidates).toBe(1)
+    expect(codesOf(preview, "linked")).toEqual(["skill-entry-not-regular"])
+    fs.rmSync(root, { recursive: true, force: true })
+    fs.rmSync(outside, { recursive: true, force: true })
+  })
+
+  test("独立扫描失败(深度 33,深层还埋着可执行文件)⇒ **fail-closed** 具名拒绝", () => {
+    // 反方向才是真危险:扫不动时「没看见可执行位」不是「没有」,是**没看**。
+    const root = tmp("deep")
+    writeManifest(root, "deep")
+    const dir = path.join(root, "skills", "abyss")
+    writeSkill(dir, "abyss")
+    let cur = dir
+    for (let i = 0; i < 34; i++) {
+      cur = path.join(cur, `d${i}`)
+      fs.mkdirSync(cur, { recursive: true })
+    }
+    fs.writeFileSync(path.join(cur, "run.sh"), "#!/bin/sh\n")
+    fs.chmodSync(path.join(cur, "run.sh"), 0o755)
+    const preview = previewLocalClaudePlugin(root)
+    expect(codesOf(preview, "abyss")).toEqual(["self-containment-scan-failed"])
+    expect(preview.installableCount).toBe(0)
+    fs.rmSync(root, { recursive: true, force: true })
   })
 })
 
