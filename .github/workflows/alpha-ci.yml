@@ -243,6 +243,14 @@ jobs:
       # REQ-027: same flag-order constraint as the typecheck job.
       # REQ-062: ext tests carry the prompt-rebrand drift lock (curated substrings asserted against
       # the upstream base prompts — a sync that rewrites them turns this red, per ADR-015 合并验证).
+      # #769:这一步在 CI 上跑的是**降级档**,而且它自己会在 stdout 说出来
+      # (`PROVENANCE NOT VERIFIED this run` + 一条 workflow 注解)。CI 是裸 checkout,
+      # 没有兄弟仓 `../alpha-web`,「这些字节来自那个 commit」结构上证不了 —— 以前那里硬失败,
+      # 于是本步**恒红**,红的理由与它要验的漂移无关,而恒红的闸等于没有闸。
+      # 不在这里加一次 alpha-web checkout 的理由:本仓 public、alpha-web private,跨仓 checkout
+      # 要把私仓读令牌放进公开仓的 secrets,而本 workflow 触发在 `pull_request` —— fork PR
+      # 结构上拿不到 secrets,那一步对外部贡献者依然红。provenance 由开发机 pre-push 真验
+      # (那里有兄弟仓);判读法见 docs/runbooks/ci.md 第 2 节。
       - name: verify immutable Alpha contract vendor lock
         if: needs.detect.outputs.code == 'true'
         run: bun run --cwd packages/alpha-contracts-consumer check:vendor

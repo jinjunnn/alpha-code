@@ -155,6 +155,9 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const repositoryRoot = resolve(packageRoot, "../..")
 const check = process.argv.includes("--check")
 
+/** The producer's own record of the artifact — the one file that cannot contain its own hash. */
+const PRODUCER_MANIFEST = "extension-package-producer-artifact.v1.json"
+
 const sha256 = (data: Uint8Array) => createHash("sha256").update(data).digest("hex")
 const sourceRootOf = (upstream: (typeof UPSTREAMS)[number]) => {
   const explicit = process.env[upstream.sourceEnv]
@@ -187,9 +190,19 @@ if (check) {
     const vendorRoot = resolve(packageRoot, upstream.vendor)
     const sourceRoot = sourceRootOf(upstream)
     const hasStagedSource = existsSync(sourceRoot)
-    if ("commitBound" in upstream && !hasStagedSource)
-      throw new Error(`required producer checkout is unavailable: ${sourceRoot}`)
-    if ("commitBound" in upstream) {
+    // #769:这里原本对 commitBound 条目**硬抛**「required producer checkout is unavailable」。
+    // CI 跑的是裸 checkout,兄弟仓 `../alpha-web` 结构上不存在 —— 于是 `verify immutable Alpha
+    // contract vendor lock` 这一步**恒红**,而红的理由与它要验的漂移毫无关系。一道恒红的闸等于
+    // 没有闸,还更糟:大家学会忽略它,真出漂移时也没人看(#754 是同一种病的本地那一道)。
+    //
+    // 为什么不在 CI 里 checkout 兄弟仓(票面的另一条路):alpha-code 是 **public**、alpha-web 是
+    // **private**,跨仓 checkout 要把私仓读令牌放进公开仓的 Actions secrets;而本 workflow 触发在
+    // `pull_request`,fork PR 结构上拿不到 secrets ⇒ 那一步对外部贡献者依然红。再加上 pin 的 sha
+    // 要么全量 clone 私仓、要么抄进 YAML 变成第二份真相 —— 都是拿恒红换更坏的东西。
+    //
+    // 所以:无源时**降级**并在输出里说清降级掉的是哪一条保证(下方 console.log)。`vendor`
+    // 那一侧照旧硬失败 —— 没有 provenance 就不能落盘一份自洽的替身 lock。
+    if (hasStagedSource && "commitBound" in upstream) {
       const resolved = gitInRepository(sourceRoot, ["rev-parse", `${upstream.commit}^{commit}`])
       if (resolved.exitCode !== 0 || resolved.stdout.toString().trim() !== upstream.commit)
         throw new Error(
@@ -224,15 +237,22 @@ if (check) {
       const source = await sourceBytes(upstream, sourceRoot, path)
       if (sha256(source) !== entry.sha256) throw new Error(`staged contract hash mismatch: ${path}`)
     }
+    // 降级输出要报「锚住了几条」,而报的必须是**真跑过的条数**,不是从别处推算出来的数字 ——
+    // 推算出来的数字在断言被跳过时依然好看,那正是假绿的形状。
+    let manifestAnchored = 0
     if ("artifactPath" in upstream) {
+      // #769:manifest 从 **vendored** 字节读,不再从 git 读。有 staged checkout 时两者可证等价 ——
+      // 上面的逐文件循环已断言 vendored == lock == staged bytes,而这份 manifest 自己就在 files 里。
+      // 没有 checkout 时这是唯一还跑得动的读法,于是下面这组断言在 CI 上**真的会被执行**,
+      // 而不是像原先那样连同整步一起红掉(红掉 = 一条也没跑)。
       const manifest = JSON.parse(
         new TextDecoder().decode(
-          await sourceBytes(upstream, sourceRoot, "extension-package-producer-artifact.v1.json"),
+          new Uint8Array(await Bun.file(resolve(vendorRoot, PRODUCER_MANIFEST)).arrayBuffer()),
         ),
       ) as {
         artifactPath?: unknown
         artifactSha256?: unknown
-        files?: unknown
+        files?: Array<{ path?: unknown; sha256?: unknown }>
         producerRepository?: unknown
         producerCommit?: unknown
       }
@@ -258,6 +278,24 @@ if (check) {
         aggregate !== upstream.artifactSha256
       )
         throw new Error(`producer artifact manifest aggregate/provenance binding mismatch: ${upstream.lock}`)
+      // #769:把 manifest 声称的每个文件哈希与 lock 条目对上。**没有这一条,降级模式就是自洽的**
+      // ——「lock ↔ vendored 字节」两边都由 `vendor` 一次跑就同时重写:拿一个陈旧/错误的目录跑一次
+      // vendor,两边一起被改写,闸门照样绿(正是下方注释点名的那个攻击)。而 `artifactSha256` 是
+      // **人在 diff 里评审过的源码常量**,`vendor` 从不回写它;aggregate 又覆盖整个 files 数组。
+      // 于是这一条把 35 个文件哈希锚死在一个机器改不动的值上 —— 降级模式因此仍是一道真闸,
+      // 只是证不到「这些字节来自那个 git commit」。断言顺序:aggregate 先跑,所以被清空/改形的
+      // files 数组在这里之前就已经红了。
+      if (!Array.isArray(manifest.files))
+        throw new Error(`producer artifact manifest has no file list: ${upstream.lock}`)
+      const lockHash = new Map(lock.files.map((entry) => [entry.path, entry.sha256]))
+      for (const entry of manifest.files) {
+        if (typeof entry.path !== "string" || lockHash.get(entry.path) !== entry.sha256)
+          throw new Error(
+            `producer manifest disagrees with the lock about ${String(entry.path)}: ` +
+              `manifest ${String(entry.sha256)} vs lock ${String(lockHash.get(String(entry.path)))} (${upstream.lock})`,
+          )
+        manifestAnchored++
+      }
     }
     // 只说自己真的验过的事。有 staged checkout 时三方比对(lock ↔ vendored 字节 ↔ 上游字节)成立,
     // 说 "from …@<sha>" 才是真的;**没有**时,本次只证明了本仓自洽(lock ↔ vendored 字节),
@@ -265,14 +303,27 @@ if (check) {
     // 无源时仍打印 "verified … from …@<sha>" 就是宣称一件自己没验证的事(假闸门的标准形态):
     // 拿一个陈旧/错误的目录跑一次 vendor,脚本照收并重写 lock,CI 随后照样说"来自那个 commit"。
     // 无源不判红 —— CI 没有上游 checkout 是常态,不是错误;错的只是措辞。
-    console.log(
-      hasStagedSource
-        ? `verified ${upstream.files.length} contract artifacts from ${upstream.repo}@${upstream.commit}` +
-            ` (lock + staged upstream bytes)`
-        : `checked ${upstream.files.length} contract artifacts against ${upstream.lock}` +
-            ` — lock ↔ vendored bytes OK; PROVENANCE NOT VERIFIED this run` +
-            ` (no staged checkout of ${upstream.repo}@${upstream.commit}; these bytes are not proven to come from it)`,
-    )
+    if (hasStagedSource) {
+      console.log(
+        `verified ${upstream.files.length} contract artifacts from ${upstream.repo}@${upstream.commit}` +
+          ` (lock + staged upstream bytes)`,
+      )
+      continue
+    }
+    // #769:降级这件事必须**响亮**。一行淹在绿色步骤日志里的 console.log 就是「大家习惯性忽略它」
+    // 的下一个形态,所以在 GitHub Actions 上同时发一条 workflow 注解 —— 它会出现在 run summary 和
+    // PR 页面上。本地不打注解(那只是噪音),judgment 完全一样,只是呈现方式跟着环境走。
+    const anchored = manifestAnchored
+      ? `; ${manifestAnchored} producer-manifest hashes ↔ source-pinned aggregate` +
+        ` ${"artifactSha256" in upstream ? upstream.artifactSha256 : ""} OK`
+      : ""
+    const degraded =
+      `checked ${upstream.files.length} contract artifacts against ${upstream.lock}` +
+      ` — lock ↔ vendored bytes OK${anchored}; PROVENANCE NOT VERIFIED this run` +
+      ` (no staged checkout of ${upstream.repo}@${upstream.commit}; these bytes are not proven to come from it)`
+    console.log(degraded)
+    if (process.env.GITHUB_ACTIONS === "true")
+      console.log(`::warning title=PROVENANCE NOT VERIFIED (${upstream.repo})::${degraded}`)
   }
   process.exit(0)
 }
