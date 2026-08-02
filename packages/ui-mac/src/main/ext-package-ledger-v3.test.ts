@@ -357,3 +357,61 @@ describe("REQ-128 #706 — 落盘前的整体不变量", () => {
     if (!dupClaim.ok) expect(dupClaim.reason).toContain("duplicate claim")
   })
 })
+
+// REQ-128 Phase 3 `#781`(基线 §9 D3 = 编排者裁决 F):`envelopeDigest` 保留字段名,填本地
+// 规范化载荷摘要,**由测试钉住**「它不是信封摘要、provenance 从 record.origin 读」。
+// 裁决明写「不许靠注释解决」—— 所以这两条在这里,不在文件抬头。
+describe("REQ-128 #781 — `envelopeDigest` 名不副实,且它不承载任何判决", () => {
+  /** catalog:一份已验签信封的摘要。 */
+  const CATALOG_ENVELOPE = `sha256:${"c".repeat(64)}`
+  /** 本地 Claude 插件包:**本机对本地字节算的**规范化载荷摘要。格式相同,语义不同。 */
+  const LOCAL_PAYLOAD = `sha256:${"1".repeat(64)}`
+
+  const localGraph = graph({
+    packageId: "local:tide-plugin",
+    envelopeDigest: LOCAL_PAYLOAD,
+    root: { componentId: "user:premarket", kind: "skill", name: "premarket", required: true, manifestDigest: D2 },
+  })
+  const catalogGraph = graph({
+    packageId: "skill:demo",
+    envelopeDigest: CATALOG_ENVELOPE,
+    root: { componentId: "skill:demo", kind: "skill", name: "premarket", required: true, manifestDigest: D2 },
+  })
+
+  test("`local:` 命名空间与本地载荷摘要:decoder 照收 —— 它只校验格式,不校验来源", () => {
+    expect(PACKAGE_ID_RE.test("local:tide-plugin")).toBe(true)
+    expect(decodePackageGraphV1(localGraph)).toEqual({ ok: true, value: localGraph })
+    // 这正是本地路线不必改 `#306` 的全部理由:图节点的摘要与 child record 的摘要互不校验。
+  })
+
+  test("换掉 envelopeDigest 的语义,本模块的每一个判决逐字不变", () => {
+    const localOwner = bundleOwner(localGraph.packageId, localGraph.root.manifestDigest)
+    const catalogOwner = bundleOwner(catalogGraph.packageId, catalogGraph.root.manifestDigest)
+    const state = (g: PackageGraphV1, owner: string) =>
+      validateV3State({ recordKeys: new Set(["skill:premarket"]), packageGraphs: [g], claims: [claim("skill", "premarket", [owner])] })
+    expect(state(localGraph, localOwner)).toEqual({ ok: true })
+    expect(state(catalogGraph, catalogOwner)).toEqual({ ok: true })
+    // 直接卸载判决同样只看 owner 集合,不看图上的 digest 是打哪来的。
+    // (理由串里会点名 owner —— 那是给用户看的「去卸哪个包」,判决本身是 `decision` 这一格。)
+    const verdictOf = (owner: string) => directUninstallVerdict(claim("skill", "premarket", [owner]), "skill", "premarket")
+    expect(verdictOf(localOwner).decision).toBe("refuse")
+    expect(verdictOf(localOwner).decision).toBe(verdictOf(catalogOwner).decision)
+    // 但它仍被 installedGraphDigest 覆盖 —— 改一个字节照样响亮失败,不是「随便填」。
+    expect(decodePackageGraphV1({ ...localGraph, envelopeDigest: CATALOG_ENVELOPE }).ok).toBe(false)
+  })
+
+  test("provenance 不在这本账里:V3 的状态入参结构上答不出「这东西哪来的」", () => {
+    // `validateV3State` 的 recordKeys 是 `${kind}:${name}` 字符串集 —— 没有 origin、没有 id、
+    // 没有 digest。所以「这个包是不是策展来的」只能问 child record 的 `origin`
+    // (`ext-receipt-v2` 的 `decodeRecordV2`:非 catalog 恒 `user:<name>` 且禁携供给链摘要)。
+    // 若将来有人往 V3 里加「catalog-only」判据,本地扩展包会在这里先红,而不是在用户机器上。
+    const owner = bundleOwner(localGraph.packageId, localGraph.root.manifestDigest)
+    expect(
+      validateV3State({
+        recordKeys: new Set(["skill:premarket"]),
+        packageGraphs: [localGraph],
+        claims: [claim("skill", "premarket", [owner])],
+      }),
+    ).toEqual({ ok: true })
+  })
+})

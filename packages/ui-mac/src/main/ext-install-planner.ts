@@ -698,8 +698,13 @@ function portablePathProblem(p: string): string | null {
  *  一一对应且不靠数组序、拒重复/缺项/多项/不安全路径/可移植性碰撞、bytes 精确),全部通过后第二遍
  *  才逐文件 putCasBlobFromBuffer(下载/收集层已验一次 digest,put 内再验一次)——校验失败时 CAS
  *  零写入。put 失败 = 整装 fail-closed;已写入 blob 不逆删(可能已被并发/他环境引用),交 GC
- *  grace(#318)。put 自愈损坏在店 blob 的 warnings loud 透传。 */
-function promotePayloadToCas(
+ *  grace(#318)。put 自愈损坏在店 blob 的 warnings loud 透传。
+ *
+ *  REQ-128 Phase 3 `#781`:**导出**给本地 Claude 插件包的安装路径复用(`claude-plugin-install.ts`
+ *  要为 N 个技能各提升一份多文件载荷)。逻辑一个字未改 —— 自己写一份「把 buffer 塞进 CAS」的
+ *  替身就会漏掉这里的第一遍结构校验(路径安全 / 大小写折叠碰撞 / bytes 精确),而那些正是
+ *  「校验失败时 CAS 零写入」这条保证的全部内容。 */
+export function promotePayloadToCas(
   casBaseRoot: string,
   payload: Array<{ path: string; data: Buffer }>,
   manifest: Array<{ path: string; sha256: string; bytes: number }>,
@@ -2622,8 +2627,13 @@ export type UncuratedImportOutcome =
 
 /** 未策展 skill 的 fresh-only 门(agent 无更新链,skill 未策展导入同款 fresh-only)—— 与
  *  agentFreshGate 对称:catalog/损坏冲突(checkUncuratedConflict)+ 账本可写 + 任一同名有效/ v1
- *  记录拒 + 无账 flat 目录拒。锁外 preflight 省无谓 CAS 写,锁内 precondition 封 TOCTOU。 */
-function uncuratedSkillFreshGate(root: string, name: string): { ok: true } | { ok: false; reason: string } {
+ *  记录拒 + 无账 flat 目录拒。锁外 preflight 省无谓 CAS 写,锁内 precondition 封 TOCTOU。
+ *
+ *  REQ-128 Phase 3 `#781`:**导出**给本地 Claude 插件包的安装路径复用(为 N 个 accepted 建
+ *  锁内组合 precondition)。逻辑一个字未改 —— **复用同一个闸**是这条要求的全部要点:自己写一个
+ *  「查账本 record」的替身会漏掉它已经在查的三样,而那三样各自都是「静默认领用户既有内容」的
+ *  入口:损坏账本(`probeLedgerForWrite`)、**无账本的 flat 目录**、**残留 generation store**。 */
+export function uncuratedSkillFreshGate(root: string, name: string): { ok: true } | { ok: false; reason: string } {
   const base = checkUncuratedConflict(root, "skill", name)
   if (!base.ok) return base
   const probe = probeLedgerForWrite(root)
