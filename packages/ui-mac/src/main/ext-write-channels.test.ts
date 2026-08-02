@@ -9,7 +9,7 @@ import * as path from "node:path"
 
 import { makeRecoveryGate, type RecoveryGate } from "./ext-recovery-gate"
 import { probeTransactionJournals } from "./ext-transaction"
-import { buildGatedWriteChannels, GATED_WRITE_CHANNELS, type WriteChannelBodies, type WriteChannelRoots } from "./ext-write-channels"
+import { buildGatedWriteChannels, GATED_WRITE_CHANNELS, LOCAL_PACKAGE_READ_CHANNELS, type WriteChannelBodies, type WriteChannelRoots } from "./ext-write-channels"
 
 const GLOBAL = "/roots/global"
 const PROJECT = "/roots/project"
@@ -52,6 +52,8 @@ function makeHarness(admit: boolean) {
     persistMcp: body("persistMcp"),
     installPlugin: body("installPlugin"),
     importAgentConfirm: body("importAgentConfirm"),
+    // `#782`:同上 —— 漏掉这一行时 body 是 undefined,而「键集一一对应」仍然全绿。
+    importClaudePluginConfirm: body("importClaudePluginConfirm"),
     importSkillFolder: body("importSkillFolder"),
     importSkillGit: body("importSkillGit"),
   }
@@ -68,10 +70,54 @@ describe("GATED_WRITE_CHANNELS — 表完整性", () => {
     expect(new Set(names).size).toBe(names.length)
     for (const n of names) expect(n.startsWith("ext-")).toBe(true)
   })
+
+  // `#782`:**表内容逐名断言**,而不只是「builder 与表键集一一对应」。
+  // 那条对应关系对「有人往表里加了一条**不该写盘**的通道」是瞎的 —— 加一条 body、加一条键,
+  // 两边照样一一对应,全绿。这里把整张表的名字写死:表一变,这条就红,改的人必须回来解释。
+  test("写表内容逐名钉死:preview / cancel / 列表三条纯读通道**不在**表内", () => {
+    expect(Object.values(GATED_WRITE_CHANNELS)).toEqual([
+      "ext-install-catalog",
+      "ext-uninstall-v2",
+      "ext-uninstall-package",
+      "ext-rollback",
+      "ext-set-install-state",
+      "ext-project-residuals-clean",
+      "ext-remove-mcp",
+      "ext-persist-mcp",
+      "ext-install-plugin",
+      "ext-import-agent-confirm",
+      "ext-import-claude-plugin-confirm",
+      "ext-import-skill-folder",
+      "ext-import-skill-git",
+    ])
+    // 两段式的既有先例:agent 的 preview 不在表内、confirm 在表内。本地插件包逐字同款。
+    const write = new Set<string>(Object.values(GATED_WRITE_CHANNELS))
+    expect(write.has("ext-import-agent-preview")).toBe(false)
+    expect(write.has("ext-import-agent-confirm")).toBe(true)
+    expect(write.has("ext-import-claude-plugin-confirm")).toBe(true)
+    // ↓ 这三条是本条用例存在的理由:把 preview 挪进写表,这里立刻红。
+    expect(write.has("ext-import-claude-plugin-preview")).toBe(false)
+    expect(write.has("ext-import-claude-plugin-cancel")).toBe(false)
+    expect(write.has("ext-installed-packages")).toBe(false)
+  })
+
+  test("纯读通道表:内容逐名钉死,且与写表**互斥**", () => {
+    expect(Object.values(LOCAL_PACKAGE_READ_CHANNELS)).toEqual([
+      "ext-import-claude-plugin-preview",
+      "ext-import-claude-plugin-cancel",
+      "ext-installed-packages",
+    ])
+    const write = new Set<string>(Object.values(GATED_WRITE_CHANNELS))
+    // 集合级互斥:将来往读表里加通道的人,若顺手也登进写表,这条一起红。
+    for (const name of Object.values(LOCAL_PACKAGE_READ_CHANNELS)) expect(write.has(name)).toBe(false)
+    const names = Object.values(LOCAL_PACKAGE_READ_CHANNELS)
+    expect(new Set(names).size).toBe(names.length)
+    for (const n of names) expect(n.startsWith("ext-")).toBe(true)
+  })
 })
 
 describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", () => {
-  test("放行:全部 12 通道 body 收到原实参,gate 收到该通道的解析 root", async () => {
+  test("放行:全部 13 通道 body 收到原实参,gate 收到该通道的解析 root", async () => {
     const h = makeHarness(true)
     const w = buildGatedWriteChannels(h)
     await w.installCatalog({ catalogId: "x" })
@@ -84,6 +130,7 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
     await w.persistMcp("m", { type: "local" }, ["K"])
     await w.installPlugin("@scope/pkg")
     await w.importAgentConfirm("preview-1")
+    await w.importClaudePluginConfirm("local-preview-1")
     await w.importSkillFolder("/picked/dir", { scope: "project", projectDir: "/p" })
     await w.importSkillGit("https://x.git", undefined)
     expect(h.bodyLog.map((b) => b.key)).toEqual([
@@ -97,19 +144,23 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
       "persistMcp",
       "installPlugin",
       "importAgentConfirm",
+      "importClaudePluginConfirm",
       "importSkillFolder",
       "importSkillGit",
     ])
     // root 断言:global 面 / intent 定根 / 项目面 / 导入 target 定根
-    expect(h.gateLog).toEqual([GLOBAL, PROJECT, GLOBAL, GLOBAL, PROJECT, PROJECT, GLOBAL, GLOBAL, GLOBAL, GLOBAL, PROJECT, GLOBAL])
+    expect(h.gateLog).toEqual([GLOBAL, PROJECT, GLOBAL, GLOBAL, PROJECT, PROJECT, GLOBAL, GLOBAL, GLOBAL, GLOBAL, GLOBAL, PROJECT, GLOBAL])
     // 实参透传抽查
     expect(h.bodyLog[7]?.args).toEqual(["m", { type: "local" }, ["K"]])
     expect(h.bodyLog[3]?.args).toEqual([{ type: "skill" }, "gen-000001-abcdef12"])
-    expect(h.bodyLog[10]?.args).toEqual(["/picked/dir", { scope: "project", projectDir: "/p" }])
+    expect(h.bodyLog[11]?.args).toEqual(["/picked/dir", { scope: "project", projectDir: "/p" }])
     expect(h.bodyLog[2]?.args).toEqual(["package:kit"])
+    // `#782`:confirm **只**拿到 previewId 一个实参。表构造器若把 event / target / srcDir
+    // 之类的东西一起透进 body,这条立刻红 —— 那正是「renderer 给得出写入内容」的第一步。
+    expect(h.bodyLog[10]?.args).toEqual(["local-preview-1"])
   })
 
-  test("gate 拒绝:全部 12 通道 body 零调用,拒因原样返回", async () => {
+  test("gate 拒绝:全部 13 通道 body 零调用,拒因原样返回", async () => {
     const h = makeHarness(false)
     const w = buildGatedWriteChannels(h)
     const results = await Promise.all([
@@ -123,11 +174,12 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
       w.persistMcp("m", {}, undefined),
       w.installPlugin("p"),
       w.importAgentConfirm("id"),
+      w.importClaudePluginConfirm("id"),
       w.importSkillFolder("/d", undefined),
       w.importSkillGit("u", undefined),
     ])
     expect(h.bodyLog).toEqual([])
-    expect(h.gateLog).toHaveLength(12)
+    expect(h.gateLog).toHaveLength(13)
     for (const r of results) expect(r).toEqual({ ok: false, reason: "gate refused" })
   })
 
