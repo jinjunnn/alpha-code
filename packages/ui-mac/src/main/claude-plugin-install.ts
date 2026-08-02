@@ -178,6 +178,11 @@ export type LocalPackageInstallPlanV1 = {
   readonly claimMutations: readonly ClaimMutationV1[]
   readonly plan: TxPlan
   readonly hooks: TxHooks
+  /** CAS 提升期的 loud 诊断信号(在店 blob 损坏被自愈、GC 竞态、mtime 刷新失败)。
+   *  它必须一路走到成功结果的 `warning` 上:`#765` 之后呈现的咽喉在 renderer 的 `extIpc`
+   *  包装层 —— 凡返回值带具名 warning 就统一推 toast。所以本模块**不另发明一条传递通道**,
+   *  只负责把它挂在既有字段上;收集了不往上传 = 静默吞掉。 */
+  readonly casWarnings: readonly string[]
 }
 
 const identityKey = (name: string): string => `skill:${name}`
@@ -284,7 +289,11 @@ export function buildLocalPackageInstallPlanV1(
     const manifest = entry.files.map((file) => ({ path: file.path, sha256: sha256Hex(file.data), bytes: file.data.length }))
     const promoted = promotePayloadToCas(casBaseRoot, [...entry.files], manifest)
     if (!promoted.ok) return refuse("cas-promotion-failed", `${entry.dir}: ${promoted.reason}`)
-    warnings.push(...promoted.warnings)
+    // 与单技能生产路径(`ext-install-planner.ts:2668`)逐字同形:立刻 loud log，并把 warning
+    // 带到成功结果上。收集了不往上传就是静默吞掉 —— 这个形态在本仓已栽三次(`#765`/`#771`)。
+    if (promoted.warnings.length)
+      console.error(`[claude-plugin-install] local package skill ${entry.name}: CAS promotion warnings: ${promoted.warnings.join("; ")}`)
+    warnings.push(...promoted.warnings.map((warning) => `${entry.name}: ${warning}`))
     specsByKey.set(entry.txKey, promoted.specs)
   }
 
@@ -396,6 +405,7 @@ export function buildLocalPackageInstallPlanV1(
       claimMutations,
       plan: { items },
       hooks,
+      casWarnings: warnings,
     },
   }
 }
@@ -455,7 +465,9 @@ export async function installLocalClaudePluginV1(
       reason: result.reason,
       stage: result.stage,
     }
-  const warnings = [...result.warnings]
+  // CAS 提升的 warning 与事务自己的 warning 并到**同一个字段**上 —— renderer 的 `extIpc`
+  // 包装层(`#765` 的咽喉)对任何带具名 warning 的返回值统一推 toast,这里不另开通道。
+  const warnings = [...built.plan.casWarnings, ...result.warnings]
   return {
     ok: true,
     packageId: built.plan.packageId,

@@ -22,6 +22,7 @@ import {
   type LocalPackageInstallDepsV1,
   type LocalPackagePayloadV1,
 } from "./claude-plugin-install"
+import { addReceipt } from "./alpha-installs"
 import { casBlobPath } from "./ext-cas"
 import {
   removeInstallGrants,
@@ -41,6 +42,7 @@ import {
 } from "./ext-package-ledger-v3"
 import { uninstallPackageV1, type PackageArtifactInstallersV1 } from "./ext-package-uninstall"
 import {
+  lookupForUninstall,
   packageClaimOwners,
   readLedgerV2,
   readPackageGraphs,
@@ -131,11 +133,21 @@ const enabledSkillKeys = (): string[] => {
   }
 }
 
+type ScannedFile = { rel: string; bytes: number; sha: string; exec: boolean }
+
 /** 对源目录做**独立于生产采集器**的递归扫描。G3 的比较基准必须是这个 ——
  *  拿 `collectImportSkillPayload().files[]` 当基准是拿实现自己拼的等价链当断言:
- *  凡它悄悄丢掉的(symlink、`.git`/`node_modules`/`__pycache__`)结构上永远不会红。 */
-function independentScan(dir: string): Array<{ rel: string; bytes: number; sha: string }> {
-  const out: Array<{ rel: string; bytes: number; sha: string }> = []
+ *  凡它悄悄丢掉的(symlink、`.git`/`node_modules`/`__pycache__`)结构上永远不会红。
+ *
+ *  `exec` = **mode 语义**(任一 x 位)。为什么它必须进比较基准而不是只比字节与路径:
+ *  载荷经 CAS 物化时用的是不带 mode 的 `fs.writeFileSync`(`ext-cas.ts:267-279`),
+ *  `TxFileSpec` 里也没有 mode 这一栏 ⇒ **执行位在这条路上结构性地传不过去**。
+ *  今天这件事到不了 —— owner 裁决 A 让 T1 在**预览期**就把带可执行位的技能具名拒绝了。
+ *  **正因为如此这道比较才要立**:它是 T1 那道拒绝万一有洞时的兜底,不是主防线。
+ *  比的是「任一 x 位」而不是原始 mode 数字:umask 与源文件的 0600/0644 差异不是语义,
+ *  「这个文件能不能执行」才是。 */
+function independentScan(dir: string): ScannedFile[] {
+  const out: ScannedFile[] = []
   const walk = (rel: string): void => {
     for (const entry of fs.readdirSync(path.join(dir, rel), { withFileTypes: true })) {
       const childRel = rel ? `${rel}/${entry.name}` : entry.name
@@ -144,8 +156,14 @@ function independentScan(dir: string): Array<{ rel: string; bytes: number; sha: 
         continue
       }
       if (!entry.isFile()) continue
-      const data = fs.readFileSync(path.join(dir, childRel))
-      out.push({ rel: childRel, bytes: data.length, sha: createHash("sha256").update(data).digest("hex") })
+      const abs = path.join(dir, childRel)
+      const data = fs.readFileSync(abs)
+      out.push({
+        rel: childRel,
+        bytes: data.length,
+        sha: createHash("sha256").update(data).digest("hex"),
+        exec: (fs.lstatSync(abs).mode & 0o111) !== 0,
+      })
     }
   }
   walk("")
@@ -340,7 +358,17 @@ describe("G3 载荷完整:比较基准是对源目录的独立扫描", () => {
     expect(live).not.toBeNull()
     const source = independentScan(path.join(fs.realpathSync(pluginDir), "skills", "premarket"))
     expect(source.map((f) => f.rel)).toEqual(["SKILL.md", "references/deep/notes.md", "references/glossary.md", "scripts/fetch.py"])
+    // 相对路径 + 字节摘要 + **mode 语义**三者一起比(`independentScan` 的 `exec` 一栏)。
     expect(independentScan(live!)).toEqual(source)
+  })
+
+  test("已批准策略:装完的文件**一个都没有执行位**(纵深,兜住 T1 拒绝万一有洞)", async () => {
+    makePlugin("tide-plugin", [{ name: "premarket", extra: { "scripts/fetch.py": "print('fetch')\n" } }])
+    expect((await install()).ok).toBe(true)
+    const installed = independentScan(liveSkillDir("premarket")!)
+    expect(installed).toHaveLength(2)
+    // 单独钉住,不只是「与源相等」:源侧若哪天也被放行成可执行,相等断言会一起变绿。
+    expect(installed.filter((f) => f.exec)).toEqual([])
   })
 })
 
@@ -460,6 +488,36 @@ describe("G4 不静默改写/认领用户既有内容", () => {
     expect(outcome.reason).not.toContain("supply-chain")
     expect(ledgerBytes()).toBe(before)
     expect(storeDirs()).toEqual([])
+  })
+
+  // 生产闸同时查 **v1 与 v2** record(`ext-install-planner.ts:2640-2642` 的
+  // `lookup.status === "valid" || lookup.status === "v1"`)。上一版的夹具全是 v2,
+  // 于是 v1 那半边**从没被执行过** —— 闸门被替换掉一半也不会红。这条补的就是那半边。
+  // origin 刻意**不是** catalog:catalog 的 v1 receipt 会先被 `checkUncuratedConflict`
+  // 的另一条分支拦下,那样就又绕开了 v1 这一臂。
+  test("负向夹具②b:**v1-only 存量** receipt(非 catalog 来源)⇒ 整次拒绝,账本原文与磁盘不变", async () => {
+    makePlugin("tide-plugin", [{ name: "premarket" }, { name: "postmarket" }])
+    const added = addReceipt(root, {
+      id: "user:premarket",
+      name: "premarket",
+      type: "skill",
+      scope: "global",
+      installedAt: "2026-07-01T00:00:00.000Z",
+      origin: "imported",
+    })
+    expect(added.ok).toBe(true)
+    // 前提自检:这确实是 v1-only(没有配套 v2 record),否则这条夹具走的还是 v2 那一臂。
+    expect(lookupForUninstall(root, "skill", "premarket").status).toBe("v1")
+    expect(readLedgerV2(root).records).toEqual([])
+    const before = ledgerBytes()
+
+    const outcome = await install()
+    expect(outcome.ok).toBe(false)
+    if (outcome.ok) return
+    expect(outcome.code).toBe("preview-stale")
+    expect(outcome.reason).toContain('skill "premarket" already present')
+    expect(ledgerBytes()).toBe(before)
+    zeroWrite()
   })
 
   test("负向夹具③:**无账本的** flat 技能目录在场 ⇒ 拒绝认领,整次零写", async () => {
@@ -634,6 +692,29 @@ describe("终态、root 选择与账本语义", () => {
     expect(record.payloadDigest).toBeUndefined()
     expect(record.grantDigest).toBeUndefined()
     expect(record.previousDigest).toBeUndefined()
+  })
+
+  // `#765` / `#771` 的同一类第三次:后端如实报了「这次有个你该知道的问题」,而它在半路被丢掉。
+  // `#765` 之后呈现的咽喉在 renderer 的 `extIpc` 包装层(凡返回值带具名 warning 就统一推 toast),
+  // 所以 main 侧的责任只有一条:**把它挂在既有的 `warning` 字段上**,不另发明通道。
+  test("CAS 提升的 warning 走到成功结果的 `warning` 上,不被静默丢弃", async () => {
+    makePlugin("tide-plugin", [{ name: "premarket" }])
+    const p = preview()
+    const payloads = payloadsOf(p)
+    // 在店 blob 损坏 = 真实可达状态(盘损坏 / 半写)。promote 会自愈并 loud 报一条。
+    const skillMd = payloads[0]!.files.find((f) => f.path === "SKILL.md")!
+    const digest = createHash("sha256").update(skillMd.data).digest("hex")
+    const blob = casBlobPath(casBase, digest)!
+    fs.mkdirSync(path.dirname(blob), { recursive: true })
+    fs.writeFileSync(blob, "这不是那份字节")
+
+    const outcome = await installLocalClaudePluginV1({ pluginRoot: fs.realpathSync(pluginDir), preview: p, payloads }, deps)
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.warning ?? "").toContain("was CORRUPT on disk")
+    expect(outcome.warning ?? "").toContain("premarket")
+    // 自愈是真的:装完的字节仍然逐字正确。
+    expect(fs.readFileSync(path.join(liveSkillDir("premarket")!, "SKILL.md"))).toEqual(skillMd.data)
   })
 
   test("授权账里的 manifestDigest 带 `sha256-local:` 前缀 —— 它是本机哈希,不是供给链摘要", async () => {
