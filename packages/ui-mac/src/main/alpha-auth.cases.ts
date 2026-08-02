@@ -261,6 +261,50 @@ describe("purpose-keyed platform access token response", () => {
     expect(captureBundleError(value).reason).toBe(reason)
   })
 
+  // ── platform#177 cross-repository regressions ───────────────────────────────────────────────
+  // The wire vocabulary grew a sixth purpose (`account.keys.manage`). alpha-web deliberately does
+  // NOT put it in the bundle, and these two cases pin the two halves of why that matters, from
+  // the consumer side — the only side that can say what an installed desktop actually tolerates.
+
+  test("a sixth purpose in the bundle is rejected — the vocabulary may grow, this bundle may not", () => {
+    // If alpha-web ever derives the bundle from the purpose enum again, every shipped copy of this
+    // application fails at login with exactly this error. Written as a test here so the fact lives
+    // where the strictness lives, not only in the issuer's comments.
+    const bundle: Record<string, string> = tokenBundle()
+    bundle["account.keys.manage"] = jwt("model.invoke")
+    const error = captureBundleError({ platform_access_tokens: bundle })
+    expect(error.reason).toBe("unknown-purpose")
+    // Measured while writing this: `unknown-purpose` is the ONE bundle error thrown without the
+    // offending key, so a login broken this way says "unknown-purpose" and nothing else. Asserted
+    // as the current fact rather than quietly wished otherwise — improving it is its own change.
+    expect(error.purpose).toBeUndefined()
+  })
+
+  test("an extra TOP-LEVEL key is tolerated — the strictness is inside the bundle, not around it", () => {
+    // Measured, not assumed: the ticket for this change said "one extra key kills the published
+    // desktop", and reading `decodeTokenResponse` shows that is only true INSIDE
+    // `platform_access_tokens`. alpha-web's third-party path returns a top-level `access_token` on
+    // its own branch; pinning today's tolerance here keeps the next review from re-deriving it.
+    const bundle = tokenBundle()
+    expect(
+      decodeTokenResponse({
+        token_type: "Bearer",
+        access_token: "a-token-for-somebody-else",
+        scope: "openid profile",
+        platform_access_tokens: bundle,
+        refresh_token: "refresh-old",
+        expires_in: 3600,
+        refresh_expires_in: 7200,
+        session_id: "session-old",
+      }),
+    ).toEqual({
+      platform_access_tokens: bundle,
+      refresh_token: "refresh-old",
+      expires_in: 3600,
+      session_id: "session-old",
+    })
+  })
+
   test("malformed JWT remains a token-schema failure rather than masquerading as a bundle error", () => {
     const bundle = tokenBundle()
     bundle["artifact.read"] = "not-a-jwt"

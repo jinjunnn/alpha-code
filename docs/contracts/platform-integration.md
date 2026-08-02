@@ -36,7 +36,7 @@ The desktop consumes Alpha Platform v1 through
 `packages/alpha-contracts-consumer`. Its
 `alpha-platform-contract.lock.json` pins repository
 `jinjunnn/alpha-platform` at immutable commit
-`2fe1d0103b7c3f68acb98c44d13ed0fcfe8bf196` and records the SHA-256 of every
+`62c7aa6de5589cfcf2af00ecab69f1d3d176512b` and records the SHA-256 of every
 vendored schema, limit document, producer fixture, consumer fixture, and
 negative fixture. This pin is independent of `bun.lock`.
 

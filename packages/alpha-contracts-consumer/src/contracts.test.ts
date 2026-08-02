@@ -28,7 +28,7 @@ describe("immutable Alpha contract pin", () => {
   test("contract lock resolves to the exact immutable alpha-platform commit", async () => {
     const lock = await Bun.file(resolve(root, "alpha-platform-contract.lock.json")).json()
     expect(lock.repo).toBe("jinjunnn/alpha-platform")
-    expect(lock.commit).toBe("2fe1d0103b7c3f68acb98c44d13ed0fcfe8bf196")
+    expect(lock.commit).toBe("62c7aa6de5589cfcf2af00ecab69f1d3d176512b")
     expect(ALPHA_CONTRACT_VERSION).toBe(1)
   })
 
@@ -106,6 +106,56 @@ describe("identity, account, and artifact fail closed", () => {
   test("alpha auth rejects a non-platform-access TokenClaimsV1 union branch", async () => {
     const value = { ...(await claims()), token_use: "job", aud: "alpha-cloud", iss: "alpha-platform" }
     expect(() => decodeTokenClaims(jwt(value))).toThrow(ContractIncompatibleError)
+  })
+
+  // platform#177: the sixth branch is a token issued to SOMEONE ELSE — a third-party MCP client —
+  // and it is schema-valid. That is exactly why it needs its own negative: `decodeTokenClaims` is
+  // the desktop's credential path, and "valid against the shared schema" must not be enough to
+  // enter it. The three-way hard check (token_use / iss / aud) is what keeps it out; deleting any
+  // one of them turns this test red.
+  test("alpha auth rejects a schema-valid mcp_access token — it is not this client's credential", async () => {
+    const value = {
+      schema_version: 1,
+      iss: "https://auth.tidelabs.click",
+      aud: "https://alpha-cloud.tidelabs.click/mcp",
+      sub: "tenant_fixture",
+      token_use: "mcp_access",
+      scope: ["cloud.read", "artifact.read"],
+      iat: 1_800_000_000,
+      exp: 1_800_003_600,
+      jti: "mcp-fixture",
+    }
+    // Guard against the test proving nothing: the branch really is present in the vendored schema.
+    const schema = (await Bun.file(
+      resolve(vendor, "contracts/v1/alpha-wire-contracts.schema.json"),
+    ).json()) as { $defs: { TokenClaimsV1: { oneOf: Array<{ properties: { token_use: { const: string } } }> } } }
+    expect(schema.$defs.TokenClaimsV1.oneOf.map((branch) => branch.properties.token_use.const)).toContain(
+      "mcp_access",
+    )
+    expect(() => decodeTokenClaims(jwt(value))).toThrow(ContractIncompatibleError)
+  })
+
+  // The other half of the same bump: the five branches this repository DOES consume are untouched,
+  // and the new purpose is a legal member of the platform_access vocabulary without becoming a
+  // route purpose here.
+  test("the platform_access branch still verifies unchanged, private issuer and all", async () => {
+    const value = await claims()
+    expect(value.iss).toBe("alpha-web")
+    expect(value.token_use).toBe("platform_access")
+    expect(() => decodeTokenClaims(jwt(value))).not.toThrow()
+    const schema = (await Bun.file(
+      resolve(vendor, "contracts/v1/alpha-wire-contracts.schema.json"),
+    ).json()) as {
+      $defs: {
+        TokenClaimsV1: {
+          oneOf: Array<{ properties: { token_use: { const: string }; purpose?: { enum?: string[] } } }>
+        }
+      }
+    }
+    const platformAccess = schema.$defs.TokenClaimsV1.oneOf.find(
+      (branch) => branch.properties.token_use.const === "platform_access",
+    )
+    expect(platformAccess?.properties.purpose?.enum).toContain("account.keys.manage")
   })
 
   test("rejects a platform_access token whose purpose does not match the route", async () => {
