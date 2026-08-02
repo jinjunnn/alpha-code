@@ -14,7 +14,7 @@ review_after: 2026-11-02
 
 实施纪律:每次实验前 `git status` 干净(实现已 commit),实验后只 `git checkout -- <被改的那一个文件>`。
 基线树 = `feat/781-plugin-install` 的实现提交;每次只改一处生产代码,跑
-`bun test src/main/claude-plugin-install.test.ts`。**绿基线 = 26 pass / 0 fail。**
+`bun test src/main/claude-plugin-install.test.ts`。**绿基线:R1 前 26 pass / 0 fail,R1 三条修完后 29 pass / 0 fail。**
 
 | 闸 | 改坏了什么(生产代码) | 结果 |
 | --- | --- | --- |
@@ -70,6 +70,63 @@ Received: true
 15 行 = 3 个文件对象(`references/deep/notes.md`、`references/glossary.md`、`scripts/fetch.py`)。
 把比较基准换回 `collectImportSkillPayload().files[]` 会让这条**恒绿** —— 那是拿实现自己拼的
 等价链当断言,凡采集器静默丢掉的结构上永远不会红。
+
+## Codex R1 之后补的三条(2026-08-02)
+
+对抗审计 R1 开出 2 Major + 1 Minor,全部采纳。三条各自补了闸,并各自实施了一次绕过。
+
+| 闸 | 改坏了什么 | 结果 |
+| --- | --- | --- |
+| **G3 的 mode 语义** | 把 T1 自包含判定里**可执行位那一臂删掉**(模拟「拒绝有洞」),并给夹具的 `scripts/fetch.py` `chmod 0755` | **1 fail**:源侧 `exec: true`,装完 `exec: false` |
+| **G4 的 v1 那一臂** | `uncuratedSkillFreshGate` 里 `lookup.status === "v1"` 去掉,只留 `"valid"` | **1 fail**;**修复前同一变异 = 26 pass / 0 fail**(那半边确实从没被执行过) |
+| **CAS warning 透传** | 成功结果只并 `result.warnings`,丢掉 `casWarnings` | **1 fail**:`warning` 为空串 |
+
+### G3 mode —— 它兜的到底是什么
+
+载荷经 CAS 物化用的是**不带 mode** 的 `fs.writeFileSync`(`ext-cas.ts:267-279`),`TxFileSpec`
+里也**没有 mode 这一栏** ⇒ 执行位在这条路上**结构性地传不过去**。今天这件事到不了:owner 裁决 A
+让 T1 在**预览期**就把带可执行位的技能具名拒绝了。**正因为如此这道比较才要立** —— 它是那道拒绝
+万一有洞时的兜底,不是主防线。变异后的原文:
+
+```
+-     "exec": true,
++     "exec": false,
+(fail) G3 载荷完整 > 多文件技能装完之后,generation 目录与源目录逐条相等
+```
+
+比的是「任一 x 位」而不是原始 mode 数字:umask 与源文件 0600/0644 的差异不是语义,
+「这个文件能不能执行」才是。另有一条**单独钉住**「装完的文件一个都没有执行位」的用例 ——
+只写「与源相等」的话,源侧哪天也被放行成可执行,两边会一起变绿。
+(这条在上面那次变异里**照样是绿的**,而且这是对的:已批准策略就是「装完不带执行位」。
+两条各管一个方向,不是重复。)
+
+### G4 v1 —— 「闸门被替换掉一半也不会红」的实测
+
+生产闸同时查 v1 与 v2(`ext-install-planner.ts:2640`),而原来的四个负向夹具**全是 v2**。
+把 v1 那一支删掉之后,**修复前的测试文件 26 pass / 0 fail** —— 也就是说那半边从来没有被执行过。
+补上真 v1-only 账本夹具(`addReceipt`,origin 刻意**不是** catalog:catalog 的 v1 receipt 会先被
+`checkUncuratedConflict` 的另一条分支拦下,那样又绕开了 v1 这一臂)之后:
+
+```
+Expected: false
+Received: true
+(fail) G4 > 负向夹具②b:**v1-only 存量** receipt(非 catalog 来源)⇒ 整次拒绝,账本原文与磁盘不变
+```
+
+`Received: true` = 本地包**静默认领**了用户既有的那份技能。
+
+### CAS warning —— 没有另发明通道
+
+`#765` 之后,呈现的咽喉在 renderer 的 `extIpc` 包装层:凡返回值带具名 `warning` 就统一推 toast。
+所以 main 侧的责任只有一条 —— **把它挂在既有的 `warning` 字段上**,与单技能生产路径
+(`ext-install-planner.ts:2668`)逐字同形(立刻 loud log + 并入成功结果)。夹具用「在店 blob 损坏」
+(真实可达:盘损坏 / 半写),promote 自愈并 loud 报一条:
+
+```
+Expected to contain: "was CORRUPT on disk"
+Received: ""
+(fail) CAS 提升的 warning 走到成功结果的 `warning` 上,不被静默丢弃
+```
 
 ## 三条本轮没有以绕过实验覆盖的事
 
