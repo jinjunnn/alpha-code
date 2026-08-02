@@ -200,10 +200,15 @@ describe("#754 · the shipped check:vendor entry point, not just the helper", ()
   // cases" is exactly what the gate-file floor is supposed to catch. Instead the degraded branch
   // asserts a *positive* description of the degradation, so this can never pass for a reason
   // nobody named.
+  //
+  // #769: the branch condition used to be `exitCode !== 0`, because a missing checkout was a hard
+  // failure. It is now a **degradation**, so the run exits 0 either way and the branch is chosen by
+  // what the run says it proved — which is the honest discriminator anyway.
   test("with the producer checkout present, a pushed run still verifies it end to end", () => {
     const reference = clean()
-    if (reference.exitCode !== 0) {
-      expect(reference.stderr).toContain("required producer checkout is unavailable")
+    expect(reference.exitCode).toBe(0)
+    if (!reference.stdout.includes("verified 36 contract artifacts from jinjunnn/alpha-web@")) {
+      expect(reference.stdout).toContain("PROVENANCE NOT VERIFIED this run")
       return
     }
     for (const env of [pushEnv, poisonAll()]) {

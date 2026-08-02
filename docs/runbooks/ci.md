@@ -35,6 +35,23 @@ bash scripts/alpha-check.sh
   对比。固定命名测试 `contract lock resolves to the exact immutable
   alpha-platform commit` 与 `contract source lock matches vendored artifact
   hashes` 是 CI 证据。
+- **`check:vendor` 在 CI 上跑的是「降级」档,而且它自己会说出来(#769)。**
+  CI 是裸 checkout,兄弟仓 `../alpha-web` / `.upstream-*` 都不存在,所以
+  「vendored 字节确实来自那个 commit」这一条**证不了**。以前那里是硬失败 ⇒
+  `verify immutable Alpha contract vendor lock` 这一步**恒红**,红的理由与
+  漂移无关。现在改成降级,并在 stdout 打出 `PROVENANCE NOT VERIFIED this run`
+  (GitHub Actions 上另发一条 workflow 注解)。判读法:
+  - 有 `verified N contract artifacts from <repo>@<sha>` = 三方比对成立
+    (lock ↔ vendored 字节 ↔ 上游字节),只有开发机/pre-push 会到这一档;
+  - 有 `PROVENANCE NOT VERIFIED this run` = 本次只验了本仓侧,commit 归属没验。
+    **这是 CI 的常态,不是故障**;要真验 provenance 就在本机 `bun run --cwd
+  packages/alpha-contracts-consumer check:vendor`(旁边有 `../alpha-web` checkout)。
+  - 降级档仍然是一道**真闸**:除 lock ↔ vendored 字节外,还把 producer manifest
+    的 35 条哈希锚在 `artifactSha256` 上 —— 那是**源码里的人工评审常量**,
+    `vendor` 从不回写它,所以「拿错目录跑一次 vendor 把字节和 lock 一起改写」
+    这种自洽伪造照样红。
+- **写盘侧不降级**:`vendor`(重写 lock)缺兄弟仓仍硬失败。没有 provenance 就
+  落盘一份自洽的 lock,等于给后续每一次 `--check` 发一张伪证。
 
 ## 3. GitHub 上只跑两个 workflow(其余上游的已禁用)
 
