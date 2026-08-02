@@ -70,6 +70,20 @@ export type PackageGraphNodeV1 = {
  *  可执行判据:`test-component/package-admission.wiring.cases.ts` 在同一次真实安装里同时取两个值。 */
 export type PackageGraphV1 = {
   packageId: string
+  /**
+   * **这个字段名不再字面成立,而这是一个裁决,不是遗漏**(REQ-128 Phase 3 基线 §9 D3)。
+   *
+   * catalog 安装时它是那份**已验签信封**的摘要。本地 Claude 插件包(`local:` 命名空间)走的是
+   * 一条不经 admission 的路,根本没有信封 —— 那条路填进来的是**本机对本地字节算的规范化载荷
+   * 摘要**。两者格式相同(`sha256:<hex>`)、语义不同。
+   *
+   * 保留字段名而不改名,是因为 `ac#772` 正在同一区域改名(graphBefore/AfterDigest 横穿 wire),
+   * 两次改名撞一起比一个名不副实的字段更贵。
+   *
+   * **所以:不要从这个字段读 provenance。**「这个包是不是策展来的」只有一个答案 ——
+   * child record 的 `origin`(catalog vs `imported-claude`)。同理不要从 packageId 前缀读结构
+   * (`#737` 明令)。这条不靠注释成立:`ext-package-ledger-v3.test.ts` 里有一条用例钉住它。
+   */
   envelopeDigest: string
   installedGraphDigest: string
   root: PackageGraphNodeV1
