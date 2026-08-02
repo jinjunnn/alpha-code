@@ -21,6 +21,6 @@ test("生产 ext-import-skill-folder 分流到本地插件预览,且这一次导
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
   // 用例数写死:少一条就是有人把生产接线闸悄悄摘了一半,而 `0 fail` 照样成立。
-  expect(output).toMatch(/\b10 pass\b/)
+  expect(output).toMatch(/\b11 pass\b/)
   expect(output).toMatch(/\b0 fail\b/)
 }, 180_000)

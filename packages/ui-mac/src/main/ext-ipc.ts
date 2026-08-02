@@ -986,9 +986,13 @@ export function registerExtIpcHandlers(
     // 所以这里必须把**已装事实**喂进去 —— 不喂就等于那两条原因在生产路径上永远到不了,
     // 只在单测里靠自己注入才成立。账本读不出来时**不假装干净**:两个集合都留空并如实说明,
     // 由安装期锁内的 fresh-only 闸兜底(最终裁决本来就在那里,`[T2-install]` 的 G4)。
+    // `sideEffectFree` 不是可选的谨慎,是本票的 AC:`parseLedger` 在看到坏 receipt / 坏 record 时
+    // 会落一个 `installs.json.evidence-*`(`ext-receipt-v2.ts` r18 的字节级取证侧写)。
+    // 那是一个**写**。预览承诺零写盘,不能因为账本恰好带一条坏条目就落文件 —— 取证不会因此丢失:
+    // 任何写路径的读仍会落它,而侧写本来就按损坏集哈希幂等。
     const globalRoot = alphaGlobalRoot()
-    const ledgerV2 = readLedgerV2(globalRoot)
-    const graphState = readPackageLedgerStateV1(globalRoot)
+    const ledgerV2 = readLedgerV2(globalRoot, { sideEffectFree: true })
+    const graphState = readPackageLedgerStateV1(globalRoot, { sideEffectFree: true })
     const installedSkillNames = new Set(ledgerV2.records.filter((r) => r.kind === "skill").map((r) => r.name))
     for (const r of ledgerV2.v1Only) if (r.type === "skill") installedSkillNames.add(r.name)
     const installedPackageIds = new Set(graphState.ok ? graphState.packageGraphs.map((g) => g.packageId) : [])

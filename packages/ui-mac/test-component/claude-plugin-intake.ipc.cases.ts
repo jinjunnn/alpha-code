@@ -137,9 +137,14 @@ afterAll(() => {
   fs.rmSync(sandbox, { recursive: true, force: true })
 })
 
-/** 三处写面的合并指纹:输入语料树 + 隔离的 alpha 根(`installs.json` 在其中)+ userData。 */
+/** 写面的合并指纹:输入语料树 + 隔离 alpha 根(`installs.json` 在其中)+ userData + 隔离 home。
+ *
+ *  ⚠️ **这道闸的射程有边界,写在这里而不是让它看起来无所不能**:
+ *  它覆盖的是**传给生产 handler 的那几个根**。写到这四棵树之外(真实 `$HOME`、`/tmp`、
+ *  系统路径),或者写完把 mtime 恢复回去,它**看不见**。要堵住那一类得在进程边界上拦
+ *  (seccomp / 沙箱),不在本票射程内 —— **明写而不做**。 */
 function writeSurfaceFingerprint(): string {
-  return [treeFingerprint(corpus.root), treeFingerprint(alphaBase), treeFingerprint(userData)].join("|")
+  return [corpus.root, alphaBase, userData, path.join(sandbox, "home")].map(treeFingerprint).join("|")
 }
 
 const pluginDir = (rel: string): string => path.join(corpus.root, rel)
@@ -185,6 +190,35 @@ describe("AC9 生产路径零写盘(输入树 + installs.json + userData 三处�
     const res = await invokeImport(pluginDir(CODEX))
     expect(res.localPluginPreview!.installableCount).toBe(0)
     expect(writeSurfaceFingerprint()).toBe(before)
+  })
+
+  test("账本里有坏 receipt ⇒ 预览**不得**落 `installs.json.evidence-*`,账本文件也不得被动", async () => {
+    // R2 Blocker:为了闭合「预览要消费已装事实」而加的账本读取,**自己会写盘**。
+    // `parseLedger` 看到坏 receipt / 坏 record 时会落一份字节级取证侧写
+    // (`ext-receipt-v2.ts` r18)—— 那是一个写,直接违反 AC9。
+    // 启动期 recovery 非 clean 而跳过 migration、或账本在 barrier 之后变化,这条就到得了。
+    const { alphaGlobalRoot } = await import("../src/main/alpha-installs")
+    const root = alphaGlobalRoot()
+    fs.mkdirSync(root, { recursive: true })
+    const ledgerFile = path.join(root, "installs.json")
+    const before = fs.existsSync(ledgerFile) ? fs.readFileSync(ledgerFile, "utf8") : null
+    // 一条**坏** receipt(缺 id / 非法 type)⇒ 进 rawInvalidReceipts ⇒ 触发侧写。
+    fs.writeFileSync(ledgerFile, JSON.stringify({ v: 1, receipts: [{ name: "broken", type: "not-a-type" }] }))
+    const stampBefore = fs.lstatSync(ledgerFile)
+    const evidenceBefore = fs.readdirSync(root).filter((f) => f.includes(".evidence-")).sort()
+    try {
+      const res = await invokeImport(pluginDir(TIDE))
+      expect(res.localPluginPreview).toBeDefined() // 真走到了预览,不是提前退出
+      const evidenceAfter = fs.readdirSync(root).filter((f) => f.includes(".evidence-")).sort()
+      expect(evidenceAfter).toEqual(evidenceBefore) // 零新增
+      const stampAfter = fs.lstatSync(ledgerFile)
+      expect(stampAfter.mtimeMs).toBe(stampBefore.mtimeMs)
+      expect(stampAfter.ino).toBe(stampBefore.ino)
+    } finally {
+      for (const f of fs.readdirSync(root)) if (f.includes(".evidence-")) fs.rmSync(path.join(root, f), { force: true })
+      if (before === null) fs.rmSync(ledgerFile, { force: true })
+      else fs.writeFileSync(ledgerFile, before)
+    }
   })
 
   test("对全部 62 个插件连续跑一遍 ⇒ 三处仍逐字节不变", async () => {
@@ -265,37 +299,55 @@ describe("owner 裁决 D / K19 在**生产路径**上可达", () => {
   })
 
   test("K19:同一个包已装过 ⇒ 生产 reason 里就说清「先移除整包」", async () => {
-    // 走真账本:V3 图里有这个 packageId,生产 handler 自己读出来。
+    // ⚠️ 这条用例第一版是**假绿**:夹具写 `v: 2` 却带非空 V3 段、node 还缺 `componentId`,
+    // 账本合同必然拒绝它 ⇒ 走的是「读不出来」分支,于是**删掉 K19 的生产接线照样通过**。
+    // 现在的夹具是账本合同**真的接受**的形状,而且下面先自证它被接受,再断言 K19 —— 不留退路分支。
     const { alphaGlobalRoot } = await import("../src/main/alpha-installs")
-    const ledgerFile = path.join(alphaGlobalRoot(), "installs.json")
-    fs.mkdirSync(path.dirname(ledgerFile), { recursive: true })
+    const { upsertRecordV2, readPackageLedgerStateV1 } = await import("../src/main/ext-receipt-v2")
+    const { bundleOwner, computeInstalledGraphDigest } = await import("../src/main/ext-package-ledger-v3")
+    const root = alphaGlobalRoot()
+    const ledgerFile = path.join(root, "installs.json")
+    fs.mkdirSync(root, { recursive: true })
     const before = fs.existsSync(ledgerFile) ? fs.readFileSync(ledgerFile, "utf8") : null
     const probe = await invokeImport(pluginDir(TIDE))
     const packageId = probe.localPluginPreview!.packageId!
     expect(probe.localPluginPreview!.duplicateImportNotice).toBeNull()
 
-    const digest = `sha256:${"0".repeat(64)}`
-    const node = (name: string) => ({ kind: "skill", name, manifestDigest: digest, required: true })
-    fs.writeFileSync(
-      ledgerFile,
-      JSON.stringify({
-        v: 2,
-        installs: [],
-        records: [],
-        packageGraphs: [{ packageId, envelopeDigest: digest, installedGraphDigest: digest, root: node("root-skill"), children: [] }],
-        claims: [],
-      }),
-    )
+    const digest = `sha256:${"a".repeat(64)}`
+    const anchor = "pkg-anchor-skill" // 与 tide-plugin 的任何技能都不同名,免得干扰重名断言
+    // record 用**生产写入口**造(不手拼 InstallRecordV2 的字节),V3 段再补上去。
+    const wrote = upsertRecordV2(root, {
+      id: `skill:${anchor}`,
+      name: anchor,
+      kind: "skill",
+      environment: "prod",
+      scope: { kind: "global" },
+      version: "1.0.0",
+      manifestDigest: digest,
+      desiredState: "enabled",
+      origin: "catalog",
+      installedAt: "2026-08-02T00:00:00.000Z",
+    })
+    expect(wrote.ok).toBe(true)
+    const ledger = JSON.parse(fs.readFileSync(ledgerFile, "utf8")) as Record<string, unknown>
+    ledger.v = 3 // V3 段非空时信封版本必须是 3
+    const node = { componentId: `local:${anchor}`, kind: "skill", name: anchor, required: true, manifestDigest: digest }
+    // installedGraphDigest 用**真的**计算口径算(手填一个常数 = 替别人写文法,合同当场拒)。
+    const graphCore = { packageId, envelopeDigest: digest, root: node, children: [] as never[] }
+    ledger.packageGraphs = [{ ...graphCore, installedGraphDigest: computeInstalledGraphDigest(graphCore) }]
+    // owner token 用**真的** bundleOwner 算,不手拼格式(手拼 = 替别人写文法)。
+    ledger.claims = [{ kind: "skill", name: anchor, owners: [bundleOwner(packageId, digest)] }]
+    fs.writeFileSync(ledgerFile, JSON.stringify(ledger))
     try {
+      // 自证夹具合法 —— 不先证这一步,「读不出来」会把这道闸变回假绿。
+      const state = readPackageLedgerStateV1(root, { sideEffectFree: true })
+      expect(state.ok).toBe(true)
+      expect(state.ok && state.packageGraphs.map((g) => g.packageId)).toContain(packageId)
+
       const res = await invokeImport(pluginDir(TIDE))
-      const notice = res.localPluginPreview!.duplicateImportNotice
-      // 账本可能因图/claim 不自洽而整体读不出;那种情况下生产必须**说读不出**,而不是静默当没装。
-      if (notice !== null) {
-        expect(notice).toContain("先移除整包")
-        expect(res.reason ?? "").toContain("先移除整包")
-      } else {
-        expect(res.reason ?? "").toContain("读不出来")
-      }
+      expect(res.localPluginPreview!.duplicateImportNotice).toContain("先移除整包")
+      expect(res.reason ?? "").toContain("先移除整包")
+      expect(res.reason ?? "").not.toContain("读不出来")
     } finally {
       if (before === null) fs.rmSync(ledgerFile, { force: true })
       else fs.writeFileSync(ledgerFile, before)

@@ -440,7 +440,11 @@ function envelopeV3Sections(
 /** r19 Major:readError = 文件在场但读失败(EIO/EACCES 等瞬时故障)—— 绝不折叠成「健康空账」,
  *  否则 removeRecordV2 会 no-op 成功、卸载在记录仍在的情况下谎报完成。缺席(ENOENT/ENOTDIR)
  *  才是合法空账。 */
-function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; readError?: string } {
+/** REQ-128 `#780`:承诺「零写盘」的只读路径用它关掉 `parseLedger` 的证据侧写。
+ *  默认 `false` = 今天的行为,既有调用点一个都不动。 */
+export type LedgerReadOptions = { readonly sideEffectFree?: boolean }
+
+function parseLedger(root: string, sideEffectFree = false): { parsed: ParsedLedger; corrupt: boolean; readError?: string } {
   const empty: ParsedLedger = {
     receipts: [],
     records: [],
@@ -534,7 +538,11 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; re
   // r18:字节级证据侧写 —— 结构保全经 JSON.parse→stringify 会丢重复键/原始词法;首次观测到
   // 损坏条目即把**原文件字节**按损坏集哈希落 `installs.json.evidence-<hex12>`(同一损坏集只落
   // 一份,后续重写不再增殖),取证不依赖工作文件。尽力而为:失败不阻塞(结构保全兜底)。
-  if (rawCorruptRecords.length > 0 || rawInvalidReceipts.length > 0) {
+  //
+  // REQ-128 `#780`:`sideEffectFree` 的读**跳过**这一步 —— 这是本函数唯一的写。
+  // 承诺「零写盘」的路径(本地插件导入预览)不能因为账本恰好带一条坏 receipt 就落一个文件;
+  // 取证不会因此丢失:任何写路径的读仍会落它,而侧写本来就按损坏集哈希幂等。
+  if (!sideEffectFree && (rawCorruptRecords.length > 0 || rawInvalidReceipts.length > 0)) {
     try {
       const setDigest = sha256Hex(Buffer.from(JSON.stringify({ rawCorruptRecords, rawInvalidReceipts }), "utf8")).slice(0, 12)
       const evidence = `${ledgerPath(root)}.evidence-${setDigest}`
@@ -731,8 +739,8 @@ function writeLedgerFile(
 }
 
 /** Read the dual ledger. Corrupt FILE → empty + warning(写路径会 quarantine);corrupt record → excluded + warning。 */
-export function readLedgerV2(root: string): LedgerV2Read {
-  const { parsed, corrupt, readError } = parseLedger(root)
+export function readLedgerV2(root: string, options: LedgerReadOptions = {}): LedgerV2Read {
+  const { parsed, corrupt, readError } = parseLedger(root, options.sideEffectFree)
   const warnings = [...(readError ? [readError] : []), ...parsed.recordWarnings, ...parsed.receiptWarnings]
   if (corrupt) warnings.push(`installs.json unreadable: ${ledgerPath(root)}`)
   const recordKeys = new Set(parsed.records.map((r) => key(r.kind, r.name)))
@@ -1139,8 +1147,8 @@ export type PackageLedgerStateReadV1 =
  * 通过、实物被真删,直到最后一步写盘才拒 —— 那正是本票要消灭的「先动实物、后做判决」。
  * 判据必须与写盘期**同一条**(`validateV3State`),否则两处会各自漂移。
  */
-export function readPackageLedgerStateV1(root: string): PackageLedgerStateReadV1 {
-  const { parsed, corrupt, readError } = parseLedger(root)
+export function readPackageLedgerStateV1(root: string, options: LedgerReadOptions = {}): PackageLedgerStateReadV1 {
+  const { parsed, corrupt, readError } = parseLedger(root, options.sideEffectFree)
   if (readError) return { ok: false, reason: `${readError} — refusing to plan a package operation` }
   if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to plan a package operation` }
   if (parsed.corruptRecords.unattributable)
