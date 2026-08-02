@@ -5,8 +5,19 @@
 // gate、要能被绕过实验证伪(「取出即消费 ⇒ 重点确认用例红」这条闸没有成功路径就立不起来)。
 // 一条 confirm 若只会返回「还没上线」,它的一次性语义与 `#351` 语义都无法被任何测试杀死。
 //
-// **T2 落地时的动作**:把下面这个实现换成 `claude-plugin-install.ts` 的真安装器(四集同源
-// 派生 + 锁内 `uncuratedSkillFreshGate` + N 条多文件 generation item + 一次 `runExtensionTransaction`)。
+// **接线时的动作**(`#787` 已合并,`installLocalClaudePluginV1(input, deps)` 在
+// `claude-plugin-install.ts` 里已就绪):把下面这个实现换成对它的转调。形状基本对得上 ——
+// `pluginRoot: issued.srcDir`、`preview: issued.preview`、`payloads: issued.payloads`
+// (本模块的 payload 多带 `byteCount`/`contentDigest` 两个字段,结构上兼容)。
+// **本票不做这一步**:它属于第 4/9 跳,归 `[T4-renderer]` 与编排者。
+//
+// ⚠️ **接线的人必须注意一处会静默绕开闸门的地方**:`claude-plugin-install.ts` 自带一个
+// `collectLocalPackagePayloadsV1`,与本票的 `collectRetainedPayloads` **同名同义但没有预算**
+// —— 它不做包级字节/文件帽(G19),也不做「留下来的字节 == 预览判过的字节」摘要比对。
+// confirm 若改成调它重新采集,G19 就从「有闸」变成「有一段写着闸的注释」,而且会**重新引入
+// confirm 期重扫**(K15 明令否决的那条)。正确接法:**沿用 preview 期已经留下的字节**,
+// 也就是把 `issued.payloads` 直接喂进去,一个字节都不重读。
+//
 // 本文件不该长出第二个职责;它长了就说明它变成了那种「为将来写的抽象」。
 //
 // 在那之前它是 **fail-closed** 的:不写盘、不动账本,并且**不消费 previewId** ——

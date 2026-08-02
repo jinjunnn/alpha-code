@@ -10,12 +10,16 @@
 // 那张票还没落地。替它的是一个可切换成功/失败的 spy:G6 的「写成功才消费」没有成功路径就
 // 立不起来,而假装成功的那一半必须可控。除此之外一行生产代码都没被换掉。
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, expect, mock, test } from "bun:test"
 
-type IpcSender = { id: number; once?: (name: string, listener: () => void) => void }
+type IpcSender = {
+  id: number
+  on?: (name: string, listener: () => void) => void
+  once?: (name: string, listener: () => void) => void
+}
 type IpcHandler = (event: { sender: IpcSender }, ...args: unknown[]) => unknown
 
 const handlers = new Map<string, IpcHandler>()
@@ -29,15 +33,45 @@ let installOutcome: { ok: true; packageId: string; installed: Array<{ kind: stri
   ok: false,
   reason: "spy default",
 }
-const installCalls: Array<{ previewId: string; srcDir: string; dirs: string[]; byteCount: number }> = []
-const installSpy = async (issued: { previewId: string; srcDir: string; payloads: ReadonlyArray<{ dir: string }>; byteCount: number }) => {
+const installCalls: Array<{ previewId: string; srcDir: string; dirs: string[]; byteCount: number; heldBytes: number }> = []
+/** 非 null 时,安装器**进去之后挂住不返回** —— in-flight 竞态只能这样撑开。 */
+let installGate: { markEntered: () => void; held: Promise<void> } | null = null
+const installSpy = async (issued: {
+  previewId: string
+  srcDir: string
+  payloads: ReadonlyArray<{ dir: string; files: ReadonlyArray<{ data: { length: number } }> }>
+  byteCount: number
+}) => {
   installCalls.push({
     previewId: issued.previewId,
     srcDir: issued.srcDir,
     dirs: issued.payloads.map((p) => p.dir),
     byteCount: issued.byteCount,
+    // 安装器**此刻实际握在手里**的字节。计量报 0 而这里非 0,就是那句谎本身。
+    heldBytes: issued.payloads.reduce((total, p) => total + p.files.reduce((n, f) => n + f.data.length, 0), 0),
   })
+  if (installGate) {
+    const gate = installGate
+    gate.markEntered()
+    await gate.held
+  }
   return installOutcome
+}
+
+/** 打开一次「安装进行中」的窗口。`entered` 兑现 = 安装器真的进去了;`release()` 放它返回。 */
+function openInstallGate(): { entered: Promise<void>; release: () => void } {
+  let markEntered: () => void = () => {}
+  let releaseInstall: () => void = () => {}
+  const entered = new Promise<void>((resolve) => (markEntered = resolve))
+  const held = new Promise<void>((resolve) => (releaseInstall = resolve))
+  installGate = { markEntered, held }
+  return {
+    entered,
+    release: () => {
+      installGate = null
+      releaseInstall()
+    },
+  }
 }
 
 mock.module("../src/main/local-package-install-port", () => ({ installLocalClaudePlugin: installSpy }))
@@ -164,25 +198,50 @@ async function importFolder(dir: string, sender: IpcSender): Promise<Record<stri
   }
 }
 
-function destroyableSender(id: number): { sender: IpcSender; destroy: () => void } {
-  const listeners: Array<() => void> = []
+/**
+ * 一个能分别触发三种 renderer 生命周期事件的 sender 替身。
+ *
+ * **刻意按事件名分桶**:旧夹具只模拟 `destroyed`,于是「只听 `destroyed`」的实现全绿 ——
+ * 而 Electron 把 renderer 崩溃定义成**另一个**事件(`render-process-gone`)。
+ * 夹具把三个事件混成一个,就等于替被测代码把 Electron 的文法简化了一遍。
+ */
+/** `ok-plugin` 两个技能的真实载荷总字节 —— 由**夹具源目录**独立算出,不问被测代码要。 */
+function okPluginPayloadBytes(): number {
+  let total = 0
+  for (const rel of ["skills/alpha/SKILL.md", "skills/alpha/notes.md", "skills/beta/SKILL.md"])
+    total += statSync(join(okPlugin, rel)).size
+  return total
+}
+
+function lifecycleSender(id: number): { sender: IpcSender; fire: (name: string) => void; listenerCount: () => number } {
+  const listeners = new Map<string, Array<() => void>>()
+  const add = (name: string, listener: () => void) => {
+    const bucket = listeners.get(name) ?? []
+    bucket.push(listener)
+    listeners.set(name, bucket)
+  }
   return {
-    sender: { id, once: (name, listener) => { if (name === "destroyed") listeners.push(listener) } },
-    destroy: () => listeners.splice(0).forEach((listener) => listener()),
+    sender: { id, on: add, once: add },
+    fire: (name: string) => (listeners.get(name) ?? []).forEach((listener) => listener()),
+    listenerCount: () => [...listeners.values()].reduce((total, bucket) => total + bucket.length, 0),
   }
 }
 
 test("G6:签发走生产分流点,返回一次性 previewId,且**任何绝对路径都不过 wire**", async () => {
   const issued = await importFolder(okPlugin, { id: 1 })
   expect(issued.route).toBe("local-claude-plugin")
-  expect(typeof issued.previewId).toBe("string")
+  // 「是个字符串」不是断言 —— 返回常量 `"x"` 的实现也满足它。要的是 UUID 形状 + **不重复**。
+  expect(issued.previewId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   // 安全投影:整个响应里不许出现源目录(两种写法都查 —— macOS 的 tmpdir 是 /var → /private/var 软链)。
   const wire = JSON.stringify(issued)
   expect(wire).not.toContain(tmp)
   expect(wire).not.toContain(tmpReal)
   expect(wire).not.toContain(okPlugin)
-  // 字节确实留在了 main(不是「预览完就扔」)。
-  expect(localPackagePreviews.retainedBytes()).toBeGreaterThan(0)
+  // 留存必须**逐字节等于**这个包的真实载荷,不是「大于 0」——
+  // 「留一个常量」「只留 SKILL.md 丢掉 notes.md」都能满足「大于 0」。
+  const expectedBytes = okPluginPayloadBytes()
+  expect(localPackagePreviews.retainedBytes()).toBe(expectedBytes)
+  expect(localPackagePreviews.retainedFiles()).toBe(3)
   expect(localPackagePreviews.size()).toBe(1)
   localPackagePreviews.releaseSender(1)
 })
@@ -250,7 +309,8 @@ test("G6:**写成功才消费**(`#351`)—— 失败后 previewId 仍在,成功�
   expect(first).toMatchObject({ ok: false, reason: "配置写锁被占用,请稍后重试" })
   expect(installCalls).toHaveLength(1)
   // 「取出即消费」会让这一步拿到「预览已失效」—— 用户重点确认得不到任何正确动作。
-  expect(localPackagePreviews.get(previewId)).toBeDefined()
+  // 失败之后必须回到 `ready`(而不是卡在 `installing`),否则重点确认同样做不成。
+  expect(localPackagePreviews.read(1, previewId)?.status).toBe("ready")
 
   installOutcome = { ok: true, packageId: "local:ok-plugin", installed: [{ kind: "skill", name: "alpha" }] }
   const second = (await call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: 1 }, previewId)) as Record<string, unknown>
@@ -283,14 +343,179 @@ test("G19:取消 ⇒ confirm 被拒**且** retained bytes 归零", async () => {
   expect(await call(LOCAL_PACKAGE_READ_CHANNELS.importClaudePluginCancel, { id: 8 }, previewId)).toEqual({ ok: true, released: false })
 })
 
-test("G19:窗口销毁 ⇒ 立即释放", async () => {
-  const { sender, destroy } = destroyableSender(11)
+// ── R1 Major 1:安装**进行中**的取消/替换 —— 这一组是本轮的重点 ─────────────────────────────
+//
+// 旧用例只测「先取消、后 confirm」,那条顺序下 store 里那一条早就没了,怎么写都对。
+// 真正的洞在**另一个顺序**:confirm 先把 issued 取在手里、还在等安装返回,此时取消 ——
+// 旧实现返回 `released:true`、计量归零,而安装器仍握着那批 Buffer 并会写成功。
+// Codex 实跑复现:`{"released":true,"reportedRetainedBytes":0,"actualBytesStillHeldByConfirm":16384}`。
+// 这不是内存问题,是**对用户撒谎**:他被告知已取消,东西照装。
+
+test("G6/G19:安装进行中取消 ⇒ **如实说取消不了**,绝不返回好看的 released:true", async () => {
+  installCalls.length = 0
+  installOutcome = { ok: true, packageId: "local:ok-plugin", installed: [{ kind: "skill", name: "alpha" }] }
+  const issued = await importFolder(okPlugin, { id: 41 })
+  const previewId = issued.previewId as string
+  const retainedBeforeInstall = localPackagePreviews.retainedBytes()
+  expect(retainedBeforeInstall).toBeGreaterThan(0)
+
+  const gate = openInstallGate()
+  const confirming = call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: 41 }, previewId) as Promise<Record<string, unknown>>
+  await gate.entered // 安装器**已经进去了**,还没返回 —— 竞态窗口现在是开着的
+
+  const cancelled = (await call(LOCAL_PACKAGE_READ_CHANNELS.importClaudePluginCancel, { id: 41 }, previewId)) as Record<string, unknown>
+  // ① 不许谎报释放。
+  expect(cancelled.released).toBe(false)
+  expect(cancelled.ok).toBe(false)
+  expect(cancelled.reasonCode).toBe("install-in-flight")
+  expect(String(cancelled.reason)).toContain("取消不了")
+  // ② 计量必须继续把这批字节算在里面 —— 它们**确实**还在安装器手里。
+  //    报 0 就是那句谎的另一半:「已释放」和「还握着」不能同时为真。
+  expect(localPackagePreviews.retainedBytes()).toBe(retainedBeforeInstall)
+  expect(installCalls[0]!.heldBytes).toBe(retainedBeforeInstall)
+
+  gate.release()
+  expect(await confirming).toMatchObject({ ok: true })
+  // ③ 装完之后那一条必须消失 —— 用户表达过「不要了」,不许它还能被确认第二次。
+  expect(localPackagePreviews.retainedBytes()).toBe(0)
+  expect(localPackagePreviews.size()).toBe(0)
+})
+
+test("G6:安装进行中**再 confirm 一次**(双击确认)⇒ 只装一遍", async () => {
+  // **这条为什么不断言 `install-in-flight`**:confirm 是 gated 写通道,而
+  // `makeRecoveryGate` 的 `withRecoveredWrite` 是 **per-root 串行链**
+  // (`ext-recovery-gate.ts`:`chains`)—— 第二次 confirm **排队**,不会与第一次并发进入。
+  // 所以 `claimForInstall` 的 in-flight 臂在今天的 confirm 路径上**到不了**;它是纵深,
+  // 不是闸(写不出生产可达的绕过配方的东西,不许当闸记账)。
+  // 这条断言的是**用户真能观察到的**那个结果:双击确认不会装两遍。
+  installCalls.length = 0
+  installOutcome = { ok: true, packageId: "local:ok-plugin", installed: [] }
+  const issued = await importFolder(okPlugin, { id: 42 })
+  const previewId = issued.previewId as string
+
+  const gate = openInstallGate()
+  const first = call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: 42 }, previewId) as Promise<Record<string, unknown>>
+  await gate.entered
+  // 排在 gate 后面,**不能 await**(await 会和还被 park 住的第一次互相等 = 死锁)。
+  const second = call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: 42 }, previewId) as Promise<Record<string, unknown>>
+  expect(installCalls).toHaveLength(1)
+
+  gate.release()
+  expect(await first).toMatchObject({ ok: true })
+  // 第一次写成功 ⇒ previewId 已消费 ⇒ 排队的第二次拿到「预览已失效」,**不会**再装一遍。
+  const secondResult = await second
+  expect(secondResult.ok).toBe(false)
+  expect(secondResult.reasonCode).toBe("unknown-preview")
+  expect(installCalls).toHaveLength(1)
+  expect(localPackagePreviews.size()).toBe(0)
+})
+
+test("G19:安装进行中**换新预览** ⇒ 拒绝签发,不假装把旧的释放了", async () => {
+  installCalls.length = 0
+  installOutcome = { ok: false, reason: "spy: refuse" }
+  const issued = await importFolder(okPlugin, { id: 43 })
+  const previewId = issued.previewId as string
+  const retained = localPackagePreviews.retainedBytes()
+
+  const gate = openInstallGate()
+  const confirming = call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: 43 }, previewId) as Promise<Record<string, unknown>>
+  await gate.entered
+
+  const replacement = await importFolder(okPlugin, { id: 43 })
+  expect(replacement.previewId).toBeUndefined()
+  expect(replacement.reasonCode).toBe("install-in-flight")
+  // 中止不了的那批字节还在,**没有**被第二份挤掉,也没有变成两份(每 renderer 一条)。
+  expect(localPackagePreviews.retainedBytes()).toBe(retained)
+  expect(localPackagePreviews.size()).toBe(1)
+
+  gate.release()
+  await confirming
+  // 安装失败 ⇒ 回到 ready,用户可以重点确认(`#351`);而不是卡死在 installing。
+  expect(localPackagePreviews.size()).toBe(1)
+  const retry = (await call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: 43 }, previewId)) as Record<string, unknown>
+  expect(retry.ok).toBe(false)
+  expect(retry.reasonCode).toBeUndefined() // 是安装器的拒因,不是 install-in-flight
+  expect(installCalls).toHaveLength(2)
+  localPackagePreviews.releaseSender(43)
+})
+
+test("G19:安装进行中**窗口没了** ⇒ 不报释放,但装完即丢(不许留一份没人能释放的字节)", async () => {
+  installCalls.length = 0
+  installOutcome = { ok: false, reason: "spy: refuse" }
+  const { sender, fire } = lifecycleSender(44)
   const issued = await importFolder(okPlugin, sender)
   const previewId = issued.previewId as string
-  expect(localPackagePreviews.retainedBytes()).toBeGreaterThan(0)
-  destroy()
+  const retained = localPackagePreviews.retainedBytes()
+
+  const gate = openInstallGate()
+  const confirming = call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: 44 }, previewId) as Promise<Record<string, unknown>>
+  await gate.entered
+  fire("render-process-gone")
+  // 中止不了 ⇒ 此刻还在(如实),但用户已经不在了。
+  expect(localPackagePreviews.retainedBytes()).toBe(retained)
+
+  gate.release()
+  await confirming
+  // 安装失败也照样丢 —— 那个 renderer 已经没了,没人会来重点确认。
   expect(localPackagePreviews.retainedBytes()).toBe(0)
-  expect(((await call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: 11 }, previewId)) as Record<string, unknown>).ok).toBe(false)
+  expect(localPackagePreviews.size()).toBe(0)
+  expect(((await call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: 44 }, previewId)) as Record<string, unknown>).reasonCode).toBe(
+    "unknown-preview",
+  )
+})
+
+test("安装器抛异常 ⇒ 不卡死在 installing(finally 结算),那一条仍可重点确认", async () => {
+  installCalls.length = 0
+  const issued = await importFolder(okPlugin, { id: 45 })
+  const previewId = issued.previewId as string
+  const boom = new Error("installer exploded")
+  const previous = installOutcome
+  installOutcome = { get ok(): never { throw boom } } as never
+  try {
+    await call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: 45 }, previewId)
+  } catch {
+    // 抛不抛出去不是本条的判据 —— 判据是它没把那一条留在 installing 上。
+  }
+  installOutcome = previous
+  const after = localPackagePreviews.read(45, previewId)
+  expect(after?.status).toBe("ready")
+  const cancelled = (await call(LOCAL_PACKAGE_READ_CHANNELS.importClaudePluginCancel, { id: 45 }, previewId)) as Record<string, unknown>
+  expect(cancelled).toEqual({ ok: true, released: true })
+  expect(localPackagePreviews.retainedBytes()).toBe(0)
+})
+
+// R1 Major 2:三个事件**逐个**单独跑。合成一个用例、只触发其中一个,会让「只听 destroyed」
+// 的实现继续全绿 —— 而 renderer 崩溃在 Electron 里是 `render-process-gone`,不是 `destroyed`。
+for (const [index, eventName] of ["destroyed", "render-process-gone", "did-navigate"].entries()) {
+  test(`G19:renderer 生命周期事件「${eventName}」⇒ 立即释放,且旧 previewId 当场作废`, async () => {
+    installCalls.length = 0
+    const senderId = 110 + index
+    const { sender, fire } = lifecycleSender(senderId)
+    const issued = await importFolder(okPlugin, sender)
+    const previewId = issued.previewId as string
+    expect(localPackagePreviews.retainedBytes()).toBeGreaterThan(0)
+
+    fire(eventName)
+
+    // 泄漏是次要的,**旧号仍可确认**才是洞 —— 两条一起断言。
+    expect(localPackagePreviews.retainedBytes()).toBe(0)
+    expect(localPackagePreviews.size()).toBe(0)
+    const replay = (await call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: senderId }, previewId)) as Record<string, unknown>
+    expect(replay.ok).toBe(false)
+    expect(replay.reasonCode).toBe("unknown-preview")
+    expect(installCalls).toHaveLength(0)
+  })
+}
+
+test("G19:生命周期监听每个 sender 只挂一次 —— 连点预览不堆监听器", async () => {
+  const { sender, listenerCount } = lifecycleSender(150)
+  await importFolder(okPlugin, sender)
+  const afterFirst = listenerCount()
+  expect(afterFirst).toBe(3) // destroyed + render-process-gone + did-navigate
+  await importFolder(okPlugin, sender)
+  await importFolder(okPlugin, sender)
+  expect(listenerCount()).toBe(afterFirst)
+  localPackagePreviews.releaseSender(150)
 })
 
 test("G19:新预览替换旧预览 ⇒ 旧 previewId 当场作废,留存只算一份", async () => {
@@ -301,7 +526,10 @@ test("G19:新预览替换旧预览 ⇒ 旧 previewId 当场作废,留存只算�
   expect(localPackagePreviews.size()).toBe(1)
   // 「每 renderer 只允许一个 active preview」的可观察判据:留存没有翻倍。
   expect(localPackagePreviews.retainedBytes()).toBe(firstBytes)
-  expect(localPackagePreviews.get(first.previewId as string)).toBeUndefined()
+  expect(localPackagePreviews.read(21, first.previewId as string)).toBeUndefined()
+  // 作废不只是「读不到」—— 旧号必须**确认不了**(读面与写面各查一次)。
+  const staleConfirm = (await call(GATED_WRITE_CHANNELS.importClaudePluginConfirm, { id: 21 }, first.previewId)) as Record<string, unknown>
+  expect(staleConfirm.reasonCode).toBe("unknown-preview")
   localPackagePreviews.releaseSender(21)
   expect(localPackagePreviews.retainedBytes()).toBe(0)
 })
@@ -344,7 +572,17 @@ test("只读列表通道:空账本 ⇒ 空清单;**账本读不出来 ⇒ 说「
   // 折叠成 `{ok:true, packages:[]}` 会让用户在一本损坏的账本上看到「什么都没装」,
   // 而「移除」入口随之消失 —— 这正是 `#773` 那一类。
   expect(broken.ok).toBe(false)
-  expect(typeof broken.reason).toBe("string")
   expect(broken.packages).toBeUndefined()
+  // R1 Major 3:**「reason 是个字符串」不是断言** —— 泄漏绝对路径的实现同样满足它。
+  // reader 的失败理由里内嵌着 `installs.json` 的绝对路径(`ext-receipt-v2.ts`),
+  // 原样过线就违反本面自己那条安全投影 AC。过线的必须是稳定原因码 + 一句人话。
+  expect(broken.reasonCode).toBe("ledger-unreadable")
+  expect(typeof broken.reason).toBe("string")
+  const brokenWire = JSON.stringify(broken)
+  expect(brokenWire).not.toContain(tmp)
+  expect(brokenWire).not.toContain(tmpReal)
+  expect(brokenWire).not.toContain(getAlphaEnvironment().mutableRoot)
+  expect(brokenWire).not.toContain("installs.json")
+  expect(brokenWire).not.toContain("/")
   rmSync(ledgerPath, { force: true })
 })

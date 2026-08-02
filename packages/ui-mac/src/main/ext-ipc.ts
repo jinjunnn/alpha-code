@@ -195,7 +195,38 @@ export function registerExtIpcHandlers(
   // 用户在单技能路径上要选两次目录;若让它收 renderer 传来的路径,`#255` 就白关了。
   // 所以签发发生在既有 `ext-import-skill-folder` 的分流点上(picker 之后、写之前、gate 之外),
   // 而 `ext-import-claude-plugin-preview` 是**纯读**的取件面 —— 它不写、不弹窗、不进写表。
-  const localPreviewDestroyHooked = new Set<number>()
+  const localPreviewLifecycleHooked = new Set<number>()
+  /**
+   * renderer 走人时释放留存。**三个事件,不是一个**(R1 Major 2)——
+   * 这三条在 electron 42.3.3 的 `electron.d.ts` 里是**各自独立**的,本轮逐条实读确认:
+   *   · `destroyed`(:16247)          「Emitted when `webContents` is destroyed.」
+   *   · `render-process-gone`(:17244)「Emitted when the renderer process unexpectedly
+   *                                    disappears. This is normally because it was crashed or killed.」
+   *     ⇒ **崩溃不会触发 `destroyed`**。只听 `destroyed` 的话,renderer 崩了之后最多 32MB
+   *       还留着,而且**旧 previewId 仍然可以确认** —— 泄漏是次要的,那个「仍可确认」才是洞。
+   *   · `did-navigate`(:16602)      「Emitted when a main frame navigation is done. This event
+   *                                    is **not** emitted for in-page navigations…」
+   *     ⇒ 正好是「文档被换掉了」这件事本身。刻意**不用** `did-start-navigation`(它连
+   *       in-page 一起报,SPA 换路由就会把用户正在看的预览释放掉 —— 那是拿修复制造回归)。
+   * cleanup 幂等(`releaseSender` 对空集返回 false),所以三条重复触发无副作用。
+   */
+  const hookLocalPreviewLifecycle = (
+    sender: { on?: (name: string, listener: () => void) => void; once?: (name: string, listener: () => void) => void },
+    senderId: number,
+  ): void => {
+    // 每个 sender 只挂一次 —— 逐次挂会在用户连点预览时堆满监听器。
+    if (localPreviewLifecycleHooked.has(senderId)) return
+    if (typeof sender.on !== "function" || typeof sender.once !== "function") return
+    localPreviewLifecycleHooked.add(senderId)
+    const release = () => localPackagePreviews.releaseSender(senderId)
+    sender.on("render-process-gone", release)
+    sender.on("did-navigate", release)
+    sender.once("destroyed", () => {
+      // WebContents 真没了才摘登记:这个 id 之后不会再有预览。
+      localPreviewLifecycleHooked.delete(senderId)
+      release()
+    })
+  }
   const issueLocalPluginPreview = (
     event: IpcMainInvokeEvent,
     srcDir: string,
@@ -204,9 +235,12 @@ export function registerExtIpcHandlers(
     // 没有 sender 身份 ⇒ **不留任何字节**。留存的生命周期(一个 renderer 一条、窗口销毁即释放)
     // 全部挂在这个 id 上;认不出身份还照留,就是留下一份永远没人释放、也没人能确认的字节。
     // fail-closed 而不是抛异常:IPC handler 因为畸形 event 崩掉,比拒绝这一次预览更糟。
-    const sender = event?.sender as unknown as { id?: unknown; once?: (name: string, listener: () => void) => void } | undefined
-    const senderId = typeof sender?.id === "number" ? sender.id : null
-    if (senderId === null) return { ok: false, reason: "这次预览没能建立起来,请重新选择文件夹。", reasonCode: "preview-no-sender-identity" }
+    const sender = event?.sender as unknown as
+      | { id?: unknown; on?: (name: string, listener: () => void) => void; once?: (name: string, listener: () => void) => void }
+      | undefined
+    const senderId = sender !== undefined && typeof sender.id === "number" ? sender.id : null
+    if (sender === undefined || senderId === null)
+      return { ok: false, reason: "这次预览没能建立起来,请重新选择文件夹。", reasonCode: "preview-no-sender-identity" }
     // 预算是**硬停**:超了就整包拒,并且**什么都不留**(此时 store 里根本没登记过这一条)。
     const collected = collectRetainedPayloads(srcDir, preview)
     if (!collected.ok) return { ok: false, reason: collected.reason, reasonCode: collected.reasonCode }
@@ -218,15 +252,10 @@ export function registerExtIpcHandlers(
       byteCount: collected.byteCount,
       fileCount: collected.fileCount,
     })
-    // 窗口销毁即释放。每个 sender 只挂一次监听 —— 逐次挂会在用户连点预览时堆满监听器。
-    if (!localPreviewDestroyHooked.has(senderId) && typeof sender?.once === "function") {
-      localPreviewDestroyHooked.add(senderId)
-      sender.once("destroyed", () => {
-        localPreviewDestroyHooked.delete(senderId)
-        localPackagePreviews.releaseSender(senderId)
-      })
-    }
-    return { ok: true, previewId: issued.previewId }
+    // 上一次安装还在跑 ⇒ 拒绝签发(中止不了的字节不许被第二份挤掉,见 store 的 `issue`)。
+    if (!issued.ok) return { ok: false, reason: issued.reason, reasonCode: issued.reasonCode }
+    hookLocalPreviewLifecycle(sender, senderId)
+    return { ok: true, previewId: issued.issued.previewId }
   }
   // 纯读取件面:按 previewId 取回**安全投影**(无绝对路径、无字节)。绑 sender —— 读面有 event,
   // 就该把身份绑上(`pickedFiles.read` 同款)。
@@ -236,18 +265,30 @@ export function registerExtIpcHandlers(
     return { ok: true as const, ...previewWireV1(issued) }
   })
   // 显式取消 ⇒ **立即**释放留存字节(G19)。刻意不过恢复 gate:账本待恢复时也必须放得掉。
+  // **中止不了就说中止不了**:安装已经在跑时,这里返回 `ok:false` + `install-in-flight`,
+  // 绝不返回一个好看的 `released: true` —— 那会让用户以为东西没装进去(R1 Major 1)。
   ipcMain.handle(LOCAL_PACKAGE_READ_CHANNELS.importClaudePluginCancel, (event: IpcMainInvokeEvent, previewId: unknown) => {
-    const released = typeof previewId === "string" ? localPackagePreviews.cancel(event.sender.id, previewId) : false
-    return { ok: true as const, released }
+    if (typeof previewId !== "string") return { ok: true as const, released: false }
+    return localPackagePreviews.cancel(event.sender.id, previewId)
   })
   // confirm:**只收 previewId**。写入内容取自 main 侧留存的 preview 产物,renderer 全程给不出;
   // 且**写成功才消费**(`#351`)—— 写锁 busy 等可重试失败之后,用户重点确认必须还能用同一份预览。
+  //
+  // 先 claim 再装(R1 Major 1):claim 把这一条原子地置成 `installing`,取消/替换于是**看得见**
+  // 有一次安装在飞,只能如实拒绝。`finally` 结算 —— 安装器抛异常时 `wrote` 仍是 false,
+  // 那一条回到 `ready` 供重点确认,不会卡死在 `installing`。
   const importClaudePluginConfirmBody = async (previewId: unknown) => {
-    const issued = typeof previewId === "string" ? localPackagePreviews.get(previewId) : undefined
-    if (!issued) return { ok: false, reason: "预览已失效,请重新选择文件夹" }
-    const r = await installLocalClaudePlugin(issued)
-    if (r.ok) localPackagePreviews.consume(previewId as string)
-    return r
+    if (typeof previewId !== "string") return { ok: false, reason: "预览已失效,请重新选择文件夹" }
+    const claimed = localPackagePreviews.claimForInstall(previewId)
+    if (!claimed.ok) return { ok: false, reason: claimed.reason, reasonCode: claimed.reasonCode }
+    let wrote = false
+    try {
+      const r = await installLocalClaudePlugin(claimed.issued)
+      wrote = r.ok === true
+      return r
+    } finally {
+      localPackagePreviews.settleInstall(previewId, wrote)
+    }
   }
   // 本机已装扩展包的**只读**投影。今天 renderer 结构上看不见任何已装包:唯一入口
   // `extension-detail.tsx` 的 `kind === "package"` 分支只由远程 catalog 进得去,而 main 侧
@@ -262,7 +303,18 @@ export function registerExtIpcHandlers(
   ipcMain.handle(LOCAL_PACKAGE_READ_CHANNELS.listInstalledPackages, async () => {
     await ledgerReady
     const state = readPackageLedgerStateV1(alphaGlobalRoot())
-    if (!state.ok) return { ok: false as const, reason: state.reason }
+    if (!state.ok) {
+      // reader 的失败理由里**内嵌着 `installs.json` 的绝对路径**(`ext-receipt-v2.ts` 的
+      // `readPackageLedgerStateV1`)。原样过线就违反本面自己那条安全投影 AC —— 而
+      // 「读不出」这个**事实**必须过线(不许折叠成「没装」)。两者不冲突:
+      // 过线的是**稳定原因码 + 一句人话**,路径只写 main 日志。
+      getLogger().error(`[req128-local-packages] package ledger unreadable: ${state.reason}`)
+      return {
+        ok: false as const,
+        reasonCode: "ledger-unreadable" as const,
+        reason: "本机的已安装清单这次读不出来,所以这里暂时列不出已装的扩展包 —— 这不代表没装。",
+      }
+    }
     const recordOf = (kind: string, name: string) =>
       state.records.find((record) => record.kind === kind && record.name === name)
     return {

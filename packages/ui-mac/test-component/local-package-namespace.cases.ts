@@ -15,7 +15,7 @@
 // `catalog` —— 换成从前缀推断的实现,这条依然绿,所以还要断言那条被记在这里的可达路径。
 
 import { createHash } from "node:crypto"
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, expect, mock, test } from "bun:test"
@@ -207,9 +207,6 @@ test("只读列表通道:装成之后的 `origin` 来自 child record,不是从 
   expect(entry.packageId).toBe(CATALOG_ENVELOPE_ID)
   expect(entry.version).toBe("1.0.0")
   expect(entry.rootComponentName).toBe("namespace-fixture")
-  // `origin` 是**账本事实**。把它改成 `isLocalPackageId(packageId) ? "imported-claude" : "catalog"`
-  // 这一条仍然绿 —— 所以下面还要断言 components 的 desiredState 与安全投影的键集:
-  // 这个面交出的每一样东西都必须在账本里有出处。
   expect(entry.origin).toBe("catalog")
   expect(entry.components).toEqual([
     { componentId: "mcp:namespace-fixture", kind: "mcp", name: "namespace-fixture", required: true, desiredState: "disabled" },
@@ -260,5 +257,39 @@ test("G8①:本地铸造器只产 `local:` —— 真实语料 62 个插件全�
     expect(hostilePreview.packageId).not.toBe("mcp:markitdown")
   } finally {
     corpus.cleanup()
+  }
+})
+
+test("纪律 2:`origin` 必须来自 child record —— 把它改成从 packageId 前缀推,这条会红", async () => {
+  // 上一条只断言「装完是 catalog」。**一个从前缀推来源的实现同样满足它**
+  //(`package:` 开头 ⇒ 说 catalog),所以那不是判据,是巧合。
+  // 这里把**账本里那条 record 的 `origin` 改掉**,packageId 一个字不动:
+  //   · 从 record 读的实现 ⇒ 跟着变成 `imported-claude`;
+  //   · 从前缀推的实现   ⇒ 仍然说 `catalog` ⇒ 红。
+  const { getAlphaEnvironment } = await import("../src/main/alpha-environment")
+  const ledgerFile = join(getAlphaEnvironment().mutableRoot, "installs.json")
+  const before = readFileSync(ledgerFile, "utf8")
+  const ledger = JSON.parse(before) as { records: Array<Record<string, unknown>> }
+  const root = ledger.records.find((record) => record["kind"] === "mcp" && record["name"] === "namespace-fixture")
+  if (!root) throw new Error(`账本里没有 root 组件的 record —— 本次测量作废:${before}`)
+  expect(root["origin"]).toBe("catalog")
+  // 账本自己有一条一致性规则:**非 catalog 来源的 record 不得携带供给链摘要**,且 id 恒
+  // `user:<name>`(`ext-receipt-v2.ts`:「catalog identity is not forgeable」)。所以改 origin
+  // 必须连带把这些一起改成合法形态 —— 否则整本账读不出来,测的就不是本条要测的东西了。
+  root["origin"] = "imported-claude"
+  root["id"] = "user:namespace-fixture"
+  for (const key of ["manifestDigest", "payloadDigest", "grantDigest", "previousDigest", "channelSequence"]) delete root[key]
+  writeFileSync(ledgerFile, JSON.stringify(ledger), "utf8")
+  try {
+    const listed = (await call(LOCAL_PACKAGE_READ_CHANNELS.listInstalledPackages)) as {
+      ok: boolean
+      packages: Array<Record<string, unknown>>
+    }
+    expect(listed.ok).toBe(true)
+    expect(listed.packages).toHaveLength(1)
+    expect(listed.packages[0]!.packageId).toBe(CATALOG_ENVELOPE_ID) // 前缀没变
+    expect(listed.packages[0]!.origin).toBe("imported-claude") // 来源变了
+  } finally {
+    writeFileSync(ledgerFile, before, "utf8")
   }
 })

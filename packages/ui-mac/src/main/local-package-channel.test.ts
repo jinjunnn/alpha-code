@@ -15,9 +15,12 @@ test("生产 IPC 上的 preview→confirm 绑定(G6)与 preview 预算/释放(G1
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  // 用词边界而非 toContain:`"11 pass"` 含 `"1 pass"`,子串匹配会在用例数增减时假绿。
-  expect(output).toMatch(/\b12 pass\b/)
+  // 用词边界而非 toContain:`"20 pass"` 含 `"0 pass"`,子串匹配会在用例数增减时假绿。
+  expect(output).toMatch(/\b20 pass\b/)
   expect(output).toMatch(/\b0 fail\b/)
+  // 「跑了几个文件、几条用例」也要断言:子进程若因夹具报错跑了 0 条,上面两条**都不会**红
+  //  —— `0 fail` 恒成立。测不到就该说测不到,不是给一个好看的数字。
+  expect(output).toMatch(/Ran 20 tests across 1 file/)
 }, 180_000)
 
 test("`local:` 命名空间双向闸(G8)与已装包只读投影的来源维", () => {
@@ -28,6 +31,7 @@ test("`local:` 命名空间双向闸(G8)与已装包只读投影的来源维", (
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toMatch(/\b4 pass\b/)
+  expect(output).toMatch(/\b5 pass\b/)
   expect(output).toMatch(/\b0 fail\b/)
+  expect(output).toMatch(/Ran 5 tests across 1 file/)
 }, 180_000)

@@ -55,6 +55,19 @@ export type RetainedComponentPayload = {
   readonly contentDigest: string
 }
 
+/**
+ * 一条预览的生命状态。
+ *
+ * **为什么需要它**(R1 Major 1):没有它时,`cancel` 只是把 Map 里那一条删掉 ——
+ * 而 confirm 早就把 `issued` 取在手里了。于是取消返回 `released: true`、计量归零,
+ * 安装器却**仍然握着那批 Buffer 并可能写成功**:用户被告知「已取消」,东西照装。
+ * 实测复现:`{"released":true,"reportedRetainedBytes":0,"actualBytesStillHeldByConfirm":16384}`。
+ *
+ * 本 portfolio 栽过同型的一次(拒绝点落在付款之后:用户付了钱、弹窗显示到账、套餐不变)。
+ * 所以这里的纪律不是「让取消看起来成功」,而是:**中止不了就如实说中止不了**。
+ */
+export type LocalPreviewStatus = "ready" | "installing"
+
 /** 一次已签发的预览。**整个对象只在 main 里存在。** */
 export type IssuedLocalPackagePreview = {
   readonly previewId: string
@@ -67,6 +80,7 @@ export type IssuedLocalPackagePreview = {
   readonly byteCount: number
   readonly fileCount: number
   readonly issuedAt: number
+  readonly status: LocalPreviewStatus
 }
 
 /** 过 wire 的安全投影:previewId + 逐条判决。**没有** srcDir、**没有**字节、**没有**绝对路径。 */
@@ -75,6 +89,8 @@ export type LocalPackagePreviewWireV1 = {
   readonly preview: LocalPackagePreviewV1
   /** 留在 main 的载荷规模 —— 说给用户听的「这次要装多少东西」,不是路径。 */
   readonly retained: { readonly byteCount: number; readonly fileCount: number }
+  /** `installing` 时「取消」按钮不该还显示成可用 —— renderer 据此决定,不用猜。 */
+  readonly status: LocalPreviewStatus
 }
 
 export function previewWireV1(issued: IssuedLocalPackagePreview): LocalPackagePreviewWireV1 {
@@ -82,6 +98,7 @@ export function previewWireV1(issued: IssuedLocalPackagePreview): LocalPackagePr
     previewId: issued.previewId,
     preview: issued.preview,
     retained: { byteCount: issued.byteCount, fileCount: issued.fileCount },
+    status: issued.status,
   }
 }
 
@@ -90,6 +107,9 @@ export type CollectPayloadsResult =
   | { readonly ok: false; readonly reason: string; readonly reasonCode: LocalPackageBudgetCode }
 
 export type LocalPackageBudgetCode = "preview-budget-bytes" | "preview-budget-files" | "preview-source-changed" | "preview-payload-unreadable"
+
+/** 生命周期侧的具名结果码。过 wire 的是这些**稳定串**,不是内部措辞。 */
+export type LocalPreviewLifecycleCode = "unknown-preview" | "install-in-flight" | "no-sender-identity"
 
 /**
  * 把 preview 判为 `install` 的那些技能的**字节**收进 main,边收边累计、越界即停。
@@ -157,8 +177,14 @@ export function collectRetainedPayloads(srcDir: string, preview: LocalPackagePre
  * sender 绑定 + 单次消费。**不是**为了测试才可注入 —— 测试直接读这个单例的计量。
  */
 export function createLocalPackagePreviewStore() {
+  type StoredPreview = {
+    -readonly [K in keyof IssuedLocalPackagePreview]: IssuedLocalPackagePreview[K]
+  } & {
+    /** 安装中被取消 / 窗口没了 ⇒ 中止不了,但**安装一结束就丢掉**,不许再被确认第二次。 */
+    dropOnSettle: boolean
+  }
   /** previewId → 已签发预览。 */
-  const byId = new Map<string, IssuedLocalPackagePreview>()
+  const byId = new Map<string, StoredPreview>()
   /** senderId → previewId。**一对一** —— 新预览进来先把旧的释放掉。 */
   const bySender = new Map<number, string>()
 
@@ -170,8 +196,17 @@ export function createLocalPackagePreviewStore() {
     return true
   }
 
+  /** 中止不了的那条路:不删、不谎报释放,只记下「结束即丢」。 */
+  const orphan = (issued: StoredPreview): void => {
+    issued.dropOnSettle = true
+  }
+
   return {
-    /** 签发。**同一个 sender 的上一条当场释放**(G19 的「新预览替换即释放」)。 */
+    /** 签发。**同一个 sender 的上一条当场释放**(G19 的「新预览替换即释放」)。
+     *
+     *  上一条正在安装 ⇒ **拒绝签发新的**。理由不是保守:安装中的那批字节中止不了,
+     *  此时再签一条就是同一个 renderer 同时留两份(预算翻倍),而「每 renderer 一条」
+     *  正是 G19 的第二半。如实拒绝比悄悄留两份诚实,也比谎称把旧的释放了诚实。 */
     issue(input: {
       senderId: number
       srcDir: string
@@ -179,10 +214,15 @@ export function createLocalPackagePreviewStore() {
       payloads: readonly RetainedComponentPayload[]
       byteCount: number
       fileCount: number
-    }): IssuedLocalPackagePreview {
+    }): { ok: true; issued: IssuedLocalPackagePreview } | { ok: false; reasonCode: LocalPreviewLifecycleCode; reason: string } {
       const previous = bySender.get(input.senderId)
-      if (previous) drop(previous)
-      const issued: IssuedLocalPackagePreview = {
+      if (previous) {
+        const existing = byId.get(previous)
+        if (existing && existing.status === "installing")
+          return { ok: false, reasonCode: "install-in-flight", reason: "上一次安装还在进行中,请等它结束再导入。" }
+        drop(previous)
+      }
+      const issued: StoredPreview = {
         previewId: randomUUID(),
         senderId: input.senderId,
         srcDir: input.srcDir,
@@ -191,15 +231,43 @@ export function createLocalPackagePreviewStore() {
         byteCount: input.byteCount,
         fileCount: input.fileCount,
         issuedAt: Date.now(),
+        status: "ready",
+        dropOnSettle: false,
       }
       byId.set(issued.previewId, issued)
       bySender.set(input.senderId, issued.previewId)
-      return issued
+      return { ok: true, issued }
     },
 
-    /** confirm 侧取件:**只按 previewId**。confirm 通道拿不到 event,也就给不出任何别的输入。 */
-    get(previewId: string): IssuedLocalPackagePreview | undefined {
-      return byId.get(previewId)
+    /**
+     * confirm 侧取件:**只按 previewId**,并且**原子地占住它**。
+     *
+     * 「先取件、再等安装」与「取消只删 Map」放在一起就是那条谎:取消说释放了,安装照做。
+     * 占位之后,取消看得见 `installing`,于是它只能说实话。
+     */
+    claimForInstall(
+      previewId: string,
+    ): { ok: true; issued: IssuedLocalPackagePreview } | { ok: false; reasonCode: LocalPreviewLifecycleCode; reason: string } {
+      const issued = byId.get(previewId)
+      if (!issued) return { ok: false, reasonCode: "unknown-preview", reason: "预览已失效,请重新选择文件夹" }
+      if (issued.status === "installing")
+        return { ok: false, reasonCode: "install-in-flight", reason: "这次安装已经在进行中了,请等它结束。" }
+      issued.status = "installing"
+      return { ok: true, issued }
+    },
+
+    /**
+     * 安装结束。`wrote === true` ⇒ 消费掉(**写成功才消费**,`#351`);
+     * 否则回到 `ready` 供用户重点确认 —— 除非期间被取消/窗口没了,那就丢掉。
+     */
+    settleInstall(previewId: string, wrote: boolean): void {
+      const issued = byId.get(previewId)
+      if (!issued) return
+      if (wrote || issued.dropOnSettle) {
+        drop(previewId)
+        return
+      }
+      issued.status = "ready"
     },
 
     /** 只读通道取件:按 sender **且** previewId —— 读面有 event,就该把 sender 绑上。 */
@@ -208,22 +276,42 @@ export function createLocalPackagePreviewStore() {
       return issued && issued.senderId === senderId ? issued : undefined
     },
 
-    /** **写成功才消费**(`#351`)。失败路径绝不调它。 */
-    consume(previewId: string): boolean {
-      return drop(previewId)
-    },
-
-    /** 显式取消。返回是否真的释放了一条(用于「取消一条不存在的预览」不撒谎)。 */
-    cancel(senderId: number, previewId: string): boolean {
+    /**
+     * 显式取消。三种结果,**互不冒充**:
+     *   · `released: true`  —— 真释放了;
+     *   · `released: false` + `ok: true`  —— 没有你的这一条可取消(不存在 / 不是你的);
+     *   · `ok: false` + `install-in-flight` —— **正在装,取消不了**。这一条绝不返回
+     *     `released: true`:中止不了却报「已取消」,用户就会以为东西没装进去。
+     */
+    cancel(
+      senderId: number,
+      previewId: string,
+    ): { ok: true; released: boolean } | { ok: false; released: false; reasonCode: LocalPreviewLifecycleCode; reason: string } {
       const issued = byId.get(previewId)
-      if (!issued || issued.senderId !== senderId) return false
-      return drop(previewId)
+      if (!issued || issued.senderId !== senderId) return { ok: true, released: false }
+      if (issued.status === "installing") {
+        orphan(issued) // 装完就丢:中止不了,但不许它之后还能被确认第二次
+        return {
+          ok: false,
+          released: false,
+          reasonCode: "install-in-flight",
+          reason: "这次安装已经开始了,现在取消不了。装完之后可以整包移除。",
+        }
+      }
+      return { ok: true, released: drop(previewId) }
     },
 
-    /** 窗口销毁 / renderer 走人:那个 sender 的一切当场释放。 */
+    /** 窗口销毁 / renderer 崩了 / 文档被换掉:那个 sender 的一切当场释放。
+     *  正在安装的中止不了 ⇒ 标记「结束即丢」,**不报释放**。幂等:重复调用无副作用。 */
     releaseSender(senderId: number): boolean {
       const previewId = bySender.get(senderId)
-      return previewId ? drop(previewId) : false
+      if (!previewId) return false
+      const issued = byId.get(previewId)
+      if (issued && issued.status === "installing") {
+        orphan(issued)
+        return false
+      }
+      return drop(previewId)
     },
 
     /** 计量面(G19 的断言对象):当前**还留在 main 里的字节数**。 */
