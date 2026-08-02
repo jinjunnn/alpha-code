@@ -349,6 +349,18 @@ describe("G3 载荷完整:比较基准是对源目录的独立扫描", () => {
 // ══════════════════════════════════════════════════════════════════════════════════════════
 
 describe("G1 原子性:第 k 个装不上 ⇒ 一个都不留", () => {
+  // 「一次事务」这件事必须由**生产入口**的可观察产物证明,不是由我自己拼的一条等价链证明:
+  // 三条 record 上的 `transaction.id` 逐字相同 = 它们出自同一个 txId。改回「一个技能一个事务」
+  // 的 for 循环(= B 的形状),这条立刻红 —— 那时会有三个不同的 txId。
+  test("生产入口:N 条 record 携带的是**同一个** transactionId", async () => {
+    makePlugin("tide-plugin", [{ name: "premarket" }, { name: "postmarket" }, { name: "riskscan" }])
+    expect((await install()).ok).toBe(true)
+    const txIds = new Set(readLedgerV2(root).records.map((r) => r.transaction?.id ?? "<none>"))
+    expect(readLedgerV2(root).records).toHaveLength(3)
+    expect([...txIds]).toHaveLength(1)
+    expect([...txIds][0]).not.toBe("<none>")
+  })
+
   test("第三个技能的内容在 CAS 里没了 ⇒ 账本零条、盘上零目录、V3 零图零 claim", async () => {
     makePlugin("tide-plugin", [{ name: "premarket" }, { name: "postmarket" }, { name: "riskscan" }])
     const p = preview()
