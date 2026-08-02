@@ -1,7 +1,7 @@
 // REQ-019 T6:导入校验纯函数单测(非法 frontmatter 拒绝路径 = 验收③的一半;另一半真机 UI 走查)。
 import { describe, expect, test } from "bun:test"
 import { isExtensionName } from "../shared/extension-name"
-import { parseSkillFrontmatter, validGitUrl } from "./ext-import-validate"
+import { parseSkillFrontmatter, SKILL_CONTROL_FIELD_KEYS, validGitUrl } from "./ext-import-validate"
 
 describe("shared extension name", () => {
   test.each(["a", "A_1.test-name", "x".repeat(64)])("accepts %s", (name) => {
@@ -14,9 +14,9 @@ describe("shared extension name", () => {
 })
 
 describe("parseSkillFrontmatter (T6 导入校验)", () => {
-  test("合法 frontmatter → name/description", () => {
+  test("合法 frontmatter → name/description + 顶层键集", () => {
     const r = parseSkillFrontmatter(`---\nname: my-skill\ndescription: does things\n---\n\n# body\n`)
-    expect(r).toEqual({ ok: true, name: "my-skill", description: "does things" })
+    expect(r).toEqual({ ok: true, name: "my-skill", description: "does things", keys: ["description", "name"] })
   })
   test("引号包裹与大小写键名容忍", () => {
     const r = parseSkillFrontmatter(`---\nName: "quoted-name"\nDescription: 'ok desc'\n---\n`)
@@ -43,6 +43,46 @@ describe("parseSkillFrontmatter (T6 导入校验)", () => {
   })
   test("超长 frontmatter(>8KB 未闭合窗口)→ 拒绝", () => {
     expect(parseSkillFrontmatter(`---\n${"a: b\n".repeat(3000)}---\n`).ok).toBe(false)
+  })
+})
+
+// REQ-128 Phase 3(基线 §14 R2-b):控制字段的判据是「**顶层键在不在**」,与它有没有标量值无关。
+// 老的 `fields` 字典要求冒号后有非空标量 ⇒ 块式写法整个不进字典 ⇒ 据它判会得到一个假的「没有」。
+describe("parseSkillFrontmatter 顶层键集(REQ-128 #780)", () => {
+  const keysOf = (text: string): string[] => {
+    const r = parseSkillFrontmatter(text)
+    return r.ok ? r.keys : []
+  }
+
+  test("**块式**键(冒号后换行接列表)必须出现在键集里 —— 这是老口径唯一看不见的一类", () => {
+    const keys = keysOf(`---\nname: n\ndescription: d\nallowed-tools:\n  - Read\n  - Bash(ls *)\n---\n`)
+    expect(keys).toContain("allowed-tools")
+    // 同一份 frontmatter 里的**块内条目**不是顶层键。
+    expect(keys).toEqual(["allowed-tools", "description", "name"])
+  })
+
+  test("标量式键同样出现;两种写法一视同仁", () => {
+    expect(keysOf(`---\nname: n\ndescription: d\nallowed-tools: [Read]\n---\n`)).toContain("allowed-tools")
+  })
+
+  test("**嵌套**键不算顶层键(顶层性由顶格判定,不解析嵌套)", () => {
+    const keys = keysOf(`---\nname: n\ndescription: d\nmetadata:\n  allowed-tools: [Read]\n  user-invocable: false\n---\n`)
+    expect(keys).toEqual(["description", "metadata", "name"])
+    expect(keys).not.toContain("allowed-tools")
+    expect(keys).not.toContain("user-invocable")
+  })
+
+  test("键名统一小写、去重、排序 —— 结果确定", () => {
+    expect(keysOf(`---\nName: n\nDESCRIPTION: d\nName: n2\nversion: 1\n---\n`)).toEqual(["description", "name", "version"])
+  })
+
+  test("键集与值无关:`user-invocable: true` 与 `: false` 交出同一个键", () => {
+    expect(keysOf(`---\nname: n\ndescription: d\nuser-invocable: true\n---\n`)).toContain("user-invocable")
+    expect(keysOf(`---\nname: n\ndescription: d\nuser-invocable: false\n---\n`)).toContain("user-invocable")
+  })
+
+  test("SKILL_CONTROL_FIELD_KEYS 就是 Alpha 兑现不了的那四个,一个不多一个不少", () => {
+    expect([...SKILL_CONTROL_FIELD_KEYS].sort()).toEqual(["allowed-tools", "argument-hint", "disable-model-invocation", "user-invocable"])
   })
 })
 

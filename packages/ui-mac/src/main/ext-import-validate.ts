@@ -4,9 +4,31 @@
 
 import { isExtensionName } from "../shared/extension-name"
 
+/** REQ-128 Phase 3(基线 §14 R2-b):Alpha 没有对应语义的**调用控制**字段。
+ *  出现任一即具名跳过该技能(owner 裁决 C)——判据是「这个顶层键在不在」,与它的值无关。 */
+export const SKILL_CONTROL_FIELD_KEYS: readonly string[] = ["allowed-tools", "argument-hint", "disable-model-invocation", "user-invocable"]
+
+/** REQ-128 Phase 3(基线 §14 R2-b):frontmatter **顶层键存在性**探测。
+ *
+ *  为什么不能用下面那个 `fields` 字典回答「这个键在不在」:它的行正则要求**冒号后有非空标量**,
+ *  所以块式写法(`allowed-tools:` 后跟换行 YAML 列表)整个不进字典 —— 真实语料里
+ *  `allowed-tools` 的块式 7 份、标量式 1 份(frontmatter 内实测),据字典判会得到一个假的「没有」。
+ *
+ *  **仍然零新增解析器**(本文件抬头的 PR #73 决策不动):不解析块式的值、不引 YAML、不解析嵌套,
+ *  只回答键的**存在性**。顶层性由「键名顶格」判定 —— 缩进行是块内内容,不是顶层键;
+ *  这比 `fields` 的 `line.trim()` 更严,不会把 `permission:` 下的 `edit:` 误报成顶层键。 */
+function topLevelKeyNames(block: string): string[] {
+  const keys = new Set<string>()
+  for (const rawLine of block.split("\n")) {
+    const m = /^([A-Za-z][A-Za-z0-9_-]*)[ \t]*:/.exec(rawLine.replace(/\r$/, ""))
+    if (m) keys.add(m[1].toLowerCase())
+  }
+  return [...keys].sort()
+}
+
 export function parseSkillFrontmatter(
   text: string,
-): { ok: true; name: string; description: string } | { ok: false; reason: string } {
+): { ok: true; name: string; description: string; keys: string[] } | { ok: false; reason: string } {
   if (!text.startsWith("---")) return { ok: false, reason: "非法 frontmatter:缺少 --- 头" }
   const end = text.indexOf("\n---", 3)
   if (end === -1 || end > 8192) return { ok: false, reason: "非法 frontmatter:未闭合" }
@@ -20,7 +42,9 @@ export function parseSkillFrontmatter(
   const description = fields["description"] ?? ""
   if (!isExtensionName(name)) return { ok: false, reason: `非法 frontmatter:name 缺失或不合法(${name || "空"})` }
   if (!description) return { ok: false, reason: "非法 frontmatter:description 缺失" }
-  return { ok: true, name, description }
+  // `keys` = 顶层键名全集(块式与标量式一视同仁)。既有两个消费点只读 name/description,
+  // 结构化扩展不影响它们;REQ-128 的控制字段判定只读这一个字段。
+  return { ok: true, name, description, keys: topLevelKeyNames(block) }
 }
 
 /** REQ-098 #335:产品策展的可信 Git forge 主机 allowlist(SSRF 收口)。

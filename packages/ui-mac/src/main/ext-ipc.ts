@@ -24,6 +24,7 @@ import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { reloadInstalledMcp } from "./ext-mcp-activation"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, removeFsInstallFilesOnly, resourcesRoot } from "./ext-fs-installer"
+import { intakeImportDir } from "./claude-plugin-intake"
 import { parseAgentImport } from "./ext-import-validate"
 import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
 import { listRetainedJournals, retireTransactionJournal, type JournalRootRef } from "./ext-journal-retire"
@@ -974,6 +975,42 @@ export function registerExtIpcHandlers(
     await ledgerReady
     const picked = await pickImportSkillDir()
     if (!picked.ok) return picked
+    // REQ-128 Phase 3 `[T1-intake]`(#780):**main 侧**分流点,在 picker 之后、写之前。
+    // 用户选的若是一个 Claude 插件目录,今天会一路落到 `collectImportSkillPayload`,报一句
+    // 「文件夹内没有 SKILL.md」—— 与真因毫无关系,用户据它做不出任何正确动作。
+    // 这里改成:**纯读**清点一遍,把认出来的东西如实说清。零写盘。
+    // 确认通道与预览屏分别归 `[T3-channel]` / `[T4-renderer]`,本期只到「说清楚」为止。
+    // 不是插件目录 ⇒ 原路走既有单技能导入,行为逐字不变。
+    //
+    // owner 裁决 D / K19 要在**确认之前**说清「你已经有一个同名技能了」与「这个包已经装过了」,
+    // 所以这里必须把**已装事实**喂进去 —— 不喂就等于那两条原因在生产路径上永远到不了,
+    // 只在单测里靠自己注入才成立。账本读不出来时**不假装干净**:两个集合都留空并如实说明,
+    // 由安装期锁内的 fresh-only 闸兜底(最终裁决本来就在那里,`[T2-install]` 的 G4)。
+    // `sideEffectFree` 不是可选的谨慎,是本票的 AC:`parseLedger` 在看到坏 receipt / 坏 record 时
+    // 会落一个 `installs.json.evidence-*`(`ext-receipt-v2.ts` r18 的字节级取证侧写)。
+    // 那是一个**写**。预览承诺零写盘,不能因为账本恰好带一条坏条目就落文件 —— 取证不会因此丢失:
+    // 任何写路径的读仍会落它,而侧写本来就按损坏集哈希幂等。
+    const globalRoot = alphaGlobalRoot()
+    const ledgerV2 = readLedgerV2(globalRoot, { sideEffectFree: true })
+    const graphState = readPackageLedgerStateV1(globalRoot, { sideEffectFree: true })
+    const installedSkillNames = new Set(ledgerV2.records.filter((r) => r.kind === "skill").map((r) => r.name))
+    for (const r of ledgerV2.v1Only) if (r.type === "skill") installedSkillNames.add(r.name)
+    const installedPackageIds = new Set(graphState.ok ? graphState.packageGraphs.map((g) => g.packageId) : [])
+    const ledgerUnreadable = !graphState.ok || ledgerV2.hasExcludedRecords
+    const intake = intakeImportDir(picked.srcDir, { installedSkillNames, installedPackageIds })
+    if (intake.route === "local-claude-plugin") {
+      const p = intake.preview
+      return {
+        ok: false,
+        reason:
+          `这是一个 Claude 插件目录「${p.name}」:共 ${p.limits.skillCandidates} 个技能,` +
+          `其中 ${p.installableCount} 个本版本可以装。插件包的确认界面还没上线,本次没有做任何改动。` +
+          (p.duplicateImportNotice ? `${p.duplicateImportNotice}` : "") +
+          // 「读不出来」与「没装」不许折叠(对齐 `ext-ipc.ts` 只读投影的既有纪律)。
+          (ledgerUnreadable ? "(注意:已安装清单这次读不出来,重名提示可能不全。)" : ""),
+        localPluginPreview: p,
+      }
+    }
     return gatedWrite.importSkillFolder(picked.srcDir, target)
   })
   ipcMain.handle(GATED_WRITE_CHANNELS.importSkillGit, barrier(gatedWrite.importSkillGit))
