@@ -73,7 +73,13 @@ export function skillMdFilesIn(corpusRoot: string): string[] {
   return out.sort()
 }
 
-/** 整棵树的逐字节指纹:路径 + mode + 内容 sha256。用于「执行前后磁盘不变」断言。 */
+/** 整棵树的指纹:路径 + mode + 大小 + 内容 sha256 + **mtime + inode**。
+ *
+ *  为什么必须带 mtime 与 inode(这是绕过实验挖出来的洞,不是洁癖):
+ *  只比内容的指纹**看不见幂等重写** —— 往 `installs.json` 反复写同一串 `{}`,内容哈希逐次相同,
+ *  「磁盘逐字节不变」照样成立,而生产其实每次都在写盘。实测:C2 绕过实验里这条闸没变红,
+ *  变红的是别的用例(靠账本被覆盖间接暴露)—— 那就是这道闸自己的盲区。
+ *  inode 另外管住「写临时文件 + rename」这种内容相同但确实换过文件的写法。 */
 export function treeFingerprint(root: string): string {
   const crypto = require("node:crypto") as typeof import("node:crypto")
   const lines: string[] = []
@@ -86,12 +92,13 @@ export function treeFingerprint(root: string): string {
         lines.push(`L ${childRel} ${fs.readlinkSync(childAbs)}`)
         continue
       }
+      const stamp = `${(st.mode & 0o777).toString(8)} ${st.mtimeMs} ${st.ino}`
       if (e.isDirectory()) {
-        lines.push(`D ${childRel} ${(st.mode & 0o777).toString(8)}`)
+        lines.push(`D ${childRel} ${stamp}`)
         walk(childAbs, childRel)
         continue
       }
-      lines.push(`F ${childRel} ${(st.mode & 0o777).toString(8)} ${st.size} ${crypto.createHash("sha256").update(fs.readFileSync(childAbs)).digest("hex")}`)
+      lines.push(`F ${childRel} ${stamp} ${st.size} ${crypto.createHash("sha256").update(fs.readFileSync(childAbs)).digest("hex")}`)
     }
   }
   walk(root, "")
