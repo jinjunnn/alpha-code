@@ -90,9 +90,23 @@ R1 审计的 Blocker 是「**读引擎会读的那个文件 ≠ 跑引擎的读*
 **观察点 = 引擎 HTTP API `GET /skill`(OpenAPI identifier `app.skills`)。**
 它由 `packages/opencode/src/skill/index.ts` 的 `Skill.Service` 直接服务,而
 `packages/opencode/src/session/system.ts:98-110` 的 `SystemPrompt.skills` 调的是**同一个 service 的**
-`skill.available(agent)` → `Skill.fmt(list, {verbose:true})` —— 也就是说,`GET /skill` 返回的集合
-**就是下一条消息的系统提示里会写进 `<available_skills>` 的那一个集合**。
+`skill.available(agent)` → `Skill.fmt(list, {verbose:true})`。
 本仓 `alpha-installs.ts` 抬头亦把 `app.skills` 列为「引擎可见性真相」的权威面。
+
+**精确到什么程度(编排者复核后收紧的措辞 —— 原稿写的是「就是同一个集合」,比事实强一格):**
+
+实读 `skill/index.ts:301-315`:`all()` 与 `available(agent)` **读的是同一份
+`InstanceState.get(state)` 的 `state.skills`**;差别是 `available` 会排序,**并且在传了 agent 时
+按 `Permission.evaluate("skill", …).action !== "deny"` 多过一层过滤**。
+而 `skill.available(` 在全仓**只有 `system.ts:101` 一处调用**。
+
+所以准确说法是:**两者读同一份 live state;`available(agent)` 另加一层 agent 权限过滤。
+本次无 skill 被 permission deny,故两者重合。**
+
+**残余那一格由下面「真实模型回合」闭合** —— 引擎自报的
+`Skill "tide-intro" not found. Available skills: … chain-analysis …`(`Skill.NotFoundError.available`)
+是**被测系统在被测路径上自报的可用集**,它不经 `/skill`,因此覆盖了「`/skill` 可能不过 agent 过滤」
+这一格。**这条与计数证据同等承重,不是补充说明。**
 
 实测(同一个引擎进程,全程**未重启应用、未重启 sidecar**):
 
@@ -189,6 +203,12 @@ R1 审计的 Blocker 是「**读引擎会读的那个文件 ≠ 跑引擎的读*
 
 **e. 未覆盖**:Windows;冷启动性能;多包并存;超预算 / 0-skill / 不支持布局等**负向**输入在打包环境的表现
 (这些在 `#783` 的夹具半场已有断言,本轮只跑了真实语料的正向路径)。
+
+6. **`GET /skill` 这条路径未覆盖 agent 权限过滤那一层。**
+   `available(agent)` 比 `/skill` 多一层 `Permission.evaluate("skill", …)` 的 deny 过滤
+   (`skill/index.ts:310-315`),而本次**无任何 skill 被 permission deny** ⇒ 该分支**恒不触发**。
+   按本仓判据,**「本次没有反例」不等于「验过了」** —— 如实登记为未覆盖,
+   不因为「真实模型回合那条另外闭合了残余」就把它记成已覆盖(那是另一条证据,不是这一条)。
 
 ## 7. 打包与真机过程中踩到的坑(留给下一个人)
 
