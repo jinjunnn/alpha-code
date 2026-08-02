@@ -13,7 +13,7 @@ review_after: 2026-11-02
 本表是 `#783`(T5) 的收口件：把散在三处的绕过记录合成一份，并**点名今天还没有记录的闸**。
 散处分别是 —— T1 在 PR [`#786`](https://github.com/jinjunnn/alpha-code/pull/786) 正文的 B1–B11、
 T2 在 [`2026-08-02-req128-t2-gate-bypass-experiments.md`](2026-08-02-req128-t2-gate-bypass-experiments.md)
-的 13 条、以及本票新做的 A/B/C 三条。
+的 13 条、以及本票新做的 A–E 五条。
 
 > **这份表本身不是「已验证」的证明。** 它是一张账：哪几道闸真被绕过一次并变红、
 > 哪几道只有用例没有绕过、哪几道的真实语料半场是**恒真式**。第三类最危险 ——
@@ -35,12 +35,12 @@ T2 在 [`2026-08-02-req128-t2-gate-bypass-experiments.md`](2026-08-02-req128-t2-
 | **G5** `previousDigest` 不撞 `#306` | T2 `#787`（**借 G4 的变异**） | 基线给 G5 的配方就是「删掉 G4 的预检」⇒ 与 G4 同一次实验 | G4 变异的 5 fail 里含「catalog 同名 ⇒ 具名拒绝，不走到 mutation」 | — |
 | **G6** preview→confirm 绑定 | **无人** | — | — | — |
 | **G7** 引擎授权闸 | T2 `#787` | 计划里预塞一份「全部确认」的 `authorization` | **1 fail**：capabilities 非空时安装照样成功，不再停在 authorize | — |
-| **G8①** 铸造期 `local:` | **无人**（有用例，无绕过） | — | — | — |
+| **G8①** 铸造期 `local:` | T5 `#783` **E** | 把铸造侧的命名空间校验短路掉（`if (false && …)`） | **1 fail**：`Received: true` —— 非 `local:` 的 packageId 被**装进去了** | — |
 | **G8②** admission 反向拒绝 | **无人** | — | — | — |
 | **G9** 组件类型具名拒绝 | T1 `#786` B9 | 删掉枚举 `commands/` 的那一行 | **RED**（真实语料 22 个带 `commands/` 的插件） | — |
 | **G10** 装完默认关 | T2 `#787` | 从 `shared/ext-install-policy.ts` 删掉 `localPackage` 判别维 | **3 fail**：落账变回 `enabled` | — |
 | **G11** 事务规模界 64 | T1 `#786` B6/B7 | B6：超限改成 `items.slice(0,64)`；B7：把界从 64 改成发布端的 16 | B6 **RED**；B7 **RED ×2** | ⚠️ **恒真式**（下 §二 ①） |
-| **G12** 载荷读取硬化 | **无人**（有敌意夹具，无绕过） | 基线配方「把某一个文件的读改成 `fs.readFileSync`」**今天没人实施过** | — | — |
+| **G12** 载荷读取硬化 | T5 `#783` **D** | 照基线原配方：`readManifest` 的硬化读 `readImportFileBounded` → 裸 `fs.readFileSync` | **1 fail**：超大 `plugin.json` 被整份读进 main，`packageId` 从 `null` 变成 `"local:huge"` | — |
 | **G13** 全跳过终态 | T1 `#786` B10 + T2 `#787` | T1：0 组件改成 `{ok:true, installed:[]}`；T2：让 0 组件也去建 mutation | T1 **RED ×2**（25 个 0-skill 插件）；T2 **1 fail** | — |
 | **G14** root 是真技能 | T2 `#787` | root 换成合成的 `kind:"plugin"` 节点 | **5 fail**（被 G15 在写盘前拦下） | — |
 | **G15** 四集双射 | T2 `#787` | 图的 children 由 `accepted.slice(1)` 改成 `slice(2)` | **5 fail**，闸在调事务**之前**拒绝 | — |
@@ -53,10 +53,14 @@ T2 在 [`2026-08-02-req128-t2-gate-bypass-experiments.md`](2026-08-02-req128-t2-
 
 ### 三类点名（这是本表要交的信息）
 
-**① 有绕过记录的（15 道）**：G1、G2、G3、G4（含 G4b、v1 臂、mode 臂）、G5（借 G4）、G7、G9、
-G10、G11、G13、G14、G15、G16、G17、G18。
+**① 有绕过记录的（17 道）**：G1、G2、G3、G4（含 G4b、v1 臂、mode 臂）、G5（借 G4）、G7、
+**G8①**、G9、G10、G11、**G12**、G13、G14、G15、G16、G17、G18。
 
-**② 今天还没有记录的（6 道）**，分两种，处置完全不同：
+其中 **G8① 与 G12 是本票（T5）当场补上的** —— 它们此前的状态是「实现与用例都在册，
+但从没有人实施过一次绕过」，也就是这份表里唯一两道「本可以验而没验」的闸。
+两条都照基线给的原配方跑，都变红（见 §三 D/E）。
+
+**② 今天还没有记录的（4 道）**，全部是**票还没落地**，不是漏做：
 
 | 闸 | 为什么没有 | 谁该补 |
 | --- | --- | --- |
@@ -64,10 +68,10 @@ G10、G11、G13、G14、G15、G16、G17、G18。
 | **G8②** admission 反向拒绝 | 同上（`package-admission.ts` 的唯一一处拒绝在 T3 范围内） | 随 `#782` |
 | **G19** preview 字节预算与释放 | 同上 | 随 `#782` |
 | **G20** 热重载真接上 | 实现属 `#784`(T4)，**尚未合并**。基线自陈「这条闸第一次跑起来就是红的」 | 随 `#784` |
-| **G8①** 铸造期 `local:` 校验 | ⚠️ **实现与用例都已在册**（`claude-plugin-install.test.ts` 的「`local:` 命名空间是铸造期校验」），但**没有人实施过一次绕过** | 可立即补，不必等任何票 |
-| **G12** 载荷读取硬化 | ⚠️ **实现与敌意夹具都已在册**（`claude-plugin-intake.test.ts` 的 G12 一节，9 条），但基线给的配方「把某一个文件的读改成 `fs.readFileSync`」**今天没人跑过**。T1 的 B11 实施的是 **AC9 零写盘**，与这条不是同一件事 | 可立即补，不必等任何票 |
 
-**G8① 与 G12 是这份表里唯一「本可以验而没验」的两道。** 其余四道是票还没落地，不是漏做。
+⚠️ **这四道在 `#782` / `#784` 合并之前，一条都不许记成「已验证」。**
+G20 尤其：基线明写它钉的是**今天还不存在的接线**（`extension-detail.tsx` 的整包卸载路径
+不调 `refreshEngine()`），所以它第一次跑起来**就应该是红的**。
 
 **③ 记录是恒真式的** —— 见下一节。这一类**不会**在总账里表现为红，它表现为「全绿」，
 所以必须单独列。
@@ -101,16 +105,53 @@ T1 实测：真实语料里 7 份块式 `allowed-tools:` 的文件**全部同时
 都写过「本机 0 例」或等价的话，但都没有进那份风险清单 —— 于是它们会以「真实语料全过」的样子
 被下一轮 review 读成已验证。
 
-## 三、本票新做的三条绕过（A/B/C）
+## 三、本票新做的五条绕过（A–E）
 
 工作树干净 ⇒ 改坏一处生产代码 ⇒ 跑整个用例文件 ⇒ `git checkout -- <那一个文件>` 还原。
-基线未变异：`13 pass / 0 fail`（`Ran 13 tests across 1 file`）。
+每次只改一处；**跑整文件而不是 `-t` 过滤**（bun 的 `-t` 对本仓 CJK 用例名一条都匹配不上，
+会给假绿）；每次都核对 `Ran N tests across M files` 的 N。
 
-| # | 改坏了什么 | 结果 |
-| --- | --- | --- |
-| **A** | `intakeImportDir` 加 `if (path.basename(real).endsWith(".bak")) return { route: "single-skill" }` | **2 fail** |
-| **B** | 删掉 `not-self-contained-executable-bit` 那一臂 | **3 fail** |
-| **C** | 删掉 `dot-claude-skills-dir` 的具名（`.claude/skills` 臂） | **1 fail** |
+未变异基线：`claude-plugin-import-matrix.cases.ts` = **13 pass / 0 fail**；
+`claude-plugin-intake.test.ts` = **51 pass / 0 fail**；
+`claude-plugin-install.test.ts` = **29 pass / 0 fail**。
+
+| # | 闸 | 改坏了什么 | 结果 |
+| --- | --- | --- | --- |
+| **A** | AC7 `.bak` | `intakeImportDir` 加 `if (path.basename(real).endsWith(".bak")) return { route: "single-skill" }` | **2 fail** |
+| **B** | G16 | 删掉 `not-self-contained-executable-bit` 那一臂 | **3 fail**（含两条成员集断言） |
+| **C** | G18 臂② | 删掉 `dot-claude-skills-dir` 的具名 | **1 fail** |
+| **D** | **G12** | `readManifest` 的 `readImportFileBounded` → 裸 `fs.readFileSync`（基线原配方） | **1 fail**：`Expected: null / Received: "local:huge"` |
+| **E** | **G8①** | 铸造侧命名空间校验短路（`if (false && …)`） | **1 fail**：`Expected: false / Received: true` |
+
+### D —— 「同一个目录里，技能文件走硬化路径而 manifest 走裸读」
+
+`claude-plugin-intake.ts` 抬头自陈：把 manifest 改回裸 `readFileSync`，
+**不是纵深变浅，是开了一个旁路**。变异后超大 `plugin.json` 被整份读进 Electron main：
+
+```
+Expected: null
+Received: "local:huge"
+(fail) G12 敌意夹具 > **超大 plugin.json** ⇒ 认不出这个插件,而不是把它整份读进 main 内存
+```
+
+⚠️ **射程要说清楚**：这一次变异只打红了**一条**（超大 manifest）。
+`plugin.json` 是 symlink 那条**没有**变红 —— 因为 `isRegularFile` 的前置判断挡在读之前，
+与硬化读原语无关。也就是说 **G12 的证据强度是「体积帽」这一维，不是「硬化读的全部保证」**。
+其余几维（`O_NOFOLLOW` / realpath 圈禁 / 增长探测）今天**没有**各自独立的绕过记录。
+不写成「G12 已全验」。
+
+### E —— 摘掉命名空间校验，非 `local:` 的包直接装进去
+
+```
+Expected: false
+Received: true
+(fail) 终态、root 选择与账本语义 > `local:` 命名空间是铸造期校验:非 local 的 packageId 一律拒
+```
+
+`Received: true` = **装成功了**。这条只证明了 G8 的**第一个方向**（自己人不许乱铸）。
+G8 的关键方向是**第二个**（`resolvePreparedPackage` 必须拒绝 packageId 以 `local:` 开头的
+catalog 信封）—— 那一半属 `#782`，**今天不存在，也没有记录**。
+基线原话：「只做①等于只挡自己人」。
 
 ### A —— `.bak` 这条闸差点被我自己写成假闸
 
