@@ -162,11 +162,16 @@ export function ExtensionDetail(props: {
     const [retained, setRetained] = createSignal<
       Array<{ kind: string; name: string; reasonCode: string | null }>
     >([])
+    const [reloadPending, setReloadPending] = createSignal(false)
     const removePackage = async () => {
       setRemoving(true)
       setPackageError(undefined)
+      setReloadPending(false)
       try {
-        const result = await extIpc.uninstallPackage(view().catalogId)
+        // `#784` G20:走 `ext.uninstallPackage` 而不是 `extIpc.uninstallPackage` ——
+        // 那一层在成功之后会 `refreshEngine()`。此前这里直连 IPC 并且**只 refetch 不 refresh**,
+        // 后果是「移除成功」之后那些技能仍然被引擎实例注入着,一直到用户下次重启 App。
+        const result = await props.ext.uninstallPackage(view().catalogId)
         if (!result.ok) {
           // 失败就说失败。`ok` 之外的任何东西都不许被读成「已移除」——「空操作 + ok」正是
           // `#706` review 抓到的那种谎报(Hub 只看 ok)。
@@ -174,6 +179,9 @@ export function ExtensionDetail(props: {
           return
         }
         setRetained(result.retained.map((entry) => ({ kind: entry.kind, name: entry.name, reasonCode: entry.reasonCode })))
+        // 账本已经改完(移除是 durable 的),但引擎这次没能重载 ⇒ 如实说「待重载」,
+        // 不许让用户以为它已经不在了。
+        setReloadPending(result.reloadPending === true)
         // 成功但带具名 warning(连接绑定没释放掉、残留没清干净等)的呈现归 `extIpc`(`#765`):
         // 上面那次调用返回时就已经推了 toast,这里不再往行内错误位塞一份。
         await refetchInstalled()
@@ -328,6 +336,12 @@ export function ExtensionDetail(props: {
                   )}
                 </For>
               </ul>
+            </Show>
+            {/* `#784` G20:账本已改完但引擎没重载成功 —— 说「待重载」,不说「已移除」。 */}
+            <Show when={reloadPending()}>
+              <p class="alpha-ext-card-err" data-reload-pending="" role="status">
+                {t("alpha.ext.packageRemovedPendingReload")}
+              </p>
             </Show>
             <Show when={packageError()}>
               {(error) => <p class="alpha-ext-card-err" role="alert">{error()}</p>}

@@ -450,6 +450,61 @@ export type {
 import type { ExtInventory } from "../main/ext-inventory"
 export type { InventoryRow, ExtInventory } from "../main/ext-inventory"
 
+// REQ-128 Phase 3(`#780`/`#782`/`#784`):本地 Claude 插件包导入的 wire 形状。
+// 真源 = main/claude-plugin-intake.ts(逐组件判决)与 main/local-package-preview.ts(安全投影)。
+// 这里只 re-export,不重述:重述一遍就是给同一个问题第二个答案。
+import type { LocalPackagePreviewV1 } from "../main/claude-plugin-intake"
+import type { LocalPackagePreviewWireV1, LocalPreviewLifecycleCode } from "../main/local-package-preview"
+export type {
+  LocalPackagePreviewWireV1,
+  LocalPreviewLifecycleCode,
+  LocalPackageBudgetCode,
+} from "../main/local-package-preview"
+export type {
+  LocalPackageBlockedCode,
+  LocalPackageComponentV1,
+  LocalPackageLayoutCode,
+  LocalPackageLayoutIssueV1,
+  LocalPackagePreviewV1,
+  LocalPackageSkipCode,
+  LocalPackageUnsupportedComponentType,
+  LocalPackageUnsupportedComponentV1,
+} from "../main/claude-plugin-intake"
+
+/**
+ * REQ-128 Phase 3 `#784` 第 6 跳:已装扩展包只读清单的 wire 形状。
+ *
+ * **安全投影**:无绝对路径、无 owner token(claims 的 owner 里带着别的包的 id,那不是这个面
+ * 该说的事)。`main/ext-ipc.ts` 的 `ext-installed-packages` handler **按这个类型标注返回值** ——
+ * 于是 main 的投影与 renderer 的读法漂移会是一条类型错误,而不是一次静默的少一栏。
+ */
+export type InstalledPackageComponentV1 = {
+  componentId: string
+  kind: string
+  name: string
+  required: boolean
+  /** owner 裁决 B 之后本地包装完默认 `disabled` ⇒ 这一栏**必须**过线,否则 Hub 画不出
+   *  「已安装 · 未启用」,用户装完拿不到任何东西。
+   *  `null` = 图里有这个节点、账本里没有对应 record(两者不同步)—— **不是**「已启用」。 */
+  desiredState: "enabled" | "disabled" | null
+}
+export type InstalledPackageV1 = {
+  packageId: string
+  installedGraphDigest: string
+  /** 账本里**没有**「包显示名」这个事实 —— 不造一个。有的是 root 组件的名字,如实这么叫。 */
+  rootComponentName: string
+  version: string | null
+  /** 来源一律从 child record 的 `origin` 读,**绝不从 packageId 前缀读**(基线 §8 纪律 2,`#737`)。
+   *  `imported-claude` = 用户从本地文件夹导入的;`catalog` = 已验签目录来的。 */
+  origin: string | null
+  components: InstalledPackageComponentV1[]
+}
+export type InstalledPackagesResultV1 =
+  | { ok: true; packages: InstalledPackageV1[] }
+  /** 「读不出」**不许**折叠成「没装」:折叠会让用户在一本损坏的账本上看到「什么都没装」,
+   *  于是去重装 —— 而重装会撞上同名拒绝。 */
+  | { ok: false; reasonCode: "ledger-unreadable"; reason: string }
+
 // REQ-096(#188):隔离 HTML preview 控制通道形状(真源 shared/html-preview.ts;host 本体在
 // main/html-preview-host.ts)。renderer 只见 opaque previewId —— 一次性 host 的 URL/token、
 // 文件字节与绝对路径永不过 IPC。
@@ -650,6 +705,40 @@ export type ElectronAPI = {
       | { ok: false; reason: string }
     >
     importAgentConfirm: (previewId: string) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
+    /** REQ-128 Phase 3(`#782` 通道 / `#784` renderer):本地 Claude 插件包两段式的**纯读**取件面。
+     *  按 previewId 取回安全投影 —— **没有** srcDir、**没有**字节、**没有**绝对路径。
+     *  renderer 刷新预览屏、或重新挂载后想接着看同一份预览时走这条。 */
+    importClaudePluginPreview: (
+      previewId: string,
+    ) => Promise<({ ok: true } & LocalPackagePreviewWireV1) | { ok: false; reason: string }>
+    /** 显式取消:释放 main 侧留存的字节(G19)。
+     *  三种结果**互不冒充** —— `released:true` 真释放了;`ok:true, released:false` 没有你的这一条;
+     *  `ok:false` + `install-in-flight` **正在装,取消不了**。最后一种绝不许被读成「已取消」。 */
+    importClaudePluginCancel: (
+      previewId: string,
+    ) => Promise<
+      | { ok: true; released: boolean }
+      | { ok: false; released: false; reasonCode: LocalPreviewLifecycleCode; reason: string }
+    >
+    /** 确认安装。**只收 previewId**:写入内容取自 main 侧留存的 preview 产物,renderer 全程给不出。
+     *  成功臂带 `desiredState: "disabled"`(owner 裁决 B —— 装完默认关,renderer 据此说人话)。 */
+    importClaudePluginConfirm: (
+      previewId: string,
+    ) => Promise<
+      | {
+          ok: true
+          packageId: string
+          installed: Array<{ kind: string; name: string }>
+          desiredState: "disabled"
+          warning?: string
+        }
+      | { ok: false; reason: string; code?: string }
+    >
+    /** REQ-128 Phase 3 `#784` 第 6 跳:本机已装扩展包的**只读**清单。
+     *  在此之前 renderer 结构上看不见任何已装包(唯一入口是目录条目详情页的 `kind==="package"`
+     *  分支,只有远程 catalog 进得去)。
+     *  **「读不出」与「没装」是两件事**,合并成一句「暂无扩展包」会让用户以为东西丢了。 */
+    installedPackages: () => Promise<InstalledPackagesResultV1>
     /** REQ-032:远程 catalog(main 拉取+ed25519 验签+ETag 缓存;source 指示回退层级,renderer 内置兜底)。
      *  REQ-098 #302:通道 = main 冻结环境快照(renderer 无输入权);via = 传输面,channel = 内容通道
      *  (结构化,勿解析 via)。 */
@@ -775,10 +864,23 @@ export type ElectronAPI = {
     // 浅克隆临时目录 → 同校验。外来内容绝不执行,symlink 不复制。
     /** #336 r1:成功臂 warning = loud 诊断透传;projectionLag = 账本已 durable 但 skills 允许集
      *  发布失败(本次未注入,重启自愈)—— renderer 必须据此呈现「重启后生效」级提示。 */
+    /** REQ-128 Phase 3(`#780` 分流点 / `#784` renderer 半场):用户选中的若是一个 Claude 插件
+     *  目录,main 在 picker 之后、**写之前**改走纯读清点,回一条带 `route` 的判别臂。
+     *  renderer **按 `route` 分流,自己不判目录形态、也拿不到路径**(`#255`)。
+     *  这条臂恒 `ok:false` —— 它不是一次失败,是「这次不走单技能导入,去看预览屏」;
+     *  `previewId` 在场 ⇒ 有可确认的预览,缺席 ⇒ 一个都装不上/预算超了,只有一屏说明。 */
     importSkillFolder: (
       target?: InstallTarget,
     ) => Promise<
       | { ok: true; files?: string[]; name?: string; warning?: string; projectionLag?: string }
+      | {
+          ok: false
+          route: "local-claude-plugin"
+          previewId?: string
+          reason: string
+          reasonCode?: string
+          localPluginPreview: LocalPackagePreviewV1
+        }
       | { ok: false; canceled?: boolean; reason: string }
     >
     importSkillGit: (

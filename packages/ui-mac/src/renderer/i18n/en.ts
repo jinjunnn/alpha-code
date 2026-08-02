@@ -633,6 +633,45 @@ export const dict = {
   "alpha.ext.packageKeptUserInstalled": "Kept (you also installed it on its own)",
   "alpha.ext.packageKeptLegacy": "Kept (installed before Alpha tracked packages)",
   "alpha.ext.packageKeptUnmanaged": "Kept (Alpha does not manage this item)",
+  // REQ-128 Phase 3 `#784`: importing an extension package from a local folder.
+  // Three wording rules: (1) always name the reason — there is no "other" bucket;
+  // (2) never guess and never rewrite the user's files; (3) "won't install" is a stated
+  // trade-off, not an error.
+  "alpha.ext.localPackageTitle": "Import package",
+  "alpha.ext.localPackageFound": "{{count}} skills found",
+  // Not a disclaimer — this is the actual guarantee level. Never reword as "checked/verified/safe".
+  "alpha.ext.localPackageUnreviewed":
+    "This content comes from a folder you picked yourself and has not been reviewed. Everything that will and will not be installed is listed below.",
+  "alpha.ext.localPackageWillInstall": "Will install",
+  "alpha.ext.localPackageWontInstall": "Will not install",
+  "alpha.ext.localPackageUnsupportedLayout": "Layouts this version does not recognise",
+  "alpha.ext.localPackageUnsupportedTypes": "Content this version does not install",
+  "alpha.ext.localPackageConfirm": "Install {{count}} skills",
+  "alpha.ext.localPackageNothingToInstall": "Nothing to install",
+  "alpha.ext.localPackageCancelNote": "Cancelling leaves nothing behind on this computer.",
+  "alpha.ext.localPackageInstalled": "{{count}} skills installed · all still off; turn a switch on to use them",
+  "alpha.ext.localPackageInstalledPendingReload":
+    "{{count}} skills installed · the engine could not reload right now; restarting Alpha will apply it",
+  "alpha.ext.packagesSection": "Packages",
+  "alpha.ext.packagesGroupNote": "Skills inside a package belong to that package and can only be removed with it.",
+  // "Cannot read" and "nothing installed" are different facts; folding them makes users think
+  // their content is gone.
+  "alpha.ext.packagesUnreadableTitle": "Cannot read the installed package list right now",
+  "alpha.ext.packageNoVersion": "No version given",
+  "alpha.ext.packageSkillCount": "{{count}} skills",
+  "alpha.ext.packageNoneEnabled": "none enabled",
+  "alpha.ext.packageSomeEnabled": "{{count}} enabled",
+  "alpha.ext.packageAllOffLead":
+    "These skills are installed but none are enabled yet. Turn on any switch below and the next message can use it.",
+  "alpha.ext.packageFromLocalFolder": "From a local folder",
+  "alpha.ext.packageFromCatalog": "From the official catalog",
+  "alpha.ext.packageRemoving": "Removing…",
+  "alpha.ext.packageRemovedPendingReload":
+    "Removed · the engine could not reload right now; restarting Alpha will apply it",
+  "alpha.ext.packageComponentUnknownState": "Cannot read this item's switch state",
+  "alpha.ext.memberOfPackage": "In package {{pack}}",
+  "alpha.ext.componentOwnedByPackage": "This skill belongs to the package “{{pack}}” and cannot be removed on its own.",
+  "alpha.ext.removeWholePackage": "Remove the whole package",
   "alpha.ext.verifyPending": "Unverified",
   "alpha.ext.verifyNoteTitle": "Pending verification",
   // REQ-105 (#197): archived-connector advisory + Excel audited pin

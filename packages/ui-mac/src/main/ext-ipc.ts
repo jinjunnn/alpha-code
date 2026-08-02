@@ -13,7 +13,7 @@ import { toolProbe } from "./platform"
 import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
 import { assertProjectAlphaRootIdentity, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import { projectIpcHandler, resolveProjectIpcEntry, withProjectIpcEntryIdentity } from "./ext-project-entry"
-import type { InstallTarget, ServerReadyData } from "../preload/types"
+import type { InstalledPackagesResultV1, InstallTarget, ServerReadyData } from "../preload/types"
 import { isExtensionName } from "../shared/extension-name"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
@@ -300,7 +300,10 @@ export function registerExtIpcHandlers(
   //   · 「账本读不出来」与「没装」**不许折叠** —— 折叠会让用户在一本损坏的账本上看到
   //     「什么都没装」,而「移除」入口随之消失(`ext-package-installed` 同款语义)。
   //   · 来源一律从 child record 的 `origin` 读,**绝不从 packageId 前缀读**(基线 §8 纪律 2,`#737`)。
-  ipcMain.handle(LOCAL_PACKAGE_READ_CHANNELS.listInstalledPackages, async () => {
+  //
+  // 返回值**按 wire 类型标注**(`#784`):main 的投影与 renderer 的读法是同一份契约,
+  // 少一栏 / 改一个名字必须是一条类型错误,而不是「Hub 那边少画一个开关」这种静默退化。
+  ipcMain.handle(LOCAL_PACKAGE_READ_CHANNELS.listInstalledPackages, async (): Promise<InstalledPackagesResultV1> => {
     await ledgerReady
     const state = readPackageLedgerStateV1(alphaGlobalRoot())
     if (!state.ok) {

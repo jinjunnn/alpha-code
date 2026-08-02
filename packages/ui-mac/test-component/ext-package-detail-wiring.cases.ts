@@ -62,6 +62,10 @@ Bun.plugin({
   },
 })
 
+/** `#784` G20:详情页的「移除此扩展包」**必须经过数据层**(`ext.uninstallPackage`),
+ *  因为引擎重载接在那一层。它若绕回 `extIpc.uninstallPackage` 直连,包照样被删掉、
+ *  下面所有既有断言照样绿 —— 只有这个计数器会停在 0。 */
+const dataLayerPackageUninstalls: string[] = []
 const extensions = {
   store: {
     mcp: {},
@@ -76,11 +80,23 @@ const extensions = {
   factorySkills: () => [],
   isInstalled: () => false,
   refresh: async () => {},
+  refreshEngine: async () => true,
+  listInstalledPackages: async () => ({ ok: true as const, packages: [] }),
+  uninstallPackage: async (packageId: string) => {
+    dataLayerPackageUninstalls.push(packageId)
+    // **照生产那条链走**:`use-extensions.uninstallPackage` 调的是 `extIpc`(`#765` 的呈现咽喉),
+    // 不是 `window.api.ext`。这里若图省事直连桥,「整包卸载的 warning 到得了用户面」那条闸
+    // 会因为**替身**绕过咽喉而变红 —— 那是夹具在替被测代码改文法,不是缺陷。
+    return extIpcRef!.uninstallPackage(packageId)
+  },
 }
+/** `extIpc` 会牵出 `Toast` → solid,只能在 registrator 之后动态 import;上面的替身按调用时求值。 */
+let extIpcRef: { uninstallPackage: (packageId: string) => Promise<never> } | undefined
 
 mock.module("../src/renderer/extensions/use-extensions", () => ({
   useExtensions: () => extensions,
   isAuthzRequired: () => false,
+  isLocalPluginRoute: () => false,
 }))
 mock.module("../src/renderer/auth-recovery", () => ({
   subscribeAuthState: (listener: (state: { status: "logged-out"; mode: "byok" }) => void) => {
@@ -101,6 +117,7 @@ const { ExtensionHub } = await import("../src/renderer/extensions/extension-hub"
 // 必须**动态** import:静态 import 会在 registrator 之前牵出 solid-js,整个文件拿到 server 构建
 // (指纹 = 报错与改动无关且全文件一起挂)。这条纪律写在 CLAUDE.md 的《本机验证陷阱》里。
 const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
+extIpcRef = (await import("../src/renderer/extensions/ext-ipc")).extIpc as unknown as typeof extIpcRef
 const { setHubSection } = await import("../src/renderer/extensions/ext-hub-state")
 
 const artifact = resolve(import.meta.dir, "../../alpha-contracts-consumer/vendor/alpha-web-extension-package")
@@ -1081,6 +1098,7 @@ describe("package detail production renderer path", () => {
     const remove = detail().querySelector<HTMLElement>(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)!
     expect(remove.textContent?.trim()).toBe(zh["alpha.ext.packageActionUninstall"])
 
+    const uninstallsBefore = dataLayerPackageUninstalls.length
     click(remove)
     // 移除之后:图没了(main 说的),按钮跟着消失(renderer 重新问了 main,而不是自己乐观翻转)。
     await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual([]))
@@ -1089,6 +1107,11 @@ describe("package detail production renderer path", () => {
     )
     // 没有任何 child 被保留(这个包没和别人共享),所以不显示保留清单。
     expect(detail().querySelector(".alpha-ext-package-retained")).toBeNull()
+
+    // `#784` G20:这一次移除**经过了数据层**,而不是从详情页直连 IPC。
+    // 这条断言是必须的,因为上面每一条都能在「直连 IPC」的实现下照样绿 ——
+    // 包确实被删了,只是引擎从此不再被要求重扫,技能一直能用到下次重启。
+    expect(dataLayerPackageUninstalls.slice(uninstallsBefore)).toEqual([MIXED_BUNDLE_PACKAGE_ID])
   })
 
   test("detail install button drives preview and confirmation through real package admission, then adopts the new view", async () => {
