@@ -1068,10 +1068,13 @@ T1(authored) ──> T3 ─┤          ├──> T5 ──┐
 2. **本期在生产安装路径上不执行任何待装代码，因此证明不了「真实引擎会派发 hooks」。**
    D3 之后留下的两件东西各自能证明什么，说清楚：
    pre-switch 的 `seedPluginFileProbe`（`ext-health-probe-router.ts:37-54`）只证明
-   **落盘字节与预期 digest 逐字相等**；测试进程里的 wrapper ABI 断言只证明
-   **我们自己生成的 wrapper + 那份固定候选字节在 Node 里 import 得动、形状是 V1**。
-   生产还要过 `plugin_origins` 去重、`applyPlugin` 的 detect（`plugin/index.ts:111`）、
-   detect 命中后的 `resolvePluginId`（`:113`）。**这一条只由 T8 的真机证据关闭。**
+   **落盘字节与预期 digest 逐字相等**；测试进程里的 wrapper ABI 断言证明
+   **我们自己生成的 wrapper + 那份固定候选字节在 Node 里 import 得动、默认导出是 V1 形状、
+   `server()` 返回的键恰为两项且两个值都是函数**（R2 收紧，见 §4 D3 第 2 条 —— 不要拿本节
+   当上界去低估已有覆盖）。
+   **仍然证明不了的是「真实引擎会派发到它」**：生产还要过 `plugin_origins` 去重、
+   `applyPlugin` 的 detect（`plugin/index.ts:111`）、detect 命中后的 `resolvePluginId`（`:113`），
+   以及派发时对 hook 值的实际调用（`:255`、`:288-290`）。**这一条只由 T8 的真机证据关闭。**
 3. **只做 V1 ABI。** V2 那条腿靠「wrapper 顶层无副作用」结构性关闭（D4），**不做 V2 profile**。
    一旦将来要支持 V2，`{id, server, effect}` 是唯一的双注册形状，必须先钉死那一条。
 4. **两条腿不管**：引擎对工作目录 `{plugin,plugins}/*.{ts,js}` 的自动发现
