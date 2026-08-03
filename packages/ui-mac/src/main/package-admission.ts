@@ -1080,15 +1080,42 @@ function confirmationMatches(diffs: CapabilityDiff[], confirmed: Record<string, 
   return canonicalJson(requested) === canonicalJson(normalized)
 }
 
+/**
+ * `#808`(基线 §5 第 2 类):宿主取回资产这一跳的两道保护,与 payload 那条路
+ * (`package-installability.ts:37/539/543/546-550`)逐条对称。此前这里只有 `redirect:"error"`
+ * 与字节双查 —— 两条不对称:
+ *
+ * ① **无期限**。服务端只要保持连接不发 EOF,`await fetch(...)` 就永不落地,整个 admission
+ *    停在这里(没有超时、没有拒绝、没有错误)—— 用户看到的是安装按钮永远转圈。
+ * ② **不复查终态 URL**。`redirect:"error"` 只管住我们自己这份 fetch 实现的重定向语义;
+ *    `response.url` 是运行时给出的**终态**地址,payload 路径已经在读它,资产路径没有。
+ *    这一条是纵深保护(与 payload 侧同因同形),不是「今天已知有条路能绕过 redirect:"error"」——
+ *    如实登记成这样,不夸大成一个可复现的攻击。
+ *
+ * 两道都失败即抛,抛出物被调用点(`:540`)吞成空字节 ⇒ 撞上 bytes/sha256 双查 ⇒ **整包具名拒绝**。
+ */
+const ASSET_TIMEOUT_MS = 8000
+
 async function fetchPackageAsset(ref: PackageAssetRefV1): Promise<Uint8Array> {
   if (ref.bytes > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes)
     throw new Error("package asset exceeds host limit")
-  const response = await fetch(ref.url, { redirect: "error" })
-  if (!response.ok) throw new Error(`package asset HTTP ${response.status}`)
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes)
-    throw new Error("package asset exceeds host limit")
-  return bytes
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ASSET_TIMEOUT_MS)
+  try {
+    const response = await fetch(ref.url, { signal: controller.signal, redirect: "error" })
+    if (!response.ok) throw new Error(`package asset HTTP ${response.status}`)
+    if (response.url) {
+      const final = new URL(response.url)
+      if (final.protocol !== "https:" || final.username !== "" || final.password !== "")
+        throw new Error("package asset redirected outside HTTPS")
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (bytes.byteLength > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes)
+      throw new Error("package asset exceeds host limit")
+    return bytes
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function decodePackageAdmissionIntent(
