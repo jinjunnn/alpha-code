@@ -217,6 +217,15 @@ preload 此前已经承担过一次同类职责(把 UI locale 钉成 `zh`,因为
 只钉 `darwin` 不钉 `win32`:`node:path` 在加载时按 `process.platform` 选分支,
 darwin 与 linux 同为 posix,钉 `win32` 会把路径语义改坏。
 
+### 自陈必须真的到达运行输出
+
+`PLATFORM SIMULATED` / `[gate-environment]` 是**子进程**打的,而 host 把子进程 stdout 吃进变量、
+只在失败时抛出来 —— 于是「这次降级了什么」在**绿的那一次反而看不见**,而那正是需要它的时候。
+实测:第一版在 alpha-ci 全绿的 run 里 `grep` 不到任何一行自陈。
+现在 `gate-environment.test.ts` 在成功路径上把子进程的自陈行转述出来;
+运行级的那句(`PLATFORM DEGRADED this run: … must opt in via pinShippedPlatform()`)
+由 preload 直接打在每个测试进程的 stdout 上,不经转述。
+
 ### 还有一条只有真环境才说得出来的
 
 行为闸的形状 B 要经 `bash scripts/bun-test-floor.sh`,而那个脚本里写的是裸 `bun`。

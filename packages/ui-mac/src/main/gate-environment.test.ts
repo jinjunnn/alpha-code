@@ -60,6 +60,12 @@ test(
     expect(solo.output).toMatch(/\b0 fail\b/)
     // 子进程必须**自陈**平台那一半这次到底跑没跑到 —— 开发机(darwin)跑不到,alpha-ci 跑得到。
     expect(solo.output).toMatch(/\[gate-environment\] host=/)
+    // 并且要**转述到本次运行的输出里**:子进程的 stdout 被 host 吃进变量,只有失败时才抛出来 ——
+    // 于是「降级了什么」这句话在绿的那一次反而看不见,而那正是需要它的时候(`#777` 实测:
+    // 第一版在 alpha-ci 全绿的 run 里 grep 不到任何一行自陈)。
+    for (const line of solo.output.split("\n")) {
+      if (/\[gate-environment\] host=|PLATFORM SIMULATED/.test(line)) console.log(`  ↳ ${line.trim()}`)
+    }
 
     // ── 形状 B:闸门真正的入口,多文件,靠 bun-test-floor.sh 的 --timeout ────────
     // 慢用例**必须排第二**:preload 的 setDefaultTimeout 只覆盖第一个文件,让慢的当第一个
