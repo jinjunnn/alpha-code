@@ -3,7 +3,7 @@ id: ADR-009
 title: web search 默认策略 —— 登出/BYOK keyless 放开;登录态云优先权威 + 逃生开关跨本地/云
 status: amended
 date: 2026-06-18
-amended: 2026-07-27
+amended: 2026-08-03
 related: [ADR-002, ADR-005, ADR-006, ADR-018, ADR-029, ADR-035]
 supersedes_premise: "2026-06-18 的『桌面默认对所有 provider 放开 keyless websearch』现被登录态门控收窄为登出/BYOK 兜底"
 ---
@@ -12,6 +12,36 @@ supersedes_premise: "2026-06-18 的『桌面默认对所有 provider 放开 keyl
 opencode `websearch`(Exa/Parallel)默认只给官方 `opencode`(Zen)provider(`packages/opencode/src/tool/registry.ts` 的 `webSearchEnabled()` 闸门)。第三方 provider(DeepSeek 等)只有 `webfetch`。该工具由 sidecar **直连** Exa/Parallel、不带 opencode 鉴权,key 为可选(仅避公共端点限流)。
 
 2026-07 平台把 `web_search` 做成 host-tool 端点族首员(key 恒在 gateway,per-call 计费归租户),并经 `cloud` MCP 薄壳暴露给已登录桌面端。E7(alpha-code#223)据此把 web search 主权从「一律 keyless 放开」收窄为「登录态门控 + 云优先」。本 ADR 因此从**单一决策**扩为**两态决策**,并登记 kill-switch 与失败诚实的类语义。E7 的完整勘破与替代否决见 `docs/design/2026-07-22-e7-cloud-web-search-baseline.md`。
+
+## 就地修订 · 2026-08-03(凭证传递手段被取代;**决策实质不变**)
+
+> owner 批准就地修订(不新开 ADR、不改编号);触发者 `alpha-code#733`(REQ-130)。
+> **本条不是一次新决策。** web search 的默认行为、B1 的登录态门控、B2 的 kill-switch 语义
+> 一个字都没变;变的只是本 ADR 下文反复引用的那条**凭证传递手段**已被取代。
+
+**云 MCP 现在走标准 MCP OAuth。** 该 server 的定义里**没有任何凭证通道** —— 没有
+`headers.Authorization`、没有 `{file:…}` 引用;它声明一个 OAuth 客户端(CIMD `clientId` +
+本机回环 `redirectUri`),凭证由**引擎自己的 OAuth store 按 server URL 绑定持久化并自动刷新**
+(`packages/opencode/src/mcp/auth.ts` / `oauth-provider.ts`)。下文 R5/R6 各段里
+「含完整 URL 与 Authorization header」「`{file:}` 引用由 `installCloudMcp()` 自己解析」
+「断言配置里连一个 URL / Authorization 头都不存在」等表述,描述的是**当时**的形态,
+按史料保留;**当前形态以本条为准**。
+
+**`ALPHA_CLOUD_TOKEN` 仍然是 B1 的判据。** 它继续被写盘、继续与 `ALPHA_CLOUD_MCP_URL` 一起
+判定「平台代付」并驱动 web search 主权 —— B1 那一行**不必改**。它只是不再是云 MCP 的
+Authorization 来源。**排障含义**:云 MCP 未授权时**轮换 `ALPHA_CLOUD_TOKEN` 没有用**,
+正确动作是让用户在扩展中心走 `needs_auth` → 浏览器授权。
+
+**`oauth: false` 从来不是中性设置** —— 这是本 ADR 当初没写下来、而事后咬了人的东西。
+引擎 `packages/opencode/src/mcp/index.ts` 的 `const oauthDisabled = mcp.oauth === false` 决定
+要不要构造 `McpOAuthProvider`;没有 provider,`@modelcontextprotocol/sdk` 的 401 分支
+(`client/streamableHttp.js` 的 `response.status === 401 && this._authProvider`)整条不走。
+⇒ 写下 `oauth: false` 的那一刻,该 server **结构上永远进不了 `needs_auth`**,凭证缺失只能
+表现为 `failed`,而 `failed` 在产品面上没有任何补救入口。下文 R6 的中和条目
+(`WITHHELD_CLOUD_MCP`)仍**故意**保留 `oauth: false` —— 那里要的正是「连都别想连」,
+与这里说的缺陷方向相反,不要一并改掉。
+
+活动合同见 `docs/contracts/platform-integration.md` 的 MCP facade / Secret transport 两段。
 
 ## 决策 A(2026-06-18,原始,现降级为登出/BYOK 兜底)
 
@@ -50,9 +80,9 @@ opencode `websearch`(Exa/Parallel)默认只给官方 `opencode`(Zen)provider(`pa
   **改为握手(回执式)**:kill-switch 下 `alpha-config-injection.ts` 只注册一个 **disarmed** 的 cloud server(`enabled:false`),并置位 `ALPHA_CLOUD_MCP_ARM`;真正把它打开的是 ext 自己 `config` 钩子里的 `armCloudMcp()`。**该钩子能执行 ⇔ 插件函数已返回 hooks 对象 ⇔ 同一对象上的 `tool.execute.before` 闸确实注册**,所以「云工具可用」与「闸存在」是同一个事实的两面,而不是两个各自成立的猜测。
   **2026-07-26 五次收口(#223 R5 Major;上一段的「disarmed」与「shell 伪造进不来」两句都**不成立**,作废)**:
   - **`enabled:false` 不是不可重开**。`MCP.connect()`(`packages/opencode/src/mcp/index.ts`)**无条件**执行 `createAndStore(name, { ...mcp, enabled: true })` —— 它不看任何主权信号;该能力公开为 `POST /mcp/:name/connect`(`server/routes/instance/httpapi/handlers/mcp.ts`),**产品 UI 真的在调**。于是 ext 缺席时,用户点一下就能把那份**含完整 URL 与 Authorization header** 的 server 热连起来,此时闸并不存在。这相对 R3(ext 路径缺席就整个不注册)是**增量回归**。
-  - **握手形态改成「定义根本不进配置」**:kill-switch 下注入面**不往 `OPENCODE_CONFIG_CONTENT` 写任何 `cloud` 条目**(继承来的同名条目一并抹掉),只把 `materializeCloudMcpConfig()` 的产物经 `ALPHA_CLOUD_MCP_DEF` 托管、`ALPHA_CLOUD_MCP_ARM` 点名;装进配置的是 ext 的 `installCloudMcp()`(`config` 钩子首句,`{file:}` 引用由它自己解析,读不到密钥文件即 fail-closed 不装)。ext 缺席 ⇒ 配置里没有名为 `cloud` 的条目 ⇒ `/mcp/cloud/connect` 直接 `MCP.NotFoundError`,**无物可复活**。
+  - **握手形态改成「定义根本不进配置」**:kill-switch 下注入面**不往 `OPENCODE_CONFIG_CONTENT` 写任何 `cloud` 条目**(继承来的同名条目一并抹掉),只把 `materializeCloudMcpConfig()` 的产物经 `ALPHA_CLOUD_MCP_DEF` 托管、`ALPHA_CLOUD_MCP_ARM` 点名;装进配置的是 ext 的 `installCloudMcp()`(`config` 钩子首句)。**2026-08-03 就地修订**:该括号原文为「`{file:}` 引用由它自己解析,读不到密钥文件即 fail-closed 不装」—— 云 server 现在走标准 MCP OAuth,定义里已无引用可解,那条 fail-closed 对它是 no-op;解析器与 fail-closed **保留**,守的是任何**带引用的**定义(见顶部就地修订段)。ext 缺席 ⇒ 配置里没有名为 `cloud` 的条目 ⇒ `/mcp/cloud/connect` 直接 `MCP.NotFoundError`,**无物可复活**。
   - **握手通道的可信度不来自白名单**:`ALPHA_CLOUD_MCP_ARM` / `_DEF` / `_SERVER` 三个名字确实不在 `sidecar-env.ts` 的**固定**白名单里,但逃生阀 `ALPHA_ENV_ALLOWLIST_EXTRA` 点名即可放行(它们都不是 credential-shaped),所以「外部 shell 伪造进不来」是错的。真正成立的是:`injectAlphaConfig` 在每次 fork 的**每一条分支**上覆盖或删除这三个变量,继承值一律不作数;且 ARM 与 DEF 必须成对,单有一个 ext 什么也不装。两条测试各钉一半(`sidecar-env.test.ts` 钉「逃生阀确实放得进来」,`alpha-config-injection.test.ts` 钉「每条分支都被覆盖/清掉」)。
-  - **证据**:`packages/opencode/test/mcp/alpha-cloud-mcp-revival.test.ts`(真 streamable-HTTP MCP server + 真 HttpApi 路由)——**正向对照**先证明 R4 那个形态真的能被 `/connect` 热连,再断言 R5 形态下 `/connect` 404、远端零请求;`packages/ext/src/cloud-websearch-kill.test.ts` 的三种缺席情形改断言「配置里连一个 URL / Authorization 头都不存在」。
+  - **证据**:`packages/opencode/test/mcp/alpha-cloud-mcp-revival.test.ts`(真 streamable-HTTP MCP server + 真 HttpApi 路由)——**正向对照**先证明 R4 那个形态真的能被 `/connect` 热连,再断言 R5 形态下 `/connect` 404、远端零请求;`packages/ext/src/cloud-websearch-kill.test.ts` 的三种缺席情形改断言「配置里连一个 URL / Authorization 头都不存在」。**2026-08-03 就地修订**:云 server 走 OAuth 之后,该文件的夹具与断言已改为 OAuth 形态(装上的那份**零凭证通道**,`headers` 必须缺席);`{file:}` 解析的覆盖拆成独立的**通用** JSON 用例,不再挂在云 server 上 —— 旧夹具自带 `headers`,会让「写回时凭空补一个 Authorization」这类变异**整条分支不执行**而全绿(`#733` 审计 B1 实测)。
   **残留(诚实登记,未穷尽)**:① 远端 catalog 仍 advertise 该工具(同上条,归引擎能力);② 本闸只覆盖**引擎内**的工具执行,够不着任何绕过 opencode 工具循环、直接说 MCP 协议的客户端;③ 平台侧仍会接受并计费一个直发的 `web_search` 调用 —— 服务端按 kill-switch 拒绝需要平台改动,不在本仓;④ `POST /mcp` 的 `add` 要求调用方**自带**完整 server 定义,所以它不是「复活 alpha 的定义」而是「新装一个第三方 MCP」——拦它等于拦任意第三方 MCP,需要收编 `handlers/mcp.ts` / `mcp/index.ts` 这类通用上游文件,不在本票范围(ext 在场时它照样撞上工具闸)。
   **2026-07-26 六次收口(#223 R6 Major;上一条的「继承来的同名条目一并抹掉」与「ext 缺席 ⇒ 配置里没有名为 cloud 的条目」两句**不成立**,作废)**:R5 只从**继承来的 `OPENCODE_CONFIG_CONTENT` 对象**里删掉 `mcp.cloud`。引擎另外还分别加载 XDG global、`OPENCODE_CONFIG`(alpha.jsonc)、项目目录、`.opencode`/`OPENCODE_CONFIG_DIR` 与 managed 配置,而 `mergeDeep`(`src/config/config.ts`)里「后一个来源缺少某个键」**不会删除**先前来源的定义。于是 ext 缺席时,那些来源里的一份完整 `cloud` 定义仍会自动连接;写成 `enabled:false` 也没用(`MCP.connect()` 无条件复制成 `enabled:true`)。此外 `injectMcpDefaultDeny` 把名字 `cloud` **写死**成治理来源,连默认拒绝的 `enabled:false` 叶子都不会写 —— 名字不是治理凭据,该写死已删除,治理集改为「alpha.jsonc 里真有的 ∪ 本轮注入面真放进去的」。
   **修法 = 中和条目**:kill-switch 下注入面往 `OPENCODE_CONFIG_CONTENT` 写一份 `WITHHELD_CLOUD_MCP`(`ui-mac/src/main/cloud-web-search.ts`:`type:"remote"` + `http://127.0.0.1:1/alpha-cloud-withheld` + `enabled:false` + `oauth:false`),靠 later-wins 的标量覆盖把任何继承来的 `cloud` 的**连接控制字段**(`type` / `url` / `enabled` / `oauth`)压成一个不做 DNS、必然 ECONNREFUSED 的端点(TCP 握手就失败,继承来的 Authorization 头一个字节都发不出去);ext 确认装载后由 `installCloudMcp()` **整条替换**它。

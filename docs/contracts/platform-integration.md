@@ -149,9 +149,15 @@ inactive-plan payloads.
   Platform.
 - **Cloud Jobs:** renderer requests cross narrow IPC handlers; the main process
   calls the Cloud Jobs HTTP/SSE and artifact APIs with the main-held bearer.
-- **MCP facade:** the sidecar receives the Cloud MCP URL and a `{file:...}`
-  bearer reference. The MCP facade fronts the same Cloud Jobs model; it is not
-  a second execution truth.
+- **MCP facade:** the sidecar receives the Cloud MCP URL and a standard MCP
+  OAuth client declaration (`clientId` is a Client ID Metadata Document URL;
+  `redirectUri` is the loopback callback the engine's own callback server
+  binds). The sidecar does **not** receive a bearer for this server: the
+  engine's OAuth credential store holds and refreshes the credential, keyed by
+  server URL. A missing or rejected credential surfaces as `needs_auth`, which
+  the desktop presents with a re-authorize action — rotating `ALPHA_CLOUD_TOKEN`
+  does not affect it. The MCP facade fronts the same Cloud Jobs model; it is
+  not a second execution truth.
 - **Account:** transactions are decoded as `LedgerPageV1`/`LedgerEntryV1`
   before renderer projection. Account summary remains outside this pinned
   contract until its producer publishes a schema and does not block the ledger
@@ -160,8 +166,12 @@ inactive-plan payloads.
   entry as scheduled and cold-start refresh.
 - **Secret transport:** on each sidecar fork, login and BYOK secrets are
   mirrored into `0600` secret files. The sidecar allowlist carries non-secret
-  endpoint configuration, while provider/MCP configuration carries file
-  references rather than token values.
+  endpoint configuration, while provider configuration carries file references
+  rather than token values. `ALPHA_CLOUD_TOKEN` is still written and is still
+  the platform-pays predicate (its presence, together with the Cloud MCP URL,
+  gates cloud registration and web-search sovereignty), but it is no longer a
+  credential source for the Cloud MCP server — that server's configuration
+  carries neither a token value nor a file reference.
 - **Sidecar continuity:** main publishes token-free `recovering` and `ready`
   states with a monotonically increasing sidecar generation. Pure token
   rotation re-forks on the same URL and password, rebuilds renderer SDK/SSE

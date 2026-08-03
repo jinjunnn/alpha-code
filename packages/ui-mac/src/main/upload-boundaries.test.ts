@@ -26,7 +26,11 @@ describe("upload authority is absent from non-explicit channels", () => {
       createdAt: "2026-07-22T00:00:00.000Z",
     }
     const savedSchedule = cloudScheduleRegistrationFor(task, "0 9 * * *")
-    const sidecar = materializeCloudMcpConfig("https://cloud.example/mcp", "{file:/safe/cloud-token}")
+    // `#733`:签名只剩一个参数(第二个参数是删掉的静态 bearer 的密钥文件引用)。
+    // 这一处**不会**因为漏改而变红 —— `packages/ui-mac/tsconfig.json` 把 `*.test.ts` 排除在
+    // typecheck 外,而 bun 直接剥类型:多传一个实参在运行时是静默忽略。所以它靠手工枚举改到,
+    // 不靠编译器。判据见 CLAUDE.md《本机验证陷阱》「测试文件常被排除在 typecheck 外」。
+    const sidecar = materializeCloudMcpConfig("https://cloud.example/mcp")
     const boundedAgent = guardCloudEnvelope({
       autonomy: "bounded-agent",
       objective: "Review the public release notes",

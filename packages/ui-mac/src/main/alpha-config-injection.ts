@@ -17,7 +17,10 @@ import * as path from "node:path"
 import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { buildAlphaCapabilities, buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
-import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
+// `#733`:`secretFileRef` 随静态 bearer 一起从本文件退场 —— 云 MCP 的 Authorization 头没了,
+// 就没有第二个 `{file:}` 引用要发。`hasSecretFile` 留着:它是 ADR-009 的「平台代付」判据
+// (见下方 `platformPays`),与 MCP 怎么认证无关,删掉会顺手关掉 web search 主权闸。
+import { hasSecretFile } from "./alpha-secret-files"
 import {
   applyWebSearchDenies,
   CLOUD_MCP_ARM_ENV,
@@ -283,13 +286,20 @@ export function injectAlphaConfig(
     }
 
     //   3. Cloud tool gateway (alpha-platform B). Registered only when platform-pays is active —
-    //      main derives the login state (alpha-auth.ts §③) and materializes the bearer into the
-    //      {file:} channel at fork (A6), so logged-out / BYOK leaves it dark. The same bearer fronts
-    //      the model proxy (ALPHA_API_KEY) and this MCP tool gateway
+    //      main derives the login state (alpha-auth.ts §③) from the presence of the
+    //      ALPHA_CLOUD_TOKEN secret file, so logged-out / BYOK leaves it dark.
     //      (see docs/contracts/platform-integration.md).
-    //      The header carries a {file:} ref — resolved by opencode at config load, so neither this
-    //      process's env nor OPENCODE_CONFIG_CONTENT ever contains the token value. oauth:false
-    //      because we attach our own capability token and must skip OAuth auto-detection.
+    //
+    //      `#733`: this server carries NO credential channel any more. It used to attach a static
+    //      `Bearer {file:…ALPHA_CLOUD_TOKEN}` header with `oauth:false`; it now declares a standard
+    //      MCP OAuth client and the engine holds/refreshes the credential itself. Two consequences
+    //      worth spelling out here, because both were invisible before:
+    //        - ALPHA_CLOUD_TOKEN is still read — but only as the platform-pays predicate above.
+    //          It is no longer the MCP Authorization source. Rotating it does NOT fix an
+    //          unauthenticated cloud MCP; the user re-authorizes from the extension hub instead.
+    //        - `oauth:false` was not a neutral setting: it made `needs_auth` structurally
+    //          unreachable for this server (engine `mcp/index.ts:241`), so a missing credential
+    //          could only ever surface as `failed` with no user-visible remedy.
     const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
     if (mcpUrl && platformPays) {
       // #223 R4→R5 fail-closed:kill-switch 下 `cloud_web_search` 的**最终**闸住在 @alpha-code/ext
@@ -314,7 +324,11 @@ export function injectAlphaConfig(
       // 可发)压成一个连不上的 `127.0.0.1:1` 端点;ext 确认装载后由 `installCloudMcp()` 整条
       // 替换它。ext 缺席 ⇒ 留下的是中和条目 ⇒ `/connect` 连不上任何东西(连兄弟工具一起损失)——
       // 诚实降级,不是 AC4 的「误杀」:AC4 管的是闸生效时的正常态。
-      const cloud = materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN"))
+      // `#733`:这份定义里**没有任何凭证通道** —— 没有 `headers`、没有 `{file:}` 引用。
+      // 云 MCP 走标准 OAuth,凭证由引擎自己的凭证库按 server URL 绑定持久化并自动刷新;
+      // 拿不到令牌时该 server 进 `needs_auth`(而不是像 `oauth:false` 时那样只能 `failed`),
+      // 用户在扩展中心有一个能点的补救入口。定义与常量见 `cloud-sidecar-config.ts`。
+      const cloud = materializeCloudMcpConfig(mcpUrl)
       // ext 的闸靠这两个变量核验「哪个 MCP server 真的是 alpha 治理的云通道」——
       // #223 R6 Blocker:判据是 DEF 里那份定义的**端点身份**(URL),不再是名字前缀,所以 DEF 在
       // 代付的两条分支上都置位(ARM 只在 kill-switch 分支置位;ARM/DEF 缺一 ext 什么都不装)。
