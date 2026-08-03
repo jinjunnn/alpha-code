@@ -187,6 +187,45 @@
       ],
       "type": "object"
     },
+    "pluginComponent": {
+      "additionalProperties": false,
+      "properties": {
+        "behavior": {
+          "additionalProperties": false,
+          "properties": {
+            "assetPath": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "assetPath"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "maxLength": 70,
+          "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,63}$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "plugin"
+        },
+        "version": {
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "kind",
+        "behavior"
+      ],
+      "type": "object"
+    },
     "remoteAuth": {
       "oneOf": [
         {
@@ -328,6 +367,9 @@
             },
             {
               "$ref": "#/$defs/mcpRemoteComponent"
+            },
+            {
+              "$ref": "#/$defs/pluginComponent"
             }
           ]
         },
@@ -348,6 +390,9 @@
                   },
                   {
                     "$ref": "#/$defs/mcpRemoteComponent"
+                  },
+                  {
+                    "$ref": "#/$defs/pluginComponent"
                   }
                 ]
               },

@@ -1,40 +1,48 @@
 {
   "repo": "jinjunnn/alpha-web",
-  "commit": "6e0db57d6c7d9867a450fccf6db5453e417dc58e",
+  "commit": "9fcd83d66ea8f5b13081f434ace150e739a0536e",
   "artifactPath": "contracts/extension-package/artifact",
-  "artifactSha256": "d229717f895fcfb9a75bc6fdcc6ab2338f057ef1778db15e8720c31a1affc446",
+  "artifactSha256": "2a36d9cb8a0c7632eb6f4c9415d1e7b00acba55dc4f01004ce025c05834bf389",
   "files": [
     {
       "path": "alpha-package-compatibility-report-v1.schema.json",
-      "sha256": "e551446c1d26d5607e80a2390d11cfd02332d7ba7941a848fb3f75094aeb6e98"
+      "sha256": "3a4a16949acaab35bf44311f65e19087ca9b6ae8b442b52a78a62e7e28e3c5e7"
     },
     {
       "path": "alpha-package-declaration-v1.schema.json",
-      "sha256": "8030bbdb83d5a0026bf3744ef1ae79677e74e746e54de000ef5d6b36cc310aa9"
+      "sha256": "0ca6bc84ecaa99400cddf8bb83435c98c948424687d9bec650230535d553ce88"
     },
     {
       "path": "asset.generic-bundle-agent.md",
-      "sha256": "81353065800f69d14b7c1f8c4f6996473fa8a1bb74864478743d22057037e513"
+      "sha256": "f2a5576d98928e8df98f4608ac8521cabd95b17875a474317193836584683c65"
     },
     {
       "path": "asset.generic-bundle-skill.md",
-      "sha256": "d3e1d121b0317d8cc1a53b9a5c9d9e2c53fdad364bafd6d8144e01e8707b76f8"
+      "sha256": "4e62da1a8bc554708127ec4aa749e77850462478efd378338c56da6f348ba38e"
+    },
+    {
+      "path": "asset.generic-plugin.js",
+      "sha256": "9a0324820ce2903533e3d5ade50374116ef4339d5f7683ab994beb0b79948a49"
     },
     {
       "path": "expected.bundle.compiled.json",
-      "sha256": "2a8ca35a234f3834d7caf28fd1169da02e0080ab63ddcbe8fa87d01814d946a1"
+      "sha256": "55c1ec9a8902c4abbdbc30c622eabea4055c52370e7d76ca3f591e4b0bbb6d95"
     },
     {
       "path": "expected.mcp-remote.compiled.json",
-      "sha256": "8b0a7aad97e46dd26c85cc7aa9411da6b275b41e06912414500684af7b88260d"
+      "sha256": "3ac8e5450c6f9a314e20d6cd20fefaa460ca1f7283f32241a007629b8b1d78fe"
+    },
+    {
+      "path": "expected.plugin.compiled.json",
+      "sha256": "31cccdbfb61c7ca08d08e46526c372b2120d14815cfe5d1c66a7fe965931ae57"
     },
     {
       "path": "expected.remote-connection.compiled.json",
-      "sha256": "902cb235fc9a39e3ae42956bfb0bd80b0b0780a54549a363d20332c3f6345c13"
+      "sha256": "7e25debc239bd2cc5fb397753c46cefa13dcba290ab0339fa42de309f47d2ae0"
     },
     {
       "path": "expected.remote-oauth.compiled.json",
-      "sha256": "335e17b0152d06aba0e798f4371adb33f6050d8e9ccf22a65669abd58bbaf523"
+      "sha256": "5c1674a79a116d330e27af8071977328dea44f13ad2014fc0200fb3599850974"
     },
     {
       "path": "extension-package-error-v1.schema.json",
@@ -42,27 +50,27 @@
     },
     {
       "path": "extension-package-producer-artifact.v1.json",
-      "sha256": "e58c5f4ac8a043e969e195b78e16deb6b64416e4d2067654eafe95584008be9e"
+      "sha256": "389743da9b47b3a4fb258727347b2c985a7c4d312bcb11d420f698ec0c11ef4a"
     },
     {
       "path": "generic-profiles.v1.json",
-      "sha256": "ba1d718f2878cbe7bfb73855c673e2a0a20fb2e5627239b6d9e72c1c092b9076"
+      "sha256": "63828da23ee56e3c961aec4166585e6c2b44bf57d486b0d053e3c446dacf444a"
     },
     {
       "path": "generic-rules.v1.json",
-      "sha256": "b60952dbb581176778533580e650bf3e2ec3ee79367c559eb6633e9eaa887b3d"
+      "sha256": "1737ae24b484ee383147ec8c362a07dc3677afbb152a5827b6bb8184905c022a"
     },
     {
       "path": "host-contract-pin.v1.json",
-      "sha256": "34535894377c11f6e7cf57432ed32e11d2a6738f98e44348aa8adb528e0b2530"
+      "sha256": "4c9cf3e6dc0bd4e95989a8b00751bfedf00b8c2ea30872e145610126fdbe325b"
     },
     {
       "path": "host-extension-package-artifact.v1.json",
-      "sha256": "5431b2cc2e03629d778af1715afcd08cf7ecb84a4abb66dab7b8d458bb63945c"
+      "sha256": "c9148c6f00f025b0f679a2d63ffb71d4f64ad43f33478c37271997a5815975ff"
     },
     {
       "path": "host-extension-package.registry.v1.json",
-      "sha256": "5b30bc3ada35629d0a3495d5e36ad8cc87fbb6b769cf17d9617a595c3daf54ff"
+      "sha256": "5a0aeae6d75bc95370d304ff9ffcffcc219ac662abf11a4c03fcb03317ea74ca"
     },
     {
       "path": "input.author-capabilities.invalid.json",
@@ -109,6 +117,10 @@
       "sha256": "6cf26a546a9bd236d1a80be7a9bf53ff650c712a006d032e4022e573bc685b03"
     },
     {
+      "path": "input.plugin.valid.json",
+      "sha256": "9116cb01314e986f39ba08653d3090c08d0e3cd87589bf44c167665f3682defd"
+    },
+    {
       "path": "input.remote-auth-unknown.invalid.json",
       "sha256": "c2fe05d03d9cc90aa9fb123fb9d4d2954ef7c6695016b335fe171de946be80f9"
     },
@@ -130,23 +142,23 @@
     },
     {
       "path": "normalized-package-build-record-v1.schema.json",
-      "sha256": "216dd94ea05f1fade737c6d82f82dfb8205c2361dcbd6ddbf814a6cbc8abfd92"
+      "sha256": "8321ba9f99e6249835b3ed858319bad7394cfd626edea7e0915781a0c548ab3b"
     },
     {
       "path": "report.blocked.json",
-      "sha256": "a35083f15e205e367d0abac5dadd873aa993a19c4b6dbff05198297167262093"
+      "sha256": "714e7abc871c53d32f34de38964985b5bc3c6051ea7676d3834a1338b325eda3"
     },
     {
       "path": "report.compatible.json",
-      "sha256": "6fbd9d9c2df8565f5c335457df0b887772a90fae530e49a380dc7da1417df38c"
+      "sha256": "cc09428eeaa9fe2b2b3e9e7fe60f5731ba389ca3a2936d450bcb5c925f6827fb"
     },
     {
       "path": "report.review-required.json",
-      "sha256": "c8bc9b441064601eb320ea941e6837cd6ab908eb4468cf1b54f99b08bcf52bcb"
+      "sha256": "f4317e6fc532610a26da06fa270058716bc79096252dc51d96d0d9b5917e58f2"
     },
     {
       "path": "vectors.v1.json",
-      "sha256": "601a57fdcc30d84fd737fb8ef939ba31b988193147bd3307fb240e33141436be"
+      "sha256": "14c2d5c6a41217ecb1c9d977ac622d9dfdec7090ac20186d428bed2979f145f4"
     }
   ]
 }

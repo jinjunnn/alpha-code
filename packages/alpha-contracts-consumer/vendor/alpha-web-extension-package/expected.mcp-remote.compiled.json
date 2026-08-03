@@ -56,7 +56,7 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "6fbd9d9c2df8565f5c335457df0b887772a90fae530e49a380dc7da1417df38c",
+        "reportSha256": "cc09428eeaa9fe2b2b3e9e7fe60f5731ba389ca3a2936d450bcb5c925f6827fb",
         "verdict": "compatible"
       },
       "componentId": "mcp:generic-remote",

@@ -103,7 +103,7 @@ const UPSTREAMS = [
     // older optional staged fixtures above, an unavailable checkout or missing commit is a hard
     // failure:provenance cannot be proved by a self-consistent replacement lock.
     repo: "jinjunnn/alpha-web",
-    commit: "6e0db57d6c7d9867a450fccf6db5453e417dc58e",
+    commit: "9fcd83d66ea8f5b13081f434ace150e739a0536e",
     lock: "alpha-web-extension-package.lock.json",
     vendor: "vendor/alpha-web-extension-package",
     sourceEnv: "ALPHA_WEB_EXTENSION_PACKAGE_SOURCE",
@@ -111,19 +111,30 @@ const UPSTREAMS = [
     sourceFallback: "../../../alpha-web",
     sourcePrefix: "contracts/extension-package/artifact",
     artifactPath: "contracts/extension-package/artifact",
-    artifactSha256: "d229717f895fcfb9a75bc6fdcc6ab2338f057ef1778db15e8720c31a1affc446",
+    artifactSha256: "2a36d9cb8a0c7632eb6f4c9415d1e7b00acba55dc4f01004ce025c05834bf389",
     commitBound: true,
     // #759 / alpha-web#109:producer 追平宿主合同 v2。语料从 22 个文件长到 36 个 —— 新增的是
     // flat Bundle 正/负向、OAuth 与 Alpha Connection 的正向语料(旧的 `input.remote-oauth.invalid.json`
     // 随之消失,它在 v2 下是**合法**输入),外加 Bundle 组件引用的两份 markdown 资产。
     // 这两份 `.md` 是本清单里第一批非 JSON 字节,vendor 循环的 JSON 语法自检因此按扩展名分流。
+    //
+    // #811 / alpha-web#129(REQ-128 Phase 4):producer 追平宿主合同的 `opencode-plugin` profile
+    // (本仓 #807 同一个 PR 里落的),语料 36 → 39:新增 `input.plugin.valid.json`、
+    // `expected.plugin.compiled.json`、以及 plugin 组件引用的脚本资产 `asset.generic-plugin.js`
+    // (本清单第一份 `.js` 字节 —— 同样走非 JSON 分支)。**一个文件都没被撤掉**,所以 vendor
+    // 「只写不删」这次不会留下无主残留;目录清单断言(artifact.test.ts:69)仍是那条判据。
+    // 同一跳还把 aw#112 的 frontmatter 修复带了进来:两份 markdown 资产从「# 标题 + 正文」
+    // 改成带 `name`/`description`(agent 还有 `mode`)的 YAML frontmatter —— 旧字节宿主自己
+    // **装不上**,宿主侧那批引用它们的测试语料因此同步前移。
     files: [
       "alpha-package-compatibility-report-v1.schema.json",
       "alpha-package-declaration-v1.schema.json",
       "asset.generic-bundle-agent.md",
       "asset.generic-bundle-skill.md",
+      "asset.generic-plugin.js",
       "expected.bundle.compiled.json",
       "expected.mcp-remote.compiled.json",
+      "expected.plugin.compiled.json",
       "expected.remote-connection.compiled.json",
       "expected.remote-oauth.compiled.json",
       "extension-package-error-v1.schema.json",
@@ -144,6 +155,7 @@ const UPSTREAMS = [
       "input.mcp-remote.valid.json",
       "input.oauth-authorization-header.invalid.json",
       "input.oauth-prerequisite-collision.invalid.json",
+      "input.plugin.valid.json",
       "input.remote-auth-unknown.invalid.json",
       "input.remote-connection.valid.json",
       "input.remote-http.invalid.json",

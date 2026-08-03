@@ -1,0 +1,95 @@
+{
+  "envelope": {
+    "capabilities": [
+      "engine:config",
+      "engine:plugin"
+    ],
+    "components": [
+      {
+        "capabilities": [
+          "engine:config",
+          "engine:plugin"
+        ],
+        "dependencies": [],
+        "id": "plugin:generic-plugin",
+        "payloadRef": {
+          "bytes": 351,
+          "mediaType": "application/vnd.alpha.host-extension-package.opencode-plugin.v1+json",
+          "sha256": "4ab522bd3bbc8776edf0e9c42d01417c586f586466a977bbc2549c36eeb45a86",
+          "url": "https://alphacodeone.com/catalog/assets/plugin.generic-plugin/1.0.0/alpha-package/4ab522bd3bbc8776edf0e9c42d01417c586f586466a977bbc2549c36eeb45a86.json"
+        },
+        "profileId": "opencode-plugin",
+        "profileVersion": 1,
+        "required": true
+      }
+    ],
+    "prelude": {
+      "packageId": "package:generic-plugin",
+      "version": "1.0.0"
+    },
+    "presentation": {
+      "description": "Generic compiler corpus input for the opencode-plugin profile.",
+      "displayName": "Generic Managed Plugin"
+    },
+    "root": "plugin:generic-plugin",
+    "schema": "alpha.host-extension-package.v1"
+  },
+  "normalizedRecord": {
+    "components": [
+      {
+        "assetDirectory": "catalog-src/assets/plugin.generic-plugin/1.0.0",
+        "assetManifestSha256": "faa614a4b3349001e39d59376c74630e7a743f3b7929ac6b9462816728a49dbb",
+        "capabilities": [
+          "engine:config",
+          "engine:plugin"
+        ],
+        "dependencies": [],
+        "id": "plugin:generic-plugin",
+        "payloadRef": {
+          "bytes": 351,
+          "mediaType": "application/vnd.alpha.host-extension-package.opencode-plugin.v1+json",
+          "sha256": "4ab522bd3bbc8776edf0e9c42d01417c586f586466a977bbc2549c36eeb45a86",
+          "url": "https://alphacodeone.com/catalog/assets/plugin.generic-plugin/1.0.0/alpha-package/4ab522bd3bbc8776edf0e9c42d01417c586f586466a977bbc2549c36eeb45a86.json"
+        },
+        "profileId": "opencode-plugin",
+        "profileVersion": 1,
+        "required": true,
+        "version": "1.0.0"
+      }
+    ],
+    "root": {
+      "compatibility": {
+        "reportSha256": "9fe62a9856830a8316bba5a8d9e236f906abd86ef98a22d3480fa94aa652ab7d",
+        "verdict": "compatible"
+      },
+      "componentId": "plugin:generic-plugin",
+      "declarationSha256": "9116cb01314e986f39ba08653d3090c08d0e3cd87589bf44c167665f3682defd",
+      "packageId": "package:generic-plugin",
+      "presentation": {
+        "description": "Generic compiler corpus input for the opencode-plugin profile.",
+        "displayName": "Generic Managed Plugin"
+      },
+      "source": {
+        "kind": "alpha-native",
+        "publisher": "official",
+        "redistributable": true
+      },
+      "version": "1.0.0"
+    },
+    "schema": "alpha.normalized-package-build-record.v1"
+  },
+  "payloads": {
+    "plugin:generic-plugin": {
+      "behavior": {
+        "asset": {
+          "bytes": 982,
+          "mediaType": "text/javascript",
+          "sha256": "9a0324820ce2903533e3d5ade50374116ef4339d5f7683ab994beb0b79948a49",
+          "url": "https://alphacodeone.com/catalog/assets/plugin.generic-plugin/1.0.0/plugin.js"
+        }
+      },
+      "schema": "alpha.host-extension-package.payload.opencode-plugin.v1"
+    }
+  },
+  "schema": "alpha.extension-package.compiled-vector.v1"
+}

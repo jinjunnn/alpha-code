@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-03
 review_after: 2027-01-26
 ---
 
@@ -61,15 +61,25 @@ orphan and is refused, even though every other property holds.
 
 `host-extension-package.registry.v1.json` is the static registry: profiles,
 capability vocabulary, and every numeric limit the decoder enforces. The v1
-profiles are exactly `agent`, `mcp-local`, `mcp-remote`, and `skill`, all at
-profile version 1. Each registry entry binds a profile/version pair to one
-strict payload schema and one media type.
+profiles are exactly `agent`, `mcp-local`, `mcp-remote`, `opencode-plugin`, and
+`skill`, all at profile version 1. Each registry entry binds a profile/version
+pair to one strict payload schema and one media type.
 
 The capability vocabulary contains exactly:
 
 - `alpha.connection.v1`
 - `alpha.mcp-oauth.v1`
 - `alpha.secret-prerequisite.v1`
+- `engine:config`
+- `engine:plugin`
+
+A capability token is honoured because it appears in this registry, never
+because of how it is spelled: there is no namespace rule, and the decoder's
+token grammar is a length/character bound rather than an admission gate. The
+last two tokens are therefore not new words invented for packages — they are the
+spellings the desktop authorization surface already uses for a sideloaded
+plugin, promoted unchanged so that a managed package discloses the same two
+facts as the legacy path for the same effect.
 
 The compiler, not an author declaration, derives component capabilities from
 the strict payload behavior. Payload decoding checks the same derivation rule
@@ -126,6 +136,34 @@ re-derive meaning from its prefix, segments, or namespace.
 
 `mcp-local` has no `auth` field: a local subprocess has no OAuth semantics.
 
+## Managed OpenCode Plugin
+
+`profiles/opencode-plugin.v1.schema.json` carries exactly one thing: a
+content-addressed script asset, `{sha256, bytes, mediaType, url}` with
+`mediaType` fixed to `text/javascript` and `bytes` bounded by the registry's own
+`maxScriptAssetBytes`. There is no install target, no argv, and no environment
+in the payload — where the bytes land and how the engine is pointed at them are
+host decisions, not producer declarations.
+
+`mediaType` is a discriminant, not a label. Widening it to a free string would
+not add script support; it would give the host two meanings for
+`text/markdown`, and the markdown asset path already has host-side parsers bound
+to that one meaning.
+
+The derived capability set for this profile is unconditionally
+`engine:config` **and** `engine:plugin`, because both facts are unconditionally
+true: the engine evaluates the shipped JavaScript in its own process, and the
+host has to write an engine configuration entry pointing at it. Deriving only
+the first would tell the person approving the install less than a sideloaded
+plugin already tells them.
+
+**Stated limitation.** The three properties in *Decoder order* below —
+fail-closed routing, loud stubs, and parser staleness — do not extend to script
+assets. A markdown asset has host-side parsers that a staleness gate can watch;
+a script asset has no host-side parser at all, because the host never
+interprets those bytes. This contract does not invent one, and no gate here
+should be read as claiming otherwise.
+
 ## Decoder order
 
 `decoder.ts` performs header byte/depth/node/string/control-character and
@@ -180,5 +218,7 @@ bytes of `{artifactPath, files}` and therefore has no self-hash.
 
 This artifact contains no production Catalog wiring, Electron/IPC code,
 network or disk implementation, legacy projection/oracle, same-ID shadow
-policy, nested (depth > 1) graphs, version solving, or managed OpenCode Plugin
-profile.
+policy, nested (depth > 1) graphs, or version solving. It defines the
+`opencode-plugin` profile's *shape* only: asset retrieval, the install
+transaction, the engine wrapper, and uninstall live in the host and are not part
+of this artifact.

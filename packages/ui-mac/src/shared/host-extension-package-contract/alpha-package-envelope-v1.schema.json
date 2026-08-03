@@ -126,7 +126,7 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "pattern": "^[a-z][a-z0-9.-]{0,95}$",
+        "pattern": "^(?:[a-z][a-z0-9.-]{0,95}|engine:config|engine:plugin)$",
         "maxLength": 96
       }
     },

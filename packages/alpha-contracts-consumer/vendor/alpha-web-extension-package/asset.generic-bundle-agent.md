@@ -1,3 +1,7 @@
-# Generic bundle agent
+---
+name: generic-bundle-agent
+description: Generic bundle agent
+mode: primary
+---
 
-Deterministic corpus asset.
+Deterministic corpus prompt body.

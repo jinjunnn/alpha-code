@@ -24,10 +24,12 @@
               "enum": [
                 "alpha.connection.v1",
                 "alpha.mcp-oauth.v1",
-                "alpha.secret-prerequisite.v1"
+                "alpha.secret-prerequisite.v1",
+                "engine:config",
+                "engine:plugin"
               ]
             },
-            "maxItems": 3,
+            "maxItems": 5,
             "type": "array",
             "uniqueItems": true
           },
@@ -82,7 +84,8 @@
               "skill",
               "agent",
               "mcp-local",
-              "mcp-remote"
+              "mcp-remote",
+              "opencode-plugin"
             ]
           },
           "profileVersion": {

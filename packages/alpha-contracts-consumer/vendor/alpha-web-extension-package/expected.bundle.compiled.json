@@ -12,10 +12,10 @@
         ],
         "id": "agent:generic-bundle-agent",
         "payloadRef": {
-          "bytes": 375,
+          "bytes": 376,
           "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
-          "sha256": "736b6f029d01caa88261552dfcbaf25e5c04cace794618b615a14ce3e97f2e60",
-          "url": "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/736b6f029d01caa88261552dfcbaf25e5c04cace794618b615a14ce3e97f2e60.json"
+          "sha256": "70710a3be9d619a66b05d1d368ffdca8d0c6f89fd2c864f6fdcd6c2f671f20e1",
+          "url": "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/70710a3be9d619a66b05d1d368ffdca8d0c6f89fd2c864f6fdcd6c2f671f20e1.json"
         },
         "profileId": "agent",
         "profileVersion": 1,
@@ -26,10 +26,10 @@
         "dependencies": [],
         "id": "skill:generic-bundle-skill",
         "payloadRef": {
-          "bytes": 375,
+          "bytes": 376,
           "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-          "sha256": "6228388d90f72c6000c3d19f5d411e5527ecb38cf283d24b9e56fe3872819b8f",
-          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/6228388d90f72c6000c3d19f5d411e5527ecb38cf283d24b9e56fe3872819b8f.json"
+          "sha256": "0861da658166436fb601c00269514976f6b0aae84bbb1b86ef045cd441f17678",
+          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/0861da658166436fb601c00269514976f6b0aae84bbb1b86ef045cd441f17678.json"
         },
         "profileId": "skill",
         "profileVersion": 1,
@@ -67,7 +67,7 @@
     "components": [
       {
         "assetDirectory": "catalog-src/assets/agent.generic-bundle-agent/1.0.0",
-        "assetManifestSha256": "b1b61778df88b86639a291b08fb39abfe3cd8c50ecc49523905524892dafedb5",
+        "assetManifestSha256": "86b3d86b1a5b96fba627ddd99c23e01ca2c95bfe016d6bee625052fc7d6320d5",
         "capabilities": [],
         "dependencies": [
           "skill:generic-bundle-skill",
@@ -75,10 +75,10 @@
         ],
         "id": "agent:generic-bundle-agent",
         "payloadRef": {
-          "bytes": 375,
+          "bytes": 376,
           "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
-          "sha256": "736b6f029d01caa88261552dfcbaf25e5c04cace794618b615a14ce3e97f2e60",
-          "url": "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/736b6f029d01caa88261552dfcbaf25e5c04cace794618b615a14ce3e97f2e60.json"
+          "sha256": "70710a3be9d619a66b05d1d368ffdca8d0c6f89fd2c864f6fdcd6c2f671f20e1",
+          "url": "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/70710a3be9d619a66b05d1d368ffdca8d0c6f89fd2c864f6fdcd6c2f671f20e1.json"
         },
         "profileId": "agent",
         "profileVersion": 1,
@@ -87,15 +87,15 @@
       },
       {
         "assetDirectory": "catalog-src/assets/skill.generic-bundle-skill/1.0.0",
-        "assetManifestSha256": "939f0b57e2e3f65f6f0b4b089c547ad210b295235013090a9c2971b2ecdac9c2",
+        "assetManifestSha256": "150b4402c169242c2377594d0660328e370a72ad412fba65f3151987aaded0d1",
         "capabilities": [],
         "dependencies": [],
         "id": "skill:generic-bundle-skill",
         "payloadRef": {
-          "bytes": 375,
+          "bytes": 376,
           "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-          "sha256": "6228388d90f72c6000c3d19f5d411e5527ecb38cf283d24b9e56fe3872819b8f",
-          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/6228388d90f72c6000c3d19f5d411e5527ecb38cf283d24b9e56fe3872819b8f.json"
+          "sha256": "0861da658166436fb601c00269514976f6b0aae84bbb1b86ef045cd441f17678",
+          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/0861da658166436fb601c00269514976f6b0aae84bbb1b86ef045cd441f17678.json"
         },
         "profileId": "skill",
         "profileVersion": 1,
@@ -124,7 +124,7 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "2a0faedb2a4b47b618fe9c25597bf7c625ed697e6954637f1b683d8d3d08311e",
+        "reportSha256": "c37eba20df3a2c8a9cffcd6611cd98ddcc89d93daf3dc093e221dcabfe84b201",
         "verdict": "compatible"
       },
       "componentId": "agent:generic-bundle-agent",
@@ -147,9 +147,9 @@
     "agent:generic-bundle-agent": {
       "behavior": {
         "asset": {
-          "bytes": 52,
+          "bytes": 118,
           "mediaType": "text/markdown",
-          "sha256": "81353065800f69d14b7c1f8c4f6996473fa8a1bb74864478743d22057037e513",
+          "sha256": "f2a5576d98928e8df98f4608ac8521cabd95b17875a474317193836584683c65",
           "url": "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/AGENT.md"
         },
         "targetDir": "alpha-agents"
@@ -172,9 +172,9 @@
     "skill:generic-bundle-skill": {
       "behavior": {
         "asset": {
-          "bytes": 52,
+          "bytes": 103,
           "mediaType": "text/markdown",
-          "sha256": "d3e1d121b0317d8cc1a53b9a5c9d9e2c53fdad364bafd6d8144e01e8707b76f8",
+          "sha256": "4e62da1a8bc554708127ec4aa749e77850462478efd378338c56da6f348ba38e",
           "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/SKILL.md"
         },
         "targetDir": "alpha-skills"
