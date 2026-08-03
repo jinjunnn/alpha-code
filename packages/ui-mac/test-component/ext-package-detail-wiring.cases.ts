@@ -490,6 +490,7 @@ async function mountHarness(options?: {
               removeMcpSecretsStrict: () => ({ ok: true as const }),
               releaseAlphaConnectionBindings: () => ({ ok: true as const }),
               removeInstallGrants: () => ({ ok: true as const, removed: [] }),
+              removePluginPath: () => ({ ok: true as const }),
             },
           })
           // `#765`:真实成功响应 + 一条具名 warning(生产里就是「连接绑定没释放干净」那种)。

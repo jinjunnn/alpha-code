@@ -180,6 +180,10 @@ function installers(calls: Calls, opts?: { failFsFor?: string }): PackageArtifac
       calls.push(`removeInstallGrants:${keys.join(",")}`)
       return { ok: true as const, removed: [] }
     },
+    removePluginPath: (name, absJsPath) => {
+      calls.push(`removePluginPath:${name}:${absJsPath}`)
+      return { ok: true as const }
+    },
   }
 }
 
@@ -388,18 +392,65 @@ describe("REQ-128 #698 —— 顺序与故障", () => {
     expect(findRecordV2(root, "skill", "a-only")).toBeNull()
   })
 
+  // `#809`:`plugin` 从「不认识的 kind」变成了**认识的 kind**(managed plugin 的卸载臂)。
+  // 负例因此必须换成一个真的没有清除接缝的 kind —— `command` 是合法的 `InstallReceiptType`
+  // 且不在 `packageChildKindV1` 的表里,正是「package 通道装不出来、也就没接缝」的那一格。
+  // 拿一个已经有接缝的 kind 当负例,是负向覆盖**数量够了但轴不对**:错误实现照样全绿。
   test("不认识的 child kind ⇒ 实物阶段响亮拒绝(不静默跳过)", () => {
     const calls: Calls = []
     const outcome = removePackageChildArtifactsV1(
       root,
       [
         { kind: "skill", name: "a-only" },
-        { kind: "plugin", name: "not-in-phase-2" }, // 违规项不放第一个
+        { kind: "command", name: "not-a-package-child" }, // 违规项不放第一个
       ],
       installers(calls),
     )
     expect(outcome.ok).toBe(false)
     if (!outcome.ok) expect(outcome.reason).toContain("no artifact removal seam")
+  })
+
+  // `#809`:plugin 的落点是内容寻址的,名字算不出目录 —— 唯一真源是账本 record 的
+  // `plugin-path:` configKey。它不在(或不是 plugin-path 形态)时**必须拒**,不能猜一个
+  // `plugins/<name>/` 去删:猜错就是任意目录删除。
+  test("plugin child 没有 plugin-path 账本记录 ⇒ 拒绝(不猜落点)", () => {
+    const calls: Calls = []
+    const outcome = removePackageChildArtifactsV1(
+      root,
+      [
+        { kind: "skill", name: "a-only" },
+        { kind: "plugin", name: "no-record-here" },
+      ],
+      installers(calls),
+    )
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.reason).toContain("cannot prove which file to remove")
+    expect(calls.filter((call) => call.startsWith("removePluginPath:"))).toEqual([])
+  })
+
+  // 账本 record 在,但 `plugin-path:` 指到了受控树之外 ⇒ 圈禁判据必须拒。
+  // 一本被改过的账本不得成为任意目录删除通道。
+  test("plugin 的账本路径指向 plugins 根之外 ⇒ 拒绝(圈禁 fail-closed)", () => {
+    upsertRecordsV2(root, [
+      {
+        id: "plugin:escapee",
+        name: "escapee",
+        kind: "plugin",
+        environment: "prod",
+        scope: { kind: "global" },
+        version: "1.0.0",
+        manifestDigest: DIGEST_A,
+        desiredState: "enabled",
+        origin: "catalog",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        configKey: `plugin-path:${path.join(tmp, "elsewhere", "plugin.js")}`,
+      },
+    ])
+    const calls: Calls = []
+    const outcome = removePackageChildArtifactsV1(root, [{ kind: "plugin", name: "escapee" }], installers(calls))
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.reason).toContain("is not under")
+    expect(calls.filter((call) => call.startsWith("removePluginPath:"))).toEqual([])
   })
 
   test("卸载一个没装过的 packageId / 非法 packageId ⇒ 计划期失败,零副作用", () => {

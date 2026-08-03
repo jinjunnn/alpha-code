@@ -185,6 +185,10 @@ function artifactInstallers(calls: string[]): PackageArtifactInstallersV1 {
     releaseAlphaConnectionBindings: () => ({ ok: true }),
     // 授权账清除走**生产那一个**函数(ext-store 下的 grants.json 是事务拥有的路径)。
     removeInstallGrants,
+    removePluginPath: (name, absJsPath) => {
+      calls.push(`removePluginPath:${name}:${absJsPath}`)
+      return { ok: true }
+    },
   }
 }
 

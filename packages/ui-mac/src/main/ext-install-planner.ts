@@ -98,7 +98,7 @@ function resolvePluginEntryPath(entry: unknown, configDir: string): string | nul
  *  都算在场:无账不认领(有账早被三态分发送去 replace);只查恰好的本次 jsPath 会漏掉其他
  *  内容寻址版本的未策展残留 —— 追加第二条同名路径后引擎会把两份 plugin 都加载。
  *  r3:解析走 resolvePluginEntryPath(相对/file:// 等价形态同样命中);树外条目不误伤。 */
-function findSameNamePluginPathEntry(list: unknown[], root: string, name: string, entryBaseDir: string = root): string | null {
+export function findSameNamePluginPathEntry(list: unknown[], root: string, name: string, entryBaseDir: string = root): string | null {
   // r14 Major:条目可经 symlink 别名到达 plugins/<name>[@…]/plugin.js —— 词法父目录判定漏判,
   // 追加 realpath 身份形态(pluginsRoot 同双形态)。
   const pluginsRootIdent = pathIdentity(path.join(root, "plugins"))

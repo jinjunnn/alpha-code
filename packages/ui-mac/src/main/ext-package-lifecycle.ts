@@ -29,11 +29,95 @@ import {
   type PackageGraphNodeV1,
   type PackageGraphV1,
 } from "./ext-package-ledger-v3"
+import { PROFILE_REGISTRY_V1 } from "../shared/host-extension-package-contract/registry"
+
+/** package 通道装得出来的 child kind —— 恰是下面那张表的值域。 */
+export type PackageChildKindV1 = "skill" | "agent" | "mcp" | "plugin"
+
+/**
+ * `#809`(REQ-128 Phase 4,基线 §5 第 7 类):**profile → child kind 的唯一一张表。**
+ *
+ * 在它之前,同一件事被三处各写一遍三元,而三处都以 `else → "mcp"` 收尾
+ * (`package-admission.ts` 的 kind、同文件的 builder 分派、本模块的 key 派生)。后果不是
+ * 「少认一个 profile」,是**认错**:一个新登记的 profile 会被静默当成 MCP 装进
+ * `alpha.jsonc` 的 `mcp` 段,而卸载侧(`ext-package-uninstall.ts`)是 fail-closed 的
+ * ⇒ **装得上、卸不掉**。两处调用点上的 `as "skill" | "agent" | "mcp"` 强转让编译器也看不见。
+ *
+ * 因此这张表的判据有两条,缺一条都是假闸:
+ *   · **键集必须等于 `PROFILE_REGISTRY_V1` 的 profileId 集**(全覆盖,期望值从注册表派生);
+ *   · **未登记的 profile 具名拒绝**(枚举对新成员默认拒绝,不是默认放行)。
+ * 只测后者的话,一张把 `opencode-plugin` 错映成 `skill` 的表完全满足断言。
+ */
+const PACKAGE_CHILD_KIND_BY_PROFILE_V1: Readonly<Record<string, PackageChildKindV1>> = {
+  agent: "agent",
+  "mcp-local": "mcp",
+  "mcp-remote": "mcp",
+  "opencode-plugin": "plugin",
+  skill: "skill",
+}
+
+/** 这张表登记了哪些 profile。**测试断言它等于 `PROFILE_REGISTRY_V1` 的 profileId 集** ——
+ *  注册表里多一个 profile 而这里没跟上,即红(而不是静默走 else)。 */
+export const PACKAGE_CHILD_KIND_PROFILE_IDS_V1: readonly string[] = Object.keys(
+  PACKAGE_CHILD_KIND_BY_PROFILE_V1,
+).sort()
+
+/** 已登记 profile 的 kind 派生。未登记 ⇒ 具名拒绝,**没有兜底分支**。 */
+export function packageChildKindV1(
+  profileId: string,
+): { ok: true; kind: PackageChildKindV1 } | { ok: false; reason: string } {
+  const kind = Object.hasOwn(PACKAGE_CHILD_KIND_BY_PROFILE_V1, profileId)
+    ? PACKAGE_CHILD_KIND_BY_PROFILE_V1[profileId]
+    : undefined
+  if (!kind)
+    return {
+      ok: false,
+      reason: `no host child kind is registered for package profile "${profileId}" — refusing (fail closed)`,
+    }
+  return { ok: true, kind }
+}
+
+export function isPackageChildKindV1(kind: string): kind is PackageChildKindV1 {
+  return kind === "skill" || kind === "agent" || kind === "mcp" || kind === "plugin"
+}
+
+/** 本模块自检:注册表长出第六个 profile 而表没跟上 ⇒ 模块装载即抛。测试另有一条独立的
+ *  集合相等断言 —— 这一条是运行期的第二道,免得只在测试里成立。 */
+export function assertPackageChildKindTableV1(): void {
+  const registered = PROFILE_REGISTRY_V1.map((profile) => profile.profileId).sort()
+  if (registered.join("\n") !== PACKAGE_CHILD_KIND_PROFILE_IDS_V1.join("\n"))
+    throw new Error(
+      `package child kind table must cover exactly the registered host profiles (registry: ${registered.join(", ")}; table: ${PACKAGE_CHILD_KIND_PROFILE_IDS_V1.join(", ")})`,
+    )
+}
 
 /** 一个 child 在事务 / 授权账里的 key。**唯一**派生点 —— `package-admission` 与本模块共用,
- *  否则「安装时用的 key」与「卸载时清授权账用的 key」会各算各的,而偏差只在卸载后现身。 */
-export function packageChildTxKeyV1(kind: "skill" | "agent" | "mcp", name: string): string {
-  return kind === "skill" ? skillGenerationKey(name) : kind === "agent" ? agentInstallKey(name) : `mcp--${name}`
+ *  否则「安装时用的 key」与「卸载时清授权账用的 key」会各算各的,而偏差只在卸载后现身。
+ *  形参窄到 `PackageChildKindV1` 且分支穷举:多一个 kind 而这里没跟上 = 编译期红。 */
+export function packageChildTxKeyV1(kind: PackageChildKindV1, name: string): string {
+  switch (kind) {
+    case "skill":
+      return skillGenerationKey(name)
+    case "agent":
+      return agentInstallKey(name)
+    case "mcp":
+      return `mcp--${name}`
+    case "plugin":
+      return `plugin--${name}`
+  }
+}
+
+/**
+ * update **预览面**的 key 派生。账本图里的 kind 是 `InstallReceiptType`(7 个值),比 package
+ * 通道装得出来的 4 个宽 —— 一本手工编过的账本里可以出现 `command` / `bundle` / `cloud`。
+ *
+ * 此前两处调用点写的是 `packageChildTxKeyV1(node.kind as "skill" | "agent" | "mcp", …)`:
+ * 那个强转把 `command:foo` 变成 `mcp--foo`,与**一个真实 MCP child 的授权账 key 逐字相撞**
+ * ⇒ 预览行上显示的是别人的 capability。这里给一个结构上不可能与任何真实 tx key 相等的值:
+ * 那一行查不到 capability(它本来就没有),而不是查到别人的。
+ */
+export function packageChildPreviewKeyV1(kind: InstallReceiptType, name: string): string {
+  return isPackageChildKindV1(kind) ? packageChildTxKeyV1(kind, name) : `unroutable-child:${kind}:${name}`
 }
 
 export type PackageChildIdentityV1 = { kind: InstallReceiptType; name: string }
@@ -346,7 +430,7 @@ export function buildPackageUpdatePreviewV1(input: {
 }): PackageUpdatePreviewV1 {
   const components = input.diff.changes.map((change) => {
     const node = change.after ?? change.before!
-    const key = packageChildTxKeyV1(node.kind as "skill" | "agent" | "mcp", node.name)
+    const key = packageChildPreviewKeyV1(node.kind, node.name)
     const capabilities = input.capabilityDiffByKey.get(key) ?? { previous: null, requested: [], added: [], removed: [] }
     return {
       componentId: change.after?.componentId ?? change.before?.componentId ?? null,

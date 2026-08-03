@@ -799,6 +799,9 @@ export function registerExtIpcHandlers(
     releaseAlphaConnectionBindings: (componentId) =>
       releaseAlphaConnectionBindingsV1({ userDataPath, extensionRoot: alphaGlobalRoot() }, componentId, new Date().toISOString()),
     removeInstallGrants,
+    // `#809`:managed plugin 的 `plugin[]` 摘除。与 `plannerDeps().installers.removePluginPath`
+    // 是**同一个函数**——单装卸载与整包卸载摘的是同一个东西。
+    removePluginPath,
   })
   /**
    * `#698`(review R2):**update** 的离场 child 清理 —— 只清内容文件 / generation store / 授权账。

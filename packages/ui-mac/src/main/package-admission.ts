@@ -8,7 +8,7 @@ import { evaluateBundleAuthorization, evaluateCapabilityDiff, isSafeCapability, 
 import { recoveryReceiptInputs } from "./ext-agent-install"
 import { nextDesiredState } from "./ext-install-policy"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
-import { buildAgentTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
+import { buildAgentTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, buildPluginTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
 import { computeGrantDigest, readPackageLedgerStateV1, type UpsertInput } from "./ext-receipt-v2"
 import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import {
@@ -19,8 +19,11 @@ import {
 import {
   buildPackageUpdatePreviewV1,
   diffPackageGraphsV1,
+  packageChildKindV1,
+  packageChildPreviewKeyV1,
   packageChildTxKeyV1,
   packageVersionFromRecordsV1,
+  type PackageChildKindV1,
   planPackageChildConflictsV1,
   planPackageChildRemovalsV1,
   planPackageClaimTransferV1,
@@ -46,7 +49,7 @@ import {
 } from "./package-installability"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import { isLocalPackageId, LOCAL_PACKAGE_ID_PREFIX } from "../shared/local-package-namespace"
-import type { MarkdownAssetRefV1 } from "../shared/host-extension-package-contract/decoder"
+import type { MarkdownAssetRefV1, ScriptAssetRefV1 } from "../shared/host-extension-package-contract/decoder"
 import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "../shared/host-extension-package-contract/registry"
 import type {
   PackageAdmissionAuthorizationV1,
@@ -56,7 +59,7 @@ import type {
 } from "../shared/package-admission"
 import type { PackageComponentSkipReasonV1 } from "../shared/host-extension-package-contract/decoder"
 import type { HealthProbe, HealthVerdict } from "./ext-transaction"
-import type { PackageTxBuildV1 } from "./ext-package-tx-builders"
+import type { PackageTxBuildResultV1 as PackageTxBuildV1Result, PackageTxBuildV1 } from "./ext-package-tx-builders"
 import type { PackageAcceptedComponentV1 } from "./package-installability"
 import type { TxStageNonAuthorizeWire } from "../shared/ext-capability-authorization"
 import { evaluatePackageSecretSubmissionV1 } from "../shared/package-secret-prerequisite"
@@ -87,6 +90,10 @@ const BINDING_KEYS = new Set([
   "capabilityDigest",
 ])
 
+/** 宿主会**下载**的资产引用。判别键是 `mediaType`,与合同侧的判别联合逐字同构 ——
+ *  放宽成 `string` 等于取消唯一挡住「用另一种 mediaType 发一种字节」的那道闸。 */
+type PackageAssetRefV1 = MarkdownAssetRefV1 | ScriptAssetRefV1
+
 type PackageScope = { scope: "global" } | { scope: "project"; projectDir: string }
 type PackageGrants = {
   secrets?: Record<string, string>
@@ -115,7 +122,7 @@ export type PackageAdmissionOutcome =
   | {
       ok: true
       /** The **root** component's kind/name. Leaves are enumerated in `installed`. */
-      kind: "skill" | "agent" | "mcp"
+      kind: PackageChildKindV1
       name: string
       manifestDigest: string
       /** Every component id this transaction actually installed, root first. */
@@ -154,7 +161,7 @@ export type PackageAdmissionDeps = {
   userDataPath: string
   environment: () => AppEnvironment
   installability?: PackageInstallabilityDeps
-  fetchAsset?: (ref: MarkdownAssetRefV1) => Promise<Uint8Array>
+  fetchAsset?: (ref: PackageAssetRefV1) => Promise<Uint8Array>
   transaction?: typeof runExtensionTransaction
   secretVersionId?: () => string
   now?: () => Date
@@ -175,7 +182,7 @@ export type PackageAdmissionDeps = {
 type PreparedComponent = {
   accepted: PackageAcceptedComponentV1
   key: string
-  kind: "skill" | "agent" | "mcp"
+  kind: PackageChildKindV1
   name: string
   asset?: Buffer
   agentEntry?: Record<string, unknown>
@@ -398,13 +405,20 @@ function connectionScope(deps: PackageAdmissionDeps): AlphaConnectionStoreScope 
 }
 
 function componentOperations(component: PreparedComponent) {
-  return component.kind === "skill"
-    ? (["write-generation", "write-install-record", "write-capability-grant"] as const)
-    : component.kind === "agent"
-      ? (["write-file", "update-config", "write-install-record", "write-capability-grant"] as const)
-      : component.accepted.prerequisite.items.length > 0
+  switch (component.kind) {
+    case "skill":
+      return ["write-generation", "write-install-record", "write-capability-grant"] as const
+    case "agent":
+      return ["write-file", "update-config", "write-install-record", "write-capability-grant"] as const
+    // managed plugin 与 agent 一样是「写文件 + 改配置」,只是文件有两个(wrapper + 第三方字节),
+    // 而这一栏说的是**种类**不是条数。
+    case "plugin":
+      return ["write-file", "update-config", "write-install-record", "write-capability-grant"] as const
+    case "mcp":
+      return component.accepted.prerequisite.items.length > 0
         ? (["write-secret-version", "update-config", "write-install-record", "write-capability-grant"] as const)
         : (["update-config", "write-install-record", "write-capability-grant"] as const)
+  }
 }
 
 /**
@@ -503,13 +517,23 @@ async function resolvePreparedPackage(
   for (const entry of ordered) {
     const component = entry.component
     const name = component.id.slice(component.id.indexOf(":") + 1)
-    const kind = component.profileId === "skill" ? "skill" : component.profileId === "agent" ? "agent" : "mcp"
+    // `#809`(基线 §5 第 7 类):kind 只此**一张表**派生。此前这里是 `else → "mcp"` 的兜底三元
+    // ⇒ 一个只在合同侧登记、宿主表没跟上的 profile 会被**静默当成 MCP** 装进 `alpha.jsonc` 的
+    // `mcp` 段,而卸载侧是 fail-closed 的 ⇒ 装得上、卸不掉。未登记 ⇒ 整个组件具名拒绝。
+    const routed = packageChildKindV1(component.profileId)
+    if (!routed.ok) return { ok: false, reason: `package admission: ${routed.reason}`, package: view }
+    const kind = routed.kind
     // 事务 key 只此一处派生(`packageChildTxKeyV1`)—— 卸载时清授权账用的是同一个函数。
     // 两处各写一遍 ternary,偏差只会在「装得上但卸载后 grants.json 还在」时现身。
     const key = packageChildTxKeyV1(kind, name)
     const assetRef =
       entry.payload.schema === "alpha.host-extension-package.payload.skill.v1" ||
-      entry.payload.schema === "alpha.host-extension-package.payload.agent.v1"
+      entry.payload.schema === "alpha.host-extension-package.payload.agent.v1" ||
+      // `#809`:managed plugin 的载荷同样是一个内容寻址资产(mediaType `text/javascript`)。
+      // ⚠️ 这一行落在基线给 **T2a** 划的边界里(`:510-517`),本票动它的唯一理由是:没有它,
+      // 本票的退出条件④(经生产 install 真写盘后读回 `alpha.jsonc`)结构上跑不到。
+      // T2a 自己的两件事(fetch timeout、终态 URL 的 HTTPS/userinfo 复查)本票一行未动。
+      entry.payload.schema === "alpha.host-extension-package.payload.opencode-plugin.v1"
         ? entry.payload.behavior.asset
         : undefined
     const asset = assetRef
@@ -669,23 +693,35 @@ async function executePreparedPackage(
       manifestDigest,
       receipt,
     }
-    const built =
-      component.kind === "skill"
-        ? buildSkillTxItems({ ...common, ...(component.asset ? { asset: component.asset } : {}) })
-        : component.kind === "agent"
-          ? buildAgentTxItems({
-              ...common,
-              ...(component.asset ? { asset: component.asset } : {}),
-              ...(component.agentEntry ? { agentEntry: component.agentEntry } : {}),
-            })
-          : buildMcpTxItems({
-              ...common,
-              userDataPath: deps.userDataPath,
-              payload: component.accepted.payload,
-              prerequisite: component.accepted.prerequisite,
-              secretValues: intent.grants?.secrets ?? {},
-              newSecretVersionId: deps.secretVersionId ?? newMcpSecretVersionId,
-            })
+    // `#809`:分派**穷举** `PackageChildKindV1`,没有 else —— 表里多一个 kind 而这里没跟上是
+    // 编译期红,不是运行期静默走 MCP。四条腿各自路由到一个具名 builder。
+    const built = ((): PackageTxBuildV1Result => {
+      switch (component.kind) {
+        case "skill":
+          return buildSkillTxItems({ ...common, ...(component.asset ? { asset: component.asset } : {}) })
+        case "agent":
+          return buildAgentTxItems({
+            ...common,
+            ...(component.asset ? { asset: component.asset } : {}),
+            ...(component.agentEntry ? { agentEntry: component.agentEntry } : {}),
+          })
+        case "plugin":
+          return buildPluginTxItems({
+            ...common,
+            componentId: component.accepted.component.id,
+            ...(component.asset ? { asset: component.asset } : {}),
+          })
+        case "mcp":
+          return buildMcpTxItems({
+            ...common,
+            userDataPath: deps.userDataPath,
+            payload: component.accepted.payload,
+            prerequisite: component.accepted.prerequisite,
+            secretValues: intent.grants?.secrets ?? {},
+            newSecretVersionId: deps.secretVersionId ?? newMcpSecretVersionId,
+          })
+      }
+    })()
     if (!built.ok) return { ok: false, reason: `package admission: ${built.reason}` }
     builds.push({ component, build: built.build, desiredState: receipt.desiredState })
   }
@@ -903,7 +939,7 @@ function packageUpdatePreview(
   // 的 diff 就是「这次会放弃哪些能力」。
   for (const change of plan.diff.changes) {
     if (change.change !== "removed") continue
-    const key = packageChildTxKeyV1(change.kind as "skill" | "agent" | "mcp", change.name)
+    const key = packageChildPreviewKeyV1(change.kind, change.name)
     if (!capabilityDiffByKey.has(key)) capabilityDiffByKey.set(key, evaluateCapabilityDiff(root, key, []))
   }
   const prerequisiteIdsByKey = new Map(
@@ -1044,7 +1080,7 @@ function confirmationMatches(diffs: CapabilityDiff[], confirmed: Record<string, 
   return canonicalJson(requested) === canonicalJson(normalized)
 }
 
-async function fetchPackageAsset(ref: MarkdownAssetRefV1): Promise<Uint8Array> {
+async function fetchPackageAsset(ref: PackageAssetRefV1): Promise<Uint8Array> {
   if (ref.bytes > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes)
     throw new Error("package asset exceeds host limit")
   const response = await fetch(ref.url, { redirect: "error" })
