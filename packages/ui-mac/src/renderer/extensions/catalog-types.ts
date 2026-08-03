@@ -148,6 +148,15 @@ export interface InstalledState {
   connected?: boolean
   /** MCP: whether opencode considers it enabled (vs disconnected/disabled). */
   enabled?: boolean
+  /**
+   * MCP:引擎报的 `needs_auth` —— 该 server 走 OAuth 且当前没有可用令牌(`#733`)。
+   *
+   * 引擎的 `MCP.Status` 是**五臂**判别联合(connected / disabled / failed / needs_auth /
+   * needs_client_registration),而这个投影从前只有 `connected` / `enabled` 两个布尔 ——
+   * `needs_auth` 于是被折成「未连接」,用户看到一行灰字、没有任何可点的东西。
+   * 少了这一位不是渲染问题,是**这个状态在下游结构上不存在**:UI 想补救也无从判起。
+   */
+  needsAuth?: boolean
   error?: string
 }
 

@@ -149,6 +149,16 @@ export interface ExtensionsApi {
    *  #395(Codex r8 M5):disconnect 失败(无 client / 抛错)= 旧连接可能仍在跑 → 返回 reload-pending,
    *  调用方据此如实提示「运行面待重载」,不谎报已断连。 */
   setMcpConnected(name: string, shouldConnect: boolean): Promise<ActionResult>
+  /**
+   * `#733`:`needs_auth` 的补救动作 —— 走引擎现成的 `POST /mcp/:name/auth/authenticate`
+   * (开系统浏览器 + 等本地回调,一步到位)。**renderer 不实现授权流的任何一步**:
+   * PKCE、state、凭证持久化、自动刷新全在引擎侧(`packages/opencode/src/mcp/`),
+   * 这里只负责"用户点了" → "把结果如实呈现"。
+   *
+   * 没有客户端超时:上限由引擎的回调服务器持有(`oauth-callback.ts` 的 5 分钟),
+   * 在这里再加一个更短的 race 只会让界面说"超时了"而授权其实还在进行 —— 那是谎报。
+   */
+  authenticateMcp(name: string): Promise<ActionResult>
   /** Remove an MCP server from the user config + disconnect. */
   removeMcp(name: string): Promise<ActionResult>
   /** #408:实验室条目的会话级授予(main 校验 + 内存登记 → 同 directory 引擎热连)。
@@ -234,6 +244,12 @@ function isConnected(info: unknown): boolean {
 }
 function isDisabled(info: unknown): boolean {
   return statusTag(info).includes("disabled")
+}
+/** `#733`:引擎的 `needs_auth` 臂 —— 该 server 走 OAuth 但当前没有可用令牌。
+ *  判等而不是 `includes`:`needs_client_registration` 是**另一件事**(配置里缺 clientId,
+ *  用户点一百次授权也没用),把两者折在一起会给用户一颗按了必失败的按钮。 */
+function needsAuth(info: unknown): boolean {
+  return statusTag(info) === "needs_auth"
 }
 function statusError(info: unknown): string | undefined {
   if (!info || typeof info !== "object") return undefined
@@ -367,6 +383,7 @@ export function useExtensions(
           type: "mcp",
           connected: isConnected(info),
           enabled: !isDisabled(info),
+          needsAuth: needsAuth(info),
           error: statusError(info),
         }
       }
@@ -513,6 +530,28 @@ export function useExtensions(
     } catch {
       await loadStatus()
       return { ok: true, reason: "reload-pending" }
+    }
+  }
+
+  /** `#733`:发起 MCP OAuth 授权(引擎开浏览器、等回调、落凭证,返回授权后的 status)。
+   *  返回值只报**这次调用的真伪**,状态真相仍由随后的 `loadStatus()` 从引擎重读 ——
+   *  「HTTP 调通了」不等于「授权成功了」,所以成功臂也要看回来的 status 是不是真的连上。 */
+  async function authenticateMcp(name: string): Promise<ActionResult> {
+    const c = client
+    if (!c) return { ok: false, reason: "no server" }
+    try {
+      // SDK v2 默认 `throwOnError:false` —— 400/404 以 `{error}` 正常 resolve,不进 catch。
+      // 判据复用本文件既有的 `connectOutcome`(同一个问题在这里已经有一个答案)。
+      const r = await c.mcp.auth.authenticate({ name })
+      const ok = connectOutcome(r as { error?: unknown })
+      await loadStatus()
+      if (!ok) return { ok: false, reason: "auth-failed" }
+      // 授权调用成功 ≠ 这个 server 现在能用:引擎可能拿到令牌却仍连不上。以重读到的
+      // 状态为准,免得界面宣布"已重新登录"而那行状态还是"需要重新登录"。
+      return store.mcp[name]?.needsAuth ? { ok: false, reason: "auth-failed" } : { ok: true }
+    } catch {
+      await loadStatus()
+      return { ok: false, reason: "auth-failed" }
     }
   }
 
@@ -917,6 +956,7 @@ export function useExtensions(
     addMcp,
     addCustomMcp,
     setMcpConnected,
+    authenticateMcp,
     removeMcp,
     grantSession,
     revokeSession,

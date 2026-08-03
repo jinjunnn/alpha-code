@@ -92,9 +92,13 @@ export const CLOUD_MCP_SERVER_ENV = "ALPHA_CLOUD_MCP_SERVER"
 export const CLOUD_MCP_ARM_ENV = "ALPHA_CLOUD_MCP_ARM"
 
 /**
- * 与 ARM 配对的云 server 定义(JSON)。内容是 `materializeCloudMcpConfig()` 的产物,
- * Authorization 头里是 `{file:…}` 引用而不是 token 值本身(A6:密钥不进 env)。
- * ext 侧由 `installCloudMcp()` 解析该引用并装进配置。
+ * 与 ARM 配对的云 server 定义(JSON)。内容是 `materializeCloudMcpConfig()` 的产物。
+ *
+ * `#733` 起这份定义里**一个凭证通道都没有** —— 没有 `headers.Authorization`,也就没有
+ * `{file:…}` 引用要托管(从前那句「Authorization 头里是 `{file:}` 引用而不是 token 值本身」
+ * 描述的是静态 bearer 时代)。A6「密钥不进 env」因此从"引用而非明文"升级成"根本没有密钥":
+ * 云 MCP 的凭证由引擎自己的 OAuth 凭证库持有,从不经过这条 env 通道。
+ * ext 侧仍由 `installCloudMcp()` 把它装进配置。
  */
 export const CLOUD_MCP_DEF_ENV = "ALPHA_CLOUD_MCP_DEF"
 

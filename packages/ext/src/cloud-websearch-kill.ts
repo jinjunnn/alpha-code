@@ -388,7 +388,15 @@ export function assertWebSearchToolAllowed(
 /** 注入面告诉 ext「这个 MCP server 等你确认装载后才能装」的通道(ui-mac `cloud-web-search.ts` 同名同义)。 */
 export const CLOUD_MCP_ARM_ENV = "ALPHA_CLOUD_MCP_ARM"
 
-/** 与 ARM 配对的 server 定义(JSON)。内含 `{file:…}` 引用而非密钥值本身(A6 纪律)。 */
+/**
+ * 与 ARM 配对的 server 定义(JSON)。
+ *
+ * `#733` 起 alpha 治理的云 server 走标准 MCP OAuth,这份定义里**没有任何凭证通道**
+ * (无 `headers.Authorization`、无 `{file:…}` 引用)。下面的 `resolveFileRefs` 因此对它
+ * 是个 no-op —— 保留它不是为了将来:注入面托管的是一个任意 JSON,含 `{file:}` 时那条
+ * fail-closed(读不到就整个不装)仍然是这里唯一的把关,删掉它等于对未来任何带引用的定义
+ * 默认放行。
+ */
 export const CLOUD_MCP_DEF_ENV = "ALPHA_CLOUD_MCP_DEF"
 
 type McpHost = { mcp?: Record<string, unknown> }

@@ -998,6 +998,38 @@ export function ExtensionHub(props: {
   const flash = (msg: string, kind: "info" | "success" | "error" = "info") => pushToast({ kind, title: msg })
   const comingSoon = () => flash(t("alpha.ext.comingSoon"))
 
+  // ── `#733`(REQ-130):`needs_auth` 的用户可见补救入口 ───────────────────────────────────
+  //
+  // 引擎的 MCP 状态是**五臂**判别联合,而此前 renderer 只认 connected / disabled ——
+  // `needs_auth` 被折成「未连接」,用户看到一行灰字、**没有任何可点的东西**。
+  // 这里补的不是文案,是一个动作:调引擎现成的 `POST /mcp/:name/auth/authenticate`
+  //(开系统浏览器 + 等本地回调,一步到位)。授权流的每一步都在引擎侧,renderer 不实现其中任何一步。
+  //
+  // 出口**只有这一个定义**,两个呈现点(已安装行 / 云连接器卡)共用它 —— 逐点各写一份的
+  // 形态在本文件里已经栽过三次(`#765` 的 warning 呈现是同一个故事):枚举对新呈现点默认放行,
+  // 而这里"放行"的具体后果是用户在那个入口下依然点不动。
+  const [authBusy, setAuthBusy] = createSignal<string | null>(null)
+  const McpNeedsAuthAction = (cp: { name: string }) => (
+    <button
+      class="alpha-ext-updbtn"
+      data-mcp-authorize={cp.name}
+      disabled={authBusy() === cp.name}
+      onClick={(ev) => {
+        ev.stopPropagation()
+        if (authBusy()) return
+        setAuthBusy(cp.name)
+        void ext
+          .authenticateMcp(cp.name)
+          // 成败都如实说:`authenticateMcp` 已经在数据层复查过重读回来的状态,
+          // 「HTTP 调通了」不算成功。
+          .then((r) => flash(r.ok ? t("alpha.ext.mcpAuthDone") : t("alpha.ext.mcpAuthFailed"), r.ok ? "success" : "error"))
+          .finally(() => setAuthBusy(null))
+      }}
+    >
+      {authBusy() === cp.name ? t("alpha.ext.mcpAuthorizing") : t("alpha.ext.mcpAuthorize")}
+    </button>
+  )
+
   // REQ-019 T5:更新执行状态(busy = receipt id;失败行内呈现,不裸 toast)。
   const [updBusy, setUpdBusy] = createSignal<string | null>(null)
   const [updErr, setUpdErr] = createSignal<Record<string, string>>({})
@@ -2055,9 +2087,13 @@ export function ExtensionHub(props: {
           ? t(rowSessionView().textKey)
           : t("alpha.ext.sessionKindUnsupportedRow")
         : row.type === "mcp"
-          ? row.mcp?.connected
-            ? t("alpha.ext.enabledLive")
-            : t("alpha.ext.disabled")
+          ? // `#733`:`needs_auth` 不是「未连接」——它是一个用户能自己修好的状态,
+            // 说成「未连接」等于把唯一的补救路径从界面上抹掉。
+            row.mcp?.needsAuth
+            ? t("alpha.ext.mcpNeedsAuth")
+            : row.mcp?.connected
+              ? t("alpha.ext.enabledLive")
+              : t("alpha.ext.disabled")
           : desiredOn()
             ? t("alpha.ext.installed")
             : t("alpha.ext.notEnabledHint") // #395:默认关/手动关的状态行提示
@@ -2171,6 +2207,11 @@ export function ExtensionHub(props: {
             )}
           </Show>
         </div>
+        {/* `#733`:MCP 走 OAuth 且当前没令牌 ⇒ 行内出一颗能点的「去授权」。
+            这颗按钮与状态行那句「需要重新登录」是同一个事实的两半,缺任何一半用户都走不出去。 */}
+        <Show when={row.type === "mcp" && row.mcp?.needsAuth}>
+          <McpNeedsAuthAction name={row.name} />
+        </Show>
         {/* REQ-103:审查更新入口(有更新的行内;复用既有 runUpdate —— MCP 走确认框重装,其余原子更新) */}
         <Show when={isUpdatable()}>
           <button
@@ -2797,17 +2838,30 @@ export function ExtensionHub(props: {
                           </span>
                         </div>
                         <div class="alpha-ext-kit-desc">
-                          <span class="alpha-ext-cloudst" data-st={cloudReady() ? (cloudLive()?.connected ? "on" : "idle") : "off"}>
+                          {/* `#733`:云连接器是用户看这条状态的**主要**地方 —— `needs_auth` 在这里
+                              也必须说成「需要重新登录」并给出动作,否则用户读到的是「未连接(引擎会
+                              自动重连)」,而引擎其实永远不会自己连上。 */}
+                          <span
+                            class="alpha-ext-cloudst"
+                            data-st={cloudReady() ? (cloudLive()?.needsAuth ? "idle" : cloudLive()?.connected ? "on" : "idle") : "off"}
+                          >
                             {cloudReady()
-                              ? cloudLive()?.connected
-                                ? t("alpha.ext.cloudConnConnected")
-                                : t("alpha.ext.cloudConnDisconnected")
+                              ? cloudLive()?.needsAuth
+                                ? t("alpha.ext.mcpNeedsAuth")
+                                : cloudLive()?.connected
+                                  ? t("alpha.ext.cloudConnConnected")
+                                  : t("alpha.ext.cloudConnDisconnected")
                               : t("alpha.ext.cloudConnNeedLogin")}
                           </span>
                           {" · "}
                           {t("alpha.ext.cloudConnectorDesc")}
                         </div>
                       </div>
+                      {/* server 名取**引擎报回来的那个**(`InstalledState.name`),不在 renderer 再写
+                          一遍 `"cloud"` 字面量 —— 注入面改名时这里会跟着走,而字面量会静默指错。 */}
+                      <Show when={cloudReady() && cloudLive()?.needsAuth}>
+                        <McpNeedsAuthAction name={cloudLive()!.name} />
+                      </Show>
                       <button
                         class="alpha-ext-add"
                         onClick={(ev) => {
