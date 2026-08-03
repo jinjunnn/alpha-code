@@ -670,9 +670,9 @@ export function ExtensionHub(props: {
       }
       if (view.action.kind !== "install" && view.action.kind !== "resolve-prerequisite") return view
       // package 首驱只带全新的 attempt identity；密钥与 authorization 必须等 preview 后再提交。
-      const result = await extIpc.installCatalog({
+      // `#810`:经**数据层**出站(`ext.installCatalogIntent`),不直连 `extIpc` —— 引擎重扫接在那一层。
+      const result = await ext.installCatalogIntent({
         catalogId: view.catalogId,
-        scope: { scope: "global" },
         attemptId: `renderer-${globalThis.crypto.randomUUID()}`,
       })
       if (
@@ -689,6 +689,9 @@ export function ExtensionHub(props: {
         )
       }
       if (!result.ok) setErrFor(view.catalogId, result.reason)
+      // `#810`:引擎重扫失败 ⇒ 如实说「要重载」。今天 admission 的首驱恒走 authorize 臂,
+      // 所以这条臂到不了;留着是因为它一旦到得了,缺这一行用户读到的就是一句谎话。
+      if (result.ok && result.reloadPending) flash(t("alpha.ext.addedPendingReload"))
       const latest =
         !result.ok && "package" in result ? result.package : await extIpc.packageDetail(view.catalogId)
       if (latest) rememberPackageView(latest)
@@ -1127,18 +1130,18 @@ export function ExtensionHub(props: {
     // REQ-100 #311:bundle = 一次 main-owned 原子事务(required 全提交或全回滚),renderer 只发一次
     // 请求。归档连接器/不支持子项的跳过决策由 main planner 落 skipped(带审计);此处只呈现结果。
     // #348:一次展示、一次授权、一次 commit —— authorize 失败原样上抛给 onAdd 统一拦截。
-    const r = await extIpc.installCatalog({
-      catalogId: e.id,
-      scope: { scope: "global" },
-      ...(authorization ? { authorization } : {}),
-    })
+    // `#810`:同 `runPackageAction` —— 经数据层出站,引擎重扫在那一层接一次。
+    // 套件成员里有 skill / agent / plugin 时,不重扫 = 装完在下一条消息里仍然不存在。
+    const r = await ext.installCatalogIntent({ catalogId: e.id, ...(authorization ? { authorization } : {}) })
     if (!r.ok) return r
     const okCount = r.installed?.length ?? 0
     const skippedCount = r.skipped?.length ?? 0
     if (skippedCount > 0) setErrFor(e.id, t("alpha.ext.bundlePartialFail", { ok: okCount, fail: skippedCount }))
+    // `#810`:重扫没成功就**不许**说「已添加」——同一句成功行改说「要重载」。
+    else if (r.reloadPending) flash(t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.addedPendingReload"), "success")
     else flash(t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.added"), "success")
     // 具名 warning 原样带出去(数据保真);**呈现**已由 `extIpc` 在上面那次调用里做完(`#765`)。
-    return { ok: true, ...(r.warning ? { warning: r.warning } : {}) }
+    return { ok: true, ...(r.reloadPending ? { reason: "reload-pending" } : {}), ...(r.warning ? { warning: r.warning } : {}) }
   }
 
   // T7(B11)+T9:失败一律行内(卡片错误行 / 详情页同款),toast 只报成功;安装阶段粗状态机
@@ -1257,9 +1260,10 @@ export function ExtensionHub(props: {
     )
     setAuthzBusy(true)
     try {
-      const result = await extIpc.installCatalog({
+      // `#810`:确认屏这一趟才是**真正落盘**的那一趟 —— 它经数据层出站,于是引擎重扫
+      // 与账本刷新都在那一层发生一次(此前这里直连 `extIpc`,一次都没有)。
+      const result = await ext.installCatalogIntent({
         catalogId: pending.view.catalogId,
-        scope: { scope: "global" },
         attemptId: pending.preview.attemptId,
         ...(packagePrerequisites().length > 0 ? { grants: { secrets } } : {}),
         authorization: {
@@ -1280,6 +1284,8 @@ export function ExtensionHub(props: {
       // `#698` 在这里手写过一行 warning 呈现 —— 这条路径(确认屏 → 二次 installCatalog)是
       // package 更新真正走的那条,而它当时**连成功 toast 都没有**。`#765` 之后这行没了:
       // 上面那次 `extIpc.installCatalog` 自己就把 warning 呈现掉了,不靠人记得写。
+      // `#810`:引擎重扫失败是**另一件事**,`extIpc` 不知道它 —— 如实说「要重载」。
+      if (result.reloadPending) flash(t("alpha.ext.addedPendingReload"))
       const latest = await extIpc.packageDetail(pending.view.catalogId)
       if (latest) rememberPackageView(latest)
       pending.finish(latest ?? pending.view)

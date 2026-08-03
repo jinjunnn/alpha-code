@@ -89,9 +89,21 @@ const extensions = {
     // 会因为**替身**绕过咽喉而变红 —— 那是夹具在替被测代码改文法,不是缺陷。
     return extIpcRef!.uninstallPackage(packageId)
   },
+  /** `#810`:安装意图收口到数据层之后,本文件的三条 package 路径也从这里出站。
+   *  同样**照生产那条链走**(`extIpc` 而不是 `window.api.ext`),理由与上面那条逐字相同;
+   *  `scope` 由数据层钉死 global —— 生产实现就是这么做的,替身不许自己另发明一个。
+   *  「装完必须让引擎重扫」的判据不在本文件(这里的 `refreshEngine` 是常量桩),
+   *  它在 `package-install-engine-reload.test.ts`。 */
+  installCatalogIntent: async (intent: { catalogId: string }) =>
+    extIpcRef!.installCatalog({ ...intent, scope: { scope: "global" } }),
 }
 /** `extIpc` 会牵出 `Toast` → solid,只能在 registrator 之后动态 import;上面的替身按调用时求值。 */
-let extIpcRef: { uninstallPackage: (packageId: string) => Promise<never> } | undefined
+let extIpcRef:
+  | {
+      uninstallPackage: (packageId: string) => Promise<never>
+      installCatalog: (intent: unknown) => Promise<never>
+    }
+  | undefined
 
 mock.module("../src/renderer/extensions/use-extensions", () => ({
   useExtensions: () => extensions,
