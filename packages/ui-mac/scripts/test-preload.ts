@@ -36,26 +36,30 @@ process.env.ALPHA_UI_LOCALE ||= "zh"
 // 需要把时长本身当断言的用例(如 artifact-quota 的 `}, 1000)`)照旧显式写,显式值恒胜。
 setDefaultTimeout(120_000)
 
-// ── ③ 平台 ───────────────────────────────────────────────────────────────────
+// ── ③ 平台:**只检测 + 自陈,不改** ────────────────────────────────────────────
 // 本产品 ship 的桌面平台是 darwin + win32(ADR-026;`ext-install-planner.ts` 的
 // `synthesizeManifest` 把 `compatibility.platforms` 写死成 `["darwin","win32"]`)。
-// alpha-ci 的 runner 是 ubuntu ⇒ 生产安装路径在写盘前就拒:
+// alpha-ci 的 runner 是 ubuntu ⇒ 凡是走到生产平台闸的用例,在写盘前就被拒:
 //   `platform linux not supported by this entry — refusing before any disk write`
-// 于是那些门在 CI 上量到的是「runner 不是我们发布的平台」,不是它们存在的理由。
+// 它们量到的是「runner 不是我们发布的平台」,不是它们存在的理由。
 //
-// 处置:host 平台不在发布清单里时,把 `process.platform` 钉到 darwin —— 这与 ADR-026 的
-// platform seam 一致(`platform/index.ts` 每个函数的默认实参就是 `process.platform`),
-// 并且 darwin 与 linux 同为 posix,`node:path` 的分支不会被改坏(win32 就会,所以只钉 darwin)。
+// ⚠️ 本票**试过**在这里全局钉 `process.platform = "darwin"`,在 alpha-ci 上实测**炸得更狠**:
+// 14 个 renderer 测试文件整片挂在
+//   `error: Cannot find module @rollup/rollup-darwin-x64`
+// —— vite/rollup 按 `process.platform` 选原生可选依赖,而 linux runner 上装的是 linux 那份。
+// 3752 pass 掉到 3625。**为了修 2 条而弄坏 14 个文件,那是把一处假红换成一片真红。**
+// 教训写在这里而不是只写在票里:全局改环境的代价,必须在真环境里量过才算知道。
 //
-// **这是一次模拟,不是覆盖**:凡是真正依赖 host 内核行为的东西,这一轮没有验到。
-// 所以下面这行**必须打出来** —— 一道门可以降级,但不许静默降级。
-const SHIPPED_PLATFORMS = ["darwin", "win32"] as const
+// 所以平台是**按需 opt-in**:需要走生产平台闸的 cases 文件自己调
+// `test-component/pin-shipped-platform.ts` 的 `pinShippedPlatform()`(它同样会自陈)。
+// 这里只负责让「本次运行的 host 不是发布平台」这件事**说出口** —— 一道门可以降级,
+// 但不许静默降级;而看到这行的人才知道要去 opt-in。
+export const SHIPPED_PLATFORMS = ["darwin", "win32"] as const
 if (!(SHIPPED_PLATFORMS as readonly string[]).includes(process.platform)) {
-  const host = process.platform
-  Object.defineProperty(process, "platform", { value: "darwin", configurable: true, enumerable: true })
   console.log(
-    `[alpha-test-env] host platform "${host}" is not one this product ships on (${SHIPPED_PLATFORMS.join("/")}). ` +
-      `process.platform pinned to "darwin" so the production install gates exercise a supported platform. ` +
-      `PLATFORM SIMULATED this run; genuinely ${host}-specific behaviour is NOT covered.`,
+    `[alpha-test-env] host platform "${process.platform}" is not one this product ships on ` +
+      `(${SHIPPED_PLATFORMS.join("/")}). PLATFORM DEGRADED this run: any gate that reaches a production ` +
+      `platform check refuses before doing anything, and measures the runner instead of the behaviour. ` +
+      `Such gates must opt in via pinShippedPlatform() (test-component/pin-shipped-platform.ts).`,
   )
 }

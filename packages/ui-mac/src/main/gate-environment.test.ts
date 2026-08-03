@@ -33,8 +33,15 @@ const REPO_ROOT = path.resolve(UI_MAC, "../..")
 const SLOW = path.resolve(UI_MAC, "test-component/gate-environment.cases.ts")
 const FIRST = path.resolve(UI_MAC, "test-component/gate-environment-first.cases.ts")
 
+// `#777` 实测:形状 B 要经 `bash scripts/bun-test-floor.sh`,而那个脚本里写的是裸 `bun`。
+// 在 alpha-ci 上第一版直接挂在 `bun-test-floor.sh: line 55: bun: command not found` ——
+// 从 bun 进程 spawn 出去的 bash 拿到的 PATH 里没有 runner 装的那个 bun。
+// 把**正在跑本测试的那个 bun**所在目录前置进 PATH:既修好,也保证父子跑的是同一个二进制。
+const BUN_DIR = path.dirname(process.execPath)
+const ENV = { ...process.env, PATH: `${BUN_DIR}${path.delimiter}${process.env.PATH ?? ""}` }
+
 function run(cmd: string[], cwd: string) {
-  const r = Bun.spawnSync({ cmd, cwd, env: process.env })
+  const r = Bun.spawnSync({ cmd, cwd, env: ENV })
   return { output: `${r.stdout.toString()}${r.stderr.toString()}`, code: r.exitCode }
 }
 

@@ -158,15 +158,30 @@ job 名在 2026-07-22(`ebd29cda`)改掉,分支保护没跟。实测 PR `#802` / 
 
 仓内的 `bun test` 只有两种形状,咽喉必须两种都盖住:
 
+### 4.1 超时:两处声明,覆盖两种运行形状
+
 | 形状 | 谁是这个形状 | 声明在哪 | 机制 |
 | --- | --- | --- | --- |
-| **A 单文件** | 31 条 host 用例用 `Bun.spawnSync([bun, "test", <一个绝对路径>])` 起的子进程 —— host 自己拼 argv,传不进 CLI flag | `packages/ui-mac/scripts/test-preload.ts` | `setDefaultTimeout(120_000)` + 平台钉桩 |
+| **A 单文件** | 31 条 host 用例用 `Bun.spawnSync([bun, "test", <一个绝对路径>])` 起的子进程 —— host 自己拼 argv,传不进 CLI flag | `packages/ui-mac/scripts/test-preload.ts` | `setDefaultTimeout(120_000)` |
 | **B 多文件** | CI 的三条 test 步、`assert-gate-files.sh` 的 77 次点名、`alpha-check.sh` 的 `[4/7]` —— **所有闸门运行的唯一入口** | `scripts/bun-test-floor.sh` | `bun test --timeout 120000` |
 
 preload 此前已经承担过一次同类职责(把 UI locale 钉成 `zh`,因为 happy-dom 的 navigator 让
-`detectLocale()` 落到 `en`)—— **同一个位置,同一个问题形态**。平台钉桩落在那里:
-host 平台不在发布清单(`darwin`/`win32`,ADR-026)时把 `process.platform` 钉到 `darwin`,
-并**打印一行自陈**:`PLATFORM SIMULATED this run; genuinely <host>-specific behaviour is NOT covered.`
+`detectLocale()` 落到 `en`)—— **同一个位置,同一个问题形态**。
+
+### 4.2 平台:检测与自陈是全局的,**钉桩是 opt-in 的**
+
+| 角色 | 落点 | 行为 |
+| --- | --- | --- |
+| 检测 + 自陈 | `scripts/test-preload.ts` | host 不是发布平台时打印 `PLATFORM DEGRADED this run: …must opt in via pinShippedPlatform()` |
+| 钉桩(声明「这道门需要发布平台」) | `test-component/pin-shipped-platform.ts` 的 `pinShippedPlatform()` | 把 `process.platform` 钉到 `darwin` 并打印 `PLATFORM SIMULATED this run; genuinely <host>-specific behaviour is NOT covered.` |
+| 目前的调用方 | `test-component/ext-install-catalog-result.cases.ts` | 它跑生产 `ext-install-catalog` 全链,里面有 ADR-026 的平台闸 |
+
+> **为什么不是全局钉 —— 这是在真环境里量出来的,不是设计品味。**
+> 本票第一版把钉桩放进 preload(全局)。alpha-ci 上实测:14 个 renderer 测试文件整片挂在
+> `error: Cannot find module @rollup/rollup-darwin-x64` —— vite/rollup 按 `process.platform`
+> 选原生可选依赖,而 linux runner 上装的是 linux 那一份。`3752 pass` 掉到 `3625 pass`。
+> **为了修 2 条而弄坏 14 个文件,是把一处假红换成一片真红。**
+> 全局改环境的代价,必须在**真环境**里量过才算知道 —— 开发机上这一版全绿。
 
 ### 候选机制全部实测(bun 1.3.14)—— 其中一条把本票自己骗过一次
 
@@ -202,12 +217,21 @@ host 平台不在发布清单(`darwin`/`win32`,ADR-026)时把 `process.platform`
 只钉 `darwin` 不钉 `win32`:`node:path` 在加载时按 `process.platform` 选分支,
 darwin 与 linux 同为 posix,钉 `win32` 会把路径语义改坏。
 
+### 还有一条只有真环境才说得出来的
+
+行为闸的形状 B 要经 `bash scripts/bun-test-floor.sh`,而那个脚本里写的是裸 `bun`。
+第一版在 alpha-ci 上直接挂在 `bun-test-floor.sh: line 55: bun: command not found` ——
+从 bun 进程 spawn 出去的 bash 拿到的 `PATH` 里没有 runner 装的那个 bun。
+开发机上 `bun` 在 PATH 里,所以本地怎么跑都看不到。
+修法是把**正在跑本测试的那个 bun**所在目录前置进子进程 PATH:既修好,也顺带保证父子跑同一个二进制。
+
 ## 5. 新增一道门时,忘记处理环境会被什么挡住
 
 | 忘了什么 | 谁判红 |
 | --- | --- |
 | 新 host 没声明超时 | 不需要声明 —— 咽喉默认给到。**咽喉本身**被删掉时,`src/main/gate-environment.test.ts` 当场红(它跑一条 6 秒、不写超时的用例) |
-| 平台钉桩被删掉 | 同上;且子用例按 `os.platform()` **自陈这一半本次跑没跑到**(开发机跑不到、alpha-ci 跑得到),不会让本地的绿被误读 |
+| 新门走到生产平台闸、忘了 opt-in | preload 在非发布平台上打出 `PLATFORM DEGRADED this run: … must opt in via pinShippedPlatform()`;门本身会红在 `platform … not supported by this entry`(**具名**,不是超时那种莫名其妙的红) |
+| `pinShippedPlatform()` 被改坏 | `src/main/gate-environment.test.ts` —— 子用例按 `os.platform()` **自陈这一半本次跑没跑到**(开发机跑不到、alpha-ci 跑得到),不会让本地的绿被误读 |
 | CI 加了一步而本地没跟 | `src/main/local-gate-parity.test.ts` —— 双向比对,CI 改名也红 |
 | 本地某一步被悄悄降级 | 同上:档位只能是 `MIRRORED` / `SUPERSET:<理由>` / `DEGRADED:<理由>`,**没有「静默不跑」这一档** |
 | ADR 新增收编而只改了 CI 一侧 | 同上(`#637` 退出条件 3) |
