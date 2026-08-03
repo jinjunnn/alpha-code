@@ -27,11 +27,32 @@ floor="$1"
 workdir="$2"
 shift 2
 
+# ── 每条用例的默认超时(`#777` 的环境咽喉)──────────────────────────────────────
+# bun 默认 5000ms。本仓有 31 条 host 用例在子进程里跑**一整套** `.cases.ts`,5 秒对它们
+# 不是超时,是**机器速度在替断言下判决**:2026-08-02 起 alpha 主线 `unit tests (alpha packages)`
+# 连红两天,其中三条就是这个(host 5035.75ms / 子用例 5933.51ms、6447.61ms),
+# 而同一棵树在开发机上 0 fail。这种红最贵 —— 它会被读成「间歇性 flaky」,一道真闸被当噪声。
+#
+# 为什么闸门在这里、而不是每个测试文件各写一遍:所有**闸门**运行(CI 的三条 test 步、
+# assert-gate-files.sh 的 77 次点名、alpha-check.sh 的 [4/7])都经过本脚本 —— 一处声明,
+# 新增的门默认拿到。单条用例仍可显式覆盖(显式值恒胜,已实测)。
+#
+# 为什么是 CLI flag 而不是别的(bun 1.3.14,全部实测,不是推断):
+#   · bunfig.toml 的 `[test] timeout` **不被读取** —— 写了照样 5000ms 被杀;
+#   · BUN_TEST_TIMEOUT / BUN_TIMEOUT / BUN_TEST_TIMEOUT_MS 全部无效;
+#   · preload 里 `setDefaultTimeout()` **只对一次运行的第一个文件生效** —— 单文件跑得通,
+#     `bun test src`(257 个文件)从第二个文件起就退回 5000ms。**单文件探针会给你一个假的通过**;
+#   · preload 里 `beforeAll(() => setDefaultTimeout(...))` 同样无效;
+#   · `bun test --timeout N` 跨全部文件生效 —— 只有这一条成立。
+# 取值 120s:与仓内已显式声明超时的那批同档(最慢的正当 host 在 CI 上实测 37.7s)。
+# 超时不是断言:卡死的用例仍会在 120s 内判红,而 5s 的代价是让真闸在慢机器上恒假红。
+ALPHA_TEST_TIMEOUT_MS="${ALPHA_TEST_TIMEOUT_MS:-120000}"
+
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 
 set +e
-(cd "$workdir" && bun test "$@") 2>&1 | tee "$log"
+(cd "$workdir" && bun test --timeout "$ALPHA_TEST_TIMEOUT_MS" "$@") 2>&1 | tee "$log"
 status=${PIPESTATUS[0]}
 set -e
 

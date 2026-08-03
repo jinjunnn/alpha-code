@@ -4,6 +4,12 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import bundledCatalog from "../src/renderer/extensions/alpha-catalog.json"
+// `#777`:本文件跑的是生产 `ext-install-catalog` 全链,里面有 ADR-026 的平台闸
+// (`platforms: ["darwin","win32"]`)。在 ubuntu runner 上不声明这一条,两条用例量到的是
+// 「runner 不是发布平台」而不是「返回值不回显 canary」。必须在任何生产模块 import 之前调。
+import { pinShippedPlatform } from "./pin-shipped-platform"
+
+pinShippedPlatform()
 
 type IpcHandler = (event: { sender: { id: number } }, ...args: unknown[]) => unknown
 
