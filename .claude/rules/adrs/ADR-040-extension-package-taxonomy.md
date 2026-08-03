@@ -1,6 +1,6 @@
 ---
 id: ADR-040
-title: 扩展安装唯一形态是 Bundle —— 封死「第三方插件装进引擎 plugin[]」这条路，profile 是载荷种类、Bundle 是包形状
+title: 扩展安装唯一形态是 Bundle —— 封死「引擎进程内、经上游加载器执行第三方代码」这条路；profile 是载荷种类、Bundle 是包形状；hooks 后续按新种类支持
 status: accepted
 date: 2026-08-03
 kind: adr
@@ -118,7 +118,36 @@ provider 的目录约定由 provider 定义、随时会变；正确做法是在�
 **C. `opencode-plugin` profile（REQ-128 Phase 4 已实现，本 ADR 予以推翻并回滚）。**
 它把「第三方 JS 以引擎同等权限执行」变成产品面，代价是一整套只为它存在的机制：
 同权限执行的授权披露、ABI 预检、strict wrapper、双载闸、pre-switch probe。
-**owner 裁决：Alpha 的扩展是声明式的（skill / agent / mcp / Bundle），不接受任意第三方代码在引擎进程里跑。**
+**owner 裁决：不接受第三方代码在引擎进程内、以引擎权限、经一个我们不拥有的加载器运行。**
+
+⚠️ **2026-08-03 补充裁决（owner）：`hooks` 后续会支持。**
+所以本 ADR **不是**「Alpha 的扩展永远是声明式的」——**封死的对象是一种特定的执行形态，不是「第三方代码」本身**：
+
+| | `plugin[]` | `hooks`（将来） |
+| --- | --- | --- |
+| 在哪跑 | **引擎进程内** | **Alpha 起的子进程** |
+| 什么权限 | **引擎自己的全部权限** | **由我们定** |
+| 谁加载 | **上游的加载器**（`UPSTREAM_PATHS`，我们改不了它的语义） | **我们自己的执行器** |
+| 失败面 | 可静默篡改引擎内部任何东西 | 进程边界内有界，输出是数据 |
+
+**这条分界才是封死的真正理由。** 判据①的措辞随之收紧（见文末）。
+
+**⚠️ hooks 的支持前置不是安全裁决，是一次事件面勘破。**
+2026-08-03 实读本机 62 个真实 Claude 插件中带 hooks 的那 12 个，得到两条硬事实：
+
+1. **影响是双峰的，不是均匀的 19%。** 有的插件**整个存在意义就是 hooks**
+   （`hookify` = `PreToolUse`/`PostToolUse`、`ralph-loop` = `Stop`）——不支持就是**装了等于没装**；
+   有的只是配件（`codex` = `SessionStart`/`SessionEnd` 的可选 review gate、
+   `claude-security` = 一个横幅）——损失是化妆品级的。
+2. **hook 绑的是 Claude Code 自己的事件名**：`PreToolUse` / `PostToolUse` / `Stop` /
+   `SessionStart` / `SessionEnd` / `UserPromptExpansion`；命令形态是
+   `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse.py"` 这类第三方脚本。
+
+⇒ **支持 hooks 要求 Alpha 的引擎有对应的事件面。**
+动笔前必须先勘破：**引擎今天有哪些事件、Claude 的这六个里哪几个能诚实映射、映射不了的怎么办**，
+以及运行时契约（`${CLAUDE_PLUGIN_ROOT}` 是什么、传什么 stdin、读什么 exit code、超时怎么算）。
+**猜一个别人的事件语义，正是本 portfolio 记录在案最贵的返工形态（「手写别人文法的替身」）。**
+在这次勘破落地之前，**任何 hooks 实现票不得升 Ready**。
 ⇒ 该 profile 与配套的 `engine:config` / `engine:plugin` host capability **全部回滚**，
 宿主 profile 集合回到四个。
 
@@ -145,7 +174,15 @@ provider 的目录约定由 provider 定义、随时会变；正确做法是在�
    - ❌ **初稿错列**：「卸载目录删除失败不再谎报成功（`#809` M1）」**不需要抢救** ——
      实测回滚前的 `ext-package-uninstall.ts` 里 `rmSync` 与 `catch` **各零命中**，
      那个空 `catch` 是**同一个 PR 第一版自己引入的**，连同 plugin 臂一起回滚即可。
-3. **REQ-128 Phase 3（本地 Claude 插件导入）不在 Bundle 这条路上** ——
+3. ⚠️ **2026-08-03 owner 裁决：Phase 3 的本地 intake 是过渡形态，等发布端适配器成熟后退役。**
+   ⇒ **provider 语义映射的唯一真源落在发布端**（`alpha-web#96`/`#98`）。
+   宿主里今天躺着的**三份**映射（Phase 3 技能/布局、REQ-033 agent frontmatter、
+   REQ-063 `CLAUDE.md`→`AGENTS.md`）**不是长期状态**：适配器成熟后，本地 intake 退役，
+   其映射逻辑要么迁到发布端、要么消费发布端的产物。
+   **本 ADR 因此撤回原先「不裁决如何收敛」那句** —— 收敛方向已定，只剩排期。
+
+   以下是该路径的实况登记（退役前仍然有效）：
+   **REQ-128 Phase 3（本地 Claude 插件导入）不在 Bundle 这条路上** ——
    它是 owner 当时裁决的本地窄竖线（本机目录无 canonical HTTPS 地址、
    admission 唯一入口要求「你在已签名 Catalog 里」，本地导入**结构上进不了信封**）。
    实读：它落**同一个 V3 包图账本**，但**完全不走信封/admission**，且**只装 skills**。
@@ -158,7 +195,8 @@ provider 的目录约定由 provider 定义、随时会变；正确做法是在�
 5. **`.alpha/plugins/*.js` 项目级扇出是我们自己的第二注入点，处置另议。**
    `packages/ext/src/plugin-fanout.ts` 在引擎进程内 `import()` 它，`packages/ext` 是 alpha 自有包。
    它不是安装路径（无 catalog、无账本、无授权），但同样让第三方 JS 以引擎同权限执行。
-   **本 ADR 不裁决它**，但要求：任何「把它当成插件安装通道」的提议，直接撞判据①。
+   **本 ADR 不裁决它**，但要求：任何「把它当成插件安装通道」的提议，直接撞判据①
+   （它是**引擎进程内、经上游加载器**的执行，与将来的 hooks 子进程不是一回事）。
 
 6. ⚠️ **「Bundle 是唯一形态」今天接不住约 11% 的真实输入 —— 这是一条待补的地基，不是可以忽略的边角。**
    2026-08-03 对本机 62 个真实 Claude 插件的实测：
@@ -181,7 +219,11 @@ provider 的目录约定由 provider 定义、随时会变；正确做法是在�
 
 ## 判据（新讨论进来时照这个走）
 
-1. **它要不要在引擎进程里跑第三方代码？** 要 ⇒ **直接拒绝**，没有下一问。
+1. **它要不要在引擎进程内、以引擎权限、经上游的加载器运行？**
+   要 ⇒ **直接拒绝**，没有下一问。
+   ⚠️ 注意这一问**收紧过**：它问的**不是**「要不要执行第三方代码」。
+   `hooks`（Alpha 起的子进程、边界由我们定）**不落在这一问里** —— owner 已裁决后续支持它，
+   届时它按判据③走「新种类」的路（新 profile，理由不得出现 provider 名字）。
 2. **它是多个不同种类的组件吗？** 是 ⇒ **Bundle**，接入点在发布端适配器。
 3. **都不是，且现有 profile 无一描述得了这份字节？** ⇒ 才考虑新 profile，
    且理由**不得出现 provider 名字**。
