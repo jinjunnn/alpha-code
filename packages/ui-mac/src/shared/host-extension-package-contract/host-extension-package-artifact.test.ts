@@ -65,12 +65,15 @@ describe("HostExtensionPackageV1 artifact", () => {
       "agent",
       "mcp-local",
       "mcp-remote",
+      "opencode-plugin",
       "skill",
     ])
     expect(CAPABILITY_REGISTRY_V1.map((capability) => capability.token)).toEqual([
       "alpha.connection.v1",
       "alpha.mcp-oauth.v1",
       "alpha.secret-prerequisite.v1",
+      "engine:config",
+      "engine:plugin",
     ])
     // 界也是合同。#737 的 5 MiB 残留就是「界只活在某个源文件里的字面量」造成的,
     // 所以每一条界都必须在 registry 里,而不是散落在 decoder / main 的常量上。
@@ -84,10 +87,14 @@ describe("HostExtensionPackageV1 artifact", () => {
       "maxPayloadBytes",
       "maxPayloadDepth",
       "maxPayloadNodes",
+      "maxScriptAssetBytes",
       "maxStringBytes",
     ])
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).toBe(16)
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes).toBe(5 * 1024 * 1024)
+    // 脚本资产有自己的界,刻意与 markdown(5 MiB)和 payload(1 MiB)都不同值 —— 一个把它
+    // 写死成"另一条已有的界"的实现在这里红,而不是等到某个真实包大到撞界才被发现。
+    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes).toBe(2 * 1024 * 1024)
     // DoS 边界必须钉住值,不能只钉住「这个键存在」—— 键存在的断言拦不住悄悄放宽。
     // v2 把 maxHeaderNodes 从 128 提到 512:16 组件的信封本身就有几百个节点,128 会拒载合法
     // 多组件包。放宽 4× 的兜底是 maxEnvelopeBytes 仍为 64 KiB —— 所以它也一起钉住,
@@ -142,7 +149,7 @@ describe("HostExtensionPackageV1 artifact", () => {
     ).toBe('{\n  "a": {\n    "b": 3,\n    "y": 2\n  },\n  "z": 1\n}\n')
   })
 
-  test("schemas are strict, payload-ref-only, and exclude Phase 2/4 profiles", async () => {
+  test("schemas are strict, payload-ref-only, and bind every registered profile exactly", async () => {
     const envelope = (await Bun.file(
       resolve(import.meta.dir, "alpha-package-envelope-v1.schema.json"),
     ).json()) as Record<string, unknown>
@@ -162,7 +169,23 @@ describe("HostExtensionPackageV1 artifact", () => {
       expect(schema.additionalProperties, profile.schemaPath).toBe(false)
       expect(schema.properties?.behavior?.additionalProperties, profile.schemaPath).toBe(false)
     }
-    expect(JSON.stringify(PROFILE_REGISTRY_V1)).not.toContain("opencode-plugin")
+    // 这条以前是 `not.toContain("opencode-plugin")` —— Phase 1..3 主动挡住这个 profile 悄悄进来。
+    // Phase 4 把它**翻成正向**而不是删掉:删掉等于少一道闸,registry 会退回到「谁都可以往里加」。
+    // 断的是完整绑定(id@version + mediaType + schemaPath),比上面那条只看 profileId 的更细 ——
+    // 一个把新 profile 指向别人的 schema 或别人的 mediaType 的实现在这里红。
+    expect(
+      PROFILE_REGISTRY_V1.map(
+        (profile) =>
+          `${profile.profileId}@${profile.profileVersion} ${profile.mediaType} ${profile.schemaPath}`,
+      ),
+    ).toEqual([
+      "agent@1 application/vnd.alpha.host-extension-package.agent.v1+json profiles/agent.v1.schema.json",
+      "mcp-local@1 application/vnd.alpha.host-extension-package.mcp-local.v1+json profiles/mcp-local.v1.schema.json",
+      "mcp-remote@1 application/vnd.alpha.host-extension-package.mcp-remote.v1+json profiles/mcp-remote.v1.schema.json",
+      "opencode-plugin@1 application/vnd.alpha.host-extension-package.opencode-plugin.v1+json profiles/opencode-plugin.v1.schema.json",
+      "skill@1 application/vnd.alpha.host-extension-package.skill.v1+json profiles/skill.v1.schema.json",
+    ])
+    // Bundle 不是 profile,而是多组件信封的形状。这一条**不动**。
     expect(JSON.stringify(PROFILE_REGISTRY_V1)).not.toContain("bundle")
   })
 

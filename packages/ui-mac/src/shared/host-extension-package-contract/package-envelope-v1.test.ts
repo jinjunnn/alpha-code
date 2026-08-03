@@ -9,7 +9,7 @@ import {
   type PackageProfilePayloadV1,
 } from "./decoder"
 import { HOST_EXTENSION_PACKAGE_CORPUS } from "./generate-artifact"
-import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "./registry"
+import { HOST_EXTENSION_PACKAGE_LIMITS_V1, type PackageCapabilityV1 } from "./registry"
 import { runSyntheticPackageDecoderV1 } from "./synthetic-decoder"
 
 type CorpusCase = {
@@ -687,6 +687,30 @@ const negativeCases: NegativeCase[] = [
       behaviorOf(payload).requiredSecrets = ["B_KEY", "A_KEY"]
     },
   },
+  // ── 脚本资产的两道闸 ────────────────────────────────────────────────────────
+  // 期望值一律从 registry 读。写成字面量 2097152 的话,「把界悄悄改成别的数」这件事
+  // 只会让 registry 与测试同时变,而两边都不红 —— 那正是断言粒度比缺陷粗一格。
+  {
+    name: "script asset one byte over the registered maxScriptAssetBytes",
+    source: "opencode-plugin-v1",
+    mode: "package",
+    error: `payload.behavior.asset.bytes: required integer in 1..${HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes}`,
+    mutatePayload: (payload) => {
+      ;(behaviorOf(payload).asset as Record<string, unknown>).bytes =
+        HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes + 1
+    },
+  },
+  {
+    // mediaType 是判别式,不是注释。放宽成 string 的实现在这里红 —— 否则 JS 字节可以顶着
+    // markdown 的媒体类型进来,宿主对同一个 mediaType 就有了两种语义。
+    name: "script asset refuses a markdown media type",
+    source: "opencode-plugin-v1",
+    mode: "package",
+    error: 'payload.behavior.asset.mediaType: expected "text/javascript"',
+    mutatePayload: (payload) => {
+      ;(behaviorOf(payload).asset as Record<string, unknown>).mediaType = "text/markdown"
+    },
+  },
 ]
 
 describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
@@ -700,6 +724,7 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       "mcp-remote-v1",
       "mcp-remote-oauth-v1",
       "mcp-remote-connection-v1",
+      "opencode-plugin-v1",
       "bundle-optional-unsupported-profile",
       "bundle-optional-unsupported-capability",
       "bundle-optional-media-type-mismatch",
@@ -972,6 +997,7 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
         "mcp-remote-v1",
         "mcp-remote-oauth-v1",
         "mcp-remote-connection-v1",
+        "opencode-plugin-v1",
         "bundle-optional-unsupported-profile",
         "bundle-optional-unsupported-capability",
       ] as const
@@ -1064,6 +1090,30 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     expect(
       derivePayloadCapabilitiesV1(connectionBoth as unknown as PackageProfilePayloadV1),
     ).toEqual(["alpha.connection.v1", "alpha.secret-prerequisite.v1"])
+  })
+
+  // 上界闸的另一半。只测「+1 拒绝」的话,一个把界读成 0 的实现照样全绿;只测「恰好接受」的话,
+  // 一个根本不检查上界的实现也全绿。两个方向都跑,期望值都从 registry 读。
+  test("the script asset limit accepts exactly the registered value and refuses one byte more", () => {
+    const limit = HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes
+    const source = caseNamed("opencode-plugin-v1")
+    const capabilities = (
+      componentsOf(source.envelope)[0] as unknown as { capabilities: PackageCapabilityV1[] }
+    ).capabilities
+    expect(capabilities).toEqual(["engine:config", "engine:plugin"])
+
+    const decodeWithAssetBytes = (bytes: number) => {
+      const payload = structuredClone(source.components[0]!.payload!)
+      ;(behaviorOf(payload).asset as Record<string, unknown>).bytes = bytes
+      return decodePackageProfilePayloadV1("opencode-plugin", jsonBytes(payload), capabilities)
+    }
+
+    const atLimit = decodeWithAssetBytes(limit)
+    expect(atLimit.ok ? "" : atLimit.errors.join("\n")).toBe("")
+    const overLimit = decodeWithAssetBytes(limit + 1)
+    expect(overLimit.ok ? "" : overLimit.errors.join("\n")).toContain(
+      `payload.behavior.asset.bytes: required integer in 1..${limit}`,
+    )
   })
 })
 

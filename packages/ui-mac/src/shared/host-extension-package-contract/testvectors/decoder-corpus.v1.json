@@ -329,6 +329,62 @@
     {
       "components": [
         {
+          "id": "opencode-plugin:opencode-plugin-v1",
+          "payload": {
+            "behavior": {
+              "asset": {
+                "bytes": 34093,
+                "mediaType": "text/javascript",
+                "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+                "url": "https://example.invalid/assets/opencode-plugin.js"
+              }
+            },
+            "schema": "alpha.host-extension-package.payload.opencode-plugin.v1"
+          }
+        }
+      ],
+      "envelope": {
+        "capabilities": [
+          "engine:config",
+          "engine:plugin"
+        ],
+        "components": [
+          {
+            "capabilities": [
+              "engine:config",
+              "engine:plugin"
+            ],
+            "dependencies": [],
+            "id": "opencode-plugin:opencode-plugin-v1",
+            "payloadRef": {
+              "bytes": 325,
+              "mediaType": "application/vnd.alpha.host-extension-package.opencode-plugin.v1+json",
+              "sha256": "47b9470690f1b7f58cf2110b5bfe48fa0e4471f1a6899427439998ade9431194",
+              "url": "https://example.invalid/packages/opencode-plugin/opencode-plugin-v1.json"
+            },
+            "profileId": "opencode-plugin",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "package:opencode-plugin-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic opencode-plugin-v1 decoder case",
+          "displayName": "opencode-plugin-v1"
+        },
+        "root": "opencode-plugin:opencode-plugin-v1",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "opencode-plugin-v1",
+      "skipped": []
+    },
+    {
+      "components": [
+        {
           "id": "skill:unknown-profile",
           "payload": null
         }

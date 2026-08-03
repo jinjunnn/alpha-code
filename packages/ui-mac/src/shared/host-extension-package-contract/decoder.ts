@@ -59,6 +59,19 @@ export type MarkdownAssetRefV1 = {
   url: string
 }
 
+/**
+ * The second asset shape, discriminated by `mediaType` exactly like the first one. Widening
+ * `mediaType` to `string` instead would not have "added JavaScript support" — it would have deleted
+ * the only thing that stops a producer from shipping bytes of one kind under the media type of
+ * another, and left the host with two meanings for `text/markdown`.
+ */
+export type ScriptAssetRefV1 = {
+  sha256: string
+  bytes: number
+  mediaType: "text/javascript"
+  url: string
+}
+
 export type SkillPayloadV1 = {
   schema: "alpha.host-extension-package.payload.skill.v1"
   behavior: { targetDir: "alpha-skills" | "global"; asset: MarkdownAssetRefV1 }
@@ -110,11 +123,22 @@ export type McpRemotePayloadV1 = {
   behavior: McpRemoteBehaviorV1
 }
 
+/**
+ * A managed OpenCode Plugin: one content-addressed JavaScript asset the engine will evaluate in its
+ * own process. The payload carries no install target, no argv, and no environment — where the bytes
+ * land and how the engine is pointed at them are host decisions, not producer declarations.
+ */
+export type OpencodePluginPayloadV1 = {
+  schema: "alpha.host-extension-package.payload.opencode-plugin.v1"
+  behavior: { asset: ScriptAssetRefV1 }
+}
+
 export type PackageProfilePayloadV1 =
   | SkillPayloadV1
   | AgentPayloadV1
   | McpLocalPayloadV1
   | McpRemotePayloadV1
+  | OpencodePluginPayloadV1
 
 /**
  * A curated component this host cannot serve is skipped, never silently dropped. The reason token
@@ -186,6 +210,7 @@ const COMPONENT_KEYS = new Set([
 const PAYLOAD_REF_KEYS = new Set(["sha256", "bytes", "mediaType", "url"])
 const PAYLOAD_KEYS = new Set(["schema", "behavior"])
 const MARKDOWN_BEHAVIOR_KEYS = new Set(["targetDir", "asset"])
+const OPENCODE_PLUGIN_BEHAVIOR_KEYS = new Set(["asset"])
 const MCP_LOCAL_BEHAVIOR_KEYS = new Set(["command", "environment", "requiredSecrets"])
 const MCP_REMOTE_BEHAVIOR_KEYS = new Set(["url", "headersTemplate", "requiredSecrets", "auth"])
 const MCP_REMOTE_AUTH_KINDS = ["alpha-connection", "mcp-oauth"] as const
@@ -201,7 +226,16 @@ const ALPHA_CONNECTION_AUTH_KEYS = new Set([
 const PACKAGE_ID_RE = /^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$/
 const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/
 const PROFILE_ID_RE = /^[a-z][a-z0-9-]{0,31}$/
-const CAPABILITY_RE = /^[a-z][a-z0-9.-]{0,95}$/
+/**
+ * `:` is legal here because the host capability vocabulary contains `engine:config` and
+ * `engine:plugin` — the renderer's own long-standing spelling, promoted rather than renamed
+ * (see `registry.ts`). This regex is a grammar/DoS bound, never the admission gate: whether a token
+ * is honoured is decided solely by `isPackageCapabilityV1` registry membership, so widening the
+ * character class by one byte does not widen what the host will accept. Keep it byte-identical to
+ * `$defs/capabilities.items.pattern` in `alpha-package-envelope-v1.schema.json`; a producer that
+ * passes the published schema and then fails this decoder is a contract that lies.
+ */
+const CAPABILITY_RE = /^[a-z][a-z0-9.:-]{0,95}$/
 const HEX64_RE = /^[0-9a-f]{64}$/
 const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]{0,127}$/
 const HEADER_NAME_RE = /^[A-Za-z0-9-]{1,128}$/
@@ -269,7 +303,9 @@ export function decodePackageProfilePayloadV1(
         ? decodeAgentPayload(parsed.value)
         : profileId === "mcp-local"
           ? decodeMcpLocalPayload(parsed.value)
-          : decodeMcpRemotePayload(parsed.value)
+          : profileId === "opencode-plugin"
+            ? decodeOpencodePluginPayload(parsed.value)
+            : decodeMcpRemotePayload(parsed.value)
   if (!decoded.ok) return decoded
   const expected = derivePayloadCapabilitiesV1(decoded.payload)
   if (expected.join("\n") !== capabilities.join("\n"))
@@ -297,6 +333,12 @@ export function derivePayloadCapabilitiesV1(payload: PackageProfilePayloadV1): P
     if (payload.behavior.auth.kind === "mcp-oauth") capabilities.push("alpha.mcp-oauth.v1")
     if (payload.behavior.auth.kind === "alpha-connection") capabilities.push("alpha.connection.v1")
   }
+  // A managed plugin discloses both facts unconditionally, because both are unconditionally true:
+  // the engine evaluates its JavaScript (`engine:plugin`) and the host has to write the engine's
+  // config to point at it (`engine:config`). Deriving only the first would tell the user less than
+  // the legacy sideload path already tells them for the identical effect.
+  if (payload.schema === "alpha.host-extension-package.payload.opencode-plugin.v1")
+    capabilities.push("engine:config", "engine:plugin")
   return [...new Set(capabilities)].sort()
 }
 
@@ -735,6 +777,29 @@ function decodeMarkdownPayload(
     payload: {
       schema: "alpha.host-extension-package.payload.agent.v1",
       behavior: { targetDir: targetDir as "alpha-agents" | "global", asset: asset as MarkdownAssetRefV1 },
+    },
+  }
+}
+
+function decodeOpencodePluginPayload(value: unknown): PackageProfilePayloadDecodeV1 {
+  const errors: string[] = []
+  const behavior = decodePayloadRoot(
+    value,
+    "alpha.host-extension-package.payload.opencode-plugin.v1",
+    OPENCODE_PLUGIN_BEHAVIOR_KEYS,
+    errors,
+  )
+  if (!behavior) return { ok: false, errors }
+  const asset = decodePayloadRef(behavior.asset, "payload.behavior.asset", errors, {
+    maxBytes: HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes,
+    mediaType: "text/javascript",
+  })
+  if (errors.length || !asset) return { ok: false, errors }
+  return {
+    ok: true,
+    payload: {
+      schema: "alpha.host-extension-package.payload.opencode-plugin.v1",
+      behavior: { asset: asset as ScriptAssetRefV1 },
     },
   }
 }
