@@ -518,11 +518,21 @@ alpha-web 消费它并重钉 pin。**三跳 pin 搬运必须有票主**（§6 T3
    plugin file item 已由 `extensionHealthProbeRouter`（本身 `async`，`ext-health-probe-router.ts:60-68`）
    接线。plugin 的 probe 复用 `seedPluginFileProbe`（`:37-54`：路径存在 + 可读 + digest 逐字相等）。
    **它只比字节，不执行字节。**
-2. **wrapper 的 ABI 形状在测试进程里验**：对 **wrapper 生成器**的输出 + **固定的候选字节**，
-   在单元测试进程内 `import` 一次，断言 `mod.default` 的**自有键恰为 `{id, server}`**、
-   两者类型正确、`server()` 的返回值是对象且其键**全部属于** `Hooks` 的 21 键集合、
-   **且至少包含候选包实际注册的那两个键**（`event` 与 `permission.ask`，§2.11）。
-   ⚠️ **只写「键 ⊆ 21 键」是假闸** —— `{}` 恒满足它（形态⑨的近亲）。必须两侧都断。
+2. **wrapper 的 ABI 形状在测试进程里验（票主 = T2b，含 `server()` 返回值这一段）**：
+   对 **wrapper 生成器**的输出 + **固定的候选字节**，在单元测试进程内 `import` 一次，断言：
+   - `mod.default` 的**自有键恰为 `{id, server}`**，`id` 是 string、`server` 是 function；
+   - `server(stubInput, options)` 的返回值是对象，其键**全部属于** `Hooks` 的 21 键集合；
+   - **对这份固定 canary，返回键恰为两项** —— `event` 与 `permission.ask`（§2.11 实读）；
+   - **这两项的值都是 `function`**。
+
+   ⚠️ **「键 ⊆ 21 键」和「两个键存在」都还是假闸**（R2 新开的 Major）：
+   `{}` 满足前者，`{event: 1, "permission.ask": 1}` 满足两者 ——
+   而真实引擎**直接调用 hook 的值**：事件面 `packages/opencode/src/plugin/index.ts:255`
+   `void hook["event"]?.({…})`，trigger 面 `:288-290` `const fn = hook[name]; if (!fn) continue;
+   yield* Effect.promise(async () => fn(input, output))`。
+   ⇒ 一个值不是函数的 hook 表**一到真实派发就抛**，而形状断言全绿。
+   **绕过配方**：把 canary 的任一 hook 值换成非函数（如 `1`）⇒ 「两个值都是 function」必须红；
+   往返回值里多加一个第三个键 ⇒ 「恰为两项」必须红。
 
 **为什么删掉上一版的「隔离子进程模块导入探针」（三条，都是硬理由）**：
 
@@ -597,7 +607,8 @@ alpha-web 消费它并重钉 pin。**三跳 pin 搬运必须有票主**（§6 T3
 ### D5 —（**已删除**：CAS pin/unpin 不做）
 
 > 槽位保留是为了留痕。本稿上一版在这里设计了「managed plugin 载荷 blob 装前 pin、卸载成功后 unpin」，
-> **R1 审计 F6 之后整条删除**，连带 §5 第 9 类与 §5 第 8 类的第 ④ 条断言。
+> **R1 审计 F6 之后整条删除**，连带 §5 第 9 类与 §5 第 8 类里那条**「CAS pin 账无该 digest」**的断言。
+> （§5 第 8 类今天仍是四条，但第 ④ 条已换成 R2 补的**「账本记录消失」**，与 pin 无关。）
 
 **为什么删**（三条，逐条实读）：
 
@@ -900,17 +911,32 @@ admission 取资产时优先用注入的 `deps.fetchAsset`
 
 ### 第 8 类 — 卸载残留
 
-**不变量**：整包卸载成功后，**三条一起**断言（不是只断 `ok`）：
+**不变量**：整包卸载成功后，**四条一起**断言（不是只断 `ok`）：
 ① `<alphaGlobalRoot>/plugins/<name>@<hex>/` 目录不存在；
 ② `alpha.jsonc` 的 `plugin[]` 不含那条绝对路径；
-③ `grants.json` 无对应 key。
+③ `grants.json` 无对应 key；
+④ **账本里那条 package 记录消失** —— 走**生产卸载**再把账本读回来，断言这个 packageId
+   查不到、且它的 child record 也没了。
 
-> 上一版这里是「四清零」，第 ④ 条是 CAS pin 账。**随 D5 一并删除**（R1 审计 F6）：
-> 本相位不 pin，`pins.json` 里从头到尾不会有这个 digest，断它「没有」是恒真式。
+> **第 ④ 条的两次变更，一起留痕**：R1 审计 F6 删掉的是「**CAS pin 账无该 digest**」
+> （本相位不 pin，`pins.json` 里从头到尾不会有这个 digest，断它「没有」是**恒真式**）；
+> R2 补进来的是**另一件事** —— 账本记录消失。两者不是同一条，不要混。
+
+**第 ④ 条的判据钉在真实 mutation 上，不许自己拼等价链**：生产卸载构造的
+`PackageLedgerMutationV1`（`main/ext-package-uninstall.ts:184-193`）就是以
+`operation: "uninstall"` + **`graphAfter: null`** + `childRecordMutations` 里逐条 `op: "remove"`
+把记录删掉的。
+- ✅ 判据 = **跑生产卸载 → 重新读账本 → 查不到**；
+- ❌ 不许写成「断言我们构造出来的 mutation 里 `graphAfter === null`」——
+  那是断言一个**中间值**，一个「mutation 造对了但从没提交」的实现照样满足它
+  （形态⑧：没测生产接线）。
 
 **咽喉**：`removePackageChildArtifactsV1`（`ext-package-uninstall.ts:86-147`，
-skill/agent/mcp 三臂在 `:100/:117/:126`，`:143-145` 是 fail-closed 兜底）新增的 plugin 臂。
-**绕过配方**：把三条里任一条对应的清理动作删掉 ⇒ 对应断言红。
+skill/agent/mcp 三臂在 `:100/:117/:126`，`:143-145` 是 fail-closed 兜底）新增的 plugin 臂
++ 账本 mutation 的提交点（`:184-193`）。
+**绕过配方**：把四条里任一条对应的清理动作删掉 ⇒ 对应断言红；
+第 ④ 条的绕过 = 让卸载**不提交那份 mutation**（或把 `childRecordMutations` 过滤空）
+⇒ 账本读回来还在 ⇒ 必须红。
 ⚠️ 只断 `{ok:true}` 的写法通不过 —— 今天的 fail-closed 分支也返回 `ok:false`，
 而一个「删了目录但没摘 config」的实现会返回 `ok:true`。
 
@@ -953,13 +979,13 @@ skill/agent/mcp 三臂在 `:100/:117/:126`，`:143-145` 是 fail-closed 兜底�
 | --- | --- | --- | --- | --- | --- |
 | **T1** `[REQ-128][CODE] 宿主合同注册 opencode-plugin profile,并把 engine:config/engine:plugin 登记进 host capability registry` | D2、D7 的合同半场、②的宿主半场 | `packages/ui-mac/src/shared/host-extension-package-contract/`：`host-extension-package.registry.v1.json`（profiles/capabilities/limits 各按序插入）、`registry.ts:3` profile 联合 + `:4-7` **capability 联合加两个成员** + `:46-57` + `:76/:79-83/:87-90` 三处 exact-set、新建 `profiles/opencode-plugin.v1.schema.json`、`decoder.ts:55-60/:113-117/:285-301/:704-740` 解码臂与 `ScriptAssetRefV1`、`:265-272` payload 分派加臂、`synthetic-decoder.ts`、`generate-artifact.ts:14-27/:64-143`、corpus、`host-extension-package-artifact.v1.json`、`CONTRACT.md`（§Profiles / §Exclusions:181-184）、`host-extension-package-artifact.test.ts:63-75` 与 `:165-166` | 宿主实现（admission/事务/卸载）、renderer、alpha-web 任何一行 | ① `bun generate-artifact.ts --check` exit 0；② **`bash scripts/alpha-check.sh` 全绿**（不许用局部 `bun test src` 代替）；③ 新 `artifactSha256` 写进 PR 正文（T3 要用）；④ `artifact.test.ts:178+` 的笛卡尔 derive 矩阵覆盖**两个新登记的 capability**；⑤ 边界对夹具：`maxScriptAssetBytes` 恰好值接受 / +1 拒绝，且**期望值从 registry 读，不写字面量**；⑥ **`maxCapabilities` 的实读值与「5 个 token + 单组件上限仍在界内」的复核结论写进 PR 正文**（D2 连锁④） | 无。**与 T4 同一 merge unit** |
 | **T2a** `[REQ-128][CODE] 宿主侧资产取回与完整性:script 资产形状 + fetchPackageAsset 补 timeout 与终态 URL 复查` | §5 第 2 类、D7 的宿主取回半场 | `main/package-admission.ts:510-517`（`assetRef` 取值条件接受 script 资产形状）、`:1047-1056` `fetchPackageAsset`（补 timeout + 终态 URL 的 HTTPS/userinfo 复查，与 `package-installability.ts:37/539/543/546-550` 对称） | kind 分流 / 事务 builder / 卸载臂（那是 T2b）；renderer；alpha-web | ① 用**真实 admission**、**不传 `deps.fetchAsset`**、只替换 `globalThis.fetch`（注入态下删掉生产 guard 也全绿，`package-admission.ts:516` + `package-update.test.ts:177`）；② 两个 mutation **逐条点名**各一条用例 + 各一次绕过记录：永不 EOF ⇒ 有界失败；终态 `response.url` 带 userinfo / 非 HTTPS ⇒ 拒绝；③ **`bash scripts/alpha-check.sh` 全绿** | T1 |
-| **T2b** `[REQ-128][CODE] plugin 事务与生命周期:kind 分流收口 + wrapper 模板 + buildPluginTxItems + 卸载臂` | §5 第 3/6/7/8 类、D1 的 wrapper 模板、D4 的不变量 | `main/package-admission.ts:506/:509/:672-681/:906`；`main/ext-package-lifecycle.ts:35-37/:349`；**新建 wrapper 模板**（顶层不 import 上游，`import("./upstream.js")` 在 `server()` 内）与 `buildPluginTxItems`（`main/ext-package-tx-builders.ts`，复用 `seedPluginPayloadItems` 的 item 构造与 `extensionHealthProbeRouter`）；`main/ext-package-uninstall.ts:86-147` 新增 plugin 臂；`shared/package-secret-prerequisite.ts` 与 `shared/package-alpha-connection.ts` **各加一条 plugin 具名用例**（**生产 else 不动**，§5 第 6 类）；`shared/package-admission.ts:88` wire 类型 | renderer 任何一行；`installPluginFromCas`（legacy 单装载体，**不复用、不改**）；alpha-web；**`main/alpha-config-injection.ts`（D4 之后不再动它）**；CAS pin/unpin（D5 已删） | ① 第 7 类 **A+B 两条都测**（五个 profile 的 exact mapping，期望键集从 `PROFILE_REGISTRY_V1` 派生；未登记第六 profile 具名拒绝），两条绕过各记一次；② 第 8 类**三条一起断**（目录 / `plugin[]` / grants）；③ file item key 必须是 `plugin--<name>--f<i>`（否则 `ext-health-probe-router.ts:40-41` 拒），一条用例钉住；④ 第 3 类：**经生产 install 真写盘后**读回真实 `alpha.jsonc`，断言精确 managed 绝对路径 + 目录圈禁 + **无同名 legacy/npm 条目**；⑤ wrapper：`mod.default` **自有键恰为 `{id, server}`**（不是 named exports）+ 顶层零副作用（V2 求值后用户 home 无新增写盘），**两条绕过各记一次**；⑥ **`bash scripts/alpha-check.sh` 全绿** | T1 |
-| **T3** `[REQ-128][CODE] alpha-web:发布端支持 plugin kind + 升 host pin(带过渡对) + 重生 producer artifact` | D2 的 web 半场、D7 的 producer 半场、③的前半跳、§5 第 1 类 | `scripts/lib/extension-package-core.mjs`：`:46-53` PIN、`:575-589` `componentProfile`、`:591-687` `validateBehavior`、`:625-630` 与 `:729-734` **两处** kind 白名单、`:1297-1369` `buildPayload`（末尾改显式拒绝）、`:1376-1394` `deriveComponentCapabilitiesV1`（**产出 `engine:config` + `engine:plugin`**）、`:2158-2166` closure exact-set（**加两个 `HOST_CAPABILITY_*` 常量**）、`:2288-2303` `verifyLiveHostArtifactAtRepo`（**临时过渡对**）；`scripts/gen-extension-package-artifact.mjs:27-107` `HOST_ARTIFACT` 表、`:110-207` `HOST_REGISTRY_BYTES`、`:917-957` profiles mapping、`:982-989` **`excluded` 删 `managed-plugin`**；`contracts/.../generic-rules.v1.json` 的 `capabilities`；`scripts/lib/host-asset-parsers.mjs:92-95`；`contracts/extension-package/CONTRACT.md:33-37/125-140`；重跑 `node scripts/gen-extension-package-artifact.mjs` | alpha-code 任何一行；发布一个真实包（那是 T7）；`catalog-sweep.mjs`（那是 T7 的前置修复） | ① `npm test` 绿（含 `assertVendoredHostContractPin` 的四个 error code 路径）；② 第 1 类**两条不变量**：单文件资产集（多一个文件 ⇒ 具名 code）+ **release 字节 ≡ 独立读取的 vendored 源字节、再从 release 字节重算 `payloadRef.sha256/bytes`**；绕过配方「**改 vendored 源一个字节但让输出不变 ⇒ 必须红**」实跑记录在 PR 正文；③ 新 producer `artifactSha256` 写进 PR 正文（T4 要用）；④ **过渡对**：`verifyLiveHostArtifactAtRepo` 临时只接受**精确的一对** `(old-live sha, new-pin sha)`，**不做任意豁免、不放宽成通配**；PR 正文写明窗口起止与「删除过渡对」那个 PR 的编号；⑤ **删除过渡对的 PR 在 T1+T4 落 `alpha` 之后立即合**，本票不闭合到它合并为止 | **T1**（要它的 `artifactSha256`；T1 **不必已合并**）。**硬序见下** |
+| **T2b** `[REQ-128][CODE] plugin 事务与生命周期:kind 分流收口 + wrapper 模板 + buildPluginTxItems + 卸载臂` | §5 第 3/6/7/8 类、D1 的 wrapper 模板、D4 的不变量 | `main/package-admission.ts:506/:509/:672-681/:906`；`main/ext-package-lifecycle.ts:35-37/:349`；**新建 wrapper 模板**（顶层不 import 上游，`import("./upstream.js")` 在 `server()` 内）与 `buildPluginTxItems`（`main/ext-package-tx-builders.ts`，复用 `seedPluginPayloadItems` 的 item 构造与 `extensionHealthProbeRouter`）；`main/ext-package-uninstall.ts:86-147` 新增 plugin 臂；`shared/package-secret-prerequisite.ts` 与 `shared/package-alpha-connection.ts` **各加一条 plugin 具名用例**（**生产 else 不动**，§5 第 6 类）；`shared/package-admission.ts:88` wire 类型 | renderer 任何一行；`installPluginFromCas`（legacy 单装载体，**不复用、不改**）；alpha-web；**`main/alpha-config-injection.ts`（D4 之后不再动它）**；CAS pin/unpin（D5 已删） | ① 第 7 类 **A+B 两条都测**（五个 profile 的 exact mapping，期望键集从 `PROFILE_REGISTRY_V1` 派生；未登记第六 profile 具名拒绝），两条绕过各记一次；② 第 8 类**四条一起断**（目录 / `plugin[]` / grants / **账本记录消失**）；第 ④ 条走**生产卸载后重读账本**，绕过 = 不提交那份 mutation（`ext-package-uninstall.ts:184-193` 的 `graphAfter: null`）⇒ 必须红；③ file item key 必须是 `plugin--<name>--f<i>`（否则 `ext-health-probe-router.ts:40-41` 拒），一条用例钉住；④ 第 3 类：**经生产 install 真写盘后**读回真实 `alpha.jsonc`，断言精确 managed 绝对路径 + 目录圈禁 + **无同名 legacy/npm 条目**；⑤ wrapper：`mod.default` **自有键恰为 `{id, server}`**（不是 named exports）+ 顶层零副作用（V2 求值后用户 home 无新增写盘），**两条绕过各记一次**；⑥ **D3 的 `server()` 返回值验证归本票**：对固定 canary 断言返回键**恰为 `event` + `permission.ask` 两项**、**两个值都是 `function`**；绕过 = 任一 hook 值换成非函数 ⇒ 必须红（真实引擎在 `plugin/index.ts:255` / `:288-290` 直接调用这两个值）；⑦ **`bash scripts/alpha-check.sh` 全绿** | T1 |
+| **T3** `[REQ-128][CODE] alpha-web:发布端支持 plugin kind + 升 host pin(带过渡对) + 重生 producer artifact` | D2 的 web 半场、D7 的 producer 半场、③的前半跳、§5 第 1 类 | `scripts/lib/extension-package-core.mjs`：`:46-53` PIN、`:575-589` `componentProfile`、`:591-687` `validateBehavior`、`:625-630` 与 `:729-734` **两处** kind 白名单、`:1297-1369` `buildPayload`（末尾改显式拒绝）、`:1376-1394` `deriveComponentCapabilitiesV1`（**产出 `engine:config` + `engine:plugin`**）、`:2158-2166` closure exact-set（**加两个 `HOST_CAPABILITY_*` 常量**）、`:2288-2303` `verifyLiveHostArtifactAtRepo`（**临时过渡对**）；`scripts/gen-extension-package-artifact.mjs:27-107` `HOST_ARTIFACT` 表、`:110-207` `HOST_REGISTRY_BYTES`、`:917-957` profiles mapping、`:982-989` **`excluded` 删 `managed-plugin`**；`contracts/.../generic-rules.v1.json` 的 `capabilities`；`scripts/lib/host-asset-parsers.mjs:92-95`；`contracts/extension-package/CONTRACT.md:33-37/125-140`；**`tests/extension-package-contract.test.mjs:84-89`（漂移闸的调用方测试，见退出条件④）**；重跑 `node scripts/gen-extension-package-artifact.mjs` | alpha-code 任何一行；发布一个真实包（那是 T7）；`catalog-sweep.mjs`（那是 T7 的前置修复） | ① `npm test` 绿（含 `assertVendoredHostContractPin` 的四个 error code 路径）；② 第 1 类**两条不变量**：单文件资产集（多一个文件 ⇒ 具名 code）+ **release 字节 ≡ 独立读取的 vendored 源字节、再从 release 字节重算 `payloadRef.sha256/bytes`**；绕过配方「**改 vendored 源一个字节但让输出不变 ⇒ 必须红**」实跑记录在 PR 正文；③ 新 producer `artifactSha256` 写进 PR 正文（T4 要用）；④ **过渡对要改两处，缺一处主线门仍是红的**：(a) `verifyLiveHostArtifactAtRepo`（`extension-package-core.mjs:2288-2303`）临时只接受**精确的一对** `(old-live sha, new-pin sha)`；(b) **调用方测试 `tests/extension-package-contract.test.mjs:84-89` 同步加过渡分支** —— 窗口期接受**同一对**并**断言处于 transition 状态**（不是把 `:88` 那条严格相等删掉），窗口外维持严格相等；**两处都不做任意豁免、不放宽成通配**；`:91-107` 的 stale 负向与 `:109+` 的 unresolvable 负向**原样保留、必须仍然报 `E_HOST_ARTIFACT_DRIFT` / fail-closed**；PR 正文写明窗口起止与「删除过渡对」那个 PR 的编号；⑤ **删除过渡对的 PR 在 T1+T4 落 `alpha` 之后立即合，且函数里的例外与测试里的过渡分支一起删**，本票不闭合到它合并为止 | **T1**（要它的 `artifactSha256`；T1 **不必已合并**）。**硬序见下** |
 | **T4** `[REQ-128][CODE] alpha-code re-vendor producer artifact + lock + closure` | ③的后半跳 | `packages/alpha-contracts-consumer/vendor/alpha-web-extension-package/**`（逐字拷 T3 那个 commit 的 `contracts/extension-package/artifact/*`）、`packages/alpha-contracts-consumer/alpha-web-extension-package.lock.json`、`packages/alpha-contracts-consumer/src/extension-package-artifact.test.ts:142-173` 的 closure exact-set（`:154-158` capability 变 5 个、`:171-173` `excluded` 去掉 `managed-plugin`）；**顺带把落后 aw@6e0db57d 的那批字节前移** | 宿主实现、renderer | ① **`bash scripts/alpha-check.sh` 全绿**；② PR 正文**单独列出**因 aw#112 frontmatter 变化而变动的宿主测试语料（`package-mixed-bundle.fixture.ts`、`package-admission.test.ts`、`package-update.test.ts`、`ext-package-detail-wiring.cases.ts`），逐条说明为什么变 | T3。**与 T1 同一 merge unit**（`extension-package-artifact.test.ts:107-110` 反向钉死，见硬序） |
 | **T5** `[REQ-128][CODE] renderer 半场:签名 package 安装路径收口到 useExtensions 并接引擎重扫` | ⑤、D6、§5 第 5 类 | `renderer/extensions/use-extensions.ts`（新增收口方法，`refreshEngine()` 在这一层接一次；先例 `:850-859` / `:865-874`）；`renderer/extensions/extension-hub.tsx:673`（`runPackageAction`）、`:1098`（`installBundle`）、`:1228`（`confirmPackageAuthz`）改走 `ext.*` 不直连 `extIpc` | main 侧任何一行；`main/ext-ipc.ts:1068-1081` 的 MCP 补偿（不动）；**`ext-authz.tsx` 与 i18n（F1 之后零改动）** | ① **渲染/调用三个生产 Hub 动作本身**，证明它们进入同一个 `useExtensions` 方法（不许只测一个新 helper）；② 三条绕过各记一次：删掉中央方法里的 `refreshEngine()` ⇒ 红；任一入口改回直连 `extIpc` ⇒ 红；③ 失败如实呈现 `reload-pending`；④ 第 5 类：授权屏**渲染结果**含 `engine:plugin` 人话文案 + 高风险徽章、含 `engine:config` 人话文案、无裸 token 行；派生能力集恰 `{engine:config, engine:plugin}`（期望值写独立字面量，**不 import 生产 derive**）；三条绕过各记一次；⑤ **`bash scripts/alpha-check.sh` 全绿**；⑥ **不含新视觉，不走 design-loop**（用的是既有词条与既有渲染路径）—— 若实现中发现需要新的视觉元素，**停下来报告**，不要顺手画 | T2b |
 | ~~**T6**~~ | **整张删除**（R1 审计 F5） | — | — | 全局剥 `plugin` 键会关掉用户所有合法 V2 插件（D4）；「wrapper 不得导出 `effect`/`setup`」测错了对象，正确形态是断 `mod.default` 自有键，已并入 **T2b** 退出条件⑤ | — |
-| **T7** `[REQ-128][CODE] 先修 catalog-sweep,再把 opencode-notify 编成 managed plugin 声明并签名发布到 dev channel` | ⑥、D8、F2 的产品定位、§5 第 1 类的 operator capture | alpha-web **`scripts/catalog-sweep.mjs:97-110`（前置修复）**；`catalog-src/packages/<name>/`（新建目录）、`catalog-src/curation/package.*/`、`catalog-src/intake/`；`scripts/build-catalog.mjs` 走既有路径；`scripts/catalog-channels.mjs promote --to dev`；operator 一次离线 capture 的 integrity 记录落 `docs/` | `preview` / `stable` 两条 channel（**不碰**）；alpha-code 任何一行 | ① **先修 `catalog-sweep`**：显式识别 package root 并**跳过 aggregate root**（其风险事实由各 child intake/curation 覆盖），plugin child 仍正常进 sweep；判据 = 在新建 `curation/package.*/` 之后 `catalog-sweep.mjs` 跑通，且把修复前会抛的那两处各写一条用例（`:102` legacy `ENTRY_ID_RE` 拒 + `:110` 读 package root 不存在的 intake）；**「已知不修」不是本票的选项**；② 构建产物里 `packages[]` 出现该包，且**摘掉 `packages` 后 legacy entry 的字节与上一版已发布 release 相同**；③ 第 1 类不变量 2 的两条断言在真实构建产物上跑一遍；④ **展示文案按 F2 定位**：不叫「完成通知」、不承诺通知行为、写成「交付链验证（开发用）」；⑤ **新的 dev release 里删掉 legacy 的 `plugin:opencode-notify` 条目**（§7.5）；⑥ dev channel promote 成功，桌面端 dev 构建能浏览到 | **T2a + T2b + T4 + T5**（汇合点，F12）、T3 |
-| **T8** `[REQ-128][VERIFY] Phase 4 验证矩阵 + 每道闸的绕过实施记录 + 打包真机 L2` | ⑦、D3 的「证明不了什么」、`aw#49` AC8 的 Phase 4 半场 | `test-component/` 下的 case 与夹具；`docs/verification/2026-08-xx-req128-phase4/` 证据 | 任何生产代码改动 | ① §5 **每一个活着的类**（1/2/3/4/5/6/7/8；第 9 类已删）都有一条「故意改坏 X ⇒ 它变红」的实施记录，写不出绕过的判为假闸并退回；② **打包真机 L2（dev BuildChannel）**：装 → 引擎重扫 → **先记 `~/.opencode-notify.log` 的 byte offset**、触发事件、**只采 offset 之后新增的行**里的 `EVENT RECEIVED:` → 整包卸载 → 目录/config/grants **三清零**；③ **独立断言身份**：`alpha.jsonc` 里无 legacy/npm 同名配置，账本身份指向 managed package（日志本身证明不了这一点，§2.11）；④ **如实记录**「通知没有弹出」这一条，不许写成通过；⑤ 一切检索带 `-a`；⑥ 批量跑测试一律 `bash -c` 并核对 `Test Files N passed (N)` 的 N 与枚举数相等，测不到就打印「本次测量作废」 | **全部 CODE 票**（T1、T2a、T2b、T3、T4、T5、T7；F12）。可与它们并行起草，T7 之后收口 |
+| **T7** `[REQ-128][CODE] 先修 catalog-sweep,再把 opencode-notify 编成 managed plugin 声明并签名发布到 dev channel` | ⑥、D8、F2 的产品定位、§5 第 1 类的 operator capture | alpha-web **`scripts/catalog-sweep.mjs:97-110`（前置修复）**；`catalog-src/packages/<name>/`（新建目录）、`catalog-src/curation/package.*/`、`catalog-src/intake/`；`scripts/build-catalog.mjs` 走既有路径；`scripts/catalog-channels.mjs promote --to dev`；operator 一次离线 capture 的 integrity 记录落 `docs/` | `preview` / `stable` 两条 channel（**不碰**）；alpha-code 任何一行 | ① **先修 `catalog-sweep`**：显式识别 package root 并**跳过 aggregate root**（其风险事实由各 child intake/curation 覆盖），plugin child 仍正常进 sweep；判据 = 在新建 `curation/package.*/` 之后 `catalog-sweep.mjs` 跑通，且把修复前会抛的那两处各写一条用例（`:102` legacy `ENTRY_ID_RE` 拒 + `:110` 读 package root 不存在的 intake）；**「已知不修」不是本票的选项**；② **legacy 面「只动这一条」的 oracle（措辞钉死，R2 新开的 Major：上一版的 ② 与 ⑤ 按字面互斥）**：在**新旧两侧都先滤掉 `plugin:opencode-notify` 这一个 id**，再断言**其余** legacy entries 与上一版已发布 release **逐字节相同**；③ **另立一条独立断言：`plugin:opencode-notify` 在新 dev release 里缺席**（上一版它确实在，`alpha-web/catalog-src/catalog.json:566-591`）。②③ 各要一条绕过：顺手改了别的 legacy 条目 ⇒ ② 红；忘了删那一条 ⇒ ③ 红；④ 第 1 类不变量 2 的两条断言在真实构建产物上跑一遍；⑤ **展示文案按 F2 定位**：不叫「完成通知」、不承诺通知行为、写成「交付链验证（开发用）」；⑥ dev channel promote 成功，桌面端 dev 构建能浏览到 | **T2a + T2b + T4 + T5**（汇合点，F12）、T3 |
+| **T8** `[REQ-128][VERIFY] Phase 4 验证矩阵 + 每道闸的绕过实施记录 + 打包真机 L2` | ⑦、D3 的「证明不了什么」、`aw#49` AC8 的 Phase 4 半场 | `test-component/` 下的 case 与夹具；`docs/verification/2026-08-xx-req128-phase4/` 证据 | 任何生产代码改动 | ① §5 **每一个活着的类**（1/2/3/4/5/6/7/8；第 9 类已删）都有一条「故意改坏 X ⇒ 它变红」的实施记录，写不出绕过的判为假闸并退回；② **打包真机 L2（dev BuildChannel）**：装 → 引擎重扫 → **先记 `~/.opencode-notify.log` 的 byte offset**、触发事件、**只采 offset 之后新增的行**里的 `EVENT RECEIVED:` → 整包卸载 → 目录/config/grants/**账本记录** **四清零**（第四条 = 卸载后重读账本查不到这个 packageId，§5 第 8 类）；③ **独立断言身份**：`alpha.jsonc` 里无 legacy/npm 同名配置，账本身份指向 managed package（日志本身证明不了这一点，§2.11）；④ **如实记录**「通知没有弹出」这一条，不许写成通过；⑤ 一切检索带 `-a`；⑥ 批量跑测试一律 `bash -c` 并核对 `Test Files N passed (N)` 的 N 与枚举数相等，测不到就打印「本次测量作废」 | **全部 CODE 票**（T1、T2a、T2b、T3、T4、T5、T7；F12）。可与它们并行起草，T7 之后收口 |
 
 ### 硬序（不可换）
 
@@ -985,13 +1011,23 @@ T1(authored) ──> T3 ─┤          ├──> T5 ──┐
 
 1. **T1 在 alpha-code 里写完但不合并**，把新的 host `artifactSha256` 交出去。
 2. **T3 在 alpha-web 合并**：升 `HOST_CONTRACT_PIN` 到新 sha，重生 producer artifact，
-   并在 `verifyLiveHostArtifactAtRepo`（`extension-package-core.mjs:2288-2303`）里
-   **临时只接受精确的 `(old-live sha, new-pin sha)` 这一对**。
+   并**在两处**放行**同一对**精确过渡对：
+   - (a) `verifyLiveHostArtifactAtRepo`（`extension-package-core.mjs:2288-2303`）；
+   - (b) **它的调用方测试** `tests/extension-package-contract.test.mjs:84-89` ——
+     `:85` 取真实 live 结果、`:88` 再**独立**做一次 `live.artifactSha256 === HOST_CONTRACT_PIN.artifactSha256`
+     的严格相等。⇒ **只改 (a) 不改 (b)，第②步的 `npm test` 仍然必红**（R2 新开的 Major：
+     上一版硬序漏了这一跳）。窗口期该测试接受同一对并**断言处于 transition 状态**，
+     窗口外维持严格相等。
+   - `:91-107` 的 stale 负向（拿更早的合同 commit 必须报 `E_HOST_ARTIFACT_DRIFT`）与
+     `:109+` 的 unresolvable 负向（live ref 解析不出必须 fail-closed）**原样保留**——
+     过渡对精确到两个 sha，这两条负向不受影响，**它们红了说明过渡对被放宽了**。
+
    —— 此刻 `origin/alpha` 上的宿主 artifact 还是旧的，没有这一对，alpha-web 主线 CI 会红。
    **只接受这一对，不做任意豁免、不放宽成通配、不加环境变量开关。**
 3. **T1 + T4 在同一个 alpha-code PR 里原子落地**：T1 的合同改动 + T4 把 T3 那个 commit 的 producer
    artifact 逐字 re-vendor 进来。两侧同时变新 ⇒ `artifact.test.ts:107-110` 绿、`alpha-check.sh` 绿。
-4. **立刻合并 T3 那个「删除过渡对」的 PR**（编号在 T3 的 PR 正文里）。窗口关闭。
+4. **立刻合并 T3 那个「删除过渡对」的 PR**（编号在 T3 的 PR 正文里）：
+   **函数里的例外与测试里的过渡分支一起删**，回到「live 严格等于 pin」。窗口关闭。
 
 > `verifyLiveHostArtifactAtRepo` 的 never-waived 语义（runbook
 > `docs/runbooks/desktop-extension-package-artifact-bump.md:33-35`）**没有被削弱**：
@@ -1102,13 +1138,16 @@ T1(authored) ──> T3 ─┤          ├──> T5 ──┐
 
 > `codex-review-watchdog` 要求的留痕，也是 R2 判闭合的对照物。
 >
-> **轮数预算：2 轮（M 级）。R1 已用（Codex，2026-08-03，VERDICT: REJECT，16 条 finding）。
-> R2 只判「这 16 条闭没闭合」+ 修复 diff，不重新推导 ground truth、不开新面。**
-> 若 R2 开出新 Blocker，**先向 owner 交互式请示再决定是否加轮**（S/M/L 一律如此）；
-> 未获批时的默认动作是 Major 及以下直接修、修完不复审。
+> **轮数预算：2 轮（M 级），已全部用完。**
+> R1 = Codex，2026-08-03，`VERDICT: REJECT`，16 条 finding；
+> R2 = Codex，2026-08-03，`RECOMMEND: REVISE`，13 FIXED / 2 PARTIAL / 1 NOT-FIXED / 3 条新增 Major、无 Blocker。
+> **本稿收口后不再复审，由派发者直接合。** 依规程，任何额外一轮都必须先向 owner 交互式请示获批
+> （S/M/L 一律如此，有新 Blocker 也不例外）；未获批时的默认动作是 Major 及以下直接修、修完不复审。
+
+### R1（2026-08-03，Codex，`VERDICT: REJECT`）—— 全量轮
 
 **总裁决：16 条全部采纳。** 其中 12 条让方案**变小**（删闸、删票、删探针），4 条让闸门变紧。
-这正是开发前审计的价值。**本次修订净效果：删 6 处、紧 9 处、重写 3 处；票数 8 → 8
+这正是开发前审计的价值。**R1 修订的净效果：删 6 处、紧 9 处、重写 3 处；票数 8 → 8
 （T6 删除、T2 拆成 T2a/T2b）。**
 
 | # | 级别 | 一句话 | 裁决 | 落在本稿哪一节 |
@@ -1118,7 +1157,7 @@ T1(authored) ──> T3 ─┤          ├──> T5 ──┐
 | F3 | MAJOR | `T1→T3→T4` 是双仓反向钉死形成的不可执行闭环 | **采纳**：T1+T4 合成同一 merge unit；alpha-web T3 临时只允许精确的 `(old-live, new-pin)` 过渡对，窗口后立刻删；不做任意豁免 | **§6 硬序（重写为四步窗口）**、§6 T1/T3/T4 |
 | F4 | MAJOR | D3 的运行时模块导入探针不可达 / 可假绿 / 有副作用 | **采纳**：**删掉运行时探针**；保留 digest pre-switch probe；wrapper 生成器 + 固定候选字节在测试进程里执行；派发由 T8 真机闭合 | **§4 D3（重写）**、§3 第 6 行、§7.2 |
 | F5 | MAJOR | D4 全删 `plugin` 键会误伤用户所有合法 V2 插件；T6 的断言测错了对象 | **采纳**：删掉全局剥键与**整张 T6**；改成 wrapper 顶层不 import 上游、`import("./upstream.js")` 放进 `server()`；断言对准 `mod.default` 自有键 | **§4 D1 实现形态④、§4 D4（重写）**、§5 第 4 类腿 2、§6 T2b 退出条件⑤、§6 T6 行 |
-| F6 | MAJOR | D5 是本期 AC 之外的离线缓存需求，且时序会留下失败 pin | **采纳**：删掉 D5、pin/unpin、§5 第 9 类，以及第 8 类的第 ④ 条断言 | **§4 D5（删除）**、**§5 第 9 类（删除）**、§5 第 8 类、§3 第 11 行、§6 T2b |
+| F6 | MAJOR | D5 是本期 AC 之外的离线缓存需求，且时序会留下失败 pin | **采纳**：删掉 D5、pin/unpin、§5 第 9 类，以及第 8 类里那条「CAS pin 账无该 digest」的断言（**注意**：第 8 类今天仍是四条，第 ④ 条已由 R2 换成「账本记录消失」，与 pin 无关） | **§4 D5（删除）**、**§5 第 9 类（删除）**、§5 第 8 类、§3 第 11 行、§6 T2b |
 | F7 | MAJOR | 第 1 类的 dependency/script/native 三个 fixture 到不了真实 producer 输入 | **采纳**：删掉三道不可达 compile gate；真正的不变量是「输入/输出资产集精确等于一个常规 `.js`」 | **§5 第 1 类（重写）**、§7.12 ② |
 | F8 | MAJOR | 固定 sha256 仍是形态⑨假闸（producer 可永远发硬编码旧文件） | **采纳**：主 oracle 改成「release 字节 ≡ 独立读取的 vendored 源字节」，再从 release 字节重算 digest；字面 digest 降级为 provenance pin | **§5 第 1 类不变量 2（重写）**、§6 T3 退出条件② |
 | F9 | MAJOR | 第 3 类无 CODE owner；T8 的日志判据可被 npm / legacy / 旧日志伪造 | **采纳**：第 3 类**归 T2b**（读真实 `alpha.jsonc` 断精确 managed 绝对路径）；T8 加 **byte offset** + 断言无 legacy/npm 同名配置 + 账本身份 | §2.11（日志两个盲区）、**§5 第 3 类（重写）**、§6 T2b 退出条件④、§6 T8 退出条件②③ |
@@ -1157,6 +1196,29 @@ T1(authored) ──> T3 ─┤          ├──> T5 ──┐
    —— 因为消费侧 `artifact.test.ts:166-168` 让这两份**互当判据**。已写进 §4 D2 连锁表⑥⑦与 T3 边界。
    另有一条**必须在 T1 开工时实读**的：`maxCapabilities` 这条界在 5 个 token 下还够不够
    （本稿未读该实值，标**未验证**，已写成 T1 的退出条件⑥）。
-3. **F6 删掉 pin 之后，第 8 类只剩三条断言**。「整包卸载后账本里不再有这条记录」不在这三条里，
-   本稿**没有**顺手补上（超出裁决范围）。若编排者认为卸载判据仍偏粗，那是 T2b 的一条增量，
-   不是本次修订能自己加的。
+3. ~~**F6 删掉 pin 之后，第 8 类只剩三条断言**。「整包卸载后账本里不再有这条记录」不在这三条里，
+   本稿**没有**顺手补上（超出裁决范围）。~~
+   **→ R2 把它作为「补充项 NOT-FIXED」重新开出，编排者已裁决采纳。第 8 类回到四条**（§5 第 8 类④），
+   判据钉在真实 mutation `ext-package-uninstall.ts:184-193` 的 `graphAfter: null` 上。
+
+### R2（2026-08-03，Codex，`RECOMMEND: REVISE`）—— 收口轮
+
+**判定**：R1 的 16 条里 **13 FIXED**；**F3 / F4 PARTIAL**；**补充项 NOT-FIXED**；
+且**修复 diff 内新增 3 条 Major**。**无 Blocker。**
+**编排者裁决:四条全部采纳**（都真实、都最小、都能落成测试）。
+
+| 项 | R2 判定 | 一句话 | 落在本稿哪一节 |
+| --- | --- | --- | --- |
+| F3 残留 | PARTIAL → **已收口** | 只放行 `verifyLiveHostArtifactAtRepo` 的过渡对不够：**调用方测试** `tests/extension-package-contract.test.mjs:85` 取真实 live 结果后，`:88` 仍**独立**断言 live SHA 严格等于新 pin ⇒ 第②步 `npm test` 必红 | **§6 硬序第②/④步（重写）**、§6 T3 边界 + 退出条件④⑤ |
+| F4 残留 | PARTIAL → **已收口** | `{event: 1, "permission.ask": 1}` 满足上一版全部 D3 断言，而真实引擎**直接调用 hook 的值**（`plugin/index.ts:255`、`:288-290`）⇒ 一到派发就抛；且这段 `server()` 返回值验证**没有 CODE 票主** | **§4 D3 第 2 条（重写：恰两项 + 两值皆 function）**、§6 T2b 退出条件⑥ |
+| T7 ②⑤ 互斥 | 新增 MAJOR → **已收口** | ②要求「摘掉 `packages` 后 legacy 与上一版 release 逐字相同」，⑤要求删掉 legacy 的 `plugin:opencode-notify` —— 而上一版确实含它（`alpha-web/catalog-src/catalog.json:566-591`）⇒ **两条按字面不可同时满足**，实现方会卡死 | **§6 T7 退出条件②③（拆成「滤掉这一个 id 后其余逐字不变」+「该 id 缺席」两条）** |
+| 卸载账本 | NOT-FIXED → **已补** | 三清零没断「成功卸载后账本里那条 package 记录消失」，而真实卸载 mutation 正是以 `graphAfter: null` 删除它（`ext-package-uninstall.ts:184-193`） | **§5 第 8 类（回到四条）**、§6 T2b 退出条件②、§6 T8 退出条件② |
+
+**三条新增 Major 的共同形态，记在这里当下一轮的对照物**：
+**它们全是上一轮修订自己引入的假绿/不可执行判据** —— 修一个假闸时造出的新判据，
+如果没有再问一遍「一个错误实现能不能满足它？」，就会带着同一个病换个位置长出来。
+本轮三条分别是：**粒度粗一格**（键存在 ≠ 值可调用）、**只堵了咽喉没堵调用方**（函数放行了、测试没放行）、
+**两条断言互相否定**（一条要求字节不变、另一条要求删掉其中一条）。
+
+> **轮数预算 2 轮已用尽（R1 + R2）。本次修订之后不再复审，由派发者直接合。**
+> 依规程：未获 owner 批准不得加轮；Major 及以下由派发者筛完直接让实现方修、修完直接合。
