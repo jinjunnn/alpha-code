@@ -105,6 +105,10 @@
 7	packages/ui-mac	src/shared/route-deep-link-consumer.test.ts	-	受托:真跑 createDeepLinkConsumer,断言导航目标 == manifest 独立推导的 href(route authority 主判据)
 14	packages/ui-mac	src/shared/route-upstream-shape.test.ts	-	受托:上游 layout 目录的 deep-link 路径 SHAPE 契约
 
+# ── 闸门自身的环境与对照(#777)──────────────────────────────────────────────
+5	packages/ui-mac	src/main/local-gate-parity.test.ts	-	#777:「本地门与 alpha-ci 1:1」的可检查断言 —— 此前那句话只写在三处散文里,而实际本地只跑了 CI 十二个代码步里的九个(其中三个是裸 `bun test` 的降级档,跑 0 条照样 exit 0)。本文件把 alpha-ci 的代码步逐条枚举出来,与 alpha-check.sh 的 CI_STEPS 对照表双向比对(CI 加一步而本地没登记即红、CI 改名而对照表没跟即红),档位只允许 MIRRORED/SUPERSET:<理由>/DEGRADED:<理由>(没有「静默不跑」这一档);另含 #637 退出条件 3 的防漂断言:两处 UPSTREAM_PATHS 与 24 条 ADR-033 收编白名单逐条相同(ADR-033 落地时只同步 paths、白名单漏了,干净 alpha 上恒假红、人人 --no-verify),以及 `assert gate files` 必须带 !cancelled()(GitHub step 默认 success() ⇒ 前一步一红,77 个登记闸门集体消失,2026-08-02 起实际发生了两天)。两条解析自检(ciSteps ≥ 12、ciExcludes ≥ 20)防止解析器退化后空对空全绿。下界=实际条数 5,不留余量
+1	packages/ui-mac	src/main/gate-environment.test.ts	-	#777:环境咽喉的行为闸 —— 一道门跑在什么环境里由 scripts/test-preload.ts 一处声明,且该声明对父进程与 Bun.spawnSync 子进程同时生效。宿主用与其余 31 条 host 用例完全相同的方式拉起 test-component/gate-environment.cases.ts,条数(2 pass / 0 fail / Ran 2 across 1 file)钉在本文件里:①一条不写显式超时的 6 秒用例 —— preload 的 setDefaultTimeout(120_000) 一旦被删,它在 5000ms 被杀、本文件当场红(本包 31 条 host 用例里 19 条从未声明超时,bun 默认 5s 让机器速度替断言下判决,2026-08-02 主线三条红即此);②平台钉桩 —— 本产品只 ship darwin/win32(ADR-026),alpha-ci 跑 ubuntu,生产安装闸在写盘前就拒整个 runner,子用例按 os.platform() 自陈这一半本次到底跑没跑到(开发机跑不到,CI 跑得到),不打印就会让本地的绿被误读成平台也验过了。下界=实际条数 1,不留余量
+
 # ── core(alpha 自有;本 job 的整包地板不覆盖 packages/core)──────────────────
 9	packages/core	test/alpha-websearch-sovereignty.test.ts	-	受托:V2 core 那份 websearch 副本的主权闸运行时证据(websearch-copies 的运行时半场)
 

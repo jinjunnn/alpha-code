@@ -22,11 +22,46 @@ import path from "node:path"
 import { materializeCorpus, treeFingerprint } from "./claude-plugin-corpus.fixture"
 
 // electron 必须在**任何**会牵出主进程模块的 import 之前 mock 掉(否则真 electron 被拉起来)。
+//
+// `#777`:这个桩必须覆盖 **electron-log 真正会碰的那一面**,不只是我们自己调的那一面。
+// 本用例走生产 composition root,`initLogging()` ⇒ `import "electron-log/main.js"`,而
+// electron-log 在**模块顶层**就 `externalApi.onIpc('__ELECTRON_LOG__', …)`,即
+// `this.electron.ipcMain?.on(channel, listener)`。`?.` 只挡 `ipcMain` 为空,挡不住
+// `ipcMain` 在而 `.on` 缺 —— 缺了就是 TypeError,整个文件 0 pass 1 fail。
+// 这条在开发机上不发作、在 alpha-ci 上发作(两边 `electron` 这个 specifier 落到 mock 还是落到
+// 真包不一样),于是它是一条**只在 CI 红**的假红。下面这份键是照 node_modules 里装着的
+// electron-log@5.4.4 `src/main/ElectronExternalApi.js` 逐条枚举出来的(不是凭记忆):
+//   app.{isReady,isPackaged,name,getName,getVersion,getPath,on,once,off}
+//   ipcMain.{on,handle} · dialog.showErrorBox · shell.openExternal
+//   session.defaultSession · webContents.getAllWebContents · BrowserWindow.getAllWindows
 const ipcHandlers = new Map<string, (...args: unknown[]) => unknown>()
 const electronStub: Record<string, unknown> = {
-  app: { isPackaged: true, getVersion: () => "0.0.0", getAppPath: () => "/tmp", getPath: () => "/tmp", on: () => {} },
-  ipcMain: { handle: (ch: string, fn: (...a: unknown[]) => unknown) => ipcHandlers.set(ch, fn), removeHandler: () => {} },
-  dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }), showMessageBox: async () => ({ response: 0 }) },
+  app: {
+    isPackaged: true,
+    isReady: () => true,
+    name: "alpha",
+    getName: () => "alpha",
+    getVersion: () => "0.0.0",
+    getAppPath: () => "/tmp",
+    getPath: () => "/tmp",
+    on: () => {},
+    once: () => {},
+    off: () => {},
+  },
+  ipcMain: {
+    handle: (ch: string, fn: (...a: unknown[]) => unknown) => ipcHandlers.set(ch, fn),
+    removeHandler: () => {},
+    // electron-log 顶层就要它;缺了整个文件挂在一条与本闸无关的 TypeError 上(`#777`)。
+    on: () => {},
+    once: () => {},
+    off: () => {},
+    removeListener: () => {},
+  },
+  dialog: {
+    showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+    showMessageBox: async () => ({ response: 0 }),
+    showErrorBox: () => {},
+  },
   BrowserWindow: Object.assign(class {}, { getAllWindows: () => [], getFocusedWindow: () => null, fromWebContents: () => null }),
   crashReporter: { start: () => {}, addExtraParameter: () => {} },
   shell: { openExternal: () => {}, openPath: () => {} },

@@ -1,0 +1,207 @@
+# 质量门 × 运行环境 —— 每道门在每个环境里的真实状态
+
+> 勘破文档(`#777`)。这里写的每一格都是**跑出来的**,不是推断的;跑不出来的格子写「未测量」,
+> 不写猜测。measurement 日期 2026-08-03,基线 `alpha@10daf61b`。
+>
+> 存在理由:一道**恒红**的门等于没有门 —— 大家会习惯性 `--no-verify` / `--admin`,真出问题时也没人看。
+> 一道**假绿**的门更糟 —— 它主动告诉你「没事」。本仓在半个月里撞上同一形态四次
+> (`#754` / `#769` / 本票原列的 `alpha-check` typecheck / 2026-08-02 起主线连红两天),
+> 所以这里不再逐个修,而是把整类列出来并在咽喉点收口。
+
+## 1. 这一类的共同前提
+
+四个实例长得都不一样,共同前提只有一句:
+
+> **门在运行时依赖某个环境事实,而这个事实从没有被任何地方声明过,于是没人能检查它对不对。**
+
+| 实例 | 门 | 隐含的环境前提 | 前提不成立时发生什么 |
+| --- | --- | --- | --- |
+| `#754` | 本地 pre-push | 「`git -C` 决定跨仓 git 的仓库」 | `git push` 注入的 `GIT_DIR` 压过它 ⇒ **任何 push 恒红** ⇒ 人人 `--no-verify` |
+| `#769` | CI 的 vendor lock 闸 | 「兄弟仓 `../alpha-web` 在」 | 裸 checkout 没有 ⇒ **CI 上恒红**,红的理由与它要验的漂移无关 |
+| `#777`-A | `bun test` 的 31 条 host 用例 | 「机器快到 5 秒内能跑完一整套子 suite」 | 慢一点就超时 ⇒ 红,而红的理由与被验的行为无关 |
+| `#777`-B | 生产安装闸的组件测试 | 「跑在本产品发布的平台上」 | ubuntu runner ⇒ 写盘前直接拒 ⇒ 门跑不起来 |
+
+**咽喉的形状因此是确定的:让门的环境需求变成一处显式声明,新增的门默认拿到它,缺失时显式降级并自陈。**
+枚举对新成员默认放行,咽喉对新成员默认拒绝 —— 优先咽喉。
+
+## 2. 枚举方法(两条互相独立的检索轴)
+
+单跑一个正则会给假的「没有」,所以每一类都用两条轴交叉:
+
+| 枚举对象 | 轴 1 | 轴 2 | 结果一致? |
+| --- | --- | --- | --- |
+| CI 的代码步 | `.github/workflows/alpha-ci.yml` 里带 `run:` 的具名步骤 | `scripts/alpha-check.sh` 的 `CI_STEPS` 对照表 | 是(12 = 12,由 `local-gate-parity.test.ts` 持续判) |
+| 子进程 host 测试 | `grep -ran -l "process.execPath" src` | `grep -ran -l "Bun.spawnSync" src` | 一致到 31 个文件 |
+| host 的超时声明 | `grep -c "timeout"`(逐文件) | `grep -oE "\}, *[0-9_]+\)"`(数字第三参形态) | **否 —— 轴 1 漏了 6 个文件**。数字形态 `}, 180_000)` 不含 "timeout" 这个词 |
+| 超时声明的**粒度** | 逐文件 | 逐 `test(...)` 声明 | **否 —— 逐文件会数错**。一个文件里可以既有带声明的又有不带的 |
+| 上游守卫白名单 | `alpha-ci.yml` 的 `':(exclude)…'` | `alpha-check.sh` 的 `UPSTREAM_EXCLUDES` | 是(24 = 24,逐条同序) |
+| alpha 自有的 opencode 测试 | 文件名 `alpha-*.test.ts` | `git cat-file -e origin/dev:<path>` 失败者 | 是(各 5 个,同一组) |
+
+轴 1 与轴 2 在第三、四行**给出了不同答案**,而只跑轴 1 会得出「31 条 host 全都没声明超时」这个错结论 ——
+这正是「观测手段自己有盲区」。`grep` 一律带 `-a`(字面 NUL 会让它对整个文件静默返回空,`#760`)。
+
+## 3. 门 × 环境:真实状态表
+
+环境有四个:**alpha-ci(ubuntu runner)** / **本地 `alpha-check.sh`(开发机 macOS)** /
+**本地 pre-push 钩子**(= 同一个脚本)/ **开发者手跑 `bun test`**。
+
+### 3.1 CI 的 12 个代码步
+
+| # | job | 步骤 | alpha-ci | alpha-check(修前) | alpha-check(修后) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | upstream-guard | No literal NUL bytes | 真结果 | 有 | 有 |
+| 2 | upstream-guard | Fail on any modification to upstream package files | 真结果 | 有(且是超集:含未提交改动) | 同 |
+| 3 | typecheck | contracts-consumer | 真结果 exit 0 | 有 | 有 |
+| 4 | typecheck | ext | 真结果 exit 0 | 有 | 有 |
+| 5 | typecheck | ui-mac | 真结果 exit 0 | 有 | 有 |
+| 6 | test | verify immutable Alpha contract vendor lock | **降级档**,自陈 `PROVENANCE NOT VERIFIED this run`(`#769`) | 有(开发机有兄弟仓 ⇒ 已验档,是超集) | 同 |
+| 7 | test | bun test (contracts consumer fixtures) 下界 15 | 真结果 | **降级**:裸 `bun test`,无下界 | 走 `bun-test-floor.sh 15` |
+| 8 | test | bun test (ext) 下界 100 | 真结果 | **降级**:同上 | 走 `bun-test-floor.sh 100` |
+| 9 | test | bun test (ui-mac) 下界 3000 | **红**(见 §3.2) | **降级**:同上 | 走 `bun-test-floor.sh 3000` |
+| 10 | test | assert gate files(77 个) | **连续两天 skipped**(见 §3.3) | **完全没有** | 有 |
+| 11 | seed-assets | Assert seed/vendored resources present | 真结果 | **完全没有** | 有 |
+| 12 | docs-gate | Relative-link validity in changed Markdown | 真结果 | **完全没有** | 有 |
+
+修前 = 12 步里跑了 9 步,其中 3 步是降级档 ⇒ **忠实镜像的只有 6 步**,而三处文档都写着「1:1」。
+`bun test` 对「文件被清空 / 用例被条件注册成零条 / 指定文件不存在」都会打印 `Ran 0 tests` 并
+**退出 0**(`#647` 已实测)—— 所以第 7/8/9 行的「降级」不是少验一点,是**闸门消失时全绿**。
+
+### 3.2 `bun test (ui-mac)` 在 CI 上为什么红 —— 四条,全是环境不是缺陷
+
+`alpha` 主线自 2026-08-02 起,凡带代码的 run 无一例外全红(实测 8 个 run id:
+`30779269408` / `30754009329` / `30750696800` / `30745161428` / `30742164690` / `30739936324` /
+`30739675979` / `30731715823`;只有纯文档 commit 因整体跳过而绿)。
+同一棵树在开发机上:**3756 pass / 0 fail / Ran 3756 tests across 255 files**。
+
+| 失败用例 | CI 上的真实报错 | 真因 | 属于哪个子形态 |
+| --- | --- | --- | --- |
+| `生产 ext-import-skill-folder 分流到本地插件预览…` | `TypeError: this.electron.ipcMain?.on is not a function` @ `electron-log/src/main/index.js:16` | 测试的 electron 桩缺 `ipcMain.on`,而 `electron-log` 在**模块顶层**就调它。开发机上 `electron` 这个 specifier 没落到桩上,CI 上落了 ⇒ **只在 CI 发作** | 依赖解析 |
+| `真实 ext-install-catalog 返回值只含公开状态且不回显 canary` | `expected authorization pause, got {"ok":false,"reason":"platform linux not supported by this entry — refusing before any disk write"}` | 生产 `synthesizeManifest` 把 `compatibility.platforms` 写死 `["darwin","win32"]`(ADR-026);runner 是 ubuntu | 平台 |
+| `默认关的真实 catalog MCP:提前返回分支…` | 同上 | 同上 | 平台 |
+| `package safe view and admission traverse the production ExtensionHub…` | `[5035.75ms] ^ this test timed out after 5000ms` | host 没声明超时,拿 bun 默认 5s 去等一整套子 suite | 时长 |
+| `REQ-128 Phase 3 第 1→9 跳…`(内含两条子用例) | `[5933.51ms]` / `[6447.61ms]` `^ timed out after 5000ms` | 同上,发生在**子进程内部** | 时长 |
+
+`?.` 只挡 `ipcMain` 为空,挡不住 `ipcMain` 在而 `.on` 缺 —— 后者照样是 TypeError。
+桩的补法是照 `node_modules` 里**装着的那个** `electron-log@5.4.4` 的
+`src/main/ElectronExternalApi.js` 逐条枚举出来的(`app.{isReady,isPackaged,name,getName,getVersion,getPath,on,once,off}`、
+`ipcMain.{on,handle}`、`dialog.showErrorBox`、`shell.openExternal`、`session.defaultSession`、
+`webContents.getAllWebContents`、`BrowserWindow.getAllWindows`),不是凭记忆补的。
+
+### 3.3 连带伤害:一步红,77 道门一起消失
+
+失败发生在 `test` job 的第 9 步,而第 10 步 `assert gate files` 的条件是 GitHub 的默认
+`success()` ⇒ **skipped**。登记簿里 77 个闸门中,`packages/llm` 1 个、`packages/core` 1 个、
+`packages/opencode` 2 个**只在这一步执行**,别处再没有第二次机会。
+即:「主线红」这一件坏事,自动升级成「主线红 + 77 道门连续两天一次都没跑」两件。
+修法:`if: ${{ !cancelled() && … }}`(不用 `always()`,`cancel-in-progress` 取消的 run 不必再跑)。
+
+### 3.4 子进程 host 测试的超时声明(基线实测:31 个文件 / 31 条)
+
+粒度是**每条 `test(...)` 声明**,不是每个文件 —— 一个文件里可以既有带声明的又有不带的
+(`package-admission.wiring.test.ts` 一个文件三条)。按文件数会数错。
+
+| 声明 | 条数 | 结论 |
+| --- | --- | --- |
+| 显式 `120_000` | 6 | 有人在自己那格踩过坑,补了自己那一个 |
+| 显式 `180_000` | 5 | 同上 |
+| 显式 `300_000` | 1 | 同上 |
+| **bun 默认 5000ms** | **19** | 从没声明过 —— CI 上已炸掉 2 条,其余 17 条是同一批潜伏成员 |
+
+`local-package-renderer.test.ts` 的抬头甚至已经写着「bun 默认 5s 会把它变成一条**间歇性**红 ——
+而间歇红比没有闸更贵」。**同一条规律只被应用了一次**,与 `#647` 当年「只给 ui-mac 加点名下界、
+漏了 ext」是同一个错。这就是为什么本票要求整类收口。
+
+### 3.5 分支保护 —— 这一类里最贵的一格
+
+| 读者 | 要求的 context | 写者 | 实际产出的 job 名 | 对得上? |
+| --- | --- | --- | --- | --- |
+| `alpha` 分支保护 | `north-star guard (zero upstream edits)` | alpha-ci | 同名 | 是 |
+| | `typecheck (alpha packages)` | | 同名 | 是 |
+| | **`unit tests (ui-mac)`** | | **`unit tests (alpha packages)`** | **否** |
+| | `docs gate` | | 同名 | 是 |
+
+job 名在 2026-07-22(`ebd29cda`)改掉,分支保护没跟。实测 PR `#802` / `#791` 的
+`statusCheckRollup` 里**根本没有** `unit tests (ui-mac)` 这一项 —— 不是 docs-only 才缺,
+是**每个 PR 都缺**。于是每个 PR 在那一格永久 pending ⇒ 每次合并都得 `--admin` ⇒
+主线真红时也没有任何东西挡住任何人。
+
+**「大家习惯性 --admin」不是纪律松懈,是分支保护自己造出来的。**
+修法在 GitHub 设置里(不在本仓文件里),归 `#717`;`#717` 票面把成因写成「docs-only path 没发布
+该 context」,与实测不符 —— 改名是全量的。
+
+### 3.6 无人执行的门
+
+| 门 | 谁跑它 | 状态 |
+| --- | --- | --- |
+| `packages/opencode/test/tool/alpha-websearch-failure.test.ts` | 只有 `assert-gate-files.sh` | 登记在册;`#777` 之前该步在 CI 上连续两天 skipped、本地根本没有 |
+| `packages/opencode/test/permission/alpha-ask-deadline.test.ts` | 同上 | 同上 |
+| `packages/opencode/test/tool/alpha-mcp-websearch-gate.test.ts` | **无** | `#649` 未决(本地 23.45s,且打印 `Bun.serve` 10 秒超时告警) |
+| `packages/opencode/test/mcp/alpha-cloud-mcp-multisource.test.ts` | **无** | `#649` 未决 |
+| `packages/opencode/test/mcp/alpha-cloud-mcp-revival.test.ts` | **无** | `#649` 未决 |
+
+`#649` 是本类的**极端成员**:门假设的环境是「某个 CI」,而那个环境**不存在**。
+本票不处置它(逐份取舍要付 CI 时间的账,归 `#649`),但把它归类记在这里。
+
+## 4. 咽喉:`packages/ui-mac/scripts/test-preload.ts`
+
+`packages/ui-mac/bunfig.toml` 的 `preload` 把这个文件注入到本包**每一个** `bun test` 进程 ——
+包括 host 用 `Bun.spawnSync(…, { cwd: packages/ui-mac })` 起的子进程(子进程 cwd 就是本包,
+于是读到同一份 bunfig)。它此前已经承担过一次同类职责(把 UI locale 钉成 `zh`,因为
+happy-dom 的 navigator 让 `detectLocale()` 落到 `en`)—— **同一个位置,同一个问题形态**。
+
+`#777` 在这里补两条声明:
+
+1. `setDefaultTimeout(120_000)` —— 抬掉「机器速度替断言下判决」。
+2. host 平台不在发布清单(`darwin`/`win32`,ADR-026)时,把 `process.platform` 钉到 `darwin`,
+   并**打印一行自陈**:`PLATFORM SIMULATED this run; genuinely <host>-specific behaviour is NOT covered.`
+
+### 为什么是这里(其余候选全部实测排除,bun 1.3.14)
+
+| 候选 | 实测结果 |
+| --- | --- |
+| `bunfig.toml` 的 `[test] timeout = 9000` | **不被读取** —— 6 秒用例照样 `timed out after 5000ms` |
+| `BUN_TEST_TIMEOUT` / `BUN_TIMEOUT` / `BUN_TEST_TIMEOUT_MS` | 全部无效(`strings $(which bun)` 里也只有 `BUN_CONFIG_HTTP_IDLE_TIMEOUT`) |
+| `bun test --timeout N` | 有效,但 host 起子进程时 argv 是自己拼的,传不下去 ⇒ 只覆盖父进程一半 |
+| **preload 里 `setDefaultTimeout()`** | **父子两侧同时生效**;单条用例的显式超时仍恒胜(两个方向都实测过) |
+
+### 取值与代价
+
+120s 与已显式声明的那批同档(本包最慢的**正当** host 在 CI 上实测 37.7s)。
+判据是「不让机器速度决定结论」,不是「越小越严」——**超时不是断言**:一条卡死的用例仍会在
+120s 内判红,而 5s 的代价是让真闸在慢机器上恒假红。
+**代价要说清**:一条本来 0.1 秒、退化成 60 秒的用例不会再被超时抓到 ——
+这一格换来的是「慢机器上不假红」,失去的是「性能退化的顺带发现」。需要把时长当断言的用例
+(如 `artifact-quota.test.ts` 的 `}, 1000)`)照旧显式写。
+
+### 平台钉桩是**模拟**,不是覆盖
+
+在 linux 内核上跑 darwin 分支,凡真正依赖 host 内核行为的东西这一轮没有验到。
+所以那行 `PLATFORM SIMULATED this run` 必须打出来 —— 一道门可以降级,**不许静默降级**。
+只钉 `darwin` 不钉 `win32`:`node:path` 在加载时按 `process.platform` 选分支,
+darwin 与 linux 同为 posix,钉 `win32` 会把路径语义改坏。
+
+## 5. 新增一道门时,忘记处理环境会被什么挡住
+
+| 忘了什么 | 谁判红 |
+| --- | --- |
+| 新 host 没声明超时 | 不需要声明 —— 咽喉默认给到。**咽喉本身**被删掉时,`src/main/gate-environment.test.ts` 当场红(它跑一条 6 秒、不写超时的用例) |
+| 平台钉桩被删掉 | 同上;且子用例按 `os.platform()` **自陈这一半本次跑没跑到**(开发机跑不到、alpha-ci 跑得到),不会让本地的绿被误读 |
+| CI 加了一步而本地没跟 | `src/main/local-gate-parity.test.ts` —— 双向比对,CI 改名也红 |
+| 本地某一步被悄悄降级 | 同上:档位只能是 `MIRRORED` / `SUPERSET:<理由>` / `DEGRADED:<理由>`,**没有「静默不跑」这一档** |
+| ADR 新增收编而只改了 CI 一侧 | 同上(`#637` 退出条件 3) |
+| `assert gate files` 又被条件掉 | 同上(断言该步带 `!cancelled()`) |
+| 新增闸门文件没登记 | `src/main/gate-file-registry.test.ts`(既有) |
+
+两条解析自检钉在 `local-gate-parity.test.ts` 里(`ciSteps ≥ 12`、`ciExcludes ≥ 20`):
+一份退化成解析不出东西的解析器会让每条断言空对空地全绿 —— 先证明手段能测出已知的坏,
+再用它判未知的好。
+
+## 6. 已知不修(留痕)
+
+- **`bun test src` 手跑仍是 5s 默认**?不是 —— preload 对手跑也生效(同一份 bunfig)。
+  但**手跑不判下界**,`Ran 0 tests` 仍会 exit 0。判据只有一条:门要走
+  `scripts/bun-test-floor.sh`,手跑只是看看。
+- **CI 仍跑在 ubuntu**。换 macOS runner 能让平台那一格从「模拟」变成「真验」,代价是 10 倍
+  Actions 分钟数。本票不做,记在这里;真要做是一张独立票。
+- **`#649` 的三份 opencode 测试仍无人执行**。逐份取舍要付 CI 时间的账,归 `#649`。
+- **分支保护的幽灵 context** 归 `#717`(改的是 GitHub 设置,不是本仓文件)。

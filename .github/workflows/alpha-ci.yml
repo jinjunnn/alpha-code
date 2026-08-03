@@ -285,8 +285,14 @@ jobs:
       #
       # 这一步同时覆盖了 alpha 自有的 opencode web search 闸 —— 那份行为闸住在
       # packages/opencode/test,而本 job 的整包地板都不覆盖 opencode(全量 opencode 测试不属 alpha)。
+      #
+      # `#777`:这一步**不得**因为前一步红而被跳过。GitHub 的 step 默认条件是 `success()`,
+      # 于是 2026-08-02 起 `bun test (ui-mac)` 连红两天,把 77 个登记闸门一起带走 —— 其中
+      # llm / core / opencode 那几个**只在这一步执行**,别处再没有第二次机会。一步失败
+      # 连带 77 道门集体消失,是「主线红」这一件坏事自动升级成两件。
+      # 用 `!cancelled()` 而不是 `always()`:cancel-in-progress 取消掉的 run 不必再跑一遍。
       - name: assert gate files (逐个点名,整包地板抓不到单文件消失)
-        if: needs.detect.outputs.code == 'true'
+        if: ${{ !cancelled() && needs.detect.outputs.code == 'true' }}
         run: bash scripts/assert-gate-files.sh
 
   seed-assets:

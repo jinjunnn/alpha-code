@@ -46,8 +46,14 @@
 ```
 bun install
 bun run --cwd packages/ui-mac dev   # electron 解析失败时加 ELECTRON_EXEC_PATH(见 ALPHA.md);flag 须在 run 后(REQ-027)
-bash scripts/alpha-check.sh          # push 前自检:北极星守卫 + typecheck + 单测(与 alpha-ci 1:1)
+bash scripts/alpha-check.sh          # push 前自检:跑 alpha-ci 的全部 12 个代码步,末尾自陈逐步覆盖
 ```
 
 ## CI(规范见 `docs/runbooks/ci.md`)
-**本地先跑,CI 兜底**。push 前必过 `scripts/alpha-check.sh`。GitHub 上只有 `alpha-ci`(三关,required)+ `sync-upstream` 两个 workflow active;继承的 ~26 个上游 workflow 已禁用(要 Blacksmith runner,本 fork 没有 → 永久 queued,即"CI 卡"真因)。排查手册见 `docs/runbooks/ci.md` §5。
+**本地先跑,CI 兜底**。push 前必过 `scripts/alpha-check.sh` —— 它跑 `alpha-ci` 的**全部 12 个代码步**,
+并在末尾打印逐步对照表(MIRRORED / SUPERSET / DEGRADED,后两者必须写理由)。这张表由
+`packages/ui-mac/src/main/local-gate-parity.test.ts` 反向核对:CI 加一步而本地没登记即红。
+`#777` 之前这里写的是「与 alpha-ci 1:1」,而实测只跑了 9 步、其中 3 步是裸 `bun test` 的降级档
+(跑 0 条照样 exit 0)—— 一句没人核对的 1:1,比没有这句话更坏。
+GitHub 上只有 `alpha-ci` + `sync-upstream` 两个 workflow active;继承的 ~26 个上游 workflow 已禁用(要 Blacksmith runner,本 fork 没有 → 永久 queued,即"CI 卡"真因)。排查手册见 `docs/runbooks/ci.md` §5。
+**门自身的环境清单**(每道门 × 每个环境 × 真实状态)见 `docs/architecture/quality-gate-environments.md`。
