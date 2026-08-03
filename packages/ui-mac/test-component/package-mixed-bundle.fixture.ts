@@ -5,13 +5,21 @@
 // root / 组件 id / required / profile / dependencies 与那份**真产物**逐条对照,上游改了 canonical
 // Bundle 的形状,这里就红,而不是悄悄漂成一个只有我们自己认得的图。
 //
-// **字节**必须重造,原因是一个真实缺口:vendored 的两个 markdown 资产
+// **字节**当初必须重造,原因是一个真实缺口:vendored 的两个 markdown 资产
 // (`asset.generic-bundle-{agent,skill}.md`)**没有 frontmatter**,而宿主对两者都强制要求
 //   · agent:`agentMdToEntry` 需要 `---` 块 + `description` + 非空 body;
 //   · skill:`skillGenerationProbe` 需要 frontmatter `name` 等于 item key。
-// 也就是说那份产物在今天的宿主上装不进去。修的是发布端语料(`alpha-web`,随 `aw#108` 发第一个
-// 真实 package 时闭合),不是本票。这里如实重造资产字节并重算签名,并在上面那条形状断言里
-// 保留与真产物的绑定。
+// 也就是说那份产物在当时的宿主上装不进去。
+//
+// **那个缺口已经关了**(`aw#112`,随 `#811` re-vendor 到 aw@9fcd83d 进来):上游两份资产现在
+// 都带 frontmatter,而下面 `AGENT_MD` / `SKILL_MD` 这两串**逐字节等于**新的 vendored 资产
+// (118 / 103 字节,sha256 `f2a5576d…` / `4e62da1a…`,也正是 `expected.bundle.compiled.json`
+// 里那两个 `behavior.asset.sha256`)。**但这份等同没有任何断言看着** —— 上游下次再动资产
+// 内容,这里不会红,只会安静地变回一份手抄替身。留成这样是本票(`#811`)刻意划的边界:
+// 它要加的是一道新闸,不在 re-vendor 的范围里。
+//
+// 夹具**仍然**自建信封,理由换成了两条与 frontmatter 无关的:第四格那个 optional leaf(下一段),
+// 以及 `breakSkillFrontmatterName` 这个打 pre-switch probe 的开关 —— 两者上游产物里都没有。
 //
 // 第四格「已策展但宿主不支持的 optional child」语料里没有(上游只发布宿主支持的 profile),
 // 所以由本夹具**显式构造**:一个 optional leaf 带本 build 不认识的 capability。它排在
@@ -205,7 +213,9 @@ const VENDORED_BUNDLE = resolve(
 )
 
 /**
- * 把本夹具与**真 producer 产物**的图形状对上。字节不同是刻意的(见文件抬头),形状不同就是漂移。
+ * 把本夹具与**真 producer 产物**的图形状对上。形状不同就是漂移。
+ * 这里**只**比形状,不比资产字节 —— 两份共享资产今天恰好逐字节相同(见文件抬头),
+ * 但那件事没有断言,别把这条形状断言读成「字节也验过了」。
  */
 export async function assertMatchesVendoredBundleShape(
   fixture: MixedBundleFixture,

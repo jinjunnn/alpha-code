@@ -1,3 +1,6 @@
-# Generic bundle skill
+---
+name: generic-bundle-skill
+description: Generic bundle skill
+---
 
-Deterministic corpus asset.
+Deterministic corpus skill body.

@@ -45,13 +45,16 @@ describe("alpha-web extension package producer artifact pin", () => {
 
     expect(lock).toMatchObject({
       repo: "jinjunnn/alpha-web",
-      commit: "6e0db57d6c7d9867a450fccf6db5453e417dc58e",
+      commit: "9fcd83d66ea8f5b13081f434ace150e739a0536e",
       artifactPath: "contracts/extension-package/artifact",
-      artifactSha256: "d229717f895fcfb9a75bc6fdcc6ab2338f057ef1778db15e8720c31a1affc446",
+      artifactSha256: "2a36d9cb8a0c7632eb6f4c9415d1e7b00acba55dc4f01004ce025c05834bf389",
     })
     // 固定条数,不留余量:上游悄悄少发一个语料文件时,只比对「lock ↔ manifest 两边一致」是
     // 抓不到的 —— 两边会一起变小并保持自洽。
-    expect(lock.files.length).toBe(36)
+    // lock 数 = 目录里的全部文件(39);manifest 数永远比它少一个(38)—— manifest 装不下
+    // 自己的哈希(`producerCommit.embedded: false` 是同一个理由的另一半)。这个「差一」不写成
+    // 第二个常数,而由下一条 `toEqual` 把 manifest 清单 ∪ {manifest 自己} 与 lock 清单对死。
+    expect(lock.files.length).toBe(39)
     expect(lock.files.map((file) => file.path).sort()).toEqual(
       [...manifest.files.map((file) => file.path), "extension-package-producer-artifact.v1.json"].sort(),
     )
@@ -139,6 +142,10 @@ describe("alpha-web extension package producer artifact pin", () => {
     })
   })
 
+  // 标题保持原样,尽管这条现在还覆盖了 `opencode-plugin` 那一档:这个字符串是
+  // `docs/verification/2026-07-31-req128-capability-matrix/matrix.tsv:7` 的 evidence key,
+  // 由 `packages/ui-mac/src/main/req128-capability-matrix.test.ts` 反查。改名会去动一份
+  // 已归档的 Phase 1 验证证据 —— 那不在本票边界内(`#811`)。
   test("v2 profile/capability closure covers OAuth and Alpha Connection and still excludes cloud", async () => {
     const registry = await json("host-extension-package.registry.v1.json")
     const profiles = await json("generic-profiles.v1.json")
@@ -147,19 +154,24 @@ describe("alpha-web extension package producer artifact pin", () => {
       "agent",
       "mcp-local",
       "mcp-remote",
+      "opencode-plugin",
       "skill",
     ])
-    // 合同 v2 (`#749`) 把两个 capability 转正。exact-set,不是 arrayContaining:多出来一个
+    // 合同 v2 (`#749`) 把两个 capability 转正;Phase 4 (`#807`) 再把 `engine:config` /
+    // `engine:plugin` 登记进宿主 registry。exact-set,不是 arrayContaining:多出来一个
     // 未经宿主登记的 token 同样要红。
     expect(registry.capabilities.map((capability: { token: string }) => capability.token)).toEqual([
       "alpha.connection.v1",
       "alpha.mcp-oauth.v1",
       "alpha.secret-prerequisite.v1",
+      "engine:config",
+      "engine:plugin",
     ])
     expect(profiles.mappings.map((mapping: { host: { profileId: string } }) => mapping.host.profileId)).toEqual([
       "agent",
       "mcp-local",
       "mcp-remote",
+      "opencode-plugin",
       "skill",
     ])
     // 编译规则与宿主 registry 是上游发布的两份文件。让它们互相当判据,任一份被单独放宽即红。
@@ -168,9 +180,17 @@ describe("alpha-web extension package producer artifact pin", () => {
     )
     expect(rules.remoteAuthKinds.slice().sort()).toEqual(["alpha-connection", "mcp-oauth", "none"])
     // Bundle 已转正,但只有 **flat** 那一档:嵌套仍在排除表里,且组件上限与宿主 registry 同值。
-    expect(rules.excluded).toEqual(
-      expect.arrayContaining(["cloud", "managed-plugin", "nested-bundle", "provider-adapter"]),
-    )
+    // Plugin 同理只转正 **managed npm** 那一档:`managed-plugin` 因此离开排除表,而
+    // `publish-wrapper`(发布端代打包)与 `legacy-projection`(投影回 legacy 目录)留下。
+    // 这里从 arrayContaining 收成 exact-set:arrayContaining 只挡「悄悄少一个」,挡不住
+    // 「悄悄多一个」—— 而上游把某一档重新塞回排除表,正是让已转正的 profile 静默失效的走法。
+    expect(rules.excluded).toEqual([
+      "cloud",
+      "legacy-projection",
+      "nested-bundle",
+      "provider-adapter",
+      "publish-wrapper",
+    ])
     expect(rules.graph).toMatchObject({
       shape: "flat",
       nested: false,
@@ -197,14 +217,15 @@ describe("alpha-web extension package producer artifact pin", () => {
     ])
       expect(validate(await json(path)), path).toBe(false)
 
-    // 四份正向语料**全部**要过 schema:只验一份的话,OAuth / Connection / Bundle 任一档被 schema
-    // 悄悄关掉都不会红。
+    // 五份正向语料**全部**要过 schema:只验一份的话,OAuth / Connection / Bundle / Plugin
+    // 任一档被 schema 悄悄关掉都不会红。
     const vectors = (await json("vectors.v1.json")) as { valid: Array<{ input: string }> }
     expect(vectors.valid.map((vector) => vector.input)).toEqual([
       "input.mcp-remote.valid.json",
       "input.remote-oauth.valid.json",
       "input.remote-connection.valid.json",
       "input.bundle.valid.json",
+      "input.plugin.valid.json",
     ])
     for (const vector of vectors.valid) expect(validate(await json(vector.input)), vector.input).toBe(true)
   })

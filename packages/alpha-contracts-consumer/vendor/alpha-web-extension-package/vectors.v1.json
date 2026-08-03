@@ -152,6 +152,17 @@
       ],
       "expected": "expected.bundle.compiled.json",
       "input": "input.bundle.valid.json"
+    },
+    {
+      "assets": [
+        {
+          "componentId": "plugin:generic-plugin",
+          "file": "asset.generic-plugin.js",
+          "path": "plugin.js"
+        }
+      ],
+      "expected": "expected.plugin.compiled.json",
+      "input": "input.plugin.valid.json"
     }
   ]
 }

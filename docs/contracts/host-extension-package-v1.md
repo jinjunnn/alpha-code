@@ -34,18 +34,32 @@ and per-file SHA-256 values before compiling packages.
 
 The Desktop consumer separately pins the producer corpus published by
 `jinjunnn/alpha-web` at commit
-`b71748103ce65f97e3e5c8ac03f08152a0a1456f`, path
+`9fcd83d66ea8f5b13081f434ace150e739a0536e`, path
 `contracts/extension-package/artifact`, and aggregate SHA-256
-`ae9f43cc2a7cf279ff06d2846ff45f39cbb0fdd2fd0c4c5d91718968692e4887`.
+`2a36d9cb8a0c7632eb6f4c9415d1e7b00acba55dc4f01004ce025c05834bf389`.
 The artifact intentionally does not embed its containing Git commit. The
 consumer lock supplies that commit and the vendor check must resolve and read
 the exact Git object; an unavailable checkout or commit is a failure, not a
 skipped provenance check.
 
+Like the aggregate above, these three values are republished prose. Nothing
+reads this file — every SHA comparison in the repository runs between the
+manifest, the vendored bytes, and
+`packages/alpha-contracts-consumer/alpha-web-extension-package.lock.json`. The
+producer pin recorded here was last correct at `alpha-web@b7174810` and stayed
+stale across `#759` (`alpha-web@6e0db57d`) with every gate green, exactly as the
+host aggregate did. Re-read both from the lock and the manifest.
+
 The byte lock is not a semantic oracle. Consumer tests additionally execute the
 published declaration schema against the published negative vectors, and assert
-the Phase 1 profile/capability closure (four profiles, one capability, `cloud`
-and Alpha Connection absent).
+the profile/capability closure as an exact set: five profiles (`agent`,
+`mcp-local`, `mcp-remote`, `opencode-plugin`, `skill`) and five capabilities
+(`alpha.connection.v1`, `alpha.mcp-oauth.v1`, `alpha.secret-prerequisite.v1`,
+`engine:config`, `engine:plugin`). Alpha Connection is a registered capability —
+it was promoted in `#749` — and `cloud` remains excluded. The exclusion list is
+also an exact set (`cloud`, `legacy-projection`, `nested-bundle`,
+`provider-adapter`, `publish-wrapper`): `managed-plugin` left it when `#807`
+registered the `opencode-plugin` profile.
 
 The **runtime host decoder** judgement is not in the consumer package — it cannot
 import across packages. It is delegated to `packages/ui-mac/src/main/package-installability.test.ts`
