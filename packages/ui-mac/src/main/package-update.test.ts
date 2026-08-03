@@ -569,7 +569,7 @@ import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { removeFsInstall, removeFsInstallFilesOnly } from "./ext-fs-installer"
 import { removeInstallGrants } from "./ext-install-planner"
 import { removePackageChildArtifactsV1, type PackageArtifactInstallersV1 } from "./ext-package-uninstall"
-import { removeMcpConfigInLock, withConfigWriteLock } from "./ext-config"
+import { removeMcpConfigInLock, removePluginPath, withConfigWriteLock } from "./ext-config"
 import { mkdirSync as mkdirSync2, writeFileSync as writeFileSync2 } from "node:fs"
 
 /** 生产接线的两个变体,与 `ext-ipc.ts` 逐字同源(只是这里不需要 userDataPath 相关的两条)。 */
@@ -579,6 +579,8 @@ const productionInstallers = (): PackageArtifactInstallersV1 => ({
   removeMcpSecretsStrict: () => ({ ok: true as const }),
   releaseAlphaConnectionBindings: () => ({ ok: true as const }),
   removeInstallGrants,
+  // `#809`:与 `ext-ipc.ts` 同源 —— managed plugin 的 `plugin[]` 摘除走生产写器。
+  removePluginPath,
 })
 
 function materialiseDepartingAgent(): void {

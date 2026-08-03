@@ -48,6 +48,7 @@
 // 兜底(见 `buildDepartingChildConfigItemsV1`)。卸载没有事务,所以这条不是纪律问题,是结构差异。
 
 import * as fs from "node:fs"
+import * as path from "node:path"
 import { agentConfigItemKey, agentInstallKey } from "./ext-agent-install"
 import { removeOwnedGenerationStoreInLock } from "./ext-transaction"
 import { skillGenerationKey, skillStorePaths } from "./ext-skill-generations"
@@ -60,7 +61,7 @@ import {
   type PackageChildRemovalVerdictV1,
 } from "./ext-package-lifecycle"
 import { validatePackageMutationScopeV1, type PackageGraphV1, type PackageLedgerMutationV1 } from "./ext-package-ledger-v3"
-import { applyPackageMutation, readPackageLedgerStateV1 } from "./ext-receipt-v2"
+import { applyPackageMutation, findRecordV2, readPackageLedgerStateV1 } from "./ext-receipt-v2"
 
 /** 实物删除需要的注入面。刻意是 `PlannerInstallers` 的**子集**(同名同签名)—— 生产接线传的就是
  *  同一组实现,测试传的是同一组假件,于是「卸载真的会删东西」这件事在两边是同一个意思。 */
@@ -70,6 +71,10 @@ export type PackageArtifactInstallersV1 = {
   removeMcpSecretsStrict(name: string): { ok: true } | { ok: false; reason: string }
   releaseAlphaConnectionBindings(componentId: string): { ok: true } | { ok: false; reason: string }
   removeInstallGrants(root: string, keys: string[]): { ok: true; removed: string[] } | { ok: false; reason: string }
+  /** `#809`:managed plugin 的 `plugin[]` 条目摘除。与 `PlannerInstallers.removePluginPath` 同名
+   *  同签名(`uninstallByKey` 的 plugin 臂用的就是它)—— 两条卸载路径摘的必须是同一个东西,
+   *  且按**引擎解析语义**等值,不是词法比较。 */
+  removePluginPath(name: string, absJsPath: string): { ok: true } | { ok: false; reason: string }
 }
 
 export type PackageArtifactRemovalV1 =
@@ -140,8 +145,58 @@ export function removePackageChildArtifactsV1(
       if (!released.ok) warnings.push(`connection binding not released for mcp:${child.name}: ${released.reason}`)
       continue
     }
-    // Bundle 在 Phase 2 只产 skill/agent/mcp(managed Plugin 是 Phase 4)。认不出的 kind 一律
-    // 响亮拒绝 —— 「跳过不认识的」会让那件东西的实物永远留下,而它的 record 已经被去掉了。
+    if (child.kind === "plugin") {
+      // 落点是**内容寻址**的(`plugins/<name>@<payload digest 前16>/`)—— 名字算不出目录。
+      // 唯一的真源是账本 record 的 `configKey`(`plugin-path:<abs>`),它由 `buildPluginTxItems`
+      // 在同一次事务里写下,而账本此刻**逐字未动**(mutation 是步骤 ③)。`uninstallByKey` 的
+      // plugin 臂读的是同一个字段、跑的是同一道圈禁判据 —— 「在 Bundle 里装的」与「单装的」
+      // 删的必须是同一堆东西。
+      const record = findRecordV2(root, "plugin", child.name)
+      const configKey = record?.configKey ?? ""
+      if (!configKey.startsWith("plugin-path:"))
+        return {
+          ok: false,
+          reason: `plugin:${child.name}: ledger record has no plugin-path configKey — cannot prove which file to remove (fail closed)`,
+          removed,
+          warnings,
+        }
+      const pluginsRoot = path.join(root, "plugins")
+      const ledgerJs = path.resolve(configKey.slice("plugin-path:".length))
+      const ledgerDir = path.dirname(ledgerJs)
+      const dirBase = path.basename(ledgerDir)
+      // 账本路径不可指向树外(与 `uninstallByKey` 的 plugin 臂逐条同判):否则一条被改过的
+      // 账本就是一个任意目录删除通道。
+      if (
+        path.basename(ledgerJs) !== "plugin.js" ||
+        path.dirname(ledgerDir) !== pluginsRoot ||
+        !(dirBase === child.name || dirBase.startsWith(`${child.name}@`))
+      )
+        return {
+          ok: false,
+          reason: `plugin:${child.name}: ledger plugin path "${ledgerJs}" is not under "${pluginsRoot}/${child.name}[@…]" — refusing (fail closed)`,
+          removed,
+          warnings,
+        }
+      // `skipConfig` 对 plugin **不适用**,刻意不接:传它的是 update 那条路径,而离场 child 的
+      // config 清除(`buildDepartingChildConfigItemsV1`)只覆盖 `agent.<name>` / `mcp.<name>`
+      // 两个**映射键**;`plugin[]` 是数组,那里没有对应的 item。照 mcp 的姿势跳过 config 就会
+      // 留下一条指向已删目录的加载路径。本函数在事务**返回之后**跑(锁已释放),`removePluginPath`
+      // 自取 config 写锁不会重入。
+      const cfg = installers.removePluginPath(child.name, ledgerJs)
+      if (!cfg.ok) return { ok: false, reason: `plugin:${child.name}: ${cfg.reason}`, removed, warnings }
+      try {
+        fs.rmSync(ledgerDir, { recursive: true, force: true })
+      } catch {
+        /* best-effort:config 已净除,残留目录已不可加载 */
+      }
+      removed.push(ledgerDir)
+      const grants = installers.removeInstallGrants(root, [packageChildTxKeyV1("plugin", child.name)])
+      if (!grants.ok) return { ok: false, reason: `plugin:${child.name}: ${grants.reason}`, removed, warnings }
+      removed.push(...grants.removed)
+      continue
+    }
+    // 认不出的 kind 一律响亮拒绝 —— 「跳过不认识的」会让那件东西的实物永远留下,
+    // 而它的 record 已经被去掉了。
     return { ok: false, reason: `no artifact removal seam for package child kind "${child.kind}" — refusing (fail closed)`, removed, warnings }
   }
   return { ok: true, removed, warnings }
