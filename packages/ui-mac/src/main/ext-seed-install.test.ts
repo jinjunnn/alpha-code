@@ -1017,338 +1017,37 @@ const pluginDeps = (overrides: Partial<CatalogEntry> = {}) => makeSeedDeps({ bun
 // 目录名 = payloadDigest 剥 `sha256:` 前缀后前 16 hex(review #383:带前缀切片只剩 20 bit 且含 `:`)。
 const pluginDigest16 = (files: FileFixture[]) => aggregateFilesDigest(lockFileEntries(files, { writeBlobs: false })).replace(/^sha256:/, "").slice(0, 16)
 
-describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
-  test("fresh:确定性内容寻址目录 + config 事务 + 账本/授权账落位", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    const r = await installAuthorized(pluginSeedIntent, pluginDeps())
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.kind).toBe("plugin")
-    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
-    expect(r.files).toEqual([dir])
-    expect(fs.readFileSync(path.join(dir, "plugin.js"), "utf8")).toBe(PLUGIN_FILES[0].content)
-    expect(fs.readFileSync(path.join(dir, "lib", "util.js"), "utf8")).toBe(PLUGIN_FILES[1].content)
-    const pluginArr = readCfg().plugin
-    expect(pluginArr).toEqual([path.join(dir, "plugin.js")])
-    const rec = findRecordV2(globalRoot, "plugin", "demo-plugin")
-    expect(rec).not.toBeNull()
-    expect(rec!.configKey).toBe(`plugin-path:${path.join(dir, "plugin.js")}`)
-    expect(rec!.files).toEqual([dir])
-    expect(fs.existsSync(capabilityGrantPath(globalRoot, "plugin--demo-plugin"))).toBe(true)
-  })
+// ADR-040(`#825`):`plugin seed install via installCatalog` 整个 describe(21 条)随 seed 侧的
+// plugin 安装路径退场 —— 它们逐条断言的是「seed 的 plugin 载荷怎么落进 plugins/<name>@<digest>/
+// 并写进 alpha.jsonc 的 plugin[]」,而这条路径现在拒在 CAS promotion 之前。`gcVendoredPluginDirLocked`
+// 是其中一条用例的被测函数,它在生产里唯一的调用点(replace 提交后的旧目录 GC)一并消失,故与用例同去。
+// 取代它的是下方 “ADR-040:seed 的 plugin 资产具名拒绝” —— 断言拒绝发生在任何写盘之前。
 
-  test("首装停在 authorize:零权威副作用,staging 不留目录(内容寻址,重驱重 staging)", async () => {
+describe("ADR-040(`#825`):seed 的 plugin 资产具名拒绝", () => {
+  test("plugin seed:具名拒绝,且**盘上一个字节都没动**(CAS 提升 / 目录 / config / 账本全零)", async () => {
     buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    const first = await installCatalog(pluginSeedIntent, pluginDeps())
-    expect(first.ok).toBe(false)
-    if (first.ok) throw new Error("unreachable")
-    expect(first.stage).toBe("authorize")
-    // 非提交路径已清理(plugins/ 空壳父目录可留,零条目)。
-    const leftover = fs.existsSync(path.join(globalRoot, "plugins")) ? fs.readdirSync(path.join(globalRoot, "plugins")) : []
-    expect(leftover).toEqual([])
+    // 授权已确认的形态也一样拒 —— 拒绝点在 authorize 之前,不是「少了一次确认」。
+    const r = await installAuthorized(pluginSeedIntent, pluginDeps())
+    expect(r.ok).toBe(false)
+    if (r.ok) throw new Error("unreachable")
+    // 具名:说得出是哪个资产、为什么。**不是**静默跳过、也不是一句泛化的 "not installable"。
+    expect(r.reason).toContain("plugin:demo-plugin")
+    expect(r.reason).toContain("ADR-040")
+    // 零副作用的四个面。plugins/ 与 CAS 一并断言,因为「拒在 promotion 之前」是这条拒绝的位置承诺,
+    // 只断 config 的话,把拒绝挪到 promotion 之后仍然全绿。
     expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
-    expect(findRecordV2(globalRoot, "plugin", "demo-plugin")).toBeNull()
+    expect(fs.existsSync(path.join(globalRoot, "installs.json"))).toBe(false)
+    expect(fs.existsSync(path.join(globalRoot, "plugins"))).toBe(false)
+    // 共享 CAS 在 `<casBase>/cas`(**不在** globalRoot 下)—— 写成 globalRoot 下的名字就是一条
+    // 恒成立的空断言。下面那条对照用例证明这个路径确实会被真实安装写出来。
+    expect(fs.existsSync(path.join(casBase, "cas"))).toBe(false)
   })
 
-  test("same-version healthy 幂等早退:重装零副作用,目录不累积", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    expect((await installAuthorized(pluginSeedIntent, pluginDeps())).ok).toBe(true)
-    const again = await installAuthorized(pluginSeedIntent, pluginDeps())
-    expect(again.ok).toBe(true)
-    if (again.ok) expect(again.warning).toContain("nothing to replace")
-    const dirs = fs.readdirSync(path.join(globalRoot, "plugins")).filter((n) => !n.startsWith("."))
-    expect(dirs).toEqual([`demo-plugin@${pluginDigest16(PLUGIN_FILES)}`])
-  })
-
-  test("旧版在装 → journaled replace(staging 源 = CAS):config 换元、旧目录 GC、账本更新", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    expect((await installAuthorized(pluginSeedIntent, pluginDeps())).ok).toBe(true)
-    const oldDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
-
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES_V2, version: "1.1.0" }])
-    const v2Entry = bundledPluginEntry({ version: "1.1.0", remoteAsset: { version: "1.1.0", files: lockFileEntries(PLUGIN_FILES_V2, { writeBlobs: false }) } })
-    const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [v2Entry] }))
+  test("对照:同一次调用形状下 skill seed 照常装成 —— 且它**真的**写出了上一条断言为空的那个 CAS 目录", async () => {
+    buildSeed([{ id: "skill:hello", files: skillFiles }])
+    const r = await installAuthorized(seedIntent, makeSeedDeps())
     expect(r.ok).toBe(true)
-    const newDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES_V2)}`)
-    expect(fs.readFileSync(path.join(newDir, "plugin.js"), "utf8")).toBe(PLUGIN_FILES_V2[0].content)
-    expect(readCfg().plugin).toEqual([path.join(newDir, "plugin.js")]) // 精确换元
-    expect(fs.existsSync(oldDir)).toBe(false) // 旧目录提交成功后 GC
-    const rec = findRecordV2(globalRoot, "plugin", "demo-plugin")
-    expect(rec!.version).toBe("1.1.0")
-  })
-
-  test("同 payload 仅版本变化的 replace:新旧目录相同,GC 不得删掉刚提交的运行目录(review #383)", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    expect((await installAuthorized(pluginSeedIntent, pluginDeps())).ok).toBe(true)
-    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
-    const jsPath = path.join(dir, "plugin.js")
-
-    // 同字节、版本 1.0.0 → 1.1.0:dispatch=replace(manifest/version 变化,vendoredHealthy 不成立)。
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES, version: "1.1.0" }])
-    const bumped = bundledPluginEntry({ version: "1.1.0", remoteAsset: { version: "1.1.0", files: lockFileEntries(PLUGIN_FILES, { writeBlobs: false }) } })
-    const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [bumped] }))
-    expect(r.ok).toBe(true)
-    expect(fs.readFileSync(jsPath, "utf8")).toBe(PLUGIN_FILES[0].content) // 运行目录仍在且完好
-    expect(readCfg().plugin).toEqual([jsPath])
-    const rec = findRecordV2(globalRoot, "plugin", "demo-plugin")
-    expect(rec!.version).toBe("1.1.0")
-  })
-
-  test("replace 异 payload:新内容寻址目录在场 = 无账在场,锁内拒不认领(review r2 Blocker)", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    expect((await installAuthorized(pluginSeedIntent, pluginDeps())).ok).toBe(true)
-    // 目标 v2 目录被外部占用(含垃圾)。
-    const d2 = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES_V2)}`)
-    fs.mkdirSync(d2, { recursive: true })
-    fs.writeFileSync(path.join(d2, "junk.js"), "junk")
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES_V2, version: "1.1.0" }])
-    const v2Entry = bundledPluginEntry({ version: "1.1.0", remoteAsset: { version: "1.1.0", files: lockFileEntries(PLUGIN_FILES_V2, { writeBlobs: false }) } })
-    const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [v2Entry] }))
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("without a ledger record")
-    expect(fs.readFileSync(path.join(d2, "junk.js"), "utf8")).toBe("junk") // 现场不动
-  })
-
-  test("同版本重装遇实物被篡改 → 走修复路径(完整 journaled replace 重写清单文件,review r2 Major)", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    const deps = pluginDeps()
-    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
-    const jsPath = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`, "plugin.js")
-    fs.writeFileSync(jsPath, "tampered live payload")
-    const repair = await installAuthorized(pluginSeedIntent, deps)
-    expect(repair.ok).toBe(true)
-    if (repair.ok) expect(repair.warning ?? "").not.toContain("nothing to replace") // 不是幂等早退
-    expect(fs.readFileSync(jsPath, "utf8")).toBe(PLUGIN_FILES[0].content) // 修复回清单字节
-  })
-
-  test("载荷路径大小写折叠碰撞 fail-closed(review r2 Major)", async () => {
-    const collide = [
-      { path: "plugin.js", content: "export const Demo = 1" },
-      { path: "Lib.js", content: "A" },
-      { path: "lib.js", content: "b" },
-    ]
-    buildSeed([{ id: "plugin:demo-plugin", files: collide }])
-    const r = await installAuthorized(
-      pluginSeedIntent,
-      pluginDeps({ remoteAsset: { version: "1.0.0", files: lockFileEntries(collide, { writeBlobs: false }) } }),
-    )
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("colliding")
-  })
-
-  test("recovery 回滚遗留的纯空目录树不阻断重试(review r3 Major 4:壳容忍)", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
-    fs.mkdirSync(path.join(dir, "lib"), { recursive: true }) // 模拟 recovery unlink 后的空壳
-    const r = await installAuthorized(pluginSeedIntent, pluginDeps())
-    expect(r.ok).toBe(true)
-    expect(fs.readFileSync(path.join(dir, "plugin.js"), "utf8")).toBe(PLUGIN_FILES[0].content)
-  })
-
-  test("同目录 repair 遇清单外文件:锁内分类 blocked 拒,不假装收敛(review r4 Major)", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    const deps = pluginDeps()
-    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
-    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
-    // 同时篡改清单文件(触发不健康 → 走 replace)并植入清单外文件(修复不可收敛)。
-    fs.writeFileSync(path.join(dir, "plugin.js"), "tampered")
-    fs.writeFileSync(path.join(dir, "extra.js"), "unmanifested")
-    const r = await installAuthorized(pluginSeedIntent, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("unmanifested content")
-    expect(fs.readFileSync(path.join(dir, "extra.js"), "utf8")).toBe("unmanifested") // 现场不动
-    expect(fs.readFileSync(path.join(dir, "plugin.js"), "utf8")).toBe("tampered") // 篡改文件也不动(r5)
-  })
-
-  test("清单文件被换成同名目录:repair 不可收敛 → blocked 拒(review r5 Major)", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    const deps = pluginDeps()
-    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
-    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
-    fs.rmSync(path.join(dir, "plugin.js"), { force: true })
-    fs.mkdirSync(path.join(dir, "plugin.js")) // 同名空目录:prepareFileTx 无法覆盖成文件
-    const r = await installAuthorized(pluginSeedIntent, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("unmanifested content")
-    expect(fs.statSync(path.join(dir, "plugin.js")).isDirectory()).toBe(true) // 现场不动
-  })
-
-  test("同版本重装遇目录被换 symlink:不得误判 healthy,也不得经 symlink 写入(review r3 Major 5)", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    const deps = pluginDeps()
-    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
-    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
-    // 把目录换成指向内容完全一致副本的 symlink。
-    const copy = path.join(tmp, "plugin-copy")
-    fs.cpSync(dir, copy, { recursive: true })
-    fs.rmSync(dir, { recursive: true, force: true })
-    fs.symlinkSync(copy, dir)
-    const again = await installAuthorized(pluginSeedIntent, deps)
-    expect(again.ok).toBe(false) // 既非幂等早退成功,也不落 symlink 写入
-    expect(fs.readFileSync(path.join(copy, "plugin.js"), "utf8")).toBe(PLUGIN_FILES[0].content) // 树外零写
-  })
-
-  test("旧目录 GC 持锁重读引用(review r2 Blocker):被引用/锁忙保留,无引用才删", async () => {
-    const { gcVendoredPluginDirLocked } = await import("./ext-install-planner")
-    const oldDir = path.join(globalRoot, "plugins", "demo-plugin@aaaabbbbccccdddd")
-    fs.mkdirSync(oldDir, { recursive: true })
-    fs.writeFileSync(path.join(oldDir, "plugin.js"), "x")
-    const oldJs = path.join(oldDir, "plugin.js")
-    // 被 config 重新引用 → 保留。
-    const referenced = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [oldJs] }), () => ({ ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }))
-    expect(referenced.removed).toBe(false)
-    expect(fs.existsSync(oldDir)).toBe(true)
-    // #378 r5 Blocker:等价形态引用同样保留 —— 相对路径(引擎按 config 目录解析)与元组 spec 头。
-    const relRef = gcVendoredPluginDirLocked(
-      globalRoot,
-      "demo-plugin",
-      oldDir,
-      () => ({ ok: true, value: ["./plugins/demo-plugin@aaaabbbbccccdddd/plugin.js"] }),
-      () => ({ ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }),
-    )
-    expect(relRef.removed).toBe(false)
-    const tupleRef = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [[oldJs, { opt: true }]] }), () => ({ ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }))
-    expect(tupleRef.removed).toBe(false)
-    expect(fs.existsSync(oldDir)).toBe(true)
-    // #378 r13:引用经 symlink 别名指向旧目录 → realpath 身份对账保留。
-    const aliasBase = path.join(globalRoot, "alias-plug")
-    fs.symlinkSync(oldDir, aliasBase)
-    const symRef = gcVendoredPluginDirLocked(
-      globalRoot,
-      "demo-plugin",
-      oldDir,
-      () => ({ ok: true, value: [path.join(aliasBase, "plugin.js")] }),
-      () => ({ ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }),
-    )
-    expect(symRef.removed).toBe(false)
-    expect(fs.existsSync(oldDir)).toBe(true)
-    fs.rmSync(aliasBase, { force: true })
-    // #378 r6 Blocker:legacy XDG 源仍引用旧目录 → 保留;legacy 不可读 → fail-closed 保留。
-    const legacyRef = gcVendoredPluginDirLocked(
-      globalRoot,
-      "demo-plugin",
-      oldDir,
-      () => ({ ok: true, value: [] }),
-      () => ({ ok: true as const, sources: [{ value: [oldJs] as unknown[], configDir: "/legacy" }] }),
-    )
-    expect(legacyRef.removed).toBe(false)
-    const legacyBad = gcVendoredPluginDirLocked(
-      globalRoot,
-      "demo-plugin",
-      oldDir,
-      () => ({ ok: true, value: [] }),
-      () => ({ ok: false as const, reason: "legacy unreadable" }),
-    )
-    expect(legacyBad.removed).toBe(false)
-    expect(fs.existsSync(oldDir)).toBe(true)
-    // 锁忙 → 保留。
-    const held = tryAcquireBundleLock(globalRoot, { txId: "probe" })
-    expect(held.ok).toBe(true)
-    if (held.ok) {
-      const busy = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }), () => ({ ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }))
-      expect(busy.removed).toBe(false)
-      held.lock.release()
-    }
-    // 圈禁外 → 保留。
-    const outside = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", path.join(globalRoot, "evil"), () => ({ ok: true, value: [] }), () => ({ ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }))
-    expect(outside.removed).toBe(false)
-    // 账本损坏 → fail-closed 保留(review r3:读不出记录 ≠ 无引用)。
-    fs.writeFileSync(path.join(globalRoot, "installs.json"), "{ not json")
-    const corrupt = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }), () => ({ ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }))
-    expect(corrupt.removed).toBe(false)
-    expect(fs.existsSync(oldDir)).toBe(true)
-    fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
-    // 合法 JSON 但含不可解码记录(warnings)→ 同样 fail-closed 保留(review r4)。
-    const broken: UpsertInput = {
-      id: "plugin:other",
-      name: "other",
-      kind: "plugin",
-      environment: "prod",
-      scope: { kind: "global" },
-      desiredState: "enabled",
-      origin: "catalog",
-      installedAt: new Date().toISOString(),
-    }
-    expect(upsertRecordV2(globalRoot, broken).ok).toBe(true)
-    const ledgerPath2 = path.join(globalRoot, "installs.json")
-    const parsedLedger: unknown = JSON.parse(fs.readFileSync(ledgerPath2, "utf8"))
-    if (!isRec(parsedLedger)) throw new Error("ledger not an object")
-    for (const v of Object.values(parsedLedger)) {
-      if (!Array.isArray(v)) continue
-      for (const rec of v) if (isRec(rec) && rec.kind === "plugin") rec.schemaVersion = 99
-    }
-    fs.writeFileSync(ledgerPath2, JSON.stringify(parsedLedger))
-    const undecodable = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }), () => ({ ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }))
-    expect(undecodable.removed).toBe(false)
-    expect(fs.existsSync(oldDir)).toBe(true)
-    fs.rmSync(ledgerPath2, { force: true })
-    // 无引用 + 拿到锁 → 删。
-    const removed = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }), () => ({ ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }))
-    expect(removed.removed).toBe(true)
-    expect(fs.existsSync(oldDir)).toBe(false)
-  })
-
-  test("downgrade 拒:已装更高版本时 seed 不提供降级通道", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES_V2, version: "2.0.0" }])
-    const v2Entry = bundledPluginEntry({ version: "2.0.0", remoteAsset: { version: "2.0.0", files: lockFileEntries(PLUGIN_FILES_V2, { writeBlobs: false }) } })
-    expect((await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [v2Entry] }))).ok).toBe(true)
-
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    const down = await installAuthorized(pluginSeedIntent, pluginDeps())
-    expect(down.ok).toBe(false)
-    if (!down.ok) expect(down.reason).toContain("refusing downgrade")
-  })
-
-  test("npm plugin / 缺 plugin.js / 篡改的同 digest 目录 / 无账 bare 目录:一律 fail-closed 拒", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    const npm = await installAuthorized(pluginSeedIntent, pluginDeps({ installSpec: { kind: "plugin", package: "demo-pkg" } }))
-    expect(npm.ok).toBe(false)
-    if (!npm.ok) expect(npm.reason).toContain("npm plugin has no offline CAS payload")
-
-    const noJs = [{ path: "index.js", content: "x" }]
-    buildSeed([{ id: "plugin:demo-plugin", files: noJs }])
-    const missing = await installAuthorized(pluginSeedIntent, pluginDeps({ remoteAsset: { version: "1.0.0", files: lockFileEntries(noJs, { writeBlobs: false }) } }))
-    expect(missing.ok).toBe(false)
-    if (!missing.ok) expect(missing.reason).toContain("plugin.js")
-
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    // fresh 时内容寻址目录已在场 = 无账在场(外部放置/历史残留)—— 未策展不认领,journaled
-    // 覆盖也不做(review #383 结构性修正后语义)。
-    const stagedDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
-    fs.mkdirSync(stagedDir, { recursive: true })
-    fs.writeFileSync(path.join(stagedDir, "plugin.js"), "tampered")
-    const tampered = await installAuthorized(pluginSeedIntent, pluginDeps())
-    expect(tampered.ok).toBe(false)
-    if (!tampered.ok) expect(tampered.reason).toContain("without a ledger record")
-    fs.rmSync(stagedDir, { recursive: true, force: true })
-
-    fs.mkdirSync(path.join(globalRoot, "plugins", "demo-plugin"), { recursive: true })
-    const bare = await installAuthorized(pluginSeedIntent, pluginDeps())
-    expect(bare.ok).toBe(false)
-    if (!bare.ok) expect(bare.reason).toContain("without a ledger record")
-  })
-
-  test("卸载联动清授权账(vendored 落点),重装重新弹 authorize", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    const deps = pluginDeps()
-    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
-    const jsPath = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`, "plugin.js")
-
-    const installers: PlannerInstallers = {
-      ...forbiddenInstallers(),
-      removePluginPath: (_name, _absJsPath) => {
-        fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), "{}\n")
-        return { ok: true }
-      },
-    }
-    const un = await uninstallByKey({ type: "plugin", name: "demo-plugin", scope: "global" }, { ...deps, installers })
-    expect(un.ok).toBe(true)
-    expect(findRecordV2(globalRoot, "plugin", "demo-plugin")).toBeNull()
-    expect(fs.existsSync(capabilityGrantPath(globalRoot, "plugin--demo-plugin"))).toBe(false)
-    expect(fs.existsSync(path.dirname(jsPath))).toBe(false) // 卸载删除 vendored 目录
-    const again = await installCatalog(pluginSeedIntent, deps)
-    expect(again.ok).toBe(false)
-    if (!again.ok) expect(again.stage).toBe("authorize")
+    expect(fs.existsSync(path.join(casBase, "cas"))).toBe(true) // 观测手段自检:上一条不是恒真
   })
 })
 
@@ -1374,33 +1073,6 @@ describe("seed capability authorize gate (REQ-100 #348)", () => {
 // ── #395(REQ-104):第三方(official/community)fresh 安装默认关 —— 落盘形态全查 ─────────────────
 
 describe("#395 第三方 seed 安装默认关(账本 disabled;持久化 config 投影:mcp enabled:false / plugin 缺席)", () => {
-  test("official plugin fresh:账本 disabled;plugin[] 写正常条目(disk);载荷照常物化;set-state 只翻账本", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES, source: "official" }])
-    const entry = bundledPluginEntry({ source: "official" })
-    const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [entry] }))
-    expect(r.ok).toBe(true)
-    expect(findRecordV2(globalRoot, "plugin", "demo-plugin")!.desiredState).toBe("disabled")
-    // 持久化投影:disabled plugin 从 disk plugin[] 缺席(引擎 import 前);内容照常物化(disabled ≠ 未装)。
-    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
-    const cfg: { plugin?: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
-    expect(cfg.plugin ?? []).toEqual([])
-    expect(fs.existsSync(path.join(dir, "plugin.js"))).toBe(true)
-    // 启用:按 configKey 补回 plugin[] 条目 + 账本翻开。#397 r1-5:enable 闸要求解析到同身份
-    // 已验 entry(record.version = 1.0.0 = entry.version)—— 回镜 bundled entry。
-    const en = await setInstallStateByKey(
-      { type: "plugin", name: "demo-plugin", scope: "global", state: "enabled" },
-      {
-        globalRoot: () => globalRoot,
-        advisoryGate: () => ({ allowed: true }),
-        resolveEntry: async () => ({ entry: bundledPluginEntry({ source: "official" }), channel: "bundled", catalogVersion: "1.0.0" }),
-      },
-    )
-    expect(en.ok).toBe(true)
-    const cfg2: { plugin: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
-    expect(cfg2.plugin).toEqual([path.join(dir, "plugin.js")])
-    expect(findRecordV2(globalRoot, "plugin", "demo-plugin")!.desiredState).toBe("enabled")
-  })
-
   test("official mcp fresh:账本 disabled;config 写正常叶(无 disabled 键);装 ≠ 连", async () => {
     buildSeed([{ id: "mcp:demo", files: MCP_FILES, source: "official" }])
     const entry = bundledMcpEntry({ source: "official" })

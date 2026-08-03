@@ -227,7 +227,6 @@ const api: ElectronAPI = {
     packageDetail: (catalogId) => ipcRenderer.invoke("ext-package-detail", catalogId),
     curationBlob: (catalogId, kind) => ipcRenderer.invoke("ext-curation-blob", catalogId, kind),
     browseSeed: () => ipcRenderer.invoke("ext-seed-browse"),
-    installPlugin: (pkg) => ipcRenderer.invoke("ext-install-plugin", pkg),
     installCatalog: (intent) => ipcRenderer.invoke("ext-install-catalog", intent),
     readBuiltinSkill: (builtinAssetKey) => ipcRenderer.invoke("ext-read-builtin-skill", builtinAssetKey),
     importSkillFolder: (target) => ipcRenderer.invoke("ext-import-skill-folder", target),

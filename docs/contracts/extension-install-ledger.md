@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-17
+last_reviewed: 2026-08-03
 review_after: 2026-10-14
 ---
 
@@ -13,6 +13,26 @@ review_after: 2026-10-14
 本文钉住 `<root>/installs.json`(v1 receipts + v2 records 同文件双视图)的**写方所有权**
 与 catalog 安装提交面的 fail-closed 语义。账本机制归 `ext-receipt-v2.ts`,提交面编排归
 `ext-install-planner.ts`,未策展协调归 `ext-uncurated-record.ts`(#306)。
+
+> ## ⚠️ ADR-040(2026-08-03,`#825` 已落地):plugin 的**安装与启用**整段作废
+>
+> **Alpha 的扩展安装唯一形态是 Bundle;任何扩展安装都不得写入引擎的 `plugin[]`。**
+> 本文中一切描述「plugin 怎么装进去」的段落 —— npm fresh、vendored fresh、`installPluginFromCas`、
+> §3.1 的原子替换、以及启停投影的 **enable 臂**(「按 configKey 补回受管条目形态」)——
+> **都已随生产代码退场**,保留在此仅作历史脉络。
+>
+> **今天仍然成立的**只有 plugin 的**减法**半场:启停投影的 disable 臂(从 `plugin[]` 移除)、
+> 卸载(`removePlugin` / `removePluginPath`)、dangling 清扫、以及 boot reconcile 里
+> 「disabled plugin 移不掉 = `enforcementGap` 阻断 sidecar」那条(§ 启动 reconcile 原样有效)。
+> **plugin 的 enable 现在是具名拒绝**:「启用」按定义就是把 spec 写回 `plugin[]`,与安装是同一件事。
+>
+> 咽喉在 `packages/ui-mac/src/main/engine-plugin-seal.ts`:两族物理写原语
+> (`ext-config.ts` 的原子提交、`ext-config-tx.ts` 的 image 对)在写盘前判「`plugin[]` 有没有多出
+> 写之前没有的元素」,有则拒 —— **新增写入点不需要登记就已经被挡住**。
+> 已知不经过它的写入口只有一个:boot 期把 legacy `~/.opencode/opencode.jsonc` 的 `plugin[]` 并进
+> `alpha.jsonc` 的整文件写(`engine-config-truth-boot.ts`)。那不是扩展安装,单独一张票处置。
+>
+> 权威见 `.claude/rules/adrs/ADR-040-extension-package-taxonomy.md` §决策三。
 
 ## 1. 写方所有权(单一账本真源)
 

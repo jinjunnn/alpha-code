@@ -78,17 +78,20 @@ const writeCfg = (cfg: unknown) => fs.writeFileSync(path.join(root, "alpha.jsonc
 const readCfg = (): Record<string, any> => JSON.parse(fs.readFileSync(path.join(root, "alpha.jsonc"), "utf8"))
 
 describe("setInstallStateByKey(#395 持久化投影 + 账本翻转)", () => {
-  test("plugin:disable 从 plugin[] 移除条目 + 账本翻关;enable 按 configKey 补回 + 账本翻开(往返)", async () => {
+  test("plugin:disable 仍从 plugin[] 移除并翻账本;**enable 具名拒绝且账本不翻**(ADR-040 第 6 条)", async () => {
     record({ name: "np", kind: "plugin", configKey: "plugin:@x/np@1.0.0" })
     writeCfg({ plugin: ["@x/np@1.0.0"] })
     const dis = await setInstallStateByKey({ type: "plugin", name: "np", scope: "global", state: "disabled" }, deps())
     expect(dis.ok).toBe(true)
     expect(readCfg().plugin).toEqual([]) // disabled plugin 从 disk config 缺席(引擎 import 前)
     expect(findRecordV2(root, "plugin", "np")!.desiredState).toBe("disabled")
+    // 「启用」= 把 spec 写回 plugin[],与安装是同一件事换了个入口 —— 拒。
     const en = await setInstallStateByKey({ type: "plugin", name: "np", scope: "global", state: "enabled" }, deps())
-    expect(en.ok).toBe(true)
-    expect(readCfg().plugin).toEqual(["@x/np@1.0.0"])
-    expect(findRecordV2(root, "plugin", "np")!.desiredState).toBe("enabled")
+    expect(en.ok).toBe(false)
+    if (!en.ok) expect(en.reason).toContain("ADR-040")
+    // 关键:拒必须发生在**账本翻转之前** —— 否则账本说 enabled 而运行面空着,那是谎报。
+    expect(readCfg().plugin).toEqual([])
+    expect(findRecordV2(root, "plugin", "np")!.desiredState).toBe("disabled")
   })
 
   test("mcp:disable 写引擎消费键 enabled:false(其余键原样);enable 剥离该键", async () => {

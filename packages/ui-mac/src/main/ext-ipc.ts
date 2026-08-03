@@ -106,7 +106,7 @@ export function registerExtIpcHandlers(
   // plugin 导入的 body —— #336(残留4)抽至 electron-free 的 ext-uncurated-bodies(账本写失败的
   // fail-closed 返回 + 精确补偿可注入测试);此处只接线,注册仍经写通道表(文件尾),过恢复
   // gate + ledgerReady(#347,review #376 B1)。
-  const { persistMcpBody, installPluginBody } = makeUncuratedInstallBodies({
+  const { persistMcpBody } = makeUncuratedInstallBodies({
     userDataPath,
     globalRoot: alphaGlobalRoot,
     environment: () => getAlphaEnvironment().environment,
@@ -1099,7 +1099,6 @@ export function registerExtIpcHandlers(
       projectResidualsClean: (projectDir) => cleanProjectCatalogResiduals(projectDir, plannerDeps()),
       removeMcpLegacy: removeMcpLegacyBody,
       persistMcp: (name, server, secretVars) => persistMcpBody(name as string, server as Record<string, unknown>, secretVars as string[] | undefined),
-      installPlugin: (pkg) => installPluginBody(pkg as string),
       importAgentConfirm: importAgentConfirmBody,
       importClaudePluginConfirm: importClaudePluginConfirmBody,
       // #390:global 未策展技能导入走 planner 的 CAS + generation 事务(取代 flat copy 的崩溃半成品窗);
@@ -1135,7 +1134,6 @@ export function registerExtIpcHandlers(
   ipcMain.handle(GATED_WRITE_CHANNELS.projectResidualsClean, barrier(gatedWrite.projectResidualsClean))
   ipcMain.handle(GATED_WRITE_CHANNELS.removeMcpLegacy, barrier(gatedWrite.removeMcpLegacy))
   ipcMain.handle(GATED_WRITE_CHANNELS.persistMcp, barrier(gatedWrite.persistMcp))
-  ipcMain.handle(GATED_WRITE_CHANNELS.installPlugin, barrier(gatedWrite.installPlugin))
   ipcMain.handle(GATED_WRITE_CHANNELS.importAgentConfirm, barrier(gatedWrite.importAgentConfirm))
   ipcMain.handle(GATED_WRITE_CHANNELS.importClaudePluginConfirm, barrier(gatedWrite.importClaudePluginConfirm))
   // 目录选择在 gate 外(mutex 不横跨用户交互);持久化阶段过表。

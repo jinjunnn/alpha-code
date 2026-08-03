@@ -789,35 +789,6 @@ describe("other kinds — derivation & records", () => {
     if (!rd.ok) expect(rd.reason).toContain("trailing dot/space")
   })
 
-  test("vendored plugin(#378):载荷经 CAS file items 事务落内容寻址目录;configKey/record 由 commitReceipt 落账", async () => {
-    const { deps, calls } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(called(calls, "collectVendoredPluginPayload")[0]!.args).toEqual(["plugins/vp", "vp"])
-    const record = findRecordV2(globalRoot, "plugin", "vp")
-    expect(record).not.toBeNull()
-    // 内容寻址目录 plugins/vp@<digest16>(#359 seed 同一载体);plugin.js 实物落位 + config 换元
-    const dir = r.files?.[0]
-    expect(dir).toMatch(/plugins\/vp@[0-9a-f]{16}$/)
-    expect(fs.existsSync(path.join(dir!, "plugin.js"))).toBe(true)
-    expect(record?.configKey).toBe(`plugin-path:${path.join(dir!, "plugin.js")}`)
-    expect(pluginArrayOnDisk()).toEqual([path.join(dir!, "plugin.js")])
-    expect(record?.transaction?.state).toBe("committed")
-  })
-
-  test("npm plugin(#378):config action 单事务整数组换元;跨源冲突双查", async () => {
-    const { deps, calls } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    expect(pluginArrayOnDisk()).toEqual(["@alpha/np@2.3.4"])
-    // 计划前 + 锁内 precondition 双查(installAuthorized 两驱 → 首驱 1 次计划前,重驱 1 次计划前 + 1 次锁内)
-    expect(called(calls, "findPluginBaseConflictStrict").length).toBeGreaterThanOrEqual(2)
-    const record = findRecordV2(globalRoot, "plugin", "np")
-    expect(record?.configKey).toBe("plugin:@alpha/np@2.3.4")
-    expect(record?.transaction?.state).toBe("committed")
-  })
-
   test("cloud: receipts-only — record written, zero installer calls", async () => {
     const { deps, calls } = makeDeps()
     const r = await installAuthorized({ catalogId: "cloud:research", scope: { scope: "global" } }, deps)
@@ -1278,21 +1249,6 @@ describe("uninstall — facts from main's own ledger", () => {
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("is not under")
     expect(called(calls, "removePluginPath")).toHaveLength(0)
-  })
-
-  test("vendored plugin: matching derived path → removed via re-derived owned path", async () => {
-    const { deps, calls } = makeDeps()
-    const inst = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(inst.ok).toBe(true)
-    const jsPath = inst.ok ? path.join(inst.files![0]!, "plugin.js") : ""
-    calls.length = 0
-    const r = await uninstallByKey({ type: "plugin", name: "vp", scope: "global" }, deps)
-    expect(r.ok).toBe(true)
-    const rm = called(calls, "removePluginPath")
-    expect(rm).toHaveLength(1)
-    // #378:内容寻址目录 plugins/vp@<digest16>(卸载对 <name>@… 布局同样圈禁认可)
-    expect(rm[0]!.args[1]).toBe(jsPath)
-    expect(findRecordV2(globalRoot, "plugin", "vp")).toBeNull()
   })
 
   test("v1-only receipt (no v2 record) remains uninstallable — read-only compat (AC#6)", async () => {
@@ -1765,61 +1721,6 @@ describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
     expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
   })
 
-  test("plugin(npm):有账在场 → 写前拒绝(更新归 #352 原子替换),零 installer 触碰", async () => {
-    seedRecord("plugin", "np")
-    const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("refusing replace") // #352:无 configKey 的账 = 模糊态,拒 replace 也拒 fresh
-    expect(called(calls, "persistPlugin")).toHaveLength(0)
-  })
-
-  test("plugin(npm):无账但 config 已有恰同钉版 → 拒绝静默认领(#378 跨源严格检查),零写入", async () => {
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: ["@alpha/np@2.3.4"] }))
-    const before = fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")
-    const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("refusing to adopt or double-install")
-    expect(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")).toBe(before)
-  })
-
-  test("plugin(npm):根只读 → 事务失败 fail-closed,config/账本零残留(#378 引擎回滚取代精确补偿)", async () => {
-    const { deps } = makeDeps()
-    if (runningAsRoot()) return // root 下 0o555 仍可写(review minor:假红而非假绿)
-    lockRoot()
-    try {
-      const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-      expect(r.ok).toBe(false)
-    } finally {
-      unlockRoot()
-    }
-    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
-    expect(findRecordV2(globalRoot, "plugin", "np")).toBeNull()
-  })
-
-  test("plugin(vendored):无账目录在场 → 写前拒绝;根只读 → 事务失败零残留", async () => {
-    fs.mkdirSync(path.join(globalRoot, "plugins", "vp"), { recursive: true })
-    const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("without a ledger record")
-    fs.rmSync(path.join(globalRoot, "plugins", "vp"), { recursive: true, force: true })
-
-    const { deps: d2 } = makeDeps()
-    if (runningAsRoot()) return // root 下 0o555 仍可写(review minor:假红而非假绿)
-    lockRoot()
-    try {
-      const r2 = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
-      expect(r2.ok).toBe(false)
-    } finally {
-      unlockRoot()
-    }
-    // #378:引擎回滚零残留(config/账本;根只读时事务在 journal 期即拒)
-    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
-    expect(findRecordV2(globalRoot, "plugin", "vp")).toBeNull()
-  })
-
   test("agent:有账或文件在场 → 写前拒绝(无更新链,不静默覆盖/认领),零内容副作用", async () => {
     seedRecord("agent", "helper")
     const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, agentBuiltinEntry] })
@@ -1882,22 +1783,6 @@ describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
     expect(installerCallCount(calls)).toBe(0)
   })
 
-  test("v1-only receipt 同样触发写前拒绝(历史 eager v1 遗物;npm 按规范化名双查)", async () => {
-    // npm 插件历史 eager v1 名 = pluginRecordName("@alpha/np") = "alpha__np"(≠ entry.name "np")。
-    addReceipt(globalRoot, { id: "plugin:np", name: "alpha__np", type: "plugin", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "plugin:@alpha/np@2.3.4" })
-    const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("v1-only")
-    expect(called(calls, "persistPlugin")).toHaveLength(0)
-
-    addReceipt(globalRoot, { id: "agent:helper", name: "helper", type: "agent", scope: "global", installedAt: new Date().toISOString(), origin: "catalog" })
-    const { deps: d2, calls: c2 } = makeDeps({ entries: [...ALL_ENTRIES, agentBuiltinEntry] })
-    const r2 = await installCatalog({ catalogId: "agent:helper", scope: { scope: "global" } }, d2)
-    expect(r2.ok).toBe(false)
-    expect(called(c2, "collectBuiltinAgentPayload")).toHaveLength(0)
-  })
-
   test("#378 Q2:authorize 暂停 = 零权威副作用 —— 无 config/账/grant,本次密钥版本已清;策略 provisioning(空目录)允许残留", async () => {
     const managed = path.join(tmp, "managed-workspace")
     const { deps, calls } = makeDeps({
@@ -1941,11 +1826,11 @@ describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
 
 // ── #378 退出条件:三类单装全走事务 + 首装 authorize 生产入口 + cloud 卸载清授权账 ────────────────
 describe("single-install transactionalization exit criteria (REQ-100 #378)", () => {
-  test("首装无 authorization → stage=\"authorize\"(生产入口,mcp/plugin-vendored/plugin-npm/cloud 各一)", async () => {
+  test("首装无 authorization → stage=\"authorize\"(生产入口,mcp/cloud 各一)", async () => {
     const cases: Array<{ catalogId: string; key: string; grants?: Record<string, unknown> }> = [
       { catalogId: "mcp:markitdown", key: "mcp--markitdown", grants: { secrets: { API_KEY: "v" } } },
-      { catalogId: "plugin:vp", key: "plugin--vp" },
-      { catalogId: "plugin:np", key: "plugin--np" },
+      // ADR-040(`#825`):plugin-vendored / plugin-npm 两格随安装路径退场(catalog plugin 条目
+      // 现在拒在 authorize 之前 —— 见本文件末尾的 ADR-040 具名拒绝用例)。
       { catalogId: "cloud:research", key: "cloud--research" },
     ]
     for (const c of cases) {
@@ -2045,22 +1930,6 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     expect(u2.ok).toBe(true)
   })
 
-  test("r2:fresh 拒绝同名其他 digest 的未策展派生路径(vendored 与 npm 双入口,防双载)", async () => {
-    const stray = path.join(globalRoot, "plugins", "vp@deadbeefdeadbeef", "plugin.js")
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [stray] }))
-    const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("without a ledger record")
-    const strayNp = path.join(globalRoot, "plugins", "np@aaaabbbbccccdddd", "plugin.js")
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [strayNp] }))
-    const r2 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r2.ok).toBe(false)
-    if (!r2.ok) expect(r2.reason).toContain("without a ledger record")
-    // 双入口都零写入
-    expect(JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))).toEqual({ plugin: [strayNp] })
-  })
-
   test("r5:authorize 暂停时本次密钥版本清理失败 → 降级普通失败(不返回 authorize),明文位置入 reason", async () => {
     const { deps } = makeDeps({
       installers: {
@@ -2075,12 +1944,10 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     expect(first.reason).toContain("plaintext")
   })
 
-  test("r7:escape-hatch 真源路由 → 事务单装 fail-closed 拒(mcp/npm/vendored 三入口),零写零账", async () => {
+  test("r7:escape-hatch 真源路由 → 事务单装 fail-closed 拒(mcp 入口;plugin 两入口随 ADR-040 退场),零写零账", async () => {
     const { deps } = makeDeps({ installers: { mcpConfigTruthPath: () => "/elsewhere/opencode.jsonc" } })
     for (const c of [
       { catalogId: "mcp:markitdown", grants: { secrets: { API_KEY: "v" } } },
-      { catalogId: "plugin:np" },
-      { catalogId: "plugin:vp" },
     ]) {
       const r = await installCatalog({ catalogId: c.catalogId, scope: { scope: "global" }, ...(c.grants ? { grants: c.grants } : {}) }, deps)
       expect(r.ok).toBe(false)
@@ -2103,626 +1970,11 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     expect(fs.existsSync(path.join(globalRoot, "installs.json"))).toBe(false)
   })
 
-  test("r6:vendored 内容身份交叉在分发前 —— 配错 vendoredAssetKey 的 replace/fresh 一律拒", async () => {
-    const { deps } = makeDeps()
-    const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(v1.ok).toBe(true)
-    // 已有 victim 记录 + 配错 key 的高版本 entry:replace 分支不得绕过身份绑定
-    const drifted = {
-      ...pluginVendoredEntry,
-      version: "1.0.1",
-      installSpec: { kind: "plugin", package: "@alpha/vp", vendoredAssetKey: "plugins/other" },
-    } as CatalogEntry
-    const { deps: d2 } = makeDeps({ entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:vp"), drifted] })
-    const upd = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
-    expect(upd.ok).toBe(false)
-    if (!upd.ok) expect(upd.reason).toContain("content identity drift")
-  })
-
-  test("r6:legacy XDG 源 —— 同名派生路径拒(vendored/npm 双入口);legacy 非法/不可读 fail-closed", async () => {
-    const legacyPath = path.join(globalRoot, "plugins", "vp@1111222233334444", "plugin.js")
-    const withLegacy = (value: unknown[], fail = false) => ({
-      installers: {
-        readLegacyPluginArrayStrict: () =>
-          fail
-            ? { ok: false as const, reason: "legacy config plugin[] contains invalid entries" }
-            : { ok: true as const, sources: [{ value, configDir: path.join(tmp, "legacy") }] },
-      },
-    })
-    const { deps } = makeDeps(withLegacy([legacyPath]))
-    const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("legacy config contains")
-    const { deps: dNp } = makeDeps(withLegacy([path.join(globalRoot, "plugins", "np@5555666677778888", "plugin.js")]))
-    const r2 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, dNp)
-    expect(r2.ok).toBe(false)
-    if (!r2.ok) expect(r2.reason).toContain("legacy config contains")
-    // legacy 非法成员/不可读 → fail-closed(引擎会拒整份合并配置,不得落账谎报成功)
-    const { deps: dBad } = makeDeps(withLegacy([], true))
-    const r3 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, dBad)
-    expect(r3.ok).toBe(false)
-    if (!r3.ok) expect(r3.reason).toContain("invalid entries")
-  })
-
-  test("r10:等价重复条目(同一引擎 load 身份)→ replace 收敛为单条;npm 同包兄弟 pin → 拒", async () => {
-    const { deps } = makeDeps()
-    const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(v1.ok).toBe(true)
-    if (!v1.ok) return
-    const oldJs = path.join(v1.files![0]!, "plugin.js")
-    // 绝对 + 等价相对重复条目(引擎去重后同一身份)
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs, `./${path.relative(globalRoot, oldJs)}`] }))
-    const v2Entry = { ...pluginVendoredEntry, version: "1.0.1" } as CatalogEntry
-    const { deps: d2 } = makeDeps({
-      entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:vp"), v2Entry],
-      installers: {
-        collectVendoredPluginPayload: (_key: string, name: string) => ({
-          ok: true as const,
-          files: [{ path: "plugin.js", data: Buffer.from(`// vendored ${name} v1.0.1`) }],
-        }),
-      },
-    })
-    const upd = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
-    expect(upd.ok).toBe(true) // 不再按原始条目数误判 drift
-    expect(pluginArrayOnDisk()).toHaveLength(1) // 等价重复收敛为单条
-    // r11:收敛保留**最后一条**的形态/options(引擎 later-wins)—— 前条纯字符串 + 后条带
-    // options 的元组,置换后 options 必须存活。
-    const v2Js = strOf((() => { const a = pluginArrayOnDisk()[0]; return Array.isArray(a) ? a[0] : a })())
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [v2Js, [`./${path.relative(globalRoot, v2Js)}`, { lazy: true }]] }))
-    const v3Entry = { ...pluginVendoredEntry, version: "1.0.2" } as CatalogEntry
-    const { deps: dOpts } = makeDeps({
-      entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:vp"), v3Entry],
-      installers: {
-        collectVendoredPluginPayload: (_key: string, name: string) => ({
-          ok: true as const,
-          files: [{ path: "plugin.js", data: Buffer.from(`// vendored ${name} v1.0.2`) }],
-        }),
-      },
-    })
-    const upd3 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, dOpts)
-    expect(upd3.ok).toBe(true)
-    const after3 = pluginArrayOnDisk()
-    expect(after3).toHaveLength(1)
-    expect(Array.isArray(after3[0])).toBe(true) // 保留后条元组形态
-    const tup = after3[0]
-    if (Array.isArray(tup)) expect(tup[1]).toEqual({ lazy: true }) // options 存活
-    // npm:同包兄弟 pin 在场 → 置换歧义拒
-    fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
-    fs.rmSync(path.join(globalRoot, "alpha.jsonc"), { force: true })
-    const { deps: d3 } = makeDeps()
-    const np1 = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, d3)
-    expect(np1.ok).toBe(true)
-    const cur = pluginArrayOnDisk()
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [...cur, "@alpha/np@9.9.9"] }))
-    const npV2 = { ...pluginNpmEntry, version: "2.3.5", installSpec: { kind: "plugin", package: "@alpha/np", version: "2.3.5" } } as CatalogEntry
-    const { deps: d4 } = makeDeps({ entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:np"), npV2] })
-    const npUpd = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, d4)
-    expect(npUpd.ok).toBe(false)
-    if (!npUpd.ok) expect(npUpd.reason).toContain("other pins")
-    // r11:legacy 源的同包 pin 同样拒(引擎合并去重可能加载 legacy 版本)
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: cur }))
-    const { deps: d5 } = makeDeps({
-      entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:np"), npV2],
-      installers: {
-        readLegacyPluginArrayStrict: () => ({ ok: true as const, sources: [{ value: ["@alpha/np@9.9.9"], configDir: path.join(tmp, "legacy") }] }),
-      },
-    })
-    const npUpd2 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, d5)
-    expect(npUpd2.ok).toBe(false)
-    if (!npUpd2.ok) expect(npUpd2.reason).toContain("legacy config contains pin")
-  })
-
-  test("r9:vendored 条目被等价改写为相对形态 → dispatch/replace 按引擎语义仍可更新", async () => {
-    const { deps } = makeDeps()
-    const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(v1.ok).toBe(true)
-    if (!v1.ok) return
-    const oldJs = path.join(v1.files![0]!, "plugin.js")
-    // 把绝对条目改写为等价相对形态(引擎按 config 目录解析,合法配置)
-    const rel = `./${path.relative(globalRoot, oldJs)}`
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [rel] }))
-    const v2Entry = { ...pluginVendoredEntry, version: "1.0.1" } as CatalogEntry
-    const { deps: d2 } = makeDeps({
-      entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:vp"), v2Entry],
-      installers: {
-        collectVendoredPluginPayload: (_key: string, name: string) => ({
-          ok: true as const,
-          files: [{ path: "plugin.js", data: Buffer.from(`// vendored ${name} v1.0.1`) }],
-        }),
-      },
-    })
-    const upd = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
-    expect(upd.ok).toBe(true) // 不再被词法比较误判 ledger drift
-    const arr = pluginArrayOnDisk()
-    expect(arr).toHaveLength(1)
-    expect(strOf(arr[0])).not.toBe(rel) // 已换元为新落点
-  })
-
-  test("r5:元组 [spec, options] —— 合法元组可被 replace 换首项保留 options;非法形状拒", async () => {
-    const { deps } = makeDeps()
-    const v1 = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(v1.ok).toBe(true)
-    // 把安装条目改写为引擎合法元组(带 options);replace 必须能按 spec 头对账并换元
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [["@alpha/np@2.3.4", { lazy: true }]] }))
-    const v2Entry = { ...pluginNpmEntry, version: "2.3.5", installSpec: { kind: "plugin", package: "@alpha/np", version: "2.3.5" } } as CatalogEntry
-    const { deps: d2 } = makeDeps({ entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:np"), v2Entry] })
-    const upd = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, d2)
-    expect(upd.ok).toBe(true)
-    expect(pluginArrayOnDisk()).toEqual([["@alpha/np@2.3.5", { lazy: true }]]) // 换首项保留 options
-    // 引擎非法形状(["x"] / ["x", null])在 strict 读被拒 → 新装 fail-closed
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [["only-head"]] }))
-    const bad = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
-    expect(bad.ok).toBe(false)
-    if (!bad.ok) expect(bad.reason).toContain("invalid entries")
-  })
-
-  test("r3:相对与 file:// 等价形态的同名 stray 同样被拒(引擎按 config 目录解析路径条目)", async () => {
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: ["./plugins/vp@0011223344556677/plugin.js"] }))
-    const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("without a ledger record")
-    const fileUrl = `file://${path.join(globalRoot, "plugins", "np@8899aabbccddeeff", "plugin.js")}`
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [fileUrl] }))
-    const r2 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r2.ok).toBe(false)
-    if (!r2.ok) expect(r2.reason).toContain("without a ledger record")
-  })
-
-  test("r2:replace 失败清理按 live 引用判定 —— config 已含 staged jsPath 时目录保留", async () => {
-    const { deps } = makeDeps()
-    const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(v1.ok).toBe(true)
-    // 触发 replace(高版本)+ 事务在途 busy → 失败;fake stager 落点固定 plugins/vp@feed1234,
-    // 预先把该 jsPath 塞进 live plugin[](模拟「config 已指向 staged 载荷」的 retained 形态)。
-    const stagedJs = path.join(globalRoot, "plugins", "vp@feed1234", "plugin.js")
-    const cur = pluginArrayOnDisk()
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [...cur, stagedJs] }))
-    const v2Entry = { ...pluginVendoredEntry, version: "1.0.1" } as CatalogEntry
-    const { deps: d2 } = makeDeps({ entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:vp"), v2Entry] })
-    const upd = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
-    expect(upd.ok).toBe(false)
-    // 保守清理:live 引用在场 → staged 目录不删(删除会制造「config 指向缺失载荷」)
-    expect(fs.existsSync(path.join(globalRoot, "plugins", "vp@feed1234"))).toBe(true)
-  })
-
-  test("plugin 更新失败 → 旧版继续健康(config 指旧 jsPath、旧目录原样、账本不动)", async () => {
-    const { deps } = makeDeps()
-    const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(v1.ok).toBe(true)
-    if (!v1.ok) return
-    const oldDir = v1.files![0]!
-    const oldJs = path.join(oldDir, "plugin.js")
-    const oldBytes = fs.readFileSync(oldJs, "utf8")
-    const recBefore = JSON.stringify(findRecordV2(globalRoot, "plugin", "vp"))
-    // 高版本 entry(触发 replace)+ 事务在途 busy → 更新失败
-    const v2Entry = { ...pluginVendoredEntry, version: "1.0.1" } as CatalogEntry
-    const { deps: d2 } = makeDeps({
-      entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:vp"), v2Entry],
-      installers: {
-        collectVendoredPluginPayload: (_key: string, name: string) => ({
-          ok: true as const,
-          files: [{ path: "plugin.js", data: Buffer.from(`// vendored ${name} v1.0.1`) }],
-        }),
-      },
-    })
-    const held = tryAcquireBundleLock(globalRoot, { txId: "test-busy" })
-    expect(held.ok).toBe(true)
-    try {
-      const upd = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
-      expect(upd.ok).toBe(false)
-    } finally {
-      if (held.ok) held.lock.release()
-    }
-    // 旧版继续健康:实物在、字节不变、config 仍指旧 jsPath、账本原样
-    expect(fs.readFileSync(oldJs, "utf8")).toBe(oldBytes)
-    expect(pluginArrayOnDisk()).toEqual([oldJs])
-    expect(JSON.stringify(findRecordV2(globalRoot, "plugin", "vp"))).toBe(recBefore)
-  })
 })
 
 // ── #352:catalog 插件原子替换(journaled 事务;fresh/replace/refuse 三态分发)────────────────────
-describe("atomic plugin replace via installCatalog (REQ-099 #352)", () => {
-  const npDigest = () => {
-    const d = decodeManifestV2(synthesizeManifest({ entry: pluginNpmEntry, channel: "remote", catalogVersion: "2026-07-13.1" }))
-    if (!d.ok) throw new Error("fixture manifest invalid")
-    return computeManifestDigest(d.manifest)
-  }
-  const seedNpmOld = (over: { pinned?: string; digest?: string; desiredState?: "enabled" | "disabled"; name?: string; id?: string; version?: string } = {}) => {
-    const pinned = over.pinned ?? "@alpha/np@2.0.0"
-    fs.mkdirSync(globalRoot, { recursive: true })
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [pinned] }, null, 2))
-    const w = upsertRecordV2(globalRoot, {
-      id: over.id ?? "plugin:np",
-      name: over.name ?? "np",
-      kind: "plugin",
-      environment: "prod",
-      scope: { kind: "global" },
-      version: over.version ?? "2.0.0",
-      ...(over.digest ? { manifestDigest: over.digest } : {}),
-      desiredState: over.desiredState ?? "enabled",
-      origin: "catalog",
-      configKey: `plugin:${pinned}`,
-      transaction: { id: "tx-old-1", state: "committed" },
-      installedAt: "2026-07-15T00:00:00.000Z",
-    })
-    if (!w.ok) throw new Error(w.reason)
-    return w.record
-  }
-
-  test("npm 替换:同一事务换元 + receipt 落账;generation/previous 链、desiredState 继承、authorize 闸全通", async () => {
-    const old = seedNpmOld({ desiredState: "disabled", digest: `sha256:${"c".repeat(64)}` })
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    // #395:disabled 插件的置换保持 plugin[] 缺席(丢旧不加新;更新 disabled 不重新启用),内容/账本照常换代。
-    expect(cfg.plugin).toEqual([])
-    const rec = findRecordV2(globalRoot, "plugin", "np")!
-    expect(rec.generation).toBe(old.generation + 1)
-    expect(rec.version).toBe("2.3.4")
-    expect(rec.configKey).toBe("plugin:@alpha/np@2.3.4")
-    expect(rec.desiredState).toBe("disabled") // 更新不静默重新启用
-    expect(rec.previousDigest).toBe(`sha256:${"c".repeat(64)}`)
-    expect(readCapabilityGrant(globalRoot, "plugin--np")?.capabilities?.slice().sort()).toEqual(["engine:config", "engine:plugin"])
-  })
-
-  test("同钉版同 digest → 幂等早退(零副作用,warning 说明)", async () => {
-    seedNpmOld({ pinned: "@alpha/np@2.3.4", digest: npDigest(), version: "2.3.4" })
-    const before = fs.readFileSync(path.join(globalRoot, "installs.json"))
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.warning).toContain("nothing to replace")
-    expect(fs.readFileSync(path.join(globalRoot, "installs.json")).equals(before)).toBe(true)
-  })
-
-  test("锁内 precondition 钉 TOCTOU:plan 快照与锁内重读分歧 → 拒绝重试,config/账本零变化", async () => {
-    seedNpmOld()
-    // 预写授权基线(与请求集同)→ authorize 闸静默通过,单次驱动内演练 plan→锁内窗口。
-    writeCapabilityGrantSync(globalRoot, { v: 1, key: "plugin--np", capabilities: ["engine:config", "engine:plugin"], txId: "t-pre", grantedAt: new Date().toISOString() })
-    let reads = 0
-    const { deps } = makeDeps({
-      installers: {
-        // 第 1 次(dispatch)与第 2 次(plan 快照)= 原状;第 3 次(锁内 precondition)= 漂移
-        //(模拟 plan 与锁获取之间的跨进程/绕道写方)。
-        readPluginArrayStrict: () => {
-          reads++
-          return { ok: true as const, value: reads >= 3 ? ["@alpha/np@2.0.0", "intruder@1.0.0"] : ["@alpha/np@2.0.0"] }
-        },
-      },
-    })
-    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("changed since plan")
-    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    expect(cfg.plugin).toEqual(["@alpha/np@2.0.0"]) // 旧元素原样;替换未发生
-    expect(findRecordV2(globalRoot, "plugin", "np")!.version).toBe("2.0.0")
-  })
-
-  test("双键(entry 名与规范化名各有账)→ 显式拒绝;规范化名单独有账且名不符 → 名变更拒绝", async () => {
-    seedNpmOld()
-    seedNpmOld({ name: "alpha__np" })
-    const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("duplicate keys")
-
-    fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
-    seedNpmOld({ name: "alpha__np" })
-    const r2 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r2.ok).toBe(false)
-    if (!r2.ok) expect(r2.reason).toContain("name changes are refused")
-  })
-
-  test("configKey 与实际 config 不符(账/配漂移)→ 拒绝 replace 也拒绝 fresh", async () => {
-    seedNpmOld()
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [] }, null, 2)) // 配置已被外力清掉
-    const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("ledger/config drift")
-    expect(called(calls, "persistPlugin")).toHaveLength(0)
-  })
-
-  test("vendored 替换:versioned staging → 事务切路径 → 旧目录 GC;versioned 目录可正常卸载", async () => {
-    // 旧 vendored 安装:plugins/vp + config 路径 + 账。
-    const oldDir = path.join(globalRoot, "plugins", "vp")
-    fs.mkdirSync(oldDir, { recursive: true })
-    fs.writeFileSync(path.join(oldDir, "plugin.js"), "// old")
-    const oldJs = path.join(oldDir, "plugin.js")
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs] }, null, 2))
-    const w = upsertRecordV2(globalRoot, {
-      id: "plugin:vp",
-      name: "vp",
-      kind: "plugin",
-      environment: "prod",
-      scope: { kind: "global" },
-      version: "0.9.0",
-      desiredState: "enabled",
-      origin: "catalog",
-      configKey: `plugin-path:${oldJs}`,
-      files: [oldDir],
-      transaction: { id: "tx-old-vp", state: "committed" },
-      installedAt: "2026-07-15T00:00:00.000Z",
-    })
-    if (!w.ok) throw new Error(w.reason)
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    const stagedDir = path.join(globalRoot, "plugins", "vp@feed1234")
-    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    expect(cfg.plugin).toEqual([path.join(stagedDir, "plugin.js")])
-    expect(fs.existsSync(oldDir)).toBe(false) // 旧目录提交成功后 GC
-    expect(fs.existsSync(stagedDir)).toBe(true)
-    const rec = findRecordV2(globalRoot, "plugin", "vp")!
-    expect(rec.configKey).toBe(`plugin-path:${path.join(stagedDir, "plugin.js")}`)
-    // versioned 目录卸载(#352 放宽 <name>@<suffix>):
-    const u = await uninstallByKey({ type: "plugin", name: "vp", scope: "global" }, deps)
-    expect(u.ok).toBe(true)
-    expect(fs.existsSync(stagedDir)).toBe(false)
-    expect(findRecordV2(globalRoot, "plugin", "vp")).toBeNull()
-  })
-})
-
 // ── #352 review #381 回归锁 ────────────────────────────────────────────────────────────────────────
-describe("plugin replace hardening (review #381)", () => {
-  test("vendored:账本路径树外(形状合法但漂移)→ 拒绝 replace,绝不作为删除目标", async () => {
-    const evilJs = path.join(tmp, "Documents", "plugin.js")
-    fs.mkdirSync(path.dirname(evilJs), { recursive: true })
-    fs.writeFileSync(evilJs, "// user data")
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [evilJs] }, null, 2))
-    const w = upsertRecordV2(globalRoot, {
-      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
-      version: "0.9.0", desiredState: "enabled", origin: "catalog",
-      configKey: `plugin-path:${evilJs}`, transaction: { id: "tx-evil", state: "committed" },
-      installedAt: "2026-07-15T00:00:00.000Z",
-    })
-    if (!w.ok) throw new Error(w.reason)
-    const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("uncontrolled removal target")
-    expect(fs.existsSync(evilJs)).toBe(true) // 树外目标毫发无损
-  })
-
-  test("改名史:同 catalog id 的 v1-only 历史名(当前 spec 重建不出)→ 拒绝,不误走 fresh", async () => {
-    addReceipt(globalRoot, { id: "plugin:np", name: "old__np", type: "plugin", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "plugin:@old/np@1.0.0" })
-    const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("historical package name")
-    expect(called(calls, "persistPlugin")).toHaveLength(0)
-  })
-
-  test("幂等早退须证完整:同 digest 但 plugin.js 丢失(vendored)→ 走完整替换修复,不谎报成功", async () => {
-    const oldDir = path.join(globalRoot, "plugins", "vp")
-    const oldJs = path.join(oldDir, "plugin.js")
-    fs.mkdirSync(oldDir, { recursive: true }) // 目录在、plugin.js 丢失
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs] }, null, 2))
-    const d = decodeManifestV2(synthesizeManifest({ entry: pluginVendoredEntry, channel: "remote", catalogVersion: "2026-07-13.1" }))
-    if (!d.ok) throw new Error("fixture manifest invalid")
-    const w = upsertRecordV2(globalRoot, {
-      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
-      version: d.manifest.version, manifestDigest: computeManifestDigest(d.manifest),
-      desiredState: "enabled", origin: "catalog",
-      configKey: `plugin-path:${oldJs}`, transaction: { id: "tx-old-vp2", state: "committed" },
-      installedAt: "2026-07-15T00:00:00.000Z",
-    })
-    if (!w.ok) throw new Error(w.reason)
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.warning ?? "").not.toContain("nothing to replace") // 修复路径,非早退
-    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    expect(cfg.plugin[0]).toContain("vp@feed1234") // 新 versioned 路径已接管
-  })
-
-  test("replay:可变归属字段(desiredState)漂移不算冲突 —— 重放保留后到变更;纯重放批零写盘", async () => {
-    const base = {
-      id: "plugin:np", name: "np", kind: "plugin" as const, environment: "prod" as const,
-      scope: { kind: "global" as const }, version: "2.3.4", desiredState: "enabled" as const,
-      origin: "catalog" as const, configKey: "plugin:@alpha/np@2.3.4",
-      transaction: { id: "tx-rp", state: "committed" as const }, installedAt: "2026-07-16T00:00:00.000Z",
-    }
-    expect(upsertRecordV2(globalRoot, base).ok).toBe(true)
-    // 模拟 setInstallState 后到变更(真实写方:保留 transaction.id,只翻 desiredState)…
-    const flipped = setDesiredStateV2(globalRoot, "plugin", "np", "disabled")
-    expect(flipped.ok).toBe(true)
-    // …随后崩溃恢复重放原 tx(desiredState=enabled 的 journal 模板):不冲突、不回翻、不递增。
-    const replay = upsertRecordsV2(globalRoot, [base])
-    expect(replay.ok).toBe(true)
-    if (!replay.ok) return
-    expect(replay.records[0]!.desiredState).toBe("disabled") // 后到合法变更保留
-    expect(replay.records[0]!.generation).toBe(1) // 不递增(重放非新代)
-    // 纯重放批 = 零写盘:账本只读也能成功(root CI 跳过)。
-    if (!(typeof process.getuid === "function" && process.getuid() === 0)) {
-      fs.chmodSync(globalRoot, 0o555)
-      try {
-        const ro = upsertRecordsV2(globalRoot, [base])
-        expect(ro.ok).toBe(true)
-      } finally {
-        fs.chmodSync(globalRoot, 0o755)
-      }
-    }
-  })
-})
-
 // ── #378 r15:同版本严格实物校验 + 文件系统身份对账的 symlink 别名回归 ─────────────────────────
-describe("plugin replace r15 —— 同版本精确校验与别名身份对账", () => {
-  const seedVendoredCurrent = (jsContent: string) => {
-    const oldDir = path.join(globalRoot, "plugins", "vp")
-    const oldJs = path.join(oldDir, "plugin.js")
-    fs.mkdirSync(oldDir, { recursive: true })
-    fs.writeFileSync(oldJs, jsContent)
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs] }, null, 2))
-    const d = decodeManifestV2(synthesizeManifest({ entry: pluginVendoredEntry, channel: "remote", catalogVersion: "2026-07-13.1" }))
-    if (!d.ok) throw new Error("fixture manifest invalid")
-    const w = upsertRecordV2(globalRoot, {
-      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
-      version: d.manifest.version, manifestDigest: computeManifestDigest(d.manifest),
-      desiredState: "enabled", origin: "catalog",
-      configKey: `plugin-path:${oldJs}`, transaction: { id: "tx-old-vp3", state: "committed" },
-      installedAt: "2026-07-15T00:00:00.000Z",
-    })
-    if (!w.ok) throw new Error(w.reason)
-    return { oldDir, oldJs }
-  }
-
-  test("同 digest + 实物逐字节等值 → 幂等早退零副作用(锁内重读 + 精确校验)", async () => {
-    seedVendoredCurrent("// vendored vp (plugins/vp)") // 与 makeDeps 载荷 fake 逐字节一致
-    const before = fs.readFileSync(path.join(globalRoot, "installs.json"))
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.warning).toContain("nothing to replace")
-    expect(fs.readFileSync(path.join(globalRoot, "installs.json")).equals(before)).toBe(true)
-    expect(fs.existsSync(path.join(globalRoot, "plugins", "vp@feed1234"))).toBe(false) // 未 staging
-  })
-
-  test("同 digest 但 plugin.js 内容与载荷不符(截断/篡改)→ 不早退,走修复替换", async () => {
-    seedVendoredCurrent("// tampered") // r15 前旧判据 existsSync 会误判健康而空转
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.warning ?? "").not.toContain("nothing to replace")
-    expect(strOf(pluginArrayOnDisk()[0])).toContain("vp@feed1234") // 修好的新 versioned 路径接管
-    // r16 Minor:置换 receipt 落 payloadDigest(upsert 整记录替换,缺省会抹掉内容身份)。
-    expect(strOf(recOf(findRecordV2(globalRoot, "plugin", "vp")).payloadDigest)).toMatch(/^sha256:/)
-  })
-
-  test("r16:plugins/<name> 整目录被换成指向外部等值内容的 symlink → 不判健康,走修复替换", async () => {
-    const external = path.join(tmp, "external-vp")
-    fs.mkdirSync(external, { recursive: true })
-    fs.writeFileSync(path.join(external, "plugin.js"), "// vendored vp (plugins/vp)") // 字节等值也不行
-    const oldDir = path.join(globalRoot, "plugins", "vp")
-    fs.mkdirSync(path.dirname(oldDir), { recursive: true })
-    fs.symlinkSync(external, oldDir)
-    const oldJs = path.join(oldDir, "plugin.js")
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs] }, null, 2))
-    const d = decodeManifestV2(synthesizeManifest({ entry: pluginVendoredEntry, channel: "remote", catalogVersion: "2026-07-13.1" }))
-    if (!d.ok) throw new Error("fixture manifest invalid")
-    const w = upsertRecordV2(globalRoot, {
-      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
-      version: d.manifest.version, manifestDigest: computeManifestDigest(d.manifest),
-      desiredState: "enabled", origin: "catalog",
-      configKey: `plugin-path:${oldJs}`, transaction: { id: "tx-old-vp5", state: "committed" },
-      installedAt: "2026-07-15T00:00:00.000Z",
-    })
-    if (!w.ok) throw new Error(w.reason)
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.warning ?? "").not.toContain("nothing to replace") // 外部路径执行现场必须被修复
-    expect(strOf(pluginArrayOnDisk()[0])).toContain("vp@feed1234")
-  })
-
-  test("r16:等值载荷 + 多余空目录夹带 → 不判健康,走修复替换", async () => {
-    const { oldDir } = seedVendoredCurrent("// vendored vp (plugins/vp)")
-    fs.mkdirSync(path.join(oldDir, "smuggled"), { recursive: true })
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.warning ?? "").not.toContain("nothing to replace")
-  })
-
-  test("r20:vendored 首装遇同包 base 未策展 npm 条目 → 拒(引擎按包名与 file URL 各自去重,两份都会加载)", async () => {
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: ["@alpha/vp@0.9.9"] }, null, 2))
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("refusing to adopt or double-install")
-    expect(fs.existsSync(path.join(globalRoot, "plugins", "vp@feed1234"))).toBe(false) // 未 staging
-    const cfgAfter = pluginArrayOnDisk()
-    expect(cfgAfter).toEqual(["@alpha/vp@0.9.9"]) // 原条目原封
-  })
-
-  test("r22:同版本健康 vendored + 同包 npm pin 在场 → 幂等早退失效,如实拒(不谎报 already)", async () => {
-    const { oldJs } = seedVendoredCurrent("// vendored vp (plugins/vp)") // 实物逐字节健康
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs, "@alpha/vp@0.9.9"] }, null, 2))
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false) // r22 前:返回 ok + "already at this version",双载现场被报成功
-    if (!r.ok) expect(r.reason).toContain("engine loads it alongside")
-    expect(pluginArrayOnDisk()).toEqual([oldJs, "@alpha/vp@0.9.9"]) // config 原封交人工清
-  })
-
-  test("r21:vendored→vendored 更新遇同包 base 未策展 npm 条目 → 拒且 staging 清净(fresh 门不覆盖 replace)", async () => {
-    const oldDir = path.join(globalRoot, "plugins", "vp")
-    const oldJs = path.join(oldDir, "plugin.js")
-    fs.mkdirSync(oldDir, { recursive: true })
-    fs.writeFileSync(oldJs, "// old")
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs, "@alpha/vp@0.9.9"] }, null, 2))
-    const w = upsertRecordV2(globalRoot, {
-      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
-      version: "0.9.0", desiredState: "enabled", origin: "catalog",
-      configKey: `plugin-path:${oldJs}`, transaction: { id: "tx-old-vp6", state: "committed" },
-      installedAt: "2026-07-15T00:00:00.000Z",
-    })
-    if (!w.ok) throw new Error(w.reason)
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("engine loads it alongside")
-    expect(pluginArrayOnDisk()).toEqual([oldJs, "@alpha/vp@0.9.9"]) // config 原封
-    expect(fs.existsSync(path.join(globalRoot, "plugins", "vp@feed1234"))).toBe(false) // staging 已清
-  })
-
-  test("r20:npm→vendored 迁移 —— 载荷分支按新 spec 选,npm 钉版被换成 vendored 路径(不再账实背离)", async () => {
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: ["@alpha/vp@0.9.0"] }, null, 2))
-    const w = upsertRecordV2(globalRoot, {
-      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
-      version: "0.9.0", desiredState: "enabled", origin: "catalog",
-      configKey: "plugin:@alpha/vp@0.9.0", transaction: { id: "tx-npm-old", state: "committed" },
-      installedAt: "2026-07-15T00:00:00.000Z",
-    })
-    if (!w.ok) throw new Error(w.reason)
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.warning ?? "").not.toContain("nothing to replace")
-    const stagedJs = path.join(globalRoot, "plugins", "vp@feed1234", "plugin.js")
-    expect(pluginArrayOnDisk()).toEqual([stagedJs]) // r20 前:继续钉 npm,加载源与 bundled manifest 背离
-    const rec = recOf(findRecordV2(globalRoot, "plugin", "vp"))
-    expect(rec.configKey).toBe(`plugin-path:${stagedJs}`)
-    expect(strOf(rec.payloadDigest)).toMatch(/^sha256:/)
-  })
-
-  test("config 条目经 symlink 别名指向账本路径 → 身份对账不误判 drift,置换收敛为单条", async () => {
-    const oldDir = path.join(globalRoot, "plugins", "vp")
-    const oldJs = path.join(oldDir, "plugin.js")
-    fs.mkdirSync(oldDir, { recursive: true })
-    fs.writeFileSync(oldJs, "// old")
-    const aliasRoot = path.join(tmp, "alias-plugins")
-    fs.symlinkSync(path.join(globalRoot, "plugins"), aliasRoot)
-    const aliasJs = path.join(aliasRoot, "vp", "plugin.js")
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [aliasJs] }, null, 2))
-    const w = upsertRecordV2(globalRoot, {
-      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
-      version: "0.9.0", desiredState: "enabled", origin: "catalog",
-      configKey: `plugin-path:${oldJs}`, transaction: { id: "tx-old-vp4", state: "committed" },
-      installedAt: "2026-07-15T00:00:00.000Z",
-    })
-    if (!w.ok) throw new Error(w.reason)
-    const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    const stagedJs = path.join(globalRoot, "plugins", "vp@feed1234", "plugin.js")
-    expect(pluginArrayOnDisk()).toEqual([stagedJs]) // 别名条目被换元,不残留
-    expect(recOf(findRecordV2(globalRoot, "plugin", "vp")).configKey).toBe(`plugin-path:${stagedJs}`)
-  })
-})
-
 // ── #361:catalog agent 走事务安装链(file md + config 叶单事务;裁决见 issue #361 评论)────────────
 describe("catalog agent install via transaction engine (REQ-098 #361)", () => {
   const entriesWithAgents = [...ALL_ENTRIES, agentBuiltinEntry, agentRemoteEntry]
@@ -3173,76 +2425,40 @@ describe("#397 enable 闸(setInstallStateByKey;advisory 之后)", () => {
 })
 
 // ── #397 r1-2:plugin 置换(更新链)经带当前 curation 的分类器 ────────────────────────────────────
-describe("#397 r1-2:plugin replace 的 session-grant 强制(更新链不是豁免通道)", () => {
-  const seedNpmOldEnabled = () => {
-    const pinned = "@alpha/np@2.0.0"
-    fs.mkdirSync(globalRoot, { recursive: true })
-    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [pinned] }, null, 2))
-    const w = upsertRecordV2(globalRoot, {
-      id: "plugin:np",
-      name: "np",
-      kind: "plugin",
-      environment: "prod",
-      scope: { kind: "global" },
-      version: "2.0.0",
-      desiredState: "enabled",
-      origin: "catalog",
-      configKey: `plugin:${pinned}`,
-      transaction: { id: "tx-old-1", state: "committed" },
-      installedAt: "2026-07-15T00:00:00.000Z",
+// ── ADR-040(`#825` 第 2/3/4 条):catalog 的 plugin 条目一律具名拒绝 ─────────────────────────────
+//
+// 这里替代掉的是本文件原有的四组 plugin 安装用例(fresh / 原子置换 / 加固 / session-grant 强制,
+// 共 46 条)。它们逐条断言的是「怎么把插件装进 plugin[] / 怎么原子换掉它」,而那条路径已经封死。
+// 留下来的判据只有一条,但它比那 46 条更靠前:**拒在事务开始之前、在任何写盘之前,并且说得出理由。**
+describe("ADR-040(`#825`):catalog plugin 条目在事务开始前具名拒绝", () => {
+  for (const [label, catalogId] of [["vendored", "plugin:vp"], ["npm", "plugin:np"]] as const) {
+    test(`${label} plugin 条目:具名拒绝(带 entry id + ADR-040),盘面零变更、事务从未开始`, async () => {
+      const { deps, calls } = makeDeps()
+      const r = await installCatalog({ catalogId, scope: { scope: "global" } }, deps)
+      expect(r.ok).toBe(false)
+      if (r.ok) throw new Error("unreachable")
+      // 具名:哪个条目、按哪条裁决。只断 ok:false 的话,「别处随便一个失败」也会读成通过。
+      expect(r.reason).toContain(catalogId)
+      expect(r.reason).toContain("ADR-040")
+      // 位置承诺:拒在**任何 installer 被碰之前**。`calls` 记的是真实的 installer 调用
+      //(`readPluginArrayStrict` / `findPluginBaseConflictStrict` / `collectVendoredPluginPayload` …),
+      // 拒绝若挪到 dispatch 之后,这条立刻红。下面那条对照用例证明 `calls` 确实会被填。
+      expect(calls).toEqual([])
+      // 零副作用的三个面(config / 账本 / 载荷目录)。
+      expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+      expect(fs.existsSync(path.join(globalRoot, "installs.json"))).toBe(false)
+      expect(fs.existsSync(path.join(globalRoot, "plugins"))).toBe(false)
+      expect(findRecordV2(globalRoot, "plugin", catalogId.slice("plugin:".length))).toBeNull()
     })
-    if (!w.ok) throw new Error(w.reason)
   }
 
-  test("已启用 plugin 更新到声明 session-grant 的版本 ⇒ plugin[] 移除 + 账本 disabled(不留非法 enabled)", async () => {
-    seedNpmOldEnabled()
-    const sessionGrantV2: CatalogEntry = {
-      ...pluginNpmEntry,
-      source: "official",
-      curation: makeCuration("plugin:np", "2.3.4", { tier: "labs", activationPolicy: "session-grant" }),
-    }
-    const { deps } = makeDeps({ entries: [sessionGrantV2] })
-    const r = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+  test("对照:同一个 makeDeps 下 mcp 条目照常装成 —— 且它**真的**填了 calls 与 alpha.jsonc", async () => {
+    const { deps, calls } = makeDeps()
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "v" } } }, deps)
     expect(r.ok).toBe(true)
-    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    expect(cfg.plugin).toEqual([]) // 目标版本 session-grant:置换丢旧不加新
-    const rec = findRecordV2(globalRoot, "plugin", "np")!
-    expect(rec.version).toBe("2.3.4")
-    expect(rec.desiredState).toBe("disabled") // 持久 enabled 非法 —— 更新链同样强制
-  })
-
-  test("r2:授权暂停零账本副作用 —— 归位只在锁内提交路径发生,拒绝/暂停的操作不动账", async () => {
-    seedNpmOldEnabled()
-    const sessionGrantV2: CatalogEntry = {
-      ...pluginNpmEntry,
-      source: "official",
-      curation: makeCuration("plugin:np", "2.3.4", { tier: "labs", activationPolicy: "session-grant" }),
-    }
-    const { deps } = makeDeps({ entries: [sessionGrantV2] })
-    // 首驱:无授权基线 → authorize 暂停(引擎顺序 lock → authorize 零写盘 → precondition)。
-    const first = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(first.ok).toBe(false)
-    if (!first.ok) expect(first.stage).toBe("authorize")
-    // r2 Major 的核心断言:暂停的操作零账本副作用 —— 非法 enabled 原样保留,config 不动。
-    expect(findRecordV2(globalRoot, "plugin", "np")!.desiredState).toBe("enabled")
-    expect(findRecordV2(globalRoot, "plugin", "np")!.version).toBe("2.0.0")
-    const cfg0 = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    expect(cfg0.plugin).toEqual(["@alpha/np@2.0.0"])
-    // 确认重驱:锁内 precondition 归位 + 同一事务提交 → disabled + plugin[] 移除。
-    const confirmed = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(confirmed.ok).toBe(true)
-    expect(findRecordV2(globalRoot, "plugin", "np")!.desiredState).toBe("disabled")
-    const cfg1 = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    expect(cfg1.plugin).toEqual([])
-  })
-
-  test("对照:目标版本未策展 ⇒ 置换保留旧 enabled(#352 语义不回归)", async () => {
-    seedNpmOldEnabled()
-    const { deps } = makeDeps({ entries: [{ ...pluginNpmEntry, source: "official" }] })
-    const r = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
-    expect(r.ok).toBe(true)
-    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    expect(cfg.plugin).toEqual(["@alpha/np@2.3.4"])
-    expect(findRecordV2(globalRoot, "plugin", "np")!.desiredState).toBe("enabled")
+    // 观测手段自检:上面那两条用例断言的 `calls` 与 `alpha.jsonc` 在成功路径上确实非空/存在,
+    // 所以它们的「空/不存在」不是恒成立的空断言。
+    expect(calls.length).toBeGreaterThan(0)
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(true)
   })
 })

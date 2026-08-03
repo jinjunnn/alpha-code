@@ -34,7 +34,6 @@ export const GATED_WRITE_CHANNELS = {
   projectResidualsClean: "ext-project-residuals-clean",
   removeMcpLegacy: "ext-remove-mcp",
   persistMcp: "ext-persist-mcp",
-  installPlugin: "ext-install-plugin",
   importAgentConfirm: "ext-import-agent-confirm",
   /** REQ-128 Phase 3 `#782`:本地 Claude 插件包的**确认**。两段式里**只有它**会写盘,
    *  所以两段式里**只有它**在这张表里 —— preview / cancel / 列表三条纯读通道在下面的
@@ -86,7 +85,6 @@ export type WriteChannelBodies = {
   projectResidualsClean: (projectDir: unknown) => Promise<unknown>
   removeMcpLegacy: (name: unknown) => Promise<unknown>
   persistMcp: (name: unknown, server: unknown, secretVars?: unknown) => Promise<unknown>
-  installPlugin: (pkg: unknown) => Promise<unknown>
   importAgentConfirm: (previewId: unknown) => Promise<unknown>
   /** `#782`:**只收 previewId**。多一个入参就是多一条 renderer 可控的写入内容通道。 */
   importClaudePluginConfirm: (previewId: unknown) => Promise<unknown>
@@ -111,7 +109,6 @@ export function buildGatedWriteChannels(deps: { gate: RecoveryGate; roots: Write
     projectResidualsClean: gatedWriteHandler(gate, roots.projectDir, bodies.projectResidualsClean),
     removeMcpLegacy: gatedWriteHandler(gate, roots.global, bodies.removeMcpLegacy),
     persistMcp: gatedWriteHandler(gate, roots.global, bodies.persistMcp),
-    installPlugin: gatedWriteHandler(gate, roots.global, bodies.installPlugin),
     importAgentConfirm: gatedWriteHandler(gate, roots.global, bodies.importAgentConfirm),
     // 本地包恒全局面(project scope 显式不支持,ADR-030);定根与 catalog 安装同一个。
     importClaudePluginConfirm: gatedWriteHandler(gate, roots.global, bodies.importClaudePluginConfirm),

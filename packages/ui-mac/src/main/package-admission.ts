@@ -8,7 +8,7 @@ import { evaluateBundleAuthorization, evaluateCapabilityDiff, isSafeCapability, 
 import { recoveryReceiptInputs } from "./ext-agent-install"
 import { nextDesiredState } from "./ext-install-policy"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
-import { buildAgentTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, buildPluginTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
+import { buildAgentTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
 import { computeGrantDigest, readPackageLedgerStateV1, type UpsertInput } from "./ext-receipt-v2"
 import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import {
@@ -523,6 +523,18 @@ async function resolvePreparedPackage(
     const routed = packageChildKindV1(component.profileId)
     if (!routed.ok) return { ok: false, reason: `package admission: ${routed.reason}`, package: view }
     const kind = routed.kind
+    // ADR-040(`#825` 第 5 条):带可执行 plugin 组件的包**整包拒绝**,拒在资产下载之前 ——
+    // 那份字节的唯一用途就是被写进引擎 `plugin[]` 以同等权限执行。
+    // **整包拒而不是跳过这一个组件**:跳过会让用户拿到一个「装上了但少一半」的包,而包的
+    // required 语义本来就是全有或全无;ADR-040 §决策三也明确要求 fail-closed 而非静默跳过。
+    // 宿主合同里的 `opencode-plugin` profile 本身不在本票范围(它要走跨仓 pin 回滚),所以
+    // 这条拒绝落在**装载侧**:合同还认识这个 profile,而这台机器不再装它。
+    if (kind === "plugin")
+      return {
+        ok: false,
+        reason: `package admission: component "${component.id}" installs an engine plugin — Alpha no longer installs executable plugins into the engine (ADR-040); refusing the whole package`,
+        package: view,
+      }
     // 事务 key 只此一处派生(`packageChildTxKeyV1`)—— 卸载时清授权账用的是同一个函数。
     // 两处各写一遍 ternary,偏差只会在「装得上但卸载后 grants.json 还在」时现身。
     const key = packageChildTxKeyV1(kind, name)
@@ -706,11 +718,12 @@ async function executePreparedPackage(
             ...(component.agentEntry ? { agentEntry: component.agentEntry } : {}),
           })
         case "plugin":
-          return buildPluginTxItems({
-            ...common,
-            componentId: component.accepted.component.id,
-            ...(component.asset ? { asset: component.asset } : {}),
-          })
+          // ADR-040:到不了这里 —— `resolvePreparedPackage` 已经整包拒过一次。这一条是纵深:
+          // 分派表保持穷举(新增 kind 仍是编译期红),而 plugin 这条腿没有 builder 可去。
+          return {
+            ok: false,
+            reason: `component "${component.accepted.component.id}" installs an engine plugin — Alpha no longer installs executable plugins into the engine (ADR-040); refusing`,
+          }
         case "mcp":
           return buildMcpTxItems({
             ...common,

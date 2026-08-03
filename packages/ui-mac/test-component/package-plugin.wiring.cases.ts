@@ -143,7 +143,6 @@ mock.module("../src/main/ext-transaction", () => ({
 
 const { initAlphaEnvironment, getAlphaEnvironment } = await import("../src/main/alpha-environment")
 const { registerExtIpcHandlers } = await import("../src/main/ext-ipc")
-const { managedPluginWrapperSourceV1 } = await import("../src/main/managed-plugin-wrapper")
 const { setDesiredStateV2, upsertRecordsV2 } = await import("../src/main/ext-receipt-v2")
 
 delete process.env.ALPHA_GLOBAL_DIR
@@ -306,250 +305,90 @@ function confinedUnderPluginsRoot(value: unknown): boolean {
   return isAbsolute(value) && value.endsWith(".js") && resolvePath(value).startsWith(pluginsRoot + "/")
 }
 
-// ── ① 五个 profile 各自路由到一个具名 builder(行为半场)+ ② file item key 形状 ───────────────
+// ── ADR-040(`#825` 第 5 条):带 plugin 组件的包整包被拒,拒在取第三方 JS 之前 ──────────────────
+//
+// 原来这里有八条用例,断言的是「managed plugin 怎么装进去」:落盘两个文件、`plugin[]` 写 wrapper
+// 绝对路径、卸载四清零、目录删不掉时如实失败。那条路径已经封死,所以它们随路径一起走。
+// 留下来的是这一条真正的判据 —— **它跑的仍然是同一条生产链**(真已验 Catalog → 真 IPC 通道 →
+// 真 admission),只是断言换成了「这条链在哪一步、以什么理由停下」。
 
-test("五个已登记 profile 在一次真安装里各自路由到自己的 builder,plugin 的 file item key 恰是 plugin--<name>--f<i>", async () => {
+test("带 opencode-plugin 组件的包:生产 IPC 路径上整包具名拒绝,第三方 JS 一个字节都没取过,盘面零变更", async () => {
   resetDisk()
-  const { result } = await install("plugin-kit-routing")
+  const { staged, result } = await install("plugin-kit-sealed")
+  // 拒绝发生在**授权之前**:`install()` 只有在拿到 stage="authorize" 时才会发第二次请求,
+  // 所以这里 staged 就是终态。授权屏都不该出现 —— 用户不应该被问「要不要授权一个装不了的东西」。
+  expect(staged.stage).not.toBe("authorize")
+  expect(result).toMatchObject({ ok: false })
+  const reason = (result as { reason: string }).reason
+  // 具名:说得出是**哪个组件**、按**哪条裁决**。只断 `ok === false` 会把「别处随便一个失败」
+  // 也读成通过 —— 本仓已实证过这个粒度问题。
+  expect(reason).toContain(LEAF_PLUGIN_ID)
+  expect(reason).toContain("ADR-040")
+
+  // 位置承诺:拒在**资产取用之前**。payload.json 会被取(admission 要先看懂这个包是什么),
+  // 但那份会被引擎执行的 JS 一个字节都不该下载。把拒绝挪到 builder 里仍然会通过上面的断言,
+  // 却过不了这一条。
+  expect(fetchedUrls).not.toContain(PLUGIN_ASSET_URL)
+  // 连计划都没构造:`runExtensionTransaction` 从未被调用。
+  expect(lastPlan).toBeUndefined()
+
+  // 盘面零变更(四个面)。`plugins/` 与 `ext-store/` 一起断,因为「拒了但已经落了目录/授权账」
+  // 是这类拒绝最常见的半态。
+  expect(existsSync(configPath())).toBe(false)
+  expect(existsSync(ledgerPath())).toBe(false)
+  expect(existsSync(join(root(), "plugins"))).toBe(false)
+  expect(existsSync(join(root(), "ext-store"))).toBe(false)
+})
+
+test("对照:同一个包去掉 plugin 组件后照常装成 —— 四个 profile 各自路由到自己的 builder,且 plugin[] 全程没长出来", async () => {
+  resetDisk()
+  fixture = pluginKitFixture({ withoutPlugin: true })
+  const { result } = await install("plugin-kit-without-plugin")
   expect(result).toMatchObject({ ok: true, kind: "agent", name: "plugin-kit-root" })
   expect((result as { installed: string[] }).installed.sort()).toEqual(
-    [ROOT_AGENT_ID, LEAF_SKILL_ID, LEAF_MCP_LOCAL_ID, LEAF_MCP_REMOTE_ID, LEAF_PLUGIN_ID].sort(),
+    [ROOT_AGENT_ID, LEAF_SKILL_ID, LEAF_MCP_LOCAL_ID, LEAF_MCP_REMOTE_ID].sort(),
   )
 
+  // 这一段是从被删掉的「五个 profile 各自路由」那条原样搬来的四个 profile 半场 —— 它证明
+  // 上一条用例的拒绝**不是**把整条 package 通道弄坏了。
   const items = lastPlan!.items
   const keyed = new Map(items.map((item) => [item.key, item]))
-
-  // skill builder:generation item(无 action)+ 一条 `SKILL.md` 文件清单。
   const skillItem = items.find((item) => item.key.startsWith("skill--"))!
   expect(skillItem.action).toBeUndefined()
   expect(skillItem.files?.map((file) => file.path)).toEqual(["SKILL.md"])
-
-  // agent builder:file item(`agents/<name>.md`)+ 一条 `agent.<name>` config item。
   const agentFile = items.find((item) => item.key === "agent--plugin-kit-root")!
   expect(agentFile.action).toBe("file")
   expect(agentFile.file?.relTarget).toBe("agents/plugin-kit-root.md")
   expect(keyed.get("agent--plugin-kit-root--config")?.config?.edits[0]?.keyPath).toEqual(["agent", "plugin-kit-root"])
-
-  // mcp builder(local 与 remote **同一个** builder):各一条 `mcp.<name>` config item。
   for (const name of ["plugin-kit-local", "plugin-kit-remote"]) {
     const item = keyed.get(`mcp--${name}`)!
     expect(item.action, name).toBe("config")
     expect(item.config?.edits[0]?.keyPath, name).toEqual(["mcp", name])
   }
-
-  // plugin builder:两条 file item + 一条写整个 `plugin` 数组的 config item。
-  // key 形状是硬要求:`ext-health-probe-router` 对不匹配 `plugin--<name>--f<i>` 的 file item
-  // 一律判不健康 ⇒ pre-switch 拒掉整次安装。
-  const pluginFiles = items.filter((item) => item.action === "file" && item.key.startsWith("plugin--"))
-  expect(pluginFiles.map((item) => item.key)).toEqual([
-    `plugin--${PLUGIN_NAME}--f0`,
-    `plugin--${PLUGIN_NAME}--f1`,
-  ])
-  expect(pluginFiles.map((item) => item.file!.relTarget)).toEqual([
-    `plugins/${fixture.pluginDirName}/plugin.js`,
-    `plugins/${fixture.pluginDirName}/upstream.js`,
-  ])
-  const pluginConfig = keyed.get(`plugin--${PLUGIN_NAME}`)!
-  expect(pluginConfig.action).toBe("config")
-  expect(pluginConfig.config?.edits[0]?.keyPath).toEqual(["plugin"])
-  // 四个 builder 的特征 item 互不相同 ⇒ 「五个 profile 路由到不同的具名 builder」是被跑出来的。
-  expect(new Set([skillItem.key, agentFile.key, keyed.get("mcp--plugin-kit-local")!.key, pluginConfig.key]).size).toBe(4)
+  expect(new Set([skillItem.key, agentFile.key, keyed.get("mcp--plugin-kit-local")!.key, keyed.get("mcp--plugin-kit-remote")!.key]).size).toBe(4)
+  // 一条 plugin item 都没有,写盘后的 `alpha.jsonc` 里也没有 `plugin` 键。
+  expect(items.filter((item) => item.key.startsWith("plugin--"))).toHaveLength(0)
+  expect(readConfigStrict().plugin).toBeUndefined()
 })
 
-// ── 落盘形态:wrapper 由宿主生成,第三方字节逐字节不改 ────────────────────────────────────────
-
-test("落盘两个文件:wrapper 的字节恰是生成器的输出,upstream.js 与签名字节逐字节相同", async () => {
+test("@alpha-code/ext 不受影响:引擎侧接缝走 OPENCODE_CONFIG_CONTENT,与磁盘 plugin[] 无关", async () => {
   resetDisk()
-  const { result } = await install("plugin-kit-disk")
-  expect(result).toMatchObject({ ok: true })
-
-  expect(readdirSync(managedDir()).sort()).toEqual(["plugin.js", "upstream.js"])
-  const wrapper = managedPluginWrapperSourceV1(LEAF_PLUGIN_ID)
-  expect(wrapper.ok).toBe(true)
-  expect(readFileSync(managedJs(), "utf8")).toBe((wrapper as { ok: true; source: string }).source)
-  expect(sha(new Uint8Array(readFileSync(join(managedDir(), "upstream.js"))))).toBe(sha(fixture.pluginAsset))
-
-  const record = readLedgerStrict().records!.find((entry) => entry.kind === "plugin" && entry.name === PLUGIN_NAME)!
-  expect(record.configKey).toBe(`plugin-path:${managedJs()}`)
-  // 零 registry 连接(§5 第 3 类):**每一条**发出去的 URL 都必须是签名信封里的那几条。
-  // 写成「没调用 Npm.add」会被第二个加载器绕过,写成「网络调用数为零」恒假 —— 判据是白名单。
-  const signedUrls = new Set([
-    ...fixture.envelope.components.map((component) => component.payloadRef.url),
-    ...fixture.assetByUrl.keys(),
-  ])
-  expect(fetchedUrls.filter((url) => !signedUrls.has(url))).toEqual([])
-  expect(fetchedUrls).toContain(PLUGIN_ASSET_URL)
-})
-
-// ── ③ 第 3 类:经生产 install 真写盘之后,读回真实 alpha.jsonc ─────────────────────────────────
-//
-// ⚠️ **一条实测出来的、票面与基线都没说到的事实**(报告里已单列):今天**任何**签名 package 的
-// 组件都落 `desiredState: "disabled"` —— `package-admission` 传给 `nextDesiredState` 的只有
-// `{origin:"catalog"}`,没有 source、没有 curation ⇒ `initialDesiredState` 走
-// 「catalog 且 source !== "alpha"」那一格。而 plugin 的「已装未启用」在引擎里的表示**就是**
-// 「不在 `plugin[]` 里」(条目在场 = 加载,没有 per-entry 禁用键;生产的启停投影
-// `computeEnableProjectionEdit` 对 plugin 的 disabled 定义逐字如此)。
-//   ⇒ 首装之后 `plugin[]` 是空的,这是**正确行为**,不是漏写。
-//   ⇒ 而 `ext-set-install-state` 对 package child **一律拒**(实测:
-//      `curation-unverifiable — the entry is not resolvable from the verified catalog`,
-//      因为它按 `record.id` 去 legacy `catalog.entries` 里找条目,而 package child 不在那里)。
-// 所以下面分两半:第一半断言首装之后**没有**写任何东西进 `plugin[]`(含否定面);第二半把
-// 「用户已经把它开着」这个 durable intent 用**生产写器** `setDesiredStateV2` 落进账本,再跑一次
-// **真安装**,断言生产那条 config item 写进去的是精确的 managed 绝对路径。被测对象(config item
-// 的值)全程没有被注入过。
-
-test("首装落 disabled ⇒ plugin[] 里一条都不写(且没有裸包名/legacy 同名条目)", async () => {
-  resetDisk()
-  const { result } = await install("plugin-kit-config-disabled")
-  expect(result).toMatchObject({ ok: true })
-  expect(pluginArrayStrict()).toEqual([])
-  // 账本已经知道该指向哪个文件 —— 「没写进配置」不是因为宿主算不出这个值。
-  const record = readLedgerStrict().records!.find((entry) => entry.kind === "plugin" && entry.name === PLUGIN_NAME)!
-  expect(record.desiredState).toBe("disabled")
-  expect(record.configKey).toBe(`plugin-path:${managedJs()}`)
-})
-
-test("desiredState 为 enabled 时,生产 install 写进 plugin[] 的是精确的 managed 绝对路径,且无同名 legacy/npm 条目", async () => {
-  resetDisk()
-  expect(await install("plugin-kit-config-first")).toMatchObject({ result: { ok: true } })
-  // durable intent = 用户把它开着。用**生产账本写器**落这一步(它正是启停通道在过完闸之后调的
-  // 那个函数),被测的那条 config item 本身一点没被碰。
-  expect(setDesiredStateV2(root(), "plugin", PLUGIN_NAME, "enabled").ok).toBe(true)
-  expect(pluginArrayStrict()).toEqual([]) // 账本翻转本身不写配置 —— 下面那条路径才是被测对象
-  expect(await install("plugin-kit-config-enabled")).toMatchObject({ result: { ok: true } })
-
-  const array = pluginArrayStrict()
-  expect(array).toEqual([managedJs()])
-  expect(confinedUnderPluginsRoot(array[0])).toBe(true)
-  // 否定面:裸包名 / vendored 目录路径这类同名条目**一条都不许在**。一个把配置写成
-  // `opencode-notify@0.3.1` 的实现在这里必红(那正是 npm 通道会被走通的形态)。
-  for (const entry of array) {
-    expect(typeof entry).toBe("string")
-    expect(String(entry).startsWith(PLUGIN_NAME)).toBe(false)
-    expect(String(entry)).not.toContain("@0.3.1")
-  }
-  expect(array.filter((entry) => String(entry).includes(`/${PLUGIN_NAME}`))).toHaveLength(1)
-})
-
-// ── ④ 第 8 类:整包卸载,四条一起 ─────────────────────────────────────────────────────────────
-
-test("整包卸载:目录 / plugin[] / grants / 账本记录 四条一起消失(账本是重读出来的)", async () => {
-  resetDisk()
-  expect(await install("plugin-kit-uninstall-first")).toMatchObject({ result: { ok: true } })
-  expect(setDesiredStateV2(root(), "plugin", PLUGIN_NAME, "enabled").ok).toBe(true)
-  expect(await install("plugin-kit-uninstall")).toMatchObject({ result: { ok: true } })
-  // 卸载之前先放两件**与本包无关**的东西 —— 「整份配置/整本账本被推倒重写」在只看四条清零时
-  // 与「正确清空」长得一模一样,这两件是唯一分得开它们的东西。
-  seedUnrelatedSentinels()
-
-  // 前置事实:四条现在都**在**。否则下面四条断言就是恒真式。
-  expect(existsSync(managedDir())).toBe(true)
-  expect(pluginArrayStrict()).toEqual([managedJs()])
-  expect(existsSync(grantPath(`plugin--${PLUGIN_NAME}`))).toBe(true)
-  expect(grantOf(`plugin--${PLUGIN_NAME}`).capabilities).toEqual(["engine:config", "engine:plugin"])
-  expect(readLedgerStrict().records!.some((entry) => entry.kind === "plugin" && entry.name === PLUGIN_NAME)).toBe(true)
-
-  const uninstall = handlers.get("ext-uninstall-package")
-  if (!uninstall) throw new Error("ext-uninstall-package handler was not registered")
-  const outcome = (await uninstall({ sender: { id: 1 } }, PLUGIN_KIT_PACKAGE_ID)) as { ok: boolean; reason?: string }
-  expect(outcome.reason ?? "").toBe("")
-  expect(outcome.ok).toBe(true)
-
-  // ① 目录
-  expect(existsSync(managedDir())).toBe(false)
-  // ② plugin[] —— 严格读:文件必须还在、还是合法 jsonc、`plugin` 还是数组,只是空了。
-  expect(pluginArrayStrict()).toEqual([])
-  // ③ grants —— **明确断言文件不存在**(不是「读不出来」)。
-  expect(existsSync(grantPath(`plugin--${PLUGIN_NAME}`))).toBe(false)
-  // ④ **账本记录** —— 跑完生产卸载再把账本读回来,不断言中间那份 mutation 的字段。
-  const after = readLedgerStrict()
-  expect(after.packageGraphs ?? []).toEqual([])
-  expect((after.records ?? []).filter((entry) => entry.kind === "plugin")).toEqual([])
-  expect((after.claims ?? []).filter((entry) => entry.kind === "plugin")).toEqual([])
-  // ⑤ 两件无关的东西**逐字还在** —— 把「整文件清空也算通过」这条假绿堵死。
-  expectUnrelatedSentinelsIntact()
-})
-
-// ── M1:目录删不掉 ⇒ 卸载**失败**,账本**逐字未动**,重试收敛 ─────────────────────────────────
-//
-// 用真实的磁盘失败(把 `<root>/plugins` 的写权限去掉),**不 mock `rmSync`** —— mock 掉它就绕开了
-// 生产路径本身,而这条闸要证明的恰恰是生产路径在真实失败下的行为。
-test("目录删不掉时卸载必须失败且账本原样保留,恢复权限后重试收敛", async () => {
-  resetDisk()
-  if (process.getuid?.() === 0) throw new Error("本次测量作废:以 root 运行时 chmod 挡不住 rmSync")
-  expect(await install("plugin-kit-rm-fails-first")).toMatchObject({ result: { ok: true } })
-  expect(setDesiredStateV2(root(), "plugin", PLUGIN_NAME, "enabled").ok).toBe(true)
-  expect(await install("plugin-kit-rm-fails")).toMatchObject({ result: { ok: true } })
-  seedUnrelatedSentinels()
-
-  const uninstall = handlers.get("ext-uninstall-package")!
-  const pluginsRoot = join(root(), "plugins")
-  const ledgerBefore = readFileSync(ledgerPath(), "utf8")
-  chmodSync(pluginsRoot, 0o500) // r-x:目录项删不掉
-  let failed: { ok: boolean; reason?: string; stage?: string }
-  try {
-    failed = (await uninstall({ sender: { id: 1 } }, PLUGIN_KIT_PACKAGE_ID)) as typeof failed
-  } finally {
-    chmodSync(pluginsRoot, 0o700)
-  }
-  // 观测手段自检:权限真的挡住了(否则下面这条「失败」测的不是我以为的东西)。
-  expect(failed.ok).toBe(false)
-  expect(failed.stage).toBe("artifacts")
-  expect(failed.reason).toContain("install directory could not be removed")
-  expect(failed.reason).toContain("EACCES")
-  // 绝对路径不许过线到 renderer。
-  expect(failed.reason).not.toContain(pluginsRoot)
-
-  // 目录还在,而**账本逐字未动** —— 用户有可靠的重试依据。
-  expect(existsSync(managedDir())).toBe(true)
-  expect(readFileSync(ledgerPath(), "utf8")).toBe(ledgerBefore)
-  expect(readLedgerStrict().records!.some((entry) => entry.kind === "plugin" && entry.name === PLUGIN_NAME)).toBe(true)
-
-  // 重试(权限已恢复)⇒ 收敛,四条清零照常成立,两件无关的东西仍在。
-  const retried = (await uninstall({ sender: { id: 1 } }, PLUGIN_KIT_PACKAGE_ID)) as { ok: boolean; reason?: string }
-  expect(retried.reason ?? "").toBe("")
-  expect(retried.ok).toBe(true)
-  expect(existsSync(managedDir())).toBe(false)
-  expect(pluginArrayStrict()).toEqual([])
-  expect(existsSync(grantPath(`plugin--${PLUGIN_NAME}`))).toBe(false)
-  expect((readLedgerStrict().records ?? []).filter((entry) => entry.kind === "plugin")).toEqual([])
-  expectUnrelatedSentinelsIntact()
-})
-
-// ── 完整性:第三方字节被掉包 ⇒ **整包**被拒,不是「那个叶子被跳过」 ────────────────────────────
-
-test("JS 资产字节与签名不符 ⇒ 整包安装被拒,盘面零变更", async () => {
-  resetDisk()
-  fixture = pluginKitFixture({ corruptPluginAsset: true })
-  const { staged, result } = await install("plugin-kit-integrity")
-  const outcome = (staged.stage === "authorize" ? result : staged) as { ok: boolean; reason?: string }
-  expect(outcome.ok).toBe(false)
-  expect(outcome.reason).toContain("package asset unavailable or failed integrity")
-  // 判据是**整包被拒**:别的组件一件都没落地(「某个叶子被跳过」对畸形值恒真)。
-  expect(existsSync(join(root(), "plugins"))).toBe(false)
-  expect(existsSync(join(root(), "agents"))).toBe(false)
-  // 「零变更」在这里的正确表示是**根本没被创建**,不是「读出来是空的」。
-  expect(existsSync(configPath())).toBe(false)
-  expect(existsSync(ledgerPath())).toBe(false)
-})
-
-// ── 如实登记:生产启停通道今天拒绝 package child ───────────────────────────────────────────────
-//
-// 这条**不是**本票要修的东西,写在这里是为了让它有一处会红的记录:`setInstallStateByKey` 的
-// curation 闸按 `record.id` 去 legacy `catalog.entries` 里找条目,而签名 package 的 child 从来
-// 不在那张表里 ⇒ 用户在 Hub 上点「启用」必然被拒。对 skill/agent/mcp 它「只是」开不了;对
-// managed plugin 它是致命的 —— plugin 的唯一启用面就是出现在 `plugin[]` 里。
-// 哪天这条闸被修好,本用例会红,而红的时候正是该把它删掉的时候。
-test("已登记边界:生产启停通道今天对 package child 一律拒(managed plugin 因此无法被用户启用)", async () => {
-  resetDisk()
-  expect(await install("plugin-kit-enable-boundary")).toMatchObject({ result: { ok: true } })
-  const setState = handlers.get("ext-set-install-state")
-  if (!setState) throw new Error("ext-set-install-state handler was not registered")
-  const outcome = (await setState(
-    { sender: { id: 1 } },
-    { type: "plugin", name: PLUGIN_NAME, scope: "global", state: "enabled" },
-  )) as { ok: boolean; code?: string; reason?: string }
-  expect(outcome.ok).toBe(false)
-  expect(outcome.code).toBe("curation-unverifiable")
-  expect(pluginArrayStrict()).toEqual([])
+  // 生产注入面(`injectAlphaConfig`)在 sidecar 里跑,这里只需证明它**不经过**被封死的那条路:
+  // 它把 alpha 自己的 ext 绝对路径合进 env 通道的对象,磁盘上的 alpha.jsonc 一个字节都不写。
+  const { injectAlphaConfig } = await import("../src/main/alpha-config-injection")
+  const extPath = join(tmp, "alpha-ext", "index.js")
+  mkdirSync(join(tmp, "alpha-ext"), { recursive: true })
+  writeFileSync(extPath, "export default {}\n")
+  const prevContent = process.env.OPENCODE_CONFIG_CONTENT
+  delete process.env.OPENCODE_CONFIG_CONTENT
+  const injected = injectAlphaConfig(userData, extPath, "dev")
+  expect(injected.ok).toBe(true)
+  const envConfig = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!) as { plugin?: unknown[] }
+  // ① alpha 自有 ext 确实进了引擎会读的那份配置(env 通道);
+  expect(envConfig.plugin).toEqual([extPath])
+  // ② 而磁盘上的 `alpha.jsonc` 里没有它 —— 注入只 seed 了一个 `{$schema}`。
+  //    咽喉若误伤这条接缝,①会红;咽喉若其实拦不住磁盘写,②会红。
+  expect(readConfigStrict().plugin).toBeUndefined()
+  if (prevContent === undefined) delete process.env.OPENCODE_CONFIG_CONTENT
+  else process.env.OPENCODE_CONFIG_CONTENT = prevContent
 })
