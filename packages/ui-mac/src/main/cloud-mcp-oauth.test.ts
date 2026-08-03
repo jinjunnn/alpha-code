@@ -30,7 +30,11 @@ import {
   materializeCloudMcpConfig,
 } from "./cloud-sidecar-config"
 import { injectAlphaConfig } from "./alpha-config-injection"
-import { CLOUD_MCP_DEF_ENV } from "./cloud-web-search"
+import { CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV } from "./cloud-web-search"
+// B1(审计):kill-switch 下**最终**进配置的那一份不是注入面写的,是 ext 写回的。
+// 只断 main 的 config / DEF = 断中间产物;用户拿到的是 `installCloudMcp()` 之后那一份。
+// 所以这里 import 的是**生产件本体**(不是替身),让最后一跳真的执行。
+import { installCloudMcp } from "../../../ext/src/cloud-websearch-kill"
 
 const CLOUD_URL = "https://cloud.example/mcp"
 
@@ -186,6 +190,52 @@ describe("`#733` 生产注入面(真 injectAlphaConfig / 真密钥文件 / 真 e
     expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
     expect(injectedCloud()).toBeUndefined()
     expect(process.env[CLOUD_MCP_DEF_ENV]).toBeUndefined()
+  })
+
+  // ── B1(审计 Blocker):走到**最终那一跳** ────────────────────────────────────────────────
+  //
+  // kill-switch 下真定义不进 `OPENCODE_CONFIG_CONTENT`,只经 ARM/DEF 两个 env 托管给 ext,
+  // 由 `packages/ext/src/cloud-websearch-kill.ts` 的 `installCloudMcp()` **写回**配置。
+  // 用户实际拿到的是**写回之后**那一份 —— 只断 main 的 config 与 DEF,就是断中间产物:
+  // 审计实测把写回那行改成「DEF 里没有 headers 就补一个 Authorization」,原有 11 条门
+  // **全绿** ⇒ 静态 bearer 可以在最终咽喉复活而没有任何闸响。这条用来堵死它。
+  test("B1:真 injectAlphaConfig → 真 installCloudMcp,最终配置里仍然零凭证通道", () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1" // kill-switch:定义只经 env 托管给 ext
+    const errors: unknown[] = []
+    const original = console.error
+    console.error = (...args: unknown[]) => void errors.push(args)
+    try {
+      expect(injectAlphaConfig(userData, path.join(tmp, "ext.js"), "stable")).toEqual({ ok: true })
+    } finally {
+      console.error = original
+    }
+    expect(process.env[CLOUD_MCP_ARM_ENV]).toBe("cloud")
+
+    // 引擎在 config 文本阶段已解析过 `{file:}`,ext 的 config 钩子拿到的是解析后的对象;
+    // 这里传真的 `readFileSync` 语义替身**只为了**:万一定义里还残留 `{file:}` 引用,
+    // 它会把密钥真值读进来 —— 那样下面的断言就会抓到 token 值。不给它假数据。
+    const secretValue = "SECRET-CLOUD-TOKEN-VALUE"
+    const cfg: { mcp?: Record<string, unknown> } = { mcp: { cloud: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!).mcp.cloud } }
+    expect(installCloudMcp(cfg, process.env, () => secretValue)).toBe("cloud")
+
+    // **最终**那一份 —— 逐字面量,不拿常量当基准。
+    expect(cfg.mcp!.cloud).toEqual({
+      type: "remote",
+      url: CLOUD_URL,
+      enabled: true,
+      oauth: {
+        clientId: "https://auth.tidelabs.click/oauth/clients/alpha-code-mcp.json",
+        redirectUri: "http://127.0.0.1:19876/callback",
+      },
+    })
+    // `toEqual` 已经排他,但键名断言让「写回时补了一个凭证通道」这件事红得有名有姓。
+    const finalText = JSON.stringify(cfg.mcp!.cloud)
+    expect(Object.keys(cfg.mcp!.cloud as object).sort()).toEqual(["enabled", "oauth", "type", "url"])
+    expect(finalText).not.toContain("headers")
+    expect(finalText).not.toContain("Authorization")
+    expect(finalText).not.toContain("Bearer")
+    expect(finalText).not.toContain("{file:")
+    expect(finalText).not.toContain(secretValue)
   })
 
   test("ADR-009 的 web search 主权没被这次改动带走(代付时本地 websearch 仍被 deny)", () => {

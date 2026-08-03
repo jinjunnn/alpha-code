@@ -50,9 +50,13 @@ Bun.plugin({
 type StatusMap = Record<string, { status: string; error?: string }>
 let engineStatus: StatusMap = {}
 const authenticateCalls: Array<{ name: string }> = []
-/** authenticate 返回什么由用例决定:成功 = 授权后引擎报 connected;失败 = SDK 以 {error} resolve
- *  (v2 默认 `throwOnError:false`,HTTP 400/404 **不会抛**)。 */
-let authenticateBehaviour: "succeed" | "reject" = "succeed"
+/** authenticate 返回什么由用例决定:
+ *   - `succeed`  = 授权后引擎报 connected;
+ *   - `reject`   = SDK 以 `{error}` resolve(v2 默认 `throwOnError:false`,HTTP 400/404 **不会抛**);
+ *   - `http-200-but-failed` = **端点成功、授权没成**。`POST /mcp/:name/auth/authenticate` 的
+ *     success 类型就是 `MCP.Status`(五臂联合),所以 200 + `{status:"failed"}` 是**合法响应**。
+ *     审计 M1 正是这一格:按「不再 needs_auth」判成功,用户会看到「已重新登录」而 MCP 仍不可用。 */
+let authenticateBehaviour: "succeed" | "reject" | "http-200-but-failed" = "succeed"
 
 const emptyStream = { [Symbol.asyncIterator]: async function* () {} }
 const fakeClient = {
@@ -65,6 +69,11 @@ const fakeClient = {
       authenticate: async (parameters: { name: string }) => {
         authenticateCalls.push({ name: parameters.name })
         if (authenticateBehaviour === "reject") return { data: undefined, error: { _tag: "McpUnsupportedOAuthError" } }
+        if (authenticateBehaviour === "http-200-but-failed") {
+          // HTTP 层完全成功(无 error),body 是合法的 failed 臂;引擎那边这个 server 依旧连不上。
+          engineStatus = { ...engineStatus, [parameters.name]: { status: "failed", error: "token rejected by resource server" } }
+          return { data: { status: "failed", error: "token rejected by resource server" }, error: undefined }
+        }
         // 授权成功 = 引擎那边这个 server 现在连上了。下一次 loadStatus 会读到它。
         engineStatus = { ...engineStatus, [parameters.name]: { status: "connected" } }
         return { data: { status: "connected" }, error: undefined }
@@ -221,6 +230,25 @@ test("授权没完成时如实说失败,按钮留在原地(不谎报已重新登
   expect(toastTexts().some((text) => text.includes(zh["alpha.ext.mcpAuthDone"]))).toBe(false)
   // 补救入口必须还在 —— 「再试一次」是这条提示唯一有意义的下一步。
   expect(authorizeButtons().length).toBe(1)
+})
+
+test("M1:端点 200 但 body 是 failed —— 必须说失败,绝不能说「已重新登录」", async () => {
+  reset()
+  engineStatus = { cloud: { status: "needs_auth" } }
+  authenticateBehaviour = "http-200-but-failed"
+  mount("installed")
+  await waitFor(() => expect(authorizeButtons().length).toBe(1))
+
+  authorizeButtons()[0]!.click()
+
+  await waitFor(() => expect(authenticateCalls).toEqual([{ name: "cloud" }]))
+  // 授权后这个 server 是 `failed`:`needs_auth` 确实不成立了 —— 按「不再 needs_auth」
+  // 判成功的实现会在这里宣布成功,而用户的 MCP 根本用不了。
+  await waitFor(() => expect(document.body.textContent).toContain("token rejected by resource server"))
+  await waitFor(() => expect(toastTexts().some((text) => text.includes(zh["alpha.ext.mcpAuthFailed"]))).toBe(true))
+  expect(toastTexts().some((text) => text.includes(zh["alpha.ext.mcpAuthDone"]))).toBe(false)
+  // failed 不是用户点一下能修好的状态 ⇒ 授权按钮不该留在那里假装还能救。
+  expect(authorizeButtons().length).toBe(0)
 })
 
 // ── 区分度证明:一个「永远显示授权按钮」的错误实现必须过不了下面这两条 ────────────────────

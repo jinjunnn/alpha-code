@@ -15,7 +15,7 @@ test("needs_auth 从引擎状态一路走到用户能点的按钮(真 useExtensi
   if (result.exitCode !== 0) throw new Error(output)
   // 条数是**先确认新用例真的跑起来了**才写上来的。反过来用它去确认新增,会在
   // 「块替换吞掉一条 + 新增一条」时净数对上而看不见 —— `#765` 已经栽过。
-  expect(output).toContain(" 7 pass")
+  expect(output).toContain(" 8 pass")
   expect(output).toContain(" 0 fail")
-  expect(output).toMatch(/Ran 7 tests across 1 file/)
+  expect(output).toMatch(/Ran 8 tests across 1 file/)
 })

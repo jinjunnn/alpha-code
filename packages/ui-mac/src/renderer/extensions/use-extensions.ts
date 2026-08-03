@@ -546,9 +546,12 @@ export function useExtensions(
       const ok = connectOutcome(r as { error?: unknown })
       await loadStatus()
       if (!ok) return { ok: false, reason: "auth-failed" }
-      // 授权调用成功 ≠ 这个 server 现在能用:引擎可能拿到令牌却仍连不上。以重读到的
-      // 状态为准,免得界面宣布"已重新登录"而那行状态还是"需要重新登录"。
-      return store.mcp[name]?.needsAuth ? { ok: false, reason: "auth-failed" } : { ok: true }
+      // 授权调用成功 ≠ 这个 server 现在能用。**判据是正向的 `connected === true`,不是
+      // 「不再 needs_auth」** —— 端点 200 时 body 合法地可以是 `{status:"failed"}`
+      //(`MCP.Status` 是五臂联合),此时「不再 needs_auth」成立而 MCP 仍然不可用,
+      // 界面会宣布「已重新登录」。审计 M1:按缺席取反去判成功,等于把 failed /
+      // needs_client_registration / 读不出**全部**读成成功。
+      return store.mcp[name]?.connected === true ? { ok: true } : { ok: false, reason: "auth-failed" }
     } catch {
       await loadStatus()
       return { ok: false, reason: "auth-failed" }

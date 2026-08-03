@@ -286,13 +286,20 @@ export function injectAlphaConfig(
     }
 
     //   3. Cloud tool gateway (alpha-platform B). Registered only when platform-pays is active —
-    //      main derives the login state (alpha-auth.ts §③) and materializes the bearer into the
-    //      {file:} channel at fork (A6), so logged-out / BYOK leaves it dark. The same bearer fronts
-    //      the model proxy (ALPHA_API_KEY) and this MCP tool gateway
+    //      main derives the login state (alpha-auth.ts §③) from the presence of the
+    //      ALPHA_CLOUD_TOKEN secret file, so logged-out / BYOK leaves it dark.
     //      (see docs/contracts/platform-integration.md).
-    //      The header carries a {file:} ref — resolved by opencode at config load, so neither this
-    //      process's env nor OPENCODE_CONFIG_CONTENT ever contains the token value. oauth:false
-    //      because we attach our own capability token and must skip OAuth auto-detection.
+    //
+    //      `#733`: this server carries NO credential channel any more. It used to attach a static
+    //      `Bearer {file:…ALPHA_CLOUD_TOKEN}` header with `oauth:false`; it now declares a standard
+    //      MCP OAuth client and the engine holds/refreshes the credential itself. Two consequences
+    //      worth spelling out here, because both were invisible before:
+    //        - ALPHA_CLOUD_TOKEN is still read — but only as the platform-pays predicate above.
+    //          It is no longer the MCP Authorization source. Rotating it does NOT fix an
+    //          unauthenticated cloud MCP; the user re-authorizes from the extension hub instead.
+    //        - `oauth:false` was not a neutral setting: it made `needs_auth` structurally
+    //          unreachable for this server (engine `mcp/index.ts:241`), so a missing credential
+    //          could only ever surface as `failed` with no user-visible remedy.
     const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
     if (mcpUrl && platformPays) {
       // #223 R4→R5 fail-closed:kill-switch 下 `cloud_web_search` 的**最终**闸住在 @alpha-code/ext
