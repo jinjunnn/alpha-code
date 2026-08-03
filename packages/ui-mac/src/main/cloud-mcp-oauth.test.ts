@@ -153,9 +153,12 @@ describe("`#733` 生产注入面(真 injectAlphaConfig / 真密钥文件 / 真 e
     const decoded = Schema.decodeUnknownSync(EngineRemoteSchema)(cloud)
     expect(decoded.url).toBe(CLOUD_URL)
     expect(decoded.headers).toBeUndefined()
+    // **逐字面量断言,不拿常量当基准。** 拿 `CLOUD_MCP_OAUTH_CLIENT_ID` 来比是一条自指等价链:
+    // 改常量的一刀两边一起动,这条恒绿。这个弱点是绕过实验当场量出来的 —— 实验前只有上面那条
+    // 常量闸会红,而它与生产路径无关。
     expect(decoded.oauth).toEqual({
-      clientId: CLOUD_MCP_OAUTH_CLIENT_ID,
-      redirectUri: CLOUD_MCP_OAUTH_REDIRECT_URI,
+      clientId: "https://auth.tidelabs.click/oauth/clients/alpha-code-mcp.json",
+      redirectUri: "http://127.0.0.1:19876/callback",
     })
 
     // 整份 config 文本里一个凭证影子都不许有(继承面/兄弟键一起覆盖到)。
