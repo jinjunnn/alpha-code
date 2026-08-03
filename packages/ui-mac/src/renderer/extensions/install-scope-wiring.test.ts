@@ -36,21 +36,23 @@ function installCatalogCallArgs(source: string): string[] {
 const read = (rel: string) => fs.readFileSync(path.join(here, rel), "utf8")
 
 describe("ADR-030 wiring: 第一方 installCatalog 调用全部 scope=global", () => {
-  test("use-extensions.ts:五个动作(mcp/skill/plugin/agent/cloud)", () => {
+  // `#810`:package 首驱 / 确认屏 / 套件三条原本在 `extension-hub.tsx` 里直连 `extIpc`,
+  // 现已收口到 `use-extensions.installCatalogIntent`(引擎重扫接在那一层)。于是本文件的
+  // 计数从 5 + 3 变成 6 + 0,而 `scope` 只在**一处**写出来:那正是收口的意义。
+  test("use-extensions.ts:五个既有动作(mcp/skill/plugin/agent/cloud)+ package/套件收口点", () => {
     const calls = installCatalogCallArgs(read("use-extensions.ts"))
-    expect(calls).toHaveLength(5) // 新增调用点必须来此登记并保持 global
+    expect(calls).toHaveLength(6) // 新增调用点必须来此登记并保持 global
     for (const args of calls) expect(args).toContain(`scope: { scope: "global" }`)
     for (const args of calls) expect(args).not.toContain(`"project"`)
   })
 
-  test("extension-hub.tsx:package 与 bundle 动作", () => {
-    const calls = installCatalogCallArgs(read("extension-hub.tsx"))
-    expect(calls).toHaveLength(3) // package preview/confirm 两趟 + bundle
-    for (const args of calls) expect(args).toContain(`scope: { scope: "global" }`)
-    for (const args of calls) expect(args).not.toContain(`"project"`)
+  test("extension-hub.tsx:一个 installCatalog 调用都不许有(`#810` 收口)", () => {
+    // 呈现层不得自己出站。这条从「三个调用点都得写对 scope」收紧成「一个都不许有」——
+    // 直连回来一个,引擎重扫就对它默认放行,而那是静默的。
+    expect(installCatalogCallArgs(read("extension-hub.tsx"))).toHaveLength(0)
   })
 
-  test("整个 renderer 树无其它 installCatalog 调用文件(第 9 个入口必须显式登记)", () => {
+  test("整个 renderer 树无其它 installCatalog 调用文件(新入口必须显式登记)", () => {
     const rendererRoot = path.resolve(here, "..")
     const withCalls: string[] = []
     const walk = (dir: string): void => {
@@ -67,6 +69,6 @@ describe("ADR-030 wiring: 第一方 installCatalog 调用全部 scope=global", (
       }
     }
     walk(rendererRoot)
-    expect(withCalls.sort()).toEqual(["extensions/extension-hub.tsx", "extensions/use-extensions.ts"])
+    expect(withCalls.sort()).toEqual(["extensions/use-extensions.ts"])
   })
 })

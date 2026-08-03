@@ -108,6 +108,21 @@ export type LocalPackageUninstallResult =
   | (Extract<Awaited1<ReturnType<ExtApi["uninstallPackage"]>>, { ok: true }> & { reloadPending?: true })
   | Extract<Awaited1<ReturnType<ExtApi["uninstallPackage"]>>, { ok: false }>
 
+// ── REQ-128 Phase 4 `#810`:签名 package / 套件安装意图的数据层形状 ──────────────────────────
+//
+// 同样**从 wire 派生**。`scope` 被 `Omit` 掉:ADR-030 之下受管安装恒 global,由数据层钉死一次,
+// 调用方连写错的机会都没有(此前三个 hub 调用点各自手写一遍同一个字面量)。
+type InstallCatalogWireResult = Awaited1<ReturnType<ExtApi["installCatalog"]>>
+export type CatalogInstallIntentV1 = Omit<
+  Extract<Parameters<ExtApi["installCatalog"]>[0], { catalogId: string }>,
+  "scope"
+>
+/** 成功臂多挂一条 `reloadPending` —— 账本已 durable,而引擎这次没重扫成功。
+ *  **不许**把它读成「已生效」:那正是本文件反复说的 placebo 安装。 */
+export type CatalogInstallResult =
+  | (Extract<InstallCatalogWireResult, { ok: true }> & { reloadPending?: true })
+  | Extract<InstallCatalogWireResult, { ok: false }>
+
 /** `route === "local-claude-plugin"` 的类型守卫。**判据是 main 给的 `route` 字段** ——
  *  renderer 一个字都不看目录形态(`#255` 之后它连路径都拿不到)。 */
 export function isLocalPluginRoute(
@@ -220,6 +235,23 @@ export interface ExtensionsApi {
   importNpmPlugin(pkg: string): Promise<ActionResult>
   /** REQ-023:安装 catalog 官方 agent(vendored md 资产 → writeAgent 同管线)。 */
   installAgentEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
+  /**
+   * REQ-128 Phase 4 `#810`:**签名 package 与套件安装的唯一出站点**。
+   *
+   * 三个 Hub 入口(`runPackageAction` / `installBundle` / `confirmPackageAuthz`)此前各自
+   * 直连 `extIpc.installCatalog`,于是**一个都没有**接引擎重扫 —— 而组件(skill / agent /
+   * plugin / MCP 的注入面)只在引擎实例构造时装载。后果是 placebo 安装:账本翻了、盘上有了、
+   * 界面说「已安装」,用户下一条消息里什么都没有。Phase 3 在本地导入那条线上修过同一个洞
+   * (G20),签名 package 这条线从来没修过。
+   *
+   * 修法与 G20 逐字同形:收进这一层,`refreshEngine()` 在这里**接一次**。
+   * 逐调用点补一行的形态在本仓已栽三次(`#765` 的 warning 呈现是同一个故事)——
+   * **枚举对新调用点默认放行**,而第四个安装入口出现时,默认放行的具体后果就是 placebo 安装。
+   *
+   * dispose 没成功 ⇒ 成功臂挂 `reloadPending`,由调用方**如实呈现**「要重载」,
+   * 不谎报「下一条消息里就能用」。
+   */
+  installCatalogIntent(intent: CatalogInstallIntentV1): Promise<CatalogInstallResult>
   /** REQ-020 T4:启用云 pipeline = receipts-only(进本机可用列表;不落文件、不写引擎 config)。
    *  停用走 uninstall(cloud receipt → 去账)。 */
   enableCloud(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
@@ -856,6 +888,26 @@ export function useExtensions(
     return r
   }
 
+  /**
+   * `#810`:签名 package / 套件安装的**唯一**出站点(合同见 `ExtensionsApi.installCatalogIntent`)。
+   *
+   * 三件事都只在这里发生一次:`scope` 钉死 global(ADR-030)、成功后刷新账本、
+   * **成功后让引擎当场重扫**。`refreshEngine()` 在本方法里只有这一处 —— 这就是它的全部意义。
+   *
+   * `!r.ok` 原样上抛,一个字不折叠:`stage: "authorize"` 那条臂(package 首驱恒走它)带着
+   * 预览与 binding,`package` 那条臂带着最新的安全视图,调用方两者都要读。
+   * **authorize 不是一次安装**,所以这条路径上不刷新、不重扫 —— 盘上还什么都没发生。
+   */
+  async function installCatalogIntent(intent: CatalogInstallIntentV1): Promise<CatalogInstallResult> {
+    const r = await extIpc.installCatalog({ ...intent, scope: { scope: "global" } })
+    if (!r.ok) return r
+    await loadInstalls()
+    // G20 同形:fs / config 类安装写盘后不触发实例重建,就是 placebo 安装。
+    // 失败**如实**降级为 reloadPending,由调用方说「要重载」。
+    if (!(await refreshEngine())) return { ...r, reloadPending: true }
+    return r
+  }
+
   // REQ-019 T6:导入。成功后刷新账本 + dispose 重载(与 createSkill 同节奏);失败原因原样上抛,
   // 由 hub 行内呈现(B11)。npm 导入 = 复用 persistPlugin 通道(白名单校验在主进程)。
   async function importSkillFolder(): Promise<LocalPluginRoute | (ActionResult & { name?: string; canceled?: boolean })> {
@@ -982,6 +1034,7 @@ export function useExtensions(
     importSkillGit,
     importNpmPlugin,
     installAgentEntry,
+    installCatalogIntent,
     enableCloud,
   }
 }
