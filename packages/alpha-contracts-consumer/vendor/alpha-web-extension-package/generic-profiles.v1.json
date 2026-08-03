@@ -34,16 +34,6 @@
     },
     {
       "declaration": {
-        "kind": "plugin"
-      },
-      "host": {
-        "mediaType": "application/vnd.alpha.host-extension-package.opencode-plugin.v1+json",
-        "profileId": "opencode-plugin",
-        "profileVersion": 1
-      }
-    },
-    {
-      "declaration": {
         "kind": "skill"
       },
       "host": {
