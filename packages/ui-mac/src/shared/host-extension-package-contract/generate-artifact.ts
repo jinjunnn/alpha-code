@@ -20,7 +20,6 @@ export const HOST_EXTENSION_PACKAGE_ARTIFACT_FILES = [
   "profiles/agent.v1.schema.json",
   "profiles/mcp-local.v1.schema.json",
   "profiles/mcp-remote.v1.schema.json",
-  "profiles/opencode-plugin.v1.schema.json",
   "profiles/skill.v1.schema.json",
   "registry.ts",
   "synthetic-decoder.ts",
@@ -111,20 +110,6 @@ const mcpRemotePayload = (
   },
 })
 
-// 34093 是候选包 opencode-notify 的 dist 实测字节数(§2.11 勘破),刻意既不是界、也不是圆整数:
-// 一个把资产大小写死成 maxScriptAssetBytes 或 0 的实现在语料上就对不上。
-const opencodePluginPayload = () => ({
-  schema: "alpha.host-extension-package.payload.opencode-plugin.v1",
-  behavior: {
-    asset: {
-      sha256: "3".repeat(64),
-      bytes: 34093,
-      mediaType: "text/javascript",
-      url: "https://example.invalid/assets/opencode-plugin.js",
-    },
-  },
-})
-
 export function decoderCorpusBytesV1(): Uint8Array {
   const cases: CorpusCase[] = [
     single("skill-v1", "skill", [], skillPayload("skill")),
@@ -154,14 +139,6 @@ export function decoderCorpusBytesV1(): Uint8Array {
         connectionHandlerId: "alpha-example",
         label: "Alpha Example Connection",
       }),
-    ),
-    // 两个 capability 一起声明:managed plugin 会被引擎求值(engine:plugin)且宿主必须写引擎
-    // 配置指向它(engine:config)。少声明一个,payload 解码的 derive 比对当场拒绝。
-    single(
-      "opencode-plugin-v1",
-      "opencode-plugin",
-      ["engine:config", "engine:plugin"],
-      opencodePluginPayload(),
     ),
   ]
 

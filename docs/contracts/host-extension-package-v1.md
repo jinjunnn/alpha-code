@@ -16,7 +16,7 @@ profile, capability, and strict-decoder contract.
 The authoritative self-contained copy is
 [`packages/ui-mac/src/shared/host-extension-package-contract/CONTRACT.md`](../../packages/ui-mac/src/shared/host-extension-package-contract/CONTRACT.md).
 Its current aggregate artifact SHA-256 is
-`fb196fc1d187acb334b144374aeec2fe1c7da76f5b1bd4fac2df1c118ee0bba2`.
+`11d6c02624abcbeb121f3c1c6ffc08314398948e6d006514416aef14fd62ca73`.
 
 This value is republished prose, not a checked pin: nothing in the repository
 compares it against
@@ -24,6 +24,12 @@ compares it against
 (`#729`), went stale at `74af30d1` (`#749`, contract v2) and stayed stale until
 `#807` — the whole time, every gate was green. Re-read it from the manifest
 rather than trusting it.
+
+The v1 host profiles are `agent`, `mcp-local`, `mcp-remote`, and `skill`; the
+capability vocabulary is `alpha.connection.v1`, `alpha.mcp-oauth.v1`, and
+`alpha.secret-prerequisite.v1`. `#807` briefly registered a fifth profile
+(`opencode-plugin`) with two more capabilities (`engine:config`,
+`engine:plugin`); ADR-040 rejected it and `#830` withdrew all three.
 
 The `alpha-web#95` consumer pins an immutable `alpha-code` commit, the fixed
 artifact path `packages/ui-mac/src/shared/host-extension-package-contract`, and
@@ -52,14 +58,17 @@ host aggregate did. Re-read both from the lock and the manifest.
 
 The byte lock is not a semantic oracle. Consumer tests additionally execute the
 published declaration schema against the published negative vectors, and assert
-the profile/capability closure as an exact set: five profiles (`agent`,
-`mcp-local`, `mcp-remote`, `opencode-plugin`, `skill`) and five capabilities
-(`alpha.connection.v1`, `alpha.mcp-oauth.v1`, `alpha.secret-prerequisite.v1`,
-`engine:config`, `engine:plugin`). Alpha Connection is a registered capability —
-it was promoted in `#749` — and `cloud` remains excluded. The exclusion list is
-also an exact set (`cloud`, `legacy-projection`, `nested-bundle`,
-`provider-adapter`, `publish-wrapper`): `managed-plugin` left it when `#807`
-registered the `opencode-plugin` profile.
+the profile/capability closure as an exact set. Alpha Connection is a registered
+capability — it was promoted in `#749` — and `cloud` remains excluded.
+
+⚠️ **The vendored producer closure is one hop behind the host registry.** `#830`
+withdrew `opencode-plugin` / `engine:config` / `engine:plugin` from the host
+side above, but the producer artifact vendored here still publishes five
+profiles and five capabilities, and still leaves `managed-plugin` out of the
+exclusion list — `#807`/`#811` put it there and only an `alpha-web` republish
+plus a re-vendor can take it back out. Until that hop lands, the consumer's
+byte-identity check against the live host artifact is expected to fail; that is
+the cross-repository pin being mid-flight, not a defect in either side.
 
 The **runtime host decoder** judgement is not in the consumer package — it cannot
 import across packages. It is delegated to `packages/ui-mac/src/main/package-installability.test.ts`

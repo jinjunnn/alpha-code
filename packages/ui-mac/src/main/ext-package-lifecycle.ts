@@ -46,13 +46,16 @@ export type PackageChildKindV1 = "skill" | "agent" | "mcp" | "plugin"
  * 因此这张表的判据有两条,缺一条都是假闸:
  *   · **键集必须等于 `PROFILE_REGISTRY_V1` 的 profileId 集**(全覆盖,期望值从注册表派生);
  *   · **未登记的 profile 具名拒绝**(枚举对新成员默认拒绝,不是默认放行)。
- * 只测后者的话,一张把 `opencode-plugin` 错映成 `skill` 的表完全满足断言。
+ * 只测后者的话,一张把新 profile 错映成 `skill` 的表完全满足断言。
+ *
+ * ADR-040(`#830`)撤回 `opencode-plugin` profile 之后,**没有任何 package profile 派生出
+ * `plugin` kind**。`plugin` 仍是 `PackageChildKindV1` 的成员,因为 seed / legacy 通道用同一套
+ * 事务 key 与授权账位置(`packageChildTxKeyV1("plugin", …)`),那条通道不经过本表。
  */
 const PACKAGE_CHILD_KIND_BY_PROFILE_V1: Readonly<Record<string, PackageChildKindV1>> = {
   agent: "agent",
   "mcp-local": "mcp",
   "mcp-remote": "mcp",
-  "opencode-plugin": "plugin",
   skill: "skill",
 }
 

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { resolve } from "node:path"
 import { afterAll, describe, expect, test } from "bun:test"
 import {
+  PACKAGE_CAPABILITY_GRAMMAR_V1,
   canonicalPackagePreludeBytesV1,
   derivePayloadCapabilitiesV1,
   type PackageProfilePayloadV1,
@@ -65,15 +66,12 @@ describe("HostExtensionPackageV1 artifact", () => {
       "agent",
       "mcp-local",
       "mcp-remote",
-      "opencode-plugin",
       "skill",
     ])
     expect(CAPABILITY_REGISTRY_V1.map((capability) => capability.token)).toEqual([
       "alpha.connection.v1",
       "alpha.mcp-oauth.v1",
       "alpha.secret-prerequisite.v1",
-      "engine:config",
-      "engine:plugin",
     ])
     // 界也是合同。#737 的 5 MiB 残留就是「界只活在某个源文件里的字面量」造成的,
     // 所以每一条界都必须在 registry 里,而不是散落在 decoder / main 的常量上。
@@ -87,14 +85,10 @@ describe("HostExtensionPackageV1 artifact", () => {
       "maxPayloadBytes",
       "maxPayloadDepth",
       "maxPayloadNodes",
-      "maxScriptAssetBytes",
       "maxStringBytes",
     ])
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).toBe(16)
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes).toBe(5 * 1024 * 1024)
-    // 脚本资产有自己的界,刻意与 markdown(5 MiB)和 payload(1 MiB)都不同值 —— 一个把它
-    // 写死成"另一条已有的界"的实现在这里红,而不是等到某个真实包大到撞界才被发现。
-    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes).toBe(2 * 1024 * 1024)
     // DoS 边界必须钉住值,不能只钉住「这个键存在」—— 键存在的断言拦不住悄悄放宽。
     // v2 把 maxHeaderNodes 从 128 提到 512:16 组件的信封本身就有几百个节点,128 会拒载合法
     // 多组件包。放宽 4× 的兜底是 maxEnvelopeBytes 仍为 64 KiB —— 所以它也一起钉住,
@@ -169,19 +163,8 @@ describe("HostExtensionPackageV1 artifact", () => {
       expect(schema.additionalProperties, profile.schemaPath).toBe(false)
       expect(schema.properties?.behavior?.additionalProperties, profile.schemaPath).toBe(false)
     }
-    // 发布给 producer 的 schema 与宿主 decoder 必须对同一条界。这两份是**分开维护**的:
-    // 上面那两条只查了 additionalProperties,所以 schema 里的 maximum 可以被单独改宽/改窄,
-    // 而没有任何东西会红 —— producer 于是能发出一个宿主当场拒收的包(或反过来)。
-    const pluginSchema = (await Bun.file(
-      resolve(import.meta.dir, "profiles/opencode-plugin.v1.schema.json"),
-    ).json()) as { $defs?: { scriptAsset?: { properties?: { bytes?: { maximum?: unknown } } } } }
-    expect(pluginSchema.$defs?.scriptAsset?.properties?.bytes?.maximum).toBe(
-      HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes,
-    )
-    // 这条以前是 `not.toContain("opencode-plugin")` —— Phase 1..3 主动挡住这个 profile 悄悄进来。
-    // Phase 4 把它**翻成正向**而不是删掉:删掉等于少一道闸,registry 会退回到「谁都可以往里加」。
-    // 断的是完整绑定(id@version + mediaType + schemaPath),比上面那条只看 profileId 的更细 ——
-    // 一个把新 profile 指向别人的 schema 或别人的 mediaType 的实现在这里红。
+    // 完整绑定(id@version + mediaType + schemaPath)的 exact-set。它挡的是「悄悄加一个」——
+    // 一个把新 profile 指向别人的 schema 或别人的 mediaType 的实现也在这里红。
     expect(
       PROFILE_REGISTRY_V1.map(
         (profile) =>
@@ -191,11 +174,59 @@ describe("HostExtensionPackageV1 artifact", () => {
       "agent@1 application/vnd.alpha.host-extension-package.agent.v1+json profiles/agent.v1.schema.json",
       "mcp-local@1 application/vnd.alpha.host-extension-package.mcp-local.v1+json profiles/mcp-local.v1.schema.json",
       "mcp-remote@1 application/vnd.alpha.host-extension-package.mcp-remote.v1+json profiles/mcp-remote.v1.schema.json",
-      "opencode-plugin@1 application/vnd.alpha.host-extension-package.opencode-plugin.v1+json profiles/opencode-plugin.v1.schema.json",
       "skill@1 application/vnd.alpha.host-extension-package.skill.v1+json profiles/skill.v1.schema.json",
     ])
+    // ADR-040(`#830`):这条曾在 Phase 4 被**翻成正向**以容纳 `opencode-plugin`。owner 否决了
+    // 那个 profile,所以它翻回反向 —— 上面那条 exact-set 只在有人**改了它自己**时红,而这一条
+    // 说的是一件与列表内容无关的话:这个名字不许再回来。两条一起才把「悄悄加一个」堵死。
+    expect(JSON.stringify(PROFILE_REGISTRY_V1)).not.toContain("opencode-plugin")
     // Bundle 不是 profile,而是多组件信封的形状。这一条**不动**。
     expect(JSON.stringify(PROFILE_REGISTRY_V1)).not.toContain("bundle")
+  })
+
+  /**
+   * ADR-040(`#830`)必须保住的那条:**decoder 的 capability 文法与发布给 producer 的信封
+   * schema 必须逐字一致**。两处分开维护,不一致 = 「过了发布端 schema 却被宿主拒掉」= 合同说谎。
+   *
+   * `#807` 当初两边同步加冒号时是**人拿程序比对了一次**,仓里没有留下任何东西看着它 ——
+   * 本票回滚时两边同步收回,于是把那次一次性比对变成一道常驻闸。
+   *
+   * 两条一起断,因为单独任何一条都不够:
+   *   · `.source` 相等抓的是「两份字面量漂了」,但一个把两边**一起**改错的人仍然自洽;
+   *   · 所以再拿一组固定探针跑双方,**期望值是写死的字面量**,不从任何一边派生 ——
+   *     它们是这条文法的独立锚点。冒号那三个是 `#807` 的原始反例,回滚后必须全部为假。
+   */
+  test("the capability grammar is byte-identical in the decoder and the published envelope schema", async () => {
+    const envelope = (await Bun.file(
+      resolve(import.meta.dir, "alpha-package-envelope-v1.schema.json"),
+    ).json()) as { $defs?: { capabilities?: { items?: { pattern?: string } } } }
+    const published = envelope.$defs?.capabilities?.items?.pattern
+    expect(published).toBe(PACKAGE_CAPABILITY_GRAMMAR_V1.source)
+
+    const publishedRe = new RegExp(published!)
+    const probes: Array<[string, boolean]> = [
+      ["alpha.connection.v1", true],
+      ["alpha.mcp-oauth.v1", true],
+      ["alpha.secret-prerequisite.v1", true],
+      ["a", true],
+      ["a-b.c", true],
+      // ADR-040 撤回的两个 token 与 `#807` R1/F1 的三个畸形值:回滚后文法里没有冒号,五个全假。
+      ["engine:config", false],
+      ["engine:plugin", false],
+      ["a::b", false],
+      ["a:", false],
+      ["a:b:c:d", false],
+      ["A", false],
+      ["1a", false],
+      ["", false],
+      ["a b", false],
+      ["a\nb", false],
+      [`a${"b".repeat(96)}`, false],
+    ]
+    for (const [token, allowed] of probes) {
+      expect(PACKAGE_CAPABILITY_GRAMMAR_V1.test(token), `decoder: ${JSON.stringify(token)}`).toBe(allowed)
+      expect(publishedRe.test(token), `schema: ${JSON.stringify(token)}`).toBe(allowed)
+    }
   })
 
   test("every schema-reachable behavior derives exactly the registered capability vocabulary", async () => {

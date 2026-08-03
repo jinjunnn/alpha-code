@@ -115,6 +115,13 @@ export function pluginKitFixture(options?: {
   /** ADR-040(`#825`)对照组:同一个包**去掉** `opencode-plugin` 组件 —— 其余四个 profile 原样。
    *  它存在的唯一理由是把「拒绝只针对 plugin」与「整条 package 通道被我改坏了」分开。 */
   withoutPlugin?: boolean
+  /** ADR-040(`#830`)第二形态:plugin 组件**不声明任何 capability**。
+   *
+   *  合同层回滚同时撤掉了两样东西 —— `opencode-plugin` profile 与 `engine:config` /
+   *  `engine:plugin` 两个 token(连同文法里容纳冒号的那条支路)。默认形态两样都踩,于是
+   *  「哪一样在拦」分不出来:把 profile 悄悄加回注册表,默认形态仍会被文法拦下而不红。
+   *  这一档只踩 profile 那一样,让两半各自可被单独证伪。 */
+  pluginWithoutCapabilities?: boolean
 }): PluginKitFixture {
   const agentAsset = utf8(AGENT_MD)
   const skillAsset = utf8(SKILL_MD)
@@ -167,10 +174,20 @@ export function pluginKitFixture(options?: {
     componentOf(LEAF_SKILL_ID, "skill", true, [], skillBytes),
     componentOf(LEAF_MCP_LOCAL_ID, "mcp-local", true, [], mcpLocalBytes),
     componentOf(LEAF_MCP_REMOTE_ID, "mcp-remote", true, [], mcpRemoteBytes),
-    // managed plugin 恰好披露两件事:引擎会执行它的 JS,而宿主要替用户改引擎配置指向它。
+    // Phase 4 的 managed plugin 组件,**逐字保留发布端当时会发出的形状**:两个 capability
+    // 声明的是「引擎会执行它的 JS」与「宿主要替用户改引擎配置指向它」。ADR-040 之后宿主两样
+    // 都不认了 —— 夹具不跟着改成一个宿主认得的形状,否则测的就不是那个陈旧生产者会发来的字节。
     ...(options?.withoutPlugin
       ? []
-      : [componentOf(LEAF_PLUGIN_ID, "opencode-plugin", true, ["engine:config", "engine:plugin"], pluginBytes)]),
+      : [
+          componentOf(
+            LEAF_PLUGIN_ID,
+            "opencode-plugin",
+            true,
+            options?.pluginWithoutCapabilities ? [] : ["engine:config", "engine:plugin"],
+            pluginBytes,
+          ),
+        ]),
   ]
 
   const envelope = {

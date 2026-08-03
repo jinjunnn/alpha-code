@@ -20,12 +20,6 @@
       "schemaPath": "profiles/mcp-remote.v1.schema.json"
     },
     {
-      "profileId": "opencode-plugin",
-      "profileVersion": 1,
-      "mediaType": "application/vnd.alpha.host-extension-package.opencode-plugin.v1+json",
-      "schemaPath": "profiles/opencode-plugin.v1.schema.json"
-    },
-    {
       "profileId": "skill",
       "profileVersion": 1,
       "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
@@ -44,14 +38,6 @@
     {
       "token": "alpha.secret-prerequisite.v1",
       "semantic": "Resolve declared secret references without placing secret values in package bytes."
-    },
-    {
-      "token": "engine:config",
-      "semantic": "Write an entry into the engine configuration file on the user's behalf."
-    },
-    {
-      "token": "engine:plugin",
-      "semantic": "Execute JavaScript inside the engine process with the engine's own privileges."
     }
   ],
   "limits": {
@@ -62,7 +48,6 @@
     "maxCapabilities": 16,
     "maxComponents": 16,
     "maxMarkdownAssetBytes": 5242880,
-    "maxScriptAssetBytes": 2097152,
     "maxPayloadBytes": 1048576,
     "maxPayloadDepth": 8,
     "maxPayloadNodes": 512
