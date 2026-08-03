@@ -18,6 +18,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import { writeFileAtomicSync } from "./ext-atomic-fs"
+import { sealEnginePluginAdditions } from "./engine-plugin-seal"
 
 const ALLOWED_TOP_KEYS = new Set(["mcp", "plugin", "provider", "agent"])
 
@@ -84,6 +85,10 @@ export function prepareConfigTx(
     if (errors.length > 0) return { ok: false, reason: `resulting config is not valid jsonc after edit ${e.keyPath.join(".")}` }
     text = applied
   }
+  // ADR-040 咽喉(计划期):config action 是事务侧唯一能改 `plugin[]` 的东西,判据落在 image 对上 ——
+  // 「加元素」在写盘前就具名拒绝,调用方拿到的是 stage="staging" 的可读理由而不是一次半态写。
+  const sealed = sealEnginePluginAdditions(target, preImage, text)
+  if (!sealed.ok) return sealed
   return {
     ok: true,
     image: { target, preImage, nextImage: text, preDigest: digest(preImage), nextDigest: digest(text) },
@@ -105,12 +110,21 @@ export function stageConfigImage(stagingDir: string, slot: number, image: Config
 
 /** switch 阶段:原子替换 live target 为 nextImage。返回替换前 target 的实际 digest(供部分应用判定)。 */
 export function applyConfigImage(image: ConfigTxImage): void {
+  // ADR-040 咽喉(写盘期终闸)。prepare 已判过一次;这一道管的是**不经过 prepare 的 image**:
+  // 崩溃恢复从 staging 重建的 image(可能是旧版本 alpha 留下的)、以及任何直接构造 image 的新调用点。
+  // 抛错落在事务的 switch 循环里 → rollbackAll("switch", …),不是裸崩溃。
+  const sealed = sealEnginePluginAdditions(image.target, image.preImage, image.nextImage)
+  if (!sealed.ok) throw new Error(sealed.reason)
   writeFileAtomicSync(image.target, image.nextImage)
 }
 
 /**
  * 回滚:仅当 target 当前内容 == nextImage(即我们的 switch 已应用且无旁路覆盖)才写回 preImage。
- * 若 target 既非 pre 也非 next(有并发旁路写)→ 保留现状 + fail-closed 报告,绝不盲目覆盖用户/旁路内容。 */
+ * 若 target 既非 pre 也非 next(有并发旁路写)→ 保留现状 + fail-closed 报告,绝不盲目覆盖用户/旁路内容。
+ *
+ * **本函数刻意不过 ADR-040 咽喉**:它写回的是**这次写盘之前磁盘上就有的那份字节**,不可能引入
+ * 磁盘上从未有过的 `plugin[]` 成员;而给它加闸会让「移除条目的事务回滚」被自己的闸拒掉 ——
+ * 那正是卸载/禁用失败后无法恢复原状的形态。 */
 export type ConfigRestoreOutcome = { ok: true; action: "restored" | "noop" } | { ok: false; reason: string }
 export function restoreConfigImage(image: ConfigTxImage): ConfigRestoreOutcome {
   let current: string

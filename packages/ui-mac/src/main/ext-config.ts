@@ -29,6 +29,7 @@ import type { TxPreparedResourceV1 } from "./ext-transaction"
 import { alphaGlobalRoot } from "./alpha-installs"
 import { findRecordV2 } from "./ext-receipt-v2"
 import { alphaJsoncPath } from "./engine-config-truth"
+import { sealEnginePluginAdditions } from "./engine-plugin-seal"
 import { commandHeadBase } from "./platform"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 
@@ -410,6 +411,10 @@ export function writeConfigLeafEditsUnlocked(
 }
 
 function writeConfigTextAtomic(target: string, before: string, result: string): ConfigResult {
+  // ADR-040 咽喉:本函数是 ext-config 全部配置写盘的唯一原子提交点(writeKey* 与 dangling 清扫都
+  // 收在这里),所以「往 plugin[] 加元素一律拒」落在这一行 —— 新增的写入调用点不需要登记就已经被挡住。
+  const sealed = sealEnginePluginAdditions(target, before, result)
+  if (!sealed.ok) return sealed
   const bak = `${target}.bak`
   const tmp = `${target}.tmp`
   try {
@@ -933,92 +938,10 @@ function pkgBase(spec: string): string {
 }
 
 
-/**
- * Append a plugin package to the config `plugin` array (SINGULAR — the key opencode's V1 schema
- * accepts; `plugins` would hard-fail the whole config). opencode auto-installs it from npm on next
- * launch. Idempotent; the caller should prompt for a restart (config is read at boot only).
- */
-/** Codex review #355:persist 必须回报真实变更 —— changed=false(恰同钉版已在)时调用方跳过落账
- *  (免虚增 generation);同 base 不同钉版一律显式拒绝(不许「配置不变、账本记新版」的谎)。 */
-export type PersistPluginResult =
-  | { ok: true; changed: boolean; projectedDisabled?: true }
-  | { ok: false; reason: string }
-
-export function persistPlugin(pkg: string, meta?: InstallMeta): PersistPluginResult {
-  return withConfigWriteLock(() => persistPluginUnlocked(pkg, meta)) // plugin[] 是跨读写 RMW,整函数持锁
-}
-function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginResult {
-  if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
-  // #395(Codex r5):未策展 npm 重加接入同一投影 —— 账本 disabled 的 plugin 条目必须保持缺席
-  // (引擎 import 早于 config-hook;写正常数组元素 = 确定性复活)。projectedDisabled 让调用方照常
-  // 刷账本(desiredState 当前策略优先,不翻),config 零写入,启用时按 configKey 补回。
-  const priorRecord = findRecordV2(alphaGlobalRoot(), "plugin", pluginRecordName(pkg))
-  const target = mcpPluginTargetPath()
-  const readPlugins = (file: string): unknown[] => {
-    try {
-      if (!fs.existsSync(file)) return []
-      const parsed = parse(fs.readFileSync(file, "utf8")) as { plugin?: unknown } | undefined
-      return Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
-    } catch {
-      return []
-    }
-  }
-  // opencode validates opencode.jsonc with its V1 schema, whose key is `plugin` (SINGULAR) —
-  // `plugins` is an unrecognized key and makes opencode hard-fail the ENTIRE config (breaking every
-  // session), see packages/core/src/v1/config/config.ts:56. Element shape is string | [string, opts].
-  // #395(Codex r5)步骤4:目标 config 读错误只容缺席 —— EACCES/EIO 当空数组会让下方 modify 以
-  // [pkg] 整替换既有 plugin[](clobber 其余条目);legacy XDG 侧保持容错(只用于幂等判重,读不出
-  // 顶多放行一个重复项,引擎合并侧去重)。
-  let current: unknown[]
-  try {
-    const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
-    current = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code
-    if (code !== "ENOENT" && code !== "ENOTDIR") return { ok: false, reason: `config unreadable (${code ?? String(e)}) — fail closed` }
-    current = []
-  }
-  const base = pkgBase(pkg)
-  const findIn = (list: unknown[]): string | undefined => {
-    for (const p of list) {
-      if (typeof p === "string" && pkgBase(p) === base) return p
-      if (Array.isArray(p) && typeof p[0] === "string" && pkgBase(p[0] as string) === base) return p[0] as string
-    }
-    return undefined
-  }
-  // idempotent across BOTH files: an entry still sitting in the legacy XDG config (pre-migration)
-  // must not be duplicated into the alpha file — the engine merges the two plugin arrays.
-  const existingMain = findIn(current)
-  const existingLegacy = target !== userConfigPath() ? findIn(readPlugins(userConfigPath())) : undefined
-  // #395(Codex r5/r6 M1 → r11 pivot):账本 disabled 的 plugin 重加 —— 只需保证从 alpha.jsonc plugin[]
-  // 缺席(无用户 = 无他源;plugin union 无覆盖面,alpha.jsonc 是唯一生效面)。主 config 残留旧钉版
-  // (换钉版 @x/p@1→@x/p@2 或崩溃残留)→ 移除该 base 全部条目(投影为缺席),changed;缺席 → 纯账本刷新。
-  if (priorRecord?.desiredState === "disabled") {
-    if (existingMain !== undefined) {
-      const next = current.filter((p) => {
-        const s = typeof p === "string" ? p : Array.isArray(p) && typeof p[0] === "string" ? (p[0] as string) : null
-        return s === null || pkgBase(s) !== base
-      })
-      const w = writeKeyUnlocked(target, ["plugin"], next)
-      if (!w.ok) return w
-      return { ok: true, changed: true, projectedDisabled: true }
-    }
-    return { ok: true, changed: false, projectedDisabled: true }
-  }
-  const existing = existingMain ?? existingLegacy
-  if (existing !== undefined) {
-    if (existing === pkg) return { ok: true, changed: false } // 恰同钉版 → 真幂等,调用方跳过落账
-    return { ok: false, reason: `plugin "${base}" already configured as "${existing}" — refusing silent version mismatch (requested "${pkg}")` }
-  }
-  // #354:eager v1 下线(v1 视图由 planner v2 upsert 锁步派生;未策展归 orchestrator)。
-  const written = writeKeyUnlocked(target, ["plugin"], [...current, pkg])
-  return written.ok ? { ok: true, changed: true } : written
-}
-
-/** plugin 的账本名(包名规范化;未策展 orchestrator 与 catalog 落账共用同一派生,防两套名)。 */
-export function pluginRecordName(pkg: string): string {
-  return pkgBase(pkg).replace(/^@/, "").replace("/", "__")
-}
+// ADR-040(`#825` 第 1 条):`persistPlugin` / `persistPluginUnlocked` / `pluginRecordName` /
+// `removePluginEntryExact` / `persistPluginPath` 全部随未策展 npm 导入通道退场 —— 它们的唯一
+// 存在理由是**往 plugin[] 追加元素**,而那件事本身已经不再合法(咽喉见 engine-plugin-seal.ts)。
+// `SAFE_PACKAGE` 与 `pkgBase` 留在上面:`removePlugin` 与 `findPluginBaseConflictStrict` 复用它们。
 
 /** plugin[] 成员的引擎合法形状(V1 schema:string 或恰 [string, Record])。 */
 function legalPluginEntry(x: unknown): boolean {
@@ -1120,24 +1043,6 @@ export function findPluginBaseConflictStrict(
   return { ok: true, existing: undefined }
 }
 
-/** Codex review #355:只撤销恰为本次写入的 plugin[] 元素(orchestrator 落账失败补偿)——
- *  不碰 legacy 文件、不碰 receipt、不碰同 base 其他元素(removePlugin 全量卸载会误删既有安装)。 */
-export function removePluginEntryExact(pkg: string): ConfigResult {
-  return withConfigWriteLock(() => {
-    const target = mcpPluginTargetPath()
-    try {
-      if (!fs.existsSync(target)) return { ok: true }
-      const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
-      const current: unknown[] = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
-      const next = current.filter((p) => p !== pkg)
-      if (next.length === current.length) return { ok: true }
-      return writeKeyUnlocked(target, ["plugin"], next)
-    } catch {
-      return { ok: false, reason: "failed to read config" }
-    }
-  })
-}
-
 /**
  * Remove a plugin package from config `plugin[]` (alpha-owned file + legacy XDG file, pre-migration)
  * and drop its receipt. Idempotent — absent package is a no-op success.
@@ -1177,38 +1082,8 @@ function removePluginUnlocked(pkg: string): ConfigResult {
   return { ok: true }
 }
 
-// ── REQ-023 T2:vendored 插件的绝对路径持久化(零网络通道) ──────────────────────────────────
-// 引擎 plugin[] 原生接受绝对路径(config/plugin.ts:42-60,与 @alpha-code/ext 注入同机制)。
-// 路径必须位于当前环境的 plugins 树内(装载面收敛:不能把任意本机 JS 喂进引擎进程)。
-
-function underAlphaPlugins(absPath: string): boolean {
-  const root = path.join(alphaGlobalRoot(), "plugins")
-  const resolved = path.resolve(absPath)
-  return resolved.startsWith(root + path.sep)
-}
-
-export function persistPluginPath(name: string, absJsPath: string, files: string[], meta?: InstallMeta): ConfigResult {
-  return withConfigWriteLock(() => persistPluginPathUnlocked(name, absJsPath, files, meta))
-}
-function persistPluginPathUnlocked(name: string, absJsPath: string, files: string[], meta?: InstallMeta): ConfigResult {
-  if (!isExtensionName(name)) return { ok: false, reason: "invalid plugin name" }
-  if (!path.isAbsolute(absJsPath) || !absJsPath.endsWith(".js") || !underAlphaPlugins(absJsPath))
-    return { ok: false, reason: "refused: plugin path outside the current environment plugins root" }
-  const target = mcpPluginTargetPath()
-  const read = (): unknown[] => {
-    try {
-      if (!fs.existsSync(target)) return []
-      const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
-      return Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
-    } catch {
-      return []
-    }
-  }
-  const current = read()
-  if (current.some((p) => p === absJsPath)) return { ok: true } // idempotent
-  // #354:eager v1 下线(同 persistPluginUnlocked;v1 视图由 planner v2 upsert 锁步派生)。
-  return writeKeyUnlocked(target, ["plugin"], [...current, absJsPath])
-}
+// ── REQ-023 T2 的 vendored 绝对路径**写入**通道随 ADR-040 退场;卸载侧(removePluginPath)保留 ──
+// 引擎 plugin[] 原生接受绝对路径(config/plugin.ts:42-60)。写入不再合法,移除仍是清理方向。
 
 export function removePluginPath(name: string, absJsPath: string): ConfigResult {
   return withConfigWriteLock(() => removePluginPathUnlocked(name, absJsPath))

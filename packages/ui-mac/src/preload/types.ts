@@ -797,8 +797,6 @@ export type ElectronAPI = {
         }
       | { ok: false; reason: string }
     >
-    /** 未策展 npm 插件通道(REQ-099 #305:不收 meta,同 persistMcp 理由;catalog 插件走 installCatalog)。 */
-    installPlugin: (pkg: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     /** REQ-100 #311 / REQ-099 #305:main-owned catalog 安装唯一入口(mcp/plugin/skill/agent/cloud/bundle)。
      *  MCP durable commit 后由 main 让 engine 重载 `{file:}` 引用；result 只带 reference + status。 */
     installCatalog: (

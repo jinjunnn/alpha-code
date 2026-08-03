@@ -571,7 +571,11 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
   })
 })
 
-describe("plugin seed 形状的崩溃恢复(REQ-102 #359:载荷 file items + config 单事务)", () => {
+// ADR-040(`#825`):这两条测的是**事务引擎**在「多个 file item + 一个 config item」形状下的崩溃恢复
+// (digest 判翻转 → 前滚 / 篡改 → 回滚),plugin 只是当时的载体。载体已随扩展安装路径封死,于是
+// config item 换成 `mcp.<name>` 叶(引擎行为逐字不变),file item 的 key 与落点保持 `plugin--*`
+// 形状 —— 它们要驱动的正是 `seedPluginFileProbe` 那条 typed probe 分支,换掉 key 就把这半场测没了。
+describe("多 file item + config 单事务的崩溃恢复(REQ-102 #359;原 plugin seed 形状)", () => {
   const PJS = "export const Demo = async () => ({})"
   const LIB = "export const u = 1"
   const pluginPlan = (): TxPlan => {
@@ -584,17 +588,17 @@ describe("plugin seed 形状的崩溃恢复(REQ-102 #359:载荷 file items + con
         {
           key: "plugin--demo",
           action: "config",
-          config: { target: cfgTarget, edits: [{ keyPath: ["plugin"], value: [join(dir, "plugin.js")] }] },
+          config: { target: cfgTarget, edits: [{ keyPath: ["mcp", "demo"], value: { type: "local", command: ["x"] } }] },
           receipt: {
-            id: "plugin:demo",
+            id: "mcp:demo",
             name: "demo",
-            kind: "plugin",
+            kind: "mcp",
             environment: "prod",
             scope: { kind: "global" },
             desiredState: "enabled",
             origin: "catalog",
             installedAt: iso,
-            configKey: `plugin-path:${join(dir, "plugin.js")}`,
+            configKey: "mcp.demo",
             files: [dir],
           },
         },
@@ -630,7 +634,7 @@ describe("plugin seed 形状的崩溃恢复(REQ-102 #359:载荷 file items + con
     const dir = join(root, "plugins", "demo@abcdef0123456789")
     expect(readFileSync(join(dir, "plugin.js"), "utf8")).toBe(PJS)
     expect(readFileSync(join(dir, "lib", "util.js"), "utf8")).toBe(LIB)
-    expect(findRecordV2(root, "plugin", "demo")).not.toBeNull()
+    expect(findRecordV2(root, "mcp", "demo")).not.toBeNull()
   })
 
   test("crash after-switched + 载荷被篡改 → digest 判未翻转 → 回滚(文件恢复缺席、config 回旧)", async () => {
@@ -643,7 +647,7 @@ describe("plugin seed 形状的崩溃恢复(REQ-102 #359:载荷 file items + con
     expect(rec.ok).toBe(true)
     // 篡改文件 digest ≠ next → 部分翻转 → 回滚;被篡改文件 diverged fail-closed 保留非终态。
     expect(rec.reports[0].action).toBe("none")
-    expect(findRecordV2(root, "plugin", "demo")).toBeNull() // 绝不为篡改载荷落账
+    expect(findRecordV2(root, "mcp", "demo")).toBeNull() // 绝不为篡改载荷落账
   })
 })
 

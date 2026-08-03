@@ -464,8 +464,9 @@ export function ExtensionHub(props: {
   // (ALPHA_MIGRATE_ENABLE=1,A6 真机验证后)且有候选时显示迁移条。
   const [migrateCandidates, setMigrateCandidates] = createSignal<CatalogEntry[]>([])
   const [migrating, setMigrating] = createSignal(false)
-  // T6:导入状态。importDialog = git/npm 输入弹窗;importBusy/importErr 行内反馈(B11)。
-  const [importDialog, setImportDialog] = createSignal<"git" | "npm" | null>(null)
+  // T6:导入状态。importDialog = git 输入弹窗;importBusy/importErr 行内反馈(B11)。
+  // ADR-040(`#825`):npm 插件导入这一档随「扩展安装不得写引擎 plugin[]」整档撤下。
+  const [importDialog, setImportDialog] = createSignal<"git" | null>(null)
   // REQ-033:自定义连接器(catalog 外任意 MCP)+ agent 导入(两段式:预览映射 → 确认)
   const [customMcpOpen, setCustomMcpOpen] = createSignal(false)
   const [cmType, setCmType] = createSignal<"local" | "remote">("local")
@@ -628,13 +629,11 @@ export function ExtensionHub(props: {
     setImportBusy(true)
     setImportErr("")
     try {
-      const r = kind === "git" ? await ext.importSkillGit(value) : await ext.importNpmPlugin(value)
+      const r = await ext.importSkillGit(value)
       if (r.ok) {
         // #336 r1:projectionLag = 本次未注入(重启自愈)—— 不得宣称「当场生效」。
         flash(
-          kind === "git"
-            ? t(r.projectionLag ? "alpha.ext.importedPendingRestart" : "alpha.ext.imported", { name: (r as { name?: string }).name ?? "" })
-            : t("alpha.ext.pluginRestart"),
+          t(r.projectionLag ? "alpha.ext.importedPendingRestart" : "alpha.ext.imported", { name: (r as { name?: string }).name ?? "" }),
           "success",
         )
         setImportDialog(null)
@@ -2748,21 +2747,6 @@ export function ExtensionHub(props: {
                               <small>{t("alpha.ext.importGitSub")}</small>
                             </span>
                           </button>
-                          <button
-                            class="alpha-ext-import-card"
-                            disabled={importBusy()}
-                            onClick={() => {
-                              setImportErr("")
-                              setImportInput("")
-                              setImportDialog("npm")
-                            }}
-                          >
-                            <Svg d="M3 9l9-5 9 5-9 5zM3 9v6l9 5 9-5V9" />
-                            <span>
-                              <b>{t("alpha.ext.importNpm")}</b>
-                              <small>{t("alpha.ext.importNpmSub")}</small>
-                            </span>
-                          </button>
                           <button class="alpha-ext-import-card" disabled={cmBusy()} onClick={() => { setCmErr(""); setCustomMcpOpen(true) }}>
                             <Svg d="M8 12h8M12 8v8M4 12a8 8 0 1 0 16 0a8 8 0 1 0-16 0" />
                             <span>
@@ -3148,7 +3132,7 @@ export function ExtensionHub(props: {
           restoreFocus={() => hubCloseButton}
         />
 
-        {/* T6:导入输入弹窗(Git URL / npm 包名)。失败行内呈现于弹窗内(B11),成功 toast。 */}
+        {/* T6:导入输入弹窗(Git URL)。失败行内呈现于弹窗内(B11),成功 toast。 */}
         <Dialog
           open={!!importDialog()}
           onClose={() => {
@@ -3157,7 +3141,7 @@ export function ExtensionHub(props: {
           }}
           besideSidebar
           size="sm"
-          title={importDialog() === "git" ? t("alpha.ext.importGitTitle") : t("alpha.ext.importNpmTitle")}
+          title={t("alpha.ext.importGitTitle")}
           restoreFocus={() => hubCloseButton}
           footer={
             <>
@@ -3172,20 +3156,17 @@ export function ExtensionHub(props: {
         >
           <div class="alpha-ext-confirm">
             <p class="alpha-ext-confirm-desc">
-              {importDialog() === "git" ? t("alpha.ext.importGitHint") : t("alpha.ext.importNpmHint")}
+              {t("alpha.ext.importGitHint")}
             </p>
             <input
               class="alpha-ext-input alpha-mono"
-              placeholder={importDialog() === "git" ? "https://github.com/user/skill-repo" : "opencode-notify@0.3.1"}
+              placeholder="https://github.com/user/skill-repo"
               value={importInput()}
               onInput={(ev) => setImportInput(ev.currentTarget.value)}
               onKeyDown={(ev) => {
                 if (ev.key === "Enter" && importInput().trim() && !importBusy()) void runImportDialog()
               }}
             />
-            <Show when={importDialog() === "npm"}>
-              <p class="alpha-ext-confirm-risk">⚠ {t("alpha.ext.pluginRisk")}</p>
-            </Show>
             <Show when={importErr()}>
               <p class="alpha-ext-import-err">{importErr()}</p>
             </Show>

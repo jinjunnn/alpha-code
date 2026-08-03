@@ -112,6 +112,9 @@ export const PLUGIN_ASSET_URL = "https://alphacodeone.com/catalog/assets/plugin.
 export function pluginKitFixture(options?: {
   /** 把 JS 资产字节换成别的内容(integrity 负例用)。 */
   corruptPluginAsset?: boolean
+  /** ADR-040(`#825`)对照组:同一个包**去掉** `opencode-plugin` 组件 —— 其余四个 profile 原样。
+   *  它存在的唯一理由是把「拒绝只针对 plugin」与「整条 package 通道被我改坏了」分开。 */
+  withoutPlugin?: boolean
 }): PluginKitFixture {
   const agentAsset = utf8(AGENT_MD)
   const skillAsset = utf8(SKILL_MD)
@@ -151,17 +154,23 @@ export function pluginKitFixture(options?: {
   const pluginBytes = canonicalBytes(pluginPayload)
 
   const components = [
-    componentOf(ROOT_AGENT_ID, "agent", true, [], agentBytes, [
-      LEAF_SKILL_ID,
-      LEAF_MCP_LOCAL_ID,
-      LEAF_MCP_REMOTE_ID,
-      LEAF_PLUGIN_ID,
-    ]),
+    componentOf(
+      ROOT_AGENT_ID,
+      "agent",
+      true,
+      [],
+      agentBytes,
+      options?.withoutPlugin
+        ? [LEAF_SKILL_ID, LEAF_MCP_LOCAL_ID, LEAF_MCP_REMOTE_ID]
+        : [LEAF_SKILL_ID, LEAF_MCP_LOCAL_ID, LEAF_MCP_REMOTE_ID, LEAF_PLUGIN_ID],
+    ),
     componentOf(LEAF_SKILL_ID, "skill", true, [], skillBytes),
     componentOf(LEAF_MCP_LOCAL_ID, "mcp-local", true, [], mcpLocalBytes),
     componentOf(LEAF_MCP_REMOTE_ID, "mcp-remote", true, [], mcpRemoteBytes),
     // managed plugin 恰好披露两件事:引擎会执行它的 JS,而宿主要替用户改引擎配置指向它。
-    componentOf(LEAF_PLUGIN_ID, "opencode-plugin", true, ["engine:config", "engine:plugin"], pluginBytes),
+    ...(options?.withoutPlugin
+      ? []
+      : [componentOf(LEAF_PLUGIN_ID, "opencode-plugin", true, ["engine:config", "engine:plugin"], pluginBytes)]),
   ]
 
   const envelope = {

@@ -49,7 +49,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     expect(cfg.plugin).toEqual(["@keep/u@1"])
   })
 
-  test("反方向:账本 enabled / config 残留禁用键或条目缺席 → 剥禁用键 + plugin 补回", () => {
+  test("反方向:账本 enabled / config 残留禁用键 → mcp/agent 剥禁用键;**plugin 不再补回**(ADR-040)", () => {
     record({ name: "m", kind: "mcp", configKey: "mcp.m", desiredState: "enabled" })
     record({ name: "a", kind: "agent", configKey: "agent.a", desiredState: "enabled" })
     record({ name: "p", kind: "plugin", configKey: "plugin:@x/p@1.0.0", desiredState: "enabled" })
@@ -59,7 +59,13 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     const cfg = readCfg()
     expect(cfg.mcp.m).toEqual({ type: "local" })
     expect(cfg.agent.a).toEqual({ description: "d" })
-    expect(cfg.plugin).toEqual(["@x/p@1.0.0"])
+    // 「boot 期把账本记 enabled 的 plugin 补回 plugin[]」= 第 6 条加法路径的另一半入口。
+    // 它现在是**具名跳过**:config 里那个数组一个元素都不长,而理由进 warnings(不是静默)。
+    expect(cfg.plugin).toEqual([])
+    expect(r.warnings.some((w) => w.includes("plugin p") && w.includes("ADR-040"))).toBe(true)
+    // enable 失败不是 enforcementGap(缺功能 ≠ 有安全洞;gap 只留给「本该禁用却禁不掉」)。
+    // 本夹具另有一条与本票无关的 gap(session-grant oracle 不可判),所以判据是「gap 里没有这一条」。
+    expect((r.enforcementGap ?? []).some((g) => g.includes("plugin p"))).toBe(false)
   })
 
   test("多条 plugin 记录共享 plugin[] 键路径 → 工作副本累积,互不覆盖(2 禁 1 启混合)", () => {
@@ -69,7 +75,9 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     writeCfg({ plugin: ["@x/a@1", "@x/b@1", "@keep/u@1"] })
     const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(true)
-    expect(readCfg().plugin).toEqual(["@keep/u@1", "@x/c@1"])
+    // 两条 disabled 的移除照常累积(工作副本互不覆盖);enabled 的那条**不再补回**(ADR-040)。
+    expect(readCfg().plugin).toEqual(["@keep/u@1"])
+    expect(r.applied.sort()).toEqual(["plugin:a→disabled", "plugin:b→disabled"])
   })
 
   test("config 已与账本一致 → 零写盘(逐字节不动,幂等)", () => {

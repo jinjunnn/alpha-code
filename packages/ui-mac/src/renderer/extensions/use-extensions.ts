@@ -232,7 +232,6 @@ export interface ExtensionsApi {
   /** REQ-019 T6:导入 Git 仓库技能(https-only 浅克隆临时目录 → 同校验)。 */
   importSkillGit(url: string): Promise<ActionResult & { name?: string }>
   /** REQ-019 T6:npm 插件导入 = 复用 persistPlugin 通道(主进程包名白名单)。 */
-  importNpmPlugin(pkg: string): Promise<ActionResult>
   /** REQ-023:安装 catalog 官方 agent(vendored md 资产 → writeAgent 同管线)。 */
   installAgentEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
   /**
@@ -909,7 +908,7 @@ export function useExtensions(
   }
 
   // REQ-019 T6:导入。成功后刷新账本 + dispose 重载(与 createSkill 同节奏);失败原因原样上抛,
-  // 由 hub 行内呈现(B11)。npm 导入 = 复用 persistPlugin 通道(白名单校验在主进程)。
+  // 由 hub 行内呈现(B11)。ADR-040(`#825`):npm 插件导入通道随「扩展安装不得写引擎 plugin[]」退场。
   async function importSkillFolder(): Promise<LocalPluginRoute | (ActionResult & { name?: string; canceled?: boolean })> {
     // REQ-098 #255:main 自弹目录选择器,renderer 不再传 srcDir。
     const r = await extIpc.importSkillFolder()
@@ -975,14 +974,6 @@ export function useExtensions(
     if (!(await refreshEngine())) return { ok: true, name: r.name, reason: "reload-pending", ...carry }
     return { ok: true, name: r.name, ...carry }
   }
-  async function importNpmPlugin(pkg: string): Promise<ActionResult> {
-    const r = await extIpc.installPlugin(pkg)
-    if (!r.ok) return r
-    await loadInstalls()
-    await refreshEngine()
-    return r
-  }
-
   /** REQ-020 T4 / REQ-099 #305:云 pipeline「启用」= receipts-only,切 installCatalog(planner cloud
    *  分支同语义:不触达引擎/文件系统,只落账)。 */
   async function enableCloud(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
@@ -1032,7 +1023,6 @@ export function useExtensions(
     listInstalledPackages,
     uninstallPackage,
     importSkillGit,
-    importNpmPlugin,
     installAgentEntry,
     installCatalogIntent,
     enableCloud,

@@ -1,6 +1,7 @@
-// #336(残留4)—— 未策展提交面(custom MCP / npm plugin 导入)的账本写失败注入测试:
-// 断言 fail-closed 返回(绝不谎报成功)+ 精确补偿(restoreMcpLeaf 前像复原 / removePluginEntryExact
-// 只撤本次条目)+ 密钥版本清理。注入 = recordInstall 参数 DI(账本提交结果是本面唯一要观测的失败源;
+// #336(残留4)—— 未策展提交面(custom MCP 导入)的账本写失败注入测试:
+// 断言 fail-closed 返回(绝不谎报成功)+ 精确补偿(restoreMcpLeaf 前像复原)+ 密钥版本清理。
+// ADR-040(`#825`):npm plugin 导入 body 与它的三条用例随通道整条撤下 —— `installPluginBody` /
+// `persistPlugin` / `removePluginEntryExact` 都已不存在,没有任何生产路径能到达那三条断言。注入 = recordInstall 参数 DI(账本提交结果是本面唯一要观测的失败源;
 // 静态 fs seam 如 installs.json 置目录会先被账本**读侧**的 ledger-corrupt fail-closed 拦截,证明
 // 不了「写失败后补偿」)。其余全真盘:env 根重定向临时目录,零 mock.module(仓规)。
 
@@ -8,8 +9,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { pluginRecordName, readMcpLeaf } from "./ext-config"
-import { upsertRecordV2 } from "./ext-receipt-v2"
+import { readMcpLeaf } from "./ext-config"
 import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
 import type { recordUncuratedInstall } from "./ext-uncurated-record"
 
@@ -124,60 +124,5 @@ describe("#336 custom MCP(persistMcpBody)—— 账本写失败注入", () => {
     expect(readMcpLeaf("secret-srv")).toBeUndefined()
     // 复原成功 → 本次版本目录已删:userData 树内不残留明文
     expect(anyFileContains(userDataTmp, "plaintext-secret-value")).toBe(false)
-  })
-})
-
-describe("#336 npm plugin 导入(installPluginBody)—— 账本写失败注入", () => {
-  const readPluginArray = (): unknown[] => {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8")) as { plugin?: unknown[] }
-      return Array.isArray(cfg.plugin) ? cfg.plugin : []
-    } catch {
-      return []
-    }
-  }
-
-  test("enabled 路径:账本写失败 → removePluginEntryExact 只撤本次条目 + ok:false 如实上报", async () => {
-    const calls: string[] = []
-    const r = await bodies(failingRecorder(calls)).installPluginBody("left-pad@1.2.3")
-    expect(r.ok).toBe(false)
-    if (r.ok) throw new Error("unreachable")
-    expect(r.reason).toContain("install ledger write failed")
-    expect(calls).toEqual([`plugin:${pluginRecordName("left-pad@1.2.3")}`])
-    expect(readPluginArray().some((p) => String(p).startsWith("left-pad"))).toBe(false) // 条目已撤
-  })
-
-  test("projectedDisabled 路径:绕过同 configKey 幂等短路后确实进入 recordInstall;失败 → ok:false、config 零写", async () => {
-    // 账本预置 disabled plugin record,configKey **不同**于本次(`plugin:<pkg>`)→ 幂等短路不命中
-    const name = pluginRecordName("left-pad@1.2.3")
-    const seeded = upsertRecordV2(alphaTmp, {
-      id: `user:${name}`,
-      name,
-      kind: "plugin",
-      environment: "prod",
-      scope: { kind: "global" },
-      desiredState: "disabled",
-      origin: "created",
-      installedAt: "2026-07-17T00:00:00.000Z",
-      configKey: "plugin:stale-spec@0.0.1",
-    })
-    expect(seeded.ok).toBe(true)
-
-    const calls: string[] = []
-    const r = await bodies(failingRecorder(calls)).installPluginBody("left-pad@1.2.3")
-    expect(calls).toEqual([`plugin:${name}`]) // 裁决⑦:fixture 必须真进 recordInstall
-    expect(r.ok).toBe(false)
-    if (r.ok) throw new Error("unreachable")
-    expect(r.reason).toContain("install ledger write failed")
-    expect(readPluginArray()).toEqual([]) // disabled 投影 = config 零写入,失败无需补偿
-  })
-
-  test("恰同钉版重加(真幂等短路)不触发落账:注入失败不影响 ok:true", async () => {
-    const first = await bodies().installPluginBody("some-plugin@2.0.0") // 真落账
-    expect(first.ok).toBe(true)
-    const calls: string[] = []
-    const again = await bodies(failingRecorder(calls)).installPluginBody("some-plugin@2.0.0")
-    expect(again.ok).toBe(true) // changed:false → 跳过落账(#355 真幂等)
-    expect(calls).toEqual([]) // seam 未被调用 = 幂等路径零账本写
   })
 })
