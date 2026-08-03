@@ -14,12 +14,22 @@
 //      一条「模块只导出 default」的断言对那个错误形状照样成立。
 //   ② **顶层零副作用**:只 `import()` wrapper、不调 `server()` 的求值方(V2 就是),
 //      不得让第三方字节跑起来 —— 判据是 fake home 里没有新增写盘。
-//   ③ 对**固定 canary**(仓内 vendored 的那份 `opencode-notify/plugin.js`),`server()` 的返回
-//      键**恰为三项**(`event` / `permission.ask` / `tool.execute.before` —— 实测,基线 §4 D3
-//      写的「两项」是错的,更正理由见下面那条用例里的注释),而且**每一个值都是 function**。
-//      只断「键存在」的话 `{event:1,"permission.ask":1}` 就能过,而真实引擎
-//      (`packages/opencode/src/plugin/index.ts:255` / `:288-290`)**直接调用**这些值 ⇒
-//      一到真实派发就抛,而形状断言全绿。
+//   ③ **`server()` 把 factory 的返回值原样交出去。**(`#809` R1/M2 收紧)
+//      这一条此前是「返回键恰为三项 + 每个值是 function + 对上游源码做 `toContain`」——
+//      **三条一起也拦不住**一个「真调了 factory(于是日志出现、『第三方跑过了』成立)、
+//      **丢掉它的返回值**、再硬编码三个空函数」的错误 wrapper:键集恰好一样,值也确实都是函数,
+//      源码文本更是与本仓无关。日志只证明第三方**被执行过**,不证明**返回值被透传**。
+//      现在改成两条,缺一条都不够:
+//        · **期望键集直接调同一个 `upstream.js` factory 派生**,不写字面量(杀「抄成常量」);
+//        · **合成 upstream 返回一个模块级 sentinel 对象,断言 wrapper 交出来的就是同一个对象**
+//          (identity,不是形状 —— 这一条才杀得掉「丢弃返回值」)。顺带钉住 `(input, options)`
+//          两个实参**原样**转发。
+//      ⚠️ 顺带更正一条实读事实:基线 §4 D3 写的「返回键恰为两项」是错的,vendored 的那份
+//      `plugin.js` 返回**三项**(`:762` permission.ask、`:803` event、`:1020` tool.execute.before)。
+//      本文件不再把这个数字写死 —— 它由 factory 自己派生。
+//      「这些名字是不是上游 `Hooks` 的合法键」改由**类型级约束**盯着
+//      (`main/managed-plugin-wrapper.ts` 对 `@opencode-ai/plugin` 的 `import type`),
+//      **不再断言上游源码文本**(那是假闸①)。
 //
 // **这套东西证明不了什么**(如实登记):它不证明真实引擎会把 hooks 派发到这个插件 ——
 // 生产还要过 `plugin_origins` 去重、`applyPlugin` 的 detect、detect 命中后的 `resolvePluginId`。
@@ -34,22 +44,50 @@ import { managedPluginWrapperSourceV1 } from "../src/main/managed-plugin-wrapper
 const CANDIDATE = resolve(import.meta.dir, "../resources/plugins/opencode-notify/plugin.js")
 /** 第三方的固定日志落点(`plugin.js:742`:`join(homedir(), ".opencode-notify.log")`)。 */
 const THIRD_PARTY_LOG = join(homedir(), ".opencode-notify.log")
-/** ABI 的 SOT。`Hooks` 是**类型**,运行期读不到 —— 所以对它做的是文本交叉核对,不是复制一份。 */
-const ABI_SOT = resolve(import.meta.dir, "../../plugin/src/index.ts")
 
 const tmp = mkdtempSync(join(tmpdir(), "req128-809-wrapper-"))
 afterAll(() => rmSync(tmp, { recursive: true, force: true }))
 
 let dirSeq = 0
+/** 把**生产生成器**的 wrapper 与一份 upstream 落到一个新目录里。 */
 function materialize(upstreamSource: string | Buffer, componentId = "plugin:opencode-notify"): string {
-  const dir = join(tmp, `case-${dirSeq++}`)
-  mkdirSync(dir, { recursive: true })
   const wrapper = managedPluginWrapperSourceV1(componentId)
   if (!wrapper.ok) throw new Error(wrapper.reason)
-  writeFileSync(join(dir, "plugin.js"), wrapper.source)
+  return materializeWith(wrapper.source, upstreamSource)
+}
+
+/** 同上,但 wrapper 的源码由调用方给 —— 负向控制用(手写一个**错误**的 wrapper)。 */
+function materializeWith(wrapperSource: string, upstreamSource: string | Buffer): string {
+  const dir = join(tmp, `case-${dirSeq++}`)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, "plugin.js"), wrapperSource)
   writeFileSync(join(dir, "upstream.js"), upstreamSource)
   return dir
 }
+
+/**
+ * 合成 upstream:默认导出的 factory 返回一个**模块级**的 hooks 对象,并把收到的两个实参记下来。
+ * 「模块级」是关键 —— 它让「wrapper 交出来的是不是**同一个**对象」变成可判定的 identity 问题,
+ * 而不是又一次形状比对(形状比对正是「丢弃返回值 + 硬编码同形状」能钻的空子)。
+ */
+const SENTINEL_UPSTREAM = `export const HOOKS = { event: async () => {}, "permission.ask": async () => {} }
+export const CALLS = []
+export default async (input, options) => {
+  CALLS.push([input, options])
+  return HOOKS
+}
+`
+
+/** 一个**错误**的 wrapper:真的把 factory 调起来(日志/副作用都会发生),然后**丢掉返回值**,
+ *  自己硬编码一张同形状的 hooks 表。它满足旧的三条断言 —— 本文件的负向控制就是它。 */
+const DISCARDING_WRAPPER = `const id = "plugin:discarding"
+async function server(input, options) {
+  const upstream = await import("./upstream.js")
+  await upstream.default(input, options)
+  return { event: async () => {}, "permission.ask": async () => {} }
+}
+export default { id, server }
+`
 
 const defaultOwnKeys = (mod: { default?: unknown }): string[] =>
   Object.keys(Object.getOwnPropertyDescriptors((mod.default ?? {}) as object)).sort()
@@ -117,27 +155,61 @@ test("只 import wrapper ⇒ 第三方字节零求值;调 server() 之后才跑�
   // 的东西(比如 HOME 没生效、或者第三方根本不写盘),整条判据作废。
   expect(existsSync(THIRD_PARTY_LOG)).toBe(true)
 
-  // ③ 返回键**恰为这三项**,而且**每一个值都是 function**。
-  //
-  // ⚠️ 已批基线 §4 D3 第 3 小条写的是「恰为两项:event 与 permission.ask」。**实读是三项** ——
-  // vendored 的那份 `plugin.js` 还返回 `tool.execute.before`(`:1020`;`:762` 是 permission.ask,
-  // `:803` 是 event)。基线那句大概率是从 §2.11 里「日志里有两条 HOOK 记录」推出来的,而写日志的
-  // hook 与返回的 hook 不是同一个集合。此处按**实测**钉三项:照基线原文写死 2,这道闸第一天就是
-  // 红的,而一条注定红的闸只会被人加豁免。
-  //
-  // 「值都是 function」才是本条真正拦的东西:`{event:1,"permission.ask":1}` 满足「键恰为两项」,
-  // 而真实引擎在 `plugin/index.ts:255`(`void hook["event"]?.(…)`)与 `:288-290`
+  // ③ 期望键集**由同一个 factory 派生**,不写字面量:直接 import 同一份 `upstream.js` 再调一次
+  // 它的默认导出,拿它的键集当期望。写死一张表 = 「期望值恰好等于一个可硬编码的常量」,
+  // 一个把返回值硬编码成同样三个键的 wrapper 完全满足它。
+  const upstreamMod = (await import(join(dir, "upstream.js"))) as {
+    default: (input: unknown, options: unknown) => Promise<Record<string, unknown>>
+  }
+  const direct = await upstreamMod.default({}, {})
+  expect(Object.keys(direct).length).toBeGreaterThan(0) // 前提自检:factory 真的返回了东西
+  expect(Object.keys(hooks).sort()).toEqual(Object.keys(direct).sort())
+  // 值都是 function:`{event:1,…}` 满足键集断言,而真实引擎在
+  // `plugin/index.ts:255`(`void hook["event"]?.(…)`)与 `:288-290`
   // (`const fn = hook[name]; yield* Effect.promise(async () => fn(input, output))`)**直接调用**
   // 这些值 ⇒ 一到真实派发就抛,而只断形状的闸全绿。
-  expect(Object.keys(hooks).sort()).toEqual(["event", "permission.ask", "tool.execute.before"])
   for (const [name, value] of Object.entries(hooks)) expect(typeof value, name).toBe("function")
+})
 
-  // 这三个名字必须真的是上游 `Hooks` 的顶层键 —— 对着 ABI 的 SOT 交叉核对,不在这里另抄一份
-  // 21 键表(抄一份就是「手写别人文法的替身」)。
-  const abi = readFileSync(ABI_SOT, "utf8")
-  expect(abi).toContain("\n  event?:")
-  expect(abi).toContain('\n  "permission.ask"?:')
-  expect(abi).toContain('\n  "tool.execute.before"?:')
+// ── ③ 的另一半:透传是 identity,不是形状 ────────────────────────────────────────────────────
+
+test("server() 交出来的就是 factory 返回的**那个对象**,两个实参也原样转发", async () => {
+  const dir = materialize(SENTINEL_UPSTREAM)
+  const mod = (await import(join(dir, "plugin.js"))) as {
+    default: { server: (input: unknown, options: unknown) => Promise<unknown> }
+  }
+  const upstreamMod = (await import(join(dir, "upstream.js"))) as {
+    HOOKS: Record<string, unknown>
+    CALLS: unknown[][]
+  }
+  const input = { marker: "req128-809-input" }
+  const options = { marker: "req128-809-options" }
+  const returned = await mod.default.server(input, options)
+  // identity:一个「调了 factory 但丢掉返回值、自己硬编码一张同形状表」的 wrapper 在这里必红。
+  expect(returned).toBe(upstreamMod.HOOKS)
+  // 实参原样转发(同样是 identity —— 复制一份出来也算没转发)。
+  expect(upstreamMod.CALLS).toHaveLength(1)
+  expect(upstreamMod.CALLS[0]![0]).toBe(input)
+  expect(upstreamMod.CALLS[0]![1]).toBe(options)
+})
+
+test("负向控制:一个「真调 factory 但丢弃返回值」的 wrapper 必须被上面那条判据判否", async () => {
+  const dir = materializeWith(DISCARDING_WRAPPER, SENTINEL_UPSTREAM)
+  const mod = (await import(join(dir, "plugin.js"))) as {
+    default: { server: (input: unknown, options: unknown) => Promise<Record<string, unknown>> }
+  }
+  const upstreamMod = (await import(join(dir, "upstream.js"))) as {
+    HOOKS: Record<string, unknown>
+    CALLS: unknown[][]
+  }
+  const returned = await mod.default.server({}, {})
+  // 它**确实**把 factory 调起来了(旧判据里「日志出现了」那条对它成立)……
+  expect(upstreamMod.CALLS).toHaveLength(1)
+  // ……键集也一模一样、值也都是函数 —— 旧的三条断言全都放它过。
+  expect(Object.keys(returned).sort()).toEqual(Object.keys(upstreamMod.HOOKS).sort())
+  for (const value of Object.values(returned)) expect(typeof value).toBe("function")
+  // 只有 identity 判得出它:交出来的不是 factory 返回的那个对象。
+  expect(returned).not.toBe(upstreamMod.HOOKS)
 })
 
 test("upstream.js 的 default 不是函数 ⇒ server() 响亮失败(不静默返回空 hooks)", async () => {

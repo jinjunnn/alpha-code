@@ -33,6 +33,26 @@
 // `resolvePluginId`,以及派发时对 hook 值的实际调用(`plugin/index.ts:255` / `:288-290`)。
 // 那一条只由打包真机证据关闭。
 
+import type { Plugin, PluginModule } from "@opencode-ai/plugin"
+
+/**
+ * **编译期约束(`#809` R1/M2)**:wrapper 生成的是 JS,类型在运行期不存在 —— 所以「它假定
+ * `upstream.js` 长什么样、它自己产出什么形状」这两件事必须在**这里**用上游的类型表达一次,
+ * 由编译器盯着。
+ *
+ * 此前这一条是测试里的 `expect(abiSource).toContain('\n  event?:')` —— 断言**上游源码的文本**,
+ * 属于本 portfolio 已记档的「假闸①」:它不检查任何运行期事实,而且上游把 `Hooks` 换个写法
+ * (`event?: …` 挪行、加注释、改成 type alias)就会在一个与安全无关的地方红。
+ *
+ * `PluginModule`(`packages/plugin/src/index.ts:76`)正是 V1 加载器 detect 分支要的形状,
+ * `Plugin`(`:74`)正是第三方默认导出的形状。上游改 ABI ⇒ ui-mac typecheck 红。
+ * ⚠️ `packages/plugin` **不在** north-star 的 `UPSTREAM_PATHS` 里,引用它是允许的;
+ * 这里只做 `import type`,零运行期依赖。
+ */
+export type ManagedPluginWrapperModuleV1 = Required<Pick<PluginModule, "id" | "server">>
+/** wrapper 在 `server()` 里 `import()` 到的东西:第三方的默认导出必须是上游的 `Plugin` 工厂。 */
+export type ManagedPluginUpstreamV1 = { default: Plugin }
+
 /** wrapper 的入口文件名。`installPluginFromCas` 的载体本来就要求顶层 `plugin.js`,managed 通道
  *  沿用同一约定 —— 两条通道在盘上的入口名不同会让「同名派生路径」那组闸各查各的。 */
 export const MANAGED_PLUGIN_ENTRYPOINT_V1 = "plugin.js"

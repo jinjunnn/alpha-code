@@ -19,9 +19,9 @@ test("wrapper 的 default 形状、顶层零副作用与固定 canary 的 server
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toMatch(/\b6 pass\b/)
+    expect(output).toMatch(/\b8 pass\b/)
     expect(output).toMatch(/\b0 fail\b/)
-    expect(output).toMatch(/Ran 6 tests across 1 file/)
+    expect(output).toMatch(/Ran 8 tests across 1 file/)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

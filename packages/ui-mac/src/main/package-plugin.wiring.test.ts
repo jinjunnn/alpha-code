@@ -14,7 +14,7 @@ test("managed plugin 的安装图、落盘字节、alpha.jsonc 投影与整包�
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toMatch(/\b7 pass\b/)
+  expect(output).toMatch(/\b8 pass\b/)
   expect(output).toMatch(/\b0 fail\b/)
-  expect(output).toMatch(/Ran 7 tests across 1 file/)
+  expect(output).toMatch(/Ran 8 tests across 1 file/)
 }, 300_000)

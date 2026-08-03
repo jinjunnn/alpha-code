@@ -16,10 +16,10 @@
 //      重读账本**,不断言中间那份 mutation 的 `graphAfter === null`(那是自己拼等价链)。
 
 import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { isAbsolute, join, resolve as resolvePath } from "node:path"
-import { parse } from "jsonc-parser"
+import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import { afterAll, expect, mock, test } from "bun:test"
 import type { PackageAdmissionPreviewV1 } from "../src/shared/package-admission"
 import type { PackageGraphV1 } from "../src/main/ext-package-ledger-v3"
@@ -144,7 +144,7 @@ mock.module("../src/main/ext-transaction", () => ({
 const { initAlphaEnvironment, getAlphaEnvironment } = await import("../src/main/alpha-environment")
 const { registerExtIpcHandlers } = await import("../src/main/ext-ipc")
 const { managedPluginWrapperSourceV1 } = await import("../src/main/managed-plugin-wrapper")
-const { setDesiredStateV2 } = await import("../src/main/ext-receipt-v2")
+const { setDesiredStateV2, upsertRecordsV2 } = await import("../src/main/ext-receipt-v2")
 
 delete process.env.ALPHA_GLOBAL_DIR
 initAlphaEnvironment({
@@ -210,33 +210,90 @@ type Ledger = {
   claims?: Array<{ kind: string; name: string; owners: string[] }>
 }
 
-const ledger = (): Ledger => {
-  try {
-    return JSON.parse(readFileSync(join(root(), "installs.json"), "utf8")) as Ledger
-  } catch {
-    return {}
-  }
+const configPath = () => join(root(), "alpha.jsonc")
+const ledgerPath = () => join(root(), "installs.json")
+const grantPath = (key: string) => join(root(), "ext-store", key, "grants.json")
+
+// ── 观测手段本身不许有盲区 ────────────────────────────────────────────────────────────────────
+//
+// 这三个读法此前都是 `try { … } catch { 返回空 }`,于是「正确清空」与「**整个文件被删掉/写坏**」
+// 折叠成同一个观察结果:一个卸载时顺手把 `alpha.jsonc` 删了、把 `installs.json` 重置了的实现,
+// 四条清零断言仍然全绿。**读不出来是失败,不是「空」** —— 下面一律严格读,读不出就抛。
+
+/** 严格读 `alpha.jsonc`:文件必须在、必须是合法 jsonc、根必须是对象。 */
+function readConfigStrict(): Record<string, unknown> {
+  const text = readFileSync(configPath(), "utf8") // 缺席 ⇒ 抛(ENOENT)
+  const errors: ParseError[] = []
+  const parsed: unknown = parse(text, errors)
+  if (errors.length > 0) throw new Error(`alpha.jsonc is not valid jsonc (${errors.length} syntax error(s))`)
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+    throw new Error("alpha.jsonc root is not an object")
+  return parsed as Record<string, unknown>
 }
 
-/** 真实 `alpha.jsonc` 的 `plugin[]` —— 读的是**生产写下的那个文件**,不是计划里的中间值。 */
-const pluginArray = (): unknown[] => {
-  try {
-    const parsed = parse(readFileSync(join(root(), "alpha.jsonc"), "utf8")) as { plugin?: unknown }
-    return Array.isArray(parsed?.plugin) ? parsed.plugin : []
-  } catch {
-    return []
-  }
+/** 严格读 `plugin[]`:文件与键都必须在,且必须是数组。清空 = `[]`,**不是**「键没了」。 */
+function pluginArrayStrict(): unknown[] {
+  const value = readConfigStrict().plugin
+  if (!Array.isArray(value))
+    throw new Error(`alpha.jsonc "plugin" is ${JSON.stringify(value) ?? "undefined"}, expected an array`)
+  return value
 }
 
-/** 一个扩展的已授权 capability 集:`<root>/ext-store/<key>/grants.json`(事务拥有的路径)。 */
-const grantOf = (key: string): { capabilities?: string[] } | null => {
-  try {
-    return JSON.parse(readFileSync(join(root(), "ext-store", key, "grants.json"), "utf8")) as {
-      capabilities?: string[]
-    }
-  } catch {
-    return null
-  }
+/** 严格读账本:文件必须在、必须是 JSON、根必须是对象、`records` 必须是数组。 */
+function readLedgerStrict(): Ledger {
+  const parsed: unknown = JSON.parse(readFileSync(ledgerPath(), "utf8")) // 缺席/损坏 ⇒ 抛
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+    throw new Error("installs.json root is not an object")
+  if (!Array.isArray((parsed as Ledger).records)) throw new Error("installs.json has no records array")
+  return parsed as Ledger
+}
+
+/** 一个扩展的已授权 capability 集:`<root>/ext-store/<key>/grants.json`(事务拥有的路径)。
+ *  存在时严格解析(损坏 ⇒ 抛);**不存在**由调用方用 `existsSync(grantPath(key))` 单独断言 ——
+ *  「读不出来」不许和「已经清掉了」用同一个返回值表示。 */
+function grantOf(key: string): { capabilities?: string[] } {
+  return JSON.parse(readFileSync(grantPath(key), "utf8")) as { capabilities?: string[] }
+}
+
+// ── 无关 sentinel:杀掉「整文件清空/删除也算通过」的假绿 ──────────────────────────────────────
+//
+// 严格读只能抓到「文件没了 / 坏了」。抓不到「文件还在、但被重写成一个空壳」。所以再加一层:
+// 卸载**之前**在 config 与账本里各放一件**与本包无关**的东西,卸载**之后**断言它们逐字还在。
+// 一个把整份配置或整本账本推倒重写的实现,会连这两件一起抹掉。
+
+const CONFIG_SENTINEL_KEY = "alphaTestUnrelatedSetting"
+const CONFIG_SENTINEL_VALUE = "req128-809-untouched"
+const LEDGER_SENTINEL_NAME = "req128-809-unrelated-agent"
+
+/** 用 jsonc 的 `modify`/`applyEdits` 写,不手搓 JSON —— 免得 sentinel 自己把文件格式改坏。 */
+function seedUnrelatedSentinels(): void {
+  const text = readFileSync(configPath(), "utf8")
+  const edits = modify(text, [CONFIG_SENTINEL_KEY], CONFIG_SENTINEL_VALUE, {})
+  writeFileSync(configPath(), applyEdits(text, edits))
+  const written = upsertRecordsV2(root(), [
+    {
+      // 形状由**生产写器**校验(非 catalog 来源必须是 `user:<name>`、不得带供应链 digest)——
+      // 夹具不绕过它,否则 sentinel 自己就是一条账本合同管不着的假记录。
+      id: `user:${LEDGER_SENTINEL_NAME}`,
+      name: LEDGER_SENTINEL_NAME,
+      kind: "agent",
+      environment: "dev",
+      scope: { kind: "global" },
+      version: "1.0.0",
+      desiredState: "enabled",
+      origin: "imported",
+      installedAt: "2026-08-03T00:00:00.000Z",
+    },
+  ])
+  if (!written.ok) throw new Error(`sentinel ledger record could not be written: ${written.reason}`)
+}
+
+/** 卸载之后:两件无关的东西必须逐字还在。 */
+function expectUnrelatedSentinelsIntact(): void {
+  expect(readConfigStrict()[CONFIG_SENTINEL_KEY]).toBe(CONFIG_SENTINEL_VALUE)
+  expect(
+    (readLedgerStrict().records ?? []).filter((entry) => entry.kind === "agent" && entry.name === LEDGER_SENTINEL_NAME),
+  ).toHaveLength(1)
 }
 
 const managedDir = () => join(root(), "plugins", fixture.pluginDirName)
@@ -312,7 +369,7 @@ test("落盘两个文件:wrapper 的字节恰是生成器的输出,upstream.js �
   expect(readFileSync(managedJs(), "utf8")).toBe((wrapper as { ok: true; source: string }).source)
   expect(sha(new Uint8Array(readFileSync(join(managedDir(), "upstream.js"))))).toBe(sha(fixture.pluginAsset))
 
-  const record = ledger().records!.find((entry) => entry.kind === "plugin" && entry.name === PLUGIN_NAME)!
+  const record = readLedgerStrict().records!.find((entry) => entry.kind === "plugin" && entry.name === PLUGIN_NAME)!
   expect(record.configKey).toBe(`plugin-path:${managedJs()}`)
   // 零 registry 连接(§5 第 3 类):**每一条**发出去的 URL 都必须是签名信封里的那几条。
   // 写成「没调用 Npm.add」会被第二个加载器绕过,写成「网络调用数为零」恒假 —— 判据是白名单。
@@ -345,9 +402,9 @@ test("首装落 disabled ⇒ plugin[] 里一条都不写(且没有裸包名/lega
   resetDisk()
   const { result } = await install("plugin-kit-config-disabled")
   expect(result).toMatchObject({ ok: true })
-  expect(pluginArray()).toEqual([])
+  expect(pluginArrayStrict()).toEqual([])
   // 账本已经知道该指向哪个文件 —— 「没写进配置」不是因为宿主算不出这个值。
-  const record = ledger().records!.find((entry) => entry.kind === "plugin" && entry.name === PLUGIN_NAME)!
+  const record = readLedgerStrict().records!.find((entry) => entry.kind === "plugin" && entry.name === PLUGIN_NAME)!
   expect(record.desiredState).toBe("disabled")
   expect(record.configKey).toBe(`plugin-path:${managedJs()}`)
 })
@@ -358,10 +415,10 @@ test("desiredState 为 enabled 时,生产 install 写进 plugin[] 的是精确�
   // durable intent = 用户把它开着。用**生产账本写器**落这一步(它正是启停通道在过完闸之后调的
   // 那个函数),被测的那条 config item 本身一点没被碰。
   expect(setDesiredStateV2(root(), "plugin", PLUGIN_NAME, "enabled").ok).toBe(true)
-  expect(pluginArray()).toEqual([]) // 账本翻转本身不写配置 —— 下面那条路径才是被测对象
+  expect(pluginArrayStrict()).toEqual([]) // 账本翻转本身不写配置 —— 下面那条路径才是被测对象
   expect(await install("plugin-kit-config-enabled")).toMatchObject({ result: { ok: true } })
 
-  const array = pluginArray()
+  const array = pluginArrayStrict()
   expect(array).toEqual([managedJs()])
   expect(confinedUnderPluginsRoot(array[0])).toBe(true)
   // 否定面:裸包名 / vendored 目录路径这类同名条目**一条都不许在**。一个把配置写成
@@ -381,12 +438,16 @@ test("整包卸载:目录 / plugin[] / grants / 账本记录 四条一起消失(
   expect(await install("plugin-kit-uninstall-first")).toMatchObject({ result: { ok: true } })
   expect(setDesiredStateV2(root(), "plugin", PLUGIN_NAME, "enabled").ok).toBe(true)
   expect(await install("plugin-kit-uninstall")).toMatchObject({ result: { ok: true } })
+  // 卸载之前先放两件**与本包无关**的东西 —— 「整份配置/整本账本被推倒重写」在只看四条清零时
+  // 与「正确清空」长得一模一样,这两件是唯一分得开它们的东西。
+  seedUnrelatedSentinels()
 
   // 前置事实:四条现在都**在**。否则下面四条断言就是恒真式。
   expect(existsSync(managedDir())).toBe(true)
-  expect(pluginArray()).toEqual([managedJs()])
-  expect(grantOf(`plugin--${PLUGIN_NAME}`)?.capabilities).toEqual(["engine:config", "engine:plugin"])
-  expect(ledger().records!.some((entry) => entry.kind === "plugin" && entry.name === PLUGIN_NAME)).toBe(true)
+  expect(pluginArrayStrict()).toEqual([managedJs()])
+  expect(existsSync(grantPath(`plugin--${PLUGIN_NAME}`))).toBe(true)
+  expect(grantOf(`plugin--${PLUGIN_NAME}`).capabilities).toEqual(["engine:config", "engine:plugin"])
+  expect(readLedgerStrict().records!.some((entry) => entry.kind === "plugin" && entry.name === PLUGIN_NAME)).toBe(true)
 
   const uninstall = handlers.get("ext-uninstall-package")
   if (!uninstall) throw new Error("ext-uninstall-package handler was not registered")
@@ -396,15 +457,63 @@ test("整包卸载:目录 / plugin[] / grants / 账本记录 四条一起消失(
 
   // ① 目录
   expect(existsSync(managedDir())).toBe(false)
-  // ② plugin[]
-  expect(pluginArray()).toEqual([])
-  // ③ grants
-  expect(grantOf(`plugin--${PLUGIN_NAME}`)).toBeNull()
+  // ② plugin[] —— 严格读:文件必须还在、还是合法 jsonc、`plugin` 还是数组,只是空了。
+  expect(pluginArrayStrict()).toEqual([])
+  // ③ grants —— **明确断言文件不存在**(不是「读不出来」)。
+  expect(existsSync(grantPath(`plugin--${PLUGIN_NAME}`))).toBe(false)
   // ④ **账本记录** —— 跑完生产卸载再把账本读回来,不断言中间那份 mutation 的字段。
-  const after = ledger()
+  const after = readLedgerStrict()
   expect(after.packageGraphs ?? []).toEqual([])
   expect((after.records ?? []).filter((entry) => entry.kind === "plugin")).toEqual([])
   expect((after.claims ?? []).filter((entry) => entry.kind === "plugin")).toEqual([])
+  // ⑤ 两件无关的东西**逐字还在** —— 把「整文件清空也算通过」这条假绿堵死。
+  expectUnrelatedSentinelsIntact()
+})
+
+// ── M1:目录删不掉 ⇒ 卸载**失败**,账本**逐字未动**,重试收敛 ─────────────────────────────────
+//
+// 用真实的磁盘失败(把 `<root>/plugins` 的写权限去掉),**不 mock `rmSync`** —— mock 掉它就绕开了
+// 生产路径本身,而这条闸要证明的恰恰是生产路径在真实失败下的行为。
+test("目录删不掉时卸载必须失败且账本原样保留,恢复权限后重试收敛", async () => {
+  resetDisk()
+  if (process.getuid?.() === 0) throw new Error("本次测量作废:以 root 运行时 chmod 挡不住 rmSync")
+  expect(await install("plugin-kit-rm-fails-first")).toMatchObject({ result: { ok: true } })
+  expect(setDesiredStateV2(root(), "plugin", PLUGIN_NAME, "enabled").ok).toBe(true)
+  expect(await install("plugin-kit-rm-fails")).toMatchObject({ result: { ok: true } })
+  seedUnrelatedSentinels()
+
+  const uninstall = handlers.get("ext-uninstall-package")!
+  const pluginsRoot = join(root(), "plugins")
+  const ledgerBefore = readFileSync(ledgerPath(), "utf8")
+  chmodSync(pluginsRoot, 0o500) // r-x:目录项删不掉
+  let failed: { ok: boolean; reason?: string; stage?: string }
+  try {
+    failed = (await uninstall({ sender: { id: 1 } }, PLUGIN_KIT_PACKAGE_ID)) as typeof failed
+  } finally {
+    chmodSync(pluginsRoot, 0o700)
+  }
+  // 观测手段自检:权限真的挡住了(否则下面这条「失败」测的不是我以为的东西)。
+  expect(failed.ok).toBe(false)
+  expect(failed.stage).toBe("artifacts")
+  expect(failed.reason).toContain("install directory could not be removed")
+  expect(failed.reason).toContain("EACCES")
+  // 绝对路径不许过线到 renderer。
+  expect(failed.reason).not.toContain(pluginsRoot)
+
+  // 目录还在,而**账本逐字未动** —— 用户有可靠的重试依据。
+  expect(existsSync(managedDir())).toBe(true)
+  expect(readFileSync(ledgerPath(), "utf8")).toBe(ledgerBefore)
+  expect(readLedgerStrict().records!.some((entry) => entry.kind === "plugin" && entry.name === PLUGIN_NAME)).toBe(true)
+
+  // 重试(权限已恢复)⇒ 收敛,四条清零照常成立,两件无关的东西仍在。
+  const retried = (await uninstall({ sender: { id: 1 } }, PLUGIN_KIT_PACKAGE_ID)) as { ok: boolean; reason?: string }
+  expect(retried.reason ?? "").toBe("")
+  expect(retried.ok).toBe(true)
+  expect(existsSync(managedDir())).toBe(false)
+  expect(pluginArrayStrict()).toEqual([])
+  expect(existsSync(grantPath(`plugin--${PLUGIN_NAME}`))).toBe(false)
+  expect((readLedgerStrict().records ?? []).filter((entry) => entry.kind === "plugin")).toEqual([])
+  expectUnrelatedSentinelsIntact()
 })
 
 // ── 完整性:第三方字节被掉包 ⇒ **整包**被拒,不是「那个叶子被跳过」 ────────────────────────────
@@ -419,8 +528,9 @@ test("JS 资产字节与签名不符 ⇒ 整包安装被拒,盘面零变更", as
   // 判据是**整包被拒**:别的组件一件都没落地(「某个叶子被跳过」对畸形值恒真)。
   expect(existsSync(join(root(), "plugins"))).toBe(false)
   expect(existsSync(join(root(), "agents"))).toBe(false)
-  expect(pluginArray()).toEqual([])
-  expect(ledger().packageGraphs ?? []).toEqual([])
+  // 「零变更」在这里的正确表示是**根本没被创建**,不是「读出来是空的」。
+  expect(existsSync(configPath())).toBe(false)
+  expect(existsSync(ledgerPath())).toBe(false)
 })
 
 // ── 如实登记:生产启停通道今天拒绝 package child ───────────────────────────────────────────────
@@ -441,5 +551,5 @@ test("已登记边界:生产启停通道今天对 package child 一律拒(manage
   )) as { ok: boolean; code?: string; reason?: string }
   expect(outcome.ok).toBe(false)
   expect(outcome.code).toBe("curation-unverifiable")
-  expect(pluginArray()).toEqual([])
+  expect(pluginArrayStrict()).toEqual([])
 })

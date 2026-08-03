@@ -77,6 +77,12 @@ export type PackageArtifactInstallersV1 = {
   removePluginPath(name: string, absJsPath: string): { ok: true } | { ok: false; reason: string }
 }
 
+/** 无断言的 errno 提取(cast-free)。失败理由只带这个,**不带绝对路径** —— 它会过 IPC 到 renderer。 */
+function errnoCodeOf(error: unknown): string {
+  if (typeof error !== "object" || error === null || !("code" in error)) return "unknown error"
+  return typeof error.code === "string" ? error.code : "unknown error"
+}
+
 export type PackageArtifactRemovalV1 =
   | { ok: true; removed: string[]; warnings: string[] }
   | { ok: false; reason: string; removed: string[]; warnings: string[] }
@@ -186,8 +192,25 @@ export function removePackageChildArtifactsV1(
       if (!cfg.ok) return { ok: false, reason: `plugin:${child.name}: ${cfg.reason}`, removed, warnings }
       try {
         fs.rmSync(ledgerDir, { recursive: true, force: true })
-      } catch {
-        /* best-effort:config 已净除,残留目录已不可加载 */
+      } catch (error) {
+        // 目录删不掉 ⇒ **整体失败并立刻返回**,账本一个字节都不动。
+        //
+        // 这里此前是一个**空 catch**(「best-effort」),而那句话在这条路径上是假的:异常被吞掉
+        // 之后 `removed` 仍把目录记作已删、grants 照删、root mutation 照提交、返回 `ok:true`
+        // —— 界面说卸载成功,而文件还在盘上、**账本记录已经没了**,用户连「该重试什么」的依据
+        // 都失去了。§5 第 8 类的第 ① 条(目录也必须消失)因此可以被谎报成功。
+        //
+        // 失败态是安全的那一侧:config 条目此刻已经摘掉(`removePluginPath` 在上一行),所以
+        // 残留目录**引擎加载不到**,是惰性的;`rmSync(recursive)` 可能已经删掉一部分,但 ① 判决
+        // 与 ② 删除都幂等 —— 用户再点一次「移除」就收敛。
+        //
+        // 只报 errno,不把绝对路径塞进 reason:这条 reason 会过 IPC 到 renderer。
+        return {
+          ok: false,
+          reason: `plugin:${child.name}: install directory could not be removed (${errnoCodeOf(error)}) — the config entry is already gone, so nothing loads it; retry (idempotent)`,
+          removed,
+          warnings,
+        }
       }
       removed.push(ledgerDir)
       const grants = installers.removeInstallGrants(root, [packageChildTxKeyV1("plugin", child.name)])
