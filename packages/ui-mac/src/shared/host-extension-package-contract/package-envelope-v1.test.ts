@@ -73,6 +73,21 @@ const rootOf = (envelope: Record<string, unknown>) =>
 
 const graphCases: GraphCase[] = [
   {
+    // `#807` 回归闸。capability 文法一度为了容纳 `engine:config` 被放宽成通用字符类
+    // `[a-z0-9.:-]`,连带把 `a::b` / `a:` / `engine:` 一起判成合法。危险的不是「多认了几个
+    // 字符串」,而是它们挂在 **optional** 叶子上时:membership 让叶子被 skipped,而整包仍在
+    // `decodeEnvelopeObject` 末尾判 accepted —— 畸形值一路进来又哪里都不出现。
+    // **判据必须是「整包被拒」**,不是「叶子被跳过」:后者对畸形值恒真,杀不掉这个缺陷。
+    name: "a malformed colon capability on an optional leaf blocks the whole package",
+    source: "bundle-optional-unsupported-capability",
+    error: "capabilities[0]: invalid format",
+    mutate: (envelope) => {
+      const leaf = componentsOf(envelope).find((component) => component.id !== envelope.root)!
+      leaf.capabilities = ["a::b"]
+      envelope.capabilities = ["a::b"]
+    },
+  },
+  {
     name: "duplicate component id",
     source: "bundle-optional-unsupported-capability",
     error: "duplicate component id",
@@ -711,6 +726,38 @@ const negativeCases: NegativeCase[] = [
       ;(behaviorOf(payload).asset as Record<string, unknown>).mediaType = "text/markdown"
     },
   },
+  // ── plugin 自己的 strict 轴 ──────────────────────────────────────────────────
+  // 「每个 profile 至少一条负例」那条闸只数**数量**,不看**轴**:上面两条都在讲资产的取值,
+  // 而「未知键 / 缺字段 / 类型错」这三条轴此前是靠 agent(:205)与 mcp-remote(:938)的用例
+  // 覆盖的 —— 那是**别的解码臂**。plugin 的解码臂一条都没被钉住,所以给
+  // OPENCODE_PLUGIN_BEHAVIOR_KEYS 加一个 executeScript、或把 bytes 强转成数字,全绿。
+  {
+    name: "plugin payload refuses an unknown behavior key",
+    source: "opencode-plugin-v1",
+    mode: "package",
+    error: 'payload.behavior: unknown key "executeScript"',
+    mutatePayload: (payload) => {
+      behaviorOf(payload).executeScript = true
+    },
+  },
+  {
+    name: "plugin payload refuses a missing asset",
+    source: "opencode-plugin-v1",
+    mode: "package",
+    error: "payload.behavior.asset: required object",
+    mutatePayload: (payload) => {
+      delete behaviorOf(payload).asset
+    },
+  },
+  {
+    name: "plugin payload refuses a string asset byte count",
+    source: "opencode-plugin-v1",
+    mode: "package",
+    error: `payload.behavior.asset.bytes: required integer in 1..${HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes}`,
+    mutatePayload: (payload) => {
+      ;(behaviorOf(payload).asset as Record<string, unknown>).bytes = "34093"
+    },
+  },
 ]
 
 describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
@@ -1114,6 +1161,32 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     expect(overLimit.ok ? "" : overLimit.errors.join("\n")).toContain(
       `payload.behavior.asset.bytes: required integer in 1..${limit}`,
     )
+
+    // ── 上面两条还不够,它们有一个共同的盲区 ────────────────────────────────
+    // 期望值虽然从 registry 读,但 registry 里钉着的**恰好也是** 2 MiB,所以把 decoder 写死成
+    // 字面量 2097152 仍然满足上面全部断言 —— 比较基准与被测对象碰巧相等,闸是瞎的。
+    // 唯一能分辨「接线到 registry」与「硬编码」的做法:**把界挪走,看边界跟不跟着走**。
+    // 4096 刻意既不是 maxScriptAssetBytes,也不是 markdown(5 MiB)/ payload(1 MiB)任何一条界。
+    const probe = 4096
+    expect(probe).not.toBe(limit)
+    try {
+      HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes = probe
+      const atProbe = decodeWithAssetBytes(probe)
+      expect(atProbe.ok ? "" : atProbe.errors.join("\n")).toBe("")
+      const overProbe = decodeWithAssetBytes(probe + 1)
+      expect(overProbe.ok ? "" : overProbe.errors.join("\n")).toContain(
+        `payload.behavior.asset.bytes: required integer in 1..${probe}`,
+      )
+      // 决定性的一条:界挪到 4096 之后,原来那个恰好合法的 2 MiB **必须变成越界**。
+      // 一个写死 2097152 的实现在这里、且只在这里,变红。
+      const formerlyLegal = decodeWithAssetBytes(limit)
+      expect(formerlyLegal.ok ? "" : formerlyLegal.errors.join("\n")).toContain(
+        `payload.behavior.asset.bytes: required integer in 1..${probe}`,
+      )
+    } finally {
+      HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes = limit
+    }
+    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes).toBe(limit)
   })
 })
 

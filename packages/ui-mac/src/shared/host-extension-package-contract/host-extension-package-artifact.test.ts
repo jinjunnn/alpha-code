@@ -169,6 +169,15 @@ describe("HostExtensionPackageV1 artifact", () => {
       expect(schema.additionalProperties, profile.schemaPath).toBe(false)
       expect(schema.properties?.behavior?.additionalProperties, profile.schemaPath).toBe(false)
     }
+    // 发布给 producer 的 schema 与宿主 decoder 必须对同一条界。这两份是**分开维护**的:
+    // 上面那两条只查了 additionalProperties,所以 schema 里的 maximum 可以被单独改宽/改窄,
+    // 而没有任何东西会红 —— producer 于是能发出一个宿主当场拒收的包(或反过来)。
+    const pluginSchema = (await Bun.file(
+      resolve(import.meta.dir, "profiles/opencode-plugin.v1.schema.json"),
+    ).json()) as { $defs?: { scriptAsset?: { properties?: { bytes?: { maximum?: unknown } } } } }
+    expect(pluginSchema.$defs?.scriptAsset?.properties?.bytes?.maximum).toBe(
+      HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes,
+    )
     // 这条以前是 `not.toContain("opencode-plugin")` —— Phase 1..3 主动挡住这个 profile 悄悄进来。
     // Phase 4 把它**翻成正向**而不是删掉:删掉等于少一道闸,registry 会退回到「谁都可以往里加」。
     // 断的是完整绑定(id@version + mediaType + schemaPath),比上面那条只看 profileId 的更细 ——

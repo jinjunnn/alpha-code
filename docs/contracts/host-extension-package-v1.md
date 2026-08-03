@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code
-last_reviewed: 2026-07-30
+last_reviewed: 2026-08-03
 review_after: 2027-01-26
 ---
 
@@ -16,7 +16,14 @@ profile, capability, and strict-decoder contract.
 The authoritative self-contained copy is
 [`packages/ui-mac/src/shared/host-extension-package-contract/CONTRACT.md`](../../packages/ui-mac/src/shared/host-extension-package-contract/CONTRACT.md).
 Its current aggregate artifact SHA-256 is
-`1ed320e4ccf455576b41d30f4fbba22b5cafb37563c56cee55e40b8c574ff2bb`.
+`fb196fc1d187acb334b144374aeec2fe1c7da76f5b1bd4fac2df1c118ee0bba2`.
+
+This value is republished prose, not a checked pin: nothing in the repository
+compares it against
+`host-extension-package-artifact.v1.json`. It was last correct at `284916c7`
+(`#729`), went stale at `74af30d1` (`#749`, contract v2) and stayed stale until
+`#807` — the whole time, every gate was green. Re-read it from the manifest
+rather than trusting it.
 
 The `alpha-web#95` consumer pins an immutable `alpha-code` commit, the fixed
 artifact path `packages/ui-mac/src/shared/host-extension-package-contract`, and

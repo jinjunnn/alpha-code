@@ -227,15 +227,23 @@ const PACKAGE_ID_RE = /^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$/
 const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/
 const PROFILE_ID_RE = /^[a-z][a-z0-9-]{0,31}$/
 /**
- * `:` is legal here because the host capability vocabulary contains `engine:config` and
- * `engine:plugin` — the renderer's own long-standing spelling, promoted rather than renamed
- * (see `registry.ts`). This regex is a grammar/DoS bound, never the admission gate: whether a token
- * is honoured is decided solely by `isPackageCapabilityV1` registry membership, so widening the
- * character class by one byte does not widen what the host will accept. Keep it byte-identical to
- * `$defs/capabilities.items.pattern` in `alpha-package-envelope-v1.schema.json`; a producer that
- * passes the published schema and then fails this decoder is a contract that lies.
+ * The dotted grammar **or** one of exactly two colon-bearing literals. It is spelled as an
+ * alternation rather than by adding `:` to the character class, because this regex does not only
+ * admit the two tokens this host knows — it also decides which *unknown* tokens are well-formed
+ * enough to ride along on a component. `[a-z0-9.:-]` additionally admits `a::b`, `a:`, `engine:`
+ * and `a:b:c:d`; a component carrying one of those is refused only if it is `required`, because an
+ * **optional** one is skipped by the capability-membership gate while the package as a whole is
+ * still accepted — so the malformed value gets in and then surfaces nowhere. The alternation adds
+ * the two real tokens and nothing else (`#807` R1/F1).
+ *
+ * `engine:config` / `engine:plugin` are the renderer's own long-standing spelling, promoted rather
+ * than renamed (see `registry.ts`). This regex stays a grammar/DoS bound and is never the admission
+ * gate: whether a token is honoured is decided solely by `isPackageCapabilityV1` registry
+ * membership. Keep it byte-identical to `$defs/capabilities.items.pattern` in
+ * `alpha-package-envelope-v1.schema.json`; a producer that passes the published schema and then
+ * fails this decoder is a contract that lies.
  */
-const CAPABILITY_RE = /^[a-z][a-z0-9.:-]{0,95}$/
+const CAPABILITY_RE = /^(?:[a-z][a-z0-9.-]{0,95}|engine:config|engine:plugin)$/
 const HEX64_RE = /^[0-9a-f]{64}$/
 const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]{0,127}$/
 const HEADER_NAME_RE = /^[A-Za-z0-9-]{1,128}$/
