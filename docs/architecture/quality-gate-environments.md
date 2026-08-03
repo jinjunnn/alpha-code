@@ -154,27 +154,37 @@ job 名在 2026-07-22(`ebd29cda`)改掉,分支保护没跟。实测 PR `#802` / 
 `#649` 是本类的**极端成员**:门假设的环境是「某个 CI」,而那个环境**不存在**。
 本票不处置它(逐份取舍要付 CI 时间的账,归 `#649`),但把它归类记在这里。
 
-## 4. 咽喉:`packages/ui-mac/scripts/test-preload.ts`
+## 4. 咽喉:两处声明,覆盖仓内真实存在的两种运行形状
 
-`packages/ui-mac/bunfig.toml` 的 `preload` 把这个文件注入到本包**每一个** `bun test` 进程 ——
-包括 host 用 `Bun.spawnSync(…, { cwd: packages/ui-mac })` 起的子进程(子进程 cwd 就是本包,
-于是读到同一份 bunfig)。它此前已经承担过一次同类职责(把 UI locale 钉成 `zh`,因为
-happy-dom 的 navigator 让 `detectLocale()` 落到 `en`)—— **同一个位置,同一个问题形态**。
+仓内的 `bun test` 只有两种形状,咽喉必须两种都盖住:
 
-`#777` 在这里补两条声明:
+| 形状 | 谁是这个形状 | 声明在哪 | 机制 |
+| --- | --- | --- | --- |
+| **A 单文件** | 31 条 host 用例用 `Bun.spawnSync([bun, "test", <一个绝对路径>])` 起的子进程 —— host 自己拼 argv,传不进 CLI flag | `packages/ui-mac/scripts/test-preload.ts` | `setDefaultTimeout(120_000)` + 平台钉桩 |
+| **B 多文件** | CI 的三条 test 步、`assert-gate-files.sh` 的 77 次点名、`alpha-check.sh` 的 `[4/7]` —— **所有闸门运行的唯一入口** | `scripts/bun-test-floor.sh` | `bun test --timeout 120000` |
 
-1. `setDefaultTimeout(120_000)` —— 抬掉「机器速度替断言下判决」。
-2. host 平台不在发布清单(`darwin`/`win32`,ADR-026)时,把 `process.platform` 钉到 `darwin`,
-   并**打印一行自陈**:`PLATFORM SIMULATED this run; genuinely <host>-specific behaviour is NOT covered.`
+preload 此前已经承担过一次同类职责(把 UI locale 钉成 `zh`,因为 happy-dom 的 navigator 让
+`detectLocale()` 落到 `en`)—— **同一个位置,同一个问题形态**。平台钉桩落在那里:
+host 平台不在发布清单(`darwin`/`win32`,ADR-026)时把 `process.platform` 钉到 `darwin`,
+并**打印一行自陈**:`PLATFORM SIMULATED this run; genuinely <host>-specific behaviour is NOT covered.`
 
-### 为什么是这里(其余候选全部实测排除,bun 1.3.14)
+### 候选机制全部实测(bun 1.3.14)—— 其中一条把本票自己骗过一次
 
 | 候选 | 实测结果 |
 | --- | --- |
 | `bunfig.toml` 的 `[test] timeout = 9000` | **不被读取** —— 6 秒用例照样 `timed out after 5000ms` |
 | `BUN_TEST_TIMEOUT` / `BUN_TIMEOUT` / `BUN_TEST_TIMEOUT_MS` | 全部无效(`strings $(which bun)` 里也只有 `BUN_CONFIG_HTTP_IDLE_TIMEOUT`) |
-| `bun test --timeout N` | 有效,但 host 起子进程时 argv 是自己拼的,传不下去 ⇒ 只覆盖父进程一半 |
-| **preload 里 `setDefaultTimeout()`** | **父子两侧同时生效**;单条用例的显式超时仍恒胜(两个方向都实测过) |
+| preload 里 `beforeAll(() => setDefaultTimeout(…))` | 无效 |
+| preload 里 `setDefaultTimeout()` | **只对一次运行的第一个文件生效** —— 单文件跑得通,`bun test src`(257 个文件)从第二个文件起退回 5000ms |
+| `bun test --timeout N` | **跨全部文件生效**;单条用例的显式超时仍恒胜(两个方向都实测过) |
+
+> **本票自己踩了第四行。** 第一版把 preload 当成唯一咽喉,证据是「单文件探针 6 秒用例通过」——
+> 而闸门跑的是 257 个文件。这个假绿是被**新加的那道门自己**在全量里抓出来的
+> (`(fail) 环境咽喉对子进程也生效 [5005.06ms]`),不是靠人复查。
+> 教训与本文 §2 同源:**先证明这个手段能测出已知的坏,再用它判未知的好** ——
+> 而「已知的坏」必须用**真实形状**去测,单文件探针测不出多文件的坏。
+> 现在的行为闸让慢用例**排在第二个文件**,占位文件 `gate-environment-first.cases.ts` 就是为此存在:
+> 让慢的当第一个文件,验的会是形状 A(本来就成立),给出假绿。
 
 ### 取值与代价
 

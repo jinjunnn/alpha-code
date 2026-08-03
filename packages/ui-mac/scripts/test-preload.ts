@@ -17,27 +17,22 @@ import { setDefaultTimeout } from "bun:test"
 // (alpha-composer-model.component.test.ts) inherit this via process.env.
 process.env.ALPHA_UI_LOCALE ||= "zh"
 
-// ── ② 每条用例的默认超时 ──────────────────────────────────────────────────────
-// bun 默认 5000ms。本包有 31 条 host 用例用 `Bun.spawnSync` 在子进程里跑**一整套**
-// `.cases.ts`;5 秒对它们不是超时,是**机器速度在替断言下判决**。2026-08-02 起 alpha 主线
-// `unit tests (alpha packages)` 连续两天全红,其中两条就是这个:
-//   ext-package-detail-wiring   host  5035.75ms  ^ timed out after 5000ms
-//   local-package-renderer 的两条子用例  5933.51ms / 6447.61ms  ^ timed out after 5000ms
-// 同样的用例在开发机上 0 fail —— 红的理由与它要验的东西无关,而这种红最贵:它会被读成
-// 「间歇性 flaky」,然后一道真闸被当噪声重试到绿(见 alpha-work/CLAUDE.md「本机验证陷阱」)。
+// ── ② 每条用例的默认超时(**只管单文件运行**,权威在 scripts/bun-test-floor.sh)────────
+// bun 默认 5000ms,对「在子进程里跑一整套 `.cases.ts`」的 host 用例来说,那不是超时,
+// 是**机器速度在替断言下判决**(2026-08-02 主线连红两天,三条即此)。
 //
-// 为什么落在这里而不是逐个文件写:实测 31 条里 19 条从没写过超时(写了的 12 条是各自踩坑后
-// 补的自己那一格),靠记忆的东西会漏掉 19 次。枚举对新成员默认放行,咽喉对新成员默认拒绝。
+// ⚠️ 这一行的作用范围**远小于它看起来的样子** —— 实测(bun 1.3.14):
+//   `setDefaultTimeout()` 从 preload 调用,**只对一次运行的第一个测试文件生效**;
+//   `bun test src`(257 个文件)从第二个文件起就退回 5000ms。
+//   最初的探针只跑了单文件,于是给出一个**假的通过** —— 观测手段自己有盲区。
+//   `beforeAll(() => setDefaultTimeout(...))` 同样无效。跨全部文件唯一有效的是
+//   `bun test --timeout N`,而那个 flag 现在由 `scripts/bun-test-floor.sh` 一处给出。
 //
-// 为什么不是 bunfig / 环境变量:**都实测过,都不行**(bun 1.3.14)——
-//   `[test] timeout = 9000` 写进 bunfig.toml → 用例仍在 5000ms 被杀(该键不被读取);
-//   BUN_TEST_TIMEOUT / BUN_TIMEOUT / BUN_TEST_TIMEOUT_MS → 全部无效;
-//   `bun test --timeout` 有效,但 host 起子进程时 argv 是自己拼的,传不下去。
-//   只有 `setDefaultTimeout()` 在 preload 里对**父子两侧**同时生效。
+// 那为什么这里还留着:**host 起的子进程都是单文件运行**(`bun test <一个绝对路径>`),
+// 它们的 argv 是 host 自己拼的、传不进 flag —— 那一半正好落在本行的有效范围内。
+// 两处合起来才覆盖两种形状,两处都有行为闸看着(`src/main/gate-environment.test.ts`)。
 //
-// 取值:本包最慢的**正当** host 在 CI 上实测 37.7s;已显式声明超时的那几个取的是 120s。
-// 取 120s 与它们同档 —— 判据是「不让机器速度决定结论」,不是「越小越严」。超时不是断言:
-// 一条用例卡死仍然会在 120s 内被判红,而 5s 的代价是让真闸在慢机器上恒假红。
+// 取值 120s:与仓内已显式声明超时的那批同档(最慢的正当 host 在 CI 上实测 37.7s)。
 // 需要把时长本身当断言的用例(如 artifact-quota 的 `}, 1000)`)照旧显式写,显式值恒胜。
 setDefaultTimeout(120_000)
 
