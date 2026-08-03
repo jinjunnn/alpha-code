@@ -103,7 +103,7 @@ const UPSTREAMS = [
     // older optional staged fixtures above, an unavailable checkout or missing commit is a hard
     // failure:provenance cannot be proved by a self-consistent replacement lock.
     repo: "jinjunnn/alpha-web",
-    commit: "9fcd83d66ea8f5b13081f434ace150e739a0536e",
+    commit: "a8e6d52e05430623ec7b91ae078d902f0e11a614",
     lock: "alpha-web-extension-package.lock.json",
     vendor: "vendor/alpha-web-extension-package",
     sourceEnv: "ALPHA_WEB_EXTENSION_PACKAGE_SOURCE",
@@ -111,7 +111,7 @@ const UPSTREAMS = [
     sourceFallback: "../../../alpha-web",
     sourcePrefix: "contracts/extension-package/artifact",
     artifactPath: "contracts/extension-package/artifact",
-    artifactSha256: "2a36d9cb8a0c7632eb6f4c9415d1e7b00acba55dc4f01004ce025c05834bf389",
+    artifactSha256: "5546c08d541851f860d0e6835bf58db41acdc6447e1393f81e5bb8ed6c276261",
     commitBound: true,
     // #759 / alpha-web#109:producer 追平宿主合同 v2。语料从 22 个文件长到 36 个 —— 新增的是
     // flat Bundle 正/负向、OAuth 与 Alpha Connection 的正向语料(旧的 `input.remote-oauth.invalid.json`
@@ -126,15 +126,20 @@ const UPSTREAMS = [
     // 同一跳还把 aw#112 的 frontmatter 修复带了进来:两份 markdown 资产从「# 标题 + 正文」
     // 改成带 `name`/`description`(agent 还有 `mode`)的 YAML frontmatter —— 旧字节宿主自己
     // **装不上**,宿主侧那批引用它们的测试语料因此同步前移。
+    //
+    // `#830` / alpha-web#138(ADR-040):owner 否决 `opencode-plugin`,发布端跟着撤回,语料
+    // 39 → 36。**这一跳是本清单第一次有文件被撤掉** —— `input.plugin.valid.json`、
+    // `expected.plugin.compiled.json`、`asset.generic-plugin.js` 三份随 profile 一起走。
+    // vendor 循环「只写不删」,所以这三份 vendored 字节必须**手动删**,否则会留成无主残留;
+    // 抓它的是 `extension-package-artifact.test.ts` 的目录清单断言(vendor 目录的实际条目
+    // 必须恰等于 lock 的 files 集),那条判据在这一跳第一次真正做功。
     files: [
       "alpha-package-compatibility-report-v1.schema.json",
       "alpha-package-declaration-v1.schema.json",
       "asset.generic-bundle-agent.md",
       "asset.generic-bundle-skill.md",
-      "asset.generic-plugin.js",
       "expected.bundle.compiled.json",
       "expected.mcp-remote.compiled.json",
-      "expected.plugin.compiled.json",
       "expected.remote-connection.compiled.json",
       "expected.remote-oauth.compiled.json",
       "extension-package-error-v1.schema.json",
@@ -155,7 +160,6 @@ const UPSTREAMS = [
       "input.mcp-remote.valid.json",
       "input.oauth-authorization-header.invalid.json",
       "input.oauth-prerequisite-collision.invalid.json",
-      "input.plugin.valid.json",
       "input.remote-auth-unknown.invalid.json",
       "input.remote-connection.valid.json",
       "input.remote-http.invalid.json",

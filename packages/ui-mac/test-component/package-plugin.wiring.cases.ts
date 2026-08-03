@@ -144,6 +144,9 @@ mock.module("../src/main/ext-transaction", () => ({
 const { initAlphaEnvironment, getAlphaEnvironment } = await import("../src/main/alpha-environment")
 const { registerExtIpcHandlers } = await import("../src/main/ext-ipc")
 const { setDesiredStateV2, upsertRecordsV2 } = await import("../src/main/ext-receipt-v2")
+const { decodePackageEnvelopeHeaderV1 } = await import(
+  "../src/shared/host-extension-package-contract/decoder"
+)
 
 delete process.env.ALPHA_GLOBAL_DIR
 initAlphaEnvironment({
@@ -305,40 +308,85 @@ function confinedUnderPluginsRoot(value: unknown): boolean {
   return isAbsolute(value) && value.endsWith(".js") && resolvePath(value).startsWith(pluginsRoot + "/")
 }
 
-// ── ADR-040(`#825` 第 5 条):带 plugin 组件的包整包被拒,拒在取第三方 JS 之前 ──────────────────
+// ── ADR-040:带 plugin 组件的包整包被拒,拒在取第三方 JS 之前 ─────────────────────────────────
 //
 // 原来这里有八条用例,断言的是「managed plugin 怎么装进去」:落盘两个文件、`plugin[]` 写 wrapper
-// 绝对路径、卸载四清零、目录删不掉时如实失败。那条路径已经封死,所以它们随路径一起走。
-// 留下来的是这一条真正的判据 —— **它跑的仍然是同一条生产链**(真已验 Catalog → 真 IPC 通道 →
-// 真 admission),只是断言换成了「这条链在哪一步、以什么理由停下」。
+// 绝对路径、卸载四清零、目录删不掉时如实失败。那条路径已经封死(`#825`),所以它们随路径一起走。
+//
+// **`#830` 把拒绝点又往前挪了一格。** `#825` 时合同层还认识 `opencode-plugin`,所以这个包能
+// 一路解码到 admission,由那里的 kind 咽喉发出一条带组件 id 与「ADR-040」字样的具名消息。
+// 合同层回滚之后,宿主根本没有这个 profile、也没有 `engine:config`/`engine:plugin` 这两个 token
+// (连文法里容纳冒号的那条支路都收回了)⇒ 这些字节**在解码期就停下**,IPC 面拿到的是
+// `package-invalid` 这个 reason code,而不再是那条消息。
+//
+// 所以「具名」这半边改由**合同自己**回答:同一份信封字节喂给生产 decoder,断言它逐条说得出
+// 拒在哪个组件的哪个字段。IPC 面继续钉「在哪一步停下」的位置承诺。
+// 两档输入分别踩掉合同层的两半(capability 词表 / profile 注册表),任一半被悄悄加回来都红。
 
-test("带 opencode-plugin 组件的包:生产 IPC 路径上整包具名拒绝,第三方 JS 一个字节都没取过,盘面零变更", async () => {
-  resetDisk()
-  const { staged, result } = await install("plugin-kit-sealed")
-  // 拒绝发生在**授权之前**:`install()` 只有在拿到 stage="authorize" 时才会发第二次请求,
-  // 所以这里 staged 就是终态。授权屏都不该出现 —— 用户不应该被问「要不要授权一个装不了的东西」。
-  expect(staged.stage).not.toBe("authorize")
-  expect(result).toMatchObject({ ok: false })
-  const reason = (result as { reason: string }).reason
-  // 具名:说得出是**哪个组件**、按**哪条裁决**。只断 `ok === false` 会把「别处随便一个失败」
-  // 也读成通过 —— 本仓已实证过这个粒度问题。
-  expect(reason).toContain(LEAF_PLUGIN_ID)
-  expect(reason).toContain("ADR-040")
+const pluginRefusalCases = [
+  {
+    label: "Phase 4 原样(声明 engine:config / engine:plugin)",
+    fixtureOptions: undefined,
+    // 文法收回原样之后,带冒号的 token 结构上进不了信封 —— header 阶段就停。
+    reason: "package-invalid",
+    contractErrorNeedle: "capabilities[0]: invalid format",
+  },
+  {
+    label: "只踩 profile 注册表(不声明任何 capability)",
+    fixtureOptions: { pluginWithoutCapabilities: true },
+    // 未登记 profile 落在 support 阶段;组件是 required ⇒ 整包停,而不是跳过这一个组件。
+    reason: "package-host-update-required",
+    contractErrorNeedle: "unsupported profile opencode-plugin@1",
+  },
+] as const
 
-  // 位置承诺:拒在**资产取用之前**。payload.json 会被取(admission 要先看懂这个包是什么),
-  // 但那份会被引擎执行的 JS 一个字节都不该下载。把拒绝挪到 builder 里仍然会通过上面的断言,
-  // 却过不了这一条。
-  expect(fetchedUrls).not.toContain(PLUGIN_ASSET_URL)
-  // 连计划都没构造:`runExtensionTransaction` 从未被调用。
-  expect(lastPlan).toBeUndefined()
+for (const item of pluginRefusalCases) {
+  test(`带 opencode-plugin 组件的包(${item.label}):生产 IPC 路径整包拒绝,第三方 JS 一个字节都没取过,盘面零变更`, async () => {
+    resetDisk()
+    if (item.fixtureOptions) fixture = pluginKitFixture(item.fixtureOptions)
 
-  // 盘面零变更(四个面)。`plugins/` 与 `ext-store/` 一起断,因为「拒了但已经落了目录/授权账」
-  // 是这类拒绝最常见的半态。
-  expect(existsSync(configPath())).toBe(false)
-  expect(existsSync(ledgerPath())).toBe(false)
-  expect(existsSync(join(root(), "plugins"))).toBe(false)
-  expect(existsSync(join(root(), "ext-store"))).toBe(false)
-})
+    // ① 合同层:同一份信封字节,生产 decoder 说得出拒在哪。这半边是「具名」——
+    //    只断 IPC 的 reason code 的话,任何一种解码失败都长一个样。
+    const header = decodePackageEnvelopeHeaderV1(
+      new TextEncoder().encode(`${JSON.stringify(fixture.envelope)}\n`),
+    )
+    expect(header.ok).toBe(false)
+    if (header.ok) return
+    const errors = header.errors.join("\n")
+    expect(errors).toContain(item.contractErrorNeedle)
+    // 报的是**那个 plugin 组件**,不是随便哪一个:四个正常 profile 的组件一个都不该出现在错误里。
+    const pluginIndex = fixture.envelope.components.findIndex((entry) => entry.id === LEAF_PLUGIN_ID)
+    expect(pluginIndex).toBeGreaterThanOrEqual(0)
+    expect(errors).toContain(`envelope.components[${pluginIndex}]`)
+    for (const other of [ROOT_AGENT_ID, LEAF_SKILL_ID, LEAF_MCP_LOCAL_ID, LEAF_MCP_REMOTE_ID]) {
+      const index = fixture.envelope.components.findIndex((entry) => entry.id === other)
+      expect(errors, other).not.toContain(`envelope.components[${index}]`)
+    }
+
+    // ② 生产 IPC 路径:拒绝发生在**授权之前**。`install()` 只有在拿到 stage="authorize" 时才会
+    //    发第二次请求,所以这里 staged 就是终态 —— 用户不该被问「要不要授权一个装不了的东西」。
+    const { staged, result } = await install("plugin-kit-sealed")
+    expect(staged.stage).not.toBe("authorize")
+    expect(result).toMatchObject({ ok: false })
+    // reason code 写死字面量,不从被测对象派生:两档输入落在**不同**的拒绝分支上,
+    // 把其中一档悄悄改成另一档(或改成「可装」)在这里红。
+    expect((result as { reason: string }).reason).toBe(item.reason)
+
+    // ③ 位置承诺:拒在**资产取用之前**。payload.json 会被取(admission 要先看懂这个包是什么),
+    //    但那份会被引擎执行的 JS 一个字节都不该下载。把拒绝挪到 builder 里仍然会通过上面的
+    //    断言,却过不了这一条。
+    expect(fetchedUrls).not.toContain(PLUGIN_ASSET_URL)
+    // 连计划都没构造:`runExtensionTransaction` 从未被调用。
+    expect(lastPlan).toBeUndefined()
+
+    // ④ 盘面零变更(四个面)。`plugins/` 与 `ext-store/` 一起断,因为「拒了但已经落了目录/授权账」
+    //    是这类拒绝最常见的半态。
+    expect(existsSync(configPath())).toBe(false)
+    expect(existsSync(ledgerPath())).toBe(false)
+    expect(existsSync(join(root(), "plugins"))).toBe(false)
+    expect(existsSync(join(root(), "ext-store"))).toBe(false)
+  })
+}
 
 test("对照:同一个包去掉 plugin 组件后照常装成 —— 四个 profile 各自路由到自己的 builder,且 plugin[] 全程没长出来", async () => {
   resetDisk()

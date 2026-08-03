@@ -4,9 +4,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import {
-  decodePackageEnvelopeHeaderV1,
-  decodePackageProfilePayloadV1,
-  derivePayloadCapabilitiesV1,
   type AlphaPackageEnvelopeV1,
   type PackageProfilePayloadV1,
 } from "../shared/host-extension-package-contract/decoder"
@@ -199,73 +196,6 @@ function admissionCoordinator(options: {
     },
   })
 }
-
-/**
- * `#809`(REQ-128 Phase 4,基线 §5 第 6 类不变量 1 的 connection 半场)。
- *
- * 组件**必须经生产的 support gate 解出来**:`PackageSupportedComponentV1` 的唯一构造点是
- * `decoder.ts` 里 support gate 命中之后的 `narrowComponent`(全仓两条轴查过:该类型无第二个
- * 构造点,`narrowComponent` 只有一个调用点)。自己 `as` 一个出来就绕开了这条链的咽喉。
- */
-describe("#809 managed plugin 的 Alpha Connection 前置", () => {
-  test("显式为空集(具名,不是走「非 mcp-remote 就返回空」那条兜底)", () => {
-    const assetBytes = new TextEncoder().encode("export default async () => ({})\n")
-    const payload = {
-      schema: "alpha.host-extension-package.payload.opencode-plugin.v1",
-      behavior: {
-        asset: {
-          sha256: createHash("sha256").update(assetBytes).digest("hex"),
-          bytes: assetBytes.byteLength,
-          mediaType: "text/javascript",
-          url: "https://example.invalid/plugin.js",
-        },
-      },
-    }
-    const bytes = new TextEncoder().encode(`${JSON.stringify(payload)}\n`)
-    const capabilities = ["engine:config", "engine:plugin"]
-    const envelopeBytes = new TextEncoder().encode(
-      `${JSON.stringify({
-        schema: "alpha.host-extension-package.v1",
-        prelude: { packageId: "plugin:demo", version: "1.0.0" },
-        presentation: { displayName: "Demo", description: "Demo managed plugin" },
-        root: "plugin:demo",
-        components: [
-          {
-            id: "plugin:demo",
-            required: true,
-            dependencies: [],
-            profileId: "opencode-plugin",
-            profileVersion: 1,
-            capabilities,
-            payloadRef: {
-              sha256: createHash("sha256").update(bytes).digest("hex"),
-              bytes: bytes.byteLength,
-              mediaType: "application/vnd.alpha.host-extension-package.opencode-plugin.v1+json",
-              url: "https://example.invalid/payload.json",
-            },
-          },
-        ],
-        capabilities,
-      })}\n`,
-    )
-    const header = decodePackageEnvelopeHeaderV1(envelopeBytes)
-    expect(header.ok).toBe(true)
-    if (!header.ok) return
-    const rootEntry = header.components.find((entry) => entry.role === "root")!
-    expect(rootEntry.status).toBe("supported")
-    if (rootEntry.status !== "supported") return
-    const decoded = decodePackageProfilePayloadV1(rootEntry.component.profileId, bytes, rootEntry.component.capabilities)
-    expect(decoded.ok).toBe(true)
-    if (!decoded.ok) return
-    expect(decodePackageConnectionPrerequisiteProfileV1(rootEntry.component, decoded.payload)).toEqual({
-      profile: "alpha.connection.v1",
-      componentId: "plugin:demo",
-      items: [],
-    })
-    // 不变量 2 的 capability 半场:derive **恰好**产出这两个,不含任何 `alpha.*` 前置 token。
-    expect(derivePayloadCapabilitiesV1(decoded.payload)).toEqual(["engine:config", "engine:plugin"])
-  })
-})
 
 describe("alpha connection allowlist", () => {
   /**

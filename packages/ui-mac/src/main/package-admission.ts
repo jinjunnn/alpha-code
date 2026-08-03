@@ -49,7 +49,7 @@ import {
 } from "./package-installability"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import { isLocalPackageId, LOCAL_PACKAGE_ID_PREFIX } from "../shared/local-package-namespace"
-import type { MarkdownAssetRefV1, ScriptAssetRefV1 } from "../shared/host-extension-package-contract/decoder"
+import type { MarkdownAssetRefV1 } from "../shared/host-extension-package-contract/decoder"
 import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "../shared/host-extension-package-contract/registry"
 import type {
   PackageAdmissionAuthorizationV1,
@@ -91,8 +91,9 @@ const BINDING_KEYS = new Set([
 ])
 
 /** 宿主会**下载**的资产引用。判别键是 `mediaType`,与合同侧的判别联合逐字同构 ——
- *  放宽成 `string` 等于取消唯一挡住「用另一种 mediaType 发一种字节」的那道闸。 */
-type PackageAssetRefV1 = MarkdownAssetRefV1 | ScriptAssetRefV1
+ *  放宽成 `string` 等于取消唯一挡住「用另一种 mediaType 发一种字节」的那道闸。
+ *  ADR-040(`#830`)撤回 `opencode-plugin` 之后合同侧只剩 markdown 一种资产,这里跟着收窄。 */
+type PackageAssetRefV1 = MarkdownAssetRefV1
 
 type PackageScope = { scope: "global" } | { scope: "project"; projectDir: string }
 type PackageGrants = {
@@ -527,8 +528,12 @@ async function resolvePreparedPackage(
     // 那份字节的唯一用途就是被写进引擎 `plugin[]` 以同等权限执行。
     // **整包拒而不是跳过这一个组件**:跳过会让用户拿到一个「装上了但少一半」的包,而包的
     // required 语义本来就是全有或全无;ADR-040 §决策三也明确要求 fail-closed 而非静默跳过。
-    // 宿主合同里的 `opencode-plugin` profile 本身不在本票范围(它要走跨仓 pin 回滚),所以
-    // 这条拒绝落在**装载侧**:合同还认识这个 profile,而这台机器不再装它。
+    //
+    // `#830` 之后这一支**在 package 通道上到不了**:合同层撤回了 `opencode-plugin` profile,
+    // 于是拒绝提前到解码 —— required 的 plugin 组件让整包 blocked(`unsupported profile`),
+    // optional 的被 skip 且根本不进这个循环。这一支因此是 `PackageChildKindV1` 上的
+    // **穷举兜底**:哪天有第二个 profile 被映到 `plugin`,它在写盘之前就被这里挡住,
+    // 而不是靠「注册表里没有它」这条外部前提。删掉它 = 把 fail-closed 换成默认放行。
     if (kind === "plugin")
       return {
         ok: false,
@@ -540,12 +545,7 @@ async function resolvePreparedPackage(
     const key = packageChildTxKeyV1(kind, name)
     const assetRef =
       entry.payload.schema === "alpha.host-extension-package.payload.skill.v1" ||
-      entry.payload.schema === "alpha.host-extension-package.payload.agent.v1" ||
-      // `#809`:managed plugin 的载荷同样是一个内容寻址资产(mediaType `text/javascript`)。
-      // ⚠️ 这一行落在基线给 **T2a** 划的边界里(`:510-517`),本票动它的唯一理由是:没有它,
-      // 本票的退出条件④(经生产 install 真写盘后读回 `alpha.jsonc`)结构上跑不到。
-      // T2a 自己的两件事(fetch timeout、终态 URL 的 HTTPS/userinfo 复查)本票一行未动。
-      entry.payload.schema === "alpha.host-extension-package.payload.opencode-plugin.v1"
+      entry.payload.schema === "alpha.host-extension-package.payload.agent.v1"
         ? entry.payload.behavior.asset
         : undefined
     const asset = assetRef

@@ -9,7 +9,7 @@ import {
   type PackageProfilePayloadV1,
 } from "./decoder"
 import { HOST_EXTENSION_PACKAGE_CORPUS } from "./generate-artifact"
-import { HOST_EXTENSION_PACKAGE_LIMITS_V1, type PackageCapabilityV1 } from "./registry"
+import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "./registry"
 import { runSyntheticPackageDecoderV1 } from "./synthetic-decoder"
 
 type CorpusCase = {
@@ -702,62 +702,6 @@ const negativeCases: NegativeCase[] = [
       behaviorOf(payload).requiredSecrets = ["B_KEY", "A_KEY"]
     },
   },
-  // ── 脚本资产的两道闸 ────────────────────────────────────────────────────────
-  // 期望值一律从 registry 读。写成字面量 2097152 的话,「把界悄悄改成别的数」这件事
-  // 只会让 registry 与测试同时变,而两边都不红 —— 那正是断言粒度比缺陷粗一格。
-  {
-    name: "script asset one byte over the registered maxScriptAssetBytes",
-    source: "opencode-plugin-v1",
-    mode: "package",
-    error: `payload.behavior.asset.bytes: required integer in 1..${HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes}`,
-    mutatePayload: (payload) => {
-      ;(behaviorOf(payload).asset as Record<string, unknown>).bytes =
-        HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes + 1
-    },
-  },
-  {
-    // mediaType 是判别式,不是注释。放宽成 string 的实现在这里红 —— 否则 JS 字节可以顶着
-    // markdown 的媒体类型进来,宿主对同一个 mediaType 就有了两种语义。
-    name: "script asset refuses a markdown media type",
-    source: "opencode-plugin-v1",
-    mode: "package",
-    error: 'payload.behavior.asset.mediaType: expected "text/javascript"',
-    mutatePayload: (payload) => {
-      ;(behaviorOf(payload).asset as Record<string, unknown>).mediaType = "text/markdown"
-    },
-  },
-  // ── plugin 自己的 strict 轴 ──────────────────────────────────────────────────
-  // 「每个 profile 至少一条负例」那条闸只数**数量**,不看**轴**:上面两条都在讲资产的取值,
-  // 而「未知键 / 缺字段 / 类型错」这三条轴此前是靠 agent(:205)与 mcp-remote(:938)的用例
-  // 覆盖的 —— 那是**别的解码臂**。plugin 的解码臂一条都没被钉住,所以给
-  // OPENCODE_PLUGIN_BEHAVIOR_KEYS 加一个 executeScript、或把 bytes 强转成数字,全绿。
-  {
-    name: "plugin payload refuses an unknown behavior key",
-    source: "opencode-plugin-v1",
-    mode: "package",
-    error: 'payload.behavior: unknown key "executeScript"',
-    mutatePayload: (payload) => {
-      behaviorOf(payload).executeScript = true
-    },
-  },
-  {
-    name: "plugin payload refuses a missing asset",
-    source: "opencode-plugin-v1",
-    mode: "package",
-    error: "payload.behavior.asset: required object",
-    mutatePayload: (payload) => {
-      delete behaviorOf(payload).asset
-    },
-  },
-  {
-    name: "plugin payload refuses a string asset byte count",
-    source: "opencode-plugin-v1",
-    mode: "package",
-    error: `payload.behavior.asset.bytes: required integer in 1..${HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes}`,
-    mutatePayload: (payload) => {
-      ;(behaviorOf(payload).asset as Record<string, unknown>).bytes = "34093"
-    },
-  },
 ]
 
 describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
@@ -771,7 +715,6 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       "mcp-remote-v1",
       "mcp-remote-oauth-v1",
       "mcp-remote-connection-v1",
-      "opencode-plugin-v1",
       "bundle-optional-unsupported-profile",
       "bundle-optional-unsupported-capability",
       "bundle-optional-media-type-mismatch",
@@ -1044,7 +987,6 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
         "mcp-remote-v1",
         "mcp-remote-oauth-v1",
         "mcp-remote-connection-v1",
-        "opencode-plugin-v1",
         "bundle-optional-unsupported-profile",
         "bundle-optional-unsupported-capability",
       ] as const
@@ -1139,55 +1081,6 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     ).toEqual(["alpha.connection.v1", "alpha.secret-prerequisite.v1"])
   })
 
-  // 上界闸的另一半。只测「+1 拒绝」的话,一个把界读成 0 的实现照样全绿;只测「恰好接受」的话,
-  // 一个根本不检查上界的实现也全绿。两个方向都跑,期望值都从 registry 读。
-  test("the script asset limit accepts exactly the registered value and refuses one byte more", () => {
-    const limit = HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes
-    const source = caseNamed("opencode-plugin-v1")
-    const capabilities = (
-      componentsOf(source.envelope)[0] as unknown as { capabilities: PackageCapabilityV1[] }
-    ).capabilities
-    expect(capabilities).toEqual(["engine:config", "engine:plugin"])
-
-    const decodeWithAssetBytes = (bytes: number) => {
-      const payload = structuredClone(source.components[0]!.payload!)
-      ;(behaviorOf(payload).asset as Record<string, unknown>).bytes = bytes
-      return decodePackageProfilePayloadV1("opencode-plugin", jsonBytes(payload), capabilities)
-    }
-
-    const atLimit = decodeWithAssetBytes(limit)
-    expect(atLimit.ok ? "" : atLimit.errors.join("\n")).toBe("")
-    const overLimit = decodeWithAssetBytes(limit + 1)
-    expect(overLimit.ok ? "" : overLimit.errors.join("\n")).toContain(
-      `payload.behavior.asset.bytes: required integer in 1..${limit}`,
-    )
-
-    // ── 上面两条还不够,它们有一个共同的盲区 ────────────────────────────────
-    // 期望值虽然从 registry 读,但 registry 里钉着的**恰好也是** 2 MiB,所以把 decoder 写死成
-    // 字面量 2097152 仍然满足上面全部断言 —— 比较基准与被测对象碰巧相等,闸是瞎的。
-    // 唯一能分辨「接线到 registry」与「硬编码」的做法:**把界挪走,看边界跟不跟着走**。
-    // 4096 刻意既不是 maxScriptAssetBytes,也不是 markdown(5 MiB)/ payload(1 MiB)任何一条界。
-    const probe = 4096
-    expect(probe).not.toBe(limit)
-    try {
-      HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes = probe
-      const atProbe = decodeWithAssetBytes(probe)
-      expect(atProbe.ok ? "" : atProbe.errors.join("\n")).toBe("")
-      const overProbe = decodeWithAssetBytes(probe + 1)
-      expect(overProbe.ok ? "" : overProbe.errors.join("\n")).toContain(
-        `payload.behavior.asset.bytes: required integer in 1..${probe}`,
-      )
-      // 决定性的一条:界挪到 4096 之后,原来那个恰好合法的 2 MiB **必须变成越界**。
-      // 一个写死 2097152 的实现在这里、且只在这里,变红。
-      const formerlyLegal = decodeWithAssetBytes(limit)
-      expect(formerlyLegal.ok ? "" : formerlyLegal.errors.join("\n")).toContain(
-        `payload.behavior.asset.bytes: required integer in 1..${probe}`,
-      )
-    } finally {
-      HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes = limit
-    }
-    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxScriptAssetBytes).toBe(limit)
-  })
 })
 
 function bindPayload(item: CorpusCase, componentId: string, bytes?: Uint8Array): void {
