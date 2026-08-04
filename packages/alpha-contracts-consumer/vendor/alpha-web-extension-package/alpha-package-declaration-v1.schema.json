@@ -254,11 +254,25 @@
         }
       ]
     },
+    "skillBehavior": {
+      "additionalProperties": false,
+      "properties": {
+        "targetDir": {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "targetDir"
+      ],
+      "type": "object"
+    },
     "skillComponent": {
       "additionalProperties": false,
       "properties": {
         "behavior": {
-          "$ref": "#/$defs/markdownBehavior"
+          "$ref": "#/$defs/skillBehavior"
         },
         "id": {
           "maxLength": 70,
@@ -361,7 +375,7 @@
             ],
             "type": "object"
           },
-          "maxItems": 15,
+          "maxItems": 31,
           "type": "array"
         }
       },
