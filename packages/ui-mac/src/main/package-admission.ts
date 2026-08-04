@@ -568,11 +568,12 @@ async function resolvePreparedPackage(
     const fetchVerified = async (ref: PackageAssetRefV1): Promise<Buffer | undefined> => {
       // 取回失败必须与「成功取回 0 字节」分开:0 字节是合法条目,而它的 sha256 就是空串的
       // sha256 ⇒ 把 reject 兜成 `new Uint8Array()` 会让一次传输失败正好通过下面的双查。
-      const fetched = await fetchAsset(ref).then(
-        (value) => Buffer.from(value),
-        () => undefined,
-      )
-      if (!fetched) return undefined
+      let fetched: Buffer
+      try {
+        fetched = Buffer.from(await fetchAsset(ref))
+      } catch {
+        return undefined
+      }
       if (fetched.byteLength !== ref.bytes) return undefined
       if (createHash("sha256").update(fetched).digest("hex") !== ref.sha256) return undefined
       return fetched
