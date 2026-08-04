@@ -34,12 +34,22 @@ review_after: 2026-10-14
 > `writeFileSync+rename` 整个 `alpha.jsonc`,三道白名单一道都不过,而它每次启动都跑。处置是两件事:
 > ① `planConfigMerge` 里「legacy `plugin[]` 并集」删掉(本 portfolio 无真实用户 ⇒ 无 legacy 迁移
 > 义务;而「来源是用户旧配置」不改变「以引擎同等权限执行的第三方 JS」这个事实);② 那次整文件写盘
-> 改调 `ext-config` 的同一个原子提交点。**「整份文本换一份」这类写今天只剩这一个提交点。**
-> 边界要说清(实读枚举过,不是推断):`applyBuiltinPolicyEditsUnlocked` 仍有自己的 tmp+rename 写同一个
-> 文件,它**不过这道咽喉** —— 由 `builtinPolicyPathAllowed` 这道具名路径白名单把守(只放 `agent` /
-> `permission.skill` / `command` 的叶子,`plugin` 不是合法首段);`alpha-config-injection` 只在真源缺席时
-> seed `{$schema}`;`alpha-migrate` 的 legacy 臂只做减法且要 `ALPHA_MIGRATE_ENABLE=1`。三者都到不了
-> 「往 `plugin[]` 加元素」,但那是另一道闸的功劳。
+> 改调 `ext-config` 的同一个原子提交点。
+>
+> **边界要说清(实读枚举过,不是推断):咽喉不是唯一的守门人。** 不过这道咽喉的写还有四条,
+> 各自靠**另一道**闸 —— 谁在挡比路径本身重要:
+>
+> | 不过咽喉的写 | 真正挡住 `plugin` 的是什么 |
+> | --- | --- |
+> | `ext-config.ts` `applyBuiltinPolicyEditsUnlocked`(自己的 tmp+rename 写 `alpha.jsonc`) | `builtinPolicyPathAllowed` 具名路径白名单(只放 `agent` / `permission.skill` / `command` 叶子,`plugin` 不是合法首段,落盘前逐条判) |
+> | `alpha-config-injection` | 只在真源**缺席**时 seed 字面量 `{$schema}`,内容里没有 `plugin` 键 |
+> | `alpha-migrate` legacy 臂 | 目标是 legacy `opencode.jsonc`,只做减法,且要 `ALPHA_MIGRATE_ENABLE=1` |
+> | **`ecosystem-import.ts` `registerProjectSkillsPath`**(整文件写**项目级** `<proj>/.alpha/alpha.jsonc`) | **它自己没有任何白名单**;挡住 `plugin` 的闸在另一个包:`packages/ext/src/project-config.ts` 的 `mergeProjectConfig` 只合 `mcp`(信任门)/`agent`/`command`/`skills.paths`。同族的 `packages/ext/src/register.ts`(引擎进程侧整文件序列化同一文件)靠 `RegisterType` 类型白名单 |
+>
+> 最后一行是 `#832` 审计补上的,也是唯一一条「今天只写 `skills.paths`」属于**恰好**而非被挡:实测在
+> `registerProjectSkillsPath` 里加一行 `cfg.plugin=[…]`,盘上当场多出该条目而咽喉用例全绿;同一份文本
+> 喂 `mergeProjectConfig` 则 `added` 只有 `["skills.paths"]`、`cfg.plugin === undefined`。
+> **今天没有洞,但功劳不是咽喉的,两道闸之间也没有任何东西把它们和 ADR-040 连起来。**
 > 随之而来的一格新 fail-closed:盘上的 `alpha.jsonc` 语法坏掉、而容错解析仍读得出 `plugin` 条目时,
 > reconcile **整次不写盘**(loud,`bailedOut` 带咽喉理由,`~/.opencode` 也不清理)—— 因为「写完之后
 > 没多出元素」在那种输入上证不出来。坏文件原样留给用户,不被改写。

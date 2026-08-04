@@ -417,12 +417,13 @@ export function writeConfigLeafEditsUnlocked(
  * 导出是因为 `#832`:boot 期 reconcile 曾经自己 `writeFileSync(tmp)+rename` 写整个 `alpha.jsonc`,
  * 于是它写什么都不过咽喉 —— 那是 ADR-040 记录在案的最后一个结构性绕开口。现在它调本函数。
  *
- * **不要把这句话读成「主进程里只剩这一个 config 写盘点」**(实读过一遍,那是假的):
- * `applyBuiltinPolicyEditsUnlocked` 也有自己的 tmp+rename 写同一个文件,它不过本咽喉 —— 它靠的是
- * 另一道具名路径白名单 `builtinPolicyPathAllowed`(只放 `agent.*.<字段>` / `permission.skill.<名>` /
- * `command.<名>.<字段>`,`plugin` 结构上不是合法首段,且在任何写盘之前逐条判)。
- * 另两个不过本咽喉的写:`alpha-config-injection` 只在真源**缺席**时 seed 一个 `{$schema}`
- * (内容里没有 `plugin` 键),`alpha-migrate` 的 legacy 臂只做减法且要 `ALPHA_MIGRATE_ENABLE=1`。
+ * **不要把这句话读成「只剩这一个 config 写盘点」**(实读枚举过,那是假的)。不过本咽喉的还有四条,
+ * 各自靠**另一道**闸:`applyBuiltinPolicyEditsUnlocked`(本文件,自己的 tmp+rename)靠
+ * `builtinPolicyPathAllowed` 具名路径白名单;`alpha-config-injection` 只在真源缺席时 seed `{$schema}`;
+ * `alpha-migrate` 的 legacy 臂只做减法;**`ecosystem-import.ts` 的 `registerProjectSkillsPath`**
+ * 整文件写项目级 `<proj>/.alpha/alpha.jsonc`,而且**它自己没有任何白名单** —— 挡住 `plugin` 的是
+ * 另一个包里的 `mergeProjectConfig`(与同族的 `packages/ext/src/register.ts` 类型白名单)。
+ * 完整一栏与实测在 `engine-plugin-seal.ts` 抬头,改这一族之前先读那里。
  */
 export function writeConfigTextAtomic(target: string, before: string, result: string): ConfigResult {
   // ADR-040 咽喉:凡是「整份文本换一份」的写都收在这里(writeKey* / dangling 清扫 / boot reconcile),

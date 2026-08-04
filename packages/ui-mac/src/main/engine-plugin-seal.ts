@@ -28,12 +28,24 @@
 //     整文件写 —— 三者共用的原子提交);
 //   · `ext-config-tx.ts` 的 `prepareConfigTx`(计划期具名拒绝)与 `applyConfigImage`(switch 期终闸)。
 //
-// **本咽喉不是主进程里唯一的守门人,别照着这句话推「凡写 config 必过这里」**(实读枚举过,那是假的):
-//   `ext-config.ts` 的 `applyBuiltinPolicyEditsUnlocked` 有自己的 tmp+rename,不过本闸 —— 它由
-//   `builtinPolicyPathAllowed` 这道**具名路径白名单**把守(只放 `agent` / `permission.skill` /
-//   `command` 三个域的叶子,`plugin` 结构上不是合法首段,且在任何字节落盘之前逐条判);
-//   `alpha-config-injection` 只在真源缺席时 seed `{$schema}`;`alpha-migrate` 的 legacy 臂只做减法。
-//   三者都到不了「往 `plugin[]` 加元素」,但它们是**另一道闸**的功劳,不是本闸的覆盖面。
+// **本咽喉不是唯一的守门人,别照着这句话推「凡写引擎 config 必过这里」**(实读枚举过,那是假的)。
+// 四条不过本闸的写,以及**各自真正靠的是哪道闸** —— 这一栏比路径本身重要:
+//   · `ext-config.ts` 的 `applyBuiltinPolicyEditsUnlocked`:自己的 tmp+rename 写同一个 `alpha.jsonc`。
+//     靠 `builtinPolicyPathAllowed` 这道**具名路径白名单**(只放 `agent` / `permission.skill` /
+//     `command` 三个域的叶子,`plugin` 结构上不是合法首段,且在任何字节落盘之前逐条判);
+//   · `alpha-config-injection`:只在真源**缺席**时 seed 字面量 `{$schema}`,内容里没有 `plugin` 键;
+//   · `alpha-migrate` 的 legacy 臂:目标是 legacy `opencode.jsonc`,且只做减法,还要 `ALPHA_MIGRATE_ENABLE=1`;
+//   · **`ecosystem-import.ts` 的 `registerProjectSkillsPath`(`#832` 审计补的第四条,这条最值得记住)**:
+//     整文件 `JSON.stringify` + tmp+rename 写**项目级** `<proj>/.alpha/alpha.jsonc` —— 与上面三条不同,
+//     **它自己没有任何路径白名单**;今天只写 `skills.paths` 是「它恰好只写这个」,不是被谁挡着。
+//     真正挡住 `plugin` 的闸**在另一个包里**:`packages/ext/src/project-config.ts` 的 `mergeProjectConfig`
+//     只合 `mcp`(信任门)/ `agent` / `command` / `skills.paths`,`plugin` 结构性不合。同族还有
+//     `packages/ext/src/register.ts`(`alpha_register` 工具的纯逻辑,`serialize` 同样整文件序列化,由
+//     `plugin.ts` 在**引擎进程**侧原子写同一个文件),靠 `RegisterType` 类型白名单(mcp/agent/command/skill)。
+//     实测(`#832`):在 `registerProjectSkillsPath` 里加一行 `cfg.plugin=[…]`,盘上当场多出该条目,
+//     **本文件的全部咽喉用例照样全绿**;而同一份文本喂给 `mergeProjectConfig`,`added` 只有
+//     `["skills.paths"]`、合并后 `cfg.plugin === undefined`。⇒ 今天没有洞,但**功劳不是本闸的**,
+//     两道闸之间也没有任何东西把它们和 ADR-040 连起来。要动那条路,先读这一段。
 
 import * as path from "node:path"
 import { parse, type ParseError } from "jsonc-parser"
