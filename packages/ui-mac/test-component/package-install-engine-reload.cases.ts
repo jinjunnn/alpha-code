@@ -37,10 +37,10 @@ import bundledCatalog from "../src/renderer/extensions/alpha-catalog.json"
 import { LEAF_MCP_ID, MIXED_BUNDLE_PACKAGE_ID, mixedBundleFixture } from "./package-mixed-bundle.fixture"
 import { pinShippedPlatform } from "./pin-shipped-platform"
 
-// 本文件会走到**生产平台闸**(套件/条目的 `compatibility.platforms` = darwin/win32,ADR-026)。
-// linux runner 上套件安装被就地拒掉(DOM 实测:「platform linux not supported by this bundle」),
-// 授权屏因此**永远不出现** —— ③④ 等多久都等不到,与 `waitFor` 的预算无关。
-// 与两个兄弟 cases 文件同款 opt-in;它会自陈本轮是模拟,不静默降级。
+// 本文件要验的是**发布平台上**的安装行为,而它会走到生产平台闸
+// (套件/条目 `compatibility.platforms` = darwin/win32,ADR-026):linux runner 上套件安装被
+// 就地拒掉(DOM 原话「platform linux not supported by this bundle」),授权屏永不出现。
+// 与两个兄弟 cases 文件同款 opt-in;它自陈本轮平台是模拟,不静默降级。
 pinShippedPlatform()
 
 // ── ① 引擎客户端替身 = 「引擎有没有被叫去重扫」的唯一判据 ──────────────────────────────
@@ -356,26 +356,21 @@ afterAll(() => {
 })
 
 // ── ⑧ DOM 驱动小工具 ────────────────────────────────────────────────────────────────────
+const flush = () => new Promise((r) => setTimeout(r, 0))
 /** ⚠️ 必须 `await assertion()`:传一个 async 断言进来而不 await,它的拒绝会变成 unhandled
- *  rejection,而 `waitFor` **立刻返回成功** —— 一条永远绿的假闸。
- *
- *  预算按**实际时间**算,不按重试次数:此前是 300 次 × `setTimeout(…, 0)`,实测合计只有 ~0.4s
- *  且随机器快慢漂移 —— 次数度量的是调度轮次,不是它想等的那件事。
- *  (这是一条独立的潜在缺陷,**不是** `#810` 那次 CI 红的真因:真因是上面那道平台闸,
- *  把预算抬到 5s 后 ③④ 照样跑满 5s 才红。) */
+ *  rejection,而 `waitFor` **立刻返回成功** —— 一条永远绿的假闸。 */
 async function waitFor(assertion: () => void | Promise<void>): Promise<void> {
-  const deadline = Date.now() + 5_000
   let failure: unknown
-  for (;;) {
+  for (let attempt = 0; attempt < 300; attempt++) {
     try {
       await assertion()
       return
     } catch (error) {
       failure = error
-      if (Date.now() >= deadline) throw failure
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await flush()
     }
   }
+  throw failure
 }
 function click(element: Element | null | undefined): void {
   expect(element).toBeInstanceOf(HTMLElement)
