@@ -71,12 +71,8 @@ const componentsOf = (envelope: Record<string, unknown>) =>
 const rootOf = (envelope: Record<string, unknown>) =>
   componentsOf(envelope).find((component) => component.id === envelope.root)!
 
-/**
- * `#827`:把单组件语料 `skill-v1` 加宽成 `leafCount + 1` 个组件的合法包。
- *
- * 从**已生成的 canonical 语料**加宽,而不是手搭一个信封 —— 手搭的替身会跟着合同一起漂,
- * 漂了也不会红(同本文件 §4.1 负向集的纪律)。三条边界用例共用它,免得各自复制一份构造。
- */
+/** `#827`:把单组件语料 `skill-v1` 加宽成 `leafCount + 1` 个组件的合法包。从**已生成的 canonical
+ *  语料**加宽而不手搭替身(手搭的会跟着合同一起漂,漂了也不会红)。三条边界用例共用。 */
 const widenSkillCase = (leafCount: number) => {
   const item = caseNamed("skill-v1")
   const root = rootOf(item.envelope)
@@ -95,12 +91,8 @@ const widenSkillCase = (leafCount: number) => {
   return item
 }
 
-/**
- * `#827`:把 registry 的组件上界临时挪到 `value`,跑完 `body` 后**无条件**恢复。
- *
- * 改的就是生产读的那一份对象(`HOST_EXTENSION_PACKAGE_LIMITS_V1` 是 registry JSON 的直接
- * 引用)。这是刻意的:注入一份假 limits 只能证明「假的被读了」,证明不了真的那份有人读。
- */
+/** `#827`:把 registry 组件上界临时挪到 `value`,`finally` 无条件恢复。改的就是生产读的那一份
+ *  对象 —— 注入假 limits 只能证明「假的被读了」,证明不了真的那份有人读。 */
 const withMaxComponents = (value: number, body: () => void): void => {
   const limits = HOST_EXTENSION_PACKAGE_LIMITS_V1 as { maxComponents: number }
   const previous = limits.maxComponents
@@ -914,22 +906,10 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     ).toContain(`requires 1..${HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents} components`)
   })
 
-  /**
-   * `#827` AC:**证明 +1 撞的是 `maxComponents` 这道闸,不是别的界先咬。**
-   *
-   * `#828` 在 `maxComponentAssetFiles` 上踩过这个形态:上面那条用例只断 `.toContain(...)`,
-   * 而一个从来没被执行到的上界闸,在别的界先报错时照样能让 `.toContain` 全绿 —— 于是
-   * 「界立住了」变成一句没人验过的话。这里的判据因此有两条,单独任何一条都不够:
-   *
-   *   · **恰好一条错误**(不是 `toContain`):节点界、字节界、根依赖条数界若有任何一条参与,
-   *     错误串就不止这一条 —— `decodeComponentGraph` 的长度检查是 early-return,依赖条数界
-   *     在它之后,而 `inspectStructure`(节点/字节)在它**之前**,所以这条断言同时管住前后两侧;
-   *   · **同一份字节在界抬高一格后转为接受** —— 这是决定性的那一步。若还有第二道界在咬,
-   *     只把 `maxComponents` 抬一格不会让它转绿。
-   *
-   * 实测支撑(见 registry.ts 注释):33 组件 = 439 节点 / 16,462 字节,分别在 512 与 65,536
-   * 之下,所以这条用例在今天的界下是真的走到了组件数那一闸。
-   */
+  /** `#827` AC:证明 +1 撞的是 `maxComponents` 而非别的界先咬(`#828` 在 `maxComponentAssetFiles` 上
+   *  踩过:上界闸从没被执行到时 `.toContain` 照样全绿)。判据两条 —— **恰好一条错误**(节点/字节界在
+   *  长度检查之前、依赖条数界在其后,任一参与则错误串不止一条)+ **同一份字节在界+1 时转为接受**
+   *  (还有第二道界在咬就不会转绿)。实测数字见 registry.ts 的 `maxComponents`。 */
   test("the +1 rejection comes from maxComponents itself, not from another bound biting first", () => {
     const limit = HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents
     const overflowBytes = jsonBytes(widenSkillCase(limit).envelope)
@@ -945,18 +925,9 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     })
   })
 
-  /**
-   * `#827` AC:**边界必须跟着 registry 走,而不是在生产代码里写死 32。**
-   *
-   * 「期望值从 registry 读」这一条**不够** —— 已实证:registry 钉的值恰好等于生产里那个
-   * 字面量时,把生产写成字面量仍然全绿(两边碰巧相等,断言就永远说真话)。唯一能分辨
-   * 「读了 registry」与「写死了一个恰好相等的数」的办法,是把 registry 挪到一个**不相等**
-   * 的哨兵值,再看边界跟不跟着动。
-   *
-   * 直接改那个可变对象是刻意的:它就是生产读的那一份。若改成注入一个假 limits,证明的就变成
-   * 「假的那份被读了」,而真的那份仍可能没人读 —— 那正是本条要排除的缺陷。恢复放在 finally,
-   * 同文件内其余用例仍看到真值(上一条用例的 `limit + 1` 同此纪律)。
-   */
+  /** `#827` AC:边界跟着 registry 走,不是写死 32。「期望值从 registry 读」**不够** —— registry 钉的值
+   *  恰好等于生产里的字面量时,把生产写成字面量仍然全绿;只有把 registry 挪到一个**不相等**的哨兵值
+   *  再看边界跟不跟着动,才分得开「读了 registry」与「写死了一个恰好相等的数」。 */
   test("the component bound follows the registry instead of a literal baked into the decoder", () => {
     const SENTINEL = 5
     expect(SENTINEL).not.toBe(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents)

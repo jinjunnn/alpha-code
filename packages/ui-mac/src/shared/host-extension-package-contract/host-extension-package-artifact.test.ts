@@ -88,9 +88,7 @@ describe("HostExtensionPackageV1 artifact", () => {
       "maxPayloadNodes",
       "maxStringBytes",
     ])
-    // `#827`:32,不是 16。口径与推导见 registry.ts 的 `maxComponents` 注释 —— 一句话:
-    // 按信封真正用的那把尺子实测最大是 13,但那 13 靠一个第三方的 JSON 语法错误撑着,
-    // 修好就是 25;32 是容纳 25 的最小常用档,且仍低于事务引擎的 64。
+    // `#827`:32,不是 16。口径与「25 怎么办」的推导见 registry.ts 的 `maxComponents`。
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).toBe(32)
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes).toBe(5 * 1024 * 1024)
     // `#828`:钉住值,不只钉键。64 = 实测语料上界(18 个文件)的 3.5×,同时留在
@@ -192,15 +190,8 @@ describe("HostExtensionPackageV1 artifact", () => {
     expect(JSON.stringify(PROFILE_REGISTRY_V1)).not.toContain("bundle")
   })
 
-  /**
-   * `#827`:发布给 producer 的信封 schema 里那两个 `maxItems` 是 registry `maxComponents`
-   * 的**派生值**,不是两个各自维护的字面量。
-   *
-   * 这条闸挡的是一个具体的失败形态:抬了 registry 而忘了抬 schema —— 宿主 decoder 收得下
-   * 33 个组件,发布端 schema 却在 17 个就拒,于是「合同」在两侧说两句不同的话。它与
-   * capability 文法那条(decoder ↔ schema 逐字一致)是同一个理由的两半:凡是两处分开写的
-   * 数,都必须有东西看着它们。
-   */
+  /** `#827`:信封 schema 那两个 `maxItems` 是 registry `maxComponents` 的**派生值**,不是各自维护的
+   *  字面量。挡的是「抬了 registry 忘了抬 schema」—— 宿主收得下 33 个,发布端 schema 却在 17 个就拒。 */
   test("the published envelope schema derives both component bounds from the registry", async () => {
     const envelope = (await Bun.file(
       resolve(import.meta.dir, "alpha-package-envelope-v1.schema.json"),

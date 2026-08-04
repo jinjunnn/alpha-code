@@ -29,8 +29,7 @@ import { parseSkillFrontmatter, SKILL_CONTROL_FIELD_KEYS } from "./ext-import-va
 import { PACKAGE_DISPLAY_NAME_MAX, PACKAGE_ID_RE, isValidPackageDisplayName } from "./ext-package-ledger-v3"
 
 /** 事务的**真界**(`ext-transaction.ts:650` 的 `plan.items.length > 64`)。
- *  刻意**不是**发布端的 `maxComponents`(`#827` 起为 32)—— 本路根本不过 decoder,
- *  拿信封那道界立闸是前提为假的闸。 */
+ *  刻意**不是**发布端的 `maxComponents`(`#827` 起 32)—— 本路根本不过 decoder,拿它立闸前提为假。 */
 export const LOCAL_PACKAGE_MAX_COMPONENTS = 64
 
 /** 本期只认这一种技能布局。深度实测恒为 2,真实语料 159/162 无一例外。 */
