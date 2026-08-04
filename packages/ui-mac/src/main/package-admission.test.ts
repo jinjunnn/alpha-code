@@ -937,3 +937,123 @@ describe("package admission", () => {
     expect(ledger.claims.map((claim) => `${claim.kind}:${claim.name}`)).toEqual(["mcp:generic-remote"])
   })
 })
+
+// 0 字节是合法条目,而空串的 sha256 是个定值 ⇒ 把 fetch 的 reject 兜成空 Uint8Array,一次传输
+// 失败就正好通过「长度 + sha256」双查,被当成一份成功取回的空文件装进去。两条控制缺一不可:
+// 只有失败那条时,把整条路改成恒拒也全绿。
+describe("package admission distinguishes a failed asset fetch from an empty one", () => {
+  const SKILL_MD = "---\nname: zero-byte\ndescription: audit fixture\n---\nbody\n"
+  const MD = new TextEncoder().encode(SKILL_MD)
+  const EMPTY = new Uint8Array(0)
+  const EMPTY_PATH = "support/empty.txt"
+  const sha = (data: Uint8Array) => createHash("sha256").update(data).digest("hex")
+
+  function skillPackage() {
+    const files = [
+      { path: "SKILL.md", sha256: sha(MD), bytes: MD.byteLength, url: "https://example.invalid/s/SKILL.md" },
+      { path: EMPTY_PATH, sha256: sha(EMPTY), bytes: 0, url: "https://example.invalid/s/empty.txt" },
+    ]
+    const payload = {
+      schema: "alpha.host-extension-package.payload.skill.v1",
+      behavior: { targetDir: "alpha-skills", files },
+    }
+    const payloadBytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
+    return {
+      payloadBytes,
+      envelope: {
+        schema: "alpha.host-extension-package.v1",
+        prelude: { packageId: "package:zero-byte-skill", version: "1.0.0" },
+        root: "skill:zero-byte",
+        presentation: { displayName: "zero-byte", description: "#827 audit fixture" },
+        components: [
+          {
+            id: "skill:zero-byte",
+            required: true,
+            dependencies: [],
+            profileId: "skill",
+            profileVersion: 1,
+            capabilities: [],
+            payloadRef: {
+              sha256: sha(payloadBytes),
+              bytes: payloadBytes.byteLength,
+              mediaType: "application/vnd.alpha.host-extension-package.skill.v1+json",
+              url: "https://example.invalid/payload.json",
+            },
+          },
+        ],
+        capabilities: [],
+      } as unknown as AlphaPackageEnvelopeV1,
+    }
+  }
+
+  async function install(fetchAsset: (ref: { path?: string }) => Promise<Uint8Array>) {
+    const { envelope, payloadBytes } = skillPackage()
+    let transactionCalls = 0
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      casBaseRoot: () => userData,
+      environment: () => "dev",
+      installability: { fetchPayload: async () => payloadBytes },
+      fetchAsset,
+      transaction: async (...args) => {
+        transactionCalls++
+        return runExtensionTransaction(...args)
+      },
+    })
+    const intent = {
+      catalogId: envelope.prelude.packageId,
+      scope: { scope: "global" as const },
+      attemptId: "attempt-zero-byte",
+    }
+    const preview = await admit(intent)
+    if (preview.ok) throw new Error("expected an authorization preview, not an immediate install")
+    // 取回失败在**预览轮**就把整包拒掉(补丁前这一轮会把空字节当成功、照常进授权)。
+    if (preview.stage !== "authorize") return { result: preview, transactionCalls }
+    const result = await admit({ ...intent, authorization: confirmation(preview) })
+    return { result, transactionCalls }
+  }
+
+  const filesUnder = (dir: string) => {
+    const found: string[] = []
+    const walk = (at: string) => {
+      for (const entry of readdirSync(at, { withFileTypes: true })) {
+        const full = join(at, entry.name)
+        if (entry.isDirectory()) walk(full)
+        else if (entry.isFile()) found.push(full)
+      }
+    }
+    if (existsSync(dir)) walk(dir)
+    return found
+  }
+
+  test("a successful zero-length fetch installs and materializes the empty file", async () => {
+    const { result, transactionCalls } = await install(async (ref) =>
+      ref.path === EMPTY_PATH ? EMPTY : MD,
+    )
+    expect(result).toMatchObject({ ok: true, kind: "skill", name: "zero-byte" })
+    expect(transactionCalls).toBe(1)
+    const materialized = filesUnder(root).filter((file) => file.endsWith(join("support", "empty.txt")))
+    expect(materialized).toHaveLength(1)
+    expect(statSync(materialized[0]!).size).toBe(0)
+  })
+
+  test("a rejected fetch for that same ref refuses the package before any transaction or CAS write", async () => {
+    const { result, transactionCalls } = await install(async (ref) => {
+      if (ref.path === EMPTY_PATH) throw new Error("transport failed")
+      return MD
+    })
+    expect(result).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("package asset unavailable or failed integrity"),
+    })
+    expect(transactionCalls).toBe(0)
+    expect(filesUnder(root)).toEqual([])
+    expect(filesUnder(userData)).toEqual([])
+  })
+})
