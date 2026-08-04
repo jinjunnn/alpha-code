@@ -26,10 +26,10 @@
         "dependencies": [],
         "id": "skill:generic-bundle-skill",
         "payloadRef": {
-          "bytes": 376,
+          "bytes": 390,
           "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-          "sha256": "0861da658166436fb601c00269514976f6b0aae84bbb1b86ef045cd441f17678",
-          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/0861da658166436fb601c00269514976f6b0aae84bbb1b86ef045cd441f17678.json"
+          "sha256": "e99309b86d266280532b997b3c57f596418475a20c35b94fed20024767bbab2b",
+          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/e99309b86d266280532b997b3c57f596418475a20c35b94fed20024767bbab2b.json"
         },
         "profileId": "skill",
         "profileVersion": 1,
@@ -92,10 +92,10 @@
         "dependencies": [],
         "id": "skill:generic-bundle-skill",
         "payloadRef": {
-          "bytes": 376,
+          "bytes": 390,
           "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-          "sha256": "0861da658166436fb601c00269514976f6b0aae84bbb1b86ef045cd441f17678",
-          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/0861da658166436fb601c00269514976f6b0aae84bbb1b86ef045cd441f17678.json"
+          "sha256": "e99309b86d266280532b997b3c57f596418475a20c35b94fed20024767bbab2b",
+          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/e99309b86d266280532b997b3c57f596418475a20c35b94fed20024767bbab2b.json"
         },
         "profileId": "skill",
         "profileVersion": 1,
@@ -124,11 +124,11 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "8a832a7fe1390d75f0b574cafad7151cf144d4d1db9963b18879998dc31d967d",
+        "reportSha256": "528087b4e9695800a22d2061d739cd4ea2a8d25845f003f00535ab9e6ee4e893",
         "verdict": "compatible"
       },
       "componentId": "agent:generic-bundle-agent",
-      "declarationSha256": "d28fcbeb143049ffdd9f7be2fa332b649652e4084f0beeda2830b37c728c3189",
+      "declarationSha256": "10a28b3a4d1e9bd23b73ec3351efca56b813867794fd44d79fadc8e7e08da84f",
       "packageId": "package:generic-bundle",
       "presentation": {
         "description": "Generic flat Bundle corpus input: one agent root and two leaves.",
@@ -171,12 +171,14 @@
     },
     "skill:generic-bundle-skill": {
       "behavior": {
-        "asset": {
-          "bytes": 103,
-          "mediaType": "text/markdown",
-          "sha256": "4e62da1a8bc554708127ec4aa749e77850462478efd378338c56da6f348ba38e",
-          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/SKILL.md"
-        },
+        "files": [
+          {
+            "bytes": 103,
+            "path": "SKILL.md",
+            "sha256": "4e62da1a8bc554708127ec4aa749e77850462478efd378338c56da6f348ba38e",
+            "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/SKILL.md"
+          }
+        ],
         "targetDir": "alpha-skills"
       },
       "schema": "alpha.host-extension-package.payload.skill.v1"

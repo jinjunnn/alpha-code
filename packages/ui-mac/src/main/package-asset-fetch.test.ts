@@ -95,18 +95,36 @@ function fixtureOf(): Fixture {
     [LATE_ASSET_URL, utf8(skillMd("asset-beta"))],
   ])
 
-  const payloadOf = (profileId: "agent" | "skill", url: string) => ({
-    schema: `alpha.host-extension-package.payload.${profileId}.v1`,
-    behavior: {
-      targetDir: profileId === "agent" ? "alpha-agents" : "alpha-skills",
-      asset: {
-        sha256: sha(assets.get(url)!),
-        bytes: assets.get(url)!.byteLength,
-        mediaType: "text/markdown",
-        url,
-      },
-    },
-  })
+  // `#828`:skill 载荷是文件清单,agent 仍是单个资产。资产 URL 不变 —— 本文件测的是
+  // **取回这一跳**的两道保护(超时 / 终态 URL 复查),那一跳对两种引用逐字相同。
+  const payloadOf = (profileId: "agent" | "skill", url: string) =>
+    profileId === "agent"
+      ? {
+          schema: "alpha.host-extension-package.payload.agent.v1",
+          behavior: {
+            targetDir: "alpha-agents",
+            asset: {
+              sha256: sha(assets.get(url)!),
+              bytes: assets.get(url)!.byteLength,
+              mediaType: "text/markdown",
+              url,
+            },
+          },
+        }
+      : {
+          schema: "alpha.host-extension-package.payload.skill.v1",
+          behavior: {
+            targetDir: "alpha-skills",
+            files: [
+              {
+                path: "SKILL.md",
+                sha256: sha(assets.get(url)!),
+                bytes: assets.get(url)!.byteLength,
+                url,
+              },
+            ],
+          },
+        }
 
   const payloadByUrl = new Map<string, Uint8Array>()
   const componentOf = (
@@ -239,6 +257,8 @@ async function admitOnce(attemptId: string) {
     }),
     root: () => root,
     userDataPath: userData,
+    // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+    casBaseRoot: () => userData,
     environment: () => "dev",
     now: () => new Date("2026-08-03T00:00:00.000Z"),
     transaction: async () => {

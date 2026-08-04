@@ -61,16 +61,50 @@ type ComponentSpec = {
   profileVersion?: number
 }
 
+/** 单文件技能(`#828` 之前唯一能表达的形状)—— 这条语料**留着**,它是「多文件不许把单文件弄坏」的判据。 */
 const skillPayload = (slug: string) => ({
   schema: "alpha.host-extension-package.payload.skill.v1",
   behavior: {
     targetDir: "alpha-skills",
-    asset: {
-      sha256: "1".repeat(64),
-      bytes: 12,
-      mediaType: "text/markdown",
-      url: `https://example.invalid/assets/${slug}.md`,
-    },
+    files: [
+      {
+        path: "SKILL.md",
+        sha256: "1".repeat(64),
+        bytes: 12,
+        url: `https://example.invalid/assets/${slug}/SKILL.md`,
+      },
+    ],
+  },
+})
+
+/**
+ * `#828`:多文件技能 —— 真实语料里 40/162 是这个形状(实测上界 18 文件 / 深度 2)。
+ * 这条语料带一层子目录与一个 `.py`,因为那正是旧形状**结构上表达不了**的东西。
+ */
+const multiFileSkillPayload = (slug: string) => ({
+  schema: "alpha.host-extension-package.payload.skill.v1",
+  behavior: {
+    targetDir: "alpha-skills",
+    files: [
+      {
+        path: "SKILL.md",
+        sha256: "1".repeat(64),
+        bytes: 12,
+        url: `https://example.invalid/assets/${slug}/SKILL.md`,
+      },
+      {
+        path: "reference/guide.md",
+        sha256: "3".repeat(64),
+        bytes: 34,
+        url: `https://example.invalid/assets/${slug}/reference/guide.md`,
+      },
+      {
+        path: "scripts/run.py",
+        sha256: "4".repeat(64),
+        bytes: 56,
+        url: `https://example.invalid/assets/${slug}/scripts/run.py`,
+      },
+    ],
   },
 })
 
@@ -113,6 +147,9 @@ const mcpRemotePayload = (
 export function decoderCorpusBytesV1(): Uint8Array {
   const cases: CorpusCase[] = [
     single("skill-v1", "skill", [], skillPayload("skill")),
+    // `#828`:多文件技能是**正向**语料的一等成员,不是边角。消费方(发布端)据此知道
+    // 「这条路今天能装多文件」——只发一条单文件语料时,那件事对下游是不可见的。
+    single("skill-multifile-v1", "skill", [], multiFileSkillPayload("skill-multifile")),
     single("agent-v1", "agent", [], agentPayload("agent")),
     single("mcp-local-v1", "mcp-local", ["alpha.secret-prerequisite.v1"], mcpLocalPayload()),
     single("mcp-remote-v1", "mcp-remote", [], mcpRemotePayload()),

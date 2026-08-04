@@ -14,8 +14,7 @@
 // 纪律:构造期的读盘(账本在册判定、live MCP 叶 strict 读、server 形状校验)保持与单装同序同点位 ——
 // 它们决定 requireAbsent / 拒绝理由,挪位就是行为变化。
 
-import { createHash } from "node:crypto"
-import { lstatSync, writeFileSync } from "node:fs"
+import { lstatSync } from "node:fs"
 import { join, posix } from "node:path"
 import {
   claimMcpSecretVersionDir,
@@ -24,10 +23,14 @@ import {
 } from "./alpha-mcp-secrets"
 import { readMcpLeafStrict, validateServer } from "./ext-config"
 import { agentConfigItemKey } from "./ext-agent-install"
+import { populateFromCas } from "./ext-cas"
 import { extensionHealthProbeRouter } from "./ext-health-probe-router"
 import { findRecordV2, probeLedgerForWrite, type UpsertInput } from "./ext-receipt-v2"
-import type { HealthProbe, HealthVerdict, TxPlanItem, TxPreparedResourceV1 } from "./ext-transaction"
-import type { PackageProfilePayloadV1 } from "../shared/host-extension-package-contract/decoder"
+import type { HealthProbe, HealthVerdict, TxFileSpec, TxPlanItem, TxPreparedResourceV1 } from "./ext-transaction"
+import {
+  SKILL_MD_PATH,
+  type PackageProfilePayloadV1,
+} from "../shared/host-extension-package-contract/decoder"
 import {
   packageSecretReferenceV1,
   type PackageSecretPrerequisiteProfileV1,
@@ -114,7 +117,19 @@ export function buildDepartingChildConfigItemsV1(input: {
   return items
 }
 
-export type SkillTxBuildInputV1 = CommonInput & { asset?: Buffer }
+export type SkillTxBuildInputV1 = CommonInput & {
+  /**
+   * `#828`:技能载荷**已提升进验证共享 CAS** 之后的 spec 清单(`promotePayloadToCas` 的产物)。
+   *
+   * 为什么是 spec 而不是 Buffer:那个函数的第一遍(路径安全 / 大小写折叠碰撞 / Windows 保留名 /
+   * 重复 / bytes 精确)是**本仓这套路径文法的唯一所有者**,且校验失败时 CAS 零写入。
+   * 在这里改收 Buffer 再自己写 staging,等于把那一遍换成一条自己拼的等价链 —— 而 `../` 这类
+   * 路径会在 `verifyStagedItem` 走目录之前就已经写到 staging 之外去了。
+   */
+  assetFiles?: TxFileSpec[]
+  /** CAS 基根;populate 走既有的 `populateFromCas`,不自己写文件。 */
+  casBaseRoot?: string
+}
 export type AgentTxBuildInputV1 = CommonInput & { asset?: Buffer; agentEntry?: Record<string, unknown> }
 export type McpTxBuildInputV1 = CommonInput & {
   userDataPath: string
@@ -129,31 +144,41 @@ export type McpTxBuildInputV1 = CommonInput & {
 /** 计划无法构造(缺资产/缺解析结果)时的统一理由 —— 与 #705 之前 planItems 为空的落点逐字相同。 */
 const NO_PLAN = "package profile could not produce a transaction plan"
 
-/** skill:单 generation item(SKILL.md 写进 staging;probe 验 frontmatter 与 key 一致)。 */
+/**
+ * skill:单 generation item —— **整份文件清单**写进 staging,probe 验 `SKILL.md` frontmatter 与 key 一致。
+ *
+ * `#828` 之前这里把 `files` 与 populate **各写死一次** `SKILL.md`,于是签名 package 这条路
+ * 结构上装不了多文件技能(真实语料 40/162),装完是残件而安装全绿。现在两处都由同一份
+ * `assetFiles` 派生 —— **一份清单,两个消费者**,不可能再各自漂。
+ *
+ * populate 走既有的 `populateFromCas`(`ext-cas.ts`),与 Phase 3 本地导入路径
+ * (`claude-plugin-install.ts`)是同一个函数:那边当初正是因为本函数写死 `SKILL.md` 才不敢复用它。
+ */
 export function buildSkillTxItems(input: SkillTxBuildInputV1): PackageTxBuildResultV1 {
-  const asset = input.asset
-  if (!asset) return { ok: false, reason: NO_PLAN }
+  const assetFiles = input.assetFiles
+  const casBaseRoot = input.casBaseRoot
+  if (!assetFiles?.length || !casBaseRoot) return { ok: false, reason: NO_PLAN }
+  // 锚点在解码期已是合同项(`decoder.ts` 的 `decodeSkillAssetFiles`)。这里再判一次是纵深:
+  // 本函数还有别的调用方时,缺 SKILL.md 的计划会在**构造期**被具名拒绝,而不是先建 generation
+  // 再让 pre-switch probe 判不健康(那条路要多走一次下载 + CAS 提升 + materialize)。
+  if (!assetFiles.some((file) => file.path === SKILL_MD_PATH))
+    return { ok: false, reason: `skill payload has no ${SKILL_MD_PATH}` }
   const items: TxPlanItem[] = [
     {
       key: input.key,
-      files: [
-        {
-          path: "SKILL.md",
-          sha256: createHash("sha256").update(asset).digest("hex"),
-          size: asset.byteLength,
-        },
-      ],
+      files: assetFiles,
       manifestDigest: input.manifestDigest,
       capabilities: input.capabilities,
       receipt: input.receipt,
     },
   ]
+  const populate = populateFromCas(casBaseRoot)
   return {
     ok: true,
     build: {
       items,
       receipt: input.receipt,
-      populate: (_item, stagingDir) => writeFileSync(join(stagingDir, "SKILL.md"), asset),
+      populate: (item, stagingDir) => populate({ files: item.files ?? [] }, stagingDir),
       precondition: () => probeLedgerForWrite(input.root),
       probe: extensionHealthProbeRouter(input.root),
     },

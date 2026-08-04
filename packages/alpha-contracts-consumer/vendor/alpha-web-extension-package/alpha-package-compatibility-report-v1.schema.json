@@ -44,10 +44,10 @@
           "const": "packages/ui-mac/src/shared/host-extension-package-contract"
         },
         "artifactSha256": {
-          "const": "11d6c02624abcbeb121f3c1c6ffc08314398948e6d006514416aef14fd62ca73"
+          "const": "33eab79c63a476b96db5f1a64e024531393f78a63186ef2d6ef0f86bc11f3612"
         },
         "commit": {
-          "const": "ead7a84fcde9fd8cf48bc710a72e0b625a5f5d05"
+          "const": "7d6ff40c1ccd6ab9d55b637dbdb5dcffa88ef17f"
         },
         "repo": {
           "const": "jinjunnn/alpha-code"

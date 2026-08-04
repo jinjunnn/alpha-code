@@ -107,19 +107,35 @@ const packageWithComponentName = (
   requiredSecrets: string[] = [],
 ) => {
   const payload =
-    profileId === "skill" || profileId === "agent"
+    // `#828`:skill 与 agent 的载荷形状分家了 —— skill 是文件清单,agent 仍是单个资产。
+    profileId === "skill"
       ? {
-          schema: `alpha.host-extension-package.payload.${profileId}.v1`,
+          schema: "alpha.host-extension-package.payload.skill.v1",
           behavior: {
-            targetDir: profileId === "skill" ? "alpha-skills" : "alpha-agents",
-            asset: {
-              sha256: "a".repeat(64),
-              bytes: 1,
-              mediaType: "text/markdown",
-              url: "https://example.invalid/extension.md",
-            },
+            targetDir: "alpha-skills",
+            files: [
+              {
+                path: "SKILL.md",
+                sha256: "a".repeat(64),
+                bytes: 1,
+                url: "https://example.invalid/extension/SKILL.md",
+              },
+            ],
           },
         }
+      : profileId === "agent"
+        ? {
+            schema: "alpha.host-extension-package.payload.agent.v1",
+            behavior: {
+              targetDir: "alpha-agents",
+              asset: {
+                sha256: "a".repeat(64),
+                bytes: 1,
+                mediaType: "text/markdown",
+                url: "https://example.invalid/extension.md",
+              },
+            },
+          }
       : profileId === "mcp-local"
         ? {
             schema: "alpha.host-extension-package.payload.mcp-local.v1",
@@ -839,12 +855,9 @@ describe("package installability authority", () => {
       schema: "alpha.host-extension-package.payload.skill.v1",
       behavior: {
         targetDir: "alpha-skills",
-        asset: {
-          sha256: "a".repeat(64),
-          bytes: 1,
-          mediaType: "text/markdown",
-          url: "https://example.invalid/root.md",
-        },
+        files: [
+          { path: "SKILL.md", sha256: "a".repeat(64), bytes: 1, url: "https://example.invalid/root/SKILL.md" },
+        ],
       },
     }
     const leafPayload = {
