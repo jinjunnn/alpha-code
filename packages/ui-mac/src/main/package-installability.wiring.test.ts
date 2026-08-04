@@ -421,20 +421,6 @@ describe("package installability production wiring", () => {
     )
     expect(envelope.components.length).toBeGreaterThan(1)
     expect(publishedVerdict).toBe("compatible")
-    // `#828` 跨仓过渡窗口(**这是一条会自己退休的断言**)。
-    //
-    // 宿主的 skill 载荷从单个 `asset` 换成 `behavior.files` 清单;vendored 的 producer 产物
-    // (aw@a8e6d52)还停在旧形状 ⇒ 它那个 skill leaf 今天**解不出来**,整包 `blocked`。
-    // 这正是「宿主先动、发布端还没跟」的**设计态**,与 alpha-web 侧的 `E_HOST_ARTIFACT_DRIFT`
-    // 是同一件事的两半;发布端那半 aw#138 用「过渡对」处置过一次。
-    //
-    // 为什么不改成手搓一个新形状的信封:那正是 alpha-web runbook §Desktop consumer bump 第 6 条
-    // 点名禁止的东西 —— 手搓替身会跟着合同一起漂,永远不会红。
-    //
-    // 退休方式是自动的:re-vendor 之后这个包会重新 `compatible`,下面这两条断言当场变红,
-    // 谁做搬运谁就必须把它们删掉、把本用例恢复成 `compatible` 那一版。
-    const bundleSkill = envelope.components.find((component) => component.profileId === "skill")
-    expect(bundleSkill, "语料需要一个 skill leaf 才谈得上这个过渡窗口").toBeDefined()
 
     const fetched: string[] = []
     const refresh = () =>
@@ -452,14 +438,11 @@ describe("package installability production wiring", () => {
       envelope.prelude.packageId,
     )) as CatalogPackageViewV1
 
-    // ── 过渡窗口内的真实判决(搬运落地后这三条必须换回 compatible / enabled / 全 included)──
-    expect(detail.verdict).toBe("blocked")
-    expect(detail.action.enabled).toBe(false)
-    // 拒绝的**原因**必须是载荷解不出来,不是别的什么顺带失败(只断 blocked 的写法,
-    // 对「什么都拒」的实现恒真)。
-    expect(detail.action.reasonCode).toBe("package-payload-invalid")
-    // 图本身仍然被合同接受:每个组件都在列表里、root/leaf 角色正确、零 skip。
-    // 这一条**不随过渡窗口变**,它证明红的是载荷形状那一格,不是整份产物烂了。
+    expect(detail.verdict).toBe("compatible")
+    expect(detail.action.enabled).toBe(true)
+    expect(detail.action.kind).toBe("resolve-prerequisite")
+    // 图被合同接受:每个组件都在列表里,root/leaf 角色正确,零 skip。若 re-vendor 没做对,
+    // 这里会是 `package-invalid` 且 components 为空。
     expect(detail.components).toEqual(
       envelope.components.map((component) => ({
         componentId: component.id,
@@ -470,20 +453,10 @@ describe("package installability production wiring", () => {
       })),
     )
     expect(detail.components.filter((component) => component.role === "root")).toHaveLength(1)
-    // 门二时代这里是**零 fetch**,所以「取过哪些」始终是「图有没有走到取载荷那一步」的判据。
-    //
-    // 过渡窗口内它是**前缀**而不是全集:解不出来的那个载荷让 admission 就地 fail-closed,
-    // 排在它后面的组件不再被取。所以这里断言两件仍然为真、且一个「什么都没做就拒」的实现
-    // 满足不了的事:
-    const declared = new Set(envelope.components.map((component) => component.payloadRef.sha256))
-    //   ① 取过的每一个都是签名里声明过的(没有凭空多出来的取用);
-    expect([...new Set(fetched)].filter((digest) => !declared.has(digest))).toEqual([])
-    //   ② **skill leaf 自己的那一份被取过** —— 否则「blocked」可能发生在够到它之前,
-    //      那样这条用例就没在测本票动过的那一格。
-    expect(fetched).toContain(bundleSkill!.payloadRef.sha256)
-    // 搬运落地后恢复成全集断言:
-    //   expect([...new Set(fetched)].sort()).toEqual(
-    //     envelope.components.map((component) => component.payloadRef.sha256).sort())
+    // 每个组件的 payload 都取过(去重后 = 签名里声明的那一组 digest)。
+    expect([...new Set(fetched)].sort()).toEqual(
+      envelope.components.map((component) => component.payloadRef.sha256).sort(),
+    )
     // 门二已经删掉,而不是换成一个更弱的谓词:整个仓里不该再有那个理由码。
     expect(CATALOG_PACKAGE_REASON_CODES as readonly string[]).not.toContain(
       "package-bundle-activation-pending",
