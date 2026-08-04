@@ -6,12 +6,14 @@
           "id": "skill:skill-v1",
           "payload": {
             "behavior": {
-              "asset": {
-                "bytes": 12,
-                "mediaType": "text/markdown",
-                "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
-                "url": "https://example.invalid/assets/skill.md"
-              },
+              "files": [
+                {
+                  "bytes": 12,
+                  "path": "SKILL.md",
+                  "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                  "url": "https://example.invalid/assets/skill/SKILL.md"
+                }
+              ],
               "targetDir": "alpha-skills"
             },
             "schema": "alpha.host-extension-package.payload.skill.v1"
@@ -26,9 +28,9 @@
             "dependencies": [],
             "id": "skill:skill-v1",
             "payloadRef": {
-              "bytes": 333,
+              "bytes": 353,
               "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
+              "sha256": "5994ae82b68a8ae487d4cb6434bea3d3063c2dac048ff6e95ef416453e48269f",
               "url": "https://example.invalid/packages/skill/skill-v1.json"
             },
             "profileId": "skill",
@@ -49,6 +51,71 @@
       },
       "expect": "accepted",
       "name": "skill-v1",
+      "skipped": []
+    },
+    {
+      "components": [
+        {
+          "id": "skill:skill-multifile-v1",
+          "payload": {
+            "behavior": {
+              "files": [
+                {
+                  "bytes": 12,
+                  "path": "SKILL.md",
+                  "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                  "url": "https://example.invalid/assets/skill-multifile/SKILL.md"
+                },
+                {
+                  "bytes": 34,
+                  "path": "reference/guide.md",
+                  "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+                  "url": "https://example.invalid/assets/skill-multifile/reference/guide.md"
+                },
+                {
+                  "bytes": 56,
+                  "path": "scripts/run.py",
+                  "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+                  "url": "https://example.invalid/assets/skill-multifile/scripts/run.py"
+                }
+              ],
+              "targetDir": "alpha-skills"
+            },
+            "schema": "alpha.host-extension-package.payload.skill.v1"
+          }
+        }
+      ],
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "skill:skill-multifile-v1",
+            "payloadRef": {
+              "bytes": 845,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "e1b27cdad2eda3060a9bd476dd0e8239c6bf0d008b18c80beeaa6e52bf877ee5",
+              "url": "https://example.invalid/packages/skill/skill-multifile-v1.json"
+            },
+            "profileId": "skill",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "package:skill-multifile-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic skill-multifile-v1 decoder case",
+          "displayName": "skill-multifile-v1"
+        },
+        "root": "skill:skill-multifile-v1",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "skill-multifile-v1",
       "skipped": []
     },
     {
@@ -425,9 +492,9 @@
             "dependencies": [],
             "id": "skill:skill-v1",
             "payloadRef": {
-              "bytes": 333,
+              "bytes": 353,
               "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
+              "sha256": "5994ae82b68a8ae487d4cb6434bea3d3063c2dac048ff6e95ef416453e48269f",
               "url": "https://example.invalid/packages/skill/skill-v1.json"
             },
             "profileVersion": 1,
@@ -511,12 +578,14 @@
           "id": "skill:bundle-supported-leaf",
           "payload": {
             "behavior": {
-              "asset": {
-                "bytes": 12,
-                "mediaType": "text/markdown",
-                "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
-                "url": "https://example.invalid/assets/bundle-supported-leaf.md"
-              },
+              "files": [
+                {
+                  "bytes": 12,
+                  "path": "SKILL.md",
+                  "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                  "url": "https://example.invalid/assets/bundle-supported-leaf/SKILL.md"
+                }
+              ],
               "targetDir": "alpha-skills"
             },
             "schema": "alpha.host-extension-package.payload.skill.v1"
@@ -557,9 +626,9 @@
             "dependencies": [],
             "id": "skill:bundle-supported-leaf",
             "payloadRef": {
-              "bytes": 349,
+              "bytes": 369,
               "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "a13224a2e6f3642704d66394e6692d952cb6baefb4cd884fba41eb30390ed903",
+              "sha256": "5af713db57c26afc89892d5c4b41fcc066dca6194147dbacdccf39664f7d41a9",
               "url": "https://example.invalid/packages/skill/bundle-supported-leaf.json"
             },
             "profileId": "skill",
@@ -606,12 +675,14 @@
           "id": "skill:bundle-capability-root",
           "payload": {
             "behavior": {
-              "asset": {
-                "bytes": 12,
-                "mediaType": "text/markdown",
-                "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
-                "url": "https://example.invalid/assets/bundle-capability-root.md"
-              },
+              "files": [
+                {
+                  "bytes": 12,
+                  "path": "SKILL.md",
+                  "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                  "url": "https://example.invalid/assets/bundle-capability-root/SKILL.md"
+                }
+              ],
               "targetDir": "alpha-skills"
             },
             "schema": "alpha.host-extension-package.payload.skill.v1"
@@ -634,9 +705,9 @@
             ],
             "id": "skill:bundle-capability-root",
             "payloadRef": {
-              "bytes": 350,
+              "bytes": 370,
               "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "0137f13ac469cf1a5b867fa75ef6ff95f9366f2d5832c97c746ec12ab9d39cfe",
+              "sha256": "65cb5a5a7a1801c13c5f7932c0cf7c98ff241f9cb48c0a3759be26ab8b8e26a8",
               "url": "https://example.invalid/packages/skill/bundle-capability-root.json"
             },
             "profileId": "skill",
@@ -683,12 +754,14 @@
           "id": "skill:bundle-media-root",
           "payload": {
             "behavior": {
-              "asset": {
-                "bytes": 12,
-                "mediaType": "text/markdown",
-                "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
-                "url": "https://example.invalid/assets/bundle-media-root.md"
-              },
+              "files": [
+                {
+                  "bytes": 12,
+                  "path": "SKILL.md",
+                  "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                  "url": "https://example.invalid/assets/bundle-media-root/SKILL.md"
+                }
+              ],
               "targetDir": "alpha-skills"
             },
             "schema": "alpha.host-extension-package.payload.skill.v1"
@@ -709,9 +782,9 @@
             ],
             "id": "skill:bundle-media-root",
             "payloadRef": {
-              "bytes": 345,
+              "bytes": 365,
               "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "b41218fa374b0ee9cb4e9eff19508a6d715a5b775660ea82624f450d463b84df",
+              "sha256": "04ac880d26d4503575dc670cc7edb0603e31deb77471a38c6395fe647aba34f7",
               "url": "https://example.invalid/packages/skill/bundle-media-root.json"
             },
             "profileId": "skill",

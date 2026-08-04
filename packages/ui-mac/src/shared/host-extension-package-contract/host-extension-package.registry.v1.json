@@ -46,6 +46,7 @@
     "maxHeaderNodes": 512,
     "maxStringBytes": 4096,
     "maxCapabilities": 16,
+    "maxComponentAssetFiles": 64,
     "maxComponents": 16,
     "maxMarkdownAssetBytes": 5242880,
     "maxPayloadBytes": 1048576,

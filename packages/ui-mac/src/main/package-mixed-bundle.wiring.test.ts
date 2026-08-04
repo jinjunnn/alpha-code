@@ -14,7 +14,8 @@ test("mixed Bundle activation, named faults, and the crash matrix all run throug
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toMatch(/\b3 pass\b/)
+  // `#828`:3 → 5(多加了「单文件技能仍装得上」与「整包卸载删掉每一个文件」两条)。
+  expect(output).toMatch(/\b5 pass\b/)
   expect(output).toMatch(/\b0 fail\b/)
-  expect(output).toMatch(/Ran 3 tests across 1 file/)
+  expect(output).toMatch(/Ran 5 tests across 1 file/)
 }, 300_000)

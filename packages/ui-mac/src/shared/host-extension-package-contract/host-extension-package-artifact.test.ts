@@ -77,6 +77,7 @@ describe("HostExtensionPackageV1 artifact", () => {
     // 所以每一条界都必须在 registry 里,而不是散落在 decoder / main 的常量上。
     expect(Object.keys(HOST_EXTENSION_PACKAGE_LIMITS_V1).sort()).toEqual([
       "maxCapabilities",
+      "maxComponentAssetFiles",
       "maxComponents",
       "maxEnvelopeBytes",
       "maxHeaderDepth",
@@ -89,6 +90,10 @@ describe("HostExtensionPackageV1 artifact", () => {
     ])
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).toBe(16)
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes).toBe(5 * 1024 * 1024)
+    // `#828`:钉住值,不只钉键。64 = 实测语料上界(18 个文件)的 3.5×,同时留在
+    // maxPayloadNodes 预算之内 —— 后半句由 package-envelope-v1.test.ts 那条
+    // 「64 时先咬的是条数界而不是节点界」的用例证明,不靠这里的算术。
+    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponentAssetFiles).toBe(64)
     // DoS 边界必须钉住值,不能只钉住「这个键存在」—— 键存在的断言拦不住悄悄放宽。
     // v2 把 maxHeaderNodes 从 128 提到 512:16 组件的信封本身就有几百个节点,128 会拒载合法
     // 多组件包。放宽 4× 的兜底是 maxEnvelopeBytes 仍为 64 KiB —— 所以它也一起钉住,

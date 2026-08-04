@@ -93,6 +93,50 @@ what this host happens to support. It can therefore legitimately contain a
 token this host does not know, which is why it is not narrowed to the
 vocabulary above.
 
+## Skill payloads are a bounded file list
+
+`profiles/skill.v1.schema.json` publishes `behavior.files`: a bounded list of
+content-addressed files, each `{path, sha256, bytes, url}`. It replaced a single
+`asset` in `#828`. The single asset was not a simplification, it was a structural
+denial: 40 of 162 skills in the measured corpus are multi-file directories (upper
+bounds observed: 18 files, 230,243 total bytes, 64,768 bytes in one file, relative
+path depth 2). Installed through the old shape they were complete-looking
+remnants — the install succeeded, the ledger was consistent, the skill could be
+enabled, and every file it referenced was absent, with nothing anywhere turning
+red.
+
+The host enforces four structural facts and no more:
+
+- 1..`maxComponentAssetFiles` entries;
+- `path` values are pairwise distinct;
+- exactly one entry whose `path` is `SKILL.md` — the entry point is a contract
+  term, not an accident of a hard-coded writer;
+- the declared `bytes` sum does not exceed `maxMarkdownAssetBytes`.
+
+**`maxMarkdownAssetBytes` is the component asset budget**, not the ceiling of one
+Markdown asset. The key name is unchanged on purpose: renaming it would move
+exact-set assertions in two repositories plus an archived verification matrix,
+while the semantic change fits in this sentence. With a single file the budget
+and the old per-asset ceiling are identical, so single-file skills are unchanged.
+
+Entries carry **no `mediaType`**. Multi-file skills legitimately contain `.py`,
+`.sh`, and `.json`, so keeping the field would force the producer to derive a
+type table from file extensions — a producer writing a grammar this host would
+then have to interpret. The removed check compared a declared value against a
+constant and inspected no bytes; the two facts that replaced it both read bytes:
+the `SKILL.md` anchor above, and the generation probe parsing that file's
+frontmatter. Nothing in a skill payload declares a file mode, and no installer on
+this path sets one: files materialize non-executable.
+
+Path grammar is **not** decided here. Traversal, portability, case/Unicode
+folding collisions, and duplicate detection belong to the host's single owner of
+that grammar (`promotePayloadToCas`), which validates the whole manifest before
+writing anything. A payload naming an unsafe path decodes and is then refused
+before any byte reaches disk.
+
+`agent` is deliberately untouched: its payload is one Markdown file with
+`mediaType: "text/markdown"`, exactly as before.
+
 ## Remote MCP authorization
 
 `profiles/mcp-remote.v1.schema.json` freezes the whole authorization payload

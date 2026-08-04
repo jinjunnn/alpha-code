@@ -62,18 +62,36 @@ function envelopeFor(kind: "skill" | "agent" | "mcp") {
             auth: "none",
           },
         }
-      : {
-          schema: `alpha.host-extension-package.payload.${kind}.v1`,
-          behavior: {
-            targetDir: kind === "skill" ? "alpha-skills" : "alpha-agents",
-            asset: {
-              sha256: sha(assetBytes),
-              bytes: assetBytes.byteLength,
-              mediaType: "text/markdown",
-              url: "https://example.invalid/extension.md",
+      : kind === "skill"
+        ? {
+            // `#828`:skill 载荷是文件清单。这里仍是**一条** SKILL.md —— 本文件冻结的是
+            // 「单装与 Bundle 走同一个 builder」的 parity,不是多文件本身(那条判据在
+            // package-mixed-bundle.wiring.cases.ts,走真事务、真盘面)。
+            schema: "alpha.host-extension-package.payload.skill.v1",
+            behavior: {
+              targetDir: "alpha-skills",
+              files: [
+                {
+                  path: "SKILL.md",
+                  sha256: sha(assetBytes),
+                  bytes: assetBytes.byteLength,
+                  url: "https://example.invalid/extension/SKILL.md",
+                },
+              ],
             },
-          },
-        }
+          }
+        : {
+            schema: "alpha.host-extension-package.payload.agent.v1",
+            behavior: {
+              targetDir: "alpha-agents",
+              asset: {
+                sha256: sha(assetBytes),
+                bytes: assetBytes.byteLength,
+                mediaType: "text/markdown",
+                url: "https://example.invalid/extension.md",
+              },
+            },
+          }
   const payloadBytes = canonicalBytes(payload)
   const capabilities = kind === "mcp" ? ["alpha.secret-prerequisite.v1"] : []
   return {
@@ -130,6 +148,8 @@ async function captureBuild(kind: "skill" | "agent" | "mcp") {
     }),
     root: () => root,
     userDataPath: userData,
+    // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+    casBaseRoot: () => userData,
     environment: () => "dev",
     installability: { fetchPayload: async () => payloadBytes },
     fetchAsset: async () => assetBytes,

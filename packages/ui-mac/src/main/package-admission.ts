@@ -7,6 +7,7 @@ import { releasePreparedTxResources } from "./ext-config"
 import { evaluateBundleAuthorization, evaluateCapabilityDiff, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
 import { recoveryReceiptInputs } from "./ext-agent-install"
 import { nextDesiredState } from "./ext-install-policy"
+import { promotePayloadToCas } from "./ext-install-planner"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { buildAgentTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
 import { computeGrantDigest, readPackageLedgerStateV1, type UpsertInput } from "./ext-receipt-v2"
@@ -36,6 +37,7 @@ import type { PackageArtifactRemovalV1 } from "./ext-package-uninstall"
 import {
   runExtensionTransaction,
   type TxCommitRecord,
+  type TxFileSpec,
   type TxPlan,
   type TxPlanItem,
   type TxPreparedResourceV1,
@@ -90,10 +92,17 @@ const BINDING_KEYS = new Set([
   "capabilityDigest",
 ])
 
-/** 宿主会**下载**的资产引用。判别键是 `mediaType`,与合同侧的判别联合逐字同构 ——
- *  放宽成 `string` 等于取消唯一挡住「用另一种 mediaType 发一种字节」的那道闸。
- *  ADR-040(`#830`)撤回 `opencode-plugin` 之后合同侧只剩 markdown 一种资产,这里跟着收窄。 */
-type PackageAssetRefV1 = MarkdownAssetRefV1
+/**
+ * 宿主会**下载**的一份字节的引用 —— 取用这一跳只读这三个字段。
+ *
+ * `#828` 之前它 `= MarkdownAssetRefV1`,靠 `mediaType` 判别。现在两种引用共用这条取用路径:
+ * agent 的 `MarkdownAssetRefV1`(仍带 `mediaType: "text/markdown"`,那道闸原封不动留在
+ * `decoder.ts` 的 `decodeAgentPayload` 里)与 skill 的 `SkillAssetFileV1`(带 `path`,无
+ * `mediaType` —— 理由见 `decoder.ts` 里 `SkillAssetFileV1` 的注释)。
+ * **这不是把 agent 的 mediaType 闸放宽**:它从来不在这一层,这一层只负责「按 url 取回、
+ * 按 bytes/sha256 双查」。
+ */
+type PackageAssetRefV1 = { sha256: string; bytes: number; url: string }
 
 type PackageScope = { scope: "global" } | { scope: "project"; projectDir: string }
 type PackageGrants = {
@@ -160,6 +169,14 @@ export type PackageAdmissionDeps = {
   loadVerifiedCatalog: () => Promise<VerifiedCatalogLoad>
   root: () => string
   userDataPath: string
+  /**
+   * `#828`:验证共享 CAS 的基根(生产 = `getAlphaEnvironment().casBaseRoot`)。
+   *
+   * skill 载荷从这一票起走 `promotePayloadToCas` → generation item → `populateFromCas`,
+   * 与 Phase 3 本地导入路径**同一组函数**。必填、无缺省:给一个「猜一个路径」的兜底,
+   * 等于让载荷在一次没人预期的位置落盘。
+   */
+  casBaseRoot: () => string
   environment: () => AppEnvironment
   installability?: PackageInstallabilityDeps
   fetchAsset?: (ref: PackageAssetRefV1) => Promise<Uint8Array>
@@ -185,7 +202,10 @@ type PreparedComponent = {
   key: string
   kind: PackageChildKindV1
   name: string
+  /** agent:那一份 markdown 的字节(`agentMdToEntry` 与 file item 都读它)。 */
   asset?: Buffer
+  /** `#828` skill:已提升进共享 CAS 的整份文件清单(materialize 由 `populateFromCas` 做)。 */
+  assetFiles?: TxFileSpec[]
   agentEntry?: Record<string, unknown>
   itemDigest: string
 }
@@ -543,27 +563,61 @@ async function resolvePreparedPackage(
     // 事务 key 只此一处派生(`packageChildTxKeyV1`)—— 卸载时清授权账用的是同一个函数。
     // 两处各写一遍 ternary,偏差只会在「装得上但卸载后 grants.json 还在」时现身。
     const key = packageChildTxKeyV1(kind, name)
-    const assetRef =
-      entry.payload.schema === "alpha.host-extension-package.payload.skill.v1" ||
+    const fetchAsset = deps.fetchAsset ?? fetchPackageAsset
+    /** 取一份字节并**逐份**双查(长度 + sha256)。任一不符 ⇒ 整包具名拒绝,零副作用。 */
+    const fetchVerified = async (ref: PackageAssetRefV1): Promise<Buffer | undefined> => {
+      const bytes = Buffer.from(await fetchAsset(ref).catch(() => new Uint8Array()))
+      if (bytes.byteLength !== ref.bytes) return undefined
+      if (createHash("sha256").update(bytes).digest("hex") !== ref.sha256) return undefined
+      return bytes
+    }
+
+    // ── agent:一份 markdown,形状与 `#828` 之前逐字相同 ────────────────────────────────
+    const agentRef =
       entry.payload.schema === "alpha.host-extension-package.payload.agent.v1"
         ? entry.payload.behavior.asset
         : undefined
-    const asset = assetRef
-      ? Buffer.from(await (deps.fetchAsset ?? fetchPackageAsset)(assetRef).catch(() => new Uint8Array()))
-      : undefined
-    if (
-      assetRef &&
-      (!asset ||
-        asset.byteLength !== assetRef.bytes ||
-        createHash("sha256").update(asset).digest("hex") !== assetRef.sha256)
-    )
+    const asset = agentRef ? await fetchVerified(agentRef) : undefined
+    if (agentRef && !asset)
       return { ok: false, reason: "package admission: package asset unavailable or failed integrity", package: view }
-    const agentEntry =
-      entry.payload.schema === "alpha.host-extension-package.payload.agent.v1" && asset
-        ? agentMdToEntry(asset.toString("utf8"))
-        : undefined
+    const agentEntry = asset ? agentMdToEntry(asset.toString("utf8")) : undefined
     if (agentEntry && !agentEntry.ok)
       return { ok: false, reason: `package admission: agent payload invalid (${agentEntry.reason})`, package: view }
+
+    // ── `#828` skill:整份文件清单逐份取回 → 提升进验证共享 CAS ─────────────────────────
+    //
+    // CAS 提升不是「顺手换个存法」:`promotePayloadToCas` 的第一遍是本仓路径文法的**唯一所有者**
+    // (路径安全 / 大小写·Unicode 折叠碰撞 / Windows 保留名 / 重复 / bytes 精确),且校验失败时
+    // CAS 零写入。少了它而自己往 staging 写,`../` 这类路径在 `verifyStagedItem` 走目录**之前**
+    // 就已经写到 staging 之外去了 —— 那道结构闸看不见已经逃出去的东西。
+    const skillRefs =
+      entry.payload.schema === "alpha.host-extension-package.payload.skill.v1"
+        ? entry.payload.behavior.files
+        : undefined
+    let assetFiles: TxFileSpec[] | undefined
+    if (skillRefs) {
+      const payloadFiles: Array<{ path: string; data: Buffer }> = []
+      for (const ref of skillRefs) {
+        const bytes = await fetchVerified(ref)
+        if (!bytes)
+          return { ok: false, reason: "package admission: package asset unavailable or failed integrity", package: view }
+        payloadFiles.push({ path: ref.path, data: bytes })
+      }
+      const promoted = promotePayloadToCas(
+        deps.casBaseRoot(),
+        payloadFiles,
+        skillRefs.map((ref) => ({ path: ref.path, sha256: ref.sha256, bytes: ref.bytes })),
+      )
+      if (!promoted.ok)
+        return { ok: false, reason: `package admission: ${promoted.reason}`, package: view }
+      // warning 收集了不往上报就是静默吞掉 —— 这个形态在本仓已栽三次(`#765`/`#771`)。
+      // 这条路上没有把 warning 带回 renderer 的通道,所以至少 loud log,与单装路径同形。
+      if (promoted.warnings.length)
+        console.error(
+          `[req128-828] package skill ${name}: CAS promotion warnings: ${promoted.warnings.join("; ")}`,
+        )
+      assetFiles = promoted.specs
+    }
 
     components.push({
       accepted: entry,
@@ -571,12 +625,24 @@ async function resolvePreparedPackage(
       kind,
       name,
       ...(asset ? { asset } : {}),
+      ...(assetFiles ? { assetFiles } : {}),
       ...(agentEntry?.ok ? { agentEntry: agentEntry.entry } : {}),
       itemDigest: sha256Hex(
         canonicalJson({
           component,
           payload: entry.payload,
-          ...(assetRef ? { asset: { sha256: assetRef.sha256, bytes: assetRef.bytes } } : {}),
+          ...(agentRef ? { asset: { sha256: agentRef.sha256, bytes: agentRef.bytes } } : {}),
+          // `#828`:binding 必须覆盖**每一个**文件。只摘 `SKILL.md` 的摘要,等于换掉一份参考
+          // 资料或一个脚本时 itemDigest 不变 —— 授权屏展示的与实际装下去的就此脱钩。
+          ...(skillRefs
+            ? {
+                assetFiles: skillRefs.map((ref) => ({
+                  path: ref.path,
+                  sha256: ref.sha256,
+                  bytes: ref.bytes,
+                })),
+              }
+            : {}),
         }),
       ),
     })
@@ -710,7 +776,11 @@ async function executePreparedPackage(
     const built = ((): PackageTxBuildV1Result => {
       switch (component.kind) {
         case "skill":
-          return buildSkillTxItems({ ...common, ...(component.asset ? { asset: component.asset } : {}) })
+          return buildSkillTxItems({
+            ...common,
+            ...(component.assetFiles ? { assetFiles: component.assetFiles } : {}),
+            casBaseRoot: deps.casBaseRoot(),
+          })
         case "agent":
           return buildAgentTxItems({
             ...common,

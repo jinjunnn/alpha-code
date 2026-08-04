@@ -24,7 +24,17 @@ export type HostExtensionPackageLimitsV1 = {
   maxHeaderNodes: number
   maxStringBytes: number
   maxCapabilities: number
+  /** `#828`:一个组件的资产**文件条数**上界(skill 载荷的 `behavior.files`)。 */
+  maxComponentAssetFiles: number
   maxComponents: number
+  /**
+   * `#828` 起这是**该组件资产的总字节预算**,不再是「单个 markdown 资产的上限」。
+   *
+   * 名字保持不变是刻意的:改名会同时动两仓的 exact-set 断言、发布端 `HOST_LIMIT_KEYS`、
+   * 以及一份已归档的 Phase 1 验证证据矩阵,而语义变化本身用一条注释就能说清。
+   * 单文件语义因此**一字未变**:一份 5 MiB 的 `SKILL.md` 改前能过、改后照样能过
+   * (总预算 = 单文件上限 ⇒ 只有一条时两者恒等)。
+   */
   maxMarkdownAssetBytes: number
   maxPayloadBytes: number
   maxPayloadDepth: number
@@ -45,6 +55,7 @@ export const HOST_EXTENSION_PACKAGE_LIMITS_V1 = registry.limits
 
 export const HOST_EXTENSION_PACKAGE_LIMIT_KEYS_V1 = [
   "maxCapabilities",
+  "maxComponentAssetFiles",
   "maxComponents",
   "maxEnvelopeBytes",
   "maxHeaderDepth",

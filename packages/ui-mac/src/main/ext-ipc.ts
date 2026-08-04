@@ -362,6 +362,8 @@ export function registerExtIpcHandlers(
     },
     root: alphaGlobalRoot,
     userDataPath,
+    // `#828`:skill 载荷经验证共享 CAS 落 generation —— 与单装/本地导入路径同一个基根。
+    casBaseRoot: () => getAlphaEnvironment().casBaseRoot,
     environment: () => getAlphaEnvironment().environment,
     // `#698`:update 把 child 踢出图时,那个 child 的实物由这条接缝删 —— 与整包卸载**同一份**
     // 实现。接缝缺席时 admission 响亮拒绝该次更新(见 executePreparedPackage),不会留下

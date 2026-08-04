@@ -74,11 +74,46 @@ description: Curated but unsupported here
 Never installed on this build.
 `
 
-const payloadFor = (schema: string, targetDir: string, asset: Uint8Array, url: string) => ({
-  schema,
+/**
+ * `#828`:skill leaf 的**兄弟文件**。
+ *
+ * 两条选择都是刻意的:
+ *   · `reference/guide.md` 带一层子目录 —— 实测语料的相对路径深度上界正是 2;
+ *   · `scripts/run.sh` 是**非 markdown**,而且源端是一个 shell 脚本 —— 语料里 25/345 个
+ *     技能内文件带可执行位(19 个 755、6 个 700)。旧形状结构上表达不了这两者,
+ *     所以拿它们当判据:装完之后它们必须逐字节在盘上,且**不带任何可执行位**。
+ */
+export const SKILL_REFERENCE_MD = `# Reference
+
+Deterministic corpus reference material for the bundle skill.
+`
+
+export const SKILL_RUN_SH = `#!/usr/bin/env bash
+set -euo pipefail
+echo "deterministic corpus helper"
+`
+
+/** 技能载荷的相对路径清单(顺序 = 声明顺序;断言按 path 取,不靠下标)。 */
+export const SKILL_FILE_PATHS = ["SKILL.md", "reference/guide.md", "scripts/run.sh"] as const
+
+const agentPayloadFor = (targetDir: string, asset: Uint8Array, url: string) => ({
+  schema: "alpha.host-extension-package.payload.agent.v1",
   behavior: {
     targetDir,
     asset: { sha256: sha(asset), bytes: asset.byteLength, mediaType: "text/markdown", url },
+  },
+})
+
+const skillPayloadFor = (files: Array<{ path: string; data: Uint8Array }>, base: string) => ({
+  schema: "alpha.host-extension-package.payload.skill.v1",
+  behavior: {
+    targetDir: "alpha-skills",
+    files: files.map((file) => ({
+      path: file.path,
+      sha256: sha(file.data),
+      bytes: file.data.byteLength,
+      url: `${base}/${file.path}`,
+    })),
   },
 })
 
@@ -123,6 +158,8 @@ export type MixedBundleFixture = {
   assetByDigest: Map<string, Uint8Array>
   agentAsset: Uint8Array
   skillAsset: Uint8Array
+  /** `#828`:skill 载荷的**整份**清单(相对路径 → 期望字节)。逐文件比对的真源。 */
+  skillFiles: Array<{ path: string; data: Uint8Array }>
 }
 
 export function mixedBundleFixture(options?: {
@@ -130,28 +167,39 @@ export function mixedBundleFixture(options?: {
   withUnsupportedOptionalLeaf?: boolean
   /** 让 skill 资产的 frontmatter name 与组件名不符 —— 生产 pre-switch probe 会因此判不健康。 */
   breakSkillFrontmatterName?: boolean
+  /**
+   * `#828`:把 skill 载荷退回**单文件**(只有 SKILL.md)。
+   *
+   * 两个用途,方向相反:
+   *   ① 正向 —— 单文件技能仍然装得上(不许为了多文件把单文件弄坏);
+   *   ② 绕过配方 —— 拿它跑「逐文件在盘上」那条断言,**必须当场变红**。
+   */
+  singleFileSkill?: boolean
 }): MixedBundleFixture {
   const withUnsupported = options?.withUnsupportedOptionalLeaf ?? true
   const agentAsset = utf8(AGENT_MD)
   const skillAsset = utf8(
     options?.breakSkillFrontmatterName ? SKILL_MD.replace("name: generic-bundle-skill", "name: not-the-skill") : SKILL_MD,
   )
+  const skillFiles: Array<{ path: string; data: Uint8Array }> = options?.singleFileSkill
+    ? [{ path: "SKILL.md", data: skillAsset }]
+    : [
+        { path: "SKILL.md", data: skillAsset },
+        { path: "reference/guide.md", data: utf8(SKILL_REFERENCE_MD) },
+        { path: "scripts/run.sh", data: utf8(SKILL_RUN_SH) },
+      ]
   const unsupportedAsset = utf8(UNSUPPORTED_MD)
 
-  const agentPayload = payloadFor(
-    "alpha.host-extension-package.payload.agent.v1",
+  const agentPayload = agentPayloadFor(
     "alpha-agents",
     agentAsset,
     "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/AGENT.md",
   )
-  const skillPayload = payloadFor(
-    "alpha.host-extension-package.payload.skill.v1",
-    "alpha-skills",
-    skillAsset,
-    "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/SKILL.md",
+  const skillPayload = skillPayloadFor(
+    skillFiles,
+    "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0",
   )
-  const unsupportedPayload = payloadFor(
-    "alpha.host-extension-package.payload.agent.v1",
+  const unsupportedPayload = agentPayloadFor(
     "alpha-agents",
     unsupportedAsset,
     "https://alphacodeone.com/catalog/assets/agent.generic-bundle-future/1.0.0/AGENT.md",
@@ -196,11 +244,12 @@ export function mixedBundleFixture(options?: {
     ]),
     assetByDigest: new Map([
       [sha(agentAsset), agentAsset],
-      [sha(skillAsset), skillAsset],
+      ...skillFiles.map((file) => [sha(file.data), file.data] as const),
       [sha(unsupportedAsset), unsupportedAsset],
     ]),
     agentAsset,
     skillAsset,
+    skillFiles,
   }
 }
 

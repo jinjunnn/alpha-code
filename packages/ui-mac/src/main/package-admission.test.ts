@@ -157,6 +157,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: { fetchPayload: async () => bytes },
       transaction: async (...args) => {
@@ -197,6 +199,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: { fetchPayload: async () => bytes },
       transaction: async (...args) => {
@@ -224,6 +228,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: { fetchPayload: async () => bytes },
     })
@@ -253,6 +259,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: {
         fetchPayload: async () => {
@@ -379,6 +387,8 @@ describe("package admission", () => {
       },
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: { fetchPayload: async () => activeBytes },
       transaction: async (...args) => {
@@ -524,6 +534,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev" as const,
       installability: { fetchPayload: async () => bytes },
     }
@@ -617,6 +629,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev" as const,
       installability: { fetchPayload: async () => bytes },
     }
@@ -689,6 +703,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev" as const,
       installability: { fetchPayload: async () => bytes },
     }
@@ -775,6 +791,8 @@ describe("package admission", () => {
         }),
         root: () => root,
         userDataPath: userData,
+        // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+        casBaseRoot: () => userData,
         environment: () => "dev",
         installability: { fetchPayload: async () => payloadBytes },
       })
@@ -852,6 +870,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: {
         fetchPayload: async (ref) => {

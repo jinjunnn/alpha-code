@@ -59,9 +59,43 @@ export type MarkdownAssetRefV1 = {
   url: string
 }
 
+/**
+ * `#828`:一个技能载荷里的**一个文件**。
+ *
+ * 形状不是新发明的:它逐字等于本仓既有的多文件内容寻址清单
+ * (`src/renderer/extensions/catalog-types.ts` 的 `remoteAsset.files[]`,由
+ * `remote-catalog.ts` 的 `downloadRemoteAsset` 取用)。签名 package 这条路此前只能表达
+ * **一个** markdown 资产,而真实语料里 40/162 的技能是多文件目录(实测上界 18 个文件、
+ * 总 230,243 字节、单文件 64,768 字节、相对路径深度 2)—— 照旧形状装,这 40 个装完是残件:
+ * 安装成功、账本干净、技能能启用,而它引用的脚本与参考资料一个都不在,且**没有任何东西会红**。
+ *
+ * **没有 `mediaType`**,这是**刻意**的,并且是一次如实登记的取舍:
+ *   · 多文件技能里合法地含 `.py` / `.sh` / `.json`,要保留 `mediaType` 就得让发布端按扩展名
+ *     派生一张类型表 —— 那正是「替第三方写文法」,本仓最贵的返工形态;
+ *   · 旧的 `mediaType: const "text/markdown"` 只是一次**声明值相等比较**,不看任何字节
+ *     (生产者声明 `text/markdown` 就能塞二进制)⇒ 它的真实强度是零;
+ *   · 顶上来的两条判据都**看字节**:下面 `SKILL_MD_PATH` 锚点(恰好一条),以及
+ *     `ext-skill-generations.ts` 的 `skillGenerationProbe` 解析 `SKILL.md` 的 frontmatter。
+ *
+ * **路径安全不在本层判**(如实登记的降级):`path` 的遍历/可移植性/大小写折叠碰撞由
+ * `ext-install-planner.ts` 的 `promotePayloadToCas` 唯一拥有 —— 它是本仓这套文法的单一所有者,
+ * 且第一遍纯校验零写入。在这里再抄一份就是第二个真源。非法路径因此在**任何写盘之前**被拒,
+ * 只是拒绝点在解码之后。
+ */
+export type SkillAssetFileV1 = {
+  /** 相对技能根的 POSIX 路径。文法归 `promotePayloadToCas`,本层只管存在/唯一/锚点。 */
+  path: string
+  sha256: string
+  bytes: number
+  url: string
+}
+
+/** 技能的入口文件。它的位置是合同项而不是巧合:`skillGenerationProbe` 读的就是这一条。 */
+export const SKILL_MD_PATH = "SKILL.md"
+
 export type SkillPayloadV1 = {
   schema: "alpha.host-extension-package.payload.skill.v1"
-  behavior: { targetDir: "alpha-skills" | "global"; asset: MarkdownAssetRefV1 }
+  behavior: { targetDir: "alpha-skills" | "global"; files: SkillAssetFileV1[] }
 }
 
 export type AgentPayloadV1 = {
@@ -185,7 +219,11 @@ const COMPONENT_KEYS = new Set([
 ])
 const PAYLOAD_REF_KEYS = new Set(["sha256", "bytes", "mediaType", "url"])
 const PAYLOAD_KEYS = new Set(["schema", "behavior"])
+/** agent 的 behavior —— `#828` **刻意没动**:Claude 的 agent 就是单个 `.md`。 */
 const MARKDOWN_BEHAVIOR_KEYS = new Set(["targetDir", "asset"])
+/** `#828`:skill 的 behavior 与 agent 分家(载荷是一份**有界文件清单**)。 */
+const SKILL_BEHAVIOR_KEYS = new Set(["targetDir", "files"])
+const SKILL_ASSET_FILE_KEYS = new Set(["path", "sha256", "bytes", "url"])
 const MCP_LOCAL_BEHAVIOR_KEYS = new Set(["command", "environment", "requiredSecrets"])
 const MCP_REMOTE_BEHAVIOR_KEYS = new Set(["url", "headersTemplate", "requiredSecrets", "auth"])
 const MCP_REMOTE_AUTH_KINDS = ["alpha-connection", "mcp-oauth"] as const
@@ -713,43 +751,113 @@ function decodePayloadRef(
     return { sha256, bytes: value.bytes, mediaType, url }
 }
 
+/**
+ * `#828`:skill 的载荷是一份**有界文件清单**,不再是一个 markdown 资产。
+ *
+ * 本层负责、且只负责下面四件**结构**事实(路径文法归 `promotePayloadToCas`,见
+ * `SkillAssetFileV1` 的注释):
+ *   ① 条数 1..`maxComponentAssetFiles`;
+ *   ② `path` 两两不同 —— 重复路径会让「装完盘上是哪份字节」取决于写入顺序;
+ *   ③ **恰好一条** `path === "SKILL.md"` —— 这条此前是 `buildSkillTxItems` 里那个硬编码
+ *      **偶然**保证的;把它写成合同项,于是缺它时在**取任何字节之前**就被拒,而不是
+ *      下载完、提升完 CAS、materialize 完之后才被 pre-switch probe 判不健康;
+ *   ④ `sum(bytes) ≤ maxMarkdownAssetBytes` —— 该键自 `#828` 起是**组件资产总预算**
+ *      (见 `registry.ts` 的字段注释)。只有一条文件时它与旧的单文件上限恒等 ⇒ 单文件语义未变。
+ */
 function decodeSkillPayload(value: unknown): PackageProfilePayloadDecodeV1 {
-  return decodeMarkdownPayload(value, "skill", ["alpha-skills", "global"])
-}
-
-function decodeAgentPayload(value: unknown): PackageProfilePayloadDecodeV1 {
-  return decodeMarkdownPayload(value, "agent", ["alpha-agents", "global"])
-}
-
-function decodeMarkdownPayload(
-  value: unknown,
-  profileId: "skill" | "agent",
-  targets: string[],
-): PackageProfilePayloadDecodeV1 {
   const errors: string[] = []
   const behavior = decodePayloadRoot(
     value,
-    `alpha.host-extension-package.payload.${profileId}.v1`,
+    "alpha.host-extension-package.payload.skill.v1",
+    SKILL_BEHAVIOR_KEYS,
+    errors,
+  )
+  if (!behavior) return { ok: false, errors }
+  const targetDir = decodeString(behavior.targetDir, "payload.behavior.targetDir", errors, { max: 32 })
+  if (targetDir && !["alpha-skills", "global"].includes(targetDir))
+    errors.push("payload.behavior.targetDir: expected one of [alpha-skills, global]")
+  const files = decodeSkillAssetFiles(behavior.files, "payload.behavior.files", errors)
+  if (errors.length || !targetDir || !files) return { ok: false, errors }
+  return {
+    ok: true,
+    payload: {
+      schema: "alpha.host-extension-package.payload.skill.v1",
+      behavior: { targetDir: targetDir as "alpha-skills" | "global", files },
+    },
+  }
+}
+
+function decodeSkillAssetFiles(
+  value: unknown,
+  at: string,
+  errors: string[],
+): SkillAssetFileV1[] | undefined {
+  const max = HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponentAssetFiles
+  if (!Array.isArray(value)) {
+    errors.push(`${at}: required array`)
+    return
+  }
+  if (value.length < 1) {
+    errors.push(`${at}: required at least 1 file`)
+    return
+  }
+  if (value.length > max) {
+    errors.push(`${at}: ${value.length} files exceeds the host limit of ${max}`)
+    return
+  }
+  const files: SkillAssetFileV1[] = []
+  const seen = new Set<string>()
+  let total = 0
+  value.forEach((entry, index) => {
+    const where = `${at}[${index}]`
+    if (!isObject(entry)) {
+      errors.push(`${where}: required object`)
+      return
+    }
+    rejectUnknownKeys(entry, SKILL_ASSET_FILE_KEYS, where, errors)
+    const path = decodeString(entry.path, `${where}.path`, errors, { max: 1024 })
+    const sha256 = decodeString(entry.sha256, `${where}.sha256`, errors, { pattern: HEX64_RE })
+    const perFileMax = HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes
+    const bytesOk =
+      typeof entry.bytes === "number" &&
+      Number.isInteger(entry.bytes) &&
+      entry.bytes >= 1 &&
+      entry.bytes <= perFileMax
+    if (!bytesOk) errors.push(`${where}.bytes: required integer in 1..${perFileMax}`)
+    const url = decodeHttpsUrl(entry.url, `${where}.url`, errors)
+    if (path !== undefined) {
+      if (seen.has(path)) errors.push(`${where}.path: duplicate path "${path}" — refused`)
+      seen.add(path)
+    }
+    if (bytesOk) total += entry.bytes as number
+    if (path !== undefined && sha256 && bytesOk && url)
+      files.push({ path, sha256, bytes: entry.bytes as number, url })
+  })
+  const budget = HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes
+  if (total > budget) errors.push(`${at}: declared bytes ${total} exceed the component budget ${budget}`)
+  const entries = files.filter((file) => file.path === SKILL_MD_PATH).length
+  if (entries !== 1) errors.push(`${at}: exactly one file must be "${SKILL_MD_PATH}" (found ${entries})`)
+  if (errors.length) return
+  return files
+}
+
+function decodeAgentPayload(value: unknown): PackageProfilePayloadDecodeV1 {
+  const errors: string[] = []
+  const behavior = decodePayloadRoot(
+    value,
+    "alpha.host-extension-package.payload.agent.v1",
     MARKDOWN_BEHAVIOR_KEYS,
     errors,
   )
   if (!behavior) return { ok: false, errors }
   const targetDir = decodeString(behavior.targetDir, "payload.behavior.targetDir", errors, { max: 32 })
-  if (targetDir && !targets.includes(targetDir))
-    errors.push(`payload.behavior.targetDir: expected one of [${targets.join(", ")}]`)
+  if (targetDir && !["alpha-agents", "global"].includes(targetDir))
+    errors.push("payload.behavior.targetDir: expected one of [alpha-agents, global]")
   const asset = decodePayloadRef(behavior.asset, "payload.behavior.asset", errors, {
     maxBytes: HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes,
     mediaType: "text/markdown",
   })
   if (errors.length || !targetDir || !asset) return { ok: false, errors }
-  if (profileId === "skill")
-    return {
-      ok: true,
-      payload: {
-        schema: "alpha.host-extension-package.payload.skill.v1",
-        behavior: { targetDir: targetDir as "alpha-skills" | "global", asset: asset as MarkdownAssetRefV1 },
-      },
-    }
   return {
     ok: true,
     payload: {

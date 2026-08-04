@@ -237,12 +237,14 @@ const negativeCases: NegativeCase[] = [
     },
   },
   {
+    // `#828`:两条结构界的挂点从 `behavior.asset` 移到 `behavior.files[0]`。挂在 agent 上会让
+    // 它们与「skill 载荷形状」脱钩 —— 而 skill 才是这一票动过的那一半。
     name: "payload depth limit",
     source: "skill-v1",
     mode: "payload",
-    error: "depth 9 exceeds 8",
+    error: "payload.behavior.files[0].extra.a.b.c.d: depth 9 exceeds 8",
     mutatePayload: (payload) => {
-      ;(behaviorOf(payload).asset as Record<string, unknown>).extra = {
+      ;(skillFilesOf(payload)[0] as Record<string, unknown>).extra = {
         a: { b: { c: { d: { e: true } } } },
       }
     },
@@ -253,7 +255,7 @@ const negativeCases: NegativeCase[] = [
     mode: "payload",
     error: "node limit 512 exceeded",
     mutatePayload: (payload) => {
-      ;(behaviorOf(payload).asset as Record<string, unknown>).extra = Array.from(
+      ;(skillFilesOf(payload)[0] as Record<string, unknown>).extra = Array.from(
         { length: 520 },
         (_, index) => index,
       )
@@ -710,6 +712,7 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     const cases = corpus.cases.filter((item) => item.expect === "accepted")
     expect(cases.map((item) => item.name)).toEqual([
       "skill-v1",
+      "skill-multifile-v1",
       "agent-v1",
       "mcp-local-v1",
       "mcp-remote-v1",
@@ -1027,6 +1030,96 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
     expect(calls).toEqual({ fetch: 1, decoder: 1, secret: 0, planner: 0 })
   })
 
+  // ── `#828` skill 载荷形状:每一条都问过「一个错误实现能不能满足它?」 ──────────────────
+  describe("skill payload file list", () => {
+    /** 直接跑**生产解码器**;返回它的错误串(或空串)。不自建等价链。 */
+    const decodeSkill = (files: unknown): string => {
+      const payload = { schema: "alpha.host-extension-package.payload.skill.v1", behavior: { targetDir: "alpha-skills", files } }
+      const result = decodePackageProfilePayloadV1("skill", jsonBytes(payload), [])
+      return result.ok ? "" : result.errors.join("\n")
+    }
+    const fileAt = (path: string, bytes = 12) => ({
+      path,
+      sha256: "1".repeat(64),
+      bytes,
+      url: `https://example.invalid/assets/${encodeURI(path)}`,
+    })
+    /** N 条合法条目,第一条恒为 SKILL.md(锚点),其余路径两两不同。 */
+    const nFiles = (n: number) => [
+      fileAt("SKILL.md"),
+      ...Array.from({ length: n - 1 }, (_, index) => fileAt(`reference/f${String(index).padStart(3, "0")}.md`)),
+    ]
+
+    test("多文件技能装得上,单文件技能仍然装得上", () => {
+      expect(decodeSkill([fileAt("SKILL.md")])).toBe("")
+      expect(decodeSkill([fileAt("SKILL.md"), fileAt("reference/guide.md"), fileAt("scripts/run.py")])).toBe("")
+      // 实测语料上界 18 —— 这个形状必须过,否则这一票没解决它要解决的问题。
+      expect(decodeSkill(nFiles(18))).toBe("")
+    })
+
+    test("条数界:64 过 / 65 拒,且 64 时先咬的不是节点界", () => {
+      // 这条用例存在的全部理由:若 maxPayloadNodes 在 64 之前就咬,那条条数界**从来没有被
+      // 执行过** —— 上界闸变成一句从不生效的散文(REQ-128 Phase 3 已实证过这个形态)。
+      expect(decodeSkill(nFiles(64))).toBe("")
+      const over = decodeSkill(nFiles(65))
+      expect(over).toContain("65 files exceeds the host limit of 64")
+      // 65 被拒的**原因**必须是条数,不是顺带撞上的节点/字节界。
+      expect(over).not.toContain("node limit")
+      expect(over).not.toContain("component budget")
+    })
+
+    test("恰好一条 SKILL.md:零条拒、两条拒", () => {
+      expect(decodeSkill([fileAt("reference/guide.md")])).toContain('exactly one file must be "SKILL.md" (found 0)')
+      // 两条同名会先撞重复路径闸,所以用大小写不同的第二条?不行 —— 那是**路径文法**,
+      // 归 promotePayloadToCas。这里构造的是「零条」这一支,以及下面的重复路径。
+      expect(decodeSkill([fileAt("skill.md"), fileAt("SKILL.MD")])).toContain('exactly one file must be "SKILL.md" (found 0)')
+    })
+
+    test("重复路径被拒 —— 否则盘上是哪份字节取决于写入顺序", () => {
+      expect(decodeSkill([fileAt("SKILL.md"), fileAt("reference/guide.md"), fileAt("reference/guide.md")])).toContain(
+        'duplicate path "reference/guide.md"',
+      )
+    })
+
+    test("总预算:sum(bytes) 超 maxMarkdownAssetBytes 即拒(单文件语义不变)", () => {
+      const budget = HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes
+      // 单文件恰好用满预算 —— `#828` 之前能过,之后也必须能过。
+      expect(decodeSkill([fileAt("SKILL.md", budget)])).toBe("")
+      // 两条各占一半 + 1 字节 ⇒ 逐条都合法,合起来越界。只断言逐条上界的实现满足不了这条。
+      const half = Math.floor(budget / 2)
+      expect(decodeSkill([fileAt("SKILL.md", half + 1), fileAt("reference/guide.md", half + 1)])).toContain(
+        `exceed the component budget ${budget}`,
+      )
+    })
+
+    test("条目形状:未知键、缺键、非 https 一律拒", () => {
+      expect(decodeSkill([{ ...fileAt("SKILL.md"), mediaType: "text/markdown" }])).toContain('unknown key "mediaType"')
+      const { sha256: _dropped, ...missing } = fileAt("SKILL.md")
+      expect(decodeSkill([missing])).toContain("sha256")
+      expect(decodeSkill([{ ...fileAt("SKILL.md"), url: "http://example.invalid/SKILL.md" }])).toContain("url")
+      expect(decodeSkill([])).toContain("required at least 1 file")
+      expect(decodeSkill({ "0": fileAt("SKILL.md") })).toContain("required array")
+    })
+
+    test("agent 的单资产形状一字未变(本票不碰它)", () => {
+      const agent = caseNamed("agent-v1")
+      const entry = agent.components.find((candidate) => candidate.id === agent.envelope.root)!
+      const behavior = behaviorOf(entry.payload!)
+      expect(Object.keys(behavior).sort()).toEqual(["asset", "targetDir"])
+      expect((behavior.asset as Record<string, unknown>).mediaType).toBe("text/markdown")
+      expect(decodePackageProfilePayloadV1("agent", jsonBytes(entry.payload), []).ok).toBe(true)
+      // agent 载荷里出现 skill 的 files ⇒ 拒(两条路真的分家了,不是共用一个宽解码器)。
+      const drifted = { ...(entry.payload as Record<string, unknown>), behavior: { targetDir: "alpha-agents", files: [fileAt("SKILL.md")] } }
+      expect(decodePackageProfilePayloadV1("agent", jsonBytes(drifted), []).ok).toBe(false)
+      // 反向同理:skill 载荷里出现 agent 的 asset ⇒ 拒。
+      const skillWithAsset = {
+        schema: "alpha.host-extension-package.payload.skill.v1",
+        behavior: { targetDir: "alpha-skills", asset: { sha256: "1".repeat(64), bytes: 12, mediaType: "text/markdown", url: "https://example.invalid/a.md" } },
+      }
+      expect(decodePackageProfilePayloadV1("skill", jsonBytes(skillWithAsset), []).ok).toBe(false)
+    })
+  })
+
   test("unknown envelope version, inline payload, and bad package union fail closed", () => {
     const unknownEnvelope = caseNamed("skill-v1").envelope
     unknownEnvelope.schema = "alpha.host-extension-package.v2"
@@ -1098,6 +1191,11 @@ function payloadRefOf(envelope: Record<string, unknown>): Record<string, unknown
 
 function behaviorOf(payload: Record<string, unknown>): Record<string, unknown> {
   return payload.behavior as Record<string, unknown>
+}
+
+/** `#828`:skill 载荷的文件清单(agent 仍是单个 `behavior.asset`,两者刻意不共用取法)。 */
+function skillFilesOf(payload: Record<string, unknown>): Array<Record<string, unknown>> {
+  return behaviorOf(payload).files as Array<Record<string, unknown>>
 }
 
 function errorsOf(result: ReturnType<typeof decodePackageEnvelopeHeaderV1>): string {
