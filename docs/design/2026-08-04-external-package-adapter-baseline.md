@@ -43,7 +43,7 @@ review_after: 2026-11-04
 | --- | --- |
 | **扩展安装唯一形态是 Bundle**;任何安装路径不得写入引擎 `plugin[]` | ADR-040 决策二、三 |
 | provider 语义映射走 **B 通往 A** —— 适配器抽成纯库、发布端产物化、alpha-code vendored,本地导入跑同一份 | ADR-040 后果第 3 条 |
-| **`hooks` 后续会支持**;ADR-040 定的前置「引擎事件面勘破」**已完成**(引擎侧 + 语料侧),剩下的是引擎缺口与 hooks profile/runner,在它们落地前 hooks 实现票不得升 Ready | ADR-040 被否决方案 C 补充裁决 + [事件面勘破](../architecture/engine-command-and-event-surface.md) §5.2 |
+| **`hooks` 后续会支持**;ADR-040 定的前置「引擎事件面勘破」**已完成**(引擎侧 + 语料侧),该准入门就此满足 —— 本期仍阻断 hooks,是因为引擎缺口与 hooks profile/runner **属于后续范围**,不是因为还有未满足的门 | ADR-040 被否决方案 C 补充裁决 + [事件面勘破](../architecture/engine-command-and-event-surface.md) §5.2 |
 
 三份已落地的勘破,本稿引用不复述:
 [组件规模与口径](../architecture/claude-plugin-corpus-component-scale.md)、
