@@ -1,12 +1,41 @@
 ---
 title: REQ-128 Phase 4 方案基线：Catalog 托管的 OpenCode Plugin（单包窄竖线）
 kind: design
-status: draft
+status: superseded
 owners:
   - alpha-code extension maintainers
 last_reviewed: 2026-08-03
 review_after: 2026-11-03
 ---
+
+> # ⛔ 本稿整体作废，不得据此开工
+>
+> **2026-08-03 owner 裁决**：[`ADR-040 扩展安装唯一形态是 Bundle`](../../.claude/rules/adrs/ADR-040-extension-package-taxonomy.md)
+> 否决了本稿的**题目本身** —— 不是某几条结论过期，是「Catalog 托管的 OpenCode Plugin」这条路
+> 被整条封死。ADR-040「被否决的方案 C」就是本稿。
+>
+> **裁决的实质**：不接受第三方代码在**引擎进程内**、以**引擎权限**、经**一个我们不拥有的加载器**运行。
+> 因此任何扩展安装都不得写入引擎的 `plugin[]`。外部插件（Claude Code / OpenAI Codex）的正确落点是
+> **Bundle + 发布端适配器**。
+>
+> **已执行的回滚**：
+>
+> | 层 | 动作 | 落地 |
+> | --- | --- | --- |
+> | 行为层 | 关掉七条写 `plugin[]` 的加法路径，咽喉改成「加元素一律拒」 | `alpha-code#825`（PR #831） |
+> | 合同层 | 摘掉 `opencode-plugin` profile 与两个 host capability，profile 集合回到四个 | PR #833 → `alpha-code@c01130fa` |
+> | 跨仓 pin | alpha-web 升 host contract pin 到 `c01130fa` | `alpha-web` PR #141 |
+>
+> **接替本稿的是什么**：发布端适配器 `alpha-web#96`（OpenAI/Codex）/ `alpha-web#98`（Claude Code），
+> 它们把外部包适配成 `AlphaPackageDeclarationV1` + `CompatibilityReport`，编译出来就是多组件信封 = Bundle。
+> 动笔前的硬前置是三张地基票：`alpha-code#826`（先补语料再定界）/ `#827`（组件上限）/ `#828`（skill 多文件）。
+>
+> **`hooks` 不在封死范围内**（owner 补充裁决）：封死的是「引擎进程内、引擎权限、上游加载器」这一种形态；
+> hooks 跑在 Alpha 自己起的子进程里，权限由我们定，将来会支持。前置是一次引擎事件面勘破，见 ADR-040。
+>
+> **本稿保留的唯一用途**：它记录了 2026-08-03 那次相位在 `alpha-code@10daf61b` / `alpha-web@a06e642`
+> 上实读出的地面事实（尤其 §3 对旧票断言的逐条证伪，以及引擎存在**第二个插件加载器**
+> `ConfigExternalPlugin`、上游 V1 ABI 无 init/无 cancel 这两条）。**只当史料读，不当方案读。**
 
 > **勘破基准**：`alpha-code@10daf61b`（只读 worktree `.worktrees/p4-baseline`，分支 `docs/req128-p4-baseline`）
 > / `alpha-web@a06e642`。本稿**所有带 `file:line` 的断言都在这两棵树上实读**，凡未实读的一律写
