@@ -6,10 +6,18 @@
  * **夹具复制进仓、不依赖本机路径** —— 否则那道闸只在写它的人的机器上是真的。
  *
  * 导出规则(每一条都为了让判定面**逐字保真**,同时不把第三方内容整个搬进仓):
- *   · `SKILL.md` 与 `.claude-plugin/plugin.json` —— **逐字保留**。它们是解析器与引用扫描
- *     真正读的输入;换成手写复刻就是「替别人写文法」,判定面立刻变成自证。
+ *   · `SKILL.md`、`.claude-plugin/plugin.json` 与 `.mcp.json` —— **逐字保留**。它们是解析器、
+ *     引用扫描与**规模测量**真正读的输入;换成手写复刻就是「替别人写文法」,判定面立刻变成自证。
  *   · 其余文件 —— **占位**,只保留 `size` 与 `mode`。判定只用到它们的**存在性、名字、
  *     可执行位与体积**(引用 resolve / exec 位 / 10MB 帽),用不到内容。
+ *
+ * `#826`:`.mcp.json` 原先落在**占位**那一档,于是这份语料在结构上**表示不了**「一份
+ * `.mcp.json` 声明了几个 server」—— 而 ADR-040 下每个 server 是 Bundle 里的一个独立组件。
+ * 拿这份语料算出来的组件规模因此只能是下界,再拿那个下界去定信封上限,定出来的界本身就是错的。
+ * 这是本仓记录在案的「观测手段自己有盲区」,只是这次盲区在**语料生成器**里。
+ * 实读收获(只有留下字节才看得见):22 份 `.mcp.json` = 9 份带 `mcpServers` 包裹层
+ * + **12 份没有包裹层**(server 直接摆在顶层)+ **1 份根本不是合法 JSON**;
+ * 9 份带包裹层的里还有 2 份是空的 `{"mcpServers":{}}`。合计声明 19 个 server。
  *   · `.git` / `node_modules` / `__pycache__` —— 不导出(collector 与独立扫描都跳过;
  *     真实语料里这三者在技能目录内 0 命中,R2-a 的夹具是合成的)。
  *
@@ -26,7 +34,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-const VERBATIM = new Set(["SKILL.md", "plugin.json"])
+const VERBATIM = new Set(["SKILL.md", "plugin.json", ".mcp.json"])
 const SKIP_DIRS = new Set([".git", "node_modules", "__pycache__"])
 
 type Entry = { path: string; mode: number } & ({ text: string } | { size: number })
@@ -56,8 +64,18 @@ function main(): void {
       if (!dirent.isFile()) continue
       const st = fs.lstatSync(abs)
       const mode = st.mode & 0o777
-      if (VERBATIM.has(dirent.name)) entries.push({ path: rel, mode, text: fs.readFileSync(abs, "utf8") })
-      else entries.push({ path: rel, mode, size: st.size })
+      if (VERBATIM.has(dirent.name)) {
+        // 「逐字保留」必须是**真的**,不是名义上的:`readFileSync(..., "utf8")` 对非法 UTF-8
+        // 会静默塞 U+FFFD,于是夹具里躺着一份**看起来像原文**的赝品。往返比一次字节,
+        // 不等就当场停 —— 让这份语料悄悄失真,正是本文件要修的那类缺陷。
+        const raw = fs.readFileSync(abs)
+        const text = raw.toString("utf8")
+        if (!Buffer.from(text, "utf8").equals(raw)) {
+          console.error(`逐字保留失真(非 UTF-8 字节):${rel}`)
+          process.exit(1)
+        }
+        entries.push({ path: rel, mode, text })
+      } else entries.push({ path: rel, mode, size: st.size })
     }
   }
   for (const root of roots) walk(path.join(corpusRoot, root), root)
@@ -66,7 +84,7 @@ function main(): void {
     schema: "claude-plugin-corpus-fixture/v1",
     source: "~/.claude/plugins/marketplaces (excluding *.bak)",
     note:
-      "SKILL.md 与 plugin.json 逐字保留;其余文件只留 size/mode 占位(判定只用到存在性/名字/可执行位/体积)。" +
+      "SKILL.md、plugin.json 与 .mcp.json 逐字保留;其余文件只留 size/mode 占位(判定只用到存在性/名字/可执行位/体积)。" +
       "由 packages/ui-mac/scripts/gen-claude-plugin-corpus-fixture.ts 生成,不要手改。",
     roots,
     entries,

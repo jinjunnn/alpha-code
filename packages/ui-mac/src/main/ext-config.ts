@@ -410,9 +410,24 @@ export function writeConfigLeafEditsUnlocked(
   return writeConfigTextAtomic(target, current, result)
 }
 
-function writeConfigTextAtomic(target: string, before: string, result: string): ConfigResult {
-  // ADR-040 咽喉:本函数是 ext-config 全部配置写盘的唯一原子提交点(writeKey* 与 dangling 清扫都
-  // 收在这里),所以「往 plugin[] 加元素一律拒」落在这一行 —— 新增的写入调用点不需要登记就已经被挡住。
+/**
+ * 引擎 config 的**整文本原子提交**(挂咽喉的那一个)。`before` = 写之前盘上的 live 文本
+ * (文件缺席传 `""`/`"{}"`)。
+ *
+ * 导出是因为 `#832`:boot 期 reconcile 曾经自己 `writeFileSync(tmp)+rename` 写整个 `alpha.jsonc`,
+ * 于是它写什么都不过咽喉 —— 那是 ADR-040 记录在案的最后一个结构性绕开口。现在它调本函数。
+ *
+ * **不要把这句话读成「只剩这一个 config 写盘点」**(实读枚举过,那是假的)。不过本咽喉的还有四条,
+ * 各自靠**另一道**闸:`applyBuiltinPolicyEditsUnlocked`(本文件,自己的 tmp+rename)靠
+ * `builtinPolicyPathAllowed` 具名路径白名单;`alpha-config-injection` 只在真源缺席时 seed `{$schema}`;
+ * `alpha-migrate` 的 legacy 臂只做减法;**`ecosystem-import.ts` 的 `registerProjectSkillsPath`**
+ * 整文件写项目级 `<proj>/.alpha/alpha.jsonc`,而且**它自己没有任何白名单** —— 挡住 `plugin` 的是
+ * 另一个包里的 `mergeProjectConfig`(与同族的 `packages/ext/src/register.ts` 类型白名单)。
+ * 完整一栏与实测在 `engine-plugin-seal.ts` 抬头,改这一族之前先读那里。
+ */
+export function writeConfigTextAtomic(target: string, before: string, result: string): ConfigResult {
+  // ADR-040 咽喉:凡是「整份文本换一份」的写都收在这里(writeKey* / dangling 清扫 / boot reconcile),
+  // 所以「往 plugin[] 加元素一律拒」落在这一行 —— 这几条路上新增的写入调用点不需要登记就已经被挡住。
   const sealed = sealEnginePluginAdditions(target, before, result)
   if (!sealed.ok) return sealed
   const bak = `${target}.bak`

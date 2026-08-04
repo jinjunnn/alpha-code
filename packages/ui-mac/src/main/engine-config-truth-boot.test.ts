@@ -97,6 +97,57 @@ describe("reconcile — migration + skills.paths", () => {
   })
 })
 
+// ── ADR-040 `#832`:legacy 的 plugin[] 不再并进真源 ────────────────────────────────────────────
+// 断言成对写:「真源既有的一条都不能少」与「legacy 独有的一条都不能进来」是两件事,
+// 而且都不能拿「整次 reconcile 干脆不写了」来满足 —— 所以每格都同时钉住「该迁的确实迁了」。
+describe("reconcile — ADR-040 legacy plugin[] 不并入", () => {
+  const seedTruth = (obj: unknown) => fs.writeFileSync(path.join(alphaTmp, "alpha.jsonc"), JSON.stringify(obj, null, 2))
+
+  test("legacy 带一个真源没有的 plugin:不并入,而 mcp / skills.paths 照常落盘", () => {
+    seedTruth({ $schema: "https://opencode.ai/config.json", plugin: ["/already/installed/notify.js"] })
+    writeLegacy({ mcp: { markitdown: { type: "local" } }, plugin: ["unregistered-plugin@9.9.9"] })
+    writeLedger([mcpReceipt("markitdown")])
+
+    const r = reconcileEngineConfigTruth({ log: () => {}, warn: () => {} })
+    expect(r.skipped).toBe(false)
+    if (!r.skipped) {
+      expect(r.migrated).toBe(true) // 写确实发生了(不是拿「什么都没写」冒充「没有新增」)
+      expect(r.added).not.toContain("plugin[]")
+      expect(r.bailedOut).toBeUndefined()
+    }
+    const t = readTruth()
+    expect(t.plugin).toEqual(["/already/installed/notify.js"]) // 逐元素:既有的还在、legacy 的没进来
+    expect(t.mcp.markitdown).toEqual({ type: "local" }) // 同一次写里,该迁的迁了
+    expect((t.skills as any).paths).toContain(path.join(alphaTmp, "skills"))
+  })
+
+  test("真源根本没有 plugin 键:legacy 的 plugin[] 不会把这个键造出来", () => {
+    writeLegacy({ plugin: ["unregistered-plugin@9.9.9"], mcp: { demo: { type: "local" } } })
+    writeLedger([mcpReceipt("demo")])
+    reconcileEngineConfigTruth({ log: () => {}, warn: () => {} })
+    const t = readTruth()
+    expect(t.plugin).toBeUndefined()
+    expect(t.mcp.demo).toEqual({ type: "local" })
+  })
+
+  test("legacy 与真源唯一的差异就是 plugin ⇒ 本次一个字节都不写(比 mtime+inode,不比内容)", () => {
+    // 幂等重写会让「内容逐字节不变」照样成立 —— 判据必须带文件身份与时间。
+    writeLegacy({ plugin: ["unregistered-plugin@9.9.9"] })
+    reconcileEngineConfigTruth({ log: () => {}, warn: () => {} }) // 第一次:注入 skills.paths,写盘
+    const truthPath = path.join(alphaTmp, "alpha.jsonc")
+    const before = { text: fs.readFileSync(truthPath, "utf8"), stat: fs.statSync(truthPath) }
+    fs.mkdirSync(homeTmp, { recursive: true }) // 上一轮 T3 清理把 ~/.opencode 整个删了
+    writeLegacy({ plugin: ["unregistered-plugin@9.9.9"] }) // 重新摆上,再来一次
+    const second = reconcileEngineConfigTruth({ log: () => {}, warn: () => {} })
+    expect(second.skipped).toBe(false)
+    if (!second.skipped) expect(second.migrated).toBe(false)
+    const after = { text: fs.readFileSync(truthPath, "utf8"), stat: fs.statSync(truthPath) }
+    expect(after.text).toBe(before.text)
+    expect(after.stat.ino).toBe(before.stat.ino) // 原子写会换 inode
+    expect(after.stat.mtimeMs).toBe(before.stat.mtimeMs)
+  })
+})
+
 describe("reconcile — ownership bail-out", () => {
   test("legacy stray key (user-authored) → not migrated, loud, legacy kept", () => {
     writeLegacy({ mcp: {}, keybinds: { leader: "ctrl+x" } })
