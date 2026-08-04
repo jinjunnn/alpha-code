@@ -43,7 +43,7 @@ review_after: 2026-11-04
 | --- | --- |
 | **扩展安装唯一形态是 Bundle**;任何安装路径不得写入引擎 `plugin[]` | ADR-040 决策二、三 |
 | provider 语义映射走 **B 通往 A** —— 适配器抽成纯库、发布端产物化、alpha-code vendored,本地导入跑同一份 | ADR-040 后果第 3 条 |
-| **`hooks` 后续会支持**,前置是一次引擎事件面勘破;在它落地前 hooks 实现票不得升 Ready | ADR-040 被否决方案 C 的补充裁决 |
+| **`hooks` 后续会支持**;ADR-040 定的前置「引擎事件面勘破」**已完成**(引擎侧 + 语料侧),剩下的是引擎缺口与 hooks profile/runner,在它们落地前 hooks 实现票不得升 Ready | ADR-040 被否决方案 C 补充裁决 + [事件面勘破](../architecture/engine-command-and-event-surface.md) §5.2 |
 
 三份已落地的勘破,本稿引用不复述:
 [组件规模与口径](../architecture/claude-plugin-corpus-component-scale.md)、
@@ -132,7 +132,7 @@ AdapterResultV1 {
 | `.mcp.json` 里含 `command`(+`args`)的 server | → `mcp-local`,**逐 server 一个组件**;`args` 必须一起带 |
 | `.mcp.json` 里含 `url`(+`type`/`headers`)的 server | → `mcp-remote`;Authorization → `headersTemplate + requiredSecrets` |
 | `commands/**` | **error** —— 宿主三条路都没有安装腿(`ac#840`) |
-| `hooks/**` | **error** —— 引擎事件面未勘破(ADR-040) |
+| `hooks/**` | **error** —— 宿主没有 hooks profile/runner;引擎还缺真正的 `Stop`、真正的 `SessionEnd`、覆盖失败结果的 PostTool 契约与结构化否决通道([勘破](../architecture/engine-command-and-event-surface.md) §5.2) |
 | 文件表里任何 `executable: true` | **error** —— 执行位结构上穿不过安装链(`source 755 → cas 644 → materialized 644`) |
 | `${CLAUDE_PLUGIN_ROOT}` / `${CLAUDE_PROJECT_DIR}` 等模板引用 | **error** —— 不求值模板 |
 | 非法 JSON 的 `.mcp.json` | **error** + 具名 malformed;**不能当「不存在」,更不能修补后猜** |
@@ -140,7 +140,8 @@ AdapterResultV1 {
 | 其余未识别的目录 / 键 | **error**(未知安装语义),或 `warning`(证明得了不携带安装语义) |
 
 ⚠️ **诚实后果**:第一版能整包通过的插件是少数 —— 单是 `commands`(22/62 插件)、
-`hooks`(12/62 有目录)、可执行位(9 个技能 / 25 个文件)三格各自都会整包阻断。
+`hooks`(**12/62 有目录**,本期按目录阻断;其中**真正声明了 hook 的是 7 个**,谈能力影响面时用 7)、
+可执行位(9 个技能 / 25 个文件)三格各自都会整包阻断。
 这是刻意的 fail-closed 起点,放宽走后续票,不靠部分安装换覆盖率。
 
 ⚠️ **「形状对得上」不等于可映射** —— 实测三条全是反例,**逐字段冻结表必须在实现开工前落定**:
@@ -224,8 +225,11 @@ bare 顶层 map → 逐 server 判形状。**冻结表不得复用 Alpha 自有�
 
 - **`ac#848`(语料补齐 agent 真字节)只阻塞 agent 映射** —— 没有真字节就写不出 agent 的冻结表。
   它**不阻塞** adapter 骨架、skill 与 MCP 映射,也不阻塞第 3 跳的本地消费。
-- **`ac#840`(command 安装腿)与引擎事件面勘破(hooks)是后续支持,不是第一版前置** ——
+- **`ac#840`(command 安装腿)与 hooks profile/runner 是后续支持,不是第一版前置** ——
   落地前 `commands` / `hooks` 恒 error。
+  ⚠️ ADR-040 要求的那次**事件面勘破已落地**([文档](../architecture/engine-command-and-event-surface.md),
+  引擎侧 + 语料侧);hooks 剩下的是**引擎三缺口**(真 `Stop` / 真 `SessionEnd` / 覆盖失败的 PostTool)
+  **+ 结构化否决通道 + profile/runner**,外加 Claude hook 契约的两处未验证(退出码语义、stdin 完整字段表)。
 - **`ac#843`(可执行位告知)是放宽「可执行位一律 error」的前置,不是本期前置。**
 
 ## 8. 退出门
