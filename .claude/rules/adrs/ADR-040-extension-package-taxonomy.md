@@ -116,6 +116,9 @@ Alpha 对它的唯一合法用途是**注入 Alpha 自己的引擎侧接缝**（
 provider 的目录约定由 provider 定义、随时会变；正确做法是在发布端一次性适配成我们自己的声明。
 
 **C. `opencode-plugin` profile（REQ-128 Phase 4 已实现，本 ADR 予以推翻并回滚）。**
+方案原文见 [`docs/design/2026-08-03-req128-phase4-managed-npm-plugin.md`](../../../docs/design/2026-08-03-req128-phase4-managed-npm-plugin.md)
+（已标 `superseded`，只当史料读）；更早的 [`docs/design/2026-07-30-req128-extension-package-baseline.md`](../../../docs/design/2026-07-30-req128-extension-package-baseline.md)
+中所有 OpenCode Plugin 相关内容同样作废，作废位置逐条列在该稿顶部。
 它把「第三方 JS 以引擎同等权限执行」变成产品面，代价是一整套只为它存在的机制：
 同权限执行的授权披露、ABI 预检、strict wrapper、双载闸、pre-switch probe。
 **owner 裁决：不接受第三方代码在引擎进程内、以引擎权限、经一个我们不拥有的加载器运行。**
