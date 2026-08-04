@@ -47,7 +47,7 @@
     "maxStringBytes": 4096,
     "maxCapabilities": 16,
     "maxComponentAssetFiles": 64,
-    "maxComponents": 16,
+    "maxComponents": 32,
     "maxMarkdownAssetBytes": 5242880,
     "maxPayloadBytes": 1048576,
     "maxPayloadDepth": 8,

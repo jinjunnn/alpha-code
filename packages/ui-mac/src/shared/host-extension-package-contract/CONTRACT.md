@@ -19,10 +19,20 @@ per-file SHA-256 values in
 ## Envelope
 
 `alpha-package-envelope-v1.schema.json` defines a bounded, shallow header. A
-package carries `1..16` components and names exactly one of them in the
+package carries `1..32` components and names exactly one of them in the
 required `root` field. Each component carries only identity, required/optional
 disposition, its dependency list, profile gate data, compiler-derived
 capabilities, and a content-addressed `payloadRef`.
+
+The `32` is `limits.maxComponents` in the registry, and both `maxItems` values
+in the envelope schema (`components`, and `dependencies` at `maxComponents - 1`)
+are derived from it — an assertion in `host-extension-package-artifact.test.ts`
+keeps the published schema and the registry from drifting apart. It counts only
+the four registered profiles, with one component per `.mcp.json` server. Under
+that counting the largest real Claude plugin measured is 13 components, but that
+figure is an artifact of one malformed `.mcp.json`; repaired upstream it becomes
+25, so the bound is set to accommodate 25 rather than the observed maximum. See
+the `maxComponents` doc comment in `registry.ts` for the full derivation.
 
 `payloadRef` is exactly `{sha256, bytes, mediaType, url}`. `sha256` is 64
 lowercase hexadecimal characters, `bytes` is the exact positive payload byte

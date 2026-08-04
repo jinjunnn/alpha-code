@@ -88,7 +88,10 @@ describe("HostExtensionPackageV1 artifact", () => {
       "maxPayloadNodes",
       "maxStringBytes",
     ])
-    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).toBe(16)
+    // `#827`:32,不是 16。口径与推导见 registry.ts 的 `maxComponents` 注释 —— 一句话:
+    // 按信封真正用的那把尺子实测最大是 13,但那 13 靠一个第三方的 JSON 语法错误撑着,
+    // 修好就是 25;32 是容纳 25 的最小常用档,且仍低于事务引擎的 64。
+    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).toBe(32)
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes).toBe(5 * 1024 * 1024)
     // `#828`:钉住值,不只钉键。64 = 实测语料上界(18 个文件)的 3.5×,同时留在
     // maxPayloadNodes 预算之内 —— 后半句由 package-envelope-v1.test.ts 那条
@@ -187,6 +190,37 @@ describe("HostExtensionPackageV1 artifact", () => {
     expect(JSON.stringify(PROFILE_REGISTRY_V1)).not.toContain("opencode-plugin")
     // Bundle 不是 profile,而是多组件信封的形状。这一条**不动**。
     expect(JSON.stringify(PROFILE_REGISTRY_V1)).not.toContain("bundle")
+  })
+
+  /**
+   * `#827`:发布给 producer 的信封 schema 里那两个 `maxItems` 是 registry `maxComponents`
+   * 的**派生值**,不是两个各自维护的字面量。
+   *
+   * 这条闸挡的是一个具体的失败形态:抬了 registry 而忘了抬 schema —— 宿主 decoder 收得下
+   * 33 个组件,发布端 schema 却在 17 个就拒,于是「合同」在两侧说两句不同的话。它与
+   * capability 文法那条(decoder ↔ schema 逐字一致)是同一个理由的两半:凡是两处分开写的
+   * 数,都必须有东西看着它们。
+   */
+  test("the published envelope schema derives both component bounds from the registry", async () => {
+    const envelope = (await Bun.file(
+      resolve(import.meta.dir, "alpha-package-envelope-v1.schema.json"),
+    ).json()) as {
+      properties: {
+        components: {
+          minItems?: number
+          maxItems?: number
+          items: { properties: { dependencies: { maxItems?: number } } }
+        }
+      }
+    }
+    const components = envelope.properties.components
+    expect(components.minItems).toBe(1)
+    expect(components.maxItems).toBe(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents)
+    // 根组件的 dependencies 恰好是「除根以外的每一个 id」,所以它的上界永远比组件数少一个。
+    // 写成派生式而不是第二个字面量:两个数一起漂时,只钉住其中一个是抓不到的。
+    expect(components.items.properties.dependencies.maxItems).toBe(
+      HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents - 1,
+    )
   })
 
   /**

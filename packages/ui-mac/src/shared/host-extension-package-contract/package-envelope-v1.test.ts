@@ -71,6 +71,47 @@ const componentsOf = (envelope: Record<string, unknown>) =>
 const rootOf = (envelope: Record<string, unknown>) =>
   componentsOf(envelope).find((component) => component.id === envelope.root)!
 
+/**
+ * `#827`:把单组件语料 `skill-v1` 加宽成 `leafCount + 1` 个组件的合法包。
+ *
+ * 从**已生成的 canonical 语料**加宽,而不是手搭一个信封 —— 手搭的替身会跟着合同一起漂,
+ * 漂了也不会红(同本文件 §4.1 负向集的纪律)。三条边界用例共用它,免得各自复制一份构造。
+ */
+const widenSkillCase = (leafCount: number) => {
+  const item = caseNamed("skill-v1")
+  const root = rootOf(item.envelope)
+  const leaves = Array.from({ length: leafCount }, (_, index) => ({
+    ...structuredClone(root),
+    id: `skill:leaf-${String(index).padStart(2, "0")}`,
+    required: false,
+    dependencies: [],
+  }))
+  root.dependencies = leaves.map((leaf) => leaf.id)
+  item.envelope.components = [root, ...leaves]
+  item.components = [
+    item.components[0]!,
+    ...leaves.map((leaf) => ({ id: leaf.id, payload: item.components[0]!.payload })),
+  ]
+  return item
+}
+
+/**
+ * `#827`:把 registry 的组件上界临时挪到 `value`,跑完 `body` 后**无条件**恢复。
+ *
+ * 改的就是生产读的那一份对象(`HOST_EXTENSION_PACKAGE_LIMITS_V1` 是 registry JSON 的直接
+ * 引用)。这是刻意的:注入一份假 limits 只能证明「假的被读了」,证明不了真的那份有人读。
+ */
+const withMaxComponents = (value: number, body: () => void): void => {
+  const limits = HOST_EXTENSION_PACKAGE_LIMITS_V1 as { maxComponents: number }
+  const previous = limits.maxComponents
+  limits.maxComponents = value
+  try {
+    body()
+  } finally {
+    limits.maxComponents = previous
+  }
+}
+
 const graphCases: GraphCase[] = [
   {
     // `#807` 回归闸。capability 文法一度为了容纳 `engine:config` 被放宽成通用字符类
@@ -860,32 +901,81 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
   })
 
   test("a maximum-width package still decodes; one component more does not", async () => {
-    const item = caseNamed("skill-v1")
-    const root = rootOf(item.envelope)
-    const widen = (count: number) => {
-      const widened = structuredClone(item)
-      const widenedRoot = rootOf(widened.envelope)
-      const leaves = Array.from({ length: count }, (_, index) => ({
-        ...structuredClone(root),
-        id: `skill:leaf-${String(index).padStart(2, "0")}`,
-        required: false,
-        dependencies: [],
-      }))
-      widenedRoot.dependencies = leaves.map((leaf) => leaf.id)
-      widened.envelope.components = [widenedRoot, ...leaves]
-      widened.components = [
-        widened.components[0]!,
-        ...leaves.map((leaf) => ({ id: leaf.id, payload: item.components[0]!.payload })),
-      ]
-      return widened
-    }
-    const atLimit = widen(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents - 1)
+    const atLimit = widenSkillCase(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents - 1)
     const atLimitResult = decodePackageEnvelopeHeaderV1(jsonBytes(atLimit.envelope))
     expect(errorsOf(atLimitResult)).toBe("")
     expect(atLimitResult.ok).toBe(true)
-    expect(errorsOf(decodePackageEnvelopeHeaderV1(jsonBytes(widen(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).envelope)))).toContain(
-      `requires 1..${HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents} components`,
+    expect(
+      errorsOf(
+        decodePackageEnvelopeHeaderV1(
+          jsonBytes(widenSkillCase(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).envelope),
+        ),
+      ),
+    ).toContain(`requires 1..${HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents} components`)
+  })
+
+  /**
+   * `#827` AC:**证明 +1 撞的是 `maxComponents` 这道闸,不是别的界先咬。**
+   *
+   * `#828` 在 `maxComponentAssetFiles` 上踩过这个形态:上面那条用例只断 `.toContain(...)`,
+   * 而一个从来没被执行到的上界闸,在别的界先报错时照样能让 `.toContain` 全绿 —— 于是
+   * 「界立住了」变成一句没人验过的话。这里的判据因此有两条,单独任何一条都不够:
+   *
+   *   · **恰好一条错误**(不是 `toContain`):节点界、字节界、根依赖条数界若有任何一条参与,
+   *     错误串就不止这一条 —— `decodeComponentGraph` 的长度检查是 early-return,依赖条数界
+   *     在它之后,而 `inspectStructure`(节点/字节)在它**之前**,所以这条断言同时管住前后两侧;
+   *   · **同一份字节在界抬高一格后转为接受** —— 这是决定性的那一步。若还有第二道界在咬,
+   *     只把 `maxComponents` 抬一格不会让它转绿。
+   *
+   * 实测支撑(见 registry.ts 注释):33 组件 = 439 节点 / 16,462 字节,分别在 512 与 65,536
+   * 之下,所以这条用例在今天的界下是真的走到了组件数那一闸。
+   */
+  test("the +1 rejection comes from maxComponents itself, not from another bound biting first", () => {
+    const limit = HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents
+    const overflowBytes = jsonBytes(widenSkillCase(limit).envelope)
+
+    const rejected = decodePackageEnvelopeHeaderV1(overflowBytes)
+    expect(rejected.ok).toBe(false)
+    expect(errorsOf(rejected)).toBe(`envelope.components: requires 1..${limit} components`)
+
+    withMaxComponents(limit + 1, () => {
+      const admitted = decodePackageEnvelopeHeaderV1(overflowBytes)
+      expect(errorsOf(admitted)).toBe("")
+      expect(admitted.ok).toBe(true)
+    })
+  })
+
+  /**
+   * `#827` AC:**边界必须跟着 registry 走,而不是在生产代码里写死 32。**
+   *
+   * 「期望值从 registry 读」这一条**不够** —— 已实证:registry 钉的值恰好等于生产里那个
+   * 字面量时,把生产写成字面量仍然全绿(两边碰巧相等,断言就永远说真话)。唯一能分辨
+   * 「读了 registry」与「写死了一个恰好相等的数」的办法,是把 registry 挪到一个**不相等**
+   * 的哨兵值,再看边界跟不跟着动。
+   *
+   * 直接改那个可变对象是刻意的:它就是生产读的那一份。若改成注入一个假 limits,证明的就变成
+   * 「假的那份被读了」,而真的那份仍可能没人读 —— 那正是本条要排除的缺陷。恢复放在 finally,
+   * 同文件内其余用例仍看到真值(上一条用例的 `limit + 1` 同此纪律)。
+   */
+  test("the component bound follows the registry instead of a literal baked into the decoder", () => {
+    const SENTINEL = 5
+    expect(SENTINEL).not.toBe(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents)
+
+    withMaxComponents(SENTINEL, () => {
+      const atSentinel = decodePackageEnvelopeHeaderV1(jsonBytes(widenSkillCase(SENTINEL - 1).envelope))
+      expect(errorsOf(atSentinel)).toBe("")
+      expect(atSentinel.ok).toBe(true)
+
+      const overSentinel = decodePackageEnvelopeHeaderV1(jsonBytes(widenSkillCase(SENTINEL).envelope))
+      expect(overSentinel.ok).toBe(false)
+      expect(errorsOf(overSentinel)).toBe(`envelope.components: requires 1..${SENTINEL} components`)
+    })
+
+    // 哨兵撤回后真界回来 —— 否则「跟着走」只被证明了一半(挪下去了,没挪回来)。
+    const restored = decodePackageEnvelopeHeaderV1(
+      jsonBytes(widenSkillCase(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents - 1).envelope),
     )
+    expect(restored.ok).toBe(true)
   })
 
   test.each(graphCases)("graph refuses: $name", (graphCase) => {
