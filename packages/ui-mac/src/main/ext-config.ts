@@ -410,9 +410,18 @@ export function writeConfigLeafEditsUnlocked(
   return writeConfigTextAtomic(target, current, result)
 }
 
-function writeConfigTextAtomic(target: string, before: string, result: string): ConfigResult {
-  // ADR-040 咽喉:本函数是 ext-config 全部配置写盘的唯一原子提交点(writeKey* 与 dangling 清扫都
-  // 收在这里),所以「往 plugin[] 加元素一律拒」落在这一行 —— 新增的写入调用点不需要登记就已经被挡住。
+/**
+ * 引擎 config 的**整文本原子提交**。`before` = 写之前盘上的 live 文本(文件缺席传 `""`/`"{}"`)。
+ *
+ * 导出是因为 `#832`:boot 期 reconcile 曾经自己 `writeFileSync(tmp)+rename` 写整个 `alpha.jsonc`,
+ * 于是它写什么都不过咽喉 —— 那是 ADR-040 记录在案的最后一个结构性绕开口。现在它调本函数,
+ * 主进程里**再没有第二个引擎 config 的整文件写原语**;新写入点想绕过咽喉,得先自己手搓一个
+ * 原子写,那不是「忘了登记」而是刻意造第二条路。
+ */
+export function writeConfigTextAtomic(target: string, before: string, result: string): ConfigResult {
+  // ADR-040 咽喉:本函数是引擎 config 全部整文本写盘的唯一原子提交点(writeKey* / dangling 清扫 /
+  // boot reconcile 都收在这里),所以「往 plugin[] 加元素一律拒」落在这一行 —— 新增的写入调用点
+  // 不需要登记就已经被挡住。
   const sealed = sealEnginePluginAdditions(target, before, result)
   if (!sealed.ok) return sealed
   const bak = `${target}.bak`

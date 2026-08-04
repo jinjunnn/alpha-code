@@ -2,8 +2,13 @@
 //
 // 这个文件回答的不是「已知的那几条安装路径被关了吗」——那是枚举,枚举对新成员默认放行。
 // 它回答的是:**一个刚写出来的、没有在任何地方登记过的写入调用点,会不会被挡住。**
-// 所以下面的用例**自己就是那个新调用点**:测试里现场构造一次配置写入,直接喂给生产的两族物理
-// 写原语(`ext-config` 的原子提交 / `ext-config-tx` 的 image 对),然后断言它被具名拒绝。
+// 所以下面的用例**自己就是那个新调用点**:测试里现场构造一次配置写入,直接喂给生产的三族物理
+// 写原语(`ext-config` 的原子提交 / `ext-config-tx` 的 image 对 / boot reconcile 的整文件写),
+// 然后断言它被具名拒绝。
+//
+// 第三族是 `#832` 补上的:`#825` 交付时,boot 期那次 `JSON.stringify` 整文件写盘**结构性地不过
+// 任何一道白名单**,而且每次启动都跑 —— 一道拦得住六条已知路径、拦不住第七条的闸,在「完整性」
+// 这个维度上只是部分为真。见 ④。
 //
 // 三条纪律,写每条断言时都过了一遍:
 //   · 断言的是**生产写盘那条路径**,不是内层纯函数 —— 摘掉 `prepareConfigTx` / `writeConfigTextAtomic`
@@ -20,7 +25,8 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { sealEnginePluginAdditions } from "./engine-plugin-seal"
 import { applyConfigImage, prepareConfigTx } from "./ext-config-tx"
-import { persistMcp, readPluginArrayStrict, removePlugin } from "./ext-config"
+import { persistMcp, readPluginArrayStrict, removePlugin, writeConfigTextAtomic } from "./ext-config"
+import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 
 let tmp = ""
 let alphaTmp = ""
@@ -147,6 +153,71 @@ describe("ADR-040 咽喉:清理方向与无关写入照常通过(闸不能是「
     expect(persistMcp("demo", { type: "local", command: ["npx", "-y", "demo-mcp"] }).ok).toBe(true)
     expect(readCfg().plugin).toEqual(["existing@1"]) // 原样保留
     expect(readPluginArrayStrict()).toEqual({ ok: true, value: ["existing@1"] })
+  })
+})
+
+// ── ④ 第三族物理写原语:boot reconcile 的**整文件**写(`#832`)────────────────────────────────
+//
+// `#825` 交付时它是**唯一已知绕开咽喉**的写入口:每次启动都跑,`JSON.stringify` 整个 `alpha.jsonc`
+// 覆盖一遍,三道白名单一道都不过。本段是那个口子被关掉的判据。
+//
+// 三格分工(缺一格就有一半是假的):
+//   · 一格证明**这种形状的新调用点**(手搓整文件文本)过不去;
+//   · 一格证明**生产入口真的把该做的活做了**——「什么都不写」同样满足「没有新增」,那是错误实现;
+//   · 一格证明**生产入口那条路上真的执行了咽喉**:喂一个咽喉会拒、而它自己的容错读**不会**拒的
+//     输入,看它是不是当场停手。摘掉写盘处那次咽喉调用,这一格立刻绿转红 —— 它不靠源码文本。
+
+describe("ADR-040 咽喉:boot reconcile 的整文件写(第三族物理写原语)", () => {
+  const legacyDir = () => path.join(tmp, "opencode-home")
+  const writeLegacy = (obj: unknown) => {
+    fs.mkdirSync(legacyDir(), { recursive: true })
+    fs.writeFileSync(path.join(legacyDir(), "opencode.jsonc"), JSON.stringify(obj))
+  }
+
+  test("新调用点手搓一次整文件写,加一条 —— 拒,且文件逐字节不动", () => {
+    writeCfg({ plugin: ["kept@1"], mcp: {} })
+    const before = fs.readFileSync(target(), "utf8")
+    const r = writeConfigTextAtomic(
+      target(),
+      before,
+      JSON.stringify({ plugin: ["kept@1", "whole-file-smuggled@2"], mcp: {} }, null, 2) + "\n",
+    )
+    expect(r.ok).toBe(false)
+    expect(refusal(r)).toContain("ADR-040")
+    expect(refusal(r)).toContain("whole-file-smuggled@2")
+    expect(fs.readFileSync(target(), "utf8")).toBe(before)
+  })
+
+  test("生产入口:legacy 带一个真源没有的 plugin ⇒ 没并进来,而这一次 reconcile 该写的照写", () => {
+    writeCfg({ $schema: "https://opencode.ai/config.json", plugin: ["kept@1"] })
+    writeLegacy({ mcp: { markitdown: { type: "local" } }, plugin: ["legacy-smuggled@9"] })
+    const out = reconcileEngineConfigTruth({ log: () => {}, warn: () => {} })
+    expect(out.skipped).toBe(false)
+    if (!out.skipped) expect(out.migrated).toBe(true) // 写发生了 —— 不是靠「整次拒写」拿到的绿
+    expect(readCfg().plugin).toEqual(["kept@1"]) // 逐元素
+    expect((readCfg().mcp as Record<string, unknown>).markitdown).toBeDefined()
+  })
+
+  test("生产入口:盘上的 alpha.jsonc 语法坏掉而它自己容错读得出 plugin 条目 ⇒ 整次拒写,文件身份不变", () => {
+    // 缺一个逗号:jsonc-parser 3.3.1 的容错解析照样给出 {plugin,mcp}(实测),而带 errors 的严格读
+    // 报 1 个语法错 —— 于是「写完之后没多出元素」证不出来。fail-closed 的定义就是这一格。
+    fs.writeFileSync(target(), '{\n  "plugin": ["kept@1"]\n  "mcp": {}\n}\n')
+    const before = { text: fs.readFileSync(target(), "utf8"), stat: fs.statSync(target()) }
+    const legacyFile = path.join(legacyDir(), "opencode.jsonc")
+    writeLegacy({ mcp: { markitdown: { type: "local" } } })
+
+    const out = reconcileEngineConfigTruth({ log: () => {}, warn: () => {} })
+
+    expect(out.skipped).toBe(false)
+    if (!out.skipped) {
+      expect(out.migrated).toBe(false)
+      expect(out.bailedOut).toContain("ADR-040") // 说得出是被哪道闸拦的
+    }
+    const after = { text: fs.readFileSync(target(), "utf8"), stat: fs.statSync(target()) }
+    expect(after.text).toBe(before.text) // 用户那份坏文件原样留着,不被「修复」成另一份
+    expect(after.stat.ino).toBe(before.stat.ino) // 内容相同也可能是幂等重写 ⇒ 身份与时间一起判
+    expect(after.stat.mtimeMs).toBe(before.stat.mtimeMs)
+    expect(fs.existsSync(legacyFile)).toBe(true) // 没写成 ⇒ 更不能去删源
   })
 })
 

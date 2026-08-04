@@ -244,7 +244,14 @@ function mergeNamed(
 /**
  * 迁移合并计划:把 legacy(`~/.opencode/opencode.jsonc`)与 XDG provider 域**拷贝**进 alpha 真源既有内容。
  * copy-don't-delete(源不动,由调用方按 junk 判定决定删源)+ 幂等(existing 已有的键不覆盖,重复启动 no-op)。
- * merge 语义:命名条目域(mcp/provider/agent/command)逐名补 absent;plugin[] 数组并集去重。
+ * merge 语义:命名条目域(mcp/provider/agent/command)逐名补 absent。
+ *
+ * **`plugin[]` 刻意不在 merge 语义里(ADR-040,`#832`)**:合并 legacy 的 `plugin[]` 就是「把一段
+ * 第三方 JS 装进引擎、以同等权限执行」,而 ADR-040 裁定 Alpha 不再提供这个能力 —— 它不因为
+ * 「来源是用户自己的旧配置」而变成另一件事。existing(`alpha.jsonc` 里已有的条目)原样穿过
+ * 浅拷贝,本函数**既不加也不删**;删除归卸载侧(`removePlugin` / dangling 清扫)。
+ * 想「顺手把这条并集加回来」的下一位:它加不回来 —— 落盘那一刻的咽喉会拒(`engine-plugin-seal.ts`),
+ * 拒的后果是**整次 reconcile 不写盘**(skills.paths 注入一起停),不是只丢这一个键。
  */
 export function planConfigMerge(
   existing: Record<string, unknown> | undefined,
@@ -265,24 +272,6 @@ export function planConfigMerge(
   // XDG provider 域(拷贝迁移;existing/legacy 已有的 provider 名不覆盖)
   mergeNamed(merged, xdgProvider, "provider", added)
 
-  // plugin[] 数组并集(去重,保序:existing 先、legacy 补)
-  const exPlugins = Array.isArray(merged.plugin) ? (merged.plugin as unknown[]) : []
-  const lgPlugins = Array.isArray(legacy?.plugin) ? (legacy!.plugin as unknown[]) : []
-  const union = [...exPlugins]
-  let pluginTouched = false
-  for (const p of lgPlugins) {
-    if (!union.includes(p)) {
-      union.push(p)
-      pluginTouched = true
-    }
-  }
-  if (pluginTouched || (Array.isArray(merged.plugin) && merged.plugin.length !== union.length)) {
-    merged.plugin = union
-    added.push("plugin[]")
-  } else if (union.length > 0 && !Array.isArray(merged.plugin)) {
-    merged.plugin = union
-    added.push("plugin[]")
-  }
-
+  // `plugin[]`:没有分支 —— 不读 legacy 的、不写 merged 的。existing 的那份已经随浅拷贝穿过去了。
   return { merged, changed: added.length > 0, added }
 }

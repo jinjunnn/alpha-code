@@ -26,11 +26,18 @@ review_after: 2026-10-14
 > 「disabled plugin 移不掉 = `enforcementGap` 阻断 sidecar」那条(§ 启动 reconcile 原样有效)。
 > **plugin 的 enable 现在是具名拒绝**:「启用」按定义就是把 spec 写回 `plugin[]`,与安装是同一件事。
 >
-> 咽喉在 `packages/ui-mac/src/main/engine-plugin-seal.ts`:两族物理写原语
-> (`ext-config.ts` 的原子提交、`ext-config-tx.ts` 的 image 对)在写盘前判「`plugin[]` 有没有多出
-> 写之前没有的元素」,有则拒 —— **新增写入点不需要登记就已经被挡住**。
-> 已知不经过它的写入口只有一个:boot 期把 legacy `~/.opencode/opencode.jsonc` 的 `plugin[]` 并进
-> `alpha.jsonc` 的整文件写(`engine-config-truth-boot.ts`)。那不是扩展安装,单独一张票处置。
+> 咽喉在 `packages/ui-mac/src/main/engine-plugin-seal.ts`:**三族**物理写原语
+> (`ext-config.ts` 的原子提交、`ext-config-tx.ts` 的 image 对、boot reconcile 的整文件写)在写盘前
+> 判「`plugin[]` 有没有多出写之前没有的元素」,有则拒 —— **新增写入点不需要登记就已经被挡住**。
+>
+> `#832`(2026-08-03)关掉了 `#825` 留下的最后一个结构性绕开口:boot 期 reconcile 曾经自己
+> `writeFileSync+rename` 整个 `alpha.jsonc`,三道白名单一道都不过,而它每次启动都跑。处置是两件事:
+> ① `planConfigMerge` 里「legacy `plugin[]` 并集」删掉(本 portfolio 无真实用户 ⇒ 无 legacy 迁移
+> 义务;而「来源是用户旧配置」不改变「以引擎同等权限执行的第三方 JS」这个事实);② 那次整文件写盘
+> 改调 `ext-config` 的同一个原子提交点。**今天主进程里已不存在第二个引擎 config 的整文件写原语。**
+> 随之而来的一格新 fail-closed:盘上的 `alpha.jsonc` 语法坏掉、而容错解析仍读得出 `plugin` 条目时,
+> reconcile **整次不写盘**(loud,`bailedOut` 带咽喉理由,`~/.opencode` 也不清理)—— 因为「写完之后
+> 没多出元素」在那种输入上证不出来。坏文件原样留给用户,不被改写。
 >
 > 权威见 `.claude/rules/adrs/ADR-040-extension-package-taxonomy.md` §决策三。
 

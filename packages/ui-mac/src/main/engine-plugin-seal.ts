@@ -16,14 +16,16 @@
 //   `alpha.jsonc` 那一侧它只在文件缺席时 seed 一个 `{$schema}`。这就是为什么本咽喉可以做成
 //   「一律拒」而不需要留任何合法加法通道(ADR-040 实读依据四)。
 //
-// **今天已知的、不经过本咽喉的写入口只有一个**:boot 期把 legacy `~/.opencode/opencode.jsonc` 的
-//   `plugin[]` 并进 `alpha.jsonc` 的整文件写(`engine-config-truth-boot.ts` 的 `planConfigMerge`
-//   落盘处)。它不是扩展安装、是迁移用户自己的既有配置,按 `#825` 票面明确留给单独一张票处置。
-//   本模块**没有**替它开豁免口:豁免口会让这道闸看起来完整而实际留门。它是本咽喉的已知边界,
-//   不是它的一部分。
+// **`#825` 交付时留着的那个已知边界,`#832` 已经关掉**:boot 期把 legacy `~/.opencode/opencode.jsonc`
+//   的 `plugin[]` 并进 `alpha.jsonc` 的整文件写。当时它不经过本咽喉,而且每次启动都跑。
+//   处置不是给它开豁免口(豁免口会让这道闸看起来完整而实际留门),是两件事一起做:
+//   ①`planConfigMerge` 里那条并集删掉 —— 「迁移用户自己的旧配置」不改变「这是一段以引擎同等权限
+//   执行的第三方 JS」这个事实;②那次整文件写盘改调 `ext-config` 的原子提交点,于是它**也**过闸。
+//   后者才是类判据:这条路上将来新增任何加法,不需要谁记得登记,就已经被挡住。
 //
-// 接线点(两族物理写原语,扩展安装的全部写盘都在其中之一):
-//   · `ext-config.ts` 的 `writeConfigTextAtomic`(`writeKey*` / dangling 清扫的原子提交);
+// 接线点(三族物理写原语,主进程里引擎 config 的全部写盘都在其中之一):
+//   · `ext-config.ts` 的 `writeConfigTextAtomic`(`writeKey*` / dangling 清扫 / boot reconcile 的
+//     整文件写 —— 三者共用的唯一原子提交);
 //   · `ext-config-tx.ts` 的 `prepareConfigTx`(计划期具名拒绝)与 `applyConfigImage`(switch 期终闸)。
 
 import * as path from "node:path"
