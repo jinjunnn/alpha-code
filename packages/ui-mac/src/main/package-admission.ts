@@ -632,8 +632,11 @@ async function resolvePreparedPackage(
           component,
           payload: entry.payload,
           ...(agentRef ? { asset: { sha256: agentRef.sha256, bytes: agentRef.bytes } } : {}),
-          // `#828`:binding 必须覆盖**每一个**文件。只摘 `SKILL.md` 的摘要,等于换掉一份参考
-          // 资料或一个脚本时 itemDigest 不变 —— 授权屏展示的与实际装下去的就此脱钩。
+          // `#828`:**冗余纵深,不是唯一屏障** —— 如实登记(审计实测:把这块收窄成只取第一条,
+          // 3738 条全绿)。真正兜住「换掉一份参考资料 ⇒ itemDigest 必变」的是上面那条
+          // `payload: entry.payload`:解码后的载荷本身就带每条的 path/sha256/bytes。
+          // 这块与既有 agent 的 `asset` 块同形,留着是为了让 binding 的**意图**在这一处读得出来
+          // (「摘要覆盖每一个文件」),而不是靠读者自己去推 payload 里有什么。
           ...(skillRefs
             ? {
                 assetFiles: skillRefs.map((ref) => ({

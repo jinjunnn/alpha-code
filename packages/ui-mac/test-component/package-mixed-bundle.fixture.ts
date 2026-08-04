@@ -104,7 +104,15 @@ const agentPayloadFor = (targetDir: string, asset: Uint8Array, url: string) => (
   },
 })
 
-const skillPayloadFor = (files: Array<{ path: string; data: Uint8Array }>, base: string) => ({
+/**
+ * `urlPath` 与 `path` 分开是**必需**的,不是方便:`decodeHttpsUrl` 要求 URL 逐字 canonical
+ * (`new URL(x).href === x`),所以一条带 `..` 的 URL 在解码期就被拒 —— 那样"逃逸路径"用例
+ * 测到的是 URL 那一层,而不是路径那一层。真实的攻击形状本来也是这个:URL 完全合法,
+ * 生产者在 `path` 上声明一个往外跳的落点。
+ */
+type SkillFixtureFile = { path: string; data: Uint8Array; urlPath?: string }
+
+const skillPayloadFor = (files: SkillFixtureFile[], base: string) => ({
   schema: "alpha.host-extension-package.payload.skill.v1",
   behavior: {
     targetDir: "alpha-skills",
@@ -112,7 +120,7 @@ const skillPayloadFor = (files: Array<{ path: string; data: Uint8Array }>, base:
       path: file.path,
       sha256: sha(file.data),
       bytes: file.data.byteLength,
-      url: `${base}/${file.path}`,
+      url: `${base}/${file.urlPath ?? file.path}`,
     })),
   },
 })
@@ -159,7 +167,7 @@ export type MixedBundleFixture = {
   agentAsset: Uint8Array
   skillAsset: Uint8Array
   /** `#828`:skill 载荷的**整份**清单(相对路径 → 期望字节)。逐文件比对的真源。 */
-  skillFiles: Array<{ path: string; data: Uint8Array }>
+  skillFiles: SkillFixtureFile[]
 }
 
 export function mixedBundleFixture(options?: {
@@ -175,19 +183,34 @@ export function mixedBundleFixture(options?: {
    *   ② 绕过配方 —— 拿它跑「逐文件在盘上」那条断言,**必须当场变红**。
    */
   singleFileSkill?: boolean
+  /**
+   * `#828`:给技能载荷加一条**逃逸路径**的兄弟文件(`../evil.md`)。
+   *
+   * 宿主的解码层按裁决**不判路径安全**(唯一所有者是 `promotePayloadToCas`)。这条选项存在
+   * 是因为「唯一所有者今天拦得住」与「签名 package 这条路上有东西看着它」是两件事:
+   * 没有它,谁哪天拆掉一层兜底,**这条路上不会有任何东西变红**。
+   */
+  escapingSkillPath?: boolean
 }): MixedBundleFixture {
   const withUnsupported = options?.withUnsupportedOptionalLeaf ?? true
   const agentAsset = utf8(AGENT_MD)
   const skillAsset = utf8(
     options?.breakSkillFrontmatterName ? SKILL_MD.replace("name: generic-bundle-skill", "name: not-the-skill") : SKILL_MD,
   )
-  const skillFiles: Array<{ path: string; data: Uint8Array }> = options?.singleFileSkill
+  const skillFiles: SkillFixtureFile[] = options?.singleFileSkill
     ? [{ path: "SKILL.md", data: skillAsset }]
-    : [
-        { path: "SKILL.md", data: skillAsset },
-        { path: "reference/guide.md", data: utf8(SKILL_REFERENCE_MD) },
-        { path: "scripts/run.sh", data: utf8(SKILL_RUN_SH) },
-      ]
+    : options?.escapingSkillPath
+      ? [
+          { path: "SKILL.md", data: skillAsset },
+          // 逃逸项放**第二个**:只看第一个元素的实现要能被抓住。
+          // URL 一侧完全合法(canonical),越界的只有 `path`。
+          { path: "../evil.md", data: utf8(SKILL_REFERENCE_MD), urlPath: "evil.md" },
+        ]
+      : [
+          { path: "SKILL.md", data: skillAsset },
+          { path: "reference/guide.md", data: utf8(SKILL_REFERENCE_MD) },
+          { path: "scripts/run.sh", data: utf8(SKILL_RUN_SH) },
+        ]
   const unsupportedAsset = utf8(UNSUPPORTED_MD)
 
   const agentPayload = agentPayloadFor(

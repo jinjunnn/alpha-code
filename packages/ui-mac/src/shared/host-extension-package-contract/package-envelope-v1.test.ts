@@ -1057,6 +1057,28 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       expect(decodeSkill(nFiles(18))).toBe("")
     })
 
+    test("0 字节条目必须被接受 —— 语料里 skill-creator 带一个空的 scripts/__init__.py", () => {
+      // 这条闸的方向与其它几条相反:它挡的不是坏输入,是**我们自己把真实配置拒掉**。
+      // `>= 1` 是从单资产 `decodePayloadRef` 抄过来时最容易顺手带上的一个字符,而它会让
+      // 官方语料里的 skill-creator 整包 blocked(Python 包必需的空 `__init__.py`)。
+      expect(decodeSkill([fileAt("SKILL.md"), { ...fileAt("scripts/__init__.py"), bytes: 0 }])).toBe("")
+      // 空的**入口文件**同样合法:形状层不替 frontmatter 校验做判断,那是 probe 的事
+      //(空 SKILL.md 会在 pre-switch probe 上以「非法 frontmatter」被拒,而不是被静默装上)。
+      expect(decodeSkill([{ ...fileAt("SKILL.md"), bytes: 0 }])).toBe("")
+      // 下界只放开到 0:负数与非整数仍拒。
+      expect(decodeSkill([{ ...fileAt("SKILL.md"), bytes: -1 }])).toContain("bytes: required integer in 0..")
+      expect(decodeSkill([{ ...fileAt("SKILL.md"), bytes: 1.5 }])).toContain("bytes: required integer in 0..")
+      // agent 那一侧**没有**跟着放开:它仍是单份 markdown,空 = 畸形。
+      const agentPayload = {
+        schema: "alpha.host-extension-package.payload.agent.v1",
+        behavior: {
+          targetDir: "alpha-agents",
+          asset: { sha256: "1".repeat(64), bytes: 0, mediaType: "text/markdown", url: "https://example.invalid/a.md" },
+        },
+      }
+      expect(decodePackageProfilePayloadV1("agent", jsonBytes(agentPayload), []).ok).toBe(false)
+    })
+
     test("条数界:64 过 / 65 拒,且 64 时先咬的不是节点界", () => {
       // 这条用例存在的全部理由:若 maxPayloadNodes 在 64 之前就咬,那条条数界**从来没有被
       // 执行过** —— 上界闸变成一句从不生效的散文(REQ-128 Phase 3 已实证过这个形态)。

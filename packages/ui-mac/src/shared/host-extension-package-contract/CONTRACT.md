@@ -113,6 +113,19 @@ The host enforces four structural facts and no more:
   term, not an accident of a hard-coded writer;
 - the declared `bytes` sum does not exceed `maxMarkdownAssetBytes`.
 
+**A file may declare `bytes: 0`, and that is a decision.** The single-asset
+`agent` payload keeps a lower bound of 1 because one Markdown body is never
+empty; copying that bound here would refuse a real skill. The measured corpus
+contains `claude-plugins-official/.../skills/skill-creator`, whose payload
+includes a zero-byte `scripts/__init__.py` — the empty file a Python package
+requires. A lower bound of 1 makes that skill's whole payload undecodable and
+blocks the entire package; a producer's only way out is to drop the empty file,
+which is the very "installs as a remnant" failure this shape exists to end. The
+same skill installs today through the local-import path, which has no per-file
+lower bound, so the bound would also make one host answer two different
+questions about one input. Empty entries are bounded by the **file count**, not
+by a byte floor.
+
 **`maxMarkdownAssetBytes` is the component asset budget**, not the ceiling of one
 Markdown asset. The key name is unchanged on purpose: renaming it would move
 exact-set assertions in two repositories plus an archived verification matrix,

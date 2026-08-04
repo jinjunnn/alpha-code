@@ -818,12 +818,21 @@ function decodeSkillAssetFiles(
     const path = decodeString(entry.path, `${where}.path`, errors, { max: 1024 })
     const sha256 = decodeString(entry.sha256, `${where}.sha256`, errors, { pattern: HEX64_RE })
     const perFileMax = HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes
+    // 下界是 **0**,这是一条决定,不是从单资产那边抄漏的:真实语料里
+    // `claude-plugins-official/.../skills/skill-creator` 带一个 **0 字节的
+    // `scripts/__init__.py`**(Python 包必需的空文件)。写 `>= 1` 会让这个真实技能的整个
+    // payload 解不出来 ⇒ 整包 blocked —— 那不是"少拦一个坏输入",是**拒载真实配置**,
+    // 也正是这张票要杀的"装完是残件"从另一扇门回来(发布端为了过闸只能把空文件丢掉)。
+    // 同一个技能走 Phase 3 本地导入那条路今天装得上(`claude-plugin-intake.ts` 只求和、
+    // 无 per-file 下界),两条路对同一份输入必须给同一个答案。
+    // DoS 由**条数界**封住(空条目吃的是条数不是字节),不需要再拿下界当补偿。
+    // 单资产的 `decodePayloadRef` 保持 `>= 1`:那里一份 SKILL.md 恒非空,合理。
     const bytesOk =
       typeof entry.bytes === "number" &&
       Number.isInteger(entry.bytes) &&
-      entry.bytes >= 1 &&
+      entry.bytes >= 0 &&
       entry.bytes <= perFileMax
-    if (!bytesOk) errors.push(`${where}.bytes: required integer in 1..${perFileMax}`)
+    if (!bytesOk) errors.push(`${where}.bytes: required integer in 0..${perFileMax}`)
     const url = decodeHttpsUrl(entry.url, `${where}.url`, errors)
     if (path !== undefined) {
       if (seen.has(path)) errors.push(`${where}.path: duplicate path "${path}" — refused`)

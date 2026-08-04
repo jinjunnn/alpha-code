@@ -1,11 +1,11 @@
 {
   "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
-  "artifactSha256": "15984d4e2c191662b087b56e2b1874cfa6b537386985a64ea530513da4441fc4",
+  "artifactSha256": "b3827e79dc9bb20b729a0f8f04fce008aa4340f4f846450bafee13f8b8f5e388",
   "files": [
     {
-      "bytes": 11456,
+      "bytes": 12327,
       "path": "CONTRACT.md",
-      "sha256": "61ab63ba7e995fd3e6583f6135c51de68b3cbbde2429cedd867a20a1405aa71d"
+      "sha256": "4008e8260b878a0ed201251108ff5a94ad50e970a8c52d939e5d55788d3d2b25"
     },
     {
       "bytes": 3903,
@@ -13,9 +13,9 @@
       "sha256": "a975d19468f3cad730290fe673cc85ba4364b9a72d8b4746ee5e1032aa1d8b20"
     },
     {
-      "bytes": 46221,
+      "bytes": 47134,
       "path": "decoder.ts",
-      "sha256": "720d2eb8a4e2e7db277ec6de895af54d34fdae9d0ee770d67c7d2564eb4701a0"
+      "sha256": "0c7f053395d1d4776be956d3b4ff1de56036991097add31f6af7718af918cc9a"
     },
     {
       "bytes": 15308,
@@ -45,7 +45,7 @@
     {
       "bytes": 1542,
       "path": "profiles/skill.v1.schema.json",
-      "sha256": "a74c8a7f26883b72cabdb2b385edf1fefaa87a3682d60ab60c6ebbf64aa611d7"
+      "sha256": "4b2a59b129724b11a365cf23dc4af25f0f5664f3345d4f4d34f3a3494158878e"
     },
     {
       "bytes": 4307,

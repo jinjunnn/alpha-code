@@ -157,7 +157,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   const prefix = "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/"
   if (url.startsWith(prefix)) {
     const relative = url.slice(prefix.length)
-    const file = fixture.skillFiles.find((candidate) => candidate.path === relative)
+    // 按 **URL 那一侧**路由(逃逸用例里 `urlPath` 与 `path` 刻意不同)。
+    const file = fixture.skillFiles.find((candidate) => (candidate.urlPath ?? candidate.path) === relative)
     if (!file) throw new Error(`unexpected asset fetch: ${url}`)
     return new Response(file.data, { status: 200 })
   }
@@ -602,6 +603,34 @@ test("a single-file skill still installs through the same production path", asyn
   expect(Buffer.compare(landed[0]!.data, Buffer.from(fixture.skillFiles[0]!.data))).toBe(0)
   expect(landed.filter((file) => (file.mode & 0o111) !== 0)).toEqual([])
   expectCoherentInstall("single-file skill install")
+})
+
+// ── `#828`:载荷里的逃逸路径,在**签名 package 这条路上**必须有东西看着 ─────────────────────
+//
+// 解码层按裁决不判路径安全(唯一所有者是 `promotePayloadToCas`)。审计核实过今天的行为是对的,
+// 但**这条路上没有自己的负向用例** ⇒ 谁哪天拆掉一层兜底,这里不会有任何东西变红。
+// 判据不是「返回了 ok:false」(一个什么都拒的实现也满足),而是**盘面零变更**:
+// `ext-store` 整个不存在、根目录下没有多出任何东西。
+test("a payload naming a path outside the skill root is refused with zero writes", async () => {
+  resetDisk()
+  fixture = mixedBundleFixture({ escapingSkillPath: true })
+  const beforeRootEntries = readdirSync(root()).sort()
+
+  const { result } = await installBundle("mixed-bundle-escape", grants())
+  expect(result).toMatchObject({ ok: false })
+  // 只断布尔值不行:删掉路径闸之后 `ok` 仍会是 false(别的地方也会拒),只是 reason 变了。
+  // 所以断言拒绝**具名于路径守卫**,并且点得出是哪一条路径。
+  expect((result as { reason: string }).reason).toContain("unsafe manifest path: ../evil.md")
+  // 拒绝理由不许把宿主的绝对路径漏给 renderer。
+  expect((result as { reason: string }).reason).not.toContain(root())
+
+  // ① 逃逸落点没有被创建 —— 「上一级」是 store 根,越界文件会落在它旁边。
+  expect(existsSync(join(root(), "ext-store"))).toBe(false)
+  expect(existsSync(join(root(), "evil.md"))).toBe(false)
+  // ② 根目录条目集与安装前逐字相同(不止那一个名字:任何新落点都算)。
+  expect(readdirSync(root()).sort()).toEqual(beforeRootEntries)
+  // ③ 盘面九格全 absent —— 整包零副作用,而不是「skill 拒了、agent/mcp 装上了」。
+  expect(expectAllOldOrAllNew("escaping skill path")).toBe("old")
 })
 
 // ── `#828` AC4:整包卸载之后**所有**文件消失,不是只删 SKILL.md ─────────────────────────────
