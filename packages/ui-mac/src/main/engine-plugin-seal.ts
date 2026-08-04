@@ -16,15 +16,36 @@
 //   `alpha.jsonc` 那一侧它只在文件缺席时 seed 一个 `{$schema}`。这就是为什么本咽喉可以做成
 //   「一律拒」而不需要留任何合法加法通道(ADR-040 实读依据四)。
 //
-// **今天已知的、不经过本咽喉的写入口只有一个**:boot 期把 legacy `~/.opencode/opencode.jsonc` 的
-//   `plugin[]` 并进 `alpha.jsonc` 的整文件写(`engine-config-truth-boot.ts` 的 `planConfigMerge`
-//   落盘处)。它不是扩展安装、是迁移用户自己的既有配置,按 `#825` 票面明确留给单独一张票处置。
-//   本模块**没有**替它开豁免口:豁免口会让这道闸看起来完整而实际留门。它是本咽喉的已知边界,
-//   不是它的一部分。
+// **`#825` 交付时留着的那个已知边界,`#832` 已经关掉**:boot 期把 legacy `~/.opencode/opencode.jsonc`
+//   的 `plugin[]` 并进 `alpha.jsonc` 的整文件写。当时它不经过本咽喉,而且每次启动都跑。
+//   处置不是给它开豁免口(豁免口会让这道闸看起来完整而实际留门),是两件事一起做:
+//   ①`planConfigMerge` 里那条并集删掉 —— 「迁移用户自己的旧配置」不改变「这是一段以引擎同等权限
+//   执行的第三方 JS」这个事实;②那次整文件写盘改调 `ext-config` 的原子提交点,于是它**也**过闸。
+//   后者才是类判据:这条路上将来新增任何加法,不需要谁记得登记,就已经被挡住。
 //
-// 接线点(两族物理写原语,扩展安装的全部写盘都在其中之一):
-//   · `ext-config.ts` 的 `writeConfigTextAtomic`(`writeKey*` / dangling 清扫的原子提交);
+// 接线点(三族物理写原语):
+//   · `ext-config.ts` 的 `writeConfigTextAtomic`(`writeKey*` / dangling 清扫 / boot reconcile 的
+//     整文件写 —— 三者共用的原子提交);
 //   · `ext-config-tx.ts` 的 `prepareConfigTx`(计划期具名拒绝)与 `applyConfigImage`(switch 期终闸)。
+//
+// **本咽喉不是唯一的守门人,别照着这句话推「凡写引擎 config 必过这里」**(实读枚举过,那是假的)。
+// 四条不过本闸的写,以及**各自真正靠的是哪道闸** —— 这一栏比路径本身重要:
+//   · `ext-config.ts` 的 `applyBuiltinPolicyEditsUnlocked`:自己的 tmp+rename 写同一个 `alpha.jsonc`。
+//     靠 `builtinPolicyPathAllowed` 这道**具名路径白名单**(只放 `agent` / `permission.skill` /
+//     `command` 三个域的叶子,`plugin` 结构上不是合法首段,且在任何字节落盘之前逐条判);
+//   · `alpha-config-injection`:只在真源**缺席**时 seed 字面量 `{$schema}`,内容里没有 `plugin` 键;
+//   · `alpha-migrate` 的 legacy 臂:目标是 legacy `opencode.jsonc`,且只做减法,还要 `ALPHA_MIGRATE_ENABLE=1`;
+//   · **`ecosystem-import.ts` 的 `registerProjectSkillsPath`(`#832` 审计补的第四条,这条最值得记住)**:
+//     整文件 `JSON.stringify` + tmp+rename 写**项目级** `<proj>/.alpha/alpha.jsonc` —— 与上面三条不同,
+//     **它自己没有任何路径白名单**;今天只写 `skills.paths` 是「它恰好只写这个」,不是被谁挡着。
+//     真正挡住 `plugin` 的闸**在另一个包里**:`packages/ext/src/project-config.ts` 的 `mergeProjectConfig`
+//     只合 `mcp`(信任门)/ `agent` / `command` / `skills.paths`,`plugin` 结构性不合。同族还有
+//     `packages/ext/src/register.ts`(`alpha_register` 工具的纯逻辑,`serialize` 同样整文件序列化,由
+//     `plugin.ts` 在**引擎进程**侧原子写同一个文件),靠 `RegisterType` 类型白名单(mcp/agent/command/skill)。
+//     实测(`#832`):在 `registerProjectSkillsPath` 里加一行 `cfg.plugin=[…]`,盘上当场多出该条目,
+//     **本文件的全部咽喉用例照样全绿**;而同一份文本喂给 `mergeProjectConfig`,`added` 只有
+//     `["skills.paths"]`、合并后 `cfg.plugin === undefined`。⇒ 今天没有洞,但**功劳不是本闸的**,
+//     两道闸之间也没有任何东西把它们和 ADR-040 连起来。要动那条路,先读这一段。
 
 import * as path from "node:path"
 import { parse, type ParseError } from "jsonc-parser"

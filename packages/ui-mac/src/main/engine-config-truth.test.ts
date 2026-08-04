@@ -223,11 +223,27 @@ describe("planConfigMerge", () => {
     expect((p.merged.provider as any).deepseek.options.baseURL).toBe("ALPHA")
   })
 
-  test("plugin[] union dedup, existing order preserved", () => {
+  // ADR-040(`#832`):legacy 的 plugin[] 不再并进来。断言分两条 —— 「既有那条还在」与「legacy 那条
+  // 没进来」是两件事,只断长度或只断 changed 都会被「等量替换」这类错误实现满足。
+  test("legacy plugin[] 不并入:existing 那条原样保留,legacy 独有的那条不出现", () => {
     const existing = { plugin: ["/a/.alpha/plugins/x.js"] }
     const p = planConfigMerge(existing, { plugin: ["/a/.alpha/plugins/x.js", "/a/.alpha/plugins/y.js"] }, undefined)
+    expect(p.merged.plugin).toEqual(["/a/.alpha/plugins/x.js"]) // 逐元素:既有一个不少、legacy 一个不多
+    expect(p.added).not.toContain("plugin[]")
+    expect(p.changed).toBe(false) // 只有 plugin 有差异 ⇒ 没有任何可迁内容 ⇒ 免写盘
+  })
+
+  test("existing 根本没有 plugin 键时,legacy 的 plugin[] 也不会凭空造出这个键", () => {
+    const p = planConfigMerge({ $schema: "https://opencode.ai/config.json" }, { plugin: ["/only-legacy.js"] }, undefined)
+    expect(p.merged.plugin).toBeUndefined()
+    expect(p.changed).toBe(false)
+  })
+
+  test("plugin 之外的域照常迁移(闸不能顺手把整次 merge 也一起关掉)", () => {
+    const p = planConfigMerge(undefined, { mcp: { markitdown: { type: "local" } }, plugin: ["/p.js"] }, undefined)
     expect(p.changed).toBe(true)
-    expect(p.merged.plugin).toEqual(["/a/.alpha/plugins/x.js", "/a/.alpha/plugins/y.js"])
+    expect((p.merged.mcp as any).markitdown).toEqual({ type: "local" })
+    expect(p.merged.plugin).toBeUndefined()
   })
 
   test("fully idempotent second pass = no change", () => {
