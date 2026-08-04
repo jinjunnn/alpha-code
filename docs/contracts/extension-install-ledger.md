@@ -34,7 +34,12 @@ review_after: 2026-10-14
 > `writeFileSync+rename` 整个 `alpha.jsonc`,三道白名单一道都不过,而它每次启动都跑。处置是两件事:
 > ① `planConfigMerge` 里「legacy `plugin[]` 并集」删掉(本 portfolio 无真实用户 ⇒ 无 legacy 迁移
 > 义务;而「来源是用户旧配置」不改变「以引擎同等权限执行的第三方 JS」这个事实);② 那次整文件写盘
-> 改调 `ext-config` 的同一个原子提交点。**今天主进程里已不存在第二个引擎 config 的整文件写原语。**
+> 改调 `ext-config` 的同一个原子提交点。**「整份文本换一份」这类写今天只剩这一个提交点。**
+> 边界要说清(实读枚举过,不是推断):`applyBuiltinPolicyEditsUnlocked` 仍有自己的 tmp+rename 写同一个
+> 文件,它**不过这道咽喉** —— 由 `builtinPolicyPathAllowed` 这道具名路径白名单把守(只放 `agent` /
+> `permission.skill` / `command` 的叶子,`plugin` 不是合法首段);`alpha-config-injection` 只在真源缺席时
+> seed `{$schema}`;`alpha-migrate` 的 legacy 臂只做减法且要 `ALPHA_MIGRATE_ENABLE=1`。三者都到不了
+> 「往 `plugin[]` 加元素」,但那是另一道闸的功劳。
 > 随之而来的一格新 fail-closed:盘上的 `alpha.jsonc` 语法坏掉、而容错解析仍读得出 `plugin` 条目时,
 > reconcile **整次不写盘**(loud,`bailedOut` 带咽喉理由,`~/.opencode` 也不清理)—— 因为「写完之后
 > 没多出元素」在那种输入上证不出来。坏文件原样留给用户,不被改写。

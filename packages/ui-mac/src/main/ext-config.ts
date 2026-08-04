@@ -411,17 +411,22 @@ export function writeConfigLeafEditsUnlocked(
 }
 
 /**
- * 引擎 config 的**整文本原子提交**。`before` = 写之前盘上的 live 文本(文件缺席传 `""`/`"{}"`)。
+ * 引擎 config 的**整文本原子提交**(挂咽喉的那一个)。`before` = 写之前盘上的 live 文本
+ * (文件缺席传 `""`/`"{}"`)。
  *
  * 导出是因为 `#832`:boot 期 reconcile 曾经自己 `writeFileSync(tmp)+rename` 写整个 `alpha.jsonc`,
- * 于是它写什么都不过咽喉 —— 那是 ADR-040 记录在案的最后一个结构性绕开口。现在它调本函数,
- * 主进程里**再没有第二个引擎 config 的整文件写原语**;新写入点想绕过咽喉,得先自己手搓一个
- * 原子写,那不是「忘了登记」而是刻意造第二条路。
+ * 于是它写什么都不过咽喉 —— 那是 ADR-040 记录在案的最后一个结构性绕开口。现在它调本函数。
+ *
+ * **不要把这句话读成「主进程里只剩这一个 config 写盘点」**(实读过一遍,那是假的):
+ * `applyBuiltinPolicyEditsUnlocked` 也有自己的 tmp+rename 写同一个文件,它不过本咽喉 —— 它靠的是
+ * 另一道具名路径白名单 `builtinPolicyPathAllowed`(只放 `agent.*.<字段>` / `permission.skill.<名>` /
+ * `command.<名>.<字段>`,`plugin` 结构上不是合法首段,且在任何写盘之前逐条判)。
+ * 另两个不过本咽喉的写:`alpha-config-injection` 只在真源**缺席**时 seed 一个 `{$schema}`
+ * (内容里没有 `plugin` 键),`alpha-migrate` 的 legacy 臂只做减法且要 `ALPHA_MIGRATE_ENABLE=1`。
  */
 export function writeConfigTextAtomic(target: string, before: string, result: string): ConfigResult {
-  // ADR-040 咽喉:本函数是引擎 config 全部整文本写盘的唯一原子提交点(writeKey* / dangling 清扫 /
-  // boot reconcile 都收在这里),所以「往 plugin[] 加元素一律拒」落在这一行 —— 新增的写入调用点
-  // 不需要登记就已经被挡住。
+  // ADR-040 咽喉:凡是「整份文本换一份」的写都收在这里(writeKey* / dangling 清扫 / boot reconcile),
+  // 所以「往 plugin[] 加元素一律拒」落在这一行 —— 这几条路上新增的写入调用点不需要登记就已经被挡住。
   const sealed = sealEnginePluginAdditions(target, before, result)
   if (!sealed.ok) return sealed
   const bak = `${target}.bak`

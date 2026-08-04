@@ -23,10 +23,17 @@
 //   执行的第三方 JS」这个事实;②那次整文件写盘改调 `ext-config` 的原子提交点,于是它**也**过闸。
 //   后者才是类判据:这条路上将来新增任何加法,不需要谁记得登记,就已经被挡住。
 //
-// 接线点(三族物理写原语,主进程里引擎 config 的全部写盘都在其中之一):
+// 接线点(三族物理写原语):
 //   · `ext-config.ts` 的 `writeConfigTextAtomic`(`writeKey*` / dangling 清扫 / boot reconcile 的
-//     整文件写 —— 三者共用的唯一原子提交);
+//     整文件写 —— 三者共用的原子提交);
 //   · `ext-config-tx.ts` 的 `prepareConfigTx`(计划期具名拒绝)与 `applyConfigImage`(switch 期终闸)。
+//
+// **本咽喉不是主进程里唯一的守门人,别照着这句话推「凡写 config 必过这里」**(实读枚举过,那是假的):
+//   `ext-config.ts` 的 `applyBuiltinPolicyEditsUnlocked` 有自己的 tmp+rename,不过本闸 —— 它由
+//   `builtinPolicyPathAllowed` 这道**具名路径白名单**把守(只放 `agent` / `permission.skill` /
+//   `command` 三个域的叶子,`plugin` 结构上不是合法首段,且在任何字节落盘之前逐条判);
+//   `alpha-config-injection` 只在真源缺席时 seed `{$schema}`;`alpha-migrate` 的 legacy 臂只做减法。
+//   三者都到不了「往 `plugin[]` 加元素」,但它们是**另一道闸**的功劳,不是本闸的覆盖面。
 
 import * as path from "node:path"
 import { parse, type ParseError } from "jsonc-parser"
