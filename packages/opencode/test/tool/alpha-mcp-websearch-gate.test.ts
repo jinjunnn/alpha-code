@@ -44,11 +44,6 @@ import {
   CLOUD_MCP_SERVER_ENV,
   LOCAL_WEBSEARCH_DENY_ENV,
 } from "../../../ext/src/cloud-websearch-kill"
-// #650:云工具 id 从**远端**工具名推导,与本文件第三方那半场同一条纪律。alpha 的 server 名是
-// `cloud`,而云 worker 的远端名本身就叫 `cloud_web_search`(#643 P1.3 实测),真实 id 因此是
-// `cloud_cloud_web_search`(P2.1 实测 `calledTool`)—— 下面两条用例以前手写远端名,谁改了 server
-// 名或远端名它们都不会红。
-import { CLOUD_MCP_SERVER_NAME, CLOUD_WEB_SEARCH_REMOTE_TOOL } from "../../../ui-mac/src/main/cloud-web-search"
 
 /** 真 MCP 服务 + 真 Plugin 服务(会真的按 config.plugin 装载外部插件)。 */
 const it = testEffect(LayerNode.compile(LayerNode.group([MCP.node, Plugin.node])))
@@ -129,7 +124,7 @@ const withSovereignty = (on: boolean) => {
   if (on) {
     // main 的 applyWebSearchSovereignty():平台代付(或 kill-switch)时置位本地判决。
     process.env[LOCAL_WEBSEARCH_DENY_ENV] = "1"
-    process.env[CLOUD_MCP_SERVER_ENV] = CLOUD_MCP_SERVER_NAME
+    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
     return
   }
   delete process.env[LOCAL_WEBSEARCH_DENY_ENV]
@@ -315,14 +310,12 @@ describe("#223 R5:用户自带的 remote MCP web search 同受主权判决(真�
 // 127.0.0.1:1(不做 DNS、必然 ECONNREFUSED),因为本组只判钩子,不需要真的连上去。
 // ─────────────────────────────────────────────────────────────────────────────
 const ALPHA_CLOUD_URL = "http://127.0.0.1:1/alpha-cloud"
-/** 引擎真实注册 id(`cloud_cloud_web_search`),由远端名与 server 名推导 —— 不手写。 */
-const CLOUD_WEB_SEARCH_TOOL_ID = McpCatalog.toolName(CLOUD_MCP_SERVER_NAME, CLOUD_WEB_SEARCH_REMOTE_TOOL)
 const ATTACKER_URL = "http://127.0.0.1:1/attacker"
 
 describe("#223 R6:治理豁免绑定端点身份(真实配置 + 真实 ext 装载)", () => {
   const withGovernedCloud = () => {
     process.env[LOCAL_WEBSEARCH_DENY_ENV] = "1"
-    process.env[CLOUD_MCP_SERVER_ENV] = CLOUD_MCP_SERVER_NAME
+    process.env[CLOUD_MCP_SERVER_ENV] = "cloud"
     // 注入面在代付分支托管的那份定义(端点身份的真源)。
     process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify({ type: "remote", url: ALPHA_CLOUD_URL, enabled: true })
   }
@@ -341,7 +334,7 @@ describe("#223 R6:治理豁免绑定端点身份(真实配置 + 真实 ext 装�
         expect((yield* plugin.list()).some((hook) => typeof hook["tool.execute.before"] === "function")).toBe(true)
 
         // 端点身份对上 ⇒ 代付态权威通道照常可用(AC4:不误杀)。
-        expect(Exit.isSuccess(yield* fire(plugin, CLOUD_WEB_SEARCH_TOOL_ID))).toBe(true)
+        expect(Exit.isSuccess(yield* fire(plugin, "cloud_web_search"))).toBe(true)
 
         // 名字前缀撞上治理 server,但它自己不是治理 server ⇒ 豁免不给,照常被拒。
         const denied = yield* fire(plugin, "cloud_attacker_web_search")
@@ -368,7 +361,7 @@ describe("#223 R6:治理豁免绑定端点身份(真实配置 + 真实 ext 装�
       Effect.gen(function* () {
         withGovernedCloud()
         const plugin = yield* Plugin.Service
-        expect(Exit.isFailure(yield* fire(plugin, CLOUD_WEB_SEARCH_TOOL_ID))).toBe(true)
+        expect(Exit.isFailure(yield* fire(plugin, "cloud_web_search"))).toBe(true)
       }),
     {
       config: () => ({
