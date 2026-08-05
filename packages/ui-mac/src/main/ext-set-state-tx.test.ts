@@ -648,3 +648,73 @@ describe("setInstallStateByKey(#817 共有 child 存在量词)", () => {
     expect(findRecordV2(root, "skill", "shx")!.desiredState).toBe("disabled")
   })
 })
+
+// ── `#817` 收尾(Codex 二审②):bundle-claim-only 分类信号的 bypass pin ─────────────────────────
+
+describe("setInstallStateByKey(#817 claim-only package 信号)", () => {
+  test("claim 挂真实 bundle owner 而 graph 不命名该 child ⇒ 仍判 package-managed、候选=0 fail-closed;resolveEntry 零调用", async () => {
+    // validateV3State 只保证 bundle owner 对应**某张**图,不反向要求那张图命名这个 child ——
+    // 所以「claim 复用别的 package 的 owner、图不含 target」是一个读侧合法状态。构造:
+    // ① 装一个真 package(graph A,root agent:ra);② 直写一条 standalone catalog record skill:solo;
+    // ③ 手写账本给 skill:solo 的 claim 挂上 A 的 bundle owner(graph A 不含 skill:solo)。
+    const a = installPackageFixture({ packageId: "package:claim-only", children: [{ kind: "agent", name: "ra" }] })
+    const up = upsertRecordV2(root, {
+      id: "skill:solo",
+      name: "solo",
+      kind: "skill",
+      environment: "prod",
+      scope: { kind: "global" },
+      version: "1.0.0",
+      manifestDigest: dg("manifest:skill:solo"),
+      payloadDigest: dg("payload:skill:solo"),
+      desiredState: "disabled",
+      origin: "catalog",
+      installedAt: "2026-08-05T00:00:00.000Z",
+    })
+    expect(up.ok).toBe(true)
+    const ledgerFile = path.join(root, "installs.json")
+    const ledger = JSON.parse(fs.readFileSync(ledgerFile, "utf8")) as { claims: Array<{ kind: string; name: string; owners: string[] }> }
+    // upsertRecordV2 已为 skill:solo 挂了 standalone claim —— 把 A 的 bundle owner **并进**它的
+    // owners(新建同 key claim 会撞 validateV3State 的 duplicate-claim 闸)。
+    const soloClaim = ledger.claims.find((c) => c.kind === "skill" && c.name === "solo")!
+    soloClaim.owners = [...soloClaim.owners, bundleOwner(a.packageId, a.graph.root.manifestDigest)].sort()
+    fs.writeFileSync(ledgerFile, JSON.stringify(ledger, null, 2) + "\n")
+    // 状态对读侧合法(readPackageLedgerStateV1 会跑 validateV3State;非法即 enable 直接换一种拒因,
+    // 本用例断言的是**分类信号**那一种)。
+    const allowBefore = fs.readFileSync(skillsEnabledPath(root), "utf8")
+    const cfgBefore = fs.existsSync(path.join(root, "alpha.jsonc")) ? fs.readFileSync(path.join(root, "alpha.jsonc"), "utf8") : null
+    let resolveEntryCalls = 0
+    const en = await setInstallStateByKey(
+      { type: "skill", name: "solo", scope: "global", state: "enabled" },
+      deps({
+        // 即使 legacy 表里躺着一条身份完全匹配的 entry:claim 信号必须把它挡在门外(零调用)。
+        // 删掉 packageManagedFactsFor 的 claimHasBundleOwner 分支 ⇒ 本 stub 被咨询并放行 ⇒ 本用例红。
+        resolveEntry: async (id) => {
+          resolveEntryCalls++
+          const entry = {
+            id,
+            type: "skill",
+            name: "solo",
+            displayName: "solo",
+            description: "t",
+            source: "official",
+            category: "t",
+            version: "1.0.0",
+          } as unknown as CatalogEntry
+          return { entry, channel: "cache", catalogVersion: "1.0.0" }
+        },
+        resolvePackage: foundStub(a),
+      }),
+    )
+    expect(en.ok).toBe(false)
+    if (!en.ok) {
+      expect(en.code).toBe("curation-unverifiable")
+      expect(en.reason).toContain("does not match the install record")
+    }
+    expect(resolveEntryCalls).toBe(0)
+    expect(findRecordV2(root, "skill", "solo")!.desiredState).toBe("disabled")
+    expect(fs.readFileSync(skillsEnabledPath(root), "utf8")).toBe(allowBefore)
+    const cfgAfter = fs.existsSync(path.join(root, "alpha.jsonc")) ? fs.readFileSync(path.join(root, "alpha.jsonc"), "utf8") : null
+    expect(cfgAfter).toBe(cfgBefore)
+  })
+})
