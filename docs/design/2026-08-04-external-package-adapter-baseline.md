@@ -101,7 +101,7 @@ AdapterResultV1 {
   fileTableSha256: string,                          // 绑定规范化【文件表】,不是声明
   declaration: AlphaPackageDeclarationV1 | null,    // blocked 时为 null
   status: "ready" | "blocked",
-  findings: [{ sourcePath, level: "warning" | "error", code }]
+  findings: [{ sourcePath, level: "info" | "review-required" | "error", code }]
 }
 ```
 
@@ -112,14 +112,26 @@ AdapterResultV1 {
    这是「未知语义不静默丢弃」可检验的形态。
 2. **`sourcePath` 是源目录里的路径**,不是声明组件的 JSON 路径;
    `.mcp.json` 的每个 server 用 `.mcp.json#<serverName>` 保证唯一。
-3. **`status: "blocked"` ⟺ 至少一条 `level: "error"`**,且此时 `declaration === null`。
+3. **`error` ⇒ `blocked`,钉死**:只要有一条 `level: "error"`,`status` **必须**是 `"blocked"` 且
+   `declaration === null`;反向亦然(`blocked` 必有至少一条 `error`)。
+   ⇒ **`error` + `ready` 不是合法组合**,实现不得产出。
    零可安装组件同样是 `blocked`,code = `no-installable-component`
    (声明必须有 root ⇒ 没有别的合法输出形状;实测语料里 8 个插件不含任何当前合法组件)。
-4. **`warning` 只允许出现在不携带安装语义的条目上**(README / LICENSE、Alpha 不消费的展示性 manifest 字段)。
+4. **三个 level 的语义**:
+   - **`info`** —— 干净映射的组件,或不携带安装语义的条目(README / LICENSE、Alpha 不消费的展示性
+     manifest 字段)。**不改变结果。** 这是**一个干净 mapped 组件的合法表达** —— 规则 1 要求它必须有
+     一条 finding,而它既不该阻断也无需人过目,`info` 就是它的那一条。
+   - **`review-required`** —— 装得上,但**发布端必须人工过目**才能进 build/sign;
+     本地必须**在确认屏展示并绑定该 finding 的 digest**。`status` 仍是 `"ready"`。
+   - **`error`** —— 见规则 3。
+
    **判不准就是 `error`** —— 这是 fail-closed 的位置,不是风格偏好。
 
 > 现行 `CompatibilityReport` 是「可发布声明」的投影(`inputSha256` 绑规范化后的声明、finding 路径
 > 必须是声明组件的 JSON 路径)⇒ **它承载不了源目录覆盖**,不得拿它冒充本合同。
+> `review-required` **投影**进它原生的同名档(其 `verdict` 枚举本就是
+> `compatible | review-required | blocked`,`disposition` 本就含 `review-required`)——
+> 是投影关系,**不是**把那套四态搬回 `AdapterResultV1`:本合同的 `status` 恒为两态。
 
 ### 4.3 第一版映射范围
 
@@ -133,16 +145,17 @@ AdapterResultV1 {
 | `.mcp.json` 里含 `url`(+`type`/`headers`)的 server | → `mcp-remote`;Authorization → `headersTemplate + requiredSecrets` |
 | `commands/**` | **error** —— 宿主三条路都没有安装腿(`ac#840`) |
 | `hooks/**` | **error** —— 宿主没有 hooks profile/runner;引擎还缺真正的 `Stop`、真正的 `SessionEnd`、覆盖失败结果的 PostTool 契约与结构化否决通道([勘破](../architecture/engine-command-and-event-surface.md) §5.2) |
-| 文件表里任何 `executable: true` | **error** —— 执行位结构上穿不过安装链(`source 755 → cas 644 → materialized 644`) |
+| 技能含 `executable: true` 文件 | **`review-required`(不是 error)** —— 执行位结构上穿不过安装链(实测 `source 755 → cas 644 → materialized 644`,全链 `chmod` 零次),故**不阻断安装**,但必须逐源路径具名、展示并绑定 digest。`ac#843` owner 裁决候选 2(发布端报告),**不给 payload 加 `mode`、不保留执行位、不另起第二条宿主告警管线** |
 | `${CLAUDE_PLUGIN_ROOT}` / `${CLAUDE_PROJECT_DIR}` 等模板引用 | **error** —— 不求值模板 |
 | 非法 JSON 的 `.mcp.json` | **error** + 具名 malformed;**不能当「不存在」,更不能修补后猜** |
 | `.mcp.json` 其它形状 / `command` 与 `url` 同时出现 | **error**,具名 unknown,**不猜** |
-| 其余未识别的目录 / 键 | **error**(未知安装语义),或 `warning`(证明得了不携带安装语义) |
+| 其余未识别的目录 / 键 | **error**(未知安装语义),或 `info`(证明得了不携带安装语义) |
 
-⚠️ **诚实后果**:第一版能整包通过的插件是少数 —— 单是 `commands`(22/62 插件)、
-`hooks`(**12/62 有目录**,本期按目录阻断;其中**真正声明了 hook 的是 7 个**,谈能力影响面时用 7)、
-可执行位(9 个技能 / 25 个文件)三格各自都会整包阻断。
-这是刻意的 fail-closed 起点,放宽走后续票,不靠部分安装换覆盖率。
+⚠️ **诚实后果**:第一版整包阻断的两格是 `commands`(22/62 插件)与
+`hooks`(**12/62 有目录**,本期按目录阻断;其中**真正声明了 hook 的是 7 个**,谈能力影响面时用 7)。
+**可执行位不阻断** —— 9 个技能 / 25 个文件走 `review-required`(其中 6 个技能的 `SKILL.md` 真的引用了
+那些脚本,`ac#843` 实测),装得上、但用户在装之前就看得到这件事。
+阻断是刻意的 fail-closed 起点,放宽走后续票,不靠部分安装换覆盖率。
 
 ⚠️ **「形状对得上」不等于可映射** —— 实测三条全是反例,**逐字段冻结表必须在实现开工前落定**:
 
@@ -157,8 +170,11 @@ AdapterResultV1 {
 bare 顶层 map → 逐 server 判形状。**冻结表不得复用 Alpha 自有的受限文法当作 Claude 的文法**
 (那正是「手写别人文法的替身」)。
 
-**容量**:按信封真正用的口径实测 0/62 超过 16、最大 13 —— 但最大那个插件靠一份**非法 JSON** 撑着,
-修好就是 25。`ac#827` 定界时**必须显式回答「25 怎么办」**,答案落进代码或发布端的 error finding。
+**容量:已定界,`ac#827` 已交付**。`maxComponents` = **32**(不再是 16),另有
+`maxComponentAssetFiles` = 64。「25 怎么办」的答案**就是这条界** —— 32 ≥ 25,**装得下**:
+不需要发布端的 blocked finding,也不需要把一个插件拆成多个 Bundle(那会打掉「整包装、整包卸」)。
+32 是容纳 25 的最小常用档,且仍低于事务引擎的 64,保住「信封比事务更严」这层纵深。
+⚠️ 与本界共同起作用的是 `maxHeaderNodes`:32 组件各带满 3 个 capability = 525 > 512,**会先撞它**。
 
 ## 5. 本地落点
 
@@ -173,6 +189,7 @@ bare 顶层 map → 逐 server 判形状。**冻结表不得复用 Alpha 自有�
 
 1. **main-held preview**:vendored adapter 在**已捕获的文件表**上运行,renderer confirm 只回传 `previewId`;
 2. **校验完整的 `AdapterResultV1`,不只是声明**:`status: "blocked"` ⇒ **零 preview-confirm、零事务、零写盘**;
+   **每条 `review-required` finding 必须在确认屏展示,并绑定该 finding 的 digest**(`ac#843`);
    preview 绑定 `fileTableSha256` 与声明。
    不做这一条**发布与本地会分叉** —— 发布端拒 `blocked` 进 build/sign;本地若只看声明,
    一个含 `commands` 的包会拿到「映射组件声明 + blocked 结果」,本地照装子集 ⇒ 用户得到一个不完整的插件;
@@ -215,8 +232,9 @@ bare 顶层 map → 逐 server 判形状。**冻结表不得复用 Alpha 自有�
 
 **一条线,四跳**(`ac#826` 语料尺子已合,是它的起点):
 
-1. **`ac#827` ⊕ `ac#828` 合并成【一次】跨仓 pin 搬运** —— 两票改同一个 registry 文件、同一个聚合 SHA,
-   分两次搬,第一跳落地就把第二跳的 pin 打陈旧;
+1. ✅ **已交付** —— `ac#827` ⊕ `ac#828` 的那**一次**跨仓 pin 搬运已落地:
+   `maxComponents` 升到 **32**、新增 `maxComponentAssetFiles` = 64,skill 载荷从单个 `asset`
+   升为**有界文件清单**(`files`,`1..64`,`uniqueItems`)⇒ **多文件技能现在表达得了**;
 2. **`aw#98` Claude 适配器**(纯库 + 逐字段冻结表)+ 不可变 producer artifact;
 3. **alpha-code 本地消费** —— vendor pin → capture → preview/confirm → 一次事务 → 整包卸载;
 4. **`aw#96` 第二个 provider(Codex)** —— 验证纯库不是给 Claude 定制的。
@@ -230,7 +248,8 @@ bare 顶层 map → 逐 server 判形状。**冻结表不得复用 Alpha 自有�
   ⚠️ ADR-040 要求的那次**事件面勘破已落地**([文档](../architecture/engine-command-and-event-surface.md),
   引擎侧 + 语料侧);hooks 剩下的是**引擎三缺口**(真 `Stop` / 真 `SessionEnd` / 覆盖失败的 PostTool)
   **+ 结构化否决通道 + profile/runner**,外加 Claude hook 契约的两处未验证(退出码语义、stdin 完整字段表)。
-- **`ac#843`(可执行位告知)是放宽「可执行位一律 error」的前置,不是本期前置。**
+- ✅ **`ac#843`(可执行位)已裁决关闭**(owner 2026-08-04 取候选 2:发布端报告)——
+  不再是任何东西的前置;其契约已并入 §4.3 的 `review-required` 行与 §5 的展示 / digest 绑定要求。
 
 ## 8. 退出门
 
@@ -241,7 +260,7 @@ bare 顶层 map → 逐 server 判形状。**冻结表不得复用 Alpha 自有�
 | --- | --- |
 | 1 | **纯度与确定性**:在没有 `fs` / `child_process` / 网络的隔离环境里**真跑** adapter(隔离 `vm.SourceTextModule` 或等价 isolate,自定义 linker 拒绝所有 builtin 与 dynamic import,context 不提供 `process` / `require` / `fetch`),并观测全局写入。⚠️ **双跑逐字节相同远远不够** —— 一个返回固定值的实现完全满足它。必须加**输入敏感性**:分别改 identity / 一个文件的字节 / 路径 / MCP `args` / MCP header / `executable` 位,断言**只有**对应的输出字段与 digest 发生预期变化;**期望值从独立 oracle 得出,不读 adapter 自己的输出回填** |
 | 2 | **发现组件全分类**:真实语料全量跑过 adapter 再送进生产 host parser / decoder / builder(159 skill、43 agent、19 MCP server);**每个被发现的组件恰好一条 finding**,support 文件不产多余 finding;零可安装组件产 `blocked` + `no-installable-component` |
-| 3 | **`blocked` ⇒ 零副作用**:含 `commands` / `hooks` / 可执行位的**真实**包既不进 build/sign,本地也零 preview-confirm、零写盘;**删掉 status gate ⇒ 发生写盘且测试变红**(走真实本地 IPC) |
+| 3 | **`blocked` ⇒ 零副作用**:含 `commands` / `hooks` 的**真实**包既不进 build/sign,本地也零 preview-confirm、零写盘;**删掉 status gate ⇒ 发生写盘且测试变红**(走真实本地 IPC)。**并各一条反向用例**:带可执行位的真实技能**装得上**(它是 `review-required`,不是 `error`),且那条 finding **在确认屏上被抄得到、digest 绑得住**;**摘掉展示 ⇒ 变红**;不带可执行位的技能**一条都不许多** |
 | 4 | **ready Bundle 原子安装 / 卸载**:一份**多组件**本地声明装上后逐文件比对字节;卸载后全部消失;子记录是 `user:` / local origin 且不带 Catalog supply digests;**跨 kind 是一次事务、一个 package mutation** |
 | 5 | **consumer pin 对 producer artifact**:比较对象必须是**固定 alpha-web commit 构建出的不可变 producer artifact**,**不能由 consumer 的 vendor 反向生成** |
 | 6 | **生产调用路径确实调用 adapter**:对 packaged / main build 跑一个特征输入,经**真实本地 handler** 拿到特征输出;**把 adapter 从 bundle 移除、或删掉生产的调用 ⇒ 门必须红**。⚠️「vendored 字节等于旁边的 producer copy」是**假闸** —— Electron 只打包 `out/**` 与 `resources/**`,模块没进包或生产 handler 压根没调用它时,那条门照样全绿 |
