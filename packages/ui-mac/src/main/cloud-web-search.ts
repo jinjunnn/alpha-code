@@ -1,4 +1,33 @@
-export const CLOUD_WEB_SEARCH_TOOL_ID = "cloud_web_search"
+/** 注入面给云 MCP server 起的名字。工具 id 由它与远端工具名拼成(见 `cloudMcpToolId`)。 */
+export const CLOUD_MCP_SERVER_NAME = "cloud"
+
+/**
+ * 已部署云 worker **自己** advertise 的远端工具名(#643 P1.3 实测 `remoteToolNames` 含
+ * `cloud_web_search`)。**它不是引擎里的工具 id** —— 远端名自带 `cloud_` 前缀纯属命名巧合,
+ * 引擎还会再拼一次 server 名。混淆这两层正是 #650 的缺陷。
+ */
+export const CLOUD_WEB_SEARCH_REMOTE_TOOL = "cloud_web_search"
+
+/** `McpCatalog.sanitize`(`packages/opencode/src/mcp/catalog.ts:117`)逐字同义。 */
+const sanitizeMcpName = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "_")
+
+/**
+ * 引擎给远端 MCP 工具起的 id,`McpCatalog.toolName`(同文件 `:119`)逐字同义:
+ * `sanitize(server) + "_" + sanitize(remote)`。ui-mac 不依赖 opencode,所以拼法在这里再写一份;
+ * 漂移由 `cloud-web-search.test.ts` 用**真的** `McpCatalog.toolName` 钉住,不是靠字面量对照。
+ */
+export const cloudMcpToolId = (remoteName: string) =>
+  `${sanitizeMcpName(CLOUD_MCP_SERVER_NAME)}_${sanitizeMcpName(remoteName)}`
+
+/**
+ * 云 web search 在**引擎**里的真实工具 id = `cloud_cloud_web_search`(#643 P2.1 实测
+ * `calledTool`)。
+ *
+ * **#650**:这里以前写的是远端名 `cloud_web_search`。它经 `Permission.fromConfig` →
+ * `Permission.disabled` → `Wildcard.match` 编成 `^cloud_web_search$`,对真实 id 恒不匹配 ——
+ * kill-switch 下那道 permission deny 是**空闸门**,云工具从未从模型工具表里消失过。
+ */
+export const CLOUD_WEB_SEARCH_TOOL_ID = cloudMcpToolId(CLOUD_WEB_SEARCH_REMOTE_TOOL)
 /** 引擎内置的本地 keyless web search 工具 ID(`packages/opencode/src/tool/websearch.ts`)。 */
 export const LOCAL_WEB_SEARCH_TOOL_ID = "websearch"
 /**
@@ -10,7 +39,7 @@ export const LOCAL_WEB_SEARCH_TOOL_ID = "websearch"
  */
 export const LOCAL_WEBSEARCH_DENY_ENV = "ALPHA_LOCAL_WEBSEARCH_DENY"
 /**
- * 云侧同一条通道(#223 R3)。`cloud_web_search` 是**远端 MCP 工具**,没有 alpha 能改的
+ * 云侧同一条通道(#223 R3)。云 web search(引擎 id `cloud_cloud_web_search`)是**远端 MCP 工具**,没有 alpha 能改的
  * `execute` 首行可放闸,而 `ConfigMCPV1.Remote`(`packages/core/src/v1/config/mcp.ts`)只有
  * 整 server 的 `enabled`,**没有 per-tool 过滤** —— 「注册期就不提供这个工具」在引擎侧不存在。
  * 于是最终闸落在 alpha 自有的 ext 插件的 `tool.execute.before` 钩子
@@ -19,9 +48,6 @@ export const LOCAL_WEBSEARCH_DENY_ENV = "ALPHA_LOCAL_WEBSEARCH_DENY"
  * 因此 agent/session 的后置 allow 与 `approved` 一概够不着。
  */
 export const CLOUD_WEBSEARCH_DENY_ENV = "ALPHA_CLOUD_WEBSEARCH_DENY"
-
-/** 注入面给云 MCP server 起的名字(工具 id 由此拼成 `cloud_*`)。 */
-export const CLOUD_MCP_SERVER_NAME = "cloud"
 
 /**
  * kill-switch 下写进 `OPENCODE_CONFIG_CONTENT` 的**中和条目**(#223 R6 Major)。
@@ -120,7 +146,7 @@ export type WebSearchSovereignty = {
 /**
  * 把 ADR-009 的 web search 主权判决落到引擎 permission 层。
  *
- * - **云 `cloud_web_search`**:仅 kill-switch 时 deny(alpha-code#490)。`ConfigMCPV1.Remote`
+ * - **云 web search(`CLOUD_WEB_SEARCH_TOOL_ID` = `cloud_cloud_web_search`)**:仅 kill-switch 时 deny(alpha-code#490)。`ConfigMCPV1.Remote`
  *   只支持整 server 开关,而整 server 关会误伤 `cloud_dispatch` 等兄弟工具。**这层同样只是
  *   可用性**(#223 R3):远端 MCP 工具最终走 `ctx.ask`,后置 allow / `approved` 都能顶掉它。
  *   云侧不可覆盖的最终闸在 `packages/ext/src/cloud-websearch-kill.ts` 的 `tool.execute.before`
@@ -160,7 +186,7 @@ export function applyWebSearchDenies(
     // TODO(alpha-code#490): replace this approximation with a remote-MCP per-tool deny when the engine
     // exposes one; until then the remote catalog still contains the tool even though model tool sets do not.
     diagnostic(
-      "[alpha-code#490] remote MCP config has no per-tool deny; filtering cloud_web_search from model tool sets while preserving the cloud server and sibling tools",
+      `[alpha-code#490] remote MCP config has no per-tool deny; filtering ${CLOUD_WEB_SEARCH_TOOL_ID} from model tool sets while preserving the cloud server and sibling tools`,
     )
   if (denied.includes(LOCAL_WEB_SEARCH_TOOL_ID))
     diagnostic(
