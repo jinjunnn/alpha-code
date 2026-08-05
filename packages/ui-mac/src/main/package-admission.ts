@@ -9,7 +9,7 @@ import { recoveryReceiptInputs } from "./ext-agent-install"
 import { nextDesiredState } from "./ext-install-policy"
 import { promotePayloadToCas } from "./ext-install-planner"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
-import { buildAgentTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
+import { buildAgentTxItems, buildCommandTxItems, buildDepartingChildConfigItemsV1, buildMcpTxItems, buildSkillTxItems } from "./ext-package-tx-builders"
 import { computeGrantDigest, readPackageLedgerStateV1, type UpsertInput } from "./ext-receipt-v2"
 import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import {
@@ -207,6 +207,8 @@ type PreparedComponent = {
   /** `#828` skill:已提升进共享 CAS 的整份文件清单(materialize 由 `populateFromCas` 做)。 */
   assetFiles?: TxFileSpec[]
   agentEntry?: Record<string, unknown>
+  /** `#840` command:payload 字段 + template asset 字节合成的引擎叶(builder 只落 config)。 */
+  commandEntry?: Record<string, unknown>
   itemDigest: string
 }
 
@@ -431,6 +433,9 @@ function componentOperations(component: PreparedComponent) {
       return ["write-generation", "write-install-record", "write-capability-grant"] as const
     case "agent":
       return ["write-file", "update-config", "write-install-record", "write-capability-grant"] as const
+    // `#840` command:纯 config 叶,无盘上文件、无密钥 —— 与无密钥 MCP 同一组操作种类。
+    case "command":
+      return ["update-config", "write-install-record", "write-capability-grant"] as const
     // managed plugin 与 agent 一样是「写文件 + 改配置」,只是文件有两个(wrapper + 第三方字节),
     // 而这一栏说的是**种类**不是条数。
     case "plugin":
@@ -560,6 +565,20 @@ async function resolvePreparedPackage(
         reason: `package admission: component "${component.id}" installs an engine plugin — Alpha no longer installs executable plugins into the engine (ADR-040); refusing the whole package`,
         package: view,
       }
+    // `#840` R1-1(owner 2026-08-05):command 组件的保留名闸。三个名字各是一个已实证的碰撞面:
+    //   · `init` / `review` —— 引擎 builtin 命令。真机实测:config 同名条目**整条静默替换** builtin
+    //     且 `source` 同为 "command",renderer 只按名字短路判 builtin ⇒ 一个叫 init 的包命令会
+    //     无痕接管 /init;
+    //   · `customize-opencode` —— 出厂治理占位名(FACTORY_DENIED_SKILLS),boot reconcile 的
+    //     `stripFactoryBuiltinPolicyLeaves` 会按「名 ∈ 出厂清单 ∧ description 前缀指纹」删它的
+    //     command 叶 —— 同名包命令会撞进这台机器的键空间。
+    // 拒在资产下载之前、整包拒(required 语义本就是全有或全无)。
+    if (kind === "command" && (name === "init" || name === "review" || name === "customize-opencode"))
+      return {
+        ok: false,
+        reason: `package admission: command name "${name}" is reserved (engine builtin or factory governance name) — refusing the whole package (R1-1)`,
+        package: view,
+      }
     // 事务 key 只此一处派生(`packageChildTxKeyV1`)—— 卸载时清授权账用的是同一个函数。
     // 两处各写一遍 ternary,偏差只会在「装得上但卸载后 grants.json 还在」时现身。
     const key = packageChildTxKeyV1(kind, name)
@@ -590,6 +609,27 @@ async function resolvePreparedPackage(
     const agentEntry = asset ? agentMdToEntry(asset.toString("utf8")) : undefined
     if (agentEntry && !agentEntry.ok)
       return { ok: false, reason: `package admission: agent payload invalid (${agentEntry.reason})`, package: view }
+
+    // ── `#840` command:template asset 字节 + payload 字段合成引擎叶 ─────────────────────
+    // **不解析任何 frontmatter**:provider 语义映射唯一真源在发布端(alpha-web),到达这里的
+    // template 已是 provider-neutral 的纯模板字节。取用与双查走 agent 同一条 fetchVerified。
+    const commandBehavior =
+      entry.payload.schema === "alpha.host-extension-package.payload.command.v1"
+        ? entry.payload.behavior
+        : undefined
+    const commandTemplate = commandBehavior ? await fetchVerified(commandBehavior.template) : undefined
+    if (commandBehavior && !commandTemplate)
+      return { ok: false, reason: "package admission: package asset unavailable or failed integrity", package: view }
+    const commandEntry =
+      commandBehavior && commandTemplate
+        ? {
+            template: commandTemplate.toString("utf8"),
+            ...(commandBehavior.description !== undefined ? { description: commandBehavior.description } : {}),
+            ...(commandBehavior.agent !== undefined ? { agent: commandBehavior.agent } : {}),
+            ...(commandBehavior.model !== undefined ? { model: commandBehavior.model } : {}),
+            ...(commandBehavior.subtask !== undefined ? { subtask: commandBehavior.subtask } : {}),
+          }
+        : undefined
 
     // ── `#828` skill:整份文件清单逐份取回 → 提升进验证共享 CAS ─────────────────────────
     //
@@ -634,6 +674,7 @@ async function resolvePreparedPackage(
       ...(asset ? { asset } : {}),
       ...(assetFiles ? { assetFiles } : {}),
       ...(agentEntry?.ok ? { agentEntry: agentEntry.entry } : {}),
+      ...(commandEntry ? { commandEntry } : {}),
       itemDigest: sha256Hex(
         canonicalJson({
           component,
@@ -796,6 +837,13 @@ async function executePreparedPackage(
             ...common,
             ...(component.asset ? { asset: component.asset } : {}),
             ...(component.agentEntry ? { agentEntry: component.agentEntry } : {}),
+          })
+        case "command":
+          // `#840`:单 config item;R4-1 的 disabled 拒绝在 builder 首段(connection.unavailable
+          // 压制的 receipt 会在那里让整包 fail-closed,而不是装出「账本关、命令活」的假态)。
+          return buildCommandTxItems({
+            ...common,
+            ...(component.commandEntry ? { commandEntry: component.commandEntry } : {}),
           })
         case "plugin":
           // ADR-040:到不了这里 —— `resolvePreparedPackage` 已经整包拒过一次。这一条是纵深:

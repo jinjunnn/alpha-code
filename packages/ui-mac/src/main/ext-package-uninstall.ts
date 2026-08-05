@@ -68,6 +68,9 @@ import { applyPackageMutation, findRecordV2, readPackageLedgerStateV1 } from "./
 export type PackageArtifactInstallersV1 = {
   removeFsInstall(type: "skill" | "agent", name: string, target?: { scope: "global" }): { ok: true; files?: string[] } | { ok: false; reason: string }
   removeMcpConfig(name: string): { ok: true } | { ok: false; reason: string }
+  /** `#840`:删 `command.<name>` 叶(生产 = `withConfigWriteLock(removeCommandEntry)` 语义,
+   *  实现自取锁)。command 无盘上实物 —— 叶就是它的全部。 */
+  removeCommandConfig(name: string): { ok: true } | { ok: false; reason: string }
   removeMcpSecretsStrict(name: string): { ok: true } | { ok: false; reason: string }
   releaseAlphaConnectionBindings(componentId: string): { ok: true } | { ok: false; reason: string }
   removeInstallGrants(root: string, keys: string[]): { ok: true; removed: string[] } | { ok: false; reason: string }
@@ -131,6 +134,20 @@ export function removePackageChildArtifactsV1(
       removed.push(...(fsOut.files ?? []))
       const grants = installers.removeInstallGrants(root, [agentInstallKey(child.name), agentConfigItemKey(child.name)])
       if (!grants.ok) return { ok: false, reason: `agent:${child.name}: ${grants.reason}`, removed, warnings }
+      removed.push(...grants.removed)
+      continue
+    }
+    if (child.kind === "command") {
+      // `#840`:command 的「实物」只有一个 —— `alpha.jsonc` 的 `command.<name>` 叶。
+      // update 路径(`skipConfig: true`)上它已由 `buildDepartingChildConfigItemsV1` 的事务
+      // config item 删除(before-image 回滚兜底);整包卸载路径在锁外跑,`removeCommandConfig`
+      // 自取 config 写锁,与 mcp 臂同构。
+      if (!options?.skipConfig) {
+        const cfg = installers.removeCommandConfig(child.name)
+        if (!cfg.ok) return { ok: false, reason: `command:${child.name}: ${cfg.reason}`, removed, warnings }
+      }
+      const grants = installers.removeInstallGrants(root, [packageChildTxKeyV1("command", child.name)])
+      if (!grants.ok) return { ok: false, reason: `command:${child.name}: ${grants.reason}`, removed, warnings }
       removed.push(...grants.removed)
       continue
     }

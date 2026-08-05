@@ -66,11 +66,11 @@ orphan and is refused, even though every other property holds.
 
 `host-extension-package.registry.v1.json` is the static registry: profiles,
 capability vocabulary, and every numeric limit the decoder enforces. The v1
-profiles are exactly `agent`, `mcp-local`, `mcp-remote`, and `skill`, all at
-profile version 1. Each registry entry binds a profile/version pair to one
-strict payload schema and one media type.
+profiles are exactly `agent`, `command`, `mcp-local`, `mcp-remote`, and
+`skill`, all at profile version 1. Each registry entry binds a profile/version
+pair to one strict payload schema and one media type.
 
-ADR-040 forbids a fifth profile whose payload is code the engine evaluates in
+ADR-040 forbids any profile whose payload is code the engine evaluates in
 its own process. `opencode-plugin` was registered here and has been withdrawn,
 together with the `engine:config` / `engine:plugin` capability tokens it
 derived; the desktop authorization surface still uses those two spellings for a
@@ -97,6 +97,21 @@ skipped ones included: it is the producer's signed fact and does not depend on
 what this host happens to support. It can therefore legitimately contain a
 token this host does not know, which is why it is not narrowed to the
 vocabulary above.
+
+## Command payloads carry the template by reference
+
+`profiles/command.v1.schema.json` (`#840`) publishes
+`behavior.{template, description?, agent?, model?, subtask?}` — the
+provider-neutral subset of the engine's v1 `command.<name>` config leaf.
+`template` is a content-addressed `text/markdown` asset reference, not an
+inline string: every payload string is subject to the `maxStringBytes`
+(4096 UTF-8 bytes) structural bound, and 27 of the 100 real command files in
+the measured corpus exceed it (maximum 24,386 bytes). An inline shape would
+refuse real configurations — the `#828` lesson through another door. The host
+fetches and double-checks the template bytes exactly like the agent asset and
+composes the engine leaf at transaction-planning time. `variant` is
+deliberately not part of the v1 payload (owner ruling R3-1, 2026-08-05);
+adding it later is an additive profile revision.
 
 ## Skill payloads are a bounded file list
 

@@ -319,7 +319,9 @@ export function validateServer(server: Record<string, unknown>): ConfigResult {
 // Top-level keys we've verified against opencode's V1 schema (packages/core/src/v1/config/config.ts).
 // opencode hard-fails its ENTIRE config on any unrecognized top-level key, so a single wrong key
 // breaks every session — this allowlist makes such a regression fail loudly here instead.
-const ALLOWED_TOP_KEYS = new Set(["mcp", "plugin", "provider", "agent"])
+// `#840`: "command" verified against ConfigCommandV1 (packages/core/src/v1/config/command.ts) and
+// a live-engine probe (config `command.<name>` served verbatim by v1 `GET /command`).
+const ALLOWED_TOP_KEYS = new Set(["mcp", "plugin", "provider", "agent", "command"])
 
 // https for any host; plain http only for loopback, never with embedded credentials. WHATWG-parsed
 // (not substring) so http://localhost.evil.com / http://127.0.0.1@evil.com can't slip past.
@@ -578,6 +580,29 @@ export function readMcpLeafStrict(
   }
 }
 
+/** `#840`:command 叶的可失败严格读 —— `readMcpLeafStrict` 的 command 面镜像。
+ *  「不存在」(合法前像 undefined)与「不可读/语法损坏/形状异常」(写前拒绝)必须分开:
+ *  fresh 闸靠它区分「可以装」与「未登记叶不认领不覆盖」(治理路写的 builtin 覆盖叶
+ *  `command.init/review` 正是后者的真实实例)。 */
+export function readCommandLeafStrict(
+  name: string,
+): { ok: true; value: Record<string, unknown> | undefined } | { ok: false; reason: string } {
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid command name" }
+  const target = mcpPluginTargetPath()
+  try {
+    if (!fs.existsSync(target)) return { ok: true, value: undefined }
+    const errors: ParseError[] = []
+    const parsed = parse(fs.readFileSync(target, "utf8"), errors) as { command?: Record<string, unknown> } | undefined
+    if (errors.length > 0) return { ok: false, reason: `config unparseable (${errors.length} syntax error(s)) — refusing before any side effect` }
+    const v = parsed?.command?.[name]
+    if (v === undefined) return { ok: true, value: undefined }
+    if (v && typeof v === "object" && !Array.isArray(v)) return { ok: true, value: v as Record<string, unknown> }
+    return { ok: false, reason: `command.${name} has unexpected shape — refusing to snapshot (compensation would destroy it)` }
+  } catch (error) {
+    return { ok: false, reason: `config unreadable: ${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
 /** #352:plugin[] 的 strict 快照读(原子替换的 plan 快照与锁内 precondition 用)——
  *  缺失文件 = 合法空数组;语法损坏/形状异常写前拒绝(替换以 config 现状为事实基底,
  *  基底不可信就不许动)。 */
@@ -776,6 +801,13 @@ export function persistAgentEntry(name: string, entry: Record<string, unknown>, 
 export function removeAgentEntry(name: string, targetPath?: string): ConfigResult {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid agent name" }
   return writeKey(targetPath ?? mcpPluginTargetPath(), ["agent", name], undefined)
+}
+
+/** `#840`:删 `command.<name>` 叶(整包卸载的 command 臂用;`removeAgentEntry` 的 command 镜像)。
+ *  自取 config 写锁(`writeKey` 内)—— 只可在锁外路径调用(整包卸载无事务,满足)。 */
+export function removeCommandEntry(name: string, targetPath?: string): ConfigResult {
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid command name" }
+  return writeKey(targetPath ?? mcpPluginTargetPath(), ["command", name], undefined)
 }
 
 /**

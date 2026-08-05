@@ -51,6 +51,7 @@ describe("package child kind 路由表 (#809 · 基线 §5 第 7 类)", () => {
     expect(routed).toEqual({
       skill: "skill",
       agent: "agent",
+      command: "command",
       "mcp-local": "mcp",
       "mcp-remote": "mcp",
     })
@@ -59,9 +60,9 @@ describe("package child kind 路由表 (#809 · 基线 §5 第 7 类)", () => {
     expect(Object.values(routed)).not.toContain("plugin")
   })
 
-  test("四个 kind 各自派生出互不相同的事务 key 前缀(一个 kind 一个授权账/journal 位置)", () => {
-    const keys = (["skill", "agent", "mcp", "plugin"] as const).map((kind) => packageChildTxKeyV1(kind, "x"))
-    expect(new Set(keys).size).toBe(4)
+  test("五个 kind 各自派生出互不相同的事务 key 前缀(一个 kind 一个授权账/journal 位置)", () => {
+    const keys = (["skill", "agent", "command", "mcp", "plugin"] as const).map((kind) => packageChildTxKeyV1(kind, "x"))
+    expect(new Set(keys).size).toBe(5)
     // plugin 的 key 与 seed 通道的逻辑主 item key 逐字相同 —— 两条通道清的是同一个授权账。
     expect(packageChildTxKeyV1("plugin", "opencode-notify")).toBe("plugin--opencode-notify")
   })
@@ -89,19 +90,19 @@ describe("package child kind 路由表 (#809 · 基线 §5 第 7 类)", () => {
 
   // ── 预览 key:账本图里的 kind 比 package 通道宽,不许强转回一个真实 kind ────────
   test("账本图里出现 package 通道装不出来的 kind ⇒ 预览 key 不得与任何真实 tx key 相撞", () => {
-    // 此前这里是 `packageChildTxKeyV1(node.kind as "skill"|"agent"|"mcp", …)`:`command:foo`
-    // 会被强转成 `mcp--foo`,与一个**真实 MCP child** 的授权账 key 逐字相同 ⇒ 预览行上显示
-    // 的是别人的 capability。
-    expect(packageChildPreviewKeyV1("command", "foo")).not.toBe(packageChildTxKeyV1("mcp", "foo"))
+    // 此前这里是 `packageChildTxKeyV1(node.kind as "skill"|"agent"|"mcp", …)`:当时还不是
+    // child kind 的 `command:foo` 会被强转成 `mcp--foo`,与一个**真实 MCP child** 的授权账
+    // key 逐字相同 ⇒ 预览行上显示的是别人的 capability。`#840` 后 command 成为真实 kind,
+    // 负例由 bundle/cloud 承担(它们仍不在表里)。
     expect(packageChildPreviewKeyV1("bundle", "foo")).not.toBe(packageChildTxKeyV1("mcp", "foo"))
     expect(packageChildPreviewKeyV1("cloud", "foo")).not.toBe(packageChildTxKeyV1("mcp", "foo"))
-    // 四个真实 kind 仍然逐字走同一个派生 —— 预览与事务/授权账必须是同一个 key。
-    for (const kind of ["skill", "agent", "mcp", "plugin"] as const)
+    // 五个真实 kind 仍然逐字走同一个派生 —— 预览与事务/授权账必须是同一个 key。
+    for (const kind of ["skill", "agent", "command", "mcp", "plugin"] as const)
       expect(packageChildPreviewKeyV1(kind, "foo")).toBe(packageChildTxKeyV1(kind, "foo"))
   })
 
-  test("isPackageChildKindV1 恰认这四个", () => {
-    for (const kind of ["skill", "agent", "mcp", "plugin"]) expect(isPackageChildKindV1(kind)).toBe(true)
-    for (const kind of ["command", "bundle", "cloud", "", "Plugin"]) expect(isPackageChildKindV1(kind)).toBe(false)
+  test("isPackageChildKindV1 恰认这五个", () => {
+    for (const kind of ["skill", "agent", "command", "mcp", "plugin"]) expect(isPackageChildKindV1(kind)).toBe(true)
+    for (const kind of ["bundle", "cloud", "", "Plugin", "Command"]) expect(isPackageChildKindV1(kind)).toBe(false)
   })
 })
