@@ -104,6 +104,31 @@ packages/ui-mac src/main/ext-package-lifecycle` → `47 pass` / `Ran 47 tests ac
 | P3b 全量 `--update` 幂等 | exit 0,`✓ 登记簿与实测一致(87 条),零改动`,sha 逐字节同 |
 | P4b 全量 check 绿扫 | exit 0,`✓ 87 个闸门文件全部在位且真的跑过(条数与登记精确一致)`,87 条 summary 全部 `across 1 file` |
 
+## R3(2026-08-05,Codex 三审 —— --update 从不查行级校验红,已修)
+
+**发现成立**:行级校验失败(登记簿格式坏行 / delegates 列空 / `>=N` 无理由 / 条数列非法,
+`assert-gate-files.sh` 四个校验点)只置 `failed=1` 就 `continue`,而 `--update` 分支在写回/
+报成功前**从不看它** —— 末端的 `[ "$failed" -eq 0 ] || exit 1` 只在 check 模式可达。后果:
+登记簿自身坏了一行时,`--update` 静默跳过该行、把其余行照写照报 exit 0。
+
+**修法**:`--update` 分支在任何写回判断之前先查 `failed` —— 非法行存在即
+`--update 中止:登记簿存在非法行 …… all-or-nothing,一条都不写回`,exit 1。
+
+**复验(四个校验类全部实施,零写回逐一以 TSV sha256 证明)**:
+
+| 探针 | 植入 | 结果 |
+| --- | --- | --- |
+| R3-probe(三类合并) | contracts 行 `>=22` 无理由 + git-cross-repo 行条数 `8x` + 坏行 `99` | exit 1;两条行级具名红(`例外必须具名` / `条数列非法:8x`)当场打印;TSV 零写 |
+| R3-b(delegates 真空) | model-catalog 行截断成 4 列(尾随 tab) | exit 1;行级具名红 `delegates_to 列为空 —— 没有委派请显式写 '-'`;TSV 零写 |
+| R3-d(坏行,直接命中新闸) | 追加仅有条数列的 `99` 行 | exit 1;87 条全量测量后行级红 `登记簿格式错误:99`,**新 post-loop 闸**以 `--update 中止:登记簿存在非法行 …… 一条都不写回` 收口;TSV 零写 |
+| 干净幂等复跑 | 无 | exit 0,`✓ 登记簿与实测一致(87 条),零改动`,sha 逐字节同 |
+
+**分层事实(如实登记,不装单层全能)**:bash `read` 以 tab 为 IFS 时**连续 tab 会折叠**,
+「五列中间某列为空」在行内不可表示 —— 双 tab 形态的坏行会把 guarantee 读进 delegates 列,
+脚本行级校验看不出;这类形变由**登记簿完备性测试**(`gate-file-registry.test.ts`,自身在册,
+JS `split("\t")` 不折叠)在测量途中判红,经既有「测试失败即中止」路径同样收口(R3-probe 与
+R3-b 的中止点即它)。两层合起来:任一形态的登记簿损坏在 `--update` 下都是 exit 1 + 零写回。
+
 ## 五、残留(诚实登记)
 
 - 精确条数守「条数」,不守「内容」:把断言掏空留壳(条数不变)不会红 —— 本票范围外的已知边界。

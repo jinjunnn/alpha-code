@@ -119,6 +119,13 @@ if [ "$checked" -lt 25 ]; then
 fi
 
 if [ "$MODE" = update ]; then
+  # `#844` R3(Codex 三审):行级校验红(格式坏行/委派列空/例外无理由/条数列非法)以前只置
+  # failed=1 就 continue,而本分支在写回/报成功前从不看它 —— 非法行被静默跳过、其余行照写照
+  # 报 exit 0,破 all-or-nothing。校验红 = 登记簿本身坏了,一条都不许写回。
+  if [ "$failed" -ne 0 ]; then
+    echo "::error::--update 中止:登记簿存在非法行(见上方 ::error::)—— 先修登记簿,all-or-nothing,一条都不写回"
+    exit 1
+  fi
   if [ ! -s "$updates" ]; then
     echo "✓ 登记簿与实测一致($checked 条),零改动"
     exit 0
