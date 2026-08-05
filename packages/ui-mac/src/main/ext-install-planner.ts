@@ -141,6 +141,7 @@ import {
   setDesiredStateV2,
   probeLedgerForWrite,
   readLedgerV2,
+  readPackageLedgerStateV1,
   reconcileSkillsDerivation,
   upsertRecordsV2,
   verifyProjectScope,
@@ -149,6 +150,8 @@ import {
   type ScopeIdentity,
   type UpsertInput,
 } from "./ext-receipt-v2"
+import type { PackageEnvelopeIdentityV1 } from "./package-installability"
+import { parseOwnerToken } from "./ext-package-ledger-v3"
 import {
   commitInputFromRecord,
   hasSkillGeneration,
@@ -562,8 +565,20 @@ const passthroughTx: InstallTransactionHooks = {
   rollback: () => {},
 }
 
+/** `#817`:签名 package child 启停闸的 catalog 解析结果。选择必须是 **(packageId, version) 双键**
+ *  精确匹配(`validateCatalogPackageShape` 允许同 packageId 多版本并存 —— 单键 `.find` 会错拿
+ *  版本,把真实可验证的安装拒掉);`missing.anyVersionPresent` 供拒绝文案区分「整包下架」与
+ *  「已装版本不再发布」。 */
+export type VerifiedCatalogPackageResolution =
+  | { status: "refused"; reason: string }
+  | { status: "missing"; channel: "remote" | "cache" | "bundled"; anyVersionPresent: boolean }
+  | { status: "found"; channel: "remote" | "cache" | "bundled"; identity: PackageEnvelopeIdentityV1 }
+
 export type PlannerDeps = {
   resolveEntry(catalogId: string): Promise<VerifiedCatalogEntry | null>
+  /** `#817`:签名 package child 的启停解析面(已验 catalog `packages[]`,双键精确)。package-managed
+   *  记录只走此面,**绝不**回退 `resolveEntry`(legacy `entries[]` 从来不含 package child)。 */
+  resolvePackage(packageId: string, version: string): Promise<VerifiedCatalogPackageResolution>
   environment(): AppEnvironment
   platform(): NodeJS.Platform
   globalRoot(): string
@@ -2587,6 +2602,100 @@ export type SetStateRefusalCode =
   | "curation-unverifiable"
 
 
+// ── `#817`:package-managed 判定与 exact 候选(纯读,零写)────────────────────────────────────
+
+/** 一个 exact 候选 = 图节点身份与 record **逐项相等**(componentId + manifestDigest)的那张图。 */
+type PackageManagedFacts =
+  | { ok: true; managed: false }
+  | { ok: true; managed: true; candidates: Array<{ packageId: string; envelopeDigest: string }> }
+  | { ok: false; reason: string }
+
+/**
+ * `#817` 分类规则(Codex 裁决,两个信号任一成立即 package-managed):
+ *   ① 任一 packageGraph 节点命中 (kind,name);② 该 (kind,name) 的 claim 含 `bundle:` owner。
+ * package-managed 时启停**只走** `resolvePackage`;exact 候选为 0 = fail-closed,**绝不**回退
+ * `resolveEntry`。两个信号都不在场才走既有 legacy `entries` 路径(逐字语义保留)。
+ *
+ * exact 候选判据:节点 `componentId === record.id` 且 `manifestDigest === record.manifestDigest`。
+ * 可多候选(跨包共有 child 是准入期允许的 canonical permutation,条件 = 同 manifestDigest,
+ * 见 `ext-package-lifecycle.planPackageChildConflictsV1`;而 manifestDigest 覆盖整个 component
+ * 对象含 id,故合法共有节点恒同 componentId)。候选按 packageId 升序,仅为遍历确定性 ——
+ * 判据是独立精确谓词的存在量词,结果与顺序无关。
+ */
+function packageManagedFactsFor(
+  root: string,
+  record: { kind: InstallReceiptType; name: string; id: string; manifestDigest?: string },
+): PackageManagedFacts {
+  const state = readPackageLedgerStateV1(root, { sideEffectFree: true })
+  if (!state.ok) return { ok: false, reason: state.reason }
+  const named = state.packageGraphs.filter((graph) =>
+    [graph.root, ...graph.children].some((node) => node.kind === record.kind && node.name === record.name),
+  )
+  const claim = state.claims.find((c) => c.kind === record.kind && c.name === record.name)
+  const claimHasBundleOwner = claim !== undefined && claim.owners.some((owner) => parseOwnerToken(owner)?.kind === "bundle")
+  if (named.length === 0 && !claimHasBundleOwner) return { ok: true, managed: false }
+  const candidates = named
+    .filter((graph) =>
+      [graph.root, ...graph.children].some(
+        (node) =>
+          node.kind === record.kind &&
+          node.name === record.name &&
+          node.componentId === record.id &&
+          record.manifestDigest !== undefined &&
+          node.manifestDigest === record.manifestDigest,
+      ),
+    )
+    .map((graph) => ({ packageId: graph.packageId, envelopeDigest: graph.envelopeDigest }))
+    .sort((a, b) => (a.packageId < b.packageId ? -1 : a.packageId > b.packageId ? 1 : 0))
+  return { ok: true, managed: true, candidates }
+}
+
+/** 单候选核对(锁内消费冻结的 resolution;每条谓词独立,失败给具名理由)。 */
+function verifyPackageCandidate(
+  candidate: { packageId: string; envelopeDigest: string },
+  resolution: VerifiedCatalogPackageResolution,
+  record: { kind: InstallReceiptType; name: string; id: string; version?: string; payloadDigest?: string },
+): { ok: true } | { ok: false; reason: string } {
+  if (resolution.status === "refused")
+    return { ok: false, reason: `cannot verify signed package ${candidate.packageId}: ${resolution.reason}` }
+  if (resolution.status === "missing") {
+    if (resolution.channel === "bundled")
+      return {
+        ok: false,
+        reason: `signed package ${candidate.packageId} cannot be verified: the live verified catalog is unavailable and the bundled snapshot carries no signed packages`,
+      }
+    return resolution.anyVersionPresent
+      ? {
+          ok: false,
+          reason: `signed package ${candidate.packageId}@${record.version ?? "unversioned"} is no longer published in the verified catalog (other versions exist) — update or reinstall first`,
+        }
+      : { ok: false, reason: `signed package ${candidate.packageId} is not present in the verified catalog (delisted)` }
+  }
+  const identity = resolution.identity
+  if (identity.packageId !== candidate.packageId || identity.version !== record.version)
+    return {
+      ok: false,
+      reason: `verified catalog package identity ${identity.packageId}@${identity.version} does not match this install (${candidate.packageId}@${record.version ?? "unversioned"})`,
+    }
+  if (identity.envelopeDigest !== candidate.envelopeDigest)
+    return {
+      ok: false,
+      reason: `verified catalog package ${candidate.packageId}@${identity.version} content does not match the installed package (installed ${candidate.envelopeDigest} vs catalog ${identity.envelopeDigest}) — update or reinstall first`,
+    }
+  const component = identity.components.find((c) => c.id === record.id)
+  if (!component)
+    return {
+      ok: false,
+      reason: `component ${record.id} is not part of verified catalog package ${candidate.packageId}@${identity.version}`,
+    }
+  if (record.payloadDigest === undefined || `sha256:${component.payloadSha256}` !== record.payloadDigest)
+    return {
+      ok: false,
+      reason: `component ${record.id} payload digest does not match the verified catalog (installed ${record.payloadDigest ?? "<absent>"} vs catalog sha256:${component.payloadSha256})`,
+    }
+  return { ok: true }
+}
+
 /** desiredState 翻转:scope 独立(global/各项目账本物理分域),项目 identity fail-closed 同卸载。
  *  #395(持久化 config 投影,非事务):锁内 record 重读 + advisory(闭 TOCTOU)→ **两方向都账本先写**
  *  (durable intent;更新读账本重投影自愈,禁用不被更新复活)→ config 原子写(applyConfigImage;
@@ -2595,7 +2704,7 @@ export type SetStateRefusalCode =
  *  project 记录纯账本翻转。本函数自持 Bundle 锁,调用方不得预持(防与内锁互斥死锁)。 */
 export async function setInstallStateByKey(
   rawIntent: unknown,
-  deps: Pick<PlannerDeps, "globalRoot" | "advisoryGate" | "resolveEntry">,
+  deps: Pick<PlannerDeps, "globalRoot" | "advisoryGate" | "resolveEntry" | "resolvePackage">,
 ): Promise<{ ok: true; warning?: string } | { ok: false; reason: string; code?: SetStateRefusalCode }> {
   const decoded = decodeSetStateIntent(rawIntent)
   if (!decoded.ok) return decoded
@@ -2622,23 +2731,45 @@ export async function setInstallStateByKey(
     verified: { id: string; type: string; name: string; version: string | undefined } | null
     status: CurationStatus | null
   } | null = null
+  // ── `#817`:package-managed child 的冻结解析(与 legacy 冻结互斥)。判定信号 = 图节点命中
+  //    (kind,name) 或 claim 含 bundle owner(packageManagedFactsFor);package-managed 只走
+  //    resolvePackage(双键精确),**绝不**调用 resolveEntry —— legacy `entries[]` 从来不含
+  //    package child,回退等于在错误的表里找。
+  let frozenPackage:
+    | { kind: "ledger-unreadable"; reason: string }
+    | {
+        kind: "managed"
+        probes: Array<{ packageId: string; envelopeDigest: string; resolution: VerifiedCatalogPackageResolution }>
+      }
+    | null = null
   if (intent.state === "enabled") {
     const pre = findRecordV2(root, intent.type, intent.name)
     if (pre && pre.origin === "catalog") {
-      const verified = await deps.resolveEntry(pre.id)
-      frozenCuration = verified
-        ? {
-            verified: {
-              id: verified.entry.id,
-              type: verified.entry.type,
-              name: verified.entry.name,
-              // 安装面 record.version = manifest.version = entry.version ?? catalogVersion(synthesizeManifest)
-              // —— 身份比较用同一派生,免得无条目级版本的 bundled 条目恒假失配。
-              version: typeof verified.entry.version === "string" && verified.entry.version ? verified.entry.version : verified.catalogVersion,
-            },
-            status: decodeEntryCurationLoud(verified.entry),
-          }
-        : { verified: null, status: null }
+      const managedPre = packageManagedFactsFor(root, pre)
+      if (!managedPre.ok) {
+        frozenPackage = { kind: "ledger-unreadable", reason: managedPre.reason }
+      } else if (managedPre.managed) {
+        const probes: Array<{ packageId: string; envelopeDigest: string; resolution: VerifiedCatalogPackageResolution }> = []
+        if (pre.version !== undefined)
+          for (const candidate of managedPre.candidates)
+            probes.push({ ...candidate, resolution: await deps.resolvePackage(candidate.packageId, pre.version) })
+        frozenPackage = { kind: "managed", probes }
+      } else {
+        const verified = await deps.resolveEntry(pre.id)
+        frozenCuration = verified
+          ? {
+              verified: {
+                id: verified.entry.id,
+                type: verified.entry.type,
+                name: verified.entry.name,
+                // 安装面 record.version = manifest.version = entry.version ?? catalogVersion(synthesizeManifest)
+                // —— 身份比较用同一派生,免得无条目级版本的 bundled 条目恒假失配。
+                version: typeof verified.entry.version === "string" && verified.entry.version ? verified.entry.version : verified.catalogVersion,
+              },
+              status: decodeEntryCurationLoud(verified.entry),
+            }
+          : { verified: null, status: null }
+      }
     }
   }
   // Codex r2/r3 重设计:启停 = **持久化 config 投影 + 账本翻转**(锁内;disabled plugin 必须从磁盘
@@ -2671,6 +2802,66 @@ export async function setInstallStateByKey(
       if (!adv.allowed) return { ok: false, reason: `advisory ${adv.advisoryId}: ${adv.reason} — re-enable refused (R14)` }
       // #397 curation 闸(advisory 之后 —— 权威排序 §1;仅 catalog 记录有 curation 面)。
       if (record.origin === "catalog") {
+        // ── `#817`:锁内先判 package-managed(权威判定;信号 = 图节点命中 (kind,name) 或 claim
+        //    含 bundle owner)。package-managed 只走冻结的 resolvePackage 探测,**绝不**回退
+        //    resolveEntry;exact 候选为 0 = fail-closed。两个信号都不在场才走下方 legacy 路径
+        //    (逐字保留)。冻结/锁内判定不一致 = 记录或图在两点之间漂移 → 拒绝重试。
+        const managedNow = packageManagedFactsFor(root, record)
+        if (!managedNow.ok)
+          return {
+            ok: false,
+            code: "curation-unverifiable",
+            reason: `${record.kind} ${record.name}: cannot determine package management state (${managedNow.reason}) — enable refused (fail closed)`,
+          }
+        if (managedNow.managed) {
+          if (!frozenPackage)
+            return { ok: false, reason: `${record.kind} ${record.name}: record became package-managed while its state was being resolved — retry` }
+          if (frozenPackage.kind === "ledger-unreadable")
+            return {
+              ok: false,
+              code: "curation-unverifiable",
+              reason: `${record.kind} ${record.name}: cannot determine package management state (${frozenPackage.reason}) — enable refused (fail closed)`,
+            }
+          if (record.version === undefined)
+            return {
+              ok: false,
+              code: "curation-unverifiable",
+              reason: `${record.kind} ${record.name}: install record carries no version — cannot match it against the verified catalog; reinstall first (fail closed)`,
+            }
+          // exact 候选 = 0:图/claim 表明 package-managed,但节点身份(componentId/manifestDigest)
+          // 与 record 漂移 —— 无法证明这份安装对应任何已验 package,fail-closed,绝不回退 entries。
+          if (managedNow.candidates.length === 0)
+            return {
+              ok: false,
+              code: "curation-unverifiable",
+              reason: `${record.kind} ${record.name}: a package graph names this child but its identity (componentId/manifestDigest) does not match the install record — enable refused (fail closed; update or reinstall the package)`,
+            }
+          // 存在量词 over 精确谓词:至少一个候选全匹配才放行;每次探测都是 (packageId, version)
+          // 双键 + envelope/component/payload/manifest 逐项核对,结果与遍历顺序无关。
+          const failures: string[] = []
+          let anyVerified = false
+          for (const candidate of managedNow.candidates) {
+            const probe = frozenPackage.probes.find(
+              (p) => p.packageId === candidate.packageId && p.envelopeDigest === candidate.envelopeDigest,
+            )
+            if (!probe)
+              return { ok: false, reason: `${record.kind} ${record.name}: package graph changed while its state was being resolved — retry` }
+            const verdict = verifyPackageCandidate(candidate, probe.resolution, record)
+            if (verdict.ok) {
+              anyVerified = true
+              break
+            }
+            failures.push(verdict.reason)
+          }
+          if (!anyVerified)
+            return {
+              ok: false,
+              code: "curation-unverifiable",
+              reason: `${record.kind} ${record.name}: ${failures.join("; ")} (fail closed)`,
+            }
+          // 全匹配 ⇒ 诚实 uncurated(package envelope 今天没有 curation 字段)——直接落既有 #395
+          // 保守启用面;不发明 package curation,session-grant / 复审过期分支按构造不触发。
+        } else {
         // 「锁外无记录、锁内出现」的窗口 → 拒绝重试(下轮重新冻结)。
         if (!frozenCuration)
           return { ok: false, reason: `${record.kind} ${record.name}: record appeared while curation was being resolved — retry` }
@@ -2710,6 +2901,7 @@ export async function setInstallStateByKey(
               code: "expired-review-confirmation-required",
               reason: `${record.kind} ${record.name}: security review expired at ${status.curation.review.reviewBefore} — enable requires explicit user confirmation (contract §7.2)`,
             }
+        }
         }
       }
     }

@@ -762,3 +762,66 @@ test("every TX_CRASH_POINT converges through the real ext-ipc recovery to all-ol
     "在这张计划上未生效的崩溃点必须逐个具名",
   ).toEqual(["mid-materialize"])
 }, 300_000)
+
+// ── `#817`:签名 package child 在**生产启停通道**上拨开(用户竖线的最后一跳)────────────────────
+//
+// 判据是三个生效面的**盘面结果**,不是 resolver 的返回值:skill = 派生允许集文件(引擎注入门
+// 消费的那份)、agent = alpha.jsonc 的 `disable` 键、mcp = `enabled:false` 键。把启停解析改回
+// legacy `entries[]`(package child 从来不在那张表里)⇒ enable 一律被拒 ⇒ 这三处盘面不变 ⇒ 红。
+test("`#817` signed package children flip on through the production ext-set-install-state channel; catalog drift stays fail-closed", async () => {
+  resetDisk()
+  fixture = mixedBundleFixture()
+  const { result } = await installBundle("mixed-bundle-817-enable", grants())
+  expect(result).toMatchObject({ ok: true })
+
+  const setState = handlers.get("ext-set-install-state")
+  if (!setState) throw new Error("ext-set-install-state handler was not registered")
+  const cfg = () => JSON.parse(readFileSync(join(root(), "alpha.jsonc"), "utf8")) as Record<string, any>
+  const allow = () => JSON.parse(readFileSync(join(root(), "skills-enabled.json"), "utf8")) as unknown
+
+  // 安装后三 child 均 disabled(catalog 首装缺省)—— #817 报的现场。
+  expect(cfg().agent["generic-bundle-agent"].disable).toBe(true)
+  expect(cfg().mcp["generic-bundle-remote"].enabled).toBe(false)
+  expect(allow()).toEqual({ v: 1, keys: [] })
+
+  // skill:拨开 → 引擎允许集当场出现它。
+  const skillOn = (await setState({ sender: { id: 1 } }, { type: "skill", name: "generic-bundle-skill", scope: "global", state: "enabled" })) as { ok: boolean; reason?: string }
+  expect(skillOn.ok, skillOn.reason).toBe(true)
+  expect(allow()).toEqual({ v: 1, keys: ["skill--generic-bundle-skill"] })
+
+  // agent:拨开 → disable 投影解除。
+  const agentOn = (await setState({ sender: { id: 1 } }, { type: "agent", name: "generic-bundle-agent", scope: "global", state: "enabled" })) as { ok: boolean; reason?: string }
+  expect(agentOn.ok, agentOn.reason).toBe(true)
+  expect(cfg().agent["generic-bundle-agent"].disable).toBeUndefined()
+
+  // mcp:拨开 → enabled:false 解除。
+  const mcpOn = (await setState({ sender: { id: 1 } }, { type: "mcp", name: "generic-bundle-remote", scope: "global", state: "enabled" })) as { ok: boolean; reason?: string }
+  expect(mcpOn.ok, mcpOn.reason).toBe(true)
+  expect(cfg().mcp["generic-bundle-remote"].enabled).toBeUndefined()
+
+  // 拨回 disabled(反向投影仍通),为漂移负例归位。
+  const mcpOff = (await setState({ sender: { id: 1 } }, { type: "mcp", name: "generic-bundle-remote", scope: "global", state: "disabled" })) as { ok: boolean }
+  expect(mcpOff.ok).toBe(true)
+  expect(cfg().mcp["generic-bundle-remote"].enabled).toBe(false)
+
+  // 漂移负例①:catalog 里同 (packageId, version) 的 envelope 内容变了(payload sha 改一位 ⇒
+  // envelopeDigest 必变)⇒ enable fail-closed,具名 mismatch。
+  const drifted = structuredClone(fixture.envelope)
+  ;(drifted.components[0]!.payloadRef as { sha256: string }).sha256 = "0".repeat(64)
+  fixture = { ...fixture, envelope: drifted }
+  const refused = (await setState({ sender: { id: 1 } }, { type: "mcp", name: "generic-bundle-remote", scope: "global", state: "enabled" })) as { ok: boolean; code?: string; reason?: string }
+  expect(refused.ok).toBe(false)
+  expect(refused.code).toBe("curation-unverifiable")
+  expect(refused.reason).toContain("content does not match the installed package")
+  expect(cfg().mcp["generic-bundle-remote"].enabled).toBe(false)
+
+  // 漂移负例②:整包从 verified catalog 消失(delisted;alpha-web#131 的时序)⇒ 拒且具名。
+  const relisted = structuredClone(mixedBundleFixture().envelope)
+  ;(relisted.prelude as { packageId: string }).packageId = "package:someone-else"
+  fixture = { ...fixture, envelope: relisted }
+  const gone = (await setState({ sender: { id: 1 } }, { type: "mcp", name: "generic-bundle-remote", scope: "global", state: "enabled" })) as { ok: boolean; code?: string; reason?: string }
+  expect(gone.ok).toBe(false)
+  expect(gone.code).toBe("curation-unverifiable")
+  expect(gone.reason).toContain("delisted")
+  expect(cfg().mcp["generic-bundle-remote"].enabled).toBe(false)
+})
