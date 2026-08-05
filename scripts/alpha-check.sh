@@ -150,7 +150,7 @@ else
   echo "    ✗ tests failed"; fail=1
 fi
 
-# `#777`:下面三步此前**本地完全没有**,而 CI 有。缺 [5/7] 尤其贵 —— 77 个登记闸门里
+# `#777`:下面三步此前**本地完全没有**,而 CI 有。缺 [5/7] 尤其贵 —— 登记闸门里
 # llm / core / opencode 那几个只在这一步执行,别的步骤一条都不覆盖它们。
 echo "▶ [5/7] assert gate files (逐个点名;整包地板抓不到单个闸门文件消失)"
 if bash scripts/assert-gate-files.sh; then

@@ -14,7 +14,7 @@ bash scripts/alpha-check.sh
 
 > `#777` 起,「与 alpha-ci 1:1」不再是散文。2026-08-03 实读:此前这句话写在三处
 > (本文件、`CLAUDE.md`、`scripts/alpha-check.sh` 抬头),而脚本实际只跑了 12 步里的 9 步 ——
-> 缺 `assert-gate-files.sh`(77 个登记闸门里 llm / core / opencode 那几个**只在这一步执行**)、
+> 缺 `assert-gate-files.sh`(登记闸门里 llm / core / opencode 那几个**只在这一步执行**)、
 > 缺 `assert-seed-assets.sh`、缺 `check-doc-links.py`;而且三条测试用的是裸 `bun test`
 > (跑 0 条照样 exit 0 —— CI 早在 `#647` 修掉的假绿形态,本地原样留着)。
 > **「本地绿 ⇒ 可以合」这条铁律的全部依据就是这句 1:1**,所以它现在由
@@ -36,7 +36,7 @@ bash scripts/alpha-check.sh
 | **NUL 字节闸** | `[2/7]` `scripts/assert-no-nul-bytes.py` | 同上 job | 字面 NUL 让 `grep` 对整个文件静默失明(`#760`) |
 | **typecheck**(三个 alpha 包) | `[3/7]` contracts-consumer + ext + ui-mac | `typecheck (alpha packages)` | 类型不过 |
 | **契约锁 + 单元测试** | `[4/7]` `check:vendor` + `bun-test-floor.sh` × 3(15 / 100 / 3000) | `unit tests (alpha packages)` | vendored hash、producer/consumer fixture 或运行时守卫回归 |
-| **闸门文件点名** | `[5/7]` `scripts/assert-gate-files.sh`(77 个) | 同上 job | 某个闸门文件被删/被清空 —— 整包地板抓不到 |
+| **闸门文件点名** | `[5/7]` `scripts/assert-gate-files.sh`(全量见 `scripts/gate-files.tsv`) | 同上 job | 某个闸门文件被删/被清空/条数偏离登记 —— 整包地板抓不到。`#844` 起逐条判**精确条数**(少=删了用例,多=新增未登记);改动闸门文件后跑 `bash scripts/assert-gate-files.sh --update` 从实测写回登记簿(all-or-nothing、幂等),例外语法与理由要求见 TSV 抬头或脚本 `--help` |
 | **seed assets** | `[6/7]` `scripts/assert-seed-assets.sh` | `seed assets present` | 打包资源被静默删除(B7/B15) |
 | **docs gate** | `[7/7]` `scripts/check-doc-links.py <改动的 md>` | `docs gate` | Markdown 相对链接断了 |
 
