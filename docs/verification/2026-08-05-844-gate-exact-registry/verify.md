@@ -77,6 +77,33 @@ review_after: 2026-11-05
 - `gate-file-registry.test.ts` / `req128-capability-matrix.test.ts` 对 TSV 只读
   workdir/path/delegates 列,列 1 语义变化不涉及;两者均在 V1 全绿扫中通过。
 
+## R2(2026-08-05,Codex 二审 Blocker —— 测量路径漏了「恰好 1 个文件」判定,已修)
+
+**Blocker 成立并已逐字复现**:R1 版把 M==1 判定只挂在 `=N` 精确模式上,而 `--update` 对精确行
+以 `run_spec=0`(下界模式)测量 —— 过宽的路径过滤器会把**跨文件合计数**当单文件实测写回。
+复现(修复前):`ALPHA_TEST_COUNT_FILE=/tmp/count bash scripts/bun-test-floor.sh 0
+packages/ui-mac src/main/ext-package-lifecycle` → `47 pass` / `Ran 47 tests across 2 files`
+(lifecycle 26 + permutations 21)、exit 0、count 文件被写成 47。
+
+**修法**(`scripts/bun-test-floor.sh`):「恰好 1 个文件」判定上移为**精确模式 ∨ 测量模式
+(count 文件置位)**共用,且判定失败先于写 count 文件(量错对象的数字零字节流出)。
+
+**修复自身引出的第二个坑(P3 首跑抓到,一并修)**:`ALPHA_TEST_COUNT_FILE` 会顺着 env 继承进
+被测用例自己 spawn 的 `bun-test-floor.sh` —— `gate-environment.test.ts` 形状 B 恰好以**双文件
+下界模式**合法调用本脚本,于是 `--update` 量到它时其内部子调用被 M==1 误杀(受保护测试在测量
+路径上假红)。修法:测量契约只属于本次调用,读入后立刻 `unset`,子进程零继承(顺带消除子调用
+覆写父测量值的通道)。
+
+复验(全部实施):
+
+| 探针 | 结果 |
+| --- | --- |
+| P1 过宽路径测量(Codex 原式) | exit 1,`精确/测量模式要求恰好点名 1 个文件,实际匹配了 2 个`,count 文件**未写** |
+| P2 `--update` 端到端(TSV 行 path 改成 `src/`,命中 3 文件) | 第 1 条即中止,`all-or-nothing,一条都不写回`,TSV sha 前后相同 |
+| gate-environment 单条测量 | exit 0,count=1(受保护测试的合法双文件子调用不再被误杀) |
+| P3b 全量 `--update` 幂等 | exit 0,`✓ 登记簿与实测一致(87 条),零改动`,sha 逐字节同 |
+| P4b 全量 check 绿扫 | exit 0,`✓ 87 个闸门文件全部在位且真的跑过(条数与登记精确一致)`,87 条 summary 全部 `across 1 file` |
+
 ## 五、残留(诚实登记)
 
 - 精确条数守「条数」,不守「内容」:把断言掏空留壳(条数不变)不会红 —— 本票范围外的已知边界。

@@ -2,7 +2,8 @@
 #
 # 跑 `bun test`,并断言**实际执行的用例数**符合给定期望。期望有两种形态(`#844`):
 #   · `N`  —— 下界:pass ≥ N。整包地板专用(3000/100/15 这类刻意留大余量的灾难闸)。
-#   · `=N` —— 精确:pass == N,且本次运行必须恰好跑了 1 个文件。闸门登记簿
+#   · `=N` —— 精确:pass == N,且本次运行必须恰好跑了 1 个文件(该「恰好 1 个文件」判定
+#             同样罩住 ALPHA_TEST_COUNT_FILE 置位的测量模式 —— #844 R2)。闸门登记簿
 #             (scripts/gate-files.tsv)专用 —— 下界留余量时,新加进闸门文件的用例
 #             可以被整段删掉而登记簿全绿(#844 实测 35/87 条有余量);精确条数让
 #             「删一条」与「加一条没登记」都当场红。
@@ -42,6 +43,13 @@ fi
 case "$floor" in
   ''|*[!0-9]*) echo "::error::非法的条数参数:${exact:+=}${floor}" >&2; exit 2 ;;
 esac
+
+# `#844` R2:测量契约(ALPHA_TEST_COUNT_FILE)只属于**本次调用**,读入后立刻 unset ——
+# 否则它会顺着 env 继承进被测用例自己 spawn 的 bun-test-floor.sh(gate-environment.test.ts
+# 的形状 B 就以双文件下界模式合法调用本脚本),让「恰好 1 个文件」判定误伤合法的多文件
+# 子调用,并让子调用反过来覆写父测量值。
+count_file="${ALPHA_TEST_COUNT_FILE:-}"
+unset ALPHA_TEST_COUNT_FILE
 
 # ── 每条用例的默认超时(`#777` 的环境咽喉)──────────────────────────────────────
 # bun 默认 5000ms。本仓有 31 条 host 用例在子进程里跑**一整套** `.cases.ts`,5 秒对它们
@@ -86,21 +94,29 @@ if [ "$status" -ne 0 ]; then
   exit 1
 fi
 
-# `#844`:供 assert-gate-files.sh --update 收集实测条数。写在断言之前:--update 需要的是
+# `#844` R2(Codex 二审 Blocker):「恰好 1 个文件」的判定必须同时罩住**精确模式**与
+# **测量模式**(ALPHA_TEST_COUNT_FILE 置位,即 --update 的取数路径)。R1 版只挂在精确
+# 模式上,而 --update 对精确行以下界 0 测量 —— 一个过宽的路径过滤器(实测
+# `src/main/ext-package-lifecycle` 同时命中 lifecycle 与 lifecycle-permutations 两个文件,
+# 47 across 2 files)会把跨文件合计数当成单文件实测写回登记簿。判定先于写 count 文件:
+# 量错了对象的数字一个字节都不许流出去。
+if [ -n "$exact" ] || [ -n "$count_file" ]; then
+  # bun test 的参数是路径**过滤器**,一个写歪的路径可以匹配到 0 个或多个文件,条数碰巧
+  # 凑对就是假绿。取最后一行 summary(host 内嵌子进程的 summary 在前,外层最后打印)。
+  files="$(grep -aoE 'Ran [0-9]+ tests? across [0-9]+ files?' "$log" | tail -1 | sed -E 's/.*across ([0-9]+) files?.*/\1/')"
+  if [ "${files:-0}" -ne 1 ]; then
+    echo "::error::${workdir} $* —— 精确/测量模式要求恰好点名 1 个文件,实际匹配了 ${files:-0} 个(路径写歪/文件被删/过滤器过宽)。"
+    exit 1
+  fi
+fi
+
+# 供 assert-gate-files.sh --update 收集实测条数。写在条数断言之前:--update 需要的是
 # 「测试绿时的实测值」,与当前登记值是否相符无关(它就是来修登记值的)。
-if [ -n "${ALPHA_TEST_COUNT_FILE:-}" ]; then
-  printf '%s\n' "$pass" > "$ALPHA_TEST_COUNT_FILE"
+if [ -n "$count_file" ]; then
+  printf '%s\n' "$pass" > "$count_file"
 fi
 
 if [ -n "$exact" ]; then
-  # 精确模式一次只能点名一个文件:bun test 的参数是路径**过滤器**,一个写歪的路径可以
-  # 匹配到 0 个或多个文件,条数碰巧凑对就是假绿。取最后一行 summary(host 内嵌子进程的
-  # summary 在前,外层最后打印)。
-  files="$(grep -aoE 'Ran [0-9]+ tests? across [0-9]+ files?' "$log" | tail -1 | sed -E 's/.*across ([0-9]+) files?.*/\1/')"
-  if [ "${files:-0}" -ne 1 ]; then
-    echo "::error::${workdir} $* —— 精确模式要求恰好点名 1 个文件,实际匹配了 ${files:-0} 个(路径写歪/文件被删/过滤器过宽)。"
-    exit 1
-  fi
   if [ "$pass" -lt "$floor" ]; then
     echo "::error::${workdir} $* —— 实际 ${pass} 条 < 登记 ${floor} 条:有用例被删除/清空/skip 掉了。若是刻意移除,跑 bash scripts/assert-gate-files.sh --update 并让评审读到这个 diff。"
     exit 1
