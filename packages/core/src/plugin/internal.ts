@@ -60,17 +60,6 @@ export function define<R>(plugin: Plugin<R>) {
   return plugin
 }
 
-// The model endpoint needs one deterministic, account-independent signal that the built-in
-// catalog transforms have all committed. Waiting on an ordinary provider/variant plugin is
-// brittle because that plugin can stay active while a later built-in transform is still loading.
-// This no-op plugin is registered last and becomes active only after every preceding built-in
-// plugin has completed its initial effect.
-export const CatalogReadyPluginID = PluginV2.ID.make("core/catalog-ready")
-const CatalogReadyPlugin = define({
-  id: CatalogReadyPluginID,
-  effect: () => Effect.void,
-})
-
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
@@ -130,7 +119,6 @@ const layer = Layer.effectDiscard(
         yield* add(ConfigExternalPlugin.Plugin)
         yield* add(ConfigProviderPlugin.Plugin)
         yield* add(VariantPlugin.Plugin)
-        yield* add(CatalogReadyPlugin)
       }),
     ).pipe(Effect.withSpan("PluginInternal.boot"), Effect.forkScoped({ startImmediately: true }))
   }),

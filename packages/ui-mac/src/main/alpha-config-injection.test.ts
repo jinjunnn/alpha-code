@@ -23,9 +23,14 @@
 // 变异实证绕过);留在本文件的源码锚只锁 bun 无法运行时验证的接线事实(唯一通路 + 捕获值整体入参)。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Config } from "../../../core/src/config"
+import { ConfigV1 } from "../../../core/src/v1/config/config"
+import { ConfigMigrateV1 } from "../../../core/src/v1/config/migrate"
+import { Schema } from "effect"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../shared/alpha-config"
 import { injectAlphaConfig } from "./alpha-config-injection"
 import { secretFilePath } from "./alpha-secret-files"
 import {
@@ -176,6 +181,17 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     expect(typeof v2.model).toBe("string")
     expect(v2.model.length).toBeGreaterThan(0)
     expect(Object.keys(v2.provider ?? {})).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
+    // #857:internal V2-only marker is committed by ConfigProvider in the same local batch as the
+    // governed catalog. Empty env + zero models keeps it unavailable and invisible to model.list.
+    expect(v2.provider[ALPHA_V2_CATALOG_READY_PROVIDER_ID]).toEqual({
+      name: "Alpha catalog readiness marker",
+      env: [],
+    })
+    const decodedV1 = Schema.decodeUnknownSync(ConfigV1.Info)(v2)
+    const decodedV2 = Schema.decodeUnknownSync(Config.Info)(ConfigMigrateV1.migrate(decodedV1))
+    expect(decodedV2.providers?.[ALPHA_V2_CATALOG_READY_PROVIDER_ID]?.env).toEqual([])
+    const v1 = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? "")
+    expect(v1.provider?.[ALPHA_V2_CATALOG_READY_PROVIDER_ID]).toBeUndefined()
     // v2 投影是**刻意 keyless** 的(契约 docs/contracts/engine-config-channels.md:41-42):
     // 推理走 v1 的 {file:} 通道,v2 只供 picker 列目录,所以这份文件里既不该有明文密钥,
     // 也不该有 apiKey 字段本身。断言两者,而不是断言「有 {file: ref」——

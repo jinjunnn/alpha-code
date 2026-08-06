@@ -48,10 +48,12 @@ import 是 bun 未实现的 `node:module` registerHooks,顶层还有 `getParentP
      —— 桥内不设 catch,抛错经 `injectAlphaConfig` 外层 catch 以 `{ok:false}` 上报。
      桥排在 v1 env 写出**之后**,抛错不撤销已就位的 v1 注入(顺序由反向闸门锁死)。
 
-v2 catalog 的配置文件就位不等于内存 catalog 已经收敛。`PluginInternal` 在后台依次装载
-models.dev、provider、用户配置与 variant transform;中途读取曾把 6,132 行 models.dev
-过渡态序列化给首屏,而同进程热路径只有 37 行(#857)。`/api/model` 因此必须先等待内部最后
-注册的 `core/catalog-ready` marker,再调用 `catalog.model.available()`。这道 barrier 只等待本地
+v2 catalog 的配置文件就位不等于每个 directory 的内存 catalog 已经收敛。`PluginInternal`
+在后台依次装载 models.dev、provider、用户配置与 variant transform;中途读取曾把 6,132 行
+models.dev 过渡态序列化给首屏,而同进程热路径只有 37 行(#857)。Alpha 因此在 v2-only provider
+投影里追加 `alpha-internal-catalog-ready` 记录(`env:[]`、零 models):它不进入 available provider/model
+集合,但只会随现有 ConfigProvider 的同一批 catalog commit 出现。renderer 的 typed model contract
+在**同一 directory**先轮询 `provider.get(marker)`,再发首次 `model.list`。这道 barrier 只等待本地
 插件初始化,不读取 account summary、平台 bearer 或远端账户状态;登出/BYOK 目录仍与账户链并行。
 
 同一次 fork 内同源产出,两投影无漂移面。推理密钥只存在于 v1 通道。
@@ -86,8 +88,10 @@ models.dev、provider、用户配置与 variant transform;中途读取曾把 6,1
 - **v2 文件必须能通过 `isV1 → migrate → decode` 链**:v2 解码失败是静默整文件
   丢弃,新增键前先以真实链验证(参照 2026-07-23 探针方法)。
 - **v2 `model.list` 不得读取内部插件批次的中间态**:#857 以
-  `packages/server/src/handlers/model.test.ts` 锁住 `wait(core/catalog-ready) → read` 顺序、首读与
-  热读集合相等,并先证明绕过 barrier 时替身确实暴露未治理集合。barrier 不得换成账户或网络门。
+  `packages/ui-mac/src/renderer/alpha-ui/model-contract.test.ts` 锁住
+  `provider.get(alpha-internal-catalog-ready) → model.list` 顺序、首读与热读集合相等,并先证明
+  绕过 barrier 时替身确实暴露未治理集合。`alpha-config-injection.test.ts` 另锁 marker 只在 v2
+  投影、`env:[]` 且零 models。barrier 不得换成账户或网络门。
 - **密钥不落 v2 文件**:v2 无解析机制,写入即明文。
 
 ## 事故记录与收敛
