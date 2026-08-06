@@ -34,6 +34,7 @@ import { injectDisabledOverrides } from "./ext-disabled-injection"
 import { injectMcpDefaultDeny } from "./mcp-default-deny"
 import { materializeCloudMcpConfig } from "./cloud-sidecar-config"
 import type { ChannelName } from "./catalog-channels"
+import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../shared/alpha-config"
 
 // Inject alpha-code's customizations into opencode via OPENCODE_CONFIG_CONTENT. This env var is
 // MERGED with the user's global/project config — it does NOT replace it (opencode config.ts
@@ -133,7 +134,11 @@ export function injectAlphaConfig(
     try {
       const instrDir = path.join(alphaGlobalRoot(), "instructions")
       const imported = fs.existsSync(instrDir)
-        ? fs.readdirSync(instrDir).filter((f) => f.endsWith(".md")).sort().map((f) => path.join(instrDir, f))
+        ? fs
+            .readdirSync(instrDir)
+            .filter((f) => f.endsWith(".md"))
+            .sort()
+            .map((f) => path.join(instrDir, f))
         : []
       if (imported.length) {
         const instructions: string[] = Array.isArray(config.instructions) ? config.instructions : []
@@ -421,7 +426,7 @@ function materializeV2EngineConfig(userDataPath: string, config: { model?: unkno
   } catch {
     fs.rmSync(userCopy, { force: true }) // 无真源(或读失败)则清掉旧拷贝,不留陈尸
   }
-  const provider = Object.fromEntries(
+  const provider: Record<string, unknown> = Object.fromEntries(
     Object.entries((config.provider ?? {}) as Record<string, { options?: Record<string, unknown> }>).map(
       ([id, def]) => {
         const { apiKey: _apiKey, ...options } = def.options ?? {}
@@ -429,6 +434,10 @@ function materializeV2EngineConfig(userDataPath: string, config: { model?: unkno
       },
     ),
   )
+  provider[ALPHA_V2_CATALOG_READY_PROVIDER_ID] = {
+    name: "Alpha catalog readiness marker",
+    env: [],
+  }
   const v2 = {
     $schema: "https://opencode.ai/config.json",
     ...(typeof config.model === "string" ? { model: config.model } : {}),
