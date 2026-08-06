@@ -1,12 +1,12 @@
 {
   "schema": "alpha.extension-seed.lock.v1",
   "channel": "stable",
-  "catalogVersion": "2026-07-13.1",
+  "catalogVersion": "2026-08-06.1",
   "catalog": {
-    "sha256": "fd5dbc78b3524333c8d90966d8ff48b0010b49c7d8d162562fe3059555fdf3d1",
-    "bytes": 59591,
-    "url": "https://alphacodeone.com/catalog/v1/releases/2026-07-13.1/catalog.json",
-    "sigUrl": "https://alphacodeone.com/catalog/v1/releases/2026-07-13.1/catalog.json.sig"
+    "sha256": "e37a4cf3142e12169fa5bd0a2b6907189499122f7ae578a22ffa5a731dc1e874",
+    "bytes": 81682,
+    "url": "https://alphacodeone.com/catalog/v1/releases/2026-08-06.1/catalog.json",
+    "sigUrl": "https://alphacodeone.com/catalog/v1/releases/2026-08-06.1/catalog.json.sig"
   },
   "supportedPlatforms": [
     "darwin-arm64",

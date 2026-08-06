@@ -20,13 +20,14 @@ const canary = "REQ128_IPC_CANARY_02c9f86a"
 // 是不够的 —— shipped catalog 的 8 条 MCP 全是 official/community,`source:"alpha"` 一条都没有,
 // 所以每一次真实首装走的都是 installedDisabled 那条提前返回。往那条分支塞明文,
 // 只测另一条时整包 3269 全绿。
-const entry = structuredClone(bundledCatalog.entries.find((item) => item.id === "mcp:github")!)
+const entry = structuredClone(bundledCatalog.entries.find((item) => item.id === "mcp:dbhub")!)
 entry.source = "alpha"
+delete entry.curation
 
 // 未改 source:保持 catalog 里的真实形状(official)⇒ 落 installedDisabled 提前返回那条。
-const disabledEntry = structuredClone(bundledCatalog.entries.find((item) => item.id === "mcp:github")!)
-disabledEntry.id = "mcp:github-default-off"
-disabledEntry.name = "github-default-off"
+const disabledEntry = structuredClone(bundledCatalog.entries.find((item) => item.id === "mcp:dbhub")!)
+disabledEntry.id = "mcp:dbhub-default-off"
+disabledEntry.name = "dbhub-default-off"
 
 mock.module("electron", () => ({
   BrowserWindow: class {
@@ -127,7 +128,7 @@ test("真实 ext-install-catalog 返回值只含公开状态且不回显 canary"
     catalogId: entry.id,
     scope: { scope: "global" },
     grants: {
-      secrets: { GITHUB_PERSONAL_ACCESS_TOKEN: canary },
+      secrets: { DSN: canary },
     },
   }
   const first = await install({ sender: { id: 1 } }, intent)
@@ -214,7 +215,7 @@ test("默认关的真实 catalog MCP:提前返回分支同样只含公开状态�
     catalogId: disabledEntry.id,
     scope: { scope: "global" },
     grants: {
-      secrets: { GITHUB_PERSONAL_ACCESS_TOKEN: canary },
+      secrets: { DSN: canary },
     },
   }
   const first = await install({ sender: { id: 1 } }, intent)

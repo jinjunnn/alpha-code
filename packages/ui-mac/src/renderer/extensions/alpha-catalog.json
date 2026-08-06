@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-13.1",
+  "version": "2026-08-06.1",
   "_note": "alpha-code 扩展目录 —— 远程分发真源(REQ-032:alphacodeone.com/catalog/v1,ed25519 签名,ETag 缓存;A 侧回退链 远端→缓存→内置)。schema 同 A 侧 alpha-catalog.json + 条目级 version + remoteAsset(下载清单,sha256 钉死)。编辑本文件后跑 scripts/build-catalog.mjs 再 git commit + deploy。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
@@ -8,7 +8,7 @@
     "MCP command/version 全部钉精确版本(A2/T1.5):npx `@pkg@x.y.z` / uvx `pkg@x.y.z`,消除每启动在线解析风暴。钉的值 = 更新当日各包 latest,行为与不钉一致、仅冻结确定性。升级 = 手动 bump(见 npm/pypi)。存量用户配置的一键钉版本迁移(T1.5 第二半)仍待做。",
     "内置 skill 资产(builtinAssetKey → resources/skills/):alpha-upstream-sync / safe-refactor(MIT,自写)+ skill-creator(Apache-2.0,Anthropic 官方,S12 T7 已打包,见 NOTICE)。mcp-builder / canvas-design / brand-guidelines 及空壳 bundle:design 已撤(REQ-044:资产从未打包 → 安装恒失败;S21 真机实锤)——资产就绪后经远程 catalog(REQ-032)上架,零发版,不再内置无资产条目。",
     "tools[]/hooks[] 是精选元数据(详情页展示用),非全集;引擎无 tools 查询路由,实时探测为 flag 内 V2(REQ-019 T8)。标 _verify 条目的 tools[] 同属待核实。",
-    "agent 类条目 = vendored md 资产(resources/agents/),安装经 writeAgent 同管线(桥+账本);plugin 条目带 vendoredAssetKey 时安装零网络(REQ-023)。",
+    "agent 类条目 = vendored md 资产(resources/agents/),安装经 writeAgent 同管线(桥+账本);legacy catalog 的 plugin entry type 只保留为货架词汇,ADR-040 后当前目录不再发布会写入引擎 plugin[] 的条目。",
     "REQ-105(2026-07-13,alpha-web#21):REQ-080 上架的 Word/PPT 社区连接器上游已于 2026-03-03 归档(不再维护)→ 从 stable catalog 下架。处置 = 条目移除而非 tombstone/archived 标记(A 侧 schema 无此字段,且其快照守卫禁归档包名逐字出现);已装用户由 A 侧随包 advisory 静态表 + receipts 如实警示,不静默删除。Excel 连接器审计钉版 0.1.8、仅 local stdio(详见条目 _provenance);回流/漂移由 tests/catalog-guard.test.mjs 拦截。"
   ],
   "entries": [
@@ -40,7 +40,60 @@
           "name": "convert_to_markdown",
           "description": "把文件 / URL(PDF/Word/PPT/Excel/图片/HTML)转成 Markdown"
         }
-      ]
+      ],
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "labs",
+        "activationPolicy": "session-grant",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-07-18T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "community",
+          "reviewBefore": "2027-01-18T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [],
+          "networkDomains": [
+            "127.0.0.1",
+            "github.com",
+            "img.shields.io",
+            "modelcontextprotocol.io",
+            "pdm.fming.dev",
+            "pypi.org",
+            "python-poetry.org",
+            "www.microsoft.com"
+          ],
+          "requiredSecrets": [],
+          "runtimeDependencies": [
+            "python"
+          ],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "448b40a09ce894a6cc1b93b14e85b6f4c892f57ba6782974fc3c77a7126a1d23",
+            "bytes": 258,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.markitdown/1.0.0/alpha-curation/sbom/448b40a09ce894a6cc1b93b14e85b6f4c892f57ba6782974fc3c77a7126a1d23.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "752d7ab8d17ebd5712a82606a5785bad384da312b63b98b2b5266cc1fa1bb3b9",
+            "bytes": 465,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.markitdown/1.0.0/alpha-curation/intake-provenance/752d7ab8d17ebd5712a82606a5785bad384da312b63b98b2b5266cc1fa1bb3b9.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
     },
     {
       "id": "mcp:excel",
@@ -142,7 +195,61 @@
           "name": "search_files",
           "description": "按名称递归检索文件"
         }
-      ]
+      ],
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "precache",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-07-18T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "community",
+          "reviewBefore": "2027-01-18T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [
+            "fs:read",
+            "fs:write"
+          ],
+          "networkDomains": [
+            "anthropic.com",
+            "code.visualstudio.com",
+            "github.com",
+            "img.shields.io",
+            "insiders.vscode.dev",
+            "modelcontextprotocol.io"
+          ],
+          "requiredSecrets": [],
+          "runtimeDependencies": [
+            "node"
+          ],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "440af2f3847a719355731bcb94269baf9511242e711eb1f6288502e4036621ae",
+            "bytes": 258,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.filesystem/1.0.0/alpha-curation/sbom/440af2f3847a719355731bcb94269baf9511242e711eb1f6288502e4036621ae.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "3d882c868067dcf43bf5b898b871026ad3da94f81d76948572e1d5b03498e1a4",
+            "bytes": 514,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.filesystem/1.0.0/alpha-curation/intake-provenance/3d882c868067dcf43bf5b898b871026ad3da94f81d76948572e1d5b03498e1a4.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
     },
     {
       "id": "mcp:fetch",
@@ -172,7 +279,72 @@
           "name": "fetch",
           "description": "抓取 URL 并转 Markdown(可分段续读)"
         }
-      ]
+      ],
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "precache",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-07-18T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "community",
+          "reviewBefore": "2027-01-18T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [
+            "net:http"
+          ],
+          "networkDomains": [
+            "api.example.com",
+            "bower.io",
+            "docs.astral.sh",
+            "example.com",
+            "files.pythonhosted.org",
+            "github.com",
+            "gruntjs.com",
+            "img.shields.io",
+            "insiders.vscode.dev",
+            "nextjs.org",
+            "nodejs.org",
+            "parceljs.org",
+            "pdm.fming.dev",
+            "proxy.example.com",
+            "pypi.org",
+            "python-poetry.org",
+            "snowpack.dev"
+          ],
+          "requiredSecrets": [],
+          "runtimeDependencies": [
+            "python",
+            "uv"
+          ],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "74413850a99f90697df0a24f292eff7b5533f22c1de2942286cb7e70ed9110f3",
+            "bytes": 248,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.fetch/1.0.0/alpha-curation/sbom/74413850a99f90697df0a24f292eff7b5533f22c1de2942286cb7e70ed9110f3.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "3260c296249bb49dfc7e0ff894250f57b4436d00c74ca0a28a9f62d6a57bd5b3",
+            "bytes": 709,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.fetch/1.0.0/alpha-curation/intake-provenance/3260c296249bb49dfc7e0ff894250f57b4436d00c74ca0a28a9f62d6a57bd5b3.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
     },
     {
       "id": "mcp:playwright",
@@ -197,7 +369,7 @@
         "runtimeDep": [
           "node"
         ],
-        "_verify": "实测结论(证据:docs/verification/2026-07-22-d5-playwright-kernel/verify.md):默认使用系统 Chrome,首次打开网页下载 0 字节;选择 Chromium 浏览器内核时,首次打开网页从 cdn.playwright.dev 下载约 268 MB。系统无 Chrome、下载或启动失败(含受限网络/中国区网络问题)都会直接报错,不会静默回退或伪装成功。默认安装配置已确认无需改变。中国区弱网格(需 sudo pfctl)与无 Chrome 设备的真机确认仍由用户后续补测。"
+        "_verify": "首次浏览时 Playwright 需浏览器内核:默认下载 Chromium(~150MB,中国区 egress 慢),或在 command 末尾加 \"--browser\",\"chrome\" 复用系统已装 Chrome(免下载但需已装)。runtimeDep 只能 which 到 node,内核下载发生在运行时而非安装时 → A6 必须桌面实测首个 navigate 能否真起浏览器。"
       },
       "tools": [
         {
@@ -224,7 +396,75 @@
           "name": "browser_evaluate",
           "description": "在页面内执行 JS"
         }
-      ]
+      ],
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "precache",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-07-18T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "community",
+          "reviewBefore": "2027-01-18T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [
+            "net:http"
+          ],
+          "networkDomains": [
+            "block.github.io",
+            "code.visualstudio.com",
+            "cursor.com",
+            "docs.cline.bot",
+            "docs.factory.ai",
+            "docs.github.com",
+            "docs.qodo.ai",
+            "docs.warp.dev",
+            "docs.windsurf.com",
+            "example.com",
+            "files.lmstudio.ai",
+            "github.com",
+            "img.shields.io",
+            "insiders.vscode.dev",
+            "junie.jetbrains.com",
+            "kiro.dev",
+            "lmstudio.ai",
+            "modelcontextprotocol.io",
+            "opencode.ai",
+            "playwright.dev",
+            "www.apache.org"
+          ],
+          "requiredSecrets": [],
+          "runtimeDependencies": [
+            "node"
+          ],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "c7bdeb162de72c19f00be720d2363be86d2580ddde0595a87eb0a5f1c98eb93a",
+            "bytes": 258,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.playwright/1.0.0/alpha-curation/sbom/c7bdeb162de72c19f00be720d2363be86d2580ddde0595a87eb0a5f1c98eb93a.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "f76c0de46dbe623eba0822936e96082c5f53217535e54384c44693db1c141a30",
+            "bytes": 610,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.playwright/1.0.0/alpha-curation/intake-provenance/f76c0de46dbe623eba0822936e96082c5f53217535e54384c44693db1c141a30.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
     },
     {
       "id": "mcp:git",
@@ -273,7 +513,64 @@
           "name": "git_commit",
           "description": "提交"
         }
-      ]
+      ],
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "precache",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-07-18T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "community",
+          "reviewBefore": "2027-01-18T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [
+            "fs:read",
+            "fs:write"
+          ],
+          "networkDomains": [
+            "code.visualstudio.com",
+            "docs.astral.sh",
+            "files.pythonhosted.org",
+            "github.com",
+            "img.shields.io",
+            "insiders.vscode.dev",
+            "pypi.org",
+            "zencoder.ai"
+          ],
+          "requiredSecrets": [],
+          "runtimeDependencies": [
+            "python",
+            "uv"
+          ],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "8c33653a19e1c19b3a804bf7200cc1fa2600f2a2cc2a908e1002d28938f7d5a6",
+            "bytes": 244,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.git/1.0.0/alpha-curation/sbom/8c33653a19e1c19b3a804bf7200cc1fa2600f2a2cc2a908e1002d28938f7d5a6.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "f00ec33f400fbe5a09480ff150c3235176b3ad19eb1f072a9c615a11fc5165e4",
+            "bytes": 706,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.git/1.0.0/alpha-curation/intake-provenance/f00ec33f400fbe5a09480ff150c3235176b3ad19eb1f072a9c615a11fc5165e4.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
     },
     {
       "id": "mcp:github",
@@ -323,7 +620,65 @@
           "name": "list_issues",
           "description": "列出 issue"
         }
-      ]
+      ],
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "connector",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-07-18T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "archived",
+          "supportTier": "none",
+          "reviewBefore": "2027-01-18T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [
+            "env:read",
+            "net:http"
+          ],
+          "networkDomains": [
+            "anthropic.com",
+            "api.github.com",
+            "docs.github.com",
+            "github.com",
+            "modelcontextprotocol.io"
+          ],
+          "requiredSecrets": [
+            {
+              "name": "GITHUB_PERSONAL_ACCESS_TOKEN",
+              "source": "environment"
+            }
+          ],
+          "runtimeDependencies": [
+            "node"
+          ],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "89f798c7bb6d233f0370e3a4b535ac1804f109255c4dd3bf1bf90511c5f65108",
+            "bytes": 250,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.github/1.0.0/alpha-curation/sbom/89f798c7bb6d233f0370e3a4b535ac1804f109255c4dd3bf1bf90511c5f65108.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "221ffa173da98063a20ec6028b60a399c27a6d05742962fcd856b36b60bf1bb2",
+            "bytes": 505,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.github/1.0.0/alpha-curation/intake-provenance/221ffa173da98063a20ec6028b60a399c27a6d05742962fcd856b36b60bf1bb2.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
     },
     {
       "id": "mcp:dbhub",
@@ -356,8 +711,7 @@
         "mirrorCommand": [
           "npx",
           "-y",
-          "--registry",
-          "https://registry.npmmirror.com",
+          "--registry=https://registry.npmmirror.com",
           "@bytebase/dbhub@0.12.0",
           "--transport",
           "stdio",
@@ -370,7 +724,244 @@
           "name": "execute_sql",
           "description": "执行 SQL(--readonly 档:仅查询类语句)"
         }
-      ]
+      ],
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "connector",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-07-18T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "community",
+          "reviewBefore": "2027-01-18T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [
+            "env:read",
+            "fs:read",
+            "net:http"
+          ],
+          "networkDomains": [
+            "api.star-history.com",
+            "contrib.rocks",
+            "creativecommons.org",
+            "database.windows.net",
+            "dbhub.ai",
+            "github.com",
+            "raw.githubusercontent.com",
+            "reactjs.org",
+            "reactrouter.com",
+            "www.bytebase.com",
+            "www.cs.aau.dk",
+            "www.w3.org"
+          ],
+          "requiredSecrets": [
+            {
+              "name": "DB_PASSWORD",
+              "source": "environment"
+            },
+            {
+              "name": "SSH_KEY",
+              "source": "environment"
+            },
+            {
+              "name": "SSH_PASSWORD",
+              "source": "environment"
+            }
+          ],
+          "runtimeDependencies": [
+            "node"
+          ],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "afcc8fb456cbd0e7163744b23d3f7f2cb2f922e390782b67ed98dd084c5d2dc9",
+            "bytes": 248,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.dbhub/1.0.0/alpha-curation/sbom/afcc8fb456cbd0e7163744b23d3f7f2cb2f922e390782b67ed98dd084c5d2dc9.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "3ddee2b1f538a5d834ba9b8fd9b9199b44451cdff8ad778d49006c28dce30d1c",
+            "bytes": 605,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.dbhub/1.0.0/alpha-curation/intake-provenance/3ddee2b1f538a5d834ba9b8fd9b9199b44451cdff8ad778d49006c28dce30d1c.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
+    },
+    {
+      "id": "mcp:chrome-devtools",
+      "type": "mcp",
+      "name": "chrome-devtools",
+      "displayName": "网页性能与调试(Chrome DevTools)",
+      "description": "让 agent 用 Chrome 开发者工具排查网页:录制性能追踪、读控制台报错、查网络请求、截图与执行调试脚本。Google 官方 MCP,需本机已装 Chrome。",
+      "source": "official",
+      "category": "dev",
+      "license": "Apache-2.0",
+      "redistributable": true,
+      "version": "1.0.0",
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": [
+          "npx",
+          "-y",
+          "chrome-devtools-mcp@1.6.0"
+        ],
+        "requiredEnvVars": [],
+        "runtimeDep": [
+          "node"
+        ],
+        "_verify": "运行时需系统已装 Chrome(不自带内核下载,免 Chromium egress);能力面含进程派生与文件写(截图/trace 落盘),故首批以逐会话授权层上架;冒烟 = stdio 握手 initialize+tools/list。"
+      },
+      "tools": [
+        {
+          "name": "performance_start_trace",
+          "description": "录制页面性能追踪(找加载慢的原因)"
+        },
+        {
+          "name": "navigate_page",
+          "description": "打开网页"
+        },
+        {
+          "name": "list_console_messages",
+          "description": "读浏览器控制台报错"
+        },
+        {
+          "name": "list_network_requests",
+          "description": "查网络请求"
+        },
+        {
+          "name": "take_screenshot",
+          "description": "截图"
+        },
+        {
+          "name": "evaluate_script",
+          "description": "在页面内执行调试脚本"
+        }
+      ],
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "labs",
+        "activationPolicy": "session-grant",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-07-18T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "community",
+          "reviewBefore": "2027-01-18T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [
+            "env:read",
+            "fs:read",
+            "fs:write",
+            "net:http",
+            "proc:spawn"
+          ],
+          "networkDomains": [
+            "127.0.0.1",
+            "ajv.js.org",
+            "ampcode.com",
+            "antigravity.google",
+            "chromeuxreport.googleapis.com",
+            "chromiumdash.appspot.com",
+            "cloud.google.com",
+            "code.claude.com",
+            "code.visualstudio.com",
+            "commandcode.ai",
+            "core-js.io",
+            "creativecommons.org",
+            "csp-evaluator.withgoogle.com",
+            "cursor.com",
+            "daringfireball.net",
+            "developer.chrome.com",
+            "developers.chrome.com",
+            "developers.openai.com",
+            "docs.cline.bot",
+            "docs.factory.ai",
+            "docs.katalon.com",
+            "docs.qoder.com",
+            "docs.warp.dev",
+            "docs.windsurf.com",
+            "docs.x.ai",
+            "example.com",
+            "facebook.github.io",
+            "ffmpeg.org",
+            "geminicli.com",
+            "github.com",
+            "img.shields.io",
+            "insiders.vscode.dev",
+            "lodash.com",
+            "mathiasbynens.be",
+            "modelcontextprotocol.io",
+            "mozilla.org",
+            "mths.be",
+            "nodejs.org",
+            "npmjs.org",
+            "opencode.ai",
+            "openjsf.org",
+            "play.googleapis.com",
+            "policies.google.com",
+            "registry.npmjs.org",
+            "sindresorhus.com",
+            "source.chromium.org",
+            "underscorejs.org",
+            "urlpattern.spec.whatwg.org",
+            "vs-open.link",
+            "vscode.dev",
+            "web.dev",
+            "www.apache.org",
+            "www.chromium.org",
+            "www.deque.com",
+            "www.ffmpeg.org",
+            "www.google.com",
+            "www.npmjs.com",
+            "www.typescriptlang.org",
+            "yargs.js.org",
+            "zod.dev"
+          ],
+          "requiredSecrets": [],
+          "runtimeDependencies": [
+            "node"
+          ],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "97bde39092f92142ebbf69bebabf8c2dec86084dc0c479c5f9bbec71c45f4ddc",
+            "bytes": 268,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.chrome-devtools/1.0.0/alpha-curation/sbom/97bde39092f92142ebbf69bebabf8c2dec86084dc0c479c5f9bbec71c45f4ddc.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "f3ade0db437f121aafc49a2159ce35b2960d045209e9157e3ec060a0ec704fb8",
+            "bytes": 619,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.chrome-devtools/1.0.0/alpha-curation/intake-provenance/f3ade0db437f121aafc49a2159ce35b2960d045209e9157e3ec060a0ec704fb8.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
     },
     {
       "id": "skill:skill-creator",
@@ -1039,6 +1630,53 @@
             "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/YoungSerif-Regular.ttf"
           }
         ]
+      },
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "precache",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-07-18T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "community",
+          "reviewBefore": "2027-01-18T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [],
+          "networkDomains": [
+            "github.com",
+            "openfontlicense.org",
+            "www.apache.org",
+            "www.github.com"
+          ],
+          "requiredSecrets": [],
+          "runtimeDependencies": [],
+          "download": {
+            "bytes": 5554573,
+            "basis": "catalog-assets"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "2e6200c3962f6bfc0f426ef83c16bfad4d3ef9c01c69aae63d37d0bfd7609edd",
+            "bytes": 268,
+            "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/alpha-curation/sbom/2e6200c3962f6bfc0f426ef83c16bfad4d3ef9c01c69aae63d37d0bfd7609edd.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "ba8a727ed80960c81f8369284a72c73c874cd39c8b501b31d7d93ea85b8db0a8",
+            "bytes": 4531,
+            "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/alpha-curation/intake-provenance/ba8a727ed80960c81f8369284a72c73c874cd39c8b501b31d7d93ea85b8db0a8.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
       }
     },
     {
@@ -1079,6 +1717,50 @@
             "url": "https://alphacodeone.com/catalog/assets/skill.brand-guidelines/1.0.0/SKILL.md"
           }
         ]
+      },
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "precache",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-07-18T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "community",
+          "reviewBefore": "2027-01-18T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [],
+          "networkDomains": [
+            "www.apache.org"
+          ],
+          "requiredSecrets": [],
+          "runtimeDependencies": [],
+          "download": {
+            "bytes": 13987,
+            "basis": "catalog-assets"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "2375a7875da7ddfd36fb24d6ee6ac82ea646429c4d929603caac455b2a5850b4",
+            "bytes": 274,
+            "url": "https://alphacodeone.com/catalog/assets/skill.brand-guidelines/1.0.0/alpha-curation/sbom/2375a7875da7ddfd36fb24d6ee6ac82ea646429c4d929603caac455b2a5850b4.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "5f782d0c67d77f1af3d79e1eeb361e760e0e6f44a423bcc803218850cd78d887",
+            "bytes": 621,
+            "url": "https://alphacodeone.com/catalog/assets/skill.brand-guidelines/1.0.0/alpha-curation/intake-provenance/5f782d0c67d77f1af3d79e1eeb361e760e0e6f44a423bcc803218850cd78d887.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
       }
     },
     {
@@ -1125,32 +1807,6 @@
         "source": "builtin",
         "builtinAssetKey": "agents/code-reviewer.md"
       }
-    },
-    {
-      "id": "plugin:opencode-notify",
-      "type": "plugin",
-      "name": "opencode-notify",
-      "displayName": "完成通知",
-      "description": "任务/会话完成时弹系统通知的 opencode 插件(社区)。",
-      "source": "community",
-      "category": "dev",
-      "license": "MIT",
-      "redistributable": true,
-      "version": "1.0.0",
-      "installSpec": {
-        "kind": "plugin",
-        "package": "opencode-notify",
-        "version": "0.3.1",
-        "mirrorRegistry": "https://registry.npmmirror.com",
-        "_verify": "社区插件:vendored 自 npm 0.3.1(dist 自包含);OpenCodeNotifier.app 未再分发(公证风险),通知走 osascript 回退 —— 真机核实回退通知实际弹出。",
-        "vendoredAssetKey": "plugins/opencode-notify"
-      },
-      "hooks": [
-        {
-          "name": "event(session.idle)",
-          "description": "会话空闲 / 任务完成时发 macOS 系统通知"
-        }
-      ]
     },
     {
       "id": "bundle:office",
