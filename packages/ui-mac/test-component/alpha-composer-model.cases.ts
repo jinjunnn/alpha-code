@@ -771,6 +771,66 @@ describe("AlphaComposer production model seam", () => {
     toasts.dispose()
   })
 
+  test("idle token-only 换血只关闭执行门且不闪动;换代失败则如实回到 Syncing", async () => {
+    let submissions = 0
+    installApi({ auth: async () => loggedOut })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async () => {
+            submissions++
+            return "session-new"
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          list: async () => [info("deepseek-byok", "deepseek-v4-flash")],
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "保留稳定布局",
+      }),
+    )
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    await waitFor(() => expect(send.disabled).toBe(false))
+
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "recovering", generation: 8, reason: "token-only" },
+      }),
+    )
+    await waitFor(() => expect(send.disabled).toBe(true))
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.syncing"])
+    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("保留稳定布局")
+
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "ready", generation: 8, reason: "token-only" },
+      }),
+    )
+    await waitFor(() => expect(send.disabled).toBe(false))
+    expect(submissions).toBe(0)
+
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "recovering", generation: 9, reason: "token-only" },
+      }),
+    )
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "failed", generation: 9, reason: "token-only" },
+      }),
+    )
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    expect(send.disabled).toBe(true)
+    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("保留稳定布局")
+    mounted.dispose()
+  })
+
   test("KEY 读取失败由外层失败态呈现并阻止提交；picker 重试会重跑整条链", async () => {
     let failing = true
     let submissions = 0

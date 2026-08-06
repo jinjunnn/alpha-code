@@ -662,6 +662,16 @@ export function useAlphaProjects(
     runtimeState = state
     clearTimeout(bridgeFallbackTimer)
     if (state.status === "recovering") {
+      // Token-only rotation reuses the same loopback URL and Basic-auth password. Keep the
+      // existing client/SSE owner alive while the sidecar is replaced so the project tree and
+      // every consumer holding this SDK keep a stable identity. The stream's bounded reconnect
+      // loop already crosses this short gap; tearing the client down made an expected renewal
+      // look like the whole desktop had restarted. Structural recovery still invalidates the
+      // client because its runtime/config identity may have changed.
+      if (state.reason === "token-only" && client) {
+        stopSelfProbe()
+        return
+      }
       generation++
       client = undefined
       abortRef.abort()
@@ -670,6 +680,14 @@ export function useAlphaProjects(
       return
     }
     if (state.status === "failed") {
+      // A failed token-only terminal means the old sidecar is already gone. Continuity is no
+      // longer provable, so close the retained client and fall back to the existing health probe.
+      if (state.reason === "token-only" && client) {
+        generation++
+        client = undefined
+        abortRef.abort()
+        provisionalClient = false
+      }
       // #577 终态:本代 ready 不会再来。执行面保持关闭(不盲目重建 client),
       // 只靠自探自证 —— 引擎真实可达才重建。
       stopSelfProbe()
@@ -682,6 +700,12 @@ export function useAlphaProjects(
     if (!serverInfo) return
     // R1 Major1:同代已有 client 只在「权威连接」时跳过;自探建的 provisional 连接可能
     // 应答自将死的旧进程,权威 ready 必须强制刷新一次(重建 client + 重拉 + 重订阅)。
+    if (state.reason === "token-only" && client && !provisionalClient) {
+      connectedSidecarGeneration = state.generation
+      void loadProjects()
+      notifySseReconnected("token-rotation")
+      return
+    }
     if (state.generation === connectedSidecarGeneration && client && !provisionalClient) return
     provisionalClient = false
     connect(serverInfo, state.generation)

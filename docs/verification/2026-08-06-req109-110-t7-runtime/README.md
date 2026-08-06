@@ -110,12 +110,22 @@ ceiling.
 The deterministic gate drives a child that deliberately ignores the stop
 message and proves that token rotation terminates it at 500 ms while the
 default path does not terminate before 6 s. A production wiring gate proves
-that only `token-only` selects that bounded path. The current headless narrow
-result is 70 tests passing with zero failures, plus a clean `ui-mac` typecheck.
+that only `token-only` selects that bounded path.
 
-This is not yet a packaged PASS. The signed 3 s renewal cell and active-stream
-cell must still establish renewal-to-generation-ready P95 <=2 s, retry <=100
-ms, honest interruption with draft preservation, mount=1, reload=0, no loop,
-and a first post-rotation inference using only the renewed token. The existing
-probe can visibly flash or launch a window, so it must run only in an
-owner-approved quiescent desktop window; until then #858 remains open.
+The first installed signed candidate then exposed a separate continuity gap:
+the main process and renderer stayed mounted, but every scheduled token-only
+rotation tore down the renderer's project SDK and inserted a transient
+`Syncing…` composer row. The process evidence showed no crash, no renderer
+reload, and an expected sidecar exit with code 0; the visible layout churn made
+that healthy renewal look like a desktop restart. The follow-up keeps the
+same-URL/same-password SDK owner stable, closes a separate execution gate while
+the sidecar is unavailable, and rebuilds only if the token-only generation
+actually fails. Active responses still take the explicit interruption path
+and preserve their draft.
+
+The signed 3 s renewal cell already established approximately 1.15 s from
+rotation request to generation ready in all five samples, and the active-stream
+cell preserved the draft, reported the interruption, kept mount=1/reload=0,
+and completed its first post-rotation request with only the renewed token. The
+new idle-continuity follow-up still requires a rebuilt signed candidate and a
+quiescent-desktop rerun before #858 can close.
