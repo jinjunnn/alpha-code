@@ -7,6 +7,14 @@
 //
 // 逃生:ALPHA_JSONC_TRUTH_DISABLE=1 / ALPHA_LEGACY_INSTALL_ROOT=1 → 不迁(回旧行为,与 sidecar 注入
 // 及 ext-config 写入目标三侧一致)。启动早期(sidecar fork 前)调用一次;幂等,重复启动 no-op。
+//
+// ADR-040(`#832`):本模块**不再有自己的写盘原语**。它曾经 `writeFileSync(tmp)+rename` 写整个
+// `alpha.jsonc` —— 整文件写,`writeKeyUnlocked` / `prepareConfigTx` / `writeConfigLeafEditsUnlocked`
+// 三道白名单一道都不过,于是「往引擎 `plugin[]` 里加东西」在这条路上是免检的(它每次启动都跑)。
+// 现在落盘经 `ext-config` 那个**已挂咽喉**的原子提交点:本函数将来无论新增什么注入步,只要写完
+// 之后 `plugin[]` 里多出写之前没有的元素,就在写盘那一刻被具名拒掉,不需要谁记得来这里登记。
+// 与之配套,legacy 的 `plugin[]` 并集已从 `planConfigMerge` 删除 —— 那是唯一真的会撞上这道闸的
+// 加法,留着它等于每次启动都拿一次拒绝换一次「整个 reconcile 不写盘」。
 
 import * as fs from "node:fs"
 import * as os from "node:os"
@@ -16,7 +24,7 @@ import { alphaGlobalRoot } from "./alpha-installs"
 import { opencodeHomeDir } from "./alpha-bridge"
 import { readLedger } from "./alpha-installs"
 import { agentMdToEntry } from "./agent-md-entry"
-import { persistAgentEntry } from "./ext-config"
+import { persistAgentEntry, writeConfigTextAtomic } from "./ext-config"
 import {
   alphaJsoncPath,
   alphaSkillsDir,
@@ -60,8 +68,11 @@ function legacyOpencodePath(): string {
 }
 
 type JsoncRead =
-  | { status: "ok"; value: Record<string, unknown> }
-  | { status: "absent" }
+  // `text` = 盘上那份**原始文本**。`#832`:落盘要过咽喉,而咽喉判的是 before/after 两份整文本 ——
+  // 拿解析后的对象反序列化回去当 before 会把「盘上本来就语法坏掉」这个事实抹平(它正是要 fail-closed
+  // 的那一格)。缺席记 `""`(咽喉与 `"{}"` 等价处理)。
+  | { status: "ok"; value: Record<string, unknown>; text: string }
+  | { status: "absent"; text: string }
   | { status: "unreadable"; reason: string }
 
 /** #395(Codex r5)步骤4:读错误只容缺席(ENOENT/ENOTDIR)—— EACCES/EIO 等「读不出」≠「不存在」。
@@ -74,16 +85,16 @@ function readJsonc(file: string): JsoncRead {
     text = fs.readFileSync(file, "utf8")
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code
-    if (code === "ENOENT" || code === "ENOTDIR") return { status: "absent" }
+    if (code === "ENOENT" || code === "ENOTDIR") return { status: "absent", text: "" }
     return { status: "unreadable", reason: `${file}: ${code ?? String(e)}` }
   }
   try {
     const parsed = parse(text) as unknown
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? { status: "ok", value: parsed as Record<string, unknown> }
-      : { status: "absent" }
+      ? { status: "ok", value: parsed as Record<string, unknown>, text }
+      : { status: "absent", text }
   } catch {
-    return { status: "absent" }
+    return { status: "absent", text }
   }
 }
 
@@ -189,17 +200,18 @@ export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions
 
   let migrated = false
   if (plan.changed || skillsAdded || factoryRewritten || denyStripped) {
-    try {
-      fs.mkdirSync(path.dirname(truth), { recursive: true })
-      const tmp = `${truth}.tmp`
-      fs.writeFileSync(tmp, JSON.stringify(plan.merged, null, 2) + "\n", "utf8")
-      fs.renameSync(tmp, truth)
-      log?.log(`[req059] current-environment engine config truth updated`, { added })
-      migrated = true
-    } catch (error) {
-      log?.warn(`[req059] failed to write alpha.jsonc during reconcile`, { error: String(error) })
-      return { skipped: false, migrated: false, added: [], bailedOut: bailedOut ?? "write failed" }
+    // ADR-040(`#832`)咽喉:整文件写盘收进 ext-config 的唯一原子提交点(mkdir / .bak / tmp+rename /
+    // 结果 jsonc 校验都在里面)。拒绝 = 一个字节都不落,且**本次 reconcile 到此为止** —— 不继续去
+    // 清理 `~/.opencode`(那一步的前提是「内容已经安全落到真源」,前提没成立就不能删源)。
+    const written = writeConfigTextAtomic(truth, existingRead.text, JSON.stringify(plan.merged, null, 2) + "\n")
+    if (!written.ok) {
+      log?.warn(`[req059] alpha.jsonc write refused during reconcile — config untouched`, { reason: written.reason })
+      // 报的是**这次为什么一个字节都没写**(而不是更早那条 legacy 所有权 bail 的理由 —— 它已经
+      // 各自 loud 过一遍了)。写不下去比「legacy 没迁」严重一档,报低的那条会让人查错方向。
+      return { skipped: false, migrated: false, added: [], bailedOut: written.reason }
     }
+    log?.log(`[req059] current-environment engine config truth updated`, { added })
+    migrated = true
   }
 
   // Bail-out → leave ~/.opencode fully intact (legacy mcp/plugin still read by the engine). Only clean up

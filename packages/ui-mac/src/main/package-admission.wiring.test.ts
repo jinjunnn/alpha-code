@@ -33,7 +33,7 @@ test("signed Catalog snapshot carries the Envelope prerequisite into the real se
   expect(output).toMatch(/\b0 fail\b/)
 }, 120_000)
 
-test("admission decoder, secret failure, MCP adoption, tamper, cancel, stale, and replay gates remain active", () => {
+test("admission decoder, secret failure, MCP adoption, tamper, cancel, stale, replay, graph-digest, and mixed-Bundle gates remain active", () => {
   const result = Bun.spawnSync({
     cmd: [process.execPath, "test", resolve(import.meta.dir, "package-admission.test.ts")],
     cwd: resolve(import.meta.dir, "../.."),
@@ -41,6 +41,8 @@ test("admission decoder, secret failure, MCP adoption, tamper, cancel, stale, an
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toMatch(/\b10 pass\b/)
+  // 14 → 15:#712 加了泄漏扫描闸(明文/摘要/绝对密钥路径的正面扫描)。
+  // 15 → 17:#827 审计加了「取回失败 ≠ 成功取回 0 字节」的两条控制。
+  expect(output).toMatch(/\b17 pass\b/)
   expect(output).toMatch(/\b0 fail\b/)
 }, 120_000)

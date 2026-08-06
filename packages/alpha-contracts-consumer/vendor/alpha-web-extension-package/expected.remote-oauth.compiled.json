@@ -1,0 +1,102 @@
+{
+  "envelope": {
+    "capabilities": [
+      "alpha.mcp-oauth.v1",
+      "alpha.secret-prerequisite.v1"
+    ],
+    "components": [
+      {
+        "capabilities": [
+          "alpha.mcp-oauth.v1",
+          "alpha.secret-prerequisite.v1"
+        ],
+        "dependencies": [],
+        "id": "mcp:generic-remote-oauth",
+        "payloadRef": {
+          "bytes": 416,
+          "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          "sha256": "a1283973d0ec8348984a5a09152b3d0586298045b21ace798b0b855de943bcbf",
+          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote-oauth/1.0.0/alpha-package/a1283973d0ec8348984a5a09152b3d0586298045b21ace798b0b855de943bcbf.json"
+        },
+        "profileId": "mcp-remote",
+        "profileVersion": 1,
+        "required": true
+      }
+    ],
+    "prelude": {
+      "packageId": "package:generic-remote-oauth",
+      "version": "1.0.0"
+    },
+    "presentation": {
+      "description": "Generic compiler corpus input with engine-owned MCP OAuth.",
+      "displayName": "Generic Remote MCP (OAuth)"
+    },
+    "root": "mcp:generic-remote-oauth",
+    "schema": "alpha.host-extension-package.v1"
+  },
+  "normalizedRecord": {
+    "components": [
+      {
+        "assetDirectory": "catalog-src/assets/mcp.generic-remote-oauth/1.0.0",
+        "assetManifestSha256": null,
+        "capabilities": [
+          "alpha.mcp-oauth.v1",
+          "alpha.secret-prerequisite.v1"
+        ],
+        "dependencies": [],
+        "id": "mcp:generic-remote-oauth",
+        "payloadRef": {
+          "bytes": 416,
+          "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          "sha256": "a1283973d0ec8348984a5a09152b3d0586298045b21ace798b0b855de943bcbf",
+          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote-oauth/1.0.0/alpha-package/a1283973d0ec8348984a5a09152b3d0586298045b21ace798b0b855de943bcbf.json"
+        },
+        "profileId": "mcp-remote",
+        "profileVersion": 1,
+        "required": true,
+        "version": "1.0.0"
+      }
+    ],
+    "root": {
+      "compatibility": {
+        "reportSha256": "fc9e20f8f7f5615979cedc442432786041b2023499f6c89b3489af35f4790ed2",
+        "verdict": "compatible"
+      },
+      "componentId": "mcp:generic-remote-oauth",
+      "declarationSha256": "82a7b4fc8de30497685e9479339365a1b4d57360b1d9ec0adbdde07d2c243672",
+      "packageId": "package:generic-remote-oauth",
+      "presentation": {
+        "description": "Generic compiler corpus input with engine-owned MCP OAuth.",
+        "displayName": "Generic Remote MCP (OAuth)"
+      },
+      "source": {
+        "kind": "alpha-native",
+        "publisher": "official",
+        "redistributable": true
+      },
+      "version": "1.0.0"
+    },
+    "schema": "alpha.normalized-package-build-record.v1"
+  },
+  "payloads": {
+    "mcp:generic-remote-oauth": {
+      "behavior": {
+        "auth": {
+          "kind": "mcp-oauth",
+          "label": "Connect the generic workspace",
+          "prerequisiteId": "generic-oauth",
+          "required": true
+        },
+        "headersTemplate": {
+          "X-Workspace": "{WORKSPACE_ID}"
+        },
+        "requiredSecrets": [
+          "WORKSPACE_ID"
+        ],
+        "url": "https://oauth.example.com/mcp"
+      },
+      "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+    }
+  },
+  "schema": "alpha.extension-package.compiled-vector.v1"
+}

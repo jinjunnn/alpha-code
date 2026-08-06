@@ -21,7 +21,8 @@ import { CAPABILITY_LABEL_KEYS, SHELF_CHIP_KEYS, curatedOf, foldDomains, isArchi
 import type { SessionToggleView } from "./ext-session-toggle"
 import type { CurationStatus } from "../../shared/catalog-curation"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
-import { packagePresentation } from "./ext-package-presentation"
+import { packageComponentPresentation, packagePresentation, packageRetainedReasonKey } from "./ext-package-presentation"
+import { extIpc } from "./ext-ipc"
 
 /** What the detail page shows: a legacy catalog entry, a host-projected package, an engine agent
  *  (no catalog identity), or the injected platform cloud connector. */
@@ -141,7 +142,7 @@ export function ExtensionDetail(props: {
     const source = props.target.source
     const [packageDetail, { mutate: setPackageDetail }] = createResource(
       () => initial.catalogId,
-      (catalogId) => window.api.ext.packageDetail(catalogId),
+      (catalogId) => extIpc.packageDetail(catalogId),
     )
     const view = () => packageDetail() ?? initial
     const presentation = () => packagePresentation(view())
@@ -151,9 +152,49 @@ export function ExtensionDetail(props: {
         : source === "cache"
           ? "alpha.ext.packageSourceCache"
           : "alpha.ext.packageSourceBuiltin"
+    // `#698`:这个包在本机装没装 —— main 从**它自己的账本图**回答;renderer 不推断、不缓存。
+    const [installed, { refetch: refetchInstalled }] = createResource(
+      () => initial.catalogId,
+      (catalogId) => extIpc.packageInstalled(catalogId),
+    )
+    const [removing, setRemoving] = createSignal(false)
+    const [packageError, setPackageError] = createSignal<string | undefined>()
+    const [retained, setRetained] = createSignal<
+      Array<{ kind: string; name: string; reasonCode: string | null }>
+    >([])
+    const [reloadPending, setReloadPending] = createSignal(false)
+    const removePackage = async () => {
+      setRemoving(true)
+      setPackageError(undefined)
+      setReloadPending(false)
+      try {
+        // `#784` G20:走 `ext.uninstallPackage` 而不是 `extIpc.uninstallPackage` ——
+        // 那一层在成功之后会 `refreshEngine()`。此前这里直连 IPC 并且**只 refetch 不 refresh**,
+        // 后果是「移除成功」之后那些技能仍然被引擎实例注入着,一直到用户下次重启 App。
+        const result = await props.ext.uninstallPackage(view().catalogId)
+        if (!result.ok) {
+          // 失败就说失败。`ok` 之外的任何东西都不许被读成「已移除」——「空操作 + ok」正是
+          // `#706` review 抓到的那种谎报(Hub 只看 ok)。
+          setPackageError(`${t("alpha.ext.packageRemoveFailed")}: ${result.reason}`)
+          return
+        }
+        setRetained(result.retained.map((entry) => ({ kind: entry.kind, name: entry.name, reasonCode: entry.reasonCode })))
+        // 账本已经改完(移除是 durable 的),但引擎这次没能重载 ⇒ 如实说「待重载」,
+        // 不许让用户以为它已经不在了。
+        setReloadPending(result.reloadPending === true)
+        // 成功但带具名 warning(连接绑定没释放掉、残留没清干净等)的呈现归 `extIpc`(`#765`):
+        // 上面那次调用返回时就已经推了 toast,这里不再往行内错误位塞一份。
+        await refetchInstalled()
+      } finally {
+        setRemoving(false)
+      }
+    }
     const runAction = async () => {
       const latest = await props.onPackageAction(view())
       if (latest) setPackageDetail(latest)
+      // `#698`:装完之后「移除此扩展包」必须当场出现。不重新问一次 main,用户就得退出再进来
+      // 才看得到它 —— 而「装完就删不掉」正是本票要消灭的那条死路。
+      await refetchInstalled()
     }
 
     return (
@@ -199,9 +240,38 @@ export function ExtensionDetail(props: {
         </Section>
 
         <Section title={t("alpha.ext.packageComponentsTitle")}>
-          <FactRow label={t("alpha.ext.packageComponent")}>
-            {view().presentation.displayName} · {view().presentation.version}
-          </FactRow>
+          {/* `#697` 第 5 跳:逐组件一行(root + 各 leaf),被跳过的组件带**具名原因**。
+              以前这里写死一行「包名 · 版本」—— 安全视图早就带着 components[] 与 skipReasonCode,
+              而用户在任何一步都看不到「这个包里有一件东西不会被装」。 */}
+          <For each={view().components}>
+            {(component) => {
+              const shown = packageComponentPresentation(component)
+              return (
+                <div
+                  class="alpha-ext-package-component"
+                  data-package-component={component.componentId}
+                  data-included={component.included ? "true" : "false"}
+                >
+                  <FactRow label={t(shown.roleKey as never)}>
+                    <code class="alpha-ext-package-component-id">{component.componentId}</code>
+                    <span class="alpha-ext-package-component-req" data-required={component.required ? "true" : "false"}>
+                      {t(shown.requirementKey as never)}
+                    </span>
+                    <span class="alpha-ext-package-component-state" data-included={component.included ? "true" : "false"}>
+                      {t(shown.stateKey as never)}
+                    </span>
+                  </FactRow>
+                  <Show when={shown.skipReasonKey}>
+                    {(reasonKey) => (
+                      <p class="alpha-ext-package-component-why" data-skip-reason={component.skipReasonCode}>
+                        {t(reasonKey() as never)}
+                      </p>
+                    )}
+                  </Show>
+                </div>
+              )
+            }}
+          </For>
           <FactRow label={t("alpha.ext.packagePrerequisiteStatus")}>
             <span class="alpha-ext-package-state" data-prerequisite={view().prerequisites.status}>
               {t(presentation().prerequisiteKey)}
@@ -238,6 +308,47 @@ export function ExtensionDetail(props: {
             >
               {t(presentation().actionKey)}
             </button>
+            {/* `#698`:装过之后,这里是把整个扩展包拿掉的**唯一**入口。`#706` 起,属于扩展包的
+                单个部件被单独移除会被响亮拒绝(「它还属于这个包」)—— 在这颗按钮之前,那句拒绝
+                指向的地方并不存在,用户装完一个扩展包就再也删不掉它。 */}
+            <Show when={(() => { const state = installed(); return !!state && "installed" in state && state.installed })()}>
+              <button
+                class="alpha-ext-add"
+                data-variant="danger"
+                data-size="lg"
+                data-package-uninstall={view().catalogId}
+                disabled={removing()}
+                onClick={() => void removePackage()}
+              >
+                {t("alpha.ext.packageActionUninstall")}
+              </button>
+            </Show>
+            {/* 「留下来的部件」必须说得出理由 —— 用户点了「移除」却发现某个技能还在,而系统
+                说不出为什么,那和一个 bug 没有区别。 */}
+            <Show when={retained().length > 0}>
+              <ul class="alpha-ext-package-retained">
+                <For each={retained()}>
+                  {(entry) => (
+                    <li data-package-retained={`${entry.kind}:${entry.name}`} data-retained-reason={entry.reasonCode ?? ""}>
+                      <code>{`${entry.kind}:${entry.name}`}</code>
+                      <span>{entry.reasonCode ? (t(packageRetainedReasonKey(entry.reasonCode) as never) as string) : ""}</span>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+            {/* `#784` G20:账本已改完但引擎没重载成功 —— 说「待重载」,不说「已移除」。 */}
+            <Show when={reloadPending()}>
+              <p class="alpha-ext-card-err" data-reload-pending="" role="status">
+                {t("alpha.ext.packageRemovedPendingReload")}
+              </p>
+            </Show>
+            <Show when={packageError()}>
+              {(error) => <p class="alpha-ext-card-err" role="alert">{error()}</p>}
+            </Show>
+            <Show when={props.errorFor?.(view().catalogId)}>
+              {(error) => <p class="alpha-ext-card-err" role="alert">{error()}</p>}
+            </Show>
           </div>
         </Section>
       </div>
@@ -288,7 +399,7 @@ export function ExtensionDetail(props: {
       if (spec?.kind === "agent") return spec.builtinAssetKey || undefined
       return undefined
     },
-    (key) => window.api.ext.readBuiltinSkill(key),
+    (key) => extIpc.readBuiltinSkill(key),
   )
 
   // ── #397:策展采信(整段真源切换的判定;fail-closed —— invalid 走未策展保守面 + 一行上报)──
@@ -307,14 +418,14 @@ export function ExtensionDetail(props: {
       const e = entry()
       return e && curated() ? e.id : undefined
     },
-    (id) => window.api.ext.curationBlob(id, "sbom"),
+    (id) => extIpc.curationBlob(id, "sbom"),
   )
   const [provBlob, { refetch: refetchProv }] = createResource(
     () => {
       const e = entry()
       return e && curated() ? e.id : undefined
     },
-    (id) => window.api.ext.curationBlob(id, "provenance"),
+    (id) => extIpc.curationBlob(id, "provenance"),
   )
   const sbomComponents = createMemo((): { name: string; version: string }[] => {
     const r = sbomBlob()
@@ -382,7 +493,7 @@ export function ExtensionDetail(props: {
     async (src) => {
       const results: { dep: string; ok: boolean }[] = []
       for (const dep of src.deps) {
-        const r = await window.api.ext.checkRuntime(dep)
+        const r = await extIpc.checkRuntime(dep)
         results.push({ dep, ok: r.ok })
       }
       return results

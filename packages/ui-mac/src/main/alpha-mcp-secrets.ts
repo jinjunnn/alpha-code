@@ -13,11 +13,11 @@ import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { isExtensionName } from "../shared/extension-name"
 
 const MCP_SECRET_DIR = "alpha-mcp-secrets"
-const SAFE_SERVER = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const SAFE_VAR = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
-// #378(Codex 裁决 Q1):版本目录名与 server/VAR 名字空间互斥(SAFE_SERVER 不含 "v-" 前缀约束,
+// #378(Codex 裁决 Q1):版本目录名与 server/VAR 名字空间互斥(extension name 无 "v-" 前缀约束,
 // 但 SAFE_VAR 不允许 "-",且版本目录固定 v- 前缀 + hex),GC 枚举据此判别三类条目。
 // review r1 Minor:64 位随机 + **排他 claim**(claimMcpSecretVersionDir)—— 碰撞不再静默复用
 // 既有版本目录(那会经 rename 覆盖旧配置正在引用的密钥,破坏 append-only)。
@@ -50,7 +50,7 @@ export function writeMcpSecret(
   varName: string,
   value: string,
 ): { ok: true; ref: string } | { ok: false; reason: string } {
-  if (!SAFE_SERVER.test(server)) return { ok: false, reason: "invalid server name" }
+  if (!isExtensionName(server)) return { ok: false, reason: "invalid server name" }
   if (!SAFE_VAR.test(varName)) return { ok: false, reason: `invalid env var name: ${varName}` }
   if (typeof value !== "string" || value.length === 0) return { ok: false, reason: "empty secret value" }
   try {
@@ -70,11 +70,11 @@ export function writeMcpSecret(
  *  snapshotMcpServerSecretsStrict:`${dir}.bak-${randomBytes(4).hex}` = 恰 `<server>.bak-<hex8>`)
  *  —— 吊销/GC 都必须覆盖这一层,否则含密钥的旧备份在卸载与成功重装后永久残留。
  *  r4(Major):后缀按历史实现**精确匹配** `.bak-<hex8>` —— 裸前缀会把碰巧叫
- *  `<server>.bak-live` 的另一个合法 server(SAFE_SERVER 允许点与连字符)的**在用密钥目录**
+ *  `<server>.bak-live` 的另一个合法 server(extension name 允许点与连字符)的**在用密钥目录**
  *  误判成备份删除。枚举失败走结果通道(strict 调用方必须失败,best-effort 调用方静默);
  *  ENOENT = 空。 */
 const SIBLING_BAK_SUFFIX = /^\.bak-[a-f0-9]{8}$/
-/** r8(Major):名字模式仍可能撞真 server(`foo.bak-<hex8>` 是 SAFE_SERVER 合法名)——
+/** r8(Major):名字模式仍可能撞真 server(`foo.bak-<hex8>` 是合法 extension name)——
  *  isLiveServer(全配置源在册名集合)排除活体,只把「名字匹配且不在册」当历史备份。 */
 function listSiblingBackupDirs(
   userDataPath: string,
@@ -108,7 +108,7 @@ export function removeMcpServerSecrets(
   server: string,
   isLiveServer: (candidate: string) => boolean,
 ): void {
-  if (!SAFE_SERVER.test(server)) return
+  if (!isExtensionName(server)) return
   try {
     fs.rmSync(serverDir(userDataPath, server), { recursive: true, force: true })
     const baks = listSiblingBackupDirs(userDataPath, server, isLiveServer)
@@ -127,7 +127,7 @@ export function removeMcpServerSecretsStrict(
   server: string,
   isLiveServer: (candidate: string) => boolean,
 ): { ok: true } | { ok: false; reason: string } {
-  if (!SAFE_SERVER.test(server)) return { ok: false, reason: `invalid server name: ${server}` }
+  if (!isExtensionName(server)) return { ok: false, reason: `invalid server name: ${server}` }
   try {
     fs.rmSync(serverDir(userDataPath, server), { recursive: true, force: true })
     const baks = listSiblingBackupDirs(userDataPath, server, isLiveServer)
@@ -200,7 +200,7 @@ export function claimMcpSecretVersionDir(
   server: string,
   verId: string,
 ): { ok: true } | { ok: false; exists: boolean; reason: string } {
-  if (!SAFE_SERVER.test(server)) return { ok: false, exists: false, reason: "invalid server name" }
+  if (!isExtensionName(server)) return { ok: false, exists: false, reason: "invalid server name" }
   if (!SAFE_SECRET_VER.test(verId)) return { ok: false, exists: false, reason: `invalid secret version id: ${verId}` }
   const sDir = serverDir(userDataPath, server)
   for (const dir of [path.join(userDataPath, MCP_SECRET_DIR), sDir]) {
@@ -253,7 +253,7 @@ export function writeMcpSecretVersioned(
   varName: string,
   value: string,
 ): { ok: true; ref: string } | { ok: false; reason: string } {
-  if (!SAFE_SERVER.test(server)) return { ok: false, reason: "invalid server name" }
+  if (!isExtensionName(server)) return { ok: false, reason: "invalid server name" }
   if (!SAFE_SECRET_VER.test(verId)) return { ok: false, reason: `invalid secret version id: ${verId}` }
   if (!SAFE_VAR.test(varName)) return { ok: false, reason: `invalid env var name: ${varName}` }
   if (typeof value !== "string" || value.length === 0) return { ok: false, reason: "empty secret value" }
@@ -287,7 +287,7 @@ export function removeMcpSecretVersionDir(
   server: string,
   verId: string,
 ): { ok: true } | { ok: false; reason: string } {
-  if (!SAFE_SERVER.test(server)) return { ok: false, reason: "invalid server name" }
+  if (!isExtensionName(server)) return { ok: false, reason: "invalid server name" }
   if (!SAFE_SECRET_VER.test(verId)) return { ok: false, reason: `invalid secret version id: ${verId}` }
   try {
     fs.rmSync(path.join(serverDir(userDataPath, server), verId), { recursive: true, force: true })
@@ -449,6 +449,80 @@ export function collectMcpFileRefPaths(value: unknown): string[] {
   return out
 }
 
+export type McpSecretRefIndex = {
+  /** 候选文件是否被引用集引用(双形态命中);候选自身身份不可判 = 视为被引用(不删)。 */
+  isReferencedFile: (abs: string) => boolean
+}
+
+/**
+ * 引用集 → **删除守卫索引**(#712)。GC 与 prepared resource 释放共用同一判据 —— 两处各写一份
+ * 就会漂移,而漂移的方向是「一处删掉在用密钥」。
+ *
+ * 任一引用路径的文件系统身份不可判(非缺席类 fs 错误,如暂时的 EACCES/EIO)= 整个索引不可信,
+ * 返回失败;调用方必须 fail-closed 不删(fail-open 会把活体别名引用判成未引用而删掉在用密钥)。
+ */
+export function buildMcpSecretRefIndex(
+  referencedPaths: string[],
+): { ok: true; index: McpSecretRefIndex } | { ok: false; reason: string } {
+  const referenced = new Set<string>()
+  for (const rp of referencedPaths) {
+    const ident = pathIdentity(rp)
+    if (!ident.certain)
+      return { ok: false, reason: "a reference path's filesystem identity is unresolvable (non-absence fs error)" }
+    for (const form of ident.forms) referenced.add(form)
+  }
+  return {
+    ok: true,
+    index: {
+      isReferencedFile: (abs: string): boolean => {
+        if (referenced.has(path.resolve(abs))) return true
+        try {
+          return referenced.has(fs.realpathSync(abs))
+        } catch (e) {
+          return !isAbsenceError(e) // 候选文件身份不可判 = 视为被引用(不删);确证缺席才允许判未引用
+        }
+      },
+    },
+  }
+}
+
+/**
+ * #712:释放**一次未提交事务准备的**版本目录。宽限期不适用 —— 调用方(事务失败路径 / 崩溃恢复)
+ * 知道这个版本属于一次没有提交的事务,而 config/receipt/reference 才是原子权威,版本目录只是
+ * provisioning。删除前仍用与 GC 同一份引用判据复核:
+ *   · 任一引用路径身份不可判 → 不删(`ok:false`);
+ *   · 目录内任一文件仍被引用 → 不删(`state:"referenced"`);
+ *   · 目录缺席 → 幂等成功(`state:"absent"`,恢复重放会走到这里)。
+ * 路径由固定 store 根 + **校验过的** (server, verId) 派生 —— 绝不接受调用方给的绝对删除路径。
+ */
+export function removeUnreferencedMcpSecretVersion(
+  userDataPath: string,
+  server: string,
+  verId: string,
+  referencedPaths: string[],
+): { ok: true; state: "removed" | "referenced" | "absent" } | { ok: false; reason: string } {
+  if (!isExtensionName(server)) return { ok: false, reason: `invalid server name: ${server}` }
+  if (!SAFE_SECRET_VER.test(verId)) return { ok: false, reason: `invalid secret version id: ${verId}` }
+  const built = buildMcpSecretRefIndex(referencedPaths)
+  if (!built.ok) return built
+  const dir = path.join(serverDir(userDataPath, server), verId)
+  let files: string[]
+  try {
+    files = fs.readdirSync(dir)
+  } catch (error) {
+    // 确证缺席 = 从未落盘或已释放(幂等);其余(EACCES/EIO)= 内容不可枚举,不删。
+    if (isAbsenceError(error)) return { ok: true, state: "absent" }
+    return {
+      ok: false,
+      reason: `secret version dir unreadable: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+  if (files.some((name) => built.index.isReferencedFile(path.join(dir, name))))
+    return { ok: true, state: "referenced" }
+  const removed = removeMcpSecretVersionDir(userDataPath, server, verId)
+  return removed.ok ? { ok: true, state: "removed" } : removed
+}
+
 /**
  * 提交后版本 GC(#378)。**调用方必须持配置写锁**(referencedPaths 从锁内读出的当前 mcp.<server>
  * leaf 收集 —— 锁保证引用集与 config 现状一致;命名合同对标 gcVendoredPluginDirLocked)。
@@ -465,28 +539,16 @@ export function gcMcpSecretVersionsLocked(
 ): { removed: string[]; warnings: string[] } {
   const removed: string[] = []
   const warnings: string[] = []
-  if (!SAFE_SERVER.test(server)) return { removed, warnings: [`invalid server name: ${server}`] }
+  if (!isExtensionName(server)) return { removed, warnings: [`invalid server name: ${server}`] }
   const sDir = serverDir(userDataPath, server)
   // r13 Major:引用可能经 symlink 别名到达版本文件 —— 词法 resolve 不够,补文件系统身份
   // (realpath;引用目标缺席时保留词法形态)。候选文件比较时同样双形态查询。
   // r15 Major:非缺席类 realpath 失败 = 身份不可判 —— 本轮整体不删(fail-closed,宽限期后重试),
   // 否则暂时 EIO/EACCES 的活体别名引用会被判成未引用而删掉在用密钥。
-  const referenced = new Set<string>()
-  let identityUnprovable = false
-  for (const rp of referencedPaths) {
-    const ident = pathIdentity(rp)
-    if (!ident.certain) identityUnprovable = true
-    for (const form of ident.forms) referenced.add(form)
-  }
-  if (identityUnprovable) return { removed, warnings: [`gc skipped for ${server}: a reference path's filesystem identity is unresolvable (non-absence fs error) — retrying next gc`] }
-  const isReferencedFile = (abs: string): boolean => {
-    if (referenced.has(path.resolve(abs))) return true
-    try {
-      return referenced.has(fs.realpathSync(abs))
-    } catch (e) {
-      return !isAbsenceError(e) // 候选文件身份不可判 = 视为被引用(不删);确证缺席才允许判未引用
-    }
-  }
+  // #712:判据本体抽进 buildMcpSecretRefIndex —— prepared resource 释放消费同一份,不另写一遍。
+  const built = buildMcpSecretRefIndex(referencedPaths)
+  if (!built.ok) return { removed, warnings: [`gc skipped for ${server}: ${built.reason} — retrying next gc`] }
+  const isReferencedFile = built.index.isReferencedFile
   const cutoff = Date.now() - SECRET_GC_GRACE_MS
   const olderThanGrace = (p: string): boolean => {
     try {

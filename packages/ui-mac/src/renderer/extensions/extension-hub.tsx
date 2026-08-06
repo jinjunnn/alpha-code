@@ -31,7 +31,14 @@ import { Button } from "../alpha-ui/Button"
 import { pushToast } from "../alpha-ui/Toast"
 import { Banner } from "../alpha-ui/Banner"
 import type { ServerInfo } from "../sidebar/use-projects"
-import { useExtensions, isAuthzRequired, type ActionResult, type HubAgent } from "./use-extensions"
+import {
+  useExtensions,
+  isAuthzRequired,
+  isLocalPluginRoute,
+  type ActionResult,
+  type HubAgent,
+  type LocalPackagePreviewV1,
+} from "./use-extensions"
 import { ExtAuthzView, ExtStandaloneAuthzDialog, buildAuthzConfirmation, authzIsEscalation } from "./ext-authz"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../shared/ext-capability-authorization"
 import type { Catalog, CatalogEntry, InstalledState } from "./catalog-types"
@@ -60,7 +67,9 @@ import {
 import { findSessionGrant, sessionGrantKeyOf, sessionRefusalRoute, sessionToggleView } from "./ext-session-toggle"
 import { curationActivationFacts, type Curation, type CurationStatus } from "../../shared/catalog-curation"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
-import { packagePresentation } from "./ext-package-presentation"
+import type { PackageAdmissionPreviewV1 } from "../../shared/package-admission"
+import { packagePresentation, packageRetainedReasonKey, packageSkipReasonKey } from "./ext-package-presentation"
+import { extIpc } from "./ext-ipc"
 import "./extension-hub.css"
 
 
@@ -198,8 +207,44 @@ export function ExtensionHub(props: {
       props.open()
         ? `${receiptFingerprint(ext.store.receipts)}:${receiptFingerprint(ext.store.projectReceipts)}:${projectDir() ?? ""}`
         : null,
-    () => window.api.ext.inventoryView(projectDir()),
+    () => extIpc.inventoryView(projectDir()),
   )
+  // ── REQ-128 Phase 3 `#784` 第 6 跳:本机已装扩展包 ────────────────────────────────────────
+  //
+  // 在这条 resource 之前,已安装页对「包」是**结构上**看不见的:唯一能看到包的地方是目录条目
+  // 详情页的 `kind === "package"` 分支,而它只能从远程目录进得去。本地导入的包没有目录条目
+  // ⇒ 装完就再也找不到它,也没有任何地方能把它整个拿掉。
+  //
+  // key 里带账本指纹:装完/卸完 receipts 变了就自动重取。启停**不**改指纹(desiredState 不在
+  // 指纹里),所以 `runStateToggle` 末尾显式 `refetchPackages()` —— 少这一行的后果是开关拨完
+  // 包卡上的「未启用」不消失,用户以为没生效又去拨一次。
+  // key 里也带 tab:进「已安装」就重读一次。这不只是省一次 IPC —— 账本在别处坏掉时,
+  // 「回到这一页会重新读」是用户唯一能自己走到「读不出」那条如实呈现上的路。
+  const [installedPackages, { refetch: refetchPackages }] = createResource(
+    () => (props.open() && section() === "installed" ? `${receiptFingerprint(ext.store.receipts)}` : null),
+    () => ext.listInstalledPackages(),
+  )
+  /** 这个包在界面上叫什么。**`#784` owner 裁决**:显示插件作者自己声明的名字;
+   *  存量图没有这个字段时才回退到 root 组件名(那是包里某个技能的名字,不是包名)。
+   *  空白 / 只有空格一律当缺席 —— 用户绝不该看到一张没有名字的卡。 */
+  const packLabel = (pack: { displayName: string | null; rootComponentName: string }): string =>
+    (pack.displayName ?? "").trim() || pack.rootComponentName
+  /** 已装扩展包清单**读不出来**(与「一个都没装」是两件事)。 */
+  const packagesUnreadable = () => {
+    const state = installedPackages()
+    return !!state && !state.ok
+  }
+  /** 一个 `kind:name` 属不属于某个已装扩展包 —— 属于就不能被单独移除(第 8 跳)。
+   *  真源是 main 的包图投影,**不是**从名字或 id 前缀猜的。 */
+  const packageOwnerOf = createMemo(() => {
+    const state = installedPackages()
+    const owners = new Map<string, { packageId: string; label: string }>()
+    if (!state || !state.ok) return owners
+    for (const pack of state.packages)
+      for (const component of pack.components)
+        owners.set(`${component.kind}:${component.name}`, { packageId: pack.packageId, label: packLabel(pack) })
+    return owners
+  })
   // REQ-020 T2:云门控。subscribe 会立即回放当前态(preload 内置 getState),再跟增量推送。
   // 云可用 ⟺ 已登录且 platform 模式(mcp.cloud 由 sidecar 在该态注入,ADR-013/ADR-016)。
   const [authState, setAuthState] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
@@ -290,7 +335,7 @@ export function ExtensionHub(props: {
     }
   }
   // #408:会话结束事件(sidecar 停止/崩溃)→ 开关已由数据层归位,此处如实提示(v6:行保留、开关归位)。
-  onCleanup(window.api.ext.onSessionGrantsEnded(() => pushToast({ kind: "info", title: t("alpha.ext.sessionEndedToast") })))
+  onCleanup(extIpc.onSessionGrantsEnded(() => pushToast({ kind: "info", title: t("alpha.ext.sessionEndedToast") })))
   const runStateToggle = async (args: {
     receipt: InstallReceipt
     type: string
@@ -331,6 +376,9 @@ export function ExtensionHub(props: {
     }
     if (r.reason === "reload-pending" || mcPending) pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
     await refetchGovernance()
+    // `#784`:包卡上的「未启用」由包图投影的 `desiredState` 画出,而它不在 governance 的
+    // 指纹里 —— 不显式重取,开关拨完包卡不变,用户会以为没生效。
+    await refetchPackages()
   }
   // T7/T9:安装阶段(粗粒度状态机:checking→installing)与逐条行内错误(B11:失败不裸 toast)。
   const [stage, setStage] = createSignal<Record<string, "checking" | "installing">>({})
@@ -385,6 +433,30 @@ export function ExtensionHub(props: {
     diffs: CapabilityDiffWire[]
   }
   const [authz, setAuthz] = createSignal<AuthzState | null>(null)
+  type PackageAuthzState = {
+    view: CatalogPackageViewV1
+    preview: PackageAdmissionPreviewV1
+    finish: (view: CatalogPackageViewV1) => void
+  }
+  const [packageAuthz, setPackageAuthz] = createSignal<PackageAuthzState | null>(null)
+  const packagePrerequisites = createMemo(() => {
+    const preview = packageAuthz()?.preview
+    if (!preview) return []
+    return Array.from(
+      new Map(
+        preview.plan.items
+          .flatMap((item) => (item.included ? item.prerequisites : []))
+          .map((item) => [item.prerequisiteId, item]),
+      ).values(),
+    )
+  })
+  /** 确认屏上「会装什么」与「不会装什么」两段 —— 同一个 items[],由 `included` 分开。 */
+  const packagePlanIncluded = () =>
+    packageAuthz()?.preview.plan.items.flatMap((item) => (item.included ? [item] : [])) ?? []
+  const packagePlanSkipped = () =>
+    packageAuthz()?.preview.plan.items.flatMap((item) => (item.included ? [] : [item])) ?? []
+  const packageSecretsComplete = () =>
+    packagePrerequisites().every((item) => (envValues()[item.prerequisiteId] ?? "").trim().length > 0)
   const [confirmBusy, setConfirmBusy] = createSignal(false)
   const [authzBusy, setAuthzBusy] = createSignal(false)
   // REQ-036:创建表单已移除(创建走技能:skill-creator/agent-creator 出厂注入),原表单 state 随之下线。
@@ -392,8 +464,9 @@ export function ExtensionHub(props: {
   // (ALPHA_MIGRATE_ENABLE=1,A6 真机验证后)且有候选时显示迁移条。
   const [migrateCandidates, setMigrateCandidates] = createSignal<CatalogEntry[]>([])
   const [migrating, setMigrating] = createSignal(false)
-  // T6:导入状态。importDialog = git/npm 输入弹窗;importBusy/importErr 行内反馈(B11)。
-  const [importDialog, setImportDialog] = createSignal<"git" | "npm" | null>(null)
+  // T6:导入状态。importDialog = git 输入弹窗;importBusy/importErr 行内反馈(B11)。
+  // ADR-040(`#825`):npm 插件导入这一档随「扩展安装不得写引擎 plugin[]」整档撤下。
+  const [importDialog, setImportDialog] = createSignal<"git" | null>(null)
   // REQ-033:自定义连接器(catalog 外任意 MCP)+ agent 导入(两段式:预览映射 → 确认)
   const [customMcpOpen, setCustomMcpOpen] = createSignal(false)
   const [cmType, setCmType] = createSignal<"local" | "remote">("local")
@@ -410,6 +483,34 @@ export function ExtensionHub(props: {
   const [importInput, setImportInput] = createSignal("")
   const [importBusy, setImportBusy] = createSignal(false)
   const [importErr, setImportErr] = createSignal("")
+  // REQ-128 Phase 3 `#784`:本地 Claude 插件包的预览屏状态。
+  // `previewId` **可能缺席** —— 一个都装不上 / 超预算 / 已装过时 main 不签发预览:
+  // 那种终态仍然要给用户一屏说明,只是没有可确认的东西(确认键保留但禁用,原因写在键面上)。
+  const [localPlugin, setLocalPlugin] = createSignal<{
+    previewId?: string
+    headline: string
+    preview: LocalPackagePreviewV1
+    reasonCode?: string
+  } | null>(null)
+  const [localPluginBusy, setLocalPluginBusy] = createSignal(false)
+  const [localPluginErr, setLocalPluginErr] = createSignal("")
+  /** 刚装完的包 —— 已安装页把它排在最前并挂引导条(裁决 B 之下不引导 = 用户以为没装上)。 */
+  const [highlightPackage, setHighlightPackage] = createSignal<string | null>(null)
+  const [packBusy, setPackBusy] = createSignal<string | null>(null)
+  const [packErr, setPackErr] = createSignal<Record<string, string>>({})
+  /** 上一次整包移除**留下了什么、为什么**。
+   *
+   *  它**不能**挂在包卡里:移除成功之后那张卡当场就没了(包图没了),挂在卡里的解释会跟着
+   *  一起消失 —— 用户看见技能还在,却再也拿不到原因。所以它是一条**区块级**的结果,
+   *  由用户自己关掉。 */
+  const [packRemoval, setPackRemoval] = createSignal<{
+    packageId: string
+    label: string
+    retained: Array<{ kind: string; name: string; reasonCode: string | null }>
+  } | null>(null)
+  /** 第 8 跳:对属于扩展包的单个组件点了「移除」之后的**拒绝**呈现(逐行,key = `kind:name`)。
+   *  这条必须留在行上,不能只发一条 toast:用户要的是「那我该怎么办」,而答案是「移除整个包」。 */
+  const [rowRefusal, setRowRefusal] = createSignal<Record<string, string>>({})
 
   const runImportFolder = async () => {
     setImportErr("")
@@ -417,11 +518,108 @@ export function ExtensionHub(props: {
     try {
       // REQ-098 #255:main 自弹目录选择器并直接以用户实选目录为来源;renderer 不再传 srcDir。
       const r = await ext.importSkillFolder()
+      // REQ-128 Phase 3 `#784` 第 1 跳:**按 main 给的 `route` 分流**。
+      // renderer 不判目录形态(它连路径都没有),也不新增第六张卡 —— 同一张「文件夹」卡,
+      // 按下去之后由 main 决定这是一个技能目录还是一个插件目录。
+      if (isLocalPluginRoute(r)) {
+        setLocalPlugin({
+          previewId: r.previewId,
+          headline: r.reason,
+          preview: r.localPluginPreview,
+          reasonCode: r.reasonCode,
+        })
+        return
+      }
+      // ↓ 非插件目录:**逐字不变**的既有行为(成功 toast / 失败行内红字)。
       // #336 r1:projectionLag = 本次未注入(重启自愈)—— 不得宣称「当场生效」。
       if (r.ok) flash(t(r.projectionLag ? "alpha.ext.importedPendingRestart" : "alpha.ext.imported", { name: r.name ?? "" }), "success")
       else if (!r.canceled) setImportErr(r.reason ?? t("alpha.ext.installFailed"))
     } finally {
       setImportBusy(false)
+    }
+  }
+  // ── `#784` 第 3/4 跳:本地插件包预览屏 ────────────────────────────────────────────────────
+  //
+  // 关掉预览屏 = **取消**,而取消必须真的把 main 侧留存的字节放掉(G19)。
+  //
+  // ⚠️ 这里有一条本 portfolio 栽过的形态:**中止不了却报「已取消」**。
+  // main 在安装已经开跑时会如实拒绝(`install-in-flight`),那批字节仍然算在计量里。
+  // 所以拒绝**不能**被读成成功:界面留在原地、把拒绝写在屏内,而不是先关掉弹窗再飞一条
+  // toast —— 弹窗一关,用户读到的第一件事就是「它取消了」。
+  const closeLocalPlugin = async (): Promise<void> => {
+    const current = localPlugin()
+    if (!current?.previewId) {
+      setLocalPlugin(null)
+      setLocalPluginErr("")
+      return
+    }
+    const released = await ext.localPluginCancel(current.previewId)
+    if (!released.ok) {
+      setLocalPluginErr(released.reason)
+      return
+    }
+    setLocalPlugin(null)
+    setLocalPluginErr("")
+  }
+  const runConfirmLocalPlugin = async (): Promise<void> => {
+    const current = localPlugin()
+    if (!current?.previewId || localPluginBusy()) return
+    setLocalPluginBusy(true)
+    setLocalPluginErr("")
+    try {
+      const r = await ext.localPluginConfirm(current.previewId)
+      if (!r.ok) {
+        // 「预览过期」「安装中途失败」对用户是同一件事:**一个都没装,盘上没有半成品**。
+        // 措辞里不许出现「已装了 N 个」这种中间态。
+        setLocalPluginErr(r.reason)
+        return
+      }
+      setLocalPlugin(null)
+      // 裁决 B:装完默认全关。不跳页的结果是用户按完确认**什么都看不到**,然后判定功能坏了。
+      // 所以确认成功后直接落在已安装页,新包卡带引导条。**先切页再重取** —— 包清单的
+      // resource key 里带着 tab,切页本身就是那次重取的触发器。
+      setDetail(null)
+      setHubSection("installed")
+      setHighlightPackage(r.packageId)
+      await refetchPackages()
+      flash(
+        r.reason === "reload-pending"
+          ? t("alpha.ext.localPackageInstalledPendingReload", { count: String(r.installed.length) })
+          : t("alpha.ext.localPackageInstalled", { count: String(r.installed.length) }),
+        r.reason === "reload-pending" ? "info" : "success",
+      )
+    } finally {
+      setLocalPluginBusy(false)
+    }
+  }
+  // ── `#784` 第 7 跳:整包移除 ─────────────────────────────────────────────────────────────
+  const runRemovePackage = async (packageId: string): Promise<void> => {
+    if (packBusy() === packageId) return
+    // 名字要在**移除之前**取:成功之后这个包就从投影里消失了,再取只能拿到空。
+    const state = installedPackages()
+    const target = state && state.ok ? state.packages.find((pack) => pack.packageId === packageId) : undefined
+    const label = target ? packLabel(target) : packageId
+    setPackBusy(packageId)
+    setPackErr((prev) => ({ ...prev, [packageId]: "" }))
+    try {
+      const r = await ext.uninstallPackage(packageId)
+      if (!r.ok) {
+        // AC:移除失败**必须显示失败**。`ok` 之外的任何东西都不许被读成「已移除」——
+        // 包**仍然留在列表里**,错误就在卡上。
+        setPackErr((prev) => ({ ...prev, [packageId]: `${t("alpha.ext.packageRemoveFailed")}: ${r.reason}` }))
+        return
+      }
+      // 留下来的部件必须说得出理由:用户点了移除却发现某个技能还在、而系统说不出为什么,
+      // 那和一个缺陷没有区别。**落在区块级结果上**,因为包卡马上就要消失了。
+      const retained = r.retained.map((entry) => ({ kind: entry.kind, name: entry.name, reasonCode: entry.reasonCode }))
+      setPackRemoval(retained.length > 0 ? { packageId, label, retained } : null)
+      await refetchPackages()
+      flash(
+        r.reloadPending ? t("alpha.ext.packageRemovedPendingReload") : t("alpha.ext.packageRemoved"),
+        r.reloadPending ? "info" : "success",
+      )
+    } finally {
+      setPackBusy(null)
     }
   }
   const runImportDialog = async () => {
@@ -431,13 +629,11 @@ export function ExtensionHub(props: {
     setImportBusy(true)
     setImportErr("")
     try {
-      const r = kind === "git" ? await ext.importSkillGit(value) : await ext.importNpmPlugin(value)
+      const r = await ext.importSkillGit(value)
       if (r.ok) {
         // #336 r1:projectionLag = 本次未注入(重启自愈)—— 不得宣称「当场生效」。
         flash(
-          kind === "git"
-            ? t(r.projectionLag ? "alpha.ext.importedPendingRestart" : "alpha.ext.imported", { name: (r as { name?: string }).name ?? "" })
-            : t("alpha.ext.pluginRestart"),
+          t(r.projectionLag ? "alpha.ext.importedPendingRestart" : "alpha.ext.imported", { name: (r as { name?: string }).name ?? "" }),
           "success",
         )
         setImportDialog(null)
@@ -462,24 +658,46 @@ export function ExtensionHub(props: {
   const runPackageAction = async (input: CatalogPackageViewV1) => {
     const view = currentPackageView(input)
     if (!view.action.enabled || busy() === view.catalogId) return view
+    setErrFor(view.catalogId, null)
     setBusy(view.catalogId)
     try {
       if (view.verdict !== "compatible") {
         if (view.action.kind === "update-alpha") await window.api.updater.check()
-        const latest = await window.api.ext.packageDetail(view.catalogId)
+        const latest = await extIpc.packageDetail(view.catalogId)
         if (latest) rememberPackageView(latest)
         return latest ?? view
       }
       if (view.action.kind !== "install" && view.action.kind !== "resolve-prerequisite") return view
-      const result = await window.api.ext.installCatalog({
+      // package 首驱只带全新的 attempt identity；密钥与 authorization 必须等 preview 后再提交。
+      // `#810`:经**数据层**出站(`ext.installCatalogIntent`),不直连 `extIpc` —— 引擎重扫接在那一层。
+      const result = await ext.installCatalogIntent({
         catalogId: view.catalogId,
-        scope: { scope: "global" },
+        attemptId: `renderer-${globalThis.crypto.randomUUID()}`,
       })
-      const latest = !result.ok && "package" in result
-        ? result.package
-        : await window.api.ext.packageDetail(view.catalogId)
+      if (
+        !result.ok &&
+        "stage" in result &&
+        result.stage === "authorize" &&
+        "packageAuthorization" in result &&
+        result.packageAuthorization
+      ) {
+        const preview = result.packageAuthorization
+        setEnvValues({})
+        return await new Promise<CatalogPackageViewV1>((finish) =>
+          setPackageAuthz({ view, preview, finish }),
+        )
+      }
+      if (!result.ok) setErrFor(view.catalogId, result.reason)
+      // `#810`:引擎重扫失败 ⇒ 如实说「要重载」。今天 admission 的首驱恒走 authorize 臂,
+      // 所以这条臂到不了;留着是因为它一旦到得了,缺这一行用户读到的就是一句谎话。
+      if (result.ok && result.reloadPending) flash(t("alpha.ext.addedPendingReload"))
+      const latest =
+        !result.ok && "package" in result ? result.package : await extIpc.packageDetail(view.catalogId)
       if (latest) rememberPackageView(latest)
       return latest ?? view
+    } catch (error) {
+      setErrFor(view.catalogId, error instanceof Error ? error.message : String(error))
+      return view
     } finally {
       setBusy(null)
     }
@@ -494,6 +712,12 @@ export function ExtensionHub(props: {
   // 关闭时重置,重开回到当前分区的列表(review 发现:详情页上点 ✕ 关闭再开会残留 stale 详情)。
   createEffect(() => {
     if (!props.open()) {
+      const pending = packageAuthz()
+      if (pending && !authzBusy()) {
+        pending.finish(pending.view)
+        setPackageAuthz(null)
+        setEnvValues({})
+      }
       setDetail(null)
       setQuery("")
     } else {
@@ -542,7 +766,7 @@ export function ExtensionHub(props: {
     if (!picked || !picked.files?.length) return
     setAgentBusy(true)
     try {
-      const r = await window.api.ext.importAgentPreview(picked.token, picked.files[0].path)
+      const r = await extIpc.importAgentPreview(picked.token, picked.files[0].path)
       if (!r.ok) {
         setAgentErr(r.reason)
         return
@@ -557,7 +781,7 @@ export function ExtensionHub(props: {
     if (!pv || agentBusy()) return
     setAgentBusy(true)
     try {
-      const r = await window.api.ext.importAgentConfirm(pv.previewId)
+      const r = await extIpc.importAgentConfirm(pv.previewId)
       if (!r.ok) {
         setAgentErr(r.reason)
         return
@@ -649,7 +873,7 @@ export function ExtensionHub(props: {
   // 与 main 闸「advisories 不可验即拒激活」同向 fail-closed。fetcher 自吞异常归一为不可判定态。
   const [advisoryFacts] = createResource(
     () => (props.open() ? "open" : null),
-    () => window.api.ext.advisoryActive().catch((): { ids: string[]; fresh: boolean } => ({ ids: [], fresh: false })),
+    () => extIpc.advisoryActive().catch((): { ids: string[]; fresh: boolean } => ({ ids: [], fresh: false })),
   )
   const advisoryState = createMemo<"loading" | "unavailable" | "ready">(() => {
     if (advisoryFacts.loading) return "loading"
@@ -776,6 +1000,38 @@ export function ExtensionHub(props: {
   const flash = (msg: string, kind: "info" | "success" | "error" = "info") => pushToast({ kind, title: msg })
   const comingSoon = () => flash(t("alpha.ext.comingSoon"))
 
+  // ── `#733`(REQ-130):`needs_auth` 的用户可见补救入口 ───────────────────────────────────
+  //
+  // 引擎的 MCP 状态是**五臂**判别联合,而此前 renderer 只认 connected / disabled ——
+  // `needs_auth` 被折成「未连接」,用户看到一行灰字、**没有任何可点的东西**。
+  // 这里补的不是文案,是一个动作:调引擎现成的 `POST /mcp/:name/auth/authenticate`
+  //(开系统浏览器 + 等本地回调,一步到位)。授权流的每一步都在引擎侧,renderer 不实现其中任何一步。
+  //
+  // 出口**只有这一个定义**,两个呈现点(已安装行 / 云连接器卡)共用它 —— 逐点各写一份的
+  // 形态在本文件里已经栽过三次(`#765` 的 warning 呈现是同一个故事):枚举对新呈现点默认放行,
+  // 而这里"放行"的具体后果是用户在那个入口下依然点不动。
+  const [authBusy, setAuthBusy] = createSignal<string | null>(null)
+  const McpNeedsAuthAction = (cp: { name: string }) => (
+    <button
+      class="alpha-ext-updbtn"
+      data-mcp-authorize={cp.name}
+      disabled={authBusy() === cp.name}
+      onClick={(ev) => {
+        ev.stopPropagation()
+        if (authBusy()) return
+        setAuthBusy(cp.name)
+        void ext
+          .authenticateMcp(cp.name)
+          // 成败都如实说:`authenticateMcp` 已经在数据层复查过重读回来的状态,
+          // 「HTTP 调通了」不算成功。
+          .then((r) => flash(r.ok ? t("alpha.ext.mcpAuthDone") : t("alpha.ext.mcpAuthFailed"), r.ok ? "success" : "error"))
+          .finally(() => setAuthBusy(null))
+      }}
+    >
+      {authBusy() === cp.name ? t("alpha.ext.mcpAuthorizing") : t("alpha.ext.mcpAuthorize")}
+    </button>
+  )
+
   // REQ-019 T5:更新执行状态(busy = receipt id;失败行内呈现,不裸 toast)。
   const [updBusy, setUpdBusy] = createSignal<string | null>(null)
   const [updErr, setUpdErr] = createSignal<Record<string, string>>({})
@@ -796,6 +1052,7 @@ export function ExtensionHub(props: {
     setUpdBusy(r.id)
     try {
       const res = await ext.updateEntry(target)
+      // `#765`:具名 warning 不在这里呈现 —— `extIpc` 在 IPC 包装层已经呈现过。
       if (res.ok) flash(t("alpha.ext.updated"), "success")
       else if (isAuthzRequired(res)) {
         // #348:扩权 → 授权框(mode=update,场景化文案);调用方据返回值中止批量循环。
@@ -822,6 +1079,7 @@ export function ExtensionHub(props: {
     try {
       const res = await ext.updateEntry(target, authorization)
       if (res.ok) {
+        // `#765`:同 runUpdateOne —— warning 归 `extIpc`,这里只报「已更新」。
         flash(t("alpha.ext.updated"), "success")
         return null
       }
@@ -871,17 +1129,18 @@ export function ExtensionHub(props: {
     // REQ-100 #311:bundle = 一次 main-owned 原子事务(required 全提交或全回滚),renderer 只发一次
     // 请求。归档连接器/不支持子项的跳过决策由 main planner 落 skipped(带审计);此处只呈现结果。
     // #348:一次展示、一次授权、一次 commit —— authorize 失败原样上抛给 onAdd 统一拦截。
-    const r = await window.api.ext.installCatalog({
-      catalogId: e.id,
-      scope: { scope: "global" },
-      ...(authorization ? { authorization } : {}),
-    })
+    // `#810`:同 `runPackageAction` —— 经数据层出站,引擎重扫在那一层接一次。
+    // 套件成员里有 skill / agent / plugin 时,不重扫 = 装完在下一条消息里仍然不存在。
+    const r = await ext.installCatalogIntent({ catalogId: e.id, ...(authorization ? { authorization } : {}) })
     if (!r.ok) return r
     const okCount = r.installed?.length ?? 0
     const skippedCount = r.skipped?.length ?? 0
     if (skippedCount > 0) setErrFor(e.id, t("alpha.ext.bundlePartialFail", { ok: okCount, fail: skippedCount }))
+    // `#810`:重扫没成功就**不许**说「已添加」——同一句成功行改说「要重载」。
+    else if (r.reloadPending) flash(t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.addedPendingReload"), "success")
     else flash(t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.added"), "success")
-    return { ok: true }
+    // 具名 warning 原样带出去(数据保真);**呈现**已由 `extIpc` 在上面那次调用里做完(`#765`)。
+    return { ok: true, ...(r.reloadPending ? { reason: "reload-pending" } : {}), ...(r.warning ? { warning: r.warning } : {}) }
   }
 
   // T7(B11)+T9:失败一律行内(卡片错误行 / 详情页同款),toast 只报成功;安装阶段粗状态机
@@ -915,6 +1174,9 @@ export function ExtensionHub(props: {
     const addedFlash = (fallbackKey: "alpha.ext.added" | "alpha.ext.addedLive" | "alpha.ext.pluginRestart") =>
       flash(willBeDisabled ? t("alpha.ext.addedDisabled") : t(fallbackKey), "success")
     try {
+      // `#765`:这里**不再**有 warning 呈现。`#698` 把它收成本函数的单点出口,但那只覆盖一个
+      // 函数 —— 详情页装 package 走确认屏,压根不经过这里。现在呈现在 `extIpc`(IPC 包装层),
+      // 对**任何**返回具名 warning 的调用默认生效,不必逐入口登记。
       if (e.type === "mcp") {
         setStageFor(e.id, "checking")
         const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
@@ -952,8 +1214,6 @@ export function ExtensionHub(props: {
         if (!res.ok) return failOr(res)
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
         else addedFlash("alpha.ext.addedLive")
-        // 成功但携带 loud 诊断(CAS 自愈/授权账写失败等,#361 review r1):原样呈现,不吞。
-        if (res.warning) flash(res.warning)
       } else if (e.type === "plugin") {
         setStageFor(e.id, "installing")
         const res = await ext.installPlugin(e, authorization)
@@ -982,6 +1242,62 @@ export function ExtensionHub(props: {
     setAuthz(null)
     setConfirming(null)
     setEnvValues({})
+  }
+  const closePackageAuthz = () => {
+    const pending = packageAuthz()
+    if (!pending || authzBusy()) return
+    pending.finish(pending.view)
+    setPackageAuthz(null)
+    setEnvValues({})
+  }
+  const confirmPackageAuthz = async () => {
+    const pending = packageAuthz()
+    if (!pending || authzBusy() || !packageSecretsComplete()) return
+    // prerequisiteId 是 main 校验的身份；required=false 的签名前置条件也必须完整提交。
+    const secrets = Object.fromEntries(
+      packagePrerequisites().map((item) => [item.prerequisiteId, envValues()[item.prerequisiteId]!]),
+    )
+    setAuthzBusy(true)
+    try {
+      // `#810`:确认屏这一趟才是**真正落盘**的那一趟 —— 它经数据层出站,于是引擎重扫
+      // 与账本刷新都在那一层发生一次(此前这里直连 `extIpc`,一次都没有)。
+      const result = await ext.installCatalogIntent({
+        catalogId: pending.view.catalogId,
+        attemptId: pending.preview.attemptId,
+        ...(packagePrerequisites().length > 0 ? { grants: { secrets } } : {}),
+        authorization: {
+          // package confirmation 精确覆盖 preview 全部 diff key，不能沿用 legacy 的需确认项过滤。
+          confirmed: Object.fromEntries(pending.preview.items.map((item) => [item.key, item.requested])),
+          binding: pending.preview.binding,
+        },
+      })
+      if (!result.ok) {
+        const latest = "package" in result ? result.package : pending.view
+        if ("package" in result) rememberPackageView(result.package)
+        setErrFor(pending.view.catalogId, result.reason)
+        pending.finish(latest)
+        setPackageAuthz(null)
+        setEnvValues({})
+        return
+      }
+      // `#698` 在这里手写过一行 warning 呈现 —— 这条路径(确认屏 → 二次 installCatalog)是
+      // package 更新真正走的那条,而它当时**连成功 toast 都没有**。`#765` 之后这行没了:
+      // 上面那次 `extIpc.installCatalog` 自己就把 warning 呈现掉了,不靠人记得写。
+      // `#810`:引擎重扫失败是**另一件事**,`extIpc` 不知道它 —— 如实说「要重载」。
+      if (result.reloadPending) flash(t("alpha.ext.addedPendingReload"))
+      const latest = await extIpc.packageDetail(pending.view.catalogId)
+      if (latest) rememberPackageView(latest)
+      pending.finish(latest ?? pending.view)
+      setPackageAuthz(null)
+      setEnvValues({})
+    } catch (error) {
+      setErrFor(pending.view.catalogId, error instanceof Error ? error.message : String(error))
+      pending.finish(pending.view)
+      setPackageAuthz(null)
+      setEnvValues({})
+    } finally {
+      setAuthzBusy(false)
+    }
   }
   const cancelAuthz = () => {
     if (authzBusy() || confirmBusy()) return
@@ -1048,11 +1364,31 @@ export function ExtensionHub(props: {
   }
 
   const onUninstall = async (receipt: InstallReceipt) => {
+    const rowKey = `${receipt.type}:${receipt.name}`
+    setRowRefusal((prev) => {
+      const next = { ...prev }
+      delete next[rowKey]
+      return next
+    })
     const res = await ext.uninstall(receipt)
+    // `#784` 第 8 跳:这一条属于某个扩展包 ⇒ main 的 `directUninstallVerdict` 会在**删任何实物
+    // 之前**响亮拒绝。那条拒绝的原文是给开发者看的英文(`… is owned by bundle:… — uninstall the
+    // package instead`),用户读不了也做不出动作,所以行上说人话并给出**正确的下一步**。
+    // 判据是「main 拒了 **且** 这一条在某个包图里」——**不解析 reason 的文字**,
+    // 那样一改措辞这条分支就静默失效了。
+    const owner = packageOwnerOf().get(rowKey)
+    if (!res.ok && owner) {
+      setRowRefusal((prev) => ({ ...prev, [rowKey]: owner.packageId }))
+      flash(t("alpha.ext.componentOwnedByPackage", { pack: owner.label }), "error")
+      return
+    }
     flash(
       res.ok ? t("alpha.ext.removed") : `${t("alpha.ext.removeFailed")}${res.reason ? `: ${res.reason}` : ""}`,
       res.ok ? "success" : "error",
     )
+    if (res.ok) await refetchPackages()
+    // `#706` 的「它还属于某个扩展包 —— 只移除了你的独立安装,文件保留」正是走这条 warning;
+    // `#765` 之后它由 `extIpc` 在 uninstallV2 返回时呈现,这里不再重复(重复会出两条同样的 toast)。
   }
 
   // T3:开 hub 时扫描旧 XDG 根,匹配 catalog(只迁 alpha 自己装的,不碰用户自建内容,ADR-019 §4)。
@@ -1082,7 +1418,7 @@ export function ExtensionHub(props: {
   }
   const scanMigration = async () => {
     try {
-      const { enabled, inventory } = await window.api.ext.migrateScan()
+      const { enabled, inventory } = await extIpc.migrateScan()
       if (!enabled) return setMigrateCandidates([])
       const skillNames = new Set(inventory.skills)
       const mcpNames = new Set(inventory.mcp.map((m) => m.name))
@@ -1094,7 +1430,7 @@ export function ExtensionHub(props: {
         return false
       })
       const requests = named.map(provenanceRequest).filter((r): r is ProvenanceRequest => r !== null)
-      const verdicts = requests.length ? await window.api.ext.migrateVerify(requests) : []
+      const verdicts = requests.length ? await extIpc.migrateVerify(requests) : []
       const passed = new Set(verdicts.filter((v) => v.verified).map((v) => `${v.type}:${v.name}`))
       setMigrateCandidates(named.filter((e) => passed.has(`${e.type}:${e.name}`)))
     } catch {
@@ -1122,7 +1458,7 @@ export function ExtensionHub(props: {
           continue
         }
         const legacyName = e.type === "plugin" && e.installSpec?.kind === "plugin" ? e.installSpec.package : e.name
-        await window.api.ext.removeLegacy(e.type as "skill" | "mcp" | "plugin", legacyName)
+        await extIpc.removeLegacy(e.type as "skill" | "mcp" | "plugin", legacyName)
         ok++
       }
       flash(fail ? `${t("alpha.ext.migrated", { count: ok })} · ${fail} 失败` : t("alpha.ext.migrated", { count: ok }), fail ? "error" : "success")
@@ -1394,6 +1730,9 @@ export function ExtensionHub(props: {
             {t(presentation().actionKey)}
           </button>
         </div>
+        <Show when={cardErr()[view().catalogId]}>
+          <p class="alpha-ext-card-err" role="alert">{cardErr()[view().catalogId]}</p>
+        </Show>
       </div>
     )
   }
@@ -1516,6 +1855,185 @@ export function ExtensionHub(props: {
   // REQ-103(#195)已安装行:名字 + 徽标 + 一行「健康点 · 健康态 · 启用态」+ 右侧开关/审查更新/卸载。
   // 三态正交(AC2):健康点=governance health(运行健康/上游归档/事务未落定…);启用态=文字(已连接/
   // 已安装但关闭);来源/类型/版本收进详情页(coordinator 拍板,已安装行不再挤来源灰字)。
+  // ── REQ-128 Phase 3 `#784`:已装扩展包区块 ────────────────────────────────────────────────
+  //
+  // 每个技能各有自己的开关(装完默认全关,owner 裁决 B),包头挂「移除此扩展包」。
+  // 开关走的是**既有** `runStateToggle` —— 与平铺行同一条通道、同一个账本、同一次
+  // `refreshEngine()`。另写一条「包内开关」就是给同一个状态第二个答案。
+  const PackageComponentRow = (cp: {
+    packageId: string
+    component: { componentId: string; kind: string; name: string; required: boolean; desiredState: "enabled" | "disabled" | null }
+  }) => {
+    const receipt = createMemo(() =>
+      ext.store.receipts.find((r) => r.type === (cp.component.kind as InstallReceiptType) && r.name === cp.component.name),
+    )
+    // `null` = 图里有这个节点、账本里没有 record。**不许当成「已启用」**:那会画出一个
+    // 拨下去必然失败的开关。如实呈现为「读不出」,开关禁用。
+    const known = () => cp.component.desiredState !== null
+    const on = () => cp.component.desiredState === "enabled"
+    const busy = createSignal(false)
+    const toggle = async () => {
+      const r = receipt()
+      if (!r || busy[0]()) return
+      busy[1](true)
+      try {
+        await runStateToggle({
+          receipt: r,
+          type: cp.component.kind,
+          name: cp.component.name,
+          currentlyOn: on(),
+          liveUnreceipted: false,
+          mcpConnected: false,
+        })
+      } finally {
+        busy[1](false)
+      }
+    }
+    return (
+      <div class="alpha-ext-pack-c" data-package-component={`${cp.packageId}/${cp.component.name}`}>
+        <div class="alpha-ext-man-body">
+          <div class="alpha-ext-man-nm">
+            <b title={cp.component.name}>{cp.component.name}</b>
+            <Show when={known() && !on()}>
+              <span class="alpha-ext-type-pill" data-off="">
+                {t("alpha.ext.notEnabledChip")}
+              </span>
+            </Show>
+          </div>
+          <div class="alpha-ext-man-st">
+            <span class="alpha-ext-man-dot" data-on={on() ? "" : undefined} />
+            {!known()
+              ? t("alpha.ext.packageComponentUnknownState")
+              : on()
+                ? t("alpha.ext.enabled")
+                : t("alpha.ext.notEnabledHint")}
+          </div>
+        </div>
+        <button
+          class="alpha-ext-sw"
+          data-on={on() ? "" : undefined}
+          data-package-switch={`${cp.packageId}/${cp.component.name}`}
+          disabled={busy[0]() || !known() || !receipt()}
+          aria-label={on() ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
+          onClick={(ev) => {
+            ev.stopPropagation()
+            void toggle()
+          }}
+        />
+      </div>
+    )
+  }
+
+  const InstalledPackagesSection = () => {
+    const state = () => installedPackages()
+    // 刚装完的排最前(裁决 B 之下,不这么做用户按完确认「什么都看不到」)。
+    const ordered = createMemo(() => {
+      const s = state()
+      if (!s || !s.ok) return []
+      const top = highlightPackage()
+      return [...s.packages].sort((a, b) =>
+        a.packageId === top ? -1 : b.packageId === top ? 1 : packLabel(a) < packLabel(b) ? -1 : 1,
+      )
+    })
+    return (
+      <>
+        {/* 上一次移除留下了什么。**故意放在包卡之外** —— 卡会随着包图消失,解释不能跟着走。 */}
+        <Show when={packRemoval()}>
+          {(removal) => (
+            <div class="alpha-ext-verify-note" data-package-removal={removal().packageId} role="status">
+              <b>{t("alpha.ext.packageRemovedWithRetained", { pack: removal().label, count: String(removal().retained.length) })}</b>
+              <ul class="alpha-ext-package-retained">
+                <For each={removal().retained}>
+                  {(entry) => (
+                    <li data-package-retained={`${entry.kind}:${entry.name}`} data-retained-reason={entry.reasonCode ?? ""}>
+                      <code>{entry.name}</code>
+                      <span>{entry.reasonCode ? (t(packageRetainedReasonKey(entry.reasonCode) as never) as string) : ""}</span>
+                    </li>
+                  )}
+                </For>
+              </ul>
+              <button class="alpha-ext-updbtn" data-dismiss-removal="" onClick={() => setPackRemoval(null)}>
+                {t("alpha.ext.gotIt")}
+              </button>
+            </div>
+          )}
+        </Show>
+        {/* 「读不出」与「没装」**永远分开**:折叠成一句「暂无扩展包」会让用户以为东西丢了,
+            于是去重装 —— 而重装会撞上同名拒绝。 */}
+        <Show when={packagesUnreadable()}>
+          <SecRow label={t("alpha.ext.packagesSection")} />
+          <div class="alpha-ext-verify-note" data-packages-unreadable="" role="alert">
+            <b>{t("alpha.ext.packagesUnreadableTitle")}</b>
+            <p>{(state() as { reason: string }).reason}</p>
+            <button class="alpha-ext-updbtn" onClick={() => void refetchPackages()}>
+              {t("alpha.ext.retry")}
+            </button>
+          </div>
+        </Show>
+        <Show when={ordered().length > 0}>
+          <SecRow label={t("alpha.ext.packagesSection")} count={ordered().length} />
+          <p class="alpha-ext-dnote" style={{ margin: "0 2px 8px" }}>{t("alpha.ext.packagesGroupNote")}</p>
+          <For each={ordered()}>
+            {(pack) => {
+              const enabledCount = () => pack.components.filter((c) => c.desiredState === "enabled").length
+              // 来源**只从 child record 的 `origin` 读**(基线 §8 纪律 2)。显示名再怎么写,
+              // 都不参与这个判定 —— `#737`:不从 id 读结构,同理不从展示字段读身份。
+              const local = () => pack.origin === "imported-claude" || pack.origin === "imported-agents"
+              return (
+                <div class="alpha-ext-pack" data-installed-package={pack.packageId}>
+                  <div class="alpha-ext-pack-h">
+                    <div class="alpha-ext-man-body">
+                      <div class="alpha-ext-man-nm">
+                        <b data-package-label={pack.packageId}>{packLabel(pack)}</b>
+                        <span class="alpha-ext-type-pill">{t("alpha.ext.packageType")}</span>
+                        <span class="alpha-ext-type-pill" data-off="" data-package-origin={pack.origin ?? ""}>
+                          {local() ? t("alpha.ext.packageFromLocalFolder") : t("alpha.ext.packageFromCatalog")}
+                        </span>
+                      </div>
+                      <div class="alpha-ext-man-st">
+                        {pack.version ? `v${pack.version}` : t("alpha.ext.packageNoVersion")} ·{" "}
+                        {t("alpha.ext.packageSkillCount", { count: String(pack.components.length) })} ·{" "}
+                        {enabledCount() === 0
+                          ? t("alpha.ext.packageNoneEnabled")
+                          : t("alpha.ext.packageSomeEnabled", { count: String(enabledCount()) })}
+                      </div>
+                    </div>
+                    <button
+                      class="alpha-ext-add"
+                      data-variant="danger"
+                      data-package-remove={pack.packageId}
+                      disabled={packBusy() === pack.packageId}
+                      onClick={() => void runRemovePackage(pack.packageId)}
+                    >
+                      {packBusy() === pack.packageId ? t("alpha.ext.packageRemoving") : t("alpha.ext.packageActionUninstall")}
+                    </button>
+                  </div>
+                  {/* 裁决 B 的必然连带:装完默认全关 ⇒ 不说这一句,用户按完确认拿不到任何东西。
+                      有任意一个被启用过就不再出现。 */}
+                  <Show when={enabledCount() === 0}>
+                    <p class="alpha-ext-pack-lead">{t("alpha.ext.packageAllOffLead")}</p>
+                  </Show>
+                  <div class="alpha-ext-pack-cs">
+                    <For each={pack.components}>
+                      {(component) => <PackageComponentRow packageId={pack.packageId} component={component} />}
+                    </For>
+                  </div>
+                  <Show when={packErr()[pack.packageId]}>
+                    {(error) => (
+                      <p class="alpha-ext-card-err" data-package-error={pack.packageId} role="alert">
+                        {error()}
+                      </p>
+                    )}
+                  </Show>
+                </div>
+              )
+            }}
+          </For>
+        </Show>
+      </>
+    )
+  }
+
   const InstalledRow = (cp: { row: ManageRow }) => {
     const row = cp.row
     const ic = iconForRow(row.entry, row.type, row.name)
@@ -1574,9 +2092,13 @@ export function ExtensionHub(props: {
           ? t(rowSessionView().textKey)
           : t("alpha.ext.sessionKindUnsupportedRow")
         : row.type === "mcp"
-          ? row.mcp?.connected
-            ? t("alpha.ext.enabledLive")
-            : t("alpha.ext.disabled")
+          ? // `#733`:`needs_auth` 不是「未连接」——它是一个用户能自己修好的状态,
+            // 说成「未连接」等于把唯一的补救路径从界面上抹掉。
+            row.mcp?.needsAuth
+            ? t("alpha.ext.mcpNeedsAuth")
+            : row.mcp?.connected
+              ? t("alpha.ext.enabledLive")
+              : t("alpha.ext.disabled")
           : desiredOn()
             ? t("alpha.ext.installed")
             : t("alpha.ext.notEnabledHint") // #395:默认关/手动关的状态行提示
@@ -1615,6 +2137,15 @@ export function ExtensionHub(props: {
               <span class="alpha-ext-type-pill" data-off="">
                 {t("alpha.ext.notEnabledChip")}
               </span>
+            </Show>
+            {/* `#784`:这一条属于某个扩展包 —— 如实标出来。这枚标是「为什么它不能被单独移除」
+                这句话在界面上唯一的前情提要;没有它,那条拒绝会显得毫无来由。 */}
+            <Show when={packageOwnerOf().get(`${row.type}:${row.name}`)}>
+              {(owner) => (
+                <span class="alpha-ext-type-pill" data-off="" data-package-member={owner().packageId}>
+                  {t("alpha.ext.memberOfPackage", { pack: owner().label })}
+                </span>
+              )}
             </Show>
             {/* REQ-105:archived + unsupported 徽标(上游归档;禁自动更新) */}
             <Show when={officeAdvisoryFor({ id: row.receipt.id, name: row.name })}>
@@ -1655,7 +2186,37 @@ export function ExtensionHub(props: {
               {row.mcp?.error}
             </Show>
           </div>
+          {/* `#784` 第 8 跳:单独移除被拒 ⇒ **明确拒绝 + 指向正确动作**,不是静默什么都不做,
+              更不是回一句「已移除」而东西还在。注意开关仍然可用:单独**停用**是合法的,
+              不能单独**移除**而已。 */}
+          <Show when={rowRefusal()[`${row.type}:${row.name}`]}>
+            {(packageId) => (
+              <div class="alpha-ext-man-refusal" data-row-refusal={`${row.type}:${row.name}`} role="alert">
+                <div class="alpha-ext-man-st" data-err="">
+                  <span class="alpha-ext-man-dot" data-tone="warn" />
+                  {t("alpha.ext.componentOwnedByPackage", {
+                    pack: packageOwnerOf().get(`${row.type}:${row.name}`)?.label ?? packageId(),
+                  })}
+                </div>
+                <button
+                  class="alpha-ext-updbtn"
+                  data-goto-package={packageId()}
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    setHighlightPackage(packageId())
+                  }}
+                >
+                  {t("alpha.ext.removeWholePackage")}
+                </button>
+              </div>
+            )}
+          </Show>
         </div>
+        {/* `#733`:MCP 走 OAuth 且当前没令牌 ⇒ 行内出一颗能点的「去授权」。
+            这颗按钮与状态行那句「需要重新登录」是同一个事实的两半,缺任何一半用户都走不出去。 */}
+        <Show when={row.type === "mcp" && row.mcp?.needsAuth}>
+          <McpNeedsAuthAction name={row.name} />
+        </Show>
         {/* REQ-103:审查更新入口(有更新的行内;复用既有 runUpdate —— MCP 走确认框重装,其余原子更新) */}
         <Show when={isUpdatable()}>
           <button
@@ -2078,6 +2639,10 @@ export function ExtensionHub(props: {
                         </For>
                       </div>
                     </Show>
+                    {/* ░░ REQ-128 Phase 3 `#784` 第 6/7/9 跳:已装扩展包 ░░
+                        放在「已安装」清单**之前**:先看到整体,再往下看到零件。
+                        本地导入的包**没有目录详情页可去**,所以这里是它唯一的移除入口。 */}
+                    <InstalledPackagesSection />
                     <Show when={!ext.store.ready && installedAll().length === 0}>
                       <div class="alpha-ext-manage" aria-hidden="true">
                         <div class="alpha-ext-skel-row" />
@@ -2088,7 +2653,11 @@ export function ExtensionHub(props: {
                     <Show
                       when={installedAll().length > 0}
                       fallback={
-                        <Show when={ext.store.ready}>
+                        // `#784` R1 Major:账本损坏时**不许**同时喊「读不出」和「尚未安装任何扩展」。
+                        // 两条互相矛盾的信息摆在一起,用户会当成「东西丢了」而去重装 —— 而重装会
+                        // 撞上同名拒绝。已装扩展包清单读不出来 ⇒ 已装列表**本身**也未必是真的空,
+                        // 通用空态在这一刻是一句没有依据的断言,不许说。
+                        <Show when={ext.store.ready && !packagesUnreadable()}>
                         <EmptyState
                           title={t("alpha.ext.empty")}
                           sub={t("alpha.ext.emptySub")}
@@ -2178,21 +2747,6 @@ export function ExtensionHub(props: {
                               <small>{t("alpha.ext.importGitSub")}</small>
                             </span>
                           </button>
-                          <button
-                            class="alpha-ext-import-card"
-                            disabled={importBusy()}
-                            onClick={() => {
-                              setImportErr("")
-                              setImportInput("")
-                              setImportDialog("npm")
-                            }}
-                          >
-                            <Svg d="M3 9l9-5 9 5-9 5zM3 9v6l9 5 9-5V9" />
-                            <span>
-                              <b>{t("alpha.ext.importNpm")}</b>
-                              <small>{t("alpha.ext.importNpmSub")}</small>
-                            </span>
-                          </button>
                           <button class="alpha-ext-import-card" disabled={cmBusy()} onClick={() => { setCmErr(""); setCustomMcpOpen(true) }}>
                             <Svg d="M8 12h8M12 8v8M4 12a8 8 0 1 0 16 0a8 8 0 1 0-16 0" />
                             <span>
@@ -2274,17 +2828,30 @@ export function ExtensionHub(props: {
                           </span>
                         </div>
                         <div class="alpha-ext-kit-desc">
-                          <span class="alpha-ext-cloudst" data-st={cloudReady() ? (cloudLive()?.connected ? "on" : "idle") : "off"}>
+                          {/* `#733`:云连接器是用户看这条状态的**主要**地方 —— `needs_auth` 在这里
+                              也必须说成「需要重新登录」并给出动作,否则用户读到的是「未连接(引擎会
+                              自动重连)」,而引擎其实永远不会自己连上。 */}
+                          <span
+                            class="alpha-ext-cloudst"
+                            data-st={cloudReady() ? (cloudLive()?.needsAuth ? "idle" : cloudLive()?.connected ? "on" : "idle") : "off"}
+                          >
                             {cloudReady()
-                              ? cloudLive()?.connected
-                                ? t("alpha.ext.cloudConnConnected")
-                                : t("alpha.ext.cloudConnDisconnected")
+                              ? cloudLive()?.needsAuth
+                                ? t("alpha.ext.mcpNeedsAuth")
+                                : cloudLive()?.connected
+                                  ? t("alpha.ext.cloudConnConnected")
+                                  : t("alpha.ext.cloudConnDisconnected")
                               : t("alpha.ext.cloudConnNeedLogin")}
                           </span>
                           {" · "}
                           {t("alpha.ext.cloudConnectorDesc")}
                         </div>
                       </div>
+                      {/* server 名取**引擎报回来的那个**(`InstalledState.name`),不在 renderer 再写
+                          一遍 `"cloud"` 字面量 —— 注入面改名时这里会跟着走,而字面量会静默指错。 */}
+                      <Show when={cloudReady() && cloudLive()?.needsAuth}>
+                        <McpNeedsAuthAction name={cloudLive()!.name} />
+                      </Show>
                       <button
                         class="alpha-ext-add"
                         onClick={(ev) => {
@@ -2332,22 +2899,38 @@ export function ExtensionHub(props: {
           }
         />
         <Dialog
-          open={!!confirming()}
-          onClose={closeAuthz}
+          open={!!confirming() || !!packageAuthz()}
+          onClose={() => packageAuthz() ? closePackageAuthz() : closeAuthz()}
           dismissible={!confirmBusy() && !authzBusy()}
           busy={confirmBusy() || authzBusy()}
           besideSidebar
           size="sm"
           title={
-            authz()?.host === "confirm"
-              ? authzTitle()
-              : confirming()
-                ? t("alpha.ext.confirmTitle", { name: confirming()!.displayName })
-                : ""
+            packageAuthz()
+              ? t("alpha.ext.confirmTitle", { name: packageAuthz()!.view.presentation.displayName })
+              : authz()?.host === "confirm"
+                ? authzTitle()
+                : confirming()
+                  ? t("alpha.ext.confirmTitle", { name: confirming()!.displayName })
+                  : ""
           }
           restoreFocus={() => hubCloseButton}
           footer={
-            authz()?.host === "confirm" ? (
+            packageAuthz() ? (
+              <>
+                <Button variant="ghost" autofocus disabled={authzBusy()} onClick={closePackageAuthz}>
+                  {t("alpha.ext.cancel")}
+                </Button>
+                <Button
+                  variant="primary"
+                  loading={authzBusy()}
+                  disabled={!packageSecretsComplete()}
+                  onClick={() => void confirmPackageAuthz()}
+                >
+                  {t("alpha.ext.confirmInstall")}
+                </Button>
+              </>
+            ) : authz()?.host === "confirm" ? (
               authzFooter()
             ) : (
               <>
@@ -2385,10 +2968,87 @@ export function ExtensionHub(props: {
             )
           }
         >
+          <Show when={packageAuthz()}>
+            {(state) => (
+              <div class="alpha-ext-confirm" data-package-authorization={state().view.catalogId}>
+                <p class="alpha-ext-confirm-desc">{state().view.presentation.description}</p>
+                <div class="alpha-ext-install-box">
+                  <For each={packagePlanIncluded()}>
+                    {(item) => (
+                      <div class="alpha-ext-install-row" data-plan-component={item.componentId} data-included="true">
+                        <span class="alpha-ext-install-nm">{item.name}</span>
+                        <span class="alpha-ext-install-k">{typeLabel(item.kind)}</span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+                {/* 确认屏也是一个 preview:被跳过的组件必须在**用户按下确认之前**就说清楚,
+                    并且用与详情页、收据逐字相同的原因 token。 */}
+                <Show when={packagePlanSkipped().length > 0}>
+                  <div class="alpha-ext-install-box" data-plan-skipped="true">
+                    <div class="alpha-ext-confirm-line">{t("alpha.ext.packageComponentSkipped")}</div>
+                    <For each={packagePlanSkipped()}>
+                      {(item) => (
+                        <div
+                          class="alpha-ext-install-row"
+                          data-plan-component={item.componentId}
+                          data-included="false"
+                          data-skip-reason={item.included ? undefined : item.skipReasonCode}
+                        >
+                          <span class="alpha-ext-install-nm">{item.componentId}</span>
+                          <span class="alpha-ext-install-k">
+                            {item.included ? "" : t(packageSkipReasonKey(item.skipReasonCode) as never)}
+                          </span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <ExtAuthzView
+                  name={state().view.presentation.displayName}
+                  isBundle={packagePlanIncluded().length > 1}
+                  mode="install"
+                  diffs={state().preview.items}
+                />
+                <Show when={packagePrerequisites().length > 0}>
+                  <div class="alpha-ext-confirm-keys">
+                    <div class="alpha-ext-confirm-line">{t("alpha.ext.packageConfirmEnv")}</div>
+                    <For each={packagePrerequisites()}>
+                      {(item) => (
+                        <label class="alpha-ext-key-field">
+                          <span class="alpha-ext-key-name">{item.label}</span>
+                          <input
+                            class="alpha-ext-key-input"
+                            type="password"
+                            autocomplete="off"
+                            spellcheck={false}
+                            required
+                            placeholder={t("alpha.ext.packageKeyPlaceholder")}
+                            value={envValues()[item.prerequisiteId] ?? ""}
+                            onInput={(event) =>
+                              setEnvValues((current) => ({
+                                ...current,
+                                [item.prerequisiteId]: event.currentTarget.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      )}
+                    </For>
+                    <Show when={!packageSecretsComplete()}>
+                      <p class="alpha-ext-key-hint" role="status">{t("alpha.ext.packageKeysRequired")}</p>
+                    </Show>
+                    <p class="alpha-ext-key-hint">{t("alpha.ext.keyHint")}</p>
+                  </div>
+                </Show>
+                <p class="alpha-ext-confirm-note">{t("alpha.ext.confirmNote")}</p>
+              </div>
+            )}
+          </Show>
           <Show when={authz()?.host === "confirm"}>
             <ExtAuthzView name={authz()!.entry.displayName} isBundle={authz()!.entry.type === "bundle"} mode={authz()!.mode} diffs={authz()!.diffs} />
           </Show>
-          <Show when={authz()?.host !== "confirm" && confirming()}>
+          <Show when={!packageAuthz() && authz()?.host !== "confirm" && confirming()}>
             {(entry) => (
               <div class="alpha-ext-confirm">
                 <div class="alpha-ext-confirm-meta">
@@ -2472,7 +3132,7 @@ export function ExtensionHub(props: {
           restoreFocus={() => hubCloseButton}
         />
 
-        {/* T6:导入输入弹窗(Git URL / npm 包名)。失败行内呈现于弹窗内(B11),成功 toast。 */}
+        {/* T6:导入输入弹窗(Git URL)。失败行内呈现于弹窗内(B11),成功 toast。 */}
         <Dialog
           open={!!importDialog()}
           onClose={() => {
@@ -2481,7 +3141,7 @@ export function ExtensionHub(props: {
           }}
           besideSidebar
           size="sm"
-          title={importDialog() === "git" ? t("alpha.ext.importGitTitle") : t("alpha.ext.importNpmTitle")}
+          title={t("alpha.ext.importGitTitle")}
           restoreFocus={() => hubCloseButton}
           footer={
             <>
@@ -2496,20 +3156,17 @@ export function ExtensionHub(props: {
         >
           <div class="alpha-ext-confirm">
             <p class="alpha-ext-confirm-desc">
-              {importDialog() === "git" ? t("alpha.ext.importGitHint") : t("alpha.ext.importNpmHint")}
+              {t("alpha.ext.importGitHint")}
             </p>
             <input
               class="alpha-ext-input alpha-mono"
-              placeholder={importDialog() === "git" ? "https://github.com/user/skill-repo" : "opencode-notify@0.3.1"}
+              placeholder="https://github.com/user/skill-repo"
               value={importInput()}
               onInput={(ev) => setImportInput(ev.currentTarget.value)}
               onKeyDown={(ev) => {
                 if (ev.key === "Enter" && importInput().trim() && !importBusy()) void runImportDialog()
               }}
             />
-            <Show when={importDialog() === "npm"}>
-              <p class="alpha-ext-confirm-risk">⚠ {t("alpha.ext.pluginRisk")}</p>
-            </Show>
             <Show when={importErr()}>
               <p class="alpha-ext-import-err">{importErr()}</p>
             </Show>
@@ -2563,6 +3220,184 @@ export function ExtensionHub(props: {
               <p class="alpha-ext-import-err">{cmErr()}</p>
             </Show>
           </div>
+        </Dialog>
+
+        {/* ░░ REQ-128 Phase 3 `#784` 第 3 跳:本地插件包预览屏 ░░
+            骨架继承上面那个 agent 两段式预览(取消 / 确认两键,确认之前一个字节都不写盘),
+            尺寸放大到 lg —— 单插件技能数实测最多 13 个,弹窗装得下。
+            内容分三段:会安装 / 不会安装(逐条原因)/ 这一版不安装的内容类型。
+            **每一条「不装」都带具名原因,没有「其他」这一档** —— 原因文案全部由 main 的
+            `reasonCode → 人话` 表给出,renderer 一个字都不自己编,也不把多条折叠成「跳过 N 项」。 */}
+        <Dialog
+          open={!!localPlugin()}
+          onClose={() => void closeLocalPlugin()}
+          besideSidebar
+          size="lg"
+          title={t("alpha.ext.localPackageTitle")}
+          dismissible={!localPluginBusy()}
+          restoreFocus={() => hubCloseButton}
+          footer={
+            <>
+              {/* 安装在跑的时候「取消」**照样可点** —— 用户必须有一条出路,而 main 会如实告诉他
+                  这次中止不了。把按钮禁掉等于把那条真话藏起来,用户只会以为界面卡死了。 */}
+              <Button variant="ghost" onClick={() => void closeLocalPlugin()}>
+                {t("alpha.ext.cancel")}
+              </Button>
+              {/* 一个都装不上时**保留确认键但禁用**,并把原因写在键面上 —— 这一屏和能装的那一屏
+                  是同一屏,不换成一个「知道了」把它伪装成提示框。 */}
+              <Button
+                variant="primary"
+                disabled={localPluginBusy() || !localPlugin()?.previewId}
+                onClick={() => void runConfirmLocalPlugin()}
+              >
+                {localPluginBusy()
+                  ? t("alpha.ext.importing")
+                  : localPlugin()?.previewId
+                    ? t("alpha.ext.localPackageConfirm", { count: String(localPlugin()?.preview.installableCount ?? 0) })
+                    : t("alpha.ext.localPackageNothingToInstall")}
+              </Button>
+            </>
+          }
+        >
+          <Show when={localPlugin()}>
+            {(pv) => (
+              <div class="alpha-ext-confirm" data-local-package-preview={pv().preview.packageId ?? ""}>
+                <p class="alpha-ext-confirm-desc">
+                  <b>{pv().preview.name}</b> ·{" "}
+                  {pv().preview.version ? `v${pv().preview.version}` : t("alpha.ext.packageNoVersion")} ·{" "}
+                  {t("alpha.ext.localPackageFound", { count: String(pv().preview.limits.skillCandidates) })}
+                </p>
+                {/* 这句话不是免责声明,是这个功能的实际保证水平。任何把它改写成
+                    「已检查 / 已验证 / 安全」的措辞都是错的(基线 §8 纪律 3)。 */}
+                <p class="alpha-ext-verify-note" data-unreviewed="" role="note">
+                  {t("alpha.ext.localPackageUnreviewed")}
+                </p>
+                {/* `#784` R2:名字显示不了(超长 / 带特殊字符)⇒ 在**按确认之前**说清它会怎么显示。
+                    它**不影响能不能装** —— 显示名是可选的、只管显示的;之前它能让整个事务在
+                    落账那一刻回滚,那是「预览说能装、点了确认却失败」。 */}
+                <Show when={pv().preview.displayNameNotice}>
+                  {(notice) => (
+                    <p class="alpha-ext-verify-note" data-display-name-notice="" role="note">
+                      {notice()}
+                    </p>
+                  )}
+                </Show>
+                {/* K19:重复导入必须在**按确认之前**说清。说得晚就从提示变成了失败。 */}
+                <Show when={pv().preview.duplicateImportNotice}>
+                  {(notice) => (
+                    <p class="alpha-ext-verify-note" data-duplicate-import="" role="alert">
+                      {notice()}
+                    </p>
+                  )}
+                </Show>
+                {/* 一个都装不上 / 结构不认识 / 超出单次导入上限 —— 三种终态共用这一条,
+                    文字全部来自 main 的具名判定,不在这里重新措辞。 */}
+                <Show when={pv().preview.disposition === "blocked" || !pv().previewId}>
+                  <p class="alpha-ext-import-err" data-local-package-blocked={pv().preview.blockedReasonCode ?? pv().reasonCode ?? ""} role="alert">
+                    {pv().headline}
+                  </p>
+                </Show>
+
+                <Show when={pv().preview.components.some((c) => c.disposition === "install")}>
+                  <SecRow
+                    label={t("alpha.ext.localPackageWillInstall")}
+                    count={pv().preview.components.filter((c) => c.disposition === "install").length}
+                  />
+                  <div class="alpha-ext-manage">
+                    <For each={pv().preview.components.filter((c) => c.disposition === "install")}>
+                      {(component) => (
+                        <div class="alpha-ext-man" data-preview-component={component.dir} data-disposition="install">
+                          <div class="alpha-ext-man-body">
+                            <div class="alpha-ext-man-nm">
+                              <b>{component.name}</b>
+                              <span class="alpha-ext-type-pill">{typeLabel("skill")}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+
+                <Show when={pv().preview.components.some((c) => c.disposition === "skip")}>
+                  <SecRow
+                    label={t("alpha.ext.localPackageWontInstall")}
+                    count={pv().preview.components.filter((c) => c.disposition === "skip").length}
+                  />
+                  <div class="alpha-ext-manage">
+                    <For each={pv().preview.components.filter((c) => c.disposition === "skip")}>
+                      {(component) => (
+                        <div class="alpha-ext-man" data-preview-component={component.dir} data-disposition="skip" data-dim="">
+                          <div class="alpha-ext-man-body">
+                            <div class="alpha-ext-man-nm">
+                              <b>{component.name}</b>
+                              <For each={component.reasonCodes}>
+                                {(code) => (
+                                  <span class="alpha-ext-type-pill" data-off="" data-skip-reason={code}>
+                                    {code}
+                                  </span>
+                                )}
+                              </For>
+                            </div>
+                            {/* 逐条人话,与 reasonCodes 同序同长(main 给的,不折叠、不改写)。 */}
+                            <For each={component.reasons}>
+                              {(reason) => <div class="alpha-ext-man-st">{reason}</div>}
+                            </For>
+                          </div>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+
+                <Show when={pv().preview.unsupportedLayouts.length > 0}>
+                  <SecRow label={t("alpha.ext.localPackageUnsupportedLayout")} count={pv().preview.unsupportedLayouts.length} />
+                  <div class="alpha-ext-manage">
+                    <For each={pv().preview.unsupportedLayouts}>
+                      {(issue) => (
+                        <div class="alpha-ext-man" data-unsupported-layout={issue.code} data-dim="">
+                          <div class="alpha-ext-man-body">
+                            <div class="alpha-ext-man-nm">
+                              <b>{issue.at || pv().preview.name}</b>
+                            </div>
+                            <div class="alpha-ext-man-st">{issue.detail}</div>
+                          </div>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+
+                <Show when={pv().preview.unsupportedComponentTypes.length > 0}>
+                  <SecRow
+                    label={t("alpha.ext.localPackageUnsupportedTypes")}
+                    count={pv().preview.unsupportedComponentTypes.length}
+                  />
+                  <div class="alpha-ext-manage">
+                    <For each={pv().preview.unsupportedComponentTypes}>
+                      {(item) => (
+                        <div class="alpha-ext-man" data-unsupported-type={item.type} data-dim="">
+                          <div class="alpha-ext-man-body">
+                            <div class="alpha-ext-man-nm">
+                              <b>{item.at}</b>
+                            </div>
+                            <div class="alpha-ext-man-st">{item.detail}</div>
+                          </div>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+
+                <Show when={localPluginErr()}>
+                  <p class="alpha-ext-import-err" data-local-package-error="" role="alert">
+                    {localPluginErr()}
+                  </p>
+                </Show>
+                <p class="alpha-ext-key-hint">{t("alpha.ext.localPackageCancelNote")}</p>
+              </div>
+            )}
+          </Show>
         </Dialog>
 
         {/* REQ-033:agent 导入映射预览(显式逐字段;不支持项 loud,确认才写入) */}

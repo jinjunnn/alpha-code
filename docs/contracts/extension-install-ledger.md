@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-17
+last_reviewed: 2026-08-03
 review_after: 2026-10-14
 ---
 
@@ -13,6 +13,48 @@ review_after: 2026-10-14
 本文钉住 `<root>/installs.json`(v1 receipts + v2 records 同文件双视图)的**写方所有权**
 与 catalog 安装提交面的 fail-closed 语义。账本机制归 `ext-receipt-v2.ts`,提交面编排归
 `ext-install-planner.ts`,未策展协调归 `ext-uncurated-record.ts`(#306)。
+
+> ## ⚠️ ADR-040(2026-08-03,`#825` 已落地):plugin 的**安装与启用**整段作废
+>
+> **Alpha 的扩展安装唯一形态是 Bundle;任何扩展安装都不得写入引擎的 `plugin[]`。**
+> 本文中一切描述「plugin 怎么装进去」的段落 —— npm fresh、vendored fresh、`installPluginFromCas`、
+> §3.1 的原子替换、以及启停投影的 **enable 臂**(「按 configKey 补回受管条目形态」)——
+> **都已随生产代码退场**,保留在此仅作历史脉络。
+>
+> **今天仍然成立的**只有 plugin 的**减法**半场:启停投影的 disable 臂(从 `plugin[]` 移除)、
+> 卸载(`removePlugin` / `removePluginPath`)、dangling 清扫、以及 boot reconcile 里
+> 「disabled plugin 移不掉 = `enforcementGap` 阻断 sidecar」那条(§ 启动 reconcile 原样有效)。
+> **plugin 的 enable 现在是具名拒绝**:「启用」按定义就是把 spec 写回 `plugin[]`,与安装是同一件事。
+>
+> 咽喉在 `packages/ui-mac/src/main/engine-plugin-seal.ts`:**三族**物理写原语
+> (`ext-config.ts` 的原子提交、`ext-config-tx.ts` 的 image 对、boot reconcile 的整文件写)在写盘前
+> 判「`plugin[]` 有没有多出写之前没有的元素」,有则拒 —— **新增写入点不需要登记就已经被挡住**。
+>
+> `#832`(2026-08-03)关掉了 `#825` 留下的最后一个结构性绕开口:boot 期 reconcile 曾经自己
+> `writeFileSync+rename` 整个 `alpha.jsonc`,三道白名单一道都不过,而它每次启动都跑。处置是两件事:
+> ① `planConfigMerge` 里「legacy `plugin[]` 并集」删掉(本 portfolio 无真实用户 ⇒ 无 legacy 迁移
+> 义务;而「来源是用户旧配置」不改变「以引擎同等权限执行的第三方 JS」这个事实);② 那次整文件写盘
+> 改调 `ext-config` 的同一个原子提交点。
+>
+> **边界要说清(实读枚举过,不是推断):咽喉不是唯一的守门人。** 不过这道咽喉的写还有四条,
+> 各自靠**另一道**闸 —— 谁在挡比路径本身重要:
+>
+> | 不过咽喉的写 | 真正挡住 `plugin` 的是什么 |
+> | --- | --- |
+> | `ext-config.ts` `applyBuiltinPolicyEditsUnlocked`(自己的 tmp+rename 写 `alpha.jsonc`) | `builtinPolicyPathAllowed` 具名路径白名单(只放 `agent` / `permission.skill` / `command` 叶子,`plugin` 不是合法首段,落盘前逐条判) |
+> | `alpha-config-injection` | 只在真源**缺席**时 seed 字面量 `{$schema}`,内容里没有 `plugin` 键 |
+> | `alpha-migrate` legacy 臂 | 目标是 legacy `opencode.jsonc`,只做减法,且要 `ALPHA_MIGRATE_ENABLE=1` |
+> | **`ecosystem-import.ts` `registerProjectSkillsPath`**(整文件写**项目级** `<proj>/.alpha/alpha.jsonc`) | **它自己没有任何白名单**;挡住 `plugin` 的闸在另一个包:`packages/ext/src/project-config.ts` 的 `mergeProjectConfig` 只合 `mcp`(信任门)/`agent`/`command`/`skills.paths`。同族的 `packages/ext/src/register.ts`(引擎进程侧整文件序列化同一文件)靠 `RegisterType` 类型白名单 |
+>
+> 最后一行是 `#832` 审计补上的,也是唯一一条「今天只写 `skills.paths`」属于**恰好**而非被挡:实测在
+> `registerProjectSkillsPath` 里加一行 `cfg.plugin=[…]`,盘上当场多出该条目而咽喉用例全绿;同一份文本
+> 喂 `mergeProjectConfig` 则 `added` 只有 `["skills.paths"]`、`cfg.plugin === undefined`。
+> **今天没有洞,但功劳不是咽喉的,两道闸之间也没有任何东西把它们和 ADR-040 连起来。**
+> 随之而来的一格新 fail-closed:盘上的 `alpha.jsonc` 语法坏掉、而容错解析仍读得出 `plugin` 条目时,
+> reconcile **整次不写盘**(loud,`bailedOut` 带咽喉理由,`~/.opencode` 也不清理)—— 因为「写完之后
+> 没多出元素」在那种输入上证不出来。坏文件原样留给用户,不被改写。
+>
+> 权威见 `.claude/rules/adrs/ADR-040-extension-package-taxonomy.md` §决策三。
 
 ## 1. 写方所有权(单一账本真源)
 
@@ -117,6 +159,16 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   config 原子写(writeFileAtomicSync 整替换或原文件不变)抛错 → 回滚账本到原态(回滚失败如实报真实
   状态);config 未变故 opts 等原样保留。残余:账本↔config 崩溃窗口的短暂运行态不符,durable intent 恒
   正确、下次更新/重开收敛。enable 缺生效面 fail-closed。disabled ≠ 卸载:内容/账本/授权账照常在位。
+  **enable 方向的 catalog 解析两路分明(`#817`)**:legacy catalog record(V3 图/claim 两个 package
+  信号都不在场)照旧解析 legacy `entries[]` 的 exact 条目(id/kind/name/version 精确对应 + #397
+  curation 消费);**signed package child** 以一次有效 V3 state 分类 —— 任一 packageGraph 节点命中
+  `(kind,name)`,或该 `(kind,name)` 的 claim 含 `bundle:` owner,任一成立即 package-managed ——
+  先要求 exact graph/record 身份(节点 `componentId===record.id ∧ manifestDigest===record.manifestDigest`),
+  再按 **(packageId, 已装 record.version) 双键**解析已验 catalog `packages[]`(同 packageId 多版本可
+  合法并存,禁单键 `.find`),逐项核对 envelope/component/payload/manifest digest;missing/delisted/
+  security/catalog 不可得/任一 digest mismatch 一律 fail-closed,**package-managed 永不回退
+  `entries[]`**;全匹配 = 诚实 uncurated,落既有保守启用面(不发明 package curation)。
+  **disable 方向不咨询 catalog**(两路皆然)。
 - **skill 严格门(Codex r5 定稿)**:ext 无法 import 主进程 decoder,逐字段镜像有永久漂移风险 ——
   改为 **main 用真 `decodeRecordV2` 派生 enabled 允许集写独立文件 `<root>/skills-enabled.json`**,
   hook 只读该文件(缺失/损坏/未知版本 = fail closed 不注入)。派生与账本**锁步**
@@ -180,6 +232,20 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   (skill 安装/bundle/set-state 的 warning 通道),**后台入口(recovery 重放 / migration / boot)
   必须 loud log**(写点统一 `console.error`);整体仍 `ok:true`(账本才是真源 —— 改 `ok:false`
   会经 commitReceipt throw 让引擎回滚 live 与已 durable 账本分叉)。
+
+### 5.1 warning 谁来呈现(`#765`)
+
+上一条说「用户可见写入口必须呈现」。**那句话曾经是靠人记得**:呈现是每个调用点各写一行,
+而 REQ-128 Phase 2 期间连着三次发现调用点没写 —— 六个里只有一个照做,最后一处还是闸门逼出来的
+(详情页装扩展包走确认屏,压根不经过此前那个「单点出口」)。
+
+现在呈现收在 renderer 的 **IPC 包装层**:`renderer/extensions/ext-ipc.ts` 的 `extIpc` 是生产代码
+够到 `window.api.ext` 的唯一入口,凡是返回值里带一条非空 `warning` 字符串的调用,由它统一推 toast。
+判据看**返回值**不看方法名 —— 明天新加的 IPC 通道默认被覆盖,不需要来这里登记。
+
+对 main 侧写入口的要求因此没有变化(照旧把 loud 信号放进 `warning`),对 renderer 调用点的要求
+则**反过来了**:不要再自己呈现一次,那会让用户读到两条一模一样的提示。复数 `warnings`
+(`InstallLedgerView` / `projectResidualsCheck`)不走这条通道 —— 它们是成批清单,各有各的呈现位置。
 
 ## 6. 证据
 

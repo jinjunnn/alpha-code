@@ -3,101 +3,117 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "component": {
-      "additionalProperties": false,
-      "properties": {
-        "assetDirectory": {
-          "maxLength": 2048,
-          "minLength": 1,
-          "type": "string"
-        },
-        "assetManifestSha256": {
-          "pattern": "^[0-9a-f]{64}$",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "capabilities": {
-          "items": {
-            "const": "alpha.secret-prerequisite.v1"
+    "components": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetDirectory": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
           },
-          "maxItems": 1,
-          "type": "array"
-        },
-        "dependencies": {
-          "maxItems": 0,
-          "type": "array"
-        },
-        "id": {
-          "maxLength": 160,
-          "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$",
-          "type": "string"
-        },
-        "payloadRef": {
-          "additionalProperties": false,
-          "properties": {
-            "bytes": {
-              "maximum": 1048576,
-              "minimum": 1,
-              "type": "integer"
-            },
-            "mediaType": {
-              "maxLength": 128,
-              "minLength": 1,
-              "type": "string"
-            },
-            "sha256": {
-              "pattern": "^[0-9a-f]{64}$",
-              "type": "string"
-            },
-            "url": {
-              "maxLength": 2048,
-              "pattern": "^https://",
-              "type": "string"
-            }
+          "assetManifestSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": [
+              "string",
+              "null"
+            ]
           },
-          "required": [
-            "sha256",
-            "bytes",
-            "mediaType",
-            "url"
-          ],
-          "type": "object"
+          "capabilities": {
+            "items": {
+              "enum": [
+                "alpha.connection.v1",
+                "alpha.mcp-oauth.v1",
+                "alpha.secret-prerequisite.v1"
+              ]
+            },
+            "maxItems": 3,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "dependencies": {
+            "items": {
+              "maxLength": 70,
+              "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,63}$",
+              "type": "string"
+            },
+            "maxItems": 31,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "id": {
+            "maxLength": 70,
+            "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,63}$",
+            "type": "string"
+          },
+          "payloadRef": {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "maximum": 1048576,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "mediaType": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "url": {
+                "maxLength": 2048,
+                "pattern": "^https://",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sha256",
+              "bytes",
+              "mediaType",
+              "url"
+            ],
+            "type": "object"
+          },
+          "profileId": {
+            "enum": [
+              "skill",
+              "agent",
+              "mcp-local",
+              "mcp-remote"
+            ]
+          },
+          "profileVersion": {
+            "const": 1
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "version": {
+            "maxLength": 64,
+            "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$",
+            "type": "string"
+          }
         },
-        "profileId": {
-          "enum": [
-            "skill",
-            "agent",
-            "mcp-local",
-            "mcp-remote"
-          ]
-        },
-        "profileVersion": {
-          "const": 1
-        },
-        "required": {
-          "const": true
-        },
-        "version": {
-          "maxLength": 64,
-          "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$",
-          "type": "string"
-        }
+        "required": [
+          "id",
+          "version",
+          "required",
+          "dependencies",
+          "assetDirectory",
+          "assetManifestSha256",
+          "profileId",
+          "profileVersion",
+          "capabilities",
+          "payloadRef"
+        ],
+        "type": "object"
       },
-      "required": [
-        "id",
-        "version",
-        "required",
-        "dependencies",
-        "assetDirectory",
-        "assetManifestSha256",
-        "profileId",
-        "profileVersion",
-        "capabilities",
-        "payloadRef"
-      ],
-      "type": "object"
+      "maxItems": 32,
+      "minItems": 1,
+      "type": "array"
     },
     "root": {
       "additionalProperties": false,
@@ -122,6 +138,11 @@
             "reportSha256"
           ],
           "type": "object"
+        },
+        "componentId": {
+          "maxLength": 70,
+          "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,63}$",
+          "type": "string"
         },
         "declarationSha256": {
           "pattern": "^[0-9a-f]{64}$",
@@ -185,6 +206,7 @@
       "required": [
         "packageId",
         "version",
+        "componentId",
         "presentation",
         "source",
         "declarationSha256",
@@ -199,7 +221,7 @@
   "required": [
     "schema",
     "root",
-    "component"
+    "components"
   ],
   "title": "NormalizedPackageBuildRecordV1",
   "type": "object"

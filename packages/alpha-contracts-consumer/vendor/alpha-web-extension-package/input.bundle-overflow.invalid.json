@@ -1,0 +1,539 @@
+{
+  "packageId": "package:generic-bundle",
+  "presentation": {
+    "description": "Generic flat Bundle corpus input: one agent root and two leaves.",
+    "displayName": "Generic Bundle"
+  },
+  "root": {
+    "component": {
+      "behavior": {
+        "assetPath": "AGENT.md",
+        "targetDir": "alpha-agents"
+      },
+      "id": "agent:generic-bundle-agent",
+      "kind": "agent",
+      "version": "1.0.0"
+    },
+    "leaves": [
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-00",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-01",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-02",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-03",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-04",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-05",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-06",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-07",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-08",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-09",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-10",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-11",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-12",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-13",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-14",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-15",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-16",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-17",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-18",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-19",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-20",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-21",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-22",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-23",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-24",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-25",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-26",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-27",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-28",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-29",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-30",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "command": [
+              "overflow@1.0.0"
+            ],
+            "environment": {},
+            "requiredSecrets": []
+          },
+          "id": "mcp:generic-overflow-31",
+          "kind": "mcp",
+          "transport": "local",
+          "version": "1.0.0"
+        },
+        "required": false
+      }
+    ]
+  },
+  "schema": "alpha.package-declaration.v1",
+  "source": {
+    "kind": "alpha-native",
+    "publisher": "official",
+    "redistributable": true
+  },
+  "version": "1.0.0"
+}

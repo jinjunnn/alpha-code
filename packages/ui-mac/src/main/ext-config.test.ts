@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
+import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, persistMcp, persistProvider, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
+import { newMcpSecretVersionId, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
 import { upsertRecordV2 } from "./ext-receipt-v2"
@@ -284,117 +285,36 @@ describe("persistMcp — accept paths write mcp[name]", () => {
   })
 })
 
-describe("persistPlugin — package-name guard", () => {
-  test.each([["foo; rm -rf /"], ["a b"], ["../x"], ["$(evil)"], ["pkg&&x"]])(
-    "rejects package spec with shell metachars %p",
-    (pkg) => {
-      const r = persistPlugin(pkg)
-      expect(r).toEqual({ ok: false, reason: "invalid package name" })
-    },
-  )
-
-  test.each([["@scope/pkg@1.2.3"], ["some-plugin"], ["@a/b"]])("accepts clean package %p", (pkg) => {
-    expect(persistPlugin(pkg)).toEqual({ ok: true, changed: true })
-  })
-
-  test("Codex #355:恰同钉版 = changed:false;同 base 不同钉版显式拒绝(不许配置不变账本记新版)", () => {
-    expect(persistPlugin("dup-plugin@1.0.0")).toEqual({ ok: true, changed: true })
-    expect(persistPlugin("dup-plugin@1.0.0")).toEqual({ ok: true, changed: false }) // 真幂等
-    const mismatch = persistPlugin("dup-plugin@2.0.0")
-    expect(mismatch.ok).toBe(false)
-    if (!mismatch.ok) expect(mismatch.reason).toContain("version mismatch")
-    expect(readConfig().plugin.filter((p: string) => String(p).startsWith("dup-plugin")).length).toBe(1)
-  })
-})
-
-describe("persistProvider — baseURL + shape guards", () => {
-  test("rejects non-https / non-loopback baseURL", () => {
-    const r = persistProvider({
-      id: "p",
-      name: "P",
-      compat: "openai",
-      baseURL: "http://evil.com/v1",
-      apiKey: "k",
-      models: ["m"],
-    } as any)
-    expect(r.ok).toBe(false)
-  })
-
-  test("accepts a valid https provider and writes provider[id]", () => {
-    const r = persistProvider({
-      id: "myprov",
-      name: "My Provider",
-      compat: "openai",
-      baseURL: "https://api.example.com/v1",
-      apiKey: "sk-x",
-      models: ["model-a"],
-    } as any)
-    expect(r).toEqual({ ok: true })
-    const cfg = readUserConfig()
-    expect(cfg.provider.myprov.options.baseURL).toBe("https://api.example.com/v1")
-    expect(cfg.provider.myprov.models["model-a"]).toBeDefined()
-  })
-})
-
-// ── B11/B23:configHealth(探测「引擎会整份清零」的两种病灶) ──────────────────────────────
-describe("configHealth", () => {
-  const write = (text: string) => fs.writeFileSync(path.join(tmp, "opencode.jsonc"), text)
-
-  test("无文件 / 合法配置 → 健康", () => {
-    expect(configHealth().broken).toBe(false)
-    write('{\n  // comment ok\n  "model": "x",\n  "mcp": {},\n}\n')
-    expect(configHealth().broken).toBe(false)
-  })
-
-  test("jsonc 语法坏 → broken(语法)", () => {
-    write('{ "mcp": { broken')
-    const h = configHealth()
-    expect(h.broken).toBe(true)
-    expect(h.reason).toContain("语法")
-  })
-
-  test("未知顶层 key → broken 并点名(B23 主案例)", () => {
-    write('{ "mcp": {}, "strictKey": 1, "another_bad": true }')
-    const h = configHealth()
-    expect(h.broken).toBe(true)
-    expect(h.reason).toContain("strictKey")
-  })
-
-  test("全部 V1 合法顶键不误报", () => {
-    write('{ "$schema": "s", "provider": {}, "plugin": [], "instructions": [], "experimental": {}, "theme_typo_guard": 0 }'.replace(', "theme_typo_guard": 0', ""))
-    expect(configHealth().broken).toBe(false)
-  })
-
-  test("ALPHA_CONFIG_HEALTH_DISABLE=1 → 恒健康", () => {
-    write("{ nope")
-    process.env.ALPHA_CONFIG_HEALTH_DISABLE = "1"
-    try {
-      expect(configHealth().broken).toBe(false)
-    } finally {
-      delete process.env.ALPHA_CONFIG_HEALTH_DISABLE
-    }
-  })
-})
-
-// ── T6:persistMcp/persistPlugin 记账 + removePlugin 卸载 ──────────────────────────────────────
+// ── T6:persistMcp 记账 + removePlugin 卸载 ────────────────────────────────────────────────────
+// ADR-040(`#825`):`persistPlugin` 与它的包名白名单随未策展 npm 导入通道退场,对应的
+// 「package-name guard」「disabled 投影」「读错误 fail-closed」「换钉版重加」四组用例一并撤下 ——
+// 它们测的是**往 plugin[] 追加元素**的语义,而那件事已经没有任何生产路径能到达。
+// 移除方向(removePlugin)的覆盖原样保留,并改由直接预置 config 起手(不再靠安装通道造前像)。
 describe("receipts on persist/remove (T6)", () => {
   test("#354:persistMcp 不再 eager 落 v1(账本所有权归 planner v2 upsert);removeMcp 仍清 legacy receipt", () => {
     expect(persistMcp("markitdown", { type: "local", command: ["uvx", "markitdown-mcp"] }, { catalogId: "mcp:markitdown", version: "1" }).ok).toBe(true)
     expect(readLedger(alphaTmp).receipts.find((x) => x.type === "mcp" && x.name === "markitdown")).toBeUndefined()
-    // legacy receipt(历史安装)仍由 removeMcp 清理 —— 卸载语义不变。
+    // REQ-128 `#706`:配置写器**不再**碰账本。原先内层 removeReceipt 走 v1 物理写器,会把
+    // 账本重写成 v:2 并抹掉 V3 的 packageGraphs/claims;去账只归外层单点提交。
     addReceipt(alphaTmp, { id: "mcp:markitdown", name: "markitdown", type: "mcp", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "mcp.markitdown" })
+    const before = fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")
     expect(removeMcp("markitdown").ok).toBe(true)
-    expect(readLedger(alphaTmp).receipts.find((x) => x.name === "markitdown")).toBeUndefined()
+    expect(fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")).toBe(before) // 账本字节零改动
+    expect(readLedger(alphaTmp).receipts.find((x) => x.name === "markitdown")).toBeDefined()
   })
 
-  test("#354:persistPlugin 不再 eager 落 v1;removePlugin 撤 config[] 并清 legacy receipt", () => {
-    expect(persistPlugin("opencode-notify@0.3.1", { catalogId: "plugin:opencode-notify" }).ok).toBe(true)
+  test("removePlugin 撤 config[] 且账本字节零改动(ADR-040 后前像由直接预置 config 造)", () => {
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.writeFileSync(path.join(alphaTmp, "alpha.jsonc"), JSON.stringify({ plugin: ["opencode-notify@0.3.1"] }, null, 2))
     expect(readConfig().plugin).toContain("opencode-notify@0.3.1")
     expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(false)
     addReceipt(alphaTmp, { id: "plugin:opencode-notify", name: "opencode-notify", type: "plugin", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "plugin:opencode-notify@0.3.1" })
+    const before = fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")
     expect(removePlugin("opencode-notify@0.3.1").ok).toBe(true)
     expect(readConfig().plugin ?? []).not.toContain("opencode-notify@0.3.1")
-    expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(false)
+    // REQ-128 `#706`:同上 —— 撤 config[] 与去账彻底分家,账本字节零改动。
+    expect(fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")).toBe(before)
+    expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(true)
   })
 
   test("removePlugin on an absent package is a no-op success", () => {
@@ -413,12 +333,9 @@ describe("config write lock — serialized with the extension bundle lock (REQ-1
     const mcp = persistMcp("demo", server)
     expect(mcp.ok).toBe(false)
     if (!mcp.ok) expect(mcp.reason).toContain("config busy")
-    const plug = persistPlugin("@alpha/np")
-    expect(plug.ok).toBe(false)
     expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc"))).toBe(false) // 拒后零写入
     held.lock.release()
     expect(persistMcp("demo", server).ok).toBe(true)
-    expect(persistPlugin("@alpha/np").ok).toBe(true)
     expect(readConfig().mcp.demo).toBeDefined()
   })
 
@@ -509,6 +426,28 @@ describe("removePluginPath — 主+legacy 全源净除,引擎语义匹配,strict
     expect(pluginsOf(homeCfg())).toEqual([]) // legacy file:// 等价形态同扫
   })
 
+  // REQ-128 `#706`:第三个配置写器同样**不碰账本**。前两条(removeMcp / removePlugin)已各有
+  // 字节零改动的钉子;这一条补上 vendored-path 那支 —— 少了它,把内层 `removeReceipt` 接回
+  // `removePluginPathUnlocked` 一处,整仓没有任何测试会红。
+  test("REQ-128 #706:撤 vendored plugin 路径条目与账本彻底分家 —— installs.json 字节零改动", () => {
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    const target = jsOf("vp@cccc")
+    fs.writeFileSync(mainCfg(), JSON.stringify({ plugin: [target] }))
+    addReceipt(alphaTmp, {
+      id: "plugin:vp",
+      name: "vp",
+      type: "plugin",
+      scope: "global",
+      installedAt: new Date().toISOString(),
+      origin: "catalog",
+      configKey: `plugin-path:${target}`,
+    })
+    const before = fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")
+    expect(removePluginPath("vp", target).ok).toBe(true)
+    expect(fs.readFileSync(path.join(alphaTmp, "installs.json"), "utf8")).toBe(before)
+    expect(readLedger(alphaTmp).receipts.some((x) => x.name === "vp")).toBe(true)
+  })
+
   test("语法损坏 / 非对象根 / plugin 非数组 → fail-closed 拒(不删条目也不谎报成功)", () => {
     fs.mkdirSync(alphaTmp, { recursive: true })
     const target = jsOf("vp@bbbb")
@@ -572,7 +511,7 @@ describe("applyBuiltinPolicyEdits — 幽灵删除跳过(O4)", () => {
 })
 
 // ── #395(Codex r5):未策展重加接入同一投影 —— disabled 记录不得被 persist 写「正常叶」复活 ────
-describe("#395 persistMcp/persistPlugin — 账本 disabled 投影(重加不复活)", () => {
+describe("#395 persistMcp — 账本 disabled 投影(重加不复活)", () => {
   const record = (kind: "mcp" | "plugin", name: string, desiredState: "enabled" | "disabled", configKey: string) => {
     const w = upsertRecordV2(alphaTmp, {
       id: `user:${name}`,
@@ -609,60 +548,177 @@ describe("#395 persistMcp/persistPlugin — 账本 disabled 投影(重加不复�
     expect(readConfig().mcp.srv2.enabled).toBe(false)
   })
 
-  test("persistPlugin:账本 disabled → projectedDisabled,plugin[] 保持缺席(config 零写入)", () => {
-    record("plugin", "x__p", "disabled", "plugin:@x/p@1.0.0")
-    const r = persistPlugin("@x/p@1.0.0")
-    expect(r).toEqual({ ok: true, changed: false, projectedDisabled: true })
-    expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc"))).toBe(false) // 从未写盘
-  })
-
-  test("persistPlugin:账本 enabled → 照常追加(投影不误伤)", () => {
-    record("plugin", "y__q", "enabled", "plugin:@y/q@1.0.0")
-    expect(persistPlugin("@y/q@1.0.0")).toEqual({ ok: true, changed: true })
-    expect(readConfig().plugin).toEqual(["@y/q@1.0.0"])
-  })
 })
 
-describe("#395 步骤4:persistPlugin 目标读错误 fail-closed", () => {
-  test("目标 config 不可读(EISDIR)→ 拒绝(不以空基底 [pkg] 整替换既有 plugin[])", () => {
-    fs.mkdirSync(path.join(alphaTmp, "alpha.jsonc"), { recursive: true })
-    const r = persistPlugin("@z/r@1.0.0")
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("unreadable")
-  })
-})
+// ── #712:prepared 密钥版本的释放 —— 合并视图(主 + retained legacy)是唯一判据 ────────────────
+// 这里的每一格都是「误删在用密钥」的一种真实到达方式:引擎在主配置之后还合并 retained legacy 源,
+// 而引用可以写成 `~/`、相对路径、或经 symlink 别名。任一来源读不出可信引用集就一律不删。
+describe("releasePreparedMcpSecretVersion — #712 合并引用视图", () => {
+  const server = "relmcp"
+  let userData = ""
+  let vid = ""
+  let file = ""
+  let decoyFile = ""
 
-// ── #395 Codex r6 M1:disabled plugin 换钉版重加 —— 清残留 / legacy fail-closed(不留无账活条目)──
-describe("#395 r6 M1 disabled plugin 换钉版", () => {
-  const recPlugin = (name: string, configKey: string) => {
-    const w = upsertRecordV2(alphaTmp, {
-      id: `user:${name}`,
-      name,
-      kind: "plugin",
-      environment: "prod",
-      scope: { kind: "global" },
-      desiredState: "disabled",
-      origin: "created",
-      installedAt: "2026-07-17T00:00:00.000Z",
-      configKey,
-    })
-    if (!w.ok) throw new Error(w.reason)
+  beforeEach(() => {
+    userData = path.join(alphaTmp, "user-data")
+    vid = newMcpSecretVersionId()
+    // 目标版本目录里放**两个**密钥文件,而 config 只引用**非首个**的那一个 ——
+    // 「只看目录里第一个文件」的削弱必须转红(readdir 序 A_DECOY 在前)。
+    for (const [name, value] of [
+      ["A_DECOY", "PREPARED_SECRET_DECOY"],
+      ["Z_TOK", "PREPARED_SECRET_CANARY"],
+    ] as const) {
+      const written = writeMcpSecretVersioned(userData, server, vid, name, value)
+      if (!written.ok) throw new Error(written.reason)
+    }
+    file = path.join(userData, "alpha-mcp-secrets", server, vid, "Z_TOK")
+    // 另一个版本目录:引用集里恒排在目标之前,且必须**始终**零接触。
+    const decoyVid = newMcpSecretVersionId()
+    const decoy = writeMcpSecretVersioned(userData, server, decoyVid, "TOK", "OTHER_VERSION")
+    if (!decoy.ok) throw new Error(decoy.reason)
+    decoyFile = path.join(userData, "alpha-mcp-secrets", server, decoyVid, "TOK")
+  })
+
+  const writeRaw = (target: string, text: string) => {
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, text)
   }
-
-  test("主 config 有旧钉版残留(@x/p@1),重加 @x/p@2 → 清残留 + projectedDisabled changed(不留旧活条目)", () => {
-    recPlugin("x__p", "plugin:@x/p@1.0.0") // 账本 name=x__p(pkgBase 派生),记录 disabled
-    // 崩溃残留:主 config 仍有旧钉版条目 + 无关插件。
-    fs.writeFileSync(path.join(alphaTmp, "alpha.jsonc"), JSON.stringify({ plugin: ["@x/p@1.0.0", "@keep/o@1"] }))
-    const r = persistPlugin("@x/p@2.0.0")
-    expect(r).toEqual({ ok: true, changed: true, projectedDisabled: true })
-    // 旧钉版残留被清,无关插件保留,新钉版不写(disabled = 缺席)。
-    expect(readConfig().plugin).toEqual(["@keep/o@1"])
+  const legacyPath = () => path.join(homeTmp, "opencode.jsonc")
+  const writeLegacy = (value: unknown) => writeRaw(legacyPath(), JSON.stringify(value, null, 2))
+  /** 引用**永远不放在第一位**:前面先垫一个指向别的版本的引用,再垫一个非密钥引用。 */
+  const leaf = (...refs: string[]) => ({
+    mcp: {
+      [server]: {
+        type: "remote",
+        url: "https://x.invalid",
+        environment: { OTHER_VERSION: `{file:${decoyFile}}`, UNRELATED: `{file:${path.join(alphaTmp, "unrelated")}}` },
+        headers: Object.fromEntries(refs.map((ref, i) => [`X-Auth-${i}`, `Bearer {file:${ref}}`])),
+      },
+    },
   })
 
-  test("主+legacy 都缺席该 base → changed:false(纯账本刷新,零 config 写)", () => {
-    recPlugin("y__q", "plugin:@y/q@1.0.0")
-    const r = persistPlugin("@y/q@2.0.0")
-    expect(r).toEqual({ ok: true, changed: false, projectedDisabled: true })
-    expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc"))).toBe(false)
+  test("没有任何来源引用它 → 删(这是失败/回滚后的正常情形:leaf 本就缺席)", () => {
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "removed" })
+    expect(fs.existsSync(file)).toBe(false)
+    expect(fs.existsSync(decoyFile)).toBe(true) // 别的版本零接触
+  })
+
+  test("主 leaf 引用集里含它(非首位)→ 保留", () => {
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret"), file))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test("主 leaf 用 `~/` 形态引用 → 按引擎语义展开 home 后命中,保留", () => {
+    // os.homedir() 在 bun 里进程启动后不再随 HOME 变,所以这里用一条**真的**以 `~/` 开头的引用:
+    // 相对段从真实 home 走到临时目录。判据不变 —— 不展开 `~` 就命不中,活密钥当场被删。
+    const fromHome = `~/${path.relative(os.homedir(), file)}`
+    expect(fromHome.startsWith("~/")).toBe(true)
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret"), fromHome))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test("主 leaf 用 `./` 相对形态引用 → 按 config 文件所在目录解析,保留", () => {
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret"), `./${path.relative(alphaTmp, file)}`))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test("只有 retained legacy 源引用它(主 leaf 在场但不引用)→ 保留", () => {
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret")))
+    writeLegacy(leaf(path.join(homeTmp, "not-a-secret"), file))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test("legacy 源用相对路径引用(按自己所在目录解析)→ 保留", () => {
+    writeLegacy(leaf("not-a-secret", path.relative(homeTmp, file)))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test("symlink 别名引用 → realpath 命中,保留", () => {
+    const alias = path.join(alphaTmp, "alias-TOK")
+    fs.symlinkSync(file, alias)
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret"), alias))
+    expect(releasePreparedMcpSecretVersion(userData, server, vid)).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(file)).toBe(true)
+  })
+
+  test.each([
+    [
+      "legacy 源语法损坏",
+      () => {
+        writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret")))
+        writeRaw(legacyPath(), '{ "mcp": { "relmcp": { "type": "remote" ')
+      },
+      "legacy config unparseable",
+    ],
+    [
+      "主配置语法损坏",
+      () => {
+        writeLegacy({})
+        writeRaw(path.join(alphaTmp, "alpha.jsonc"), '{ "mcp": { "relmcp": { "type": "remote"  // 少一个括号\n')
+      },
+      "unparseable",
+    ],
+    [
+      "主 leaf 形状异常(数组)",
+      () => {
+        writeLegacy({})
+        writeAlphaConfig({ mcp: { [server]: ["not", "an", "object"] } })
+      },
+      "unexpected shape",
+    ],
+    [
+      "legacy 源的 mcp 键形状异常",
+      () => {
+        writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret")))
+        writeLegacy({ mcp: ["not", "an", "object"] })
+      },
+      "unexpected shape",
+    ],
+  ])("%s → 引用集不可信,拒绝释放(绝不当作零引用)", (_name, setup, expectedReason) => {
+    setup()
+    const r = releasePreparedMcpSecretVersion(userData, server, vid)
+    expect(r.ok).toBe(false)
+    expect(!r.ok && r.reason).toContain(expectedReason)
+    expect(fs.existsSync(file)).toBe(true)
+    expect(fs.existsSync(decoyFile)).toBe(true)
+  })
+
+  test("releasePreparedTxResources:逐条处置 —— 未登记 kind/store 拒绝,合法条目照常释放", () => {
+    const other = newMcpSecretVersionId()
+    const otherWritten = writeMcpSecretVersioned(userData, server, other, "TOK", "SECOND_ORPHAN")
+    if (!otherWritten.ok) throw new Error(otherWritten.reason)
+    const otherFile = path.join(userData, "alpha-mcp-secrets", server, other, "TOK")
+    // 主 leaf 引用目标版本,不引用另外两个 —— 一批里同时有「必须保留」「必须删」「必须拒」。
+    writeAlphaConfig(leaf(path.join(alphaTmp, "not-a-secret"), file))
+    expect(() =>
+      releasePreparedTxResources(userData, [
+        // 合法且未被引用 → 应删(排在第一位:违规项不占首位)
+        { kind: "mcp-secret-version", store: "alpha-mcp-secrets", server, version: other },
+        // 未登记 kind → 拒(不猜别人的布局)
+        { kind: "ssh-key", store: "alpha-mcp-secrets", server, version: other } as never,
+        // 未登记 store → 拒
+        { kind: "mcp-secret-version", store: "somewhere-else", server, version: other } as never,
+        // 合法但仍被引用 → 保留并如实抛出
+        { kind: "mcp-secret-version", store: "alpha-mcp-secrets", server, version: vid },
+      ]),
+    ).toThrow(/no release seam.*no release seam.*still referenced/s)
+    expect(fs.existsSync(otherFile)).toBe(false) // 批里合法的那条真的删了
+    expect(fs.existsSync(file)).toBe(true) // 被引用的那条真的保住了
+    expect(fs.existsSync(decoyFile)).toBe(true)
+
+    // 引用撤掉后再释放同一条 → 真的删,且不抛。
+    writeAlphaConfig({})
+    expect(() =>
+      releasePreparedTxResources(userData, [
+        { kind: "mcp-secret-version", store: "alpha-mcp-secrets", server, version: vid },
+      ]),
+    ).not.toThrow()
+    expect(fs.existsSync(file)).toBe(false)
   })
 })

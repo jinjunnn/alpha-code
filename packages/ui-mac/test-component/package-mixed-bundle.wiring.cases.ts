@@ -1,0 +1,827 @@
+// REQ-128 `#697` —— canonical mixed Bundle 的**生产接线**闸。
+//
+// 判据不是「协调器能拼出一个多组件计划」——那是单元测试。判据是走 `registerExtIpcHandlers` 注册的
+// 真 `ext-install-catalog` 通道:真已验 Catalog → 真 admission → 真 `runExtensionTransaction` →
+// 真 config switch / 真密钥 store / 真 V3 账本;失败与崩溃则经**真 ext-ipc recoveryOpts**收敛。
+//
+// 这里的每一条 fault 都可达:
+//   · download   —— 资产 HTTP 失败(签名 digest 对不上 ⇒ 完整性拒);
+//   · secret     —— 版本目录认领不下来 ⇒ populatePrepared 抛错(授权终闸后、switch 前);
+//   · config     —— live 出现未登记的 mcp 叶 ⇒ 锁内 precondition 拒;
+//   · probe      —— skill 资产 frontmatter name 与组件名不符 ⇒ pre-switch probe 判不健康;
+//   · receipt    —— 账本提交接缝抛错 ⇒ journal 保持非终态,由生产恢复收敛;
+//   · 全部 `TX_CRASH_POINTS` —— 进程在每一个点死掉,恢复后必须**全旧或全新**。
+//
+// 「全旧或全新」的判据是盘面本身(agent md / skill generation / mcp config 叶 / 三条 child record /
+// 图 / claim / 密钥版本目录),不是返回值。半装 = 其中任意一项与其余不一致。
+
+import { createHash } from "node:crypto"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterAll, expect, mock, test } from "bun:test"
+import type { PackageAdmissionPreviewV1 } from "../src/shared/package-admission"
+import type { PackageGraphV1 } from "../src/main/ext-package-ledger-v3"
+import type { TxCrashPoint, TxHooks, TxPlan } from "../src/main/ext-transaction"
+import {
+  assertMatchesVendoredBundleShape,
+  EXPECTED_SKIP_REASON,
+  LEAF_MCP_ID,
+  LEAF_SKILL_ID,
+  LEAF_UNSUPPORTED_ID,
+  MCP_SECRET_PREREQUISITE_ID,
+  MIXED_BUNDLE_PACKAGE_ID,
+  mixedBundleFixture,
+  ROOT_AGENT_ID,
+  SKILL_FILE_PATHS,
+  type MixedBundleFixture,
+} from "./package-mixed-bundle.fixture"
+
+type IpcHandler = (event: { sender: { id: number } }, ...args: unknown[]) => unknown
+
+const handlers = new Map<string, IpcHandler>()
+const tmp = mkdtempSync(join(tmpdir(), "req128-697-mixed-"))
+const userData = join(tmp, "user-data")
+const secretCanary = "REQ128_697_BUNDLE_SECRET_5b1e07"
+const snapshotDigest = "5".repeat(64)
+
+// 当前这一轮用的夹具(每个用例换一份;refreshRemoteCatalog 的 mock 每次读它)。
+let fixture: MixedBundleFixture = mixedBundleFixture()
+/** 让某个 URL 的取用失败 —— download fault 的到达方式。 */
+let failAssetUrlContaining: string | null = null
+let payloadFetches = 0
+let assetFetches = 0
+const fetchedUrls: string[] = []
+
+// `crashAt` 是引擎自带的故障注入点,生产不传。下面(electron 等基础 mock 之后)会把
+// ext-transaction 包一层再让 ext-ipc 装载它。
+let crashAt: TxCrashPoint | undefined
+let failLedgerCommitOnce = false
+let lastPlan: TxPlan | undefined
+/** 模拟「持锁进程真的死了」:crashAt 刻意不释放锁,而本进程还活着 —— 把锁里的 pid 改成一个
+ *  确定不存在的 pid,生产恢复的陈旧判据(`holder pid … not alive`)才谈得上被触发。
+ *  这是崩溃注入没做完的那半件事,不是绕过恢复:收敛仍由真 recoveryOpts 完成。 */
+let deadPid = 0
+
+mock.module("electron", () => ({
+  BrowserWindow: class {
+    static fromWebContents() {
+      return undefined
+    }
+  },
+  dialog: {
+    showMessageBox: async () => ({ response: 1, checkboxChecked: false }),
+    showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+  },
+  ipcMain: {
+    handle: (channel: string, handler: IpcHandler) => handlers.set(channel, handler),
+  },
+}))
+
+mock.module("../src/main/ipc", () => ({
+  pickedFiles: {
+    read: async () => {
+      throw new Error("unexpected picked-file read")
+    },
+  },
+}))
+
+const logLines: string[] = []
+mock.module("../src/main/logging", () => ({
+  getLogger: () => ({
+    error: (m: unknown) => logLines.push(String(m)),
+    log: (m: unknown) => logLines.push(String(m)),
+    warn: (m: unknown) => logLines.push(String(m)),
+  }),
+}))
+
+mock.module("../src/main/ext-advisory-gate", () => ({
+  listAdvisoryBlockedFacts: () => ({ ids: [], fresh: true }),
+  makeAdvisoryGate: () => () => ({ allowed: true }),
+}))
+
+// remote-catalog:只替换**网络那一段**(`refreshRemoteCatalog`)。目录读通道的注册与安全视图
+// 投影仍走真实现 —— 详情页那一面必须是生产投影出来的,否则「三个面逐字相同」里的第一个面
+// 就是本用例自己造的。函数值同样在 mock 之前抓下来(见上面 ext-transaction 的同款陷阱)。
+const realRemoteCatalog = await import("../src/main/remote-catalog")
+const realRegisterPackageCatalogReadIpcHandlers = realRemoteCatalog.registerPackageCatalogReadIpcHandlers
+const realEvaluateRemoteCatalogPackages = realRemoteCatalog.evaluateRemoteCatalogPackages
+mock.module("../src/main/remote-catalog", () => ({
+  ...realRemoteCatalog,
+  downloadRemoteAsset: async () => ({ ok: false, reason: "unexpected remote asset download" }),
+  readCachedCatalog: () => null,
+  registerPackageCatalogReadIpcHandlers: realRegisterPackageCatalogReadIpcHandlers,
+  refreshRemoteCatalog: async () =>
+    realEvaluateRemoteCatalogPackages({
+      source: "remote",
+      catalog: { version: "2026-08-01", entries: [{}], packages: [fixture.envelope] },
+      version: "2026-08-01",
+      fetchedAt: "2026-08-01T00:00:00.000Z",
+      via: "channel-dev",
+      channel: "dev",
+      snapshotDigest,
+    } as never),
+}))
+
+const reloadedMcp: string[] = []
+mock.module("../src/main/ext-mcp-activation", () => ({
+  reloadInstalledMcp: async (name: string) => {
+    reloadedMcp.push(name)
+    return { reference: name, status: "connected" }
+  },
+}))
+
+const originalFetch = globalThis.fetch
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  expect(init?.redirect).toBe("error")
+  const url = String(input)
+  fetchedUrls.push(url)
+  if (failAssetUrlContaining && url.includes(failAssetUrlContaining))
+    return new Response("nope", { status: 503 })
+  // payload 的 url 都带 `/alpha-package/payload.json`;markdown 资产不带。
+  if (url.endsWith("/alpha-package/payload.json")) {
+    payloadFetches++
+    const component = fixture.envelope.components.find((entry) => entry.payloadRef.url === url)
+    if (!component) throw new Error(`unexpected payload fetch: ${url}`)
+    return new Response(fixture.payloadByDigest.get(component.payloadRef.sha256)!, { status: 200 })
+  }
+  assetFetches++
+  // `#828`:技能载荷现在是**一份清单**,取用按 URL 的尾段路由到那一条的字节。
+  // 旧写法「不是 AGENT.md 就返回那一份 skill 字节」会让三个 URL 都拿到同一串 —— 那样
+  // 「逐文件比对字节」断言的就是夹具自己,而不是宿主把哪一份写到了哪里。
+  if (url.includes("AGENT.md")) {
+    const agent = fixture.assetByDigest.get(sha(fixture.agentAsset))
+    if (!agent) throw new Error(`unexpected asset fetch: ${url}`)
+    return new Response(agent, { status: 200 })
+  }
+  const prefix = "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/"
+  if (url.startsWith(prefix)) {
+    const relative = url.slice(prefix.length)
+    // 按 **URL 那一侧**路由(逃逸用例里 `urlPath` 与 `path` 刻意不同)。
+    const file = fixture.skillFiles.find((candidate) => (candidate.urlPath ?? candidate.path) === relative)
+    if (!file) throw new Error(`unexpected asset fetch: ${url}`)
+    return new Response(file.data, { status: 200 })
+  }
+  throw new Error(`unexpected asset fetch: ${url}`)
+}) as typeof fetch
+
+const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex")
+
+// ── 事务注入面 ────────────────────────────────────────────────────────────────────────────────
+// electron 等基础 mock **之后**才装载 ext-transaction(它的依赖链会牵出 electron),然后把
+// `runExtensionTransaction` 包一层再交给 ext-ipc。走的仍是真 `registerExtIpcHandlers` → 真
+// admission → 真事务,只多了一个注入的死亡点 / 提交失败点;其余导出(恢复、journal 读取)原样透传。
+const realTransactionModule = await import("../src/main/ext-transaction")
+// **函数值**要在 mock 之前抓下来。`mock.module` 会就地改写模块命名空间对象,所以
+// `realTransactionModule.runExtensionTransaction` 在注册之后指的是包装器本身 —— 直接调它
+// 就是无限自递归(实测:计划被反复重建,事务一步都没跑,进程活着但永不返回)。
+const realRunExtensionTransaction = realTransactionModule.runExtensionTransaction
+mock.module("../src/main/ext-transaction", () => ({
+  ...realTransactionModule,
+  runExtensionTransaction: (root: string, plan: TxPlan, hooks: TxHooks) => {
+    lastPlan = plan
+    const commitReceipt = hooks.commitReceipt
+    return realRunExtensionTransaction(root, plan, {
+      ...hooks,
+      ...(crashAt ? { crashAt } : {}),
+      ...(commitReceipt
+        ? {
+            commitReceipt: async (records) => {
+              if (failLedgerCommitOnce) {
+                failLedgerCommitOnce = false
+                throw new Error("injected ledger commit failure")
+              }
+              return commitReceipt(records)
+            },
+          }
+        : {}),
+    })
+  },
+}))
+
+const { readBundleAuthorizationReceipt, resolveLiveGenerationDir } = realTransactionModule
+// `#828`:generation 的 live 目录派生只此**一份**(生产的解析器 + 生产的 key 文法)。
+const { skillGenerationKey } = await import("../src/main/ext-skill-generations")
+const { initAlphaEnvironment, getAlphaEnvironment } = await import("../src/main/alpha-environment")
+const { registerExtIpcHandlers } = await import("../src/main/ext-ipc")
+
+delete process.env.ALPHA_GLOBAL_DIR
+initAlphaEnvironment({
+  isPackaged: false,
+  channel: "dev",
+  appDataDir: tmp,
+  baseRoot: join(tmp, "alpha-code-state"),
+  homeDir: join(tmp, "home"),
+})
+registerExtIpcHandlers(
+  userData,
+  "dev",
+  async () => ({ url: "http://127.0.0.1:39121", username: "opencode", password: "route-password" }),
+  join(tmp, "home"),
+)
+
+afterAll(() => {
+  globalThis.fetch = originalFetch
+  rmSync(tmp, { recursive: true, force: true })
+})
+
+const root = () => getAlphaEnvironment().mutableRoot
+
+/** 每个用例一块干净盘面(全局根 + userData),但**共用**已注册的生产 handler。 */
+function resetDisk() {
+  for (const dir of [root(), userData]) {
+    rmSync(dir, { recursive: true, force: true })
+    mkdirSync(dir, { recursive: true })
+  }
+  crashAt = undefined
+  failLedgerCommitOnce = false
+  failAssetUrlContaining = null
+  deadPid = 0
+  lastPlan = undefined
+  payloadFetches = 0
+  assetFetches = 0
+  fetchedUrls.length = 0
+  reloadedMcp.length = 0
+  logLines.length = 0
+}
+
+async function preview(attemptId: string) {
+  const install = handlers.get("ext-install-catalog")
+  if (!install) throw new Error("ext-install-catalog handler was not registered")
+  const intent = { catalogId: MIXED_BUNDLE_PACKAGE_ID, scope: { scope: "global" as const }, attemptId }
+  const first = await install({ sender: { id: 1 } }, intent)
+  return { install, intent, first }
+}
+
+async function installBundle(attemptId: string, secrets: Record<string, string>) {
+  const { install, intent, first } = await preview(attemptId)
+  const staged = first as {
+    ok: false
+    stage?: string
+    reason?: string
+    authorization?: Array<{ key: string; requested: string[] }>
+    packageAuthorization?: PackageAdmissionPreviewV1
+  }
+  if (staged.stage !== "authorize" || !staged.packageAuthorization)
+    return { preview: staged, result: first }
+  const result = await install(
+    { sender: { id: 1 } },
+    {
+      ...intent,
+      grants: { secrets },
+      authorization: {
+        confirmed: Object.fromEntries(staged.authorization!.map((item) => [item.key, item.requested])),
+        binding: staged.packageAuthorization.binding,
+      },
+    },
+  )
+  return { preview: staged, result }
+}
+
+const grants = () => ({ [MCP_SECRET_PREREQUISITE_ID]: secretCanary })
+
+/**
+ * 崩溃注入**故意**不释放锁(那正是进程猝死的样子),但本进程还活着,所以生产恢复看到的是一把
+ * 「持有者仍在跑」的锁,永远不会接管它。把锁文件里的 pid 换成一个确定不存在的 pid,让盘面真的
+ * 长成「持锁进程已死」——这是崩溃模拟没做完的那半件事。收敛本身仍由真 ext-ipc recoveryOpts 完成。
+ */
+function makeLockHolderDead() {
+  const lockFile = join(root(), "ext-tx", "tx.lock")
+  if (!existsSync(lockFile)) return false
+  const holder = JSON.parse(readFileSync(lockFile, "utf8")) as { pid: number }
+  if (deadPid === 0) {
+    // 找一个确定不存在的 pid(向上探,直到 kill(pid,0) 报 ESRCH)。
+    for (let candidate = 999_000; candidate < 999_400; candidate++) {
+      try {
+        process.kill(candidate, 0)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") {
+          deadPid = candidate
+          break
+        }
+      }
+    }
+    if (deadPid === 0) throw new Error("could not find a dead pid to simulate process death")
+  }
+  writeFileSync(lockFile, `${JSON.stringify({ ...holder, pid: deadPid }, null, 2)}\n`)
+  return true
+}
+
+type Ledger = {
+  v?: number
+  records?: Array<{ kind: string; name: string }>
+  packageGraphs?: PackageGraphV1[]
+  claims?: Array<{ kind: string; name: string; owners: string[] }>
+}
+
+const ledger = (): Ledger => {
+  try {
+    return JSON.parse(readFileSync(join(root(), "installs.json"), "utf8")) as Ledger
+  } catch {
+    return {}
+  }
+}
+
+const configText = () => {
+  try {
+    return readFileSync(join(root(), "alpha.jsonc"), "utf8")
+  } catch {
+    return ""
+  }
+}
+
+const secretVersions = () => {
+  try {
+    return readdirSync(join(userData, "alpha-mcp-secrets", "generic-bundle-remote"))
+  } catch {
+    return []
+  }
+}
+
+// ── `#828` 技能实物的观测面 ─────────────────────────────────────────────────────────────────
+//
+// 判据必须落在**引擎真正会读的那个目录**上。技能不落 `<root>/skills/<name>`:它落
+// `<root>/ext-store/skill--<name>/<genId>/`,由 `skillGenerationLiveDirs()` 注入引擎
+// `skills.paths`。断言 CAS 里有那几个 blob、或断言载荷清单里有那几条,都不是「用户拿到了
+// 那些文件」—— 那是自己拼的等价链。
+
+/**
+ * live generation 目录。用**生产的**指针解析器(`resolveLiveGenerationDir`)+ 生产的 key 派生
+ * (`skillGenerationKey`),不自己拼 `<store>/<genId>` —— 自己拼的第一版就拼错了(真实布局是
+ * `<store>/generations/<genId>`),而拼错的版本会让「文件不在」与「我找错了目录」长得一模一样。
+ */
+function liveSkillDir(name: string): string | undefined {
+  return resolveLiveGenerationDir(root(), skillGenerationKey(name)) ?? undefined
+}
+
+/** 目录里**全部**常规文件的相对 POSIX 路径 + 字节 + 模式位。递归,排序。 */
+function walkFiles(dir: string): Array<{ path: string; data: Buffer; mode: number }> {
+  const out: Array<{ path: string; data: Buffer; mode: number }> = []
+  const walk = (relDir: string) => {
+    for (const entry of readdirSync(relDir ? join(dir, relDir) : dir, { withFileTypes: true })) {
+      const rel = relDir ? `${relDir}/${entry.name}` : entry.name
+      const abs = join(dir, rel)
+      if (entry.isDirectory()) walk(rel)
+      else if (entry.isFile()) out.push({ path: rel, data: readFileSync(abs), mode: statSync(abs).mode & 0o777 })
+    }
+  }
+  walk("")
+  return out.sort((left, right) => (left.path < right.path ? -1 : 1))
+}
+
+/**
+ * 盘面的**九个**观测点。「全旧或全新」= 这九个要么全是 absent 的那一套,要么全是 present 的
+ * 那一套;任何混合都是半装包。返回布尔向量而不是一个聚合判断 —— 失败信息要指得出是哪一格。
+ */
+function diskFacts() {
+  const state = ledger()
+  const recordKey = (kind: string, name: string) =>
+    (state.records ?? []).some((record) => record.kind === kind && record.name === name)
+  return {
+    agentFile: existsSync(join(root(), "agents", "generic-bundle-agent.md")),
+    agentConfigLeaf: configText().includes('"generic-bundle-agent"'),
+    skillGeneration: existsSync(join(root(), "ext-store", "skill--generic-bundle-skill", "current.json")),
+    mcpConfigLeaf: configText().includes('"generic-bundle-remote"'),
+    agentRecord: recordKey("agent", "generic-bundle-agent"),
+    skillRecord: recordKey("skill", "generic-bundle-skill"),
+    mcpRecord: recordKey("mcp", "generic-bundle-remote"),
+    packageGraph: (state.packageGraphs ?? []).length > 0,
+    claims: (state.claims ?? []).length > 0,
+  }
+}
+
+function expectAllOldOrAllNew(label: string) {
+  const facts = diskFacts()
+  const values = Object.values(facts)
+  const allNew = values.every(Boolean)
+  const allOld = values.every((value) => !value)
+  expect(
+    allNew || allOld,
+    `${label}: 盘面既不是「全旧」也不是「全新」 —— ${JSON.stringify(facts)}`,
+  ).toBe(true)
+  if (allNew) expectCoherentInstall(label)
+  return allNew ? "new" : "old"
+}
+
+/** 「全新」不只是九格都为 true —— 图、claim、record 三者必须互相指得上。 */
+function expectCoherentInstall(label: string) {
+  const state = ledger()
+  expect(state.v, label).toBe(3)
+  const graph = state.packageGraphs![0]!
+  expect(graph.packageId, label).toBe(MIXED_BUNDLE_PACKAGE_ID)
+  expect([graph.root.componentId, ...graph.children.map((child) => child.componentId)].sort(), label).toEqual(
+    [ROOT_AGENT_ID, LEAF_MCP_ID, LEAF_SKILL_ID].sort(),
+  )
+  const owner = `bundle:${MIXED_BUNDLE_PACKAGE_ID}@${graph.root.manifestDigest}`
+  expect(
+    (state.claims ?? []).map((claim) => `${claim.kind}:${claim.name}`).sort(),
+    `${label}: 每个装上的 child 都要有 claim`,
+  ).toEqual(["agent:generic-bundle-agent", "mcp:generic-bundle-remote", "skill:generic-bundle-skill"])
+  for (const claim of state.claims ?? [])
+    expect(claim.owners, `${label}: claim 必须由这个 Bundle 持有`).toEqual([owner])
+  // 「无 child-only record」:被跳过的组件绝不出现在 record / claim / 图里。
+  expect((state.records ?? []).some((record) => record.name === "generic-bundle-future"), label).toBe(false)
+  expect((state.claims ?? []).some((claim) => claim.name === "generic-bundle-future"), label).toBe(false)
+}
+
+// ── ① canonical mixed Bundle 的一次成功安装 ─────────────────────────────────────────────────
+
+test("the production ext-install-catalog channel activates a mixed Bundle in one transaction and one ledger mutation", async () => {
+  resetDisk()
+  fixture = mixedBundleFixture()
+  await assertMatchesVendoredBundleShape(fixture, (actual, expectedShape, label) =>
+    expect(actual, label).toEqual(expectedShape),
+  )
+
+  const { preview: staged, result } = await installBundle("mixed-bundle-1", grants())
+  const plan = staged.packageAuthorization!.plan
+
+  // ── 确认屏:三个会装的组件 + 一个不会装的,原因逐字来自 decoder。
+  expect(plan.items.filter((item) => item.included).map((item) => item.componentId)).toEqual([
+    ROOT_AGENT_ID,
+    LEAF_MCP_ID,
+    LEAF_SKILL_ID,
+  ])
+  const skippedRow = plan.items.find((item) => !item.included)
+  if (!skippedRow || skippedRow.included) throw new Error("授权确认屏必须带着被跳过的组件")
+  expect(skippedRow.componentId).toBe(LEAF_UNSUPPORTED_ID)
+  expect(skippedRow.skipReasonCode).toBe(EXPECTED_SKIP_REASON)
+  // 授权集只含会装的三个 —— 没人被要求为一个不会到货的组件授权。
+  expect(staged.authorization!.map((item) => item.key).sort()).toEqual([
+    "agent--generic-bundle-agent",
+    "mcp--generic-bundle-remote",
+    "skill--generic-bundle-skill",
+  ])
+  // binding 逐组件:itemDigests 三个键,graphDigest 与 envelopeDigest 各不相同。
+  expect(Object.keys(staged.packageAuthorization!.binding.itemDigests).sort()).toEqual(
+    [ROOT_AGENT_ID, LEAF_MCP_ID, LEAF_SKILL_ID].sort(),
+  )
+  expect(staged.packageAuthorization!.binding.graphDigest).not.toBe(
+    staged.packageAuthorization!.binding.envelopeDigest,
+  )
+  // 被跳过的组件**零字节**。判据是取过的 URL 集合,不是次数:preview 与确认各重验一次
+  // (main 每次绑定都重读签名事实),次数会随重验轮数变,而「哪些东西被取过」不会。
+  expect([...new Set(fetchedUrls)].sort()).toEqual(
+    [
+      ...fixture.envelope.components
+        .filter((component) => component.id !== LEAF_UNSUPPORTED_ID)
+        .map((component) => component.payloadRef.url),
+      "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/AGENT.md",
+      // `#828`:技能的**每一个**文件都必须被取过。少取一个 = 装成残件,而这条断言正是
+      // 为了让「少取一个」变红 —— 只断言 SKILL.md 被取过的写法对残件恒真。
+      ...fixture.skillFiles.map(
+        (file) => `https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/${file.path}`,
+      ),
+    ].sort(),
+  )
+  expect(fetchedUrls.filter((url) => url.includes("generic-bundle-future"))).toEqual([])
+  expect(payloadFetches).toBeGreaterThan(0)
+  expect(assetFetches).toBeGreaterThan(0)
+
+  expect(result).toMatchObject({ ok: true, kind: "agent", name: "generic-bundle-agent" })
+  const outcome = result as { installed: string[]; skipped: Array<{ id: string; reason: string }> }
+  expect(outcome.installed).toEqual([ROOT_AGENT_ID, LEAF_MCP_ID, LEAF_SKILL_ID])
+  expect(outcome.skipped).toEqual([{ id: LEAF_UNSUPPORTED_ID, reason: EXPECTED_SKIP_REASON }])
+  // main 内部的重载指令不过线。
+  expect(Object.keys(result as object)).not.toContain("activateMcp")
+  // 全新安装的 catalog MCP 默认关 ⇒ 一次 live 重载都不该发生(「无 double load」的下界)。
+  expect(reloadedMcp).toEqual([])
+
+  // ── 一次事务、一份 mutation。
+  const journals = readdirSync(join(root(), "ext-tx", "journal"))
+  expect(journals).toHaveLength(1)
+  const journal = JSON.parse(readFileSync(join(root(), "ext-tx", "journal", journals[0]!), "utf8")) as {
+    state: string
+    items: Array<{ key: string; packageMutation?: unknown }>
+  }
+  expect(journal.state).toBe("committed")
+  expect(journal.items.filter((item) => item.packageMutation !== undefined).map((item) => item.key)).toEqual([
+    "agent--generic-bundle-agent",
+  ])
+  // 「无 double load」:一个 item key 只出现一次。
+  expect(new Set(journal.items.map((item) => item.key)).size).toBe(journal.items.length)
+
+  expectCoherentInstall("mixed bundle install")
+  expect(diskFacts()).toEqual({
+    agentFile: true,
+    agentConfigLeaf: true,
+    skillGeneration: true,
+    mcpConfigLeaf: true,
+    agentRecord: true,
+    skillRecord: true,
+    mcpRecord: true,
+    packageGraph: true,
+    claims: true,
+  })
+
+  // ── `#828` AC1:多文件技能装完之后,**每个文件都在盘上**,判据是逐文件比对字节 ──────────
+  //
+  // 「安装返回 ok」满足不了这一条:旧实现正是 ok + 账本干净 + 技能能启用 + 兄弟文件一个不在。
+  const liveDir = liveSkillDir("generic-bundle-skill")
+  expect(liveDir, "技能没有 live generation 目录").toBeDefined()
+  const landed = walkFiles(liveDir!)
+  // ① 集合恰等:少一个(残件)与多一个(有人往 generation 里塞了东西)都要红。
+  expect(landed.map((file) => file.path)).toEqual([...SKILL_FILE_PATHS].sort())
+  // ② 逐文件字节相等 —— 比的是 fetch 那一端喂进去的**那一串**,不是「非空」也不是长度。
+  for (const expected of fixture.skillFiles) {
+    const actual = landed.find((file) => file.path === expected.path)
+    expect(actual, `technically missing: ${expected.path}`).toBeDefined()
+    expect(Buffer.compare(actual!.data, Buffer.from(expected.data)), expected.path).toBe(0)
+  }
+  // ③ 三个文件的字节两两不同 —— 否则「逐文件比对」可能只是在比同一串三次
+  //    (取用桩若把三个 URL 都喂成同一份,①②都会绿)。
+  expect(new Set(landed.map((file) => file.data.toString("utf8"))).size).toBe(landed.length)
+  // ④ `#828` 追加要求 A:没有 `mediaType` 之后,技能目录里第一次可以合法出现 `.sh` / `.py`。
+  //    载荷里没有任何字段能表达模式位,materialize 也只走 `writeFileSync(dest, data)` ——
+  //    所以这条钉住「落下来的东西不可执行」。它是本票新增面的唯一守卫。
+  expect(landed.filter((file) => (file.mode & 0o111) !== 0).map((file) => file.path)).toEqual([])
+  //    观测手段自证:先证明这个 walker 能测出已知的坏,再用它判未知的好。
+  //    (不 chmod 生产落点 —— 在一个临时目录上验 walker 本身。)
+  {
+    const probeDir = mkdtempSync(join(tmp, "exec-probe-"))
+    writeFileSync(join(probeDir, "run.sh"), "#!/bin/sh\n", { mode: 0o755 })
+    expect(walkFiles(probeDir).filter((file) => (file.mode & 0o111) !== 0).map((file) => file.path)).toEqual(["run.sh"])
+    rmSync(probeDir, { recursive: true, force: true })
+  }
+
+  // 密钥:一个版本目录、明文只在那一个 0600 文件里,config 只引用它。
+  expect(secretVersions()).toHaveLength(1)
+  const secretFile = join(userData, "alpha-mcp-secrets", "generic-bundle-remote", secretVersions()[0]!, "C_TOKEN")
+  expect(readFileSync(secretFile, "utf8")).toBe(secretCanary)
+  expect(configText()).toContain(`{file:${secretFile}}`)
+  expect(configText()).not.toContain(secretCanary)
+  expect(JSON.stringify(result)).not.toContain(secretCanary)
+  expect(logLines.join("\n")).not.toContain(secretCanary)
+
+  // ── §4.3 闸 ③:三个面对同一个被跳过的组件给出**逐字相同**的原因。
+  //
+  // 三个值分别来自三条独立的生产路径:详情页读的是 `ext-remote-catalog` 投影出来的安全视图,
+  // 确认屏读的是 admission 的 plan preview,收据读的是引擎写在盘上的 Bundle 授权收据。
+  // 断言的不是「都非空」,是**同一个字符串**,而且还要等于 decoder 的那个 token —— 只比较三者
+  // 相等的话,三处一起变成 `""` 仍然全绿。
+  const browse = (await handlers.get("ext-remote-catalog")!({ sender: { id: 1 } })) as {
+    catalog: { packages: Array<{ catalogId: string; components: Array<{ componentId: string; skipReasonCode: string | null }> }> }
+  }
+  const safeViewLeaf = browse.catalog.packages
+    .find((view) => view.catalogId === MIXED_BUNDLE_PACKAGE_ID)!
+    .components.find((component) => component.componentId === LEAF_UNSUPPORTED_ID)!
+  const skippedKey = `skipped--${createHash("sha256").update(LEAF_UNSUPPORTED_ID).digest("hex").slice(0, 24)}`
+  const receipt = readBundleAuthorizationReceipt(root(), journals[0]!.replace(".json", ""))
+  expect(receipt, "Bundle 授权收据必须落盘").not.toBeNull()
+
+  const faces = {
+    safeView: safeViewLeaf.skipReasonCode,
+    confirmScreen: skippedRow.skipReasonCode,
+    receipt: receipt!.skippedOptional.find((entry) => entry.key === skippedKey)?.reason,
+  }
+  expect(faces).toEqual({
+    safeView: EXPECTED_SKIP_REASON,
+    confirmScreen: EXPECTED_SKIP_REASON,
+    receipt: EXPECTED_SKIP_REASON,
+  })
+  // 收据里只该有这一条被跳过的组件(会装的三个都不该混进 skippedOptional)。
+  expect(receipt!.skippedOptional).toEqual([{ key: skippedKey, reason: EXPECTED_SKIP_REASON }])
+  // 计划面与收据面同源:引擎落的就是 admission 交上去的那份。
+  expect(lastPlan?.skippedOptional).toEqual(receipt!.skippedOptional)
+})
+
+// ── `#828` ①b:单文件技能仍然装得上 ─────────────────────────────────────────────────────────
+//
+// 与上面那条走**同一条生产链**(真 IPC → 真 admission → 真事务),只把载荷换回一条 SKILL.md。
+// 为多文件把单文件弄坏,是这一票最容易犯又最不容易被发现的错:多文件用例全绿,而现网
+// 绝大多数技能(122/162)是单文件的。
+test("a single-file skill still installs through the same production path", async () => {
+  resetDisk()
+  fixture = mixedBundleFixture({ singleFileSkill: true })
+  const { result } = await installBundle("mixed-bundle-single-file", grants())
+  expect(result).toMatchObject({ ok: true })
+
+  const liveDir = liveSkillDir("generic-bundle-skill")
+  expect(liveDir).toBeDefined()
+  const landed = walkFiles(liveDir!)
+  expect(landed.map((file) => file.path)).toEqual(["SKILL.md"])
+  expect(Buffer.compare(landed[0]!.data, Buffer.from(fixture.skillFiles[0]!.data))).toBe(0)
+  expect(landed.filter((file) => (file.mode & 0o111) !== 0)).toEqual([])
+  expectCoherentInstall("single-file skill install")
+})
+
+// ── `#828`:载荷里的逃逸路径,在**签名 package 这条路上**必须有东西看着 ─────────────────────
+//
+// 解码层按裁决不判路径安全(唯一所有者是 `promotePayloadToCas`)。审计核实过今天的行为是对的,
+// 但**这条路上没有自己的负向用例** ⇒ 谁哪天拆掉一层兜底,这里不会有任何东西变红。
+// 判据不是「返回了 ok:false」(一个什么都拒的实现也满足),而是**盘面零变更**:
+// `ext-store` 整个不存在、根目录下没有多出任何东西。
+test("a payload naming a path outside the skill root is refused with zero writes", async () => {
+  resetDisk()
+  fixture = mixedBundleFixture({ escapingSkillPath: true })
+  const beforeRootEntries = readdirSync(root()).sort()
+
+  const { result } = await installBundle("mixed-bundle-escape", grants())
+  expect(result).toMatchObject({ ok: false })
+  // 只断布尔值不行:删掉路径闸之后 `ok` 仍会是 false(别的地方也会拒),只是 reason 变了。
+  // 所以断言拒绝**具名于路径守卫**,并且点得出是哪一条路径。
+  expect((result as { reason: string }).reason).toContain("unsafe manifest path: ../evil.md")
+  // 拒绝理由不许把宿主的绝对路径漏给 renderer。
+  expect((result as { reason: string }).reason).not.toContain(root())
+
+  // ① 逃逸落点没有被创建 —— 「上一级」是 store 根,越界文件会落在它旁边。
+  expect(existsSync(join(root(), "ext-store"))).toBe(false)
+  expect(existsSync(join(root(), "evil.md"))).toBe(false)
+  // ② 根目录条目集与安装前逐字相同(不止那一个名字:任何新落点都算)。
+  expect(readdirSync(root()).sort()).toEqual(beforeRootEntries)
+  // ③ 盘面九格全 absent —— 整包零副作用,而不是「skill 拒了、agent/mcp 装上了」。
+  expect(expectAllOldOrAllNew("escaping skill path")).toBe("old")
+})
+
+// ── `#828` AC4:整包卸载之后**所有**文件消失,不是只删 SKILL.md ─────────────────────────────
+test("removing the package deletes every skill file, not just SKILL.md", async () => {
+  resetDisk()
+  fixture = mixedBundleFixture()
+  const { result } = await installBundle("mixed-bundle-uninstall", grants())
+  expect(result).toMatchObject({ ok: true })
+
+  // 先证明卸载之前那些兄弟文件**确实在**:否则「卸载后都不在」对一个从没装上的实现恒真。
+  const before = liveSkillDir("generic-bundle-skill")
+  expect(before).toBeDefined()
+  expect(walkFiles(before!).map((file) => file.path)).toEqual([...SKILL_FILE_PATHS].sort())
+  const beforeAbsolute = walkFiles(before!).map((file) => join(before!, file.path))
+
+  const uninstall = handlers.get("ext-uninstall-package")
+  if (!uninstall) throw new Error("ext-uninstall-package handler was not registered")
+  const removed = await uninstall({ sender: { id: 1 } }, MIXED_BUNDLE_PACKAGE_ID)
+  expect(removed).toMatchObject({ ok: true })
+
+  // ① 逐个绝对路径都不在了 —— 只断言「目录没了」的写法,漏得掉「目录还在但只剩残骸」。
+  for (const file of beforeAbsolute) expect(existsSync(file), file).toBe(false)
+  // ② generation store 整棵树也不在(残留的 store 会让下次安装撞上 fresh gate)。
+  expect(existsSync(join(root(), "ext-store", "skill--generic-bundle-skill"))).toBe(false)
+  expect(liveSkillDir("generic-bundle-skill")).toBeUndefined()
+})
+
+// ── ② 具名 fault:download / secret / config / probe / receipt ────────────────────────────────
+
+test("named production faults leave the disk entirely old", async () => {
+  // download —— 签名资产取不到。
+  resetDisk()
+  fixture = mixedBundleFixture()
+  failAssetUrlContaining = "SKILL.md"
+  const download = await installBundle("mixed-bundle-download", grants())
+  expect(download.result).toMatchObject({ ok: false })
+  expect(expectAllOldOrAllNew("download fault")).toBe("old")
+
+  // secret populate —— 版本目录认领不下来(授权终闸之后、任何 live switch 之前)。
+  // 到达方式是「该是目录的位置上是一个普通文件」:`claimMcpSecretVersionDir` 的 `ensureRealDir`
+  // 因此拒绝。用它而不是 chmod:目录权限对目录所有者不总是拦得住(实测 0500 仍能建子目录),
+  // 那种夹具会安静地变成「什么都没注入」。
+  resetDisk()
+  fixture = mixedBundleFixture()
+  mkdirSync(join(userData, "alpha-mcp-secrets"), { recursive: true })
+  writeFileSync(join(userData, "alpha-mcp-secrets", "generic-bundle-remote"), "not a directory\n")
+  const secretFault = await installBundle("mixed-bundle-secret", grants())
+  expect(secretFault.result).toMatchObject({ ok: false })
+  expect(expectAllOldOrAllNew("secret populate fault")).toBe("old")
+  expect(secretVersions()).toEqual([])
+
+  // config —— live 出现一个未登记的同名 mcp 叶(锁内 precondition 拒)。
+  resetDisk()
+  fixture = mixedBundleFixture()
+  writeFileSync(
+    join(root(), "alpha.jsonc"),
+    `${JSON.stringify({ mcp: { "generic-bundle-remote": { type: "remote", url: "https://hand.written/" } } }, null, 2)}\n`,
+  )
+  const handwritten = configText()
+  const configFault = await installBundle("mixed-bundle-config", grants())
+  expect(configFault.result).toMatchObject({ ok: false })
+  expect(configText()).toBe(handwritten)
+  expect(existsSync(join(root(), "agents", "generic-bundle-agent.md"))).toBe(false)
+  expect(ledger().packageGraphs ?? []).toEqual([])
+
+  // probe —— skill 资产的 frontmatter name 与组件名不符 ⇒ pre-switch 判不健康。
+  resetDisk()
+  fixture = mixedBundleFixture({ breakSkillFrontmatterName: true })
+  const probeFault = await installBundle("mixed-bundle-probe", grants())
+  expect(probeFault.result).toMatchObject({ ok: false })
+  expect(expectAllOldOrAllNew("probe fault")).toBe("old")
+
+  // receipt —— 账本提交接缝抛错。事务不得把它当成功;盘面收敛后仍是全旧或全新。
+  resetDisk()
+  fixture = mixedBundleFixture()
+  failLedgerCommitOnce = true
+  const receiptFault = await installBundle("mixed-bundle-receipt", grants())
+  expect(receiptFault.result).toMatchObject({ ok: false })
+  // 触发一次生产恢复(任何受闸写通道都会先经 recoveryGate)。
+  await preview("mixed-bundle-receipt-recover")
+  expectAllOldOrAllNew("ledger commit fault")
+})
+
+// ── ③ 全部 TX_CRASH_POINTS ────────────────────────────────────────────────────────────────────
+
+test("every TX_CRASH_POINT converges through the real ext-ipc recovery to all-old or all-new", async () => {
+  const points = realTransactionModule.TX_CRASH_POINTS
+  expect(points.length).toBeGreaterThan(10)
+  const outcomes: Record<string, string> = {}
+  const fired: string[] = []
+  for (const point of points) {
+    resetDisk()
+    fixture = mixedBundleFixture()
+    crashAt = point
+    const crashed = await installBundle(`mixed-bundle-crash-${point}`, grants()).catch((error) => ({
+      preview: undefined,
+      result: { ok: false, reason: String(error) },
+    }))
+    crashAt = undefined
+    // 注入是否真的生效:调用没返回成功,且锁**仍被持有**(crashAt 刻意不做任何清理,这正是
+    // 进程猝死的样子)。判据放在锁上而不是 journal 上 —— 第一个点 `after-lock` 早于 journal,
+    // 拿 journal 判会把「崩得更早」误报成「没崩」。
+    const injected = (crashed.result as { ok?: unknown }).ok !== true
+    if (injected) {
+      expect(makeLockHolderDead(), `crash at ${point}: 崩溃后锁应当仍被持有`).toBe(true)
+      fired.push(point)
+    }
+    // 生产恢复:下一次任何受闸写通道调用都先经 recoveryGate.withRecoveredWrite(真 recoveryOpts)。
+    await preview(`mixed-bundle-crash-${point}-recover`)
+    outcomes[point] = expectAllOldOrAllNew(`crash at ${point}`)
+    // 无 secret orphan:密钥版本目录要么零个(全旧),要么恰好一个且被 live config 引用(全新)。
+    const versions = secretVersions()
+    if (outcomes[point] === "old") expect(versions, `crash at ${point}: secret orphan`).toEqual([])
+    else {
+      expect(versions, `crash at ${point}`).toHaveLength(1)
+      expect(configText()).toContain(join(userData, "alpha-mcp-secrets", "generic-bundle-remote", versions[0]!, "C_TOKEN"))
+    }
+    expect(logLines.join("\n"), `crash at ${point}: 明文不得进日志`).not.toContain(secretCanary)
+  }
+  // 两端都要真的出现过 —— 全是 "old" 说明注入根本没跑到提交,全是 "new" 说明崩溃没生效。
+  expect(new Set(Object.values(outcomes)), JSON.stringify(outcomes)).toEqual(new Set(["old", "new"]))
+  // 哪些点**没**在这张计划上生效,要显式点名,不能默默当成「都测过了」。
+  // `mid-materialize` 只在 `journal.items[0]` 本身是 generation 时才抛(materialize 循环对非
+  // generation item 先 `continue`),而 canonical mixed Bundle 的第一条 item 是 agent 的 file
+  // action。这是引擎的结构事实,不是本用例的取舍;将来它变得可达(或某个现在会生效的点悄悄
+  // 不生效了),下面这条就会红。
+  expect(
+    points.filter((point) => !fired.includes(point)),
+    "在这张计划上未生效的崩溃点必须逐个具名",
+  ).toEqual(["mid-materialize"])
+}, 300_000)
+
+// ── `#817`:签名 package child 在**生产启停通道**上拨开(用户竖线的最后一跳)────────────────────
+//
+// 判据是三个生效面的**盘面结果**,不是 resolver 的返回值:skill = 派生允许集文件(引擎注入门
+// 消费的那份)、agent = alpha.jsonc 的 `disable` 键、mcp = `enabled:false` 键。把启停解析改回
+// legacy `entries[]`(package child 从来不在那张表里)⇒ enable 一律被拒 ⇒ 这三处盘面不变 ⇒ 红。
+test("`#817` signed package children flip on through the production ext-set-install-state channel; catalog drift stays fail-closed", async () => {
+  resetDisk()
+  fixture = mixedBundleFixture()
+  const { result } = await installBundle("mixed-bundle-817-enable", grants())
+  expect(result).toMatchObject({ ok: true })
+
+  const setState = handlers.get("ext-set-install-state")
+  if (!setState) throw new Error("ext-set-install-state handler was not registered")
+  const cfg = () => JSON.parse(readFileSync(join(root(), "alpha.jsonc"), "utf8")) as Record<string, any>
+  const allow = () => JSON.parse(readFileSync(join(root(), "skills-enabled.json"), "utf8")) as unknown
+
+  // 安装后三 child 均 disabled(catalog 首装缺省)—— #817 报的现场。
+  expect(cfg().agent["generic-bundle-agent"].disable).toBe(true)
+  expect(cfg().mcp["generic-bundle-remote"].enabled).toBe(false)
+  expect(allow()).toEqual({ v: 1, keys: [] })
+
+  // skill:拨开 → 引擎允许集当场出现它。
+  const skillOn = (await setState({ sender: { id: 1 } }, { type: "skill", name: "generic-bundle-skill", scope: "global", state: "enabled" })) as { ok: boolean; reason?: string }
+  expect(skillOn.ok, skillOn.reason).toBe(true)
+  expect(allow()).toEqual({ v: 1, keys: ["skill--generic-bundle-skill"] })
+
+  // agent:拨开 → disable 投影解除。
+  const agentOn = (await setState({ sender: { id: 1 } }, { type: "agent", name: "generic-bundle-agent", scope: "global", state: "enabled" })) as { ok: boolean; reason?: string }
+  expect(agentOn.ok, agentOn.reason).toBe(true)
+  expect(cfg().agent["generic-bundle-agent"].disable).toBeUndefined()
+
+  // mcp:拨开 → enabled:false 解除。
+  const mcpOn = (await setState({ sender: { id: 1 } }, { type: "mcp", name: "generic-bundle-remote", scope: "global", state: "enabled" })) as { ok: boolean; reason?: string }
+  expect(mcpOn.ok, mcpOn.reason).toBe(true)
+  expect(cfg().mcp["generic-bundle-remote"].enabled).toBeUndefined()
+
+  // 拨回 disabled(反向投影仍通),为漂移负例归位。
+  const mcpOff = (await setState({ sender: { id: 1 } }, { type: "mcp", name: "generic-bundle-remote", scope: "global", state: "disabled" })) as { ok: boolean }
+  expect(mcpOff.ok).toBe(true)
+  expect(cfg().mcp["generic-bundle-remote"].enabled).toBe(false)
+
+  // 漂移负例①:catalog 里同 (packageId, version) 的 envelope 内容变了(payload sha 改一位 ⇒
+  // envelopeDigest 必变)⇒ enable fail-closed,具名 mismatch。
+  const drifted = structuredClone(fixture.envelope)
+  ;(drifted.components[0]!.payloadRef as { sha256: string }).sha256 = "0".repeat(64)
+  fixture = { ...fixture, envelope: drifted }
+  const refused = (await setState({ sender: { id: 1 } }, { type: "mcp", name: "generic-bundle-remote", scope: "global", state: "enabled" })) as { ok: boolean; code?: string; reason?: string }
+  expect(refused.ok).toBe(false)
+  expect(refused.code).toBe("curation-unverifiable")
+  expect(refused.reason).toContain("content does not match the installed package")
+  expect(cfg().mcp["generic-bundle-remote"].enabled).toBe(false)
+
+  // 漂移负例②:整包从 verified catalog 消失(delisted;alpha-web#131 的时序)⇒ 拒且具名。
+  const relisted = structuredClone(mixedBundleFixture().envelope)
+  ;(relisted.prelude as { packageId: string }).packageId = "package:someone-else"
+  fixture = { ...fixture, envelope: relisted }
+  const gone = (await setState({ sender: { id: 1 } }, { type: "mcp", name: "generic-bundle-remote", scope: "global", state: "enabled" })) as { ok: boolean; code?: string; reason?: string }
+  expect(gone.ok).toBe(false)
+  expect(gone.code).toBe("curation-unverifiable")
+  expect(gone.reason).toContain("delisted")
+  expect(cfg().mcp["generic-bundle-remote"].enabled).toBe(false)
+})

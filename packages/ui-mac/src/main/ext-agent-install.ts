@@ -16,6 +16,7 @@ import { isAbsolute, join } from "node:path"
 import { parse, type ParseError } from "jsonc-parser"
 import type { AppEnvironment } from "./alpha-environment"
 import type { InstallReceiptOrigin } from "../preload/types"
+import { isExtensionName } from "../shared/extension-name"
 import { agentMdToEntry } from "./agent-md-entry"
 import { readCasBlobVerified } from "./ext-cas"
 import type { CapabilityDiff } from "./ext-capability-grants"
@@ -33,7 +34,6 @@ import {
   type TxStage,
 } from "./ext-transaction"
 
-const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 /** 装约定(agent md 单文件 256KB 帽;builtin 采集器/下载层同帽)。 */
 export const AGENT_MD_MAX_BYTES = 256 * 1024
 /** 单顶层 .md(无目录分隔;agent 资产装约定)。 */
@@ -81,7 +81,7 @@ export function agentFileProbe(root: string): HealthProbe {
     if (!input.key.startsWith("agent--") || input.key.endsWith("--config"))
       return { healthy: false, reason: `no typed probe for file item "${input.key}" — refusing (fail closed)` }
     const name = input.key.slice("agent--".length)
-    if (!SAFE_NAME.test(name)) return { healthy: false, reason: `invalid agent key "${input.key}"` }
+    if (!isExtensionName(name)) return { healthy: false, reason: `invalid agent key "${input.key}"` }
     const readMd = (p: string | undefined, label: string): { ok: true; data: Buffer } | { ok: false; reason: string } => {
       if (!p) return { ok: false, reason: `agent "${name}": ${label} path missing from probe input` }
       try {
@@ -164,7 +164,7 @@ export type AgentSeedResult =
  * → 引擎回滚(md 恢复缺席/前像 + config 叶复原),receipt 与 live 永不背离(#354 同款 fail-closed)。
  */
 export async function installAgentFromCas(root: string, spec: AgentSeedInstall): Promise<AgentSeedResult> {
-  if (!SAFE_NAME.test(spec.name)) return { ok: false, reason: `invalid agent name: ${spec.name}` }
+  if (!isExtensionName(spec.name)) return { ok: false, reason: `invalid agent name: ${spec.name}` }
   // review r2 Minor:名称含 "--" 与事务 key 方案(agent--<name>[--config])歧义 —— 如名为
   // "foo--config" 的主 key 恰为 "foo" 的 config 副 item key,generic probe 无法区分。显式拒。
   if (spec.name.includes("--"))

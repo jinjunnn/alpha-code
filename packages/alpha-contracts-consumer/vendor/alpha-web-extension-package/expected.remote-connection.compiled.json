@@ -1,0 +1,102 @@
+{
+  "envelope": {
+    "capabilities": [
+      "alpha.connection.v1",
+      "alpha.secret-prerequisite.v1"
+    ],
+    "components": [
+      {
+        "capabilities": [
+          "alpha.connection.v1",
+          "alpha.secret-prerequisite.v1"
+        ],
+        "dependencies": [],
+        "id": "mcp:generic-remote-connection",
+        "payloadRef": {
+          "bytes": 425,
+          "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          "sha256": "5e49469f7faea02e6215d216031ab72427ee46897031e9ea15e61b3d690cd93c",
+          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote-connection/1.0.0/alpha-package/5e49469f7faea02e6215d216031ab72427ee46897031e9ea15e61b3d690cd93c.json"
+        },
+        "profileId": "mcp-remote",
+        "profileVersion": 1,
+        "required": true
+      }
+    ],
+    "prelude": {
+      "packageId": "package:generic-remote-connection",
+      "version": "1.0.0"
+    },
+    "presentation": {
+      "description": "Generic compiler corpus input with a host-owned Alpha Connection.",
+      "displayName": "Generic Remote MCP (Alpha Connection)"
+    },
+    "root": "mcp:generic-remote-connection",
+    "schema": "alpha.host-extension-package.v1"
+  },
+  "normalizedRecord": {
+    "components": [
+      {
+        "assetDirectory": "catalog-src/assets/mcp.generic-remote-connection/1.0.0",
+        "assetManifestSha256": null,
+        "capabilities": [
+          "alpha.connection.v1",
+          "alpha.secret-prerequisite.v1"
+        ],
+        "dependencies": [],
+        "id": "mcp:generic-remote-connection",
+        "payloadRef": {
+          "bytes": 425,
+          "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+          "sha256": "5e49469f7faea02e6215d216031ab72427ee46897031e9ea15e61b3d690cd93c",
+          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote-connection/1.0.0/alpha-package/5e49469f7faea02e6215d216031ab72427ee46897031e9ea15e61b3d690cd93c.json"
+        },
+        "profileId": "mcp-remote",
+        "profileVersion": 1,
+        "required": true,
+        "version": "1.0.0"
+      }
+    ],
+    "root": {
+      "compatibility": {
+        "reportSha256": "7e1eef8c8eba8c46bb6feb8c6dfab57b671b546d5302001d72bbac70ca96c963",
+        "verdict": "compatible"
+      },
+      "componentId": "mcp:generic-remote-connection",
+      "declarationSha256": "b4e243935100eb50e687c1f2aed347924eccd6e13827f8df7c27fd72a6340184",
+      "packageId": "package:generic-remote-connection",
+      "presentation": {
+        "description": "Generic compiler corpus input with a host-owned Alpha Connection.",
+        "displayName": "Generic Remote MCP (Alpha Connection)"
+      },
+      "source": {
+        "kind": "alpha-native",
+        "publisher": "official",
+        "redistributable": true
+      },
+      "version": "1.0.0"
+    },
+    "schema": "alpha.normalized-package-build-record.v1"
+  },
+  "payloads": {
+    "mcp:generic-remote-connection": {
+      "behavior": {
+        "auth": {
+          "connectionHandlerId": "generic-handler",
+          "kind": "alpha-connection",
+          "prerequisiteId": "generic-connection",
+          "required": false
+        },
+        "headersTemplate": {
+          "X-Tenant": "{TENANT_ID}"
+        },
+        "requiredSecrets": [
+          "TENANT_ID"
+        ],
+        "url": "https://connection.example.com/mcp"
+      },
+      "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+    }
+  },
+  "schema": "alpha.extension-package.compiled-vector.v1"
+}

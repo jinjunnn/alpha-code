@@ -15,12 +15,21 @@ import { randomUUID } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { applyEdits, format, modify, parse, type ParseError } from "jsonc-parser"
 import type { ProviderInput } from "../shared/alpha-model-types"
+import { isExtensionName } from "../shared/extension-name"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
-import { collectMcpFileRefPaths, gcMcpSecretVersionsLocked, pathIdentity, resolveMcpRefPath } from "./alpha-mcp-secrets"
-import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
+import {
+  collectMcpFileRefPaths,
+  gcMcpSecretVersionsLocked,
+  pathIdentity,
+  removeUnreferencedMcpSecretVersion,
+  resolveMcpRefPath,
+} from "./alpha-mcp-secrets"
+import type { TxPreparedResourceV1 } from "./ext-transaction"
+import { alphaGlobalRoot } from "./alpha-installs"
 import { findRecordV2 } from "./ext-receipt-v2"
 import { alphaJsoncPath } from "./engine-config-truth"
+import { sealEnginePluginAdditions } from "./engine-plugin-seal"
 import { commandHeadBase } from "./platform"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 
@@ -41,7 +50,6 @@ export function withConfigWriteLock<T>(fn: () => T): T | { ok: false; reason: st
   }
 }
 
-const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const SAFE_MCP_FIELDS = new Set([
   "type",
   "command",
@@ -249,10 +257,6 @@ function applyBuiltinPolicyEditsUnlocked(edits: BuiltinPolicyEdit[]): BuiltinPol
   }
 }
 
-function receiptsActive(): boolean {
-  return process.env.ALPHA_LEGACY_INSTALL_ROOT !== "1"
-}
-
 /** 纯校验(零写盘;REQ-102 #359 裁决 B:seed MCP 走 config action 时在 plan 生成前复用本门 ——
  *  ext-config-tx 只保证 JSONC/顶层键,命令头/inline-eval/URL/危险 env 的安全门在此)。 */
 export function validateServer(server: Record<string, unknown>): ConfigResult {
@@ -406,7 +410,26 @@ export function writeConfigLeafEditsUnlocked(
   return writeConfigTextAtomic(target, current, result)
 }
 
-function writeConfigTextAtomic(target: string, before: string, result: string): ConfigResult {
+/**
+ * 引擎 config 的**整文本原子提交**(挂咽喉的那一个)。`before` = 写之前盘上的 live 文本
+ * (文件缺席传 `""`/`"{}"`)。
+ *
+ * 导出是因为 `#832`:boot 期 reconcile 曾经自己 `writeFileSync(tmp)+rename` 写整个 `alpha.jsonc`,
+ * 于是它写什么都不过咽喉 —— 那是 ADR-040 记录在案的最后一个结构性绕开口。现在它调本函数。
+ *
+ * **不要把这句话读成「只剩这一个 config 写盘点」**(实读枚举过,那是假的)。不过本咽喉的还有四条,
+ * 各自靠**另一道**闸:`applyBuiltinPolicyEditsUnlocked`(本文件,自己的 tmp+rename)靠
+ * `builtinPolicyPathAllowed` 具名路径白名单;`alpha-config-injection` 只在真源缺席时 seed `{$schema}`;
+ * `alpha-migrate` 的 legacy 臂只做减法;**`ecosystem-import.ts` 的 `registerProjectSkillsPath`**
+ * 整文件写项目级 `<proj>/.alpha/alpha.jsonc`,而且**它自己没有任何白名单** —— 挡住 `plugin` 的是
+ * 另一个包里的 `mergeProjectConfig`(与同族的 `packages/ext/src/register.ts` 类型白名单)。
+ * 完整一栏与实测在 `engine-plugin-seal.ts` 抬头,改这一族之前先读那里。
+ */
+export function writeConfigTextAtomic(target: string, before: string, result: string): ConfigResult {
+  // ADR-040 咽喉:凡是「整份文本换一份」的写都收在这里(writeKey* / dangling 清扫 / boot reconcile),
+  // 所以「往 plugin[] 加元素一律拒」落在这一行 —— 这几条路上新增的写入调用点不需要登记就已经被挡住。
+  const sealed = sealEnginePluginAdditions(target, before, result)
+  if (!sealed.ok) return sealed
   const bak = `${target}.bak`
   const tmp = `${target}.tmp`
   try {
@@ -504,7 +527,7 @@ export function ensureGovernedMcpConnectTimeouts(
 
 /** Persist an MCP server under mcp[<name>] in the alpha-owned engine config file (durable) + receipt. */
 export function persistMcp(name: string, server: Record<string, unknown>, meta?: InstallMeta): ConfigResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
   if (!server || typeof server !== "object") return { ok: false, reason: "invalid server config" }
   const valid = validateServer(server)
   if (!valid.ok) return valid
@@ -520,7 +543,7 @@ export function persistMcp(name: string, server: Record<string, unknown>, meta?:
 /** 读 mcp.<name> 当前叶子(Codex review #355:orchestrator 失败补偿用精确 before-image ——
  *  不得用 removeMcp 全量卸载,那会误删既有配置/legacy/receipt)。不存在或不可读 → undefined。 */
 export function readMcpLeaf(name: string): Record<string, unknown> | undefined {
-  if (!SAFE_NAME.test(name)) return undefined
+  if (!isExtensionName(name)) return undefined
   try {
     const target = mcpPluginTargetPath()
     if (!fs.existsSync(target)) return undefined
@@ -537,7 +560,7 @@ export function readMcpLeaf(name: string): Record<string, unknown> | undefined {
 export function readMcpLeafStrict(
   name: string,
 ): { ok: true; value: Record<string, unknown> | undefined } | { ok: false; reason: string } {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
   const target = mcpPluginTargetPath()
   try {
     if (!fs.existsSync(target)) return { ok: true, value: undefined }
@@ -585,7 +608,7 @@ export function readAgentEntryStrict(
   name: string,
   targetPath?: string,
 ): { ok: true; present: boolean } | { ok: false; reason: string } {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid agent name" }
   const target = targetPath ?? mcpPluginTargetPath()
   try {
     if (!fs.existsSync(target)) return { ok: true, present: false }
@@ -600,14 +623,14 @@ export function readAgentEntryStrict(
 
 /** 恢复 mcp.<name> 到给定 before-image(undefined = 删除本次写入)。只动主配置该叶子。 */
 export function restoreMcpLeaf(name: string, value: Record<string, unknown> | undefined): ConfigResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
   return writeKey(mcpPluginTargetPath(), ["mcp", name], value)
 }
 
 /** #378 r7/r10:全部 legacy 源 mcp.<name> leaf 的 {file:} 引用集(各按其文件目录解析;
  *  语法/形状损坏或不可读 = 引用集不可信,strict 失败)。GC 与安装失败清理共用。 */
 export function collectLegacyMcpRefPathsStrict(name: string): { ok: true; refs: string[] } | { ok: false; reason: string } {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: `invalid server name: ${name}` }
+  if (!isExtensionName(name)) return { ok: false, reason: `invalid server name: ${name}` }
   const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
   const refs: string[] = []
   for (const file of legacyConfigPaths(mcpPluginTargetPath())) {
@@ -639,34 +662,98 @@ export function collectLegacyMcpRefPathsStrict(name: string): { ok: true; refs: 
  *  undefined = 零引用,会让 GC 把仍被引用的版本全删;读不出可信引用集就整轮安全退出,
  *  leaf 缺席(刚成功的安装不可能缺席)同样拒绝零引用清扫。 */
 export function gcMcpSecretsAgainstConfig(userDataPath: string, name: string): { removed: string[]; warnings: string[] } {
-  if (!SAFE_NAME.test(name)) return { removed: [], warnings: [`invalid server name: ${name}`] }
+  if (!isExtensionName(name)) return { removed: [], warnings: [`invalid server name: ${name}`] }
   const r = withConfigWriteLock(() => {
-    const leaf = readMcpLeafStrict(name)
-    if (!leaf.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${leaf.reason}`] }
-    if (leaf.value === undefined)
-      return { removed: [], warnings: [`secret gc skipped for ${name}: mcp leaf absent — refusing a zero-reference sweep`] }
-    // r4/r5 Major:引用集按引擎解析语义规范化(resolveMcpRefPath:先展开 ~/,再按 config
-    // 文件所在目录 resolve 相对)—— 任何等价形态被误判未引用都会删掉在用密钥。
-    const configDir = path.dirname(mcpPluginTargetPath())
-    const referenced = collectMcpFileRefPaths(leaf.value).map((p) => resolveMcpRefPath(p, configDir))
-    // r7 Blocker:引擎在主配置之后还合并 retained home(~/.opencode)/XDG 等 legacy 源 ——
-    // 其 mcp.<name> leaf 可能仍引用更旧的版本目录或 flat 密钥;引用集漏掉它们,GC 会删掉
-    // 合并视图仍在用的凭证。任一 legacy 源不可读/解析失败 = 引用集不可信,整轮安全退出。
-    const legacyRefs = collectLegacyMcpRefPathsStrict(name)
-    if (!legacyRefs.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${legacyRefs.reason}`] }
-    referenced.push(...legacyRefs.refs)
+    // #712:合并引用集(主 leaf + retained legacy,任一来源不可信即整体失败)抽进
+    // collectMergedMcpRefPathsStrict —— GC 与 prepared resource 释放消费同一份解析器。
+    // GC 额外要求 leaf 在场(刚成功的安装不可能缺席;缺席即拒绝零引用清扫)。
+    const merged = collectMergedMcpRefPathsStrict(name, { requireLeafPresent: true })
+    if (!merged.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${merged.reason}`] }
     // r8 Major:兄弟备份活体排除 —— 在册名读不出 = 引用集同源不可信,整轮安全退出。
     const live = listConfiguredMcpServerNamesStrict()
     if (!live.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${live.reason}`] }
     const liveNames = new Set(live.names)
-    return gcMcpSecretVersionsLocked(userDataPath, name, referenced, (cand) => liveNames.has(cand))
+    return gcMcpSecretVersionsLocked(userDataPath, name, merged.refs, (cand) => liveNames.has(cand))
   })
   return "removed" in r ? r : { removed: [], warnings: [r.reason] }
 }
 
+/**
+ * #712:**合并视图**的 `{file:}` 引用集 —— 主配置 `mcp.<name>` leaf(strict)+ 引擎随后合并的
+ * 全部 retained legacy 源(strict),各按其 config 文件所在目录以引擎解析语义归一
+ * (`~/` 展开 + 相对解析,resolveMcpRefPath)。任一来源不可读 / 语法损坏 / 形状异常 =
+ * 引用集不可信,整体失败 —— 调用方一律 fail-closed 不删。
+ *
+ * `requireLeafPresent`:GC 用(刚成功的安装不可能缺席,缺席即拒绝零引用清扫);
+ * prepared resource 释放**不用**——失败/回滚后 leaf 本就应当缺席,那正是可以释放的证据。
+ */
+export function collectMergedMcpRefPathsStrict(
+  name: string,
+  opts: { requireLeafPresent?: boolean } = {},
+): { ok: true; refs: string[] } | { ok: false; reason: string } {
+  if (!isExtensionName(name)) return { ok: false, reason: `invalid server name: ${name}` }
+  const leaf = readMcpLeafStrict(name)
+  if (!leaf.ok) return { ok: false, reason: leaf.reason }
+  if (opts.requireLeafPresent && leaf.value === undefined)
+    return { ok: false, reason: "mcp leaf absent — refusing a zero-reference sweep" }
+  // r4/r5 Major:引用集按引擎解析语义规范化(resolveMcpRefPath:先展开 ~/,再按 config
+  // 文件所在目录 resolve 相对)—— 任何等价形态被误判未引用都会删掉在用密钥。
+  const configDir = path.dirname(mcpPluginTargetPath())
+  const refs = collectMcpFileRefPaths(leaf.value).map((p) => resolveMcpRefPath(p, configDir))
+  // r7 Blocker:引擎在主配置之后还合并 retained home(~/.opencode)/XDG 等 legacy 源 ——
+  // 其 mcp.<name> leaf 可能仍引用更旧的版本目录或 flat 密钥;引用集漏掉它们就会删掉
+  // 合并视图仍在用的凭证。任一 legacy 源不可读/解析失败 = 引用集不可信,整体失败。
+  const legacy = collectLegacyMcpRefPathsStrict(name)
+  if (!legacy.ok) return legacy
+  refs.push(...legacy.refs)
+  return { ok: true, refs }
+}
+
+/**
+ * #712:释放一个**未提交事务准备的**密钥版本目录。合并视图仍引用它 / 任一来源不可读 /
+ * 路径身份不可判 → 一律保留(retained),绝不误删在用密钥。
+ *
+ * 不取任何锁:`withConfigWriteLock` 取的是与扩展事务**同一把**环境级 bundle 锁,而本函数的两个
+ * 调用点(事务失败路径、崩溃恢复)都已经持着它 —— 重取必然 busy。读侧全部走 strict 原语。
+ */
+export function releasePreparedMcpSecretVersion(
+  userDataPath: string,
+  server: string,
+  verId: string,
+): { ok: true; state: "removed" | "referenced" | "absent" } | { ok: false; reason: string } {
+  const merged = collectMergedMcpRefPathsStrict(server)
+  if (!merged.ok) return merged
+  return removeUnreferencedMcpSecretVersion(userDataPath, server, verId, merged.refs)
+}
+
+/**
+ * #712:prepared resource 释放接缝的**唯一**实现 —— 安装路径(`TxHooks.releasePrepared`)与崩溃
+ * 恢复(`RecoverOptions.releasePrepared`)共用,两处各写一份就会在「什么算仍被引用」上漂移。
+ *
+ * 未登记的 kind/store 一律拒绝:引擎不认识别人的 store 布局,更不许猜。任何一条没能释放(含
+ * 「仍被引用」)即抛错 —— 引擎把它如实收进 warnings / 恢复日志,资源保留在盘上等下一轮。
+ */
+export function releasePreparedTxResources(
+  userDataPath: string,
+  resources: readonly TxPreparedResourceV1[],
+): void {
+  const retained: string[] = []
+  for (const resource of resources) {
+    if (resource.kind !== "mcp-secret-version" || resource.store !== "alpha-mcp-secrets") {
+      retained.push(`no release seam for prepared resource "${String(resource.store)}/${String(resource.kind)}" — refused`)
+      continue
+    }
+    const released = releasePreparedMcpSecretVersion(userDataPath, resource.server, resource.version)
+    if (!released.ok) retained.push(`${resource.server}/${resource.version}: ${released.reason}`)
+    else if (released.state === "referenced")
+      retained.push(`${resource.server}/${resource.version}: still referenced by the merged config view — retained`)
+  }
+  if (retained.length > 0) throw new Error(retained.join("; "))
+}
+
 /** 读 agent.<name> 当前条目(writeAgent 覆盖/补偿用 before-image)。 */
 export function readAgentEntry(name: string, targetPath?: string): Record<string, unknown> | undefined {
-  if (!SAFE_NAME.test(name)) return undefined
+  if (!isExtensionName(name)) return undefined
   try {
     const target = targetPath ?? mcpPluginTargetPath()
     if (!fs.existsSync(target)) return undefined
@@ -681,13 +768,13 @@ export function readAgentEntry(name: string, targetPath?: string): Record<string
 /** REQ-059 T3b:agent 条目写 alpha.jsonc 的 agent.<name>(桥退役后引擎经 G1 见到全局 agent)。
  *  targetPath 可覆盖(项目分支写 <proj>/.alpha/alpha.jsonc);条目由 agent-md-entry 转换器产出。 */
 export function persistAgentEntry(name: string, entry: Record<string, unknown>, targetPath?: string): ConfigResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid agent name" }
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) return { ok: false, reason: "invalid agent entry" }
   return writeKey(targetPath ?? mcpPluginTargetPath(), ["agent", name], entry)
 }
 
 export function removeAgentEntry(name: string, targetPath?: string): ConfigResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid agent name" }
   return writeKey(targetPath ?? mcpPluginTargetPath(), ["agent", name], undefined)
 }
 
@@ -705,7 +792,7 @@ export function removeMcp(name: string): ConfigResult {
  *  removeMcpUnlocked 的两点差异:① 不做 removeReceipt;② legacy 文件存在但不可读/不可解析时
  *  fail-closed 返回失败(吞错继续会让「配置已净除」不可证明,后续密钥吊销/删账都失据)。 */
 export function removeMcpConfigInLock(name: string): ConfigResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
   const primary = writeKeyUnlocked(mcpPluginTargetPath(), ["mcp", name], undefined)
   if (!primary.ok) return primary
   for (const legacy of legacyConfigPaths(mcpPluginTargetPath())) {
@@ -735,7 +822,7 @@ export function removeMcpConfigInLock(name: string): ConfigResult {
   return { ok: true }
 }
 function removeMcpUnlocked(name: string): ConfigResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
   const primary = writeKeyUnlocked(mcpPluginTargetPath(), ["mcp", name], undefined)
   if (!primary.ok) return primary
   for (const legacy of legacyConfigPaths(mcpPluginTargetPath())) {
@@ -750,7 +837,8 @@ function removeMcpUnlocked(name: string): ConfigResult {
       /* unreadable legacy config → nothing to remove there */
     }
   }
-  if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "mcp", name)
+  // REQ-128 `#706`:账本副作用已从配置写器里删掉(v1 物理写器会抹掉 V3 的 packageGraphs/claims,
+  // 且发生在实物变更之后、返回值被忽略)。去账只归外层单点提交。
   return { ok: true }
 }
 
@@ -763,7 +851,7 @@ function removeMcpUnlocked(name: string): ConfigResult {
  * this id into enabled_providers before the renderer reconnects and refreshes model.list.
  */
 export function persistProvider(input: ProviderInput): ConfigResult {
-  if (!SAFE_NAME.test(input.id)) return { ok: false, reason: "invalid provider id" }
+  if (!isExtensionName(input.id)) return { ok: false, reason: "invalid provider id" }
   if (!input.name || typeof input.name !== "string") return { ok: false, reason: "missing provider name" }
   if (input.compat !== "openai" && input.compat !== "anthropic") return { ok: false, reason: "invalid compat" }
   if (!isAllowedUrl(input.baseURL)) return { ok: false, reason: "only https (or loopback http) base URLs are allowed" }
@@ -833,7 +921,7 @@ export function removeProvider(id: string): ConfigResult {
   return withConfigWriteLock(() => removeProviderUnlocked(id)) // 主文件+legacy 多写一把锁,不允许中途 busy 半删
 }
 function removeProviderUnlocked(id: string): ConfigResult {
-  if (!SAFE_NAME.test(id)) return { ok: false, reason: "invalid provider id" }
+  if (!isExtensionName(id)) return { ok: false, reason: "invalid provider id" }
   // Drop from the real source, and from any legacy source (XDG/~/.opencode) still carrying it during
   // the migration period — otherwise a stale copy would shadow-resurrect the provider on next reconnect.
   const primary = writeKeyUnlocked(providerTargetPath(), ["provider", id], undefined)
@@ -865,92 +953,10 @@ function pkgBase(spec: string): string {
 }
 
 
-/**
- * Append a plugin package to the config `plugin` array (SINGULAR — the key opencode's V1 schema
- * accepts; `plugins` would hard-fail the whole config). opencode auto-installs it from npm on next
- * launch. Idempotent; the caller should prompt for a restart (config is read at boot only).
- */
-/** Codex review #355:persist 必须回报真实变更 —— changed=false(恰同钉版已在)时调用方跳过落账
- *  (免虚增 generation);同 base 不同钉版一律显式拒绝(不许「配置不变、账本记新版」的谎)。 */
-export type PersistPluginResult =
-  | { ok: true; changed: boolean; projectedDisabled?: true }
-  | { ok: false; reason: string }
-
-export function persistPlugin(pkg: string, meta?: InstallMeta): PersistPluginResult {
-  return withConfigWriteLock(() => persistPluginUnlocked(pkg, meta)) // plugin[] 是跨读写 RMW,整函数持锁
-}
-function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginResult {
-  if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
-  // #395(Codex r5):未策展 npm 重加接入同一投影 —— 账本 disabled 的 plugin 条目必须保持缺席
-  // (引擎 import 早于 config-hook;写正常数组元素 = 确定性复活)。projectedDisabled 让调用方照常
-  // 刷账本(desiredState 当前策略优先,不翻),config 零写入,启用时按 configKey 补回。
-  const priorRecord = findRecordV2(alphaGlobalRoot(), "plugin", pluginRecordName(pkg))
-  const target = mcpPluginTargetPath()
-  const readPlugins = (file: string): unknown[] => {
-    try {
-      if (!fs.existsSync(file)) return []
-      const parsed = parse(fs.readFileSync(file, "utf8")) as { plugin?: unknown } | undefined
-      return Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
-    } catch {
-      return []
-    }
-  }
-  // opencode validates opencode.jsonc with its V1 schema, whose key is `plugin` (SINGULAR) —
-  // `plugins` is an unrecognized key and makes opencode hard-fail the ENTIRE config (breaking every
-  // session), see packages/core/src/v1/config/config.ts:56. Element shape is string | [string, opts].
-  // #395(Codex r5)步骤4:目标 config 读错误只容缺席 —— EACCES/EIO 当空数组会让下方 modify 以
-  // [pkg] 整替换既有 plugin[](clobber 其余条目);legacy XDG 侧保持容错(只用于幂等判重,读不出
-  // 顶多放行一个重复项,引擎合并侧去重)。
-  let current: unknown[]
-  try {
-    const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
-    current = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code
-    if (code !== "ENOENT" && code !== "ENOTDIR") return { ok: false, reason: `config unreadable (${code ?? String(e)}) — fail closed` }
-    current = []
-  }
-  const base = pkgBase(pkg)
-  const findIn = (list: unknown[]): string | undefined => {
-    for (const p of list) {
-      if (typeof p === "string" && pkgBase(p) === base) return p
-      if (Array.isArray(p) && typeof p[0] === "string" && pkgBase(p[0] as string) === base) return p[0] as string
-    }
-    return undefined
-  }
-  // idempotent across BOTH files: an entry still sitting in the legacy XDG config (pre-migration)
-  // must not be duplicated into the alpha file — the engine merges the two plugin arrays.
-  const existingMain = findIn(current)
-  const existingLegacy = target !== userConfigPath() ? findIn(readPlugins(userConfigPath())) : undefined
-  // #395(Codex r5/r6 M1 → r11 pivot):账本 disabled 的 plugin 重加 —— 只需保证从 alpha.jsonc plugin[]
-  // 缺席(无用户 = 无他源;plugin union 无覆盖面,alpha.jsonc 是唯一生效面)。主 config 残留旧钉版
-  // (换钉版 @x/p@1→@x/p@2 或崩溃残留)→ 移除该 base 全部条目(投影为缺席),changed;缺席 → 纯账本刷新。
-  if (priorRecord?.desiredState === "disabled") {
-    if (existingMain !== undefined) {
-      const next = current.filter((p) => {
-        const s = typeof p === "string" ? p : Array.isArray(p) && typeof p[0] === "string" ? (p[0] as string) : null
-        return s === null || pkgBase(s) !== base
-      })
-      const w = writeKeyUnlocked(target, ["plugin"], next)
-      if (!w.ok) return w
-      return { ok: true, changed: true, projectedDisabled: true }
-    }
-    return { ok: true, changed: false, projectedDisabled: true }
-  }
-  const existing = existingMain ?? existingLegacy
-  if (existing !== undefined) {
-    if (existing === pkg) return { ok: true, changed: false } // 恰同钉版 → 真幂等,调用方跳过落账
-    return { ok: false, reason: `plugin "${base}" already configured as "${existing}" — refusing silent version mismatch (requested "${pkg}")` }
-  }
-  // #354:eager v1 下线(v1 视图由 planner v2 upsert 锁步派生;未策展归 orchestrator)。
-  const written = writeKeyUnlocked(target, ["plugin"], [...current, pkg])
-  return written.ok ? { ok: true, changed: true } : written
-}
-
-/** plugin 的账本名(包名规范化;未策展 orchestrator 与 catalog 落账共用同一派生,防两套名)。 */
-export function pluginRecordName(pkg: string): string {
-  return pkgBase(pkg).replace(/^@/, "").replace("/", "__")
-}
+// ADR-040(`#825` 第 1 条):`persistPlugin` / `persistPluginUnlocked` / `pluginRecordName` /
+// `removePluginEntryExact` / `persistPluginPath` 全部随未策展 npm 导入通道退场 —— 它们的唯一
+// 存在理由是**往 plugin[] 追加元素**,而那件事本身已经不再合法(咽喉见 engine-plugin-seal.ts)。
+// `SAFE_PACKAGE` 与 `pkgBase` 留在上面:`removePlugin` 与 `findPluginBaseConflictStrict` 复用它们。
 
 /** plugin[] 成员的引擎合法形状(V1 schema:string 或恰 [string, Record])。 */
 function legalPluginEntry(x: unknown): boolean {
@@ -1052,24 +1058,6 @@ export function findPluginBaseConflictStrict(
   return { ok: true, existing: undefined }
 }
 
-/** Codex review #355:只撤销恰为本次写入的 plugin[] 元素(orchestrator 落账失败补偿)——
- *  不碰 legacy 文件、不碰 receipt、不碰同 base 其他元素(removePlugin 全量卸载会误删既有安装)。 */
-export function removePluginEntryExact(pkg: string): ConfigResult {
-  return withConfigWriteLock(() => {
-    const target = mcpPluginTargetPath()
-    try {
-      if (!fs.existsSync(target)) return { ok: true }
-      const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
-      const current: unknown[] = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
-      const next = current.filter((p) => p !== pkg)
-      if (next.length === current.length) return { ok: true }
-      return writeKeyUnlocked(target, ["plugin"], next)
-    } catch {
-      return { ok: false, reason: "failed to read config" }
-    }
-  })
-}
-
 /**
  * Remove a plugin package from config `plugin[]` (alpha-owned file + legacy XDG file, pre-migration)
  * and drop its receipt. Idempotent — absent package is a no-op success.
@@ -1104,42 +1092,13 @@ function removePluginUnlocked(pkg: string): ConfigResult {
     const r = dropFrom(legacy)
     if (!r.ok) return r
   }
-  if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "plugin", base.replace(/^@/, "").replace("/", "__"))
+  // REQ-128 `#706`:账本副作用已从配置写器里删掉(v1 物理写器会抹掉 V3 的 packageGraphs/claims,
+  // 且发生在实物变更之后、返回值被忽略)。去账只归外层单点提交。
   return { ok: true }
 }
 
-// ── REQ-023 T2:vendored 插件的绝对路径持久化(零网络通道) ──────────────────────────────────
-// 引擎 plugin[] 原生接受绝对路径(config/plugin.ts:42-60,与 @alpha-code/ext 注入同机制)。
-// 路径必须位于当前环境的 plugins 树内(装载面收敛:不能把任意本机 JS 喂进引擎进程)。
-
-function underAlphaPlugins(absPath: string): boolean {
-  const root = path.join(alphaGlobalRoot(), "plugins")
-  const resolved = path.resolve(absPath)
-  return resolved.startsWith(root + path.sep)
-}
-
-export function persistPluginPath(name: string, absJsPath: string, files: string[], meta?: InstallMeta): ConfigResult {
-  return withConfigWriteLock(() => persistPluginPathUnlocked(name, absJsPath, files, meta))
-}
-function persistPluginPathUnlocked(name: string, absJsPath: string, files: string[], meta?: InstallMeta): ConfigResult {
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name)) return { ok: false, reason: "invalid plugin name" }
-  if (!path.isAbsolute(absJsPath) || !absJsPath.endsWith(".js") || !underAlphaPlugins(absJsPath))
-    return { ok: false, reason: "refused: plugin path outside the current environment plugins root" }
-  const target = mcpPluginTargetPath()
-  const read = (): unknown[] => {
-    try {
-      if (!fs.existsSync(target)) return []
-      const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
-      return Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
-    } catch {
-      return []
-    }
-  }
-  const current = read()
-  if (current.some((p) => p === absJsPath)) return { ok: true } // idempotent
-  // #354:eager v1 下线(同 persistPluginUnlocked;v1 视图由 planner v2 upsert 锁步派生)。
-  return writeKeyUnlocked(target, ["plugin"], [...current, absJsPath])
-}
+// ── REQ-023 T2 的 vendored 绝对路径**写入**通道随 ADR-040 退场;卸载侧(removePluginPath)保留 ──
+// 引擎 plugin[] 原生接受绝对路径(config/plugin.ts:42-60)。写入不再合法,移除仍是清理方向。
 
 export function removePluginPath(name: string, absJsPath: string): ConfigResult {
   return withConfigWriteLock(() => removePluginPathUnlocked(name, absJsPath))
@@ -1207,7 +1166,8 @@ function removePluginPathUnlocked(name: string, absJsPath: string): ConfigResult
       return { ok: false, reason: `config unreadable (fail closed): ${file}: ${error instanceof Error ? error.message : String(error)}` }
     }
   }
-  if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "plugin", name)
+  // REQ-128 `#706`:账本副作用已从配置写器里删掉(v1 物理写器会抹掉 V3 的 packageGraphs/claims,
+  // 且发生在实物变更之后、返回值被忽略)。去账只归外层单点提交。
   return { ok: true }
 }
 

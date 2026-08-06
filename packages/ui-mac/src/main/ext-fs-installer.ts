@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url"
 import { opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
 import { agentMdToEntry } from "./agent-md-entry"
 import { persistAgentEntry, readAgentEntry, readAgentEntryStrict, removeAgentEntry } from "./ext-config"
-import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
+import { alphaGlobalRoot } from "./alpha-installs"
 import { tryGetAlphaEnvironment } from "./alpha-environment"
 import { projectScopeIdentity, type ScopeIdentity } from "./ext-receipt-v2"
 import { checkUncuratedConflict, recordUncuratedInstall, type UncuratedOrigin } from "./ext-uncurated-record"
@@ -26,10 +26,9 @@ import { alphaRoot, ensureAlphaScaffold } from "./alpha-workdir"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
 import { parseSkillFrontmatter, validGitUrl } from "./ext-import-validate"
 import { collectSkillPayloadFromDir } from "./ext-skill-generations"
+import { isExtensionName } from "../shared/extension-name"
 
 export type FsResult = { ok: true; files?: string[] } | { ok: false; reason: string }
-
-const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 
 function opencodeConfigDir(): string {
   // REQ-017:与 ext-config.userConfigDir / 上游 core/global.ts 同规则(OPENCODE_CONFIG_DIR >
@@ -141,7 +140,7 @@ export function writeSkill(
   target?: InstallTarget,
   meta?: InstallMeta,
 ): FsResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid skill name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid skill name" }
   const content = `---\nname: ${name}\ndescription: ${oneLine(description) || name}\n---\n\n${body || ""}\n`
   if (legacyRootActive()) {
     return legacyWrite("skills", name, (dir) => {
@@ -195,7 +194,7 @@ export function writeSkill(
  *  见到 agent,不再造 `.opencode` 桥(不变量:任何层级零 `.opencode`)。md 文件仍写盘 = 内容真源/人读;
  *  编辑文件不生效(诚实边界:改 agent 走重装/hub)。项目 target 同构(条目写 <proj>/.alpha/alpha.jsonc)。 */
 export function writeAgent(name: string, content: string, target?: InstallTarget, meta?: InstallMeta, origin?: InstallReceipt["origin"]): FsResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid agent name" }
   const normalized = content.endsWith("\n") ? content : `${content}\n`
   if (legacyRootActive()) {
     return legacyWrite("agent", name, (dir) => {
@@ -268,9 +267,15 @@ export function resourcesRoot(): string {
 
 // builtinAssetKey is author-controlled (the catalog), but validate it anyway so a bad entry can't
 // escape the resources tree. skills/<dir> · agents/<name>.md · plugins/<dir>(REQ-023)。
-const SAFE_ASSET_KEY = /^skills\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
-const SAFE_AGENT_ASSET_KEY = /^agents\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}\.md$/
-const SAFE_PLUGIN_ASSET_KEY = /^plugins\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
+function isExtensionAssetKey(
+  value: string,
+  directory: "skills" | "agents" | "plugins",
+  extension = "",
+): boolean {
+  const prefix = `${directory}/`
+  if (!value.startsWith(prefix) || !value.endsWith(extension)) return false
+  return isExtensionName(value.slice(prefix.length, extension ? -extension.length : undefined))
+}
 
 /**
  * Read a bundled builtin skill's SKILL.md for the detail page (REQ-019 T3). Read-only, key
@@ -278,8 +283,9 @@ const SAFE_PLUGIN_ASSET_KEY = /^plugins\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
  * bundled in this build (same wording as install).
  */
 export function readBuiltinSkill(builtinAssetKey: string): { ok: true; content: string } | { ok: false; reason: string } {
-  const isAgent = SAFE_AGENT_ASSET_KEY.test(builtinAssetKey)
-  if (!isAgent && !SAFE_ASSET_KEY.test(builtinAssetKey)) return { ok: false, reason: "invalid asset key" }
+  const isAgent = isExtensionAssetKey(builtinAssetKey, "agents", ".md")
+  if (!isAgent && !isExtensionAssetKey(builtinAssetKey, "skills"))
+    return { ok: false, reason: "invalid asset key" }
   const file = isAgent
     ? path.join(resourcesRoot(), builtinAssetKey)
     : path.join(resourcesRoot(), builtinAssetKey, "SKILL.md")
@@ -303,8 +309,8 @@ export function installBuiltinSkill(
   target?: InstallTarget,
   meta?: InstallMeta,
 ): FsResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid skill name" }
-  if (!SAFE_ASSET_KEY.test(builtinAssetKey)) return { ok: false, reason: "invalid asset key" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid skill name" }
+  if (!isExtensionAssetKey(builtinAssetKey, "skills")) return { ok: false, reason: "invalid asset key" }
   const srcDir = path.join(resourcesRoot(), builtinAssetKey)
   if (!fs.existsSync(path.join(srcDir, "SKILL.md"))) {
     return { ok: false, reason: "技能内容未随此版本打包" }
@@ -340,7 +346,7 @@ export function installRemoteSkill(
   target?: InstallTarget,
   meta?: InstallMeta,
 ): FsResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid skill name" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid skill name" }
   const skillMd = contents.find((c) => c.path === "SKILL.md")
   if (!skillMd) return { ok: false, reason: "asset missing SKILL.md" }
   // codex M4:引擎以 frontmatter name 为技能真名 —— 必须与 catalog entry.name 一致,否则装进安全
@@ -386,12 +392,29 @@ function resolveRootsReadonly(target: InstallTarget | undefined): Roots | { erro
 }
 
 /**
- * Uninstall a skill/agent: remove its truth dir/file under .alpha, unbridge its .opencode link, and
- * drop the receipt. Legacy installs (ALPHA_LEGACY_INSTALL_ROOT era, no bridge/receipt) are removed
- * from the old XDG root by name. Missing target = already-gone success (idempotent).
+ * Uninstall a skill/agent: remove its truth dir/file under .alpha and unbridge its .opencode link.
+ * REQ-128 `#706`:**不动账本** —— 去账只归外层单点提交。Legacy installs
+ * (ALPHA_LEGACY_INSTALL_ROOT era, no bridge/receipt) are removed from the old XDG root by name.
+ * Missing target = already-gone success (idempotent).
  */
+/**
+ * `#698`(review R2 Blocker 1):**只删内容文件,绝不碰配置**。
+ *
+ * update 路径把离场 child 的 `agent.<name>` 配置删除交给了事务自己的 config item(在引擎的锁与
+ * before-image 回滚体系内)。剩下的内容文件必须在事务**返回之后**清理,而那一步绝不能再去取
+ * 配置写锁 —— `withConfigWriteLock` 与事务共用同一把非重入的 bundle 锁。走这个入口,重入在
+ * **构造上**不可能发生,而不是靠调用方记得。
+ */
+export function removeFsInstallFilesOnly(type: "skill" | "agent", name: string, target?: InstallTarget): FsResult {
+  return removeFsInstallImpl(type, name, target, true)
+}
+
 export function removeFsInstall(type: "skill" | "agent", name: string, target?: InstallTarget): FsResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid name" }
+  return removeFsInstallImpl(type, name, target, false)
+}
+
+function removeFsInstallImpl(type: "skill" | "agent", name: string, target: InstallTarget | undefined, filesOnly: boolean): FsResult {
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid name" }
   const removed: string[] = []
   // legacy XDG location (best-effort, pre-migration installs)
   const legacyRoot = opencodeConfigDir()
@@ -411,7 +434,8 @@ export function removeFsInstall(type: "skill" | "agent", name: string, target?: 
   // REQ-059 T3b:agent 条目净除(alpha.jsonc 的 agent.<name>;存量桥装的 agent 无条目 → no-op 幂等)。
   // Codex review #351:配置删除(可因配置写锁 busy 失败)必须在删内容文件**之前**——否则 busy 会把
   // 操作报失败却已不可逆地拆掉真源文件(半拆态)。
-  if (type === "agent") {
+  // filesOnly:配置那一半已由调用方以事务 config item 的形式处理(见 removeFsInstallFilesOnly)。
+  if (type === "agent" && !filesOnly) {
     const entryTarget = roots.scope === "project" ? path.join(roots.alphaDir, "alpha.jsonc") : undefined
     const r = removeAgentEntry(name, entryTarget)
     if (!r.ok) return { ok: false, reason: `agent config entry removal failed: ${r.reason}` }
@@ -425,7 +449,11 @@ export function removeFsInstall(type: "skill" | "agent", name: string, target?: 
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to remove" }
   }
-  removeReceipt(roots.alphaDir, type, name)
+  // REQ-128 `#706`:这里**不再**碰账本。原先内层 `removeReceipt` 有两个真问题:
+  //   ① 它走的是 v1 物理写器,会把账本重写成 v:2 —— V3 的 packageGraphs/claims 静默蒸发;
+  //   ② 它在删完实物之后跑、返回值被忽略 —— 账本拒写时用户看到「卸载失败」而东西已经没了。
+  // 账本只由外层单点提交(uninstallByKey / 恢复期的 commitUninstall),claim-aware 判决则在
+  // 删任何实物之前就做完(planDirectUninstall)。
   return { ok: true, files: removed }
 }
 
@@ -434,10 +462,18 @@ export function removeFsInstall(type: "skill" | "agent", name: string, target?: 
 // 绝不执行导入内容;git 先浅克隆到临时目录、校验通过才入 .alpha;symlink 一律不跟随不复制。
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
-const IMPORT_MAX_TOTAL = 10 * 1024 * 1024 // 整个技能目录 10MB 帽
-const IMPORT_MAX_ENTRIES = 500
+/** **单个技能目录**的体积/条数帽。导出的理由(REQ-128 `#782`):包级预算必须**夹在**
+ *  这两个数与事务真界之间 —— 包帽低于单技能帽,一个单技能插件就会比直接导入同一个技能
+ *  更容易被拒(拿闸门制造回归)。那条关系写在注释里只是散文,导出之后它是一条可跑的断言。 */
+export const IMPORT_MAX_TOTAL = 10 * 1024 * 1024 // 整个技能目录 10MB 帽
+export const IMPORT_MAX_ENTRIES = 500
 const SKILL_MD_MAX = 256 * 1024
 
+
+/** collector 静默跳过的目录名。**唯一真源** —— REQ-128 Phase 3(基线 §14 R2-a)的 intake
+ *  用同一份做具名 preview 拒绝:collector 必定跳过它们,而独立 lstat 扫描看得见 ⇒ 两处各写一份
+ *  就是「手写替身」,一旦漂移就出现「预览接受、装完缺件」。改这里 = 同时改判定与采集。 */
+export const IMPORT_EXCLUDED_DIR_NAMES: readonly string[] = [".git", "node_modules", "__pycache__"]
 
 // 递归收集可复制文件(拒 symlink、跳 .git/node_modules、计数与体积帽)。返回相对路径列表。
 function collectImportFiles(srcDir: string): { ok: true; files: string[] } | { ok: false; reason: string } {
@@ -447,7 +483,7 @@ function collectImportFiles(srcDir: string): { ok: true; files: string[] } | { o
     const abs = path.join(srcDir, rel)
     const entries = fs.readdirSync(abs, { withFileTypes: true })
     for (const entry of entries) {
-      if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "__pycache__") continue
+      if (IMPORT_EXCLUDED_DIR_NAMES.includes(entry.name)) continue
       const childRel = rel ? path.join(rel, entry.name) : entry.name
       if (entry.isSymbolicLink()) continue // 不跟随、不复制(防逃逸/防内容偷换)
       if (entry.isDirectory()) {
@@ -475,7 +511,7 @@ function collectImportFiles(srcDir: string): { ok: true; files: string[] } | { o
 /** #390:未策展技能导入 byte-exact 单文件读 —— realpath 圈禁(父目录 symlink 逃逸)+ O_NOFOLLOW
  *  开(末段 symlink 换内容)+ fstat 前置帽 + 定长读 + 增长探测(帽/身份都以实际字节为准,不信 walk 期
  *  stat 快照;review r1 Major 3/4)。data.length 即最终帽依据,调用方据此累计真实总量。 */
-function readImportFileBounded(
+export function readImportFileBounded(
   abs: string,
   realBase: string,
   capBytes: number,
@@ -756,7 +792,7 @@ export async function importSkillGit(url: string, target?: InstallTarget): Promi
  *  走事务载体,本函数只剩锁外快速拒用途(锁内权威门 = planner 的 agentFreshGate)。
  *  解析失败按在场处理(fail-closed)。 */
 export function agentInstallPresent(name: string, target?: InstallTarget): boolean {
-  if (!SAFE_NAME.test(name)) return true
+  if (!isExtensionName(name)) return true
   const roots = resolveRoots(target)
   if ("error" in roots) return true
   const dir = safeResolveUnder(roots.alphaDir, "agents")
@@ -782,8 +818,8 @@ export function collectBuiltinAgentPayload(
   builtinAssetKey: string,
   name: string,
 ): { ok: true; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string } {
-  if (!SAFE_AGENT_ASSET_KEY.test(builtinAssetKey)) return { ok: false, reason: "invalid asset key" }
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  if (!isExtensionAssetKey(builtinAssetKey, "agents", ".md")) return { ok: false, reason: "invalid asset key" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid agent name" }
   if (builtinAssetKey !== `agents/${name}.md`)
     return { ok: false, reason: `asset key "${builtinAssetKey}" ≠ "agents/${name}.md" — refusing (content identity drift)` }
   const file = path.join(resourcesRoot(), builtinAssetKey)
@@ -862,8 +898,8 @@ export function stageVendoredPluginVersioned(
   // (两次独立收集之间源变化会提交「载荷 B + digest A」,内容身份断链)。缺省自收集。
   precollected?: Array<{ path: string; data: Buffer }>,
 ): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string } {
-  if (!SAFE_PLUGIN_ASSET_KEY.test(vendoredAssetKey)) return { ok: false, reason: "invalid asset key" }
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid plugin name" }
+  if (!isExtensionAssetKey(vendoredAssetKey, "plugins")) return { ok: false, reason: "invalid asset key" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid plugin name" }
   let files: Array<{ path: string; data: Buffer }>
   if (precollected) files = precollected
   else {
@@ -925,8 +961,8 @@ export function collectVendoredPluginPayload(
   vendoredAssetKey: string,
   name: string,
 ): { ok: true; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string } {
-  if (!SAFE_PLUGIN_ASSET_KEY.test(vendoredAssetKey)) return { ok: false, reason: "invalid asset key" }
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid plugin name" }
+  if (!isExtensionAssetKey(vendoredAssetKey, "plugins")) return { ok: false, reason: "invalid asset key" }
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid plugin name" }
   // #378 r5(Major):内容身份交叉(#361 agent 同款)—— 已验签但配错的 entry 不得把别的资产
   // 目录按本 plugin 的名称/账本身份/capability grant 装入运行。
   if (vendoredAssetKey !== `plugins/${name}`)

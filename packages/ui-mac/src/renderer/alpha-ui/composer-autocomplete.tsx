@@ -308,7 +308,7 @@ export function createComposerAutocomplete(opts: {
         ? `${itemIdentity(it)}:${it.on}`
         : itemIdentity(it)
   const optionId = (item: Item) => `${listboxId}-option-${encodeURIComponent(itemIdentity(item))}`
-  const itemsSig = createMemo(() => items().map(itemKey).join(" "))
+  const itemsSig = createMemo(() => items().map(itemKey).join("\u0000"))
   createEffect(on(itemsSig, () => setActive(0)))
 
   // 空态可见(根因③,两菜单同语义):有查询 + 零命中 → 菜单保留显示「无匹配」,不再闪没。

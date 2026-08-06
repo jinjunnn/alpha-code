@@ -1,6 +1,25 @@
 {
   "cases": [
     {
+      "components": [
+        {
+          "id": "skill:skill-v1",
+          "payload": {
+            "behavior": {
+              "files": [
+                {
+                  "bytes": 12,
+                  "path": "SKILL.md",
+                  "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                  "url": "https://example.invalid/assets/skill/SKILL.md"
+                }
+              ],
+              "targetDir": "alpha-skills"
+            },
+            "schema": "alpha.host-extension-package.payload.skill.v1"
+          }
+        }
+      ],
       "envelope": {
         "capabilities": [],
         "components": [
@@ -9,10 +28,10 @@
             "dependencies": [],
             "id": "skill:skill-v1",
             "payloadRef": {
-              "bytes": 333,
+              "bytes": 353,
               "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
-              "url": "https://example.invalid/packages/skill.json"
+              "sha256": "5994ae82b68a8ae487d4cb6434bea3d3063c2dac048ff6e95ef416453e48269f",
+              "url": "https://example.invalid/packages/skill/skill-v1.json"
             },
             "profileId": "skill",
             "profileVersion": 1,
@@ -20,31 +39,103 @@
           }
         ],
         "prelude": {
-          "packageId": "skill:skill-v1",
+          "packageId": "package:skill-v1",
           "version": "1.0.0"
         },
         "presentation": {
-          "description": "Synthetic skill decoder case",
+          "description": "Synthetic skill-v1 decoder case",
           "displayName": "skill-v1"
         },
+        "root": "skill:skill-v1",
         "schema": "alpha.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "skill-v1",
-      "payload": {
-        "behavior": {
-          "asset": {
-            "bytes": 12,
-            "mediaType": "text/markdown",
-            "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
-            "url": "https://example.invalid/assets/skill.md"
-          },
-          "targetDir": "alpha-skills"
-        },
-        "schema": "alpha.host-extension-package.payload.skill.v1"
-      }
+      "skipped": []
     },
     {
+      "components": [
+        {
+          "id": "skill:skill-multifile-v1",
+          "payload": {
+            "behavior": {
+              "files": [
+                {
+                  "bytes": 12,
+                  "path": "SKILL.md",
+                  "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                  "url": "https://example.invalid/assets/skill-multifile/SKILL.md"
+                },
+                {
+                  "bytes": 34,
+                  "path": "reference/guide.md",
+                  "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+                  "url": "https://example.invalid/assets/skill-multifile/reference/guide.md"
+                },
+                {
+                  "bytes": 56,
+                  "path": "scripts/run.py",
+                  "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+                  "url": "https://example.invalid/assets/skill-multifile/scripts/run.py"
+                }
+              ],
+              "targetDir": "alpha-skills"
+            },
+            "schema": "alpha.host-extension-package.payload.skill.v1"
+          }
+        }
+      ],
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "skill:skill-multifile-v1",
+            "payloadRef": {
+              "bytes": 845,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "e1b27cdad2eda3060a9bd476dd0e8239c6bf0d008b18c80beeaa6e52bf877ee5",
+              "url": "https://example.invalid/packages/skill/skill-multifile-v1.json"
+            },
+            "profileId": "skill",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "package:skill-multifile-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic skill-multifile-v1 decoder case",
+          "displayName": "skill-multifile-v1"
+        },
+        "root": "skill:skill-multifile-v1",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "skill-multifile-v1",
+      "skipped": []
+    },
+    {
+      "components": [
+        {
+          "id": "agent:agent-v1",
+          "payload": {
+            "behavior": {
+              "asset": {
+                "bytes": 12,
+                "mediaType": "text/markdown",
+                "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+                "url": "https://example.invalid/assets/agent.md"
+              },
+              "targetDir": "alpha-agents"
+            },
+            "schema": "alpha.host-extension-package.payload.agent.v1"
+          }
+        }
+      ],
       "envelope": {
         "capabilities": [],
         "components": [
@@ -56,7 +147,7 @@
               "bytes": 333,
               "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
               "sha256": "c11476758739f16a6d8dd061635241ed4a6c102343f235e46cfd7a7b0faa0f73",
-              "url": "https://example.invalid/packages/agent.json"
+              "url": "https://example.invalid/packages/agent/agent-v1.json"
             },
             "profileId": "agent",
             "profileVersion": 1,
@@ -64,31 +155,39 @@
           }
         ],
         "prelude": {
-          "packageId": "agent:agent-v1",
+          "packageId": "package:agent-v1",
           "version": "1.0.0"
         },
         "presentation": {
-          "description": "Synthetic agent decoder case",
+          "description": "Synthetic agent-v1 decoder case",
           "displayName": "agent-v1"
         },
+        "root": "agent:agent-v1",
         "schema": "alpha.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "agent-v1",
-      "payload": {
-        "behavior": {
-          "asset": {
-            "bytes": 12,
-            "mediaType": "text/markdown",
-            "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
-            "url": "https://example.invalid/assets/agent.md"
-          },
-          "targetDir": "alpha-agents"
-        },
-        "schema": "alpha.host-extension-package.payload.agent.v1"
-      }
+      "skipped": []
     },
     {
+      "components": [
+        {
+          "id": "mcp-local:mcp-local-v1",
+          "payload": {
+            "behavior": {
+              "command": [
+                "bunx",
+                "example-mcp"
+              ],
+              "environment": {},
+              "requiredSecrets": [
+                "API_KEY"
+              ]
+            },
+            "schema": "alpha.host-extension-package.payload.mcp-local.v1"
+          }
+        }
+      ],
       "envelope": {
         "capabilities": [
           "alpha.secret-prerequisite.v1"
@@ -104,7 +203,7 @@
               "bytes": 217,
               "mediaType": "application/vnd.alpha.host-extension-package.mcp-local.v1+json",
               "sha256": "b730d0942cb431283ccd50a0541acb0724242efca764111938a87adf9c55d14c",
-              "url": "https://example.invalid/packages/mcp-local.json"
+              "url": "https://example.invalid/packages/mcp-local/mcp-local-v1.json"
             },
             "profileId": "mcp-local",
             "profileVersion": 1,
@@ -112,32 +211,35 @@
           }
         ],
         "prelude": {
-          "packageId": "mcp-local:mcp-local-v1",
+          "packageId": "package:mcp-local-v1",
           "version": "1.0.0"
         },
         "presentation": {
-          "description": "Synthetic mcp-local decoder case",
+          "description": "Synthetic mcp-local-v1 decoder case",
           "displayName": "mcp-local-v1"
         },
+        "root": "mcp-local:mcp-local-v1",
         "schema": "alpha.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "mcp-local-v1",
-      "payload": {
-        "behavior": {
-          "command": [
-            "bunx",
-            "example-mcp"
-          ],
-          "environment": {},
-          "requiredSecrets": [
-            "API_KEY"
-          ]
-        },
-        "schema": "alpha.host-extension-package.payload.mcp-local.v1"
-      }
+      "skipped": []
     },
     {
+      "components": [
+        {
+          "id": "mcp-remote:mcp-remote-v1",
+          "payload": {
+            "behavior": {
+              "auth": "none",
+              "headersTemplate": {},
+              "requiredSecrets": [],
+              "url": "https://mcp.example.invalid/service"
+            },
+            "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+          }
+        }
+      ],
       "envelope": {
         "capabilities": [],
         "components": [
@@ -149,7 +251,7 @@
               "bytes": 213,
               "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
               "sha256": "765cc8b1de58b6dfe528fab55742f59dce1daf82457bd5cbdcff87679da90b96",
-              "url": "https://example.invalid/packages/mcp-remote.json"
+              "url": "https://example.invalid/packages/mcp-remote/mcp-remote-v1.json"
             },
             "profileId": "mcp-remote",
             "profileVersion": 1,
@@ -157,40 +259,159 @@
           }
         ],
         "prelude": {
-          "packageId": "mcp-remote:mcp-remote-v1",
+          "packageId": "package:mcp-remote-v1",
           "version": "1.0.0"
         },
         "presentation": {
-          "description": "Synthetic mcp-remote decoder case",
+          "description": "Synthetic mcp-remote-v1 decoder case",
           "displayName": "mcp-remote-v1"
         },
+        "root": "mcp-remote:mcp-remote-v1",
         "schema": "alpha.host-extension-package.v1"
       },
       "expect": "accepted",
       "name": "mcp-remote-v1",
-      "payload": {
-        "behavior": {
-          "auth": "none",
-          "headersTemplate": {},
-          "requiredSecrets": [],
-          "url": "https://mcp.example.invalid/service"
-        },
-        "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
-      }
+      "skipped": []
     },
     {
+      "components": [
+        {
+          "id": "mcp-remote:mcp-remote-oauth-v1",
+          "payload": {
+            "behavior": {
+              "auth": {
+                "kind": "mcp-oauth",
+                "prerequisiteId": "example-oauth",
+                "required": true
+              },
+              "headersTemplate": {
+                "X-Tenant": "{TENANT_ID}"
+              },
+              "requiredSecrets": [
+                "TENANT_ID"
+              ],
+              "url": "https://mcp.example.invalid/service"
+            },
+            "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+          }
+        }
+      ],
+      "envelope": {
+        "capabilities": [
+          "alpha.mcp-oauth.v1",
+          "alpha.secret-prerequisite.v1"
+        ],
+        "components": [
+          {
+            "capabilities": [
+              "alpha.mcp-oauth.v1",
+              "alpha.secret-prerequisite.v1"
+            ],
+            "dependencies": [],
+            "id": "mcp-remote:mcp-remote-oauth-v1",
+            "payloadRef": {
+              "bytes": 365,
+              "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+              "sha256": "b85ce4562d9a9b985a2fe870c705bc56a70af3434abd9a3c267a4c665b8f7390",
+              "url": "https://example.invalid/packages/mcp-remote/mcp-remote-oauth-v1.json"
+            },
+            "profileId": "mcp-remote",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "package:mcp-remote-oauth-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic mcp-remote-oauth-v1 decoder case",
+          "displayName": "mcp-remote-oauth-v1"
+        },
+        "root": "mcp-remote:mcp-remote-oauth-v1",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "mcp-remote-oauth-v1",
+      "skipped": []
+    },
+    {
+      "components": [
+        {
+          "id": "mcp-remote:mcp-remote-connection-v1",
+          "payload": {
+            "behavior": {
+              "auth": {
+                "connectionHandlerId": "alpha-example",
+                "kind": "alpha-connection",
+                "label": "Alpha Example Connection",
+                "prerequisiteId": "example-connection",
+                "required": true
+              },
+              "headersTemplate": {},
+              "requiredSecrets": [],
+              "url": "https://mcp.example.invalid/service"
+            },
+            "schema": "alpha.host-extension-package.payload.mcp-remote.v1"
+          }
+        }
+      ],
+      "envelope": {
+        "capabilities": [
+          "alpha.connection.v1"
+        ],
+        "components": [
+          {
+            "capabilities": [
+              "alpha.connection.v1"
+            ],
+            "dependencies": [],
+            "id": "mcp-remote:mcp-remote-connection-v1",
+            "payloadRef": {
+              "bytes": 406,
+              "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+              "sha256": "91313dea25562d991d63ca58ec5e3d23a2779629fd2c4bd63b89de8783772a6e",
+              "url": "https://example.invalid/packages/mcp-remote/mcp-remote-connection-v1.json"
+            },
+            "profileId": "mcp-remote",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "package:mcp-remote-connection-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic mcp-remote-connection-v1 decoder case",
+          "displayName": "mcp-remote-connection-v1"
+        },
+        "root": "mcp-remote:mcp-remote-connection-v1",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "mcp-remote-connection-v1",
+      "skipped": []
+    },
+    {
+      "components": [
+        {
+          "id": "skill:unknown-profile",
+          "payload": null
+        }
+      ],
       "envelope": {
         "capabilities": [],
         "components": [
           {
             "capabilities": [],
             "dependencies": [],
-            "id": "skill:skill-v1",
+            "id": "skill:unknown-profile",
             "payloadRef": {
-              "bytes": 333,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
-              "url": "https://example.invalid/packages/skill.json"
+              "bytes": 3,
+              "mediaType": "application/vnd.alpha.host-extension-package.future.v1+json",
+              "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+              "url": "https://example.invalid/packages/skill/unknown-profile.json"
             },
             "profileId": "future",
             "profileVersion": 1,
@@ -198,53 +419,27 @@
           }
         ],
         "prelude": {
-          "packageId": "skill:skill-v1",
+          "packageId": "package:unknown-profile-required",
           "version": "1.0.0"
         },
         "presentation": {
-          "description": "Synthetic skill decoder case",
-          "displayName": "skill-v1"
+          "description": "Synthetic unknown-profile-required decoder case",
+          "displayName": "unknown-profile-required"
         },
+        "root": "skill:unknown-profile",
         "schema": "alpha.host-extension-package.v1"
       },
       "expect": "blocked",
       "name": "unknown-profile-required",
-      "payload": null
+      "skipped": []
     },
     {
-      "envelope": {
-        "capabilities": [],
-        "components": [
-          {
-            "capabilities": [],
-            "dependencies": [],
-            "id": "skill:skill-v1",
-            "payloadRef": {
-              "bytes": 333,
-              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
-              "url": "https://example.invalid/packages/skill.json"
-            },
-            "profileId": "future",
-            "profileVersion": 1,
-            "required": false
-          }
-        ],
-        "prelude": {
-          "packageId": "skill:skill-v1",
-          "version": "1.0.0"
-        },
-        "presentation": {
-          "description": "Synthetic skill decoder case",
-          "displayName": "skill-v1"
-        },
-        "schema": "alpha.host-extension-package.v1"
-      },
-      "expect": "skipped",
-      "name": "unknown-profile-optional",
-      "payload": null
-    },
-    {
+      "components": [
+        {
+          "id": "skill:unknown-capability",
+          "payload": null
+        }
+      ],
       "envelope": {
         "capabilities": [
           "alpha.future.v1"
@@ -255,12 +450,12 @@
               "alpha.future.v1"
             ],
             "dependencies": [],
-            "id": "skill:skill-v1",
+            "id": "skill:unknown-capability",
             "payloadRef": {
-              "bytes": 333,
+              "bytes": 3,
               "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
-              "url": "https://example.invalid/packages/skill.json"
+              "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+              "url": "https://example.invalid/packages/skill/unknown-capability.json"
             },
             "profileId": "skill",
             "profileVersion": 1,
@@ -268,20 +463,27 @@
           }
         ],
         "prelude": {
-          "packageId": "skill:skill-v1",
+          "packageId": "package:unknown-capability-required",
           "version": "1.0.0"
         },
         "presentation": {
-          "description": "Synthetic skill decoder case",
-          "displayName": "skill-v1"
+          "description": "Synthetic unknown-capability-required decoder case",
+          "displayName": "unknown-capability-required"
         },
+        "root": "skill:unknown-capability",
         "schema": "alpha.host-extension-package.v1"
       },
       "expect": "blocked",
       "name": "unknown-capability-required",
-      "payload": null
+      "skipped": []
     },
     {
+      "components": [
+        {
+          "id": "skill:skill-v1",
+          "payload": null
+        }
+      ],
       "envelope": {
         "capabilities": [],
         "components": [
@@ -290,28 +492,396 @@
             "dependencies": [],
             "id": "skill:skill-v1",
             "payloadRef": {
-              "bytes": 333,
+              "bytes": 353,
               "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-              "sha256": "9524d687ede598fda12bb43f057ac9c57cef3179f69c93f724f62ca8a2549e77",
-              "url": "https://example.invalid/packages/skill.json"
+              "sha256": "5994ae82b68a8ae487d4cb6434bea3d3063c2dac048ff6e95ef416453e48269f",
+              "url": "https://example.invalid/packages/skill/skill-v1.json"
             },
             "profileVersion": 1,
             "required": true
           }
         ],
         "prelude": {
-          "packageId": "skill:skill-v1",
+          "packageId": "package:skill-v1",
           "version": "1.0.0"
         },
         "presentation": {
-          "description": "Synthetic skill decoder case",
+          "description": "Synthetic skill-v1 decoder case",
           "displayName": "skill-v1"
         },
+        "root": "skill:skill-v1",
         "schema": "alpha.host-extension-package.v1"
       },
       "expect": "blocked",
       "name": "missing-profile-required",
-      "payload": null
+      "skipped": []
+    },
+    {
+      "components": [
+        {
+          "id": "skill:non-required-root",
+          "payload": null
+        }
+      ],
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "skill:non-required-root",
+            "payloadRef": {
+              "bytes": 3,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+              "url": "https://example.invalid/packages/skill/non-required-root.json"
+            },
+            "profileId": "skill",
+            "profileVersion": 1,
+            "required": false
+          }
+        ],
+        "prelude": {
+          "packageId": "package:non-required-root",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic non-required-root decoder case",
+          "displayName": "non-required-root"
+        },
+        "root": "skill:non-required-root",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "blocked",
+      "name": "non-required-root",
+      "skipped": []
+    },
+    {
+      "components": [
+        {
+          "id": "mcp-local:bundle-root",
+          "payload": {
+            "behavior": {
+              "command": [
+                "bunx",
+                "example-mcp"
+              ],
+              "environment": {},
+              "requiredSecrets": [
+                "API_KEY"
+              ]
+            },
+            "schema": "alpha.host-extension-package.payload.mcp-local.v1"
+          }
+        },
+        {
+          "id": "skill:bundle-supported-leaf",
+          "payload": {
+            "behavior": {
+              "files": [
+                {
+                  "bytes": 12,
+                  "path": "SKILL.md",
+                  "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                  "url": "https://example.invalid/assets/bundle-supported-leaf/SKILL.md"
+                }
+              ],
+              "targetDir": "alpha-skills"
+            },
+            "schema": "alpha.host-extension-package.payload.skill.v1"
+          }
+        },
+        {
+          "id": "agent:bundle-unsupported-leaf",
+          "payload": null
+        }
+      ],
+      "envelope": {
+        "capabilities": [
+          "alpha.future.v1",
+          "alpha.secret-prerequisite.v1"
+        ],
+        "components": [
+          {
+            "capabilities": [
+              "alpha.secret-prerequisite.v1"
+            ],
+            "dependencies": [
+              "skill:bundle-supported-leaf",
+              "agent:bundle-unsupported-leaf"
+            ],
+            "id": "mcp-local:bundle-root",
+            "payloadRef": {
+              "bytes": 217,
+              "mediaType": "application/vnd.alpha.host-extension-package.mcp-local.v1+json",
+              "sha256": "b730d0942cb431283ccd50a0541acb0724242efca764111938a87adf9c55d14c",
+              "url": "https://example.invalid/packages/mcp-local/bundle-root.json"
+            },
+            "profileId": "mcp-local",
+            "profileVersion": 1,
+            "required": true
+          },
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "skill:bundle-supported-leaf",
+            "payloadRef": {
+              "bytes": 369,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "5af713db57c26afc89892d5c4b41fcc066dca6194147dbacdccf39664f7d41a9",
+              "url": "https://example.invalid/packages/skill/bundle-supported-leaf.json"
+            },
+            "profileId": "skill",
+            "profileVersion": 1,
+            "required": false
+          },
+          {
+            "capabilities": [
+              "alpha.future.v1"
+            ],
+            "dependencies": [],
+            "id": "agent:bundle-unsupported-leaf",
+            "payloadRef": {
+              "bytes": 3,
+              "mediaType": "application/vnd.alpha.host-extension-package.future.v1+json",
+              "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+              "url": "https://example.invalid/packages/agent/bundle-unsupported-leaf.json"
+            },
+            "profileId": "future",
+            "profileVersion": 1,
+            "required": false
+          }
+        ],
+        "prelude": {
+          "packageId": "package:bundle-optional-unsupported-profile",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic bundle-optional-unsupported-profile decoder case",
+          "displayName": "bundle-optional-unsupported-profile"
+        },
+        "root": "mcp-local:bundle-root",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "bundle-optional-unsupported-profile",
+      "skipped": [
+        "agent:bundle-unsupported-leaf"
+      ]
+    },
+    {
+      "components": [
+        {
+          "id": "skill:bundle-capability-root",
+          "payload": {
+            "behavior": {
+              "files": [
+                {
+                  "bytes": 12,
+                  "path": "SKILL.md",
+                  "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                  "url": "https://example.invalid/assets/bundle-capability-root/SKILL.md"
+                }
+              ],
+              "targetDir": "alpha-skills"
+            },
+            "schema": "alpha.host-extension-package.payload.skill.v1"
+          }
+        },
+        {
+          "id": "agent:bundle-capability-leaf",
+          "payload": null
+        }
+      ],
+      "envelope": {
+        "capabilities": [
+          "alpha.future.v1"
+        ],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [
+              "agent:bundle-capability-leaf"
+            ],
+            "id": "skill:bundle-capability-root",
+            "payloadRef": {
+              "bytes": 370,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "65cb5a5a7a1801c13c5f7932c0cf7c98ff241f9cb48c0a3759be26ab8b8e26a8",
+              "url": "https://example.invalid/packages/skill/bundle-capability-root.json"
+            },
+            "profileId": "skill",
+            "profileVersion": 1,
+            "required": true
+          },
+          {
+            "capabilities": [
+              "alpha.future.v1"
+            ],
+            "dependencies": [],
+            "id": "agent:bundle-capability-leaf",
+            "payloadRef": {
+              "bytes": 3,
+              "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
+              "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+              "url": "https://example.invalid/packages/agent/bundle-capability-leaf.json"
+            },
+            "profileId": "agent",
+            "profileVersion": 1,
+            "required": false
+          }
+        ],
+        "prelude": {
+          "packageId": "package:bundle-optional-unsupported-capability",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic bundle-optional-unsupported-capability decoder case",
+          "displayName": "bundle-optional-unsupported-capability"
+        },
+        "root": "skill:bundle-capability-root",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "bundle-optional-unsupported-capability",
+      "skipped": [
+        "agent:bundle-capability-leaf"
+      ]
+    },
+    {
+      "components": [
+        {
+          "id": "skill:bundle-media-root",
+          "payload": {
+            "behavior": {
+              "files": [
+                {
+                  "bytes": 12,
+                  "path": "SKILL.md",
+                  "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                  "url": "https://example.invalid/assets/bundle-media-root/SKILL.md"
+                }
+              ],
+              "targetDir": "alpha-skills"
+            },
+            "schema": "alpha.host-extension-package.payload.skill.v1"
+          }
+        },
+        {
+          "id": "agent:bundle-media-leaf",
+          "payload": null
+        }
+      ],
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [
+              "agent:bundle-media-leaf"
+            ],
+            "id": "skill:bundle-media-root",
+            "payloadRef": {
+              "bytes": 365,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "04ac880d26d4503575dc670cc7edb0603e31deb77471a38c6395fe647aba34f7",
+              "url": "https://example.invalid/packages/skill/bundle-media-root.json"
+            },
+            "profileId": "skill",
+            "profileVersion": 1,
+            "required": true
+          },
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "agent:bundle-media-leaf",
+            "payloadRef": {
+              "bytes": 3,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+              "url": "https://example.invalid/packages/agent/bundle-media-leaf.json"
+            },
+            "profileId": "agent",
+            "profileVersion": 1,
+            "required": false
+          }
+        ],
+        "prelude": {
+          "packageId": "package:bundle-optional-media-type-mismatch",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic bundle-optional-media-type-mismatch decoder case",
+          "displayName": "bundle-optional-media-type-mismatch"
+        },
+        "root": "skill:bundle-media-root",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "bundle-optional-media-type-mismatch",
+      "skipped": [
+        "agent:bundle-media-leaf"
+      ]
+    },
+    {
+      "components": [
+        {
+          "id": "skill:bundle-required-root",
+          "payload": null
+        },
+        {
+          "id": "agent:bundle-required-leaf",
+          "payload": null
+        }
+      ],
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [
+              "agent:bundle-required-leaf"
+            ],
+            "id": "skill:bundle-required-root",
+            "payloadRef": {
+              "bytes": 3,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+              "url": "https://example.invalid/packages/skill/bundle-required-root.json"
+            },
+            "profileId": "skill",
+            "profileVersion": 1,
+            "required": true
+          },
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "agent:bundle-required-leaf",
+            "payloadRef": {
+              "bytes": 3,
+              "mediaType": "application/vnd.alpha.host-extension-package.future.v1+json",
+              "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+              "url": "https://example.invalid/packages/agent/bundle-required-leaf.json"
+            },
+            "profileId": "future",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "package:bundle-required-unsupported-child",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic bundle-required-unsupported-child decoder case",
+          "displayName": "bundle-required-unsupported-child"
+        },
+        "root": "skill:bundle-required-root",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "blocked",
+      "name": "bundle-required-unsupported-child",
+      "skipped": []
     }
   ],
   "schema": "alpha.host-extension-package.decoder-corpus.v1"

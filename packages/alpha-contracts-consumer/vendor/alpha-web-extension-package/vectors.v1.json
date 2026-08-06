@@ -1,28 +1,108 @@
 {
   "invalid": [
     {
+      "assets": [],
       "errorCode": "E_URL_HTTPS",
       "input": "input.remote-http.invalid.json"
     },
     {
+      "assets": [],
       "errorCode": "E_URL_CREDENTIALS",
       "input": "input.remote-userinfo.invalid.json"
     },
     {
+      "assets": [],
       "errorCode": "E_AUTH_UNSUPPORTED",
-      "input": "input.remote-oauth.invalid.json"
+      "input": "input.remote-auth-unknown.invalid.json"
     },
     {
+      "assets": [],
+      "errorCode": "E_AUTH_HEADER_CONFLICT",
+      "input": "input.oauth-authorization-header.invalid.json"
+    },
+    {
+      "assets": [],
+      "errorCode": "E_PREREQUISITE_COLLISION",
+      "input": "input.oauth-prerequisite-collision.invalid.json"
+    },
+    {
+      "assets": [],
       "errorCode": "E_PROFILE_UNSUPPORTED",
       "input": "input.cloud-profile.invalid.json"
     },
     {
+      "assets": [],
       "errorCode": "E_AUTHOR_DERIVED_FIELD",
       "input": "input.author-capabilities.invalid.json"
     },
     {
+      "assets": [
+        {
+          "componentId": "agent:generic-bundle-agent",
+          "file": "asset.generic-bundle-agent.md",
+          "path": "AGENT.md"
+        },
+        {
+          "componentId": "skill:generic-bundle-skill",
+          "file": "asset.generic-bundle-skill.md",
+          "path": "SKILL.md"
+        }
+      ],
+      "errorCode": "E_AUTHOR_DERIVED_FIELD",
+      "input": "input.author-dependencies.invalid.json"
+    },
+    {
+      "assets": [],
       "errorCode": "E_AUTHOR_DERIVED_FIELD",
       "input": "input.author-secret-value.invalid.json"
+    },
+    {
+      "assets": [
+        {
+          "componentId": "agent:generic-bundle-agent",
+          "file": "asset.generic-bundle-agent.md",
+          "path": "AGENT.md"
+        },
+        {
+          "componentId": "skill:generic-bundle-skill",
+          "file": "asset.generic-bundle-skill.md",
+          "path": "SKILL.md"
+        }
+      ],
+      "errorCode": "E_COMPONENT_ID_DUPLICATE",
+      "input": "input.bundle-duplicate-component.invalid.json"
+    },
+    {
+      "assets": [
+        {
+          "componentId": "agent:generic-bundle-agent",
+          "file": "asset.generic-bundle-agent.md",
+          "path": "AGENT.md"
+        },
+        {
+          "componentId": "skill:generic-bundle-skill",
+          "file": "asset.generic-bundle-skill.md",
+          "path": "SKILL.md"
+        }
+      ],
+      "errorCode": "E_COMPONENT_ID_DUPLICATE",
+      "input": "input.bundle-root-leaf-collision.invalid.json"
+    },
+    {
+      "assets": [
+        {
+          "componentId": "agent:generic-bundle-agent",
+          "file": "asset.generic-bundle-agent.md",
+          "path": "AGENT.md"
+        },
+        {
+          "componentId": "skill:generic-bundle-skill",
+          "file": "asset.generic-bundle-skill.md",
+          "path": "SKILL.md"
+        }
+      ],
+      "errorCode": "E_COMPONENT_COUNT",
+      "input": "input.bundle-overflow.invalid.json"
     }
   ],
   "reports": [
@@ -42,9 +122,36 @@
   "schema": "alpha.extension-package.testvectors.v1",
   "valid": [
     {
+      "assets": [],
       "expected": "expected.mcp-remote.compiled.json",
       "input": "input.mcp-remote.valid.json",
       "report": "report.compatible.json"
+    },
+    {
+      "assets": [],
+      "expected": "expected.remote-oauth.compiled.json",
+      "input": "input.remote-oauth.valid.json"
+    },
+    {
+      "assets": [],
+      "expected": "expected.remote-connection.compiled.json",
+      "input": "input.remote-connection.valid.json"
+    },
+    {
+      "assets": [
+        {
+          "componentId": "agent:generic-bundle-agent",
+          "file": "asset.generic-bundle-agent.md",
+          "path": "AGENT.md"
+        },
+        {
+          "componentId": "skill:generic-bundle-skill",
+          "file": "asset.generic-bundle-skill.md",
+          "path": "SKILL.md"
+        }
+      ],
+      "expected": "expected.bundle.compiled.json",
+      "input": "input.bundle.valid.json"
     }
   ]
 }

@@ -32,6 +32,17 @@ export type FreshIntakeFacts = {
   activationPolicy?: ActivationPolicy
   /** #397:review.reviewBefore 已过期(排他截止)—— fresh install 一律先落 disabled。 */
   reviewExpired?: boolean
+  /**
+   * REQ-128 Phase 3 `#781`(owner 裁决 B):这次落账属于一个**本地导入的扩展包**。
+   *
+   * 裁决要「本地**包**装完默认关、本地**单个** skill 维持开」,而两者的 `origin` 逐字都是
+   * `imported-claude`(REQ-063 的既有词汇,本期刻意不发明新 origin)⇒ **今天的入参里没有
+   * 任何别的东西能区分它们**,所以判别维必须加在这个共享真源上。
+   *
+   * 加在这里而不是在调用点分叉,是本文件抬头那句话的直接后果:main 的落账决策与 renderer 的
+   * 「已安装但未启用」文案共用此定义;各写一份就会出现「账本落 disabled、UI 说已启用」。
+   */
+  localPackage?: boolean
 }
 
 export function initialDesiredState(intake: FreshIntakeFacts): "enabled" | "disabled" {
@@ -43,6 +54,10 @@ export function initialDesiredState(intake: FreshIntakeFacts): "enabled" | "disa
   }
   // #395 规则 2(保守面,逐字保留)。
   if (intake.kind === "cloud") return "enabled"
+  // REQ-128 `#781`(owner 裁决 B):本地扩展包一次带进来 N 个第三方技能 —— 落 enabled 等于
+  // 一次确认放行 N 个。判据只有 `localPackage` 这一维,**不是** origin:本地包与本地单 skill
+  // 的 origin 逐字相同。排在下面那条「非目录 intake = enabled」之前,否则永远轮不到它。
+  if (intake.localPackage === true) return "disabled"
   if (intake.origin !== "catalog") return "enabled"
   return intake.source === "alpha" ? "enabled" : "disabled"
 }

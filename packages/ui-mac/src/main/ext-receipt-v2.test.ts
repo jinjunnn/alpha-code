@@ -396,7 +396,7 @@ describe("v1 → v2 explicit migration (AC#6)", () => {
 
   test("#357 Blocker 回归锁:未来版本/未知顶层键/非数组集合 → 拒迁移,原文件字节零改动", () => {
     const cases = [
-      { v: 3, receipts: [] }, // 未来版本
+      { v: 4, receipts: [] }, // 未来版本(v:3 是本构建的 V3 信封,REQ-128 #706)
       { v: 1, receipts: [], futureKey: {} }, // 未知顶层键
       { v: 1, receipts: {} }, // receipts 非数组(parseLedger 会静默当空 → 重写即丢数据)
       { v: 2, receipts: [], records: "oops" }, // records 非数组
@@ -508,7 +508,7 @@ describe("#378 r17 Blocker —— 损坏记录原文保全 + 同 key/unattributa
   })
 
   test("r22:信封收口 —— 未来版本一切写拒零触碰;records 非数组按损坏处理(quarantine 保字节,不静默折叠成空)", () => {
-    fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 3, receipts: [], records: [{ future: true }] }))
+    fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 4, receipts: [], records: [{ future: true }] }))
     const futureBytes = fs.readFileSync(ledgerFile(), "utf8")
     expect(probeLedgerForWrite(root).ok).toBe(false)
     const w = upsertRecordV2(root, upsertInput())

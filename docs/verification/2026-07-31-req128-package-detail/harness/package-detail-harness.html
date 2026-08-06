@@ -7,15 +7,17 @@
 
 <!--
   静态 L2 harness：逐字加载现役 tokens/base/extension-hub CSS。
-  DOM 复刻 extension-detail.tsx 的 package 分支；hz-* 只负责给截图提供画布，
-  不覆盖任何生产选择器。
+  DOM 复刻 extension-detail.tsx 的 package 分支与 extension-hub.tsx 的 package
+  密钥采集 Dialog；hz-* 只负责给截图提供画布，不覆盖任何生产选择器。
 
   file://…/package-detail-harness.html?theme=<light|dark>&state=<state>
   state = compatible-ready | compatible-required | update-required |
-          blocked-safety | blocked-payload
+          blocked-safety | blocked-payload | secret-collection
 -->
 <link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/alpha-ui/tokens.css">
 <link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/alpha-ui/base.css">
+<link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/alpha-ui/button.css">
+<link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/alpha-ui/dialog.css">
 <link rel="stylesheet" href="../../../../packages/ui-mac/src/renderer/extensions/extension-hub.css">
 <style>
   body {
@@ -81,10 +83,10 @@ const STATES = {
     enabled: true,
   },
   "update-required": {
-    catalogId: "package:next-profile-agent",
-    name: "package:next-profile-agent",
-    description: "",
-    version: "2.4.0",
+    catalogId: "package:generic-remote-mcp",
+    name: "Generic Remote MCP",
+    description: "Generic Phase 1 compiler corpus input.",
+    version: "1.0.0",
     verdict: "update-required",
     verdictText: "需要更新 Alpha",
     prerequisite: "ready",
@@ -125,6 +127,22 @@ const STATES = {
     action: "不可用",
     actionKind: "none",
     enabled: false,
+  },
+  "secret-collection": {
+    catalogId: "package:research-workspace-connector",
+    name: "Research Workspace Connector",
+    description: "连接研究工作区与团队知识库；确认前需要提供由组织管理员签发的访问密钥。",
+    version: "2026.7.31",
+    verdict: "compatible",
+    verdictText: "兼容",
+    prerequisite: "required-action",
+    prerequisiteText: "需要先处理",
+    prerequisites: ["ORGANIZATION_RESEARCH_WORKSPACE_ACCESS_TOKEN"],
+    reason: "安装此扩展包前,请先完成必需的前置条件。",
+    action: "处理前置条件",
+    actionKind: "resolve-prerequisite",
+    enabled: true,
+    authorization: true,
   },
 }
 
@@ -215,6 +233,60 @@ if (view.focus) {
   const button = document.querySelector(".alpha-ext-dsub .alpha-ext-add")
   button.focus()
   button.dataset.visualFocus = "true"
+}
+
+if (view.authorization) {
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="a-ui a-dialog-root" data-beside-sidebar="">
+      <div aria-hidden="true" class="a-dialog-backdrop"></div>
+      <div class="a-dialog-panel" data-size="sm" role="dialog" aria-modal="true" aria-labelledby="package-authz-title">
+        <header class="a-dialog-header">
+          <div id="package-authz-title" class="a-dialog-title">安装「${esc(view.name)}」?</div>
+          <button type="button" class="a-dialog-close" aria-label="Close">✕</button>
+        </header>
+        <div class="a-dialog-body">
+          <div class="alpha-ext-confirm" data-package-authorization="${esc(view.catalogId)}">
+            <p class="alpha-ext-confirm-desc">${esc(view.description)}</p>
+            <div class="alpha-ext-install-box">
+              <div class="alpha-ext-install-row">
+                <span class="alpha-ext-install-nm">research-workspace</span>
+                <span class="alpha-ext-install-k">MCP</span>
+              </div>
+            </div>
+            <div class="alpha-ext-authz" aria-live="polite">
+              <p class="alpha-ext-authz-intro">「${esc(view.name)}」首次安装,请求以下能力:</p>
+              <div class="alpha-ext-authz-box">
+                <div class="alpha-ext-authz-cap">
+                  <span class="alpha-ext-authz-ic" data-tier="mid" aria-hidden="true">?</span>
+                  <span class="alpha-ext-authz-nm"><b>alpha.secret-prerequisite.v1</b></span>
+                  <span class="alpha-ext-authz-id">alpha.secret-prerequisite.v1</span>
+                  <span class="alpha-ext-authz-chip" data-kind="new">新增</span>
+                </div>
+              </div>
+              <p class="alpha-ext-confirm-note">确认即授权上述完整能力集;授权仅在安装成功提交后生效。取消不会安装扩展或授予能力。</p>
+            </div>
+            <div class="alpha-ext-confirm-keys">
+              <div class="alpha-ext-confirm-line">需要密钥(全部必填)</div>
+              <label class="alpha-ext-key-field">
+                <span class="alpha-ext-key-name">ORGANIZATION_RESEARCH_WORKSPACE_ACCESS_TOKEN</span>
+                <input class="alpha-ext-key-input" type="password" autocomplete="off" spellcheck="false"
+                  placeholder="粘贴密钥…(必填)" required>
+              </label>
+              <p class="alpha-ext-key-hint" role="status">全部密钥均为必填;填写完整后才能确认安装。</p>
+              <p class="alpha-ext-key-hint">密钥保存在本机 alpha 安全文件(0600),配置里只存引用、绝不明文。</p>
+            </div>
+            <p class="alpha-ext-confirm-note">将写入你的 ~/.opencode/opencode.jsonc(仅白名单字段),当场生效、免重启。</p>
+          </div>
+        </div>
+        <footer class="a-dialog-footer">
+          <button class="a-btn" data-variant="ghost" data-size="md">取消</button>
+          <button class="a-btn" data-variant="primary" data-size="md" disabled>确认安装</button>
+        </footer>
+      </div>
+    </div>`)
+  const input = document.querySelector(".alpha-ext-key-input")
+  input.focus()
+  input.dataset.visualFocus = "true"
 }
 </script>
 </body>

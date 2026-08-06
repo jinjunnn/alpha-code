@@ -19,6 +19,7 @@ import {
   pathIdentity,
   removeMcpSecretVersionDir,
   removeMcpServerSecrets,
+  removeUnreferencedMcpSecretVersion,
   substituteMcpSecretRefsPure,
   writeMcpSecret,
   writeMcpSecretVersioned,
@@ -407,5 +408,83 @@ describe("removeMcpServerSecrets", () => {
     writeMcpSecretVersioned(userData, "github", vid, "TOKEN", "v")
     removeMcpServerSecrets(userData, "github")
     expect(fs.existsSync(path.join(userData, "alpha-mcp-secrets", "github"))).toBe(false)
+  })
+})
+
+// ── #712:未提交事务准备的版本目录的**受守卫**释放 ────────────────────────────────────────────
+// 与 GC 的差别只有宽限期:调用方(事务失败路径/崩溃恢复)知道这个版本属于一次没有提交的事务。
+// 引用判据必须与 GC 完全同款 —— 一处漂移的后果是删掉在用密钥。
+describe("removeUnreferencedMcpSecretVersion — #712 prepared resource 释放守卫", () => {
+  test("未引用 → 立即删(不等宽限:刚写的版本正是要释放的那个)", () => {
+    const vid = newMcpSecretVersionId()
+    writeMcpSecretVersioned(userData, "s", vid, "TOK", "orphan")
+    const other = newMcpSecretVersionId()
+    writeMcpSecretVersioned(userData, "s", other, "TOK", "live")
+    const r = removeUnreferencedMcpSecretVersion(userData, "s", vid, [verFile("s", other, "TOK")])
+    expect(r).toEqual({ ok: true, state: "removed" })
+    expect(fs.existsSync(verFile("s", vid, "TOK"))).toBe(false)
+    expect(fs.existsSync(verFile("s", other, "TOK"))).toBe(true) // 别的版本零接触
+  })
+
+  test("被引用 → 保留(命中项在目录内与引用集内都**不占首位**)", () => {
+    const vid = newMcpSecretVersionId()
+    for (const name of ["A", "B", "C"]) writeMcpSecretVersioned(userData, "s", vid, name, name)
+    const other = newMcpSecretVersionId()
+    writeMcpSecretVersioned(userData, "s", other, "TOK", "other")
+    // 引用集:先两条与本版本无关的,命中项排在**最后** —— 「只查第一条引用」会当场删掉活密钥。
+    const r = removeUnreferencedMcpSecretVersion(userData, "s", vid, [
+      verFile("s", other, "TOK"),
+      path.join(userData, "nothing-here"),
+      verFile("s", vid, "C"), // 目录内 readdir 序里也是最后一个
+    ])
+    expect(r).toEqual({ ok: true, state: "referenced" })
+    for (const name of ["A", "B", "C"]) expect(fs.existsSync(verFile("s", vid, name))).toBe(true)
+    expect(fs.existsSync(verFile("s", other, "TOK"))).toBe(true)
+  })
+
+  test("symlink 别名引用 → realpath 命中,保留", () => {
+    const vid = newMcpSecretVersionId()
+    writeMcpSecretVersioned(userData, "s", vid, "TOK", "aliased")
+    const aliasDir = path.join(userData, "alias")
+    fs.mkdirSync(aliasDir, { recursive: true })
+    const alias = path.join(aliasDir, "TOK-link")
+    fs.symlinkSync(verFile("s", vid, "TOK"), alias)
+    expect(removeUnreferencedMcpSecretVersion(userData, "s", vid, [alias])).toEqual({ ok: true, state: "referenced" })
+    expect(fs.existsSync(verFile("s", vid, "TOK"))).toBe(true)
+  })
+
+  test("引用集里**任一条**身份不可判(EACCES)→ 整体拒绝,绝不删", () => {
+    if (typeof process.getuid === "function" && process.getuid() === 0) return // root 无视权限,场景不可构造
+    const vid = newMcpSecretVersionId()
+    writeMcpSecretVersioned(userData, "s", vid, "TOK", "v")
+    const lockedDir = path.join(userData, "locked")
+    fs.mkdirSync(lockedDir, { recursive: true })
+    fs.writeFileSync(path.join(lockedDir, "ref"), "x")
+    fs.chmodSync(lockedDir, 0o000)
+    try {
+      // 不可判的那条排在**最后**,前面两条都完全可判 —— 「只看第一条引用的身份」必须转红。
+      const r = removeUnreferencedMcpSecretVersion(userData, "s", vid, [
+        path.join(userData, "plainly-absent"),
+        path.join(userData, "alpha-mcp-secrets"),
+        path.join(lockedDir, "ref"),
+      ])
+      expect(r.ok).toBe(false)
+      expect(!r.ok && r.reason).toContain("unresolvable")
+      expect(fs.existsSync(verFile("s", vid, "TOK"))).toBe(true)
+    } finally {
+      fs.chmodSync(lockedDir, 0o700)
+    }
+  })
+
+  test("缺席 = 幂等成功(恢复重放走到这里);非法 server/version 一律拒", () => {
+    expect(removeUnreferencedMcpSecretVersion(userData, "s", "v-00000001", [])).toEqual({ ok: true, state: "absent" })
+    // 名字文法由 store 拥有者把关 —— 这是引擎通用段界之外的第二道线,派生路径前必须过。
+    expect(removeUnreferencedMcpSecretVersion(userData, "../escape", "v-00000001", []).ok).toBe(false)
+    expect(removeUnreferencedMcpSecretVersion(userData, "s", "not-a-version", []).ok).toBe(false)
+    // 拒绝时确实什么都没删。
+    const vid = newMcpSecretVersionId()
+    writeMcpSecretVersioned(userData, "s", vid, "TOK", "v")
+    expect(removeUnreferencedMcpSecretVersion(userData, "s", `${vid}/../${vid}`, []).ok).toBe(false)
+    expect(fs.existsSync(verFile("s", vid, "TOK"))).toBe(true)
   })
 })

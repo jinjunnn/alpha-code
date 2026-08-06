@@ -195,9 +195,22 @@ export function isWebSearchToolId(tool: string): boolean {
 /** alpha 自己注册的云 MCP server 名(注入面经 `ALPHA_CLOUD_MCP_SERVER` 告知,见 ui-mac 同名常量)。 */
 export const CLOUD_MCP_SERVER_ENV = "ALPHA_CLOUD_MCP_SERVER"
 
-/** `McpCatalog.sanitize`(`opencode/src/mcp/catalog.ts`)逐字同义 —— 工具 id 的前缀就是它的产物。 */
+/** `McpCatalog.sanitize`(`opencode/src/mcp/catalog.ts:117`)逐字同义 —— 工具 id 的前缀就是它的产物。 */
 function sanitizeMcpName(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_")
+}
+
+/**
+ * 引擎给远端 MCP 工具起的 id,`McpCatalog.toolName`(`opencode/src/mcp/catalog.ts:119`)逐字同义:
+ * `sanitize(server) + "_" + sanitize(remote)`。
+ *
+ * **#650**:`remoteName` 是远端 server **自己** advertise 的名字,不是引擎里的 id。云 worker 的
+ * 远端名自带 `cloud_` 前缀(`cloud_web_search` / `cloud_dispatch` …),拼上 server 名 `cloud` 之后
+ * 真实 id 是 `cloud_cloud_*` —— 把远端名当 id 用过的地方,闸一次都没生效过。ext 不依赖 opencode,
+ * 拼法只能在这里再写一份;漂移由 `cloud-contract-hook.test.ts` 用**真的** `McpCatalog.toolName` 钉住。
+ */
+export function mcpEngineToolId(server: string, remoteName: string): string {
+  return `${sanitizeMcpName(server)}_${sanitizeMcpName(remoteName)}`
 }
 
 /**
@@ -388,7 +401,15 @@ export function assertWebSearchToolAllowed(
 /** 注入面告诉 ext「这个 MCP server 等你确认装载后才能装」的通道(ui-mac `cloud-web-search.ts` 同名同义)。 */
 export const CLOUD_MCP_ARM_ENV = "ALPHA_CLOUD_MCP_ARM"
 
-/** 与 ARM 配对的 server 定义(JSON)。内含 `{file:…}` 引用而非密钥值本身(A6 纪律)。 */
+/**
+ * 与 ARM 配对的 server 定义(JSON)。
+ *
+ * `#733` 起 alpha 治理的云 server 走标准 MCP OAuth,这份定义里**没有任何凭证通道**
+ * (无 `headers.Authorization`、无 `{file:…}` 引用)。下面的 `resolveFileRefs` 因此对它
+ * 是个 no-op —— 保留它不是为了将来:注入面托管的是一个任意 JSON,含 `{file:}` 时那条
+ * fail-closed(读不到就整个不装)仍然是这里唯一的把关,删掉它等于对未来任何带引用的定义
+ * 默认放行。
+ */
 export const CLOUD_MCP_DEF_ENV = "ALPHA_CLOUD_MCP_DEF"
 
 type McpHost = { mcp?: Record<string, unknown> }

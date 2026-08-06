@@ -4,7 +4,7 @@ kind: runbook
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-16
+last_reviewed: 2026-08-01
 review_after: 2026-10-15
 ---
 
@@ -23,14 +23,40 @@ journal 收敛到终态;收敛不了的**如实保留**,绝不静默终态化(#3
 | `uninstalling`(action=generation/config) | 卸载中途崩溃/某步失败 | 启动或下一次相关写操作前幂等前滚(删净 artifact → 删账 → 终态) |
 | `switching`/`switched` | 安装/回滚在 health/receipt 确认前中断 | probe 重验:健康前滚落账;不健康**先经账本证伪 receipt 是否已 durable**(#336 r3)—— 已 durable/无法证伪(账本损坏)= 拒回滚保留非终态只前滚(receipt/live 绝不分叉),确证未落才回滚+隔离(generation 隔离;config/file 按 image 回旧) |
 | `authorizing`(#336) | receipt 已 durable(越过可回滚点),授权账/收据投影未落位(grants.json / ext-tx/authz 写失败或其间崩溃) | **只前滚**:重试 `writeCommitAuthorizationSync`(幂等)→ 成功即 `committed`;失败保留非终态待下轮(gate 拒后续写)。绝不回滚(回滚 = receipt/live 分叉)。人工处置 = 排除授权投影路径的写障碍(如 grants.json 被目录占位/卷只读),任一写操作或重启即自动收敛 |
-| `staging`/`staged`/`materialized` | switch 未发生 | 清 staging 残留,journal → `aborted`(可重试) |
+| `staging`/`staged`/`materialized` | switch 未发生 | 清 staging 残留 → 释放 prepared resource(见下)→ journal → `aborted`(可重试) |
+
+## `prepared` 面:事务根之外的受限资源(REQ-128 #712)
+
+带密钥前置的 MCP 安装会在**授权终闸之后、任何 live switch 之前**写一个版本化密钥目录
+`<userData>/alpha-mcp-secrets/<server>/<verId>/`(0700,内含 0600 密钥文件)。它在事务根之外,
+因此不受 staging/generation 那套回滚原语管辖;journal 的 `prepared` 数组记录它的**类型化身份**:
+
+```json
+"prepared": [{ "kind": "mcp-secret-version", "store": "alpha-mcp-secrets", "server": "<name>", "version": "v-<hex>" }]
+```
+
+- **只有身份**。journal / 账本 / 授权收据 / 日志里都不会出现密钥明文、明文摘要,也不会出现任何
+  绝对删除路径 —— 释放方按固定 store 根 + 自己的名字文法重新派生路径。带多余字段的计划在写盘前
+  即被拒。密钥的绝对路径只出现在 live config 的 `{file:}` 引用里(那是它的引用通道)。
+- **释放时机**:journal 收敛为 `aborted` / `rolled-back` 时释放一次;前滚为 `committed` 时
+  **绝不**释放(那时 live config 已经指向它)。
+- **释放前复核引用**:合并视图(主 `alpha.jsonc` + 全部 retained legacy 源)只要仍引用该版本
+  目录内**任一**文件,或任一来源不可读 / 任一引用路径的文件系统身份不可判,就一律保留,并在
+  `[req100-tx-recovery]` 日志里如实报出(`still referenced by the merged config view` /
+  具体的读取失败原因)。**这类保留不阻断 journal 终态化** —— 残留此刻不被任何 live config 引用,
+  而挂着非终态 journal 会封死后续全部扩展写。它随后由提交后 GC(`gcMcpSecretsAgainstConfig`,
+  10 分钟宽限)收走。
+- **人工处置**:先排除来源读取障碍(损坏的 legacy `opencode.jsonc`、不可读的引用路径),
+  下一次写操作或重启即自动收敛;确认无误后也可直接删除该版本目录(它不被任何 config 引用)。
 
 ## 需要人工诊断的保留态(自动恢复**不会**碰)
 
 以下情形 journal 保持非终态并在每次恢复日志(`[req100-tx-recovery]`)重复报告:
 
 - **不可解析 journal**:被移动为 `<txId>.json.corrupt-<ts>` 留证;
-- **畸形 journal**:空/多 item、非法 key、非法 genId、意外 state;
+- **畸形 journal**:空/多 item、非法 key、非法 genId、意外 state、非法 `prepared` 面
+  (未登记的 kind/store、不是单个安全路径段的 server/version、超出身份的多余字段)——
+  畸形件绝不进释放路径,不会据它删任何东西;
 - **未知 uninstall key**(如 kind 不在 skill/agent/mcp/plugin/cloud):
   账本删除接缝抛错保留;
 - **owned path 删不掉**(EACCES/EBUSY):修复文件权限后,下次启动或下一次相关写操作自动收敛。
@@ -141,6 +167,9 @@ seed plugin 的载荷是同一事务里的 file items,落点 = 内容寻址目�
   成功路径会在配置写锁内自动 GC(全源未引用 + mtime 超 10 分钟宽限),一般无需人工;要手工
   收时先逐源核对引用,再删未引用版本目录。**宽限期内的新目录不要删**——可能是「文件已写、
   config 尚未提交」的在途安装。
+  **REQ-128 #712 起,package 安装路径的「崩溃于提交前」不再依赖这条宽限 GC**:该版本的身份
+  进了事务 journal 的 `prepared` 面,恢复把 journal 收敛成 `aborted`/`rolled-back` 时立即按
+  同一份全源引用判据释放它(见上文「`prepared` 面」)。单装/未策展通道仍走宽限 GC。
 - **legacy flat 文件**(`<server>/<VAR>` 直挂):存量安装与 env 迁移的合法布局,被当前 leaf
   引用时绝不可删;不再被引用后由同一 GC 收。
 - **卸载**:journaled 卸载会删除整个 `<server>` 目录(全部版本 + flat),无需按版本处置。

@@ -1,14 +1,17 @@
 {
   "packageId": "package:generic-remote-mcp",
   "presentation": {
-    "description": "Generic Phase 1 compiler corpus input.",
+    "description": "Generic compiler corpus input.",
     "displayName": "Generic Remote MCP"
   },
   "root": {
     "component": {
       "behavior": {
         "auth": "none",
-        "headersTemplate": {},
+        "headersTemplate": {
+          "Authorization": "Bearer {A_KEY}",
+          "X-Remote-Token": "{B_TOKEN}"
+        },
         "requiredSecrets": [
           "B_TOKEN",
           "A_KEY",

@@ -366,7 +366,7 @@ describe("拒绝矩阵(合成 ed25519 宇宙)", () => {
       {
         version: "3.0.0",
         entries: [{ id: "skill:new" }],
-        packages: [{ prelude: { packageId: "mcp:not-a-package-root", version: "1.0.0" } }],
+        packages: [{ prelude: { packageId: "Mcp:invalid-namespace", version: "1.0.0" } }],
       },
       null,
       2,

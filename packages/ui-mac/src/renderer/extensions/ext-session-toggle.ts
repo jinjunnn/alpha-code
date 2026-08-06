@@ -1,5 +1,5 @@
 // ext-session-toggle — REQ-104 #408 PR-C:会话开关的**纯派生层**(零 IPC、零样式)。
-// 真源:main 内存 grant 登记(window.api.ext.sessionGrants,会话边界 = sidecar 运行期)+
+// 真源:main 内存 grant 登记(extIpc.sessionGrants,会话边界 = sidecar 运行期)+
 // renderer 本地的连接结果(grant ok ≠ 已连接 —— 连接真伪单独呈现,不谎报)。
 // 本层只做展示/路由决策,供 extension-hub / extension-detail 消费与单测。
 

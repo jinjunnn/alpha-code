@@ -25,15 +25,42 @@ export type RootResolution = { ok: true; root: string } | { ok: false; reason: s
 export const GATED_WRITE_CHANNELS = {
   installCatalog: "ext-install-catalog",
   uninstallV2: "ext-uninstall-v2",
+  /** `#698`:整包卸载。与 `uninstallV2` 分开是因为**意图形状不同** —— 这里传的是 packageId,
+   *  而 main 要删什么完全由它自己的账本图算出;把它塞进 key-based 卸载会让 renderer 的一次
+   *  点击可以指名某个 child 而实际删掉一整个包。 */
+  uninstallPackage: "ext-uninstall-package",
   rollback: "ext-rollback",
   setInstallState: "ext-set-install-state",
   projectResidualsClean: "ext-project-residuals-clean",
   removeMcpLegacy: "ext-remove-mcp",
   persistMcp: "ext-persist-mcp",
-  installPlugin: "ext-install-plugin",
   importAgentConfirm: "ext-import-agent-confirm",
+  /** REQ-128 Phase 3 `#782`:本地 Claude 插件包的**确认**。两段式里**只有它**会写盘,
+   *  所以两段式里**只有它**在这张表里 —— preview / cancel / 列表三条纯读通道在下面的
+   *  `LOCAL_PACKAGE_READ_CHANNELS`,与本表**必须互斥**(`ext-write-channels.test.ts` 断言)。
+   *  入参只有 previewId:写入内容取自 main 侧留存的 preview 产物,renderer 全程给不出。 */
+  importClaudePluginConfirm: "ext-import-claude-plugin-confirm",
   importSkillFolder: "ext-import-skill-folder",
   importSkillGit: "ext-import-skill-git",
+} as const
+
+/**
+ * REQ-128 Phase 3 `#782`:本地插件包两段式里的**纯读**通道。
+ *
+ * 它们**不进** `GATED_WRITE_CHANNELS`,理由与 `ext-import-agent-preview` 不在表里逐字一致:
+ * 它们不写 `installs.json`、不写事务拥有的 config/store,一个字节都不落盘。把纯读通道塞进写表
+ * 不是「更安全」,是让恢复 gate 在读面上生效 —— 账本待恢复时用户连「这个包能不能装」都看不到。
+ *
+ * 立成具名表(而不是散在 `ext-ipc` 里的字面量)的唯一目的:让「preview 有没有被人挪进写表」
+ * 这个问题**可被一条断言回答**。两表互斥由 `ext-write-channels.test.ts` 钉死。
+ */
+export const LOCAL_PACKAGE_READ_CHANNELS = {
+  /** 按 previewId 取回已签发预览的安全投影(无绝对路径、无字节)。 */
+  importClaudePluginPreview: "ext-import-claude-plugin-preview",
+  /** 显式取消:释放 main 侧留存的字节。**必须不过 gate** —— 账本待恢复时也得放得掉。 */
+  importClaudePluginCancel: "ext-import-claude-plugin-cancel",
+  /** 列出本机已装的 V3 包图(安全投影)。 */
+  listInstalledPackages: "ext-installed-packages",
 } as const
 
 export type WriteChannelRoots = {
@@ -52,13 +79,15 @@ export type WriteChannelRoots = {
 export type WriteChannelBodies = {
   installCatalog: (intent: unknown) => Promise<unknown>
   uninstallV2: (intent: unknown) => Promise<unknown>
+  uninstallPackage: (packageId: unknown) => Promise<unknown>
   rollback: (intent: unknown, genId: unknown) => Promise<unknown>
   setInstallState: (intent: unknown) => Promise<unknown>
   projectResidualsClean: (projectDir: unknown) => Promise<unknown>
   removeMcpLegacy: (name: unknown) => Promise<unknown>
   persistMcp: (name: unknown, server: unknown, secretVars?: unknown) => Promise<unknown>
-  installPlugin: (pkg: unknown) => Promise<unknown>
   importAgentConfirm: (previewId: unknown) => Promise<unknown>
+  /** `#782`:**只收 previewId**。多一个入参就是多一条 renderer 可控的写入内容通道。 */
+  importClaudePluginConfirm: (previewId: unknown) => Promise<unknown>
   /** 持久化阶段(srcDir 已由 main 弹窗取得)。 */
   importSkillFolder: (srcDir: string, target?: InstallTarget) => Promise<unknown>
   importSkillGit: (url: unknown, target?: InstallTarget) => Promise<unknown>
@@ -73,13 +102,16 @@ export function buildGatedWriteChannels(deps: { gate: RecoveryGate; roots: Write
   return {
     installCatalog: gatedWriteHandler(gate, roots.global, bodies.installCatalog),
     uninstallV2: gatedWriteHandler(gate, roots.uninstallIntent, bodies.uninstallV2),
+    // package 恒全局面(admission 只接受 global scope),定根与 catalog 安装同一个。
+    uninstallPackage: gatedWriteHandler(gate, roots.global, bodies.uninstallPackage),
     rollback: gatedWriteHandler(gate, roots.global, bodies.rollback),
     setInstallState: gatedWriteHandler(gate, roots.setStateIntent, bodies.setInstallState),
     projectResidualsClean: gatedWriteHandler(gate, roots.projectDir, bodies.projectResidualsClean),
     removeMcpLegacy: gatedWriteHandler(gate, roots.global, bodies.removeMcpLegacy),
     persistMcp: gatedWriteHandler(gate, roots.global, bodies.persistMcp),
-    installPlugin: gatedWriteHandler(gate, roots.global, bodies.installPlugin),
     importAgentConfirm: gatedWriteHandler(gate, roots.global, bodies.importAgentConfirm),
+    // 本地包恒全局面(project scope 显式不支持,ADR-030);定根与 catalog 安装同一个。
+    importClaudePluginConfirm: gatedWriteHandler(gate, roots.global, bodies.importClaudePluginConfirm),
     importSkillFolder: gatedWriteHandler(gate, (_srcDir: string, target?: InstallTarget) => roots.importTarget(target), bodies.importSkillFolder),
     importSkillGit: gatedWriteHandler(gate, (_url: unknown, target?: InstallTarget) => roots.importTarget(target), bodies.importSkillGit),
   }

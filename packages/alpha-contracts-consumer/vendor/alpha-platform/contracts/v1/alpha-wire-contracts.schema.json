@@ -85,6 +85,7 @@
                   "cloud.read",
                   "artifact.read",
                   "account.read",
+                  "account.keys.manage",
                   "billing.reconcile",
                   "artifact.upload",
                   "billing.settle"
@@ -125,7 +126,8 @@
                 "cloud.dispatch",
                 "cloud.read",
                 "artifact.read",
-                "account.read"
+                "account.read",
+                "account.keys.manage"
               ]
             },
             "edition": {
@@ -172,6 +174,7 @@
                   "cloud.read",
                   "artifact.read",
                   "account.read",
+                  "account.keys.manage",
                   "billing.reconcile",
                   "artifact.upload",
                   "billing.settle"
@@ -248,6 +251,7 @@
                   "cloud.read",
                   "artifact.read",
                   "account.read",
+                  "account.keys.manage",
                   "billing.reconcile",
                   "artifact.upload",
                   "billing.settle"
@@ -399,6 +403,7 @@
                   "cloud.read",
                   "artifact.read",
                   "account.read",
+                  "account.keys.manage",
                   "billing.reconcile",
                   "artifact.upload",
                   "billing.settle"
@@ -480,6 +485,7 @@
                   "cloud.read",
                   "artifact.read",
                   "account.read",
+                  "account.keys.manage",
                   "billing.reconcile",
                   "artifact.upload",
                   "billing.settle"
@@ -529,6 +535,78 @@
             "aud",
             "token_use",
             "purpose"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "number",
+              "const": 1
+            },
+            "sub": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "scope": {
+              "minItems": 1,
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "model.invoke",
+                  "cloud.dispatch",
+                  "cloud.read",
+                  "artifact.read",
+                  "account.read",
+                  "account.keys.manage",
+                  "billing.reconcile",
+                  "artifact.upload",
+                  "billing.settle"
+                ]
+              }
+            },
+            "iat": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "exp": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "jti": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "iss": {
+              "type": "string",
+              "const": "https://auth.tidelabs.click"
+            },
+            "aud": {
+              "type": "string",
+              "const": "https://alpha-cloud.tidelabs.click/mcp"
+            },
+            "token_use": {
+              "type": "string",
+              "const": "mcp_access"
+            }
+          },
+          "required": [
+            "schema_version",
+            "sub",
+            "scope",
+            "iat",
+            "exp",
+            "jti",
+            "iss",
+            "aud",
+            "token_use"
           ],
           "additionalProperties": false
         }

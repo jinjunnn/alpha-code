@@ -328,6 +328,9 @@ export const dict = {
   "alpha.ext.confirmRuntime": "Requires runtime",
   "alpha.ext.confirmEnv": "Requires keys (leave blank to set up later)",
   "alpha.ext.keyPlaceholder": "Paste key… (optional)",
+  "alpha.ext.packageConfirmEnv": "Required keys (all required)",
+  "alpha.ext.packageKeyPlaceholder": "Paste key… (required)",
+  "alpha.ext.packageKeysRequired": "All keys are required; enter each one to confirm installation.",
   "alpha.ext.keyHint": "Keys are saved to a local alpha secure file (0600); the config stores only a reference, never plaintext.",
   "alpha.ext.confirmBundle": "Installs {{count}} items",
   "alpha.ext.confirmNote": "Writes to your ~/.opencode/opencode.jsonc (whitelisted fields only) and applies live, no restart.",
@@ -497,6 +500,11 @@ export const dict = {
   "alpha.ext.cloudConnConnected": "Connected",
   "alpha.ext.cloudConnDisconnected": "Not connected (the engine reconnects automatically)",
   "alpha.ext.cloudConnNeedLogin": "Not injected — requires platform-mode sign-in",
+  "alpha.ext.mcpNeedsAuth": "Sign-in required",
+  "alpha.ext.mcpAuthorize": "Authorize",
+  "alpha.ext.mcpAuthorizing": "Waiting for browser authorization…",
+  "alpha.ext.mcpAuthFailed": "Authorization did not complete — please try again",
+  "alpha.ext.mcpAuthDone": "Signed in again",
   "alpha.ext.cloudToolDispatch": "Dispatch a cloud job (pipeline / bounded-agent envelope)",
   "alpha.ext.cloudToolStatus": "Query job status, progress and usage counters",
   "alpha.ext.cloudToolAwait": "Wait for a job to reach a terminal state (polling wrapper)",
@@ -589,10 +597,19 @@ export const dict = {
   "alpha.ext.packageVerdictBlocked": "Blocked",
   "alpha.ext.packageComponentsTitle": "Components and prerequisites",
   "alpha.ext.packageComponent": "Component",
+  "alpha.ext.packageComponentRoot": "Main",
+  "alpha.ext.packageComponentLeaf": "Included",
+  "alpha.ext.packageComponentIncluded": "Will be installed",
+  "alpha.ext.packageComponentSkipped": "Will not be installed",
+  "alpha.ext.packageSkipCapabilityUnsupported":
+    "This part needs a capability this version of Alpha does not have.",
+  "alpha.ext.packageSkipMediaTypeMismatch": "This part is published in a format Alpha cannot read.",
+  "alpha.ext.packageSkipProfileUnsupported": "This version of Alpha does not support this kind of part.",
   "alpha.ext.packagePrerequisiteStatus": "Prerequisites",
   "alpha.ext.packagePrerequisiteReady": "Ready",
   "alpha.ext.packagePrerequisiteRequired": "Action required",
   "alpha.ext.packageRequired": "Required",
+  "alpha.ext.packageOptional": "Optional",
   "alpha.ext.packageReasonTitle": "Why",
   "alpha.ext.packageReasonCompatible": "This package is compatible with this version of Alpha.",
   "alpha.ext.packageReasonPrerequisiteRequired":
@@ -611,6 +628,59 @@ export const dict = {
   "alpha.ext.packageActionUpdateAlpha": "Check for updates",
   "alpha.ext.packageActionResolvePrerequisite": "Resolve prerequisites",
   "alpha.ext.packageActionNone": "Unavailable",
+  // REQ-128 `#698`:装过之后,这一屏是把整个扩展包拿掉的唯一入口 —— 属于扩展包的单个部件
+  // 被单独移除时会被拒绝(它还属于这个包),而在此之前那句拒绝指向的地方并不存在。
+  "alpha.ext.packageActionUninstall": "Remove this package",
+  "alpha.ext.packageInstalledHere": "Installed on this Mac",
+  "alpha.ext.packageRemoved": "Package removed",
+  "alpha.ext.packageRemoveFailed": "Could not remove this package",
+  "alpha.ext.packageKeptShared": "Kept (still used by another package)",
+  "alpha.ext.packageKeptUserInstalled": "Kept (you also installed it on its own)",
+  "alpha.ext.packageKeptLegacy": "Kept (installed before Alpha tracked packages)",
+  "alpha.ext.packageKeptUnmanaged": "Kept (Alpha does not manage this item)",
+  // REQ-128 Phase 3 `#784`: importing an extension package from a local folder.
+  // Three wording rules: (1) always name the reason — there is no "other" bucket;
+  // (2) never guess and never rewrite the user's files; (3) "won't install" is a stated
+  // trade-off, not an error.
+  "alpha.ext.localPackageTitle": "Import package",
+  "alpha.ext.localPackageFound": "{{count}} skills found",
+  // Not a disclaimer — this is the actual guarantee level. Never reword as "checked/verified/safe".
+  "alpha.ext.localPackageUnreviewed":
+    "This content comes from a folder you picked yourself and has not been reviewed. Everything that will and will not be installed is listed below.",
+  "alpha.ext.localPackageWillInstall": "Will install",
+  "alpha.ext.localPackageWontInstall": "Will not install",
+  "alpha.ext.localPackageUnsupportedLayout": "Layouts this version does not recognise",
+  "alpha.ext.localPackageUnsupportedTypes": "Content this version does not install",
+  "alpha.ext.localPackageConfirm": "Install {{count}} skills",
+  "alpha.ext.localPackageNothingToInstall": "Nothing to install",
+  "alpha.ext.localPackageCancelNote": "Cancelling leaves nothing behind on this computer.",
+  "alpha.ext.localPackageInstalled": "{{count}} skills installed · all still off; turn a switch on to use them",
+  "alpha.ext.localPackageInstalledPendingReload":
+    "{{count}} skills installed · the engine could not reload right now; restarting Alpha will apply it",
+  // `#784` R1 Major: the pack card is gone once removal succeeds — what was kept, and why,
+  // has to live outside the card, or the user sees leftovers with no explanation.
+  "alpha.ext.packageRemovedWithRetained": "Removed package “{{pack}}” · {{count}} item(s) kept",
+  "alpha.ext.gotIt": "Got it",
+  "alpha.ext.packagesSection": "Packages",
+  "alpha.ext.packagesGroupNote": "Skills inside a package belong to that package and can only be removed with it.",
+  // "Cannot read" and "nothing installed" are different facts; folding them makes users think
+  // their content is gone.
+  "alpha.ext.packagesUnreadableTitle": "Cannot read the installed package list right now",
+  "alpha.ext.packageNoVersion": "No version given",
+  "alpha.ext.packageSkillCount": "{{count}} skills",
+  "alpha.ext.packageNoneEnabled": "none enabled",
+  "alpha.ext.packageSomeEnabled": "{{count}} enabled",
+  "alpha.ext.packageAllOffLead":
+    "These skills are installed but none are enabled yet. Turn on any switch below and the next message can use it.",
+  "alpha.ext.packageFromLocalFolder": "From a local folder",
+  "alpha.ext.packageFromCatalog": "From the official catalog",
+  "alpha.ext.packageRemoving": "Removing…",
+  "alpha.ext.packageRemovedPendingReload":
+    "Removed · the engine could not reload right now; restarting Alpha will apply it",
+  "alpha.ext.packageComponentUnknownState": "Cannot read this item's switch state",
+  "alpha.ext.memberOfPackage": "In package {{pack}}",
+  "alpha.ext.componentOwnedByPackage": "This skill belongs to the package “{{pack}}” and cannot be removed on its own.",
+  "alpha.ext.removeWholePackage": "Remove the whole package",
   "alpha.ext.verifyPending": "Unverified",
   "alpha.ext.verifyNoteTitle": "Pending verification",
   // REQ-105 (#197): archived-connector advisory + Excel audited pin

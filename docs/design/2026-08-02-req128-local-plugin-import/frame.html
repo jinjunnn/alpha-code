@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>定制中心增量 · 本地插件包导入(技能)— 预览屏 / 已装扩展包 / 启用与生效 (2026-08-02)</title>
+<!-- 视觉语言与 token 全部沿用活稿,不在此重抄一份 -->
+<link rel="stylesheet" href="../current/customization-center/design.css">
+<style>
+/* ── 本增量新增的三组基元。批准后随帧一起并入 current/customization-center/design.css ── */
+
+/* 弹窗骨架(现役 alpha-ui Dialog 的稿内等价物;size=lg + besideSidebar) */
+.dlg-stage{background:var(--a-bg-inset);padding:26px 22px;display:flex;justify-content:center}
+.dlg{width:100%;max-width:640px;background:var(--a-surface-raised);border:1px solid var(--a-border);border-radius:var(--a-radius-xl);box-shadow:var(--a-shadow-overlay);overflow:hidden}
+.dlg-h{padding:15px 18px 13px;border-bottom:1px solid var(--a-border-faint)}
+.dlg-h .t{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.dlg-h .t b{font-size:var(--a-text-md);font-weight:var(--a-weight-semibold)}
+.dlg-h .s{margin-top:4px;font-size:var(--a-text-xs);color:var(--a-text-tertiary);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dlg-b{padding:15px 18px;max-height:460px;overflow:auto}
+.dlg-f{display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid var(--a-border-faint);background:var(--a-bg-subtle)}
+.dlg-f .grow{flex:1;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+
+/* 预览逐条行:状态图标 + 名称 + 状态标 + 具名原因 */
+.pv-g{display:flex;align-items:baseline;gap:8px;margin:16px 0 7px}
+.pv-g:first-child{margin-top:0}
+.pv-g b{font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold)}
+.pv-g span{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.pv{display:flex;gap:9px;padding:8px 11px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);background:var(--a-surface);margin-bottom:6px}
+.pv .st-ic{width:19px;height:19px;border-radius:6px;display:grid;place-items:center;flex:none;font-size:11px;font-weight:700;margin-top:1px}
+.pv .st-ic.ok{background:var(--a-success-subtle);color:var(--a-success)}
+.pv .st-ic.no{background:var(--a-bg-muted);color:var(--a-text-tertiary)}
+.pv .st-ic.err{background:var(--a-error-subtle);color:var(--a-error)}
+.pv .bd{min-width:0;flex:1}
+.pv .nm{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.pv .why{margin:3px 0 0;font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:var(--a-leading-snug)}
+.pv .why b{color:var(--a-text-secondary);font-weight:var(--a-weight-medium)}
+.pv[data-dim]{background:var(--a-bg-subtle)}
+
+/* 扩展包卡:包头(动作)+ 组件行(每技能一个开关) */
+.pack{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);margin-bottom:11px;overflow:hidden}
+.pack-h{display:flex;align-items:center;gap:12px;padding:12px 14px}
+.pack-h .ico{width:34px;height:34px;border-radius:var(--a-radius-md);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex:none;box-shadow:var(--a-shadow-xs)}
+.pack-h .bd{min-width:0;flex:1}
+.pack-h .nm{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pack-h .nm b{font-size:var(--a-text-md);font-weight:var(--a-weight-medium)}
+.pack-h .st{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin-top:2px}
+.pack-lead{display:flex;gap:9px;margin:0 14px 11px;padding:9px 12px;border-radius:var(--a-radius-md);background:var(--a-accent-subtle);border:1px solid color-mix(in srgb,var(--a-accent) 26%,transparent);font-size:var(--a-text-sm);color:var(--a-text);line-height:var(--a-leading-snug)}
+.pack-cs{border-top:1px solid var(--a-border-faint);background:var(--a-bg-subtle)}
+.pc{display:flex;align-items:center;gap:11px;padding:9px 14px;border-bottom:1px solid var(--a-border-faint)}
+.pc:last-child{border-bottom:0}
+.pc .bd{min-width:0;flex:1}
+.pc .nm{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:var(--a-text-sm)}
+.pc .st{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin-top:1px;display:flex;align-items:center;gap:6px}
+.pc .st .dot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--a-text-disabled)}
+.pc .st .dot.ok{background:var(--a-success)}
+.pc .st .dot.warn{background:var(--a-warning)}
+.man-row .st[data-err],.pc .st[data-err]{color:var(--a-error)}
+.pack-foot{padding:0 14px 12px}
+.danger{border:1px solid color-mix(in srgb,var(--a-error) 40%,var(--a-border));background:transparent;color:var(--a-error);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 12px;border-radius:var(--a-radius-md)}
+
+/* 三步状态流 */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:20px 22px}
+@media (max-width:820px){.steps{grid-template-columns:1fr}}
+.step{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);padding:13px 14px}
+.step .k{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:var(--a-radius-full);background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-2xs);font-weight:700}
+.step .h{display:flex;align-items:center;gap:8px;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold)}
+.step p{margin:7px 0 0;font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:var(--a-leading-snug)}
+.stack{display:grid;gap:14px;padding:18px 20px}
+.pad{padding:18px 20px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="m">α</span> 定制中心增量 · 本地插件包导入(技能)</div>
+  <div class="spacer"></div>
+  <nav><a href="#rel">与现状的关系</a><a href="#vocab">词汇表</a><a href="#entry">入口(零改动)</a><a href="#preview">预览屏</a><a href="#packs">已装扩展包</a><a href="#flow">启用与生效</a><a href="#fail">失败与边界态</a><a href="#review">评审点</a></nav>
+  <div class="seg" id="themeSeg"><button data-t="light" class="on">浅色</button><button data-t="dark">深色</button></div>
+</div>
+
+<div class="wrap">
+
+<!-- ═══ 与现状的关系 ═══ -->
+<section class="sec" id="rel">
+  <div class="sec-kicker">增量稿 · 基线 = 活稿 v6(四级货架)+ 现行实现 alpha@13a69d2c + 已批方案基线(Phase 3)</div>
+  <h2>与上一稿 / 现状的关系</h2>
+  <p class="lede">本稿<b>只画三样东西</b>:导入本地插件目录时的<b>预览屏</b>、已安装页里新的<b>「扩展包」区块</b>(含每个技能的开关与「移除此扩展包」)、以及装完之后的<b>启用与生效状态流</b>。定制中心的 tab、货架、浏览卡、详情页段顺序、已安装页的 scope 分组一寸不动;<b>导入页不新增第六张卡</b>。</p>
+  <div class="matrix-scroll"><table class="matrix">
+    <tr><th>面</th><th>今天是什么样(实读现行实现)</th><th>本稿</th></tr>
+    <tr><td>导入入口</td><td>导入页 5 张卡:文件夹 / Git / npm / 自定义连接器 / 导入 Agent(<code>extension-hub.tsx:2264-2323</code>)。「文件夹」点下去由主进程自弹选择器,界面不传路径(<code>:440</code>)</td><td><span class="tag zero">零改动</span>选中的目录若是一个插件目录,主进程改走新路;界面按返回值分流,<b>自己不判目录形态</b></td></tr>
+    <tr><td>非插件目录</td><td>沿用既有单技能导入:成功 toast / 失败行内红字(<code>:447-448</code>)</td><td><span class="tag zero">逐字不变</span>本稿画出这一帧当对照物,防止实现顺手改它</td></tr>
+    <tr><td>两段式预览</td><td>已有形状:导入 Agent 的映射预览弹窗(<code>:2774-2819</code>,取消 / 确认两键)</td><td><span class="tag new">继承形状</span>同一个弹窗骨架,内容换成逐技能判定;尺寸 md → lg</td></tr>
+    <tr><td>已装的「包」</td><td><b>看不见</b>。唯一能看到包的地方是目录条目的详情页(<code>extension-detail.tsx:140</code>),而它只能从远程目录进得去;已安装页只有逐个组件的平铺行</td><td><span class="tag new">新增区块</span>本地导入的包<b>没有目录详情页可去</b>,所以包头动作只能挂在区块里</td></tr>
+    <tr><td>逐组件「会装 / 不会装 + 原因」</td><td><b>已有词汇</b>:目录扩展包详情页已经是「主件 / 附带 · 会安装 / 不会安装 + 具名原因」(<code>extension-detail.tsx:234-266</code>)</td><td><span class="tag done">复用</span>预览屏沿用同一套词,不另造一套说法</td></tr>
+    <tr><td>「已安装 · 未启用」</td><td>已有:徽标 + 状态行「未启用 —— 打开开关后生效」(<code>extension-hub.tsx:1727</code>)</td><td><span class="tag done">复用</span>本地包装完默认全是这个状态,所以它从边角变成<b>主路径</b></td></tr>
+    <tr><td>开关 / 移除</td><td>已有:行内开关(<code>:1789-1800</code>)与移除按钮(<code>:1818-1828</code>);整包移除按钮与失败呈现已在包详情页(<code>extension-detail.tsx:165-183</code>、<code>:306-337</code>)</td><td><span class="tag new">搬位置</span>控件版式全部现役,只是第一次出现在已安装页的包卡里</td></tr>
+    <tr><td>装完当场生效</td><td>引擎重载能力已有(<code>use-extensions.ts:136</code>),开关路径已经在用(<code>:605</code>);<b>整包移除今天只刷列表、不重载引擎</b></td><td><span class="tag new">接线</span>确认安装成功、整包移除成功都要重载;重载没成功如实说「待重载」</td></tr>
+  </table></div>
+  <div class="note ok"><b>净效果(用户视角一句话)</b>:点「文件夹」挑一个插件目录 → 弹一屏逐条告诉你哪些装得上、哪些装不上以及为什么 → 确认 → 已安装页多出一张扩展包卡,里面的技能<b>默认都是关的</b>,卡上一行字告诉你「打开开关才会生效」→ 打开任意一个,下一条消息里就能用 → 「移除此扩展包」一键连文件带记录一起拿掉。</div>
+  <div class="note warn"><b>一条不许被磨平的话</b>:本地文件夹里的内容<b>没有经过任何审核</b>。这一屏能给的只有「逐条告诉你」,给不了「已验证」。帧里那句「来自你选择的文件夹,未经审核」不是免责声明,是这个功能的实际保证水平 —— 任何把它改写成「已检查 / 已验证 / 安全」的措辞都是错的。</div>
+</section>
+
+<!-- ═══ 词汇表 ═══ -->
+<section class="sec" id="vocab">
+  <div class="sec-kicker">内部判定 → 用户语言(帧内只出现右列)</div>
+  <h2>词汇表:每一条「不装」都要说人话</h2>
+  <p class="lede">「装不上」不是边角:本机 40 个带技能的插件里,有 10 个从干净机器起就一个技能都装不上。所以下面这张表不是错误码附录,<b>它就是这个功能的主要产出</b>。</p>
+  <div class="matrix-scroll"><table class="matrix">
+    <tr><th>判定</th><th>行内标(帧内)</th><th>原因文案(帧内)</th></tr>
+    <tr><td>通过</td><td>会安装</td><td>(不出原因行)</td></tr>
+    <tr><td>同名已存在</td><td>不会安装 · 已有同名</td><td>你已经装过一个叫「{名字}」的技能。这次不覆盖它 —— 想换成这一个,请先移除原来的。</td></tr>
+    <tr><td>说明读不出</td><td>不会安装 · 说明读不出</td><td>这个技能开头的说明写成了跨行格式,这一版读不了,所以不装。</td></tr>
+    <tr><td>引用了自己文件夹外的东西</td><td>不会安装 · 会缺件</td><td>它要用到自己文件夹以外的文件(<span class="mono">{相对路径}</span>),单独装过来会缺件。</td></tr>
+    <tr><td>带可执行文件</td><td>不会安装 · 含可执行文件</td><td>这个技能里带了能直接运行的脚本,这一版不装。</td></tr>
+    <tr><td>含快捷方式</td><td>不会安装 · 含快捷方式</td><td>这个技能里有指向别处的快捷方式,装过来指不到,所以不装。</td></tr>
+    <tr><td>带兑现不了的调用设置</td><td>不会安装 · 设置不支持</td><td>它带了「{设置名}」这类调用设置,Alpha 这一版没有对应开关 —— 装过来它的行为会和作者的意图不一样,所以不装。</td></tr>
+    <tr><td>摆放位置不认识</td><td>不会安装 · 位置不认识</td><td>这个技能放在「{目录}」,这一版只认「skills」里的技能,所以不装。</td></tr>
+    <tr><td>整个文件夹的结构不认识</td><td>(整屏终态)</td><td>这个文件夹的结构这一版还不认识,没有能装的东西。</td></tr>
+    <tr><td>本版本不安装的内容类型</td><td>这一版不安装</td><td>命令 · 子 Agent · 钩子 · 外部服务连接配置 —— 逐类具名列出数量,不静默跳过。</td></tr>
+  </table></div>
+  <div class="note"><b>三条措辞纪律</b>:①<b>永远说得出原因</b> —— 没有「其他原因」这一档,也没有「跳过 N 项」这种不点名的汇总;②<b>不猜、不改写</b> —— 我们一个字节都不改用户的文件,读不了就直说读不了;③<b>不把「不装」写成失败</b> —— 它是一次说清的取舍,语气是陈述不是报错(整屏一个都装不上时才升级为警示框)。</div>
+</section>
+
+<!-- ═══ 入口:零改动 ═══ -->
+<section class="sec" id="entry">
+  <div class="sec-kicker">帧 1 · 导入页 · 现状对照(本稿零改动,画出来是为了钉死「不新增卡」)</div>
+  <h2>入口不变:还是那张「文件夹」卡</h2>
+  <div class="frame"><div class="hub">
+    <div class="hub-tabbar">
+      <div class="hub-tab">推荐</div><div class="hub-tab">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">Agent</div><div class="hub-tab">插件</div><div class="hub-tab">套件</div><div class="hub-tab">已安装</div><div class="hub-tab on">导入</div><div class="hub-tab">云能力</div>
+    </div>
+    <div class="hub-body">
+      <div class="hub-h1">导入</div>
+      <div class="hub-sub">把已有的技能、Agent 或连接器带进来。</div>
+      <div class="cat-h">从哪里导入</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(190px,1fr))">
+        <div class="card"><div class="top"><span class="ic" style="background:#4f46e5">📁</span><div class="hd"><div class="nm"><b>文件夹</b></div></div></div><p class="desc">本地 SKILL.md / agent</p></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#52525b">⎇</span><div class="hd"><div class="nm"><b>Git 仓库</b></div></div></div><p class="desc">https 仓库地址</p></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#b91c1c">npm</span><div class="hd"><div class="nm"><b>npm 包</b></div></div></div><p class="desc">上游生态插件</p></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#0e7490">＋</span><div class="hd"><div class="nm"><b>自定义连接器</b></div></div></div><p class="desc">任意 MCP 服务</p></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#7c3aed">◆</span><div class="hd"><div class="nm"><b>导入 Agent</b></div></div></div><p class="desc">单个 agent 文件</p></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="cap">五张卡一张不增一张不改。变化全部发生在「文件夹」卡按下去<b>之后</b>:选中的目录若是一个插件目录,进本稿的预览屏;否则原路走既有单技能导入 —— 成功 toast、失败行内红字,<b>一个字都不动</b>(这一条在实现里由回归用例钉死)。用户不需要事先知道自己挑的是哪一种。</div>
+</section>
+
+<!-- ═══ 预览屏 ═══ -->
+<section class="sec" id="preview">
+  <div class="sec-kicker">帧 2–4 · 预览屏 · 三种真实终态(数据取自本机真实插件语料)</div>
+  <h2>预览屏:先说清楚,再让你按确认</h2>
+  <p class="lede">弹窗骨架继承导入 Agent 的两段式预览(取消 / 确认两键,确认之前一个字节都不写盘)。内容分三段:<b>会安装</b>、<b>不会安装(逐条原因)</b>、<b>这一版不安装的内容类型</b>。主按钮上直接写数量 —— 用户在按下去之前就知道到底装几个。</p>
+
+  <div class="frame"><div class="dlg-stage"><div class="dlg">
+    <div class="dlg-h">
+      <div class="t"><b>导入扩展包</b><span class="chip" data-src="type">本地文件夹</span></div>
+      <div class="s"><span>plugin-dev</span><span>·</span><span>未提供版本</span><span>·</span><span>找到 7 个技能</span></div>
+    </div>
+    <div class="dlg-b">
+      <div class="warnbox"><span>⚠️</span><span>这些内容来自你自己选择的文件夹,<b>没有经过审核</b>。下面逐条列出会装什么、不装什么。</span></div>
+
+      <div class="pv-g"><b>会安装</b><span>1 个技能</span></div>
+      <div class="pv"><span class="st-ic ok">✓</span><div class="bd"><div class="nm">skill-development<span class="chip" data-src="type">技能</span></div></div></div>
+
+      <div class="pv-g"><b>不会安装</b><span>6 个技能 · 每条都说明原因</span></div>
+      <div class="pv" data-dim><span class="st-ic no">–</span><div class="bd"><div class="nm">command-development<span class="chip" data-src="off">会缺件</span></div><p class="why">它要用到自己文件夹以外的文件(<span class="mono">${CLAUDE_PLUGIN_ROOT}</span> 下的内容),单独装过来会缺件。</p></div></div>
+      <div class="pv" data-dim><span class="st-ic no">–</span><div class="bd"><div class="nm">mcp-integration<span class="chip" data-src="off">会缺件</span></div><p class="why">它要用到自己文件夹以外的文件(<span class="mono">${CLAUDE_PLUGIN_ROOT}</span> 下的内容),单独装过来会缺件。</p></div></div>
+      <div class="pv" data-dim><span class="st-ic no">–</span><div class="bd"><div class="nm">plugin-structure<span class="chip" data-src="off">会缺件</span></div><p class="why">它要用到自己文件夹以外的文件(<span class="mono">${CLAUDE_PLUGIN_ROOT}</span> 下的内容),单独装过来会缺件。</p></div></div>
+      <div class="pv" data-dim><span class="st-ic no">–</span><div class="bd"><div class="nm">hook-development<span class="chip" data-src="off">含可执行文件</span><span class="chip" data-src="off">会缺件</span></div><p class="why">这个技能里带了能直接运行的脚本,并且要用到自己文件夹以外的文件,这一版不装。</p></div></div>
+      <div class="pv" data-dim><span class="st-ic no">–</span><div class="bd"><div class="nm">plugin-settings<span class="chip" data-src="off">含可执行文件</span></div><p class="why">这个技能里带了能直接运行的脚本,这一版不装。</p></div></div>
+      <div class="pv" data-dim><span class="st-ic no">–</span><div class="bd"><div class="nm">agent-development<span class="chip" data-src="off">含可执行文件</span></div><p class="why">这个技能里带了能直接运行的脚本,这一版不装。</p></div></div>
+
+      <div class="pv-g"><b>这一版不安装的内容</b><span>2 类</span></div>
+      <div class="pv" data-dim><span class="st-ic no">–</span><div class="bd"><div class="nm">命令<span class="chip" data-src="type">1 个</span></div><p class="why">这一版只从插件目录里导入技能,命令留在原处不动。</p></div></div>
+      <div class="pv" data-dim><span class="st-ic no">–</span><div class="bd"><div class="nm">子 Agent<span class="chip" data-src="type">3 个</span></div><p class="why">这一版只从插件目录里导入技能;单个 Agent 可以用导入页的「导入 Agent」单独带进来。</p></div></div>
+    </div>
+    <div class="dlg-f"><span class="grow">取消不会在这台电脑上留下任何东西。</span><button class="ghost-btn">取消</button><button class="add">安装 1 个技能</button></div>
+  </div></div></div>
+  <div class="cap">帧 2 · <b>部分可装(典型态)</b>。数据 = 本机真实插件 <code>plugin-dev</code>:7 个技能里 6 个因「引用插件根资源 / 带可执行位」被拒,恰好落在方案基线点名的那 6 个上;它的 <code>plugin.json</code> <b>没有 version 字段</b>(本机 62 个插件里 27 个没有),所以副标题如实写「未提供版本」而不是造一个 <code>1.0.0</code>。原因文案里的 <span class="mono">${CLAUDE_PLUGIN_ROOT}</span> 是<b>用户文件里的原字符串</b>(照抄不翻译),不是我们的术语。</div>
+
+  <div class="duo" style="margin-top:22px">
+    <div>
+      <div class="frame"><div class="dlg-stage" style="padding:18px 14px"><div class="dlg">
+        <div class="dlg-h">
+          <div class="t"><b>导入扩展包</b><span class="chip" data-src="type">本地文件夹</span></div>
+          <div class="s"><span>codex</span><span>·</span><span>v1.0.4</span><span>·</span><span>找到 3 个技能</span></div>
+        </div>
+        <div class="dlg-b" style="max-height:300px">
+          <div class="errbox" style="margin-bottom:12px"><span>✕</span><span>这个文件夹里的技能,这一版<b>一个都装不了</b>。原因逐条列在下面。</span></div>
+          <div class="pv-g"><b>不会安装</b><span>3 个技能</span></div>
+          <div class="pv" data-dim><span class="st-ic err">✕</span><div class="bd"><div class="nm">codex-cli-runtime<span class="chip" data-src="err">设置不支持</span></div><p class="why">它带了「只允许手动调用」这类调用设置,Alpha 这一版没有对应开关 —— 装过来行为会和作者的意图不一样,所以不装。</p></div></div>
+          <div class="pv" data-dim><span class="st-ic err">✕</span><div class="bd"><div class="nm">codex-result-handling<span class="chip" data-src="err">设置不支持</span></div><p class="why">同上:带了这一版兑现不了的调用设置。</p></div></div>
+          <div class="pv" data-dim><span class="st-ic err">✕</span><div class="bd"><div class="nm">gpt-5-4-prompting<span class="chip" data-src="err">设置不支持</span></div><p class="why">同上:带了这一版兑现不了的调用设置。</p></div></div>
+          <div class="pv-g"><b>这一版不安装的内容</b><span>3 类</span></div>
+          <div class="pv" data-dim><span class="st-ic no">–</span><div class="bd"><div class="nm">命令<span class="chip" data-src="type">7 个</span><span>·</span>子 Agent<span class="chip" data-src="type">1 个</span><span>·</span>钩子<span class="chip" data-src="type">1 项</span></div><p class="why">这一版只从插件目录里导入技能。</p></div></div>
+        </div>
+        <div class="dlg-f"><span class="grow">没有可安装的技能。</span><button class="ghost-btn">取消</button><button class="add" disabled>没有可安装的技能</button></div>
+      </div></div></div>
+      <div class="cap">帧 3 · <b>一个都装不上(常态终态,不是边角)</b>。数据 = 本机真实插件 <code>codex</code>,3 个技能全部声明了调用控制设置。本机 40 个带技能的插件里有 10 个是这个结局。确认键<b>保留但禁用</b>并把原因写在键面上,用户看到的仍是同一屏 —— 不换成一个「知道了」把这一屏伪装成提示框(评审点 Q3)。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="dlg-stage" style="padding:18px 14px"><div class="dlg">
+        <div class="dlg-h">
+          <div class="t"><b>导入扩展包</b><span class="chip" data-src="type">本地文件夹</span></div>
+          <div class="s"><span>receipts</span><span>·</span><span>这个文件夹的结构不认识</span></div>
+        </div>
+        <div class="dlg-b" style="max-height:300px">
+          <div class="warnbox" style="margin-bottom:12px"><span>⚠️</span><span>这个文件夹里<b>有技能</b>,但它们的摆放方式这一版还不认识,所以一个都没法装。</span></div>
+          <div class="pv-g"><b>看到了什么</b></div>
+          <div class="pv" data-dim><span class="st-ic no">–</span><div class="bd"><div class="nm">receipts<span class="chip" data-src="off">位置不认识</span></div><p class="why">这个技能放在这个文件夹的更深一层,而这一版只认识插件根目录下的「skills」。</p></div></div>
+          <div class="pv-g"><b>可以怎么办</b></div>
+          <div class="pv"><span class="st-ic ok">✓</span><div class="bd"><div class="nm">直接选中技能自己的文件夹</div><p class="why">如果这个技能自己的文件夹里有 SKILL.md,重新点「文件夹」并直接选中它,可以单独导入。</p></div></div>
+        </div>
+        <div class="dlg-f"><span class="grow">没有可安装的技能。</span><button class="ghost-btn">取消</button><button class="add" disabled>没有可安装的技能</button></div>
+      </div></div></div>
+      <div class="cap">帧 4 · <b>结构不认识</b>。数据 = 本机真实插件 <code>receipts</code>(Anthropic 官方现役条目,<b>没有</b>插件清单文件,但确实带技能)。要害在这一句必须是「摆放方式不认识」,<b>绝不能落回「这个文件夹里没有 SKILL.md」</b> —— 那句话与真因毫无关系,而它正是今天这条路径会说出来的话。这一屏也是唯一给出「下一步可以怎么办」的终态。</div>
+    </div>
+  </div>
+  <div class="note"><b>为什么会有一屏什么都装不了</b>:这一版收得很窄 —— 只装「自带全部所需文件、没有可执行脚本、没有我们兑现不了的调用设置」的技能。窄不是遗憾,是这条路上唯一诚实的选择:文件夹里的内容没有经过审核,能少猜一点就少猜一点。<b>把这一屏画清楚,比把它藏起来更重要</b>,否则用户只会得到一句「导入失败」。</div>
+</section>
+
+<!-- ═══ 已装扩展包区块 ═══ -->
+<section class="sec" id="packs">
+  <div class="sec-kicker">帧 5–6 · 已安装页 · 新增「扩展包」区块(区块内含每技能开关与整包移除)</div>
+  <h2>已装扩展包:看得见整体,也看得见零件</h2>
+  <p class="lede">已安装页今天只有平铺的组件行 —— 装进来的一包技能会散成 10 行,用户看不出它们是一件东西,也没有任何地方能把它整个拿掉。新区块<b>放在「已安装」清单之前</b>:先看到整体,再往下看到零件。区块里每个技能各有自己的开关(装完默认全关),包头挂「移除此扩展包」。</p>
+  <div class="frame"><div class="hub">
+    <div class="hub-tabbar">
+      <div class="hub-tab">推荐</div><div class="hub-tab">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">Agent</div><div class="hub-tab">插件</div><div class="hub-tab">套件</div><div class="hub-tab on">已安装</div><div class="hub-tab">导入</div><div class="hub-tab">云能力</div>
+    </div>
+    <div class="hub-body">
+      <div class="hub-h1">已安装</div>
+      <div class="hub-sub">这台电脑上装了什么,以及它们现在开着还是关着。</div>
+
+      <div class="cat-h">扩展包 · 2</div>
+      <p class="group-note">一个扩展包里的技能属于这个包,只能整包移除。</p>
+
+      <div class="pack">
+        <div class="pack-h">
+          <div class="ico" style="background:#0f766e">tid</div>
+          <div class="bd">
+            <div class="nm"><b>tide</b><span class="chip" data-src="type">扩展包</span><span class="chip" data-src="off">来自本地文件夹</span></div>
+            <div class="st">v0.1.0 · 10 个技能 · 全部未启用</div>
+          </div>
+          <button class="danger">移除此扩展包</button>
+        </div>
+        <div class="pack-lead"><span>💡</span><span>这些技能已经装好了,但<b>都还没启用</b>。打开下面任意一个开关,下一条消息里就能用。</span></div>
+        <div class="pack-cs">
+          <div class="pc"><div class="bd"><div class="nm">premarket-briefing<span class="chip" data-src="off">已安装 · 未启用</span></div><div class="st"><span class="dot"></span>未启用 —— 打开开关后生效</div></div><button class="sw" role="switch" aria-checked="false"></button></div>
+          <div class="pc"><div class="bd"><div class="nm">postmarket-review<span class="chip" data-src="off">已安装 · 未启用</span></div><div class="st"><span class="dot"></span>未启用 —— 打开开关后生效</div></div><button class="sw" role="switch" aria-checked="false"></button></div>
+          <div class="pc"><div class="bd"><div class="nm">portfolio-review<span class="chip" data-src="off">已安装 · 未启用</span></div><div class="st"><span class="dot"></span>未启用 —— 打开开关后生效</div></div><button class="sw" role="switch" aria-checked="false"></button></div>
+          <div class="pc"><div class="bd"><div class="nm">chain-analysis<span class="chip" data-src="off">已安装 · 未启用</span></div><div class="st"><span class="dot"></span>未启用 —— 打开开关后生效</div></div><button class="sw" role="switch" aria-checked="false"></button></div>
+          <div class="pc"><div class="bd"><div class="nm">event-impact<span class="chip" data-src="off">已安装 · 未启用</span></div><div class="st"><span class="dot"></span>未启用 —— 打开开关后生效</div></div><button class="sw" role="switch" aria-checked="false"></button></div>
+          <div class="pc"><div class="bd"><div class="nm">还有 5 个技能</div><div class="st">theme-analysis · stock-deep-dive · risk-scan · event-tracking · tide-intro</div></div><button class="ghost-btn">展开</button></div>
+        </div>
+      </div>
+
+      <div class="pack">
+        <div class="pack-h">
+          <div class="ico" style="background:#4f46e5">plu</div>
+          <div class="bd">
+            <div class="nm"><b>plugin-dev</b><span class="chip" data-src="type">扩展包</span><span class="chip" data-src="off">来自本地文件夹</span></div>
+            <div class="st">未提供版本 · 1 个技能 · 1 个已启用</div>
+          </div>
+          <button class="danger">移除此扩展包</button>
+        </div>
+        <div class="pack-cs">
+          <div class="pc"><div class="bd"><div class="nm">skill-development</div><div class="st"><span class="dot ok"></span>已启用</div></div><button class="sw on" role="switch" aria-checked="true"></button></div>
+        </div>
+      </div>
+
+      <div class="cat-h">已安装 · 全局</div>
+      <div class="man-row"><div class="ico" style="background:#0f766e">pre</div><div class="body"><div class="nm"><b>premarket-briefing</b><span class="chip" data-src="type">技能</span><span class="chip" data-src="off">属于扩展包 tide</span><span class="chip" data-src="off">已安装 · 未启用</span></div><div class="st"><span class="dot muted"></span>未启用 —— 打开开关后生效</div></div><button class="sw" role="switch" aria-checked="false"></button><button class="ghost-btn" title="移除">🗑</button></div>
+      <div class="man-row" style="margin-bottom:0"><div class="ico" style="background:#4f46e5">FS</div><div class="body"><div class="nm"><b>文件系统</b><span class="chip" data-shelf="precache">精选</span></div><div class="st"><span class="dot ok"></span>已启用</div></div><button class="sw on" role="switch" aria-checked="true"></button><button class="ghost-btn" title="移除">🗑</button></div>
+    </div>
+  </div></div>
+  <div class="cap">帧 5 · <b>刚装完(默认全关)+ 版本缺失</b>。第一张卡 = 本机真实插件 <code>tide</code>(10 个技能全部可装,版本 0.1.0);第二张 = <code>plugin-dev</code>,<b>没有版本字段</b>,如实写「未提供版本」。包头的「移除此扩展包」与包详情页是同一颗按钮、同一套失败与保留件呈现 —— 本地包<b>没有目录详情页可去</b>,所以这里是它唯一的移除入口。技能超过 5 个时折行收进「还有 N 个」,与包内技能数上限(单插件实测最多 13 个)相称。</div>
+  <div class="cap">下方「已安装 · 全局」组<b>零改动</b>:包里的技能本来就有各自的安装记录,会照常出现在这里,只多一枚<span class="chip" data-src="off">属于扩展包 tide</span>。保留它有两个理由:一是搜索、更新、逐个启停这些既有能力不该因为「它在一个包里」就消失;二是用户在这里点垃圾桶,正是「单个技能不能单独移除」这条规则唯一说得出口的地方(见下一节失败态)。<b>两处开关翻的是同一个状态,不是两份设置。</b>(评审点 Q1)</div>
+</section>
+
+<!-- ═══ 启用与生效 ═══ -->
+<section class="sec" id="flow">
+  <div class="sec-kicker">帧 7 · 装完 → 启用 → 可用(默认关是产品裁决,所以「装完什么都没发生」是默认路径)</div>
+  <h2>启用与生效:装完不等于能用,这件事必须说出来</h2>
+  <p class="lede">本地扩展包装完之后<b>默认全部关闭</b>。这意味着:如果界面不主动引导,用户按完确认会觉得「什么都没发生」,然后判定这个功能坏了。所以确认成功之后界面<b>自动切到已安装页并把新包定位在最上面</b>,包卡上带一行引导;开关拨开的那一刻引擎当场重载,下一条消息里技能就在。</p>
+  <div class="frame"><div class="steps">
+    <div class="step">
+      <div class="h"><span class="k">1</span>装好了,但都还关着</div>
+      <p>确认之后直接落在已安装页的新包卡上,卡里每个技能都是<b>已安装 · 未启用</b>,卡头一行字说明「打开开关才会生效」。</p>
+      <div class="pc" style="margin-top:10px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);background:var(--a-bg-subtle)"><div class="bd"><div class="nm">premarket-briefing<span class="chip" data-src="off">已安装 · 未启用</span></div><div class="st"><span class="dot"></span>未启用 —— 打开开关后生效</div></div><button class="sw" role="switch" aria-checked="false"></button></div>
+    </div>
+    <div class="step">
+      <div class="h"><span class="k">2</span>你打开它</div>
+      <p>拨开关 = 立刻生效,不需要退出重进,也不需要重启应用。开关翻动的同时后台让引擎重新加载一次。</p>
+      <div class="pc" style="margin-top:10px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);background:var(--a-bg-subtle)"><div class="bd"><div class="nm">premarket-briefing</div><div class="st"><span class="dot ok"></span>已启用</div></div><button class="sw on" role="switch" aria-checked="true"></button></div>
+    </div>
+    <div class="step">
+      <div class="h"><span class="k">3</span>下一条消息里就能用</div>
+      <p>回到会话,下一条消息发出去时这个技能已经在了 —— 输入 <span class="mono">/</span> 也能看到它。</p>
+      <div class="pc" style="margin-top:10px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);background:var(--a-bg-subtle)"><div class="bd"><div class="nm"><span class="mono">/premarket-briefing</span></div><div class="st">盘前简报(环境 → 今日重点 → 观察/回避 → 板块池)</div></div></div>
+    </div>
+  </div></div>
+  <div class="cap">这三步是本增量唯一的行为主张,也是最容易被实现切断的一段:安装成功后要重载引擎、<b>整包移除成功后同样要重载</b>(今天的整包移除只刷新列表、不重载 —— 结果是移除之后技能仍然能用到下次重启)。重载没成功不许装作成功,见下一节。</div>
+  <div class="duo" style="margin-top:16px">
+    <div>
+      <div class="frame"><div class="pad">
+        <div class="pc" style="border:1px solid var(--a-border);border-radius:var(--a-radius-md)"><div class="bd"><div class="nm">premarket-briefing<span class="chip" data-src="warn">待重载</span></div><div class="st"><span class="dot warn"></span>已记录为「启用」,但这次没能让引擎立即重新加载 —— 重启 Alpha 后一定生效。</div></div><button class="sw on" role="switch" aria-checked="true"></button></div>
+      </div></div>
+      <div class="cap">态 · <b>开关翻了但引擎没重载成功</b>。设置已经落账(重启必然生效),但<b>不许宣称已经能用</b>。这条状态语是现役词汇,本稿只是把它接到本地包的启用与整包移除两条路径上。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="pad">
+        <div class="pack" style="margin-bottom:0">
+          <div class="pack-h"><div class="ico" style="background:#0f766e">tid</div><div class="bd"><div class="nm"><b>tide</b><span class="chip" data-src="type">扩展包</span></div><div class="st">v0.1.0 · 10 个技能 · 3 个已启用</div></div><button class="danger" disabled style="opacity:.55">移除中…</button></div>
+        </div>
+      </div></div>
+      <div class="cap">态 · <b>移除进行中</b>。按钮禁用并改词,防止连点造出第二次移除;整包移除是一次事务,过程中不给「部分已移除」的中间呈现。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 失败与边界态 ═══ -->
+<section class="sec" id="fail">
+  <div class="sec-kicker">帧 8 · 失败态与边界态 —— 这一节的每一格都是「不许假装成功」</div>
+  <h2>失败与边界态</h2>
+  <p class="lede">这一节里有一半的状态票面没有点名,但它们都在真实路径上到得了。共同判据只有一条:<b>凡是没有确认成功的,一律不许呈现为成功</b>;凡是「留下了什么」,一律说得出为什么。</p>
+
+  <div class="duo">
+    <div>
+      <div class="frame"><div class="pad">
+        <div class="pack" style="margin-bottom:0">
+          <div class="pack-h"><div class="ico" style="background:#0f766e">tid</div><div class="bd"><div class="nm"><b>tide</b><span class="chip" data-src="type">扩展包</span></div><div class="st">v0.1.0 · 10 个技能</div></div><button class="danger">移除此扩展包</button></div>
+          <div class="pack-foot"><div class="errbox"><span>✕</span><span><b>无法移除此扩展包</b><br>另一个安装正在进行,这次没有动任何文件。请稍后重试。</span></div></div>
+        </div>
+      </div></div>
+      <div class="cap">态一 · <b>移除失败</b>(票面 AC)。包<b>仍然留在列表里</b>,错误就在卡上。判据是「只有明确的成功才算成功」—— 任何别的返回都按失败呈现,绝不因为「调用返回了」就把卡拿掉。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="pad">
+        <div class="pack" style="margin-bottom:0">
+          <div class="pack-h"><div class="ico" style="background:#4f46e5">plu</div><div class="bd"><div class="nm"><b>plugin-dev</b><span class="chip" data-src="type">扩展包</span></div><div class="st">已移除</div></div></div>
+          <div class="pack-foot"><div class="warnbox" style="margin-bottom:0"><span>⚠️</span><span><b>有 1 项留了下来</b><br><span class="mono">skill-development</span> —— 保留(你自己也单独装过它)。想彻底删掉它,请在下面的「已安装」里单独移除。</span></div></div>
+        </div>
+      </div></div>
+      <div class="cap">态二 · <b>移除成功但有保留件</b>。「保留(…)」的四种理由是现役文案,本稿只是把它搬到包卡上并补一句「下一步怎么办」。留下东西而说不出理由,和一个缺陷没有区别。</div>
+    </div>
+  </div>
+
+  <div class="duo" style="margin-top:18px">
+    <div>
+      <div class="frame"><div class="pad">
+        <div class="man-row" style="margin-bottom:0"><div class="ico" style="background:#0f766e">pre</div><div class="body"><div class="nm"><b>premarket-briefing</b><span class="chip" data-src="type">技能</span><span class="chip" data-src="off">属于扩展包 tide</span></div><div class="st" data-err=""><span class="dot warn"></span>这个技能属于扩展包「tide」,不能单独移除。</div><div style="margin-top:8px"><button class="ghost-btn">移除整个扩展包</button></div></div><button class="sw" role="switch" aria-checked="false"></button><button class="ghost-btn" title="移除">🗑</button></div>
+      </div></div>
+      <div class="cap">态三 · <b>点了包里单个技能的移除</b>(票面 AC)。系统<b>明确拒绝</b>并把用户直接送到正确的动作 —— 不是静默什么都不做,更不是回一句「已移除」而东西还在。拒绝发生在删任何东西<b>之前</b>。注意开关仍然可用:单独<b>停用</b>一个技能是合法的,不能单独<b>移除</b>而已。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="pad">
+        <div class="cat-h" style="margin-top:0">扩展包</div>
+        <div class="errbox"><span>!</span><span><b>暂时读不出已装扩展包的清单</b><br>这<b>不代表没有安装</b> —— 只是这次没读出来。已安装的内容不受影响。</span></div>
+        <div style="margin-top:10px"><button class="ghost-btn">重试</button></div>
+      </div></div>
+      <div class="cap">态四 · <b>清单读不出</b>(票面未点名)。「读不出来」和「一个都没装」是两件事,合并成一句「暂无扩展包」会让用户以为东西丢了,进而去重装 —— 而重装会撞上同名拒绝。所以这两种状态在界面上永远分开。</div>
+    </div>
+  </div>
+
+  <div class="duo" style="margin-top:18px">
+    <div>
+      <div class="frame"><div class="dlg-stage" style="padding:16px 14px"><div class="dlg">
+        <div class="dlg-h"><div class="t"><b>导入扩展包</b><span class="chip" data-src="type">本地文件夹</span></div><div class="s"><span>tide</span><span>·</span><span>v0.1.0</span></div></div>
+        <div class="dlg-b" style="max-height:150px"><div class="warnbox" style="margin-bottom:0"><span>⚠️</span><span><b>你已经装过这个扩展包了。</b><br>要换成这个文件夹里的版本,请先在「已安装」里移除它,再重新导入。这一版不做原地更新。</span></div></div>
+        <div class="dlg-f"><span class="grow"></span><button class="ghost-btn">取消</button><button class="add" disabled>已装过</button></div>
+      </div></div></div>
+      <div class="cap">态五 · <b>重复导入</b>(票面未点名)。这句话必须出现在<b>按确认之前</b>。否则用户按下确认,才被告知「同名已存在」而一个都没装 —— 同一件事说得晚,就从提示变成了失败。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="dlg-stage" style="padding:16px 14px"><div class="dlg">
+        <div class="dlg-h"><div class="t"><b>导入扩展包</b><span class="chip" data-src="type">本地文件夹</span></div><div class="s"><span>tide</span><span>·</span><span>v0.1.0</span><span>·</span><span>10 个技能</span></div></div>
+        <div class="dlg-b" style="max-height:150px"><div class="errbox"><span>✕</span><span><b>这次什么都没有安装。</b><br>刚才预览之后,这些技能在这台电脑上的情况发生了变化。为了不覆盖你现有的内容,这一次整个取消了 —— 请重新预览一遍。</span></div></div>
+        <div class="dlg-f"><span class="grow">这台电脑上没有留下任何改动。</span><button class="ghost-btn">取消</button><button class="add">重新预览</button></div>
+      </div></div></div>
+      <div class="cap">态六 · <b>预览过期 / 安装中途失败</b>(票面未点名)。两者共用这一屏,因为对用户来说是同一件事:<b>一个都没装,盘上没有半成品</b>。措辞上不许出现「已装了 3 个」这种中间状态 —— 一次要么全成,要么全不成。</div>
+    </div>
+  </div>
+
+  <div class="duo" style="margin-top:18px">
+    <div>
+      <div class="frame"><div class="dlg-stage" style="padding:16px 14px"><div class="dlg">
+        <div class="dlg-h"><div class="t"><b>导入扩展包</b><span class="chip" data-src="type">本地文件夹</span></div><div class="s"><span>claude-for-financial-services</span></div></div>
+        <div class="dlg-b" style="max-height:170px"><div class="warnbox" style="margin-bottom:0"><span>⚠️</span><span><b>这个文件夹太大了,这一版没法一次性导入。</b><br>里面的技能数量或体积超过了单次导入的上限。可以改成直接选中你要用的那个技能自己的文件夹,单独导入。</span></div></div>
+        <div class="dlg-f"><span class="grow">没有可安装的技能。</span><button class="ghost-btn">取消</button><button class="add" disabled>没有可安装的技能</button></div>
+      </div></div></div>
+      <div class="cap">态七 · <b>超出单次导入上限</b>(票面未点名)。这一屏在<b>预览阶段</b>就给出终态,不会先把内容读进来再失败;并且给了一条真的走得通的出路。</div>
+    </div>
+    <div>
+      <div class="frame"><div class="pad">
+        <div class="note ok" style="margin-top:0"><b>取消 = 什么都没发生</b><br>预览屏上的「取消」、直接关掉窗口、或者转头去预览另一个文件夹 —— 三者结果相同:这台电脑上一个字节都没写,刚才为了预览读进内存的内容也当场丢掉。下次再点同一个文件夹,是重新读一遍,不是接着上次。</div>
+        <div class="note" style="margin-top:12px"><b>非插件目录 = 今天的行为,一字不改</b><br>选中的文件夹如果只是一个普通的技能文件夹,用户看到的仍然是今天那条路径的成功提示或红字错误。<b>本增量在这条路径上不新增任何一屏。</b></div>
+      </div></div>
+      <div class="cap">态八 · <b>取消与旁路</b>(票面点名了取消)。取消没有专属界面 —— 正因为如此,它容易在实现里变成「留着下次用」。这一格把它写成明确的产品承诺,好让它可以被验证。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 评审点 ═══ -->
+<section class="sec" id="review">
+  <div class="sec-kicker">待你拍板</div>
+  <h2>评审点</h2>
+  <div class="note"><b>Q1 包里的技能,要不要照常出现在下面的「已安装 · 全局」清单里?</b>稿采 <b>A = 照常出现 + 一枚「属于扩展包 X」的标</b>。理由:①这是今天的行为,不做任何事就是这样,收起来反而是额外改动;②搜索、逐个启停这些既有能力不该因为进了包就消失;③用户在这里点垃圾桶,是「单个不能单独移除」那句拒绝<b>唯一说得出口</b>的地方(帧 8 态三)。代价 = 同一个技能在页面上出现两次、有两个开关(翻的是同一个状态)。备选 B = 收进包卡内不重复,列表更干净,但拒绝路径从界面上就到不了了。</div>
+  <div class="note"><b>Q2 「扩展包」区块只列本地导入的包,还是所有包?</b>稿采 <b>A = 账本里有什么就列什么</b>(目录来的包也列,用「来自本地文件夹 / 来自官方目录」两枚标区分;目录包多一个「查看详情」入口通向已有的详情页)。理由:目录来的包今天在已安装页同样是隐身的,这个区块本来就是在补这个洞。备选 B = 只列本地导入的,增量更小,但已安装页继续对目录包撒谎。</div>
+  <div class="note"><b>Q3 一个都装不上时,确认键是禁用还是换成「知道了」?</b>稿采 <b>A = 保留确认键但禁用,并把原因写在键面上</b>(「没有可安装的技能」)。理由:这一屏和能装的那一屏是<b>同一屏</b>,用户的心智模型不该在这里分叉。备选 B = 换成单键「知道了」,更像提示框,但会让「装不上」看起来像一次错误弹窗而不是一次说明。</div>
+  <div class="note"><b>Q4 预览用弹窗还是整页?</b>稿采 <b>A = 弹窗</b>(继承导入 Agent 的两段式形状,尺寸放大到 lg,内容区滚动)。单插件技能数实测最多 13 个,弹窗装得下。备选 B = 整页,长清单更舒服,但要新开一条页面路由,而且会让「确认之前不写盘」这件事更难被看清。</div>
+  <div class="note"><b>Q5 确认成功之后跳不跳页?</b>稿采 <b>A = 自动切到已安装页并把新包定位在最上面</b>。理由直接对着裁决:既然默认全关,不跳页的结果就是用户按完确认<b>什么都看不到</b>,然后认为功能坏了。备选 B = 留在导入页 + 一个 toast,改动更小,但把「装完像没装」这个已知风险原样留给用户。</div>
+  <div class="note"><b>Q6 包卡里的引导条什么时候消失?</b>稿采 <b>A = 这个包里只要有任意一个技能被启用过,就不再出现</b>。备选 B = 用户手动关掉。A 更省事,但代价是:如果用户先开后关,引导条不会回来。</div>
+  <div class="note warn"><b>硬约束(不接受反转)</b>:①导入页不新增第六张卡,非插件目录的行为逐字不变;②每一条「不装」都必须带具名原因,没有「其他」这一档;③装完默认全关是产品裁决,界面不得「贴心地」自动打开任何一个;④移除失败必须显示失败,只有明确成功才算成功;⑤包内单个技能的移除请求 = 明确拒绝 + 指向整包移除,不是假成功;⑥取消 = 零写入;⑦「读不出清单」不许显示成「没有安装」;⑧本地文件夹的内容<b>没有经过审核</b>这件事,必须在按确认之前可见,不得写成「已验证 / 已检查 / 安全」。</div>
+</section>
+
+</div>
+
+<script>
+document.querySelectorAll(".sw:not([disabled])").forEach(function(s){s.addEventListener("click",function(e){e.stopPropagation();s.classList.toggle("on")})});
+document.querySelectorAll("#themeSeg button").forEach(function(b){b.addEventListener("click",function(){document.querySelectorAll("#themeSeg button").forEach(function(x){x.classList.remove("on")});b.classList.add("on");document.documentElement.dataset.theme=b.dataset.t})});
+</script>
+</body>
+</html>

@@ -2,28 +2,39 @@ import { createHash } from "node:crypto"
 import { isAbsolute } from "node:path"
 import type {
   CatalogPackageActionV1,
+  CatalogPackageComponentV1,
   CatalogPackageReasonCodeV1,
   CatalogPackageViewV1,
 } from "../shared/catalog-package-view"
+import { isExtensionName } from "../shared/extension-name"
 import {
   decodePackageEnvelopeHeaderV1,
   decodePackageProfilePayloadV1,
+  HOST_EXTENSION_PACKAGE_SCHEMA_V1,
   type AlphaPackageEnvelopeV1,
+  type PackageComponentDecodeV1,
   type PackagePayloadRefV1,
   type PackageProfilePayloadV1,
+  type PackageSupportedComponentV1,
 } from "../shared/host-extension-package-contract/decoder"
+import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "../shared/host-extension-package-contract/registry"
+import {
+  packageEffectiveInstallGraphV1,
+  type PackageEffectiveInstallGraphV1,
+} from "../shared/package-admission"
 import {
   decodePackageSecretPrerequisiteProfileV1,
   type PackageSecretPrerequisiteProfileDecodeV1,
 } from "../shared/package-secret-prerequisite"
+import {
+  decodePackageConnectionPrerequisiteProfileV1,
+  type AlphaConnectionHandlerTableV1,
+  type PackageConnectionPrerequisiteProfileV1,
+} from "../shared/package-alpha-connection"
+import { lookupAlphaConnectionHandlerV1, ALPHA_CONNECTION_HANDLERS_V1 } from "./alpha-connection-handlers"
+import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 
-const PACKAGE_ID = /^package:[a-z0-9][a-z0-9._-]{0,127}$/
-const VERSION = /^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$/
 const ATTEMPT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
-// eslint-disable-next-line no-control-regex
-const CONTROL = /[\x00-\x1f\x7f]/
-const PRELUDE_KEYS = new Set(["packageId", "version"])
-const MAX_PACKAGE_PAYLOAD_BYTES = 1024 * 1024
 const PAYLOAD_TIMEOUT_MS = 8000
 
 const ACTION_BY_REASON = {
@@ -46,15 +57,33 @@ export type PackageInstallabilityDeps = {
   fetchPayload?: (ref: PackagePayloadRefV1) => Promise<Uint8Array>
   decodePayload?: typeof decodePackageProfilePayloadV1
   decodeSecretPrerequisite?: typeof decodePackageSecretPrerequisiteProfileV1
+  /** The static Alpha Connection allowlist. Production default is the compiled-in table. */
+  connectionHandlers?: AlphaConnectionHandlerTableV1
   accepted?: (facts: PackageAcceptedFactsV1) => void
 }
 
 export type PackageEvaluator = (envelope: unknown, deps?: PackageInstallabilityDeps) => Promise<CatalogPackageViewV1>
 
-export type PackageAcceptedFactsV1 = {
-  envelope: AlphaPackageEnvelopeV1
+export type PackageAcceptedComponentV1 = {
+  component: PackageSupportedComponentV1
+  role: "root" | "leaf"
   payload: PackageProfilePayloadV1
   prerequisite: Extract<PackageSecretPrerequisiteProfileDecodeV1, { ok: true }>["profile"]
+  /** Alpha Connection prerequisites declared by this component. Empty for every other profile. */
+  connection: PackageConnectionPrerequisiteProfileV1
+}
+
+export type PackageAcceptedFactsV1 = {
+  envelope: AlphaPackageEnvelopeV1
+  /**
+   * Every supported component, root first. `#697` removed the root-only `payload` / `prerequisite`
+   * / `connection` convenience fields that used to sit beside this list: a Bundle has one of each
+   * *per component*, and a root-shaped shortcut is how "we only ever looked at the first one"
+   * survives a graph landing.
+   */
+  components: PackageAcceptedComponentV1[]
+  /** Root plus every leaf that will actually be installed; skipped components are absent. */
+  graph: PackageEffectiveInstallGraphV1
 }
 
 export type CatalogPackageShapeValidation =
@@ -71,6 +100,71 @@ export type PackageInstallPreflightResult = { matched: false } | { matched: true
 
 export function packageActionForReason(reasonCode: CatalogPackageReasonCodeV1): CatalogPackageActionV1 {
   return { ...ACTION_BY_REASON[reasonCode], reasonCode }
+}
+
+// ── `#817`:启停通道的 package 身份投影(纯函数,零网络、零写盘)──────────────────────────────
+
+/** 一份已验 catalog raw envelope 的身份事实。`envelopeDigest` 与 admission 落入 V3 图的那一份
+ *  **同一口径**(`package-admission.ts` binding:`sha256Hex(canonicalJson(header.envelope))`,
+ *  即对**同一个头解码对象**过同一个 canonicalJson)—— 两处口径一旦分叉,启停闸会把每一份真实
+ *  安装判成 mismatch,所以派生只此一份,不在消费点重写。 */
+export type PackageEnvelopeIdentityV1 = {
+  packageId: string
+  version: string
+  /** `sha256:<hex>`,与 `PackageGraphV1.envelopeDigest` 同格式同口径。 */
+  envelopeDigest: string
+  components: Array<{ id: string; payloadSha256: string }>
+}
+
+export function packageEnvelopeIdentityV1(
+  envelope: unknown,
+): { ok: true; identity: PackageEnvelopeIdentityV1 } | { ok: false; reason: string } {
+  const bytes = encodeEnvelope(envelope)
+  if (!bytes) return { ok: false, reason: "envelope is not JSON-encodable" }
+  const header = decodePackageEnvelopeHeaderV1(bytes)
+  if (!header.ok)
+    return { ok: false, reason: `envelope header does not decode (${header.stage}): ${header.errors[0] ?? "invalid"}` }
+  return {
+    ok: true,
+    identity: {
+      packageId: header.envelope.prelude.packageId,
+      version: header.envelope.prelude.version,
+      envelopeDigest: `sha256:${sha256Hex(canonicalJson(header.envelope))}`,
+      components: header.envelope.components.map((component) => ({
+        id: component.id,
+        payloadSha256: component.payloadRef.sha256,
+      })),
+    },
+  }
+}
+
+export type VerifiedPackageResolutionV1 =
+  | { status: "refused"; reason: string }
+  | { status: "missing"; anyVersionPresent: boolean }
+  | { status: "found"; identity: PackageEnvelopeIdentityV1 }
+
+/**
+ * `#817`:从已验 catalog 的 `packages[]` 里按 **(packageId, version) 双键**精确取一份 envelope 身份。
+ * `validateCatalogPackageShape` 的重复判据是 `packageId\u0000version` —— 同一 packageId 的多个
+ * version 可合法并存,所以**不得**按 packageId 单键 `.find`(会错拿版本,把一份真实可验证的安装
+ * 拒掉)。`anyVersionPresent` 让拒绝文案能区分「整包下架(delisted)」与「已装版本不再发布」。
+ */
+export function resolveVerifiedPackageV1(
+  catalog: unknown,
+  packageId: string,
+  version: string,
+): VerifiedPackageResolutionV1 {
+  const validated = validateCatalogPackageShape(catalog)
+  if (!validated.ok) return { status: "refused", reason: `verified catalog packages are unusable: ${validated.error}` }
+  const anyVersionPresent = validated.packages.some((item) => item.prelude.packageId === packageId)
+  const selected = validated.packages.find(
+    (item) => item.prelude.packageId === packageId && item.prelude.version === version,
+  )
+  if (!selected) return { status: "missing", anyVersionPresent }
+  const identity = packageEnvelopeIdentityV1(selected.envelope)
+  if (!identity.ok)
+    return { status: "refused", reason: `verified catalog package ${packageId}@${version} does not decode: ${identity.reason}` }
+  return { status: "found", identity: identity.identity }
 }
 
 /**
@@ -128,8 +222,10 @@ export async function evaluateCatalogPackagesForHost(
 
 /**
  * The only host compatibility authority for one signed package envelope. Ordering is fixed:
- * bounded header/support gate → exact payload fetch/digest → strict profile decoder → safe
- * prerequisite projection. No payload/secret stage is reachable after a header/support failure.
+ * bounded header/graph/support gate → §5.1 门二(signed Bundle) → per supported component (exact
+ * payload fetch/digest → strict profile decoder → safe prerequisite projection). No payload/secret
+ * stage is reachable after a header/support/Bundle failure, and a skipped component reaches none of
+ * them at all.
  */
 export async function evaluatePackageForHost(
   envelope: unknown,
@@ -142,61 +238,114 @@ export async function evaluatePackageForHost(
   if (!bytes) return blockedView(prelude.prelude, "package-invalid")
   const header = decodePackageEnvelopeHeaderV1(bytes)
   if (!header.ok) {
-    if (header.stage === "support") return view(prelude.prelude, "update-required", "package-host-update-required")
+    if (header.stage === "support")
+      return view(prelude.prelude, "update-required", "package-host-update-required", [], header.presentation)
     return blockedView(prelude.prelude, "package-invalid")
   }
 
-  const component = header.envelope.components[0]
-  if (!component.required)
-    return blockedView(header.envelope.prelude, "package-invalid", {
-      displayName: header.envelope.presentation.displayName,
-      description: header.envelope.presentation.description,
-    })
-  const fetched = await (deps.fetchPayload ?? fetchPackagePayload)(component.payloadRef).then(
-    (payloadBytes) => ({ ok: true as const, payloadBytes }),
-    () => ({ ok: false as const }),
-  )
-  if (!fetched.ok)
-    return blockedView(header.envelope.prelude, "package-payload-unavailable", {
-      displayName: header.envelope.presentation.displayName,
-      description: header.envelope.presentation.description,
-    })
-  const payloadBytes = fetched.payloadBytes
-  if (
-    payloadBytes.byteLength !== component.payloadRef.bytes ||
-    createHash("sha256").update(payloadBytes).digest("hex") !== component.payloadRef.sha256
-  )
-    return blockedView(header.envelope.prelude, "package-payload-integrity", {
-      displayName: header.envelope.presentation.displayName,
-      description: header.envelope.presentation.description,
-    })
+  const presentation = {
+    displayName: header.envelope.presentation.displayName,
+    description: header.envelope.presentation.description,
+  }
+  const componentViews = safeComponentViews(header.components)
+  const refuse = (reason: Exclude<CatalogPackageReasonCodeV1, "package-compatible" | "package-prerequisite-required" | "package-host-update-required">) =>
+    blockedView(header.envelope.prelude, reason, componentViews, presentation)
 
-  const decoded = (deps.decodePayload ?? decodePackageProfilePayloadV1)(
-    component.profileId,
-    payloadBytes,
-    component.capabilities,
-  )
-  if (!decoded.ok)
-    return blockedView(header.envelope.prelude, "package-payload-invalid", {
-      displayName: header.envelope.presentation.displayName,
-      description: header.envelope.presentation.description,
-    })
+  const rootEntry = header.components.find((entry) => entry.role === "root")
+  // §4.1 条件 1 已经在 decoder 里把 non-required root 判成 header 失败;这里保留原来的单组件
+  // 判据作为第二道 fail-closed —— decoder 一旦回归,安装动作不会因此静默变成可点。
+  if (!rootEntry || rootEntry.status !== "supported" || !rootEntry.component.required)
+    return refuse("package-invalid")
 
-  const prerequisite = (deps.decodeSecretPrerequisite ?? decodePackageSecretPrerequisiteProfileV1)(
+  // §5.1 门二在 `#697` 翻开:admission 现在把**整张有效安装图**放进一次事务,所以 Bundle 不再
+  // 需要被拦在这里。翻开的判据不是「读起来像装得下」,而是 `package-mixed-bundle.wiring.cases.ts`
+  // 里那条走真 IPC、真事务、真恢复的生产接线用例 —— 它装的正是 canonical mixed Bundle。
+  //
+  // 这里刻意**没有**换成「有效图长度 > 1 就拒」之类的替代闸:那正是审计抓到的漏洞形态
+  // ——「root + 一个不受支持的 optional leaf」的有效图长度是 1,会绕过去装出半装包。门二的
+  // 正确终结方式是让 admission 真的能装完整张图,而不是换一个更弱的谓词。
+
+  const supported = [
+    ...header.components.filter((entry) => entry.role === "root" && entry.status === "supported"),
+    ...header.components.filter((entry) => entry.role === "leaf" && entry.status === "supported"),
+  ] as Extract<PackageComponentDecodeV1, { status: "supported" }>[]
+
+  for (const entry of supported) {
+    const name = entry.component.id.slice(entry.component.id.indexOf(":") + 1)
+    if (
+      (entry.component.profileId === "skill" || entry.component.profileId === "agent") &&
+      !isExtensionName(name)
+    )
+      return refuse("package-invalid")
+  }
+
+  const accepted: PackageAcceptedComponentV1[] = []
+  for (const entry of supported) {
+    const component = entry.component
+    const fetched = await (deps.fetchPayload ?? fetchPackagePayload)(component.payloadRef).then(
+      (payloadBytes) => ({ ok: true as const, payloadBytes }),
+      () => ({ ok: false as const }),
+    )
+    if (!fetched.ok) return refuse("package-payload-unavailable")
+    const payloadBytes = fetched.payloadBytes
+    if (
+      payloadBytes.byteLength !== component.payloadRef.bytes ||
+      createHash("sha256").update(payloadBytes).digest("hex") !== component.payloadRef.sha256
+    )
+      return refuse("package-payload-integrity")
+
+    const decoded = (deps.decodePayload ?? decodePackageProfilePayloadV1)(
+      component.profileId,
+      payloadBytes,
+      component.capabilities,
+    )
+    if (!decoded.ok) return refuse("package-payload-invalid")
+
+    const prerequisite = (deps.decodeSecretPrerequisite ?? decodePackageSecretPrerequisiteProfileV1)(
+      component,
+      decoded.payload,
+    )
+    if (!prerequisite.ok) return refuse("package-prerequisite-invalid")
+
+    // Alpha Connection is answered here, in the browse/detail evaluator, which is the earliest
+    // point at which the host knows a signed package wants one: the declaration lives inside the
+    // component payload fetched just above, so this is the first line that can see it. An id this
+    // build has no handler for becomes `update-required` now — before a handler runs, before an
+    // auth/browser window opens, before anything reaches the connection store, before the install
+    // button is enabled. It is *not* before every outbound call: that one payload request has
+    // already gone out, and if it had failed the user would see `package-payload-unavailable`
+    // instead. `package-alpha-connection.test.ts` pins the verdict and that fetch count at exactly
+    // one. The lookup itself is a table hit and nothing else: main never reads structure out of the
+    // id (`#737` discipline).
+    const connection = decodePackageConnectionPrerequisiteProfileV1(component, decoded.payload)
+    const unknownHandler = connection.items.find(
+      (item) =>
+        !lookupAlphaConnectionHandlerV1(item.handlerId, deps.connectionHandlers ?? ALPHA_CONNECTION_HANDLERS_V1).ok,
+    )
+    if (unknownHandler)
+      return view(
+        header.envelope.prelude,
+        "update-required",
+        "package-host-update-required",
+        componentViews,
+        presentation,
+      )
+    accepted.push({
+      component,
+      role: entry.role,
+      payload: decoded.payload,
+      prerequisite: prerequisite.profile,
+      connection,
+    })
+  }
+
+  const graph = packageEffectiveInstallGraphV1(
     header.envelope,
-    decoded.payload,
+    accepted.map((entry) => entry.component),
   )
-  if (!prerequisite.ok)
-    return blockedView(header.envelope.prelude, "package-prerequisite-invalid", {
-      displayName: header.envelope.presentation.displayName,
-      description: header.envelope.presentation.description,
-    })
-  deps.accepted?.({
-    envelope: header.envelope,
-    payload: decoded.payload,
-    prerequisite: prerequisite.profile,
-  })
-  return compatibleView(header.envelope, prerequisite)
+
+  deps.accepted?.({ envelope: header.envelope, components: accepted, graph })
+  return compatibleView(header.envelope, componentViews, accepted)
 }
 
 /**
@@ -220,9 +369,7 @@ export async function runCatalogInstallWithPackagePreflight<T, P = never>(
   if (
     deps.installPackage &&
     isObject(rawIntent) &&
-    typeof rawIntent.catalogId === "string" &&
-    rawIntent.catalogId.startsWith("package:") &&
-    typeof rawIntent.attemptId === "string"
+    Object.hasOwn(rawIntent, "attemptId")
   )
     return deps.installPackage(rawIntent)
   const preflight = await preflightPackageInstall(rawIntent, deps)
@@ -240,18 +387,9 @@ export async function preflightPackageInstall(
     installability?: PackageInstallabilityDeps
   },
 ): Promise<PackageInstallPreflightResult> {
-  if (!isObject(rawIntent) || typeof rawIntent.catalogId !== "string" || !rawIntent.catalogId.startsWith("package:"))
+  if (!isObject(rawIntent) || !Object.hasOwn(rawIntent, "attemptId"))
     return { matched: false }
-  if (!PACKAGE_ID.test(rawIntent.catalogId))
-    return {
-      matched: true,
-      outcome: {
-        ok: false,
-        reason: "package preflight: invalid catalogId",
-        package: blockedView({ packageId: "package:invalid", version: "unknown" }, "package-invalid"),
-      },
-    }
-
+  const catalogId = typeof rawIntent.catalogId === "string" ? rawIntent.catalogId : "package:invalid"
   const loaded = await deps.loadVerifiedCatalog()
   if (loaded.source === "none")
     return {
@@ -259,7 +397,7 @@ export async function preflightPackageInstall(
       outcome: {
         ok: false,
         reason: "package-catalog-unavailable",
-        package: blockedView({ packageId: rawIntent.catalogId, version: "unknown" }, "package-payload-unavailable"),
+        package: blockedView({ packageId: catalogId, version: "unknown" }, "package-payload-unavailable"),
       },
     }
   const validated = validateCatalogPackageShape(loaded.catalog)
@@ -269,17 +407,17 @@ export async function preflightPackageInstall(
       outcome: {
         ok: false,
         reason: "package-catalog-invalid",
-        package: blockedView({ packageId: rawIntent.catalogId, version: "unknown" }, "package-invalid"),
+        package: blockedView({ packageId: catalogId, version: "unknown" }, "package-invalid"),
       },
     }
-  const selected = validated.packages.find((item) => item.prelude.packageId === rawIntent.catalogId)
+  const selected = validated.packages.find((item) => item.prelude.packageId === catalogId)
   if (!selected)
     return {
       matched: true,
       outcome: {
         ok: false,
         reason: "package preflight: catalogId not found in verified Catalog",
-        package: blockedView({ packageId: rawIntent.catalogId, version: "unknown" }, "package-invalid"),
+        package: blockedView({ packageId: catalogId, version: "unknown" }, "package-invalid"),
       },
     }
 
@@ -298,6 +436,8 @@ export async function preflightPackageInstall(
     matched: true,
     outcome: {
       ok: false,
+      // `verdict === "compatible"` 只从 `compatibleView` 来,它的两个 reason 都是 enabled ⇒
+      // 再 `&& action.enabled` 是恒真的死代码,会被误读成第二道闸。判据只留真的那两条。
       reason:
         evaluated.verdict === "compatible" && evaluated.prerequisites.status === "ready"
           ? "package-admission-not-implemented"
@@ -307,20 +447,42 @@ export async function preflightPackageInstall(
   }
 }
 
-function compatibleView(
-  envelope: Extract<Awaited<ReturnType<typeof decodePackageEnvelopeHeaderV1>>, { ok: true }>["envelope"],
-  prerequisite: Extract<PackageSecretPrerequisiteProfileDecodeV1, { ok: true }>,
-): CatalogPackageViewV1 {
-  const items = prerequisite.profile.items.map((item) => ({
-    prerequisiteId: item.prerequisiteId,
-    label: item.label,
-    required: item.required,
+function safeComponentViews(components: PackageComponentDecodeV1[]): CatalogPackageComponentV1[] {
+  return components.map((entry) => ({
+    componentId: entry.component.id,
+    role: entry.role,
+    required: entry.component.required,
+    included: entry.status === "supported",
+    skipReasonCode: entry.status === "skipped" ? entry.reasonCode : null,
   }))
+}
+
+function compatibleView(
+  envelope: AlphaPackageEnvelopeV1,
+  components: CatalogPackageComponentV1[],
+  accepted: PackageAcceptedComponentV1[],
+): CatalogPackageViewV1 {
+  // 授权集只含「受支持且未跳过」的组件(§4.3):被跳过的子件不会安装,就不该要用户为它授权。
+  // Connection prerequisites join the secret ones on the same channel and are ordered after them
+  // per component: the safe view says *what must be satisfied*, and readiness is main's answer at
+  // admission time, exactly as it already is for secrets — the browse surface has no store access
+  // and must not be the place that decides a package is ready.
+  const items = accepted.flatMap((entry) =>
+    [
+      ...entry.prerequisite.items,
+      ...entry.connection.items,
+    ].map((item) => ({
+      prerequisiteId: item.prerequisiteId,
+      label: item.label,
+      required: item.required,
+    })),
+  )
   const reason = items.length > 0 ? "package-prerequisite-required" : "package-compatible"
   return {
     catalogId: envelope.prelude.packageId,
     verdict: "compatible",
     action: packageActionForReason(reason),
+    components,
     prerequisites: {
       status: items.length > 0 ? "required-action" : "ready",
       items,
@@ -339,21 +501,24 @@ function blockedView(
     CatalogPackageReasonCodeV1,
     "package-compatible" | "package-prerequisite-required" | "package-host-update-required"
   >,
+  components: CatalogPackageComponentV1[] = [],
   presentation?: { displayName: string; description: string },
 ) {
-  return view(prelude, "blocked", reason, presentation)
+  return view(prelude, "blocked", reason, components, presentation)
 }
 
 function view(
   prelude: PackagePreludeV1,
   verdict: "update-required" | "blocked",
   reason: CatalogPackageReasonCodeV1,
+  components: CatalogPackageComponentV1[],
   presentation?: { displayName: string; description: string },
 ): CatalogPackageViewV1 {
   return {
     catalogId: prelude.packageId,
     verdict,
     action: packageActionForReason(reason),
+    components,
     prerequisites: { status: "ready", items: [] },
     presentation: {
       displayName: presentation?.displayName ?? prelude.packageId,
@@ -364,24 +529,34 @@ function view(
 }
 
 function decodeSafePrelude(envelope: unknown): { ok: true; prelude: PackagePreludeV1 } | { ok: false; error: string } {
-  if (!isObject(envelope) || !isObject(envelope.prelude)) return { ok: false, error: "required object" }
-  if (
-    Object.keys(envelope.prelude).some((key) => !PRELUDE_KEYS.has(key)) ||
-    typeof envelope.prelude.packageId !== "string" ||
-    typeof envelope.prelude.version !== "string" ||
-    !PACKAGE_ID.test(envelope.prelude.packageId) ||
-    !VERSION.test(envelope.prelude.version) ||
-    CONTROL.test(envelope.prelude.packageId) ||
-    CONTROL.test(envelope.prelude.version)
-  )
-    return { ok: false, error: "invalid packageId/version binding" }
-  return {
-    ok: true,
-    prelude: {
-      packageId: envelope.prelude.packageId,
-      version: envelope.prelude.version,
-    },
-  }
+  if (!isObject(envelope)) return { ok: false, error: "required object" }
+  const bytes = encodeEnvelope({
+    schema: HOST_EXTENSION_PACKAGE_SCHEMA_V1,
+    prelude: envelope.prelude,
+    presentation: { displayName: "Prelude probe", description: "Contract decoder probe" },
+    root: "package:prelude-probe",
+    components: [
+      {
+        id: "package:prelude-probe",
+        required: true,
+        dependencies: [],
+        profileId: "skill",
+        profileVersion: 1,
+        capabilities: [],
+        payloadRef: {
+          sha256: "0".repeat(64),
+          bytes: 1,
+          mediaType: "application/vnd.alpha.host-extension-package.skill.v1+json",
+          url: "https://example.invalid/prelude-probe.json",
+        },
+      },
+    ],
+    capabilities: [],
+  })
+  if (!bytes) return { ok: false, error: "cannot encode prelude probe" }
+  const decoded = decodePackageEnvelopeHeaderV1(bytes)
+  if (!decoded.ok) return { ok: false, error: decoded.errors.join("; ") }
+  return { ok: true, prelude: decoded.envelope.prelude }
 }
 
 function decodePackagePreflightIntent(input: Record<string, unknown>): { ok: true } | { ok: false; reason: string } {
@@ -392,7 +567,7 @@ function decodePackagePreflightIntent(input: Record<string, unknown>): { ok: tru
       ok: false,
       reason: `package preflight: renderer-supplied key "${unknown}" is refused`,
     }
-  if (typeof input.catalogId !== "string" || !PACKAGE_ID.test(input.catalogId))
+  if (typeof input.catalogId !== "string" || input.catalogId.length > 160)
     return { ok: false, reason: "package preflight: invalid catalogId" }
   if (
     !isObject(input.scope) ||
@@ -424,7 +599,8 @@ export async function fetchPackagePayload(
   ref: PackagePayloadRefV1,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Uint8Array> {
-  if (ref.bytes > MAX_PACKAGE_PAYLOAD_BYTES) throw new Error("package payload exceeds host limit")
+  if (ref.bytes > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxPayloadBytes)
+    throw new Error("package payload exceeds host limit")
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), PAYLOAD_TIMEOUT_MS)
   try {
@@ -439,7 +615,8 @@ export async function fetchPackagePayload(
         throw new Error("package payload redirected outside HTTPS")
     }
     const bytes = new Uint8Array(await response.arrayBuffer())
-    if (bytes.byteLength > MAX_PACKAGE_PAYLOAD_BYTES) throw new Error("package payload exceeds host limit")
+    if (bytes.byteLength > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxPayloadBytes)
+      throw new Error("package payload exceeds host limit")
     return bytes
   } finally {
     clearTimeout(timer)

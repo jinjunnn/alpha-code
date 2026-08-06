@@ -1,6 +1,8 @@
-// #336(残留4):未策展提交面(custom MCP / npm plugin 导入)的 IPC body 从 ext-ipc 抽出为
-// electron-free 模块 —— 账本写失败的 fail-closed 返回与精确补偿(restoreMcpLeaf /
-// removePluginEntryExact)必须可注入测试(仓规:参数 DI + 真盘临时目录,零 mock.module)。
+// #336(残留4):未策展提交面(custom MCP 导入)的 IPC body 从 ext-ipc 抽出为 electron-free 模块
+// —— 账本写失败的 fail-closed 返回与精确补偿(restoreMcpLeaf)必须可注入测试(仓规:参数 DI +
+// 真盘临时目录,零 mock.module)。
+// ADR-040(`#825`):npm plugin 导入 body 随「扩展安装不得写引擎 plugin[]」整条撤下 ——
+// 通道(`ext-install-plugin`)、preload 方法、hub 入口一并消失,不留一个恒失败的按钮。
 // 静态 fs seam(如 installs.json 置目录)会先被账本**读侧**的 fail-closed(ledger-corrupt 拒绝)
 // 拦截,无法证明「写失败后精确补偿」—— 注入唯一要观测的账本提交结果(recordInstall)是正确接缝。
 // 逻辑逐字搬移自 ext-ipc.ts(#355/#378/#395 各裁决注释原样保留),仅 userDataPath/globalRoot/
@@ -8,9 +10,8 @@
 
 import { claimMcpSecretVersionDir, fileifyMcpSecretsVersioned, isFileRef, newMcpSecretVersionId, removeMcpSecretVersionDir } from "./alpha-mcp-secrets"
 import type { AppEnvironment } from "./alpha-environment"
-import { gcMcpSecretsAgainstConfig, persistPlugin, pluginRecordName, readMcpLeaf, removePluginEntryExact, restoreMcpLeaf } from "./ext-config"
+import { gcMcpSecretsAgainstConfig, readMcpLeaf, restoreMcpLeaf } from "./ext-config"
 import { persistMcpWithPolicy } from "./ext-mcp-policy"
-import { findRecordV2 } from "./ext-receipt-v2"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
 
 export type UncuratedBodyDeps = {
@@ -115,45 +116,5 @@ export function makeUncuratedInstallBodies(deps: UncuratedBodyDeps) {
     return r
   }
 
-  // REQ-099 #305:旧 catalog 事实通道全部下线 —— ext-install-plugin 仅保留给未策展 npm 导入,
-  // 且不再收 renderer meta(未策展安装无 catalog 身份,防伪造 catalog 来源,ADR-028 §5)。
-  const installPluginBody = async (pkg: string) => {
-    const r = persistPlugin(pkg, undefined)
-    if (!r.ok) return r
-    // #395(Codex r5):账本 disabled → persistPlugin 投影为条目缺席(config 零写入)。恰同钉版
-    // 重加 = 真幂等跳过落账(同 #355:不虚增 generation);换钉版才刷账本(nextDesiredState 当前
-    // 策略优先,状态不翻);失败无需 config 补偿(本次未写数组)。
-    if (r.projectedDisabled) {
-      if (findRecordV2(deps.globalRoot(), "plugin", pluginRecordName(pkg))?.configKey === `plugin:${pkg}`) return { ok: true }
-      const led = recordInstall(deps.globalRoot(), {
-        kind: "plugin",
-        name: pluginRecordName(pkg),
-        origin: "created",
-        environment: deps.environment(),
-        scope: { kind: "global" },
-        configKey: `plugin:${pkg}`,
-      })
-      return led.ok ? { ok: true } : { ok: false, reason: `install ledger write failed: ${led.reason}` }
-    }
-    // Codex review #355:恰同钉版重装 = 真幂等 → 跳过落账(不虚增 generation);
-    // 同 base 不同钉版已在 persistPlugin 内显式拒绝(不许「配置不变、账本记新版」)。
-    if (!r.changed) return { ok: true }
-    // REQ-099 #306:未策展 npm 导入落账(coordinator);失败只撤本次新增的数组元素(精确补偿,
-    // 不碰 legacy/receipt/同 base 其他条目)。
-    const led = recordInstall(deps.globalRoot(), {
-      kind: "plugin",
-      name: pluginRecordName(pkg),
-      origin: "created",
-      environment: deps.environment(),
-      scope: { kind: "global" },
-      configKey: `plugin:${pkg}`,
-    })
-    if (!led.ok) {
-      removePluginEntryExact(pkg)
-      return { ok: false, reason: `install ledger write failed: ${led.reason}` }
-    }
-    return { ok: true }
-  }
-
-  return { persistMcpBody, installPluginBody }
+  return { persistMcpBody }
 }

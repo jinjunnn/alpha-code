@@ -16,6 +16,7 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { isExtensionName } from "../shared/extension-name"
 import { alphaGlobalRoot } from "./alpha-installs"
 import { applyBuiltinPolicyEdits, type BuiltinPolicyEdit } from "./ext-config"
 
@@ -65,8 +66,6 @@ export const CONFIRM_AGENTS = ["build"] as const
 
 /** agent 字段级覆盖允许的字段(上游 ConfigAgentV1 已验证面;prompt 即 system prompt)。 */
 const AGENT_OVERRIDE_FIELDS = new Set(["prompt", "model", "permission", "description", "temperature", "steps", "variant", "color"])
-const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
-
 const govPath = () => path.join(alphaGlobalRoot(), "governance.json")
 const materializedPath = () => path.join(alphaGlobalRoot(), "governance-materialized.json")
 
@@ -105,7 +104,8 @@ export function readBuiltinPolicy(): BuiltinPolicy {
   return structuredClone(DEFAULT_BUILTIN_POLICY)
 }
 
-const asNames = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && NAME_RE.test(x)) : [])
+const asNames = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x) => typeof x === "string" && isExtensionName(x)) : []
 // codex M3:字段值按类型校验 —— 坏值(temperature:"hot")进 home jsonc 会让引擎整份 config 解码失败
 const OVERRIDE_FIELD_OK: Record<string, (v: unknown) => boolean> = {
   prompt: (v) => typeof v === "string",
@@ -121,7 +121,7 @@ const asOverrides = (v: unknown): Record<string, Record<string, unknown>> => {
   if (!v || typeof v !== "object") return {}
   const out: Record<string, Record<string, unknown>> = {}
   for (const [name, fields] of Object.entries(v as Record<string, unknown>)) {
-    if (!NAME_RE.test(name) || !fields || typeof fields !== "object") continue
+    if (!isExtensionName(name) || !fields || typeof fields !== "object") continue
     const picked: Record<string, unknown> = {}
     for (const [f, val] of Object.entries(fields as Record<string, unknown>))
       if (AGENT_OVERRIDE_FIELDS.has(f) && OVERRIDE_FIELD_OK[f]?.(val)) picked[f] = val
@@ -133,7 +133,7 @@ const asCommandOverrides = (v: unknown): Record<string, { template: string; desc
   if (!v || typeof v !== "object") return {}
   const out: Record<string, { template: string; description?: string }> = {}
   for (const [name, o] of Object.entries(v as Record<string, any>)) {
-    if (!NAME_RE.test(name) || typeof o?.template !== "string" || !o.template.trim()) continue
+    if (!isExtensionName(name) || typeof o?.template !== "string" || !o.template.trim()) continue
     out[name] = { template: o.template, ...(typeof o.description === "string" ? { description: o.description } : {}) }
   }
   return out
@@ -168,7 +168,7 @@ export function materializeEdits(gov: BuiltinPolicy, visibleAgents: string[]): B
   if (gov.mode === "allowlist") {
     const allow = new Set(gov.agents.allow)
     for (const n of visibleAgents) {
-      if (!NAME_RE.test(n)) continue
+      if (!isExtensionName(n)) continue
       if (allow.has(n)) continue
       if ((HARD_PROTECTED_AGENTS as readonly string[]).includes(n)) continue
       if ((ALPHA_INJECTED_AGENTS as readonly string[]).includes(n)) continue
@@ -225,9 +225,9 @@ export function applyBuiltinPolicy(gov: BuiltinPolicy, visibleAgents: string[], 
   const prevHidden = prev.keys.filter((k) => k[0] === "agent" && k[2] === "hidden").map((k) => k[1])
   const knownAgents = [...new Set([...visibleAgents, ...prevHidden])]
   const desired = materializeEdits(gov, knownAgents)
-  const desiredKeys = new Set(desired.map((e) => e.path.join(" ")))
+  const desiredKeys = new Set(desired.map((e) => e.path.join("\u0000")))
   const stale: BuiltinPolicyEdit[] = prev.keys
-    .filter((k) => !desiredKeys.has(k.join(" ")))
+    .filter((k) => !desiredKeys.has(k.join("\u0000")))
     .map((k) => ({ path: k, value: undefined }))
 
   // codex M1:记账先行(prev ∪ desired 超集)再写 jsonc —— jsonc 写成功而记账失败的孤儿叶子不可清;

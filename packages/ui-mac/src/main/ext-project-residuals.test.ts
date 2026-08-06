@@ -89,6 +89,7 @@ function makeDeps(overrides: Partial<PlannerInstallers> = {}): PlannerDeps {
   return {
     advisoryGate: () => ({ allowed: true }),
     resolveEntry: async () => null,
+    resolvePackage: async () => ({ status: "refused", reason: "resolvePackage must not be consulted in this test" }),
     environment: () => "prod",
     platform: () => "darwin",
     globalRoot: () => path.join(tmp, "global"),

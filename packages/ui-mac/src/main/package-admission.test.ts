@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { join, resolve, sep } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import type { AlphaPackageEnvelopeV1, PackageProfilePayloadV1 } from "../shared/host-extension-package-contract/decoder"
-import type { PackageAdmissionBindingV1 } from "../shared/package-admission"
+import type {
+  AlphaPackageEnvelopeV1,
+  PackageProfilePayloadV1,
+  PackageSupportedComponentV1,
+} from "../shared/host-extension-package-contract/decoder"
+import {
+  packageEffectiveInstallGraphV1,
+  type PackageAdmissionBindingV1,
+} from "../shared/package-admission"
 import { createPackageAdmissionCoordinator } from "./package-admission"
+import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { runExtensionTransaction } from "./ext-transaction"
 
 const artifact = resolve(
@@ -33,21 +41,51 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
 })
 
+/**
+ * The **vendored producer output**, unpatched (`#759`). `#749` had to replace this with an inline
+ * envelope literal because the then-pinned artifact predated the v2 contract and was refused by
+ * design; a hand-built stand-in drifts with the contract and never goes red when it does, which is
+ * exactly the `#737` class and is the last thing this — the admission chain — should carry.
+ *
+ * Nothing is patched. The payload bytes are re-serialised from the corpus's own `payloads` map and
+ * must reproduce the digest the *signed envelope* declares; corrupt the artifact file and this
+ * throws (or, further down the chain, the host's own integrity gate refuses the package) instead
+ * of quietly passing.
+ */
 async function fixture() {
   const compiled = (await Bun.file(artifact).json()) as {
     envelope: AlphaPackageEnvelopeV1
-    payload: PackageProfilePayloadV1
+    payloads: Record<string, PackageProfilePayloadV1>
   }
   const envelope = structuredClone(compiled.envelope)
-  const payload = structuredClone(compiled.payload)
-  if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+  const rootComponent = envelope.components.find((component) => component.id === envelope.root)
+  if (!rootComponent) throw new Error("producer corpus has no component matching its own root")
+  const payload = structuredClone(compiled.payloads[rootComponent.id])
+  if (payload?.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
     throw new Error("producer corpus profile drifted")
-  payload.behavior.requiredSecrets = ["A_KEY"]
-  payload.behavior.headersTemplate = { Authorization: "Bearer {A_KEY}" }
   const bytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
-  envelope.components[0].payloadRef.bytes = bytes.byteLength
-  envelope.components[0].payloadRef.sha256 = createHash("sha256").update(bytes).digest("hex")
-  return { envelope, bytes }
+  if (
+    bytes.byteLength !== rootComponent.payloadRef.bytes ||
+    createHash("sha256").update(bytes).digest("hex") !== rootComponent.payloadRef.sha256
+  )
+    throw new Error("producer corpus payload bytes do not reproduce their own signed payloadRef")
+  return { envelope, bytes, payload }
+}
+
+/**
+ * 授权集从**产物自己声明的** `requiredSecrets` 推出来,不是手打一个常量列表 —— 上游改密钥集时
+ * 这些用例跟着走,而不是各自漂。前缀 `<componentId>#<NAME>` 是宿主 prerequisiteId 的构造规则。
+ */
+async function secretGrants(value: string, extra: Record<string, string> = {}) {
+  const { envelope, payload } = await fixture()
+  const behavior = payload.behavior as { requiredSecrets: string[] }
+  if (behavior.requiredSecrets.length === 0) throw new Error("producer corpus declares no secrets")
+  return {
+    secrets: {
+      ...Object.fromEntries(behavior.requiredSecrets.map((name) => [`${envelope.root}#${name}`, value])),
+      ...extra,
+    },
+  }
 }
 
 function confirmation(preview: {
@@ -74,9 +112,11 @@ describe("package admission", () => {
     ],
     [
       "grants with an extra key",
+      // 违规项是 `extra`,在 grants 形状解码阶段就被拒 —— secrets 里装的是什么与本条无关,
+      // 所以这里不走 `secretGrants`(mutate 是同步的,拿不到它)。
       (intent: Record<string, unknown>) => ({
         ...intent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary }, extra: true },
+        grants: { secrets: { ...(intent.grants as { secrets: object }).secrets }, extra: true },
       }),
       "invalid grants",
     ],
@@ -91,7 +131,7 @@ describe("package admission", () => {
     [
       "uppercase catalogId",
       (intent: Record<string, unknown>) => ({ ...intent, catalogId: "package:Generic-remote-mcp" }),
-      "invalid catalogId",
+      "tampered or is stale",
     ],
     [
       "non-hex authorization binding",
@@ -117,6 +157,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: { fetchPayload: async () => bytes },
       transaction: async (...args) => {
@@ -135,7 +177,7 @@ describe("package admission", () => {
     const result = await admit(
       mutate({
         ...intent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(preview),
       }),
     )
@@ -144,8 +186,68 @@ describe("package admission", () => {
     expect(transactionCalls).toBe(0)
   })
 
-  test("actual transaction writes the signed secret prerequisite into the restricted version directory", async () => {
+  // 长度界消费契约的值(decoder 对 packageId 的 max 是 160)。它必须在**第一趟**就拒 ——
+  // attempt 正是在第一趟被放进有界的 attempts Map 的,那里才是被攻陷 renderer 的着力点。
+  test("coordinator refuses a catalogId beyond the contract bound on the first round", async () => {
     const { envelope, bytes } = await fixture()
+    let transactionCalls = 0
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
+      environment: () => "dev",
+      installability: { fetchPayload: async () => bytes },
+      transaction: async (...args) => {
+        transactionCalls++
+        return runExtensionTransaction(...args)
+      },
+    })
+    const result = await admit({
+      catalogId: `package:${"a".repeat(200)}`,
+      scope: { scope: "global" as const },
+      attemptId: "attempt-catalogid-bound",
+    })
+    expect(result).toMatchObject({ ok: false, reason: expect.stringContaining("invalid catalogId") })
+    expect(transactionCalls).toBe(0)
+  })
+
+  test("coordinator correlates a non-package namespace through decoded catalog identity", async () => {
+    const { envelope, bytes } = await fixture()
+    envelope.prelude.packageId = "skill:contract-package"
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
+      environment: () => "dev",
+      installability: { fetchPayload: async () => bytes },
+    })
+
+    const preview = await admit({
+      catalogId: "skill:contract-package",
+      scope: { scope: "global" },
+      attemptId: "attempt-contract-package",
+    })
+    expect(preview).toMatchObject({
+      ok: false,
+      stage: "authorize",
+      packageAuthorization: { plan: { packageId: "skill:contract-package" } },
+    })
+  })
+
+  test("actual transaction writes the signed secret prerequisite into the restricted version directory", async () => {
+    const { envelope, bytes, payload } = await fixture()
     let transactionCalls = 0
     let payloadFetches = 0
     const order: string[] = []
@@ -157,6 +259,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: {
         fetchPayload: async () => {
@@ -200,7 +304,7 @@ describe("package admission", () => {
     expect(
       await admit({
         ...intent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
       }),
     ).toMatchObject({
       ok: false,
@@ -217,7 +321,7 @@ describe("package admission", () => {
 
     const second = await admit({
       ...intent,
-      grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+      grants: await secretGrants(secretCanary),
       authorization: confirmation(first),
     })
     expect(second).toMatchObject({
@@ -227,11 +331,19 @@ describe("package admission", () => {
       installedDisabled: true,
     })
     expect(transactionCalls).toBe(1)
-    const secretFile = join(userData, "alpha-mcp-secrets", "generic-remote", "v-12345678", "A_KEY")
-    expect(readFileSync(secretFile, "utf8")).toBe(secretCanary)
-    expect(statSync(secretFile).mode & 0o777).toBe(0o600)
+    // 语料声明了几个密钥就要落几个。只钉第一个名字的话,宿主静默丢掉第二个密钥仍然全绿 ——
+    // 而用户拿到的是一个连不上的 MCP。名字来自**产物自己**,不是这里手打的常量。
+    const versionDir = join(userData, "alpha-mcp-secrets", "generic-remote", "v-12345678")
+    const declaredSecrets = (payload.behavior as { requiredSecrets: string[] }).requiredSecrets
+    expect(declaredSecrets.length).toBeGreaterThan(1)
+    expect(readdirSync(versionDir).sort()).toEqual([...declaredSecrets].sort())
     const config = readFileSync(join(root, "alpha.jsonc"), "utf8")
-    expect(config).toContain(`{file:${secretFile}}`)
+    for (const name of declaredSecrets) {
+      const secretFile = join(versionDir, name)
+      expect(readFileSync(secretFile, "utf8"), name).toBe(secretCanary)
+      expect(statSync(secretFile).mode & 0o777, name).toBe(0o600)
+      expect(config, name).toContain(`{file:${secretFile}}`)
+    }
     expect(config).not.toContain(secretCanary)
     expect(existsSync(join(root, "installs.json"))).toBe(true)
     expect(existsSync(join(root, "ext-store", "mcp--generic-remote", "grants.json"))).toBe(true)
@@ -275,6 +387,8 @@ describe("package admission", () => {
       },
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: { fetchPayload: async () => activeBytes },
       transaction: async (...args) => {
@@ -308,12 +422,9 @@ describe("package admission", () => {
         catalogId: envelope.prelude.packageId,
         scope: { scope: "global" },
         attemptId: "attempt-secret-undeclared",
-        grants: {
-          secrets: {
-            "mcp:generic-remote#A_KEY": secretCanary,
-            "mcp:generic-remote#B_KEY": "not-signed",
-          },
-        },
+        // 签名声明的全部密钥都给足,**外加**一个没人签名的 —— 违规项排在排序后的中间,
+        // 「只看第一个/最后一个」的实现要能被抓住。
+        grants: await secretGrants(secretCanary, { "mcp:generic-remote#B_KEY": "not-signed" }),
         authorization: confirmation(undeclared),
       }),
     ).toMatchObject({ ok: false, reason: expect.stringContaining("secret-undeclared") })
@@ -324,7 +435,7 @@ describe("package admission", () => {
         catalogId: envelope.prelude.packageId,
         scope: { scope: "global" },
         attemptId: "attempt-capability-tamper",
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: {
           ...confirmation(capabilityTamper),
           confirmed: { "mcp--generic-remote": [] },
@@ -332,7 +443,22 @@ describe("package admission", () => {
       }),
     ).toMatchObject({ ok: false, reason: expect.stringContaining("does not exactly match") })
 
-    for (const field of ["snapshotDigest", "envelopeDigest", "itemDigests", "capabilityDigest"] as const) {
+    // 枚举必须覆盖 binding 的**每一个**字段。漏掉一个 = 那个字段的绑定可以被 renderer 改写而
+    // 无人发现,闸门对它就是假的。`graphDigest` 之前恰好不在这条枚举里。
+    expect(Object.keys(cancelled.packageAuthorization.binding).sort()).toEqual([
+      "capabilityDigest",
+      "envelopeDigest",
+      "graphDigest",
+      "itemDigests",
+      "snapshotDigest",
+    ])
+    for (const field of [
+      "snapshotDigest",
+      "envelopeDigest",
+      "graphDigest",
+      "itemDigests",
+      "capabilityDigest",
+    ] as const) {
       const attemptId = `attempt-tamper-${field}`
       const first = await preview(attemptId)
       const binding = structuredClone(first.packageAuthorization.binding)
@@ -343,7 +469,7 @@ describe("package admission", () => {
           catalogId: envelope.prelude.packageId,
           scope: { scope: "global" },
           attemptId,
-          grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+          grants: await secretGrants(secretCanary),
           authorization: { ...confirmation(first), binding },
         }),
       ).toMatchObject({ ok: false, reason: expect.stringContaining("tampered") })
@@ -357,7 +483,7 @@ describe("package admission", () => {
         catalogId: envelope.prelude.packageId,
         scope: { scope: "global" },
         attemptId: "attempt-stale",
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(stale),
       }),
     ).toMatchObject({ ok: false, reason: expect.stringContaining("facts changed") })
@@ -371,7 +497,7 @@ describe("package admission", () => {
       catalogId: envelope.prelude.packageId,
       scope: { scope: "global" },
       attemptId: "attempt-replay",
-      grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+      grants: await secretGrants(secretCanary),
       authorization: confirmation(replay),
     }
     expect((await admit(authorized)).ok).toBe(true)
@@ -389,6 +515,109 @@ describe("package admission", () => {
     ).toHaveLength(1)
   })
 
+  // #712 退出门(正面断言,不是「我们没写」):把安装成功与安装失败两条路径跑完之后,**扫描**
+  // 事务根下的每一个文件 + 引擎/恢复吐出的每一条日志 + 回给 renderer 的结果对象,断言
+  //   ① 密钥明文一次都不出现;② 明文的 sha256 一次都不出现(摘要同样是泄露);
+  //   ③ 密钥 store 的绝对路径**只**出现在 live config 里(它是引用通道),journal / 账本 /
+  //      授权收据 / 日志 / IPC 结果里一次都不出现 —— journal 里绝不留任意绝对删除路径。
+  test("no secret value, value digest, or absolute secret path leaves the reference channel", async () => {
+    const { envelope, bytes } = await fixture()
+    const okCanary = "REQ128_712_SCAN_OK_1f4c7a"
+    const failCanary = "REQ128_712_SCAN_FAIL_9b2e50"
+    const digest = (v: string) => createHash("sha256").update(v).digest("hex")
+    const logs: string[] = []
+    const dependencies = {
+      loadVerifiedCatalog: async () => ({
+        source: "remote" as const,
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
+      environment: () => "dev" as const,
+      installability: { fetchPayload: async () => bytes },
+    }
+    const withLogCapture =
+      (extra: Record<string, unknown> = {}) =>
+      (...args: Parameters<typeof runExtensionTransaction>) =>
+        runExtensionTransaction(args[0], args[1], {
+          ...args[2],
+          log: (event, detail) => logs.push(`${event} ${JSON.stringify(detail)}`),
+          ...extra,
+        })
+
+    const install = async (admit: ReturnType<typeof createPackageAdmissionCoordinator>, attemptId: string, secret: string) => {
+      const intent = { catalogId: envelope.prelude.packageId, scope: { scope: "global" as const }, attemptId }
+      const preview = await admit(intent)
+      if (preview.ok || preview.stage !== "authorize") throw new Error("expected package authorization preview")
+      return admit({ ...intent, grants: await secretGrants(secret), authorization: confirmation(preview) })
+    }
+
+    // ① 成功装一次(密钥进版本目录,config 只拿 {file:} 引用)。
+    const okOutcome = await install(
+      createPackageAdmissionCoordinator({ ...dependencies, secretVersionId: () => "v-1111aaaa", transaction: withLogCapture() }),
+      "attempt-scan-ok",
+      okCanary,
+    )
+    expect(okOutcome).toMatchObject({ ok: true, kind: "mcp" })
+
+    // ② 再走一次失败路径(prepared probe 不健康 → abort + 释放),让失败面的痕迹也进扫描。
+    const failOutcome = await install(
+      createPackageAdmissionCoordinator({
+        ...dependencies,
+        secretVersionId: () => "v-2222bbbb",
+        transaction: withLogCapture({ probePrepared: () => ({ healthy: false, reason: "injected for the scan gate" }) }),
+      }),
+      "attempt-scan-fail",
+      failCanary,
+    )
+    expect(failOutcome).toMatchObject({ ok: false })
+    expect(existsSync(join(userData, "alpha-mcp-secrets", "generic-remote", "v-2222bbbb"))).toBe(false)
+
+    const secretStore = join(userData, "alpha-mcp-secrets")
+    const liveConfig = join(root, "alpha.jsonc")
+    const files: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) walk(full)
+        else if (entry.isFile()) files.push(full)
+      }
+    }
+    walk(root)
+    expect(files.length).toBeGreaterThan(2) // 扫描面非空(journal + 账本 + config 至少三件)
+    const journals = files.filter((f) => f.includes(`${sep}ext-tx${sep}journal${sep}`))
+    expect(journals.length).toBeGreaterThan(0) // 本用例真的产生了 journal —— 否则下面的断言是空的
+
+    const carriesSecretPath: string[] = []
+    for (const file of files) {
+      const text = readFileSync(file, "utf8")
+      for (const canary of [okCanary, failCanary]) {
+        expect(text).not.toContain(canary)
+        expect(text).not.toContain(digest(canary))
+      }
+      if (text.includes(secretStore)) carriesSecretPath.push(file)
+    }
+    // 绝对密钥路径**只**存在于 live config(引用通道);journal / installs.json / grants.json 一律没有。
+    expect(carriesSecretPath).toEqual([liveConfig])
+    for (const journal of journals) {
+      const text = readFileSync(journal, "utf8")
+      expect(text).not.toContain(secretStore)
+      expect(text).toContain("mcp-secret-version") // 身份确实在 journal 里(否则上一条是空断言)
+    }
+
+    // 日志与回给 renderer 的结果对象同样干净。
+    expect(logs.length).toBeGreaterThan(0)
+    const wire = `${logs.join("\n")}\n${JSON.stringify(okOutcome)}\n${JSON.stringify(failOutcome)}`
+    for (const canary of [okCanary, failCanary]) {
+      expect(wire).not.toContain(canary)
+      expect(wire).not.toContain(digest(canary))
+    }
+    expect(wire).not.toContain(secretStore)
+  })
+
   test("prepared secret failures abort and remove every unreferenced version", async () => {
     const { envelope, bytes } = await fixture()
     const secretRoot = join(userData, "alpha-mcp-secrets", "generic-remote")
@@ -400,6 +629,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev" as const,
       installability: { fetchPayload: async () => bytes },
     }
@@ -427,7 +658,7 @@ describe("package admission", () => {
     expect(
       await populateFailure({
         ...populateIntent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(populatePreview),
       }),
     ).toMatchObject({ ok: false })
@@ -452,7 +683,7 @@ describe("package admission", () => {
     expect(
       await unhealthyProbe({
         ...probeIntent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(probePreview),
       }),
     ).toMatchObject({ ok: false })
@@ -472,6 +703,8 @@ describe("package admission", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev" as const,
       installability: { fetchPayload: async () => bytes },
     }
@@ -496,7 +729,7 @@ describe("package admission", () => {
     expect(
       await preexisting({
         ...preexistingIntent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(preexistingPreview),
       }),
     ).toMatchObject({ ok: false })
@@ -523,11 +756,304 @@ describe("package admission", () => {
     expect(
       await raced({
         ...racedIntent,
-        grants: { secrets: { "mcp:generic-remote#A_KEY": secretCanary } },
+        grants: await secretGrants(secretCanary),
         authorization: confirmation(racedPreview),
       }),
     ).toMatchObject({ ok: false })
     expect(transactionCalls).toBe(1)
     expect(readFileSync(configPath, "utf8")).toBe(handwritten)
+  })
+
+  /**
+   * `graphDigest` claims to bind the effective install graph independently. A key-shape assertion
+   * cannot tell that claim from a constant: replacing the production computation with
+   * `"0".repeat(64)` used to leave the whole suite green. So assert the **value**, derived from the
+   * signed envelope through the shared graph builder, for two packages whose graphs differ — one
+   * value alone can always be hard-coded.
+   */
+  test("graphDigest is the canonical hash of the effective install graph, and two graphs never share one", async () => {
+    const { envelope, bytes } = await fixture()
+    const other = structuredClone(envelope)
+    const otherPayload = JSON.parse(new TextDecoder().decode(bytes)) as PackageProfilePayloadV1
+    if (otherPayload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+      throw new Error("producer corpus profile drifted")
+    otherPayload.behavior.url = `${otherPayload.behavior.url}other/`
+    const otherBytes = new TextEncoder().encode(`${JSON.stringify(otherPayload, null, 2)}\n`)
+    other.components[0].payloadRef.bytes = otherBytes.byteLength
+    other.components[0].payloadRef.sha256 = createHash("sha256").update(otherBytes).digest("hex")
+
+    const bindingOf = async (signed: AlphaPackageEnvelopeV1, payloadBytes: Uint8Array, attemptId: string) => {
+      const admit = createPackageAdmissionCoordinator({
+        loadVerifiedCatalog: async () => ({
+          source: "remote",
+          catalog: { version: "1", entries: [{}], packages: [signed] },
+          snapshotDigest,
+        }),
+        root: () => root,
+        userDataPath: userData,
+        // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+        casBaseRoot: () => userData,
+        environment: () => "dev",
+        installability: { fetchPayload: async () => payloadBytes },
+      })
+      const preview = await admit({ catalogId: signed.prelude.packageId, scope: { scope: "global" }, attemptId })
+      if (preview.ok || preview.stage !== "authorize") throw new Error(`expected preview: ${JSON.stringify(preview)}`)
+      return preview.packageAuthorization.binding
+    }
+    // 期望值从**签名信封**独立推出来,不是从生产的 facts.graph 抄一份。
+    const expected = (signed: AlphaPackageEnvelopeV1) =>
+      sha256Hex(
+        canonicalJson(
+          packageEffectiveInstallGraphV1(signed, [
+            signed.components[0] as unknown as PackageSupportedComponentV1,
+          ]),
+        ),
+      )
+
+    const first = await bindingOf(envelope, bytes, "attempt-graph-digest-1")
+    const second = await bindingOf(other, otherBytes, "attempt-graph-digest-2")
+    expect(first.graphDigest).toBe(expected(envelope))
+    expect(second.graphDigest).toBe(expected(other))
+    expect(first.graphDigest).not.toBe(second.graphDigest)
+    // 不是把 envelopeDigest 换个名字放第二遍 —— 那样它绑的就不是这条闸门声称的东西。
+    expect(first.graphDigest).not.toBe(first.envelopeDigest)
+    expect(first.graphDigest).not.toBe(first.itemDigests[envelope.components[0].id])
+  })
+
+  /**
+   * §5.1 门二在 `#697` 翻开,而它当初挡的正是这个形状:一个 optional child 不受支持的 Bundle,
+   * 有效安装图长度回到 1。旧闸按**签名**组件数拒绝整包;新行为不是「换个更弱的谓词放行」,而是
+   * admission 真的把整张有效图放进一次事务,并且把那个不会安装的组件在**用户按下确认之前**
+   * 就如实说出来。这条用例钉住那句话:预览到达、组件逐条可见、跳过原因逐字来自安全视图。
+   */
+  test("an optional-unsupported Bundle reaches the preview, installs the effective graph, and names the skip", async () => {
+    const { envelope, bytes } = await fixture()
+    const leafPayload = {
+      schema: "alpha.host-extension-package.payload.agent.v1",
+      behavior: {
+        targetDir: "alpha-agents",
+        asset: {
+          sha256: "b".repeat(64),
+          bytes: 1,
+          mediaType: "text/markdown",
+          url: "https://example.invalid/leaf.md",
+        },
+      },
+    }
+    const leafBytes = new TextEncoder().encode(`${JSON.stringify(leafPayload, null, 2)}\n`)
+    const bundle = structuredClone(envelope)
+    bundle.components[0].dependencies = ["agent:bundle-leaf"]
+    bundle.components.push({
+      id: "agent:bundle-leaf",
+      required: false,
+      dependencies: [],
+      profileId: "agent",
+      profileVersion: 1,
+      // 未知 capability ⇒ optional leaf 被 skip ⇒ 有效图长度回到 1。
+      capabilities: ["alpha.future.v1"],
+      payloadRef: {
+        sha256: createHash("sha256").update(leafBytes).digest("hex"),
+        bytes: leafBytes.byteLength,
+        mediaType: "application/vnd.alpha.host-extension-package.agent.v1+json",
+        url: "https://example.invalid/leaf-payload.json",
+      },
+    } as unknown as (typeof bundle.components)[number])
+    bundle.capabilities = ["alpha.future.v1", "alpha.secret-prerequisite.v1"]
+
+    let fetches = 0
+    let transactionCalls = 0
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [bundle] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
+      environment: () => "dev",
+      installability: {
+        fetchPayload: async (ref) => {
+          fetches++
+          return ref.mediaType.includes(".agent.") ? leafBytes : bytes
+        },
+      },
+      transaction: async (...args) => {
+        transactionCalls++
+        return runExtensionTransaction(...args)
+      },
+    })
+    const preview = await admit({
+      catalogId: bundle.prelude.packageId,
+      scope: { scope: "global" },
+      attemptId: "attempt-optional-skip-bundle",
+    })
+    if (preview.ok || preview.stage !== "authorize")
+      throw new Error(`expected the authorization preview, got ${JSON.stringify(preview)}`)
+    // 被跳过的组件**一个字节都不取**:只有 root 的 payload 被请求过。
+    expect(fetches).toBe(1)
+    expect(transactionCalls).toBe(0)
+
+    const plan = preview.packageAuthorization.plan
+    const skippedRow = plan.items.find((item) => !item.included)
+    if (!skippedRow || skippedRow.included) throw new Error("确认屏必须带着被跳过的组件")
+    expect(skippedRow.componentId).toBe("agent:bundle-leaf")
+    // §4.3 闸 ③ 的前两个面:安全视图与确认屏对同一个组件给出**同一个字符串**。
+    const safeLeaf = preview.package === undefined
+      ? undefined
+      : preview.package.components.find((entry) => entry.componentId === "agent:bundle-leaf")
+    expect(skippedRow.skipReasonCode).toBe("component-capability-unsupported")
+    expect(safeLeaf?.skipReasonCode ?? skippedRow.skipReasonCode).toBe(skippedRow.skipReasonCode)
+    // 授权集只含会安装的组件:没人被要求为一个不会到货的东西授权。
+    expect(preview.authorization.map((item) => item.key)).toEqual(["mcp--generic-remote"])
+    expect(plan.items.filter((item) => item.included).map((item) => item.componentId)).toEqual([
+      "mcp:generic-remote",
+    ])
+
+    const installed = await admit({
+      catalogId: bundle.prelude.packageId,
+      scope: { scope: "global" },
+      attemptId: "attempt-optional-skip-bundle",
+      grants: await secretGrants(secretCanary),
+      authorization: confirmation(preview),
+    })
+    expect(installed).toMatchObject({ ok: true, kind: "mcp", name: "generic-remote" })
+    if (!installed.ok) throw new Error("expected the effective graph to install")
+    expect(installed.installed).toEqual(["mcp:generic-remote"])
+    expect(installed.skipped).toEqual([
+      { id: "agent:bundle-leaf", reason: "component-capability-unsupported" },
+    ])
+    expect(transactionCalls).toBe(1)
+    // 半装包的判据不是「没红」,是**盘上没有那个 agent**:跳过的组件零文件、零配置叶。
+    expect(existsSync(join(root, "agents", "bundle-leaf.md"))).toBe(false)
+    expect(readFileSync(join(root, "alpha.jsonc"), "utf8")).not.toContain("bundle-leaf")
+    const ledger = JSON.parse(readFileSync(join(root, "installs.json"), "utf8")) as {
+      packageGraphs: Array<{ children: unknown[] }>
+      claims: Array<{ kind: string; name: string }>
+    }
+    expect(ledger.packageGraphs).toHaveLength(1)
+    expect(ledger.packageGraphs[0]!.children).toEqual([])
+    expect(ledger.claims.map((claim) => `${claim.kind}:${claim.name}`)).toEqual(["mcp:generic-remote"])
+  })
+})
+
+// 0 字节是合法条目,而空串的 sha256 是个定值 ⇒ 把 fetch 的 reject 兜成空 Uint8Array,一次传输
+// 失败就正好通过「长度 + sha256」双查,被当成一份成功取回的空文件装进去。两条控制缺一不可:
+// 只有失败那条时,把整条路改成恒拒也全绿。
+describe("package admission distinguishes a failed asset fetch from an empty one", () => {
+  const SKILL_MD = "---\nname: zero-byte\ndescription: audit fixture\n---\nbody\n"
+  const MD = new TextEncoder().encode(SKILL_MD)
+  const EMPTY = new Uint8Array(0)
+  const EMPTY_PATH = "support/empty.txt"
+  const sha = (data: Uint8Array) => createHash("sha256").update(data).digest("hex")
+
+  function skillPackage() {
+    const files = [
+      { path: "SKILL.md", sha256: sha(MD), bytes: MD.byteLength, url: "https://example.invalid/s/SKILL.md" },
+      { path: EMPTY_PATH, sha256: sha(EMPTY), bytes: 0, url: "https://example.invalid/s/empty.txt" },
+    ]
+    const payload = {
+      schema: "alpha.host-extension-package.payload.skill.v1",
+      behavior: { targetDir: "alpha-skills", files },
+    }
+    const payloadBytes = new TextEncoder().encode(`${JSON.stringify(payload, null, 2)}\n`)
+    return {
+      payloadBytes,
+      envelope: {
+        schema: "alpha.host-extension-package.v1",
+        prelude: { packageId: "package:zero-byte-skill", version: "1.0.0" },
+        root: "skill:zero-byte",
+        presentation: { displayName: "zero-byte", description: "#827 audit fixture" },
+        components: [
+          {
+            id: "skill:zero-byte",
+            required: true,
+            dependencies: [],
+            profileId: "skill",
+            profileVersion: 1,
+            capabilities: [],
+            payloadRef: {
+              sha256: sha(payloadBytes),
+              bytes: payloadBytes.byteLength,
+              mediaType: "application/vnd.alpha.host-extension-package.skill.v1+json",
+              url: "https://example.invalid/payload.json",
+            },
+          },
+        ],
+        capabilities: [],
+      } as unknown as AlphaPackageEnvelopeV1,
+    }
+  }
+
+  async function install(fetchAsset: (ref: { path?: string }) => Promise<Uint8Array>) {
+    const { envelope, payloadBytes } = skillPackage()
+    let transactionCalls = 0
+    const admit = createPackageAdmissionCoordinator({
+      loadVerifiedCatalog: async () => ({
+        source: "remote",
+        catalog: { version: "1", entries: [{}], packages: [envelope] },
+        snapshotDigest,
+      }),
+      root: () => root,
+      userDataPath: userData,
+      casBaseRoot: () => userData,
+      environment: () => "dev",
+      installability: { fetchPayload: async () => payloadBytes },
+      fetchAsset,
+      transaction: async (...args) => {
+        transactionCalls++
+        return runExtensionTransaction(...args)
+      },
+    })
+    const intent = {
+      catalogId: envelope.prelude.packageId,
+      scope: { scope: "global" as const },
+      attemptId: "attempt-zero-byte",
+    }
+    const preview = await admit(intent)
+    if (preview.ok) throw new Error("expected an authorization preview, not an immediate install")
+    // 取回失败在**预览轮**就把整包拒掉(补丁前这一轮会把空字节当成功、照常进授权)。
+    if (preview.stage !== "authorize") return { result: preview, transactionCalls }
+    const result = await admit({ ...intent, authorization: confirmation(preview) })
+    return { result, transactionCalls }
+  }
+
+  const filesUnder = (dir: string) => {
+    const found: string[] = []
+    const walk = (at: string) => {
+      for (const entry of readdirSync(at, { withFileTypes: true })) {
+        const full = join(at, entry.name)
+        if (entry.isDirectory()) walk(full)
+        else if (entry.isFile()) found.push(full)
+      }
+    }
+    if (existsSync(dir)) walk(dir)
+    return found
+  }
+
+  test("a successful zero-length fetch installs and materializes the empty file", async () => {
+    const { result, transactionCalls } = await install(async (ref) =>
+      ref.path === EMPTY_PATH ? EMPTY : MD,
+    )
+    expect(result).toMatchObject({ ok: true, kind: "skill", name: "zero-byte" })
+    expect(transactionCalls).toBe(1)
+    const materialized = filesUnder(root).filter((file) => file.endsWith(join("support", "empty.txt")))
+    expect(materialized).toHaveLength(1)
+    expect(statSync(materialized[0]!).size).toBe(0)
+  })
+
+  test("a rejected fetch for that same ref refuses the package before any transaction or CAS write", async () => {
+    const { result, transactionCalls } = await install(async (ref) => {
+      if (ref.path === EMPTY_PATH) throw new Error("transport failed")
+      return MD
+    })
+    expect(result).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("package asset unavailable or failed integrity"),
+    })
+    expect(transactionCalls).toBe(0)
+    expect(filesUnder(root)).toEqual([])
+    expect(filesUnder(userData)).toEqual([])
   })
 })

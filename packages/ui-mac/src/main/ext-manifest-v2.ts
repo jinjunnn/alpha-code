@@ -12,6 +12,7 @@
 
 import { createHash } from "node:crypto"
 import { decodeOwnershipDims, RUNTIME_SURFACES, type OwnershipDims, type RuntimeSurface } from "../shared/ext-ownership"
+import { isExtensionName } from "../shared/extension-name"
 
 export const MANIFEST_SCHEMA_VERSION = 2 as const
 
@@ -73,7 +74,6 @@ const PLATFORMS = new Set<string>(["darwin", "win32", "linux"])
 const SURFACES = new Set<string>(RUNTIME_SURFACES)
 const CAPS = new Set<string>(MANIFEST_CAPABILITIES)
 
-const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const DIGEST_RE = /^sha256:[0-9a-f]{64}$/
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\x00-\x1f\x7f]/
@@ -173,10 +173,9 @@ export function decodeManifestV2(input: unknown): ManifestDecode {
   rejectUnknownKeys(input, TOP_KEYS, "manifest", errors)
 
   const id = decodeString(input.id, "manifest.id", errors, { max: 200 })
-  const name = decodeString(input.name, "manifest.name", errors, {
-    re: SAFE_NAME,
-    reMsg: "must be 1-64 chars of [a-zA-Z0-9._-] starting alphanumeric",
-  })
+  const name = decodeString(input.name, "manifest.name", errors, { max: 64 })
+  if (name !== undefined && !isExtensionName(name))
+    errors.push("manifest.name: must be 1-64 chars of [a-zA-Z0-9._-] starting alphanumeric")
   const kindStr = decodeString(input.kind, "manifest.kind", errors)
   if (kindStr !== undefined && !KINDS.has(kindStr)) errors.push(`manifest.kind: "${kindStr}" not a known kind`)
   const versionStr = decodeString(input.version, "manifest.version", errors, { max: 64 })
@@ -308,7 +307,7 @@ export function computeManifestDigest(manifest: ExtensionManifestV2): string {
  *  (REQ-098 #303,一致性标识而非上游真实性证明)。 */
 export function aggregateFilesDigest(files: Array<{ path: string; sha256: string }>): string {
   const lines = files
-    .map((f) => `${f.path} ${f.sha256}`)
+    .map((f) => `${f.path}\u0000${f.sha256}`)
     .sort()
     .join("\n")
   return `sha256:${sha256Hex(lines)}`

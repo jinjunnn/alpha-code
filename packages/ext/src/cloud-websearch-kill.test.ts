@@ -382,28 +382,60 @@ describe("上游次序前提(trigger 早于 ask)", () => {
 
 describe("installCloudMcp 单元判据", () => {
   const tokenFile = join(tmpdir(), `alpha-ext-token-${process.pid}`)
+  // `#733` B1(审计 Blocker):alpha 治理的云 server **走标准 MCP OAuth**,定义里没有任何凭证通道。
+  // 这个夹具从前是 `headers.Authorization + oauth:false`,于是即便本文件全绿,
+  // 「最终写回的那一份不许带静态 bearer」这条 AC **一个闸都没有** ——
+  // 实测把写回行改成「DEF 没有 headers 就补一个 Authorization」,本文件 42 条照样全绿
+  //(因为夹具自己就带 headers,那条分支根本不执行)。夹具接受的形状 = 这道闸真正的边界。
   const def = JSON.stringify({
     type: "remote",
     url: "https://cloud.example/mcp",
     enabled: true,
-    headers: { Authorization: `Bearer {file:${tokenFile}}` },
-    oauth: false,
+    oauth: {
+      clientId: "https://auth.tidelabs.click/oauth/clients/alpha-code-mcp.json",
+      redirectUri: "http://127.0.0.1:19876/callback",
+    },
   })
   const armed = { [CLOUD_MCP_ARM_ENV]: "cloud", [CLOUD_MCP_DEF_ENV]: def }
   const readToken = () => "tok-live"
 
-  test("装的是完整定义,且 {file:} 引用在这一层才被解析(config 钩子拿到的已是解析后对象)", () => {
+  test("装的是完整定义,且云 server 那一份零凭证通道(OAuth 形态)", () => {
     const cfg: { mcp?: Record<string, unknown> } = { mcp: { other: { type: "local", enabled: false } } }
     expect(installCloudMcp(cfg, armed, readToken)).toBe("cloud")
     expect(cfg.mcp!.cloud).toEqual({
       type: "remote",
       url: "https://cloud.example/mcp",
       enabled: true,
-      headers: { Authorization: "Bearer tok-live" },
-      oauth: false,
+      oauth: {
+        clientId: "https://auth.tidelabs.click/oauth/clients/alpha-code-mcp.json",
+        redirectUri: "http://127.0.0.1:19876/callback",
+      },
     })
+    // 写回时**不许**凭空长出凭证通道(`toEqual` 已排他,键名单再点一次名)。
+    expect(Object.keys(cfg.mcp!.cloud as object).sort()).toEqual(["enabled", "oauth", "type", "url"])
     // 别人的 disabled 条目(账本覆盖 / XDG 默认拒绝)不归本握手管。
     expect(cfg.mcp!.other).toEqual({ type: "local", enabled: false })
+  })
+
+  // `{file:}` 解析仍然要有闸 —— 但它是**通用 JSON** 能力,不再挂在云 server 上放行静态 bearer。
+  // 拆开之后:上面那条钉「云 server 长什么样」,这条钉「带引用的定义会被解析」。
+  const genericRefDef = JSON.stringify({
+    type: "remote",
+    url: "https://third-party.example/mcp",
+    enabled: true,
+    headers: { "X-Api-Key": `{file:${tokenFile}}` },
+  })
+  const armedGeneric = { [CLOUD_MCP_ARM_ENV]: "cloud", [CLOUD_MCP_DEF_ENV]: genericRefDef }
+
+  test("通用能力:DEF 里的 {file:} 引用在这一层才被解析(config 钩子拿到的已是解析后对象)", () => {
+    const cfg: { mcp?: Record<string, unknown> } = {}
+    expect(installCloudMcp(cfg, armedGeneric, readToken)).toBe("cloud")
+    expect(cfg.mcp!.cloud).toEqual({
+      type: "remote",
+      url: "https://third-party.example/mcp",
+      enabled: true,
+      headers: { "X-Api-Key": "tok-live" },
+    })
   })
 
   test("ARM 与 DEF 必须成对;缺一个就什么都不装", () => {
@@ -428,12 +460,14 @@ describe("installCloudMcp 单元判据", () => {
     }
   })
 
-  test("密钥文件读不到(登出 / 同步失败)⇒ 不装一个没有凭据的 server", () => {
+  test("带 {file:} 的定义在密钥文件读不到时 fail-closed:不装一个没有凭据的 server", () => {
+    // 用 `armedGeneric`:云 server 自己已经没有引用可解了(走 OAuth),这条守的是
+    // 「任何带引用的定义读不到就整个不装」——删掉它 = 对未来带引用的定义默认放行。
     const cfg: { mcp?: Record<string, unknown> } = {}
     const missing = () => {
       throw Object.assign(new Error("ENOENT"), { code: "ENOENT" })
     }
-    expect(installCloudMcp(cfg, armed, missing)).toBeUndefined()
+    expect(installCloudMcp(cfg, armedGeneric, missing)).toBeUndefined()
     expect(cfg.mcp).toBeUndefined()
   })
 
@@ -453,12 +487,15 @@ describe("ext 缺席三态:云 MCP 定义根本不进配置(#223 R4→R5 云 kil
   let savedDef: string | undefined
   let tokenFile = ""
 
+  // `#733`:真实注入面在 kill-switch 下托管的形状 —— OAuth 对象,零凭证通道。
   const cloudDef = () => ({
     type: "remote",
     url: "https://cloud.example/mcp",
     enabled: true,
-    headers: { Authorization: `Bearer {file:${tokenFile}}` },
-    oauth: false,
+    oauth: {
+      clientId: "https://auth.tidelabs.click/oauth/clients/alpha-code-mcp.json",
+      redirectUri: "http://127.0.0.1:19876/callback",
+    },
   })
 
   beforeEach(() => {
@@ -548,8 +585,18 @@ describe("ext 缺席三态:云 MCP 定义根本不进配置(#223 R4→R5 云 kil
     // 装上的同一个 hooks 对象上,那道不可覆盖的闸确实在。
     expect(typeof hooks[0]!["tool.execute.before"]).toBe("function")
     expect(cfg.mcp.cloud).toMatchObject({ type: "remote", enabled: true })
-    // {file:} 引用由 ext 自己解析(config 钩子拿到的是引擎已替换过的对象)。
-    expect(cfg.mcp.cloud!.headers).toEqual({ Authorization: "Bearer tok-live" })
+    // `#733`:装进去的是 OAuth 形态,**没有** headers —— 这是「删静态 bearer」在
+    // 真实装载路径(引擎装 ext → 派发 config 钩子 → installCloudMcp 写回)上的落点。
+    expect(cfg.mcp.cloud!.headers).toBeUndefined()
+    expect(cfg.mcp.cloud).toEqual({
+      type: "remote",
+      url: "https://cloud.example/mcp",
+      enabled: true,
+      oauth: {
+        clientId: "https://auth.tidelabs.click/oauth/clients/alpha-code-mcp.json",
+        redirectUri: "http://127.0.0.1:19876/callback",
+      },
+    })
   })
 
   test("① OPENCODE_PURE:引擎整个跳过外部插件 ⇒ 配置里只剩中和条目", async () => {

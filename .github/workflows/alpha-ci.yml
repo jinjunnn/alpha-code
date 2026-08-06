@@ -10,11 +10,16 @@
 # were --admin-merged with zero gating (broken relative links shipped silently).
 #
 #   detect          — classify the diff (code vs docs-only), collect changed Markdown.
-#   upstream-guard  — mechanically enforces the north star (冲突文件数 = 0, ADR-004/B10): fail if this
-#                     branch MODIFIES/DELETES/RENAMES any upstream package file relative to dev. Uses a
+#   upstream-guard  — two source-hygiene assertions over the checkout.
+#                     ① north star (冲突文件数 = 0, ADR-004/B10): fail if this branch
+#                     MODIFIES/DELETES/RENAMES any upstream package file relative to dev. Uses a
 #                     merge-base three-dot diff so it measures alpha's OWN delta and stays green when
 #                     dev is merely ahead. New files under packages/ext|ui-mac are alpha's and ignored;
 #                     root bun.lock (allowlisted) + .gitignore aren't under the guarded paths.
+#                     ② no literal NUL bytes anywhere under version control (#760) — a NUL makes
+#                     grep/rg/file classify the whole file as binary and return **nothing**, so
+#                     "I grepped, there is none" becomes a lie. Runs on docs-only PRs too, hence
+#                     this job's checkout is unconditional.
 #   typecheck       — tsgo on the Alpha packages a PR can actually touch.
 #   test            — vendored contract hashes/fixtures plus alpha package unit tests.
 #   seed-assets     — B7: asserts electron-builder extraResources (REQ-023 vendored agent/plugin,
@@ -101,11 +106,18 @@ jobs:
     needs: detect
     runs-on: ubuntu-latest
     steps:
+      # checkout 刻意**无条件**跑(#760):同 job 里的 NUL 字节闸对 docs-only PR 也必须生效 ——
+      # 一个 .md 里的字面 NUL 让 grep 对整个文件失明,与 .ts 里的完全一样。checkout 约 5 秒。
       - name: Checkout (full history for merge-base)
-        if: needs.detect.outputs.code == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # #760:源码里的字面 NUL 让 grep 静默失明 —— 危害不是漏看,是给出一个假的「没有」让人
+      # 据此下结论(alpha-web#109 的实现方 `grep "secret"` 得 0 命中,差点断定「测试被删了」)。
+      # 这是**兜底**,真正的门是本地 scripts/alpha-check.sh 第 [2/4] 步(docs/runbooks/ci.md §6)。
+      # 刻意不新开 job:按本仓纪律,新增检查 = 往 bin/check 加一步,CI 只镜像它。
+      - name: No literal NUL bytes in version-controlled files
+        run: python3 scripts/assert-no-nul-bytes.py
       - name: Ensure origin/dev is available
         if: needs.detect.outputs.code == 'true'
         run: git fetch --no-tags origin dev
@@ -231,6 +243,14 @@ jobs:
       # REQ-027: same flag-order constraint as the typecheck job.
       # REQ-062: ext tests carry the prompt-rebrand drift lock (curated substrings asserted against
       # the upstream base prompts — a sync that rewrites them turns this red, per ADR-015 合并验证).
+      # #769:这一步在 CI 上跑的是**降级档**,而且它自己会在 stdout 说出来
+      # (`PROVENANCE NOT VERIFIED this run` + 一条 workflow 注解)。CI 是裸 checkout,
+      # 没有兄弟仓 `../alpha-web`,「这些字节来自那个 commit」结构上证不了 —— 以前那里硬失败,
+      # 于是本步**恒红**,红的理由与它要验的漂移无关,而恒红的闸等于没有闸。
+      # 不在这里加一次 alpha-web checkout 的理由:本仓 public、alpha-web private,跨仓 checkout
+      # 要把私仓读令牌放进公开仓的 secrets,而本 workflow 触发在 `pull_request` —— fork PR
+      # 结构上拿不到 secrets,那一步对外部贡献者依然红。provenance 由开发机 pre-push 真验
+      # (那里有兄弟仓);判读法见 docs/runbooks/ci.md 第 2 节。
       - name: verify immutable Alpha contract vendor lock
         if: needs.detect.outputs.code == 'true'
         run: bun run --cwd packages/alpha-contracts-consumer check:vendor
@@ -260,13 +280,22 @@ jobs:
       #   ui-mac 删掉 stream-read-hygiene.test.ts → 3077 条 ≥ 地板 3000 → 全绿
       #   ext    删掉 prompt-rebrand.test.ts      →  106 条 ≥ 地板  100 → 全绿
       # 「闸门文件」= 删掉它就移除某条**具体保证**(而不只是减少覆盖率)。它们逐个登记在
-      # scripts/gate-files.tsv,由下面这一步逐个跑 + 逐个判下界。新增闸门文件忘了登记,会被
+      # scripts/gate-files.tsv,由下面这一步逐个跑 + 逐个判**精确条数**(`#844`:下界留余量时,
+      # 新加进闸门文件的用例可以被整段删掉而登记簿全绿 —— 实测 35/87 条有余量;现在少一条 =
+      # 有用例被删,多一条 = 新增未登记,均当场红;写回用 assert-gate-files.sh --update)。
+      # 新增闸门文件忘了登记,会被
       # packages/ui-mac/src/main/gate-file-registry.test.ts 判红(它自己也在登记簿里)。
       #
       # 这一步同时覆盖了 alpha 自有的 opencode web search 闸 —— 那份行为闸住在
       # packages/opencode/test,而本 job 的整包地板都不覆盖 opencode(全量 opencode 测试不属 alpha)。
+      #
+      # `#777`:这一步**不得**因为前一步红而被跳过。GitHub 的 step 默认条件是 `success()`,
+      # 于是 2026-08-02 起 `bun test (ui-mac)` 连红两天,把 77 个登记闸门一起带走 —— 其中
+      # llm / core / opencode 那几个**只在这一步执行**,别处再没有第二次机会。一步失败
+      # 连带 77 道门集体消失,是「主线红」这一件坏事自动升级成两件。
+      # 用 `!cancelled()` 而不是 `always()`:cancel-in-progress 取消掉的 run 不必再跑一遍。
       - name: assert gate files (逐个点名,整包地板抓不到单文件消失)
-        if: needs.detect.outputs.code == 'true'
+        if: ${{ !cancelled() && needs.detect.outputs.code == 'true' }}
         run: bash scripts/assert-gate-files.sh
 
   seed-assets:

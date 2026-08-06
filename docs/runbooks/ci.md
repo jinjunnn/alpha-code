@@ -9,7 +9,17 @@
 bash scripts/alpha-check.sh
 ```
 
-绿了再 push。它跑的就是 `alpha-ci` 的三关(北极星守卫 / typecheck / 单测),本地几秒出结果,和 CI 1:1 一致。
+绿了再 push。它跑的是 `alpha-ci` 的**全部 12 个代码步**,并在末尾打印一张逐步对照表
+(`MIRRORED` / `SUPERSET:<理由>` / `DEGRADED:<理由>`)。
+
+> `#777` 起,「与 alpha-ci 1:1」不再是散文。2026-08-03 实读:此前这句话写在三处
+> (本文件、`CLAUDE.md`、`scripts/alpha-check.sh` 抬头),而脚本实际只跑了 12 步里的 9 步 ——
+> 缺 `assert-gate-files.sh`(登记闸门里 llm / core / opencode 那几个**只在这一步执行**)、
+> 缺 `assert-seed-assets.sh`、缺 `check-doc-links.py`;而且三条测试用的是裸 `bun test`
+> (跑 0 条照样 exit 0 —— CI 早在 `#647` 修掉的假绿形态,本地原样留着)。
+> **「本地绿 ⇒ 可以合」这条铁律的全部依据就是这句 1:1**,所以它现在由
+> `packages/ui-mac/src/main/local-gate-parity.test.ts` 双向核对:CI 加一步而对照表没登记即红,
+> CI 改一个步骤名而对照表没跟也即红。
 
 ## 1. 为什么 local-first(优先本地跑)
 
@@ -18,15 +28,21 @@ bash scripts/alpha-check.sh
 - **CI 的真正职责**是①**强制门禁**(branch protection:不绿不让 merge,挡手滑)②**中立环境兜底**(抓"在我机器上是好的"那类环境差异)——不是给你当调试台用的。
 - 所以顺序永远是:**本地 `alpha-check` 绿 → push → CI 复核 → merge**。
 
-## 2. 三关是什么(与 `alpha-ci` 1:1)
+## 2. 七关是什么(逐步对照见 `alpha-check.sh` 的 `CI_STEPS`)
 
-| 关 | 本地命令 | CI job | 失败含义 |
+| 关 | 本地步骤 | CI job | 失败含义 |
 |---|---|---|---|
-| **北极星守卫**(零改上游) | `scripts/alpha-check.sh` 内含;等价 `git diff --diff-filter=DMR --name-only origin/dev...HEAD -- <上游7包>` 必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
-| **typecheck**(三个 alpha 包) | `bun run --cwd packages/alpha-contracts-consumer typecheck` + `bun run --cwd packages/ext typecheck` + `bun run --cwd packages/ui-mac typecheck` | `typecheck (alpha packages)` | 类型不过 |
-| **契约锁 + 单元测试** | `packages/alpha-contracts-consumer` 的 `check:vendor`/`bun test`,再从 `packages/ext`、`packages/ui-mac` 各跑 `bun test` | `unit tests (alpha packages)` | vendored hash、producer/consumer fixture 或运行时守卫回归 |
+| **北极星守卫**(零改上游) | `[1/7]`;等价 `git diff --diff-filter=DMR --name-only origin/dev...HEAD -- <上游 8 包>` 必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
+| **NUL 字节闸** | `[2/7]` `scripts/assert-no-nul-bytes.py` | 同上 job | 字面 NUL 让 `grep` 对整个文件静默失明(`#760`) |
+| **typecheck**(三个 alpha 包) | `[3/7]` contracts-consumer + ext + ui-mac | `typecheck (alpha packages)` | 类型不过 |
+| **契约锁 + 单元测试** | `[4/7]` `check:vendor` + `bun-test-floor.sh` × 3(15 / 100 / 3000) | `unit tests (alpha packages)` | vendored hash、producer/consumer fixture 或运行时守卫回归 |
+| **闸门文件点名** | `[5/7]` `scripts/assert-gate-files.sh`(全量见 `scripts/gate-files.tsv`) | 同上 job | 某个闸门文件被删/被清空/条数偏离登记 —— 整包地板抓不到。`#844` 起逐条判**精确条数**(少=删了用例,多=新增未登记);改动闸门文件后跑 `bash scripts/assert-gate-files.sh --update` 从实测写回登记簿(all-or-nothing、幂等),例外语法与理由要求见 TSV 抬头或脚本 `--help` |
+| **seed assets** | `[6/7]` `scripts/assert-seed-assets.sh` | `seed assets present` | 打包资源被静默删除(B7/B15) |
+| **docs gate** | `[7/7]` `scripts/check-doc-links.py <改动的 md>` | `docs gate` | Markdown 相对链接断了 |
 
-- **上游 7 包** = `packages/{opencode,core,server,app,ui,tui,sdk}`(见 alpha-ci.yml `env.UPSTREAM_PATHS`)。
+- **上游包** = `packages/{opencode,core,server,tui,sdk,protocol,schema,client}`(**8 个**,见 alpha-ci.yml
+  `env.UPSTREAM_PATHS`;`app`/`ui` 已按 ADR-020 移出守卫,`protocol`/`schema`/`client` 按 ADR-033 补入)。
+  这份清单与 24 条 ADR-033 收编白名单,两处必须逐条相同 —— 由 `local-gate-parity.test.ts` 判(`#637`)。
 - **bun 版本钉 `1.3.14`**(与 CI 一致,根 `package.json` 的 `packageManager`)。本机版本不同先对齐。
 - 根 `bun test` 被故意禁用(`do not run tests from root`)——测试按包跑,别在根跑。
 - Alpha Platform wire pin 不使用 `bun.lock`。`check:vendor` 要求
@@ -35,6 +51,23 @@ bash scripts/alpha-check.sh
   对比。固定命名测试 `contract lock resolves to the exact immutable
   alpha-platform commit` 与 `contract source lock matches vendored artifact
   hashes` 是 CI 证据。
+- **`check:vendor` 在 CI 上跑的是「降级」档,而且它自己会说出来(#769)。**
+  CI 是裸 checkout,兄弟仓 `../alpha-web` / `.upstream-*` 都不存在,所以
+  「vendored 字节确实来自那个 commit」这一条**证不了**。以前那里是硬失败 ⇒
+  `verify immutable Alpha contract vendor lock` 这一步**恒红**,红的理由与
+  漂移无关。现在改成降级,并在 stdout 打出 `PROVENANCE NOT VERIFIED this run`
+  (GitHub Actions 上另发一条 workflow 注解)。判读法:
+  - 有 `verified N contract artifacts from <repo>@<sha>` = 三方比对成立
+    (lock ↔ vendored 字节 ↔ 上游字节),只有开发机/pre-push 会到这一档;
+  - 有 `PROVENANCE NOT VERIFIED this run` = 本次只验了本仓侧,commit 归属没验。
+    **这是 CI 的常态,不是故障**;要真验 provenance 就在本机 `bun run --cwd
+  packages/alpha-contracts-consumer check:vendor`(旁边有 `../alpha-web` checkout)。
+  - 降级档仍然是一道**真闸**:除 lock ↔ vendored 字节外,还把 producer manifest
+    的 35 条哈希锚在 `artifactSha256` 上 —— 那是**源码里的人工评审常量**,
+    `vendor` 从不回写它,所以「拿错目录跑一次 vendor 把字节和 lock 一起改写」
+    这种自洽伪造照样红。
+- **写盘侧不降级**:`vendor`(重写 lock)缺兄弟仓仍硬失败。没有 provenance 就
+  落盘一份自洽的 lock,等于给后续每一次 `--check` 发一张伪证。
 
 ## 3. GitHub 上只跑两个 workflow(其余上游的已禁用)
 
@@ -47,7 +80,15 @@ bash scripts/alpha-check.sh
 | **`alpha-ci`** | 本仓 CI(上面三关) | `push` / `pull_request` → `alpha`;也可 `workflow_dispatch` |
 | **`sync-upstream`** | 每日上游 `dev → merge alpha` 同步 | 定时 + 手动 |
 
-- **required check 只有 `alpha-ci` 的三个 job**;其它 workflow 一律**不影响 merge**(PR 上若看到别的 check = 历史残留,忽略)。
+- **分支保护 required contexts 与真实 job 名对不上,`unit tests (ui-mac)` 是个幽灵**(2026-08-03 实读,`#717`)。
+  `alpha` 保护要求四个 context:`north-star guard (zero upstream edits)` / `typecheck (alpha packages)` /
+  **`unit tests (ui-mac)`** / `docs gate`。而那个 job 早在 2026-07-22(`ebd29cda`)就改名成
+  `unit tests (alpha packages)` —— **没有任何 PR 会产出 `unit tests (ui-mac)` 这个 context**,
+  code PR 也不会。后果:每个 PR 在这一格上永久 pending ⇒ 每次合并都得 `--admin` ⇒
+  主线真红的时候也没有任何东西挡住。**「大家习惯性 --admin」不是纪律松懈,是分支保护自己造出来的。**
+  `#717` 的票面把成因写成「docs-only path 没发布该 context」,与实测不符:改名是全量的。
+  修法(改的是 GitHub 设置,不在本仓文件里)由 `#717` 承担。
+- 其它 workflow 一律**不影响 merge**(PR 上若看到别的 check = 历史残留,忽略)。
 - **不要盲目 `gh workflow enable`** 上游那些——除非你真给 fork 接了对应 runner。要恢复某个:`gh workflow enable <name>.yml`(可逆,文件没删)。
 
 ## 4. 提交纪律
@@ -64,11 +105,14 @@ bash scripts/alpha-check.sh
    - 一直 `queued` = 等 runner(无匹配 runner / Actions 额度耗尽 / 并发上限);
    - `in_progress` 慢 = job 本身慢(装依赖 / 测试)——那才是 REQ-009 缓存优化的场景。
 3. **命令**:`gh run cancel <id>` 取消 · `gh run watch <id>` 盯 · `gh run rerun <id>` 重跑 · `gh run list --workflow=alpha-ci.yml` 只看本仓 CI。
-4. **别被堵**:本地三关已绿 = 代码没问题;required 只有 alpha-ci 三个。真急可 `gh pr merge --admin` 绕过(慎用,别养成习惯)。
+4. **别被堵**:本地七步已绿 = 代码没问题。注意 §3 那条 —— 目前 required 里有一个**永远不会上报**的
+   context(`unit tests (ui-mac)`,`#717`),所以「PR 卡着不动」多半不是 CI 慢,是那一格永远 pending。
+   真急可 `gh pr merge --admin` 绕过(它现在是**结构性必需**,不是纪律松懈;`#717` 修好之前别把
+   「又 --admin 了一次」当成有人偷懒)。
 
 ## 6. pre-push 钩子 —— local-first 强制(2026-07-05 REQ-015 起默认开启)
 
-`.githooks/pre-push` = 跑 `scripts/alpha-check.sh`(与 alpha-ci 1:1)。**默认开启**:`alpha-check.sh` 每次运行都会幂等重挂 `git config core.hooksPath .githooks`。
+`.githooks/pre-push` = 跑 `scripts/alpha-check.sh`(覆盖 alpha-ci 全部 12 个代码步,末尾自陈对照表)。**默认开启**:`alpha-check.sh` 每次运行都会幂等重挂 `git config core.hooksPath .githooks`。
 
 为什么不能用上游 husky 门(此前「配置过又失效」的根因,REQ-015):
 - `.husky/pre-push` 跑**全量** `bun turbo typecheck`,在 ADR-020 冻结偏斜下 `session-ui` 恒红(上游叶子包,alpha 不 ship,权威门 alpha-ci 不含)→ 逼出 `--no-verify` 习惯;

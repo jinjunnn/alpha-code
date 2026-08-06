@@ -4,7 +4,7 @@ import { createHash } from "node:crypto"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { PROFILE_REGISTRY_V1, type PackageCapabilityV1, type PackageProfileIdV1 } from "./registry"
+import { PROFILE_REGISTRY_V1, type PackageProfileIdV1 } from "./registry"
 
 export const HOST_EXTENSION_PACKAGE_ARTIFACT_PATH =
   "packages/ui-mac/src/shared/host-extension-package-contract"
@@ -26,11 +26,19 @@ export const HOST_EXTENSION_PACKAGE_ARTIFACT_FILES = [
   HOST_EXTENSION_PACKAGE_CORPUS,
 ] as const
 
+type CorpusComponentCase = {
+  /** Component id, so a consumer can bind a payload to a component without positional guessing. */
+  id: string
+  payload: Record<string, unknown> | null
+}
+
 type CorpusCase = {
   name: string
-  expect: "accepted" | "blocked" | "skipped"
+  expect: "accepted" | "blocked"
+  /** Component ids the host is expected to skip. Empty for every single-component case. */
+  skipped: string[]
   envelope: Record<string, unknown>
-  payload: Record<string, unknown> | null
+  components: CorpusComponentCase[]
 }
 
 type ArtifactManifestV1 = {
@@ -43,99 +51,261 @@ type ArtifactManifestV1 = {
 const root = dirname(fileURLToPath(import.meta.url))
 const textEncoder = new TextEncoder()
 
+type ComponentSpec = {
+  id: string
+  profileId: string
+  required: boolean
+  capabilities: string[]
+  payload: Record<string, unknown> | null
+  mediaType?: string
+  profileVersion?: number
+}
+
+/** 单文件技能(`#828` 之前唯一能表达的形状)—— 这条语料**留着**,它是「多文件不许把单文件弄坏」的判据。 */
+const skillPayload = (slug: string) => ({
+  schema: "alpha.host-extension-package.payload.skill.v1",
+  behavior: {
+    targetDir: "alpha-skills",
+    files: [
+      {
+        path: "SKILL.md",
+        sha256: "1".repeat(64),
+        bytes: 12,
+        url: `https://example.invalid/assets/${slug}/SKILL.md`,
+      },
+    ],
+  },
+})
+
+/**
+ * `#828`:多文件技能 —— 真实语料里 40/162 是这个形状(实测上界 18 文件 / 深度 2)。
+ * 这条语料带一层子目录与一个 `.py`,因为那正是旧形状**结构上表达不了**的东西。
+ */
+const multiFileSkillPayload = (slug: string) => ({
+  schema: "alpha.host-extension-package.payload.skill.v1",
+  behavior: {
+    targetDir: "alpha-skills",
+    files: [
+      {
+        path: "SKILL.md",
+        sha256: "1".repeat(64),
+        bytes: 12,
+        url: `https://example.invalid/assets/${slug}/SKILL.md`,
+      },
+      {
+        path: "reference/guide.md",
+        sha256: "3".repeat(64),
+        bytes: 34,
+        url: `https://example.invalid/assets/${slug}/reference/guide.md`,
+      },
+      {
+        path: "scripts/run.py",
+        sha256: "4".repeat(64),
+        bytes: 56,
+        url: `https://example.invalid/assets/${slug}/scripts/run.py`,
+      },
+    ],
+  },
+})
+
+const agentPayload = (slug: string) => ({
+  schema: "alpha.host-extension-package.payload.agent.v1",
+  behavior: {
+    targetDir: "alpha-agents",
+    asset: {
+      sha256: "2".repeat(64),
+      bytes: 12,
+      mediaType: "text/markdown",
+      url: `https://example.invalid/assets/${slug}.md`,
+    },
+  },
+})
+
+const mcpLocalPayload = () => ({
+  schema: "alpha.host-extension-package.payload.mcp-local.v1",
+  behavior: {
+    command: ["bunx", "example-mcp"],
+    environment: {},
+    requiredSecrets: ["API_KEY"],
+  },
+})
+
+const mcpRemotePayload = (
+  auth: unknown = "none",
+  requiredSecrets: string[] = [],
+  headersTemplate: Record<string, string> = {},
+) => ({
+  schema: "alpha.host-extension-package.payload.mcp-remote.v1",
+  behavior: {
+    url: "https://mcp.example.invalid/service",
+    headersTemplate,
+    requiredSecrets,
+    auth,
+  },
+})
+
 export function decoderCorpusBytesV1(): Uint8Array {
   const cases: CorpusCase[] = [
-    createCase(
-      "skill-v1",
-      "skill",
-      [],
-      {
-        schema: "alpha.host-extension-package.payload.skill.v1",
-        behavior: {
-          targetDir: "alpha-skills",
-          asset: {
-            sha256: "1".repeat(64),
-            bytes: 12,
-            mediaType: "text/markdown",
-            url: "https://example.invalid/assets/skill.md",
-          },
-        },
-      },
-    ),
-    createCase(
-      "agent-v1",
-      "agent",
-      [],
-      {
-        schema: "alpha.host-extension-package.payload.agent.v1",
-        behavior: {
-          targetDir: "alpha-agents",
-          asset: {
-            sha256: "2".repeat(64),
-            bytes: 12,
-            mediaType: "text/markdown",
-            url: "https://example.invalid/assets/agent.md",
-          },
-        },
-      },
-    ),
-    createCase(
-      "mcp-local-v1",
-      "mcp-local",
-      ["alpha.secret-prerequisite.v1"],
-      {
-        schema: "alpha.host-extension-package.payload.mcp-local.v1",
-        behavior: {
-          command: ["bunx", "example-mcp"],
-          environment: {},
-          requiredSecrets: ["API_KEY"],
-        },
-      },
-    ),
-    createCase(
-      "mcp-remote-v1",
+    single("skill-v1", "skill", [], skillPayload("skill")),
+    // `#828`:多文件技能是**正向**语料的一等成员,不是边角。消费方(发布端)据此知道
+    // 「这条路今天能装多文件」——只发一条单文件语料时,那件事对下游是不可见的。
+    single("skill-multifile-v1", "skill", [], multiFileSkillPayload("skill-multifile")),
+    single("agent-v1", "agent", [], agentPayload("agent")),
+    single("mcp-local-v1", "mcp-local", ["alpha.secret-prerequisite.v1"], mcpLocalPayload()),
+    single("mcp-remote-v1", "mcp-remote", [], mcpRemotePayload()),
+    // OAuth 与 Connection 都携带一条额外 secret:auth 不豁免 requiredSecrets(rev3 不变量 5),
+    // 两个 capability 必须同时出现在派生结果里。
+    single(
+      "mcp-remote-oauth-v1",
       "mcp-remote",
-      [],
-      {
-        schema: "alpha.host-extension-package.payload.mcp-remote.v1",
-        behavior: {
-          url: "https://mcp.example.invalid/service",
-          headersTemplate: {},
-          requiredSecrets: [],
-          auth: "none",
-        },
-      },
+      ["alpha.mcp-oauth.v1", "alpha.secret-prerequisite.v1"],
+      mcpRemotePayload(
+        { kind: "mcp-oauth", prerequisiteId: "example-oauth", required: true },
+        ["TENANT_ID"],
+        { "X-Tenant": "{TENANT_ID}" },
+      ),
+    ),
+    single(
+      "mcp-remote-connection-v1",
+      "mcp-remote",
+      ["alpha.connection.v1"],
+      mcpRemotePayload({
+        kind: "alpha-connection",
+        prerequisiteId: "example-connection",
+        required: true,
+        connectionHandlerId: "alpha-example",
+        label: "Alpha Example Connection",
+      }),
     ),
   ]
-  const unknownProfile = structuredClone(cases[0]!)
-  unknownProfile.name = "unknown-profile-required"
-  unknownProfile.expect = "blocked"
-  ;(unknownProfile.envelope.components as Array<Record<string, unknown>>)[0]!.profileId = "future"
-  unknownProfile.payload = null
-  cases.push(unknownProfile)
 
-  const optionalProfile = structuredClone(unknownProfile)
-  optionalProfile.name = "unknown-profile-optional"
-  optionalProfile.expect = "skipped"
-  ;(optionalProfile.envelope.components as Array<Record<string, unknown>>)[0]!.required = false
-  cases.push(optionalProfile)
-
-  const unknownCapability = structuredClone(cases[0]!)
-  unknownCapability.name = "unknown-capability-required"
-  unknownCapability.expect = "blocked"
-  ;(unknownCapability.envelope.components as Array<Record<string, unknown>>)[0]!.capabilities = [
-    "alpha.future.v1",
-  ]
-  unknownCapability.envelope.capabilities = ["alpha.future.v1"]
-  unknownCapability.payload = null
-  cases.push(unknownCapability)
-
+  // 单组件负向:profile / capability / 缺 profileId。
+  cases.push(
+    blocked("unknown-profile-required", [
+      { id: "skill:unknown-profile", profileId: "future", required: true, capabilities: [], payload: null },
+    ]),
+    blocked("unknown-capability-required", [
+      {
+        id: "skill:unknown-capability",
+        profileId: "skill",
+        required: true,
+        capabilities: ["alpha.future.v1"],
+        payload: null,
+      },
+    ]),
+  )
   const missingProfile = structuredClone(cases[0]!)
   missingProfile.name = "missing-profile-required"
   missingProfile.expect = "blocked"
   delete (missingProfile.envelope.components as Array<Record<string, unknown>>)[0]!.profileId
-  missingProfile.payload = null
+  missingProfile.components = missingProfile.components.map((entry) => ({ ...entry, payload: null }))
   cases.push(missingProfile)
+
+  // §4.1 条件 1 的单组件特例:唯一组件就是 root,它必须 required。
+  const nonRequiredRoot = blocked("non-required-root", [
+    { id: "skill:non-required-root", profileId: "skill", required: false, capabilities: [], payload: null },
+  ])
+  cases.push(nonRequiredRoot)
+
+  // Bundle:被跳过的可选子件不得让整包失败,且它的 capability 仍留在签名并集里。
+  cases.push(
+    bundle(
+      "bundle-optional-unsupported-profile",
+      "mcp-local:bundle-root",
+      [
+        {
+          id: "mcp-local:bundle-root",
+          profileId: "mcp-local",
+          required: true,
+          capabilities: ["alpha.secret-prerequisite.v1"],
+          payload: mcpLocalPayload(),
+        },
+        {
+          id: "skill:bundle-supported-leaf",
+          profileId: "skill",
+          required: false,
+          capabilities: [],
+          payload: skillPayload("bundle-supported-leaf"),
+        },
+        {
+          id: "agent:bundle-unsupported-leaf",
+          profileId: "future",
+          required: false,
+          capabilities: ["alpha.future.v1"],
+          payload: null,
+        },
+      ],
+      ["agent:bundle-unsupported-leaf"],
+    ),
+    bundle(
+      "bundle-optional-unsupported-capability",
+      "skill:bundle-capability-root",
+      [
+        {
+          id: "skill:bundle-capability-root",
+          profileId: "skill",
+          required: true,
+          capabilities: [],
+          payload: skillPayload("bundle-capability-root"),
+        },
+        {
+          id: "agent:bundle-capability-leaf",
+          profileId: "agent",
+          required: false,
+          capabilities: ["alpha.future.v1"],
+          payload: null,
+        },
+      ],
+      ["agent:bundle-capability-leaf"],
+    ),
+    bundle(
+      "bundle-optional-media-type-mismatch",
+      "skill:bundle-media-root",
+      [
+        {
+          id: "skill:bundle-media-root",
+          profileId: "skill",
+          required: true,
+          capabilities: [],
+          payload: skillPayload("bundle-media-root"),
+        },
+        {
+          id: "agent:bundle-media-leaf",
+          profileId: "agent",
+          required: false,
+          capabilities: [],
+          mediaType: "application/vnd.alpha.host-extension-package.skill.v1+json",
+          payload: null,
+        },
+      ],
+      ["agent:bundle-media-leaf"],
+    ),
+  )
+
+  // 必需子件不受支持 = 整包 blocked。跳过语义绝不适用于 required。
+  const requiredChild = bundle(
+    "bundle-required-unsupported-child",
+    "skill:bundle-required-root",
+    [
+      {
+        id: "skill:bundle-required-root",
+        profileId: "skill",
+        required: true,
+        capabilities: [],
+        payload: null,
+      },
+      {
+        id: "agent:bundle-required-leaf",
+        profileId: "future",
+        required: true,
+        capabilities: [],
+        payload: null,
+      },
+    ],
+    [],
+  )
+  requiredChild.expect = "blocked"
+  cases.push(requiredChild)
 
   return canonicalArtifactJsonBytesV1({
     schema: "alpha.host-extension-package.decoder-corpus.v1",
@@ -188,41 +358,63 @@ async function writeHostExtensionPackageArtifact(artifactRoot = root): Promise<v
   )
 }
 
-function createCase(
+function single(
   name: string,
   profileId: PackageProfileIdV1,
-  capabilities: PackageCapabilityV1[],
+  capabilities: string[],
   payload: Record<string, unknown>,
 ): CorpusCase {
-  const payloadBytes = canonicalArtifactJsonBytesV1(payload)
-  const profile = PROFILE_REGISTRY_V1.find((entry) => entry.profileId === profileId)!
   const id = `${profileId}:${name}`
+  return bundle(name, id, [{ id, profileId, required: true, capabilities, payload }], [])
+}
+
+function blocked(name: string, specs: ComponentSpec[]): CorpusCase {
+  const item = bundle(name, specs[0]!.id, specs, [])
+  item.expect = "blocked"
+  return item
+}
+
+function bundle(
+  name: string,
+  rootId: string,
+  specs: ComponentSpec[],
+  skipped: string[],
+): CorpusCase {
+  const components = specs.map((spec) => {
+    const registered = PROFILE_REGISTRY_V1.find((entry) => entry.profileId === spec.profileId)
+    const payloadBytes = canonicalArtifactJsonBytesV1(spec.payload ?? {})
+    return {
+      id: spec.id,
+      required: spec.required,
+      dependencies:
+        spec.id === rootId ? specs.filter((entry) => entry.id !== rootId).map((entry) => entry.id) : [],
+      profileId: spec.profileId,
+      profileVersion: spec.profileVersion ?? 1,
+      capabilities: spec.capabilities,
+      payloadRef: {
+        sha256: sha256(payloadBytes),
+        bytes: payloadBytes.byteLength,
+        mediaType:
+          spec.mediaType ??
+          registered?.mediaType ??
+          `application/vnd.alpha.host-extension-package.${spec.profileId}.v1+json`,
+        url: `https://example.invalid/packages/${spec.id.replace(":", "/")}.json`,
+      },
+    }
+  })
   return {
     name,
     expect: "accepted",
+    skipped,
     envelope: {
       schema: "alpha.host-extension-package.v1",
-      prelude: { packageId: id, version: "1.0.0" },
-      presentation: { displayName: name, description: `Synthetic ${profileId} decoder case` },
-      components: [
-        {
-          id,
-          required: true,
-          dependencies: [],
-          profileId,
-          profileVersion: 1,
-          capabilities,
-          payloadRef: {
-            sha256: sha256(payloadBytes),
-            bytes: payloadBytes.byteLength,
-            mediaType: profile.mediaType,
-            url: `https://example.invalid/packages/${profileId}.json`,
-          },
-        },
-      ],
-      capabilities,
+      prelude: { packageId: `package:${name}`, version: "1.0.0" },
+      presentation: { displayName: name, description: `Synthetic ${name} decoder case` },
+      root: rootId,
+      components,
+      capabilities: [...new Set(specs.flatMap((spec) => spec.capabilities))].sort(),
     },
-    payload,
+    components: specs.map((spec) => ({ id: spec.id, payload: spec.payload })),
   }
 }
 

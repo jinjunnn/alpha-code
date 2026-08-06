@@ -15,8 +15,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { applyEdits, modify, parse } from "jsonc-parser"
-
-const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
+import { isExtensionName } from "../shared/extension-name"
 
 export type LegacyInventory = {
   root: string
@@ -49,7 +48,7 @@ export function scanLegacy(): LegacyInventory {
     try {
       return fs
         .readdirSync(path.join(root, sub), { withFileTypes: true })
-        .filter((d) => d.isDirectory() && SAFE_NAME.test(d.name) && fs.existsSync(path.join(root, sub, d.name, "SKILL.md")))
+        .filter((d) => d.isDirectory() && isExtensionName(d.name) && fs.existsSync(path.join(root, sub, d.name, "SKILL.md")))
         .map((d) => d.name)
     } catch {
       return []
@@ -59,7 +58,7 @@ export function scanLegacy(): LegacyInventory {
   try {
     inv.agents = fs
       .readdirSync(path.join(root, "agent"), { withFileTypes: true })
-      .filter((d) => d.isFile() && d.name.endsWith(".md") && SAFE_NAME.test(d.name.slice(0, -3)))
+      .filter((d) => d.isFile() && d.name.endsWith(".md") && isExtensionName(d.name.slice(0, -3)))
       .map((d) => d.name.slice(0, -3))
   } catch {
     /* no agent dir */
@@ -70,7 +69,7 @@ export function scanLegacy(): LegacyInventory {
       const parsed = parse(fs.readFileSync(file, "utf8")) as { mcp?: Record<string, unknown>; plugin?: unknown } | undefined
       if (parsed?.mcp && typeof parsed.mcp === "object") {
         for (const [name, config] of Object.entries(parsed.mcp)) {
-          if (SAFE_NAME.test(name) && config && typeof config === "object") {
+          if (isExtensionName(name) && config && typeof config === "object") {
             inv.mcp.push({ name, config: config as Record<string, unknown> })
           }
         }
@@ -112,21 +111,21 @@ export function removeLegacy(type: "skill" | "agent" | "mcp" | "plugin", name: s
   const removed: string[] = []
   try {
     if (type === "skill") {
-      if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid name" }
+      if (!isExtensionName(name)) return { ok: false, reason: "invalid name" }
       const dir = path.join(root, "skills", name)
       if (fs.existsSync(dir)) {
         fs.rmSync(dir, { recursive: true, force: true })
         removed.push(dir)
       }
     } else if (type === "agent") {
-      if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid name" }
+      if (!isExtensionName(name)) return { ok: false, reason: "invalid name" }
       const file = path.join(root, "agent", `${name}.md`)
       if (fs.existsSync(file)) {
         fs.rmSync(file, { force: true })
         removed.push(file)
       }
     } else if (type === "mcp") {
-      if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid name" }
+      if (!isExtensionName(name)) return { ok: false, reason: "invalid name" }
       removeConfigKey(["mcp", name])
       removed.push(`mcp.${name}`)
     } else if (type === "plugin") {
@@ -193,8 +192,6 @@ export type ProvenanceRequest =
   | { type: "plugin"; name: string; package: string }
 
 export type ProvenanceVerdict = { type: "skill" | "mcp" | "plugin"; name: string; verified: boolean; reason: string }
-
-const SAFE_SKILL_ASSET_KEY = /^skills\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 
 /** npm-style spec → package base (strip a trailing @version; scoped names keep their leading @). */
 function specBase(spec: string): string {
@@ -300,9 +297,13 @@ export function verifyLegacyProvenance(requests: ProvenanceRequest[], resourcesR
     const fail = (reason: string): ProvenanceVerdict => ({ type: req.type, name: req.name, verified: false, reason })
     const pass = (): ProvenanceVerdict => ({ type: req.type, name: req.name, verified: true, reason: "" })
     try {
-      if (!SAFE_NAME.test(req.name)) return fail("invalid name")
+      if (!isExtensionName(req.name)) return fail("invalid name")
       if (req.type === "skill") {
-        if (!req.builtinAssetKey || !SAFE_SKILL_ASSET_KEY.test(req.builtinAssetKey)) return fail("no packaged asset to verify against")
+        if (
+          !req.builtinAssetKey?.startsWith("skills/") ||
+          !isExtensionName(req.builtinAssetKey.slice("skills/".length))
+        )
+          return fail("no packaged asset to verify against")
         const assetDir = path.join(resourcesRoot, req.builtinAssetKey)
         if (!fs.existsSync(path.join(assetDir, "SKILL.md"))) return fail("asset not bundled in this build")
         const legacyDir = path.join(legacyRoot, "skills", req.name)

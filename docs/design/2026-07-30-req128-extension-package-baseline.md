@@ -30,6 +30,35 @@ review_after: 2026-10-30
 >    `alpha.connection-prerequisite.v1` 两个 capability token 已在 `#694` 交付中删除
 >    （词表在 host decoder 里就是白名单，声明未实现的 token = 对外超卖支持）。
 
+> **⛔ 2026-08-03 owner 裁决（ADR-040）：本基线里所有 OpenCode Plugin 相关的内容整体作废。**
+>
+> 权威：[`ADR-040 扩展安装唯一形态是 Bundle`](../../.claude/rules/adrs/ADR-040-extension-package-taxonomy.md)。
+> **任何扩展安装都不得写入引擎的 `plugin[]`**；外部插件（Claude Code / OpenAI Codex）的正确落点是
+> **Bundle + 发布端适配器**，不是给每个 provider 加 profile。
+> 已执行的回滚：`alpha-code#825`（PR #831 行为层封死）、PR #833（合同层摘 profile，profile 集合回到
+> `skill` / `agent` / `mcp-local` / `mcp-remote` 四个）、`alpha-web` PR #141（升 host pin 到 `c01130fa`）。
+>
+> **本基线中作废的具体位置**：
+>
+> | 位置 | 作废内容 |
+> | --- | --- |
+> | §1.3 OpenCode Plugin | 整节。它的结论是「Catalog-managed npm Plugin 该怎么做」，而这条路已封死。 |
+> | §2.2 正交轴 | 原生 profile 列表里的 `OpenCode Plugin` 与 `Cloud` —— 宿主 profile 集合就是四个。 |
+> | §4.4 Transaction、graph 与 Plugin | 「managed Plugin 只从 Alpha CAS strict wrapper 激活」等 Plugin 不变量。 |
+> | §5 开发切片 | `alpha-web#99`（managed Plugin producer）、`alpha-code#699`（managed Plugin）两行，及 `#697` 的 managed Plugin 半场；两票均已 CLOSED 作废。 |
+> | §6 Bundle、ledger 与 Plugin | 其中 Plugin 相关的退出门。 |
+> | §8 审计记录 | 「managed Plugin 技术 Blocker 均关闭」这句 —— 该 Blocker 不是被关闭，是题目被撤销。 |
+>
+> **仍然有效且成为新主线的**：§2.4 的 `alpha-web` 作者与发布流程、§1.4「外部格式不是 Alpha Runtime ABI」。
+> 外部插件的映射真源在**发布端**（owner 裁决），承接票是 `alpha-web#96` / `alpha-web#98`；
+> REQ-128 Phase 3 的本地 intake 在发布端适配器成熟后退役。
+> 动笔前的硬前置是三张地基票：`alpha-code#826` / `#827` / `#828` —— 今天的 Bundle 形状
+> **接不住约 11% 的真实输入**（组件上限 16 装不下 7/62 个真实插件；`skill` profile 只能装单个 markdown，
+> 而 40/162 的技能是多文件）。
+>
+> **`hooks` 不在封死范围内**：封死的是「引擎进程内、引擎权限、上游加载器」这一种执行形态；
+> hooks 跑在 Alpha 自己起的子进程里，将来会支持，前置是一次引擎事件面勘破（见 ADR-040）。
+
 本基线回答一个产品问题：发布者新增 Skill、Agent、MCP/Connection、OpenCode
 Plugin 或它们的 Bundle 时，怎样在不发布新版 Alpha App 的前提下，让已经兼容的
 宿主安全发现、授权、安装、更新和卸载；怎样把 OpenAI/Codex 与 Claude Code 的
