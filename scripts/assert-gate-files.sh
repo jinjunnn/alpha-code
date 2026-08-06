@@ -30,7 +30,8 @@ usage() {
            一致时零改动。给闸门文件加/删用例后跑这一条即可,让评审读 TSV 的 diff。
 
 例外语法:登记簿第 1 列写 `>=N`(而不是 `N`)= 该行退回下界语义。例外必须具名:
-           该行 guarantee 列必须含完整且非空的 `[例外:<理由>]`,否则判红。--update 不改写例外行
+           该行 guarantee 列必须含完整且理由有非空白字符的 `[例外:<理由>]`,否则判红。
+           --update 不改写例外行
            的数字(例外行由人维护)。当前登记簿零例外 —— 87 个文件全部零平台/环境
            条件注册(#844 勘破实测),条数逐 commit 确定。
 
@@ -53,7 +54,8 @@ failed=0
 checked=0
 updates="$(mktemp)"
 countfile="$(mktemp)"
-trap 'rm -f "$updates" "$countfile"' EXIT
+seenfile="$(mktemp)"
+trap 'rm -f "$updates" "$countfile" "$seenfile"' EXIT
 
 while IFS=$'\t' read -r floor workdir path delegates guarantee || [ -n "${floor:-}" ]; do
   case "${floor:-}" in ''|\#*) continue ;; esac
@@ -61,14 +63,24 @@ while IFS=$'\t' read -r floor workdir path delegates guarantee || [ -n "${floor:
   # delegates_to 默认拒:没有委派也必须显式写 `-`,留空即红。
   [ -n "${delegates:-}" ] || { echo "::error::$workdir/$path 的 delegates_to 列为空 —— 没有委派请显式写 '-'"; failed=1; continue; }
 
+  # `(workdir,path)` 是登记簿主键。重复行会让 --update 的 awk 同时改写两行,甚至把人工维护的
+  # `>=N` 例外静默改成精确数字;所有模式都先拒绝重复,写回保持 all-or-nothing。
+  registry_key="${workdir}"$'\t'"${path}"
+  if grep -Fqx -- "$registry_key" "$seenfile"; then
+    echo "::error::登记簿重复路径:$workdir/$path —— (workdir,path) 必须唯一;否则 --update 会同时改写多行"
+    failed=1
+    continue
+  fi
+  printf '%s\n' "$registry_key" >> "$seenfile"
+
   # `#844`:`N` = 精确(默认);`>=N` = 具名例外(下界语义,理由必须写进 guarantee)。
   kind=exact
   spec="$floor"
   if [ "${floor#>=}" != "$floor" ]; then
     kind=range
     spec="${floor#>=}"
-    if [[ ! "${guarantee:-}" =~ \[例外:[^]]+\] ]]; then
-      echo "::error::$workdir/$path 登记为范围例外($floor)但 guarantee 缺少完整且非空的 [例外:理由] —— 例外必须具名,不许静默退回下界"
+    if ! [[ "${guarantee:-}" =~ \[例外:([^][]*)\] ]] || ! [[ "${BASH_REMATCH[1]}" =~ [^[:space:]] ]]; then
+      echo "::error::$workdir/$path 登记为范围例外($floor)但 guarantee 缺少完整且理由有非空白字符的 [例外:理由] —— 例外必须具名,不许静默退回下界"
       failed=1
       continue
     fi
