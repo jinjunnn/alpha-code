@@ -6,7 +6,7 @@
 // 生产分派仍是 `else → mcp` 的实现完全满足它。放齐五个,一次真安装的计划里就同时出现四个
 // builder 各自的**特征 item**,路由是被跑出来的,不是被断言出来的。
 //
-// **第三方字节是真的**:plugin 组件的资产就是仓内 vendored 的 `opencode-notify/plugin.js`
+// **第三方字节是真的**:plugin 组件的资产是仓内只供拒绝闸使用的历史语料
 // (34,093 B)。夹具不重造它 —— D3 的 canary 断言(`server()` 返回键恰为 `event` +
 // `permission.ask`、两个值都是 function)必须打在**会被真的装进去的那份字节**上,
 // 拿一份自己写的小 stub 去断言等于给一个不存在的成员造反例。
@@ -29,8 +29,8 @@ export const LEAF_MCP_REMOTE_ID = "mcp:plugin-kit-remote"
 export const LEAF_PLUGIN_ID = "plugin:opencode-notify"
 export const PLUGIN_NAME = "opencode-notify"
 
-/** 仓内 vendored 的第三方字节。**唯一**来源,夹具与 wrapper ABI 闸共用同一份。 */
-export const CANDIDATE_PLUGIN_JS = resolve(import.meta.dir, "../resources/plugins/opencode-notify/plugin.js")
+/** 历史第三方字节只留在 test-component,绝不进入 app 的 resources/out 打包面。 */
+export const CANDIDATE_PLUGIN_JS = resolve(import.meta.dir, "fixtures/retired-plugin.js")
 
 const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex")
 const canonicalBytes = (value: unknown) => new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`)

@@ -1387,11 +1387,11 @@ describe("package detail production renderer path", () => {
     await mountHarness()
     setHubSection("connectors")
     await waitFor(() =>
-      expect(document.querySelector(".alpha-ext-card-name b[title='github']")).toBeInstanceOf(
+      expect(document.querySelector(".alpha-ext-card-name b[title='dbhub']")).toBeInstanceOf(
         HTMLElement,
       ),
     )
-    const card = document.querySelector(".alpha-ext-card-name b[title='github']")!.closest(".alpha-ext-card")!
+    const card = document.querySelector(".alpha-ext-card-name b[title='dbhub']")!.closest(".alpha-ext-card")!
     click(card.querySelector(".alpha-ext-add"))
     const keys = document.querySelector<HTMLElement>(".alpha-ext-confirm-keys")
     expect(keys).toBeInstanceOf(HTMLElement)

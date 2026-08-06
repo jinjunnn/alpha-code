@@ -22,7 +22,6 @@ const ICON_COLOR: Record<string, string> = {
   "mcp:playwright": "#7c3aed",
   "mcp:github": "#24292f",
   "mcp:yuque": "#1f7a4d",
-  "plugin:opencode-notify": "#d97706",
 }
 const ICON_GLYPH: Record<string, string> = {
   "mcp:markitdown": "文",
@@ -36,7 +35,6 @@ const ICON_GLYPH: Record<string, string> = {
   "skill:skill-creator": "技",
   "skill:alpha-upstream-sync": "同",
   "skill:safe-refactor": "重",
-  "plugin:opencode-notify": "通",
   "bundle:office": "办",
   "bundle:research": "研",
   "bundle:dev": "开",
@@ -74,7 +72,6 @@ export function sourceLabel(source: CatalogSource): string {
 
 export function catalogDescription(entry: CatalogEntry): string {
   if (entry.id === "skill:alpha-upstream-sync") return t("alpha.ext.upstreamSyncDescription")
-  if (entry.id === "plugin:opencode-notify") return t("alpha.ext.notifyPluginDescription")
   return entry.description
 }
 

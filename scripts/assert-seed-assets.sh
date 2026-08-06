@@ -3,7 +3,7 @@
 #
 # electron-builder.config.ts ships these via `extraResources`; a silent deletion (a refactor, an
 # upstream sync, a bad merge) would otherwise produce a package that is broken at runtime (missing
-# vendored agent/plugin, no builtin skills) or LICENSE-NON-COMPLIANT (missing NOTICE.txt, B15) —
+# vendored agent, no builtin skills) or LICENSE-NON-COMPLIANT (missing NOTICE.txt, B15) —
 # and neither typecheck nor unit tests catch it. This guard fails loud instead.
 #
 # Source-tracked assets ONLY. Build outputs (packages/ext/dist → alpha-ext/) are produced by the
@@ -31,7 +31,6 @@ for fs in agent-creator customize-alpha integrate-project alpha-workspace cloud-
   need_file "$res/factory-skills/$fs/SKILL.md"
 done
 need_file "$res/agents/code-reviewer.md"  # REQ-023 vendored agent (zero-network install)
-need_dir "$res/plugins/opencode-notify"   # REQ-023 vendored plugin (self-contained JS)
 need_file "$res/NOTICE.txt"               # B15 MIT / third-party attribution — license compliance
 need_file "$res/entitlements.plist"       # mac signing entitlements
 need_file "$res/icons/icon.icns"          # mac app icon
@@ -45,6 +44,19 @@ office_skill="$res/factory-skills/office-docs/SKILL.md"
 advisories_ts="$root/packages/ui-mac/src/shared/office-advisories.ts"
 need_file "$seed_catalog"
 need_file "$advisories_ts"
+
+# ADR-040 / #841:engine plugin 已从线上货架与离线快照成对退休。随包字节和 catalog id
+# 任一回流都会让离线路径重新展示一个只能被 planner 拒绝的条目。
+if [ -e "$res/plugins/opencode-notify" ]; then
+  echo "::error::ADR-040: retired opencode-notify bytes reappeared in packaged resources"
+  fail=1
+fi
+for banned in '"plugin:opencode-notify"' 'opencode-notify'; do
+  if grep -qF -- "$banned" "$seed_catalog"; then
+    echo "::error::ADR-040: retired engine plugin reappeared in the offline catalog: $banned"
+    fail=1
+  fi
+done
 
 for banned in office-word-mcp-server office-powerpoint-mcp-server '"mcp:word"' '"mcp:powerpoint"'; do
   if grep -qF -- "$banned" "$seed_catalog"; then

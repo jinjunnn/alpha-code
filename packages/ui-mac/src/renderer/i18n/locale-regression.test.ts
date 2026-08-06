@@ -146,10 +146,7 @@ describe("locale regression gate", () => {
       )
     ).flatMap((item) => item.tokens.map((token) => ({ file: item.file, token })))
 
-    expect(occurrences).toEqual([
-      // Historical verification names the real third-party macOS bundle that is no longer redistributed.
-      { file: "extensions/alpha-catalog.json", token: "OpenCodeNotifier.app" },
-    ])
+    expect(occurrences).toEqual([])
   })
 })
 

@@ -233,7 +233,7 @@ export type InstallReceipt = {
   origin: InstallReceiptOrigin
   /** absolute paths owned by this install (fs types + bridge symlinks) */
   files?: string[]
-  /** config ownership, e.g. "mcp.markitdown" / "plugin:opencode-notify@0.3.1" */
+  /** config ownership, e.g. "mcp.markitdown" / "plugin:example@1.0.0" */
   configKey?: string
 }
 export type InstallLedgerView = { global: InstallReceipt[]; project: InstallReceipt[]; warnings: string[] }
