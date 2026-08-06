@@ -97,3 +97,25 @@ iteration `2026-W32`, and linked as a native sub-issue of #528 or #529. Thus
 #536 has met its verification exit condition (matrix + evidence + bug routing),
 while the parent product requirements correctly remain open until those bugs
 pass their own packaged gates.
+
+## #858 post-fix candidate
+
+The #858 change gives token-only rotation a bounded 500 ms graceful-stop window
+before terminating the old sidecar. Structural respawns and application exit
+continue to use the existing 6 s graceful budget. This preserves the explicit
+active-stream interruption and renderer/draft continuity contract without
+letting an old active connection block a renewed-token fork for the full stop
+ceiling.
+
+The deterministic gate drives a child that deliberately ignores the stop
+message and proves that token rotation terminates it at 500 ms while the
+default path does not terminate before 6 s. A production wiring gate proves
+that only `token-only` selects that bounded path. The current headless narrow
+result is 70 tests passing with zero failures, plus a clean `ui-mac` typecheck.
+
+This is not yet a packaged PASS. The signed 3 s renewal cell and active-stream
+cell must still establish renewal-to-generation-ready P95 <=2 s, retry <=100
+ms, honest interruption with draft preservation, mount=1, reload=0, no loop,
+and a first post-rotation inference using only the renewed token. The existing
+probe can visibly flash or launch a window, so it must run only in an
+owner-approved quiescent desktop window; until then #858 remains open.
