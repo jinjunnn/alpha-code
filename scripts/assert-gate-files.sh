@@ -30,7 +30,7 @@ usage() {
            一致时零改动。给闸门文件加/删用例后跑这一条即可,让评审读 TSV 的 diff。
 
 例外语法:登记簿第 1 列写 `>=N`(而不是 `N`)= 该行退回下界语义。例外必须具名:
-           该行 guarantee 列必须含 `[例外:<理由>]`,否则判红。--update 不改写例外行
+           该行 guarantee 列必须含完整且非空的 `[例外:<理由>]`,否则判红。--update 不改写例外行
            的数字(例外行由人维护)。当前登记簿零例外 —— 87 个文件全部零平台/环境
            条件注册(#844 勘破实测),条数逐 commit 确定。
 
@@ -67,14 +67,20 @@ while IFS=$'\t' read -r floor workdir path delegates guarantee || [ -n "${floor:
   if [ "${floor#>=}" != "$floor" ]; then
     kind=range
     spec="${floor#>=}"
-    case "${guarantee:-}" in
-      *"[例外:"*) ;;
-      *) echo "::error::$workdir/$path 登记为范围例外($floor)但 guarantee 缺少 [例外:理由] —— 例外必须具名,不许静默退回下界"; failed=1; continue ;;
-    esac
+    if [[ ! "${guarantee:-}" =~ \[例外:[^]]+\] ]]; then
+      echo "::error::$workdir/$path 登记为范围例外($floor)但 guarantee 缺少完整且非空的 [例外:理由] —— 例外必须具名,不许静默退回下界"
+      failed=1
+      continue
+    fi
   fi
   case "$spec" in
     ''|*[!0-9]*) echo "::error::$workdir/$path 的条数列非法:$floor"; failed=1; continue ;;
   esac
+  if [ "$spec" -eq 0 ]; then
+    echo "::error::$workdir/$path 的登记条数必须大于 0:$floor —— 空文件/零断言不能成为闸门"
+    failed=1
+    continue
+  fi
 
   checked=$((checked + 1))
 
