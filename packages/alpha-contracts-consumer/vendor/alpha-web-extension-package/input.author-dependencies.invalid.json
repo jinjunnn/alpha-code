@@ -1,7 +1,7 @@
 {
   "packageId": "package:generic-bundle",
   "presentation": {
-    "description": "Generic flat Bundle corpus input: one agent root and two leaves.",
+    "description": "Generic flat Bundle corpus input: one agent root and three leaves.",
     "displayName": "Generic Bundle"
   },
   "root": {
@@ -42,6 +42,19 @@
           "id": "mcp:generic-bundle-remote",
           "kind": "mcp",
           "transport": "remote",
+          "version": "1.0.0"
+        },
+        "required": false
+      },
+      {
+        "component": {
+          "behavior": {
+            "assetPath": "COMMAND.md",
+            "description": "Generic bundle command",
+            "subtask": false
+          },
+          "id": "command:generic-bundle-command",
+          "kind": "command",
           "version": "1.0.0"
         },
         "required": false

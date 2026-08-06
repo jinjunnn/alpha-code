@@ -8,8 +8,8 @@
   ],
   "hostContract": {
     "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
-    "artifactSha256": "33eab79c63a476b96db5f1a64e024531393f78a63186ef2d6ef0f86bc11f3612",
-    "commit": "7d6ff40c1ccd6ab9d55b637dbdb5dcffa88ef17f",
+    "artifactSha256": "deaa72dee3958694e3f7ea20985c841160676dab974a1aa1a2c21028d822eb26",
+    "commit": "bf4c8fb7611886342ac47d7a8fb75071ae70d76a",
     "repo": "jinjunnn/alpha-code"
   },
   "inputSha256": "ba5e55d84930546f798c8d4488dd139c79b61bffbf00064b3daa0bf0211133fa",

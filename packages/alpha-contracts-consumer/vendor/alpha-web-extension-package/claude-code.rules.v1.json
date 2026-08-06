@@ -1,0 +1,137 @@
+{
+  "agentFrontmatter": {
+    "blocked": [
+      "hooks",
+      "mcpServers",
+      "permissionMode"
+    ],
+    "hostParsed": "name/description/mode belong to the host's agentMdToEntry — the adapter does not restate that grammar"
+  },
+  "bodyScan": {
+    "blocked": {
+      "${CLAUDE_PLUGIN_DATA}": "alpha.claude-code.plugin-data-path.blocked",
+      "${CLAUDE_PLUGIN_ROOT}": "alpha.claude-code.plugin-root-path.blocked",
+      "${CLAUDE_PROJECT_DIR}": "alpha.claude-code.project-dir-path.blocked"
+    },
+    "reviewRequired": {
+      "!`": "alpha.claude-code.script-marker"
+    }
+  },
+  "boundsEnforcement": "every emitted declaration is compiled through compileAlphaPackageDeclarationV1 with the derived asset tables before the adapter returns — Markdown per-asset and skill budgets, asset path grammar, and path depth are the compiler's own gates, not adapter restatements",
+  "commandFrontmatter": {
+    "blocked": [
+      "hooks",
+      "shell"
+    ],
+    "mapped": {
+      "agent": "behavior.agent (≤120)",
+      "context": "exact value \"fork\" → behavior.subtask = true; any other value → review-required",
+      "description": "behavior.description (≤500)",
+      "model": "behavior.model (≤120)"
+    },
+    "reviewRequired": [
+      "argument-hint",
+      "arguments",
+      "background",
+      "disable-model-invocation",
+      "disallowed-tools",
+      "effort",
+      "name",
+      "paths",
+      "user-invocable",
+      "when_to_use",
+      "allowed-tools"
+    ],
+    "unknown": "review-required"
+  },
+  "componentSources": {
+    "agents": "agents/*.md files (or manifest.agents replacement list) → agent@1, targetDir alpha-agents",
+    "commands": "top-level commands/*.md flat files (or manifest.commands replacement list) → command@1 template leaves (alpha-code#840, #98 B1)",
+    "hooksDir": "hooks/hooks.json → blocked",
+    "lspFile": ".lsp.json → blocked",
+    "mcp": "manifest.mcpServers inline object or .mcp.json → mcp-local (stdio) / mcp-remote (url)",
+    "monitorsDir": "monitors/monitors.json → blocked",
+    "outputStylesDir": "output-styles/ → blocked",
+    "rootSkillMd": "single SKILL.md at plugin root → review-required (layout outside the pinned profile)",
+    "skills": "skills/<name>/SKILL.md directories (+ manifest.skills additions) → skill@1, targetDir alpha-skills, whole directory as assets",
+    "themesDir": "themes/ → blocked",
+    "workflowsDir": "workflows/ → blocked"
+  },
+  "executableEvidence": "capture entries with executable:true stay evidence only (#843): review-required finding alpha.claude-code.executable-evidence on the owning component; no mode in payloads, no chmod, no skipped component, no second host warning path",
+  "graph": {
+    "leaves": "every other component, required: false",
+    "root": "first component by class order agent, skill, command, mcp — byte order inside a class"
+  },
+  "groundTruth": "https://code.claude.com/docs/en/plugins-reference",
+  "hostContract": {
+    "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
+    "artifactSha256": "deaa72dee3958694e3f7ea20985c841160676dab974a1aa1a2c21028d822eb26",
+    "commit": "bf4c8fb7611886342ac47d7a8fb75071ae70d76a",
+    "repo": "jinjunnn/alpha-code"
+  },
+  "identity": {
+    "forbidden": "directory names and the literal \"unknown\" never mint identity",
+    "packageId": "package:<manifest.name>; missing name only from importSpec.packageName",
+    "version": "<manifest.version>; missing only from importSpec.version"
+  },
+  "limits": {
+    "maxCaptureFiles": 512,
+    "maxComponents": 32,
+    "maxFileBytes": 16777216,
+    "maxJsonDepth": 64,
+    "maxJsonNodes": 4096,
+    "maxManifestBytes": 65536,
+    "maxMarkdownBytes": 5242880
+  },
+  "manifest": {
+    "blocked": {
+      "channels": "alpha.claude-code.channels.blocked",
+      "dependencies": "alpha.claude-code.dependencies.blocked",
+      "experimental": "alpha.claude-code.experimental.blocked",
+      "hooks": "alpha.claude-code.hooks.blocked",
+      "lspServers": "alpha.claude-code.lsp.blocked",
+      "outputStyles": "alpha.claude-code.output-styles.blocked",
+      "userConfig": "alpha.claude-code.user-config.blocked",
+      "workflows": "alpha.claude-code.workflows.blocked"
+    },
+    "mapped": {
+      "agents": "custom agent file list (replaces agents/)",
+      "commands": "custom command file list (replaces commands/)",
+      "description": "presentation.description",
+      "displayName": "presentation.displayName",
+      "mcpServers": "mcp-local / mcp-remote components",
+      "name": "packageId suffix",
+      "skills": "additional skill directories (adds to skills/)",
+      "version": "declaration version"
+    },
+    "metadata": [
+      "$schema",
+      "author",
+      "defaultEnabled",
+      "homepage",
+      "keywords",
+      "license",
+      "repository"
+    ]
+  },
+  "manifestPath": ".claude-plugin/plugin.json",
+  "mcp": {
+    "malformed": "a known server field with a wrong type (args not an all-string array, headers/env values not strings) is named blocked — never silently filtered into a smaller compatible config",
+    "placeholders": {
+      "${CLAUDE_PLUGIN_DATA}": "blocked",
+      "${CLAUDE_PLUGIN_ROOT}": "blocked",
+      "${CLAUDE_PROJECT_DIR}": "review-required only as a stdio server arg/env value that is the placeholder itself or the placeholder plus a traversal-free relative suffix (a provable workspace mapping); a suffix containing \"..\", backslashes, or control characters is blocked as workspace traversal; anywhere else blocked",
+      "${user_config.*}": "blocked"
+    },
+    "remote": "url + headers → behavior.url/headersTemplate; auth always \"none\"",
+    "stdio": "command + args → behavior.command[1..16]; env (plain strings) → behavior.environment; requiredSecrets always []"
+  },
+  "profile": "claude-code.v1",
+  "reservedCommandNames": [
+    "customize-opencode",
+    "init",
+    "review"
+  ],
+  "schema": "alpha.provider-adapter.claude-code.rules.v1",
+  "templateBytes": "the parsed markdown BODY only — frontmatter is provider configuration, never prompt text, so it is stripped before the template asset is bound; a command file whose frontmatter cannot be parsed by the pinned subset fails closed (blocked, component not emitted), and an empty body after stripping fails closed the same way. skill/agent assets stay verbatim: their frontmatter is what the host's own parsers read at install"
+}

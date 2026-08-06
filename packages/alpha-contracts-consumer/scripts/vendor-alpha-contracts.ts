@@ -103,7 +103,7 @@ const UPSTREAMS = [
     // older optional staged fixtures above, an unavailable checkout or missing commit is a hard
     // failure:provenance cannot be proved by a self-consistent replacement lock.
     repo: "jinjunnn/alpha-web",
-    commit: "d3925997c30b09af8b556f60e1f0b006a909cf53",
+    commit: "9f1e74a146f2046126982b371ba66180d26bbcde",
     lock: "alpha-web-extension-package.lock.json",
     vendor: "vendor/alpha-web-extension-package",
     sourceEnv: "ALPHA_WEB_EXTENSION_PACKAGE_SOURCE",
@@ -111,7 +111,7 @@ const UPSTREAMS = [
     sourceFallback: "../../../alpha-web",
     sourcePrefix: "contracts/extension-package/artifact",
     artifactPath: "contracts/extension-package/artifact",
-    artifactSha256: "92fef1b04e244789e15b45a2b96016df791b42fac23dd612e0225ac9250203ec",
+    artifactSha256: "3d6c5a74ba43c8b9a12100965e22d822fcf2cc447e3137738414480d24be4749",
     commitBound: true,
     // #759 / alpha-web#109:producer 追平宿主合同 v2。语料从 22 个文件长到 36 个 —— 新增的是
     // flat Bundle 正/负向、OAuth 与 Alpha Connection 的正向语料(旧的 `input.remote-oauth.invalid.json`
@@ -133,11 +133,22 @@ const UPSTREAMS = [
     // vendor 循环「只写不删」,所以这三份 vendored 字节必须**手动删**,否则会留成无主残留;
     // 抓它的是 `extension-package-artifact.test.ts` 的目录清单断言(vendor 目录的实际条目
     // 必须恰等于 lock 的 files 集),那条判据在这一跳第一次真正做功。
+    //
+    // `#853` / alpha-web#98(REQ-128 C-1 拆票 B2):producer 追平宿主合同的 `command` profile
+    // (宿主半场 `#840`,checkpoint bf4c8fb7)。语料 36 → 40,纯增无删:command 负向两份
+    // (`input.command-variant.invalid.json` E_UNKNOWN_FIELD、
+    // `input.command-reserved-name.invalid.json` E_COMMAND_NAME_RESERVED)、Bundle 语料新增
+    // command 组件引用的 markdown 资产 `asset.generic-bundle-command.md`,外加发布端 provider
+    // 映射纯库产物 `claude-code.rules.v1.json`(ADR-040 裁决 B 的单真源,本仓暂零消费者)。
+    // command **不单列**正向 vector:正向覆盖走 `input.bundle.valid.json` 的 command 叶
+    // (`expected.bundle.compiled.json` 的 payloads 随之含 `command:generic-bundle-command`)。
     files: [
       "alpha-package-compatibility-report-v1.schema.json",
       "alpha-package-declaration-v1.schema.json",
       "asset.generic-bundle-agent.md",
+      "asset.generic-bundle-command.md",
       "asset.generic-bundle-skill.md",
+      "claude-code.rules.v1.json",
       "expected.bundle.compiled.json",
       "expected.mcp-remote.compiled.json",
       "expected.remote-connection.compiled.json",
@@ -157,6 +168,8 @@ const UPSTREAMS = [
       "input.bundle-root-leaf-collision.invalid.json",
       "input.bundle.valid.json",
       "input.cloud-profile.invalid.json",
+      "input.command-reserved-name.invalid.json",
+      "input.command-variant.invalid.json",
       "input.mcp-remote.valid.json",
       "input.oauth-authorization-header.invalid.json",
       "input.oauth-prerequisite-collision.invalid.json",

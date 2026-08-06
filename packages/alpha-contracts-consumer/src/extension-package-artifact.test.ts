@@ -45,17 +45,19 @@ describe("alpha-web extension package producer artifact pin", () => {
 
     expect(lock).toMatchObject({
       repo: "jinjunnn/alpha-web",
-      commit: "d3925997c30b09af8b556f60e1f0b006a909cf53",
+      commit: "9f1e74a146f2046126982b371ba66180d26bbcde",
       artifactPath: "contracts/extension-package/artifact",
-      artifactSha256: "92fef1b04e244789e15b45a2b96016df791b42fac23dd612e0225ac9250203ec",
+      artifactSha256: "3d6c5a74ba43c8b9a12100965e22d822fcf2cc447e3137738414480d24be4749",
     })
     // 固定条数,不留余量:上游悄悄少发一个语料文件时,只比对「lock ↔ manifest 两边一致」是
     // 抓不到的 —— 两边会一起变小并保持自洽。
-    // lock 数 = 目录里的全部文件(36);manifest 数永远比它少一个(35)—— manifest 装不下
+    // lock 数 = 目录里的全部文件(40);manifest 数永远比它少一个(39)—— manifest 装不下
     // 自己的哈希(`producerCommit.embedded: false` 是同一个理由的另一半)。这个「差一」不写成
     // 第二个常数,而由下一条 `toEqual` 把 manifest 清单 ∪ {manifest 自己} 与 lock 清单对死。
     // `#830` / alpha-web#138:39 → 36,撤掉的是 plugin 那三份(见下面 closure 那条用例)。
-    expect(lock.files.length).toBe(36)
+    // `#853` / alpha-web#98:36 → 40,command 语料纯增无删(负向两份 + bundle 的 command
+    // 资产 + `claude-code.rules.v1.json`)。
+    expect(lock.files.length).toBe(40)
     expect(lock.files.map((file) => file.path).sort()).toEqual(
       [...manifest.files.map((file) => file.path), "extension-package-producer-artifact.v1.json"].sort(),
     )
@@ -154,6 +156,7 @@ describe("alpha-web extension package producer artifact pin", () => {
     const rules = await json("generic-rules.v1.json")
     expect(registry.profiles.map((profile: { profileId: string }) => profile.profileId).sort()).toEqual([
       "agent",
+      "command",
       "mcp-local",
       "mcp-remote",
       "skill",
@@ -168,6 +171,7 @@ describe("alpha-web extension package producer artifact pin", () => {
     ])
     expect(profiles.mappings.map((mapping: { host: { profileId: string } }) => mapping.host.profileId)).toEqual([
       "agent",
+      "command",
       "mcp-local",
       "mcp-remote",
       "skill",
@@ -306,6 +310,8 @@ describe("alpha-web extension package producer artifact pin", () => {
       "input.author-secret-value.invalid.json": "E_AUTHOR_DERIVED_FIELD",
       "input.bundle-duplicate-component.invalid.json": "E_COMPONENT_ID_DUPLICATE",
       "input.bundle-root-leaf-collision.invalid.json": "E_COMPONENT_ID_DUPLICATE",
+      "input.command-variant.invalid.json": "E_UNKNOWN_FIELD",
+      "input.command-reserved-name.invalid.json": "E_COMMAND_NAME_RESERVED",
       "input.bundle-overflow.invalid.json": "E_COMPONENT_COUNT",
     })
     // 每个负向语料都必须真的在 vendor 目录里(错误码表列了一个不存在的文件 = 空闸门)。

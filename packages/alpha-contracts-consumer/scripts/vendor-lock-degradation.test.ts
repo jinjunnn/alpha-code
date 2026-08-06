@@ -91,8 +91,8 @@ describe("#769 · check:vendor degrades without a producer checkout instead of b
     // Naming the pin is the point: "provenance unverified" without saying *which* commit went
     // unproven is not a usable statement.
     expect(clean.stdout).toContain("PROVENANCE NOT VERIFIED this run")
-    expect(clean.stdout).toContain("no staged checkout of jinjunnn/alpha-web@d3925997c30b09af8b556f60e1f0b006a909cf53")
-    expect(clean.stdout).not.toContain("verified 36 contract artifacts from")
+    expect(clean.stdout).toContain("no staged checkout of jinjunnn/alpha-web@9f1e74a146f2046126982b371ba66180d26bbcde")
+    expect(clean.stdout).not.toContain("verified 40 contract artifacts from")
   })
 
   test("on GitHub Actions the degradation is also raised as a workflow annotation, not just a log line", () => {
