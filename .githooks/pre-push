@@ -1,10 +1,26 @@
 #!/usr/bin/env bash
 # alpha pre-push hook — enforce local-first (docs/runbooks/ci.md §6).
 # DEFAULT-ON since 2026-07-05 (REQ-015): scripts/alpha-check.sh re-arms
-#   `git config core.hooksPath .githooks` on every run, because husky's `prepare`
+#   `git config core.hooksPath .githooks` whenever it has drifted, because husky's `prepare`
 #   resets it back to .husky/_ after each `bun install` — and that upstream hook's
 #   full-turbo typecheck is permanently red under the ADR-020 frozen-frontend skew
 #   (session-ui needs new-ui props; unshipped upstream leaf; see REQ-015).
 # Disable persistently:  git config --unset core.hooksPath  (+ export ALPHA_HOOKS_DISABLE=1)
 # Bypass a single push:  git push --no-verify
-exec bash "$(git rev-parse --show-toplevel)/scripts/alpha-check.sh"
+repository_root="$(git rev-parse --show-toplevel)"
+
+# #815: a linked-worktree push exports repository-local GIT_* variables into this hook. GIT_DIR
+# beats both a child process cwd and `git -C`, so test fixtures that intend to initialize and commit
+# inside a temporary repository instead commit into the branch being pushed and rewrite the shared
+# .git/config. Ask Git for its own complete repository-local set; never maintain a second list.
+repository_local_git_env="$(git rev-parse --local-env-vars)" || exit 1
+if [ -z "$repository_local_git_env" ]; then
+  echo "alpha pre-push: git reported no repository-local environment variables; refusing an unsafe run" >&2
+  exit 1
+fi
+while IFS= read -r name; do
+  [ -n "$name" ] && unset "$name"
+done <<< "$repository_local_git_env"
+unset repository_local_git_env
+
+exec bash "$repository_root/scripts/alpha-check.sh"
