@@ -50,7 +50,10 @@ import 是 bun 未实现的 `node:module` registerHooks,顶层还有 `getParentP
 
 v2 catalog 的配置文件就位不等于每个 directory 的内存 catalog 已经收敛。`PluginInternal`
 在后台依次装载 models.dev、provider、用户配置与 variant transform;中途读取曾把 6,132 行
-models.dev 过渡态序列化给首屏,而同进程热路径只有 37 行(#857)。Alpha 因此在 v2-only provider
+models.dev 过渡态序列化给首屏,而同进程热路径只有 37 行(#857)。Alpha 模型治理开启时,现有
+provider 投影已完整定义可用模型,因此同一桥目录另写精确的空 models.dev 基础文件,并令现有
+`OPENCODE_MODELS_PATH` 指向它;引擎不再解码无关的内置快照。`ALPHA_MODELS_DISABLE=1` 时不覆盖
+该路径,保留上游 catalog 逃生语义。Alpha 同时在 v2-only provider
 投影里追加 `alpha-internal-catalog-ready` 记录(`env:[]`、零 models):它不进入 available provider/model
 集合,但只会随现有 ConfigProvider 的同一批 catalog commit 出现。renderer 的 typed model contract
 在**同一 directory**先轮询 `provider.get(marker)`,再发首次 `model.list`。这道 barrier 只等待本地
@@ -92,6 +95,10 @@ models.dev 过渡态序列化给首屏,而同进程热路径只有 37 行(#857)�
   `provider.get(alpha-internal-catalog-ready) → model.list` 顺序、首读与热读集合相等,并先证明
   绕过 barrier 时替身确实暴露未治理集合。`alpha-config-injection.test.ts` 另锁 marker 只在 v2
   投影、`env:[]` 且零 models。barrier 不得换成账户或网络门。
+- **Alpha 治理目录不得物化全量 models.dev 快照**:`alpha-config-injection.test.ts` 锁定
+  `OPENCODE_MODELS_PATH` 指向桥目录中的精确 `{}` 基础文件,并锁定
+  `ALPHA_MODELS_DISABLE=1` 不覆盖 operator 提供的上游路径。可用 provider/model 仍只来自既有完整
+  配置投影,不得在 core/server 新增第二套过滤器。
 - **密钥不落 v2 文件**:v2 无解析机制,写入即明文。
 
 ## 事故记录与收敛

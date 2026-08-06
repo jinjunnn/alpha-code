@@ -45,7 +45,7 @@ import {
 // 这里以前手写 `cloud_web_search` / `cloud_dispatch` 字面量,与生产代码同错,于是恒绿。
 const CLOUD_DISPATCH_TOOL_ID = cloudMcpToolId("cloud_dispatch")
 
-// 注入读到的每一个 env 输入 + 它自己写出的三个 env 输出:逐个快照/清空/还原,
+// 注入读到的每一个 env 输入 + 它自己写出的 env 输出:逐个快照/清空/还原,
 // 既隔离宿主机真实配置,也不把注入结果泄漏给同进程的其它测试文件。
 const MANAGED = [
   "ALPHA_JSONC_TRUTH_DISABLE",
@@ -56,6 +56,7 @@ const MANAGED = [
   "OPENCODE_CONFIG",
   "OPENCODE_CONFIG_CONTENT",
   "OPENCODE_CONFIG_DIR",
+  "OPENCODE_MODELS_PATH",
   "ALPHA_IDENTITY_DISABLE",
   "ALPHA_BEHAVIOR_DISABLE",
   "ALPHA_MODELS_DISABLE",
@@ -170,6 +171,7 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     // 组合体的另外两个 env 产物:v1 文件通道(alpha.jsonc)与 v2 目录桥,缺一都会让引擎看不见 provider。
     expect(process.env.OPENCODE_CONFIG).toBe(path.join(process.env.ALPHA_GLOBAL_DIR, "alpha.jsonc"))
     expect(process.env.OPENCODE_CONFIG_DIR).toBe(path.join(userData, "alpha-engine-config"))
+    expect(process.env.OPENCODE_MODELS_PATH).toBe(path.join(userData, "alpha-engine-config", "models.json"))
 
     // I7 是「v2 桥目录已物化」,不是「env 里有那个字符串」(#607 R1)。只断言 OPENCODE_CONFIG_DIR
     // 的值,会让「删掉写 opencode.jsonc 的 writeFileSync、保留下一行赋值」全绿通过 ——
@@ -200,6 +202,19 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     expect(v2Raw).not.toContain(PLATFORM_KEY)
     expect(v2Raw).not.toContain(BYOK_KEY)
     expect(v2Raw).not.toContain("apiKey")
+    // #857:the first request must not pay to decode the bundled 6,132-row models.dev snapshot.
+    // Config providers above are the complete governed catalog, so the upstream base is exactly
+    // empty. Deleting the write or path assignment makes this deterministic guard fail.
+    expect(fs.readFileSync(process.env.OPENCODE_MODELS_PATH!, "utf8")).toBe("{}\n")
+  })
+
+  test("ALPHA_MODELS_DISABLE preserves the upstream models path escape hatch", () => {
+    process.env.ALPHA_MODELS_DISABLE = "1"
+    process.env.OPENCODE_MODELS_PATH = "/operator/upstream-models.json"
+
+    expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
+    expect(process.env.OPENCODE_MODELS_PATH).toBe("/operator/upstream-models.json")
+    expect(fs.existsSync(path.join(userData, "alpha-engine-config", "models.json"))).toBe(false)
   })
 
   test("反向闸门:注入内部抛错时失败必须出声,且正向闸门的断言体真的转红(函数级 catch 不再能瞒过测试)", () => {
