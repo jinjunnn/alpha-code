@@ -1,10 +1,10 @@
 ---
 title: 全来源工具 registry-derived inventory 与稳定 identity 方案基线
 kind: design
-status: draft
+status: accepted
 owners:
   - alpha-code engine and contracts maintainers
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-06
 review_after: 2027-01-31
 ---
 
@@ -19,7 +19,8 @@ review_after: 2027-01-31
 不重新定义 identity。**前置修复**:`#726`(别名碰撞 fail-closed)——本文把它从"补丁"
 升级为"不变量",见 §2.4。
 
-**状态**:`draft`,待 owner 批准。批准前不得据此开实现票。
+**状态**:`accepted`。owner 于 2026-08-06 批准本文三个裁决请求:收编 ADR、E5 纳入本轮、
+I9 纳入同一 identity 校验面。接线实现仍须先落 §6.3 的收编 ADR。
 
 ---
 
@@ -485,7 +486,7 @@ V2 侧同构:`core/tool/registry.ts:112-113` 的 `whollyDisabled(permission(tool
 `tool/code-mode.ts`、`session/llm.ts`、`session/prompt.ts`、`session/llm/request.ts`、
 `schema/src/v1/session.ts`、`core/tool/registry.ts`、`core/tool/application-tools.ts`,
 并载明 L3 单向门代价(这批文件此后不再白嫖上游)。**这条 ADR 是实现票的硬前置,
-owner 未批准前不得开工。**
+owner 已于 2026-08-06 批准该收编方向;**ADR 落地仍是接线实现的硬前置。**
 
 ---
 
@@ -543,13 +544,14 @@ owner 未批准前不得开工。**
 
 ---
 
-## ⑩ 留给 owner 的开放点
+## ⑩ Owner 裁决(2026-08-06)
 
-1. **是否批准收编 ADR(§6.3)**。不批 ⇒ 本方案只能落 §6.2 前四行的机制部分,接线无法
-   完成,两张消费票都拿不到可用产物。这是本文最主要的裁决请求。
-2. **E5(workflow executor)是否纳入本轮**。它是第 8 个把别名当权限键的地方,不改会
-   留一个"策略已收紧但 workflow 面按旧别名预批"的假闸门;改则接管面多一个文件
-   (`session/llm.ts`)。
-3. **I9(插件遮蔽内置工具 loud 失败)是否属于本票**。它是识别出的真实静默失效,但严格
-   说是"插件命名空间"问题而非"identity"问题。倾向:纳入,因为修法与 I1 是同一处校验;
-   若 owner 认为超范围,拆独立 Issue。
+1. **批准收编 ADR(§6.3)。** 机制部分可按 §6.2 先行;任何接线实现必须先由该 ADR
+   精确收编列出的上游表面。
+2. **E5(workflow executor)纳入本轮。** `session/llm.ts` 的 workflow 预批名单必须改用
+   canonical identity,不得留下按旧别名预批的旁路。
+3. **I9 纳入本轮,不拆票。** 插件遮蔽内置工具与 I1 共用装载期双射/遮蔽校验,冲突必须
+   loud 失败,不得静默覆盖。
+
+三项均已终判,本文不再保留 owner 开放点。展示与策略消费票仍只消费本文定义,不重开
+identity 设计。
