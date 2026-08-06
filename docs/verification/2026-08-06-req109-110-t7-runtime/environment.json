@@ -1,0 +1,30 @@
+{
+  "captured_at": "2026-08-06T10:42:00Z",
+  "source_commit": "606e27db924267132e16767bf52ce90d42e9ff45",
+  "app_binary_sha256": "06e2cb71e9263adc60c8dc6c15a74190396562d1ed1caab878bf110c6a0202d1",
+  "platform": {
+    "os": "macOS 26.3.1 (25D2128)",
+    "arch": "arm64",
+    "bun": "1.3.14",
+    "node": "v22.22.3"
+  },
+  "bundle": {
+    "identifier": "com.tide.alphacode.dev",
+    "team_identifier": "RQX6X6A635",
+    "signature": "Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+    "installed_over_applications": false
+  },
+  "clash": {
+    "app_running": true,
+    "service_running": true,
+    "mihomo_running": true,
+    "tun_interface": "utun1024",
+    "tun_gateway": "198.18.0.1",
+    "loopback_in_exception_list": true
+  },
+  "credential_boundary": {
+    "real_test_alpha_api_key_used": false,
+    "synthetic_credentials_only": true,
+    "controlled_endpoint": "loopback"
+  }
+}
