@@ -144,8 +144,9 @@ servers = doc["mcpServers"] if isinstance(doc.get("mcpServers"), dict) else doc
 **语料本身怎么来的**:`packages/ui-mac/scripts/gen-claude-plugin-corpus-fixture.ts`
 把 `~/.claude/plugins/marketplaces`(排除 `*.bak`)导出成
 `packages/ui-mac/test-fixtures/claude-plugin-corpus.json`。
-`SKILL.md` / `plugin.json` / `.mcp.json` **逐字保留**(并做 UTF-8 往返校验,失真即停),
-其余文件只留 `size` + `mode`。**在这份语料上量任何数之前,先读 §9** —— 那里写清楚
+`SKILL.md` / `plugin.json` / `.mcp.json`、plugin-level `agents/**/*.md` 与 marketplace 根
+`LICENSE*` **逐字保留**(并做 UTF-8 往返校验,失真即停),其余文件只留 `size` + `mode`。
+**在这份语料上量任何数之前,先读 §9** —— 那里写清楚
 哪一格的字节是真的、哪一格是假的,以及各自会让什么数字失真。
 
 ## 7. 附录:逐插件明细(62 行)
@@ -229,10 +230,13 @@ servers = doc["mcpServers"] if isinstance(doc.get("mcpServers"), dict) else doc
 
 - 语料 = `~/.claude/plugins/marketplaces`,排除 `*.bak`;四个 marketplace 根、62 个插件、
   162 个 `SKILL.md`、888 个文件。
-- 语料是**活的第三方内容**,会漂。本轮重生相对上一份夹具:
-  文件集合与逐字内容**零变化**;376 个文件的 mode 从 `0o600/0o700` 变成 `0o644/0o755`
-  (可执行位语义逐文件不变,已机械核对);`claude-plugins-official/.claude-plugin/marketplace.json`
-  从 161310 变成 163121 字节(占位档,无判定读它的内容)。
+- 语料是**活的第三方内容**,会漂。`#848` 冻结的这一轮文件集合仍是 888 条;
+  相对上一份夹具,恰有 **46 条**从占位档移进逐字档:43 份 plugin-level agent
+  (169 124 B)与 3 份 marketplace 根 `LICENSE*`(33 660 B)。路径、mode 与 size 不借此改写。
+- 本轮夹具 SHA-256 是
+  `bfd176c60aedf55ef5b3de5edf0a4104bce25e3edfe2300c7dfad3095c7105b3`;
+  agent 的路径+逐文件 SHA-256 聚合是
+  `fa30d60c7e60a8c1789d457da6f50627b67d6b3725e4e0d31369ba7b84d433f6`。
 - 三个数只描述**这一份语料**。它不是全网 Claude 插件的样本,别当分布外推用。
 
 ## 9. 语料的保真档位:哪一格的字节是真的
@@ -243,12 +247,12 @@ servers = doc["mcpServers"] if isinstance(doc.get("mcpServers"), dict) else doc
 
 | 档位 | 是什么 | 条数 | 字节 |
 | --- | --- | ---: | ---: |
-| **逐字** | `SKILL.md` 162 + `plugin.json` 62 + `.mcp.json` 22 | **246** | 真实内容 |
-| **占位** | 其余全部 | **642** | 6 577 137 B,内容是**填充字节 `'a'`** |
+| **逐字** | `SKILL.md` 162 + `plugin.json` 62 + `.mcp.json` 22 + plugin-level agent 43 + marketplace 根 `LICENSE*` 3 | **292** | 真实内容 |
+| **占位** | 其余全部 | **596** | 6 374 353 B,内容是**填充字节 `'a'`** |
 
-占位档里数量最多的几类:`.md` 352(`commands/**` 100、`agents/**` 43、README/文档若干)、
+占位档里数量最多的几类:`.md` 309(`commands/**` 100、README/文档与口径外 agent 若干)、
 `.py` 51、`.yaml` 40、`.json` 38(含 4 份 `marketplace.json`)、`.mjs` 33、`.sh` 23、
-无扩展名 54,以及 5 个含**字面 NUL 字节**的 `.png`/`.jpg`。完整分类由
+无扩展名 51,以及 5 个含**字面 NUL 字节**的 `.png`/`.jpg`。完整分类由
 `packages/ui-mac/src/main/claude-plugin-corpus-census.test.ts` 的 G6 逐类钉住。
 
 **占位档保住了什么、丢了什么**(两条都是可执行断言,不是自述):
@@ -265,18 +269,21 @@ servers = doc["mcpServers"] if isinstance(doc.get("mcpServers"), dict) else doc
 实证:技能侧六个数(162 skill / 40 个多文件 / 单技能最多 18 个文件 / 单技能最大 230 243 B /
 最大单文件 64 768 B / 最大相对深度 2)从**夹具**与从**真实语料**分别算,逐个相同。
 
-⇒ **不可以**在这份语料上量的:任何需要**解析这些文件内容**才能得出的数 ——
-`agents/*.md` 与 `commands/*.md` 的 frontmatter、hooks 脚本里声明的事件、
+⇒ **不可以**在这份语料上量的:任何需要**解析占位文件内容**才能得出的数 ——
+`commands/*.md` 的 frontmatter、hooks 脚本里声明的事件、
 `marketplace.json` 里的条目清单。**注意这不是「算出来偏小」** ——
 拿 `'aaaa…'` 去解析会得到**一个假的零**,那比下界更坏。
 
-**为什么不干脆全部逐字保留**:那是把第三方内容整个搬进仓(另外 6.5 MB,含带 NUL 的图片),
-而今天没有任何判据需要那些字节。**需要哪一类,就补哪一类** —— 补法是把文件名加进生成器的
-`VERBATIM`,并同时在 G6 的分类断言里改条数(改了不同步,当场红)。
+plugin-level agent 是逐字档,所以现在可以量它的 frontmatter。`#848` 用生产
+`agentMdToEntry` 独立复算出 **9 / 43 通过、34 / 43 拒绝**;拒绝恰分为 `tools` 23、
+`effort` 7、块式 frontmatter 缩进 4。可读分布与口径外三份具名文件见
+`docs/audits/2026-08-05-claude-plugin-agent-frontmatter-distribution.md`。
 
-**已知缺口(今天故意不补,谁要用谁补)**:`agents/**/*.md` 43 个文件的内容不在语料里。
-若将来要回答「真实 agent 的 frontmatter 长什么样、`agent` profile 接不接得住」,
-必须先把它补进 `VERBATIM` 重生语料,**不能**拿现在的语料去量。
+**为什么不干脆全部逐字保留**:那是把第三方内容整个搬进仓(另外 6.5 MB,含带 NUL 的图片),
+而今天没有任何判据需要那些字节。**需要哪一类,就补哪一类** —— 补法是在生成器中
+增加一个最窄的逐字分类,并同时在 G6 的分类断言里改条数(改了不同步,当场红)。
+`#848` 正是按这个流程只提升 plugin-level agent 与再分发依据,没有把 commands/hooks 或
+技能内层 agent 一起扩进来。
 
 **另一侧的上界**(读的是 alpha-web,本仓不动它):发布端对**每个组件**的资产文件数有硬上限
 `maxFilesPerComponent: 512`(`scripts/lib/extension-package-core.mjs:77`,由同文件 1042–1049 的

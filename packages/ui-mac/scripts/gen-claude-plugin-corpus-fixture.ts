@@ -21,6 +21,15 @@
  *   · `.git` / `node_modules` / `__pycache__` —— 不导出(collector 与独立扫描都跳过;
  *     真实语料里这三者在技能目录内 0 命中,R2-a 的夹具是合成的)。
  *
+ * `#848`:**plugin-level `agents/**\/*.md` 与 marketplace 根级 `LICENSE*` 也逐字保留**。
+ * agent 那一格与 `#826` 的 `.mcp.json` 同病:43 份 plugin-level agent 全在占位档,于是
+ * 「agent profile 接得住 Claude 的 agent」没有字节可对 —— 而方案审计实测 34/43 被生产
+ * `agentMdToEntry` 拒(admission 期即拒装)。逐字段冻结表(基线 §3.5)只能对着真字节写。
+ * 口径与规模普查一致(census G3):只算 `<插件根>/agents/**`,插件根 = 带
+ * `.claude-plugin/plugin.json` 的目录;技能内层的 agents(如 skill-creator 里那 3 份)
+ * 不在口径内,维持占位。根级 `LICENSE*` 让夹具自带第三方内容的再分发授权依据
+ * (owner 2026-08-04 拍板;根下不存在就不猜,插件级/技能级 LICENSE 不在此列)。
+ *
  * 为什么落成**一个 JSON**而不是把文件直接摊进仓:
  *   语料里有 5 个 `.png`/`.jpg` 带**字面 NUL 字节**。JSON 的 `\u0000` 转义写法在文件字节上
  *   不含 NUL —— 正是 `scripts/assert-no-nul-bytes.py` 指定的修法。摊开写会让那道闸变红,
@@ -50,6 +59,26 @@ function main(): void {
   const roots = fs.readdirSync(corpusRoot).filter((n) => !n.endsWith(".bak")).sort()
   const entries: Entry[] = []
 
+  // `#848`:plugin-level agent 判定。rel 里某个 `agents` 段的**前缀目录**带
+  // `.claude-plugin/plugin.json` 即命中(覆盖 tide-plugin 这种「marketplace 根本身就是
+  // 插件根」的形态,也覆盖 `agents/` 下任意深度嵌套)。技能内层 agents 的前缀是
+  // `skills/<name>`,没有插件清单,自然落回占位档 —— 不靠点名排除。
+  const isPluginLevelAgentMd = (rel: string): boolean => {
+    if (!rel.endsWith(".md")) return false
+    const seg = rel.split("/")
+    for (let i = 1; i < seg.length - 1; i++) {
+      if (seg[i] !== "agents") continue
+      if (fs.existsSync(path.join(corpusRoot, ...seg.slice(0, i), ".claude-plugin", "plugin.json"))) return true
+    }
+    return false
+  }
+  // `#848`:marketplace 根一级的 `LICENSE*`(rel 恰两段)。只看根一级 —— owner 拍板的
+  // 再分发依据挂在 marketplace 根上;插件级/技能级 LICENSE 维持占位。
+  const isMarketplaceRootLicense = (rel: string): boolean => {
+    const seg = rel.split("/")
+    return seg.length === 2 && seg[1].startsWith("LICENSE")
+  }
+
   const walk = (absDir: string, relDir: string): void => {
     const dirents = fs.readdirSync(absDir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))
     for (const dirent of dirents) {
@@ -64,7 +93,7 @@ function main(): void {
       if (!dirent.isFile()) continue
       const st = fs.lstatSync(abs)
       const mode = st.mode & 0o777
-      if (VERBATIM.has(dirent.name)) {
+      if (VERBATIM.has(dirent.name) || isPluginLevelAgentMd(rel) || isMarketplaceRootLicense(rel)) {
         // 「逐字保留」必须是**真的**,不是名义上的:`readFileSync(..., "utf8")` 对非法 UTF-8
         // 会静默塞 U+FFFD,于是夹具里躺着一份**看起来像原文**的赝品。往返比一次字节,
         // 不等就当场停 —— 让这份语料悄悄失真,正是本文件要修的那类缺陷。
@@ -84,7 +113,8 @@ function main(): void {
     schema: "claude-plugin-corpus-fixture/v1",
     source: "~/.claude/plugins/marketplaces (excluding *.bak)",
     note:
-      "SKILL.md、plugin.json 与 .mcp.json 逐字保留;其余文件只留 size/mode 占位(判定只用到存在性/名字/可执行位/体积)。" +
+      "SKILL.md、plugin.json、.mcp.json、plugin-level agents/**/*.md 与 marketplace 根级 LICENSE* 逐字保留(#848);" +
+      "其余文件只留 size/mode 占位(判定只用到存在性/名字/可执行位/体积)。" +
       "由 packages/ui-mac/scripts/gen-claude-plugin-corpus-fixture.ts 生成,不要手改。",
     roots,
     entries,

@@ -4,8 +4,9 @@
 // (realpath 圈禁 / O_NOFOLLOW / fstat 帽)与**独立 lstat 扫描**——两者读的都是文件系统。
 // 喂内存对象等于把生产代码换成一条自己拼的等价链,那正是本仓「假闸形态⑧」。
 //
-// 占位文件按记录的 `size` 与 `mode` 还原:判定用到的是**存在性 / 名字 / 可执行位 / 体积**,
-// 用不到内容(内容只有 SKILL.md 与 plugin.json 才被解析,那两类是逐字保留的)。
+// 占位文件按记录的 `size` 与 `mode` 还原:判定用到的是**存在性 / 名字 / 可执行位 / 体积**。
+// 会被解析的 SKILL.md / plugin.json / .mcp.json / plugin-level agents/**/*.md 与再分发依据
+// marketplace 根 LICENSE* 全部逐字保留;`#848` 的 agent 解析闸读的就是这里摊开的真字节。
 
 import fs from "node:fs"
 import os from "node:os"
