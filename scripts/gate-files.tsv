@@ -122,6 +122,9 @@
 # ── core(alpha 自有;本 job 的整包地板不覆盖 packages/core)──────────────────
 11	packages/core	test/alpha-websearch-sovereignty.test.ts	-	受托:V2 core 那份 websearch 副本的主权闸运行时证据(websearch-copies 的运行时半场)
 
+# ── server(alpha 自有;模型目录消费时序)─────────────────────────────────────
+1	packages/server	src/handlers/model.test.ts	-	#857:V2 model.list 先等本地 core/catalog-ready 再读 catalog;控制组证明绕过 barrier 会读到未治理中间态,首读与热读集合逐项相等且不引入账户/网络门
+
 # ── opencode(仅 alpha 自有)────────────────────────────────────────────────
 45	packages/opencode	test/tool/alpha-websearch-failure.test.ts	packages/ui-mac/src/main/stream-read-hygiene.test.ts	#647 readBoundedBody 读全 + MAX_BODY_BYTES 硬限 + #489/#223 失败诚实
 5	packages/opencode	test/permission/alpha-ask-deadline.test.ts	-	ADR-038/#668:v1 审批请求无人应答时在期限内**具名失败**(Exit 必须 failure = 绝不到点自动放行)+ 广播 reject 回执 + pending 清空 + 默认期限不被调成无期限
