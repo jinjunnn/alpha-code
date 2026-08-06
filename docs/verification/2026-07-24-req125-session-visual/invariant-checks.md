@@ -28,7 +28,9 @@ last_reviewed: 2026-08-06
   session DOM 查询;终端舞台的 5 个原始色值均由既有 token ratchet 白名单钉住。
 - benchmark 合同已完成证据审计并终判 **3 FAIL**:C5 前基点的 Alpha timeline host 是空壳,
   且合并前没有生产采样,因此不存在可比较的 before 数据;上游 app timeline benchmark 又未
-  测量本次 Alpha C5 变更。缺口已路由 #866,不得虚构指标或倒签 PASS。
+  测量本次 Alpha C5 变更,不得虚构指标或倒签 PASS。#866 已在 commit
+  `19b96f2920dce59101fb15ed2d9af85ea7368b3f` 建立
+  [当前生产性能基线](../2026-08-06-req125-timeline-performance/README.md),只供未来 delta。
 - 全部执行均为无界面 L1:production Solid 组件、生产 CSS、确定性 adapter/fixture 与
   loopback-only headless Chrome。未启动 Electron、Alpha Code、packaged app 或前台 Chrome,
   也未读取账号或真实 API key。本记录不冒充候选发布包的 L3 GUI smoke。
@@ -50,9 +52,9 @@ last_reviewed: 2026-08-06
 | F3  | 滚动锚定                      | PASS | 底部跟随、离底冻结、回到底部恢复                                       |
 | F4  | dock fail-closed/Recovery     | PASS | permission dock、Recovery 与 workspace 集成测试                        |
 | F5  | 旧注入清零/manifest lineage   | PASS | 旧文件/符号静态扫描 + frontend surface manifest 测试                   |
-| B1  | 大会话冷开 before/after       | FAIL | C5 前 Alpha host 为空且无采样,没有合法 before;#866                     |
-| B2  | 30s 流式帧率 before/after     | FAIL | 同一缺失基线;上游 app timeline harness 不覆盖 Alpha C5;#866            |
-| B3  | 滚顶加载/内存 before/after    | FAIL | 同一缺失基线;不得以不可比数据补签;#866                                 |
+| B1  | 大会话冷开 before/after       | FAIL | C5 前 Alpha host 为空且无采样;#866 当前基线不倒签 before               |
+| B2  | 30s 流式帧率 before/after     | FAIL | 上游 harness 不覆盖 Alpha C5;#866 当前基线只供未来 delta               |
+| B3  | 滚顶加载/内存 before/after    | FAIL | 不得以不可比数据补签;#866 已归档当前 raw/median                        |
 
 以下保留父需求关闭前的详细合同与测试映射。原表中的「真机抽查」是未来候选发布包 L3
 观测场景,不属于本次 L1 证据的声明范围;其安全/状态不变量已由上表所列确定性测试覆盖。任何
@@ -160,5 +162,8 @@ C5 改动的上游 timeline,不能作为替代基线。
 | 流式帧率       | 长任务流式 30s,rAF 采样丢帧率(CDP Tracing)                                         | 后丢帧率不高于前 +10%         |
 | 滚动与历史加载 | fixture 会话滚顶加载一批历史的耗时 + `process.memoryUsage`/renderer 内存           | 后 ≤ 前 ×1.1;内存无台阶式增长 |
 
-本次 B1/B2/B3 均在“可比性前置门”终判 FAIL,统一由 #866 承接。#866 将建立可复用的当前
-Alpha 基线供未来 delta 对比,但不得倒签不存在的 C5 前性能结论。父票 #538 保持开放。
+本次 B1/B2/B3 均在“可比性前置门”终判 FAIL。#866 已建立可复用的
+[当前 Alpha 基线](../2026-08-06-req125-timeline-performance/README.md):三轮中位数为
+冷开 132.0ms、30s 流式 rAF gap p95 18.1ms/估算丢帧率 4.5221%、滚顶触发 9.2ms、
+历史前插 26.2ms,并归档 renderer memory 与完整 raw diagnostics。该证据只供未来 delta
+对比,不得倒签不存在的 C5 前性能结论;父票 #538 保持开放。
