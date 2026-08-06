@@ -18,6 +18,7 @@ import presetSolid from "babel-preset-solid"
 import type { AlphaProject, AlphaProjectsApi } from "../src/renderer/sidebar/use-projects"
 import type { ComposerAttachment } from "../src/renderer/alpha-ui/composer-attachments-core"
 import type { MentionPart } from "../src/renderer/alpha-ui/composer-autocomplete-core"
+import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../src/shared/alpha-config"
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
@@ -156,6 +157,9 @@ function projectsApi(projects: AlphaProject[]): AlphaProjectsApi {
         vcs: { status: async () => ({ data: [] }) },
         v2: {
           agent: { list: async () => ({ data: { data: [] } }) },
+          provider: {
+            get: async () => ({ data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }),
+          },
           model: { list: async () => ({ data: { data: platformModels } }) },
           session: {
             get: async () => ({ data: { data: { id: "s", model: undefined, agent: undefined } } }),
