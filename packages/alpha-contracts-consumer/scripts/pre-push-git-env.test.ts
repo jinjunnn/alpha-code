@@ -7,7 +7,12 @@ import { crossRepoGitEnv } from "./git-cross-repo"
 
 const repositoryRoot = resolve(import.meta.dir, "../../..")
 const shippedHook = readFileSync(join(repositoryRoot, ".githooks/pre-push"), "utf8")
+const alphaCheck = readFileSync(join(repositoryRoot, "scripts/alpha-check.sh"), "utf8")
 const scrubBlock = /repository_local_git_env="\$\(git rev-parse --local-env-vars\)"[\s\S]*?unset repository_local_git_env\n/
+const selfHealBlock = alphaCheck.match(
+  /if \[ "\$\{ALPHA_HOOKS_DISABLE:-\}" != "1" \]; then\n[\s\S]*?unset current_alpha_hooks_path\nfi\n/,
+)?.[0]
+if (!selfHealBlock) throw new Error("alpha-check hook self-heal block not found")
 
 const runGit = (root: string, ...args: string[]) => {
   const result = Bun.spawnSync(["git", "-C", root, ...args], { env: crossRepoGitEnv() })
@@ -29,6 +34,7 @@ const makeHarness = (hook: string) => {
     join(main, "scripts/alpha-check.sh"),
     `#!/usr/bin/env bash
 set -euo pipefail
+${selfHealBlock}
 if [ "\${EXPECT_CLEAN_GIT_ENV:-0}" = "1" ]; then
   while IFS= read -r name; do
     if [ -n "$name" ] && [ "\${!name+x}" = "x" ]; then
@@ -69,6 +75,12 @@ const runPush = (root: string, expectClean: boolean) =>
     env: { ...crossRepoGitEnv(), EXPECT_CLEAN_GIT_ENV: expectClean ? "1" : "0" },
   })
 
+const runCheck = (root: string, disabled = false) =>
+  Bun.spawnSync(["bash", join(root, "scripts/alpha-check.sh")], {
+    cwd: root,
+    env: { ...crossRepoGitEnv(), ALPHA_HOOKS_DISABLE: disabled ? "1" : "0" },
+  })
+
 describe("#815 · pre-push scrubs the repository-local Git environment before running tests", () => {
   test("control: removing the scrub makes the fixture commit and config land in the branch being pushed", () => {
     const brokenHook = shippedHook.replace(scrubBlock, "")
@@ -78,6 +90,17 @@ describe("#815 · pre-push scrubs the repository-local Git environment before ru
     expect(result.exitCode).toBe(0)
     expect(runGit(harness.root, "rev-parse", "HEAD")).not.toBe(harness.head)
     expect(readFileSync(harness.configPath, "utf8")).toContain("test@opencode.test")
+    rmSync(harness.container, { recursive: true, force: true })
+  })
+
+  test("alpha-check repairs an actual hooksPath drift but does not override the disable escape hatch", () => {
+    const harness = makeHarness(shippedHook)
+    runGit(harness.root, "config", "core.hooksPath", ".husky/_")
+    expect(runCheck(harness.root).exitCode).toBe(0)
+    expect(runGit(harness.root, "config", "--get", "core.hooksPath")).toBe(".githooks")
+    runGit(harness.root, "config", "core.hooksPath", ".husky/_")
+    expect(runCheck(harness.root, true).exitCode).toBe(0)
+    expect(runGit(harness.root, "config", "--get", "core.hooksPath")).toBe(".husky/_")
     rmSync(harness.container, { recursive: true, force: true })
   })
 

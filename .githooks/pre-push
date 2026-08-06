@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # alpha pre-push hook — enforce local-first (docs/runbooks/ci.md §6).
 # DEFAULT-ON since 2026-07-05 (REQ-015): scripts/alpha-check.sh re-arms
-#   `git config core.hooksPath .githooks` on every run, because husky's `prepare`
+#   `git config core.hooksPath .githooks` whenever it has drifted, because husky's `prepare`
 #   resets it back to .husky/_ after each `bun install` — and that upstream hook's
 #   full-turbo typecheck is permanently red under the ADR-020 frozen-frontend skew
 #   (session-ui needs new-ui props; unshipped upstream leaf; see REQ-015).

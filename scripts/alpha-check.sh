@@ -40,9 +40,14 @@ CI_STEPS=(
 
 # REQ-015 self-heal(2026-07-05):husky 的 prepare 在每次 `bun install` 后把 core.hooksPath
 # 重置回 .husky/_(其全量 turbo typecheck 在 ADR-020 冻结偏斜下因 session-ui 恒红)。
-# 此处幂等重挂 alpha 门,使 .githooks/pre-push(= 本脚本)成为默认 push 门。逃生:ALPHA_HOOKS_DISABLE=1。
+# 此处仅在值偏离时重挂 alpha 门,使 .githooks/pre-push(= 本脚本)成为默认 push 门,同时
+# 让一次健康的 pre-push 连共享 .git/config 的文件身份都不改。逃生:ALPHA_HOOKS_DISABLE=1。
 if [ "${ALPHA_HOOKS_DISABLE:-}" != "1" ]; then
-  git config core.hooksPath .githooks 2>/dev/null || true
+  current_alpha_hooks_path="$(git config --local --get core.hooksPath 2>/dev/null || true)"
+  if [ "$current_alpha_hooks_path" != ".githooks" ]; then
+    git config --local core.hooksPath .githooks 2>/dev/null || true
+  fi
+  unset current_alpha_hooks_path
 fi
 
 # Keep in lockstep with .github/workflows/alpha-ci.yml (env.UPSTREAM_PATHS + the guard's excludes)
