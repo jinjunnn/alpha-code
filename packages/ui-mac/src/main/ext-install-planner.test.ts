@@ -327,6 +327,8 @@ function makeDeps(opts: {
       const entry = entries.find((e) => e.id === catalogId)
       return entry ? { entry, channel: "remote", catalogVersion: "2026-07-13.1" } : null
     },
+    // `#817`:本 harness 不测 package child 启停 —— 意外触达即响亮拒绝(fail-closed 可见)。
+    resolvePackage: async () => ({ status: "refused", reason: "resolvePackage must not be consulted in this test" }),
     environment: () => "prod",
     platform: () => opts.platform ?? "darwin",
     globalRoot: () => globalRoot,

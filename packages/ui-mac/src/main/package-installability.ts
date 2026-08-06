@@ -32,6 +32,7 @@ import {
   type PackageConnectionPrerequisiteProfileV1,
 } from "../shared/package-alpha-connection"
 import { lookupAlphaConnectionHandlerV1, ALPHA_CONNECTION_HANDLERS_V1 } from "./alpha-connection-handlers"
+import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 
 const ATTEMPT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const PAYLOAD_TIMEOUT_MS = 8000
@@ -99,6 +100,71 @@ export type PackageInstallPreflightResult = { matched: false } | { matched: true
 
 export function packageActionForReason(reasonCode: CatalogPackageReasonCodeV1): CatalogPackageActionV1 {
   return { ...ACTION_BY_REASON[reasonCode], reasonCode }
+}
+
+// ── `#817`:启停通道的 package 身份投影(纯函数,零网络、零写盘)──────────────────────────────
+
+/** 一份已验 catalog raw envelope 的身份事实。`envelopeDigest` 与 admission 落入 V3 图的那一份
+ *  **同一口径**(`package-admission.ts` binding:`sha256Hex(canonicalJson(header.envelope))`,
+ *  即对**同一个头解码对象**过同一个 canonicalJson)—— 两处口径一旦分叉,启停闸会把每一份真实
+ *  安装判成 mismatch,所以派生只此一份,不在消费点重写。 */
+export type PackageEnvelopeIdentityV1 = {
+  packageId: string
+  version: string
+  /** `sha256:<hex>`,与 `PackageGraphV1.envelopeDigest` 同格式同口径。 */
+  envelopeDigest: string
+  components: Array<{ id: string; payloadSha256: string }>
+}
+
+export function packageEnvelopeIdentityV1(
+  envelope: unknown,
+): { ok: true; identity: PackageEnvelopeIdentityV1 } | { ok: false; reason: string } {
+  const bytes = encodeEnvelope(envelope)
+  if (!bytes) return { ok: false, reason: "envelope is not JSON-encodable" }
+  const header = decodePackageEnvelopeHeaderV1(bytes)
+  if (!header.ok)
+    return { ok: false, reason: `envelope header does not decode (${header.stage}): ${header.errors[0] ?? "invalid"}` }
+  return {
+    ok: true,
+    identity: {
+      packageId: header.envelope.prelude.packageId,
+      version: header.envelope.prelude.version,
+      envelopeDigest: `sha256:${sha256Hex(canonicalJson(header.envelope))}`,
+      components: header.envelope.components.map((component) => ({
+        id: component.id,
+        payloadSha256: component.payloadRef.sha256,
+      })),
+    },
+  }
+}
+
+export type VerifiedPackageResolutionV1 =
+  | { status: "refused"; reason: string }
+  | { status: "missing"; anyVersionPresent: boolean }
+  | { status: "found"; identity: PackageEnvelopeIdentityV1 }
+
+/**
+ * `#817`:从已验 catalog 的 `packages[]` 里按 **(packageId, version) 双键**精确取一份 envelope 身份。
+ * `validateCatalogPackageShape` 的重复判据是 `packageId\u0000version` —— 同一 packageId 的多个
+ * version 可合法并存,所以**不得**按 packageId 单键 `.find`(会错拿版本,把一份真实可验证的安装
+ * 拒掉)。`anyVersionPresent` 让拒绝文案能区分「整包下架(delisted)」与「已装版本不再发布」。
+ */
+export function resolveVerifiedPackageV1(
+  catalog: unknown,
+  packageId: string,
+  version: string,
+): VerifiedPackageResolutionV1 {
+  const validated = validateCatalogPackageShape(catalog)
+  if (!validated.ok) return { status: "refused", reason: `verified catalog packages are unusable: ${validated.error}` }
+  const anyVersionPresent = validated.packages.some((item) => item.prelude.packageId === packageId)
+  const selected = validated.packages.find(
+    (item) => item.prelude.packageId === packageId && item.prelude.version === version,
+  )
+  if (!selected) return { status: "missing", anyVersionPresent }
+  const identity = packageEnvelopeIdentityV1(selected.envelope)
+  if (!identity.ok)
+    return { status: "refused", reason: `verified catalog package ${packageId}@${version} does not decode: ${identity.reason}` }
+  return { status: "found", identity: identity.identity }
 }
 
 /**

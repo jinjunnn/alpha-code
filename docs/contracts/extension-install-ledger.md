@@ -159,6 +159,16 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   config 原子写(writeFileAtomicSync 整替换或原文件不变)抛错 → 回滚账本到原态(回滚失败如实报真实
   状态);config 未变故 opts 等原样保留。残余:账本↔config 崩溃窗口的短暂运行态不符,durable intent 恒
   正确、下次更新/重开收敛。enable 缺生效面 fail-closed。disabled ≠ 卸载:内容/账本/授权账照常在位。
+  **enable 方向的 catalog 解析两路分明(`#817`)**:legacy catalog record(V3 图/claim 两个 package
+  信号都不在场)照旧解析 legacy `entries[]` 的 exact 条目(id/kind/name/version 精确对应 + #397
+  curation 消费);**signed package child** 以一次有效 V3 state 分类 —— 任一 packageGraph 节点命中
+  `(kind,name)`,或该 `(kind,name)` 的 claim 含 `bundle:` owner,任一成立即 package-managed ——
+  先要求 exact graph/record 身份(节点 `componentId===record.id ∧ manifestDigest===record.manifestDigest`),
+  再按 **(packageId, 已装 record.version) 双键**解析已验 catalog `packages[]`(同 packageId 多版本可
+  合法并存,禁单键 `.find`),逐项核对 envelope/component/payload/manifest digest;missing/delisted/
+  security/catalog 不可得/任一 digest mismatch 一律 fail-closed,**package-managed 永不回退
+  `entries[]`**;全匹配 = 诚实 uncurated,落既有保守启用面(不发明 package curation)。
+  **disable 方向不咨询 catalog**(两路皆然)。
 - **skill 严格门(Codex r5 定稿)**:ext 无法 import 主进程 decoder,逐字段镜像有永久漂移风险 ——
   改为 **main 用真 `decodeRecordV2` 派生 enabled 允许集写独立文件 `<root>/skills-enabled.json`**,
   hook 只读该文件(缺失/损坏/未知版本 = fail closed 不注入)。派生与账本**锁步**
