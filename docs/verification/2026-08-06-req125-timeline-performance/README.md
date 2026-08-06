@@ -18,7 +18,10 @@ last_reviewed: 2026-08-06
 ## 测量身份
 
 - measured commit:`19b96f2920dce59101fb15ed2d9af85ea7368b3f`。
-- fixture sha256:`9e58c9573f149d5c2a8505318df86c3e8f91534fee13748566da26d3f402a51f`。
+- materialized fixture JSON sha256（`JSON.stringify(materializeTimelineBenchmarkFixture())`）:
+  `9e58c9573f149d5c2a8505318df86c3e8f91534fee13748566da26d3f402a51f`。
+- fixture source sha256（`packages/ui-mac/benchmarks/timeline/fixture.ts`）:
+  `9d23753c4859ea397a4469b9752a4a22fb306053092f80780330743388ead60b`。
 - 生产形态:真实 `SessionTimelineView`、真实 `MarkedProvider`、生产 CSS、Vite production
   build 与 loopback preview;没有复制生产 DOM 或另写时间线实现。
 - 固定视口:1440×900,device scale factor 1;初始 561 行,历史前插 140 行,最终 701 行。
@@ -63,7 +66,11 @@ ALPHA_TIMELINE_BENCH_OUTPUT=/tmp/req125-timeline-baseline \
   bun run bench:timeline
 ```
 
-runner 拒绝脏工作树,先做 production build,再跑三轮;每个阶段有 fail-fast 超时。每轮
+runner 写入 `raw/summary.json.fixtureSha256` 的是完整 materialized fixture JSON 哈希,不是
+`fixture.ts` 源文件哈希;上方同时钉住两者,避免源码身份和测量输入身份混为一谈。
+
+runner 拒绝脏工作树,先做 production build,再跑三轮;navigation、cold-open、streaming
+与 history-load 均有 fail-fast 超时,context/browser close 各自最多等待 10 秒。每轮
 Chrome 结束后才进入下一轮,最终关闭 preview server。归档本批后复核 4175 listener、
 benchmark Bun 进程与其 Playwright headless Chrome 进程均为 0。
 

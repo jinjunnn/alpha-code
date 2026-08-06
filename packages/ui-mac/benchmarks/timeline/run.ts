@@ -138,6 +138,7 @@ async function benchmarkRun(run: number, baseURL: string): Promise<BenchmarkRun>
   })
   const blockedExternalRequests: string[] = []
   let loopbackRequests = 0
+  let completed = false
   try {
     const context = await browser.newContext({
       viewport: {
@@ -191,8 +192,8 @@ async function benchmarkRun(run: number, baseURL: string): Promise<BenchmarkRun>
     )
     assertHistory(history)
     const afterHistoryLoad = await rendererMemory(cdp)
-    await context.close()
-    return {
+    await phase(run, "context-close", context.close(), 10_000)
+    const result = {
       run,
       coldOpen,
       stream,
@@ -200,8 +201,15 @@ async function benchmarkRun(run: number, baseURL: string): Promise<BenchmarkRun>
       rendererMemory: { afterColdOpen, afterStreaming, afterHistoryLoad },
       network: { loopbackRequests, blockedExternalRequests },
     }
+    completed = true
+    return result
   } finally {
-    await browser.close()
+    try {
+      await phase(run, "browser-close", browser.close(), 10_000)
+    } catch (error) {
+      if (completed) throw error
+      process.stderr.write(`run ${run}/3 browser-close failed after primary failure: ${String(error)}\n`)
+    }
   }
 }
 
