@@ -389,7 +389,7 @@ export function injectAlphaConfig(
     })
 
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
-    materializeV2EngineConfig(userDataPath, config)
+    materializeV2EngineConfig(userDataPath, config, Boolean(models))
     return { ok: true }
   } catch (error) {
     // #613:catch 保留(sidecar 照常起,候选形态③),但失败必须离开本进程:
@@ -417,7 +417,11 @@ export function injectAlphaConfig(
 // catch,抛错经 injectAlphaConfig 外层 catch 以 {ok:false} 离开进程。桥排在
 // OPENCODE_CONFIG_CONTENT 写出**之后**,抛错不撤销已就位的 v1 注入
 // (顺序由反向闸门锁死:alpha-config-injection.test.ts 的 v2 桥用例)。
-function materializeV2EngineConfig(userDataPath: string, config: { model?: unknown; provider?: unknown }) {
+function materializeV2EngineConfig(
+  userDataPath: string,
+  config: { model?: unknown; provider?: unknown },
+  governedModels: boolean,
+) {
   const dir = path.join(userDataPath, "alpha-engine-config")
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
   const userCopy = path.join(dir, "opencode.json")
@@ -445,4 +449,17 @@ function materializeV2EngineConfig(userDataPath: string, config: { model?: unkno
   }
   fs.writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify(v2, null, 2), { mode: 0o600 })
   process.env.OPENCODE_CONFIG_DIR = dir
+
+  // #857:when Alpha model governance is active, every available provider/model is already fully
+  // described by the provider projection above. Letting ModelsDev fall through to the bundled
+  // snapshot still makes the first V2 request decode and materialize 6,132 unrelated rows before
+  // enabled_providers can discard them (2.8-6.1s in the signed packaged matrix). Point the existing
+  // upstream catalog seam at an empty base instead: config providers are then the only database
+  // entries, so the first and hot model.list paths see the same governed set without a core edit.
+  // Preserve ALPHA_MODELS_DISABLE as a real escape hatch by leaving any inherited path untouched.
+  if (governedModels) {
+    const modelsPath = path.join(dir, "models.json")
+    fs.writeFileSync(modelsPath, "{}\n", { mode: 0o600 })
+    process.env.OPENCODE_MODELS_PATH = modelsPath
+  }
 }
