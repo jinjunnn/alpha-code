@@ -2,17 +2,25 @@
 // disabled plugin 必须从磁盘 config 缺席(引擎 import 早于 config-hook);mcp 写 enabled:false、agent 写 disable:true;
 // skill 无 config 面(投影经引擎注入门)。config 自持 disabled 态 → 免疫「删账本复活」。真盘临时根,零 mock。
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { createHash } from "node:crypto"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { setInstallStateByKey, type VerifiedCatalogEntry } from "./ext-install-planner"
-import { findRecordV2, upsertRecordV2, type InstallReceiptType, type UpsertInput } from "./ext-receipt-v2"
+import { applyPackageMutation, findRecordV2, skillsEnabledPath, upsertRecordV2, type InstallReceiptType, type UpsertInput } from "./ext-receipt-v2"
+import { bundleOwner, computeInstalledGraphDigest, type PackageGraphNodeV1 } from "./ext-package-ledger-v3"
+import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
+import { packageEnvelopeIdentityV1, resolveVerifiedPackageV1 } from "./package-installability"
 import type { CatalogEntry } from "../renderer/extensions/catalog-types"
+
+type SetStateDeps = Parameters<typeof setInstallStateByKey>[1]
 
 let root: string
 // #397 r1-5:enable 闸要求已验 entry 与 record 身份(id/kind/name/version)精确对应 ——
 // 测试 deps 从账本回镜同身份 uncurated entry(本文件测的是 #395 投影语义,非 curation 面)。
-const deps = () => ({
+// `#817`:resolvePackage 缺省响亮拒绝 —— legacy 用例没有 V3 图,到不了 package 分支;
+// package 用例逐个注入自己的 stub。
+const deps = (over: Partial<SetStateDeps> = {}): SetStateDeps => ({
   globalRoot: () => root,
   advisoryGate: () => ({ allowed: true }) as const,
   resolveEntry: async (id: string): Promise<VerifiedCatalogEntry | null> => {
@@ -31,6 +39,8 @@ const deps = () => ({
     } as unknown as CatalogEntry
     return { entry, channel: "cache", catalogVersion: rec.version ?? "t" }
   },
+  resolvePackage: async () => ({ status: "refused", reason: "resolvePackage must not be consulted in this test" }),
+  ...over,
 })
 // hermetic:隔离引擎真实读取的 legacy 源根(XDG 固定 = XDG_CONFIG_HOME/opencode;~/.opencode = ALPHA_OPENCODE_HOME),
 // 使 legacyEnableResidueStrict 探测不碰开发机真实 ~/.config,并可精确造 before(XDG)/after(~/.opencode)源。
@@ -228,4 +238,483 @@ describe("#395 r12 Major3 无生效面拒绝", () => {
       if (!r.ok) expect(r.reason).toContain("no enable/disable surface")
     })
   }
+})
+
+// ── `#817`:签名 package child 启停(package-managed 只走 packages[] 解析,绝不回退 entries)──────
+
+const hex = (seed: string) => createHash("sha256").update(seed).digest("hex")
+const dg = (seed: string) => `sha256:${hex(seed)}`
+
+type PkgChildSpec = { kind: "skill" | "agent" | "mcp"; name: string; payloadDigest?: string }
+
+/** 铸一个已装签名 package:真 `applyPackageMutation`(图 + claim + child record 同一次写)。
+ *  children[0] = root;record 均 `desiredState:"disabled"`(catalog 首装缺省,#817 的现场)。 */
+function installPackageFixture(opts: {
+  packageId: string
+  version?: string
+  envelopeDigest?: string
+  children: PkgChildSpec[]
+  txId?: string
+}) {
+  const version = opts.version ?? "1.0.0"
+  const envelopeDigest = opts.envelopeDigest ?? dg(`envelope:${opts.packageId}:${version}`)
+  const nodes: PackageGraphNodeV1[] = opts.children.map((c) => ({
+    componentId: `${c.kind}:${c.name}`,
+    kind: c.kind,
+    name: c.name,
+    required: true,
+    manifestDigest: dg(`manifest:${c.kind}:${c.name}`),
+  }))
+  const bare = { packageId: opts.packageId, envelopeDigest, root: nodes[0]!, children: nodes.slice(1) }
+  const graph = { ...bare, installedGraphDigest: computeInstalledGraphDigest(bare) }
+  const owner = bundleOwner(opts.packageId, graph.root.manifestDigest)
+  const w = applyPackageMutation(root, {
+    transactionId: opts.txId ?? `tx-${opts.packageId}-${version}`,
+    operation: "install",
+    graphBeforeDigest: null,
+    graphAfter: graph,
+    childRecordMutations: opts.children.map((c, i) => ({
+      op: "upsert" as const,
+      input: {
+        id: nodes[i]!.componentId,
+        name: c.name,
+        kind: c.kind,
+        environment: "prod",
+        scope: { kind: "global" },
+        version,
+        manifestDigest: nodes[i]!.manifestDigest,
+        payloadDigest: c.payloadDigest ?? dg(`payload:${c.kind}:${c.name}`),
+        desiredState: "disabled",
+        origin: "catalog",
+        installedAt: "2026-08-05T00:00:00.000Z",
+      } satisfies UpsertInput,
+    })),
+    claimMutations: nodes.map((n) => ({ op: "acquire" as const, kind: n.kind, name: n.name, owner })),
+  })
+  if (!w.ok) throw new Error(w.reason)
+  return { packageId: opts.packageId, version, envelopeDigest, graph, nodes }
+}
+
+type PkgFixture = ReturnType<typeof installPackageFixture>
+type PkgIdentity = { packageId: string; version: string; envelopeDigest: string; components: Array<{ id: string; payloadSha256: string }> }
+
+/** (packageId, version) 双键命中即回全匹配 identity;可注入 mutate 造逐项 mismatch。 */
+const foundStub =
+  (fix: PkgFixture, mutate?: (identity: PkgIdentity) => PkgIdentity): SetStateDeps["resolvePackage"] =>
+  async (pid, ver) => {
+    if (pid !== fix.packageId || ver !== fix.version)
+      return { status: "missing", channel: "cache", anyVersionPresent: pid === fix.packageId }
+    const identity: PkgIdentity = {
+      packageId: fix.packageId,
+      version: fix.version,
+      envelopeDigest: fix.envelopeDigest,
+      components: fix.nodes.map((n) => ({ id: n.componentId, payloadSha256: hex(`payload:${n.kind}:${n.name}`) })),
+    }
+    return { status: "found", channel: "cache", identity: mutate ? mutate(identity) : identity }
+  }
+
+const readAllowSet = (): unknown => JSON.parse(fs.readFileSync(skillsEnabledPath(root), "utf8"))
+
+/** `#817` package 用例的 deps:legacy `entries[]` **不含** package child(现实形态)——
+ *  resolveEntry 恒 null。这使「把解析改回 legacy entries」的绕过在这些用例上**必然转红**
+ *  (AC2:判据是盘面结果,legacy 路径解析不到即拒,盘面不动)。 */
+const pkgDeps = (over: Partial<SetStateDeps> = {}): SetStateDeps => deps({ resolveEntry: async () => null, ...over })
+
+describe("setInstallStateByKey(#817 签名 package child)", () => {
+  test("skill child:enable 经 packages[] 全匹配放行,进入引擎允许集(skills-enabled.json)", async () => {
+    const fix = installPackageFixture({ packageId: "package:pkg-skill", children: [{ kind: "skill", name: "psk" }] })
+    const en = await setInstallStateByKey(
+      { type: "skill", name: "psk", scope: "global", state: "enabled" },
+      pkgDeps({ resolvePackage: foundStub(fix) }),
+    )
+    expect(en.ok).toBe(true)
+    expect(findRecordV2(root, "skill", "psk")!.desiredState).toBe("enabled")
+    expect(readAllowSet()).toEqual({ v: 1, keys: ["skill--psk"] })
+  })
+
+  test("agent child:enable 解除 alpha.jsonc 的 disable:true 投影", async () => {
+    const fix = installPackageFixture({ packageId: "package:pkg-agent", children: [{ kind: "agent", name: "pag" }] })
+    writeCfg({ agent: { pag: { description: "d", disable: true } } })
+    const en = await setInstallStateByKey(
+      { type: "agent", name: "pag", scope: "global", state: "enabled" },
+      pkgDeps({ resolvePackage: foundStub(fix) }),
+    )
+    expect(en.ok).toBe(true)
+    expect(readCfg().agent.pag).toEqual({ description: "d" })
+    expect(findRecordV2(root, "agent", "pag")!.desiredState).toBe("enabled")
+  })
+
+  test("mcp child:enable 解除 alpha.jsonc 的 enabled:false", async () => {
+    const fix = installPackageFixture({ packageId: "package:pkg-mcp", children: [{ kind: "mcp", name: "pmc" }] })
+    writeCfg({ mcp: { pmc: { type: "remote", url: "https://x.example/", enabled: false } } })
+    const en = await setInstallStateByKey(
+      { type: "mcp", name: "pmc", scope: "global", state: "enabled" },
+      pkgDeps({ resolvePackage: foundStub(fix) }),
+    )
+    expect(en.ok).toBe(true)
+    expect(readCfg().mcp.pmc).toEqual({ type: "remote", url: "https://x.example/" })
+  })
+
+  test("disable 方向不咨询 catalog(entries 与 packages 面都不许被碰)", async () => {
+    const fix = installPackageFixture({ packageId: "package:pkg-off", children: [{ kind: "skill", name: "poff" }] })
+    const en = await setInstallStateByKey(
+      { type: "skill", name: "poff", scope: "global", state: "enabled" },
+      pkgDeps({ resolvePackage: foundStub(fix) }),
+    )
+    expect(en.ok).toBe(true)
+    const dis = await setInstallStateByKey(
+      { type: "skill", name: "poff", scope: "global", state: "disabled" },
+      deps({
+        resolveEntry: async () => {
+          throw new Error("resolveEntry must not run on the disable path")
+        },
+        resolvePackage: async () => {
+          throw new Error("resolvePackage must not run on the disable path")
+        },
+      }),
+    )
+    expect(dis.ok).toBe(true)
+    expect(findRecordV2(root, "skill", "poff")!.desiredState).toBe("disabled")
+    expect(readAllowSet()).toEqual({ v: 1, keys: [] })
+  })
+
+  test("package-managed 但 record manifestDigest 漂移 ⇒ exact 候选=0 fail-closed;**resolveEntry 零调用**(绝不回退 legacy)", async () => {
+    const fix = installPackageFixture({ packageId: "package:pkg-drift", children: [{ kind: "skill", name: "pdr" }] })
+    // 漂移:record 直写成另一个 manifestDigest(图/claim 原样 —— package-managed 信号仍在)。
+    const up = upsertRecordV2(root, {
+      id: "skill:pdr",
+      name: "pdr",
+      kind: "skill",
+      environment: "prod",
+      scope: { kind: "global" },
+      version: fix.version,
+      manifestDigest: dg("manifest:drifted"),
+      payloadDigest: dg("payload:skill:pdr"),
+      desiredState: "disabled",
+      origin: "catalog",
+      installedAt: "2026-08-05T00:00:00.000Z",
+    })
+    expect(up.ok).toBe(true)
+    const allowBefore = fs.readFileSync(skillsEnabledPath(root), "utf8")
+    let resolveEntryCalls = 0
+    const en = await setInstallStateByKey(
+      { type: "skill", name: "pdr", scope: "global", state: "enabled" },
+      deps({
+        // 即使 legacy 表里躺着一条身份完全匹配的 entry,也必须拒绝且**不得咨询**它。
+        resolveEntry: async (id) => {
+          resolveEntryCalls++
+          const entry = {
+            id,
+            type: "skill",
+            name: "pdr",
+            displayName: "pdr",
+            description: "t",
+            source: "official",
+            category: "t",
+            version: fix.version,
+          } as unknown as CatalogEntry
+          return { entry, channel: "cache", catalogVersion: fix.version }
+        },
+        resolvePackage: foundStub(fix),
+      }),
+    )
+    expect(en.ok).toBe(false)
+    if (!en.ok) {
+      expect(en.code).toBe("curation-unverifiable")
+      expect(en.reason).toContain("does not match the install record")
+    }
+    expect(resolveEntryCalls).toBe(0)
+    expect(findRecordV2(root, "skill", "pdr")!.desiredState).toBe("disabled")
+    expect(fs.readFileSync(skillsEnabledPath(root), "utf8")).toBe(allowBefore)
+  })
+
+  test("componentId 漂移同样 exact 候选=0 fail-closed", async () => {
+    const fix = installPackageFixture({ packageId: "package:pkg-drift2", children: [{ kind: "skill", name: "pdr2" }] })
+    const up = upsertRecordV2(root, {
+      id: "skill:alt-pdr2", // 与图节点 componentId(skill:pdr2)不再相等
+      name: "pdr2",
+      kind: "skill",
+      environment: "prod",
+      scope: { kind: "global" },
+      version: fix.version,
+      manifestDigest: dg("manifest:skill:pdr2"),
+      payloadDigest: dg("payload:skill:pdr2"),
+      desiredState: "disabled",
+      origin: "catalog",
+      installedAt: "2026-08-05T00:00:00.000Z",
+    })
+    expect(up.ok).toBe(true)
+    const en = await setInstallStateByKey(
+      { type: "skill", name: "pdr2", scope: "global", state: "enabled" },
+      pkgDeps({ resolvePackage: foundStub(fix) }),
+    )
+    expect(en.ok).toBe(false)
+    if (!en.ok) {
+      expect(en.code).toBe("curation-unverifiable")
+      expect(en.reason).toContain("does not match the install record")
+    }
+    expect(findRecordV2(root, "skill", "pdr2")!.desiredState).toBe("disabled")
+  })
+})
+
+// ── `#817`:(packageId, version) 双键选择 —— 真 resolveVerifiedPackageV1 + 真 envelope ──────────
+
+const MV_PKG = "package:multi-ver"
+const MV_COMPONENT = "mcp:multi-ver-remote"
+/** 一份最小、decoder-stable 的合法 envelope(单 mcp-remote 组件;字段与宿主合同逐键canonical)。 */
+const mvEnvelope = (version: string) => ({
+  schema: "alpha.host-extension-package.v1",
+  prelude: { packageId: MV_PKG, version },
+  presentation: { displayName: "Multi Ver", description: "double-key selection corpus" },
+  root: MV_COMPONENT,
+  components: [
+    {
+      id: MV_COMPONENT,
+      required: true,
+      dependencies: [],
+      profileId: "mcp-remote",
+      profileVersion: 1,
+      capabilities: [],
+      payloadRef: {
+        sha256: hex(`payload:multi-ver:${version}`),
+        bytes: 64,
+        mediaType: "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
+        url: `https://alphacodeone.com/catalog/assets/mcp.multi-ver-remote/${version}/alpha-package/payload.json`,
+      },
+    },
+  ],
+  capabilities: [],
+})
+
+/** ext-ipc resolvePackage 的同形薄胶水:真 resolveVerifiedPackageV1 + channel 标注。 */
+const realResolveOver =
+  (catalog: unknown): SetStateDeps["resolvePackage"] =>
+  async (pid, ver) => {
+    const r = resolveVerifiedPackageV1(catalog, pid, ver)
+    return r.status === "found"
+      ? { status: "found", channel: "cache", identity: r.identity }
+      : r.status === "missing"
+        ? { status: "missing", channel: "cache", anyVersionPresent: r.anyVersionPresent }
+        : r
+  }
+
+describe("setInstallStateByKey(#817 双键精确选择,真 resolveVerifiedPackageV1)", () => {
+  test("同 packageId 多版本并存:已装 exact 版本是 packages[] **第二条**,仍选对并启用", async () => {
+    // 期望摘要从**测试自己的输入**推导(公开原语 canonicalJson/sha256Hex),不回读实现输出;
+    // 再与生产派生互证(两轴独立,口径分叉当场红)。
+    const v2 = mvEnvelope("2.0.0")
+    const expectedDigest = `sha256:${sha256Hex(canonicalJson(v2))}`
+    const produced = packageEnvelopeIdentityV1(v2)
+    expect(produced.ok && produced.identity.envelopeDigest).toBe(expectedDigest)
+
+    installPackageFixture({
+      packageId: MV_PKG,
+      version: "2.0.0",
+      envelopeDigest: expectedDigest,
+      children: [{ kind: "mcp", name: "multi-ver-remote", payloadDigest: `sha256:${hex("payload:multi-ver:2.0.0")}` }],
+    })
+    writeCfg({ mcp: { "multi-ver-remote": { type: "remote", url: "https://mcp.example.com/", enabled: false } } })
+    // exact 版本(2.0.0)刻意放在**第二条**;若实现按 packageId 单键 .find 会错拿 1.0.0 而拒。
+    const catalog = { version: "t", entries: [{}], packages: [mvEnvelope("1.0.0"), v2] }
+    const en = await setInstallStateByKey(
+      { type: "mcp", name: "multi-ver-remote", scope: "global", state: "enabled" },
+      pkgDeps({ resolvePackage: realResolveOver(catalog) }),
+    )
+    expect(en.ok).toBe(true)
+    expect(readCfg().mcp["multi-ver-remote"]).toEqual({ type: "remote", url: "https://mcp.example.com/" })
+    expect(findRecordV2(root, "mcp", "multi-ver-remote")!.desiredState).toBe("enabled")
+  })
+
+  test("已装 exact 版本不在 packages[](仅存其他版本)⇒ fail-closed,具名「不再发布」", async () => {
+    const v2 = mvEnvelope("2.0.0")
+    const expectedDigest = `sha256:${sha256Hex(canonicalJson(v2))}`
+    installPackageFixture({
+      packageId: MV_PKG,
+      version: "2.0.0",
+      envelopeDigest: expectedDigest,
+      children: [{ kind: "mcp", name: "multi-ver-remote", payloadDigest: `sha256:${hex("payload:multi-ver:2.0.0")}` }],
+    })
+    writeCfg({ mcp: { "multi-ver-remote": { type: "remote", url: "https://mcp.example.com/", enabled: false } } })
+    const catalog = { version: "t", entries: [{}], packages: [mvEnvelope("1.0.0")] } // exact 缺席
+    const en = await setInstallStateByKey(
+      { type: "mcp", name: "multi-ver-remote", scope: "global", state: "enabled" },
+      pkgDeps({ resolvePackage: realResolveOver(catalog) }),
+    )
+    expect(en.ok).toBe(false)
+    if (!en.ok) {
+      expect(en.code).toBe("curation-unverifiable")
+      expect(en.reason).toContain("no longer published")
+    }
+    expect(readCfg().mcp["multi-ver-remote"]).toEqual({ type: "remote", url: "https://mcp.example.com/", enabled: false })
+    expect(findRecordV2(root, "mcp", "multi-ver-remote")!.desiredState).toBe("disabled")
+  })
+})
+
+// ── `#817`:missing/delisted/security/catalog-unavailable/逐项 digest mismatch 负例矩阵 ─────────
+
+describe("setInstallStateByKey(#817 fail-closed 负例矩阵)", () => {
+  test("每一类失配都拒且理由具名;盘面与账本零变化", async () => {
+    const fix = installPackageFixture({ packageId: "package:pkg-neg", children: [{ kind: "mcp", name: "pneg" }] })
+    writeCfg({ mcp: { pneg: { type: "remote", url: "https://x.example/", enabled: false } } })
+    const cases: Array<{ label: string; rp: SetStateDeps["resolvePackage"]; needle: string }> = [
+      {
+        label: "delisted",
+        rp: async () => ({ status: "missing", channel: "cache", anyVersionPresent: false }),
+        needle: "delisted",
+      },
+      {
+        label: "version-gone",
+        rp: async () => ({ status: "missing", channel: "cache", anyVersionPresent: true }),
+        needle: "no longer published",
+      },
+      {
+        label: "catalog-unavailable(bundled 无 packages)",
+        rp: async () => ({ status: "missing", channel: "bundled", anyVersionPresent: false }),
+        needle: "bundled snapshot carries no signed packages",
+      },
+      {
+        label: "security browse-only",
+        rp: async () => ({ status: "refused", reason: "verified catalog is in security-failure state (browse-only)" }),
+        needle: "security-failure",
+      },
+      {
+        label: "envelope digest mismatch",
+        rp: foundStub(fix, (identity) => ({ ...identity, envelopeDigest: dg("other-envelope") })),
+        needle: "content does not match the installed package",
+      },
+      {
+        label: "component 缺席",
+        rp: foundStub(fix, (identity) => ({ ...identity, components: [] })),
+        needle: "is not part of verified catalog package",
+      },
+      {
+        label: "payload digest mismatch",
+        rp: foundStub(fix, (identity) => ({
+          ...identity,
+          components: identity.components.map((c) => ({ ...c, payloadSha256: hex("evil") })),
+        })),
+        needle: "payload digest does not match",
+      },
+    ]
+    for (const c of cases) {
+      const en = await setInstallStateByKey(
+        { type: "mcp", name: "pneg", scope: "global", state: "enabled" },
+        pkgDeps({ resolvePackage: c.rp }),
+      )
+      expect(en.ok).toBe(false)
+      if (!en.ok) {
+        expect(en.code).toBe("curation-unverifiable")
+        expect(en.reason).toContain(c.needle)
+      }
+      expect(findRecordV2(root, "mcp", "pneg")!.desiredState).toBe("disabled")
+      expect(readCfg().mcp.pneg).toEqual({ type: "remote", url: "https://x.example/", enabled: false })
+    }
+  })
+})
+
+// ── `#817`:跨包共有 child(准入期允许的 canonical permutation)边界 ───────────────────────────
+
+describe("setInstallStateByKey(#817 共有 child 存在量词)", () => {
+  test("两包共有同一 child:经后写者包全匹配启用;两包都解析不到 ⇒ fail-closed", async () => {
+    const shared: PkgChildSpec = { kind: "skill", name: "shx" }
+    const a = installPackageFixture({ packageId: "package:pkg-a", version: "1.0.0", children: [{ kind: "agent", name: "ra" }, shared] })
+    const b = installPackageFixture({ packageId: "package:pkg-b", version: "2.0.0", children: [{ kind: "agent", name: "rb" }, shared] })
+    // record.version = 后写者(B)—— 生产 upsert 語义(package-admission 同款)。
+    expect(findRecordV2(root, "skill", "shx")!.version).toBe("2.0.0")
+    // 存在量词:候选 = {A 图, B 图};A@2.0.0 missing、B@2.0.0 全匹配 ⇒ 放行(与遍历顺序无关)。
+    const viaB: SetStateDeps["resolvePackage"] = async (pid, ver) =>
+      pid === b.packageId ? foundStub(b)(pid, ver) : { status: "missing", channel: "cache", anyVersionPresent: pid === a.packageId }
+    const en = await setInstallStateByKey({ type: "skill", name: "shx", scope: "global", state: "enabled" }, pkgDeps({ resolvePackage: viaB }))
+    expect(en.ok).toBe(true)
+    expect(readAllowSet()).toEqual({ v: 1, keys: ["skill--shx"] })
+    // 反向(登记的设计内 fail-closed 边):后写者 B 下架,A 仍在但版本对不上 record ⇒ 全部候选失败 ⇒ 拒。
+    const dis = await setInstallStateByKey({ type: "skill", name: "shx", scope: "global", state: "disabled" }, deps())
+    expect(dis.ok).toBe(true)
+    const neitherResolves: SetStateDeps["resolvePackage"] = async (pid) => ({
+      status: "missing",
+      channel: "cache",
+      anyVersionPresent: pid === a.packageId, // A 有别的版本在架,B 整包下架
+    })
+    const refused = await setInstallStateByKey(
+      { type: "skill", name: "shx", scope: "global", state: "enabled" },
+      pkgDeps({ resolvePackage: neitherResolves }),
+    )
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) {
+      expect(refused.code).toBe("curation-unverifiable")
+      expect(refused.reason).toContain("update or reinstall")
+    }
+    expect(readAllowSet()).toEqual({ v: 1, keys: [] })
+    expect(findRecordV2(root, "skill", "shx")!.desiredState).toBe("disabled")
+  })
+})
+
+// ── `#817` 收尾(Codex 二审②):bundle-claim-only 分类信号的 bypass pin ─────────────────────────
+
+describe("setInstallStateByKey(#817 claim-only package 信号)", () => {
+  test("claim 挂真实 bundle owner 而 graph 不命名该 child ⇒ 仍判 package-managed、候选=0 fail-closed;resolveEntry 零调用", async () => {
+    // validateV3State 只保证 bundle owner 对应**某张**图,不反向要求那张图命名这个 child ——
+    // 所以「claim 复用别的 package 的 owner、图不含 target」是一个读侧合法状态。构造:
+    // ① 装一个真 package(graph A,root agent:ra);② 直写一条 standalone catalog record skill:solo;
+    // ③ 手写账本给 skill:solo 的 claim 挂上 A 的 bundle owner(graph A 不含 skill:solo)。
+    const a = installPackageFixture({ packageId: "package:claim-only", children: [{ kind: "agent", name: "ra" }] })
+    const up = upsertRecordV2(root, {
+      id: "skill:solo",
+      name: "solo",
+      kind: "skill",
+      environment: "prod",
+      scope: { kind: "global" },
+      version: "1.0.0",
+      manifestDigest: dg("manifest:skill:solo"),
+      payloadDigest: dg("payload:skill:solo"),
+      desiredState: "disabled",
+      origin: "catalog",
+      installedAt: "2026-08-05T00:00:00.000Z",
+    })
+    expect(up.ok).toBe(true)
+    const ledgerFile = path.join(root, "installs.json")
+    const ledger = JSON.parse(fs.readFileSync(ledgerFile, "utf8")) as { claims: Array<{ kind: string; name: string; owners: string[] }> }
+    // upsertRecordV2 已为 skill:solo 挂了 standalone claim —— 把 A 的 bundle owner **并进**它的
+    // owners(新建同 key claim 会撞 validateV3State 的 duplicate-claim 闸)。
+    const soloClaim = ledger.claims.find((c) => c.kind === "skill" && c.name === "solo")!
+    soloClaim.owners = [...soloClaim.owners, bundleOwner(a.packageId, a.graph.root.manifestDigest)].sort()
+    fs.writeFileSync(ledgerFile, JSON.stringify(ledger, null, 2) + "\n")
+    // 状态对读侧合法(readPackageLedgerStateV1 会跑 validateV3State;非法即 enable 直接换一种拒因,
+    // 本用例断言的是**分类信号**那一种)。
+    const allowBefore = fs.readFileSync(skillsEnabledPath(root), "utf8")
+    const cfgBefore = fs.existsSync(path.join(root, "alpha.jsonc")) ? fs.readFileSync(path.join(root, "alpha.jsonc"), "utf8") : null
+    let resolveEntryCalls = 0
+    const en = await setInstallStateByKey(
+      { type: "skill", name: "solo", scope: "global", state: "enabled" },
+      deps({
+        // 即使 legacy 表里躺着一条身份完全匹配的 entry:claim 信号必须把它挡在门外(零调用)。
+        // 删掉 packageManagedFactsFor 的 claimHasBundleOwner 分支 ⇒ 本 stub 被咨询并放行 ⇒ 本用例红。
+        resolveEntry: async (id) => {
+          resolveEntryCalls++
+          const entry = {
+            id,
+            type: "skill",
+            name: "solo",
+            displayName: "solo",
+            description: "t",
+            source: "official",
+            category: "t",
+            version: "1.0.0",
+          } as unknown as CatalogEntry
+          return { entry, channel: "cache", catalogVersion: "1.0.0" }
+        },
+        resolvePackage: foundStub(a),
+      }),
+    )
+    expect(en.ok).toBe(false)
+    if (!en.ok) {
+      expect(en.code).toBe("curation-unverifiable")
+      expect(en.reason).toContain("does not match the install record")
+    }
+    expect(resolveEntryCalls).toBe(0)
+    expect(findRecordV2(root, "skill", "solo")!.desiredState).toBe("disabled")
+    expect(fs.readFileSync(skillsEnabledPath(root), "utf8")).toBe(allowBefore)
+    const cfgAfter = fs.existsSync(path.join(root, "alpha.jsonc")) ? fs.readFileSync(path.join(root, "alpha.jsonc"), "utf8") : null
+    expect(cfgAfter).toBe(cfgBefore)
+  })
 })

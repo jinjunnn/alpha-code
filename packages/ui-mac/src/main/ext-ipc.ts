@@ -73,7 +73,7 @@ import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
 import { releaseAlphaConnectionBindingsV1 } from "./alpha-connection-store"
 import { recoverExtensionTransactions, recoverExtensionTransactionsInHeldLock, recoveryClean, type RecoverOptions } from "./ext-transaction"
 import { getLogger } from "./logging"
-import { runCatalogInstallWithPackagePreflight } from "./package-installability"
+import { resolveVerifiedPackageV1, runCatalogInstallWithPackagePreflight } from "./package-installability"
 import { createPackageAdmissionCoordinator } from "./package-admission"
 
 // REQ-076 T2(阻断②):原实现硬编码 `which` + `:` 拼接的 unix PATH,Windows 上恒报「未安装」
@@ -817,13 +817,15 @@ export function registerExtIpcHandlers(
 
   const plannerDeps = (): PlannerDeps => {
     // 每次调用解析一次 effective catalog(bundle 会对逐子条目调 resolveEntry —— 不重复打网络)。
-    let effective: Promise<{ entries: Catalog["entries"]; channel: "remote" | "cache" | "bundled"; version: string }> | null = null
+    // `#817`:raw 随行保留 —— 签名 package child 启停要从**同一份**已验 catalog 的 `packages[]`
+    // 解析(bundled 快照不带 packages 键,离线无缓存时 package 解析诚实落 missing)。
+    let effective: Promise<{ entries: Catalog["entries"]; raw: unknown; channel: "remote" | "cache" | "bundled"; version: string }> | null = null
     const effectiveCatalog = () =>
       (effective ??= (async () => {
         const rc = await refreshRemoteCatalog(userDataPath, registryChannel)
         if (rc.source !== "none") {
           const cat = rc.catalog as Catalog
-          return { entries: cat.entries ?? [], channel: rc.source, version: String(cat.version ?? rc.version) }
+          return { entries: cat.entries ?? [], raw: rc.catalog as unknown, channel: rc.source, version: String(cat.version ?? rc.version) }
         }
         // #314/#315:security 类失败落到 bundled 只用于**浏览**;激活解析拒绝(review B2)。
         if (rc.reasonClass === "security") {
@@ -831,7 +833,7 @@ export function registerExtIpcHandlers(
           console.error(`[ext-ipc] catalog SECURITY failure (${rc.error}) — bundled catalog is browse-only; activation resolution REFUSED`)
         }
         const bundled = bundledCatalogJson as unknown as Catalog
-        return { entries: bundled.entries, channel: "bundled" as const, version: bundled.version }
+        return { entries: bundled.entries, raw: bundledCatalogJson as unknown, channel: "bundled" as const, version: bundled.version }
       })())
     // #315(review B1):advisory 视图**懒冻结** —— 首次取用发生在 resolveEntry 的 await
     // 刷新(可能持久化更新公示)之后,保证本操作用的是刷新后的视图;冻结后 bundle fan-out
@@ -851,6 +853,22 @@ export function registerExtIpcHandlers(
         }
         const entry = cat.entries.find((e) => e.id === catalogId)
         return entry ? { entry, channel: cat.channel, catalogVersion: cat.version } : null
+      },
+      // `#817`:签名 package child 启停的解析面 —— 同一份 effective catalog 的 `packages[]`,
+      // **(packageId, version) 双键**精确选择(resolveVerifiedPackageV1;同 packageId 多版本可
+      // 合法并存,单键 .find 会错拿版本)。security browse-only 与 entries 同语义:整体拒绝。
+      resolvePackage: async (packageId, version) => {
+        const cat = await effectiveCatalog()
+        if (securityBlocked) {
+          console.error(`[ext-ipc] resolvePackage(${packageId}@${version}) refused: catalog in security-failure state (browse-only)`)
+          return { status: "refused", reason: "verified catalog is in security-failure state (browse-only)" }
+        }
+        const resolved = resolveVerifiedPackageV1(cat.raw, packageId, version)
+        return resolved.status === "found"
+          ? { status: "found", channel: cat.channel, identity: resolved.identity }
+          : resolved.status === "missing"
+            ? { status: "missing", channel: cat.channel, anyVersionPresent: resolved.anyVersionPresent }
+            : resolved
       },
       environment: () => getAlphaEnvironment().environment,
       platform: () => process.platform,
