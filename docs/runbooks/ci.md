@@ -114,6 +114,14 @@ bash scripts/alpha-check.sh
 
 `.githooks/pre-push` = 跑 `scripts/alpha-check.sh`(覆盖 alpha-ci 全部 12 个代码步,末尾自陈对照表)。**默认开启**:`alpha-check.sh` 每次运行都会幂等重挂 `git config core.hooksPath .githooks`。
 
+`#815` 起,钩子会先保存当前工作树根,再按 `git rev-parse --local-env-vars` 的**Git 自有清单**
+清掉全部 repository-local `GIT_*` 变量,最后才启动 `alpha-check`。这是被测对象完整性边界:
+linked worktree 的 `git push` 会把 `GIT_DIR` 注入钩子,而它压过测试夹具的 cwd 与 `git -C`；不清理时,
+夹具本想写临时仓的空提交、`Test <test@opencode.test>` 与 `core.bare` 会落进正在推送的分支和
+所有 worktree 共享的 `.git/config`。清单不手写,因为 Git 新增一个 repository-local 变量时枚举会
+默认放行。`pre-push-git-env.test.ts` 在隔离的 linked worktree 里真 push 五次,同时钉住反向污染与
+shipped hook 的 HEAD/config 零变化。
+
 为什么不能用上游 husky 门(此前「配置过又失效」的根因,REQ-015):
 - `.husky/pre-push` 跑**全量** `bun turbo typecheck`,在 ADR-020 冻结偏斜下 `session-ui` 恒红(上游叶子包,alpha 不 ship,权威门 alpha-ci 不含)→ 逼出 `--no-verify` 习惯;
 - husky 的 `prepare` 在每次 `bun install` 后把 `core.hooksPath` 重置回 `.husky/_` → 手动 `git config` 一次性开启会被静默冲掉。alpha-check 的自愈重挂即对策;残余窗口(install 后、首次 alpha-check 前直接 push)会撞上游红门 → 跑一次 alpha-check 即恢复,**永不劣于旧状**。
