@@ -152,6 +152,16 @@ describe("闸门文件登记簿完备性 (#647)", () => {
     expect(missing, `登记簿指向不存在的测试文件:${missing.join(", ")}`).toEqual([])
   })
 
+  test("登记簿里的 (workdir,path) 必须唯一(--update 不得同时改写重复行)", () => {
+    const seen = new Set<string>()
+    const duplicates = REGISTERED.filter((path) => {
+      if (seen.has(path)) return true
+      seen.add(path)
+      return false
+    })
+    expect(duplicates, `登记簿存在重复路径:${duplicates.join(", ")}`).toEqual([])
+  })
+
   test("NOT_GATES 里的每个文件都真的存在且真的命中命名词", () => {
     for (const path of Object.keys(NOT_GATES)) {
       expect(ALL_TESTS, `NOT_GATES 登记了不存在的文件:${path}`).toContain(path)
