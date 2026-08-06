@@ -97,3 +97,19 @@ iteration `2026-W32`, and linked as a native sub-issue of #528 or #529. Thus
 #536 has met its verification exit condition (matrix + evidence + bug routing),
 while the parent product requirements correctly remain open until those bugs
 pass their own packaged gates.
+
+## #857 candidate verification (not yet packaged-complete)
+
+The #857 candidate makes the V2 `model.list` consumer wait for the local-only
+`core/catalog-ready` marker before reading `catalog.model.available()`. The marker
+is registered after the built-in config-provider and variant transforms, so the
+first read and stable hot read observe the same committed catalog. It does not
+wait for account summary, a platform bearer, or any account network request.
+
+The deterministic regression test supplies an observable ungoverned catalog
+before the marker, proves that bypassing the marker returns that control value,
+then proves both the first production read and the hot read return the governed
+set in strict `wait → read` order. This is code-level candidate evidence only;
+the issue remains open and the ≤2 s claim remains unmade until a quiescent
+desktop window is approved and the packaged logged-out/BYOK five-sample matrix
+passes.

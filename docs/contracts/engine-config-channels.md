@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-23
+last_reviewed: 2026-08-06
 review_after: 2026-10-23
 ---
 
@@ -16,13 +16,13 @@ review_after: 2026-10-23
 
 ## 两代配置面的地面真相
 
-| | v1(`packages/opencode/src/config/`) | v2(`packages/core/src/config.ts`) |
-| --- | --- | --- |
-| 读取来源 | `OPENCODE_CONFIG_CONTENT` env(merge 序最后)、`OPENCODE_CONFIG` 指向的文件(alpha.jsonc)、`Global.Path.config` 静态目录 | **只读文件**:`OPENCODE_CONFIG_DIR ?? ~/.config/opencode` 目录下的 `opencode.json` + `opencode.jsonc`(json 先、jsonc 后,后者压前者)+ 项目/`.opencode` 发现 |
-| 变量解析 | `{file:}` / `{env:}`(`config/variable.ts`) | **无** —— 密钥引用原样成字面量 |
-| v1 形态兼容 | 原生 | `isV1 → ConfigV1 decode → migrate → v2 decode`;**解码失败 = 整文件静默丢弃** |
-| 主要消费面 | 推理(session prompt → v1 `Provider.Service`)、权限 deny、MCP、plugin、disabled 主权覆盖 | `/api/model` catalog(模型选择器 list)、`v2.session.switchModel/get` |
-| `OPENCODE_CONFIG_DIR` 影响 | 仅跳过默认 schema stub 落盘;全局读取仍走静态路径 | **决定唯一全局配置目录**(也影响 v2 的 `AGENTS.md` 全局查找) |
+|                            | v1(`packages/opencode/src/config/`)                                                                                   | v2(`packages/core/src/config.ts`)                                                                                                                         |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 读取来源                   | `OPENCODE_CONFIG_CONTENT` env(merge 序最后)、`OPENCODE_CONFIG` 指向的文件(alpha.jsonc)、`Global.Path.config` 静态目录 | **只读文件**:`OPENCODE_CONFIG_DIR ?? ~/.config/opencode` 目录下的 `opencode.json` + `opencode.jsonc`(json 先、jsonc 后,后者压前者)+ 项目/`.opencode` 发现 |
+| 变量解析                   | `{file:}` / `{env:}`(`config/variable.ts`)                                                                            | **无** —— 密钥引用原样成字面量                                                                                                                            |
+| v1 形态兼容                | 原生                                                                                                                  | `isV1 → ConfigV1 decode → migrate → v2 decode`;**解码失败 = 整文件静默丢弃**                                                                              |
+| 主要消费面                 | 推理(session prompt → v1 `Provider.Service`)、权限 deny、MCP、plugin、disabled 主权覆盖                               | `/api/model` catalog(模型选择器 list)、`v2.session.switchModel/get`                                                                                       |
+| `OPENCODE_CONFIG_DIR` 影响 | 仅跳过默认 schema stub 落盘;全局读取仍走静态路径                                                                      | **决定唯一全局配置目录**(也影响 v2 的 `AGENTS.md` 全局查找)                                                                                               |
 
 关键不对称:v2 **不读** `OPENCODE_CONFIG_CONTENT` 与 `OPENCODE_CONFIG`——alpha
 经典的两条注入通道对 v2 完全不可见。
@@ -47,6 +47,12 @@ import 是 bun 未实现的 `node:module` registerHooks,顶层还有 `getParentP
      目录读模型,丢 v2 = alpha/BYOK 模型全灰(票面事故症状),不是可忽略的局部降级
      —— 桥内不设 catch,抛错经 `injectAlphaConfig` 外层 catch 以 `{ok:false}` 上报。
      桥排在 v1 env 写出**之后**,抛错不撤销已就位的 v1 注入(顺序由反向闸门锁死)。
+
+v2 catalog 的配置文件就位不等于内存 catalog 已经收敛。`PluginInternal` 在后台依次装载
+models.dev、provider、用户配置与 variant transform;中途读取曾把 6,132 行 models.dev
+过渡态序列化给首屏,而同进程热路径只有 37 行(#857)。`/api/model` 因此必须先等待内部最后
+注册的 `core/catalog-ready` marker,再调用 `catalog.model.available()`。这道 barrier 只等待本地
+插件初始化,不读取 account summary、平台 bearer 或远端账户状态;登出/BYOK 目录仍与账户链并行。
 
 同一次 fork 内同源产出,两投影无漂移面。推理密钥只存在于 v1 通道。
 
@@ -79,6 +85,9 @@ import 是 bun 未实现的 `node:module` registerHooks,顶层还有 `getParentP
   `test-component/alpha-composer-model.cases.ts`(renderer 区分,变异实跑已红)。
 - **v2 文件必须能通过 `isV1 → migrate → decode` 链**:v2 解码失败是静默整文件
   丢弃,新增键前先以真实链验证(参照 2026-07-23 探针方法)。
+- **v2 `model.list` 不得读取内部插件批次的中间态**:#857 以
+  `packages/server/src/handlers/model.test.ts` 锁住 `wait(core/catalog-ready) → read` 顺序、首读与
+  热读集合相等,并先证明绕过 barrier 时替身确实暴露未治理集合。barrier 不得换成账户或网络门。
 - **密钥不落 v2 文件**:v2 无解析机制,写入即明文。
 
 ## 事故记录与收敛
