@@ -1,4 +1,5 @@
-// `#826` —— 真实 Claude 插件语料的**规模普查闸**(ADR-040 「Bundle 是唯一形态」的地基数字)。
+// `#826` / `#848` —— 真实 Claude 插件语料的**规模与字节保真闸**
+// (ADR-040 「Bundle 是唯一形态」的地基数字)。
 //
 // 这道闸守两件事,少一件另一件就没有意义:
 //
@@ -28,6 +29,7 @@ import path from "node:path"
 import { afterAll, describe, expect, test } from "bun:test"
 
 import { loadCorpusFixture, materializeCorpus, pluginRootsIn } from "../../test-component/claude-plugin-corpus.fixture"
+import { agentMdToEntry } from "./agent-md-entry"
 
 const corpus = materializeCorpus()
 afterAll(corpus.cleanup)
@@ -354,21 +356,41 @@ describe("G6 语料的保真档位:谁逐字、谁只剩 size/mode", () => {
   const verbatim = fixture.entries.filter((e) => "text" in e)
   const placeholder = fixture.entries.filter((e) => !("text" in e))
 
-  test("逐字白名单**恰好**是三个文件名,条数逐个点名", () => {
-    const byName = new Map<string, number>()
+  test("逐字白名单恰好是三个固定文件名 + plugin-level agent + marketplace 根 LICENSE,条数逐类点名", () => {
+    const pluginRoots = fixture.entries
+      .filter((e) => e.path.endsWith("/.claude-plugin/plugin.json"))
+      .map((e) => e.path.slice(0, -"/.claude-plugin/plugin.json".length))
+    const byClass = new Map<string, number>()
+    const unknown: string[] = []
     for (const e of verbatim) {
       const base = e.path.split("/").pop()!
-      byName.set(base, (byName.get(base) ?? 0) + 1)
+      const cls =
+        base === ".mcp.json"
+          ? ".mcp.json"
+          : base === "SKILL.md"
+            ? "SKILL.md"
+            : base === "plugin.json"
+              ? "plugin.json"
+              : pluginRoots.some((root) => e.path.startsWith(`${root}/agents/`) && e.path.endsWith(".md"))
+                ? "plugin-level agents/**/*.md"
+                : e.path.split("/").length === 2 && /^LICENSE/.test(base)
+                  ? "marketplace root LICENSE*"
+                  : undefined
+      if (!cls) unknown.push(e.path)
+      else byClass.set(cls, (byClass.get(cls) ?? 0) + 1)
     }
-    expect([...byName.entries()].sort()).toEqual([
+    expect(unknown).toEqual([])
+    expect([...byClass.entries()].sort()).toEqual([
       [".mcp.json", 22],
       ["SKILL.md", 162],
+      ["marketplace root LICENSE*", 3],
+      ["plugin-level agents/**/*.md", 43],
       ["plugin.json", 62],
     ])
-    expect(verbatim.length).toBe(246)
+    expect(verbatim.length).toBe(292)
   })
 
-  test("被降级成 size/mode 的 642 条,按扩展名逐类点名(新增一类而没人复核即红)", () => {
+  test("被降级成 size/mode 的 596 条,按扩展名逐类点名(新增一类而没人复核即红)", () => {
     const ext = (p: string): string => {
       const base = p.split("/").pop()!
       if (base.startsWith(".") && base.split(".").length === 2) return base
@@ -378,7 +400,7 @@ describe("G6 语料的保真档位:谁逐字、谁只剩 size/mode", () => {
     const hist = new Map<string, number>()
     for (const e of placeholder) hist.set(ext(e.path), (hist.get(ext(e.path)) ?? 0) + 1)
     expect([...hist.entries()].sort()).toEqual([
-      ["", 54],
+      ["", 51],
       [".example", 1],
       [".gcs-sha", 1],
       [".gitignore", 5],
@@ -387,7 +409,7 @@ describe("G6 语料的保真档位:谁逐字、谁只剩 size/mode", () => {
       [".js", 7],
       [".json", 38],
       [".lock", 4],
-      [".md", 352],
+      [".md", 309],
       [".mjs", 33],
       [".npmrc", 4],
       [".png", 4],
@@ -399,7 +421,7 @@ describe("G6 语料的保真档位:谁逐字、谁只剩 size/mode", () => {
       [".yaml", 40],
       [".yml", 4],
     ])
-    expect(placeholder.length).toBe(642)
+    expect(placeholder.length).toBe(596)
   })
 
   // 「size 忠实、content 已知假」不是一句自我介绍,是两条可执行的断言。
@@ -415,7 +437,7 @@ describe("G6 语料的保真档位:谁逐字、谁只剩 size/mode", () => {
     }
     expect(sizeMismatch).toEqual([])
     expect(notFiller).toEqual([])
-    expect(placeholder.reduce((n, e) => n + (e as { size: number }).size, 0)).toBe(6577137)
+    expect(placeholder.reduce((n, e) => n + (e as { size: number }).size, 0)).toBe(6374353)
   })
 
   // 生成器抬头声明「.git / node_modules / __pycache__ 在技能目录内 0 命中」,
@@ -436,5 +458,54 @@ describe("G6 语料的保真档位:谁逐字、谁只剩 size/mode", () => {
     walk(corpus.root)
     expect(symlinks).toEqual([])
     expect(skipped).toEqual([])
+  })
+})
+
+describe("G7 `#848`:plugin-level agent 是真实字节,不是 size/mode 占位档", () => {
+  const fixture = loadCorpusFixture()
+  const pluginRoots = fixture.entries
+    .filter((e) => e.path.endsWith("/.claude-plugin/plugin.json"))
+    .map((e) => e.path.slice(0, -"/.claude-plugin/plugin.json".length))
+  const agentEntries = fixture.entries
+    .filter((e) => pluginRoots.some((root) => e.path.startsWith(`${root}/agents/`) && e.path.endsWith(".md")))
+    .sort((a, b) => (a.path < b.path ? -1 : 1))
+  const agentTextEntries = agentEntries.filter((e): e is typeof e & { text: string } => "text" in e)
+
+  test("43 份 agent 合计 169124 字节,且每一份都携带 text", () => {
+    expect(agentEntries.length).toBe(43)
+    expect(agentTextEntries.length).toBe(43)
+    expect(agentTextEntries.reduce((n, e) => n + Buffer.byteLength(e.text), 0)).toBe(169124)
+  })
+
+  test("43 份 agent 的路径+逐文件 sha256 聚合值等于独立真实语料轴", () => {
+    expect(agentTextEntries.length).toBe(43)
+    const lines = agentTextEntries.map((e) => {
+      return `${e.path}\u0000${crypto.createHash("sha256").update(e.text).digest("hex")}`
+    })
+    expect(crypto.createHash("sha256").update(lines.join("\n")).digest("hex")).toBe(
+      "fa30d60c7e60a8c1789d457da6f50627b67d6b3725e4e0d31369ba7b84d433f6",
+    )
+  })
+
+  test("摊开的目录树仍逐字可读,没有退回全 `a` 填充", () => {
+    expect(agentTextEntries.length).toBe(43)
+    const filler: string[] = []
+    for (const entry of agentTextEntries) {
+      const buf = fs.readFileSync(path.join(corpus.root, entry.path))
+      if (buf.length > 0 && buf.every((b) => b === 0x61)) filler.push(entry.path)
+      expect(buf.equals(Buffer.from(entry.text, "utf8"))).toBe(true)
+    }
+    expect(filler).toEqual([])
+  })
+
+  test("生产 agentMdToEntry 独立复算:9/43 通过;tools 23、effort 7、块式 frontmatter 4 被拒", () => {
+    expect(agentTextEntries.length).toBe(43)
+    const results = agentTextEntries.map((e) => agentMdToEntry(e.text))
+    const reasons = results.filter((r) => !r.ok).map((r) => r.reason)
+    expect(results.filter((r) => r.ok).length).toBe(9)
+    expect(reasons.filter((r) => r === "unsupported frontmatter key: tools").length).toBe(23)
+    expect(reasons.filter((r) => r === "unsupported frontmatter key: effort").length).toBe(7)
+    expect(reasons.filter((r) => r.startsWith("unexpected indentation at frontmatter line:")).length).toBe(4)
+    expect(reasons.length).toBe(34)
   })
 })
