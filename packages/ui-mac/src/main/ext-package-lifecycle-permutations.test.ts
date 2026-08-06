@@ -168,6 +168,10 @@ function installers(calls: Calls, opts?: { failFsFor?: string }): PackageArtifac
       calls.push(`removeMcpConfig:${name}`)
       return { ok: true as const }
     },
+    removeCommandConfig: (name) => {
+      calls.push(`removeCommandConfig:${name}`)
+      return { ok: true as const }
+    },
     removeMcpSecretsStrict: (name) => {
       calls.push(`removeMcpSecretsStrict:${name}`)
       return { ok: true as const }
@@ -392,9 +396,10 @@ describe("REQ-128 #698 —— 顺序与故障", () => {
     expect(findRecordV2(root, "skill", "a-only")).toBeNull()
   })
 
-  // `#809`:`plugin` 从「不认识的 kind」变成了**认识的 kind**(managed plugin 的卸载臂)。
-  // 负例因此必须换成一个真的没有清除接缝的 kind —— `command` 是合法的 `InstallReceiptType`
-  // 且不在 `packageChildKindV1` 的表里,正是「package 通道装不出来、也就没接缝」的那一格。
+  // `#809`:`plugin` 从「不认识的 kind」变成了**认识的 kind**(managed plugin 的卸载臂);
+  // `#840` 之后 `command` 同样有了卸载臂。负例因此必须换成一个真的没有清除接缝的 kind ——
+  // `cloud` 是合法的 `InstallReceiptType` 且不在 `packageChildKindV1` 的表里,正是
+  // 「package 通道装不出来、也就没接缝」的那一格。
   // 拿一个已经有接缝的 kind 当负例,是负向覆盖**数量够了但轴不对**:错误实现照样全绿。
   test("不认识的 child kind ⇒ 实物阶段响亮拒绝(不静默跳过)", () => {
     const calls: Calls = []
@@ -402,7 +407,7 @@ describe("REQ-128 #698 —— 顺序与故障", () => {
       root,
       [
         { kind: "skill", name: "a-only" },
-        { kind: "command", name: "not-a-package-child" }, // 违规项不放第一个
+        { kind: "cloud", name: "not-a-package-child" }, // 违规项不放第一个
       ],
       installers(calls),
     )

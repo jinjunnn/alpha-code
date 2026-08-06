@@ -272,8 +272,12 @@ export async function evaluatePackageForHost(
 
   for (const entry of supported) {
     const name = entry.component.id.slice(entry.component.id.indexOf(":") + 1)
+    // `#840`:command 同闸 —— 名字进 `ext-store/command--<name>/grants.json` 路径与引擎
+    // config record 键,必须 fs-safe。
     if (
-      (entry.component.profileId === "skill" || entry.component.profileId === "agent") &&
+      (entry.component.profileId === "skill" ||
+        entry.component.profileId === "agent" ||
+        entry.component.profileId === "command") &&
       !isExtensionName(name)
     )
       return refuse("package-invalid")

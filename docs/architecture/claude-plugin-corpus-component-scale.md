@@ -6,6 +6,11 @@ ADR-040 把 **Bundle** 定成扩展安装的唯一形状,于是「一个真实�
 
 > 散文断言不算勘破。下面每个数都能用两条互相独立的路径复算,方法写在 §6。
 
+> **口径状态（`#840`，2026-08-05）**：本文的数字冻结在 command profile 落地之前，
+> 所以 221、13、0/62 都是“四-profile 基线”，不是当前五-profile 总量。`#840` 已让
+> `command` 成为合法的第五 profile；`#848` 负责用钉死语料重算并发布包含 command 的
+> 新数字。在那一跳完成前，本文不得被引用为当前 bundle 容量证明。
+
 ## 1. 先说结论
 
 | 问题 | 答案 |
@@ -22,7 +27,7 @@ ADR-040 把 **Bundle** 定成扩展安装的唯一形状,于是「一个真实�
 
 ## 2. 口径(v1)—— 这是本文最重要的一节
 
-**今天合法的 profile 只有四个**:`skill` / `agent` / `mcp-local` / `mcp-remote`
+**测量基线的合法 profile 只有四个**:`skill` / `agent` / `mcp-local` / `mcp-remote`
 (见 `packages/ui-mac/src/shared/host-extension-package-contract/profiles/`)。
 组件数**只数这四个**:
 
@@ -35,11 +40,11 @@ ADR-040 把 **Bundle** 定成扩展安装的唯一形状,于是「一个真实�
 
 **一个 `.mcp.json` 里的每个 server 各算一个组件**,不是整份算一个。
 
-**故意不计入**(今天没有任何 profile 描述得了它们):
+**基线故意不计入**（`command` 已在 `#840` 落地，所以下表第一行不再是当前态）：
 
 | 种类 | 实测规模 | 为什么不计入 |
 | --- | --- | --- |
-| `commands/**` | 22 个插件 / 100 个文件 | 没有 profile。把它算进组件数,会得出一个**没有对应现实**的数 |
+| `commands/**` | 22 个插件 / 100 个文件 | 测量时没有 profile；`#840` 后须由 `#848` 按钉死语料重算，不能直接把 100 加进旧总数 |
 | `hooks/**` | 12 个插件 / 31 个文件 | 引擎里根本不存在这个概念 |
 | 非标准布局的 `SKILL.md` | 1 个(`.claude/skills/verify/SKILL.md`) | 不在 `skills/<名字>/` 下,本地 intake 也把它当不支持布局具名拒绝 |
 
@@ -214,10 +219,11 @@ servers = doc["mcpServers"] if isinstance(doc.get("mcpServers"), dict) else doc
 | `claude-plugins-official/plugins/ralph-loop` | 0 | 0 | 0 | 0 | **0** | 3 | 2 | 5 |
 | `claude-plugins-official/plugins/security-guidance` | 0 | 0 | 0 | 0 | **0** | 0 | 12 | 12 |
 
-**8 个插件今天是 0 个组件** —— 它们不含任何四个合法 profile 描述得了的东西:
+**四-profile 基线下有 8 个插件是 0 个组件** —— 它们不含任何当时四个合法 profile 描述得了的东西:
 七个只有 `commands` 和/或 `hooks`,第八个(`claude-for-msft-365-install`)是 8 个 command
 加一个**非标准布局**的 `.claude/skills/verify/SKILL.md`。
-按 ADR-040,它们今天**打不成任何 Bundle**;而信封要求组件数 ≥ 1。
+在测量基线里它们**打不成任何 Bundle**；`#840` 后 command-only 插件已不再天然为零，
+但准确的新组件数只能由 `#848` 的同一份钉死语料重算，不能用旧表外推。
 
 ## 8. 语料的边界与漂移
 

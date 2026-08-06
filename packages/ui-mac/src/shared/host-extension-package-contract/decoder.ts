@@ -103,6 +103,30 @@ export type AgentPayloadV1 = {
   behavior: { targetDir: "alpha-agents" | "global"; asset: MarkdownAssetRefV1 }
 }
 
+/**
+ * `#840`:command 的载荷。`template` 是**内容寻址 markdown asset**,不是 inline 字符串 ——
+ * 这不是偏好而是被真实语料与既有界共同强迫的:payload 里每个 string 受
+ * `maxStringBytes`(4096 UTF-8 字节,`inspectValue`)硬界,而 62 插件语料的 100 条真实
+ * command 文件里 **27 条超过 4096 字节**(max 24,386;尺寸逐字节真,见
+ * `docs/architecture/claude-plugin-corpus-component-scale.md` §9)。inline 形状会把这 27 条
+ * 拒载 —— 正是 `#828` 0 字节教训里「拒载真实配置」的形态。asset 形状与 agent 同构,
+ * 复用同一套 fetchVerified/双查机械。
+ *
+ * 字段集 = 引擎 v1 `ConfigCommandV1.Info` 的 provider-neutral 子集
+ * `{template, description?, agent?, model?, subtask?}`。**刻意不收 `variant?`**
+ * (owner 2026-08-05 批 R3-1:枚举面之外,加法回补留待将来独立修订)。
+ */
+export type CommandPayloadV1 = {
+  schema: "alpha.host-extension-package.payload.command.v1"
+  behavior: {
+    template: MarkdownAssetRefV1
+    description?: string
+    agent?: string
+    model?: string
+    subtask?: boolean
+  }
+}
+
 export type McpLocalPayloadV1 = {
   schema: "alpha.host-extension-package.payload.mcp-local.v1"
   behavior: { command: string[]; environment: Record<string, string>; requiredSecrets: string[] }
@@ -147,6 +171,7 @@ export type McpRemotePayloadV1 = {
 export type PackageProfilePayloadV1 =
   | SkillPayloadV1
   | AgentPayloadV1
+  | CommandPayloadV1
   | McpLocalPayloadV1
   | McpRemotePayloadV1
 
@@ -221,6 +246,8 @@ const PAYLOAD_REF_KEYS = new Set(["sha256", "bytes", "mediaType", "url"])
 const PAYLOAD_KEYS = new Set(["schema", "behavior"])
 /** agent 的 behavior —— `#828` **刻意没动**:Claude 的 agent 就是单个 `.md`。 */
 const MARKDOWN_BEHAVIOR_KEYS = new Set(["targetDir", "asset"])
+/** `#840`:command 的 behavior。恰五键(R3-1:无 `variant`)。 */
+const COMMAND_BEHAVIOR_KEYS = new Set(["template", "description", "agent", "model", "subtask"])
 /** `#828`:skill 的 behavior 与 agent 分家(载荷是一份**有界文件清单**)。 */
 const SKILL_BEHAVIOR_KEYS = new Set(["targetDir", "files"])
 const SKILL_ASSET_FILE_KEYS = new Set(["path", "sha256", "bytes", "url"])
@@ -325,9 +352,11 @@ export function decodePackageProfilePayloadV1(
       ? decodeSkillPayload(parsed.value)
       : profileId === "agent"
         ? decodeAgentPayload(parsed.value)
-        : profileId === "mcp-local"
-          ? decodeMcpLocalPayload(parsed.value)
-          : decodeMcpRemotePayload(parsed.value)
+        : profileId === "command"
+          ? decodeCommandPayload(parsed.value)
+          : profileId === "mcp-local"
+            ? decodeMcpLocalPayload(parsed.value)
+            : decodeMcpRemotePayload(parsed.value)
   if (!decoded.ok) return decoded
   const expected = derivePayloadCapabilitiesV1(decoded.payload)
   if (expected.join("\n") !== capabilities.join("\n"))
@@ -872,6 +901,62 @@ function decodeAgentPayload(value: unknown): PackageProfilePayloadDecodeV1 {
     payload: {
       schema: "alpha.host-extension-package.payload.agent.v1",
       behavior: { targetDir: targetDir as "alpha-agents" | "global", asset: asset as MarkdownAssetRefV1 },
+    },
+  }
+}
+
+/**
+ * `#840`:command 载荷解码。结构与 `decodeAgentPayload` 同构(单 markdown asset ref),
+ * 差异只有两处:①无 `targetDir`(command 无盘上实物,生效面 = `alpha.jsonc` 的
+ * `command.<name>` 叶);②四个可选 inline 字段(有界字符串 + boolean),它们与 asset 字节
+ * 在事务构造期合成引擎叶 `{template, description?, agent?, model?, subtask?}`。
+ */
+function decodeCommandPayload(value: unknown): PackageProfilePayloadDecodeV1 {
+  const errors: string[] = []
+  const behavior = decodePayloadRoot(
+    value,
+    "alpha.host-extension-package.payload.command.v1",
+    COMMAND_BEHAVIOR_KEYS,
+    errors,
+  )
+  if (!behavior) return { ok: false, errors }
+  const template = decodePayloadRef(behavior.template, "payload.behavior.template", errors, {
+    maxBytes: HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes,
+    mediaType: "text/markdown",
+  })
+  const hasDescription = Object.hasOwn(behavior, "description")
+  const description = hasDescription
+    ? decodeString(behavior.description, "payload.behavior.description", errors, { max: 500 })
+    : undefined
+  const hasAgent = Object.hasOwn(behavior, "agent")
+  const agent = hasAgent
+    ? decodeString(behavior.agent, "payload.behavior.agent", errors, { max: 120 })
+    : undefined
+  const hasModel = Object.hasOwn(behavior, "model")
+  const model = hasModel
+    ? decodeString(behavior.model, "payload.behavior.model", errors, { max: 120 })
+    : undefined
+  if (Object.hasOwn(behavior, "subtask") && typeof behavior.subtask !== "boolean")
+    errors.push("payload.behavior.subtask: required boolean")
+  if (
+    errors.length ||
+    !template ||
+    (hasDescription && !description) ||
+    (hasAgent && !agent) ||
+    (hasModel && !model)
+  )
+    return { ok: false, errors }
+  return {
+    ok: true,
+    payload: {
+      schema: "alpha.host-extension-package.payload.command.v1",
+      behavior: {
+        template: template as MarkdownAssetRefV1,
+        ...(description ? { description } : {}),
+        ...(agent ? { agent } : {}),
+        ...(model ? { model } : {}),
+        ...(Object.hasOwn(behavior, "subtask") ? { subtask: behavior.subtask as boolean } : {}),
+      },
     },
   }
 }

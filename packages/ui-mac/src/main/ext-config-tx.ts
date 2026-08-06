@@ -20,7 +20,7 @@ import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import { writeFileAtomicSync } from "./ext-atomic-fs"
 import { sealEnginePluginAdditions } from "./engine-plugin-seal"
 
-const ALLOWED_TOP_KEYS = new Set(["mcp", "plugin", "provider", "agent"])
+const ALLOWED_TOP_KEYS = new Set(["mcp", "plugin", "provider", "agent", "command"])
 
 export type ConfigEdit = { keyPath: string[]; value: unknown }
 

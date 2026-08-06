@@ -747,6 +747,8 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       "skill-v1",
       "skill-multifile-v1",
       "agent-v1",
+      "command-v1",
+      "bundle-skill-with-command",
       "mcp-local-v1",
       "mcp-remote-v1",
       "mcp-remote-oauth-v1",
@@ -1200,6 +1202,34 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
         behavior: { targetDir: "alpha-skills", asset: { sha256: "1".repeat(64), bytes: 12, mediaType: "text/markdown", url: "https://example.invalid/a.md" } },
       }
       expect(decodePackageProfilePayloadV1("skill", jsonBytes(skillWithAsset), []).ok).toBe(false)
+    })
+
+    test("`#840` command 载荷:五键窄面、template 是 asset ref、variant 具名拒(R3-1)", () => {
+      const command = caseNamed("command-v1")
+      const entry = command.components.find((candidate) => candidate.id === command.envelope.root)!
+      const behavior = behaviorOf(entry.payload!)
+      expect(Object.keys(behavior).sort()).toEqual(["agent", "description", "model", "subtask", "template"])
+      expect((behavior.template as Record<string, unknown>).mediaType).toBe("text/markdown")
+      expect(decodePackageProfilePayloadV1("command", jsonBytes(entry.payload), []).ok).toBe(true)
+
+      const payload = entry.payload as Record<string, unknown>
+      const withVariant = { ...payload, behavior: { ...(payload.behavior as Record<string, unknown>), variant: "compact" } }
+      const variantResult = decodePackageProfilePayloadV1("command", jsonBytes(withVariant), [])
+      expect(variantResult.ok).toBe(false)
+      if (!variantResult.ok) expect(variantResult.errors.join("\n")).toContain('unknown key "variant"')
+
+      const { template: _dropped, ...withoutTemplate } = payload.behavior as Record<string, unknown>
+      expect(decodePackageProfilePayloadV1("command", jsonBytes({ ...payload, behavior: withoutTemplate }), []).ok).toBe(false)
+
+      const badSubtask = { ...payload, behavior: { ...(payload.behavior as Record<string, unknown>), subtask: "yes" } }
+      const subtaskResult = decodePackageProfilePayloadV1("command", jsonBytes(badSubtask), [])
+      expect(subtaskResult.ok).toBe(false)
+      if (!subtaskResult.ok) expect(subtaskResult.errors.join("\n")).toContain("subtask")
+
+      // inline template(字符串而非 asset ref)⇒ 拒:27/100 真实命令超过 4096B string 界,
+      // inline 形状既装不下真实语料、也不该以第二种拼法混进来。
+      const inlineTemplate = { ...payload, behavior: { ...(payload.behavior as Record<string, unknown>), template: "inline $ARGUMENTS" } }
+      expect(decodePackageProfilePayloadV1("command", jsonBytes(inlineTemplate), []).ok).toBe(false)
     })
   })
 

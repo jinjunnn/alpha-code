@@ -18,7 +18,7 @@ import { isExtensionName } from "../shared/extension-name"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, withConfigWriteLock } from "./ext-config"
+import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, releasePreparedTxResources, removeCommandEntry, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, withConfigWriteLock } from "./ext-config"
 import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { reloadInstalledMcp } from "./ext-mcp-activation"
@@ -792,6 +792,9 @@ export function registerExtIpcHandlers(
   const packageArtifactInstallers = (): PackageArtifactInstallersV1 => ({
     removeFsInstall,
     removeMcpConfig: (name) => withConfigWriteLock(() => removeMcpConfigInLock(name)),
+    // `#840`:command 叶删除。`removeCommandEntry` 内部经 `writeKey` 自取 config 写锁 ——
+    // 本 installers 只在锁外路径(整包卸载 / skipConfig 的 update 清理,后者不触 config)被调。
+    removeCommandConfig: (name) => removeCommandEntry(name),
     removeMcpSecretsStrict: (name) => {
       const live = listConfiguredMcpServerNamesStrict()
       if (!live.ok) return { ok: false as const, reason: `secret revocation blocked: ${live.reason}` }

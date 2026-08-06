@@ -61,7 +61,8 @@ review_after: 2026-10-14
 - **catalog 安装(全类型,#378 收口)** 归事务引擎 `commitReceipt`(写失败即事务失败 →
   引擎回滚,#336/#310/#311/#358/#359/#361/#378):skill = generation 事务;agent = file+config
   双 item(seed #358 + catalog #361,同一载体);**mcp = config action 单 item(#378;
-  `configKey: mcp.<name>`)**;**plugin vendored fresh = CAS file items + config item(#378,
+  `configKey: mcp.<name>`)**;**signed-package command = config action 单 item(#840;
+  `configKey: command.<name>`)**;**plugin vendored fresh = CAS file items + config item(#378,
   `installPluginFromCas`;`configKey: plugin-path:<jsPath>`,`files:
   [plugins/<name>@<digest16>]`)**;**plugin npm fresh = config action 单 item(#378;
   `configKey: plugin:<pinned>`)**;plugin replace = #352 原子替换;**cloud = receipt action
@@ -94,6 +95,7 @@ review_after: 2026-10-14
 | plugin npm | 有账拒(三态分发;更新 = #352 替换);**跨配置源同 base 严格检查**(主配置未策展在场拒认领 + legacy XDG 在场拒,任一侧不可读拒;计划前与锁内双查)+ config 数组快照等值 | 引擎回滚(config 整文件复原);零残留 |
 | plugin vendored | 有账拒(三态分发);无账既有目录拒(bare 与内容寻址目录都算在场,不覆盖/不认领);载荷经 CAS 读取重验;**entry 带 package 发行元数据时,跨配置源同 base 严格检查同样适用**(fresh 与 vendored 形态更新都查,主/legacy 未策展同包 npm 条目在场拒 —— 引擎按包名与 file URL 各自去重,漏查即双载;计划前与锁内双查,更新侧排除将被换元的旧条目) | 引擎回滚(file items + config 全撤);rolled-back 终态收空壳目录;崩溃按 journal digest 判翻转 |
 | agent(seed #358 + catalog #361,同一载体) | fresh-only 双层门:catalog 锁外快速拒(有账 v2/v1、md 文件、或手工 `agent.<name>` 配置项 —— strict 读,不可读按在场)+ **引擎锁内 precondition**(`agentFreshGate`)重读封 TOCTOU;catalog 另拒 `entry.id ≠ agent:<name>` 身份漂移与含 `--` 名 | 引擎回滚(file 前像恢复缺席/旧字节 + config 叶复原) |
+| signed-package command(#840) | `init`/`review`/`customize-opencode` 下载前拒；模板摘要/字节数双查后严格 UTF-8；fresh 未登记 live 叶拒认领，锁内重查封 TOCTOU；disabled receipt 具名拒绝 | 引擎回滚(config 整文件复原)；成功即 enabled；更新与整包卸载只改同一 `command.<name>` 叶和对应 grants/账本 |
 | cloud | 账本可写探测 | receipt action 零盘副作用;失败 = 零账本;**卸载 = grants 清除成功前置 + ledger 删除失败 `ok:false`**(receipts-only,账没去=没卸载);重装显式继承 `desiredState` |
 | 未策展导入(#390:folder/git 技能 + imported agent,**仅 global**) | fresh-only:skill = `uncuratedSkillFreshGate`(catalog/损坏冲突 + 账本可写 + 有账 v2/v1 拒 + 无账 flat `skills/<name>` 目录拒),agent = `agentFreshGate(channel="import")`;`id=user:<name>`、`capabilities=[]`、**不携供给链摘要**(#306 非 catalog 不变量);内容自算地址进验证共享 CAS | 技能走 generation 载体、agent 走 file+config 载体,引擎回滚(前像恢复缺席/旧字节);project scope 不走本路径(ADR-030:维持 `<project>/.alpha/skills` flat sanctioned) |
 
@@ -207,9 +209,11 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
     · **账本损坏/不可读**(Codex r12 B2):sidecar 注入会拿到空 records、disabled mcp/agent 无从注入 →
       boot reconcile `probeLedgerForWrite` 检出损坏(非缺席)即 **enforcementGap 阻断 sidecar**(不放行可能
       加载已禁扩展的引擎)。缺席账本(ENOENT)= 无记录 = 安全,不阻断。
-    · **command/bundle 无生效面**(Codex r12 Major3):引擎 config.command/bundle 无 disable 键、alpha 无
-      投影/注入面 —— set-state 对 command/bundle/cloud 一律拒(翻 desiredState 会谎报已禁而仍可执行),
-      行内/详情页开关也只给有生效面的 mcp/agent/plugin/skill。
+    · **command/bundle 无启停投影**(Codex r12 Major3;`#840` 收窄):command 已有签名包安装生效面，
+      但引擎 config.command 没有 disable 键；fresh command 只允许 enabled，若 Alpha Connection
+      前置不可用把 receipt 压成 disabled，builder 整包拒绝。bundle 自身仍无 live 叶。set-state
+      对 command/bundle/cloud 一律拒(翻 desiredState 会谎报已禁而仍可执行)，行内/详情页开关
+      也只给有启停投影的 mcp/agent/plugin/skill。
     · **live 运行面**:引擎 `mcp.connect`/`mcp.add` 强制 `enabled:true`,当前 session 的连接是暂态;权威层 =
       注入(任何 reload 引擎必读 disabled)。安装/开关的 live 连接前经 inventoryView 复查 activation,读失败
       **fail-closed 不激活**(Codex r12 Major1:回 reload-pending,不靠"下次自愈"当安全控制);disabled 则不

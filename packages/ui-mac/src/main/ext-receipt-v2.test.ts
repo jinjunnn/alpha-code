@@ -366,9 +366,13 @@ describe("v1 → v2 explicit migration (AC#6)", () => {
     expect(readRaw().receipts).toEqual(before) // v1 视图逐字不变(旧 id 仍可被 v1 reader 读到)
   })
 
-  test("adoption 拒绝面:catalog 缺 kind 前缀 / command+catalog / 超长字段 → retained + 可定位 warning,文件仅在有 adopted 时才写", () => {
+  // `#840`:原第二格是「command 禁 catalog 来源」—— 该 durable 不变量随 command@1 profile
+  // 的合法生产者(V3 签名 package)一起退役,catalog+command 落回通用 `${kind}:` 前缀规则。
+  // 换上的负例是同一条前缀规则的另一个形状:catalog 来源挂着**别的 kind** 的保留前缀
+  // (身份冒用,与第一格的「无前缀」互补;非 catalog 身份会被迁移规范化成 user:<name>,当不了负例)。
+  test("adoption 拒绝面:catalog 缺 kind 前缀 / catalog 挂错 kind 前缀 / 超长字段 → retained + 可定位 warning,文件仅在有 adopted 时才写", () => {
     addReceipt(root, v1Receipt({ id: "legacy-weird", name: "svc", type: "mcp", origin: "catalog", configKey: "mcp.svc" })) // catalog 身份不可重建
-    addReceipt(root, v1Receipt({ id: "command:x", name: "x", type: "command", origin: "catalog", configKey: undefined })) // command 禁 catalog
+    addReceipt(root, v1Receipt({ id: "mcp:masq", name: "masq", type: "skill", origin: "catalog", configKey: undefined })) // skill 记录挂 mcp: 前缀 → 拒
     addReceipt(root, v1Receipt({ id: "user:big", name: "big", type: "skill", origin: "created", configKey: "k".repeat(600) })) // v2 字段上限
     const bytesBefore = fs.readFileSync(ledgerFile(), "utf8")
     const r = migrateV1Ledger(root, "prod")

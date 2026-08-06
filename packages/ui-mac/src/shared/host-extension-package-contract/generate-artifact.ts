@@ -18,6 +18,7 @@ export const HOST_EXTENSION_PACKAGE_ARTIFACT_FILES = [
   "generate-artifact.ts",
   "host-extension-package.registry.v1.json",
   "profiles/agent.v1.schema.json",
+  "profiles/command.v1.schema.json",
   "profiles/mcp-local.v1.schema.json",
   "profiles/mcp-remote.v1.schema.json",
   "profiles/skill.v1.schema.json",
@@ -121,6 +122,27 @@ const agentPayload = (slug: string) => ({
   },
 })
 
+/**
+ * `#840`:command 载荷 —— template 是内容寻址 markdown asset(真实语料 27/100 超过
+ * `maxStringBytes`,inline 表达不了),四个可选字段全带上,让消费方看到完整形状。
+ * 无 `variant`(R3-1)。
+ */
+const commandPayload = (slug: string) => ({
+  schema: "alpha.host-extension-package.payload.command.v1",
+  behavior: {
+    template: {
+      sha256: "5".repeat(64),
+      bytes: 24,
+      mediaType: "text/markdown",
+      url: `https://example.invalid/assets/${slug}/template.md`,
+    },
+    description: "synthetic command corpus case",
+    agent: "build",
+    model: "example/model",
+    subtask: true,
+  },
+})
+
 const mcpLocalPayload = () => ({
   schema: "alpha.host-extension-package.payload.mcp-local.v1",
   behavior: {
@@ -151,6 +173,31 @@ export function decoderCorpusBytesV1(): Uint8Array {
     // 「这条路今天能装多文件」——只发一条单文件语料时,那件事对下游是不可见的。
     single("skill-multifile-v1", "skill", [], multiFileSkillPayload("skill-multifile")),
     single("agent-v1", "agent", [], agentPayload("agent")),
+    // `#840`:command 是第五个 profile 的一等正向语料(artifact 测试要求每个已注册 profile
+    // 都有 accepted 载荷);再加一条「skill root + command leaf」的 bundle 正向,钉住
+    // command 作为图成员的形态 —— 真实插件正是「skills + commands 同包」。
+    single("command-v1", "command", [], commandPayload("command")),
+    bundle(
+      "bundle-skill-with-command",
+      "skill:bundle-command-root",
+      [
+        {
+          id: "skill:bundle-command-root",
+          profileId: "skill",
+          required: true,
+          capabilities: [],
+          payload: skillPayload("bundle-command-root"),
+        },
+        {
+          id: "command:bundle-command-leaf",
+          profileId: "command",
+          required: true,
+          capabilities: [],
+          payload: commandPayload("bundle-command-leaf"),
+        },
+      ],
+      [],
+    ),
     single("mcp-local-v1", "mcp-local", ["alpha.secret-prerequisite.v1"], mcpLocalPayload()),
     single("mcp-remote-v1", "mcp-remote", [], mcpRemotePayload()),
     // OAuth 与 Connection 都携带一条额外 secret:auth 不豁免 requiredSecrets(rev3 不变量 5),

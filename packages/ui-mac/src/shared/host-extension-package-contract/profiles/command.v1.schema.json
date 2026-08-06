@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "profiles/command.v1.schema.json",
+  "title": "HostExtensionPackage Command Payload V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "behavior"
+  ],
+  "properties": {
+    "schema": {
+      "const": "alpha.host-extension-package.payload.command.v1"
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template"
+      ],
+      "properties": {
+        "template": {
+          "$ref": "#/$defs/markdownAsset"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "subtask": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "markdownAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "bytes",
+        "mediaType",
+        "url"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5242880
+        },
+        "mediaType": {
+          "const": "text/markdown"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "maxLength": 2048
+        }
+      }
+    }
+  }
+}
