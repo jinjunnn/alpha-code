@@ -14,7 +14,9 @@ test("mixed Bundle activation, named faults, and the crash matrix all run throug
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toMatch(/\b3 pass\b/)
+  // `#828`:3 → 6(「单文件技能仍装得上」「整包卸载删掉每一个文件」「逃逸路径零写入」)。
+  // `#817`:6 → 7(「signed package child 在生产启停通道上拨开 + catalog 漂移 fail-closed」)。
+  expect(output).toMatch(/\b7 pass\b/)
   expect(output).toMatch(/\b0 fail\b/)
-  expect(output).toMatch(/Ran 3 tests across 1 file/)
+  expect(output).toMatch(/Ran 7 tests across 1 file/)
 }, 300_000)

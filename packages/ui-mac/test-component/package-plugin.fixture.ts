@@ -61,6 +61,15 @@ const markdownPayload = (schema: string, targetDir: string, asset: Uint8Array, u
   },
 })
 
+/** `#828`:skill 载荷是文件清单。本夹具测的是 ADR-040 的 plugin 拒绝,skill 这条腿只需一条 SKILL.md。 */
+const skillPayloadOf = (asset: Uint8Array, url: string) => ({
+  schema: "alpha.host-extension-package.payload.skill.v1",
+  behavior: {
+    targetDir: "alpha-skills",
+    files: [{ path: "SKILL.md", sha256: sha(asset), bytes: asset.byteLength, url }],
+  },
+})
+
 const MCP_LOCAL_PAYLOAD = {
   schema: "alpha.host-extension-package.payload.mcp-local.v1",
   // 命令头必须过宿主的 `validateServer` 白名单(`ext-config.ts` 的 SAFE_COMMAND_HEADS)——
@@ -134,9 +143,7 @@ export function pluginKitFixture(options?: {
     agentAsset,
     "https://alphacodeone.com/catalog/assets/agent.plugin-kit-root/1.0.0/AGENT.md",
   )
-  const skillPayload = markdownPayload(
-    "alpha.host-extension-package.payload.skill.v1",
-    "alpha-skills",
+  const skillPayload = skillPayloadOf(
     skillAsset,
     "https://alphacodeone.com/catalog/assets/skill.plugin-kit-skill/1.0.0/SKILL.md",
   )
@@ -213,7 +220,7 @@ export function pluginKitFixture(options?: {
     ]),
     assetByUrl: new Map([
       [agentPayload.behavior.asset.url, agentAsset],
-      [skillPayload.behavior.asset.url, skillAsset],
+      [skillPayload.behavior.files[0]!.url, skillAsset],
       [PLUGIN_ASSET_URL, pluginAsset],
     ]),
     pluginAsset,

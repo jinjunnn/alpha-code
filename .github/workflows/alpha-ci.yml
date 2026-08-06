@@ -280,7 +280,10 @@ jobs:
       #   ui-mac 删掉 stream-read-hygiene.test.ts → 3077 条 ≥ 地板 3000 → 全绿
       #   ext    删掉 prompt-rebrand.test.ts      →  106 条 ≥ 地板  100 → 全绿
       # 「闸门文件」= 删掉它就移除某条**具体保证**(而不只是减少覆盖率)。它们逐个登记在
-      # scripts/gate-files.tsv,由下面这一步逐个跑 + 逐个判下界。新增闸门文件忘了登记,会被
+      # scripts/gate-files.tsv,由下面这一步逐个跑 + 逐个判**精确条数**(`#844`:下界留余量时,
+      # 新加进闸门文件的用例可以被整段删掉而登记簿全绿 —— 实测 35/87 条有余量;现在少一条 =
+      # 有用例被删,多一条 = 新增未登记,均当场红;写回用 assert-gate-files.sh --update)。
+      # 新增闸门文件忘了登记,会被
       # packages/ui-mac/src/main/gate-file-registry.test.ts 判红(它自己也在登记簿里)。
       #
       # 这一步同时覆盖了 alpha 自有的 opencode web search 闸 —— 那份行为闸住在

@@ -77,6 +77,7 @@ describe("HostExtensionPackageV1 artifact", () => {
     // 所以每一条界都必须在 registry 里,而不是散落在 decoder / main 的常量上。
     expect(Object.keys(HOST_EXTENSION_PACKAGE_LIMITS_V1).sort()).toEqual([
       "maxCapabilities",
+      "maxComponentAssetFiles",
       "maxComponents",
       "maxEnvelopeBytes",
       "maxHeaderDepth",
@@ -87,8 +88,13 @@ describe("HostExtensionPackageV1 artifact", () => {
       "maxPayloadNodes",
       "maxStringBytes",
     ])
-    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).toBe(16)
+    // `#827`:32,不是 16。口径与「25 怎么办」的推导见 registry.ts 的 `maxComponents`。
+    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents).toBe(32)
     expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxMarkdownAssetBytes).toBe(5 * 1024 * 1024)
+    // `#828`:钉住值,不只钉键。64 = 实测语料上界(18 个文件)的 3.5×,同时留在
+    // maxPayloadNodes 预算之内 —— 后半句由 package-envelope-v1.test.ts 那条
+    // 「64 时先咬的是条数界而不是节点界」的用例证明,不靠这里的算术。
+    expect(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponentAssetFiles).toBe(64)
     // DoS 边界必须钉住值,不能只钉住「这个键存在」—— 键存在的断言拦不住悄悄放宽。
     // v2 把 maxHeaderNodes 从 128 提到 512:16 组件的信封本身就有几百个节点,128 会拒载合法
     // 多组件包。放宽 4× 的兜底是 maxEnvelopeBytes 仍为 64 KiB —— 所以它也一起钉住,
@@ -182,6 +188,30 @@ describe("HostExtensionPackageV1 artifact", () => {
     expect(JSON.stringify(PROFILE_REGISTRY_V1)).not.toContain("opencode-plugin")
     // Bundle 不是 profile,而是多组件信封的形状。这一条**不动**。
     expect(JSON.stringify(PROFILE_REGISTRY_V1)).not.toContain("bundle")
+  })
+
+  /** `#827`:信封 schema 那两个 `maxItems` 是 registry `maxComponents` 的**派生值**,不是各自维护的
+   *  字面量。挡的是「抬了 registry 忘了抬 schema」—— 宿主收得下 33 个,发布端 schema 却在 17 个就拒。 */
+  test("the published envelope schema derives both component bounds from the registry", async () => {
+    const envelope = (await Bun.file(
+      resolve(import.meta.dir, "alpha-package-envelope-v1.schema.json"),
+    ).json()) as {
+      properties: {
+        components: {
+          minItems?: number
+          maxItems?: number
+          items: { properties: { dependencies: { maxItems?: number } } }
+        }
+      }
+    }
+    const components = envelope.properties.components
+    expect(components.minItems).toBe(1)
+    expect(components.maxItems).toBe(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents)
+    // 根组件的 dependencies 恰好是「除根以外的每一个 id」,所以它的上界永远比组件数少一个。
+    // 写成派生式而不是第二个字面量:两个数一起漂时,只钉住其中一个是抓不到的。
+    expect(components.items.properties.dependencies.maxItems).toBe(
+      HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents - 1,
+    )
   })
 
   /**

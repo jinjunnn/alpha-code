@@ -214,9 +214,10 @@ describe("#315 生产链 wiring:refresh 落盘 → makeAdvisoryGate 真信任链
 
     // ③ 真 gate(makeAdvisoryGate 读真实 state,真信任链)+ 真 planner:enable 被拒
     const gate = makeAdvisoryGate(dir, { now: () => NOW, builtinKeyB64: k.publicKeyB64 })
+    const noPackage = async () => ({ status: "refused", reason: "resolvePackage must not be consulted in this test" }) as const
     const refused = await setInstallStateByKey(
       { type: "skill", name: "demo", scope: "global", state: "enabled" },
-      { globalRoot: () => globalRoot, advisoryGate: gate, resolveEntry: async () => null },
+      { globalRoot: () => globalRoot, advisoryGate: gate, resolveEntry: async () => null, resolvePackage: noPackage },
     )
     expect(refused.ok).toBe(false)
     if (refused.ok) throw new Error("unreachable")
@@ -224,7 +225,7 @@ describe("#315 生产链 wiring:refresh 落盘 → makeAdvisoryGate 真信任链
     // disable 不受闸(advisory 拦的是再启用)
     const disable = await setInstallStateByKey(
       { type: "skill", name: "demo", scope: "global", state: "disabled" },
-      { globalRoot: () => globalRoot, advisoryGate: gate, resolveEntry: async () => null },
+      { globalRoot: () => globalRoot, advisoryGate: gate, resolveEntry: async () => null, resolvePackage: noPackage },
     )
     expect(disable.ok).toBe(true)
   })

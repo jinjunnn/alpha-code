@@ -228,6 +228,9 @@ function makeSeedDeps(opts: { bundledEntries?: CatalogEntry[]; bundledVersion?: 
     resolveEntry: async () => {
       throw new Error("effective catalog must not be consulted for seed installs")
     },
+    resolvePackage: async () => {
+      throw new Error("effective catalog packages must not be consulted for seed installs")
+    },
     environment: () => "prod",
     platform: () => "darwin",
     globalRoot: () => globalRoot,

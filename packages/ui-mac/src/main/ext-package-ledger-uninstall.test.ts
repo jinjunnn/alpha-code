@@ -248,6 +248,7 @@ function makeDeps(calls: Calls): PlannerDeps {
   return {
     advisoryGate: () => ({ allowed: true }),
     resolveEntry: async () => null,
+    resolvePackage: async () => ({ status: "refused", reason: "resolvePackage must not be consulted in this test" }),
     environment: () => "prod",
     platform: () => "darwin",
     globalRoot: () => root,

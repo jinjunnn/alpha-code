@@ -18,7 +18,6 @@
       {
         "component": {
           "behavior": {
-            "assetPath": "SKILL.md",
             "targetDir": "alpha-skills"
           },
           "id": "skill:generic-bundle-skill",

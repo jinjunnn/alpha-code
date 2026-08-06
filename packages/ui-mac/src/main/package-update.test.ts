@@ -89,14 +89,18 @@ function generation(base: Corpus, options: { agentBody: string; keepMcp: boolean
   const assetByDigest = new Map<string, Uint8Array>()
   const payloadByDigest = new Map<string, Uint8Array>()
 
+  // `#828`:skill 与 agent 的载荷形状分家 —— skill 是 `behavior.files` 清单(这里一条),
+  // agent 仍是 `behavior.asset`。`url` 对 skill 而言是**目录基址**,文件路径接在后面。
   const withAsset = (payload: PackageProfilePayloadV1, body: string, url: string): PackageProfilePayloadV1 => {
     const asset = utf8(body)
     assetByDigest.set(sha(asset), asset)
     const behavior = (payload as { behavior: Record<string, unknown> }).behavior
-    return {
-      ...payload,
-      behavior: { ...behavior, asset: { bytes: asset.byteLength, mediaType: "text/markdown", sha256: sha(asset), url } },
-    } as PackageProfilePayloadV1
+    const isSkill = payload.schema === "alpha.host-extension-package.payload.skill.v1"
+    const next = isSkill
+      ? { ...behavior, asset: undefined, files: [{ path: "SKILL.md", bytes: asset.byteLength, sha256: sha(asset), url }] }
+      : { ...behavior, files: undefined, asset: { bytes: asset.byteLength, mediaType: "text/markdown", sha256: sha(asset), url } }
+    for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key]
+    return { ...payload, behavior: next } as PackageProfilePayloadV1
   }
 
   const agentPayload = withAsset(
@@ -170,6 +174,8 @@ function coordinatorFor(
     }),
     root: () => root,
     userDataPath: userData,
+    // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+    casBaseRoot: () => userData,
     environment: () => "dev",
     installability: {
       fetchPayload: async (ref) => current().payloadByDigest.get(ref.sha256)!,
@@ -331,6 +337,8 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: { fetchPayload: async (ref) => current().payloadByDigest.get(ref.sha256)! },
       fetchAsset: async (ref) => current().assetByDigest.get(ref.sha256)!,
@@ -412,6 +420,8 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: { fetchPayload: async (ref) => current().payloadByDigest.get(ref.sha256)! },
       fetchAsset: async (ref) => current().assetByDigest.get(ref.sha256)!,
@@ -471,6 +481,8 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: { fetchPayload: async (ref) => current().payloadByDigest.get(ref.sha256)! },
       fetchAsset: async (ref) => current().assetByDigest.get(ref.sha256)!,
@@ -522,6 +534,8 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
       }),
       root: () => root,
       userDataPath: userData,
+      // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+      casBaseRoot: () => userData,
       environment: () => "dev",
       installability: { fetchPayload: async (ref) => rival.payloadByDigest.get(ref.sha256)! },
       fetchAsset: async (ref) => rival.assetByDigest.get(ref.sha256)!,

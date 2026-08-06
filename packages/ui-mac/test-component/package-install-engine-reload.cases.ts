@@ -35,6 +35,13 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import bundledCatalog from "../src/renderer/extensions/alpha-catalog.json"
 import { LEAF_MCP_ID, MIXED_BUNDLE_PACKAGE_ID, mixedBundleFixture } from "./package-mixed-bundle.fixture"
+import { pinShippedPlatform } from "./pin-shipped-platform"
+
+// 本文件要验的是**发布平台上**的安装行为,而它会走到生产平台闸
+// (套件/条目 `compatibility.platforms` = darwin/win32,ADR-026):linux runner 上套件安装被
+// 就地拒掉(DOM 原话「platform linux not supported by this bundle」),授权屏永不出现。
+// 与两个兄弟 cases 文件同款 opt-in;它自陈本轮平台是模拟,不静默降级。
+pinShippedPlatform()
 
 // ── ① 引擎客户端替身 = 「引擎有没有被叫去重扫」的唯一判据 ──────────────────────────────
 //     函数值先存 const,再 mock.module。
@@ -139,18 +146,20 @@ const catalogDocument = {
   packages: [fixture.envelope],
 }
 
-// URL → 字节。payload 由信封的 `payloadRef` 给出;markdown 资产由 payload 自己的 `behavior.asset` 给出。
+// URL → 字节。payload 由信封的 `payloadRef` 给出;资产由 payload 自己给出 —— `#828` 起 agent 是
+// `behavior.asset`(单个),skill 是 `behavior.files`(清单),两者都要**逐条**登记进这张表。
 const bytesByUrl = new Map<string, Uint8Array>()
 for (const component of fixture.envelope.components) {
   const payload = fixture.payloadByDigest.get(component.payloadRef.sha256)
   if (!payload) throw new Error(`fixture: payload bytes missing for ${component.id}`)
   bytesByUrl.set(component.payloadRef.url, payload)
-  const decoded = JSON.parse(new TextDecoder().decode(payload)) as { behavior?: { asset?: { url: string; sha256: string } } }
-  const asset = decoded.behavior?.asset
-  if (asset) {
-    const assetBytes = fixture.assetByDigest.get(asset.sha256)
-    if (!assetBytes) throw new Error(`fixture: asset bytes missing for ${component.id}`)
-    bytesByUrl.set(asset.url, assetBytes)
+  const decoded = JSON.parse(new TextDecoder().decode(payload)) as {
+    behavior?: { asset?: { url: string; sha256: string }; files?: Array<{ url: string; sha256: string }> }
+  }
+  for (const ref of [...(decoded.behavior?.asset ? [decoded.behavior.asset] : []), ...(decoded.behavior?.files ?? [])]) {
+    const assetBytes = fixture.assetByDigest.get(ref.sha256)
+    if (!assetBytes) throw new Error(`fixture: asset bytes missing for ${component.id} (${ref.url})`)
+    bytesByUrl.set(ref.url, assetBytes)
   }
 }
 

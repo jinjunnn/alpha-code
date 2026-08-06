@@ -355,6 +355,8 @@ async function mountHarness(options?: {
     }),
     root: () => globalRoot,
     userDataPath: userData,
+    // `#828`:skill 载荷经验证共享 CAS 落 generation。测试里 CAS 与 userData 同根即可。
+    casBaseRoot: () => userData,
     environment: () => "dev",
     installability: { fetchPayload: fixture.fetchPayload },
     fetchAsset: fixture.fetchAsset,
