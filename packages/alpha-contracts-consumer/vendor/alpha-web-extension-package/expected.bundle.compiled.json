@@ -8,7 +8,8 @@
         "capabilities": [],
         "dependencies": [
           "skill:generic-bundle-skill",
-          "mcp:generic-bundle-remote"
+          "mcp:generic-bundle-remote",
+          "command:generic-bundle-command"
         ],
         "id": "agent:generic-bundle-agent",
         "payloadRef": {
@@ -50,6 +51,20 @@
         "profileId": "mcp-remote",
         "profileVersion": 1,
         "required": false
+      },
+      {
+        "capabilities": [],
+        "dependencies": [],
+        "id": "command:generic-bundle-command",
+        "payloadRef": {
+          "bytes": 420,
+          "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
+          "sha256": "08656efbe6e8afe2b6cbe6c836f0b1e268fb82492ccb2a3573f7cbec663e326e",
+          "url": "https://alphacodeone.com/catalog/assets/command.generic-bundle-command/1.0.0/alpha-package/08656efbe6e8afe2b6cbe6c836f0b1e268fb82492ccb2a3573f7cbec663e326e.json"
+        },
+        "profileId": "command",
+        "profileVersion": 1,
+        "required": false
       }
     ],
     "prelude": {
@@ -57,7 +72,7 @@
       "version": "1.0.0"
     },
     "presentation": {
-      "description": "Generic flat Bundle corpus input: one agent root and two leaves.",
+      "description": "Generic flat Bundle corpus input: one agent root and three leaves.",
       "displayName": "Generic Bundle"
     },
     "root": "agent:generic-bundle-agent",
@@ -71,7 +86,8 @@
         "capabilities": [],
         "dependencies": [
           "skill:generic-bundle-skill",
-          "mcp:generic-bundle-remote"
+          "mcp:generic-bundle-remote",
+          "command:generic-bundle-command"
         ],
         "id": "agent:generic-bundle-agent",
         "payloadRef": {
@@ -120,18 +136,35 @@
         "profileVersion": 1,
         "required": false,
         "version": "1.0.0"
+      },
+      {
+        "assetDirectory": "catalog-src/assets/command.generic-bundle-command/1.0.0",
+        "assetManifestSha256": "9a32f555a7376af5ea873e99e09feeef7272e7b64452b01d169d58aaf395d8db",
+        "capabilities": [],
+        "dependencies": [],
+        "id": "command:generic-bundle-command",
+        "payloadRef": {
+          "bytes": 420,
+          "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
+          "sha256": "08656efbe6e8afe2b6cbe6c836f0b1e268fb82492ccb2a3573f7cbec663e326e",
+          "url": "https://alphacodeone.com/catalog/assets/command.generic-bundle-command/1.0.0/alpha-package/08656efbe6e8afe2b6cbe6c836f0b1e268fb82492ccb2a3573f7cbec663e326e.json"
+        },
+        "profileId": "command",
+        "profileVersion": 1,
+        "required": false,
+        "version": "1.0.0"
       }
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "528087b4e9695800a22d2061d739cd4ea2a8d25845f003f00535ab9e6ee4e893",
+        "reportSha256": "5f6c2fc11800ef3e5f45352763252a5ed475eb899f0e27b07ebd943104b13c83",
         "verdict": "compatible"
       },
       "componentId": "agent:generic-bundle-agent",
-      "declarationSha256": "10a28b3a4d1e9bd23b73ec3351efca56b813867794fd44d79fadc8e7e08da84f",
+      "declarationSha256": "30a8ec893b96eb13e574e8149234981039736e53710272fae648e77a9ae2ee34",
       "packageId": "package:generic-bundle",
       "presentation": {
-        "description": "Generic flat Bundle corpus input: one agent root and two leaves.",
+        "description": "Generic flat Bundle corpus input: one agent root and three leaves.",
         "displayName": "Generic Bundle"
       },
       "source": {
@@ -155,6 +188,19 @@
         "targetDir": "alpha-agents"
       },
       "schema": "alpha.host-extension-package.payload.agent.v1"
+    },
+    "command:generic-bundle-command": {
+      "behavior": {
+        "description": "Generic bundle command",
+        "subtask": false,
+        "template": {
+          "bytes": 86,
+          "mediaType": "text/markdown",
+          "sha256": "6af33a90b83e8d1b6eda01c4a6a195be850027aba95ecf2b245a45d2ef65f9d9",
+          "url": "https://alphacodeone.com/catalog/assets/command.generic-bundle-command/1.0.0/COMMAND.md"
+        }
+      },
+      "schema": "alpha.host-extension-package.payload.command.v1"
     },
     "mcp:generic-bundle-remote": {
       "behavior": {

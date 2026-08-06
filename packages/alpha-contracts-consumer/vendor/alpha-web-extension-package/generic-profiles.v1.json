@@ -12,6 +12,16 @@
     },
     {
       "declaration": {
+        "kind": "command"
+      },
+      "host": {
+        "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
+        "profileId": "command",
+        "profileVersion": 1
+      }
+    },
+    {
+      "declaration": {
         "kind": "mcp",
         "transport": "local"
       },

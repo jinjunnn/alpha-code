@@ -43,6 +43,11 @@
           "path": "AGENT.md"
         },
         {
+          "componentId": "command:generic-bundle-command",
+          "file": "asset.generic-bundle-command.md",
+          "path": "COMMAND.md"
+        },
+        {
           "componentId": "skill:generic-bundle-skill",
           "file": "asset.generic-bundle-skill.md",
           "path": "SKILL.md"
@@ -64,6 +69,11 @@
           "path": "AGENT.md"
         },
         {
+          "componentId": "command:generic-bundle-command",
+          "file": "asset.generic-bundle-command.md",
+          "path": "COMMAND.md"
+        },
+        {
           "componentId": "skill:generic-bundle-skill",
           "file": "asset.generic-bundle-skill.md",
           "path": "SKILL.md"
@@ -80,6 +90,11 @@
           "path": "AGENT.md"
         },
         {
+          "componentId": "command:generic-bundle-command",
+          "file": "asset.generic-bundle-command.md",
+          "path": "COMMAND.md"
+        },
+        {
           "componentId": "skill:generic-bundle-skill",
           "file": "asset.generic-bundle-skill.md",
           "path": "SKILL.md"
@@ -94,6 +109,53 @@
           "componentId": "agent:generic-bundle-agent",
           "file": "asset.generic-bundle-agent.md",
           "path": "AGENT.md"
+        },
+        {
+          "componentId": "command:generic-bundle-command",
+          "file": "asset.generic-bundle-command.md",
+          "path": "COMMAND.md"
+        },
+        {
+          "componentId": "skill:generic-bundle-skill",
+          "file": "asset.generic-bundle-skill.md",
+          "path": "SKILL.md"
+        }
+      ],
+      "errorCode": "E_UNKNOWN_FIELD",
+      "input": "input.command-variant.invalid.json"
+    },
+    {
+      "assets": [
+        {
+          "componentId": "agent:generic-bundle-agent",
+          "file": "asset.generic-bundle-agent.md",
+          "path": "AGENT.md"
+        },
+        {
+          "componentId": "command:generic-bundle-command",
+          "file": "asset.generic-bundle-command.md",
+          "path": "COMMAND.md"
+        },
+        {
+          "componentId": "skill:generic-bundle-skill",
+          "file": "asset.generic-bundle-skill.md",
+          "path": "SKILL.md"
+        }
+      ],
+      "errorCode": "E_COMMAND_NAME_RESERVED",
+      "input": "input.command-reserved-name.invalid.json"
+    },
+    {
+      "assets": [
+        {
+          "componentId": "agent:generic-bundle-agent",
+          "file": "asset.generic-bundle-agent.md",
+          "path": "AGENT.md"
+        },
+        {
+          "componentId": "command:generic-bundle-command",
+          "file": "asset.generic-bundle-command.md",
+          "path": "COMMAND.md"
         },
         {
           "componentId": "skill:generic-bundle-skill",
@@ -143,6 +205,11 @@
           "componentId": "agent:generic-bundle-agent",
           "file": "asset.generic-bundle-agent.md",
           "path": "AGENT.md"
+        },
+        {
+          "componentId": "command:generic-bundle-command",
+          "file": "asset.generic-bundle-command.md",
+          "path": "COMMAND.md"
         },
         {
           "componentId": "skill:generic-bundle-skill",

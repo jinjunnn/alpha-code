@@ -45,17 +45,17 @@ describe("alpha-web extension package producer artifact pin", () => {
 
     expect(lock).toMatchObject({
       repo: "jinjunnn/alpha-web",
-      commit: "d3925997c30b09af8b556f60e1f0b006a909cf53",
+      commit: "3ebca3c95a5f5e37f6c9ea0598fff5676c60ea84",
       artifactPath: "contracts/extension-package/artifact",
-      artifactSha256: "92fef1b04e244789e15b45a2b96016df791b42fac23dd612e0225ac9250203ec",
+      artifactSha256: "ec555a1dc7c4435ec8cea965e9c12e1e2c8d55273249a898b47ceed26693b33d",
     })
     // 固定条数,不留余量:上游悄悄少发一个语料文件时,只比对「lock ↔ manifest 两边一致」是
     // 抓不到的 —— 两边会一起变小并保持自洽。
-    // lock 数 = 目录里的全部文件(36);manifest 数永远比它少一个(35)—— manifest 装不下
+    // lock 数 = 目录里的全部文件(40);manifest 数永远比它少一个(39)—— manifest 装不下
     // 自己的哈希(`producerCommit.embedded: false` 是同一个理由的另一半)。这个「差一」不写成
     // 第二个常数,而由下一条 `toEqual` 把 manifest 清单 ∪ {manifest 自己} 与 lock 清单对死。
-    // `#830` / alpha-web#138:39 → 36,撤掉的是 plugin 那三份(见下面 closure 那条用例)。
-    expect(lock.files.length).toBe(36)
+    // `#853` / alpha-web#98:36 → 40,增补的是 command 资产、Claude 发布端规则与两份负例。
+    expect(lock.files.length).toBe(40)
     expect(lock.files.map((file) => file.path).sort()).toEqual(
       [...manifest.files.map((file) => file.path), "extension-package-producer-artifact.v1.json"].sort(),
     )
@@ -154,6 +154,7 @@ describe("alpha-web extension package producer artifact pin", () => {
     const rules = await json("generic-rules.v1.json")
     expect(registry.profiles.map((profile: { profileId: string }) => profile.profileId).sort()).toEqual([
       "agent",
+      "command",
       "mcp-local",
       "mcp-remote",
       "skill",
@@ -168,6 +169,7 @@ describe("alpha-web extension package producer artifact pin", () => {
     ])
     expect(profiles.mappings.map((mapping: { host: { profileId: string } }) => mapping.host.profileId)).toEqual([
       "agent",
+      "command",
       "mcp-local",
       "mcp-remote",
       "skill",
@@ -214,6 +216,7 @@ describe("alpha-web extension package producer artifact pin", () => {
       "input.author-dependencies.invalid.json",
       "input.author-secret-value.invalid.json",
       "input.bundle-overflow.invalid.json",
+      "input.command-variant.invalid.json",
     ])
       expect(validate(await json(path)), path).toBe(false)
 
@@ -301,6 +304,8 @@ describe("alpha-web extension package producer artifact pin", () => {
       "input.oauth-authorization-header.invalid.json": "E_AUTH_HEADER_CONFLICT",
       "input.oauth-prerequisite-collision.invalid.json": "E_PREREQUISITE_COLLISION",
       "input.cloud-profile.invalid.json": "E_PROFILE_UNSUPPORTED",
+      "input.command-reserved-name.invalid.json": "E_COMMAND_NAME_RESERVED",
+      "input.command-variant.invalid.json": "E_UNKNOWN_FIELD",
       "input.author-capabilities.invalid.json": "E_AUTHOR_DERIVED_FIELD",
       "input.author-dependencies.invalid.json": "E_AUTHOR_DERIVED_FIELD",
       "input.author-secret-value.invalid.json": "E_AUTHOR_DERIVED_FIELD",

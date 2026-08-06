@@ -1,7 +1,7 @@
 // REQ-128 `#697` canonical mixed Bundle —— 一处夹具,两个闸门共用(单元面与生产接线面)。
 //
 // **形状**取自 vendored producer 产物 `expected.bundle.compiled.json`(agent root + skill leaf +
-// 带必需密钥的 mcp-remote leaf)。它不是抄来的:`assertMatchesVendoredBundleShape` 会把本夹具的
+// 带必需密钥的 mcp-remote leaf + command leaf)。它不是抄来的:`assertMatchesVendoredBundleShape` 会把本夹具的
 // root / 组件 id / required / profile / dependencies 与那份**真产物**逐条对照,上游改了 canonical
 // Bundle 的形状,这里就红,而不是悄悄漂成一个只有我们自己认得的图。
 //
@@ -18,10 +18,10 @@
 // 内容,这里不会红,只会安静地变回一份手抄替身。留成这样是本票(`#811`)刻意划的边界:
 // 它要加的是一道新闸,不在 re-vendor 的范围里。
 //
-// 夹具**仍然**自建信封,理由换成了两条与 frontmatter 无关的:第四格那个 optional leaf(下一段),
+// 夹具**仍然**自建信封,理由换成了两条与 frontmatter 无关的:第五格那个 optional leaf(下一段),
 // 以及 `breakSkillFrontmatterName` 这个打 pre-switch probe 的开关 —— 两者上游产物里都没有。
 //
-// 第四格「已策展但宿主不支持的 optional child」语料里没有(上游只发布宿主支持的 profile),
+// 第五格「已策展但宿主不支持的 optional child」语料里没有(上游只发布宿主支持的 profile),
 // 所以由本夹具**显式构造**:一个 optional leaf 带本 build 不认识的 capability。它排在
 // `components[]` 的**最后**,签名并集含它(§4.3 第一层),而有效安装图不含它。
 
@@ -37,7 +37,8 @@ export const MIXED_BUNDLE_VERSION = "1.0.0"
 export const ROOT_AGENT_ID = "agent:generic-bundle-agent"
 export const LEAF_SKILL_ID = "skill:generic-bundle-skill"
 export const LEAF_MCP_ID = "mcp:generic-bundle-remote"
-/** 已策展、但本 build 不支持的 optional leaf(第四格)。 */
+export const LEAF_COMMAND_ID = "command:generic-bundle-command"
+/** 已策展、但本 build 不支持的 optional leaf(第五格)。 */
 export const LEAF_UNSUPPORTED_ID = "agent:generic-bundle-future"
 export const MCP_SECRET_PREREQUISITE_ID = `${LEAF_MCP_ID}#C_TOKEN`
 export const UNSUPPORTED_CAPABILITY = "alpha.future.v1"
@@ -65,7 +66,12 @@ description: Generic bundle skill
 Deterministic corpus skill body.
 `
 
-/** 第四格 leaf 的资产:形状合法,但它永远不会被取 —— 断言之一就是「零 fetch」。 */
+export const COMMAND_MD = `Deterministic corpus command template body.
+
+Review $ARGUMENTS and report the result.
+`
+
+/** 第五格 leaf 的资产:形状合法,但它永远不会被取 —— 断言之一就是「零 fetch」。 */
 const UNSUPPORTED_MD = `---
 name: generic-bundle-future
 description: Curated but unsupported here
@@ -135,6 +141,20 @@ const MCP_PAYLOAD = {
   },
 }
 
+const commandPayloadFor = (template: Uint8Array) => ({
+  behavior: {
+    description: "Generic bundle command",
+    subtask: false,
+    template: {
+      bytes: template.byteLength,
+      mediaType: "text/markdown",
+      sha256: sha(template),
+      url: "https://alphacodeone.com/catalog/assets/command.generic-bundle-command/1.0.0/COMMAND.md",
+    },
+  },
+  schema: "alpha.host-extension-package.payload.command.v1",
+})
+
 const componentOf = (
   id: string,
   profileId: string,
@@ -166,12 +186,13 @@ export type MixedBundleFixture = {
   assetByDigest: Map<string, Uint8Array>
   agentAsset: Uint8Array
   skillAsset: Uint8Array
+  commandAsset: Uint8Array
   /** `#828`:skill 载荷的**整份**清单(相对路径 → 期望字节)。逐文件比对的真源。 */
   skillFiles: SkillFixtureFile[]
 }
 
 export function mixedBundleFixture(options?: {
-  /** 第四格:是否带上那个「已策展但宿主不支持」的 optional leaf(默认带)。 */
+  /** 第五格:是否带上那个「已策展但宿主不支持」的 optional leaf(默认带)。 */
   withUnsupportedOptionalLeaf?: boolean
   /** 让 skill 资产的 frontmatter name 与组件名不符 —— 生产 pre-switch probe 会因此判不健康。 */
   breakSkillFrontmatterName?: boolean
@@ -212,6 +233,7 @@ export function mixedBundleFixture(options?: {
           { path: "scripts/run.sh", data: utf8(SKILL_RUN_SH) },
         ]
   const unsupportedAsset = utf8(UNSUPPORTED_MD)
+  const commandAsset = utf8(COMMAND_MD)
 
   const agentPayload = agentPayloadFor(
     "alpha-agents",
@@ -222,6 +244,7 @@ export function mixedBundleFixture(options?: {
     skillFiles,
     "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0",
   )
+  const commandPayload = commandPayloadFor(commandAsset)
   const unsupportedPayload = agentPayloadFor(
     "alpha-agents",
     unsupportedAsset,
@@ -231,13 +254,20 @@ export function mixedBundleFixture(options?: {
   const agentBytes = canonicalBytes(agentPayload)
   const skillBytes = canonicalBytes(skillPayload)
   const mcpBytes = canonicalBytes(MCP_PAYLOAD)
+  const commandBytes = canonicalBytes(commandPayload)
   const unsupportedBytes = canonicalBytes(unsupportedPayload)
 
-  const dependencies = [LEAF_SKILL_ID, LEAF_MCP_ID, ...(withUnsupported ? [LEAF_UNSUPPORTED_ID] : [])]
+  const dependencies = [
+    LEAF_SKILL_ID,
+    LEAF_MCP_ID,
+    LEAF_COMMAND_ID,
+    ...(withUnsupported ? [LEAF_UNSUPPORTED_ID] : []),
+  ]
   const components = [
     componentOf(ROOT_AGENT_ID, "agent", true, [], agentBytes, "agent", dependencies),
     componentOf(LEAF_SKILL_ID, "skill", true, [], skillBytes, "skill"),
     componentOf(LEAF_MCP_ID, "mcp-remote", false, ["alpha.secret-prerequisite.v1"], mcpBytes, "mcp-remote"),
+    componentOf(LEAF_COMMAND_ID, "command", false, [], commandBytes, "command"),
     // 违规/异常项放**最后**:只看第一个元素的实现要能被抓住。
     ...(withUnsupported
       ? [componentOf(LEAF_UNSUPPORTED_ID, "agent", false, [UNSUPPORTED_CAPABILITY], unsupportedBytes, "agent")]
@@ -248,7 +278,7 @@ export function mixedBundleFixture(options?: {
     schema: "alpha.host-extension-package.v1",
     prelude: { packageId: MIXED_BUNDLE_PACKAGE_ID, version: MIXED_BUNDLE_VERSION },
     presentation: {
-      description: "Generic flat Bundle corpus input: one agent root and two leaves.",
+      description: "Generic flat Bundle corpus input: one agent root and four leaves.",
       displayName: "Generic Bundle",
     },
     root: ROOT_AGENT_ID,
@@ -263,15 +293,18 @@ export function mixedBundleFixture(options?: {
       [sha(agentBytes), agentBytes],
       [sha(skillBytes), skillBytes],
       [sha(mcpBytes), mcpBytes],
+      [sha(commandBytes), commandBytes],
       [sha(unsupportedBytes), unsupportedBytes],
     ]),
     assetByDigest: new Map([
       [sha(agentAsset), agentAsset],
       ...skillFiles.map((file) => [sha(file.data), file.data] as const),
+      [sha(commandAsset), commandAsset],
       [sha(unsupportedAsset), unsupportedAsset],
     ]),
     agentAsset,
     skillAsset,
+    commandAsset,
     skillFiles,
   }
 }

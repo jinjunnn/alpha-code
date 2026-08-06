@@ -103,7 +103,7 @@ const UPSTREAMS = [
     // older optional staged fixtures above, an unavailable checkout or missing commit is a hard
     // failure:provenance cannot be proved by a self-consistent replacement lock.
     repo: "jinjunnn/alpha-web",
-    commit: "d3925997c30b09af8b556f60e1f0b006a909cf53",
+    commit: "3ebca3c95a5f5e37f6c9ea0598fff5676c60ea84",
     lock: "alpha-web-extension-package.lock.json",
     vendor: "vendor/alpha-web-extension-package",
     sourceEnv: "ALPHA_WEB_EXTENSION_PACKAGE_SOURCE",
@@ -111,7 +111,7 @@ const UPSTREAMS = [
     sourceFallback: "../../../alpha-web",
     sourcePrefix: "contracts/extension-package/artifact",
     artifactPath: "contracts/extension-package/artifact",
-    artifactSha256: "92fef1b04e244789e15b45a2b96016df791b42fac23dd612e0225ac9250203ec",
+    artifactSha256: "ec555a1dc7c4435ec8cea965e9c12e1e2c8d55273249a898b47ceed26693b33d",
     commitBound: true,
     // #759 / alpha-web#109:producer 追平宿主合同 v2。语料从 22 个文件长到 36 个 —— 新增的是
     // flat Bundle 正/负向、OAuth 与 Alpha Connection 的正向语料(旧的 `input.remote-oauth.invalid.json`
@@ -133,11 +133,17 @@ const UPSTREAMS = [
     // vendor 循环「只写不删」,所以这三份 vendored 字节必须**手动删**,否则会留成无主残留;
     // 抓它的是 `extension-package-artifact.test.ts` 的目录清单断言(vendor 目录的实际条目
     // 必须恰等于 lock 的 files 集),那条判据在这一跳第一次真正做功。
+    //
+    // `#853` / alpha-web#98:发布端按 #840 的不可变 A checkpoint 增补 `command@1` 与
+    // `claude-code.v1` 纯库规则产物,语料 36 → 40。新增 command markdown 资产、发布端规则
+    // 以及 reserved-name / variant 两份负例;没有撤文件,所以本跳同样只做机械 re-vendor。
     files: [
       "alpha-package-compatibility-report-v1.schema.json",
       "alpha-package-declaration-v1.schema.json",
       "asset.generic-bundle-agent.md",
+      "asset.generic-bundle-command.md",
       "asset.generic-bundle-skill.md",
+      "claude-code.rules.v1.json",
       "expected.bundle.compiled.json",
       "expected.mcp-remote.compiled.json",
       "expected.remote-connection.compiled.json",
@@ -157,6 +163,8 @@ const UPSTREAMS = [
       "input.bundle-root-leaf-collision.invalid.json",
       "input.bundle.valid.json",
       "input.cloud-profile.invalid.json",
+      "input.command-reserved-name.invalid.json",
+      "input.command-variant.invalid.json",
       "input.mcp-remote.valid.json",
       "input.oauth-authorization-header.invalid.json",
       "input.oauth-prerequisite-collision.invalid.json",
