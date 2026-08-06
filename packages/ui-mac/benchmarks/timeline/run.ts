@@ -52,13 +52,17 @@ const baseURL = server.resolvedUrls?.local[0] ?? "http://127.0.0.1:4175/"
 const fixture = materializeTimelineBenchmarkFixture()
 const fixtureSha256 = createHash("sha256").update(JSON.stringify(fixture)).digest("hex")
 const runs: BenchmarkRun[] = []
+const rawRuns: { file: string; sha256: string }[] = []
 
 try {
   await mkdir(output, { recursive: true })
   for (const run of [1, 2, 3]) {
     const result = await benchmarkRun(run, baseURL)
     runs.push(result)
-    await writeFile(`${output}/run-${run}.json`, `${JSON.stringify(result, null, 2)}\n`)
+    const file = `run-${run}.json`
+    const raw = `${JSON.stringify(result, null, 2)}\n`
+    await writeFile(`${output}/${file}`, raw)
+    rawRuns.push({ file, sha256: createHash("sha256").update(raw).digest("hex") })
     process.stdout.write(`run ${run}/3 complete\n`)
   }
 
@@ -115,7 +119,7 @@ try {
         ),
       ),
     },
-    runs,
+    rawRuns,
   }
   await writeFile(`${output}/summary.json`, `${JSON.stringify(summary, null, 2)}\n`)
   process.stdout.write(`${output}/summary.json\n`)

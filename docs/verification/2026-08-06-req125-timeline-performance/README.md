@@ -48,8 +48,8 @@ last_reviewed: 2026-08-06
 | 历史前插相对流式后的 heap delta | +613,928 bytes  |
 
 每轮原始 rAF 时间戳/gap、long task、滚动/历史、DOM counter、event listener、JS heap 与
-网络诊断保存在 [`raw/`](raw/);[`raw/summary.json`](raw/summary.json) 同时保存完整环境、
-fixture、命令和中位数。
+网络诊断保存在 [`raw/`](raw/);[`raw/summary.json`](raw/summary.json) 保存完整环境、
+fixture、命令、中位数以及三份原始文件的 SHA-256 引用,不重复拷贝原始数组。
 
 | 轮次 | 冷开    | 流式丢帧率 | 历史前插 |  历史后 JS heap |
 | ---: | ------- | ---------: | -------- | --------------: |
