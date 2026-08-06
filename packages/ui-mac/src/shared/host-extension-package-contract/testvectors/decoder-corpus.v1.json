@@ -172,6 +172,147 @@
     {
       "components": [
         {
+          "id": "command:command-v1",
+          "payload": {
+            "behavior": {
+              "agent": "build",
+              "description": "synthetic command corpus case",
+              "model": "example/model",
+              "subtask": true,
+              "template": {
+                "bytes": 24,
+                "mediaType": "text/markdown",
+                "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+                "url": "https://example.invalid/assets/command/template.md"
+              }
+            },
+            "schema": "alpha.host-extension-package.payload.command.v1"
+          }
+        }
+      ],
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "command:command-v1",
+            "payloadRef": {
+              "bytes": 441,
+              "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
+              "sha256": "e9cea9431403c76aa46d4d8c0e627a86cb5a4b3dacfc3a4a80cf92cedeec381d",
+              "url": "https://example.invalid/packages/command/command-v1.json"
+            },
+            "profileId": "command",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "package:command-v1",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic command-v1 decoder case",
+          "displayName": "command-v1"
+        },
+        "root": "command:command-v1",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "command-v1",
+      "skipped": []
+    },
+    {
+      "components": [
+        {
+          "id": "skill:bundle-command-root",
+          "payload": {
+            "behavior": {
+              "files": [
+                {
+                  "bytes": 12,
+                  "path": "SKILL.md",
+                  "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                  "url": "https://example.invalid/assets/bundle-command-root/SKILL.md"
+                }
+              ],
+              "targetDir": "alpha-skills"
+            },
+            "schema": "alpha.host-extension-package.payload.skill.v1"
+          }
+        },
+        {
+          "id": "command:bundle-command-leaf",
+          "payload": {
+            "behavior": {
+              "agent": "build",
+              "description": "synthetic command corpus case",
+              "model": "example/model",
+              "subtask": true,
+              "template": {
+                "bytes": 24,
+                "mediaType": "text/markdown",
+                "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+                "url": "https://example.invalid/assets/bundle-command-leaf/template.md"
+              }
+            },
+            "schema": "alpha.host-extension-package.payload.command.v1"
+          }
+        }
+      ],
+      "envelope": {
+        "capabilities": [],
+        "components": [
+          {
+            "capabilities": [],
+            "dependencies": [
+              "command:bundle-command-leaf"
+            ],
+            "id": "skill:bundle-command-root",
+            "payloadRef": {
+              "bytes": 367,
+              "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+              "sha256": "2d96c385568ccf544d23d561853821f596ea26940242eb17099cc52f56dd4099",
+              "url": "https://example.invalid/packages/skill/bundle-command-root.json"
+            },
+            "profileId": "skill",
+            "profileVersion": 1,
+            "required": true
+          },
+          {
+            "capabilities": [],
+            "dependencies": [],
+            "id": "command:bundle-command-leaf",
+            "payloadRef": {
+              "bytes": 453,
+              "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
+              "sha256": "97ef5196773b058d0065f27885d22bb46047d7a58d8fd920b831b2c90f6285f5",
+              "url": "https://example.invalid/packages/command/bundle-command-leaf.json"
+            },
+            "profileId": "command",
+            "profileVersion": 1,
+            "required": true
+          }
+        ],
+        "prelude": {
+          "packageId": "package:bundle-skill-with-command",
+          "version": "1.0.0"
+        },
+        "presentation": {
+          "description": "Synthetic bundle-skill-with-command decoder case",
+          "displayName": "bundle-skill-with-command"
+        },
+        "root": "skill:bundle-command-root",
+        "schema": "alpha.host-extension-package.v1"
+      },
+      "expect": "accepted",
+      "name": "bundle-skill-with-command",
+      "skipped": []
+    },
+    {
+      "components": [
+        {
           "id": "mcp-local:mcp-local-v1",
           "payload": {
             "behavior": {

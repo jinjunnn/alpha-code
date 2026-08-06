@@ -17,6 +17,14 @@ ADR-040 把扩展安装的唯一形态定为 Bundle，于是两件事成了地�
 
 这份文档回答那两件事。**每条断言都来自实读或实跑**，凡未验证的一律标「未验证」。
 
+> **实现状态（`#840`，2026-08-05）**：§1.4 的“没有安装路径”和 §1.5 的四-profile
+> 对比记录的是本票开工前的勘破基线。A checkpoint 已选择 §1.5(b)：host 注册第五个
+> `command` profile，模板按签名字节取回并严格 UTF-8 解码，事务写
+> `alpha.jsonc.command.<name>`，更新/整包卸载删除同一叶；真实引擎 `GET /command`
+> 验证安装可见、卸载不可见。旧 catalog 与本地导入仍不新增 command 路径。
+> 跨仓发布必须继续经过 `alpha-web#147` 与 `alpha-code#853` 的固定 artifact pin；在
+> re-vendor 前 consumer byte-identity 红灯是预期依赖门。
+
 > 本仓记录在案最贵的返工形态是「**手写一个别人文法的替身**」——
 > 手写别人的路由谓词、手写别人的 CLI 参数解析，连轮补丁都补不完，
 > 直到照着**装着的那个版本的源码**重写才一次关掉全部反例。
@@ -132,7 +140,7 @@ try { return matter(content) } catch { return matter(sanitize(content)) }
 `httpapi/groups/session.ts:343` → `handlers/session.ts:331`、
 `session/prompt.ts:1356`(展开 `$1`/`$ARGUMENTS`、shell 插值、选 agent/model)与 `:1460`。
 
-#### 没有：签名 package / 旧 catalog / 本地导入，一条都没有
+#### 勘破基线（`#840` 之前）：签名 package / 旧 catalog / 本地导入都没有
 
 | 入口 | 断点 |
 | --- | --- |
@@ -148,21 +156,21 @@ try { return matter(content) } catch { return matter(sanitize(content)) }
 ⇒ **`ext-install-planner.ts:231` 的 `RECEIPT_TYPES` 含 `"command"`、`:2657` 有 `record.kind === "command"` 分支
 这两条是弱证据，不构成安装路径。**（`plugin` 也曾同时出现在这两处，而它的安装路径已被具名拒绝，见 `:1113`。）
 
-### 1.5 四个 profile 里谁最接近，以及改动边界
+### 1.5 基线四个 profile 里谁最接近，以及 `#840` 采用的边界
 
 物理载荷最接近 **`agent`**（`profiles/agent.v1.schema.json:15`）：`{targetDir, asset{sha256,bytes,mediaType,url}}`。
 `skill` 信封结构相同但安装语义是目录/generation；两个 `mcp-*` 是纯结构化配置。
 
-建议的改动边界（四条，第 3、4 条是这次勘破真正的产出）：
+`#840` 采用的改动边界（四条，第 3、4 条是这次勘破真正的产出）：
 
 1. **合同层**：以 agent 的 Markdown asset 信封为模板，改 schema 常量与 `targetDir` 语义；
    更新 registry、TS payload union、decoder 行为键与 profile 集合。
 2. **admission / 账本层**：新增**真实的** `command` child kind、tx key、receipt/probe/uninstall/冲突判定
    与完整 builder 分支。**不能只让它落进已有的那个 `"command"` receipt token。**
-3. **生效层必须明确二选一**：
-   - **(a) 存原始 `.md`**，放进引擎真的会扫的 `{command,commands}` 目录，
+3. **生效层选择 (b)**：
+   - **未采用 (a)**：存原始 `.md`，放进引擎真的会扫的 `{command,commands}` 目录，
      让**安装版本的** `ConfigCommand.load → gray-matter` 解析；
-   - **(b) profile 直接携带结构化 `ConfigCommandV1.Info`**，builder 写 `alpha.jsonc` 的 `command.<name>`，
+   - **采用 (b)**：profile 直接携带结构化 `ConfigCommandV1.Info`，builder 写 `alpha.jsonc` 的 `command.<name>`，
      **完全不解析 Markdown**。
 4. ⚠️ **不要复用 agent 的 frontmatter 转换器。** 它明说只认 Alpha 自有的受限文法
    （`main/agent-md-entry.ts:1`），**不是上游 command 的文法**。
@@ -347,16 +355,17 @@ vcs/workspace/worktree/server）。完整清单与逐条 `properties` 见本次�
 
 ## 5. 结论
 
-### 5.1 `alpha-code#840`（command profile）今天该做多大
+### 5.1 `alpha-code#840`（command profile）的实施结论
 
-**不能只补合同。** 项目级 `alpha_register` 确实能让 command 活起来，
-但**签名 package / 旧 catalog / 本地导入三条路都没有 command 的路由、builder、账本、生效与卸载腿**。
-⇒ `#840` 必须把**安装路径**一起做，范围比「加一个 profile」大得多。
+**不是只补合同。** A checkpoint 已同时落下 profile/registry/decoder、command child/tx
+identity、事务 builder、V3 账本、更新/整包卸载，以及真实引擎可见性门。生效层取
+§1.5(b)：发布端负责 provider 语义映射，host 只把严格 payload 与经摘要验证、严格 UTF-8
+的模板组成引擎 config 叶；**不复用 agent frontmatter 转换器**，**`variant` 不进合同**。
 
-三条必须先定的：
-- 生效层取 §1.5 的 (a) 还是 (b)；
-- **不复用 agent 的 frontmatter 转换器**；
-- **`variant` 不进合同**（上游不兑现它）。
+三个保守边界也已钉死：`init` / `review` / `customize-opencode` 在下载资产前拒绝；
+未登记 live command 叶不认领不覆盖（锁内再查封 TOCTOU）；command 没有 disable 投影，
+所以 `connection.unavailable` 导致的 disabled receipt 让整包具名 fail-closed。旧 catalog、
+本地导入、bridge、migration、dual-read 与通用 profile framework 均不在本票内。
 
 ### 5.2 hooks 离「能诚实映射」还差什么
 

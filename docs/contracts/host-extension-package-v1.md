@@ -16,7 +16,7 @@ profile, capability, and strict-decoder contract.
 The authoritative self-contained copy is
 [`packages/ui-mac/src/shared/host-extension-package-contract/CONTRACT.md`](../../packages/ui-mac/src/shared/host-extension-package-contract/CONTRACT.md).
 Its current aggregate artifact SHA-256 is
-`11d6c02624abcbeb121f3c1c6ffc08314398948e6d006514416aef14fd62ca73`.
+`deaa72dee3958694e3f7ea20985c841160676dab974a1aa1a2c21028d822eb26`.
 
 This value is republished prose, not a checked pin: nothing in the repository
 compares it against
@@ -25,7 +25,7 @@ compares it against
 `#807` — the whole time, every gate was green. Re-read it from the manifest
 rather than trusting it.
 
-The v1 host profiles are `agent`, `mcp-local`, `mcp-remote`, and `skill`; the
+The v1 host profiles are `agent`, `command`, `mcp-local`, `mcp-remote`, and `skill`; the
 capability vocabulary is `alpha.connection.v1`, `alpha.mcp-oauth.v1`, and
 `alpha.secret-prerequisite.v1`. `#807` briefly registered a fifth profile
 (`opencode-plugin`) with two more capabilities (`engine:config`,
@@ -61,14 +61,13 @@ published declaration schema against the published negative vectors, and assert
 the profile/capability closure as an exact set. Alpha Connection is a registered
 capability — it was promoted in `#749` — and `cloud` remains excluded.
 
-⚠️ **The vendored producer closure is one hop behind the host registry.** `#830`
-withdrew `opencode-plugin` / `engine:config` / `engine:plugin` from the host
-side above, but the producer artifact vendored here still publishes five
-profiles and five capabilities, and still leaves `managed-plugin` out of the
-exclusion list — `#807`/`#811` put it there and only an `alpha-web` republish
-plus a re-vendor can take it back out. Until that hop lands, the consumer's
-byte-identity check against the live host artifact is expected to fail; that is
-the cross-repository pin being mid-flight, not a defect in either side.
+⚠️ **The vendored producer closure is one hop behind the host registry.** This
+`#840` A checkpoint registers `command` on the host, while the producer artifact
+vendored here still publishes the four pre-command mappings and pins the older
+host artifact. `alpha-web#147` publishes the fifth mapping and `alpha-code#853`
+re-vendors those exact bytes. Until both hops land, the consumer's byte-identity
+check against the live host artifact is expected to fail. That red gate is the
+cross-repository pin doing its job; it must not be weakened or skipped.
 
 The **runtime host decoder** judgement is not in the consumer package — it cannot
 import across packages. It is delegated to `packages/ui-mac/src/main/package-installability.test.ts`

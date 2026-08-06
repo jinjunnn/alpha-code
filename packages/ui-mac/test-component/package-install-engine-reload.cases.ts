@@ -146,17 +146,25 @@ const catalogDocument = {
   packages: [fixture.envelope],
 }
 
-// URL → 字节。payload 由信封的 `payloadRef` 给出;资产由 payload 自己给出 —— `#828` 起 agent 是
-// `behavior.asset`(单个),skill 是 `behavior.files`(清单),两者都要**逐条**登记进这张表。
+// URL → 字节。payload 由信封的 `payloadRef` 给出;资产由 payload 自己给出 —— agent 是
+// `behavior.asset`、skill 是 `behavior.files`、command 是 `behavior.template`,都要**逐条**登记进这张表。
 const bytesByUrl = new Map<string, Uint8Array>()
 for (const component of fixture.envelope.components) {
   const payload = fixture.payloadByDigest.get(component.payloadRef.sha256)
   if (!payload) throw new Error(`fixture: payload bytes missing for ${component.id}`)
   bytesByUrl.set(component.payloadRef.url, payload)
   const decoded = JSON.parse(new TextDecoder().decode(payload)) as {
-    behavior?: { asset?: { url: string; sha256: string }; files?: Array<{ url: string; sha256: string }> }
+    behavior?: {
+      asset?: { url: string; sha256: string }
+      files?: Array<{ url: string; sha256: string }>
+      template?: { url: string; sha256: string }
+    }
   }
-  for (const ref of [...(decoded.behavior?.asset ? [decoded.behavior.asset] : []), ...(decoded.behavior?.files ?? [])]) {
+  for (const ref of [
+    ...(decoded.behavior?.asset ? [decoded.behavior.asset] : []),
+    ...(decoded.behavior?.files ?? []),
+    ...(decoded.behavior?.template ? [decoded.behavior.template] : []),
+  ]) {
     const assetBytes = fixture.assetByDigest.get(ref.sha256)
     if (!assetBytes) throw new Error(`fixture: asset bytes missing for ${component.id} (${ref.url})`)
     bytesByUrl.set(ref.url, assetBytes)

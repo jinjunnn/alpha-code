@@ -8,6 +8,12 @@
       "schemaPath": "profiles/agent.v1.schema.json"
     },
     {
+      "profileId": "command",
+      "profileVersion": 1,
+      "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
+      "schemaPath": "profiles/command.v1.schema.json"
+    },
+    {
       "profileId": "mcp-local",
       "profileVersion": 1,
       "mediaType": "application/vnd.alpha.host-extension-package.mcp-local.v1+json",

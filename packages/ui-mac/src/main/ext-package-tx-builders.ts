@@ -21,7 +21,7 @@ import {
   mcpSecretVersionedRef,
   writeMcpSecretVersioned,
 } from "./alpha-mcp-secrets"
-import { readMcpLeafStrict, validateServer } from "./ext-config"
+import { readCommandLeafStrict, readMcpLeafStrict, validateServer } from "./ext-config"
 import { agentConfigItemKey } from "./ext-agent-install"
 import { populateFromCas } from "./ext-cas"
 import { extensionHealthProbeRouter } from "./ext-health-probe-router"
@@ -113,6 +113,13 @@ export function buildDepartingChildConfigItemsV1(input: {
         action: "config",
         config: { target: join(input.root, "alpha.jsonc"), edits: [{ keyPath: ["mcp", child.name], value: undefined }] },
       })
+    else if (child.kind === "command")
+      // `#840`:command 的生效面就是这一格 config 叶 —— 离场即删,与安装侧 keyPath 逐字同源。
+      items.push({
+        key: `command--${child.name}--departing`,
+        action: "config",
+        config: { target: join(input.root, "alpha.jsonc"), edits: [{ keyPath: ["command", child.name], value: undefined }] },
+      })
   }
   return items
 }
@@ -131,6 +138,9 @@ export type SkillTxBuildInputV1 = CommonInput & {
   casBaseRoot?: string
 }
 export type AgentTxBuildInputV1 = CommonInput & { asset?: Buffer; agentEntry?: Record<string, unknown> }
+/** `#840`:commandEntry = admission 从 payload 字段 + template asset 字节合成的引擎叶
+ *  `{template, description?, agent?, model?, subtask?}`。本层不解释其内容,只落 config。 */
+export type CommandTxBuildInputV1 = CommonInput & { commandEntry?: Record<string, unknown> }
 export type McpTxBuildInputV1 = CommonInput & {
   userDataPath: string
   payload: PackageProfilePayloadV1
@@ -229,6 +239,69 @@ export function buildAgentTxItems(input: AgentTxBuildInputV1): PackageTxBuildRes
       receipt,
       populate: () => {},
       precondition: () => probeLedgerForWrite(input.root),
+      probe: extensionHealthProbeRouter(input.root),
+    },
+  }
+}
+
+/**
+ * `#840` command:单 config item —— 生效面就是 `alpha.jsonc` 的 `command.<name>` 叶
+ * (引擎经 `OPENCODE_CONFIG` 读到、`GET /command` 原样列出,已真机实证)。无盘上实物、
+ * 无密钥、无 prepared resource;fresh 闸与锁内 precondition 与 MCP builder 同构
+ * (未登记 live 叶不认领不覆盖 —— 治理路写的 builtin 覆盖叶 `command.init/review` 是
+ * 该闸的真实保护对象)。
+ *
+ * **R4-1(owner 2026-08-05)**:command 没有禁用面(引擎叶无 disable 键、
+ * `setInstallStateByKey` 拒绝翻转)。`desiredState === "disabled"` 的 receipt(唯一可达
+ * 来源 = alpha-connection 前置不可用时 admission 的全组件压制)在这里**具名拒绝** ——
+ * 装成 disabled 是永远无法启用的死态,且叶一旦落盘命令就活着,账本却说关。整包因此
+ * fail-closed,而不是装出半真半假。
+ */
+export function buildCommandTxItems(input: CommandTxBuildInputV1): PackageTxBuildResultV1 {
+  const commandEntry = input.commandEntry
+  if (!commandEntry) return { ok: false, reason: NO_PLAN }
+  const receipt = input.receipt
+  if (receipt.desiredState === "disabled")
+    return {
+      ok: false,
+      reason: `command "${input.name}" has no enable/disable surface — a package whose connection prerequisite is unavailable cannot install its command children; the whole package fails closed (R4-1)`,
+    }
+  receipt.configKey = `command.${input.name}`
+  const items: TxPlanItem[] = [
+    {
+      key: input.key,
+      action: "config",
+      config: {
+        target: join(input.root, "alpha.jsonc"),
+        edits: [{ keyPath: ["command", input.name], value: commandEntry }],
+      },
+      manifestDigest: input.manifestDigest,
+      capabilities: input.capabilities,
+      receipt,
+    },
+  ]
+
+  const existing = readCommandLeafStrict(input.name)
+  if (!existing.ok) return { ok: false, reason: existing.reason }
+  if (existing.value && !findRecordV2(input.root, "command", input.name))
+    return { ok: false, reason: "unregistered command config is not adopted or overwritten" }
+
+  return {
+    ok: true,
+    build: {
+      items,
+      receipt,
+      populate: () => {},
+      // 锁内重读:账本可写 + live 叶仍未被未登记配置占用(封死锁外读的 TOCTOU;MCP 同款)。
+      precondition: () => {
+        const ledger = probeLedgerForWrite(input.root)
+        if (!ledger.ok) return ledger
+        const current = readCommandLeafStrict(input.name)
+        if (!current.ok) return current
+        if (current.value && !findRecordV2(input.root, "command", input.name))
+          return { ok: false, reason: "unregistered command config appeared before commit" }
+        return { ok: true }
+      },
       probe: extensionHealthProbeRouter(input.root),
     },
   }

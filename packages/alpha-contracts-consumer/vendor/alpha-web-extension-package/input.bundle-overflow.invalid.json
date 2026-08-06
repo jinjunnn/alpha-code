@@ -1,7 +1,7 @@
 {
   "packageId": "package:generic-bundle",
   "presentation": {
-    "description": "Generic flat Bundle corpus input: one agent root and two leaves.",
+    "description": "Generic flat Bundle corpus input: one agent root and three leaves.",
     "displayName": "Generic Bundle"
   },
   "root": {

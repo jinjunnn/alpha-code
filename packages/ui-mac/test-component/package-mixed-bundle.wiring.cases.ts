@@ -12,7 +12,7 @@
 //   · receipt    —— 账本提交接缝抛错 ⇒ journal 保持非终态,由生产恢复收敛;
 //   · 全部 `TX_CRASH_POINTS` —— 进程在每一个点死掉,恢复后必须**全旧或全新**。
 //
-// 「全旧或全新」的判据是盘面本身(agent md / skill generation / mcp config 叶 / 三条 child record /
+// 「全旧或全新」的判据是盘面本身(agent md / skill generation / mcp + command config 叶 / 四条 child record /
 // 图 / claim / 密钥版本目录),不是返回值。半装 = 其中任意一项与其余不一致。
 
 import { createHash } from "node:crypto"
@@ -26,6 +26,7 @@ import type { TxCrashPoint, TxHooks, TxPlan } from "../src/main/ext-transaction"
 import {
   assertMatchesVendoredBundleShape,
   EXPECTED_SKIP_REASON,
+  LEAF_COMMAND_ID,
   LEAF_MCP_ID,
   LEAF_SKILL_ID,
   LEAF_UNSUPPORTED_ID,
@@ -153,6 +154,11 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     const agent = fixture.assetByDigest.get(sha(fixture.agentAsset))
     if (!agent) throw new Error(`unexpected asset fetch: ${url}`)
     return new Response(agent, { status: 200 })
+  }
+  if (url.includes("COMMAND.md")) {
+    const command = fixture.assetByDigest.get(sha(fixture.commandAsset))
+    if (!command) throw new Error(`unexpected asset fetch: ${url}`)
+    return new Response(command, { status: 200 })
   }
   const prefix = "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/"
   if (url.startsWith(prefix)) {
@@ -370,7 +376,7 @@ function walkFiles(dir: string): Array<{ path: string; data: Buffer; mode: numbe
 }
 
 /**
- * 盘面的**九个**观测点。「全旧或全新」= 这九个要么全是 absent 的那一套,要么全是 present 的
+ * 盘面的**十一个**观测点。「全旧或全新」= 这些观测点要么全是 absent 的那一套,要么全是 present 的
  * 那一套;任何混合都是半装包。返回布尔向量而不是一个聚合判断 —— 失败信息要指得出是哪一格。
  */
 function diskFacts() {
@@ -382,9 +388,11 @@ function diskFacts() {
     agentConfigLeaf: configText().includes('"generic-bundle-agent"'),
     skillGeneration: existsSync(join(root(), "ext-store", "skill--generic-bundle-skill", "current.json")),
     mcpConfigLeaf: configText().includes('"generic-bundle-remote"'),
+    commandConfigLeaf: configText().includes('"generic-bundle-command"'),
     agentRecord: recordKey("agent", "generic-bundle-agent"),
     skillRecord: recordKey("skill", "generic-bundle-skill"),
     mcpRecord: recordKey("mcp", "generic-bundle-remote"),
+    commandRecord: recordKey("command", "generic-bundle-command"),
     packageGraph: (state.packageGraphs ?? []).length > 0,
     claims: (state.claims ?? []).length > 0,
   }
@@ -403,20 +411,25 @@ function expectAllOldOrAllNew(label: string) {
   return allNew ? "new" : "old"
 }
 
-/** 「全新」不只是九格都为 true —— 图、claim、record 三者必须互相指得上。 */
+/** 「全新」不只是所有观测点都为 true —— 图、claim、record 三者必须互相指得上。 */
 function expectCoherentInstall(label: string) {
   const state = ledger()
   expect(state.v, label).toBe(3)
   const graph = state.packageGraphs![0]!
   expect(graph.packageId, label).toBe(MIXED_BUNDLE_PACKAGE_ID)
   expect([graph.root.componentId, ...graph.children.map((child) => child.componentId)].sort(), label).toEqual(
-    [ROOT_AGENT_ID, LEAF_MCP_ID, LEAF_SKILL_ID].sort(),
+    [ROOT_AGENT_ID, LEAF_COMMAND_ID, LEAF_MCP_ID, LEAF_SKILL_ID].sort(),
   )
   const owner = `bundle:${MIXED_BUNDLE_PACKAGE_ID}@${graph.root.manifestDigest}`
   expect(
     (state.claims ?? []).map((claim) => `${claim.kind}:${claim.name}`).sort(),
     `${label}: 每个装上的 child 都要有 claim`,
-  ).toEqual(["agent:generic-bundle-agent", "mcp:generic-bundle-remote", "skill:generic-bundle-skill"])
+  ).toEqual([
+    "agent:generic-bundle-agent",
+    "command:generic-bundle-command",
+    "mcp:generic-bundle-remote",
+    "skill:generic-bundle-skill",
+  ])
   for (const claim of state.claims ?? [])
     expect(claim.owners, `${label}: claim 必须由这个 Bundle 持有`).toEqual([owner])
   // 「无 child-only record」:被跳过的组件绝不出现在 record / claim / 图里。
@@ -436,9 +449,10 @@ test("the production ext-install-catalog channel activates a mixed Bundle in one
   const { preview: staged, result } = await installBundle("mixed-bundle-1", grants())
   const plan = staged.packageAuthorization!.plan
 
-  // ── 确认屏:三个会装的组件 + 一个不会装的,原因逐字来自 decoder。
+  // ── 确认屏:四个会装的组件 + 一个不会装的,原因逐字来自 decoder。
   expect(plan.items.filter((item) => item.included).map((item) => item.componentId)).toEqual([
     ROOT_AGENT_ID,
+    LEAF_COMMAND_ID,
     LEAF_MCP_ID,
     LEAF_SKILL_ID,
   ])
@@ -446,15 +460,16 @@ test("the production ext-install-catalog channel activates a mixed Bundle in one
   if (!skippedRow || skippedRow.included) throw new Error("授权确认屏必须带着被跳过的组件")
   expect(skippedRow.componentId).toBe(LEAF_UNSUPPORTED_ID)
   expect(skippedRow.skipReasonCode).toBe(EXPECTED_SKIP_REASON)
-  // 授权集只含会装的三个 —— 没人被要求为一个不会到货的组件授权。
+  // 授权集只含会装的四个 —— 没人被要求为一个不会到货的组件授权。
   expect(staged.authorization!.map((item) => item.key).sort()).toEqual([
     "agent--generic-bundle-agent",
+    "command--generic-bundle-command",
     "mcp--generic-bundle-remote",
     "skill--generic-bundle-skill",
   ])
-  // binding 逐组件:itemDigests 三个键,graphDigest 与 envelopeDigest 各不相同。
+  // binding 逐组件:itemDigests 四个键,graphDigest 与 envelopeDigest 各不相同。
   expect(Object.keys(staged.packageAuthorization!.binding.itemDigests).sort()).toEqual(
-    [ROOT_AGENT_ID, LEAF_MCP_ID, LEAF_SKILL_ID].sort(),
+    [ROOT_AGENT_ID, LEAF_COMMAND_ID, LEAF_MCP_ID, LEAF_SKILL_ID].sort(),
   )
   expect(staged.packageAuthorization!.binding.graphDigest).not.toBe(
     staged.packageAuthorization!.binding.envelopeDigest,
@@ -467,6 +482,7 @@ test("the production ext-install-catalog channel activates a mixed Bundle in one
         .filter((component) => component.id !== LEAF_UNSUPPORTED_ID)
         .map((component) => component.payloadRef.url),
       "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/AGENT.md",
+      "https://alphacodeone.com/catalog/assets/command.generic-bundle-command/1.0.0/COMMAND.md",
       // `#828`:技能的**每一个**文件都必须被取过。少取一个 = 装成残件,而这条断言正是
       // 为了让「少取一个」变红 —— 只断言 SKILL.md 被取过的写法对残件恒真。
       ...fixture.skillFiles.map(
@@ -480,7 +496,7 @@ test("the production ext-install-catalog channel activates a mixed Bundle in one
 
   expect(result).toMatchObject({ ok: true, kind: "agent", name: "generic-bundle-agent" })
   const outcome = result as { installed: string[]; skipped: Array<{ id: string; reason: string }> }
-  expect(outcome.installed).toEqual([ROOT_AGENT_ID, LEAF_MCP_ID, LEAF_SKILL_ID])
+  expect(outcome.installed).toEqual([ROOT_AGENT_ID, LEAF_COMMAND_ID, LEAF_MCP_ID, LEAF_SKILL_ID])
   expect(outcome.skipped).toEqual([{ id: LEAF_UNSUPPORTED_ID, reason: EXPECTED_SKIP_REASON }])
   // main 内部的重载指令不过线。
   expect(Object.keys(result as object)).not.toContain("activateMcp")
@@ -507,9 +523,11 @@ test("the production ext-install-catalog channel activates a mixed Bundle in one
     agentConfigLeaf: true,
     skillGeneration: true,
     mcpConfigLeaf: true,
+    commandConfigLeaf: true,
     agentRecord: true,
     skillRecord: true,
     mcpRecord: true,
+    commandRecord: true,
     packageGraph: true,
     claims: true,
   })
@@ -579,7 +597,7 @@ test("the production ext-install-catalog channel activates a mixed Bundle in one
     confirmScreen: EXPECTED_SKIP_REASON,
     receipt: EXPECTED_SKIP_REASON,
   })
-  // 收据里只该有这一条被跳过的组件(会装的三个都不该混进 skippedOptional)。
+  // 收据里只该有这一条被跳过的组件(会装的四个都不该混进 skippedOptional)。
   expect(receipt!.skippedOptional).toEqual([{ key: skippedKey, reason: EXPECTED_SKIP_REASON }])
   // 计划面与收据面同源:引擎落的就是 admission 交上去的那份。
   expect(lastPlan?.skippedOptional).toEqual(receipt!.skippedOptional)
@@ -629,7 +647,7 @@ test("a payload naming a path outside the skill root is refused with zero writes
   expect(existsSync(join(root(), "evil.md"))).toBe(false)
   // ② 根目录条目集与安装前逐字相同(不止那一个名字:任何新落点都算)。
   expect(readdirSync(root()).sort()).toEqual(beforeRootEntries)
-  // ③ 盘面九格全 absent —— 整包零副作用,而不是「skill 拒了、agent/mcp 装上了」。
+  // ③ 盘面所有观测点全 absent —— 整包零副作用,而不是「skill 拒了、其它 child 装上了」。
   expect(expectAllOldOrAllNew("escaping skill path")).toBe("old")
 })
 
@@ -779,7 +797,7 @@ test("`#817` signed package children flip on through the production ext-set-inst
   const cfg = () => JSON.parse(readFileSync(join(root(), "alpha.jsonc"), "utf8")) as Record<string, any>
   const allow = () => JSON.parse(readFileSync(join(root(), "skills-enabled.json"), "utf8")) as unknown
 
-  // 安装后三 child 均 disabled(catalog 首装缺省)—— #817 报的现场。
+  // 安装后 skill / agent / mcp 三类可启停 child 均 disabled(catalog 首装缺省)—— #817 报的现场。
   expect(cfg().agent["generic-bundle-agent"].disable).toBe(true)
   expect(cfg().mcp["generic-bundle-remote"].enabled).toBe(false)
   expect(allow()).toEqual({ v: 1, keys: [] })

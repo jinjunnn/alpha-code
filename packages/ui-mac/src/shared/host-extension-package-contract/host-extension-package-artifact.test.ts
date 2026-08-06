@@ -64,6 +64,7 @@ describe("HostExtensionPackageV1 artifact", () => {
     assertHostExtensionPackageRegistryV1()
     expect(PROFILE_REGISTRY_V1.map((profile) => profile.profileId)).toEqual([
       "agent",
+      "command",
       "mcp-local",
       "mcp-remote",
       "skill",
@@ -178,6 +179,7 @@ describe("HostExtensionPackageV1 artifact", () => {
       ),
     ).toEqual([
       "agent@1 application/vnd.alpha.host-extension-package.agent.v1+json profiles/agent.v1.schema.json",
+      "command@1 application/vnd.alpha.host-extension-package.command.v1+json profiles/command.v1.schema.json",
       "mcp-local@1 application/vnd.alpha.host-extension-package.mcp-local.v1+json profiles/mcp-local.v1.schema.json",
       "mcp-remote@1 application/vnd.alpha.host-extension-package.mcp-remote.v1+json profiles/mcp-remote.v1.schema.json",
       "skill@1 application/vnd.alpha.host-extension-package.skill.v1+json profiles/skill.v1.schema.json",

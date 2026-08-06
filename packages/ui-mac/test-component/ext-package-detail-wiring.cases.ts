@@ -31,6 +31,7 @@ import {
 import { dict as zh } from "../src/renderer/i18n/zh"
 import {
   EXPECTED_SKIP_REASON,
+  LEAF_COMMAND_ID,
   LEAF_MCP_ID,
   LEAF_SKILL_ID,
   LEAF_UNSUPPORTED_ID,
@@ -501,6 +502,7 @@ async function mountHarness(options?: {
             installers: {
               removeFsInstall: () => ({ ok: true as const, files: [] }),
               removeMcpConfig: () => ({ ok: true as const }),
+              removeCommandConfig: () => ({ ok: true as const }),
               removeMcpSecretsStrict: () => ({ ok: true as const }),
               releaseAlphaConnectionBindings: () => ({ ok: true as const }),
               removeInstallGrants: () => ({ ok: true as const, removed: [] }),
@@ -955,21 +957,29 @@ describe("package detail production renderer path", () => {
     )
     const detail = document.querySelector<HTMLElement>(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)!
 
-    // ① 逐组件一行,root 与三个 leaf 全在,顺序即签名顺序。
+    // ① 逐组件一行,root 与四个 leaf 全在,顺序即签名顺序。
     const rows = Array.from(detail.querySelectorAll<HTMLElement>("[data-package-component]"))
     expect(rows.map((row) => row.getAttribute("data-package-component"))).toEqual([
       ROOT_AGENT_ID,
       LEAF_SKILL_ID,
       LEAF_MCP_ID,
+      LEAF_COMMAND_ID,
       LEAF_UNSUPPORTED_ID,
     ])
-    expect(rows.map((row) => row.getAttribute("data-included"))).toEqual(["true", "true", "true", "false"])
+    expect(rows.map((row) => row.getAttribute("data-included"))).toEqual([
+      "true",
+      "true",
+      "true",
+      "true",
+      "false",
+    ])
 
     // ② 「会装 / 不会装」是**用户能读到的中文**,不是一个 data 属性(属性可以在没有任何文案的
     //    情况下写对 —— 那正是 `#749` 之后的现状)。
     const stateText = (row: HTMLElement) =>
       row.querySelector(".alpha-ext-package-component-state")?.textContent
     expect(rows.map(stateText)).toEqual([
+      zh["alpha.ext.packageComponentIncluded"],
       zh["alpha.ext.packageComponentIncluded"],
       zh["alpha.ext.packageComponentIncluded"],
       zh["alpha.ext.packageComponentIncluded"],
@@ -980,28 +990,31 @@ describe("package detail production renderer path", () => {
       zh["alpha.ext.packageRequired"],
       zh["alpha.ext.packageOptional"],
       zh["alpha.ext.packageOptional"],
+      zh["alpha.ext.packageOptional"],
     ])
 
     // ③ 被跳过的那一行有**具名原因**,且原因文案非空、来自 decoder 的 token。
-    const why = rows[3]!.querySelector<HTMLElement>(".alpha-ext-package-component-why")
+    const why = rows[4]!.querySelector<HTMLElement>(".alpha-ext-package-component-why")
     expect(why).toBeInstanceOf(HTMLElement)
     expect(why!.getAttribute("data-skip-reason")).toBe(EXPECTED_SKIP_REASON)
     expect(why!.textContent).toBe(zh["alpha.ext.packageSkipCapabilityUnsupported"])
     expect(why!.textContent!.trim()).not.toBe("")
-    // 会安装的三行不得出现任何原因段(「所有行都显示原因」是另一种假绿)。
-    expect(rows.slice(0, 3).map((row) => row.querySelector(".alpha-ext-package-component-why"))).toEqual([
+    // 会安装的四行不得出现任何原因段(「所有行都显示原因」是另一种假绿)。
+    expect(rows.slice(0, 4).map((row) => row.querySelector(".alpha-ext-package-component-why"))).toEqual([
+      null,
       null,
       null,
       null,
     ])
 
-    // ④ 授权确认屏是第二个 preview 面:会装的三条 + 不会装的一条(带同一句原因)。
+    // ④ 授权确认屏是第二个 preview 面:会装的四条 + 不会装的一条(带同一句原因)。
     click(detail.querySelector(".alpha-ext-dsub button"))
     await waitForPackageAuthorization(MIXED_BUNDLE_PACKAGE_ID)
     const dialog = packageAuthorizationDialog()
     const included = Array.from(dialog.querySelectorAll<HTMLElement>("[data-plan-component][data-included='true']"))
     expect(included.map((row) => row.getAttribute("data-plan-component"))).toEqual([
       ROOT_AGENT_ID,
+      LEAF_COMMAND_ID,
       LEAF_MCP_ID,
       LEAF_SKILL_ID,
     ])

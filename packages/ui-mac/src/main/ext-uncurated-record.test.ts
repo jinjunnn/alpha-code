@@ -55,13 +55,17 @@ describe("decodeRecordV2 — catalog 语义防混用不变量(#306)", () => {
     if (!r.ok) expect(r.reason).toContain("supply-chain digests")
   })
 
-  test("catalog 来源缺保留前缀 → 拒写;command 禁 catalog 来源", () => {
+  test("catalog 来源缺保留前缀 → 拒写;command 走通用前缀规则(#840)", () => {
     const bad = upsertRecordV2(root, catalogInput({ id: "user:markitdown" }))
     expect(bad.ok).toBe(false)
     if (!bad.ok) expect(bad.reason).toContain('reserved "mcp:" prefix')
+    // `#840`:「command 禁 catalog 来源」随 command@1 profile 的合法生产者(V3 签名 package)
+    // 退役 —— catalog+command 落回通用 `${kind}:` 前缀规则:错前缀仍拒,对前缀即合法。
+    const masq = upsertRecordV2(root, catalogInput({ kind: "command", id: "mcp:x", name: "x", configKey: undefined, manifestDigest: undefined }))
+    expect(masq.ok).toBe(false)
+    if (!masq.ok) expect(masq.reason).toContain('reserved "command:" prefix')
     const cmd = upsertRecordV2(root, catalogInput({ kind: "command", id: "command:x", name: "x", configKey: undefined, manifestDigest: undefined }))
-    expect(cmd.ok).toBe(false)
-    if (!cmd.ok) expect(cmd.reason).toContain('not allowed for kind "command"')
+    expect(cmd.ok).toBe(true)
   })
 
   test("合法 catalog 与合法未策展 record 都可写", () => {

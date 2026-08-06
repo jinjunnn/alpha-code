@@ -46,6 +46,12 @@ export type FreshIntakeFacts = {
 }
 
 export function initialDesiredState(intake: FreshIntakeFacts): "enabled" | "disabled" {
+  // `#840`(owner 2026-08-05 裁决):command 恒 enabled,排在一切规则之前。
+  // command 没有启停生效面 —— 引擎 `command.<name>` 叶无 disable 键、alpha 无投影/注入面、
+  // `setInstallStateByKey` 对 command 拒绝翻转(ext-install-planner.ts)。disabled 因此是
+  // **无法启用的死态**,且落成 disabled 而叶活着 = 「账本说关、命令仍可执行」的假态。
+  // 这是机械事实,curation 声明也改变不了它,故不让位于规则 1(cloud 例外同一形态)。
+  if (intake.kind === "command") return "enabled"
   // #397 规则 1:目录条目的有效声明优先于一切来源推断(声明是合同面,cloud 例外亦让位)。
   if (intake.origin === "catalog" && intake.activationPolicy !== undefined) {
     if (intake.activationPolicy === "session-grant") return "disabled"
