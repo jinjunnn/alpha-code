@@ -153,12 +153,37 @@ sidecar's Basic authorization and stopped before `LocationMiddleware`, while
 upstream `Default` and `listen` independently called `createRoutes` and used
 different memo maps, so they could not share a `LocationServiceMap` anyway.
 
-The next code candidate authenticates the in-process request and applies a
-strict Alpha-owned generated-output patch: only the fixed Electron
-`cors=["oc://renderer"]` listener reuses `Default`'s singleton routes and global
-memo map; all other listeners retain `createRoutes(opts)`. A real headless
-server diagnostic confirmed the shared graph built in 281.46 ms and the
-following socket request completed in 8.79 ms. This does not bypass
-`v2.model.list` or introduce a second catalog source, and it is still unclaimed
-code-level evidence: the issue and PR remain open/draft until a newly signed app
-passes all five samples at ≤2 s P95 with first/hot equality.
+The fourth signed candidate at joint RC
+`afdcf28fc717fa19ab96260a5b2a85292918fe3a` (app executable SHA-256
+`b5ddff952ace51de6c2af386f06ee4e815dfd0b7612a88eb3a8d09b5d095e885`)
+authenticated that in-process request and applied the strict Alpha-owned
+generated-output patch: only the fixed Electron `cors=["oc://renderer"]`
+listener reused `Default`'s singleton routes and global memo map; all other
+listeners retained `createRoutes(opts)`. Correctness stayed green, but its five
+BYOK-only startup values were 18,667.736 / 3,372.860 / 5,249.261 / 3,485.976 /
+3,861.934 ms, so the directly recomputed nearest-rank P95 was **18,667.736 ms**
+and the timing gate failed. Every sample still returned the exact same first/hot
+two-row governed set with zero account or bearer requests. The two recorded
+renderer mounts are expected: this probe deliberately calls `location.reload()`
+after the first successful read to compare the hot set. The summary's
+`latency.samples=0` is also expected under the current probe whitelist, which
+excludes `byok-only`; these five raw values, rather than that aggregate field,
+are the #857 P95 evidence.
+
+The failed candidate published sidecar ready as soon as socket listen completed
+while the local graph prewarm was still in flight. An isolated no-GUI diagnostic
+against the exact generated engine bundle reproduced the same shared
+`Default`/listener route and memo map with the bundled Alpha extension: listener
+build completed in 150.89 ms, the concurrent authenticated prewarm in 187.36 ms,
+and the following socket model request in 9.57 ms. This supports a narrower
+scheduling diagnosis: starting the renderer before prewarm settlement causes the
+packaged contention; the graph does not intrinsically require the observed 2–5 s
+when it runs before renderer startup.
+
+The next code candidate therefore changes only sidecar readiness ordering. It
+still starts the real authenticated V2 prewarm before `Server.listen` so the two
+builds overlap, but publishes ready only after both have settled. It does not
+bypass `v2.model.list`, introduce a second catalog source, or wait for account or
+network state. This remains unclaimed code-level evidence: the issue and PR stay
+open/draft until a newly signed app passes all five samples at ≤2 s P95 with
+first/hot equality.

@@ -113,8 +113,9 @@ async function start(command: StartCommand) {
     // Start the real per-location graph through the embedded server's authenticated in-process app
     // before socket-listen finishes. Alpha's strict generated-output patch pins the fixed Electron
     // listener to this app's routes and memo map, so the renderer's first V2 model call observes the
-    // warmed production layer rather than paying its construction cost. Do not await: listen/health
-    // and the location graph intentionally progress in parallel.
+    // warmed production layer rather than paying its construction cost. Start the request before
+    // listen so both builds progress in parallel, but do not publish ready until the local prewarm
+    // settles:starting the renderer earlier starves the graph build enough to miss #857's 2 s gate.
     const prewarm = prewarmInitialLocation(Server.Default().app, command.initialDirectory, {
       password: command.password,
     })
@@ -126,11 +127,10 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
+    const prewarmResult = await prewarm
+    if (prewarmResult.outcome === "ready") console.log("initial governed catalog location prewarmed")
+    else console.warn("initial governed catalog location prewarm did not become ready", prewarmResult)
     parentPort.postMessage(buildReadyMessage(injection))
-    void prewarm.then((result) => {
-      if (result.outcome === "ready") console.log("initial governed catalog location prewarmed")
-      else console.warn("initial governed catalog location prewarm did not become ready", result)
-    })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
     setImmediate(() => process.exit(1))

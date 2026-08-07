@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, test } from "bun:test"
 import { initialLocationPrewarmRequest, prewarmInitialLocation } from "./sidecar-location-prewarm"
 
@@ -46,6 +47,19 @@ describe("sidecar initial location prewarm", () => {
     expect(calls).toBe(1)
     resolve(new Response(null, { status: 200 }))
     expect(await warming).toEqual({ outcome: "ready", status: 200 })
+  })
+
+  test("production starts prewarm before listen and withholds ready until it settles", () => {
+    const source = readFileSync(import.meta.dir + "/sidecar.ts", "utf8")
+    const start = source.indexOf("const prewarm = prewarmInitialLocation(")
+    const listen = source.indexOf("listener = await Server.listen(")
+    const settled = source.indexOf("const prewarmResult = await prewarm")
+    const ready = source.indexOf("parentPort.postMessage(buildReadyMessage(injection))")
+
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(listen).toBeGreaterThan(start)
+    expect(settled).toBeGreaterThan(listen)
+    expect(ready).toBeGreaterThan(settled)
   })
 
   test("reports a non-ready marker response without retrying or failing open", async () => {
