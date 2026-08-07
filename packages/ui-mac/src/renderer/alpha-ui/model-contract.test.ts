@@ -194,4 +194,59 @@ describe("typed model contract", () => {
     expect(probeSignal).not.toBe(caller)
     expect(performance.now() - started).toBeLessThan(250)
   })
+
+  test("a marker response already received at the deadline remains ready", async () => {
+    const times = [0, 0, 20]
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: async () => ({ data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }),
+            },
+            model: { list: async () => ({ data: { data: [model] } }) },
+          },
+        }) as never,
+      { catalogReadyTimeoutMs: 20, now: () => times.shift() ?? 20 },
+    )
+
+    await expect(contract.list("/repo")).resolves.toEqual([model])
+  })
+
+  test("caller abort stays a request failure during both catalog probe and poll wait", async () => {
+    for (const phase of ["probe", "poll"] as const) {
+      const caller = new AbortController()
+      let probeSignal: AbortSignal | undefined
+      const contract = createModelContract(
+        () =>
+          ({
+            v2: {
+              provider: {
+                get: async (_input: unknown, options: { signal?: AbortSignal }) => {
+                  probeSignal = options.signal
+                  if (phase === "poll") return { error: { message: "not ready" } }
+                  return new Promise<{ error: unknown }>((resolve) => {
+                    if (probeSignal?.aborted) return resolve({ error: probeSignal.reason })
+                    probeSignal?.addEventListener("abort", () => resolve({ error: probeSignal?.reason }), {
+                      once: true,
+                    })
+                  })
+                },
+              },
+            },
+          }) as never,
+        { catalogReadyTimeoutMs: 1_000, catalogReadyPollMs: 1_000 },
+      )
+
+      const pending = contract.list("/repo", caller.signal).catch((error) => error)
+      setTimeout(() => caller.abort(new Error(`caller cancelled during ${phase}`)), 10)
+      const failure = await pending
+
+      expect(failure).toBeInstanceOf(ModelContractError)
+      expect(failure).toMatchObject({ operation: "list", reason: "request" })
+      expect(failure.cause).toBe(caller.signal.reason)
+      expect(probeSignal).toBeDefined()
+      expect(probeSignal).not.toBe(caller.signal)
+    }
+  })
 })

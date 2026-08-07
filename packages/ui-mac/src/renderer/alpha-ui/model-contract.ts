@@ -64,9 +64,12 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
           { providerID: ALPHA_V2_CATALOG_READY_PROVIDER_ID, location: { directory } },
           { signal: probeSignal },
         )
+        // The generated client returns fetch aborts as `{ error }` when throwOnError is false.
+        // Preserve the caller's request-abort classification before considering our own deadline.
+        if (signal?.aborted) throw new ModelContractError("list", signal.reason)
+        if (!result.error && result.data?.data.id === ALPHA_V2_CATALOG_READY_PROVIDER_ID) return
         if (deadlineSignal.aborted || now() >= deadline)
           throw new ModelContractError("list", result.error, "catalog-not-ready")
-        if (!result.error && result.data?.data.id === ALPHA_V2_CATALOG_READY_PROVIDER_ID) return
         cause = result.error
       } catch (error) {
         if (signal?.aborted) throw new ModelContractError("list", signal.reason)
@@ -76,7 +79,12 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
             : new ModelContractError("list", error, "catalog-not-ready")
         cause = error
       }
-      await waitForNextProbe(catalogReadyPollMs, signal)
+      try {
+        await waitForNextProbe(catalogReadyPollMs, signal)
+      } catch (error) {
+        if (signal?.aborted) throw new ModelContractError("list", signal.reason)
+        throw error
+      }
     }
   }
 
