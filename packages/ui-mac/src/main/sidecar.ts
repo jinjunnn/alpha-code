@@ -112,8 +112,8 @@ async function start(command: StartCommand) {
 
     // Start the real per-location graph through the embedded server's authenticated in-process app
     // before socket-listen finishes. Alpha's strict generated-output patch pins the fixed Electron
-    // listener to this app's routes and memo map, so the renderer's first V2 model call observes the
-    // warmed production layer rather than paying its construction cost. Start the request before
+    // listener to this app's routes and memo map, so the marker and real model handler settle before
+    // the renderer's first V2 model call. Start the request before
     // listen so both builds progress in parallel, but do not publish ready until the local prewarm
     // settles:starting the renderer earlier starves the graph build enough to miss #857's 2 s gate.
     const prewarm = prewarmInitialLocation(Server.Default().app, command.initialDirectory, {

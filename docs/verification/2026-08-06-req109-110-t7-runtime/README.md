@@ -180,10 +180,28 @@ scheduling diagnosis: starting the renderer before prewarm settlement causes the
 packaged contention; the graph does not intrinsically require the observed 2–5 s
 when it runs before renderer startup.
 
-The next code candidate therefore changes only sidecar readiness ordering. It
-still starts the real authenticated V2 prewarm before `Server.listen` so the two
-builds overlap, but publishes ready only after both have settled. It does not
-bypass `v2.model.list`, introduce a second catalog source, or wait for account or
+The fifth signed candidate at joint RC
+`fb0a83e9eb84e2d950966f194468ba24a5aed395` (app executable SHA-256
+`2d387e88856d1db11e670f4d4ee18e2275f757bfd2064302f53152a1e294db95`)
+changed only sidecar readiness ordering: it started the real authenticated V2
+prewarm before `Server.listen` but published ready only after both settled. Its
+five BYOK-only startup values were 16,290.028 / 3,516.540 / 3,410.652 /
+3,499.337 / 3,454.527 ms, so nearest-rank P95 was **16,290.028 ms** and the gate
+still failed. First/hot identity equality, two governed rows, zero account or
+bearer requests, zero main reloads, and negative secret checks remained green.
+
+The new ordering made the remaining cold seam exact. Sidecar ready occurred at
+1,073–1,587 ms, but the first renderer model-contract call then spent
+1,909–2,105 ms on its real marker-plus-model read in four ordinary samples; the
+same socket `/api/model` handler immediately returned in 6–16 ms afterward.
+Thus waiting for the marker prewarm alone does not mechanically prove that the
+renderer's actual model handler has settled before startup contention begins.
+
+The next code candidate retains the same sidecar-owned local path and extends
+the prewarm in one direction only: after the governed marker succeeds, it reads
+the same directory's real `/api/model` handler and consumes that response before
+ready. It does not cache or expose the response, bypass the renderer's own
+`v2.model.list`, introduce a second catalog source, or wait for account or
 network state. This remains unclaimed code-level evidence: the issue and PR stay
 open/draft until a newly signed app passes all five samples at ≤2 s P95 with
 first/hot equality.

@@ -1,17 +1,28 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, test } from "bun:test"
-import { initialLocationPrewarmRequest, prewarmInitialLocation } from "./sidecar-location-prewarm"
+import {
+  initialLocationPrewarmRequest,
+  initialModelPrewarmRequest,
+  prewarmInitialLocation,
+} from "./sidecar-location-prewarm"
 
 describe("sidecar initial location prewarm", () => {
-  test("targets the real governed-provider V2 handler for the exact directory", () => {
-    const request = initialLocationPrewarmRequest("/Users/example/Alpha", "synthetic-password")!
-    const url = new URL(request.url)
-    expect(request.method).toBe("GET")
-    expect(request.headers.get("authorization")).toBe(
-      `Basic ${Buffer.from("opencode:synthetic-password").toString("base64")}`,
-    )
-    expect(url.pathname).toBe("/api/provider/alpha-internal-catalog-ready")
-    expect(url.searchParams.get("location[directory]")).toBe("/Users/example/Alpha")
+  test("targets the real governed-provider and model V2 handlers for the exact directory", () => {
+    const requests = [
+      initialLocationPrewarmRequest("/Users/example/Alpha", "synthetic-password")!,
+      initialModelPrewarmRequest("/Users/example/Alpha", "synthetic-password")!,
+    ]
+    expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+      "/api/provider/alpha-internal-catalog-ready",
+      "/api/model",
+    ])
+    for (const request of requests) {
+      expect(request.method).toBe("GET")
+      expect(request.headers.get("authorization")).toBe(
+        `Basic ${Buffer.from("opencode:synthetic-password").toString("base64")}`,
+      )
+      expect(new URL(request.url).searchParams.get("location[directory]")).toBe("/Users/example/Alpha")
+    }
   })
 
   test("rejects a relative directory before the server app is called", async () => {
@@ -33,20 +44,21 @@ describe("sidecar initial location prewarm", () => {
   test("starts the in-process request without waiting for socket listen", async () => {
     let resolve!: (response: Response) => void
     const pending = new Promise<Response>((done) => (resolve = done))
-    let calls = 0
+    const paths: string[] = []
     const warming = prewarmInitialLocation(
       {
-        request() {
-          calls++
-          return pending
+        request(input) {
+          paths.push(new URL(input instanceof Request ? input.url : input).pathname)
+          return paths.length === 1 ? pending : new Response("[]", { status: 200 })
         },
       },
       "/Users/example/Alpha",
       { password: "synthetic-password" },
     )
-    expect(calls).toBe(1)
+    expect(paths).toEqual(["/api/provider/alpha-internal-catalog-ready"])
     resolve(new Response(null, { status: 200 }))
     expect(await warming).toEqual({ outcome: "ready", status: 200 })
+    expect(paths).toEqual(["/api/provider/alpha-internal-catalog-ready", "/api/model"])
   })
 
   test("production starts prewarm before listen and withholds ready until it settles", () => {
@@ -76,6 +88,22 @@ describe("sidecar initial location prewarm", () => {
     )
     expect(result).toEqual({ outcome: "unavailable", status: 404 })
     expect(calls).toBe(1)
+  })
+
+  test("reports a non-ready model response only after the governed marker succeeds", async () => {
+    let calls = 0
+    const result = await prewarmInitialLocation(
+      {
+        request() {
+          calls++
+          return new Response(null, { status: calls === 1 ? 200 : 503 })
+        },
+      },
+      "/Users/example/Alpha",
+      { password: "synthetic-password" },
+    )
+    expect(result).toEqual({ outcome: "unavailable", status: 503 })
+    expect(calls).toBe(2)
   })
 
   test("contains request failure as a diagnostic result", async () => {

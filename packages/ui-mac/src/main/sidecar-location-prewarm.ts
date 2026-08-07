@@ -2,7 +2,8 @@
 //
 // The embedded server exposes an in-process app. Alpha's generated-output patch
 // pins the fixed Electron listener to that app's routes and memo map, so an
-// authenticated marker request starts the exact production location layer without
+// authenticated marker request starts the exact production location layer, then an
+// authenticated model request settles the renderer's exact first handler without
 // opening a second server, inventing a catalog fast-path, or touching account state.
 import path from "node:path"
 import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../shared/alpha-config"
@@ -35,6 +36,21 @@ export function initialLocationPrewarmRequest(
   })
 }
 
+export function initialModelPrewarmRequest(
+  directory: string,
+  password: string,
+  signal?: AbortSignal,
+): Request | undefined {
+  if (!path.isAbsolute(directory)) return
+  const url = new URL("/api/model", "http://alpha-sidecar.invalid")
+  url.searchParams.set("location[directory]", directory)
+  return new Request(url, {
+    method: "GET",
+    headers: { Authorization: `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}` },
+    signal,
+  })
+}
+
 export async function prewarmInitialLocation(
   app: ServerApp,
   directory: string,
@@ -47,10 +63,13 @@ export async function prewarmInitialLocation(
   try {
     const request = initialLocationPrewarmRequest(directory, options.password, controller.signal)
     if (!request) return { outcome: "invalid-directory" }
-    const response = await app.request(request)
-    return response.ok
-      ? { outcome: "ready", status: response.status }
-      : { outcome: "unavailable", status: response.status }
+    const marker = await app.request(request)
+    if (!marker.ok) return { outcome: "unavailable", status: marker.status }
+    const modelRequest = initialModelPrewarmRequest(directory, options.password, controller.signal)!
+    const models = await app.request(modelRequest)
+    if (!models.ok) return { outcome: "unavailable", status: models.status }
+    await models.arrayBuffer()
+    return { outcome: "ready", status: models.status }
   } catch (error) {
     return { outcome: "failed", error: error instanceof Error ? error.message : String(error) }
   } finally {
