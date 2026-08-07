@@ -141,9 +141,24 @@ secret-hygiene checks. The first V2 marker request was paying the lazy
 per-location service-graph construction; moving the governed base before the
 internal plugin batch fixed correctness but did not eliminate that cost.
 
-The next code candidate starts that same location graph earlier through the
-embedded server's existing in-process V2 app for the exact `~/Alpha` home
-directory, in parallel with socket listen. It does not bypass `v2.model.list`
-or introduce a second catalog source. This is still unclaimed code-level work:
-the issue and PR remain open/draft until a newly signed app passes all five
-samples at ≤2 s P95 with first/hot equality.
+A third signed candidate at joint RC
+`ff0cf54a4fb3152f72c0e2d6c892e20a541eee22` (app executable SHA-256
+`5b6aa738d627d3ed8278dd2a8be67ef7fa1d363d2770e1b03e7c3e287cc2229b`)
+started an in-process marker request in parallel with socket listen, but the
+five BYOK-only samples were 15,295.444 / 4,625.020 / 3,581.587 / 4,022.536 /
+3,390.514 ms; P95 was **15,295.444 ms**. First/hot identity equality, zero
+account/bearer requests, zero rotation/reload, and secret hygiene all remained
+correct. Source-level diagnosis found two exact causes: the request lacked the
+sidecar's Basic authorization and stopped before `LocationMiddleware`, while
+upstream `Default` and `listen` independently called `createRoutes` and used
+different memo maps, so they could not share a `LocationServiceMap` anyway.
+
+The next code candidate authenticates the in-process request and applies a
+strict Alpha-owned generated-output patch: only the fixed Electron
+`cors=["oc://renderer"]` listener reuses `Default`'s singleton routes and global
+memo map; all other listeners retain `createRoutes(opts)`. A real headless
+server diagnostic confirmed the shared graph built in 281.46 ms and the
+following socket request completed in 8.79 ms. This does not bypass
+`v2.model.list` or introduce a second catalog source, and it is still unclaimed
+code-level evidence: the issue and PR remain open/draft until a newly signed app
+passes all five samples at ≤2 s P95 with first/hot equality.

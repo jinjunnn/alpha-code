@@ -110,12 +110,14 @@ async function start(command: StartCommand) {
     useEnvProxy()
     const { Server } = await import("virtual:opencode-server")
 
-    // Start the real per-location graph through the embedded server's in-process app before
-    // socket-listen finishes. The request and the listener share HttpApiApp.context (and therefore
-    // one LocationServiceMap cache), so the renderer's first V2 model call observes the warmed
-    // production layer rather than paying its construction cost. Do not await: listen/health and
-    // the location graph intentionally progress in parallel.
-    const prewarm = prewarmInitialLocation(Server.Default().app, command.initialDirectory)
+    // Start the real per-location graph through the embedded server's authenticated in-process app
+    // before socket-listen finishes. Alpha's strict generated-output patch pins the fixed Electron
+    // listener to this app's routes and memo map, so the renderer's first V2 model call observes the
+    // warmed production layer rather than paying its construction cost. Do not await: listen/health
+    // and the location graph intentionally progress in parallel.
+    const prewarm = prewarmInitialLocation(Server.Default().app, command.initialDirectory, {
+      password: command.password,
+    })
 
     listener = await Server.listen({
       port: command.port,

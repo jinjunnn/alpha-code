@@ -74,10 +74,13 @@ ConfigProvider 合并完文件来源,不得用局部 early set 冒充完整目�
 正确的早提交仍不等于首个 HTTP 请求没有启动成本:`/api/provider` 与 `/api/model` 共用的
 `LocationMiddleware` 会在首次目录请求时构建整张 per-location 服务图。首屏默认目录由 main 的
 `alphaUserWorkspaceDir()` 唯一解析为 `~/Alpha`;sidecar 把这个精确值随 start command 带入,并在
-`Server.listen` 同时经引擎已有的 `Server.Default().app` 发一次真实 V2 marker 请求。进程内 app 与
-socket listener 共用 `HttpApiApp.context` / `LocationServiceMap`,所以这只是把同一张生产服务图的
-构建提前并与 listen 并行,不是另造 catalog API、缓存或 renderer 假数据。预热不等待也不读取账户;
-失败只记诊断,renderer 仍保留上述 marker barrier 并照常 fail-closed。
+`Server.listen` 同时经引擎已有的 `Server.Default().app` 发一次带 sidecar Basic auth 的真实 V2
+marker 请求。上游 `Default` 与 `listen` 原本各自调用 `createRoutes` 并使用不同 memo map,无法共享
+`LocationServiceMap`;Alpha production prebuild 因而只对 gitignored embedded-server 生成物施加严格
+补丁:仅 `cors=["oc://renderer"]` 的固定 Electron listener 复用 `Default` 的 singleton routes 和全局
+memo map,其他调用仍走原 `createRoutes(opts)`。这只是把同一张生产服务图的构建提前并与 listen
+并行,不是另造 catalog API、缓存或 renderer 假数据。预热不等待也不读取账户;失败只记诊断,
+renderer 仍保留上述 marker barrier 并照常 fail-closed。
 
 同一次 fork 内同源产出,两投影无漂移面。推理密钥只存在于 v1 通道。
 
@@ -126,9 +129,12 @@ socket listener 共用 `HttpApiApp.context` / `LocationServiceMap`,所以这只�
   provider/model 仍只来自既有完整配置投影,不得在 core/server 新增第二套过滤器。
 - **首页目录预热必须复用真实 V2 handler 与共享 LocationServiceMap**:
   `sidecar-location-prewarm.test.ts` 锁住精确
-  `/api/provider/alpha-internal-catalog-ready?location[directory]=<~/Alpha>` 请求、相对路径零调用、
-  socket listen 前即启动以及非 2xx/异常只形成具名诊断。不得把预热改成 main/renderer 自造模型
-  JSON,也不得为了计时跳过首次 `v2.model.list`。
+  `/api/provider/alpha-internal-catalog-ready?location[directory]=<~/Alpha>` 请求、与真实 sidecar
+  password 对应的 `opencode` Basic auth、相对路径零调用、socket listen 前即启动以及非 2xx/异常只
+  形成具名诊断。`sidecar-shared-location-map.test.ts` 锁住只有固定 Electron CORS shape 才复用
+  singleton routes + 全局 memo map,其他 listener 保留 `createRoutes(opts)`;编译变量漂移可兼容,缺失、
+  重复、半补丁或错 memo 一律让构建失败。不得把预热改成 main/renderer 自造模型 JSON,也不得为了
+  计时跳过首次 `v2.model.list`。
 - **密钥不落 v2 文件**:v2 无解析机制,写入即明文。
 
 ## 事故记录与收敛

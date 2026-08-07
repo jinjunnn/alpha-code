@@ -3,9 +3,12 @@ import { initialLocationPrewarmRequest, prewarmInitialLocation } from "./sidecar
 
 describe("sidecar initial location prewarm", () => {
   test("targets the real governed-provider V2 handler for the exact directory", () => {
-    const request = initialLocationPrewarmRequest("/Users/example/Alpha")!
+    const request = initialLocationPrewarmRequest("/Users/example/Alpha", "synthetic-password")!
     const url = new URL(request.url)
     expect(request.method).toBe("GET")
+    expect(request.headers.get("authorization")).toBe(
+      `Basic ${Buffer.from("opencode:synthetic-password").toString("base64")}`,
+    )
     expect(url.pathname).toBe("/api/provider/alpha-internal-catalog-ready")
     expect(url.searchParams.get("location[directory]")).toBe("/Users/example/Alpha")
   })
@@ -20,6 +23,7 @@ describe("sidecar initial location prewarm", () => {
         },
       },
       "relative/Alpha",
+      { password: "synthetic-password" },
     )
     expect(result).toEqual({ outcome: "invalid-directory" })
     expect(calls).toBe(0)
@@ -37,6 +41,7 @@ describe("sidecar initial location prewarm", () => {
         },
       },
       "/Users/example/Alpha",
+      { password: "synthetic-password" },
     )
     expect(calls).toBe(1)
     resolve(new Response(null, { status: 200 }))
@@ -53,6 +58,7 @@ describe("sidecar initial location prewarm", () => {
         },
       },
       "/Users/example/Alpha",
+      { password: "synthetic-password" },
     )
     expect(result).toEqual({ outcome: "unavailable", status: 404 })
     expect(calls).toBe(1)
@@ -66,6 +72,7 @@ describe("sidecar initial location prewarm", () => {
         },
       },
       "/Users/example/Alpha",
+      { password: "synthetic-password" },
     )
     expect(result).toEqual({ outcome: "failed", error: "injected prewarm failure" })
   })
