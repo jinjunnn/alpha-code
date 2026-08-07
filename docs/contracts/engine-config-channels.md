@@ -57,10 +57,16 @@ endpoint 和上游 schema 必填的保守零值,不复制 key、不制定第二�
 仍负责同源的丰富 metadata/variant 末序覆盖。`ALPHA_MODELS_DISABLE=1` 时不覆盖该路径,保留上游
 catalog 逃生语义。
 
-机械 base 同时带 `alpha-internal-catalog-ready` 记录(`env:[]`、零 models):它不进入可选模型集合,
-但只会在较早的 ModelsDevPlugin 已一次提交整份 base 后可读。renderer 的 typed model contract 在
-**同一 directory**先轮询 `provider.get(marker)`,再发首次 `model.list`,从而不再等待末序
-ConfigProvider 才获得正确 identity 集。若 `enabled_providers` 含只存在于用户文件、无法由当前
+机械 base 同时带 `alpha-internal-catalog-ready` 记录(`env:[]`、零 models):它不进入可选模型集合。
+上游 `PluginInternal` 原本把全部 internal plugin 包在同一个 `State.batch`;即使 ModelsDevPlugin
+排在前面,它的 base/marker 也会被推迟到末序 ConfigProvider/variant 完成后才一起提交。Alpha 不改
+受 north-star 保护的 core 源码,而在 `build-node` 后由
+`packages/ui-mac/scripts/patch-plugin-internal-models.ts` 严格修改 gitignored 的 embedded-server
+产物:只把唯一的 ModelsDevPlugin 注册移到该外层 batch 之前,其余 plugin 仍维持原顺序与单批提交。
+补丁找不到唯一 `PluginInternal.boot` / ModelsDev 注册或遇到结构歧义就令构建失败,不得 warn/no-op。
+renderer 的 typed model contract 在**同一 directory**先轮询 `provider.get(marker)`,再发首次
+`model.list`,从而读取这次独立早提交,不再等待末序 ConfigProvider 才获得正确 identity 集。若
+`enabled_providers` 含只存在于用户文件、无法由当前
 内存投影完整表达的 provider,生成器就写 `{}` 且**不写 marker**;renderer 会保守等待普通
 ConfigProvider 合并完文件来源,不得用局部 early set 冒充完整目录。这道 barrier 只等待本地插件
 初始化,不读取 account summary、平台 bearer 或远端账户状态;登出/BYOK 目录仍与账户链并行。
@@ -97,6 +103,9 @@ ConfigProvider 合并完文件来源,不得用局部 early set 冒充完整目�
 - **v2 文件必须能通过 `isV1 → migrate → decode` 链**:v2 解码失败是静默整文件
   丢弃,新增键前先以真实链验证(参照 2026-07-23 探针方法)。
 - **v2 `model.list` 不得读取内部插件批次的中间态**:#857 以
+  `packages/ui-mac/src/main/plugin-internal-boot-order.test.ts` 锁住 build output 的唯一注册被移到
+  `State.batch` 前、compiled identifier 漂移可兼容而缺失/重复/歧义全部 fail-closed,并钉住
+  production prebuild 接线;以
   `packages/ui-mac/src/renderer/alpha-ui/model-contract.test.ts` 锁住
   `provider.get(alpha-internal-catalog-ready) → model.list` 顺序、首读与热读集合相等,并先证明
   绕过 barrier 时替身确实暴露未治理集合。`alpha-config-injection.test.ts` 另锁 marker 在 v2
