@@ -30,6 +30,9 @@ type BenchmarkRun = {
     loopbackRequests: number
     blockedExternalRequests: string[]
   }
+  diagnostics: {
+    pageErrors: string[]
+  }
 }
 
 const here = fileURLToPath(new URL(".", import.meta.url))
@@ -39,6 +42,7 @@ const script = fileURLToPath(import.meta.url)
 const output = process.env.ALPHA_TIMELINE_BENCH_OUTPUT ?? `/tmp/alpha-timeline-benchmark-${Date.now()}`
 const chrome = process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim()
+const tree = execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: repo, encoding: "utf8" }).trim()
 const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: repo, encoding: "utf8" }).trim()
 
 if (dirty && process.env.ALPHA_TIMELINE_BENCH_ALLOW_DIRTY !== "1")
@@ -58,6 +62,8 @@ if (childRun) {
   if (![1, 2, 3].includes(run) || !baseURL || !rawPath) throw new Error("Invalid timeline benchmark child input")
   const result = await benchmarkRun(run, baseURL)
   await writeFile(rawPath, `${JSON.stringify(result, null, 2)}\n`)
+  if (result.diagnostics.pageErrors.length > 0)
+    throw new Error(`Run ${run} captured ${result.diagnostics.pageErrors.length} page error(s)`)
   process.stdout.write(`run ${run}/3 complete\n`)
   process.exit(0)
 }
@@ -82,6 +88,7 @@ try {
   const summary = {
     schemaVersion: 1,
     measuredCommit: commit,
+    measuredTree: tree,
     dirtyWorktreeAllowed: dirty.length > 0,
     fixtureSha256,
     fixture: timelineBenchmarkFixture,
@@ -122,6 +129,7 @@ try {
       ),
       scrollToTopLatencyMs: median(runs.map((run) => run.history.scrollToTopLatencyMs)),
       historyPrependLatencyMs: median(runs.map((run) => run.history.historyPrependLatencyMs)),
+      historyAnchorOffsetDeltaPx: median(runs.map((run) => run.history.anchorOffsetDeltaPx!)),
       rendererHeapAfterColdOpenBytes: median(runs.map((run) => run.rendererMemory.afterColdOpen.jsHeapUsedBytes)),
       rendererHeapAfterStreamingBytes: median(runs.map((run) => run.rendererMemory.afterStreaming.jsHeapUsedBytes)),
       rendererHeapAfterHistoryLoadBytes: median(runs.map((run) => run.rendererMemory.afterHistoryLoad.jsHeapUsedBytes)),
@@ -174,6 +182,7 @@ async function benchmarkRun(run: number, baseURL: string): Promise<BenchmarkRun>
     ],
   })
   const blockedExternalRequests: string[] = []
+  const pageErrors: string[] = []
   let loopbackRequests = 0
   let completed = false
   try {
@@ -196,7 +205,10 @@ async function benchmarkRun(run: number, baseURL: string): Promise<BenchmarkRun>
       await route.abort("blockedbyclient")
     })
     const page = await context.newPage()
-    page.on("pageerror", (error) => process.stderr.write(`run ${run} page error: ${error.message}\n`))
+    page.on("pageerror", (error) => {
+      pageErrors.push(error.stack ?? error.message)
+      process.stderr.write(`run ${run} page error: ${error.message}\n`)
+    })
     const cdp = await context.newCDPSession(page)
     await cdp.send("Network.enable")
     await cdp.send("Network.setCacheDisabled", { cacheDisabled: true })
@@ -237,6 +249,7 @@ async function benchmarkRun(run: number, baseURL: string): Promise<BenchmarkRun>
       history,
       rendererMemory: { afterColdOpen, afterStreaming, afterHistoryLoad },
       network: { loopbackRequests, blockedExternalRequests },
+      diagnostics: { pageErrors },
     }
     completed = true
     return result
@@ -302,6 +315,7 @@ function assertStream(result: TimelineStreamResult) {
 function assertHistory(result: TimelineHistoryResult) {
   if (result.rowsAfter - result.rowsBefore !== result.insertedRows)
     throw new Error(`History row mismatch: ${result.rowsBefore} -> ${result.rowsAfter}`)
+  if (result.anchorOffsetDeltaPx === null) throw new Error("History anchor diagnostic is unavailable")
 }
 
 function median(values: number[]) {
