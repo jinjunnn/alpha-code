@@ -100,18 +100,32 @@ pass their own packaged gates.
 
 ## #857 candidate verification (not yet packaged-complete)
 
-The #857 candidate adds a V2-only, unavailable provider marker with no models to
-Alpha's generated engine config. The existing ConfigProvider materializes that
-record in the same batched catalog commit as the governed providers. The typed
-renderer model contract polls `provider.get(marker)` in the same directory before
-issuing its first `model.list`, so the first read and stable hot read observe the
-same committed catalog. The marker and probe do not read account summary, a
-platform bearer, or any account network request.
+The first signed #857 candidate removed the 6,132-row bundled models.dev
+snapshot and proved that the first and hot provider/model identities were the
+same governed set, with zero account or bearer requests. It did **not** meet the
+latency gate: the empty base still waited for the late ConfigProvider commit, so
+five logged-out/BYOK samples became ready in 3,965–13,968 ms.
+
+The current code candidate instead derives a minimal models.dev base
+mechanically from Alpha's existing provider projection. The base carries only
+the exact provider/model identities, names, endpoint, upstream schema-required
+conservative values, and a V2-only unavailable readiness marker with no models;
+it never reads or writes a key and does not define a second allow/deny policy.
+ModelsDevPlugin can therefore commit the complete governed identity set before
+the late ConfigProvider metadata/variant overlay. If an enabled provider exists
+only in a user file and cannot be completely represented by the in-memory
+projection, the base is `{}` without the marker and the renderer conservatively
+waits for the existing late ConfigProvider commit instead of exposing a partial
+set. The typed renderer model contract still polls `provider.get(marker)` in the
+same directory before issuing its first `model.list`; neither path reads account
+summary, a platform bearer, or any account network request.
 
 The deterministic regression test supplies an observable ungoverned catalog
 before the marker, proves that bypassing the marker returns that control value,
 then proves both the first production read and the hot read return the governed
-set in strict `provider.get(marker) → model.list` order. This is code-level candidate evidence only;
-the issue remains open and the ≤2 s claim remains unmade until a quiescent
-desktop window is approved and the packaged logged-out/BYOK five-sample matrix
-passes.
+set in strict `provider.get(marker) → model.list` order. The injection test
+also schema-decodes every generated base entry, compares its identity set with
+the existing V2 projection, rejects key material, and pins the incomplete
+user-file-provider fallback. This remains code-level candidate evidence: the
+issue stays open and the ≤2 s claim remains unmade until the rebuilt signed
+app passes the logged-out/BYOK five-sample matrix.

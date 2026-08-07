@@ -51,13 +51,19 @@ import 是 bun 未实现的 `node:module` registerHooks,顶层还有 `getParentP
 v2 catalog 的配置文件就位不等于每个 directory 的内存 catalog 已经收敛。`PluginInternal`
 在后台依次装载 models.dev、provider、用户配置与 variant transform;中途读取曾把 6,132 行
 models.dev 过渡态序列化给首屏,而同进程热路径只有 37 行(#857)。Alpha 模型治理开启时,现有
-provider 投影已完整定义可用模型,因此同一桥目录另写精确的空 models.dev 基础文件,并令现有
-`OPENCODE_MODELS_PATH` 指向它;引擎不再解码无关的内置快照。`ALPHA_MODELS_DISABLE=1` 时不覆盖
-该路径,保留上游 catalog 逃生语义。Alpha 同时在 v2-only provider
-投影里追加 `alpha-internal-catalog-ready` 记录(`env:[]`、零 models):它不进入 available provider/model
-集合,但只会随现有 ConfigProvider 的同一批 catalog commit 出现。renderer 的 typed model contract
-在**同一 directory**先轮询 `provider.get(marker)`,再发首次 `model.list`。这道 barrier 只等待本地
-插件初始化,不读取 account summary、平台 bearer 或远端账户状态;登出/BYOK 目录仍与账户链并行。
+provider 投影已完整定义内建的可用 provider/model identity,因此同一桥目录会从**这份既有投影**
+机械生成最小 models.dev base,并令现有 `OPENCODE_MODELS_PATH` 指向它;它只携带 identity、名称、
+endpoint 和上游 schema 必填的保守零值,不复制 key、不制定第二份 allow/deny 策略。ConfigProvider
+仍负责同源的丰富 metadata/variant 末序覆盖。`ALPHA_MODELS_DISABLE=1` 时不覆盖该路径,保留上游
+catalog 逃生语义。
+
+机械 base 同时带 `alpha-internal-catalog-ready` 记录(`env:[]`、零 models):它不进入可选模型集合,
+但只会在较早的 ModelsDevPlugin 已一次提交整份 base 后可读。renderer 的 typed model contract 在
+**同一 directory**先轮询 `provider.get(marker)`,再发首次 `model.list`,从而不再等待末序
+ConfigProvider 才获得正确 identity 集。若 `enabled_providers` 含只存在于用户文件、无法由当前
+内存投影完整表达的 provider,生成器就写 `{}` 且**不写 marker**;renderer 会保守等待普通
+ConfigProvider 合并完文件来源,不得用局部 early set 冒充完整目录。这道 barrier 只等待本地插件
+初始化,不读取 account summary、平台 bearer 或远端账户状态;登出/BYOK 目录仍与账户链并行。
 
 同一次 fork 内同源产出,两投影无漂移面。推理密钥只存在于 v1 通道。
 
@@ -93,12 +99,14 @@ provider 投影已完整定义可用模型,因此同一桥目录另写精确的�
 - **v2 `model.list` 不得读取内部插件批次的中间态**:#857 以
   `packages/ui-mac/src/renderer/alpha-ui/model-contract.test.ts` 锁住
   `provider.get(alpha-internal-catalog-ready) → model.list` 顺序、首读与热读集合相等,并先证明
-  绕过 barrier 时替身确实暴露未治理集合。`alpha-config-injection.test.ts` 另锁 marker 只在 v2
-  投影、`env:[]` 且零 models。barrier 不得换成账户或网络门。
-- **Alpha 治理目录不得物化全量 models.dev 快照**:`alpha-config-injection.test.ts` 锁定
-  `OPENCODE_MODELS_PATH` 指向桥目录中的精确 `{}` 基础文件,并锁定
-  `ALPHA_MODELS_DISABLE=1` 不覆盖 operator 提供的上游路径。可用 provider/model 仍只来自既有完整
-  配置投影,不得在 core/server 新增第二套过滤器。
+  绕过 barrier 时替身确实暴露未治理集合。`alpha-config-injection.test.ts` 另锁 marker 在 v2
+  config 投影中保持 keyless,并在 models.dev base 中只随完整 identity 投影出现;用户文件 provider
+  缺投影时 base 必须无 marker、回到 late barrier。barrier 不得换成账户或网络门。
+- **Alpha 治理目录不得物化全量 models.dev 快照或第二份策略真源**:
+  `alpha-config-injection.test.ts` 锁定 `OPENCODE_MODELS_PATH` 指向桥目录中的最小机械 base、其
+  provider/model identity 与既有 v2 provider 投影精确一致、全部条目通过上游 ModelsDev schema、
+  且不含任何 key;同时锁定 `ALPHA_MODELS_DISABLE=1` 不覆盖 operator 提供的上游路径。可用
+  provider/model 仍只来自既有完整配置投影,不得在 core/server 新增第二套过滤器。
 - **密钥不落 v2 文件**:v2 无解析机制,写入即明文。
 
 ## 事故记录与收敛

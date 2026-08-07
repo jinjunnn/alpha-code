@@ -24,6 +24,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Config } from "../../../core/src/config"
+import { Provider as ModelsDevProvider } from "../../../core/src/models-dev"
 import { ConfigV1 } from "../../../core/src/v1/config/config"
 import { ConfigMigrateV1 } from "../../../core/src/v1/config/migrate"
 import { Schema } from "effect"
@@ -202,10 +203,52 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     expect(v2Raw).not.toContain(PLATFORM_KEY)
     expect(v2Raw).not.toContain(BYOK_KEY)
     expect(v2Raw).not.toContain("apiKey")
-    // #857:the first request must not pay to decode the bundled 6,132-row models.dev snapshot.
-    // Config providers above are the complete governed catalog, so the upstream base is exactly
-    // empty. Deleting the write or path assignment makes this deterministic guard fail.
-    expect(fs.readFileSync(process.env.OPENCODE_MODELS_PATH!, "utf8")).toBe("{}\n")
+    // #857:the first request must not pay to decode the bundled 6,132-row models.dev snapshot or
+    // wait for the late ConfigProvider commit. The early base is mechanically derived from the
+    // SAME provider projection; it carries exact identities + marker, never a key or second policy.
+    const modelsBaseRaw = fs.readFileSync(process.env.OPENCODE_MODELS_PATH!, "utf8")
+    const modelsBase = JSON.parse(modelsBaseRaw) as Record<string, any>
+    expect(Object.keys(modelsBase).sort()).toEqual(
+      ["alpha", "deepseek-byok", ALPHA_V2_CATALOG_READY_PROVIDER_ID].sort(),
+    )
+    expect(modelsBase[ALPHA_V2_CATALOG_READY_PROVIDER_ID]).toEqual({
+      id: ALPHA_V2_CATALOG_READY_PROVIDER_ID,
+      name: "Alpha catalog readiness marker",
+      env: [],
+      models: {},
+    })
+    for (const id of ["alpha", "deepseek-byok"]) {
+      expect(Object.keys(modelsBase[id].models).sort()).toEqual(Object.keys(v2.provider[id].models).sort())
+      Schema.decodeUnknownSync(ModelsDevProvider)(modelsBase[id])
+    }
+    Schema.decodeUnknownSync(ModelsDevProvider)(modelsBase[ALPHA_V2_CATALOG_READY_PROVIDER_ID])
+    expect(modelsBaseRaw).not.toContain(PLATFORM_KEY)
+    expect(modelsBaseRaw).not.toContain(BYOK_KEY)
+    expect(modelsBaseRaw).not.toContain("apiKey")
+  })
+
+  test("enabled user/file provider missing from the in-memory projection keeps the late barrier fail-closed", () => {
+    givenLoggedInWithByok()
+    fs.writeFileSync(
+      path.join(process.env.ALPHA_GLOBAL_DIR!, "alpha.jsonc"),
+      JSON.stringify({
+        $schema: "https://opencode.ai/config.json",
+        provider: {
+          "user-file-provider": {
+            npm: "@ai-sdk/openai-compatible",
+            models: { "user-model": { name: "User Model" } },
+          },
+        },
+      }),
+    )
+
+    expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
+    const modelsBase = JSON.parse(fs.readFileSync(process.env.OPENCODE_MODELS_PATH!, "utf8"))
+    expect(modelsBase).toEqual({})
+    expect(JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!).enabled_providers).toContain("user-file-provider")
+    expect(JSON.parse(fs.readFileSync(path.join(process.env.OPENCODE_CONFIG_DIR!, "opencode.json"), "utf8")).provider[
+      "user-file-provider"
+    ]).toBeDefined()
   })
 
   test("ALPHA_MODELS_DISABLE preserves the upstream models path escape hatch", () => {

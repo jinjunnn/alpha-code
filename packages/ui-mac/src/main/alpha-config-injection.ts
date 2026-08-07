@@ -417,9 +417,81 @@ export function injectAlphaConfig(
 // catch,抛错经 injectAlphaConfig 外层 catch 以 {ok:false} 离开进程。桥排在
 // OPENCODE_CONFIG_CONTENT 写出**之后**,抛错不撤销已就位的 v1 注入
 // (顺序由反向闸门锁死:alpha-config-injection.test.ts 的 v2 桥用例)。
+type V1ProjectedModel = { name?: unknown }
+type V1ProjectedProvider = {
+  name?: unknown
+  npm?: unknown
+  api?: unknown
+  options?: { baseURL?: unknown }
+  models?: unknown
+}
+
+function governedModelsBase(config: { enabled_providers?: unknown; provider?: unknown }): Record<string, unknown> {
+  const enabled = Array.isArray(config.enabled_providers)
+    ? config.enabled_providers.filter((id): id is string => typeof id === "string")
+    : []
+  const providers = (config.provider ?? {}) as Record<string, V1ProjectedProvider>
+
+  // An enabled id without a complete provider/model projection is a user/file-owned provider.
+  // Do not publish the early marker for a partial set: the renderer will keep waiting for the
+  // ordinary ConfigProvider commit, which has already merged those file sources.
+  if (
+    enabled.some((id) => {
+      const item = providers[id]
+      return !item || !item.models || typeof item.models !== "object" || Array.isArray(item.models)
+    })
+  )
+    return {}
+
+  const base: Record<string, unknown> = {}
+  for (const id of enabled) {
+    const item = providers[id]!
+    const npm = typeof item.npm === "string" ? item.npm : undefined
+    const api =
+      typeof item.options?.baseURL === "string"
+        ? item.options.baseURL
+        : typeof item.api === "string"
+          ? item.api
+          : undefined
+    const modelProvider = npm || api ? { ...(npm ? { npm } : {}), ...(api ? { api } : {}) } : undefined
+    const models = Object.fromEntries(
+      Object.entries(item.models as Record<string, V1ProjectedModel>).map(([modelID, model]) => [
+        modelID,
+        {
+          id: modelID,
+          name: typeof model.name === "string" ? model.name : modelID,
+          release_date: "1970-01-01",
+          attachment: false,
+          reasoning: false,
+          temperature: false,
+          tool_call: false,
+          limit: { context: 0, output: 0 },
+          modalities: { input: [], output: [] },
+          ...(modelProvider ? { provider: modelProvider } : {}),
+        },
+      ]),
+    )
+    base[id] = {
+      id,
+      name: typeof item.name === "string" ? item.name : id,
+      env: [],
+      ...(api ? { api } : {}),
+      ...(npm ? { npm } : {}),
+      models,
+    }
+  }
+  base[ALPHA_V2_CATALOG_READY_PROVIDER_ID] = {
+    id: ALPHA_V2_CATALOG_READY_PROVIDER_ID,
+    name: "Alpha catalog readiness marker",
+    env: [],
+    models: {},
+  }
+  return base
+}
+
 function materializeV2EngineConfig(
   userDataPath: string,
-  config: { model?: unknown; provider?: unknown },
+  config: { model?: unknown; enabled_providers?: unknown; provider?: unknown },
   governedModels: boolean,
 ) {
   const dir = path.join(userDataPath, "alpha-engine-config")
@@ -450,16 +522,19 @@ function materializeV2EngineConfig(
   fs.writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify(v2, null, 2), { mode: 0o600 })
   process.env.OPENCODE_CONFIG_DIR = dir
 
-  // #857:when Alpha model governance is active, every available provider/model is already fully
+  // #857:when Alpha model governance is active, every available built-in provider/model is already
   // described by the provider projection above. Letting ModelsDev fall through to the bundled
   // snapshot still makes the first V2 request decode and materialize 6,132 unrelated rows before
-  // enabled_providers can discard them (2.8-6.1s in the signed packaged matrix). Point the existing
-  // upstream catalog seam at an empty base instead: config providers are then the only database
-  // entries, so the first and hot model.list paths see the same governed set without a core edit.
+  // ConfigProvider commits (2.8-6.1s in the signed packaged matrix). Materialize a minimal ModelsDev
+  // base mechanically from that SAME projection so the earlier ModelsDevPlugin commit carries the
+  // exact governed identities and readiness marker. ConfigProvider remains authoritative for the
+  // richer late metadata/variants. If an enabled user/file provider is absent from this in-memory
+  // projection, governedModelsBase returns {} WITHOUT the marker, preserving the conservative late
+  // barrier instead of exposing a partial first set. No key field is read or written here.
   // Preserve ALPHA_MODELS_DISABLE as a real escape hatch by leaving any inherited path untouched.
   if (governedModels) {
     const modelsPath = path.join(dir, "models.json")
-    fs.writeFileSync(modelsPath, "{}\n", { mode: 0o600 })
+    fs.writeFileSync(modelsPath, `${JSON.stringify(governedModelsBase(config), null, 2)}\n`, { mode: 0o600 })
     process.env.OPENCODE_MODELS_PATH = modelsPath
   }
 }
