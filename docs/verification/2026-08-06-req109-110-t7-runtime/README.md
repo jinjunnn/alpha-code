@@ -4,7 +4,7 @@ kind: verification
 status: complete
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-08-06
+last_reviewed: 2026-08-07
 ---
 
 # REQ-109/110 T7 packaged runtime matrix
@@ -212,3 +212,24 @@ their real cold location-graph path; this evidence does not claim a process-wide
 catalog cache. The ready gate is bounded at 2,000 ms, marker and model response
 bodies are both consumed, and renderer evidence distinguishes
 `error:catalog-not-ready` from a general `error:request`.
+
+The sixth signed candidate at joint RC
+`c47f138953ee340b460b372749e7d6f59374ea91` (app executable SHA-256
+`cf3370162ed955734d21e26c48c2a3a4fc5970bf82fed9742c33b55b48aef7f2`)
+extended the prewarm through the real model handler but still failed the timing
+gate. Its five BYOK-only startup values were 24,985.102 / 6,319.862 /
+3,518.196 / 4,452.116 / 4,658.581 ms, so nearest-rank P95 was
+**24,985.102 ms**. Every sample retained first/hot equality at the exact same
+two-row SHA, made zero account or bearer requests, performed zero rotation or
+main-triggered reload, and passed all secret-hygiene checks.
+
+The named readiness outcome made the failure mode observable. Sample 1 emitted
+two consecutive `error:catalog-not-ready` ends, each at the 10 s renderer
+deadline, before a separate chain returned the two-row set in 7.5 ms. The other
+four samples returned the first two-row set without retry, but the initial
+model-list chain still took 2,012.7–4,828.2 ms after sidecar ready was published
+at 1,071–1,143 ms. Thus the 2 s bounded prewarm correctly avoids holding sidecar
+ready indefinitely, but it does not make the renderer's first production
+contract meet the <=2 s gate. The issue and PR remain open/draft; #858 and #859
+were not run because #857 did not pass. The preserved raw facts are
+[`results/byok-only-c47f1389.json`](./results/byok-only-c47f1389.json).
