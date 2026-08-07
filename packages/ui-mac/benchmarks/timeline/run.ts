@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
-import { execFileSync } from "node:child_process"
-import { access, mkdir, writeFile } from "node:fs/promises"
+import { execFileSync, spawn } from "node:child_process"
+import { access, mkdir, readFile, writeFile } from "node:fs/promises"
 import { cpus, arch, platform, release, totalmem } from "node:os"
 import { fileURLToPath, URL } from "node:url"
 import { chromium, type CDPSession } from "playwright-core"
@@ -35,6 +35,7 @@ type BenchmarkRun = {
 const here = fileURLToPath(new URL(".", import.meta.url))
 const repo = fileURLToPath(new URL("../../../..", import.meta.url))
 const config = fileURLToPath(new URL("./vite.config.ts", import.meta.url))
+const script = fileURLToPath(import.meta.url)
 const output = process.env.ALPHA_TIMELINE_BENCH_OUTPUT ?? `/tmp/alpha-timeline-benchmark-${Date.now()}`
 const chrome = process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim()
@@ -46,24 +47,36 @@ if (dirty && process.env.ALPHA_TIMELINE_BENCH_ALLOW_DIRTY !== "1")
 await access(chrome).catch(() => {
   throw new Error(`Chrome executable not found: ${chrome}`)
 })
+const fixture = materializeTimelineBenchmarkFixture()
+const fixtureSha256 = createHash("sha256").update(JSON.stringify(fixture)).digest("hex")
+const childRun = process.env.ALPHA_TIMELINE_BENCH_CHILD_RUN
+
+if (childRun) {
+  const run = Number(childRun)
+  const baseURL = process.env.ALPHA_TIMELINE_BENCH_CHILD_BASE_URL
+  const rawPath = process.env.ALPHA_TIMELINE_BENCH_CHILD_OUTPUT
+  if (![1, 2, 3].includes(run) || !baseURL || !rawPath) throw new Error("Invalid timeline benchmark child input")
+  const result = await benchmarkRun(run, baseURL)
+  await writeFile(rawPath, `${JSON.stringify(result, null, 2)}\n`)
+  process.stdout.write(`run ${run}/3 complete\n`)
+  process.exit(0)
+}
+
+await mkdir(output, { recursive: true })
 await build({ configFile: config, logLevel: "warn", mode: "production" })
 const server = await preview({ configFile: config, logLevel: "warn" })
 const baseURL = server.resolvedUrls?.local[0] ?? "http://127.0.0.1:4175/"
-const fixture = materializeTimelineBenchmarkFixture()
-const fixtureSha256 = createHash("sha256").update(JSON.stringify(fixture)).digest("hex")
 const runs: BenchmarkRun[] = []
 const rawRuns: { file: string; sha256: string }[] = []
 
 try {
-  await mkdir(output, { recursive: true })
   for (const run of [1, 2, 3]) {
-    const result = await benchmarkRun(run, baseURL)
-    runs.push(result)
     const file = `run-${run}.json`
-    const raw = `${JSON.stringify(result, null, 2)}\n`
-    await writeFile(`${output}/${file}`, raw)
+    const rawPath = `${output}/${file}`
+    await runWorker(run, baseURL, rawPath)
+    const raw = await readFile(rawPath, "utf8")
+    runs.push(JSON.parse(raw) as BenchmarkRun)
     rawRuns.push({ file, sha256: createHash("sha256").update(raw).digest("hex") })
-    process.stdout.write(`run ${run}/3 complete\n`)
   }
 
   const summary = {
@@ -72,8 +85,7 @@ try {
     dirtyWorktreeAllowed: dirty.length > 0,
     fixtureSha256,
     fixture: timelineBenchmarkFixture,
-    command:
-      "ALPHA_TIMELINE_BENCH_OUTPUT=<evidence>/raw bun run bench:timeline (from packages/ui-mac; three serial runs)",
+    command: `CHROME_PATH=${chrome} ALPHA_TIMELINE_BENCH_OUTPUT=<evidence>/raw bun run bench:timeline (from packages/ui-mac; three serial runs)`,
     productionBuild: "Vite production build + loopback preview",
     browser: {
       executable: chrome,
@@ -91,6 +103,7 @@ try {
     },
     isolation: {
       serialRuns: true,
+      freshWorkerProcessPerRun: true,
       freshBrowserPerRun: true,
       viewport: timelineBenchmarkFixture.viewport,
       electronStarted: false,
@@ -125,6 +138,26 @@ try {
   process.stdout.write(`${output}/summary.json\n`)
 } finally {
   await server.close()
+}
+
+async function runWorker(run: number, baseURL: string, rawPath: string) {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(process.execPath, [script], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        ALPHA_TIMELINE_BENCH_CHILD_RUN: String(run),
+        ALPHA_TIMELINE_BENCH_CHILD_BASE_URL: baseURL,
+        ALPHA_TIMELINE_BENCH_CHILD_OUTPUT: rawPath,
+      },
+      stdio: "inherit",
+    })
+    child.once("error", reject)
+    child.once("exit", (code, signal) => {
+      if (code === 0) resolve()
+      else reject(new Error(`Timeline benchmark run ${run} exited with ${code ?? signal ?? "unknown"}`))
+    })
+  })
 }
 
 async function benchmarkRun(run: number, baseURL: string): Promise<BenchmarkRun> {
