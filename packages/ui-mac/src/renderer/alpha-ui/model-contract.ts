@@ -52,17 +52,30 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
     let cause: unknown
     while (true) {
       if (signal?.aborted) throw new ModelContractError("list", signal.reason)
+      const remainingMs = deadline - now()
+      if (remainingMs <= 0) throw new ModelContractError("list", cause, "catalog-not-ready")
+      // The caller's model request budget is intentionally much wider than this readiness
+      // barrier. Give each marker request its own deadline so a cold location graph cannot
+      // turn the 1.5 s catalog-ready gate into the caller's 10 s abort timeout.
+      const deadlineSignal = AbortSignal.timeout(Math.max(1, Math.ceil(remainingMs)))
+      const probeSignal = signal ? AbortSignal.any([signal, deadlineSignal]) : deadlineSignal
       try {
         const result = await client.v2.provider.get(
           { providerID: ALPHA_V2_CATALOG_READY_PROVIDER_ID, location: { directory } },
-          signal ? { signal } : undefined,
+          { signal: probeSignal },
         )
+        if (deadlineSignal.aborted || now() >= deadline)
+          throw new ModelContractError("list", result.error, "catalog-not-ready")
         if (!result.error && result.data?.data.id === ALPHA_V2_CATALOG_READY_PROVIDER_ID) return
         cause = result.error
       } catch (error) {
+        if (signal?.aborted) throw new ModelContractError("list", signal.reason)
+        if (deadlineSignal.aborted || now() >= deadline)
+          throw error instanceof ModelContractError
+            ? error
+            : new ModelContractError("list", error, "catalog-not-ready")
         cause = error
       }
-      if (now() >= deadline) throw new ModelContractError("list", cause, "catalog-not-ready")
       await waitForNextProbe(catalogReadyPollMs, signal)
     }
   }

@@ -224,12 +224,21 @@ two-row SHA, made zero account or bearer requests, performed zero rotation or
 main-triggered reload, and passed all secret-hygiene checks.
 
 The named readiness outcome made the failure mode observable. Sample 1 emitted
-two consecutive `error:catalog-not-ready` ends, each at the 10 s renderer
-deadline, before a separate chain returned the two-row set in 7.5 ms. The other
-four samples returned the first two-row set without retry, but the initial
-model-list chain still took 2,012.7–4,828.2 ms after sidecar ready was published
-at 1,071–1,143 ms. Thus the 2 s bounded prewarm correctly avoids holding sidecar
-ready indefinitely, but it does not make the renderer's first production
-contract meet the <=2 s gate. The issue and PR remain open/draft; #858 and #859
-were not run because #857 did not pass. The preserved raw facts are
+two consecutive `error:catalog-not-ready` ends, each at the 10 s request-abort
+timeout. That proves the intended 1.5 s readiness deadline did not bound wall
+clock before a separate chain returned the two-row set in 7.5 ms. The other four
+samples returned the first two-row set, but the initial model-list chain still
+took 2,012.7–4,828.2 ms after sidecar ready was published at 1,071–1,143 ms.
+Thus the 2 s bounded prewarm correctly avoids holding sidecar ready indefinitely,
+but it does not make the renderer's first production contract meet the <=2 s
+gate. The issue and PR remain open/draft; #858 and #859 were not run because #857
+did not pass. The preserved raw facts are
 [`results/byok-only-c47f1389.json`](./results/byok-only-c47f1389.json).
+
+The RC-only probe variant that produced those facts was not included in the
+evidence commit, and its artifact whitelist omitted
+`renderer.home.model_list.retry_tick`. Therefore the preserved JSON cannot be
+used to claim that no retry occurred; sample 1's 1,004 ms gap between attempts
+is consistent with the first 1 s recovery backoff. The executable probe in this
+directory now contains the exact BYOK-only row/hash and secret-hygiene capture
+and retains `retry_tick` events for the next signed run.

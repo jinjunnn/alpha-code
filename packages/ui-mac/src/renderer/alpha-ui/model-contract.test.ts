@@ -163,4 +163,35 @@ describe("typed model contract", () => {
       reason: "catalog-not-ready",
     })
   })
+
+  test("catalog readiness timeout bounds a hung provider request below the wider list budget", async () => {
+    let probeSignal: AbortSignal | undefined
+    const caller = AbortSignal.timeout(1_000)
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: async (_input: unknown, options: { signal?: AbortSignal }) => {
+                probeSignal = options.signal
+                await new Promise<never>((_resolve, reject) => {
+                  if (probeSignal?.aborted) return reject(probeSignal.reason)
+                  probeSignal?.addEventListener("abort", () => reject(probeSignal?.reason), { once: true })
+                })
+              },
+            },
+          },
+        }) as never,
+      { catalogReadyTimeoutMs: 20 },
+    )
+
+    const started = performance.now()
+    await expect(contract.list("/repo", caller)).rejects.toMatchObject({
+      operation: "list",
+      reason: "catalog-not-ready",
+    })
+    expect(probeSignal).toBeDefined()
+    expect(probeSignal).not.toBe(caller)
+    expect(performance.now() - started).toBeLessThan(250)
+  })
 })

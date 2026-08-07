@@ -85,8 +85,9 @@ memo map,其他调用仍走原 `createRoutes(opts)`。预热在 marker 证明治
 失败只记具名诊断,renderer 仍保留上述 marker barrier 并照常 fail-closed。
 这项预热保证只覆盖默认 `~/Alpha` 首页流;任何其它 directory/workspace ref 都必须按真实冷路径
 建立自己的 location graph,不得把首页一次预热宣称成全目录缓存。预热等待最多 2 秒,超时后
-sidecar 仍发布 ready,renderer 时间线以 `error:catalog-not-ready` 区分本地 barrier 未收敛与普通
-模型请求错误。
+sidecar 仍发布 ready。renderer marker barrier 自身以 1.5 秒 wall-clock 为上限(包括挂起的
+`provider.get`),不得被更宽的 model request abort budget 延长;时间线以
+`error:catalog-not-ready` 区分本地 barrier 未收敛与普通模型请求错误。
 
 同一次 fork 内同源产出,两投影无漂移面。推理密钥只存在于 v1 通道。
 
