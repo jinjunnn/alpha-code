@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-06T11:58:19.657Z",
+  "productionBaselineCommit": "d3790e90b1e815001f8bb40f4ce8d15573c5de89",
+  "harness": "production Solid components via loopback Vite + Chrome --headless=new",
+  "harnessSha256": "f1278a6d32a8ccd60c30602433051d4bfa727c1841c7e09bc0f035a7eeb3f7c6",
+  "captureDriverSha256": "77cca324b9594ca22272d3b53fca8646c754c5a0498f21634416f86f06cf8edf",
+  "chrome": "Google Chrome 151.0.7922.75",
+  "viewport": {
+    "width": 1440,
+    "height": 900,
+    "deviceScaleFactor": 1
+  },
+  "foregroundApplicationLaunches": 0,
+  "credentialsUsed": false,
+  "electronStarted": false,
+  "records": [
+    {
+      "state": "A1",
+      "theme": "light",
+      "file": "shots/A1-light-headless.png",
+      "bytes": 77617,
+      "sha256": "3dce6efedc71948a7738779ca0a26c817209555bb013c3fae83f5605377c1e3f"
+    },
+    {
+      "state": "A1",
+      "theme": "dark",
+      "file": "shots/A1-dark-headless.png",
+      "bytes": 78481,
+      "sha256": "a2efb194440fa6a7a59d0c14e0ce7ba1ac2a21cd39121e2339f4c7b38815d601"
+    },
+    {
+      "state": "A2",
+      "theme": "light",
+      "file": "shots/A2-light-headless.png",
+      "bytes": 76984,
+      "sha256": "c889436a78c6d4c89616afd906675bd5fc438c991e951e71b29f90c8b6e58433"
+    },
+    {
+      "state": "A2",
+      "theme": "dark",
+      "file": "shots/A2-dark-headless.png",
+      "bytes": 77593,
+      "sha256": "fc92977db0daab94e0fe73b954e4a65aede319cf287f91fdba9ce5368ece4014"
+    },
+    {
+      "state": "A3",
+      "theme": "light",
+      "file": "shots/A3-light-headless.png",
+      "bytes": 74248,
+      "sha256": "126fb3248d5c08b8e626aab5cb64fa6608c49f97137668cfd0b8e73a36e93a1e"
+    },
+    {
+      "state": "A3",
+      "theme": "dark",
+      "file": "shots/A3-dark-headless.png",
+      "bytes": 74851,
+      "sha256": "f770b9d803f8827e8bb22aa89c6a3e00eca84d37dd6fc1ecf6184d2298d0e3ee"
+    },
+    {
+      "state": "A4",
+      "theme": "light",
+      "file": "shots/A4-light-headless.png",
+      "bytes": 110759,
+      "sha256": "2bb5103496fdfbf52180ac6753fcc9ca8b5cc59005c9c793543f5b2b906781fc"
+    },
+    {
+      "state": "A4",
+      "theme": "dark",
+      "file": "shots/A4-dark-headless.png",
+      "bytes": 111155,
+      "sha256": "25fb93a9de6f5385c5e4e9a5337c7fad223bf4179d8998cb5716db1068d025bd"
+    },
+    {
+      "state": "B2",
+      "theme": "light",
+      "file": "shots/B2-light-headless.png",
+      "bytes": 7019,
+      "sha256": "09230f519f756a2fa3b7d8e90c6dc268b302940189b2f99d915890d8c2b1bc87"
+    },
+    {
+      "state": "B2",
+      "theme": "dark",
+      "file": "shots/B2-dark-headless.png",
+      "bytes": 7301,
+      "sha256": "9e6d1c0bfffc682d0374899ec09dd1c16829cff3c74eb1b78edf9ed91ebbddc9"
+    },
+    {
+      "state": "C2",
+      "theme": "light",
+      "file": "shots/C2-light-headless.png",
+      "bytes": 65019,
+      "sha256": "a60f785664e23557fabf9f3056b3bf3e1c69e0b0cce386912072c8ac853bdbef"
+    },
+    {
+      "state": "C2",
+      "theme": "dark",
+      "file": "shots/C2-dark-headless.png",
+      "bytes": 57398,
+      "sha256": "f2127580aee4c26d2092c665dd79e62e2450e9c4cd81292a628a63c0c59c91a4"
+    },
+    {
+      "state": "C3",
+      "theme": "light",
+      "file": "shots/C3-light-headless.png",
+      "bytes": 80801,
+      "sha256": "19f6175599fe2d0d349cbcc2e493fc3f3d2df84d6adde1fc1803255a6ae4d8b6"
+    },
+    {
+      "state": "C3",
+      "theme": "dark",
+      "file": "shots/C3-dark-headless.png",
+      "bytes": 81871,
+      "sha256": "1cbb8ad1ca1c85df0df478eae5e03d7e380b04163ca87680013e183b7df43d24"
+    },
+    {
+      "state": "D1",
+      "theme": "light",
+      "file": "shots/D1-light-headless.png",
+      "bytes": 41587,
+      "sha256": "265c4a72027787ed81c9a09ed43764358a145df925050317b2d152b9a8886912"
+    },
+    {
+      "state": "D1",
+      "theme": "dark",
+      "file": "shots/D1-dark-headless.png",
+      "bytes": 41614,
+      "sha256": "cee703d68662c8caf64b8e5bc811e12d213bfa68d75b8539a7b7fb8863c4fff6"
+    },
+    {
+      "state": "D2",
+      "theme": "light",
+      "file": "shots/D2-light-headless.png",
+      "bytes": 39260,
+      "sha256": "7766898e234f5d4d0162ab25efcafc3947452127436be899f0645e3bbd927c72"
+    },
+    {
+      "state": "D2",
+      "theme": "dark",
+      "file": "shots/D2-dark-headless.png",
+      "bytes": 39141,
+      "sha256": "326a3432f97750ca601f24f29916bbadbdf0ec1af3d00fbc13b54dd6ce78b279"
+    },
+    {
+      "state": "D5",
+      "theme": "light",
+      "file": "shots/D5-light-headless.png",
+      "bytes": 23527,
+      "sha256": "116f778de3f54e4793421dce966d14b9edce47a034168cccc4576a9be9d3b21f"
+    },
+    {
+      "state": "D5",
+      "theme": "dark",
+      "file": "shots/D5-dark-headless.png",
+      "bytes": 23426,
+      "sha256": "db6d830ee459be55be69ff2bec1eb20d049482bb641d2879da737364180b6b49"
+    },
+    {
+      "state": "D6",
+      "theme": "light",
+      "file": "shots/D6-light-headless.png",
+      "bytes": 19822,
+      "sha256": "5e04a7dc599fd97869d55f162e4f8d7b105acd86410e617ff0b3a70f34fc5e09"
+    },
+    {
+      "state": "D6",
+      "theme": "dark",
+      "file": "shots/D6-dark-headless.png",
+      "bytes": 19900,
+      "sha256": "6a2361208b85940c744c80f379d01cf785247ca398aca9f53b8ec4fd7c62359a"
+    },
+    {
+      "state": "D8",
+      "theme": "light",
+      "file": "shots/D8-light-headless.png",
+      "bytes": 54316,
+      "sha256": "e100f2a07f928fa9bad7a01136ee0f94694acbd0ab363c2a569a57e406503389"
+    },
+    {
+      "state": "D8",
+      "theme": "dark",
+      "file": "shots/D8-dark-headless.png",
+      "bytes": 54297,
+      "sha256": "19f0546648a323329dc1cba977c5aa4724595079bdf4169a136db651250b9d1b"
+    },
+    {
+      "state": "D9",
+      "theme": "light",
+      "file": "shots/D9-light-headless.png",
+      "bytes": 24601,
+      "sha256": "613d01af83c9303cfdde7f1c92d57b8e7b71f2fa25c71b558a8aadeb7f0c48d3"
+    },
+    {
+      "state": "D9",
+      "theme": "dark",
+      "file": "shots/D9-dark-headless.png",
+      "bytes": 24924,
+      "sha256": "a90b70626156ca5973bf535a43fbca6e46284595d865fafd7a63ade32be6cc90"
+    },
+    {
+      "state": "E8",
+      "theme": "light",
+      "file": "shots/E8-light-headless.png",
+      "bytes": 8071,
+      "sha256": "a228f1497ade37bcc7ec025e081a33dea262ce83c90470787c1088b9c145db3d"
+    },
+    {
+      "state": "E8",
+      "theme": "dark",
+      "file": "shots/E8-dark-headless.png",
+      "bytes": 8153,
+      "sha256": "52aa38e927fa6f7cab9c5b737343d7fb4451fccba1c609233953642c7458a8c0"
+    },
+    {
+      "state": "I2",
+      "theme": "light",
+      "file": "shots/I2-light-headless.png",
+      "bytes": 111123,
+      "sha256": "03ef981e0ecb2a81bbfcc68ceead4f25edc7f65646a2da9380c3a689f9432062"
+    },
+    {
+      "state": "I2",
+      "theme": "dark",
+      "file": "shots/I2-dark-headless.png",
+      "bytes": 111127,
+      "sha256": "62390d97ff8e519943332e16dbbd6ce4989d2dd9268738f584c078493b8b4b6a"
+    },
+    {
+      "state": "I3",
+      "theme": "light",
+      "file": "shots/I3-light-headless.png",
+      "bytes": 104809,
+      "sha256": "fe12122f4fbf1310decd534e979bbf3732b8c906940ea5ca4b51bcff44e41b7a"
+    },
+    {
+      "state": "I3",
+      "theme": "dark",
+      "file": "shots/I3-dark-headless.png",
+      "bytes": 105706,
+      "sha256": "9273dbdca4c615a8359420d47e45b4245773d264e78b0a108e8bbb88e0747df6"
+    },
+    {
+      "state": "J1",
+      "theme": "light",
+      "file": "shots/J1-light-headless.png",
+      "bytes": 65019,
+      "sha256": "a60f785664e23557fabf9f3056b3bf3e1c69e0b0cce386912072c8ac853bdbef"
+    },
+    {
+      "state": "J1",
+      "theme": "dark",
+      "file": "shots/J1-dark-headless.png",
+      "bytes": 57398,
+      "sha256": "f2127580aee4c26d2092c665dd79e62e2450e9c4cd81292a628a63c0c59c91a4"
+    },
+    {
+      "state": "J2",
+      "theme": "light",
+      "file": "shots/J2-light-headless.png",
+      "bytes": 19094,
+      "sha256": "12f23abcd1d13a2484c408648a22ff97027cc254ca6ce169125a2c1e2e86392b"
+    },
+    {
+      "state": "J2",
+      "theme": "dark",
+      "file": "shots/J2-dark-headless.png",
+      "bytes": 19321,
+      "sha256": "06878462df55254ca62114958e32bef044b81c3d5b296dc0537708a6f478860d"
+    },
+    {
+      "state": "J3",
+      "theme": "light",
+      "file": "shots/J3-light-headless.png",
+      "bytes": 17428,
+      "sha256": "bbbf7160fe6016d29c6477360701102c01de2551b06880a48a831d61ca00ff9a"
+    },
+    {
+      "state": "J3",
+      "theme": "dark",
+      "file": "shots/J3-dark-headless.png",
+      "bytes": 17437,
+      "sha256": "9883d9160c903d7b3a9333318d4ae72134e592a1e9a109371be873bebff8f03e"
+    },
+    {
+      "state": "J5",
+      "theme": "light",
+      "file": "shots/J5-light-headless.png",
+      "bytes": 15595,
+      "sha256": "451da1b9dab93a79fa7cea2d0b7bae21829ae961b5c3d257623602f8926a9cb6"
+    },
+    {
+      "state": "J5",
+      "theme": "dark",
+      "file": "shots/J5-dark-headless.png",
+      "bytes": 15606,
+      "sha256": "ea7c616752b978ef7fbb652e96befa0520c17057a3c789d1ec042f38c15d1b2a"
+    },
+    {
+      "state": "J6",
+      "theme": "light",
+      "file": "shots/J6-light-headless.png",
+      "bytes": 6116,
+      "sha256": "aac3d47952b85fe4d7ef6380d86fa3e36610fd4a7747452b79aeef1f60c5159f"
+    },
+    {
+      "state": "J6",
+      "theme": "dark",
+      "file": "shots/J6-dark-headless.png",
+      "bytes": 6117,
+      "sha256": "7907a75393f0bace5278f544d613825db65e44dc22ce7dead203c59071498fc1"
+    }
+  ]
+}
