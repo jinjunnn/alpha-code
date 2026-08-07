@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
-  "measuredCommit": "f7517c6c5836edc2ecd66a1efcbb768f927dc211",
+  "measuredCommit": "80b42438a3386e26a36feb3a9d1f68c1de898852",
+  "measuredTree": "35547072d0907d7357e63f8084fec2b244a65682",
   "dirtyWorktreeAllowed": false,
   "fixtureSha256": "9e58c9573f149d5c2a8505318df86c3e8f91534fee13748566da26d3f402a51f",
   "fixture": {
@@ -47,31 +48,32 @@
     "network": "loopback-only; every non-loopback page request is aborted"
   },
   "medians": {
-    "coldOpenMs": 106.30000001192093,
-    "streamP95RafGapMs": 27.100000000000136,
-    "streamMaxRafGapMs": 31.80000000000291,
-    "streamEstimatedFrameLossRatio": 0.09466666666666666,
+    "coldOpenMs": 104.69999998807907,
+    "streamP95RafGapMs": 26.100000000000364,
+    "streamMaxRafGapMs": 29,
+    "streamEstimatedFrameLossRatio": 0.10202324580284115,
     "streamLongTaskCount": 0,
     "streamLongTaskDurationMs": 0,
-    "scrollToTopLatencyMs": 9.800000011920929,
-    "historyPrependLatencyMs": 32.80000001192093,
-    "rendererHeapAfterColdOpenBytes": 7541632,
-    "rendererHeapAfterStreamingBytes": 8124084,
-    "rendererHeapAfterHistoryLoadBytes": 9325000,
-    "rendererHeapHistoryDeltaBytes": 1201688
+    "scrollToTopLatencyMs": 14.899999976158142,
+    "historyPrependLatencyMs": 45.200000047683716,
+    "historyAnchorOffsetDeltaPx": 58.875,
+    "rendererHeapAfterColdOpenBytes": 7541820,
+    "rendererHeapAfterStreamingBytes": 8124236,
+    "rendererHeapAfterHistoryLoadBytes": 8936040,
+    "rendererHeapHistoryDeltaBytes": 812192
   },
   "rawRuns": [
     {
       "file": "run-1.json",
-      "sha256": "402f6ca97affb40623ab76d86dafec7e7e615b34e3f70bb6756959e103ffa6e5"
+      "sha256": "12262eb20f213698d1864ba7bd61da452dfdb245b00f650ef4473eb68df66354"
     },
     {
       "file": "run-2.json",
-      "sha256": "f2bcc33fdc63c0d6b0a75c6de4523cdf5582e6cbfb2efe3a9aced0c50bfcc366"
+      "sha256": "e1219796c83865f33b556b429eaad993195a8b9e405ee76f966c945b36cf8847"
     },
     {
       "file": "run-3.json",
-      "sha256": "949e965e028f80eb3d78122c60b9756701d6dfb97690f5a5b6ccbef6e91bf293"
+      "sha256": "855cd685b68e82ec480874ffa9aa80c0b7e4d8935cff60f76d328633fb63f0f0"
     }
   ]
 }

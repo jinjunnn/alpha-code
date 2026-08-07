@@ -4,7 +4,7 @@ kind: verification
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-08-06
+last_reviewed: 2026-08-07
 ---
 
 # REQ-125 #547 V1 · 不变量 I1–I8 抽查清单(功能/安全门)
@@ -28,8 +28,8 @@ last_reviewed: 2026-08-06
   session DOM 查询;终端舞台的 5 个原始色值均由既有 token ratchet 白名单钉住。
 - benchmark 合同已完成证据审计并终判 **3 FAIL**:C5 前基点的 Alpha timeline host 是空壳,
   且合并前没有生产采样,因此不存在可比较的 before 数据;上游 app timeline benchmark 又未
-  测量本次 Alpha C5 变更,不得虚构指标或倒签 PASS。#866 已在 commit
-  `19b96f2920dce59101fb15ed2d9af85ea7368b3f` 建立
+  测量本次 Alpha C5 变更,不得虚构指标或倒签 PASS。#866 已在可达代码 commit
+  `80b42438a3386e26a36feb3a9d1f68c1de898852` 建立
   [当前生产性能基线](../2026-08-06-req125-timeline-performance/README.md),只供未来 delta。
 - 全部执行均为无界面 L1:production Solid 组件、生产 CSS、确定性 adapter/fixture 与
   loopback-only headless Chrome。未启动 Electron、Alpha Code、packaged app 或前台 Chrome,
@@ -164,6 +164,7 @@ C5 改动的上游 timeline,不能作为替代基线。
 
 本次 B1/B2/B3 均在“可比性前置门”终判 FAIL。#866 已建立可复用的
 [当前 Alpha 基线](../2026-08-06-req125-timeline-performance/README.md):三轮中位数为
-冷开 132.0ms、30s 流式 rAF gap p95 18.1ms/估算丢帧率 4.5221%、滚顶触发 9.2ms、
-历史前插 26.2ms,并归档 renderer memory 与完整 raw diagnostics。该证据只供未来 delta
+冷开 104.7ms、30s 流式 rAF gap p95 26.1ms/估算丢帧率 10.2023%、滚顶触发 14.9ms、
+历史前插 45.2ms、锚点位移 58.875px,并归档 renderer memory 与完整 raw diagnostics。
+该证据只供未来 delta
 对比,不得倒签不存在的 C5 前性能结论;父票 #538 保持开放。
