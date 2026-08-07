@@ -242,3 +242,32 @@ used to claim that no retry occurred; sample 1's 1,004 ms gap between attempts
 is consistent with the first 1 s recovery backoff. The executable probe in this
 directory now contains the exact BYOK-only row/hash and secret-hygiene capture
 and retains `retry_tick` events for the next signed run.
+
+The seventh signed candidate at joint RC
+`8f023b7c0b187f9927a2b58d3b325de3c18ee64a` (app executable SHA-256
+`f991100a7ebda20c71cebc5549a8b4a54167869fdfdc28c700c59ed547fd5800`)
+made the 1.5 s readiness budget a real wall-clock bound and preserved caller
+abort classification, but it still failed the packaged timing gate. The
+notarized app passed strict `codesign`, Gatekeeper, and stapler validation. Its
+five BYOK-only startup values were 20,051.873 / 4,333.817 / 4,499.791 /
+4,436.110 / 4,989.793 ms, so nearest-rank P95 was **20,051.873 ms**.
+
+Every sample retained first/hot equality at the same exact two-row SHA, made
+zero account or bearer requests, performed zero rotation or main-triggered
+reload, displayed no unavailable state, and passed all secret-hygiene checks.
+The corrected timeline now distinguishes the failure precisely. Samples 2–5
+each ended the initial readiness attempt as `error:catalog-not-ready` in
+1,502.3–1,502.7 ms, recorded one `retry_tick`, then returned the governed set
+on the next attempt in 359.0–1,012.7 ms. Sample 1 recorded four separately
+bounded readiness failures in 1,501.4–1,502.3 ms and three retry ticks before a
+separate production chain returned the same set in 5.1 ms. Thus the earlier
+10 s mislabeled hang is closed, but the bounded barrier plus recovery path does
+not make the first packaged production contract meet the <=2 s gate.
+
+The summary's `latency.samples=0` remains a probe aggregate limitation for the
+BYOK-only scenario; the five raw `startupMs` values above are the #857 timing
+evidence. The issue and PR remain open/draft. Per the hard stop, #858 and #859
+were not run, and no production or real-credential probe was attempted. The
+preserved raw facts and screenshots are
+[`results/byok-only-f991100a.json`](./results/byok-only-f991100a.json) and
+`results/byok-only-f991100a-{1..5}.png`.
