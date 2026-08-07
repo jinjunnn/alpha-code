@@ -33,6 +33,7 @@ export class ModelContractError extends Error {
   constructor(
     readonly operation: "list" | "get" | "switch",
     readonly cause?: unknown,
+    readonly reason: "request" | "catalog-not-ready" = "request",
   ) {
     super(`model contract ${operation} failed`)
     this.name = "ModelContractError"
@@ -61,7 +62,7 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
       } catch (error) {
         cause = error
       }
-      if (now() >= deadline) throw new ModelContractError("list", cause)
+      if (now() >= deadline) throw new ModelContractError("list", cause, "catalog-not-ready")
       await waitForNextProbe(catalogReadyPollMs, signal)
     }
   }

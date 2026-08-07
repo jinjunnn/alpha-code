@@ -138,4 +138,29 @@ describe("typed model contract", () => {
       "model.list",
     ])
   })
+
+  test("catalog readiness timeout is distinguishable from a model request failure", async () => {
+    let elapsed = 0
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: { get: async () => ({ error: { message: "not ready" } }) },
+          },
+        }) as never,
+      {
+        catalogReadyTimeoutMs: 20,
+        catalogReadyPollMs: 10,
+        now: () => elapsed,
+        wait: async (delayMs) => {
+          elapsed += delayMs
+        },
+      },
+    )
+
+    await expect(contract.list("/repo")).rejects.toMatchObject({
+      operation: "list",
+      reason: "catalog-not-ready",
+    })
+  })
 })

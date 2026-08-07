@@ -205,3 +205,10 @@ ready. It does not cache or expose the response, bypass the renderer's own
 network state. This remains unclaimed code-level evidence: the issue and PR stay
 open/draft until a newly signed app passes all five samples at ≤2 s P95 with
 first/hot equality.
+
+The prewarm is deliberately scoped to the default `~/Alpha` home directory
+carried in the sidecar start command. Other directory/workspace refs still take
+their real cold location-graph path; this evidence does not claim a process-wide
+catalog cache. The ready gate is bounded at 2,000 ms, marker and model response
+bodies are both consumed, and renderer evidence distinguishes
+`error:catalog-not-ready` from a general `error:request`.

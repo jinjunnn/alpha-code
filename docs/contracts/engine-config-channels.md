@@ -83,6 +83,10 @@ memo map,其他调用仍走原 `createRoutes(opts)`。预热在 marker 证明治
 提前并与 listen 并行,不是另造 catalog API、缓存或 renderer 假数据。sidecar 在 listen 与预热都完成后才发布 ready,
 避免 renderer 启动与首次服务图构建互相争用;这道本地门不读取账户,也不改变目录/账户并行。预热
 失败只记具名诊断,renderer 仍保留上述 marker barrier 并照常 fail-closed。
+这项预热保证只覆盖默认 `~/Alpha` 首页流;任何其它 directory/workspace ref 都必须按真实冷路径
+建立自己的 location graph,不得把首页一次预热宣称成全目录缓存。预热等待最多 2 秒,超时后
+sidecar 仍发布 ready,renderer 时间线以 `error:catalog-not-ready` 区分本地 barrier 未收敛与普通
+模型请求错误。
 
 同一次 fork 内同源产出,两投影无漂移面。推理密钥只存在于 v1 通道。
 

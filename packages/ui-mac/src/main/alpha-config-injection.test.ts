@@ -24,7 +24,9 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Config } from "../../../core/src/config"
+import { ModelV2 } from "../../../core/src/model"
 import { Provider as ModelsDevProvider } from "../../../core/src/models-dev"
+import { ProviderV2 } from "../../../core/src/provider"
 import { ConfigV1 } from "../../../core/src/v1/config/config"
 import { ConfigMigrateV1 } from "../../../core/src/v1/config/migrate"
 import { Schema } from "effect"
@@ -219,6 +221,28 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     })
     for (const id of ["alpha", "deepseek-byok"]) {
       expect(Object.keys(modelsBase[id].models).sort()).toEqual(Object.keys(v2.provider[id].models).sort())
+      for (const [modelID, early] of Object.entries(modelsBase[id].models) as Array<[string, any]>) {
+        // These providers are custom config projections, so before #857 their settled catalog rows
+        // started from ModelV2.Info.empty() and ConfigProvider overlaid only declared fields. Keep
+        // the early ModelsDev base capability/limit values byte-for-byte equivalent to that prior
+        // settled default; this prevents the fast first commit from inventing a second metadata
+        // authority while still proving it did not regress the final catalog.
+        const settledDefault = ModelV2.Info.empty(ProviderV2.ID.make(id), ModelV2.ID.make(modelID))
+        expect({
+          tool_call: early.tool_call,
+          limit: early.limit,
+          modalities: early.modalities,
+          released: Date.parse(early.release_date),
+        }).toEqual({
+          tool_call: settledDefault.capabilities.tools,
+          limit: settledDefault.limit,
+          modalities: {
+            input: settledDefault.capabilities.input,
+            output: settledDefault.capabilities.output,
+          },
+          released: settledDefault.time.released,
+        })
+      }
       Schema.decodeUnknownSync(ModelsDevProvider)(modelsBase[id])
     }
     Schema.decodeUnknownSync(ModelsDevProvider)(modelsBase[ALPHA_V2_CATALOG_READY_PROVIDER_ID])
@@ -243,12 +267,14 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     )
 
     expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
-    const modelsBase = JSON.parse(fs.readFileSync(process.env.OPENCODE_MODELS_PATH!, "utf8"))
-    expect(modelsBase).toEqual({})
+    expect(process.env.OPENCODE_MODELS_PATH).toBeUndefined()
+    expect(fs.existsSync(path.join(userData, "alpha-engine-config", "models.json"))).toBe(false)
     expect(JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!).enabled_providers).toContain("user-file-provider")
-    expect(JSON.parse(fs.readFileSync(path.join(process.env.OPENCODE_CONFIG_DIR!, "opencode.json"), "utf8")).provider[
-      "user-file-provider"
-    ]).toBeDefined()
+    expect(
+      JSON.parse(fs.readFileSync(path.join(process.env.OPENCODE_CONFIG_DIR!, "opencode.json"), "utf8")).provider[
+        "user-file-provider"
+      ],
+    ).toBeDefined()
   })
 
   test("ALPHA_MODELS_DISABLE preserves the upstream models path escape hatch", () => {

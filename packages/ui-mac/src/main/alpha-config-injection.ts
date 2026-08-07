@@ -530,11 +530,20 @@ function materializeV2EngineConfig(
   // exact governed identities and readiness marker. ConfigProvider remains authoritative for the
   // richer late metadata/variants. If an enabled user/file provider is absent from this in-memory
   // projection, governedModelsBase returns {} WITHOUT the marker, preserving the conservative late
-  // barrier instead of exposing a partial first set. No key field is read or written here.
+  // barrier instead of exposing a partial first set. An empty base must also leave
+  // OPENCODE_MODELS_PATH unset: ModelsDev treats an on-disk `{}` as truthy and would otherwise
+  // short-circuit its bundled snapshot instead of reaching the conservative late barrier. No key
+  // field is read or written here.
   // Preserve ALPHA_MODELS_DISABLE as a real escape hatch by leaving any inherited path untouched.
   if (governedModels) {
     const modelsPath = path.join(dir, "models.json")
-    fs.writeFileSync(modelsPath, `${JSON.stringify(governedModelsBase(config), null, 2)}\n`, { mode: 0o600 })
-    process.env.OPENCODE_MODELS_PATH = modelsPath
+    const base = governedModelsBase(config)
+    if (Object.keys(base).length) {
+      fs.writeFileSync(modelsPath, `${JSON.stringify(base, null, 2)}\n`, { mode: 0o600 })
+      process.env.OPENCODE_MODELS_PATH = modelsPath
+    } else {
+      fs.rmSync(modelsPath, { force: true })
+      delete process.env.OPENCODE_MODELS_PATH
+    }
   }
 }

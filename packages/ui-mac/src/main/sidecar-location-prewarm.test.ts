@@ -1,12 +1,17 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, test } from "bun:test"
 import {
+  INITIAL_LOCATION_PREWARM_TIMEOUT_MS,
   initialLocationPrewarmRequest,
   initialModelPrewarmRequest,
   prewarmInitialLocation,
 } from "./sidecar-location-prewarm"
 
 describe("sidecar initial location prewarm", () => {
+  test("bounds the ready gate by the #857 startup budget", () => {
+    expect(INITIAL_LOCATION_PREWARM_TIMEOUT_MS).toBe(2_000)
+  })
+
   test("targets the real governed-provider and model V2 handlers for the exact directory", () => {
     const requests = [
       initialLocationPrewarmRequest("/Users/example/Alpha", "synthetic-password")!,
@@ -76,11 +81,18 @@ describe("sidecar initial location prewarm", () => {
 
   test("reports a non-ready marker response without retrying or failing open", async () => {
     let calls = 0
+    let consumed = false
     const result = await prewarmInitialLocation(
       {
         request() {
           calls++
-          return new Response(null, { status: 404 })
+          const response = new Response("marker-not-ready", { status: 404 })
+          const read = response.arrayBuffer.bind(response)
+          response.arrayBuffer = async () => {
+            consumed = true
+            return read()
+          }
+          return response
         },
       },
       "/Users/example/Alpha",
@@ -88,6 +100,7 @@ describe("sidecar initial location prewarm", () => {
     )
     expect(result).toEqual({ outcome: "unavailable", status: 404 })
     expect(calls).toBe(1)
+    expect(consumed).toBe(true)
   })
 
   test("reports a non-ready model response only after the governed marker succeeds", async () => {

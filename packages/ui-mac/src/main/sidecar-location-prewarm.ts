@@ -18,6 +18,8 @@ export type LocationPrewarmResult =
   | { outcome: "invalid-directory" }
   | { outcome: "failed"; error: string }
 
+export const INITIAL_LOCATION_PREWARM_TIMEOUT_MS = 2_000
+
 export function initialLocationPrewarmRequest(
   directory: string,
   password: string,
@@ -56,7 +58,7 @@ export async function prewarmInitialLocation(
   directory: string,
   options: { password: string; timeoutMs?: number },
 ): Promise<LocationPrewarmResult> {
-  const timeoutMs = options.timeoutMs ?? 10_000
+  const timeoutMs = options.timeoutMs ?? INITIAL_LOCATION_PREWARM_TIMEOUT_MS
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(new Error("initial location prewarm timed out")), timeoutMs)
   timer.unref?.()
@@ -64,6 +66,7 @@ export async function prewarmInitialLocation(
     const request = initialLocationPrewarmRequest(directory, options.password, controller.signal)
     if (!request) return { outcome: "invalid-directory" }
     const marker = await app.request(request)
+    await marker.arrayBuffer()
     if (!marker.ok) return { outcome: "unavailable", status: marker.status }
     const modelRequest = initialModelPrewarmRequest(directory, options.password, controller.signal)!
     const models = await app.request(modelRequest)
