@@ -71,6 +71,14 @@ renderer 的 typed model contract 在**同一 directory**先轮询 `provider.get
 ConfigProvider 合并完文件来源,不得用局部 early set 冒充完整目录。这道 barrier 只等待本地插件
 初始化,不读取 account summary、平台 bearer 或远端账户状态;登出/BYOK 目录仍与账户链并行。
 
+正确的早提交仍不等于首个 HTTP 请求没有启动成本:`/api/provider` 与 `/api/model` 共用的
+`LocationMiddleware` 会在首次目录请求时构建整张 per-location 服务图。首屏默认目录由 main 的
+`alphaUserWorkspaceDir()` 唯一解析为 `~/Alpha`;sidecar 把这个精确值随 start command 带入,并在
+`Server.listen` 同时经引擎已有的 `Server.Default().app` 发一次真实 V2 marker 请求。进程内 app 与
+socket listener 共用 `HttpApiApp.context` / `LocationServiceMap`,所以这只是把同一张生产服务图的
+构建提前并与 listen 并行,不是另造 catalog API、缓存或 renderer 假数据。预热不等待也不读取账户;
+失败只记诊断,renderer 仍保留上述 marker barrier 并照常 fail-closed。
+
 同一次 fork 内同源产出,两投影无漂移面。推理密钥只存在于 v1 通道。
 
 ## 不变量(实现与 review 都要守)
@@ -116,6 +124,11 @@ ConfigProvider 合并完文件来源,不得用局部 early set 冒充完整目�
   provider/model identity 与既有 v2 provider 投影精确一致、全部条目通过上游 ModelsDev schema、
   且不含任何 key;同时锁定 `ALPHA_MODELS_DISABLE=1` 不覆盖 operator 提供的上游路径。可用
   provider/model 仍只来自既有完整配置投影,不得在 core/server 新增第二套过滤器。
+- **首页目录预热必须复用真实 V2 handler 与共享 LocationServiceMap**:
+  `sidecar-location-prewarm.test.ts` 锁住精确
+  `/api/provider/alpha-internal-catalog-ready?location[directory]=<~/Alpha>` 请求、相对路径零调用、
+  socket listen 前即启动以及非 2xx/异常只形成具名诊断。不得把预热改成 main/renderer 自造模型
+  JSON,也不得为了计时跳过首次 `v2.model.list`。
 - **密钥不落 v2 文件**:v2 无解析机制,写入即明文。
 
 ## 事故记录与收敛

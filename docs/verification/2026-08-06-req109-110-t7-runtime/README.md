@@ -129,3 +129,21 @@ the existing V2 projection, rejects key material, and pins the incomplete
 user-file-provider fallback. This remains code-level candidate evidence: the
 issue stays open and the ≤2 s claim remains unmade until the rebuilt signed
 app passes the logged-out/BYOK five-sample matrix.
+
+A second signed candidate at joint RC
+`9528cc24065fa7efb8de6f6e5ea1d816d9d3edb7` (app executable SHA-256
+`0d86adecb343c3d215cb22dd09ed60042e7f08079f010ccdfcbe60a8550f150b`)
+proved the identity fix but failed the timing gate. Its five BYOK-only samples
+were 16,123.905 / 4,113.954 / 2,989.986 / 3,491.911 / 2,985.562 ms, so P95
+was **16,123.905 ms**. Every sample still had the exact same first/hot two-row
+governed set, zero account/bearer requests, zero rotation/reload, and negative
+secret-hygiene checks. The first V2 marker request was paying the lazy
+per-location service-graph construction; moving the governed base before the
+internal plugin batch fixed correctness but did not eliminate that cost.
+
+The next code candidate starts that same location graph earlier through the
+embedded server's existing in-process V2 app for the exact `~/Alpha` home
+directory, in parallel with socket listen. It does not bypass `v2.model.list`
+or introduce a second catalog source. This is still unclaimed code-level work:
+the issue and PR remain open/draft until a newly signed app passes all five
+samples at ≤2 s P95 with first/hot equality.

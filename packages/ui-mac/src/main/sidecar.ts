@@ -9,6 +9,7 @@ import { injectAlphaConfig, type AlphaConfigInjectionResult } from "./alpha-conf
 // 在 sidecar-ready-message.test.ts;本文件不得字面量构造 ready 消息(接线锚断言其不存在)。
 import { buildReadyMessage, type SidecarReadyMessage } from "./sidecar-ready-message"
 import type { ChannelName } from "./catalog-channels"
+import { prewarmInitialLocation } from "./sidecar-location-prewarm"
 
 // ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
 // raw-TS tools (.opencode/tool/*.ts), and packages whose TS entry does `import "./x.js"` (e.g.
@@ -58,6 +59,8 @@ type StartCommand = {
    *  连同 provider 注入一起炸掉(2026-07-23 打包端「全模型当前不可用」事故)。缺省 = loud 跳过
    *  override 注入(fail-closed 权威在 boot reconcile,见 ext-disabled-injection.ts)。 */
   registryChannel?: ChannelName
+  /** #857:the renderer home model contract's exact initial location (`~/Alpha`). */
+  initialDirectory: string
 }
 
 type StopCommand = { type: "stop" }
@@ -96,11 +99,23 @@ async function start(command: StartCommand) {
   try {
     // #613:注入结果必须捕获并随 ready 上报 —— 注入失败 = 引擎起来了但整份 alpha 配置丢失
     // (模型全灰),不上报则 main/renderer 无从与「引擎未就绪」区分。
-    const injection = prepareSidecarEnv(command.password, command.userDataPath, command.extPluginPath, command.registryChannel)
+    const injection = prepareSidecarEnv(
+      command.password,
+      command.userDataPath,
+      command.extPluginPath,
+      command.registryChannel,
+    )
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
     const { Server } = await import("virtual:opencode-server")
+
+    // Start the real per-location graph through the embedded server's in-process app before
+    // socket-listen finishes. The request and the listener share HttpApiApp.context (and therefore
+    // one LocationServiceMap cache), so the renderer's first V2 model call observes the warmed
+    // production layer rather than paying its construction cost. Do not await: listen/health and
+    // the location graph intentionally progress in parallel.
+    const prewarm = prewarmInitialLocation(Server.Default().app, command.initialDirectory)
 
     listener = await Server.listen({
       port: command.port,
@@ -110,6 +125,10 @@ async function start(command: StartCommand) {
       cors: ["oc://renderer"],
     })
     parentPort.postMessage(buildReadyMessage(injection))
+    void prewarm.then((result) => {
+      if (result.outcome === "ready") console.log("initial governed catalog location prewarmed")
+      else console.warn("initial governed catalog location prewarm did not become ready", result)
+    })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
     setImmediate(() => process.exit(1))
@@ -188,14 +207,18 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
   if (typeof command.port !== "number") return
   if (typeof command.password !== "string") return
   if (typeof command.userDataPath !== "string") return
+  if (typeof command.initialDirectory !== "string") return
   return {
     type: "start",
     hostname: command.hostname,
     port: command.port,
     password: command.password,
     userDataPath: command.userDataPath,
+    initialDirectory: command.initialDirectory,
     ...(typeof command.extPluginPath === "string" ? { extPluginPath: command.extPluginPath } : {}),
-    ...(command.registryChannel === "stable" || command.registryChannel === "preview" || command.registryChannel === "dev"
+    ...(command.registryChannel === "stable" ||
+    command.registryChannel === "preview" ||
+    command.registryChannel === "dev"
       ? { registryChannel: command.registryChannel }
       : {}),
   }
