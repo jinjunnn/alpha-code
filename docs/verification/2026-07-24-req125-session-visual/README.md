@@ -68,8 +68,10 @@ C6 未知工具 fail-closed 回归帧;这些辅助文件不增加矩阵行数。
 - 静态复核:旧注入文件/符号、未经 sanitizer 的 HTML API、裸外开均为 0;唯一局部
   `querySelector` 不是上游 session DOM 访问。
 - [`invariant-checks.md`](invariant-checks.md) 的 13 个功能/安全行全部 PASS。
-- 3 个 before/after benchmark 行全部 FAIL:C5 合并前没有 Alpha timeline 生产基线,
-  且上游 timeline harness 不覆盖 C5 变更。缺口由 #866 承接;父票 #538 保持开放。
+- 3 个历史 before/after benchmark 行仍为 FAIL:C5 合并前没有 Alpha timeline 生产基线,
+  且上游 timeline harness 不覆盖 C5 变更;不得倒签。#866 已建立
+  [当前生产性能基线](../2026-08-06-req125-timeline-performance/README.md),供未来 delta
+  对比;父票 #538 保持开放。
 
 #547 的 VERIFY 范围至此全部获得终态结果;关闭本验证票不代表 #538 完成。视觉 FAIL
-继续由上表实现票承接,性能证据缺口由 #866 承接。
+继续由上表实现票承接;#866 的当前基线不改变历史 before 缺失结论。
