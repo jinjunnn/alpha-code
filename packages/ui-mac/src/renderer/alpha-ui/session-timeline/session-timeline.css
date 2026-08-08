@@ -490,7 +490,19 @@ button.a-tl-cmd-chip:focus-visible {
 }
 
 .a-tl-cmd-body {
-  max-width: 100%;
+  max-width: min(520px, 100%);
+  max-height: 200px;
+  padding: 11px 13px;
+  overflow: auto;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+  line-height: var(--a-leading-normal);
+  overflow-wrap: anywhere;
+  text-align: left;
+  white-space: pre-wrap;
 }
 
 /* ── 回合末富脚注(A6/A7:agent·model·时长·tokens + hover 动作) ──────── */

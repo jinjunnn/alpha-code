@@ -1275,7 +1275,9 @@ describe("#568 斜杠命令 chip(消费可选 typed 接口)", () => {
     chip.click()
     await flush()
     expect(chip.getAttribute("aria-expanded")).toBe("true")
-    expect(cmd.querySelector(".a-tl-cmd-body")!.textContent).toContain("expanded prompt body")
+    const body = cmd.querySelector(".a-tl-cmd-body")!
+    expect(body.textContent).toContain("expanded prompt body")
+    expect(body.querySelector(".a-tl-bubble")).toBeNull()
 
     runtime.setTimelineRows(slashRows(false))
     await flush()

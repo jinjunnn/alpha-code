@@ -534,9 +534,7 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }> }) {
               </button>
             </Show>
             <Show when={promptOpen() && props.row.text}>
-              <div class="a-tl-cmd-body">
-                <div class="a-tl-bubble">{bubbleInner()}</div>
-              </div>
+              <div class="a-tl-cmd-body">{bubbleInner()}</div>
             </Show>
           </div>
         )}

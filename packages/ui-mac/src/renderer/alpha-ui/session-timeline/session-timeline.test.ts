@@ -107,6 +107,14 @@ describe("REQ-125 C5 I5 令牌白名单与运动契约", () => {
     const transitions = [...css.matchAll(/transition:\s*([^;]+);/g)].map((match) => match[1])
     transitions.forEach((value) => expect(value).toContain("var(--a-dur"))
   })
+
+  test("#861 命令展开体固定为中性面板,恢复强调色用户气泡即失败", () => {
+    const bodyRule = css.match(/\.a-tl-cmd-body\s*\{([^}]*)\}/)?.[1] ?? ""
+    expect(bodyRule).toContain("border: 1px solid var(--a-border-faint)")
+    expect(bodyRule).toContain("background: var(--a-bg-subtle)")
+    expect(bodyRule).toContain("color: var(--a-text-secondary)")
+    expect(bodyRule).not.toContain("--a-accent")
+  })
 })
 
 describe("REQ-125 C5 shell 接线(最小增量)", () => {
