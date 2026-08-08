@@ -20,6 +20,7 @@ import { TimelineIntentsContext, type TimelineIntents, useTimelineIntents } from
 import { TimelineMarkdown } from "./timeline-markdown"
 import {
   boundedText,
+  MARKDOWN_MAX_CHARS,
   REASONING_MAX_CHARS,
   reasoningSummary,
   type TimelineComment,
@@ -717,11 +718,48 @@ function MarkdownRow(props: { row: Extract<TimelineRow, { kind: "markdown" }> })
 }
 
 function DividerRow(props: { row: Extract<TimelineRow, { kind: "divider" }> }) {
-  // label 随行身份定格(rev = label),两种形态互不重建。
-  if (props.row.label === "interrupted") return <InterruptedRow />
+  // label 随行身份定格;compaction 的 rev 在完成态 summary 到达时变化,两种形态互不重建。
+  const row = props.row
+  if (row.label === "interrupted") return <InterruptedRow />
+  const [open, setOpen] = createSignal(false)
+  const expandable = () => row.summaryParts.length > 0
   return (
-    <div class="a-tl-row a-tl-divider" data-alpha-timeline-row="divider" data-label={props.row.label}>
-      <span class="a-tl-divider-pill">{t("alpha.timeline.compacted")}</span>
+    <div
+      class="a-tl-row a-tl-divider"
+      data-alpha-timeline-row="divider"
+      data-label={row.label}
+      data-expanded={open() ? "true" : "false"}
+    >
+      <button
+        type="button"
+        class="a-tl-divider-pill"
+        aria-expanded={expandable() ? open() : false}
+        disabled={!expandable()}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <svg class="a-tl-compaction-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8" />
+        </svg>
+        <span>{t("alpha.timeline.compacted")}</span>
+        <span aria-hidden="true">·</span>
+        <span>{t("alpha.timeline.retainedHighlights")}</span>
+        <svg class="a-tl-compaction-chevron" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      </button>
+      <Show when={open() && expandable()}>
+        <div class="a-tl-compaction-body" data-alpha-compaction-summary="true">
+          <For each={row.summaryParts}>
+            {(part) => (
+              <TimelineMarkdown
+                text={boundedText(part.text ?? "", MARKDOWN_MAX_CHARS).text}
+                cacheKey={`compaction:${part.id}`}
+                streaming={false}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
     </div>
   )
 }

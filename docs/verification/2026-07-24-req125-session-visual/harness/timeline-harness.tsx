@@ -512,7 +512,22 @@ const STATES: Record<string, TimelineRow[]> = {
   // H4 上下文压缩分隔
   h4: [
     md("h4-a", "此前的探查结论已并入摘要。"),
-    { kind: "divider", key: "h4", rev: "1", userMessageID: "msg_user", label: "compaction" } as any,
+    {
+      kind: "divider",
+      key: "h4",
+      rev: "2",
+      userMessageID: "msg_user",
+      label: "compaction",
+      summaryParts: [
+        {
+          id: "h4-summary",
+          sessionID: "ses_harness",
+          messageID: "msg_compaction",
+          type: "text",
+          text: "## 保留要点\n\n- 已确认安全边界\n- 下一步补 AGENTS.md 的硬约束一节",
+        },
+      ],
+    } as any,
     md("h4-b", "继续:下一步补 AGENTS.md 的硬约束一节。"),
   ],
   // H5 回到底部按钮(渲染长内容后向上滚动触发)

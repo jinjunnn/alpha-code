@@ -1291,6 +1291,7 @@ export const dict = {
   "alpha.timeline.reasoning": "思考",
   "alpha.timeline.reasoningDuration": "{{seconds}} 秒",
   "alpha.timeline.compacted": "上下文已压缩",
+  "alpha.timeline.retainedHighlights": "保留要点",
   "alpha.timeline.interrupted": "已由你停止",
   "alpha.timeline.continueTurn": "继续生成",
   "alpha.timeline.continuePrompt": "继续",

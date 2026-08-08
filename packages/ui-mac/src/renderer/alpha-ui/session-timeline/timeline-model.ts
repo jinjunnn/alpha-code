@@ -180,7 +180,16 @@ export type TimelineRow =
   | { kind: "artifacts"; key: string; rev: string; partID: string; links: TimelineArtifactLink[] }
   | { kind: "retry"; key: string; rev: string; userMessageID: string; attempt: number; message: string }
   | { kind: "turnError"; key: string; rev: string; userMessageID: string; name: string; message: string }
-  | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "compaction" | "interrupted" }
+  | {
+      kind: "divider"
+      key: string
+      rev: string
+      userMessageID: string
+      label: "compaction"
+      /** 引擎已生成的 compaction assistant summary;视图默认折叠,不在此生成或猜测内容。 */
+      summaryParts: TextPart[]
+    }
+  | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "interrupted" }
   | { kind: "thinking"; key: string; rev: string; userMessageID: string }
   | {
       kind: "footnote"
@@ -659,13 +668,25 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         slash,
       })
 
-    if (userParts.some((part) => part.type === "compaction"))
+    const compacted = userParts.some((part) => part.type === "compaction")
+    const compactionSummaryParts = compacted
+      ? turnAssistants.flatMap((assistant) =>
+          assistant.summary && typeof assistant.time.completed === "number"
+            ? input
+                .partsOf(assistant.id)
+                .filter((part): part is TextPart => part.type === "text" && !!part.text?.trim())
+            : [],
+        )
+      : []
+
+    if (compacted)
       rows.push({
         kind: "divider",
         key: `compaction:${userMessage.id}`,
-        rev: "compaction",
+        rev: `compaction:${compactionSummaryParts.map((part) => part.id).join(",")}`,
         userMessageID: userMessage.id,
         label: "compaction",
+        summaryParts: compactionSummaryParts,
       })
 
     let emitted = 0
@@ -716,6 +737,9 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
 
     for (const assistant of assistants) {
       const parts = input.partsOf(assistant.id)
+      // compaction assistant 的完成态 text 已收进上方分隔行作为「保留要点」;不再当普通助手正文
+      // 重复摊开。其内部 reasoning 也不进入普通时间线,错误仍由回合级错误行呈现。
+      const compactionSummary = compacted && assistant.summary === true
       const streamingHere = streamingAssistant?.id === assistant.id
       const lastVisible = streamingHere
         ? [...parts]
@@ -732,6 +756,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         switch (part.type) {
           case "text": {
             if (!part.text?.trim()) continue
+            if (compactionSummary) continue
             flushContextRun()
             rows.push({
               kind: "markdown",
@@ -745,6 +770,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           }
           case "reasoning": {
             if (!part.text?.trim()) continue
+            if (compactionSummary) continue
             flushContextRun()
             rows.push({
               kind: "reasoning",
