@@ -17,6 +17,9 @@ import {
   MARKDOWN_MAX_CHARS,
   MENTION_LABEL_MAX_CHARS,
   projectTimelineRows,
+  REASONING_MAX_CHARS,
+  REASONING_SUMMARY_MAX_CHARS,
+  reasoningSummary,
   reuseTimelineRows,
   reviewPathOf,
   segmentUserText,
@@ -29,6 +32,28 @@ import {
   TURN_ERROR_MAX_CHARS,
   USER_TEXT_MAX_CHARS,
 } from "./timeline-model"
+
+describe("#863 reasoning 折叠头安全摘要", () => {
+  test("只提取显式标题并清理展示标记；普通正文不猜摘要", () => {
+    expect(reasoningSummary("## 规划 `README` 探查顺序\n\n先列目录")).toBe("规划 README 探查顺序")
+    expect(reasoningSummary("<h3>核对 <em>配置</em></h3>\n正文")).toBe("核对 配置")
+    expect(reasoningSummary("**归纳 [风险](https://example.com)**\n\n正文")).toBe("归纳 风险")
+    expect(reasoningSummary("先列目录看结构,再读 README 抓事实。")).toBeUndefined()
+  })
+
+  test("不从普通正文中段回溯 Markdown 标记，也不把有歧义的 setext 形态当摘要", () => {
+    expect(reasoningSummary("先核对认证流。\n**用户 API key 是 sk-live-example**\n再轮换密钥。")).toBeUndefined()
+    expect(reasoningSummary("先重新考虑计划。\n\n# 内部步骤 4\n继续正文")).toBeUndefined()
+    expect(reasoningSummary("客户记录里有敏感字段。\n---\n继续正文")).toBeUndefined()
+  })
+
+  test("标题在进入常显折叠头前有硬上限", () => {
+    expect(reasoningSummary(`# ${"摘".repeat(REASONING_SUMMARY_MAX_CHARS + 20)}`)).toHaveLength(
+      REASONING_SUMMARY_MAX_CHARS,
+    )
+    expect(reasoningSummary(`${"内".repeat(REASONING_MAX_CHARS)}\n# 预算外标题`)).toBeUndefined()
+  })
+})
 
 function userMsg(id: string, created: number, over: Partial<UserMessage> = {}): UserMessage {
   return {

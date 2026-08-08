@@ -271,7 +271,7 @@ function conversationRows(status = "idle") {
             sessionID: "ses_1",
             messageID: "msg_a1",
             type: "reasoning",
-            text: "先列目录看结构",
+            text: "**规划探查顺序**\n\n先列目录看结构",
             time: status === "busy" ? { start: 0 } : { start: 0, end: 6000 },
           },
           {
@@ -390,19 +390,53 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     expect(first.querySelector("button[aria-label='复制消息']")).not.toBeNull()
   })
 
-  test("推理块默认折叠,点击展开正文并回写 aria-expanded", async () => {
+  test("推理块默认折叠并在时长旁显示安全摘要,点击展开正文并回写 aria-expanded", async () => {
     const host = mount()
     runtime.setTimelineRows(conversationRows())
     await flush()
 
     const head = host.querySelector<HTMLButtonElement>(".a-tl-reason-head")!
     expect(head.getAttribute("aria-expanded")).toBe("false")
+    expect(head.querySelector(".a-tl-reason-duration")!.textContent).toBe("6 秒")
+    expect(head.querySelector(".a-tl-reason-summary")!.textContent).toBe("规划探查顺序")
+    expect(head.textContent).toContain("6 秒·规划探查顺序")
     expect(host.querySelector(".a-tl-reason-body")).toBeNull()
 
     head.click()
     await flush()
     expect(head.getAttribute("aria-expanded")).toBe("true")
     expect(host.querySelector(".a-tl-reason-body")!.textContent).toContain("先列目录看结构")
+  })
+
+  test("推理正文没有显式摘要时稳定降级为时长,不从正文猜常显文案", async () => {
+    const host = mount()
+    const rows = conversationRows()
+    const reasoning = rows.find((row) => row.kind === "reasoning")
+    if (!reasoning || reasoning.kind !== "reasoning") throw new Error("reasoning fixture missing")
+    reasoning.part.text = "先列目录看结构,再读 README 抓事实。"
+    runtime.setTimelineRows(rows)
+    await flush()
+
+    const head = host.querySelector<HTMLButtonElement>(".a-tl-reason-head")!
+    expect(head.querySelector(".a-tl-reason-duration")!.textContent).toBe("6 秒")
+    expect(head.querySelector(".a-tl-reason-summary")).toBeNull()
+    expect(head.querySelector(".a-tl-reason-separator")).toBeNull()
+    expect(head.textContent).not.toContain("先列目录")
+  })
+
+  test("推理时长缺席但完成态有起始摘要时只显示摘要,不显示分隔点", async () => {
+    const host = mount()
+    const rows = conversationRows()
+    const reasoning = rows.find((row) => row.kind === "reasoning")
+    if (!reasoning || reasoning.kind !== "reasoning") throw new Error("reasoning fixture missing")
+    reasoning.part.time = { start: 0 }
+    runtime.setTimelineRows(rows)
+    await flush()
+
+    const head = host.querySelector<HTMLButtonElement>(".a-tl-reason-head")!
+    expect(head.querySelector(".a-tl-reason-summary")!.textContent).toBe("规划探查顺序")
+    expect(head.querySelector(".a-tl-reason-duration")).toBeNull()
+    expect(head.querySelector(".a-tl-reason-separator")).toBeNull()
   })
 
   test("流式回合:末段 Markdown 带光标,推理块进行中标记,busy 空输出显示思考中", async () => {
@@ -413,6 +447,7 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     expect(host.querySelector("[data-alpha-timeline-row='markdown'][data-streaming='true']")).not.toBeNull()
     expect(host.querySelector(".a-tl-cursor")).not.toBeNull()
     expect(host.querySelector(".a-tl-reason[data-streaming='true']")).not.toBeNull()
+    expect(host.querySelector(".a-tl-reason-summary")).toBeNull()
 
     runtime.setTimelineRows(
       model.projectTimelineRows({

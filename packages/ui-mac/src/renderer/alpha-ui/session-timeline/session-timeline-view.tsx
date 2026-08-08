@@ -5,7 +5,7 @@
 // 以及 C6 卡片全集:工具卡四态/折叠组/回合级错误/重试/媒体预览行/产物链接行)。
 // 数据经 props 注入(rows 来自 timeline-model 投影),本文件零上游 session DOM/选择器依赖,
 // CSS 只用 --a-* 令牌;卡片交互经可选 intents(缺席即降级为纯展示,fail-closed)。
-import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import { t } from "../../i18n"
 import {
   ContextToolGroupCard,
@@ -21,6 +21,7 @@ import { TimelineMarkdown } from "./timeline-markdown"
 import {
   boundedText,
   REASONING_MAX_CHARS,
+  reasoningSummary,
   type TimelineComment,
   type TimelineRow,
   type TimelineSegment,
@@ -626,6 +627,8 @@ function ReasoningRow(props: { row: Extract<TimelineRow, { kind: "reasoning" }> 
     return Math.max(0, Math.round((time.end - time.start) / 1000))
   }
   const body = () => boundedText(props.row.part.text ?? "", REASONING_MAX_CHARS)
+  // 流式期不读取不断增长的正文：完成态一次提取，避免折叠头随分片跳变。
+  const summary = createMemo(() => (props.row.streaming ? undefined : reasoningSummary(props.row.part.text ?? "")))
   return (
     <section
       class="a-tl-row a-tl-reason"
@@ -640,8 +643,22 @@ function ReasoningRow(props: { row: Extract<TimelineRow, { kind: "reasoning" }> 
         <span class="a-tl-reason-label">
           {props.row.streaming ? t("alpha.timeline.thinking") : t("alpha.timeline.reasoning")}
         </span>
-        <Show when={seconds() !== undefined}>
-          <span class="a-tl-reason-duration">{t("alpha.timeline.reasoningDuration", { seconds: seconds()! })}</span>
+        <Show when={seconds() !== undefined || summary()}>
+          <span class="a-tl-reason-meta">
+            <Show when={seconds() !== undefined}>
+              <span class="a-tl-reason-duration">{t("alpha.timeline.reasoningDuration", { seconds: seconds()! })}</span>
+            </Show>
+            <Show when={summary()}>
+              <Show when={seconds() !== undefined}>
+                <span class="a-tl-reason-separator" aria-hidden="true">
+                  ·
+                </span>
+              </Show>
+              <span class="a-tl-reason-summary" title={summary()}>
+                {summary()}
+              </span>
+            </Show>
+          </span>
         </Show>
         <svg class="a-tl-reason-chev" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M9 6l6 6-6 6" />

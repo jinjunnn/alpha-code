@@ -158,7 +158,7 @@ const STATES: Record<string, TimelineRow[]> = {
       part: {
         id: "f2",
         type: "reasoning",
-        text: "先列目录看结构,再读 README 与 compose 抓事实,最后浓缩成简介。",
+        text: "**规划探查顺序**\n\n先列目录看结构,再读 README 与 compose 抓事实,最后浓缩成简介。",
         time: { start: at(11, 20), end: at(11, 20) + 6000 },
       } as any,
     } as any,
