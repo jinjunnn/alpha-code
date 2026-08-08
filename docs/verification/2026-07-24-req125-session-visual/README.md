@@ -17,8 +17,8 @@ alpha@`d3790e90b1e815001f8bb40f4ce8d15573c5de89`;逐行裁决以
 
 | 结果 | 行数 | 说明                                     |
 | ---- | ---: | ---------------------------------------- |
-| PASS |   60 | 可达形态符合当前判定合同                 |
-| FAIL |   12 | 每行均已路由到 #538 下的实现票           |
+| PASS |   61 | 可达形态符合当前判定合同                 |
+| FAIL |   11 | 每行均已路由到 #538 下的实现票           |
 | N/A  |    2 | J4/J7;#558/PR#571 已确认生产数据面不存在 |
 | 合计 |   74 | 74/74 均已裁决,无留空、部分或待输入状态  |
 
@@ -37,11 +37,23 @@ C6 未知工具 fail-closed 回归帧;这些辅助文件不增加矩阵行数。
 | G15          | #585   |
 | G17          | #586   |
 | G18          | #587   |
-| I1           | #865   |
 
 历史发现9/12/13/14 已分别由 #588/#591/#589/#590 修复。D6 的 production PTY
 环境数据同步由 #579 承接;F9 的无副作用 resume 语义由 #620 承接。两者不改变本次
 组件视觉终判。
+
+## 2026-08-08 I1 #865 复验
+
+- production Solid 时间线与现役 CSS 经 loopback-only Vite 装配,Google Chrome
+  `151.0.7922.77` 以 `--headless=new` 重采明暗两帧；零 Electron、零账号/API key、
+  零前台窗口。
+- 行能力直接复用右栏 artifact renderer registry：PNG/HTML/Markdown/PDF 保留强调色与
+  medium 字重；parquet 及尚未获得结构证明的 OOXML 落入 fallback,使用中性色与普通
+  字重。两类行均保留原生 button 与 `focusArtifact(runId+name)`,I2/I3 联动不变。
+- 证据：[浅色](shots/I1-light-harness.png)
+  `661f2ae6df03244df1040ef1f438c981512ddf672cd86660d76988fb5291bed5`；
+  [暗色](shots/I1-dark-harness.png)
+  `d9d675a33bc96686cdc5f9b6ad219811fac554c38c5ede350594120733e160eb`。
 
 ## 2026-08-08 H4 #864 复验
 

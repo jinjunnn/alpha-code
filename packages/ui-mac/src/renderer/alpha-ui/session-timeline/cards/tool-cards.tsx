@@ -9,6 +9,7 @@
 import type { ToolPart } from "@opencode-ai/sdk/v2/client"
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js"
 import { t } from "../../../i18n"
+import { routeArtifact } from "../../artifact-workbench/renderers/registry"
 import type { TimelineMediaSource, TimelineRow } from "../timeline-model"
 import {
   basenameOf,
@@ -765,6 +766,7 @@ export function TimelineArtifactRows(props: { row: Extract<TimelineRow, { kind: 
             type="button"
             class="a-artrow"
             role="listitem"
+            data-previewable={routeArtifact({ name: link.name }).rendererId !== "fallback" ? "true" : "false"}
             disabled={!intents.focusArtifact}
             onClick={() => intents.focusArtifact?.({ name: link.name, runId: link.runId })}
           >

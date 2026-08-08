@@ -1185,7 +1185,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     expect(host.querySelector("[data-alpha-timeline-row='media'] .a-media-row")).not.toBeNull()
   })
 
-  test("产物链接行:§⑥ 形态(链接图标+文档名),点击发 focusArtifact(runId+name)", async () => {
+  test("产物链接行:§⑥ 可预览强调/不可预览中性,点击仍发 focusArtifact(runId+name)", async () => {
     const host = mount()
     runtime.setTimelineIntentsEnabled(true)
     runtime.setTimelineRows(
@@ -1196,7 +1196,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
           output: JSON.stringify({
             job_id: "job_7f3a",
             status: "completed",
-            artifacts: ["季度经营分析.docx", "营收对比图.png"],
+            artifacts: ["营收对比图.png", "数据底表.parquet"],
           }),
           title: "await",
           metadata: {},
@@ -1209,9 +1209,11 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     const rows = host.querySelector("[data-alpha-timeline-row='artifacts']")!
     expect(rows.getAttribute("role")).toBe("list")
     const links = [...rows.querySelectorAll(".a-artrow")]
-    expect(links.map((el) => el.textContent)).toEqual(["季度经营分析.docx", "营收对比图.png"])
-    ;(links[0] as HTMLButtonElement).click()
-    expect(runtime.getIntentLog().focusArtifact).toEqual([{ name: "季度经营分析.docx", runId: "job_7f3a" }])
+    expect(links.map((el) => el.textContent)).toEqual(["营收对比图.png", "数据底表.parquet"])
+    expect(links.map((el) => el.getAttribute("data-previewable"))).toEqual(["true", "false"])
+    expect((links[1] as HTMLButtonElement).disabled).toBe(false)
+    ;(links[1] as HTMLButtonElement).click()
+    expect(runtime.getIntentLog().focusArtifact).toEqual([{ name: "数据底表.parquet", runId: "job_7f3a" }])
   })
 })
 
