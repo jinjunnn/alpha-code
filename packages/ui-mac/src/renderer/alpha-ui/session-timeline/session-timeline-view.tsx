@@ -733,7 +733,7 @@ function DividerRow(props: { row: Extract<TimelineRow, { kind: "divider" }> }) {
       <button
         type="button"
         class="a-tl-divider-pill"
-        aria-expanded={expandable() ? open() : false}
+        aria-expanded={expandable() ? open() : undefined}
         disabled={!expandable()}
         onClick={() => setOpen((value) => !value)}
       >
@@ -741,11 +741,13 @@ function DividerRow(props: { row: Extract<TimelineRow, { kind: "divider" }> }) {
           <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8" />
         </svg>
         <span>{t("alpha.timeline.compacted")}</span>
-        <span aria-hidden="true">·</span>
-        <span>{t("alpha.timeline.retainedHighlights")}</span>
-        <svg class="a-tl-compaction-chevron" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M9 6l6 6-6 6" />
-        </svg>
+        <Show when={expandable()}>
+          <span aria-hidden="true">·</span>
+          <span>{t("alpha.timeline.retainedHighlights")}</span>
+          <svg class="a-tl-compaction-chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </Show>
       </button>
       <Show when={open() && expandable()}>
         <div class="a-tl-compaction-body" data-alpha-compaction-summary="true">

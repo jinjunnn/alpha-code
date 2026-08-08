@@ -1713,6 +1713,24 @@ describe("#589 中断态:左对齐安静行 + 继续生成", () => {
     expect(host.querySelector("[data-alpha-compaction-summary]")).toBeNull()
     expect(host.querySelector(".a-tl-int-continue")).toBeNull()
   })
+
+  test("压缩分隔没有完成态摘要时只陈述已压缩,不伪装为可展开", async () => {
+    const host = mount()
+    const rows = compactionRows()
+    const divider = rows.find((row) => row.kind === "divider" && row.label === "compaction")
+    if (!divider || divider.label !== "compaction") throw new Error("expected compaction divider")
+    divider.summaryParts = []
+    runtime.setTimelineRows(rows)
+    await flush()
+
+    const pill = host.querySelector<HTMLButtonElement>("button.a-tl-divider-pill")!
+    expect(pill.disabled).toBe(true)
+    expect(pill.textContent).toBe("上下文已压缩")
+    expect(pill.hasAttribute("aria-expanded")).toBe(false)
+    expect(pill.querySelector(".a-tl-compaction-icon")).not.toBeNull()
+    expect(pill.querySelector(".a-tl-compaction-chevron")).toBeNull()
+    expect(host.querySelector("[data-alpha-compaction-summary]")).toBeNull()
+  })
 })
 
 describe("#589 真实继续生成闸门(生产绑定层挂载,SDK 层观察)", () => {
