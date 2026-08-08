@@ -112,6 +112,8 @@
 
 .a-tl-divider {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
 }
 
@@ -124,7 +126,50 @@
   border-radius: var(--a-radius-full);
   background: var(--a-bg-muted);
   color: var(--a-text-tertiary);
+  font: inherit;
   font-size: var(--a-text-xs);
+  cursor: pointer;
+}
+
+.a-tl-divider-pill:disabled {
+  cursor: default;
+}
+
+.a-tl-compaction-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-tl-compaction-chevron {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-tl-divider[data-expanded="true"] .a-tl-compaction-chevron {
+  transform: rotate(90deg);
+}
+
+.a-tl-compaction-body {
+  width: min(720px, calc(100% - 24px));
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-secondary);
 }
 
 /* 中断态(design ② .interrupted):左对齐安静行 + 续钮,不占用告警色底。 */

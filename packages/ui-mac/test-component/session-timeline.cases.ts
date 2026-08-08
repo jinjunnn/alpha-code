@@ -1624,6 +1624,21 @@ describe("#589 中断态:左对齐安静行 + 继续生成", () => {
           agent: "build",
           model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
         },
+        {
+          id: "msg_a1",
+          sessionID: "ses_1",
+          role: "assistant",
+          time: { created: 1010, completed: 1020 },
+          parentID: "msg_u1",
+          modelID: "deepseek-reasoner",
+          providerID: "deepseek",
+          mode: "compaction",
+          agent: "compaction",
+          summary: true,
+          path: { cwd: "/tmp", root: "/tmp" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
       ] as never,
       partsOf: (messageID: string) =>
         (messageID === "msg_u1"
@@ -1631,6 +1646,16 @@ describe("#589 中断态:左对齐安静行 + 继续生成", () => {
               { id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "开始" },
               { id: "prt_k1", sessionID: "ses_1", messageID: "msg_u1", type: "compaction", auto: false },
             ]
+          : messageID === "msg_a1"
+            ? [
+                {
+                  id: "prt_sum",
+                  sessionID: "ses_1",
+                  messageID: "msg_a1",
+                  type: "text",
+                  text: "## 保留要点\n\n- 已确认安全边界\n- 下一步补验证",
+                },
+              ]
           : []) as never,
       status: "idle",
     })
@@ -1660,15 +1685,51 @@ describe("#589 中断态:左对齐安静行 + 继续生成", () => {
     expect(host.querySelector(".a-tl-interrupted")!.textContent).toContain("已由你停止")
   })
 
-  test("压缩分隔(同一行类的另一 label)保持既有居中 pill 形态", async () => {
+  test("压缩分隔具备已批图标/文案/展开指示;原生 button 支持键盘语义且鼠标展开既有摘要", async () => {
     const host = mount()
     runtime.setTimelineRows(compactionRows())
     await flush()
 
     const row = host.querySelector("[data-alpha-timeline-row='divider'][data-label='compaction']")!
     expect(row.classList.contains("a-tl-divider")).toBe(true)
-    expect(row.querySelector(".a-tl-divider-pill")!.textContent).toBe("上下文已压缩")
+    const pill = row.querySelector<HTMLButtonElement>("button.a-tl-divider-pill")!
+    expect(pill.type).toBe("button")
+    expect(pill.disabled).toBe(false)
+    expect(pill.textContent).toBe("上下文已压缩·保留要点")
+    expect(pill.getAttribute("aria-expanded")).toBe("false")
+    expect(pill.querySelector(".a-tl-compaction-icon")).not.toBeNull()
+    expect(pill.querySelector(".a-tl-compaction-chevron")).not.toBeNull()
+    expect(host.querySelector("[data-alpha-compaction-summary]")).toBeNull()
+
+    pill.click()
+    await flush()
+    expect(pill.getAttribute("aria-expanded")).toBe("true")
+    expect(row.getAttribute("data-expanded")).toBe("true")
+    expect(host.querySelector("[data-alpha-compaction-summary]")!.textContent).toContain("已确认安全边界")
+
+    pill.click()
+    await flush()
+    expect(pill.getAttribute("aria-expanded")).toBe("false")
+    expect(host.querySelector("[data-alpha-compaction-summary]")).toBeNull()
     expect(host.querySelector(".a-tl-int-continue")).toBeNull()
+  })
+
+  test("压缩分隔没有完成态摘要时只陈述已压缩,不伪装为可展开", async () => {
+    const host = mount()
+    const rows = compactionRows()
+    const divider = rows.find((row) => row.kind === "divider" && row.label === "compaction")
+    if (!divider || divider.label !== "compaction") throw new Error("expected compaction divider")
+    divider.summaryParts = []
+    runtime.setTimelineRows(rows)
+    await flush()
+
+    const pill = host.querySelector<HTMLButtonElement>("button.a-tl-divider-pill")!
+    expect(pill.disabled).toBe(true)
+    expect(pill.textContent).toBe("上下文已压缩")
+    expect(pill.hasAttribute("aria-expanded")).toBe(false)
+    expect(pill.querySelector(".a-tl-compaction-icon")).not.toBeNull()
+    expect(pill.querySelector(".a-tl-compaction-chevron")).toBeNull()
+    expect(host.querySelector("[data-alpha-compaction-summary]")).toBeNull()
   })
 })
 

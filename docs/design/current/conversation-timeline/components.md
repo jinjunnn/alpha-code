@@ -44,7 +44,8 @@ review_after: 2027-01-16
 | glob(按模式匹配文件)工具卡 | `#tools` | — | 2026-07-23 | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
 | bash 运行中的流式输出子消息 | `#tools` | — | 2026-07-24 | — | — | `cards/tool-card-model.ts` | 未登记(历史) |
 | 文件 part 徽章六态 | `#tools` | — | 2026-07-24 | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
-| 工具折叠分组 · 本回合改动 · 压缩 · 回合分隔 | `#struct` | `2026-06-28-timeline-overhaul/` | — | — | — | `timeline-model.ts` | 未登记(历史) |
+| 工具折叠分组 · 本回合改动 · 回合分隔 | `#struct` | `2026-06-28-timeline-overhaul/` | — | — | — | `timeline-model.ts` | 未登记(历史) |
+| 上下文压缩分隔(图标 · 保留要点 · 展开摘要) | `#struct` | `2026-06-28-timeline-overhaul/` | — | ac#864 | 2026-08-08 | `timeline-model.ts` · `session-timeline-view.tsx` | 已实现 |
 | 空态(会话内轻着陆) | `#struct` | — | 2026-07-24 | — | — | `session-timeline-view.tsx` | 未登记(历史) |
 | 消息导航(上一条 / 下一条) | `#struct` | — | **无帧** | — | — | 代码未接线(仅有「滚动到底」) | **待补** |
 | 右栏审查 / 终端(换肤基线) | `#panel` | `2026-06-28-timeline-overhaul/` | — | — | — | 整页四面板形态见 `../session-workspace/` | 未登记(历史) |

@@ -508,6 +508,49 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(rows.map((row) => row.kind)).toEqual(["user", "divider", "markdown", "divider"])
     const labels = rows.flatMap((row) => (row.kind === "divider" ? [row.label] : []))
     expect(labels).toEqual(["compaction", "interrupted"])
+    const compaction = rows.find((row) => row.kind === "divider" && row.label === "compaction")
+    if (!compaction || compaction.label !== "compaction") throw new Error("expected compaction divider")
+    expect(compaction.summaryParts).toEqual([])
+  })
+
+  test("压缩助手的既有 summary 收进分隔行,不再重复投影为普通 Markdown/脚注", () => {
+    const summary = textPart("prt_sum", "msg_a1", "## 保留要点\n\n- 已确认安全边界")
+    const rows = project(
+      [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1", { summary: true, mode: "compaction" })],
+      {
+        msg_u1: [{ id: "prt_k1", sessionID: "ses_1", messageID: "msg_u1", type: "compaction", auto: true }],
+        msg_a1: [reasoningPart("prt_reason", "msg_a1", "压缩过程内部推理"), summary],
+      },
+    )
+
+    expect(rows.map((row) => row.kind)).toEqual(["divider"])
+    const divider = rows[0]!
+    if (divider.kind !== "divider" || divider.label !== "compaction") throw new Error("expected compaction divider")
+    expect(divider.summaryParts).toEqual([summary])
+    expect(divider.rev).toContain("prt_sum")
+  })
+
+  test("压缩 summary 未完成时不暴露半截要点,也不回退成普通 Markdown", () => {
+    const rows = project(
+      [
+        userMsg("msg_u1", 1000),
+        assistantMsg("msg_a1", "msg_u1", {
+          summary: true,
+          mode: "compaction",
+          time: { created: 10 },
+        }),
+      ],
+      {
+        msg_u1: [{ id: "prt_k1", sessionID: "ses_1", messageID: "msg_u1", type: "compaction", auto: true }],
+        msg_a1: [textPart("prt_sum", "msg_a1", "尚未完成的半截摘要")],
+      },
+      "busy",
+    )
+
+    expect(rows.map((row) => row.kind)).toEqual(["divider", "thinking"])
+    const divider = rows[0]!
+    if (divider.kind !== "divider" || divider.label !== "compaction") throw new Error("expected compaction divider")
+    expect(divider.summaryParts).toEqual([])
   })
 
   test("空会话投影为空行集(空态由视图渲染)", () => {

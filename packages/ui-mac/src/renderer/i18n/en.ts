@@ -1315,6 +1315,7 @@ export const dict = {
   "alpha.timeline.reasoning": "Reasoning",
   "alpha.timeline.reasoningDuration": "{{seconds}}s",
   "alpha.timeline.compacted": "Context compacted",
+  "alpha.timeline.retainedHighlights": "Highlights retained",
   "alpha.timeline.interrupted": "Stopped by you",
   "alpha.timeline.continueTurn": "Continue",
   "alpha.timeline.continuePrompt": "Continue",
