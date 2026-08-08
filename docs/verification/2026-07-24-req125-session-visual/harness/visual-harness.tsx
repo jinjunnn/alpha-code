@@ -109,6 +109,7 @@ const timelineRows: TimelineRow[] = [
       time: { created: now - 30_000 },
     },
     text: "核对 README.md,更新会话视觉矩阵并保留最小变更。",
+    copyText: () => "核对 README.md,更新会话视觉矩阵并保留最小变更。",
     truncated: false,
     segments: [{ text: "核对 " }, { text: "README.md", kind: "file" }, { text: ",更新会话视觉矩阵并保留最小变更。" }],
     attachments: [],
@@ -168,6 +169,7 @@ const e8Rows: TimelineRow[] = [
       time: { created: now },
     },
     text: "GitHub 对照 README.md 核对仓库结构。",
+    copyText: () => "GitHub 对照 README.md 核对仓库结构。",
     truncated: false,
     segments: [
       { text: "GitHub", kind: "resource", label: "GitHub" },
@@ -184,6 +186,7 @@ function Timeline(props: { rail?: SessionRailApi; rows?: TimelineRow[] }) {
   const intents: TimelineIntents = {
     focusArtifact: props.rail ? (intent) => props.rail!.focusArtifact(intent.name) : undefined,
     openFile: props.rail ? (intent) => props.rail!.jumpToReview(intent.path) : undefined,
+    editUserMessage: () => {},
   }
   return (
     <MarkedProvider>
@@ -195,6 +198,10 @@ function Timeline(props: { rail?: SessionRailApi; rows?: TimelineRow[] }) {
         history={{ more: false, loading: false }}
         onLoadOlder={() => Promise.resolve()}
         intents={intents}
+        displayNames={{
+          agent: (agent) => agent.slice(0, 1).toUpperCase() + agent.slice(1),
+          model: (_providerID, modelID) => (modelID === "gpt-5" ? "GPT-5" : modelID),
+        }}
       />
     </MarkedProvider>
   )

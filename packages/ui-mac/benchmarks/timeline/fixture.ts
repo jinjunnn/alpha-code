@@ -67,6 +67,7 @@ function turnRows(prefix: string, index: number, order: number): TimelineRow[] {
         time: { created: createdAt },
       } as never,
       text: `Inspect module ${index} and preserve the production timeline contract.`,
+      copyText: () => `Inspect module ${index} and preserve the production timeline contract.`,
       truncated: false,
       segments: [{ text: `Inspect module ${index} and preserve the production timeline contract.` }],
       attachments: [],

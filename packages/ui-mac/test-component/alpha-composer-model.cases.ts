@@ -1425,6 +1425,56 @@ describe("REQ-125 C558 SessionComposerMount 按身份 keyed:切会话草稿正�
     expect(ta(mounted.host)?.value).toBe("A-draft")
     mounted.dispose()
   })
+
+  test("④ #862 同身份 edit revision 重挂 composer 并预填原消息,旧未发草稿仍按身份暂存", async () => {
+    installApi()
+    const drafts = createComposerDraftStash()
+    const identity = () => identityFor("A")
+    const key = identityKey(identity())!
+    const [editRequest, setEditRequest] = createSignal<
+      { identityKey: string; revision: number; text: string } | undefined
+    >(undefined)
+    const mounted = mount(() =>
+      createComponent(SessionComposerMount, {
+        identity,
+        projects: keyedProjects,
+        dock: dockApi,
+        drafts,
+        editRequest,
+      }),
+    )
+    await flush()
+    const original = ta(mounted.host)!
+    type(original, "尚未发送的草稿")
+    await flush()
+
+    setEditRequest({ identityKey: key, revision: 1, text: "历史消息原文" })
+    await flush()
+    const edited = ta(mounted.host)!
+    expect(edited).not.toBe(original)
+    expect(edited.value).toBe("历史消息原文")
+    expect(drafts.restore(key)).toBe("尚未发送的草稿")
+    mounted.dispose()
+  })
+
+  test("⑤ #862 同一身份对象刷新不重挂 composer,正在输入的草稿留在原实例", async () => {
+    installApi()
+    const drafts = createComposerDraftStash()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mount(() =>
+      createComponent(SessionComposerMount, { identity, projects: keyedProjects, dock: dockApi, drafts }),
+    )
+    await flush()
+    const original = ta(mounted.host)!
+    type(original, "正在输入的草稿")
+    await flush()
+
+    setIdentity(identityFor("A")) // current() 的状态刷新会产生新 identity 对象,但 I8 key 未变。
+    await flush()
+    expect(ta(mounted.host)).toBe(original)
+    expect(original.value).toBe("正在输入的草稿")
+    mounted.dispose()
+  })
 })
 
 // REQ-125 C558 复审第5-6轮 Major:v2 durable 发送(session.prompt)在途期间切会话,composer 卸载不能把

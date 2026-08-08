@@ -50,6 +50,7 @@ const userRow = (key: string, over: Record<string, unknown>): TimelineRow =>
     rev: "1",
     message: userMessage(),
     text: "",
+    copyText: () => String(over.text ?? ""),
     truncated: false,
     segments: [],
     attachments: [],
@@ -548,6 +549,7 @@ const intents = {
   openSession: (id: string) => console.log("[harness] openSession", id),
   openFile: (intent: unknown) => console.log("[harness] openFile", intent),
   continueTurn: () => console.log("[harness] continueTurn"),
+  editUserMessage: (intent: unknown) => console.log("[harness] editUserMessage", intent),
 }
 
 document.title = "REQ-125 timeline harness"
@@ -572,6 +574,10 @@ render(
         history={{ more: false, loading: false }}
         onLoadOlder={() => Promise.resolve()}
         intents={intents}
+        displayNames={{
+          agent: (agent) => agent.slice(0, 1).toUpperCase() + agent.slice(1),
+          model: (_providerID, modelID) => (modelID === "deepseek-reasoner" ? "DeepSeek Reasoner" : modelID),
+        }}
       />
     </MarkedProvider>
   ),

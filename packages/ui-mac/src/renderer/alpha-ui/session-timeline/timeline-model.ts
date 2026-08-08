@@ -127,6 +127,8 @@ export type TimelineRow =
       rev: string
       message: UserMessage
       text: string
+      /** 复制/编辑使用原始正文；渲染仍只消费上限内的 text。 */
+      copyText: () => string
       truncated: boolean
       segments: TimelineSegment[]
       attachments: TimelineAttachment[]
@@ -613,6 +615,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         ].join("§"),
         message: userMessage,
         text,
+        copyText: () => rawText,
         truncated,
         segments,
         attachments,

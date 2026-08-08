@@ -4,7 +4,11 @@
 // C6:intents 可开关(记录调用),覆盖「handler 缺席 → 行降级纯展示」的 fail-closed 合同。
 import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
-import type { TimelineFocusArtifactIntent, TimelineOpenFileIntent } from "./cards/timeline-intents"
+import type {
+  TimelineEditUserMessageIntent,
+  TimelineFocusArtifactIntent,
+  TimelineOpenFileIntent,
+} from "./cards/timeline-intents"
 import type { TimelineRow } from "./timeline-model"
 import { SessionTimelineView, type SessionTimelineHistory } from "./session-timeline-view"
 
@@ -25,11 +29,13 @@ const intentLog: {
   openSession: string[]
   openFile: TimelineOpenFileIntent[]
   continueTurn: number
+  editUserMessage: TimelineEditUserMessageIntent[]
 } = {
   focusArtifact: [],
   openSession: [],
   openFile: [],
   continueTurn: 0,
+  editUserMessage: [],
 }
 
 // 稳定对象 + 反应式 getter:开关翻转时,卡片内 <Show when={intents.x}> 立即重估
@@ -48,6 +54,13 @@ const harnessIntents = {
     return intentsEnabled()
       ? () => {
           intentLog.continueTurn += 1
+        }
+      : undefined
+  },
+  get editUserMessage() {
+    return intentsEnabled()
+      ? (intent: TimelineEditUserMessageIntent) => {
+          intentLog.editUserMessage.push(intent)
         }
       : undefined
   },
@@ -70,6 +83,10 @@ export function SessionTimelineHarness() {
       }}
       settleTimeoutMs={settleTimeoutMs()}
       intents={harnessIntents}
+      displayNames={{
+        agent: (agent) => agent.slice(0, 1).toUpperCase() + agent.slice(1),
+        model: (_providerID, modelID) => (modelID === "deepseek-reasoner" ? "DeepSeek Reasoner" : modelID),
+      }}
     />
   )
 }
@@ -129,5 +146,6 @@ export function resetTimelineHarness() {
   intentLog.openSession.length = 0
   intentLog.openFile.length = 0
   intentLog.continueTurn = 0
+  intentLog.editUserMessage.length = 0
   resolvePendingLoads()
 }

@@ -71,6 +71,13 @@ export interface SessionTimelineViewProps {
   settleTimeoutMs?: number
   /** 卡片交互意图(可选):#568 起由绑定层接 C4 rail api;handler 缺席即降级纯展示。 */
   intents?: TimelineIntents
+  /** SDK 目录的可读显示名投影；缺席/异常时诚实回落原始 id。 */
+  displayNames?: TimelineDisplayNames
+}
+
+export interface TimelineDisplayNames {
+  agent: (agent: string) => string
+  model: (providerID: string, modelID: string) => string
 }
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { timeStyle: "short" })
@@ -258,7 +265,7 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
                 </Show>
               </div>
             </Show>
-            <For each={props.rows}>{(row) => <TimelineRowView row={row} />}</For>
+            <For each={props.rows}>{(row) => <TimelineRowView row={row} displayNames={props.displayNames} />}</For>
           </div>
         </div>
       </TimelineIntentsContext.Provider>
@@ -282,11 +289,11 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
   )
 }
 
-function TimelineRowView(props: { row: TimelineRow }) {
+function TimelineRowView(props: { row: TimelineRow; displayNames?: TimelineDisplayNames }) {
   // 行对象引用稳定(reuseTimelineRows),kind 不随内容变化;内容字段经 store proxy 反应式读取。
   const row = props.row
   if (row.kind === "turn") return <TurnRow row={row} />
-  if (row.kind === "user") return <UserRow row={row} />
+  if (row.kind === "user") return <UserRow row={row} displayNames={props.displayNames} />
   if (row.kind === "reasoning") return <ReasoningRow row={row} />
   if (row.kind === "markdown") return <MarkdownRow row={row} />
   if (row.kind === "tool") return <TimelineToolCard part={row.part} />
@@ -335,7 +342,7 @@ function FootnoteRow(props: { row: Extract<TimelineRow, { kind: "footnote" }> })
   // 复制动作:剪贴板通道缺席即不渲染按钮(fail-closed)。重试/分支钮按 owner 直令登记跳过:
   // 引擎无「重试」操作(SDK 无对应端点),分支只有 v1 `session.fork`(建新会话 + 导航,
   // 属另建链路)—— 两者均不在时间线的数据面内,不为凑形态伪造。
-  const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard
+  const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard && !!props.row.copyText()
   const copy = () => {
     try {
       void navigator.clipboard.writeText(props.row.copyText()).catch(() => {})
@@ -426,15 +433,50 @@ function UserSegment(props: { segment: TimelineSegment }) {
   return <span>{segment.text}</span>
 }
 
-function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }> }) {
+function displayName(read: () => string, fallback: string) {
+  try {
+    return read().trim() || fallback
+  } catch {
+    return fallback
+  }
+}
+
+function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }>; displayNames?: TimelineDisplayNames }) {
+  const intents = useTimelineIntents()
   const meta = () => {
     const message = props.row.message
-    const items = [
-      message.agent ? t("alpha.timeline.sentTo", { agent: message.agent }) : "",
-      message.model?.modelID ?? "",
-      formatTime(message.time.created),
-    ]
+    const agent = message.agent
+      ? displayName(() => props.displayNames?.agent(message.agent!) ?? message.agent!, message.agent)
+      : ""
+    const modelID = message.model?.modelID ?? ""
+    const model = message.model
+      ? displayName(
+          () => props.displayNames?.model(message.model!.providerID, message.model!.modelID) ?? modelID,
+          modelID,
+        )
+      : ""
+    const items = [agent ? t("alpha.timeline.sentTo", { agent }) : "", model, formatTime(message.time.created)]
     return items.filter(Boolean).join(" · ")
+  }
+  const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard && !!props.row.copyText()
+  const copy = () => {
+    try {
+      void navigator.clipboard.writeText(props.row.copyText()).catch(() => {})
+    } catch {
+      // 剪贴板拒绝不阻断时间线。
+    }
+  }
+  const edit = () => {
+    const handler = intents.editUserMessage
+    const text = props.row.copyText()
+    if (!handler || !text) return
+    try {
+      void Promise.resolve(
+        handler({ sessionID: props.row.message.sessionID, messageID: props.row.message.id, text }),
+      ).catch(() => {})
+    } catch {
+      // 同步 handler 异常同样不得击穿时间线；生产宿主会自行给失败反馈。
+    }
   }
   // 斜杠命令 chip(U 节):展开提示词默认折叠;正文缺席则 chip 不可展开。
   const [promptOpen, setPromptOpen] = createSignal(false)
@@ -539,7 +581,39 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }> }) {
           </div>
         )}
       </Show>
-      <div class="a-tl-user-meta">{meta()}</div>
+      <div class="a-tl-user-meta">
+        <span>{meta()}</span>
+        <Show when={canCopy || (!!intents.editUserMessage && !!props.row.copyText())}>
+          <span class="a-tl-user-actions">
+            <Show when={canCopy}>
+              <button
+                type="button"
+                title={t("alpha.timeline.copyMessage")}
+                aria-label={t("alpha.timeline.copyMessage")}
+                onClick={copy}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="9" width="11" height="11" rx="2" />
+                  <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+                </svg>
+              </button>
+            </Show>
+            <Show when={intents.editUserMessage && !!props.row.copyText()}>
+              <button
+                type="button"
+                title={t("alpha.timeline.editResend")}
+                aria-label={t("alpha.timeline.editResend")}
+                onClick={edit}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
+                </svg>
+              </button>
+            </Show>
+          </span>
+        </Show>
+      </div>
     </article>
   )
 }

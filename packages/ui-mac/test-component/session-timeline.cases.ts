@@ -357,6 +357,39 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     expect(host.querySelector("[data-alpha-timeline-row='turn']")!.textContent).toContain("新一轮")
   })
 
+  test("#862 用户脚注投影可读名,复制原文并发编辑重发 intent;handler 缺席时编辑钮消失", async () => {
+    const copied: string[] = []
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText: (text: string) => (copied.push(text), Promise.resolve()) },
+      configurable: true,
+    })
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    runtime.setTimelineRows(conversationRows())
+    await flush()
+
+    const first = host.querySelector<HTMLElement>("[data-alpha-timeline-row='user']")!
+    const meta = first.querySelector<HTMLElement>(".a-tl-user-meta")!
+    expect(meta.textContent).toContain("发往 Build")
+    expect(meta.textContent).toContain("DeepSeek Reasoner")
+    expect(meta.textContent).not.toContain("deepseek-reasoner")
+
+    const copy = first.querySelector<HTMLButtonElement>("button[aria-label='复制消息']")!
+    const edit = first.querySelector<HTMLButtonElement>("button[aria-label='编辑重发']")!
+    copy.click()
+    edit.click()
+    await flush()
+    expect(copied).toEqual(["对照 README.md 改一版"])
+    expect(runtime.getIntentLog().editUserMessage).toEqual([
+      { sessionID: "ses_1", messageID: "msg_u1", text: "对照 README.md 改一版" },
+    ])
+
+    runtime.setTimelineIntentsEnabled(false)
+    await flush()
+    expect(first.querySelector("button[aria-label='编辑重发']")).toBeNull()
+    expect(first.querySelector("button[aria-label='复制消息']")).not.toBeNull()
+  })
+
   test("推理块默认折叠,点击展开正文并回写 aria-expanded", async () => {
     const host = mount()
     runtime.setTimelineRows(conversationRows())

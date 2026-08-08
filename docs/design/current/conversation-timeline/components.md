@@ -31,7 +31,7 @@ review_after: 2027-01-16
 | 组件 | 锚 | 增量稿 | 设计定稿 | 实现票 | 落地 | 代码入口 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 产物链接行 + 右栏预览联动 | `#artifacts` | `2026-07-21-req124-timeline-artifact-rows/` | 2026-07-23 | ac#454 | 代码在,票未关 | `cards/tool-cards.tsx` (`TimelineArtifactRows`) · 接线 `session-timeline-view.tsx` | **已实现·票未关** |
-| 用户气泡(附件 / 提及 / 连接器) | `#user` | `2026-06-28-timeline-overhaul/` | — | — | — | `session-timeline-view.tsx` | 未登记(历史) |
+| 用户气泡(附件 / 提及 / 连接器 / 脚注动作) | `#user` | `2026-06-28-timeline-overhaul/` | — | ac#862 | 2026-08-08 | `session-timeline-view.tsx` · 编辑接线 `session-workspace/` | 已实现 |
 | 斜杠输入(命令 / 技能 / MCP) | `#user` | `2026-06-28-timeline-overhaul/` | — | ac#861 | 2026-08-08 | `session-timeline-view.tsx` | 已实现 |
 | 行内代码评论(用户消息内) | `#user` | — | 2026-07-23 | — | — | — | 未登记(历史) |
 | 助手 Markdown · 脚注 · 流式 · 中断 | `#ai` | `2026-06-28-timeline-overhaul/` | — | — | — | `timeline-markdown.tsx` | 未登记(历史) |
