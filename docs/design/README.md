@@ -121,7 +121,7 @@ and indexed in `PAGE-MAP.md`.
 | Frontend/upstream boundary | `2026-07-03-frontend-decoupling-options.md` | `docs/architecture/upstream-integration.md`, sync workflows, ADR-020/ADR-029 |
 | Alpha extension storage | `2026-07-07-project-alpha-only-extensions.md` | current installer/config code and ADR-019 |
 | Safety and curation | `2026-07-05-db-safety-belt.md`, `2026-07-09-supply-baseline-curation-proposal.md` | current code, tests, signed Catalog contracts, and accepted ADRs |
-| Tool identity and inventory | [`2026-07-31-tool-identity-baseline.md`](2026-07-31-tool-identity-baseline.md) (accepted — 全来源工具 inventory / 稳定 identity;REQ-125 展示与 REQ-131 策略共同消费) | current engine registry/MCP/permission code; supersedes nothing |
+| Tool identity, inventory, and display | [`2026-07-31-tool-identity-baseline.md`](2026-07-31-tool-identity-baseline.md) (accepted — 全来源工具 inventory / 稳定 identity;REQ-125 展示与 REQ-131 策略共同消费) → [`2026-08-08-req125-tool-card-provenance/`](2026-08-08-req125-tool-card-provenance/) (proposed — 来源徽标、字段 allowlist/redactor、不可变调用快照与安全通用降级;owner decision pending) | identity: current engine registry/MCP/permission code; display: current timeline tool-card renderer until proposal approval |
 | Challenges | `debates/` | immutable design-review context only |
 
 Architecture diagrams are indexed separately under
