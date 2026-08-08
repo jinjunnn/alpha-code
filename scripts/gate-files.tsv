@@ -95,7 +95,7 @@
 6	packages/ui-mac	src/renderer/alpha-ui/contrast-ratchet.test.ts	-	C21 AC4 对比度棘轮:改回 AA 以下即红
 15	packages/ui-mac	src/renderer/alpha-ui/takeover-adapter-coexistence.test.ts	packages/ui-mac/src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts,packages/ui-mac/src/renderer/alpha-ui/session-workspace/session-second-send.test.ts	REQ-125 遗留 DOM 接管件零引用棘轮 + #652 单一代次棘轮(行为层闸委派)
 1	packages/ui-mac	src/renderer/alpha-ui/session-workspace/session-second-send.test.ts	-	#652 受托:同一会话连发三条,生产 composer+timeline 真挂载,断言渲染出的回复(源码棘轮的行为判据)
-7	packages/ui-mac	src/renderer/alpha-ui/session-timeline/cards/cards-contract.test.ts	-	REQ-125 C6 cards 静态棘轮(内容引擎/外链形态)
+8	packages/ui-mac	src/renderer/alpha-ui/session-timeline/cards/cards-contract.test.ts	-	REQ-125 C6 cards 静态棘轮(内容引擎/外链形态 + #865 fallback 中性态)
 5	packages/ui-mac	src/renderer/alpha-ui/permission-mount-ratchet.test.ts	packages/ui-mac/src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts,packages/ui-mac/src/renderer/alpha-ui/permission-dual-channel.test.ts	permission 挂载面棘轮 + 决定提交入口白名单(#668 起白名单含一个 v1 入口;运行时行为闸委派)
 2	packages/ui-mac	src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts	-	受托:单一审批面的**运行时**行为闸(两个棘轮的主判据)
 11	packages/ui-mac	src/renderer/alpha-ui/permission-dual-channel.test.ts	-	受托:#668 双通道审批的端到端行为闸 —— v1 `permission.asked` 真的弹出审批面、真能批准/拒绝(断言真实发出的请求落在哪条通道),且 v2 读写两侧无回归
