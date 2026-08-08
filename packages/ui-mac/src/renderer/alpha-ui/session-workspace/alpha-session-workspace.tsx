@@ -1,8 +1,10 @@
 import { ServerConnection, type MaybePreloadableComponent, useServerSDK, useServerSync } from "@opencode-ai/app"
 import { useLocation } from "@solidjs/router"
-import { createContext, createEffect, createMemo, untrack, type ParentProps, useContext } from "solid-js"
+import { createContext, createEffect, createMemo, createSignal, untrack, type ParentProps, useContext } from "solid-js"
 import { parseRoute } from "../../../shared/route-manifest"
+import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
+import { pushToast } from "../Toast"
 import { SessionRailArtifacts } from "../session-rail/artifacts/session-rail-artifacts"
 import { SessionRailFiles } from "../session-rail/files/session-rail-files"
 import { reviewChangeCount } from "../session-rail/review/review-core"
@@ -11,6 +13,12 @@ import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal
 import { AlphaSessionTimeline } from "../session-timeline/session-timeline"
 import { SurfaceBoundary } from "../surface-boundary"
 import { SessionComposerDock } from "./session-composer-dock"
+import type { SessionComposerEditRequest } from "./session-composer-mount"
+import {
+  canEditUserMessageForSession,
+  createSessionEditUserMessageHandler,
+  discardStaleEditRequest,
+} from "./session-edit-user-message"
 import { sessionSlashOriginsFor } from "./session-slash-origin"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
 import { type AlphaSessionLiveContext, SessionWorkspaceShell } from "./session-workspace-shell"
@@ -46,6 +54,25 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
     current,
     accepts: (identity) => sameSessionIdentity(identity, current()?.identity),
   }
+  const [editRequest, setEditRequest] = createSignal<SessionComposerEditRequest | undefined>(undefined)
+  // 编辑预填只属于发起时的 I8 身份；一旦离开该会话就销毁，返回时不得再次覆盖草稿。
+  createEffect(() => discardStaleEditRequest(editRequest(), current()?.identity, () => setEditRequest(undefined)))
+  const canEditUserMessage = createMemo(() => {
+    const identity = current()?.identity
+    const info = identity ? serverSync().session.data.info[identity.sessionID] : undefined
+    return canEditUserMessageForSession(identity, info)
+  })
+  const editUserMessage = createSessionEditUserMessageHandler({
+    current,
+    accepts: live.accepts,
+    canEdit: (identity) => canEditUserMessageForSession(identity, serverSync().session.data.info[identity.sessionID]),
+    session: () => serverSDK().client.session,
+    apply: setEditRequest,
+    reject: (error) => {
+      console.warn("[alpha] edit resend revert failed", error)
+      pushToast({ kind: "error", title: t("alpha.timeline.editResendFailed") })
+    },
+  })
   // #554:真引擎 channel(I8 三元身份铸造)。TerminalProvider 随上游 SessionProviders 包住
   // 本叶,适配器可直接消费;引擎或会话身份缺席时为 undefined,面板 fail-closed 空态。
   const terminalChannel = useAlphaTerminalEngineChannel(current)
@@ -75,8 +102,14 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
       <SessionLiveProvider value={live}>
         <SessionWorkspaceShell
           live={live}
-          timeline={(rail) => <AlphaSessionTimeline rail={rail} slashOriginsFor={sessionSlashOriginsFor} />}
-          composer={() => <SessionComposerDock live={live} projects={props.projects} />}
+          timeline={(rail) => (
+            <AlphaSessionTimeline
+              rail={rail}
+              slashOriginsFor={sessionSlashOriginsFor}
+              onEditUserMessage={canEditUserMessage() ? editUserMessage : undefined}
+            />
+          )}
+          composer={() => <SessionComposerDock live={live} projects={props.projects} editRequest={editRequest} />}
           panels={{
             review: (rail) => <SessionRailReviewPanel live={live} rail={rail} />,
             files: (rail) => <SessionRailFiles live={live} rail={rail} />,

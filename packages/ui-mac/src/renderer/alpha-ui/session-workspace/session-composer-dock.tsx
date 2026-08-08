@@ -18,7 +18,7 @@ import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import type { ComposerSessionDockApi, ComposerSlashCapture } from "../alpha-composer"
 import { createModelContract } from "../model-contract"
-import { SessionComposerMount } from "./session-composer-mount"
+import { SessionComposerMount, type SessionComposerEditRequest } from "./session-composer-mount"
 import {
   childParentHref,
   childSessionFacts,
@@ -36,7 +36,11 @@ import { recordSessionSlashOrigin } from "./session-slash-origin"
 import { type AlphaSessionIdentity, identityKey } from "./session-workspace-core"
 import type { AlphaSessionLiveContext } from "./session-workspace-shell"
 
-export function SessionComposerDock(props: { live: AlphaSessionLiveContext; projects: AlphaProjectsApi }) {
+export function SessionComposerDock(props: {
+  live: AlphaSessionLiveContext
+  projects: AlphaProjectsApi
+  editRequest?: () => SessionComposerEditRequest | undefined
+}) {
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
   const navigate = useNavigate()
@@ -208,7 +212,13 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
         when={childSession()}
         keyed
         fallback={
-          <SessionComposerMount identity={identity} projects={props.projects} dock={dockApi} drafts={draftStash} />
+          <SessionComposerMount
+            identity={identity}
+            projects={props.projects}
+            dock={dockApi}
+            drafts={draftStash}
+            editRequest={props.editRequest}
+          />
         }
       >
         {(facts) => (

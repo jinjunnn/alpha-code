@@ -25,7 +25,7 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("37 pass")
+    expect(output).toContain("38 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -120,11 +120,23 @@ describe("REQ-125 C5 I5 令牌白名单与运动契约", () => {
 describe("REQ-125 C5 shell 接线(最小增量)", () => {
   test("workspace 把时间线挂进 timeline 宿主(#568:renderer 形态携带 rail api + C7 斜杠真供给),宿主仍是唯一挂载点", () => {
     expect(workspace).toContain(`import { AlphaSessionTimeline } from "../session-timeline/session-timeline"`)
-    expect(workspace).toContain(
-      `timeline={(rail) => <AlphaSessionTimeline rail={rail} slashOriginsFor={sessionSlashOriginsFor} />}`,
+    expect(workspace).toMatch(
+      /timeline=\{\(rail\) => \([\s\S]*?<AlphaSessionTimeline[\s\S]*?rail=\{rail\}[\s\S]*?slashOriginsFor=\{sessionSlashOriginsFor\}[\s\S]*?onEditUserMessage=/,
     )
     expect(workspace).toContain(`import { sessionSlashOriginsFor } from "./session-slash-origin"`)
     expect(shell).toContain(`typeof props.timeline === "function" ? props.timeline(rail) : props.timeline`)
     expect(shell.match(/data-alpha-session-timeline-host/g)).toHaveLength(1)
+  })
+
+  test("#862 用户脚注保持安静,hover/focus 才显动作；动作样式只用 --a-* token", () => {
+    const meta = css.match(/\.a-tl-user-meta \{[^}]*\}/)?.[0] ?? ""
+    expect(meta).toContain("opacity: 0")
+    expect(css).toMatch(
+      /\.a-tl-user:hover \.a-tl-user-meta,[\s\S]*?\.a-tl-user:focus-within \.a-tl-user-meta \{\s*opacity: 1;/,
+    )
+    const actions = css.match(/\.a-tl-user-actions button \{[^}]*\}/)?.[0] ?? ""
+    expect(actions).toContain("width: 22px")
+    expect(actions).toContain("height: 22px")
+    expect(actions).toContain("background: transparent")
   })
 })

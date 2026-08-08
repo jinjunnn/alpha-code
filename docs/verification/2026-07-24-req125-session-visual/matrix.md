@@ -164,7 +164,7 @@ FAIL 转 bug 票挂父票 #538。
 | E2  | 命令 chip · 配置命令带 args             | CT `#user` 帧1                | #544 #545 | PASS(harness)       | PASS(harness)       | 「运行命令 · review pr 12」                                                            |
 | E3  | 技能 chip(用户侧)                       | CT `#user` 帧1                | #544 #545 | FAIL(#582)          | FAIL(#582)          | 与 G15 执行态技能卡分处两回合                                                          |
 | E4  | MCP chip                                | CT `#user` 帧1                | #544 #545 | FAIL(#582)          | FAIL(#582)          | 紫;name+args                                                                           |
-| E5  | 用户文本气泡+脚注(发往·model·时间+操作) | CT `#user` 帧2                | #543      | FAIL(#862)          | FAIL(#862)          | 气泡成立;可读显示名及 hover 复制/编辑重发缺席                                          |
+| E5  | 用户文本气泡+脚注(发往·model·时间+操作) | CT `#user` 帧2                | #543 #862 | PASS(harness)       | PASS(harness)       | 可读显示名;hover 显复制/编辑重发;`E5-*-harness.png`                                     |
 | E6  | 附件卡 · 文件(v2 双行)                  | CT `#user` 帧2                | #544      | PASS(harness·发现8) | PASS(harness·发现8) | 由 v1 内联 chip 重锚(帧外注记)                                                         |
 | E7  | 附件卡 · 图片                           | CT `#user` 帧2                | #544      | PASS(harness)       | PASS(harness)       | 缩略图+名+元信息                                                                       |
 | E8  | 连接器 chip(GH GitHub)                  | CT `#user` 帧2                | #544 #588 | PASS(headless)      | PASS(headless)      | 当前生产 resource segment 渲染 GitHub chip;`E8-*-headless.png`;历史发现9已由 #588 修复 |
