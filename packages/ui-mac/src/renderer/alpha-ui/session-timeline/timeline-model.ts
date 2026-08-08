@@ -26,12 +26,48 @@ import type { AlphaSessionIdentity } from "../session-workspace/session-workspac
 export const MARKDOWN_MAX_CHARS = 60_000
 export const USER_TEXT_MAX_CHARS = 20_000
 export const REASONING_MAX_CHARS = 20_000
+export const REASONING_SUMMARY_MAX_CHARS = 120
 export const TURN_ERROR_MAX_CHARS = 4_000
 export const RETRY_MESSAGE_MAX_CHARS = 500
 
 export function boundedText(text: string, max: number): { text: string; truncated: boolean } {
   if (text.length <= max) return { text, truncated: false }
   return { text: text.slice(0, max), truncated: true }
+}
+
+/**
+ * 折叠头只消费 reasoning 起始行里的显式标题形态。普通正文不做首句猜测，
+ * 中段 Markdown 也不回溯匹配，避免把原始思维链提升到常显标题；标题本身在
+ * 进入 DOM 前收窄字段帽。
+ */
+export function reasoningSummary(text: string): string | undefined {
+  const markdown = text.slice(0, REASONING_MAX_CHARS).replace(/\r\n?/g, "\n").trimStart()
+  const clean = (value: string) => {
+    const summary = value
+      .replace(/<[^>]+>/g, " ")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/[*_~]+/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+    return summary ? summary.slice(0, REASONING_SUMMARY_MAX_CHARS) : undefined
+  }
+
+  const html = markdown.match(/^<h([1-6])[^>]*>([\s\S]*?)<\/h\1>[ \t]*(?:\n|$)/i)
+  if (html?.[2]) {
+    const summary = clean(html[2])
+    if (summary) return summary
+  }
+
+  const atx = markdown.match(/^#{1,6}[ \t]+(.+?)(?:[ \t]+#+[ \t]*)?[ \t]*(?:\n|$)/)
+  if (atx?.[1]) {
+    const summary = clean(atx[1])
+    if (summary) return summary
+  }
+
+  const strong = markdown.match(/^(?:\*\*(.+?)\*\*|__(.+?)__)[ \t]*(?:\n|$)/)
+  const strongText = strong?.[1] ?? strong?.[2]
+  if (strongText) return clean(strongText)
 }
 
 export interface TimelineSegment {

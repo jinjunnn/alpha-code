@@ -740,7 +740,27 @@ button.a-tl-cmd-chip:focus-visible {
 }
 
 .a-tl-reason-duration {
+  flex: none;
   color: var(--a-text-tertiary);
+}
+
+.a-tl-reason-meta {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  color: var(--a-text-tertiary);
+}
+
+.a-tl-reason-separator {
+  flex: none;
+}
+
+.a-tl-reason-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .a-tl-reason-chev {

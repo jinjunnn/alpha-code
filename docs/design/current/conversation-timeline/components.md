@@ -35,7 +35,7 @@ review_after: 2027-01-16
 | 斜杠输入(命令 / 技能 / MCP) | `#user` | `2026-06-28-timeline-overhaul/` | — | ac#861 | 2026-08-08 | `session-timeline-view.tsx` | 已实现 |
 | 行内代码评论(用户消息内) | `#user` | — | 2026-07-23 | — | — | — | 未登记(历史) |
 | 助手 Markdown · 脚注 · 流式 · 中断 | `#ai` | `2026-06-28-timeline-overhaul/` | — | — | — | `timeline-markdown.tsx` | 未登记(历史) |
-| 推理 / 思考块(折叠 + 进行中) | `#ai` | `2026-06-28-timeline-overhaul/` | — | — | — | `session-timeline-view.tsx` | 未登记(历史) |
+| 推理 / 思考块(折叠 + 进行中) | `#ai` | `2026-06-28-timeline-overhaul/` | — | ac#863 | 2026-08-08 | `session-timeline-view.tsx` | 已实现 |
 | 自动重试卡 | `#ai` | `2026-06-28-timeline-overhaul/` | — | — | — | `session-timeline-view.tsx` · `cards/tool-cards.tsx` | 未登记(历史) |
 | 回合级错误卡(限流 / 接口报错 / 上下文超限) | `#ai` | — | 2026-07-23 | ac#590 | 2026-07-26 | `cards/tool-cards.tsx` | 已实现 |
 | 助手侧截图 / 图片 / 媒体预览行 | `#ai` | — | 2026-07-24 | — | — | — | 未登记(历史) |
