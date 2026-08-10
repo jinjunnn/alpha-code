@@ -123,23 +123,36 @@
 而间歇红比没有闸更贵」。**同一条规律只被应用了一次**,与 `#647` 当年「只给 ui-mac 加点名下界、
 漏了 ext」是同一个错。这就是为什么本票要求整类收口。
 
-### 3.5 分支保护 —— 这一类里最贵的一格
+### 3.5 分支保护 —— 这一类里最贵的一格(`#717` 已闭合)
+
+2026-08-10 实读 `gh api repos/jinjunnn/alpha-code/branches/alpha/protection`,四条逐条对得上:
 
 | 读者 | 要求的 context | 写者 | 实际产出的 job 名 | 对得上? |
 | --- | --- | --- | --- | --- |
 | `alpha` 分支保护 | `north-star guard (zero upstream edits)` | alpha-ci | 同名 | 是 |
 | | `typecheck (alpha packages)` | | 同名 | 是 |
-| | **`unit tests (ui-mac)`** | | **`unit tests (alpha packages)`** | **否** |
+| | `unit tests (alpha packages)` | | 同名 | 是(曾经写着 `unit tests (ui-mac)`) |
 | | `docs gate` | | 同名 | 是 |
 
-job 名在 2026-07-22(`ebd29cda`)改掉,分支保护没跟。实测 PR `#802` / `#791` 的
-`statusCheckRollup` 里**根本没有** `unit tests (ui-mac)` 这一项 —— 不是 docs-only 才缺,
-是**每个 PR 都缺**。于是每个 PR 在那一格永久 pending ⇒ 每次合并都得 `--admin` ⇒
-主线真红时也没有任何东西挡住任何人。
+**这一格当年怎么坏的**:job 名在 2026-07-22(`ebd29cda`)改掉,分支保护没跟。实测 PR `#802` / `#791`
+的 `statusCheckRollup` 里**根本没有** `unit tests (ui-mac)` 这一项 —— 不是 docs-only 才缺,是**每个
+PR 都缺**。于是每个 PR 在那一格永久 pending ⇒ 每次合并都得 `--admin` ⇒ 主线真红时也没有任何东西
+挡住任何人。**「大家习惯性 --admin」不是纪律松懈,是分支保护自己造出来的。**
+owner 已于 2026-08-03 直接改分支保护补上(`#717` 评论里有回滚值)。
 
-**「大家习惯性 --admin」不是纪律松懈,是分支保护自己造出来的。**
-修法在 GitHub 设置里(不在本仓文件里),归 `#717`;`#717` 票面把成因写成「docs-only path 没发布
-该 context」,与实测不符 —— 改名是全量的。
+**这个值的数据模型问题(`#717` 收的口)**:它同时活在**仓外的 GitHub 分支保护**与**仓内 alpha-ci.yml
+的 job `name:`** 两处,而两处都没声明自己是真源,也没有任何东西比对它们 —— 所以 `ebd29cda` 改名当天
+无一处变红。现在仓内有一份手抄快照 [`.github/required-contexts.txt`](../../.github/required-contexts.txt),
+`packages/ui-mac/src/main/local-gate-parity.test.ts` 两条断言把它接上:记录里的每个 context 必须等于
+某个 job 的 `name:`;每个 job 要么在记录里、要么在 `NOT_REQUIRED_JOBS` 里写明为什么不必需(新 job 默认拒)。
+
+⚠️ **诚实边界,别写成「已防漂」**:真源在仓外,CI 结构上够不着它(本仓 public、读分支保护要令牌,而
+workflow 触发在 `pull_request`,fork PR 拿不到 secrets)。这份记录**抓得住** workflow 侧改名/删 job
+(即 `ebd29cda` 那一类,真正咬过我们的那一类),**抓不住**「只改 GitHub 设置」,更抓不住「两侧一起
+改错」—— 那时它与 workflow 自洽,测试照绿。这是减速带,不是闸门;核对真源仍是人的动作。
+
+`#717` 票面把成因写成「docs-only path 没发布该 context」,与实测不符 —— 改名是全量的。票剩下的另一半
+(`pull_request` 上的 diff 基准)见 §3.7。
 
 ### 3.6 无人执行的门
 
@@ -153,6 +166,54 @@ job 名在 2026-07-22(`ebd29cda`)改掉,分支保护没跟。实测 PR `#802` / 
 
 `#649` 是本类的**极端成员**:门假设的环境是「某个 CI」,而那个环境**不存在**。
 本票不处置它(逐份取舍要付 CI 时间的账,归 `#649`),但把它归类记在这里。
+
+### 3.7 `detect` 的 diff 基准 —— 决定「今天哪些门跑」的那一格(`#717`)
+
+本节记的是**同一类里的上游**:3.1~3.6 讲的是某道门在某个环境里真不真;这一格讲的是
+**这些门今天到底跑不跑**。alpha-ci 里 upstream-guard / typecheck / test / seed-assets 的
+**全部**步骤都挂在 `needs.detect.outputs.code == 'true'` 上,docs gate 的入参就是 `detect` 输出的
+`md`。**一个布尔值算错,当天所有门的开关就一起错。**
+
+坏在哪(`#717` 剩下的那一半):`pull_request` 事件上用的是**两点** diff `base..head`,而
+`github.event.pull_request.base.sha` 给的是**当下 alpha 的 tip**,不是分叉点。于是一个落后于 alpha
+的纯文档分支,会把别人已经合进 alpha 的代码算成自己的改动 ⇒ `code=true` ⇒ 跑全量 ⇒ 继承主线的红,
+而这个 PR 里一行代码都没有。实证(`#717` owner 评论):同一个 commit,PR run `30756424959` 判
+`code=true` 并红在 `bun test (ui-mac)`,push run `30756431539` 判 `code=false`、全部 skipped。
+**同一个 workflow 里的 north-star 守卫用的一直是三点 `origin/dev...HEAD`** —— 两者本来就不一致。
+
+| 事件 | 基准 | 口径 | 为什么 |
+| --- | --- | --- | --- |
+| `pull_request` | `merge-base(base.sha, head.sha)` → `head.sha` | 三点 | `base.sha` 是移动中的 tip,只有分叉点才回答「这个 PR 自己改了什么」 |
+| `push` | `before` → `sha` | **两点(不动)** | 这对 SHA 本来就是同一条线上的前后两点,语义是「这次 push 推进了什么」,没有分叉可言 |
+| 空 base / base 不可达 / 无共同祖先 | 空树 | — | fail-closed:一切都算改动 ⇒ 跑全量。反向(算成 docs-only)= 在看不懂的形状上把所有门关掉 |
+
+逻辑因此从 workflow 的内联 shell 搬进 [`scripts/detect-changed-scope.sh`](../../scripts/detect-changed-scope.sh)。
+**唯一的理由是让它有判据** —— 内联时它一个判据都没有,而断言 YAML 文本按本仓定义是假闸门。
+行为闸 `packages/ui-mac/src/main/ci-diff-scope.test.ts` 起真 git 仓、造真的「落后于 base 的纯文档
+分支」、跑生产脚本本体,断言它写进 `$GITHUB_OUTPUT` 的实际值;八条各钉一个方向(含「分支自己改代码
+必须 `code=true`」——否则「永远返回 false」也能满足这道门)。workflow 那一步的 `name:` 与 `env:`
+一个字没改,所以 §3.1 的 CI_STEPS 对照表不受影响。
+
+#### 3.7.1 同一格的另一半:**谁算代码**
+
+上面那张表管的是「拿哪两个点做 diff」。分类器还有第二个决定 —— 拿到文件列表之后,**哪些文件算
+代码**。这一半原来有两个绕过口,都能让真实的代码变更被判成 docs-only ⇒ 二十多个挂在
+`code == 'true'` 上的步骤集体跳过 ⇒ **假绿**。两个都是实测复现,不是推演:
+
+| 绕过口 | 原来的行为 | 实测事实 | 修法 |
+| --- | --- | --- | --- |
+| 路径**中间段**的 `docs/` | 分类分支写的是 `*/docs/*`,而 `*` 吃 `/` ⇒ 匹配路径里**任何位置**的 `docs/` 段 | 本仓真实存在 `packages/console/app/src/routes/docs/index.ts` 与 `.../docs/[...path].ts` —— 无歧义的 TypeScript 源码;仓内 `/docs/` 段下的非 `.md` 文件共 639 个 | 拆成两条都不含通配中间段的判定:**① 源码扩展名**(`.ts .tsx .js .jsx .mjs .cjs .sh`)住在哪都算代码;**② 文档树只认仓根锚定的显式前缀**(`docs/` `.claude/rules/` `knowledge/`) |
+| 跨分类 **rename** | `git diff --name-only` | git 默认开着 rename 检测(`diff.renames` 默认 true)⇒ 一次重命名**只输出目标路径**,源路径一个字都不出现(git 2.50.1 实测) | 加 `--no-renames`:重命名重新变回「删源 + 加目标」两条路径,两端都参与分类 |
+
+①的**代价是显式的**:`packages/docs/**` 与 `packages/web/src/content/docs/**` 的 `.mdx`(13 + 614 =
+627 个文件)不再算文档,改它们会跑全量 CI。这是保守的一侧(多跑闸门,永远不会少跑);要豁免,请加一条
+仓根锚定的显式前缀,不要把通配中间段放回去。同理,`docs/**` 下的 43 个 `.ts`/`.tsx`/`.mjs`/`.sh`
+(验证与审计的 harness)从此算代码 —— 分类器无法区分 `docs/verification/x/probe.ts` 与
+`packages/console/.../docs/index.ts`,唯一稳的规则是「源码扩展名一律算代码」。
+
+判据各自独立可证伪:①用 `.ts` + 同目录 `.css` 两个输入(`.ts` 被两半同时覆盖,`.css` 只被显式前缀
+那一半覆盖);②的 rename 目标刻意取 `.md`(修好后目标路径**仍**算文档,于是这条只由 `--no-renames`
+决定)。两条各自单独还原,对应用例当场转红。
 
 ## 4. 咽喉:两处声明,覆盖仓内真实存在的两种运行形状
 
@@ -259,4 +320,7 @@ darwin 与 linux 同为 posix,钉 `win32` 会把路径语义改坏。
 - **CI 仍跑在 ubuntu**。换 macOS runner 能让平台那一格从「模拟」变成「真验」,代价是 10 倍
   Actions 分钟数。本票不做,记在这里;真要做是一张独立票。
 - **`#649` 的三份 opencode 测试仍无人执行**。逐份取舍要付 CI 时间的账,归 `#649`。
-- **分支保护的幽灵 context** 归 `#717`(改的是 GitHub 设置,不是本仓文件)。
+- ~~**分支保护的幽灵 context** 归 `#717`~~ —— **已闭合**(§3.5)。owner 2026-08-03 改掉分支保护设置,
+  `#717` 补上仓内记录 [`.github/required-contexts.txt`](../../.github/required-contexts.txt) 与两条防漂断言。
+  **残余缺口(有意留着,不假装闭合)**:真源是仓外的 GitHub 设置,CI 够不着 ⇒ 「只改 GitHub 设置」
+  或「两侧一起改错」都不会红。那份记录是手抄快照 + 减速带,不是闸门。

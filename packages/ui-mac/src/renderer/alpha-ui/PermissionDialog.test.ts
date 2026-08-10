@@ -463,6 +463,47 @@ describe("Alpha Permission watcher reconciliation", () => {
     expect(document.querySelectorAll("[role='dialog']")).toHaveLength(1)
   })
 
+  test("#561 被 store 观察过的合法请求照常呈现,点「允许一次」真的发出 once", async () => {
+    // #561:solid store 的 $PROXY 是**非枚举符号键**,却被 exactFactRecord 的 Reflect.ownKeys
+    // 计入 ⇒ 键数 3 ≠ 2 ⇒ 合法请求被判「核不实」⇒ onMount 自动 reject。用户可观察的后果是
+    // 该弹的授权框没弹、动作被拒、且没有任何提示 —— 所以断言必须落在「框在不在、发出去的
+    // 决定是什么」,不能断言 permissionRequestFacts 这类内层纯函数。
+    //
+    // 夹具必须是自己的深拷贝:污染 configurable:false 不可撤销,碰了模块级 request 会永久
+    // 污染同文件后续用例。JSON 往返同时把「数据域恒是 JSON wire」这条前提摆在明面上。
+    const observed = runtime.observeThroughStore(
+      JSON.parse(JSON.stringify({ ...request, id: "per_ui_observed" })) as PermissionV2Request,
+    )
+    // 先证明夹具真的造出了已知的坏 —— 否则 store 若没注入成功,这条用例会因为「什么都没
+    // 发生」而假绿(观测手段自己有盲区)。
+    expect(Object.getOwnPropertySymbols(observed.subject).length).toBeGreaterThan(0)
+    expect(Object.getOwnPropertySymbols(observed.scope).length).toBeGreaterThan(0)
+    // 而 wire 上真实存在的字段一个不多一个不少 —— 严格核验本来就该放行它。
+    expect(Object.keys(observed.subject)).toEqual(["kind", "id"])
+    expect(Object.keys(observed.scope)).toEqual(["kind", "sessionID"])
+
+    const replies: string[] = []
+    mountWatcher({
+      list: async () => [observed],
+      reply: async (requestID, command) => {
+        replies.push(`${requestID}:${command.decision}`)
+        return receipt(command, observed)
+      },
+      subscribe: () => () => {},
+    })
+    await flush()
+
+    expect(replies).toEqual([])
+    expect(document.querySelector("[role='dialog']")).not.toBeNull()
+    expect(document.querySelector('[data-permission-fact="subject"]')?.textContent).toContain("build-reviewer")
+    expect(document.querySelector('[data-permission-fact="scope"]')?.textContent).toContain("ses_ui_1")
+    expect(decision("once").disabled).toBeFalse()
+
+    decision("once").click()
+    await flush()
+    expect(replies).toEqual(["per_ui_observed:once"])
+  })
+
   test("reconciles missed asked and replied events after server reconnects", async () => {
     const stale = { ...request, id: "per_ui_stale", action: "bash", resources: ["old/**"] }
     const fresh = { ...request, id: "per_ui_fresh", action: "edit", resources: ["new/**"] }
