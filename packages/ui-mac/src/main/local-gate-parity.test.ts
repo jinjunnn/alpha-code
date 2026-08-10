@@ -14,8 +14,10 @@
 //       ADR-033 落地时只同步了 paths、白名单漏了,于是本地 north-star 在干净 alpha 上恒假红,
 //       人人 `--no-verify`。修好了但没有防漂断言 = 下一次收编重演);
 //   ④  `assert gate files` 这一步不得因为前一步红而被跳过(GitHub step 默认条件是 success())。
+//   ⑤  (`#717`)`alpha` 分支保护要求的每个 context,都必须等于 alpha-ci 某个 job 的 `name:`;
+//       反过来每个 job 要么在那份记录里、要么在本文件里显式写明「不必需」。
 //
-// 删掉本文件会失去什么:上面四条全部退回「靠人记得」。CI 改一个 job/步骤名、加一步、
+// 删掉本文件会失去什么:上面五条全部退回「靠人记得」。CI 改一个 job/步骤名、加一步、
 // 或者有人把 alpha-check 的某一步删掉,都不再有任何东西变红。
 
 import { readFileSync } from "node:fs"
@@ -25,6 +27,7 @@ import { describe, expect, test } from "bun:test"
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..", "..")
 const WORKFLOW = readFileSync(resolve(REPO_ROOT, ".github/workflows/alpha-ci.yml"), "utf8")
 const SCRIPT = readFileSync(resolve(REPO_ROOT, "scripts/alpha-check.sh"), "utf8")
+const REQUIRED_CONTEXTS_FILE = readFileSync(resolve(REPO_ROOT, ".github/required-contexts.txt"), "utf8")
 
 /**
  * alpha-ci.yml 里「有名字、且真的执行一条命令」的步骤。
@@ -74,6 +77,34 @@ function line2prop(text: string, cur: { name?: string; run?: boolean; condition?
  * 否则默认被当成门,少一条对照即红(咽喉对新成员默认拒绝)。
  */
 const NON_GATE_STEPS = new Set(["detect|Classify diff (code vs docs-only)", "upstream-guard|Ensure origin/dev is available"])
+
+/**
+ * alpha-ci.yml 里每个 job 的 `name:` —— 也就是 GitHub 上那一格 check 的**显示名**,
+ * 分支保护的 required context 用的就是这个字符串。job `name:` 恒在 4 空格缩进,
+ * step 的 `- name:` 在 6 空格,两者不会混。
+ */
+function parseWorkflowJobNames(yaml: string): string[] {
+  return [...yaml.matchAll(/^ {4}name: (.+)$/gm)].map((m) => m[1].trim())
+}
+
+/** `.github/required-contexts.txt`:分支保护要求的 context 的仓内手抄快照。 */
+function parseRequiredContexts(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"))
+}
+
+/**
+ * **不**必需的 job —— 每个都必须在这里显式表态,理由写清楚。
+ * 默认拒:新加一个 job 而不表态,下面那条断言当场红(咽喉对新成员默认拒绝)。
+ */
+const NOT_REQUIRED_JOBS: Record<string, string> = {
+  "detect changes":
+    "分类步。它的产物(code/md)决定别的 job 跑不跑,但它自己不判任何东西 —— 它红了下游全部 job 会因 needs 失败而拿不到结论,合并照样进不去。行为闸在 packages/ui-mac/src/main/ci-diff-scope.test.ts。",
+  "seed assets present":
+    "B7 打包资源在位闸。合并前它的缺失不改变仓库正确性(打包期才吃到),历史上一直不在 required 里;要提必需是独立裁决,不在 `#717` 范围内。",
+}
 
 function parseLedger(script: string): Array<{ job: string; name: string; status: string }> {
   const block = /^CI_STEPS=\(\n([\s\S]*?)^\)$/m.exec(script)
@@ -136,6 +167,45 @@ describe("#777 本地门与 alpha-ci 的对照表", () => {
     // 解析手段自检:两边都必须真解析出内容,否则 `[] === []` 会给一条假绿。
     expect(ciExcludes.length).toBeGreaterThanOrEqual(20)
     expect(shExcludes, "本地 north-star 的收编白名单与 CI 漂移了 —— 干净 alpha 上会恒假红(#637)").toEqual(ciExcludes)
+  })
+
+  // ── `#717`:required context 名的防漂 ──────────────────────────────────────
+  // 这个值有两个家 —— 仓外的 GitHub 分支保护设置,和仓内 alpha-ci.yml 的 job `name:` ——
+  // 而两边都没声明自己是真源。2026-07-22 `ebd29cda` 把 job 改名成
+  // `unit tests (alpha packages)`,分支保护那侧没跟,GitHub 从此再没见过旧名字 ⇒ 每个 PR
+  // 都在那一格永久 pending,人人 --admin。改名当天没有任何东西变红。
+  //
+  // ⚠️ 诚实边界:真源在仓外,CI 够不着(fork PR 拿不到 secrets)。`.github/required-contexts.txt`
+  //    是**手抄快照**,抓得住 workflow 侧改名(咬过我们的那一类),抓不住「只改 GitHub 设置」
+  //    或「两侧一起改错」。这是减速带,不是闸门 —— 文件抬头把这条也写着。
+  test("#717:分支保护记录里的每个 context 都对应 alpha-ci 的一个 job name(改名即红)", () => {
+    const jobNames = parseWorkflowJobNames(WORKFLOW)
+    const required = parseRequiredContexts(REQUIRED_CONTEXTS_FILE)
+    // 解析自检:任一侧解析退化成空,下面的比对就会空对空地绿。
+    expect(jobNames.length, "alpha-ci.yml 里一个 job name 都没解析到 —— 解析器坏了").toBeGreaterThanOrEqual(6)
+    expect(required.length, ".github/required-contexts.txt 一条都没解析到 —— 记录被清空或解析器坏了").toBeGreaterThanOrEqual(4)
+    const orphaned = required.filter((context) => !jobNames.includes(context))
+    expect(
+      orphaned,
+      "分支保护要求的 context 在 alpha-ci 里没有同名 job —— GitHub 永远等不到它,每个 PR 都在那一格永久 pending(`ebd29cda` 那一类)",
+    ).toEqual([])
+  })
+
+  test("#717:alpha-ci 的每个 job 要么是必需 context,要么显式登记为不必需(默认拒)", () => {
+    const jobNames = parseWorkflowJobNames(WORKFLOW)
+    const required = parseRequiredContexts(REQUIRED_CONTEXTS_FILE)
+    expect(jobNames.length).toBeGreaterThanOrEqual(6)
+    const unclassified = jobNames.filter((name) => !required.includes(name) && !(name in NOT_REQUIRED_JOBS))
+    expect(
+      unclassified,
+      "新 job 既不在 .github/required-contexts.txt 里,也没在 NOT_REQUIRED_JOBS 里写明为什么不必需 —— 一道没人表态的门等于没有门",
+    ).toEqual([])
+    // 反向:登记为「不必需」的 job 必须真的存在,且必须真的不在必需列表里(自相矛盾即红)。
+    for (const [name, reason] of Object.entries(NOT_REQUIRED_JOBS)) {
+      expect(jobNames, `NOT_REQUIRED_JOBS 登记了 alpha-ci 里不存在的 job:${name}`).toContain(name)
+      expect(required, `${name} 同时被登记为「不必需」和分支保护必需 —— 两处矛盾`).not.toContain(name)
+      expect(reason.trim().length, `${name} 的「不必需」理由为空`).toBeGreaterThan(0)
+    }
   })
 
   test("`assert gate files` 不因前一步失败而被跳过", () => {

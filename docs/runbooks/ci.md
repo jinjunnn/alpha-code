@@ -80,14 +80,20 @@ bash scripts/alpha-check.sh
 | **`alpha-ci`** | 本仓 CI(上面三关) | `push` / `pull_request` → `alpha`;也可 `workflow_dispatch` |
 | **`sync-upstream`** | 每日上游 `dev → merge alpha` 同步 | 定时 + 手动 |
 
-- **分支保护 required contexts 与真实 job 名对不上,`unit tests (ui-mac)` 是个幽灵**(2026-08-03 实读,`#717`)。
-  `alpha` 保护要求四个 context:`north-star guard (zero upstream edits)` / `typecheck (alpha packages)` /
-  **`unit tests (ui-mac)`** / `docs gate`。而那个 job 早在 2026-07-22(`ebd29cda`)就改名成
-  `unit tests (alpha packages)` —— **没有任何 PR 会产出 `unit tests (ui-mac)` 这个 context**,
-  code PR 也不会。后果:每个 PR 在这一格上永久 pending ⇒ 每次合并都得 `--admin` ⇒
-  主线真红的时候也没有任何东西挡住。**「大家习惯性 --admin」不是纪律松懈,是分支保护自己造出来的。**
+- **分支保护 required contexts —— 幽灵 context 已消,记录落在仓内**(`#717`,2026-08-10 复核)。
+  `alpha` 保护当前要求四个 context,与真实 job 名逐条对得上:
+  `north-star guard (zero upstream edits)` / `typecheck (alpha packages)` /
+  `unit tests (alpha packages)` / `docs gate`。
+  历史:那一格曾经写着 `unit tests (ui-mac)`,而 job 早在 2026-07-22(`ebd29cda`)就改名了 ⇒
+  **没有任何 PR 会产出那个 context**,code PR 也不会 ⇒ 每个 PR 在那一格永久 pending ⇒ 每次合并都得
+  `--admin`。**「大家习惯性 --admin」当时不是纪律松懈,是分支保护自己造出来的。**
+  owner 已于 2026-08-03 直接改分支保护修掉那一半。
   `#717` 的票面把成因写成「docs-only path 没发布该 context」,与实测不符:改名是全量的。
-  修法(改的是 GitHub 设置,不在本仓文件里)由 `#717` 承担。
+  现在这份列表在仓内有一份手抄快照 [`.github/required-contexts.txt`](../../.github/required-contexts.txt),
+  由 `packages/ui-mac/src/main/local-gate-parity.test.ts` 断言「记录里的每个 context 都等于某个 job 的
+  `name:`」+「每个 job 要么在记录里、要么显式登记为不必需」。**它抓得住 workflow 侧改名(咬过我们的
+  那一类),抓不住「只改 GitHub 设置」——真源在仓外,CI 够不着(fork PR 拿不到 secrets)。改分支保护时
+  同一轮里改那个文件,这是减速带不是闸门。**
 - 其它 workflow 一律**不影响 merge**(PR 上若看到别的 check = 历史残留,忽略)。
 - **不要盲目 `gh workflow enable`** 上游那些——除非你真给 fork 接了对应 runner。要恢复某个:`gh workflow enable <name>.yml`(可逆,文件没删)。
 
@@ -105,10 +111,13 @@ bash scripts/alpha-check.sh
    - 一直 `queued` = 等 runner(无匹配 runner / Actions 额度耗尽 / 并发上限);
    - `in_progress` 慢 = job 本身慢(装依赖 / 测试)——那才是 REQ-009 缓存优化的场景。
 3. **命令**:`gh run cancel <id>` 取消 · `gh run watch <id>` 盯 · `gh run rerun <id>` 重跑 · `gh run list --workflow=alpha-ci.yml` 只看本仓 CI。
-4. **别被堵**:本地七步已绿 = 代码没问题。注意 §3 那条 —— 目前 required 里有一个**永远不会上报**的
-   context(`unit tests (ui-mac)`,`#717`),所以「PR 卡着不动」多半不是 CI 慢,是那一格永远 pending。
-   真急可 `gh pr merge --admin` 绕过(它现在是**结构性必需**,不是纪律松懈;`#717` 修好之前别把
-   「又 --admin 了一次」当成有人偷懒)。
+4. **别被堵**:本地七步已绿 = 代码没问题。`#717` 之前这里写着「required 里有一个永远不会上报的
+   context,真急可 `--admin`」—— **那条已经过时,别再照它办**。四个 required context 现在都会产出
+   结论(§3),`--admin` 回到「例外」而不是「结构性必需」。
+   **PR 还是卡着不动时先问这两个**:①`gh pr view <n> --json statusCheckRollup` 里是哪一格 pending /
+   failure?②那一格是不是真的红了 —— 一个**落后于 alpha 的纯文档分支**曾经会被 `detect` 误判成
+   有代码改动、跑全量、继承主线的红(`#717` 修的就是这个;现在走 merge-base 三点口径,行为闸在
+   `packages/ui-mac/src/main/ci-diff-scope.test.ts`)。**真红就修,不要用 `--admin` 盖过去。**
 
 ## 6. pre-push 钩子 —— local-first 强制(2026-07-05 REQ-015 起默认开启)
 

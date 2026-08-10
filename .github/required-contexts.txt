@@ -1,0 +1,32 @@
+# `alpha` 分支保护当前要求的 status check context —— 仓内的一份**手抄快照**。
+#
+# ⚠️ 真源(SOT)不在这个文件里,也不在这个仓库里。它是 GitHub 的分支保护设置。
+#    取数命令(权威):
+#        gh api repos/jinjunnn/alpha-code/branches/alpha/protection \
+#          --jq '.required_status_checks.contexts[]'
+#    本文件最后一次与真源核对:2026-08-10T06:24:38Z(`#717`,四条逐字相同)。
+#
+# 为什么还要抄一份(`#717`):这个值同时活在**仓外的 GitHub 设置**和**仓内 alpha-ci.yml
+# 的 job `name:`** 两处,而两处都没有声明自己是真源,也没有任何东西比对它们。后果实测过:
+# 2026-07-22 的 `ebd29cda` 把 job 从 `unit tests (ui-mac)` 改名成 `unit tests (alpha packages)`,
+# 分支保护那侧没人跟着改 —— GitHub 从此再没见过那个 context 名,于是**每个 PR 都在那一格
+# 永久 pending**,与改的是文档还是代码无关,人人 `--admin`。改名当天没有任何东西变红。
+# owner 已于 2026-08-03 直接改分支保护修好了那次(回滚值见 `#717` 评论);本文件是为了让
+# **下一次**改名当场变红。
+#
+# 这份记录抓得住什么、抓不住什么(诚实边界,不要写成「已防漂」):
+#   ✅ 抓得住:有人改了 alpha-ci.yml 的 job 名 / 删了 job —— 也就是 `ebd29cda` 那一类,
+#      即真正咬过我们的那一类。判据在 packages/ui-mac/src/main/local-gate-parity.test.ts。
+#   ✅ 抓得住:新增一个 job 而没表态它必不必需(那条断言默认拒)。
+#   ❌ 抓不住:有人**只改 GitHub 设置**而不碰仓库。CI 里够不着真源 —— 本仓 public、
+#      读分支保护要带令牌,而 workflow 触发在 `pull_request`,fork PR 结构上拿不到 secrets。
+#   ❌ 抓不住:两侧被**一起**改错。那时本文件与 workflow 自洽,测试照绿。
+#   ⇒ 所以核对真源仍然是**人的动作**:改分支保护时,同一轮里改这个文件;定期用上面那条
+#      `gh api` 命令对一次。这是一条减速带,不是一道闸门。
+#
+# 格式:每行一个 context,`#` 开头为注释。顺序无意义(GitHub 也不保证顺序)。
+
+north-star guard (zero upstream edits)
+typecheck (alpha packages)
+unit tests (alpha packages)
+docs gate
