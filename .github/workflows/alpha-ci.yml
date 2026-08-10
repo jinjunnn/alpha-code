@@ -74,32 +74,10 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_HEAD: ${{ github.sha }}
-        run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            base="$PR_BASE_SHA"
-            head="$PR_HEAD_SHA"
-          else
-            base="$PUSH_BEFORE"
-            head="$PUSH_HEAD"
-          fi
-          # first push / unknown base → diff against the empty tree so every file counts as changed
-          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            base="$(git hash-object -t tree /dev/null)"
-          fi
-          files="$(git diff --name-only "$base" "$head")"
-          echo "changed files:"; echo "$files" | sed 's/^/  /'
-          code=false; md=""
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
-            case "$f" in
-              *.md) md="$md $f" ;;                              # docs, and collect for link check
-              docs/*|*/docs/*|.claude/rules/*|knowledge/*) : ;; # docs (html/design/adr), not code
-              *) code=true ;;                                   # anything else → full CI
-            esac
-          done <<< "$files"
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          echo "md=$(echo $md | xargs)" >> "$GITHUB_OUTPUT"
-          echo "→ code=$code ; md=[$(echo $md | xargs)]"
+        # `#717`:逻辑住在 scripts/detect-changed-scope.sh —— 内联时它没有任何判据,而它决定
+        # 的是「哪些闸门今天到底跑不跑」。真判据 = packages/ui-mac/src/main/ci-diff-scope.test.ts,
+        # 它在真 git 仓上跑**这个**脚本。
+        run: bash scripts/detect-changed-scope.sh
 
   upstream-guard:
     name: north-star guard (zero upstream edits)
