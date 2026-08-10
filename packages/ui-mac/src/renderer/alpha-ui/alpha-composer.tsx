@@ -20,6 +20,7 @@ import {
   onMount,
   Show,
   Switch,
+  untrack,
   type JSX,
 } from "solid-js"
 import { Portal } from "solid-js/web"
@@ -44,6 +45,7 @@ import { pushToast } from "./Toast"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
 import type { AuthState } from "../../preload/types"
 import {
+  adoptComposerAgentScope,
   applyDefaultComposerModel,
   buildPromptRequest,
   clearSuspendedModel,
@@ -55,9 +57,11 @@ import {
   composerPerm,
   failComposerModelProjection,
   invalidateComposerModelProjection,
+  releaseComposerAgentScope,
   resetComposerModelProjection,
   resolveComposerModelProjection,
   routeSlash,
+  seedComposerAgentScope,
   setComposerAgent,
   setComposerModel,
   setComposerPerm,
@@ -717,13 +721,34 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const removeAttachment = (id: string) => setAttachments((xs) => xs.filter((a) => a.id !== id))
   const hasDragFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files")
 
-  // REQ-073 拍板③:模式是会话级的 —— home 是新会话入口,挂载即回默认(build);会话页不重置。
+  // REQ-073 拍板③:模式是会话级的 —— home 是新会话入口,挂载即回默认(build)。
   onMount(() => {
     if (props.mode !== "home") return
-    setComposerAgent(null)
     setComposerModel(null)
     clearSuspendedModel()
     resetComposerModelProjection()
+  })
+
+  /* #570:上一行那句「会话级」此前只写在注释里 —— 档位信号是模块级的,会话页又不重置,于是它
+     **跟着人跑**:在会话 A 开「计划」、点侧栏进会话 B,B 的 chip 照样显示「计划」,B 的下一条
+     消息也真的以 agent=plan 发出。这里把作用域接上:进一个会话就接管它自己的档位(没开过 =
+     默认 build),离开就把当前档位交还给它。home 的作用域是 null(新会话入口,一律回默认)。
+     用 createEffect 而不是 onMount:生产的会话 composer 由 SessionComposerMount 按身份 keyed
+     重挂,但同一实例内 sessionID 换代(模型链已按此换代)也必须换档位 —— 两种都盖住。 */
+  let agentScope: string | null = null
+  let agentScopeHeld = false
+  createEffect(() => {
+    const next = props.mode === "home" ? null : (props.sessionID?.() ?? null)
+    untrack(() => {
+      if (agentScopeHeld && next === agentScope) return
+      if (agentScopeHeld) releaseComposerAgentScope(agentScope)
+      agentScope = next
+      agentScopeHeld = true
+      adoptComposerAgentScope(next)
+    })
+  })
+  onCleanup(() => {
+    if (agentScopeHeld) releaseComposerAgentScope(agentScope)
   })
 
   const auto = createComposerAutocomplete({
@@ -1312,6 +1337,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
           return
         }
+        // #570:这条消息用的档位就是新会话的开局档位 —— 不交给它,跳进会话页的瞬间 chip 熄灭、
+        // 第二条消息掉回默认档,而用户明明在首页把计划模式开着发出了第一条。
+        seedComposerAgentScope(id, composerAgent())
         setText("")
         setMentions([])
         setAttachments([])

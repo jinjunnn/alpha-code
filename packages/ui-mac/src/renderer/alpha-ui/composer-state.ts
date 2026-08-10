@@ -68,6 +68,62 @@ export function applyDefaultComposerModel(m: ComposerModel) {
   setModelSignal(m)
 }
 
+/* ── 档位的会话归属(#570)──────────────────────────────────────────────────────
+ * 已批稿(`docs/design/current/assemble-popup/design.html`「③ 计划作用域:会话级;新会话默认
+ * build」)说档位是**会话级**的,而上面那个 signal 是**模块级**的 —— 所有渲染面共用一份
+ * composer 状态。两者不一致时档位跟着人跑:在会话 A 开「计划」、点侧栏进会话 B,B 的 chip 照样
+ * 显示「计划」,B 的下一条消息也真的以 `agent=plan` 发出 —— 而用户从没在 B 开过它。
+ *
+ * #570 原本的两条候选路(消费 v2 `session.next.agent.switched`、或给档位补版本号)已随
+ * [[ADR-036]] §决策 1 一起没了主体:v2 `switchAgent` 在 alpha 侧零生产调用方,档位随每条消息走
+ * `PromptInput.agent`,全程不过网 —— 没有信道,也没有「陈旧」可言。**今天仅存的档位不一致就是
+ * 这条作用域**,它是纯本地的。
+ *
+ * 归属的做法与草稿暂存同形(`session-workspace/session-dock-core` 的
+ * `createComposerDraftStash`):composer 按会话 adopt / release。只登记**非默认**档位(默认档
+ * 不占位),登记按 LRU 设上界 —— 越界回默认档,那是引擎自己的 build,永远是可解释的一档。 */
+const AGENT_SCOPE_CAPACITY = 32
+const agentByScope = new Map<string, string>()
+/** 当前持有档位信号的会话 id;null = 首页(新会话入口)或无人持有。 */
+let agentScopeOwner: string | null = null
+
+function rememberScopedAgent(scopeID: string, value: string | null) {
+  agentByScope.delete(scopeID) // 重插到队尾(Map 保持插入序 → 队首 = 最旧,用作 LRU)
+  if (value === null) return // 默认档 = 不登记
+  agentByScope.set(scopeID, value)
+  while (agentByScope.size > AGENT_SCOPE_CAPACITY) {
+    const oldest = agentByScope.keys().next().value
+    if (oldest === undefined) break
+    agentByScope.delete(oldest)
+  }
+}
+
+/** 挂载:接管该会话的档位(无登记 = 默认 build)。`null` = 首页,一律回默认。 */
+export function adoptComposerAgentScope(scopeID: string | null) {
+  agentScopeOwner = scopeID
+  setAgent(scopeID === null ? null : (agentByScope.get(scopeID) ?? null))
+}
+
+/** 卸载:把当前档位交还给该会话。**只有仍持有时才写** —— 新实例已经接管就不许再覆盖它的值
+ *  (卸载与挂载的先后由宿主决定,这条守卫让两种顺序都不会把 B 的档位写进 A 的名下)。 */
+export function releaseComposerAgentScope(scopeID: string | null) {
+  if (scopeID === null || agentScopeOwner !== scopeID) return
+  rememberScopedAgent(scopeID, agent())
+  agentScopeOwner = null
+}
+
+/** 首页发出第一条消息后新建的那个会话,继承这条消息用的档位 —— 它就是同一段对话的开头。
+ *  少了这一步,「在首页开计划模式发第一条」会在跳进会话页的瞬间掉回默认档。 */
+export function seedComposerAgentScope(scopeID: string, value: string | null) {
+  rememberScopedAgent(scopeID, value)
+}
+
+/** 测试隔离:清空会话档位登记与持有者(模块级状态跨用例会串,和 signal 本身一样要复位)。 */
+export function resetComposerAgentScopesForTests() {
+  agentByScope.clear()
+  agentScopeOwner = null
+}
+
 /* ── REQ-069:当前选择的挂起/恢复 ────────────────────────────────────────────── */
 
 export type SuspendReason = "needs-login" | "needs-credit" | "provider-gone"

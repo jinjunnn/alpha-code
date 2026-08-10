@@ -70,6 +70,7 @@ const {
   composerModel,
   composerModelProjection,
   composerModelSuspended,
+  resetComposerAgentScopesForTests,
   resetComposerModelProjection,
   setComposerAgent,
   setComposerModel,
@@ -77,6 +78,7 @@ const {
 } = await import(
   "../src/renderer/alpha-ui/composer-state"
 )
+const { ALPHA_V2_CATALOG_READY_PROVIDER_ID } = await import("../src/shared/alpha-config")
 const { byokEngineId } = await import("../src/shared/alpha-model-types")
 const { resetAuthRecoveryForTests } = await import("../src/renderer/auth-recovery")
 const { setLocale } = await import("../src/renderer/i18n")
@@ -236,6 +238,9 @@ afterEach(() => {
   document.body.replaceChildren()
   setComposerModel(null)
   setComposerAgent(null)
+  // #570:档位的会话登记也是模块级状态,和 signal 一样跨用例会串(卸载 composer 会把当时的档位
+  // 记进它那个会话名下,下一条用例复用同一个 sessionID 就会「继承」上一条的档位)。
+  resetComposerAgentScopesForTests()
   resetComposerModelProjection()
 })
 afterAll(() => GlobalRegistrator.unregister())
@@ -1533,6 +1538,196 @@ describe("REQ-125 C558 SessionComposerMount 按身份 keyed:切会话草稿正�
     await flush()
     expect(ta(mounted.host)).toBe(original)
     expect(original.value).toBe("正在输入的草稿")
+    mounted.dispose()
+  })
+})
+
+/* ── #570 档位的作用域是「一个会话」,不是「这个 app」────────────────────────────────────
+   已批稿写死了:`docs/design/current/assemble-popup/design.html`「③ 计划作用域:会话级;新会话默认
+   build」。修复前档位信号是模块级的、会话页又不重置 ⇒ 在 A 开计划、点侧栏进 B,B 的 chip 显示
+   「计划」,而且 B 的下一条消息**真的**以 `agent=plan` 发出 —— 用户从没在 B 开过它。
+
+   判据只认用户看得见 / 引擎收得到的那两样:**渲染出来的 chip** 与 **promptAsync 真实载荷里的
+   agent 字段**。档位一律经生产写入口打开(Shift+Tab,alpha-composer 的 onKey),不直接调
+   setComposerAgent —— 只驱动内层 signal 的话,分流层被绕过也照样绿。会话切换走生产的
+   SessionComposerMount(按身份 keyed 重挂),不自己拼一条等价链。
+
+   变异验证(三条都实跑过,每条各只打掉一处):删掉 alpha-composer 里 adopt/release 那段
+   createEffect ⇒ ①② 红(54 pass / 2 fail);删掉首页发送后的 `seedComposerAgentScope` ⇒ ③ 红;
+   让 `rememberScopedAgent` 在默认档时也留登记(交还「开过的痕迹」而不是当前档位)⇒ ④ 红。
+   ④ 之所以要单列:前两个变异下它照样绿 —— 它挡的是反方向的错(把档位复活),不是同一个洞。 */
+describe("#570 档位按会话归属:切会话不把上一个会话的档位带过去", () => {
+  const identityFor = (sessionID: string) => ({ serverKey: "sidecar", directory: "/ws", sessionID })
+  const dockApi = {
+    running: () => false,
+    contextUsage: () => null,
+    approvalPending: () => false,
+    onSlashCommand: () => {},
+  }
+
+  /** 假 sidecar:SessionComposerMount 内部自建 createModelContract(props.projects.sdk),所以模型链
+   *  的三跳(catalog-ready 探针 / model.list / session.get)都得真给,composer 才会进 ready 而不是
+   *  卡在「正在同步」——发送门开不了,就什么行为都断不到。 */
+  function scopedSdk() {
+    const promptAsyncCalls: Array<Record<string, unknown>> = []
+    const client = {
+      command: { list: async () => ({ data: [] }) },
+      session: {
+        promptAsync: async (args: Record<string, unknown>) => {
+          promptAsyncCalls.push(args)
+          return {}
+        },
+        abort: async () => ({}),
+      },
+      v2: {
+        provider: {
+          get: async () => ({ data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }),
+        },
+        model: { list: async () => ({ data: { data: platformModels } }) },
+        session: {
+          get: async ({ sessionID }: { sessionID: string }) => ({
+            data: {
+              data: {
+                id: sessionID,
+                model: { providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id },
+                agent: undefined,
+              },
+            },
+          }),
+          switchModel: async () => ({}),
+        },
+      },
+    }
+    return { client, promptAsyncCalls }
+  }
+
+  const startedChats: Array<{ agent: string | undefined }> = []
+  const scopedProjects = (sdk: ReturnType<typeof scopedSdk>, newSessionID = "NEW") =>
+    ({
+      ...projects,
+      sdk: () => sdk.client as never,
+      startChat: async (_dir: string, _text: string, _parts?: unknown[], options?: { agent?: string }) => {
+        startedChats.push({ agent: options?.agent })
+        return newSessionID
+      },
+    }) satisfies AlphaProjectsApi
+
+  /** 首页 composer 直挂时的模型档(会话页那条走 SessionComposerMount 自建的真 contract)。 */
+  const homeContract = (): ModelContract => ({
+    list: async () => platformModels,
+    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+    switch: async () => {},
+  })
+
+  const ta = (host: HTMLElement) => host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")!
+  const planChip = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".a-chip-plan")
+  const shiftTab = (el: HTMLTextAreaElement) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }))
+  async function sendVia(host: HTMLElement, value: string) {
+    const el = ta(host)
+    el.value = value
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+    await waitFor(() => expect(host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    host.querySelector<HTMLButtonElement>(".a-comp-send")!.click()
+  }
+  const mountSession = (sdk: ReturnType<typeof scopedSdk>, identity: () => { sessionID: string } | undefined) =>
+    mount(() =>
+      createComponent(SessionComposerMount, {
+        identity: identity as never,
+        projects: scopedProjects(sdk),
+        dock: dockApi,
+        drafts: createComposerDraftStash(),
+      }),
+    )
+
+  test("① 在 A 开计划 → 切到 B:B 的 chip 不显示计划,B 发出的消息也不带 agent", async () => {
+    installApi()
+    const sdk = scopedSdk()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mountSession(sdk, identity)
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+
+    shiftTab(ta(mounted.host)) // 生产写入口:Shift+Tab 切计划模式
+    await waitFor(() => expect(planChip(mounted.host)?.textContent).toContain(zh["alpha.composer.plan"]))
+
+    setIdentity(identityFor("B")) // 侧栏切会话 = 按身份 keyed 重挂
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+
+    expect(planChip(mounted.host)).toBeNull() // 用户看得见的那一半
+    await sendVia(mounted.host, "B 的第一句") // 引擎收得到的那一半
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "B" })
+    expect("agent" in sdk.promptAsyncCalls[0]!).toBe(false)
+    mounted.dispose()
+  })
+
+  test("② A→B→回 A:A 自己的计划模式还在,A 发出的消息仍带 agent=plan", async () => {
+    installApi()
+    const sdk = scopedSdk()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mountSession(sdk, identity)
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+    shiftTab(ta(mounted.host))
+    await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+
+    setIdentity(identityFor("B"))
+    await waitFor(() => expect(planChip(mounted.host)).toBeNull())
+    setIdentity(identityFor("A"))
+    await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+
+    await sendVia(mounted.host, "回到 A 继续按计划")
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "plan" })
+    mounted.dispose()
+  })
+
+  test("③ 首页开着计划发第一条:跳进新会话后 chip 还在,第二条仍以 plan 发出", async () => {
+    installApi()
+    startedChats.length = 0
+    const sdk = scopedSdk()
+    const home = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: scopedProjects(sdk, "NEW"),
+        directory: () => "/ws",
+        command,
+        modelContract: homeContract(),
+      }),
+    )
+    await waitFor(() => expect(ta(home.host)).not.toBeNull())
+    shiftTab(ta(home.host))
+    await waitFor(() => expect(planChip(home.host)).not.toBeNull())
+    await sendVia(home.host, "先给我一个方案")
+    await waitFor(() => expect(startedChats).toHaveLength(1))
+    expect(startedChats[0]).toEqual({ agent: "plan" }) // 第一条本来就该带 plan
+    home.dispose() // 首页让位给会话页
+
+    const mounted = mountSession(sdk, () => identityFor("NEW"))
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+    expect(planChip(mounted.host)).not.toBeNull() // 新会话继承开局档位,chip 不该熄灭
+    await sendVia(mounted.host, "第二条")
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "NEW", agent: "plan" })
+    mounted.dispose()
+  })
+
+  test("④ 在 A 关掉计划再切走:B 干净,回 A 也不复活(交还的是当前档位,不是开过的痕迹)", async () => {
+    installApi()
+    const sdk = scopedSdk()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mountSession(sdk, identity)
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+    shiftTab(ta(mounted.host))
+    await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+    shiftTab(ta(mounted.host)) // 再按一次 = 关掉
+    await waitFor(() => expect(planChip(mounted.host)).toBeNull())
+
+    setIdentity(identityFor("B"))
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+    expect(planChip(mounted.host)).toBeNull()
+    setIdentity(identityFor("A"))
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+    expect(planChip(mounted.host)).toBeNull()
     mounted.dispose()
   })
 })
