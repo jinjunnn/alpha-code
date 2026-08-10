@@ -6,6 +6,7 @@ import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { canonicalToolIdentity, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 
 export const Event = PermissionV1.Event
 
@@ -283,21 +284,40 @@ export function merge(...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule[] 
   return rulesets.flat()
 }
 
-export function disabled(tools: string[], ruleset: PermissionV1.Ruleset): Set<string> {
+export type ToolPermissionSubject = { technicalId: string; identity: ToolIdentity }
+
+export function disabled(
+  tools: readonly (string | ToolPermissionSubject)[],
+  ruleset: PermissionV1.Ruleset,
+): Set<string> {
   const edits = ["edit", "write", "apply_patch"]
   const reads = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]
   return new Set(
-    tools.filter((tool) => {
+    tools.flatMap((subject) => {
+      const tool = typeof subject === "string" ? subject : subject.technicalId
       const permission = edits.includes(tool) ? "edit" : reads.includes(tool) ? "read" : tool
-      const rule = ruleset.findLast((rule) => Wildcard.match(permission, rule.permission))
-      return rule?.pattern === "*" && rule.action === "deny"
+      const ability = ruleset.findLast((rule) => Wildcard.match(permission, rule.permission))
+      if (ability?.pattern === "*" && ability.action === "deny") return [tool]
+      if (typeof subject === "string") return []
+      const identity = canonicalToolIdentity(subject.identity)
+      const identityRule = ruleset.findLast((rule) => Wildcard.match(identity, rule.permission))
+      return identityRule?.pattern === "*" && identityRule.action === "deny" ? [tool] : []
     }),
   )
 }
 
 export function visibleTools<T>(tools: Record<string, T>, ruleset: PermissionV1.Ruleset): Record<string, T> {
-  const hidden = disabled(Object.keys(tools), ruleset)
-  return Object.fromEntries(Object.entries(tools).filter(([name]) => !hidden.has(name)))
+  const subjects = Object.entries(tools).map(([technicalId, item]) => {
+    if (!item || typeof item !== "object" || !("identity" in item) || !item.identity) return technicalId
+    return { technicalId, identity: item.identity as ToolIdentity }
+  })
+  const hidden = disabled(subjects, ruleset)
+  return Object.fromEntries(
+    Object.entries(tools).filter(
+      ([name, item]) =>
+        !!item && typeof item === "object" && "identity" in item && !!item.identity && !hidden.has(name),
+    ),
+  )
 }
 
 export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node] })

@@ -101,6 +101,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { readFileSync } from "node:fs"
+import {
+  CLOUD_MCP_DEF_ENV,
+  CLOUD_MCP_SERVER_ENV,
+  computeMcpOwnership,
+  type McpOwnership,
+  UNVERIFIED_MCP_OWNERSHIP,
+} from "@opencode-ai/plugin/alpha-cloud-authority"
+
+export {
+  CLOUD_MCP_DEF_ENV,
+  CLOUD_MCP_SERVER_ENV,
+  computeMcpOwnership,
+  type McpOwnership,
+  UNVERIFIED_MCP_OWNERSHIP,
+} from "@opencode-ai/plugin/alpha-cloud-authority"
 
 /** main 每次 fork 前落定的**云侧**主权判决通道(`ui-mac/src/main/cloud-web-search.ts` 同名同义)。 */
 export const CLOUD_WEBSEARCH_DENY_ENV = "ALPHA_CLOUD_WEBSEARCH_DENY"
@@ -193,8 +208,6 @@ export function isWebSearchToolId(tool: string): boolean {
 }
 
 /** alpha 自己注册的云 MCP server 名(注入面经 `ALPHA_CLOUD_MCP_SERVER` 告知,见 ui-mac 同名常量)。 */
-export const CLOUD_MCP_SERVER_ENV = "ALPHA_CLOUD_MCP_SERVER"
-
 /** `McpCatalog.sanitize`(`opencode/src/mcp/catalog.ts:117`)逐字同义 —— 工具 id 的前缀就是它的产物。 */
 function sanitizeMcpName(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_")
@@ -220,74 +233,6 @@ export function mcpEngineToolId(server: string, remoteName: string): string {
  * 且配置里那条定义是 `type:"remote"` 且 `url` 与 `ALPHA_CLOUD_MCP_DEF` 里 alpha 自己写的逐字相同)。
  * `foreign` = 配置里其余每一个 server 名 —— 一个都拿不到治理豁免。
  */
-export type McpOwnership = {
-  governed: string[]
-  foreign: string[]
-}
-
-/**
- * 尚未核验(config 钩子还没跑 / 配置里没有 mcp 段 / 合并中途失败)= 没有任何治理 server,
- * 豁免一律不给。这是判决函数的默认实参 —— 调用方不传归属时永远 fail-closed。
- */
-export const UNVERIFIED_MCP_OWNERSHIP: McpOwnership = { governed: [], foreign: [] }
-
-/**
- * alpha 在**本次 fork** 自己写进 env 的那份云 server 定义的端点身份。
- *
- * 不可伪造的根据与 ARM/DEF 握手同一条:`injectAlphaConfig` 在每次 fork 的**每一条分支**上覆盖或
- * 删除 `ALPHA_CLOUD_MCP_SERVER` / `ALPHA_CLOUD_MCP_DEF`,继承来的值一律不作数(逃生阀
- * `ALPHA_ENV_ALLOWLIST_EXTRA` 能把名字放进 sidecar,但放不进一个活过注入面的值)。
- */
-function governedCloudEndpoint(
-  env: Record<string, string | undefined>,
-): { name: string; url: string } | undefined {
-  const name = env[CLOUD_MCP_SERVER_ENV]
-  const raw = env[CLOUD_MCP_DEF_ENV]
-  if (!name || !raw) return undefined
-  let definition: unknown
-  try {
-    definition = JSON.parse(raw)
-  } catch {
-    return undefined
-  }
-  if (!definition || typeof definition !== "object" || Array.isArray(definition)) return undefined
-  const { type, url } = definition as { type?: unknown; url?: unknown }
-  if (type !== "remote" || typeof url !== "string" || !url) return undefined
-  return { name, url }
-}
-
-function isGovernedEntry(entry: unknown, endpoint: { url: string }): boolean {
-  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false
-  const { type, url } = entry as { type?: unknown; url?: unknown }
-  return type === "remote" && url === endpoint.url
-}
-
-/**
- * 从一份**已合并完成的**引擎配置算出治理归属。
- *
- * **纯函数,不写任何模块级状态**(#223 R7 Blocker):本模块由 Bun 动态 import **缓存**,一个引擎
- * 进程只有一份;而 Plugin / MCP 状态按 directory 建实例,同一份模块被多个 `AlphaExt` 实例共用。
- * 归属一旦存进模块级变量,后跑的实例就会覆盖先跑的实例的快照 —— 实测:实例 B 记录一个 foreign
- * `cloud_web` 后,实例 A 的 `cloud_web_search` 立刻被误拒(跨项目串扰)。因此归属由调用方
- * (`plugin.ts` 里**每个实例自己的闭包**)保存,并显式传给判决函数。
- */
-export function computeMcpOwnership(
-  cfg: unknown,
-  env: Record<string, string | undefined> = process.env,
-): McpOwnership {
-  const host = cfg as McpHost | null | undefined
-  if (!host || typeof host !== "object") return UNVERIFIED_MCP_OWNERSHIP
-  const servers = host.mcp && typeof host.mcp === "object" ? host.mcp : {}
-  const endpoint = governedCloudEndpoint(env)
-  const governed: string[] = []
-  const foreign: string[] = []
-  for (const [name, entry] of Object.entries(servers)) {
-    if (endpoint && name === endpoint.name && isGovernedEntry(entry, endpoint)) governed.push(name)
-    else foreign.push(name)
-  }
-  return { governed, foreign }
-}
-
 /**
  * 工具 id 的可能归属方。sanitize 不是单射,而 `<server>_<tool>` 的边界也不唯一
  * (`cloud_web` + `search` 与 `cloud` + `web_search` 拼出同一个 id),所以这里收集**全部**候选。
@@ -410,8 +355,6 @@ export const CLOUD_MCP_ARM_ENV = "ALPHA_CLOUD_MCP_ARM"
  * fail-closed(读不到就整个不装)仍然是这里唯一的把关,删掉它等于对未来任何带引用的定义
  * 默认放行。
  */
-export const CLOUD_MCP_DEF_ENV = "ALPHA_CLOUD_MCP_DEF"
-
 type McpHost = { mcp?: Record<string, unknown> }
 
 /**

@@ -25,6 +25,7 @@ import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
+import { parseToolDisplaySnapshot, type ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
 
 const DOOM_LOOP_THRESHOLD = 3
 export type Result = "compact" | "stop" | "continue"
@@ -44,6 +45,7 @@ export interface Handle {
       attachments?: SessionV1.FilePart[]
     },
   ) => Effect.Effect<void>
+  readonly registerToolDisplay: (technicalId: string, display: ToolDisplaySnapshotV1) => void
   readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
 }
 
@@ -72,6 +74,7 @@ interface ProcessorContext extends Input {
   needsCompaction: boolean
   currentText: SessionV1.TextPart | undefined
   reasoningMap: Record<string, SessionV1.ReasoningPart>
+  toolDisplays: Record<string, ToolDisplaySnapshotV1>
 }
 
 type StreamEvent = LLMEvent
@@ -111,8 +114,19 @@ const layer = Layer.effect(
         needsCompaction: false,
         currentText: undefined,
         reasoningMap: {},
+        toolDisplays: {},
       }
       let aborted = false
+
+      const registerToolDisplay = (technicalId: string, display: ToolDisplaySnapshotV1) => {
+        const normalized = parseToolDisplaySnapshot(display)
+        if (technicalId !== normalized.technicalId)
+          throw new Error(`tool display id mismatch: ${technicalId} != ${normalized.technicalId}`)
+        const existing = ctx.toolDisplays[technicalId]
+        if (existing && JSON.stringify(existing) !== JSON.stringify(normalized))
+          throw new Error(`conflicting tool display registration for ${technicalId}`)
+        ctx.toolDisplays[technicalId] = structuredClone(normalized)
+      }
 
       const parse = (e: unknown) =>
         MessageV2.fromError(e, {
@@ -240,6 +254,7 @@ const layer = Layer.effect(
           type: "tool",
           tool: input.name,
           callID: input.id,
+          display: ctx.toolDisplays[input.name] ? structuredClone(ctx.toolDisplays[input.name]) : undefined,
           state: { status: "pending", input: {}, raw: "" },
           metadata: input.providerExecuted ? { providerExecuted: true } : undefined,
         } satisfies SessionV1.ToolPart)
@@ -688,6 +703,7 @@ const layer = Layer.effect(
         },
         updateToolCall,
         completeToolCall,
+        registerToolDisplay,
         process,
       } satisfies Handle
     })

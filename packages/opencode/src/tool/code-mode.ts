@@ -8,6 +8,7 @@ import { Agent } from "@/agent/agent"
 import { Session } from "@/session/session"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
+import { canonicalToolIdentity } from "@opencode-ai/schema/tool-identity"
 
 export const CODE_MODE_TOOL = "execute"
 
@@ -36,29 +37,30 @@ type CatalogEntry = {
   tool: MCP.McpTool
 }
 
-function groupByServer(mcpTools: Record<string, MCP.McpTool>, servers: readonly string[]): Map<string, CatalogEntry[]> {
-  const byLongest = [...servers].sort((a, b) => b.length - a.length)
+function groupByServer(mcpTools: Record<string, MCP.McpTool>): Map<string, CatalogEntry[]> {
   const groups = new Map<string, CatalogEntry[]>()
   for (const key of Object.keys(mcpTools).sort((a, b) => a.localeCompare(b))) {
-    const server =
-      byLongest.find((name) => key.startsWith(name + "_")) ?? (key.includes("_") ? key.slice(0, key.indexOf("_")) : key)
-    const local = server && key.startsWith(server + "_") ? key.slice(server.length + 1) : key
+    const tool = mcpTools[key]!
+    if (!tool.identity || tool.identity.source !== "mcp")
+      throw new Error(`MCP tool ${key} is missing its source identity`)
+    const server = McpCatalog.sanitize(tool.identity.origin)
+    const local = McpCatalog.sanitize(tool.identity.name)
     const entry: CatalogEntry = {
       path: `${server}.${local}`,
       key,
       server,
       local,
-      tool: mcpTools[key]!,
+      tool,
     }
     groups.set(server, [...(groups.get(server) ?? []), entry])
   }
   return groups
 }
 
-export function describeCatalog(mcpTools: Record<string, MCP.McpTool>, servers: readonly string[]): string {
+export function describeCatalog(mcpTools: Record<string, MCP.McpTool>, _servers: readonly string[] = []): string {
   return CodeMode.make({
     tools: toolTree(
-      [...groupByServer(mcpTools, servers).values()].flat(),
+      [...groupByServer(mcpTools).values()].flat(),
       () => () => Effect.fail(toolError("Tool preview is not executable.")),
     ),
   }).instructions()
@@ -144,7 +146,9 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
     { args: input.args },
   )
   const result: CallToolResult = yield* Effect.gen(function* () {
-    yield* input.ctx.ask({ permission: input.entry.key, metadata: {}, patterns: ["*"], always: ["*"] })
+    const identity = input.entry.tool.identity
+    if (!identity) throw new Error(`MCP tool ${input.entry.key} is missing its source identity`)
+    yield* input.ctx.ask({ permission: canonicalToolIdentity(identity), metadata: {}, patterns: ["*"], always: ["*"] })
     // Deliberately mirrors McpCatalog.convertTool's transport call so the MCP service stays free of tool-loop concerns.
     return yield* Effect.promise(async () => {
       const raw = await input.entry.tool.client.callTool(
@@ -208,8 +212,7 @@ export const CodeModeTool = Tool.define(
         const session = yield* sessions.get(ctx.sessionID).pipe(Effect.orDie)
         const ruleset = Permission.merge(agent.permission, session.permission ?? [])
         const mcpTools = Permission.visibleTools(yield* mcp.tools(), ruleset)
-        const servers = Object.keys(yield* mcp.clients()).map(McpCatalog.sanitize)
-        const catalog = [...groupByServer(mcpTools, servers).values()].flat()
+        const catalog = [...groupByServer(mcpTools).values()].flat()
 
         const calls: CallEntry[] = []
         const attachments: Attachment[] = []

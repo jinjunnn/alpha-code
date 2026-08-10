@@ -4,6 +4,7 @@ import { Context, Effect, Layer, Scope } from "effect"
 import { State } from "../state"
 import { Tool } from "./tool"
 import { makeGlobalNode } from "../effect/app-node"
+import type { ToolIdentity } from "@opencode-ai/schema/tool-identity"
 
 type Data = {
   readonly entries: Map<string, Entry>
@@ -14,7 +15,8 @@ type Draft = {
 }
 
 export interface Entry {
-  readonly identity: object
+  readonly token: object
+  readonly identity: ToolIdentity
   readonly tool: Tool.AnyTool
 }
 
@@ -44,7 +46,9 @@ const layer = Layer.effect(
         const entries = Object.entries(tools)
         if (entries.length === 0) return
         yield* Effect.forEach(entries, ([name]) => Tool.validateName(name), { discard: true })
-        const registrations = entries.map(([name, tool]) => [name, { identity: {}, tool }] as const)
+        const registrations = entries.map(
+          ([name, tool]) => [name, { token: {}, identity: { source: "builtin-v2", origin: "", name }, tool }] as const,
+        )
         yield* state.transform((draft) => {
           for (const [name, entry] of registrations) draft.set(name, entry)
         })

@@ -11,6 +11,22 @@ import { ascending } from "../identifier"
 import { SessionID } from "../session-id"
 import { WorkspaceID } from "../workspace-id"
 import { PermissionV1 } from "./permission"
+import { ToolDisplaySnapshotV1 } from "../tool-identity"
+
+export {
+  InvalidToolIdentityError,
+  ToolAliasCollisionError,
+  ToolAliasLedger,
+  ToolAuthority,
+  ToolBillingFact,
+  ToolDisplaySnapshotV1,
+  ToolIdentity,
+  ToolIdentitySource,
+  canonicalToolIdentity,
+  notAssertedToolSnapshot,
+  parseToolIdentity,
+  parseToolDisplaySnapshot,
+} from "../tool-identity"
 
 const Timestamp = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 
@@ -317,6 +333,7 @@ export const ToolPart = Schema.Struct({
   type: Schema.Literal("tool"),
   callID: Schema.String,
   tool: Schema.String,
+  display: Schema.optional(ToolDisplaySnapshotV1),
   state: ToolState,
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
 }).annotate({ identifier: "ToolPart" })

@@ -4,6 +4,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceState } from "@/effect/instance-state"
 import { Permission } from "@/permission"
+import { attachToolDisplay, getToolDisplay } from "../tool-display"
 import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "../message-v2"
 import type { Provider } from "@/provider/provider"
@@ -154,7 +155,12 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     input.model.api.npm === "@ai-sdk/azure" ||
     input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle"
   ) {
-    for (const key of Object.keys(tools)) tools[key] = { ...tools[key], strict: false }
+    for (const key of Object.keys(tools)) {
+      const original = tools[key]!
+      const display = getToolDisplay(original)
+      if (!display) throw new Error(`tool ${key} is missing its source identity`)
+      tools[key] = attachToolDisplay({ ...original, strict: false }, display)
+    }
   }
   if (
     input.model.providerID.includes("github-copilot") &&
@@ -207,7 +213,11 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
 
 function resolveTools(input: Pick<PrepareInput, "tools" | "agent" | "permission" | "user">) {
   const disabled = Permission.disabled(
-    Object.keys(input.tools),
+    Object.entries(input.tools).map(([technicalId, tool]) => {
+      const display = getToolDisplay(tool)
+      if (!display) throw new Error(`tool ${technicalId} is missing its source identity`)
+      return { technicalId, identity: display.identity }
+    }),
     Permission.merge(input.agent.permission, input.permission ?? []),
   )
   return Record.filter(input.tools, (_, k) => input.user.tools?.[k] !== false && !disabled.has(k))

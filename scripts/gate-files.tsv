@@ -121,8 +121,11 @@
 
 # ── core(alpha 自有;本 job 的整包地板不覆盖 packages/core)──────────────────
 11	packages/core	test/alpha-websearch-sovereignty.test.ts	-	受托:V2 core 那份 websearch 副本的主权闸运行时证据(websearch-copies 的运行时半场)
+1	packages/core	test/alpha-tool-identity.test.ts	-	ADR-041/#878:V2 registry 的 identity 权限轴闸。真 ApplicationTools 注册 `report`,只 deny canonical `builtin-v2::report`,materialize 必须不广告该工具;ability 名仍是独立轴。删掉 canonical identity 过滤即红。下界=实际条数 1,不留余量
 
-# ── opencode(仅 alpha 自有)────────────────────────────────────────────────
+# ── opencode(alpha 自有 + ADR 具名收编)────────────────────────────────────
+368	packages/opencode	test/provider/transform.test.ts	-	ADR-041/#878:provider 兼容分支把工具复制成 `strict:false` 后必须保留 WeakMap-backed display identity;真跑 `LLMRequestPrep.prepare` 的 Azure 路径并断言复制结果。该 upstream 测试已由 ADR-041 具名收编;下界=实际条数 368,不留余量
+10	packages/opencode	test/tool/alpha-tool-identity.test.ts	-	ADR-041/#878:身份 canonical 转义/解析、非法与非规范输入拒绝、alias/case/reverse collision、verified binding 才能声明 Alpha Cloud、伪 URL/标题/图标/annotation 不得冒充、identity deny 与不完整 authority fail-closed;另有 code-mode 禁 alias-prefix 反解、首次写入禁 live catalog 两条源码棘轮、StructuredOutput 完整 host identity 与 workflow canonical preapproval 行为闸。下界=实际条数 10,不留余量
 45	packages/opencode	test/tool/alpha-websearch-failure.test.ts	packages/ui-mac/src/main/stream-read-hygiene.test.ts	#647 readBoundedBody 读全 + MAX_BODY_BYTES 硬限 + #489/#223 失败诚实
 5	packages/opencode	test/permission/alpha-ask-deadline.test.ts	-	ADR-038/#668:v1 审批请求无人应答时在期限内**具名失败**(Exit 必须 failure = 绝不到点自动放行)+ 广播 reject 回执 + pending 清空 + 默认期限不被调成无期限
 34	packages/ui-mac	src/main/ext-package-ledger-uninstall.test.ts	packages/ui-mac/src/main/ext-fs-installer.test.ts,packages/ui-mac/src/main/ext-config.test.ts	#706:直接卸载的 claim-aware 判决 —— bundle-only(无 standalone claim 可释放)必须写盘前拒绝而不是谎报 ok,双 owner 只释放 standalone,legacy-protected 永不 GC;并钉住 removeRecordV2 的三形状(拒绝支/只释放支/solo 仍去得了账)。下界=实际条数 34,不留余量:留余量则删一格仍能过
