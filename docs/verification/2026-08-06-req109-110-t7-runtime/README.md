@@ -97,3 +97,25 @@ iteration `2026-W32`, and linked as a native sub-issue of #528 or #529. Thus
 #536 has met its verification exit condition (matrix + evidence + bug routing),
 while the parent product requirements correctly remain open until those bugs
 pass their own packaged gates.
+
+## #859 post-fix candidate
+
+The #859 change separates an in-flight boot fork's token generation from the
+generation that a healthy sidecar has committed. The in-flight value may only
+suppress a duplicate rotation for the same generation; it is never published
+as applied. Health success commits first and then replays the rotation latch,
+while spawn/health failure clears the in-flight value and replays the pending
+rotation. A newer generation is not suppressed by an older in-flight boot.
+
+The deterministic gate covers five repetitions of the 50 ms ordering, boot
+spawn/health failure, a newer generation arriving during boot, source-level
+production wiring, and the existing sidecar terminal matrix. The current
+headless narrow result is 71 tests passing with zero failures, plus a clean
+`ui-mac` typecheck.
+
+This is not yet a packaged PASS. The signed `latency-50ms` five-sample cell must
+still be rerun to establish one boot fork, zero token-only respawns, mount=1,
+reload=0, no loop, and catalog P95 <=2 s. The existing probe can visibly flash
+or launch a window, so it must run only in an owner-approved quiescent desktop
+window; until then #859 remains open and this section makes no packaged or
+latency claim.

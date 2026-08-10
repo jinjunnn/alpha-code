@@ -505,6 +505,81 @@ describe("token rotation latch", () => {
     expect(applied).toEqual([2])
   })
 
+  test("five in-flight boot forks suppress duplicate rotation without claiming applied", async () => {
+    for (let sample = 1; sample <= 5; sample++) {
+      let forked = 1
+      let pendingFork = 2
+      let respawns = 0
+      const applied: number[] = []
+      const latch = createTokenRotationLatch({
+        forkedGeneration: () => forked,
+        pendingForkGeneration: () => pendingFork,
+        canRespawn: () => true,
+        respawn: async () => {
+          respawns++
+          return true
+        },
+        onApplied: (generation) => applied.push(generation),
+      })
+
+      expect(await latch.accept(result("refreshed", 2), `boot-grace-${sample}`)).toBe(false)
+      expect(respawns).toBe(0)
+      expect(applied).toEqual([])
+
+      forked = 2
+      pendingFork = 0
+      expect(await latch.flush()).toBe(true)
+      expect(respawns).toBe(0)
+      expect(applied).toEqual([2])
+    }
+  })
+
+  test("a failed in-flight boot fork releases the pending generation for one reliable rotation", async () => {
+    let forked = 1
+    let pendingFork = 2
+    let respawns = 0
+    const latch = createTokenRotationLatch({
+      forkedGeneration: () => forked,
+      pendingForkGeneration: () => pendingFork,
+      canRespawn: () => true,
+      respawn: async () => {
+        respawns++
+        forked = 2
+        return true
+      },
+    })
+
+    expect(await latch.accept(result("refreshed", 2), "boot-grace")).toBe(false)
+    expect(respawns).toBe(0)
+
+    pendingFork = 0
+    expect(await latch.flush()).toBe(true)
+    expect(respawns).toBe(1)
+  })
+
+  test("a newer generation rotates once while an older boot fork is still in flight", async () => {
+    let forked = 1
+    const applied: number[] = []
+    let respawns = 0
+    const latch = createTokenRotationLatch({
+      forkedGeneration: () => forked,
+      pendingForkGeneration: () => 2,
+      canRespawn: () => true,
+      respawn: async () => {
+        respawns++
+        forked = 3
+        return true
+      },
+      onApplied: (generation) => applied.push(generation),
+    })
+
+    expect(await latch.accept(result("refreshed", 3), "newer-than-boot")).toBe(true)
+    expect(respawns).toBe(1)
+    expect(applied).toEqual([3])
+    expect(await latch.flush()).toBe(true)
+    expect(respawns).toBe(1)
+  })
+
   // R2 新 Minor2:onApplied 的消费方(auth publish)仍可能抛;latch 不得被它 derail。
   test("an onApplied consumer that throws does not derail the latch", async () => {
     let forked = 1
