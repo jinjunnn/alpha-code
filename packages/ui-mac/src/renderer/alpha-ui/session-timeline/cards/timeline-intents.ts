@@ -21,10 +21,22 @@ export interface TimelineOpenFileIntent {
   path: string
 }
 
+/** 用户消息「编辑重发」的现有会话回退入口；text 是该消息的原始文本。 */
+export interface TimelineEditUserMessageIntent {
+  sessionID: string
+  messageID: string
+  text: string
+}
+
 export interface TimelineIntents {
   focusArtifact?: (intent: TimelineFocusArtifactIntent) => void
   openSession?: (sessionID: string) => void
   openFile?: (intent: TimelineOpenFileIntent) => void
+  /**
+   * 用户消息「编辑重发」:宿主接现有 session.revert + composer 预填；缺席即不出按钮。
+   * 宿主负责明确失败反馈；时间线本身不猜写入结果。
+   */
+  editUserMessage?: (intent: TimelineEditUserMessageIntent) => void | Promise<void>
   /**
    * 中断态「继续生成」:绑定层接现有会话发送入口(v2 session.prompt);缺席即中断行无续钮。
    * 返回 Promise 时,拒绝 = 发送失败(admission 前不产生任何 session_status 事件,typed

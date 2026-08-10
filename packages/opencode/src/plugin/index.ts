@@ -33,7 +33,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
 
 type State = {
-  hooks: Hooks[]
+  hooks: { origin: string; value: Hooks }[]
 }
 
 // Hook names that follow the (input, output) => Promise<void> trigger pattern
@@ -52,6 +52,7 @@ export interface Interface {
     output: Output,
   ) => Effect.Effect<Output>
   readonly list: () => Effect.Effect<Hooks[]>
+  readonly tools: () => Effect.Effect<{ origin: string; tools: NonNullable<Hooks["tool"]> }[]>
   readonly init: () => Effect.Effect<void>
 }
 
@@ -107,16 +108,22 @@ function getLegacyPlugins(mod: Record<string, unknown>) {
   return result
 }
 
-async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput, hooks: Hooks[]) {
+async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput, hooks: State["hooks"]) {
   const plugin = readV1Plugin(load.mod, load.spec, "server", "detect")
   if (plugin) {
-    await resolvePluginId(load.source, load.spec, load.target, readPluginId(plugin.id, load.spec), load.pkg)
-    hooks.push(await (plugin as PluginModule).server(input, load.options))
+    const origin = await resolvePluginId(
+      load.source,
+      load.spec,
+      load.target,
+      readPluginId(plugin.id, load.spec),
+      load.pkg,
+    )
+    hooks.push({ origin, value: await (plugin as PluginModule).server(input, load.options) })
     return
   }
 
   for (const server of getLegacyPlugins(load.mod)) {
-    hooks.push(await server(input, load.options))
+    hooks.push({ origin: load.spec, value: await server(input, load.options) })
   }
 }
 
@@ -129,7 +136,7 @@ const layer = Layer.effect(
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Plugin.state")(function* (ctx) {
-        const hooks: Hooks[] = []
+        const hooks: State["hooks"] = []
         const bridge = yield* EffectBridge.make()
 
         function publishPluginError(message: string) {
@@ -171,7 +178,7 @@ const layer = Layer.effect(
             Effect.tapError((error) => Effect.logError("failed to load internal plugin", { name: plugin.name, error })),
             Effect.option,
           )
-          if (init._tag === "Some") hooks.push(init.value)
+          if (init._tag === "Some") hooks.push({ origin: `internal:${plugin.name || "anonymous"}`, value: init.value })
         }
 
         const plugins = flags.pure ? [] : (cfg.plugin_origins ?? [])
@@ -238,7 +245,7 @@ const layer = Layer.effect(
         }
 
         // Notify plugins of current config
-        for (const hook of hooks) {
+        for (const { value: hook } of hooks) {
           yield* Effect.tryPromise({
             try: () => Promise.resolve((hook as any).config?.(cfg)),
             catch: errorMessage,
@@ -251,7 +258,7 @@ const layer = Layer.effect(
         const unsubscribe = yield* events.listen((event) => {
           if (event.location?.directory !== ctx.directory) return Effect.void
           return Effect.sync(() => {
-            for (const hook of hooks) {
+            for (const { value: hook } of hooks) {
               void hook["event"]?.({ event: { id: event.id, type: event.type, properties: event.data } as any })
             }
           })
@@ -261,7 +268,7 @@ const layer = Layer.effect(
         yield* Effect.addFinalizer(() =>
           Effect.forEach(
             hooks,
-            (hook) =>
+            ({ value: hook }) =>
               Effect.tryPromise({
                 try: () => Promise.resolve(hook.dispose?.()),
                 catch: errorMessage,
@@ -284,7 +291,7 @@ const layer = Layer.effect(
     >(name: Name, input: Input, output: Output) {
       if (!name) return output
       const s = yield* InstanceState.get(state)
-      for (const hook of s.hooks) {
+      for (const { value: hook } of s.hooks) {
         const fn = hook[name] as any
         if (!fn) continue
         yield* Effect.promise(async () => fn(input, output))
@@ -294,14 +301,19 @@ const layer = Layer.effect(
 
     const list = Effect.fn("Plugin.list")(function* () {
       const s = yield* InstanceState.get(state)
-      return s.hooks
+      return s.hooks.map((item) => item.value)
+    })
+
+    const tools = Effect.fn("Plugin.tools")(function* () {
+      const s = yield* InstanceState.get(state)
+      return s.hooks.flatMap((item) => (item.value.tool ? [{ origin: item.origin, tools: item.value.tool }] : []))
     })
 
     const init = Effect.fn("Plugin.init")(function* () {
       yield* InstanceState.get(state)
     })
 
-    return Service.of({ trigger, list, init })
+    return Service.of({ trigger, list, tools, init })
   }),
 )
 

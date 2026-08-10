@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+import {
+  canEditUserMessageForSession,
+  createSessionEditUserMessageHandler,
+  discardStaleEditRequest,
+} from "./session-edit-user-message"
+import { identityKey, type AlphaSessionLiveSnapshot } from "./session-workspace-core"
 
 const tsx = readFileSync(join(import.meta.dir, "alpha-session-workspace.tsx"), "utf8")
 const shell = readFileSync(join(import.meta.dir, "session-workspace-shell.tsx"), "utf8")
@@ -32,6 +38,98 @@ describe("REQ-125 C1b seam skeleton mount", () => {
     const fail = output.match(/(\d+) fail\b/)?.[1]
     const pass = Number(output.match(/(\d+) pass\b/)?.[1] ?? 0)
     expect({ fail, ran: pass > 0 }).toEqual({ fail: "0", ran: true })
+  })
+})
+
+describe("REQ-125 #862 edit resend production behavior", () => {
+  const identity = { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: "ses_1" }
+  const intent = { sessionID: "ses_1", messageID: "msg_1", text: "完整原文" }
+  const snapshot: AlphaSessionLiveSnapshot = {
+    identity,
+    project: "workspace",
+    title: "session",
+    activity: "running",
+  }
+
+  test("unknown and child session metadata fail closed", () => {
+    expect(canEditUserMessageForSession(identity, undefined)).toBe(false)
+    expect(
+      canEditUserMessageForSession(identity, {
+        id: "ses_1",
+        directory: "/tmp/workspace",
+        title: "session",
+        parentID: "parent",
+      }),
+    ).toBe(false)
+    expect(canEditUserMessageForSession(identity, { id: "ses_1", directory: "/tmp/workspace", title: "session" })).toBe(
+      true,
+    )
+  })
+
+  test("same-session prefill survives while an identity switch discards it", () => {
+    let request: Parameters<typeof discardStaleEditRequest>[0] = {
+      identityKey: identityKey(identity),
+      revision: 1,
+      text: intent.text,
+    }
+    const discard = () => (request = undefined)
+
+    discardStaleEditRequest(request, identity, discard)
+    expect(request).toBeDefined()
+    discardStaleEditRequest(request, { ...identity, sessionID: "ses_2" }, discard)
+    expect(request).toBeUndefined()
+  })
+
+  test("engine error blocks prefill, preserves the reason, and reports failure", async () => {
+    const calls: string[] = []
+    const applied: unknown[] = []
+    const rejected: unknown[] = []
+    const engineError = { code: "revert-rejected" }
+    const handler = createSessionEditUserMessageHandler({
+      current: () => snapshot,
+      accepts: () => true,
+      canEdit: () => true,
+      session: () => ({
+        abort: async () => void calls.push("abort"),
+        revert: async () => (calls.push("revert"), { error: engineError }),
+      }),
+      apply: (request) => applied.push(request),
+      reject: (error) => rejected.push(error),
+    })
+
+    await handler(intent)
+    expect(calls).toEqual(["abort", "revert"])
+    expect(applied).toEqual([])
+    expect(rejected).toHaveLength(1)
+    expect((rejected[0] as Error & { cause?: unknown }).cause).toBe(engineError)
+  })
+
+  test("in-flight duplicate reuses one revert and an identity switch never prefills", async () => {
+    let resolveRevert!: (value: unknown) => void
+    const reverted = new Promise<unknown>((resolve) => (resolveRevert = resolve))
+    let accepted = true
+    let revertCalls = 0
+    const applied: unknown[] = []
+    const handler = createSessionEditUserMessageHandler({
+      current: () => ({ ...snapshot, activity: "idle" }),
+      accepts: () => accepted,
+      canEdit: () => true,
+      session: () => ({
+        abort: async () => {},
+        revert: async () => (revertCalls++, reverted),
+      }),
+      apply: (request) => applied.push(request),
+      reject: () => {},
+    })
+
+    const first = handler(intent)
+    const duplicate = handler(intent)
+    await Promise.resolve()
+    expect(revertCalls).toBe(1)
+    accepted = false
+    resolveRevert({ data: true })
+    await Promise.all([first, duplicate])
+    expect(applied).toEqual([])
   })
 })
 
@@ -92,15 +190,27 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
     // switch tears down the old instance (its cleanup captures under its own keyed key) and
     // mounts a fresh one for the new identity. Key and instance lifecycle are one, so there is no
     // "frozen key vs reactive directory" split: continued edits after a switch land in the new key.
-    expect(composerMount).toMatch(/when=\{identityKey\(props\.identity\(\)\)\}/)
+    expect(composerMount).toContain("const key = identityKey(props.identity())")
+    expect(composerMount).toContain("when={mount()}")
     expect(composerMount).toContain("keyed")
-    // restore/capture use the keyed value (mountedKey), never a cleanup-time re-read of identity().
-    expect(composerMount).toMatch(/initialText=\{props\.drafts\.restore\(mountedKey\)\}/)
-    expect(composerMount).toMatch(/onDraftCapture=\{[^}]*props\.drafts\.capture\(mountedKey,\s*draft\)/)
+    // restore/capture use the memoized mounted identity key, never a cleanup-time re-read of identity().
+    expect(composerMount).toContain("initialText: props.drafts.restore(key)")
+    expect(composerMount).toContain("initialText={mounted.initialText}")
+    expect(composerMount).toMatch(/onDraftCapture=\{[^}]*props\.drafts\.capture\(mounted\.key,\s*draft\)/)
     expect(composerMount).not.toMatch(/capture\(identityKey\(/)
     // Identity undefined ⇒ no composer, just a light placeholder (mounts once identity resolves;
     // avoids the empty-key drop).
     expect(composerMount).toContain("a-swk-composer-pending")
+  })
+
+  test("#862 编辑重发接入 fail-closed session info 闸与生产行为函数", () => {
+    expect(tsx).toContain("canEditUserMessageForSession")
+    expect(tsx).toContain("createSessionEditUserMessageHandler")
+    expect(tsx).toContain("discardStaleEditRequest(editRequest(), current()?.identity")
+    expect(tsx).toContain('pushToast({ kind: "error", title: t("alpha.timeline.editResendFailed") })')
+    expect(dock).toContain("editRequest={props.editRequest}")
+    expect(composerMount).toContain("edit?.identityKey === key")
+    expect(composerMount).toContain("revision: edit.revision")
   })
 
   test("workspace owns the single session-page titlebar and its drag region (#574)", () => {
@@ -122,9 +232,7 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
 
   test("keeps the single session composition and existing Alpha Recovery boundary", () => {
     expect(rendererIndex).toContain(`session: (projects: AlphaProjectsApi) => alphaSessionWorkspaceSurface(projects)`)
-    expect(rendererIndex).toContain(
-      `[productionRoutes.session.surface]: productionRoutes.session.mount(alphaProjects)`,
-    )
+    expect(rendererIndex).toContain(`[productionRoutes.session.surface]: productionRoutes.session.mount(alphaProjects)`)
     expect(upstreamApp).toContain(`function createTargetSessionRoute(`)
     expect(upstreamApp).toContain(`<TargetSessionRouteContent content={Content} />`)
     expect(upstreamApp).toContain(`<Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />`)

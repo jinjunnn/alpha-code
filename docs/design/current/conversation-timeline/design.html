@@ -18,7 +18,7 @@
   <div class="sec-kicker">P0 · 时间线全量重做</div>
   <h2 class="t">把整条时间线统一成一套克制、信息密度高的 alpha 卡片语言</h2>
   <p class="lede">本稿覆盖经真机 DOM 核对的 <b>全部 ~52 个构件</b>(取代旧稿只覆盖 1/3)。设计取向:开发者工具应当<strong>安静、可扫读、密而不噪</strong> —— 中性灰底 + 单一克制 indigo 强调,工具按类型着色,运动只用在状态变化的高价值瞬间。每块都标注了真机 <span class="mono">data-component/data-slot</span> 钩子 + 接缝 + 现状(<span class="badge-st done" style="margin:0">已优化</span> / <span class="badge-st part" style="margin:0">部分</span> / <span class="badge-st gap" style="margin:0">裸样式</span>),因此它也是落地 spec。</p>
-  <div class="note"><b>本稿同时是时间线组件的全量活稿</b>:组件帧按 ①–⑤ 分区陈列;已批的「产物链接行与右栏预览联动」增量已并入 ⑥ 节(帧 verbatim 引自增量稿);各消息类型的帧覆盖情况与缺帧待补,见 ⑦「<a href="#inventory">组件索引与待补</a>」。整页装配(单一顶栏 / 右栏四面板 / 输入框停靠)见 <a href="../session-workspace/design.html">session-workspace 整页稿</a>;本稿只管时间线行类型本身,两稿表述冲突时组件形态以本稿为准。<br><b>2026-07-23 补帧更新</b>:新增回合级错误卡(②)、匹配文件卡(③)、用户消息内联代码评论卡(①)三帧;附件卡与子任务卡重锚 v2 形态(帧外注记「由 v1 形态更新」);渲染位 / 回合分隔 / 右栏历史参照三处帧外注记修正;待补清单同步。<br><b>2026-07-24 补帧更新</b>:新增 bash 流式输出帧(③)、文件行徽章六态一览(③)、助手侧媒体预览行(②)、会话内空态帧(④)四帧;待补仅剩「消息导航(代码未接线)」一项。</div>
+  <div class="note"><b>本稿同时是时间线组件的全量活稿</b>:组件帧按 ①–⑤ 分区陈列;已批的「产物链接行与右栏预览联动」增量已并入 ⑥ 节(帧 verbatim 引自增量稿);各消息类型的帧覆盖情况与缺帧待补,见 ⑦「<a href="#inventory">组件索引与待补</a>」。整页装配(单一顶栏 / 右栏四面板 / 输入框停靠)见 <a href="../session-workspace/design.html">session-workspace 整页稿</a>;本稿只管时间线行类型本身,两稿表述冲突时组件形态以本稿为准。<br><b>2026-07-23 补帧更新</b>:新增回合级错误卡(②)、匹配文件卡(③)、用户消息内联代码评论卡(①)三帧;附件卡与子任务卡重锚 v2 形态(帧外注记「由 v1 形态更新」);渲染位 / 回合分隔 / 右栏历史参照三处帧外注记修正;待补清单同步。<br><b>2026-07-24 补帧更新</b>:新增 bash 流式输出帧(③)、文件行徽章六态一览(③)、助手侧媒体预览行(②)、会话内空态帧(④)四帧;待补仅剩「消息导航(代码未接线)」一项。<br><b>2026-08-09 已批增量</b>:③ 新增全来源来源徽标、安全通用降级与默认折叠开发者详情；未知 / 第三方工具严格 metadata-only。</div>
 
   <!-- ════════════════ USER INPUT ════════════════ -->
   <div class="sec-kicker" id="user" style="margin-top:40px">① 用户输入侧</div>
@@ -252,6 +252,42 @@ admission · 阈值边界 …<span class="cur"></span></div></div></div>
   <div class="note"><b>新帧 · bash 流式输出</b>:运行中的命令卡沿用通用运行态(强调边框 + 扫线 + 运行 chip),输出体 = 终端流实时增行、尾行块状光标;命令结束即转为其上方的完成态帧 —— 状态翻「退出 N」、光标消失、输出定格,卡片本体不换。<b>新帧 · 文件行徽章六态一览</b>:读取 / 写入 / 移动为本次补齐,新增 / 修改 / 删除与应用补丁卡同一套;徽章只表动作类别,统计徽标照旧。</div>
   <div class="note warn"><b>渲染位注记</b>:本节的「请求审批」待批卡、任务清单卡、提问可选项卡,真实渲染位为<b>输入框上方的停靠区</b>(不是时间线行);落地时挂载点以 <a href="../session-workspace/design.html">session-workspace 稿</a>为准。此处帧只定卡片形态。<br><b>审批例外(2026-07-26 owner 裁决)</b>:「请求审批」待批卡<b>不走停靠区</b> —— 审批统一由独立 Permission 对话框呈现(强模态、五栏事实、Esc 不可关闭),session-workspace 稿的审批停靠帧已随该裁决作废。此处审批帧仅存卡片形态的历史参照,不再是落地锚点。</div>
 
+  <div class="label" id="tool-provenance">已批增量 · 全来源工具卡与安全通用降级（2026-08-09）</div>
+  <div class="note"><b>来源先于外观；未知默认不展开。</b>专用卡只由完整稳定 identity 命中 Alpha 自有展示规则。第三方工具即便自称 <span class="mono">bash</span> 或“Alpha 官方”，也只能得到安全通用卡；标题、图标、翻译、annotation 与徽标永不反向参与授权、工具策略或计费。</div>
+  <div class="prov-stage"><div class="prov-stack">
+    <article class="prov-card">
+      <div class="prov-head"><span class="prov-ico local">⌘</span><div class="prov-main"><div class="prov-title"><b>读取</b><span class="prov-badge">本机</span></div><div class="prov-sub">src/session/message.ts · 86 行</div></div><span class="prov-state ok">完成</span></div>
+      <details><summary>› 开发者详情（默认折叠）</summary><div class="prov-dev">builtin::read<br>technical-id: read</div></details>
+    </article>
+    <article class="prov-card">
+      <div class="prov-head"><span class="prov-ico cloud">☁</span><div class="prov-main"><div class="prov-title"><b>网页搜索</b><span class="prov-badge cloud">云端</span></div><div class="prov-sub">“alpha-code e7 …” · 3 条结果</div></div><span class="prov-state ok">完成</span></div>
+      <details><summary>› 开发者详情（默认折叠）</summary><div class="prov-dev">mcp:alpha-cloud:web_search<br>technical-id: alpha_cloud_web_search<br>authority: verified binding · e7…</div></details>
+    </article>
+    <article class="prov-card">
+      <div class="prov-head"><span class="prov-ico third">◇</span><div class="prov-main"><div class="prov-title"><b>第三方 MCP 工具</b><span class="prov-badge third">第三方 MCP</span></div><div class="prov-sub">context7 · resolve-library-id</div></div><span class="prov-state ok">完成</span></div>
+      <div class="prov-body"><div class="prov-safe"><span>◉</span><span><b>详情未展示</b><br>没有命中 Alpha 拥有的展示规则；参数、错误和输出保持隐藏。</span></div><div class="prov-warn">第三方 annotation 只能增加警示，不能把卡片变成“官方 / 安全 / 免费”。</div></div>
+      <details><summary>› 开发者详情（默认折叠）</summary><div class="prov-dev">mcp:context7:resolve-library-id<br>technical-id: context7_resolve-library-id<br>authority: not asserted</div></details>
+    </article>
+    <article class="prov-card">
+      <div class="prov-head"><span class="prov-ico plugin">◆</span><div class="prov-main"><div class="prov-title"><b>插件工具</b><span class="prov-badge">插件</span></div><div class="prov-sub">sample-plugin · bash</div></div><span class="prov-state run">运行中</span></div>
+      <div class="prov-body"><div class="prov-safe"><span>◉</span><span><b>详情未展示</b><br>名字是 <span class="mono">bash</span> 也不会借用内置命令卡。</span></div></div>
+      <details><summary>› 开发者详情（默认折叠）</summary><div class="prov-dev">plugin:sample-plugin:bash<br>technical-id: bash_2</div></details>
+    </article>
+    <article class="prov-card">
+      <div class="prov-head"><span class="prov-ico unknown">?</span><div class="prov-main"><div class="prov-title"><b>未知来源的工具</b><span class="prov-badge">未知来源</span></div><div class="prov-sub">calendar_lookup</div></div><span class="prov-state">失败</span></div>
+      <div class="prov-body"><div class="prov-safe"><span>◉</span><span><b>错误详情已隐藏</b><br>历史行缺少完整来源快照；不查 live registry，也不从别名猜。</span></div></div>
+    </article>
+  </div></div>
+  <table class="imap prov-matrix">
+    <thead><tr><th>来源</th><th>专用卡资格</th><th>参数 / 输出</th><th>云端声明</th></tr></thead>
+    <tbody>
+      <tr><td>内置 / 宿主</td><td>精确 identity 规则</td><td>字段 allowlist + redactor</td><td>仅权威事实</td></tr>
+      <tr><td>Alpha Cloud MCP</td><td>identity + verified binding</td><td>字段 allowlist + redactor</td><td>当次证明快照</td></tr>
+      <tr><td>第三方 MCP / plugin</td><td>默认通用；宿主规则才可升级</td><td>默认不显示</td><td>annotation 不算证明</td></tr>
+      <tr><td>缺 identity / 未知</td><td>无</td><td>不显示</td><td>不推断</td></tr>
+    </tbody>
+  </table>
+
   <!-- ════════════════ STRUCTURE ════════════════ -->
   <div class="sec-kicker" id="struct" style="margin-top:40px">④ 上下文分组 · 回合 · 结构</div>
   <h2 class="t">分组 / 本回合改动 / 压缩 / 回合分隔</h2>
@@ -429,6 +465,7 @@ admission · 阈值边界 …<span class="cur"></span></div></div></div>
       <tr><td>推理 / 思考块(折叠 + 进行中)</td><td>② 助手输出侧</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>通用工具卡四态(运行 / 完成 / 错误 / 待批)</td><td>③ 工具卡</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>read · list · grep · webfetch · websearch · task · bash · edit · write · apply_patch · todowrite · question · skill · MCP · 诊断</td><td>③ 工具卡</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
+      <tr><td>全来源徽标 · 安全通用降级 · 折叠开发者详情</td><td>③ 工具卡 · <a href="#tool-provenance">已批增量</a>(2026-08-09)</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>工具折叠分组(已探索)· 本回合改动 · 压缩分隔 · 回合分隔</td><td>④ 结构</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>重试(自动重试卡)</td><td>② 助手输出侧</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>回合级错误卡(限流 / 接口报错 / 上下文超限)</td><td>② 助手输出侧(2026-07-23 补)</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>

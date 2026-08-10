@@ -17,6 +17,9 @@ import {
   MARKDOWN_MAX_CHARS,
   MENTION_LABEL_MAX_CHARS,
   projectTimelineRows,
+  REASONING_MAX_CHARS,
+  REASONING_SUMMARY_MAX_CHARS,
+  reasoningSummary,
   reuseTimelineRows,
   reviewPathOf,
   segmentUserText,
@@ -29,6 +32,28 @@ import {
   TURN_ERROR_MAX_CHARS,
   USER_TEXT_MAX_CHARS,
 } from "./timeline-model"
+
+describe("#863 reasoning 折叠头安全摘要", () => {
+  test("只提取显式标题并清理展示标记；普通正文不猜摘要", () => {
+    expect(reasoningSummary("## 规划 `README` 探查顺序\n\n先列目录")).toBe("规划 README 探查顺序")
+    expect(reasoningSummary("<h3>核对 <em>配置</em></h3>\n正文")).toBe("核对 配置")
+    expect(reasoningSummary("**归纳 [风险](https://example.com)**\n\n正文")).toBe("归纳 风险")
+    expect(reasoningSummary("先列目录看结构,再读 README 抓事实。")).toBeUndefined()
+  })
+
+  test("不从普通正文中段回溯 Markdown 标记，也不把有歧义的 setext 形态当摘要", () => {
+    expect(reasoningSummary("先核对认证流。\n**用户 API key 是 sk-live-example**\n再轮换密钥。")).toBeUndefined()
+    expect(reasoningSummary("先重新考虑计划。\n\n# 内部步骤 4\n继续正文")).toBeUndefined()
+    expect(reasoningSummary("客户记录里有敏感字段。\n---\n继续正文")).toBeUndefined()
+  })
+
+  test("标题在进入常显折叠头前有硬上限", () => {
+    expect(reasoningSummary(`# ${"摘".repeat(REASONING_SUMMARY_MAX_CHARS + 20)}`)).toHaveLength(
+      REASONING_SUMMARY_MAX_CHARS,
+    )
+    expect(reasoningSummary(`${"内".repeat(REASONING_MAX_CHARS)}\n# 预算外标题`)).toBeUndefined()
+  })
+})
 
 function userMsg(id: string, created: number, over: Partial<UserMessage> = {}): UserMessage {
   return {
@@ -483,6 +508,49 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(rows.map((row) => row.kind)).toEqual(["user", "divider", "markdown", "divider"])
     const labels = rows.flatMap((row) => (row.kind === "divider" ? [row.label] : []))
     expect(labels).toEqual(["compaction", "interrupted"])
+    const compaction = rows.find((row) => row.kind === "divider" && row.label === "compaction")
+    if (!compaction || compaction.label !== "compaction") throw new Error("expected compaction divider")
+    expect(compaction.summaryParts).toEqual([])
+  })
+
+  test("压缩助手的既有 summary 收进分隔行,不再重复投影为普通 Markdown/脚注", () => {
+    const summary = textPart("prt_sum", "msg_a1", "## 保留要点\n\n- 已确认安全边界")
+    const rows = project(
+      [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1", { summary: true, mode: "compaction" })],
+      {
+        msg_u1: [{ id: "prt_k1", sessionID: "ses_1", messageID: "msg_u1", type: "compaction", auto: true }],
+        msg_a1: [reasoningPart("prt_reason", "msg_a1", "压缩过程内部推理"), summary],
+      },
+    )
+
+    expect(rows.map((row) => row.kind)).toEqual(["divider"])
+    const divider = rows[0]!
+    if (divider.kind !== "divider" || divider.label !== "compaction") throw new Error("expected compaction divider")
+    expect(divider.summaryParts).toEqual([summary])
+    expect(divider.rev).toContain("prt_sum")
+  })
+
+  test("压缩 summary 未完成时不暴露半截要点,也不回退成普通 Markdown", () => {
+    const rows = project(
+      [
+        userMsg("msg_u1", 1000),
+        assistantMsg("msg_a1", "msg_u1", {
+          summary: true,
+          mode: "compaction",
+          time: { created: 10 },
+        }),
+      ],
+      {
+        msg_u1: [{ id: "prt_k1", sessionID: "ses_1", messageID: "msg_u1", type: "compaction", auto: true }],
+        msg_a1: [textPart("prt_sum", "msg_a1", "尚未完成的半截摘要")],
+      },
+      "busy",
+    )
+
+    expect(rows.map((row) => row.kind)).toEqual(["divider", "thinking"])
+    const divider = rows[0]!
+    if (divider.kind !== "divider" || divider.label !== "compaction") throw new Error("expected compaction divider")
+    expect(divider.summaryParts).toEqual([])
   })
 
   test("空会话投影为空行集(空态由视图渲染)", () => {

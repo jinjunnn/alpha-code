@@ -112,6 +112,8 @@
 
 .a-tl-divider {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
 }
 
@@ -124,7 +126,50 @@
   border-radius: var(--a-radius-full);
   background: var(--a-bg-muted);
   color: var(--a-text-tertiary);
+  font: inherit;
   font-size: var(--a-text-xs);
+  cursor: pointer;
+}
+
+.a-tl-divider-pill:disabled {
+  cursor: default;
+}
+
+.a-tl-compaction-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-tl-compaction-chevron {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-tl-divider[data-expanded="true"] .a-tl-compaction-chevron {
+  transform: rotate(90deg);
+}
+
+.a-tl-compaction-body {
+  width: min(720px, calc(100% - 24px));
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-secondary);
 }
 
 /* 中断态(design ② .interrupted):左对齐安静行 + 续钮,不占用告警色底。 */
@@ -381,11 +426,49 @@
 }
 
 .a-tl-user-meta {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: flex-end;
   padding-right: 2px;
   color: var(--a-text-disabled);
   font-size: var(--a-text-2xs);
   opacity: 0;
   transition: opacity var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-tl-user-actions {
+  display: inline-flex;
+  gap: 1px;
+}
+
+.a-tl-user-actions button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+}
+
+.a-tl-user-actions button:hover,
+.a-tl-user-actions button:focus-visible {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-tl-user-actions svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .a-tl-user:hover .a-tl-user-meta,
@@ -490,7 +573,19 @@ button.a-tl-cmd-chip:focus-visible {
 }
 
 .a-tl-cmd-body {
-  max-width: 100%;
+  max-width: min(520px, 100%);
+  max-height: 200px;
+  padding: 11px 13px;
+  overflow: auto;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+  line-height: var(--a-leading-normal);
+  overflow-wrap: anywhere;
+  text-align: left;
+  white-space: pre-wrap;
 }
 
 /* ── 回合末富脚注(A6/A7:agent·model·时长·tokens + hover 动作) ──────── */
@@ -690,7 +785,27 @@ button.a-tl-cmd-chip:focus-visible {
 }
 
 .a-tl-reason-duration {
+  flex: none;
   color: var(--a-text-tertiary);
+}
+
+.a-tl-reason-meta {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  color: var(--a-text-tertiary);
+}
+
+.a-tl-reason-separator {
+  flex: none;
+}
+
+.a-tl-reason-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .a-tl-reason-chev {

@@ -23,6 +23,8 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { canonicalToolIdentity, ToolAliasLedger, type ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
+import { attachToolDisplay } from "./tool-display"
 
 const MCP_RESOURCE_TOOLS = {
   list: "list_mcp_resources",
@@ -42,7 +44,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
-  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "registerToolDisplay">
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
@@ -55,6 +57,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
   const flags = yield* RuntimeFlags.Service
+  const aliases = new ToolAliasLedger()
+
+  const register = (technicalId: string, value: AITool, display: ToolDisplaySnapshotV1) => {
+    aliases.add(technicalId, display.identity)
+    input.processor.registerToolDisplay(technicalId, display)
+    tools[technicalId] = attachToolDisplay(value, display)
+  }
 
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
     sessionID: input.session.id,
@@ -96,13 +105,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     permission: input.session.permission,
   })) {
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
-    tools[item.id] = tool({
+    const value = tool({
       description: item.description,
       inputSchema: jsonSchema(schema),
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
-            const ctx = context(args, options)
+            const ctx = context(args as Record<string, unknown>, options)
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
@@ -131,13 +140,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         )
       },
     })
+    register(item.id, value, {
+      identity: item.identity,
+      technicalId: item.id,
+      authority: { kind: "not-asserted" },
+    })
   }
 
   const hasMcpResourceServer = Object.values(yield* mcp.clients()).some(
     (client) => !!client.getServerCapabilities()?.resources,
   )
   if (hasMcpResourceServer) {
-    tools[MCP_RESOURCE_TOOLS.list] = tool({
+    const listResources = tool({
       description:
         "Lists resources provided by connected MCP servers. Resources provide context such as files, database schemas, or application-specific information.",
       inputSchema: jsonSchema(
@@ -218,8 +232,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         )
       },
     })
+    register(MCP_RESOURCE_TOOLS.list, listResources, {
+      identity: { source: "host", origin: "", name: MCP_RESOURCE_TOOLS.list },
+      technicalId: MCP_RESOURCE_TOOLS.list,
+      authority: { kind: "not-asserted" },
+    })
 
-    tools[MCP_RESOURCE_TOOLS.listTemplates] = tool({
+    const listTemplates = tool({
       description:
         "Lists resource templates provided by connected MCP servers. Resource templates are parameterized resources that can be read after filling in their URI template.",
       inputSchema: jsonSchema(
@@ -301,8 +320,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         )
       },
     })
+    register(MCP_RESOURCE_TOOLS.listTemplates, listTemplates, {
+      identity: { source: "host", origin: "", name: MCP_RESOURCE_TOOLS.listTemplates },
+      technicalId: MCP_RESOURCE_TOOLS.listTemplates,
+      authority: { kind: "not-asserted" },
+    })
 
-    tools[MCP_RESOURCE_TOOLS.read] = tool({
+    const readResource = tool({
       description:
         "Read a specific resource from an MCP server using the server name and resource URI. The URI is an MCP identifier and does not need to be a file URL.",
       inputSchema: jsonSchema(
@@ -383,11 +407,17 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         )
       },
     })
+    register(MCP_RESOURCE_TOOLS.read, readResource, {
+      identity: { source: "host", origin: "", name: MCP_RESOURCE_TOOLS.read },
+      technicalId: MCP_RESOURCE_TOOLS.read,
+      authority: { kind: "not-asserted" },
+    })
   }
 
   if (flags.experimentalCodeMode) return tools
 
   for (const [key, entry] of Object.entries(yield* mcp.tools())) {
+    if (!entry.identity || !entry.authority) throw new Error(`MCP tool ${key} is missing its source identity`)
     const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
     const execute = item.execute
     if (!execute) continue
@@ -405,7 +435,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             { args },
           )
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
-            yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
+            yield* ctx.ask({
+              permission: canonicalToolIdentity(entry.identity!),
+              metadata: {},
+              patterns: ["*"],
+              always: ["*"],
+            })
             return yield* Effect.promise(() => execute(args, opts))
           }).pipe(
             Effect.withSpan("Tool.execute", {
@@ -486,7 +521,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           return output
         }),
       )
-    tools[key] = item
+    register(key, item, { identity: entry.identity, technicalId: key, authority: entry.authority })
   }
 
   return tools

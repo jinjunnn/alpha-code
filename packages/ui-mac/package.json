@@ -14,6 +14,7 @@
   "scripts": {
     "typecheck": "tsgo -b",
     "test": "bun test src",
+    "bench:timeline": "bun ./benchmarks/timeline/run.ts",
     "test:live:req087": "bun test --timeout 300000 test-live/req087",
     "predev": "bun ./scripts/predev.ts",
     "dev": "bun ./scripts/launch.ts dev",
@@ -69,6 +70,7 @@
     "sury": "11.0.0-alpha.4",
     "typescript": "~5.6.2",
     "vite": "catalog:",
+    "vite-plugin-solid": "catalog:",
     "zod-openapi": "5.4.6"
   },
   "optionalDependencies": {

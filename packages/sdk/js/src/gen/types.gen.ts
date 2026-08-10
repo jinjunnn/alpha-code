@@ -234,6 +234,34 @@ export type FilePart = {
   source?: FilePartSource
 }
 
+export type ToolIdentity = {
+  source: "builtin" | "builtin-v2" | "plugin" | "mcp" | "host"
+  origin: string
+  name: string
+}
+
+export type ToolAuthority =
+  | {
+      kind: "not-asserted"
+    }
+  | {
+      kind: "alpha-cloud"
+      bindingId: string
+      evidenceDigest: string
+    }
+
+export type ToolBillingFact = {
+  class: string
+  evidenceId: string
+}
+
+export type ToolDisplaySnapshotV1 = {
+  identity: ToolIdentity
+  technicalId: string
+  authority: ToolAuthority
+  billing?: ToolBillingFact
+}
+
 export type ToolStatePending = {
   status: "pending"
   input: {
@@ -298,6 +326,7 @@ export type ToolPart = {
   type: "tool"
   callID: string
   tool: string
+  display?: ToolDisplaySnapshotV1
   state: ToolState
   metadata?: {
     [key: string]: unknown

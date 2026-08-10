@@ -54,31 +54,33 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
+import { ToolAliasLedger, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel
 }
 
-type TaskDef = Tool.InferDef<typeof TaskTool>
-type ReadDef = Tool.InferDef<typeof ReadTool>
+export type RegisteredTool<T extends Tool.Def = Tool.Def> = T & { readonly identity: ToolIdentity }
+type TaskDef = RegisteredTool<Tool.InferDef<typeof TaskTool>>
+type ReadDef = RegisteredTool<Tool.InferDef<typeof ReadTool>>
 
 type State = {
-  custom: Tool.Def[]
-  builtin: Tool.Def[]
+  custom: RegisteredTool[]
+  builtin: RegisteredTool[]
   task: TaskDef
   read: ReadDef
 }
 
 export interface Interface {
   readonly ids: () => Effect.Effect<string[]>
-  readonly all: () => Effect.Effect<Tool.Def[]>
+  readonly all: () => Effect.Effect<RegisteredTool[]>
   readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
   readonly tools: (model: {
     providerID: ProviderV2.ID
     modelID: ModelV2.ID
     agent: Agent.Info
     permission?: PermissionV1.Ruleset
-  }) => Effect.Effect<Tool.Def[]>
+  }) => Effect.Effect<RegisteredTool[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ToolRegistry") {}
@@ -115,9 +117,10 @@ const layer = Layer.effect(
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
-        const custom: Tool.Def[] = []
+        const custom: RegisteredTool[] = []
+        const aliases = new ToolAliasLedger()
 
-        function fromPlugin(id: string, def: ToolDefinition): Tool.Def {
+        function fromPlugin(id: string, origin: string, name: string, def: ToolDefinition): RegisteredTool {
           // Plugin tools still expose Zod args publicly; keep that compatibility
           // boxed at the registry boundary and give the LLM the original JSON Schema.
           // Normalize missing args to `{}` once — pre-1.14.49 the code was
@@ -130,8 +133,10 @@ const layer = Layer.effect(
           const parameters = zodParams
             ? Schema.declare<unknown>((u): u is unknown => zodParams.safeParse(u).success)
             : Schema.Unknown
+          const identity = aliases.add(id, { source: "plugin", origin, name })
           return {
             id,
+            identity,
             parameters,
             jsonSchema,
             description: def.description,
@@ -187,14 +192,14 @@ const layer = Layer.effect(
           const mod = yield* Effect.promise(() => import(pathToFileURL(match).href))
           for (const [id, def] of Object.entries(mod)) {
             if (!isPluginTool(def)) continue
-            custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
+            custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, namespace, id, def))
           }
         }
 
-        const plugins = yield* plugin.list()
+        const plugins = yield* plugin.tools()
         for (const p of plugins) {
-          for (const [id, def] of Object.entries(p.tool ?? {})) {
-            custom.push(fromPlugin(id, def))
+          for (const [id, def] of Object.entries(p.tools)) {
+            custom.push(fromPlugin(id, p.origin, id, def))
           }
         }
 
@@ -221,36 +226,45 @@ const layer = Layer.effect(
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
 
+        const builtin = [
+          tool.invalid,
+          ...(questionEnabled ? [tool.question] : []),
+          tool.shell,
+          tool.read,
+          tool.glob,
+          tool.grep,
+          tool.edit,
+          tool.write,
+          tool.task,
+          tool.fetch,
+          tool.todo,
+          tool.search,
+          tool.skill,
+          tool.patch,
+          ...(tool.execute ? [tool.execute] : []),
+          ...(flags.experimentalLspTool ? [tool.lsp] : []),
+          ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+        ].map((item) => ({
+          ...item,
+          identity: aliases.add(item.id, {
+            source: item.id === "execute" ? "host" : "builtin",
+            origin: "",
+            name: item.id,
+          }),
+        })) as RegisteredTool[]
+
         return {
           custom,
-          builtin: [
-            tool.invalid,
-            ...(questionEnabled ? [tool.question] : []),
-            tool.shell,
-            tool.read,
-            tool.glob,
-            tool.grep,
-            tool.edit,
-            tool.write,
-            tool.task,
-            tool.fetch,
-            tool.todo,
-            tool.search,
-            tool.skill,
-            tool.patch,
-            ...(tool.execute ? [tool.execute] : []),
-            ...(flags.experimentalLspTool ? [tool.lsp] : []),
-            ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
-          ],
-          task: tool.task,
-          read: tool.read,
+          builtin,
+          task: builtin.find((item) => item.id === tool.task.id)! as TaskDef,
+          read: builtin.find((item) => item.id === tool.read.id)! as ReadDef,
         }
       }),
     )
 
     const all: Interface["all"] = Effect.fn("ToolRegistry.all")(function* () {
       const s = yield* InstanceState.get(state)
-      return [...s.builtin, ...s.custom] as Tool.Def[]
+      return [...s.builtin, ...s.custom]
     })
 
     const ids: Interface["ids"] = Effect.fn("ToolRegistry.ids")(function* () {
@@ -304,7 +318,7 @@ const layer = Layer.effect(
 
       return yield* Effect.forEach(
         visible,
-        Effect.fnUntraced(function* (tool: Tool.Def) {
+        Effect.fnUntraced(function* (tool: RegisteredTool) {
           const output = {
             description: tool.description,
             parameters: tool.parameters,
@@ -317,6 +331,7 @@ const layer = Layer.effect(
               : undefined
           return {
             id: tool.id,
+            identity: tool.identity,
             description: [
               output.description,
               tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,

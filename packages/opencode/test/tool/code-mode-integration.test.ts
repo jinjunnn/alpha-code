@@ -135,7 +135,12 @@ async function buildTool() {
   const listed = (await client.listTools()).tools as MCPToolDef[]
   const mcpTools: Record<string, MCP.McpTool> = {}
   for (const def of listed) {
-    mcpTools[McpCatalog.toolName(SERVER, def.name)] = { def, client: client as unknown as Client }
+    mcpTools[McpCatalog.toolName(SERVER, def.name)] = {
+      def,
+      client: client as unknown as Client,
+      identity: { source: "mcp", origin: SERVER, name: def.name },
+      authority: { kind: "not-asserted" },
+    }
   }
 
   const layer = Layer.mergeAll(
@@ -294,7 +299,7 @@ describe("code mode integration (real MCP server)", () => {
     expect(out.metadata.toolCalls).toEqual([])
   })
 
-  test("asks permission for each MCP call, keyed by the flat catalog name", async () => {
+  test("asks permission for each MCP call, keyed by canonical identity", async () => {
     const asked: string[] = []
     const permCtx: Tool.Context = { ...ctx, ask: (req: any) => Effect.sync(() => void asked.push(req.permission)) }
     await Effect.runPromise(
@@ -309,7 +314,7 @@ describe("code mode integration (real MCP server)", () => {
         permCtx,
       ),
     )
-    expect(asked).toEqual(["fixtures_add", "fixtures_get_text"])
+    expect(asked).toEqual(["mcp:fixtures:add", "mcp:fixtures:get_text"])
   })
 
   test("streams running/completed metadata for child calls over a real transport", async () => {

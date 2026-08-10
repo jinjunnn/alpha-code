@@ -271,7 +271,7 @@ function conversationRows(status = "idle") {
             sessionID: "ses_1",
             messageID: "msg_a1",
             type: "reasoning",
-            text: "先列目录看结构",
+            text: "**规划探查顺序**\n\n先列目录看结构",
             time: status === "busy" ? { start: 0 } : { start: 0, end: 6000 },
           },
           {
@@ -357,19 +357,86 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     expect(host.querySelector("[data-alpha-timeline-row='turn']")!.textContent).toContain("新一轮")
   })
 
-  test("推理块默认折叠,点击展开正文并回写 aria-expanded", async () => {
+  test("#862 用户脚注投影可读名,复制原文并发编辑重发 intent;handler 缺席时编辑钮消失", async () => {
+    const copied: string[] = []
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText: (text: string) => (copied.push(text), Promise.resolve()) },
+      configurable: true,
+    })
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    runtime.setTimelineRows(conversationRows())
+    await flush()
+
+    const first = host.querySelector<HTMLElement>("[data-alpha-timeline-row='user']")!
+    const meta = first.querySelector<HTMLElement>(".a-tl-user-meta")!
+    expect(meta.textContent).toContain("发往 Build")
+    expect(meta.textContent).toContain("DeepSeek Reasoner")
+    expect(meta.textContent).not.toContain("deepseek-reasoner")
+
+    const copy = first.querySelector<HTMLButtonElement>("button[aria-label='复制消息']")!
+    const edit = first.querySelector<HTMLButtonElement>("button[aria-label='编辑重发']")!
+    copy.click()
+    edit.click()
+    await flush()
+    expect(copied).toEqual(["对照 README.md 改一版"])
+    expect(runtime.getIntentLog().editUserMessage).toEqual([
+      { sessionID: "ses_1", messageID: "msg_u1", text: "对照 README.md 改一版" },
+    ])
+
+    runtime.setTimelineIntentsEnabled(false)
+    await flush()
+    expect(first.querySelector("button[aria-label='编辑重发']")).toBeNull()
+    expect(first.querySelector("button[aria-label='复制消息']")).not.toBeNull()
+  })
+
+  test("推理块默认折叠并在时长旁显示安全摘要,点击展开正文并回写 aria-expanded", async () => {
     const host = mount()
     runtime.setTimelineRows(conversationRows())
     await flush()
 
     const head = host.querySelector<HTMLButtonElement>(".a-tl-reason-head")!
     expect(head.getAttribute("aria-expanded")).toBe("false")
+    expect(head.querySelector(".a-tl-reason-duration")!.textContent).toBe("6 秒")
+    expect(head.querySelector(".a-tl-reason-summary")!.textContent).toBe("规划探查顺序")
+    expect(head.textContent).toContain("6 秒·规划探查顺序")
     expect(host.querySelector(".a-tl-reason-body")).toBeNull()
 
     head.click()
     await flush()
     expect(head.getAttribute("aria-expanded")).toBe("true")
     expect(host.querySelector(".a-tl-reason-body")!.textContent).toContain("先列目录看结构")
+  })
+
+  test("推理正文没有显式摘要时稳定降级为时长,不从正文猜常显文案", async () => {
+    const host = mount()
+    const rows = conversationRows()
+    const reasoning = rows.find((row) => row.kind === "reasoning")
+    if (!reasoning || reasoning.kind !== "reasoning") throw new Error("reasoning fixture missing")
+    reasoning.part.text = "先列目录看结构,再读 README 抓事实。"
+    runtime.setTimelineRows(rows)
+    await flush()
+
+    const head = host.querySelector<HTMLButtonElement>(".a-tl-reason-head")!
+    expect(head.querySelector(".a-tl-reason-duration")!.textContent).toBe("6 秒")
+    expect(head.querySelector(".a-tl-reason-summary")).toBeNull()
+    expect(head.querySelector(".a-tl-reason-separator")).toBeNull()
+    expect(head.textContent).not.toContain("先列目录")
+  })
+
+  test("推理时长缺席但完成态有起始摘要时只显示摘要,不显示分隔点", async () => {
+    const host = mount()
+    const rows = conversationRows()
+    const reasoning = rows.find((row) => row.kind === "reasoning")
+    if (!reasoning || reasoning.kind !== "reasoning") throw new Error("reasoning fixture missing")
+    reasoning.part.time = { start: 0 }
+    runtime.setTimelineRows(rows)
+    await flush()
+
+    const head = host.querySelector<HTMLButtonElement>(".a-tl-reason-head")!
+    expect(head.querySelector(".a-tl-reason-summary")!.textContent).toBe("规划探查顺序")
+    expect(head.querySelector(".a-tl-reason-duration")).toBeNull()
+    expect(head.querySelector(".a-tl-reason-separator")).toBeNull()
   })
 
   test("流式回合:末段 Markdown 带光标,推理块进行中标记,busy 空输出显示思考中", async () => {
@@ -380,6 +447,7 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     expect(host.querySelector("[data-alpha-timeline-row='markdown'][data-streaming='true']")).not.toBeNull()
     expect(host.querySelector(".a-tl-cursor")).not.toBeNull()
     expect(host.querySelector(".a-tl-reason[data-streaming='true']")).not.toBeNull()
+    expect(host.querySelector(".a-tl-reason-summary")).toBeNull()
 
     runtime.setTimelineRows(
       model.projectTimelineRows({
@@ -1117,7 +1185,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     expect(host.querySelector("[data-alpha-timeline-row='media'] .a-media-row")).not.toBeNull()
   })
 
-  test("产物链接行:§⑥ 形态(链接图标+文档名),点击发 focusArtifact(runId+name)", async () => {
+  test("产物链接行:§⑥ 可预览强调/不可预览中性,点击仍发 focusArtifact(runId+name)", async () => {
     const host = mount()
     runtime.setTimelineIntentsEnabled(true)
     runtime.setTimelineRows(
@@ -1128,7 +1196,7 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
           output: JSON.stringify({
             job_id: "job_7f3a",
             status: "completed",
-            artifacts: ["季度经营分析.docx", "营收对比图.png"],
+            artifacts: ["营收对比图.png", "数据底表.parquet"],
           }),
           title: "await",
           metadata: {},
@@ -1141,9 +1209,11 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     const rows = host.querySelector("[data-alpha-timeline-row='artifacts']")!
     expect(rows.getAttribute("role")).toBe("list")
     const links = [...rows.querySelectorAll(".a-artrow")]
-    expect(links.map((el) => el.textContent)).toEqual(["季度经营分析.docx", "营收对比图.png"])
-    ;(links[0] as HTMLButtonElement).click()
-    expect(runtime.getIntentLog().focusArtifact).toEqual([{ name: "季度经营分析.docx", runId: "job_7f3a" }])
+    expect(links.map((el) => el.textContent)).toEqual(["营收对比图.png", "数据底表.parquet"])
+    expect(links.map((el) => el.getAttribute("data-previewable"))).toEqual(["true", "false"])
+    expect((links[1] as HTMLButtonElement).disabled).toBe(false)
+    ;(links[1] as HTMLButtonElement).click()
+    expect(runtime.getIntentLog().focusArtifact).toEqual([{ name: "数据底表.parquet", runId: "job_7f3a" }])
   })
 })
 
@@ -1275,7 +1345,9 @@ describe("#568 斜杠命令 chip(消费可选 typed 接口)", () => {
     chip.click()
     await flush()
     expect(chip.getAttribute("aria-expanded")).toBe("true")
-    expect(cmd.querySelector(".a-tl-cmd-body")!.textContent).toContain("expanded prompt body")
+    const body = cmd.querySelector(".a-tl-cmd-body")!
+    expect(body.textContent).toContain("expanded prompt body")
+    expect(body.querySelector(".a-tl-bubble")).toBeNull()
 
     runtime.setTimelineRows(slashRows(false))
     await flush()
@@ -1554,6 +1626,21 @@ describe("#589 中断态:左对齐安静行 + 继续生成", () => {
           agent: "build",
           model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
         },
+        {
+          id: "msg_a1",
+          sessionID: "ses_1",
+          role: "assistant",
+          time: { created: 1010, completed: 1020 },
+          parentID: "msg_u1",
+          modelID: "deepseek-reasoner",
+          providerID: "deepseek",
+          mode: "compaction",
+          agent: "compaction",
+          summary: true,
+          path: { cwd: "/tmp", root: "/tmp" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
       ] as never,
       partsOf: (messageID: string) =>
         (messageID === "msg_u1"
@@ -1561,6 +1648,16 @@ describe("#589 中断态:左对齐安静行 + 继续生成", () => {
               { id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "开始" },
               { id: "prt_k1", sessionID: "ses_1", messageID: "msg_u1", type: "compaction", auto: false },
             ]
+          : messageID === "msg_a1"
+            ? [
+                {
+                  id: "prt_sum",
+                  sessionID: "ses_1",
+                  messageID: "msg_a1",
+                  type: "text",
+                  text: "## 保留要点\n\n- 已确认安全边界\n- 下一步补验证",
+                },
+              ]
           : []) as never,
       status: "idle",
     })
@@ -1590,15 +1687,51 @@ describe("#589 中断态:左对齐安静行 + 继续生成", () => {
     expect(host.querySelector(".a-tl-interrupted")!.textContent).toContain("已由你停止")
   })
 
-  test("压缩分隔(同一行类的另一 label)保持既有居中 pill 形态", async () => {
+  test("压缩分隔具备已批图标/文案/展开指示;原生 button 支持键盘语义且鼠标展开既有摘要", async () => {
     const host = mount()
     runtime.setTimelineRows(compactionRows())
     await flush()
 
     const row = host.querySelector("[data-alpha-timeline-row='divider'][data-label='compaction']")!
     expect(row.classList.contains("a-tl-divider")).toBe(true)
-    expect(row.querySelector(".a-tl-divider-pill")!.textContent).toBe("上下文已压缩")
+    const pill = row.querySelector<HTMLButtonElement>("button.a-tl-divider-pill")!
+    expect(pill.type).toBe("button")
+    expect(pill.disabled).toBe(false)
+    expect(pill.textContent).toBe("上下文已压缩·保留要点")
+    expect(pill.getAttribute("aria-expanded")).toBe("false")
+    expect(pill.querySelector(".a-tl-compaction-icon")).not.toBeNull()
+    expect(pill.querySelector(".a-tl-compaction-chevron")).not.toBeNull()
+    expect(host.querySelector("[data-alpha-compaction-summary]")).toBeNull()
+
+    pill.click()
+    await flush()
+    expect(pill.getAttribute("aria-expanded")).toBe("true")
+    expect(row.getAttribute("data-expanded")).toBe("true")
+    expect(host.querySelector("[data-alpha-compaction-summary]")!.textContent).toContain("已确认安全边界")
+
+    pill.click()
+    await flush()
+    expect(pill.getAttribute("aria-expanded")).toBe("false")
+    expect(host.querySelector("[data-alpha-compaction-summary]")).toBeNull()
     expect(host.querySelector(".a-tl-int-continue")).toBeNull()
+  })
+
+  test("压缩分隔没有完成态摘要时只陈述已压缩,不伪装为可展开", async () => {
+    const host = mount()
+    const rows = compactionRows()
+    const divider = rows.find((row) => row.kind === "divider" && row.label === "compaction")
+    if (!divider || divider.label !== "compaction") throw new Error("expected compaction divider")
+    divider.summaryParts = []
+    runtime.setTimelineRows(rows)
+    await flush()
+
+    const pill = host.querySelector<HTMLButtonElement>("button.a-tl-divider-pill")!
+    expect(pill.disabled).toBe(true)
+    expect(pill.textContent).toBe("上下文已压缩")
+    expect(pill.hasAttribute("aria-expanded")).toBe(false)
+    expect(pill.querySelector(".a-tl-compaction-icon")).not.toBeNull()
+    expect(pill.querySelector(".a-tl-compaction-chevron")).toBeNull()
+    expect(host.querySelector("[data-alpha-compaction-summary]")).toBeNull()
   })
 })
 

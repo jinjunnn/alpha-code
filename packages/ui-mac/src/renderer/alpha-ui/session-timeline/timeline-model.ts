@@ -26,12 +26,48 @@ import type { AlphaSessionIdentity } from "../session-workspace/session-workspac
 export const MARKDOWN_MAX_CHARS = 60_000
 export const USER_TEXT_MAX_CHARS = 20_000
 export const REASONING_MAX_CHARS = 20_000
+export const REASONING_SUMMARY_MAX_CHARS = 120
 export const TURN_ERROR_MAX_CHARS = 4_000
 export const RETRY_MESSAGE_MAX_CHARS = 500
 
 export function boundedText(text: string, max: number): { text: string; truncated: boolean } {
   if (text.length <= max) return { text, truncated: false }
   return { text: text.slice(0, max), truncated: true }
+}
+
+/**
+ * 折叠头只消费 reasoning 起始行里的显式标题形态。普通正文不做首句猜测，
+ * 中段 Markdown 也不回溯匹配，避免把原始思维链提升到常显标题；标题本身在
+ * 进入 DOM 前收窄字段帽。
+ */
+export function reasoningSummary(text: string): string | undefined {
+  const markdown = text.slice(0, REASONING_MAX_CHARS).replace(/\r\n?/g, "\n").trimStart()
+  const clean = (value: string) => {
+    const summary = value
+      .replace(/<[^>]+>/g, " ")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/[*_~]+/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+    return summary ? summary.slice(0, REASONING_SUMMARY_MAX_CHARS) : undefined
+  }
+
+  const html = markdown.match(/^<h([1-6])[^>]*>([\s\S]*?)<\/h\1>[ \t]*(?:\n|$)/i)
+  if (html?.[2]) {
+    const summary = clean(html[2])
+    if (summary) return summary
+  }
+
+  const atx = markdown.match(/^#{1,6}[ \t]+(.+?)(?:[ \t]+#+[ \t]*)?[ \t]*(?:\n|$)/)
+  if (atx?.[1]) {
+    const summary = clean(atx[1])
+    if (summary) return summary
+  }
+
+  const strong = markdown.match(/^(?:\*\*(.+?)\*\*|__(.+?)__)[ \t]*(?:\n|$)/)
+  const strongText = strong?.[1] ?? strong?.[2]
+  if (strongText) return clean(strongText)
 }
 
 export interface TimelineSegment {
@@ -127,6 +163,8 @@ export type TimelineRow =
       rev: string
       message: UserMessage
       text: string
+      /** 复制/编辑使用原始正文；渲染仍只消费上限内的 text。 */
+      copyText: () => string
       truncated: boolean
       segments: TimelineSegment[]
       attachments: TimelineAttachment[]
@@ -142,7 +180,16 @@ export type TimelineRow =
   | { kind: "artifacts"; key: string; rev: string; partID: string; links: TimelineArtifactLink[] }
   | { kind: "retry"; key: string; rev: string; userMessageID: string; attempt: number; message: string }
   | { kind: "turnError"; key: string; rev: string; userMessageID: string; name: string; message: string }
-  | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "compaction" | "interrupted" }
+  | {
+      kind: "divider"
+      key: string
+      rev: string
+      userMessageID: string
+      label: "compaction"
+      /** 引擎已生成的 compaction assistant summary;视图默认折叠,不在此生成或猜测内容。 */
+      summaryParts: TextPart[]
+    }
+  | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "interrupted" }
   | { kind: "thinking"; key: string; rev: string; userMessageID: string }
   | {
       kind: "footnote"
@@ -613,6 +660,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         ].join("§"),
         message: userMessage,
         text,
+        copyText: () => rawText,
         truncated,
         segments,
         attachments,
@@ -620,13 +668,25 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         slash,
       })
 
-    if (userParts.some((part) => part.type === "compaction"))
+    const compacted = userParts.some((part) => part.type === "compaction")
+    const compactionSummaryParts = compacted
+      ? turnAssistants.flatMap((assistant) =>
+          assistant.summary && typeof assistant.time.completed === "number"
+            ? input
+                .partsOf(assistant.id)
+                .filter((part): part is TextPart => part.type === "text" && !!part.text?.trim())
+            : [],
+        )
+      : []
+
+    if (compacted)
       rows.push({
         kind: "divider",
         key: `compaction:${userMessage.id}`,
-        rev: "compaction",
+        rev: `compaction:${compactionSummaryParts.map((part) => part.id).join(",")}`,
         userMessageID: userMessage.id,
         label: "compaction",
+        summaryParts: compactionSummaryParts,
       })
 
     let emitted = 0
@@ -677,6 +737,9 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
 
     for (const assistant of assistants) {
       const parts = input.partsOf(assistant.id)
+      // compaction assistant 的完成态 text 已收进上方分隔行作为「保留要点」;不再当普通助手正文
+      // 重复摊开。其内部 reasoning 也不进入普通时间线,错误仍由回合级错误行呈现。
+      const compactionSummary = compacted && assistant.summary === true
       const streamingHere = streamingAssistant?.id === assistant.id
       const lastVisible = streamingHere
         ? [...parts]
@@ -693,6 +756,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         switch (part.type) {
           case "text": {
             if (!part.text?.trim()) continue
+            if (compactionSummary) continue
             flushContextRun()
             rows.push({
               kind: "markdown",
@@ -706,6 +770,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           }
           case "reasoning": {
             if (!part.text?.trim()) continue
+            if (compactionSummary) continue
             flushContextRun()
             rows.push({
               kind: "reasoning",

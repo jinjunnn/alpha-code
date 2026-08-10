@@ -12,6 +12,7 @@ import { ApplicationTools } from "./application-tools"
 import { definition, permission, settle, validateName, type AnyTool, type RegistrationError } from "./tool"
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
+import { canonicalToolIdentity, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 
 export type ExecuteInput = {
   readonly sessionID: SessionSchema.ID
@@ -44,7 +45,7 @@ const registryLayer = Layer.effect(
   Effect.gen(function* () {
     const applications = yield* ApplicationTools.Service
     const resources = yield* ToolOutputStore.Service
-    type Registration = { readonly identity: object; readonly tool: AnyTool }
+    type Registration = { readonly token: object; readonly identity: ToolIdentity; readonly tool: AnyTool }
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
 
     const settleWith = Effect.fn("ToolRegistry.settle")(function* (input: ExecuteInput, advertised?: object) {
@@ -57,7 +58,7 @@ const registryLayer = Layer.effect(
             value: advertised ? `Stale tool call: ${input.call.name}` : `Unknown tool: ${input.call.name}`,
           },
         }
-      if (advertised && registration.identity !== advertised)
+      if (advertised && registration.token !== advertised)
         return { result: { type: "error" as const, value: `Stale tool call: ${input.call.name}` } }
       const pending = yield* settle(registration.tool, input.call, {
         sessionID: input.sessionID,
@@ -90,7 +91,10 @@ const registryLayer = Layer.effect(
           Effect.gen(function* () {
             const token = {}
             for (const [name, tool] of entries)
-              local.set(name, [...(local.get(name) ?? []), { token, registration: { identity: {}, tool } }])
+              local.set(name, [
+                ...(local.get(name) ?? []),
+                { token, registration: { token, identity: { source: "builtin-v2", origin: "", name }, tool } },
+              ])
             yield* Effect.addFinalizer(() =>
               Effect.sync(() => {
                 for (const [name] of entries) {
@@ -110,12 +114,16 @@ const registryLayer = Layer.effect(
           if (registration) registrations.set(name, registration)
         }
         for (const [name, registration] of registrations)
-          if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
+          if (
+            whollyDisabled(permission(registration.tool, name), permissions) ||
+            whollyDisabled(canonicalToolIdentity(registration.identity), permissions)
+          )
+            registrations.delete(name)
         return {
           definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)),
           settle: (input) => {
             const registration = registrations.get(input.call.name)
-            if (registration) return settleWith(input, registration.identity)
+            if (registration) return settleWith(input, registration.token)
             return Effect.succeed({ result: { type: "error", value: `Unknown tool: ${input.call.name}` } })
           },
         }

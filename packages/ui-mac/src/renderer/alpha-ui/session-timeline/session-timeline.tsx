@@ -17,8 +17,8 @@ import { hrefFor } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
 import { useAlphaSessionLiveContext } from "../session-workspace/alpha-session-workspace"
 import type { SessionRailApi } from "../session-workspace/session-workspace-shell"
-import type { TimelineIntents } from "./cards/timeline-intents"
-import { SessionTimelineView } from "./session-timeline-view"
+import type { TimelineEditUserMessageIntent, TimelineIntents } from "./cards/timeline-intents"
+import { SessionTimelineView, type TimelineDisplayNames } from "./session-timeline-view"
 import {
   projectTimelineRows,
   reuseTimelineRows,
@@ -32,6 +32,8 @@ export interface AlphaSessionTimelineProps {
   rail?: Pick<SessionRailApi, "jumpToReview" | "focusArtifact">
   /** #545 C7 的斜杠命令来源供给;缺席 = chip 零渲染(fail-closed)。 */
   slashOriginsFor?: SessionSlashOriginsFor
+  /** 用户消息编辑重发接线；缺席时按钮零渲染。 */
+  onEditUserMessage?: (intent: TimelineEditUserMessageIntent) => void | Promise<void>
 }
 
 export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
@@ -109,6 +111,11 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
   }
 
   const navigate = useNavigate()
+  const displayNames: TimelineDisplayNames = {
+    // 与上游会话消息脚注一致:agent 没有独立目录显示名,只把首字母转为可读形式。
+    agent: (agent) => agent.slice(0, 1).toUpperCase() + agent.slice(1),
+    model: (providerID, modelID) => serverSync().data.provider.all.get(providerID)?.models?.[modelID]?.name ?? modelID,
+  }
   const intents: TimelineIntents = {
     // 子任务卡「打开子会话」:route-manifest 构 href 失败即放弃(fail-closed,不裸拼路径)。
     openSession: (childSessionID) => {
@@ -141,6 +148,9 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
         rail.jumpToReview(relative)
       }
     },
+    get editUserMessage() {
+      return props.onEditUserMessage
+    },
     // 中断态「继续生成」:走 composer 同一条发送入口。#652 起那条入口是 v1 session.promptAsync
     // (与首页 startChat 同一条),不再是 v2 durable 队列 —— 理由见 alpha-composer 的送出段。
     // 会话不空闲(还在跑/重试)时零动作 —— 续写只对已经停下的回合成立,不往在跑的回合里塞输入
@@ -172,6 +182,7 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
       history={history()}
       onLoadOlder={loadOlder}
       intents={intents}
+      displayNames={displayNames}
     />
   )
 }

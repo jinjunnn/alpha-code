@@ -96,4 +96,16 @@ describe("REQ-125 C6 I5 令牌白名单与运动契约(cards.css)", () => {
     const transitions = [...css.matchAll(/transition:\s*([^;]+);/g)].map((match) => match[1])
     transitions.forEach((value) => expect(value).toContain("var(--a-dur"))
   })
+
+  test("#865 产物行复用 renderer 决策；fallback 保持可聚焦但使用中性态", () => {
+    const cards = sources.get("tool-cards.tsx")!
+    expect(cards).toContain(`import { routeArtifact } from "../../artifact-workbench/renderers/registry"`)
+    expect(cards).toContain(`routeArtifact({ name: link.name }).rendererId !== "fallback"`)
+
+    const neutral = css.match(/\.a-artrow\[data-previewable="false"\] \{[^}]*\}/)?.[0] ?? ""
+    expect(neutral).toContain("color: var(--a-text-secondary)")
+    expect(neutral).toContain("font-weight: var(--a-weight-normal)")
+    expect(css).toContain(`.a-artrow[data-previewable="false"]:hover:not(:disabled)`)
+    expect(css).toContain("background: var(--a-bg-muted)")
+  })
 })

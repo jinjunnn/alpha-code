@@ -4,7 +4,7 @@ kind: design
 status: active
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-07-29
+last_reviewed: 2026-08-09
 review_after: 2027-01-16
 ---
 
@@ -30,21 +30,23 @@ review_after: 2027-01-16
 
 | 组件 | 锚 | 增量稿 | 设计定稿 | 实现票 | 落地 | 代码入口 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 产物链接行 + 右栏预览联动 | `#artifacts` | `2026-07-21-req124-timeline-artifact-rows/` | 2026-07-23 | ac#454 | 代码在,票未关 | `cards/tool-cards.tsx` (`TimelineArtifactRows`) · 接线 `session-timeline-view.tsx` | **已实现·票未关** |
-| 用户气泡(附件 / 提及 / 连接器) | `#user` | `2026-06-28-timeline-overhaul/` | — | — | — | `session-timeline-view.tsx` | 未登记(历史) |
-| 斜杠输入(命令 / 技能 / MCP) | `#user` | `2026-06-28-timeline-overhaul/` | — | — | — | `session-timeline-view.tsx` | 未登记(历史) |
+| 产物链接行 + 右栏预览联动 | `#artifacts` | `2026-07-21-req124-timeline-artifact-rows/` | 2026-07-23 | ac#454 · ac#865 | 2026-08-08 | `cards/tool-cards.tsx` (`TimelineArtifactRows`) · 接线 `session-timeline-view.tsx` · capability 复用 artifact renderer registry | **已实现·REQ-124 票未关** |
+| 用户气泡(附件 / 提及 / 连接器 / 脚注动作) | `#user` | `2026-06-28-timeline-overhaul/` | — | ac#862 | 2026-08-08 | `session-timeline-view.tsx` · 编辑接线 `session-workspace/` | 已实现 |
+| 斜杠输入(命令 / 技能 / MCP) | `#user` | `2026-06-28-timeline-overhaul/` | — | ac#861 | 2026-08-08 | `session-timeline-view.tsx` | 已实现 |
 | 行内代码评论(用户消息内) | `#user` | — | 2026-07-23 | — | — | — | 未登记(历史) |
 | 助手 Markdown · 脚注 · 流式 · 中断 | `#ai` | `2026-06-28-timeline-overhaul/` | — | — | — | `timeline-markdown.tsx` | 未登记(历史) |
-| 推理 / 思考块(折叠 + 进行中) | `#ai` | `2026-06-28-timeline-overhaul/` | — | — | — | `session-timeline-view.tsx` | 未登记(历史) |
+| 推理 / 思考块(折叠 + 进行中) | `#ai` | `2026-06-28-timeline-overhaul/` | — | ac#863 | 2026-08-08 | `session-timeline-view.tsx` | 已实现 |
 | 自动重试卡 | `#ai` | `2026-06-28-timeline-overhaul/` | — | — | — | `session-timeline-view.tsx` · `cards/tool-cards.tsx` | 未登记(历史) |
 | 回合级错误卡(限流 / 接口报错 / 上下文超限) | `#ai` | — | 2026-07-23 | ac#590 | 2026-07-26 | `cards/tool-cards.tsx` | 已实现 |
 | 助手侧截图 / 图片 / 媒体预览行 | `#ai` | — | 2026-07-24 | — | — | — | 未登记(历史) |
 | 通用工具卡四态(运行 / 完成 / 错误 / 待批) | `#tools` | `2026-06-28-timeline-overhaul/` | — | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
 | 各工具类型卡(read / grep / bash / edit / MCP …) | `#tools` | `2026-06-28-timeline-overhaul/` | — | — | — | `cards/tool-cards.tsx` | 未登记(历史) |
+| 全来源工具卡来源徽标 + 安全通用降级 | `#tool-provenance` | `2026-08-08-req125-tool-card-provenance/` | 2026-08-09 | ac#878 · ac#879 · ac#587 | — | — | **待实现** |
 | glob(按模式匹配文件)工具卡 | `#tools` | — | 2026-07-23 | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
 | bash 运行中的流式输出子消息 | `#tools` | — | 2026-07-24 | — | — | `cards/tool-card-model.ts` | 未登记(历史) |
 | 文件 part 徽章六态 | `#tools` | — | 2026-07-24 | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
-| 工具折叠分组 · 本回合改动 · 压缩 · 回合分隔 | `#struct` | `2026-06-28-timeline-overhaul/` | — | — | — | `timeline-model.ts` | 未登记(历史) |
+| 工具折叠分组 · 本回合改动 · 回合分隔 | `#struct` | `2026-06-28-timeline-overhaul/` | — | — | — | `timeline-model.ts` | 未登记(历史) |
+| 上下文压缩分隔(图标 · 保留要点 · 展开摘要) | `#struct` | `2026-06-28-timeline-overhaul/` | — | ac#864 | 2026-08-08 | `timeline-model.ts` · `session-timeline-view.tsx` | 已实现 |
 | 空态(会话内轻着陆) | `#struct` | — | 2026-07-24 | — | — | `session-timeline-view.tsx` | 未登记(历史) |
 | 消息导航(上一条 / 下一条) | `#struct` | — | **无帧** | — | — | 代码未接线(仅有「滚动到底」) | **待补** |
 | 右栏审查 / 终端(换肤基线) | `#panel` | `2026-06-28-timeline-overhaul/` | — | — | — | 整页四面板形态见 `../session-workspace/` | 未登记(历史) |
