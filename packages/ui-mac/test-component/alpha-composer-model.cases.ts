@@ -72,6 +72,7 @@ const {
   composerModelSuspended,
   resetComposerAgentScopesForTests,
   resetComposerModelProjection,
+  resetComposerPermScopesForTests,
   setComposerAgent,
   setComposerModel,
   setComposerPerm,
@@ -238,9 +239,12 @@ afterEach(() => {
   document.body.replaceChildren()
   setComposerModel(null)
   setComposerAgent(null)
+  setComposerPerm("ask")
   // #570:档位的会话登记也是模块级状态,和 signal 一样跨用例会串(卸载 composer 会把当时的档位
   // 记进它那个会话名下,下一条用例复用同一个 sessionID 就会「继承」上一条的档位)。
+  // #884:只读档的会话登记同理,同样要复位。
   resetComposerAgentScopesForTests()
+  resetComposerPermScopesForTests()
   resetComposerModelProjection()
 })
 afterAll(() => GlobalRegistrator.unregister())
@@ -1729,6 +1733,110 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
     await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
     expect(planChip(mounted.host)).toBeNull()
     mounted.dispose()
+  })
+
+  /* ── #884 只读档也是「一个会话」的,不是「这个 app」的 ────────────────────────────────
+     上面四条只治了档位。只读档不跟上,上面就等于没治:`buildPromptRequest` 里
+     `perm === "readonly"` 会把 agent 强制成 alpha-readonly 并**压过**手选档位,所以「在 A 开只读、
+     切到 B」的后果不只是 B 的权限 chip 亮着只读 —— B 里刚手选的计划档会被 alpha-readonly 顶掉,
+     用户从没在 B 开过只读,只会看到模型忽然不肯动文件。
+
+     判据与上面同源,只认两样:**渲染出来的权限 chip**(`.a-chip-perm` 的 data-mode 与可见文案)
+     与 **promptAsync 真实载荷里的 agent 字段**。只读档一律经生产写入口打开(点 chip → 弹窗里点
+     「只读」那一行,那是全仓唯一把 perm 写成 readonly 的地方),不直接调 setComposerPerm;
+     也不断言 `composerPerm()` 这个 signal —— 只断内层信号的话,「分流层照样把旧 perm 塞进请求」
+     这种绕过会全绿。⑥ 是反方向:光在挂载时无条件回 ask 也能骗过 ⑤,但骗不过 ⑥。 */
+  describe("#884 只读档按会话归属", () => {
+    const permChipOf = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".a-chip-perm")
+    const readonlyItems = () =>
+      [...document.body.querySelectorAll<HTMLButtonElement>('.a-pop-item[role="menuitemradio"]')].filter((item) =>
+        item.textContent?.includes(zh["alpha.composer.permReadonly"]),
+      )
+    /** 生产写入口:点权限 chip → 在弹窗里点「只读」那一行。 */
+    async function pickReadonly(host: HTMLElement) {
+      await waitFor(() => expect(permChipOf(host)).not.toBeNull())
+      permChipOf(host)!.click()
+      await waitFor(() => expect(readonlyItems()).toHaveLength(1))
+      readonlyItems()[0]!.click()
+      await waitFor(() => expect(permChipOf(host)!.getAttribute("data-mode")).toBe("readonly"))
+    }
+
+    test("⑤ 在 A 开只读 → 切到 B:B 的 chip 不是只读态,B 手选的档位也不再被 alpha-readonly 顶掉", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const [identity, setIdentity] = createSignal(identityFor("A"))
+      const mounted = mountSession(sdk, identity)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+
+      await pickReadonly(mounted.host)
+
+      setIdentity(identityFor("B")) // 侧栏切会话 = 按身份 keyed 重挂
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+
+      // 用户看得见的那一半
+      const chip = permChipOf(mounted.host)!
+      expect(chip.getAttribute("data-mode")).toBe("ask")
+      expect(chip.textContent).toContain(zh["alpha.composer.permAsk"])
+      expect(chip.textContent).not.toContain(zh["alpha.composer.permReadonly"])
+
+      // 引擎收得到的那一半:B 里手选计划档,发出去的就得是计划档,不是只读档的那个 agent
+      shiftTab(ta(mounted.host))
+      await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+      await sendVia(mounted.host, "B 的第一句")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "B", agent: "plan" })
+      expect(sdk.promptAsyncCalls[0]!.agent).not.toBe("alpha-readonly")
+      mounted.dispose()
+    })
+
+    test("⑥ A→B→回 A:A 自己的只读还在,A 发出的消息仍以 alpha-readonly 落到引擎", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const [identity, setIdentity] = createSignal(identityFor("A"))
+      const mounted = mountSession(sdk, identity)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      await pickReadonly(mounted.host)
+
+      setIdentity(identityFor("B"))
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("ask"))
+      setIdentity(identityFor("A"))
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("readonly"))
+      expect(permChipOf(mounted.host)!.textContent).toContain(zh["alpha.composer.permReadonly"])
+
+      await sendVia(mounted.host, "回到 A 继续只看")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "alpha-readonly" })
+      mounted.dispose()
+    })
+
+    test("⑦ 首页开着只读发第一条:跳进新会话后 chip 仍是只读,第二条仍以 alpha-readonly 发出", async () => {
+      installApi()
+      startedChats.length = 0
+      const sdk = scopedSdk()
+      const home = mount(() =>
+        createComponent(AlphaComposerRuntime, {
+          mode: "home",
+          projects: scopedProjects(sdk, "NEW-RO"),
+          directory: () => "/ws",
+          command,
+          modelContract: homeContract(),
+        }),
+      )
+      await waitFor(() => expect(ta(home.host)).not.toBeNull())
+      await pickReadonly(home.host)
+      await sendVia(home.host, "只看不要改")
+      await waitFor(() => expect(startedChats).toHaveLength(1))
+      expect(startedChats[0]).toEqual({ agent: "alpha-readonly" }) // 第一条本来就该是只读档
+      home.dispose() // 首页让位给会话页
+
+      const mounted = mountSession(sdk, () => identityFor("NEW-RO"))
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("readonly") // 不该背着用户关掉
+      await sendVia(mounted.host, "第二条")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "NEW-RO", agent: "alpha-readonly" })
+      mounted.dispose()
+    })
   })
 })
 

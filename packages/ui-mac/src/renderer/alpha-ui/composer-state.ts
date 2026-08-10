@@ -124,6 +124,58 @@ export function resetComposerAgentScopesForTests() {
   agentScopeOwner = null
 }
 
+/* ── 只读档的会话归属(#884)────────────────────────────────────────────────────
+ * 上面把**档位**归到会话名下了,只读档没跟上就等于没改:`buildPromptRequest` 里
+ * `perm === "readonly"` 会把 agent 强制成 READONLY_AGENT 并**压过**手选档位(本文件末尾那段),
+ * 而 perm 同样是模块级 signal、同样没有任何重置点(连 home 挂载那段都只重置了 model/投影)。
+ * 合起来:在 A 打开只读、切到 B,B 的只读 chip 照样亮着,B 手选的档位也被 READONLY_AGENT 顶掉
+ * —— 用户在 B 从没开过只读,只会看到模型忽然不肯动文件。
+ *
+ * 机制与档位那份**逐条同形**:同一把钥匙(会话 id / null=首页)、同一处 adopt/release
+ * (alpha-composer 的那一个 createEffect)、同一个 LRU 上界。唯一的差别是默认值 —— 档位的默认是
+ * `null`(引擎自己的 build),只读档的默认是 `"ask"`(引擎默认的逐次审批),所以「默认不登记」这条
+ * 判的是 `=== "ask"`,越界丢弃后回落的也是 `"ask"`:那是权限最紧的一档里**用户可解释**的那个,
+ * 丢登记只会多问一次,不会静默放松限制。 */
+const PERM_SCOPE_CAPACITY = 32
+const permByScope = new Map<string, PermMode>()
+/** 当前持有只读档信号的会话 id;null = 首页(新会话入口)或无人持有。 */
+let permScopeOwner: string | null = null
+
+function rememberScopedPerm(scopeID: string, value: PermMode) {
+  permByScope.delete(scopeID) // 重插到队尾(Map 保持插入序 → 队首 = 最旧,用作 LRU)
+  if (value === "ask") return // 默认档 = 不登记
+  permByScope.set(scopeID, value)
+  while (permByScope.size > PERM_SCOPE_CAPACITY) {
+    const oldest = permByScope.keys().next().value
+    if (oldest === undefined) break
+    permByScope.delete(oldest)
+  }
+}
+
+/** 挂载:接管该会话的只读档(无登记 = 默认 ask)。`null` = 首页,一律回默认。 */
+export function adoptComposerPermScope(scopeID: string | null) {
+  permScopeOwner = scopeID
+  setPerm(scopeID === null ? "ask" : (permByScope.get(scopeID) ?? "ask"))
+}
+
+/** 卸载:把当前只读档交还给该会话。守卫同档位那条 —— 新实例已接管就不许再覆盖它的值。 */
+export function releaseComposerPermScope(scopeID: string | null) {
+  if (scopeID === null || permScopeOwner !== scopeID) return
+  rememberScopedPerm(scopeID, perm())
+  permScopeOwner = null
+}
+
+/** 首页发出第一条消息后新建的那个会话,继承这条消息用的只读档 —— 第一条就是以只读发出去的。 */
+export function seedComposerPermScope(scopeID: string, value: PermMode) {
+  rememberScopedPerm(scopeID, value)
+}
+
+/** 测试隔离:清空会话只读档登记与持有者。 */
+export function resetComposerPermScopesForTests() {
+  permByScope.clear()
+  permScopeOwner = null
+}
+
 /* ── REQ-069:当前选择的挂起/恢复 ────────────────────────────────────────────── */
 
 export type SuspendReason = "needs-login" | "needs-credit" | "provider-gone"

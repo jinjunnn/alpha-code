@@ -46,6 +46,7 @@ import type { AlphaProjectsApi } from "../sidebar/use-projects"
 import type { AuthState } from "../../preload/types"
 import {
   adoptComposerAgentScope,
+  adoptComposerPermScope,
   applyDefaultComposerModel,
   buildPromptRequest,
   clearSuspendedModel,
@@ -58,10 +59,12 @@ import {
   failComposerModelProjection,
   invalidateComposerModelProjection,
   releaseComposerAgentScope,
+  releaseComposerPermScope,
   resetComposerModelProjection,
   resolveComposerModelProjection,
   routeSlash,
   seedComposerAgentScope,
+  seedComposerPermScope,
   setComposerAgent,
   setComposerModel,
   setComposerPerm,
@@ -734,21 +737,30 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
      消息也真的以 agent=plan 发出。这里把作用域接上:进一个会话就接管它自己的档位(没开过 =
      默认 build),离开就把当前档位交还给它。home 的作用域是 null(新会话入口,一律回默认)。
      用 createEffect 而不是 onMount:生产的会话 composer 由 SessionComposerMount 按身份 keyed
-     重挂,但同一实例内 sessionID 换代(模型链已按此换代)也必须换档位 —— 两种都盖住。 */
-  let agentScope: string | null = null
-  let agentScopeHeld = false
+     重挂,但同一实例内 sessionID 换代(模型链已按此换代)也必须换档位 —— 两种都盖住。
+
+     #884:只读档(perm)走**同一把钥匙、同一处 adopt/release**。它不跟上就等于上面白改 ——
+     `buildPromptRequest` 里 readonly 强制 alpha-readonly 并压过手选档位,只读档跨会话粘连时
+     B 的档位照样被顶掉。两者的作用域生命周期完全一致,所以共用这一个 effect,不另起一条。 */
+  let composerScope: string | null = null
+  let composerScopeHeld = false
+  const releaseComposerScope = () => {
+    releaseComposerAgentScope(composerScope)
+    releaseComposerPermScope(composerScope)
+  }
   createEffect(() => {
     const next = props.mode === "home" ? null : (props.sessionID?.() ?? null)
     untrack(() => {
-      if (agentScopeHeld && next === agentScope) return
-      if (agentScopeHeld) releaseComposerAgentScope(agentScope)
-      agentScope = next
-      agentScopeHeld = true
+      if (composerScopeHeld && next === composerScope) return
+      if (composerScopeHeld) releaseComposerScope()
+      composerScope = next
+      composerScopeHeld = true
       adoptComposerAgentScope(next)
+      adoptComposerPermScope(next)
     })
   })
   onCleanup(() => {
-    if (agentScopeHeld) releaseComposerAgentScope(agentScope)
+    if (composerScopeHeld) releaseComposerScope()
   })
 
   const auto = createComposerAutocomplete({
@@ -1339,7 +1351,10 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         }
         // #570:这条消息用的档位就是新会话的开局档位 —— 不交给它,跳进会话页的瞬间 chip 熄灭、
         // 第二条消息掉回默认档,而用户明明在首页把计划模式开着发出了第一条。
+        // #884:只读档同理 —— 第一条**已经**是以只读发出去的(req.agent = alpha-readonly),
+        // 跳进会话页却回到「请求审批」,等于我们背着用户把它关了。
         seedComposerAgentScope(id, composerAgent())
+        seedComposerPermScope(id, composerPerm())
         setText("")
         setMentions([])
         setAttachments([])
