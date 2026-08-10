@@ -70,13 +70,16 @@ const {
   composerModel,
   composerModelProjection,
   composerModelSuspended,
+  resetComposerAgentScopesForTests,
   resetComposerModelProjection,
+  resetComposerPermScopesForTests,
   setComposerAgent,
   setComposerModel,
   setComposerPerm,
 } = await import(
   "../src/renderer/alpha-ui/composer-state"
 )
+const { ALPHA_V2_CATALOG_READY_PROVIDER_ID } = await import("../src/shared/alpha-config")
 const { byokEngineId } = await import("../src/shared/alpha-model-types")
 const { resetAuthRecoveryForTests } = await import("../src/renderer/auth-recovery")
 const { setLocale } = await import("../src/renderer/i18n")
@@ -236,6 +239,12 @@ afterEach(() => {
   document.body.replaceChildren()
   setComposerModel(null)
   setComposerAgent(null)
+  setComposerPerm("ask")
+  // #570:档位的会话登记也是模块级状态,和 signal 一样跨用例会串(卸载 composer 会把当时的档位
+  // 记进它那个会话名下,下一条用例复用同一个 sessionID 就会「继承」上一条的档位)。
+  // #884:只读档的会话登记同理,同样要复位。
+  resetComposerAgentScopesForTests()
+  resetComposerPermScopesForTests()
   resetComposerModelProjection()
 })
 afterAll(() => GlobalRegistrator.unregister())
@@ -1534,6 +1543,504 @@ describe("REQ-125 C558 SessionComposerMount 按身份 keyed:切会话草稿正�
     expect(ta(mounted.host)).toBe(original)
     expect(original.value).toBe("正在输入的草稿")
     mounted.dispose()
+  })
+})
+
+/* ── #570 档位的作用域是「一个会话」,不是「这个 app」────────────────────────────────────
+   已批稿写死了:`docs/design/current/assemble-popup/design.html`「③ 计划作用域:会话级;新会话默认
+   build」。修复前档位信号是模块级的、会话页又不重置 ⇒ 在 A 开计划、点侧栏进 B,B 的 chip 显示
+   「计划」,而且 B 的下一条消息**真的**以 `agent=plan` 发出 —— 用户从没在 B 开过它。
+
+   判据只认用户看得见 / 引擎收得到的那两样:**渲染出来的 chip** 与 **promptAsync 真实载荷里的
+   agent 字段**。档位一律经生产写入口打开(Shift+Tab,alpha-composer 的 onKey),不直接调
+   setComposerAgent —— 只驱动内层 signal 的话,分流层被绕过也照样绿。会话切换走生产的
+   SessionComposerMount(按身份 keyed 重挂),不自己拼一条等价链。
+
+   变异验证(三条都实跑过,每条各只打掉一处):删掉 alpha-composer 里 adopt/release 那段
+   createEffect ⇒ ①② 红(54 pass / 2 fail);删掉首页发送后的 `seedComposerAgentScope` ⇒ ③ 红;
+   让 `rememberScopedAgent` 在默认档时也留登记(交还「开过的痕迹」而不是当前档位)⇒ ④ 红。
+   ④ 之所以要单列:前两个变异下它照样绿 —— 它挡的是反方向的错(把档位复活),不是同一个洞。 */
+describe("#570 档位按会话归属:切会话不把上一个会话的档位带过去", () => {
+  const identityFor = (sessionID: string) => ({ serverKey: "sidecar", directory: "/ws", sessionID })
+  const dockApi = {
+    running: () => false,
+    contextUsage: () => null,
+    approvalPending: () => false,
+    onSlashCommand: () => {},
+  }
+
+  /** 假 sidecar:SessionComposerMount 内部自建 createModelContract(props.projects.sdk),所以模型链
+   *  的三跳(catalog-ready 探针 / model.list / session.get)都得真给,composer 才会进 ready 而不是
+   *  卡在「正在同步」——发送门开不了,就什么行为都断不到。 */
+  function scopedSdk() {
+    const promptAsyncCalls: Array<Record<string, unknown>> = []
+    const client = {
+      command: { list: async () => ({ data: [] }) },
+      session: {
+        promptAsync: async (args: Record<string, unknown>) => {
+          promptAsyncCalls.push(args)
+          return {}
+        },
+        abort: async () => ({}),
+      },
+      v2: {
+        provider: {
+          get: async () => ({ data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }),
+        },
+        model: { list: async () => ({ data: { data: platformModels } }) },
+        session: {
+          get: async ({ sessionID }: { sessionID: string }) => ({
+            data: {
+              data: {
+                id: sessionID,
+                model: { providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id },
+                agent: undefined,
+              },
+            },
+          }),
+          switchModel: async () => ({}),
+        },
+      },
+    }
+    return { client, promptAsyncCalls }
+  }
+
+  const startedChats: Array<{ agent: string | undefined }> = []
+  const scopedProjects = (sdk: ReturnType<typeof scopedSdk>, newSessionID = "NEW") =>
+    ({
+      ...projects,
+      sdk: () => sdk.client as never,
+      startChat: async (_dir: string, _text: string, _parts?: unknown[], options?: { agent?: string }) => {
+        startedChats.push({ agent: options?.agent })
+        return newSessionID
+      },
+    }) satisfies AlphaProjectsApi
+
+  /** 首页 composer 直挂时的模型档(会话页那条走 SessionComposerMount 自建的真 contract)。 */
+  const homeContract = (): ModelContract => ({
+    list: async () => platformModels,
+    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+    switch: async () => {},
+  })
+
+  const ta = (host: HTMLElement) => host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")!
+  const planChip = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".a-chip-plan")
+  const shiftTab = (el: HTMLTextAreaElement) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }))
+  async function sendVia(host: HTMLElement, value: string) {
+    const el = ta(host)
+    el.value = value
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+    await waitFor(() => expect(host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    host.querySelector<HTMLButtonElement>(".a-comp-send")!.click()
+  }
+  const mountSession = (sdk: ReturnType<typeof scopedSdk>, identity: () => { sessionID: string } | undefined) =>
+    mount(() =>
+      createComponent(SessionComposerMount, {
+        identity: identity as never,
+        projects: scopedProjects(sdk),
+        dock: dockApi,
+        drafts: createComposerDraftStash(),
+      }),
+    )
+
+  test("① 在 A 开计划 → 切到 B:B 的 chip 不显示计划,B 发出的消息也不带 agent", async () => {
+    installApi()
+    const sdk = scopedSdk()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mountSession(sdk, identity)
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+
+    shiftTab(ta(mounted.host)) // 生产写入口:Shift+Tab 切计划模式
+    await waitFor(() => expect(planChip(mounted.host)?.textContent).toContain(zh["alpha.composer.plan"]))
+
+    setIdentity(identityFor("B")) // 侧栏切会话 = 按身份 keyed 重挂
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+
+    expect(planChip(mounted.host)).toBeNull() // 用户看得见的那一半
+    await sendVia(mounted.host, "B 的第一句") // 引擎收得到的那一半
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "B" })
+    expect("agent" in sdk.promptAsyncCalls[0]!).toBe(false)
+    mounted.dispose()
+  })
+
+  test("② A→B→回 A:A 自己的计划模式还在,A 发出的消息仍带 agent=plan", async () => {
+    installApi()
+    const sdk = scopedSdk()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mountSession(sdk, identity)
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+    shiftTab(ta(mounted.host))
+    await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+
+    setIdentity(identityFor("B"))
+    await waitFor(() => expect(planChip(mounted.host)).toBeNull())
+    setIdentity(identityFor("A"))
+    await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+
+    await sendVia(mounted.host, "回到 A 继续按计划")
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "plan" })
+    mounted.dispose()
+  })
+
+  test("③ 首页开着计划发第一条:跳进新会话后 chip 还在,第二条仍以 plan 发出", async () => {
+    installApi()
+    startedChats.length = 0
+    const sdk = scopedSdk()
+    const home = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: scopedProjects(sdk, "NEW"),
+        directory: () => "/ws",
+        command,
+        modelContract: homeContract(),
+      }),
+    )
+    await waitFor(() => expect(ta(home.host)).not.toBeNull())
+    shiftTab(ta(home.host))
+    await waitFor(() => expect(planChip(home.host)).not.toBeNull())
+    await sendVia(home.host, "先给我一个方案")
+    await waitFor(() => expect(startedChats).toHaveLength(1))
+    expect(startedChats[0]).toEqual({ agent: "plan" }) // 第一条本来就该带 plan
+    home.dispose() // 首页让位给会话页
+
+    const mounted = mountSession(sdk, () => identityFor("NEW"))
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+    expect(planChip(mounted.host)).not.toBeNull() // 新会话继承开局档位,chip 不该熄灭
+    await sendVia(mounted.host, "第二条")
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "NEW", agent: "plan" })
+    mounted.dispose()
+  })
+
+  test("④ 在 A 关掉计划再切走:B 干净,回 A 也不复活(交还的是当前档位,不是开过的痕迹)", async () => {
+    installApi()
+    const sdk = scopedSdk()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mountSession(sdk, identity)
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+    shiftTab(ta(mounted.host))
+    await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+    shiftTab(ta(mounted.host)) // 再按一次 = 关掉
+    await waitFor(() => expect(planChip(mounted.host)).toBeNull())
+
+    setIdentity(identityFor("B"))
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+    expect(planChip(mounted.host)).toBeNull()
+    setIdentity(identityFor("A"))
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+    expect(planChip(mounted.host)).toBeNull()
+    mounted.dispose()
+  })
+
+  /* ── #884 只读档也是「一个会话」的,不是「这个 app」的 ────────────────────────────────
+     上面四条只治了档位。只读档不跟上,上面就等于没治:`buildPromptRequest` 里
+     `perm === "readonly"` 会把 agent 强制成 alpha-readonly 并**压过**手选档位,所以「在 A 开只读、
+     切到 B」的后果不只是 B 的权限 chip 亮着只读 —— B 里刚手选的计划档会被 alpha-readonly 顶掉,
+     用户从没在 B 开过只读,只会看到模型忽然不肯动文件。
+
+     判据与上面同源,只认两样:**渲染出来的权限 chip**(`.a-chip-perm` 的 data-mode 与可见文案)
+     与 **promptAsync 真实载荷里的 agent 字段**。只读档一律经生产写入口打开(点 chip → 弹窗里点
+     「只读」那一行,那是全仓唯一把 perm 写成 readonly 的地方),不直接调 setComposerPerm;
+     也不断言 `composerPerm()` 这个 signal —— 只断内层信号的话,「分流层照样把旧 perm 塞进请求」
+     这种绕过会全绿。⑥ 是反方向:光在挂载时无条件回 ask 也能骗过 ⑤,但骗不过 ⑥。 */
+  describe("#884 只读档按会话归属", () => {
+    const permChipOf = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".a-chip-perm")
+    const readonlyItems = () =>
+      [...document.body.querySelectorAll<HTMLButtonElement>('.a-pop-item[role="menuitemradio"]')].filter((item) =>
+        item.textContent?.includes(zh["alpha.composer.permReadonly"]),
+      )
+    const askItems = () =>
+      [...document.body.querySelectorAll<HTMLButtonElement>('.a-pop-item[role="menuitemradio"]')].filter((item) =>
+        item.textContent?.includes(zh["alpha.composer.permAsk"]),
+      )
+    /** 生产写入口:点权限 chip → 在弹窗里点「只读」那一行。 */
+    async function pickReadonly(host: HTMLElement) {
+      await waitFor(() => expect(permChipOf(host)).not.toBeNull())
+      permChipOf(host)!.click()
+      await waitFor(() => expect(readonlyItems()).toHaveLength(1))
+      readonlyItems()[0]!.click()
+      await waitFor(() => expect(permChipOf(host)!.getAttribute("data-mode")).toBe("readonly"))
+    }
+    /** 同一个生产写入口的另一支:点「请求审批」那一行(退出只读的唯一用户路径)。 */
+    async function pickAsk(host: HTMLElement) {
+      await waitFor(() => expect(permChipOf(host)).not.toBeNull())
+      permChipOf(host)!.click()
+      await waitFor(() => expect(askItems()).toHaveLength(1))
+      askItems()[0]!.click()
+      await waitFor(() => expect(permChipOf(host)!.getAttribute("data-mode")).toBe("ask"))
+    }
+
+    test("⑤ 在 A 开只读 → 切到 B:B 的 chip 不是只读态,B 手选的档位也不再被 alpha-readonly 顶掉", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const [identity, setIdentity] = createSignal(identityFor("A"))
+      const mounted = mountSession(sdk, identity)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+
+      await pickReadonly(mounted.host)
+
+      setIdentity(identityFor("B")) // 侧栏切会话 = 按身份 keyed 重挂
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+
+      // 用户看得见的那一半
+      const chip = permChipOf(mounted.host)!
+      expect(chip.getAttribute("data-mode")).toBe("ask")
+      expect(chip.textContent).toContain(zh["alpha.composer.permAsk"])
+      expect(chip.textContent).not.toContain(zh["alpha.composer.permReadonly"])
+
+      // 引擎收得到的那一半:B 里手选计划档,发出去的就得是计划档,不是只读档的那个 agent
+      shiftTab(ta(mounted.host))
+      await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+      await sendVia(mounted.host, "B 的第一句")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "B", agent: "plan" })
+      expect(sdk.promptAsyncCalls[0]!.agent).not.toBe("alpha-readonly")
+      mounted.dispose()
+    })
+
+    test("⑥ A→B→回 A:A 自己的只读还在,A 发出的消息仍以 alpha-readonly 落到引擎", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const [identity, setIdentity] = createSignal(identityFor("A"))
+      const mounted = mountSession(sdk, identity)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      await pickReadonly(mounted.host)
+
+      setIdentity(identityFor("B"))
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("ask"))
+      setIdentity(identityFor("A"))
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("readonly"))
+      expect(permChipOf(mounted.host)!.textContent).toContain(zh["alpha.composer.permReadonly"])
+
+      await sendVia(mounted.host, "回到 A 继续只看")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "alpha-readonly" })
+      mounted.dispose()
+    })
+
+    test("⑦ 首页开着只读发第一条:跳进新会话后 chip 仍是只读,第二条仍以 alpha-readonly 发出", async () => {
+      installApi()
+      startedChats.length = 0
+      const sdk = scopedSdk()
+      const home = mount(() =>
+        createComponent(AlphaComposerRuntime, {
+          mode: "home",
+          projects: scopedProjects(sdk, "NEW-RO"),
+          directory: () => "/ws",
+          command,
+          modelContract: homeContract(),
+        }),
+      )
+      await waitFor(() => expect(ta(home.host)).not.toBeNull())
+      await pickReadonly(home.host)
+      await sendVia(home.host, "只看不要改")
+      await waitFor(() => expect(startedChats).toHaveLength(1))
+      expect(startedChats[0]).toEqual({ agent: "alpha-readonly" }) // 第一条本来就该是只读档
+      home.dispose() // 首页让位给会话页
+
+      const mounted = mountSession(sdk, () => identityFor("NEW-RO"))
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("readonly") // 不该背着用户关掉
+      await sendVia(mounted.host, "第二条")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "NEW-RO", agent: "alpha-readonly" })
+      mounted.dispose()
+    })
+
+    /* ── 合并前审计 R1 的五条,判据补在这里 ─────────────────────────────────────────
+       上面 ①~⑦ 的每一条断言本身都是对的,只是**比缺陷粗一格**:perm 那半场从未退出过 readonly、
+       从未同时留住两个非默认会话、从未跨过容量上界、也从未让两个 composer 实例的挂卸交错。
+       下面六条各钉一个具体的错误实现,每一条都在「把对应那处修复单独还原」时转红(绕过实验
+       逐条实跑过,输出附在票里)。断言一律落在 `.a-chip-perm` / `.a-chip-plan` 的可观察态与
+       `promptAsync` 真实载荷上,不断言 `composerPerm()` / `composerAgent()`。 */
+
+    test("⑧ 首页第一条在途时切进别的会话:新会话拿到的是**提交那一刻**的只读,不是切过去那个会话的档位", async () => {
+      installApi()
+      startedChats.length = 0
+      const submitted: Array<string | undefined> = []
+      const sdk = scopedSdk()
+      // startChat 卡在这道闸上 = 请求在途。这不是构造出来的时机:创建会话 + 首发要过一趟引擎。
+      const gate = deferred<string | undefined>()
+      const home = mount(() =>
+        createComponent(AlphaComposerRuntime, {
+          mode: "home",
+          projects: {
+            ...projects,
+            sdk: () => sdk.client as never,
+            startChat: async (_dir: string, _text: string, _parts?: unknown[], options?: { agent?: string }) => {
+              startedChats.push({ agent: options?.agent })
+              return gate.promise
+            },
+          } satisfies AlphaProjectsApi,
+          directory: () => "/ws",
+          command,
+          modelContract: homeContract(),
+          onSubmitted: (id: string) => submitted.push(id),
+        }),
+      )
+      await waitFor(() => expect(ta(home.host)).not.toBeNull())
+      await pickReadonly(home.host)
+      await sendVia(home.host, "只看不要改")
+      await waitFor(() => expect(startedChats).toHaveLength(1))
+      expect(startedChats[0]).toEqual({ agent: "alpha-readonly" }) // 第一条**确实**以只读发出去了
+
+      // 请求还在途,用户点侧栏进了会话 B,并在 B 里开计划 —— 模块级 signal 这一刻已经是 B 的。
+      home.dispose()
+      const inB = mountSession(sdk, () => identityFor("B"))
+      await waitFor(() => expect(permChipOf(inB.host)?.getAttribute("data-mode")).toBe("ask"))
+      shiftTab(ta(inB.host))
+      await waitFor(() => expect(planChip(inB.host)).not.toBeNull())
+
+      gate.resolve("NEW-INFLIGHT") // 首页那条续行现在才跑(它读的若是 signal,拿到的就是 B 的档位)
+      await waitFor(() => expect(submitted).toEqual(["NEW-INFLIGHT"]))
+      inB.dispose()
+
+      const mounted = mountSession(sdk, () => identityFor("NEW-INFLIGHT"))
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("readonly") // 提交那一刻的只读
+      expect(planChip(mounted.host)).toBeNull() // B 的计划档不许被登记到这个新会话名下
+      await sendVia(mounted.host, "第二条")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "NEW-INFLIGHT", agent: "alpha-readonly" })
+      mounted.dispose()
+    })
+
+    test("⑨ A 里 计划→只读→切回请求审批,往返两次:只读不复活,计划档也没被只读吃掉", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const [identity, setIdentity] = createSignal(identityFor("A"))
+      const mounted = mountSession(sdk, identity)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+
+      shiftTab(ta(mounted.host)) // A:开计划
+      await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+      await pickReadonly(mounted.host) // A:再开只读 —— 计划 chip 只置灰,不该消失
+      expect(planChip(mounted.host)?.getAttribute("data-disabled")).toBe("")
+
+      // 先切走一趟再回来:这一趟才**真的建立**「A = readonly」那条登记。少了它,下面「切回请求审批
+      // 要把旧登记删掉」就落在一条根本不存在的登记上,一个不删旧登记的实现照样绿。
+      setIdentity(identityFor("B"))
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("ask"))
+      setIdentity(identityFor("A"))
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("readonly"))
+      expect(planChip(mounted.host)).not.toBeNull() // 进只读不许把计划档清掉
+
+      await pickAsk(mounted.host) // A:退出只读
+      expect(planChip(mounted.host)).not.toBeNull()
+      expect(planChip(mounted.host)!.getAttribute("data-disabled")).toBeNull()
+
+      setIdentity(identityFor("B"))
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("ask"))
+      expect(planChip(mounted.host)).toBeNull()
+      setIdentity(identityFor("A"))
+      await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+
+      // 回到 A:最后一次显式选择是「请求审批」,只读不许复活;计划档必须还在,且真的发出去
+      expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("ask")
+      expect(permChipOf(mounted.host)!.textContent).not.toContain(zh["alpha.composer.permReadonly"])
+      await sendVia(mounted.host, "回到 A")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "plan" })
+      mounted.dispose()
+    })
+
+    test("⑩ A、B 各自开只读 → 往返:两个非默认登记必须同时留着", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const [identity, setIdentity] = createSignal(identityFor("A"))
+      const mounted = mountSession(sdk, identity)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      await pickReadonly(mounted.host)
+
+      setIdentity(identityFor("B"))
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("ask"))
+      await pickReadonly(mounted.host)
+
+      setIdentity(identityFor("A")) // 容量被改成 1 的实现会在这里把 A 丢掉
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("readonly")
+      await sendVia(mounted.host, "A 只看")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "alpha-readonly" })
+
+      setIdentity(identityFor("B"))
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("readonly")
+      await sendVia(mounted.host, "B 只看")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
+      expect(sdk.promptAsyncCalls[1]).toMatchObject({ sessionID: "B", agent: "alpha-readonly" })
+      mounted.dispose()
+    })
+
+    test("⑪ 依次在 33 个会话里开只读:第 1 个的只读不许被淘汰(系统不能替用户把只读关掉)", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const [identity, setIdentity] = createSignal(identityFor("S1"))
+      const mounted = mountSession(sdk, identity)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      await pickReadonly(mounted.host)
+      // 32 是**档位**那份的 LRU 上界(回落到引擎默认 build,是安全方向)。只读档若照抄同一个上界,
+      // S1 正好在第 33 个会话的登记落账时被挤掉:回到 S1,chip 变「请求审批」、请求不再带
+      // alpha-readonly。这一条按那个精确的界跨过去,不是取个「很多」的数。
+      for (let n = 2; n <= 33; n++) {
+        setIdentity(identityFor(`S${n}`))
+        await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("ask"))
+        await pickReadonly(mounted.host)
+      }
+      setIdentity(identityFor("S1"))
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("readonly")
+      await sendVia(mounted.host, "回到第一个会话")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "S1", agent: "alpha-readonly" })
+      mounted.dispose()
+    })
+
+    test("⑫ 新会话的 composer 先挂、旧的后卸:A 的只读必须在被顶替的那一刻就落账", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const inA = mountSession(sdk, () => identityFor("A"))
+      await waitFor(() => expect(ta(inA.host)).not.toBeNull())
+      await pickReadonly(inA.host)
+
+      // 挂卸先后由宿主决定,adopt 完全可能跑在 release 之前。那一刻 A 就不再是持有者 ——
+      // 只在 release 上设「不是我持有就不写」的守卫,防得住错写,防不住**丢写**。
+      const inB = mountSession(sdk, () => identityFor("B"))
+      await waitFor(() => expect(permChipOf(inB.host)?.getAttribute("data-mode")).toBe("ask"))
+      inA.dispose()
+      inB.dispose()
+
+      const back = mountSession(sdk, () => identityFor("A"))
+      await waitFor(() => expect(ta(back.host)).not.toBeNull())
+      expect(permChipOf(back.host)!.getAttribute("data-mode")).toBe("readonly")
+      await sendVia(back.host, "回到 A")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "alpha-readonly" })
+      back.dispose()
+    })
+
+    test("⑬ 同一个会话 id 的新旧两个实例:旧实例的卸载不许把新实例的持有权清掉", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const first = mountSession(sdk, () => identityFor("A"))
+      await waitFor(() => expect(ta(first.host)).not.toBeNull())
+      const second = mountSession(sdk, () => identityFor("A")) // 同一个会话的第二个实例接管
+      await waitFor(() => expect(ta(second.host)).not.toBeNull())
+      first.dispose() // 旧实例后卸:只比 scope 的话它会把持有权清成「无人持有」
+      await pickReadonly(second.host) // 用户在**活着的**那个实例里开只读
+      second.dispose()
+
+      const back = mountSession(sdk, () => identityFor("A"))
+      await waitFor(() => expect(ta(back.host)).not.toBeNull())
+      expect(permChipOf(back.host)!.getAttribute("data-mode")).toBe("readonly")
+      await sendVia(back.host, "回到 A")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "alpha-readonly" })
+      back.dispose()
+    })
   })
 })
 
