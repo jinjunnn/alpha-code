@@ -744,9 +744,13 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
      B 的档位照样被顶掉。两者的作用域生命周期完全一致,所以共用这一个 effect,不另起一条。 */
   let composerScope: string | null = null
   let composerScopeHeld = false
+  // adopt 发下来的租约(两份各自一张)。卸载时原样交回 —— 别的实例已经接管时,租约不匹配,
+  // 本实例的 cleanup 就不会去清掉人家的持有权(同一个会话 id 的新旧实例只能靠它分开)。
+  let composerAgentLease = 0
+  let composerPermLease = 0
   const releaseComposerScope = () => {
-    releaseComposerAgentScope(composerScope)
-    releaseComposerPermScope(composerScope)
+    releaseComposerAgentScope(composerScope, composerAgentLease)
+    releaseComposerPermScope(composerScope, composerPermLease)
   }
   createEffect(() => {
     const next = props.mode === "home" ? null : (props.sessionID?.() ?? null)
@@ -755,8 +759,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       if (composerScopeHeld) releaseComposerScope()
       composerScope = next
       composerScopeHeld = true
-      adoptComposerAgentScope(next)
-      adoptComposerPermScope(next)
+      composerAgentLease = adoptComposerAgentScope(next)
+      composerPermLease = adoptComposerPermScope(next)
     })
   })
   onCleanup(() => {
@@ -1326,13 +1330,20 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       pushToast({ kind: "info", title: t("alpha.composer.commandNoAttachments"), detail: t("alpha.composer.commandNoAttachmentsDetail") })
       return
     }
+    // #884:档位/只读档在这里**定格**。它们是模块级 signal(所有渲染面共用一份),而 home 的
+    // `await startChat(...)` 之后还要把这条消息的档位登记给新会话 —— 中途用户完全可能点侧栏进另一个
+    // 会话,那时 signal 已经是**那个会话**的值。续行再读一次 signal,登记的就是别人的档位:
+    // 第一条确实以只读发出去了,进了新会话却显示「请求审批」,第二条也真的不再带 alpha-readonly。
+    // 一份快照,构造请求与两处 seed 都用它。
+    const submittedAgent = composerAgent()
+    const submittedPerm = composerPerm()
     const req = buildPromptRequest({
       text: body,
       extraParts: [...buildMentionParts(body, dir, mentions()), ...buildAttachmentParts(attachments())],
       model: composerModel(),
       effort: composerEffortSel(),
-      perm: composerPerm(),
-      agent: composerAgent(),
+      perm: submittedPerm,
+      agent: submittedAgent,
     })
     const submissionGeneration = runtimeGenerationEpoch
     const interrupted = () => submissionGeneration !== runtimeGenerationEpoch
@@ -1353,8 +1364,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         // 第二条消息掉回默认档,而用户明明在首页把计划模式开着发出了第一条。
         // #884:只读档同理 —— 第一条**已经**是以只读发出去的(req.agent = alpha-readonly),
         // 跳进会话页却回到「请求审批」,等于我们背着用户把它关了。
-        seedComposerAgentScope(id, composerAgent())
-        seedComposerPermScope(id, composerPerm())
+        // 用上面的提交快照,不重读 signal:这一行跑在 await 之后,signal 可能早已易主(见那段注释)。
+        seedComposerAgentScope(id, submittedAgent)
+        seedComposerPermScope(id, submittedPerm)
         setText("")
         setMentions([])
         setAttachments([])

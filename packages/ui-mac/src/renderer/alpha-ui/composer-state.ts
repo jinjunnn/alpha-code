@@ -86,6 +86,10 @@ const AGENT_SCOPE_CAPACITY = 32
 const agentByScope = new Map<string, string>()
 /** 当前持有档位信号的会话 id;null = 首页(新会话入口)或无人持有。 */
 let agentScopeOwner: string | null = null
+/** 每次 adopt 发一张新租约。release 必须**同时**匹配 scope 与租约 —— 只比 scope 的话,同一个
+ *  会话 id 的新旧两个实例分不开:旧实例的 cleanup 会把新实例刚拿到的持有权清成 null,新实例
+ *  之后的改动就再也落不了账。租约单调递增,永不复位(复位会让陈旧租约与新租约撞号)。 */
+let agentScopeLease = 0
 
 function rememberScopedAgent(scopeID: string, value: string | null) {
   agentByScope.delete(scopeID) // 重插到队尾(Map 保持插入序 → 队首 = 最旧,用作 LRU)
@@ -98,17 +102,24 @@ function rememberScopedAgent(scopeID: string, value: string | null) {
   }
 }
 
-/** 挂载:接管该会话的档位(无登记 = 默认 build)。`null` = 首页,一律回默认。 */
-export function adoptComposerAgentScope(scopeID: string | null) {
+/** 挂载:接管该会话的档位(无登记 = 默认 build)。`null` = 首页,一律回默认。返回本次租约,
+ *  卸载时必须原样交回 `releaseComposerAgentScope`。 */
+export function adoptComposerAgentScope(scopeID: string | null): number {
+  // 先把**现任持有者**的值落账。宿主完全可能 adopt 早于 release(新面先挂、旧面后卸),那时旧值
+  // 根本还没机会写回,只在 release 上设守卫等于「防错写、不防丢写」:A 开了计划、B 先 adopt、
+  // A 后 release 看见 owner 是 B 就直接 return ⇒ 回到 A 永久掉回默认档。
+  if (agentScopeOwner !== null) rememberScopedAgent(agentScopeOwner, agent())
   agentScopeOwner = scopeID
+  agentScopeLease += 1
   setAgent(scopeID === null ? null : (agentByScope.get(scopeID) ?? null))
+  return agentScopeLease
 }
 
-/** 卸载:把当前档位交还给该会话。**只有仍持有时才写** —— 新实例已经接管就不许再覆盖它的值
- *  (卸载与挂载的先后由宿主决定,这条守卫让两种顺序都不会把 B 的档位写进 A 的名下)。 */
-export function releaseComposerAgentScope(scopeID: string | null) {
-  if (scopeID === null || agentScopeOwner !== scopeID) return
-  rememberScopedAgent(scopeID, agent())
+/** 卸载:把当前档位交还给该会话。**只有仍持有那张租约时才写** —— 别的实例已经接管(不论它接管的
+ *  是不是同一个会话 id)就不许再覆盖它的值。 */
+export function releaseComposerAgentScope(scopeID: string | null, lease: number) {
+  if (agentScopeLease !== lease || agentScopeOwner !== scopeID) return
+  if (scopeID !== null) rememberScopedAgent(scopeID, agent())
   agentScopeOwner = null
 }
 
@@ -132,36 +143,43 @@ export function resetComposerAgentScopesForTests() {
  * —— 用户在 B 从没开过只读,只会看到模型忽然不肯动文件。
  *
  * 机制与档位那份**逐条同形**:同一把钥匙(会话 id / null=首页)、同一处 adopt/release
- * (alpha-composer 的那一个 createEffect)、同一个 LRU 上界。唯一的差别是默认值 —— 档位的默认是
- * `null`(引擎自己的 build),只读档的默认是 `"ask"`(引擎默认的逐次审批),所以「默认不登记」这条
- * 判的是 `=== "ask"`,越界丢弃后回落的也是 `"ask"`:那是权限最紧的一档里**用户可解释**的那个,
- * 丢登记只会多问一次,不会静默放松限制。 */
-const PERM_SCOPE_CAPACITY = 32
+ * (alpha-composer 的那一个 createEffect)、同一套租约守卫。两处差别,都在这一段说清:
+ *
+ * ① 默认值不同 —— 档位的默认是 `null`(引擎自己的 build),只读档的默认是 `"ask"`(引擎默认的
+ *    逐次审批),所以「默认不登记」这条判的是 `=== "ask"`。
+ * ② **只读档这一份没有容量上界。** 档位那份有(32,越界回落到引擎默认 build,那是安全方向);
+ *    只读档不是。原先照抄了同一个 LRU,并在这里写着「丢登记只会多问一次,不会静默放松限制」——
+ *    **那句话是错的**:依次在 33 个会话里开只读,第 1 个就被淘汰,回到它时 chip 变回「请求审批」、
+ *    请求也不再带 `alpha-readonly`。ask 确实不会未经批准就写盘,但**是系统替用户把只读关掉了**,
+ *    而用户从没做过这个动作。登记是「用户显式开过只读」的唯一凭据,不能有损。 */
 const permByScope = new Map<string, PermMode>()
 /** 当前持有只读档信号的会话 id;null = 首页(新会话入口)或无人持有。 */
 let permScopeOwner: string | null = null
+/** 租约语义同档位那份(见 `agentScopeLease`)。两份各自持有,不共用计数器。 */
+let permScopeLease = 0
 
 function rememberScopedPerm(scopeID: string, value: PermMode) {
-  permByScope.delete(scopeID) // 重插到队尾(Map 保持插入序 → 队首 = 最旧,用作 LRU)
-  if (value === "ask") return // 默认档 = 不登记
-  permByScope.set(scopeID, value)
-  while (permByScope.size > PERM_SCOPE_CAPACITY) {
-    const oldest = permByScope.keys().next().value
-    if (oldest === undefined) break
-    permByScope.delete(oldest)
+  if (value === "ask") {
+    permByScope.delete(scopeID) // 默认档 = 不登记(显式退出只读时要把旧登记删掉)
+    return
   }
+  permByScope.set(scopeID, value)
 }
 
-/** 挂载:接管该会话的只读档(无登记 = 默认 ask)。`null` = 首页,一律回默认。 */
-export function adoptComposerPermScope(scopeID: string | null) {
+/** 挂载:接管该会话的只读档(无登记 = 默认 ask)。`null` = 首页,一律回默认。返回本次租约。 */
+export function adoptComposerPermScope(scopeID: string | null): number {
+  // 先落账现任持有者的值,理由同档位那份(adopt 可能早于 release)。
+  if (permScopeOwner !== null) rememberScopedPerm(permScopeOwner, perm())
   permScopeOwner = scopeID
+  permScopeLease += 1
   setPerm(scopeID === null ? "ask" : (permByScope.get(scopeID) ?? "ask"))
+  return permScopeLease
 }
 
-/** 卸载:把当前只读档交还给该会话。守卫同档位那条 —— 新实例已接管就不许再覆盖它的值。 */
-export function releaseComposerPermScope(scopeID: string | null) {
-  if (scopeID === null || permScopeOwner !== scopeID) return
-  rememberScopedPerm(scopeID, perm())
+/** 卸载:把当前只读档交还给该会话。守卫同档位那条 —— 租约不匹配即不写。 */
+export function releaseComposerPermScope(scopeID: string | null, lease: number) {
+  if (permScopeLease !== lease || permScopeOwner !== scopeID) return
+  if (scopeID !== null) rememberScopedPerm(scopeID, perm())
   permScopeOwner = null
 }
 
