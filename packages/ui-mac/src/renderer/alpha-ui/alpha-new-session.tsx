@@ -35,6 +35,10 @@ export function AlphaNewSession(props: {
 
   const projects = createMemo(() => visibleWorkspaces(store.projects))
   const directory = createMemo(() => tabs.draft(props.draftId).directory)
+  // #891:该 draft 晋升成会话后落在**这个 server** 上 —— 上游 `promoteDraft` 用 `draft.server` 建
+  // session tab,`tabHref` 就是 `/server/<draft.server>/session/<id>`。composer 用它给新会话登记开局
+  // 档位/只读档,钥匙才与会话页 adopt 时算的那把一致。
+  const draftServerKey = createMemo(() => tabs.draft(props.draftId).server)
   // 未显式选择时落默认对话目录 `~/Alpha`(ADR-025 §3,owner 2026-07-28 改判)。这里是**呈现**
   // 口径:chip 与标题都按它显示;draft 真正带哪个目录由建 draft 的入口决定(CODE-C)。
   const defaultWs = createDefaultWorkspaceDir()
@@ -100,6 +104,7 @@ export function AlphaNewSession(props: {
                 mode="home"
                 projects={props.projects}
                 directory={directory}
+                serverKey={draftServerKey}
                 initialText={stashed?.text ?? initialPrompt}
                 initialMentions={stashed?.mentions}
                 initialAttachments={stashed?.attachments}

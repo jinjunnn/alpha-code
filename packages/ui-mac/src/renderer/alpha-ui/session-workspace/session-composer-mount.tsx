@@ -49,6 +49,9 @@ export function SessionComposerMount(props: {
           projects={props.projects}
           directory={() => props.identity()?.directory}
           sessionID={() => props.identity()?.sessionID}
+          // #891:composer 的档位/只读档作用域按 canonical 身份键持有,身份的第三段在这里交给它
+          // —— 本组件已经拿着权威 identity(上面 keyed 用的就是它的 identityKey)。
+          serverKey={() => props.identity()?.serverKey}
           sessionDock={props.dock}
           initialText={mounted.initialText}
           onDraftCapture={(draft) => props.drafts.capture(mounted.key, draft)}

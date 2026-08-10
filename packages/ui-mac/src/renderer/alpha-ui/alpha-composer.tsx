@@ -78,6 +78,7 @@ import {
   type EngineModelRef,
 } from "./model-default-core"
 import { ModelPickPop } from "./alpha-composer-model"
+import { identityKey } from "./session-workspace/session-workspace-core"
 import { createModelContract, ModelContractError, type ModelContract } from "./model-contract"
 import { byokEngineId, isByokEngineId } from "../../shared/alpha-model-types"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
@@ -539,6 +540,13 @@ export type AlphaComposerProps = {
   directory: () => string | undefined
   /** session 模式必传:目标会话。 */
   sessionID?: () => string | undefined
+  /** #891:目标会话所属的 server 身份(`ServerConnection.key`)。与 `directory` / `sessionID` 合成
+   *  仓内 canonical 的会话身份三元组 —— composer 的档位/只读档作用域就以它的 `identityKey` 为键
+   *  (与草稿暂存、artifacts、review 同一把钥匙)。宿主各自给权威源:会话页给 live 身份的
+   *  `serverKey`、首页给 `useServer().key`(新会话的 legacy href 正是被重定向到这个 key 上的)、
+   *  新对话页给该 draft 的 `server`。缺席 = 身份不成立,作用域退到 `null`(一律默认档,不登记)——
+   *  宁可不记,也不记到一把与会话页对不上的钥匙下面。 */
+  serverKey?: () => string | undefined
   /** session 模式:seam dock 注入的 typed 数据面。 */
   sessionDock?: ComposerSessionDockApi
   /** home:零工作区时的引导(打开工作区选择器)。 */
@@ -741,7 +749,21 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
 
      #884:只读档(perm)走**同一把钥匙、同一处 adopt/release**。它不跟上就等于上面白改 ——
      `buildPromptRequest` 里 readonly 强制 alpha-readonly 并压过手选档位,只读档跨会话粘连时
-     B 的档位照样被顶掉。两者的作用域生命周期完全一致,所以共用这一个 effect,不另起一条。 */
+     B 的档位照样被顶掉。两者的作用域生命周期完全一致,所以共用这一个 effect,不另起一条。
+
+     #891:那把钥匙此前是 raw `sessionID`,现在是仓内 canonical 的会话身份键
+     (`identityKey(serverKey, directory, sessionID)`,与草稿暂存/artifacts/review 同一把)。raw id
+     不是永久身份:同一个 id 在不同 server 或不同目录下是两个会话,共用一条登记就会串档;会话删掉
+     后同 id 再出现(导入/外部创建)也会未经用户操作就继承旧的只读档。身份三元组缺任何一段 = 身份
+     不成立,作用域按 null 处理(与首页同档:一律默认,不登记)。 */
+  const composerScopeKey = (): string | null => {
+    if (props.mode === "home") return null
+    const sessionID = props.sessionID?.()
+    const directory = props.directory()
+    const serverKey = props.serverKey?.()
+    if (!sessionID || !directory || !serverKey) return null
+    return identityKey({ serverKey, directory, sessionID }) ?? null
+  }
   let composerScope: string | null = null
   let composerScopeHeld = false
   // adopt 发下来的租约(两份各自一张)。卸载时原样交回 —— 别的实例已经接管时,租约不匹配,
@@ -753,7 +775,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     releaseComposerPermScope(composerScope, composerPermLease)
   }
   createEffect(() => {
-    const next = props.mode === "home" ? null : (props.sessionID?.() ?? null)
+    const next = composerScopeKey()
     untrack(() => {
       if (composerScopeHeld && next === composerScope) return
       if (composerScopeHeld) releaseComposerScope()
@@ -1337,6 +1359,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     // 一份快照,构造请求与两处 seed 都用它。
     const submittedAgent = composerAgent()
     const submittedPerm = composerPerm()
+    // #891:新会话的身份 server 段也在这里定格 —— 与档位同理,`await startChat(...)` 之后用户可能
+    // 已经切了 server,那时读到的 key 属于别人。
+    const submittedServerKey = props.serverKey?.()
     const req = buildPromptRequest({
       text: body,
       extraParts: [...buildMentionParts(body, dir, mentions()), ...buildAttachmentParts(attachments())],
@@ -1365,8 +1390,16 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         // #884:只读档同理 —— 第一条**已经**是以只读发出去的(req.agent = alpha-readonly),
         // 跳进会话页却回到「请求审批」,等于我们背着用户把它关了。
         // 用上面的提交快照,不重读 signal:这一行跑在 await 之后,signal 可能早已易主(见那段注释)。
-        seedComposerAgentScope(id, submittedAgent)
-        seedComposerPermScope(id, submittedPerm)
+        // #891:登记用的钥匙必须与会话页 adopt 时算出的**逐字节相同** —— 同一个 `identityKey`,
+        // 三段都取提交那一刻的快照。serverKey 缺席就不登记:与其记到一把没人认领的钥匙下面,
+        // 不如让新会话老实回默认档(用户看得见 chip 熄灭,而不是被静默记到别的会话名下)。
+        const seedKey = submittedServerKey
+          ? identityKey({ serverKey: submittedServerKey, directory: dir, sessionID: id })
+          : undefined
+        if (seedKey) {
+          seedComposerAgentScope(seedKey, submittedAgent)
+          seedComposerPermScope(seedKey, submittedPerm)
+        }
         setText("")
         setMentions([])
         setAttachments([])

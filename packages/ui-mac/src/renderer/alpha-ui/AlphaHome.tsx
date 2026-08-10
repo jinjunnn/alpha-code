@@ -7,6 +7,7 @@
 
 import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
+import { useServer } from "@opencode-ai/app"
 import { type AlphaProjectsApi } from "../sidebar/use-projects"
 import { sessionHref } from "../sidebar/route"
 import { AlphaComposer } from "./alpha-composer"
@@ -30,6 +31,11 @@ function greeting(): string {
 
 export function AlphaHome(props: { projects: AlphaProjectsApi }) {
   const navigate = useNavigate()
+  // #891:首页建出来的会话,其 canonical 身份的 server 段 = **当前 active server**。这不是猜的:
+  // 首页跳的是 legacy href(`sessionHref(ws, id)`),上游 NewLayoutLegacySessionRedirect 对一个还没有
+  // tab 的新 id 直接落到 `useServer().key`,会话页再按 `route.serverKey ?? providerServerKey` 定身份。
+  // composer 用它给新会话登记开局档位 —— 与会话页 adopt 时算出的钥匙必须是同一把。
+  const server = useServer()
   const { store } = props.projects
   const configHealth = useConfigHealth()
 
@@ -122,6 +128,7 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
             mode="home"
             projects={props.projects}
             directory={activeWs}
+            serverKey={() => server.key}
             onNeedWorkspace={() => {
               // 零工作区不留死点(REQ-054①):任何需要工作区的控件都引导到选择器
               setWsOpen(true)

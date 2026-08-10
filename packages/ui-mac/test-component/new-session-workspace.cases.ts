@@ -65,7 +65,15 @@ const tabs = {
     void startTransition(() => setDraft((current) => ({ ...current, ...patch })))
   },
 }
-mock.module("@opencode-ai/app", () => ({ useTabs: () => tabs }))
+// #891:AlphaHome 从 `useServer().key` 取当前 active server —— 首页建出来的会话正落在它上面,
+// composer 用它给新会话登记开局档位。draft 那条路不经这里(用的是 `tabs.draft().server`)。
+const [activeServerKey] = createSignal("sidecar")
+const server = {
+  get key() {
+    return activeServerKey()
+  },
+}
+mock.module("@opencode-ai/app", () => ({ useTabs: () => tabs, useServer: () => server }))
 mock.module("@solidjs/router", () => ({
   useSearchParams: () => [{}, () => {}],
   useNavigate: () => () => {},
