@@ -101,7 +101,7 @@
 8	packages/ui-mac	src/renderer/alpha-ui/session-timeline/cards/cards-contract.test.ts	-	REQ-125 C6 cards 静态棘轮(内容引擎/外链形态 + #865 fallback 中性态)
 5	packages/ui-mac	src/renderer/alpha-ui/permission-mount-ratchet.test.ts	packages/ui-mac/src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts,packages/ui-mac/src/renderer/alpha-ui/permission-dual-channel.test.ts	permission 挂载面棘轮 + 决定提交入口白名单(#668 起白名单含一个 v1 入口;运行时行为闸委派)
 2	packages/ui-mac	src/renderer/alpha-ui/session-workspace/permission-single-surface.test.ts	-	受托:单一审批面的**运行时**行为闸(两个棘轮的主判据)
-11	packages/ui-mac	src/renderer/alpha-ui/permission-dual-channel.test.ts	-	受托:#668 双通道审批的端到端行为闸 —— v1 `permission.asked` 真的弹出审批面、真能批准/拒绝(断言真实发出的请求落在哪条通道),且 v2 读写两侧无回归
+12	packages/ui-mac	src/renderer/alpha-ui/permission-dual-channel.test.ts	-	受托:#668 双通道审批的端到端行为闸 —— v1 `permission.asked` 真的弹出审批面、真能批准/拒绝(断言真实发出的请求落在哪条通道),且 v2 读写两侧无回归;`#561` 追加判据域闸:被 solid store 观察过(原始对象上多一个非枚举 $PROXY 符号键)的合法 v2 请求,经生产 createPermissionSurfaceMount 仍须呈现并真的发出 once —— 把 exactFactRecord 换回 Reflect.ownKeys 即红(实测),它守的是「静默自动拒绝」这一类无提示失败
 7	packages/ui-mac	src/renderer/alpha-ui/permission-auto-approve-switch.test.ts	-	#668:`permissions.autoApprove` 不是死开关 —— 关(默认)时任何 autoAccept 配置都不自动放行(生产判定权威全矩阵)
 6	packages/ui-mac	src/renderer/alpha-ui/settings-surface-ratchet.test.ts	-	settings surface 清单棘轮(对 FRONTEND_SURFACE_MANIFEST)
 2	packages/ui-mac	src/renderer/alpha-ui/reduced-motion-ratchet.test.ts	-	reduced-motion 棘轮:新动效必须尊重降级偏好

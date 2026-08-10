@@ -11,6 +11,7 @@ import { PermissionWatcher } from "./permission-watcher"
 
 export { render }
 export * from "./permission-dual-channel-stub"
+export { observeThroughStore } from "./permission-store-observation"
 
 const Mount = createPermissionSurfaceMount(PermissionWatcher)
 

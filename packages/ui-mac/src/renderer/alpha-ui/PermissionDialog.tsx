@@ -328,10 +328,19 @@ export function permissionRequestFacts(request: PermissionV2Request) {
   }
 }
 
+/**
+ * 严格键集核验:被核验的值必须**恰好**带着 expectedKeys,多一个字段就核不实。
+ *
+ * 判据域刻意取「自有可枚举字符串键」,而不是 `Reflect.ownKeys`(REQ-090 #561):被核验的值
+ * 恒来自 JSON wire,`JSON.parse` 只可能产出可枚举字符串键 ⇒ 非枚举键与符号键**结构上到不了
+ * 这里**,只可能由进程内代码事后盖章(solid store 的 $PROXY / $NODE、devtools 注解)。把它们
+ * 计入 = 把「进程内注解」误读成「wire 上多出来的字段」,让合法请求核不实并触发静默自动拒绝。
+ * 反向不放松:wire 上任何真实多出来的字段都是可枚举字符串键,照旧被这里拒掉。
+ */
 function exactFactRecord(value: unknown, expectedKeys: string[]) {
   const record = errorRecord(value)
   if (!record || Array.isArray(value)) return undefined
-  const keys = Reflect.ownKeys(record)
+  const keys = Object.keys(record)
   if (keys.length !== expectedKeys.length || expectedKeys.some((key) => !Object.hasOwn(record, key))) return undefined
   return record
 }

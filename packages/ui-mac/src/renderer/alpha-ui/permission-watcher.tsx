@@ -31,9 +31,11 @@ export function PermissionWatcher(props: PermissionSurfaceProps) {
   return (
     <Show when={feed.state.ready && feed.state.requests[0]} keyed>
       {(request) => {
-        // 呈现前必须还原 raw 对象:solid store 代理会把 $PROXY 等符号注入 Reflect.ownKeys,
-        // 而 permissionRequestFacts 的 exactFactRecord 是严格键集核验 —— 经代理传入会把
-        // 一切合法请求误判为「核不实」并触发自动拒绝(2026-07-24 审计修复轮实测)。
+        // 呈现前还原 raw 对象。这是**纵深防御,不是承重判据**(REQ-090 #561 更正):承重的是
+        // exactFactRecord 自己的判据域(自有可枚举字符串键)。unwrap 只把顶层换回 raw —— solid
+        // 的 wrap() 把 $PROXY 盖在**原始对象自身**且 configurable:false,任何一处消费者只要先
+        // 经代理读过 .subject/.scope,污染就永久刻在共享对象上,unwrap 当场失效且不报错。
+        // 保留它的另一个理由:避免对话框对 store 建立反应性订阅。
         const raw = unwrap(request)
         return (
           <PermissionDialog
