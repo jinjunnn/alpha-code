@@ -976,6 +976,21 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       // contract 里(每次网络往返各自 ENGINE_FETCH_TIMEOUT_MS);目录就绪的等待不该被它掐断 ——
       // 掐断只会把「还在收敛」伪装成一次失败,再交给退避空转,那正是本票要消灭的东西。
       const listing = modelContract.list(directory, chainSignal)
+      /* #882:这条 listing 的**拒绝**必须在创建处就登记一个观察者。它唯一的真消费者是下面的
+         `loadEngineModelsWithRetry`(自带 try/catch),而它与这里之间隔着三个早退点
+         (`currentRead` / `catalogRead` / `auth+keys` 各自的 `chainDisposed || seq !== chainSeq`),
+         退避循环自己在 `isStale()` 上也会丢下一条刚发出的 listing —— 每一处早退都把这条在途请求
+         留成**无主**。
+
+         从前无主是安全的:它只挂在一个 10s 预算上,被丢下时既不 settle 也不 reject。本票把它改挂
+         到**链的生命期**上之后,`supersede`/卸载会当场把它拒掉 ⇒ **未处理拒绝**。它不改变任何
+         用户可观察的档位/身份结果(#891 那两条断言的值全对),但在 renderer 里是真的
+         `unhandledrejection`:bun 直接把它记到当前用例头上,Electron 里则会走全局错误上报。
+         别用「早退点各自补一句」代替这里 —— 那是按实例修,下一个早退点会再漏一次。
+
+         `.catch` 只登记「这个拒绝已被观察」,`listing` 本身不受影响:真消费者仍从自己的 `await`
+         拿到同一个拒绝,recovering + 1/2/4/8s 恢复链一步不少。 */
+      listing.catch(() => {})
       if (markModelList)
         void listing.then(
           (listed) =>
