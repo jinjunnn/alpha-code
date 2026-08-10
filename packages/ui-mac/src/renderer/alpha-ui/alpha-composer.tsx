@@ -543,9 +543,12 @@ export type AlphaComposerProps = {
   /** #891:目标会话所属的 server 身份(`ServerConnection.key`)。与 `directory` / `sessionID` 合成
    *  仓内 canonical 的会话身份三元组 —— composer 的档位/只读档作用域就以它的 `identityKey` 为键
    *  (与草稿暂存、artifacts、review 同一把钥匙)。宿主各自给权威源:会话页给 live 身份的
-   *  `serverKey`、首页给 `useServer().key`(新会话的 legacy href 正是被重定向到这个 key 上的)、
-   *  新对话页给该 draft 的 `server`。缺席 = 身份不成立,作用域退到 `null`(一律默认档,不登记)——
-   *  宁可不记,也不记到一把与会话页对不上的钥匙下面。 */
+   *  `serverKey`;首页与新对话页给**那份 projects store 连着的 server**(会话是 `startChat` 在
+   *  它上面建的),不是"当前 active server"。三段缺任何一段 = 身份不成立,作用域退到 `null`
+   *  (一律默认档,不登记)—— 宁可不记,也不记到一把与会话页对不上的钥匙下面。
+   *
+   *  这里的类型仍是可选的,只为**测试**能直挂 `AlphaComposerRuntime`;生产宿主一律必传,见
+   *  下面 `AlphaComposer` 的签名。 */
   serverKey?: () => string | undefined
   /** session 模式:seam dock 注入的 typed 数据面。 */
   sessionDock?: ComposerSessionDockApi
@@ -596,7 +599,19 @@ const readState = <T,>(promise: Promise<T>): Promise<ReadState<T>> =>
    durable 发送一起退役 —— v1 promptAsync 每条消息自带 agent,不存在「会话档」这个需要
    先读后 CAS 的中间状态。 */
 
-export function AlphaComposer(props: AlphaComposerProps) {
+/** #891:生产宿主的 composer 契约 —— `serverKey` **必传**。
+ *
+ *  为什么单独收紧这一处:漏传不是"少一个可选项",而是**系统替用户把只读关掉** —— 身份不成立
+ *  ⇒ 作用域为 `null` ⇒ 只读档回默认的 `ask`,而用户在这个会话里明明开过只读。这种降级既不报错
+ *  也没有 UI 痕迹,只有下一次模型动了文件才看得出来。把它做成**编译期**错误,是唯一能让"将来
+ *  某个宿主忘了接这条线"当场响的办法(测试文件不进 typecheck,靠测试兜不住新宿主)。
+ *
+ *  必传管的是「宿主有没有把这条线接上」,**不是**「这一刻算不算得出身份」:accessor 的返回值
+ *  仍可以是 `undefined`(身份尚未解析,如 `SessionComposerMount` 的 `props.identity()?.serverKey`),
+ *  那时 composer 照旧按"身份不成立"退到默认档、不登记。 */
+export type AlphaComposerHostProps = AlphaComposerProps & { serverKey: () => string | undefined }
+
+export function AlphaComposer(props: AlphaComposerHostProps) {
   return <AlphaComposerRuntime {...props} command={useCommand()} />
 }
 

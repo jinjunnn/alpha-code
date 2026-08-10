@@ -2130,6 +2130,48 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       expect(sdk.promptAsyncCalls[1]).toMatchObject({ directory: "/ws", agent: "alpha-readonly" })
       mounted.dispose()
     })
+
+    /* ── #891 钥匙的编码必须是**单射**的,不只是「三段都进去了」──────────────────────
+       ⑭⑮ 各拨开一段,但它们两个都杀不掉一种改法:把钥匙改成 `serverKey + directory + sessionID`
+       的无分隔自拼。那样三段确实全在,⑭⑮ 也照样全绿 —— 而**切分位置不同的两个身份会撞成同一
+       把钥匙**,于是两个真实存在的不同会话共用一条只读登记(正是本票要消灭的串档,只是换了个
+       入口回来)。下面这对就是撞的:
+         A = `https://h/a` + `/b`   + S
+         B = `https://h`   + `/a/b` + S
+       自拼两者都得到 `https://h/a/bS`;`identityKey` 的 NUL 分隔则不会。
+       两个 serverKey 都是真实形状 —— `ServerConnection.key` 对 http 连接就是整条 URL。 */
+    test("⑯ 切分位置不同、拼起来相同的两个身份:钥匙不撞,只读与计划各自独立", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const left = { serverKey: "https://h/a", directory: "/b", sessionID: DUP_SESSION_ID }
+      const right = { serverKey: "https://h", directory: "/a/b", sessionID: DUP_SESSION_ID }
+      // 自拼会撞 —— 这条断言是本用例的前提,写在这里免得将来改了夹具还以为在测碰撞。
+      expect(`${left.serverKey}${left.directory}${left.sessionID}`).toBe(
+        `${right.serverKey}${right.directory}${right.sessionID}`,
+      )
+
+      const [identity, setIdentity] = createSignal(left)
+      const mounted = mountSession(sdk, identity)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      await turnBothOn(mounted.host)
+
+      setIdentity(right)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("ask")
+      expect(planChip(mounted.host)).toBeNull()
+      await sendVia(mounted.host, "另一个切分位置上的同 id 会话")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ directory: "/a/b" })
+      expect("agent" in sdk.promptAsyncCalls[0]!).toBe(false)
+
+      setIdentity(left)
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("readonly"))
+      expect(planChip(mounted.host)).not.toBeNull()
+      await sendVia(mounted.host, "回到原来那个身份")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
+      expect(sdk.promptAsyncCalls[1]).toMatchObject({ directory: "/b", agent: "alpha-readonly" })
+      mounted.dispose()
+    })
   })
 })
 

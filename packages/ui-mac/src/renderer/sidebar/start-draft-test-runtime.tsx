@@ -383,6 +383,8 @@ export function AlphaShell(props: { connection?: ServerConnection.Any }) {
             newSession: (surfaceProps) => (
               <AlphaNewSession
                 projects={projects}
+                // #891:本 harness 里 `projects` 就连着这一个连接(生产是由 store 的 baseUrl 反查)。
+                serverKey={() => ServerConnection.key(connection)}
                 draftId={surfaceProps.draftId}
                 promoteDraft={surfaceProps.promoteDraft}
               />
