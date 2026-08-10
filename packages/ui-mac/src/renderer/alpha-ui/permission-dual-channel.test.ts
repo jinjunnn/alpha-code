@@ -261,6 +261,35 @@ describe("#668 回归:v2 读写两侧不得被破坏", () => {
     expect(dialog()).toBeNull()
   })
 
+  test("#561 被 store 观察过的 v2 请求:仍然呈现,决定仍是 once 而不是静默拒绝", async () => {
+    // 这条挂的是生产接线点 createPermissionSurfaceMount(PermissionWatcher)。#561 的缺陷在于
+    // 严格键集核验用 Reflect.ownKeys,会把 solid store 盖在原始对象上的非枚举符号键当成
+    // 「wire 上多出来的字段」⇒ 核不实 ⇒ 自动拒绝。断言落在真的发出去的那个决定上。
+    const observed = runtime.observeThroughStore(JSON.parse(JSON.stringify(v2Request)) as typeof v2Request)
+    expect(Object.getOwnPropertySymbols(observed.subject).length).toBeGreaterThan(0)
+    expect(Object.keys(observed.subject)).toEqual(["kind", "id"])
+
+    await mounted()
+    runtime.emit("permission.v2.asked", observed)
+    await flush()
+
+    expect(dialog()).not.toBeNull()
+    expect(fact("subject")).toContain("build-reviewer")
+    // 自动拒绝会立刻提交一个 reject 并关掉对话框 —— 这里必须一条审批流量都还没发生。
+    expect(runtime.permissionTraffic()).not.toContain("v2.session.permission.reply")
+
+    button("once")!.click()
+    await flush()
+
+    const reply = runtime.sdkCalls.find((call) => call.path === "v2.session.permission.reply")
+    expect(reply).toBeDefined()
+    expect(reply!.args[0]).toMatchObject({
+      requestID: v2Request.id,
+      permissionV2DecisionCommand: { decision: "once" },
+    })
+    expect(dialog()).toBeNull()
+  })
+
   test("v2 快照与 v1 快照合并呈现,两条通道各自的 id 都在", async () => {
     runtime.seedPendingV1([v1Request])
     runtime.seedPendingV2([v2Request])
