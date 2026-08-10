@@ -623,6 +623,11 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const [modelChainState, setModelChainState] = createSignal<"loading" | "recovering" | "ready" | "error">(
     "loading",
   )
+  // Token renewal briefly replaces the loopback sidecar without remounting this renderer. Keep
+  // the established model projection visible while idle, but gate every engine-backed action
+  // until the new generation is healthy. This separates availability from presentation: a
+  // routine renewal no longer inserts/removes the "Syncing…" row and shifts the whole composer.
+  const [runtimeUnavailable, setRuntimeUnavailable] = createSignal(false)
   const [mentions, setMentions] = createSignal<MentionPart[]>([...(props.initialMentions ?? [])])
   const [composing, setComposing] = createSignal(false)
   let taRef: HTMLTextAreaElement | undefined
@@ -797,6 +802,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     return (
       text().trim().length > 0 &&
       !!props.directory() &&
+      !runtimeUnavailable() &&
       modelChainState() === "ready" &&
       (!needsPlatform || platformPermission() === "ready") &&
       // 谓词 2:引擎里没有这个直连节点就发不出去,按钮如实关闭(行内另有告知)。
@@ -812,6 +818,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
        modelChainState() === "ready",绝不在引擎未恢复时假装能发送。
        session 模式不豁免:换模型必须落到服务端 switchModel,引擎不在就不能伪装成已切换。 */
     const homeLocalByok = props.mode === "home" && !props.sessionID?.() && isByokEngineId(model.providerID)
+    if (runtimeUnavailable() && !homeLocalByok) throw new Error("runtime is recovering")
     // 未获全链 admission 时不能 supersede 正在完成 auth/KEY/account/list 的 owner，否则无人接管 loading。
     if (modelChainState() !== "ready" && !homeLocalByok) throw new Error("model chain is not ready")
     if (model.providerID === platformId() && platformPermission() !== "ready")
@@ -1145,11 +1152,16 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         if (state.status === "ready") return
       }
       if (state.status === "recovering") {
+        setRuntimeUnavailable(true)
         runtimeGenerationEpoch++
-        setModelChainState("recovering")
+        const interrupted = running() || sending()
+        // An idle token-only renewal changes credentials, not the catalog or selected model.
+        // Preserve the ready projection and silently close the execution gate; structural
+        // recovery and an interrupted response still rebuild the chain and surface recovery.
+        if (state.reason !== "token-only" || interrupted) setModelChainState("recovering")
         // C7:引擎运行态是 typed live 通道的派生值(sessionDock.running),重启后随
         // session_status 自行归位 —— 本地只需复位在途提交并如实播报中断。
-        if (running() || sending()) {
+        if (interrupted) {
           markStartupTimeline("renderer.generation.interruption", {
             generation: state.generation,
             reason: state.reason,
@@ -1164,18 +1176,25 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         return
       }
       if (state.status === "failed") {
+        setRuntimeUnavailable(true)
+        setModelChainState("recovering")
         // #577 终态:引擎未通过健康线,不得当成 ready 唤醒(那是在已知失败下伪造恢复信号)。
-        // 执行面保持关闭(modelChainState 不动),模型链自身的无上限封顶退避(#594)继续自证:
+        // 执行面保持关闭并显式进入恢复态;模型链自身的无上限封顶退避(#594)继续自证:
         // 引擎真实可达时 list 成功,链自然回 ready。
         return
       }
       // ready 与 injection-failed(#613)都证明引擎可达 —— 唤醒停跑的链不是伪造恢复信号;
       // 「配置未生效」的区分呈现归 picker 横幅(alpha-composer-model),不在唤醒面。
+      setRuntimeUnavailable(false)
       modelRetryWakeup.wake("generation-ready")
       if (modelChainState() === "recovering") setModelRetryEpoch((value) => value + 1)
       accountRetryWakeup.wake("generation-ready")
     })
     const unsubscribeSse = subscribeSseReconnected(() => {
+      // The bounded health/SSE self-probe is the recovery path when a generation-ready IPC event
+      // is lost. A proven live transport may reopen the execution gate; otherwise the hidden
+      // availability latch would stay closed even after the model chain recovered.
+      setRuntimeUnavailable(false)
       modelRetryWakeup.wake("sse-reconnected")
       if (modelChainState() === "recovering") setModelRetryEpoch((value) => value + 1)
       accountRetryWakeup.wake("sse-reconnected")
@@ -1208,6 +1227,10 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     const dir = props.directory()
     if (!dir) {
       props.onNeedWorkspace?.()
+      return
+    }
+    if (runtimeUnavailable()) {
+      pushToast({ kind: "info", title: t("alpha.composer.modelStateReading"), detail: t("alpha.composer.modelStateDetail") })
       return
     }
     if (modelChainState() !== "ready") {
@@ -1518,7 +1541,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           directory={props.directory}
           onSelect={selectComposerModel}
           onRetryCurrent={retryCurrentModel}
-          modelChainReady={() => modelChainState() === "ready"}
+          modelChainReady={() => modelChainState() === "ready" && !runtimeUnavailable()}
           onNeedWorkspace={props.onNeedWorkspace}
           hasWorkspace={hasWorkspace}
         />
@@ -1527,7 +1550,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           directory={props.directory}
           onSelect={selectComposerModel}
           onRetryCurrent={retryCurrentModel}
-          modelChainReady={() => modelChainState() === "ready"}
+          modelChainReady={() => modelChainState() === "ready" && !runtimeUnavailable()}
         />
         <Show
           when={running()}

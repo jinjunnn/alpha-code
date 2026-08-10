@@ -119,3 +119,35 @@ reload=0, no loop, and catalog P95 <=2 s. The existing probe can visibly flash
 or launch a window, so it must run only in an owner-approved quiescent desktop
 window; until then #859 remains open and this section makes no packaged or
 latency claim.
+
+## #858 post-fix candidate
+
+The #858 change gives token-only rotation a bounded 500 ms graceful-stop window
+before terminating the old sidecar. Structural respawns and application exit
+continue to use the existing 6 s graceful budget. This preserves the explicit
+active-stream interruption and renderer/draft continuity contract without
+letting an old active connection block a renewed-token fork for the full stop
+ceiling.
+
+The deterministic gate drives a child that deliberately ignores the stop
+message and proves that token rotation terminates it at 500 ms while the
+default path does not terminate before 6 s. A production wiring gate proves
+that only `token-only` selects that bounded path.
+
+The first installed signed candidate then exposed a separate continuity gap:
+the main process and renderer stayed mounted, but every scheduled token-only
+rotation tore down the renderer's project SDK and inserted a transient
+`Syncing…` composer row. The process evidence showed no crash, no renderer
+reload, and an expected sidecar exit with code 0; the visible layout churn made
+that healthy renewal look like a desktop restart. The follow-up keeps the
+same-URL/same-password SDK owner stable, closes a separate execution gate while
+the sidecar is unavailable, and rebuilds only if the token-only generation
+actually fails. Active responses still take the explicit interruption path
+and preserve their draft.
+
+The signed 3 s renewal cell already established approximately 1.15 s from
+rotation request to generation ready in all five samples, and the active-stream
+cell preserved the draft, reported the interruption, kept mount=1/reload=0,
+and completed its first post-rotation request with only the renewed token. The
+new idle-continuity follow-up still requires a rebuilt signed candidate and a
+quiescent-desktop rerun before #858 can close.

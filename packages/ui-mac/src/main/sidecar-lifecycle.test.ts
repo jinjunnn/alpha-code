@@ -242,3 +242,13 @@ test("#600/#859 接线锚:boot token 代先标 in-flight,只在 health 后提交
   expect(source).toContain("commitSidecarTokenGeneration(forkTokenGeneration, healthy)")
   expect(source).not.toMatch(/sidecarTokenGeneration = getTokenGeneration\(\)/)
 })
+
+test("#858 接线锚:token-only 换血用短收口预算,结构换血与退出保留 graceful", () => {
+  const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
+  expect(source).toContain("async function killSidecar(reason?: SidecarRespawnReason)")
+  expect(source).toContain('await current.stop(reason === "token-only" ? "token-rotation" : "graceful")')
+
+  const respawn = source.slice(source.indexOf("const doRespawnSidecar"), source.indexOf("const respawnSidecar"))
+  expect(respawn).toContain("await killSidecar(reason)")
+  expect(source).toContain("await killSidecar()")
+})

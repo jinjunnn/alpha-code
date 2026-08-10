@@ -179,7 +179,7 @@ function useEnvProxy() {
   }
 }
 
-async function killSidecar() {
+async function killSidecar(reason?: SidecarRespawnReason) {
   stopEngineRunawayMeter()
   if (!server) return
   const current = server
@@ -187,7 +187,7 @@ async function killSidecar() {
   // #408:蓄意停止 = 会话结束 —— 在任何 await 之前推栅栏(endSession 先撤 active 标记再清 Map),
   // 此后一切在途 grant 授权的迟到 commit 都被拒,复活窗口闭合(Codex 裁决 Q3 竞态不变量)。
   endSessionGrants("sidecar-stop")
-  await current.stop()
+  await current.stop(reason === "token-only" ? "token-rotation" : "graceful")
 }
 
 // #408:会话结束的统一收口(蓄意 kill = "sidecar-stop";崩溃 = "sidecar-exit")。幂等:无活跃
@@ -1137,7 +1137,7 @@ const main = Effect.gen(function* () {
       // 「这一代已经宣告过」,补不上那个 failed。
       announcedGeneration = spawnGen
       publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason })
-      await killSidecar()
+      await killSidecar(reason)
       ensureLoopbackNoProxy()
       useEnvProxy()
       selfHeal = noteSpawn(selfHeal, Date.now())

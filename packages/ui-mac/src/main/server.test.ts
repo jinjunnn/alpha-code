@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test, vi } from "bun:test"
 import { EventEmitter } from "node:events"
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
@@ -329,6 +329,48 @@ describe("keyless baseline vs the real login-shell import (#223 Major 3)", () =>
 })
 
 describe("spawnLocalServer", () => {
+  test("token rotation bounds graceful stop at 500ms while the default keeps the 6s budget", async () => {
+    class HangingStopChild extends FakeChild {
+      kills = 0
+
+      postMessage(message: { type: string }) {
+        if (message.type === "start") queueMicrotask(() => this.emit("message", { type: "ready" }))
+        // stop 故意不 exit:复现活动连接拖住 graceful stop 的 packaged 现场。
+      }
+
+      kill() {
+        this.kills++
+        queueMicrotask(() => this.emit("exit", 0))
+      }
+    }
+
+    const run = async (mode: "token-rotation" | "graceful", beforeKillMs: number) => {
+      const child = new HangingStopChild()
+      const result = await spawnLocalServer("127.0.0.1", 4098, "password", {
+        userDataPath,
+        healthCheck: async () => true,
+        fork: (() => child) as unknown as typeof import("electron").utilityProcess.fork,
+      })
+      await result.health.wait
+
+      const stopping = result.listener.stop(mode)
+      vi.advanceTimersByTime(beforeKillMs)
+      await Promise.resolve()
+      expect(child.kills).toBe(0)
+      vi.advanceTimersByTime(1)
+      await stopping
+      expect(child.kills).toBe(1)
+    }
+
+    vi.useFakeTimers()
+    try {
+      await run("token-rotation", 499)
+      await run("graceful", 5_999)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   // #223 对抗审计 Major 4(2026-07-25):密钥文件同步失败后仍继续 fork —— 登出删不掉旧 token
   // 文件时只写日志继续,主权闸读到旧文件仍判 platformPays=true,新 sidecar 带着已作废的 token
   // 注册云工具;反向地登录写失败会静默回落 keyless。密钥同步是 fork 的前置条件,不是尽力而为。
