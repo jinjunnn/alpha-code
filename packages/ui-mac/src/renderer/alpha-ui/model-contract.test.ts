@@ -391,6 +391,92 @@ describe("typed model contract", () => {
     expect(delays).toEqual([1_000, 2_000, 4_000, 8_000])
   })
 
+  test("#882 R2 503 与 catalog.updated 撞在同一轮:按失败来源判，不被 landed 短路", async () => {
+    // R2 未闭合的窄竞态:生产曾先执行 `if (landed) continue` 再看 `failed`,于是「引擎这一轮
+    // 已经答了 503」与「catalog.updated 恰好同时到达」撞上时,503 走了「目录尚未收敛,继续等」
+    // 那条路被**吞掉**。审计用真实生成客户端无写复现:markerProbes=2、首个 signal 已 abort,
+    // 而 `contract.list()` 最终 **resolved** —— 503 一次都没进 recovering。
+    //
+    // 两个方向都要钉:真实失败必须抛(否则窄竞态原样回来),我们自己的取消必须不抛(否则事件
+    // 唤醒退化回 1/2/4/8s 退避,把 #882 本身修的东西改坏)。只钉一个方向,反方向的错实现全绿。
+    const unavailableBody = { _tag: "ServiceUnavailableError", message: "unavailable" }
+
+    // ① 引擎的 503 **已经形成**,而 catalog.updated 落在同一轮里。
+    let probes = 0
+    const failing = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: async () => {
+                probes++
+                if (probes === 1) {
+                  // 事件先落地(landed=true + 在途探针被取消),再把这一轮**真实**的答案交出来。
+                  notifyCatalogUpdated("/race-503")
+                  return { error: unavailableBody, response: { status: 503 } }
+                }
+                // 吞掉 503 的实现靠这一次「成功」走完屏障 —— 那正是审计量到的 markerProbes=2。
+                // 它同时让本用例**快速转红**(list 直接 resolve),而不是空转成用例超时。
+                return { data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }
+              },
+            },
+            model: { list: async () => ({ data: { data: [model] } }) },
+          },
+        }) as never,
+      { wait: async () => Promise.reject(new Error("真实 503 不该让屏障进入兜底等待")) },
+    )
+
+    const failure = await failing.list("/race-503").catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(ModelContractError)
+    expect(failure).toMatchObject({ operation: "list" })
+    // cause 必须是引擎那份 503 body,不是被我们自己的取消顶替掉的 abort 错误。
+    expect((failure as ModelContractError).cause).toBe(unavailableBody)
+    // 一次就抛:抛在第二次探针**之后**,等于仍然吞掉了这一轮引擎给出的答案。
+    expect(probes).toBe(1)
+
+    // ② 反方向:本轮失败正是**我们自己**为了重探发的取消。形状取自实跑,不是想象 ——
+    //    生成客户端(throwOnError 未开)把 fetch 的拒绝原样回成 `{ error, response: undefined }`,
+    //    而 `AbortSignal.any` 保留 abort reason 的对象身份 ⇒ error 就是 `signal.reason` 本身。
+    let cancelProbes = 0
+    let timerArmed = 0
+    const recovering = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: async (_input: unknown, options: { signal: AbortSignal }) => {
+                cancelProbes++
+                if (cancelProbes > 1) return { data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }
+                // 首探针悬挂,只可能被事件取消收场。
+                return new Promise((resolve) => {
+                  options.signal.addEventListener("abort", () => resolve({ error: options.signal.reason }), {
+                    once: true,
+                  })
+                })
+              },
+            },
+            model: { list: async () => ({ data: { data: [model] } }) },
+          },
+        }) as never,
+      {
+        wait: () => {
+          timerArmed++
+          return new Promise<void>(() => {})
+        },
+      },
+    )
+
+    const listing = recovering.list("/race-cancel")
+    for (let spin = 0; spin < 1_000 && cancelProbes === 0; spin++) await Promise.resolve()
+    expect(cancelProbes).toBe(1)
+    notifyCatalogUpdated("/race-cancel")
+    // 把「landed 时一律抛」当修法的实现在这里 reject —— 事件唤醒会退化成一次恢复链重试。
+    await expect(listing).resolves.toEqual([model])
+    expect(cancelProbes).toBe(2)
+    // 事件唤醒路径上一个兜底计时器都不该武装。
+    expect(timerArmed).toBe(0)
+  })
+
   test("#882 事件到不了时兜底轮询仍能就绪，且每一轮都闩在 250ms 档位上", async () => {
     // 实测:先于 renderer 订阅就已收敛的目录再也不会发 catalog.updated。屏障因此不能只认事件。
     //

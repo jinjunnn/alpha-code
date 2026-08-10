@@ -76,6 +76,29 @@ const catalogNotReady = (error: unknown, status: number | undefined) =>
   status === 404 ||
   (typeof error === "object" && error !== null && "_tag" in error && error._tag === "ProviderNotFoundError")
 
+/**
+ * 「本轮这次失败,是**我们自己**为了立刻重探而发的取消」——只有这一种失败不算故障。
+ *
+ * #882 R2:原实现用「`catalog.updated` 落地了」来代替这个判断,那是两件不同的事。事件落地
+ * 是**事件到达**的事实,取消归属是**这次失败从哪来**的事实;把前者当后者用,同一轮里已经
+ * 形成的真实 503 就会跟着走「目录尚未收敛,继续等」那条路被吞掉(审计用真实生成客户端复现:
+ * `markerProbes=2`、首个 signal 已 abort,而 `list()` 最终 resolved,503 从未进 recovering)。
+ *
+ * 判据来自实跑,不是推断(`packages/sdk/js/src/v2/gen/client/client.gen.ts` 的 result-tuple
+ * 路径,`throwOnError` 未开):fetch 的拒绝被**原样**回成 `{ error, response: undefined }`,
+ * 而 `AbortSignal.any` 保留 abort reason 的**对象身份** ⇒ `error === round.reason`。身份是主
+ * 判据;`name === "AbortError"` 是备判据(平台在 `abort()` 未带 reason 时自造的那一个)。两条
+ * 都必须发生在 `round.aborted` 之后 —— 我们没取消过,就不存在「自己取消」这回事。
+ *
+ * 落不进来的:401/503(引擎真的答了,带 HTTP `response`)、网络错(`TypeError`)、单次往返
+ * 预算到期(`TimeoutError`,名字不是 `AbortError`)。它们照旧抛 `ModelContractError`,**哪怕
+ * `catalog.updated` 恰好在同一轮到达** —— 那正是 R2 点名的那条窄竞态。
+ */
+const cancelledByUs = (error: unknown, round: AbortSignal) =>
+  round.aborted &&
+  (error === round.reason ||
+    (typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"))
+
 /** The renderer-facing model contract. All calls go through the generated SDK v2 Model.Ref API. */
 export function createModelContract(sdk: () => Client | undefined, options: ModelContractOptions = {}) {
   const catalogReadyPollMs = options.catalogReadyPollMs ?? CATALOG_READY_POLL_MS
@@ -138,10 +161,13 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
           failure = error
         }
         if (ready) return
+        // #882 R2:**真实失败先判,`landed` 后判**。反过来时,「引擎这一轮已经答了 503、而
+        // `catalog.updated` 恰好同时到达」会被短路成「目录尚未收敛,继续等」——那份 503 既不
+        // reject 也不进 recovering,而合同说只有 404/`ProviderNotFoundError` 算未就绪。
+        if (failed && !cancelledByUs(failure, round.signal)) throw new ModelContractError("list", failure)
         // 事件已落地(含「本轮探针正是被它取消的」那一支):立刻重探,不进等待,也不把这次
         // 主动中断当成故障 —— 取消是我们自己发的。
         if (landed) continue
-        if (failed) throw new ModelContractError("list", failure)
         const woken = new Promise<void>((resolve) => {
           wake = resolve
         })
