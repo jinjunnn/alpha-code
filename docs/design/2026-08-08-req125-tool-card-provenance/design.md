@@ -2,7 +2,7 @@
 type: design
 slug: req125-tool-card-provenance
 date: 2026-08-08
-status: proposed(owner decision pending)
+status: accepted
 relates:
   - jinjunnn/alpha-code#538(REQ-125)
   - jinjunnn/alpha-code#722(DECIDE)
@@ -25,6 +25,10 @@ relates:
 
 标题、图标、翻译、远端 annotations 和展示徽标都是输出，永远不能反向参与授权、
 用户工具策略或计费。
+
+**状态**：`accepted`。owner 于 2026-08-09 批准 §9 的 Q1–Q3 推荐项：严格
+metadata-only、宿主精确规则独占、technical-id 默认折叠。实现按 §8 的既有 / 新建
+CODE 票推进，不再重开这三项产品选择。
 
 ## 2. 实读现状与缺口
 
@@ -176,28 +180,32 @@ type ToolDisplaySnapshotV1 = {
 | T7 | 标题 / 图标 / 翻译 / annotation 改动不改变 policy / billing 结果 | 任一 UI 字段进入授权、策略或计费输入 |
 | T8 | technical-id 只在折叠开发者详情 | 把模型别名提升为主标题或从它反推 identity |
 
-## 8. 后续实现切片（owner 批准后另开 CODE 票）
+## 8. 后续实现切片
 
-1. **P1 · 快照写入**：在 #731 L3 identity 接线之上，于每次调用创建点冻结
+1. **P1 · 快照写入（[#878](https://github.com/jinjunnn/alpha-code/issues/878)）**：
+   在 #731 L3 identity 接线之上，于每次调用创建点冻结
    `identity + technicalId + authority (+ billing fact when authoritative)`；持久化 / SDK /
    replay 用例覆盖 delete / rename / rebind。
-2. **P1 · 展示规则与 redactor**：renderer 改为 identity 驱动；建立最小宿主规则表与
-   typed redactors；unknown / third-party generic 完全 metadata-only。
-3. **P1 · 卡片 UI**：来源徽标、人类标题、安全通用卡、折叠开发者详情；合并本增量帧到
-   `current/conversation-timeline/design.html`。
-4. **P1 · 反例门**：T1–T8 逐条 mutation / component tests，加 alpha-check。
+2. **P1 · 展示规则与 redactor（[#879](https://github.com/jinjunnn/alpha-code/issues/879)）**：
+   renderer 改为 identity 驱动；建立最小宿主规则表与 typed redactors；unknown /
+   third-party generic 完全 metadata-only。
+3. **P1 · 卡片 UI（[#587](https://github.com/jinjunnn/alpha-code/issues/587)）**：
+   来源徽标、人类标题、安全通用卡、折叠开发者详情；本增量帧已在批准时合入
+   `current/conversation-timeline/design.html#tool-provenance`。
+4. **P1 · 反例门**：T1–T8 已按责任面分配给 #878（T3–T4）、#879
+   （T1–T2、T5–T7）与 #587（T8），并各自接入 alpha-check。
 
 依赖顺序固定为 #731 L3 → 快照 → renderer/redactor → UI/反例门；#724 策略消费可并行，
 但不能读展示标题或徽标。
 
-## 9. Owner 需裁决（推荐项已体现在增量帧）
+## 9. Owner 裁决（2026-08-09）
 
-- **Q1（推荐：metadata-only）**：identity 缺失、非法或无宿主规则时，只显示来源分类、
-  名称、状态；不提供“已脱敏 raw body”例外。是否接受？
-- **Q2（推荐：宿主规则独占）**：第三方 MCP / plugin 只有命中 Alpha 自有、精确 identity
-  规则时才有专用卡；远端 annotation 永不授予专用卡。是否接受？
-- **Q3（推荐：默认折叠）**：technical-id 与 canonical identity 放在默认折叠的开发者详情，
-  而非完全隐藏。是否接受？
+- **Q1 · 已批准（metadata-only）**：identity 缺失、非法或无宿主规则时，只显示来源分类、
+  名称、状态；不提供“已脱敏 raw body”例外。
+- **Q2 · 已批准（宿主规则独占）**：第三方 MCP / plugin 只有命中 Alpha 自有、精确
+  identity 规则时才有专用卡；远端 annotation 永不授予专用卡。
+- **Q3 · 已批准（默认折叠）**：technical-id 与 canonical identity 放在默认折叠的
+  开发者详情，而非完全隐藏。
 
-三项不改变授权、策略或计费机制。owner 批准后将本稿状态改为 accepted，把帧合入活稿，
-关闭 #722，并按 §8 建立实现票。
+三项不改变授权、策略或计费机制。批准只解除 #722 的设计阻塞；实现仍按 §8 的依赖顺序
+和各票验收门推进。
