@@ -52,10 +52,29 @@ export class ModelContractError extends Error {
 }
 
 /** 单次网络往返的悬挂防御(2026-07-12 复验盲区)。屏障的**等待**不受它约束,只有请求受。 */
-const requestBudget = (signal?: AbortSignal) => {
+const requestBudget = (...signals: Array<AbortSignal | undefined>) => {
   const budget = AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS)
-  return signal ? AbortSignal.any([signal, budget]) : budget
+  const present = signals.filter((candidate): candidate is AbortSignal => candidate !== undefined)
+  return present.length === 0 ? budget : AbortSignal.any([...present, budget])
 }
+
+/**
+ * 引擎在 marker provider 尚未提交时的**真实**回答:HTTP `404`,body 是 `ProviderNotFoundError`
+ * (`packages/server/src/handlers/provider.ts`;实跑记录见
+ * `docs/architecture/2026-08-10-catalog-readiness-signals.md`,marker probe #1/#2 都是 404)。
+ *
+ * #882 R1 Major:屏障原本把**任何**失败都读成「目录尚未收敛」继续等 —— 401 / 503 / 网络错 /
+ * 单次超时于是被吞成一个永不结束的等待:sidecar 仍被认为 ready,`list()` 永不 reject,
+ * `alpha-composer.tsx` 一直 await ⇒ **用户永久停在 loading、发送禁用**,失败回调一次都不执行。
+ * 那比本票原本要修的「20 秒后能用」更糟。只有这一种回答算「还没收敛」;其余一律抛出去,
+ * 交给既有的 recovering + 1/2/4/8s 恢复链(`model-recovery.ts` 的 `loadEngineModelsWithRetry`)。
+ *
+ * 两条判别轴各自单独钉住(`model-contract.test.ts` 用两种夹具分别只带一条),否则删掉其中一半
+ * 不会红 —— 本仓点名过的「闸门被替换掉一半也可以不红」。
+ */
+const catalogNotReady = (error: unknown, status: number | undefined) =>
+  status === 404 ||
+  (typeof error === "object" && error !== null && "_tag" in error && error._tag === "ProviderNotFoundError")
 
 /** The renderer-facing model contract. All calls go through the generated SDK v2 Model.Ref API. */
 export function createModelContract(sdk: () => Client | undefined, options: ModelContractOptions = {}) {
@@ -72,8 +91,12 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
    * 那次只用了 5.1ms。等待方与被等待方之间没有任何信号,全靠固定计时器猜。
    *
    * 现在等待由引擎既有的 `catalog.updated` 唤醒(经 /global/event → use-projects →
-   * notifyCatalogUpdated),事件到达即重探,兜底轮询只在事件到不了时接住。退出条件只剩两个:
-   * marker 答了,或调用方取消 —— 屏障自己不再制造失败,也就不再喂退避。
+   * notifyCatalogUpdated),事件到达即取消在途探针并重探,兜底轮询只在事件到不了时接住。
+   *
+   * 屏障不再因为「目录还没收敛」制造失败,也就不再喂退避;但它**不吞真实故障** —— 只有
+   * 404 / `ProviderNotFoundError` 算未收敛(见 `catalogNotReady`),401/503/网络错/单次超时
+   * 照旧抛 `ModelContractError`,走既有的 recovering + 1/2/4/8s 恢复链。退出条件三个:
+   * marker 答了、探针给出真实故障、或调用方取消。
    */
   const waitForCatalogReady = async (client: Client, directory: string, signal?: AbortSignal) => {
     while (true) {
@@ -82,26 +105,43 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
       // 周期。实测事件与就绪之间只隔几毫秒,这一格丢不起。
       let landed = false
       let wake: (() => void) | undefined
+      // #882 R1 Blocker:事件到达时**在飞的那次探针**必须当场被取消。只置 `landed` 不够 ——
+      // 首探针悬挂时 `wake` 还没赋值(还没进 race),事件既叫不醒等待、也打不断请求,屏障只能
+      // 挂到 10s 请求预算到期才发下一次。冷启动首探针恰恰是这个形态,所以那是主路径,不是边角。
+      const round = new AbortController()
       const unsubscribe = subscribeCatalogUpdated(directory, () => {
         landed = true
+        round.abort()
         wake?.()
       })
       try {
+        let ready = false
+        let failed = false
+        let failure: unknown
         try {
           const result = await client.v2.provider.get(
             { providerID: ALPHA_V2_CATALOG_READY_PROVIDER_ID, location: { directory } },
-            { signal: requestBudget(signal) },
+            { signal: requestBudget(signal, round.signal) },
           )
           // The generated client returns fetch aborts as `{ error }` when throwOnError is false.
           // Preserve the caller's request-abort classification before anything else.
           if (signal?.aborted) throw new ModelContractError("list", signal.reason)
-          if (!result.error && result.data?.data.id === ALPHA_V2_CATALOG_READY_PROVIDER_ID) return
+          if (!result.error && result.data?.data.id === ALPHA_V2_CATALOG_READY_PROVIDER_ID) ready = true
+          else if (!catalogNotReady(result.error, result.response?.status)) {
+            failed = true
+            failure = result.error
+          }
         } catch (error) {
           if (signal?.aborted) throw new ModelContractError("list", signal.reason)
           if (error instanceof ModelContractError) throw error
-          // 探针失败或悬挂都不是终态 —— 它说明目录还没收敛,继续等下一次唤醒。
+          failed = true
+          failure = error
         }
+        if (ready) return
+        // 事件已落地(含「本轮探针正是被它取消的」那一支):立刻重探,不进等待,也不把这次
+        // 主动中断当成故障 —— 取消是我们自己发的。
         if (landed) continue
+        if (failed) throw new ModelContractError("list", failure)
         const woken = new Promise<void>((resolve) => {
           wake = resolve
         })

@@ -5,6 +5,25 @@ import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../../shared/alpha-config"
 // 注入一个 subscribe 桩会让「删掉生产订阅仍全绿」重新成立 —— 那是本仓点名的第 ⑧ 类假闸门。
 import { notifyCatalogUpdated } from "../runtime-recovery"
 import { createModelContract, ModelContractError } from "./model-contract"
+// #882 R1 Major:「503 走既有 recovering 链」不能自己拼一条等价链 —— 直接驱动生产的那个循环。
+import { loadEngineModelsWithRetry } from "./model-recovery"
+
+// 引擎在 marker 还没提交时的**真实**回答:HTTP 404 + body `ProviderNotFoundError`
+//(packages/server/src/handlers/provider.ts;实跑记录见
+// docs/architecture/2026-08-10-catalog-readiness-signals.md 里 marker probe #1/#2 的 404)。
+// 两种夹具各自只带**一条**判别轴:屏障的 `catalogNotReady` 是个 OR,两条都单独钉住才不会
+// 「删掉一半仍全绿」。下面的用例刻意混用两者,任何一半被删都会有用例转红。
+const notReadyByStatus = () => ({
+  error: { message: "Provider not found: alpha-internal-catalog-ready" },
+  response: { status: 404 },
+})
+const notReadyByTag = () => ({
+  error: {
+    _tag: "ProviderNotFoundError",
+    providerID: "alpha-internal-catalog-ready",
+    message: "Provider not found: alpha-internal-catalog-ready",
+  },
+})
 
 const model: ModelV2Info = {
   id: "claude-sonnet-4.6",
@@ -105,7 +124,7 @@ describe("typed model contract", () => {
           get: async () => {
             probes++
             calls.push(`catalog-ready:${probes}`)
-            if (probes < 3) return { error: { message: "not ready" } }
+            if (probes < 3) return notReadyByStatus()
             ready = true
             return { data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }
           },
@@ -161,7 +180,7 @@ describe("typed model contract", () => {
             provider: {
               get: async () => {
                 probes++
-                if (!ready) return { error: { message: "not ready" } }
+                if (!ready) return notReadyByTag()
                 return { data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }
               },
             },
@@ -201,9 +220,187 @@ describe("typed model contract", () => {
     expect(await listing).toEqual([model])
   })
 
-  test("#882 事件到不了时兜底轮询仍能就绪(事件唯一化 = 新的死信道)", async () => {
-    // 实测:先于 renderer 订阅就已收敛的目录再也不会发 catalog.updated。屏障因此不能只认事件。
+  test("#882 事件到达时**在飞的**探针当场被取消并立刻重探(不等 10s 请求预算)", async () => {
+    // R1 Blocker:上一条用例里事件到达时探针**已经返回**;冷启动首探针恰恰是**还在飞**。
+    // 真机记录:sidecar ready 在 1912.9ms,而 marker 端点到 15699.7ms 仍不答 —— 事件在这中间
+    // 到达时,如果只置 `landed` 而不取消在途请求,下一次探针最迟要等 ENGINE_FETCH_TIMEOUT_MS
+    //(10s)的请求预算到期。所以这是主路径,不是边角。
     let probes = 0
+    let ready = false
+    let timerArmed = 0
+    const probeSignals: AbortSignal[] = []
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: async (_input: unknown, options: { signal: AbortSignal }) => {
+                probes++
+                probeSignals.push(options.signal)
+                if (ready) return { data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }
+                // 首探针**悬挂**:除非被取消,否则永不返回。生成客户端把 abort 回成
+                // `{ error }`(throwOnError=false),这里照抄那个形状。
+                return new Promise((resolve) => {
+                  options.signal.addEventListener(
+                    "abort",
+                    () => resolve({ error: new DOMException("This operation was aborted", "AbortError") }),
+                    { once: true },
+                  )
+                })
+              },
+            },
+            model: { list: async () => ({ data: { data: [model] } }) },
+          },
+        }) as never,
+      {
+        // 冻结兜底:本用例里任何计时器都到不了期,能推进屏障的只有「取消在途探针」这一条。
+        wait: () => {
+          timerArmed++
+          return new Promise<void>(() => {})
+        },
+      },
+    )
+
+    const listing = contract.list("/in-flight")
+    for (let spin = 0; spin < 1_000 && probes === 0; spin++) await Promise.resolve()
+    // 屏障停在**请求**上,还没走到兜底档位 —— 这正是审计复现的那一格。
+    expect(probes).toBe(1)
+    expect(timerArmed).toBe(0)
+    expect(probeSignals[0]!.aborted).toBe(false)
+
+    ready = true
+    notifyCatalogUpdated("/in-flight")
+    // 修复前这一行当场红(仍是 false):回调只置 `landed`,`wake` 尚未赋值、探针也没被打断。
+    expect(probeSignals[0]!.aborted).toBe(true)
+
+    for (let spin = 0; spin < 200 && probes < 2; spin++) await Promise.resolve()
+    expect(probes).toBe(2)
+    // 第二次探针拿的是**新一轮**的 signal,没被上一轮的取消连坐。
+    expect(probeSignals[1]!.aborted).toBe(false)
+    // 全程一个兜底计时器都没武装过:事件到达与下一次请求之间隔着 0 个 tick。
+    expect(timerArmed).toBe(0)
+    expect(await listing).toEqual([model])
+  })
+
+  test("#882 屏障只把 404/ProviderNotFoundError 当未就绪:401/503/网络错/单次超时一律抛 ModelContractError", async () => {
+    // R1 Major:修复前这四种全被读成「目录尚未收敛」⇒ 屏障永不返回 ⇒ `list()` 永不 reject ⇒
+    // alpha-composer 一直 await ⇒ **用户永久停在 loading、发送禁用**,失败回调一次都不执行。
+    // 那比本票原本要修的「20 秒后能用」更糟。
+    const failures = {
+      "401": { error: { _tag: "UnauthorizedError", message: "unauthorized" }, response: { status: 401 } },
+      "503": { error: { _tag: "ServiceUnavailableError", message: "unavailable" }, response: { status: 503 } },
+      // 生成客户端把 fetch 异常(网络错 / AbortSignal.timeout 到期)回成
+      // `{ error, response: undefined }` —— 没有 status 可读,更不能默认当成未就绪。
+      transport: { error: new TypeError("Failed to fetch"), response: undefined },
+      timeout: { error: new DOMException("The operation timed out.", "TimeoutError"), response: undefined },
+    }
+    for (const [label, outcome] of Object.entries(failures)) {
+      let probes = 0
+      let waits = 0
+      const contract = createModelContract(
+        () =>
+          ({
+            v2: {
+              provider: {
+                get: async () => {
+                  probes++
+                  return outcome
+                },
+              },
+              model: { list: async () => ({ data: { data: [model] } }) },
+            },
+          }) as never,
+        {
+          // 判官必须快:吞掉故障的实现会在这里空转,第 4 轮就用一个**可辨认**的普通 Error 收场,
+          // 于是 `toBeInstanceOf(ModelContractError)` 当场红,而不是挂到用例超时。
+          wait: async () => {
+            if (++waits > 3) throw new Error(`屏障把 ${label} 吞成了「尚未收敛」:第 ${waits} 轮兜底等待`)
+          },
+        },
+      )
+
+      const failure = await contract.list(`/failing-${label}`).catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(ModelContractError)
+      expect(failure).toMatchObject({ operation: "list" })
+      expect((failure as ModelContractError).cause).toBe(outcome.error)
+      // 一次就抛:真实故障不该在屏障里空转,它要交给恢复链去决定节奏。
+      expect(probes).toBe(1)
+      expect(waits).toBe(0)
+    }
+  })
+
+  test("#882 503 接回既有的 recovering + 1/2/4/8s 恢复链(不新造一条)", async () => {
+    // 「抛出去」只是半条判据 —— 还得证明抛给了**生产里那条链**。这里直接驱动
+    // model-recovery.ts 的 loadEngineModelsWithRetry(composer 用的就是它),不自己拼等价链。
+    let unavailable = true
+    const unavailableBody = { _tag: "ServiceUnavailableError", message: "unavailable" }
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: async () =>
+                unavailable
+                  ? { error: unavailableBody, response: { status: 503 } }
+                  : { data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } },
+            },
+            model: { list: async () => ({ data: { data: [model] } }) },
+          },
+        }) as never,
+      // 修好的实现在 503 上一次都不等;吞故障的实现会在这里空转,拿一个**可辨认**的普通 Error
+      // 收场 —— 下面按「每次失败的到底是什么」判,那个 Error 不是 ModelContractError,当场红。
+      // (这一条必须自己抓得住:靠 `loadEngineModelsWithRetry` 判不出来,它对任何异常一视同仁。)
+      { wait: async () => Promise.reject(new Error("屏障仍在把 503 当作『尚未收敛』等下去")) },
+    )
+
+    const attemptFailures: unknown[] = []
+    const readOnce = () =>
+      contract.list("/unavailable").catch((error: unknown) => {
+        attemptFailures.push(error)
+        throw error
+      })
+
+    const recoveringAt: number[] = []
+    const delays: number[] = []
+    const loaded = await loadEngineModelsWithRetry<ModelV2Info[]>({
+      initial: readOnce(),
+      read: readOnce,
+      wait: async (delayMs) => {
+        delays.push(delayMs)
+        // 第 4 次退避之后引擎恢复:证明这条链**还在重试**,而不是失败一次就永久停摆。
+        if (delays.length === 4) unavailable = false
+        return "elapsed"
+      },
+      clearWake: () => {},
+      // 有界:任何不收敛的实现在这里被判 stale 而快速红,不会挂成用例超时。
+      isStale: () => delays.length > 8,
+      onAttemptFailed: () => recoveringAt.push(delays.length),
+    })
+
+    expect(loaded).toEqual({ status: "loaded", data: [model] })
+    // 喂给这条链的必须是屏障抛出的 ModelContractError,且 cause 就是引擎那份 503 body ——
+    // 不是「随便什么异常最终也能走完重试」。
+    expect(attemptFailures).toHaveLength(4)
+    for (const failure of attemptFailures) {
+      expect(failure).toBeInstanceOf(ModelContractError)
+      expect((failure as ModelContractError).cause).toBe(unavailableBody)
+    }
+    // 每一次 503 都触发一次 onAttemptFailed —— composer 把它接成 setModelChainState("recovering")。
+    expect(recoveringAt).toEqual([0, 1, 2, 3])
+    // 退避档位来自生产的 nextEngineRetryDelay;期望值是独立字面量,不从被测模块读回来。
+    expect(delays).toEqual([1_000, 2_000, 4_000, 8_000])
+  })
+
+  test("#882 事件到不了时兜底轮询仍能就绪，且每一轮都闩在 250ms 档位上", async () => {
+    // 实测:先于 renderer 订阅就已收敛的目录再也不会发 catalog.updated。屏障因此不能只认事件。
+    //
+    // #882 R1 Major:注入的 `wait` 如果忽略 `delayMs` 立即完成,这条用例就只证明了「轮询会重试」
+    // —— 把生产常量从 250ms 改成 60s,它照样全绿,而晚订阅且无事件的目录会停在 loading 至少
+    // 一分钟。所以这里记录每一轮真实收到的 `delayMs`,并**手动**放行,不真睡。
+    // 期望值 250 是独立字面量:`CATALOG_READY_POLL_MS` 没有导出,断言不可能从被测模块读回来。
+    let probes = 0
+    const delays: number[] = []
+    let release: (() => void) | undefined
     const contract = createModelContract(
       () =>
         ({
@@ -211,19 +408,36 @@ describe("typed model contract", () => {
             provider: {
               get: async () => {
                 probes++
-                if (probes < 4) return { error: { message: "not ready" } }
+                if (probes < 4) return notReadyByStatus()
                 return { data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }
               },
             },
             model: { list: async () => ({ data: { data: [model] } }) },
           },
         }) as never,
-      { wait: async () => {} },
+      {
+        wait: (delayMs) => {
+          delays.push(delayMs)
+          return new Promise<void>((resolve) => {
+            release = resolve
+          })
+        },
+      },
     )
 
     // 全程一条 catalog.updated 都不投递。
-    await expect(contract.list("/never-notified")).resolves.toEqual([model])
+    const listing = contract.list("/never-notified")
+    for (let round = 1; round <= 3; round++) {
+      for (let spin = 0; spin < 1_000 && delays.length < round; spin++) await Promise.resolve()
+      expect(delays.length).toBe(round)
+      expect(probes).toBe(round)
+      const resume = release
+      release = undefined
+      resume!()
+    }
+    await expect(listing).resolves.toEqual([model])
     expect(probes).toBe(4)
+    expect(delays).toEqual([250, 250, 250])
   })
 
   test("#882 屏障不再自己判失败:探针一直不就绪也不会抛，只有调用方取消才结束", async () => {
@@ -238,7 +452,7 @@ describe("typed model contract", () => {
             provider: {
               get: async () => {
                 probes++
-                return { error: { message: "not ready" } }
+                return notReadyByTag()
               },
             },
           },
@@ -247,7 +461,11 @@ describe("typed model contract", () => {
     )
 
     const pending = contract.list("/never-ready", caller.signal).catch((error) => error)
-    while (probes < 50) await Promise.resolve()
+    // 自旋有界:无界的 `while (probes < 50)` 会在**屏障提前收场**的实现下饿死事件循环 ——
+    // 连 bun 自己的用例超时都发不出来,一次绕过实验因此挂死而不是转红(本轮实测)。
+    // 判官必须快:先有界自旋,再用断言说清「它根本没跑到 50 次」。
+    for (let spin = 0; spin < 5_000 && probes < 50; spin++) await Promise.resolve()
+    expect(probes).toBeGreaterThanOrEqual(50)
     caller.abort(new Error("chain superseded"))
     const failure = await pending
     expect(failure).toBeInstanceOf(ModelContractError)
@@ -265,7 +483,7 @@ describe("typed model contract", () => {
               provider: {
                 get: async (_input: unknown, options: { signal?: AbortSignal }) => {
                   probeSignal = options.signal
-                  if (phase === "poll") return { error: { message: "not ready" } }
+                  if (phase === "poll") return notReadyByStatus()
                   return new Promise<{ error: unknown }>((resolve) => {
                     if (probeSignal?.aborted) return resolve({ error: probeSignal.reason })
                     probeSignal?.addEventListener("abort", () => resolve({ error: probeSignal?.reason }), {
