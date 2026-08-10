@@ -725,6 +725,7 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
             bindingId: "mcp:weather",
             evidenceDigest: `sha256:${"a".repeat(64)}`,
           },
+          billing: { class: "platform-paid", evidenceId: "bill-1" },
         })
 
         const value = yield* handle.process({
@@ -760,6 +761,7 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
                   bindingId: "mcp:weather",
                   evidenceDigest: `sha256:${"a".repeat(64)}`,
                 },
+                billing: { class: "platform-paid", evidenceId: "bill-1" },
               },
             ),
           },
@@ -780,6 +782,7 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
             bindingId: "mcp:weather",
             evidenceDigest: `sha256:${"a".repeat(64)}`,
           },
+          billing: { class: "platform-paid", evidenceId: "bill-1" },
         })
         expect(call?.state.status).toBe("completed")
         if (call?.state.status !== "completed") return

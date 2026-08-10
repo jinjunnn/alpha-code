@@ -193,6 +193,7 @@ jobs:
             ':(exclude)packages/opencode/test/session/compaction.test.ts'
             ':(exclude)packages/opencode/test/session/processor-effect.test.ts'
             ':(exclude)packages/opencode/test/session/prompt.test.ts'
+            ':(exclude)packages/opencode/test/provider/transform.test.ts'
             ':(exclude)packages/opencode/test/tool/code-mode-integration.test.ts'
             ':(exclude)packages/opencode/test/tool/code-mode.test.ts'
             ':(exclude)packages/opencode/test/tool/registry.test.ts'

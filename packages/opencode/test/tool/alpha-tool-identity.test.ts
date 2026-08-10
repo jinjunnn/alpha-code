@@ -12,8 +12,9 @@ import { Wildcard } from "@opencode-ai/core/util/wildcard"
 import { Permission } from "../../src/permission"
 import { Schema } from "effect"
 import { workflowPreapprovedToolNames } from "../../src/session/llm"
-import { attachToolDisplay } from "../../src/session/tool-display"
+import { attachToolDisplay, getToolDisplay } from "../../src/session/tool-display"
 import type { Tool as AITool } from "ai"
+import { SessionPrompt } from "../../src/session/prompt"
 
 const identity = (origin: string, name: string): ToolIdentity => ({ source: "mcp", origin, name })
 
@@ -155,6 +156,15 @@ describe("stable tool identity", () => {
     expect(source).not.toContain('from "@/tool/registry')
     expect(source).not.toContain("McpCatalog")
     expect(source).toContain("ctx.toolDisplays[input.name]")
+  })
+
+  test("structured output enters the governed tool path with a complete host identity", () => {
+    const structured = SessionPrompt.createStructuredOutputTool({ schema: { type: "object" }, onSuccess() {} })
+    expect(getToolDisplay(structured)).toEqual({
+      identity: { source: "host", origin: "", name: "StructuredOutput" },
+      technicalId: "StructuredOutput",
+      authority: { kind: "not-asserted" },
+    })
   })
 
   test("workflow preapproval is keyed only by canonical identity", () => {

@@ -29,6 +29,11 @@ export function removeDuplicateToolDisplayTypes(generatedTypes: string) {
   if (!duplicate.includes("export type ToolPart1 =") || !duplicate.includes("display?: ToolDisplaySnapshotV11")) {
     throw new Error("Duplicate generated tool display declarations changed shape")
   }
+  const declarations = Array.from(duplicate.matchAll(/\nexport type ([A-Za-z0-9_]+) =/g), (match) => match[1])
+  const exportCount = duplicate.match(/\nexport /g)?.length ?? 0
+  if (exportCount !== 2 || declarations.join(",") !== "ToolDisplaySnapshotV11,ToolPart1") {
+    throw new Error("Duplicate generated tool display declarations contain an unexpected declaration")
+  }
   const patched = generatedTypes.replace(duplicate, "")
   if (patched.includes("ToolDisplaySnapshotV11") || patched.includes("export type ToolPart1 =")) {
     throw new Error("Duplicate generated tool display declarations were not removed completely")

@@ -77,5 +77,17 @@ export type SessionStatus2 = { type: "session.status" }
     expect(() => removeDuplicateToolDisplayTypes("export type SessionStatus2 = {}\n")).toThrow(
       "Duplicate generated tool display declarations were not found",
     )
+    expect(() =>
+      removeDuplicateToolDisplayTypes(`export type ToolDisplaySnapshotV1 = {}
+
+export type ToolDisplaySnapshotV11 = {}
+
+export interface Unexpected { mustSurvive: true }
+
+export type ToolPart1 = { display?: ToolDisplaySnapshotV11 }
+
+export type SessionStatus2 = {}
+`),
+    ).toThrow("Duplicate generated tool display declarations contain an unexpected declaration")
   })
 })

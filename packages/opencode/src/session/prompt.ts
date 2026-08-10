@@ -56,6 +56,8 @@ import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
+import { attachToolDisplay } from "./tool-display"
+import type { ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -80,6 +82,12 @@ IMPORTANT:
 - This tool provides your final answer - no further actions are taken after calling it`
 
 const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
+
+const STRUCTURED_OUTPUT_TOOL_DISPLAY = {
+  identity: { source: "host", origin: "", name: "StructuredOutput" },
+  technicalId: "StructuredOutput",
+  authority: { kind: "not-asserted" },
+} satisfies ToolDisplaySnapshotV1
 
 function mcpResourceBase64Size(value: string) {
   const trimmed = value.replace(/\s/g, "")
@@ -1255,6 +1263,7 @@ const layer = Layer.effect(
             )
 
             if (lastUser.format?.type === "json_schema") {
+              handle.registerToolDisplay("StructuredOutput", STRUCTURED_OUTPUT_TOOL_DISPLAY)
               tools["StructuredOutput"] = createStructuredOutputTool({
                 schema: lastUser.format.schema,
                 onSuccess(output) {
@@ -1583,25 +1592,28 @@ export function createStructuredOutputTool(input: {
   // Remove $schema property if present (not needed for tool input)
   const { $schema: _, ...toolSchema } = input.schema
 
-  return tool({
-    description: STRUCTURED_OUTPUT_DESCRIPTION,
-    inputSchema: jsonSchema(toolSchema as JSONSchema7),
-    async execute(args) {
-      // AI SDK validates args against inputSchema before calling execute()
-      input.onSuccess(args)
-      return {
-        output: "Structured output captured successfully.",
-        title: "Structured Output",
-        metadata: { valid: true },
-      }
-    },
-    toModelOutput({ output }) {
-      return {
-        type: "text",
-        value: output.output,
-      }
-    },
-  })
+  return attachToolDisplay(
+    tool({
+      description: STRUCTURED_OUTPUT_DESCRIPTION,
+      inputSchema: jsonSchema(toolSchema as JSONSchema7),
+      async execute(args) {
+        // AI SDK validates args against inputSchema before calling execute()
+        input.onSuccess(args)
+        return {
+          output: "Structured output captured successfully.",
+          title: "Structured Output",
+          metadata: { valid: true },
+        }
+      },
+      toModelOutput({ output }) {
+        return {
+          type: "text",
+          value: output.output,
+        }
+      },
+    }),
+    STRUCTURED_OUTPUT_TOOL_DISPLAY,
+  )
 }
 const bashRegex = /!`([^`]+)`/g
 // Match [Image N] as single token, quoted strings, or non-space sequences

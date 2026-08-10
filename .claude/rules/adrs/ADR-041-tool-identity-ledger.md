@@ -61,6 +61,7 @@ plugin、MCP、host 或 V2。因而从 alias、标题、URL、图标或 annotati
 - `packages/opencode/test/session/compaction.test.ts`
 - `packages/opencode/test/session/processor-effect.test.ts`
 - `packages/opencode/test/session/prompt.test.ts`
+- `packages/opencode/test/provider/transform.test.ts`（更新直呼 `LLMRequestPrep.prepare` 的测试夹具，并断言 `strict:false` 复制后保留本 ADR 要求的完整 identity）
 - `packages/opencode/test/tool/code-mode-integration.test.ts`
 - `packages/opencode/test/tool/code-mode.test.ts`
 - `packages/opencode/test/tool/registry.test.ts`
