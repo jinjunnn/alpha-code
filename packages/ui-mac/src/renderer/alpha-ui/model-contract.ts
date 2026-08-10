@@ -84,20 +84,22 @@ const catalogNotReady = (error: unknown, status: number | undefined) =>
  * 形成的真实 503 就会跟着走「目录尚未收敛,继续等」那条路被吞掉(审计用真实生成客户端复现:
  * `markerProbes=2`、首个 signal 已 abort,而 `list()` 最终 resolved,503 从未进 recovering)。
  *
- * 判据来自实跑,不是推断(`packages/sdk/js/src/v2/gen/client/client.gen.ts` 的 result-tuple
- * 路径,`throwOnError` 未开):fetch 的拒绝被**原样**回成 `{ error, response: undefined }`,
- * 而 `AbortSignal.any` 保留 abort reason 的**对象身份** ⇒ `error === round.reason`。身份是主
- * 判据;`name === "AbortError"` 是备判据(平台在 `abort()` 未带 reason 时自造的那一个)。两条
- * 都必须发生在 `round.aborted` 之后 —— 我们没取消过,就不存在「自己取消」这回事。
+ * 判据来自实跑,不是推断(bun 起真 HTTP 服务 + 生成客户端走
+ * `packages/sdk/js/src/v2/gen/client/client.gen.ts` 的 result-tuple 路径,`throwOnError` 未开):
+ * ①fetch 的拒绝被**原样**回成 `{ error, response: undefined }`(`wrapClientError` 只在
+ * `throwOnError` 时才介入);②`AbortSignal.any` 保留 abort reason 的**对象身份**,`requestBudget`
+ * 合成出来的 signal 其 `reason` 就是 `round.reason` 本身;③我们的 `round.abort()` 不带 reason,
+ * 平台因此自造一个 `name === "AbortError"` 的 `DOMException`。三条合起来:「我们自己取消的那次
+ * 失败」在这里的形状恒为一个 `AbortError`,且必须发生在 `round.aborted` 之后 —— 没取消过,就
+ * 不存在「自己取消」这回事。
  *
- * 落不进来的:401/503(引擎真的答了,带 HTTP `response`)、网络错(`TypeError`)、单次往返
- * 预算到期(`TimeoutError`,名字不是 `AbortError`)。它们照旧抛 `ModelContractError`,**哪怕
- * `catalog.updated` 恰好在同一轮到达** —— 那正是 R2 点名的那条窄竞态。
+ * 落不进来的:401/503(引擎真的答了,body 是 `_tag` 形状的 POJO)、网络错(`TypeError`)、
+ * 单次往返预算到期(`TimeoutError` —— `AbortSignal.timeout` 的名字不是 `AbortError`)。它们
+ * 照旧抛 `ModelContractError`,**哪怕 `catalog.updated` 恰好在同一轮到达** —— 那正是 R2 点名的
+ * 那条窄竞态。判错时的方向也是安全的那一侧:多抛一次 = 恢复链多重试一次,不是永久 loading。
  */
 const cancelledByUs = (error: unknown, round: AbortSignal) =>
-  round.aborted &&
-  (error === round.reason ||
-    (typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"))
+  round.aborted && typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
 
 /** The renderer-facing model contract. All calls go through the generated SDK v2 Model.Ref API. */
 export function createModelContract(sdk: () => Client | undefined, options: ModelContractOptions = {}) {
