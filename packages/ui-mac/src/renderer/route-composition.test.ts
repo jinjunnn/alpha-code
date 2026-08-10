@@ -61,9 +61,16 @@ describe("manifest-derived production route composition", () => {
     expect(entry.match(/surfaces=\{surfaceComponents\(\)\}/g)).toHaveLength(1)
     // Each leaf is mounted unconditionally from the composition — no release gate can reappear
     // between the manifest and the seam.
-    expect(entry).toContain("[productionRoutes.home.surface]: productionRoutes.home.mount(alphaProjects)")
     expect(entry).toContain(
-      '[productionRoutes["new-session"].surface]: productionRoutes["new-session"].mount(alphaProjects)',
+      "[productionRoutes.home.surface]: productionRoutes.home.mount(alphaProjects, projectsServerKey)",
+    )
+    expect(entry).toContain('[productionRoutes["new-session"].surface]: productionRoutes["new-session"].mount(')
+    // #891:两个新会话入口叶拿的 serverKey 必须是**这份 store 连着的 server**(由 store 自己的
+    // baseUrl 反查),不是 `useServer().key`。这一条只钉住 index.tsx 里接的是哪个 accessor ——
+    // 它是源码断言,弱;行为判据在 test-component/new-session-workspace.cases.ts 的 #891 一节
+    // (那里 active server 与 store 的 server 被钉成不同值,叶回头去读前者当场红)。
+    expect(entry).toMatch(
+      /const projectsServerKey = createMemo\(\(\) => \{\s*const baseUrl = sidebarServer\(\)\?\.baseUrl/,
     )
     expect(entry).toContain("[productionRoutes.session.surface]: productionRoutes.session.mount(alphaProjects)")
     expect(entry).toContain("<SettingsSurface />")

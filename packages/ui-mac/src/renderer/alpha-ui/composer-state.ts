@@ -81,20 +81,28 @@ export function applyDefaultComposerModel(m: ComposerModel) {
  *
  * 归属的做法与草稿暂存同形(`session-workspace/session-dock-core` 的
  * `createComposerDraftStash`):composer 按会话 adopt / release。只登记**非默认**档位(默认档
- * 不占位),登记按 LRU 设上界 —— 越界回默认档,那是引擎自己的 build,永远是可解释的一档。 */
+ * 不占位),登记按 LRU 设上界 —— 越界回默认档,那是引擎自己的 build,永远是可解释的一档。
+ *
+ * #891:键是**仓内既有的 canonical 会话身份键** —— `session-workspace-core` 的
+ * `identityKey(AlphaSessionIdentity)`(`serverKey\0directory\0sessionID`),与草稿暂存
+ * (`createComposerDraftStash`)、artifacts、review 用的是同一把钥匙。此前这里拿 raw `sessionID`
+ * 当永久身份,同一个仓里就有了两套会话口径:同一个 id 出现在不同 serverKey / directory 下时
+ * 两边共用一条登记(串档),会话删掉后又出现同 id 也会静默继承旧的只读档。本模块不认识身份的
+ * 结构,只认宿主传进来的那把钥匙 —— 造钥匙的地方只有一处(`alpha-composer` 的 scope effect
+ * 与 home 提交后的 seed),都过 `identityKey`。 */
 const AGENT_SCOPE_CAPACITY = 32
 const agentByScope = new Map<string, string>()
-/** 当前持有档位信号的会话 id;null = 首页(新会话入口)或无人持有。 */
+/** 当前持有档位信号的会话身份键;null = 首页(新会话入口)、身份未定、或无人持有。 */
 let agentScopeOwner: string | null = null
 /** 每次 adopt 发一张新租约。release 必须**同时**匹配 scope 与租约 —— 只比 scope 的话,同一个
- *  会话 id 的新旧两个实例分不开:旧实例的 cleanup 会把新实例刚拿到的持有权清成 null,新实例
+ *  身份键的新旧两个实例分不开:旧实例的 cleanup 会把新实例刚拿到的持有权清成 null,新实例
  *  之后的改动就再也落不了账。租约单调递增,永不复位(复位会让陈旧租约与新租约撞号)。 */
 let agentScopeLease = 0
 
-function rememberScopedAgent(scopeID: string, value: string | null) {
-  agentByScope.delete(scopeID) // 重插到队尾(Map 保持插入序 → 队首 = 最旧,用作 LRU)
+function rememberScopedAgent(scopeKey: string, value: string | null) {
+  agentByScope.delete(scopeKey) // 重插到队尾(Map 保持插入序 → 队首 = 最旧,用作 LRU)
   if (value === null) return // 默认档 = 不登记
-  agentByScope.set(scopeID, value)
+  agentByScope.set(scopeKey, value)
   while (agentByScope.size > AGENT_SCOPE_CAPACITY) {
     const oldest = agentByScope.keys().next().value
     if (oldest === undefined) break
@@ -102,31 +110,32 @@ function rememberScopedAgent(scopeID: string, value: string | null) {
   }
 }
 
-/** 挂载:接管该会话的档位(无登记 = 默认 build)。`null` = 首页,一律回默认。返回本次租约,
- *  卸载时必须原样交回 `releaseComposerAgentScope`。 */
-export function adoptComposerAgentScope(scopeID: string | null): number {
+/** 挂载:接管该身份的档位(无登记 = 默认 build)。`null` = 首页或身份未定,一律回默认。返回本次
+ *  租约,卸载时必须原样交回 `releaseComposerAgentScope`。 */
+export function adoptComposerAgentScope(scopeKey: string | null): number {
   // 先把**现任持有者**的值落账。宿主完全可能 adopt 早于 release(新面先挂、旧面后卸),那时旧值
   // 根本还没机会写回,只在 release 上设守卫等于「防错写、不防丢写」:A 开了计划、B 先 adopt、
   // A 后 release 看见 owner 是 B 就直接 return ⇒ 回到 A 永久掉回默认档。
   if (agentScopeOwner !== null) rememberScopedAgent(agentScopeOwner, agent())
-  agentScopeOwner = scopeID
+  agentScopeOwner = scopeKey
   agentScopeLease += 1
-  setAgent(scopeID === null ? null : (agentByScope.get(scopeID) ?? null))
+  setAgent(scopeKey === null ? null : (agentByScope.get(scopeKey) ?? null))
   return agentScopeLease
 }
 
-/** 卸载:把当前档位交还给该会话。**只有仍持有那张租约时才写** —— 别的实例已经接管(不论它接管的
- *  是不是同一个会话 id)就不许再覆盖它的值。 */
-export function releaseComposerAgentScope(scopeID: string | null, lease: number) {
-  if (agentScopeLease !== lease || agentScopeOwner !== scopeID) return
-  if (scopeID !== null) rememberScopedAgent(scopeID, agent())
+/** 卸载:把当前档位交还给该身份。**只有仍持有那张租约时才写** —— 别的实例已经接管(不论它接管的
+ *  是不是同一个身份键)就不许再覆盖它的值。 */
+export function releaseComposerAgentScope(scopeKey: string | null, lease: number) {
+  if (agentScopeLease !== lease || agentScopeOwner !== scopeKey) return
+  if (scopeKey !== null) rememberScopedAgent(scopeKey, agent())
   agentScopeOwner = null
 }
 
 /** 首页发出第一条消息后新建的那个会话,继承这条消息用的档位 —— 它就是同一段对话的开头。
- *  少了这一步,「在首页开计划模式发第一条」会在跳进会话页的瞬间掉回默认档。 */
-export function seedComposerAgentScope(scopeID: string, value: string | null) {
-  rememberScopedAgent(scopeID, value)
+ *  少了这一步,「在首页开计划模式发第一条」会在跳进会话页的瞬间掉回默认档。
+ *  `scopeKey` 与会话页 adopt 时用的必须是同一把钥匙(`identityKey`),否则这条登记永远没人认领。 */
+export function seedComposerAgentScope(scopeKey: string, value: string | null) {
+  rememberScopedAgent(scopeKey, value)
 }
 
 /** 测试隔离:清空会话档位登记与持有者(模块级状态跨用例会串,和 signal 本身一样要复位)。 */
@@ -142,8 +151,8 @@ export function resetComposerAgentScopesForTests() {
  * 合起来:在 A 打开只读、切到 B,B 的只读 chip 照样亮着,B 手选的档位也被 READONLY_AGENT 顶掉
  * —— 用户在 B 从没开过只读,只会看到模型忽然不肯动文件。
  *
- * 机制与档位那份**逐条同形**:同一把钥匙(会话 id / null=首页)、同一处 adopt/release
- * (alpha-composer 的那一个 createEffect)、同一套租约守卫。两处差别,都在这一段说清:
+ * 机制与档位那份**逐条同形**:同一把钥匙(canonical 身份键 / null=首页,见 #891)、同一处
+ * adopt/release(alpha-composer 的那一个 createEffect)、同一套租约守卫。两处差别,都在这一段说清:
  *
  * ① 默认值不同 —— 档位的默认是 `null`(引擎自己的 build),只读档的默认是 `"ask"`(引擎默认的
  *    逐次审批),所以「默认不登记」这条判的是 `=== "ask"`。
@@ -153,39 +162,40 @@ export function resetComposerAgentScopesForTests() {
  *    请求也不再带 `alpha-readonly`。ask 确实不会未经批准就写盘,但**是系统替用户把只读关掉了**,
  *    而用户从没做过这个动作。登记是「用户显式开过只读」的唯一凭据,不能有损。 */
 const permByScope = new Map<string, PermMode>()
-/** 当前持有只读档信号的会话 id;null = 首页(新会话入口)或无人持有。 */
+/** 当前持有只读档信号的会话身份键;null = 首页(新会话入口)、身份未定、或无人持有。 */
 let permScopeOwner: string | null = null
 /** 租约语义同档位那份(见 `agentScopeLease`)。两份各自持有,不共用计数器。 */
 let permScopeLease = 0
 
-function rememberScopedPerm(scopeID: string, value: PermMode) {
+function rememberScopedPerm(scopeKey: string, value: PermMode) {
   if (value === "ask") {
-    permByScope.delete(scopeID) // 默认档 = 不登记(显式退出只读时要把旧登记删掉)
+    permByScope.delete(scopeKey) // 默认档 = 不登记(显式退出只读时要把旧登记删掉)
     return
   }
-  permByScope.set(scopeID, value)
+  permByScope.set(scopeKey, value)
 }
 
-/** 挂载:接管该会话的只读档(无登记 = 默认 ask)。`null` = 首页,一律回默认。返回本次租约。 */
-export function adoptComposerPermScope(scopeID: string | null): number {
+/** 挂载:接管该身份的只读档(无登记 = 默认 ask)。`null` = 首页或身份未定,一律回默认。 */
+export function adoptComposerPermScope(scopeKey: string | null): number {
   // 先落账现任持有者的值,理由同档位那份(adopt 可能早于 release)。
   if (permScopeOwner !== null) rememberScopedPerm(permScopeOwner, perm())
-  permScopeOwner = scopeID
+  permScopeOwner = scopeKey
   permScopeLease += 1
-  setPerm(scopeID === null ? "ask" : (permByScope.get(scopeID) ?? "ask"))
+  setPerm(scopeKey === null ? "ask" : (permByScope.get(scopeKey) ?? "ask"))
   return permScopeLease
 }
 
-/** 卸载:把当前只读档交还给该会话。守卫同档位那条 —— 租约不匹配即不写。 */
-export function releaseComposerPermScope(scopeID: string | null, lease: number) {
-  if (permScopeLease !== lease || permScopeOwner !== scopeID) return
-  if (scopeID !== null) rememberScopedPerm(scopeID, perm())
+/** 卸载:把当前只读档交还给该身份。守卫同档位那条 —— 租约不匹配即不写。 */
+export function releaseComposerPermScope(scopeKey: string | null, lease: number) {
+  if (permScopeLease !== lease || permScopeOwner !== scopeKey) return
+  if (scopeKey !== null) rememberScopedPerm(scopeKey, perm())
   permScopeOwner = null
 }
 
-/** 首页发出第一条消息后新建的那个会话,继承这条消息用的只读档 —— 第一条就是以只读发出去的。 */
-export function seedComposerPermScope(scopeID: string, value: PermMode) {
-  rememberScopedPerm(scopeID, value)
+/** 首页发出第一条消息后新建的那个会话,继承这条消息用的只读档 —— 第一条就是以只读发出去的。
+ *  `scopeKey` 同上:必须与会话页 adopt 用的是同一把 `identityKey`。 */
+export function seedComposerPermScope(scopeKey: string, value: PermMode) {
+  rememberScopedPerm(scopeKey, value)
 }
 
 /** 测试隔离:清空会话只读档登记与持有者。 */
