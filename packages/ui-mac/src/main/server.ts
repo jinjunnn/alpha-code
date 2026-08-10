@@ -20,6 +20,7 @@ import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 import { isEphemeralLocalServerUrl } from "../shared/ephemeral-server-url"
 import { ensureEngineScratchCwd } from "./engine-scratch-cwd"
 import { markStartupTimeline } from "./startup-timeline"
+import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -351,13 +352,16 @@ export async function spawnLocalServer(
     // 已 init;tryGet 仅为纯单测兜底(缺省 → sidecar loud 跳过 override 注入,boot reconcile 兜 fail-closed)。
     const registryChannel = tryGetAlphaEnvironment()?.registryChannel
     if (!registryChannel)
-      getLogger()?.warn("alpha environment not initialized at sidecar spawn — disabled-override injection will be skipped")
+      getLogger()?.warn(
+        "alpha environment not initialized at sidecar spawn — disabled-override injection will be skipped",
+      )
     child.postMessage({
       type: "start",
       hostname,
       port,
       password,
       userDataPath: options.userDataPath,
+      initialDirectory: alphaUserWorkspaceDir(),
       extPluginPath: ext.path,
       registryChannel,
     })

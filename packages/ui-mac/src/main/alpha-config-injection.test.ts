@@ -23,9 +23,17 @@
 // 变异实证绕过);留在本文件的源码锚只锁 bun 无法运行时验证的接线事实(唯一通路 + 捕获值整体入参)。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Config } from "../../../core/src/config"
+import { ModelV2 } from "../../../core/src/model"
+import { Provider as ModelsDevProvider } from "../../../core/src/models-dev"
+import { ProviderV2 } from "../../../core/src/provider"
+import { ConfigV1 } from "../../../core/src/v1/config/config"
+import { ConfigMigrateV1 } from "../../../core/src/v1/config/migrate"
+import { Schema } from "effect"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../shared/alpha-config"
 import { injectAlphaConfig } from "./alpha-config-injection"
 import { secretFilePath } from "./alpha-secret-files"
 import {
@@ -40,7 +48,7 @@ import {
 // 这里以前手写 `cloud_web_search` / `cloud_dispatch` 字面量,与生产代码同错,于是恒绿。
 const CLOUD_DISPATCH_TOOL_ID = cloudMcpToolId("cloud_dispatch")
 
-// 注入读到的每一个 env 输入 + 它自己写出的三个 env 输出:逐个快照/清空/还原,
+// 注入读到的每一个 env 输入 + 它自己写出的 env 输出:逐个快照/清空/还原,
 // 既隔离宿主机真实配置,也不把注入结果泄漏给同进程的其它测试文件。
 const MANAGED = [
   "ALPHA_JSONC_TRUTH_DISABLE",
@@ -51,6 +59,7 @@ const MANAGED = [
   "OPENCODE_CONFIG",
   "OPENCODE_CONFIG_CONTENT",
   "OPENCODE_CONFIG_DIR",
+  "OPENCODE_MODELS_PATH",
   "ALPHA_IDENTITY_DISABLE",
   "ALPHA_BEHAVIOR_DISABLE",
   "ALPHA_MODELS_DISABLE",
@@ -165,6 +174,7 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     // 组合体的另外两个 env 产物:v1 文件通道(alpha.jsonc)与 v2 目录桥,缺一都会让引擎看不见 provider。
     expect(process.env.OPENCODE_CONFIG).toBe(path.join(process.env.ALPHA_GLOBAL_DIR, "alpha.jsonc"))
     expect(process.env.OPENCODE_CONFIG_DIR).toBe(path.join(userData, "alpha-engine-config"))
+    expect(process.env.OPENCODE_MODELS_PATH).toBe(path.join(userData, "alpha-engine-config", "models.json"))
 
     // I7 是「v2 桥目录已物化」,不是「env 里有那个字符串」(#607 R1)。只断言 OPENCODE_CONFIG_DIR
     // 的值,会让「删掉写 opencode.jsonc 的 writeFileSync、保留下一行赋值」全绿通过 ——
@@ -176,6 +186,17 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     expect(typeof v2.model).toBe("string")
     expect(v2.model.length).toBeGreaterThan(0)
     expect(Object.keys(v2.provider ?? {})).toEqual(expect.arrayContaining(["alpha", "deepseek-byok"]))
+    // #857:internal V2-only marker is committed by ConfigProvider in the same local batch as the
+    // governed catalog. Empty env + zero models keeps it unavailable and invisible to model.list.
+    expect(v2.provider[ALPHA_V2_CATALOG_READY_PROVIDER_ID]).toEqual({
+      name: "Alpha catalog readiness marker",
+      env: [],
+    })
+    const decodedV1 = Schema.decodeUnknownSync(ConfigV1.Info)(v2)
+    const decodedV2 = Schema.decodeUnknownSync(Config.Info)(ConfigMigrateV1.migrate(decodedV1))
+    expect(decodedV2.providers?.[ALPHA_V2_CATALOG_READY_PROVIDER_ID]?.env).toEqual([])
+    const v1 = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? "")
+    expect(v1.provider?.[ALPHA_V2_CATALOG_READY_PROVIDER_ID]).toBeUndefined()
     // v2 投影是**刻意 keyless** 的(契约 docs/contracts/engine-config-channels.md:41-42):
     // 推理走 v1 的 {file:} 通道,v2 只供 picker 列目录,所以这份文件里既不该有明文密钥,
     // 也不该有 apiKey 字段本身。断言两者,而不是断言「有 {file: ref」——
@@ -184,6 +205,85 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
     expect(v2Raw).not.toContain(PLATFORM_KEY)
     expect(v2Raw).not.toContain(BYOK_KEY)
     expect(v2Raw).not.toContain("apiKey")
+    // #857:the first request must not pay to decode the bundled 6,132-row models.dev snapshot or
+    // wait for the late ConfigProvider commit. The early base is mechanically derived from the
+    // SAME provider projection; it carries exact identities + marker, never a key or second policy.
+    const modelsBaseRaw = fs.readFileSync(process.env.OPENCODE_MODELS_PATH!, "utf8")
+    const modelsBase = JSON.parse(modelsBaseRaw) as Record<string, any>
+    expect(Object.keys(modelsBase).sort()).toEqual(
+      ["alpha", "deepseek-byok", ALPHA_V2_CATALOG_READY_PROVIDER_ID].sort(),
+    )
+    expect(modelsBase[ALPHA_V2_CATALOG_READY_PROVIDER_ID]).toEqual({
+      id: ALPHA_V2_CATALOG_READY_PROVIDER_ID,
+      name: "Alpha catalog readiness marker",
+      env: [],
+      models: {},
+    })
+    for (const id of ["alpha", "deepseek-byok"]) {
+      expect(Object.keys(modelsBase[id].models).sort()).toEqual(Object.keys(v2.provider[id].models).sort())
+      for (const [modelID, early] of Object.entries(modelsBase[id].models) as Array<[string, any]>) {
+        // These providers are custom config projections, so before #857 their settled catalog rows
+        // started from ModelV2.Info.empty() and ConfigProvider overlaid only declared fields. Keep
+        // the early ModelsDev base capability/limit values byte-for-byte equivalent to that prior
+        // settled default; this prevents the fast first commit from inventing a second metadata
+        // authority while still proving it did not regress the final catalog.
+        const settledDefault = ModelV2.Info.empty(ProviderV2.ID.make(id), ModelV2.ID.make(modelID))
+        expect({
+          tool_call: early.tool_call,
+          limit: early.limit,
+          modalities: early.modalities,
+          released: Date.parse(early.release_date),
+        }).toEqual({
+          tool_call: settledDefault.capabilities.tools,
+          limit: settledDefault.limit,
+          modalities: {
+            input: settledDefault.capabilities.input,
+            output: settledDefault.capabilities.output,
+          },
+          released: settledDefault.time.released,
+        })
+      }
+      Schema.decodeUnknownSync(ModelsDevProvider)(modelsBase[id])
+    }
+    Schema.decodeUnknownSync(ModelsDevProvider)(modelsBase[ALPHA_V2_CATALOG_READY_PROVIDER_ID])
+    expect(modelsBaseRaw).not.toContain(PLATFORM_KEY)
+    expect(modelsBaseRaw).not.toContain(BYOK_KEY)
+    expect(modelsBaseRaw).not.toContain("apiKey")
+  })
+
+  test("enabled user/file provider missing from the in-memory projection keeps the late barrier fail-closed", () => {
+    givenLoggedInWithByok()
+    fs.writeFileSync(
+      path.join(process.env.ALPHA_GLOBAL_DIR!, "alpha.jsonc"),
+      JSON.stringify({
+        $schema: "https://opencode.ai/config.json",
+        provider: {
+          "user-file-provider": {
+            npm: "@ai-sdk/openai-compatible",
+            models: { "user-model": { name: "User Model" } },
+          },
+        },
+      }),
+    )
+
+    expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
+    expect(process.env.OPENCODE_MODELS_PATH).toBeUndefined()
+    expect(fs.existsSync(path.join(userData, "alpha-engine-config", "models.json"))).toBe(false)
+    expect(JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!).enabled_providers).toContain("user-file-provider")
+    expect(
+      JSON.parse(fs.readFileSync(path.join(process.env.OPENCODE_CONFIG_DIR!, "opencode.json"), "utf8")).provider[
+        "user-file-provider"
+      ],
+    ).toBeDefined()
+  })
+
+  test("ALPHA_MODELS_DISABLE preserves the upstream models path escape hatch", () => {
+    process.env.ALPHA_MODELS_DISABLE = "1"
+    process.env.OPENCODE_MODELS_PATH = "/operator/upstream-models.json"
+
+    expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
+    expect(process.env.OPENCODE_MODELS_PATH).toBe("/operator/upstream-models.json")
+    expect(fs.existsSync(path.join(userData, "alpha-engine-config", "models.json"))).toBe(false)
   })
 
   test("反向闸门:注入内部抛错时失败必须出声,且正向闸门的断言体真的转红(函数级 catch 不再能瞒过测试)", () => {

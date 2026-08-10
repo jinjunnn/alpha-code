@@ -4,7 +4,7 @@ kind: verification
 status: complete
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-08-06
+last_reviewed: 2026-08-07
 ---
 
 # REQ-109/110 T7 packaged runtime matrix
@@ -151,3 +151,177 @@ cell preserved the draft, reported the interruption, kept mount=1/reload=0,
 and completed its first post-rotation request with only the renewed token. The
 new idle-continuity follow-up still requires a rebuilt signed candidate and a
 quiescent-desktop rerun before #858 can close.
+
+## #857 candidate verification (not yet packaged-complete)
+
+The first signed #857 candidate removed the 6,132-row bundled models.dev
+snapshot and proved that the first and hot provider/model identities were the
+same governed set, with zero account or bearer requests. It did **not** meet the
+latency gate: the empty base still waited for the late ConfigProvider commit, so
+five logged-out/BYOK samples became ready in 3,965–13,968 ms.
+
+The current code candidate instead derives a minimal models.dev base
+mechanically from Alpha's existing provider projection. The base carries only
+the exact provider/model identities, names, endpoint, upstream schema-required
+conservative values, and a V2-only unavailable readiness marker with no models;
+it never reads or writes a key and does not define a second allow/deny policy.
+ModelsDevPlugin can therefore commit the complete governed identity set before
+the late ConfigProvider metadata/variant overlay. If an enabled provider exists
+only in a user file and cannot be completely represented by the in-memory
+projection, the base is `{}` without the marker and the renderer conservatively
+waits for the existing late ConfigProvider commit instead of exposing a partial
+set. The typed renderer model contract still polls `provider.get(marker)` in the
+same directory before issuing its first `model.list`; neither path reads account
+summary, a platform bearer, or any account network request.
+
+The deterministic regression test supplies an observable ungoverned catalog
+before the marker, proves that bypassing the marker returns that control value,
+then proves both the first production read and the hot read return the governed
+set in strict `provider.get(marker) → model.list` order. The injection test
+also schema-decodes every generated base entry, compares its identity set with
+the existing V2 projection, rejects key material, and pins the incomplete
+user-file-provider fallback. This remains code-level candidate evidence: the
+issue stays open and the ≤2 s claim remains unmade until the rebuilt signed
+app passes the logged-out/BYOK five-sample matrix.
+
+A second signed candidate at joint RC
+`9528cc24065fa7efb8de6f6e5ea1d816d9d3edb7` (app executable SHA-256
+`0d86adecb343c3d215cb22dd09ed60042e7f08079f010ccdfcbe60a8550f150b`)
+proved the identity fix but failed the timing gate. Its five BYOK-only samples
+were 16,123.905 / 4,113.954 / 2,989.986 / 3,491.911 / 2,985.562 ms, so P95
+was **16,123.905 ms**. Every sample still had the exact same first/hot two-row
+governed set, zero account/bearer requests, zero rotation/reload, and negative
+secret-hygiene checks. The first V2 marker request was paying the lazy
+per-location service-graph construction; moving the governed base before the
+internal plugin batch fixed correctness but did not eliminate that cost.
+
+A third signed candidate at joint RC
+`ff0cf54a4fb3152f72c0e2d6c892e20a541eee22` (app executable SHA-256
+`5b6aa738d627d3ed8278dd2a8be67ef7fa1d363d2770e1b03e7c3e287cc2229b`)
+started an in-process marker request in parallel with socket listen, but the
+five BYOK-only samples were 15,295.444 / 4,625.020 / 3,581.587 / 4,022.536 /
+3,390.514 ms; P95 was **15,295.444 ms**. First/hot identity equality, zero
+account/bearer requests, zero rotation/reload, and secret hygiene all remained
+correct. Source-level diagnosis found two exact causes: the request lacked the
+sidecar's Basic authorization and stopped before `LocationMiddleware`, while
+upstream `Default` and `listen` independently called `createRoutes` and used
+different memo maps, so they could not share a `LocationServiceMap` anyway.
+
+The fourth signed candidate at joint RC
+`afdcf28fc717fa19ab96260a5b2a85292918fe3a` (app executable SHA-256
+`b5ddff952ace51de6c2af386f06ee4e815dfd0b7612a88eb3a8d09b5d095e885`)
+authenticated that in-process request and applied the strict Alpha-owned
+generated-output patch: only the fixed Electron `cors=["oc://renderer"]`
+listener reused `Default`'s singleton routes and global memo map; all other
+listeners retained `createRoutes(opts)`. Correctness stayed green, but its five
+BYOK-only startup values were 18,667.736 / 3,372.860 / 5,249.261 / 3,485.976 /
+3,861.934 ms, so the directly recomputed nearest-rank P95 was **18,667.736 ms**
+and the timing gate failed. Every sample still returned the exact same first/hot
+two-row governed set with zero account or bearer requests. The two recorded
+renderer mounts are expected: this probe deliberately calls `location.reload()`
+after the first successful read to compare the hot set. The summary's
+`latency.samples=0` is also expected under the current probe whitelist, which
+excludes `byok-only`; these five raw values, rather than that aggregate field,
+are the #857 P95 evidence.
+
+The failed candidate published sidecar ready as soon as socket listen completed
+while the local graph prewarm was still in flight. An isolated no-GUI diagnostic
+against the exact generated engine bundle reproduced the same shared
+`Default`/listener route and memo map with the bundled Alpha extension: listener
+build completed in 150.89 ms, the concurrent authenticated prewarm in 187.36 ms,
+and the following socket model request in 9.57 ms. This supports a narrower
+scheduling diagnosis: starting the renderer before prewarm settlement causes the
+packaged contention; the graph does not intrinsically require the observed 2–5 s
+when it runs before renderer startup.
+
+The fifth signed candidate at joint RC
+`fb0a83e9eb84e2d950966f194468ba24a5aed395` (app executable SHA-256
+`2d387e88856d1db11e670f4d4ee18e2275f757bfd2064302f53152a1e294db95`)
+changed only sidecar readiness ordering: it started the real authenticated V2
+prewarm before `Server.listen` but published ready only after both settled. Its
+five BYOK-only startup values were 16,290.028 / 3,516.540 / 3,410.652 /
+3,499.337 / 3,454.527 ms, so nearest-rank P95 was **16,290.028 ms** and the gate
+still failed. First/hot identity equality, two governed rows, zero account or
+bearer requests, zero main reloads, and negative secret checks remained green.
+
+The new ordering made the remaining cold seam exact. Sidecar ready occurred at
+1,073–1,587 ms, but the first renderer model-contract call then spent
+1,909–2,105 ms on its real marker-plus-model read in four ordinary samples; the
+same socket `/api/model` handler immediately returned in 6–16 ms afterward.
+Thus waiting for the marker prewarm alone does not mechanically prove that the
+renderer's actual model handler has settled before startup contention begins.
+
+The next code candidate retains the same sidecar-owned local path and extends
+the prewarm in one direction only: after the governed marker succeeds, it reads
+the same directory's real `/api/model` handler and consumes that response before
+ready. It does not cache or expose the response, bypass the renderer's own
+`v2.model.list`, introduce a second catalog source, or wait for account or
+network state. This remains unclaimed code-level evidence: the issue and PR stay
+open/draft until a newly signed app passes all five samples at ≤2 s P95 with
+first/hot equality.
+
+The prewarm is deliberately scoped to the default `~/Alpha` home directory
+carried in the sidecar start command. Other directory/workspace refs still take
+their real cold location-graph path; this evidence does not claim a process-wide
+catalog cache. The ready gate is bounded at 2,000 ms, marker and model response
+bodies are both consumed, and renderer evidence distinguishes
+`error:catalog-not-ready` from a general `error:request`.
+
+The sixth signed candidate at joint RC
+`c47f138953ee340b460b372749e7d6f59374ea91` (app executable SHA-256
+`cf3370162ed955734d21e26c48c2a3a4fc5970bf82fed9742c33b55b48aef7f2`)
+extended the prewarm through the real model handler but still failed the timing
+gate. Its five BYOK-only startup values were 24,985.102 / 6,319.862 /
+3,518.196 / 4,452.116 / 4,658.581 ms, so nearest-rank P95 was
+**24,985.102 ms**. Every sample retained first/hot equality at the exact same
+two-row SHA, made zero account or bearer requests, performed zero rotation or
+main-triggered reload, and passed all secret-hygiene checks.
+
+The named readiness outcome made the failure mode observable. Sample 1 emitted
+two consecutive `error:catalog-not-ready` ends, each at the 10 s request-abort
+timeout. That proves the intended 1.5 s readiness deadline did not bound wall
+clock before a separate chain returned the two-row set in 7.5 ms. The other four
+samples returned the first two-row set, but the initial model-list chain still
+took 2,012.7–4,828.2 ms after sidecar ready was published at 1,071–1,143 ms.
+Thus the 2 s bounded prewarm correctly avoids holding sidecar ready indefinitely,
+but it does not make the renderer's first production contract meet the <=2 s
+gate. The issue and PR remain open/draft; #858 and #859 were not run because #857
+did not pass. The preserved raw facts are
+[`results/byok-only-c47f1389.json`](./results/byok-only-c47f1389.json).
+
+The RC-only probe variant that produced those facts was not included in the
+evidence commit, and its artifact whitelist omitted
+`renderer.home.model_list.retry_tick`. Therefore the preserved JSON cannot be
+used to claim that no retry occurred; sample 1's 1,004 ms gap between attempts
+is consistent with the first 1 s recovery backoff. The executable probe in this
+directory now contains the exact BYOK-only row/hash and secret-hygiene capture
+and retains `retry_tick` events for the next signed run.
+
+The seventh signed candidate at joint RC
+`8f023b7c0b187f9927a2b58d3b325de3c18ee64a` (app executable SHA-256
+`f991100a7ebda20c71cebc5549a8b4a54167869fdfdc28c700c59ed547fd5800`)
+made the 1.5 s readiness budget a real wall-clock bound and preserved caller
+abort classification, but it still failed the packaged timing gate. The
+notarized app passed strict `codesign`, Gatekeeper, and stapler validation. Its
+five BYOK-only startup values were 20,051.873 / 4,333.817 / 4,499.791 /
+4,436.110 / 4,989.793 ms, so nearest-rank P95 was **20,051.873 ms**.
+
+Every sample retained first/hot equality at the same exact two-row SHA, made
+zero account or bearer requests, performed zero rotation or main-triggered
+reload, displayed no unavailable state, and passed all secret-hygiene checks.
+The corrected timeline now distinguishes the failure precisely. Samples 2–5
+each ended the initial readiness attempt as `error:catalog-not-ready` in
+1,502.3–1,502.7 ms, recorded one `retry_tick`, then returned the governed set
+on the next attempt in 359.0–1,012.7 ms. Sample 1 recorded four separately
+bounded readiness failures in 1,501.4–1,502.3 ms and three retry ticks before a
+separate production chain returned the same set in 5.1 ms. Thus the earlier
+10 s mislabeled hang is closed, but the bounded barrier plus recovery path does
+not make the first packaged production contract meet the <=2 s gate.
+
+The summary's `latency.samples=0` remains a probe aggregate limitation for the
+BYOK-only scenario; the five raw `startupMs` values above are the #857 timing
+evidence. The issue and PR remain open/draft. Per the hard stop, #858 and #859
+were not run, and no production or real-credential probe was attempted. The
+preserved raw facts and screenshots are
+[`results/byok-only-f991100a.json`](./results/byok-only-f991100a.json) and
+`results/byok-only-f991100a-{1..5}.png`.

@@ -10,6 +10,15 @@
  *  (window.api.endpoints). Change a domain HERE only to move the default. */
 export type AlphaEndpoints = { web: string; platform: string; account: string; cloud: string; mcp?: string }
 
+/**
+ * Alpha-owned V2 config marker. It has no models and an empty env integration, so it is never an
+ * available provider. The mechanically derived governed ModelsDev base materializes it in the same
+ * early batch as the exact provider/model identities; the ordinary ConfigProvider projection keeps
+ * the same marker for the conservative user/file-provider fallback. Renderer model consumers can
+ * therefore wait for it without an account or network dependency before issuing the first list.
+ */
+export const ALPHA_V2_CATALOG_READY_PROVIDER_ID = "alpha-internal-catalog-ready"
+
 export const ALPHA_ENDPOINTS = {
   /** alpha-web (C): identity / login / token / billing portal. */
   web: "https://alphacodeone.com",

@@ -71,7 +71,7 @@ import {
   type EngineModelRef,
 } from "./model-default-core"
 import { ModelPickPop } from "./alpha-composer-model"
-import { createModelContract, type ModelContract } from "./model-contract"
+import { createModelContract, ModelContractError, type ModelContract } from "./model-contract"
 import { byokEngineId, isByokEngineId } from "../../shared/alpha-model-types"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
@@ -894,12 +894,15 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
               durationMs: performance.now() - started,
               outcome: "ok",
             }),
-          () =>
+          (error) =>
             markStartupTimeline("renderer.home.model_list.end", {
               attempt,
               chain: seq,
               durationMs: performance.now() - started,
-              outcome: "error:request",
+              outcome:
+                error instanceof ModelContractError && error.reason === "catalog-not-ready"
+                  ? "error:catalog-not-ready"
+                  : "error:request",
             }),
         )
       return listing
