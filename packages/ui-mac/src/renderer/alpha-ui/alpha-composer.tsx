@@ -79,7 +79,7 @@ import {
 } from "./model-default-core"
 import { ModelPickPop } from "./alpha-composer-model"
 import { identityKey } from "./session-workspace/session-workspace-core"
-import { createModelContract, ModelContractError, type ModelContract } from "./model-contract"
+import { createModelContract, type ModelContract } from "./model-contract"
 import { byokEngineId, isByokEngineId } from "../../shared/alpha-model-types"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 import { accountResultState, createRetryWakeup, loadEngineModelsWithRetry, resolveAccountWithRetry } from "./model-recovery"
