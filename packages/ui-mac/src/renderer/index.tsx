@@ -66,16 +66,25 @@ import { markStartupTimeline } from "./startup-timeline"
 // runtime switch: a fatal render goes to Alpha Recovery (SurfaceBoundary), never to an
 // upstream leaf.
 const productionRoutes = composeRoutes({
-  home: (projects: AlphaProjectsApi) => () => (
+  // #891:两个「新会话入口」叶都要 `serverKey` —— 它们经 `projects.startChat` 建会话,新会话的
+  // canonical 身份因此落在**那个 store 连着的 server** 上,composer 拿它给开局档位/只读档登记。
+  // 值由 App() 的 `projectsServerKey` 反查(见那里),不在叶里自己猜。
+  home: (projects: AlphaProjectsApi, serverKey: () => string | undefined) => () => (
     <SurfaceBoundary surface="home">
-      <AlphaHome projects={projects} />
+      <AlphaHome projects={projects} serverKey={serverKey} />
     </SurfaceBoundary>
   ),
-  newSession: (projects: AlphaProjectsApi) => (props: DraftSurfaceProps) => (
-    <SurfaceBoundary surface="newSession">
-      <AlphaNewSession projects={projects} draftId={props.draftId} promoteDraft={props.promoteDraft} />
-    </SurfaceBoundary>
-  ),
+  newSession:
+    (projects: AlphaProjectsApi, serverKey: () => string | undefined) => (props: DraftSurfaceProps) => (
+      <SurfaceBoundary surface="newSession">
+        <AlphaNewSession
+          projects={projects}
+          serverKey={serverKey}
+          draftId={props.draftId}
+          promoteDraft={props.promoteDraft}
+        />
+      </SurfaceBoundary>
+    ),
   session: (projects: AlphaProjectsApi) => alphaSessionWorkspaceSurface(projects),
   settings: () => (
     <AlphaBoundary name="AlphaSettings">
@@ -468,11 +477,18 @@ render(() => {
     // instance instead of each running its own (was ×2 project.list / ×2N session.list + an extra SSE).
     const alphaProjects = useAlphaProjects(sidebarServer)
 
-    // REQ-126 CODE-F(#659):会话搜索结果的 server 身份。搜索只读 `alphaProjects` 那一份
-    // store,而它连的是 `sidebarServer` 那个 baseUrl —— 所以 href 里的 serverKey 必须由**同一个
-    // baseUrl** 反查出的连接算出,而不是"当前 active server"。当前 server 是 WSL/remote 时,后者
-    // 会把本地 sidecar 的结果导向错误的服务器(legacy `sessionHref` 正是这么坏的)。
-    const searchServerKey = createMemo(() => {
+    // `alphaProjects` 这份 store 连着的那个 server 的 `ServerConnection.key`。**唯一**的反查口:
+    // 由 store 自己的 `baseUrl` 找回连接再算 key,而不是读"当前 active server"。
+    //
+    // REQ-126 CODE-F(#659,第一个消费者):会话搜索结果的 href。搜索只读这一份 store,当前
+    // server 是 WSL/remote 时,拿 active server 拼 href 会把本地 sidecar 的结果导向错误的服务器
+    // (legacy `sessionHref` 正是这么坏的)。
+    //
+    // #891(第二个消费者):首页 / 新对话页的 composer。这两个叶经 `alphaProjects.startChat` 建
+    // 会话 —— 会话**就落在这个 baseUrl 上**,它的 canonical 身份三元组第一段因此是这个 key,不是
+    // active server。composer 用它给新会话登记开局档位/只读档;记到 active server 下面,会话页
+    // 按真实身份 adopt 时就永远认领不到那条登记(用户在首页开的只读档静默丢失)。
+    const projectsServerKey = createMemo(() => {
       const baseUrl = sidebarServer()?.baseUrl
       if (!baseUrl) return undefined
       const connection = servers().find((candidate) => candidate.http.url === baseUrl)
@@ -487,8 +503,11 @@ render(() => {
           <PermissionWatcher {...props} />
         </AlphaBoundary>
       ),
-      [productionRoutes.home.surface]: productionRoutes.home.mount(alphaProjects),
-      [productionRoutes["new-session"].surface]: productionRoutes["new-session"].mount(alphaProjects),
+      [productionRoutes.home.surface]: productionRoutes.home.mount(alphaProjects, projectsServerKey),
+      [productionRoutes["new-session"].surface]: productionRoutes["new-session"].mount(
+        alphaProjects,
+        projectsServerKey,
+      ),
       [productionRoutes.session.surface]: productionRoutes.session.mount(alphaProjects),
     }))
 
@@ -515,7 +534,7 @@ render(() => {
                   上游三处注册全在已被 alpha 顶替的叶里,注册随叶一起蒸发,侧栏「搜索」才成了静默
                   no-op。放在这里,它与路由无关地常驻,侧栏按钮与 mod+k 都落到它。 */}
               <AlphaBoundary name="AlphaSessionSearch">
-                <AlphaSessionSearch projects={alphaProjects} serverKey={searchServerKey} />
+                <AlphaSessionSearch projects={alphaProjects} serverKey={projectsServerKey} />
               </AlphaBoundary>
               <SettingsSurface />
               <AlphaBoundary name="ExtensionHub">

@@ -28,7 +28,17 @@ function greeting(): string {
   return t("alpha.home.greetingEvening")
 }
 
-export function AlphaHome(props: { projects: AlphaProjectsApi }) {
+export function AlphaHome(props: {
+  projects: AlphaProjectsApi
+  /** #891:`props.projects` 这份 store 连着的那个 server 的 key(`index.tsx` 的 `projectsServerKey`
+   *  由 store 自己的 baseUrl 反查出来)。首页的会话是 `projects.startChat` 建的,**就落在这个
+   *  server 上** —— 它是新会话 canonical 身份的第一段,composer 拿它登记开局档位/只读档。
+   *  这里刻意**不读** `useServer().key`:那是「当前 active server」,WSL/remote 下与本地 sidecar
+   *  不是同一个,拿它当身份就把登记写到了一把没人认领的钥匙下面(用户在首页开的只读档静默丢失)。
+   *  首页跳的 legacy href 今天仍按 active server 事后反推(`#894`),那是**导航**的缺陷,不是身份
+   *  的:身份归会话真正所在的那个 server。 */
+  serverKey: () => string | undefined
+}) {
   const navigate = useNavigate()
   const { store } = props.projects
   const configHealth = useConfigHealth()
@@ -122,6 +132,7 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
             mode="home"
             projects={props.projects}
             directory={activeWs}
+            serverKey={props.serverKey}
             onNeedWorkspace={() => {
               // 零工作区不留死点(REQ-054①):任何需要工作区的控件都引导到选择器
               setWsOpen(true)

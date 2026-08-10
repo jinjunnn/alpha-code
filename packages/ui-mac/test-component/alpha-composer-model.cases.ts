@@ -1561,7 +1561,11 @@ describe("REQ-125 C558 SessionComposerMount 按身份 keyed:切会话草稿正�
    让 `rememberScopedAgent` 在默认档时也留登记(交还「开过的痕迹」而不是当前档位)⇒ ④ 红。
    ④ 之所以要单列:前两个变异下它照样绿 —— 它挡的是反方向的错(把档位复活),不是同一个洞。 */
 describe("#570 档位按会话归属:切会话不把上一个会话的档位带过去", () => {
-  const identityFor = (sessionID: string) => ({ serverKey: "sidecar", directory: "/ws", sessionID })
+  // #891:作用域的键是 canonical 身份三元组,首页与会话页因此都得说清自己在哪个 server 上 ——
+  // 首页建的会话就落在当前 active server 上(上游 legacy 重定向对新 id 直接落 `useServer().key`),
+  // 所以这两处用同一个值,①~⑬ 的场景才是「同一个 server 上的多个会话」。
+  const SERVER_KEY = "sidecar"
+  const identityFor = (sessionID: string) => ({ serverKey: SERVER_KEY, directory: "/ws", sessionID })
   const dockApi = {
     running: () => false,
     contextUsage: () => null,
@@ -1694,6 +1698,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
         mode: "home",
         projects: scopedProjects(sdk, "NEW"),
         directory: () => "/ws",
+        serverKey: () => SERVER_KEY,
         command,
         modelContract: homeContract(),
       }),
@@ -1830,6 +1835,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
           mode: "home",
           projects: scopedProjects(sdk, "NEW-RO"),
           directory: () => "/ws",
+          serverKey: () => SERVER_KEY,
           command,
           modelContract: homeContract(),
         }),
@@ -1876,6 +1882,7 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
             },
           } satisfies AlphaProjectsApi,
           directory: () => "/ws",
+          serverKey: () => SERVER_KEY,
           command,
           modelContract: homeContract(),
           onSubmitted: (id: string) => submitted.push(id),
@@ -2040,6 +2047,130 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
       expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "A", agent: "alpha-readonly" })
       back.dispose()
+    })
+
+    /* ── #891 作用域的钥匙是 canonical 会话身份,不是 raw sessionID ────────────────────
+       上面 ①~⑬ 全部在同一个 serverKey + 同一个 directory 下打转 —— 在它们眼里,「拿 sessionID
+       当永久身份」与「拿三元身份当键」逐条等价:十三条断言各自都对,只是**比缺陷粗了一格**,
+       输入形状取窄了。下面两条各把三元组里 composer 此前根本不看的那一段拨开:同一个
+       `sessionID` 落在**不同 server** / **不同 directory** 下,是两个会话(仓内其它面 —— 草稿
+       暂存、artifacts、review —— 早就这么算了)。
+
+       每条都验两个方向:切过去的那个**不继承**(否则用户没开过的只读会替他把编辑关掉),
+       切回来的那个**没被清掉**(否则「挂载即无条件复位」也能骗过前半条)。判据仍只认
+       `.a-chip-perm` / `.a-chip-plan` 的可观察态与 `promptAsync` 真实载荷。 */
+
+    /** 三元身份里只换一段的两个会话。id 特意取同一个 —— 这正是 raw-id 作键时会撞上的那格。 */
+    const DUP_SESSION_ID = "ses_dup"
+    const other = (over: { serverKey?: string; directory?: string }) => () => ({
+      serverKey: over.serverKey ?? SERVER_KEY,
+      directory: over.directory ?? "/ws",
+      sessionID: DUP_SESSION_ID,
+    })
+
+    /** 在当前挂着的会话里把两档都打开(两张登记表都要写到,才验得出「只修了一张」)。
+     *  顺序不能反:`onKey` 里 readonly 档下 Shift+Tab 是 no-op(模式本就不生效),先开只读就永远
+     *  开不出计划档。 */
+    async function turnBothOn(host: HTMLElement) {
+      shiftTab(ta(host))
+      await waitFor(() => expect(planChip(host)).not.toBeNull())
+      await pickReadonly(host)
+      expect(planChip(host)).not.toBeNull() // 只读只是把计划 chip 置灰,不删掉它
+    }
+
+    test("⑭ 同一个 sessionID 落在两个 server 上:另一个不继承只读与计划,回到原来那个也没被清掉", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const [identity, setIdentity] = createSignal(other({})())
+      const mounted = mountSession(sdk, identity)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      await turnBothOn(mounted.host)
+
+      // 同一个 id,换 server(切 WSL / SSH server = 上游 ServerSDKProvider 换代,会话页身份的
+      // serverKey 段随之变)。这在 raw-id 作键时是**同一条登记**。
+      setIdentity(other({ serverKey: "wsl:ubuntu" })())
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("ask")
+      expect(planChip(mounted.host)).toBeNull()
+      await sendVia(mounted.host, "另一个 server 上的同 id 会话")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect("agent" in sdk.promptAsyncCalls[0]!).toBe(false)
+
+      setIdentity(other({})())
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("readonly"))
+      expect(planChip(mounted.host)).not.toBeNull()
+      await sendVia(mounted.host, "回到原来那个 server")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
+      expect(sdk.promptAsyncCalls[1]).toMatchObject({ sessionID: DUP_SESSION_ID, agent: "alpha-readonly" })
+      mounted.dispose()
+    })
+
+    test("⑮ 同一个 sessionID 落在两个目录下:另一个不继承只读与计划,回到原来那个也没被清掉", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const [identity, setIdentity] = createSignal(other({})())
+      const mounted = mountSession(sdk, identity)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      await turnBothOn(mounted.host)
+
+      setIdentity(other({ directory: "/ws-other" })())
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("ask")
+      expect(planChip(mounted.host)).toBeNull()
+      await sendVia(mounted.host, "另一个目录下的同 id 会话")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ directory: "/ws-other" })
+      expect("agent" in sdk.promptAsyncCalls[0]!).toBe(false)
+
+      setIdentity(other({})())
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("readonly"))
+      expect(planChip(mounted.host)).not.toBeNull()
+      await sendVia(mounted.host, "回到原来那个目录")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
+      expect(sdk.promptAsyncCalls[1]).toMatchObject({ directory: "/ws", agent: "alpha-readonly" })
+      mounted.dispose()
+    })
+
+    /* ── #891 钥匙的编码必须是**单射**的,不只是「三段都进去了」──────────────────────
+       ⑭⑮ 各拨开一段,但它们两个都杀不掉一种改法:把钥匙改成 `serverKey + directory + sessionID`
+       的无分隔自拼。那样三段确实全在,⑭⑮ 也照样全绿 —— 而**切分位置不同的两个身份会撞成同一
+       把钥匙**,于是两个真实存在的不同会话共用一条只读登记(正是本票要消灭的串档,只是换了个
+       入口回来)。下面这对就是撞的:
+         A = `https://h/a` + `/b`   + S
+         B = `https://h`   + `/a/b` + S
+       自拼两者都得到 `https://h/a/bS`;`identityKey` 的 NUL 分隔则不会。
+       两个 serverKey 都是真实形状 —— `ServerConnection.key` 对 http 连接就是整条 URL。 */
+    test("⑯ 切分位置不同、拼起来相同的两个身份:钥匙不撞,只读与计划各自独立", async () => {
+      installApi()
+      const sdk = scopedSdk()
+      const left = { serverKey: "https://h/a", directory: "/b", sessionID: DUP_SESSION_ID }
+      const right = { serverKey: "https://h", directory: "/a/b", sessionID: DUP_SESSION_ID }
+      // 自拼会撞 —— 这条断言是本用例的前提,写在这里免得将来改了夹具还以为在测碰撞。
+      expect(`${left.serverKey}${left.directory}${left.sessionID}`).toBe(
+        `${right.serverKey}${right.directory}${right.sessionID}`,
+      )
+
+      const [identity, setIdentity] = createSignal(left)
+      const mounted = mountSession(sdk, identity)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      await turnBothOn(mounted.host)
+
+      setIdentity(right)
+      await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+      expect(permChipOf(mounted.host)!.getAttribute("data-mode")).toBe("ask")
+      expect(planChip(mounted.host)).toBeNull()
+      await sendVia(mounted.host, "另一个切分位置上的同 id 会话")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+      expect(sdk.promptAsyncCalls[0]).toMatchObject({ directory: "/a/b" })
+      expect("agent" in sdk.promptAsyncCalls[0]!).toBe(false)
+
+      setIdentity(left)
+      await waitFor(() => expect(permChipOf(mounted.host)?.getAttribute("data-mode")).toBe("readonly"))
+      expect(planChip(mounted.host)).not.toBeNull()
+      await sendVia(mounted.host, "回到原来那个身份")
+      await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(2))
+      expect(sdk.promptAsyncCalls[1]).toMatchObject({ directory: "/b", agent: "alpha-readonly" })
+      mounted.dispose()
     })
   })
 })

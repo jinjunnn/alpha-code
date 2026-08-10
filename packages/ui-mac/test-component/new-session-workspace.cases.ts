@@ -49,8 +49,16 @@ Bun.plugin({
    AlphaNewSession reads the draft through upstream `useTabs()` and clears `?prompt=`
    through the router; both are replaced with observable fakes so the assertions can be
    about *what the page asked for*, not about internal calls. */
+// #891:两个「当会话身份用就是错的」的值,在本文件里被**故意钉成与 store 的 server 不同**:
+// `useServer().key`(当前 active server)与 `tabs.draft().server`(建 draft 那一刻的 active
+// server)。首页/新对话页的会话是 `projects.startChat` 在 **store 连着的那个 server** 上建的,
+// 身份只能是后者。两个错值都取 ACTIVE_SERVER_KEY,任一叶回头去读它们,判据当场红。
+const ACTIVE_SERVER_KEY = "wsl:ubuntu"
+/** `projects` 这份 store 真正连着的 server(生产由 `index.tsx` 的 `projectsServerKey` 反查)。 */
+const STORE_SERVER_KEY = "sidecar"
+
 type DraftRecord = { server: string; directory: string }
-const [draft, setDraft] = createSignal<DraftRecord>({ server: "sidecar", directory: "/ws/a" })
+const [draft, setDraft] = createSignal<DraftRecord>({ server: ACTIVE_SERVER_KEY, directory: "/ws/a" })
 // 上游 tabs.store 的最小形状:哪些 draft 还活着(关掉 = 从这里消失)。
 const [liveDrafts, setLiveDrafts] = createSignal<string[]>(["draft-1"])
 const updateDraftCalls: Array<{ draftID: string; patch: Partial<DraftRecord> }> = []
@@ -65,7 +73,13 @@ const tabs = {
     void startTransition(() => setDraft((current) => ({ ...current, ...patch })))
   },
 }
-mock.module("@opencode-ai/app", () => ({ useTabs: () => tabs }))
+/** 上游 `useServer()` 的最小形状。故意只给 active server —— 任何叶把它当会话身份用都会被判据抓住。 */
+const server = {
+  get key() {
+    return ACTIVE_SERVER_KEY
+  },
+}
+mock.module("@opencode-ai/app", () => ({ useTabs: () => tabs, useServer: () => server }))
 mock.module("@solidjs/router", () => ({
   useSearchParams: () => [{}, () => {}],
   useNavigate: () => () => {},
@@ -81,8 +95,20 @@ const { AlphaHome } = await import("../src/renderer/alpha-ui/AlphaHome")
 const { newSessionDraftStash } = await import("../src/renderer/alpha-ui/new-session-draft-stash")
 const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
 const { dict: zh } = await import("../src/renderer/i18n/zh")
-const { resetComposerModelProjection, setComposerAgent, setComposerModel } = await import(
-  "../src/renderer/alpha-ui/composer-state"
+const {
+  resetComposerAgentScopesForTests,
+  resetComposerModelProjection,
+  resetComposerPermScopesForTests,
+  setComposerAgent,
+  setComposerModel,
+} = await import("../src/renderer/alpha-ui/composer-state")
+// #891 判据要跑**会话页那一侧的真实 adopt**(不是自己拼一条等价链):seed 写进去的钥匙,
+// 只有 SessionComposerMount 按 canonical 身份算出同一把时才认领得到。
+const { SessionComposerMount } = await import(
+  "../src/renderer/alpha-ui/session-workspace/session-composer-mount"
+)
+const { createComposerDraftStash } = await import(
+  "../src/renderer/alpha-ui/session-workspace/session-dock-core"
 )
 
 const DEFAULT_WORKSPACE = "/Users/tester/Alpha"
@@ -287,6 +313,9 @@ function DraftLeaf(props: { projects: AlphaProjectsApi; draftId?: string }) {
     get children() {
       return createComponent(AlphaNewSession, {
         projects: props.projects,
+        // #891:生产由 index.tsx 的 `projectsServerKey` 供给(store 的 baseUrl 反查),这里同源:
+        // 这份 `projects` 连的就是 STORE_SERVER_KEY,而 `draft().server` 是另一个值。
+        serverKey: () => STORE_SERVER_KEY,
         draftId: props.draftId ?? "draft-1",
         promoteDraft: () => {},
       })
@@ -303,7 +332,7 @@ beforeEach(() => {
   pickedDirectory = undefined
   defaultWorkspaceGate = undefined
   setLiveDrafts(["draft-1"])
-  setDraft({ server: "sidecar", directory: "/ws/a" })
+  setDraft({ server: ACTIVE_SERVER_KEY, directory: "/ws/a" })
   document.body.replaceChildren()
 })
 
@@ -312,6 +341,9 @@ afterEach(() => {
   setComposerModel(null)
   setComposerAgent(null)
   resetComposerModelProjection()
+  // #891:档位/只读档的作用域登记是**模块级**的,跨用例会串(与 signal 本身同理)。
+  resetComposerAgentScopesForTests()
+  resetComposerPermScopesForTests()
   document.body.replaceChildren()
 })
 
@@ -348,7 +380,7 @@ describe("REQ-126 CODE-D 新对话页工作区选择器", () => {
   })
 
   test("未显式选择(draft 无目录)⇒ chip 与标题都显示默认对话目录 ~/Alpha", async () => {
-    setDraft({ server: "sidecar", directory: "" })
+    setDraft({ server: ACTIVE_SERVER_KEY, directory: "" })
     const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
     await flush()
     await flush()
@@ -676,7 +708,10 @@ describe("REQ-126 CODE-D 切目录不吞内容(真重挂)", () => {
 describe("REQ-126 CODE-D 首页:chip 抽取行为保持 + 默认落 ~/Alpha", () => {
   test("未显式选择 ⇒ chip 与真实提交目标都是默认对话目录(不是第一个项目)", async () => {
     const host = mount(() =>
-      createComponent(AlphaHome, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }),
+      createComponent(AlphaHome, {
+        projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]),
+        serverKey: () => STORE_SERVER_KEY,
+      }),
     )
     await flush()
     await flush()
@@ -699,7 +734,10 @@ describe("REQ-126 CODE-D 首页:chip 抽取行为保持 + 默认落 ~/Alpha", ()
     mountToasts()
     const gate = gateDefaultWorkspace() // workspaceDefaultDir 保持未决
     const host = mount(() =>
-      createComponent(AlphaHome, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }),
+      createComponent(AlphaHome, {
+        projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]),
+        serverKey: () => STORE_SERVER_KEY,
+      }),
     )
     await flush()
     await flush()
@@ -725,7 +763,10 @@ describe("REQ-126 CODE-D 首页:chip 抽取行为保持 + 默认落 ~/Alpha", ()
 
   test("chip 抽取行为保持:仍列默认工作区 + 项目 + 打开项目…,显式选中即改提交目标", async () => {
     const host = mount(() =>
-      createComponent(AlphaHome, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }),
+      createComponent(AlphaHome, {
+        projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]),
+        serverKey: () => STORE_SERVER_KEY,
+      }),
     )
     await flush()
     await flush()
@@ -750,5 +791,133 @@ describe("REQ-126 CODE-D 首页:chip 抽取行为保持 + 默认落 ~/Alpha", ()
 
     expect(startChatCalls).toHaveLength(1)
     expect(startChatCalls[0]!.directory).toBe("/ws/b") // 显式所选压过默认目录
+  })
+})
+
+/* ── #891 新会话开局档位登记的钥匙,取自**建这个会话的那个 server** ────────────────────
+   首页与新对话页发第一条走的是 `props.projects.startChat` —— 会话就建在**那份 store 连着的
+   server** 上。它的 canonical 身份第一段因此是那个 server 的 key,而不是壳里「当前 active
+   server」(`useServer().key`),也不是「建 draft 那一刻的 active server」(`tabs.draft().server`)。
+   WSL/remote 下这三者不是同一个值:登记落在后两者下面,会话页按真实身份 adopt 时就永远认领
+   不到 —— 用户在首页开的只读档静默消失,而他从没关过它。
+
+   判据形制:钥匙不直接断言(那是内部形状),断言的是**用户可观察的结果** —— 会话页把开局
+   档位/只读档接过来没有。写入走首页的生产提交路径,读取走会话页的生产 `SessionComposerMount`
+   (它自己按 canonical 身份算钥匙),两侧都不是测试拼的等价链。
+
+   本文件里 ACTIVE_SERVER_KEY ≠ STORE_SERVER_KEY 是**故意**的:任一叶回头去读 active server
+   或 draft.server,下面两条当场红(已实跑,见 PR 说明)。 */
+describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 server 名下", () => {
+  const planChipOf = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".a-chip-plan")
+  const permChipOf = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".a-chip-perm")
+  const readonlyItems = () =>
+    [...document.body.querySelectorAll<HTMLButtonElement>('.a-pop-item[role="menuitemradio"]')].filter((item) =>
+      item.textContent?.includes(zh["alpha.composer.permReadonly"]),
+    )
+
+  /** 本节要「先挂 A 断言、卸掉、再挂 B」——共享的 disposers 只在 afterEach 收,这里要能就地卸。 */
+  function mountDisposable(view: () => unknown) {
+    const host = document.createElement("div")
+    document.body.append(host)
+    const dispose = render(view as () => never, host)
+    return {
+      host,
+      dispose: () => {
+        dispose()
+        host.remove()
+      },
+    }
+  }
+
+  /** 会话页那一侧的生产挂载:它自己从 identity 算 `identityKey`,再 adopt 档位/只读档。 */
+  function mountSessionAt(projects: AlphaProjectsApi, serverKey: string, sessionID: string) {
+    return mountDisposable(() =>
+      createComponent(SessionComposerMount, {
+        identity: () => ({ serverKey, directory: DEFAULT_WORKSPACE, sessionID }),
+        projects,
+        dock: {
+          running: () => false,
+          contextUsage: () => null,
+          approvalPending: () => false,
+          onSlashCommand: () => {},
+        },
+        drafts: createComposerDraftStash(),
+      } as never),
+    )
+  }
+
+  /** 首页:开计划档 + 只读档,再真提交。顺序不能反 —— 只读档下 Shift+Tab 是 no-op。 */
+  async function submitFromHomeWithBothOn(projects: AlphaProjectsApi) {
+    const home = mountDisposable(() => createComponent(AlphaHome, { projects, serverKey: () => STORE_SERVER_KEY }))
+    for (let i = 0; i < 20 && !textarea(home.host); i++) await flush()
+    textarea(home.host)!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }),
+    )
+    for (let i = 0; i < 20 && !planChipOf(home.host); i++) await flush()
+    expect(planChipOf(home.host)).not.toBeNull()
+
+    permChipOf(home.host)!.click()
+    for (let i = 0; i < 20 && readonlyItems().length === 0; i++) await flush()
+    readonlyItems()[0]!.click()
+    for (let i = 0; i < 20 && permChipOf(home.host)!.getAttribute("data-mode") !== "readonly"; i++) await flush()
+    expect(permChipOf(home.host)!.getAttribute("data-mode")).toBe("readonly")
+
+    type(textarea(home.host)!, "开工")
+    await flush()
+    textarea(home.host)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    for (let i = 0; i < 30 && startChatCalls.length === 0; i++) await flush()
+    expect(startChatCalls).toHaveLength(1)
+    for (let i = 0; i < 10; i++) await flush() // seed 落在 await startChat 之后
+    home.dispose()
+  }
+
+  test("active server ≠ store 的 server 时:会话页按 store 的 server 认领得到开局档位与只读档", async () => {
+    const projects = projectsApi([project("alpha-code", "/ws/a")])
+    await submitFromHomeWithBothOn(projects)
+
+    // ① 反方向先测:登记**没有**落在 active server 名下(落在那儿 = 会话页永远认领不到)。
+    const wrong = mountSessionAt(projects, ACTIVE_SERVER_KEY, "session-1")
+    for (let i = 0; i < 20 && !textarea(wrong.host); i++) await flush()
+    expect(planChipOf(wrong.host)).toBeNull()
+    expect(permChipOf(wrong.host)!.getAttribute("data-mode")).toBe("ask")
+    wrong.dispose()
+
+    // ② 正方向:同一个 sessionID,换成 store 真正连着的那个 server —— 两档都在。
+    const right = mountSessionAt(projects, STORE_SERVER_KEY, "session-1")
+    for (let i = 0; i < 20 && !textarea(right.host); i++) await flush()
+    expect(planChipOf(right.host)).not.toBeNull()
+    expect(permChipOf(right.host)!.getAttribute("data-mode")).toBe("readonly")
+    right.dispose()
+  })
+
+  test("新对话页同一条线:draft.server 不是身份,登记仍在 store 的 server 名下", async () => {
+    const projects = projectsApi([project("alpha-code", "/ws/a")])
+    setDraft({ server: ACTIVE_SERVER_KEY, directory: DEFAULT_WORKSPACE })
+    const leaf = mountDisposable(() => createComponent(DraftLeaf, { projects }))
+    for (let i = 0; i < 20 && !textarea(leaf.host); i++) await flush()
+
+    textarea(leaf.host)!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }),
+    )
+    for (let i = 0; i < 20 && !planChipOf(leaf.host); i++) await flush()
+    expect(planChipOf(leaf.host)).not.toBeNull()
+
+    type(textarea(leaf.host)!, "从新对话页开工")
+    await flush()
+    textarea(leaf.host)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    for (let i = 0; i < 30 && startChatCalls.length === 0; i++) await flush()
+    expect(startChatCalls).toHaveLength(1)
+    for (let i = 0; i < 10; i++) await flush()
+    leaf.dispose()
+
+    const wrong = mountSessionAt(projects, ACTIVE_SERVER_KEY, "session-1") // = draft.server
+    for (let i = 0; i < 20 && !textarea(wrong.host); i++) await flush()
+    expect(planChipOf(wrong.host)).toBeNull()
+    wrong.dispose()
+
+    const right = mountSessionAt(projects, STORE_SERVER_KEY, "session-1")
+    for (let i = 0; i < 20 && !textarea(right.host); i++) await flush()
+    expect(planChipOf(right.host)).not.toBeNull()
+    right.dispose()
   })
 })
