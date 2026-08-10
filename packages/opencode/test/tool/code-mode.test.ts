@@ -11,6 +11,7 @@ import { Tool } from "@/tool/tool"
 import * as Truncate from "@/tool/truncate"
 import { MessageID, SessionID } from "@/session/schema"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
+import { McpCatalog } from "@/mcp/catalog"
 
 const ctx: Tool.Context = {
   sessionID: SessionID.make("ses_code-mode"),
@@ -43,6 +44,21 @@ function harness(input: {
   permission?: PermissionV1.Rule[]
   trigger?: Plugin.Interface["trigger"]
 }) {
+  const mcpTools = Object.fromEntries(
+    Object.entries(input.mcpTools).map(([key, item]) => {
+      if (item.identity) return [key, item]
+      const origins = input.servers.filter((server) => McpCatalog.toolName(server, item.def.name) === key)
+      if (origins.length !== 1) return [key, item]
+      return [
+        key,
+        {
+          ...item,
+          identity: { source: "mcp" as const, origin: origins[0]!, name: item.def.name },
+          authority: { kind: "not-asserted" as const },
+        },
+      ]
+    }),
+  )
   return Layer.mergeAll(
     Layer.mock(Plugin.Service, {
       trigger: input.trigger ?? (((_name, _input, output) => Effect.succeed(output)) as Plugin.Interface["trigger"]),
@@ -57,7 +73,7 @@ function harness(input: {
       get: () => Effect.succeed({ permission: [] } as any),
     }),
     Layer.mock(MCP.Service, {
-      tools: () => Effect.succeed(input.mcpTools),
+      tools: () => Effect.succeed(mcpTools),
       clients: () => Effect.succeed(Object.fromEntries(input.servers.map((name) => [name, {} as any]))),
     }),
   )
@@ -83,7 +99,22 @@ function build(
 }
 
 function describeFor(mcpTools: Record<string, MCP.McpTool>, servers?: string[], permission: PermissionV1.Rule[] = []) {
-  return describeCatalog(Permission.visibleTools(mcpTools, permission), serverNames(mcpTools, servers))
+  const names = serverNames(mcpTools, servers)
+  const identified = Object.fromEntries(
+    Object.entries(mcpTools).map(([key, item]) => {
+      const origins = names.filter((server) => McpCatalog.toolName(server, item.def.name) === key)
+      if (origins.length !== 1) return [key, item]
+      return [
+        key,
+        {
+          ...item,
+          identity: { source: "mcp" as const, origin: origins[0]!, name: item.def.name },
+          authority: { kind: "not-asserted" as const },
+        },
+      ]
+    }),
+  )
+  return describeCatalog(Permission.visibleTools(identified, permission), names)
 }
 
 // Program failures die at the tool boundary; recover the defect for message assertions.
@@ -107,16 +138,16 @@ describe("code mode execute", () => {
     })
   })
 
-  test("groups multi-underscore server names by longest matching prefix", () => {
+  test("groups multi-underscore server names from the structured identity", () => {
     const description = describeFor({ my_server_do_thing: mcpTool("do_thing", () => "") }, ["my_server"])
     expect(description).toContain("- my_server (1 tool)")
     expect(description).toContain("tools.my_server.do_thing(")
   })
 
-  test("groupByServer uses the whole key as the server name when it has no underscore", () => {
-    const description = describeFor({ standalone: mcpTool("standalone", () => "") }, [])
-    expect(description).toContain("- standalone (1 tool)")
-    expect(description).toContain("tools.standalone.standalone(")
+  test("catalog entries without a complete identity fail closed", () => {
+    expect(() => describeCatalog({ standalone: mcpTool("standalone", () => "") }, [])).toThrow(
+      "missing its source identity",
+    )
   })
 
   test("describeCatalog carries the raw MCP schemas for rendering", () => {
@@ -362,20 +393,20 @@ describe("code mode execute", () => {
     const asked: unknown[] = []
     const permissionCtx: Tool.Context = { ...ctx, ask: (req) => Effect.sync(() => void asked.push(req)) }
     const ok = () => ({ content: [{ type: "text", text: "ok" }] })
-    const tool = await build({ a_tool: mcpTool("a", ok), b_tool: mcpTool("b", ok) })
+    const tool = await build({ a_tool: mcpTool("tool", ok), b_tool: mcpTool("tool", ok) })
 
     await Effect.runPromise(
       tool.execute({ code: "await tools.a.tool({}); await tools.b.tool({}); return 'done'" }, permissionCtx),
     )
 
-    expect(asked.map((req: any) => req.permission)).toEqual(["a_tool", "b_tool"])
+    expect(asked.map((req: any) => req.permission)).toEqual(["mcp:a:tool", "mcp:b:tool"])
   })
 
   test("a denied permission fails the child call with a catchable message, not the whole execute", async () => {
     const denyCtx: Tool.Context = { ...ctx, ask: () => Effect.die(new Error("permission denied by user")) }
     const called: string[] = []
     const tool = await build({
-      a_tool: mcpTool("a", () => {
+      a_tool: mcpTool("tool", () => {
         called.push("a")
         return { content: [{ type: "text", text: "ok" }] }
       }),
@@ -400,8 +431,8 @@ describe("code mode execute", () => {
       })) as Plugin.Interface["trigger"]
     const tool = await build(
       {
-        a_tool: mcpTool("a", () => ({ content: [{ type: "text", text: "one" }] })),
-        b_tool: mcpTool("b", () => ({ content: [{ type: "text", text: "two" }] })),
+        a_tool: mcpTool("tool", () => ({ content: [{ type: "text", text: "one" }] })),
+        b_tool: mcpTool("tool", () => ({ content: [{ type: "text", text: "two" }] })),
       },
       undefined,
       undefined,
@@ -437,7 +468,7 @@ describe("code mode execute", () => {
       return { content: [{ type: "text", text: "ok" }] }
     }
     const tool = await build(
-      { a_tool: mcpTool("a", record("a")), b_tool: mcpTool("b", record("b")) },
+      { a_tool: mcpTool("tool", record("a")), b_tool: mcpTool("tool", record("b")) },
       undefined,
       undefined,
       trigger,
@@ -715,11 +746,16 @@ describe("code mode permission visibility", () => {
     )
     const out = await Effect.runPromise(tool.execute({ code: "return await tools.github.list_issues({})" }, askCtx))
     expect(out.output).toBe("ok")
-    expect(asked).toEqual(["github_list_issues"])
+    expect(asked).toEqual(["mcp:github:list_issues"])
   })
 
   test("Permission.visibleTools hides only hard denies, matching Permission.disabled", () => {
-    const tools = { a_tool: 1, b_tool: 2, c_tool: 3 }
+    const tools = Object.fromEntries(
+      ["a_tool", "b_tool", "c_tool"].map((name, index) => [
+        name,
+        { value: index + 1, identity: { source: "builtin" as const, origin: "", name } },
+      ]),
+    )
     const visible = Permission.visibleTools(tools, [
       deny("a_tool"),
       askRule("b_tool"),

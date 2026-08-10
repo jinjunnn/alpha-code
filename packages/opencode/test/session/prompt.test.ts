@@ -1,4 +1,5 @@
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Database } from "@opencode-ai/core/database/database"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -946,6 +947,31 @@ it.instance("subtask child inherits parent session external_directory allow", ()
     expect(Permission.evaluate("external_directory", "/tmp/allowed/file", rules).action).toBe("allow")
     expect(Permission.evaluate("task", "anything", rules).action).toBe("deny")
   }),
+)
+
+noLLMServer.instance(
+  "direct subtask execution honors canonical task identity deny before persistence",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Identity denied",
+        permission: [{ permission: "builtin::task", pattern: "*", action: "deny" }],
+      })
+      const msg = yield* user(chat.id, "hello")
+      yield* addSubtask(chat.id, msg.id)
+
+      const exit = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.DeniedError)
+      expect(yield* sessions.children(chat.id)).toEqual([])
+      const history = yield* MessageV2.filterCompactedEffect(chat.id)
+      expect(
+        history.some((entry) => entry.info.role === "assistant" && entry.parts.some((part) => part.type === "tool")),
+      ).toBe(false)
+    }),
+  { config: cfg },
 )
 
 noLLMServer.instance("prompt tools replace previous prompt tool rules", () =>

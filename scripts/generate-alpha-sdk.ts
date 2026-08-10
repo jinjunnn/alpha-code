@@ -21,7 +21,23 @@ export function patchPermissionDecisionTypes(generatedTypes: string) {
   return generatedTypes.replace(permissionType, permissionTypePatched)
 }
 
+export function removeDuplicateToolDisplayTypes(generatedTypes: string) {
+  const duplicate = generatedTypes.match(
+    /\nexport type ToolDisplaySnapshotV11 = \{[\s\S]*?(?=\nexport type SessionStatus2 =)/,
+  )?.[0]
+  if (!duplicate) throw new Error("Duplicate generated tool display declarations were not found")
+  if (!duplicate.includes("export type ToolPart1 =") || !duplicate.includes("display?: ToolDisplaySnapshotV11")) {
+    throw new Error("Duplicate generated tool display declarations changed shape")
+  }
+  const patched = generatedTypes.replace(duplicate, "")
+  if (patched.includes("ToolDisplaySnapshotV11") || patched.includes("export type ToolPart1 =")) {
+    throw new Error("Duplicate generated tool display declarations were not removed completely")
+  }
+  return patched
+}
+
 if (import.meta.main) {
   await $`./packages/sdk/js/script/build.ts`.cwd(root)
-  await Bun.write(generatedTypesPath, patchPermissionDecisionTypes(await Bun.file(generatedTypesPath).text()))
+  const generatedTypes = await Bun.file(generatedTypesPath).text()
+  await Bun.write(generatedTypesPath, patchPermissionDecisionTypes(removeDuplicateToolDisplayTypes(generatedTypes)))
 }

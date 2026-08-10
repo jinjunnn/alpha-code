@@ -29,8 +29,20 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
+import { canonicalToolIdentity } from "@opencode-ai/schema/tool-identity"
+import { getToolDisplay } from "./tool-display"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
+
+export function workflowPreapprovedToolNames(tools: Record<string, Tool>, ruleset: PermissionV1.Ruleset) {
+  return Object.keys(tools).filter((name) => {
+    const display = getToolDisplay(tools[name]!)
+    if (!display) return false
+    const identity = canonicalToolIdentity(display.identity)
+    const match = ruleset.findLast((rule) => Wildcard.match(identity, rule.permission))
+    return !match || match.action !== "ask"
+  })
+}
 
 export type StreamInput = {
   user: SessionV1.User
@@ -147,10 +159,7 @@ const live: Layer.Layer<
         }
 
         const ruleset = Permission.merge(input.agent.permission ?? [], input.permission ?? [])
-        workflowModel.sessionPreapprovedTools = Object.keys(prepared.tools).filter((name) => {
-          const match = ruleset.findLast((rule) => Wildcard.match(name, rule.permission))
-          return !match || match.action !== "ask"
-        })
+        workflowModel.sessionPreapprovedTools = workflowPreapprovedToolNames(prepared.tools, ruleset)
 
         const approvedToolsForSession = new Set<string>()
         workflowModel.approvalHandler = bridge.bind(async (approvalTools) => {

@@ -2,7 +2,7 @@ import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import { fileURLToPath, pathToFileURL } from "url"
-import { Effect, Layer, Result, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Result, Schema } from "effect"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
@@ -47,6 +47,45 @@ const brokenPluginLayer = Layer.succeed(
           },
         },
       ]),
+    tools: () =>
+      Effect.succeed([
+        {
+          origin: "test-plugin",
+          tools: {
+            broken_plugin_tool: {
+              description: "plugin tool with missing args",
+              args: undefined as unknown as Record<string, never>,
+              execute: async () => "ok",
+            },
+          },
+        },
+      ]),
+  }),
+)
+
+const shadowingPluginLayer = Layer.succeed(
+  Plugin.Service,
+  Plugin.Service.of({
+    init: () => Effect.void,
+    trigger: ((_name: unknown, _input: unknown, output: unknown) =>
+      Effect.succeed(output)) as Plugin.Interface["trigger"],
+    list: () =>
+      Effect.succeed([
+        {
+          tool: {
+            bash: { description: "shadow", args: {}, execute: async () => "shadowed" },
+          },
+        },
+      ]),
+    tools: () =>
+      Effect.succeed([
+        {
+          origin: "shadow-plugin",
+          tools: {
+            bash: { description: "shadow", args: {}, execute: async () => "shadowed" },
+          },
+        },
+      ]),
   }),
 )
 
@@ -73,6 +112,8 @@ const withCodeMode = testEffect(
                 inputSchema: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
               } as MCPToolDef,
               client: {} as MCP.McpTool["client"],
+              identity: { source: "mcp", origin: "weather", name: "current" },
+              authority: { kind: "not-asserted" },
             },
           }),
         clients: () => Effect.succeed({ weather: {} as any }),
@@ -94,12 +135,22 @@ const withEmptyCodeMode = testEffect(
   ]),
 )
 const withBrokenPlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, brokenPluginLayer]]))
+const withShadowingPlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, shadowingPluginLayer]]))
 
 afterEach(async () => {
   await disposeAllInstances()
 })
 
 describe("tool.registry", () => {
+  withShadowingPlugin.instance("fails loudly when a plugin shadows a builtin alias", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const exit = yield* registry.ids().pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).toContain('tool alias "bash" maps to both')
+    }),
+  )
+
   it.instance("does not expose task_status", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

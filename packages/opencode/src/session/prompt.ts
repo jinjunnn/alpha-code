@@ -265,6 +265,19 @@ const layer = Layer.effect(
       const promptOps = yield* ops()
       const { task: taskTool } = yield* registry.named()
       const taskModel = task.model ? yield* getModel(task.model.providerID, task.model.modelID, sessionID) : model
+      const taskAgent = yield* agents.get(task.agent)
+      if (!taskAgent) {
+        const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
+        const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
+        const error = new NamedError.Unknown({ message: `Agent not found: "${task.agent}".${hint}` })
+        yield* events.publish(Session.Event.Error, { sessionID, error: error.toObject() })
+        throw error
+      }
+      const taskRuleset = Permission.merge(taskAgent.permission, session.permission ?? [])
+      if (
+        Permission.disabled([{ technicalId: TaskTool.id, identity: taskTool.identity }], taskRuleset).has(TaskTool.id)
+      )
+        return yield* Effect.die(new PermissionV1.DeniedError({ ruleset: taskRuleset }))
       const assistantMessage: SessionV1.Assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
         role: "assistant",
@@ -287,6 +300,11 @@ const layer = Layer.effect(
         type: "tool",
         callID: ulid(),
         tool: TaskTool.id,
+        display: {
+          identity: taskTool.identity,
+          technicalId: TaskTool.id,
+          authority: { kind: "not-asserted" },
+        },
         state: {
           status: "running",
           input: {
@@ -309,15 +327,6 @@ const layer = Layer.effect(
         { tool: TaskTool.id, sessionID, callID: part.id },
         { args: taskArgs },
       )
-
-      const taskAgent = yield* agents.get(task.agent)
-      if (!taskAgent) {
-        const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
-        const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-        const error = new NamedError.Unknown({ message: `Agent not found: "${task.agent}".${hint}` })
-        yield* events.publish(Session.Event.Error, { sessionID, error: error.toObject() })
-        throw error
-      }
 
       let error: Error | undefined
       const taskAbort = new AbortController()
@@ -343,7 +352,7 @@ const layer = Layer.effect(
               .ask({
                 ...req,
                 sessionID,
-                ruleset: Permission.merge(taskAgent.permission, session.permission ?? []),
+                ruleset: taskRuleset,
               })
               .pipe(Effect.orDie),
         })
@@ -508,6 +517,11 @@ const layer = Layer.effect(
               messageID: msg.id,
               sessionID: input.sessionID,
               tool: ShellID.ToolID,
+              display: {
+                identity: { source: "builtin", origin: "", name: ShellID.ToolID },
+                technicalId: ShellID.ToolID,
+                authority: { kind: "not-asserted" },
+              },
               callID: ulid(),
               state: {
                 status: "running",

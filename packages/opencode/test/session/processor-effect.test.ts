@@ -26,6 +26,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { LLMEvent } from "@opencode-ai/llm"
+import { attachToolDisplay } from "@/session/tool-display"
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -255,7 +256,6 @@ it.live("session.processor effect tests capture llm input cleanly", () =>
           sessionID: chat.id,
           model: mdl,
         })
-
         const input = {
           user: {
             id: parent.id,
@@ -390,7 +390,6 @@ it.live("session.processor effect tests stop after token overflow requests compa
           sessionID: chat.id,
           model: mdl,
         })
-
         const value = yield* handle.process({
           user: {
             id: parent.id,
@@ -718,6 +717,15 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
           sessionID: chat.id,
           model: mdl,
         })
+        handle.registerToolDisplay("lookup", {
+          identity: { source: "mcp", origin: "weather", name: "current" },
+          technicalId: "lookup",
+          authority: {
+            kind: "alpha-cloud",
+            bindingId: "mcp:weather",
+            evidenceDigest: `sha256:${"a".repeat(64)}`,
+          },
+        })
 
         const value = yield* handle.process({
           user: {
@@ -734,15 +742,26 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
           system: [],
           messages: [{ role: "user", content: "tool" }],
           tools: {
-            lookup: tool({
-              description: "Look up information",
-              inputSchema: z.object({ query: z.string() }),
-              execute: async (input) => ({
-                title: "Weather lookup",
-                output: `result:${input.query}`,
-                metadata: { source: "test" },
+            lookup: attachToolDisplay(
+              tool({
+                description: "Look up information",
+                inputSchema: z.object({ query: z.string() }),
+                execute: async (input) => ({
+                  title: "Weather lookup",
+                  output: `result:${input.query}`,
+                  metadata: { source: "test" },
+                }),
               }),
-            }),
+              {
+                identity: { source: "mcp", origin: "weather", name: "current" },
+                technicalId: "lookup",
+                authority: {
+                  kind: "alpha-cloud",
+                  bindingId: "mcp:weather",
+                  evidenceDigest: `sha256:${"a".repeat(64)}`,
+                },
+              },
+            ),
           },
         })
 
@@ -753,6 +772,15 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
         expect(yield* llm.calls).toBe(1)
         expect(call?.callID).toBe("call_1")
         expect(call?.tool).toBe("lookup")
+        expect(call?.display).toEqual({
+          identity: { source: "mcp", origin: "weather", name: "current" },
+          technicalId: "lookup",
+          authority: {
+            kind: "alpha-cloud",
+            bindingId: "mcp:weather",
+            evidenceDigest: `sha256:${"a".repeat(64)}`,
+          },
+        })
         expect(call?.state.status).toBe("completed")
         if (call?.state.status !== "completed") return
         expect(call.state.input).toEqual({ query: "weather" })
@@ -761,6 +789,45 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
         expect(call.state.metadata).toEqual({ source: "test" })
         expect(call.state.time.start).toBeDefined()
         expect(call.state.time.end).toBeDefined()
+
+        expect(() =>
+          handle.registerToolDisplay("lookup", {
+            identity: { source: "mcp", origin: "rebound", name: "current" },
+            technicalId: "lookup",
+            authority: { kind: "not-asserted" },
+          }),
+        ).toThrow("conflicting tool display registration")
+
+        expect(() =>
+          handle.registerToolDisplay("incomplete", {
+            identity: { source: "mcp", origin: "weather", name: "broken" },
+            technicalId: "incomplete",
+            authority: { kind: "alpha-cloud", bindingId: "mcp:weather" },
+          } as never),
+        ).toThrow()
+
+        expect(() =>
+          handle.registerToolDisplay("lookup", {
+            identity: { source: "mcp", origin: "weather", name: "current" },
+            technicalId: "lookup",
+            authority: {
+              kind: "alpha-cloud",
+              bindingId: "mcp:weather",
+              evidenceDigest: `sha256:${"a".repeat(64)}`,
+            },
+            billing: { class: "platform-paid", evidenceId: "bill-2" },
+          }),
+        ).toThrow("conflicting tool display registration")
+
+        handle.registerToolDisplay("lookup_v2", {
+          identity: { source: "mcp", origin: "weather", name: "current_v2" },
+          technicalId: "lookup_v2",
+          authority: { kind: "not-asserted" },
+        })
+        const replay = (yield* MessageV2.parts(msg.id)).find((part): part is SessionV1.ToolPart => part.type === "tool")
+        // Delete/catalog-unavailable are represented by replaying with no live MCP service at all;
+        // rename and rebind were exercised above. Every matrix cell must read the stored first-write bytes.
+        expect(replay?.display).toEqual(call?.display)
       }),
     { config: (url) => providerCfg(url) },
   ),

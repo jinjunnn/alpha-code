@@ -98,6 +98,29 @@ UPSTREAM_EXCLUDES=(
   # 接管面刻意压到这一个文件;新增闸门落 alpha 自有的
   # test/permission/alpha-ask-deadline.test.ts(新增文件不触发 --diff-filter=DMR)。
   ':(exclude)packages/opencode/src/permission/index.ts'
+  # ADR-041(#878,2026-08-09):工具身份与不可变显示快照。来源信息在这些注册/聚合/
+  # 权限/首次写入咽喉之后结构性丢失,L0-L2 无法从 alias 诚实反推。仅逐文件接管;
+  # 新的 alpha-tool-identity 闸门是新增文件,无需 exclude。permission/index.ts 已由
+  # ADR-038 接管,不重复列。
+  ':(exclude)packages/schema/src/v1/session.ts'
+  ':(exclude)packages/sdk/js/src/gen/types.gen.ts'
+  ':(exclude)packages/opencode/src/mcp/index.ts'
+  ':(exclude)packages/opencode/src/plugin/index.ts'
+  ':(exclude)packages/opencode/src/tool/registry.ts'
+  ':(exclude)packages/opencode/src/tool/code-mode.ts'
+  ':(exclude)packages/opencode/src/session/tools.ts'
+  ':(exclude)packages/opencode/src/session/processor.ts'
+  ':(exclude)packages/opencode/src/session/llm.ts'
+  ':(exclude)packages/opencode/src/session/llm/request.ts'
+  ':(exclude)packages/opencode/src/session/prompt.ts'
+  ':(exclude)packages/opencode/test/session/compaction.test.ts'
+  ':(exclude)packages/opencode/test/session/processor-effect.test.ts'
+  ':(exclude)packages/opencode/test/session/prompt.test.ts'
+  ':(exclude)packages/opencode/test/tool/code-mode-integration.test.ts'
+  ':(exclude)packages/opencode/test/tool/code-mode.test.ts'
+  ':(exclude)packages/opencode/test/tool/registry.test.ts'
+  ':(exclude)packages/core/src/tool/application-tools.ts'
+  ':(exclude)packages/core/src/tool/registry.ts'
 )
 fail=0
 
