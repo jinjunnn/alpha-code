@@ -4,7 +4,7 @@ kind: design
 status: active
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-08-08
+last_reviewed: 2026-08-09
 review_after: 2027-01-16
 ---
 
@@ -41,6 +41,7 @@ review_after: 2027-01-16
 | 助手侧截图 / 图片 / 媒体预览行 | `#ai` | — | 2026-07-24 | — | — | — | 未登记(历史) |
 | 通用工具卡四态(运行 / 完成 / 错误 / 待批) | `#tools` | `2026-06-28-timeline-overhaul/` | — | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
 | 各工具类型卡(read / grep / bash / edit / MCP …) | `#tools` | `2026-06-28-timeline-overhaul/` | — | — | — | `cards/tool-cards.tsx` | 未登记(历史) |
+| 全来源工具卡来源徽标 + 安全通用降级 | `#tool-provenance` | `2026-08-08-req125-tool-card-provenance/` | 2026-08-09 | ac#878 · ac#879 · ac#587 | — | — | **待实现** |
 | glob(按模式匹配文件)工具卡 | `#tools` | — | 2026-07-23 | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
 | bash 运行中的流式输出子消息 | `#tools` | — | 2026-07-24 | — | — | `cards/tool-card-model.ts` | 未登记(历史) |
 | 文件 part 徽章六态 | `#tools` | — | 2026-07-24 | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |

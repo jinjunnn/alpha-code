@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REQ-125 增量 · 全来源工具卡与安全通用降级</title>
+<link rel="stylesheet" href="../current/conversation-timeline/design.css" />
+<style>
+body{padding:0 0 64px}.bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--a-border);background:color-mix(in srgb,var(--a-surface) 94%,transparent);backdrop-filter:blur(14px)}
+.bar b{font-size:var(--a-text-sm)}.bar span{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}.grow{flex:1}.seg{display:flex;padding:2px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-bg-subtle)}.seg button{border:0;background:transparent;color:var(--a-text-secondary);padding:5px 10px;border-radius:calc(var(--a-radius-md) - 2px)}.seg button.on{background:var(--a-surface-raised);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.wrap{max-width:920px;margin:0 auto;padding:26px 20px}.intro{margin-bottom:22px}.intro h1{margin:0 0 8px;font-size:24px}.intro p{margin:0;color:var(--a-text-secondary);line-height:1.65}.kicker{margin:28px 0 9px;color:var(--a-text-tertiary);font-size:var(--a-text-xs);font-weight:700;text-transform:uppercase;letter-spacing:.08em}.stage{padding:18px;border:1px solid var(--a-border);border-radius:var(--a-radius-xl);background:var(--a-bg-inset)}
+.stack{display:grid;gap:10px}.card{overflow:hidden;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-shadow-xs)}.head{display:flex;align-items:center;gap:10px;padding:11px 13px}.ico{width:28px;height:28px;display:grid;place-items:center;flex:none;border-radius:9px;background:var(--a-bg-muted);font-size:14px}.ico.local,.ico.cloud{color:var(--a-accent);background:var(--a-accent-subtle)}.ico.third{color:var(--a-warning);background:var(--a-warning-subtle)}.ico.plugin{color:var(--a-text-secondary);background:var(--a-bg-muted)}.ico.unknown{color:var(--a-text-tertiary)}
+.main{min-width:0;flex:1}.title{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.title b{font-size:var(--a-text-sm)}.sub{margin-top:2px;color:var(--a-text-tertiary);font-size:var(--a-text-xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:999px;background:var(--a-bg-muted);color:var(--a-text-secondary);font-size:10px;font-weight:700}.badge.cloud{background:var(--a-accent-subtle);color:var(--a-accent)}.badge.third{background:var(--a-warning-subtle);color:var(--a-warning)}.state{font-size:var(--a-text-xs);color:var(--a-text-tertiary);white-space:nowrap}.state.ok{color:var(--a-success)}.state.run{color:var(--a-accent)}
+.body{padding:0 13px 11px 51px;color:var(--a-text-secondary);font-size:var(--a-text-xs);line-height:1.55}.safe{display:flex;gap:7px;align-items:flex-start;padding:8px 10px;border-radius:var(--a-radius-md);background:var(--a-bg-subtle);color:var(--a-text-tertiary)}.safe b{color:var(--a-text-secondary)}details{border-top:1px solid var(--a-border-faint)}summary{cursor:pointer;list-style:none;padding:8px 13px 8px 51px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs)}summary::-webkit-details-marker{display:none}.dev{padding:0 13px 11px 51px;color:var(--a-text-tertiary);font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}.warn{margin:9px 0 0;padding:9px 11px;border:1px solid color-mix(in srgb,var(--a-warning) 28%,var(--a-border));border-radius:var(--a-radius-md);background:var(--a-warning-subtle);color:var(--a-text-secondary);font-size:var(--a-text-xs)}
+.matrix{width:100%;border-collapse:collapse;background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);overflow:hidden;font-size:var(--a-text-xs)}.matrix th,.matrix td{padding:9px 11px;border-bottom:1px solid var(--a-border-faint);text-align:left;vertical-align:top}.matrix th{background:var(--a-bg-subtle);color:var(--a-text-secondary)}.matrix tr:last-child td{border-bottom:0}.yes{color:var(--a-success);font-weight:700}.no{color:var(--a-error);font-weight:700}.questions{display:grid;gap:9px}.q{padding:11px 13px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface)}.q b{font-size:var(--a-text-sm)}.q p{margin:5px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-xs);line-height:1.55}.rec{color:var(--a-success);font-weight:700}
+@media(max-width:640px){.wrap{padding:20px 12px}.bar span{display:none}.body,summary,.dev{padding-left:13px}.matrix{display:block;overflow-x:auto}.state{font-size:10px}}
+</style>
+</head>
+<body>
+<div class="bar"><b>α · REQ-125 工具卡增量</b><span>只定展示；不参与授权、策略或计费</span><div class="grow"></div><div class="seg"><button class="on" data-theme-button="light">浅色</button><button data-theme-button="dark">深色</button></div></div>
+<main class="wrap">
+  <section class="intro">
+    <h1>来源先于外观；未知默认不展开</h1>
+    <p>专用卡只由稳定 identity 命中宿主展示规则。第三方工具即便自称 <code>bash</code> 或“Alpha 官方”，也只能得到安全通用卡；原始参数、错误与输出不进入通用卡。</p>
+  </section>
+
+  <div class="kicker">推荐帧 · 五种来源结果</div>
+  <section class="stage"><div class="stack">
+    <article class="card">
+      <div class="head"><span class="ico local">⌘</span><div class="main"><div class="title"><b>读取</b><span class="badge">本机</span></div><div class="sub">src/session/message.ts · 86 行</div></div><span class="state ok">完成</span></div>
+      <details><summary>› 开发者详情（默认折叠）</summary><div class="dev">builtin::read<br/>technical-id: read</div></details>
+    </article>
+
+    <article class="card">
+      <div class="head"><span class="ico cloud">☁</span><div class="main"><div class="title"><b>网页搜索</b><span class="badge cloud">云端</span></div><div class="sub">“alpha-code e7 …” · 3 条结果</div></div><span class="state ok">完成</span></div>
+      <details><summary>› 开发者详情（默认折叠）</summary><div class="dev">mcp:alpha-cloud:web_search<br/>technical-id: alpha_cloud_web_search<br/>authority: verified binding · e7…</div></details>
+    </article>
+
+    <article class="card">
+      <div class="head"><span class="ico third">◇</span><div class="main"><div class="title"><b>第三方 MCP 工具</b><span class="badge third">第三方 MCP</span></div><div class="sub">context7 · resolve-library-id</div></div><span class="state ok">完成</span></div>
+      <div class="body"><div class="safe"><span>◉</span><span><b>详情未展示</b><br/>这个工具没有命中 Alpha 拥有的展示规则；参数、错误和输出保持隐藏。</span></div><div class="warn">第三方 annotation 只能增加警示，不能让这张卡变成“官方 / 安全 / 免费”。</div></div>
+      <details><summary>› 开发者详情（默认折叠）</summary><div class="dev">mcp:context7:resolve-library-id<br/>technical-id: context7_resolve-library-id<br/>authority: not asserted</div></details>
+    </article>
+
+    <article class="card">
+      <div class="head"><span class="ico plugin">◆</span><div class="main"><div class="title"><b>插件工具</b><span class="badge">插件</span></div><div class="sub">sample-plugin · bash</div></div><span class="state run">运行中</span></div>
+      <div class="body"><div class="safe"><span>◉</span><span><b>详情未展示</b><br/>名字是 <code>bash</code> 也不会借用内置命令卡。</span></div></div>
+      <details><summary>› 开发者详情（默认折叠）</summary><div class="dev">plugin:sample-plugin:bash<br/>technical-id: bash_2</div></details>
+    </article>
+
+    <article class="card">
+      <div class="head"><span class="ico unknown">?</span><div class="main"><div class="title"><b>未知来源的工具</b><span class="badge">未知来源</span></div><div class="sub">calendar_lookup</div></div><span class="state">失败</span></div>
+      <div class="body"><div class="safe"><span>◉</span><span><b>错误详情已隐藏</b><br/>历史行缺少完整来源快照；不查 live registry，也不从别名猜。</span></div></div>
+    </article>
+  </div></section>
+
+  <div class="kicker">展示资格矩阵</div>
+  <table class="matrix">
+    <tr><th>来源</th><th>专用卡</th><th>参数 / 输出</th><th>云端声明</th></tr>
+    <tr><td>内置 / 宿主</td><td class="yes">精确 identity 规则</td><td>字段 allowlist + redactor</td><td>仅权威事实</td></tr>
+    <tr><td>Alpha Cloud MCP</td><td class="yes">identity + verified binding</td><td>字段 allowlist + redactor</td><td class="yes">当次证明快照</td></tr>
+    <tr><td>第三方 MCP / plugin</td><td>默认通用；宿主规则才可升级</td><td class="no">默认不显示</td><td class="no">annotation 不算证明</td></tr>
+    <tr><td>缺 identity / 未知</td><td class="no">无</td><td class="no">不显示</td><td class="no">不推断</td></tr>
+  </table>
+
+  <div class="kicker">Owner 三项裁决 · 2026-08-09 已批准</div>
+  <section class="questions">
+    <div class="q"><b>Q1 · 未知工具严格 metadata-only</b><p><span class="rec">已批准。</span>不设“已脱敏 raw body”例外；只显示来源分类、名称、状态。</p></div>
+    <div class="q"><b>Q2 · 第三方专用卡只认 Alpha 自有规则</b><p><span class="rec">已批准。</span>远端 annotation 永不授予专用卡，只能提高警戒。</p></div>
+    <div class="q"><b>Q3 · technical-id 默认折叠</b><p><span class="rec">已批准。</span>保留排障能力，但不占主层级、不参与任何判定。</p></div>
+  </section>
+</main>
+<script>
+document.querySelectorAll("[data-theme-button]").forEach((button) => {
+  button.addEventListener("click", () => {
+    document.documentElement.dataset.theme = button.dataset.themeButton
+    document.querySelectorAll("[data-theme-button]").forEach((item) => item.classList.toggle("on", item === button))
+  })
+})
+</script>
+</body>
+</html>
