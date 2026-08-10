@@ -71,10 +71,9 @@ import {
   type EngineModelRef,
 } from "./model-default-core"
 import { ModelPickPop } from "./alpha-composer-model"
-import { createModelContract, ModelContractError, type ModelContract } from "./model-contract"
+import { createModelContract, type ModelContract } from "./model-contract"
 import { byokEngineId, isByokEngineId } from "../../shared/alpha-model-types"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
-import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
 import { accountResultState, createRetryWakeup, loadEngineModelsWithRetry, resolveAccountWithRetry } from "./model-recovery"
 import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
@@ -769,6 +768,17 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const [modelRetryEpoch, setModelRetryEpoch] = createSignal(0)
   let chainSeq = 0
   let chainDisposed = false
+  /* #882:目录就绪屏障不再自带 deadline(它等的是「目录还没收敛」,那不是故障),于是它必须有
+     一个真的取消源。每次 supersede/卸载都在这里取消在途的等待 —— 少了它,每一次 supersede 都
+     会永久留下一条自己跑的探针循环。`seq !== chainSeq` 只在 promise settle 之后才判得到,
+     对一个不会自己 settle 的等待毫无作用。 */
+  let chainAbort = new AbortController()
+  const supersedeChain = () => {
+    chainSeq++
+    chainAbort.abort(new Error("model chain superseded"))
+    chainAbort = new AbortController()
+    return chainSeq
+  }
   let runtimeGenerationEpoch = 0
   let lastAuthSignature: string | undefined
   const modelRetryWakeup = createRetryWakeup({
@@ -831,7 +841,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
        解析读的是 `composerModel()` 实时值,本次选择照样压过它(applyDefaultComposerModel 空判)。
        安全的 supersede(directory / authEpoch / session 切换 / retryAll)都会建立新的 replacement
        owner,不在此列。 */
-    const seq = homeLocalByok ? chainSeq : ++chainSeq
+    const seq = homeLocalByok ? chainSeq : supersedeChain()
     const sessionID = props.sessionID?.()
     if (sessionID) {
       const projection = composerModelProjection()
@@ -860,7 +870,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   }
 
   const runModelChain = async (directory: string, sessionID: string | undefined) => {
-    const seq = ++chainSeq
+    const seq = supersedeChain()
+    const chainSignal = chainAbort.signal
     setModelChainState("loading")
     setLastAuth(null)
     setPlatformId(null)
@@ -883,7 +894,10 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         homeModelListMarkCount++
         markStartupTimeline("renderer.home.model_list.start", { attempt, chain: seq })
       }
-      const listing = modelContract.list(directory, AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS))
+      // #882:传的是**链的生命期**信号,不再是一个 10s 固定预算。请求自身的悬挂防御留在
+      // contract 里(每次网络往返各自 ENGINE_FETCH_TIMEOUT_MS);目录就绪的等待不该被它掐断 ——
+      // 掐断只会把「还在收敛」伪装成一次失败,再交给退避空转,那正是本票要消灭的东西。
+      const listing = modelContract.list(directory, chainSignal)
       if (markModelList)
         void listing.then(
           (listed) =>
@@ -894,15 +908,15 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
               durationMs: performance.now() - started,
               outcome: "ok",
             }),
-          (error) =>
+          () =>
             markStartupTimeline("renderer.home.model_list.end", {
               attempt,
               chain: seq,
               durationMs: performance.now() - started,
-              outcome:
-                error instanceof ModelContractError && error.reason === "catalog-not-ready"
-                  ? "error:catalog-not-ready"
-                  : "error:request",
+              // #882:`error:catalog-not-ready` 这个分类跟着屏障 deadline 一起没了 —— 屏障不再
+              // 自己判失败,能到这里的只有真正的请求失败或链被 supersede。留一个永不成立的标签
+              // 只会让 #881 的归因把「假失败」和「真失败」混在一起数。
+              outcome: "error:request",
             }),
         )
       return listing
@@ -1115,7 +1129,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     const directory = props.directory()
     const sessionID = props.sessionID?.()
     if (!directory) {
-      chainSeq++
+      // #882:这里 supersede 之后**没有接替者**,在途的目录就绪等待只能靠取消收场。
+      supersedeChain()
       setModelChainState("loading")
       return
     }
@@ -1204,6 +1219,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     })
     onCleanup(() => {
       chainDisposed = true
+      // #882:卸载必须取消在途的目录就绪等待 —— 它自己没有 deadline,没有取消就永远不结束。
+      chainAbort.abort(new Error("composer unmounted"))
       unsub?.()
       unsubscribeRuntime()
       unsubscribeSse()

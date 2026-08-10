@@ -245,7 +245,9 @@ globalThis.fetch = ((input: unknown) => {
 
 const { useAlphaProjects } = await import("../src/renderer/sidebar/use-projects")
 const { projectSidebarGroups } = await import("../src/renderer/sidebar/project-display")
-const { replayRuntimeRecoveryState, subscribeRuntimeRecovery } = await import("../src/renderer/runtime-recovery")
+const { replayRuntimeRecoveryState, subscribeCatalogUpdated, subscribeRuntimeRecovery } = await import(
+  "../src/renderer/runtime-recovery"
+)
 const { AlphaComposerRuntime } = await import("../src/renderer/alpha-ui/alpha-composer")
 const { ModelPickPop } = await import("../src/renderer/alpha-ui/alpha-composer-model")
 const { composerModel, setComposerModel, setComposerAgent, resetComposerModelProjection } = await import(
@@ -616,6 +618,39 @@ test("#692 非 Git 会话冷加载与 SSE 新建都进入真实目录项目,且�
     groups = projectSidebarGroups(api.store.projects)
     expect(groups.find((project) => project.worktree === "/Users/tester/Downloads")?.sessions[0]?.id).toBe("ses-live")
   })
+})
+
+test("#882 global 事件流把 catalog.updated 按 directory 派发给就绪屏障(接线层,不是等价链)", async () => {
+  // 没有这一条,use-projects 里那个 case 可以被整段删掉而全仓仍然全绿 —— model-contract 的
+  // 单测只驱动 notifyCatalogUpdated,证明不了「引擎真发的那条事件走到了这个函数」。
+  sidebarScenario = true
+  const { api } = mountHook(60_000)
+  await waitFor(() => expect(api.sdk()).toBeDefined())
+  await waitFor(() => expect(globalEventController).toBeDefined())
+
+  const woken: string[] = []
+  const unsubscribe = subscribeCatalogUpdated("/repos/alpha-code", () => woken.push("/repos/alpha-code"))
+  const unsubscribeOther = subscribeCatalogUpdated("/repos/elsewhere", () => woken.push("/repos/elsewhere"))
+
+  const emit = (frame: Record<string, unknown>) =>
+    globalEventController!.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`))
+
+  // 控制组:同一条流上的**别的**事件类型不得唤醒任何人(否则这个 case 只是「流是通的」)。
+  emit({ directory: "/repos/alpha-code", project: "git-alpha", payload: { type: "server.heartbeat", properties: {} } })
+  await tick(20)
+  expect(woken).toEqual([])
+
+  // 真事实:引擎每次 CatalogV2.finalize 都发这条,envelope 带 directory(实跑记录见
+  // docs/architecture/2026-08-10-catalog-readiness-signals.md)。
+  emit({ directory: "/repos/alpha-code", project: "git-alpha", payload: { type: "catalog.updated", properties: {} } })
+  await waitFor(() => expect(woken).toEqual(["/repos/alpha-code"]))
+
+  // 按 directory 分派:另一个目录的提交只唤醒那个目录的等待者。
+  emit({ directory: "/repos/elsewhere", project: "git-elsewhere", payload: { type: "catalog.updated", properties: {} } })
+  await waitFor(() => expect(woken).toEqual(["/repos/alpha-code", "/repos/elsewhere"]))
+
+  unsubscribe()
+  unsubscribeOther()
 })
 
 test("#858 idle token-only rotation keeps the SDK identity stable, but a failed generation falls back to probing", async () => {
