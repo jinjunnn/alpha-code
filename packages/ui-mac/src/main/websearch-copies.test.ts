@@ -164,7 +164,7 @@ describe("websearch 执行副本普查(#223 R3 · R4 起降为纵深)", () => {
     }
   })
 
-  test("主权信道名在四个包里逐字一致(没有共用依赖边,只能靠这条锁)", () => {
+  test("主权信道名在四个包里逐字一致;MCP authority 共享唯一核验源", () => {
     expect(LOCAL_WEBSEARCH_DENY_ENV).toBe("ALPHA_LOCAL_WEBSEARCH_DENY")
     expect(CLOUD_WEBSEARCH_DENY_ENV).toBe("ALPHA_CLOUD_WEBSEARCH_DENY")
     expect(CLOUD_MCP_ARM_ENV).toBe("ALPHA_CLOUD_MCP_ARM")
@@ -178,8 +178,19 @@ describe("websearch 执行副本普查(#223 R3 · R4 起降为纵深)", () => {
     expect(read("packages/ext/src/cloud-websearch-kill.ts")).toContain(
       `export const CLOUD_WEBSEARCH_DENY_ENV = "${CLOUD_WEBSEARCH_DENY_ENV}"`,
     )
-    for (const name of [CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV, CLOUD_MCP_SERVER_ENV])
-      expect(read("packages/ext/src/cloud-websearch-kill.ts")).toContain(`_ENV = "${name}"`)
+    const extGate = read("packages/ext/src/cloud-websearch-kill.ts")
+    expect(extGate).toContain(`export const CLOUD_MCP_ARM_ENV = "${CLOUD_MCP_ARM_ENV}"`)
+    // #878 gives the engine snapshot and ext sovereignty gate one verified-definition source.
+    // The shared constants live in plugin; ext must explicitly re-export that exact source.
+    const authority = read("packages/plugin/src/alpha-cloud-authority.ts")
+    for (const [identifier, name] of [
+      ["CLOUD_MCP_DEF_ENV", CLOUD_MCP_DEF_ENV],
+      ["CLOUD_MCP_SERVER_ENV", CLOUD_MCP_SERVER_ENV],
+    ]) {
+      expect(authority).toContain(`export const ${identifier} = "${name}"`)
+      expect(extGate).toContain(`${identifier},`)
+    }
+    expect(extGate).toContain('from "@opencode-ai/plugin/alpha-cloud-authority"')
     // 本地判决在 ext 侧也必须逐字一致 —— R5 起 ext 的闸靠它拦第三方 web-search MCP。
     expect(read("packages/ext/src/cloud-websearch-kill.ts")).toContain(
       `export const LOCAL_WEBSEARCH_DENY_ENV = "${LOCAL_WEBSEARCH_DENY_ENV}"`,

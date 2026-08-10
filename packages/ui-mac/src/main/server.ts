@@ -30,11 +30,16 @@ type SidecarMessage =
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
-export type SidecarListener = { stop: () => Promise<void>; kill: () => void }
+export type SidecarStopMode = "graceful" | "token-rotation"
+export type SidecarListener = { stop: (mode?: SidecarStopMode) => Promise<void>; kill: () => void }
 
 const SIDECAR_SERVICE_NAME = "opencode server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
 const SIDECAR_STOP_TIMEOUT = 6_000
+// #858:token-only 换血已经会如实中断活动流并保留 renderer/draft。给旧请求
+// 一个很短的收口机会,但不能让它阻塞新 token 的 sidecar 整整 6s。结构换血和退出
+// 仍用上面的完整 graceful 预算。
+const SIDECAR_TOKEN_ROTATION_STOP_TIMEOUT = 500
 
 type SpawnLocalServerOptions = {
   userDataPath: string
@@ -390,13 +395,14 @@ export async function spawnLocalServer(
       kill: () => {
         if (!exited) child.kill()
       },
-      stop: () => {
+      stop: (mode = "graceful") => {
         if (stopping) return stopping
         if (exited) return Promise.resolve()
         child.postMessage({ type: "stop" })
+        const timeoutMs = mode === "token-rotation" ? SIDECAR_TOKEN_ROTATION_STOP_TIMEOUT : SIDECAR_STOP_TIMEOUT
         stopping = Promise.race([
           exit.promise.then(() => undefined),
-          delay(SIDECAR_STOP_TIMEOUT).then(() => {
+          delay(timeoutMs).then(() => {
             if (!exited) child.kill()
           }),
         ])

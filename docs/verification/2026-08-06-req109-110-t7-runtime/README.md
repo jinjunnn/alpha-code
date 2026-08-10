@@ -98,6 +98,60 @@ iteration `2026-W32`, and linked as a native sub-issue of #528 or #529. Thus
 while the parent product requirements correctly remain open until those bugs
 pass their own packaged gates.
 
+## #859 post-fix candidate
+
+The #859 change separates an in-flight boot fork's token generation from the
+generation that a healthy sidecar has committed. The in-flight value may only
+suppress a duplicate rotation for the same generation; it is never published
+as applied. Health success commits first and then replays the rotation latch,
+while spawn/health failure clears the in-flight value and replays the pending
+rotation. A newer generation is not suppressed by an older in-flight boot.
+
+The deterministic gate covers five repetitions of the 50 ms ordering, boot
+spawn/health failure, a newer generation arriving during boot, source-level
+production wiring, and the existing sidecar terminal matrix. The current
+headless narrow result is 71 tests passing with zero failures, plus a clean
+`ui-mac` typecheck.
+
+This is not yet a packaged PASS. The signed `latency-50ms` five-sample cell must
+still be rerun to establish one boot fork, zero token-only respawns, mount=1,
+reload=0, no loop, and catalog P95 <=2 s. The existing probe can visibly flash
+or launch a window, so it must run only in an owner-approved quiescent desktop
+window; until then #859 remains open and this section makes no packaged or
+latency claim.
+
+## #858 post-fix candidate
+
+The #858 change gives token-only rotation a bounded 500 ms graceful-stop window
+before terminating the old sidecar. Structural respawns and application exit
+continue to use the existing 6 s graceful budget. This preserves the explicit
+active-stream interruption and renderer/draft continuity contract without
+letting an old active connection block a renewed-token fork for the full stop
+ceiling.
+
+The deterministic gate drives a child that deliberately ignores the stop
+message and proves that token rotation terminates it at 500 ms while the
+default path does not terminate before 6 s. A production wiring gate proves
+that only `token-only` selects that bounded path.
+
+The first installed signed candidate then exposed a separate continuity gap:
+the main process and renderer stayed mounted, but every scheduled token-only
+rotation tore down the renderer's project SDK and inserted a transient
+`Syncing…` composer row. The process evidence showed no crash, no renderer
+reload, and an expected sidecar exit with code 0; the visible layout churn made
+that healthy renewal look like a desktop restart. The follow-up keeps the
+same-URL/same-password SDK owner stable, closes a separate execution gate while
+the sidecar is unavailable, and rebuilds only if the token-only generation
+actually fails. Active responses still take the explicit interruption path
+and preserve their draft.
+
+The signed 3 s renewal cell already established approximately 1.15 s from
+rotation request to generation ready in all five samples, and the active-stream
+cell preserved the draft, reported the interruption, kept mount=1/reload=0,
+and completed its first post-rotation request with only the renewed token. The
+new idle-continuity follow-up still requires a rebuilt signed candidate and a
+quiescent-desktop rerun before #858 can close.
+
 ## #857 candidate verification (not yet packaged-complete)
 
 The first signed #857 candidate removed the 6,132-row bundled models.dev

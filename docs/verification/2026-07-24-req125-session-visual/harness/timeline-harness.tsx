@@ -50,6 +50,7 @@ const userRow = (key: string, over: Record<string, unknown>): TimelineRow =>
     rev: "1",
     message: userMessage(),
     text: "",
+    copyText: () => String(over.text ?? ""),
     truncated: false,
     segments: [],
     attachments: [],
@@ -157,7 +158,7 @@ const STATES: Record<string, TimelineRow[]> = {
       part: {
         id: "f2",
         type: "reasoning",
-        text: "先列目录看结构,再读 README 与 compose 抓事实,最后浓缩成简介。",
+        text: "**规划探查顺序**\n\n先列目录看结构,再读 README 与 compose 抓事实,最后浓缩成简介。",
         time: { start: at(11, 20), end: at(11, 20) + 6000 },
       } as any,
     } as any,
@@ -511,7 +512,22 @@ const STATES: Record<string, TimelineRow[]> = {
   // H4 上下文压缩分隔
   h4: [
     md("h4-a", "此前的探查结论已并入摘要。"),
-    { kind: "divider", key: "h4", rev: "1", userMessageID: "msg_user", label: "compaction" } as any,
+    {
+      kind: "divider",
+      key: "h4",
+      rev: "2",
+      userMessageID: "msg_user",
+      label: "compaction",
+      summaryParts: [
+        {
+          id: "h4-summary",
+          sessionID: "ses_harness",
+          messageID: "msg_compaction",
+          type: "text",
+          text: "## 保留要点\n\n- 已确认安全边界\n- 下一步补 AGENTS.md 的硬约束一节",
+        },
+      ],
+    } as any,
     md("h4-b", "继续:下一步补 AGENTS.md 的硬约束一节。"),
   ],
   // H5 回到底部按钮(渲染长内容后向上滚动触发)
@@ -548,6 +564,7 @@ const intents = {
   openSession: (id: string) => console.log("[harness] openSession", id),
   openFile: (intent: unknown) => console.log("[harness] openFile", intent),
   continueTurn: () => console.log("[harness] continueTurn"),
+  editUserMessage: (intent: unknown) => console.log("[harness] editUserMessage", intent),
 }
 
 document.title = "REQ-125 timeline harness"
@@ -572,6 +589,10 @@ render(
         history={{ more: false, loading: false }}
         onLoadOlder={() => Promise.resolve()}
         intents={intents}
+        displayNames={{
+          agent: (agent) => agent.slice(0, 1).toUpperCase() + agent.slice(1),
+          model: (_providerID, modelID) => (modelID === "deepseek-reasoner" ? "DeepSeek Reasoner" : modelID),
+        }}
       />
     </MarkedProvider>
   ),

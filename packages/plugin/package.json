@@ -10,6 +10,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./alpha-cloud-authority": "./src/alpha-cloud-authority.ts",
     "./tool": "./src/tool.ts",
     "./tui": "./src/tui.ts",
     "./v2/effect": "./src/v2/effect/index.ts",

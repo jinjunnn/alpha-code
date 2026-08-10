@@ -5,7 +5,7 @@
 // 以及 C6 卡片全集:工具卡四态/折叠组/回合级错误/重试/媒体预览行/产物链接行)。
 // 数据经 props 注入(rows 来自 timeline-model 投影),本文件零上游 session DOM/选择器依赖,
 // CSS 只用 --a-* 令牌;卡片交互经可选 intents(缺席即降级为纯展示,fail-closed)。
-import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import { t } from "../../i18n"
 import {
   ContextToolGroupCard,
@@ -20,7 +20,9 @@ import { TimelineIntentsContext, type TimelineIntents, useTimelineIntents } from
 import { TimelineMarkdown } from "./timeline-markdown"
 import {
   boundedText,
+  MARKDOWN_MAX_CHARS,
   REASONING_MAX_CHARS,
+  reasoningSummary,
   type TimelineComment,
   type TimelineRow,
   type TimelineSegment,
@@ -71,6 +73,13 @@ export interface SessionTimelineViewProps {
   settleTimeoutMs?: number
   /** 卡片交互意图(可选):#568 起由绑定层接 C4 rail api;handler 缺席即降级纯展示。 */
   intents?: TimelineIntents
+  /** SDK 目录的可读显示名投影；缺席/异常时诚实回落原始 id。 */
+  displayNames?: TimelineDisplayNames
+}
+
+export interface TimelineDisplayNames {
+  agent: (agent: string) => string
+  model: (providerID: string, modelID: string) => string
 }
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { timeStyle: "short" })
@@ -258,7 +267,7 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
                 </Show>
               </div>
             </Show>
-            <For each={props.rows}>{(row) => <TimelineRowView row={row} />}</For>
+            <For each={props.rows}>{(row) => <TimelineRowView row={row} displayNames={props.displayNames} />}</For>
           </div>
         </div>
       </TimelineIntentsContext.Provider>
@@ -282,11 +291,11 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
   )
 }
 
-function TimelineRowView(props: { row: TimelineRow }) {
+function TimelineRowView(props: { row: TimelineRow; displayNames?: TimelineDisplayNames }) {
   // 行对象引用稳定(reuseTimelineRows),kind 不随内容变化;内容字段经 store proxy 反应式读取。
   const row = props.row
   if (row.kind === "turn") return <TurnRow row={row} />
-  if (row.kind === "user") return <UserRow row={row} />
+  if (row.kind === "user") return <UserRow row={row} displayNames={props.displayNames} />
   if (row.kind === "reasoning") return <ReasoningRow row={row} />
   if (row.kind === "markdown") return <MarkdownRow row={row} />
   if (row.kind === "tool") return <TimelineToolCard part={row.part} />
@@ -335,7 +344,7 @@ function FootnoteRow(props: { row: Extract<TimelineRow, { kind: "footnote" }> })
   // 复制动作:剪贴板通道缺席即不渲染按钮(fail-closed)。重试/分支钮按 owner 直令登记跳过:
   // 引擎无「重试」操作(SDK 无对应端点),分支只有 v1 `session.fork`(建新会话 + 导航,
   // 属另建链路)—— 两者均不在时间线的数据面内,不为凑形态伪造。
-  const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard
+  const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard && !!props.row.copyText()
   const copy = () => {
     try {
       void navigator.clipboard.writeText(props.row.copyText()).catch(() => {})
@@ -426,15 +435,50 @@ function UserSegment(props: { segment: TimelineSegment }) {
   return <span>{segment.text}</span>
 }
 
-function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }> }) {
+function displayName(read: () => string, fallback: string) {
+  try {
+    return read().trim() || fallback
+  } catch {
+    return fallback
+  }
+}
+
+function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }>; displayNames?: TimelineDisplayNames }) {
+  const intents = useTimelineIntents()
   const meta = () => {
     const message = props.row.message
-    const items = [
-      message.agent ? t("alpha.timeline.sentTo", { agent: message.agent }) : "",
-      message.model?.modelID ?? "",
-      formatTime(message.time.created),
-    ]
+    const agent = message.agent
+      ? displayName(() => props.displayNames?.agent(message.agent!) ?? message.agent!, message.agent)
+      : ""
+    const modelID = message.model?.modelID ?? ""
+    const model = message.model
+      ? displayName(
+          () => props.displayNames?.model(message.model!.providerID, message.model!.modelID) ?? modelID,
+          modelID,
+        )
+      : ""
+    const items = [agent ? t("alpha.timeline.sentTo", { agent }) : "", model, formatTime(message.time.created)]
     return items.filter(Boolean).join(" · ")
+  }
+  const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard && !!props.row.copyText()
+  const copy = () => {
+    try {
+      void navigator.clipboard.writeText(props.row.copyText()).catch(() => {})
+    } catch {
+      // 剪贴板拒绝不阻断时间线。
+    }
+  }
+  const edit = () => {
+    const handler = intents.editUserMessage
+    const text = props.row.copyText()
+    if (!handler || !text) return
+    try {
+      void Promise.resolve(
+        handler({ sessionID: props.row.message.sessionID, messageID: props.row.message.id, text }),
+      ).catch(() => {})
+    } catch {
+      // 同步 handler 异常同样不得击穿时间线；生产宿主会自行给失败反馈。
+    }
   }
   // 斜杠命令 chip(U 节):展开提示词默认折叠;正文缺席则 chip 不可展开。
   const [promptOpen, setPromptOpen] = createSignal(false)
@@ -534,14 +578,44 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }> }) {
               </button>
             </Show>
             <Show when={promptOpen() && props.row.text}>
-              <div class="a-tl-cmd-body">
-                <div class="a-tl-bubble">{bubbleInner()}</div>
-              </div>
+              <div class="a-tl-cmd-body">{bubbleInner()}</div>
             </Show>
           </div>
         )}
       </Show>
-      <div class="a-tl-user-meta">{meta()}</div>
+      <div class="a-tl-user-meta">
+        <span>{meta()}</span>
+        <Show when={canCopy || (!!intents.editUserMessage && !!props.row.copyText())}>
+          <span class="a-tl-user-actions">
+            <Show when={canCopy}>
+              <button
+                type="button"
+                title={t("alpha.timeline.copyMessage")}
+                aria-label={t("alpha.timeline.copyMessage")}
+                onClick={copy}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="9" width="11" height="11" rx="2" />
+                  <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+                </svg>
+              </button>
+            </Show>
+            <Show when={intents.editUserMessage && !!props.row.copyText()}>
+              <button
+                type="button"
+                title={t("alpha.timeline.editResend")}
+                aria-label={t("alpha.timeline.editResend")}
+                onClick={edit}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
+                </svg>
+              </button>
+            </Show>
+          </span>
+        </Show>
+      </div>
     </article>
   )
 }
@@ -554,6 +628,8 @@ function ReasoningRow(props: { row: Extract<TimelineRow, { kind: "reasoning" }> 
     return Math.max(0, Math.round((time.end - time.start) / 1000))
   }
   const body = () => boundedText(props.row.part.text ?? "", REASONING_MAX_CHARS)
+  // 流式期不读取不断增长的正文：完成态一次提取，避免折叠头随分片跳变。
+  const summary = createMemo(() => (props.row.streaming ? undefined : reasoningSummary(props.row.part.text ?? "")))
   return (
     <section
       class="a-tl-row a-tl-reason"
@@ -568,8 +644,22 @@ function ReasoningRow(props: { row: Extract<TimelineRow, { kind: "reasoning" }> 
         <span class="a-tl-reason-label">
           {props.row.streaming ? t("alpha.timeline.thinking") : t("alpha.timeline.reasoning")}
         </span>
-        <Show when={seconds() !== undefined}>
-          <span class="a-tl-reason-duration">{t("alpha.timeline.reasoningDuration", { seconds: seconds()! })}</span>
+        <Show when={seconds() !== undefined || summary()}>
+          <span class="a-tl-reason-meta">
+            <Show when={seconds() !== undefined}>
+              <span class="a-tl-reason-duration">{t("alpha.timeline.reasoningDuration", { seconds: seconds()! })}</span>
+            </Show>
+            <Show when={summary()}>
+              <Show when={seconds() !== undefined}>
+                <span class="a-tl-reason-separator" aria-hidden="true">
+                  ·
+                </span>
+              </Show>
+              <span class="a-tl-reason-summary" title={summary()}>
+                {summary()}
+              </span>
+            </Show>
+          </span>
         </Show>
         <svg class="a-tl-reason-chev" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M9 6l6 6-6 6" />
@@ -628,11 +718,50 @@ function MarkdownRow(props: { row: Extract<TimelineRow, { kind: "markdown" }> })
 }
 
 function DividerRow(props: { row: Extract<TimelineRow, { kind: "divider" }> }) {
-  // label 随行身份定格(rev = label),两种形态互不重建。
-  if (props.row.label === "interrupted") return <InterruptedRow />
+  // label 随行身份定格;compaction 的 rev 在完成态 summary 到达时变化,两种形态互不重建。
+  const row = props.row
+  if (row.label === "interrupted") return <InterruptedRow />
+  const [open, setOpen] = createSignal(false)
+  const expandable = () => row.summaryParts.length > 0
   return (
-    <div class="a-tl-row a-tl-divider" data-alpha-timeline-row="divider" data-label={props.row.label}>
-      <span class="a-tl-divider-pill">{t("alpha.timeline.compacted")}</span>
+    <div
+      class="a-tl-row a-tl-divider"
+      data-alpha-timeline-row="divider"
+      data-label={row.label}
+      data-expanded={open() ? "true" : "false"}
+    >
+      <button
+        type="button"
+        class="a-tl-divider-pill"
+        aria-expanded={expandable() ? open() : undefined}
+        disabled={!expandable()}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <svg class="a-tl-compaction-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8" />
+        </svg>
+        <span>{t("alpha.timeline.compacted")}</span>
+        <Show when={expandable()}>
+          <span aria-hidden="true">·</span>
+          <span>{t("alpha.timeline.retainedHighlights")}</span>
+          <svg class="a-tl-compaction-chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </Show>
+      </button>
+      <Show when={open() && expandable()}>
+        <div class="a-tl-compaction-body" data-alpha-compaction-summary="true">
+          <For each={row.summaryParts}>
+            {(part) => (
+              <TimelineMarkdown
+                text={boundedText(part.text ?? "", MARKDOWN_MAX_CHARS).text}
+                cacheKey={`compaction:${part.id}`}
+                streaming={false}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
     </div>
   )
 }

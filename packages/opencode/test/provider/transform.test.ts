@@ -6,6 +6,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { jsonSchema } from "ai"
+import { attachToolDisplay, getToolDisplay } from "@/session/tool-display"
 
 describe("ProviderTransform.options - setCacheKey", () => {
   const sessionID = "test-session-123"
@@ -564,10 +565,17 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
         system: [],
         messages: [{ role: "user", content: "Hello" }],
         tools: {
-          lookup: {
-            description: "Look up a value",
-            inputSchema: jsonSchema({ type: "object", properties: {} }),
-          },
+          lookup: attachToolDisplay(
+            {
+              description: "Look up a value",
+              inputSchema: jsonSchema({ type: "object", properties: {} }),
+            },
+            {
+              identity: { source: "host", origin: "", name: "lookup" },
+              technicalId: "lookup",
+              authority: { kind: "not-asserted" },
+            },
+          ),
         },
         provider: { id: "azure", options: { useCompletionUrls: true } } as any,
         auth: undefined,
@@ -584,6 +592,11 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
     expect(result.params.options.reasoningSummary).toBeUndefined()
     expect(result.params.options.include).toBeUndefined()
     expect(result.tools.lookup.strict).toBe(false)
+    expect(getToolDisplay(result.tools.lookup)).toEqual({
+      identity: { source: "host", origin: "", name: "lookup" },
+      technicalId: "lookup",
+      authority: { kind: "not-asserted" },
+    })
   })
 
   test("gpt-5.1 should have textVerbosity set to low", () => {

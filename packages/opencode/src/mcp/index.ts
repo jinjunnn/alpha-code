@@ -1,4 +1,5 @@
 import path from "node:path"
+import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
@@ -34,6 +35,8 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { McpCatalog } from "./catalog"
 import { McpEvent } from "@opencode-ai/schema/mcp-event"
 import { McpBrowser } from "./browser"
+import { governedMcpEvidence } from "@opencode-ai/plugin/alpha-cloud-authority"
+import { ToolAliasLedger, type ToolAuthority, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 
 const DEFAULT_TIMEOUT = 30_000
 const CLIENT_OPTIONS = {
@@ -145,6 +148,7 @@ interface State {
   clients: Record<string, MCPClient>
   defs: Record<string, MCPToolDef[]>
   instructions: Record<string, string>
+  authority: Record<string, ToolAuthority>
 }
 
 export interface ServerInstructions {
@@ -159,6 +163,22 @@ export interface McpTool {
   readonly def: MCPToolDef
   readonly client: MCPClient
   readonly timeout?: number
+  readonly identity?: ToolIdentity
+  readonly authority?: ToolAuthority
+}
+
+export function authorityForMcp(
+  name: string,
+  entry: ConfigMCPV1.Info,
+  env: Record<string, string | undefined> = process.env,
+): ToolAuthority {
+  const evidence = governedMcpEvidence(name, entry, env)
+  if (!evidence) return { kind: "not-asserted" }
+  return {
+    kind: "alpha-cloud",
+    bindingId: `mcp:${encodeURIComponent(name)}`,
+    evidenceDigest: `sha256:${createHash("sha256").update(evidence).digest("hex")}`,
+  }
 }
 
 export interface Interface {
@@ -500,6 +520,7 @@ const layer = Layer.effect(
           clients: {},
           defs: {},
           instructions: {},
+          authority: {},
         }
 
         yield* Effect.forEach(
@@ -521,6 +542,7 @@ const layer = Layer.effect(
               if (result.mcpClient) {
                 s.clients[key] = result.mcpClient
                 s.defs[key] = result.defs!
+                s.authority[key] = authorityForMcp(key, mcp)
                 if (result.instructions) s.instructions[key] = result.instructions
                 watch(s, key, result.mcpClient, bridge, mcp.timeout)
               }
@@ -534,6 +556,7 @@ const layer = Layer.effect(
             s.clients = {}
             s.defs = {}
             s.instructions = {}
+            s.authority = {}
             yield* Effect.forEach(
               clients,
               (client) =>
@@ -564,6 +587,7 @@ const layer = Layer.effect(
       delete s.clients[name]
       delete s.defs[name]
       delete s.instructions[name]
+      delete s.authority[name]
       if (!client) return Effect.void
       return Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
     }
@@ -574,6 +598,7 @@ const layer = Layer.effect(
       client: MCPClient,
       listed: MCPToolDef[],
       instructions: string | undefined,
+      mcp: ConfigMCPV1.Info,
       timeout?: number,
     ) {
       const bridge = yield* EffectBridge.make()
@@ -581,6 +606,7 @@ const layer = Layer.effect(
       s.status[name] = { status: "connected" }
       s.clients[name] = client
       s.defs[name] = listed
+      s.authority[name] = authorityForMcp(name, mcp)
       if (instructions) s.instructions[name] = instructions
       else delete s.instructions[name]
       watch(s, name, client, bridge, timeout)
@@ -635,7 +661,7 @@ const layer = Layer.effect(
         return result.status
       }
 
-      return yield* storeClient(s, name, result.mcpClient, result.defs!, result.instructions, mcp.timeout)
+      return yield* storeClient(s, name, result.mcpClient, result.defs!, result.instructions, mcp, mcp.timeout)
     })
 
     const add = Effect.fn("MCP.add")(function* (name: string, mcp: ConfigMCPV1.Info) {
@@ -665,6 +691,7 @@ const layer = Layer.effect(
 
     const tools = Effect.fn("MCP.tools")(function* () {
       const result: Record<string, McpTool> = {}
+      const aliases = new ToolAliasLedger()
       const s = yield* InstanceState.get(state)
 
       const cfg = yield* cfgSvc.get()
@@ -681,7 +708,16 @@ const layer = Layer.effect(
         }
         const timeout = requestTimeout(s, clientName, mcpConfig, defaultTimeout)
         for (const def of listed) {
-          result[McpCatalog.toolName(clientName, def.name)] = { def, client, timeout }
+          const alias = McpCatalog.toolName(clientName, def.name)
+          const identity = { source: "mcp", origin: clientName, name: def.name } as const
+          aliases.add(alias, identity)
+          result[alias] = {
+            def,
+            client,
+            timeout,
+            identity,
+            authority: s.authority[clientName] ?? { kind: "not-asserted" },
+          }
         }
       }
       return result
@@ -892,7 +928,15 @@ const layer = Layer.effect(
 
         const s = yield* InstanceState.get(state)
         yield* auth.clearOAuthState(mcpName)
-        return yield* storeClient(s, mcpName, client, listed, client.getInstructions()?.trim(), mcpConfig.timeout)
+        return yield* storeClient(
+          s,
+          mcpName,
+          client,
+          listed,
+          client.getInstructions()?.trim(),
+          mcpConfig,
+          mcpConfig.timeout,
+        )
       }
 
       const callbackPromise = McpOAuthCallback.waitForCallback(result.oauthState, mcpName)

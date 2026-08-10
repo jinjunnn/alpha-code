@@ -164,7 +164,7 @@ FAIL 转 bug 票挂父票 #538。
 | E2  | 命令 chip · 配置命令带 args             | CT `#user` 帧1                | #544 #545 | PASS(harness)       | PASS(harness)       | 「运行命令 · review pr 12」                                                            |
 | E3  | 技能 chip(用户侧)                       | CT `#user` 帧1                | #544 #545 | FAIL(#582)          | FAIL(#582)          | 与 G15 执行态技能卡分处两回合                                                          |
 | E4  | MCP chip                                | CT `#user` 帧1                | #544 #545 | FAIL(#582)          | FAIL(#582)          | 紫;name+args                                                                           |
-| E5  | 用户文本气泡+脚注(发往·model·时间+操作) | CT `#user` 帧2                | #543      | FAIL(#862)          | FAIL(#862)          | 气泡成立;可读显示名及 hover 复制/编辑重发缺席                                          |
+| E5  | 用户文本气泡+脚注(发往·model·时间+操作) | CT `#user` 帧2                | #543 #862 | PASS(harness)       | PASS(harness)       | 可读显示名;hover 显复制/编辑重发;`E5-*-harness.png`                                     |
 | E6  | 附件卡 · 文件(v2 双行)                  | CT `#user` 帧2                | #544      | PASS(harness·发现8) | PASS(harness·发现8) | 由 v1 内联 chip 重锚(帧外注记)                                                         |
 | E7  | 附件卡 · 图片                           | CT `#user` 帧2                | #544      | PASS(harness)       | PASS(harness)       | 缩略图+名+元信息                                                                       |
 | E8  | 连接器 chip(GH GitHub)                  | CT `#user` 帧2                | #544 #588 | PASS(headless)      | PASS(headless)      | 当前生产 resource segment 渲染 GitHub chip;`E8-*-headless.png`;历史发现9已由 #588 修复 |
@@ -177,7 +177,7 @@ FAIL 转 bug 票挂父票 #538。
 | ID  | 验证帧                                                 | 对照稿锚点              | 实现票    | 浅                   | 暗                   | 备注                                                    |
 | --- | ------------------------------------------------------ | ----------------------- | --------- | -------------------- | -------------------- | ------------------------------------------------------- |
 | F1  | Thinking 流式态(pill+三点)                             | CT `#ai`                | #543      | PASS(harness)        | PASS(harness)        |                                                         |
-| F2  | 推理折叠卡(思考·时长·摘要)                             | CT `#ai`                | #543      | FAIL(#863)           | FAIL(#863)           | 卡头缺安全摘要文案                                      |
+| F2  | 推理折叠卡(思考·时长·摘要)                             | CT `#ai`                | #543 #863 | PASS(harness)        | PASS(harness)        | 完成态起始标题+时长;缺标题稳定省略摘要;`F2-*-harness.png` |
 | F3  | 助手 Markdown 正文+表格                                | CT `#ai`                | #543      | FAIL(#592)           | FAIL(#592)           | 820 测量;表格边框/表头/斑马                             |
 | F4  | 代码块(语言标签+复制头条)                              | CT `#ai`                | #543      | FAIL(#592)           | FAIL(#592)           | 白名单 Markdown 引擎差异由 #592 承接                    |
 | F5  | Markdown 富元素(标题/列表/引用/hr/链接)                | CT `#ai`                | #543      | FAIL(#592)           | FAIL(#592)           | 白名单 Markdown 引擎差异由 #592 承接                    |
@@ -218,7 +218,7 @@ FAIL 转 bug 票挂父票 #538。
 | H1  | 回合分隔条(HH:MM · 新一轮)           | CT `#struct`                | #543      | PASS(harness)       | PASS(harness)       | ⚠ 条件项:帧为设计意图;帧外注记定 v2 真机=不可见间隔,落地与否归 seam 实现。若 C5 实现为不可见间隔,判 `N/A(实现合同)`;批2:实现=可见分隔条,与设计意图帧一致,N/A 条款不触发 |
 | H2  | 已探索分组(头+计数+展开行)           | CT `#struct`                | #544      | PASS(harness·发现8) | PASS(harness·发现8) | TL-30;TL-31 计数动画静帧仅验配色                                                                                                                                         |
 | H3  | 本回合改动汇总 diffsum(头+文件行+徽) | CT `#struct`                | #543 #544 | PASS(harness)       | PASS(harness)       | 行模型归属以实现为准                                                                                                                                                     |
-| H4  | 上下文压缩分隔(居中胶囊)             | CT `#struct`                | #543      | FAIL(#864)          | FAIL(#864)          |                                                                                                                                                                          |
+| H4  | 上下文压缩分隔(居中胶囊)             | CT `#struct`                | #543 #864 | PASS(harness)       | PASS(harness)       | 图标+「保留要点」+展开指示;键盘/鼠标展开引擎既有 summary;`H4-*-harness.png`                                                                                              |
 | H5  | 回到底部按钮(s2b)                    | CT `#struct` 帧右下         | #543      | PASS(harness)       | PASS(harness)       | 滚动锚定配套                                                                                                                                                             |
 | H6  | 会话内空态(会话名+一句引导)          | CT `#struct`(2026-07-24 补) | #543      | PASS                | PASS                | 与首页问候面分工(帧外注记);`H6-{light,dark}.png` 与 CT 帧逐字/逐元素对齐(会话名+引导句+下箭头)                                                                           |
 
@@ -226,7 +226,7 @@ FAIL 转 bug 票挂父票 #538。
 
 | ID  | 验证帧                               | 对照稿锚点                       | 实现票    | 浅             | 暗             | 备注                                                          |
 | --- | ------------------------------------ | -------------------------------- | --------- | -------------- | -------------- | ------------------------------------------------------------- |
-| I1  | 产物链接行(6 类型含 parquet 中性态)  | CT `#artifacts` 帧1              | #542 #544 | FAIL(#865)     | FAIL(#865)     | 承接 REQ-124 #454;当前行不区分可否预览                        |
+| I1  | 产物链接行(6 类型含 parquet 中性态)  | CT `#artifacts` 帧1              | #542 #544 #865 | PASS(harness) | PASS(harness) | 复用 artifact renderer 判定；fallback 中性且仍可聚焦；`I1-*-harness.png` |
 | I2  | 产物点击联动 · 可预览(office)        | CT `#artifacts` frameD office 态 | #542      | PASS(headless) | PASS(headless) | 点击真实 timeline 产物行后右栏聚焦 office;`I2-*-headless.png` |
 | I3  | 产物点击联动 · 暂不支持预览(parquet) | CT `#artifacts` frameD other 态  | #542      | PASS(headless) | PASS(headless) | 文件信息+有界 fallback,不称“预览”;`I3-*-headless.png`         |
 
@@ -244,13 +244,12 @@ FAIL 转 bug 票挂父票 #538。
 
 ## 统计
 
-- **终判 74/74 行**:PASS 57 行,FAIL 15 行,N/A 2 行。没有留空、受阻、部分或待 owner
+- **终判 74/74 行**:PASS 61 行,FAIL 11 行,N/A 2 行。没有留空、受阻、部分或待 owner
   判定的单元格。
 - 72 个可达行均有明暗双主题证据 = **144 个终判帧**;J4/J7 因 #558/PR#571 已确认
   生产数据面不存在而 N/A,不制作虚假截图。另有 C6 未知工具回归档 2 帧及历史局部帧。
-- FAIL 15 行全部路由到父票 #538 下的 12 张实现票:E1→#861,E3/E4→#582,
-  E5→#862,F2→#863,F3–F5→#592,G6→#583,G7→#584,G15→#585,
-  G17→#586,G18→#587,H4→#864,I1→#865。
+- FAIL 11 行全部路由到父票 #538 下的 8 张实现票:E1→#861,E3/E4→#582,
+  F3–F5→#592,G6→#583,G7→#584,G15→#585,G17→#586,G18→#587。
 - 历史发现9/12/13/14 已分别由 #588/#591/#589/#590 修复;批4 E8 新证据取代旧的
   「组件缺席」判断。F9 的无副作用 resume 语义仍由 #620 承接,不改变本视觉终判。
 - 现行无开放口径冲突:C2/J1 按 #619 的独立 Permission surface 判定;E1 按现行 CT

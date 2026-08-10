@@ -204,28 +204,51 @@ describe("forked token generation commits", () => {
 // 一英里(index.ts 是 electron main,bun test 里 import 不起来)只能锁源码形状,范式沿用 #577 锚。
 //
 // 锁四件事:
-// ① boot 只 **capture**:恰好一处 `bootForkTokenGeneration = getTokenGeneration()`,且在 boot 的
+// ① boot 只 **capture**:恰好一处 `const forkTokenGeneration = getTokenGeneration()`,且在 boot
 //    spawn 之前(捕获的必须是 fork 继承的那一代);
-// ② 提交只在 **health 落定之后**:`void health.wait.then(` 存在,且提交调用就在它的回调里;
-// ③ 两条路都经 healthy 门:commit 一律走 commitForkedTokenGeneration,respawn 侧带 healthy 实参;
-// ④ 旧的「fork 前直接记账」形状不得复活(`sidecarTokenGeneration = getTokenGeneration()`)。
-test("#600 接线锚:boot 的 token 代必须捕获在 fork 前、提交在 health 之后", () => {
+// ② capture 同时只写 in-flight 去重代,不写已健康代;
+// ③ health 成功/失败和 spawn 失败都经 settle,清 pending 并重放 latch;
+// ④ 仅 healthy settle 经 commitForkedTokenGeneration 提交;旧的 fork 前直接记账不得复活。
+test("#600/#859 接线锚:boot token 代先标 in-flight,只在 health 后提交并重放 latch", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
 
-  expect(source.split("bootForkTokenGeneration = getTokenGeneration()").length - 1).toBe(1)
-  const capture = source.indexOf("bootForkTokenGeneration = getTokenGeneration()")
-  const bootSpawn = source.indexOf("const spawning = spawnLocalServer(")
+  const bootStart = source.indexOf('reason: "boot"')
+  const capture = source.indexOf("const forkTokenGeneration = getTokenGeneration()", bootStart)
+  const bootSpawn = source.indexOf("const spawning = spawnLocalServer(", capture)
+  expect(bootStart).toBeGreaterThan(-1)
   expect(capture).toBeGreaterThan(-1)
   expect(bootSpawn).toBeGreaterThan(capture)
+  expect(source.slice(capture, bootSpawn)).toContain("bootForkTokenGeneration = forkTokenGeneration")
+  expect(source.slice(capture, bootSpawn)).toContain("pendingBootForkTokenGeneration = forkTokenGeneration")
 
   const healthGate = source.indexOf("void health.wait.then(")
   expect(healthGate).toBeGreaterThan(bootSpawn)
-  expect(source.slice(healthGate, healthGate + 200)).toContain(
-    "commitSidecarTokenGeneration(bootForkTokenGeneration, true)",
+  const healthSettlement = source.slice(healthGate, healthGate + 300)
+  expect(healthSettlement).toContain("settleBootForkTokenGeneration(forkTokenGeneration, true)")
+  expect(healthSettlement).toContain("settleBootForkTokenGeneration(forkTokenGeneration, false)")
+  expect(source).toContain("void spawning.catch(() => settleBootForkTokenGeneration(forkTokenGeneration, false))")
+
+  expect(source).toContain("pendingForkGeneration: () => pendingBootForkTokenGeneration")
+  const settle = source.slice(
+    source.indexOf("function settleBootForkTokenGeneration("),
+    source.indexOf("function recordDanglingSweep("),
   )
-  expect(source.split("commitSidecarTokenGeneration(bootForkTokenGeneration").length - 1).toBe(1)
+  expect(settle).toContain("if (pendingBootForkTokenGeneration !== forked) return")
+  expect(settle).toContain("if (healthy) commitSidecarTokenGeneration(forked, true)")
+  expect(settle).toContain("pendingBootForkTokenGeneration = 0")
+  expect(settle).toContain("void tokenRotation.flush()")
 
   expect(source).toContain("sidecarTokenGeneration = commitForkedTokenGeneration(")
   expect(source).toContain("commitSidecarTokenGeneration(forkTokenGeneration, healthy)")
   expect(source).not.toMatch(/sidecarTokenGeneration = getTokenGeneration\(\)/)
+})
+
+test("#858 接线锚:token-only 换血用短收口预算,结构换血与退出保留 graceful", () => {
+  const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
+  expect(source).toContain("async function killSidecar(reason?: SidecarRespawnReason)")
+  expect(source).toContain('await current.stop(reason === "token-only" ? "token-rotation" : "graceful")')
+
+  const respawn = source.slice(source.indexOf("const doRespawnSidecar"), source.indexOf("const respawnSidecar"))
+  expect(respawn).toContain("await killSidecar(reason)")
+  expect(source).toContain("await killSidecar()")
 })

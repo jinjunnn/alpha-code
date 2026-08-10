@@ -4,7 +4,7 @@ kind: verification
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-08-06
+last_reviewed: 2026-08-08
 ---
 
 # REQ-125 #547 会话视觉矩阵验证摘要
@@ -17,8 +17,8 @@ alpha@`d3790e90b1e815001f8bb40f4ce8d15573c5de89`;逐行裁决以
 
 | 结果 | 行数 | 说明                                     |
 | ---- | ---: | ---------------------------------------- |
-| PASS |   57 | 可达形态符合当前判定合同                 |
-| FAIL |   15 | 每行均已路由到 #538 下的实现票           |
+| PASS |   61 | 可达形态符合当前判定合同                 |
+| FAIL |   11 | 每行均已路由到 #538 下的实现票           |
 | N/A  |    2 | J4/J7;#558/PR#571 已确认生产数据面不存在 |
 | 合计 |   74 | 74/74 均已裁决,无留空、部分或待输入状态  |
 
@@ -31,20 +31,67 @@ C6 未知工具 fail-closed 回归帧;这些辅助文件不增加矩阵行数。
 | ------------ | ------ |
 | E1           | #861   |
 | E3 / E4      | #582   |
-| E5           | #862   |
-| F2           | #863   |
 | F3 / F4 / F5 | #592   |
 | G6           | #583   |
 | G7           | #584   |
 | G15          | #585   |
 | G17          | #586   |
 | G18          | #587   |
-| H4           | #864   |
-| I1           | #865   |
 
 历史发现9/12/13/14 已分别由 #588/#591/#589/#590 修复。D6 的 production PTY
 环境数据同步由 #579 承接;F9 的无副作用 resume 语义由 #620 承接。两者不改变本次
 组件视觉终判。
+
+## 2026-08-08 I1 #865 复验
+
+- production Solid 时间线与现役 CSS 经 loopback-only Vite 装配,Google Chrome
+  `151.0.7922.77` 以 `--headless=new` 重采明暗两帧；零 Electron、零账号/API key、
+  零前台窗口。
+- 行能力直接复用右栏 artifact renderer registry：PNG/HTML/Markdown/PDF 保留强调色与
+  medium 字重；parquet 及尚未获得结构证明的 OOXML 落入 fallback,使用中性色与普通
+  字重。两类行均保留原生 button 与 `focusArtifact(runId+name)`,I2/I3 联动不变。
+- 证据：[浅色](shots/I1-light-harness.png)
+  `661f2ae6df03244df1040ef1f438c981512ddf672cd86660d76988fb5291bed5`；
+  [暗色](shots/I1-dark-harness.png)
+  `d9d675a33bc96686cdc5f9b6ad219811fac554c38c5ede350594120733e160eb`。
+
+## 2026-08-08 H4 #864 复验
+
+- production Solid 时间线与现役 CSS 经 loopback-only Vite 装配,Google Chrome
+  `151.0.7922.77` 以 `--headless=new` 重采明暗两帧;零 Electron、零账号/API key、
+  零前台窗口。
+- 居中胶囊按已批稿补齐压缩图标、「上下文已压缩 · 保留要点」和 chevron。控件使用
+  原生 `button`/`aria-expanded`,真 Chrome 中 Enter、Space 与鼠标均完成展开/收起;
+  展开体只复用完成态 `assistant.summary=true` 的引擎摘要,不生成、猜测或暴露半截摘要。
+- 证据:[浅色](shots/H4-light-harness.png)
+  `906d35dfbfc024a41957141b58148058659100e657f2b1790326b3928cf4bb33`;
+  [暗色](shots/H4-dark-harness.png)
+  `77a589228932485398e7cb413cb084f2a9d107ee16c139e701927a67950c6648`。
+
+## 2026-08-08 F2 #863 复验
+
+- production Solid 时间线与现役 CSS 经 loopback-only Vite 装配,Google Chrome
+  `151.0.7922.77` 以 `--headless=new` 重采明暗两帧;零 Electron、零账号/API key、
+  零前台窗口。
+- 折叠卡头在两主题均显示「思考 6 秒 · 规划探查顺序」,只在完成态投影起始行的
+  显式标题并保持正文折叠;缺少起始标题时仅保留时长、不回溯或暴露普通推理正文,
+  流式期不显示摘要,由组件测试钉住稳定降级。
+- 证据:[浅色](shots/F2-light-harness.png)
+  `f3a0976ba75e6e35afee411b7e208a812529dc774a897d8c5ce650d3b203cccd`;
+  [暗色](shots/F2-dark-harness.png)
+  `367de41b47219ca4a0c850fae4fda061551015398be759eb1331f0fcc1e38028`。
+
+## 2026-08-08 E5 #862 复验
+
+- production Solid 时间线与现役 CSS 经 loopback-only Vite 装配,Google Chrome
+  `151.0.7922.77` 以 `--headless=new` 重采明暗两帧;零 Electron、零账号/API key、
+  零前台窗口。
+- 非 hover 时脚注 `opacity=0`;hover 后两主题均为 `1`,并显示可读的
+  `Build · GPT-5`、「复制消息」与「编辑重发」。
+- 证据:[浅色](shots/E5-light-harness.png)
+  `eb938d887ac164e5599d6d004822a20ee5326df95db1ac4944e3ec8a23bb755f`;
+  [暗色](shots/E5-dark-harness.png)
+  `d3a0ca1527e09ad00d828d51fe6f17439beefe48e611c0b58140e503d72caf5f`。
 
 ## 2026-08-06 headless 收口证据
 
@@ -68,8 +115,10 @@ C6 未知工具 fail-closed 回归帧;这些辅助文件不增加矩阵行数。
 - 静态复核:旧注入文件/符号、未经 sanitizer 的 HTML API、裸外开均为 0;唯一局部
   `querySelector` 不是上游 session DOM 访问。
 - [`invariant-checks.md`](invariant-checks.md) 的 13 个功能/安全行全部 PASS。
-- 3 个 before/after benchmark 行全部 FAIL:C5 合并前没有 Alpha timeline 生产基线,
-  且上游 timeline harness 不覆盖 C5 变更。缺口由 #866 承接;父票 #538 保持开放。
+- 3 个历史 before/after benchmark 行仍为 FAIL:C5 合并前没有 Alpha timeline 生产基线,
+  且上游 timeline harness 不覆盖 C5 变更;不得倒签。#866 已建立
+  [当前生产性能基线](../2026-08-06-req125-timeline-performance/README.md),供未来 delta
+  对比;父票 #538 保持开放。
 
 #547 的 VERIFY 范围至此全部获得终态结果;关闭本验证票不代表 #538 完成。视觉 FAIL
-继续由上表实现票承接,性能证据缺口由 #866 承接。
+继续由上表实现票承接;#866 的当前基线不改变历史 before 缺失结论。

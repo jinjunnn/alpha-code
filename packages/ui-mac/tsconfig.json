@@ -18,6 +18,6 @@
     "types": ["vite/client", "node", "electron"]
   },
   "references": [{ "path": "../app" }],
-  "include": ["src", "package.json"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.cases.ts"]
+  "include": ["src", "benchmarks", "package.json"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.cases.ts", "benchmarks/**/dist"]
 }

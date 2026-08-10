@@ -321,11 +321,11 @@ test("#594 回归保持:recovering → ready 正常路径重建 client,自探不
   const { api } = mountHook(60_000)
   await tick()
 
-  bridgeCb!({ status: "recovering", generation: 2, reason: "token-only" })
+  bridgeCb!({ status: "recovering", generation: 2, reason: "structural" })
   await tick()
   expect(api.sdk()).toBeUndefined()
 
-  bridgeCb!({ status: "ready", generation: 2, reason: "token-only" })
+  bridgeCb!({ status: "ready", generation: 2, reason: "structural" })
   await tick()
   expect(api.sdk()).toBeDefined()
   expect(healthProbes).toBe(0)
@@ -382,13 +382,13 @@ test("R1 Major1:自探建立的 provisional 连接,同代权威 ready 必须强�
   const { api } = mountHook(5)
   await tick()
 
-  bridgeCb!({ status: "recovering", generation: 6, reason: "token-only" })
+  bridgeCb!({ status: "recovering", generation: 6, reason: "structural" })
   await waitFor(() => expect(api.sdk()).toBeDefined())
   const provisional = api.sdk()
 
   // 同代权威 ready:不得因「同 generation 且已有 client」跳过 —— provisional 连接可能
   // 应答自将死的旧进程,必须重建 client + 重拉 + 重订阅(以 client 身份变化为证)。
-  bridgeCb!({ status: "ready", generation: 6, reason: "token-only" })
+  bridgeCb!({ status: "ready", generation: 6, reason: "structural" })
   await tick()
   expect(api.sdk()).toBeDefined()
   expect(api.sdk()).not.toBe(provisional)
@@ -399,9 +399,9 @@ test("R1 Major2:迟到的 getState 回放不得回退新状态;完全相同的 r
   const { api } = mountHook(60_000)
   await tick()
 
-  bridgeCb!({ status: "recovering", generation: 7, reason: "token-only" })
+  bridgeCb!({ status: "recovering", generation: 7, reason: "structural" })
   await tick()
-  bridgeCb!({ status: "ready", generation: 7, reason: "token-only" })
+  bridgeCb!({ status: "ready", generation: 7, reason: "structural" })
   await tick()
   const authoritative = api.sdk()
   expect(authoritative).toBeDefined()
@@ -413,17 +413,17 @@ test("R1 Major2:迟到的 getState 回放不得回退新状态;完全相同的 r
 
   // 迟到的 getState 读到旧 recovering(用户点重试时响应尚未回来,期间 live ready 已到)
   // → 必须被丢弃:不得拆掉已恢复的 client,不得污染之后订阅者看到的当前值。
-  currentState = { status: "recovering", generation: 7, reason: "token-only" }
+  currentState = { status: "recovering", generation: 7, reason: "structural" }
   await replayRuntimeRecoveryState()
   await tick(20)
   expect(replayed).toEqual([])
   expect(api.sdk()).toBe(authoritative)
 
   // 完全相同的 ready:允许重复广播(把已恢复的事实再递给停跑的消费链),client 不重建。
-  currentState = { status: "ready", generation: 7, reason: "token-only" }
+  currentState = { status: "ready", generation: 7, reason: "structural" }
   await replayRuntimeRecoveryState()
   await tick(20)
-  expect(replayed).toEqual([{ status: "ready", generation: 7, reason: "token-only" }])
+  expect(replayed).toEqual([{ status: "ready", generation: 7, reason: "structural" }])
   expect(api.sdk()).toBe(authoritative)
   unsubscribe()
 })
@@ -460,7 +460,7 @@ test("R1 Blocker2:自探重建后发本地恢复通知 —— composer 模型链
   await waitFor(() => expect(send().disabled).toBe(false))
 
   // t1:respawn 发出 recovering;t2:ready 事件丢失(永不到达)
-  bridgeCb!({ status: "recovering", generation: 8, reason: "token-only" })
+  bridgeCb!({ status: "recovering", generation: 8, reason: "structural" })
   await tick()
   expect(api.sdk()).toBeUndefined()
   expect(send().disabled).toBe(true) // modelChainState 已闩在 recovering,发送关闭
@@ -616,4 +616,29 @@ test("#692 非 Git 会话冷加载与 SSE 新建都进入真实目录项目,且�
     groups = projectSidebarGroups(api.store.projects)
     expect(groups.find((project) => project.worktree === "/Users/tester/Downloads")?.sessions[0]?.id).toBe("ses-live")
   })
+})
+
+test("#858 idle token-only rotation keeps the SDK identity stable, but a failed generation falls back to probing", async () => {
+  healthReachable = false
+  healthProbes = 0
+  currentState = { status: "ready", generation: 20, reason: "boot" }
+  await replayRuntimeRecoveryState()
+  const { api } = mountHook(5)
+  await waitFor(() => expect(api.sdk()).toBeDefined())
+  const stable = api.sdk()
+
+  bridgeCb!({ status: "recovering", generation: 21, reason: "token-only" })
+  await tick(20)
+  expect(api.sdk()).toBe(stable)
+  expect(healthProbes).toBe(0)
+
+  bridgeCb!({ status: "ready", generation: 21, reason: "token-only" })
+  await tick(20)
+  expect(api.sdk()).toBe(stable)
+  expect(healthProbes).toBe(0)
+
+  bridgeCb!({ status: "recovering", generation: 22, reason: "token-only" })
+  bridgeCb!({ status: "failed", generation: 22, reason: "token-only" })
+  await waitFor(() => expect(healthProbes).toBeGreaterThan(0))
+  expect(api.sdk()).toBeUndefined()
 })

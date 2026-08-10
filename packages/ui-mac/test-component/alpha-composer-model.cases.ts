@@ -771,6 +771,66 @@ describe("AlphaComposer production model seam", () => {
     toasts.dispose()
   })
 
+  test("idle token-only 换血只关闭执行门且不闪动;换代失败则如实回到 Syncing", async () => {
+    let submissions = 0
+    installApi({ auth: async () => loggedOut })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async () => {
+            submissions++
+            return "session-new"
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          list: async () => [info("deepseek-byok", "deepseek-v4-flash")],
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "保留稳定布局",
+      }),
+    )
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    await waitFor(() => expect(send.disabled).toBe(false))
+
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "recovering", generation: 8, reason: "token-only" },
+      }),
+    )
+    await waitFor(() => expect(send.disabled).toBe(true))
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.syncing"])
+    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("保留稳定布局")
+
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "ready", generation: 8, reason: "token-only" },
+      }),
+    )
+    await waitFor(() => expect(send.disabled).toBe(false))
+    expect(submissions).toBe(0)
+
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "recovering", generation: 9, reason: "token-only" },
+      }),
+    )
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "failed", generation: 9, reason: "token-only" },
+      }),
+    )
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    expect(send.disabled).toBe(true)
+    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("保留稳定布局")
+    mounted.dispose()
+  })
+
   test("KEY 读取失败由外层失败态呈现并阻止提交；picker 重试会重跑整条链", async () => {
     let failing = true
     let submissions = 0
@@ -1423,6 +1483,56 @@ describe("REQ-125 C558 SessionComposerMount 按身份 keyed:切会话草稿正�
     setIdentity(identityFor("A")) // 回 A → 新实例 restore(keyA)=A-draft
     await flush()
     expect(ta(mounted.host)?.value).toBe("A-draft")
+    mounted.dispose()
+  })
+
+  test("④ #862 同身份 edit revision 重挂 composer 并预填原消息,旧未发草稿仍按身份暂存", async () => {
+    installApi()
+    const drafts = createComposerDraftStash()
+    const identity = () => identityFor("A")
+    const key = identityKey(identity())!
+    const [editRequest, setEditRequest] = createSignal<
+      { identityKey: string; revision: number; text: string } | undefined
+    >(undefined)
+    const mounted = mount(() =>
+      createComponent(SessionComposerMount, {
+        identity,
+        projects: keyedProjects,
+        dock: dockApi,
+        drafts,
+        editRequest,
+      }),
+    )
+    await flush()
+    const original = ta(mounted.host)!
+    type(original, "尚未发送的草稿")
+    await flush()
+
+    setEditRequest({ identityKey: key, revision: 1, text: "历史消息原文" })
+    await flush()
+    const edited = ta(mounted.host)!
+    expect(edited).not.toBe(original)
+    expect(edited.value).toBe("历史消息原文")
+    expect(drafts.restore(key)).toBe("尚未发送的草稿")
+    mounted.dispose()
+  })
+
+  test("⑤ #862 同一身份对象刷新不重挂 composer,正在输入的草稿留在原实例", async () => {
+    installApi()
+    const drafts = createComposerDraftStash()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mount(() =>
+      createComponent(SessionComposerMount, { identity, projects: keyedProjects, dock: dockApi, drafts }),
+    )
+    await flush()
+    const original = ta(mounted.host)!
+    type(original, "正在输入的草稿")
+    await flush()
+
+    setIdentity(identityFor("A")) // current() 的状态刷新会产生新 identity 对象,但 I8 key 未变。
+    await flush()
+    expect(ta(mounted.host)).toBe(original)
+    expect(original.value).toBe("正在输入的草稿")
     mounted.dispose()
   })
 })

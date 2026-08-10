@@ -186,6 +186,9 @@ export function createAuthRenewalScheduler(deps: {
 
 export function createTokenRotationLatch(deps: {
   forkedGeneration: () => number
+  /** 已经被某个 fork 捕获、但尚未通过 health 的 token 代。它只能抑制同代重复换血,
+   *  绝不能参与 applied 判定;health 终态必须再次 flush。 */
+  pendingForkGeneration?: () => number
   canRespawn: () => boolean
   respawn: (reason: SidecarRespawnReason) => Promise<boolean>
   mark?: (result: RenewalResult, trigger: string, outcome: string) => void
@@ -249,6 +252,11 @@ export function createTokenRotationLatch(deps: {
       }
       return Promise.resolve(false)
     }
+    // #859:boot fork 已经携带目标代但尚未健康时,不能为了同一代再杀一次 sidecar。
+    // pending 只是一条去重信号,不进入 inEffect()/notifyApplied;health 失败后由接线清掉
+    // pending 并再次 flush,成功后则先提交健康代再 flush。
+    if (requestedGeneration > 0 && requestedGeneration <= (deps.pendingForkGeneration?.() ?? 0))
+      return Promise.resolve(false)
     // 失败后由 timer 独占重试该代:重复 accept / 其它触发不得就地再试(否则退化成自旋);
     // 更新的 generation 允许立刻尝试。
     if (retryTimer && requestedGeneration <= retryingGeneration) return Promise.resolve(false)

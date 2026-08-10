@@ -18,6 +18,7 @@ export interface AlphaSessionRecord {
   id: string
   directory: string
   title: string
+  parentID?: string
 }
 
 export function sessionLiveSnapshotOf(input: {

@@ -165,6 +165,9 @@ const commitSidecarTokenGeneration = (forked: number, healthy: boolean) => {
 // 「首个 fork **启动时**继承的 token 代」——只用于 boot 后那次「登录发生在 fork 之前吗」的
 // 判断(它问的是继承事实,不是健康事实),与上面那个健康确认值刻意分开。
 let bootForkTokenGeneration = 0
+// #859:boot fork 已捕获但尚未通过 health 的 token 代。与 sidecarTokenGeneration 分离:
+// 前者只阻止 latch 为同一代重复换血,后者才是可以发布 applied/ready 的健康事实。
+let pendingBootForkTokenGeneration = 0
 
 function useEnvProxy() {
   try {
@@ -176,7 +179,7 @@ function useEnvProxy() {
   }
 }
 
-async function killSidecar() {
+async function killSidecar(reason?: SidecarRespawnReason) {
   stopEngineRunawayMeter()
   if (!server) return
   const current = server
@@ -184,7 +187,7 @@ async function killSidecar() {
   // #408:蓄意停止 = 会话结束 —— 在任何 await 之前推栅栏(endSession 先撤 active 标记再清 Map),
   // 此后一切在途 grant 授权的迟到 commit 都被拒,复活窗口闭合(Codex 裁决 Q3 竞态不变量)。
   endSessionGrants("sidecar-stop")
-  await current.stop()
+  await current.stop(reason === "token-only" ? "token-rotation" : "graceful")
 }
 
 // #408:会话结束的统一收口(蓄意 kill = "sidecar-stop";崩溃 = "sidecar-exit")。幂等:无活跃
@@ -233,6 +236,7 @@ function publishSidecarGeneration(next: SidecarGenerationState) {
 
 const tokenRotation = createTokenRotationLatch({
   forkedGeneration: () => sidecarTokenGeneration,
+  pendingForkGeneration: () => pendingBootForkTokenGeneration,
   // #600:sidecar 已死(换血的 spawn 失败后 server 为 null)恰恰是必须允许再换血的时刻 ——
   // 旧的 `server &&` 让「换血失败 ⇒ 无 sidecar」变成永久不可用:低频重试永远进不了 respawn 入口。
   canRespawn: () => Boolean(requestSidecarRespawn && !quittingApp),
@@ -247,6 +251,13 @@ const tokenRotation = createTokenRotationLatch({
       outcome,
     }),
 })
+
+function settleBootForkTokenGeneration(forked: number, healthy: boolean) {
+  if (pendingBootForkTokenGeneration !== forked) return
+  if (healthy) commitSidecarTokenGeneration(forked, true)
+  pendingBootForkTokenGeneration = 0
+  void tokenRotation.flush()
+}
 
 function recordDanglingSweep(context: "boot" | "respawn", outcome: DanglingSweepOutcome) {
   if (outcome.stripped.length > 0)
@@ -981,7 +992,9 @@ const main = Effect.gen(function* () {
     const spawnGen = ++sidecarGen
     publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason: "boot" })
     selfHeal = noteSpawn(selfHeal, Date.now())
-    bootForkTokenGeneration = getTokenGeneration()
+    const forkTokenGeneration = getTokenGeneration()
+    bootForkTokenGeneration = forkTokenGeneration
+    pendingBootForkTokenGeneration = forkTokenGeneration
     const { listener, health } = yield* Effect.promise(() => {
       const started = performance.now()
       markStartupTimeline("main.sidecar.boot.fork.start", { generation: spawnGen })
@@ -1006,6 +1019,7 @@ const main = Effect.gen(function* () {
             outcome: errorOutcome(error),
           }),
       )
+      void spawning.catch(() => settleBootForkTokenGeneration(forkTokenGeneration, false))
       // #577:终态生产者与 spawn 同时武装。父 fiber 从 serverReady 醒来后毫秒级终止会
       // 连带杀死本被监督 fiber(forkChild auto supervision),曾把「等健康 → 发 ready」
       // 连同 30s 兜底一起杀死;spawn 在返回 health 之前失败(R1 Blocker1)则连武装的机会
@@ -1031,8 +1045,8 @@ const main = Effect.gen(function* () {
     // 这里只改 token 快照时序,不碰终态发布接线(armBootGenerationTerminal 的 detached 武装
     // 位置与 `return spawning` 的顺序完全未动 —— #577/#598 的接线锚仍然成立)。
     void health.wait.then(
-      () => commitSidecarTokenGeneration(bootForkTokenGeneration, true),
-      () => {},
+      () => settleBootForkTokenGeneration(forkTokenGeneration, true),
+      () => settleBootForkTokenGeneration(forkTokenGeneration, false),
     )
     armEngineRunawayMeter(spawnGen)
     sessionGrantRegistry.beginSession(spawnGen) // #408:新会话空集起步(grant 面绑本代)
@@ -1123,7 +1137,7 @@ const main = Effect.gen(function* () {
       // 「这一代已经宣告过」,补不上那个 failed。
       announcedGeneration = spawnGen
       publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason })
-      await killSidecar()
+      await killSidecar(reason)
       ensureLoopbackNoProxy()
       useEnvProxy()
       selfHeal = noteSpawn(selfHeal, Date.now())

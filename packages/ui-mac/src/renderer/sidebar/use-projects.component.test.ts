@@ -10,7 +10,7 @@ import path from "node:path"
 // ②默认目录**查询**失败不得连坐普通项目的会话创建(两次 IPC 的失败必须分开处理)。
 // 行为断言全部在 cases 文件内;本包装只核对「全部用例都跑了且零失败」——
 // bun test 对通过用例不输出逐条行,计数 + 退出码是包装层能拿到的最强信号。
-test("use-projects 恢复语义(8 例)+ REQ-126 供给回报(2 例)+ #692 非 Git 侧栏(1 例)", () => {
+test("use-projects 恢复语义(9 例)+ REQ-126 供给回报(2 例)+ #692 非 Git 侧栏(1 例)", () => {
   const result = Bun.spawnSync({
     cmd: [process.execPath, "test", path.resolve(import.meta.dir, "../../../test-component/use-projects.cases.ts")],
     cwd: path.resolve(import.meta.dir, "../../.."),
@@ -18,7 +18,7 @@ test("use-projects 恢复语义(8 例)+ REQ-126 供给回报(2 例)+ #692 非 Gi
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain(" 11 pass")
+  expect(output).toContain(" 12 pass")
   expect(output).toContain(" 0 fail")
-  expect(output).toMatch(/Ran 11 tests across 1 file/)
+  expect(output).toMatch(/Ran 12 tests across 1 file/)
 })
