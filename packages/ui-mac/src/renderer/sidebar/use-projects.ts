@@ -17,7 +17,12 @@ import type { SidecarGenerationState } from "../../preload/types"
 import { projectLabel } from "./route"
 import { hiddenProjects } from "./sidebar-state"
 import { isUnderSkippedWorktree, shouldSkipWorktree } from "./worktree-filter"
-import { hasRuntimeRecoveryBridge, notifySseReconnected, subscribeRuntimeRecovery } from "../runtime-recovery"
+import {
+  hasRuntimeRecoveryBridge,
+  notifyCatalogUpdated,
+  notifySseReconnected,
+  subscribeRuntimeRecovery,
+} from "../runtime-recovery"
 import { nextEngineRetryDelay } from "../alpha-ui/model-picker-logic"
 
 export interface ServerInfo {
@@ -568,6 +573,13 @@ export function useAlphaProjects(
             case "project.updated":
             case "project.directories.updated":
               void loadProjects()
+              break
+            case "catalog.updated":
+              // #882:引擎每提交一次该 directory 的 catalog 就发一条(`CatalogV2.finalize`)。
+              // 首屏的就绪屏障靠它唤醒后立刻重探,不再靠 1.5s 自超时 + 指数退避去猜。
+              // 它只是**唤醒** —— 同一次冷启动会发多条,含未治理的中间态提交,marker 探针仍是
+              // 唯一的就绪证明(docs/architecture/2026-08-10-catalog-readiness-signals.md)。
+              if (directory) notifyCatalogUpdated(directory)
               break
           }
         }

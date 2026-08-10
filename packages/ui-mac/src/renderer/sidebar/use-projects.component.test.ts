@@ -8,9 +8,12 @@ import path from "node:path"
 // REQ-126 CODE-C(#656)追加 2 例:①`ensureDefaultWorkspace` 必须如实回报 `{ok:false}` ——
 // 侧栏的「ensure 失败就不建 draft」全靠这个返回值,而这条 IPC 不 throw,try/catch 看不见它;
 // ②默认目录**查询**失败不得连坐普通项目的会话创建(两次 IPC 的失败必须分开处理)。
+// #882 追加 1 例:`/global/event` 上的 `catalog.updated` 必须按 directory 派发给
+// `notifyCatalogUpdated` —— 首屏就绪屏障的唤醒源就是它。没有这一条,switch 里那个 case
+// 可以被整段删掉而全仓仍然全绿(model-contract 的单测只驱动通知函数,证明不了接线)。
 // 行为断言全部在 cases 文件内;本包装只核对「全部用例都跑了且零失败」——
 // bun test 对通过用例不输出逐条行,计数 + 退出码是包装层能拿到的最强信号。
-test("use-projects 恢复语义(9 例)+ REQ-126 供给回报(2 例)+ #692 非 Git 侧栏(1 例)", () => {
+test("use-projects 恢复语义(9 例)+ REQ-126 供给回报(2 例)+ #692 非 Git 侧栏(1 例)+ #882 catalog.updated 接线(1 例)", () => {
   const result = Bun.spawnSync({
     cmd: [process.execPath, "test", path.resolve(import.meta.dir, "../../../test-component/use-projects.cases.ts")],
     cwd: path.resolve(import.meta.dir, "../../.."),
@@ -18,7 +21,7 @@ test("use-projects 恢复语义(9 例)+ REQ-126 供给回报(2 例)+ #692 非 Gi
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain(" 12 pass")
+  expect(output).toContain(" 13 pass")
   expect(output).toContain(" 0 fail")
-  expect(output).toMatch(/Ran 12 tests across 1 file/)
+  expect(output).toMatch(/Ran 13 tests across 1 file/)
 })

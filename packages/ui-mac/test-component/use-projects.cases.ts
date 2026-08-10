@@ -245,12 +245,18 @@ globalThis.fetch = ((input: unknown) => {
 
 const { useAlphaProjects } = await import("../src/renderer/sidebar/use-projects")
 const { projectSidebarGroups } = await import("../src/renderer/sidebar/project-display")
-const { replayRuntimeRecoveryState, subscribeRuntimeRecovery } = await import("../src/renderer/runtime-recovery")
+const { replayRuntimeRecoveryState, subscribeCatalogUpdated, subscribeRuntimeRecovery } = await import(
+  "../src/renderer/runtime-recovery"
+)
 const { AlphaComposerRuntime } = await import("../src/renderer/alpha-ui/alpha-composer")
 const { ModelPickPop } = await import("../src/renderer/alpha-ui/alpha-composer-model")
 const { composerModel, setComposerModel, setComposerAgent, resetComposerModelProjection } = await import(
   "../src/renderer/alpha-ui/composer-state"
 )
+// #882:接线用例要驱动**真的**就绪屏障 —— 只订阅 notifyCatalogUpdated 只能证明「最终被唤醒」,
+// 证明不了「事件跑赢了兜底档位」。
+const { createModelContract } = await import("../src/renderer/alpha-ui/model-contract")
+const { ALPHA_V2_CATALOG_READY_PROVIDER_ID } = await import("../src/shared/alpha-config")
 
 const serverInfo: ServerInfo = { baseUrl: "http://127.0.0.1:19099", username: "u", password: "p" }
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -269,6 +275,8 @@ async function waitFor(assertion: () => void, timeoutMs = 3_000) {
   }
 }
 const activeDisposals: Array<() => void> = []
+/** #882 接线用例里那条**真**兜底定时器;用例结束必须清掉,不许把 tick 漏进下一条用例。 */
+const fallbackTimers: Array<ReturnType<typeof setTimeout>> = []
 function mountHook(probeDelayMs: number): { api: AlphaProjectsApi } {
   let api!: AlphaProjectsApi
   const dispose = createRoot((d: () => void) => {
@@ -290,6 +298,7 @@ const buttonByText = (host: HTMLElement, text: string) =>
   [...host.querySelectorAll("button")].find((b) => b.textContent?.trim() === text)
 
 afterEach(() => {
+  fallbackTimers.splice(0).forEach((timer) => clearTimeout(timer))
   activeDisposals.splice(0).forEach((dispose) => dispose())
   document.body.replaceChildren()
   sidebarScenario = false
@@ -616,6 +625,87 @@ test("#692 非 Git 会话冷加载与 SSE 新建都进入真实目录项目,且�
     groups = projectSidebarGroups(api.store.projects)
     expect(groups.find((project) => project.worktree === "/Users/tester/Downloads")?.sessions[0]?.id).toBe("ses-live")
   })
+})
+
+test("#882 global 事件流把 catalog.updated 按 directory 派发给就绪屏障(接线层,不是等价链)", async () => {
+  // 没有这一条,use-projects 里那个 case 可以被整段删掉而全仓仍然全绿 —— model-contract 的
+  // 单测只驱动 notifyCatalogUpdated,证明不了「引擎真发的那条事件走到了这个函数」。
+  sidebarScenario = true
+  const { api } = mountHook(60_000)
+  await waitFor(() => expect(api.sdk()).toBeDefined())
+  await waitFor(() => expect(globalEventController).toBeDefined())
+
+  const woken: string[] = []
+  const unsubscribe = subscribeCatalogUpdated("/repos/alpha-code", () => woken.push("/repos/alpha-code"))
+  const unsubscribeOther = subscribeCatalogUpdated("/repos/elsewhere", () => woken.push("/repos/elsewhere"))
+
+  const emit = (frame: Record<string, unknown>) =>
+    globalEventController!.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`))
+
+  // 控制组:同一条流上的**别的**事件类型不得唤醒任何人(否则这个 case 只是「流是通的」)。
+  emit({ directory: "/repos/alpha-code", project: "git-alpha", payload: { type: "server.heartbeat", properties: {} } })
+  await tick(20)
+  expect(woken).toEqual([])
+
+  // 真事实:引擎每次 CatalogV2.finalize 都发这条,envelope 带 directory(实跑记录见
+  // docs/architecture/2026-08-10-catalog-readiness-signals.md)。
+  emit({ directory: "/repos/alpha-code", project: "git-alpha", payload: { type: "catalog.updated", properties: {} } })
+  await waitFor(() => expect(woken).toEqual(["/repos/alpha-code"]))
+
+  // 按 directory 分派:另一个目录的提交只唤醒那个目录的等待者。
+  emit({ directory: "/repos/elsewhere", project: "git-elsewhere", payload: { type: "catalog.updated", properties: {} } })
+  await waitFor(() => expect(woken).toEqual(["/repos/alpha-code", "/repos/elsewhere"]))
+
+  unsubscribe()
+  unsubscribeOther()
+
+  // ── 事件到请求的**间隔**,不是「最终收到」 ────────────────────────────────────────
+  // R1 Major:上面几条只断言「3 秒内最终被唤醒」。把生产通知延迟 300ms,它们照样全绿 ——
+  // 而真实环境里 250ms 的兜底档位已经先发出请求了,事件通路实际上是死的。票面判据是间隔。
+  //
+  // 所以这里挂**真的**就绪屏障(生产 createModelContract),兜底走**真定时器**(默认 250ms
+  // 档位),并在每次探针发生的**那一刻**同步记下已经烧掉了几个兜底 tick。事件路径活着 ⇒
+  // 第二次探针看到的 tick 数是 0;事件比兜底慢(或整条链被删)⇒ 兜底先赢,读到 ≥1,当场红。
+  let fallbackTicks = 0
+  const ticksAtProbe: number[] = []
+  let markerReady = false
+  const contract = createModelContract(
+    () =>
+      ({
+        v2: {
+          provider: {
+            get: async () => {
+              ticksAtProbe.push(fallbackTicks)
+              return markerReady
+                ? { data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }
+                : { error: { message: "Provider not found" }, response: { status: 404 } }
+            },
+          },
+          model: { list: async () => ({ data: { data: [info("alpha", "m")] } }) },
+        },
+      }) as never,
+    {
+      wait: (delayMs: number) =>
+        new Promise<void>((resolve) => {
+          const timer = setTimeout(() => {
+            fallbackTicks++
+            resolve()
+          }, delayMs)
+          fallbackTimers.push(timer)
+        }),
+    },
+  )
+
+  const listing = contract.list("/repos/alpha-code")
+  await waitFor(() => expect(ticksAtProbe.length).toBe(1))
+  expect(ticksAtProbe).toEqual([0])
+
+  markerReady = true
+  emit({ directory: "/repos/alpha-code", project: "git-alpha", payload: { type: "catalog.updated", properties: {} } })
+  await waitFor(() => expect(ticksAtProbe.length).toBe(2))
+  // 判据:第二次探针是**事件**推动的 —— 它发生时一个兜底 tick 都还没烧掉。
+  expect(ticksAtProbe[1]).toBe(0)
+  expect(await listing).toHaveLength(1)
 })
 
 test("#858 idle token-only rotation keeps the SDK identity stable, but a failed generation falls back to probing", async () => {

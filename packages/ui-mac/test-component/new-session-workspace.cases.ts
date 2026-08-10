@@ -167,6 +167,8 @@ const project = (name: string, worktree: string): AlphaProject => ({
 })
 
 const startChatCalls: Array<{ directory: string; body: string; parts: unknown[] }> = []
+/** #888:会话页那一侧**真发**出去的载荷。chip 只证明界面显示对了,这里证明它真的上了线。 */
+const promptAsyncCalls: Array<Record<string, unknown>> = []
 function projectsApi(projects: AlphaProject[]): AlphaProjectsApi {
   return {
     store: { projects, ready: true, error: false },
@@ -181,6 +183,13 @@ function projectsApi(projects: AlphaProject[]): AlphaProjectsApi {
         command: { list: async () => ({ data: [] }) },
         find: { files: async () => ({ data: [] }) },
         vcs: { status: async () => ({ data: [] }) },
+        // #652 起会话内发送与首页 startChat 同走 v1 session.promptAsync。
+        session: {
+          promptAsync: async (args: Record<string, unknown>) => {
+            promptAsyncCalls.push(args)
+            return {}
+          },
+        },
         v2: {
           agent: { list: async () => ({ data: { data: [] } }) },
           provider: {
@@ -328,6 +337,7 @@ beforeEach(() => {
   newSessionDraftStash.resetForTests()
   updateDraftCalls.splice(0)
   startChatCalls.splice(0)
+  promptAsyncCalls.splice(0)
   pickerCalls.splice(0)
   pickedDirectory = undefined
   defaultWorkspaceGate = undefined
@@ -919,5 +929,89 @@ describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 s
     for (let i = 0; i < 20 && !textarea(right.host); i++) await flush()
     expect(planChipOf(right.host)).not.toBeNull()
     right.dispose()
+  })
+
+  /* #888:上面两条盯的是**钥匙对不对**;这一条盯的是**整条序列还走不走得完**。
+     真实序列是「首页提交 → 会话页挂载 → 卸载 → 再挂载 → 接着发」。#891 与 #882 各自单独测
+     都绿,合起来才坏:#882 把 `model.list` 的取消源从一个 10s 固定预算换成**链的生命期**
+     之后,卸载/supersede 会当场把在途 listing 拒掉,而 `runModelChain` 在它的真消费者
+     (`loadEngineModelsWithRetry`)之前有三个早退点 —— 早退时那条 listing 无人接,于是每一次
+     「链没跑完就卸载」都留下一个**未处理拒绝**。它不改档位的值(#891 那两条用例的断言值全对),
+     却让这条序列上的用例整片变红:bun 把未处理拒绝记到当前用例头上,Electron 里走全局错误上报。
+
+     判据落在两处用户可观察的地方,少一处都不够:
+     ①会话页渲染出来的 chip —— 用户看得见的那两档;
+     ②会话页**真发出去**的 `session.promptAsync` 载荷 —— 显示只读而线上不带 `alpha-readonly`,
+       用户看到的就是「只读亮着,模型照样改文件」。丢了登记时这里连 `agent` 键都不会出现
+       (`buildPromptRequest` 在 perm=ask + agent=null 时不写这个字段),所以键在不在本身就是判据。
+     最后再把只读放回「请求审批」,让**开局档位**(plan)也走一次线 —— 只读会压过手选档位,
+     不解除它,plan 永远只在 chip 上、不在载荷里。
+
+     ⚠️ 步骤 ② 的位置是实测定下来的,不能挪:卸载必须发生在**模型链还在飞**的时候,而且后面
+     还得有 await。链已 ready 之后再卸载抓不到(那一刻没有在途请求),把卸载写在用例最后一行
+     也抓不到(拒绝落在用例窗口之外)—— 两种写法在还原修复后都**照样全绿**,是假绿。 */
+  test("首页提交 → 会话页挂载 → 链未收敛就卸载 → 再挂载:开局档位与只读档整条序列不掉(chip + promptAsync 载荷)", async () => {
+    const projects = projectsApi([project("alpha-code", "/ws/a")])
+    await submitFromHomeWithBothOn(projects) // 内部结尾就是首页 composer 的真实卸载
+    expect(startChatCalls[0]!.directory).toBe(DEFAULT_WORKSPACE)
+
+    // ① 跳进会话页:两档立刻就在(chip 是用户唯一看得见的那一面)。
+    const glance = mountSessionAt(projects, STORE_SERVER_KEY, "session-1")
+    for (let i = 0; i < 20 && !textarea(glance.host); i++) await flush()
+    expect(planChipOf(glance.host)).not.toBeNull()
+    expect(permChipOf(glance.host)!.getAttribute("data-mode")).toBe("readonly")
+
+    // ② 模型链还没收敛就把会话页卸掉(切标签页 / 切回列表 —— 生产上最常见的那一刻)。
+    glance.dispose()
+    for (let i = 0; i < 5; i++) await flush()
+
+    // ③ 回到会话页:两档还在。
+    const session = mountSessionAt(projects, STORE_SERVER_KEY, "session-1")
+    for (let i = 0; i < 20 && !textarea(session.host); i++) await flush()
+    expect(planChipOf(session.host)).not.toBeNull()
+    expect(permChipOf(session.host)!.getAttribute("data-mode")).toBe("readonly")
+
+    // ④ 线上:第一条后续消息带着 alpha-readonly 真发出去。
+    const sendButton = () => session.host.querySelector<HTMLButtonElement>(".a-comp-send")!
+    type(textarea(session.host)!, "第二条")
+    for (let i = 0; i < 60 && sendButton().disabled; i++) await flush()
+    expect(sendButton().disabled).toBe(false)
+    sendButton().click()
+    for (let i = 0; i < 30 && promptAsyncCalls.length === 0; i++) await flush()
+    expect(promptAsyncCalls).toHaveLength(1)
+    expect(promptAsyncCalls[0]).toMatchObject({
+      sessionID: "session-1",
+      directory: DEFAULT_WORKSPACE,
+      agent: "alpha-readonly",
+      parts: [{ type: "text", text: "第二条" }],
+    })
+
+    // 等这次发送**落定**再往下走:清空输入框与解锁发送都在 `await promptAsync` 之后,而
+    // `promptAsync` 是同步被调用的 —— 不等,下一步敲进去的字会被这次的 setText("") 抹掉,
+    // 表现成一个与本判据无关的假红(实测踩过)。
+    for (let i = 0; i < 30 && textarea(session.host)!.value !== ""; i++) await flush()
+    expect(textarea(session.host)!.value).toBe("")
+
+    // ⑤ 解除只读之后,开局的 plan 档仍在,并且这一次它自己上了线。
+    permChipOf(session.host)!.click()
+    const askItems = () =>
+      [...document.body.querySelectorAll<HTMLButtonElement>('.a-pop-item[role="menuitemradio"]')].filter((item) =>
+        item.textContent?.includes(zh["alpha.composer.permAsk"]),
+      )
+    for (let i = 0; i < 20 && askItems().length === 0; i++) await flush()
+    askItems()[0]!.click()
+    for (let i = 0; i < 20 && permChipOf(session.host)!.getAttribute("data-mode") !== "ask"; i++) await flush()
+    expect(permChipOf(session.host)!.getAttribute("data-mode")).toBe("ask")
+    expect(planChipOf(session.host)).not.toBeNull()
+
+    type(textarea(session.host)!, "第三条")
+    for (let i = 0; i < 60 && sendButton().disabled; i++) await flush()
+    expect(sendButton().disabled).toBe(false)
+    sendButton().click()
+    for (let i = 0; i < 30 && promptAsyncCalls.length < 2; i++) await flush()
+    expect(promptAsyncCalls).toHaveLength(2)
+    expect(promptAsyncCalls[1]).toMatchObject({ sessionID: "session-1", agent: "plan" })
+
+    session.dispose()
   })
 })

@@ -12,6 +12,9 @@ describe("nextEngineRetryDelay", () => {
 })
 
 describe("ENGINE_FETCH_TIMEOUT_MS(2026-07-12 复验盲区:悬挂必须转成可重试失败)", () => {
+  // #882 起适用面收窄:这条不变式管的是**真失败**的重试链(引擎挂了/5xx/悬挂)。首屏的目录
+  // 就绪等待已经不走退避 —— 它由 catalog.updated 唤醒,屏障自己不再制造失败。所以本条对
+  // 「首屏第一次读到目录要多久」不再有任何断言力,别把它当成那件事已被覆盖。
   test("超时必须严格大于任何退避间隔 —— 保证「悬挂 → 超时 → 退避 → 重试」链不重叠不空转", () => {
     for (const attempt of [0, 1, 2, 3, 10]) {
       expect(ENGINE_FETCH_TIMEOUT_MS).toBeGreaterThan(nextEngineRetryDelay(attempt))

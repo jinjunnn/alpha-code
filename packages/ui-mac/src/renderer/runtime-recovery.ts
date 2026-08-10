@@ -63,6 +63,38 @@ export function subscribeRuntimeRecovery(listener: (state: SidecarGenerationStat
   return () => window.removeEventListener(RUNTIME_RECOVERY_EVENT, handle)
 }
 
+// #882:引擎每提交一次某个 directory 的 catalog(`CatalogV2.finalize` → `catalog.updated`)
+// 就唤醒一次该 directory 的等待者。这条信道**只是唤醒,不是就绪证明**:
+// docs/architecture/2026-08-10-catalog-readiness-signals.md 里实跑的两条事实决定了这个定位 ——
+// ①一次冷启动会发多条(含未治理的中间态提交:事件 #1 落地后 0.6ms 的 marker 探针仍是 404);
+// ②在 renderer 订阅之前就已收敛的 directory **再也不会**发事件(实测 4s 内 0 条)。
+// 于是 marker 探针仍是唯一的就绪证明,而兜底轮询是承重项、不是冗余。
+//
+// 刻意不走上面两条邻居用的 window CustomEvent:这条信号带 directory 载荷,而它唯一的消费者
+// model-contract.ts 是在无 DOM 的 bun 进程里跑单测的纯模块 —— 走 window 会把 DOM 拖进它的依赖图,
+// 而收发两端本来就 import 同一个模块,window 不提供任何额外可达性。
+const catalogUpdateListeners = new Map<string, Set<() => void>>()
+
+export function notifyCatalogUpdated(directory: string) {
+  // 快照后再派发:监听者在回调里退订(屏障每轮都退订)不得影响本轮派发。
+  for (const listener of [...(catalogUpdateListeners.get(directory) ?? [])]) listener()
+}
+
+export function subscribeCatalogUpdated(directory: string, listener: () => void) {
+  let listeners = catalogUpdateListeners.get(directory)
+  if (!listeners) {
+    listeners = new Set()
+    catalogUpdateListeners.set(directory, listeners)
+  }
+  const owned = listeners
+  owned.add(listener)
+  return () => {
+    owned.delete(listener)
+    if (owned.size === 0 && catalogUpdateListeners.get(directory) === owned)
+      catalogUpdateListeners.delete(directory)
+  }
+}
+
 // trigger 只进 timeline 打点(排障溯源:真 SSE 流内重连 vs 自探重建后的本地恢复通知),
 // 订阅者语义一致 —— 都是「传输已恢复,停跑的消费链该醒了」。
 export function notifySseReconnected(trigger?: string) {

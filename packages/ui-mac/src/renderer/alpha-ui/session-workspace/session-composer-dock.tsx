@@ -148,7 +148,10 @@ export function SessionComposerDock(props: {
         setModels(undefined)
         if (!directory) return
         let stale = false
-        modelContract.list(directory).then(
+        // #882:目录就绪屏障不再自带 deadline,取消必须由调用方给 —— 否则每次目录切换都会留下
+        // 一条自己跑到天荒地老的探针循环(`stale` 只挡住结果落地,挡不住等待本身)。
+        const cancel = new AbortController()
+        modelContract.list(directory, cancel.signal).then(
           (listed) => {
             if (stale || identity()?.directory !== directory) return
             setModels({ directory, models: listed })
@@ -159,6 +162,7 @@ export function SessionComposerDock(props: {
         )
         onCleanup(() => {
           stale = true
+          cancel.abort(new Error("session dock directory changed"))
         })
       },
     ),
