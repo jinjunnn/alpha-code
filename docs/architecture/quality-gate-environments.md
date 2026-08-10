@@ -190,9 +190,30 @@ workflow 触发在 `pull_request`,fork PR 拿不到 secrets)。这份记录**抓
 逻辑因此从 workflow 的内联 shell 搬进 [`scripts/detect-changed-scope.sh`](../../scripts/detect-changed-scope.sh)。
 **唯一的理由是让它有判据** —— 内联时它一个判据都没有,而断言 YAML 文本按本仓定义是假闸门。
 行为闸 `packages/ui-mac/src/main/ci-diff-scope.test.ts` 起真 git 仓、造真的「落后于 base 的纯文档
-分支」、跑生产脚本本体,断言它写进 `$GITHUB_OUTPUT` 的实际值;六条各钉一个方向(含「分支自己改代码
+分支」、跑生产脚本本体,断言它写进 `$GITHUB_OUTPUT` 的实际值;八条各钉一个方向(含「分支自己改代码
 必须 `code=true`」——否则「永远返回 false」也能满足这道门)。workflow 那一步的 `name:` 与 `env:`
 一个字没改,所以 §3.1 的 CI_STEPS 对照表不受影响。
+
+#### 3.7.1 同一格的另一半:**谁算代码**
+
+上面那张表管的是「拿哪两个点做 diff」。分类器还有第二个决定 —— 拿到文件列表之后,**哪些文件算
+代码**。这一半原来有两个绕过口,都能让真实的代码变更被判成 docs-only ⇒ 二十多个挂在
+`code == 'true'` 上的步骤集体跳过 ⇒ **假绿**。两个都是实测复现,不是推演:
+
+| 绕过口 | 原来的行为 | 实测事实 | 修法 |
+| --- | --- | --- | --- |
+| 路径**中间段**的 `docs/` | 分类分支写的是 `*/docs/*`,而 `*` 吃 `/` ⇒ 匹配路径里**任何位置**的 `docs/` 段 | 本仓真实存在 `packages/console/app/src/routes/docs/index.ts` 与 `.../docs/[...path].ts` —— 无歧义的 TypeScript 源码;仓内 `/docs/` 段下的非 `.md` 文件共 639 个 | 拆成两条都不含通配中间段的判定:**① 源码扩展名**(`.ts .tsx .js .jsx .mjs .cjs .sh`)住在哪都算代码;**② 文档树只认仓根锚定的显式前缀**(`docs/` `.claude/rules/` `knowledge/`) |
+| 跨分类 **rename** | `git diff --name-only` | git 默认开着 rename 检测(`diff.renames` 默认 true)⇒ 一次重命名**只输出目标路径**,源路径一个字都不出现(git 2.50.1 实测) | 加 `--no-renames`:重命名重新变回「删源 + 加目标」两条路径,两端都参与分类 |
+
+①的**代价是显式的**:`packages/docs/**` 与 `packages/web/src/content/docs/**` 的 `.mdx`(13 + 614 =
+627 个文件)不再算文档,改它们会跑全量 CI。这是保守的一侧(多跑闸门,永远不会少跑);要豁免,请加一条
+仓根锚定的显式前缀,不要把通配中间段放回去。同理,`docs/**` 下的 43 个 `.ts`/`.tsx`/`.mjs`/`.sh`
+(验证与审计的 harness)从此算代码 —— 分类器无法区分 `docs/verification/x/probe.ts` 与
+`packages/console/.../docs/index.ts`,唯一稳的规则是「源码扩展名一律算代码」。
+
+判据各自独立可证伪:①用 `.ts` + 同目录 `.css` 两个输入(`.ts` 被两半同时覆盖,`.css` 只被显式前缀
+那一半覆盖);②的 rename 目标刻意取 `.md`(修好后目标路径**仍**算文档,于是这条只由 `--no-renames`
+决定)。两条各自单独还原,对应用例当场转红。
 
 ## 4. 咽喉:两处声明,覆盖仓内真实存在的两种运行形状
 

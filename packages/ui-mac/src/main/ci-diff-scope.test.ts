@@ -12,6 +12,13 @@
 // 实证(`#717` owner 评论):同一个 commit,PR run 30756424959 判 code=true 并红在
 // `bun test (ui-mac)`,push run 30756431539 判 code=false、全部 skipped。
 //
+// 它还错在哪(合并前审计 + owner 实测复现,两条都是「真代码被判成文档」⇒ 假绿):
+//   · `*/docs/*` 匹配**路径里任何位置**的 `docs/` 段。本仓真实存在
+//     packages/console/app/src/routes/docs/index.ts 与 .../docs/[...path].ts —— 无歧义的
+//     源码。改它们 ⇒ code=false ⇒ typecheck / 单测 / gate-files / seed assets 全跳过。
+//   · git 默认开着 rename 检测,`--name-only` 对一次重命名**只输出目标路径**。把一个真实源
+//     文件 `git mv` 到 docs/ 之下,分类器就只看见一个 docs 路径 ⇒ 同样全跳过。
+//
 // 为什么判据必须长这样:
 //   · **不断言 YAML 文本**。按本仓定义那是假闸门 —— 源码里写着 `...` 三个点,不等于
 //     GitHub 上跑出来的分类是对的。这里起**真的 git 仓**、造**真的落后分支**、跑
@@ -173,6 +180,62 @@ describe("#717 detect 的 diff 基准", () => {
     const classification = classify(fixture.repo, pullRequest(fixture.mainline, orphan))
     // 取不到分叉点时宁可跑全量。反向(算成 docs-only)= 在一个我们看不懂的形状上把所有闸门关掉。
     expect(classification.code, `无共同祖先时没有 fail-closed:\n${classification.stdout}`).toBe("true")
+  })
+
+  test("路径中间段的 docs/ 不许把真实源码判成文档", () => {
+    const fixture = staleDocsBranchFixture()
+
+    // 本仓**真实存在**这个路径:packages/console/app/src/routes/docs/index.ts(以及同目录的
+    // `[...path].ts`)—— 一个路由处理器,不是文档。原来的 `*/docs/*` 匹配路径里任何位置的
+    // `docs/` 段,于是改它 ⇒ code=false ⇒ typecheck / 单测 / gate-files / seed assets 全跳过。
+    git(fixture.repo, ["checkout", "-q", "-b", "mid-docs-source", fixture.seed])
+    const tsHead = commit(fixture.repo, "edit a route handler that happens to sit under docs/", {
+      "packages/console/app/src/routes/docs/index.ts": "export const route = 1\n",
+    })
+    const ts = classify(fixture.repo, pullRequest(fixture.seed, tsHead))
+    expect(ts.code, `中间段是 docs/ 的 TypeScript 源码被判成文档,全部代码闸门会被跳过:\n${ts.stdout}`).toBe("true")
+
+    // 第二个输入,单独钉住修法的另一半。上面那条 .ts 被「源码扩展名」与「显式前缀」**两条**
+    // 判定同时覆盖 ⇒ 只有它的话,把宽松 glob 放回去仍然全绿。这个 .css 不是源码扩展名,
+    // 只有「文档树必须是仓根锚定的显式前缀」这一半能让它变红 —— 它和真实的那两个 .ts 住在
+    // 同一个目录里,一样会被打进 console 应用的产物。
+    git(fixture.repo, ["checkout", "-q", "-b", "mid-docs-asset", fixture.seed])
+    const cssHead = commit(fixture.repo, "edit a stylesheet in that same route directory", {
+      "packages/console/app/src/routes/docs/styles.css": ".doc-route { color: red }\n",
+    })
+    const css = classify(fixture.repo, pullRequest(fixture.seed, cssHead))
+    expect(css.code, `通配中间段的 docs/ 仍在把应用资源判成文档:\n${css.stdout}`).toBe("true")
+
+    // 第三个输入,钉住另一半。这个 `.ts` 住在**仓根锚定的文档树**里 —— 显式前缀那一半照样
+    // 放它过去,只有「源码扩展名无论住哪都是代码」这一条能让它变红。分类器分不清
+    // docs/verification/x/probe.ts 和 packages/console/.../docs/index.ts,所以规则只能按
+    // 扩展名走;代价(docs/** 下的 harness 从此算代码)是明写的,不是漏网。
+    git(fixture.repo, ["checkout", "-q", "-b", "docs-tree-source", fixture.seed])
+    const harnessHead = commit(fixture.repo, "add a source file inside the docs tree", {
+      "docs/verification/2026-08-10-probe/probe.ts": "export const probe = 1\n",
+    })
+    const harness = classify(fixture.repo, pullRequest(fixture.seed, harnessHead))
+    expect(harness.code, `文档树里的源码扩展名被判成文档:\n${harness.stdout}`).toBe("true")
+  })
+
+  test("把源码 rename 到文档树之下,源路径仍然算数", () => {
+    const fixture = staleDocsBranchFixture()
+    git(fixture.repo, ["checkout", "-q", "-b", "rename-into-docs", fixture.seed])
+    // git 默认开着 rename 检测,`--name-only` 对一次重命名**只输出目标路径**(实测:源路径
+    // 一个字都不出现)。把 packages/ui-mac/src/seed.ts 移进文档树,分类器就只看见一个
+    // `.md` ⇒ code=false ⇒ 二十多道挂在 code=='true' 上的闸门集体跳过,而这次变更删掉了
+    // 一个真的源文件。
+    //
+    // 目标刻意取 `.md`:修好之后目标路径**仍然**被判成文档,所以这条断言只由「文件列表要不要
+    // 包含 rename 的源端」决定 —— 把 docs/ 那半边的修法单独还原,它照样绿。
+    git(fixture.repo, ["mv", "packages/ui-mac/src/seed.ts", "docs/moved-seed.md"])
+    git(fixture.repo, ["commit", "-q", "-m", "move a source file into the docs tree"])
+    const head = git(fixture.repo, ["rev-parse", "HEAD"])
+    const classification = classify(fixture.repo, pullRequest(fixture.seed, head))
+    expect(
+      classification.code,
+      `rename 把源路径吃掉了 —— 删掉一个 .ts 的变更被判成 docs-only:\n${classification.stdout}`,
+    ).toBe("true")
   })
 
   test("GITHUB_OUTPUT 缺失时当场失败,而不是静默把闸门全关掉", () => {

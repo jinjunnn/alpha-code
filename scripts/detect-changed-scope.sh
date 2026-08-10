@@ -58,14 +58,29 @@ if [ "$use_merge_base" = 1 ]; then
   fi
 fi
 
-files="$(git diff --name-only "$base" "$head")"
+# `--no-renames` 不是风格偏好,是判据前提:git 默认开着 rename 检测(`diff.renames` 默认 true),
+# 于是 `--name-only` 对一次重命名**只输出目标路径**,源路径完全不出现(git 2.50.1 实测)。
+# 把一个真实源文件 `git mv` 到 docs/ 之下,分类器就只看见一个 docs 路径 ⇒ code=false ⇒ 上面
+# 二十多个挂在 `code == 'true'` 上的步骤集体跳过,而这次变更真的动了代码。关掉 rename 检测,
+# 一次重命名重新变回「删源 + 加目标」两条路径,两端都参与分类。
+files="$(git diff --name-only --no-renames "$base" "$head")"
 echo "changed files:"; echo "$files" | sed 's/^/  /'
 code=false; md=""
 while IFS= read -r f; do
   [ -z "$f" ] && continue
+  # 分支顺序即优先级。原来这里的 `*/docs/*` 匹配的是**路径里任何位置**的 `docs/` 段,而
+  # 「路径里有个 docs 段」和「这是文档」不是同一个集合:本仓真实存在
+  # packages/console/app/src/routes/docs/index.ts 与 .../docs/[...path].ts —— 无歧义的
+  # TypeScript 源码,改它们会被判成 docs-only,全部代码闸门跳过。
+  # 换成两条各管一头、都不含通配中间段的判定:
+  #   ① 源码扩展名躺在哪个目录下都算代码(对**新出现**的路径默认拒绝,不靠枚举跟上);
+  #   ② 文档树只认锚定在仓根的显式前缀(`docs/` `.claude/rules/` `knowledge/`)。
+  # 代价是显式的:`packages/docs/**` 与 `packages/web/src/content/docs/**` 的 .mdx 不再算
+  # 文档、改它们会跑全量 CI。方向是保守的一侧(多跑闸门,不会少跑),要豁免请加显式前缀。
   case "$f" in
     *.md) md="$md $f" ;;                              # docs, and collect for link check
-    docs/*|*/docs/*|.claude/rules/*|knowledge/*) : ;; # docs (html/design/adr), not code
+    *.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs|*.sh) code=true ;;  # 源码扩展名 → 无论住在哪都是代码
+    docs/*|.claude/rules/*|knowledge/*) : ;;          # 仓根锚定的文档树(html/design/adr/证据)
     *) code=true ;;                                   # anything else → full CI
   esac
 done <<< "$files"
