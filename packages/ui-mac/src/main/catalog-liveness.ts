@@ -15,8 +15,10 @@
 //     只要在窗口内收敛就绝不误伤。
 //
 // 观测手段自己有盲区(本仓最贵教训):探针**自己的**超时不是引擎的回答。样本按「谁的事实」
-// 分类 —— 引擎答了但没就绪(engine-not-ready,带真实 status)与我们的探测失败(probe-failed,
-// probe-timeout/network)分开记账,裁决日志里两者分栏,诊断时才分得出「引擎卡死」与「探针环境坏」。
+// 三分 —— 引擎答了 404(权威的「未收敛」,与 renderer 屏障同判据)、引擎答了协议外 status
+// (engine-unclassified,实测目录不存在 ⇒ 确定性 500,不授权 kill)、我们的探测失败
+// (probe-failed,probe-timeout/network)分开记账,裁决日志分栏,诊断时才分得出
+// 「引擎卡死」「观测面不可用」与「探针环境坏」。
 //
 // 反复触发的上界:窗口 ≈ SELF_HEAL_RESET_UPTIME_MS ⇒ 退化代每次都把 self-heal 阶梯重置回快路径,
 // 没有自己的 strike 上界就是每 ~DEADLINE 一次的无限 kill 循环。镜像 engine-runaway-guard:
@@ -33,8 +35,14 @@ export const CATALOG_LIVENESS_STRIKE_DECAY_MS = 30 * 60 * 1000
 export type CatalogLivenessSample =
   /** 引擎答了 2xx:治理目录已收敛(marker provider 已提交)。 */
   | { outcome: "ready" }
-  /** 引擎**真的答了**,但 marker 不在(未收敛恒 404;401/5xx 同样按引擎的回答记它的 status)。 */
+  /** 引擎**真的答了 404**:目录存在但尚未收敛 —— 这是「未收敛」的**唯一权威表示**
+   *  (与 renderer 屏障 model-contract.ts 同判据,readiness 勘破 §3.3:只有 404 /
+   *  ProviderNotFoundError 算「尚未收敛」)。 */
   | { outcome: "engine-not-ready"; status: number }
+  /** 引擎答了,但 status 在 marker 协议的词汇表之外(500/401/…)。实测(R1 Blocker,
+   *  2026-08-11):探针目录不存在时该端点**确定性 500**(`UnknownError`),永不 404/200 ——
+   *  这不是「未收敛」,是观测面本身不可用,**不授权到期 kill**。 */
+  | { outcome: "engine-unclassified"; status: number }
   /** 引擎没有答 —— 这是**我们这一侧**的事实(自己的超时/网络错),不冒充引擎的回答。 */
   | { outcome: "probe-failed"; reason: "probe-timeout" | "network"; message: string }
 
@@ -46,29 +54,47 @@ export type CatalogLivenessState = {
   lastVerdictAt: number | null
   probes: number
   engineNotReady: number
+  engineUnclassified: number
   probeFailures: number
 }
 
-export type CatalogLivenessAction = "none" | "confirmed" | "kill-and-respawn" | "stop-and-report"
+export type CatalogLivenessAction =
+  | "none"
+  | "confirmed"
+  | "kill-and-respawn"
+  | "stop-and-report"
+  /** 窗口到期但**没有一个权威的「未收敛」样本**(引擎在答,答的却全是协议外 status)——
+   *  观测面不可用,弃权解除:不 kill、不记 strike。杀一个引擎要凭引擎自己的 404,不凭 500。 */
+  | "indeterminate"
 
 export type CatalogLivenessDecision = {
   state: CatalogLivenessState
   action: CatalogLivenessAction
   /** 距武装点的实测时长(confirmed 时 = catalog 可操作时延的 main 侧上界)。未武装时为 0。 */
   elapsedMs: number
-  /** 本代累计探针记账(含本次),两类失败分栏 —— 见文件头「谁的事实」。 */
+  /** 本代累计探针记账(含本次),失败分栏 —— 见文件头「谁的事实」。 */
   probes: number
   engineNotReady: number
+  engineUnclassified: number
   probeFailures: number
 }
 
 export function initialCatalogLivenessState(): CatalogLivenessState {
-  return { armed: false, armedAt: null, strikes: 0, lastVerdictAt: null, probes: 0, engineNotReady: 0, probeFailures: 0 }
+  return {
+    armed: false,
+    armedAt: null,
+    strikes: 0,
+    lastVerdictAt: null,
+    probes: 0,
+    engineNotReady: 0,
+    engineUnclassified: 0,
+    probeFailures: 0,
+  }
 }
 
 /** 引擎 ready 终态到达时武装。strikes/lastVerdictAt 跨代保留(反无限 kill 循环),计数器归零。 */
 export function armCatalogLiveness(state: CatalogLivenessState, now: number): CatalogLivenessState {
-  return { ...state, armed: true, armedAt: now, probes: 0, engineNotReady: 0, probeFailures: 0 }
+  return { ...state, armed: true, armedAt: now, probes: 0, engineNotReady: 0, engineUnclassified: 0, probeFailures: 0 }
 }
 
 export function disarmCatalogLiveness(state: CatalogLivenessState): CatalogLivenessState {
@@ -89,34 +115,64 @@ export function decideCatalogLiveness(
       ? { ...previous, strikes: 0, lastVerdictAt: null }
       : previous
   if (!state.armed || state.armedAt === null)
-    return { state, action: "none", elapsedMs: 0, probes: state.probes, engineNotReady: state.engineNotReady, probeFailures: state.probeFailures }
+    return {
+      state,
+      action: "none",
+      elapsedMs: 0,
+      probes: state.probes,
+      engineNotReady: state.engineNotReady,
+      engineUnclassified: state.engineUnclassified,
+      probeFailures: state.probeFailures,
+    }
 
   const elapsedMs = now - state.armedAt
 
   if (sample.outcome === "ready") {
     const probes = state.probes + 1
     return {
-      state: { ...state, armed: false, armedAt: null, probes: 0, engineNotReady: 0, probeFailures: 0 },
+      state: { ...state, armed: false, armedAt: null, probes: 0, engineNotReady: 0, engineUnclassified: 0, probeFailures: 0 },
       action: "confirmed",
       elapsedMs,
       probes,
       engineNotReady: state.engineNotReady,
+      engineUnclassified: state.engineUnclassified,
       probeFailures: state.probeFailures,
     }
   }
 
   const probes = state.probes + 1
   const engineNotReady = state.engineNotReady + (sample.outcome === "engine-not-ready" ? 1 : 0)
+  const engineUnclassified = state.engineUnclassified + (sample.outcome === "engine-unclassified" ? 1 : 0)
   const probeFailures = state.probeFailures + (sample.outcome === "probe-failed" ? 1 : 0)
 
   // 判据是「窗口内从未成功」,不是「失败了 N 次」——窗口未到期,任何失败形态都只记账。
   if (elapsedMs < CATALOG_LIVENESS_DEADLINE_MS) {
     return {
-      state: { ...state, probes, engineNotReady, probeFailures },
+      state: { ...state, probes, engineNotReady, engineUnclassified, probeFailures },
       action: "none",
       elapsedMs,
       probes,
       engineNotReady,
+      engineUnclassified,
+      probeFailures,
+    }
+  }
+
+  // 到期裁决的授权(R1 Blocker):kill 只凭两种**引擎侧**退化证据 ——
+  //   ① 窗口内至少一次权威的「未收敛」(404);
+  //   ② 引擎整窗一次都没答(全是我们的探测失败 = 引擎卡死也是退化,行为与首版一致)。
+  // 引擎在答、答的却全是协议外 status(实测:探针目录不存在 ⇒ 确定性 500)——观测面不可用,
+  // 弃权解除,不 kill 不记 strike:否则全新安装(~/Alpha 是 lazy 供给)会在 60s 处杀掉一个
+  // 完全健康的引擎,并在三振后弹 Recovery incident。
+  const authorized = engineNotReady >= 1 || engineNotReady + engineUnclassified === 0
+  if (!authorized) {
+    return {
+      state: { ...state, armed: false, armedAt: null, probes: 0, engineNotReady: 0, engineUnclassified: 0, probeFailures: 0 },
+      action: "indeterminate",
+      elapsedMs,
+      probes,
+      engineNotReady,
+      engineUnclassified,
       probeFailures,
     }
   }
@@ -130,12 +186,14 @@ export function decideCatalogLiveness(
       lastVerdictAt: now,
       probes: 0,
       engineNotReady: 0,
+      engineUnclassified: 0,
       probeFailures: 0,
     },
     action: strikes < CATALOG_LIVENESS_MAX_STRIKES ? "kill-and-respawn" : "stop-and-report",
     elapsedMs,
     probes,
     engineNotReady,
+    engineUnclassified,
     probeFailures,
   }
 }
@@ -174,7 +232,10 @@ export async function probeCatalogMarker(opts: CatalogLivenessProbeOptions): Pro
     const res = await Promise.race([fetching, aborted])
     await res.arrayBuffer().catch(() => {})
     if (res.ok) return { outcome: "ready" }
-    return { outcome: "engine-not-ready", status: res.status }
+    // 只有 404 是权威的「未收敛」(readiness 勘破 §3.3,与 renderer 屏障同判据);其余 status
+    // 是协议外应答(实测:目录不存在 ⇒ 确定性 500),归不可判样本,不授权到期 kill。
+    if (res.status === 404) return { outcome: "engine-not-ready", status: res.status }
+    return { outcome: "engine-unclassified", status: res.status }
   } catch (error) {
     // AbortSignal.timeout 的 reason 是 name === "TimeoutError" 的 DOMException(与
     // model-contract.ts 的实跑结论同源)。这是**我们的**超时,如实标注,不折进引擎的回答。

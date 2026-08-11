@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdirSync, rmSync, statSync } from "node:fs"
+import { existsSync, mkdirSync, rmSync, statSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
@@ -982,6 +982,16 @@ const main = Effect.gen(function* () {
   // 转 Recovery incident(与 engine runaway 的 stop-and-report 同纪律,反无限 kill 循环)。
   const armCatalogLivenessWatchdog = (gen: number) => {
     stopCatalogLivenessWatchdog()
+    // R1 Blocker:~/Alpha 是 lazy 供给(ensureUserWorkspaceDir 只在用户动作时建),boot 路径
+    // 一处都不建它;目录不存在时 marker 端点**确定性 500**(实测 8/8,永不 404/200)——观测面
+    // 不可用,不武装。也绝不顺手 mkdir:REQ-071/ADR-025「绝不代建」,启动即建目录是产品行为变更。
+    if (!existsSync(alphaUserWorkspaceDir())) {
+      markStartupTimeline("main.sidecar.catalog_liveness.skipped", {
+        generation: gen,
+        reason: "workspace-dir-missing",
+      })
+      return
+    }
     catalogLiveness = armCatalogLiveness(catalogLiveness, Date.now())
     catalogLivenessTimer = setInterval(() => {
       if (gen !== sidecarGen || !server) {
@@ -1006,6 +1016,31 @@ const main = Effect.gen(function* () {
           })
           return
         }
+        if (decision.action === "indeterminate") {
+          // R1 Blocker:窗口到期但引擎的应答全在协议外(如目录不存在的确定性 500)——弃权,
+          // 不 kill 不记 strike。杀引擎要凭引擎自己的 404,不凭 500。
+          stopCatalogLivenessWatchdog()
+          markStartupTimeline("main.sidecar.catalog_liveness.indeterminate", {
+            generation: gen,
+            elapsedMs: decision.elapsedMs,
+            probes: decision.probes,
+            engineAnsweredNotReady: decision.engineNotReady,
+            engineAnsweredUnclassified: decision.engineUnclassified,
+            probeFailures: decision.probeFailures,
+          })
+          writeLog(
+            "utility",
+            "catalog liveness window closed without an authoritative not-converged signal — abstaining (no kill)",
+            {
+              elapsedMs: decision.elapsedMs,
+              probes: decision.probes,
+              engineAnsweredUnclassified: decision.engineUnclassified,
+              probeFailures: decision.probeFailures,
+            },
+            "warn",
+          )
+          return
+        }
         const current = server
         stopCatalogLivenessWatchdog()
         if (!current) return
@@ -1015,6 +1050,7 @@ const main = Effect.gen(function* () {
           elapsedMs: decision.elapsedMs,
           probes: decision.probes,
           engineAnsweredNotReady: decision.engineNotReady,
+          engineAnsweredUnclassified: decision.engineUnclassified,
           probeFailures: decision.probeFailures,
           strikes: catalogLiveness.strikes,
         })

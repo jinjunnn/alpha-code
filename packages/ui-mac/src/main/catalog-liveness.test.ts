@@ -20,6 +20,9 @@ const STRIKE_DECAY = 30 * 60 * 1000
 const notReady: CatalogLivenessSample = { outcome: "engine-not-ready", status: 404 }
 const probeTimeout: CatalogLivenessSample = { outcome: "probe-failed", reason: "probe-timeout", message: "t/o" }
 const ready: CatalogLivenessSample = { outcome: "ready" }
+// R1 Blocker 实测形态:探针目录不存在 ⇒ marker 端点确定性 500(UnknownError),永不 404/200。
+const unclassified500: CatalogLivenessSample = { outcome: "engine-unclassified", status: 500 }
+const unclassified401: CatalogLivenessSample = { outcome: "engine-unclassified", status: 401 }
 
 function armed(now = T0): CatalogLivenessState {
   return armCatalogLiveness(initialCatalogLivenessState(), now)
@@ -97,6 +100,43 @@ describe("catalog-liveness decision", () => {
     expect(decision.engineNotReady).toBe(0)
   })
 
+  test("全新安装形态(R1 Blocker):窗口内引擎在答、答的全是协议外 status → 到期弃权,不 kill 不记 strike", () => {
+    // 负向夹具刻意不用退化形状:500/401 混着我们自己的探测超时,贴满整窗 —— 引擎全程健康,
+    // 只是观测面(~/Alpha 不存在 ⇒ 确定性 500)不可用。旧实现在这里 kill-and-respawn,
+    // 60s 杀一次健康引擎、三振后弹 Recovery incident。
+    const steps = [5, 12, 20, 28, 36, 44, 52, 60].map((s, i) => ({
+      at: T0 + s * 1000,
+      sample: i % 4 === 3 ? probeTimeout : i % 2 === 0 ? unclassified500 : unclassified401,
+    }))
+    const decision = feed(armed(), steps)
+    expect(decision.action).toBe("indeterminate")
+    expect(decision.state.armed).toBe(false)
+    expect(decision.state.strikes).toBe(0)
+    expect(decision.state.lastVerdictAt).toBeNull()
+    // 记账分栏:协议外应答与我们的探测失败各归各栏,权威未收敛为 0 —— 这就是弃权的依据。
+    expect(decision.engineUnclassified).toBe(6)
+    expect(decision.probeFailures).toBe(2)
+    expect(decision.engineNotReady).toBe(0)
+    // 弃权不是裁决:同代不再产生任何动作(表已停由接线负责),后续武装从零 strike 起步。
+    const rearmed = decideCatalogLiveness(T0 + DEADLINE + 10_000, unclassified500, decision.state)
+    expect(rearmed.action).toBe("none")
+  })
+
+  test("窗口内哪怕一次权威 404,其余全是协议外应答 → 到期照样 kill(授权凭引擎自己的未收敛)", () => {
+    const steps = [
+      { at: T0 + 5_000, sample: unclassified500 },
+      { at: T0 + 15_000, sample: notReady },
+      { at: T0 + 30_000, sample: unclassified500 },
+      { at: T0 + 45_000, sample: unclassified401 },
+      { at: T0 + DEADLINE, sample: unclassified500 },
+    ]
+    const decision = feed(armed(), steps)
+    expect(decision.action).toBe("kill-and-respawn")
+    expect(decision.state.strikes).toBe(1)
+    expect(decision.engineNotReady).toBe(1)
+    expect(decision.engineUnclassified).toBe(4)
+  })
+
   test("30 分钟内第三次裁决 → stop-and-report(不再自动 kill),strike 跨代累计", () => {
     let state = initialCatalogLivenessState()
     const actions: string[] = []
@@ -156,6 +196,26 @@ describe("catalog-liveness probe(真执行,fetch 注入)", () => {
     expect(sample).toEqual({ outcome: "engine-not-ready", status: 404 })
   })
 
+  test("引擎答 500(实测:探针目录不存在的确定性拒绝)→ engine-unclassified,不冒充「未收敛」", async () => {
+    // body 用实测形状(UnknownError),不用空 body 的退化夹具。
+    const sample = await probeCatalogMarker({
+      ...opts,
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ name: "UnknownError", data: { message: "Unexpected server error." } }), {
+          status: 500,
+        }),
+    })
+    expect(sample).toEqual({ outcome: "engine-unclassified", status: 500 })
+  })
+
+  test("引擎答 401 → engine-unclassified(协议外应答一律不授权 kill,保留真实 status)", async () => {
+    const sample = await probeCatalogMarker({
+      ...opts,
+      fetchImpl: async () => new Response("unauthorized", { status: 401 }),
+    })
+    expect(sample).toEqual({ outcome: "engine-unclassified", status: 401 })
+  })
+
   test("我们自己的超时 → probe-failed/probe-timeout,不冒充引擎的回答", async () => {
     // fetch 挂死(连 signal 都不尊重),探针必须靠自己的硬上界返回,并把失败记在自己头上。
     const sample = await probeCatalogMarker({
@@ -184,13 +244,15 @@ describe("catalog-liveness probe(真执行,fetch 注入)", () => {
 })
 
 // #564 接线锚(index.ts 是本仓唯一跑不进单测的文件,生产接线的最后一英里只能锁源码形状;
-// 决策行为的真闸门在上面的纯函数用例里)。断言五件事:
+// 决策行为的真闸门在上面的纯函数用例里)。断言六件事:
 // ① 恰好两处武装(boot 终态continuation + respawn 健康线之后),条件形状逐字锁定 ——
 //    boot 只在干净 ready 终态武装(injection-failed 不武装),respawn 同判据;
 // ② 决策被消费恰好一次(decideCatalogLiveness);
 // ③ kill-and-respawn 裁决真的接到 current.kill()(交给既有 self-heal respawn 路径);
 // ④ stop-and-report 裁决接到 recoveryService.register(显式恢复,不再自动 kill);
-// ⑤ killSidecar 与 handleSidecarExit 都停表(旧代探针不得打在新代身上)。
+// ⑤ killSidecar 与 handleSidecarExit 都停表(旧代探针不得打在新代身上);
+// ⑥ R1 Blocker:武装前判 ~/Alpha 存在(不存在 = 观测面不可用,不武装、绝不代建),
+//    且 indeterminate 弃权在 kill 分支**之前**被消费(弃权路径上不得出现 current.kill())。
 test("#564 接线锚:看门狗武装/停表/裁决消费必须留在 index.ts 的接线形状里", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
 
@@ -207,6 +269,19 @@ test("#564 接线锚:看门狗武装/停表/裁决消费必须留在 index.ts �
   expect(armBody).toContain('decision.action === "kill-and-respawn"')
   expect(armBody).toContain("current.kill()")
   expect(armBody).toContain("recoveryService.register")
+
+  // ⑥ 目录存在守卫:武装体内、armCatalogLiveness 之前(守卫失效 = 全新安装 60s 杀健康引擎)。
+  const guardAt = armBody.indexOf("if (!existsSync(alphaUserWorkspaceDir()))")
+  const armCallAt = armBody.indexOf("armCatalogLiveness(catalogLiveness")
+  expect(guardAt).toBeGreaterThan(-1)
+  expect(armCallAt).toBeGreaterThan(guardAt)
+  expect(armBody).toContain("workspace-dir-missing")
+  // ⑥ indeterminate 弃权:在 kill 分支之前消费,且它与 current.kill() 之间隔着 return。
+  const indeterminateAt = armBody.indexOf('decision.action === "indeterminate"')
+  const killBranchAt = armBody.indexOf('decision.action === "kill-and-respawn"')
+  expect(indeterminateAt).toBeGreaterThan(-1)
+  expect(indeterminateAt).toBeLessThan(killBranchAt)
+  expect(armBody).toContain("main.sidecar.catalog_liveness.indeterminate")
 
   const killFn = source.indexOf("async function killSidecar")
   const killFnEnd = source.indexOf("function endSessionGrants")
