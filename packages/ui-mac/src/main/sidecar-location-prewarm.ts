@@ -31,16 +31,17 @@ export type LocationPrewarmResult = { durationMs: number } & (
 
 export const INITIAL_LOCATION_PREWARM_TIMEOUT_MS = 2_000
 
+// #564:base 参数化 —— sidecar 进程内走 app.request(假 host 即可),main 侧 catalog-liveness
+// 看门狗(catalog-liveness.ts)对同一个 marker 端点发**真 HTTP**,URL 形状必须单一来源,不许
+// 在看门狗里手写一份迟早漂移的替身。
 export function initialLocationPrewarmRequest(
   directory: string,
   password: string,
   signal?: AbortSignal,
+  base: string = "http://alpha-sidecar.invalid",
 ): Request | undefined {
   if (!path.isAbsolute(directory)) return
-  const url = new URL(
-    `/api/provider/${encodeURIComponent(ALPHA_V2_CATALOG_READY_PROVIDER_ID)}`,
-    "http://alpha-sidecar.invalid",
-  )
+  const url = new URL(`/api/provider/${encodeURIComponent(ALPHA_V2_CATALOG_READY_PROVIDER_ID)}`, base)
   url.searchParams.set("location[directory]", directory)
   return new Request(url, {
     method: "GET",
