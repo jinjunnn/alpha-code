@@ -81,7 +81,17 @@ export function applyDefaultComposerModel(m: ComposerModel) {
  *
  * 归属的做法与草稿暂存同形(`session-workspace/session-dock-core` 的
  * `createComposerDraftStash`):composer 按会话 adopt / release。只登记**非默认**档位(默认档
- * 不占位),登记按 LRU 设上界 —— 越界回默认档,那是引擎自己的 build,永远是可解释的一档。
+ * 不占位),且**登记无损**——没有容量淘汰。
+ *
+ * #896:这里原先照抄草稿暂存写了个 32 项 LRU,并说「越界回默认档,那是引擎自己的 build,永远是
+ * 可解释的一档」——**那句话是错的**,与 #884 里被证伪的「丢登记只会多问一次」是同一形态。实读
+ * `packages/opencode/src/agent/agent.ts`:`build` 自陈 "The default agent. Executes tools based on
+ * configured permissions",而 `plan` 把 `edit` 的写口限死在 plan 目录。所以越界回落 build 不是
+ * 「回到安全默认」,是**放宽能力**:依次在 33 个会话里开计划,第 1 个就被挤掉,回到它时 chip 变回
+ * 普通档、请求也不再带 `agent=plan` —— 用户选的「只做计划、别动我的文件」被系统悄悄关掉了。
+ * 登记是「用户显式选过非默认档」的唯一凭据,不能有损。规模量级:一条登记 = 一把身份键 + 一个
+ * 档位名(百字节量级),且只有**显式开过非默认档**的会话才占位,与同文件里已经无界的 perm 那份、
+ * 以及会话草稿暂存同量级 —— 没有实测得出的规模问题,就不留一个会静默改语义的上界。
  *
  * #891:键是**仓内既有的 canonical 会话身份键** —— `session-workspace-core` 的
  * `identityKey(AlphaSessionIdentity)`(`serverKey\0directory\0sessionID`),与草稿暂存
@@ -90,7 +100,6 @@ export function applyDefaultComposerModel(m: ComposerModel) {
  * 两边共用一条登记(串档),会话删掉后又出现同 id 也会静默继承旧的只读档。本模块不认识身份的
  * 结构,只认宿主传进来的那把钥匙 —— 造钥匙的地方只有一处(`alpha-composer` 的 scope effect
  * 与 home 提交后的 seed),都过 `identityKey`。 */
-const AGENT_SCOPE_CAPACITY = 32
 const agentByScope = new Map<string, string>()
 /** 当前持有档位信号的会话身份键;null = 首页(新会话入口)、身份未定、或无人持有。 */
 let agentScopeOwner: string | null = null
@@ -100,14 +109,11 @@ let agentScopeOwner: string | null = null
 let agentScopeLease = 0
 
 function rememberScopedAgent(scopeKey: string, value: string | null) {
-  agentByScope.delete(scopeKey) // 重插到队尾(Map 保持插入序 → 队首 = 最旧,用作 LRU)
-  if (value === null) return // 默认档 = 不登记
-  agentByScope.set(scopeKey, value)
-  while (agentByScope.size > AGENT_SCOPE_CAPACITY) {
-    const oldest = agentByScope.keys().next().value
-    if (oldest === undefined) break
-    agentByScope.delete(oldest)
+  if (value === null) {
+    agentByScope.delete(scopeKey) // 默认档 = 不登记(显式切回 build 时要把旧登记删掉)
+    return
   }
+  agentByScope.set(scopeKey, value)
 }
 
 /** 挂载:接管该身份的档位(无登记 = 默认 build)。`null` = 首页或身份未定,一律回默认。返回本次
@@ -156,8 +162,8 @@ export function resetComposerAgentScopesForTests() {
  *
  * ① 默认值不同 —— 档位的默认是 `null`(引擎自己的 build),只读档的默认是 `"ask"`(引擎默认的
  *    逐次审批),所以「默认不登记」这条判的是 `=== "ask"`。
- * ② **只读档这一份没有容量上界。** 档位那份有(32,越界回落到引擎默认 build,那是安全方向);
- *    只读档不是。原先照抄了同一个 LRU,并在这里写着「丢登记只会多问一次,不会静默放松限制」——
+ * ② **只读档这一份没有容量上界**(#896 起档位那份也没有,两份至此逐条同形)。
+ *    原先照抄了草稿暂存的 LRU,并在这里写着「丢登记只会多问一次,不会静默放松限制」——
  *    **那句话是错的**:依次在 33 个会话里开只读,第 1 个就被淘汰,回到它时 chip 变回「请求审批」、
  *    请求也不再带 `alpha-readonly`。ask 确实不会未经批准就写盘,但**是系统替用户把只读关掉了**,
  *    而用户从没做过这个动作。登记是「用户显式开过只读」的唯一凭据,不能有损。 */

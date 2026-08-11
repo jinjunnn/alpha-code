@@ -2173,6 +2173,61 @@ describe("#570 档位按会话归属:切会话不把上一个会话的档位带�
       mounted.dispose()
     })
   })
+
+  /* ── #896 档位这一份登记也必须无损 ────────────────────────────────────────────────
+     #884 把**只读档**的容量淘汰取消了,档位(agent)那份的 32 上界当时被判成「安全方向,原样
+     不动」—— 那个判断是错的。实读 `packages/opencode/src/agent/agent.ts`:`build` 自陈
+     "The default agent. Executes tools based on configured permissions",而 `plan` 把 `edit`
+     的写口限死在 plan 目录。所以「越界回落到引擎默认 build」不是回到安全默认,而是**放宽能力**:
+     用户显式选的「只做计划、别动我的文件」被系统悄悄换成普通 agent,方向与 #884 修掉的
+     readonly → ask 完全一致。
+
+     判据与 ⑪ 同源、按那个精确的界跨过去:依次在 33 个会话开计划,回第 1 个。断言只认
+     **渲染出来的 chip**(`.a-chip-plan`)与 **`promptAsync` 真实载荷里的 `agent`**,
+     不断言 `composerAgent()` —— 只断内层信号的话,分流层照样把默认档塞进请求也会全绿。
+     回程逐个走完 33 个:只断 S1 的话,「淘汰的是别处那一条」这类实现能全绿。
+     这一条杀不掉的错误实现只有一种 —— 把上界从 32 换成某个更大的有限数;生产侧已不存在
+     任何上界常量,而按源码文本立断言是假闸门,故不写。 */
+  test("⑰ 依次在 33 个会话里开计划:一条都不许被淘汰成 build(系统不能替用户放宽能力)", async () => {
+    installApi()
+    const sdk = scopedSdk()
+    const [identity, setIdentity] = createSignal(identityFor("P1"))
+    const mounted = mountSession(sdk, identity)
+    await waitFor(() => expect(ta(mounted.host)).not.toBeNull())
+    shiftTab(ta(mounted.host))
+    await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+
+    // 32 是档位那份原来的 LRU 上界:P1 正好在第 33 个会话的登记落账时被挤掉。
+    for (let n = 2; n <= 33; n++) {
+      setIdentity(identityFor(`P${n}`))
+      await waitFor(() => expect(planChip(mounted.host)).toBeNull())
+      shiftTab(ta(mounted.host))
+      await waitFor(() => expect(planChip(mounted.host)).not.toBeNull())
+    }
+
+    // 回 P1 与回程同理:P33 的 chip 也是「计划」,等不到态变化,只能等 keyed 重挂真的换掉节点 ——
+    // 否则读到的是 P33 的 DOM,一个照旧淘汰的实现会假绿。
+    const beforeBack = ta(mounted.host)
+    setIdentity(identityFor("P1"))
+    await waitFor(() => expect(ta(mounted.host) === beforeBack).toBe(false))
+    expect(planChip(mounted.host)).not.toBeNull() // 用户看得见的那一半
+    await sendVia(mounted.host, "回到第一个会话") // 引擎收得到的那一半
+    await waitFor(() => expect(sdk.promptAsyncCalls).toHaveLength(1))
+    expect(sdk.promptAsyncCalls[0]).toMatchObject({ sessionID: "P1", agent: "plan" })
+
+    // 回程逐个核对:33 条登记全在,不是只保住了被点名的那一条。回程相邻两个会话的 chip 态相同,
+    // 「等 chip 变化」在这里等不到任何东西 —— 换成等**那个 textarea 节点被换掉**(按身份 keyed
+    // 重挂的真实产物),否则读到的可能还是上一个会话的 DOM,断言就成了自欺。
+    const lost: string[] = []
+    for (let n = 33; n >= 1; n--) {
+      const before = ta(mounted.host)
+      setIdentity(identityFor(`P${n}`))
+      await waitFor(() => expect(ta(mounted.host) === before).toBe(false))
+      if (planChip(mounted.host) === null) lost.push(`P${n}`)
+    }
+    expect(lost).toEqual([])
+    mounted.dispose()
+  })
 })
 
 // REQ-125 C558 复审第5-6轮 Major:v2 durable 发送(session.prompt)在途期间切会话,composer 卸载不能把
