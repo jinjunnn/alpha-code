@@ -20,13 +20,17 @@
 //   ⑤  (`#717`)`alpha` 分支保护要求的每个 context,都必须等于 alpha-ci 某个 job 的 `name:`;
 //       反过来每个 job 要么在那份记录里、要么在本文件里显式写明「不必需」。
 //   ⑥  (`#895`)每个必需 job 都必须在 `detect` 没给出结论时**照跑并变红**,而不是被 `needs`
-//       折成 skipped —— GitHub 把 skipped 记成「已满足」(实测,见下)。
+//       折成 skipped —— GitHub 把 skipped 记成「已满足」(实测,见下);
+//   ⑦  (`#890`)⑤ 比的是**手抄件**与 workflow;真源在仓外。scripts/assert-required-contexts.sh
+//       去问 GitHub 那份真的,三档结局(一致 / 漂移 / 未比对)各自可判 —— 判据在下面,
+//       用假的 `gh`(PATH 注入)驱动生产脚本本体,不断言它的源码文本。
 //
-// 删掉本文件会失去什么:上面六条全部退回「靠人记得」。CI 改一个 job/步骤名、加一步、
+// 删掉本文件会失去什么:上面七条全部退回「靠人记得」。CI 改一个 job/步骤名、加一步、
 // 或者有人把 alpha-check 的某一步删掉,都不再有任何东西变红。
 
-import { readFileSync } from "node:fs"
-import { resolve } from "node:path"
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join, resolve } from "node:path"
 import { describe, expect, test } from "bun:test"
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..", "..")
@@ -38,6 +42,8 @@ const GUARD_SCRIPT = readFileSync(resolve(REPO_ROOT, NORTH_STAR_GUARD), "utf8")
 const REQUIRED_CONTEXTS_FILE = readFileSync(resolve(REPO_ROOT, ".github/required-contexts.txt"), "utf8")
 /** `#895` 的判据本体 —— 四个必需 job 的第一步跑的就是这个文件。 */
 const DETECT_CLASSIFIED_SCRIPT = "scripts/assert-detect-classified.sh"
+/** `#890` 的判据本体 —— alpha-check.sh 第 [8/8] 步跑的就是这个文件。 */
+const REQUIRED_CONTEXTS_SCRIPT = "scripts/assert-required-contexts.sh"
 
 /**
  * alpha-ci.yml 里「有名字、且真的执行一条命令」的步骤。
@@ -141,6 +147,48 @@ function parseRequiredContexts(text: string): string[] {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith("#"))
+}
+
+// ── `#890` 的夹具:用假的 `gh` 驱动生产脚本本体 ────────────────────────────────
+// 刻意**不**在生产脚本里做「真源从哪来」的开关(env / 参数)。那种开关自己就是绕过口:
+// 在 alpha-check 里给它喂一份合意的清单,这道门就永远绿。改用 PATH 注入 —— 被测的是
+// 生产脚本原样的那条路径,连它怎么拼 `gh` 的参数、怎么解析输出都一起验到。
+
+/** 假 `gh` 的 stdout:与 2026-08-11 实测的三种形状同构(见脚本抬头)。 */
+function fakeGhStdout(contexts: string[], enabled = "true"): string {
+  const lines = [`enabled=${enabled}`, ...contexts.map((c) => `context=${c}`)]
+  return `cat <<'ALPHA_FAKE_GH'\n${lines.join("\n")}\nALPHA_FAKE_GH`
+}
+
+type RequiredContextsRun = { exitCode: number; out: string; argv: string[] }
+
+/** 跑 `scripts/assert-required-contexts.sh`(默认跑仓内那份生产脚本),`gh` 换成 `behaviour`。 */
+function runRequiredContexts(behaviour: string, root: string = REPO_ROOT): RequiredContextsRun {
+  const binDir = mkdtempSync(join(tmpdir(), "alpha-890-gh-"))
+  const argvFile = join(binDir, "argv.txt")
+  const shim = join(binDir, "gh")
+  writeFileSync(shim, `#!/usr/bin/env bash\nprintf '%s\\n' "$@" > ${JSON.stringify(argvFile)}\n${behaviour}\n`)
+  chmodSync(shim, 0o755)
+  try {
+    const r = Bun.spawnSync(["bash", resolve(root, REQUIRED_CONTEXTS_SCRIPT)], {
+      env: { PATH: `${binDir}:${process.env.PATH ?? "/usr/bin:/bin"}` },
+    })
+    const recorded = existsSync(argvFile) ? readFileSync(argvFile, "utf8").replace(/\n$/, "") : ""
+    const argv = recorded.length > 0 ? recorded.split("\n") : []
+    return { exitCode: r.exitCode ?? -1, out: `${r.stdout.toString()}${r.stderr.toString()}`, argv }
+  } finally {
+    rmSync(binDir, { recursive: true, force: true })
+  }
+}
+
+/** 把生产脚本原样复制到一棵临时树里,只换掉手抄件 —— 脚本按自己的位置解析仓根,故会读那一份。 */
+function sandboxWithSnapshot(snapshot: string): string {
+  const root = mkdtempSync(join(tmpdir(), "alpha-890-root-"))
+  mkdirSync(join(root, "scripts"), { recursive: true })
+  mkdirSync(join(root, ".github"), { recursive: true })
+  copyFileSync(resolve(REPO_ROOT, REQUIRED_CONTEXTS_SCRIPT), join(root, REQUIRED_CONTEXTS_SCRIPT))
+  writeFileSync(join(root, ".github/required-contexts.txt"), snapshot)
+  return root
 }
 
 /**
@@ -302,6 +350,126 @@ describe("#777 本地门与 alpha-ci 的对照表", () => {
       expect(jobNames, `NOT_REQUIRED_JOBS 登记了 alpha-ci 里不存在的 job:${name}`).toContain(name)
       expect(required, `${name} 同时被登记为「不必需」和分支保护必需 —— 两处矛盾`).not.toContain(name)
       expect(reason.trim().length, `${name} 的「不必需」理由为空`).toBeGreaterThan(0)
+    }
+  })
+
+  // ── `#890`:手抄件 ↔ **仓外真源** 的漂移判据 ────────────────────────────────
+  // 上面两条 `#717` 只把手抄件与 alpha-ci 的 job 名对齐 —— 两边一起错就一起自洽,而真正
+  // 决定「PR 能不能合」的那份清单在 GitHub 的分支保护设置里,没有任何东西比对它。
+  // 漏一条的后果是安静的:那道检查从此不再必需(红着也能合),仓内测试**全绿**;而且
+  // `#895` 那两条遍历的也是这份手抄件 ⇒ 漏掉的那条连 `!cancelled()` 的保护都没有。
+  //
+  // 真源只在**有鉴权**的地方够得着(CI 里够不着:fork PR 结构上拿不到 secrets),所以门落在
+  // scripts/alpha-check.sh 第 [8/8] 步。下面五条驱动**生产脚本本体**,`gh` 用 PATH 注入换掉:
+  // 生产代码里没有「真源从哪来」的开关(那种开关自己就是绕过口)。
+  test("`#890`:真源与记录逐条相同时绿 —— 先证明这个手段测得出「好」", () => {
+    const required = parseRequiredContexts(REQUIRED_CONTEXTS_FILE)
+    expect(required.length, ".github/required-contexts.txt 一条都没解析到").toBeGreaterThanOrEqual(4)
+    // 顺序打乱 + 首尾空白:GitHub 不保证顺序(文件抬头也这么写)。一个「顺序不同就报漂移」的
+    // 实现会天天假红,进而被 --no-verify 掉 —— 恒红的门等于没有门。
+    const noisy = [...required].reverse().map((c, i) => (i === 0 ? `  ${c}  ` : c))
+    const r = runRequiredContexts(fakeGhStdout(noisy))
+    expect(r.exitCode, `一致时不该拦(输出:${r.out})`).toBe(0)
+    expect(r.out).toContain("逐条相同")
+    expect(r.out).not.toContain("未比对")
+    // 跨解析器交叉验证:脚本自己数出来的条数,必须与本文件的 parseRequiredContexts 一致。
+    // 两处口径漂开(比如一边把行内 `#` 当注释)会让这道门比的是另一份清单。
+    expect(r.out, "脚本数出的条数与本文件的解析对不上 —— 两个解析器已经在读不同的东西").toContain(
+      `记录 ${required.length} 条`,
+    )
+  })
+
+  test("`#890`:真源与记录有差时必须红(退出码恰好 1),并点名差在哪条", () => {
+    const required = parseRequiredContexts(REQUIRED_CONTEXTS_FILE)
+    const dropped = required[0]
+    const extra = "bogus check nobody registered"
+    const cases: Array<[string, string, string[]]> = [
+      // 真源少一条 = 仓里以为它必需,其实不必需 ⇒ 它红着的 PR 照样能合。
+      ["真源少了一条", fakeGhStdout(required.filter((c) => c !== dropped)), [dropped]],
+      // 真源多一条 = 一道真必需的检查在仓内没登记 ⇒ #717/#895 的保护都盖不到它。
+      ["真源多了一条", fakeGhStdout([...required, extra]), [extra]],
+      // 保护还开着但一条 required 都没有 —— 与「读不到」必须分得开,所以判 1 不判 2。
+      ["真源一条都没有", fakeGhStdout([]), required],
+      // 分支保护被整个关掉。这是最该红的一刻:`branches/<b>/protection` 那个端点在这种状态下
+      // 回 404(实测),退出码与网络不通一样 ⇒ 会被伪装成「未比对」,所以生产脚本问的是
+      // `branches/<b>` —— 它回 200 + enabled=false。
+      ["分支保护被关掉", fakeGhStdout([], "false"), ["关的"]],
+    ]
+    for (const [label, behaviour, mustName] of cases) {
+      const r = runRequiredContexts(behaviour)
+      // 判**恰好 1**:退出码 2(未比对)也是非零,只断「非零」会让「漂移被报成读不到」全绿。
+      expect(r.exitCode, `${label}:必须判成漂移(1),实际 ${r.exitCode}。输出:${r.out}`).toBe(1)
+      for (const name of mustName) {
+        expect(r.out, `${label}:输出没点名 ${name} —— 只说「不一致」等于让人自己去猜`).toContain(name)
+      }
+    }
+  })
+
+  test("`#890`:真源读不到时必须说「未比对」,且不得报成绿", () => {
+    // 缺这一条,「catch 住所有错误然后返回成功」这个错误实现能满足上面两条。
+    const cases: Array<[string, string]> = [
+      ["网络不通(本机代理实测的那条错)", `echo 'Get "https://api.github.com/repos/…": EOF' >&2; exit 1`],
+      ["没装 gh", `echo 'bash: gh: command not found' >&2; exit 127`],
+      ["没登录 / 令牌无权限", `echo 'gh: Requires authentication (HTTP 401)' >&2; exit 1`],
+      // 退出 0 但 JSON 里没有 protection 字段(实测:repos/<repo> 就是这个形状)。
+      ["读到的 JSON 没有 protection", fakeGhStdout([], "null")],
+      // 退出 0 却什么都没输出 —— 一个「反正返回成功」的假 gh 长这样。
+      ["退出 0 却零输出", "exit 0"],
+    ]
+    for (const [label, behaviour] of cases) {
+      const r = runRequiredContexts(behaviour)
+      expect(r.exitCode, `${label}:未比对必须是自己的一档(2),不能与「一致」同码。输出:${r.out}`).toBe(2)
+      expect(r.out, `${label}:输出里必须出现「未比对」,静默跳过就是又一个看起来在测的假门`).toContain("未比对")
+      expect(r.out, `${label}:没读到真源却宣称一致`).not.toContain("逐条相同")
+    }
+  })
+
+  test("`#890`:跑的就是文件抬头写着的那条命令,且问的是 alpha-ci 服务的那条分支", () => {
+    // 锚点取两处**独立**的东西:命令取自手抄件抬头(人手对真源时照抄的就是那一条),
+    // 分支名取自 workflow 的触发分支(`#889` 同款)。不拿脚本自己的常量当期望值 —— 那是自指。
+    const documented = [...REQUIRED_CONTEXTS_FILE.matchAll(/^#\s+(gh api \S+ --jq '[^']*')\s*$/gm)].map((m) => m[1])
+    expect(documented.length, ".github/required-contexts.txt 抬头没有(或有多条)可解析的 gh api 命令").toBe(1)
+
+    const triggerBranches = [...WORKFLOW.matchAll(/^ {4}branches: \[([^\]]+)\]$/gm)].map((m) => m[1].trim())
+    expect(new Set(triggerBranches).size, `alpha-ci 服务多条分支:${triggerBranches}`).toBe(1)
+    expect(
+      documented[0],
+      `抬头那条命令问的不是 alpha-ci 服务的分支(origin/${triggerBranches[0]})—— 比的就不是这条线上的保护`,
+    ).toContain(`/branches/${triggerBranches[0]} --jq`)
+
+    const r = runRequiredContexts(fakeGhStdout(parseRequiredContexts(REQUIRED_CONTEXTS_FILE)))
+    const quote = (t: string) => (/^[A-Za-z0-9._/=:-]+$/.test(t) ? t : `'${t}'`)
+    expect(
+      `gh ${r.argv.map(quote).join(" ")}`,
+      "本地门实际发出的 gh 调用与文件抬头写着的那条不一致 —— 文档说的和门跑的不是一回事",
+    ).toBe(documented[0])
+  })
+
+  test("`#890`:比的是那个文件里的内容 —— 换掉手抄件,判决必须跟着变", () => {
+    // 少了这一条,一个把清单**写死在脚本里**的实现能满足上面全部断言(它今天恰好也是四条),
+    // 而那时 .github/required-contexts.txt 已经是摆设:改它不影响任何判断。
+    const custom = ["alpha-only check A", "alpha-only check B"]
+    const root = sandboxWithSnapshot(`# 抄件(夹具)\n\n${custom.join("\n")}\n`)
+    try {
+      const same = runRequiredContexts(fakeGhStdout(custom), root)
+      expect(same.exitCode, `换掉的手抄件与真源一致却判红:${same.out}`).toBe(0)
+      expect(same.out).toContain("记录 2 条")
+
+      const drift = runRequiredContexts(fakeGhStdout([custom[0]]), root)
+      expect(drift.exitCode, `换掉的手抄件与真源有差却没判红:${drift.out}`).toBe(1)
+      expect(drift.out, "点名的不是这份手抄件里的条目 —— 脚本读的是别的东西").toContain(custom[1])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+
+    // 空清单与任何真源比都恒「一致」。它必须自己红,而不是安静地变成一句空话。
+    const emptyRoot = sandboxWithSnapshot("# 只剩注释\n#\n\n")
+    try {
+      const r = runRequiredContexts(fakeGhStdout(custom), emptyRoot)
+      expect(r.exitCode, `手抄件被清空却没红:${r.out}`).toBe(1)
+      expect(r.out).toContain("0 条")
+    } finally {
+      rmSync(emptyRoot, { recursive: true, force: true })
     }
   })
 

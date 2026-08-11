@@ -1,10 +1,16 @@
 # `alpha` 分支保护当前要求的 status check context —— 仓内的一份**手抄快照**。
 #
 # ⚠️ 真源(SOT)不在这个文件里,也不在这个仓库里。它是 GitHub 的分支保护设置。
-#    取数命令(权威):
-#        gh api repos/jinjunnn/alpha-code/branches/alpha/protection \
-#          --jq '.required_status_checks.contexts[]'
-#    本文件最后一次与真源核对:2026-08-10T06:24:38Z(`#717`,四条逐字相同)。
+#    取数命令(权威。`#890` 起本地门 scripts/assert-required-contexts.sh 跑的**就是这一条**,
+#    逐字相同由 packages/ui-mac/src/main/local-gate-parity.test.ts 钉住 —— 文档说的和门跑的
+#    不是一回事时当场红):
+#        gh api repos/jinjunnn/alpha-code/branches/alpha --jq '"enabled=\(.protection.enabled)", (.protection.required_status_checks.contexts[]? | "context=\(.)")'
+#    为什么不问 `branches/alpha/protection`(实跑得出,不是推断):分支保护被整个**关掉**时
+#    它回 HTTP 404,退出码与「网络不通」一样 —— 最该变红的那一刻反而会被报成「未比对」。
+#    问 `branches/alpha` 则两种状态都是 200:保护关着时回 `enabled=false` + 零个 context。
+#    同源的坑:`.required_status_checks.contexts[]` 少那个 `?`,字段为 null 时 jq 报
+#    `cannot iterate over: null` 并非零退出,同样把灾难态伪装成读不到。
+#    本文件最后一次与真源核对:每次 `bash scripts/alpha-check.sh` 的第 [8/8] 步(`#890`)。
 #
 # 为什么还要抄一份(`#717`):这个值同时活在**仓外的 GitHub 设置**和**仓内 alpha-ci.yml
 # 的 job `name:`** 两处,而两处都没有声明自己是真源,也没有任何东西比对它们。后果实测过:
@@ -18,11 +24,16 @@
 #   ✅ 抓得住:有人改了 alpha-ci.yml 的 job 名 / 删了 job —— 也就是 `ebd29cda` 那一类,
 #      即真正咬过我们的那一类。判据在 packages/ui-mac/src/main/local-gate-parity.test.ts。
 #   ✅ 抓得住:新增一个 job 而没表态它必不必需(那条断言默认拒)。
-#   ❌ 抓不住:有人**只改 GitHub 设置**而不碰仓库。CI 里够不着真源 —— 本仓 public、
-#      读分支保护要带令牌,而 workflow 触发在 `pull_request`,fork PR 结构上拿不到 secrets。
-#   ❌ 抓不住:两侧被**一起**改错。那时本文件与 workflow 自洽,测试照绿。
-#   ⇒ 所以核对真源仍然是**人的动作**:改分支保护时,同一轮里改这个文件;定期用上面那条
-#      `gh api` 命令对一次。这是一条减速带,不是一道闸门。
+#   ✅(`#890`)抓得住:有人**只改 GitHub 设置**而不碰仓库 —— 但只在**跑得动 gh 的机器**上,
+#      也就是开发机 push 前的 scripts/alpha-check.sh 第 [8/8] 步。改了真源而没改本文件,
+#      下一次 push 当场红并点名差在哪条;分支保护被整个关掉同样红。
+#   ❌ 抓不住:CI 里。读分支保护要带令牌,而 alpha-ci 触发在 `pull_request` —— 本仓 public,
+#      fork PR **结构上**拿不到 secrets。在 CI 加这一步只会做出一个恒红或恒跳过的假门。
+#   ❌ 抓不住:没有 gh / 没登录 / 网络不通的那一次 push。那时第 [8/8] 步报「未比对」并让
+#      alpha-check 的总结行不再说「全绿」—— 它明说自己这次没检查,而不是静默放行。
+#   ❌ 抓不住:两侧被**一起**改错(真源与本文件同时改成同一个错的值)。那时三方自洽,全绿。
+#   ⇒ 所以:改分支保护时,同一轮里改这个文件。第 [8/8] 步会在下一次 push 时替你验这件事,
+#      它不替你验的是「这四条本身对不对」—— 那仍然是人的判断。
 #
 # 格式:每行一个 context,`#` 开头为注释。顺序无意义(GitHub 也不保证顺序)。
 
