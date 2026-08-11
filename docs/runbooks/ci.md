@@ -52,6 +52,13 @@ bash scripts/alpha-check.sh
   任何一次不在白名单里的合法上游改动,都会让这道门在**每个 PR** 上恒红(`#754` 那一类)。
   行为判据(造真的上游改动、跑守卫本体、断言它真的点名)在
   `packages/ui-mac/src/main/north-star-guard.test.ts`。
+- **本地跑时看到 `(warn: could not fetch origin/alpha …)` 怎么读**(`#913`)。守卫开跑前那条
+  `git fetch` 会间歇失败(实测约 3 次 1 次,手跑同一条命令 exit 0);失败时它降级用**本地上一次
+  拿到的** `origin/alpha` 当基准继续跑。**这不是假绿** —— 陈旧基准只把比较窗口撑得更宽 ⇒ 过报,
+  不漏报。紧跟着的那一行会告诉你这一跑到底量的是什么:
+  `baseline: last-known origin/alpha @ <sha> — dated <日期> (<多久以前>); window origin/alpha..HEAD = <N> commits`。
+  窗口越宽 = 越多与本分支无关的提交被算了进来;真要一个准的结论,`git fetch origin alpha` 成功后重跑。
+  CI 不走这条路:`Ensure origin/alpha is available` 是裸 fetch,失败即 job 红。
 - **bun 版本钉 `1.3.14`**(与 CI 一致,根 `package.json` 的 `packageManager`)。本机版本不同先对齐。
 - 根 `bun test` 被故意禁用(`do not run tests from root`)——测试按包跑,别在根跑。
 - Alpha Platform wire pin 不使用 `bun.lock`。`check:vendor` 要求

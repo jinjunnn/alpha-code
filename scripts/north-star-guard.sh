@@ -105,7 +105,21 @@ UPSTREAM_EXCLUDES=(
   ':(exclude)packages/core/src/tool/registry.ts'
 )
 
-git fetch --no-tags origin alpha --quiet 2>/dev/null || echo "    (warn: could not fetch origin/alpha — comparing against last-known origin/alpha)"
+# ── fetch 失败时的降级,以及它为什么必须自报家门(`#913`)───────────────────────────
+# 这条 fetch **间歇失败**(实测:`#889` 实现方约 3 次 1 次、主 session 复验 3 次撞到 1 次,
+# 手跑同一条命令 exit 0 —— 与 CLAUDE.md 记的 `api.github.com` 代理抖动同形)。失败时守卫按
+# 设计降级到「本地上一次拿到的 origin/alpha」继续跑,**方向是安全的**:陈旧基准只会把比较
+# 窗口撑得更宽 ⇒ 过报,不会漏报真违规。
+# 真正的问题是**可见性**:那行 warn 混在一整屏门输出里极易被略过,而「落后 1 个提交」与
+# 「落后 3 周」原来长得一模一样 ⇒「守卫今天绿」这句话的含义,取决于一个没人看得见的量。
+# 所以降级时把基准的身份与年龄一并报出来(在基准 ref 确认存在之后的那一段)。
+# CI 不走这条路:alpha-ci.yml 的 `Ensure origin/alpha is available` 步是裸 fetch,失败即 job
+# 红。降级只属于本地档。
+fetched=1
+if ! git fetch --no-tags origin alpha --quiet 2>/dev/null; then
+  fetched=0
+  echo "    (warn: could not fetch origin/alpha — comparing against last-known origin/alpha)"
+fi
 
 # 基准取不到就**当场红**,不是静默放行(`#889`)。原来的写法是
 # `git diff … origin/dev…HEAD … 2>/dev/null || true`:ref 不存在时 git 报错被吞掉、
@@ -115,6 +129,21 @@ if ! git rev-parse --verify --quiet origin/alpha >/dev/null; then
   echo "    ✗ 比较基准 origin/alpha 取不到 —— 本次守卫作废(不是通过)。"
   echo "      → 先 \`git fetch origin alpha\`;拿不到基准时这道门无法回答「这个分支改了哪些上游文件」。"
   exit 1
+fi
+
+# `#913`:降级时把「这一跑到底量的是什么」写进输出 —— 基准的身份(sha)、它有多旧、以及
+# 比较窗口因此有多宽。窗口宽度 = 有多少条提交落进了 `origin/alpha...HEAD`,也就是过报的量。
+# 注意这里报的都只能是**本地可知**的量:fetch 都失败了,真实远端领先多少条无从得知,所以
+# 报的是基准提交自己的日期与 `origin/alpha..HEAD` 的条数,**不是**「落后远端 N 条」。
+# 判据不在这段散文里:north-star-guard.test.ts 造「fetch 拿不到 + last-known 陈旧」的情形,
+# 断言输出里读得出基准 sha 与陈旧程度,并且 fetch 正常时这一段**不出现**(否则一个「无条件
+# 永远打印一句年龄」的实现也能满足前者)。
+if [ "$fetched" -eq 0 ]; then
+  base_sha="$(git rev-parse --short origin/alpha 2>/dev/null || echo '?')"
+  base_date="$(git log -1 --format=%cd --date=short origin/alpha 2>/dev/null || echo '?')"
+  base_age="$(git log -1 --format=%cr origin/alpha 2>/dev/null || echo 'unknown age')"
+  base_window="$(git rev-list --count origin/alpha..HEAD 2>/dev/null || echo '?')"
+  echo "      baseline: last-known origin/alpha @ ${base_sha} — dated ${base_date} (${base_age}); window origin/alpha..HEAD = ${base_window} commits"
 fi
 
 # committed delta (mirrors CI) ∪ working-tree edits (earlier local feedback)
