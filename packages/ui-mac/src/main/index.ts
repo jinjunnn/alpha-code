@@ -88,6 +88,17 @@ import {
   initialEngineRunawayGuardState,
   resetEngineRunawayGuard,
 } from "./engine-runaway-guard"
+// #564:catalog-liveness 看门狗(决策逻辑在 catalog-liveness.ts;此处只接线)。
+import {
+  CATALOG_LIVENESS_PROBE_INTERVAL_MS,
+  armCatalogLiveness,
+  decideCatalogLiveness,
+  disarmCatalogLiveness,
+  initialCatalogLivenessState,
+  resetCatalogLiveness,
+  probeCatalogMarker,
+} from "./catalog-liveness"
+import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
 // #408:session-grant 生命周期接线(会话边界 = sidecar 运行期;栅栏语义见 ext-session-grants.ts)。
 import { sessionGrantRegistry } from "./ext-session-grants"
 import type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
@@ -186,6 +197,7 @@ function useEnvProxy() {
 
 async function killSidecar(reason?: SidecarRespawnReason) {
   stopEngineRunawayMeter()
+  stopCatalogLivenessWatchdog()
   if (!server) return
   const current = server
   server = null
@@ -217,6 +229,11 @@ let selfHeal = initialSelfHealState()
 let selfHealTimer: NodeJS.Timeout | null = null
 let engineRunawayGuard = initialEngineRunawayGuardState()
 let engineRunawayTimer: NodeJS.Timeout | null = null
+// #564:catalog-liveness 看门狗状态(strikes 跨代保留,反无限 kill 循环 —— 退化代 uptime ≈
+// deadline ≥ SELF_HEAL_RESET_UPTIME_MS,self-heal 阶梯每次都被重置,上界只能由这里给)。
+let catalogLiveness = initialCatalogLivenessState()
+let catalogLivenessTimer: NodeJS.Timeout | null = null
+let catalogLivenessProbeInFlight = false
 let requestSidecarRespawn: ((reason: SidecarRespawnReason) => Promise<boolean>) | null = null
 let recoveryService: RecoveryService | null = null
 const sidecarGeneration = createSidecarGenerationState()
@@ -289,6 +306,7 @@ function handleSidecarExit(gen: number, code: number) {
   if (gen !== sidecarGen) return
   if (!server) return
   stopEngineRunawayMeter()
+  stopCatalogLivenessWatchdog()
   // #408:崩溃 = 会话结束(栅栏先行;respawn 后新会话从空集开始,grant 无从复活)。
   endSessionGrants("sidecar-exit")
   const plan = planSelfHeal(selfHeal, Date.now())
@@ -327,6 +345,15 @@ function stopEngineRunawayMeter() {
   if (engineRunawayTimer) clearInterval(engineRunawayTimer)
   engineRunawayTimer = null
   engineRunawayGuard = disarmEngineRunawayGuard(engineRunawayGuard)
+}
+
+// #564:sidecar 停止/退出时看门狗必须一起停(与 stopEngineRunawayMeter 同纪律),
+// 否则旧代的探针会打在下一代身上、或打在一个不存在的端口上白记失败。
+function stopCatalogLivenessWatchdog() {
+  if (catalogLivenessTimer) clearInterval(catalogLivenessTimer)
+  catalogLivenessTimer = null
+  catalogLivenessProbeInFlight = false
+  catalogLiveness = disarmCatalogLiveness(catalogLiveness)
 }
 
 function armEngineRunawayMeter(gen: number) {
@@ -945,6 +972,94 @@ const main = Effect.gen(function* () {
   const url = `http://${hostname}:${port}`
   const password = randomUUID()
 
+  // #564:catalog-liveness 看门狗接线(决策与探针分类全在 catalog-liveness.ts —— index.ts
+  // 跑不进单测,判定住在这里就只剩源码锚看得见)。存活性判据原本 = 「进程在 + ready IPC 已发
+  // + /global/health 200」,不覆盖「引擎活着但治理目录从未收敛、model.list 持续 0」:真机
+  // run 20260724T091738 该状态被动等到 t=225s 才被一次 respawn 救活。引擎 ready 终态之后,
+  // main 直接对引擎问 marker 探针(目录就绪的唯一证明,docs/architecture/
+  // 2026-08-10-catalog-readiness-signals.md);60s 窗口内从未 ready → kill 交给既有 self-heal
+  // respawn;窗口内任一次 ready → confirmed 永久解除。30min 内 3 次裁决 → 停止自动 kill,
+  // 转 Recovery incident(与 engine runaway 的 stop-and-report 同纪律,反无限 kill 循环)。
+  const armCatalogLivenessWatchdog = (gen: number) => {
+    stopCatalogLivenessWatchdog()
+    catalogLiveness = armCatalogLiveness(catalogLiveness, Date.now())
+    catalogLivenessTimer = setInterval(() => {
+      if (gen !== sidecarGen || !server) {
+        stopCatalogLivenessWatchdog()
+        return
+      }
+      if (catalogLivenessProbeInFlight) return
+      catalogLivenessProbeInFlight = true
+      void probeCatalogMarker({ url, password, directory: alphaUserWorkspaceDir() }).then((sample) => {
+        catalogLivenessProbeInFlight = false
+        // 探针在途期间世界可能已换代/停表 —— 迟到样本不得写进新代的账。
+        if (gen !== sidecarGen || !server || !catalogLivenessTimer) return
+        const decision = decideCatalogLiveness(Date.now(), sample, catalogLiveness)
+        catalogLiveness = decision.state
+        if (decision.action === "none") return
+        if (decision.action === "confirmed") {
+          stopCatalogLivenessWatchdog()
+          markStartupTimeline("main.sidecar.catalog_liveness.confirmed", {
+            generation: gen,
+            elapsedMs: decision.elapsedMs,
+            probes: decision.probes,
+          })
+          return
+        }
+        const current = server
+        stopCatalogLivenessWatchdog()
+        if (!current) return
+        markStartupTimeline("main.sidecar.catalog_liveness.degraded", {
+          generation: gen,
+          action: decision.action,
+          elapsedMs: decision.elapsedMs,
+          probes: decision.probes,
+          engineAnsweredNotReady: decision.engineNotReady,
+          probeFailures: decision.probeFailures,
+          strikes: catalogLiveness.strikes,
+        })
+        if (decision.action === "kill-and-respawn") {
+          writeLog(
+            "utility",
+            "engine ready but governed catalog never converged — killing sidecar for self-heal respawn",
+            {
+              elapsedMs: decision.elapsedMs,
+              probes: decision.probes,
+              engineAnsweredNotReady: decision.engineNotReady,
+              probeFailures: decision.probeFailures,
+              strikes: catalogLiveness.strikes,
+            },
+            "error",
+          )
+          current.kill()
+          return
+        }
+        // stop-and-report:不再自动 kill(退化实例仍在如实 serve「正在同步」,杀而不复只会更糟),
+        // 留给显式恢复。
+        writeLog(
+          "utility",
+          "governed catalog repeatedly never converged after ready — automatic respawn paused for explicit recovery",
+          { strikes: catalogLiveness.strikes },
+          "error",
+        )
+        if (!recoveryService || !mainWindow || mainWindow.isDestroyed()) return
+        const incident = recoveryService.register({
+          source: { kind: "engine", plan: { action: "give-up", state: selfHeal } },
+          senderID: mainWindow.webContents.id,
+          effects: {
+            [RECOVERY_ACTIONS.retryEngine]: async () => {
+              catalogLiveness = resetCatalogLiveness()
+              selfHeal = initialSelfHealState()
+              const applied = await requestSidecarRespawn?.("structural")
+              return applied ? { applied: true } : { applied: false, retryable: true }
+            },
+          },
+        })
+        if (incident) mainWindow.webContents.send("alpha-recovery-incident", incident)
+      })
+    }, CATALOG_LIVENESS_PROBE_INTERVAL_MS)
+  }
+
   yield* Effect.gen(function* () {
     logger.log("sidecar connection started", { url })
 
@@ -1059,7 +1174,12 @@ const main = Effect.gen(function* () {
         // ready 与 injection-failed 都算通过(token 随 fork 物化,{file:} 通道不经注入 ——
         // 与 respawn 侧 armRespawnGenerationTerminal 的返回值语义同构);failed(健康失败、
         // 30s 超时、spawn 在握手前失败)只释放抑制、绝不提交。
-        (terminal) => settleBootForkTokenGeneration(forkTokenGeneration, terminal !== "failed"),
+        (terminal) => {
+          settleBootForkTokenGeneration(forkTokenGeneration, terminal !== "failed")
+          // #564:看门狗只在干净 ready 终态时武装(injection-failed 不武装:配置整份丢失是
+          // 确定性缺失,respawn 修不了,武装只会白撞 strike 上界;它已有自己的 loud 终态)。
+          if (terminal === "ready" && spawnGen === sidecarGen) armCatalogLivenessWatchdog(spawnGen)
+        },
         // 终态生产者自身 rejected 也必须结算,否则抑制照样永久化(它已是全函数,这里是兜底)。
         () => settleBootForkTokenGeneration(forkTokenGeneration, false),
       )
@@ -1199,13 +1319,15 @@ const main = Effect.gen(function* () {
       // R1 Major3:spawn reject 时下面的 await 直接跳到 catch,没人再 await terminal ——
       // 挂一个吞异常的守卫,任何情况下都不会留下 unhandled rejection(main 进程有退出风险)。
       void terminal.catch(() => {})
-      const { listener } = await spawning
+      const { listener, injectionFailure } = await spawning
       server = listener
       armEngineRunawayMeter(spawnGen)
       sessionGrantRegistry.beginSession(spawnGen) // #408:respawn = 新会话,grant 恒从空集开始
       // B5 验收②:未健康不 reload —— reload 进死后端只会白屏(REQ-014 同族),留旧 renderer 状态。
       const healthy = await terminal
       commitSidecarTokenGeneration(forkTokenGeneration, healthy)
+      // #564:respawn 侧与 boot 同判据 —— 只有健康且注入完好才武装 catalog-liveness 看门狗。
+      if (healthy && !injectionFailure && spawnGen === sidecarGen) armCatalogLivenessWatchdog(spawnGen)
       if (healthy && mainWindow && !mainWindow.isDestroyed()) {
         if (shouldReloadRenderer(reason)) {
           markStartupTimeline("main.renderer.reload", {
