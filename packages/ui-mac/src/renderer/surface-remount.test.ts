@@ -208,17 +208,54 @@ describe("#565 surface 收敛不重挂 composer(REQ-109 第四闪机制回归闸
 })
 
 describe("#565 harness 复刻的原件形状锚点(renderer/index.tsx)", () => {
-  // App() 的响应图无法 import(render() 入口)。这些锚点不判行为,只判「复刻还对不对得上原件」:
-  // 任何人改掉 index.tsx 的这几处接线(比如把 surfaces 变回异步 admission、把 keyed 换到别的值上),
-  // 这里先红,提醒把 surface-remount-test-runtime.tsx 的复刻与判据一起更新。
+  // App() 的响应图无法 import(render() 入口)。这些锚点不判行为,只判「复刻还对不对得上原件」。
+  // 判据是**整段精确文本**而不是 presence 探针:第四闪的历史触发点(REQ-088 的 resolvedSurfaces
+  // admission)是「往被复刻区域里新增一个收敛源」—— presence 探针对新增全盲(旧四条锚点在
+  // `ready()` 并入新资源时一条不红,而 harness 跑的是自己的复刻,index.tsx 一个字节没被执行)。
+  // 三处咽喉逐字钉死:ready() 的收敛源集合、keyed 的 key 计算、外层门→keyed→AppInterface 的
+  // 连续文本(中间插任何新门都会打断连续性)。锚点红不代表行为坏,代表复刻过期了:
+  // 先把 surface-remount-test-runtime.tsx 的复刻同步到原件,再把这里的字面量一起更新。
   const entry = readFileSync(join(import.meta.dir, "index.tsx"), "utf8")
+  const replica = readFileSync(join(import.meta.dir, "surface-remount-test-runtime.tsx"), "utf8")
+
+  // ready() 整段:哪些资源的 loading 能拆掉整棵树,一字不差。独立字面量,不从被测文件里抽取。
+  const readyAnchor = [
+    "    const ready = createMemo(",
+    "      () => !defaultServer.loading && !sidecar.loading && !windowCount.loading && !locale.loading,",
+    "    )",
+  ].join("\n")
+
+  test("ready() 的收敛源集合被逐字钉死,且复刻与原件是同一段文本", () => {
+    // 在 ready() 里并入任何新的 `.loading`(资源重取 ⇒ ready 翻 false ⇒ 外层 Show 整棵拆毁重建,
+    // 即第四闪)都会当场打断这段字面量:
+    expect(entry).toContain(readyAnchor)
+    // 复刻用同一段文本 —— 复刻单方面漂移(今天真实发生过:少 `!locale.loading`)同样当场红:
+    expect(replica).toContain(readyAnchor)
+  })
 
   test("surfaces 仍是一次性同步组合,路由树仍 keyed 在 effectiveDefaultServer 上", () => {
     expect(entry).toContain("const surfaceComponents = createMemo<AppSurfaces>(() => ({")
-    expect(entry).toContain("<Show when={effectiveDefaultServer()} keyed>")
+    // keyed 的 key 计算整段:往这个 memo 里并收敛源同样会翻树。
     expect(entry).toContain(
-      "ServerConnection.Key.make(availableStartupServer(defaultServer.latest, wslServers.data))",
+      [
+        "    const effectiveDefaultServer = createMemo(() =>",
+        "      ServerConnection.Key.make(availableStartupServer(defaultServer.latest, wslServers.data)),",
+        "    )",
+      ].join("\n"),
     )
+    // 外层门 → keyed → AppInterface 的连续文本:在 ready() 之外新加一道收敛门(包一层 Show)、
+    // 或在 keyed 与 AppInterface 之间再插一层,都会打断连续性:
+    expect(entry).toContain(
+      [
+        "    return (",
+        "      <Show when={ready()} fallback={splash}>",
+        "        <Show when={effectiveDefaultServer()} keyed>",
+        "          {(key) => (",
+        "            <AppInterface defaultServer={key} servers={servers()} router={MemoryRouter} surfaces={surfaceComponents()}>",
+      ].join("\n"),
+    )
+    // 整个 index.tsx 只允许这一个 keyed Show:
+    expect(entry.match(/keyed/g)?.length).toBe(1)
     // REQ-089 删掉的异步 admission 不得回魂:
     expect(entry).not.toContain("resolvedSurfaces")
     expect(entry).not.toContain("surfaces.resolve")

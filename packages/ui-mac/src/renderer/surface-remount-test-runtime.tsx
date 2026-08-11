@@ -342,11 +342,17 @@ export function AlphaSurfaceShell() {
   const [windowCount] = createResource(() => window.api.getWindowCount())
   const [sidecar] = createResource(() => window.api.awaitInitialization())
   const [defaultServer] = createResource(async () => defaultServerChoice)
+  // 原件 ready() 的第四个收敛源(index.tsx 的 loadLocale)。值的消费(AppBaseProviders 的
+  // locale prop)不在命题上,已裁;但 loading 边必须在 —— 它进 ready(),锚点钉的原件文本里有它,
+  // 复刻少了它就是审计点名过的那种静默漂移。
+  const [locale] = createResource(async () => "harness-locale")
 
   function App() {
     const wslServers = useWslServers()
 
-    const ready = createMemo(() => !defaultServer.loading && !sidecar.loading && !windowCount.loading)
+    const ready = createMemo(
+      () => !defaultServer.loading && !sidecar.loading && !windowCount.loading && !locale.loading,
+    )
     const servers = createMemo(() => {
       const data = initializationData(sidecar)
       const list: ServerConnection.Any[] = []
