@@ -21,6 +21,7 @@ import { isEphemeralLocalServerUrl } from "../shared/ephemeral-server-url"
 import { ensureEngineScratchCwd } from "./engine-scratch-cwd"
 import { markStartupTimeline } from "./startup-timeline"
 import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
+import { buildSidecarStopCommand, type SidecarStopMode } from "./sidecar-stop"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -38,7 +39,9 @@ type SidecarMessage =
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
-export type SidecarStopMode = "graceful" | "token-rotation"
+// 形状与两侧的读写都住在 ./sidecar-stop(sidecar.ts 消费同一份);此处只做再导出,
+// 让既有 `import { SidecarStopMode } from "./server"` 的调用点不必改。
+export type { SidecarStopMode }
 export type SidecarListener = { stop: (mode?: SidecarStopMode) => Promise<void>; kill: () => void }
 
 const SIDECAR_SERVICE_NAME = "opencode server"
@@ -47,6 +50,11 @@ const SIDECAR_STOP_TIMEOUT = 6_000
 // #858:token-only 换血已经会如实中断活动流并保留 renderer/draft。给旧请求
 // 一个很短的收口机会,但不能让它阻塞新 token 的 sidecar 整整 6s。结构换血和退出
 // 仍用上面的完整 graceful 预算。
+//
+// 这个数是**兜底**,不是正常路径:正常路径下停止命令带着 `closeActiveConnections`,
+// sidecar 主动关掉活动连接后自己退出,远早于此。它只在 sidecar 连强关都做不完(引擎卡死)
+// 时才到期,而到期意味着 SIGTERM —— 把 sidecar 自己的 finalizer 砍在半路。
+// 换句话说:主动关连接是修法,这个 timer 是安全网;别把安全网当修法。
 const SIDECAR_TOKEN_ROTATION_STOP_TIMEOUT = 500
 
 type SpawnLocalServerOptions = {
@@ -408,10 +416,12 @@ export async function spawnLocalServer(
       kill: () => {
         if (!exited) child.kill()
       },
-      stop: (mode = "graceful") => {
+      stop: (mode: SidecarStopMode = "graceful") => {
         if (stopping) return stopping
         if (exited) return Promise.resolve()
-        child.postMessage({ type: "stop" })
+        // #858:停止原因必须过进程边界 —— 关不关活动连接的开关在 sidecar 那一侧的
+        // `listener.stop(close)` 上,main 这边只有 timer,而 timer 到期 = SIGTERM,不是"关连接"。
+        child.postMessage(buildSidecarStopCommand(mode))
         const timeoutMs = mode === "token-rotation" ? SIDECAR_TOKEN_ROTATION_STOP_TIMEOUT : SIDECAR_STOP_TIMEOUT
         stopping = Promise.race([
           exit.promise.then(() => undefined),
