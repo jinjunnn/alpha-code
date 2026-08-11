@@ -190,7 +190,18 @@ workflow 触发在 `pull_request`,fork PR 拿不到 secrets)。这份记录**抓
 | --- | --- | --- | --- |
 | `pull_request` | `merge-base(base.sha, head.sha)` → `head.sha` | 三点 | `base.sha` 是移动中的 tip,只有分叉点才回答「这个 PR 自己改了什么」 |
 | `push` | `before` → `sha` | **两点(不动)** | 这对 SHA 本来就是同一条线上的前后两点,语义是「这次 push 推进了什么」,没有分叉可言 |
-| 空 base / base 不可达 / 无共同祖先 | 空树 | — | fail-closed:一切都算改动 ⇒ 跑全量。反向(算成 docs-only)= 在看不懂的形状上把所有门关掉 |
+| 空 base / base 不可达 | 空树,分类照跑 | — | 「这次推进了什么」无从谈起,拿空树把文件列表收全 |
+| 无共同祖先 | 空树,**且结论直接钉成 `code=true`** | — | fail-closed:一切都算改动 ⇒ 跑全量。反向(算成 docs-only)= 在看不懂的形状上把所有门关掉 |
+
+**`#897` 修的正是这最后一行:fail-closed 说的是结论,不是基准。** `#717` 只做了换基准那一半 ——
+把 base 换成空树,只保证**文件列表**是 HEAD 的全部,不保证**结论**是 `code=true`;分类器随后照跑
+同一套规则,于是一条**纯文档的 orphan 分支**仍然得到 `code=false`,二十多道挂在 `code == 'true'`
+上的门在一个我们看不懂的形状上被集体关掉,而 job 报绿。脚本当时同时打印 `everything counts as
+changed` 与 `code=false`,自相矛盾。上面那条判据此前也测不出这件事:`git checkout --orphan`
+**只换 HEAD,不动索引与工作树**,夹具残留的 `.ts` 让用例拿到 `code=true` —— 它验的是残留文件,
+不是 fail-closed(清树后在修复前的实现上当场红)。
+**倒数第二行(空 base / base 不可达)刻意不动**:那是另一个条件,且本仓 HEAD 恒含 `.ts`,
+走不到「全量文件列表却分类成 docs-only」这个状态。
 
 逻辑因此从 workflow 的内联 shell 搬进 [`scripts/detect-changed-scope.sh`](../../scripts/detect-changed-scope.sh)。
 **唯一的理由是让它有判据** —— 内联时它一个判据都没有,而断言 YAML 文本按本仓定义是假闸门。
