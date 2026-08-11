@@ -10,9 +10,12 @@
 // 所以这里把它变成断言:
 //   ①  alpha-ci 的每一个代码步,都必须登记在 alpha-check.sh 的 CI_STEPS 对照表里(反之亦然);
 //   ②  登记的档位只能是 MIRRORED / SUPERSET:<理由> / DEGRADED:<理由> —— 没有「静默不跑」这一档;
-//   ③  两处的 UPSTREAM_PATHS 与 ADR-033 收编白名单必须逐条相同(`#637` 退出条件 3:
-//       ADR-033 落地时只同步了 paths、白名单漏了,于是本地 north-star 在干净 alpha 上恒假红,
-//       人人 `--no-verify`。修好了但没有防漂断言 = 下一次收编重演);
+//   ③  UPSTREAM_PATHS 与 ADR-033 收编白名单**只有一处**:CI 与本地都调用
+//       `scripts/north-star-guard.sh`,workflow 里不得再出现第二份副本(`#637` 退出条件 3 的
+//       升级版 —— 当时是两份内联清单靠逐行比对维持,ADR-033 落地时只同步了 paths、白名单漏了,
+//       本地 north-star 在干净 alpha 上恒假红、人人 `--no-verify`;`#889` 把那一类漂移从结构上消掉);
+//   ③′ (`#889`)守卫的比较基准 = 这个 workflow 服务的那条分支,且 fetch 与 diff 用同一条 ref
+//       —— 守卫的**行为**判据不在本文件,在 packages/ui-mac/src/main/north-star-guard.test.ts;
 //   ④  `assert gate files` 这一步不得因为前一步红而被跳过(GitHub step 默认条件是 success())。
 //   ⑤  (`#717`)`alpha` 分支保护要求的每个 context,都必须等于 alpha-ci 某个 job 的 `name:`;
 //       反过来每个 job 要么在那份记录里、要么在本文件里显式写明「不必需」。
@@ -29,6 +32,9 @@ import { describe, expect, test } from "bun:test"
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..", "..")
 const WORKFLOW = readFileSync(resolve(REPO_ROOT, ".github/workflows/alpha-ci.yml"), "utf8")
 const SCRIPT = readFileSync(resolve(REPO_ROOT, "scripts/alpha-check.sh"), "utf8")
+/** `#889`:north-star 守卫本体 —— CI 与本地跑的是同一份字节。 */
+const NORTH_STAR_GUARD = "scripts/north-star-guard.sh"
+const GUARD_SCRIPT = readFileSync(resolve(REPO_ROOT, NORTH_STAR_GUARD), "utf8")
 const REQUIRED_CONTEXTS_FILE = readFileSync(resolve(REPO_ROOT, ".github/required-contexts.txt"), "utf8")
 /** `#895` 的判据本体 —— 四个必需 job 的第一步跑的就是这个文件。 */
 const DETECT_CLASSIFIED_SCRIPT = "scripts/assert-detect-classified.sh"
@@ -80,7 +86,7 @@ function line2prop(text: string, cur: { name?: string; run?: boolean; condition?
  * 不是门的步骤:它们把环境准备好,不判任何东西。**显式登记**,新加一个就必须在这里表态 ——
  * 否则默认被当成门,少一条对照即红(咽喉对新成员默认拒绝)。
  */
-const NON_GATE_STEPS = new Set(["detect|Classify diff (code vs docs-only)", "upstream-guard|Ensure origin/dev is available"])
+const NON_GATE_STEPS = new Set(["detect|Classify diff (code vs docs-only)", "upstream-guard|Ensure origin/alpha is available"])
 
 /**
  * alpha-ci.yml 里每个 job 的 `name:` —— 也就是 GitHub 上那一格 check 的**显示名**,
@@ -171,7 +177,7 @@ function parseLedger(script: string): Array<{ job: string; name: string; status:
 
 function bashArrayItems(script: string, varName: string): string[] {
   const block = new RegExp(`^${varName}=\\(\\n([\\s\\S]*?)^\\)$`, "m").exec(script)
-  if (!block) throw new Error(`scripts/alpha-check.sh 里找不到 ${varName}=( … )`)
+  if (!block) throw new Error(`找不到 ${varName}=( … )`)
   return [...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1])
 }
 
@@ -206,17 +212,58 @@ describe("#777 本地门与 alpha-ci 的对照表", () => {
     }
   })
 
-  test("#637 退出条件 3:UPSTREAM_PATHS 与 ADR-033 收编白名单两处逐条相同", () => {
-    const ciPaths = /UPSTREAM_PATHS:\s*"([^"]+)"/.exec(WORKFLOW)?.[1].split(/\s+/)
-    const shPaths = /^UPSTREAM_PATHS="([^"]+)"/m.exec(SCRIPT)?.[1].split(/\s+/)
-    expect(ciPaths, "alpha-ci.yml 里没解析到 env.UPSTREAM_PATHS").toBeDefined()
-    expect(shPaths).toEqual(ciPaths!)
+  // ── `#637` → `#889`:从「两处逐条相同」升级成「只有一处」──────────────────────
+  // `#637` 的原判据是逐行比对 CI 内联 shell 与 alpha-check.sh 里**两份** UPSTREAM_PATHS +
+  // ADR-033 收编白名单。那是枚举比对 —— 对新成员默认放行,只在两边都被解析到时才成立。
+  // `#889` 把守卫本体收进 scripts/north-star-guard.sh,CI 与本地跑同一份字节 ⇒ 那一类漂移
+  // 在结构上不存在。本条改为守住这个前提:workflow 必须**调用**它,且不得留第二份副本。
+  test("#889:CI 的 north-star 步跑的是共用脚本本体,workflow 里没有第二份清单", () => {
+    const guardStep = parseWorkflowSteps(WORKFLOW).find((s) => s.name === "Fail on any modification to upstream package files")
+    expect(guardStep, "alpha-ci.yml 里找不到 north-star 守卫步").toBeDefined()
+    expect(
+      WORKFLOW.includes(`run: bash ${NORTH_STAR_GUARD}`),
+      `alpha-ci 的守卫步没有调用 ${NORTH_STAR_GUARD} —— 它又长回了一份自己的副本`,
+    ).toBe(true)
 
-    const ciExcludes = [...WORKFLOW.matchAll(/':\(exclude\)([^']+)'/g)].map((m) => m[1])
-    const shExcludes = bashArrayItems(SCRIPT, "UPSTREAM_EXCLUDES").map((s) => s.replace(":(exclude)", ""))
-    // 解析手段自检:两边都必须真解析出内容,否则 `[] === []` 会给一条假绿。
-    expect(ciExcludes.length).toBeGreaterThanOrEqual(20)
-    expect(shExcludes, "本地 north-star 的收编白名单与 CI 漂移了 —— 干净 alpha 上会恒假红(#637)").toEqual(ciExcludes)
+    // 第二份真源默认拒:workflow 里再出现 `:(exclude)` 或 UPSTREAM_PATHS 定义,就是有人把
+    // 清单抄了回去(`#637` 咬人的那个形状:抄回去之后两边可以各自漂移,而没有任何东西变红)。
+    expect([...WORKFLOW.matchAll(/':\(exclude\)([^']+)'/g)].map((m) => m[1]), "workflow 里又出现了收编白名单副本").toEqual([])
+    expect(/UPSTREAM_PATHS\s*[:=]/.test(WORKFLOW), "workflow 里又出现了 UPSTREAM_PATHS 定义").toBe(false)
+
+    // 清单本身必须真的在脚本里(解析自检:脚本被清空时上面两条会空对空地绿)。
+    expect(/^UPSTREAM_PATHS="([^"]+)"/m.exec(GUARD_SCRIPT)?.[1].split(/\s+/).length, "守卫脚本里没解析到 UPSTREAM_PATHS").toBeGreaterThanOrEqual(8)
+    expect(bashArrayItems(GUARD_SCRIPT, "UPSTREAM_EXCLUDES").length, "守卫脚本里的 ADR-033 收编白名单没解析到").toBeGreaterThanOrEqual(20)
+  })
+
+  // ── `#889`:比较基准只有一个家 ────────────────────────────────────────────────
+  // 缺陷形态:守卫的基准写死 `origin/dev`(上游纯镜像),而这道门要回答的是「**这个 PR
+  // 自己**改了上游文件吗」—— 基准只能是它的目标分支。同一个 alpha-check.sh 里 docs gate
+  // 用的却是 `origin/alpha`:同一个脚本,两套基准。
+  // 这一条是**防漂**断言,不是守卫的行为判据(行为判据在 north-star-guard.test.ts,它造一个
+  // 只落在 dev 窗口里的上游改动,断言守卫不点名它)。锚点刻意取 workflow 自己的触发分支 ——
+  // 不是把两个可以一起改错的值互相比对(自指等价链)。
+  test("#889:守卫基准 = 这个 workflow 服务的分支,且 fetch 与 diff 是同一条 ref", () => {
+    const triggerBranches = [...WORKFLOW.matchAll(/^ {4}branches: \[([^\]]+)\]$/gm)].map((m) => m[1].trim())
+    expect(triggerBranches.length, "alpha-ci.yml 里没解析到 on: push/pull_request 的 branches").toBeGreaterThanOrEqual(2)
+    expect(new Set(triggerBranches).size, `alpha-ci 服务多条分支,守卫基准该取哪条需要一个裁决:${triggerBranches}`).toBe(1)
+    const target = triggerBranches[0]
+
+    const guardBaseline = /--diff-filter=DMR --name-only (\S+)\.\.\.HEAD/.exec(GUARD_SCRIPT)?.[1]
+    expect(guardBaseline, "守卫脚本里没解析到 `<ref>...HEAD` 的比较基准").toBeDefined()
+    expect(guardBaseline, `守卫基准不是 alpha-ci 服务的那条分支(origin/${target})—— 它量的就不是「这个 PR 改了什么」`).toBe(
+      `origin/${target}`,
+    )
+
+    // 连带的 fetch/ensure 步:取回来的 ref 与用来 diff 的 ref 必须同一条,否则 CI 上那一步
+    // 在给一条根本不参与判断的 ref 做准备,而真正的基准可能压根没被取回。
+    const guardFetch = /git fetch --no-tags origin (\S+)/.exec(GUARD_SCRIPT)?.[1]
+    expect(guardFetch, "守卫脚本里没解析到 git fetch").toBe(target)
+    const ciFetch = /run: git fetch --no-tags origin (\S+)/.exec(WORKFLOW)?.[1]
+    expect(ciFetch, "alpha-ci 的 `Ensure origin/… is available` 步取的不是守卫要用的那条 ref").toBe(target)
+
+    // 同一个 alpha-check.sh 内部也不许再有第二套基准(`#889` 票面点名的那句「同一脚本两套基准」)。
+    const docsBaseline = /--diff-filter=d (\S+)\.\.\.HEAD/.exec(SCRIPT)?.[1]
+    expect(docsBaseline, "alpha-check.sh 的 docs gate 里没解析到比较基准").toBe(`origin/${target}`)
   })
 
   // ── `#717`:required context 名的防漂 ──────────────────────────────────────
