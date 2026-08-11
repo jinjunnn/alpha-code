@@ -46,15 +46,17 @@ if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
   use_merge_base=0
 fi
 
+no_merge_base=0
 if [ "$use_merge_base" = 1 ]; then
   # 显式 merge-base 而不是 `git diff base...head`:后者在没有共同祖先时直接 fatal,
-  # 一步失败在这里等于「必需检查又不产生结论」——正是本票要消灭的状态。取不到分叉点就
-  # fail-closed 回落到空树(⇒ 一切都算改动 ⇒ code=true ⇒ 跑全量),红也红在真闸门上。
+  # 一步失败在这里等于「必需检查又不产生结论」——正是 `#717` 要消灭的状态。取不到分叉点就
+  # fail-closed:回落到空树把 md 收全,并**把结论直接钉成 code=true**(见下面 `no_merge_base`)。
   if merge_base="$(git merge-base "$base" "$head" 2>/dev/null)" && [ -n "$merge_base" ]; then
     base="$merge_base"
   else
-    echo "::warning::no merge base between $base and $head — falling back to the empty tree (everything counts as changed)"
+    echo "::warning::no merge base between $base and $head — everything counts as changed (code=true, full CI)"
     base="$(git hash-object -t tree /dev/null)"
+    no_merge_base=1
   fi
 fi
 
@@ -84,6 +86,16 @@ while IFS= read -r f; do
     *) code=true ;;                                   # anything else → full CI
   esac
 done <<< "$files"
+
+# `#897`:**fail-closed 说的是结论,不是基准。** 上面把 base 换成空树,只保证**文件列表**是
+# HEAD 的全部;分类器随后照跑同一套规则,于是一个纯文档的 orphan 分支仍然得到 code=false ——
+# 在一个我们看不懂的形状上,把二十多道挂在 `code == 'true'` 上的闸门集体关掉,而 job 报绿。
+# (`#717` 只做了换基准那一半,warning 里写着 everything counts as changed,输出却是 false。)
+# 没有共同祖先时,「这次变更改了什么」本来就无从谈起,唯一安全的答案是「全都改了」。
+if [ "$no_merge_base" = 1 ]; then
+  code=true
+fi
+
 echo "code=$code" >> "$GITHUB_OUTPUT"
 echo "md=$(echo $md | xargs)" >> "$GITHUB_OUTPUT"
 echo "→ code=$code ; md=[$(echo $md | xargs)]"

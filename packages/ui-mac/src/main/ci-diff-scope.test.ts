@@ -173,10 +173,40 @@ describe("#717 detect 的 diff 基准", () => {
     expect(classification.code, `push 支路的 diff 口径被改动了:\n${classification.stdout}`).toBe("true")
   })
 
-  test("没有共同祖先时 fail-closed:回落空树 ⇒ code=true", () => {
+  test("没有共同祖先时 fail-closed:一切算改动 ⇒ code=true", () => {
     const fixture = staleDocsBranchFixture()
+    // 两次分类喂**同一份纯文档载荷**,唯一的差别是「有没有共同祖先」。结论的差别因此
+    // 只能归给这一条,不能归给别的。
+    const payload = { "docs/orphan.md": "# orphan\n" }
+
+    // ── 对照组:有共同祖先。必须**保持** code=false ────────────────────────────
+    // 少了这半边,「无条件 code=true」这个错误实现能满足下面那条断言 —— 而它会让每个
+    // 纯文档 PR 都跑全量,正是 `#717` 修掉的那件事。
+    git(fixture.repo, ["checkout", "-q", "-b", "docs-control", fixture.seed])
+    const control = commit(fixture.repo, "same docs-only payload, on a branch that shares history", payload)
+    const shared = classify(fixture.repo, pullRequest(fixture.mainline, control))
+    expect(shared.code, `有共同祖先的纯文档分支被判成 code=true —— fail-closed 漏到了正常路径上:\n${shared.stdout}`).toBe(
+      "false",
+    )
+
+    // ── 实验组:同一份载荷,换成一条没有共同祖先的根 ──────────────────────────
+    // `git checkout --orphan` **只换 HEAD,不动索引与工作树**:上面那些 .ts 会被原样提进这个
+    // 「无关」的根。`#717` 的原用例漏了清树,于是它断言到的 `code=true` 来自残留的
+    // packages/ui-mac/src/{seed,mainline}.ts,而不是 fail-closed —— 用例误绿,验的是残留文件。
+    // 靶心必须是**纯文档**的 orphan:那时「按 HEAD 的文件重跑同一套分类」的实现给出
+    // code=false(实测:`#897` 修复前本用例在清树后当场红),只有真的把结论钉成 true 才过得去。
     git(fixture.repo, ["checkout", "-q", "--orphan", "unrelated"])
-    const orphan = commit(fixture.repo, "unrelated root", { "docs/orphan.md": "# orphan\n" })
+    git(fixture.repo, ["rm", "-rqf", "."])
+    // 断言树真的空了。少这一步就是原地复制本票要修的那个 bug —— 夹具脏不脏,不能靠"我写了
+    // 一条 rm"这种意图来判,要靠量。
+    expect(git(fixture.repo, ["ls-files"]), "orphan 夹具的索引没清干净").toBe("")
+    expect(git(fixture.repo, ["status", "--porcelain", "-uall"]), "orphan 夹具的工作树没清干净").toBe("")
+
+    const orphan = commit(fixture.repo, "unrelated root", payload)
+    expect(git(fixture.repo, ["ls-tree", "-r", "--name-only", "HEAD"]), "orphan 提交里混进了非文档文件").toBe(
+      "docs/orphan.md",
+    )
+
     const classification = classify(fixture.repo, pullRequest(fixture.mainline, orphan))
     // 取不到分叉点时宁可跑全量。反向(算成 docs-only)= 在一个我们看不懂的形状上把所有闸门关掉。
     expect(classification.code, `无共同祖先时没有 fail-closed:\n${classification.stdout}`).toBe("true")
