@@ -32,7 +32,7 @@ bash scripts/alpha-check.sh
 
 | 关 | 本地步骤 | CI job | 失败含义 |
 |---|---|---|---|
-| **北极星守卫**(零改上游) | `[1/7]`;等价 `git diff --diff-filter=DMR --name-only origin/dev...HEAD -- <上游 8 包>` 必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
+| **北极星守卫**(零改上游) | `[1/7]` `scripts/north-star-guard.sh`;等价 `git diff --diff-filter=DMR --name-only origin/alpha...HEAD -- <上游 8 包>` 必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
 | **NUL 字节闸** | `[2/7]` `scripts/assert-no-nul-bytes.py` | 同上 job | 字面 NUL 让 `grep` 对整个文件静默失明(`#760`) |
 | **typecheck**(三个 alpha 包) | `[3/7]` contracts-consumer + ext + ui-mac | `typecheck (alpha packages)` | 类型不过 |
 | **契约锁 + 单元测试** | `[4/7]` `check:vendor` + `bun-test-floor.sh` × 3(15 / 100 / 3000) | `unit tests (alpha packages)` | vendored hash、producer/consumer fixture 或运行时守卫回归 |
@@ -40,9 +40,18 @@ bash scripts/alpha-check.sh
 | **seed assets** | `[6/7]` `scripts/assert-seed-assets.sh` | `seed assets present` | 打包资源被静默删除(B7/B15) |
 | **docs gate** | `[7/7]` `scripts/check-doc-links.py <改动的 md>` | `docs gate` | Markdown 相对链接断了 |
 
-- **上游包** = `packages/{opencode,core,server,tui,sdk,protocol,schema,client}`(**8 个**,见 alpha-ci.yml
-  `env.UPSTREAM_PATHS`;`app`/`ui` 已按 ADR-020 移出守卫,`protocol`/`schema`/`client` 按 ADR-033 补入)。
-  这份清单与 24 条 ADR-033 收编白名单,两处必须逐条相同 —— 由 `local-gate-parity.test.ts` 判(`#637`)。
+- **上游包** = `packages/{opencode,core,server,tui,sdk,protocol,schema,client}`(**8 个**;`app`/`ui`
+  已按 ADR-020 移出守卫,`protocol`/`schema`/`client` 按 ADR-033 补入)。这份清单与 ADR-033 收编
+  白名单的**唯一真源**是 [`scripts/north-star-guard.sh`](../../scripts/north-star-guard.sh) ——
+  CI 与本地 `alpha-check.sh` 调用的是同一份字节(`#889`;此前是两份内联副本靠 `local-gate-parity.test.ts`
+  逐行比对维持,`#637` 咬过一次)。workflow 里再出现第二份副本即红,同样由该文件判。
+- **比较基准 = `origin/alpha`**(`#889`)。这道门要回答的是「**这个 PR 自己**改了上游文件吗」,
+  基准只能是它的目标分支(alpha-ci 的 `on: push/pull_request: branches: [alpha]`)。此前写死
+  `origin/dev`(上游纯镜像):实测 2026-08-10 两条 ref 的 merge-base 停在 2026-07-23,窗口是
+  550 commits / 2467 文件,窗口内点名的 47 个上游文件全靠 44 条收编白名单恰好吸收才没红 ——
+  任何一次不在白名单里的合法上游改动,都会让这道门在**每个 PR** 上恒红(`#754` 那一类)。
+  行为判据(造真的上游改动、跑守卫本体、断言它真的点名)在
+  `packages/ui-mac/src/main/north-star-guard.test.ts`。
 - **bun 版本钉 `1.3.14`**(与 CI 一致,根 `package.json` 的 `packageManager`)。本机版本不同先对齐。
 - 根 `bun test` 被故意禁用(`do not run tests from root`)——测试按包跑,别在根跑。
 - Alpha Platform wire pin 不使用 `bun.lock`。`check:vendor` 要求

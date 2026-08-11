@@ -38,15 +38,11 @@ on:
     branches: [alpha]
   workflow_dispatch: {}
 
-# Upstream dirs whose modification would conflict on the next fork-sync. Keep in sync with
-# .claude/rules/ARCHITECTURE.md 硬约束#1 and ADR-004.
-# ADR-020(2026-07-03,用户拍板):packages/{app,ui} 已冻结为 alpha 管理的前端基线
-# (frontend-freeze-base tag),不再随上游同步,故移出守卫范围——它们相对上游镜像的 diff 是
-# 冻结的本意,不是北极星破坏。引擎/契约包(opencode/core/server/tui/sdk + session-ui 等)照旧只读。
-env:
-  # ADR-033(#456,2026-07-21):补全守卫盲区——permission wire 契约的 SOT 有一半在
-  # protocol/schema/client(同提交 fd357d58 收编),纳入守卫范围;被接管/生成文件在下方 :(exclude)。
-  UPSTREAM_PATHS: "packages/opencode packages/core packages/server packages/tui packages/sdk packages/protocol packages/schema packages/client"
+# 上游包清单(改了就会在下次 fork-sync 冲突)与 ADR-033 收编白名单,唯一真源是
+# scripts/north-star-guard.sh —— 本 workflow 与本地 scripts/alpha-check.sh 都调用它。
+# 此前这里还有一份 `env.UPSTREAM_PATHS`,与脚本里那份是两个可以各自漂移的真源(`#889`)。
+# 相关裁决:ADR-004(北极星)、ADR-020/ADR-027(前端冻结包移出守卫)、ADR-033(#456,
+# permission wire 契约的 SOT 有一半在 protocol/schema/client)、ADR-029 §3(新增收编须自己的 ADR)。
 
 concurrency:
   group: alpha-ci-${{ github.ref }}
@@ -116,91 +112,14 @@ jobs:
         run: git fetch --no-tags origin alpha
       - name: Fail on any modification to upstream package files
         if: needs.detect.outputs.code == 'true'
-        run: |
-          # ADR-033(2026-07-21,owner 批准接管 #456):REQ-090 permission 内核走 L3 冻结接管。
-          # 下述被接管表面 + 生成/快照文件退出守卫范围——它们散在 core/server/opencode 等高 churn 包内,
-          # 故用文件级 :(exclude) 而非 ADR-020 的整包移出。守卫盲区(protocol/schema/client)留待独立
-          # 裁决(#456),本处刻意不 expand UPSTREAM_PATHS。新增收编须自己的 ADR,不得静默加 exclude。
-          excludes=(
-            # ADR-033 §1 被接管 permission 表面(L3)
-            ':(exclude)packages/core/src/permission.ts'
-            ':(exclude)packages/core/src/permission'
-            ':(exclude)packages/server/src/handlers/permission.ts'
-            ':(exclude)packages/opencode/src/server/routes/instance/httpapi/public.ts'
-            ':(exclude)packages/core/test/permission.test.ts'
-            ':(exclude)packages/core/test/database-migration.test.ts'
-            ':(exclude)packages/opencode/test/server/httpapi-exercise'
-            ':(exclude)packages/opencode/test/server/httpapi-public-openapi.test.ts'
-            # ADR-033 §4 生成/快照(SOT = alpha 拥有的迁移/协议/schema;静态 diff 会误报)
-            ':(exclude)packages/core/schema.json'
-            ':(exclude)packages/core/src/database/migration.gen.ts'
-            ':(exclude)packages/core/src/database/schema.gen.ts'
-            ':(exclude)packages/sdk/js/src/v2/gen/sdk.gen.ts'
-            ':(exclude)packages/sdk/js/src/v2/gen/types.gen.ts'
-            # ADR-033 §守卫盲区(#456 裁决):permission wire 契约在 protocol/schema/client 的 SOT
-            # (同 fd357d58 收编)+ 生成随源。agent.ts = 抽出的共享 AgentID(被 schema/permission 依赖)。
-            ':(exclude)packages/protocol/src/groups/permission.ts'
-            ':(exclude)packages/schema/src/permission.ts'
-            ':(exclude)packages/schema/src/agent.ts'
-            ':(exclude)packages/schema/test/contract-hygiene.test.ts'
-            ':(exclude)packages/client/src/generated/client.ts'
-            ':(exclude)packages/client/src/generated-effect/client.ts'
-            ':(exclude)packages/client/src/generated/types.ts'
-            # ADR-035(#489,2026-07-25):E7 web search 失败诚实。打包端挂载的是 opencode 副本,
-            # 失败面(伪成功串 / orDie 塌成匿名 defect)只能在这两个文件里修;云路径的
-            # catalog.ts / code-mode.ts 已 loud,刻意不收编。上游 test/tool/websearch.test.ts
-            # **不**接管(#223 修复轮):新增失败测试落在 alpha 自有的
-            # test/tool/alpha-websearch-failure.test.ts(新增文件对 --diff-filter=DMR 天然不触发,
-            # 无需 exclude),上游那份继续受守。
-            ':(exclude)packages/opencode/src/tool/websearch.ts'
-            ':(exclude)packages/opencode/src/tool/mcp-websearch.ts'
-            # ADR-035 §1 追加(#223 R3 Blocker 1,2026-07-26):ADR-035 背景 §2 初版称 core 的 v2
-            # builtin websearch「永不挂载」——与事实不符。打包 sidecar 的 HttpApi 同时挂载 V2
-            # Session 路由与 Location 服务,core 的 BuiltInTools 里是**第二份已挂载的同名注册**,
-            # 不读主权信号、直接调 Exa/Parallel。主权最终闸必须覆盖每一份执行副本,故同类叶子
-            # 再收一个;接管面仅 execute 首行的闸。防第四份副本的普查闸见
-            # packages/ui-mac/src/main/websearch-copies.test.ts。
-            ':(exclude)packages/core/src/tool/websearch.ts'
-            # ADR-038(#668,2026-07-28):v1 审批请求的应答期限。上游 `Permission.ask` 的
-            # `Deferred.await` 无超时 ⇒ 无人应答即无限期挂起(ADR-036 把会话发送退回 v1 后
-            # 成为高频路径:external_directory / read *.env* / doom_loop / 用户自配 ask)。
-            # 期限只能落在 Deferred 所在的这一处;L0 接缝(plugin permission.ask 只能改判定)、
-            # 壳侧看门狗(v1 reject 连带拒绝同会话全部 pending)、L1/L2 均不可行,逐条证据见
-            # ADR-038 §2。接管面刻意压到这一个文件。
-            ':(exclude)packages/opencode/src/permission/index.ts'
-            # ADR-041(#878,2026-08-09):工具身份与不可变显示快照。来源信息在这些注册/聚合/
-            # 权限/首次写入咽喉之后结构性丢失,L0-L2 无法从 alias 诚实反推。仅逐文件接管;
-            # 新的 alpha-tool-identity 闸门是新增文件,无需 exclude。permission/index.ts 已由
-            # ADR-038 接管,不重复列。
-            ':(exclude)packages/schema/src/v1/session.ts'
-            ':(exclude)packages/sdk/js/src/gen/types.gen.ts'
-            ':(exclude)packages/opencode/src/mcp/index.ts'
-            ':(exclude)packages/opencode/src/plugin/index.ts'
-            ':(exclude)packages/opencode/src/tool/registry.ts'
-            ':(exclude)packages/opencode/src/tool/code-mode.ts'
-            ':(exclude)packages/opencode/src/session/tools.ts'
-            ':(exclude)packages/opencode/src/session/processor.ts'
-            ':(exclude)packages/opencode/src/session/llm.ts'
-            ':(exclude)packages/opencode/src/session/llm/request.ts'
-            ':(exclude)packages/opencode/src/session/prompt.ts'
-            ':(exclude)packages/opencode/test/session/compaction.test.ts'
-            ':(exclude)packages/opencode/test/session/processor-effect.test.ts'
-            ':(exclude)packages/opencode/test/session/prompt.test.ts'
-            ':(exclude)packages/opencode/test/provider/transform.test.ts'
-            ':(exclude)packages/opencode/test/tool/code-mode-integration.test.ts'
-            ':(exclude)packages/opencode/test/tool/code-mode.test.ts'
-            ':(exclude)packages/opencode/test/tool/registry.test.ts'
-            ':(exclude)packages/core/src/tool/application-tools.ts'
-            ':(exclude)packages/core/src/tool/registry.ts'
-          )
-          changed="$(git diff --diff-filter=DMR --name-only origin/alpha...HEAD -- $UPSTREAM_PATHS "${excludes[@]}")"
-          if [ -n "$changed" ]; then
-            echo "::error::North star broken — alpha modified/deleted/renamed upstream files (fork-sync will conflict):"
-            echo "$changed" | sed 's/^/  /'
-            echo "Fix: revert the edit; extend behaviour via alpha-owned files (packages/ext, packages/ui-mac) or the plugin/tool/MCP/sidecar seams (ADR-002/005). Sanctioned takeovers are enumerated as :(exclude) above per ADR-029 §3 — a new takeover needs its own ADR, not a silent exclude."
-            exit 1
-          fi
-          echo "✓ zero upstream package edits (ADR-033 permission takeover excepted) — north star intact"
+        # `#889`:守卫本体 = scripts/north-star-guard.sh,CI 与本地 alpha-check.sh 跑的是
+        # **同一份字节**。此前这里是一段内联 shell,把 UPSTREAM_PATHS 与 44 条 ADR-033 收编
+        # 白名单又抄了一遍 —— 两处逐条相同只能靠 local-gate-parity.test.ts 逐行比对来维持
+        # (`#637`:ADR-033 落地时只同步了 paths、白名单漏了,干净 alpha 上本地恒假红、
+        # 人人 --no-verify)。枚举比对对**新成员默认放行**,共用一份让那一类漂移在结构上
+        # 不存在。行为判据 = packages/ui-mac/src/main/north-star-guard.test.ts(起真 git 仓、
+        # 造真的上游改动、跑这个脚本本体,断言它真的点名了那个文件)。
+        run: bash scripts/north-star-guard.sh
 
   typecheck:
     name: typecheck (alpha packages)

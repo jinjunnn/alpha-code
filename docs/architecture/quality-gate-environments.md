@@ -184,6 +184,7 @@ workflow 触发在 `pull_request`,fork PR 拿不到 secrets)。这份记录**抓
 而这个 PR 里一行代码都没有。实证(`#717` owner 评论):同一个 commit,PR run `30756424959` 判
 `code=true` 并红在 `bun test (ui-mac)`,push run `30756431539` 判 `code=false`、全部 skipped。
 **同一个 workflow 里的 north-star 守卫用的一直是三点 `origin/dev...HEAD`** —— 两者本来就不一致。
+(`#889` 已把守卫基准改成 `origin/alpha`,见 §3.8;`detect` 这一格不变。)
 
 | 事件 | 基准 | 口径 | 为什么 |
 | --- | --- | --- | --- |
@@ -218,6 +219,57 @@ workflow 触发在 `pull_request`,fork PR 拿不到 secrets)。这份记录**抓
 判据各自独立可证伪:①用 `.ts` + 同目录 `.css` 两个输入(`.ts` 被两半同时覆盖,`.css` 只被显式前缀
 那一半覆盖);②的 rename 目标刻意取 `.md`(修好后目标路径**仍**算文档,于是这条只由 `--no-renames`
 决定)。两条各自单独还原,对应用例当场转红。
+
+### 3.8 north-star 守卫的比较基准 —— 「相对**谁**」的那一格(`#889`)
+
+§3.7 讲的是「今天哪些门跑」;这一格讲的是**一道门在拿什么当参照物**。north-star 守卫问的是
+「这个 PR 改了上游文件吗」,而它此前把参照物写死成 `origin/dev`(上游纯镜像分支)——
+一个与「这个 PR 的目标分支」无关的字面常量。
+
+实测(2026-08-10,`origin/dev` 与 `origin/alpha`):
+
+| 量 | 值 |
+| --- | --- |
+| merge-base | `347510a73`(2026-07-23) |
+| alpha 领先 / dev 领先 | 289 / 261(dev 今天仍在动) |
+| `origin/dev...HEAD` 的窗口 | **550 commits / 2467 文件** |
+| 该窗口点名的上游文件(不应用 excludes) | **47** |
+| 该窗口点名的上游文件(应用 44 条 `UPSTREAM_EXCLUDES`) | **0** |
+| `origin/alpha...HEAD` 同口径 | **0** |
+
+**所以两种基准今天结论相同,守卫没有在给错答案。** 缺陷是形态,不是当天的输出:
+
+1. `origin/dev...HEAD` 是 `origin/alpha...HEAD` 的**超集窗口** ⇒ 不会漏报真违规,但会**过报**;
+2. 它今天绿,只是因为那 44 条 exclude(本意是登记**有意的收编**)恰好吸收了三周的无关漂移;
+3. ⇒ **任何一次不在 exclude 表里的合法上游改动,都会让守卫在每个 PR 上恒红**,包括没碰它的 PR。
+   守卫脚本自己写着「Drift here is worse than no gate: a permanently-red local guard trains you
+   to ignore it」,而 `#754`(pre-push 恒假红 ⇒ 第一道门实际关着)已经演过一遍。
+
+修法两条,都在收窄「这个值有几个家」:
+
+- **基准 = 这个 workflow 服务的那条分支**(`on: push/pull_request: branches: [alpha]`)。
+  防漂断言的锚点取 workflow 自己的触发分支,不是把两个可以一起改错的值互相比对(自指等价链)。
+- **守卫本体搬进 [`scripts/north-star-guard.sh`](../../scripts/north-star-guard.sh)**,CI 与本地
+  `alpha-check.sh` 跑**同一份字节**。此前 `UPSTREAM_PATHS` + 44 条收编白名单在两处各有一份内联
+  副本,靠 `local-gate-parity.test.ts` 逐行比对维持(`#637` 咬过一次:ADR-033 落地只同步了 paths、
+  白名单漏了 ⇒ 干净 alpha 上本地恒假红、人人 `--no-verify`)。**枚举比对对新成员默认放行**,
+  共用一份让那一类漂移在结构上不存在;防漂断言随之改成「workflow 必须调用它,且不得留第二份副本」。
+
+行为判据在 [`packages/ui-mac/src/main/north-star-guard.test.ts`](../../packages/ui-mac/src/main/north-star-guard.test.ts)
+—— 与 §3.7 同一条纪律:起真 git 仓、造真的上游改动、跑**生产脚本本体**,断言它**真的点名了那个文件**。
+断言脚本源码文本按本仓定义是假闸门(守卫被整段注释掉时照样绿)。其中基准那一条自带**控制组**:
+同一条用例里把生产脚本复制一份、只把基准换成 `origin/dev` 跑一遍,先证明夹具测得出已知的坏 ——
+否则「守卫没点名它」会空对空地绿。
+
+顺带修掉一个**本地独有的 fail-open**:原来是 `git diff … origin/dev…HEAD … 2>/dev/null || true`,
+基准 ref 取不到时 git 报错被吞、`|| true` 把它变成空串 ⇒「已提交改动」那半边守卫**静默消失**而这一步
+报 ✓。现在取不到基准当场红并说「本次守卫作废(不是通过)」。
+
+**本票不改的一条边界(明写,不是漏网)**:`--diff-filter=DMR` **不含 `A`** ⇒ 在上游路径下**新增**
+文件不被守卫点名。这是有意的 —— fork-sync 冲突来自 M/D/R,而 ADR-035 与 ADR-038 都明写依赖它
+(「新增闸门文件落 alpha 自有的 `alpha-*.test.ts`,新增文件不触发 `--diff-filter=DMR`,无需 exclude」)。
+`north-star-guard.test.ts` 把这句散文变成判据:有人顺手加上 `A`,那两条 ADR 的前提当场失效并变红。
+代价也明写:上游包内**新增**一个 alpha 文件不受守卫管,靠 review 与 ADR 纪律拦。
 
 ## 4. 咽喉:两处声明,覆盖仓内真实存在的两种运行形状
 
@@ -308,13 +360,14 @@ darwin 与 linux 同为 posix,钉 `win32` 会把路径语义改坏。
 | `pinShippedPlatform()` 被改坏 | `src/main/gate-environment.test.ts` —— 子用例按 `os.platform()` **自陈这一半本次跑没跑到**(开发机跑不到、alpha-ci 跑得到),不会让本地的绿被误读 |
 | CI 加了一步而本地没跟 | `src/main/local-gate-parity.test.ts` —— 双向比对,CI 改名也红 |
 | 本地某一步被悄悄降级 | 同上:档位只能是 `MIRRORED` / `SUPERSET:<理由>` / `DEGRADED:<理由>`,**没有「静默不跑」这一档** |
-| ADR 新增收编而只改了 CI 一侧 | 同上(`#637` 退出条件 3) |
+| ADR 新增收编而只改了 CI 一侧 | **结构上不可能了**(`#889`):清单只有 `scripts/north-star-guard.sh` 一份,CI 与本地都调用它;`local-gate-parity.test.ts` 守住「workflow 必须调用它、且不得留第二份副本」 |
+| north-star 的比较基准被改成别的 ref | `src/main/north-star-guard.test.ts` —— 造一个只落在 dev 窗口里的上游改动,断言守卫不点名它(§3.8) |
 | `assert gate files` 又被条件掉 | 同上(断言该步带 `!cancelled()`) |
 | 新增闸门文件没登记 | `src/main/gate-file-registry.test.ts`(既有) |
 
-两条解析自检钉在 `local-gate-parity.test.ts` 里(`ciSteps ≥ 12`、`ciExcludes ≥ 20`):
-一份退化成解析不出东西的解析器会让每条断言空对空地全绿 —— 先证明手段能测出已知的坏,
-再用它判未知的好。
+解析自检钉在 `local-gate-parity.test.ts` 里(`ciSteps ≥ 12`、守卫脚本的 `UPSTREAM_PATHS ≥ 8`
+与收编白名单 `≥ 20`、`jobNames ≥ 6`、`required ≥ 4`):一份退化成解析不出东西的解析器会让每条
+断言空对空地全绿 —— 先证明手段能测出已知的坏,再用它判未知的好。
 
 ## 6. 已知不修(留痕)
 
