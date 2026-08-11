@@ -58,8 +58,10 @@ if [ "${ALPHA_HOOKS_DISABLE:-}" != "1" ]; then
 fi
 
 fail=0
+# `#890`:「本次没能比对真源」是**第三种**结局,不是绿也不是红 —— 见第 [8/8] 步。
+unverified=0
 
-echo "▶ [1/7] north-star guard (zero upstream edits)"
+echo "▶ [1/8] north-star guard (zero upstream edits)"
 # `#889`:守卫本体住在 scripts/north-star-guard.sh —— 内联时它一个判据都没有(断言 shell
 # 源码文本按本仓定义是假闸门:守卫被整段注释掉时那种断言照样绿)。真判据 =
 # packages/ui-mac/src/main/north-star-guard.test.ts,它起真 git 仓、造真的上游改动、跑
@@ -71,7 +73,7 @@ else
   fail=1
 fi
 
-echo "▶ [2/7] no literal NUL bytes in version-controlled files"
+echo "▶ [2/8] no literal NUL bytes in version-controlled files"
 # #760:字面 NUL 不会让运行时出错,它坏的是**验证手段** —— BSD grep / rg / file(1) 看到 NUL 就把
 # 整个文件判成二进制并静默返回空,于是「我 grep 过了,没有」变成假话。本仓 CLAUDE.md 要求
 # 「大文件 Edit 后 grep + git show 双验」,而在这些文件上 grep 会安静地说「没有」。
@@ -83,7 +85,7 @@ else
   echo "    ✗ literal NUL bytes found"; fail=1
 fi
 
-echo "▶ [3/7] typecheck (alpha packages: contracts-consumer + ext + ui-mac)"
+echo "▶ [3/8] typecheck (alpha packages: contracts-consumer + ext + ui-mac)"
 # REQ-027:flag 必须在 `run` 之后 —— `bun --cwd X run Y` 在 bun 1.3.x 打印 usage 后静默退出 0(不执行脚本)。
 if bun run --cwd packages/alpha-contracts-consumer typecheck \
   && bun run --cwd packages/ext typecheck \
@@ -93,7 +95,7 @@ else
   echo "    ✗ typecheck failed"; fail=1
 fi
 
-echo "▶ [4/7] contract lock + unit tests (contracts-consumer + ext + ui-mac)"
+echo "▶ [4/8] contract lock + unit tests (contracts-consumer + ext + ui-mac)"
 # REQ-062:ext 测试入门 —— 其中 prompt-rebrand drift 锁逐条断言转写子串仍在上游底座原文,
 # 上游 sync 改写底座即红(ADR-015 合并验证的机械化)。
 #
@@ -110,23 +112,23 @@ else
   echo "    ✗ tests failed"; fail=1
 fi
 
-# `#777`:下面三步此前**本地完全没有**,而 CI 有。缺 [5/7] 尤其贵 —— 登记闸门里
+# `#777`:下面三步此前**本地完全没有**,而 CI 有。缺 [5/8] 尤其贵 —— 登记闸门里
 # llm / core / opencode 那几个只在这一步执行,别的步骤一条都不覆盖它们。
-echo "▶ [5/7] assert gate files (逐个点名;整包地板抓不到单个闸门文件消失)"
+echo "▶ [5/8] assert gate files (逐个点名;整包地板抓不到单个闸门文件消失)"
 if bash scripts/assert-gate-files.sh; then
   echo "    ✓ gate files"
 else
   echo "    ✗ gate files failed"; fail=1
 fi
 
-echo "▶ [6/7] seed assets present (B7)"
+echo "▶ [6/8] seed assets present (B7)"
 if bash scripts/assert-seed-assets.sh; then
   echo "    ✓ seed assets"
 else
   echo "    ✗ seed assets missing"; fail=1
 fi
 
-echo "▶ [7/7] docs gate (relative-link validity in changed Markdown)"
+echo "▶ [7/8] docs gate (relative-link validity in changed Markdown)"
 # CI 只查**这次改动过的** Markdown(detect job 收集)。本地口径同构:相对 origin/alpha 的
 # 提交 delta ∪ 未提交工作树改动,再滤成 *.md。一个都没有 ⇒ 与 CI 一样是 no-op。
 md_committed="$(git diff --name-only --diff-filter=d origin/alpha...HEAD -- '*.md' 2>/dev/null || true)"
@@ -144,6 +146,25 @@ else
   fi
 fi
 
+echo "▶ [8/8] required contexts vs GitHub 分支保护真源 (#890)"
+# 这一步在 alpha-ci 里**没有对应**,所以它不进 CI_STEPS(那张表是 CI 步骤的对照表)。
+# 理由:读分支保护要带令牌,而 alpha-ci 触发在 `pull_request` —— fork PR 结构上拿不到
+# secrets。有鉴权的地方是这台机器,所以这道门只能落在本地。放最后,因为它是七步真闸门跑完
+# 之后的一次网络往返。
+bash scripts/assert-required-contexts.sh
+required_contexts_rc=$?
+case "$required_contexts_rc" in
+0) ;; # 脚本自己打了 ✓
+2)
+  # 未比对:没装 gh / 没登录 / 令牌无权 / 网络不通。刻意**不**判红 —— 这台机器到
+  # api.github.com 走的代理会间歇失败,让它拦 push 只会逼出 `--no-verify`,那会连带关掉
+  # 上面七道真闸门(本仓已经栽过这个形态)。代价是下面的总结行不许再说「全绿」。
+  unverified=1
+  ;;
+*) fail=1 ;;
+esac
+unset required_contexts_rc
+
 # ── 覆盖自陈(`#777`)──────────────────────────────────────────────────────────
 # 「和 CI 1:1」以前是散文。现在这张表由脚本自己打出来,并由
 # packages/ui-mac/src/main/local-gate-parity.test.ts 反向核对(CI 加了步而这里没登记即红)。
@@ -155,9 +176,14 @@ done
 echo "   注:MIRRORED = 同一条命令;SUPERSET = 本地还多验了;DEGRADED = 降级,理由在同一行。"
 
 echo
-if [ "$fail" -eq 0 ]; then
-  echo "✅ all local gates green — safe to push (alpha-ci will mirror this)."
-else
+if [ "$fail" -ne 0 ]; then
   echo "❌ local gates failed — fix before pushing (alpha-ci would fail the same way)."
+elif [ "$unverified" -ne 0 ]; then
+  # `#890`:七道闸门绿了,但第 [8/8] 步这次**没读到**分支保护真源。说「全绿」会把
+  # 「没检查」读成「检查过了」—— 那正是这道门要消掉的形态,所以这里换一句话。
+  echo "⚠️  local gates passed, but required contexts 这次**未比对**真源(见上面第 [8/8] 步)。"
+  echo "    可以 push;但本次运行不构成「仓内记录与 alpha 分支保护一致」的证据。"
+else
+  echo "✅ all local gates green — safe to push (alpha-ci will mirror this)."
 fi
 exit $fail
