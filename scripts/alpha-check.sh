@@ -158,11 +158,21 @@ echo "▶ [8/9] worktree bootstrap 能力(新建 worktree 自己就能跑出可�
 # 「文件里写着 bun install」(按本仓定义那是假闸门),而是真建 worktree、真跑 typecheck,
 # 并且**先证明没 bootstrap 的树确实会红**,再用同一个探针判 bootstrap 过的树绿。
 # 代价:本机实测约 40s(3 棵探针树 + 一次 `bun install` 9.5s + 三次 ui-mac typecheck)。
-if bash scripts/assert-worktree-bootstrap.sh; then
-  echo "    ✓ worktree bootstrap"
-else
-  echo "    ✗ worktree bootstrap 失守 —— 新建 worktree 仍然只能去共享主 checkout 才能跑真 typecheck"; fail=1
-fi
+# 退出码三档(与第 [9/9] 步同形):0 已验证 / 1 真失守拦住 / 2 本次未验证不拦。
+# 第 2 档的理由(owner 裁决,`#916` R2):`bun install` **依赖网络**(实测:已装好的树指向
+# 不可达 registry 也会 `failed to resolve` / exit 1),而这一步每次 push 都跑 ⇒ 不给豁免的话
+# 网络一抖就拦住 push,理由与本次改动无关 ⇒ 人会 `--no-verify` ⇒ **九道门一起关掉**。
+# 豁免不许变成万能挡箭牌:判别依据是**独立探一次 registry 可达性**(不解析 bun 的报错措辞),
+# 拿不准一律倒向「拦住」;而且脚本自己有两条判据钉着它 —— 非网络失败必须仍判 real(`[5/6]`)、
+# 判别依据必须双向可分且网络档不报绿(`[6/6]`)。
+bash scripts/assert-worktree-bootstrap.sh
+worktree_bootstrap_rc=$?
+case "$worktree_bootstrap_rc" in
+0) echo "    ✓ worktree bootstrap" ;;
+2) unverified=1 ;;  # 脚本自己打了「未验证」;不拦 push,但下面的总结行不许再说「全绿」
+*) echo "    ✗ worktree bootstrap 失守 —— 新建 worktree 仍然只能去共享主 checkout 才能跑真 typecheck"; fail=1 ;;
+esac
+unset worktree_bootstrap_rc
 
 echo "▶ [9/9] required contexts vs GitHub 分支保护真源 (#890)"
 # 这一步在 alpha-ci 里**没有对应**,所以它不进 CI_STEPS(那张表是 CI 步骤的对照表)。
@@ -197,10 +207,12 @@ echo
 if [ "$fail" -ne 0 ]; then
   echo "❌ local gates failed — fix before pushing (alpha-ci would fail the same way)."
 elif [ "$unverified" -ne 0 ]; then
-  # `#890`:八道闸门绿了,但第 [9/9] 步这次**没读到**分支保护真源。说「全绿」会把
+  # `#890`:门都绿了,但**有一步这次没验成**(第 [8/9] 的 registry 不可达,或第 [9/9] 的
+  # 分支保护真源读不到)。说「全绿」会把
   # 「没检查」读成「检查过了」—— 那正是这道门要消掉的形态,所以这里换一句话。
-  echo "⚠️  local gates passed, but required contexts 这次**未比对**真源(见上面第 [8/8] 步)。"
-  echo "    可以 push;但本次运行不构成「仓内记录与 alpha 分支保护一致」的证据。"
+  echo "⚠️  local gates passed, but **有一步这次没验成**(见上面标了「未验证 / 未比对」的那一步)。"
+  echo "    可以 push;但本次运行不构成那一步的证据 —— 第 [8/9] 未验证 = worktree bootstrap 能力"
+  echo "    这次没被验证(registry 不可达);第 [9/9] 未比对 = 仓内记录与 alpha 分支保护是否一致没读到真源。"
 else
   echo "✅ all local gates green — safe to push (alpha-ci will mirror this)."
 fi

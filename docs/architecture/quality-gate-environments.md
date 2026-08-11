@@ -347,6 +347,16 @@ changed` 与 `code=false`,自相矛盾。上面那条判据此前也测不出这
    借的是主 checkout 那一份。报出来的是 `Cannot find module` 而不是 `command not found`,
    于是**看起来像代码坏了**。这是本文件反复讲的那件事:观测手段自己有盲区。
 
+**这道门自己也踩在同一类前提上(`#916` R2)**:它靠 `bun install`,而 `bun install` **依赖网络** ——
+实测把 registry 指向不可达地址,**连已经装好的树**也会 `failed to resolve` / exit 1(3s)。
+一道每次 push 都跑、网络一抖就恒红的门,正是本文件开头那句「恒红的门等于没有门」。
+所以它取 `#890` 的三档形状:0 已验证 / 1 真失守(拦住)/ **2 本次未验证**(不拦 push,但**不报绿**)。
+豁免的判别依据是**独立于失败本身的环境事实** —— 单独探一次 registry 可达性(`curl`,**不用 bun**:
+`[5/6]` 的注入就是「没有 bun」),拿不准一律倒向拦住;并且判别依据自己被两条判据钉着
+(非网络失败必须仍判 `real`、判别依据必须双向可分且网络档不报绿),否则「一律算网络」
+会让这道门**永不失守** = 假门。分辨「判别依据坏了」与「机器真离线」用的是一条**独立**探针,
+不是判别依据自己的答案(自指等价链)。
+
 咽喉:[`scripts/worktree-bootstrap.sh`](../../scripts/worktree-bootstrap.sh) —— 建 worktree 与
 `bun install` 合成一步,失败即非零退出并把**本次**创建的半装树整棵删掉。
 判据是**能力**不是产物([`scripts/assert-worktree-bootstrap.sh`](../../scripts/assert-worktree-bootstrap.sh),

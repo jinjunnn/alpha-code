@@ -5,34 +5,59 @@
 # 是**假闸门**(断言产物 / 断言源码文本:把 `bun install` 那一行换成 `true`,它们照样全绿)。
 # 这里判的是**能力**:真建一棵全新 worktree,在里面跑**真的** typecheck,断言它给得出可信结论。
 #
-# ── 五条(按执行顺序),各杀一个不同的错误实现 ────────────────────────────────────
-#  [1/5] 反向(**本判据是否成立的唯一证明**):**没**经过 bootstrap 的全新 worktree
-#      必须**仍然**产生 `Cannot find module 'bun:test'` 这一类错误。
-#      少了这条,[2/5] 会**空对空地绿** —— 「这台机器碰巧哪里都能解析」和「bootstrap 起作用了」
-#      在只看 [2/5] 时长得一模一样。先证明这个探针测得出已知的坏,再用它判未知的好。
-#  [2/5] 正向:经 bootstrap 建出来的 worktree,ui-mac typecheck **exit 0 且零条模块解析错误**。
-#      摘掉 bootstrap 里的 `bun install` ⇒ 这条转红(绕过实验已实跑,见 PR)。
-#  [3/5] 不污染共享树:bootstrap 跑完,**共享** `.git/config` 的 `core.hooksPath` 必须没变。
-#      根 package.json 的 `"prepare": "husky"` 会在每次 `bun install` 后把它改成 `.husky/_`,
-#      而它是 repository-local 的 ⇒ 在 worktree 里 install 会改**所有 worktree 共用**的那份配置,
-#      把 alpha 的 pre-push 换成上游那份(冻结偏斜下恒红)⇒ 下一个人 `--no-verify` ⇒ 七道真闸门
-#      一起关掉。本条先把值**设成 `.githooks`** 再跑 —— 不设的话,机器上本来就漂成 `.husky/_` 时
-#      「前后相等」会**恒真**,断言粒度比缺陷粗一格。`.githooks` 也是崩溃时的安全残留值
-#      (REQ-015 要的就是它)。
-#  [4/5] 幂等:对**已存在且已装好**的 worktree 重跑 bootstrap 必须 exit 0,且重跑之后
-#      typecheck **仍然**绿 —— 只断言重跑的退出码会被「重跑时把树删了再报 0」满足。
-#  [5/5] 失败要响,且不留半装的树:让 `bun install` 真的失败(PATH 里没有 bun —— 真实可达:
-#      精简过的 cron/CI shell 就是这个形状),断言 bootstrap **非零退出**、**并且把它本次
-#      创建的 worktree 整棵删掉**。只断非零退出,会被「报错但把半装的树留在那」满足,
-#      而那正是票面点名「比没有更坏」的那个状态。
+# ── 退出码有三档(与 `#890` 的 assert-required-contexts.sh 同形)────────────────────
+#   0  能力**已验证**
+#   1  **真失守**:bootstrap 确实坏了 —— 拦住 push
+#   2  **本次未验证**:装不上依赖的原因是环境(registry 不可达)⇒ 这道门这一跑什么都没证明。
+#      **不拦 push**,但**不许报绿** —— 输出里必然出现「未验证」,聚合层的总结行也会跟着换掉。
+#
+# 为什么要有第 2 档(`#916` R2,owner 裁决):`bun install` **依赖网络**(实测:已装好的树
+# 指向不可达 registry 也会 `failed to resolve`、exit 1),而这道门每次 push 都跑。不给豁免 ⇒
+# 网络一抖就拦住 push,理由与本次改动无关 ⇒ 人会 `--no-verify` ⇒ **九道门一起关掉**。
+# 那正是 `#890` 那条 lane 推理过并特意避开的形态。
+#
+# ── 豁免不许变成万能挡箭牌 ────────────────────────────────────────────────────────
+# 如果「`bun install` 失败」一律归成网络,那 bootstrap 真坏掉的那天也会被归成网络 ⇒
+# 这道门从此**永不失守** = 假门。所以判别依据必须是一件**独立于失败本身的环境事实**:
+#
+#   · 判据 = **单独探一次 registry 可达性**(curl),不是去解析 bun 的报错措辞。
+#     解析别人的错误文法 = 本仓点名过的「手写一个别人文法的替身」,措辞一改就悄悄失效。
+#   · 探测**不许用 bun** —— `[5/6]` 的故障注入正是「PATH 里没有 bun」,用 bun 探测会连带失败、
+#     把一个**非网络**失败误判成网络,恰好打穿本节要立的那条判据。
+#   · **拿不准一律倒向「拦住」**(fail-closed):registry 解析不出来(仓内/用户级
+#     `.npmrc` / `bunfig.toml` 声明了我们没算进来的 registry)、没装 curl —— 都判 `real`。
+#   · registry 可达却仍然失败 ⇒ `real` ⇒ 拦住。
+#
+# ── 六条,各杀一个不同的错误实现 ──────────────────────────────────────────────────
+#  [1/6] 反向(**本判据是否成立的唯一证明**):**没**经过 bootstrap 的全新 worktree
+#      必须**仍然**产生 `Cannot find module 'bun:test'` 这一类错误。少了这条,[2/6] 会**空对空地绿**
+#      ——「这台机器碰巧哪里都能解析」和「bootstrap 起作用了」在只看 [2/6] 时长得一模一样。
+#  [2/6] 正向:经 bootstrap 建出来的 worktree,ui-mac typecheck **exit 0 且零条模块解析错误**。
+#      摘掉 bootstrap 里的 `bun install` ⇒ 这条转红。
+#  [3/6] 不污染共享树:跑完**共享** `.git/config` 的 `core.hooksPath` 必须没变(husky 的
+#      `prepare` 每次 install 都改它,而在 worktree 里改的是所有 worktree 共用的那份)。
+#      本条先把值**设成 `.githooks`** 再跑 —— 不设的话,机器上本来就漂成 `.husky/_` 时
+#      「前后相等」会**恒真**,断言粒度比缺陷粗一格。
+#  [4/6] 幂等:对**已存在且已装好**的 worktree 重跑必须 exit 0,**且重跑之后 typecheck 仍绿**
+#      —— 只断重跑的退出码会被「重跑时把树删了再报 0」满足。
+#  [5/6] **非网络原因的失败必须仍然拦住**(owner 点名要补的那条)。让 `bun install` 真的失败
+#      (PATH 里没有 bun —— 真实可达:精简过的 cron/CI shell 就是这个形状),断言三件事:
+#      bootstrap **非零退出**、**把本次创建的 worktree 整棵删掉**(只断非零退出会被「报错但把
+#      半装的树留在那」满足)、**且判别依据把它判成 `real` 而不是 `network`**。
+#      少了最后半句,「一律算网络」这个错误实现能满足前两句。
+#  [6/6] 判别依据**真的判别**,且网络档**不报绿**:
+#      (a) registry 可达时必须判 `real`(直接杀掉「一律算网络」);
+#      (b) registry 指向不可达地址时必须判 `network`(杀掉「一律算真失守」——那等于没有豁免);
+#      (c) 报告契约:把整个探针**套跑一遍**并注入不可达 registry,断言它 **exit 2**、
+#          输出里**有「未验证」**、且**没有**那句「新建 worktree 自己就能跑出可信 typecheck」。
+#          嵌套跑靠 ALPHA_WT_PROBE_NESTED=1 断掉递归(只关掉 (c) 自己,不关任何真判据)。
 #
 # 一条载重的实现事实:`.worktrees/` 就在主 checkout **内部**,而 `bun run` 找可执行文件是
 # 逐级往上走父目录的 `node_modules/.bin` —— 所以未 bootstrap 的 worktree 仍能跑起 `tsgo`
 # (借的是**共享主 checkout** 那一份),报出来的才是 TS2307 而不是 `command not found`。
-# [1/5] 的指纹依赖这一点;真变成 `command not found` 时它会因「零条 TS2307」而红,不会假绿。
+# [1/6] 的指纹依赖这一点;真变成 `command not found` 时它会因「零条 TS2307」而红,不会假绿。
 #
 # 用法:bash scripts/assert-worktree-bootstrap.sh
-# 退出 0 = 这台机器上「建 worktree ⇒ 能跑真闸门」这条能力成立。
 set -uo pipefail
 
 MAIN="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || {
@@ -41,13 +66,17 @@ MAIN="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || {
 MAIN="${MAIN%/.git}"
 # 被测的是**跑本脚本的这棵树**上的那份 bootstrap,不是主 checkout 那份 —— 否则在 worktree 里
 # 跑 alpha-check 时,量到的是共享树上的旧版本(而本票的全部意义就是「别去量别人的树」)。
-# `.worktrees/` 的落点仍由 bootstrap 自己从 git-common-dir 推出,恒为主 checkout 之下。
 SELF_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 BOOTSTRAP="$SELF_ROOT/scripts/worktree-bootstrap.sh"
+SELF="$SELF_ROOT/scripts/assert-worktree-bootstrap.sh"
 [ -f "$BOOTSTRAP" ] || { echo "✗ 找不到 $BOOTSTRAP" >&2; exit 1; }
 
 # 探针树一律从 HEAD 建:判的是**当前这棵树上的**脚本与配置,不是某个远端 ref 的历史版本。
 BASE_SHA="$(git rev-parse HEAD 2>/dev/null)" || { echo "✗ 读不到 HEAD" >&2; exit 1; }
+
+NESTED="${ALPHA_WT_PROBE_NESTED:-0}"
+DEFAULT_REGISTRY="https://registry.npmjs.org"
+UNREACHABLE_REGISTRY="http://127.0.0.1:9"
 
 ID="probe-$$-${RANDOM}"
 NEG="wtboot-${ID}-neg"
@@ -56,15 +85,14 @@ FAIL="wtboot-${ID}-fail"
 HOOKS_ORIGINAL="$(git -C "$MAIN" config --local --get core.hooksPath 2>/dev/null || true)"
 
 cleanup() {
-  local n
+  local n now
   for n in "$NEG" "$POS" "$FAIL"; do
     [ -e "$MAIN/.worktrees/$n" ] || continue
     git -C "$MAIN" worktree remove --force "$MAIN/.worktrees/$n" 2>/dev/null || rm -rf "$MAIN/.worktrees/$n"
   done
   git -C "$MAIN" worktree prune 2>/dev/null || true
-  # 还原本脚本在 [5] 里动过的共享配置。崩溃时的残留值是 `.githooks` —— 正是 REQ-015 想要的那个,
+  # 还原本脚本在 [3/6] 里动过的共享配置。崩溃时的残留值是 `.githooks` —— 正是 REQ-015 想要的那个,
   # 所以这里失手也不会让别人的门变松。
-  local now
   now="$(git -C "$MAIN" config --local --get core.hooksPath 2>/dev/null || true)"
   if [ "$now" != "$HOOKS_ORIGINAL" ]; then
     if [ -n "$HOOKS_ORIGINAL" ]; then
@@ -77,20 +105,69 @@ cleanup() {
 trap cleanup EXIT
 
 fail=0
+unverified=0
 red() { echo "    ✗ $*" >&2; fail=1; }
 
-# ui-mac 的 typecheck 是这道能力的**被测读者**:它是 alpha-check 第 [3/9] 步真正跑的那条命令。
+# ── 判别依据 ──────────────────────────────────────────────────────────────────────
+# bun 会用哪个 registry。**任何一处声明了我们没算进来的 registry ⇒ 返回 1**(⇒ 不给豁免)。
+# 这不是假设而是**被检查的前提**:仓内/用户级 `.npmrc`、`bunfig.toml` 将来长出 registry 声明时,
+# 这里会退回 fail-closed 并逼人来更新,而不是继续拿一个已经不成立的全称命题发豁免。
+resolve_registry() {
+  local f
+  for f in "$SELF_ROOT/.npmrc" "$SELF_ROOT/bunfig.toml" "$HOME/.npmrc" "$HOME/.bunfig.toml"; do
+    [ -f "$f" ] || continue
+    grep -aqE '^[[:space:]]*"?registry"?[[:space:]]*=' "$f" && return 1
+  done
+  printf '%s' "${BUN_CONFIG_REGISTRY:-$DEFAULT_REGISTRY}"
+}
+
+# 打印 `network` 或 `real`。拿不准一律 `real`(fail-closed:宁可拦住,不可放行)。
+classify_bootstrap_failure() {
+  local url
+  url="$(resolve_registry)" || { printf 'real'; return 0; }
+  # 刻意不用 bun 探测:[5/6] 的注入就是「没有 bun」,用 bun 探会把非网络失败误判成网络。
+  command -v curl >/dev/null 2>&1 || { printf 'real'; return 0; }
+  if curl -sS -o /dev/null --max-time 8 --head "$url" >/dev/null 2>&1; then
+    printf 'real'
+  else
+    printf 'network'
+  fi
+}
+
+# 独立于 `classify_bootstrap_failure` 的可达性探针。存在的理由:[5/6]/[6/6] 要分开
+# 「判别依据坏了」和「这台机器真的离线」两件事 —— 拿判别依据自己的答案去判它自己,
+# 是本仓点名过的**自指等价链**(一起改错就一起自洽)。返回 0 = registry 这一刻确实可达。
+live_registry_reachable() {
+  local url
+  url="$(resolve_registry)" || return 1
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -sS -o /dev/null --max-time 8 --head "$url" >/dev/null 2>&1
+}
+
+note_bootstrap_failure() {
+  local verdict url
+  verdict="$(classify_bootstrap_failure)"
+  if [ "$verdict" = network ]; then
+    url="$(resolve_registry 2>/dev/null || printf '%s' '<解析不出>')"
+    unverified=1
+    echo "    ⚠️  未验证:registry 不可达($url)—— bun install 这次装不上,本步什么都没证明。"
+    echo "        这**不是绿**:worktree bootstrap 能力本次未被验证;网络恢复后重跑。"
+  else
+    red "$1"
+  fi
+}
+
 typecheck_in() {
   (cd "$MAIN/.worktrees/$1" && bun run --cwd packages/ui-mac typecheck 2>&1)
 }
-# 「模块解析假红」这一类的指纹。`bun:test` 与 `@types/bun` 是票面点名的两个,
-# 但按**错误码**枚举才不会漏(TS2307 = Cannot find module)——按字面串枚举对新成员默认放行。
+# 「模块解析假红」这一类的指纹。按**错误码**枚举(TS2307 = Cannot find module)而不是按字面串 ——
+# 按字面串枚举对新成员默认放行。
 missing_module_lines() { grep -ac "error TS2307" <<<"$1" 2>/dev/null || true; }
 
-echo "  · 探针 id=$ID,base=$BASE_SHA"
+echo "  · 探针 id=$ID,base=$BASE_SHA${NESTED:+ ,nested=$NESTED}"
 
-# ── [1/5] 反向:没 bootstrap 的全新 worktree 必须仍然假红 ──────────────────────────
-echo "  · [1/5] 反向:未 bootstrap 的全新 worktree 必须产生模块解析错误"
+# ── [1/6] 反向:没 bootstrap 的全新 worktree 必须仍然假红 ──────────────────────────
+echo "  · [1/6] 反向:未 bootstrap 的全新 worktree 必须产生模块解析错误"
 if ! git -C "$MAIN" worktree add --detach -q "$MAIN/.worktrees/$NEG" "$BASE_SHA" 2>/dev/null; then
   echo "    ✗ 建不出反向探针 worktree —— **本次测量作废**,不要把它读成绿" >&2
   exit 1
@@ -98,10 +175,10 @@ fi
 neg_out="$(typecheck_in "$NEG")"; neg_rc=$?
 neg_missing="$(missing_module_lines "$neg_out")"
 if [ "$neg_rc" -eq 0 ]; then
-  red "未 bootstrap 的 worktree 竟然 typecheck 通过(rc=0)—— 这台机器哪里都能解析,[2] 于是空对空;本判据不成立"
+  red "未 bootstrap 的 worktree 竟然 typecheck 通过(rc=0)—— 这台机器哪里都能解析,[2/6] 于是空对空;本判据不成立"
 fi
 if [ "${neg_missing:-0}" -lt 1 ]; then
-  red "未 bootstrap 的 worktree 没产生任何 TS2307 —— 探针测不出已知的坏,[2] 的绿没有含义"
+  red "未 bootstrap 的 worktree 没产生任何 TS2307 —— 探针测不出已知的坏,[2/6] 的绿没有含义"
 else
   echo "    ✓ 未 bootstrap:rc=$neg_rc,TS2307 ${neg_missing} 条(探针测得出已知的坏)"
 fi
@@ -110,14 +187,16 @@ if ! grep -aq "Cannot find module 'bun:test'" <<<"$neg_out"; then
 fi
 git -C "$MAIN" worktree remove --force "$MAIN/.worktrees/$NEG" 2>/dev/null || true
 
-# ── [3/5] 的前置:把共享 core.hooksPath 设成一个**确定**的值,再跑 [2/5] ────────────
+# ── [3/6] 的前置:把共享 core.hooksPath 设成一个**确定**的值,再跑 [2/6] ──────────────
 git -C "$MAIN" config --local core.hooksPath .githooks 2>/dev/null || true
 
-# ── [2/5] 正向:bootstrap 一步建出来的 worktree 必须能给出可信 typecheck ────────────
-echo "  · [2/5] 正向:bootstrap 建出的 worktree 必须 typecheck 干净"
+# ── [2/6] 正向:bootstrap 一步建出来的 worktree 必须能给出可信 typecheck ──────────────
+echo "  · [2/6] 正向:bootstrap 建出的 worktree 必须 typecheck 干净"
+pos_ready=0
 if ! bash "$BOOTSTRAP" "$POS" --detach --base "$BASE_SHA" >/dev/null 2>&1; then
-  red "bootstrap 自己非零退出 —— 建不出可用的 worktree"
+  note_bootstrap_failure "bootstrap 自己非零退出 —— 建不出可用的 worktree"
 else
+  pos_ready=1
   pos_out="$(typecheck_in "$POS")"; pos_rc=$?
   pos_missing="$(missing_module_lines "$pos_out")"
   if [ "$pos_rc" -ne 0 ] || [ "${pos_missing:-0}" -ne 0 ]; then
@@ -128,8 +207,9 @@ else
   fi
 fi
 
-# ── [3/5] 共享 .git/config 没被 husky 改掉 ──────────────────────────────────────────
-echo "  · [3/5] 不污染共享树:core.hooksPath 必须还是 .githooks"
+# ── [3/6] 共享 .git/config 没被 husky 改掉 ──────────────────────────────────────────
+# 这条**永不豁免**:它不需要 registry 可达,install 失败与否都该成立。
+echo "  · [3/6] 不污染共享树:core.hooksPath 必须还是 .githooks"
 hooks_now="$(git -C "$MAIN" config --local --get core.hooksPath 2>/dev/null || true)"
 if [ "$hooks_now" != ".githooks" ]; then
   red "bootstrap 改掉了**共享** .git/config 的 core.hooksPath:.githooks → ${hooks_now:-(unset)}(husky 的 prepare);下一个人的 git push 会撞上上游那份恒红钩子,然后 --no-verify"
@@ -137,10 +217,12 @@ else
   echo "    ✓ core.hooksPath 仍是 .githooks"
 fi
 
-# ── [4/5] 幂等:对已装好的 worktree 重跑,不破坏它 ──────────────────────────────────
-echo "  · [4/5] 幂等:对已装好的 worktree 重跑 bootstrap"
-if ! bash "$BOOTSTRAP" "$POS" --detach --base "$BASE_SHA" >/dev/null 2>&1; then
-  red "对已存在且已装好的 worktree 重跑 bootstrap 非零退出 —— 不幂等"
+# ── [4/6] 幂等:对已装好的 worktree 重跑,不破坏它 ──────────────────────────────────
+echo "  · [4/6] 幂等:对已装好的 worktree 重跑 bootstrap"
+if [ "$pos_ready" -eq 0 ]; then
+  echo "    ⚠️  跳过:[2/6] 没能装出可用的 worktree(见上),幂等这一条本次无从判起"
+elif ! bash "$BOOTSTRAP" "$POS" --detach --base "$BASE_SHA" >/dev/null 2>&1; then
+  note_bootstrap_failure "对已存在且已装好的 worktree 重跑 bootstrap 非零退出 —— 不幂等"
 else
   again_out="$(typecheck_in "$POS")"; again_rc=$?
   again_missing="$(missing_module_lines "$again_out")"
@@ -151,15 +233,15 @@ else
   fi
 fi
 
-# ── [5/5] install 失败要响,且不留半装的树 ─────────────────────────────────────────
-echo "  · [5/5] bun install 失败时:非零退出 + 不留半装的 worktree"
+# ── [5/6] 非网络原因的失败:非零退出 + 不留半装的树 + **判成 real 而不是 network** ────
+echo "  · [5/6] 非网络失败必须仍然拦住(bun 缺失:非零退出 + 不留半装树 + 判成 real)"
 BUN_BIN="$(command -v bun 2>/dev/null || true)"
 if [ -z "$BUN_BIN" ]; then
   echo "    ✗ 这台机器上找不到 bun —— **本次测量作废**" >&2
   exit 1
 fi
 BUN_DIR="${BUN_BIN%/*}"
-# 从 PATH 里摘掉 bun 所在目录(只摘它,别的工具照旧可用 —— git 还得能跑)。
+# 从 PATH 里摘掉 bun 所在目录(只摘它,别的工具照旧可用 —— git/curl 还得能跑)。
 # 按 `IFS=':'` 分词而不是 `read -d ':'`:后者在 herestring 末尾会多读出一个换行字段,
 # 于是 RESTRICTED 末尾挂上一个空/换行目录项(不报错,只是悄悄多一段)。
 RESTRICTED=""
@@ -190,13 +272,74 @@ else
   elif [ -e "$MAIN/.worktrees/$FAIL" ]; then
     red "bun install 失败后,本次创建的 worktree 还留在 .worktrees/$FAIL —— 半装的树比没有更坏"
   else
-    echo "    ✓ 非零退出(rc=$boot_rc)且没留下 .worktrees/$FAIL"
+    # ★ owner 点名要补的那半:这是一个**非网络**失败,判别依据必须说 `real`。
+    #   少了它,「一律算网络」这个错误实现能满足上面两条 ⇒ 豁免变成万能挡箭牌 ⇒ 这道门永不失守。
+    verdict_real="$(classify_bootstrap_failure)"
+    if [ "$verdict_real" = real ]; then
+      # `${FAIL}` 必须带花括号:紧跟其后的是 CJK 顿号,UTF-8 locale 下 bash 会把那几个字节
+      # 一起当成变量名 ⇒ `FAIL<0xe3><0x80><0x81>: unbound variable`(set -u 下当场炸)。
+      echo "    ✓ 非零退出(rc=$boot_rc)、没留下 .worktrees/${FAIL}、且判成 real(会拦住)"
+    elif live_registry_reachable; then
+      # registry 明明可达,判别依据却把一个**非网络**失败说成 network ⇒ 豁免成了万能挡箭牌:
+      # bootstrap 真坏掉的那天也会被当成网络放行,这道门从此永不失守。
+      red "非网络失败(bun 缺失)被判别依据归成 '$verdict_real',而 registry 这一刻是可达的 —— 豁免成了万能挡箭牌"
+    else
+      # 这台机器这一刻真的连不上 registry:`real` 与 `network` 本来就分不开(判别依据只有
+      # 可达性这一个输入)。如实降级,不许当绿,也不冤枉判红。
+      unverified=1
+      echo "    ⚠️  未验证:registry 这一刻不可达,本条分不出 real / network(判别依据只看可达性)"
+    fi
   fi
 fi
 
+# ── [6/6] 判别依据真的判别 + 网络档不报绿 ───────────────────────────────────────────
+echo "  · [6/6] 判别依据双向可分 + 网络档不报绿"
+# (b) 不可达 registry 必须判 network —— 杀掉「一律算 real」(那等于没有豁免,网络一抖就拦 push)
+verdict_net="$(export BUN_CONFIG_REGISTRY="$UNREACHABLE_REGISTRY"; classify_bootstrap_failure)"
+if [ "$verdict_net" != network ]; then
+  red "registry 指向 $UNREACHABLE_REGISTRY 时判别依据仍说 '$verdict_net' —— 豁免形同虚设,网络一抖就拦住 push"
+else
+  echo "    ✓ 不可达 registry ⇒ network"
+fi
+# (a) 可达 registry 必须判 real —— 直接杀掉「一律算网络」
+live_registry="$(resolve_registry 2>/dev/null || true)"
+if live_registry_reachable; then
+  verdict_live="$(classify_bootstrap_failure)"
+  if [ "$verdict_live" != real ]; then
+    red "registry($live_registry)明明可达,判别依据却说 '$verdict_live' —— 一律算网络 = 这道门永不失守"
+  else
+    echo "    ✓ 可达 registry($live_registry)⇒ real"
+  fi
+else
+  # 本机这一刻真的连不上 registry:判别力这一条**证不了**,如实降级,不许当绿。
+  unverified=1
+  echo "    ⚠️  未验证:registry 这一刻不可达,'可达 ⇒ real' 这一半本次证不了"
+fi
+# (c) 报告契约:套跑一遍并注入不可达 registry —— 必须 exit 2 + 说「未验证」+ 不说那句全绿话
+if [ "$NESTED" = "1" ]; then
+  echo "    · 嵌套运行:跳过报告契约自检(断递归)"
+else
+  nested_out="$(ALPHA_WT_PROBE_NESTED=1 BUN_CONFIG_REGISTRY="$UNREACHABLE_REGISTRY" bash "$SELF" 2>&1)"
+  nested_rc=$?
+  if [ "$nested_rc" -ne 2 ]; then
+    red "注入不可达 registry 后整个探针的退出码是 $nested_rc,应为 2(0=谎报绿;1=网络一抖就拦 push)"
+  elif ! grep -aq "未验证" <<<"$nested_out"; then
+    red "网络档没有在输出里说「未验证」—— 把「没验成」读成「验过了」正是这一档要消掉的东西"
+  elif grep -aq "新建 worktree 自己就能跑出可信 typecheck" <<<"$nested_out"; then
+    red "网络档仍然打印了那句全绿结论 —— 不许报绿"
+  else
+    echo "    ✓ 网络档:exit 2、说「未验证」、不报绿"
+  fi
+fi
+
+# ── 结局 ──────────────────────────────────────────────────────────────────────────
 if [ "$fail" -ne 0 ]; then
   echo "    ✗ worktree bootstrap 能力判据失守" >&2
   exit 1
+fi
+if [ "$unverified" -ne 0 ]; then
+  echo "    ⚠️  worktree bootstrap 能力**本次未验证**(见上面的未验证行)—— 不拦 push,但这一跑不构成证据"
+  exit 2
 fi
 echo "    ✓ 新建 worktree 自己就能跑出可信 typecheck(不必碰共享主 checkout)"
 exit 0
