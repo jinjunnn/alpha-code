@@ -32,6 +32,25 @@ type RunResult = {
   sample: number
   startupMs?: number
   bootReadyMs?: number
+  /**
+   * #881:sidecar ready 之后那一段的**分项**。此前 `startupMs - bootReadyMs` 是一个不可拆的
+   * 差值(上一轮首启 18139.0ms),问「这十八秒是什么」在证据里没有任何字段可以回答。
+   */
+  catalogReady?: {
+    /** `renderer.home.catalog_ready.t`:目录真就绪时刻(marker 答 200 的那一刻)。 */
+    atMs: number
+    /** 屏障自己的等待,不含随后的 `v2.model.list` 往返。 */
+    barrierMs: number
+    probes: number
+    pollWaits: number
+    /** `first` / `event` / `poll` —— 事件路径与兜底路径必须分开报,混成一个 P95 看不出信道死没死。 */
+    wake: string
+  }
+  /**
+   * #881:`phase=ready` 结构上不等于「目录已收敛」—— main 把 ready 压在 `prewarmInitialLocation`
+   * 之后,而后者非 ready 也照发。这两个字段是「ready 是等到了什么才发的」在证据里的唯一答案。
+   */
+  prewarm?: { outcome: string; durationMs?: number; status?: number; atMs: number }
   refreshDurationMs?: number
   refreshResult?: string
   grace?: string
@@ -80,7 +99,11 @@ const CDP_PORT = 9222
 const REFRESH_TOKEN = "synthetic-refresh-token"
 const SYNTHETIC_BYOK_KEY = "synthetic-deepseek-key"
 const DRAFT = "draft survives token rotation"
-const MAX_WAIT_MS = 25_000
+// #881:取证侧仅存的自超时。旧值 25_000 与被测量本身同量级 —— 上一轮样本 1 的目录就绪落在
+// 20051.9ms,余量只剩 5s。首启若比它慢,`waitFor` 会先抛 `timeout after 25000ms`,一次**数字
+// 取证**当场变成一次失败,而失败的耗时是**我们自己的计时器**说的,不是被测方的答复。这与本票
+// 要消灭的观测缺陷同源,只是搬到了取证侧。
+const MAX_WAIT_MS = 60_000
 
 const scenarios: Scenario[] = [
   { id: "latency-50ms", samples: 5, auth: "expired", refresh: { delayMs: 50, status: 200 }, waitForRefreshEnd: true },
@@ -791,6 +814,10 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
       : undefined
     const rawTimeline = timelineFile(appRoot) ? readFileSync(timelineFile(appRoot)!, "utf8") : ""
     const authFile = join(appRoot, "desktop", "alpha-auth.json")
+    // #881:sidecar ready 之后那一段的分项。两条标都可能缺席(旧构建、或首启根本没走到就绪),
+    // 缺席时留 undefined —— 不要拿别的量顶上去当数字用。
+    const catalogReadyMark = events.find((event) => event.name === "renderer.home.catalog_ready")
+    const readyIpc = events.find((event) => event.name === "main.sidecar.ready_ipc")
     if (modelSet) {
       const facts = serverFacts.filter((fact) => fact.scenario === scenario.id && fact.sample === sample)
       modelSet.accountRequests = facts.filter((fact) => fact.request === "account").length
@@ -804,6 +831,25 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
       sample,
       startupMs: ready.t,
       bootReadyMs: readyEvents.find((event) => event.reason === "boot")?.t,
+      catalogReady:
+        catalogReadyMark && typeof catalogReadyMark.barrierMs === "number"
+          ? {
+              atMs: catalogReadyMark.t,
+              barrierMs: catalogReadyMark.barrierMs,
+              probes: Number(catalogReadyMark.probes),
+              pollWaits: Number(catalogReadyMark.pollWaits),
+              wake: String(catalogReadyMark.wake),
+            }
+          : undefined,
+      prewarm:
+        readyIpc && typeof readyIpc.prewarmOutcome === "string"
+          ? {
+              atMs: readyIpc.t,
+              outcome: readyIpc.prewarmOutcome,
+              durationMs: typeof readyIpc.prewarmMs === "number" ? readyIpc.prewarmMs : undefined,
+              status: typeof readyIpc.prewarmStatus === "number" ? readyIpc.prewarmStatus : undefined,
+            }
+          : undefined,
       refreshDurationMs: refreshStart && refreshEnd ? refreshEnd.t - refreshStart.t : undefined,
       refreshResult: typeof refreshEnd?.result === "string" ? refreshEnd.result : undefined,
       grace: String(events.find((event) => event.name === "main.auth.boot.grace")?.outcome ?? "not-applicable"),
@@ -849,10 +895,16 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
           "main.auth.refresh.end",
           "main.auth.rotation",
           "main.sidecar.generation.emit",
+          // #881:这三条此前被这张允许清单**过滤掉了** —— 时间线文件里有,而落库的证据里没有。
+          // 于是「ready 是等到了什么才发的」在归因时结构上无从查起,尽管数据当时就在盘上。
+          "main.sidecar.boot.fork.start",
+          "main.sidecar.boot.fork.end",
+          "main.sidecar.ready_ipc",
           "main.renderer.reload.perform",
           "main.renderer.reload.skipped",
           "renderer.root.mount",
           "renderer.home.model_list.start",
+          "renderer.home.catalog_ready",
           "renderer.home.model_list.end",
           "renderer.home.model_list.retry_tick",
           "renderer.generation.interruption",
@@ -934,7 +986,9 @@ function writeResults(incomplete?: { scenario: string; sample: number; error: st
     )
     .flatMap((result) => (typeof result.startupMs === "number" ? [result.startupMs] : []))
   const payload = {
-    schema: "alpha-code/req109-110-t7-runtime/v1",
+    // #881:v2 = 每条样本多出 `catalogReady` / `prewarm` 两个分项块,事件允许清单也补齐了
+    // sidecar fork 与 ready IPC 三条标。v1 的样本与 v2 不可混着算 —— 那一版结构上没有分项。
+    schema: "alpha-code/req109-110-t7-runtime/v2",
     issue: "alpha-code#536",
     capturedAt: new Date().toISOString(),
     commit: Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: join(import.meta.dir, "../../..") })

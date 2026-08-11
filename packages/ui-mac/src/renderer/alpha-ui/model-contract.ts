@@ -5,9 +5,38 @@ import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
 
 type Client = ReturnType<typeof createOpencodeClient>
 
+/**
+ * #881:目录**真就绪时刻**在系统里的表示。
+ *
+ * 在此之前它没有表示 —— 最接近的载体 `renderer.home.model_list.end.durationMs` 把三个成因
+ * 不同的量压成一个标量:①屏障等待(打包首启实测十几秒,那不是故障)、②唤醒来自事件还是
+ * 250ms 兜底(死信道的唯一判别轴)、③随后的 `v2.model.list` 网络往返(热路径 5–50ms)。
+ * 归因需要的分项在那个标量下**结构上产不出来**。
+ */
+export type CatalogReadyFact = {
+  /** 屏障自己的等待:进入屏障 → marker 首次答 200。**不含**随后的 `v2.model.list` 往返。 */
+  barrierMs: number
+  /** marker 探针发出的轮数,含就绪那一轮。恒 ≥ 1。 */
+  probes: number
+  /** 走满一个兜底轮询周期的次数。事件路径恒为 0 —— 这是死信道的判别轴。 */
+  pollWaits: number
+  /** 让**就绪那一轮**探针得以发出的唤醒来源。 */
+  wake: "first" | "event" | "poll"
+}
+
 type ModelContractOptions = {
   catalogReadyPollMs?: number
+  now?: () => number
   wait?: (delayMs: number, signal?: AbortSignal) => Promise<void>
+  /**
+   * #881:就绪时刻的**汇总**上报。刻意不是「每轮探针一条」—— 首启收敛实测约 16s,250ms 一档
+   * 就是约 64 条标,每条都过 IPC + sanitize + 落盘,观测自己会污染要归因的那段。一条汇总标
+   * 加三个计数已经够拆分项。
+   *
+   * 发标通道由调用方注入,contract 不 import renderer 的 `startup-timeline`(它读 `window.api`,
+   * 静态 import 会把本模块的组件测试整文件拖进 server 构建 —— 本仓点名过的形态)。
+   */
+  onCatalogReady?: (fact: CatalogReadyFact) => void
 }
 
 /**
@@ -105,6 +134,8 @@ const cancelledByUs = (error: unknown, round: AbortSignal) =>
 export function createModelContract(sdk: () => Client | undefined, options: ModelContractOptions = {}) {
   const catalogReadyPollMs = options.catalogReadyPollMs ?? CATALOG_READY_POLL_MS
   const waitForNextProbe = options.wait ?? wait
+  const now = options.now ?? (() => performance.now())
+  const onCatalogReady = options.onCatalogReady
 
   /**
    * 目录就绪屏障。#857 的保证一字不动:marker 探针是**唯一**的就绪证明,绕过它会把未治理的
@@ -124,6 +155,12 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
    * marker 答了、探针给出真实故障、或调用方取消。
    */
   const waitForCatalogReady = async (client: Client, directory: string, signal?: AbortSignal) => {
+    // #881:分项计数。屏障是**唯一**知道这些事实的位置(就绪时刻、探针轮数、唤醒来源),
+    // 此前它们在这里被原地丢弃,只 `return`。
+    const startedAt = now()
+    let probes = 0
+    let pollWaits = 0
+    let wakeSource: CatalogReadyFact["wake"] = "first"
     while (true) {
       if (signal?.aborted) throw new ModelContractError("list", signal.reason)
       // 先武装唤醒、再发探针:提交若落在探针在途期间,事件不能丢 —— 否则屏障会白等一个兜底
@@ -144,6 +181,7 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
         let failed = false
         let failure: unknown
         try {
+          probes++
           const result = await client.v2.provider.get(
             { providerID: ALPHA_V2_CATALOG_READY_PROVIDER_ID, location: { directory } },
             { signal: requestBudget(signal, round.signal) },
@@ -162,14 +200,26 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
           failed = true
           failure = error
         }
-        if (ready) return
+        if (ready) {
+          // #881:就绪时刻**只在真就绪时**发一次。放进 finally / 无条件发,等于拿「发起时刻」
+          // 或「取消时刻」冒充就绪 —— 那正是本票要消灭的「客户端计时器冒充被测方答复」。
+          try {
+            onCatalogReady?.({ barrierMs: now() - startedAt, probes, pollWaits, wake: wakeSource })
+          } catch {
+            // 观测绝不扰动被观测对象:上报抛出不得把屏障变成一次失败(= 用户停在 recovering)。
+          }
+          return
+        }
         // #882 R2:**真实失败先判,`landed` 后判**。反过来时,「引擎这一轮已经答了 503、而
         // `catalog.updated` 恰好同时到达」会被短路成「目录尚未收敛,继续等」——那份 503 既不
         // reject 也不进 recovering,而合同说只有 404/`ProviderNotFoundError` 算未就绪。
         if (failed && !cancelledByUs(failure, round.signal)) throw new ModelContractError("list", failure)
         // 事件已落地(含「本轮探针正是被它取消的」那一支):立刻重探,不进等待,也不把这次
         // 主动中断当成故障 —— 取消是我们自己发的。
-        if (landed) continue
+        if (landed) {
+          wakeSource = "event"
+          continue
+        }
         const woken = new Promise<void>((resolve) => {
           wake = resolve
         })
@@ -177,6 +227,10 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
         // 事件先到时,兜底定时器仍可能在之后因 abort 而拒绝 —— 先接住,避免未处理拒绝。
         fallback.catch(() => {})
         await Promise.race([woken, fallback])
+        // `woken` 只由订阅回调解决,而那个回调解决它之前先置 `landed` ⇒ `landed` 就是「谁赢了这场
+        // race」的判据。走满一个兜底周期才计入 `pollWaits`(#881 要分开报的那条轴)。
+        wakeSource = landed ? "event" : "poll"
+        if (!landed) pollWaits++
       } catch (error) {
         if (signal?.aborted && !(error instanceof ModelContractError))
           throw new ModelContractError("list", signal.reason)

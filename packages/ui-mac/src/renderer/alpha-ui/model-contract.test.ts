@@ -4,7 +4,7 @@ import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../../shared/alpha-config"
 // #882:唤醒信道用的是**生产接线**本体(runtime-recovery 的同一对函数),不是测试替身。
 // 注入一个 subscribe 桩会让「删掉生产订阅仍全绿」重新成立 —— 那是本仓点名的第 ⑧ 类假闸门。
 import { notifyCatalogUpdated } from "../runtime-recovery"
-import { createModelContract, ModelContractError } from "./model-contract"
+import { createModelContract, ModelContractError, type CatalogReadyFact } from "./model-contract"
 // #882 R1 Major:「503 走既有 recovering 链」不能自己拼一条等价链 —— 直接驱动生产的那个循环。
 import { loadEngineModelsWithRetry } from "./model-recovery"
 
@@ -556,6 +556,152 @@ describe("typed model contract", () => {
     const failure = await pending
     expect(failure).toBeInstanceOf(ModelContractError)
     expect(failure.cause).toBe(caller.signal.reason)
+  })
+
+  test("#881 目录真就绪时刻单独成标:barrierMs 是屏障自己的等待，不含随后的 model.list 往返", async () => {
+    // 此前「真就绪时刻」在系统里**没有表示**:最接近的载体 renderer.home.model_list.end.durationMs
+    // 把屏障等待与随后的 list 往返压成一个标量,归因要的分项在那个标量下结构上产不出来。
+    //
+    // 夹具自己拿三个**独立字面量**造这两段(屏障 9000ms、随后的 list 3000ms、档位 1000ms);
+    // 期望值不从被测模块读回来 —— 自指等价链一起改错就一起自洽(本仓点名过的形态)。
+    const BARRIER_MS = 9_000
+    const LIST_MS = 3_000
+    const POLL_MS = 1_000
+    let clock = 0
+    const order: string[] = []
+    const facts: CatalogReadyFact[] = []
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: async () =>
+                clock >= BARRIER_MS
+                  ? { data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }
+                  : notReadyByStatus(),
+            },
+            model: {
+              list: async () => {
+                clock += LIST_MS
+                order.push("list-settled")
+                return { data: { data: [model] } }
+              },
+            },
+          },
+        }) as never,
+      {
+        catalogReadyPollMs: POLL_MS,
+        now: () => clock,
+        wait: async (delayMs) => {
+          clock += delayMs
+        },
+        onCatalogReady: (fact) => {
+          order.push("ready-mark")
+          facts.push(fact)
+        },
+      },
+    )
+
+    await expect(contract.list("/cold-barrier")).resolves.toEqual([model])
+    expect(facts).toHaveLength(1)
+    // 把发标挪到 list() 之后 ⇒ 这里量到 12000,红。这正是「合并成一个标量」那个缺陷本身。
+    expect(facts[0].barrierMs).toBe(BARRIER_MS)
+    expect(order).toEqual(["ready-mark", "list-settled"])
+    // 分项自洽:9000ms 的屏障、1000ms 一档 ⇒ 10 轮探针、9 次走满兜底周期。
+    expect(facts[0]).toMatchObject({ probes: 10, pollWaits: 9, wake: "poll" })
+  })
+
+  test("#881 唤醒来源与探针轮数各自成立：事件路径 pollWaits=0，兜底路径的轮数由 250ms 档位独立算出", async () => {
+    // 「唤醒来自事件还是兜底」是死信道的**唯一**判别轴(实测:先于 renderer 订阅就收敛的目录
+    // 再也不发 catalog.updated)。混成一个标量报数,信道死了也看不出来。
+    // 两支的期望值互不相同(0 vs 4、2 vs 5、event vs poll)⇒ 任何写死常量的实现至少在一支上红。
+
+    // (a) 事件唤醒:兜底定时器**永不到期**,只有 catalog.updated 能把屏障推进第二轮。
+    let eventProbes = 0
+    const eventFacts: CatalogReadyFact[] = []
+    const byEvent = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: async () => {
+                eventProbes++
+                if (eventProbes === 1) return notReadyByTag()
+                return { data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }
+              },
+            },
+            model: { list: async () => ({ data: { data: [model] } }) },
+          },
+        }) as never,
+      { wait: () => new Promise<void>(() => {}), onCatalogReady: (fact) => eventFacts.push(fact) },
+    )
+    const listing = byEvent.list("/wake-by-event")
+    for (let spin = 0; spin < 1_000 && eventProbes < 1; spin++) await Promise.resolve()
+    notifyCatalogUpdated("/wake-by-event")
+    await expect(listing).resolves.toEqual([model])
+    expect(eventFacts).toHaveLength(1)
+    expect(eventFacts[0]).toMatchObject({ probes: 2, pollWaits: 0, wake: "event" })
+
+    // (b) 全程一条事件都不投递,marker 在 1000ms 处就绪。期望的 4 / 5 由独立字面量 1000÷250
+    //     算出;CATALOG_READY_POLL_MS 没有导出,断言不可能从被测对象读回来 —— 生产档位被改成
+    //     500ms 时本支当场红。
+    const READY_AT_MS = 1_000
+    let clock = 0
+    const pollFacts: CatalogReadyFact[] = []
+    const byPoll = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: async () =>
+                clock >= READY_AT_MS
+                  ? { data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } }
+                  : notReadyByStatus(),
+            },
+            model: { list: async () => ({ data: { data: [model] } }) },
+          },
+        }) as never,
+      {
+        now: () => clock,
+        wait: async (delayMs) => {
+          clock += delayMs
+        },
+        onCatalogReady: (fact) => pollFacts.push(fact),
+      },
+    )
+    await expect(byPoll.list("/wake-by-poll")).resolves.toEqual([model])
+    expect(pollFacts).toHaveLength(1)
+    expect(pollFacts[0]).toMatchObject({ probes: 5, pollWaits: 4, wake: "poll", barrierMs: READY_AT_MS })
+  })
+
+  test("#881 屏障永不就绪时不得发就绪标 —— 不许拿发起时刻或取消时刻冒充就绪", async () => {
+    // 这条专杀「有标就算数」这一格粗断言:把发标放进 finally / 无条件发,标就变成了「我开始等
+    // 了」或「我被取消了」,而票要归因的恰恰是**被测方什么时候答的**。
+    const caller = new AbortController()
+    let probes = 0
+    const facts: CatalogReadyFact[] = []
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: async () => {
+                probes++
+                return notReadyByStatus()
+              },
+            },
+          },
+        }) as never,
+      { wait: async () => {}, onCatalogReady: (fact) => facts.push(fact) },
+    )
+
+    const pending = contract.list("/never-ready-mark", caller.signal).catch((error) => error)
+    // 自旋有界(与上面那条同理:无界自旋在「屏障提前收场」的实现下会饿死事件循环)。
+    for (let spin = 0; spin < 5_000 && probes < 50; spin++) await Promise.resolve()
+    expect(probes).toBeGreaterThanOrEqual(50)
+    caller.abort(new Error("chain superseded"))
+    expect(await pending).toBeInstanceOf(ModelContractError)
+    expect(facts).toEqual([])
   })
 
   test("caller abort stays the recorded cause during both catalog probe and poll wait", async () => {

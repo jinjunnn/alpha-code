@@ -95,6 +95,8 @@ let chipSeq = 0
 let homeModelListMarkCount = 0
 let homeModelRetryMarkCount = 0
 let homeAccountMarkCount = 0
+/** #881:目录真就绪标的预算,与上面三个同构(每次主进程运行封顶 25 条)。 */
+let homeCatalogReadyMarkCount = 0
 export const closeChips = () => setOpenChipId(null)
 
 function useChip() {
@@ -622,7 +624,18 @@ export type AlphaComposerRuntimeProps = AlphaComposerProps & {
 
 export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const command = props.command
-  const modelContract = props.modelContract ?? createModelContract(props.projects.sdk)
+  const modelContract =
+    props.modelContract ??
+    // #881:屏障是唯一知道「目录真就绪时刻」的位置,发标通道从这里注入(contract 不 import
+    // renderer 的 startup-timeline —— 它读 window.api,静态 import 会把 contract 的组件测试
+    // 整文件拖进 server 构建)。
+    createModelContract(props.projects.sdk, {
+      onCatalogReady: (fact) => {
+        if (props.mode !== "home" || homeCatalogReadyMarkCount >= 25) return
+        homeCatalogReadyMarkCount++
+        markStartupTimeline("renderer.home.catalog_ready", fact)
+      },
+    })
   // #663:本实例是否已卸载。异步读盘 settle 时据此让位 —— 已卸载的实例不写暂存、不弹 toast。
   let disposed = false
   const [text, setText] = createSignal(props.initialText ?? "")

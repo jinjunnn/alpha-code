@@ -25,8 +25,16 @@ import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
 export type HealthCheck = { wait: Promise<void> }
 
 // #613:ready 可携带注入失败(sidecar.ts 同构镜像)——引擎起来了但 alpha 配置整份丢失。
+// #881:ready 另外携带 prewarm 的结局与耗时 —— `phase=ready` 结构上不等于「目录已收敛」,
+// 这三个字段是打包证据里唯一能回答「ready 是等到了什么才发的」的东西。
 type SidecarMessage =
-  | { type: "ready"; injectionFailure?: { message: string; stack?: string } }
+  | {
+      type: "ready"
+      injectionFailure?: { message: string; stack?: string }
+      prewarmOutcome?: string
+      prewarmMs?: number
+      prewarmStatus?: number
+    }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
@@ -325,6 +333,11 @@ export async function spawnLocalServer(
           )
         markStartupTimeline("main.sidecar.ready_ipc", {
           context: options.timelineContext ?? "other",
+          // #881:键名刻意避开 sanitizeExtra 的黑名单子串(env/token/secret/header…),命中即
+          // **静默剔除**,打包跑完只会发现字段不在。判据在 startup-timeline.test.ts。
+          ...(message.prewarmOutcome === undefined ? {} : { prewarmOutcome: message.prewarmOutcome }),
+          ...(message.prewarmMs === undefined ? {} : { prewarmMs: message.prewarmMs }),
+          ...(message.prewarmStatus === undefined ? {} : { prewarmStatus: message.prewarmStatus }),
         })
         done = true
         cleanup()
