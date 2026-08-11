@@ -46,11 +46,11 @@
 ```
 bun install
 bun run --cwd packages/ui-mac dev   # electron 解析失败时加 ELECTRON_EXEC_PATH(见 ALPHA.md);flag 须在 run 后(REQ-027)
-bash scripts/alpha-check.sh          # push 前自检:跑 alpha-ci 的全部 12 个代码步,末尾自陈逐步覆盖
+bash scripts/alpha-check.sh          # push 前自检:跑 alpha-ci 的全部 16 个代码步,末尾自陈逐步覆盖
 ```
 
 ## CI(规范见 `docs/runbooks/ci.md`)
-**本地先跑,CI 兜底**。push 前必过 `scripts/alpha-check.sh` —— 它跑 `alpha-ci` 的**全部 12 个代码步**,
+**本地先跑,CI 兜底**。push 前必过 `scripts/alpha-check.sh` —— 它跑 `alpha-ci` 的**全部 16 个代码步**,
 并在末尾打印逐步对照表(MIRRORED / SUPERSET / DEGRADED,后两者必须写理由)。这张表由
 `packages/ui-mac/src/main/local-gate-parity.test.ts` 反向核对:CI 加一步而本地没登记即红。
 `#777` 之前这里写的是「与 alpha-ci 1:1」,而实测只跑了 9 步、其中 3 步是裸 `bun test` 的降级档

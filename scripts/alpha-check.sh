@@ -24,6 +24,13 @@ cd "$(git rev-parse --show-toplevel)"
 # 档位只有三种:MIRRORED(跑同一条命令)、SUPERSET(本地还多验了东西)、
 # DEGRADED:<理由>(跑不了/跑的是降级档 —— 必须写清降级了什么)。没有第四种。
 CI_STEPS=(
+  # `#895`:四个 required job 各自的第一步 —— 证明 alpha-ci 的分类步 detect 真的给出了结论。
+  # 本地没有这个状态可言:alpha-check 一律跑全部七步,没有 docs-only 快路径、没有分类步,
+  # 所以「分类步失败 ⇒ 闸门集体静默跳过」在本地结构上到不了 —— 本地严格更强,故 SUPERSET。
+  "upstream-guard|Assert detect classified this diff (#895)|SUPERSET:本地无条件跑全部闸门,不存在分类步 ⇒ 无「分类失败则闸门静默跳过」这一状态"
+  "typecheck|Assert detect classified this diff (#895)|SUPERSET:同上"
+  "test|Assert detect classified this diff (#895)|SUPERSET:同上"
+  "docs-gate|Assert detect classified this diff (#895)|SUPERSET:同上"
   "upstream-guard|No literal NUL bytes in version-controlled files|MIRRORED"
   "upstream-guard|Fail on any modification to upstream package files|SUPERSET:committed delta ∪ 未提交工作树改动"
   "typecheck|typecheck @alpha-code/contracts-consumer|MIRRORED"

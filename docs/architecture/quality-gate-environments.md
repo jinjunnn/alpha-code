@@ -45,7 +45,11 @@
 环境有四个:**alpha-ci(ubuntu runner)** / **本地 `alpha-check.sh`(开发机 macOS)** /
 **本地 pre-push 钩子**(= 同一个脚本)/ **开发者手跑 `bun test`**。
 
-### 3.1 CI 的 12 个代码步
+### 3.1 CI 的 12 个代码步(`#777` 当时的普查)
+
+> 数字已变:`#895` 给四个必需 job 各加了一步 `Assert detect classified this diff`,
+> 现在是 16 步(`scripts/alpha-check.sh` 的 `CI_STEPS` 是权威,它自己会打出来)。下表刻意保留
+> `#777` 当时的 12 行 —— 它讲的是「修前/修后」那段历史,不是今天的清单。
 
 | # | job | 步骤 | alpha-ci | alpha-check(修前) | alpha-check(修后) |
 | --- | --- | --- | --- | --- | --- |
