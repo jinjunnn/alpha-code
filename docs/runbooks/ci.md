@@ -9,7 +9,7 @@
 bash scripts/alpha-check.sh
 ```
 
-绿了再 push。它跑的是 `alpha-ci` 的**全部 12 个代码步**,并在末尾打印一张逐步对照表
+绿了再 push。它跑的是 `alpha-ci` 的**全部 16 个代码步**,并在末尾打印一张逐步对照表
 (`MIRRORED` / `SUPERSET:<理由>` / `DEGRADED:<理由>`)。
 
 > `#777` 起,「与 alpha-ci 1:1」不再是散文。2026-08-03 实读:此前这句话写在三处
@@ -94,6 +94,15 @@ bash scripts/alpha-check.sh
   `name:`」+「每个 job 要么在记录里、要么显式登记为不必需」。**它抓得住 workflow 侧改名(咬过我们的
   那一类),抓不住「只改 GitHub 设置」——真源在仓外,CI 够不着(fork PR 拿不到 secrets)。改分支保护时
   同一轮里改那个文件,这是减速带不是闸门。**
+- **必需检查不会因为 `detect` 失败而静默放行**(`#895`,2026-08-11 实测)。四个必需 job 都
+  `needs: detect`;从前 `detect` 一红,它们被折成 `skipped`,而 **GitHub 把 `skipped` 当成
+  「已满足」** ⇒ 四道闸门一道没跑,PR 照样可合(实测 `mergeStateStatus=UNSTABLE`)。现在它们带
+  job 级 `if: ${{ !cancelled() }}`,并以
+  [`scripts/assert-detect-classified.sh`](../../scripts/assert-detect-classified.sh) 开头 ——
+  `detect` 的 `result` 不是 `success`、或它的 `outputs.code` 不是 `true`/`false`,这一格就红。
+  **只加 `!cancelled()` 而不加这一步会更坏**:`code` 为空时每一步都判假,job 零工作量报
+  **绿**(实测)。`seed assets present` 刻意不在此列 —— 它不是必需 context。
+  测量与反例:[`docs/verification/2026-08-11-detect-failure-required-checks.md`](../verification/2026-08-11-detect-failure-required-checks.md)。
 - 其它 workflow 一律**不影响 merge**(PR 上若看到别的 check = 历史残留,忽略)。
 - **不要盲目 `gh workflow enable`** 上游那些——除非你真给 fork 接了对应 runner。要恢复某个:`gh workflow enable <name>.yml`(可逆,文件没删)。
 
@@ -114,6 +123,15 @@ bash scripts/alpha-check.sh
 4. **别被堵**:本地七步已绿 = 代码没问题。`#717` 之前这里写着「required 里有一个永远不会上报的
    context,真急可 `--admin`」—— **那条已经过时,别再照它办**。四个 required context 现在都会产出
    结论(§3),`--admin` 回到「例外」而不是「结构性必需」。
+   ⚠️ 「产出结论」这句话在 `#895` 之前是**半真的**:`detect changes` 一失败,四格产出的结论叫
+   **`skipped`**,而 GitHub 把 `skipped` 记成「已满足」—— 2026-08-11 在 PR #908 上实测:四格全
+   `skipped`、`mergeable=true`、`mergeStateStatus=UNSTABLE`(**可合**),一道闸门都没真跑。
+   现在四个必需 job 带 job 级 `!cancelled()`,第一步跑
+   [`scripts/assert-detect-classified.sh`](../../scripts/assert-detect-classified.sh):`detect`
+   没给出可用分类时,**四格各自变红**,`mergeStateStatus=BLOCKED`。所以现在在这四格看到 red 的
+   第一件事是往上看 `detect changes` —— 真因常常在那里。
+   全部测量(含「只加 `!cancelled()` 会让四格从灰变**绿**」那条反例):
+   [`docs/verification/2026-08-11-detect-failure-required-checks.md`](../verification/2026-08-11-detect-failure-required-checks.md)。
    **PR 还是卡着不动时先问这两个**:①`gh pr view <n> --json statusCheckRollup` 里是哪一格 pending /
    failure?②那一格是不是真的红了 —— 一个**落后于 alpha 的纯文档分支**曾经会被 `detect` 误判成
    有代码改动、跑全量、继承主线的红(`#717` 修的就是这个;现在走 merge-base 三点口径,行为闸在
@@ -121,7 +139,7 @@ bash scripts/alpha-check.sh
 
 ## 6. pre-push 钩子 —— local-first 强制(2026-07-05 REQ-015 起默认开启)
 
-`.githooks/pre-push` = 跑 `scripts/alpha-check.sh`(覆盖 alpha-ci 全部 12 个代码步,末尾自陈对照表)。**默认开启**:`alpha-check.sh` 每次运行都会检查 `core.hooksPath`,只在偏离时重挂 `.githooks`；健康值不重写共享 `.git/config`。
+`.githooks/pre-push` = 跑 `scripts/alpha-check.sh`(覆盖 alpha-ci 全部 16 个代码步,末尾自陈对照表)。**默认开启**:`alpha-check.sh` 每次运行都会检查 `core.hooksPath`,只在偏离时重挂 `.githooks`；健康值不重写共享 `.git/config`。
 
 `#815` 起,钩子会先保存当前工作树根,再按 `git rev-parse --local-env-vars` 的**Git 自有清单**
 清掉全部 repository-local `GIT_*` 变量,最后才启动 `alpha-check`。这是被测对象完整性边界:

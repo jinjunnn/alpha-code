@@ -16,8 +16,10 @@
 //   ④  `assert gate files` 这一步不得因为前一步红而被跳过(GitHub step 默认条件是 success())。
 //   ⑤  (`#717`)`alpha` 分支保护要求的每个 context,都必须等于 alpha-ci 某个 job 的 `name:`;
 //       反过来每个 job 要么在那份记录里、要么在本文件里显式写明「不必需」。
+//   ⑥  (`#895`)每个必需 job 都必须在 `detect` 没给出结论时**照跑并变红**,而不是被 `needs`
+//       折成 skipped —— GitHub 把 skipped 记成「已满足」(实测,见下)。
 //
-// 删掉本文件会失去什么:上面五条全部退回「靠人记得」。CI 改一个 job/步骤名、加一步、
+// 删掉本文件会失去什么:上面六条全部退回「靠人记得」。CI 改一个 job/步骤名、加一步、
 // 或者有人把 alpha-check 的某一步删掉,都不再有任何东西变红。
 
 import { readFileSync } from "node:fs"
@@ -28,6 +30,8 @@ const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..", "..")
 const WORKFLOW = readFileSync(resolve(REPO_ROOT, ".github/workflows/alpha-ci.yml"), "utf8")
 const SCRIPT = readFileSync(resolve(REPO_ROOT, "scripts/alpha-check.sh"), "utf8")
 const REQUIRED_CONTEXTS_FILE = readFileSync(resolve(REPO_ROOT, ".github/required-contexts.txt"), "utf8")
+/** `#895` 的判据本体 —— 四个必需 job 的第一步跑的就是这个文件。 */
+const DETECT_CLASSIFIED_SCRIPT = "scripts/assert-detect-classified.sh"
 
 /**
  * alpha-ci.yml 里「有名字、且真的执行一条命令」的步骤。
@@ -87,6 +91,44 @@ function parseWorkflowJobNames(yaml: string): string[] {
   return [...yaml.matchAll(/^ {4}name: (.+)$/gm)].map((m) => m[1].trim())
 }
 
+/**
+ * job 级属性 —— `parseWorkflowSteps` 只认 6 空格的 step 与 8 空格的属性,对 **4 空格的 job 级
+ * `if:`** 结构性失明。`#895` 要判的恰恰是 job 级条件,所以这里单独解析一层。
+ * 只从 `jobs:` 之后开始扫:`on:` 那一段里的 `  push:` / `  pull_request:` 与 job key 同缩进。
+ */
+type CiJob = { key: string; name: string; condition: string; body: string }
+
+function parseWorkflowJobs(yaml: string): CiJob[] {
+  const jobsAt = yaml.indexOf("\njobs:\n")
+  if (jobsAt < 0) throw new Error("alpha-ci.yml 里找不到 `jobs:`")
+  const lines = yaml.slice(jobsAt + "\njobs:\n".length).split("\n")
+  const out: CiJob[] = []
+  let key = ""
+  let buf: string[] = []
+  const flush = () => {
+    if (!key) return
+    const body = buf.join("\n")
+    out.push({
+      key,
+      name: /^ {4}name: (.+)$/m.exec(body)?.[1].trim() ?? "",
+      condition: /^ {4}if: (.+)$/m.exec(body)?.[1].trim() ?? "",
+      body,
+    })
+  }
+  for (const line of lines) {
+    const header = /^ {2}([a-z][a-z0-9-]*):\s*$/.exec(line)
+    if (header) {
+      flush()
+      key = header[1]
+      buf = []
+      continue
+    }
+    if (key) buf.push(line)
+  }
+  flush()
+  return out
+}
+
 /** `.github/required-contexts.txt`:分支保护要求的 context 的仓内手抄快照。 */
 function parseRequiredContexts(text: string): string[] {
   return text
@@ -100,10 +142,18 @@ function parseRequiredContexts(text: string): string[] {
  * 默认拒:新加一个 job 而不表态,下面那条断言当场红(咽喉对新成员默认拒绝)。
  */
 const NOT_REQUIRED_JOBS: Record<string, string> = {
+  // `#895` 更正:这条理由原文写的是「它红了下游全部 job 会因 needs 失败而拿不到结论,合并照样
+  // 进不去」——**两半都与实测相反**。2026-08-11 在 PR #908 上真跑了一次 detect 硬失败:
+  // 下游拿到的结论叫 **skipped**(不是「拿不到结论」),而 GitHub 把 skipped 记成「已满足」⇒
+  // 四格 required 全 skipped、mergeable=true、mergeStateStatus=**UNSTABLE**(合并进得去)。
+  // 也就是说仓里曾经有一条测试在为一个假闸门背书。修法不是把 detect 提成必需(那要改仓外的
+  // 分支保护,CI 够不着),而是让四个必需 job 在 detect 没结论时**照跑并各自变红** ——
+  // 见下面 `#895` 那两条断言与 scripts/assert-detect-classified.sh。
+  // 证据:docs/verification/2026-08-11-detect-failure-required-checks.md
   "detect changes":
-    "分类步。它的产物(code/md)决定别的 job 跑不跑,但它自己不判任何东西 —— 它红了下游全部 job 会因 needs 失败而拿不到结论,合并照样进不去。行为闸在 packages/ui-mac/src/main/ci-diff-scope.test.ts。",
+    "分类步。它的产物(code/md)决定别的 job 跑不跑,但它自己不判任何东西。它红了不再等于「合并进不去」——`#895` 实测 skipped 被 GitHub 当成满足;真正拦住合并的是四个必需 job 各自的 Assert detect classified this diff 那一步(下面两条断言钉住它)。行为闸在 packages/ui-mac/src/main/ci-diff-scope.test.ts。",
   "seed assets present":
-    "B7 打包资源在位闸。合并前它的缺失不改变仓库正确性(打包期才吃到),历史上一直不在 required 里;要提必需是独立裁决,不在 `#717` 范围内。",
+    "B7 打包资源在位闸。合并前它的缺失不改变仓库正确性(打包期才吃到),历史上一直不在 required 里;要提必需是独立裁决,不在 `#717` 范围内。`#895` 刻意不给它加 !cancelled():它不是必需 context,detect 失败时它显示 skipped 不会让任何东西被误判成通过。",
 }
 
 function parseLedger(script: string): Array<{ job: string; name: string; status: string }> {
@@ -213,5 +263,61 @@ describe("#777 本地门与 alpha-ci 的对照表", () => {
     expect(step, "alpha-ci.yml 里找不到 `assert gate files` 步骤").toBeDefined()
     // GitHub 的 step 默认条件是 success():前一步红 ⇒ 这一步 skipped ⇒ 77 个登记闸门集体消失。
     expect(step!.condition, "assert gate files 缺 !cancelled() —— 前一步一红,77 个闸门就一起没了").toContain("!cancelled()")
+  })
+
+  // ── `#895`:detect 没结论时,四道必需检查不得被折成「skipped = 通过」───────────────
+  // 实测(PR #908,2026-08-11,不是读官方文档):让 detect 硬失败 ⇒
+  //   detect changes = failure;north-star / typecheck / unit tests / docs gate = **全 skipped**;
+  //   PR mergeable=true、mergeStateStatus=**UNSTABLE** —— 分支保护那侧没拦。
+  //   同一个 commit,四格还没上报时是 BLOCKED,变成 skipped 之后转 UNSTABLE ⇒ GitHub 把
+  //   **skipped 记成「已满足」**。全文:docs/verification/2026-08-11-detect-failure-required-checks.md
+  test("`#895`:scripts/assert-detect-classified.sh 在 detect 没给出可用分类时必须非零退出", () => {
+    const script = resolve(REPO_ROOT, DETECT_CLASSIFIED_SCRIPT)
+    const run = (env: Record<string, string>) =>
+      Bun.spawnSync(["bash", script], { env: { PATH: process.env.PATH ?? "/usr/bin:/bin", ...env } })
+    // 先证明这个手段能测出「好」——一个恒非零的脚本会让下面每条负向断言空对空地绿。
+    for (const code of ["true", "false"]) {
+      const ok = run({ DETECT_RESULT: "success", DETECT_CODE: code })
+      expect(ok.exitCode, `detect 成功且 code=${code} 时不该拦(stderr: ${ok.stderr.toString()})`).toBe(0)
+    }
+    // 负向:每一种「拿不到可用分类」的真实形状都必须红。
+    // 注意 failure + code=true 这一条:job 失败时 outputs 是否仍然可读由 GitHub 决定,
+    // 不由我们决定 —— 所以判据钉在 result 上,而不是「反正 code 会是空的」。
+    const bad: Array<[string, Record<string, string>]> = [
+      ["detect 失败(outputs 仍可读)", { DETECT_RESULT: "failure", DETECT_CODE: "true" }],
+      ["detect 失败(outputs 为空)", { DETECT_RESULT: "failure", DETECT_CODE: "" }],
+      ["detect 被跳过", { DETECT_RESULT: "skipped", DETECT_CODE: "" }],
+      ["detect 被取消", { DETECT_RESULT: "cancelled", DETECT_CODE: "" }],
+      ["detect 退出 0 却没写 code", { DETECT_RESULT: "success", DETECT_CODE: "" }],
+      ["code 是别的字符串", { DETECT_RESULT: "success", DETECT_CODE: "maybe" }],
+      ["result 本身没传进来", { DETECT_CODE: "true" }],
+    ]
+    for (const [label, env] of bad) {
+      const r = run(env)
+      expect(r.exitCode, `${label}:这一步必须红,否则本 job 会零步骤报绿`).not.toBe(0)
+    }
+  })
+
+  test("`#895`:每个必需 job 都带 !cancelled() 且第一步就跑 assert-detect-classified.sh", () => {
+    // ⚠️ 诚实边界:这一条断言的是 YAML 文本,按本仓定义是**减速带**,不是闸门 ——
+    //    「GitHub 上真的会红吗」只有一次真实 PR 量得出来(证据文档里那次)。它抓的是
+    //    「有人把接线拆掉」,而上一条抓的是「判据本身被改坏」。两条缺一不可。
+    const jobs = parseWorkflowJobs(WORKFLOW)
+    const required = parseRequiredContexts(REQUIRED_CONTEXTS_FILE)
+    // 解析自检:任一侧退化成空,下面的循环就一次都不跑,空对空地绿。
+    expect(jobs.length, "alpha-ci.yml 一个 job 都没解析到 —— 解析器坏了").toBeGreaterThanOrEqual(6)
+    expect(required.length, ".github/required-contexts.txt 一条都没解析到").toBeGreaterThanOrEqual(4)
+    for (const context of required) {
+      const job = jobs.find((j) => j.name === context)
+      expect(job, `必需 context「${context}」在 alpha-ci.yml 里没有同名 job`).toBeDefined()
+      expect(
+        job!.condition,
+        `必需 job「${context}」缺 job 级 !cancelled() —— detect 一失败它就被 needs 折成 skipped,而 GitHub 把 skipped 当成满足(#895 实测:四格全 skipped ⇒ mergeStateStatus=UNSTABLE ⇒ 可合)`,
+      ).toContain("!cancelled()")
+      expect(
+        job!.body,
+        `必需 job「${context}」没有跑 ${DETECT_CLASSIFIED_SCRIPT} —— 光有 !cancelled() 更坏:detect 失败时 needs.detect.outputs.code 是空串,挂在 == 'true' 上的步骤仍然一步不跑,这一格会从灰色 skipped 变成**绿色 success**`,
+      ).toContain(DETECT_CLASSIFIED_SCRIPT)
+    }
   })
 })

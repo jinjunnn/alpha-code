@@ -82,6 +82,11 @@ jobs:
   upstream-guard:
     name: north-star guard (zero upstream edits)
     needs: detect
+    # `#895`:必需 job 必须在 detect 失败时**照跑并变红**,而不是被 needs 折成 skipped ——
+    # GitHub 把 skipped 记成「已满足」(PR #908 实测)。见下面那一步与
+    # scripts/assert-detect-classified.sh 抬头。用 !cancelled() 而不是 always():
+    # cancel-in-progress 取消掉的 run 不必再跑一遍。
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       # checkout 刻意**无条件**跑(#760):同 job 里的 NUL 字节闸对 docs-only PR 也必须生效 ——
@@ -90,6 +95,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Assert detect classified this diff (#895)
+        env:
+          DETECT_RESULT: ${{ needs.detect.result }}
+          DETECT_CODE: ${{ needs.detect.outputs.code }}
+        run: bash scripts/assert-detect-classified.sh
       # #760:源码里的字面 NUL 让 grep 静默失明 —— 危害不是漏看,是给出一个假的「没有」让人
       # 据此下结论(alpha-web#109 的实现方 `grep "secret"` 得 0 命中,差点断定「测试被删了」)。
       # 这是**兜底**,真正的门是本地 scripts/alpha-check.sh 第 [2/4] 步(docs/runbooks/ci.md §6)。
@@ -190,10 +200,19 @@ jobs:
   typecheck:
     name: typecheck (alpha packages)
     needs: detect
+    # `#895`:见 upstream-guard 上的同一条注释。
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - if: needs.detect.outputs.code == 'true'
-        uses: actions/checkout@v4
+      # `#895`:checkout 从「code == 'true'」改成**无条件** —— 下一步是判据本身,它得先有仓库
+      # 才跑得起来(与 upstream-guard 的 checkout 同理,约 5 秒)。docs-only 快路径不变:
+      # 真正花时间的 install/typecheck 仍然挂在 code == 'true' 上。
+      - uses: actions/checkout@v4
+      - name: Assert detect classified this diff (#895)
+        env:
+          DETECT_RESULT: ${{ needs.detect.result }}
+          DETECT_CODE: ${{ needs.detect.outputs.code }}
+        run: bash scripts/assert-detect-classified.sh
       - if: needs.detect.outputs.code == 'true'
         uses: oven-sh/setup-bun@v2
         with:
@@ -224,10 +243,17 @@ jobs:
   test:
     name: unit tests (alpha packages)
     needs: detect
+    # `#895`:见 upstream-guard 上的同一条注释。
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - if: needs.detect.outputs.code == 'true'
-        uses: actions/checkout@v4
+      # `#895`:同 typecheck —— checkout 无条件,好让下一步的判据跑得起来。
+      - uses: actions/checkout@v4
+      - name: Assert detect classified this diff (#895)
+        env:
+          DETECT_RESULT: ${{ needs.detect.result }}
+          DETECT_CODE: ${{ needs.detect.outputs.code }}
+        run: bash scripts/assert-detect-classified.sh
       - if: needs.detect.outputs.code == 'true'
         uses: oven-sh/setup-bun@v2
         with:
@@ -314,9 +340,18 @@ jobs:
   docs-gate:
     name: docs gate
     needs: detect
+    # `#895`:见 upstream-guard 上的同一条注释。本 job 尤其需要下面那一步 —— 它的链接检查
+    # **无条件**跑,MD 为空时打印「no Markdown changed」直接绿。只加 !cancelled() 而不加判据,
+    # 这一格会在 detect 失败时从灰色 skipped 变成**绿色 success**,更坏。
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Assert detect classified this diff (#895)
+        env:
+          DETECT_RESULT: ${{ needs.detect.result }}
+          DETECT_CODE: ${{ needs.detect.outputs.code }}
+        run: bash scripts/assert-detect-classified.sh
       - name: Relative-link validity in changed Markdown
         # MD (attacker-controllable filenames on a fork PR) enters via env, never via ${{ }}
         # interpolation into the script text. A shell variable expansion is not re-parsed for
