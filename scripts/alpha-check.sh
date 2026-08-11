@@ -58,10 +58,10 @@ if [ "${ALPHA_HOOKS_DISABLE:-}" != "1" ]; then
 fi
 
 fail=0
-# `#890`:「本次没能比对真源」是**第三种**结局,不是绿也不是红 —— 见第 [8/8] 步。
+# `#890`:「本次没能比对真源」是**第三种**结局,不是绿也不是红 —— 见第 [9/9] 步。
 unverified=0
 
-echo "▶ [1/8] north-star guard (zero upstream edits)"
+echo "▶ [1/9] north-star guard (zero upstream edits)"
 # `#889`:守卫本体住在 scripts/north-star-guard.sh —— 内联时它一个判据都没有(断言 shell
 # 源码文本按本仓定义是假闸门:守卫被整段注释掉时那种断言照样绿)。真判据 =
 # packages/ui-mac/src/main/north-star-guard.test.ts,它起真 git 仓、造真的上游改动、跑
@@ -73,7 +73,7 @@ else
   fail=1
 fi
 
-echo "▶ [2/8] no literal NUL bytes in version-controlled files"
+echo "▶ [2/9] no literal NUL bytes in version-controlled files"
 # #760:字面 NUL 不会让运行时出错,它坏的是**验证手段** —— BSD grep / rg / file(1) 看到 NUL 就把
 # 整个文件判成二进制并静默返回空,于是「我 grep 过了,没有」变成假话。本仓 CLAUDE.md 要求
 # 「大文件 Edit 后 grep + git show 双验」,而在这些文件上 grep 会安静地说「没有」。
@@ -85,7 +85,7 @@ else
   echo "    ✗ literal NUL bytes found"; fail=1
 fi
 
-echo "▶ [3/8] typecheck (alpha packages: contracts-consumer + ext + ui-mac)"
+echo "▶ [3/9] typecheck (alpha packages: contracts-consumer + ext + ui-mac)"
 # REQ-027:flag 必须在 `run` 之后 —— `bun --cwd X run Y` 在 bun 1.3.x 打印 usage 后静默退出 0(不执行脚本)。
 if bun run --cwd packages/alpha-contracts-consumer typecheck \
   && bun run --cwd packages/ext typecheck \
@@ -95,7 +95,7 @@ else
   echo "    ✗ typecheck failed"; fail=1
 fi
 
-echo "▶ [4/8] contract lock + unit tests (contracts-consumer + ext + ui-mac)"
+echo "▶ [4/9] contract lock + unit tests (contracts-consumer + ext + ui-mac)"
 # REQ-062:ext 测试入门 —— 其中 prompt-rebrand drift 锁逐条断言转写子串仍在上游底座原文,
 # 上游 sync 改写底座即红(ADR-015 合并验证的机械化)。
 #
@@ -112,23 +112,23 @@ else
   echo "    ✗ tests failed"; fail=1
 fi
 
-# `#777`:下面三步此前**本地完全没有**,而 CI 有。缺 [5/8] 尤其贵 —— 登记闸门里
+# `#777`:下面三步此前**本地完全没有**,而 CI 有。缺 [5/9] 尤其贵 —— 登记闸门里
 # llm / core / opencode 那几个只在这一步执行,别的步骤一条都不覆盖它们。
-echo "▶ [5/8] assert gate files (逐个点名;整包地板抓不到单个闸门文件消失)"
+echo "▶ [5/9] assert gate files (逐个点名;整包地板抓不到单个闸门文件消失)"
 if bash scripts/assert-gate-files.sh; then
   echo "    ✓ gate files"
 else
   echo "    ✗ gate files failed"; fail=1
 fi
 
-echo "▶ [6/8] seed assets present (B7)"
+echo "▶ [6/9] seed assets present (B7)"
 if bash scripts/assert-seed-assets.sh; then
   echo "    ✓ seed assets"
 else
   echo "    ✗ seed assets missing"; fail=1
 fi
 
-echo "▶ [7/8] docs gate (relative-link validity in changed Markdown)"
+echo "▶ [7/9] docs gate (relative-link validity in changed Markdown)"
 # CI 只查**这次改动过的** Markdown(detect job 收集)。本地口径同构:相对 origin/alpha 的
 # 提交 delta ∪ 未提交工作树改动,再滤成 *.md。一个都没有 ⇒ 与 CI 一样是 no-op。
 md_committed="$(git diff --name-only --diff-filter=d origin/alpha...HEAD -- '*.md' 2>/dev/null || true)"
@@ -146,10 +146,28 @@ else
   fi
 fi
 
-echo "▶ [8/8] required contexts vs GitHub 分支保护真源 (#890)"
+echo "▶ [8/9] worktree bootstrap 能力(新建 worktree 自己就能跑出可信 typecheck)(#916)"
+# 这一步在 alpha-ci 里**没有对应**,所以它不进 CI_STEPS(那张表是 CI 步骤的对照表)——
+# 与第 [9/9] 步同为「只能落在本地」的门,但理由不同:CI 的每个 job 都是一次全新
+# `actions/checkout` + `bun install`,**结构上不存在 worktree**;这道门守的是本机多 lane
+# 并行时的那条能力。缺了它的世界长这样(`#916` 票面记录的实证):worktree 里拿不到真
+# typecheck ⇒ 每条 lane 为了下结论都得去动**共享**主 checkout ⇒ 谁先跑谁量到别人的树。
+# 那正是 2026-08-02 把一道**真闸门**误诊成「1/5 间歇性 flaky」的同一形态。
+#
+# 判据本体在 scripts/assert-worktree-bootstrap.sh —— 它**不**断言「脚本在」「软链在」
+# 「文件里写着 bun install」(按本仓定义那是假闸门),而是真建 worktree、真跑 typecheck,
+# 并且**先证明没 bootstrap 的树确实会红**,再用同一个探针判 bootstrap 过的树绿。
+# 代价:本机实测约 40s(3 棵探针树 + 一次 `bun install` 9.5s + 三次 ui-mac typecheck)。
+if bash scripts/assert-worktree-bootstrap.sh; then
+  echo "    ✓ worktree bootstrap"
+else
+  echo "    ✗ worktree bootstrap 失守 —— 新建 worktree 仍然只能去共享主 checkout 才能跑真 typecheck"; fail=1
+fi
+
+echo "▶ [9/9] required contexts vs GitHub 分支保护真源 (#890)"
 # 这一步在 alpha-ci 里**没有对应**,所以它不进 CI_STEPS(那张表是 CI 步骤的对照表)。
 # 理由:读分支保护要带令牌,而 alpha-ci 触发在 `pull_request` —— fork PR 结构上拿不到
-# secrets。有鉴权的地方是这台机器,所以这道门只能落在本地。放最后,因为它是七步真闸门跑完
+# secrets。有鉴权的地方是这台机器,所以这道门只能落在本地。放最后,因为它是八步真闸门跑完
 # 之后的一次网络往返。
 bash scripts/assert-required-contexts.sh
 required_contexts_rc=$?
@@ -179,7 +197,7 @@ echo
 if [ "$fail" -ne 0 ]; then
   echo "❌ local gates failed — fix before pushing (alpha-ci would fail the same way)."
 elif [ "$unverified" -ne 0 ]; then
-  # `#890`:七道闸门绿了,但第 [8/8] 步这次**没读到**分支保护真源。说「全绿」会把
+  # `#890`:八道闸门绿了,但第 [9/9] 步这次**没读到**分支保护真源。说「全绿」会把
   # 「没检查」读成「检查过了」—— 那正是这道门要消掉的形态,所以这里换一句话。
   echo "⚠️  local gates passed, but required contexts 这次**未比对**真源(见上面第 [8/8] 步)。"
   echo "    可以 push;但本次运行不构成「仓内记录与 alpha 分支保护一致」的证据。"
