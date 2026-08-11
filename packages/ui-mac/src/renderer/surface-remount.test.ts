@@ -98,7 +98,7 @@ async function waitFor(check: () => boolean, label: string) {
     if (check()) return
     await settle()
   }
-  throw new Error(`等不到:${label}`)
+  throw new Error(`等不到:${label}(composer.mount=${runtime.composerMountCount()})`)
 }
 
 function mountShell() {
