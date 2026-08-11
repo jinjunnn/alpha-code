@@ -6,6 +6,7 @@ import {
   decideCatalogLiveness,
   initialCatalogLivenessState,
   probeCatalogMarker,
+  resolveCatalogProbeDirectory,
   type CatalogLivenessSample,
   type CatalogLivenessState,
 } from "./catalog-liveness"
@@ -164,6 +165,70 @@ describe("catalog-liveness decision", () => {
   })
 })
 
+// #564 R2 Major:探针目录 = 用户首屏实际目录,不是全场最快收敛的 ~/Alpha。
+// 全部夹具形状取自两台真机 store 实读(2026-08-11):store 值是 JSON **字符串**(renderer
+// AsyncStorage 写入形态);dev 店 recent 指 draft、draft tab 带裸 directory;非 dev 店的
+// session 目录在 tabs.info[key].directory,key = `${server}\n/server/<b64>/session/<id>`。
+// 期望目录全用独立字面量 —— 不从生产常量或夹具自身推导(自指等价链)。
+describe("catalog-liveness 探针目录解析(#564 R2)", () => {
+  // 负向夹具不用退化形状:多 tab、混类型、recent 指向中间那个 —— 「取第一个 draft」或
+  // 「永远回默认目录」的错误实现都过不去。
+  const tabs = JSON.stringify([
+    { type: "draft", draftID: "d-alpha", server: "sidecar", directory: "/Users/u/Alpha" },
+    { type: "session", server: "sidecar", sessionId: "ses_x" },
+    { type: "draft", draftID: "d-repo", server: "sidecar", directory: "/Users/u/app/alpha-code" },
+    { type: "draft", draftID: "d-wsl", server: "wsl:Ubuntu", directory: "/home/u/repo" },
+  ])
+  const sessionKey = "sidecar\n/server/c2lkZWNhcg/session/ses_0be83b52cffeLQrUz2wzXJ5D6x"
+  const info = JSON.stringify({
+    [sessionKey]: { title: "New session", directory: "/Users/u/Documents/workspace" },
+    "ssh:host\n/server/eA/session/ses_y": { title: "remote", directory: "/Users/u/app/alpha-code" },
+  })
+
+  test("recent 指 draft → 该 draft 的 directory(不是列表里第一个,也不是默认工作区)", () => {
+    const recent = JSON.stringify({ key: "draft:d-repo" })
+    expect(resolveCatalogProbeDirectory({ tabs, recent, info })).toBe("/Users/u/app/alpha-code")
+  })
+
+  test("recent 指本地 session → tabs.info[key].directory", () => {
+    const recent = JSON.stringify({ key: sessionKey })
+    expect(resolveCatalogProbeDirectory({ tabs, recent, info })).toBe("/Users/u/Documents/workspace")
+  })
+
+  test("非本地引擎的 tab 不供靶:wsl draft 与 ssh session 都解析为 undefined(本地看门狗判不了别的引擎)", () => {
+    expect(resolveCatalogProbeDirectory({ tabs, recent: JSON.stringify({ key: "draft:d-wsl" }), info })).toBeUndefined()
+    expect(
+      resolveCatalogProbeDirectory({ tabs, recent: JSON.stringify({ key: "ssh:host\n/server/eA/session/ses_y" }), info }),
+    ).toBeUndefined()
+  })
+
+  test("recent 缺席 / 空对象 / 指向不存在的 draft / info 缺该 key → undefined(回退默认目录)", () => {
+    expect(resolveCatalogProbeDirectory({ tabs, recent: undefined, info })).toBeUndefined()
+    expect(resolveCatalogProbeDirectory({ tabs, recent: JSON.stringify({}), info })).toBeUndefined()
+    expect(resolveCatalogProbeDirectory({ tabs, recent: JSON.stringify({ key: "draft:gone" }), info })).toBeUndefined()
+    expect(
+      resolveCatalogProbeDirectory({ tabs, recent: JSON.stringify({ key: "sidecar\n/server/c2lkZWNhcg/session/ses_unknown" }), info }),
+    ).toBeUndefined()
+  })
+
+  test("坏账 fail-open:JSON 烂 / tabs 非数组 / 目录非绝对路径 / info 条目缺 directory → undefined,绝不抛", () => {
+    expect(resolveCatalogProbeDirectory({ tabs, recent: "{not json", info })).toBeUndefined()
+    expect(
+      resolveCatalogProbeDirectory({ tabs: JSON.stringify({ nope: 1 }), recent: JSON.stringify({ key: "draft:d-repo" }), info }),
+    ).toBeUndefined()
+    const relative = JSON.stringify([{ type: "draft", draftID: "d-rel", server: "sidecar", directory: "relative/dir" }])
+    expect(resolveCatalogProbeDirectory({ tabs: relative, recent: JSON.stringify({ key: "draft:d-rel" }), info })).toBeUndefined()
+    const noDir = JSON.stringify({ [sessionKey]: { title: "no directory" } })
+    expect(resolveCatalogProbeDirectory({ tabs, recent: JSON.stringify({ key: sessionKey }), info: noDir })).toBeUndefined()
+  })
+
+  test("裸对象形态(legacy 写入)与 JSON 字符串同容忍度 —— 与 tabs-preclean 的 decodeStoreValue 同款", () => {
+    const bareTabs = [{ type: "draft", draftID: "d-obj", server: "sidecar", directory: "/Users/u/proj" }]
+    const bareRecent = { key: "draft:d-obj" }
+    expect(resolveCatalogProbeDirectory({ tabs: bareTabs, recent: bareRecent, info: {} })).toBe("/Users/u/proj")
+  })
+})
+
 describe("catalog-liveness probe(真执行,fetch 注入)", () => {
   const opts = { url: "http://127.0.0.1:41234", password: "pw-564", directory: "/tmp/alpha-workspace" }
 
@@ -244,15 +309,21 @@ describe("catalog-liveness probe(真执行,fetch 注入)", () => {
 })
 
 // #564 接线锚(index.ts 是本仓唯一跑不进单测的文件,生产接线的最后一英里只能锁源码形状;
-// 决策行为的真闸门在上面的纯函数用例里)。断言六件事:
+// 决策行为的真闸门在上面的纯函数用例里)。断言八件事:
 // ① 恰好两处武装(boot 终态continuation + respawn 健康线之后),条件形状逐字锁定 ——
 //    boot 只在干净 ready 终态武装(injection-failed 不武装),respawn 同判据;
 // ② 决策被消费恰好一次(decideCatalogLiveness);
 // ③ kill-and-respawn 裁决真的接到 current.kill()(交给既有 self-heal respawn 路径);
 // ④ stop-and-report 裁决接到 recoveryService.register(显式恢复,不再自动 kill);
 // ⑤ killSidecar 与 handleSidecarExit 都停表(旧代探针不得打在新代身上);
-// ⑥ R1 Blocker:武装前判 ~/Alpha 存在(不存在 = 观测面不可用,不武装、绝不代建),
-//    且 indeterminate 弃权在 kill 分支**之前**被消费(弃权路径上不得出现 current.kill())。
+// ⑥ R1 Blocker:武装前判探针目录存在(不存在 = 观测面不可用,不武装、绝不代建),
+//    且 indeterminate 弃权在 kill 分支**之前**被消费(弃权路径上不得出现 current.kill());
+// ⑦ R2 Major:探针目录来自首屏解析(resolveCatalogProbeDirectory 唯一消费点),解析不出 /
+//    不在盘上才回退默认工作区 —— 探针本体**不得**再打 alphaUserWorkspaceDir()(那正是
+//    「只观测最廉价目录」的回归形状);
+// ⑧ R2 Minor:探针 promise 链尾必须有 .catch(回调体任一抛出不得成为 main 的 unhandled
+//    rejection),且 catch 内复位 probeInFlight(否则 probeCatalogMarker 意外 reject 会让
+//    每个后续 tick 空转、看门狗静默失效)。
 test("#564 接线锚:看门狗武装/停表/裁决消费必须留在 index.ts 的接线形状里", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
 
@@ -270,12 +341,26 @@ test("#564 接线锚:看门狗武装/停表/裁决消费必须留在 index.ts �
   expect(armBody).toContain("current.kill()")
   expect(armBody).toContain("recoveryService.register")
 
+  // ⑦ 探针目录:首屏解析唯一消费点;probe 打解析结果;唯一的 alphaUserWorkspaceDir() 出现在
+  //    回退表达式里(probe 本体直呼它 = 回归到只观测最廉价目录,必须在这里红)。
+  expect(source.split("resolveCatalogProbeDirectory(").length - 1).toBe(1)
+  expect(armBody).toContain("probeCatalogMarker({ url, password, directory: probeDirectory })")
+  expect(armBody).toContain("existsSync(userDirectory) ? userDirectory : alphaUserWorkspaceDir()")
+  expect(armBody.split("alphaUserWorkspaceDir()").length - 1).toBe(1)
+
   // ⑥ 目录存在守卫:武装体内、armCatalogLiveness 之前(守卫失效 = 全新安装 60s 杀健康引擎)。
-  const guardAt = armBody.indexOf("if (!existsSync(alphaUserWorkspaceDir()))")
+  const guardAt = armBody.indexOf("if (!existsSync(probeDirectory))")
   const armCallAt = armBody.indexOf("armCatalogLiveness(catalogLiveness")
   expect(guardAt).toBeGreaterThan(-1)
   expect(armCallAt).toBeGreaterThan(guardAt)
   expect(armBody).toContain("workspace-dir-missing")
+
+  // ⑧ 链尾 .catch:在 .then 之后、且 catch 体内复位 probeInFlight。
+  const thenAt = armBody.indexOf(".then((sample) => {")
+  const catchAt = armBody.indexOf(".catch((error) => {", thenAt)
+  expect(thenAt).toBeGreaterThan(-1)
+  expect(catchAt).toBeGreaterThan(thenAt)
+  expect(armBody.indexOf("catalogLivenessProbeInFlight = false", catchAt)).toBeGreaterThan(catchAt)
   // ⑥ indeterminate 弃权:在 kill 分支之前消费,且它与 current.kill() 之间隔着 return。
   const indeterminateAt = armBody.indexOf('decision.action === "indeterminate"')
   const killBranchAt = armBody.indexOf('decision.action === "kill-and-respawn"')

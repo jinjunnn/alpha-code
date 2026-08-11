@@ -174,6 +174,9 @@ export async function dropDanglingSessionTabs(
 export const GLOBAL_RENDERER_STORE = "opencode.global.dat"
 export const TABS_KEY = "tabs"
 export const TABS_RECENT_KEY = "tabs.recent"
+// #564:catalog-liveness 看门狗解析首屏目录用(上游 tabs.tsx 的 Persist.window("tabs.info"),
+// ui-mac 无 windowID ⇒ 落 GLOBAL_STORAGE)。preclean 自身不读它,放这里只为契约键单一来源。
+export const TABS_INFO_KEY = "tabs.info"
 
 export type TabsPrecleanDeps = {
   getValue: (key: string) => unknown

@@ -48,7 +48,7 @@ import {
   write as writeLog,
 } from "./logging"
 import { getStore } from "./store"
-import { GLOBAL_RENDERER_STORE, runTabsPreclean } from "./tabs-preclean"
+import { GLOBAL_RENDERER_STORE, TABS_INFO_KEY, TABS_KEY, TABS_RECENT_KEY, runTabsPreclean } from "./tabs-preclean"
 import { checkSessionExistsViaFetch } from "./tabs-preclean-io"
 import { parseMarkdown } from "./markdown"
 import { createDbMenuActions, runDbPreflightBoot } from "./db-safety-boot"
@@ -96,6 +96,7 @@ import {
   disarmCatalogLiveness,
   initialCatalogLivenessState,
   resetCatalogLiveness,
+  resolveCatalogProbeDirectory,
   probeCatalogMarker,
 } from "./catalog-liveness"
 import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
@@ -982,13 +983,33 @@ const main = Effect.gen(function* () {
   // 转 Recovery incident(与 engine runaway 的 stop-and-report 同纪律,反无限 kill 循环)。
   const armCatalogLivenessWatchdog = (gen: number) => {
     stopCatalogLivenessWatchdog()
-    // R1 Blocker:~/Alpha 是 lazy 供给(ensureUserWorkspaceDir 只在用户动作时建),boot 路径
-    // 一处都不建它;目录不存在时 marker 端点**确定性 500**(实测 8/8,永不 404/200)——观测面
+    // R2 Major:catalog 就绪是 per-directory 的(core/location.ts boundNode 按目录懒引导),
+    // 固定探 ~/Alpha(空目录、全场最快收敛)= 票面自己的复现场景(多 tab + 大仓)下几秒
+    // confirmed 永久解除、大仓 224s 0 模型一次都不裁决。探针目录 = 用户首屏实际目录:
+    // renderer 的 tab 状态经 store-set IPC 落在 main 自己的 store(与 tabs-preclean 同契约面),
+    // 每代武装时解析一次(一窗一目录,窗口内不换靶 —— 换靶会把不同目录的 404 记进同一本账)。
+    // 解析不出 / 目录已不在盘上(陈旧 tab)→ 回退默认工作区(= R1 行为)。
+    const userDirectory = (() => {
+      try {
+        const store = getStore(GLOBAL_RENDERER_STORE)
+        return resolveCatalogProbeDirectory({
+          tabs: store.get(TABS_KEY),
+          recent: store.get(TABS_RECENT_KEY),
+          info: store.get(TABS_INFO_KEY),
+        })
+      } catch {
+        return undefined // store 读挂了不许炸 boot 路径 —— 回退默认目录
+      }
+    })()
+    const probeDirectory = userDirectory && existsSync(userDirectory) ? userDirectory : alphaUserWorkspaceDir()
+    // R1 Blocker:探针目录不存在时 marker 端点**确定性 500**(实测 8/8,永不 404/200)——观测面
     // 不可用,不武装。也绝不顺手 mkdir:REQ-071/ADR-025「绝不代建」,启动即建目录是产品行为变更。
-    if (!existsSync(alphaUserWorkspaceDir())) {
+    // (~/Alpha 是 lazy 供给;首屏目录若存在则武装在它身上,~/Alpha 缺席不再一票否决。)
+    if (!existsSync(probeDirectory)) {
       markStartupTimeline("main.sidecar.catalog_liveness.skipped", {
         generation: gen,
         reason: "workspace-dir-missing",
+        directory: probeDirectory,
       })
       return
     }
@@ -1000,7 +1021,7 @@ const main = Effect.gen(function* () {
       }
       if (catalogLivenessProbeInFlight) return
       catalogLivenessProbeInFlight = true
-      void probeCatalogMarker({ url, password, directory: alphaUserWorkspaceDir() }).then((sample) => {
+      void probeCatalogMarker({ url, password, directory: probeDirectory }).then((sample) => {
         catalogLivenessProbeInFlight = false
         // 探针在途期间世界可能已换代/停表 —— 迟到样本不得写进新代的账。
         if (gen !== sidecarGen || !server || !catalogLivenessTimer) return
@@ -1011,6 +1032,7 @@ const main = Effect.gen(function* () {
           stopCatalogLivenessWatchdog()
           markStartupTimeline("main.sidecar.catalog_liveness.confirmed", {
             generation: gen,
+            directory: probeDirectory,
             elapsedMs: decision.elapsedMs,
             probes: decision.probes,
           })
@@ -1022,6 +1044,7 @@ const main = Effect.gen(function* () {
           stopCatalogLivenessWatchdog()
           markStartupTimeline("main.sidecar.catalog_liveness.indeterminate", {
             generation: gen,
+            directory: probeDirectory,
             elapsedMs: decision.elapsedMs,
             probes: decision.probes,
             engineAnsweredNotReady: decision.engineNotReady,
@@ -1032,6 +1055,7 @@ const main = Effect.gen(function* () {
             "utility",
             "catalog liveness window closed without an authoritative not-converged signal — abstaining (no kill)",
             {
+              directory: probeDirectory,
               elapsedMs: decision.elapsedMs,
               probes: decision.probes,
               engineAnsweredUnclassified: decision.engineUnclassified,
@@ -1046,6 +1070,7 @@ const main = Effect.gen(function* () {
         if (!current) return
         markStartupTimeline("main.sidecar.catalog_liveness.degraded", {
           generation: gen,
+          directory: probeDirectory,
           action: decision.action,
           elapsedMs: decision.elapsedMs,
           probes: decision.probes,
@@ -1059,6 +1084,7 @@ const main = Effect.gen(function* () {
             "utility",
             "engine ready but governed catalog never converged — killing sidecar for self-heal respawn",
             {
+              directory: probeDirectory,
               elapsedMs: decision.elapsedMs,
               probes: decision.probes,
               engineAnsweredNotReady: decision.engineNotReady,
@@ -1092,6 +1118,23 @@ const main = Effect.gen(function* () {
           },
         })
         if (incident) mainWindow.webContents.send("alpha-recovery-incident", incident)
+      }).catch((error) => {
+        // R2 Minor:回调体做 writeLog / markStartupTimeline / recoveryService.register /
+        // webContents.send / current.kill(),任一抛出都不得变成 main 的 unhandled rejection
+        // (同文件 respawn 链 `void terminal.catch` 是同一理由挂的守卫)。另一半:probeCatalogMarker
+        // 自身 reject(结构上不应发生,但守卫防的就是"不应发生")会把 probeInFlight 卡死成
+        // 永久 true —— 之后每个 tick 空转、永无裁决,看门狗静默失效,所以这里必须复位。
+        catalogLivenessProbeInFlight = false
+        try {
+          writeLog(
+            "utility",
+            "catalog liveness probe tick failed unexpectedly",
+            { message: error instanceof Error ? error.message : String(error) },
+            "error",
+          )
+        } catch {
+          // 守卫自己不许再抛
+        }
       })
     }, CATALOG_LIVENESS_PROBE_INTERVAL_MS)
   }

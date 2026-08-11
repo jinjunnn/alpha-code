@@ -198,6 +198,77 @@ export function decideCatalogLiveness(
   }
 }
 
+// —— 探针目录解析(R2 Major)——
+// catalog 就绪是 **per-directory** 的(core/location.ts 的 boundNode(ref) 按目录懒引导):
+// 固定探 ~/Alpha(空目录、全场最快收敛)= 断言了一个更容易满足的事实 —— 票面自己的复现
+// 场景(多 tab + 大仓)下几秒 confirmed 永久解除,大仓 224s 0 模型看门狗一次都不裁决。
+// 正解:探**用户首屏实际目录**。main 侧今天就拿得到、零新增 IPC —— renderer 的 tab 状态经
+// store-set IPC 持久化在 main 自己的 electron store(opencode.global.dat,与 tabs-preclean
+// 同一契约面):`tabs.recent`.key 指首屏 tab;draft tab 在 `tabs` 里带裸 directory;
+// session tab 的目录在 `tabs.info[key].directory`(rememberSessionInfo 随会话加载写入)。
+// 两份真实生产 store 实读验证过全部三种形状(2026-08-11,#564 R2)。
+// 只认本地引擎的 tab:server key ≠ "sidecar"(wsl:/ssh:/URL)的目录属于别的引擎,本地看门狗
+// 判不了它,解析为 undefined → 调用方回退默认工作区。解析在武装时做一次 —— 一窗一目录,
+// 窗口内不换靶(换靶会把不同目录的 404 记进同一本账,kill 授权就说不清凭的是谁的事实)。
+import path from "node:path"
+
+/** 本地 sidecar 的 ServerConnection.Key(app/src/context/server.tsx:230 Key.make("sidecar"))。 */
+export const LOCAL_SIDECAR_SERVER_KEY = "sidecar"
+
+/** store 值可能是 JSON 字符串(renderer AsyncStorage 写入形态)或裸对象 —— 与 tabs-preclean
+ *  的 decodeStoreValue 同容忍度;认不出返回 undefined(fail-open 到默认目录)。 */
+function parseStoreValue(raw: unknown): unknown {
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return undefined
+    }
+  }
+  if (raw !== null && typeof raw === "object") return raw
+  return undefined
+}
+
+function absoluteDirectoryOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && path.isAbsolute(value) ? value : undefined
+}
+
+export type CatalogProbeDirectorySources = {
+  /** `opencode.global.dat` 的 `tabs`。 */
+  tabs: unknown
+  /** `opencode.global.dat` 的 `tabs.recent`。 */
+  recent: unknown
+  /** `opencode.global.dat` 的 `tabs.info`。 */
+  info: unknown
+}
+
+/** 用户首屏实际目录;任何一步认不出都返回 undefined(调用方回退默认工作区,即旧行为)。 */
+export function resolveCatalogProbeDirectory(sources: CatalogProbeDirectorySources): string | undefined {
+  const recent = parseStoreValue(sources.recent)
+  const key = recent && typeof recent === "object" && !Array.isArray(recent) ? (recent as Record<string, unknown>).key : undefined
+  if (typeof key !== "string" || key.length === 0) return undefined
+
+  if (key.startsWith("draft:")) {
+    const draftID = key.slice("draft:".length)
+    const tabs = parseStoreValue(sources.tabs)
+    if (!Array.isArray(tabs)) return undefined
+    const draft = tabs.find(
+      (t): t is Record<string, unknown> =>
+        !!t && typeof t === "object" && !Array.isArray(t) && (t as Record<string, unknown>).type === "draft" && (t as Record<string, unknown>).draftID === draftID,
+    )
+    if (!draft || draft.server !== LOCAL_SIDECAR_SERVER_KEY) return undefined
+    return absoluteDirectoryOrUndefined(draft.directory)
+  }
+
+  // session tabKey = `${server}\n${sessionHref(server, sessionId)}`(app/src/context/tabs.tsx)。
+  if (!key.startsWith(`${LOCAL_SIDECAR_SERVER_KEY}\n`)) return undefined
+  const info = parseStoreValue(sources.info)
+  if (!info || typeof info !== "object" || Array.isArray(info)) return undefined
+  const entry = (info as Record<string, unknown>)[key]
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return undefined
+  return absoluteDirectoryOrUndefined((entry as Record<string, unknown>).directory)
+}
+
 // —— 探针本体(main 侧对引擎的真 HTTP,不是进程内 app.request)——
 // URL 形状与 prewarm 单一来源(initialLocationPrewarmRequest,#857/#881 lineage),不自写替身。
 import { initialLocationPrewarmRequest } from "./sidecar-location-prewarm"
