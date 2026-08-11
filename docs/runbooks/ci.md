@@ -48,6 +48,18 @@ bash scripts/alpha-check.sh
 | **docs gate** | `[7/8]` `scripts/check-doc-links.py <改动的 md>` | `docs gate` | Markdown 相对链接断了 |
 | **required contexts 对真源**(`#890`) | `[8/8]` `scripts/assert-required-contexts.sh` | **无 —— CI 结构上跑不了**(读分支保护要令牌,fork PR 拿不到 secrets) | 仓内 [`.github/required-contexts.txt`](../../.github/required-contexts.txt) 与 GitHub 分支保护里那份真的对不上:漏一条 ⇒ 那道检查其实不必需(红着也能合),而仓内测试全绿。三档结局:一致 / 漂移(红,点名差在哪条,含「分支保护被整个关掉」)/ **未比对**(没 `gh`、没登录、网络不通 —— 不拦 push,但总结行不再说「全绿」) |
 
+- **写了一个起子进程跑 `bun test` 的测试(仓内惯例 `*.cases.ts`)?必须把宿主登记进
+  `scripts/gate-files.tsv`。** `#893` 起这是**默认拒**:不登记,
+  [`gate-file-registry.test.ts`](../../packages/ui-mac/src/main/gate-file-registry.test.ts) 当场红,
+  且这一层**没有** `NOT_GATES` 出口。理由是整包地板对这一类结构性失明 —— 子进程跑的那个文件
+  不进任何整包计数(`bun test src` 只收 `*.test.ts`,`test-component/` 还整个在 `src` 之外),
+  删掉宿主 ui-mac 只掉 1~2 条(地板 3000 照样过),而子进程里十几到几十条断言一次全没。
+  「它算不算闸门」在这一层不是问题,「删掉它会不会红」才是,而只有登记能回答后者。
+  做法:加一行(`delegates_to` 通常是 `-`),再跑
+  `bash scripts/assert-gate-files.sh --update` 把精确条数写回。反向那一半同样成立:
+  每个 `*.cases.ts` 必须被至少一个**已登记**的宿主跑到,删掉宿主留下 cases 文件 = 孤儿 = 红。
+- **同一个路径不得同时出现在 `scripts/gate-files.tsv` 和 `NOT_GATES` 里。** 两张表互斥(`#893`)。
+  此前它们在代码里从不相遇,于是一个路径可以同时被登记为闸门、又被写明「不是闸门」而无人吭声。
 - **上游包** = `packages/{opencode,core,server,tui,sdk,protocol,schema,client}`(**8 个**;`app`/`ui`
   已按 ADR-020 移出守卫,`protocol`/`schema`/`client` 按 ADR-033 补入)。这份清单与 ADR-033 收编
   白名单的**唯一真源**是 [`scripts/north-star-guard.sh`](../../scripts/north-star-guard.sh) ——
