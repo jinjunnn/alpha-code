@@ -12,7 +12,17 @@ bash scripts/alpha-check.sh
 绿了再 push。它跑的是 `alpha-ci` 的**全部 16 个代码步**,并在末尾打印一张逐步对照表
 (`MIRRORED` / `SUPERSET:<理由>` / `DEGRADED:<理由>`)。
 
-> 再加一步 CI **结构上跑不了**的(`#890`,第 `[8/8]` 步):把 `.github/required-contexts.txt`
+> 再加**两步** CI **结构上跑不了**的。
+>
+> 一步是 `#916` 的第 `[8/9]` 步:`scripts/assert-worktree-bootstrap.sh` —— 真建一棵全新
+> worktree、在里面跑真的 typecheck,断言它**自己**就能给出可信结论。CI 的每个 job 都是一次
+> 全新 `actions/checkout` + `bun install`,**结构上不存在 worktree**,所以这条能力只能在本地判。
+> 它守的是多 lane 并行:worktree 里拿不到真 typecheck ⇒ 每条 lane 都得去动**共享**主 checkout
+> ⇒ 谁先跑谁量到别人的树。本机实测约 50s。
+> 这一步也有**三档**结局(与 `[9/9]` 同形):已验证 / **真失守**(红,拦住)/ **未验证**
+> —— `bun install` 依赖网络,registry 不可达时它什么都证明不了,这时**不拦 push**但也**不报绿**。
+>
+> 另一步是 `#890` 的第 `[9/9]` 步:把 `.github/required-contexts.txt`
 > 与 GitHub 分支保护里那份真的 required status checks 比一次。读分支保护要带令牌,而 alpha-ci
 > 触发在 `pull_request` —— fork PR 拿不到 secrets,所以它只能落在有鉴权的开发机上。
 > 这一步有**三档**结局:一致 / 漂移(红,点名差在哪条)/ **未比对**(没装 `gh`、没登录、
@@ -35,18 +45,19 @@ bash scripts/alpha-check.sh
 - **CI 的真正职责**是①**强制门禁**(branch protection:不绿不让 merge,挡手滑)②**中立环境兜底**(抓"在我机器上是好的"那类环境差异)——不是给你当调试台用的。
 - 所以顺序永远是:**本地 `alpha-check` 绿 → push → CI 复核 → merge**。
 
-## 2. 八关是什么(逐步对照见 `alpha-check.sh` 的 `CI_STEPS`)
+## 2. 九关是什么(逐步对照见 `alpha-check.sh` 的 `CI_STEPS`)
 
 | 关 | 本地步骤 | CI job | 失败含义 |
 |---|---|---|---|
-| **北极星守卫**(零改上游) | `[1/8]` `scripts/north-star-guard.sh`;等价 `git diff --diff-filter=DMR --name-only origin/alpha...HEAD -- <上游 8 包>` 必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
-| **NUL 字节闸** | `[2/8]` `scripts/assert-no-nul-bytes.py` | 同上 job | 字面 NUL 让 `grep` 对整个文件静默失明(`#760`) |
-| **typecheck**(三个 alpha 包) | `[3/8]` contracts-consumer + ext + ui-mac | `typecheck (alpha packages)` | 类型不过 |
-| **契约锁 + 单元测试** | `[4/8]` `check:vendor` + `bun-test-floor.sh` × 3(15 / 100 / 3000) | `unit tests (alpha packages)` | vendored hash、producer/consumer fixture 或运行时守卫回归 |
-| **闸门文件点名** | `[5/8]` `scripts/assert-gate-files.sh`(全量见 `scripts/gate-files.tsv`) | 同上 job | 某个闸门文件被删/被清空/条数偏离登记 —— 整包地板抓不到。`#844` 起逐条判**精确条数**(少=删了用例,多=新增未登记);改动闸门文件后跑 `bash scripts/assert-gate-files.sh --update` 从实测写回登记簿(all-or-nothing、幂等),例外语法与理由要求见 TSV 抬头或脚本 `--help` |
-| **seed assets** | `[6/8]` `scripts/assert-seed-assets.sh` | `seed assets present` | 打包资源被静默删除(B7/B15) |
-| **docs gate** | `[7/8]` `scripts/check-doc-links.py <改动的 md>` | `docs gate` | Markdown 相对链接断了 |
-| **required contexts 对真源**(`#890`) | `[8/8]` `scripts/assert-required-contexts.sh` | **无 —— CI 结构上跑不了**(读分支保护要令牌,fork PR 拿不到 secrets) | 仓内 [`.github/required-contexts.txt`](../../.github/required-contexts.txt) 与 GitHub 分支保护里那份真的对不上:漏一条 ⇒ 那道检查其实不必需(红着也能合),而仓内测试全绿。三档结局:一致 / 漂移(红,点名差在哪条,含「分支保护被整个关掉」)/ **未比对**(没 `gh`、没登录、网络不通 —— 不拦 push,但总结行不再说「全绿」) |
+| **北极星守卫**(零改上游) | `[1/9]` `scripts/north-star-guard.sh`;等价 `git diff --diff-filter=DMR --name-only origin/alpha...HEAD -- <上游 8 包>` 必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
+| **NUL 字节闸** | `[2/9]` `scripts/assert-no-nul-bytes.py` | 同上 job | 字面 NUL 让 `grep` 对整个文件静默失明(`#760`) |
+| **typecheck**(三个 alpha 包) | `[3/9]` contracts-consumer + ext + ui-mac | `typecheck (alpha packages)` | 类型不过 |
+| **契约锁 + 单元测试** | `[4/9]` `check:vendor` + `bun-test-floor.sh` × 3(15 / 100 / 3000) | `unit tests (alpha packages)` | vendored hash、producer/consumer fixture 或运行时守卫回归 |
+| **闸门文件点名** | `[5/9]` `scripts/assert-gate-files.sh`(全量见 `scripts/gate-files.tsv`) | 同上 job | 某个闸门文件被删/被清空/条数偏离登记 —— 整包地板抓不到。`#844` 起逐条判**精确条数**(少=删了用例,多=新增未登记);改动闸门文件后跑 `bash scripts/assert-gate-files.sh --update` 从实测写回登记簿(all-or-nothing、幂等),例外语法与理由要求见 TSV 抬头或脚本 `--help` |
+| **seed assets** | `[6/9]` `scripts/assert-seed-assets.sh` | `seed assets present` | 打包资源被静默删除(B7/B15) |
+| **docs gate** | `[7/9]` `scripts/check-doc-links.py <改动的 md>` | `docs gate` | Markdown 相对链接断了 |
+| **worktree bootstrap 能力**(`#916`) | `[8/9]` `scripts/assert-worktree-bootstrap.sh` | **无 —— CI 结构上没有 worktree**(每个 job 都是全新 checkout + `bun install`) | 新建的 worktree 里跑不出可信 typecheck ⇒ 每条 lane 为了下结论都得去动**共享**主 checkout ⇒ 并行时互相污染彼此的门测量(2026-08-02 把一道真闸门误诊成「1/5 间歇性 flaky」是同一形态)。判据是**能力**不是产物:真建 worktree、真跑 typecheck,并且**先证明没 bootstrap 的树确实会红**,再判 bootstrap 过的树绿。**三档结局**:已验证 / 真失守(红,拦住)/ **未验证**(registry 不可达 ⇒ `bun install` 装不上 ⇒ 本跑什么都没证明;不拦 push,但不报绿)|
+| **required contexts 对真源**(`#890`) | `[9/9]` `scripts/assert-required-contexts.sh` | **无 —— CI 结构上跑不了**(读分支保护要令牌,fork PR 拿不到 secrets) | 仓内 [`.github/required-contexts.txt`](../../.github/required-contexts.txt) 与 GitHub 分支保护里那份真的对不上:漏一条 ⇒ 那道检查其实不必需(红着也能合),而仓内测试全绿。三档结局:一致 / 漂移(红,点名差在哪条,含「分支保护被整个关掉」)/ **未比对**(没 `gh`、没登录、网络不通 —— 不拦 push,但总结行不再说「全绿」) |
 
 - **写了一个起子进程跑 `bun test` 的测试(仓内惯例 `*.cases.ts`)?必须把宿主登记进
   `scripts/gate-files.tsv`。** `#893` 起这是**默认拒**:不登记,
@@ -199,9 +210,100 @@ linked worktree 的 `git push` 会把 `GIT_DIR` 注入钩子,而它压过测试�
 为什么不能用上游 husky 门(此前「配置过又失效」的根因,REQ-015):
 - `.husky/pre-push` 跑**全量** `bun turbo typecheck`,在 ADR-020 冻结偏斜下 `session-ui` 恒红(上游叶子包,alpha 不 ship,权威门 alpha-ci 不含)→ 逼出 `--no-verify` 习惯;
 - husky 的 `prepare` 在每次 `bun install` 后把 `core.hooksPath` 重置回 `.husky/_` → 手动 `git config` 一次性开启会被静默冲掉。alpha-check 的自愈重挂即对策;残余窗口(install 后、首次 alpha-check 前直接 push)会撞上游红门 → 跑一次 alpha-check 即恢复,**永不劣于旧状**。
+  **在 worktree 里跑 `bun install` 更糟一格(`#916` 实测)**:`core.hooksPath` 是 repository-local 的,
+  所以那次写落在**所有 worktree 共享的** `.git/config` 上 —— 受害的不是你,是下一个在别的 lane 里
+  `git push` 的人。`scripts/worktree-bootstrap.sh` 在 install 前后夹住并还原这个值,把 worktree 这半边
+  的窗口关掉;第 `[8/9]` 步的 `[3/5]` 条断言它真的关着(先把值设成 `.githooks` 再跑,
+  否则机器上本来就漂成 `.husky/_` 时「前后相等」会恒真)。
 
 ```bash
 # 逃生:
 git push --no-verify                                # 单次绕过
 git config --unset core.hooksPath                   # 关闭(需配合 export ALPHA_HOOKS_DISABLE=1,否则下次 alpha-check 重挂)
 ```
+
+## 7. 新建 worktree —— 一条命令,建完就能跑真闸门(`#916`)
+
+```bash
+bash scripts/worktree-bootstrap.sh 916-worktree-bootstrap -b feat/916-worktree-bootstrap
+# 或:--detach(不建分支)、--base <ref>(默认 origin/alpha)
+```
+
+建在主 checkout 的 `.worktrees/<name>`(治理规定的唯一位置),建完立刻 `bun install`。
+退出 0 = 这棵树自己就能跑 `bash scripts/alpha-check.sh` 并给出**可信**结论,
+**不必去碰共享主 checkout**。幂等:对已存在且已装好的 worktree 重跑只是再跑一次
+`bun install`(实测 3.5s / exit 0,不破坏它)。
+
+### 为什么不是「补齐各包 `node_modules` 软链」
+
+这是 `#916` 票面原本设想的修法,也是外部笔记里写着的那条。**实测推翻了它**
+(2026-08-11,`alpha@510f50ff5`,本机):
+
+| 做法 | `bun run --cwd packages/ui-mac typecheck` |
+|---|---|
+| 全新 worktree(`node_modules` 一个都没有) | exit 2,**11627 条 `error TS`**,首条 `Cannot find module 'bun:test'` |
+| 把主 checkout 的 29 个 `node_modules` 逐个软链过去 | exit 2,**8694 条** —— 降了,但**仍然不可用** |
+| `bun install`(9.5s / 4694 packages) | **exit 0 / 0 条 / 3.0s** |
+
+软链修不好的原因是 bun 的**隔离式布局**:真包在**根** `node_modules/.bun/` 里
+(`ghostty-web` 实际住在 `node_modules/.bun/ghostty-web@github+…/node_modules/ghostty-web`),
+各包 `node_modules` 放的只是指进 store 的链 —— **逐包软链重建不出这张图**。
+
+而且软链**有害**:`packages/{app,desktop,ui-mac}/tsconfig.json` 的 `outDir` 是
+`node_modules/.ts-dist`。把 `node_modules` 链到主 checkout ⇒ 每条 lane 的 typecheck 都往
+**共享树**写构建产物 —— 本票要消灭的交叉污染换个地方发生。`bun install` 之后
+`node_modules` 与 `.ts-dist` 都是 worktree 本地真目录,不与任何人共享。
+
+### 一条会骗人的观察
+
+`.worktrees/` 就在主 checkout **内部**,而 `bun run` 找可执行文件是逐级往上走父目录的
+`node_modules/.bin`。所以**没装依赖的 worktree 照样能跑起 `tsgo`** —— 借的是**共享主 checkout**
+那一份。它报出来的是成千上万条 `Cannot find module`,而不是 `command not found`:
+看起来像「代码坏了」,实际是「依赖没装」,而且这一跑还悄悄用了别人的工具链。
+第 `[8/9]` 步的 `[1/5]` 条正是拿这个指纹当**反向**判据 —— 先证明未 bootstrap 的树确实会红,
+否则「bootstrap 过的树是绿的」这句话空对空。
+
+### 失败时的约定
+
+`bun install` 挂了 ⇒ **非零退出**,并且:
+
+- worktree 是**本次**创建的 → 整棵删掉。**半装的 worktree 比没有更坏**:人会以为装好了,
+  然后把几千条 `Cannot find module` 假红当成「基线既有」。
+- worktree 是**之前就有**的(可能装着没提交的活)→ 不删,但明说它的依赖解析现在不可信。
+
+### 装不上依赖的时候:三档,不是两档(`#916` R2,owner 裁决)
+
+`bun install` **依赖网络**。实测(2026-08-11):把 registry 指向不可达地址,**连已经装好的树**
+也会 `failed to resolve` / exit 1(3s)。而 `[8/9]` 每次 push 都跑 ⇒ 若把「装不上」一律判红,
+**网络一抖就拦住 push**,理由与本次改动无关 ⇒ 人会 `--no-verify` ⇒ **九道门一起关掉**。
+这正是 `#890` 那条 lane 推理过并特意避开的形态,所以两处取同一个形状:
+
+| 结局 | 退出码 | 拦 push? | 输出 |
+|---|---|---|---|
+| 已验证 | 0 | — | `✓ 新建 worktree 自己就能跑出可信 typecheck` |
+| **真失守** | 1 | **拦** | `✗ worktree bootstrap 能力判据失守` |
+| **未验证** | 2 | 不拦 | `⚠️ 未验证:registry 不可达(…)`,且总结行不再说「全绿」 |
+
+**豁免最容易变成一道假门**:如果「`bun install` 失败」一律归成网络,那 bootstrap 真坏掉的那天
+也会被归成网络 ⇒ 这道门从此**永不失守**。所以判别依据是一件**独立于失败本身的环境事实** ——
+**单独探一次 registry 可达性**(`curl`),而不是去解析 bun 的报错措辞(解析别人的错误文法 =
+本仓点名过的「手写一个别人文法的替身」,措辞一改就悄悄失效)。三条配套约束:
+
+- 探测**不许用 bun**:`[5/6]` 的故障注入正是「PATH 里没有 bun」,用 bun 探会连带失败、把一个
+  **非网络**失败误判成网络,恰好打穿要立的那条判据。
+- **拿不准一律倒向「拦住」**:registry 解析不出来(仓内/用户级 `.npmrc`、`bunfig.toml` 声明了
+  我们没算进来的 registry)、没装 `curl` —— 都判 `real`。这不是假设而是**被检查的前提**:
+  将来真长出 registry 声明,这里会退回 fail-closed 并逼人来更新。
+- **判别依据自己有两条判据钉着**:`[5/6]` 非网络失败(bun 缺失)必须仍判 `real`;
+  `[6/6]` 判别依据必须双向可分,且网络档 **exit 2 + 说「未验证」+ 不打印那句全绿话**。
+  「registry 可达却判 network」= 万能挡箭牌,当场红。
+
+判「判别依据坏了」还是「这台机器真的离线」,用的是一条**独立**的可达性探针,不是判别依据
+自己的答案 —— 拿被测对象自己当比较基准是本仓点名过的**自指等价链**。
+
+### 为什么没加 `--frozen-lockfile`
+
+实测它**不省任何网络往返**:全新 worktree + 不可达 registry,`bun install` 与
+`bun install --frozen-lockfile` 都在 3s 左右以同样的 `failed to resolve` 失败(exit 1)。
+另外两条:CI 跑的是裸 `bun install`(bootstrap 与之对齐),且实测裸 install **不会**改写
+`bun.lock`(装完 `git status` 干净)。三条合起来 ⇒ 加它只多一种失败形态,不带来好处。

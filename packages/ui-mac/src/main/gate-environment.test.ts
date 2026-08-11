@@ -7,7 +7,7 @@
 //           起的子进程全是这个形状。声明在 `packages/ui-mac/scripts/test-preload.ts`
 //           (`setDefaultTimeout`),因为 host 自己拼 argv,传不进 CLI flag。
 //   形状 B:多文件运行 —— CI 的三条 test 步、`assert-gate-files.sh` 的 77 次点名、
-//           `alpha-check.sh` 的 [4/8] 全是这个形状。声明在 `scripts/bun-test-floor.sh`
+//           `alpha-check.sh` 的 [4/9] 全是这个形状。声明在 `scripts/bun-test-floor.sh`
 //           (`bun test --timeout`),因为**这才是所有闸门运行的唯一入口**。
 //
 // 为什么需要它:本包有 31 条 host 用例在子进程里跑整套 `.cases.ts`(粒度是每条 `test(...)`

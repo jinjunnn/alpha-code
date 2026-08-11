@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # worktree-link-deps.sh — 给一个 git worktree 装上「真隔离」的依赖解析。
 #
+# ⚠️ 新建 worktree 请用 `scripts/worktree-bootstrap.sh`(`#916`),它建树 + `bun install` 一步到位,
+#    产出的 `node_modules` 与 `.ts-dist` 都是 worktree 本地真目录、与任何人不共享,实测
+#    9.5s 装完、ui-mac typecheck exit 0。本文件保留给「已有 worktree 想省磁盘、逐条软链第三方包」
+#    这个旧用法(`#783` 的打包真机 L2 用过);它**没有**被 `#916` 的能力判据覆盖。
+#
 # 为什么需要它:bun workspace 在包内放的是**相对**软链
 # (`packages/ui-mac/node_modules/@opencode-ai/app -> ../../../app`)。若把整个
 # `node_modules` 目录软链到主 checkout,相对链会相对**主 checkout**解析 —— worktree

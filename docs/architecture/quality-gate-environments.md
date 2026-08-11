@@ -20,6 +20,7 @@
 | `#769` | CI 的 vendor lock 闸 | 「兄弟仓 `../alpha-web` 在」 | 裸 checkout 没有 ⇒ **CI 上恒红**,红的理由与它要验的漂移无关 |
 | `#777`-A | `bun test` 的 31 条 host 用例 | 「机器快到 5 秒内能跑完一整套子 suite」 | 慢一点就超时 ⇒ 红,而红的理由与被验的行为无关 |
 | `#777`-B | 生产安装闸的组件测试 | 「跑在本产品发布的平台上」 | ubuntu runner ⇒ 写盘前直接拒 ⇒ 门跑不起来 |
+| `#916` | 本地 `alpha-check` 的 typecheck / 测试 | 「跑门的这棵树装着依赖」 | 全新 worktree 一个 `node_modules` 都没有 ⇒ **11627 条假红** ⇒ 唯一出路是去动**共享**主 checkout ⇒ 并行 lane 互相污染彼此的门测量 |
 
 **咽喉的形状因此是确定的:让门的环境需求变成一处显式声明,新增的门默认拿到它,缺失时显式降级并自陈。**
 枚举对新成员默认放行,咽喉对新成员默认拒绝 —— 优先咽喉。
@@ -317,6 +318,56 @@ changed` 与 `code=false`,自相矛盾。上面那条判据此前也测不出这
 (「新增闸门文件落 alpha 自有的 `alpha-*.test.ts`,新增文件不触发 `--diff-filter=DMR`,无需 exclude」)。
 `north-star-guard.test.ts` 把这句散文变成判据:有人顺手加上 `A`,那两条 ADR 的前提当场失效并变红。
 代价也明写:上游包内**新增**一个 alpha 文件不受守卫管,靠 review 与 ADR 纪律拦。
+
+### 3.9 跑门的那棵树装没装依赖 —— worktree 这一格(`#916`)
+
+> 实测 2026-08-11,基线 `alpha@510f50ff5`,本机 macOS / bun 1.3.14。
+
+前八格问的都是「门在什么环境里跑」;这一格问的是**门跑在哪棵树上**,而答案曾经只能是
+「共享主 checkout」——于是**两条并行 lane 会量到彼此的树**。
+
+| 树 | `bun run --cwd packages/ui-mac typecheck` | 耗时 |
+|---|---|---|
+| 主 checkout(装着依赖) | exit 0 / 0 条 | 3.0s |
+| 全新 worktree,`node_modules` 一个都没有 | exit 2 / **11627 条 `error TS`**(TS2307 1462 条),首条 `Cannot find module 'bun:test'` | 0.5s |
+| 同一棵 worktree,把主 checkout 的 **29** 个 `node_modules` 逐个软链过去 | exit 2 / **8694 条** —— 降了,**仍然不可用** | — |
+| 同一棵 worktree,`bun install`(4694 packages / 9.5s) | **exit 0 / 0 条** | 3.0s |
+
+三条只有跑过才说得出来的事实:
+
+1. **逐包软链结构性地修不好。** bun 是隔离式布局,真包在**根** `node_modules/.bun/` 下
+   (`ghostty-web` 住在 `node_modules/.bun/ghostty-web@github+…/node_modules/ghostty-web`),
+   各包 `node_modules` 里放的只是指进 store 的链。软链重建不出这张图 —— 这也是为什么
+   「补齐各包软链」这条写在票面和外部笔记里的修法是**错的**,证伪它只需要跑一次。
+2. **软链还会反向污染。** `packages/{app,desktop,ui-mac}/tsconfig.json` 的 `outDir` 是
+   `node_modules/.ts-dist`;`node_modules` 一旦链向主 checkout,每条 lane 的 typecheck 就都往
+   **共享树**写构建产物 —— 要消灭的交叉污染换了个地方发生。
+3. **没装依赖的 worktree 会借用共享树的工具链,而且不吭声。** `.worktrees/` 在主 checkout
+   **内部**,`bun run` 逐级往上找 `node_modules/.bin` ⇒ 未装依赖的 worktree 照样跑得起 `tsgo`,
+   借的是主 checkout 那一份。报出来的是 `Cannot find module` 而不是 `command not found`,
+   于是**看起来像代码坏了**。这是本文件反复讲的那件事:观测手段自己有盲区。
+
+**这道门自己也踩在同一类前提上(`#916` R2)**:它靠 `bun install`,而 `bun install` **依赖网络** ——
+实测把 registry 指向不可达地址,**连已经装好的树**也会 `failed to resolve` / exit 1(3s)。
+一道每次 push 都跑、网络一抖就恒红的门,正是本文件开头那句「恒红的门等于没有门」。
+所以它取 `#890` 的三档形状:0 已验证 / 1 真失守(拦住)/ **2 本次未验证**(不拦 push,但**不报绿**)。
+豁免的判别依据是**独立于失败本身的环境事实** —— 单独探一次 registry 可达性(`curl`,**不用 bun**:
+`[5/6]` 的注入就是「没有 bun」),拿不准一律倒向拦住;并且判别依据自己被两条判据钉着
+(非网络失败必须仍判 `real`、判别依据必须双向可分且网络档不报绿),否则「一律算网络」
+会让这道门**永不失守** = 假门。分辨「判别依据坏了」与「机器真离线」用的是一条**独立**探针,
+不是判别依据自己的答案(自指等价链)。
+
+咽喉:[`scripts/worktree-bootstrap.sh`](../../scripts/worktree-bootstrap.sh) —— 建 worktree 与
+`bun install` 合成一步,失败即非零退出并把**本次**创建的半装树整棵删掉。
+判据是**能力**不是产物([`scripts/assert-worktree-bootstrap.sh`](../../scripts/assert-worktree-bootstrap.sh),
+`alpha-check` 第 `[8/9]` 步):真建 worktree、真跑 typecheck,且**先证明未 bootstrap 的树确实会红**
+再判 bootstrap 过的树绿 —— 少了反向那条,「这台机器碰巧哪里都能解析」会让正向断言空对空地绿。
+
+附带修掉的一格:`bun install` 会触发根 `package.json` 的 `"prepare": "husky"`,把
+`core.hooksPath` 改成 `.husky/_`。它是 repository-local 的 ⇒ **在 worktree 里 install,写的是
+所有 worktree 共享的 `.git/config`**,受害的是下一个在别的 lane 里 `git push` 的人
+(撞上游那份在 ADR-020 冻结偏斜下恒红的钩子 ⇒ `--no-verify` ⇒ 八道真闸门一起关掉)。
+bootstrap 在 install 前后夹住并还原它。
 
 ## 4. 咽喉:两处声明,覆盖仓内真实存在的两种运行形状
 
