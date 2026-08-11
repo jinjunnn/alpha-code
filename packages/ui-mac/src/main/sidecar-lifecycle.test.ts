@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import type { SidecarGenerationState } from "../preload/types"
+import type { RenewalResult } from "./alpha-auth"
+import { createTokenRotationLatch } from "./auth-renewal"
+import { armBootGenerationTerminal } from "./sidecar-generation"
 import {
   armRespawnGenerationTerminal,
   commitForkedTokenGeneration,
@@ -203,13 +206,17 @@ describe("forked token generation commits", () => {
 // —— helper 单测只锁纯函数,#577 的五条形状锚只看 armBootGenerationTerminal。生产接线的最后
 // 一英里(index.ts 是 electron main,bun test 里 import 不起来)只能锁源码形状,范式沿用 #577 锚。
 //
-// 锁四件事:
+// 锁五件事:
 // ① boot 只 **capture**:恰好一处 `const forkTokenGeneration = getTokenGeneration()`,且在 boot
 //    spawn 之前(捕获的必须是 fork 继承的那一代);
 // ② capture 同时只写 in-flight 去重代,不写已健康代;
-// ③ health 成功/失败和 spawn 失败都经 settle,清 pending 并重放 latch;
-// ④ 仅 healthy settle 经 commitForkedTokenGeneration 提交;旧的 fork 前直接记账不得复活。
-test("#600/#859 接线锚:boot token 代先标 in-flight,只在 health 后提交并重放 latch", () => {
+// ③ #859:结算**独家**由 boot generation 终态驱动,且该终态带上界(timeoutMs)——
+//    三条路(spawn 失败 / 健康通过 / 健康失败或超时)都必然结算,pending 的释放因此有界;
+// ④ #859:无上界的结算源不得复活 —— index.ts 不得再直接消费 `health.wait`
+//    (server.ts 的 health 只在「探到健康」或「子进程退出」时结束,pollUntilHealthy 无限轮询
+//    ⇒ 进程活着但永不健康时它永远 pending),也不得留下绕过终态的 `spawning.catch` 结算;
+// ⑤ 仅 healthy settle 经 commitForkedTokenGeneration 提交;旧的 fork 前直接记账不得复活。
+test("#600/#859 接线锚:boot token 代先标 in-flight,结算独家挂在有上界的终态上", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
 
   const bootStart = source.indexOf('reason: "boot"')
@@ -221,12 +228,22 @@ test("#600/#859 接线锚:boot token 代先标 in-flight,只在 health 后提交
   expect(source.slice(capture, bootSpawn)).toContain("bootForkTokenGeneration = forkTokenGeneration")
   expect(source.slice(capture, bootSpawn)).toContain("pendingBootForkTokenGeneration = forkTokenGeneration")
 
-  const healthGate = source.indexOf("void health.wait.then(")
-  expect(healthGate).toBeGreaterThan(bootSpawn)
-  const healthSettlement = source.slice(healthGate, healthGate + 300)
-  expect(healthSettlement).toContain("settleBootForkTokenGeneration(forkTokenGeneration, true)")
-  expect(healthSettlement).toContain("settleBootForkTokenGeneration(forkTokenGeneration, false)")
-  expect(source).toContain("void spawning.catch(() => settleBootForkTokenGeneration(forkTokenGeneration, false))")
+  // ③ 终态是唯一结算源,并且它带上界。
+  const arm = source.indexOf("void armBootGenerationTerminal(", bootSpawn)
+  const handoff = source.indexOf("\n      return spawning", arm)
+  expect(arm).toBeGreaterThan(bootSpawn)
+  expect(handoff).toBeGreaterThan(arm)
+  const settlement = source.slice(arm, handoff)
+  expect(settlement).toContain("timeoutMs: BOOT_GENERATION_TERMINAL_MS")
+  expect(settlement).toContain('settleBootForkTokenGeneration(forkTokenGeneration, terminal !== "failed")')
+  expect(settlement).toContain("() => settleBootForkTokenGeneration(forkTokenGeneration, false)")
+  expect(source).toMatch(/^const BOOT_GENERATION_TERMINAL_MS = 30_000$/m)
+
+  // ④ 无上界的结算源不得复活:health 既不得被取进 index.ts 的作用域,也不得被直接消费。
+  //   (断言写成正则而不是 `not.toContain("health.wait")`,否则解释这件事的注释自己会把它打红。)
+  expect(source).not.toMatch(/health\.wait\s*\.\s*then\s*\(/)
+  expect(source).not.toMatch(/const \{[^}]*\bhealth\b[^}]*\} = yield\*/)
+  expect(source).not.toMatch(/spawning\.catch\(\(\) => settleBootForkTokenGeneration/)
 
   expect(source).toContain("pendingForkGeneration: () => pendingBootForkTokenGeneration")
   const settle = source.slice(
@@ -234,13 +251,224 @@ test("#600/#859 接线锚:boot token 代先标 in-flight,只在 health 后提交
     source.indexOf("function recordDanglingSweep("),
   )
   expect(settle).toContain("if (pendingBootForkTokenGeneration !== forked) return")
-  expect(settle).toContain("if (healthy) commitSidecarTokenGeneration(forked, true)")
+  // fail-closed 的判定必须落在那条唯一规则上,不得退回 index.ts 里的 `if (healthy)`
+  // ——后者跑不进单测,只有源码锚看得见它。
+  expect(settle).toContain("commitSidecarTokenGeneration(forked, healthy)")
+  expect(settle).not.toMatch(/if \(healthy\)/)
   expect(settle).toContain("pendingBootForkTokenGeneration = 0")
   expect(settle).toContain("void tokenRotation.flush()")
 
   expect(source).toContain("sidecarTokenGeneration = commitForkedTokenGeneration(")
   expect(source).toContain("commitSidecarTokenGeneration(forkTokenGeneration, healthy)")
   expect(source).not.toMatch(/sidecarTokenGeneration = getTokenGeneration\(\)/)
+})
+
+// ── #859 boot 换血竞态 harness ───────────────────────────────────────────────
+// 用**生产的两个单元**跑完整条 boot 结算链:
+//   armBootGenerationTerminal(sidecar-generation.ts,自带 timeoutMs 上界)
+//     → settle(index.ts 的四行 glue,形状由上面那条源码锚逐行钉住)
+//     → createTokenRotationLatch(auth-renewal.ts)
+// 诚实记账:glue 是这条链上唯一没被直接执行的一环 —— index.ts 顶层 `Effect.runFork(main)`
+// 让它在 bun test 里 import 不起来,只能靠源码锚保证形状。其余每一环都是生产代码本身。
+// 判据一律用**恰好**(respawns 的确切次数、applied 的确切数组),不写 `≤`、不只断布尔:
+// 「宽限内只 fork 一次」这种上限断言写成 `≤1` 就等于没写。
+type BootRace = {
+  /** boot fork 继承(捕获)的 token 代。 */
+  forkGeneration: number
+  /** health 线。永不 settle = 「子进程活着但永远探不到健康」(MCP 风暴 / 引擎卡死)。 */
+  health: Promise<unknown>
+  /** spawn 在 ready 握手之前就失败。 */
+  spawnFails?: boolean
+  injectionFailure?: { message: string }
+  terminalTimeoutMs?: number
+}
+
+function runBootRace(race: BootRace) {
+  let committed = 0 // = index.ts 的 sidecarTokenGeneration(只由健康确认推进)
+  let pending = race.forkGeneration // = index.ts 的 pendingBootForkTokenGeneration
+  let respawns = 0
+  let nextForkCarries = 0
+  const applied: number[] = []
+  const published: SidecarGenerationState[] = []
+  const flushes: Promise<boolean>[] = []
+
+  const latch = createTokenRotationLatch({
+    forkedGeneration: () => committed,
+    pendingForkGeneration: () => pending,
+    canRespawn: () => true,
+    // 换血 = 杀掉旧 sidecar、fork 一个携带被请求那一代的新进程,健康后按同一条规则提交。
+    respawn: async () => {
+      respawns++
+      committed = commitForkedTokenGeneration(committed, nextForkCarries, true)
+      return true
+    },
+    onApplied: (generation) => applied.push(generation),
+  })
+
+  // index.ts 的 settle glue。fail-closed 的判定走**生产那条规则**
+  // (commitForkedTokenGeneration),不在这里写 `if (healthy)` —— 写了就等于把 AC2 的判定
+  // 搬进测试自己的 glue:实测把生产规则改成忽略 healthy,这一整组竞态用例仍然全绿。
+  const settle = (forked: number, healthy: boolean) => {
+    if (pending !== forked) return
+    committed = commitForkedTokenGeneration(committed, forked, healthy)
+    pending = 0
+    flushes.push(latch.flush())
+  }
+
+  const spawning = race.spawnFails
+    ? Promise.reject(new Error("fork failed before the ready IPC"))
+    : Promise.resolve({ health: { wait: race.health }, injectionFailure: race.injectionFailure })
+  const terminal = armBootGenerationTerminal({
+    generation: 1,
+    spawning,
+    timeoutMs: race.terminalTimeoutMs ?? 20,
+    publish: (state) => published.push(state),
+    log: () => {},
+    logError: () => {},
+  }).then(
+    (outcome) => settle(race.forkGeneration, outcome !== "failed"),
+    () => settle(race.forkGeneration, false),
+  )
+
+  return {
+    published,
+    applied,
+    latch,
+    get respawns() {
+      return respawns
+    },
+    get committed() {
+      return committed
+    },
+    /** 续期落地 ⇒ 请求换血。`carries` = 新 fork 会携带的代(换血成功后提交的就是它)。 */
+    request(generation: number, trigger = "boot-grace") {
+      nextForkCarries = generation
+      return latch.accept({ outcome: "refreshed", generation } satisfies RenewalResult, trigger)
+    },
+    /** 等终态与它触发的那次 flush 跑完 —— 显式 await 生产 promise 本身,不 sleep 撞运气。 */
+    async settled() {
+      await terminal
+      while (flushes.length) await flushes.shift()
+    },
+  }
+}
+
+describe("#859 boot fork 与 token 换血的竞态", () => {
+  // 正向(AC1):宽限内 refreshed —— boot fork 已经带上新代,窗口建立后的 flush 不得再杀它。
+  // 五个样本各自独立,判据是**恰好**:respawn 恰好 0 次、applied 恰好一次且是那一代。
+  test("宽限内 refreshed:五个样本都只有 boot 一次 fork,token-only 换血恰好 0 次", async () => {
+    for (let sample = 1; sample <= 5; sample++) {
+      let healthy!: () => void
+      const race = runBootRace({
+        forkGeneration: 2,
+        health: new Promise<void>((resolve) => {
+          healthy = resolve
+        }),
+      })
+
+      // 窗口建立后的那次 flush 落在 health 之前 —— 这正是 #859 的窗口。
+      expect(await race.request(2, `boot-grace-${sample}`)).toBe(false)
+      expect(await race.latch.flush()).toBe(false)
+      expect(race.respawns).toBe(0)
+      // fail-closed(AC2):health 未落定之前,这一代绝不能被记成已应用。
+      expect(race.committed).toBe(0)
+      expect(race.applied).toEqual([])
+
+      healthy()
+      await race.settled()
+      expect(race.respawns).toBe(0)
+      expect(race.committed).toBe(2)
+      expect(race.applied).toEqual([2])
+      expect(race.published).toEqual([{ status: "ready", generation: 1, reason: "boot" }])
+    }
+  })
+
+  // fail-closed(AC2):健康线没通过的 fork 不得被标成已应用 —— 它只释放抑制。
+  // 反例:让 settle 无条件提交(「干脆在 fork 时就记账」)⇒ 这里 committed 会变成 2、
+  // respawn 变成 0,本条与下一条同时转红。
+  test("健康失败的 boot fork 不提交代,只释放抑制并换来恰好一次换血", async () => {
+    const race = runBootRace({ forkGeneration: 2, health: Promise.reject(new Error("probe refused")) })
+
+    expect(await race.request(2)).toBe(false)
+    expect(race.respawns).toBe(0)
+
+    await race.settled()
+    expect(race.respawns).toBe(1)
+    expect(race.applied).toEqual([2]) // 是新 fork 携带它,不是那个失败的 boot fork
+    expect(race.published).toEqual([{ status: "failed", generation: 1, reason: "boot" }])
+    // 再多来几次触发也不得变成换血循环。
+    expect(await race.latch.flush()).toBe(true)
+    expect(race.respawns).toBe(1)
+  })
+
+  // 不留终局(AC3)——**本票真正的缺口**:health 结构上可能永不落定
+  // (server.ts 只在「探到健康」或「子进程退出」时结束它,pollUntilHealthy 是无限轮询),
+  // 而 latch 的 in-flight 抑制分支**不排重试定时器**。结算若挂在 health 上,这一代永远等不到
+  // 换血且没有任何定时器会来救 —— 只有把结算挂在带上界的终态上才有界。
+  test("health 永不落定:上界到点后仍发生恰好一次换血,不是无定时器终局", async () => {
+    const race = runBootRace({ forkGeneration: 2, health: new Promise(() => {}), terminalTimeoutMs: 20 })
+
+    expect(await race.request(2)).toBe(false)
+    expect(race.respawns).toBe(0)
+    expect(race.committed).toBe(0)
+    expect(race.applied).toEqual([])
+
+    await race.settled()
+    expect(race.respawns).toBe(1)
+    expect(race.committed).toBe(2)
+    expect(race.applied).toEqual([2])
+    expect(race.published).toEqual([{ status: "failed", generation: 1, reason: "boot" }])
+  })
+
+  // 不留终局(AC3):spawn 在 ready 握手前失败 —— 这条路上 health 根本不存在。
+  test("spawn 在握手前失败:抑制照样被释放,换血恰好一次", async () => {
+    const race = runBootRace({ forkGeneration: 2, health: new Promise(() => {}), spawnFails: true })
+
+    expect(await race.request(2)).toBe(false)
+    await race.settled()
+    expect(race.respawns).toBe(1)
+    expect(race.committed).toBe(2)
+    expect(race.published).toEqual([{ status: "failed", generation: 1, reason: "boot" }])
+  })
+
+  // 不留终局(AC3)的另一半:boot 之后来了**更新**的代 —— 抑制只对同一代成立。
+  // 迟到的 boot 握手不得把已经更新的代推回去(commitForkedTokenGeneration 的单调性)。
+  test("boot 在飞时来了更新的代:立刻换血一次,迟到的 boot 握手不再触发第二次", async () => {
+    let healthy!: () => void
+    const race = runBootRace({
+      forkGeneration: 2,
+      health: new Promise<void>((resolve) => {
+        healthy = resolve
+      }),
+    })
+
+    expect(await race.request(3, "renewal")).toBe(true)
+    expect(race.respawns).toBe(1)
+    expect(race.committed).toBe(3)
+
+    healthy()
+    await race.settled()
+    expect(race.respawns).toBe(1)
+    expect(race.committed).toBe(3)
+    expect(race.applied).toEqual([3, 3])
+  })
+
+  // 注入失败 ≠ 健康线没过:token 随 fork 物化({file:} 通道不经注入),与 respawn 侧
+  // armRespawnGenerationTerminal 的返回值语义同构。把它当 failed 处理会白白多杀一次 sidecar。
+  test("健康通过但注入失败:仍算这一代已落地,不触发换血", async () => {
+    const race = runBootRace({
+      forkGeneration: 2,
+      health: Promise.resolve(),
+      injectionFailure: { message: "ENOTDIR" },
+    })
+
+    expect(await race.request(2)).toBe(false)
+    await race.settled()
+    expect(race.respawns).toBe(0)
+    expect(race.committed).toBe(2)
+    expect(race.applied).toEqual([2])
+    expect(race.published).toEqual([{ status: "injection-failed", generation: 1, reason: "boot" }])
+  })
 })
 
 test("#858 接线锚:token-only 换血用短收口预算,结构换血与退出保留 graceful", () => {
