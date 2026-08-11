@@ -59,6 +59,11 @@ const STORE_SERVER_KEY = "sidecar"
 /** #894:第三个 server —— 请求在途期间 store 改连到它。三个互不相同,负向夹具才不是退化形状
  *  (两个值时「取另一个」也能蒙对)。 */
 const LATER_SERVER_KEY = "wsl:debian"
+/** #894 R1 审计:第四个 server —— **第二条用例提交那一刻** store 连的是它,而不是 `STORE_SERVER_KEY`。
+ *  两条用例都从 `"sidecar"` 提交时,一个把 href 写死成 `"sidecar"` 的实现两条全绿(生产今天
+ *  `projectsServerKey` 恒为 `sidecar`,行为等价 ⇒ 有人真会那么写);提交时的 key 两条不同,
+ *  写死单值就同时满足不了 —— 这是本仓「期望值恰好等于一个可硬编码的常量」那一形态的闸。 */
+const SUBMIT_TIME_SERVER_KEY = "wsl:fedora"
 
 type DraftRecord = { server: string; directory: string }
 const [draft, setDraft] = createSignal<DraftRecord>({ server: ACTIVE_SERVER_KEY, directory: "/ws/a" })
@@ -1054,8 +1059,10 @@ describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 s
       且 server 段等于建会话的那个 server(锚点是本文件自己的字面量,不 import 生产常量);
    ② 落地页确实是「刚建的那个会话」—— 首页开的开局档位/只读档在它身上接得住(读取走生产的
       `SessionComposerMount`,它自己按 canonical 身份算钥匙)。
-   第二条用例把「快照」与「完成时重读」分开:请求在途时 store 改连第三个 server,导航仍须落在
-   提交那一刻的那个。三个 server key 互不相同,负向夹具不取退化形状。 */
+   第二条用例把「快照」与「完成时重读」分开:请求在途时 store 改连别的 server,导航仍须落在
+   提交那一刻的那个。四个 server key 互不相同,负向夹具不取退化形状;两条用例**提交那一刻**的
+   key 也刻意不同(`STORE_SERVER_KEY` / `SUBMIT_TIME_SERVER_KEY`)—— 否则一个把 href 写死成
+   `"sidecar"` 的实现两条全绿(R1 审计 Minor)。 */
 describe("#894 首页提交后的导航:落地的是真正创建会话的那个 server 上的那个会话", () => {
   test("active server ≠ store 的 server:导航目标带着 store 的 server,落地页就是刚建的那个会话", async () => {
     const projects = projectsApi([project("alpha-code", "/ws/a")])
@@ -1084,7 +1091,7 @@ describe("#894 首页提交后的导航:落地的是真正创建会话的那个 
 
   test("请求在途时 store 改连了别的 server:仍落在**提交那一刻**的那个,不是完成时的", async () => {
     const projects = projectsApi([project("alpha-code", "/ws/a")])
-    const [storeServerKey, setStoreServerKey] = createSignal<string | undefined>(STORE_SERVER_KEY)
+    const [storeServerKey, setStoreServerKey] = createSignal<string | undefined>(SUBMIT_TIME_SERVER_KEY)
     const gate = gateStartChat()
 
     const home = mountDisposable(() => createComponent(AlphaHome, { projects, serverKey: storeServerKey }))
@@ -1096,7 +1103,7 @@ describe("#894 首页提交后的导航:落地的是真正创建会话的那个 
     expect(startChatCalls).toHaveLength(1)
     expect(navigateCalls).toEqual([]) // 还在途:会话还没建成,当然还没跳
 
-    // 会话此刻正建在 STORE_SERVER_KEY 上;这时 store 改连到第三个 server(sidecar 重启换端口 /
+    // 会话此刻正建在 SUBMIT_TIME_SERVER_KEY 上;这时 store 改连到另一个 server(sidecar 重启换端口 /
     // 用户切了服务器),`props.serverKey()` 从此返回新值。
     await startTransition(() => setStoreServerKey(LATER_SERVER_KEY))
     for (let i = 0; i < 5; i++) await flush()
@@ -1106,8 +1113,10 @@ describe("#894 首页提交后的导航:落地的是真正创建会话的那个 
     expect(navigateCalls).toHaveLength(1)
     const landed = parseRoute(navigateCalls[0]!) as { serverKey?: string; id?: string }
     expect(landed.id).toBe("session-1")
-    expect(landed.serverKey).toBe(STORE_SERVER_KEY)
+    expect(landed.serverKey).toBe(SUBMIT_TIME_SERVER_KEY)
     expect(landed.serverKey).not.toBe(LATER_SERVER_KEY)
+    // 与第一条用例提交时的 key 也不同 ⇒ 把 href 写死成任何单个字面量都过不了这两条。
+    expect(landed.serverKey).not.toBe(STORE_SERVER_KEY)
     home.dispose()
   })
 })
