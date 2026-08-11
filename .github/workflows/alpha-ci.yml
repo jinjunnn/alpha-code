@@ -41,7 +41,7 @@ on:
 # Upstream dirs whose modification would conflict on the next fork-sync. Keep in sync with
 # .claude/rules/ARCHITECTURE.md 硬约束#1 and ADR-004.
 # ADR-020(2026-07-03,用户拍板):packages/{app,ui} 已冻结为 alpha 管理的前端基线
-# (frontend-freeze-base tag),不再随上游同步,故移出守卫范围——它们相对 origin/dev 的 diff 是
+# (frontend-freeze-base tag),不再随上游同步,故移出守卫范围——它们相对上游镜像的 diff 是
 # 冻结的本意,不是北极星破坏。引擎/契约包(opencode/core/server/tui/sdk + session-ui 等)照旧只读。
 env:
   # ADR-033(#456,2026-07-21):补全守卫盲区——permission wire 契约的 SOT 有一半在
@@ -106,9 +106,14 @@ jobs:
       # 刻意不新开 job:按本仓纪律,新增检查 = 往 bin/check 加一步,CI 只镜像它。
       - name: No literal NUL bytes in version-controlled files
         run: python3 scripts/assert-no-nul-bytes.py
-      - name: Ensure origin/dev is available
+      # `#889`:守卫的比较基准 = 这个 workflow 服务的那条分支(`on: push/pull_request:
+      # branches: [alpha]`),不是上游镜像 `dev`。取错基准不会漏报真违规,但会把 alpha 与
+      # dev 三周的合法分叉全算进窗口 ⇒ 一次不在白名单里的上游改动就让这道门在**每个 PR**
+      # 上恒红。fetch 的 ref 与下一步 diff 的基准必须同一条,由
+      # packages/ui-mac/src/main/local-gate-parity.test.ts 判(两者不一致即红)。
+      - name: Ensure origin/alpha is available
         if: needs.detect.outputs.code == 'true'
-        run: git fetch --no-tags origin dev
+        run: git fetch --no-tags origin alpha
       - name: Fail on any modification to upstream package files
         if: needs.detect.outputs.code == 'true'
         run: |
@@ -188,7 +193,7 @@ jobs:
             ':(exclude)packages/core/src/tool/application-tools.ts'
             ':(exclude)packages/core/src/tool/registry.ts'
           )
-          changed="$(git diff --diff-filter=DMR --name-only origin/dev...HEAD -- $UPSTREAM_PATHS "${excludes[@]}")"
+          changed="$(git diff --diff-filter=DMR --name-only origin/alpha...HEAD -- $UPSTREAM_PATHS "${excludes[@]}")"
           if [ -n "$changed" ]; then
             echo "::error::North star broken — alpha modified/deleted/renamed upstream files (fork-sync will conflict):"
             echo "$changed" | sed 's/^/  /'
