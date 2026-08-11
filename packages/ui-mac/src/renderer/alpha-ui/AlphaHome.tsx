@@ -8,7 +8,7 @@
 import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { type AlphaProjectsApi } from "../sidebar/use-projects"
-import { sessionHref } from "../sidebar/route"
+import { hrefFor } from "../../shared/route-manifest"
 import { AlphaComposer } from "./alpha-composer"
 import { createDefaultWorkspaceDir } from "./default-workspace"
 import { AlphaWorkspaceChip, visibleWorkspaces } from "./workspace-chip"
@@ -35,8 +35,8 @@ export function AlphaHome(props: {
    *  server 上** —— 它是新会话 canonical 身份的第一段,composer 拿它登记开局档位/只读档。
    *  这里刻意**不读** `useServer().key`:那是「当前 active server」,WSL/remote 下与本地 sidecar
    *  不是同一个,拿它当身份就把登记写到了一把没人认领的钥匙下面(用户在首页开的只读档静默丢失)。
-   *  首页跳的 legacy href 今天仍按 active server 事后反推(`#894`),那是**导航**的缺陷,不是身份
-   *  的:身份归会话真正所在的那个 server。 */
+   *  `#894` 起**导航**消费同一个身份:提交那一刻的快照经 `onSubmitted` 交回来,直接拼
+   *  `/server/:serverKey/session/:id`,不再走 legacy href 让壳事后反推。 */
   serverKey: () => string | undefined
 }) {
   const navigate = useNavigate()
@@ -138,9 +138,20 @@ export function AlphaHome(props: {
               setWsOpen(true)
               pushToast({ kind: "info", title: t("alpha.home.workspaceRequired") })
             }}
-            onSubmitted={(id) => {
-              const ws = activeWs()
-              if (ws) navigate(sessionHref(ws, id))
+            onSubmitted={(id, submitted) => {
+              // #894:落点 = **提交那一刻**的 server 快照。会话是 `projects.startChat` 在那个
+              // server 上建的,所以身份从来就在手上 —— 过去这里跳的是 legacy
+              // `/{目录}/session/{id}`(不带 server 段),壳只能事后反推:「完成时的 active
+              // server」或「同 id 的 tab」。多 server(WSL/remote)下 active 与 store 连的
+              // sidecar 不是同一个 ⇒ 跳去的 server 上根本没有这个会话;那边若恰好有同 id 会话,
+              // 打开并污染的是那个无关会话。
+              //
+              // 快照缺席 ⇒ **不跳**,不猜。走我们自己的代码到不了这个状态(`serverKey` 与
+              // `startChat` 用的 client 同源于 `initializationData(sidecar)` 的那个 url:
+              // client 不在时 `startChat` 返回 undefined,`onSubmitted` 根本不会被调),
+              // 真到了这里也只说明身份不成立 —— 那时随便跳一个 server 就是在制造上面那个事故。
+              if (!submitted.serverKey) return
+              navigate(hrefFor.session(submitted.serverKey, id))
             }}
           />
 

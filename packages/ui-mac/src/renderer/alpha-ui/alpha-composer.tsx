@@ -534,6 +534,15 @@ export type ComposerSessionDockApi = {
   onSlashCommand?: (capture: ComposerSlashCapture) => void
 }
 
+/** #894:home 首发建成会话那一刻的落点快照 —— 会话就是 `startChat` 在 `serverKey` 这个 server
+ *  的 `directory` 下建的。宿主拿它拼导航目标,**不得**在 `onSubmitted` 里回头读 accessor:
+ *  那一行跑在 `await startChat(...)` 之后,读到的是「完成时」的值(用户可能已经切了 server /
+ *  换了工作区),而会话早就落在提交那一刻的那个 server 上了。
+ *
+ *  `serverKey` 仍可能是 `undefined`(身份未解析)—— 与 `AlphaComposerProps.serverKey` 同一口径:
+ *  身份不成立时宁可什么都不做,也不要拿一个猜出来的 server 当落点。 */
+export type ComposerSubmission = { serverKey: string | undefined; directory: string }
+
 export type AlphaComposerProps = {
   mode: "home" | "session"
   projects: AlphaProjectsApi
@@ -555,8 +564,8 @@ export type AlphaComposerProps = {
   sessionDock?: ComposerSessionDockApi
   /** home:零工作区时的引导(打开工作区选择器)。 */
   onNeedWorkspace?: () => void
-  /** home:创建+首发成功后的跳转。 */
-  onSubmitted?: (sessionID: string) => void
+  /** home:创建+首发成功后的跳转。第二参 = **提交那一刻**的落点快照(见 `ComposerSubmission`)。 */
+  onSubmitted?: (sessionID: string, submitted: ComposerSubmission) => void
   /** REQ-086:一次性预填文本(deep link `?prompt=`),仅初始化时注入,不覆盖用户后续输入。 */
   initialText?: string
   /** REQ-126:与 `initialText` 同期一次性注入的 mention / 附件(新对话页切目录重挂后的还原)。 */
@@ -1463,7 +1472,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         setText("")
         setMentions([])
         setAttachments([])
-        props.onSubmitted?.(id)
+        // #894:落点快照与上面的 `seedKey` 取自**同一份**提交时快照 —— 登记用哪把钥匙,就跳到
+        // 哪个 server。两处若各读各的,首页开的档位会记在 A 而人被送到 B。
+        props.onSubmitted?.(id, { serverKey: submittedServerKey, directory: dir })
         return
       }
       // session 模式
