@@ -8,6 +8,15 @@ import { injectAlphaConfig, type AlphaConfigInjectionResult } from "./alpha-conf
 // #613 R1:ready 消息构造抽成 bun 可真执行的单元 —— 文本锚锁不住「值真的上车」,运行时闸门
 // 在 sidecar-ready-message.test.ts;本文件不得字面量构造 ready 消息(接线锚断言其不存在)。
 import { buildReadyMessage, type SidecarReadyMessage } from "./sidecar-ready-message"
+// #858:停止命令的形状与「关不关活动连接」的决定住在 sidecar-stop.ts —— 本文件顶层的
+// registerHooks / getParentPort() 让它无法被测试 import(与 #607 同因),真判据必须在可 import
+// 的模块里跑(见 sidecar-stop.test.ts)。
+import {
+  parseSidecarStopCommand,
+  stopSidecarListener,
+  type SidecarStopCommand,
+  type StoppableListener,
+} from "./sidecar-stop"
 import type { ChannelName } from "./catalog-channels"
 import { prewarmInitialLocation } from "./sidecar-location-prewarm"
 
@@ -63,7 +72,7 @@ type StartCommand = {
   initialDirectory: string
 }
 
-type StopCommand = { type: "stop" }
+type StopCommand = SidecarStopCommand
 type SidecarCommand = StartCommand | StopCommand
 
 // #613:注入失败随 ready 上报(server.ts 持有同构镜像)——引擎照常起,但 main 必须知情。
@@ -78,9 +87,7 @@ type ParentPort = {
   on(event: "message", listener: (event: { data: unknown }) => void): void
 }
 
-type Listener = {
-  stop(close?: boolean): void | Promise<void>
-}
+type Listener = StoppableListener
 
 const parentPort = getParentPort()
 let listener: Listener | undefined
@@ -89,7 +96,7 @@ parentPort.on("message", (event) => {
   const command = parseCommand(event.data)
   if (!command) return
   if (command.type === "stop") {
-    void stop()
+    void stop(command)
     return
   }
   void start(command)
@@ -137,9 +144,9 @@ async function start(command: StartCommand) {
   }
 }
 
-async function stop() {
+async function stop(command: StopCommand) {
   try {
-    await listener?.stop()
+    await stopSidecarListener(listener, command)
   } finally {
     listener = undefined
     parentPort.postMessage({ type: "stopped" })
@@ -203,7 +210,7 @@ function useEnvProxy() {
 function parseCommand(value: unknown): SidecarCommand | undefined {
   if (!value || typeof value !== "object") return
   const command = value as Partial<StartCommand | StopCommand>
-  if (command.type === "stop") return { type: "stop" }
+  if (command.type === "stop") return parseSidecarStopCommand(value)
   if (command.type !== "start") return
   if (typeof command.hostname !== "string") return
   if (typeof command.port !== "number") return

@@ -4,7 +4,7 @@ kind: verification
 status: complete
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-08-07
+last_reviewed: 2026-08-11
 ---
 
 # REQ-109/110 T7 packaged runtime matrix
@@ -133,6 +133,24 @@ The deterministic gate drives a child that deliberately ignores the stop
 message and proves that token rotation terminates it at 500 ms while the
 default path does not terminate before 6 s. A production wiring gate proves
 that only `token-only` selects that bounded path.
+
+That bound alone left the mechanism inverted. The stop command crossing the
+main/sidecar boundary carried no reason, so the sidecar always drained; with a
+live connection the drain never completed and every token-only rotation ended
+in a 500 ms wait followed by `SIGTERM`, cutting the sidecar's own shutdown
+short. The current candidate carries the reason across that boundary: a
+token-only stop asks the sidecar to force-close active HTTP and WebSocket
+connections, so the old sidecar releases them and exits cleanly on its own and
+the 500 ms is only a backstop for an engine that cannot even force-close.
+Structural respawns and application exit still drain, unchanged. The
+deterministic gate for this step asserts behavior rather than elapsed time —
+the two shapes have the same duration band, so a duration assertion cannot
+distinguish them: it drives the production `spawnLocalServer`, has the fake
+child consume the emitted command through the production parser and stop
+executor, and requires the engine listener to receive the force-close while no
+`kill()` occurs. Three reverse assertions pin that the structural and exit
+paths still drain, that both backstop budgets are unchanged, and that only an
+explicit `true` requests a force-close.
 
 The first installed signed candidate then exposed a separate continuity gap:
 the main process and renderer stayed mounted, but every scheduled token-only
