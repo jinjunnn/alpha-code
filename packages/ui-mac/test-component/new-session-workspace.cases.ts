@@ -56,6 +56,9 @@ Bun.plugin({
 const ACTIVE_SERVER_KEY = "wsl:ubuntu"
 /** `projects` 这份 store 真正连着的 server(生产由 `index.tsx` 的 `projectsServerKey` 反查)。 */
 const STORE_SERVER_KEY = "sidecar"
+/** #894:第三个 server —— 请求在途期间 store 改连到它。三个互不相同,负向夹具才不是退化形状
+ *  (两个值时「取另一个」也能蒙对)。 */
+const LATER_SERVER_KEY = "wsl:debian"
 
 type DraftRecord = { server: string; directory: string }
 const [draft, setDraft] = createSignal<DraftRecord>({ server: ACTIVE_SERVER_KEY, directory: "/ws/a" })
@@ -80,9 +83,14 @@ const server = {
   },
 }
 mock.module("@opencode-ai/app", () => ({ useTabs: () => tabs, useServer: () => server }))
+/** #894:叶真正跳去了哪里。路由本体不参与 —— 记的是叶交给 `useNavigate()` 的那个 href,
+ *  再由生产的 `parseRoute` 读回去,编码与解码是两条相反的路,不构成自指等价链。 */
+const navigateCalls: string[] = []
 mock.module("@solidjs/router", () => ({
   useSearchParams: () => [{}, () => {}],
-  useNavigate: () => () => {},
+  useNavigate: () => (href: string) => {
+    navigateCalls.push(href)
+  },
 }))
 const command = { options: [], trigger: () => {} }
 mock.module("../src/renderer/alpha-ui/providers", () => ({
@@ -92,6 +100,7 @@ mock.module("../src/renderer/alpha-ui/providers", () => ({
 
 const { AlphaNewSession } = await import("../src/renderer/alpha-ui/alpha-new-session")
 const { AlphaHome } = await import("../src/renderer/alpha-ui/AlphaHome")
+const { parseRoute } = await import("../src/shared/route-manifest")
 const { newSessionDraftStash } = await import("../src/renderer/alpha-ui/new-session-draft-stash")
 const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
 const { dict: zh } = await import("../src/renderer/i18n/zh")
@@ -169,6 +178,14 @@ const project = (name: string, worktree: string): AlphaProject => ({
 const startChatCalls: Array<{ directory: string; body: string; parts: unknown[] }> = []
 /** #888:会话页那一侧**真发**出去的载荷。chip 只证明界面显示对了,这里证明它真的上了线。 */
 const promptAsyncCalls: Array<Record<string, unknown>> = []
+/** #894:让「会话创建在途」这段窗口真的存在 —— 生产上正是这段时间里用户可以切 server。 */
+let startChatGate: { promise: Promise<void>; release: () => void } | undefined
+function gateStartChat() {
+  let release!: () => void
+  const promise = new Promise<void>((next) => (release = () => next()))
+  startChatGate = { promise, release }
+  return startChatGate
+}
 function projectsApi(projects: AlphaProject[]): AlphaProjectsApi {
   return {
     store: { projects, ready: true, error: false },
@@ -176,6 +193,7 @@ function projectsApi(projects: AlphaProject[]): AlphaProjectsApi {
     createSession: async () => undefined,
     startChat: async (directory: string, body: string, parts?: unknown[]) => {
       startChatCalls.push({ directory, body, parts: parts ?? [] })
+      if (startChatGate) await startChatGate.promise
       return "session-1"
     },
     sdk: () =>
@@ -338,6 +356,8 @@ beforeEach(() => {
   updateDraftCalls.splice(0)
   startChatCalls.splice(0)
   promptAsyncCalls.splice(0)
+  navigateCalls.splice(0)
+  startChatGate = undefined
   pickerCalls.splice(0)
   pickedDirectory = undefined
   defaultWorkspaceGate = undefined
@@ -816,71 +836,76 @@ describe("REQ-126 CODE-D 首页:chip 抽取行为保持 + 默认落 ~/Alpha", ()
    (它自己按 canonical 身份算钥匙),两侧都不是测试拼的等价链。
 
    本文件里 ACTIVE_SERVER_KEY ≠ STORE_SERVER_KEY 是**故意**的:任一叶回头去读 active server
-   或 draft.server,下面两条当场红(已实跑,见 PR 说明)。 */
-describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 server 名下", () => {
-  const planChipOf = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".a-chip-plan")
-  const permChipOf = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".a-chip-perm")
-  const readonlyItems = () =>
-    [...document.body.querySelectorAll<HTMLButtonElement>('.a-pop-item[role="menuitemradio"]')].filter((item) =>
-      item.textContent?.includes(zh["alpha.composer.permReadonly"]),
-    )
+   或 draft.server,下面两条当场红(已实跑,见 PR 说明)。
 
-  /** 本节要「先挂 A 断言、卸掉、再挂 B」——共享的 disposers 只在 afterEach 收,这里要能就地卸。 */
-  function mountDisposable(view: () => unknown) {
-    const host = document.createElement("div")
-    document.body.append(host)
-    const dispose = render(view as () => never, host)
-    return {
-      host,
-      dispose: () => {
-        dispose()
-        host.remove()
+   (#894 复用下面这几个助手 —— 它们从本节内提到模块作用域,内容未改。) */
+const planChipOf = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".a-chip-plan")
+const permChipOf = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".a-chip-perm")
+const readonlyItems = () =>
+  [...document.body.querySelectorAll<HTMLButtonElement>('.a-pop-item[role="menuitemradio"]')].filter((item) =>
+    item.textContent?.includes(zh["alpha.composer.permReadonly"]),
+  )
+
+/** #891/#894 都要「先挂 A 断言、卸掉、再挂 B」——共享的 disposers 只在 afterEach 收,这里要能就地卸。 */
+function mountDisposable(view: () => unknown) {
+  const host = document.createElement("div")
+  document.body.append(host)
+  const dispose = render(view as () => never, host)
+  return {
+    host,
+    dispose: () => {
+      dispose()
+      host.remove()
+    },
+  }
+}
+
+/** 会话页那一侧的生产挂载:它自己从 identity 算 `identityKey`,再 adopt 档位/只读档。 */
+function mountSessionAt(projects: AlphaProjectsApi, serverKey: string, sessionID: string) {
+  return mountDisposable(() =>
+    createComponent(SessionComposerMount, {
+      identity: () => ({ serverKey, directory: DEFAULT_WORKSPACE, sessionID }),
+      projects,
+      dock: {
+        running: () => false,
+        contextUsage: () => null,
+        approvalPending: () => false,
+        onSlashCommand: () => {},
       },
-    }
-  }
+      drafts: createComposerDraftStash(),
+    } as never),
+  )
+}
 
-  /** 会话页那一侧的生产挂载:它自己从 identity 算 `identityKey`,再 adopt 档位/只读档。 */
-  function mountSessionAt(projects: AlphaProjectsApi, serverKey: string, sessionID: string) {
-    return mountDisposable(() =>
-      createComponent(SessionComposerMount, {
-        identity: () => ({ serverKey, directory: DEFAULT_WORKSPACE, sessionID }),
-        projects,
-        dock: {
-          running: () => false,
-          contextUsage: () => null,
-          approvalPending: () => false,
-          onSlashCommand: () => {},
-        },
-        drafts: createComposerDraftStash(),
-      } as never),
-    )
-  }
+/** 首页:开计划档 + 只读档,再真提交。顺序不能反 —— 只读档下 Shift+Tab 是 no-op。 */
+async function submitFromHomeWithBothOn(
+  projects: AlphaProjectsApi,
+  serverKey: () => string | undefined = () => STORE_SERVER_KEY,
+) {
+  const home = mountDisposable(() => createComponent(AlphaHome, { projects, serverKey }))
+  for (let i = 0; i < 20 && !textarea(home.host); i++) await flush()
+  textarea(home.host)!.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }),
+  )
+  for (let i = 0; i < 20 && !planChipOf(home.host); i++) await flush()
+  expect(planChipOf(home.host)).not.toBeNull()
 
-  /** 首页:开计划档 + 只读档,再真提交。顺序不能反 —— 只读档下 Shift+Tab 是 no-op。 */
-  async function submitFromHomeWithBothOn(projects: AlphaProjectsApi) {
-    const home = mountDisposable(() => createComponent(AlphaHome, { projects, serverKey: () => STORE_SERVER_KEY }))
-    for (let i = 0; i < 20 && !textarea(home.host); i++) await flush()
-    textarea(home.host)!.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }),
-    )
-    for (let i = 0; i < 20 && !planChipOf(home.host); i++) await flush()
-    expect(planChipOf(home.host)).not.toBeNull()
+  permChipOf(home.host)!.click()
+  for (let i = 0; i < 20 && readonlyItems().length === 0; i++) await flush()
+  readonlyItems()[0]!.click()
+  for (let i = 0; i < 20 && permChipOf(home.host)!.getAttribute("data-mode") !== "readonly"; i++) await flush()
+  expect(permChipOf(home.host)!.getAttribute("data-mode")).toBe("readonly")
 
-    permChipOf(home.host)!.click()
-    for (let i = 0; i < 20 && readonlyItems().length === 0; i++) await flush()
-    readonlyItems()[0]!.click()
-    for (let i = 0; i < 20 && permChipOf(home.host)!.getAttribute("data-mode") !== "readonly"; i++) await flush()
-    expect(permChipOf(home.host)!.getAttribute("data-mode")).toBe("readonly")
+  type(textarea(home.host)!, "开工")
+  await flush()
+  textarea(home.host)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+  for (let i = 0; i < 30 && startChatCalls.length === 0; i++) await flush()
+  expect(startChatCalls).toHaveLength(1)
+  for (let i = 0; i < 10; i++) await flush() // seed 落在 await startChat 之后
+  home.dispose()
+}
 
-    type(textarea(home.host)!, "开工")
-    await flush()
-    textarea(home.host)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
-    for (let i = 0; i < 30 && startChatCalls.length === 0; i++) await flush()
-    expect(startChatCalls).toHaveLength(1)
-    for (let i = 0; i < 10; i++) await flush() // seed 落在 await startChat 之后
-    home.dispose()
-  }
-
+describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 server 名下", () => {
   test("active server ≠ store 的 server 时:会话页按 store 的 server 认领得到开局档位与只读档", async () => {
     const projects = projectsApi([project("alpha-code", "/ws/a")])
     await submitFromHomeWithBothOn(projects)
@@ -1013,5 +1038,76 @@ describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 s
     expect(promptAsyncCalls[1]).toMatchObject({ sessionID: "session-1", agent: "plan" })
 
     session.dispose()
+  })
+})
+
+/* ── #894 首页提交后的导航,落在**建这个会话的那个 server** 上 ──────────────────────────
+   首页发第一条走 `props.projects.startChat` ⇒ 会话建在**那份 store 连着的 server** 上,而
+   过去这里跳的是 legacy `/{目录}/session/{id}` —— 路径里没有任何 server 段,壳只能事后反推
+   (`packages/app/src/utils/session-route.ts` 的 `legacySessionServer`:同 id 的 tab,否则回落
+   到「完成时的 active server」)。实测(sidecar + 一个 ready 的 WSL,默认 server = 那个 WSL):
+   active = `wsl:Ubuntu`,而 store 连的是 `sidecar`,反推恒给 `wsl:Ubuntu`;那台机器上若恰好
+   有同 id 会话,打开并污染的就是那个无关会话。
+
+   判据落在**用户可观察的结果**上,而不是某个 memo 的值:
+   ① 叶真正交给路由的那个 href,经生产 `parseRoute` 读回来必须是 canonical 的 `session` 路由,
+      且 server 段等于建会话的那个 server(锚点是本文件自己的字面量,不 import 生产常量);
+   ② 落地页确实是「刚建的那个会话」—— 首页开的开局档位/只读档在它身上接得住(读取走生产的
+      `SessionComposerMount`,它自己按 canonical 身份算钥匙)。
+   第二条用例把「快照」与「完成时重读」分开:请求在途时 store 改连第三个 server,导航仍须落在
+   提交那一刻的那个。三个 server key 互不相同,负向夹具不取退化形状。 */
+describe("#894 首页提交后的导航:落地的是真正创建会话的那个 server 上的那个会话", () => {
+  test("active server ≠ store 的 server:导航目标带着 store 的 server,落地页就是刚建的那个会话", async () => {
+    const projects = projectsApi([project("alpha-code", "/ws/a")])
+    await submitFromHomeWithBothOn(projects)
+
+    expect(navigateCalls).toHaveLength(1)
+    const landing = parseRoute(navigateCalls[0]!)
+    // canonical 的 server 路由,不是 legacy 那条(legacy 的 routeId 是 `legacy-session`,
+    // 且它解出来根本没有 server 段 —— 那正是壳只能去猜的原因)。
+    expect({ kind: landing.kind, routeId: landing.identity.routeId }).toEqual({
+      kind: "session",
+      routeId: "session",
+    })
+    const landed = landing as { serverKey?: string; id?: string }
+    expect(landed.id).toBe("session-1")
+    expect(landed.serverKey).toBe(STORE_SERVER_KEY)
+    expect(landed.serverKey).not.toBe(ACTIVE_SERVER_KEY)
+
+    // 用户可观察:跳过去之后,首页开的开局档位与只读档都在 —— 落地的就是刚建的那个会话。
+    const page = mountSessionAt(projects, landed.serverKey!, landed.id!)
+    for (let i = 0; i < 20 && !textarea(page.host); i++) await flush()
+    expect(planChipOf(page.host)).not.toBeNull()
+    expect(permChipOf(page.host)!.getAttribute("data-mode")).toBe("readonly")
+    page.dispose()
+  })
+
+  test("请求在途时 store 改连了别的 server:仍落在**提交那一刻**的那个,不是完成时的", async () => {
+    const projects = projectsApi([project("alpha-code", "/ws/a")])
+    const [storeServerKey, setStoreServerKey] = createSignal<string | undefined>(STORE_SERVER_KEY)
+    const gate = gateStartChat()
+
+    const home = mountDisposable(() => createComponent(AlphaHome, { projects, serverKey: storeServerKey }))
+    for (let i = 0; i < 20 && !textarea(home.host); i++) await flush()
+    type(textarea(home.host)!, "开工")
+    await flush()
+    textarea(home.host)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    for (let i = 0; i < 30 && startChatCalls.length === 0; i++) await flush()
+    expect(startChatCalls).toHaveLength(1)
+    expect(navigateCalls).toEqual([]) // 还在途:会话还没建成,当然还没跳
+
+    // 会话此刻正建在 STORE_SERVER_KEY 上;这时 store 改连到第三个 server(sidecar 重启换端口 /
+    // 用户切了服务器),`props.serverKey()` 从此返回新值。
+    await startTransition(() => setStoreServerKey(LATER_SERVER_KEY))
+    for (let i = 0; i < 5; i++) await flush()
+    gate.release()
+    for (let i = 0; i < 30 && navigateCalls.length === 0; i++) await flush()
+
+    expect(navigateCalls).toHaveLength(1)
+    const landed = parseRoute(navigateCalls[0]!) as { serverKey?: string; id?: string }
+    expect(landed.id).toBe("session-1")
+    expect(landed.serverKey).toBe(STORE_SERVER_KEY)
+    expect(landed.serverKey).not.toBe(LATER_SERVER_KEY)
+    home.dispose()
   })
 })
