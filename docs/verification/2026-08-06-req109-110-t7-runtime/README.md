@@ -103,15 +103,42 @@ pass their own packaged gates.
 The #859 change separates an in-flight boot fork's token generation from the
 generation that a healthy sidecar has committed. The in-flight value may only
 suppress a duplicate rotation for the same generation; it is never published
-as applied. Health success commits first and then replays the rotation latch,
-while spawn/health failure clears the in-flight value and replays the pending
-rotation. A newer generation is not suppressed by an older in-flight boot.
+as applied. A newer generation is not suppressed by an older in-flight boot.
 
-The deterministic gate covers five repetitions of the 50 ms ordering, boot
-spawn/health failure, a newer generation arriving during boot, source-level
-production wiring, and the existing sidecar terminal matrix. The current
-headless narrow result is 71 tests passing with zero failures, plus a clean
-`ui-mac` typecheck.
+Settling that in-flight value is driven **exclusively by the bounded boot
+generation terminal** (`BOOT_GENERATION_TERMINAL_MS`, 30 s), which is the only
+fact source on this path that is guaranteed to conclude. The first landing
+settled on `health.wait` instead, and that promise can structurally never
+settle: `server.ts` ends it only when the probe succeeds or the child exits
+first, and `pollUntilHealthy` polls forever, so a sidecar that stays alive
+without ever becoming healthy pinned the in-flight value permanently. The
+rotation latch's in-flight branch schedules no retry timer and lets any
+previously armed one lapse, so that generation could never rotate again — the
+timer-less dead end that #600 forbids. `ready` and `injection-failed` both
+count as the health line passing (the token materializes with the fork; the
+`{file:}` channel does not depend on injection, matching the respawn side);
+`failed` only releases the suppression and never commits a generation, so the
+fail-closed rule is unchanged.
+
+The deterministic gate composes the production units end to end —
+`armBootGenerationTerminal` → settlement → `createTokenRotationLatch` /
+`commitForkedTokenGeneration` — awaiting the production promises rather than
+sleeping, and asserts exact counts (not bounds). It covers five repetitions of
+the 50 ms ordering, boot health failure, **health that never settles**, spawn
+failure before the handshake, a newer generation arriving during boot, and
+injection failure with a healthy engine. Because `index.ts` cannot be imported
+under `bun test` (its top level is `Effect.runFork(main)`), the four-line
+settlement glue remains the one link covered only by the source anchor; the
+anchor now also locks that an unbounded settlement source cannot return.
+
+Measured on the fix branch: the narrow set (`sidecar-lifecycle`, `auth-renewal`,
+`sidecar-generation`) is 58 tests passing with zero failures, the full
+`bun test src` is 3884 passing / 0 failing across 272 files (base on the same
+tree: 3878 / 0), and `ui-mac` typecheck is clean. Five bypass experiments were
+run against production code — removing the latch's in-flight branch, making the
+commit rule ignore `healthy`, removing the terminal's timeout leg, reverting the
+wiring, and re-adding only the unbounded settlement source — and each turned the
+corresponding assertions red.
 
 This is not yet a packaged PASS. The signed `latency-50ms` five-sample cell must
 still be rerun to establish one boot fork, zero token-only respawns, mount=1,

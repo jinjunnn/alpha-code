@@ -167,7 +167,12 @@ const commitSidecarTokenGeneration = (forked: number, healthy: boolean) => {
 let bootForkTokenGeneration = 0
 // #859:boot fork 已捕获但尚未通过 health 的 token 代。与 sidecarTokenGeneration 分离:
 // 前者只阻止 latch 为同一代重复换血,后者才是可以发布 applied/ready 的健康事实。
+// 它是**抑制信号**,所以释放必须有上界 —— 见 BOOT_GENERATION_TERMINAL_MS 与 boot 处的结算接线。
 let pendingBootForkTokenGeneration = 0
+/** boot generation 终态的上界。#577 起它是「等健康 → 发终态」的兜底;#859 起它同时是
+ *  pendingBootForkTokenGeneration 的释放上界 —— 两者必须是同一个数,否则会出现
+ *  「终态已判 failed,而 latch 仍被 in-flight 抑制」的空窗。 */
+const BOOT_GENERATION_TERMINAL_MS = 30_000
 
 function useEnvProxy() {
   try {
@@ -252,9 +257,18 @@ const tokenRotation = createTokenRotationLatch({
     }),
 })
 
+// boot fork 的 token 代结算(唯一驱动方 = boot generation 终态,见 spawn 处的接线)。
+// R3 新 Major 保留:boot 也 capture-then-commit —— 只有**健康线通过**才把这一代记成
+// 「活着的 sidecar 携带的代」,否则 latch 的 inEffect 路径会为一个从未健康的 fork 清掉重试
+// 并发布 ready(#600 M1 的反面)。#859 只改「谁来宣布结论、多久之内必须宣布」,不放宽这条门:
+// 不健康时**只**释放 in-flight 抑制并重放 latch,代照旧不提交。
 function settleBootForkTokenGeneration(forked: number, healthy: boolean) {
   if (pendingBootForkTokenGeneration !== forked) return
-  if (healthy) commitSidecarTokenGeneration(forked, true)
+  // fail-closed 的判定整条交给那唯一的规则(commitForkedTokenGeneration:不健康即不推进),
+  // 这里不再自己分一次支 —— 分了就等于把判定搬进 index.ts,而它是本仓唯一跑不进单测的文件,
+  // 判定住在这里就只剩源码锚看得见(实测:把那条规则改成忽略 healthy,竞态用例仍然全绿,
+  // 只有规则自己的纯函数单测转红)。行为完全等价:不健康时规则原样返回 current。
+  commitSidecarTokenGeneration(forked, healthy)
   pendingBootForkTokenGeneration = 0
   void tokenRotation.flush()
 }
@@ -995,7 +1009,7 @@ const main = Effect.gen(function* () {
     const forkTokenGeneration = getTokenGeneration()
     bootForkTokenGeneration = forkTokenGeneration
     pendingBootForkTokenGeneration = forkTokenGeneration
-    const { listener, health } = yield* Effect.promise(() => {
+    const { listener } = yield* Effect.promise(() => {
       const started = performance.now()
       markStartupTimeline("main.sidecar.boot.fork.start", { generation: spawnGen })
       const spawning = spawnLocalServer(hostname, port, password, {
@@ -1019,7 +1033,6 @@ const main = Effect.gen(function* () {
             outcome: errorOutcome(error),
           }),
       )
-      void spawning.catch(() => settleBootForkTokenGeneration(forkTokenGeneration, false))
       // #577:终态生产者与 spawn 同时武装。父 fiber 从 serverReady 醒来后毫秒级终止会
       // 连带杀死本被监督 fiber(forkChild auto supervision),曾把「等健康 → 发 ready」
       // 连同 30s 兜底一起杀死;spawn 在返回 health 之前失败(R1 Blocker1)则连武装的机会
@@ -1030,24 +1043,29 @@ const main = Effect.gen(function* () {
       void armBootGenerationTerminal({
         generation: spawnGen,
         spawning,
-        timeoutMs: 30_000,
+        timeoutMs: BOOT_GENERATION_TERMINAL_MS,
         publish: publishSidecarGeneration,
         log: (message) => logger.log(message),
         logError: (message) => logger.error(message),
-      })
+      }).then(
+        // #859:boot fork 的 token 代结算由**终态独家驱动**,因为终态是这条路上唯一有上界的
+        // 事实源(BOOT_GENERATION_TERMINAL_MS)。不能再直接挂在 `health.wait` 上:那个 promise
+        // 结构上可能永不落定 —— server.ts 的 health 只有「探到健康」或「子进程先退出」两种
+        // 结束方式,而 pollUntilHealthy 是无限轮询,所以「进程活着但永远不健康」(MCP 风暴、
+        // 引擎卡死)会让它一直 pending。以它作唯一结算源时 pendingBootForkTokenGeneration
+        // 被永久钉住,而 latch 的 in-flight 抑制分支是**不排重试定时器**的(还会让先前
+        // !canRespawn 排下的那只定时器自然消亡)⇒ 那一代永远等不到换血,正是 ③′3 禁止的
+        // 无定时器终局。R3 的 fail-closed 不变:只有健康线真的通过才提交代。
+        // ready 与 injection-failed 都算通过(token 随 fork 物化,{file:} 通道不经注入 ——
+        // 与 respawn 侧 armRespawnGenerationTerminal 的返回值语义同构);failed(健康失败、
+        // 30s 超时、spawn 在握手前失败)只释放抑制、绝不提交。
+        (terminal) => settleBootForkTokenGeneration(forkTokenGeneration, terminal !== "failed"),
+        // 终态生产者自身 rejected 也必须结算,否则抑制照样永久化(它已是全函数,这里是兜底)。
+        () => settleBootForkTokenGeneration(forkTokenGeneration, false),
+      )
       return spawning
     })
     server = listener
-    // R3 新 Major:boot 也 capture-then-commit —— 健康握手通过之后才把这一代记成
-    // 「活着的 sidecar 携带的代」。旧接线在 spawn 之前就记账,于是「boot 健康仍 pending 甚至
-    // 最终失败」时,latch 的 inEffect 路径会据此清掉重试并发布 ready(#600 M1 的反面)。
-    // 健康永不落定 ⇒ 永不提交(fail-closed):latch 保持 pending,由封顶低频 timer 继续重试。
-    // 这里只改 token 快照时序,不碰终态发布接线(armBootGenerationTerminal 的 detached 武装
-    // 位置与 `return spawning` 的顺序完全未动 —— #577/#598 的接线锚仍然成立)。
-    void health.wait.then(
-      () => settleBootForkTokenGeneration(forkTokenGeneration, true),
-      () => settleBootForkTokenGeneration(forkTokenGeneration, false),
-    )
     armEngineRunawayMeter(spawnGen)
     sessionGrantRegistry.beginSession(spawnGen) // #408:新会话空集起步(grant 面绑本代)
     yield* Deferred.succeed(serverReady, {
