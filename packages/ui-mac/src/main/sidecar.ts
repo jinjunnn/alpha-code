@@ -130,7 +130,7 @@ async function start(command: StartCommand) {
     const prewarmResult = await prewarm
     if (prewarmResult.outcome === "ready") console.log("initial governed catalog location prewarmed")
     else console.warn("initial governed catalog location prewarm did not become ready", prewarmResult)
-    parentPort.postMessage(buildReadyMessage(injection))
+    parentPort.postMessage(buildReadyMessage(injection, prewarmResult))
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
     setImmediate(() => process.exit(1))

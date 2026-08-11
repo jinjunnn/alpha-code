@@ -93,6 +93,9 @@ export const RENDERER_STARTUP_MARK_NAMES = [
   "renderer.home.account_summary.start",
   "renderer.home.account_summary.end",
   "renderer.home.model_list.start",
+  // #881:目录**真就绪时刻**。与 `.end` 分开是因为 `.end.durationMs` 把「屏障等待」与
+  // 「随后的 model.list 往返」压成一个标量,归因需要的分项在那个标量下产不出来。
+  "renderer.home.catalog_ready",
   "renderer.home.model_list.end",
   "renderer.home.model_list.retry_tick",
   "renderer.sidecar.generation.received",

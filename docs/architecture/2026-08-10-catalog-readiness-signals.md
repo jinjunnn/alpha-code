@@ -142,6 +142,8 @@ T7 样本 1 里 ready 在 1912.9ms，而同一个 marker 端点到 15699.7ms 仍
 ## 4. 已知未验证
 
 - 本文全部数据来自**裸引擎**（`packages/opencode` serve）。打包 Electron sidecar 上的
-  真实时间线没有在本票内复测 —— 那需要真机启动，属 `#881`/L2 的取证面。
+  真实时间线没有在本票内复测 —— 那需要真机启动，属 `#881`/L2 的取证面。归因面的接手在
+  [`2026-08-10-packaged-first-launch-catalog-cost.md`](2026-08-10-packaged-first-launch-catalog-cost.md)：
+  已成立的分账、本轮补的分项仪表、以及仍欠一次真机窗口的那几条，都在那里分栏列着。
 - `directory` 字符串在 renderer 与引擎之间是否恒等（软链/`/private` 前缀/尾斜杠）未穷举。
   实跑里是原样回显；不等也只退化成兜底轮询（§1.3 已保证不会因此永久 loading）。

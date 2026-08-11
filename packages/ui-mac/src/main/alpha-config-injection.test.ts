@@ -368,8 +368,9 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
 
     // ① start() 捕获注入结果,ready 发送在捕获之后、以捕获值**整体**入参 —— 精确到字符:
     //    `buildReadyMessage(injection && …)` / `(injection ?? …)` 等义改写都无法命中该子串。
+    //    #881:第二个入参是 prewarm 的结局(同样整体入参,同样精确到字符)。
     const capture = source.indexOf("const injection = prepareSidecarEnv(")
-    const ready = source.indexOf("parentPort.postMessage(buildReadyMessage(injection))")
+    const ready = source.indexOf("parentPort.postMessage(buildReadyMessage(injection, prewarmResult))")
     expect(capture).toBeGreaterThan(-1)
     expect(ready).toBeGreaterThan(capture)
     // ② 被调用的必须是 sidecar-ready-message 导出的那一个(换源 import = 红),

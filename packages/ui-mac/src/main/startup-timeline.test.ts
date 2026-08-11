@@ -64,6 +64,31 @@ describe("startup timeline", () => {
     })
   })
 
+  test("#881 ready_ipc 携带的 prewarm 字段过 sanitizeExtra 之后仍在", () => {
+    // 静默丢失是这条链的默认失败模式:键名撞上 DENIED_EXTRA_KEY_PARTS(env/token/secret/header…)
+    // 或值不是标量,`sanitizeExtra` **不抛不报**地剔掉它,打包跑完只会发现字段不在。
+    // 这一格就是那道绊线:把字段改名成含黑名单子串的形状,本条当场红。
+    const records: StartupTimelineRecord[] = []
+    const timeline = createStartupTimeline({ now: () => 10, timeOrigin: 0 })
+    timeline.initialize((record) => records.push(record))
+    timeline.mark("main.sidecar.ready_ipc", {
+      context: "boot",
+      prewarmOutcome: "timed-out",
+      prewarmMs: 2001.5,
+      prewarmStatus: 404,
+    })
+
+    expect(JSON.parse(JSON.stringify(records.at(-1)))).toEqual({
+      seq: 2,
+      name: "main.sidecar.ready_ipc",
+      t: 0,
+      context: "boot",
+      prewarmOutcome: "timed-out",
+      prewarmMs: 2001.5,
+      prewarmStatus: 404,
+    })
+  })
+
   test("reduces thrown errors to errno or class without logging messages", () => {
     expect(errorOutcome(Object.assign(new Error("contains-sensitive-detail"), { code: "ETIMEDOUT" }))).toBe(
       "error:ETIMEDOUT",
