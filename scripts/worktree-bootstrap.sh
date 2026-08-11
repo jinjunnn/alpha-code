@@ -19,7 +19,7 @@
 #     都往**共享树**写构建产物 —— 本票要消灭的交叉污染换个地方发生。
 #   · `bun install`:exit 0 / 4694 packages / **9.5 秒**,随后 ui-mac typecheck **exit 0 / 0 条 / 3 秒**,
 #     `node_modules` 与 `.ts-dist` 都是 worktree 本地真目录,不与任何人共享。
-# 判据不写在这段散文里 —— 它在 `scripts/assert-worktree-bootstrap.sh`(alpha-check 第 [9/9] 步),
+# 判据不写在这段散文里 —— 它在 `scripts/assert-worktree-bootstrap.sh`(alpha-check 第 [8/9] 步),
 # 那里真建 worktree、真跑 typecheck,并且**先证明没 bootstrap 的树确实会红**再判 bootstrap 过的树绿。
 #
 # ── 为什么要救 `core.hooksPath`(`#916` 勘破,实测)──────────────────────────────────
@@ -30,7 +30,7 @@
 #     (cd .worktrees/X && bun install)              # 3.5s,exit 0
 #     git config --local --get core.hooksPath       # → .husky/_      ← 共享配置被改了
 # 后果不是「少跑一道门」,是**换了一道门**:`.husky/pre-push` 是上游那份,在 ADR-020 冻结偏斜下
-# 恒红 ⇒ 下一个人 `git push` 被一个与他改动无关的红拦住 ⇒ `--no-verify` ⇒ alpha 的七道真闸门
+# 恒红 ⇒ 下一个人 `git push` 被一个与他改动无关的红拦住 ⇒ `--no-verify` ⇒ alpha 的八道真闸门
 # 一起关掉(`#754` 那个形态)。所以本脚本在 install 前后存/还原它;还原是**无条件**的,
 # install 失败也还原。
 set -uo pipefail
