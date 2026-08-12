@@ -523,7 +523,9 @@ render(() => {
                 <Inner />
               </AlphaBoundary>
               <AlphaBoundary name="AlphaSidebar">
-                <AlphaSidebar projects={alphaProjects} />
+                {/* #925(第三个消费者):侧栏的会话 href / 新会话导航 / draft 的 server 段。
+                    侧栏列的与建的会话全在这份 store 的 server 上,身份只能是这个 key。 */}
+                <AlphaSidebar projects={alphaProjects} serverKey={projectsServerKey} />
               </AlphaBoundary>
               {/* REQ-085:AlphaHome 不再作为 children Portal 注入 —— 它是正式 `home` surface
                   (见上方 surfaceComponents);legacy 模式下 upstream Home 原样呈现。 */}
@@ -541,7 +543,9 @@ render(() => {
                 <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
               </AlphaBoundary>
               <AlphaBoundary name="AutomationPanel">
-                <AutomationPanel />
+                {/* #925(第四个消费者):「回跳会话」。自动化 run 的会话由主进程建在内嵌
+                    sidecar 上,renderer 侧那台机器的身份就是这个 key。 */}
+                <AutomationPanel serverKey={projectsServerKey} />
               </AlphaBoundary>
               {/* REQ-126 AC3(#654):产物工作台不再全页挂载 —— 产物只经会话右栏 artifacts 面板到达。 */}
               {/* REQ-125 C7/C8:会话页 composer = AlphaComposer 经 seam 会话页直挂(session surface

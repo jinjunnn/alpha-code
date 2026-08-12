@@ -19,8 +19,8 @@ import { Mark } from "../logo-alpha"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
 import { subscribeAuthState } from "../auth-recovery"
-import { homeHref, projectLabel, sessionHref } from "./route"
-import { parseRoute } from "../../shared/route-manifest"
+import { homeHref, projectLabel } from "./route"
+import { hrefFor, parseRoute } from "../../shared/route-manifest"
 import {
   clearHiddenProjects,
   hiddenProjects,
@@ -171,7 +171,15 @@ function until(condition: () => boolean): { promise: Promise<void>; cancel: () =
   return { promise, cancel }
 }
 
-export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
+export function AlphaSidebar(props: {
+  projects: AlphaProjectsApi
+  /** #925:`props.projects` 这份 store 连着的那个 server 的 key(`renderer/index.tsx` 的
+   *  `projectsServerKey`,由 store 自己的 baseUrl 反查)。侧栏列的会话、`createSession` 建的
+   *  会话**全部**长在这个 server 上 —— 它们的 href 因此必须钉在这个 key 上。这里刻意**不读**
+   *  `useServer().key`(当前 active server):WSL/remote 下两者不是同一个,按 active 拼 href
+   *  就是 #894 修掉的那个缺陷(跳去没有该会话的机器;那边若恰好有同 id 会话,污染的是它)。 */
+  serverKey: () => string | undefined
+}) {
   const { store, reload, createSession, renameSession, shareSession, deleteSession, copySession } = props.projects
   const routerNavigate = useNavigate()
   const location = useLocation()
@@ -465,6 +473,17 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     const r = parseRoute(location.pathname)
     if (r.kind === "directory") return { dir: r.directory }
     if (r.kind === "session" && r.directory) return { dir: r.directory, sessionId: r.id }
+    // #925:canonical `/server/:serverKey/session/:id` 路径里**没有**目录段(这正是它的意义:
+    // 身份是 server+id,不再靠目录反推)。会话属于哪个项目改由 store 反查 —— 否则落在 canonical
+    // 路由上时高亮/已读水位/自动展开全部失灵(#659/#894 起搜索与首页已经这么导航了)。
+    if (r.kind === "session" && r.id) {
+      const sid = r.id
+      for (const project of store.projects) {
+        const match = project.sessions.find((session) => session.id === sid)
+        if (match) return { dir: match.directory, sessionId: sid }
+      }
+      return { sessionId: sid }
+    }
     return {}
   })
 
@@ -647,7 +666,20 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
         pushToast({ kind: "error", title: t("alpha.sidebar.newChatWorkspaceFailed") })
         return
       }
-      await tabs.newDraft({ server: server.key, directory: target.directory })
+      // #925:draft 的 server 段 = **projects store 连着的那个 server**,不再是 active server。
+      // 新对话页(AlphaNewSession)发第一条走 `props.projects.startChat` —— 会话**恒**建在
+      // store 连着的 server 上,与 active 是谁无关(alpha-composer.tsx home 模式,#891 勘破)。
+      // 而上游 `promoteDraft`(packages/app/src/app.tsx createDraftRoute)按 `draft.server` 建
+      // session tab 并导航到 `/server/{draft.server}/session/{id}`:draft 带着 active server
+      // 时,tab 与导航都落在一台**没有这个会话**的机器上 —— 这正是 #894 那个缺陷在 draft
+      // 晋升这条线上的样子。key 缺席(sidecar 未就绪)⇒ 不建 draft、不猜:那时 store 无
+      // client,startChat 也发不出去,建出来的只会是一个必然坏掉的对话页。
+      const projectsKey = props.serverKey()
+      if (!projectsKey) {
+        pushToast({ kind: "error", title: t("alpha.sidebar.newChatFailed") })
+        return
+      }
+      await tabs.newDraft({ server: ServerConnection.Key.make(projectsKey), directory: target.directory })
     } finally {
       draftInFlight = false
     }
@@ -688,11 +720,21 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     // 关闭属于**导航意图**,不属于导航结果,所以提到第一个 await 之前。
     closeAllOverlays()
     setProjectExpanded(worktree, true)
+    // #925:server 身份在**发起创建那一刻**定格 —— `createSession` 在 store 连着的 server 上建
+    // 会话,await 期间 store 可能改连别处(sidecar 重启换端口),完成后再读就是别人的 key。
+    // key 缺席 ⇒ store 无 client,创建注定失败:如实报失败,不建、不猜。
+    const submittedServerKey = props.serverKey()
+    if (!submittedServerKey) {
+      pushToast({ kind: "error", title: t("alpha.sidebar.newChatFailed") })
+      return
+    }
     const id = await createSession(worktree)
     // REQ-126 不变量 1(#656):失败**不再**回退到 `newSessionHref(worktree)` —— 那个 href 就是
     // legacy admission 路由(sidebar/route.ts 的 directorySession),回退等于给 alpha 自己留了
     // 第二条进 admission 的入口。失败就如实说失败,不假装"已经给你开了个草稿"。
-    if (id) navigate(sessionHref(worktree, id))
+    // #925:导航消费创建那一刻的 server 快照,拼 canonical 的 `/server/:serverKey/session/:id`,
+    // 不再走 legacy `/{目录}/session/{id}` 让壳按 active server 反推。
+    if (id) navigate(hrefFor.session(submittedServerKey, id))
     else pushToast({ kind: "error", title: t("alpha.sidebar.newChatFailed") })
   }
 
@@ -746,9 +788,19 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     void props.projects.reload()
   }
 
-  const openSession = (e: MouseEvent, directory: string, id: string) => {
+  // #925:会话 href 钉在**持有这个会话的那个 server**(= props.serverKey,store 反查出来的
+  // 身份)上,canonical 形态,壳不再反推。key 缺席 ⇒ 返回 undefined / 不导航:侧栏的会话行
+  // 本来就来自那份 store,store 没连上时一行都不会渲染出来 —— 真到了这里只说明身份不成立,
+  // 随便挑一个 server 跳过去就是在制造 #894 那个事故(fail-closed,不猜)。
+  const sessionLink = (id: string): string | undefined => {
+    const key = props.serverKey()
+    return key ? hrefFor.session(key, id) : undefined
+  }
+
+  const openSession = (e: MouseEvent, id: string) => {
     e.preventDefault()
-    navigate(sessionHref(directory, id))
+    const href = sessionLink(id)
+    if (href) navigate(href)
   }
 
   return (
@@ -1139,9 +1191,9 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                                   <>
                                     <a
                                       class="alpha-session"
-                                      href={sessionHref(session.directory, session.id)}
+                                      href={sessionLink(session.id)}
                                       data-active={route().sessionId === session.id ? "" : undefined}
-                                      onClick={(e) => openSession(e, session.directory, session.id)}
+                                      onClick={(e) => openSession(e, session.id)}
                                     >
                                       <span class="alpha-session-title">{sessionDisplayTitle(session.title)}</span>
                                     </a>

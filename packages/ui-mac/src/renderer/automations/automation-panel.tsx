@@ -13,7 +13,7 @@ import type { AutomationRunRecord, AutomationSchedule, AutomationTask } from "..
 import { AUTOMATION_DEFAULTS } from "../../shared/automation-types"
 import { describeSchedule, isValidCron, parseCron } from "../../shared/automation-schedule"
 import { parseAutomationText } from "../../shared/automation-nl"
-import { sessionHref } from "../sidebar/route"
+import { hrefFor } from "../../shared/route-manifest"
 import { subscribeAuthState } from "../auth-recovery"
 import { Svg } from "../extensions/ext-presentation"
 import { automationOpen, setAutomationOpen } from "./automation-state"
@@ -100,7 +100,14 @@ function statusDot(r: AutomationRunRecord | undefined): { cls: string; label: st
   return { cls: "err", label: r.status === "timeout" ? t("alpha.auto.lastTimeout") : t("alpha.auto.lastFailed") }
 }
 
-export function AutomationPanel() {
+export function AutomationPanel(props: {
+  /** #925:自动化 run 的会话建在**主进程内嵌 sidecar** 上(automation-scheduler.ts 的
+   *  `awaitServer` 等的就是 serverReady 那台)——renderer 侧它的身份就是 `projectsServerKey`
+   *  (renderer/index.tsx 由 store 的 baseUrl 反查)。「回跳会话」的 href 必须钉在它上面:
+   *  过去走 legacy `/{目录}/session/{id}`,壳按「点击时的 active server」反推,WSL/remote 下
+   *  跳去的机器上根本没有这条 run 的会话。 */
+  serverKey: () => string | undefined
+}) {
   const navigate = useNavigate()
   const [tasks, setTasks] = createSignal<ListedTask[]>([])
   const [pausedAll, setPausedAll] = createSignal(false)
@@ -313,10 +320,17 @@ export function AutomationPanel() {
     backToList()
   }
 
-  const openSession = (task: ListedTask, rec: AutomationRunRecord) => {
+  const openSession = (_task: ListedTask, rec: AutomationRunRecord) => {
     if (!rec.sessionID) return
+    // #925:key 在点击那一刻取。缺席 ⇒ 引擎侧身份不成立(sidecar 未就绪/重启中)——run 列表走
+    // IPC 照样能显示,所以这里**到得了**;如实提示,不挑一个 server 瞎跳(fail-closed)。
+    const key = props.serverKey()
+    if (!key) {
+      pushToast({ kind: "error", title: t("alpha.home.engineUnavailable") })
+      return
+    }
     setAutomationOpen(false)
-    navigate(sessionHref(task.target.projectDir, rec.sessionID))
+    navigate(hrefFor.session(key, rec.sessionID))
   }
 
   const projectName = (dir: string) => dir.split("/").filter(Boolean).pop() ?? dir

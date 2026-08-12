@@ -71,7 +71,9 @@ mock.module("../src/renderer/alpha-ui/providers", () => ({
   useCommand: () => ({ options: [], register: () => {}, trigger: () => {}, show: () => {}, hide: () => {} }),
   // 侧栏用 `ServerConnection.key` 派生内嵌 sidecar 的稳定 key(不硬编码字面量);这里给同结果的
   // 最小替身,与下面 useServer 的 key 对齐,否则同源判定会把本闸门的 server 当成"别的 server"。
-  ServerConnection: { key: () => "sidecar" },
+  // #925:startDraft 用 `ServerConnection.Key.make(props.serverKey())` 给 draft 钉 server 段;
+  // 替身与上游同义(Key.make 是 brand 构造,运行时即恒等)。
+  ServerConnection: { key: () => "sidecar", Key: { make: (value: string) => value } },
   useTabs: () => ({
     ready: Object.assign(() => true, { promise: undefined }),
     newDraft: () => new Promise<void>(() => {}),
@@ -124,7 +126,6 @@ function apiNode(path: string[]): unknown {
 
 // —— 生产组合体(真实侧栏 + 真实两个覆盖层 + 真实路由)—————————————————————————
 const runtime = await import("../src/renderer/sidebar/overlay-close-test-runtime")
-const { sessionHref } = await import("../src/renderer/sidebar/route")
 const { hrefFor } = await import("../src/shared/route-manifest")
 const extHubState = await import("../src/renderer/extensions/ext-hub-state")
 const automationState = await import("../src/renderer/automations/automation-state")
@@ -237,8 +238,10 @@ async function open(overlay: (typeof OVERLAYS)[number]) {
   await flush()
 }
 
-const CURRENT_HREF = sessionHref(DIR, CURRENT_SESSION)
-const OTHER_HREF = sessionHref(DIR, OTHER_SESSION)
+// #925:侧栏会话锚点已是 canonical 的 `/server/:serverKey/session/:id`(legacy 产生器已删);
+// key 与 harness 传给侧栏的 serverKey 同值("sidecar")。
+const CURRENT_HREF = hrefFor.session("sidecar", CURRENT_SESSION)
+const OTHER_HREF = hrefFor.session("sidecar", OTHER_SESSION)
 const DRAFT_A = hrefFor.newSession("draft-a")
 const DRAFT_B = hrefFor.newSession("draft-b")
 

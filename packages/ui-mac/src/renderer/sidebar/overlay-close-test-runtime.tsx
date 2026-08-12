@@ -21,12 +21,15 @@ export type { MemoryHistory }
 
 export function OverlayCloseHarness(props: { history: MemoryHistory; projects: AlphaProjectsApi }): JSX.Element {
   const server = (): ServerInfo | undefined => ({ baseUrl: "http://127.0.0.1:65535" })
+  // #925:生产里两者的 serverKey 都是 renderer/index.tsx 的 `projectsServerKey`;本闸门只测
+  // 「覆盖层随导航关闭」,server 身份不是被测语义,给与 providers 替身一致的 "sidecar"。
+  const serverKey = () => "sidecar"
   // 侧栏与两个覆盖层在生产里是 AppInterface 下的兄弟(renderer/index.tsx:500-508),这里同构。
   const Shell = (p: { children?: JSX.Element }) => (
     <>
-      <AlphaSidebar projects={props.projects} />
+      <AlphaSidebar projects={props.projects} serverKey={serverKey} />
       <ExtensionHub server={server} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
-      <AutomationPanel />
+      <AutomationPanel serverKey={serverKey} />
       {p.children}
     </>
   )

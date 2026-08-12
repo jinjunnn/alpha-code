@@ -23,7 +23,9 @@ import { AlphaSessionSearch } from "../alpha-ui/alpha-session-search"
 import { setSettingsOpen, settingsOpen } from "../alpha-ui/settings-state"
 import { PermChip } from "../alpha-ui/alpha-composer"
 import { READONLY_AGENT, buildPromptRequest, composerPerm, setComposerPerm } from "../alpha-ui/composer-state"
-import { setSidebarCollapsed } from "./sidebar-state"
+import { setSidebarCollapsed, setProjectExpanded } from "./sidebar-state"
+import { AutomationPanel } from "../automations/automation-panel"
+import { setAutomationOpen } from "../automations/automation-state"
 import type { AlphaProject, AlphaProjectsApi } from "./use-projects"
 import { ALPHA_SETTINGS_DEFAULTS } from "../../shared/settings-adapters"
 import { hrefFor } from "../../shared/route-manifest"
@@ -35,12 +37,44 @@ export { PermChip }
 export const FIXTURE_DIRECTORY = "/repos/alpha-code"
 export const PICKED_DIRECTORY = "/repos/picked-by-user"
 export const CREATED_SESSION_ID = "ses_created"
+/** #925:draft 晋升探针交给上游 `promoteDraft` 的会话 id(与 CREATED_SESSION_ID 相异,免得
+ *  两条判据互相蒙混)。 */
+export const PROMOTED_SESSION_ID = "ses_promoted"
+/** #925:自动化 run 记录里的会话 id。 */
+export const AUTOMATION_SESSION_ID = "ses_auto_run"
 
 const connection: ServerConnection.Any = {
   displayName: "Local Server",
   type: "sidecar",
   variant: "base",
   http: { url: "http://127.0.0.1:4096" },
+}
+
+/* ── #925:多 server 配置 ────────────────────────────────────────────────────────
+   legacy sessionHref 那一类缺陷只在「active server ≠ 会话真正所在的 server」时可见,单 server
+   壳结构上测不出它。这里给三台互不相同的 WSL 连接(key 分别是 wsl:ubuntu / wsl:fedora /
+   wsl:arch),按用例组合成不同的 {active, projects} 对 —— 各用例**点击那一刻**的 projects key
+   互不相同,把 href 写死成任何单个字面量的实现无法同时满足(#894 R1 审计那条形态⑨)。 */
+const wslUbuntu: ServerConnection.Any = {
+  displayName: "WSL Ubuntu",
+  type: "sidecar",
+  variant: "wsl",
+  distro: "ubuntu",
+  http: { url: "http://127.0.0.1:5096" },
+}
+const wslFedora: ServerConnection.Any = {
+  displayName: "WSL Fedora",
+  type: "sidecar",
+  variant: "wsl",
+  distro: "fedora",
+  http: { url: "http://127.0.0.1:6096" },
+}
+const wslArch: ServerConnection.Any = {
+  displayName: "WSL Arch",
+  type: "sidecar",
+  variant: "wsl",
+  distro: "arch",
+  http: { url: "http://127.0.0.1:7096" },
 }
 
 const fixtureProject: AlphaProject = {
@@ -63,8 +97,6 @@ const [routerPath, setRouterPath] = createSignal("")
 const [navigationIntents, setNavigationIntents] = createSignal<string[]>([])
 export { pickerCalls, createdIn, exportedLogs, routerPath, navigationIntents }
 
-/** 该连接的 canonical serverKey(会话搜索结果的来源身份)。 */
-const SERVER_KEY = ServerConnection.key(connection)
 
 /** 目录选择器的下一次返回值:`null` = 用户取消。 */
 const [pickerResult, setPickerResult] = createSignal<string | null>(PICKED_DIRECTORY)
@@ -84,6 +116,38 @@ const projects = {
     return CREATED_SESSION_ID
   },
 } as unknown as AlphaProjectsApi
+
+/** #925:展开侧栏里某个项目(生产状态函数;会话行只在展开后渲染)。 */
+export function expandProject(worktree: string) {
+  setProjectExpanded(worktree, true)
+}
+
+/** #925:打开自动化面板(生产模块信号;面板本体与「回跳会话」按钮都是生产组件)。 */
+export function openAutomationPanel() {
+  setAutomationOpen(true)
+}
+
+/** #925:自动化任务夹具 —— 一条已完成的 run,带会话 id(「回跳会话」按钮的渲染条件)。 */
+const automationTaskFixture = {
+  id: "auto-1",
+  name: "夜间总结",
+  nlText: "每天 21 点总结当天工作",
+  schedule: { kind: "cron", expr: "0 21 * * *" },
+  target: { projectDir: FIXTURE_DIRECTORY, agent: "alpha-automation" },
+  prompt: "总结当天工作",
+  execution: "local",
+  permissionProfile: "readonly",
+  budget: { maxDurationMin: 30 },
+  overlapPolicy: "skip",
+  catchUpPolicy: "skip",
+  notify: { system: true },
+  enabled: true,
+  createdAt: "2026-08-10T21:00:00.000Z",
+  lastRun: { at: "2026-08-10T21:00:00.000Z", status: "ok", sessionID: AUTOMATION_SESSION_ID, summary: "已完成" },
+  history: [{ at: "2026-08-10T21:00:00.000Z", status: "ok", sessionID: AUTOMATION_SESSION_ID, summary: "已完成" }],
+  nextFireAt: null,
+  running: false,
+}
 
 function RouteProbe() {
   const location = useLocation()
@@ -170,6 +234,25 @@ const platform: Platform = {
 /** 叶不在本闸门射程内:给最小标记件,免得把三棵叶子树一起拖进来。 */
 const leaf = (name: string) => () => <div data-harness-leaf={name} />
 
+/** #925:新对话叶的最小探针。`promoteDraft` 这个 prop 是**上游生产 wrapper**
+ *  (packages/app/src/app.tsx createDraftRoute)交下来的 —— 点这个按钮走的是真实
+ *  tabs.promoteDraft:真实 tab 交换 + 真实导航(tabHref 按 tab.server 拼 canonical 路由)。
+ *  叶只发起,判据落在真实 router 收到的落点上。 */
+const NewSessionPromoteProbe = (props: {
+  draftId: string
+  promoteDraft: (session: { directory: string; sessionId: string }) => void
+}) => (
+  <div data-harness-leaf="new-session">
+    <button
+      type="button"
+      data-harness-promote
+      onClick={() => props.promoteDraft({ directory: FIXTURE_DIRECTORY, sessionId: PROMOTED_SESSION_ID })}
+    >
+      promote
+    </button>
+  </div>
+)
+
 /**
  * 设置面的**权威读**必须真的落定:设置页里那张快捷键表也是一批「指向命令」的入口(用户能改、
  * 能存),而上游只对**已注册**的命令应用自定义键位 —— 表里留一条已退休的 id,就是又一个
@@ -200,7 +283,12 @@ export function installPreloadStub() {
       start: async () => {},
       logout: async () => {},
     },
-    automations: { list: async () => ({ tasks: [] }), onEvent: noop },
+    automations: {
+      // #925:完整形状(list 消费 r.state.pausedAll / r.loginItem);一条带 run 历史的任务,
+      // 「回跳会话」用例点的就是它。
+      list: async () => ({ tasks: [automationTaskFixture], state: { pausedAll: false }, loginItem: false }),
+      onEvent: noop,
+    },
     account: { summary: async () => null },
     contracts: { health: async () => null, subscribe: noop },
     endpoints: async () => undefined,
@@ -272,29 +360,48 @@ export function resetHarness() {
   setComposerPerm("ask")
   setRegisteredCommands([])
   setDraftTabs([])
+  // #925:自动化面板的开合是模块级信号,跨用例残留。
+  setAutomationOpen(false)
   triggerCommand = undefined
 }
 
-function Shell(props: { sidebar?: boolean; legacySettingsEntry?: boolean }) {
+function Shell(props: {
+  sidebar?: boolean
+  legacySettingsEntry?: boolean
+  /** #925:壳里挂的全部连接;缺省 = 单 sidecar(既有用例的世界)。 */
+  servers?: ServerConnection.Any[]
+  /** #925:active(default)server;缺省 sidecar。 */
+  activeServer?: ServerConnection.Any
+  /** #925:`projects` 这份 store「连着」的 server —— 生产里 `projectsServerKey` 反查出来的那台。 */
+  projectsServer?: ServerConnection.Any
+}) {
+  const servers = props.servers ?? [connection]
+  const active = props.activeServer ?? connection
+  const projectsServer = props.projectsServer ?? connection
+  // 与生产同构:serverKey 是「由连接算 key」的 accessor(renderer/index.tsx 的 projectsServerKey);
+  // 判据侧的锚点用独立字面量,不读这里(否则是自指等价链)。
+  const projectsServerKey = () => ServerConnection.key(projectsServer)
   return (
     <PlatformProvider value={platform}>
       <AppBaseProviders>
         <AppInterface
-          defaultServer={ServerConnection.key(connection)}
-          servers={[connection]}
+          defaultServer={ServerConnection.key(active)}
+          servers={servers}
           router={MemoryRouter}
           disableHealthCheck
-          surfaces={{ home: leaf("home"), session: leaf("session"), newSession: leaf("new-session") }}
+          surfaces={{ home: leaf("home"), session: leaf("session"), newSession: NewSessionPromoteProbe }}
         >
           <RouteProbe />
           <CommandProbe />
-          {props.sidebar === false ? null : <AlphaSidebar projects={projects} />}
+          {props.sidebar === false ? null : <AlphaSidebar projects={projects} serverKey={projectsServerKey} />}
           {/* 与 renderer/index.tsx 的 settings surface 同一接法。 */}
           <AlphaSettings open={settingsOpen()} onClose={() => setSettingsOpen(false)} api={settingsApi} />
           {/* `command.palette` 的唯一注册点(#659)。壳组成必须与 renderer/index.tsx 一致 ——
               设置页快捷键表里就有这一条,少挂它会把「产品少注册了一条」误判成真。
               负对照那个壳同样不挂它(它复现的正是「alpha 壳级注册还不存在」的世界)。 */}
-          {props.sidebar === false ? null : <AlphaSessionSearch projects={projects} serverKey={() => SERVER_KEY} />}
+          {props.sidebar === false ? null : <AlphaSessionSearch projects={projects} serverKey={projectsServerKey} />}
+          {/* #925:自动化面板与生产同构地挂在壳上(renderer/index.tsx),「回跳会话」用例点它。 */}
+          {props.sidebar === false ? null : <AutomationPanel serverKey={projectsServerKey} />}
           {props.legacySettingsEntry ? <LegacySettingsEntry /> : null}
         </AppInterface>
       </AppBaseProviders>
@@ -315,6 +422,25 @@ function LegacySettingsEntry() {
 /** 真实壳(侧栏 + 生产设置面),与生产入口的接法一致。 */
 export function AlphaShell() {
   return <Shell />
+}
+
+/* ── #925:多 server 壳 ─────────────────────────────────────────────────────────
+   三个变体的 {active, projects} 对各不相同,且 projects key 三者互异("sidecar" /
+   "wsl:fedora" / "wsl:arch")—— 判据锚在各自的独立字面量上,写死任何单值的实现无法全绿。 */
+
+/** active = wsl:ubuntu,projects store 连的是本地 sidecar("sidecar")。 */
+export function AlphaShellRemoteActive() {
+  return <Shell servers={[connection, wslUbuntu]} activeServer={wslUbuntu} projectsServer={connection} />
+}
+
+/** active = sidecar,projects store 连的是 wsl:fedora。 */
+export function AlphaShellRemoteProjects() {
+  return <Shell servers={[connection, wslFedora]} activeServer={connection} projectsServer={wslFedora} />
+}
+
+/** active = wsl:ubuntu,projects store 连的是 wsl:arch(自动化「回跳会话」用例)。 */
+export function AlphaShellAutomationRemote() {
+  return <Shell servers={[wslUbuntu, wslArch]} activeServer={wslUbuntu} projectsServer={wslArch} />
 }
 
 /**
