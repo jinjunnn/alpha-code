@@ -14,7 +14,7 @@
 // 裸赋值 —— 整包跑时先跑的测试可能已把它定义成只读属性)。
 
 import { AppBaseProviders, AppInterface, PlatformProvider, ServerConnection, useCommand, useTabs, type Platform } from "@opencode-ai/app"
-import { MemoryRouter, useBeforeLeave, useLocation } from "@solidjs/router"
+import { MemoryRouter, useBeforeLeave, useLocation, useNavigate } from "@solidjs/router"
 import { createEffect, createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import { AlphaSidebar } from "./alpha-sidebar"
@@ -23,7 +23,7 @@ import { AlphaSessionSearch } from "../alpha-ui/alpha-session-search"
 import { setSettingsOpen, settingsOpen } from "../alpha-ui/settings-state"
 import { PermChip } from "../alpha-ui/alpha-composer"
 import { READONLY_AGENT, buildPromptRequest, composerPerm, setComposerPerm } from "../alpha-ui/composer-state"
-import { setSidebarCollapsed, setProjectExpanded } from "./sidebar-state"
+import { setSidebarCollapsed, setProjectExpanded, markSessionViewed } from "./sidebar-state"
 import { AutomationPanel } from "../automations/automation-panel"
 import { setAutomationOpen } from "../automations/automation-state"
 import type { AlphaProject, AlphaProjectsApi } from "./use-projects"
@@ -76,6 +76,12 @@ const wslArch: ServerConnection.Any = {
   distro: "arch",
   http: { url: "http://127.0.0.1:7096" },
 }
+
+/** #933:emitSessionIdle 的驱动端参数(从哪台 server 的事件流发)。判据侧的 server key 锚点
+ *  仍是测试文件里的独立字面量,不从这里读。 */
+export const SIDECAR_URL = connection.http.url
+export const WSL_UBUNTU_URL = wslUbuntu.http.url
+export const WSL_ARCH_URL = wslArch.http.url
 
 const fixtureProject: AlphaProject = {
   id: "prj_alpha-code",
@@ -151,11 +157,70 @@ const automationTaskFixture = {
 
 function RouteProbe() {
   const location = useLocation()
+  const navigate = useNavigate()
   // 导航请求必须在这里取,不能只看 location:上游会对 legacy 会话/草稿路由立刻再 redirect 一次,
   // 中间那一站在同一个批次里就被覆盖掉,createEffect 根本看不见。
   useBeforeLeave((event) => setNavigationIntents((seen) => [...seen, String(event.to)]))
   createEffect(() => setRouterPath(`${location.pathname}${location.search}`))
-  return null
+  // #933:让用例能把真实 router 开到任意 href(存量 legacy URL / 别台 server 的 canonical 路由),
+  // 复现「点了升级前的 OS 通知 / 经上游标签页打开别台机器的会话」。必须经**真实 DOM 点击**进
+  // Solid 的事件派发(与生产的点击同一条执行上下文):从测试代码裸调 `navigate()` 没有 owner,
+  // 会让 AppInterface 的 children 整棵重挂(实测每导航一次 sidebar 重挂一次、多出一个 draft)。
+  return (
+    <button
+      type="button"
+      data-harness-navigate
+      style={{ display: "none" }}
+      onClick={() => {
+        if (pendingNavigateHref) navigate(pendingNavigateHref)
+      }}
+    />
+  )
+}
+
+let pendingNavigateHref: string | undefined
+/** 把真实 router 开到 href(见 RouteProbe)。 */
+export function navigateTo(href: string) {
+  const probe = document.querySelector<HTMLButtonElement>("[data-harness-navigate]")
+  if (!probe) throw new Error("shell is not mounted")
+  pendingNavigateHref = href
+  try {
+    probe.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+  } finally {
+    pendingNavigateHref = undefined
+  }
+}
+
+/** #933:被交给 OS 通知层(platform.notify)的每一条 —— 用户点通知后会去的就是这个 href。 */
+export type OsNotification = { title: string; description?: string; href?: string }
+const [osNotifications, setOsNotifications] = createSignal<OsNotification[]>([])
+export { osNotifications }
+
+/** #933:通知用例的会话 id(`/session/{id}` fixture 配套)。 */
+export const NOTIFIED_SESSION_ID = "ses_noti"
+
+/* ── #933:可控的 `/global/event` SSE 流,按 server 端口区分 ───────────────────────
+   每台 server 的 ServerSDK 都对自己的 baseUrl 开一条事件流;fixture 按**端口**把流的写端存起来,
+   用例便可从指定的那台 server 发一条真事件 —— 之后跑的全是生产代码(server-sdk 的 SSE 解析、
+   合流、notification context 的 lookup 与 platform.notify)。 */
+const sseWriters = new Map<string, (frame: string) => void>()
+
+/** 那台 server 的事件流是否已被生产代码连上(emit 前用它等,不猜时长)。 */
+export function hasEventStream(serverUrl: string) {
+  return sseWriters.has(new URL(serverUrl).port)
+}
+
+/** 从 `serverUrl`(如 "http://127.0.0.1:4096")那台 server 的事件流发一条 session.idle。 */
+export function emitSessionIdle(serverUrl: string, directory: string, sessionID: string) {
+  const port = new URL(serverUrl).port
+  const write = sseWriters.get(port)
+  if (!write) throw new Error(`no event stream connected for port ${port}`)
+  write(`data: ${JSON.stringify({ directory, payload: { type: "session.idle", properties: { sessionID } } })}\n\n`)
+}
+
+/** #933:预置某会话的已读水位(生产 sidebar-state),让未读点有一个可观察的「在/不在」。 */
+export function seedSessionViewed(id: string, updated: number) {
+  markSessionViewed(id, updated)
 }
 
 /** 真实命令总线上此刻**确实注册**的 id —— 桌面菜单发布面按它逐条核对。 */
@@ -167,6 +232,19 @@ export { registeredCommands }
 export type DraftRecord = { draftID: string; server: string; directory: string }
 const [draftTabs, setDraftTabs] = createSignal<DraftRecord[]>([])
 export { draftTabs }
+
+/** #933:上游 tabs store 里当前的 session tab(legacySessionServer 反推消费的就是这份)。 */
+export type SessionTabRecord = { server: string; sessionId: string }
+const [sessionTabs, setSessionTabs] = createSignal<SessionTabRecord[]>([])
+export { sessionTabs }
+
+let addSessionTabFn: ((server: string, sessionId: string) => void) | undefined
+/** #933:经上游生产 `tabs.addSessionTab` 在指定 server 上落一个 session tab(不导航)——
+ *  复现「用户曾在那台机器上开过这条会话」的持久化痕迹。 */
+export function openSessionTab(serverKey: string, sessionId: string) {
+  if (!addSessionTabFn) throw new Error("shell is not mounted")
+  addSessionTabFn(serverKey, sessionId)
+}
 /** 新 draft 的落地 href,取自 alpha 路由契约的唯一事实源(route-manifest 的 `hrefFor.newSession`,
  *  与上游 `context/tabs.tsx` 的 `draftHref` 同形;route-authority ratchet 禁止在别处复刻该 URL)。 */
 export const draftHref = (draftID: string) => hrefFor.newSession(draftID)
@@ -182,11 +260,19 @@ function CommandProbe() {
   const command = useCommand()
   const tabs = useTabs()
   triggerCommand = (id) => command.trigger(id)
+  addSessionTabFn = (server, sessionId) => tabs.addSessionTab({ server: ServerConnection.Key.make(server), sessionId })
   createEffect(() => setRegisteredCommands(command.options.map((option) => option.id)))
   createEffect(() =>
     setDraftTabs(
       tabs.store.flatMap((tab) =>
         tab.type === "draft" ? [{ draftID: tab.draftID, server: tab.server as string, directory: tab.directory }] : [],
+      ),
+    ),
+  )
+  createEffect(() =>
+    setSessionTabs(
+      tabs.store.flatMap((tab) =>
+        tab.type === "session" ? [{ server: tab.server as string, sessionId: tab.sessionId }] : [],
       ),
     ),
   )
@@ -217,7 +303,11 @@ const platform: Platform = {
   restart: async () => {},
   back: () => {},
   forward: () => {},
-  notify: async () => {},
+  // #933:生产里这个 href 原样交给 OS 通知的 onclick → handleNotificationClick(href) → router。
+  // 记录它 = 记录「用户点通知会落到哪」。
+  notify: async (title: string, description?: string, href?: string) => {
+    setOsNotifications((seen) => [...seen, { title, description, href }])
+  },
   openDirectoryPickerDialog: async () => ({ paths: [] }) as never,
   // 与 renderer/index.tsx 逐字同义:上游那几处 `settings.open` 注册都以
   // `if (platform.openSettings) return platform.openSettings()` 短路到 alpha 设置面
@@ -313,8 +403,25 @@ export function installPreloadStub() {
       // 那条最终 navigate 进会话路由),Solid **全局**的 transition 就永远悬着 —— 此后每一次
       // startTransition(含 `tabs.newDraft` 内部的导航)都并进这个悬置事务,永不提交。症状是
       // 下一条用例整个壳"点了没反应"且随用例顺序漂移:单跑绿、全文件红。
+      // #933:`/global/event` 变成可控 SSE 流(按端口存写端,emitSessionIdle 用);其余事件端点
+      // 维持挂起。流保持打开(生产的重连逻辑不被触发),Response 走标准 ReadableStream。
+      if (path === "/global/event") {
+        const port = new URL(url).port
+        const encoder = new TextEncoder()
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            sseWriters.set(port, (frame) => controller.enqueue(encoder.encode(frame)))
+          },
+        })
+        return Promise.resolve(
+          new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+        )
+      }
       if (path.endsWith("/event")) return new Promise(() => {})
-      const body = path in FETCH_FIXTURES ? FETCH_FIXTURES[path] : {}
+      // #933:session.sync 会顺带拉消息/子会话/todo/diff,这些端点按契约回**数组**;回 {} 会让
+      // 上游 `.filter` 直接 TypeError,lookup 静默失败。
+      const listShaped = /^\/session\/[^/]+\/(message|children|todo|diff)$/.test(path)
+      const body = path in FETCH_FIXTURES ? FETCH_FIXTURES[path] : listShaped ? [] : {}
       return Promise.resolve(
         new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } }),
       )
@@ -329,6 +436,33 @@ const FETCH_FIXTURES: Record<string, unknown> = {
   "/project": [],
   "/project/current": { id: "prj_default", worktree: FIXTURE_DIRECTORY },
   "/session": [],
+  // #933:测试里会被真实路由/事件解析到的会话逐个给形状正确的响应 —— 上游对形状不对的响应
+  // 走重试退避,叶被 Suspense 压住之后,**后续所有导航都并进悬置事务、静默丢失**(见上面
+  // fetch stub 的注释;这里少一条 fixture 的症状就是"navigateTo 点了没反应")。
+  "/session/ses_noti": {
+    id: "ses_noti",
+    projectID: "prj_alpha-code",
+    directory: FIXTURE_DIRECTORY,
+    title: "通知会话",
+    version: "0",
+    time: { created: 1, updated: 1 },
+  },
+  "/session/ses_tab_only": {
+    id: "ses_tab_only",
+    projectID: "prj_alpha-code",
+    directory: FIXTURE_DIRECTORY,
+    title: "只在 tab 里的会话",
+    version: "0",
+    time: { created: 1, updated: 1 },
+  },
+  "/session/ses_one": {
+    id: "ses_one",
+    projectID: "prj_alpha-code",
+    directory: FIXTURE_DIRECTORY,
+    title: "已有会话",
+    version: "0",
+    time: { created: 1, updated: 10 },
+  },
   "/agent": [],
   "/command": [],
   "/question": [],
@@ -363,6 +497,11 @@ export function resetHarness() {
   // #925:自动化面板的开合是模块级信号,跨用例残留。
   setAutomationOpen(false)
   triggerCommand = undefined
+  // #933:OS 通知记录与 SSE 写端都跨用例残留。
+  addSessionTabFn = undefined
+  setOsNotifications([])
+  setSessionTabs([])
+  sseWriters.clear()
 }
 
 function Shell(props: {

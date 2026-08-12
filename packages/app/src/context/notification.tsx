@@ -15,7 +15,7 @@ import { playSoundById } from "@/utils/sound"
 import { useGlobal } from "./global"
 import { ServerConnection, useServer } from "./server"
 import { type DraftTab, useTabs } from "./tabs"
-import { requireServerKey } from "@/utils/session-route"
+import { requireServerKey, sessionHref } from "@/utils/session-route"
 import type { ServerScope } from "@/utils/server-scope"
 
 type NotificationBase = {
@@ -351,7 +351,10 @@ function createServerNotificationState(input: {
         session: sessionID,
       })
 
-      const href = `/${base64Encode(directory)}/session/${sessionID}`
+      // #933:每台 server 有自己的 notification state(见 useNotification 的 ensure),事件来自
+      // 哪台、会话就在哪台 —— href 钉 canonical 的 server+id 身份,不再产 legacy 形状让壳按
+      // active server 反推(多 server 下点通知会落到没有该会话的机器,#894 同形)。
+      const href = sessionHref(ServerConnection.key(serverSDK().server), session.id)
       if (settings.notifications.agent()) {
         void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, href)
       }
@@ -384,7 +387,11 @@ function createServerNotificationState(input: {
       const description =
         session?.title ??
         (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
-      const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
+      // #933:同上 —— 带会话 id 时钉 canonical;没有会话 id 的错误通知仍指向项目目录(目录路由
+      // 不指认任何会话,不属本咽喉)。
+      const href = sessionID
+        ? sessionHref(ServerConnection.key(serverSDK().server), sessionID)
+        : `/${base64Encode(directory)}`
       if (settings.notifications.errors()) {
         void platform.notify(language.t("notification.session.error.title"), description, href)
       }
