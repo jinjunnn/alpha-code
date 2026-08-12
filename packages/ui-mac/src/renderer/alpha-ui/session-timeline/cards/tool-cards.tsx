@@ -13,6 +13,8 @@ import { routeArtifact } from "../../artifact-workbench/renderers/registry"
 import type { TimelineMediaSource, TimelineRow } from "../timeline-model"
 import {
   basenameOf,
+  bashDescriptionOf,
+  cappedItem,
   contextGroupSummaryOf,
   contextRowOf,
   diagnosticsOf,
@@ -26,6 +28,7 @@ import {
   toolCardHeadOf,
   type ToolCardBody,
   type ToolCardHead,
+  type ToolSourceCategory,
 } from "./tool-card-model"
 import { diffViewOf } from "./tool-diff"
 import { useTimelineIntents } from "./timeline-intents"
@@ -125,6 +128,16 @@ function chevron() {
       <path d="M9 6l6 6-6 6" />
     </svg>
   )
+}
+
+// ── 来源分类标签(#879:metadata-only 降级卡的主标题;视觉形态归 #587) ──────
+const SOURCE_KEYS: Record<ToolSourceCategory, string> = {
+  builtin: "alpha.timeline.sourceBuiltin",
+  host: "alpha.timeline.sourceHost",
+  "alpha-cloud": "alpha.timeline.sourceAlphaCloud",
+  mcp: "alpha.timeline.sourceMcp",
+  plugin: "alpha.timeline.sourcePlugin",
+  unknown: "alpha.timeline.sourceUnknown",
 }
 
 // ── 状态徽标 ────────────────────────────────────────────────────────────────
@@ -410,7 +423,8 @@ function DiffBody(props: { patch: string }) {
 export function TimelineToolCard(props: { part: ToolPart }) {
   const head = createMemo(() => toolCardHeadOf(props.part))
   const body = createMemo(() => toolCardBodyOf(props.part))
-  const hasBody = () => body().type !== "none"
+  // hidden 体(AC5)不算可展开体:确定标记常驻显示,没有 raw 查看旁路。
+  const hasBody = () => body().type !== "none" && body().type !== "hidden"
   // 默认展开:终端流(bash)/错误体,且**原始**体量在帽内 —— 被截断过(truncated)
   // 即视为超帽收起,不用截后长度比(I7:大输出体默认收起,防多卡累积常驻 DOM);
   // 其余折叠。用户显式选择永远优先。
@@ -422,12 +436,8 @@ export function TimelineToolCard(props: { part: ToolPart }) {
     return false
   }
   const open = () => chosen() ?? defaultOpen()
-  const description = () => {
-    const input = props.part.state.input
-    const value =
-      typeof input === "object" && input !== null ? (input as { description?: unknown }).description : undefined
-    return typeof value === "string" && value && head().kind === "bash" ? value : undefined
-  }
+  // #879:命令说明副行经模型层 identity 分派 + redactor(不再直读 input)。
+  const description = createMemo(() => bashDescriptionOf(props.part))
   const task = createMemo(() => (head().kind === "task" ? taskCardInfoOf(props.part) : undefined))
   const intents = useTimelineIntents()
   // T8「在面板打开」pill:write/edit 的文件目标 + openFile intent 双在场才渲染(fail-closed)。
@@ -446,20 +456,40 @@ export function TimelineToolCard(props: { part: ToolPart }) {
         {icons(head().kind)}
       </span>
       <span class="a-tc-title">
-        <Show when={head().titleKey} fallback={<b class="a-tc-name">{head().toolName}</b>}>
-          <b>{t(head().titleKey! as Parameters<typeof t>[0])}</b>
-        </Show>
-        <Show when={head().target}>
-          <span class="a-tc-target">{head().target}</span>
-        </Show>
-        <Show when={head().detail}>
-          <span class="a-tc-detail">{head().detail}</span>
-        </Show>
-        <Show when={task()?.agent}>
-          <span class="a-tc-agent">
-            <i aria-hidden="true" />
-            {task()!.agent}
-          </span>
+        {/* #879 metadata-only 降级卡:来源分类 + 被动净化名称(+ origin),无参数。 */}
+        <Show
+          when={!head().metadataOnly}
+          fallback={
+            <>
+              <b>{t(SOURCE_KEYS[head().category] as Parameters<typeof t>[0])}</b>
+              <span class="a-tc-name">{head().toolName}</span>
+              <Show when={head().origin}>
+                <span class="a-tc-detail">{head().origin}</span>
+              </Show>
+            </>
+          }
+        >
+          <Show when={head().titleKey} fallback={<b class="a-tc-name">{head().toolName}</b>}>
+            <b>{t(head().titleKey! as Parameters<typeof t>[0])}</b>
+          </Show>
+          <Show when={head().target}>
+            <span class="a-tc-target">{head().target}</span>
+          </Show>
+          {/* AC5:目标存在但 redactor 失败 → 确定的「详情已隐藏」,无 raw 旁路。 */}
+          <Show when={head().targetHidden}>
+            <span class="a-tc-detail" data-alpha-details-hidden>
+              {t("alpha.timeline.detailsHidden")}
+            </span>
+          </Show>
+          <Show when={head().detail}>
+            <span class="a-tc-detail">{head().detail}</span>
+          </Show>
+          <Show when={task()?.agent}>
+            <span class="a-tc-agent">
+              <i aria-hidden="true" />
+              {task()!.agent}
+            </span>
+          </Show>
         </Show>
       </span>
       <Show when={head().stat}>{(stat) => <StatBadge stat={stat()} />}</Show>
@@ -476,7 +506,8 @@ export function TimelineToolCard(props: { part: ToolPart }) {
       data-alpha-timeline-row="tool"
       data-alpha-tool-card
       data-kind={head().kind}
-      data-tool={props.part.tool}
+      data-category={head().category}
+      data-tool={cappedItem(props.part.tool)}
       data-status={head().status}
       data-open={hasBody() && open() ? "true" : undefined}
     >
@@ -518,6 +549,14 @@ export function TimelineToolCard(props: { part: ToolPart }) {
       </Show>
       <Show when={description()}>
         <div class="a-tc-subdesc">{description()}</div>
+      </Show>
+      {/* AC5:redactor 失败的整字段 → 常驻的确定「详情已隐藏」,无展开、无 raw 旁路。 */}
+      <Show when={body().type === "hidden"}>
+        <div class="a-tc-body">
+          <div class="a-tc-out" data-alpha-details-hidden>
+            {t("alpha.timeline.detailsHidden")}
+          </div>
+        </div>
       </Show>
       <Show
         when={errorBody()}
@@ -651,11 +690,12 @@ export function ContextToolGroupCard(props: { parts: ToolPart[] }) {
             {(part) => {
               const row = () => contextRowOf(part)
               return (
-                <div class="a-explore-row" data-tool={part.tool}>
-                  <span class="a-explore-ri" data-kind={row().tool} aria-hidden="true">
-                    {icons(row().tool)}
+                <div class="a-explore-row" data-tool={cappedItem(part.tool)}>
+                  {/* #879:图标与动词按 identity 分派的 kind,不再按裸别名。 */}
+                  <span class="a-explore-ri" data-kind={row().kind} aria-hidden="true">
+                    {icons(row().kind)}
                   </span>
-                  <span class="a-explore-verb" data-kind={row().tool}>
+                  <span class="a-explore-verb" data-kind={row().kind}>
                     <Show when={row().titleKey} fallback={row().tool}>
                       {t(row().titleKey! as Parameters<typeof t>[0])}
                     </Show>
