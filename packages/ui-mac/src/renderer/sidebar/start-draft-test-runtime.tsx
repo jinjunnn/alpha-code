@@ -392,7 +392,9 @@ export function AlphaShell(props: { connection?: ServerConnection.Any }) {
           }}
         >
           <ShellProbe />
-          <AlphaSidebar projects={projects} />
+          {/* #925:本 harness 是单连接世界 —— `projects` 就连着这一个连接(见上方 #891 注),
+              所以侧栏的 serverKey 与它同源;draft 的 server 段自此取自这里,不再读 active。 */}
+          <AlphaSidebar projects={projects} serverKey={() => ServerConnection.key(connection)} />
           <ToastViewport />
         </AppInterface>
       </AppBaseProviders>

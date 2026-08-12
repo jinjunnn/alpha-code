@@ -11,9 +11,9 @@
 // - 该写入会让上游按 `server\0directory` keyed 的 draft 叶**整叶重挂**,所以 composer 的草稿
 //   经 newSessionDraftStash(叶之外)往返,切目录不吞已输入内容(基线不变量 6)。
 
-import { createMemo, createSignal, Show, untrack } from "solid-js"
+import { createEffect, createMemo, createSignal, Show, untrack } from "solid-js"
 import { useSearchParams } from "@solidjs/router"
-import { useTabs } from "@opencode-ai/app"
+import { ServerConnection, useTabs } from "@opencode-ai/app"
 import { type AlphaProjectsApi } from "../sidebar/use-projects"
 import { AlphaComposer } from "./alpha-composer"
 import { createDefaultWorkspaceDir } from "./default-workspace"
@@ -28,11 +28,11 @@ export function AlphaNewSession(props: {
   projects: AlphaProjectsApi
   /** #891:与首页同一条线 —— 本页发第一条也走 `props.projects.startChat`,会话因此落在**那份
    *  store 连着的 server** 上,composer 拿这个 key 给新会话登记开局档位/只读档。
-   *  刻意**不用** `tabs.draft(draftId).server`:那是建 draft 时的 active server(`alpha-sidebar`
-   *  的 `newDraft({ server: server.key, … })`),与 store 实际连的 sidecar 在 WSL/remote 下不是
-   *  同一个;拿它当身份,登记就落在一把会话页永远算不出来的钥匙下面。
-   *  (`promoteDraft` 今天仍按 `draft.server` 建 session tab —— 那是**导航**的缺陷,与 `#894`
-   *  同一类,不在本票边界内。) */
+   *  刻意**不用** `tabs.draft(draftId).server`:登记的钥匙必须与会话页 adopt 时算出的逐字节
+   *  相同,身份来源只有这一个。draft 的 server 段也**不保证**天生等于本 prop —— alpha-sidebar
+   *  的 `startDraft` 自 #925 起钉到 projects key,但生产者不止它一个(见下面收口 effect 的
+   *  注释);两者不同时由本组件把 draft 钉回本 prop,upstream `promoteDraft` 按 `draft.server`
+   *  建的 session tab 与导航才落在真正持有会话的那台。 */
   serverKey: () => string | undefined
   draftId: string
   promoteDraft: (session: { directory: string; sessionId: string }) => void
@@ -40,6 +40,20 @@ export function AlphaNewSession(props: {
   const tabs = useTabs()
   const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
   const { store } = props.projects
+
+  // #925 审计 Major:draft 的生产者不止 alpha-sidebar 一个 —— 上游 Titlebar 的「+ 新标签」/
+  // mod+t(packages/app/src/components/titlebar.tsx `openNewTab`,五个分支)建的 draft 带的是
+  // active(或兜底)server,而本页的会话恒经 `props.projects.startChat` 建在 projects store
+  // 连着的 server 上。逐个生产者补不完,在唯一消费者这里收口:两者不同即把 draft 的 server 段
+  // 钉回 projects key。上游 `createDraftRoute` 按 `${server}\0${directory}` keyed ⇒ 这次写入会
+  // 整叶重挂一次;composer 内容经 newSessionDraftStash 在卸载时捕获、重挂后取回(与切目录同一
+  // 条路),不丢。写成 effect 而不是挂载一次:sidecar 迟就绪时 key 从 undefined 变可用,那扇窗
+  // 里建的 draft 也要钉住;key 缺席时不猜 —— 那时 store 无 client,`startChat` 本来也发不出去。
+  createEffect(() => {
+    const key = props.serverKey()
+    if (!key || tabs.draft(props.draftId).server === key) return
+    tabs.updateDraft(props.draftId, { server: ServerConnection.Key.make(key) })
+  })
 
   const projects = createMemo(() => visibleWorkspaces(store.projects))
   const directory = createMemo(() => tabs.draft(props.draftId).directory)

@@ -49,10 +49,13 @@ Bun.plugin({
    AlphaNewSession reads the draft through upstream `useTabs()` and clears `?prompt=`
    through the router; both are replaced with observable fakes so the assertions can be
    about *what the page asked for*, not about internal calls. */
-// #891:两个「当会话身份用就是错的」的值,在本文件里被**故意钉成与 store 的 server 不同**:
-// `useServer().key`(当前 active server)与 `tabs.draft().server`(建 draft 那一刻的 active
-// server)。首页/新对话页的会话是 `projects.startChat` 在 **store 连着的那个 server** 上建的,
-// 身份只能是后者。两个错值都取 ACTIVE_SERVER_KEY,任一叶回头去读它们,判据当场红。
+// #891:「当会话身份用就是错的」的值在本文件里被**故意钉成与 store 的 server 不同**:
+// `useServer().key`(当前 active server)恒为 ACTIVE_SERVER_KEY,任一叶回头去读它,判据当场红。
+// 首页/新对话页的会话是 `projects.startChat` 在 **store 连着的那个 server** 上建的,身份只能是
+// 后者。draft 的 server 段:#925 起 alpha-sidebar 建的 draft 已钉在 projects key 上,且
+// AlphaNewSession 在唯一消费者处把不同值的 draft 收口钉回(#925 审计 Major,上游 Titlebar 的
+// 「+ 新标签」/ mod+t 仍按 active server 建 draft)—— 所以本文件默认 draft 带 STORE_SERVER_KEY
+// (生产两头收口后的稳态),「上游入口建的 wrong-server draft」由 #925 那组用例显式铺设。
 const ACTIVE_SERVER_KEY = "wsl:ubuntu"
 /** `projects` 这份 store 真正连着的 server(生产由 `index.tsx` 的 `projectsServerKey` 反查)。 */
 const STORE_SERVER_KEY = "sidecar"
@@ -66,7 +69,7 @@ const LATER_SERVER_KEY = "wsl:debian"
 const SUBMIT_TIME_SERVER_KEY = "wsl:fedora"
 
 type DraftRecord = { server: string; directory: string }
-const [draft, setDraft] = createSignal<DraftRecord>({ server: ACTIVE_SERVER_KEY, directory: "/ws/a" })
+const [draft, setDraft] = createSignal<DraftRecord>({ server: STORE_SERVER_KEY, directory: "/ws/a" })
 // 上游 tabs.store 的最小形状:哪些 draft 还活着(关掉 = 从这里消失)。
 const [liveDrafts, setLiveDrafts] = createSignal<string[]>(["draft-1"])
 const updateDraftCalls: Array<{ draftID: string; patch: Partial<DraftRecord> }> = []
@@ -87,7 +90,13 @@ const server = {
     return ACTIVE_SERVER_KEY
   },
 }
-mock.module("@opencode-ai/app", () => ({ useTabs: () => tabs, useServer: () => server }))
+mock.module("@opencode-ai/app", () => ({
+  useTabs: () => tabs,
+  useServer: () => server,
+  // #925:生产的 `ServerConnection.Key.make` 就是 brand cast(packages/app/src/context/server.tsx:238),
+  // 这里如实照抄 —— 收口 effect 写回 draft 的值不经任何变换。
+  ServerConnection: { Key: { make: (v: string) => v } },
+}))
 /** #894:叶真正跳去了哪里。路由本体不参与 —— 记的是叶交给 `useNavigate()` 的那个 href,
  *  再由生产的 `parseRoute` 读回去,编码与解码是两条相反的路,不构成自指等价链。 */
 const navigateCalls: string[] = []
@@ -335,8 +344,12 @@ function pasteFile(el: HTMLTextAreaElement, file: File) {
   el.dispatchEvent(event)
 }
 
-function DraftLeaf(props: { projects: AlphaProjectsApi; draftId?: string }) {
-  // 上游 createDraftRoute 的 keyed 包装(packages/app/src/app.tsx):directory 变 ⇒ 整叶重挂。
+/** #925:上游 `createDraftRoute` 的 `promoteDraft` 按 **`props.draft.server` 晋升那一刻的值**建
+ *  session tab 并导航(packages/app/src/app.tsx:272-277)—— 这里如实照抄那次读取并记下来。
+ *  它就是「打开的是哪台机器」的决定值:断言落在它身上,而不是某个内部 memo。 */
+const promoteCalls: Array<{ server: string; sessionId: string }> = []
+function DraftLeaf(props: { projects: AlphaProjectsApi; draftId?: string; serverKey?: () => string | undefined }) {
+  // 上游 createDraftRoute 的 keyed 包装(packages/app/src/app.tsx):server/directory 变 ⇒ 整叶重挂。
   return createComponent(solid.Show, {
     get when() {
       return `${draft().server}\0${draft().directory}`
@@ -346,10 +359,13 @@ function DraftLeaf(props: { projects: AlphaProjectsApi; draftId?: string }) {
       return createComponent(AlphaNewSession, {
         projects: props.projects,
         // #891:生产由 index.tsx 的 `projectsServerKey` 供给(store 的 baseUrl 反查),这里同源:
-        // 这份 `projects` 连的就是 STORE_SERVER_KEY,而 `draft().server` 是另一个值。
-        serverKey: () => STORE_SERVER_KEY,
+        // 这份 `projects` 连的就是 STORE_SERVER_KEY(#925 的用例用自己的 key 覆盖,两组字面量
+        // 互不相同 —— 写死单值的实现过不了)。
+        serverKey: props.serverKey ?? (() => STORE_SERVER_KEY),
         draftId: props.draftId ?? "draft-1",
-        promoteDraft: () => {},
+        promoteDraft: (session: { sessionId: string }) => {
+          promoteCalls.push({ server: draft().server, sessionId: session.sessionId })
+        },
       })
     },
   })
@@ -367,7 +383,8 @@ beforeEach(() => {
   pickedDirectory = undefined
   defaultWorkspaceGate = undefined
   setLiveDrafts(["draft-1"])
-  setDraft({ server: ACTIVE_SERVER_KEY, directory: "/ws/a" })
+  setDraft({ server: STORE_SERVER_KEY, directory: "/ws/a" })
+  promoteCalls.splice(0)
   document.body.replaceChildren()
 })
 
@@ -415,7 +432,7 @@ describe("REQ-126 CODE-D 新对话页工作区选择器", () => {
   })
 
   test("未显式选择(draft 无目录)⇒ chip 与标题都显示默认对话目录 ~/Alpha", async () => {
-    setDraft({ server: ACTIVE_SERVER_KEY, directory: "" })
+    setDraft({ server: STORE_SERVER_KEY, directory: "" })
     const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
     await flush()
     await flush()
@@ -932,8 +949,12 @@ describe("#891 首页/新对话页:开局档位登记在 store 连着的那个 s
 
   test("新对话页同一条线:draft.server 不是身份,登记仍在 store 的 server 名下", async () => {
     const projects = projectsApi([project("alpha-code", "/ws/a")])
+    // draft 生来带 active server(上游入口的形态)。#925 收口会先钉回 projects key 并整叶重挂
+    // 一次 —— 等它落定再开档位:开在旧实例上的档随重挂消失,那是收口的已知代价(内容经暂存
+    // 保住,档位是 composer 实例状态),不是本用例的命题。
     setDraft({ server: ACTIVE_SERVER_KEY, directory: DEFAULT_WORKSPACE })
     const leaf = mountDisposable(() => createComponent(DraftLeaf, { projects }))
+    for (let i = 0; i < 20 && draft().server !== STORE_SERVER_KEY; i++) await flush()
     for (let i = 0; i < 20 && !textarea(leaf.host); i++) await flush()
 
     textarea(leaf.host)!.dispatchEvent(
@@ -1118,5 +1139,77 @@ describe("#894 首页提交后的导航:落地的是真正创建会话的那个 
     // 与第一条用例提交时的 key 也不同 ⇒ 把 href 写死成任何单个字面量都过不了这两条。
     expect(landed.serverKey).not.toBe(STORE_SERVER_KEY)
     home.dispose()
+  })
+})
+
+/* ── #925 审计 Major:draft 的生产者不止 alpha-sidebar 一个 ────────────────────────────
+   上游 Titlebar 的「+ 新标签」/ mod+t(packages/app/src/components/titlebar.tsx `openNewTab`,
+   五个分支)建的 draft 带的是 active(或兜底)server;而新对话页发第一条恒经
+   `props.projects.startChat` 把会话建在 projects store 连着的 server 上。收口在唯一消费者:
+   AlphaNewSession 挂载/取到 key 后把不同值的 draft.server 钉回 projects key,上游 `promoteDraft`
+   按 `draft.server` 建的 session tab 与导航才落在真正持有会话的那台。
+   判据纪律:两组用例的 projects key 用**不同**字面量(STORE / LATER),写死单值的实现两条同时
+   过不了;负向夹具的 draft.server 也取两个互不相同的非退化值(ACTIVE / SUBMIT_TIME)。 */
+describe("#925 上游入口建的 draft(带 active server)在唯一消费者处被钉回 projects key", () => {
+  test("draft 带 active server ⇒ server 段被钉回,晋升读到的就是 projects key;收口重挂不吞已有内容", async () => {
+    // 用户此前在这条 draft 里输入过(经暂存注入 —— 与切目录内容保护同一条路)。
+    newSessionDraftStash.capture("draft-1", { text: "上游入口建的草稿", mentions: [], attachments: [], pendingReads: [] })
+    setDraft({ server: ACTIVE_SERVER_KEY, directory: "/ws/a" })
+    const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    for (let i = 0; i < 20 && draft().server !== STORE_SERVER_KEY; i++) await flush()
+
+    expect(updateDraftCalls).toEqual([{ draftID: "draft-1", patch: { server: STORE_SERVER_KEY } }])
+    expect(draft().server).toBe(STORE_SERVER_KEY)
+    // 收口引发的重挂不吞内容(卸载捕获 → 重挂取回,与切目录同一条暂存路)。
+    for (let i = 0; i < 20 && !textarea(host)?.value; i++) await flush()
+    expect(textarea(host)!.value).toBe("上游入口建的草稿")
+
+    // 用户可观察的终点:晋升(上游按 draft.server 建 tab + 导航)读到的 server 是 projects key,
+    // 不是建 draft 那一刻的 active server —— 打开的才是真正持有这个会话的机器。
+    textarea(host)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    for (let i = 0; i < 30 && promoteCalls.length === 0; i++) await flush()
+    expect(startChatCalls).toHaveLength(1)
+    expect(promoteCalls).toEqual([{ server: STORE_SERVER_KEY, sessionId: "session-1" }])
+  })
+
+  test("钉回的是**这份 projects 连着的那个** key,不是任何单一字面量(第二组 key 全不同)", async () => {
+    setDraft({ server: SUBMIT_TIME_SERVER_KEY, directory: "/ws/a" })
+    mount(() =>
+      createComponent(DraftLeaf, {
+        projects: projectsApi([project("alpha-code", "/ws/a")]),
+        serverKey: () => LATER_SERVER_KEY,
+      }),
+    )
+    for (let i = 0; i < 20 && draft().server !== LATER_SERVER_KEY; i++) await flush()
+    expect(updateDraftCalls).toEqual([{ draftID: "draft-1", patch: { server: LATER_SERVER_KEY } }])
+    expect(draft().server).toBe(LATER_SERVER_KEY)
+  })
+
+  test("draft.server 已等于 projects key ⇒ 零写入、零重挂(收口是条件的,不是每次挂载都拍一下)", async () => {
+    const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    const before = textarea(host)!
+    for (let i = 0; i < 5; i++) await flush()
+    expect(updateDraftCalls).toEqual([])
+    expect(draft().server).toBe(STORE_SERVER_KEY)
+    expect(textarea(host)).toBe(before) // 没重挂
+  })
+
+  test("挂载时 key 还没就绪(sidecar 迟启动)⇒ 不猜不写;就绪那一刻补钉", async () => {
+    setDraft({ server: ACTIVE_SERVER_KEY, directory: "/ws/a" })
+    const [lateKey, setLateKey] = createSignal<string | undefined>(undefined)
+    mount(() =>
+      createComponent(DraftLeaf, {
+        projects: projectsApi([project("alpha-code", "/ws/a")]),
+        serverKey: lateKey,
+      }),
+    )
+    for (let i = 0; i < 5; i++) await flush()
+    expect(updateDraftCalls).toEqual([]) // key 缺席:不写 undefined,也不拿 active 兜底
+    expect(draft().server).toBe(ACTIVE_SERVER_KEY)
+
+    setLateKey(STORE_SERVER_KEY)
+    for (let i = 0; i < 20 && draft().server !== STORE_SERVER_KEY; i++) await flush()
+    expect(updateDraftCalls).toEqual([{ draftID: "draft-1", patch: { server: STORE_SERVER_KEY } }])
+    expect(draft().server).toBe(STORE_SERVER_KEY)
   })
 })

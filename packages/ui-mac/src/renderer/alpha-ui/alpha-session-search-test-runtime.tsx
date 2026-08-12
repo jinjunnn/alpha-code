@@ -140,7 +140,8 @@ function Shell(props: { search?: boolean }) {
           surfaces={{ home: leaf("home"), session: leaf("session"), newSession: leaf("new-session") }}
         >
           <RouteProbe />
-          <AlphaSidebar projects={projects} />
+          {/* #925:侧栏与搜索同源 —— 都消费 projects store 连着的那个 server 的 key。 */}
+          <AlphaSidebar projects={projects} serverKey={serverKey} />
           {props.search === false ? null : <AlphaSessionSearch projects={projects} serverKey={serverKey} />}
         </AppInterface>
       </AppBaseProviders>

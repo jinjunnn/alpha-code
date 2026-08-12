@@ -24,7 +24,8 @@ import { build } from "vite"
 import type { render } from "solid-js/web"
 import type * as Runtime from "./shell-commands-test-runtime"
 import { RETIRED_MENU_COMMANDS, publishedMenuCommands } from "../../shared/desktop-menu-policy"
-import { homeHref, newSessionHref, sessionHref } from "./route"
+import { homeHref, newSessionHref } from "./route"
+import { parseRoute } from "../../shared/route-manifest"
 
 type TestRuntime = typeof Runtime & { render: typeof render }
 
@@ -127,6 +128,20 @@ async function openAccountMenu() {
   await flush()
 }
 
+/** #925:真实 router 收到的导航请求里,凡**解析成会话路由**的,抽出落点三元组。编码(生产
+ *  `hrefFor`)与解码(生产 `parseRoute`)是两条相反的路,不构成自指等价链;判据锚在独立的
+ *  server key 字面量上。 */
+function sessionLandings(intents: string[]) {
+  return intents
+    .map((href) => parseRoute(href))
+    .filter((route) => route.kind === "session")
+    .map((route) => ({
+      routeId: route.identity.routeId,
+      serverKey: (route as { serverKey?: string }).serverKey,
+      id: (route as { id?: string }).id,
+    }))
+}
+
 describe("侧栏账户菜单「设置」:改接 alpha 自有设置面,与路由无关", () => {
   test("在首页点设置 → 真实的 alpha 设置面出现在 DOM 里", async () => {
     // 首页是「原来死得最彻底」的那条路由:上游三叶已被顶替、legacy layout 不挂载。
@@ -218,9 +233,14 @@ describe("空项目态「打开项目」:改走 alpha 自己的目录选择", ()
     expect(runtime.pickerCalls()).toBe(1)
     expect(runtime.createdIn()).toEqual([runtime.PICKED_DIRECTORY])
     // 真实 router 真的收到了去那条会话路由的导航。判据取 router 自己的 beforeLeave,而不是
-    // 最终 location:上游对 legacy 会话路由会立刻再 redirect 一次,中间那一站在同一批次里就被
-    // 覆盖掉了(这条 admission 跳转正是 REQ-126 CODE-C 在处置的东西,不是本票的命题)。
-    expect(runtime.navigationIntents()).toContain(sessionHref(runtime.PICKED_DIRECTORY, runtime.CREATED_SESSION_ID))
+    // 最终 location。#925 起落点是 canonical 的 `/server/:serverKey/session/:id`(单 server 壳,
+    // projects key = "sidecar");legacy 形状(壳按 active 反推的那种)一条都不许有 ——
+    // 多 server 下的判别在下方 #925 一节(那里各用例的 key 互不相同)。
+    const landed = sessionLandings(runtime.navigationIntents()).find((route) => route.id === runtime.CREATED_SESSION_ID)
+    expect(landed).toBeDefined()
+    expect(landed!.routeId).toBe("session")
+    expect(landed!.serverKey).toBe("sidecar")
+    expect(sessionLandings(runtime.navigationIntents()).filter((route) => route.routeId === "legacy-session")).toEqual([])
   })
 
   test("用户取消选择 → 不建会话、不跳转", async () => {
@@ -340,10 +360,129 @@ describe("桌面菜单:发布面上的每一条在真实壳里都接得住", () 
     expect(runtime.navigationIntents()).not.toContain(newSessionHref(runtime.FIXTURE_DIRECTORY))
   })
 
+  // #925 注:上面 session.new 那条断言 `added[0].server === "sidecar"` 在单 server 壳里
+  // active 与 projects key 同值,判别不了「draft 的 server 段来自谁」;多 server 的判别在
+  // 下方 #925 一节的 draft 晋升用例(active=sidecar、projects=wsl:fedora,两值相异)。
+
   // common.goBack / common.goForward 已从桌面菜单**退休**(shared/desktop-menu-policy.ts),
   // 所以这里没有它们的用例:上游 Titlebar 在首页/新对话页抢先注册同名 id 并走只有 `["/"]` 的私有
   // history —— 那不是「语义相同、谁赢都行」,是同一菜单项在不同路由两种行为、其中一种还是空转。
   // 侧栏左上角那对**按钮**保留(直连 `navigate(±1)`,从不经命令总线),但本文件**没有**为它们写
   // 行为用例:只在退休那两条用例里断言过左上工具簇仍有 3 个按钮,从未点击并观察导航。这是刻意的
   // 诚实分层,已在 docs/architecture/upstream-integration.md 的「Known not covered」列明。
+})
+
+/* ── #925:legacy sessionHref 的全部生产者清零 —— 会话导航钉在真正持有会话的 server 上 ────
+   缺陷同形于 #894:legacy `/{目录}/session/{id}` 路径里没有 server 段,壳只能事后反推
+   (`packages/app/src/utils/session-route.ts` 的 `legacySessionServer`:同 id 的 tab,否则回落
+   「完成时的 active server」)。多 server(WSL/remote)下反推恒给错机器;那台机器上若恰好有
+   同 id 会话,打开并污染的是那个无关会话。修法是删掉产生器(sidebar/route.ts 的
+   `sessionHref`)并让四个消费者(侧栏点击 / 侧栏锚点 / 新会话导航 / 自动化回跳)+ draft 的
+   server 段全部消费 projects store 的 server 身份。
+
+   判据纪律:
+   · 落点判据 = 真实 router 收到的 href 经生产 `parseRoute` 解回来的 {routeId, serverKey, id}
+     (编码与解码两条相反的路);锚点是**本文件的独立字面量**,不 import 生产常量。
+   · 各用例点击那一刻的 projects key 互不相同("sidecar" / "wsl:fedora" / "wsl:arch"),且都与
+     该壳的 active server 相异 —— 写死任何单值、或按 active 反推的实现,至少两条当场红。
+   · 每条都扫一遍「legacy 形状的会话导航 = 0」:那是反推入口本身。 */
+describe("#925 多 server 下的会话导航:落在真正持有该会话的 server 上", () => {
+  test("点侧栏里没开过 tab 的会话(active=wsl:ubuntu,store 连 sidecar)→ 锚点与真实落点都钉在 sidecar", async () => {
+    await mountShell(() => runtime.AlphaShellRemoteActive())
+    runtime.expandProject(runtime.FIXTURE_DIRECTORY)
+    await settle()
+
+    // ① 锚点本身(右键复制/中键打开拿到的就是它):canonical 会话路由,server 段 = sidecar。
+    const anchor = document.querySelector<HTMLAnchorElement>("a.alpha-session")
+    expect(anchor).not.toBeNull()
+    const anchorLanding = parseRoute(anchor!.getAttribute("href")!)
+    expect({ kind: anchorLanding.kind, routeId: anchorLanding.identity.routeId }).toEqual({
+      kind: "session",
+      routeId: "session",
+    })
+    expect((anchorLanding as { serverKey?: string }).serverKey).toBe("sidecar")
+
+    // ② 真点击:真实 router 收到的落点同样钉在 sidecar,而不是 active 的 wsl:ubuntu。
+    const before = runtime.navigationIntents().length
+    anchor!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+    await settle()
+    const landed = sessionLandings(runtime.navigationIntents().slice(before)).find((route) => route.id === "ses_one")
+    expect(landed).toBeDefined()
+    expect(landed!.routeId).toBe("session")
+    expect(landed!.serverKey).toBe("sidecar")
+    expect(landed!.serverKey).not.toBe("wsl:ubuntu")
+
+    // ③ 反推入口清零:全程一条 legacy 形状的会话导航都没有。
+    expect(sessionLandings(runtime.navigationIntents()).filter((route) => route.routeId === "legacy-session")).toEqual([])
+  })
+
+  test("「打开项目」开出的新会话(active=sidecar,store 连 wsl:fedora)→ 落点钉在 wsl:fedora", async () => {
+    runtime.setHasProjects(false)
+    await mountShell(() => runtime.AlphaShellRemoteProjects())
+
+    openProjectButton()!.click()
+    await settle()
+
+    expect(runtime.createdIn()).toEqual([runtime.PICKED_DIRECTORY])
+    const landed = sessionLandings(runtime.navigationIntents()).find((route) => route.id === runtime.CREATED_SESSION_ID)
+    expect(landed).toBeDefined()
+    expect(landed!.routeId).toBe("session")
+    // 与上一条用例点击那一刻的 key("sidecar")相异 —— 写死单值的实现两条不可能同时绿。
+    expect(landed!.serverKey).toBe("wsl:fedora")
+    expect(landed!.serverKey).not.toBe("sidecar")
+    expect(sessionLandings(runtime.navigationIntents()).filter((route) => route.routeId === "legacy-session")).toEqual([])
+  })
+
+  test("draft 晋升(active=sidecar,store 连 wsl:fedora):draft 带 store 的 server,上游 promoteDraft 的真实导航落在 wsl:fedora", async () => {
+    await mountShell(() => runtime.AlphaShellRemoteProjects())
+
+    // 启动导航自己建 draft(#656)。#925:draft 的 server 段 = store 的 server,不再是 active ——
+    // 会话是 `projects.startChat` 在 store 的 server 上建的,draft 带 active 时,上游
+    // `promoteDraft`(packages/app createDraftRoute)会把 session tab 与导航都落到一台没有
+    // 这个会话的机器上。
+    await waitFor(() => runtime.draftTabs().length > 0, "启动草稿落地")
+    const draft = runtime.draftTabs().at(-1)!
+    expect(draft.server).toBe("wsl:fedora")
+    expect(draft.server).not.toBe("sidecar")
+    await waitFor(() => runtime.routerPath() === runtime.draftHref(draft.draftID), "壳落在新草稿页")
+
+    // 探针把「已建成的会话」交回**上游生产 promoteDraft**:真实 tabs 交换 + 真实导航。
+    const probe = document.querySelector<HTMLButtonElement>("[data-harness-promote]")
+    expect(probe).not.toBeNull()
+    probe!.click()
+    await waitFor(
+      () => sessionLandings(runtime.navigationIntents()).some((route) => route.id === runtime.PROMOTED_SESSION_ID),
+      "晋升导航落地",
+    )
+    const landed = sessionLandings(runtime.navigationIntents()).find((route) => route.id === runtime.PROMOTED_SESSION_ID)
+    expect(landed!.routeId).toBe("session")
+    expect(landed!.serverKey).toBe("wsl:fedora")
+    expect(landed!.serverKey).not.toBe("sidecar")
+    expect(sessionLandings(runtime.navigationIntents()).filter((route) => route.routeId === "legacy-session")).toEqual([])
+  })
+
+  test("自动化「回跳会话」(active=wsl:ubuntu,store 连 wsl:arch)→ 落点钉在 wsl:arch", async () => {
+    await mountShell(() => runtime.AlphaShellAutomationRemote())
+    runtime.openAutomationPanel()
+    await waitFor(() => document.querySelector(".alpha-auto-row") !== null, "自动化任务列表渲染")
+
+    // 进任务详情 → 运行历史 → 点「打开会话」(带 sessionID 的那条 run 才渲染这个按钮)。
+    document
+      .querySelector<HTMLElement>(".alpha-auto-row")!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+    await waitFor(() => document.querySelector(".alpha-auto-hist .alpha-ext-link") !== null, "运行历史的回跳按钮渲染")
+    document.querySelector<HTMLButtonElement>(".alpha-auto-hist .alpha-ext-link")!.click()
+    await settle()
+
+    const landed = sessionLandings(runtime.navigationIntents()).find(
+      (route) => route.id === runtime.AUTOMATION_SESSION_ID,
+    )
+    expect(landed).toBeDefined()
+    expect(landed!.routeId).toBe("session")
+    // run 的会话由主进程建在 projects store 连着的那台上;三个 #925 用例的 key 各不相同。
+    expect(landed!.serverKey).toBe("wsl:arch")
+    expect(landed!.serverKey).not.toBe("wsl:ubuntu")
+    expect(landed!.serverKey).not.toBe("sidecar")
+    expect(sessionLandings(runtime.navigationIntents()).filter((route) => route.routeId === "legacy-session")).toEqual([])
+  })
 })

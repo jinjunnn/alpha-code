@@ -20,7 +20,7 @@ import { pathToFileURL } from "node:url"
 import { build } from "vite"
 import type { render } from "solid-js/web"
 import type * as Runtime from "./alpha-session-search-test-runtime"
-import { decodeDirectory, hrefFor } from "../../shared/route-manifest"
+import { decodeDirectory, hrefFor, navFor } from "../../shared/route-manifest"
 
 type TestRuntime = typeof Runtime & { render: typeof render }
 
@@ -199,7 +199,7 @@ describe("按标题搜会话,跳转 href 钉在结果来源的 server 上", () =
     expect(segments[3]).toBe("session")
     expect(segments[4]).toBe("ses_new")
     // legacy `sessionHref(dir, id)` 在无 tab 映射时回退当前 active server —— 明确不是它。
-    expect(href).not.toBe(hrefFor.legacySession(runtime.FIXTURE_DIRECTORY, "ses_new"))
+    expect(href).not.toBe(navFor.legacySession(runtime.FIXTURE_DIRECTORY, "ses_new").href)
   })
 
   test("换一个来源 server,href 跟着换 —— server 身份是取来的,不是常量", async () => {

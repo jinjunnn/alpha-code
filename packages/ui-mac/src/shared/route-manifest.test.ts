@@ -277,9 +277,11 @@ describe("manifest-derived parse, href, and navigation", () => {
     expect(hrefFor.sessionAdmission("/Users/dev/proj", "continue here")).toBe(
       "/L1VzZXJzL2Rldi9wcm9q/session?prompt=continue%20here",
     )
-    expect(hrefFor.legacySession("/Users/dev/proj", "ses_123")).toBe(
-      "/L1VzZXJzL2Rldi9wcm9q/session/ses_123",
-    )
+    // `#925`:`hrefFor` 里**故意没有** legacySession —— legacy 形状不带 server 段,是 `#894`/`#925`
+    // 那个「落到没有该会话的机器」缺陷的产生器。这里正向钉住「它不在」,否则谁顺手加回来无人变红。
+    expect("legacySession" in hrefFor).toBe(false)
+    // 形状本身仍要能造出来(`parseRoute` 要解析 packages/app 今天仍在产的那批 URL),只是不在 hrefFor 里。
+    expect(navFor.legacySession("/Users/dev/proj", "ses_123").href).toBe("/L1VzZXJzL2Rldi9wcm9q/session/ses_123")
     expect(hrefFor.session("sidecar", "ses_123")).toBe("/server/c2lkZWNhcg/session/ses_123")
     expect(hrefFor.newSession("d 1", "a+b")).toBe("/new-session?draftId=d%201&prompt=a%2Bb")
     expect(hrefFor.newSession("d1")).toBe("/new-session?draftId=d1")
