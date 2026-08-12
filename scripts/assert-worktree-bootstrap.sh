@@ -64,6 +64,23 @@ MAIN="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || {
   echo "✗ 不在一个 git 仓库里" >&2; exit 1
 }
 MAIN="${MAIN%/.git}"
+# ── 开跑前先清上一轮的残骸(`#928`)────────────────────────────────────────────────
+# 本脚本的 `trap cleanup EXIT` 对**可捕获**的信号都有效(实测:TERM/INT/HUP 三者 EXIT trap
+# 都跑、零残留),但 `SIGKILL` 结构上跑不了任何 trap —— 工具超时杀进程组就是这个形状。
+# 实测复现:在 `bun install` 写盘的时刻对整组 `kill -KILL` ⇒ 留下一棵 **496M 半装**的
+# worktree,**既注册在案又在盘上**,`git worktree prune` 清不掉。一晚四条 lane 跑五次门
+# = 6.3 GB。所以清理不能只有「退出时清自己」这一条路径,还必须有「开跑时清上一轮」。
+# 判「无主」的证据与「拿不准就留着」的方向在 scripts/worktree-probe-sweep.sh 里说明 ——
+# 并发 lane 的探针树正活着,误删它等于让别人的门在与他改动无关的地方变红。
+#
+# 放在 `[ -f "$BOOTSTRAP" ]` 之前:清的是**这个仓遗留的共享状态**,与本次能力判据跑不跑得成
+# 无关;把它挂在判据的前置条件后面,等于「前置不满足就不修上一轮的破坏」。
+# 找不到就**拦住**,不是静默跳过:静默跳过等于「清扫被删掉之后一切照绿」,
+# 而泄漏是不可见的(下一个人只会看见 `git worktree list` 越来越长)。
+SWEEP="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/worktree-probe-sweep.sh"
+[ -f "$SWEEP" ] || { echo "✗ 找不到 $SWEEP —— 上一轮被杀留下的探针树没人清" >&2; exit 1; }
+bash "$SWEEP"
+
 # 被测的是**跑本脚本的这棵树**上的那份 bootstrap,不是主 checkout 那份 —— 否则在 worktree 里
 # 跑 alpha-check 时,量到的是共享树上的旧版本(而本票的全部意义就是「别去量别人的树」)。
 SELF_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -86,13 +103,10 @@ HOOKS_ORIGINAL="$(git -C "$MAIN" config --local --get core.hooksPath 2>/dev/null
 
 cleanup() {
   local n now
-  for n in "$NEG" "$POS" "$FAIL"; do
-    [ -e "$MAIN/.worktrees/$n" ] || continue
-    git -C "$MAIN" worktree remove --force "$MAIN/.worktrees/$n" 2>/dev/null || rm -rf "$MAIN/.worktrees/$n"
-  done
-  git -C "$MAIN" worktree prune 2>/dev/null || true
-  # 还原本脚本在 [3/6] 里动过的共享配置。崩溃时的残留值是 `.githooks` —— 正是 REQ-015 想要的那个,
-  # 所以这里失手也不会让别人的门变松。
+  # ★ 顺序有意义(`#928`):**先**还原共享配置,**再**删探针树。
+  # 删一棵装好的探针树要动 2.8 GB,是 cleanup 里唯一的慢动作;共享 `.git/config` 只要一次
+  # git 调用。反过来排(删树在前)的话,清理跑到一半再被杀,丢的就是**共享配置**那一半 ——
+  # 而两件事里只有它会影响别人:下一个人 `git push` 撞上的会是 husky 那份恒红钩子。
   now="$(git -C "$MAIN" config --local --get core.hooksPath 2>/dev/null || true)"
   if [ "$now" != "$HOOKS_ORIGINAL" ]; then
     if [ -n "$HOOKS_ORIGINAL" ]; then
@@ -101,6 +115,11 @@ cleanup() {
       git -C "$MAIN" config --local --unset core.hooksPath 2>/dev/null || true
     fi
   fi
+  for n in "$NEG" "$POS" "$FAIL"; do
+    [ -e "$MAIN/.worktrees/$n" ] || continue
+    git -C "$MAIN" worktree remove --force "$MAIN/.worktrees/$n" 2>/dev/null || rm -rf "$MAIN/.worktrees/$n"
+  done
+  git -C "$MAIN" worktree prune 2>/dev/null || true
 }
 trap cleanup EXIT
 
