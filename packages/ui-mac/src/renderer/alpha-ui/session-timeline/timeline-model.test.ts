@@ -106,6 +106,11 @@ function toolPart(id: string, messageID: string, tool: string, over: Partial<Too
   }
 }
 
+/** 有效的宿主内建 display 快照(identity 分派闸的正向输入;#587 媒体行同闸)。 */
+function builtinDisplay(name: string) {
+  return { identity: { source: "builtin", origin: "", name }, technicalId: name, authority: { kind: "not-asserted" } }
+}
+
 function filePart(id: string, messageID: string, over: Partial<FilePart> = {}): FilePart {
   return {
     id,
@@ -371,6 +376,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
 
   test("媒体行(生产通道):完成态工具附件投影为 media 行,带附件的探查工具不进折叠组", () => {
     const withAttachment = toolPart("prt_r1", "msg_a1", "read", {
+      display: builtinDisplay("read"),
       state: {
         status: "completed",
         input: { filePath: "/a/shot.png" },
@@ -393,8 +399,9 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(media.key).toBe("media:prt_r1:0")
     expect(media.media).toMatchObject({ partID: "prt_r1", name: "image/png", mime: "image/png" })
 
-    // 畸形附件条目 fail-closed 丢弃。
+    // 畸形附件条目 fail-closed 丢弃(快照有效,专测附件形状闸)。
     const malformed = toolPart("prt_r9", "msg_a1", "read", {
+      display: builtinDisplay("read"),
       state: {
         status: "completed",
         input: {},
@@ -410,6 +417,36 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       msg_a1: [malformed],
     })
     expect(failClosed.some((row) => row.kind === "media")).toBe(false)
+  })
+
+  test("媒体行同 identity 分派闸(#587 R-final):metadata-only 降级的 part 附件零媒体行", () => {
+    const attachments = [{ type: "file", mime: "image/png", url: "data:image/png;base64,eA==" }]
+    const state = {
+      status: "completed",
+      input: {},
+      output: "ok",
+      title: "远端标题",
+      metadata: {},
+      time: { start: 0, end: 1 },
+      attachments,
+    } as ToolPart["state"]
+    // 第三方 MCP identity(降级卡):附件不得渲染为媒体行。
+    const thirdParty = toolPart("prt_m1", "msg_a1", "srv_capture", {
+      display: {
+        identity: { source: "mcp", origin: "srv", name: "capture" },
+        technicalId: "srv_capture",
+        authority: { kind: "not-asserted" },
+      },
+      state,
+    } as Partial<ToolPart>)
+    // 快照缺失(历史行/非法形状):同样 fail-closed。
+    const noSnapshot = toolPart("prt_m2", "msg_a1", "read", { state })
+    const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "x")],
+      msg_a1: [thirdParty, noSnapshot],
+    })
+    expect(rows.filter((row) => row.kind === "tool")).toHaveLength(2)
+    expect(rows.some((row) => row.kind === "media")).toBe(false)
   })
 
   test("I7 折叠组成员上限:超长连续探查段切成多个组行", () => {

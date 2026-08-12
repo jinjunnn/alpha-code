@@ -5,7 +5,7 @@
 // (head/body/dispatch —— 渲染层逐字显示的东西)上,不断言内部纯函数。
 // 锚点一律独立字面量,不 import 被测对象的常量(自指等价链禁忌)。
 import { describe, expect, test } from "bun:test"
-import type { ToolDisplaySnapshotV1, ToolPart, ToolState } from "@opencode-ai/sdk/v2/client"
+import type { Part, ToolDisplaySnapshotV1, ToolPart, ToolState } from "@opencode-ai/sdk/v2/client"
 import {
   contextRowOf,
   diagnosticsOf,
@@ -16,7 +16,7 @@ import {
   toolCardHeadOf,
   toolDevDetailsOf,
 } from "./tool-card-model"
-import { artifactLinksOf } from "../timeline-model"
+import { artifactLinksOf, projectTimelineRows } from "../timeline-model"
 // 生产字典是被验对象(标题必须真的解析成中文);期望值用本文件的独立字面量,
 // 不 import 被测模型的常量(自指等价链禁忌)。
 import { dict as zhDict } from "../../../i18n/zh"
@@ -626,6 +626,71 @@ describe("#587 AC2 — 安全通用卡的隐藏理由是确定分支,不携带�
       }),
     )
     expect([cloud.metadataOnly, cloud.hiddenReason]).toEqual([false, undefined])
+  })
+})
+
+describe("#587 R-final — 媒体行受同一条 identity 分派闸:第三方附件不绕过降级卡", () => {
+  // 附件是第三方可控输出(engine 把 MCP image/resource blob 写成
+  // ToolStateCompleted.attachments,url=data:…、filename 远端自选)。降级卡声称
+  // 「参数、错误和输出保持隐藏」,媒体预览行是同一 part 的输出投影 —— 放宽
+  // timeline-model 的 dispatch 闸(metadataOnly ⇒ 零媒体行)必须让这里变红。
+  const attachments = [{ type: "file", mime: "image/png", url: "data:image/png;base64,eA==", filename: "外部名" }]
+  const attachedState = () =>
+    ({
+      status: "completed",
+      input: {},
+      output: "ok",
+      title: "远端标题",
+      metadata: {},
+      time: { start: 0, end: 1 },
+      attachments,
+    }) as ToolState
+  const projectRowsOf = (part: ToolPart) =>
+    projectTimelineRows({
+      messages: [
+        {
+          id: "msg_u",
+          sessionID: "ses_g",
+          role: "user",
+          time: { created: 1000 },
+          agent: "build",
+          model: { providerID: "p", modelID: "m" },
+        },
+        {
+          id: "msg_g",
+          sessionID: "ses_g",
+          role: "assistant",
+          parentID: "msg_u",
+          time: { created: 10, completed: 20 },
+          modelID: "m",
+          providerID: "p",
+          mode: "build",
+          agent: "build",
+          path: { cwd: "/tmp", root: "/tmp" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      ] as Parameters<typeof projectTimelineRows>[0]["messages"],
+      partsOf: (id) => (id === "msg_g" ? [part] : [{ id: "prt_u", sessionID: "ses_g", messageID: "msg_u", type: "text", text: "x" } as Part]),
+      status: "idle",
+    })
+
+  test("正向对照:builtin read 的同形附件确实渲染媒体行(证明手段能测出已知的坏)", () => {
+    const rows = projectRowsOf(toolPart({ tool: "read", display: builtin("read"), state: attachedState() }))
+    expect(rows.filter((row) => row.kind === "media")).toHaveLength(1)
+  })
+
+  test("第三方 MCP identity 携同形附件 ⇒ 工具行照出(降级卡),媒体行为零", () => {
+    const rows = projectRowsOf(
+      toolPart({ tool: "srv_capture", display: mcp("srv", "capture"), state: attachedState() }),
+    )
+    expect(rows.filter((row) => row.kind === "tool")).toHaveLength(1)
+    expect(rows.some((row) => row.kind === "media")).toBe(false)
+  })
+
+  test("快照缺失(历史行)携附件 ⇒ 媒体行为零(fail-closed)", () => {
+    const rows = projectRowsOf(toolPart({ tool: "read", display: undefined, state: attachedState() }))
+    expect(rows.some((row) => row.kind === "media")).toBe(false)
   })
 })
 

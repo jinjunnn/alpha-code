@@ -21,6 +21,7 @@ import type {
   UserMessage,
 } from "@opencode-ai/sdk/v2/client"
 import type { AlphaSessionIdentity } from "../session-workspace/session-workspace-core"
+import { toolCardDispatchOf } from "./cards/tool-card-model"
 
 /** I7 资源耗尽面:单块内容进渲染管线前的硬上限(字符)。 */
 export const MARKDOWN_MAX_CHARS = 60_000
@@ -727,6 +728,10 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           links,
         })
       // 工具附件(生产上图片/PDF 的真实通道)→ 媒体预览行,挂在工具卡之后。
+      // #587 审计 R-final:媒体行与卡同一条 identity 分派闸 —— metadata-only 降级
+      // (第三方 MCP/plugin/快照缺失或非法)的 part,其附件(远端可控的 data: URL 与
+      // 文件名)不得绕过降级卡在主时间线渲染。fail-closed:降级即零媒体行。
+      if (toolCardDispatchOf(part).metadataOnly) return
       toolMediaOf(part).forEach((media, index) => {
         rows.push({
           kind: "media",
