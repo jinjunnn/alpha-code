@@ -156,6 +156,28 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(turn.kind === "turn" && turn.createdAt).toBe(2000)
   })
 
+  // #620:分隔行原来在气泡之前**无条件** push,于是 synthetic 续写(「继续生成」发出的那条)
+  // 会留下一条孤零零的「新回合」。分隔行现在跟着气泡走;续写的助手输出照常渲染。
+  test("回合里只有 synthetic 输入时:既无用户气泡,也不留分隔行,助手续写照常出行", () => {
+    const rows = project(
+      [
+        userMsg("msg_u1", 3000),
+        assistantMsg("msg_a1", "msg_u1"),
+        userMsg("msg_u2", 4000),
+        assistantMsg("msg_a2", "msg_u2"),
+      ],
+      {
+        msg_u1: [textPart("prt_u1", "msg_u1", "把配置抽成常量")],
+        msg_a1: [textPart("prt_t1", "msg_a1", "抽好了前一半")],
+        msg_u2: [textPart("prt_u2", "msg_u2", "接着写", { synthetic: true })],
+        msg_a2: [textPart("prt_t2", "msg_a2", "后一半也抽完了")],
+      },
+    )
+
+    expect(rows.map((row) => row.kind)).toEqual(["user", "markdown", "footnote", "markdown", "footnote"])
+    expect(rows.some((row) => row.kind === "turn")).toBe(false)
+  })
+
   test("提及分段:file/agent part 的 source 区间切出高亮片段", () => {
     const text = "对照 README.md 核对,交给 @build 处理"
     const fileStart = text.indexOf("README.md")

@@ -1908,8 +1908,9 @@ describe("#589 真实继续生成闸门(生产绑定层挂载,SDK 层观察)", (
     cont!.click()
     await settle()
 
+    // #620:续写的输入带 v1 wire 契约的 synthetic 标记(它是「系统替用户按的」,不是发言)。
     expect(sdkPromptCalls).toEqual([
-      { sessionID: BINDING_SESSION_ID, parts: [{ type: "text", text: "继续" }] },
+      { sessionID: BINDING_SESSION_ID, parts: [{ type: "text", text: "继续", synthetic: true }] },
     ])
     // 续写与 composer 同代次:新引擎那条链一次都不碰。
     expect(v2PromptCalls).toEqual([])
@@ -1964,6 +1965,69 @@ describe("#589 真实继续生成闸门(生产绑定层挂载,SDK 层观察)", (
 
     expect(sdkPromptCalls).toHaveLength(0)
     expect(host.querySelector(".a-tl-int-failed")).toBeNull()
+  })
+
+  // ── #620:判据落在**渲染出来的时间线**上,不断言 intent 的载荷字段 ──────────────
+  // 「续钮把 synthetic 传对了」和「用户看不到那条『继续』」是两件事(一个把标记传对、
+  // 投影却照渲的实现能满足前者)。所以下面这组用例:点真的按钮 → 拿续钮**真实发出的**
+  // parts → 按引擎的落库形态放回 typed store → 让生产绑定层重新投影 → 断言 DOM。
+  //
+  // 唯一被复刻的引擎行为是 v1 prompt 的默认分支 `{ ...part, messageID, sessionID }`
+  // (packages/opencode/src/session/prompt.ts):它原样保留 `synthetic`,而落库用的
+  // TextPart schema(packages/schema/src/v1/session.ts)本来就声明了该字段。回声之后
+  // 的投影与渲染全是生产代码,没有替身。真机那一跳(引擎确实续写)归本票的 L1 验证。
+  function echoAsEngine(call: unknown, messageID: string, createdAt: number) {
+    const { parts } = call as { parts: Array<Record<string, unknown>> }
+    bindingData.message[BINDING_SESSION_ID]!.push({
+      id: messageID,
+      sessionID: BINDING_SESSION_ID,
+      role: "user",
+      time: { created: createdAt },
+      agent: "build",
+      model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+    })
+    bindingData.part[messageID] = parts.map((part, index) => ({
+      ...part,
+      id: `prt_echo_${index}`,
+      sessionID: BINDING_SESSION_ID,
+      messageID,
+    }))
+  }
+
+  const bubbleTexts = (host: Element) =>
+    [...host.querySelectorAll("[data-alpha-timeline-row='user'] .a-tl-bubble")].map((node) => node.textContent)
+
+  test("#620 续钮发出的那条回到时间线时:零新增用户气泡,也不留孤立的回合分隔行", async () => {
+    primeInterruptedBinding()
+    sdkPromptImpl = () => Promise.resolve({})
+    const host = mountBinding()
+    await settle()
+
+    host.querySelector<HTMLButtonElement>(".a-tl-int-continue")!.click()
+    await settle()
+    expect(sdkPromptCalls).toHaveLength(1)
+    echoAsEngine(sdkPromptCalls[0], "msg_bu2", 3000)
+
+    const after = mountBinding()
+    await settle()
+
+    // 时间线上「用户说过的话」仍然只有开局那一句;续写不冒充用户发言。
+    expect(bubbleTexts(after)).toEqual(["开始"])
+    // 气泡没了,分隔行也不许剩下(否则用户看到一条孤零零的「新回合」)。
+    expect(after.querySelectorAll("[data-alpha-timeline-row='turn']")).toHaveLength(0)
+  })
+
+  test("#620 反向控制:同一条回声路径上,用户自己发的第二条照旧出气泡 + 回合分隔", async () => {
+    primeInterruptedBinding()
+    // 同一条落库形态,只差一个 synthetic —— 证明上一条用例的判据测得出「渲染了」这件事,
+    // 也挡住「把分隔行整个删掉」这种过头改法。
+    echoAsEngine({ parts: [{ type: "text", text: "顺带把 README 也改了" }] }, "msg_bu3", 4000)
+
+    const after = mountBinding()
+    await settle()
+
+    expect(bubbleTexts(after)).toEqual(["开始", "顺带把 README 也改了"])
+    expect(after.querySelectorAll("[data-alpha-timeline-row='turn']")).toHaveLength(1)
   })
 })
 

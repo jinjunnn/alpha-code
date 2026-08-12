@@ -641,15 +641,6 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
       : undefined) ?? (input.status !== "idle" ? users.at(-1)?.id : undefined)
 
   users.forEach((userMessage, index) => {
-    if (index > 0)
-      rows.push({
-        kind: "turn",
-        key: `turn:${userMessage.id}`,
-        rev: String(userMessage.time.created),
-        userMessageID: userMessage.id,
-        createdAt: userMessage.time.created,
-      })
-
     const userParts = input.partsOf(userMessage.id)
     const textPart = userParts.find((part): part is TextPart => part.type === "text" && !part.synthetic)
     const rawText = textPart?.text ?? ""
@@ -660,7 +651,22 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
     const turnAssistants = assistantsByParent.get(userMessage.id) ?? []
     const slash = slashOriginForTurn(input.slashOrigins, new Set(turnAssistants.map((message) => message.id)))
 
-    if (text || attachments.length > 0 || comments.length > 0 || slash)
+    // 用户气泡是否渲染 —— 回合分隔行跟着它走(#620)。分隔行原来在此之前**无条件** push,
+    // 于是没有气泡的回合(如「继续生成」发出的 synthetic 续写)会在时间线上留下一条
+    // 孤零零的「时间 · 新回合」。分隔行的语义是「上一段到此为止,下面是你新说的话」,
+    // 没有那句话就没有可分隔的东西;该回合的助手输出照常渲染。
+    const userVisible = Boolean(text || attachments.length > 0 || comments.length > 0 || slash)
+
+    if (index > 0 && userVisible)
+      rows.push({
+        kind: "turn",
+        key: `turn:${userMessage.id}`,
+        rev: String(userMessage.time.created),
+        userMessageID: userMessage.id,
+        createdAt: userMessage.time.created,
+      })
+
+    if (userVisible)
       rows.push({
         kind: "user",
         key: `user:${userMessage.id}`,
