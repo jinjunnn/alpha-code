@@ -160,14 +160,21 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
     // 吞掉(审计 R1 Major;async 函数把同步抛错一并折算成 rejection)。v1 SDK 把 HTTP 失败
     // 装进 `{ error }` 信封而不是 reject,所以信封必须显式翻译成 rejection —— 否则「引擎拒了」
     // 会被当成成功,又是一次静默。
+    // #620:续写的输入是**系统替用户按下的**,不是用户说的话 —— 用 v1 wire 契约本来就有的
+    // `synthetic`(schema/src/v1/session.ts 的 TextPartInput)标记它:引擎落库原样带着
+    // (opencode/src/session/prompt.ts 的默认分支 `{ ...part }`)、组模型消息时照样发给模型
+    // (message-v2.ts 只过滤 `ignored`),而 alpha 的行投影按 `!part.synthetic` 取正文,
+    // 于是时间线里不再多出一条用户自己「说」的「继续」。上游自动压缩后的续写用的就是这条
+    // (opencode/src/session/compaction.ts)。typed 客户端的 TextPartInput 已含该字段,
+    // 因此这里不需要 `as never`。
     continueTurn: async () => {
       const id = sessionID()
       if (!id) return
       if ((session().data.session_status[id]?.type ?? "idle") !== "idle") return
       const result = await serverSDK().client.session.promptAsync({
         sessionID: id,
-        parts: [{ type: "text", text: t("alpha.timeline.continuePrompt") }],
-      } as never)
+        parts: [{ type: "text", text: t("alpha.timeline.continuePrompt"), synthetic: true }],
+      })
       if ((result as { error?: unknown } | undefined)?.error !== undefined)
         throw new Error("continue turn was rejected by the engine")
     },
