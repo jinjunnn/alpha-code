@@ -499,8 +499,18 @@ describe("#925 多 server 下的会话导航:落在真正持有该会话的 serv
    写死单值、或按 active 反推的实现,至少两条当场红。绕过实验(把 legacySessionServer 改回
    `?? active` / 摘掉身份闸 / 通知 href 改回 legacy 形状)各自把对应用例翻红,记录见 PR。 */
 describe("#933 legacy 会话 href 咽喉收口:反推默认拒绝 + 侧栏身份闸 + 通知钉真机", () => {
+  /** 把壳从启动草稿页开回首页再驱动。从 draft 路由出发时,上游 DraftRoute 的 fallback
+   *  (pending location 丢了 draftId → `<Navigate href="/">`)会与被测 redirect **竞速**,
+   *  哪边赢随时序漂移 —— 实测它能把绕过实验的错误落点整个吃掉,判据两个方向都绿。
+   *  先落首页,竞速者退场,后面的每一跳才都是被测代码自己的。 */
+  async function settleOnHome() {
+    runtime.navigateTo(homeHref())
+    await waitFor(() => runtime.routerPath() === homeHref(), "先回到首页")
+  }
+
   test("存量 legacy URL 的 id 不在任何 tab 里(active=wsl:ubuntu 恰好有同 id 无关会话)→ 回家,不打开它", async () => {
     await mountShell(() => runtime.AlphaShellRemoteActive())
+    await settleOnHome()
     const before = runtime.navigationIntents().length
 
     runtime.navigateTo(`/${encodeDirectory(runtime.FIXTURE_DIRECTORY)}/session/ses_ghost`)
@@ -512,6 +522,7 @@ describe("#933 legacy 会话 href 咽喉收口:反推默认拒绝 + 侧栏身份
         ),
       "legacy 导航发生",
     )
+    await settle()
     await waitFor(() => runtime.routerPath() === homeHref(), "回到首页")
 
     // 旧版反推在这里回落 active:真实 router 会收到并**提交** /server/<wsl:ubuntu>/session/ses_ghost,
@@ -522,6 +533,7 @@ describe("#933 legacy 会话 href 咽喉收口:反推默认拒绝 + 侧栏身份
 
   test("存量 legacy URL,唯一持有该会话的 tab 在 wsl:fedora(active=sidecar)→ 仍放行到 wsl:fedora", async () => {
     await mountShell(() => runtime.AlphaShellRemoteProjects())
+    await settleOnHome()
 
     // 经上游生产 tabs.addSessionTab 在 wsl:fedora 上留下持久化痕迹(用户曾在那台开过这条会话)。
     runtime.openSessionTab("wsl:fedora", "ses_tab_only")
@@ -549,6 +561,7 @@ describe("#933 legacy 会话 href 咽喉收口:反推默认拒绝 + 侧栏身份
 
   test("经 canonical 路由打开别台机器(wsl:ubuntu)的同 id 会话 → 侧栏不高亮、不抹未读点", async () => {
     await mountShell(() => runtime.AlphaShellRemoteActive()) // store 连 sidecar,列出 ses_one(updated=10)
+    await settleOnHome()
     runtime.expandProject(runtime.FIXTURE_DIRECTORY)
     runtime.seedSessionViewed("ses_one", 4) // 水位 4 < updated 10 → 未读点亮起
     await settle()
@@ -568,6 +581,7 @@ describe("#933 legacy 会话 href 咽喉收口:反推默认拒绝 + 侧栏身份
 
   test("同形 canonical 路由指回 store 自己的 server(wsl:arch)→ 高亮该行并推进已读水位", async () => {
     await mountShell(() => runtime.AlphaShellAutomationRemote()) // store 连 wsl:arch
+    await settleOnHome()
     runtime.expandProject(runtime.FIXTURE_DIRECTORY)
     runtime.seedSessionViewed("ses_one", 4)
     await settle()
