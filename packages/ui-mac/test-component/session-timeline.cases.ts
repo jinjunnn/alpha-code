@@ -1290,18 +1290,29 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     runtime.setTimelineIntentsEnabled(true)
     runtime.setTimelineRows(
       assistantFixture([
-        toolPartFixture("prt_c1", "cloud_await", {
-          status: "completed",
-          input: {},
-          output: JSON.stringify({
-            job_id: "job_7f3a",
+        toolPartFixture(
+          "prt_c1",
+          "cloud_await",
+          {
             status: "completed",
-            artifacts: ["营收对比图.png", "数据底表.parquet"],
-          }),
-          title: "await",
-          metadata: {},
-          time: { start: 0, end: 1 },
-        }),
+            input: {},
+            output: JSON.stringify({
+              job_id: "job_7f3a",
+              status: "completed",
+              artifacts: ["营收对比图.png", "数据底表.parquet"],
+            }),
+            title: "await",
+            metadata: {},
+            time: { start: 0, end: 1 },
+          },
+          // #879 审计 R-final:产物行准入 = 第一方 cloud facade identity(mcp, "cloud"),
+          // 不再是 cloud_ 别名前缀 —— 夹具与真实注入的 facade 快照同形状。
+          {
+            identity: { source: "mcp", origin: "cloud", name: "await" },
+            technicalId: "cloud_await",
+            authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"c".repeat(64)}` },
+          },
+        ),
       ]),
     )
     await flush()
