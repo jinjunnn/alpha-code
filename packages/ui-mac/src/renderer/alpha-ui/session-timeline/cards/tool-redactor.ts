@@ -25,7 +25,10 @@ const TEXT_PATTERNS: RegExp[] = [
   // HTTP credential 形态。
   /\b(?:bearer|basic)\s+[A-Za-z0-9\-._~+/=]{8,}/gi,
   // secret 味的赋值(env / JSON / YAML:`X_TOKEN=…`、`"api_key": …`)。
-  /[\w.-]*(?:tokens?|secrets?|passwd|password|api[-_]?key|credentials?|private[-_]?key)[\w.-]*["']?\s*[:=]\s*["']?[^\s"']+/gi,
+  // 关键词前后的 key 名量词必须有界:无界 `[\w.-]*` 在长不间断 [\w.-] 输出
+  // (hex/base64url 单行)上是 O(n²) 回溯,实测 16k→544ms、64k→8.8s,关键词密集
+  // 形状(`token` 重复)16k 超 110s —— 渲染进程主线程直接冻结(#879 审计 R-final)。
+  /[\w.-]{0,64}(?:tokens?|secrets?|passwd|password|api[-_]?key|credentials?|private[-_]?key)[\w.-]{0,64}["']?\s*[:=]\s*["']?[^\s"']+/gi,
   // 常见 token 前缀。
   /\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}/g,
   /\bgh[pousr]_[A-Za-z0-9]{16,}\b/g,

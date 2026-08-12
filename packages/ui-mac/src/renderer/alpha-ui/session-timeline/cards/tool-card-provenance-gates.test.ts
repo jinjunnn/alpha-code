@@ -15,6 +15,7 @@ import {
   toolCardDispatchOf,
   toolCardHeadOf,
 } from "./tool-card-model"
+import { artifactLinksOf } from "../timeline-model"
 
 function toolPart(input: {
   tool: string
@@ -414,6 +415,94 @@ describe("#879 T6 — 路径 sentinel / 自由文本 / 错误 / 输出 / diff �
     )
     if (body.type !== "term") throw new Error("expected term body")
     expect(body.output).toBe("prefix line\n[已隐藏]")
+  })
+})
+
+describe("#879 R-final 1 — 共享 redactor 在长不间断输出上保持线性(渲染进程不冻结)", () => {
+  // 有界量词修复前的实测(本机):hex 单行 16k 经 term 体 544ms、64k 单行经 diff 体
+  // 8.75s、关键词密集形状(`token` 重复)16k 超 110s —— 全部主线程。修复后三者合计
+  // < 200ms。预算取 2000ms:对旧实现三个形状各自单独超限,对新实现留 >10× 余量。
+  test("hex / 关键词密集 / 64k 单行 diff 三种对抗形状,经生产投影路径合计 < 2000ms 且内容不失真", () => {
+    const hexLine = "0123456789abcdef".repeat(1000) // 16k,openssl rand -hex 8000 形状
+    const tokenDense = "token".repeat(3200) // 16k,关键词密集(杀「只钉前导量词」的半修)
+    const diffLine = "fedcba9876543210".repeat(4000) // 64k 单行,进 redactedDiffOf 的逐行路径
+    const started = performance.now()
+    const hexBody = toolCardBodyOf(
+      toolPart({
+        tool: "bash",
+        display: builtin("bash"),
+        state: completed({ command: "openssl rand -hex 8000" }, hexLine, { exit: 0 }),
+      }),
+    )
+    const tokenBody = toolCardBodyOf(
+      toolPart({
+        tool: "bash",
+        display: builtin("bash"),
+        state: completed({ command: "cat words.txt" }, tokenDense, { exit: 0 }),
+      }),
+    )
+    const diffBody = toolCardBodyOf(
+      toolPart({
+        tool: "edit",
+        display: builtin("edit"),
+        state: completed({ filePath: "/w/blob.bin.b64" }, "", {
+          diff: `--- a/blob.bin.b64\n+++ b/blob.bin.b64\n@@ -0,0 +1 @@\n+${diffLine}\n`,
+        }),
+      }),
+    )
+    const elapsed = performance.now() - started
+    // 内容不失真:三个形状都不含 secret 赋值,不得被误替换或整字段隐藏。
+    if (hexBody.type !== "term") throw new Error("expected term body for hex output")
+    expect(hexBody.output).toBe(hexLine)
+    if (tokenBody.type !== "term") throw new Error("expected term body for token output")
+    expect(tokenBody.output).toBe(tokenDense)
+    if (diffBody.type !== "diff") throw new Error("expected diff body for 64k line patch")
+    expect(diffBody.patch).toContain(diffLine)
+    expect({ linearBudgetMs: 2000, withinBudget: elapsed < 2000 }).toEqual({
+      linearBudgetMs: 2000,
+      withinBudget: true,
+    })
+  })
+})
+
+describe("#879 R-final 2 — 产物链接行只认第一方 cloud facade identity,不认 cloud_ 别名前缀", () => {
+  const spoofOutput = JSON.stringify({
+    job_id: "run_evil_7",
+    status: "completed",
+    artifacts: ["恶意产物入口.docx", "第二个假产物.png"],
+  })
+
+  test("撞前缀的 plugin / MCP / 无快照历史行:同一份合法产物 payload 也不出链接行", () => {
+    // 负向夹具不退化:payload 与真实完成态逐字段同形,只有 identity 来源不同。
+    const spoofs: Array<[string, ToolDisplaySnapshotV1 | undefined]> = [
+      // plugin 命名空间 `cloud`,工具 id `cloud_x`(tool/registry.ts `${namespace}_${id}`)。
+      ["cloud_x", plugin("cloud", "x")],
+      // MCP 配置键 `cloud.x` sanitize 成 `cloud_x`,别名 `cloud_x_y`(mcp/catalog.ts toolName)。
+      ["cloud_x_y", mcp("cloud.x", "y")],
+      // identity 缺失(历史行):裸别名不再是准入。
+      ["cloud_await", undefined],
+    ]
+    for (const [tool, display] of spoofs) {
+      const links = artifactLinksOf(toolPart({ tool, display, state: completed({}, spoofOutput) }))
+      expect({ tool, links }).toEqual({ tool, links: [] })
+    }
+  })
+
+  test("对照(杀「产物行一律不出」的错误实现):identity=(mcp, cloud) 才出行,且不依赖 authority 铸没铸出来", () => {
+    // 真第一方 facade:origin = 宿主注入的配置键 "cloud"。authority 故意用 not-asserted ——
+    // 审计裁定 category==="alpha-cloud"(依赖 governedMcpEvidence 运行时铸造)会误杀现网
+    // 真实云产物行,准入只看 identity。
+    const links = artifactLinksOf(
+      toolPart({
+        tool: "cloud_await",
+        display: mcp("cloud", "await"),
+        state: completed(
+          {},
+          JSON.stringify({ job_id: "run_real_3", status: "completed", artifacts: ["对账底稿.xlsx"] }),
+        ),
+      }),
+    )
+    expect(links).toEqual([{ runId: "run_real_3", name: "对账底稿.xlsx" }])
   })
 })
 

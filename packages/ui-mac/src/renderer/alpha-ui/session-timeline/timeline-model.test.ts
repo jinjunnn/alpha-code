@@ -400,13 +400,19 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(groups.map((group) => (group.kind === "toolgroup" ? group.parts.length : 0))).toEqual([24, 6])
   })
 
-  test("产物链接行:完成态 cloud_* 工具输出解析出 artifacts 名单才出行(fail-closed)", () => {
+  test("产物链接行:identity 为第一方 cloud facade 且完成态、输出解析出 artifacts 名单才出行(fail-closed)", () => {
     const output = JSON.stringify({
       job_id: "job_1",
       status: "completed",
       artifacts: [{ name: "季度分析.docx" }, "营收对比.png", { bogus: true }],
     })
+    const cloudDisplay = {
+      identity: { source: "mcp", origin: "cloud", name: "await" },
+      technicalId: "cloud_await",
+      authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"a".repeat(64)}` },
+    } as ToolPart["display"]
     const cloudDone = toolPart("prt_c1", "msg_a1", "cloud_await", {
+      display: cloudDisplay,
       state: { status: "completed", input: {}, output, title: "await", metadata: {}, time: { start: 0, end: 1 } },
     })
     const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
@@ -426,6 +432,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(
       artifactLinksOf(
         toolPart("prt_c3", "msg_a1", "cloud_await", {
+          display: cloudDisplay,
           state: {
             status: "completed",
             input: {},
@@ -440,6 +447,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(
       artifactLinksOf(
         toolPart("prt_c4", "msg_a1", "cloud_await", {
+          display: cloudDisplay,
           state: {
             status: "completed",
             input: {},
@@ -448,6 +456,16 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
             metadata: {},
             time: { start: 0, end: 1 },
           },
+        }),
+      ),
+    ).toEqual([])
+
+    // #879 审计 R-final:别名前缀 cloud_ 不再是准入 —— identity 缺失的 cloud_await
+    // 同一份合法产物 payload 也不出行(历史行 / 无快照来源 fail-closed)。
+    expect(
+      artifactLinksOf(
+        toolPart("prt_c5", "msg_a1", "cloud_await", {
+          state: { status: "completed", input: {}, output, title: "await", metadata: {}, time: { start: 0, end: 1 } },
         }),
       ),
     ).toEqual([])
