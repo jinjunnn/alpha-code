@@ -112,10 +112,16 @@ export interface ToolCardDispatch {
 // 本表精确命中 identity.name。判云端的唯一铸币是 authority(F5/T3);server 配置键
 // (origin)与工具名都不是证据,所以本表不比对 origin 字符串 —— origin 冒充
 // "cloud" 而无 authority 的调用仍是第三方 MCP 降级卡。
-// identity.name 是引擎持久化的**远端工具原名**(mcp/index.ts:712 以 def.name 铸造);
-// 云 worker advertise 的 8 个远端名自带 `cloud_` 前缀(docs/verification/
-// 2026-07-22-e7-deploy-probe.md §3c 实测 tools/list),与引擎别名
-// `cloud_cloud_*`(server 名再拼一次)是两层,后者只进开发者详情。
+// identity.name 是引擎持久化的**远端工具原名**(mcp/index.ts:712 以 def.name 铸造),
+// 自带 `cloud_` 前缀,与引擎别名 `cloud_cloud_*`(server 名再拼一次)是两层,
+// 后者只进开发者详情。远端名的今日权威 = alpha-platform
+// `packages/gateway/src/lib/mcp-tool-registry.ts` 的 **5 个**工具
+// (dispatch/status/await/artifacts/web_search);本表的 cloud_schedule_* 三条
+// 仅为 2026-07-31 之前持久化的历史行回放保留 —— schedule 已按 owner 裁决剔出
+// MCP 面(同仓 cloud-mcp.ts [#175] 注记,基线 cloud-mcp-resource-surface.md
+// §3.1/§5.8)。旧勘破「2026-07-22 匿名 tools/list 实测 8 个」
+// (docs/verification/2026-07-22-e7-deploy-probe.md §3c)已被 REQ-130 的
+// 鉴权前置(工具发现前先验身份)作废,该匿名探针今天复现不了。
 export interface AlphaCloudRule {
   /** 语义化中文标题的 i18n key(主标题;技术 id 绝不进主层级)。 */
   titleKey: string
