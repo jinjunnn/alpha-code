@@ -17,10 +17,15 @@ import { UploadConsentDialog } from "./upload-consent-dialog"
 type Phase = "idle" | "dispatching" | "running" | "done" | "failed"
 type ConsentState = { requestId: string; preview: UploadPreview }
 
+// [#918] 云端拒收带分类码(main 的 alpha-cloud-jobs 只透传 `code` 槽)。两条会真实发生在
+// 用户面前的,给出诚实说明而不是把一个裸码贴在错误行里 —— 前者告诉用户「要的限制强制不了」,
+// 后者告诉用户「作业没送出去,因为送出去也是白跑」。其余码保持原样透出,不假装认识。
 function dispatchError(code: string): string {
   if (code === "not-authenticated" || code === "unauthorized") return t("alpha.ext.cloudErrAuth")
   if (code === "no-cloud-endpoint") return t("alpha.ext.cloudErrEndpoint")
   if (code === "network") return t("alpha.ext.cloudErrNetwork")
+  if (code === "denied_paths_unenforceable_for_execution_form") return t("alpha.ext.cloudErrDeniedPaths")
+  if (code === "tools-not-declared") return t("alpha.ext.cloudErrToolsUndeclared")
   return code
 }
 
