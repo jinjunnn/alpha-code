@@ -36,6 +36,10 @@ function buildValidators() {
     CloudJobRequestV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobRequestV1" }),
     CloudJobAcceptedV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobAcceptedV1" }),
     CloudJobStatusV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobStatusV1" }),
+    // #400 / platform#255: the server-side decidable cancel outcome. The desktop refuses to show
+    // anything as cancelled without decoding this — a bare JSON.parse of the cancel response is
+    // exactly the optimistic-overwrite path the ticket forbids.
+    CloudJobCancelResultV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobCancelResultV1" }),
     ArtifactListV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/ArtifactListV1" }),
     ArtifactDescriptorV1: ajv.compile({ $ref: "artifact-descriptor.schema.json" }),
   }

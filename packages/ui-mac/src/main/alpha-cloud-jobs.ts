@@ -28,7 +28,14 @@ import {
 } from "./alpha-artifact-download"
 import { getLogger } from "./logging"
 import { reportContractFailure } from "./alpha-contract-health"
-import type { CloudResult, CloudJobEnvelope, CloudDispatchResult, CloudJobStatus, CloudArtifactList } from "../preload/types"
+import type {
+  CloudResult,
+  CloudJobEnvelope,
+  CloudDispatchResult,
+  CloudJobCancelResult,
+  CloudJobStatus,
+  CloudArtifactList,
+} from "../preload/types"
 import type { createExplicitUploadRequest } from "./alpha-upload-manifest"
 
 // Resolved by alpha-endpoints (env ALPHA_CLOUD_URL > userData pin > login discovery > default).
@@ -52,10 +59,39 @@ async function httpErrorCode(res: Response): Promise<string> {
   }
 }
 
+// #400(REQ-109 AC5 桌面半场):submit 的有界客户端重试。上限是硬的 —— 恰好 3 次尝试,之后把
+// 分类错误原样交给调用方,绝不无界自旋。只有「响应根本没形成」(fetch 抛:超时/断连/DNS)和
+// 网关侧瞬态 502/503/504 可重试;能重试的**前提**是 platform#255 的必填 idempotency_key ——
+// 同一个 guarded envelope 逐字节重发,首发其实已落地时服务端按键去重回原 job(idempotent_replay),
+// 不产生第二个 job。401/403/4xx/429 一律不重试:那是判权/契约/限流的回答,重发只会把同一个回答
+// 再要一遍(429 还会跟限流器对撞)。
+export const DISPATCH_MAX_ATTEMPTS = 3
+const RETRYABLE_HTTP = new Set([502, 503, 504])
+const RETRY_BASE_DELAY_MS = 250
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** 跑一个「产生 Response」的动作,带硬上限的瞬态重试。非瞬态结果第一时间原样返回。 */
+async function fetchWithBoundedRetry(run: () => Promise<Response>, maxAttempts: number): Promise<Response> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attempt > 1) await sleep(RETRY_BASE_DELAY_MS * (attempt - 1))
+    try {
+      const res = await run()
+      if (RETRYABLE_HTTP.has(res.status) && attempt < maxAttempts) continue
+      return res
+    } catch (error) {
+      lastError = error
+      if (attempt < maxAttempts) continue
+      throw error
+    }
+  }
+  throw lastError ?? new Error("unreachable: bounded retry exhausted without a result")
+}
+
 async function authed<T>(
   path: string,
   purpose: RoutePurpose,
-  init: { method?: string; body?: unknown } | undefined,
+  init: { method?: string; body?: unknown; maxAttempts?: number } | undefined,
   decode: (text: string) => T,
 ): Promise<CloudResult<T>> {
   try {
@@ -63,15 +99,19 @@ async function authed<T>(
     if (!token) return { error: "not-authenticated" }
     const base = cloudBase()
     if (!base) return { error: "no-cloud-endpoint" }
-    const res = await fetch(`${base}${path}`, {
-      method: init?.method ?? "GET",
-      headers: {
-        authorization: `Bearer ${token}`,
-        ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
-      },
-      body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
-      signal: AbortSignal.timeout(15000),
-    })
+    const res = await fetchWithBoundedRetry(
+      () =>
+        fetch(`${base}${path}`, {
+          method: init?.method ?? "GET",
+          headers: {
+            authorization: `Bearer ${token}`,
+            ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
+          },
+          body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+          signal: AbortSignal.timeout(15000),
+        }),
+      init?.maxAttempts ?? 1,
+    )
     if (res.status === 401) return { error: "unauthorized" }
     if (!res.ok) return { error: await httpErrorCode(res) }
     return decode(await res.text())
@@ -87,6 +127,8 @@ async function authed<T>(
 
 // ADR-021 §2(REQ-020 T1):上行硬校验单点 —— 工具集合必须显式 / 256KiB 帽 / secrets 拒发,
 // 全部 loud(错误原样回 renderer 行内呈现)。MCP facade 路径由 B 侧 schema 校验兜底(双层)。
+// #400:guard 在这里恰好跑一次 = 幂等键在这里恰好 mint 一次;下面的有界重试序列化的始终是
+// 同一个 guarded.envelope 对象 —— 「同一次意图的第 N 次重试带同一个键」由此成为结构性质。
 export const dispatchCloudJob = (envelope: CloudJobEnvelope): Promise<CloudResult<CloudDispatchResult>> => {
   const guarded = guardCloudEnvelope(envelope)
   if (!guarded.ok) {
@@ -96,11 +138,14 @@ export const dispatchCloudJob = (envelope: CloudJobEnvelope): Promise<CloudResul
   return authed(
     ALPHA_PATHS.cloudJobs,
     "cloud.dispatch",
-    { method: "POST", body: guarded.envelope },
+    { method: "POST", body: guarded.envelope, maxAttempts: DISPATCH_MAX_ATTEMPTS },
     (text) => decodeJsonContract("CloudJobAcceptedV1", text, "cloud-http"),
   )
 }
 
+// #400:body 在 upload prepare 时经 guard 构造一次(createExplicitUploadRequest),幂等键随之
+// 冻结 —— 同意对话框前后、以及这里的每次瞬态重试,发的都是同一个键。首发已落地时服务端按键
+// 去重回原 job,重发文件字节不产生第二个 job。
 export async function dispatchExplicitCloudUpload(input: {
   accessToken: string
   body: ReturnType<typeof createExplicitUploadRequest>
@@ -109,16 +154,20 @@ export async function dispatchExplicitCloudUpload(input: {
   try {
     const base = cloudBase()
     if (!base) return { error: "no-cloud-endpoint" }
-    const response = await fetch(`${base}${ALPHA_PATHS.cloudJobs}`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${input.accessToken}`,
-        "content-type": "application/json",
-        ...(input.uploadConsent ? { "x-alpha-upload-consent": input.uploadConsent } : {}),
-      },
-      body: JSON.stringify(input.body),
-      signal: AbortSignal.timeout(15000),
-    })
+    const response = await fetchWithBoundedRetry(
+      () =>
+        fetch(`${base}${ALPHA_PATHS.cloudJobs}`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${input.accessToken}`,
+            "content-type": "application/json",
+            ...(input.uploadConsent ? { "x-alpha-upload-consent": input.uploadConsent } : {}),
+          },
+          body: JSON.stringify(input.body),
+          signal: AbortSignal.timeout(15000),
+        }),
+      DISPATCH_MAX_ATTEMPTS,
+    )
     if (response.status === 401) return { error: "unauthorized" }
     if (!response.ok) return { error: `http-${response.status}` }
     return decodeJsonContract("CloudJobAcceptedV1", await response.text(), "cloud-http")
@@ -140,13 +189,16 @@ export const getCloudJobStatus = (jobId: string): Promise<CloudResult<CloudJobSt
     (text) => decodeJsonContract("CloudJobStatusV1", text, "cloud-http"),
   )
 
-// 取消 job(消费 B 的 AR-17 soft-cancel:标记 cancelled + emit 终态事件;status/SSE 随后报 cancelled)。
-export const cancelCloudJob = (jobId: string): Promise<CloudResult<{ job_id: string; status: string }>> =>
+// 取消 job。#400 / platform#255:响应是版本化的 CloudJobCancelResultV1 —— 服务端可判定结果
+// (accepted + 当前 status,可能是 `cancelling` 中间态),经严格 decode 才回 renderer;裸 JSON.parse
+// 正是「乐观状态覆盖」那条被票面禁掉的路。旧的无版本 `{job_id,status}` 形状在这里 fail closed
+// 成 contract-incompatible,不设兼容分支。
+export const cancelCloudJob = (jobId: string): Promise<CloudResult<CloudJobCancelResult>> =>
   authed(
     `${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}/cancel`,
     "cloud.dispatch",
     { method: "POST" },
-    (text) => JSON.parse(text) as { job_id: string; status: string },
+    (text) => decodeJsonContract("CloudJobCancelResultV1", text, "cloud-http"),
   )
 
 // #727:artifact 列表端点要求的 action 是 artifact.read,不是 cloud.read

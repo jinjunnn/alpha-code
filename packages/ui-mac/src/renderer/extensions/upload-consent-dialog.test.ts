@@ -172,6 +172,114 @@ describe("approved explicit-upload consent dialog harness", () => {
   })
 })
 
+// ---- #400(REQ-109 AC4 桌面半场):取消要拿到服务端可判定结果才改显示,cancelling ≠ cancelled ----
+
+type CancelResult =
+  | { schema_version: 1; job_id: string; status: string; accepted: boolean }
+  | { error: string }
+
+function mountRunningJob(options: { cancel: () => Promise<CancelResult> }) {
+  let pushEvent: ((payload: { jobId: string; event: string; data: unknown }) => void) | undefined
+  const cancelCalls: string[] = []
+  Object.defineProperty(window, "api", {
+    configurable: true,
+    value: {
+      cloud: {
+        upload: async () => ({
+          status: "sent",
+          privacy: "clear",
+          directory: "/project",
+          job: {
+            schema_version: 1,
+            job_id: "job_cancelme",
+            status: "queued",
+            autonomy: "pipeline",
+            kind: "code-review",
+            urls: { status: "/status", events: "/events", result: "/result" },
+          },
+        }),
+        confirmUpload: async () => ({ status: "cancelled" }),
+        cancelUpload: async () => ({ status: "cancelled" }),
+        cancel: async (jobId: string) => {
+          cancelCalls.push(jobId)
+          return options.cancel()
+        },
+        subscribe: async () => ({ ok: true }),
+        unsubscribe: async () => ({ ok: true }),
+        onEvent: (handler: (payload: { jobId: string; event: string; data: unknown }) => void) => {
+          pushEvent = handler
+          return () => {}
+        },
+        saveRun: async () => ({ ok: true, dir: "/project/.alpha/runs/job_cancelme", files: [], warnings: [] }),
+      },
+    },
+  })
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(
+    runtime.render(() => runtime.createComponent(runtime.CloudDispatchBox, { spec, ready: true }), host),
+  )
+  return { cancelCalls, sse: (event: string) => pushEvent?.({ jobId: "job_cancelme", event, data: {} }) }
+}
+
+const cancelButton = () => document.querySelector<HTMLButtonElement>("button[data-cancel-job]")
+
+describe("#400 cancel semantics: server-decidable result, never optimistic", () => {
+  test("accepted cancel shows CANCELLING (not cancelled) until the SSE terminal closes it", async () => {
+    const harness = mountRunningJob({
+      cancel: async () => ({ schema_version: 1, job_id: "job_cancelme", status: "cancelling", accepted: true }),
+    })
+    document.querySelector<HTMLButtonElement>('.alpha-ext-add[data-variant="primary"]')!.click()
+    await flush()
+
+    // running:取消入口在,任何取消 UI 未出现。
+    expect(cancelButton()).not.toBeNull()
+    cancelButton()!.click()
+    await flush()
+
+    // 服务端受理 → 显示「正在取消」;绝不显示已完成/已取消的终态文案,也不显示任务失败。
+    expect(harness.cancelCalls).toEqual(["job_cancelme"])
+    expect(document.querySelector("[data-cancelling]")?.textContent).toBe(zh["alpha.ext.cloudCancelling"])
+    expect(cancelButton()).toBeNull()
+    expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudDone"])
+    expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudRunFailed"])
+
+    // 终态只能由服务端事实(SSE job.cancelled)驱动。
+    harness.sse("job.cancelled")
+    await flush()
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudRunFailed"])
+    expect(document.querySelector("[data-cancelling]")).toBeNull()
+  })
+
+  test("a rejected cancel (already terminal) says so and does NOT pretend the job stopped", async () => {
+    mountRunningJob({
+      cancel: async () => ({ schema_version: 1, job_id: "job_cancelme", status: "completed", accepted: false }),
+    })
+    document.querySelector<HTMLButtonElement>('.alpha-ext-add[data-variant="primary"]')!.click()
+    await flush()
+    cancelButton()!.click()
+    await flush()
+
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudCancelRejected"])
+    expect(document.querySelector("[data-cancelling]")).toBeNull()
+    // 运行显示保持由服务端事实驱动 —— 没有任何本地编造的 cancelled。
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudRunning"])
+  })
+
+  test("a transport failure keeps the cancel entry available instead of faking any cancel state", async () => {
+    mountRunningJob({ cancel: async () => ({ error: "network" }) })
+    document.querySelector<HTMLButtonElement>('.alpha-ext-add[data-variant="primary"]')!.click()
+    await flush()
+    cancelButton()!.click()
+    await flush()
+
+    expect(document.body.textContent).toContain(zh["alpha.ext.cloudErrNetwork"])
+    expect(document.querySelector("[data-cancelling]")).toBeNull()
+    expect(cancelButton()).not.toBeNull()
+    expect(cancelButton()!.disabled).toBe(false)
+  })
+})
+
 describe("four approved upload UI outcomes", () => {
   test("sensitive opens the preview dialog", async () => {
     mountDispatch({ status: "consent-required", requestId: "request-1", preview })

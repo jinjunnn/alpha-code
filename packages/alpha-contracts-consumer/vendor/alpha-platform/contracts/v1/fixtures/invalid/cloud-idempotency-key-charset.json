@@ -1,0 +1,6 @@
+{
+  "kind": "schema",
+  "contract": "CloudJobRequestV1",
+  "expect": "invalid",
+  "value": { "schema_version": 1, "idempotency_key": "tenant/job-2026-08-11", "autonomy": "pipeline", "kind": "research", "input": { "question": "why" } }
+}

@@ -74,11 +74,12 @@ describe("ModelCatalogV2 的独立 immutable pin", () => {
     }
 
     // 独立性的另一半:V1 bundle 的锁里**不再**有 model catalog,也没被这次代际切换重钉。
+    // (#400 把 V1 bundle 前移到 platform#255 的 9cf67bd —— 那是 V1 自己的合法跳,catalog pin 不动。)
     const v1 = (await Bun.file(resolve(root, "alpha-platform-contract.lock.json")).json()) as {
       commit: string
       files: Array<{ path: string }>
     }
-    expect(v1.commit).toBe("62c7aa6de5589cfcf2af00ecab69f1d3d176512b")
+    expect(v1.commit).toBe("9cf67bd994e4a44aad3af3fdd150df207f1a234f")
     expect(v1.files.some((file) => file.path.includes("model-catalog"))).toBe(false)
   })
 

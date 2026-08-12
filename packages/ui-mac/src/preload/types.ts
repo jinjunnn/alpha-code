@@ -296,6 +296,9 @@ export type InstallMeta = { catalogId?: string; version?: string }
 
 // alpha-platform (B) cloud jobs API (ADR-016) — unified dispatch/status over the `cloud` worker.
 // tier (T1/T2/T3) is invisible here (B routes internally); autonomy discriminates pipeline vs bounded-agent.
+// #400 / platform#255: the renderer envelope deliberately has NO `idempotency_key` — the key is
+// minted once per user intent inside main's guard (cloud-envelope-guard.ts) and a renderer-supplied
+// key is rejected loud. `network` is narrowed to the only real execution shape "restricted".
 export type CloudJobEnvelope = {
   autonomy: "pipeline" | "bounded-agent"
   kind?: string // pipeline: research|code-review|docs|office-report|data-analysis|bugfix|migration
@@ -303,21 +306,32 @@ export type CloudJobEnvelope = {
   objective?: string // bounded-agent objective
   capabilities?: string[] // bounded-agent: drives B's tier-router (web_search|code_exec|file_mutation)
   budget?: { max_iter?: number; max_tokens?: number; max_wall_clock_sec?: number }
-  constraints?: { allowed_tools?: string[]; denied_paths?: string[]; network?: "none" | "restricted" | "open" }
+  constraints?: { allowed_tools?: string[]; denied_paths?: string[]; network?: "restricted" }
   output_schema?: Record<string, unknown>
 }
+/** platform#255 共享第七态枚举。`cancelling` = 取消已受理、停止协议未闭合 —— **不是** cancelled。 */
+export type CloudJobPublicStatus =
+  | "queued"
+  | "running"
+  | "blocked"
+  | "cancelling"
+  | "completed"
+  | "failed"
+  | "cancelled"
 export type CloudDispatchResult = {
   schema_version: 1
   job_id: string
   status: "queued"
   autonomy: "pipeline" | "bounded-agent"
   kind?: string
+  /** platform#255:同键同 payload 命中既有准入 —— 回的是原 job 的身份,不是第二个 job。 */
+  idempotent_replay?: boolean
   urls: { status: string; events: string; result: string }
 }
 export type CloudJobStatus = {
   schema_version: 1
   job_id: string
-  status: "queued" | "running" | "blocked" | "completed" | "failed" | "cancelled"
+  status: CloudJobPublicStatus
   autonomy: "pipeline" | "bounded-agent"
   kind?: string
   progress: { phase: string; completed_steps?: number; total_steps?: number }
@@ -326,7 +340,17 @@ export type CloudJobStatus = {
   /** REQ-092:平台 status 现携带 descriptor 数组(schemaVersion=1;旧部署缺省)。 */
   artifacts?: CloudArtifactDescriptor[]
   result?: unknown
+  /** platform#255:「派发从未成功」投影为 failed + 本判别字段,不加第八个枚举值。 */
+  reason?: "dispatch_dead"
   error: string | null
+}
+/** platform#255:服务端可判定的取消结果 —— 本地显示 cancelled 前必须拿到并解码它。
+ *  `accepted=false` = 该 job 已处于不可取消阶段;`status` 两种情况下都是服务端当前事实。 */
+export type CloudJobCancelResult = {
+  schema_version: 1
+  job_id: string
+  status: CloudJobPublicStatus
+  accepted: boolean
 }
 /** REQ-092 跨端 artifact descriptor(镜像真相源 shared/cloud-artifact-descriptor.ts ← 平台 PR #42)。 */
 export type CloudArtifactDescriptor = ArtifactDescriptor
@@ -1060,7 +1084,8 @@ export type ElectronAPI = {
     confirmUpload: (requestId: string) => Promise<CloudUploadResult>
     cancelUpload: (requestId: string) => Promise<CloudUploadResult>
     status: (jobId: string) => Promise<CloudResult<CloudJobStatus>>
-    cancel: (jobId: string) => Promise<CloudResult<{ job_id: string; status: string }>>
+    /** #400:返回的是解码过的 CloudJobCancelResultV1 —— 服务端可判定结果,不是本地乐观覆盖。 */
+    cancel: (jobId: string) => Promise<CloudResult<CloudJobCancelResult>>
     artifacts: (jobId: string) => Promise<CloudResult<CloudArtifactList>>
     /** REQ-092:descriptor-only 下载 —— renderer 只送 descriptor/meta,main 流式写入
      *  <directory>/.alpha/runs/<runId>/artifacts/(bearer 与内容字节都不过 IPC);

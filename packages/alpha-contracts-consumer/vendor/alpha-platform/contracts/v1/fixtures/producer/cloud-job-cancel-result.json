@@ -1,0 +1,11 @@
+{
+  "kind": "schema",
+  "contract": "CloudJobCancelResultV1",
+  "expect": "valid",
+  "value": {
+    "schema_version": 1,
+    "job_id": "job_fixture1",
+    "status": "cancelling",
+    "accepted": true
+  }
+}

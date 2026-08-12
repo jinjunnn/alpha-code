@@ -26,6 +26,7 @@
 // 于是一个不声明工具的 bounded-agent 会**跑起来、烧预算、什么都做不了然后 completed**。
 // 这正是本票禁止的「静默降级成零工具」,所以桌面必须显式声明它要的工具集合,声明不了就别发。
 
+import { randomUUID } from "node:crypto"
 import type { CloudJobEnvelope } from "../preload/types"
 import {
   CONTROL_ENVELOPE_MAX_BYTES,
@@ -76,8 +77,18 @@ export function scanEnvelopeSecrets(envelope: CloudJobEnvelope): SecretHit[] {
 
 export type GuardResult = { ok: true; envelope: CloudJobRequestV1 } | { ok: false; error: string }
 
-export function guardCloudEnvelope(envelope: CloudJobEnvelope): GuardResult {
+// #400(REQ-109 / platform#255):幂等键由 **main 在 guard 这一个咽喉** mint,每个用户意图恰好
+// 一次 —— dispatch 路径与 explicit-upload 路径都只 guard 一次,之后的每次网络重试都序列化同一个
+// guarded envelope,「第 N 次重试带同一个键」因此是结构性质,不靠调用方自律。renderer 自带键会被
+// 拒(下方 loud-fail):键决定服务端准入去重的身份,身份由 main-owned 边界持有,与 bearer 同侧。
+// deps.id 仅供测试注入;randomUUID(36 字符,[0-9a-f-])落在契约 `^[A-Za-z0-9._-]{8,128}$` 内。
+export function guardCloudEnvelope(envelope: CloudJobEnvelope, deps: { id?: () => string } = {}): GuardResult {
   if (containsReservedUploadControl(envelope)) return { ok: false, error: "upload-main-gate-required" }
+  // [#400] 幂等键归 main 所有:调用方(含 renderer / 技能)自带即拒 —— 键必须由这个咽喉 mint 一次,
+  //   否则「一次用户意图内跨重试稳定」这条性质就成了调用方的约定而不是结构。
+  if (Object.hasOwn(envelope as object, "idempotency_key")) {
+    return { ok: false, error: "idempotency-key-is-main-owned" }
+  }
   // ① 工具集合必须显式(见文件头 [#918])。缺失与显式 `[]` 在平台侧归一成同一个 deny-all,
   //   而 bounded-agent 的目标全靠工具达成 ⇒ 两者都当作「没说清楚」拒发,不替调用方猜。
   //   pipeline 不适用:固定管线跑的是自己的代码,`allowed_tools` 在那条路上不是工具闸
@@ -90,6 +101,7 @@ export function guardCloudEnvelope(envelope: CloudJobEnvelope): GuardResult {
   const versioned = {
     schema_version: 1 as const,
     artifact_policy: { delivery: "descriptor_only" as const },
+    idempotency_key: (deps.id ?? randomUUID)(),
     ...envelope,
   }
 

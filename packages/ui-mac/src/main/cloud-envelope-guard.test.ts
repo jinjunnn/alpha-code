@@ -106,6 +106,50 @@ describe("pinned v1 request shape", () => {
       error: "contract-incompatible",
     })
   })
+
+  // platform#262 收窄:唯一真实执行形态是 "restricted"。"none"/"open" 从前是 schema 接受、
+  // 执行层从不兑现的假承诺 —— 现在上游 schema 拒,guard 跟着 fail closed,不做静默改写。
+  test("rejects the retired network shapes none/open instead of rewriting them", () => {
+    for (const network of ["none", "open"]) {
+      const r = guardCloudEnvelope(base({ constraints: { denied_paths: ["secrets/"], network } as never }))
+      expect(r, network).toEqual({ ok: false, error: "contract-incompatible" })
+    }
+  })
+})
+
+// #400(REQ-109 / platform#255)幂等键:main 在 guard 咽喉 mint,renderer 无法携带。
+describe("④ idempotency_key 由 main mint(platform#255 必填)", () => {
+  const KEY_PATTERN = /^[A-Za-z0-9._-]{8,128}$/
+
+  test("guard 输出携带契约合法的幂等键(默认 mint 路径)", () => {
+    const r = guardCloudEnvelope(base())
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.envelope.idempotency_key).toMatch(KEY_PATTERN)
+  })
+
+  test("注入的 id 恰好进入实发信封 —— mint 点唯一,不在别处再造", () => {
+    const r = guardCloudEnvelope(base(), { id: () => "intent.2026-08-12.fixed01" })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.envelope.idempotency_key).toBe("intent.2026-08-12.fixed01")
+  })
+
+  test("每个意图一把新键:两次 guard 两个不同键(键不是常量,常量会让全用户互相去重)", () => {
+    const first = guardCloudEnvelope(base())
+    const second = guardCloudEnvelope(base())
+    expect(first.ok && second.ok).toBe(true)
+    if (first.ok && second.ok) expect(first.envelope.idempotency_key).not.toBe(second.envelope.idempotency_key)
+  })
+
+  test("renderer 自带 idempotency_key → loud 拒,不静默改写也不放行", () => {
+    expect(guardCloudEnvelope({ ...base(), idempotency_key: "attacker-chosen-key" } as never)).toEqual({
+      ok: false,
+      error: "idempotency-key-is-main-owned",
+    })
+  })
+
+  test("契约违规的注入键(过短)被 decode 闸拒 —— mint 点不是格式豁免点", () => {
+    expect(guardCloudEnvelope(base(), { id: () => "short" })).toEqual({ ok: false, error: "contract-incompatible" })
+  })
 })
 
 describe("③ secrets 扫描(拒发 + 指出字段)", () => {

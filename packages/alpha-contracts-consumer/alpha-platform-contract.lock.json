@@ -1,10 +1,10 @@
 {
   "repo": "jinjunnn/alpha-platform",
-  "commit": "62c7aa6de5589cfcf2af00ecab69f1d3d176512b",
+  "commit": "9cf67bd994e4a44aad3af3fdd150df207f1a234f",
   "files": [
     {
       "path": "contracts/v1/alpha-wire-contracts.schema.json",
-      "sha256": "1ecc74c5cad009dcea1d448728dc5fb49a11131fd1041e6375dd6f2a35c23f0d"
+      "sha256": "9327cf05ec97be9d3714650478af54154b4c0c4f18da45bd226b0d91aa3369aa"
     },
     {
       "path": "contracts/v1/artifact-descriptor.schema.json",
@@ -23,12 +23,20 @@
       "sha256": "6c479ab320f70862e95987b5d549af852103b27c7665ce7413ecb949998c3c89"
     },
     {
+      "path": "contracts/v1/fixtures/producer/cloud-job-cancel-result.json",
+      "sha256": "6decae1a85d279790d4922142a8231c0b003058fcd81ea6d3317b799478b12a9"
+    },
+    {
       "path": "contracts/v1/fixtures/producer/cloud-job-request.json",
-      "sha256": "5f7171c9bab69d3aa1c845e3e3742a993dcb712a73eb4e673b05aa4fba0ae133"
+      "sha256": "2b28ff352efa06f284a6a1d9f547e6223909d20d4508322e618aeb870f0592ed"
     },
     {
       "path": "contracts/v1/fixtures/producer/cloud-job-status.json",
       "sha256": "49e0d611728f6568cf51784cf66563dae0ee96e4010408507dcc917c9c447100"
+    },
+    {
+      "path": "contracts/v1/fixtures/producer/cloud-job-status-cancelling.json",
+      "sha256": "ac93ac14f847969ec98d699dbabb6de0735ba8047fd9235b5da184e6e694972b"
     },
     {
       "path": "contracts/v1/fixtures/producer/ledger-page.json",
@@ -47,12 +55,24 @@
       "sha256": "ddf68159b3c6c7bf15336563f9b0b2ef187daaabefe390e6482cacc48fa4b77d"
     },
     {
+      "path": "contracts/v1/fixtures/invalid/cloud-idempotency-key-charset.json",
+      "sha256": "6ea57dcad0b03e72f652f0620eab595f4748adbdde7f8869004ca28fc6cc8659"
+    },
+    {
+      "path": "contracts/v1/fixtures/invalid/cloud-idempotency-key-trailing-newline.json",
+      "sha256": "eb22742ee507e1a589bacdc14994ae5110c9af2b0e63c7bad935aac27e9297f2"
+    },
+    {
+      "path": "contracts/v1/fixtures/invalid/cloud-missing-idempotency-key.json",
+      "sha256": "a120b0ae91dfbdbc05abfca5155c4766477b159ba9381e9a4e23bb9302962585"
+    },
+    {
       "path": "contracts/v1/fixtures/invalid/cloud-missing-version.json",
-      "sha256": "cfe3b75600c6b0d912adbe07fa4e6bacd865f0359eb72dab8ab8919961d24f78"
+      "sha256": "4c1304ff0951d8140cf95fabc997d3da5cbca5e10262872f98b0b2db52cf890f"
     },
     {
       "path": "contracts/v1/fixtures/invalid/cloud-unknown-field.json",
-      "sha256": "190380ddd922848ea33d4483c4f2b9d292b178efb9ed3c8de87c69d73395cd0c"
+      "sha256": "4c47bd7f9e856f817ae1e2cdc5681c6d14ad78ca57eab1913691db4067ec05b5"
     },
     {
       "path": "contracts/v1/fixtures/limits/envelope-max-exact.json",
