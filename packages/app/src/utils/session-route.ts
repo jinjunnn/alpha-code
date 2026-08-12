@@ -19,21 +19,27 @@ export function requireServerKey(segment: string | undefined) {
 // #933:这是 legacy 会话 href(`/{目录}/session/{id}`,路径无 server 段)进入 canonical 世界的
 // 唯一咽喉。应用内的生产者(通知 / fork 对话框 / submit 兜底,#933 迁完;ui-mac 侧 #894/#925
 // 迁完)已全部改产 canonical href,走到这里的只剩存量痕迹(升级前发出的 OS 通知、legacy layout
-// 存下的 URL)。语义因此从「猜」收成「默认拒绝」:
+// 存下的 URL)。语义因此从「猜」收成「反推必然正确才放行」:
 //   · 同 id 的 tab 开在 active 上 —— 会话确实在 active 上,回 active;
 //   · 恰好一个 tab 持有该 id —— 唯一身份,回那台;
-//   · 其余(零匹配 / 多台都有且都不是 active)—— 返回 undefined,由调用方回家。
-// 旧版在这里回落 active:那正是「落到没有该会话的机器、污染同 id 无关会话」(#894)的来源,
-// 对新出现的 legacy 生产者等于默认放行。
+//   · `servers` 恰好一台(默认安装的常态)—— 全世界只有这一台,会话不可能在别处,回它。
+//     零 tab 线索在单机下不是歧义:升级前发出的 OS 通知指的会话从未开过标签页,也只能长在它上面。
+//   · 其余(多机 + 零匹配 / 多台都有且都不是 active)—— 返回 undefined,由调用方回家。
+// 旧版在这里无条件回落 active:多机下那正是「落到没有该会话的机器、污染同 id 无关会话」(#894)
+// 的来源,对新出现的 legacy 生产者等于默认放行。
+// `servers` 的收敛性:调用方从 `useServer().list` 取 —— ServerProvider 带 `gate: true`,children
+// 渲染前持久化的 server 列表必已加载完;props 侧的 sidecar 由 renderer 的 ready() 门住。
 export function legacySessionServer(
   tabs: readonly { type: "session"; server: ServerConnection.Key; sessionId: string }[],
   sessionID: string,
   active: ServerConnection.Key,
+  servers: readonly ServerConnection.Key[],
 ): ServerConnection.Key | undefined {
   const matches = tabs.filter((tab) => tab.sessionId === sessionID)
   const activeMatch = matches.find((tab) => tab.server === active)
   if (activeMatch) return activeMatch.server
   if (matches.length === 1) return matches[0]?.server
+  if (servers.length === 1) return servers[0]
   return undefined
 }
 

@@ -489,15 +489,17 @@ describe("#925 多 server 下的会话导航:落在真正持有该会话的 serv
 
 /* ── #933:legacy 会话 href 的最后一段咽喉 ──────────────────────────────────────
    #925 之后剩三件,判据全落在真实 router / 真实 DOM / 交给 OS 通知层的 href 上:
-   ① 反推兜底默认拒绝 —— 存量 legacy URL(升级前的 OS 通知等)推不出唯一 server 身份时回家,
-     **绝不**按 active server 猜(猜错 = 打开一台没有该会话的机器,同 id 时污染无关会话,#894);
-     唯一 tab 线索仍放行(枚举对已知成员放行,咽喉对新形态拒绝)。
+   ① 反推兜底「必然正确才放行」—— 存量 legacy URL(升级前的 OS 通知等)推不出唯一 server 身份
+     时回家,**绝不**按 active server 猜(猜错 = 打开一台没有该会话的机器,同 id 时污染无关会话,
+     #894);唯一 tab 线索放行;**单机(列表恰好一台,默认安装的常态)零匹配也放行** —— 全世界
+     只有一台 server,反推必然正确,一律拒绝是把默认安装的用户误伤回首页(R1 Minor 1)。
    ② 侧栏 route() 反查加身份闸 —— canonical 路由的 server 不是这份 store 的 server 时不反查,
      否则高亮错行、markSessionViewed 抹掉无关会话的未读点。
    ③ packages/app 的通知生产者迁 canonical —— OS 通知的 href 钉在事件来源那台 server 上。
-   各用例的 server key 锚点是本文件的独立字面量且互不相同("sidecar"/"wsl:fedora"/"wsl:arch"),
-   写死单值、或按 active 反推的实现,至少两条当场红。绕过实验(把 legacySessionServer 改回
-   `?? active` / 摘掉身份闸 / 通知 href 改回 legacy 形状)各自把对应用例翻红,记录见 PR。 */
+   各用例的 server key 锚点是本文件的独立字面量且互不相同(拒绝那条的 active="wsl:ubuntu"、
+   唯一 tab 放行落 "wsl:fedora"、单机放行落 "sidecar"、通知钉 "sidecar"/"wsl:arch"),写死单值、
+   或按 active 反推的实现,至少两条当场红。绕过实验(把 legacySessionServer 改回 `?? active` /
+   删掉单机放行分支 / 摘掉身份闸 / 通知 href 改回 legacy 形状)各自把对应用例翻红,记录见 PR。 */
 describe("#933 legacy 会话 href 咽喉收口:反推默认拒绝 + 侧栏身份闸 + 通知钉真机", () => {
   /** 把壳从启动草稿页开回首页再驱动。从 draft 路由出发时,上游 DraftRoute 的 fallback
    *  (pending location 丢了 draftId → `<Navigate href="/">`)会与被测 redirect **竞速**,
@@ -557,6 +559,37 @@ describe("#933 legacy 会话 href 咽喉收口:反推默认拒绝 + 侧栏身份
     )
     expect(landed!.serverKey).toBe("wsl:fedora")
     expect(landed!.serverKey).not.toBe("sidecar")
+  })
+
+  test("默认安装(单 sidecar)壳:存量 legacy URL、零 tab 线索 → 放行到那唯一一台的 canonical", async () => {
+    // #933 R1 Minor 1:单机下反推必然正确 —— 全世界只有一台 server,会话只可能在它上面。
+    // 升级前引擎发的 macOS 通知指的会话从未开过标签页(tabs 里没有),一律拒绝会把默认安装的
+    // 用户全数误伤回首页;多机下的拒绝仍由上面 ghost 用例钉住(两用例 key 锚点互异)。
+    await mountShell(() => runtime.AlphaShell())
+    await settleOnHome()
+
+    // 零匹配前提必须为真:没有任何 session tab 持有该 id(否则这条测的是唯一 tab 放行,不是单机放行)。
+    expect(runtime.sessionTabs().filter((tab) => tab.sessionId === "ses_solo")).toEqual([])
+
+    const before = runtime.navigationIntents().length
+    runtime.navigateTo(`/${encodeDirectory(runtime.FIXTURE_DIRECTORY)}/session/ses_solo`)
+    await waitFor(
+      () =>
+        sessionLandings(runtime.navigationIntents().slice(before)).some(
+          (route) => route.routeId === "session" && route.id === "ses_solo",
+        ),
+      "redirect 落 canonical",
+    )
+    const landed = sessionLandings(runtime.navigationIntents().slice(before)).find(
+      (route) => route.routeId === "session" && route.id === "ses_solo",
+    )
+    expect(landed!.serverKey).toBe("sidecar")
+    // 真实 router 必须**提交**到 canonical 落点(不是回家,也不是停在 legacy 那一站 ——
+    // legacy 路径同样以 /session/ses_solo 结尾,故两个条件必须一起等)。
+    await waitFor(
+      () => runtime.routerPath().startsWith("/server/") && runtime.routerPath().endsWith("/session/ses_solo"),
+      "router 提交 canonical 落点",
+    )
   })
 
   test("经 canonical 路由打开别台机器(wsl:ubuntu)的同 id 会话 → 侧栏不高亮、不抹未读点", async () => {

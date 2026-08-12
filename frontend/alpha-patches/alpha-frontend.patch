@@ -14,7 +14,7 @@ index faf019446..98b795648 100644
    "scripts": {
      "typecheck": "tsgo -b",
 diff --git a/packages/app/src/app.tsx b/packages/app/src/app.tsx
-index b4496ba7d..f1a112733 100644
+index b4496ba7d..e7dd83c81 100644
 --- a/packages/app/src/app.tsx
 +++ b/packages/app/src/app.tsx
 @@ -1,7 +1,8 @@
@@ -139,9 +139,9 @@ index b4496ba7d..f1a112733 100644
 +          <Show when={tabs.ready()}>
 +            {(_) => {
 +              const persisted = tabs.store.filter((item) => item.type === "session")
-+              // #933:反推兜底默认拒绝 —— 身份推不出来就回家,不再按 active server 猜
-+              // (猜错 = 打开别人机器上的同 id 无关会话并污染它,#894)。
-+              const owner = legacySessionServer(persisted, sessionID, server.key)
++              // #933:反推必然正确才放行(唯一 tab 线索 / 全世界只有一台 server),其余回家,
++              // 不再按 active server 猜(猜错 = 打开别人机器上的同 id 无关会话并污染它,#894)。
++              const owner = legacySessionServer(persisted, sessionID, server.key, server.list.map(ServerConnection.key))
 +              return <Navigate href={owner ? sessionHref(owner, sessionID) : "/"} />
 +            }}
 +          </Show>
@@ -451,7 +451,7 @@ index b4496ba7d..f1a112733 100644
          <Route path="/:dir/session/:id" component={NewLayoutLegacySessionRedirect} />
          <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
        </Show>
-@@ -619,16 +738,15 @@ function NewLayoutLegacySessionRedirect() {
+@@ -619,16 +738,17 @@ function NewLayoutLegacySessionRedirect() {
  
    return (
      <Show when={tabs.ready()}>
@@ -463,13 +463,15 @@ index b4496ba7d..f1a112733 100644
 -            server.key,
 -          ),
 +      {(_) => {
-+        // #933:与 SessionRoute 里那条同一语义 —— 反推不出唯一身份就回家,不猜 active。
++        // #933:与 SessionRoute 里那条同一语义 —— 反推必然正确才放行(唯一 tab / 单机),
++        // 其余回家,不猜 active。
 +        const owner = legacySessionServer(
 +          tabs.store.filter((item) => item.type === "session"),
            params.id,
 -        )}
 -      />
 +          server.key,
++          server.list.map(ServerConnection.key),
 +        )
 +        return <Navigate href={owner ? sessionHref(owner, params.id) : "/"} />
 +      }}
@@ -579,6 +581,116 @@ index bcc5acc0b..a20656ea3 100644
            }
            onRemove={removeAttachment}
            removeLabel={language.t("prompt.attachment.remove")}
+diff --git a/packages/app/src/components/prompt-input/submit.test.ts b/packages/app/src/components/prompt-input/submit.test.ts
+index f563a5098..0f789dbae 100644
+--- a/packages/app/src/components/prompt-input/submit.test.ts
++++ b/packages/app/src/components/prompt-input/submit.test.ts
+@@ -23,6 +23,8 @@ const promoted: Array<{ directory: string; sessionID: string }> = []
+ const sentShell: string[] = []
+ const syncedDirectories: string[] = []
+ const promotedDrafts: Array<{ draftID: string; server: string; sessionId: string }> = []
++// #933:submit 的非 draft 兜底导航落点(见下面 useNavigate mock)。
++const navigated: string[] = []
+ 
+ let params: { id?: string } = {}
+ let search: { draftId?: string } = {}
+@@ -93,7 +95,10 @@ beforeAll(async () => {
+   const rootClient = clientFor("/repo/main")
+ 
+   mock.module("@solidjs/router", () => ({
+-    useNavigate: () => () => undefined,
++    // #933:落点是判据 —— 非 draft 兜底必须导航到「执行者那台 server」的 canonical 路由。
++    useNavigate: () => (href: unknown) => {
++      navigated.push(String(href))
++    },
+     useParams: () => params,
+     useLocation: () => ({}),
+     useSearchParams: () => [search, () => undefined],
+@@ -111,7 +116,13 @@ beforeAll(async () => {
+     showToast: () => 0,
+   }))
+ 
++  // #933:submit.ts 经 @/utils/session-route → @/utils/base64 还牵进 base64Decode,模块图里
++  // 另有消费 checksum 的 —— mock.module 整体替换命名空间,少任何一个命名导出 = 模块加载期
++  // SyntaxError(且随加载顺序漂移:全量跑绿、单跑本文件红)。同款预捕获真模块、只覆写
++  // base64Encode(恒等,便于对导航/目录断言字面量)。
++  const realEncodeModule = { ...(await import("@opencode-ai/core/util/encode")) }
+   mock.module("@opencode-ai/core/util/encode", () => ({
++    ...realEncodeModule,
+     base64Encode: (value: string) => value,
+   }))
+ 
+@@ -141,10 +152,24 @@ beforeAll(async () => {
+     return { usePermission: () => ({ currentServerState: () => state(permissionServer) }) }
+   })
+ 
++  // bun 的 mock.module 会泄漏到同进程后跑的测试文件,且就地改写模块命名空间 —— mock 前先把
++  // 真模块的全部导出捕进独立 const(陷阱手册的判据),factory 里铺开副本、只覆写要替换的那个:
++  // 其余文件(pages/layout/helpers.test.ts 要真 ServerConnection.Key、context/server-sdk.test.ts
++  // 要真 coalesceServerEvents)才不会拿到残缺命名空间。
++  const realServerModule = { ...(await import("@/context/server")) }
+   mock.module("@/context/server", () => ({
++    ...realServerModule,
+     useServer: () => ({ key: "server-key" }),
+   }))
+ 
++  // #933:submit 的兜底导航按「执行者那台 server」(serverSDK 连着的)钉身份,不是 active
++  // server("server-key")—— 两个 key 故意不同,把「拿 active 拼 href」的回归钉红。
++  const realServerSdkModule = { ...(await import("@/context/server-sdk")) }
++  mock.module("@/context/server-sdk", () => ({
++    ...realServerSdkModule,
++    useServerSDK: () => () => ({ server: { type: "http", http: { url: "http://executor-host:7301" } } }),
++  }))
++
+   mock.module("@/context/tabs", () => ({
+     useTabs: () => ({
+       draft: () => ({ server: "project-server" }),
+@@ -258,6 +283,7 @@ beforeEach(() => {
+   promotedDrafts.length = 0
+   params = {}
+   search = {}
++  navigated.length = 0
+   sentShell.length = 0
+   syncedDirectories.length = 0
+   selected = "/repo/worktree-a"
+@@ -394,6 +420,37 @@ describe("prompt submit worktree selection", () => {
+     expect(promotedDrafts).toEqual([{ draftID: "draft-1", server: "project-server", sessionId: "session-1" }])
+   })
+ 
++  // #933 R1 Minor 2:非 draft 兜底分支的行为判据。会话由 serverSDK 连着的那台 server 创建,
++  // 导航必须钉 canonical 的 server+id 身份;改回 legacy 形状(`/{dir}/session/{id}`)或改拿
++  // active server("server-key")拼 href,这条当场红。encode 在本文件 mock 成恒等,故 server
++  // 段就是执行者的 key 字面量。
++  test("navigates the non-draft fallback to the executing server's canonical session route", async () => {
++    const submit = createPromptSubmit({
++      prompt,
++      info: () => undefined,
++      imageAttachments: () => [],
++      commentCount: () => 0,
++      autoAccept: () => false,
++      mode: () => "normal",
++      working: () => false,
++      editor: () => undefined,
++      queueScroll: () => undefined,
++      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
++      addToHistory: () => undefined,
++      resetHistoryNavigation: () => undefined,
++      setMode: () => undefined,
++      setPopover: () => undefined,
++      newSessionWorktree: () => selected,
++      onNewSessionWorktreeReset: () => undefined,
++      onSubmit: () => undefined,
++    })
++
++    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
++
++    expect(navigated).toEqual(["/server/http://executor-host:7301/session/session-1"])
++    expect(promotedDrafts).toEqual([])
++  })
++
+   test("includes the selected variant on optimistic prompts", async () => {
+     params = { id: "session-1" }
+     variant = "high"
 diff --git a/packages/app/src/components/prompt-input/submit.ts b/packages/app/src/components/prompt-input/submit.ts
 index 203722fc6..287ca4a2f 100644
 --- a/packages/app/src/components/prompt-input/submit.ts
@@ -2725,22 +2837,36 @@ index 000000000..5d279ad62
 +export { Terminal } from "@/components/terminal"
 +export type { TerminalColors } from "@/components/terminal"
 diff --git a/packages/app/src/utils/session-route.test.ts b/packages/app/src/utils/session-route.test.ts
-index 6a87e366c..5211aa036 100644
+index 6a87e366c..51b52f957 100644
 --- a/packages/app/src/utils/session-route.test.ts
 +++ b/packages/app/src/utils/session-route.test.ts
-@@ -26,6 +26,32 @@ describe("session routes", () => {
+@@ -9,6 +9,7 @@ describe("session routes", () => {
+         [{ type: "session", server: ServerConnection.Key.make("server-b"), sessionId: "session-1" }],
+         "session-1",
+         ServerConnection.Key.make("server-a"),
++        [ServerConnection.Key.make("server-a"), ServerConnection.Key.make("server-b")],
+       ),
+     ).toBe(ServerConnection.Key.make("server-b"))
+   })
+@@ -22,10 +23,58 @@ describe("session routes", () => {
+         ],
+         "session-1",
+         ServerConnection.Key.make("server-b"),
++        [ServerConnection.Key.make("server-a"), ServerConnection.Key.make("server-b")],
+       ),
      ).toBe(ServerConnection.Key.make("server-b"))
    })
  
-+  // #933:咽喉对推不出唯一身份的 legacy 形状默认拒绝 —— 旧版在这两种形状下回落 active,
-+  // 正是「落到没有该会话的机器、污染同 id 无关会话」的来源。两个用例的 active 各不相同,
-+  // 写死任何单值的实现无法同时满足。
-+  test("rejects a legacy session ID no persisted tab knows (no active-server guess)", () => {
++  // #933:多机下,咽喉对推不出唯一身份的 legacy 形状默认拒绝 —— 旧版在这两种形状下回落
++  // active,正是「落到没有该会话的机器、污染同 id 无关会话」的来源。两个用例的 active 各不
++  // 相同,写死任何单值的实现无法同时满足。
++  test("rejects a legacy session ID no persisted tab knows (multi-server, no active guess)", () => {
 +    expect(
 +      legacySessionServer(
 +        [{ type: "session", server: ServerConnection.Key.make("wsl:fedora"), sessionId: "session-other" }],
 +        "session-unknown",
 +        ServerConnection.Key.make("wsl:fedora"),
++        [ServerConnection.Key.make("wsl:fedora"), ServerConnection.Key.make("wsl:ubuntu")],
 +      ),
 +    ).toBeUndefined()
 +  })
@@ -2754,41 +2880,67 @@ index 6a87e366c..5211aa036 100644
 +        ],
 +        "session-1",
 +        ServerConnection.Key.make("server-c"),
++        [
++          ServerConnection.Key.make("server-a"),
++          ServerConnection.Key.make("server-b"),
++          ServerConnection.Key.make("server-c"),
++        ],
 +      ),
 +    ).toBeUndefined()
++  })
++
++  // #933 R1 Minor 1:单机(列表恰好一台)下反推必然正确 —— 零 tab 线索也放行那台。
++  // 默认安装只有 sidecar 一台 server:升级前引擎发的 macOS 通知(legacy href)指的会话
++  // 从未开过标签页 ⇒ tabs 里没有它;一律拒绝会把这批用户全数误伤到首页。
++  // server key 字面量与上面各用例互不相同,写死单值的实现无法同时满足。
++  test("allows the only server on zero tab matches (single-server install)", () => {
++    expect(
++      legacySessionServer(
++        [{ type: "session", server: ServerConnection.Key.make("solo-machine"), sessionId: "session-other" }],
++        "session-unknown",
++        ServerConnection.Key.make("solo-machine"),
++        [ServerConnection.Key.make("solo-machine")],
++      ),
++    ).toBe(ServerConnection.Key.make("solo-machine"))
 +  })
 +
    test("builds and decodes a server-keyed session route", () => {
      const server = ServerConnection.Key.make("https://example.com:4096")
      const href = sessionHref(server, "session-1")
 diff --git a/packages/app/src/utils/session-route.ts b/packages/app/src/utils/session-route.ts
-index 4721611d2..e435c3f0f 100644
+index 4721611d2..f1b05dbb9 100644
 --- a/packages/app/src/utils/session-route.ts
 +++ b/packages/app/src/utils/session-route.ts
-@@ -16,13 +16,25 @@ export function requireServerKey(segment: string | undefined) {
+@@ -16,13 +16,31 @@ export function requireServerKey(segment: string | undefined) {
    return ServerConnection.Key.make(key)
  }
  
 +// #933:这是 legacy 会话 href(`/{目录}/session/{id}`,路径无 server 段)进入 canonical 世界的
 +// 唯一咽喉。应用内的生产者(通知 / fork 对话框 / submit 兜底,#933 迁完;ui-mac 侧 #894/#925
 +// 迁完)已全部改产 canonical href,走到这里的只剩存量痕迹(升级前发出的 OS 通知、legacy layout
-+// 存下的 URL)。语义因此从「猜」收成「默认拒绝」:
++// 存下的 URL)。语义因此从「猜」收成「反推必然正确才放行」:
 +//   · 同 id 的 tab 开在 active 上 —— 会话确实在 active 上,回 active;
 +//   · 恰好一个 tab 持有该 id —— 唯一身份,回那台;
-+//   · 其余(零匹配 / 多台都有且都不是 active)—— 返回 undefined,由调用方回家。
-+// 旧版在这里回落 active:那正是「落到没有该会话的机器、污染同 id 无关会话」(#894)的来源,
-+// 对新出现的 legacy 生产者等于默认放行。
++//   · `servers` 恰好一台(默认安装的常态)—— 全世界只有这一台,会话不可能在别处,回它。
++//     零 tab 线索在单机下不是歧义:升级前发出的 OS 通知指的会话从未开过标签页,也只能长在它上面。
++//   · 其余(多机 + 零匹配 / 多台都有且都不是 active)—— 返回 undefined,由调用方回家。
++// 旧版在这里无条件回落 active:多机下那正是「落到没有该会话的机器、污染同 id 无关会话」(#894)
++// 的来源,对新出现的 legacy 生产者等于默认放行。
++// `servers` 的收敛性:调用方从 `useServer().list` 取 —— ServerProvider 带 `gate: true`,children
++// 渲染前持久化的 server 列表必已加载完;props 侧的 sidecar 由 renderer 的 ready() 门住。
  export function legacySessionServer(
    tabs: readonly { type: "session"; server: ServerConnection.Key; sessionId: string }[],
    sessionID: string,
    active: ServerConnection.Key,
 -) {
++  servers: readonly ServerConnection.Key[],
 +): ServerConnection.Key | undefined {
    const matches = tabs.filter((tab) => tab.sessionId === sessionID)
 -  return matches.find((tab) => tab.server === active)?.server ?? (matches.length === 1 ? matches[0]?.server : active)
 +  const activeMatch = matches.find((tab) => tab.server === active)
 +  if (activeMatch) return activeMatch.server
 +  if (matches.length === 1) return matches[0]?.server
++  if (servers.length === 1) return servers[0]
 +  return undefined
  }
  

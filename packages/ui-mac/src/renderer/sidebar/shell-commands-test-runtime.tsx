@@ -466,6 +466,15 @@ const FETCH_FIXTURES: Record<string, unknown> = {
     version: "0",
     time: { created: 1, updated: 1 },
   },
+  // #933 R1 Minor 1(单机放行用例):升级前通知指的会话 —— 引擎里有,tabs 里从来没有。
+  "/session/ses_solo": {
+    id: "ses_solo",
+    projectID: "prj_alpha-code",
+    directory: FIXTURE_DIRECTORY,
+    title: "单机上从未开过标签页的会话",
+    version: "0",
+    time: { created: 1, updated: 1 },
+  },
   "/session/ses_one": {
     id: "ses_one",
     projectID: "prj_alpha-code",

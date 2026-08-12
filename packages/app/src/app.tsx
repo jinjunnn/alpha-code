@@ -132,9 +132,9 @@ function createSessionRoute(Leaf: MaybePreloadableComponent, PermissionSurface?:
           <Show when={tabs.ready()}>
             {(_) => {
               const persisted = tabs.store.filter((item) => item.type === "session")
-              // #933:反推兜底默认拒绝 —— 身份推不出来就回家,不再按 active server 猜
-              // (猜错 = 打开别人机器上的同 id 无关会话并污染它,#894)。
-              const owner = legacySessionServer(persisted, sessionID, server.key)
+              // #933:反推必然正确才放行(唯一 tab 线索 / 全世界只有一台 server),其余回家,
+              // 不再按 active server 猜(猜错 = 打开别人机器上的同 id 无关会话并污染它,#894)。
+              const owner = legacySessionServer(persisted, sessionID, server.key, server.list.map(ServerConnection.key))
               return <Navigate href={owner ? sessionHref(owner, sessionID) : "/"} />
             }}
           </Show>
@@ -739,11 +739,13 @@ function NewLayoutLegacySessionRedirect() {
   return (
     <Show when={tabs.ready()}>
       {(_) => {
-        // #933:与 SessionRoute 里那条同一语义 —— 反推不出唯一身份就回家,不猜 active。
+        // #933:与 SessionRoute 里那条同一语义 —— 反推必然正确才放行(唯一 tab / 单机),
+        // 其余回家,不猜 active。
         const owner = legacySessionServer(
           tabs.store.filter((item) => item.type === "session"),
           params.id,
           server.key,
+          server.list.map(ServerConnection.key),
         )
         return <Navigate href={owner ? sessionHref(owner, params.id) : "/"} />
       }}
