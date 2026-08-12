@@ -2,5 +2,5 @@
   "kind": "schema",
   "contract": "CloudJobRequestV1",
   "expect": "invalid",
-  "value": { "autonomy": "pipeline", "kind": "research", "input": {} }
+  "value": { "idempotency_key": "missing-version.fixture", "autonomy": "pipeline", "kind": "research", "input": {} }
 }

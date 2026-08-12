@@ -2,5 +2,5 @@
   "kind": "schema",
   "contract": "CloudJobRequestV1",
   "expect": "invalid",
-  "value": { "schema_version": 1, "autonomy": "pipeline", "kind": "research", "input": {}, "admin": true }
+  "value": { "schema_version": 1, "idempotency_key": "unknown-field.fixture", "autonomy": "pipeline", "kind": "research", "input": {}, "admin": true }
 }

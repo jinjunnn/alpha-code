@@ -149,6 +149,25 @@ inactive-plan payloads.
   Platform.
 - **Cloud Jobs:** renderer requests cross narrow IPC handlers; the main process
   calls the Cloud Jobs HTTP/SSE and artifact APIs with the main-held bearer.
+  Submit, status, and cancel all speak the versioned platform#255 contract
+  (`CloudJobRequestV1` / `CloudJobStatusV1` / `CloudJobCancelResultV1`):
+  - *Idempotent submit:* `idempotency_key` is required by the wire contract and
+    is minted exactly once per user intent inside main's envelope guard
+    (`cloud-envelope-guard.ts`); a renderer-supplied key is rejected loud. The
+    dispatch POST performs a bounded client retry (hard ceiling of 3 attempts,
+    transport failures and 502/503/504 only) that re-serializes the *same*
+    guarded envelope, so every retry of one intent carries the same key and the
+    platform can collapse duplicates onto the original job
+    (`idempotent_replay`). 401/403/4xx/429 answers are never retried.
+  - *Cancel is server-decidable:* the cancel response is decoded strictly as
+    `CloudJobCancelResultV1` (`accepted` + current status). The public status
+    enum's seventh value `cancelling` means "cancel accepted, stop protocol not
+    yet closed" — the desktop shows it as *cancelling*, never as cancelled, and
+    only an SSE terminal event (`job.cancelled`/`completed`/`failed`) moves the
+    UI to a terminal state. The pre-#255 unversioned cancel body fails closed
+    as contract-incompatible; there is no compatibility branch.
+  - *Status:* `cancelling` decodes as itself, and a dead dispatch arrives as
+    `failed` plus `reason: "dispatch_dead"`, not as an eighth status value.
 - **MCP facade:** the sidecar receives the Cloud MCP URL and a standard MCP
   OAuth client declaration (`clientId` is a Client ID Metadata Document URL;
   `redirectUri` is the loopback callback the engine's own callback server

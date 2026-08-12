@@ -1,0 +1,6 @@
+{
+  "kind": "schema",
+  "contract": "CloudJobRequestV1",
+  "expect": "invalid",
+  "value": { "schema_version": 1, "idempotency_key": "a1b2c3d4\nrm -rf /", "autonomy": "bounded-agent", "objective": "unanchored-regex probe", "capabilities": [] }
+}

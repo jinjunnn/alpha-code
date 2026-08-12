@@ -16,6 +16,10 @@ import { UploadConsentDialog } from "./upload-consent-dialog"
 
 type Phase = "idle" | "dispatching" | "running" | "done" | "failed"
 type ConsentState = { requestId: string; preview: UploadPreview }
+// #400(REQ-109 AC4 桌面半场)取消子状态。"cancelling" 只在拿到服务端可判定结果
+// (CloudJobCancelResultV1)之后进入;它是「已受理未终结」,**不是** cancelled —— 终态永远由
+// SSE 的 job.cancelled/completed/failed 驱动 finish,本地绝不乐观改写。
+type CancelState = "none" | "requesting" | "cancelling" | "rejected"
 
 // [#918] 云端拒收带分类码(main 的 alpha-cloud-jobs 只透传 `code` 槽)。两条会真实发生在
 // 用户面前的,给出诚实说明而不是把一个裸码贴在错误行里 —— 前者告诉用户「要的限制强制不了」,
@@ -48,6 +52,7 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
     err: string
     jobId: string
     step: string
+    cancel: CancelState
     diffSource: "worktree" | "last-commit" | null
     savedDir: string
     transparent: boolean
@@ -58,6 +63,7 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
     err: "",
     jobId: "",
     step: "",
+    cancel: "none",
     diffSource: null,
     savedDir: "",
     transparent: false,
@@ -93,6 +99,7 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
       phase: "running",
       jobId: job.job_id,
       step: "queued",
+      cancel: "none",
       transparent,
       err: "",
       savedDir: "",
@@ -183,6 +190,24 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
     await beginJob(directory, result, envelope, false)
   }
 
+  // #400:取消请求。可判定结果三分:①受理/已在取消途中 → 显示「正在取消」,等 SSE 终态;
+  // ②服务端明确拒绝(accepted=false 且不在取消途中,即已终态)→ 行内说明,不改运行显示;
+  // ③传输/契约失败 → 行内错误,取消入口保持可用。任何分支都不把本地状态改成 cancelled。
+  const cancelJob = async () => {
+    if (!state.jobId || state.cancel === "requesting" || state.cancel === "cancelling") return
+    setState({ cancel: "requesting", err: "" })
+    const result = await window.api.cloud.cancel(state.jobId)
+    if ("error" in result) {
+      setState({ cancel: "none", err: dispatchError(result.error) })
+      return
+    }
+    if (result.accepted || result.status === "cancelling" || result.status === "cancelled") {
+      setState("cancel", "cancelling")
+      return
+    }
+    setState({ cancel: "rejected", err: t("alpha.ext.cloudCancelRejected") })
+  }
+
   const busy = () => state.phase === "dispatching" || state.phase === "running"
 
   return (
@@ -222,6 +247,19 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
         </Show>
         <Show when={state.phase === "running"}>
           <span class="alpha-ext-meta" data-live="">{state.jobId} · {state.step}</span>
+        </Show>
+        <Show when={state.phase === "running" && state.cancel !== "cancelling"}>
+          <button
+            class="alpha-ext-add"
+            data-cancel-job=""
+            disabled={state.cancel === "requesting"}
+            onClick={() => void cancelJob()}
+          >
+            {t("alpha.ext.cloudCancel")}
+          </button>
+        </Show>
+        <Show when={state.phase === "running" && state.cancel === "cancelling"}>
+          <span class="alpha-ext-meta" data-live="" data-cancelling="">{t("alpha.ext.cloudCancelling")}</span>
         </Show>
       </div>
       <Show when={state.phase === "done"}>

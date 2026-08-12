@@ -28,7 +28,9 @@ describe("immutable Alpha contract pin", () => {
   test("contract lock resolves to the exact immutable alpha-platform commit", async () => {
     const lock = await Bun.file(resolve(root, "alpha-platform-contract.lock.json")).json()
     expect(lock.repo).toBe("jinjunnn/alpha-platform")
-    expect(lock.commit).toBe("62c7aa6de5589cfcf2af00ecab69f1d3d176512b")
+    // #400 / platform#255: idempotency_key becomes required, the public status enum gains
+    // `cancelling`, and CloudJobCancelResultV1 appears. The desktop client moved in the same PR.
+    expect(lock.commit).toBe("9cf67bd994e4a44aad3af3fdd150df207f1a234f")
     expect(ALPHA_CONTRACT_VERSION).toBe(1)
   })
 
@@ -36,9 +38,10 @@ describe("immutable Alpha contract pin", () => {
     const lock = (await Bun.file(resolve(root, "alpha-platform-contract.lock.json")).json()) as {
       files: Array<{ path: string; sha256: string }>
     }
-    // 17, not 18: #681 moved the model-catalog producer fixture out of the V1 bundle and onto its own
-    // capability-scoped pin (see model-catalog-v2-consumer.test.ts).
-    expect(lock.files.length).toBe(17)
+    // 22 = 17 (#681 moved the model-catalog producer fixture onto its own pin) + 5 from
+    // platform#255: cancel-result + cancelling-status producers and the three invalid
+    // idempotency-key fixtures.
+    expect(lock.files.length).toBe(22)
     for (const file of lock.files) {
       const bytes = new Uint8Array(await Bun.file(resolve(vendor, file.path)).arrayBuffer())
       expect(createHash("sha256").update(bytes).digest("hex"), file.path).toBe(file.sha256)
@@ -51,11 +54,49 @@ describe("producer and consumer fixtures", () => {
     const paths = [
       "contracts/v1/fixtures/producer/artifact-list.json",
       "contracts/v1/fixtures/producer/cloud-job-accepted.json",
+      "contracts/v1/fixtures/producer/cloud-job-cancel-result.json",
       "contracts/v1/fixtures/producer/cloud-job-request.json",
       "contracts/v1/fixtures/producer/cloud-job-status.json",
+      "contracts/v1/fixtures/producer/cloud-job-status-cancelling.json",
       "contracts/v1/fixtures/producer/ledger-page.json",
     ]
     for (const path of paths) expect(validateFixture(await fixture(path)), path).toBe(true)
+  })
+
+  // platform#255: `cancelling` is "cancel accepted, stop protocol not yet closed" — a live state.
+  // Decoding it must yield exactly that value, not a coercion into a terminal one; the desktop UI
+  // relies on this distinction to never show "cancelled" before the server says so.
+  test("the seventh status `cancelling` decodes as itself on status and cancel-result surfaces", async () => {
+    const status = (await fixture("contracts/v1/fixtures/producer/cloud-job-status-cancelling.json")).value
+    expect(decodeContract("CloudJobStatusV1", status, "cloud-http").status).toBe("cancelling")
+    const cancel = (await fixture("contracts/v1/fixtures/producer/cloud-job-cancel-result.json")).value
+    const decoded = decodeContract("CloudJobCancelResultV1", cancel, "cloud-http")
+    expect(decoded.status).toBe("cancelling")
+    expect(decoded.accepted).toBe(true)
+  })
+
+  // platform#255: the old cancel wire shape (`{ job_id, status }`, no schema_version / accepted)
+  // is not a decodable cancel result. This portfolio ships no compatibility branch: the desktop
+  // fails closed instead of treating an unversioned blob as evidence the job stopped.
+  test("rejects the pre-#255 unversioned cancel response instead of trusting it", () => {
+    expect(() =>
+      decodeContract("CloudJobCancelResultV1", { job_id: "job_fixture1", status: "cancelled" }, "cloud-http"),
+    ).toThrow(ContractIncompatibleError)
+  })
+
+  test("upstream invalid idempotency-key fixtures are rejected by the desktop's own compiled schema", async () => {
+    const paths = [
+      "contracts/v1/fixtures/invalid/cloud-missing-idempotency-key.json",
+      "contracts/v1/fixtures/invalid/cloud-idempotency-key-charset.json",
+      "contracts/v1/fixtures/invalid/cloud-idempotency-key-trailing-newline.json",
+    ]
+    for (const path of paths) {
+      const invalid = await fixture(path)
+      expect(validateFixture(invalid), path).toBe(true)
+      expect(() => decodeContract("CloudJobRequestV1", invalid.value, "cloud-http"), path).toThrow(
+        ContractIncompatibleError,
+      )
+    }
   })
 
   test("consumer v1 fixtures validate against the pinned producer schemas", async () => {

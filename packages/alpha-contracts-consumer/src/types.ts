@@ -137,15 +137,22 @@ export type ArtifactDescriptorV1 = {
   }
 }
 
+// #400 / platform#255 (REQ-109): `idempotency_key` is REQUIRED on both request branches —
+// `^[A-Za-z0-9._-]{8,128}$`, full-string anchors. It lives in the envelope, not an HTTP header,
+// because the MCP facade has no header carrier and `cloud_dispatch`'s inputSchema references
+// CloudJobRequestV1Schema directly: one definition, both faces. `network` is narrowed to the only
+// real execution shape "restricted" (platform#262) — "none"/"open" were schema-accepted promises
+// the executor never kept, and the upstream schema now rejects them.
 export type CloudJobRequestV1 = {
   schema_version: 1
+  idempotency_key: string
   autonomy: "pipeline" | "bounded-agent"
   kind?: string
   input?: Record<string, unknown>
   objective?: string
   capabilities?: string[]
   budget?: { max_iter?: number; max_tokens?: number; max_wall_clock_sec?: number }
-  constraints?: { allowed_tools?: string[]; denied_paths?: string[]; network?: "none" | "restricted" | "open" }
+  constraints?: { allowed_tools?: string[]; denied_paths?: string[]; network?: "restricted" }
   output_schema?: Record<string, unknown>
   artifact_policy?: { delivery: "descriptor_only" }
 }
@@ -156,13 +163,27 @@ export type CloudJobAcceptedV1 = {
   status: "queued"
   autonomy: "pipeline" | "bounded-agent"
   kind?: string
+  /** platform#255: same key + same payload hit an existing admission row — the original job_id
+   *  came back instead of a second job. Informational for the desktop; the identity is job_id. */
+  idempotent_replay?: boolean
   urls: { status: string; events: string; result: string }
 }
+
+/** platform#255: the shared seventh-value public status enum. `cancelling` = cancel accepted but
+ *  the stop protocol has not closed — it is NOT `cancelled` and must never be shown as such. */
+export type CloudJobPublicStatusV1 =
+  | "queued"
+  | "running"
+  | "blocked"
+  | "cancelling"
+  | "completed"
+  | "failed"
+  | "cancelled"
 
 export type CloudJobStatusV1 = {
   schema_version: 1
   job_id: string
-  status: "queued" | "running" | "blocked" | "completed" | "failed" | "cancelled"
+  status: CloudJobPublicStatusV1
   autonomy: "pipeline" | "bounded-agent"
   kind?: string
   progress: {
@@ -174,7 +195,19 @@ export type CloudJobStatusV1 = {
   artifact_ids: string[]
   artifacts?: ArtifactDescriptorV1[]
   result?: unknown
+  /** platform#255: "dispatch never succeeded" projected as `failed` + this discriminator, instead
+   *  of an eighth enum value. */
+  reason?: "dispatch_dead"
   error: string | null
+}
+
+/** platform#255: server-side decidable cancel outcome (new). `accepted=false` means the job was
+ *  already in a non-cancellable state; `status` is the server's current truth either way. */
+export type CloudJobCancelResultV1 = {
+  schema_version: 1
+  job_id: string
+  status: CloudJobPublicStatusV1
+  accepted: boolean
 }
 
 export type ArtifactListV1 = {
@@ -194,6 +227,7 @@ export type ContractValues = {
   CloudJobRequestV1: CloudJobRequestV1
   CloudJobAcceptedV1: CloudJobAcceptedV1
   CloudJobStatusV1: CloudJobStatusV1
+  CloudJobCancelResultV1: CloudJobCancelResultV1
   ArtifactListV1: ArtifactListV1
   ArtifactDescriptorV1: ArtifactDescriptorV1
 }

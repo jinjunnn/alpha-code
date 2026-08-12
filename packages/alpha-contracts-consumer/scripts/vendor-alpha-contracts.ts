@@ -27,8 +27,18 @@ const UPSTREAMS = [
     // decodes changes shape. This repository is a CONSUMER of the new branch in one direction
     // only — it must keep rejecting it (see src/contracts.test.ts), because `decodeTokenClaims`
     // is the desktop's own credential path and an `mcp_access` token is not one of ours.
+    //
+    // #400 / platform#255(REQ-109): breaking cut, desktop moves with it in the same PR.
+    // `CloudJobRequestV1` both branches now REQUIRE `idempotency_key` (`^[A-Za-z0-9._-]{8,128}$`,
+    // full-string anchors); the public status enum gains a seventh value `cancelling` shared by
+    // `CloudJobStatusV1` and `ArtifactListV1`; `CloudJobAcceptedV1.idempotent_replay?` and
+    // `CloudJobStatusV1.reason?: "dispatch_dead"` appear; `CloudJobCancelResultV1` is new and is
+    // the server-side decidable cancel outcome the desktop must decode before showing anything
+    // as cancelled. Five fixtures join the vendor set: the cancel-result and cancelling-status
+    // producers, and the three invalid idempotency-key fixtures (missing / charset / trailing
+    // newline) that keep the desktop's own guard aligned with upstream's rejection set.
     repo: "jinjunnn/alpha-platform",
-    commit: "62c7aa6de5589cfcf2af00ecab69f1d3d176512b",
+    commit: "9cf67bd994e4a44aad3af3fdd150df207f1a234f",
     lock: "alpha-platform-contract.lock.json",
     vendor: "vendor/alpha-platform",
     sourceEnv: "ALPHA_PLATFORM_CONTRACT_SOURCE",
@@ -39,12 +49,17 @@ const UPSTREAMS = [
       "contracts/v1/limits.json",
       "contracts/v1/fixtures/producer/artifact-list.json",
       "contracts/v1/fixtures/producer/cloud-job-accepted.json",
+      "contracts/v1/fixtures/producer/cloud-job-cancel-result.json",
       "contracts/v1/fixtures/producer/cloud-job-request.json",
       "contracts/v1/fixtures/producer/cloud-job-status.json",
+      "contracts/v1/fixtures/producer/cloud-job-status-cancelling.json",
       "contracts/v1/fixtures/producer/ledger-page.json",
       "contracts/v1/fixtures/consumers/alpha-code-224/cloud-and-artifact.json",
       "contracts/v1/fixtures/consumers/alpha-web-22/platform-access-claims.json",
       "contracts/v1/fixtures/invalid/artifact-inline-content.json",
+      "contracts/v1/fixtures/invalid/cloud-idempotency-key-charset.json",
+      "contracts/v1/fixtures/invalid/cloud-idempotency-key-trailing-newline.json",
+      "contracts/v1/fixtures/invalid/cloud-missing-idempotency-key.json",
       "contracts/v1/fixtures/invalid/cloud-missing-version.json",
       "contracts/v1/fixtures/invalid/cloud-unknown-field.json",
       "contracts/v1/fixtures/limits/envelope-max-exact.json",

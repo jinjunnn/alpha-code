@@ -22,8 +22,13 @@ const purposeOf = (bearer: string): string => bearer.replace(/^Bearer tok\./, ""
 
 /** 每次 getAccessToken 请求的 purpose(按调用序)。用于判「有没有多要 / 要了通配」。 */
 const requested: RoutePurpose[] = []
-/** 每次出网请求的 (path, bearer)。 */
-const wire: Array<{ path: string; bearer: string }> = []
+/** 每次出网请求的 (path, bearer, body)。body 用于断言重试的每一发带的是**同一个**幂等键。 */
+const wire: Array<{ path: string; bearer: string; body?: string }> = []
+/** #400 注入的瞬态失败队列:每元素消费一次 —— "network" 抛(超时/断连形态),数字回该 HTTP 状态。 */
+const transientFailures: Array<"network" | number> = []
+/** #400 cancel 端点响应体(测试可换,验证 decode 闸真的在跑)。默认 = platform#255 契约形状。 */
+const CANCEL_OK = { schema_version: 1, job_id: JOB, status: "cancelling", accepted: true }
+let cancelBody = JSON.stringify(CANCEL_OK)
 
 mock.module("./alpha-auth", () => ({
   getAccessToken: (purpose: RoutePurpose) => {
@@ -75,22 +80,38 @@ const bodyFor = (path: string): string =>
   path.endsWith("/artifacts")
     ? artifactListBody
     : path.endsWith("/cancel")
-      ? JSON.stringify({ job_id: JOB, status: "cancelled" })
-      : JSON.stringify({
-          schema_version: 1,
-          job_id: JOB,
-          status: "completed",
-          autonomy: "pipeline",
-          progress: { phase: "completed" },
-          artifact_ids: [],
-          error: null,
-        })
+      ? cancelBody
+      : path === "/v1/cloud/jobs"
+        ? JSON.stringify({
+            schema_version: 1,
+            job_id: JOB,
+            status: "queued",
+            autonomy: "pipeline",
+            kind: "code-review",
+            urls: {
+              status: `${BASE}/v1/cloud/jobs/${JOB}`,
+              events: `${BASE}/v1/cloud/jobs/${JOB}/events`,
+              result: `${BASE}/v1/cloud/jobs/${JOB}/artifacts`,
+            },
+          })
+        : JSON.stringify({
+            schema_version: 1,
+            job_id: JOB,
+            status: "completed",
+            autonomy: "pipeline",
+            progress: { phase: "completed" },
+            artifact_ids: [],
+            error: null,
+          })
 
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(typeof input === "string" ? input : input.toString())
   const path = url.pathname
   const bearer = String((init?.headers as Record<string, string> | undefined)?.authorization ?? "")
-  wire.push({ path, bearer })
+  wire.push({ path, bearer, ...(typeof init?.body === "string" ? { body: init.body } : {}) })
+  const injected = transientFailures.shift()
+  if (injected === "network") throw new TypeError("fetch failed (injected transient)")
+  if (typeof injected === "number") return new Response(JSON.stringify({ error: "injected" }), { status: injected })
   const required = REQUIRED_ACTION.find(([re]) => re.test(path))?.[1]
   if (!required) return new Response(JSON.stringify({ error: "not found" }), { status: 404 })
   if (!bearer.startsWith("Bearer ")) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 })
@@ -134,7 +155,7 @@ test("artifact.read stays scoped: status and cancel keep their own approved acti
   expect(await jobs.getCloudJobStatus(JOB)).toMatchObject({ job_id: JOB })
   expect(lastWire().bearer).toBe(`Bearer ${tokenFor("cloud.read")}`)
 
-  expect(await jobs.cancelCloudJob(JOB)).toEqual({ job_id: JOB, status: "cancelled" })
+  expect(await jobs.cancelCloudJob(JOB)).toEqual(CANCEL_OK)
   expect(lastWire().bearer).toBe(`Bearer ${tokenFor("cloud.dispatch")}`)
 
   expect(requested).toEqual(["cloud.read", "cloud.dispatch"])
@@ -155,4 +176,66 @@ test("artifact bytes keep their separate transport contract, still on artifact.r
   expect(wire).toEqual([])
   expect(requested).toEqual(["artifact.read"])
   expect(downloads).toEqual([{ token: tokenFor("artifact.read"), base: BASE }])
+})
+
+// ---- #400(REQ-109 / platform#255):取消是服务端可判定结果,不是本地乐观覆盖 ----
+
+test("cancel fails closed on the pre-#255 unversioned body — an unversioned blob is not a cancel fact", async () => {
+  wire.length = 0
+  cancelBody = JSON.stringify({ job_id: JOB, status: "cancelled" })
+  try {
+    // 错误实现(裸 JSON.parse)在这里会把「任务已停」报给用户;decode 闸把它变成分类错误。
+    expect(await jobs.cancelCloudJob(JOB)).toEqual({ error: "contract-incompatible" })
+  } finally {
+    cancelBody = JSON.stringify(CANCEL_OK)
+  }
+})
+
+// ---- #400(REQ-109 AC1/AC5 桌面半场):有界重试 × 结构性稳定的幂等键 ----
+
+const DISPATCH_ENVELOPE = { autonomy: "pipeline", kind: "code-review", input: { diff: "+const x = 1" } } as const
+const dispatchKeys = () =>
+  wire
+    .filter((w) => w.path === "/v1/cloud/jobs" && w.body)
+    .map((w) => (JSON.parse(w.body!) as { idempotency_key: string }).idempotency_key)
+
+test("transient failures: dispatch retries bounded, and every retry of ONE intent carries the SAME key", async () => {
+  wire.length = 0
+  transientFailures.push("network", 503)
+
+  const result = await jobs.dispatchCloudJob(DISPATCH_ENVELOPE)
+
+  expect(result).toMatchObject({ job_id: JOB, status: "queued" })
+  const keys = dispatchKeys()
+  // 三次真实出网(1 发 + 2 重试),第 N 次重试的键与第一发逐字相同 —— 服务端才可能按键判重。
+  expect(keys.length).toBe(3)
+  expect(keys[0]).toMatch(/^[A-Za-z0-9._-]{8,128}$/)
+  expect(new Set(keys).size).toBe(1)
+})
+
+test("the retry ceiling is hard: persistent 503 stops at exactly 3 attempts with a classified error", async () => {
+  wire.length = 0
+  transientFailures.push(503, 503, 503)
+
+  expect(await jobs.dispatchCloudJob(DISPATCH_ENVELOPE)).toEqual({ error: "http-503" })
+  expect(dispatchKeys().length).toBe(3)
+})
+
+test("non-transient answers are not retried: a 400 comes back after exactly one attempt", async () => {
+  wire.length = 0
+  transientFailures.push(400)
+
+  expect(await jobs.dispatchCloudJob(DISPATCH_ENVELOPE)).toEqual({ error: "http-400" })
+  expect(dispatchKeys().length).toBe(1)
+})
+
+test("a NEW intent mints a NEW key: two independent dispatches never share identity", async () => {
+  wire.length = 0
+
+  expect(await jobs.dispatchCloudJob(DISPATCH_ENVELOPE)).toMatchObject({ job_id: JOB })
+  expect(await jobs.dispatchCloudJob(DISPATCH_ENVELOPE)).toMatchObject({ job_id: JOB })
+
+  const keys = dispatchKeys()
+  expect(keys.length).toBe(2)
+  expect(keys[0]).not.toBe(keys[1])
 })

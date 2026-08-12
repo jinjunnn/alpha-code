@@ -1,0 +1,15 @@
+{
+  "kind": "schema",
+  "contract": "CloudJobStatusV1",
+  "expect": "valid",
+  "value": {
+    "schema_version": 1,
+    "job_id": "job_fixture1",
+    "status": "cancelling",
+    "autonomy": "pipeline",
+    "kind": "code-review",
+    "progress": { "phase": "pipeline.running" },
+    "artifact_ids": [],
+    "error": null
+  }
+}
