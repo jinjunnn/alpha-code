@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { decodeContract } from "@alpha-code/contracts-consumer"
 import type { AutomationTask } from "../shared/automation-types"
-import { cloudScheduleRegistrationFor } from "./cloud-schedule-config"
+import { cloudScheduleEnvelopeFor, cloudScheduleRegistrationFor } from "./cloud-schedule-config"
 import { materializeCloudMcpConfig } from "./cloud-sidecar-config"
 import { guardCloudEnvelope } from "./cloud-envelope-guard"
 
@@ -67,5 +68,34 @@ describe("upload authority is absent from non-explicit channels", () => {
     expect(
       guardCloudEnvelope({ autonomy: "pipeline", kind: "code-review", input: { diff: "diff --git a/a b/a\n" } }).ok,
     ).toBe(true)
+  })
+
+  // #400 / platform#255:schedule 注册端(alpha-platform lib/schedules.ts:134)用同一份
+  // CloudJobRequestV1Schema 全量校验 envelope。这条判据跑的是**出货的信封构造器 × 出货的编译
+  // schema**:幂等键漏掉/不合形,这里在平台部署之前就红 —— 而不是等用户保存云档自动化吃 400。
+  test("the cloud-schedule registration envelope satisfies the shipped CloudJobRequestV1 wire contract", () => {
+    const task: AutomationTask = {
+      id: "task-2",
+      name: "Daily research",
+      nlText: "daily",
+      schedule: { kind: "cron", expr: "0 9 * * *" },
+      target: { projectDir: "/project", agent: "alpha-automation" },
+      prompt: "Research release notes",
+      execution: "cloud",
+      permissionProfile: "readonly",
+      budget: { maxDurationMin: 15 },
+      overlapPolicy: "skip",
+      catchUpPolicy: "skip",
+      notify: { system: true },
+      enabled: true,
+      createdAt: "2026-07-22T00:00:00.000Z",
+    }
+    const envelope = cloudScheduleEnvelopeFor(task)
+    const decoded = decodeContract("CloudJobRequestV1", envelope, "cloud-http")
+    expect(decoded.idempotency_key).toMatch(/^[A-Za-z0-9._-]{8,128}$/)
+    // 一次注册 = 一个意图 = 一把键;两次注册不得共享身份。
+    expect(decoded.idempotency_key).not.toBe(
+      decodeContract("CloudJobRequestV1", cloudScheduleEnvelopeFor(task), "cloud-http").idempotency_key,
+    )
   })
 })
