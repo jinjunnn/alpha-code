@@ -26,6 +26,7 @@ import {
   taskCardInfoOf,
   toolCardBodyOf,
   toolCardHeadOf,
+  toolDevDetailsOf,
   type ToolCardBody,
   type ToolCardHead,
   type ToolSourceCategory,
@@ -111,6 +112,12 @@ function icons(kind: string): JSX.Element {
           <path d="M12 7v5l3 2" />
         </svg>
       )
+    case "cloud":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M17.5 19a4.5 4.5 0 0 0 .8-8.94 6 6 0 0 0-11.7 1.4A3.75 3.75 0 0 0 7 19z" />
+        </svg>
+      )
     default:
       return (
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -139,6 +146,30 @@ const SOURCE_KEYS: Record<ToolSourceCategory, string> = {
   plugin: "alpha.timeline.sourcePlugin",
   unknown: "alpha.timeline.sourceUnknown",
 }
+
+// ── #587 来源徽标(主层级;只读 head.category = 持久化 identity+authority 投影)──
+const SOURCE_BADGE_KEYS: Record<ToolSourceCategory, string> = {
+  builtin: "alpha.timeline.srcBuiltin",
+  host: "alpha.timeline.srcHost",
+  "alpha-cloud": "alpha.timeline.srcCloud",
+  mcp: "alpha.timeline.srcMcp",
+  plugin: "alpha.timeline.srcPlugin",
+  unknown: "alpha.timeline.srcUnknown",
+}
+
+function SourceBadge(props: { category: ToolSourceCategory }) {
+  return (
+    <span class="a-tc-srcbadge" data-alpha-source-badge data-category={props.category}>
+      {t(SOURCE_BADGE_KEYS[props.category] as Parameters<typeof t>[0])}
+    </span>
+  )
+}
+
+// #587 安全通用卡的确定隐藏理由(AC2;静态文案,不携带任何调用数据)。
+const HIDDEN_REASON_KEYS = {
+  "no-snapshot": "alpha.timeline.hiddenNoSnapshot",
+  "no-rule": "alpha.timeline.hiddenNoRule",
+} as const
 
 // ── 状态徽标 ────────────────────────────────────────────────────────────────
 function StatusChip(props: { head: ToolCardHead }) {
@@ -444,6 +475,8 @@ export function TimelineToolCard(props: { part: ToolPart }) {
   const openPath = createMemo(() => openTargetOf(props.part))
   // T19 诊断行:edit/write 完成态的本文件 ERROR 级诊断(有界;缺席零渲染)。
   const diag = createMemo(() => diagnosticsOf(props.part))
+  // #587 开发者详情:快照在场才有(无快照历史行没有可信 identity 可陈列)。
+  const dev = createMemo(() => toolDevDetailsOf(props.part))
   // error 体单独出 CardBody:标题行 + 复制常驻,open() 只控 mono 正文(R1 Major)。
   const errorBody = () => {
     const value = body()
@@ -496,6 +529,8 @@ export function TimelineToolCard(props: { part: ToolPart }) {
       <Show when={task() && head().status === "running"}>
         <span class="a-tc-ring" aria-hidden="true" />
       </Show>
+      {/* #587 来源徽标:全来源常驻主层级,只读持久化快照的投影(T3/T7)。 */}
+      <SourceBadge category={head().category} />
       <StatusChip head={head()} />
     </>
   )
@@ -550,6 +585,18 @@ export function TimelineToolCard(props: { part: ToolPart }) {
       <Show when={description()}>
         <div class="a-tc-subdesc">{description()}</div>
       </Show>
+      {/* #587 安全通用卡(AC2):metadata-only 降级卡陈述确定的隐藏理由;
+          纯静态文案,不携带参数/错误/输出,也没有任何展开入口。 */}
+      <Show when={head().metadataOnly && head().hiddenReason}>
+        {(reason) => (
+          <div class="a-tc-body">
+            <div class="a-tc-safe" data-alpha-safe-card>
+              <b>{head().status === "error" ? t("alpha.timeline.safeHiddenError") : t("alpha.timeline.safeHidden")}</b>
+              <span>{t(HIDDEN_REASON_KEYS[reason()] as Parameters<typeof t>[0])}</span>
+            </div>
+          </div>
+        )}
+      </Show>
       {/* AC5:redactor 失败的整字段 → 常驻的确定「详情已隐藏」,无展开、无 raw 旁路。 */}
       <Show when={body().type === "hidden"}>
         <div class="a-tc-body">
@@ -599,6 +646,21 @@ export function TimelineToolCard(props: { part: ToolPart }) {
             <TruncatedNote />
           </Show>
         </div>
+      </Show>
+      {/* #587 开发者详情(AC3/AC4):technical-id / canonical identity / authority
+          证明只在这里;默认折叠(原生 details 无 open 属性),纯文本、已限长,
+          不参与任何授权/策略/计费判定(cards-contract 的 import 面棘轮钉着)。 */}
+      <Show when={dev()}>
+        {(info) => (
+          <details class="a-tc-dev" data-alpha-dev-details>
+            <summary>{t("alpha.timeline.devDetails")}</summary>
+            <div class="a-tc-dev-body">
+              <div>{info().canonical}</div>
+              <div>technical-id: {info().technicalId}</div>
+              <div>authority: {info().authority}</div>
+            </div>
+          </details>
+        )}
       </Show>
     </section>
   )
