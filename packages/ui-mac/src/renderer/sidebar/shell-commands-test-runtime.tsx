@@ -447,6 +447,17 @@ const FETCH_FIXTURES: Record<string, unknown> = {
     version: "0",
     time: { created: 1, updated: 1 },
   },
+  // #933:ghost 用例的关键夹具 —— **active server 的引擎里恰好有一条同 id 的无关会话**
+  // (跨机器撞 id 的形状)。它不在任何 tab 里;反推兜底若按 active 猜,打开的就是这一条。
+  // 没有这个夹具,错误落点的路由会被 Suspense 压住永不提交,判据两个方向都绿(实测)。
+  "/session/ses_ghost": {
+    id: "ses_ghost",
+    projectID: "prj_alpha-code",
+    directory: FIXTURE_DIRECTORY,
+    title: "别台机器上的无关会话",
+    version: "0",
+    time: { created: 1, updated: 1 },
+  },
   "/session/ses_tab_only": {
     id: "ses_tab_only",
     projectID: "prj_alpha-code",

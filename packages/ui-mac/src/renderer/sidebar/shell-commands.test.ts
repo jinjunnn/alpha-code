@@ -499,15 +499,23 @@ describe("#925 多 server 下的会话导航:落在真正持有该会话的 serv
    写死单值、或按 active 反推的实现,至少两条当场红。绕过实验(把 legacySessionServer 改回
    `?? active` / 摘掉身份闸 / 通知 href 改回 legacy 形状)各自把对应用例翻红,记录见 PR。 */
 describe("#933 legacy 会话 href 咽喉收口:反推默认拒绝 + 侧栏身份闸 + 通知钉真机", () => {
-  test("存量 legacy URL 指向没人认识的会话 id(active=wsl:ubuntu)→ 回家,不落 active 的同 id 路由", async () => {
+  test("存量 legacy URL 的 id 不在任何 tab 里(active=wsl:ubuntu 恰好有同 id 无关会话)→ 回家,不打开它", async () => {
     await mountShell(() => runtime.AlphaShellRemoteActive())
     const before = runtime.navigationIntents().length
 
     runtime.navigateTo(`/${encodeDirectory(runtime.FIXTURE_DIRECTORY)}/session/ses_ghost`)
+    // legacy 那一跳必须真的发生(否则「在家」是趟出来的还是原地没动,判据分不出)。
+    await waitFor(
+      () =>
+        sessionLandings(runtime.navigationIntents().slice(before)).some(
+          (route) => route.routeId === "legacy-session" && route.id === "ses_ghost",
+        ),
+      "legacy 导航发生",
+    )
     await waitFor(() => runtime.routerPath() === homeHref(), "回到首页")
 
-    // 旧版反推在这里回落 active:真实 router 会收到 /server/<wsl:ubuntu>/session/ses_ghost ——
-    // 一台从没见过这个会话的机器。默认拒绝后,这样的 canonical 落点一条都不许出现。
+    // 旧版反推在这里回落 active:真实 router 会收到并**提交** /server/<wsl:ubuntu>/session/ses_ghost,
+    // 打开的是那台机器上恰好同 id 的无关会话(夹具真的给了它)。默认拒绝后一条都不许出现。
     const landings = sessionLandings(runtime.navigationIntents().slice(before))
     expect(landings.filter((route) => route.routeId === "session" && route.id === "ses_ghost")).toEqual([])
   })
