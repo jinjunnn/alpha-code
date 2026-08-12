@@ -1,11 +1,10 @@
 // #926/#929 tabs 预清契约类型 —— **唯一定义点**,零 import(main 可安全依赖)。
 //
-// 为什么单独一个 shared 文件:与上游 Tab 类型的比对(renderer/tabs-preclean-contract.ts)必须
-// import "@opencode-ai/app",而任何从 src/main 出发、哪怕 type-only 的传递依赖都会让上游
-// app.d.ts 的极简 `Window.api` 全局声明抢先进 program,压过 env.d.ts 的 ElectronAPI ⇒
-// renderer 379 处 window.api 假红(2026-08-11 两次实测,含本票审计修复轮)。所以:
-//   定义在这里(无上游 import,main/renderer 都能安全 import type);
-//   与上游的比对在 renderer 侧比对文件(见其抬头的反孤儿锚说明)。
+// 为什么单独一个 shared 文件:与上游 Tab 类型的比对(main/tabs-preclean-contract.ts)必须
+// import "@opencode-ai/app";判据本身与那份比对分开,谓词就不会跟着上游的类型图一起漂。
+// (历史:#926 时这条分离还兼职躲一个缺陷 —— 从 src/main 出发的传递依赖会让上游 app.d.ts 的
+// 极简 `Window.api` 全局声明抢先进 program、压过 env.d.ts 的 ElectronAPI,renderer 数百条假红。
+// #932 已把声明顺序钉死,比对文件也随之搬回 src/main;这里的分离只剩「单一定义点」这一个理由。)
 //
 // 判据派生(#929 Major):main/tabs-preclean.ts 的 SESSION_CHECKS / DRAFT_CHECKS 以这两个类型的
 // 键集为形状(`-?` 全键必填)。这里改键、那边的 Record 缺键/多键当场 typecheck 红 ——

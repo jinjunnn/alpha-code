@@ -27,9 +27,6 @@ import { initI18n, t } from "./i18n"
 import { initializationData, initializationReady } from "./initialization"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import { availableStartupServer, isEphemeralLocalServerUrl, readyWslConnections } from "./wsl/connections"
-// #929 反孤儿锚:tabs 预清的漂移闸(与上游 Tab 类型的比对)是纯类型文件,没有运行时消费者 ——
-// 这行 type-only import 把它钉进 typecheck 的 program:删掉那个文件 = 这里 TS2307 当场红。
-import type {} from "./tabs-preclean-contract"
 import "./styles.css"
 import "./sidebar/sidebar.css"
 import "./sidebar/account-popover.css"

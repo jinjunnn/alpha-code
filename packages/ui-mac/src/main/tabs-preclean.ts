@@ -11,7 +11,7 @@
 // 契约锚(#926 起与上游**类型**绑死,不再手抄字段清单):
 //   store = "opencode.global.dat",键 "tabs" / "tabs.recent"(app/src/utils/persist.ts GLOBAL_STORAGE;
 //   ui-mac desktop 无 windowID ⇒ Persist.window 经 resolveTarget 落 GLOBAL_STORAGE);
-//   tab 形状 = renderer 契约文件的 SessionTabContract / DraftTabContract,与 packages/app(滚动 pin,ADR-034)的
+//   tab 形状 = shared 契约的 SessionTabContract / DraftTabContract,与 packages/app(滚动 pin,ADR-034)的
 //   Tab 类型做双向键集相等断言 —— pin bump 改了 tab 形状而这里没跟,ui-mac typecheck **当场红**。
 // 历史(#926 的教训,两处同因):
 //   ① dirBase64 曾是 session tab 字段(REQ-014 形态 B 毒键即「缺 dirBase64 → tabHref /undefined/... →
@@ -26,13 +26,13 @@
 
 // ── #926 漂移闸:tier-1 的形状判据与上游 Tab 类型绑死(typecheck 层,运行时零成本)──────────
 // packages/app 走滚动 pin(ADR-034):上游改 tab 形状 ⇒ 键集相等断言当场红,逼着本文件的判据同步走,
-// 而不是像 dirBase64 那样悄悄漂成「专剔合法数据」。断言本体在 renderer 侧的
-// `src/renderer/tabs-preclean-contract.ts`(与上游类型的比对必须 import "@opencode-ai/app",而该
-// import 在 src/main 会抢先装载上游 app.d.ts 的 `Window.api` 极简全局声明、压过 env.d.ts 的
-// ElectronAPI —— skipLibCheck 吞掉声明处冲突,379 条使用点假红;renderer 侧与现状同序,无此问题)。
+// 而不是像 dirBase64 那样悄悄漂成「专剔合法数据」。断言本体在 `./tabs-preclean-contract`
+// (#926 时它被 #932 的声明顺序缺陷逼到 renderer 侧寄放;#932 修好后搬回判据旁边)。
+// #929 反孤儿锚:那是个纯类型文件,没有运行时消费者 —— 这行 type-only import 把它钉进
+// typecheck 的 program,删掉那个文件 = 这里 TS2307 当场红。
+import type {} from "./tabs-preclean-contract"
 
-// 契约类型的唯一定义在 shared(零 import,main 可安全依赖;为什么不能直接依赖 renderer 侧
-// 比对文件 —— 会把 "@opencode-ai/app" 传递进 src/main 解析链,379 条假红,见该 shared 文件抬头)。
+// 契约类型的唯一定义在 shared(零 import),main 的谓词与 renderer 的比对都从那里派生。
 import type { DraftTabContract, SessionTabContract } from "../shared/tabs-preclean-contract"
 // 本地 sidecar 的 ServerConnection.Key,单一来源(#564 已登记;上游 server.tsx Key.make("sidecar"))。
 // 漂移方向安全:上游若改掉这个 key,tier-2 找不到「可验证的 tab」⇒ 整体 fail-open 跳过 + 留痕,
