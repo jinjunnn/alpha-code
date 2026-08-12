@@ -35,6 +35,8 @@ describe("upload authority is absent from non-explicit channels", () => {
       autonomy: "bounded-agent",
       objective: "Review the public release notes",
       capabilities: ["web_search"],
+      // [#918] bounded-agent 必须显式声明工具集合(平台把「没声明」归一成零工具)。
+      constraints: { allowed_tools: ["web"] },
     })
 
     expect(hasUploadAuthorityReference(savedSchedule)).toBe(false)

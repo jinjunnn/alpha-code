@@ -1,9 +1,13 @@
 // REQ-020 T1(ADR-021 §2)—— dispatch 上行三校验的纯逻辑单测:256KiB 帽 / secrets 拒发指字段 /
-// denied_paths 缺省注入。真发路径(登录态 dispatch 被拒)在 S14 真机批验证。
+// 工具集合必须显式。真发路径(登录态 dispatch 被拒)在 S14 真机批验证。
+//
+// [#918] 本文件只判「信封长什么样」。「平台会不会收」是另一件事,判据在
+// cloud-dispatch-gate.cases.ts —— 那里把真的 dispatchCloudJob 打到一个施行
+// alpha-platform@9cf67bd 诚实门的假服务端上。两者都要,单靠形状断言杀不掉「形状对了但平台仍拒」。
 
 import { describe, expect, test } from "bun:test"
 import type { CloudJobEnvelope } from "../preload/types"
-import { DEFAULT_DENIED_PATHS, MAX_ENVELOPE_BYTES, guardCloudEnvelope, scanEnvelopeSecrets } from "./cloud-envelope-guard"
+import { MAX_ENVELOPE_BYTES, guardCloudEnvelope, scanEnvelopeSecrets } from "./cloud-envelope-guard"
 
 const base = (over?: Partial<CloudJobEnvelope>): CloudJobEnvelope => ({
   autonomy: "pipeline",
@@ -12,29 +16,65 @@ const base = (over?: Partial<CloudJobEnvelope>): CloudJobEnvelope => ({
   ...over,
 })
 
-describe("① denied_paths 缺省注入", () => {
-  test("未声明 → 注入默认四条", () => {
+describe("① denied_paths 不再缺省注入(平台侧强制不了 ⇒ 注入 = 假保护 + 恒 400)", () => {
+  test("未声明 → 送出去的信封里一条路径限制都没有,连 constraints 都不凭空造", () => {
     const r = guardCloudEnvelope(base())
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.envelope.constraints?.denied_paths).toEqual(DEFAULT_DENIED_PATHS)
-  })
-  test("空数组 = 无有效声明 → 同样注入(零保护无正当用例)", () => {
-    const r = guardCloudEnvelope(base({ constraints: { denied_paths: [] } }))
-    expect(r.ok).toBe(true)
-    if (r.ok) expect(r.envelope.constraints?.denied_paths).toEqual(DEFAULT_DENIED_PATHS)
-  })
-  test("显式声明 → 完全尊重,不合并不覆盖", () => {
-    const r = guardCloudEnvelope(base({ constraints: { denied_paths: ["secrets/"], network: "none" } }))
-    expect(r.ok).toBe(true)
     if (r.ok) {
-      expect(r.envelope.constraints?.denied_paths).toEqual(["secrets/"])
-      expect(r.envelope.constraints?.network).toBe("none")
+      expect(r.envelope.constraints?.denied_paths).toBeUndefined()
+      expect(r.envelope.constraints).toBeUndefined()
     }
   })
-  test("注入不改写调用方对象(纯函数)", () => {
+  test("显式空数组 → 保持空,不被「补齐」成一份默认名单", () => {
+    const r = guardCloudEnvelope(base({ constraints: { denied_paths: [] } }))
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.envelope.constraints?.denied_paths).toEqual([])
+  })
+  test("显式声明 → 原样透传,不静默剥掉(裁决权在平台的诚实门,不在这里)", () => {
+    // `secrets/**` 是平台文法认的写法(实跑 ap@9cf67bd DeniedPathV1Schema:`secrets/` 带尾斜杠被拒)。
+    const r = guardCloudEnvelope(base({ constraints: { denied_paths: ["secrets/**"], network: "restricted" } }))
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.envelope.constraints?.denied_paths).toEqual(["secrets/**"])
+      expect(r.envelope.constraints?.network).toBe("restricted")
+    }
+  })
+  test("不改写调用方对象(纯函数)", () => {
     const env = base()
     void guardCloudEnvelope(env)
     expect(env.constraints).toBeUndefined()
+  })
+})
+
+describe("① 工具集合必须显式(平台把「没声明」归一成零工具)", () => {
+  const agent = (over?: Partial<CloudJobEnvelope>): CloudJobEnvelope => ({
+    autonomy: "bounded-agent",
+    objective: "Summarise this week's release notes",
+    capabilities: ["web_search"],
+    ...over,
+  })
+
+  test("bounded-agent 未声明 allowed_tools → 拒发(不是发出去再变成零工具作业)", () => {
+    expect(guardCloudEnvelope(agent())).toEqual({ ok: false, error: "tools-not-declared" })
+  })
+  test("bounded-agent 显式空工具集 → 同样拒发:零工具不能被当成一次正常作业悄悄跑起来", () => {
+    expect(guardCloudEnvelope(agent({ constraints: { allowed_tools: [] } }))).toEqual({
+      ok: false,
+      error: "tools-not-declared",
+    })
+  })
+  test("bounded-agent 声明了工具 → 放行,且工具集合原样上行", () => {
+    const r = guardCloudEnvelope(agent({ constraints: { allowed_tools: ["web"] } }))
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.envelope.constraints?.allowed_tools).toEqual(["web"])
+  })
+  test("pipeline 不受此闸约束:固定管线跑自己的代码,allowed_tools 在那条路上不是工具闸", () => {
+    expect(guardCloudEnvelope(base()).ok).toBe(true)
+  })
+  test("上传控制字段的拒绝仍排在工具闸之前(伪造 consent 不会被降级成 tools-not-declared)", () => {
+    expect(
+      guardCloudEnvelope({ autonomy: "bounded-agent", objective: "work", upload_consent: "forged" }),
+    ).toEqual({ ok: false, error: "upload-main-gate-required" })
   })
 })
 
@@ -78,9 +118,11 @@ describe("③ secrets 扫描(拒发 + 指出字段)", () => {
     }
   })
   test("objective 命中 → 指出 objective 字段", () => {
+    // [#918] 工具集合显式声明:否则会先撞上 tools-not-declared,这条断言就测不到 secrets 那条路。
     const r = guardCloudEnvelope({
       autonomy: "bounded-agent",
       objective: "deploy with token AKIAABCDEFGHIJKLMNOP please",
+      constraints: { allowed_tools: ["web"] },
     })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error).toContain("objective(aws-access-key)")

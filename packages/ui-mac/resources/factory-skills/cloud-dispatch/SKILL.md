@@ -29,17 +29,27 @@ Everything you put in an envelope **leaves the user's machine**. Rules:
    relevant `git diff` output only (the pipeline truncates around ~12k chars anyway).
 2. **No secrets.** Never include contents of `.env*`, `*.pem`, key files, tokens, or anything from
    `.alpha/` or `.git/`. If a diff contains a credential, redact it and tell the user.
-3. Dispatches from the Extension Hub additionally pass a hard local guard (1MB envelope cap +
+3. Dispatches from the Extension Hub additionally pass a hard local guard (256 KiB envelope cap +
    secrets scan). Session dispatches through these tools rely on server-side schema validation
    plus **your** discipline — the two rules above are on you.
+4. **Do not send `constraints.denied_paths`.** A cloud job runs arbitrary code inside the sandbox,
+   so a path blocklist cannot be enforced there — the platform refuses the whole dispatch with
+   `denied_paths_unenforceable_for_execution_form` rather than pretend it works. Rule 2 is the
+   protection; a blocklist in the envelope is not.
 
 ## The envelope (`cloud_dispatch`)
 
 Two autonomy modes:
 
 - `autonomy: "pipeline"` — fixed server-side pipeline; requires `kind` + `input`.
-- `autonomy: "bounded-agent"` — requires `objective` (+ optional `capabilities`). Heavier; prefer
-  a pipeline when one fits.
+- `autonomy: "bounded-agent"` — requires `objective` **and** `constraints.allowed_tools`
+  (+ optional `capabilities`). Heavier; prefer a pipeline when one fits.
+
+**`constraints.allowed_tools` is mandatory for `bounded-agent`.** An omitted or empty tool list is
+read server-side as *no tools at all*: the job starts, burns budget, and finishes having done
+nothing. Name the tools the objective actually needs — e.g. `["web"]` for research, or the coding
+tools (`["Write", "Bash"]`) for a `code_exec` / `file_mutation` job. If you cannot name them, say so
+instead of dispatching.
 
 Pipeline kinds and their `input`:
 

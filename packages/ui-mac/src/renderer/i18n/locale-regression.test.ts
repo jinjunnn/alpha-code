@@ -90,6 +90,24 @@ describe("locale regression gate", () => {
     setLocale("en")
   })
 
+  // [#918] 云端拒收带的是分类码(`denied_paths_unenforceable_for_execution_form`)。
+  // 少了这两条文案,`t()` 会把 key 原样吐回去 —— 用户在错误行上看到的就是一个开发者标识符,
+  // 而不是「你要的那条限制,这个作业形态强制不了」。所以两个 locale 各自必须真的解析出人话。
+  test("cloud dispatch refusals resolve to honest copy instead of a raw classification code", () => {
+    const keys = ["alpha.ext.cloudErrDeniedPaths", "alpha.ext.cloudErrToolsUndeclared"] as const
+    for (const locale of ["en", "zh"] as const) {
+      setLocale(locale)
+      for (const key of keys) {
+        const copy = t(key)
+        expect(copy).not.toBe(key)
+        expect(copy.length).toBeGreaterThan(40)
+        expect(copy).not.toContain("denied_paths_unenforceable_for_execution_form")
+        expect(copy).not.toContain("tools-not-declared")
+      }
+    }
+    setLocale("en")
+  })
+
   test("model row labels omit the trailing separator when status is empty", () => {
     (["en", "zh"] as const).forEach((locale) => {
       setLocale(locale)

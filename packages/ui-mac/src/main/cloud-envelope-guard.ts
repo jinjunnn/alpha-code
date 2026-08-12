@@ -4,9 +4,27 @@
 //
 // 三条规则,全部 loud-fail —— 绝不静默截断/改写内容(改写 = 送出损坏数据还装没事,反 placebo
 // 纪律 C28;ADR-021 §2 明文「不做静默改写」):
-//   ① denied_paths 缺省注入:contract 未带有效声明时补 `.env* / *.pem / .alpha/ / .git/`;
-//   ② 体积帽:注入后的实发序列化形态 >256KiB 拒发(diff-only 优先,勿传全库);
+//   ① 工具集合必须显式:bounded-agent 未声明非空 `constraints.allowed_tools` 即拒发;
+//   ② 体积帽:实发序列化形态 >256KiB 拒发(diff-only 优先,勿传全库);
 //   ③ secrets 扫描:input/objective 递归扫字符串,命中即拒发并指出字段路径。
+//
+// [#918] 原规则①「denied_paths 缺省注入(`.env* / *.pem / .alpha/ / .git/`)」**已删除**,
+// 因为它承诺的保护从来没有真正存在,而平台侧现在会因此整个拒收作业:
+//   · alpha-platform@9cf67bd `lib/cloud-contract.ts:78 deniedPathsEnforceable` ——
+//     `autonomy: "pipeline"` **恒**不可强制(固定管线在沙箱跑任意代码);Tier-2(claude_code)
+//     只在工具集合为空时才算可强制。桌面今天发的全是 pipeline ⇒ 恒不可强制。
+//   · 因此 `lib/cloud-core.ts:172` 的诚实门对「非空 denied_paths + 不可强制」回 400
+//     `denied_paths_unenforceable_for_execution_form`,先于任何副作用。
+//   · 且那四条默认值本身带 glob 元字符,`contracts/v1/execution-policy.ts DeniedPathV1Schema`
+//     在信封 parse 阶段就拒(文法 = upload-manifest POSIX-relative + 可选 `/**` 后缀)。
+//   继续注入 = 桌面每一次云派发都被 400。真正的密钥防线是③ secrets 扫描与上传同意面的
+//   `classifyUploadContent`,它们不依赖沙箱内的路径强制。
+//
+// [#918] 新规则①的由来:同一个平台改动把「缺 constraints」从 fail-open 翻成 fail-closed ——
+// `normalizeExecutionPolicy`(cloud-contract.ts:57)把缺失的 `allowed_tools` 折叠成 `[]`,
+// 而 `agent-runner.mjs:79` 的 `tools: policy.allowed_tools` 里 `[]` = 禁用全部内建工具。
+// 于是一个不声明工具的 bounded-agent 会**跑起来、烧预算、什么都做不了然后 completed**。
+// 这正是本票禁止的「静默降级成零工具」,所以桌面必须显式声明它要的工具集合,声明不了就别发。
 
 import type { CloudJobEnvelope } from "../preload/types"
 import {
@@ -16,7 +34,6 @@ import {
 } from "@alpha-code/contracts-consumer"
 
 export const MAX_ENVELOPE_BYTES = CONTROL_ENVELOPE_MAX_BYTES
-export const DEFAULT_DENIED_PATHS = [".env*", "*.pem", ".alpha/", ".git/"]
 
 // 高置信度密钥模式。定位是纵深一层、非唯一防线(A6 的 {file:} 通道才是密钥主防线);刻意收窄到
 // 强前缀/结构模式,把普通代码 diff 的误杀率压到最低 —— 新格式 token 有假阴性,属 ADR-021 已知
@@ -61,16 +78,19 @@ export type GuardResult = { ok: true; envelope: CloudJobRequestV1 } | { ok: fals
 
 export function guardCloudEnvelope(envelope: CloudJobEnvelope): GuardResult {
   if (containsReservedUploadControl(envelope)) return { ok: false, error: "upload-main-gate-required" }
-  // ① denied_paths 缺省注入。「未显式声明」按无有效声明算:空数组零保护、也没有正当用例
-  //   (真想送 .env 内容照样被 ③ 拦),一律视同未声明补默认。
-  const declared = envelope.constraints?.denied_paths
+  // ① 工具集合必须显式(见文件头 [#918])。缺失与显式 `[]` 在平台侧归一成同一个 deny-all,
+  //   而 bounded-agent 的目标全靠工具达成 ⇒ 两者都当作「没说清楚」拒发,不替调用方猜。
+  //   pipeline 不适用:固定管线跑的是自己的代码,`allowed_tools` 在那条路上不是工具闸
+  //   (alpha-platform@9cf67bd sandbox.ts 的 /v1/exec、/v1/run-python 只透传 policy)。
+  if (envelope.autonomy === "bounded-agent" && !(envelope.constraints?.allowed_tools?.length)) {
+    return { ok: false, error: "tools-not-declared" }
+  }
+  // denied_paths 原样透传:声明了就送上去,由平台的诚实门裁决并回分类码 —— 不静默剥掉
+  //   一条用户以为生效的限制(剥掉 = 我们替第三方解释它的文法,正是 ADR-021 禁止的形态)。
   const versioned = {
     schema_version: 1 as const,
     artifact_policy: { delivery: "descriptor_only" as const },
     ...envelope,
-    ...(declared && declared.length > 0
-      ? {}
-      : { constraints: { ...envelope.constraints, denied_paths: DEFAULT_DENIED_PATHS } }),
   }
 
   // ② 体积帽 —— 以实际会发出的序列化形态计量;超限拒发,不截断。

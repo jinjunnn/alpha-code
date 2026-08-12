@@ -34,6 +34,24 @@ import type { createExplicitUploadRequest } from "./alpha-upload-manifest"
 // Resolved by alpha-endpoints (env ALPHA_CLOUD_URL > userData pin > login discovery > default).
 const cloudBase = () => resolveEndpoints().cloud
 
+// [#918] 平台的拒绝带**稳定分类码**(alpha-platform@9cf67bd `lib/cloud-core.ts:177`
+// `denied_paths_unenforceable_for_execution_form`、`upload_reserved_input`、readiness 的
+// `billing_unready` …)。把它压成 `http-400` 等于把「你要的那条限制,这个执行形态根本强制不了」
+// 这句诚实说明丢掉,只留一个用户无从下手的数字 —— 而 renderer 会把它原样贴在错误行里。
+// 只取 `code` 这一个分类槽:`error` 是散文,可能携带路径/租户且随时会变,不进 UI。
+// 无 `code`(或形状不认识)⇒ 保持既有 `http-<status>`,不猜。
+const CLASSIFICATION_CODE = /^[a-z][a-z0-9_]{2,63}$/
+async function httpErrorCode(res: Response): Promise<string> {
+  const fallback = `http-${res.status}`
+  try {
+    const body: unknown = JSON.parse(await res.text())
+    const code = (body as { code?: unknown } | null)?.code
+    return typeof code === "string" && CLASSIFICATION_CODE.test(code) ? code : fallback
+  } catch {
+    return fallback
+  }
+}
+
 async function authed<T>(
   path: string,
   purpose: RoutePurpose,
@@ -55,7 +73,7 @@ async function authed<T>(
       signal: AbortSignal.timeout(15000),
     })
     if (res.status === 401) return { error: "unauthorized" }
-    if (!res.ok) return { error: `http-${res.status}` }
+    if (!res.ok) return { error: await httpErrorCode(res) }
     return decode(await res.text())
   } catch (error) {
     if (isContractIncompatibleError(error)) {
@@ -67,7 +85,7 @@ async function authed<T>(
   }
 }
 
-// ADR-021 §2(REQ-020 T1):上行硬校验单点 —— denied_paths 缺省注入 / 256KiB 帽 / secrets 拒发,
+// ADR-021 §2(REQ-020 T1):上行硬校验单点 —— 工具集合必须显式 / 256KiB 帽 / secrets 拒发,
 // 全部 loud(错误原样回 renderer 行内呈现)。MCP facade 路径由 B 侧 schema 校验兜底(双层)。
 export const dispatchCloudJob = (envelope: CloudJobEnvelope): Promise<CloudResult<CloudDispatchResult>> => {
   const guarded = guardCloudEnvelope(envelope)
