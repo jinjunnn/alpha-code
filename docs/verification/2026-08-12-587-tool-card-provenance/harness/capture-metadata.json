@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-12T04:21:17.288Z",
+  "productionBaselineCommit": "5a748ab55df57368fecaafdb2d1456f75e795d0a",
+  "harness": "production SessionTimelineView via loopback Vite build + Chrome --headless=new",
+  "harnessSha256": "31e348ba772740ff7961a6a223d379201ba5688d0d4b0b3bea222e9db8b76859",
+  "captureDriverSha256": "0fda7dff5a630f393b54494360eb2b4b9ba7b61da096c45f09405835682fb83d",
+  "chrome": "Google Chrome 151.0.7922.77",
+  "viewports": {
+    "narrow": 460,
+    "wide": 1280
+  },
+  "foregroundApplicationLaunches": 0,
+  "credentialsUsed": false,
+  "electronStarted": false,
+  "records": [
+    {
+      "state": "cloud-pending",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/cloud-pending-light-narrow.png",
+      "bytes": 11032,
+      "sha256": "50dedf4c16a6bd3f41e338b69ed2250e35dd71c79cd43449ce36770bcbdc3833"
+    },
+    {
+      "state": "cloud-pending",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/cloud-pending-dark-narrow.png",
+      "bytes": 11116,
+      "sha256": "5784ae88e318fdd55487049b383af6cb629bf707264cf7d49e9c11e87d3720e3"
+    },
+    {
+      "state": "cloud-running",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/cloud-running-light-narrow.png",
+      "bytes": 10880,
+      "sha256": "93def06a989c03915480d9d611df5a1a231da85148226a849f8380c1506c6405"
+    },
+    {
+      "state": "cloud-running",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/cloud-running-dark-narrow.png",
+      "bytes": 11083,
+      "sha256": "f577820088d107c3daba57869adf8174a931168e18eb22adb7055df93dbf1ccc"
+    },
+    {
+      "state": "cloud-completed",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/cloud-completed-light-narrow.png",
+      "bytes": 11208,
+      "sha256": "53092113b06f8ec106f22c2932bbcc28f4b7503c648c137af0d4e07e4b65077c"
+    },
+    {
+      "state": "cloud-completed",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/cloud-completed-dark-narrow.png",
+      "bytes": 11348,
+      "sha256": "8ad92bf48a620852e9370d24880ce18b014a45858abd58e84a74b3b372e5fb9d"
+    },
+    {
+      "state": "cloud-error",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/cloud-error-light-narrow.png",
+      "bytes": 17307,
+      "sha256": "86c406430af37c46f98ad51578031143204f8ee16739a38166fd699b7a1200ad"
+    },
+    {
+      "state": "cloud-error",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/cloud-error-dark-narrow.png",
+      "bytes": 17757,
+      "sha256": "bd54f9c026f1f5d33442b28f5da9a1694e926e4177c83feb32271effc6957d73"
+    },
+    {
+      "state": "cloud-all",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/cloud-all-light-narrow.png",
+      "bytes": 57697,
+      "sha256": "fde151f04ffe3980f6c6063b635409337b0855b0783e94f53cf2c57334171e46"
+    },
+    {
+      "state": "cloud-all",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/cloud-all-dark-narrow.png",
+      "bytes": 58653,
+      "sha256": "8bae6b24e26d2b338722f781c73a3786e5eea7db1251a5309dc9241c02dad15d"
+    },
+    {
+      "state": "matrix",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/matrix-light-narrow.png",
+      "bytes": 83264,
+      "sha256": "408d3e2f118e7fe8ee0f5151623d2fe08802fbfe8d759f835ee0fd0617bdb29d"
+    },
+    {
+      "state": "matrix",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/matrix-dark-narrow.png",
+      "bytes": 82889,
+      "sha256": "9a97a499ffd344c15e9c40f956d2c9fc7477543d71191784e84992f3f3a4e38a"
+    },
+    {
+      "state": "dev-open",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/dev-open-light-narrow.png",
+      "bytes": 18331,
+      "sha256": "bb73aefcf2fc7d4908bab2c0e6a10496a62a2539490480ab9943d9fb2b1b85e2"
+    },
+    {
+      "state": "dev-open",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/dev-open-dark-narrow.png",
+      "bytes": 18576,
+      "sha256": "a487baa5c02c1f62d0f3722d27f31a4b40e5b2dd8bd74e7cf19ccd71400391b9"
+    },
+    {
+      "state": "cloud-pending",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/cloud-pending-light-wide.png",
+      "bytes": 13514,
+      "sha256": "2ab0a13959bc751c1cf591643e19599ceea60513e767bb04be6311a2ebe9f1cf"
+    },
+    {
+      "state": "cloud-pending",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/cloud-pending-dark-wide.png",
+      "bytes": 13595,
+      "sha256": "f6bf78d5309b93fb0299c7bd1134d71b7893370e98b53288a18391a8e969f72c"
+    },
+    {
+      "state": "cloud-running",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/cloud-running-light-wide.png",
+      "bytes": 13338,
+      "sha256": "774624568fcd48f83096b3ad7a63876106e67de6dc652a89d23d2551d14eca07"
+    },
+    {
+      "state": "cloud-running",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/cloud-running-dark-wide.png",
+      "bytes": 13482,
+      "sha256": "571961f60576125007954335de20f0deea4dd63357607c9b4f01d15e3ee313cc"
+    },
+    {
+      "state": "cloud-completed",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/cloud-completed-light-wide.png",
+      "bytes": 14202,
+      "sha256": "651cb2b23fd359dae4c22a1e3c95d8aa9d050dadd8dbc221038cae976305f4da"
+    },
+    {
+      "state": "cloud-completed",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/cloud-completed-dark-wide.png",
+      "bytes": 14328,
+      "sha256": "b0648e53b30465959d6897088f5034ccbbc2b426e278f2819183dd78033d2708"
+    },
+    {
+      "state": "cloud-error",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/cloud-error-light-wide.png",
+      "bytes": 20109,
+      "sha256": "fede18650b9d0f3c180e0882ac9d9d8b8ea7535954da3bb83c1fac3d54c749ae"
+    },
+    {
+      "state": "cloud-error",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/cloud-error-dark-wide.png",
+      "bytes": 20511,
+      "sha256": "b87e0f63cc5db580741179177849ab4af8f2bbef43bb35adad588a7c5212cc1c"
+    },
+    {
+      "state": "cloud-all",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/cloud-all-light-wide.png",
+      "bytes": 64273,
+      "sha256": "3bc1e6cbad39eada8e6cd4cf3ea53702a8a89d8644d1e3e0a0738aeefbc66df6"
+    },
+    {
+      "state": "cloud-all",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/cloud-all-dark-wide.png",
+      "bytes": 64895,
+      "sha256": "f14d62adf2734fc6d1d9cd7e4f95bbb33ecc0314b0bc89949f3dd090aea03b49"
+    },
+    {
+      "state": "matrix",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/matrix-light-wide.png",
+      "bytes": 89938,
+      "sha256": "403e0c2b4872b6e0a3416b738639c521041d9e21e7bf65955b51b5c3033c15e2"
+    },
+    {
+      "state": "matrix",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/matrix-dark-wide.png",
+      "bytes": 89201,
+      "sha256": "2b49cbc1902e53988d80ae7c28722a16d674aeb9275b52c0e1fcbbcf53b79eee"
+    },
+    {
+      "state": "dev-open",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/dev-open-light-wide.png",
+      "bytes": 22999,
+      "sha256": "33358855ea4e6060c09d49d36fcdd10ed9bf57467cc26101a7594a666b1d4e56"
+    },
+    {
+      "state": "dev-open",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/dev-open-dark-wide.png",
+      "bytes": 22947,
+      "sha256": "ad93f5ddd4439c1320aeb9aee2674001bbcc4c227e090668ac97bd4be33b68ea"
+    }
+  ]
+}

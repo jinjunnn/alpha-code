@@ -386,6 +386,89 @@ button.a-tc-head:focus-visible {
   border-top: 1px solid var(--a-border-faint);
 }
 
+/* ── REQ-125 tool-provenance 来源徽标(主层级;data-category 只来自持久化快照投影) ──────────── */
+.a-tc-srcbadge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  white-space: nowrap;
+}
+
+.a-tc-srcbadge[data-category="alpha-cloud"],
+.a-tc-srcbadge[data-category="builtin"] {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+}
+
+.a-tc-srcbadge[data-category="mcp"] {
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+}
+
+.a-tc-srcbadge[data-category="unknown"] {
+  color: var(--a-text-tertiary);
+}
+
+/* ── REQ-125 tool-provenance 安全通用卡(metadata-only 的确定隐藏理由;无展开、无数据) ───────── */
+.a-tc-safe {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 9px 12px;
+  padding: 8px 10px;
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  line-height: 1.55;
+}
+
+.a-tc-safe b {
+  color: var(--a-text-secondary);
+  font-weight: var(--a-weight-medium);
+}
+
+/* ── REQ-125 tool-provenance 开发者详情(默认折叠;technical-id / canonical / authority 唯一落点)── */
+.a-tc-dev {
+  border-top: 1px solid var(--a-border-faint);
+}
+
+.a-tc-dev summary {
+  padding: 7px 12px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.a-tc-dev summary::-webkit-details-marker {
+  display: none;
+}
+
+.a-tc-dev summary::before {
+  content: "› ";
+}
+
+.a-tc-dev[open] summary::before {
+  content: "⌄ ";
+}
+
+.a-tc-dev-body {
+  padding: 0 12px 9px;
+  color: var(--a-text-tertiary);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-2xs);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
 .a-tc-subdesc {
   margin-top: -4px;
   padding: 0 12px 9px 45px;

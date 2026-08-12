@@ -916,6 +916,162 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(impostor.querySelector(".a-tc-term")).toBeNull()
   })
 
+  test("#587 Alpha Cloud 专用卡:中文标题+关键目标+云端徽标+状态;technical-id 只在默认折叠的开发者详情(T8)", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture(
+          "prt_c1",
+          "cloud_cloud_web_search",
+          {
+            status: "completed",
+            input: { query: "alpha-code e7 部署证据" },
+            output: "结果:https://docs.example.org/deploy 与 https://blog.example.net/e7",
+            title: "远端标题",
+            metadata: {},
+            time: { start: 0, end: 1 },
+          },
+          {
+            identity: { source: "mcp", origin: "cloud", name: "cloud_web_search" },
+            technicalId: "cloud_cloud_web_search",
+            authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"d".repeat(64)}` },
+          },
+        ),
+        toolPartFixture(
+          "prt_c2",
+          "cloud_cloud_await",
+          { status: "running", input: { job_id: "run_77bd" }, time: { start: 0 } },
+          {
+            identity: { source: "mcp", origin: "cloud", name: "cloud_await" },
+            technicalId: "cloud_cloud_await",
+            authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"e".repeat(64)}` },
+          },
+        ),
+      ]),
+    )
+    await flush()
+
+    // 完成态 web search:owner 已批行形态 = 图标 + 网页搜索 + "query" + 云端 + 完成。
+    const search = host.querySelector("[data-alpha-tool-card][data-tool='cloud_cloud_web_search']")!
+    expect(search.getAttribute("data-kind")).toBe("cloud")
+    expect(search.getAttribute("data-category")).toBe("alpha-cloud")
+    expect(search.querySelector(".a-tc-title b")!.textContent).toBe("网页搜索")
+    expect(search.querySelector(".a-tc-target")!.textContent).toBe("alpha-code e7 部署证据")
+    expect(search.querySelector("[data-alpha-source-badge]")!.textContent).toBe("云端")
+    expect(search.querySelector(".a-tc-status")!.textContent).toContain("完成")
+    // T8:主层级(头部行)拿不到任何一层技术 id;它们只活在默认折叠的开发者详情里。
+    const headText = search.querySelector(".a-tc-head")!.textContent!
+    expect(headText).not.toContain("cloud_cloud_web_search")
+    expect(headText).not.toContain("cloud_web_search")
+    const dev = search.querySelector<HTMLDetailsElement>("[data-alpha-dev-details]")!
+    expect(dev.open).toBe(false)
+    expect(dev.querySelector("summary")!.textContent).toBe("开发者详情")
+    expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("cloud_cloud_web_search")
+    expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("mcp:cloud:cloud_web_search")
+    // 链接体:URL 过 redactor 后可点(matched 云卡有 body;默认折叠与否不影响存在性)。
+    ;(search.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const links = [...search.querySelectorAll(".a-tc-link")].map((node) => node.getAttribute("href"))
+    expect(links).toEqual(["https://docs.example.org/deploy", "https://blog.example.net/e7"])
+
+    // 运行态 await:同一形态的语义标题 + 关键目标 + 运行中;绝不显示拼接 id。
+    const awaiting = host.querySelector("[data-alpha-tool-card][data-tool='cloud_cloud_await']")!
+    expect(awaiting.getAttribute("data-status")).toBe("running")
+    expect(awaiting.querySelector(".a-tc-title b")!.textContent).toBe("等待云端任务")
+    expect(awaiting.querySelector(".a-tc-target")!.textContent).toBe("run_77bd")
+    expect(awaiting.querySelector("[data-alpha-source-badge]")!.textContent).toBe("云端")
+    expect(awaiting.querySelector(".a-tc-status")!.textContent).toContain("运行中")
+    expect(awaiting.querySelector(".a-tc-head")!.textContent).not.toContain("cloud_cloud_await")
+  })
+
+  test("#587 全来源徽标 + 安全通用卡:降级卡陈述确定的隐藏理由,matched 卡没有安全卡", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        // builtin matched:本机徽标,无安全卡。
+        toolPartFixture("prt_s1", "bash", {
+          status: "completed",
+          input: { command: "git status" },
+          output: "clean",
+          title: "bash",
+          metadata: { exit: 0 },
+          time: { start: 0, end: 1 },
+        }),
+        // 第三方 MCP 降级:第三方 MCP 徽标 + 「详情未展示」 + no-rule 理由。
+        toolPartFixture(
+          "prt_s2",
+          "context7_resolve-library-id",
+          {
+            status: "completed",
+            input: { libraryName: "solid" },
+            output: "raw",
+            title: "t",
+            metadata: {},
+            time: { start: 0, end: 1 },
+          },
+          {
+            identity: { source: "mcp", origin: "context7", name: "resolve-library-id" },
+            technicalId: "context7_resolve-library-id",
+            authority: { kind: "not-asserted" },
+          },
+        ),
+        // 无快照历史行 + error:未知来源徽标 + 「错误详情已隐藏」 + no-snapshot 理由。
+        toolPartFixture(
+          "prt_s3",
+          "calendar_lookup",
+          { status: "error", input: {}, error: "boom-secret", time: { start: 0, end: 1 } },
+          null,
+        ),
+        // plugin 降级:插件徽标。
+        toolPartFixture(
+          "prt_s4",
+          "bash",
+          {
+            status: "completed",
+            input: { command: "curl x" },
+            output: "y",
+            title: "bash",
+            metadata: {},
+            time: { start: 0, end: 1 },
+          },
+          {
+            identity: { source: "plugin", origin: "sample-plugin", name: "bash" },
+            technicalId: "bash_2",
+            authority: { kind: "not-asserted" },
+          },
+        ),
+      ]),
+    )
+    await flush()
+
+    const builtinCard = host.querySelector("[data-alpha-tool-card][data-category='builtin']")!
+    expect(builtinCard.querySelector("[data-alpha-source-badge]")!.textContent).toBe("本机")
+    expect(builtinCard.querySelector("[data-alpha-safe-card]")).toBeNull()
+
+    const mcpCard = host.querySelector("[data-alpha-tool-card][data-category='mcp']")!
+    expect(mcpCard.querySelector("[data-alpha-source-badge]")!.textContent).toBe("第三方 MCP")
+    const mcpSafe = mcpCard.querySelector("[data-alpha-safe-card]")!
+    expect(mcpSafe.textContent).toContain("详情未展示")
+    expect(mcpSafe.textContent).toContain("没有命中 Alpha 拥有的展示规则")
+
+    const unknownCard = host.querySelector("[data-alpha-tool-card][data-category='unknown']")!
+    expect(unknownCard.querySelector("[data-alpha-source-badge]")!.textContent).toBe("未知来源")
+    const unknownSafe = unknownCard.querySelector("[data-alpha-safe-card]")!
+    expect(unknownSafe.textContent).toContain("错误详情已隐藏")
+    expect(unknownSafe.textContent).toContain("缺少完整来源快照")
+    expect(unknownCard.textContent).not.toContain("boom-secret")
+    // 无快照 ⇒ 无开发者详情(没有可信 identity 可陈列)。
+    expect(unknownCard.querySelector("[data-alpha-dev-details]")).toBeNull()
+
+    const pluginCard = host.querySelector("[data-alpha-tool-card][data-category='plugin']")!
+    expect(pluginCard.querySelector("[data-alpha-source-badge]")!.textContent).toBe("插件")
+    expect(pluginCard.querySelector("[data-alpha-safe-card]")!.textContent).toContain("详情未展示")
+    // 降级卡的开发者详情仍保留排障能力(AC4):快照在场即陈列,默认折叠。
+    const pluginDev = pluginCard.querySelector<HTMLDetailsElement>("[data-alpha-dev-details]")!
+    expect(pluginDev.open).toBe(false)
+    expect(pluginDev.textContent).toContain("plugin:sample-plugin:bash")
+  })
+
   test("工具级错误卡(matched 卡):标题行 + 复制常驻;超帽错误默认收起;错误体先过 redactor", async () => {
     // 工具级错误卡的复制动作要真写剪贴板(CT #tools G4 帧的 .errcard-head 复制钮)。
     const copied: string[] = []

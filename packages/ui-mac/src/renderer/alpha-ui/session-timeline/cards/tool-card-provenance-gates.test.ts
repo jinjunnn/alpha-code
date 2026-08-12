@@ -5,7 +5,7 @@
 // (head/body/dispatch —— 渲染层逐字显示的东西)上,不断言内部纯函数。
 // 锚点一律独立字面量,不 import 被测对象的常量(自指等价链禁忌)。
 import { describe, expect, test } from "bun:test"
-import type { ToolDisplaySnapshotV1, ToolPart, ToolState } from "@opencode-ai/sdk/v2/client"
+import type { Part, ToolDisplaySnapshotV1, ToolPart, ToolState } from "@opencode-ai/sdk/v2/client"
 import {
   contextRowOf,
   diagnosticsOf,
@@ -14,8 +14,12 @@ import {
   toolCardBodyOf,
   toolCardDispatchOf,
   toolCardHeadOf,
+  toolDevDetailsOf,
 } from "./tool-card-model"
-import { artifactLinksOf } from "../timeline-model"
+import { artifactLinksOf, projectTimelineRows } from "../timeline-model"
+// 生产字典是被验对象(标题必须真的解析成中文);期望值用本文件的独立字面量,
+// 不 import 被测模型的常量(自指等价链禁忌)。
+import { dict as zhDict } from "../../../i18n/zh"
 
 function toolPart(input: {
   tool: string
@@ -192,7 +196,10 @@ describe("#879 T2 — identity 缺失/非法/第三方 generic:严格 metadata-o
     expect(surface).not.toContain(leaks.input)
   })
 
-  test("host 与 Alpha Cloud MCP 当前也无专用规则:降级但分类可信", () => {
+  // #587 起 Alpha Cloud 有 8 条精确规则,但只对**引擎持久化的远端原名**(cloud_ 前缀)
+  // 成立;下面这个 fixture 的 name="web_search" 不是任何 advertise 过的远端名 ⇒ 仍降级,
+  // 分类照旧可信(徽标仍来自 authority)。host 依旧零规则。
+  test("host 无专用规则;Alpha Cloud 未注册名(非远端原名)降级但分类可信", () => {
     const host = toolPart({
       tool: "list_mcp_resources",
       display: {
@@ -503,6 +510,242 @@ describe("#879 R-final 2 — 产物链接行只认第一方 cloud facade identit
       }),
     )
     expect(links).toEqual([{ runId: "run_real_3", name: "对账底稿.xlsx" }])
+  })
+})
+
+// ── #587 —— Cloud 8/8、安全通用卡隐藏理由、开发者详情(T8 模型半场) ─────────
+function alphaCloud(name: string, technicalId = `cloud_${name}`): ToolDisplaySnapshotV1 {
+  return {
+    identity: { source: "mcp", origin: "cloud", name },
+    technicalId,
+    authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"c".repeat(64)}` },
+  }
+}
+
+describe("#587 AC1 — Alpha Cloud 8/8 全部有语义化中文标题、关键目标与可信分类", () => {
+  // [远端原名, input, 期望中文标题(独立字面量,不 import 字典键), 期望关键目标]
+  // 远端名清单 = docs/verification/2026-07-22-e7-deploy-probe.md §3c 匿名 tools/list 实测。
+  const matrix: Array<[string, Record<string, unknown>, string, string | undefined]> = [
+    ["cloud_web_search", { query: "alpha-code e7 部署证据" }, "网页搜索", "alpha-code e7 部署证据"],
+    ["cloud_dispatch", { kind: "research", autonomy: "pipeline" }, "下发云端任务", "research"],
+    ["cloud_status", { job_id: "run_5f0a" }, "查询云端任务", "run_5f0a"],
+    ["cloud_await", { job_id: "run_77bd" }, "等待云端任务", "run_77bd"],
+    ["cloud_artifacts", { job_id: "run_1c9e" }, "列出云端产物", "run_1c9e"],
+    ["cloud_schedule_create", { name: "盘前简报", cron: "0 8 * * 1-5" }, "创建云端定时任务", "盘前简报"],
+    ["cloud_schedule_list", {}, "查看云端定时任务", undefined],
+    ["cloud_schedule_delete", { schedule_id: "sch_42dd" }, "删除云端定时任务", "sch_42dd"],
+  ]
+
+  test("8/8 命中专用云卡:kind=cloud、category=alpha-cloud、标题经生产 zh 字典解析为语义中文", () => {
+    for (const [name, input, zhTitle, target] of matrix) {
+      const part = toolPart({
+        tool: `cloud_${name}`,
+        display: alphaCloud(name),
+        state: completed(input, ""),
+      })
+      const head = toolCardHeadOf(part)
+      expect({ name, kind: head.kind, category: head.category, metadataOnly: head.metadataOnly }).toEqual({
+        name,
+        kind: "cloud",
+        category: "alpha-cloud",
+        metadataOnly: false,
+      })
+      // 标题必须从生产字典解析出**语义化中文**,不是键名、不是任何一层技术 id。
+      const resolved = head.titleKey ? (zhDict as Record<string, string>)[head.titleKey] : undefined
+      expect({ name, resolved }).toEqual({ name, resolved: zhTitle })
+      expect({ name, target: head.target }).toEqual({ name, target })
+    }
+  })
+
+  test("同一份调用,authority 缺席(not-asserted)⇒ 不是云卡:降级为第三方 MCP,标题/目标全部消失", () => {
+    // origin 冒充 "cloud"、名字也在规则表里 —— 只有 authority 才能铸出云端展示(T3)。
+    const spoof = toolPart({
+      tool: "cloud_cloud_web_search",
+      display: mcp("cloud", "cloud_web_search"),
+      state: completed({ query: "内部演进路线" }, "https://leak.example/x"),
+    })
+    const head = toolCardHeadOf(spoof)
+    expect([head.kind, head.category, head.metadataOnly, head.titleKey, head.target]).toEqual([
+      "unknown",
+      "mcp",
+      true,
+      undefined,
+      undefined,
+    ])
+    expect(toolCardBodyOf(spoof)).toEqual({ type: "none" })
+    expect(projectedSurface(spoof)).not.toContain("内部演进路线")
+  })
+
+  test("云卡链接体只属于 web_search;其余云工具完成态无 body(不同工具各自验证)", () => {
+    const search = toolPart({
+      tool: "cloud_cloud_web_search",
+      display: alphaCloud("cloud_web_search"),
+      state: completed(
+        { query: "solid-js store" },
+        "结果:https://docs.example.org/store?utm=x 与 https://blog.example.net/deep",
+      ),
+    })
+    const body = toolCardBodyOf(search)
+    if (body.type !== "links") throw new Error("expected links body for cloud web search")
+    expect(body.urls).toEqual(["https://docs.example.org/store", "https://blog.example.net/deep"])
+
+    const status = toolPart({
+      tool: "cloud_cloud_status",
+      display: alphaCloud("cloud_status"),
+      state: completed({ job_id: "run_9" }, JSON.stringify({ job_id: "run_9", status: "completed" })),
+    })
+    expect(toolCardBodyOf(status)).toEqual({ type: "none" })
+  })
+})
+
+describe("#587 AC2 — 安全通用卡的隐藏理由是确定分支,不携带调用数据", () => {
+  test("快照缺失 ⇒ no-snapshot;有快照但未命中规则 ⇒ no-rule;matched 卡无隐藏理由", () => {
+    const legacy = toolCardHeadOf(
+      toolPart({ tool: "calendar_lookup", display: undefined, state: completed({ q: "x" }, "y") }),
+    )
+    expect([legacy.metadataOnly, legacy.hiddenReason]).toEqual([true, "no-snapshot"])
+
+    const generic = toolCardHeadOf(
+      toolPart({
+        tool: "context7_resolve-library-id",
+        display: mcp("context7", "resolve-library-id"),
+        state: completed({ libraryName: "solid" }, "docs"),
+      }),
+    )
+    expect([generic.metadataOnly, generic.hiddenReason]).toEqual([true, "no-rule"])
+
+    const matched = toolCardHeadOf(
+      toolPart({ tool: "read", display: builtin("read"), state: completed({ filePath: "/w/a.md" }, "") }),
+    )
+    expect([matched.metadataOnly, matched.hiddenReason]).toEqual([false, undefined])
+    const cloud = toolCardHeadOf(
+      toolPart({
+        tool: "cloud_cloud_await",
+        display: alphaCloud("cloud_await"),
+        state: completed({ job_id: "run_1" }, ""),
+      }),
+    )
+    expect([cloud.metadataOnly, cloud.hiddenReason]).toEqual([false, undefined])
+  })
+})
+
+describe("#587 R-final — 媒体行受同一条 identity 分派闸:第三方附件不绕过降级卡", () => {
+  // 附件是第三方可控输出(engine 把 MCP image/resource blob 写成
+  // ToolStateCompleted.attachments,url=data:…、filename 远端自选)。降级卡声称
+  // 「参数、错误和输出保持隐藏」,媒体预览行是同一 part 的输出投影 —— 放宽
+  // timeline-model 的 dispatch 闸(metadataOnly ⇒ 零媒体行)必须让这里变红。
+  const attachments = [{ type: "file", mime: "image/png", url: "data:image/png;base64,eA==", filename: "外部名" }]
+  const attachedState = () =>
+    ({
+      status: "completed",
+      input: {},
+      output: "ok",
+      title: "远端标题",
+      metadata: {},
+      time: { start: 0, end: 1 },
+      attachments,
+    }) as ToolState
+  const projectRowsOf = (part: ToolPart) =>
+    projectTimelineRows({
+      messages: [
+        {
+          id: "msg_u",
+          sessionID: "ses_g",
+          role: "user",
+          time: { created: 1000 },
+          agent: "build",
+          model: { providerID: "p", modelID: "m" },
+        },
+        {
+          id: "msg_g",
+          sessionID: "ses_g",
+          role: "assistant",
+          parentID: "msg_u",
+          time: { created: 10, completed: 20 },
+          modelID: "m",
+          providerID: "p",
+          mode: "build",
+          agent: "build",
+          path: { cwd: "/tmp", root: "/tmp" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      ] as Parameters<typeof projectTimelineRows>[0]["messages"],
+      partsOf: (id) => (id === "msg_g" ? [part] : [{ id: "prt_u", sessionID: "ses_g", messageID: "msg_u", type: "text", text: "x" } as Part]),
+      status: "idle",
+    })
+
+  test("正向对照:builtin read 的同形附件确实渲染媒体行(证明手段能测出已知的坏)", () => {
+    const rows = projectRowsOf(toolPart({ tool: "read", display: builtin("read"), state: attachedState() }))
+    expect(rows.filter((row) => row.kind === "media")).toHaveLength(1)
+  })
+
+  test("第三方 MCP identity 携同形附件 ⇒ 工具行照出(降级卡),媒体行为零", () => {
+    const rows = projectRowsOf(
+      toolPart({ tool: "srv_capture", display: mcp("srv", "capture"), state: attachedState() }),
+    )
+    expect(rows.filter((row) => row.kind === "tool")).toHaveLength(1)
+    expect(rows.some((row) => row.kind === "media")).toBe(false)
+  })
+
+  test("快照缺失(历史行)携附件 ⇒ 媒体行为零(fail-closed)", () => {
+    const rows = projectRowsOf(toolPart({ tool: "read", display: undefined, state: attachedState() }))
+    expect(rows.some((row) => row.kind === "media")).toBe(false)
+  })
+})
+
+describe("#587 T8(模型半场)— technical-id/canonical 只进开发者详情,主层级字段拿不到", () => {
+  test("云卡:标题与目标不含任何一层技术 id;开发者详情含 technical-id、canonical 与 authority", () => {
+    const part = toolPart({
+      tool: "cloud_cloud_web_search",
+      display: alphaCloud("cloud_web_search", "cloud_cloud_web_search"),
+      state: completed({ query: "REQ-125 工具卡" }, ""),
+    })
+    const head = toolCardHeadOf(part)
+    // 渲染层主标题 = t(titleKey);titleKey 解析结果与 target 都不得含技术 id。
+    const zhTitle = (zhDict as Record<string, string>)[head.titleKey ?? ""] ?? ""
+    for (const leaked of ["cloud_cloud_web_search", "cloud_web_search"]) {
+      expect({ leaked, inTitle: zhTitle.includes(leaked) }).toEqual({ leaked, inTitle: false })
+      expect({ leaked, inTarget: (head.target ?? "").includes(leaked) }).toEqual({ leaked, inTarget: false })
+    }
+    const dev = toolDevDetailsOf(part)
+    if (!dev) throw new Error("expected dev details for snapshot-bearing part")
+    expect(dev.technicalId).toBe("cloud_cloud_web_search")
+    expect(dev.canonical).toBe("mcp:cloud:cloud_web_search")
+    expect(dev.authority).toContain("alpha-cloud")
+    expect(dev.authority).toContain("mcp:cloud")
+  })
+
+  test("无快照历史行:没有开发者详情可陈列(别名只作为降级卡的被动净化名称)", () => {
+    const legacy = toolPart({ tool: "cloud_await", display: undefined, state: completed({}, "") })
+    expect(toolDevDetailsOf(legacy)).toBeUndefined()
+    expect(toolCardHeadOf(legacy).toolName).toBe("cloud_await")
+  })
+
+  test("开发者详情限长 + 被动净化:超长/控制字符注入不穿透(不同来源用不同夹具)", () => {
+    const hostile = toolPart({
+      tool: "x",
+      display: {
+        identity: {
+          source: "plugin",
+          origin: `evil\u202e${"o".repeat(500)}`,
+          name: `n\u0007${"a".repeat(500)}`,
+        },
+        technicalId: `t\u2066${"b".repeat(900)}`,
+        authority: { kind: "not-asserted" },
+      },
+      state: completed({}, ""),
+    })
+    const dev = toolDevDetailsOf(hostile)
+    if (!dev) throw new Error("expected dev details")
+    for (const [field, value] of Object.entries(dev)) {
+      expect({ field, bounded: value.length <= 400 }).toEqual({ field, bounded: true })
+      expect({ field, clean: /[\u0000-\u001f\u202a-\u202e\u2066-\u2069]/.test(value) }).toEqual({
+        field,
+        clean: false,
+      })
+    }
+    expect(dev.authority).toBe("not-asserted")
   })
 })
 

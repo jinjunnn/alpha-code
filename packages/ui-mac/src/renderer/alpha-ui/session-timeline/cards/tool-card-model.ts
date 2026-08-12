@@ -82,10 +82,14 @@ export type ToolCardKind =
   | "apply_patch"
   | "skill"
   | "task"
+  | "cloud"
   | "unknown"
 
 /** 展示层的可信来源分类(只从持久化 identity + authority 导出,禁止从别名猜)。 */
 export type ToolSourceCategory = "builtin" | "host" | "alpha-cloud" | "mcp" | "plugin" | "unknown"
+
+/** #587 metadata-only 降级卡的确定隐藏理由(安全通用卡文案分支,AC2)。 */
+export type ToolHiddenReason = "no-snapshot" | "no-rule"
 
 export interface ToolCardDispatch {
   /** 命中宿主规则的专用卡分支;metadata-only 时恒为 "unknown"。 */
@@ -97,7 +101,46 @@ export interface ToolCardDispatch {
   name: string
   /** mcp / plugin 的来源 origin(server 配置键 / plugin 命名空间),净化有界。 */
   origin?: string
+  /** metadata-only 时的隐藏理由(确定分支,渲染层据此选安全卡文案)。 */
+  hiddenReason?: ToolHiddenReason
+  /** kind="cloud" 时命中的 Alpha Cloud 宿主规则(标题 + 关键目标 allowlist)。 */
+  cloudRule?: AlphaCloudRule
 }
+
+// ── #587 Alpha Cloud 宿主展示规则表 ─────────────────────────────────────────
+// 资格 = 基线 §4:source="mcp" + **当次持久化 authority.kind="alpha-cloud"** +
+// 本表精确命中 identity.name。判云端的唯一铸币是 authority(F5/T3);server 配置键
+// (origin)与工具名都不是证据,所以本表不比对 origin 字符串 —— origin 冒充
+// "cloud" 而无 authority 的调用仍是第三方 MCP 降级卡。
+// identity.name 是引擎持久化的**远端工具原名**(mcp/index.ts:712 以 def.name 铸造),
+// 自带 `cloud_` 前缀,与引擎别名 `cloud_cloud_*`(server 名再拼一次)是两层,
+// 后者只进开发者详情。远端名的今日权威 = alpha-platform
+// `packages/gateway/src/lib/mcp-tool-registry.ts` 的 **5 个**工具
+// (dispatch/status/await/artifacts/web_search);本表的 cloud_schedule_* 三条
+// 仅为 2026-07-31 之前持久化的历史行回放保留 —— schedule 已按 owner 裁决剔出
+// MCP 面(同仓 cloud-mcp.ts [#175] 注记,基线 cloud-mcp-resource-surface.md
+// §3.1/§5.8)。旧勘破「2026-07-22 匿名 tools/list 实测 8 个」
+// (docs/verification/2026-07-22-e7-deploy-probe.md §3c)已被 REQ-130 的
+// 鉴权前置(工具发现前先验身份)作废,该匿名探针今天复现不了。
+export interface AlphaCloudRule {
+  /** 语义化中文标题的 i18n key(主标题;技术 id 绝不进主层级)。 */
+  titleKey: string
+  /** 关键目标的 input allowlist 键(经共享 redactor;失败即隐藏)。 */
+  targetInput?: "query" | "kind" | "job_id" | "name" | "schedule_id"
+  /** 完成态展开体:目前仅 web_search 有链接体,其余无 body。 */
+  links?: boolean
+}
+
+const ALPHA_CLOUD_RULES = new Map<string, AlphaCloudRule>([
+  ["cloud_web_search", { titleKey: "alpha.timeline.cloud.webSearch", targetInput: "query", links: true }],
+  ["cloud_dispatch", { titleKey: "alpha.timeline.cloud.dispatch", targetInput: "kind" }],
+  ["cloud_status", { titleKey: "alpha.timeline.cloud.status", targetInput: "job_id" }],
+  ["cloud_await", { titleKey: "alpha.timeline.cloud.await", targetInput: "job_id" }],
+  ["cloud_artifacts", { titleKey: "alpha.timeline.cloud.artifacts", targetInput: "job_id" }],
+  ["cloud_schedule_create", { titleKey: "alpha.timeline.cloud.scheduleCreate", targetInput: "name" }],
+  ["cloud_schedule_list", { titleKey: "alpha.timeline.cloud.scheduleList" }],
+  ["cloud_schedule_delete", { titleKey: "alpha.timeline.cloud.scheduleDelete", targetInput: "schedule_id" }],
+])
 
 // 宿主拥有的精确展示规则表:key = 完整 identity 的 (source∈{builtin,builtin-v2},
 // origin="", name)。Map 天然免疫原型继承键;未登记 identity 一律 metadata-only。
@@ -130,7 +173,9 @@ function nonEmptyString(value: unknown): value is string {
 }
 
 /** #878 快照的防御校验:结构不完整/形状非法 = 无快照(按未知来源降级)。 */
-function displaySnapshotOf(part: ToolPart): { identity: ToolIdentity; authority: ToolAuthority } | undefined {
+function displaySnapshotOf(
+  part: ToolPart,
+): { identity: ToolIdentity; authority: ToolAuthority; technicalId: string } | undefined {
   const display = (part as { display?: unknown }).display
   if (typeof display !== "object" || display === null) return undefined
   const record = display as { identity?: unknown; technicalId?: unknown; authority?: unknown; billing?: unknown }
@@ -157,6 +202,7 @@ function displaySnapshotOf(part: ToolPart): { identity: ToolIdentity; authority:
   return {
     identity: { source: id.source as ToolIdentity["source"], origin: id.origin, name: id.name },
     authority: auth as ToolAuthority,
+    technicalId: record.technicalId,
   }
 }
 
@@ -184,7 +230,13 @@ function categoryOf(identity: ToolIdentity, authority: ToolAuthority): ToolSourc
 export function toolCardDispatchOf(part: ToolPart): ToolCardDispatch {
   const snapshot = displaySnapshotOf(part)
   if (!snapshot) {
-    return { kind: "unknown", category: "unknown", metadataOnly: true, name: sanitizedName(part.tool) }
+    return {
+      kind: "unknown",
+      category: "unknown",
+      metadataOnly: true,
+      name: sanitizedName(part.tool),
+      hiddenReason: "no-snapshot",
+    }
   }
   const { identity, authority } = snapshot
   const category = categoryOf(identity, authority)
@@ -192,11 +244,34 @@ export function toolCardDispatchOf(part: ToolPart): ToolCardDispatch {
     const kind = HOST_BUILTIN_RULES.get(identity.name)
     if (kind !== undefined) return { kind, category, metadataOnly: false, name: sanitizedName(identity.name) }
   }
+  // #587 Alpha Cloud 专用卡:资格闸是 category(= 当次持久化 authority 铸出的
+  // "alpha-cloud"),不是 origin / 别名字符串 —— authority 缺席时同名工具落到下面的
+  // 第三方 MCP 降级卡(fail-closed)。
+  if (category === "alpha-cloud") {
+    const cloudRule = ALPHA_CLOUD_RULES.get(identity.name)
+    if (cloudRule !== undefined) {
+      return {
+        kind: "cloud",
+        category,
+        metadataOnly: false,
+        name: sanitizedName(identity.name),
+        origin: identity.origin.length > 0 ? sanitizedName(identity.origin) : undefined,
+        cloudRule,
+      }
+    }
+  }
   const origin =
     (identity.source === "mcp" || identity.source === "plugin") && identity.origin.length > 0
       ? sanitizedName(identity.origin)
       : undefined
-  return { kind: "unknown", category, metadataOnly: true, name: sanitizedName(identity.name), origin }
+  return {
+    kind: "unknown",
+    category,
+    metadataOnly: true,
+    name: sanitizedName(identity.name),
+    origin,
+    hiddenReason: "no-rule",
+  }
 }
 
 export type ToolCardStatus = "pending" | "running" | "error" | "success"
@@ -288,6 +363,8 @@ export interface ToolCardHead {
   toolName: string
   /** mcp / plugin 降级卡的来源 origin(净化有界)。 */
   origin?: string
+  /** metadata-only 降级卡的确定隐藏理由(安全通用卡文案分支,AC2)。 */
+  hiddenReason?: ToolHiddenReason
 }
 
 const TITLE_KEYS: Partial<Record<ToolCardKind, string>> = {
@@ -329,6 +406,7 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
     metadataOnly: dispatch.metadataOnly,
     toolName: dispatch.name,
     origin: dispatch.origin,
+    hiddenReason: dispatch.hiddenReason,
   }
   // AC2:降级卡不读 input / metadata —— 到此为止。
   if (dispatch.metadataOnly) return head
@@ -336,6 +414,17 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
 
   const input = inputOf(part)
   const metadata = metadataOf(part)
+
+  // #587 Alpha Cloud 专用卡:语义化标题 + 规则点名的关键目标(经 redactor)。
+  // 只读规则 allowlist 的单个 input 键;metadata / output 不进头部。
+  if (dispatch.kind === "cloud") {
+    const rule = dispatch.cloudRule
+    if (rule !== undefined) {
+      head.titleKey = rule.titleKey
+      if (rule.targetInput !== undefined) assignInline(head, input[rule.targetInput])
+    }
+    return head
+  }
 
   switch (dispatch.kind) {
     case "read": {
@@ -459,6 +548,30 @@ export type ToolCardBody =
   | { type: "links"; urls: string[]; truncated: boolean }
   | { type: "error"; message: string; truncated: boolean }
 
+/** websearch / cloud web_search 共用的链接体:每条 URL 过 redactUrl,失败即丢。 */
+function linksBodyOf(output: string): ToolCardBody {
+  const urls = extractHttpUrls(output)
+  const cleaned: string[] = []
+  const seen = new Set<string>()
+  let dropped = false
+  for (const url of urls) {
+    const clean = redactUrl(url, TOOL_URL_MAX_CHARS)
+    if (!clean.ok) {
+      dropped = true
+      continue
+    }
+    if (seen.has(clean.value)) continue
+    seen.add(clean.value)
+    cleaned.push(clean.value)
+  }
+  if (cleaned.length === 0) return { type: "none" }
+  return {
+    type: "links",
+    urls: cleaned.slice(0, TOOL_LINKS_MAX),
+    truncated: dropped || cleaned.length > TOOL_LINKS_MAX,
+  }
+}
+
 function textBodyOf(raw: string, maxChars = TOOL_BODY_MAX_CHARS, maxLines = TOOL_BODY_MAX_LINES): ToolCardBody {
   const clean = redactText(raw, maxChars, maxLines)
   if (!clean.ok) return { type: "hidden" }
@@ -548,28 +661,13 @@ export function toolCardBodyOf(part: ToolPart): ToolCardBody {
     case "webfetch":
       // 设计口径:仅触发行(URL 已在头部),不内联网页内容。
       return { type: "none" }
-    case "websearch": {
-      const urls = extractHttpUrls(outputOf(part))
-      const cleaned: string[] = []
-      const seen = new Set<string>()
-      let dropped = false
-      for (const url of urls) {
-        const clean = redactUrl(url, TOOL_URL_MAX_CHARS)
-        if (!clean.ok) {
-          dropped = true
-          continue
-        }
-        if (seen.has(clean.value)) continue
-        seen.add(clean.value)
-        cleaned.push(clean.value)
-      }
-      if (cleaned.length === 0) return { type: "none" }
-      return {
-        type: "links",
-        urls: cleaned.slice(0, TOOL_LINKS_MAX),
-        truncated: dropped || cleaned.length > TOOL_LINKS_MAX,
-      }
-    }
+    case "cloud":
+      // #587:云卡展开体只有 web_search 的链接列表(与 builtin websearch 同管线:
+      // 每条 URL 过 redactUrl,失败即丢);其余云工具无 body。
+      if (dispatch.cloudRule?.links !== true) return { type: "none" }
+      return linksBodyOf(outputOf(part))
+    case "websearch":
+      return linksBodyOf(outputOf(part))
     case "edit": {
       const patch = stringOf(metadata.diff)
       if (!patch) return { type: "none" }
@@ -794,6 +892,41 @@ export function diagnosticsOf(part: ToolPart): { rows: DiagnosticRow[]; truncate
     })
   }
   return { rows, truncated }
+}
+
+// ── #587 开发者详情(默认折叠;AC3/AC4)─────────────────────────────────────
+/** 开发者详情单字段展示帽:先限长再纯文本渲染,不能成为秘密/超长注入旁路。 */
+export const DEV_DETAIL_MAX_CHARS = 160
+
+/** 被动净化 + 限长的展示段(与 sanitizedName 同清单,但空值不占位为 "?")。 */
+function passiveSegment(value: string, max = DEV_DETAIL_MAX_CHARS): string {
+  return cappedItem(value.replace(UNSAFE_NAME_CHARS, ""), max)
+}
+
+export interface ToolDevDetails {
+  /** canonical identity(source:origin:name)—— 排障展示,不参与任何判定(AC4)。 */
+  canonical: string
+  /** 本次调用模型可见的别名(technical-id;只在此处,绝不进主标题,T8)。 */
+  technicalId: string
+  /** 权威来源证明摘要:"not-asserted" 或 alpha-cloud + binding + digest(截断)。 */
+  authority: string
+}
+
+/**
+ * 快照存在才有开发者详情(无快照的历史行没有可信的 identity/authority 可陈列;
+ * 其别名已按「被动转义后的现有名称」出现在降级卡次级文本)。全部字段限长 +
+ * 被动净化;渲染层只出纯文本节点,默认折叠(AC3)。
+ */
+export function toolDevDetailsOf(part: ToolPart): ToolDevDetails | undefined {
+  const snapshot = displaySnapshotOf(part)
+  if (!snapshot) return undefined
+  const { identity, authority, technicalId } = snapshot
+  const canonical = `${identity.source}:${passiveSegment(identity.origin)}:${passiveSegment(identity.name)}`
+  const authorityText =
+    authority.kind === "alpha-cloud"
+      ? `alpha-cloud · ${passiveSegment(authority.bindingId, 64)} · ${passiveSegment(authority.evidenceDigest, 32)}`
+      : "not-asserted"
+  return { canonical, technicalId: passiveSegment(technicalId), authority: authorityText }
 }
 
 // ── 分支专属信息 ────────────────────────────────────────────────────────────
