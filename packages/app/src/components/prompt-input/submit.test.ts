@@ -23,6 +23,8 @@ const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const syncedDirectories: string[] = []
 const promotedDrafts: Array<{ draftID: string; server: string; sessionId: string }> = []
+// #933:submit 的非 draft 兜底导航落点(见下面 useNavigate mock)。
+const navigated: string[] = []
 
 let params: { id?: string } = {}
 let search: { draftId?: string } = {}
@@ -93,7 +95,10 @@ beforeAll(async () => {
   const rootClient = clientFor("/repo/main")
 
   mock.module("@solidjs/router", () => ({
-    useNavigate: () => () => undefined,
+    // #933:落点是判据 —— 非 draft 兜底必须导航到「执行者那台 server」的 canonical 路由。
+    useNavigate: () => (href: unknown) => {
+      navigated.push(String(href))
+    },
     useParams: () => params,
     useLocation: () => ({}),
     useSearchParams: () => [search, () => undefined],
@@ -111,7 +116,13 @@ beforeAll(async () => {
     showToast: () => 0,
   }))
 
+  // #933:submit.ts 经 @/utils/session-route → @/utils/base64 还牵进 base64Decode,模块图里
+  // 另有消费 checksum 的 —— mock.module 整体替换命名空间,少任何一个命名导出 = 模块加载期
+  // SyntaxError(且随加载顺序漂移:全量跑绿、单跑本文件红)。同款预捕获真模块、只覆写
+  // base64Encode(恒等,便于对导航/目录断言字面量)。
+  const realEncodeModule = { ...(await import("@opencode-ai/core/util/encode")) }
   mock.module("@opencode-ai/core/util/encode", () => ({
+    ...realEncodeModule,
     base64Encode: (value: string) => value,
   }))
 
@@ -141,8 +152,22 @@ beforeAll(async () => {
     return { usePermission: () => ({ currentServerState: () => state(permissionServer) }) }
   })
 
+  // bun 的 mock.module 会泄漏到同进程后跑的测试文件,且就地改写模块命名空间 —— mock 前先把
+  // 真模块的全部导出捕进独立 const(陷阱手册的判据),factory 里铺开副本、只覆写要替换的那个:
+  // 其余文件(pages/layout/helpers.test.ts 要真 ServerConnection.Key、context/server-sdk.test.ts
+  // 要真 coalesceServerEvents)才不会拿到残缺命名空间。
+  const realServerModule = { ...(await import("@/context/server")) }
   mock.module("@/context/server", () => ({
+    ...realServerModule,
     useServer: () => ({ key: "server-key" }),
+  }))
+
+  // #933:submit 的兜底导航按「执行者那台 server」(serverSDK 连着的)钉身份,不是 active
+  // server("server-key")—— 两个 key 故意不同,把「拿 active 拼 href」的回归钉红。
+  const realServerSdkModule = { ...(await import("@/context/server-sdk")) }
+  mock.module("@/context/server-sdk", () => ({
+    ...realServerSdkModule,
+    useServerSDK: () => () => ({ server: { type: "http", http: { url: "http://executor-host:7301" } } }),
   }))
 
   mock.module("@/context/tabs", () => ({
@@ -258,6 +283,7 @@ beforeEach(() => {
   promotedDrafts.length = 0
   params = {}
   search = {}
+  navigated.length = 0
   sentShell.length = 0
   syncedDirectories.length = 0
   selected = "/repo/worktree-a"
@@ -392,6 +418,37 @@ describe("prompt submit worktree selection", () => {
     await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
 
     expect(promotedDrafts).toEqual([{ draftID: "draft-1", server: "project-server", sessionId: "session-1" }])
+  })
+
+  // #933 R1 Minor 2:非 draft 兜底分支的行为判据。会话由 serverSDK 连着的那台 server 创建,
+  // 导航必须钉 canonical 的 server+id 身份;改回 legacy 形状(`/{dir}/session/{id}`)或改拿
+  // active server("server-key")拼 href,这条当场红。encode 在本文件 mock 成恒等,故 server
+  // 段就是执行者的 key 字面量。
+  test("navigates the non-draft fallback to the executing server's canonical session route", async () => {
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      newSessionWorktree: () => selected,
+      onNewSessionWorktreeReset: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+
+    expect(navigated).toEqual(["/server/http://executor-host:7301/session/session-1"])
+    expect(promotedDrafts).toEqual([])
   })
 
   test("includes the selected variant on optimistic prompts", async () => {

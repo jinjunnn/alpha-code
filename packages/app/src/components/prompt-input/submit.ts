@@ -12,6 +12,9 @@ import { useLocal, type ModelSelection } from "@/context/local"
 import { usePermission } from "@/context/permission"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, type usePrompt } from "@/context/prompt"
 import { useSDK, type DirectorySDK } from "@/context/sdk"
+import { useServerSDK } from "@/context/server-sdk"
+import { ServerConnection } from "@/context/server"
+import { sessionHref } from "@/utils/session-route"
 import { useSync, type DirectorySync } from "@/context/sync"
 import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
@@ -197,6 +200,7 @@ type PromptSubmitInput = {
 export function createPromptSubmit(input: PromptSubmitInput) {
   const navigate = useNavigate()
   const sdk = useSDK()
+  const serverSDK = useServerSDK()
   const sync = useSync()
   const serverSync = useServerSync()
   const local = useLocal()
@@ -388,7 +392,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
           const draftID = search.draftId
           if (draftID) tabs.promoteDraft(draftID, { server: tabs.draft(draftID).server, sessionId: session.id })
-          else navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
+          // #933:会话刚由 `sdk()` 连着的那台 server 创建 —— 兜底导航钉 canonical 的 server+id
+          // 身份,不再产 legacy 形状让壳按 active server 反推(#894 同形)。
+          else navigate(sessionHref(ServerConnection.key(serverSDK().server), session.id))
           submission.retarget(prompt.capture({ dir: base64Encode(sessionDirectory), id: session.id }))
         })
       }

@@ -20,7 +20,7 @@ import { pathToFileURL } from "node:url"
 import { build } from "vite"
 import type { render } from "solid-js/web"
 import type * as Runtime from "./alpha-session-search-test-runtime"
-import { decodeDirectory, hrefFor, navFor } from "../../shared/route-manifest"
+import { decodeDirectory, encodeDirectory, hrefFor } from "../../shared/route-manifest"
 
 type TestRuntime = typeof Runtime & { render: typeof render }
 
@@ -198,8 +198,9 @@ describe("按标题搜会话,跳转 href 钉在结果来源的 server 上", () =
     expect(decodeDirectory(segments[2]!)).toBe(runtime.SIDECAR_SERVER_KEY)
     expect(segments[3]).toBe("session")
     expect(segments[4]).toBe("ses_new")
-    // legacy `sessionHref(dir, id)` 在无 tab 映射时回退当前 active server —— 明确不是它。
-    expect(href).not.toBe(navFor.legacySession(runtime.FIXTURE_DIRECTORY, "ses_new").href)
+    // legacy 形状(`/{目录}/session/{id}`,壳事后反推 server)—— 明确不是它。#933 撤掉
+    // `navFor.legacySession` 后,这个负锚点用独立字面量拼(encodeDirectory 是解码判据的逆)。
+    expect(href).not.toBe(`/${encodeDirectory(runtime.FIXTURE_DIRECTORY)}/session/ses_new`)
   })
 
   test("换一个来源 server,href 跟着换 —— server 身份是取来的,不是常量", async () => {

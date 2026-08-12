@@ -25,7 +25,7 @@ import type { render } from "solid-js/web"
 import type * as Runtime from "./shell-commands-test-runtime"
 import { RETIRED_MENU_COMMANDS, publishedMenuCommands } from "../../shared/desktop-menu-policy"
 import { homeHref, newSessionHref } from "./route"
-import { parseRoute } from "../../shared/route-manifest"
+import { encodeDirectory, parseRoute } from "../../shared/route-manifest"
 
 type TestRuntime = typeof Runtime & { render: typeof render }
 
@@ -484,5 +484,180 @@ describe("#925 多 server 下的会话导航:落在真正持有该会话的 serv
     expect(landed!.serverKey).not.toBe("wsl:ubuntu")
     expect(landed!.serverKey).not.toBe("sidecar")
     expect(sessionLandings(runtime.navigationIntents()).filter((route) => route.routeId === "legacy-session")).toEqual([])
+  })
+})
+
+/* ── #933:legacy 会话 href 的最后一段咽喉 ──────────────────────────────────────
+   #925 之后剩三件,判据全落在真实 router / 真实 DOM / 交给 OS 通知层的 href 上:
+   ① 反推兜底「必然正确才放行」—— 存量 legacy URL(升级前的 OS 通知等)推不出唯一 server 身份
+     时回家,**绝不**按 active server 猜(猜错 = 打开一台没有该会话的机器,同 id 时污染无关会话,
+     #894);唯一 tab 线索放行;**单机(列表恰好一台,默认安装的常态)零匹配也放行** —— 全世界
+     只有一台 server,反推必然正确,一律拒绝是把默认安装的用户误伤回首页(R1 Minor 1)。
+   ② 侧栏 route() 反查加身份闸 —— canonical 路由的 server 不是这份 store 的 server 时不反查,
+     否则高亮错行、markSessionViewed 抹掉无关会话的未读点。
+   ③ packages/app 的通知生产者迁 canonical —— OS 通知的 href 钉在事件来源那台 server 上。
+   各用例的 server key 锚点是本文件的独立字面量且互不相同(拒绝那条的 active="wsl:ubuntu"、
+   唯一 tab 放行落 "wsl:fedora"、单机放行落 "sidecar"、通知钉 "sidecar"/"wsl:arch"),写死单值、
+   或按 active 反推的实现,至少两条当场红。绕过实验(把 legacySessionServer 改回 `?? active` /
+   删掉单机放行分支 / 摘掉身份闸 / 通知 href 改回 legacy 形状)各自把对应用例翻红,记录见 PR。 */
+describe("#933 legacy 会话 href 咽喉收口:反推默认拒绝 + 侧栏身份闸 + 通知钉真机", () => {
+  /** 把壳从启动草稿页开回首页再驱动。从 draft 路由出发时,上游 DraftRoute 的 fallback
+   *  (pending location 丢了 draftId → `<Navigate href="/">`)会与被测 redirect **竞速**,
+   *  哪边赢随时序漂移 —— 实测它能把绕过实验的错误落点整个吃掉,判据两个方向都绿。
+   *  先落首页,竞速者退场,后面的每一跳才都是被测代码自己的。 */
+  async function settleOnHome() {
+    runtime.navigateTo(homeHref())
+    await waitFor(() => runtime.routerPath() === homeHref(), "先回到首页")
+  }
+
+  test("存量 legacy URL 的 id 不在任何 tab 里(active=wsl:ubuntu 恰好有同 id 无关会话)→ 回家,不打开它", async () => {
+    await mountShell(() => runtime.AlphaShellRemoteActive())
+    await settleOnHome()
+    const before = runtime.navigationIntents().length
+
+    runtime.navigateTo(`/${encodeDirectory(runtime.FIXTURE_DIRECTORY)}/session/ses_ghost`)
+    // legacy 那一跳必须真的发生(否则「在家」是趟出来的还是原地没动,判据分不出)。
+    await waitFor(
+      () =>
+        sessionLandings(runtime.navigationIntents().slice(before)).some(
+          (route) => route.routeId === "legacy-session" && route.id === "ses_ghost",
+        ),
+      "legacy 导航发生",
+    )
+    await settle()
+    await waitFor(() => runtime.routerPath() === homeHref(), "回到首页")
+
+    // 旧版反推在这里回落 active:真实 router 会收到并**提交** /server/<wsl:ubuntu>/session/ses_ghost,
+    // 打开的是那台机器上恰好同 id 的无关会话(夹具真的给了它)。默认拒绝后一条都不许出现。
+    const landings = sessionLandings(runtime.navigationIntents().slice(before))
+    expect(landings.filter((route) => route.routeId === "session" && route.id === "ses_ghost")).toEqual([])
+  })
+
+  test("存量 legacy URL,唯一持有该会话的 tab 在 wsl:fedora(active=sidecar)→ 仍放行到 wsl:fedora", async () => {
+    await mountShell(() => runtime.AlphaShellRemoteProjects())
+    await settleOnHome()
+
+    // 经上游生产 tabs.addSessionTab 在 wsl:fedora 上留下持久化痕迹(用户曾在那台开过这条会话)。
+    runtime.openSessionTab("wsl:fedora", "ses_tab_only")
+    await waitFor(
+      () => runtime.sessionTabs().some((tab) => tab.server === "wsl:fedora" && tab.sessionId === "ses_tab_only"),
+      "session tab 落地",
+    )
+
+    // 存量 legacy URL 进来:tab 是唯一线索,指认 wsl:fedora —— 放行,且落点是 canonical。
+    const before = runtime.navigationIntents().length
+    runtime.navigateTo(`/${encodeDirectory(runtime.FIXTURE_DIRECTORY)}/session/ses_tab_only`)
+    await waitFor(
+      () =>
+        sessionLandings(runtime.navigationIntents().slice(before)).some(
+          (route) => route.routeId === "session" && route.id === "ses_tab_only",
+        ),
+      "redirect 落 canonical",
+    )
+    const landed = sessionLandings(runtime.navigationIntents().slice(before)).find(
+      (route) => route.routeId === "session" && route.id === "ses_tab_only",
+    )
+    expect(landed!.serverKey).toBe("wsl:fedora")
+    expect(landed!.serverKey).not.toBe("sidecar")
+  })
+
+  test("默认安装(单 sidecar)壳:存量 legacy URL、零 tab 线索 → 放行到那唯一一台的 canonical", async () => {
+    // #933 R1 Minor 1:单机下反推必然正确 —— 全世界只有一台 server,会话只可能在它上面。
+    // 升级前引擎发的 macOS 通知指的会话从未开过标签页(tabs 里没有),一律拒绝会把默认安装的
+    // 用户全数误伤回首页;多机下的拒绝仍由上面 ghost 用例钉住(两用例 key 锚点互异)。
+    await mountShell(() => runtime.AlphaShell())
+    await settleOnHome()
+
+    // 零匹配前提必须为真:没有任何 session tab 持有该 id(否则这条测的是唯一 tab 放行,不是单机放行)。
+    expect(runtime.sessionTabs().filter((tab) => tab.sessionId === "ses_solo")).toEqual([])
+
+    const before = runtime.navigationIntents().length
+    runtime.navigateTo(`/${encodeDirectory(runtime.FIXTURE_DIRECTORY)}/session/ses_solo`)
+    await waitFor(
+      () =>
+        sessionLandings(runtime.navigationIntents().slice(before)).some(
+          (route) => route.routeId === "session" && route.id === "ses_solo",
+        ),
+      "redirect 落 canonical",
+    )
+    const landed = sessionLandings(runtime.navigationIntents().slice(before)).find(
+      (route) => route.routeId === "session" && route.id === "ses_solo",
+    )
+    expect(landed!.serverKey).toBe("sidecar")
+    // 真实 router 必须**提交**到 canonical 落点(不是回家,也不是停在 legacy 那一站 ——
+    // legacy 路径同样以 /session/ses_solo 结尾,故两个条件必须一起等)。
+    await waitFor(
+      () => runtime.routerPath().startsWith("/server/") && runtime.routerPath().endsWith("/session/ses_solo"),
+      "router 提交 canonical 落点",
+    )
+  })
+
+  test("经 canonical 路由打开别台机器(wsl:ubuntu)的同 id 会话 → 侧栏不高亮、不抹未读点", async () => {
+    await mountShell(() => runtime.AlphaShellRemoteActive()) // store 连 sidecar,列出 ses_one(updated=10)
+    await settleOnHome()
+    runtime.expandProject(runtime.FIXTURE_DIRECTORY)
+    runtime.seedSessionViewed("ses_one", 4) // 水位 4 < updated 10 → 未读点亮起
+    await settle()
+    expect(document.querySelector(".alpha-session-row")).not.toBeNull()
+    expect(document.querySelector(".alpha-session-unread")).not.toBeNull()
+
+    runtime.navigateTo(`/server/${encodeDirectory("wsl:ubuntu")}/session/ses_one`)
+    await waitFor(() => runtime.routerPath().startsWith("/server/"), "落在 canonical 会话路由")
+    await settle()
+
+    // 身份闸:路由的 server(wsl:ubuntu)不是这份 store 的 server(sidecar)→ 不反查。
+    // 行还在(不是整栏没渲染),但不高亮;未读点也没被 markSessionViewed 抹掉。
+    expect(document.querySelector(".alpha-session-row")).not.toBeNull()
+    expect(document.querySelector(".alpha-session-row[data-active]")).toBeNull()
+    expect(document.querySelector(".alpha-session-unread")).not.toBeNull()
+  })
+
+  test("同形 canonical 路由指回 store 自己的 server(wsl:arch)→ 高亮该行并推进已读水位", async () => {
+    await mountShell(() => runtime.AlphaShellAutomationRemote()) // store 连 wsl:arch
+    await settleOnHome()
+    runtime.expandProject(runtime.FIXTURE_DIRECTORY)
+    runtime.seedSessionViewed("ses_one", 4)
+    await settle()
+    expect(document.querySelector(".alpha-session-unread")).not.toBeNull()
+
+    runtime.navigateTo(`/server/${encodeDirectory("wsl:arch")}/session/ses_one`)
+    await waitFor(() => document.querySelector(".alpha-session-row[data-active]") !== null, "高亮落地")
+
+    // 「一律不反查」的错误实现过不了这条:身份相符时反查必须照常工作(已读水位推进,点消失)。
+    expect(document.querySelector(".alpha-session-unread")).toBeNull()
+  })
+
+  test("sidecar 上的会话完成(active=wsl:ubuntu)→ OS 通知的落点钉在 sidecar 的 canonical 路由", async () => {
+    await mountShell(() => runtime.AlphaShellRemoteActive())
+    await waitFor(() => runtime.hasEventStream(runtime.SIDECAR_URL), "sidecar 事件流建立")
+
+    runtime.emitSessionIdle(runtime.SIDECAR_URL, runtime.FIXTURE_DIRECTORY, runtime.NOTIFIED_SESSION_ID)
+    await waitFor(() => runtime.osNotifications().length > 0, "OS 通知发出")
+
+    // 用户点这条通知会去的地方:canonical、钉在事件来源那台(sidecar),不是 active(wsl:ubuntu)。
+    const href = runtime.osNotifications()[0]!.href
+    expect(href).toBeDefined()
+    const landing = parseRoute(href!)
+    expect({ kind: landing.kind, routeId: landing.identity.routeId }).toEqual({ kind: "session", routeId: "session" })
+    expect((landing as { serverKey?: string }).serverKey).toBe("sidecar")
+    expect((landing as { serverKey?: string }).serverKey).not.toBe("wsl:ubuntu")
+    expect((landing as { id?: string }).id).toBe(runtime.NOTIFIED_SESSION_ID)
+  })
+
+  test("wsl:arch 上的会话完成(active=wsl:ubuntu)→ OS 通知的落点钉在 wsl:arch", async () => {
+    await mountShell(() => runtime.AlphaShellAutomationRemote())
+    await waitFor(() => runtime.hasEventStream(runtime.WSL_ARCH_URL), "wsl:arch 事件流建立")
+
+    runtime.emitSessionIdle(runtime.WSL_ARCH_URL, runtime.FIXTURE_DIRECTORY, runtime.NOTIFIED_SESSION_ID)
+    await waitFor(() => runtime.osNotifications().length > 0, "OS 通知发出")
+
+    const href = runtime.osNotifications()[0]!.href
+    expect(href).toBeDefined()
+    const landing = parseRoute(href!)
+    expect({ kind: landing.kind, routeId: landing.identity.routeId }).toEqual({ kind: "session", routeId: "session" })
+    // 与上一条用例的 key("sidecar")相异 —— 写死单值或按 active 反推的实现两条不可能同时绿。
+    expect((landing as { serverKey?: string }).serverKey).toBe("wsl:arch")
+    expect((landing as { serverKey?: string }).serverKey).not.toBe("wsl:ubuntu")
+    expect((landing as { id?: string }).id).toBe(runtime.NOTIFIED_SESSION_ID)
   })
 })

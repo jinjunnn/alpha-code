@@ -2,6 +2,9 @@ import { Component, createMemo } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
 import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"
+import { useServerSDK } from "@/context/server-sdk"
+import { ServerConnection } from "@/context/server"
+import { sessionHref } from "@/utils/session-route"
 import { usePrompt } from "@/context/prompt"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -27,6 +30,7 @@ export const DialogFork: Component = () => {
   const navigate = useNavigate()
   const sync = useSync()
   const sdk = useSDK()
+  const serverSDK = useServerSDK()
   const prompt = usePrompt()
   const dialog = useDialog()
   const language = useLanguage()
@@ -77,7 +81,10 @@ export const DialogFork: Component = () => {
         }
         dialog.close()
         prompt.set(restored, undefined, { dir, id: forked.data.id })
-        navigate(`/${dir}/session/${forked.data.id}`)
+        // #933:fork 是 `sdk()` 连着的那台 server 执行的,分叉出的会话就长在那台上 —— href 钉
+        // canonical 的 server+id 身份。旧的 legacy 形状(`/{目录}/session/{id}`)会让壳按 active
+        // server 反推,多 server 下把新分叉导向没有它的机器(#894 同形)。
+        navigate(sessionHref(ServerConnection.key(serverSDK().server), forked.data.id))
       })
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err)

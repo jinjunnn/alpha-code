@@ -477,6 +477,11 @@ export function AlphaSidebar(props: {
     // 身份是 server+id,不再靠目录反推)。会话属于哪个项目改由 store 反查 —— 否则落在 canonical
     // 路由上时高亮/已读水位/自动展开全部失灵(#659/#894 起搜索与首页已经这么导航了)。
     if (r.kind === "session" && r.id) {
+      // #933 身份闸:canonical 路由自带 server 身份,而这份 store 只认识 props.serverKey() 那台
+      // (侧栏列的会话全长在它上面)。路由的 server 不是这台时,按 id 反查命中的必然是**另一台
+      // 机器上恰好同 id 的无关会话** —— 高亮错行、自动展开错项目、markSessionViewed 抹掉它的
+      // 未读点。身份不合直接不反查(key 未解析时同样 fail-closed,store 没连上本来也没有行可指)。
+      if (r.serverKey !== props.serverKey() || r.serverKey === undefined) return {}
       const sid = r.id
       for (const project of store.projects) {
         const match = project.sessions.find((session) => session.id === sid)

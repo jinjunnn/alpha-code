@@ -527,8 +527,11 @@ export const navFor = {
   directorySession: (directory: string, prompt?: string) =>
     resolveNavigation(referenceFor("session-admission", { directory, prompt })),
   newSession: (draftId: string, prompt?: string) => resolveNavigation(referenceFor("new-session", { draftId, prompt })),
-  legacySession: (directory: string, sessionId: string) =>
-    resolveNavigation(referenceFor("legacy-session", { directory, sessionId })),
+  // `#933`:**故意没有 `legacySession`**(`#925` 撤的是 hrefFor 的,这里补齐)。生产侧零消费
+  // (勘破实测:唯一消费者是测试),`packages/app` 的三个 legacy 生产者也已迁 canonical,咽喉
+  // (`packages/app/src/utils/session-route.ts` 的 `legacySessionServer`)对推不出唯一身份的
+  // legacy 形状默认拒绝。`legacy-session` 的 manifest 条目**保留**:`parseRoute` 仍要解析存量
+  // legacy URL(升级前发出的 OS 通知、legacy layout 的原生路由),解析归解析,生产归生产。
   session: (serverKey: string, sessionId: string) =>
     resolveNavigation(referenceFor("session", { serverKey, sessionId })),
   settings: () => resolveNavigation(referenceFor("settings")),
@@ -558,11 +561,10 @@ export const hrefFor = {
   // `#925`:**故意没有 `legacySession`**。legacy 形状(`/{目录}/session/{id}`)不带 server 段,
   // 壳只能事后按「完成时的 active server」或「同 id 的 tab」反推 —— 多 server 下那就是落到没有该
   // 会话的机器,对面若恰好有同 id 会话,打开并污染的是那个无关会话(`#894` / `#925` 的用户可观察缺陷)。
-  // ui-mac 生产侧已零消费,故把这个**顺手就能拿到的**产生器从这里撤掉:新写的调用点要造出 legacy
-  // 形状,必须绕到 `navFor.legacySession(...).href` 去 —— 那是一个需要解释的动作,不再是默认路径。
-  // 诚实边界:这不是完整的咽喉 —— `navFor.legacySession` 仍在(`parseRoute` 要解析 `packages/app`
-  // 今天仍在产的那批 legacy URL:notification.tsx / dialog-fork.tsx / prompt-input/submit.ts)。
-  // 真正的默认拒绝要等那批生产者按 ADR-034 的补丁序列迁完,见票面 openRisk ①。
+  // `#933` 收尾:`navFor.legacySession` 也已撤掉(生产零消费),`packages/app` 的三个 legacy
+  // 生产者(notification.tsx / dialog-fork.tsx / prompt-input/submit.ts)已迁 canonical,壳的
+  // 反推兜底(`legacySessionServer`)对推不出唯一身份的形状默认拒绝(回家,不猜 active)。
+  // 造 legacy 形状从此只剩手写 `resolveNavigation` reference 一条路 —— 需要解释的动作。
   session: (serverKey: string, sessionId: string) => requireHref(navFor.session(serverKey, sessionId)),
   newSession: (draftId: string, prompt?: string) => requireHref(navFor.newSession(draftId, prompt)),
 } as const

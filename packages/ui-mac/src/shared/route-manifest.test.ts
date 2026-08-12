@@ -258,7 +258,14 @@ describe("manifest-derived parse, href, and navigation", () => {
       navFor.sessionAdmission("C:\\Users\\dev\\proj", "continue here & 中文"),
       navFor.sessionAdmission("/empty-prompt", ""),
       navFor.newSession("draft /? 1", "hello world & 中文?"),
-      navFor.legacySession("/家/项目/试验", "ses_/?: 123"),
+      // #933:legacy-session 的便捷产生器已撤;round-trip 仍要覆盖这条 parse 条目(存量 URL
+      // 还会进来),用显式 reference 造 —— 造 legacy 形状从此只剩这条需要解释的路。
+      navFor.route({
+        manifestVersion: 1,
+        routeVersion: 1,
+        routeId: "legacy-session",
+        params: { directory: "/家/项目/试验", sessionId: "ses_/?: 123" },
+      }),
       navFor.session("sidecar", "ses_/?: 123"),
     ]
 
@@ -280,8 +287,14 @@ describe("manifest-derived parse, href, and navigation", () => {
     // `#925`:`hrefFor` 里**故意没有** legacySession —— legacy 形状不带 server 段,是 `#894`/`#925`
     // 那个「落到没有该会话的机器」缺陷的产生器。这里正向钉住「它不在」,否则谁顺手加回来无人变红。
     expect("legacySession" in hrefFor).toBe(false)
-    // 形状本身仍要能造出来(`parseRoute` 要解析 packages/app 今天仍在产的那批 URL),只是不在 hrefFor 里。
-    expect(navFor.legacySession("/Users/dev/proj", "ses_123").href).toBe("/L1VzZXJzL2Rldi9wcm9q/session/ses_123")
+    // `#933`:`navFor` 里同样没有 —— packages/app 的三个生产者已迁 canonical,便捷产生器全撤。
+    expect("legacySession" in navFor).toBe(false)
+    // 解析归解析:存量 legacy URL(升级前的 OS 通知等)仍要认得出来,只是造不出来。
+    expect(parseRoute("/L1VzZXJzL2Rldi9wcm9q/session/ses_123")).toMatchObject({
+      kind: "session",
+      directory: "/Users/dev/proj",
+      id: "ses_123",
+    })
     expect(hrefFor.session("sidecar", "ses_123")).toBe("/server/c2lkZWNhcg/session/ses_123")
     expect(hrefFor.newSession("d 1", "a+b")).toBe("/new-session?draftId=d%201&prompt=a%2Bb")
     expect(hrefFor.newSession("d1")).toBe("/new-session?draftId=d1")

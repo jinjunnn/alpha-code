@@ -1,5 +1,5 @@
 diff --git a/packages/app/package.json b/packages/app/package.json
-index faf01944..98b79564 100644
+index faf019446..98b795648 100644
 --- a/packages/app/package.json
 +++ b/packages/app/package.json
 @@ -9,7 +9,9 @@
@@ -14,7 +14,7 @@ index faf01944..98b79564 100644
    "scripts": {
      "typecheck": "tsgo -b",
 diff --git a/packages/app/src/app.tsx b/packages/app/src/app.tsx
-index b4496ba7..324f5adb 100644
+index b4496ba7d..e7dd83c81 100644
 --- a/packages/app/src/app.tsx
 +++ b/packages/app/src/app.tsx
 @@ -1,7 +1,8 @@
@@ -46,7 +46,7 @@ index b4496ba7..324f5adb 100644
  import { WslServersProvider } from "@/wsl/context"
  import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
  import LegacyLayout from "@/pages/layout"
-@@ -66,44 +70,108 @@ import { useCheckServerHealth } from "./utils/server-health"
+@@ -66,44 +70,111 @@ import { useCheckServerHealth } from "./utils/server-health"
  import { legacySessionHref, legacySessionServer, requireServerKey, sessionHref } from "./utils/session-route"
  import { createSessionLineage } from "@/pages/session/session-lineage"
  
@@ -121,7 +121,7 @@ index b4496ba7..324f5adb 100644
 +  session?: MaybePreloadableComponent
 +  permission?: PermissionSurfaceComponent
 +}
-+
+ 
 +function createSessionRoute(Leaf: MaybePreloadableComponent, PermissionSurface?: PermissionSurfaceComponent) {
 +  const PermissionSurfaceMount = createPermissionSurfaceMount(PermissionSurface)
 +  return Object.assign(
@@ -139,7 +139,10 @@ index b4496ba7..324f5adb 100644
 +          <Show when={tabs.ready()}>
 +            {(_) => {
 +              const persisted = tabs.store.filter((item) => item.type === "session")
-+              return <Navigate href={sessionHref(legacySessionServer(persisted, sessionID, server.key), sessionID)} />
++              // #933:反推必然正确才放行(唯一 tab 线索 / 全世界只有一台 server),其余回家,
++              // 不再按 active server 猜(猜错 = 打开别人机器上的同 id 无关会话并污染它,#894)。
++              const owner = legacySessionServer(persisted, sessionID, server.key, server.list.map(ServerConnection.key))
++              return <Navigate href={owner ? sessionHref(owner, sessionID) : "/"} />
 +            }}
 +          </Show>
 +        )
@@ -153,7 +156,7 @@ index b4496ba7..324f5adb 100644
 +        if (!tabs.ready() || !sdk().directory) return
 +        tabs.newDraft({ server: server.key, directory: sdk().directory }, search.prompt)
 +      })
- 
++
 +      return (
 +        <SessionRouteErrorBoundary sessionID={params.id}>
 +          <SessionProviders>
@@ -185,7 +188,7 @@ index b4496ba7..324f5adb 100644
    )
  }
  
-@@ -127,11 +195,20 @@ function TargetServerRoute(props: ParentProps) {
+@@ -127,11 +198,20 @@ function TargetServerRoute(props: ParentProps) {
    )
  }
  
@@ -211,7 +214,7 @@ index b4496ba7..324f5adb 100644
  
  function LegacyTargetSessionRoute() {
    const params = useParams<{ serverKey: string; id: string }>()
-@@ -182,53 +259,65 @@ function LegacyServerLayout(props: ParentProps<{ serverScoped?: JSX.Element }>)
+@@ -182,53 +262,65 @@ function LegacyServerLayout(props: ParentProps<{ serverScoped?: JSX.Element }>)
    )
  }
  
@@ -322,7 +325,7 @@ index b4496ba7..324f5adb 100644
  }
  
  function UiI18nBridge(props: ParentProps) {
-@@ -238,9 +327,6 @@ function UiI18nBridge(props: ParentProps) {
+@@ -238,9 +330,6 @@ function UiI18nBridge(props: ParentProps) {
  
  declare global {
    interface Window {
@@ -332,7 +335,7 @@ index b4496ba7..324f5adb 100644
      api?: {
        setTitlebar?: (theme: { mode: "light" | "dark"; scheme?: "system" | "light" | "dark" }) => Promise<void>
        exportDebugLogs?: () => Promise<string>
-@@ -338,11 +424,11 @@ function LegacyServerScopedShell(props: ServerScopedShellProps) {
+@@ -338,11 +427,11 @@ function LegacyServerScopedShell(props: ServerScopedShellProps) {
    )
  }
  
@@ -346,7 +349,7 @@ index b4496ba7..324f5adb 100644
        </ServerScopedProviders>
      </SelectedServerProviders>
    )
-@@ -360,7 +446,7 @@ function DraftProviders(props: ParentProps) {
+@@ -360,7 +449,7 @@ function DraftProviders(props: ParentProps) {
    )
  }
  
@@ -355,7 +358,7 @@ index b4496ba7..324f5adb 100644
    return (
      <MetaProvider>
        <Font />
-@@ -379,7 +465,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
+@@ -379,7 +468,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
              >
                <QueryProvider>
                  <WslServersProvider>
@@ -364,7 +367,7 @@ index b4496ba7..324f5adb 100644
                      <MarkedProvider>
                        <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
                      </MarkedProvider>
-@@ -530,7 +616,19 @@ export function AppInterface(props: {
+@@ -530,7 +619,19 @@ export function AppInterface(props: {
    disableHealthCheck?: boolean
    startup?: Promise<void>
    serverScoped?: JSX.Element
@@ -384,7 +387,7 @@ index b4496ba7..324f5adb 100644
    // The visual new layout lives in the router root so it remains mounted across
    // route changes. Draft and session routes override only their server-bound data
    // providers beneath it.
-@@ -561,7 +659,9 @@ export function AppInterface(props: {
+@@ -561,7 +662,9 @@ export function AppInterface(props: {
                        <NotificationProvider>
                          <ServerShell>
                            <Show when={useSettings().general.newLayoutDesigns()} fallback={routerProps.children}>
@@ -395,7 +398,7 @@ index b4496ba7..324f5adb 100644
                            </Show>
                          </ServerShell>
                        </NotificationProvider>
-@@ -569,7 +669,13 @@ export function AppInterface(props: {
+@@ -569,7 +672,13 @@ export function AppInterface(props: {
                    </TabsProvider>
                  )}
                >
@@ -410,7 +413,7 @@ index b4496ba7..324f5adb 100644
                </Dynamic>
              </Show>
            </ConnectionGate>
-@@ -579,8 +685,18 @@ export function AppInterface(props: {
+@@ -579,8 +688,18 @@ export function AppInterface(props: {
    )
  }
  
@@ -430,7 +433,7 @@ index b4496ba7..324f5adb 100644
  
    return (
      <>
-@@ -592,7 +708,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+@@ -592,7 +711,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
          <Show when={!settings.general.newLayoutDesigns()}>
            {
              <>
@@ -439,7 +442,7 @@ index b4496ba7..324f5adb 100644
                <Route path="/server/:serverKey/session/:id" component={LegacyTargetSessionRoute} />
              </>
            }
-@@ -603,7 +719,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+@@ -603,7 +722,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
          </Route>
        </Route>
        <Show when={settings.general.newLayoutDesigns()}>
@@ -448,8 +451,69 @@ index b4496ba7..324f5adb 100644
          <Route path="/:dir/session/:id" component={NewLayoutLegacySessionRedirect} />
          <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
        </Show>
+@@ -619,16 +738,17 @@ function NewLayoutLegacySessionRedirect() {
+ 
+   return (
+     <Show when={tabs.ready()}>
+-      <Navigate
+-        href={sessionHref(
+-          legacySessionServer(
+-            tabs.store.filter((item) => item.type === "session"),
+-            params.id,
+-            server.key,
+-          ),
++      {(_) => {
++        // #933:与 SessionRoute 里那条同一语义 —— 反推必然正确才放行(唯一 tab / 单机),
++        // 其余回家,不猜 active。
++        const owner = legacySessionServer(
++          tabs.store.filter((item) => item.type === "session"),
+           params.id,
+-        )}
+-      />
++          server.key,
++          server.list.map(ServerConnection.key),
++        )
++        return <Navigate href={owner ? sessionHref(owner, params.id) : "/"} />
++      }}
+     </Show>
+   )
+ }
+diff --git a/packages/app/src/components/dialog-fork.tsx b/packages/app/src/components/dialog-fork.tsx
+index 601f03084..0bf52ef11 100644
+--- a/packages/app/src/components/dialog-fork.tsx
++++ b/packages/app/src/components/dialog-fork.tsx
+@@ -2,6 +2,9 @@ import { Component, createMemo } from "solid-js"
+ import { useNavigate, useParams } from "@solidjs/router"
+ import { useSync } from "@/context/sync"
+ import { useSDK } from "@/context/sdk"
++import { useServerSDK } from "@/context/server-sdk"
++import { ServerConnection } from "@/context/server"
++import { sessionHref } from "@/utils/session-route"
+ import { usePrompt } from "@/context/prompt"
+ import { useDialog } from "@opencode-ai/ui/context/dialog"
+ import { Dialog } from "@opencode-ai/ui/dialog"
+@@ -27,6 +30,7 @@ export const DialogFork: Component = () => {
+   const navigate = useNavigate()
+   const sync = useSync()
+   const sdk = useSDK()
++  const serverSDK = useServerSDK()
+   const prompt = usePrompt()
+   const dialog = useDialog()
+   const language = useLanguage()
+@@ -77,7 +81,10 @@ export const DialogFork: Component = () => {
+         }
+         dialog.close()
+         prompt.set(restored, undefined, { dir, id: forked.data.id })
+-        navigate(`/${dir}/session/${forked.data.id}`)
++        // #933:fork 是 `sdk()` 连着的那台 server 执行的,分叉出的会话就长在那台上 —— href 钉
++        // canonical 的 server+id 身份。旧的 legacy 形状(`/{目录}/session/{id}`)会让壳按 active
++        // server 反推,多 server 下把新分叉导向没有它的机器(#894 同形)。
++        navigate(sessionHref(ServerConnection.key(serverSDK().server), forked.data.id))
+       })
+       .catch((err: unknown) => {
+         const message = err instanceof Error ? err.message : String(err)
 diff --git a/packages/app/src/components/dialog-release-notes.tsx b/packages/app/src/components/dialog-release-notes.tsx
-index d0a35b71..a0b3b851 100644
+index d0a35b71b..a0b3b8515 100644
 --- a/packages/app/src/components/dialog-release-notes.tsx
 +++ b/packages/app/src/components/dialog-release-notes.tsx
 @@ -43,12 +43,6 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
@@ -474,7 +538,7 @@ index d0a35b71..a0b3b851 100644
        fit
        class="w-[min(calc(100vw-40px),720px)] h-[min(calc(100vh-40px),400px)] -mt-20 min-h-0 overflow-hidden"
 diff --git a/packages/app/src/components/dialog-select-file.tsx b/packages/app/src/components/dialog-select-file.tsx
-index 905abe1e..b3a9cffb 100644
+index 905abe1e2..b3a9cffbb 100644
 --- a/packages/app/src/components/dialog-select-file.tsx
 +++ b/packages/app/src/components/dialog-select-file.tsx
 @@ -104,7 +104,7 @@ function DialogSelectFileLegacy(props: { filesOnly: () => boolean; onOpenFile?:
@@ -487,7 +551,7 @@ index 905abe1e..b3a9cffb 100644
          class="px-3"
          search={{
 diff --git a/packages/app/src/components/directory-picker.tsx b/packages/app/src/components/directory-picker.tsx
-index 31b15b7a..bc25db15 100644
+index 31b15b7a6..bc25db15d 100644
 --- a/packages/app/src/components/directory-picker.tsx
 +++ b/packages/app/src/components/directory-picker.tsx
 @@ -37,9 +37,9 @@ export function useDirectoryPicker() {
@@ -503,7 +567,7 @@ index 31b15b7a..bc25db15 100644
    }
  }
 diff --git a/packages/app/src/components/prompt-input.tsx b/packages/app/src/components/prompt-input.tsx
-index bcc5acc0..a20656ea 100644
+index bcc5acc0b..a20656ea3 100644
 --- a/packages/app/src/components/prompt-input.tsx
 +++ b/packages/app/src/components/prompt-input.tsx
 @@ -1489,7 +1489,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
@@ -517,8 +581,151 @@ index bcc5acc0..a20656ea 100644
            }
            onRemove={removeAttachment}
            removeLabel={language.t("prompt.attachment.remove")}
+diff --git a/packages/app/src/components/prompt-input/submit.test.ts b/packages/app/src/components/prompt-input/submit.test.ts
+index f563a5098..0f789dbae 100644
+--- a/packages/app/src/components/prompt-input/submit.test.ts
++++ b/packages/app/src/components/prompt-input/submit.test.ts
+@@ -23,6 +23,8 @@ const promoted: Array<{ directory: string; sessionID: string }> = []
+ const sentShell: string[] = []
+ const syncedDirectories: string[] = []
+ const promotedDrafts: Array<{ draftID: string; server: string; sessionId: string }> = []
++// #933:submit 的非 draft 兜底导航落点(见下面 useNavigate mock)。
++const navigated: string[] = []
+ 
+ let params: { id?: string } = {}
+ let search: { draftId?: string } = {}
+@@ -93,7 +95,10 @@ beforeAll(async () => {
+   const rootClient = clientFor("/repo/main")
+ 
+   mock.module("@solidjs/router", () => ({
+-    useNavigate: () => () => undefined,
++    // #933:落点是判据 —— 非 draft 兜底必须导航到「执行者那台 server」的 canonical 路由。
++    useNavigate: () => (href: unknown) => {
++      navigated.push(String(href))
++    },
+     useParams: () => params,
+     useLocation: () => ({}),
+     useSearchParams: () => [search, () => undefined],
+@@ -111,7 +116,13 @@ beforeAll(async () => {
+     showToast: () => 0,
+   }))
+ 
++  // #933:submit.ts 经 @/utils/session-route → @/utils/base64 还牵进 base64Decode,模块图里
++  // 另有消费 checksum 的 —— mock.module 整体替换命名空间,少任何一个命名导出 = 模块加载期
++  // SyntaxError(且随加载顺序漂移:全量跑绿、单跑本文件红)。同款预捕获真模块、只覆写
++  // base64Encode(恒等,便于对导航/目录断言字面量)。
++  const realEncodeModule = { ...(await import("@opencode-ai/core/util/encode")) }
+   mock.module("@opencode-ai/core/util/encode", () => ({
++    ...realEncodeModule,
+     base64Encode: (value: string) => value,
+   }))
+ 
+@@ -141,10 +152,24 @@ beforeAll(async () => {
+     return { usePermission: () => ({ currentServerState: () => state(permissionServer) }) }
+   })
+ 
++  // bun 的 mock.module 会泄漏到同进程后跑的测试文件,且就地改写模块命名空间 —— mock 前先把
++  // 真模块的全部导出捕进独立 const(陷阱手册的判据),factory 里铺开副本、只覆写要替换的那个:
++  // 其余文件(pages/layout/helpers.test.ts 要真 ServerConnection.Key、context/server-sdk.test.ts
++  // 要真 coalesceServerEvents)才不会拿到残缺命名空间。
++  const realServerModule = { ...(await import("@/context/server")) }
+   mock.module("@/context/server", () => ({
++    ...realServerModule,
+     useServer: () => ({ key: "server-key" }),
+   }))
+ 
++  // #933:submit 的兜底导航按「执行者那台 server」(serverSDK 连着的)钉身份,不是 active
++  // server("server-key")—— 两个 key 故意不同,把「拿 active 拼 href」的回归钉红。
++  const realServerSdkModule = { ...(await import("@/context/server-sdk")) }
++  mock.module("@/context/server-sdk", () => ({
++    ...realServerSdkModule,
++    useServerSDK: () => () => ({ server: { type: "http", http: { url: "http://executor-host:7301" } } }),
++  }))
++
+   mock.module("@/context/tabs", () => ({
+     useTabs: () => ({
+       draft: () => ({ server: "project-server" }),
+@@ -258,6 +283,7 @@ beforeEach(() => {
+   promotedDrafts.length = 0
+   params = {}
+   search = {}
++  navigated.length = 0
+   sentShell.length = 0
+   syncedDirectories.length = 0
+   selected = "/repo/worktree-a"
+@@ -394,6 +420,37 @@ describe("prompt submit worktree selection", () => {
+     expect(promotedDrafts).toEqual([{ draftID: "draft-1", server: "project-server", sessionId: "session-1" }])
+   })
+ 
++  // #933 R1 Minor 2:非 draft 兜底分支的行为判据。会话由 serverSDK 连着的那台 server 创建,
++  // 导航必须钉 canonical 的 server+id 身份;改回 legacy 形状(`/{dir}/session/{id}`)或改拿
++  // active server("server-key")拼 href,这条当场红。encode 在本文件 mock 成恒等,故 server
++  // 段就是执行者的 key 字面量。
++  test("navigates the non-draft fallback to the executing server's canonical session route", async () => {
++    const submit = createPromptSubmit({
++      prompt,
++      info: () => undefined,
++      imageAttachments: () => [],
++      commentCount: () => 0,
++      autoAccept: () => false,
++      mode: () => "normal",
++      working: () => false,
++      editor: () => undefined,
++      queueScroll: () => undefined,
++      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
++      addToHistory: () => undefined,
++      resetHistoryNavigation: () => undefined,
++      setMode: () => undefined,
++      setPopover: () => undefined,
++      newSessionWorktree: () => selected,
++      onNewSessionWorktreeReset: () => undefined,
++      onSubmit: () => undefined,
++    })
++
++    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
++
++    expect(navigated).toEqual(["/server/http://executor-host:7301/session/session-1"])
++    expect(promotedDrafts).toEqual([])
++  })
++
+   test("includes the selected variant on optimistic prompts", async () => {
+     params = { id: "session-1" }
+     variant = "high"
+diff --git a/packages/app/src/components/prompt-input/submit.ts b/packages/app/src/components/prompt-input/submit.ts
+index 203722fc6..287ca4a2f 100644
+--- a/packages/app/src/components/prompt-input/submit.ts
++++ b/packages/app/src/components/prompt-input/submit.ts
+@@ -12,6 +12,9 @@ import { useLocal, type ModelSelection } from "@/context/local"
+ import { usePermission } from "@/context/permission"
+ import { type ContextItem, type ImageAttachmentPart, type Prompt, type usePrompt } from "@/context/prompt"
+ import { useSDK, type DirectorySDK } from "@/context/sdk"
++import { useServerSDK } from "@/context/server-sdk"
++import { ServerConnection } from "@/context/server"
++import { sessionHref } from "@/utils/session-route"
+ import { useSync, type DirectorySync } from "@/context/sync"
+ import { Identifier } from "@/utils/id"
+ import { Worktree as WorktreeState } from "@/utils/worktree"
+@@ -197,6 +200,7 @@ type PromptSubmitInput = {
+ export function createPromptSubmit(input: PromptSubmitInput) {
+   const navigate = useNavigate()
+   const sdk = useSDK()
++  const serverSDK = useServerSDK()
+   const sync = useSync()
+   const serverSync = useServerSync()
+   const local = useLocal()
+@@ -388,7 +392,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
+           layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
+           const draftID = search.draftId
+           if (draftID) tabs.promoteDraft(draftID, { server: tabs.draft(draftID).server, sessionId: session.id })
+-          else navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
++          // #933:会话刚由 `sdk()` 连着的那台 server 创建 —— 兜底导航钉 canonical 的 server+id
++          // 身份,不再产 legacy 形状让壳按 active server 反推(#894 同形)。
++          else navigate(sessionHref(ServerConnection.key(serverSDK().server), session.id))
+           submission.retarget(prompt.capture({ dir: base64Encode(sessionDirectory), id: session.id }))
+         })
+       }
 diff --git a/packages/app/src/components/settings-dialog.tsx b/packages/app/src/components/settings-dialog.tsx
-index 46dd89ad..3637c753 100644
+index 46dd89ade..3637c7536 100644
 --- a/packages/app/src/components/settings-dialog.tsx
 +++ b/packages/app/src/components/settings-dialog.tsx
 @@ -2,10 +2,12 @@ import { useParams } from "@solidjs/router"
@@ -543,7 +750,7 @@ index 46dd89ad..3637c753 100644
      const sessionID = params.id
      void import("@/components/settings-v2").then((module) => {
 diff --git a/packages/app/src/components/status-popover-body.tsx b/packages/app/src/components/status-popover-body.tsx
-index 68a3f6b2..1b3814ab 100644
+index 68a3f6b22..1b3814aba 100644
 --- a/packages/app/src/components/status-popover-body.tsx
 +++ b/packages/app/src/components/status-popover-body.tsx
 @@ -161,7 +161,7 @@ export function StatusPopoverServerBody() {
@@ -565,7 +772,7 @@ index 68a3f6b2..1b3814ab 100644
                    }}
                  >
 diff --git a/packages/app/src/components/terminal.tsx b/packages/app/src/components/terminal.tsx
-index c512e782..26657253 100644
+index c512e782c..266572533 100644
 --- a/packages/app/src/components/terminal.tsx
 +++ b/packages/app/src/components/terminal.tsx
 @@ -28,6 +28,14 @@ export interface TerminalProps extends ComponentProps<"div"> {
@@ -615,7 +822,7 @@ index c512e782..26657253 100644
    const scheduleFit = () => {
      if (disposed) return
 diff --git a/packages/app/src/context/highlights.tsx b/packages/app/src/context/highlights.tsx
-index 058f7cc4..761b46f6 100644
+index 058f7cc4b..761b46f69 100644
 --- a/packages/app/src/context/highlights.tsx
 +++ b/packages/app/src/context/highlights.tsx
 @@ -195,7 +195,7 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
@@ -627,8 +834,46 @@ index 058f7cc4..761b46f6 100644
            }, 500)
          })
          .catch(() => undefined)
+diff --git a/packages/app/src/context/notification.tsx b/packages/app/src/context/notification.tsx
+index 9bfa13d85..2fdcbdc04 100644
+--- a/packages/app/src/context/notification.tsx
++++ b/packages/app/src/context/notification.tsx
+@@ -15,7 +15,7 @@ import { playSoundById } from "@/utils/sound"
+ import { useGlobal } from "./global"
+ import { ServerConnection, useServer } from "./server"
+ import { type DraftTab, useTabs } from "./tabs"
+-import { requireServerKey } from "@/utils/session-route"
++import { requireServerKey, sessionHref } from "@/utils/session-route"
+ import type { ServerScope } from "@/utils/server-scope"
+ 
+ type NotificationBase = {
+@@ -351,7 +351,10 @@ function createServerNotificationState(input: {
+         session: sessionID,
+       })
+ 
+-      const href = `/${base64Encode(directory)}/session/${sessionID}`
++      // #933:每台 server 有自己的 notification state(见 useNotification 的 ensure),事件来自
++      // 哪台、会话就在哪台 —— href 钉 canonical 的 server+id 身份,不再产 legacy 形状让壳按
++      // active server 反推(多 server 下点通知会落到没有该会话的机器,#894 同形)。
++      const href = sessionHref(ServerConnection.key(serverSDK().server), session.id)
+       if (settings.notifications.agent()) {
+         void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, href)
+       }
+@@ -384,7 +387,11 @@ function createServerNotificationState(input: {
+       const description =
+         session?.title ??
+         (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
+-      const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
++      // #933:同上 —— 带会话 id 时钉 canonical;没有会话 id 的错误通知仍指向项目目录(目录路由
++      // 不指认任何会话,不属本咽喉)。
++      const href = sessionID
++        ? sessionHref(ServerConnection.key(serverSDK().server), sessionID)
++        : `/${base64Encode(directory)}`
+       if (settings.notifications.errors()) {
+         void platform.notify(language.t("notification.session.error.title"), description, href)
+       }
 diff --git a/packages/app/src/context/permission-auto-respond.test.ts b/packages/app/src/context/permission-auto-respond.test.ts
-index 794e03ae..683c41a3 100644
+index 794e03ae4..683c41a37 100644
 --- a/packages/app/src/context/permission-auto-respond.test.ts
 +++ b/packages/app/src/context/permission-auto-respond.test.ts
 @@ -3,6 +3,10 @@ import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
@@ -724,7 +969,7 @@ index 794e03ae..683c41a3 100644
  })
  
 diff --git a/packages/app/src/context/permission-auto-respond.ts b/packages/app/src/context/permission-auto-respond.ts
-index 8fff6d70..7669217b 100644
+index 8fff6d70c..7669217bb 100644
 --- a/packages/app/src/context/permission-auto-respond.ts
 +++ b/packages/app/src/context/permission-auto-respond.ts
 @@ -37,13 +37,33 @@ function sessionLineage(session: { id: string; parentID?: string }[], sessionID:
@@ -779,7 +1024,7 @@ index 8fff6d70..7669217b 100644
      .find((item): item is boolean => item !== undefined)
 diff --git a/packages/app/src/context/permission-surface.tsx b/packages/app/src/context/permission-surface.tsx
 new file mode 100644
-index 00000000..38243126
+index 000000000..382431266
 --- /dev/null
 +++ b/packages/app/src/context/permission-surface.tsx
 @@ -0,0 +1,99 @@
@@ -884,7 +1129,7 @@ index 00000000..38243126
 +}
 diff --git a/packages/app/src/context/permission-v1-adapter.ts b/packages/app/src/context/permission-v1-adapter.ts
 new file mode 100644
-index 00000000..0c5ff0ff
+index 000000000..0c5ff0ff5
 --- /dev/null
 +++ b/packages/app/src/context/permission-v1-adapter.ts
 @@ -0,0 +1,230 @@
@@ -1119,7 +1364,7 @@ index 00000000..0c5ff0ff
 +  })
 +}
 diff --git a/packages/app/src/context/permission.tsx b/packages/app/src/context/permission.tsx
-index 496d1ab4..92da5272 100644
+index 496d1ab4a..92da5272a 100644
 --- a/packages/app/src/context/permission.tsx
 +++ b/packages/app/src/context/permission.tsx
 @@ -187,6 +187,9 @@ type PermissionState = ReturnType<typeof createServerPermissionState>
@@ -1200,7 +1445,7 @@ index 496d1ab4..92da5272 100644
    }
  
 diff --git a/packages/app/src/context/platform.tsx b/packages/app/src/context/platform.tsx
-index cf343bfa..6bb9ae19 100644
+index cf343bfa7..6bb9ae19a 100644
 --- a/packages/app/src/context/platform.tsx
 +++ b/packages/app/src/context/platform.tsx
 @@ -5,6 +5,7 @@ import type { DesktopMenuAction } from "../desktop-menu"
@@ -1225,7 +1470,7 @@ index cf343bfa..6bb9ae19 100644
    updater?: UpdaterPlatform
  
 diff --git a/packages/app/src/context/settings.tsx b/packages/app/src/context/settings.tsx
-index c2b56804..ed440ade 100644
+index c2b568041..ed440ade9 100644
 --- a/packages/app/src/context/settings.tsx
 +++ b/packages/app/src/context/settings.tsx
 @@ -1,5 +1,5 @@
@@ -1577,7 +1822,7 @@ index c2b56804..ed440ade 100644
        },
      }
 diff --git a/packages/app/src/index.ts b/packages/app/src/index.ts
-index d18e05fc..b89f68a3 100644
+index d18e05fc9..b89f68a3c 100644
 --- a/packages/app/src/index.ts
 +++ b/packages/app/src/index.ts
 @@ -1,4 +1,27 @@
@@ -1622,7 +1867,7 @@ index d18e05fc..b89f68a3 100644
  export { useWslServers } from "./wsl/context"
  export { type DisplayBackend, type FatalRendererErrorLog, type Platform, PlatformProvider } from "./context/platform"
 diff --git a/packages/app/src/pages/home.tsx b/packages/app/src/pages/home.tsx
-index 215696d7..ca677b34 100644
+index 215696d7d..ca677b349 100644
 --- a/packages/app/src/pages/home.tsx
 +++ b/packages/app/src/pages/home.tsx
 @@ -553,7 +553,7 @@ export function NewHome() {
@@ -1644,7 +1889,7 @@ index 215696d7..ca677b34 100644
          <div
            classList={{
 diff --git a/packages/app/src/pages/layout-new.tsx b/packages/app/src/pages/layout-new.tsx
-index c6fed8f6..4ce6fd51 100644
+index c6fed8f6d..4ce6fd511 100644
 --- a/packages/app/src/pages/layout-new.tsx
 +++ b/packages/app/src/pages/layout-new.tsx
 @@ -1,19 +1,26 @@
@@ -1702,7 +1947,7 @@ index c6fed8f6..4ce6fd51 100644
          <Suspense>{props.children}</Suspense>
        </main>
 diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
-index 812a479b..a30ecde9 100644
+index 812a479b2..a30ecde90 100644
 --- a/packages/app/src/pages/layout.tsx
 +++ b/packages/app/src/pages/layout.tsx
 @@ -67,12 +67,7 @@ import {
@@ -1812,7 +2057,7 @@ index 812a479b..a30ecde9 100644
        if (!mobile) scrollContainerRef = el
      },
 diff --git a/packages/app/src/pages/layout/deep-links.ts b/packages/app/src/pages/layout/deep-links.ts
-index 5dca421f..566391c2 100644
+index 5dca421f7..566391c28 100644
 --- a/packages/app/src/pages/layout/deep-links.ts
 +++ b/packages/app/src/pages/layout/deep-links.ts
 @@ -1,50 +1,110 @@
@@ -1962,7 +2207,7 @@ index 5dca421f..566391c2 100644
 +  applyDeepLinks(drainPendingDeepLinks(deps.buffer()), deps)
  }
 diff --git a/packages/app/src/pages/layout/helpers.test.ts b/packages/app/src/pages/layout/helpers.test.ts
-index df87ddfe..c1871913 100644
+index df87ddfec..c18719130 100644
 --- a/packages/app/src/pages/layout/helpers.test.ts
 +++ b/packages/app/src/pages/layout/helpers.test.ts
 @@ -1,10 +1,10 @@
@@ -2130,7 +2375,7 @@ index df87ddfe..c1871913 100644
  })
  
 diff --git a/packages/app/src/pages/session.tsx b/packages/app/src/pages/session.tsx
-index 3ce28416..02f4c33c 100644
+index 3ce284167..02f4c33c7 100644
 --- a/packages/app/src/pages/session.tsx
 +++ b/packages/app/src/pages/session.tsx
 @@ -15,6 +15,7 @@ import {
@@ -2208,7 +2453,7 @@ index 3ce28416..02f4c33c 100644
      <TerminalProvider>
        <FileProvider>
 diff --git a/packages/app/src/pages/session/composer/session-composer-region.tsx b/packages/app/src/pages/session/composer/session-composer-region.tsx
-index 600ff41e..4c8581e0 100644
+index 600ff41e3..4c8581e03 100644
 --- a/packages/app/src/pages/session/composer/session-composer-region.tsx
 +++ b/packages/app/src/pages/session/composer/session-composer-region.tsx
 @@ -1,7 +1,6 @@
@@ -2242,7 +2487,7 @@ index 600ff41e..4c8581e0 100644
            <Show when={controller.dock()}>
              <div
 diff --git a/packages/app/src/pages/session/composer/session-composer-state.ts b/packages/app/src/pages/session/composer/session-composer-state.ts
-index 45f5e4cb..7f757a98 100644
+index 45f5e4cb2..7f757a98a 100644
 --- a/packages/app/src/pages/session/composer/session-composer-state.ts
 +++ b/packages/app/src/pages/session/composer/session-composer-state.ts
 @@ -1,14 +1,10 @@
@@ -2338,7 +2583,7 @@ index 45f5e4cb..7f757a98 100644
        store.sessionID === params.id
 diff --git a/packages/app/src/pages/session/composer/session-permission-dock.tsx b/packages/app/src/pages/session/composer/session-permission-dock.tsx
 deleted file mode 100644
-index 35a62f75..00000000
+index 35a62f75c..000000000
 --- a/packages/app/src/pages/session/composer/session-permission-dock.tsx
 +++ /dev/null
 @@ -1,74 +0,0 @@
@@ -2417,7 +2662,7 @@ index 35a62f75..00000000
 -  )
 -}
 diff --git a/packages/app/src/pages/session/session-side-panel.tsx b/packages/app/src/pages/session/session-side-panel.tsx
-index 571428e2..26ad6fdc 100644
+index 571428e29..26ad6fdc6 100644
 --- a/packages/app/src/pages/session/session-side-panel.tsx
 +++ b/packages/app/src/pages/session/session-side-panel.tsx
 @@ -458,7 +458,11 @@ export function SessionSidePanel(props: {
@@ -2434,7 +2679,7 @@ index 571428e2..26ad6fdc 100644
                                      }}
                                      aria-label={language.t("command.file.open")}
 diff --git a/packages/app/src/pages/session/timeline/message-timeline.tsx b/packages/app/src/pages/session/timeline/message-timeline.tsx
-index 2959e9f8..21ad01c0 100644
+index 2959e9f8a..21ad01c06 100644
 --- a/packages/app/src/pages/session/timeline/message-timeline.tsx
 +++ b/packages/app/src/pages/session/timeline/message-timeline.tsx
 @@ -1562,7 +1562,9 @@ export function MessageTimeline(props: {
@@ -2462,7 +2707,7 @@ index 2959e9f8..21ad01c0 100644
                                </MenuV2.Item>
                              </MenuV2.Content>
 diff --git a/packages/app/src/pages/session/usage-exceeded-dialogs.tsx b/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
-index d56fa3d1..fd38b0dd 100644
+index d56fa3d1f..fd38b0dd1 100644
 --- a/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
 +++ b/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
 @@ -66,38 +66,46 @@ export function useUsageExceededDialogs() {
@@ -2544,7 +2789,7 @@ index d56fa3d1..fd38b0dd 100644
      }),
    )
 diff --git a/packages/app/src/pages/session/use-session-commands.tsx b/packages/app/src/pages/session/use-session-commands.tsx
-index 275e6ec4..bb4a5bc7 100644
+index 275e6ec4b..bb4a5bc79 100644
 --- a/packages/app/src/pages/session/use-session-commands.tsx
 +++ b/packages/app/src/pages/session/use-session-commands.tsx
 @@ -234,7 +234,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
@@ -2576,7 +2821,7 @@ index 275e6ec4..bb4a5bc7 100644
  
 diff --git a/packages/app/src/surface/terminal.ts b/packages/app/src/surface/terminal.ts
 new file mode 100644
-index 00000000..5d279ad6
+index 000000000..5d279ad62
 --- /dev/null
 +++ b/packages/app/src/surface/terminal.ts
 @@ -0,0 +1,11 @@
@@ -2591,6 +2836,115 @@ index 00000000..5d279ad6
 +export type { LocalPTY } from "@/context/terminal"
 +export { Terminal } from "@/components/terminal"
 +export type { TerminalColors } from "@/components/terminal"
+diff --git a/packages/app/src/utils/session-route.test.ts b/packages/app/src/utils/session-route.test.ts
+index 6a87e366c..51b52f957 100644
+--- a/packages/app/src/utils/session-route.test.ts
++++ b/packages/app/src/utils/session-route.test.ts
+@@ -9,6 +9,7 @@ describe("session routes", () => {
+         [{ type: "session", server: ServerConnection.Key.make("server-b"), sessionId: "session-1" }],
+         "session-1",
+         ServerConnection.Key.make("server-a"),
++        [ServerConnection.Key.make("server-a"), ServerConnection.Key.make("server-b")],
+       ),
+     ).toBe(ServerConnection.Key.make("server-b"))
+   })
+@@ -22,10 +23,58 @@ describe("session routes", () => {
+         ],
+         "session-1",
+         ServerConnection.Key.make("server-b"),
++        [ServerConnection.Key.make("server-a"), ServerConnection.Key.make("server-b")],
+       ),
+     ).toBe(ServerConnection.Key.make("server-b"))
+   })
+ 
++  // #933:多机下,咽喉对推不出唯一身份的 legacy 形状默认拒绝 —— 旧版在这两种形状下回落
++  // active,正是「落到没有该会话的机器、污染同 id 无关会话」的来源。两个用例的 active 各不
++  // 相同,写死任何单值的实现无法同时满足。
++  test("rejects a legacy session ID no persisted tab knows (multi-server, no active guess)", () => {
++    expect(
++      legacySessionServer(
++        [{ type: "session", server: ServerConnection.Key.make("wsl:fedora"), sessionId: "session-other" }],
++        "session-unknown",
++        ServerConnection.Key.make("wsl:fedora"),
++        [ServerConnection.Key.make("wsl:fedora"), ServerConnection.Key.make("wsl:ubuntu")],
++      ),
++    ).toBeUndefined()
++  })
++
++  test("rejects an ambiguous legacy session ID when the active server holds no copy", () => {
++    expect(
++      legacySessionServer(
++        [
++          { type: "session", server: ServerConnection.Key.make("server-a"), sessionId: "session-1" },
++          { type: "session", server: ServerConnection.Key.make("server-b"), sessionId: "session-1" },
++        ],
++        "session-1",
++        ServerConnection.Key.make("server-c"),
++        [
++          ServerConnection.Key.make("server-a"),
++          ServerConnection.Key.make("server-b"),
++          ServerConnection.Key.make("server-c"),
++        ],
++      ),
++    ).toBeUndefined()
++  })
++
++  // #933 R1 Minor 1:单机(列表恰好一台)下反推必然正确 —— 零 tab 线索也放行那台。
++  // 默认安装只有 sidecar 一台 server:升级前引擎发的 macOS 通知(legacy href)指的会话
++  // 从未开过标签页 ⇒ tabs 里没有它;一律拒绝会把这批用户全数误伤到首页。
++  // server key 字面量与上面各用例互不相同,写死单值的实现无法同时满足。
++  test("allows the only server on zero tab matches (single-server install)", () => {
++    expect(
++      legacySessionServer(
++        [{ type: "session", server: ServerConnection.Key.make("solo-machine"), sessionId: "session-other" }],
++        "session-unknown",
++        ServerConnection.Key.make("solo-machine"),
++        [ServerConnection.Key.make("solo-machine")],
++      ),
++    ).toBe(ServerConnection.Key.make("solo-machine"))
++  })
++
+   test("builds and decodes a server-keyed session route", () => {
+     const server = ServerConnection.Key.make("https://example.com:4096")
+     const href = sessionHref(server, "session-1")
+diff --git a/packages/app/src/utils/session-route.ts b/packages/app/src/utils/session-route.ts
+index 4721611d2..f1b05dbb9 100644
+--- a/packages/app/src/utils/session-route.ts
++++ b/packages/app/src/utils/session-route.ts
+@@ -16,13 +16,31 @@ export function requireServerKey(segment: string | undefined) {
+   return ServerConnection.Key.make(key)
+ }
+ 
++// #933:这是 legacy 会话 href(`/{目录}/session/{id}`,路径无 server 段)进入 canonical 世界的
++// 唯一咽喉。应用内的生产者(通知 / fork 对话框 / submit 兜底,#933 迁完;ui-mac 侧 #894/#925
++// 迁完)已全部改产 canonical href,走到这里的只剩存量痕迹(升级前发出的 OS 通知、legacy layout
++// 存下的 URL)。语义因此从「猜」收成「反推必然正确才放行」:
++//   · 同 id 的 tab 开在 active 上 —— 会话确实在 active 上,回 active;
++//   · 恰好一个 tab 持有该 id —— 唯一身份,回那台;
++//   · `servers` 恰好一台(默认安装的常态)—— 全世界只有这一台,会话不可能在别处,回它。
++//     零 tab 线索在单机下不是歧义:升级前发出的 OS 通知指的会话从未开过标签页,也只能长在它上面。
++//   · 其余(多机 + 零匹配 / 多台都有且都不是 active)—— 返回 undefined,由调用方回家。
++// 旧版在这里无条件回落 active:多机下那正是「落到没有该会话的机器、污染同 id 无关会话」(#894)
++// 的来源,对新出现的 legacy 生产者等于默认放行。
++// `servers` 的收敛性:调用方从 `useServer().list` 取 —— ServerProvider 带 `gate: true`,children
++// 渲染前持久化的 server 列表必已加载完;props 侧的 sidecar 由 renderer 的 ready() 门住。
+ export function legacySessionServer(
+   tabs: readonly { type: "session"; server: ServerConnection.Key; sessionId: string }[],
+   sessionID: string,
+   active: ServerConnection.Key,
+-) {
++  servers: readonly ServerConnection.Key[],
++): ServerConnection.Key | undefined {
+   const matches = tabs.filter((tab) => tab.sessionId === sessionID)
+-  return matches.find((tab) => tab.server === active)?.server ?? (matches.length === 1 ? matches[0]?.server : active)
++  const activeMatch = matches.find((tab) => tab.server === active)
++  if (activeMatch) return activeMatch.server
++  if (matches.length === 1) return matches[0]?.server
++  if (servers.length === 1) return servers[0]
++  return undefined
+ }
+ 
+ type SessionParent = { id: string; parentID?: string }
 diff --git a/packages/app/vendor/opencode-ai-client-1.17.13.tgz b/packages/app/vendor/opencode-ai-client-1.17.13.tgz
 new file mode 100644
 index 0000000000000000000000000000000000000000..5939f2cb39c27da205f1f37e9971009a669b83c2
@@ -4050,7 +4404,7 @@ literal 0
 HcmV?d00001
 
 diff --git a/packages/ui/src/components/dialog.tsx b/packages/ui/src/components/dialog.tsx
-index 981e3f45..79fc5571 100644
+index 981e3f45d..79fc55712 100644
 --- a/packages/ui/src/components/dialog.tsx
 +++ b/packages/ui/src/components/dialog.tsx
 @@ -1,6 +1,8 @@
@@ -4090,7 +4444,7 @@ index 981e3f45..79fc5571 100644
    return (
      <div
 diff --git a/packages/ui/src/components/image-preview.tsx b/packages/ui/src/components/image-preview.tsx
-index 8462ce25..944dacd7 100644
+index 8462ce256..944dacd72 100644
 --- a/packages/ui/src/components/image-preview.tsx
 +++ b/packages/ui/src/components/image-preview.tsx
 @@ -1,6 +1,8 @@
@@ -4128,7 +4482,7 @@ index 8462ce25..944dacd7 100644
      <div data-component="image-preview">
        <div data-slot="image-preview-container">
 diff --git a/packages/ui/src/context/dialog.tsx b/packages/ui/src/context/dialog.tsx
-index 39ef8ea1..343854e9 100644
+index 39ef8ea1c..343854e94 100644
 --- a/packages/ui/src/context/dialog.tsx
 +++ b/packages/ui/src/context/dialog.tsx
 @@ -7,6 +7,7 @@ import {
@@ -4290,7 +4644,7 @@ index 39ef8ea1..343854e9 100644
 +  return useContext(HostContext)
 +}
 diff --git a/packages/ui/src/v2/components/dialog-v2.tsx b/packages/ui/src/v2/components/dialog-v2.tsx
-index b9dd2521..cd6a501a 100644
+index b9dd2521e..cd6a501a0 100644
 --- a/packages/ui/src/v2/components/dialog-v2.tsx
 +++ b/packages/ui/src/v2/components/dialog-v2.tsx
 @@ -1,5 +1,7 @@

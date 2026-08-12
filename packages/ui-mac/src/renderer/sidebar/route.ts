@@ -25,6 +25,9 @@ export function base64UrlDecode(value: string): string {
 // 目录当 serverKey 编进 canonical 路由,编译期抓不住。要给会话拼 href,用
 // `shared/route-manifest` 的 `hrefFor.session(serverKey, sessionId)`:没有 server 身份就拼不出来,
 // 对新调用点默认拒绝。
+// #933 收尾:`packages/app` 侧的三个 legacy 生产者(通知 / fork / submit 兜底)也已迁 canonical,
+// `legacySessionServer` 反推兜底改为默认拒绝(推不出唯一身份 → 回家),`navFor.legacySession`
+// 一并撤掉 —— 本注释开头那句「反推兜底必须留着」自此不再成立。
 
 /**
  * Route to a project with no session id. Under the new layout opencode's SessionRoute
