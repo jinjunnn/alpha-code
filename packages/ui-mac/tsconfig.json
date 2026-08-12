@@ -18,6 +18,7 @@
     "types": ["vite/client", "node", "electron"]
   },
   "references": [{ "path": "../app" }],
+  "files": ["src/renderer/env.d.ts"],
   "include": ["src", "benchmarks", "package.json"],
   "exclude": ["src/**/*.test.ts", "src/**/*.cases.ts", "benchmarks/**/dist"]
 }
