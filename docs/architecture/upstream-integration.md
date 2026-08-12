@@ -108,6 +108,44 @@ Known not covered by those gates, stated rather than implied:
   upstream also registers (Back/Forward) is judged by reading which registration
   wins, and retired outright, rather than by that assertion.
 
+## Colliding global declarations: `window.api` (#932)
+
+`ui-mac` compiles Alpha source and upstream `packages/app` in **one TypeScript
+program**, and both declare the same global property:
+
+| Declared in | Shape |
+|---|---|
+| `packages/ui-mac/src/renderer/env.d.ts` (Alpha) | `api: ElectronAPI` — the full preload surface, ~160 renderer call sites |
+| `packages/app/src/app.tsx` (upstream), reaching `ui-mac` as the project-reference output `.ts-dist/src/app.d.ts` | `api?: { setTitlebar?; exportDebugLogs? }` — minimal, wholly optional |
+
+Both declaration sites are `.d.ts` inside `ui-mac`'s program, so `skipLibCheck:
+true` swallows the `TS2717` that the merge conflict would otherwise report at
+one of them. **Nothing goes red at the declaration.** The merged
+`Window["api"]` simply takes whichever declaration entered the program first.
+
+Measured on 2026-08-11/12: adding a single `import type … from
+"@opencode-ai/app"` anywhere that enters the program before `env.d.ts` flips the
+winner to upstream and produces **381 `error TS`** at unrelated renderer
+`window.api` call sites (`TS2339` + `TS18048` + `TS7006`). The fingerprint is
+"huge error count, concentrated in code the change never touched" — it reads as
+if the author broke the renderer. `#926` could only route around it.
+
+Two things pin it down:
+
+1. `packages/ui-mac/tsconfig.json` lists `"files": ["src/renderer/env.d.ts"]`.
+   `files` entries are expanded ahead of `include`, so the Alpha declaration is
+   always root file #0 and always wins the merge.
+2. `packages/ui-mac/src/main/tabs-preclean-contract.ts` reproduces the hazard on
+   purpose (it genuinely imports the upstream root export for the tab-shape
+   drift gate) and asserts what the merge actually produced —
+   `Window["api"]` still assignable to `ElectronAPI`, still non-optional, and
+   still carrying Alpha-only keys. Those assertions must stay in a `.ts` file;
+   inside a `.d.ts` `skipLibCheck` would swallow them too.
+
+`compilerOptions.types` is **not** an alternative lever: type reference
+directives are processed *after* root files, so moving the declaration into a
+`typeRoots` package leaves upstream winning (measured: still red).
+
 ## Verification
 
 Run the repository synchronization/CI gates and:
