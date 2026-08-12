@@ -1,36 +1,52 @@
 // REQ-014:冷启动「Not found / 整屏 ErrorPage」毒键预清(方案②,S17 实证「删毒键即愈」)。
-// 上游冻结 tabs.tsx 在 renderer 侧恢复 `opencode.global.dat` 的 `tabs`/`tabs.recent` 路由,alpha 无
-// 恢复层可插(方案① renderer 守卫已被 S17 证伪:整屏态 alpha 子组件全不挂)。修 = main 预清,两级:
-//   tier-1 格式级(同步):旧版序列化毒键 —— session tab 缺 dirBase64 → tabHref 生成 `/undefined/...`
-//     → 上游 titlebar pathKey(undefined) throw → 整屏 ErrorPage 循环(形态 B,S17 证据原件即此形状);
+// 上游 tabs.tsx 在 renderer 侧恢复 `opencode.global.dat` 的 `tabs` 路由,alpha 无恢复层可插
+// (方案① renderer 守卫已被 S17 证伪:整屏态 alpha 子组件全不挂)。修 = main 预清,两级:
+//   tier-1 格式级(同步):剔除**可证坏**条目 —— 非对象、session 缺 server/sessionId、draft 缺 draftID;
 //   tier-2 存在性(serverReady 后,时限内 fail-open):tab 指向已删会话 → 上游 Not found 白屏(形态 A)。
 // renderer 首读经 store-get gate(ipc.ts)等预清完成 —— A1 window-first 不回退:窗口/splash/侧栏照常
 // 先开,只有 tabs 恢复数据最多晚几秒(时限硬界)。
 //
-// 契约锚(上游冻结面,ADR-020 re-freeze 时按 §5 复查):
-//   store = "opencode.global.dat",键 "tabs" / "tabs.recent"(app/src/utils/persist.ts:26 GLOBAL_STORAGE);
-//   tabKey = `${server}\n/${dirBase64}/session/${sessionId}` | `draft:${draftID}`(app/src/context/tabs.tsx:36-39);
-//   dirBase64 形状 = shared/route-manifest isDirectorySlug(REQ-089 版本化契约,不再本地复刻编码方案);
-//   **worktree "/" → "Lw" 是合法全局约定(ADR-008),校验只看形状、绝不按解码值剔**。
+// 契约锚(#926 起与上游**类型**绑死,不再手抄字段清单):
+//   store = "opencode.global.dat",键 "tabs" / "tabs.recent"(app/src/utils/persist.ts GLOBAL_STORAGE;
+//   ui-mac desktop 无 windowID ⇒ Persist.window 经 resolveTarget 落 GLOBAL_STORAGE);
+//   tab 形状 = 下方 SessionTabContract / DraftTabContract,与 packages/app(滚动 pin,ADR-034)的
+//   Tab 类型做双向键集相等断言 —— pin bump 改了 tab 形状而这里没跟,ui-mac typecheck **当场红**。
+// 历史(#926 的教训,两处同因):
+//   ① dirBase64 曾是 session tab 字段(REQ-014 形态 B 毒键即「缺 dirBase64 → tabHref /undefined/... →
+//     titlebar throw」)。上游后来删掉该字段并改用 sessionHref(server, sessionId),旧判据
+//     「缺 dirBase64 = 可证坏」正好命中现行合法形状 ⇒ 今天写的 session tab 下次开机被当毒键清掉。
+//   ② tabKeyOf 手抄上游 tabKey 文法做 recent 收敛 —— 上游 key 格式同样漂了(现行
+//     `${server}\n/server/${base64url(server)}/session/${id}`),重算恒 mismatch ⇒ 合法 recent 被清。
+//     上游 tabs.tsx 本就对 mismatch 的 recent key 自愈(ready 后 setRecentKey(undefined),非崩溃向),
+//     预清不再替上游解释 key 格式:**tabs.recent 一律不读不写**(手写别人文法的替身,整块删除)。
 // 纪律:一切拿不准 = fail-open 保持原样(绝不越修越坏);每次剔除留痕(B11 反静默)。
-// 纯逻辑与编排分离:本文件不 import electron,全部依赖注入 → 可单测。
+// 纯逻辑与编排分离:本文件不 import electron(上游仅 import type,运行时零依赖),全部依赖注入 → 可单测。
 
-import { isDirectorySlug } from "../shared/route-manifest"
+// ── #926 漂移闸:tier-1 的形状判据与上游 Tab 类型绑死(typecheck 层,运行时零成本)──────────
+// packages/app 走滚动 pin(ADR-034):上游改 tab 形状 ⇒ 键集相等断言当场红,逼着本文件的判据同步走,
+// 而不是像 dirBase64 那样悄悄漂成「专剔合法数据」。断言本体在 renderer 侧的
+// `src/renderer/tabs-preclean-contract.ts`(与上游类型的比对必须 import "@opencode-ai/app",而该
+// import 在 src/main 会抢先装载上游 app.d.ts 的 `Window.api` 极简全局声明、压过 env.d.ts 的
+// ElectronAPI —— skipLibCheck 吞掉声明处冲突,379 条使用点假红;renderer 侧与现状同序,无此问题)。
 
-export type PrecleanDrop = { where: "tabs" | "recent"; reason: string; detail: string }
+/** tier-1 要求的 session tab 形状(= 现行上游 SessionTab;字段级校验见 isValidSessionTab)。 */
+export type SessionTabContract = { type: "session"; server: string; sessionId: string }
+/** 现行上游 DraftTab 形状(tier-1 只要求 draftID,见 isValidDraftTab;其余键仅作漂移绊线)。 */
+export type DraftTabContract = { type: "draft"; draftID: string; server: string; directory: string; worktree?: string }
+
+export type PrecleanDrop = { where: "tabs"; reason: string; detail: string }
 
 const SESSION_ID = /^[A-Za-z0-9_-]+$/
 
 type AnyTab = Record<string, unknown>
 
+// 多余键(如旧 build 写的 dirBase64)不剔:上游按需取字段,多余键无害;剔了才是丢用户数据。
 function isValidSessionTab(t: AnyTab): boolean {
   return (
     t.type === "session" &&
     typeof t.server === "string" &&
     t.server.length > 0 &&
     !t.server.includes("\n") &&
-    typeof t.dirBase64 === "string" &&
-    isDirectorySlug(t.dirBase64) &&
     typeof t.sessionId === "string" &&
     SESSION_ID.test(t.sessionId)
   )
@@ -38,13 +54,6 @@ function isValidSessionTab(t: AnyTab): boolean {
 
 function isValidDraftTab(t: AnyTab): boolean {
   return t.type === "draft" && typeof t.draftID === "string" && (t.draftID as string).length > 0
-}
-
-/** 重算上游 tabKey;算不出(未知类型/形状不合法)返回 undefined。 */
-export function tabKeyOf(t: AnyTab): string | undefined {
-  if (isValidDraftTab(t)) return `draft:${t.draftID as string}`
-  if (isValidSessionTab(t)) return `${t.server as string}\n/${t.dirBase64 as string}/session/${t.sessionId as string}`
-  return undefined
 }
 
 /** store 值可能是 JSON 字符串(renderer AsyncStorage 写入形态)或裸对象;编解码对称,认不出返回 null(fail-open)。 */
@@ -62,25 +71,20 @@ export function decodeStoreValue(raw: unknown): { value: unknown; reencode: (v: 
 
 export type SanitizeResult = {
   tabs: unknown[]
-  recent: Record<string, unknown>
-  /** tabs 数组是否有改动(须写回)。 */
+  /** tabs 数组是否有改动(须写回);false = 一个字节都不动。 */
   tabsChanged: boolean
-  /** recent 是否有改动(须写回)。 */
-  recentChanged: boolean
   drops: PrecleanDrop[]
 }
 
 /**
- * tier-1 格式级清洗(纯函数)。剔除**可证坏**的条目:非对象、session 缺 server/dirBase64/sessionId、
- * draft 缺 draftID;未知 type 的对象条目 fail-open 保留(冻结前端只有两型,但绝不替未来格式做决定)。
- * recent:key 不指向任何幸存 tab 即清 —— 与上游 tabs.tsx:102 自身的清理语义一致(mismatch 非崩溃向,
- * 预清只是把旧格式 key 提前收敛);存在未知型幸存 tab 时 fail-open 不清(其 key 无法重算)。
+ * tier-1 格式级清洗(纯函数)。剔除**可证坏**的条目:非对象、session 缺 server/sessionId、
+ * draft 缺 draftID;未知 type 的对象条目 fail-open 保留(绝不替未来格式做决定)。
+ * tabs.recent 不在此处理(#926 起预清一律不动它;上游 tabs.tsx 对 mismatch 自愈)。
  */
-export function sanitizeTabsValue(tabsValue: unknown, recentValue: unknown): SanitizeResult | null {
+export function sanitizeTabsValue(tabsValue: unknown): SanitizeResult | null {
   if (!Array.isArray(tabsValue)) return null // tabs 整体不可读 → fail-open,一律不动
   const drops: PrecleanDrop[] = []
   const kept: unknown[] = []
-  let hasUnknownType = false
   for (const entry of tabsValue) {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
       drops.push({ where: "tabs", reason: "non-object entry", detail: JSON.stringify(entry)?.slice(0, 120) ?? String(entry) })
@@ -92,7 +96,7 @@ export function sanitizeTabsValue(tabsValue: unknown, recentValue: unknown): San
       else
         drops.push({
           where: "tabs",
-          reason: "malformed session tab (missing/invalid server|dirBase64|sessionId — legacy serialization, REQ-014 形态 B)",
+          reason: "malformed session tab (missing/invalid server|sessionId — cannot form a route)",
           detail: JSON.stringify(t).slice(0, 200),
         })
       continue
@@ -102,25 +106,9 @@ export function sanitizeTabsValue(tabsValue: unknown, recentValue: unknown): San
       else drops.push({ where: "tabs", reason: "malformed draft tab (missing draftID)", detail: JSON.stringify(t).slice(0, 200) })
       continue
     }
-    hasUnknownType = true // 未知类型:fail-open 保留
-    kept.push(t)
+    kept.push(t) // 未知类型:fail-open 保留
   }
-
-  const recentObj = recentValue !== null && typeof recentValue === "object" && !Array.isArray(recentValue) ? ({ ...(recentValue as Record<string, unknown>) } as Record<string, unknown>) : {}
-  let recentChanged = false
-  const recentKey = recentObj.key
-  if (typeof recentKey === "string" && recentKey.length > 0 && !hasUnknownType) {
-    const known = new Set(kept.map((t) => tabKeyOf(t as AnyTab)).filter((k): k is string => !!k))
-    if (!known.has(recentKey)) {
-      drops.push({ where: "recent", reason: "recent key matches no surviving tab (stale/legacy format)", detail: recentKey.slice(0, 200) })
-      delete recentObj.key
-      recentChanged = true
-    }
-  }
-
-  const tabsChanged = kept.length !== tabsValue.length
-  if (!tabsChanged && !recentChanged) return { tabs: kept, recent: recentObj, tabsChanged, recentChanged, drops }
-  return { tabs: kept, recent: recentObj, tabsChanged, recentChanged, drops }
+  return { tabs: kept, tabsChanged: kept.length !== tabsValue.length, drops }
 }
 
 /**
@@ -162,7 +150,7 @@ export async function dropDanglingSessionTabs(
     drops.push({
       where: "tabs",
       reason: "dangling session tab (session no longer exists — REQ-014 形态 A)",
-      detail: JSON.stringify({ server: tab.server, dirBase64: tab.dirBase64, sessionId: tab.sessionId }),
+      detail: JSON.stringify({ server: tab.server, sessionId: tab.sessionId }),
     })
     return false
   })
@@ -198,19 +186,14 @@ export type TabsPrecleanDeps = {
 /**
  * 预清入口:tier-1 同步执行完毕后返回,`done` 在 tier-2(或其 fail-open 超时)后 resolve。
  * `done` **保证 resolve**(全路径 try/catch + 时限)—— store-get gate 等它,绝不悬挂。
+ * 只写 `tabs`;`tabs.recent` 一律不动(#926,上游自愈 mismatch)。
  */
 export function runTabsPreclean(deps: TabsPrecleanDeps): { done: Promise<void> } {
   const serverWaitMs = deps.serverWaitMs ?? 5000
   const queryBudgetMs = deps.queryBudgetMs ?? 2500
 
-  const writeBack = (result: SanitizeResult | { tabs: unknown[]; drops: PrecleanDrop[] }, reencodeTabs: (v: unknown) => unknown, reencodeRecent: ((v: unknown) => unknown) | null) => {
-    for (const d of result.drops) deps.log(`[req014-preclean] dropped (${d.where}): ${d.reason} — ${d.detail}`)
-    if ("tabsChanged" in result) {
-      if (result.tabsChanged) deps.setValue(TABS_KEY, reencodeTabs(result.tabs))
-      if (result.recentChanged && reencodeRecent) deps.setValue(TABS_RECENT_KEY, reencodeRecent(result.recent))
-    } else if (result.drops.length > 0) {
-      deps.setValue(TABS_KEY, reencodeTabs(result.tabs))
-    }
+  const logDrops = (drops: PrecleanDrop[]) => {
+    for (const d of drops) deps.log(`[req014-preclean] dropped (${d.where}): ${d.reason} — ${d.detail}`)
   }
 
   let tier1Tabs: unknown[] | null = null
@@ -219,14 +202,13 @@ export function runTabsPreclean(deps: TabsPrecleanDeps): { done: Promise<void> }
   // tier-1:同步(在 createMainWindow 之前被调用;renderer 尚不存在,写回无竞态)。
   try {
     const rawTabs = deps.getValue(TABS_KEY)
-    const rawRecent = deps.getValue(TABS_RECENT_KEY)
     if (rawTabs !== undefined && rawTabs !== null) {
       const decTabs = decodeStoreValue(rawTabs)
-      const decRecent = rawRecent !== undefined && rawRecent !== null ? decodeStoreValue(rawRecent) : { value: {}, reencode: (v: unknown) => JSON.stringify(v) }
       if (decTabs) {
-        const res = sanitizeTabsValue(decTabs.value, decRecent?.value ?? {})
+        const res = sanitizeTabsValue(decTabs.value)
         if (res) {
-          writeBack(res, decTabs.reencode, decRecent?.reencode ?? null)
+          logDrops(res.drops)
+          if (res.tabsChanged) deps.setValue(TABS_KEY, decTabs.reencode(res.tabs))
           tier1Tabs = res.tabs
           reencodeTabs = decTabs.reencode
           if (res.drops.length > 0)
@@ -263,24 +245,9 @@ export function runTabsPreclean(deps: TabsPrecleanDeps): { done: Promise<void> }
       if (res.uncertain > 0)
         deps.log(`[req014-preclean] tier-2 fail-open: ${res.uncertain} session tab(s) unverifiable (query error/timeout) — kept as-is`)
       if (res.drops.length > 0) {
-        writeBack(res, reencodeTabs, null)
-        // recent 若指向刚被剔的 tab,一并收敛(重算幸存 key 集)。
-        try {
-          const rawRecent = deps.getValue(TABS_RECENT_KEY)
-          const decRecent = rawRecent !== undefined && rawRecent !== null ? decodeStoreValue(rawRecent) : null
-          const key = decRecent && decRecent.value !== null && typeof decRecent.value === "object" ? (decRecent.value as Record<string, unknown>).key : undefined
-          if (decRecent && typeof key === "string" && key.length > 0) {
-            const known = new Set(res.tabs.map((t) => tabKeyOf(t as AnyTab)).filter((k): k is string => !!k))
-            if (!known.has(key)) {
-              const next = { ...(decRecent.value as Record<string, unknown>) }
-              delete next.key
-              deps.setValue(TABS_RECENT_KEY, decRecent.reencode(next))
-              deps.log(`[req014-preclean] tier-2: cleared recent key pointing at dropped tab — ${key.slice(0, 200)}`)
-            }
-          }
-        } catch {
-          // recent 收敛失败不致命:上游 tabs.tsx:102 会安全清理 mismatch
-        }
+        logDrops(res.drops)
+        deps.setValue(TABS_KEY, reencodeTabs(res.tabs))
+        // tabs.recent 不收敛:若它指向刚被剔的 tab,上游 tabs.tsx ready 后自清(mismatch 非崩溃向)。
         deps.log(`[req014-preclean] tier-2 done: dropped ${res.drops.length} dangling session tab(s), ${res.tabs.length} kept`)
       }
     } catch (e) {
