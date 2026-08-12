@@ -2,14 +2,16 @@
 // 上游 tabs.tsx 在 renderer 侧恢复 `opencode.global.dat` 的 `tabs` 路由,alpha 无恢复层可插
 // (方案① renderer 守卫已被 S17 证伪:整屏态 alpha 子组件全不挂)。修 = main 预清,两级:
 //   tier-1 格式级(同步):剔除**可证坏**条目 —— 非对象、session 缺 server/sessionId、draft 缺 draftID;
-//   tier-2 存在性(serverReady 后,时限内 fail-open):tab 指向已删会话 → 上游 Not found 白屏(形态 A)。
+//   tier-2 存在性(serverReady 后,时限内 fail-open):tab 指向已删会话 → 上游 Not found 白屏(形态 A);
+//     只对 server === 本地 sidecar key 的 tab 生效 —— 远端 server(ssh:/wsl:/URL)的会话本地判不了,
+//     一律 fail-open 保留(#929 Blocker:拿本地 404 剔远端 tab = 每次开机静默删光远端标签页)。
 // renderer 首读经 store-get gate(ipc.ts)等预清完成 —— A1 window-first 不回退:窗口/splash/侧栏照常
 // 先开,只有 tabs 恢复数据最多晚几秒(时限硬界)。
 //
 // 契约锚(#926 起与上游**类型**绑死,不再手抄字段清单):
 //   store = "opencode.global.dat",键 "tabs" / "tabs.recent"(app/src/utils/persist.ts GLOBAL_STORAGE;
 //   ui-mac desktop 无 windowID ⇒ Persist.window 经 resolveTarget 落 GLOBAL_STORAGE);
-//   tab 形状 = 下方 SessionTabContract / DraftTabContract,与 packages/app(滚动 pin,ADR-034)的
+//   tab 形状 = renderer 契约文件的 SessionTabContract / DraftTabContract,与 packages/app(滚动 pin,ADR-034)的
 //   Tab 类型做双向键集相等断言 —— pin bump 改了 tab 形状而这里没跟,ui-mac typecheck **当场红**。
 // 历史(#926 的教训,两处同因):
 //   ① dirBase64 曾是 session tab 字段(REQ-014 形态 B 毒键即「缺 dirBase64 → tabHref /undefined/... →
@@ -29,10 +31,13 @@
 // import 在 src/main 会抢先装载上游 app.d.ts 的 `Window.api` 极简全局声明、压过 env.d.ts 的
 // ElectronAPI —— skipLibCheck 吞掉声明处冲突,379 条使用点假红;renderer 侧与现状同序,无此问题)。
 
-/** tier-1 要求的 session tab 形状(= 现行上游 SessionTab;字段级校验见 isValidSessionTab)。 */
-export type SessionTabContract = { type: "session"; server: string; sessionId: string }
-/** 现行上游 DraftTab 形状(tier-1 只要求 draftID,见 isValidDraftTab;其余键仅作漂移绊线)。 */
-export type DraftTabContract = { type: "draft"; draftID: string; server: string; directory: string; worktree?: string }
+// 契约类型的唯一定义在 shared(零 import,main 可安全依赖;为什么不能直接依赖 renderer 侧
+// 比对文件 —— 会把 "@opencode-ai/app" 传递进 src/main 解析链,379 条假红,见该 shared 文件抬头)。
+import type { DraftTabContract, SessionTabContract } from "../shared/tabs-preclean-contract"
+// 本地 sidecar 的 ServerConnection.Key,单一来源(#564 已登记;上游 server.tsx Key.make("sidecar"))。
+// 漂移方向安全:上游若改掉这个 key,tier-2 找不到「可验证的 tab」⇒ 整体 fail-open 跳过 + 留痕,
+// 不会像 dirBase64/tabKeyOf 那样漂成「专剔合法数据」。
+import { LOCAL_SIDECAR_SERVER_KEY } from "./catalog-liveness"
 
 export type PrecleanDrop = { where: "tabs"; reason: string; detail: string }
 
@@ -40,20 +45,34 @@ const SESSION_ID = /^[A-Za-z0-9_-]+$/
 
 type AnyTab = Record<string, unknown>
 
+// #929:判据的字段清单从契约键**派生**(`-?` 全键必填)。契约改键 ⇒ 本 Record 缺键/多键当场
+// typecheck 红 —— 「只改契约文件」这条最省力的绿被结构上封死,判据必须跟着改。
 // 多余键(如旧 build 写的 dirBase64)不剔:上游按需取字段,多余键无害;剔了才是丢用户数据。
+const SESSION_CHECKS: { [K in keyof SessionTabContract]-?: (v: unknown) => boolean } = {
+  type: (v) => v === "session",
+  server: (v) => typeof v === "string" && v.length > 0 && !v.includes("\n"),
+  sessionId: (v) => typeof v === "string" && SESSION_ID.test(v),
+}
+
+// draft 的运行时策略不变:只有 draftID 可证坏;其余键仅作漂移绊线(契约改键逼这里表态)。
+const DRAFT_CHECKS: { [K in keyof DraftTabContract]-?: (v: unknown) => boolean } = {
+  type: (v) => v === "draft",
+  draftID: (v) => typeof v === "string" && v.length > 0,
+  server: () => true, // 绊线键:不苛求(旧 build 可能缺;fail-open)
+  directory: () => true, // 绊线键:同上
+  worktree: () => true, // 绊线键:上游可选
+}
+
+function everyCheck<C extends Record<string, (v: unknown) => boolean>>(checks: C, t: AnyTab): boolean {
+  return (Object.keys(checks) as (keyof C & string)[]).every((k) => checks[k]!(t[k]))
+}
+
 function isValidSessionTab(t: AnyTab): boolean {
-  return (
-    t.type === "session" &&
-    typeof t.server === "string" &&
-    t.server.length > 0 &&
-    !t.server.includes("\n") &&
-    typeof t.sessionId === "string" &&
-    SESSION_ID.test(t.sessionId)
-  )
+  return everyCheck(SESSION_CHECKS, t)
 }
 
 function isValidDraftTab(t: AnyTab): boolean {
-  return t.type === "draft" && typeof t.draftID === "string" && (t.draftID as string).length > 0
+  return everyCheck(DRAFT_CHECKS, t)
 }
 
 /** store 值可能是 JSON 字符串(renderer AsyncStorage 写入形态)或裸对象;编解码对称,认不出返回 null(fail-open)。 */
@@ -114,18 +133,24 @@ export function sanitizeTabsValue(tabsValue: unknown): SanitizeResult | null {
 /**
  * tier-2 存在性过滤(纯逻辑,查询注入)。checkSession 按 id 直查(`GET /api/session/{id}`,S21 真机
  * 实测契约:200=存活 / 404+SessionNotFoundError=悬空):true=存活留,false=悬空剔,null=不确定
- * (网络错/超时/非典型响应)→ fail-open 保留并计数(留痕,B11 反静默)。只动合法 session tab。
+ * (网络错/超时/非典型响应)→ fail-open 保留并计数(留痕,B11 反静默)。
+ * #929 Blocker:查询打的是 `verifiableServer` 那一台(生产 = main 自己拉起的本地 sidecar),它的
+ * 404 只对 `tab.server === verifiableServer` 的 tab 是「悬空」的证据 —— 远端 tab(ssh:/wsl:/URL)
+ * 的会话本来就不在本地,拿本地 404 剔它 = 每次开机静默删光远端标签页。所以只对可归因的 tab
+ * 查询/剔除,其余 session tab 一律保留并计入 remoteSkipped(留痕)。
  * (原设计按目录 session.list 判集合,真机实测 limit 不生效、每页仅 2 条 → cursor.next 恒在 →
  * 「分页未尽 fail-open」使 tier-2 恒空转;S21 走查当场发现并改按 id 直查。)
  */
 export async function dropDanglingSessionTabs(
   tabs: unknown[],
   checkSession: (sessionId: string) => Promise<boolean | null>,
-): Promise<{ tabs: unknown[]; drops: PrecleanDrop[]; uncertain: number }> {
+  verifiableServer: string,
+): Promise<{ tabs: unknown[]; drops: PrecleanDrop[]; uncertain: number; remoteSkipped: number }> {
+  const isCheckable = (tab: AnyTab) => isValidSessionTab(tab) && tab.server === verifiableServer
   const ids = new Map<string, boolean | null>()
   for (const t of tabs) {
     const tab = t as AnyTab
-    if (isValidSessionTab(tab) && !ids.has(tab.sessionId as string)) ids.set(tab.sessionId as string, null)
+    if (isCheckable(tab) && !ids.has(tab.sessionId as string)) ids.set(tab.sessionId as string, null)
   }
   await Promise.all(
     [...ids.keys()].map(async (sid) => {
@@ -138,9 +163,14 @@ export async function dropDanglingSessionTabs(
   )
   const drops: PrecleanDrop[] = []
   let uncertain = 0
+  let remoteSkipped = 0
   const kept = tabs.filter((t) => {
     const tab = t as AnyTab
     if (!isValidSessionTab(tab)) return true
+    if (tab.server !== verifiableServer) {
+      remoteSkipped++
+      return true // 本地 sidecar 判不了别的 server 的会话 → fail-open 保留
+    }
     const alive = ids.get(tab.sessionId as string)
     if (alive === true) return true
     if (alive === null || alive === undefined) {
@@ -154,7 +184,7 @@ export async function dropDanglingSessionTabs(
     })
     return false
   })
-  return { tabs: kept, drops, uncertain }
+  return { tabs: kept, drops, uncertain, remoteSkipped }
 }
 
 // ---------- 编排(依赖注入;index.ts 接线真实 store/logger/SDK) ----------
@@ -230,6 +260,14 @@ export function runTabsPreclean(deps: TabsPrecleanDeps): { done: Promise<void> }
       if (!tier1Tabs || !reencodeTabs) return
       const sessionTabs = tier1Tabs.filter((t) => isValidSessionTab(t as AnyTab))
       if (sessionTabs.length === 0) return
+      // #929:只有指向本地 sidecar 的 tab 能被本地查询归因;一个都没有(全远端)⇒ 整层跳过 + 留痕。
+      const checkableTabs = sessionTabs.filter((t) => (t as AnyTab).server === LOCAL_SIDECAR_SERVER_KEY)
+      if (checkableTabs.length === 0) {
+        deps.log(
+          `[req014-preclean] tier-2 fail-open: ${sessionTabs.length} session tab(s) on non-local server(s) — existence not verifiable from local sidecar, kept as-is`,
+        )
+        return
+      }
       const server = await Promise.race([
         deps.awaitServer().catch(() => null),
         new Promise<null>((r) => setTimeout(r, serverWaitMs, null)),
@@ -241,7 +279,9 @@ export function runTabsPreclean(deps: TabsPrecleanDeps): { done: Promise<void> }
       const budget = new Promise<null>((r) => setTimeout(r, queryBudgetMs, null))
       const checkSession = async (sessionId: string): Promise<boolean | null> =>
         Promise.race([deps.checkSession(server, sessionId).catch(() => null), budget])
-      const res = await dropDanglingSessionTabs(tier1Tabs, checkSession)
+      const res = await dropDanglingSessionTabs(tier1Tabs, checkSession, LOCAL_SIDECAR_SERVER_KEY)
+      if (res.remoteSkipped > 0)
+        deps.log(`[req014-preclean] tier-2 fail-open: ${res.remoteSkipped} session tab(s) on non-local server(s) — existence not verifiable from local sidecar, kept as-is`)
       if (res.uncertain > 0)
         deps.log(`[req014-preclean] tier-2 fail-open: ${res.uncertain} session tab(s) unverifiable (query error/timeout) — kept as-is`)
       if (res.drops.length > 0) {

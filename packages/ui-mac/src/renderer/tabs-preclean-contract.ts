@@ -9,8 +9,16 @@
 // 上游声明抢先装载 ⇒ renderer 379 处 window.api 使用点假红(2026-08-11 实测)。renderer 侧
 // import 与现状同序,不动这架天平。
 
+// 反孤儿(#929 审计 Major):本文件曾是孤儿 —— 没人 import,删掉它 typecheck 与全量测试都不红,
+// gate-files.tsv 又只收测试文件,结构上没有任何东西拦得住它消失。现在两条腿钉死:
+//   ① 契约类型的唯一定义搬进 src/shared/tabs-preclean-contract.ts,main 的谓词从那里派生
+//     (不能定义在本文件再让 main 反向 import:那会把 "@opencode-ai/app" 传递进 src/main 的
+//     解析链,踩中下述声明顺序地雷 —— 2026-08-11 实测正好 379 条假红);
+//   ② 本文件由 renderer/index.tsx 的 type-only import 钉进 program —— 删掉本文件 = 入口
+//     TS2307 当场红(绕过实验实测,见 PR #929)。
+
 import type { useTabs } from "@opencode-ai/app"
-import type { DraftTabContract, SessionTabContract } from "../main/tabs-preclean"
+import type { DraftTabContract, SessionTabContract } from "../shared/tabs-preclean-contract"
 
 type UpstreamTab = ReturnType<typeof useTabs>["store"][number]
 type UpstreamSessionTab = Extract<UpstreamTab, { type: "session" }>

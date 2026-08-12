@@ -49,19 +49,24 @@ function makeStore(init: Record<string, unknown>) {
   }
 }
 
-const ALL_ALIVE = {
+/** 模拟**真实**本地 sidecar(tabs-preclean-io 实测契约):库里有该 id → true(200);没有 →
+ *  false(404 + SessionNotFoundError)。远端 server(ssh:/wsl:/URL)的会话不在本地库 ⇒ 对它们
+ *  恒 false —— #929 Blocker:旧桩 checkSession 恒 true,远端 tab 在生产会被本地 404 剔光,
+ *  而闸门对自己的 AC 说「全存活」。现在的桩让这条 AC 真的能红(绕过实验见 PR)。 */
+const localSidecarKnowing = (...ids: string[]) => ({
   awaitServer: async () => ({ url: "http://127.0.0.1:1", username: null, password: null }),
-  checkSession: async () => true as boolean | null,
+  checkSession: async (_srv: { url: string }, sid: string): Promise<boolean | null> => ids.includes(sid),
   serverWaitMs: 200,
   queryBudgetMs: 200,
-}
+})
 
 describe("#926 用户可观察主判据:开着 N 个 tab → 重启预清 → N 个都还在", () => {
-  test("4 个现行/历史形状 tab(2 session + legacy + draft)全存活,盘上零改写,recent 原样", async () => {
+  test("4 个现行/历史形状 tab(本地 2 + 远端 wsl 1 + draft)全存活,盘上零改写,recent 原样", async () => {
     const before = JSON.stringify([SESSION_A, SESSION_B, LEGACY_SESSION, DRAFT_A])
     const recentBefore = JSON.stringify(RECENT_CURRENT)
     const s = makeStore({ [TABS_KEY]: before, [TABS_RECENT_KEY]: recentBefore })
-    const { done } = runTabsPreclean({ ...s.deps, ...ALL_ALIVE })
+    // 本地库只认得两个本地 id;SESSION_B(wsl:ubuntu)的 id 本地查是 404 —— 它必须照样存活
+    const { done } = runTabsPreclean({ ...s.deps, ...localSidecarKnowing(SESSION_A.sessionId, LEGACY_SESSION.sessionId) })
     await done
     // 用户重启后读到的 tabs = 预清后的 store(ipc.ts store-get gate 语义):一个不少、顺序不变
     expect(s.data[TABS_KEY]).toBe(before)
@@ -72,12 +77,13 @@ describe("#926 用户可观察主判据:开着 N 个 tab → 重启预清 → N 
     expect(s.writes).toEqual([])
   })
 
-  test("6 个 tab(3 session + 2 draft + 未知未来类型)全存活,draft 形态的 recent 原样", async () => {
+  test("6 个 tab(ssh + wsl + 本地 session + 2 draft + 未知未来类型)全存活,draft 形态的 recent 原样", async () => {
     const future = { type: "workspace-tab-v3", payload: { x: 1 } }
     const before = JSON.stringify([SESSION_C, SESSION_B, SESSION_A, DRAFT_B, DRAFT_A, future])
     const recentBefore = JSON.stringify({ key: "draft:fb6ead90-e1b2-41d5-9129-2a8c0a6aa6ce" })
     const s = makeStore({ [TABS_KEY]: before, [TABS_RECENT_KEY]: recentBefore })
-    const { done } = runTabsPreclean({ ...s.deps, ...ALL_ALIVE })
+    // ssh:devbox / wsl:ubuntu 的 id 本地一律 404(false)—— 远端 tab 仍必须全存活
+    const { done } = runTabsPreclean({ ...s.deps, ...localSidecarKnowing(SESSION_A.sessionId) })
     await done
     expect(s.data[TABS_KEY]).toBe(before)
     expect(JSON.parse(s.data[TABS_KEY] as string)).toHaveLength(6)
@@ -89,10 +95,29 @@ describe("#926 用户可观察主判据:开着 N 个 tab → 重启预清 → N 
     const solo = { type: "session", server: "sidecar", sessionId: "ses_0ba9d5115ffeQQcvghXsx1FgGc" }
     const before = JSON.stringify([solo])
     const s = makeStore({ [TABS_KEY]: before })
-    const { done } = runTabsPreclean({ ...s.deps, ...ALL_ALIVE })
+    const { done } = runTabsPreclean({ ...s.deps, ...localSidecarKnowing(solo.sessionId) })
     await done
     expect(s.data[TABS_KEY]).toBe(before)
     expect(s.writes).toEqual([])
+  })
+
+  test("#929 全远端(ssh + wsl)tab:tier-2 整体跳过留痕,零查询零删除", async () => {
+    const before = JSON.stringify([SESSION_C, SESSION_B])
+    const s = makeStore({ [TABS_KEY]: before })
+    let queried = 0
+    const { done } = runTabsPreclean({
+      ...s.deps,
+      ...localSidecarKnowing(), // 本地库空:任何 id 查了都是 false —— 但根本不该去查
+      checkSession: async () => {
+        queried++
+        return false
+      },
+    })
+    await done
+    expect(s.data[TABS_KEY]).toBe(before)
+    expect(s.writes).toEqual([])
+    expect(queried).toBe(0)
+    expect(s.logs.some((l) => l.includes("non-local server"))).toBe(true)
   })
 })
 
@@ -141,7 +166,7 @@ describe("#926 tabs.recent 一律不动(上游 tabs.tsx 对 mismatch 自愈,预�
       [TABS_KEY]: JSON.stringify([SESSION_A]),
       [TABS_RECENT_KEY]: staleRecent,
     })
-    const { done } = runTabsPreclean({ ...s.deps, ...ALL_ALIVE })
+    const { done } = runTabsPreclean({ ...s.deps, ...localSidecarKnowing(SESSION_A.sessionId) })
     await done
     expect(s.data[TABS_RECENT_KEY]).toBe(staleRecent)
     expect(s.writes).toEqual([])
@@ -155,11 +180,7 @@ describe("#926 tabs.recent 一律不动(上游 tabs.tsx 对 mismatch 自愈,预�
       [TABS_KEY]: JSON.stringify([SESSION_A, noServer, dangling]),
       [TABS_RECENT_KEY]: recentBefore,
     })
-    const { done } = runTabsPreclean({
-      ...s.deps,
-      ...ALL_ALIVE,
-      checkSession: async (_srv, sid) => sid === SESSION_A.sessionId,
-    })
+    const { done } = runTabsPreclean({ ...s.deps, ...localSidecarKnowing(SESSION_A.sessionId) })
     await done
     expect(JSON.parse(s.data[TABS_KEY] as string)).toEqual([SESSION_A])
     expect(s.data[TABS_RECENT_KEY]).toBe(recentBefore)
@@ -167,37 +188,62 @@ describe("#926 tabs.recent 一律不动(上游 tabs.tsx 对 mismatch 自愈,预�
   })
 })
 
-describe("dropDanglingSessionTabs(tier-2 存在性,按 id 直查)", () => {
+describe("dropDanglingSessionTabs(tier-2 存在性,按 id 直查;#929 只对可归因于被查 server 的 tab 生效)", () => {
   test("悬空 session 被剔(形态 A),存活者/legacy/draft 不动", async () => {
     const dangling = { type: "session", server: "sidecar", sessionId: "ses_deleted00000000000000000000" }
-    const res = await dropDanglingSessionTabs([SESSION_A, dangling, LEGACY_SESSION, DRAFT_A], async (sid) => sid !== dangling.sessionId)
+    const res = await dropDanglingSessionTabs(
+      [SESSION_A, dangling, LEGACY_SESSION, DRAFT_A],
+      async (sid) => sid !== dangling.sessionId,
+      "sidecar",
+    )
     expect(res.tabs).toEqual([SESSION_A, LEGACY_SESSION, DRAFT_A])
     expect(res.drops).toHaveLength(1)
     expect(res.uncertain).toBe(0)
+    expect(res.remoteSkipped).toBe(0)
+  })
+
+  test("#929 远端 tab(wsl:/ssh:)不因本地 404 被剔,且它们的 id 根本不被拿去查", async () => {
+    const localDangling = { type: "session", server: "sidecar", sessionId: "ses_deadbeef000000000000000000" }
+    const asked: string[] = []
+    const res = await dropDanglingSessionTabs(
+      [SESSION_B, SESSION_C, SESSION_A, localDangling],
+      async (sid) => {
+        asked.push(sid)
+        return sid === SESSION_A.sessionId // 本地库只有 SESSION_A;其余 = 404(false)
+      },
+      "sidecar",
+    )
+    // wsl:ubuntu / ssh:devbox 的 tab 存活;本地悬空的照剔(REQ-014 形态 A 不失守)
+    expect(res.tabs).toEqual([SESSION_B, SESSION_C, SESSION_A])
+    expect(res.drops).toHaveLength(1)
+    expect(res.remoteSkipped).toBe(2)
+    expect(asked.sort()).toEqual([SESSION_A.sessionId, localDangling.sessionId].sort())
   })
 
   test("查询返回 null(网络错/超时/非典型响应)→ fail-open 保留并计数", async () => {
-    const res = await dropDanglingSessionTabs([SESSION_A, SESSION_B], async () => null)
-    expect(res.tabs).toEqual([SESSION_A, SESSION_B])
+    const res = await dropDanglingSessionTabs([SESSION_A, LEGACY_SESSION], async () => null, "sidecar")
+    expect(res.tabs).toEqual([SESSION_A, LEGACY_SESSION])
     expect(res.drops).toEqual([])
     expect(res.uncertain).toBe(2)
   })
 
   test("查询抛错 → fail-open 全保留", async () => {
-    const res = await dropDanglingSessionTabs([SESSION_C], async () => {
+    const local = { type: "session", server: "sidecar", sessionId: "ses_0c11a2b33ffeboomcase000000" }
+    const res = await dropDanglingSessionTabs([local], async () => {
       throw new Error("boom")
-    })
-    expect(res.tabs).toEqual([SESSION_C])
+    }, "sidecar")
+    expect(res.tabs).toEqual([local])
     expect(res.uncertain).toBe(1)
   })
 
   test("同 id 多 tab 只查一次,判定一致", async () => {
     let calls = 0
-    const dup = { ...SESSION_B }
-    const res = await dropDanglingSessionTabs([SESSION_B, dup], async () => {
+    const local = { type: "session", server: "sidecar", sessionId: "ses_0d44e5f66ffeduplicate00000" }
+    const dup = { ...local }
+    const res = await dropDanglingSessionTabs([local, dup], async () => {
       calls++
       return false
-    })
+    }, "sidecar")
     expect(calls).toBe(1)
     expect(res.tabs).toEqual([])
     expect(res.drops).toHaveLength(2)
@@ -251,7 +297,7 @@ describe("runTabsPreclean(编排)", () => {
   test("剔除必留痕(B11 反静默):每条 drop 都有日志行", async () => {
     const noId = { type: "session", server: "sidecar" }
     const s = makeStore({ [TABS_KEY]: JSON.stringify([noId, SESSION_A]) })
-    const { done } = runTabsPreclean({ ...s.deps, ...ALL_ALIVE })
+    const { done } = runTabsPreclean({ ...s.deps, ...localSidecarKnowing(SESSION_A.sessionId) })
     await done
     expect(s.logs.some((l) => l.includes("dropped (tabs)") && l.includes("malformed session tab"))).toBe(true)
     expect(s.logs.some((l) => l.includes("tier-1 done"))).toBe(true)
