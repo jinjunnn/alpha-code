@@ -7,6 +7,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Part, ToolDisplaySnapshotV1, ToolPart, ToolState } from "@opencode-ai/sdk/v2/client"
 import {
+  bashDescriptionOf,
   contextRowOf,
   diagnosticsOf,
   openTargetOf,
@@ -810,5 +811,228 @@ describe("#879 T7 — 标题/翻译/annotation 等 UI 元数据不进入判定�
     contextRowOf(frozen)
     taskCardInfoOf(frozen)
     expect(JSON.stringify(frozen)).toBe(before)
+  })
+})
+
+// ── #934 —— 时间线残余裸别名判定收编 + #879 R1 三条 Minor ────────────────────
+/** 与 #587 R-final 相同的最小生产投影装配(user + assistant 一回合)。 */
+function timelineRowsOf(parts: ToolPart[]) {
+  return projectTimelineRows({
+    messages: [
+      {
+        id: "msg_u",
+        sessionID: "ses_g",
+        role: "user",
+        time: { created: 1000 },
+        agent: "build",
+        model: { providerID: "p", modelID: "m" },
+      },
+      {
+        id: "msg_g",
+        sessionID: "ses_g",
+        role: "assistant",
+        parentID: "msg_u",
+        time: { created: 10, completed: 20 },
+        modelID: "m",
+        providerID: "p",
+        mode: "build",
+        agent: "build",
+        path: { cwd: "/tmp", root: "/tmp" },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
+    ] as Parameters<typeof projectTimelineRows>[0]["messages"],
+    partsOf: (id) =>
+      id === "msg_g"
+        ? parts
+        : [{ id: "prt_u", sessionID: "ses_g", messageID: "msg_u", type: "text", text: "x" } as Part],
+    status: "idle",
+  })
+}
+
+function withId(part: ToolPart, id: string): ToolPart {
+  return { ...part, id }
+}
+
+describe("#934 — 时间线隐藏是第一方特权:冒名 todowrite/question 不会被静默吞掉", () => {
+  test("plugin/MCP/无快照的 todowrite 照常渲染;builtin identity 的 todowrite 才隐藏", () => {
+    const spoofs: Array<[string, ToolDisplaySnapshotV1 | undefined]> = [
+      // plugin 可注册裸 id(tool/registry.ts:202 直接以 id 为别名)。
+      ["todowrite", plugin("task-svc", "todowrite")],
+      // MCP 远端名 todowrite(别名带 server 前缀)。
+      ["tasks-srv_todowrite", mcp("tasks-srv", "todowrite")],
+      // 快照缺失(历史行):隐藏特权失效,fail-closed 方向 = 可见。
+      ["todowrite", undefined],
+    ]
+    for (const [tool, display] of spoofs) {
+      const rows = timelineRowsOf([
+        toolPart({ tool, display, state: completed({ todos: [{ content: "静默动作" }] }, "done") }),
+      ])
+      expect({ tool, toolRows: rows.filter((row) => row.kind === "tool").length }).toEqual({ tool, toolRows: 1 })
+    }
+    // 对照(杀「一律渲染」的错误实现):引擎铸造的 builtin todowrite 仍被 dock 接管,零工具行。
+    const real = timelineRowsOf([
+      toolPart({ tool: "todowrite", display: builtin("todowrite"), state: completed({ todos: [] }, "ok") }),
+    ])
+    expect(real.filter((row) => row.kind === "tool")).toHaveLength(0)
+  })
+
+  test("pending/running 的 question 接管同闸:冒名 question 运行中也可见(静默执行窗口关死)", () => {
+    const runningState: ToolState = { status: "running", input: {}, title: "q", time: { start: 0 } }
+    const spoof = timelineRowsOf([
+      toolPart({ tool: "question", display: plugin("qa-pack", "question"), state: runningState }),
+    ])
+    expect(spoof.filter((row) => row.kind === "tool")).toHaveLength(1)
+    // 对照:builtin question 运行中仍归 composer dock,时间线零行;完成后记录回归时间线。
+    const real = timelineRowsOf([toolPart({ tool: "question", display: builtin("question"), state: runningState })])
+    expect(real.filter((row) => row.kind === "tool")).toHaveLength(0)
+    const answered = timelineRowsOf([
+      toolPart({ tool: "question", display: builtin("question"), state: completed({}, "答案 B") }),
+    ])
+    expect(answered.filter((row) => row.kind === "tool")).toHaveLength(1)
+  })
+})
+
+describe("#934 — 「已探索」折叠组归属按 identity:冒名探查工具挤不进第一方分组", () => {
+  const readState = () => completed({ filePath: "/w/docs/overview.md" }, "")
+  test("plugin 裸名 read / MCP 远端 read / 无快照历史行:与真 read 相邻也不成组,各自独立成卡", () => {
+    const spoofs: Array<[string, ToolDisplaySnapshotV1 | undefined]> = [
+      ["read", plugin("fs-tools", "read")],
+      ["files-srv_read", mcp("files-srv", "read")],
+      ["read", undefined],
+    ]
+    for (const [tool, display] of spoofs) {
+      const rows = timelineRowsOf([
+        withId(toolPart({ tool: "read", display: builtin("read"), state: readState() }), "prt_real"),
+        withId(toolPart({ tool, display, state: readState() }), "prt_spoof"),
+      ])
+      expect({ tool, group: rows.some((row) => row.kind === "toolgroup") }).toEqual({ tool, group: false })
+      expect({ tool, toolRows: rows.filter((row) => row.kind === "tool").length }).toEqual({ tool, toolRows: 2 })
+    }
+  })
+
+  test("对照(杀「一律不成组」的错误实现):两个 builtin identity 探查工具照常折叠", () => {
+    const rows = timelineRowsOf([
+      withId(toolPart({ tool: "read", display: builtin("read"), state: readState() }), "prt_b1"),
+      withId(toolPart({ tool: "list", display: builtin("list"), state: completed({ path: "/w/src" }, "") }), "prt_b2"),
+    ])
+    const groups = rows.filter((row) => row.kind === "toolgroup")
+    expect(groups).toHaveLength(1)
+    expect(groups[0]!.kind === "toolgroup" && groups[0]!.parts).toHaveLength(2)
+  })
+})
+
+describe("#934(#879 R1 Minor-1)— 专用卡查表键是 identity.name,不是 part.tool", () => {
+  test("别名≠身份的 builtin(part.tool 与 identity.name 不同):仍命中专用卡", () => {
+    // 查表键换回 part.tool(HOST_BUILTIN_RULES.get(part.tool))时,"bash-compat-91" 查不到 → 本例必红。
+    const aliased = toolPart({
+      tool: "bash-compat-91",
+      display: {
+        identity: { source: "builtin", origin: "", name: "bash" },
+        technicalId: "bash-compat-91",
+        authority: { kind: "not-asserted" },
+      },
+      state: completed({ command: "sw_vers -productVersion" }, "26.1", { exit: 0 }),
+    })
+    const head = toolCardHeadOf(aliased)
+    expect([head.kind, head.metadataOnly, head.target, head.exit]).toEqual([
+      "bash",
+      false,
+      "sw_vers -productVersion",
+      0,
+    ])
+    // 第二个夹具换 kind(builtin-v2)与别名形态,杀「只对 bash 特判」的实现。
+    const aliasedRead = toolPart({
+      tool: "read_v2",
+      display: {
+        identity: { source: "builtin-v2", origin: "", name: "read" },
+        technicalId: "read_v2",
+        authority: { kind: "not-asserted" },
+      },
+      state: completed({ filePath: "/w/CHANGELOG.md" }, ""),
+    })
+    expect([toolCardHeadOf(aliasedRead).kind, toolCardHeadOf(aliasedRead).target]).toEqual(["read", "CHANGELOG.md"])
+  })
+})
+
+describe("#934(#879 R1 Minor-3)— AC5 确定标记补齐:副行字段脱敏失败不再静默丢", () => {
+  // redactor 的确定失败形态:>400 字符不间断 token(safeTruncate 回退到空 ⇒ 整字段隐藏)、
+  // >1024 字符路径(redactPath 直接拒,截断的路径指向错误目标)。各夹具字面量互不相同。
+  const unbroken = (seed: string, length: number) => seed.repeat(Math.ceil(length / seed.length)).slice(0, length)
+
+  test("折叠组行:read 路径 redactor 失败 → targetHidden 确定标记,目标不凭空消失", () => {
+    const bad = toolPart({
+      tool: "read",
+      display: builtin("read"),
+      state: completed({ filePath: `/w/deep/${unbroken("seg5", 1100)}.md` }, ""),
+    })
+    const row = contextRowOf(bad)
+    expect([row.target, row.targetHidden]).toEqual([undefined, true])
+    // 正对照:合法路径无标记(杀「恒标记」的实现)。
+    const ok = contextRowOf(
+      toolPart({ tool: "read", display: builtin("read"), state: completed({ filePath: "/w/docs/spec.md" }, "") }),
+    )
+    expect([ok.target, ok.targetHidden]).toEqual(["spec.md", undefined])
+  })
+
+  test("grep include 副行:redactor 失败 → head.detailHidden 确定标记(detail 不再静默缺席)", () => {
+    const bad = toolCardHeadOf(
+      toolPart({
+        tool: "grep",
+        display: builtin("grep"),
+        state: completed({ pattern: "TODO", include: unbroken("inc9", 460) }, "", { matches: 2 }),
+      }),
+    )
+    expect([bad.detail, bad.detailHidden, bad.target]).toEqual([undefined, true, "TODO"])
+    const ok = toolCardHeadOf(
+      toolPart({
+        tool: "grep",
+        display: builtin("grep"),
+        state: completed({ pattern: "FIXME", include: "*.tsx" }, "", { matches: 5 }),
+      }),
+    )
+    expect([ok.detail, ok.detailHidden]).toEqual(["include=*.tsx", undefined])
+  })
+
+  test("task agent chip:subagent_type redactor 失败 → agentHidden 确定标记", () => {
+    const bad = taskCardInfoOf(
+      toolPart({
+        tool: "task",
+        display: builtin("task"),
+        state: completed({ description: "巡检", subagent_type: unbroken("agent7", 430) }, ""),
+      }),
+    )
+    expect([bad.agent, bad.agentHidden]).toEqual([undefined, true])
+    const ok = taskCardInfoOf(
+      toolPart({
+        tool: "task",
+        display: builtin("task"),
+        state: completed({ description: "巡检", subagent_type: "explore" }, ""),
+      }),
+    )
+    expect([ok.agent, ok.agentHidden]).toEqual(["explore", undefined])
+  })
+
+  test("bash 命令说明副行:redactor 失败 → hidden 确定标记;缺席与失败可区分", () => {
+    const bad = bashDescriptionOf(
+      toolPart({
+        tool: "bash",
+        display: builtin("bash"),
+        state: completed({ command: "true", description: unbroken("desc3", 470) }, "", { exit: 0 }),
+      }),
+    )
+    expect(bad).toEqual({ hidden: true })
+    const ok = bashDescriptionOf(
+      toolPart({
+        tool: "bash",
+        display: builtin("bash"),
+        state: completed({ command: "ls", description: "列目录" }, "", { exit: 0 }),
+      }),
+    )
+    expect(ok).toEqual({ value: "列目录", hidden: false })
+    const absent = bashDescriptionOf(
+      toolPart({ tool: "bash", display: builtin("bash"), state: completed({ command: "pwd" }, "/w", { exit: 0 }) }),
+    )
+    expect(absent).toBeUndefined()
   })
 })

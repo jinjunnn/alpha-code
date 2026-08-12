@@ -308,15 +308,17 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(idle.some((row) => row.kind === "thinking")).toBe(false)
   })
 
-  test("工具过滤:todowrite 与 pending/running question 不渲染;未知 part 类型 fail-closed 跳过", () => {
+  test("工具过滤:builtin identity 的 todowrite 与 pending/running question 不渲染;未知 part 类型 fail-closed 跳过", () => {
     const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
       msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
       msg_a1: [
-        toolPart("prt_o1", "msg_a1", "todowrite"),
+        // #934:隐藏是第一方特权,夹具须带 builtin 快照(与真实 builtin 调用同形状)。
+        toolPart("prt_o1", "msg_a1", "todowrite", { display: builtinDisplay("todowrite") }),
         toolPart("prt_o2", "msg_a1", "question", {
+          display: builtinDisplay("question"),
           state: { status: "running", input: {}, title: "q", time: { start: 0 } },
         }),
-        toolPart("prt_o3", "msg_a1", "question"),
+        toolPart("prt_o3", "msg_a1", "question", { display: builtinDisplay("question") }),
         { id: "prt_o4", sessionID: "ses_1", messageID: "msg_a1", type: "mystery" } as unknown as Part,
         {
           id: "prt_o5",
@@ -339,12 +341,14 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
       msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
       msg_a1: [
-        toolPart("prt_g1", "msg_a1", "read"),
-        toolPart("prt_g2", "msg_a1", "grep"),
-        toolPart("prt_g3", "msg_a1", "list"),
-        toolPart("prt_x1", "msg_a1", "bash"),
-        toolPart("prt_g4", "msg_a1", "glob"),
+        // #934:分组归属按 identity 分派,夹具带 builtin 快照(与真实调用同形状)。
+        toolPart("prt_g1", "msg_a1", "read", { display: builtinDisplay("read") }),
+        toolPart("prt_g2", "msg_a1", "grep", { display: builtinDisplay("grep") }),
+        toolPart("prt_g3", "msg_a1", "list", { display: builtinDisplay("list") }),
+        toolPart("prt_x1", "msg_a1", "bash", { display: builtinDisplay("bash") }),
+        toolPart("prt_g4", "msg_a1", "glob", { display: builtinDisplay("glob") }),
         toolPart("prt_g5", "msg_a1", "read", {
+          display: builtinDisplay("read"),
           state: { status: "running", input: {}, title: "read", time: { start: 0 } },
         }),
       ],
@@ -390,7 +394,11 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     })
     const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
       msg_u1: [textPart("prt_u1", "msg_u1", "读下截图")],
-      msg_a1: [withAttachment, toolPart("prt_r2", "msg_a1", "read"), toolPart("prt_r3", "msg_a1", "grep")],
+      msg_a1: [
+        withAttachment,
+        toolPart("prt_r2", "msg_a1", "read", { display: builtinDisplay("read") }),
+        toolPart("prt_r3", "msg_a1", "grep", { display: builtinDisplay("grep") }),
+      ],
     })
     // 带附件的 read 保留独立卡 + 媒体行;其后两个无附件探查工具正常成组。
     expect(rows.map((row) => row.kind)).toEqual(["user", "tool", "media", "toolgroup", "footnote"])
@@ -450,7 +458,9 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
   })
 
   test("I7 折叠组成员上限:超长连续探查段切成多个组行", () => {
-    const many = Array.from({ length: 30 }, (_, index) => toolPart(`prt_g${index}`, "msg_a1", "read"))
+    const many = Array.from({ length: 30 }, (_, index) =>
+      toolPart(`prt_g${index}`, "msg_a1", "read", { display: builtinDisplay("read") }),
+    )
     const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
       msg_u1: [textPart("prt_u1", "msg_u1", "翻仓库")],
       msg_a1: many,
