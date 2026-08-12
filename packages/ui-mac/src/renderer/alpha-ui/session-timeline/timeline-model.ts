@@ -6,7 +6,7 @@
 //     proxy 反应式读取 —— 流式 delta 不重建行 DOM;
 //   · reuseTimelineRows 以 key+rev+proxy 同一性做行复用,保证 <For> 的引用稳定;
 //   · 工具 part → tool 行(C6 真卡);连续已完成的探查类工具 ≥2 个 → toolgroup 折叠组;
-//     助手侧 file part → media 预览行;完成的 cloud_* 工具 → artifacts 产物链接行;
+//     助手侧 file part → media 预览行;完成的第一方 cloud facade 工具(identity 判定)→ artifacts 产物链接行;
 //   · 回合级错误(非中断)→ turnError 行;session_status=retry → retry 行(对齐 v2 行模型);
 //   · 未知 part 类型 fail-closed:不渲染、不猜测(subtask 同上游 v1/v2 一致不渲染);
 //   · I7 有界:boundedText 把超大文本截断后才交给渲染管线(sanitizer/Shiki 不吃整串)。
@@ -394,8 +394,22 @@ export function mediaSourceOfFilePart(part: FilePart): TimelineMediaSource {
   }
 }
 
-// ── 产物链接行(§⑥):完成态 cloud_* 工具输出里的产物名 → 链接行 ─────────────
-const CLOUD_TOOL_PREFIX = "cloud_"
+// ── 产物链接行(§⑥):完成态云 facade 工具输出里的产物名 → 链接行 ─────────────
+// #879 审计 R-final:准入是 identity 判定,不是 `cloud_` 别名前缀。plugin 命名空间
+// `cloud`(工具 id `cloud_x`,tool/registry.ts)与 sanitize 后撞前缀的 MCP 配置键
+// (`cloud.x` → 别名 `cloud_x_*`,mcp/catalog.ts toolName)都铸得出 cloud_* 别名,
+// 但它们的持久化 identity 是 (plugin, "cloud") / (mcp, "cloud.x"),铸不出
+// (mcp, "cloud") —— 那是宿主注入的第一方 facade 配置键(cloud-web-search.ts
+// CLOUD_MCP_SERVER_NAME = "cloud",引擎侧 mcp/index.ts 以 clientName 为 origin)。
+// fail-closed:identity 缺失(历史行)/形状非法 一律无产物行。
+function isCloudFacadePart(part: ToolPart): boolean {
+  const display = (part as { display?: unknown }).display
+  if (typeof display !== "object" || display === null) return false
+  const identity = (display as { identity?: unknown }).identity
+  if (typeof identity !== "object" || identity === null) return false
+  const record = identity as { source?: unknown; origin?: unknown }
+  return record.source === "mcp" && record.origin === "cloud"
+}
 export const ARTIFACT_LINKS_MAX = 12
 const ARTIFACT_OUTPUT_PARSE_MAX = 100_000
 const artifactLinksCache = new WeakMap<object, { output: string; links: TimelineArtifactLink[] }>()
@@ -427,9 +441,9 @@ function parseArtifactLinks(output: string): TimelineArtifactLink[] {
   return links
 }
 
-/** fail-closed:非 cloud 工具/未完成/输出超限/解析不出 artifacts 名字 → 空(不出行)。 */
+/** fail-closed:identity 非第一方 cloud facade/未完成/输出超限/解析不出 artifacts 名字 → 空(不出行)。 */
 export function artifactLinksOf(part: ToolPart): TimelineArtifactLink[] {
-  if (!part.tool.startsWith(CLOUD_TOOL_PREFIX)) return []
+  if (!isCloudFacadePart(part)) return []
   if (part.state.status !== "completed") return []
   const output = part.state.output
   if (typeof output !== "string" || output.length === 0 || output.length > ARTIFACT_OUTPUT_PARSE_MAX) return []

@@ -25,7 +25,8 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("41 pass")
+    // #879:metadata-only 降级卡与 matched 错误卡拆成两条用例(41 → 42)。
+    expect(output).toContain("42 pass")
     expect(output).toContain("0 fail")
   })
 })

@@ -1,6 +1,7 @@
-// REQ-125 C6 — 工具卡纯模型:分派表全类型、四态、有界输出体、未知工具 fail-closed。
+// REQ-125 C6 / #879 — 工具卡纯模型:identity 分派、四态、有界输出体、redactor 接线。
+// T1/T2/T5/T6/T7 的 mutation/negative gates 在 tool-card-provenance-gates.test.ts。
 import { describe, expect, test } from "bun:test"
-import type { ToolPart, ToolState } from "@opencode-ai/sdk/v2/client"
+import type { ToolDisplaySnapshotV1, ToolPart, ToolState } from "@opencode-ai/sdk/v2/client"
 import {
   boundedBlock,
   contextGroupSummaryOf,
@@ -14,7 +15,6 @@ import {
   OPEN_TARGET_MAX_CHARS,
   openTargetOf,
   taskCardInfoOf,
-  TOOL_BODY_MAX_CHARS,
   TOOL_BODY_MAX_LINES,
   TOOL_ERROR_MAX_CHARS,
   TOOL_ITEM_MAX_CHARS,
@@ -24,14 +24,27 @@ import {
   TOOL_SCAN_MAX_CHARS,
   TOOL_URL_MAX_CHARS,
   toolCardBodyOf,
+  toolCardDispatchOf,
   toolCardHeadOf,
-  toolCardKindOf,
   toolCardStatusOf,
   type ToolCardKind,
 } from "./tool-card-model"
 import { DIFF_MAX_ROWS, DIFF_PATCH_MAX_CHARS, diffViewOf } from "./tool-diff"
 
-function part(tool: string, state?: Partial<ToolState> & { status?: ToolState["status"] }): ToolPart {
+/** builtin 快照(#878 铸造形状):identity 驱动分派的默认正向夹具。 */
+function builtinDisplay(name: string): ToolDisplaySnapshotV1 {
+  return {
+    identity: { source: "builtin", origin: "", name },
+    technicalId: name,
+    authority: { kind: "not-asserted" },
+  }
+}
+
+function part(
+  tool: string,
+  state?: Partial<ToolState> & { status?: ToolState["status"] },
+  display?: ToolDisplaySnapshotV1 | null,
+): ToolPart {
   const base: ToolState =
     state?.status === "pending"
       ? { status: "pending", input: (state.input as Record<string, unknown>) ?? {}, raw: "" }
@@ -57,11 +70,20 @@ function part(tool: string, state?: Partial<ToolState> & { status?: ToolState["s
               metadata: (state as { metadata?: Record<string, unknown> })?.metadata ?? {},
               time: { start: 0, end: 1 },
             }
-  return { id: "prt_1", sessionID: "ses_1", messageID: "msg_1", type: "tool", callID: "call_1", tool, state: base }
+  return {
+    id: "prt_1",
+    sessionID: "ses_1",
+    messageID: "msg_1",
+    type: "tool",
+    callID: "call_1",
+    tool,
+    display: display === null ? undefined : (display ?? builtinDisplay(tool)),
+    state: base,
+  }
 }
 
-describe("REQ-125 C6 分派表与四态", () => {
-  test("已知工具全类型分派;未知/MCP 工具 fail-closed 落 unknown", () => {
+describe("REQ-125 C6/#879 identity 分派与四态", () => {
+  test("builtin identity 全类型分派;无规则 builtin 与快照缺失一律 metadata-only", () => {
     const table: Record<string, ToolCardKind> = {
       read: "read",
       list: "list",
@@ -75,19 +97,73 @@ describe("REQ-125 C6 分派表与四态", () => {
       apply_patch: "apply_patch",
       skill: "skill",
       task: "task",
-      question: "unknown",
-      cloud_await: "unknown",
-      "context7_resolve-library-id": "unknown",
-      lsp: "unknown",
     }
-    Object.entries(table).forEach(([tool, kind]) =>
-      expect({ tool, kind: toolCardKindOf(tool) }).toEqual({ tool, kind }),
-    )
+    Object.entries(table).forEach(([tool, kind]) => {
+      const dispatch = toolCardDispatchOf(part(tool))
+      expect({ tool, kind: dispatch.kind, metadataOnly: dispatch.metadataOnly }).toEqual({
+        tool,
+        kind,
+        metadataOnly: false,
+      })
+    })
+    // 无宿主规则的 builtin(question/todowrite/lsp)→ metadata-only,分类仍是 builtin。
+    for (const name of ["question", "todowrite", "lsp"]) {
+      const dispatch = toolCardDispatchOf(part(name))
+      expect({ name, kind: dispatch.kind, metadataOnly: dispatch.metadataOnly, category: dispatch.category }).toEqual({
+        name,
+        kind: "unknown",
+        metadataOnly: true,
+        category: "builtin",
+      })
+    }
+    // 快照缺失(历史行 / 引擎未铸造)→ 未知来源。
+    const missing = toolCardDispatchOf(part("cloud_await", undefined, null))
+    expect([missing.kind, missing.metadataOnly, missing.category]).toEqual(["unknown", true, "unknown"])
   })
 
-  test("敌意工具名(原型继承键)不可能命中分派表,一律 fail-closed 落 unknown", () => {
+  test("敌意工具名(原型继承键)不可能命中规则表,一律 metadata-only", () => {
     const hostile = ["__proto__", "constructor", "prototype", "toString", "hasOwnProperty", "valueOf"]
-    hostile.forEach((tool) => expect({ tool, kind: toolCardKindOf(tool) }).toEqual({ tool, kind: "unknown" }))
+    hostile.forEach((name) => {
+      expect({ name, viaIdentity: toolCardDispatchOf(part(name)).kind }).toEqual({ name, viaIdentity: "unknown" })
+      expect({ name, viaMissing: toolCardDispatchOf(part(name, undefined, null)).kind }).toEqual({
+        name,
+        viaMissing: "unknown",
+      })
+    })
+  })
+
+  test("mcp identity 按 authority 分类:alpha-cloud 徽标只认持久化证明", () => {
+    const thirdParty = toolCardDispatchOf(
+      part("srv_search", undefined, {
+        identity: { source: "mcp", origin: "srv", name: "search" },
+        technicalId: "srv_search",
+        authority: { kind: "not-asserted" },
+      }),
+    )
+    expect([thirdParty.category, thirdParty.metadataOnly, thirdParty.origin]).toEqual(["mcp", true, "srv"])
+
+    const cloud = toolCardDispatchOf(
+      part("cloud_web_search", undefined, {
+        identity: { source: "mcp", origin: "alpha-cloud", name: "web_search" },
+        technicalId: "cloud_web_search",
+        authority: { kind: "alpha-cloud", bindingId: "mcp:alpha-cloud", evidenceDigest: `sha256:${"a".repeat(64)}` },
+      }),
+    )
+    expect([cloud.category, cloud.metadataOnly]).toEqual(["alpha-cloud", true])
+  })
+
+  test("名称是远端输入:控制字符与双向覆盖字符被剥离,超长截断", () => {
+    const dispatch = toolCardDispatchOf(
+      part("evil", undefined, {
+        identity: { source: "plugin", origin: "pkg", name: "safe\u202egnp.exe\u0007" + "n".repeat(600) },
+        technicalId: "evil",
+        authority: { kind: "not-asserted" },
+      }),
+    )
+    expect(dispatch.name.includes("\u202e")).toBe(false)
+    expect(dispatch.name.includes("\u0007")).toBe(false)
+    expect(dispatch.name.length).toBeLessThanOrEqual(TOOL_ITEM_MAX_CHARS)
+    expect(dispatch.name.startsWith("safegnp.exe")).toBe(true)
   })
 
   test("四态映射:pending/running/error/completed→success", () => {
@@ -138,8 +214,13 @@ describe("REQ-125 C6 头部投影(逐分支的数据差异)", () => {
     const webfetch = toolCardHeadOf(part("webfetch", { status: "completed", input: { url: "https://x.dev/a" } }))
     expect(webfetch.target).toBe("https://x.dev/a")
 
-    const unknown = toolCardHeadOf(part("mystery_tool"))
-    expect([unknown.kind, unknown.titleKey, unknown.toolName]).toEqual(["unknown", undefined, "mystery_tool"])
+    const unknown = toolCardHeadOf(part("mystery_tool", undefined, null))
+    expect([unknown.kind, unknown.titleKey, unknown.toolName, unknown.metadataOnly]).toEqual([
+      "unknown",
+      undefined,
+      "mystery_tool",
+      true,
+    ])
   })
 
   test("恶意/畸形 input 与 metadata 防御读取:非法类型一律忽略", () => {
@@ -151,6 +232,21 @@ describe("REQ-125 C6 头部投影(逐分支的数据差异)", () => {
       }),
     )
     expect([head.target, head.detail, head.count]).toEqual([undefined, undefined, undefined])
+  })
+
+  test("I7+AC5 超长单 token 目标:无安全切点 → 整字段隐藏(targetHidden),不显示半截", () => {
+    const bash = toolCardHeadOf(
+      part("bash", { status: "completed", input: { command: "c".repeat(TOOL_ITEM_MAX_CHARS * 10) } }),
+    )
+    expect([bash.target, bash.targetHidden]).toEqual([undefined, true])
+
+    // 有空白边界的超长命令:在安全切点截断,前缀仍可见。
+    const spaced = toolCardHeadOf(
+      part("bash", { status: "completed", input: { command: `ls -la ${"/deep/dir ".repeat(200)}` } }),
+    )
+    expect(spaced.targetHidden).toBeUndefined()
+    expect(spaced.target!.startsWith("ls -la")).toBe(true)
+    expect(spaced.target!.length).toBeLessThanOrEqual(TOOL_ITEM_MAX_CHARS)
   })
 })
 
@@ -165,11 +261,14 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     expect(done).toEqual({ type: "term", output: "app/  docs/", truncated: false, streaming: false })
   })
 
-  test("错误态优先:任何工具的 error 状态 → 有界错误体", () => {
-    const body = toolCardBodyOf(part("read", { status: "error", error: "e".repeat(TOOL_ERROR_MAX_CHARS + 10) }))
+  test("错误态优先(matched 卡):有界错误体,截断回退到安全切点", () => {
+    const body = toolCardBodyOf(
+      part("read", { status: "error", error: "err ".repeat(TOOL_ERROR_MAX_CHARS / 2) }),
+    )
     if (body.type !== "error") throw new Error("expected error body")
-    expect(body.message.length).toBe(TOOL_ERROR_MAX_CHARS)
     expect(body.truncated).toBe(true)
+    expect(body.message.length).toBeLessThanOrEqual(TOOL_ERROR_MAX_CHARS)
+    expect(body.message.length).toBeGreaterThan(TOOL_ERROR_MAX_CHARS - 8)
   })
 
   test("read loaded 文件列表(读取徽章)/ glob 匹配列表 有界;webfetch 无输出体", () => {
@@ -194,7 +293,7 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     })
   })
 
-  test("I7 单项帽:read 列表项 / glob 行 / 头部目标 逐项截断,不整串进 DOM", () => {
+  test("I7 单项帽:read 列表项 / glob 行 逐项截断,不整串进 DOM", () => {
     const longItem = "/a/" + "x".repeat(TOOL_ITEM_MAX_CHARS * 3)
     const read = toolCardBodyOf(part("read", { status: "completed", metadata: { loaded: [longItem, 42, "/ok"] } }))
     if (read.type !== "files") throw new Error("expected files body")
@@ -208,11 +307,6 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     if (glob.type !== "files") throw new Error("expected files body")
     expect(glob.files[0]!.length).toBeLessThanOrEqual(TOOL_ITEM_MAX_CHARS)
     expect(glob.files[1]).toBe("/a/ok.ts")
-
-    const bash = toolCardHeadOf(
-      part("bash", { status: "completed", input: { command: "c".repeat(TOOL_ITEM_MAX_CHARS * 10) } }),
-    )
-    expect(bash.target!.length).toBe(TOOL_ITEM_MAX_CHARS)
   })
 
   test("I7 扫描预算:glob 行切与 websearch URL 扫描不吃超预算尾部", () => {
@@ -228,15 +322,12 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
   })
 
   test("I6 跨扫描边界的 URL 整条丢弃(可能是半个 URL,fail-closed);边界内完整 URL 保留", () => {
-    // URL 起于边界前 30 字符、延伸过边界 → 截串后命中触达边界 → 丢弃。
     const crossing = "x".repeat(TOOL_SCAN_MAX_CHARS - 30) + "https://cut.example/" + "a".repeat(60)
     expect(extractHttpUrls(crossing)).toEqual([])
 
-    // 完整落在预算内(结束于边界之前)且原文更长 → 保留。
     const inside = "x".repeat(TOOL_SCAN_MAX_CHARS - 60) + "https://ok.example/x " + "y".repeat(100)
     expect(extractHttpUrls(inside)).toEqual(["https://ok.example/x"])
 
-    // 恰好整串就是一个 URL 且未被截(原文未超预算)→ 保留。
     expect(extractHttpUrls("https://exact.example/end")).toEqual(["https://exact.example/end"])
   })
 
@@ -251,7 +342,6 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     expect(read.files.length).toBe(TOOL_LIST_MAX_ITEMS)
     expect(read.truncated).toBe(true)
 
-    // 有效项不足项数帽时,总迭代帽兜底(不全扫非法尾)。
     const sparse = toolCardBodyOf(
       part("read", { status: "completed", metadata: { loaded: ["/only", ...hugeInvalidTail] } }),
     )
@@ -259,7 +349,6 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     expect(sparse.files).toEqual(["/only"])
     expect(sparse.truncated).toBe(true)
 
-    // 同类:apply_patch 文件数组的非法尾同样受迭代预算约束。
     const patch = toolCardBodyOf(
       part("apply_patch", {
         status: "completed",
@@ -346,13 +435,11 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     expect(small.stat).toEqual({ additions: 2, deletions: 0 })
   })
 
-  test("未知工具 fail-closed:有界纯文本通用卡,超限截断", () => {
+  test("AC2 快照缺失的完成态输出不再有任何 body(旧「未知工具纯文本体」已删除)", () => {
     const body = toolCardBodyOf(
-      part("mystery_tool", { status: "completed", output: "x".repeat(TOOL_BODY_MAX_CHARS + 100) }),
+      part("mystery_tool", { status: "completed", output: "leaky raw output 4f2c" }, null),
     )
-    if (body.type !== "text") throw new Error("expected text body")
-    expect(body.text.length).toBe(TOOL_BODY_MAX_CHARS)
-    expect(body.truncated).toBe(true)
+    expect(body).toEqual({ type: "none" })
   })
 
   test("boundedBlock 行数帽:超行截断并标记", () => {
@@ -406,6 +493,20 @@ describe("REQ-125 C6 task/skill/折叠组/媒体辅助", () => {
       childSessionID: undefined,
       background: false,
     })
+    // #879:identity 不是 task 的调用,不产 task 信息(冒名 task 无子会话入口)。
+    expect(
+      taskCardInfoOf(
+        part(
+          "task",
+          { status: "running", input: { description: "x" }, metadata: { sessionId: "ses_fake" } },
+          {
+            identity: { source: "plugin", origin: "evil", name: "task" },
+            technicalId: "task",
+            authority: { kind: "not-asserted" },
+          },
+        ),
+      ),
+    ).toEqual({ background: false })
   })
 
   test("折叠组行与计数摘要", () => {
@@ -416,12 +517,25 @@ describe("REQ-125 C6 task/skill/折叠组/媒体辅助", () => {
     ]
     expect(contextGroupSummaryOf(parts)).toEqual({ reads: 1, searches: 1, lists: 1 })
     expect(contextRowOf(parts[0]!)).toEqual({
+      kind: "read",
       tool: "read",
       titleKey: "alpha.timeline.tool.read",
       target: "README.md",
       args: ["limit=30"],
     })
     expect(contextRowOf(parts[1]!)).toMatchObject({ target: "image", args: [] })
+    // 冒名 read(plugin identity)不计入摘要、行内无目标。
+    const impostor = part(
+      "read",
+      { status: "completed", input: { filePath: "/Users/eve/private-notes.md" } },
+      {
+        identity: { source: "plugin", origin: "pkg", name: "read" },
+        technicalId: "read",
+        authority: { kind: "not-asserted" },
+      },
+    )
+    expect(contextGroupSummaryOf([impostor])).toEqual({ reads: 0, searches: 0, lists: 0 })
+    expect(contextRowOf(impostor)).toEqual({ kind: "unknown", tool: "read", args: [] })
   })
 
   test("媒体行:仅受限 data:image 内联缩略;标签由 mime/文件名导出", () => {
@@ -438,13 +552,27 @@ describe("REQ-125 C6 task/skill/折叠组/媒体辅助", () => {
 // ═══════════════ #568 — 「在面板打开」目标 / 诊断行(T19) ═══════════════
 
 describe("#568 openTargetOf(T8 pill 目标)", () => {
-  test("write/edit 返回原始 filePath;其余工具/非法路径 fail-closed", () => {
+  test("write/edit 返回原始 filePath;其余工具/非法路径/冒名 identity fail-closed", () => {
     expect(openTargetOf(part("write", { input: { filePath: "/repo/AGENTS.md" } }))).toBe("/repo/AGENTS.md")
     expect(openTargetOf(part("edit", { input: { filePath: "/tmp/x.txt" } }))).toBe("/tmp/x.txt")
     expect(openTargetOf(part("read", { input: { filePath: "/repo/AGENTS.md" } }))).toBeUndefined()
     expect(openTargetOf(part("write", { input: {} }))).toBeUndefined()
     expect(openTargetOf(part("write", { input: { filePath: 42 } }))).toBeUndefined()
     expect(openTargetOf(part("write", { input: { filePath: "x".repeat(OPEN_TARGET_MAX_CHARS + 1) } }))).toBeUndefined()
+    // #879:plugin 冒名 write 不产 pill(identity 分派不是别名分派)。
+    expect(
+      openTargetOf(
+        part(
+          "write",
+          { input: { filePath: "/repo/AGENTS.md" } },
+          {
+            identity: { source: "plugin", origin: "pkg", name: "write" },
+            technicalId: "write",
+            authority: { kind: "not-asserted" },
+          },
+        ),
+      ),
+    ).toBeUndefined()
   })
 })
 
@@ -522,7 +650,6 @@ describe("#568 审计修复:diagnostics 外层文件数扫描预算(Major-3)", (
     const map: Record<string, unknown> = {}
     for (let index = 0; index < 10_000; index += 1) map[`/proj/f${index}.ts`] = [issue]
     expect(10_000).toBeGreaterThan(DIAG_FILES_SCAN_MAX)
-    // 目标键需要 \\→/ 归一才能命中,且按插入序落在 DIAG_FILES_SCAN_MAX 之外。
     map["C:/ws/target.ts"] = [issue]
     const result = diagnosticsOf(
       part("edit", { input: { filePath: "C:\\ws\\target.ts" }, metadata: { diagnostics: map } }),

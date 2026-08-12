@@ -83,6 +83,18 @@ describe("REQ-125 C6 I3/I6 安全渲染静态棘轮(cards)", () => {
   })
 })
 
+describe("#879 T7 静态半场:展示层结构上接不进判定面", () => {
+  test("cards 模块的 import 里没有 permission/billing/policy 通道(UI 字段进不了授权/计费输入)", () => {
+    const importLines = codeSource.match(/^import[^\n]*from\s+"[^"]+"/gm) ?? []
+    expect(importLines.length).toBeGreaterThan(0)
+    const forbidden = ["permission", "billing", "policy", "authorization", "wallet", "quota"]
+    const offending = importLines.filter((line) =>
+      forbidden.some((token) => line.toLowerCase().includes(token)),
+    )
+    expect(offending).toEqual([])
+  })
+})
+
 describe("REQ-125 C6 I5 令牌白名单与运动契约(cards.css)", () => {
   test("CSS 只消费 --a-* 令牌,无原始颜色字面量", () => {
     expect(
