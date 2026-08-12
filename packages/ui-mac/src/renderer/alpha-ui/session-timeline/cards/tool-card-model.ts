@@ -353,6 +353,8 @@ export interface ToolCardHead {
   targetHidden?: boolean
   /** 次级细节(目录/include 等),已过 redactor。 */
   detail?: string
+  /** 次级细节存在但 redactor 失败/清空 → 确定的「详情已隐藏」(#934 Minor:AC5 标记补齐,不再静默丢字段)。 */
+  detailHidden?: boolean
   /** 计数徽标(文件数/命中数)。 */
   count?: { unit: "files" | "matches"; value: number }
   /** +N/−N 改动徽标。 */
@@ -446,7 +448,8 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
     case "grep": {
       assignInline(head, input.pattern)
       const include = redactedInlineOf(input.include)
-      if (include.value !== undefined) head.detail = `include=${include.value}`
+      if (include.hidden) head.detailHidden = true
+      else if (include.value !== undefined) head.detail = `include=${include.value}`
       const matches = finiteOf(metadata.matches)
       if (matches !== undefined) head.count = { unit: "matches", value: Math.max(0, Math.floor(matches)) }
       return head
@@ -506,11 +509,16 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
   }
 }
 
-/** bash 卡的命令说明副行(matched bash 专属;已过 redactor,失败即缺席)。 */
-export function bashDescriptionOf(part: ToolPart): string | undefined {
+/**
+ * bash 卡的命令说明副行(matched bash 专属;已过 redactor)。#934 Minor:脱敏失败
+ * 不再静默丢字段 —— hidden=true 时渲染层显示确定的「详情已隐藏」(AC5 标记半边)。
+ */
+export function bashDescriptionOf(part: ToolPart): { value?: string; hidden: boolean } | undefined {
   const dispatch = toolCardDispatchOf(part)
   if (dispatch.metadataOnly || dispatch.kind !== "bash") return undefined
-  return redactedInlineOf(inputOf(part).description).value
+  const result = redactedInlineOf(inputOf(part).description)
+  if (!result.hidden && result.value === undefined) return undefined
+  return result
 }
 
 function editStatOf(metadata: Record<string, unknown>): { additions: number; deletions: number } | undefined {
@@ -933,6 +941,9 @@ export function toolDevDetailsOf(part: ToolPart): ToolDevDetails | undefined {
 export interface TaskCardInfo {
   description?: string
   agent?: string
+  /** agent 名存在但 redactor 失败 → 确定的「详情已隐藏」chip(#934 Minor;description
+   * 的标记半边已在 head.targetHidden —— toolCardHeadOf 的 task 分支同一字段)。 */
+  agentHidden?: boolean
   childSessionID?: string
   background: boolean
 }
@@ -942,9 +953,11 @@ export function taskCardInfoOf(part: ToolPart): TaskCardInfo {
   if (dispatch.metadataOnly || dispatch.kind !== "task") return { background: false }
   const input = inputOf(part)
   const metadata = metadataOf(part)
+  const agent = redactedInlineOf(input.subagent_type)
   return {
     description: redactedInlineOf(input.description).value,
-    agent: redactedInlineOf(input.subagent_type).value,
+    agent: agent.value,
+    agentHidden: agent.hidden || undefined,
     childSessionID: stringOf(metadata.sessionId),
     background: metadata.background === true,
   }
@@ -957,6 +970,9 @@ export interface ContextRowInfo {
   tool: string
   titleKey?: string
   target?: string
+  /** 本行有字段(目标/include)过 redactor 失败被隐藏 → 确定的「详情已隐藏」
+   * (#934 Minor:AC5 标记补齐,目标不再凭空消失)。 */
+  targetHidden?: boolean
   args: string[]
 }
 
@@ -979,19 +995,26 @@ export function contextRowOf(part: ToolPart): ContextRowInfo {
         ...base,
         titleKey: TITLE_KEYS.read,
         target: path.value !== undefined ? cappedItem(basenameOf(path.value)) : undefined,
+        targetHidden: path.hidden || undefined,
         args,
       }
     }
-    case "list":
-      return { ...base, titleKey: TITLE_KEYS.list, target: redactedPathOf(input.path).value }
-    case "glob":
-      return { ...base, titleKey: TITLE_KEYS.glob, target: redactedInlineOf(input.pattern).value }
+    case "list": {
+      const path = redactedPathOf(input.path)
+      return { ...base, titleKey: TITLE_KEYS.list, target: path.value, targetHidden: path.hidden || undefined }
+    }
+    case "glob": {
+      const pattern = redactedInlineOf(input.pattern)
+      return { ...base, titleKey: TITLE_KEYS.glob, target: pattern.value, targetHidden: pattern.hidden || undefined }
+    }
     case "grep": {
+      const pattern = redactedInlineOf(input.pattern)
       const include = redactedInlineOf(input.include)
       return {
         ...base,
         titleKey: TITLE_KEYS.grep,
-        target: redactedInlineOf(input.pattern).value,
+        target: pattern.value,
+        targetHidden: pattern.hidden || include.hidden || undefined,
         args: include.value !== undefined ? [`include=${include.value}`] : [],
       }
     }

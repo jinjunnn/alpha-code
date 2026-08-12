@@ -20,6 +20,7 @@ import type {
   ToolPart,
   UserMessage,
 } from "@opencode-ai/sdk/v2/client"
+import { isCloudFacadeToolPart } from "../cloud-facade-identity"
 import type { AlphaSessionIdentity } from "../session-workspace/session-workspace-core"
 import { toolCardDispatchOf } from "./cards/tool-card-model"
 
@@ -223,7 +224,7 @@ export interface TimelineProjectionInput {
   slashOrigins?: readonly TimelineSlashOrigin[]
 }
 
-/** 用户消息里被 dock/审批面接管、时间线不渲染的工具。 */
+/** 被 dock/审批面接管、时间线不渲染的**宿主内建**工具(identity 判定;别名不是准入)。 */
 const HIDDEN_TOOLS = new Set(["todowrite"])
 
 function attachmentOf(part: FilePart): TimelineAttachment | undefined {
@@ -331,15 +332,29 @@ function mentionSpans(parts: readonly Part[]) {
   return spans
 }
 
+/**
+ * #934:「从时间线隐藏」是第一方特权,只有引擎铸造的 builtin identity 才能命中 ——
+ * 第三方(plugin/MCP)或无快照历史行,不论把工具叫什么名字都照常渲染(fail-closed
+ * 方向 = 可见:静默执行才是这里要关的洞)。category==="builtin" 只能由
+ * toolCardDispatchOf 对合法快照(source ∈ {builtin, builtin-v2})铸出,别名不参与。
+ */
+function builtinIdentityNameOf(part: ToolPart): string | undefined {
+  const dispatch = toolCardDispatchOf(part)
+  return dispatch.category === "builtin" ? dispatch.name : undefined
+}
+
 function renderableToolPart(part: ToolPart) {
-  if (HIDDEN_TOOLS.has(part.tool)) return false
-  // question 的 pending/running 渲染在 composer dock(C7 领域),时间线只保留已回答的记录。
-  if (part.tool === "question") return part.state.status !== "pending" && part.state.status !== "running"
+  const builtinName = builtinIdentityNameOf(part)
+  if (builtinName !== undefined && HIDDEN_TOOLS.has(builtinName)) return false
+  // question 的 pending/running 渲染在 composer dock(C7 领域),时间线只保留已回答的
+  // 记录;这条接管同样只属于 builtin identity 的 question(#934,与 HIDDEN_TOOLS 同闸)。
+  if (builtinName === "question") return part.state.status !== "pending" && part.state.status !== "running"
   return true
 }
 
-/** 「已探索」折叠组的成员工具(与上游 CONTEXT_GROUP_TOOLS 同集合)。 */
-const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
+/** 「已探索」折叠组的成员 kind(与上游 CONTEXT_GROUP_TOOLS 同集合;#934 起按
+ * identity 分派命中的专用卡 kind 判归属,冒名的第三方工具进不了第一方分组)。 */
+const CONTEXT_GROUP_KINDS = new Set(["read", "glob", "grep", "list"])
 /** 连续多少个已完成探查工具起折叠成组(单个保留独立卡)。 */
 export const CONTEXT_GROUP_MIN = 2
 /** I7:单个折叠组的成员上限;超长连续段切成多个组行。 */
@@ -350,7 +365,10 @@ export const CONTEXT_GROUP_MAX = 24
  * (状态可见);带附件(如 read 图片)的保留独立卡,媒体预览行不被折叠吞掉。
  */
 function groupableToolPart(part: ToolPart) {
-  if (!CONTEXT_GROUP_TOOLS.has(part.tool)) return false
+  // #934:归属按 identity 分派的 kind(只有合法 builtin 快照命中宿主规则表才铸得出
+  // read/glob/grep/list),不再按 part.tool 裸别名;metadata-only 降级卡一律独立成卡。
+  const dispatch = toolCardDispatchOf(part)
+  if (dispatch.metadataOnly || !CONTEXT_GROUP_KINDS.has(dispatch.kind)) return false
   if (part.state.status !== "completed") return false
   return toolMediaOf(part).length === 0
 }
@@ -396,21 +414,10 @@ export function mediaSourceOfFilePart(part: FilePart): TimelineMediaSource {
 }
 
 // ── 产物链接行(§⑥):完成态云 facade 工具输出里的产物名 → 链接行 ─────────────
-// #879 审计 R-final:准入是 identity 判定,不是 `cloud_` 别名前缀。plugin 命名空间
-// `cloud`(工具 id `cloud_x`,tool/registry.ts)与 sanitize 后撞前缀的 MCP 配置键
-// (`cloud.x` → 别名 `cloud_x_*`,mcp/catalog.ts toolName)都铸得出 cloud_* 别名,
-// 但它们的持久化 identity 是 (plugin, "cloud") / (mcp, "cloud.x"),铸不出
-// (mcp, "cloud") —— 那是宿主注入的第一方 facade 配置键(cloud-web-search.ts
-// CLOUD_MCP_SERVER_NAME = "cloud",引擎侧 mcp/index.ts 以 clientName 为 origin)。
+// #879 审计 R-final:准入是 identity 判定,不是 `cloud_` 别名前缀。判定本体在
+// cloud-facade-identity.ts(#934 起与 run-watcher 共用同一枚铸币),铸币依据与
+// 「不比对 authority」的审计裁决也钉在那里。
 // fail-closed:identity 缺失(历史行)/形状非法 一律无产物行。
-function isCloudFacadePart(part: ToolPart): boolean {
-  const display = (part as { display?: unknown }).display
-  if (typeof display !== "object" || display === null) return false
-  const identity = (display as { identity?: unknown }).identity
-  if (typeof identity !== "object" || identity === null) return false
-  const record = identity as { source?: unknown; origin?: unknown }
-  return record.source === "mcp" && record.origin === "cloud"
-}
 export const ARTIFACT_LINKS_MAX = 12
 const ARTIFACT_OUTPUT_PARSE_MAX = 100_000
 const artifactLinksCache = new WeakMap<object, { output: string; links: TimelineArtifactLink[] }>()
@@ -444,7 +451,7 @@ function parseArtifactLinks(output: string): TimelineArtifactLink[] {
 
 /** fail-closed:identity 非第一方 cloud facade/未完成/输出超限/解析不出 artifacts 名字 → 空(不出行)。 */
 export function artifactLinksOf(part: ToolPart): TimelineArtifactLink[] {
-  if (!isCloudFacadePart(part)) return []
+  if (!isCloudFacadeToolPart(part)) return []
   if (part.state.status !== "completed") return []
   const output = part.state.output
   if (typeof output !== "string" || output.length === 0 || output.length > ARTIFACT_OUTPUT_PARSE_MAX) return []

@@ -1356,6 +1356,109 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     expect(rows[1]!.textContent).toContain("image")
   })
 
+  // ── #934 Minor-2:AC5「详情已隐藏」确定标记的**渲染接线**判据 ──────────────────
+  // 这一类标记此前**只有模型层判据**(head.targetHidden / head.detailHidden /
+  // task.agentHidden / bashDescriptionOf().hidden / body.type==="hidden" /
+  // contextRow.targetHidden 各有单测),而把渲染层任一 `<Show when={…Hidden}>` 删掉、
+  // 或写成 `<Show when={…target}>`,provenance gates 与整包地板**全绿** —— 用户看到的
+  // 却是「目标凭空消失」,正是 AC5 要关掉的那个洞。
+  // 站点集合用两条互相独立的检索轴交叉枚举(属性 `data-alpha-details-hidden` 与 i18n 键
+  // `alpha.timeline.detailsHidden`),tool-cards.tsx 各命中 6 处 —— 本条逐处钉在 DOM 上。
+  test("#934 AC5 确定标记的渲染接线:六处脱敏失败站点各出「详情已隐藏」、零原文泄漏;干净输入零标记", async () => {
+    const host = mount()
+    // 单项帽 TOOL_ITEM_MAX_CHARS=400:不间断 token 超帽 ⇒ 安全切点回看窗内无空白 ⇒ 整字段清空。
+    // 前缀是哨兵,用来断言原文一个字符都没进 DOM(AC5 无 raw 旁路)。
+    const UNBROKEN = `S3CR3T${"z".repeat(500)}`
+    // 控制字符 ⇒ redactPath fail-closed(截断的路径指向错误目标,不降级显示)。
+    const CTRL_PATH = `/a/READ${String.fromCharCode(1)}ME.md`
+    const done = (id: string, tool: string, input: Record<string, unknown>, over: Record<string, unknown> = {}) =>
+      toolPartFixture(id, tool, {
+        status: "completed",
+        input,
+        output: "",
+        title: tool,
+        metadata: {},
+        time: { start: 0, end: 1 },
+        ...over,
+      })
+    const cardOf = (kind: string) => host.querySelector(`[data-alpha-tool-card][data-kind='${kind}']`)!
+    const markersIn = (el: Element) => [...el.querySelectorAll("[data-alpha-details-hidden]")]
+
+    // 顺序有讲究:探查类(read/glob/grep/list)连续 ≥2 个才折叠 —— grep 两侧夹着非探查卡
+    // 保持独立卡,末尾两个 read 才成组。
+    runtime.setTimelineRows(
+      assistantFixture([
+        done("prt_hd1", "websearch", { query: UNBROKEN }), // ① head.targetHidden
+        done("prt_hd2", "grep", { pattern: "image", include: UNBROKEN }), // ② head.detailHidden
+        done("prt_hd3", "task", { description: "校验 AGENTS.md", subagent_type: UNBROKEN }), // ③ agentHidden
+        done("prt_hd4", "bash", { command: "bun test src", description: UNBROKEN }, { metadata: { exit: 0 } }), // ④
+        done("prt_hd5", "edit", { filePath: "/a/NOTES.md" }, { metadata: { diff: "x".repeat(200_001) } }), // ⑤ body
+        done("prt_hd6", "read", { filePath: CTRL_PATH }), // ⑥ contextRow.targetHidden
+        done("prt_hd7", "read", { filePath: "/a/README.md" }),
+      ]),
+    )
+    await flush()
+
+    // ① 目标凭空消失 ⇒ 出确定标记(而不是一片空白)。
+    const search = cardOf("websearch")
+    expect(search.querySelector(".a-tc-target")).toBeNull()
+    expect(markersIn(search).map((el) => el.textContent)).toEqual(["详情已隐藏"])
+
+    // ② 次级细节(grep include)失败,而目标(pattern)干净 —— 两处标记站点在此分得开。
+    const grep = cardOf("grep")
+    expect(grep.querySelector(".a-tc-target")!.textContent).toBe("image")
+    expect(markersIn(grep).map((el) => el.textContent)).toEqual(["详情已隐藏"])
+
+    // ③ task 的 agent chip 不凭空消失。
+    expect(cardOf("task").querySelector(".a-tc-agent[data-alpha-details-hidden]")!.textContent).toContain("详情已隐藏")
+
+    // ④ bash 命令说明副行。
+    expect(cardOf("bash").querySelector(".a-tc-subdesc[data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
+
+    // ⑤ 整个输出体隐藏(diff 超帽):常驻标记,无展开、无 raw 旁路。
+    expect(cardOf("edit").querySelector(".a-tc-out[data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
+
+    // ⑥ 折叠组行:目标没了就得说「详情已隐藏」,相邻的干净行照常显示目标。
+    const group = host.querySelector("[data-alpha-timeline-row='toolgroup']")!
+    ;(group.querySelector(".a-explore-head") as HTMLButtonElement).click()
+    await flush()
+    const rows = [...group.querySelectorAll(".a-explore-row")]
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.querySelector(".a-explore-target")).toBeNull()
+    expect(rows[0]!.querySelector("[data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
+    expect(rows[1]!.querySelector(".a-explore-target")!.textContent).toContain("README.md")
+
+    // 六处站点各一个标记,且被隐藏的原文一个字符都没进 DOM。
+    expect(markersIn(host)).toHaveLength(6)
+    expect(host.textContent).not.toContain("S3CR3T")
+    expect(host.textContent).not.toContain("zzzz")
+
+    // ── 正对照:同样六处、干净输入 ⇒ 一个标记都不许出(杀「恒标记」实现),原值照常呈现。
+    runtime.setTimelineRows(
+      assistantFixture([
+        done("prt_ok1", "websearch", { query: "焦点环" }),
+        done("prt_ok2", "grep", { pattern: "image", include: "*.tsx" }),
+        done("prt_ok3", "task", { description: "校验 AGENTS.md", subagent_type: "general" }),
+        done("prt_ok4", "bash", { command: "bun test src", description: "跑一遍单元测试" }, { metadata: { exit: 0 } }),
+        done("prt_ok5", "edit", { filePath: "/a/NOTES.md" }, { metadata: { diff: "@@ -1 +1 @@\n-a\n+b" } }),
+        done("prt_ok6", "read", { filePath: "/a/AGENTS.md" }),
+        done("prt_ok7", "read", { filePath: "/a/README.md" }),
+      ]),
+    )
+    await flush()
+    const cleanGroup = host.querySelector("[data-alpha-timeline-row='toolgroup']")!
+    ;(cleanGroup.querySelector(".a-explore-head") as HTMLButtonElement).click()
+    await flush()
+    expect(markersIn(host)).toHaveLength(0)
+    expect(cardOf("websearch").querySelector(".a-tc-target")!.textContent).toBe("焦点环")
+    expect(cardOf("grep").querySelector(".a-tc-detail")!.textContent).toBe("include=*.tsx")
+    expect(cardOf("task").querySelector(".a-tc-agent")!.textContent).toContain("general")
+    expect(cardOf("bash").querySelector(".a-tc-subdesc")!.textContent).toBe("跑一遍单元测试")
+    expect(cleanGroup.querySelector(".a-explore-row")!.querySelector(".a-explore-target")!.textContent).toContain(
+      "AGENTS.md",
+    )
+  })
+
   test("回合级错误卡:全宽纯文本无动作,与工具级错误卡分离;重试卡显示第 N 次", async () => {
     const host = mount()
     runtime.setTimelineRows(

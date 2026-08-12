@@ -517,10 +517,23 @@ export function TimelineToolCard(props: { part: ToolPart }) {
           <Show when={head().detail}>
             <span class="a-tc-detail">{head().detail}</span>
           </Show>
+          {/* #934 Minor(AC5 标记半边):次级细节(如 grep include)脱敏失败也出确定标记。 */}
+          <Show when={head().detailHidden}>
+            <span class="a-tc-detail" data-alpha-details-hidden>
+              {t("alpha.timeline.detailsHidden")}
+            </span>
+          </Show>
           <Show when={task()?.agent}>
             <span class="a-tc-agent">
               <i aria-hidden="true" />
               {task()!.agent}
+            </span>
+          </Show>
+          {/* #934 Minor:task agent 名脱敏失败 → 确定标记,chip 不凭空消失。 */}
+          <Show when={task()?.agentHidden}>
+            <span class="a-tc-agent" data-alpha-details-hidden>
+              <i aria-hidden="true" />
+              {t("alpha.timeline.detailsHidden")}
             </span>
           </Show>
         </Show>
@@ -582,8 +595,14 @@ export function TimelineToolCard(props: { part: ToolPart }) {
           </button>
         </div>
       </Show>
-      <Show when={description()}>
-        <div class="a-tc-subdesc">{description()}</div>
+      <Show when={description()?.value}>
+        <div class="a-tc-subdesc">{description()!.value}</div>
+      </Show>
+      {/* #934 Minor:bash 命令说明脱敏失败 → 确定标记,副行不静默消失(AC5)。 */}
+      <Show when={description()?.hidden}>
+        <div class="a-tc-subdesc" data-alpha-details-hidden>
+          {t("alpha.timeline.detailsHidden")}
+        </div>
       </Show>
       {/* #587 安全通用卡(AC2):metadata-only 降级卡陈述确定的隐藏理由;
           纯静态文案,不携带参数/错误/输出,也没有任何展开入口。 */}
@@ -764,6 +783,12 @@ export function ContextToolGroupCard(props: { parts: ToolPart[] }) {
                   </span>
                   <Show when={row().target}>
                     <span class="a-explore-target">{row().target}</span>
+                  </Show>
+                  {/* #934 Minor:折叠组行的目标/include 脱敏失败 → 确定标记,不凭空消失(AC5)。 */}
+                  <Show when={row().targetHidden}>
+                    <span class="a-explore-arg" data-alpha-details-hidden>
+                      {t("alpha.timeline.detailsHidden")}
+                    </span>
                   </Show>
                   <Show when={row().args.length > 0}>
                     <span class="a-explore-arg">{row().args.join(" ")}</span>
