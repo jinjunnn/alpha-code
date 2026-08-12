@@ -555,7 +555,14 @@ export const hrefFor = {
   directory: (directory: string) => requireHref(navFor.directory(directory)),
   sessionAdmission: (directory: string, prompt?: string) => requireHref(navFor.sessionAdmission(directory, prompt)),
   directorySession: (directory: string, prompt?: string) => requireHref(navFor.sessionAdmission(directory, prompt)),
-  legacySession: (directory: string, sessionId: string) => requireHref(navFor.legacySession(directory, sessionId)),
+  // `#925`:**故意没有 `legacySession`**。legacy 形状(`/{目录}/session/{id}`)不带 server 段,
+  // 壳只能事后按「完成时的 active server」或「同 id 的 tab」反推 —— 多 server 下那就是落到没有该
+  // 会话的机器,对面若恰好有同 id 会话,打开并污染的是那个无关会话(`#894` / `#925` 的用户可观察缺陷)。
+  // ui-mac 生产侧已零消费,故把这个**顺手就能拿到的**产生器从这里撤掉:新写的调用点要造出 legacy
+  // 形状,必须绕到 `navFor.legacySession(...).href` 去 —— 那是一个需要解释的动作,不再是默认路径。
+  // 诚实边界:这不是完整的咽喉 —— `navFor.legacySession` 仍在(`parseRoute` 要解析 `packages/app`
+  // 今天仍在产的那批 legacy URL:notification.tsx / dialog-fork.tsx / prompt-input/submit.ts)。
+  // 真正的默认拒绝要等那批生产者按 ADR-034 的补丁序列迁完,见票面 openRisk ①。
   session: (serverKey: string, sessionId: string) => requireHref(navFor.session(serverKey, sessionId)),
   newSession: (draftId: string, prompt?: string) => requireHref(navFor.newSession(draftId, prompt)),
 } as const
