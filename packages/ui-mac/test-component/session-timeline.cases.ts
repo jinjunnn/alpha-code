@@ -969,9 +969,10 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("cloud_cloud_web_search")
     expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("mcp:cloud:cloud_web_search")
     // 链接体:URL 过 redactor 后可点(matched 云卡有 body;默认折叠与否不影响存在性)。
+    // #586 起链接行 = 富链接形态(字母徽 + 域名),云卡与 builtin websearch 同一管线。
     ;(search.querySelector(".a-tc-head") as HTMLButtonElement).click()
     await flush()
-    const links = [...search.querySelectorAll(".a-tc-link")].map((node) => node.getAttribute("href"))
+    const links = [...search.querySelectorAll(".a-tc-wr")].map((node) => node.getAttribute("href"))
     expect(links).toEqual(["https://docs.example.org/deploy", "https://blog.example.net/e7"])
 
     // 运行态 await:同一形态的语义标题 + 关键目标 + 运行中;绝不显示拼接 id。
@@ -1070,6 +1071,219 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     const pluginDev = pluginCard.querySelector<HTMLDetailsElement>("[data-alpha-dev-details]")!
     expect(pluginDev.open).toBe(false)
     expect(pluginDev.textContent).toContain("plugin:sample-plugin:bash")
+  })
+
+  test("#583 list 卡:目录网格 + 目录/文件分类图标 + 「共 N 项」计数(头徽标与 footer);home 前缀不显示", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_l1", "list", {
+          status: "completed",
+          input: { path: "/Users/kai/proj/site" },
+          output: "assets/\nsrc/\nindex.html\npackage.json\nvite.config.ts",
+          title: "list",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='list']")!
+    // 头部:路径折叠 home 前缀(基线明令不显示带用户名的 home 前缀);状态徽标 = 计数。
+    expect(card.querySelector(".a-tc-target")!.textContent).toBe("~/proj/site")
+    expect(card.textContent).not.toContain("/Users/")
+    expect(card.querySelector(".a-tc-status")!.textContent).toBe("共 5 项")
+
+    // 展开体:网格分类渲染,目录先于文件各带图标,footer 复述计数。
+    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const grid = card.querySelector("[data-alpha-dir-grid]")!
+    const dirs = [...grid.querySelectorAll(".a-tc-dir-item[data-entry='dir']")].map((node) => node.textContent)
+    const files = [...grid.querySelectorAll(".a-tc-dir-item[data-entry='file']")].map((node) => node.textContent)
+    expect(dirs).toEqual(["assets", "src"])
+    expect(files).toEqual(["index.html", "package.json", "vite.config.ts"])
+    expect(grid.querySelectorAll(".a-tc-dir-item svg")).toHaveLength(5)
+    expect(grid.querySelector(".a-tc-dircount")!.textContent).toBe("共 5 项")
+  })
+
+  test("#583 list 卡:条目集被截断时 footer 计数与头部同规则缺席 —— 不在同一张卡上既说「共 N 项」又说「已截断」", async () => {
+    const host = mount()
+    // 63 条(> 项数帽)⇒ 展开体只拿得到帽住的一段;「共 N 项」若直出这一段的条数,
+    // 说的就不是这个目录的总量。头部早已按此规则诚实缺席,footer 必须同规则。
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_l2", "list", {
+          status: "completed",
+          input: { path: "/w/mono/packages" },
+          output: Array.from({ length: 63 }, (_, index) => `mod-${index}.ts`).join("\n"),
+          title: "list",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='list']")!
+    // 头部:计数诚实缺席,退回「完成」(#583 既有规则,这里当对照锚)。
+    expect(card.querySelector(".a-tc-status")!.textContent).toBe("完成")
+    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+
+    const grid = card.querySelector("[data-alpha-dir-grid]")!
+    // 先证明这不是空卡/未截断卡:首项在、末项(mod-62.ts)被帽掉 —— 判据不依赖帽的具体数值。
+    expect(grid.textContent).toContain("mod-0.ts")
+    expect(grid.textContent).not.toContain("mod-62.ts")
+    // 缺席提示在场,而计数 footer 整个不渲染:用户拿不到任何会低报总量的数字。
+    expect(card.querySelector(".a-tc-truncated")!.textContent).toBe("内容过长,已截断展示")
+    expect(grid.querySelector(".a-tc-dircount")).toBeNull()
+    expect(card.textContent).not.toContain("项")
+  })
+
+  test("#584 grep 卡:文件名/行号分色 + 命中高亮;路径脱敏失败 ⇒ 整字段隐藏且出确定标记", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_g1", "grep", {
+          status: "completed",
+          input: { pattern: "worker", include: "*.toml" },
+          metadata: { matches: 2 },
+          output: [
+            "Found 2 matches",
+            "",
+            "/Users/kai/proj/wrangler.toml:",
+            "  Line 3: name = \"edge-worker\"",
+            "  Line 11: # worker routes",
+          ].join("\n"),
+          title: "grep",
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='grep']")!
+    expect(card.querySelector(".a-tc-status")!.textContent).toBe("2 处命中")
+    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const body = card.querySelector("[data-alpha-grep-body]")!
+    // 文件行分色 + 路径脱敏(home 前缀折叠)。
+    expect(body.querySelector(".a-tc-grep-file")!.textContent).toBe("~/proj/wrangler.toml")
+    expect(body.textContent).not.toContain("/Users/")
+    // 行号分色元素与命中高亮元素落在 DOM 上。
+    expect([...body.querySelectorAll(".a-tc-grep-ln")].map((node) => node.textContent)).toEqual([":3", ":11"])
+    const hits = [...body.querySelectorAll("mark.a-tc-grep-hit")]
+    expect(hits).toHaveLength(2)
+    expect(hits.every((node) => node.textContent === "worker")).toBe(true)
+
+    // redactor 失败(超长路径)⇒ 整字段隐藏 + 常驻确定标记,无任何 grep 行残留。
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_g2", "grep", {
+          status: "completed",
+          input: { pattern: "x" },
+          metadata: { matches: 1 },
+          output: `Found 1 matches\n\n/w/${"s".repeat(1_200)}/vault.ts:\n  Line 8: x = token`,
+          title: "grep",
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+    const hiddenCard = host.querySelector("[data-alpha-tool-card][data-tool='grep']")!
+    expect(hiddenCard.querySelector("[data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
+    expect(hiddenCard.querySelector("[data-alpha-grep-body]")).toBeNull()
+    expect(hiddenCard.textContent).not.toContain("vault.ts")
+  })
+
+  test("#586 websearch 卡:字母徽 + 标题 + 域名的富链接;头部只出结果数(无供应商名);URL 仍过脱敏", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_ws1", "websearch", {
+          status: "completed",
+          input: { query: "solid-js loading a11y" },
+          output: JSON.stringify({
+            results: [
+              { title: "aria-busy & loading buttons", url: "https://www.w3.org/WAI/tutorials/?utm=trk#sec" },
+              { title: "SolidJS Suspense & pending UI", url: "https://docs.solidjs.com/guides/suspense" },
+            ],
+          }),
+          title: "Exa Web Search: solid-js loading a11y",
+          metadata: { provider: "exa" },
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='websearch']")!
+    // 头部:query 目标 + 「N 条结果」;供应商名(Exa)不在基线白名单,任何位置都不显示。
+    expect(card.querySelector(".a-tc-target")!.textContent).toBe("solid-js loading a11y")
+    expect(card.querySelector(".a-tc-status")!.textContent).toBe("2 条结果")
+    expect(card.textContent).not.toContain("Exa")
+    expect(card.textContent).not.toContain("exa")
+    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+
+    // 富链接行:字母徽是纯文本首字母块(非 favicon,零 <img>、零远端请求面)。
+    const rows = [...card.querySelectorAll(".a-tc-wr")]
+    expect(rows).toHaveLength(2)
+    expect(card.querySelectorAll(".a-tc-links img")).toHaveLength(0)
+    expect(rows.map((row) => row.querySelector(".a-tc-fav")!.textContent)).toEqual(["W", "D"])
+    expect(rows.map((row) => row.querySelector(".a-tc-wt")!.textContent)).toEqual([
+      "aria-busy & loading buttons",
+      "SolidJS Suspense & pending UI",
+    ])
+    expect(rows.map((row) => row.querySelector(".a-tc-wu")!.textContent)).toEqual(["w3.org", "docs.solidjs.com"])
+    // 链接 href 已清洗:query/fragment 不落 DOM;外开形态固定。
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual([
+      "https://www.w3.org/WAI/tutorials/",
+      "https://docs.solidjs.com/guides/suspense",
+    ])
+    expect(card.textContent).not.toContain("utm=trk")
+    rows.forEach((row) => {
+      expect(row.getAttribute("target")).toBe("_blank")
+      expect(row.getAttribute("rel")).toContain("noopener")
+    })
+  })
+
+  test("#586 websearch 卡:结构化结果缺 url 键被丢掉时出缺席提示 —— 头部条数低报不得静默", async () => {
+    const host = mount()
+    // 引擎回了 4 条,其中一条没有 url 键(不可信 payload 的常态)。渲染得出的只有 3 条,
+    // 头部就只能说 3 —— 那么这张卡必须同时带缺席提示,否则用户读到的是「一共就 3 条」。
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_ws2", "websearch", {
+          status: "completed",
+          input: { query: "css container queries" },
+          output: JSON.stringify({
+            results: [
+              { title: "Grid layout primer", url: "https://developer.mozilla.example/css/grid" },
+              { title: "标题在但 url 键不在" },
+              { title: "Flexbox recipes", url: "https://css-tricks.example/flexbox" },
+              { title: "Container queries", url: "https://web.example.dev/container-queries" },
+            ],
+          }),
+          title: "Web Search: css container queries",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='websearch']")!
+    expect(card.querySelector(".a-tc-status")!.textContent).toBe("3 条结果")
+    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+
+    const links = card.querySelector(".a-tc-links")!
+    expect(links.querySelectorAll(".a-tc-wr")).toHaveLength(3)
+    // 缺 url 的那条整条不渲染(标题也不借尸还魂),但缺席这件事必须写在卡上。
+    expect(card.textContent).not.toContain("标题在但 url 键不在")
+    expect(links.querySelector(".a-tc-truncated")!.textContent).toBe("内容过长,已截断展示")
   })
 
   test("工具级错误卡(matched 卡):标题行 + 复制常驻;超帽错误默认收起;错误体先过 redactor", async () => {

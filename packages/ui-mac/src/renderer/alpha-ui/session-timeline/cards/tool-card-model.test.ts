@@ -10,6 +10,7 @@ import {
   DIAG_MAX_ROWS,
   diagnosticsOf,
   extractHttpUrls,
+  hitSpansOf,
   mediaLabelOf,
   mediaThumbable,
   OPEN_TARGET_MAX_CHARS,
@@ -366,9 +367,9 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
       part("websearch", { status: "completed", output: `${urls}\njavascript:alert(1)\nfile:///etc/passwd` }),
     )
     if (body.type !== "links") throw new Error("expected links body")
-    expect(body.urls.length).toBe(TOOL_LINKS_MAX)
+    expect(body.links.length).toBe(TOOL_LINKS_MAX)
     expect(body.truncated).toBe(true)
-    expect(body.urls.every((url) => url.startsWith("https://"))).toBe(true)
+    expect(body.links.every((link) => link.href.startsWith("https://"))).toBe(true)
     expect(extractHttpUrls("javascript:x data:y vbscript:z")).toEqual([])
     expect(extractHttpUrls(`https://long.example/${"p".repeat(TOOL_URL_MAX_CHARS)}`)).toEqual([])
   })
@@ -669,5 +670,293 @@ describe("#568 审计修复:diagnostics 外层文件数扫描预算(Major-3)", (
       part("write", { input: { filePath: "C:\\ws\\win.ts" }, metadata: { diagnostics: small } }),
     )
     expect(normalized.rows).toHaveLength(1)
+  })
+})
+
+describe("#583 list 目录网格模型(G6:目录/文件分类 + 计数 + 有界)", () => {
+  test("条目按尾随 / 分类;注记行不算条目;头部完成态出「共 N 项」计数", () => {
+    const output = ".claude/\napp/\ndocs/\ndocker-compose.yml\npyproject.toml\nREADME.md\n\n(6 entries)"
+    const body = toolCardBodyOf(part("list", { status: "completed", input: { path: "/w/demo" }, output }))
+    if (body.type !== "dir") throw new Error("expected dir body")
+    expect(body.entries).toEqual([
+      { name: ".claude", dir: true },
+      { name: "app", dir: true },
+      { name: "docs", dir: true },
+      { name: "docker-compose.yml", dir: false },
+      { name: "pyproject.toml", dir: false },
+      { name: "README.md", dir: false },
+    ])
+    expect(body.truncated).toBe(false)
+
+    const head = toolCardHeadOf(part("list", { status: "completed", input: { path: "/w/demo" }, output }))
+    expect(head.count).toEqual({ unit: "items", value: 6 })
+  })
+
+  test("home 前缀路径折叠为 ~(基线:不显示带用户名的 home 前缀);脱敏失败项丢弃并标记截断", () => {
+    const head = toolCardHeadOf(
+      part("list", { status: "completed", input: { path: "/Users/kai/app/kama-bot-local" }, output: "src/\n" }),
+    )
+    expect(head.target).toBe("~/app/kama-bot-local")
+    expect(head.target).not.toContain("/Users/")
+
+    // 控制字符条目 redactPath 失败 → 整项丢弃 + truncated;计数诚实缺席(不低报总量)。
+    const withBad = "ok.txt\nbad\u0007name\nzz/"
+    const bad = toolCardBodyOf(part("list", { status: "completed", input: { path: "/w" }, output: withBad }))
+    if (bad.type !== "dir") throw new Error("expected dir body")
+    expect(bad.entries).toEqual([
+      { name: "ok.txt", dir: false },
+      { name: "zz", dir: true },
+    ])
+    expect(bad.truncated).toBe(true)
+    const badHead = toolCardHeadOf(part("list", { status: "completed", input: { path: "/w" }, output: withBad }))
+    expect(badHead.count).toBeUndefined()
+  })
+
+  test("引擎「(Showing X of Y entries…)」注记 = 截断;项数帽有界(I7)", () => {
+    const truncatedByEngine = toolCardBodyOf(
+      part("list", { status: "completed", input: { path: "/w" }, output: "a/\nb.txt\n(Showing 2 of 40 entries. …)" }),
+    )
+    if (truncatedByEngine.type !== "dir") throw new Error("expected dir body")
+    expect(truncatedByEngine.entries).toHaveLength(2)
+    expect(truncatedByEngine.truncated).toBe(true)
+
+    const flood = Array.from({ length: TOOL_LIST_MAX_ITEMS + 9 }, (_, i) => `f${i}.ts`).join("\n")
+    const capped = toolCardBodyOf(part("list", { status: "completed", input: { path: "/w" }, output: flood }))
+    if (capped.type !== "dir") throw new Error("expected dir body")
+    expect(capped.entries).toHaveLength(TOOL_LIST_MAX_ITEMS)
+    expect(capped.truncated).toBe(true)
+  })
+})
+
+describe("#584 grep 命中高亮模型(G7:文件/行号结构化 + 字面量高亮 + 失败整字段隐藏)", () => {
+  test("引擎行文法解析:header 跳过、文件行脱敏分组、匹配行带行号与命中 span", () => {
+    const output = [
+      "Found 3 matches",
+      "",
+      "/Users/kai/proj/docker-compose.yml:",
+      "  Line 6: redis image: redis:7.4-alpine",
+      "  Line 21: postgres image: postgres:16-alpine",
+      "",
+      "/Users/kai/proj/Makefile:",
+      "  Line 2: build-image: docker build .",
+    ].join("\n")
+    const body = toolCardBodyOf(
+      part("grep", { status: "completed", input: { pattern: "image" }, metadata: { matches: 3 }, output }),
+    )
+    if (body.type !== "grep") throw new Error("expected grep body")
+    expect(body.rows[0]).toEqual({ kind: "file", path: "~/proj/docker-compose.yml" })
+    const first = body.rows[1]
+    if (first === undefined || first.kind !== "match") throw new Error("expected match row")
+    expect(first.line).toBe(6)
+    expect(first.spans).toEqual([
+      { text: "redis ", hit: false },
+      { text: "image", hit: true },
+      { text: ": redis:7.4-alpine", hit: false },
+    ])
+    expect(body.rows[3]).toEqual({ kind: "file", path: "~/proj/Makefile" })
+    const last = body.rows[4]
+    if (last === undefined || last.kind !== "match") throw new Error("expected match row")
+    expect(last.spans.filter((span) => span.hit)).toEqual([{ text: "image", hit: true }])
+    expect(body.truncated).toBe(false)
+  })
+
+  test("pattern 绝不当正则执行:正则形态字面量匹配不上就诚实不高亮;摘录里的 secret 已被替换", () => {
+    // 正则元字符 pattern:字面量搜索找不到 → 单 span 无高亮(不执行不可信正则)。
+    expect(hitSpansOf("redis image: redis", "(image|img)+")).toEqual([{ text: "redis image: redis", hit: false }])
+    // 摘录先过共享 redactor:secret 赋值 span 已替换,高亮扫描只看展示文本。
+    const body = toolCardBodyOf(
+      part("grep", {
+        status: "completed",
+        input: { pattern: "deploy_key" },
+        output: "Found 1 matches\n\n/w/ci.env:\n  Line 4: deploy_key=sk-abcdefghijklmnop1234",
+      }),
+    )
+    if (body.type !== "grep") throw new Error("expected grep body")
+    const row = body.rows[1]
+    if (row === undefined || row.kind !== "match") throw new Error("expected match row")
+    const shown = row.spans.map((span) => span.text).join("")
+    expect(shown).not.toContain("sk-abcdefghijklmnop1234")
+    expect(shown).toContain("[已隐藏]")
+  })
+
+  test("路径 redactor 失败 ⇒ 整字段隐藏(不逐项降级);未识别行整行丢弃并标记截断", () => {
+    const overlong = `/w/${"a".repeat(1_100)}/hit.ts`
+    const hidden = toolCardBodyOf(
+      part("grep", {
+        status: "completed",
+        input: { pattern: "x" },
+        output: `Found 1 matches\n\n${overlong}:\n  Line 3: x = 1`,
+      }),
+    )
+    expect(hidden).toEqual({ type: "hidden" })
+
+    const stray = toolCardBodyOf(
+      part("grep", {
+        status: "completed",
+        input: { pattern: "x" },
+        output: "Found 1 matches\n\n/w/ok.ts:\n  Line 1: x = 2\nstray unformatted output",
+      }),
+    )
+    if (stray.type !== "grep") throw new Error("expected grep body")
+    expect(stray.rows).toHaveLength(2)
+    expect(stray.truncated).toBe(true)
+  })
+
+  test("超长无空白匹配行(minify/base64)被截成空 ⇒ 该行缺席且整体标记截断,不渲染空命中", () => {
+    // safeTruncate 对无空白行回退整个 lookback 窗口 ⇒ 空串;旧行为渲染出「:7」空行且不标截断。
+    const minified = `export_const_config={api:{bodyParser:false}};${"z".repeat(430)}`
+    const body = toolCardBodyOf(
+      part("grep", {
+        status: "completed",
+        input: { pattern: "bodyParser" },
+        output: `Found 1 matches\n\n/w/dist/bundle.min.js:\n  Line 7: ${minified}`,
+      }),
+    )
+    if (body.type !== "grep") throw new Error("expected grep body")
+    expect(body.rows.filter((row) => row.kind === "match")).toHaveLength(0)
+    expect(body.rows).toHaveLength(1)
+    expect(body.truncated).toBe(true)
+  })
+
+  test("超长但有空白的匹配行:保留截断前缀并标记截断(诚实截断,不静默丢尾)", () => {
+    const spaced = `retryBudget exceeded ${"backoff wait ".repeat(40)}`
+    const body = toolCardBodyOf(
+      part("grep", {
+        status: "completed",
+        input: { pattern: "retryBudget" },
+        output: `Found 1 matches\n\n/w/svc/queue.ts:\n  Line 12: ${spaced}`,
+      }),
+    )
+    if (body.type !== "grep") throw new Error("expected grep body")
+    const row = body.rows[1]
+    if (row === undefined || row.kind !== "match") throw new Error("expected match row")
+    expect(row.spans).toContainEqual({ text: "retryBudget", hit: true })
+    const shown = row.spans.map((span) => span.text).join("")
+    expect(shown.length).toBeLessThanOrEqual(TOOL_ITEM_MAX_CHARS)
+    expect(shown.length).toBeLessThan(spaced.length)
+    expect(body.truncated).toBe(true)
+  })
+})
+
+describe("#586 websearch 富链接模型(G17:结构化标题 allowlist + 字母徽/域名导出 + 结果数)", () => {
+  test("结构化 results 出「宿主允许的标题」;host/字母徽从清洗后 URL 导出;头部出结果数", () => {
+    const output = JSON.stringify({
+      results: [
+        { title: "aria-busy & loading buttons", url: "https://www.w3.org/WAI/tutorials/?utm=x#top" },
+        { title: "SolidJS Suspense & pending UI", url: "https://docs.solidjs.com/guides/suspense" },
+        { url: "https://untitled.example.io/post" },
+      ],
+    })
+    const body = toolCardBodyOf(part("websearch", { status: "completed", input: { query: "solid a11y" }, output }))
+    if (body.type !== "links") throw new Error("expected links body")
+    expect(body.links).toEqual([
+      // query/fragment 已清洗;www. 前缀不进展示 host;字母徽 = host 首字符。
+      { href: "https://www.w3.org/WAI/tutorials/", host: "w3.org", letter: "W", title: "aria-busy & loading buttons" },
+      {
+        href: "https://docs.solidjs.com/guides/suspense",
+        host: "docs.solidjs.com",
+        letter: "D",
+        title: "SolidJS Suspense & pending UI",
+      },
+      // title 缺席的结构化行:无标题字段,不编造。
+      { href: "https://untitled.example.io/post", host: "untitled.example.io", letter: "U" },
+    ])
+    expect(body.truncated).toBe(false)
+
+    const head = toolCardHeadOf(part("websearch", { status: "completed", input: { query: "solid a11y" }, output }))
+    expect(head.count).toEqual({ unit: "results", value: 3 })
+    expect(head.target).toBe("solid a11y")
+  })
+
+  test("自由文本兜底:只捞裸 URL,永无标题;URL 仍逐条过 redactUrl(userinfo/query 不落 DOM)", () => {
+    const body = toolCardBodyOf(
+      part("websearch", {
+        status: "completed",
+        input: { query: "docs" },
+        output: "见 https://res.example.net/guide?apikey=ak_88yy 与 https://bob:pw456@mirror.example.org/dl",
+      }),
+    )
+    if (body.type !== "links") throw new Error("expected links body")
+    expect(body.links.map((link) => [link.href, link.host, link.letter, link.title])).toEqual([
+      ["https://res.example.net/guide", "res.example.net", "R", undefined],
+      ["https://mirror.example.org/dl", "mirror.example.org", "M", undefined],
+    ])
+    const flat = JSON.stringify(body)
+    expect(flat).not.toContain("ak_88yy")
+    expect(flat).not.toContain("pw456")
+    expect(flat).not.toContain("bob")
+  })
+
+  test("结构化行里的非法 URL 丢弃并标记截断;标题过共享 redactor(secret 形态整字段隐藏并标记)", () => {
+    const body = toolCardBodyOf(
+      part("websearch", {
+        status: "completed",
+        input: { query: "q" },
+        output: JSON.stringify({
+          results: [
+            { title: "ok page", url: "https://fine.example.com/a" },
+            { title: "bad scheme", url: "javascript:alert(1)" },
+            { title: `Bearer ${"t".repeat(200)}`, url: "https://leaky.example.org/b" },
+          ],
+        }),
+      }),
+    )
+    if (body.type !== "links") throw new Error("expected links body")
+    expect(body.links.map((link) => link.href)).toEqual([
+      "https://fine.example.com/a",
+      "https://leaky.example.org/b",
+    ])
+    expect(body.links[0]!.title).toBe("ok page")
+    // Bearer credential 形态:redactor 把 span 替换;展示标题绝不含原 token。
+    expect(JSON.stringify(body)).not.toContain("t".repeat(32))
+    expect(body.truncated).toBe(true)
+  })
+
+  test("结构化行缺 url 键 / url 非字符串:丢弃并标记截断,与 redactUrl 失败那一支同口径(不静默)", () => {
+    const body = toolCardBodyOf(
+      part("websearch", {
+        status: "completed",
+        input: { query: "css grid" },
+        output: JSON.stringify({
+          results: [
+            { title: "Grid primer", url: "https://mdn.example/css/grid" },
+            { title: "标题在但 url 键不在" },
+            { url: "https://web.example.dev/container-queries" },
+          ],
+        }),
+      }),
+    )
+    if (body.type !== "links") throw new Error("expected links body")
+    expect(body.links.map((link) => link.href)).toEqual([
+      "https://mdn.example/css/grid",
+      "https://web.example.dev/container-queries",
+    ])
+    // 丢掉的那条不留任何痕迹,但「丢过东西」这件事要上抛 —— 否则头部结果数低报且无提示。
+    expect(JSON.stringify(body)).not.toContain("url 键不在")
+    expect(body.truncated).toBe(true)
+
+    // url 键在、但不是字符串(数字/对象/空串)走同一支。
+    const nonString = toolCardBodyOf(
+      part("websearch", {
+        status: "completed",
+        input: { query: "q" },
+        output: JSON.stringify({ results: [{ url: 7 }, { url: { href: "x" } }, { url: "" }, { url: "https://only.example/one" }] }),
+      }),
+    )
+    if (nonString.type !== "links") throw new Error("expected links body")
+    expect(nonString.links.map((link) => link.href)).toEqual(["https://only.example/one"])
+    expect(nonString.truncated).toBe(true)
+
+    // 正对照:全部结构化行都带合法 url 时不得平白标记截断(杀掉「恒 true」的写法)。
+    const clean = toolCardBodyOf(
+      part("websearch", {
+        status: "completed",
+        input: { query: "q" },
+        output: JSON.stringify({ results: [{ url: "https://a.example/1" }, { url: "https://b.example/2" }] }),
+      }),
+    )
+    if (clean.type !== "links") throw new Error("expected links body")
+    expect(clean.links).toHaveLength(2)
+    expect(clean.truncated).toBe(false)
   })
 })

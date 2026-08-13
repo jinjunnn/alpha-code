@@ -355,8 +355,8 @@ export interface ToolCardHead {
   detail?: string
   /** 次级细节存在但 redactor 失败/清空 → 确定的「详情已隐藏」(#934 Minor:AC5 标记补齐,不再静默丢字段)。 */
   detailHidden?: boolean
-  /** 计数徽标(文件数/命中数)。 */
-  count?: { unit: "files" | "matches"; value: number }
+  /** 计数徽标(文件数/命中数/目录项数/搜索结果数)。 */
+  count?: { unit: "files" | "matches" | "items" | "results"; value: number }
   /** +N/−N 改动徽标。 */
   stat?: { additions: number; deletions: number }
   /** bash 完成态退出码(缺失 = 引擎未报,徽标退回「完成」)。 */
@@ -437,6 +437,12 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
       const path = redactedPathOf(input.path)
       if (path.hidden) head.targetHidden = true
       else if (path.value !== undefined) head.target = cappedItem(path.value)
+      // #583:完成态头部计数「共 N 项」。只有解析出完整(未截断)条目集时才出计数 ——
+      // 截断集的条数会低报总量,诚实缺席退回「完成」。
+      if (status === "success") {
+        const dir = dirEntriesOf(outputOf(part), metadata)
+        if (dir.entries.length > 0 && !dir.truncated) head.count = { unit: "items", value: dir.entries.length }
+      }
       return head
     }
     case "glob": {
@@ -465,6 +471,13 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
     }
     case "websearch": {
       assignInline(head, input.query)
+      // #586:头部只出「结果数」(基线 web search 顶层白名单:宿主标题 / query /
+      // 结果数 / 状态 —— 供应商名不在内,对照帧的「Exa · 3 条」不落地)。
+      // 计数 = 实际渲染的链接行数(清洗后),不转述远端自称的总量。
+      if (status === "success") {
+        const { links } = searchLinksOf(outputOf(part))
+        if (links.length > 0) head.count = { unit: "results", value: links.length }
+      }
       return head
     }
     case "bash": {
@@ -544,40 +557,282 @@ export interface PatchFileRow {
   deletions: number
 }
 
+/** #583 目录网格体的单项(路径已脱敏;dir 按条目尾随 `/` 判定)。 */
+export interface DirEntry {
+  name: string
+  dir: boolean
+}
+
+/** #584 grep 展开体的行:file = 文件分组行(分色);match = 行号 + 命中高亮 span 序列。 */
+export type GrepRow = { kind: "file"; path: string } | { kind: "match"; line?: number; spans: GrepSpan[] }
+
+export interface GrepSpan {
+  text: string
+  hit: boolean
+}
+
+/**
+ * #586 富链接行:href 已过 redactUrl;host / letter(字母徽,**不是 favicon** ——
+ * favicon = 渲染进程发远端请求,基线未授权的新隐私面)从清洗后 URL 导出;
+ * title 只来自结构化 `results[].title` allowlist 键并已过共享 redactor(基线
+ * §5.2 web search:「宿主允许的标题」),自由文本兜底路径没有标题。
+ */
+export interface SearchLink {
+  href: string
+  host: string
+  letter: string
+  title?: string
+}
+
 export type ToolCardBody =
   | { type: "none" }
   | { type: "hidden" }
   | { type: "text"; text: string; truncated: boolean }
   | { type: "term"; output: string; truncated: boolean; streaming: boolean }
   | { type: "files"; files: string[]; truncated: boolean; badge?: "read" }
+  | { type: "dir"; entries: DirEntry[]; truncated: boolean }
+  | { type: "grep"; rows: GrepRow[]; truncated: boolean }
   | { type: "diff"; patch: string }
   | { type: "write"; path?: string; preview: string[]; totalLines: number; approx: boolean }
   | { type: "patch"; files: PatchFileRow[]; truncated: boolean }
-  | { type: "links"; urls: string[]; truncated: boolean }
+  | { type: "links"; links: SearchLink[]; truncated: boolean }
   | { type: "error"; message: string; truncated: boolean }
 
-/** websearch / cloud web_search 共用的链接体:每条 URL 过 redactUrl,失败即丢。 */
-function linksBodyOf(output: string): ToolCardBody {
-  const urls = extractHttpUrls(output)
-  const cleaned: string[] = []
-  const seen = new Set<string>()
-  let dropped = false
-  for (const url of urls) {
-    const clean = redactUrl(url, TOOL_URL_MAX_CHARS)
-    if (!clean.ok) {
-      dropped = true
+// ── #583 list 目录网格(CT `#tools` G6 帧;基线 §5.2「文件读取/列表」类) ────
+/**
+ * 目录输出的有界解析:逐行取条目,尾随 `/` = 目录;`(...)` 注记行不算条目
+ * (`(Showing …` 代表引擎侧截断)。每项过 redactPath(基线:已脱敏路径列表,
+ * 不显示带用户名的 home 前缀);失败项整项丢弃并以截断标记诚实呈现(同 read/glob
+ * 列表纪律)。双约束:项数帽 + 行迭代预算 + 扫描预算(I7)。
+ */
+export function dirEntriesOf(
+  output: string,
+  metadata: Record<string, unknown>,
+): { entries: DirEntry[]; truncated: boolean } {
+  const scan = output.slice(0, TOOL_SCAN_MAX_CHARS)
+  let truncated = output.length > scan.length || metadata.truncated === true
+  const entries: DirEntry[] = []
+  const lines = scan.split("\n")
+  for (let index = 0; index < lines.length; index += 1) {
+    if (index >= TOOL_LIST_SCAN_MAX || entries.length >= TOOL_LIST_MAX_ITEMS) {
+      truncated = true
+      break
+    }
+    let line = cappedItem(lines[index]!).trim()
+    if (line.length === 0) continue
+    if (line.startsWith("(")) {
+      // 引擎的「(Showing X of Y entries…)」注记 = 上游已截断;「(N entries)」只是尾注。
+      if (line.startsWith("(Showing")) truncated = true
       continue
     }
-    if (seen.has(clean.value)) continue
+    if (line.startsWith("- ")) line = line.slice(2)
+    const dir = line.endsWith("/")
+    const clean = redactPath(line, TOOL_PATH_MAX_CHARS)
+    if (!clean.ok || clean.value.length === 0) {
+      truncated = true
+      continue
+    }
+    const name = clean.value.endsWith("/") ? clean.value.slice(0, -1) : clean.value
+    if (name.length === 0) {
+      truncated = true
+      continue
+    }
+    entries.push({ name: cappedItem(name), dir })
+  }
+  return { entries, truncated }
+}
+
+function dirBodyOf(part: ToolPart): ToolCardBody {
+  const { entries, truncated } = dirEntriesOf(outputOf(part), metadataOf(part))
+  if (entries.length === 0) return { type: "none" }
+  return { type: "dir", entries, truncated }
+}
+
+// ── #584 grep 命中高亮(CT `#tools` G7 帧;基线 §5.2「grep / 诊断」类) ──────
+/**
+ * 命中 span 的字面量切分:只做纯 substring 扫描(线性、有界)。**绝不把模型给的
+ * pattern 当正则执行** —— 不可信 regex 在 400 字符行上就能造出灾难性回溯
+ * (同 tool-redactor 的 O(n²) 教训);正则形态的 pattern 匹配不上就诚实不高亮。
+ * 扫描对象是**已脱敏后的展示文本**,pattern 原文只用于定位,绝不进 DOM。
+ */
+export function hitSpansOf(text: string, pattern: string | undefined): GrepSpan[] {
+  if (pattern === undefined || pattern.length === 0 || pattern.length > TOOL_ITEM_MAX_CHARS) {
+    return [{ text, hit: false }]
+  }
+  const spans: GrepSpan[] = []
+  let index = 0
+  while (index < text.length) {
+    const at = text.indexOf(pattern, index)
+    if (at < 0) break
+    if (at > index) spans.push({ text: text.slice(index, at), hit: false })
+    spans.push({ text: pattern, hit: true })
+    index = at + pattern.length
+  }
+  if (index === 0) return [{ text, hit: false }]
+  if (index < text.length) spans.push({ text: text.slice(index), hit: false })
+  return spans
+}
+
+// 引擎 grep 输出的行文法(packages/opencode/src/tool/grep.ts):
+//   Found N matches[ (more matches available)]
+//   /abs/path/file.ts:
+//     Line 12: matched text
+//   (Results truncated. …)
+const GREP_HEADER_LINE = /^Found \d+ matches/
+const GREP_MATCH_LINE = /^ {2}Line (\d+): (.*)$/
+
+/**
+ * grep 展开体的结构化投影:文件行过 redactPath、摘录行过共享 redactor 且有界;
+ * **任一行脱敏失败 = 整字段隐藏**(基线 §5.1;渲染层显示确定的「详情已隐藏」,
+ * 无 raw 回退)。未识别形状的行整行丢弃并标记截断(fail-closed,不当正文透传)。
+ */
+function grepBodyOf(part: ToolPart): ToolCardBody {
+  const output = outputOf(part)
+  const scan = output.slice(0, TOOL_SCAN_MAX_CHARS)
+  let truncated = output.length > scan.length || metadataOf(part).truncated === true
+  const pattern = stringOf(inputOf(part).pattern)
+  const rows: GrepRow[] = []
+  const lines = scan.split("\n")
+  for (let index = 0; index < lines.length; index += 1) {
+    if (index >= TOOL_LIST_SCAN_MAX || rows.length >= TOOL_LIST_MAX_ITEMS) {
+      truncated = true
+      break
+    }
+    // 分类看原始行(仅受扫描预算约束):先截行再判形状会把超长路径行「降级」成
+    // 未识别行,绕过下面的整字段隐藏(fail-closed 判据必须先于任何截断)。
+    const line = lines[index]!
+    if (line.trim().length === 0) continue
+    if (GREP_HEADER_LINE.test(line) || line === "No files found") continue
+    if (line.startsWith("(")) {
+      truncated = true
+      continue
+    }
+    const match = GREP_MATCH_LINE.exec(line)
+    if (match !== null) {
+      const clean = redactText(match[2]!, TOOL_ITEM_MAX_CHARS)
+      if (!clean.ok) return { type: "hidden" }
+      // 与 textBodyOf/dirEntriesOf 同口径:截断如实上抛;截空的行(无空白的超长行
+      // safeTruncate 会截成空串)不渲染「不含命中词的空命中」,缺席以截断标记留痕。
+      if (clean.truncated) truncated = true
+      if (clean.value.length === 0) {
+        truncated = true
+        continue
+      }
+      const lineNumber = finiteOf(Number(match[1]))
+      rows.push({
+        kind: "match",
+        line: lineNumber === undefined ? undefined : Math.max(0, Math.floor(lineNumber)),
+        spans: hitSpansOf(clean.value, pattern),
+      })
+      continue
+    }
+    if (line.endsWith(":")) {
+      // 不预截路径:redactPath 自身拒绝超长(截断的路径指向错误目标)⇒ 整字段隐藏。
+      const clean = redactPath(line.slice(0, -1), TOOL_PATH_MAX_CHARS)
+      if (!clean.ok || clean.value.length === 0) return { type: "hidden" }
+      rows.push({ kind: "file", path: cappedItem(clean.value) })
+      continue
+    }
+    truncated = true
+  }
+  if (rows.length === 0) return { type: "none" }
+  return { type: "grep", rows, truncated }
+}
+
+/** 从**已清洗**的 href 导出展示 host 与字母徽;解析失败 = 丢弃该行(fail-closed)。 */
+function searchLinkOf(href: string): SearchLink | undefined {
+  try {
+    const url = new URL(href)
+    const host = url.host.replace(/^www\./, "")
+    if (host.length === 0) return undefined
+    const letter = (/[a-z0-9]/i.exec(host)?.[0] ?? host[0]!).toUpperCase()
+    return { href, host: cappedItem(host), letter }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 结构化结果解析(#586):只认引擎会返回的 `{"results":[…]}` JSON 形状
+ * (mcp-websearch.ts 的 structuredContent 成功路)。整串有扫描预算帽;非该形状
+ * 一律 undefined,回落到裸 URL 扫描 —— 标题只能来自这里的 `title` allowlist 键。
+ */
+function structuredResultsOf(output: string): { url?: unknown; title?: unknown }[] | undefined {
+  const trimmed = output.trim()
+  if (trimmed.length === 0 || trimmed.length > TOOL_SCAN_MAX_CHARS) return undefined
+  if (!trimmed.startsWith("{")) return undefined
+  try {
+    const parsed = JSON.parse(trimmed) as { results?: unknown }
+    if (typeof parsed !== "object" || parsed === null) return undefined
+    const results = parsed.results
+    if (!Array.isArray(results)) return undefined
+    return results.filter(
+      (item): item is { url?: unknown; title?: unknown } => typeof item === "object" && item !== null,
+    )
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * websearch / cloud web_search 共用的链接体:每条 URL 过 redactUrl,失败即丢;
+ * 结构化 `results[].title` 过共享 redactor(失败 = 隐藏该标题字段并标记截断,
+ * 不静默),host / 字母徽从清洗后 URL 导出。数量与迭代双有界(I7)。
+ */
+export function searchLinksOf(output: string): { links: SearchLink[]; truncated: boolean } {
+  const links: SearchLink[] = []
+  const seen = new Set<string>()
+  let dropped = false
+  const push = (rawUrl: string, rawTitle?: unknown): void => {
+    const clean = redactUrl(rawUrl, TOOL_URL_MAX_CHARS)
+    if (!clean.ok) {
+      dropped = true
+      return
+    }
+    if (seen.has(clean.value)) return
+    const link = searchLinkOf(clean.value)
+    if (link === undefined) {
+      dropped = true
+      return
+    }
     seen.add(clean.value)
-    cleaned.push(clean.value)
+    const title = redactedInlineOf(rawTitle)
+    if (title.hidden) dropped = true
+    else if (title.value !== undefined) link.title = title.value
+    links.push(link)
   }
-  if (cleaned.length === 0) return { type: "none" }
-  return {
-    type: "links",
-    urls: cleaned.slice(0, TOOL_LINKS_MAX),
-    truncated: dropped || cleaned.length > TOOL_LINKS_MAX,
+  const structured = structuredResultsOf(output)
+  if (structured !== undefined) {
+    for (let index = 0; index < structured.length; index += 1) {
+      if (index >= TOOL_LIST_SCAN_MAX || links.length >= TOOL_LINKS_MAX) {
+        dropped = true
+        break
+      }
+      const url = stringOf(structured[index]!.url)
+      // #586:缺 url 键 / 非字符串 = 丢掉了引擎真回过的一条结果 —— 与 push 里 redactUrl
+      // 失败那一支同口径标记截断,不静默。静默的话头部「N 条结果」低报且无任何缺席提示。
+      if (url === undefined) {
+        dropped = true
+        continue
+      }
+      push(url, structured[index]!.title)
+    }
+    return { links, truncated: dropped }
   }
+  for (const url of extractHttpUrls(output)) {
+    if (links.length >= TOOL_LINKS_MAX) {
+      dropped = true
+      break
+    }
+    push(url)
+  }
+  return { links, truncated: dropped }
+}
+
+function linksBodyOf(output: string): ToolCardBody {
+  const { links, truncated } = searchLinksOf(output)
+  if (links.length === 0) return { type: "none" }
+  return { type: "links", links, truncated }
 }
 
 function textBodyOf(raw: string, maxChars = TOOL_BODY_MAX_CHARS, maxLines = TOOL_BODY_MAX_LINES): ToolCardBody {
@@ -662,9 +917,11 @@ export function toolCardBodyOf(part: ToolPart): ToolCardBody {
       if (files.length === 0) return { type: "none" }
       return { type: "files", files, truncated: overflow || metadata.truncated === true }
     }
-    case "grep":
+    case "grep": {
+      return grepBodyOf(part)
+    }
     case "list": {
-      return textBodyOf(outputOf(part))
+      return dirBodyOf(part)
     }
     case "webfetch":
       // 设计口径:仅触发行(URL 已在头部),不内联网页内容。

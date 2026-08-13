@@ -123,10 +123,13 @@ describe("#879 T1 — 撞名不借卡:分派只认 identity,不认 part.tool 裸
     const grep = toolPart({
       tool: "grep",
       display: builtin("grep"),
-      state: completed({ pattern: "TODO" }, "src/a.ts:12: TODO", { matches: 1 }),
+      // #584 起 grep 完成态是结构化 grep 体(引擎 grep.ts 行文法),不再是纯文本。
+      state: completed({ pattern: "TODO" }, "Found 1 matches\n\n/repo/src/a.ts:\n  Line 12: // TODO fix", {
+        matches: 1,
+      }),
     })
     expect(toolCardHeadOf(grep).kind).toBe("grep")
-    expect(toolCardBodyOf(grep).type).toBe("text")
+    expect(toolCardBodyOf(grep).type).toBe("grep")
   })
 })
 
@@ -259,7 +262,7 @@ describe("#879 T5 — URL 删 userinfo/query/fragment;header 默认全丢", () =
     })
     const body = toolCardBodyOf(searchPart)
     if (body.type !== "links") throw new Error("expected links body")
-    expect(body.urls).toEqual([
+    expect(body.links.map((link) => link.href)).toEqual([
       "https://res.example.net/guide",
       "https://mirror.example.org/dl",
       "https://plain.example.dev/page",
@@ -588,7 +591,10 @@ describe("#587 AC1 — Alpha Cloud 8/8 全部有语义化中文标题、关键�
     })
     const body = toolCardBodyOf(search)
     if (body.type !== "links") throw new Error("expected links body for cloud web search")
-    expect(body.urls).toEqual(["https://docs.example.org/store", "https://blog.example.net/deep"])
+    expect(body.links.map((link) => link.href)).toEqual([
+      "https://docs.example.org/store",
+      "https://blog.example.net/deep",
+    ])
 
     const status = toolPart({
       tool: "cloud_cloud_status",

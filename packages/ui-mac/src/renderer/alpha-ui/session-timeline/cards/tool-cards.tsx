@@ -182,6 +182,8 @@ function StatusChip(props: { head: ToolCardHead }) {
     if (head.kind === "skill") return t("alpha.timeline.skillLoaded")
     if (head.count) {
       if (head.count.unit === "matches") return t("alpha.timeline.countMatches", { count: head.count.value })
+      if (head.count.unit === "items") return t("alpha.timeline.countItems", { count: head.count.value })
+      if (head.count.unit === "results") return t("alpha.timeline.countResults", { count: head.count.value })
       return t("alpha.timeline.countFiles", { count: head.count.value })
     }
     return t("alpha.timeline.toolCompleted")
@@ -227,6 +229,8 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
   const term = () => (props.body.type === "term" ? props.body : undefined)
   const text = () => (props.body.type === "text" ? props.body : undefined)
   const files = () => (props.body.type === "files" ? props.body : undefined)
+  const dir = () => (props.body.type === "dir" ? props.body : undefined)
+  const grep = () => (props.body.type === "grep" ? props.body : undefined)
   const links = () => (props.body.type === "links" ? props.body : undefined)
   const diff = () => (props.body.type === "diff" ? props.body : undefined)
   const write = () => (props.body.type === "write" ? props.body : undefined)
@@ -289,13 +293,92 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
           </div>
         )}
       </Show>
+      <Show when={dir()}>
+        {(body) => (
+          <div class="a-tc-dir" data-alpha-dir-grid>
+            <div class="a-tc-dirgrid">
+              <For each={body().entries}>
+                {(entry) => (
+                  <span class="a-tc-dir-item" data-entry={entry.dir ? "dir" : "file"}>
+                    <Show
+                      when={entry.dir}
+                      fallback={
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+                          <path d="M14 3v6h6" />
+                        </svg>
+                      }
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 7l2-3h5l2 3h7v11H3z" />
+                      </svg>
+                    </Show>
+                    {entry.name}
+                  </span>
+                )}
+              </For>
+            </div>
+            <Show when={body().truncated}>
+              <TruncatedNote />
+            </Show>
+            {/* #583:footer 计数与头部(tool-card-model 的 list 分支)同一条规则 ——
+                截断集的条数是**帽住的条数**,不是目录总量,直出即低报。诚实缺席,
+                缺席提示由上方 TruncatedNote 承担;不截断才复述计数。 */}
+            <Show when={!body().truncated}>
+              <div class="a-tc-dircount">{t("alpha.timeline.countItems", { count: body().entries.length })}</div>
+            </Show>
+          </div>
+        )}
+      </Show>
+      <Show when={grep()}>
+        {(body) => (
+          <div class="a-tc-grep" data-alpha-grep-body>
+            <For each={body().rows}>
+              {(row) => (
+                <Show
+                  when={row.kind === "match" ? row : undefined}
+                  fallback={<div class="a-tc-grep-file">{row.kind === "file" ? row.path : ""}</div>}
+                >
+                  {(matchRow) => (
+                    <div class="a-tc-grep-row">
+                      <Show when={matchRow().line !== undefined}>
+                        <span class="a-tc-grep-ln">:{matchRow().line}</span>
+                      </Show>
+                      <span class="a-tc-grep-text">
+                        <For each={matchRow().spans}>
+                          {(span) => (
+                            <Show when={span.hit} fallback={span.text}>
+                              <mark class="a-tc-grep-hit">{span.text}</mark>
+                            </Show>
+                          )}
+                        </For>
+                      </span>
+                    </div>
+                  )}
+                </Show>
+              )}
+            </For>
+            <Show when={body().truncated}>
+              <TruncatedNote />
+            </Show>
+          </div>
+        )}
+      </Show>
+      {/* #586 富链接列表(G17):字母徽(不是 favicon,不发远端请求)+ 标题 + 域名。
+          title 只来自结构化 allowlist(已过 redactor);缺席时降回清洗后的 href。 */}
       <Show when={links()}>
         {(body) => (
           <div class="a-tc-links">
-            <For each={body().urls}>
-              {(url) => (
-                <a class="a-tc-link" href={url} target="_blank" rel="noopener noreferrer">
-                  {url}
+            <For each={body().links}>
+              {(link) => (
+                <a class="a-tc-wr" href={link.href} target="_blank" rel="noopener noreferrer">
+                  <span class="a-tc-fav" aria-hidden="true">
+                    {link.letter}
+                  </span>
+                  <span class="a-tc-wt" data-fallback={link.title === undefined ? "href" : undefined}>
+                    {link.title ?? link.href}
+                  </span>
+                  <span class="a-tc-wu">{link.host}</span>
                 </a>
               )}
             </For>
