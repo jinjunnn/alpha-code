@@ -589,4 +589,34 @@ describe("可达性判别依据(#941):半通不通降级,恒 'network' 硬红", 
     expect(r.err).toContain("bootstrap 自己非零退出")
     expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941f-hooks")
   }, 60_000)
+
+  // ── `#941` R1 合并前两条 Minor 的判据 ──────────────────────────────────────────────
+  test("R1 Minor:adjudicate 的第二轮共识(c2)被静默删除必须有人红 —— c1 全 ok、复测仍 network、c2 抖一发 ⇒ 未验证 exit 2,不得硬红", () => {
+    const fx = initFlakyFixture(".lane-941g-hooks")
+    // 钉的是 adjudicate 里 `c2` 那一半(本仓失效形态⑦:审计实测把 `c2=…` 连同
+    // `&& [ "$c2" = reachable ]` 删掉,原有用例一条不红 —— A 的共识本身 unstable 进不了
+    // adjudicate、B 在 v2 复测处改口、C 全程网络稳定 c2 恒 reachable)。删掉之后的行为退化
+    // 是真的:网络在第一轮共识**之后**才开始抖时,健康的判别依据(这一刻真连不上所以说
+    // network)会被判成 degraded 硬红 —— 又回到「健康仓库被硬红」。
+    // 夹具沿用 C 的恒 network 突变让 v2 不改口;序列让 [5/6] adjudicate 的 c1 全 ok(3 发,
+    // reachable)、c2 落在矛盾对(ok fail ⇒ unstable)⇒ 只能走「本次测量作废」的未验证档。
+    // 尾段的 ok fail 喂给 [6/6](a) 的外层共识,否则突变体在稳定网络下会在 (a) 处 degraded
+    // 硬红,污染对 c2 的判决;位点同时按「非 reachable 两发定局」与「恒 3 发整轮」两种共识
+    // 排布,Minor 2 单独回退时本条仍绿 —— 两条 Minor 的绕过实验互不牵连。
+    const probeCopy = join(fx.repo, "scripts", "assert-worktree-bootstrap.sh")
+    const original = readFileSync(probeCopy, "utf8")
+    const mutated = original.replace(
+      "classify_bootstrap_failure() {\n",
+      "classify_bootstrap_failure() { printf 'network'; return 0; }\nclassify_bootstrap_failure_dead() {\n",
+    )
+    expect(mutated).not.toBe(original)
+    writeFileSync(probeCopy, mutated)
+
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.flap-941g.invalid", "ok ok ok ok fail ok fail", "ok"))
+    expect(r.code).toBe(2)
+    expect(r.out).toContain("可达性探测前后矛盾")
+    expect(r.err).not.toContain("能力判据失守")
+    expect(registeredWorktreeNames(fx.repo, fx.home).filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941g-hooks")
+  }, 60_000)
 })
