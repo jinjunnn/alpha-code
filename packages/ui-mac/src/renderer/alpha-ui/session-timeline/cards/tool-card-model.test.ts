@@ -801,6 +801,41 @@ describe("#584 grep 命中高亮模型(G7:文件/行号结构化 + 字面量高�
     expect(stray.rows).toHaveLength(2)
     expect(stray.truncated).toBe(true)
   })
+
+  test("超长无空白匹配行(minify/base64)被截成空 ⇒ 该行缺席且整体标记截断,不渲染空命中", () => {
+    // safeTruncate 对无空白行回退整个 lookback 窗口 ⇒ 空串;旧行为渲染出「:7」空行且不标截断。
+    const minified = `export_const_config={api:{bodyParser:false}};${"z".repeat(430)}`
+    const body = toolCardBodyOf(
+      part("grep", {
+        status: "completed",
+        input: { pattern: "bodyParser" },
+        output: `Found 1 matches\n\n/w/dist/bundle.min.js:\n  Line 7: ${minified}`,
+      }),
+    )
+    if (body.type !== "grep") throw new Error("expected grep body")
+    expect(body.rows.filter((row) => row.kind === "match")).toHaveLength(0)
+    expect(body.rows).toHaveLength(1)
+    expect(body.truncated).toBe(true)
+  })
+
+  test("超长但有空白的匹配行:保留截断前缀并标记截断(诚实截断,不静默丢尾)", () => {
+    const spaced = `retryBudget exceeded ${"backoff wait ".repeat(40)}`
+    const body = toolCardBodyOf(
+      part("grep", {
+        status: "completed",
+        input: { pattern: "retryBudget" },
+        output: `Found 1 matches\n\n/w/svc/queue.ts:\n  Line 12: ${spaced}`,
+      }),
+    )
+    if (body.type !== "grep") throw new Error("expected grep body")
+    const row = body.rows[1]
+    if (row === undefined || row.kind !== "match") throw new Error("expected match row")
+    expect(row.spans).toContainEqual({ text: "retryBudget", hit: true })
+    const shown = row.spans.map((span) => span.text).join("")
+    expect(shown.length).toBeLessThanOrEqual(TOOL_ITEM_MAX_CHARS)
+    expect(shown.length).toBeLessThan(spaced.length)
+    expect(body.truncated).toBe(true)
+  })
 })
 
 describe("#586 websearch 富链接模型(G17:结构化标题 allowlist + 字母徽/域名导出 + 结果数)", () => {

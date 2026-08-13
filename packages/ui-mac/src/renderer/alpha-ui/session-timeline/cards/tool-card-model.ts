@@ -711,6 +711,13 @@ function grepBodyOf(part: ToolPart): ToolCardBody {
     if (match !== null) {
       const clean = redactText(match[2]!, TOOL_ITEM_MAX_CHARS)
       if (!clean.ok) return { type: "hidden" }
+      // 与 textBodyOf/dirEntriesOf 同口径:截断如实上抛;截空的行(无空白的超长行
+      // safeTruncate 会截成空串)不渲染「不含命中词的空命中」,缺席以截断标记留痕。
+      if (clean.truncated) truncated = true
+      if (clean.value.length === 0) {
+        truncated = true
+        continue
+      }
       const lineNumber = finiteOf(Number(match[1]))
       rows.push({
         kind: "match",
