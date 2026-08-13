@@ -64,7 +64,9 @@ run_bun_test src
 status=$?
 set -e
 summarize
-summary="$(grep -aoE 'Ran [0-9]+ tests? across [0-9]+ files?' "$log" | tail -1)"
+# `|| true`:bun 崩溃/被杀时没有汇总行,grep 空手而归 —— pipefail+set -e 会让脚本死在
+# 这一行,「测量作废」的诊断永远打不出来(与 [b] 同类,实验 3 实测)。
+summary="$(grep -aoE 'Ran [0-9]+ tests? across [0-9]+ files?' "$log" | tail -1 || true)"
 if [ -z "$summary" ]; then
   echo "::error::${WORKDIR} —— bun 没跑到汇总行(崩溃/挂起被杀),本次测量作废,不构成任何方向的证据。完整输出:"
   cat "$log"
@@ -146,12 +148,15 @@ for t in $delta_tests; do
   run_bun_test "$t"
   status=$?
   set -e
-  files="$(grep -aoE 'Ran [0-9]+ tests? across [0-9]+ files?' "$log" | tail -1 | sed -E 's/.*across ([0-9]+) files?.*/\1/')"
+  # `|| true`:文件被删时 bun 不打汇总行,grep 空手而归 —— pipefail+set -e 会让脚本在这行
+  # **无诊断地**静默死掉(实验 3 实测),红要落到下面带 bun 原话的分支,不许哑巴退出。
+  files="$(grep -aoE 'Ran [0-9]+ tests? across [0-9]+ files?' "$log" | tail -1 | sed -E 's/.*across ([0-9]+) files?.*/\1/' || true)"
   pass_b="$(sed -n 's/^[[:space:]]*\([0-9][0-9]*\) pass$/\1/p' "$log" | tail -1)"
   [ -z "$pass_b" ] && pass_b=0
   if [ "$status" -ne 0 ]; then
     summarize
-    echo "::error::alpha 判据文件 ${t} 点名重跑失败(exit=${status},上面 (fail) 逐条点名)。"
+    echo "::error::alpha 判据文件 ${t} 点名重跑失败(exit=${status})。bun 输出:"
+    cat "$log"
     exit 1
   fi
   if [ "${files:-0}" -ne 1 ]; then
