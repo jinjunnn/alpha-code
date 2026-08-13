@@ -40,6 +40,7 @@ CI_STEPS=(
   "test|bun test (contracts consumer fixtures)|MIRRORED"
   "test|bun test (ext)|MIRRORED"
   "test|bun test (ui-mac)|MIRRORED"
+  "test|bun test (app rolling pin, alpha 判据入门)|MIRRORED"
   "test|assert gate files (逐个点名,整包地板抓不到单文件消失)|MIRRORED"
   "seed-assets|Assert seed/vendored resources present (B7)|MIRRORED"
   "docs-gate|Relative-link validity in changed Markdown|MIRRORED"
@@ -95,7 +96,7 @@ else
   echo "    ✗ typecheck failed"; fail=1
 fi
 
-echo "▶ [4/9] contract lock + unit tests (contracts-consumer + ext + ui-mac)"
+echo "▶ [4/9] contract lock + unit tests (contracts-consumer + ext + ui-mac + app)"
 # REQ-062:ext 测试入门 —— 其中 prompt-rebrand drift 锁逐条断言转写子串仍在上游底座原文,
 # 上游 sync 改写底座即红(ADR-015 合并验证的机械化)。
 #
@@ -103,10 +104,17 @@ echo "▶ [4/9] contract lock + unit tests (contracts-consumer + ext + ui-mac)"
 # 同一个下界。裸 `bun test` 对「文件被清空 / 用例被条件注册成零条 / 指定文件不存在」都会
 # 打印 `Ran 0 tests` 并**退出 0**(`#647` 已实测)。CI 早在 #647 就修掉了这个假绿,
 # 而本地这道门原样留着 —— 于是「本地绿」在闸门被清空时也成立。
+# `#946`:packages/app(滚动 pin,ADR-034)不能裸进 bun-test-floor —— pin 849c2598 自带一条
+# 上游红(i18n parity),整包硬塞 = 恒红门(#754 形态);完全不跑 = 写在那个包里的 alpha
+# 判据「合并前跑不到」(#933:一处真红瞒过一整轮)。scripts/bun-test-app.sh 以 CI=1 钉
+# 上游自己的 CI 口径(既有红被上游 skipIf 治住、新红默认拒),并把 alpha-frontend.patch
+# 里的 alpha 判据文件逐个点名重跑、逐文件判精确条数(删文件/删用例/skipIf 包住都当场红,
+# 整包地板抓不到)。
 if bun run --cwd packages/alpha-contracts-consumer check:vendor \
   && bash scripts/bun-test-floor.sh 15 packages/alpha-contracts-consumer \
   && bash scripts/bun-test-floor.sh 100 packages/ext \
-  && bash scripts/bun-test-floor.sh 3000 packages/ui-mac src; then
+  && bash scripts/bun-test-floor.sh 3000 packages/ui-mac src \
+  && bash scripts/bun-test-app.sh; then
   echo "    ✓ tests"
 else
   echo "    ✗ tests failed"; fail=1
