@@ -32,6 +32,16 @@
 //   · **`core.hooksPath` 不与 worktree 残留共用一条判据**。它们此前挂在同一个 cleanup 上,一条
 //     路径不跑就同时丢两件事,其中一件是**共享**配置(下一个人 `git push` 会撞上 husky 那份恒红
 //     钩子)。B1 走「脚本中途失败」、B2 走「被信号打断」,两条各自单独断言它。
+//   · **父进程死了 ≠ 写手都死了**(`#945`,时序实测):bash 3.2 收到未 trap 的 TERM/HUP 时
+//     EXIT trap 立即跑、前台子进程被孤儿化 —— 父的还原先落盘且值正确,孤儿 bootstrap 带着
+//     「[3/6] 前置之后」的陈旧基线**晚 2 秒**覆写回 `.githooks`。所以:①信号用例断言前必须等
+//     fixture 的进程**全部死透**(quiesceFixture),否则迟到的覆写落在读之后 = 假绿;②新增两条
+//     把信号**确定性**打进 install 窗口(husky-sim prepare 拉宽窗口),一条 TERM 判收割+还原,
+//     一条 INT 判「Ctrl-C 真的停下来」(bash 3.2 默认把 pid 级 INT 整个丢弃);③修复有**两半**,
+//     隔着 assert 脚本打信号只考得到 assert 那半 —— 它的 reap_owned 会掩住 bootstrap 侧的
+//     还原(删掉 bootstrap 的 `trap boot_cleanup EXIT`,前面九条照样全绿,审计 MUT4 实测)。
+//     bootstrap 又是 runbook 点名的人手命令,所以最后一条**直接** spawn worktree-bootstrap.sh
+//     并把 TERM 打进 install 窗口,单独钉住它自己的收割+还原。
 //
 // 删掉本文件会失去什么:清扫可以被整段删除、可以只清一半、也可以反过来把并发 lane 的树吃掉,
 // 而没有任何东西变红(泄漏本身是不可见的 —— 下一个人只会看见 `git worktree list` 越来越长)。
@@ -86,8 +96,21 @@ function git(cwd: string, args: string[], home: string): string {
  * 起一个真的 git 仓,scripts/ 下放的是**生产文件的字节**(不是重写一份替身),
  * 外加一个可控的 typecheck —— 被测脚本自己认 `dirname $BASH_SOURCE` 找同伴(SELF_ROOT),
  * 所以三份必须一起进夹具仓。
+ *
+ * `install`(`#945`):给夹具仓一个模拟 husky 的根 `prepare` —— 真跑 `bun install` 时把
+ * **共享** core.hooksPath 写成 `corruptTo`,睡 `holdSeconds` 秒,醒来**再写一次** corruptTo。
+ * 三个作用:①把「bootstrap 子进程正在 install」这个窗口从毫秒级拉宽到秒级,信号可以
+ * **确定性**落进去(#945 的间歇红正是负载偶然把这个窗口拉宽时命中的);②sleep 之后的第二次
+ * 写 = 一个**确定性的晚到写手**:「只还原、不收割」的错误实现,还原之后孤儿醒来必然覆写
+ * ⇒ 当场红;真收割则 `&&` 链在 sleep 处被打断,第二次写结构上到不了 —— 这正是 #945
+ * 「最后写的人赢」的最小可判形态;③corruptTo 每条用例用**不同的**非 `.husky/_` 字面量 ——
+ * 「只认 husky 那个值才还原」这类写死字面量的错误实现会当场红。
  */
-function initFixture(opts: { hooksPath: string; typecheckScript: string }) {
+function initFixture(opts: {
+  hooksPath: string
+  typecheckScript: string
+  install?: { corruptTo: string; holdSeconds: number }
+}) {
   const root = mkdtempSync(join(tmpdir(), "alpha928-"))
   TEMP_ROOTS.push(root)
   const home = join(root, "home")
@@ -99,7 +122,13 @@ function initFixture(opts: { hooksPath: string; typecheckScript: string }) {
     const r = Bun.spawnSync(["cp", src, join(repo, "scripts", src.split("/").pop()!)])
     if (r.exitCode !== 0) throw new Error(`夹具仓拷不进生产脚本:${src}`)
   }
-  writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "fx", private: true, workspaces: ["packages/*"] }) + "\n")
+  const rootPkg: Record<string, unknown> = { name: "fx", private: true, workspaces: ["packages/*"] }
+  if (opts.install) {
+    rootPkg.scripts = {
+      prepare: `git config --local core.hooksPath ${opts.install.corruptTo} && sleep ${opts.install.holdSeconds} && git config --local core.hooksPath ${opts.install.corruptTo}`,
+    }
+  }
+  writeFileSync(join(repo, "package.json"), JSON.stringify(rootPkg) + "\n")
   writeFileSync(
     join(repo, "packages", "ui-mac", "package.json"),
     JSON.stringify({ name: "fx-ui-mac", scripts: { typecheck: opts.typecheckScript } }) + "\n",
@@ -125,6 +154,29 @@ function registeredWorktreeNames(repo: string, home: string): string[] {
 function hooksPathOf(repo: string, home: string): string {
   const r = run(repo, ["git", "config", "--local", "--get", "core.hooksPath"], home)
   return r.out.trim()
+}
+
+/**
+ * 等 fixture 相关的进程**全部死透**再断言(`#945`):判「core.hooksPath 还原了」必须在所有
+ * 可能晚到的写手消失之后读 —— 复现实测:旧实现里孤儿化的 bootstrap 子进程带着陈旧基线,
+ * 在父进程死后**再过 2 秒**才覆写共享配置;读得太早,红会变假绿。
+ * 匹配轴:①fixture 仓的绝对路径(bootstrap/嵌套探针的 argv 里带它);②husky-sim 的
+ * corruptTo 片段(prepare 的 sh 进程 argv 里带它)。两轴都空了才算静。
+ */
+async function quiesceFixture(repo: string, extraPattern?: string) {
+  const patterns = [repo, ...(extraPattern ? [extraPattern] : [])]
+  let alive = true
+  for (let i = 0; i < 300; i++) {
+    alive = patterns.some((p) => Bun.spawnSync(["pgrep", "-f", p]).exitCode === 0)
+    if (!alive) break
+    await Bun.sleep(50)
+  }
+  // 超时**必须表现为红**,不能静默继续读值(`#945` R1 审计 Minor)。轮询走完还有写手活着时,
+  // 后面那句「core.hooksPath 还原了」读到的是「还没被覆写」的正确值 ⇒ 绿,而生产里那次覆写
+  // 随后才发生、共享配置照坏 —— 那恰好退回本函数要封的假绿。本仓判据:**测不到就说本次测量
+  // 作废,而不是给一个数字**。
+  expect(alive).toBe(false)
+  await Bun.sleep(200)
 }
 
 /** 起一个**活着的**假探针进程:命令行里必须出现 `assert-worktree-bootstrap.sh`。 */
@@ -252,8 +304,125 @@ describe("生产接线:真跑 scripts/assert-worktree-bootstrap.sh(alpha-check �
 
     proc.kill("SIGTERM")
     await proc.exited
+    // `#945`:父进程死了 ≠ 写手都死了。等静默再读,否则孤儿的迟到覆写落在读之后 = 假绿。
+    await quiesceFixture(repo)
 
     expect(registeredWorktreeNames(repo, home).filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
     expect(hooksPathOf(repo, home)).toBe(".lane-42-hooks")
+  }, 30_000)
+
+  test("SIGTERM 落在 bootstrap 子进程仍在 install 的窗口里(#945 的间歇红,确定性化):孤儿写手先被收割,core.hooksPath 还原", async () => {
+    const { home, repo } = initFixture({
+      hooksPath: ".lane-77-hooks",
+      typecheckScript: "exit 3",
+      install: { corruptTo: ".husky-sim-77/_", holdSeconds: 3 },
+    })
+
+    const proc = Bun.spawn(["bash", "scripts/assert-worktree-bootstrap.sh"], {
+      cwd: repo,
+      env: { ...gitEnv(home), ALPHA_WT_PROBE_NESTED: "1" },
+      stdout: "ignore",
+      stderr: "ignore",
+    })
+
+    // 等到「install 已把共享值写脏」:此刻必然 bootstrap 子进程活着、它自己的 restore 还没跑。
+    // SIGTERM 落在这里,旧实现的孤儿覆写是**确定性**的(#945 时序实测:父的 EXIT trap 立即跑
+    // 并正确还原,孤儿 bootstrap 带着「[3/6] 前置之后」的陈旧基线晚 2s 覆写)——不再依赖负载。
+    let armed = false
+    for (let i = 0; i < 400; i++) {
+      if (hooksPathOf(repo, home) === ".husky-sim-77/_") {
+        armed = true
+        break
+      }
+      if (proc.exitCode !== null) break
+      await Bun.sleep(25)
+    }
+    expect(armed).toBe(true)
+
+    proc.kill("SIGTERM")
+    await proc.exited
+    await quiesceFixture(repo, "husky-sim-77")
+
+    expect(registeredWorktreeNames(repo, home).filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
+    expect(hooksPathOf(repo, home)).toBe(".lane-77-hooks")
+  }, 30_000)
+
+  test("Ctrl-C(SIGINT)落在同一窗口:门必须当场停下、不再跑后续步骤,且 core.hooksPath 还原", async () => {
+    const { home, repo } = initFixture({
+      hooksPath: ".lane-58-hooks",
+      typecheckScript: "exit 3",
+      install: { corruptTo: ".husky-sim-58/_", holdSeconds: 3 },
+    })
+
+    const proc = Bun.spawn(["bash", "scripts/assert-worktree-bootstrap.sh"], {
+      cwd: repo,
+      env: { ...gitEnv(home), ALPHA_WT_PROBE_NESTED: "1" },
+      stdout: "pipe",
+      stderr: "ignore",
+    })
+
+    let armed = false
+    for (let i = 0; i < 400; i++) {
+      if (hooksPathOf(repo, home) === ".husky-sim-58/_") {
+        armed = true
+        break
+      }
+      if (proc.exitCode !== null) break
+      await Bun.sleep(25)
+    }
+    expect(armed).toBe(true)
+
+    proc.kill("SIGINT")
+    const code = await proc.exited
+    const out = await new Response(proc.stdout).text()
+    await quiesceFixture(repo, "husky-sim-58")
+
+    // bash 3.2 对 pid 级 INT 的默认处置是**整个丢弃**(#945 实测:前台子进程正常退出后继续跑,
+    // 连 trap 都不进)—— 没有显式 INT trap 的实现会把 [4/6]、[5/6]… 当没事一样全部跑完。
+    // Ctrl-C 必须真的停下来:退出码走 130,后续步骤一个都不许再跑。
+    expect(code).toBe(130)
+    expect(out).not.toContain("[4/6]")
+    expect(registeredWorktreeNames(repo, home).filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
+    expect(hooksPathOf(repo, home)).toBe(".lane-58-hooks")
+  }, 30_000)
+
+  test("直接打断 worktree-bootstrap.sh 本身(runbook 的人手命令,TERM 落在 install 窗口):收割孤儿写手,共享 core.hooksPath 还原", async () => {
+    // 上面四条都隔着 assert-worktree-bootstrap.sh 驱动 bootstrap —— 那一层的 reap_owned 与它
+    // 自己的 cleanup 会把 bootstrap **这一侧**的还原完全掩住:单独删掉 bootstrap 的
+    // `trap boot_cleanup EXIT`,四条照样全绿(审计对照实测,MUT4)。而 bootstrap 是 runbook
+    // 点名的人手命令(docs/runbooks/ci.md「新建 worktree」),在 install 窗口里被 TERM/Ctrl-C
+    // 打断是真实可达路径 —— 打断后共享 core.hooksPath 停在 husky 那个值,就是 #754 的形态。
+    // 所以本条**不经过任何包装层**,直接 spawn 生产脚本,单独钉住 bootstrap 自己的那半修复。
+    // 夹具 prepare 在 sleep 之后还有第二次脏写:「只还原、不收割」的错误实现在这里也会红,
+    // 不只是「trap 被整个删掉」那一种。
+    const { home, repo } = initFixture({
+      hooksPath: ".lane-91-hooks",
+      typecheckScript: "exit 3",
+      install: { corruptTo: ".husky-sim-91/_", holdSeconds: 3 },
+    })
+
+    const proc = Bun.spawn(
+      ["bash", "scripts/worktree-bootstrap.sh", "wt-945-direct", "--detach", "--base", "HEAD"],
+      { cwd: repo, env: gitEnv(home), stdout: "ignore", stderr: "ignore" },
+    )
+
+    // 等到「install 已把共享值写脏」:此刻 install 进程组必然活着、bootstrap 的还原还没跑。
+    let armed = false
+    for (let i = 0; i < 400; i++) {
+      if (hooksPathOf(repo, home) === ".husky-sim-91/_") {
+        armed = true
+        break
+      }
+      if (proc.exitCode !== null) break
+      await Bun.sleep(25)
+    }
+    expect(armed).toBe(true)
+
+    proc.kill("SIGTERM")
+    await proc.exited
+    // 父进程死了 ≠ 写手都死了:等 husky-sim 的孤儿(若有)也死透再读,迟到覆写不许落在读之后。
+    await quiesceFixture(repo, "husky-sim-91")
+
+    expect(hooksPathOf(repo, home)).toBe(".lane-91-hooks")
   }, 30_000)
 })

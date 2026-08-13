@@ -31,8 +31,9 @@
 #     git config --local --get core.hooksPath       # → .husky/_      ← 共享配置被改了
 # 后果不是「少跑一道门」,是**换了一道门**:`.husky/pre-push` 是上游那份,在 ADR-020 冻结偏斜下
 # 恒红 ⇒ 下一个人 `git push` 被一个与他改动无关的红拦住 ⇒ `--no-verify` ⇒ alpha 的八道真闸门
-# 一起关掉(`#754` 那个形态)。所以本脚本在 install 前后存/还原它;还原是**无条件**的,
-# install 失败也还原。
+# 一起关掉(`#754` 那个形态)。所以本脚本在 install 前后存/还原它;还原是**无条件**的:
+# install 失败也还原,**被 TERM/INT/HUP 打断也还原**(EXIT trap),且还原之前先收割
+# install 进程组 —— 不收割的话孤儿化的 husky 会在还原之后才写,最后写的人赢(`#945`)。
 set -uo pipefail
 
 usage() {
@@ -136,14 +137,50 @@ restore_hooks_path() {
   echo "  · 已还原共享 .git/config 的 core.hooksPath:$now → ${HOOKS_BEFORE:-(unset)}(husky 的 prepare 会改它)"
 }
 
+# ── 被打断也必须还原,且还原之前先收割 install(`#945`,实测 bash 3.2.57)────────────────
+# · 本进程收到**未 trap 的 TERM/HUP** 时,EXIT trap **立即**执行(实测 ~9ms),正在跑的
+#   install 子进程被**孤儿化**继续活。原实现只在两条正常退出路径上还原 ⇒ 中途被打断时,
+#   husky 的 `prepare` 已把共享 core.hooksPath 写成 `.husky/_` 而没有任何人还原;就算加上
+#   EXIT trap,不收割孤儿的话,孤儿链(bun → husky)也可以在还原**之后**才写 —— 最后写的人赢。
+# · **pid 级 INT 会被 bash 3.2 整个丢弃**(前台子进程正常退出后继续跑,连 trap 都不进;
+#   `wait` 内建同样)。终端 Ctrl-C 旧拓扑下有效,是因为它打的是整个前台进程组;install 挪进
+#   独立进程组之后 Ctrl-C 只打到本进程 ⇒ 必须显式 trap INT + 用轮询代替裸 `wait`,否则变哑。
+# 所以:install 跑在自己的进程组里(set -m)并登记 pid;任何退出路径都先 TERM 整组、限时等死、
+# 兜底 KILL,**然后**才还原共享配置。顺序从此确定:husky 的写永远落在还原之前。
+INSTALL_PID=""
+install_group_alive() { [ -n "${INSTALL_PID:-}" ] && pgrep -g "$INSTALL_PID" >/dev/null 2>&1; }
+boot_cleanup() {
+  local i
+  if install_group_alive; then
+    kill -s TERM -- "-$INSTALL_PID" 2>/dev/null || kill -s TERM "$INSTALL_PID" 2>/dev/null || true
+    i=0; while [ "$i" -lt 100 ] && install_group_alive; do sleep 0.05; i=$((i+1)); done
+    if install_group_alive; then
+      kill -s KILL -- "-$INSTALL_PID" 2>/dev/null || true
+      i=0; while [ "$i" -lt 40 ] && install_group_alive; do sleep 0.05; i=$((i+1)); done
+    fi
+  fi
+  INSTALL_PID=""
+  restore_hooks_path
+}
+trap boot_cleanup EXIT
+trap 'echo "✗ 被 Ctrl-C 打断 —— 正在收割 install 进程组并还原共享 core.hooksPath" >&2; exit 130' INT
+
 echo "▶ bun install(worktree 本地依赖;CI 跑的是同一条命令)"
 # 刻意**不**在创建 worktree 之前预检 `bun` 在不在:那样失败就永远发生在「还没建东西」的时刻,
 # 下面这段回滚路径就永远不会被执行,而判据只要断言「失败时非零退出」就照样绿。
 # (本仓点名过的形态:断言粒度比缺陷粗一格。)
 INSTALL_RC=0
+set -m
+(cd "$TARGET" && bun install) &
+INSTALL_PID=$!
+set +m
+# 不用裸 `wait` 等它:pid 级 INT 在 bash 3.2 的 `wait` 内建里被整个丢弃(实测,见上)。
+# 轮询 + 事后取 rc(job 表在进程死后仍保留退出码);INT/TERM 最多迟 0.1s 就进 trap。
 # 注意别写成 `if (…); then … fi` 再取 `$?`:`if` 没有 else 分支时,条件为假**整条语句仍返回 0**,
 # 于是 rc 恒为 0、失败分支拿不到真实退出码。显式接住。
-(cd "$TARGET" && bun install) || INSTALL_RC=$?
+while kill -0 "$INSTALL_PID" 2>/dev/null; do sleep 0.1; done
+wait "$INSTALL_PID" || INSTALL_RC=$?
+INSTALL_PID=""
 
 if [ "$INSTALL_RC" -eq 0 ]; then
   restore_hooks_path

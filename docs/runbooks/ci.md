@@ -215,6 +215,11 @@ linked worktree 的 `git push` 会把 `GIT_DIR` 注入钩子,而它压过测试�
   `git push` 的人。`scripts/worktree-bootstrap.sh` 在 install 前后夹住并还原这个值,把 worktree 这半边
   的窗口关掉;第 `[8/9]` 步的 `[3/5]` 条断言它真的关着(先把值设成 `.githooks` 再跑,
   否则机器上本来就漂成 `.husky/_` 时「前后相等」会恒真)。
+  **被打断也关着(`#945` 实测)**:还原走 EXIT trap(TERM/INT/HUP 与失败路径都还原),且两层脚本在
+  还原**之前**都先收割自己仍在飞行的子进程组 —— bash 3.2 收到未 trap 的 TERM 时 EXIT trap 立即跑、
+  前台子进程被孤儿化,不收割的话孤儿(bootstrap 的 restore、husky 的 prepare)会在还原**之后**才写,
+  最后写的人赢;负载下 `#928` 那道闸的间歇红就是这个时序。pid 级 INT 会被 bash 3.2 整个丢弃,
+  所以两层脚本都显式 trap INT —— Ctrl-C 走「收割 → 还原 → exit 130」,不再把后续步骤跑完。
 
 ```bash
 # 逃生:
