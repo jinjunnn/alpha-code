@@ -108,7 +108,8 @@ echo "▶ [4/9] contract lock + unit tests (contracts-consumer + ext + ui-mac + 
 # 上游红(i18n parity),整包硬塞 = 恒红门(#754 形态);完全不跑 = 写在那个包里的 alpha
 # 判据「合并前跑不到」(#933:一处真红瞒过一整轮)。scripts/bun-test-app.sh 以 CI=1 钉
 # 上游自己的 CI 口径(既有红被上游 skipIf 治住、新红默认拒),并把 alpha-frontend.patch
-# 里的 alpha 判据文件逐个点名重跑(删一个文件当场红,整包地板抓不到)。
+# 里的 alpha 判据文件逐个点名重跑、逐文件判精确条数(删文件/删用例/skipIf 包住都当场红,
+# 整包地板抓不到)。
 if bun run --cwd packages/alpha-contracts-consumer check:vendor \
   && bash scripts/bun-test-floor.sh 15 packages/alpha-contracts-consumer \
   && bash scripts/bun-test-floor.sh 100 packages/ext \

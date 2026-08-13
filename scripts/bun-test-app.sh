@@ -22,17 +22,19 @@
 #       suite 被清空时全绿)。
 #   [b] alpha 判据文件逐个点名重跑:文件清单**运行时**从 frontend/alpha-patches/
 #       alpha-frontend.patch(ADR-034 唯一 SOT)解析,不手抄 —— 手抄的清单会漂;
-#       文件从补丁退场(= 还原成纯上游)则自然退出清单。判据 = `Ran … across M files`
-#       的 M 恰好等于清单数(删掉/改名一个 alpha 判据文件 ⇒ 过滤器少匹配一个 ⇒ 红;
-#       整包地板 600 对 626−13 这种量级抓不到)且 0 fail、pass ≥ 清单数。
+#       文件从补丁退场(= 还原成纯上游)则自然退出清单(登记表行随之删,反向核对钉住)。
+#       判据(#946 R1)= 每个文件**单独**重跑:恰好匹配 1 个文件(删掉/改名 ⇒ 红;
+#       整包地板 600 对 626−13 这种量级抓不到)且 pass **恰好等于**脚本内登记的精确条数
+#       (#844 同款语义)。R1 前的判据是 pass ≥ 文件数 —— 「每文件至少一条」,粒度比它要
+#       防的缺陷粗一格:skipIf(CI) 包住 12 条的文件后汇总行文件数不变、40 ≥ 4 照样绿。
 #       解析器自证:补丁里一条 `diff --git` 都解不出来 = 解析器退化或 SOT 搬家,
 #       打「测量作废」而不是静默跳过这半边(观测手段先证明能测出已知的坏)。
 #
 # 已知未覆盖(如实声明,不假装):
 #   · parity 那条红在本门永不执行(上游 skipIf 治它)⇒ 若有朝一日 alpha 去改 locale 文件,
-#     打穿 parity 本门看不见 —— 今日补丁 delta 零 i18n 文件,该风险不成立即不预建闸;
-#   · 在 alpha 测试外面包一层 skipIf(CI) 可以静默出门 —— 与任何包里 `.skip` 同类,
-#     [b] 的文件数判据不吃这一招(文件还在),靠 review 补丁 diff 看住。
+#     打穿 parity 本门看不见 —— 今日补丁 delta 零 i18n 文件,该风险不成立即不预建闸。
+#   (R1 前第二条「skipIf(CI) 可静默出门」已被 [b] 的逐文件精确条数关掉:skip 不计入
+#   pass,包住即红。)
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -96,23 +98,74 @@ if [ -z "$delta_tests" ]; then
   echo "✓ [b] 补丁 delta 里没有 packages/app 测试文件(解析器自检已过),点名半边本次为空。"
   exit 0
 fi
-expected_files="$(printf '%s\n' "$delta_tests" | grep -ac '' || true)"
-set +e
-# shellcheck disable=SC2086 — 逐行展开为多个路径参数正是本意(路径来自 git,无空白字符)。
-run_bun_test $delta_tests
-status=$?
-set -e
-summarize
-files="$(grep -aoE 'Ran [0-9]+ tests? across [0-9]+ files?' "$log" | tail -1 | sed -E 's/.*across ([0-9]+) files?.*/\1/')"
-pass_b="$(sed -n 's/^[[:space:]]*\([0-9][0-9]*\) pass$/\1/p' "$log" | tail -1)"
-[ -z "$pass_b" ] && pass_b=0
-if [ "${files:-0}" -ne "$expected_files" ]; then
-  echo "::error::alpha 判据文件点名:补丁 delta 枚举出 ${expected_files} 个测试文件,bun 实际只匹配到 ${files:-0} 个 —— 有 alpha 判据文件被删/改名(整包地板抓不到单文件消失)。清单:"
-  printf '   %s\n' $delta_tests
-  exit 1
-fi
-if [ "$status" -ne 0 ] || [ "$pass_b" -lt "$expected_files" ]; then
-  echo "::error::alpha 判据文件点名重跑失败(exit=${status},pass=${pass_b},文件 ${expected_files} 个)。"
-  exit 1
-fi
-echo "✓ [b] alpha 判据文件 ${expected_files} 个逐个点名,${pass_b} 条真的执行了"
+# `#946` R1(对抗审计 Major):旧判据 pass_b ≥ 文件数,即「每个文件至少一条」—— 粒度比它
+# 要防的缺陷粗一格:给 12 条的 permission-auto-respond.test.ts 包一层
+# `describe.skipIf(!!process.env.CI)`(绕过口正是本门自己钉的 CI=1)后,汇总行的文件数
+# 不变(skip 的文件仍计入 across M files)、40 ≥ 4 照样绿 —— #946 立票那句「判据可被
+# 无声移除」在门后依然成立。改成逐文件登记**精确条数**(#844 同款语义:少 = 用例被删/
+# 清空/skip;多 = 新增未登记,可被静默删掉 —— 两个方向都当场红)。
+#
+# 为什么条数不进 gate-files.tsv:那条路径经 bun-test-floor.sh,既不钉 CI=1 也不带
+# `--preload ./happydom.ts`,packages/app 的判据在那个口径下跑不起来;条数登记在本文件,
+# 与 CI=1 钉在同一处。改动 alpha 判据用例后把下表改成实测值,让评审读这一行 diff。
+# 表与补丁 delta **双向核对**:补丁里有而表里没有 = 红(新增判据文件必须登记);
+# 表里有而补丁里没有 = 红(文件退场必须删行)—— 哪个方向都不许静默漂移。
+REGISTERED_COUNTS="
+src/components/prompt-input/submit.test.ts 8
+src/context/permission-auto-respond.test.ts 12
+src/pages/layout/helpers.test.ts 22
+src/utils/session-route.test.ts 10
+"
+
+lookup_registered() {
+  printf '%s\n' "$REGISTERED_COUNTS" | awk -v f="$1" '$1 == f { print $2 }'
+}
+
+# 反向核对:登记了但已从补丁退场的行必须删掉,否则表漂成第二个假 SOT。
+while read -r reg_file reg_count; do
+  [ -n "$reg_file" ] || continue
+  if ! printf '%s\n' "$delta_tests" | grep -Fqx -- "$reg_file"; then
+    echo "::error::REGISTERED_COUNTS 里的 ${reg_file}(${reg_count} 条)已不在补丁 delta 里 —— 文件退场必须同步删登记行,不许留一条对着空气的判据。"
+    exit 1
+  fi
+done <<EOF
+$REGISTERED_COUNTS
+EOF
+
+checked=0
+total_pass=0
+# 逐行展开正是本意(路径来自 git,无空白字符)。
+for t in $delta_tests; do
+  expected="$(lookup_registered "$t")"
+  case "$expected" in
+    ''|*[!0-9]*)
+      echo "::error::补丁 delta 里的 ${t} 没在本脚本 REGISTERED_COUNTS 登记精确条数 —— 未登记的判据可以被静默删掉(#844 的类缺陷)。实测条数后加一行再来。"
+      exit 1 ;;
+  esac
+  set +e
+  run_bun_test "$t"
+  status=$?
+  set -e
+  files="$(grep -aoE 'Ran [0-9]+ tests? across [0-9]+ files?' "$log" | tail -1 | sed -E 's/.*across ([0-9]+) files?.*/\1/')"
+  pass_b="$(sed -n 's/^[[:space:]]*\([0-9][0-9]*\) pass$/\1/p' "$log" | tail -1)"
+  [ -z "$pass_b" ] && pass_b=0
+  if [ "$status" -ne 0 ]; then
+    summarize
+    echo "::error::alpha 判据文件 ${t} 点名重跑失败(exit=${status},上面 (fail) 逐条点名)。"
+    exit 1
+  fi
+  if [ "${files:-0}" -ne 1 ]; then
+    summarize
+    echo "::error::alpha 判据文件 ${t}:点名要求恰好匹配 1 个文件,实际 ${files:-0} 个 —— 文件被删/改名(整包地板抓不到单文件消失)。"
+    exit 1
+  fi
+  if [ "$pass_b" -ne "$expected" ]; then
+    summarize
+    echo "::error::alpha 判据文件 ${t}:实测 ${pass_b} 条 ≠ 登记 ${expected} 条。少 = 用例被删/清空/skip(本门钉 CI=1,skipIf(CI) 包住即掉 pass);多 = 新增未登记。刻意改动请更新 REGISTERED_COUNTS 并让评审读这行 diff。"
+    exit 1
+  fi
+  checked=$((checked + 1))
+  total_pass=$((total_pass + pass_b))
+  echo "   · ${t}:${pass_b} 条 = 登记精确条数"
+done
+echo "✓ [b] alpha 判据文件 ${checked} 个逐个点名,${total_pass} 条逐文件精确匹配登记条数"
