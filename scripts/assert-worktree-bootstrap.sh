@@ -101,12 +101,55 @@ POS="wtboot-${ID}-pos"
 FAIL="wtboot-${ID}-fail"
 HOOKS_ORIGINAL="$(git -C "$MAIN" config --local --get core.hooksPath 2>/dev/null || true)"
 
+# ── 会写共享配置的子进程:登记、收割(`#945`,实测 bash 3.2.57,时序数据在票/PR)─────────
+# · 本进程收到**未 trap 的 TERM/HUP** 时,EXIT trap **立即**执行(实测 ~9ms),正在跑的前台
+#   子进程被**孤儿化**继续活。cleanup 先还原共享 core.hooksPath 再退出 ⇒ 孤儿化的 bootstrap
+#   子进程(它的 HOOKS_BEFORE 是 [3/6] 前置之后的 `.githooks`)在还原**之后**才跑自己的
+#   restore ⇒ 把还原好的值覆写回 `.githooks`。最后写的人赢,谁最后写取决于调度 ⇒ 负载越高
+#   越容易命中(2026-08-12 两条 lane 的间歇红;时序实测:父还原先落盘且值正确,孤儿晚 2s 覆写)。
+# · **pid 级 INT 被 bash 3.2 整个丢弃**(前台子进程正常退出后继续跑;`wait` 内建同样,连 trap
+#   都不进)。子进程挪进独立进程组后,终端 Ctrl-C 只打到本进程 ⇒ 必须显式 trap INT,并用轮询
+#   代替裸 `wait`,否则 Ctrl-C 变哑。
+# 修法:每个**会写共享配置**的子进程(三次 bootstrap + 一次嵌套自跑)都跑在自己的进程组里并
+# 登记 pid;cleanup 的第一步是收割它(TERM 整组 → 限时等死 → 兜底 KILL),**然后**才还原共享
+# 配置、删探针树。顺序从此确定:子进程的 restore(若跑)永远落在父还原之前。
+OWNED_PID=""
+owned_group_alive() { [ -n "${OWNED_PID:-}" ] && pgrep -g "$OWNED_PID" >/dev/null 2>&1; }
+reap_owned() {
+  local i
+  if owned_group_alive; then
+    kill -s TERM -- "-$OWNED_PID" 2>/dev/null || kill -s TERM "$OWNED_PID" 2>/dev/null || true
+    # 上限 10s:bootstrap 自己的 EXIT trap 还要先收割它的 install 进程组(≤7s)再还原。
+    i=0; while [ "$i" -lt 200 ] && owned_group_alive; do sleep 0.05; i=$((i+1)); done
+    if owned_group_alive; then
+      kill -s KILL -- "-$OWNED_PID" 2>/dev/null || true
+      i=0; while [ "$i" -lt 40 ] && owned_group_alive; do sleep 0.05; i=$((i+1)); done
+    fi
+  fi
+  OWNED_PID=""
+}
+run_owned() {
+  local rc
+  set -m
+  "$@" &
+  OWNED_PID=$!
+  set +m
+  # 不用裸 `wait` 等:pid 级 INT 在 bash 3.2 的 `wait` 内建里连 trap 都进不去(实测)。
+  # 轮询 + 事后取 rc(job 表在进程死后仍保留退出码);INT 最多迟 0.1s 就进 trap。
+  while kill -0 "$OWNED_PID" 2>/dev/null; do sleep 0.1; done
+  wait "$OWNED_PID"; rc=$?
+  OWNED_PID=""
+  return "$rc"
+}
+
 cleanup() {
   local n now
-  # ★ 顺序有意义(`#928`):**先**还原共享配置,**再**删探针树。
+  # ★ 顺序有意义(`#928` + `#945`):**先收割飞行中的子写手**,**再**还原共享配置,**最后**删探针树。
   # 删一棵装好的探针树要动 2.8 GB,是 cleanup 里唯一的慢动作;共享 `.git/config` 只要一次
   # git 调用。反过来排(删树在前)的话,清理跑到一半再被杀,丢的就是**共享配置**那一半 ——
   # 而两件事里只有它会影响别人:下一个人 `git push` 撞上的会是 husky 那份恒红钩子。
+  # 收割排最前:不收割的话,还原会被孤儿子进程的 restore 覆写掉(`#945` 的间歇红)。
+  reap_owned
   now="$(git -C "$MAIN" config --local --get core.hooksPath 2>/dev/null || true)"
   if [ "$now" != "$HOOKS_ORIGINAL" ]; then
     if [ -n "$HOOKS_ORIGINAL" ]; then
@@ -122,6 +165,7 @@ cleanup() {
   git -C "$MAIN" worktree prune 2>/dev/null || true
 }
 trap cleanup EXIT
+trap 'echo "  ✗ 被 Ctrl-C 打断 —— 收割子进程并还原共享 core.hooksPath 后退出" >&2; exit 130' INT
 
 fail=0
 unverified=0
@@ -212,7 +256,7 @@ git -C "$MAIN" config --local core.hooksPath .githooks 2>/dev/null || true
 # ── [2/6] 正向:bootstrap 一步建出来的 worktree 必须能给出可信 typecheck ──────────────
 echo "  · [2/6] 正向:bootstrap 建出的 worktree 必须 typecheck 干净"
 pos_ready=0
-if ! bash "$BOOTSTRAP" "$POS" --detach --base "$BASE_SHA" >/dev/null 2>&1; then
+if ! run_owned bash "$BOOTSTRAP" "$POS" --detach --base "$BASE_SHA" >/dev/null 2>&1; then
   note_bootstrap_failure "bootstrap 自己非零退出 —— 建不出可用的 worktree"
 else
   pos_ready=1
@@ -240,7 +284,7 @@ fi
 echo "  · [4/6] 幂等:对已装好的 worktree 重跑 bootstrap"
 if [ "$pos_ready" -eq 0 ]; then
   echo "    ⚠️  跳过:[2/6] 没能装出可用的 worktree(见上),幂等这一条本次无从判起"
-elif ! bash "$BOOTSTRAP" "$POS" --detach --base "$BASE_SHA" >/dev/null 2>&1; then
+elif ! run_owned bash "$BOOTSTRAP" "$POS" --detach --base "$BASE_SHA" >/dev/null 2>&1; then
   note_bootstrap_failure "对已存在且已装好的 worktree 重跑 bootstrap 非零退出 —— 不幂等"
 else
   again_out="$(typecheck_in "$POS")"; again_rc=$?
@@ -284,7 +328,7 @@ elif ! PATH="$RESTRICTED" command -v git >/dev/null 2>&1; then
   echo "    ✗ 受限 PATH 里连 git 都没有 —— 夹具构造错了,**本条测量作废**" >&2
   fail=1
 else
-  PATH="$RESTRICTED" bash "$BOOTSTRAP" "$FAIL" --detach --base "$BASE_SHA" >/dev/null 2>&1
+  run_owned env "PATH=$RESTRICTED" bash "$BOOTSTRAP" "$FAIL" --detach --base "$BASE_SHA" >/dev/null 2>&1
   boot_rc=$?
   if [ "$boot_rc" -eq 0 ]; then
     red "bun 缺失时 bootstrap 仍然 exit 0 —— 它会静默留下一棵装不上依赖的树"
@@ -338,8 +382,14 @@ fi
 if [ "$NESTED" = "1" ]; then
   echo "    · 嵌套运行:跳过报告契约自检(断递归)"
 else
-  nested_out="$(ALPHA_WT_PROBE_NESTED=1 BUN_CONFIG_REGISTRY="$UNREACHABLE_REGISTRY" bash "$SELF" 2>&1)"
+  # 嵌套自跑也是一个会写共享配置的子进程(它自己的 cleanup 会还原到**它**看到的基线)——
+  # 一样要登记收割,否则父被打断时它就是下一个晚到的覆写者。输出改走临时文件(run_owned
+  # 走后台进程组,命令替换接不到)。
+  nested_tmp="$(mktemp "${TMPDIR:-/tmp}/alpha-wt-nested.XXXXXX")"
+  run_owned env ALPHA_WT_PROBE_NESTED=1 BUN_CONFIG_REGISTRY="$UNREACHABLE_REGISTRY" bash "$SELF" >"$nested_tmp" 2>&1
   nested_rc=$?
+  nested_out="$(cat "$nested_tmp" 2>/dev/null)"
+  rm -f "$nested_tmp"
   if [ "$nested_rc" -ne 2 ]; then
     red "注入不可达 registry 后整个探针的退出码是 $nested_rc,应为 2(0=谎报绿;1=网络一抖就拦 push)"
   elif ! grep -aq "未验证" <<<"$nested_out"; then
