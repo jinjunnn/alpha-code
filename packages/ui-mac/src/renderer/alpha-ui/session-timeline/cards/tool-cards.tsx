@@ -321,7 +321,12 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
             <Show when={body().truncated}>
               <TruncatedNote />
             </Show>
-            <div class="a-tc-dircount">{t("alpha.timeline.countItems", { count: body().entries.length })}</div>
+            {/* #583:footer 计数与头部(tool-card-model 的 list 分支)同一条规则 ——
+                截断集的条数是**帽住的条数**,不是目录总量,直出即低报。诚实缺席,
+                缺席提示由上方 TruncatedNote 承担;不截断才复述计数。 */}
+            <Show when={!body().truncated}>
+              <div class="a-tc-dircount">{t("alpha.timeline.countItems", { count: body().entries.length })}</div>
+            </Show>
           </div>
         )}
       </Show>

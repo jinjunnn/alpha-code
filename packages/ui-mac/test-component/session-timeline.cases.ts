@@ -1107,6 +1107,40 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(grid.querySelector(".a-tc-dircount")!.textContent).toBe("共 5 项")
   })
 
+  test("#583 list 卡:条目集被截断时 footer 计数与头部同规则缺席 —— 不在同一张卡上既说「共 N 项」又说「已截断」", async () => {
+    const host = mount()
+    // 63 条(> 项数帽)⇒ 展开体只拿得到帽住的一段;「共 N 项」若直出这一段的条数,
+    // 说的就不是这个目录的总量。头部早已按此规则诚实缺席,footer 必须同规则。
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_l2", "list", {
+          status: "completed",
+          input: { path: "/w/mono/packages" },
+          output: Array.from({ length: 63 }, (_, index) => `mod-${index}.ts`).join("\n"),
+          title: "list",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='list']")!
+    // 头部:计数诚实缺席,退回「完成」(#583 既有规则,这里当对照锚)。
+    expect(card.querySelector(".a-tc-status")!.textContent).toBe("完成")
+    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+
+    const grid = card.querySelector("[data-alpha-dir-grid]")!
+    // 先证明这不是空卡/未截断卡:首项在、末项(mod-62.ts)被帽掉 —— 判据不依赖帽的具体数值。
+    expect(grid.textContent).toContain("mod-0.ts")
+    expect(grid.textContent).not.toContain("mod-62.ts")
+    // 缺席提示在场,而计数 footer 整个不渲染:用户拿不到任何会低报总量的数字。
+    expect(card.querySelector(".a-tc-truncated")!.textContent).toBe("内容过长,已截断展示")
+    expect(grid.querySelector(".a-tc-dircount")).toBeNull()
+    expect(card.textContent).not.toContain("项")
+  })
+
   test("#584 grep 卡:文件名/行号分色 + 命中高亮;路径脱敏失败 ⇒ 整字段隐藏且出确定标记", async () => {
     const host = mount()
     runtime.setTimelineRows(

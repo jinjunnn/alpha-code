@@ -32,7 +32,8 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     // #583:list 目录网格 + 分类图标 + 「共 N 项」计数(47 → 48)。
     // #584:grep 展开体分色/高亮 + redactor 失败整字段隐藏(48 → 49)。
     // #586:websearch 富链接(字母徽/标题/域名 + 头部结果数)(49 → 50)。
-    expect(output).toContain("50 pass")
+    // R1 Minor-A #583:截断集下 footer 计数与头部同规则缺席(50 → 51)。
+    expect(output).toContain("51 pass")
     expect(output).toContain("0 fail")
   })
 })
