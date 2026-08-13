@@ -254,3 +254,22 @@ test("a non-401 failure keeps the lock (only a real success proves the endpoint 
   await harness.read()
   expect(harness.counts().refreshes).toBe(1)
 })
+
+// [#940] 非 401 拒绝经 platform-error-code 咽喉:服务给稳定分类码就呈现 code;
+// account 今天的错误体只有 `{error: 散文}` 无 code ⇒ 上面那条 http-503 即对照臂(行为零变化)。
+test("a non-401 rejection carrying a stable classification code surfaces the code, not http-503", async () => {
+  const authedGet = createAuthedGet({
+    accountBase: () => "https://account.invalid",
+    getAccessToken: () => "test-only",
+    refreshTokens: async () => renewed("refreshed"),
+    authIdentityEpoch: () => 1,
+    fetch: async () => new Response(JSON.stringify({ error: "billing not ready", code: "billing_unready" }), { status: 503 }),
+    warn: () => {},
+    isContractIncompatibleError: () => false,
+    reportContractFailure: () => {},
+  })
+
+  expect(await authedGet("/v1/account/summary", "account.read", (text) => JSON.parse(text))).toEqual({
+    error: "billing_unready",
+  })
+})

@@ -22,6 +22,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import type { FileHandle } from "node:fs/promises"
 import { ARTIFACT_MAX_BYTES, validateArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
+import { httpErrorCode } from "./platform-error-code"
 
 export type ArtifactDownloadErrorCode =
   | "invalid-artifact" // 提供的 artifact 引用没有可用的 id/contentRef
@@ -44,6 +45,9 @@ export type ArtifactDownloadErrorCode =
   | "retryable"
   | "staging-changed"
   | `http-${number}`
+  // [#940] 平台分类码(snake_case,如 upload_reserved_input)。形状由 platform-error-code 的
+  // 正则闸把守;TS 类型层表达不了正则,`string & {}` 保住上面具名成员的补全与 narrowing。
+  | (string & {})
 
 export type ArtifactDownloadProgress = { bytes: number; total?: number; percent?: number }
 
@@ -446,7 +450,9 @@ async function streamStage(
   if (res.status === 401) return discardAnd(res, { ok: false, error: "unauthorized" })
   if (res.status === 403) return discardAnd(res, { ok: false, error: "forbidden" })
   if (res.status === 413) return discardAnd(res, { ok: false, error: "over-limit", detail: "platform rejected: artifact exceeds max size" })
-  if (!res.ok) return discardAnd(res, { ok: false, error: `http-${res.status}` })
+  // [#940] 其余拒绝经唯一咽喉(分类码优先,无码 http-<status>)。httpErrorCode 读 body text
+  // 即已消费响应体,无需再 discard(discardBody 对已消费流的 cancel 抛错本就被吞,双保险)。
+  if (!res.ok) return discardAnd(res, { ok: false, error: await httpErrorCode(res) })
 
   // digest 三源归一(descriptor.sha256 / ETag / Digest):互相矛盾 → 读 body 前即拒。
   const hdr = expectedShaFromHeaders(res.headers)

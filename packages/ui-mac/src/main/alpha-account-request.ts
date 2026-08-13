@@ -1,6 +1,10 @@
 import type { RoutePurpose } from "@alpha-code/contracts-consumer"
 import type { AccountResult } from "../preload/types"
 import type { RenewalResult } from "./alpha-auth"
+// [#940] 服务拒绝 → 错误字符串走唯一咽喉。account 服务今天的错误体只有 `{error: 散文}` 无
+// `code`(实读 alpha-web app/api)⇒ 行为零变化(仍 http-<status>);哪天它加了稳定分类码,
+// 这里自动呈现,不再各写一份压平逻辑。纯函数,不进 deps 注入面。
+import { httpErrorCode } from "./platform-error-code"
 
 export function createAuthedGet(deps: {
   accountBase: () => string
@@ -50,7 +54,7 @@ export function createAuthedGet(deps: {
         if (retried) refreshLockedAtEpoch.set(purpose, epoch)
         return { error: "unauthorized" }
       }
-      if (!res.ok) return { error: `http-${res.status}` }
+      if (!res.ok) return { error: await httpErrorCode(res) }
       // R1 Major2:「非 401 成功」必须包含 decode 成功 —— 否则 malformed 200 也解锁,
       // 服务在 malformed 200 与 401 之间抖动时仍能周期性驱动 refresh+换血。
       const decoded = decode(await res.text())

@@ -7,7 +7,9 @@
 // MVP 边界(与 B 侧 PA-28 对齐,诚实声明):
 //  · 云端执行走 **research 管线**(任务描述 = 调研问题;bounded-agent 档随 B service-token 演进);
 //  · schedule 只认 5 字段 cron:interval 每 N 分钟(N<60)转 `*/N * * * *`,once 不支持云档;
-//  · B 端预算硬帽(15 iter/150k tok/300s)、每租户 ≤10 条、最小间隔 5 分钟 —— 超限 B 拒绝,错误原样呈现。
+//  · B 端预算硬帽(15 iter/150k tok/300s)、每租户 ≤10 条、最小间隔 5 分钟 —— 超限 B 拒绝,
+//    错误经 platform-error-code 咽喉呈现([#940]:B 给稳定分类码则呈现 code,无码保持
+//    `http-<status>`;B 的 `error` 散文可能携带路径/租户且随时会变,不进 UI)。
 import { finalizeArtifactWithQuota, registerDownloadedArtifact } from "./artifact-service"
 import type { AutomationTask } from "../shared/automation-types"
 import { scheduleToCron } from "../shared/automation-schedule"
@@ -23,6 +25,7 @@ import { cloudScheduleEnvelopeFor, cloudScheduleRegistrationFor } from "./cloud-
 // fetch 形状(同 endpoints/token 源)。
 import { resolveEndpoints } from "./alpha-endpoints"
 import { getAccessToken } from "./alpha-auth"
+import { httpErrorCode } from "./platform-error-code"
 
 type CloudResult<T> = T | { error: string }
 const isErr = (r: unknown): r is { error: string } => !!r && typeof r === "object" && "error" in (r as object)
@@ -43,9 +46,11 @@ async function authed<T>(path: string, init?: { method?: string; body?: unknown 
       signal: AbortSignal.timeout(15000),
     })
     if (res.status === 401) return { error: "unauthorized" }
-    const json = (await res.json().catch(() => null)) as T | { error?: string } | null
-    if (!res.ok) return { error: (json as { error?: string })?.error ?? `http-${res.status}` }
-    return json as T
+    // [#940] 与 alpha-cloud-jobs 同一咽喉:分类码优先(如 429 的 `rate_limited`),无码保持
+    // `http-<status>`。schedule 404 无码(实读 ap gateway routes/cloud-schedules.ts)⇒ 仍是
+    // `http-404`,deleteCloudSchedule 的已删容忍不受影响。
+    if (!res.ok) return { error: await httpErrorCode(res) }
+    return (await res.json().catch(() => null)) as T
   } catch (error) {
     getLogger().warn("alpha-cloud-schedules: fetch failed", error)
     return { error: "network" }
