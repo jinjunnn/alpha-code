@@ -271,8 +271,30 @@ note_bootstrap_failure() {
     unverified=1
     echo "    ⚠️  未验证:registry 不可达($url)—— bun install 这次装不上,本步什么都没证明。"
     echo "        这**不是绿**:worktree bootstrap 能力本次未被验证;网络恢复后重跑。"
-  else
+  elif ! resolve_registry >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+    # fail-closed 的 `real`(registry 解析不出 / 没装 curl):这不是网络状态,是「判别依据的
+    # 前提不成立」—— 没有豁免可谈,照旧拦住。**不许**把它送进下面的可达性共识:那两种前提下
+    # `registry_reachability_consensus` 结构上恒返回 `unreachable`(它与判别依据同样解析不出 /
+    # 同样没 curl),一律降未验证 = 这种机器上这道门永远 exit 2 永不失守,文件头点名的
+    # 「豁免变万能挡箭牌」原样复活。
     red "$1"
+  else
+    # `#941` 正方向(与 [6/6](a) 的反方向对称):verdict='real' 也可能是「install 被抖死 +
+    # 单发探测恰好落在成功那一侧」—— bun install 要拉几千个包,网络暴露面比一发 8s HEAD 大
+    # 得多,半通不通时两者常落矛盾的两侧(2026-08-13 实测:call#1 成、其后 17 发全败)。
+    # 硬红之前对可达性取一次共识:一致可达 ⇒ 网络是好的,失败是真的,照旧红(不放松真失守);
+    # 否则(共识不稳,或共识不可达 = 与刚成功的那一发正面矛盾)⇒ 这一刻不存在可信的地面
+    # 真相 —— 本次测量作废,落未验证档,不硬红。
+    case "$(registry_reachability_consensus)" in
+      reachable)
+        red "$1"
+        ;;
+      *)
+        unverified=1
+        echo "    ⚠️  未验证:bootstrap 非零退出,判别依据说 real,但可达性共识与那一发探测矛盾"
+        echo "        (网络半通不通)—— 本次测量作废,本步什么都没证明;网络恢复后重跑。"
+        ;;
+    esac
   fi
 }
 

@@ -112,6 +112,11 @@ function initFixture(opts: {
   install?: { corruptTo: string; holdSeconds: number }
   /** 额外提交进夹具仓根目录的文件(`#941` 的可控 typecheck 要以文件形态进探针 worktree)。 */
   files?: Record<string, string>
+  /**
+   * 额外的根 lifecycle 脚本(`#941` [2/6] 失败路径:`preinstall: "exit 47"` 让探针 worktree 里的
+   * `bun install` 确定性非零 —— 从门的视角它与「install 被网络打死」**同形**,门只看得见非零退出)。
+   */
+  rootScripts?: Record<string, string>
 }) {
   const root = mkdtempSync(join(tmpdir(), "alpha928-"))
   TEMP_ROOTS.push(root)
@@ -132,6 +137,9 @@ function initFixture(opts: {
     rootPkg.scripts = {
       prepare: `git config --local core.hooksPath ${opts.install.corruptTo} && sleep ${opts.install.holdSeconds} && git config --local core.hooksPath ${opts.install.corruptTo}`,
     }
+  }
+  if (opts.rootScripts) {
+    rootPkg.scripts = { ...(rootPkg.scripts as Record<string, string> | undefined), ...opts.rootScripts }
   }
   writeFileSync(join(repo, "package.json"), JSON.stringify(rootPkg) + "\n")
   writeFileSync(
@@ -475,11 +483,12 @@ describe("可达性判别依据(#941):半通不通降级,恒 'network' 硬红", 
     "",
   ].join("\n")
 
-  function initFlakyFixture(hooksPath: string) {
+  function initFlakyFixture(hooksPath: string, rootScripts?: Record<string, string>) {
     const fx = initFixture({
       hooksPath,
       typecheckScript: "bash ../../fake-typecheck.sh",
       files: { "fake-typecheck.sh": FAKE_TYPECHECK },
+      rootScripts,
     })
     const stubDir = join(fx.root, "stub-bin")
     mkdirSync(stubDir, { recursive: true })
@@ -539,5 +548,45 @@ describe("可达性判别依据(#941):半通不通降级,恒 'network' 硬红", 
     // 独立探测前后两轮全可达、复测不改口 —— 只能是判别依据退化,这道门必须失守给人看。
     expect(r.err).toContain("判别依据退化")
     expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941c-hooks")
+  }, 60_000)
+
+  // ── `#941` R1 审计的正方向:[2/6]/[4/6] 的失败路径(note_bootstrap_failure)────────────
+  // 已修的 [6/6](a)/[5/6] 管「判别依据说 network 而网络其实可达」;这三条管反过来那侧:
+  // **install 被网络打死,而判别依据的单发 curl 恰好落在成功那一侧** ⇒ verdict='real' ⇒
+  // 旧实现直接硬红 exit 1 —— 健康仓库被「bootstrap 自己非零退出」拦住 push(#754 形态)。
+  // bun install 要拉几千个包,网络暴露面比一发 8s HEAD 大得多,这条的命中概率不低于 [6/6](a)。
+  test("正方向:[2/6] install 死了而单发探测恰好成功、共识抖(ok + ok ok fail)⇒ 未验证档 exit 2,不得硬红", () => {
+    const fx = initFlakyFixture(".lane-941d-hooks", { preinstall: "exit 47" })
+    // 序列:第 1 发(判别依据)成功 ⇒ 'real';随后的可达性共识 ok ok fail = 2/3 ⇒ unstable。
+    // 旧实现在第 1 发之后就 red「bootstrap 自己非零退出」并 exit 1,根本不看共识。
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.flap-941d.invalid", "ok ok ok fail", "ok"))
+    expect(r.code).toBe(2)
+    expect(r.out).toContain("可达性共识与那一发探测矛盾")
+    expect(r.err).not.toContain("能力判据失守")
+    expect(registeredWorktreeNames(fx.repo, fx.home).filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941d-hooks")
+  }, 60_000)
+
+  test("正方向的反面:install 真失败且共识一致可达(全 ok)⇒ [2/6] 仍必须硬红 exit 1", () => {
+    const fx = initFlakyFixture(".lane-941e-hooks", { preinstall: "exit 47" })
+    // 杀「verdict='real' 一律降未验证」的错误实现:网络被前后 4 发独立探测证实是好的,
+    // 失败就是真的 —— 这道门必须失守给人看,不许把豁免拓宽成万能挡箭牌。
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.solid-941e.invalid", "", "ok"))
+    expect(r.code).toBe(1)
+    expect(r.err).toContain("bootstrap 自己非零退出")
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941e-hooks")
+  }, 60_000)
+
+  test("fail-closed 的 real(HOME/.npmrc 声明未收编 registry)不进共识:探测全败也必须硬红 exit 1", () => {
+    const fx = initFlakyFixture(".lane-941f-hooks", { preinstall: "exit 47" })
+    // 这半是对审计建议的实测偏离:声明了未收编 registry 时,`registry_reachability_consensus`
+    // 与判别依据**同样**解析不出 ⇒ 结构上恒 'unreachable' —— 把它也降未验证,等于这种机器上
+    // 这道门永远 exit 2 永不失守(文件头点名的「豁免变万能挡箭牌」)。判据:红必须来自 [2/6]
+    // 本身(「bootstrap 自己非零退出」),而不是只靠 [6/6](b) 陪跑出来的红撑住退出码。
+    writeFileSync(join(fx.home, ".npmrc"), "registry=http://registry.failclosed-941f.invalid\n")
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.failclosed-941f.invalid", "", "fail"))
+    expect(r.code).toBe(1)
+    expect(r.err).toContain("bootstrap 自己非零退出")
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941f-hooks")
   }, 60_000)
 })
