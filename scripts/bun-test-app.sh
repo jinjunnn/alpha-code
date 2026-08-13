@@ -75,7 +75,13 @@ fi
 pass="$(sed -n 's/^[[:space:]]*\([0-9][0-9]*\) pass$/\1/p' "$log" | tail -1)"
 [ -z "$pass" ] && pass=0
 if [ "$status" -ne 0 ]; then
-  echo "::error::${WORKDIR} 整包测试红(上面 (fail) 逐条点名)。CI=1 口径下上游既有红不在门内 —— 这是**新**红:要么本分支打穿了它(#933 的形态),要么 pin bump 带来了新的上游红(在 bump PR 里处置,不许静默放行)。"
+  echo "::error::${WORKDIR} 整包测试红(上面 (fail) 逐条点名)。CI=1 口径下上游既有红不在门内 —— 这是**新**红。三种成因,处置各不相同:"
+  echo "::error::  ① 本分支打穿了它(#933 的形态:给 packages/app 引入新依赖,mock 图没跟上,同包别的测试一起挂)⇒ 修你的改动。"
+  echo "::error::  ② pin bump 带来了新的上游红 ⇒ 在 bump PR 里处置,不许静默放行。"
+  echo "::error::  ③ **干净分支上也红** ⇒ 引擎漂移:sync-upstream 每天 06:00 UTC 把上游 dev 合进 alpha 并 \`push --no-verify\`(拦不住,只能事后报红),"
+  echo "::error::     而 packages/app 被钉在 pin(frontend/frontend-pin.lock)上、它依赖的 core/sdk/session-ui 却天天跟着上游走。"
+  echo "::error::     **这种红是真阳性**(线上就是 pin 前端 + HEAD 引擎),所以处置是**升 pin 或开票 park**,"
+  echo "::error::     **不是 \`--no-verify\`** —— 那会把九道门一起关掉(#754)。"
   exit 1
 fi
 if [ "$pass" -lt "$FLOOR" ]; then
@@ -100,6 +106,35 @@ if [ -z "$delta_tests" ]; then
   echo "✓ [b] 补丁 delta 里没有 packages/app 测试文件(解析器自检已过),点名半边本次为空。"
   exit 0
 fi
+# `#946` R1(对抗审计 Minor):清单的唯一来源是补丁,而**「补丁与树同步」在本仓没有任何自动判据**
+# —— round-trip 只写在 frontend/README.md 的月更 runbook 里,不在 alpha-check、也不在 CI。
+# 于是有一条 fail-open 的路:删掉一个 alpha 判据文件,再按 runbook 重生补丁(那本来就是改
+# packages/app 之后的规定动作)⇒ 清单从 4 缩到 3、实际文件也是 3 ⇒ 两边相等,全绿,
+# 证据只剩一个 43 文件的巨型补丁 diff 靠人眼看。反方向(改了树忘了重生)是 fail-closed 的,可接受。
+# 补一条**两轴交叉**:补丁枚举出的清单,必须与「树 vs pin」直接算出来的清单逐字相同。
+# 两轴今天实测一致(各 4 个文件)。pin 对象取不到时打「未比对」而不是硬红 —— 那是环境缺失,
+# 不是漂移,硬红会制造与改动无关的红(#941 刚治过这个形态)。
+pin="$(sed -n 's/^pin=\([0-9a-f]\{7,40\}\).*$/\1/p' frontend/frontend-pin.lock | head -1 || true)"
+if [ -z "$pin" ]; then
+  echo "::error::frontend/frontend-pin.lock 里读不出 pin —— 两轴交叉的第二轴没了,本次测量作废。"
+  exit 1
+fi
+if ! git cat-file -e "${pin}^{commit}" 2>/dev/null; then
+  echo "⚠️  未比对:pin ${pin} 的对象本地取不到(浅克隆/未 fetch)—— 补丁清单这一轴**本次没有交叉验证**。"
+else
+  tree_tests="$(git diff --name-only "$pin" -- packages/app \
+    | grep -aE '^packages/app/.*\.test\.(ts|tsx)$' | sed 's|^packages/app/||' | sort -u || true)"
+  patch_tests_sorted="$(printf '%s\n' "$delta_tests" | sort -u)"
+  if [ "$tree_tests" != "$patch_tests_sorted" ]; then
+    echo "::error::两轴不一致 —— 补丁枚举出的 alpha 判据文件与「树 vs pin ${pin}」算出来的不同,本次测量作废。"
+    echo "::error::  补丁轴:$(printf '%s' "$patch_tests_sorted" | tr '\n' ' ')"
+    echo "::error::  树 轴:$(printf '%s' "$tree_tests" | tr '\n' ' ')"
+    echo "::error::  多半是补丁没跟树重生(见 frontend/README.md 的 round-trip),或有人绕过补丁序列直接改了 packages/app。"
+    exit 1
+  fi
+  echo "✓ [b] 两轴交叉:补丁清单 == 树 vs pin ${pin}(各 $(printf '%s\n' "$tree_tests" | grep -ac . || true) 个测试文件)"
+fi
+
 # `#946` R1(对抗审计 Major):旧判据 pass_b ≥ 文件数,即「每个文件至少一条」—— 粒度比它
 # 要防的缺陷粗一格:给 12 条的 permission-auto-respond.test.ts 包一层
 # `describe.skipIf(!!process.env.CI)`(绕过口正是本门自己钉的 CI=1)后,汇总行的文件数
