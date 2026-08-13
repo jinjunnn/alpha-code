@@ -42,8 +42,20 @@ function uploadError(code: Extract<CloudUploadResult, { status: "failed" }>["err
   if (code === "upload-consent-issuance-failed" || code === "upload-consent-invalid") {
     return t("alpha.cloud.consent.errToken")
   }
-  if (code === "upload-dispatch-failed") return t("alpha.cloud.consent.errDispatch")
-  return t("alpha.cloud.consent.errScope")
+  // 本地选择/准入面的其余码 = 范围问题(此前是兜底分支;[#940] 起兜底改走 dispatchError,
+  // 这里必须显式点名,否则平台分类码会被误贴成「范围」文案)。
+  if (
+    code === "upload-selection-invalid" ||
+    code === "upload-path-invalid" ||
+    code === "upload-file-unreadable" ||
+    code === "upload-main-gate-required"
+  ) {
+    return t("alpha.cloud.consent.errScope")
+  }
+  // [#940] 派发腿不再坍缩成 "upload-dispatch-failed":到这里的是平台分类码
+  // (upload_reserved_input …)或 unauthorized/network/http-<status>,与 dispatch 面同一
+  // 呈现纪律 —— 认识的给人话,不认识的原样透出,不假装认识。
+  return dispatchError(code)
 }
 
 export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolean }) {

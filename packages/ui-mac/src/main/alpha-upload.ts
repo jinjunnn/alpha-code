@@ -49,7 +49,10 @@ export function createMainUploadService(deps: {
         const body = createExplicitUploadRequest(snapshot, { autonomy: "pipeline", kind: "code-review", input: {} })
         if (!snapshot.manifest.consent_required) {
           const job = await deps.dispatch({ accessToken: identity.accessToken, body })
-          if ("error" in job) return fail(deps.log, "upload-dispatch-failed")
+          // [#940] 派发腿的分类错误**原样上抛**(unauthorized / network / 平台分类码如
+          // upload_reserved_input / http-<status> 回退)。旧的 "upload-dispatch-failed" 把
+          // 分类整个坍缩成一句「派发失败」—— 平台那句「这个输入是保留的」根本到不了用户。
+          if ("error" in job) return fail(deps.log, job.error)
           return { status: "sent", privacy: "clear", job, directory: snapshot.projectDirectory }
         }
 
@@ -88,7 +91,8 @@ export function createMainUploadService(deps: {
           return fail(deps.log, "upload-consent-invalid")
         }
         const job = await deps.dispatch({ accessToken: identity.accessToken, body: upload.body, uploadConsent })
-        if ("error" in job) return fail(deps.log, "upload-dispatch-failed")
+        // [#940] 同上:同意面的分类拒绝(upload_consent_legacy / upload_consent_replayed …)原样上抛。
+        if ("error" in job) return fail(deps.log, job.error)
         return { status: "sent", privacy: "confirmed", job, directory: upload.snapshot.projectDirectory }
       } catch (error) {
         return fail(
@@ -139,7 +143,9 @@ export function assertSafeUploadResult<T>(result: T): T {
   return result
 }
 
-function fail(log: (message: string) => void, code: UploadErrorCode): CloudUploadResult {
+// [#940] code 除本地准入码外还可能是派发腿透传的平台分类码 / http-<status> 回退。
+// 两者都是稳定分类面(咽喉 platform-http-error 已按文法过滤),日志与 renderer 都可安全承载。
+function fail(log: (message: string) => void, code: UploadErrorCode | (string & {})): CloudUploadResult {
   log(`[alpha-upload] failed code=${code}`)
   return { status: "failed", error: code }
 }

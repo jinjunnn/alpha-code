@@ -22,6 +22,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import type { FileHandle } from "node:fs/promises"
 import { ARTIFACT_MAX_BYTES, validateArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
+import { httpErrorCode } from "./platform-http-error"
 
 export type ArtifactDownloadErrorCode =
   | "invalid-artifact" // 提供的 artifact 引用没有可用的 id/contentRef
@@ -43,7 +44,10 @@ export type ArtifactDownloadErrorCode =
   | "disk"
   | "retryable"
   | "staging-changed"
-  | `http-${number}`
+  // [#940] 平台分类码或 `http-<status>` 回退,由 platform-http-error 咽喉产出(content 路由的
+  // 429 带 rate_limited;其余多为无 code 的散文体,回退保持 http-<status>)。诚实声明:这一项
+  // 让本联合退化为 string —— 类型层本来就不是安全边界,错误面的真实闸门在产出侧的咽喉上。
+  | (string & {})
 
 export type ArtifactDownloadProgress = { bytes: number; total?: number; percent?: number }
 
@@ -446,7 +450,9 @@ async function streamStage(
   if (res.status === 401) return discardAnd(res, { ok: false, error: "unauthorized" })
   if (res.status === 403) return discardAnd(res, { ok: false, error: "forbidden" })
   if (res.status === 413) return discardAnd(res, { ok: false, error: "over-limit", detail: "platform rejected: artifact exceeds max size" })
-  if (!res.ok) return discardAnd(res, { ok: false, error: `http-${res.status}` })
+  // [#940] 经分类码咽喉(httpErrorCode 消费 body,即错误响应的 discard;成功流不走这里)。
+  // 输出只有分类码文法或 http-<status>,不含散文 —— token 卫生(REQ-092 AC#5)不受影响。
+  if (!res.ok) return { ok: false, error: await httpErrorCode(res) }
 
   // digest 三源归一(descriptor.sha256 / ETag / Digest):互相矛盾 → 读 body 前即拒。
   const hdr = expectedShaFromHeaders(res.headers)

@@ -430,8 +430,12 @@ export type CloudUploadResult =
         | "upload-not-text"
         | "upload-consent-issuance-failed"
         | "upload-consent-invalid"
-        | "upload-dispatch-failed"
         | "upload-main-gate-required"
+        // [#940] 派发腿不再把错误坍缩成 "upload-dispatch-failed":平台分类码
+        // (upload_reserved_input / upload_consent_replayed / billing_unready …)、
+        // unauthorized / network / http-<status> 回退,经 main 的 platform-http-error 咽喉
+        // 原样到达 renderer。类型层如实退化为 string(它本来就不是安全边界)。
+        | (string & {})
     }
 /** B gateway /v1/models 的一条 live 模型(真相源 allowlist)。 */
 /** #681 / ADR-039:`pricing` 是**必填**的 —— ModelCatalogV2 每一行都携带双倍数,一行没有 pair 的

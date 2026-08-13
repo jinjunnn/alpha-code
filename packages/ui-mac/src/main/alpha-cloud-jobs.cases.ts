@@ -24,8 +24,9 @@ const purposeOf = (bearer: string): string => bearer.replace(/^Bearer tok\./, ""
 const requested: RoutePurpose[] = []
 /** 每次出网请求的 (path, bearer, body)。body 用于断言重试的每一发带的是**同一个**幂等键。 */
 const wire: Array<{ path: string; bearer: string; body?: string }> = []
-/** #400 注入的瞬态失败队列:每元素消费一次 —— "network" 抛(超时/断连形态),数字回该 HTTP 状态。 */
-const transientFailures: Array<"network" | number> = []
+/** #400 注入的瞬态失败队列:每元素消费一次 —— "network" 抛(超时/断连形态),数字回该 HTTP 状态,
+ *  对象回定制 body(#940:平台分类拒绝的真实信封形状)。 */
+const transientFailures: Array<"network" | number | { status: number; body: string }> = []
 /** #400 cancel 端点响应体(测试可换,验证 decode 闸真的在跑)。默认 = platform#255 契约形状。 */
 const CANCEL_OK = { schema_version: 1, job_id: JOB, status: "cancelling", accepted: true }
 let cancelBody = JSON.stringify(CANCEL_OK)
@@ -112,6 +113,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   const injected = transientFailures.shift()
   if (injected === "network") throw new TypeError("fetch failed (injected transient)")
   if (typeof injected === "number") return new Response(JSON.stringify({ error: "injected" }), { status: injected })
+  if (typeof injected === "object" && injected !== null) return new Response(injected.body, { status: injected.status })
   const required = REQUIRED_ACTION.find(([re]) => re.test(path))?.[1]
   if (!required) return new Response(JSON.stringify({ error: "not found" }), { status: 404 })
   if (!bearer.startsWith("Bearer ")) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 })
@@ -238,4 +240,57 @@ test("a NEW intent mints a NEW key: two independent dispatches never share ident
   const keys = dispatchKeys()
   expect(keys.length).toBe(2)
   expect(keys[0]).not.toBe(keys[1])
+})
+
+// ---- #940(判据①②):显式上传派发不再把平台分类码抹平成 http-<status> ----
+// 平台拒绝信封 = { error: <散文>, code: <稳定分类码> }(ap lib/cloud-core.ts)。判据打在
+// dispatchExplicitCloudUpload 的返回值上 —— 它经 alpha-upload 原样上抛、过 IPC 后就是
+// renderer 错误行里那个字符串。各用例的 code/status 字面量互不相同(可硬编码的期望值杀不掉写死)。
+
+const UPLOAD_BODY = { autonomy: "pipeline", kind: "code-review", input: {}, upload: { files: [] } } as never
+
+test("上传被平台分类拒(400 upload_reserved_input)⇒ error 是那个 code,不是 http-400", async () => {
+  wire.length = 0
+  transientFailures.push({ status: 400, body: JSON.stringify({ error: "upload rejected", code: "upload_reserved_input" }) })
+
+  const result = await jobs.dispatchExplicitCloudUpload({ accessToken: "tok.cloud.dispatch", body: UPLOAD_BODY })
+
+  expect(result).toEqual({ error: "upload_reserved_input" })
+  expect(wire.length).toBe(1) // 400 是回答不是瞬态,恰好一次尝试
+})
+
+test("同意面的分类拒绝(403 upload_purpose_rejected)同样原样到达调用方", async () => {
+  wire.length = 0
+  transientFailures.push({ status: 403, body: JSON.stringify({ error: "upload rejected", code: "upload_purpose_rejected" }) })
+
+  expect(
+    await jobs.dispatchExplicitCloudUpload({ accessToken: "tok.cloud.dispatch", body: UPLOAD_BODY, uploadConsent: "consent.jwt" }),
+  ).toEqual({ error: "upload_purpose_rejected" })
+})
+
+test("fail-closed 那一半:400 无 code ⇒ 保持 http-400,不拿散文冒充分类码", async () => {
+  wire.length = 0
+  transientFailures.push({ status: 400, body: JSON.stringify({ error: "invalid request body" }) })
+
+  expect(await jobs.dispatchExplicitCloudUpload({ accessToken: "tok.cloud.dispatch", body: UPLOAD_BODY })).toEqual({
+    error: "http-400",
+  })
+})
+
+test("fail-closed 那一半:形状不认识(500 非 JSON)⇒ http-500,不猜不抛", async () => {
+  wire.length = 0
+  transientFailures.push({ status: 500, body: "<html>internal error</html>" })
+
+  expect(await jobs.dispatchExplicitCloudUpload({ accessToken: "tok.cloud.dispatch", body: UPLOAD_BODY })).toEqual({
+    error: "http-500",
+  })
+})
+
+test("分类码提取不碰成功路径:上传派发照常拿到 job_id", async () => {
+  wire.length = 0
+
+  expect(await jobs.dispatchExplicitCloudUpload({ accessToken: "tok.cloud.dispatch", body: UPLOAD_BODY })).toMatchObject({
+    job_id: JOB,
+    status: "queued",
+  })
 })

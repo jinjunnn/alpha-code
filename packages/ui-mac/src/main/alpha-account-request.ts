@@ -1,6 +1,7 @@
 import type { RoutePurpose } from "@alpha-code/contracts-consumer"
 import type { AccountResult } from "../preload/types"
 import type { RenewalResult } from "./alpha-auth"
+import { httpStatusFallback } from "./platform-http-error"
 
 export function createAuthedGet(deps: {
   accountBase: () => string
@@ -50,7 +51,12 @@ export function createAuthedGet(deps: {
         if (retried) refreshLockedAtEpoch.set(purpose, epoch)
         return { error: "unauthorized" }
       }
-      if (!res.ok) return { error: `http-${res.status}` }
+      // [#940] 例外:**有意不做**分类码提取(整类里唯一一个)。renderer 的 accountResultState
+      // 按 `/^http-(408|425|429|5\d\d)$/` 把 status 数字类别当 transient-vs-terminal 的判据 ——
+      // 把它换成分类码会让恢复分类失真(429 从 recovering 变 failed)。account-server 的桌面
+      // 路由今天也不产 top-level code(ap account-server.ts 实读:{ error: { message } })。
+      // 若日后 account 面要消费分类码,先给 accountResultState 一份 code→transiency 映射。
+      if (!res.ok) return { error: httpStatusFallback(res.status) }
       // R1 Major2:「非 401 成功」必须包含 decode 成功 —— 否则 malformed 200 也解锁,
       // 服务在 malformed 200 与 401 之间抖动时仍能周期性驱动 refresh+换血。
       const decoded = decode(await res.text())
