@@ -45,13 +45,15 @@ async function authed<T>(path: string, init?: { method?: string; body?: unknown 
     })
     if (res.status === 401) return { error: "unauthorized" }
     if (!res.ok) {
-      // [#940] 经分类码咽喉:code 优先(#918:分类码是稳定面,rate_limited 等不再被散文盖住)。
-      // 404 保持 `http-404` —— deleteCloudSchedule 的幂等容忍键在这个字符串上,散文("schedule
-      // not found")会把「删已删的 = 成功」误报成失败。其余保留散文回退:REQ-025 MVP 契约明写
-      // 「超限 B 拒绝,错误原样呈现」,而平台 schedules 路由的多数拒绝今天还没有 code
-      // (ap routes/cloud-schedules.ts 实读:只有 rate limit 带),散文是唯一的人话来源。
+      // [#940] 经分类码咽喉,但本面的槽优先级与 jobs 面相反(审计 R1 M3 改定):
+      //   · 404 **无条件** `http-404` —— deleteCloudSchedule 的幂等容忍键在这个字符串上;
+      //     code 若排在前面,平台哪天给 404 补个 code,「删已删的 = 成功」就静默变报错。
+      //   · 其余散文优先:本面的 error 没有任何 code 消费者(消费点只有本文件三处拼给人看的
+      //     reason),REQ-025 MVP 契约明写「超限 B 拒绝,错误原样呈现」;code 优先会把唯一
+      //     带 code 的拒绝(rate limit,ap routes/cloud-schedules.ts 实读)从人话句子降级成
+      //     裸 token,零收益纯损失。无散文才退 code,最后 `http-<status>`。
       const parts = await platformErrorParts(res)
-      return { error: parts.code ?? (res.status === 404 ? parts.fallback : (parts.prose ?? parts.fallback)) }
+      return { error: res.status === 404 ? parts.fallback : (parts.prose ?? parts.code ?? parts.fallback) }
     }
     return (await res.json().catch(() => null)) as T
   } catch (error) {

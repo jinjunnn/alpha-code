@@ -10,7 +10,9 @@
 // 不在这里:上传派发的分类码提取与 fail-closed 回退,由派发/上传两个模块各自的
 // 用例文件在假平台上驱动**生产函数**验证;咽喉自身的形状域(两种平台信封、坏形状
 // 回退)由它旁边的单测枚举。本文件只保证:已知的产出习语不在咽喉之外复活,
-// 以及每个新的出网文件都被强制归一次类。
+// 以及每个**含已知 fetch 形状**(直呼 / fetchImpl / fetcher / typeof fetch 签名)的
+// 新出网文件都被强制归一次类 —— 形状表之外的写法(经变量转手、自带 http 客户端)
+// 本闸看不见,这正是上面「减速带不是安全边界」的那一半。
 //
 // ── 两条检索轴(互相独立;单轴的盲区见 CLAUDE.md「观测手段自己有盲区」)────────
 //   轴 A(习语轴):`http-<status>` 字符串的**产出**习语(模板字面量 / 字符串拼接)
@@ -52,13 +54,16 @@ const CHOKEPOINT = "platform-http-error.ts"
 /** 真 import(不是注释里提一句):`from "./platform-http-error"`。 */
 const IMPORTS_CHOKEPOINT = /from\s+["']\.\/platform-http-error["']/
 
-/** 轴 B 的候选谓词:文件里存在 fetch 调用形状(含 DI 的 fetchImpl)。 */
-const FETCH_SHAPE = /\bfetch\s*\(|\bfetchImpl\b/
+/** 轴 B 的候选谓词:文件里存在 fetch 调用形状,含 DI 写法(fetchImpl / fetcher /
+ *  `typeof fetch` 签名)。审计反例(#940 R1):`(deps.fetcher ?? fetch)(` 直呼不匹配
+ *  `\bfetch\s*\(`,本仓 alpha-web-upload-consent.ts 就是这么写的 —— DI 形状漏了,
+ *  「新出网文件默认拒」就只对直呼成立。 */
+const FETCH_SHAPE = /\bfetch\s*\(|\bfetchImpl\b|\bfetcher\b|typeof fetch/
 
 /** 平台出口:读 alpha-platform(gateway / account-server)Response 并产出 error 字符串。 */
 const MEMBERS: Record<string, string> = {
   "alpha-cloud-jobs.ts": "authed 派发面(#918)+ 显式上传派发(#940 的第二实例)",
-  "alpha-cloud-schedules.ts": "schedules authed(code 优先;404/散文回退的理由钉在调用点)",
+  "alpha-cloud-schedules.ts": "schedules authed(404 恒 http-404 保幂等键;其余散文优先,REQ-025「错误原样呈现」;理由钉在调用点)",
   "alpha-platform-models.ts": "/v1/models(嵌套信封形状 { error: { message, code } })",
   "alpha-artifact-download.ts": "artifact content 端点(429 带 rate_limited;其余回退 http-<status>)",
   "alpha-account-request.ts":
@@ -73,6 +78,8 @@ const PLATFORM_NON_STRING: Record<string, string> = {
 /** 不打平台的出网/伪出网文件。归类理由 = 它的对端是谁。 */
 const NON_PLATFORM: Record<string, string> = {
   "alpha-auth.ts": "alpha-web(C)OAuth token 端点 —— 另一个服务、OAuth 错误形状,失败走 throw 不产 CloudResult",
+  "alpha-web-upload-consent.ts":
+    "alpha-web(C)上传同意签发端点(DI fetcher)—— 失败 throw UploadAdmissionError 本地准入码,不读平台信封不产 CloudResult",
   "catalog-channels.ts": "alpha-web(C)静态 catalog 发布(alphacodeone.com),自有 FetchFailure 分类",
   "catalog-liveness.ts": "本地引擎 base(127.0.0.1)liveness 探针",
   "curation-blobs.ts": "alpha-web(C)content-addressed blob 静态拉取",
@@ -116,7 +123,7 @@ test("MEMBERS 每个都真的 import 咽喉(注释里提一句不算)", () => {
   expect(missing).toEqual([])
 })
 
-test("元判据:轴 A 的习语谓词测得出已知的坏(#940 修掉的那一行原文)", () => {
+test("元判据:两条轴的谓词各自测得出已知的坏(轴 A = #940 修掉的原文;轴 B = 本仓真实的 DI fetch 写法)", () => {
   const producers = [/`http-\$\{/, /["']http-["']\s*\+/, /\+\s*["']http-["']/]
   // eslint-disable-next-line no-template-curly-in-string
   const knownBad = 'if (!response.ok) return { error: `http-${response.status}` }'
@@ -124,4 +131,12 @@ test("元判据:轴 A 的习语谓词测得出已知的坏(#940 修掉的那一�
   expect(producers.some((re) => re.test('"http-" + res.status'))).toBe(true)
   // 消费不误伤:与既有字符串比较是读,不是产。
   expect(producers.some((re) => re.test('r.error !== "http-404"'))).toBe(false)
+  // 轴 B:DI 写法必须落进候选集(审计 R1 反例 —— alpha-web-upload-consent.ts:11 的原文形状,
+  // 以及新出口最可能的两种 DI 签名)。直呼形状与 fetchImpl 也各钉一条,防谓词被换掉半边。
+  expect(FETCH_SHAPE.test("const res = await (deps.fetcher ?? fetch)(url, init)")).toBe(true)
+  expect(FETCH_SHAPE.test("deps: { fetcher?: typeof fetch } = {}")).toBe(true)
+  expect(FETCH_SHAPE.test("await fetch(`${base}${path}`, init)")).toBe(true)
+  expect(FETCH_SHAPE.test("constructor(private fetchImpl = fetch) {}")).toBe(true)
+  // 不误伤:与 fetch 无关的标识符不进候选集(prefetched 之类)。
+  expect(FETCH_SHAPE.test("const prefetched = cache.get(key)")).toBe(false)
 })

@@ -323,4 +323,27 @@ describe("four approved upload UI outcomes", () => {
     expect(document.querySelector("[role=dialog]")).toBeNull()
     expect(document.querySelector(".alpha-ext-card-err")?.textContent).toContain(zh["alpha.cloud.consent.errToken"])
   })
+
+  // [#940] 用户可观察的那一端:平台分类码必须**原样**到达错误行,而不是被本地兜底吞成
+  // 「范围问题」。这是本票症状的 renderer 半场 —— 把 uploadError 的兜底改回
+  // `t("alpha.cloud.consent.errScope")`(#940 之前的写法),下面两条当场红;
+  // main 侧的判据(alpha-cloud-jobs.cases.ts)抓不到这一跳。
+  // 两条用**不同**的平台码(仓规:同一判据多条用例不同字面量,杀掉「点名放行第一个码」的错误实现)。
+  test("platform classification code from the dispatch leg surfaces verbatim in the error line", async () => {
+    mountDispatch({ status: "failed", error: "upload_reserved_input" })
+    document.querySelector<HTMLButtonElement>('.alpha-ext-add[data-variant="primary"]')!.click()
+    await flush()
+    const err = document.querySelector(".alpha-ext-card-err")?.textContent ?? ""
+    expect(err).toContain("upload_reserved_input")
+    expect(err).not.toContain(zh["alpha.cloud.consent.errScope"])
+  })
+
+  test("a second, different platform code also passes through untranslated", async () => {
+    mountDispatch({ status: "failed", error: "upload_consent_replayed" })
+    document.querySelector<HTMLButtonElement>('.alpha-ext-add[data-variant="primary"]')!.click()
+    await flush()
+    const err = document.querySelector(".alpha-ext-card-err")?.textContent ?? ""
+    expect(err).toContain("upload_consent_replayed")
+    expect(err).not.toContain(zh["alpha.cloud.consent.errScope"])
+  })
 })
