@@ -37,7 +37,11 @@
 //     「[3/6] 前置之后」的陈旧基线**晚 2 秒**覆写回 `.githooks`。所以:①信号用例断言前必须等
 //     fixture 的进程**全部死透**(quiesceFixture),否则迟到的覆写落在读之后 = 假绿;②新增两条
 //     把信号**确定性**打进 install 窗口(husky-sim prepare 拉宽窗口),一条 TERM 判收割+还原,
-//     一条 INT 判「Ctrl-C 真的停下来」(bash 3.2 默认把 pid 级 INT 整个丢弃)。
+//     一条 INT 判「Ctrl-C 真的停下来」(bash 3.2 默认把 pid 级 INT 整个丢弃);③修复有**两半**,
+//     隔着 assert 脚本打信号只考得到 assert 那半 —— 它的 reap_owned 会掩住 bootstrap 侧的
+//     还原(删掉 bootstrap 的 `trap boot_cleanup EXIT`,前面九条照样全绿,审计 MUT4 实测)。
+//     bootstrap 又是 runbook 点名的人手命令,所以最后一条**直接** spawn worktree-bootstrap.sh
+//     并把 TERM 打进 install 窗口,单独钉住它自己的收割+还原。
 //
 // 删掉本文件会失去什么:清扫可以被整段删除、可以只清一半、也可以反过来把并发 lane 的树吃掉,
 // 而没有任何东西变红(泄漏本身是不可见的 —— 下一个人只会看见 `git worktree list` 越来越长)。
@@ -94,10 +98,13 @@ function git(cwd: string, args: string[], home: string): string {
  * 所以三份必须一起进夹具仓。
  *
  * `install`(`#945`):给夹具仓一个模拟 husky 的根 `prepare` —— 真跑 `bun install` 时把
- * **共享** core.hooksPath 写成 `corruptTo`,再睡 `holdSeconds` 秒。两个作用:①把
- * 「bootstrap 子进程正在 install」这个窗口从毫秒级拉宽到秒级,信号可以**确定性**落进去
- * (#945 的间歇红正是负载偶然把这个窗口拉宽时命中的);②corruptTo 每条用例用**不同的**
- * 非 `.husky/_` 字面量 —— 「只认 husky 那个值才还原」这类写死字面量的错误实现会当场红。
+ * **共享** core.hooksPath 写成 `corruptTo`,睡 `holdSeconds` 秒,醒来**再写一次** corruptTo。
+ * 三个作用:①把「bootstrap 子进程正在 install」这个窗口从毫秒级拉宽到秒级,信号可以
+ * **确定性**落进去(#945 的间歇红正是负载偶然把这个窗口拉宽时命中的);②sleep 之后的第二次
+ * 写 = 一个**确定性的晚到写手**:「只还原、不收割」的错误实现,还原之后孤儿醒来必然覆写
+ * ⇒ 当场红;真收割则 `&&` 链在 sleep 处被打断,第二次写结构上到不了 —— 这正是 #945
+ * 「最后写的人赢」的最小可判形态;③corruptTo 每条用例用**不同的**非 `.husky/_` 字面量 ——
+ * 「只认 husky 那个值才还原」这类写死字面量的错误实现会当场红。
  */
 function initFixture(opts: {
   hooksPath: string
@@ -118,7 +125,7 @@ function initFixture(opts: {
   const rootPkg: Record<string, unknown> = { name: "fx", private: true, workspaces: ["packages/*"] }
   if (opts.install) {
     rootPkg.scripts = {
-      prepare: `git config --local core.hooksPath ${opts.install.corruptTo} && sleep ${opts.install.holdSeconds}`,
+      prepare: `git config --local core.hooksPath ${opts.install.corruptTo} && sleep ${opts.install.holdSeconds} && git config --local core.hooksPath ${opts.install.corruptTo}`,
     }
   }
   writeFileSync(join(repo, "package.json"), JSON.stringify(rootPkg) + "\n")
@@ -371,5 +378,45 @@ describe("生产接线:真跑 scripts/assert-worktree-bootstrap.sh(alpha-check �
     expect(out).not.toContain("[4/6]")
     expect(registeredWorktreeNames(repo, home).filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
     expect(hooksPathOf(repo, home)).toBe(".lane-58-hooks")
+  }, 30_000)
+
+  test("直接打断 worktree-bootstrap.sh 本身(runbook 的人手命令,TERM 落在 install 窗口):收割孤儿写手,共享 core.hooksPath 还原", async () => {
+    // 上面四条都隔着 assert-worktree-bootstrap.sh 驱动 bootstrap —— 那一层的 reap_owned 与它
+    // 自己的 cleanup 会把 bootstrap **这一侧**的还原完全掩住:单独删掉 bootstrap 的
+    // `trap boot_cleanup EXIT`,四条照样全绿(审计对照实测,MUT4)。而 bootstrap 是 runbook
+    // 点名的人手命令(docs/runbooks/ci.md「新建 worktree」),在 install 窗口里被 TERM/Ctrl-C
+    // 打断是真实可达路径 —— 打断后共享 core.hooksPath 停在 husky 那个值,就是 #754 的形态。
+    // 所以本条**不经过任何包装层**,直接 spawn 生产脚本,单独钉住 bootstrap 自己的那半修复。
+    // 夹具 prepare 在 sleep 之后还有第二次脏写:「只还原、不收割」的错误实现在这里也会红,
+    // 不只是「trap 被整个删掉」那一种。
+    const { home, repo } = initFixture({
+      hooksPath: ".lane-91-hooks",
+      typecheckScript: "exit 3",
+      install: { corruptTo: ".husky-sim-91/_", holdSeconds: 3 },
+    })
+
+    const proc = Bun.spawn(
+      ["bash", "scripts/worktree-bootstrap.sh", "wt-945-direct", "--detach", "--base", "HEAD"],
+      { cwd: repo, env: gitEnv(home), stdout: "ignore", stderr: "ignore" },
+    )
+
+    // 等到「install 已把共享值写脏」:此刻 install 进程组必然活着、bootstrap 的还原还没跑。
+    let armed = false
+    for (let i = 0; i < 400; i++) {
+      if (hooksPathOf(repo, home) === ".husky-sim-91/_") {
+        armed = true
+        break
+      }
+      if (proc.exitCode !== null) break
+      await Bun.sleep(25)
+    }
+    expect(armed).toBe(true)
+
+    proc.kill("SIGTERM")
+    await proc.exited
+    // 父进程死了 ≠ 写手都死了:等 husky-sim 的孤儿(若有)也死透再读,迟到覆写不许落在读之后。
+    await quiesceFixture(repo, "husky-sim-91")
+
+    expect(hooksPathOf(repo, home)).toBe(".lane-91-hooks")
   }, 30_000)
 })
