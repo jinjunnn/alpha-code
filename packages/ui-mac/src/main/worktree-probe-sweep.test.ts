@@ -47,7 +47,7 @@
 // 而没有任何东西变红(泄漏本身是不可见的 —— 下一个人只会看见 `git worktree list` 越来越长)。
 // 它因此登记在 scripts/gate-files.tsv 里,拿精确条数。
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -110,6 +110,13 @@ function initFixture(opts: {
   hooksPath: string
   typecheckScript: string
   install?: { corruptTo: string; holdSeconds: number }
+  /** 额外提交进夹具仓根目录的文件(`#941` 的可控 typecheck 要以文件形态进探针 worktree)。 */
+  files?: Record<string, string>
+  /**
+   * 额外的根 lifecycle 脚本(`#941` [2/6] 失败路径:`preinstall: "exit 47"` 让探针 worktree 里的
+   * `bun install` 确定性非零 —— 从门的视角它与「install 被网络打死」**同形**,门只看得见非零退出)。
+   */
+  rootScripts?: Record<string, string>
 }) {
   const root = mkdtempSync(join(tmpdir(), "alpha928-"))
   TEMP_ROOTS.push(root)
@@ -122,11 +129,17 @@ function initFixture(opts: {
     const r = Bun.spawnSync(["cp", src, join(repo, "scripts", src.split("/").pop()!)])
     if (r.exitCode !== 0) throw new Error(`夹具仓拷不进生产脚本:${src}`)
   }
+  for (const [name, body] of Object.entries(opts.files ?? {})) {
+    writeFileSync(join(repo, name), body)
+  }
   const rootPkg: Record<string, unknown> = { name: "fx", private: true, workspaces: ["packages/*"] }
   if (opts.install) {
     rootPkg.scripts = {
       prepare: `git config --local core.hooksPath ${opts.install.corruptTo} && sleep ${opts.install.holdSeconds} && git config --local core.hooksPath ${opts.install.corruptTo}`,
     }
+  }
+  if (opts.rootScripts) {
+    rootPkg.scripts = { ...(rootPkg.scripts as Record<string, string> | undefined), ...opts.rootScripts }
   }
   writeFileSync(join(repo, "package.json"), JSON.stringify(rootPkg) + "\n")
   writeFileSync(
@@ -275,7 +288,9 @@ describe("生产接线:真跑 scripts/assert-worktree-bootstrap.sh(alpha-check �
     expect(names.filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
     expect(names).toContain("lane-620-continue")
     expect(hooksPathOf(repo, home)).toBe(".lane-928-hooks")
-  })
+    // `#941`:可达性共识探测(两轮;非 reachable 两发定局早退,发间隔 1s)让离线夹具里的
+    // 完整一跑确定性多花 ~2s,默认 5s 超时仍可能被顶破 —— 与同组其余用例一致取 30s。
+  }, 30_000)
 
   test("被信号打断(SIGTERM 落在探针已建出之后):同样零残留,且 core.hooksPath 还原", async () => {
     const { home, repo } = initFixture({ hooksPath: ".lane-42-hooks", typecheckScript: "sleep 3" })
@@ -425,4 +440,202 @@ describe("生产接线:真跑 scripts/assert-worktree-bootstrap.sh(alpha-check �
 
     expect(hooksPathOf(repo, home)).toBe(".lane-91-hooks")
   }, 30_000)
+})
+
+// ── `#941` —— 可达性判别依据:网络半通不通不许硬红,恒 'network' 仍必须硬红 ──────────────
+//
+// 2026-08-11 夜实测(票面):同一分支几分钟内,[6/6](a) 一次硬红(「明明可达,判别依据却说
+// 'network'」⇒ alpha-check 整体 ❌)、一次落降级档 —— 而同一时刻 `curl registry.npmjs.org`
+// http=200(一次 0.9s、一次 7.2s),同窗 git fetch 撞 SSL_ERROR_SYSCALL、gh 两次 EOF。
+// 判别依据的探测是**单发** curl(--max-time 8,零重试),两个独立调用点相隔几秒采样同一个事实,
+// 代理抖动时各落矛盾一侧 ⇒ 健康仓库被判「判据失守」(exit 1)⇒ 训练人 `--no-verify`(`#754`)。
+//
+// 判据两个方向缺一不可(只做一边 = 把 [6/6] 换成摆设):
+//   方向一:探测结果自相矛盾(半通不通)⇒ 必须落「未验证」档(exit 2)+ 说「本次测量作废」,
+//           不得打出「能力判据失守」。夹具序列取自真实复现:3~4 发 curl 里抖掉 1 发。
+//   方向二:判别依据真退化成恒 'network'(独立探测前后两轮全可达、复测不改口)⇒ 仍必须
+//           硬红(exit 1)。少了这半,「结论不稳一律未验证」的错误实现会把真退化也放行。
+//
+// 夹具:curl 桩按 FLAKY_SEQ 逐次给结果(对 127.0.0.1:9 恒败 —— 那是 [6/6](b) 的不可达注入,
+// 必须仍判 network);typecheck 以「worktree 根有没有 node_modules」区分 bootstrap 前后,
+// 让 [1/6]~[5/6] 在夹具里全部真实可绿 —— 否则 exit 2 的断言会被别处的红污染。
+describe("可达性判别依据(#941):半通不通降级,恒 'network' 硬红", () => {
+  const FAKE_TYPECHECK = [
+    "#!/usr/bin/env bash",
+    "# cwd = <探针 worktree>/packages/ui-mac;bootstrap 过 ⇒ 根有 node_modules ⇒ 干净",
+    "if [ -d ../../node_modules ]; then exit 0; fi",
+    `echo "src/x.test.ts(1,1): error TS2307: Cannot find module 'bun:test' or its corresponding type declarations."`,
+    "exit 2",
+    "",
+  ].join("\n")
+
+  const CURL_STUB = [
+    "#!/usr/bin/env bash",
+    "# 对 [6/6](b) 的不可达注入(127.0.0.1:9)恒败;其余 URL 按 FLAKY_SEQ 逐次给结果,",
+    "# 序列耗尽后按 FLAKY_DEFAULT。每次调用把计数写进 FLAKY_STATE。",
+    'for a in "$@"; do case "$a" in *127.0.0.1:9*) exit 7 ;; esac; done',
+    'STATE="${FLAKY_STATE:?}"',
+    'n=$(cat "$STATE" 2>/dev/null || echo 0)',
+    'echo $((n+1)) > "$STATE"',
+    "seq=(${FLAKY_SEQ:-})",
+    'if [ "$n" -lt "${#seq[@]}" ]; then r="${seq[$n]}"; else r="${FLAKY_DEFAULT:-ok}"; fi',
+    '[ "$r" = ok ] && exit 0 || exit 7',
+    "",
+  ].join("\n")
+
+  function initFlakyFixture(hooksPath: string, rootScripts?: Record<string, string>) {
+    const fx = initFixture({
+      hooksPath,
+      typecheckScript: "bash ../../fake-typecheck.sh",
+      files: { "fake-typecheck.sh": FAKE_TYPECHECK },
+      rootScripts,
+    })
+    const stubDir = join(fx.root, "stub-bin")
+    mkdirSync(stubDir, { recursive: true })
+    writeFileSync(join(stubDir, "curl"), CURL_STUB, { mode: 0o755 })
+    return { ...fx, stubDir }
+  }
+
+  function flakyEnv(fx: { root: string; stubDir: string }, registry: string, seq: string, dflt: string) {
+    return {
+      PATH: `${fx.stubDir}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+      BUN_CONFIG_REGISTRY: registry,
+      FLAKY_STATE: join(fx.root, "curl-calls.n"),
+      FLAKY_SEQ: seq,
+      FLAKY_DEFAULT: dflt,
+      ALPHA_WT_PROBE_NESTED: "1",
+    }
+  }
+
+  test("方向一:[6/6](a) 的探测窗抖掉一发(ok ok fail)⇒ 未验证档 exit 2 + 「本次测量作废」,不得硬红", () => {
+    const fx = initFlakyFixture(".lane-941a-hooks")
+    // 序列取自真实复现:第 3 发 curl 抖掉,旧实现在这里打出
+    // 「明明可达,判别依据却说 'network' —— 一律算网络 = 这道门永不失守」并 exit 1。
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.flap-941a.invalid", "ok ok fail", "ok"))
+    expect(r.code).toBe(2)
+    expect(r.out).toContain("本次测量作废")
+    expect(r.err).not.toContain("能力判据失守")
+    expect(registeredWorktreeNames(fx.repo, fx.home).filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941a-hooks")
+  }, 60_000)
+
+  test("方向一:[5/6] 的判别与复核落在矛盾两侧(fail ok)⇒ 未验证档 exit 2,本条如实说分不出", () => {
+    const fx = initFlakyFixture(".lane-941b-hooks")
+    // 旧实现在这里打出「被判别依据归成 'network',而 registry 这一刻是可达的 —— 豁免成了
+    // 万能挡箭牌」并 exit 1;修后:复测改口 ⇒ 结论不稳 ⇒ 本次测量作废,不冤枉判红。
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.flap-941b.invalid", "fail ok", "ok"))
+    expect(r.code).toBe(2)
+    expect(r.out).toContain("本条分不出 real / network")
+    expect(r.err).not.toContain("能力判据失守")
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941b-hooks")
+  }, 60_000)
+
+  test("方向二:判别依据退化成恒 'network' 且网络稳定可达 ⇒ 仍必须硬红 exit 1", () => {
+    const fx = initFlakyFixture(".lane-941c-hooks")
+    // 把夹具里那份生产脚本的判别依据改成恒 'network'(票面点名的绕过形态)。改不上必须红,
+    // 不许静默测了个健康版本(测不出已知的坏 = 本次测量作废)。
+    const probeCopy = join(fx.repo, "scripts", "assert-worktree-bootstrap.sh")
+    const original = readFileSync(probeCopy, "utf8")
+    const mutated = original.replace(
+      "classify_bootstrap_failure() {\n",
+      "classify_bootstrap_failure() { printf 'network'; return 0; }\nclassify_bootstrap_failure_dead() {\n",
+    )
+    expect(mutated).not.toBe(original)
+    writeFileSync(probeCopy, mutated)
+
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.solid-941c.invalid", "", "ok"))
+    expect(r.code).toBe(1)
+    // 独立探测前后两轮全可达、复测不改口 —— 只能是判别依据退化,这道门必须失守给人看。
+    expect(r.err).toContain("判别依据退化")
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941c-hooks")
+  }, 60_000)
+
+  // ── `#941` R1 审计的正方向:[2/6]/[4/6] 的失败路径(note_bootstrap_failure)────────────
+  // 已修的 [6/6](a)/[5/6] 管「判别依据说 network 而网络其实可达」;这三条管反过来那侧:
+  // **install 被网络打死,而判别依据的单发 curl 恰好落在成功那一侧** ⇒ verdict='real' ⇒
+  // 旧实现直接硬红 exit 1 —— 健康仓库被「bootstrap 自己非零退出」拦住 push(#754 形态)。
+  // bun install 要拉几千个包,网络暴露面比一发 8s HEAD 大得多,这条的命中概率不低于 [6/6](a)。
+  test("正方向:[2/6] install 死了而单发探测恰好成功、共识抖(ok + ok ok fail)⇒ 未验证档 exit 2,不得硬红", () => {
+    const fx = initFlakyFixture(".lane-941d-hooks", { preinstall: "exit 47" })
+    // 序列:第 1 发(判别依据)成功 ⇒ 'real';随后的可达性共识 ok ok fail = 2/3 ⇒ unstable。
+    // 旧实现在第 1 发之后就 red「bootstrap 自己非零退出」并 exit 1,根本不看共识。
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.flap-941d.invalid", "ok ok ok fail", "ok"))
+    expect(r.code).toBe(2)
+    expect(r.out).toContain("可达性共识与那一发探测矛盾")
+    expect(r.err).not.toContain("能力判据失守")
+    expect(registeredWorktreeNames(fx.repo, fx.home).filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941d-hooks")
+  }, 60_000)
+
+  test("正方向的反面:install 真失败且共识一致可达(全 ok)⇒ [2/6] 仍必须硬红 exit 1", () => {
+    const fx = initFlakyFixture(".lane-941e-hooks", { preinstall: "exit 47" })
+    // 杀「verdict='real' 一律降未验证」的错误实现:网络被前后 4 发独立探测证实是好的,
+    // 失败就是真的 —— 这道门必须失守给人看,不许把豁免拓宽成万能挡箭牌。
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.solid-941e.invalid", "", "ok"))
+    expect(r.code).toBe(1)
+    expect(r.err).toContain("bootstrap 自己非零退出")
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941e-hooks")
+  }, 60_000)
+
+  test("fail-closed 的 real(HOME/.npmrc 声明未收编 registry)不进共识:探测全败也必须硬红 exit 1", () => {
+    const fx = initFlakyFixture(".lane-941f-hooks", { preinstall: "exit 47" })
+    // 这半是对审计建议的实测偏离:声明了未收编 registry 时,`registry_reachability_consensus`
+    // 与判别依据**同样**解析不出 ⇒ 结构上恒 'unreachable' —— 把它也降未验证,等于这种机器上
+    // 这道门永远 exit 2 永不失守(文件头点名的「豁免变万能挡箭牌」)。判据:红必须来自 [2/6]
+    // 本身(「bootstrap 自己非零退出」),而不是只靠 [6/6](b) 陪跑出来的红撑住退出码。
+    writeFileSync(join(fx.home, ".npmrc"), "registry=http://registry.failclosed-941f.invalid\n")
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.failclosed-941f.invalid", "", "fail"))
+    expect(r.code).toBe(1)
+    expect(r.err).toContain("bootstrap 自己非零退出")
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941f-hooks")
+  }, 60_000)
+
+  // ── `#941` R1 合并前两条 Minor 的判据 ──────────────────────────────────────────────
+  test("R1 Minor:adjudicate 的第二轮共识(c2)被静默删除必须有人红 —— c1 全 ok、复测仍 network、c2 抖一发 ⇒ 未验证 exit 2,不得硬红", () => {
+    const fx = initFlakyFixture(".lane-941g-hooks")
+    // 钉的是 adjudicate 里 `c2` 那一半(本仓失效形态⑦:审计实测把 `c2=…` 连同
+    // `&& [ "$c2" = reachable ]` 删掉,原有用例一条不红 —— A 的共识本身 unstable 进不了
+    // adjudicate、B 在 v2 复测处改口、C 全程网络稳定 c2 恒 reachable)。删掉之后的行为退化
+    // 是真的:网络在第一轮共识**之后**才开始抖时,健康的判别依据(这一刻真连不上所以说
+    // network)会被判成 degraded 硬红 —— 又回到「健康仓库被硬红」。
+    // 夹具沿用 C 的恒 network 突变让 v2 不改口;序列让 [5/6] adjudicate 的 c1 全 ok(3 发,
+    // reachable)、c2 落在矛盾对(ok fail ⇒ unstable)⇒ 只能走「本次测量作废」的未验证档。
+    // 尾段的 ok fail 喂给 [6/6](a) 的外层共识,否则突变体在稳定网络下会在 (a) 处 degraded
+    // 硬红,污染对 c2 的判决;位点同时按「非 reachable 两发定局」与「恒 3 发整轮」两种共识
+    // 排布,Minor 2 单独回退时本条仍绿 —— 两条 Minor 的绕过实验互不牵连。
+    const probeCopy = join(fx.repo, "scripts", "assert-worktree-bootstrap.sh")
+    const original = readFileSync(probeCopy, "utf8")
+    const mutated = original.replace(
+      "classify_bootstrap_failure() {\n",
+      "classify_bootstrap_failure() { printf 'network'; return 0; }\nclassify_bootstrap_failure_dead() {\n",
+    )
+    expect(mutated).not.toBe(original)
+    writeFileSync(probeCopy, mutated)
+
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.flap-941g.invalid", "ok ok ok ok fail ok fail", "ok"))
+    expect(r.code).toBe(2)
+    expect(r.out).toContain("可达性探测前后矛盾")
+    expect(r.err).not.toContain("能力判据失守")
+    expect(registeredWorktreeNames(fx.repo, fx.home).filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941g-hooks")
+  }, 60_000)
+
+  test("R1 Minor(hang 形状耗时):共识对非 reachable 结论两发定局 —— 全程不可达的一跑恰好 5 发探测,exit 2", () => {
+    const fx = initFlakyFixture(".lane-941h-hooks")
+    // `#928` 的因果链:挂起代理(accept 后不回数据,非 connection-refused —— 127.0.0.1:9 是
+    // 后者,量不出这个形状)下每发 curl 吃满 --max-time 8s,恒 3 发共识 = 26s/轮,整道门
+    // +50s ⇒ 抬高被外层工具超时 SIGKILL 打进 bun install 窗口的概率(#945/#928 竞态的触发
+    // 条件)。实测(2026-08-13,本机挂起端口):修前 69.9s / 9 发,修后 51.8s / 7 发。
+    // fail 侧早退不降任何判据:unreachable/unstable 在全部消费点同义(都落未验证、都不发
+    // 硬红许可),reachable 仍要 3 发全成 —— 硬红许可证的样本量不降。
+    // 本条用探测计数钉死早退真的发生:[5/6] classify 1 发 + c1 两发定局 + [6/6](a) 两发定局
+    // = 恰好 5 发。两个方向都红:回退成恒 3 发 ⇒ 7 发(门被拉长);共识被砍到单发 ⇒ 3 发
+    // (#941 的地基被拆)。
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.hang-941h.invalid", "", "fail"))
+    expect(r.code).toBe(2)
+    expect(r.out).toContain("registry 这一刻不可达")
+    expect(r.err).not.toContain("能力判据失守")
+    expect(readFileSync(join(fx.root, "curl-calls.n"), "utf8").trim()).toBe("5")
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941h-hooks")
+  }, 60_000)
 })
