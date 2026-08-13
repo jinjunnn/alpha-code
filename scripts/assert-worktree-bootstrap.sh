@@ -46,7 +46,12 @@
 #      半装的树留在那」满足)、**且判别依据把它判成 `real` 而不是 `network`**。
 #      少了最后半句,「一律算网络」这个错误实现能满足前两句。
 #  [6/6] 判别依据**真的判别**,且网络档**不报绿**:
-#      (a) registry 可达时必须判 `real`(直接杀掉「一律算网络」);
+#      (a) registry 可达时必须判 `real`(直接杀掉「一律算网络」)。「可达」不许由**单发**探测
+#          断言(`#941`:代理半通不通时,两发相隔几秒的 curl 会落在矛盾的两侧,健康仓库被硬红
+#          成「判据失守」)——先对可达性测 3 次取共识,共识可达而判别依据说 'network' 时再复核
+#          一轮(判别依据复测 + 再一轮共识)才许硬红;任何一处前后矛盾 ⇒ **本次测量作废**
+#          (未验证档,exit 2),真离线 ⇒ 未验证。恒 'network' 的退化实现复测不会改口,
+#          在健康网络下**确定性**仍然硬红 —— 两个方向都留着判据,[6/6] 不是摆设。
 #      (b) registry 指向不可达地址时必须判 `network`(杀掉「一律算真失守」——那等于没有豁免);
 #      (c) 报告契约:把整个探针**套跑一遍**并注入不可达 registry,断言它 **exit 2**、
 #          输出里**有「未验证」**、且**没有**那句「新建 worktree 自己就能跑出可信 typecheck」。
@@ -207,6 +212,57 @@ live_registry_reachable() {
   curl -sS -o /dev/null --max-time 8 --head "$url" >/dev/null 2>&1
 }
 
+# ── `#941`:单发探测不构成「网络没问题」的地面真相 ─────────────────────────────────
+# 2026-08-11 夜实测:同一台机器几分钟内,`curl registry.npmjs.org` 一次 0.9s 成、一次 7.2s 成,
+# 同窗 `git fetch` 撞 SSL_ERROR_SYSCALL、`gh` 两次 EOF —— 代理**半通不通**时,两发相隔几秒的
+# curl 会落在矛盾的两侧。而 [5/6]/[6/6](a) 原本拿**一发** `live_registry_reachable` 当真相,
+# 再拿它硬红判别依据 ⇒ 一个健康的仓库被判成「判据失守」(exit 1),训练人 `--no-verify`
+# (`#754` 的形态)。「判别依据退化成恒 'network'」与「网络在抖」在单次采样下**不可分**,
+# 所以判决前先把「可达性」这一个事实测多次取一致;测不出一致 ⇒ **本次测量作废**(未验证档),
+# 不给判决 —— 与本仓「观测手段自己有盲区」那张表同一条判据。
+#
+# 对「registry 此刻可达吗」连续测 3 次(间隔 1s,把采样窗摊开)。打印一个词:
+#   reachable   — 3/3 可达
+#   unreachable — 0/3 可达(真离线)
+#   unstable    — 结果互相矛盾(半通不通)⇒ 这一刻不存在可信的地面真相
+registry_reachability_consensus() {
+  local i ok=0
+  for i in 1 2 3; do
+    [ "$i" -gt 1 ] && sleep 1
+    live_registry_reachable && ok=$((ok+1))
+  done
+  case "$ok" in
+    3) printf 'reachable' ;;
+    0) printf 'unreachable' ;;
+    *) printf 'unstable' ;;
+  esac
+}
+
+# 判别依据说了 'network' 之后的复核:是判别依据退化,还是网络在抖?打印一个词:
+#   degraded — 前后两轮独立探测(各 3 次)registry **全部**可达,且判别依据**复测仍**说
+#              'network' ⇒ 只能是判别依据退化成恒 'network'(硬红 —— 这道门永不失守的那个形态)。
+#   offline  — 独立探测一致不可达 ⇒ 真离线,real/network 本来就分不开 ⇒ 未验证。
+#   unstable — 任何一处前后矛盾(探测结果不一,或判别依据复测改口)⇒ 半通不通,
+#              本次测量作废 ⇒ 未验证。
+# 「恒 'network'」的退化实现在健康网络下**确定性**落到 degraded(它复测还是 'network',
+# 而 6 发独立探测全成);健康判别依据在抖动网络下落到 offline/unstable(不冤枉判红)。
+adjudicate_network_verdict() {
+  local c1 v2 c2
+  c1="$(registry_reachability_consensus)"
+  case "$c1" in
+    unreachable) printf 'offline'; return 0 ;;
+    unstable)    printf 'unstable'; return 0 ;;
+  esac
+  # 独立探测一致可达 —— 结论不稳时再探一次再下判断:让判别依据自己复测,并再取一轮共识。
+  v2="$(classify_bootstrap_failure)"
+  c2="$(registry_reachability_consensus)"
+  if [ "$v2" != real ] && [ "$c2" = reachable ]; then
+    printf 'degraded'
+  else
+    printf 'unstable'
+  fi
+}
+
 note_bootstrap_failure() {
   local verdict url
   verdict="$(classify_bootstrap_failure)"
@@ -342,15 +398,26 @@ else
       # `${FAIL}` 必须带花括号:紧跟其后的是 CJK 顿号,UTF-8 locale 下 bash 会把那几个字节
       # 一起当成变量名 ⇒ `FAIL<0xe3><0x80><0x81>: unbound variable`(set -u 下当场炸)。
       echo "    ✓ 非零退出(rc=$boot_rc)、没留下 .worktrees/${FAIL}、且判成 real(会拦住)"
-    elif live_registry_reachable; then
-      # registry 明明可达,判别依据却把一个**非网络**失败说成 network ⇒ 豁免成了万能挡箭牌:
-      # bootstrap 真坏掉的那天也会被当成网络放行,这道门从此永不失守。
-      red "非网络失败(bun 缺失)被判别依据归成 '$verdict_real',而 registry 这一刻是可达的 —— 豁免成了万能挡箭牌"
     else
-      # 这台机器这一刻真的连不上 registry:`real` 与 `network` 本来就分不开(判别依据只有
-      # 可达性这一个输入)。如实降级,不许当绿,也不冤枉判红。
-      unverified=1
-      echo "    ⚠️  未验证:registry 这一刻不可达,本条分不出 real / network(判别依据只看可达性)"
+      # 判别依据把一个**非网络**失败说成 network。硬红之前先复核(`#941`):单发探测在代理
+      # 半通不通时会与判别依据落在矛盾的两侧,拿它当真相会把健康的仓库判成「判据失守」。
+      case "$(adjudicate_network_verdict)" in
+        degraded)
+          # 前后两轮独立探测全可达、判别依据复测仍说 network ⇒ 豁免成了万能挡箭牌:
+          # bootstrap 真坏掉的那天也会被当成网络放行,这道门从此永不失守。
+          red "非网络失败(bun 缺失)被判别依据归成 'network' 且复测不改口,而前后两轮独立探测 registry 全可达 —— 判别依据退化,豁免成了万能挡箭牌"
+          ;;
+        offline)
+          # 这台机器这一刻真的连不上 registry:`real` 与 `network` 本来就分不开(判别依据只有
+          # 可达性这一个输入)。如实降级,不许当绿,也不冤枉判红。
+          unverified=1
+          echo "    ⚠️  未验证:registry 这一刻不可达,本条分不出 real / network(判别依据只看可达性)"
+          ;;
+        *)
+          unverified=1
+          echo "    ⚠️  未验证:可达性探测前后矛盾(网络半通不通)—— 本次测量作废,本条分不出 real / network"
+          ;;
+      esac
     fi
   fi
 fi
@@ -364,20 +431,39 @@ if [ "$verdict_net" != network ]; then
 else
   echo "    ✓ 不可达 registry ⇒ network"
 fi
-# (a) 可达 registry 必须判 real —— 直接杀掉「一律算网络」
+# (a) 可达 registry 必须判 real —— 直接杀掉「一律算网络」。
+# `#941`:「可达」不许由单发探测断言(半通不通时它与判别依据各落矛盾一侧,健康仓库被硬红)。
+# 先对可达性取共识;共识可达而判别依据仍说 network 时,再复核一轮才许硬红。
 live_registry="$(resolve_registry 2>/dev/null || true)"
-if live_registry_reachable; then
-  verdict_live="$(classify_bootstrap_failure)"
-  if [ "$verdict_live" != real ]; then
-    red "registry($live_registry)明明可达,判别依据却说 '$verdict_live' —— 一律算网络 = 这道门永不失守"
-  else
-    echo "    ✓ 可达 registry($live_registry)⇒ real"
-  fi
-else
-  # 本机这一刻真的连不上 registry:判别力这一条**证不了**,如实降级,不许当绿。
-  unverified=1
-  echo "    ⚠️  未验证:registry 这一刻不可达,'可达 ⇒ real' 这一半本次证不了"
-fi
+case "$(registry_reachability_consensus)" in
+  reachable)
+    verdict_live="$(classify_bootstrap_failure)"
+    if [ "$verdict_live" = real ]; then
+      echo "    ✓ 可达 registry($live_registry)⇒ real"
+    else
+      case "$(adjudicate_network_verdict)" in
+        degraded)
+          red "registry($live_registry)前后两轮独立探测全可达,判别依据复测仍说 'network' —— 判别依据退化,一律算网络 = 这道门永不失守"
+          ;;
+        *)
+          # 复核期间结论翻了(判别依据改口 real,或独立探测不再一致可达)⇒ 网络在抖,
+          # 不存在可信的地面真相 —— 本次测量作废,不给判决。
+          unverified=1
+          echo "    ⚠️  未验证:可达性结论前后矛盾(网络半通不通)—— 本次测量作废,'可达 ⇒ real' 这一半证不了"
+          ;;
+      esac
+    fi
+    ;;
+  unreachable)
+    # 本机这一刻真的连不上 registry:判别力这一条**证不了**,如实降级,不许当绿。
+    unverified=1
+    echo "    ⚠️  未验证:registry 这一刻不可达,'可达 ⇒ real' 这一半本次证不了"
+    ;;
+  *)
+    unverified=1
+    echo "    ⚠️  未验证:可达性探测三次结果不一(半通不通)—— 本次测量作废,'可达 ⇒ real' 这一半证不了"
+    ;;
+esac
 # (c) 报告契约:套跑一遍并注入不可达 registry —— 必须 exit 2 + 说「未验证」+ 不说那句全绿话
 if [ "$NESTED" = "1" ]; then
   echo "    · 嵌套运行:跳过报告契约自检(断递归)"
