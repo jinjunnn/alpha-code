@@ -165,11 +165,17 @@ function hooksPathOf(repo: string, home: string): string {
  */
 async function quiesceFixture(repo: string, extraPattern?: string) {
   const patterns = [repo, ...(extraPattern ? [extraPattern] : [])]
+  let alive = true
   for (let i = 0; i < 300; i++) {
-    const alive = patterns.some((p) => Bun.spawnSync(["pgrep", "-f", p]).exitCode === 0)
+    alive = patterns.some((p) => Bun.spawnSync(["pgrep", "-f", p]).exitCode === 0)
     if (!alive) break
     await Bun.sleep(50)
   }
+  // 超时**必须表现为红**,不能静默继续读值(`#945` R1 审计 Minor)。轮询走完还有写手活着时,
+  // 后面那句「core.hooksPath 还原了」读到的是「还没被覆写」的正确值 ⇒ 绿,而生产里那次覆写
+  // 随后才发生、共享配置照坏 —— 那恰好退回本函数要封的假绿。本仓判据:**测不到就说本次测量
+  // 作废,而不是给一个数字**。
+  expect(alive).toBe(false)
   await Bun.sleep(200)
 }
 
