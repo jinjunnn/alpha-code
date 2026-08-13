@@ -30,7 +30,8 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     // #587:Alpha Cloud 专用卡(T8 DOM 半场)+ 全来源徽标/安全通用卡(44 → 46)。
     // #934 Minor-2:AC5「详情已隐藏」六处标记的渲染接线判据(46 → 47)。
     // #583:list 目录网格 + 分类图标 + 「共 N 项」计数(47 → 48)。
-    expect(output).toContain("48 pass")
+    // #584:grep 展开体分色/高亮 + redactor 失败整字段隐藏(48 → 49)。
+    expect(output).toContain("49 pass")
     expect(output).toContain("0 fail")
   })
 })

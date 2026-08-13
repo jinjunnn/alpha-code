@@ -556,6 +556,14 @@ export interface DirEntry {
   dir: boolean
 }
 
+/** #584 grep 展开体的行:file = 文件分组行(分色);match = 行号 + 命中高亮 span 序列。 */
+export type GrepRow = { kind: "file"; path: string } | { kind: "match"; line?: number; spans: GrepSpan[] }
+
+export interface GrepSpan {
+  text: string
+  hit: boolean
+}
+
 export type ToolCardBody =
   | { type: "none" }
   | { type: "hidden" }
@@ -563,6 +571,7 @@ export type ToolCardBody =
   | { type: "term"; output: string; truncated: boolean; streaming: boolean }
   | { type: "files"; files: string[]; truncated: boolean; badge?: "read" }
   | { type: "dir"; entries: DirEntry[]; truncated: boolean }
+  | { type: "grep"; rows: GrepRow[]; truncated: boolean }
   | { type: "diff"; patch: string }
   | { type: "write"; path?: string; preview: string[]; totalLines: number; approx: boolean }
   | { type: "patch"; files: PatchFileRow[]; truncated: boolean }
@@ -617,6 +626,90 @@ function dirBodyOf(part: ToolPart): ToolCardBody {
   const { entries, truncated } = dirEntriesOf(outputOf(part), metadataOf(part))
   if (entries.length === 0) return { type: "none" }
   return { type: "dir", entries, truncated }
+}
+
+// ── #584 grep 命中高亮(CT `#tools` G7 帧;基线 §5.2「grep / 诊断」类) ──────
+/**
+ * 命中 span 的字面量切分:只做纯 substring 扫描(线性、有界)。**绝不把模型给的
+ * pattern 当正则执行** —— 不可信 regex 在 400 字符行上就能造出灾难性回溯
+ * (同 tool-redactor 的 O(n²) 教训);正则形态的 pattern 匹配不上就诚实不高亮。
+ * 扫描对象是**已脱敏后的展示文本**,pattern 原文只用于定位,绝不进 DOM。
+ */
+export function hitSpansOf(text: string, pattern: string | undefined): GrepSpan[] {
+  if (pattern === undefined || pattern.length === 0 || pattern.length > TOOL_ITEM_MAX_CHARS) {
+    return [{ text, hit: false }]
+  }
+  const spans: GrepSpan[] = []
+  let index = 0
+  while (index < text.length) {
+    const at = text.indexOf(pattern, index)
+    if (at < 0) break
+    if (at > index) spans.push({ text: text.slice(index, at), hit: false })
+    spans.push({ text: pattern, hit: true })
+    index = at + pattern.length
+  }
+  if (index === 0) return [{ text, hit: false }]
+  if (index < text.length) spans.push({ text: text.slice(index), hit: false })
+  return spans
+}
+
+// 引擎 grep 输出的行文法(packages/opencode/src/tool/grep.ts):
+//   Found N matches[ (more matches available)]
+//   /abs/path/file.ts:
+//     Line 12: matched text
+//   (Results truncated. …)
+const GREP_HEADER_LINE = /^Found \d+ matches/
+const GREP_MATCH_LINE = /^ {2}Line (\d+): (.*)$/
+
+/**
+ * grep 展开体的结构化投影:文件行过 redactPath、摘录行过共享 redactor 且有界;
+ * **任一行脱敏失败 = 整字段隐藏**(基线 §5.1;渲染层显示确定的「详情已隐藏」,
+ * 无 raw 回退)。未识别形状的行整行丢弃并标记截断(fail-closed,不当正文透传)。
+ */
+function grepBodyOf(part: ToolPart): ToolCardBody {
+  const output = outputOf(part)
+  const scan = output.slice(0, TOOL_SCAN_MAX_CHARS)
+  let truncated = output.length > scan.length || metadataOf(part).truncated === true
+  const pattern = stringOf(inputOf(part).pattern)
+  const rows: GrepRow[] = []
+  const lines = scan.split("\n")
+  for (let index = 0; index < lines.length; index += 1) {
+    if (index >= TOOL_LIST_SCAN_MAX || rows.length >= TOOL_LIST_MAX_ITEMS) {
+      truncated = true
+      break
+    }
+    // 分类看原始行(仅受扫描预算约束):先截行再判形状会把超长路径行「降级」成
+    // 未识别行,绕过下面的整字段隐藏(fail-closed 判据必须先于任何截断)。
+    const line = lines[index]!
+    if (line.trim().length === 0) continue
+    if (GREP_HEADER_LINE.test(line) || line === "No files found") continue
+    if (line.startsWith("(")) {
+      truncated = true
+      continue
+    }
+    const match = GREP_MATCH_LINE.exec(line)
+    if (match !== null) {
+      const clean = redactText(match[2]!, TOOL_ITEM_MAX_CHARS)
+      if (!clean.ok) return { type: "hidden" }
+      const lineNumber = finiteOf(Number(match[1]))
+      rows.push({
+        kind: "match",
+        line: lineNumber === undefined ? undefined : Math.max(0, Math.floor(lineNumber)),
+        spans: hitSpansOf(clean.value, pattern),
+      })
+      continue
+    }
+    if (line.endsWith(":")) {
+      // 不预截路径:redactPath 自身拒绝超长(截断的路径指向错误目标)⇒ 整字段隐藏。
+      const clean = redactPath(line.slice(0, -1), TOOL_PATH_MAX_CHARS)
+      if (!clean.ok || clean.value.length === 0) return { type: "hidden" }
+      rows.push({ kind: "file", path: cappedItem(clean.value) })
+      continue
+    }
+    truncated = true
+  }
+  if (rows.length === 0) return { type: "none" }
+  return { type: "grep", rows, truncated }
 }
 
 /** websearch / cloud web_search 共用的链接体:每条 URL 过 redactUrl,失败即丢。 */
@@ -726,7 +819,7 @@ export function toolCardBodyOf(part: ToolPart): ToolCardBody {
       return { type: "files", files, truncated: overflow || metadata.truncated === true }
     }
     case "grep": {
-      return textBodyOf(outputOf(part))
+      return grepBodyOf(part)
     }
     case "list": {
       return dirBodyOf(part)

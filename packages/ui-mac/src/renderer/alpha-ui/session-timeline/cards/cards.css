@@ -739,6 +739,43 @@ button.a-tc-head:focus-visible {
   font-size: var(--a-text-2xs);
 }
 
+/* ── grep 命中高亮(CT #tools G7 帧:文件名/行号分色 + 命中 mark) ───────── */
+.a-tc-grep {
+  padding: 7px 10px;
+  max-height: 240px;
+  overflow: auto;
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-sm);
+}
+
+.a-tc-grep-file {
+  overflow: hidden;
+  padding: 3px 0;
+  color: var(--a-info);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.a-tc-grep-row {
+  overflow: hidden;
+  padding: 3px 0 3px 14px;
+  color: var(--a-text-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.a-tc-grep-ln {
+  margin-right: 8px;
+  color: var(--a-text-tertiary);
+}
+
+.a-tc-grep-hit {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--a-warning-subtle);
+  color: var(--a-text);
+}
+
 .a-tc-links {
   display: flex;
   flex-direction: column;

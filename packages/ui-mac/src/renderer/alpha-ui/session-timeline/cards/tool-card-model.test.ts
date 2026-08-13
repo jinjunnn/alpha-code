@@ -10,6 +10,7 @@ import {
   DIAG_MAX_ROWS,
   diagnosticsOf,
   extractHttpUrls,
+  hitSpansOf,
   mediaLabelOf,
   mediaThumbable,
   OPEN_TARGET_MAX_CHARS,
@@ -724,5 +725,80 @@ describe("#583 list 目录网格模型(G6:目录/文件分类 + 计数 + 有界)
     if (capped.type !== "dir") throw new Error("expected dir body")
     expect(capped.entries).toHaveLength(TOOL_LIST_MAX_ITEMS)
     expect(capped.truncated).toBe(true)
+  })
+})
+
+describe("#584 grep 命中高亮模型(G7:文件/行号结构化 + 字面量高亮 + 失败整字段隐藏)", () => {
+  test("引擎行文法解析:header 跳过、文件行脱敏分组、匹配行带行号与命中 span", () => {
+    const output = [
+      "Found 3 matches",
+      "",
+      "/Users/kai/proj/docker-compose.yml:",
+      "  Line 6: redis image: redis:7.4-alpine",
+      "  Line 21: postgres image: postgres:16-alpine",
+      "",
+      "/Users/kai/proj/Makefile:",
+      "  Line 2: build-image: docker build .",
+    ].join("\n")
+    const body = toolCardBodyOf(
+      part("grep", { status: "completed", input: { pattern: "image" }, metadata: { matches: 3 }, output }),
+    )
+    if (body.type !== "grep") throw new Error("expected grep body")
+    expect(body.rows[0]).toEqual({ kind: "file", path: "~/proj/docker-compose.yml" })
+    const first = body.rows[1]
+    if (first === undefined || first.kind !== "match") throw new Error("expected match row")
+    expect(first.line).toBe(6)
+    expect(first.spans).toEqual([
+      { text: "redis ", hit: false },
+      { text: "image", hit: true },
+      { text: ": redis:7.4-alpine", hit: false },
+    ])
+    expect(body.rows[3]).toEqual({ kind: "file", path: "~/proj/Makefile" })
+    const last = body.rows[4]
+    if (last === undefined || last.kind !== "match") throw new Error("expected match row")
+    expect(last.spans.filter((span) => span.hit)).toEqual([{ text: "image", hit: true }])
+    expect(body.truncated).toBe(false)
+  })
+
+  test("pattern 绝不当正则执行:正则形态字面量匹配不上就诚实不高亮;摘录里的 secret 已被替换", () => {
+    // 正则元字符 pattern:字面量搜索找不到 → 单 span 无高亮(不执行不可信正则)。
+    expect(hitSpansOf("redis image: redis", "(image|img)+")).toEqual([{ text: "redis image: redis", hit: false }])
+    // 摘录先过共享 redactor:secret 赋值 span 已替换,高亮扫描只看展示文本。
+    const body = toolCardBodyOf(
+      part("grep", {
+        status: "completed",
+        input: { pattern: "deploy_key" },
+        output: "Found 1 matches\n\n/w/ci.env:\n  Line 4: deploy_key=sk-abcdefghijklmnop1234",
+      }),
+    )
+    if (body.type !== "grep") throw new Error("expected grep body")
+    const row = body.rows[1]
+    if (row === undefined || row.kind !== "match") throw new Error("expected match row")
+    const shown = row.spans.map((span) => span.text).join("")
+    expect(shown).not.toContain("sk-abcdefghijklmnop1234")
+    expect(shown).toContain("[已隐藏]")
+  })
+
+  test("路径 redactor 失败 ⇒ 整字段隐藏(不逐项降级);未识别行整行丢弃并标记截断", () => {
+    const overlong = `/w/${"a".repeat(1_100)}/hit.ts`
+    const hidden = toolCardBodyOf(
+      part("grep", {
+        status: "completed",
+        input: { pattern: "x" },
+        output: `Found 1 matches\n\n${overlong}:\n  Line 3: x = 1`,
+      }),
+    )
+    expect(hidden).toEqual({ type: "hidden" })
+
+    const stray = toolCardBodyOf(
+      part("grep", {
+        status: "completed",
+        input: { pattern: "x" },
+        output: "Found 1 matches\n\n/w/ok.ts:\n  Line 1: x = 2\nstray unformatted output",
+      }),
+    )
+    if (stray.type !== "grep") throw new Error("expected grep body")
+    expect(stray.rows).toHaveLength(2)
+    expect(stray.truncated).toBe(true)
   })
 })

@@ -229,6 +229,7 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
   const text = () => (props.body.type === "text" ? props.body : undefined)
   const files = () => (props.body.type === "files" ? props.body : undefined)
   const dir = () => (props.body.type === "dir" ? props.body : undefined)
+  const grep = () => (props.body.type === "grep" ? props.body : undefined)
   const links = () => (props.body.type === "links" ? props.body : undefined)
   const diff = () => (props.body.type === "diff" ? props.body : undefined)
   const write = () => (props.body.type === "write" ? props.body : undefined)
@@ -320,6 +321,40 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
               <TruncatedNote />
             </Show>
             <div class="a-tc-dircount">{t("alpha.timeline.countItems", { count: body().entries.length })}</div>
+          </div>
+        )}
+      </Show>
+      <Show when={grep()}>
+        {(body) => (
+          <div class="a-tc-grep" data-alpha-grep-body>
+            <For each={body().rows}>
+              {(row) => (
+                <Show
+                  when={row.kind === "match" ? row : undefined}
+                  fallback={<div class="a-tc-grep-file">{row.kind === "file" ? row.path : ""}</div>}
+                >
+                  {(matchRow) => (
+                    <div class="a-tc-grep-row">
+                      <Show when={matchRow().line !== undefined}>
+                        <span class="a-tc-grep-ln">:{matchRow().line}</span>
+                      </Show>
+                      <span class="a-tc-grep-text">
+                        <For each={matchRow().spans}>
+                          {(span) => (
+                            <Show when={span.hit} fallback={span.text}>
+                              <mark class="a-tc-grep-hit">{span.text}</mark>
+                            </Show>
+                          )}
+                        </For>
+                      </span>
+                    </div>
+                  )}
+                </Show>
+              )}
+            </For>
+            <Show when={body().truncated}>
+              <TruncatedNote />
+            </Show>
           </div>
         )}
       </Show>

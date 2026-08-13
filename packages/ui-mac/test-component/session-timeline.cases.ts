@@ -1106,6 +1106,62 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(grid.querySelector(".a-tc-dircount")!.textContent).toBe("共 5 项")
   })
 
+  test("#584 grep 卡:文件名/行号分色 + 命中高亮;路径脱敏失败 ⇒ 整字段隐藏且出确定标记", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_g1", "grep", {
+          status: "completed",
+          input: { pattern: "worker", include: "*.toml" },
+          metadata: { matches: 2 },
+          output: [
+            "Found 2 matches",
+            "",
+            "/Users/kai/proj/wrangler.toml:",
+            "  Line 3: name = \"edge-worker\"",
+            "  Line 11: # worker routes",
+          ].join("\n"),
+          title: "grep",
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='grep']")!
+    expect(card.querySelector(".a-tc-status")!.textContent).toBe("2 处命中")
+    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const body = card.querySelector("[data-alpha-grep-body]")!
+    // 文件行分色 + 路径脱敏(home 前缀折叠)。
+    expect(body.querySelector(".a-tc-grep-file")!.textContent).toBe("~/proj/wrangler.toml")
+    expect(body.textContent).not.toContain("/Users/")
+    // 行号分色元素与命中高亮元素落在 DOM 上。
+    expect([...body.querySelectorAll(".a-tc-grep-ln")].map((node) => node.textContent)).toEqual([":3", ":11"])
+    const hits = [...body.querySelectorAll("mark.a-tc-grep-hit")]
+    expect(hits).toHaveLength(2)
+    expect(hits.every((node) => node.textContent === "worker")).toBe(true)
+
+    // redactor 失败(超长路径)⇒ 整字段隐藏 + 常驻确定标记,无任何 grep 行残留。
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_g2", "grep", {
+          status: "completed",
+          input: { pattern: "x" },
+          metadata: { matches: 1 },
+          output: `Found 1 matches\n\n/w/${"s".repeat(1_200)}/vault.ts:\n  Line 8: x = token`,
+          title: "grep",
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+    const hiddenCard = host.querySelector("[data-alpha-tool-card][data-tool='grep']")!
+    expect(hiddenCard.querySelector("[data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
+    expect(hiddenCard.querySelector("[data-alpha-grep-body]")).toBeNull()
+    expect(hiddenCard.textContent).not.toContain("vault.ts")
+  })
+
   test("工具级错误卡(matched 卡):标题行 + 复制常驻;超帽错误默认收起;错误体先过 redactor", async () => {
     // 工具级错误卡的复制动作要真写剪贴板(CT #tools G4 帧的 .errcard-head 复制钮)。
     const copied: string[] = []
