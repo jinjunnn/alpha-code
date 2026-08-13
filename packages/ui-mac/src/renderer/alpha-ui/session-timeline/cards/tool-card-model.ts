@@ -809,7 +809,12 @@ export function searchLinksOf(output: string): { links: SearchLink[]; truncated:
         break
       }
       const url = stringOf(structured[index]!.url)
-      if (url === undefined) continue
+      // #586:缺 url 键 / 非字符串 = 丢掉了引擎真回过的一条结果 —— 与 push 里 redactUrl
+      // 失败那一支同口径标记截断,不静默。静默的话头部「N 条结果」低报且无任何缺席提示。
+      if (url === undefined) {
+        dropped = true
+        continue
+      }
       push(url, structured[index]!.title)
     }
     return { links, truncated: dropped }

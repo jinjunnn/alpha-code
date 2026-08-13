@@ -1249,6 +1249,43 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     })
   })
 
+  test("#586 websearch 卡:结构化结果缺 url 键被丢掉时出缺席提示 —— 头部条数低报不得静默", async () => {
+    const host = mount()
+    // 引擎回了 4 条,其中一条没有 url 键(不可信 payload 的常态)。渲染得出的只有 3 条,
+    // 头部就只能说 3 —— 那么这张卡必须同时带缺席提示,否则用户读到的是「一共就 3 条」。
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_ws2", "websearch", {
+          status: "completed",
+          input: { query: "css container queries" },
+          output: JSON.stringify({
+            results: [
+              { title: "Grid layout primer", url: "https://developer.mozilla.example/css/grid" },
+              { title: "标题在但 url 键不在" },
+              { title: "Flexbox recipes", url: "https://css-tricks.example/flexbox" },
+              { title: "Container queries", url: "https://web.example.dev/container-queries" },
+            ],
+          }),
+          title: "Web Search: css container queries",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='websearch']")!
+    expect(card.querySelector(".a-tc-status")!.textContent).toBe("3 条结果")
+    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+
+    const links = card.querySelector(".a-tc-links")!
+    expect(links.querySelectorAll(".a-tc-wr")).toHaveLength(3)
+    // 缺 url 的那条整条不渲染(标题也不借尸还魂),但缺席这件事必须写在卡上。
+    expect(card.textContent).not.toContain("标题在但 url 键不在")
+    expect(links.querySelector(".a-tc-truncated")!.textContent).toBe("内容过长,已截断展示")
+  })
+
   test("工具级错误卡(matched 卡):标题行 + 复制常驻;超帽错误默认收起;错误体先过 redactor", async () => {
     // 工具级错误卡的复制动作要真写剪贴板(CT #tools G4 帧的 .errcard-head 复制钮)。
     const copied: string[] = []

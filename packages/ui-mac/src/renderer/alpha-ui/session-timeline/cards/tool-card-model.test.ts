@@ -911,4 +911,52 @@ describe("#586 websearch 富链接模型(G17:结构化标题 allowlist + 字母�
     expect(JSON.stringify(body)).not.toContain("t".repeat(32))
     expect(body.truncated).toBe(true)
   })
+
+  test("结构化行缺 url 键 / url 非字符串:丢弃并标记截断,与 redactUrl 失败那一支同口径(不静默)", () => {
+    const body = toolCardBodyOf(
+      part("websearch", {
+        status: "completed",
+        input: { query: "css grid" },
+        output: JSON.stringify({
+          results: [
+            { title: "Grid primer", url: "https://mdn.example/css/grid" },
+            { title: "标题在但 url 键不在" },
+            { url: "https://web.example.dev/container-queries" },
+          ],
+        }),
+      }),
+    )
+    if (body.type !== "links") throw new Error("expected links body")
+    expect(body.links.map((link) => link.href)).toEqual([
+      "https://mdn.example/css/grid",
+      "https://web.example.dev/container-queries",
+    ])
+    // 丢掉的那条不留任何痕迹,但「丢过东西」这件事要上抛 —— 否则头部结果数低报且无提示。
+    expect(JSON.stringify(body)).not.toContain("url 键不在")
+    expect(body.truncated).toBe(true)
+
+    // url 键在、但不是字符串(数字/对象/空串)走同一支。
+    const nonString = toolCardBodyOf(
+      part("websearch", {
+        status: "completed",
+        input: { query: "q" },
+        output: JSON.stringify({ results: [{ url: 7 }, { url: { href: "x" } }, { url: "" }, { url: "https://only.example/one" }] }),
+      }),
+    )
+    if (nonString.type !== "links") throw new Error("expected links body")
+    expect(nonString.links.map((link) => link.href)).toEqual(["https://only.example/one"])
+    expect(nonString.truncated).toBe(true)
+
+    // 正对照:全部结构化行都带合法 url 时不得平白标记截断(杀掉「恒 true」的写法)。
+    const clean = toolCardBodyOf(
+      part("websearch", {
+        status: "completed",
+        input: { query: "q" },
+        output: JSON.stringify({ results: [{ url: "https://a.example/1" }, { url: "https://b.example/2" }] }),
+      }),
+    )
+    if (clean.type !== "links") throw new Error("expected links body")
+    expect(clean.links).toHaveLength(2)
+    expect(clean.truncated).toBe(false)
+  })
 })
