@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-13T03:04:28.922Z",
+  "productionBaselineCommit": "9b0949ebdacae77fff70e6b8932ba226e897fc5a",
+  "harness": "production SessionTimelineView via loopback Vite build + Chrome --headless=new",
+  "harnessSha256": "8593bd2f76277bf0794503e3a1c6c560bc5c7ff9cf58f56c49a3be4e3ec25d0f",
+  "captureDriverSha256": "3fa78a9bbd457866ca85d5b5f5f9fdf181dfa3c904c24203389c5681f62b0c2c",
+  "chrome": "Google Chrome 151.0.7922.137",
+  "viewports": {
+    "narrow": 460,
+    "wide": 1280
+  },
+  "foregroundApplicationLaunches": 0,
+  "credentialsUsed": false,
+  "electronStarted": false,
+  "records": [
+    {
+      "state": "list",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/list-light-narrow.png",
+      "bytes": 18663,
+      "sha256": "94facd7b6ee2f7160fdc1e9824226a6695306db21a038a613c04be5cbdf5bf39"
+    },
+    {
+      "state": "list",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/list-dark-narrow.png",
+      "bytes": 19113,
+      "sha256": "ccdd84298213b6fb8d5804b7e07e427d8a8341af7cd3ce3e41bbefbd92cbfd4f"
+    },
+    {
+      "state": "grep",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/grep-light-narrow.png",
+      "bytes": 21106,
+      "sha256": "904cce1b079d4be6548a1b986c1c2221bab07658849b4a66b1adb4e483e062bb"
+    },
+    {
+      "state": "grep",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/grep-dark-narrow.png",
+      "bytes": 21659,
+      "sha256": "3e8e054ac96fc1e9f2ae1b3cf8591e28487ad937160ac75a6b77e190a381d3e9"
+    },
+    {
+      "state": "grep-hidden",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/grep-hidden-light-narrow.png",
+      "bytes": 11263,
+      "sha256": "cebd8a78002020b0ddbb67e381fedcb3fb40a2b1d27127299cbd828065b388cd"
+    },
+    {
+      "state": "grep-hidden",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/grep-hidden-dark-narrow.png",
+      "bytes": 11401,
+      "sha256": "bb0b416587472100edbcf4173aaf35b49ec60b0acb160b6e2000de87a3125ec3"
+    },
+    {
+      "state": "websearch",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/websearch-light-narrow.png",
+      "bytes": 22704,
+      "sha256": "a317b0763213580e168e0ec15fe1af4f536c28fb48ca24a387e55711f5b1a753"
+    },
+    {
+      "state": "websearch",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/websearch-dark-narrow.png",
+      "bytes": 23275,
+      "sha256": "8ce365b7ead18f31cab91e39e4c29e5d0c9017950c05bbdd64d6082a7075f7d1"
+    },
+    {
+      "state": "all",
+      "theme": "light",
+      "width": "narrow",
+      "file": "shots/all-light-narrow.png",
+      "bytes": 52595,
+      "sha256": "d49ebd8ec7b71556c460b41dc08129bb140a3777c2366326cf6451ef1f51f75a"
+    },
+    {
+      "state": "all",
+      "theme": "dark",
+      "width": "narrow",
+      "file": "shots/all-dark-narrow.png",
+      "bytes": 54241,
+      "sha256": "3271a03eb876e8e66bff2dca12a52cbbde315c0ae979d89368c7f5751807a416"
+    },
+    {
+      "state": "list",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/list-light-wide.png",
+      "bytes": 21834,
+      "sha256": "500ae9062a2a6172212faf3598a78565e2b10254b991d367903c2dccee9c573f"
+    },
+    {
+      "state": "list",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/list-dark-wide.png",
+      "bytes": 22262,
+      "sha256": "cbc488800095b0fe0ac95b0189b1fbbd7f837e1ec21f61fea5d56dfcaba15642"
+    },
+    {
+      "state": "grep",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/grep-light-wide.png",
+      "bytes": 25862,
+      "sha256": "fd78cda49e405a000ecf7f469402e4f005a3071bf0f8f66562c628d847eb58af"
+    },
+    {
+      "state": "grep",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/grep-dark-wide.png",
+      "bytes": 26320,
+      "sha256": "2d248c5d47e7523d222a1b2303ac2f62e628af0ce47c13d137181ff7365ffe0c"
+    },
+    {
+      "state": "grep-hidden",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/grep-hidden-light-wide.png",
+      "bytes": 13753,
+      "sha256": "fc48d4792e52db5a7d171ac8409e5a440b572a04c8f944eb6770d43481ae1295"
+    },
+    {
+      "state": "grep-hidden",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/grep-hidden-dark-wide.png",
+      "bytes": 13850,
+      "sha256": "3d4027f5108c12a3943adb83810eaac18ff8a25d34b4c6238983a3c0b70347ac"
+    },
+    {
+      "state": "websearch",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/websearch-light-wide.png",
+      "bytes": 26796,
+      "sha256": "c090a6b348a5f280c6485183955c158290918f1f3918711fa743e6e0913d91d3"
+    },
+    {
+      "state": "websearch",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/websearch-dark-wide.png",
+      "bytes": 27244,
+      "sha256": "3333fe7d2edf942eb5cd3b9af47a7a491aca84c2e379f7806b988135da0e9e3a"
+    },
+    {
+      "state": "all",
+      "theme": "light",
+      "width": "wide",
+      "file": "shots/all-light-wide.png",
+      "bytes": 60915,
+      "sha256": "2f1a1faa590742fcd41561ab51473b762021fc0a87722d5e1e0e79a01886e788"
+    },
+    {
+      "state": "all",
+      "theme": "dark",
+      "width": "wide",
+      "file": "shots/all-dark-wide.png",
+      "bytes": 62102,
+      "sha256": "73a90e3d26af7f9c6259ed7c5f1ce5f7caabadafa55491219c59c2f8938ac876"
+    }
+  ]
+}
