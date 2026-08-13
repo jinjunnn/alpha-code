@@ -227,6 +227,16 @@ jobs:
       - name: bun test (ui-mac)
         if: needs.detect.outputs.code == 'true'
         run: bash scripts/bun-test-floor.sh 3000 packages/ui-mac src
+      # `#946`:packages/app 走滚动 pin(ADR-034),上游测试随 pin 一起来,其中 i18n parity
+      # 在 pin 849c2598 上就是红的(上游 locale 键滞后)—— 整包塞进 bun-test-floor 会造一道
+      # 恒红门(#754 形态),而完全不跑则让写在 packages/app 里的 alpha 判据「合并前跑不到」
+      # (#933:一处真红瞒过一整轮,含一轮对抗审计)。判据在 scripts/bun-test-app.sh:
+      # CI=1 钉上游自己的 CI 口径(整包唯一按 CI 分支的就是 parity 的 skipIf ⇒ 既有红不进门、
+      # 新红默认拒),再把 alpha-frontend.patch 里的 alpha 判据文件逐个点名重跑
+      # (文件数必须与补丁枚举相等 —— 删一个当场红,整包地板抓不到)。
+      - name: bun test (app rolling pin, alpha 判据入门)
+        if: needs.detect.outputs.code == 'true'
+        run: bash scripts/bun-test-app.sh
       # ── 第二层:闸门文件逐个点名 ────────────────────────────────────────────
       # 上面那些是**整包地板**,只抓灾难性丢失。它们抓不到「少了一个文件」——已两次实测:
       #   ui-mac 删掉 stream-read-hygiene.test.ts → 3077 条 ≥ 地板 3000 → 全绿

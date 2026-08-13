@@ -52,7 +52,7 @@ bash scripts/alpha-check.sh
 | **北极星守卫**(零改上游) | `[1/9]` `scripts/north-star-guard.sh`;等价 `git diff --diff-filter=DMR --name-only origin/alpha...HEAD -- <上游 8 包>` 必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
 | **NUL 字节闸** | `[2/9]` `scripts/assert-no-nul-bytes.py` | 同上 job | 字面 NUL 让 `grep` 对整个文件静默失明(`#760`) |
 | **typecheck**(三个 alpha 包) | `[3/9]` contracts-consumer + ext + ui-mac | `typecheck (alpha packages)` | 类型不过 |
-| **契约锁 + 单元测试** | `[4/9]` `check:vendor` + `bun-test-floor.sh` × 3(15 / 100 / 3000) | `unit tests (alpha packages)` | vendored hash、producer/consumer fixture 或运行时守卫回归 |
+| **契约锁 + 单元测试** | `[4/9]` `check:vendor` + `bun-test-floor.sh` × 3(15 / 100 / 3000)+ `bun-test-app.sh`(`#946`:滚动 pin 的 packages/app 以 CI=1 钉上游 CI 口径 —— pin 自带的 i18n parity 红被上游自己的 skipIf 治住、新红默认拒;另把 alpha-frontend.patch 里的 alpha 判据文件逐个点名重跑,删一个文件当场红) | `unit tests (alpha packages)` | vendored hash、producer/consumer fixture 或运行时守卫回归;packages/app 半场 = alpha 改动打穿了随 pin 而来的上游测试(#933 形态)或 alpha 判据文件消失 |
 | **闸门文件点名** | `[5/9]` `scripts/assert-gate-files.sh`(全量见 `scripts/gate-files.tsv`) | 同上 job | 某个闸门文件被删/被清空/条数偏离登记 —— 整包地板抓不到。`#844` 起逐条判**精确条数**(少=删了用例,多=新增未登记);改动闸门文件后跑 `bash scripts/assert-gate-files.sh --update` 从实测写回登记簿(all-or-nothing、幂等),例外语法与理由要求见 TSV 抬头或脚本 `--help` |
 | **seed assets** | `[6/9]` `scripts/assert-seed-assets.sh` | `seed assets present` | 打包资源被静默删除(B7/B15) |
 | **docs gate** | `[7/9]` `scripts/check-doc-links.py <改动的 md>` | `docs gate` | Markdown 相对链接断了 |
