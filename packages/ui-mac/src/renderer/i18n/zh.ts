@@ -1356,6 +1356,7 @@ export const dict = {
   "alpha.timeline.countFiles": "{{count}} 个文件",
   "alpha.timeline.countMatches": "{{count}} 处命中",
   "alpha.timeline.countItems": "共 {{count}} 项",
+  "alpha.timeline.countResults": "{{count}} 条结果",
   "alpha.timeline.explored": "已探索",
   "alpha.timeline.exploreReads": "{{count}} 次读取",
   "alpha.timeline.exploreSearches": "{{count}} 次搜索",

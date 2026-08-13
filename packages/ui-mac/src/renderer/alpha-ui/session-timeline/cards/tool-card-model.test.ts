@@ -367,9 +367,9 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
       part("websearch", { status: "completed", output: `${urls}\njavascript:alert(1)\nfile:///etc/passwd` }),
     )
     if (body.type !== "links") throw new Error("expected links body")
-    expect(body.urls.length).toBe(TOOL_LINKS_MAX)
+    expect(body.links.length).toBe(TOOL_LINKS_MAX)
     expect(body.truncated).toBe(true)
-    expect(body.urls.every((url) => url.startsWith("https://"))).toBe(true)
+    expect(body.links.every((link) => link.href.startsWith("https://"))).toBe(true)
     expect(extractHttpUrls("javascript:x data:y vbscript:z")).toEqual([])
     expect(extractHttpUrls(`https://long.example/${"p".repeat(TOOL_URL_MAX_CHARS)}`)).toEqual([])
   })
@@ -800,5 +800,80 @@ describe("#584 grep 命中高亮模型(G7:文件/行号结构化 + 字面量高�
     if (stray.type !== "grep") throw new Error("expected grep body")
     expect(stray.rows).toHaveLength(2)
     expect(stray.truncated).toBe(true)
+  })
+})
+
+describe("#586 websearch 富链接模型(G17:结构化标题 allowlist + 字母徽/域名导出 + 结果数)", () => {
+  test("结构化 results 出「宿主允许的标题」;host/字母徽从清洗后 URL 导出;头部出结果数", () => {
+    const output = JSON.stringify({
+      results: [
+        { title: "aria-busy & loading buttons", url: "https://www.w3.org/WAI/tutorials/?utm=x#top" },
+        { title: "SolidJS Suspense & pending UI", url: "https://docs.solidjs.com/guides/suspense" },
+        { url: "https://untitled.example.io/post" },
+      ],
+    })
+    const body = toolCardBodyOf(part("websearch", { status: "completed", input: { query: "solid a11y" }, output }))
+    if (body.type !== "links") throw new Error("expected links body")
+    expect(body.links).toEqual([
+      // query/fragment 已清洗;www. 前缀不进展示 host;字母徽 = host 首字符。
+      { href: "https://www.w3.org/WAI/tutorials/", host: "w3.org", letter: "W", title: "aria-busy & loading buttons" },
+      {
+        href: "https://docs.solidjs.com/guides/suspense",
+        host: "docs.solidjs.com",
+        letter: "D",
+        title: "SolidJS Suspense & pending UI",
+      },
+      // title 缺席的结构化行:无标题字段,不编造。
+      { href: "https://untitled.example.io/post", host: "untitled.example.io", letter: "U" },
+    ])
+    expect(body.truncated).toBe(false)
+
+    const head = toolCardHeadOf(part("websearch", { status: "completed", input: { query: "solid a11y" }, output }))
+    expect(head.count).toEqual({ unit: "results", value: 3 })
+    expect(head.target).toBe("solid a11y")
+  })
+
+  test("自由文本兜底:只捞裸 URL,永无标题;URL 仍逐条过 redactUrl(userinfo/query 不落 DOM)", () => {
+    const body = toolCardBodyOf(
+      part("websearch", {
+        status: "completed",
+        input: { query: "docs" },
+        output: "见 https://res.example.net/guide?apikey=ak_88yy 与 https://bob:pw456@mirror.example.org/dl",
+      }),
+    )
+    if (body.type !== "links") throw new Error("expected links body")
+    expect(body.links.map((link) => [link.href, link.host, link.letter, link.title])).toEqual([
+      ["https://res.example.net/guide", "res.example.net", "R", undefined],
+      ["https://mirror.example.org/dl", "mirror.example.org", "M", undefined],
+    ])
+    const flat = JSON.stringify(body)
+    expect(flat).not.toContain("ak_88yy")
+    expect(flat).not.toContain("pw456")
+    expect(flat).not.toContain("bob")
+  })
+
+  test("结构化行里的非法 URL 丢弃并标记截断;标题过共享 redactor(secret 形态整字段隐藏并标记)", () => {
+    const body = toolCardBodyOf(
+      part("websearch", {
+        status: "completed",
+        input: { query: "q" },
+        output: JSON.stringify({
+          results: [
+            { title: "ok page", url: "https://fine.example.com/a" },
+            { title: "bad scheme", url: "javascript:alert(1)" },
+            { title: `Bearer ${"t".repeat(200)}`, url: "https://leaky.example.org/b" },
+          ],
+        }),
+      }),
+    )
+    if (body.type !== "links") throw new Error("expected links body")
+    expect(body.links.map((link) => link.href)).toEqual([
+      "https://fine.example.com/a",
+      "https://leaky.example.org/b",
+    ])
+    expect(body.links[0]!.title).toBe("ok page")
+    // Bearer credential 形态:redactor 把 span 替换;展示标题绝不含原 token。
+    expect(JSON.stringify(body)).not.toContain("t".repeat(32))
+    expect(body.truncated).toBe(true)
   })
 })

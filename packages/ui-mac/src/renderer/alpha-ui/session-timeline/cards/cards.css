@@ -785,25 +785,62 @@ button.a-tc-head:focus-visible {
   overflow: auto;
 }
 
-.a-tc-link {
+/* ── websearch 富链接行(CT #tools G17 帧:字母徽 + 标题 + 域名) ─────────── */
+.a-tc-wr {
+  display: flex;
+  gap: 9px;
+  align-items: center;
   overflow: hidden;
-  padding: 5px 8px;
+  padding: 6px 8px;
+  min-width: 0;
   border-radius: var(--a-radius-md);
   color: var(--a-text-secondary);
   font-size: var(--a-text-sm);
   text-decoration: none;
+}
+
+.a-tc-wr:hover {
+  background: var(--a-bg-subtle);
+}
+
+.a-tc-wr:focus-visible {
+  outline: none;
+  box-shadow: inset var(--a-ring-focus);
+}
+
+.a-tc-fav {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--a-bg-inset);
+  color: var(--a-text-tertiary);
+  font-size: 8px;
+  font-weight: var(--a-weight-bold);
+}
+
+.a-tc-wt {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--a-text);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.a-tc-link:hover {
-  background: var(--a-bg-subtle);
-  color: var(--a-text);
+/* 无结构化标题时降回清洗后的 href:保持 mono 视觉,别伪装成远端标题。 */
+.a-tc-wt[data-fallback="href"] {
+  color: var(--a-text-secondary);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
 }
 
-.a-tc-link:focus-visible {
-  outline: none;
-  box-shadow: inset var(--a-ring-focus);
+.a-tc-wu {
+  flex: none;
+  margin-left: auto;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
 }
 
 /* diff 视图(edit 卡) */

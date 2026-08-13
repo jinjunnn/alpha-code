@@ -183,6 +183,7 @@ function StatusChip(props: { head: ToolCardHead }) {
     if (head.count) {
       if (head.count.unit === "matches") return t("alpha.timeline.countMatches", { count: head.count.value })
       if (head.count.unit === "items") return t("alpha.timeline.countItems", { count: head.count.value })
+      if (head.count.unit === "results") return t("alpha.timeline.countResults", { count: head.count.value })
       return t("alpha.timeline.countFiles", { count: head.count.value })
     }
     return t("alpha.timeline.toolCompleted")
@@ -358,13 +359,21 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
           </div>
         )}
       </Show>
+      {/* #586 富链接列表(G17):字母徽(不是 favicon,不发远端请求)+ 标题 + 域名。
+          title 只来自结构化 allowlist(已过 redactor);缺席时降回清洗后的 href。 */}
       <Show when={links()}>
         {(body) => (
           <div class="a-tc-links">
-            <For each={body().urls}>
-              {(url) => (
-                <a class="a-tc-link" href={url} target="_blank" rel="noopener noreferrer">
-                  {url}
+            <For each={body().links}>
+              {(link) => (
+                <a class="a-tc-wr" href={link.href} target="_blank" rel="noopener noreferrer">
+                  <span class="a-tc-fav" aria-hidden="true">
+                    {link.letter}
+                  </span>
+                  <span class="a-tc-wt" data-fallback={link.title === undefined ? "href" : undefined}>
+                    {link.title ?? link.href}
+                  </span>
+                  <span class="a-tc-wu">{link.host}</span>
                 </a>
               )}
             </For>

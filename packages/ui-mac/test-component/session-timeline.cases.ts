@@ -969,9 +969,10 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("cloud_cloud_web_search")
     expect(dev.querySelector(".a-tc-dev-body")!.textContent).toContain("mcp:cloud:cloud_web_search")
     // 链接体:URL 过 redactor 后可点(matched 云卡有 body;默认折叠与否不影响存在性)。
+    // #586 起链接行 = 富链接形态(字母徽 + 域名),云卡与 builtin websearch 同一管线。
     ;(search.querySelector(".a-tc-head") as HTMLButtonElement).click()
     await flush()
-    const links = [...search.querySelectorAll(".a-tc-link")].map((node) => node.getAttribute("href"))
+    const links = [...search.querySelectorAll(".a-tc-wr")].map((node) => node.getAttribute("href"))
     expect(links).toEqual(["https://docs.example.org/deploy", "https://blog.example.net/e7"])
 
     // 运行态 await:同一形态的语义标题 + 关键目标 + 运行中;绝不显示拼接 id。
@@ -1160,6 +1161,58 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(hiddenCard.querySelector("[data-alpha-details-hidden]")!.textContent).toBe("详情已隐藏")
     expect(hiddenCard.querySelector("[data-alpha-grep-body]")).toBeNull()
     expect(hiddenCard.textContent).not.toContain("vault.ts")
+  })
+
+  test("#586 websearch 卡:字母徽 + 标题 + 域名的富链接;头部只出结果数(无供应商名);URL 仍过脱敏", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_ws1", "websearch", {
+          status: "completed",
+          input: { query: "solid-js loading a11y" },
+          output: JSON.stringify({
+            results: [
+              { title: "aria-busy & loading buttons", url: "https://www.w3.org/WAI/tutorials/?utm=trk#sec" },
+              { title: "SolidJS Suspense & pending UI", url: "https://docs.solidjs.com/guides/suspense" },
+            ],
+          }),
+          title: "Exa Web Search: solid-js loading a11y",
+          metadata: { provider: "exa" },
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='websearch']")!
+    // 头部:query 目标 + 「N 条结果」;供应商名(Exa)不在基线白名单,任何位置都不显示。
+    expect(card.querySelector(".a-tc-target")!.textContent).toBe("solid-js loading a11y")
+    expect(card.querySelector(".a-tc-status")!.textContent).toBe("2 条结果")
+    expect(card.textContent).not.toContain("Exa")
+    expect(card.textContent).not.toContain("exa")
+    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+
+    // 富链接行:字母徽是纯文本首字母块(非 favicon,零 <img>、零远端请求面)。
+    const rows = [...card.querySelectorAll(".a-tc-wr")]
+    expect(rows).toHaveLength(2)
+    expect(card.querySelectorAll(".a-tc-links img")).toHaveLength(0)
+    expect(rows.map((row) => row.querySelector(".a-tc-fav")!.textContent)).toEqual(["W", "D"])
+    expect(rows.map((row) => row.querySelector(".a-tc-wt")!.textContent)).toEqual([
+      "aria-busy & loading buttons",
+      "SolidJS Suspense & pending UI",
+    ])
+    expect(rows.map((row) => row.querySelector(".a-tc-wu")!.textContent)).toEqual(["w3.org", "docs.solidjs.com"])
+    // 链接 href 已清洗:query/fragment 不落 DOM;外开形态固定。
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual([
+      "https://www.w3.org/WAI/tutorials/",
+      "https://docs.solidjs.com/guides/suspense",
+    ])
+    expect(card.textContent).not.toContain("utm=trk")
+    rows.forEach((row) => {
+      expect(row.getAttribute("target")).toBe("_blank")
+      expect(row.getAttribute("rel")).toContain("noopener")
+    })
   })
 
   test("工具级错误卡(matched 卡):标题行 + 复制常驻;超帽错误默认收起;错误体先过 redactor", async () => {

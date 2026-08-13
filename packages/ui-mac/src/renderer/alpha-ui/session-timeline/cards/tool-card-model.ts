@@ -355,8 +355,8 @@ export interface ToolCardHead {
   detail?: string
   /** 次级细节存在但 redactor 失败/清空 → 确定的「详情已隐藏」(#934 Minor:AC5 标记补齐,不再静默丢字段)。 */
   detailHidden?: boolean
-  /** 计数徽标(文件数/命中数/目录项数)。 */
-  count?: { unit: "files" | "matches" | "items"; value: number }
+  /** 计数徽标(文件数/命中数/目录项数/搜索结果数)。 */
+  count?: { unit: "files" | "matches" | "items" | "results"; value: number }
   /** +N/−N 改动徽标。 */
   stat?: { additions: number; deletions: number }
   /** bash 完成态退出码(缺失 = 引擎未报,徽标退回「完成」)。 */
@@ -471,6 +471,13 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
     }
     case "websearch": {
       assignInline(head, input.query)
+      // #586:头部只出「结果数」(基线 web search 顶层白名单:宿主标题 / query /
+      // 结果数 / 状态 —— 供应商名不在内,对照帧的「Exa · 3 条」不落地)。
+      // 计数 = 实际渲染的链接行数(清洗后),不转述远端自称的总量。
+      if (status === "success") {
+        const { links } = searchLinksOf(outputOf(part))
+        if (links.length > 0) head.count = { unit: "results", value: links.length }
+      }
       return head
     }
     case "bash": {
@@ -564,6 +571,19 @@ export interface GrepSpan {
   hit: boolean
 }
 
+/**
+ * #586 富链接行:href 已过 redactUrl;host / letter(字母徽,**不是 favicon** ——
+ * favicon = 渲染进程发远端请求,基线未授权的新隐私面)从清洗后 URL 导出;
+ * title 只来自结构化 `results[].title` allowlist 键并已过共享 redactor(基线
+ * §5.2 web search:「宿主允许的标题」),自由文本兜底路径没有标题。
+ */
+export interface SearchLink {
+  href: string
+  host: string
+  letter: string
+  title?: string
+}
+
 export type ToolCardBody =
   | { type: "none" }
   | { type: "hidden" }
@@ -575,7 +595,7 @@ export type ToolCardBody =
   | { type: "diff"; patch: string }
   | { type: "write"; path?: string; preview: string[]; totalLines: number; approx: boolean }
   | { type: "patch"; files: PatchFileRow[]; truncated: boolean }
-  | { type: "links"; urls: string[]; truncated: boolean }
+  | { type: "links"; links: SearchLink[]; truncated: boolean }
   | { type: "error"; message: string; truncated: boolean }
 
 // ── #583 list 目录网格(CT `#tools` G6 帧;基线 §5.2「文件读取/列表」类) ────
@@ -712,28 +732,95 @@ function grepBodyOf(part: ToolPart): ToolCardBody {
   return { type: "grep", rows, truncated }
 }
 
-/** websearch / cloud web_search 共用的链接体:每条 URL 过 redactUrl,失败即丢。 */
-function linksBodyOf(output: string): ToolCardBody {
-  const urls = extractHttpUrls(output)
-  const cleaned: string[] = []
+/** 从**已清洗**的 href 导出展示 host 与字母徽;解析失败 = 丢弃该行(fail-closed)。 */
+function searchLinkOf(href: string): SearchLink | undefined {
+  try {
+    const url = new URL(href)
+    const host = url.host.replace(/^www\./, "")
+    if (host.length === 0) return undefined
+    const letter = (/[a-z0-9]/i.exec(host)?.[0] ?? host[0]!).toUpperCase()
+    return { href, host: cappedItem(host), letter }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 结构化结果解析(#586):只认引擎会返回的 `{"results":[…]}` JSON 形状
+ * (mcp-websearch.ts 的 structuredContent 成功路)。整串有扫描预算帽;非该形状
+ * 一律 undefined,回落到裸 URL 扫描 —— 标题只能来自这里的 `title` allowlist 键。
+ */
+function structuredResultsOf(output: string): { url?: unknown; title?: unknown }[] | undefined {
+  const trimmed = output.trim()
+  if (trimmed.length === 0 || trimmed.length > TOOL_SCAN_MAX_CHARS) return undefined
+  if (!trimmed.startsWith("{")) return undefined
+  try {
+    const parsed = JSON.parse(trimmed) as { results?: unknown }
+    if (typeof parsed !== "object" || parsed === null) return undefined
+    const results = parsed.results
+    if (!Array.isArray(results)) return undefined
+    return results.filter(
+      (item): item is { url?: unknown; title?: unknown } => typeof item === "object" && item !== null,
+    )
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * websearch / cloud web_search 共用的链接体:每条 URL 过 redactUrl,失败即丢;
+ * 结构化 `results[].title` 过共享 redactor(失败 = 隐藏该标题字段并标记截断,
+ * 不静默),host / 字母徽从清洗后 URL 导出。数量与迭代双有界(I7)。
+ */
+export function searchLinksOf(output: string): { links: SearchLink[]; truncated: boolean } {
+  const links: SearchLink[] = []
   const seen = new Set<string>()
   let dropped = false
-  for (const url of urls) {
-    const clean = redactUrl(url, TOOL_URL_MAX_CHARS)
+  const push = (rawUrl: string, rawTitle?: unknown): void => {
+    const clean = redactUrl(rawUrl, TOOL_URL_MAX_CHARS)
     if (!clean.ok) {
       dropped = true
-      continue
+      return
     }
-    if (seen.has(clean.value)) continue
+    if (seen.has(clean.value)) return
+    const link = searchLinkOf(clean.value)
+    if (link === undefined) {
+      dropped = true
+      return
+    }
     seen.add(clean.value)
-    cleaned.push(clean.value)
+    const title = redactedInlineOf(rawTitle)
+    if (title.hidden) dropped = true
+    else if (title.value !== undefined) link.title = title.value
+    links.push(link)
   }
-  if (cleaned.length === 0) return { type: "none" }
-  return {
-    type: "links",
-    urls: cleaned.slice(0, TOOL_LINKS_MAX),
-    truncated: dropped || cleaned.length > TOOL_LINKS_MAX,
+  const structured = structuredResultsOf(output)
+  if (structured !== undefined) {
+    for (let index = 0; index < structured.length; index += 1) {
+      if (index >= TOOL_LIST_SCAN_MAX || links.length >= TOOL_LINKS_MAX) {
+        dropped = true
+        break
+      }
+      const url = stringOf(structured[index]!.url)
+      if (url === undefined) continue
+      push(url, structured[index]!.title)
+    }
+    return { links, truncated: dropped }
   }
+  for (const url of extractHttpUrls(output)) {
+    if (links.length >= TOOL_LINKS_MAX) {
+      dropped = true
+      break
+    }
+    push(url)
+  }
+  return { links, truncated: dropped }
+}
+
+function linksBodyOf(output: string): ToolCardBody {
+  const { links, truncated } = searchLinksOf(output)
+  if (links.length === 0) return { type: "none" }
+  return { type: "links", links, truncated }
 }
 
 function textBodyOf(raw: string, maxChars = TOOL_BODY_MAX_CHARS, maxLines = TOOL_BODY_MAX_LINES): ToolCardBody {

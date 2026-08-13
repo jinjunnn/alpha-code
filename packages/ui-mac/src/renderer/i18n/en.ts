@@ -1380,6 +1380,7 @@ export const dict = {
   "alpha.timeline.countFiles": "{{count}} files",
   "alpha.timeline.countMatches": "{{count}} matches",
   "alpha.timeline.countItems": "{{count}} items",
+  "alpha.timeline.countResults": "{{count}} results",
   "alpha.timeline.explored": "Explored",
   "alpha.timeline.exploreReads": "{{count}} reads",
   "alpha.timeline.exploreSearches": "{{count}} searches",
