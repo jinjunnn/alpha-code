@@ -683,6 +683,62 @@ button.a-tc-head:focus-visible {
   color: var(--a-tool-write);
 }
 
+/* ── list 目录网格(CT #tools G6 帧:auto-fill 网格 + 目录/文件分色 + 「共 N 项」footer) ── */
+.a-tc-dirgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1px 18px;
+  padding: 10px 13px;
+  max-height: 240px;
+  overflow: auto;
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-sm);
+}
+
+.a-tc-dir-item {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  overflow: hidden;
+  padding: 2px 0;
+  min-width: 0;
+  color: var(--a-text-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.a-tc-dir-item svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: var(--a-text-disabled);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-tc-dir-item[data-entry="dir"] {
+  color: var(--a-text);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-tc-dir-item[data-entry="dir"] svg {
+  stroke: var(--a-accent);
+}
+
+.a-tc-dir > .a-tc-truncated {
+  margin: 0;
+  padding: 0 13px 6px;
+}
+
+.a-tc-dircount {
+  padding: 6px 13px;
+  border-top: 1px solid var(--a-border-faint);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+}
+
 .a-tc-links {
   display: flex;
   flex-direction: column;

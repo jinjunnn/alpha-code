@@ -182,6 +182,7 @@ function StatusChip(props: { head: ToolCardHead }) {
     if (head.kind === "skill") return t("alpha.timeline.skillLoaded")
     if (head.count) {
       if (head.count.unit === "matches") return t("alpha.timeline.countMatches", { count: head.count.value })
+      if (head.count.unit === "items") return t("alpha.timeline.countItems", { count: head.count.value })
       return t("alpha.timeline.countFiles", { count: head.count.value })
     }
     return t("alpha.timeline.toolCompleted")
@@ -227,6 +228,7 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
   const term = () => (props.body.type === "term" ? props.body : undefined)
   const text = () => (props.body.type === "text" ? props.body : undefined)
   const files = () => (props.body.type === "files" ? props.body : undefined)
+  const dir = () => (props.body.type === "dir" ? props.body : undefined)
   const links = () => (props.body.type === "links" ? props.body : undefined)
   const diff = () => (props.body.type === "diff" ? props.body : undefined)
   const write = () => (props.body.type === "write" ? props.body : undefined)
@@ -286,6 +288,38 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
             <Show when={body().truncated}>
               <TruncatedNote />
             </Show>
+          </div>
+        )}
+      </Show>
+      <Show when={dir()}>
+        {(body) => (
+          <div class="a-tc-dir" data-alpha-dir-grid>
+            <div class="a-tc-dirgrid">
+              <For each={body().entries}>
+                {(entry) => (
+                  <span class="a-tc-dir-item" data-entry={entry.dir ? "dir" : "file"}>
+                    <Show
+                      when={entry.dir}
+                      fallback={
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+                          <path d="M14 3v6h6" />
+                        </svg>
+                      }
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 7l2-3h5l2 3h7v11H3z" />
+                      </svg>
+                    </Show>
+                    {entry.name}
+                  </span>
+                )}
+              </For>
+            </div>
+            <Show when={body().truncated}>
+              <TruncatedNote />
+            </Show>
+            <div class="a-tc-dircount">{t("alpha.timeline.countItems", { count: body().entries.length })}</div>
           </div>
         )}
       </Show>

@@ -1072,6 +1072,40 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(pluginDev.textContent).toContain("plugin:sample-plugin:bash")
   })
 
+  test("#583 list 卡:目录网格 + 目录/文件分类图标 + 「共 N 项」计数(头徽标与 footer);home 前缀不显示", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_l1", "list", {
+          status: "completed",
+          input: { path: "/Users/kai/proj/site" },
+          output: "assets/\nsrc/\nindex.html\npackage.json\nvite.config.ts",
+          title: "list",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='list']")!
+    // 头部:路径折叠 home 前缀(基线明令不显示带用户名的 home 前缀);状态徽标 = 计数。
+    expect(card.querySelector(".a-tc-target")!.textContent).toBe("~/proj/site")
+    expect(card.textContent).not.toContain("/Users/")
+    expect(card.querySelector(".a-tc-status")!.textContent).toBe("共 5 项")
+
+    // 展开体:网格分类渲染,目录先于文件各带图标,footer 复述计数。
+    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const grid = card.querySelector("[data-alpha-dir-grid]")!
+    const dirs = [...grid.querySelectorAll(".a-tc-dir-item[data-entry='dir']")].map((node) => node.textContent)
+    const files = [...grid.querySelectorAll(".a-tc-dir-item[data-entry='file']")].map((node) => node.textContent)
+    expect(dirs).toEqual(["assets", "src"])
+    expect(files).toEqual(["index.html", "package.json", "vite.config.ts"])
+    expect(grid.querySelectorAll(".a-tc-dir-item svg")).toHaveLength(5)
+    expect(grid.querySelector(".a-tc-dircount")!.textContent).toBe("共 5 项")
+  })
+
   test("工具级错误卡(matched 卡):标题行 + 复制常驻;超帽错误默认收起;错误体先过 redactor", async () => {
     // 工具级错误卡的复制动作要真写剪贴板(CT #tools G4 帧的 .errcard-head 复制钮)。
     const copied: string[] = []

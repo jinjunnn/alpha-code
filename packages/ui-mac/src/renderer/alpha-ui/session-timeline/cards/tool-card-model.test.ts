@@ -671,3 +671,58 @@ describe("#568 审计修复:diagnostics 外层文件数扫描预算(Major-3)", (
     expect(normalized.rows).toHaveLength(1)
   })
 })
+
+describe("#583 list 目录网格模型(G6:目录/文件分类 + 计数 + 有界)", () => {
+  test("条目按尾随 / 分类;注记行不算条目;头部完成态出「共 N 项」计数", () => {
+    const output = ".claude/\napp/\ndocs/\ndocker-compose.yml\npyproject.toml\nREADME.md\n\n(6 entries)"
+    const body = toolCardBodyOf(part("list", { status: "completed", input: { path: "/w/demo" }, output }))
+    if (body.type !== "dir") throw new Error("expected dir body")
+    expect(body.entries).toEqual([
+      { name: ".claude", dir: true },
+      { name: "app", dir: true },
+      { name: "docs", dir: true },
+      { name: "docker-compose.yml", dir: false },
+      { name: "pyproject.toml", dir: false },
+      { name: "README.md", dir: false },
+    ])
+    expect(body.truncated).toBe(false)
+
+    const head = toolCardHeadOf(part("list", { status: "completed", input: { path: "/w/demo" }, output }))
+    expect(head.count).toEqual({ unit: "items", value: 6 })
+  })
+
+  test("home 前缀路径折叠为 ~(基线:不显示带用户名的 home 前缀);脱敏失败项丢弃并标记截断", () => {
+    const head = toolCardHeadOf(
+      part("list", { status: "completed", input: { path: "/Users/kai/app/kama-bot-local" }, output: "src/\n" }),
+    )
+    expect(head.target).toBe("~/app/kama-bot-local")
+    expect(head.target).not.toContain("/Users/")
+
+    // 控制字符条目 redactPath 失败 → 整项丢弃 + truncated;计数诚实缺席(不低报总量)。
+    const withBad = "ok.txt\nbad\u0007name\nzz/"
+    const bad = toolCardBodyOf(part("list", { status: "completed", input: { path: "/w" }, output: withBad }))
+    if (bad.type !== "dir") throw new Error("expected dir body")
+    expect(bad.entries).toEqual([
+      { name: "ok.txt", dir: false },
+      { name: "zz", dir: true },
+    ])
+    expect(bad.truncated).toBe(true)
+    const badHead = toolCardHeadOf(part("list", { status: "completed", input: { path: "/w" }, output: withBad }))
+    expect(badHead.count).toBeUndefined()
+  })
+
+  test("引擎「(Showing X of Y entries…)」注记 = 截断;项数帽有界(I7)", () => {
+    const truncatedByEngine = toolCardBodyOf(
+      part("list", { status: "completed", input: { path: "/w" }, output: "a/\nb.txt\n(Showing 2 of 40 entries. …)" }),
+    )
+    if (truncatedByEngine.type !== "dir") throw new Error("expected dir body")
+    expect(truncatedByEngine.entries).toHaveLength(2)
+    expect(truncatedByEngine.truncated).toBe(true)
+
+    const flood = Array.from({ length: TOOL_LIST_MAX_ITEMS + 9 }, (_, i) => `f${i}.ts`).join("\n")
+    const capped = toolCardBodyOf(part("list", { status: "completed", input: { path: "/w" }, output: flood }))
+    if (capped.type !== "dir") throw new Error("expected dir body")
+    expect(capped.entries).toHaveLength(TOOL_LIST_MAX_ITEMS)
+    expect(capped.truncated).toBe(true)
+  })
+})

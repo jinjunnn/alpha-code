@@ -355,8 +355,8 @@ export interface ToolCardHead {
   detail?: string
   /** 次级细节存在但 redactor 失败/清空 → 确定的「详情已隐藏」(#934 Minor:AC5 标记补齐,不再静默丢字段)。 */
   detailHidden?: boolean
-  /** 计数徽标(文件数/命中数)。 */
-  count?: { unit: "files" | "matches"; value: number }
+  /** 计数徽标(文件数/命中数/目录项数)。 */
+  count?: { unit: "files" | "matches" | "items"; value: number }
   /** +N/−N 改动徽标。 */
   stat?: { additions: number; deletions: number }
   /** bash 完成态退出码(缺失 = 引擎未报,徽标退回「完成」)。 */
@@ -437,6 +437,12 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
       const path = redactedPathOf(input.path)
       if (path.hidden) head.targetHidden = true
       else if (path.value !== undefined) head.target = cappedItem(path.value)
+      // #583:完成态头部计数「共 N 项」。只有解析出完整(未截断)条目集时才出计数 ——
+      // 截断集的条数会低报总量,诚实缺席退回「完成」。
+      if (status === "success") {
+        const dir = dirEntriesOf(outputOf(part), metadata)
+        if (dir.entries.length > 0 && !dir.truncated) head.count = { unit: "items", value: dir.entries.length }
+      }
       return head
     }
     case "glob": {
@@ -544,17 +550,74 @@ export interface PatchFileRow {
   deletions: number
 }
 
+/** #583 目录网格体的单项(路径已脱敏;dir 按条目尾随 `/` 判定)。 */
+export interface DirEntry {
+  name: string
+  dir: boolean
+}
+
 export type ToolCardBody =
   | { type: "none" }
   | { type: "hidden" }
   | { type: "text"; text: string; truncated: boolean }
   | { type: "term"; output: string; truncated: boolean; streaming: boolean }
   | { type: "files"; files: string[]; truncated: boolean; badge?: "read" }
+  | { type: "dir"; entries: DirEntry[]; truncated: boolean }
   | { type: "diff"; patch: string }
   | { type: "write"; path?: string; preview: string[]; totalLines: number; approx: boolean }
   | { type: "patch"; files: PatchFileRow[]; truncated: boolean }
   | { type: "links"; urls: string[]; truncated: boolean }
   | { type: "error"; message: string; truncated: boolean }
+
+// ── #583 list 目录网格(CT `#tools` G6 帧;基线 §5.2「文件读取/列表」类) ────
+/**
+ * 目录输出的有界解析:逐行取条目,尾随 `/` = 目录;`(...)` 注记行不算条目
+ * (`(Showing …` 代表引擎侧截断)。每项过 redactPath(基线:已脱敏路径列表,
+ * 不显示带用户名的 home 前缀);失败项整项丢弃并以截断标记诚实呈现(同 read/glob
+ * 列表纪律)。双约束:项数帽 + 行迭代预算 + 扫描预算(I7)。
+ */
+export function dirEntriesOf(
+  output: string,
+  metadata: Record<string, unknown>,
+): { entries: DirEntry[]; truncated: boolean } {
+  const scan = output.slice(0, TOOL_SCAN_MAX_CHARS)
+  let truncated = output.length > scan.length || metadata.truncated === true
+  const entries: DirEntry[] = []
+  const lines = scan.split("\n")
+  for (let index = 0; index < lines.length; index += 1) {
+    if (index >= TOOL_LIST_SCAN_MAX || entries.length >= TOOL_LIST_MAX_ITEMS) {
+      truncated = true
+      break
+    }
+    let line = cappedItem(lines[index]!).trim()
+    if (line.length === 0) continue
+    if (line.startsWith("(")) {
+      // 引擎的「(Showing X of Y entries…)」注记 = 上游已截断;「(N entries)」只是尾注。
+      if (line.startsWith("(Showing")) truncated = true
+      continue
+    }
+    if (line.startsWith("- ")) line = line.slice(2)
+    const dir = line.endsWith("/")
+    const clean = redactPath(line, TOOL_PATH_MAX_CHARS)
+    if (!clean.ok || clean.value.length === 0) {
+      truncated = true
+      continue
+    }
+    const name = clean.value.endsWith("/") ? clean.value.slice(0, -1) : clean.value
+    if (name.length === 0) {
+      truncated = true
+      continue
+    }
+    entries.push({ name: cappedItem(name), dir })
+  }
+  return { entries, truncated }
+}
+
+function dirBodyOf(part: ToolPart): ToolCardBody {
+  const { entries, truncated } = dirEntriesOf(outputOf(part), metadataOf(part))
+  if (entries.length === 0) return { type: "none" }
+  return { type: "dir", entries, truncated }
+}
 
 /** websearch / cloud web_search 共用的链接体:每条 URL 过 redactUrl,失败即丢。 */
 function linksBodyOf(output: string): ToolCardBody {
@@ -662,9 +725,11 @@ export function toolCardBodyOf(part: ToolPart): ToolCardBody {
       if (files.length === 0) return { type: "none" }
       return { type: "files", files, truncated: overflow || metadata.truncated === true }
     }
-    case "grep":
-    case "list": {
+    case "grep": {
       return textBodyOf(outputOf(part))
+    }
+    case "list": {
+      return dirBodyOf(part)
     }
     case "webfetch":
       // 设计口径:仅触发行(URL 已在头部),不内联网页内容。
