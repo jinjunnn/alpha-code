@@ -285,6 +285,16 @@ describe("streaming download (descriptor path)", () => {
     }
   })
 
+  // [#940] 未映射状态经 platform-error-code 咽喉:平台给稳定分类码就呈现 code,无码保持
+  // http-<status>(上面 500 那条即对照臂 —— 它的 fakeResponse 连 body 都没有)。
+  test("unmapped rejection with a platform classification code surfaces the code, not http-400", async () => {
+    const { fetchImpl } = mockFetch(
+      () => new Response(JSON.stringify({ error: "upload rejected", code: "upload_reserved_input" }), { status: 400 }),
+    )
+    const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(fetchImpl))
+    expect(res).toMatchObject({ ok: false, error: "upload_reserved_input" })
+  })
+
   test("unknown schemaVersion → unsupported-schema, no request (read-only/error rule)", async () => {
     const { fetchImpl, calls } = mockFetch(() => okResponse([]))
     const res = await downloadArtifactToFile(

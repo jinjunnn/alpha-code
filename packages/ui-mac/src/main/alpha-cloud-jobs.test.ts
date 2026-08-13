@@ -11,6 +11,6 @@ test("cloud job action-selection cases run green in an isolated child process", 
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain(" 8 pass")
+  expect(output).toContain(" 10 pass")
   expect(output).toContain(" 0 fail")
 })

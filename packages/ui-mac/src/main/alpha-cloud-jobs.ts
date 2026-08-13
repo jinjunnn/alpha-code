@@ -19,6 +19,8 @@ import {
 } from "@alpha-code/contracts-consumer"
 import { resolveEndpoints } from "./alpha-endpoints"
 import { getAccessToken } from "./alpha-auth"
+// [#918→#940] 平台拒绝 → 错误字符串的唯一咽喉(分类码优先,无码保持 http-<status> 不猜)。
+import { httpErrorCode } from "./platform-error-code"
 import { guardCloudEnvelope } from "./cloud-envelope-guard"
 import {
   downloadArtifactToFile,
@@ -40,24 +42,6 @@ import type { createExplicitUploadRequest } from "./alpha-upload-manifest"
 
 // Resolved by alpha-endpoints (env ALPHA_CLOUD_URL > userData pin > login discovery > default).
 const cloudBase = () => resolveEndpoints().cloud
-
-// [#918] 平台的拒绝带**稳定分类码**(alpha-platform@9cf67bd `lib/cloud-core.ts:177`
-// `denied_paths_unenforceable_for_execution_form`、`upload_reserved_input`、readiness 的
-// `billing_unready` …)。把它压成 `http-400` 等于把「你要的那条限制,这个执行形态根本强制不了」
-// 这句诚实说明丢掉,只留一个用户无从下手的数字 —— 而 renderer 会把它原样贴在错误行里。
-// 只取 `code` 这一个分类槽:`error` 是散文,可能携带路径/租户且随时会变,不进 UI。
-// 无 `code`(或形状不认识)⇒ 保持既有 `http-<status>`,不猜。
-const CLASSIFICATION_CODE = /^[a-z][a-z0-9_]{2,63}$/
-async function httpErrorCode(res: Response): Promise<string> {
-  const fallback = `http-${res.status}`
-  try {
-    const body: unknown = JSON.parse(await res.text())
-    const code = (body as { code?: unknown } | null)?.code
-    return typeof code === "string" && CLASSIFICATION_CODE.test(code) ? code : fallback
-  } catch {
-    return fallback
-  }
-}
 
 // #400(REQ-109 AC5 桌面半场):submit 的有界客户端重试。上限是硬的 —— 恰好 3 次尝试,之后把
 // 分类错误原样交给调用方,绝不无界自旋。只有「响应根本没形成」(fetch 抛:超时/断连/DNS)和
@@ -169,7 +153,9 @@ export async function dispatchExplicitCloudUpload(input: {
       DISPATCH_MAX_ATTEMPTS,
     )
     if (response.status === 401) return { error: "unauthorized" }
-    if (!response.ok) return { error: `http-${response.status}` }
+    // [#940] 上传路径恰恰最容易撞上分类拒绝(upload_reserved_input / consent 类)——
+    // 与 authed() 同一咽喉,绝不压成裸数字。
+    if (!response.ok) return { error: await httpErrorCode(response) }
     return decodeJsonContract("CloudJobAcceptedV1", await response.text(), "cloud-http")
   } catch (error) {
     if (isContractIncompatibleError(error)) {

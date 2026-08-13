@@ -20,6 +20,7 @@
 // (renderer Banner 的 a-contract-failure 面),**不得**再让 models-catalog IPC 整体失败 ——
 // 那会连本地 BYOK 一起阵亡。契约:docs/contracts/byok-availability.md。
 import { resolveEndpoints } from "./alpha-endpoints"
+import { httpErrorCode } from "./platform-error-code"
 import { ContractIncompatibleError, decodeJsonContract, isContractIncompatibleError } from "@alpha-code/contracts-consumer"
 import { getAccessToken } from "./alpha-auth"
 import { getLogger } from "./logging"
@@ -47,7 +48,8 @@ export async function fetchPlatformModels(): Promise<PlatformModelsResult> {
       signal: AbortSignal.timeout(8000),
     })
     if (res.status === 401) return { error: "unauthorized" }
-    if (!res.ok) return { error: `http-${res.status}` }
+    // [#940] 平台拒绝经唯一咽喉:分类码优先,无码保持 http-<status>。
+    if (!res.ok) return { error: await httpErrorCode(res) }
     const j = decodeJsonContract("ModelCatalogV2", await res.text(), "model-catalog")
     // JSON Schema 表达不了的三条语义。任一不过 ⇒ **整份拒绝**,绝不逐行降级成「这几行没价格」——
     // 半真目录正是 ADR-039 §2 要消灭的东西。走的是既有 catch,所以失败仍只损失平台段。
