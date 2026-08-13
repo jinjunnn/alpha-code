@@ -266,6 +266,20 @@ export function routeSlash(body: string): { name: string; args: string } | null 
   return { name: head.slice(1), args: tail.join(" ") }
 }
 
+/** 斜杠命令来源(引擎 `/command` 注册方声明的 `source`;E3/E4 chip 分型的唯一依据)。 */
+export type SlashCommandSource = "command" | "mcp" | "skill"
+
+/**
+ * 从 `/command` 响应条目读注册方声明的 `source`(REQ-125 E3/E4)。
+ * 只认引擎给出的三个字面量;缺席/未知值 → undefined(fail-closed:chip 回通用形,不猜)。
+ * 基线 2026-08-08 §6/T3:来源只读声明,禁止从命令名反推。
+ */
+export function slashSourceOf(entry: unknown): SlashCommandSource | undefined {
+  if (typeof entry !== "object" || entry === null) return undefined
+  const source = (entry as { source?: unknown }).source
+  return source === "command" || source === "mcp" || source === "skill" ? source : undefined
+}
+
 /** SDK /agent 列表 → 用户可见 agent:排除 subagent、hidden、alpha 内部档。 */
 export function filterAgents(
   list: Array<{ name: string; mode?: string; hidden?: boolean; description?: string }>,

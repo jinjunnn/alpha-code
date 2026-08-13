@@ -295,6 +295,16 @@ describe("session-slash-origin:发送时捕获,绑完整会话身份,有界存�
     expect(sessionSlashOriginsFor({ ...identity("ses_a"), serverKey: "other" })).toHaveLength(0)
   })
 
+  test("E3/E4:登记可携带引擎声明的 source,读取原样返还;未带则诚实缺席", () => {
+    resetSessionSlashOrigins()
+    recordSessionSlashOrigin({ identity: identity("ses_s"), command: "orbit-docs", arguments: "", source: "skill", assistantMessageID: "msg_1", at: 1 })
+    recordSessionSlashOrigin({ identity: identity("ses_s"), command: "triage-notes", arguments: "", at: 2 })
+    const kept = sessionSlashOriginsFor(identity("ses_s"))
+    expect(kept).toHaveLength(2)
+    expect(kept[0]).toMatchObject({ command: "orbit-docs", source: "skill" })
+    expect(kept[1]!.source).toBeUndefined()
+  })
+
   test("单会话超限丢最旧(有界,I7)", () => {
     resetSessionSlashOrigins()
     for (let index = 0; index < 20; index++) {

@@ -1387,6 +1387,8 @@ export const dict = {
   "alpha.timeline.tokens": "{{tokens}} tokens",
   "alpha.timeline.turnDiffs": "本回合改动 · {{count}} 个文件",
   "alpha.timeline.slashCommand": "运行命令 ·",
+  "alpha.timeline.slashSkill": "运行技能 ·",
+  "alpha.timeline.slashMcp": "MCP ·",
   "alpha.timeline.slashViewPrompt": "查看展开提示词",
   "alpha.timeline.diagError": "ERR",
   "alpha.terminal.tabs": "终端页签",

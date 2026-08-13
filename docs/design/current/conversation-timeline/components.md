@@ -32,7 +32,7 @@ review_after: 2027-01-16
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 产物链接行 + 右栏预览联动 | `#artifacts` | `2026-07-21-req124-timeline-artifact-rows/` | 2026-07-23 | ac#454 · ac#865 | 2026-08-08 | `cards/tool-cards.tsx` (`TimelineArtifactRows`) · 接线 `session-timeline-view.tsx` · capability 复用 artifact renderer registry | **已实现·REQ-124 票未关** |
 | 用户气泡(附件 / 提及 / 连接器 / 脚注动作) | `#user` | `2026-06-28-timeline-overhaul/` | — | ac#862 | 2026-08-08 | `session-timeline-view.tsx` · 编辑接线 `session-workspace/` | 已实现 |
-| 斜杠输入(命令 / 技能 / MCP) | `#user` | `2026-06-28-timeline-overhaul/` | — | ac#861 · ac#582 | 2026-08-08(命令面) | `session-timeline-view.tsx` | **部分实现**:命令展开体已交付(ac#861);**类型分型(橙技能 / 紫 MCP,矩阵行 E3/E4)未做** —— ac#861 的 Out of scope 头一句就点名它归 ac#582,而 ac#582 今天开不了工(数据面缺失,见票内订正块) |
+| 斜杠输入(命令 / 技能 / MCP) | `#user` | `2026-06-28-timeline-overhaul/` | — | ac#861 · ac#582 | 2026-08-13 | `session-timeline-view.tsx`(chip 分型)· 捕获链 `alpha-composer.tsx` → `session-composer-dock.tsx` → `session-slash-origin.ts` → `timeline-model.ts` | **已实现**:命令展开体(ac#861)+ 类型分型(ac#582,来源只读引擎 `/command` 声明的 `source`;E3 橙技能 / E4 紫 MCP)。**与稿的已裁差异**:E4 的 name 显示引擎合成键整串(如 `context7:resolve-library-id`),不切 server 两段 —— 引擎无独立 server 字段,切串 = 从名字反推,基线 §6/T3 禁止 |
 | 行内代码评论(用户消息内) | `#user` | — | 2026-07-23 | — | — | — | 未登记(历史) |
 | 助手 Markdown · 脚注 · 流式 · 中断 | `#ai` | `2026-06-28-timeline-overhaul/` | — | — | — | `timeline-markdown.tsx` | 未登记(历史) |
 | 推理 / 思考块(折叠 + 进行中) | `#ai` | `2026-06-28-timeline-overhaul/` | — | ac#863 | 2026-08-08 | `session-timeline-view.tsx` | 已实现 |

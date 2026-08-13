@@ -963,6 +963,31 @@ describe("#568 斜杠命令来源(可选 typed 接口,C7 供给)", () => {
     expect(long?.command).toHaveLength(SLASH_COMMAND_MAX_CHARS)
     expect(long?.arguments).toHaveLength(SLASH_ARGUMENTS_MAX_CHARS)
   })
+
+  test("E3/E4:source 只透传注册方声明的三个字面量;未知值/缺席按缺席处理(不猜)", () => {
+    const ids = new Set(["msg_a1"])
+    expect(slashOriginForTurn([{ assistantMessageID: "msg_a1", command: "orbit-docs", source: "skill" }], ids)).toEqual(
+      { command: "orbit-docs", source: "skill" },
+    )
+    expect(
+      slashOriginForTurn(
+        [{ assistantMessageID: "msg_a1", command: "atlas7:fetch-spec", arguments: "graphql", source: "mcp" }],
+        ids,
+      ),
+    ).toEqual({ command: "atlas7:fetch-spec", arguments: "graphql", source: "mcp" })
+    expect(
+      slashOriginForTurn([{ assistantMessageID: "msg_a1", command: "triage-notes", source: "command" }], ids),
+    ).toEqual({ command: "triage-notes", source: "command" })
+    // 未知值(引擎从未声明过的字符串)与非字符串 → source 诚实缺席,chip 回通用形。
+    expect(
+      slashOriginForTurn([{ assistantMessageID: "msg_a1", command: "mystery", source: "wizard" } as never], ids)
+        ?.source,
+    ).toBeUndefined()
+    expect(
+      slashOriginForTurn([{ assistantMessageID: "msg_a1", command: "mystery", source: 7 } as never], ids)?.source,
+    ).toBeUndefined()
+    expect(slashOriginForTurn([{ assistantMessageID: "msg_a1", command: "mystery" }], ids)?.source).toBeUndefined()
+  })
 })
 
 describe("#568 审计修复:脚注只认回合尾态成功完成(Major-1)", () => {

@@ -122,6 +122,8 @@ export interface TimelineSlashOrigin {
   assistantMessageID?: string
   command: string
   arguments?: string
+  /** 引擎注册方声明的来源(E3/E4 chip 分型);缺席/非法 → chip 回通用形,不猜。 */
+  source?: "command" | "mcp" | "skill"
 }
 
 /** C7 的供给接口(sessionSlashOriginsFor);workspace 装配传入,缺席零渲染。 */
@@ -172,7 +174,7 @@ export type TimelineRow =
       attachments: TimelineAttachment[]
       comments: TimelineComment[]
       /** 斜杠命令来源(C7 可选供给;缺席 = 普通气泡)。 */
-      slash?: { command: string; arguments?: string }
+      slash?: { command: string; arguments?: string; source?: "command" | "mcp" | "skill" }
     }
   | { kind: "reasoning"; key: string; rev: string; part: ReasoningPart; streaming: boolean }
   | { kind: "markdown"; key: string; rev: string; part: TextPart; streaming: boolean }
@@ -593,18 +595,22 @@ export function reviewPathOf(path: string, directory: string): string | undefine
 export function slashOriginForTurn(
   origins: readonly TimelineSlashOrigin[] | undefined,
   assistantIDs: ReadonlySet<string>,
-): { command: string; arguments?: string } | undefined {
+): { command: string; arguments?: string; source?: "command" | "mcp" | "skill" } | undefined {
   if (!Array.isArray(origins)) return undefined
   for (let index = 0; index < origins.length && index < SLASH_ORIGINS_SCAN_MAX; index += 1) {
     const item = origins[index]
     if (typeof item !== "object" || item === null) continue
-    const record = item as { assistantMessageID?: unknown; command?: unknown; arguments?: unknown }
+    const record = item as { assistantMessageID?: unknown; command?: unknown; arguments?: unknown; source?: unknown }
     if (typeof record.assistantMessageID !== "string" || !assistantIDs.has(record.assistantMessageID)) continue
     if (typeof record.command !== "string" || record.command.length === 0) continue
     const args = typeof record.arguments === "string" && record.arguments.length > 0 ? record.arguments : undefined
+    // E3/E4:来源只认注册方声明的三个字面量;其余值一律按缺席处理(通用 chip,不猜)。
+    const source =
+      record.source === "command" || record.source === "mcp" || record.source === "skill" ? record.source : undefined
     return {
       command: record.command.slice(0, SLASH_COMMAND_MAX_CHARS),
       arguments: args?.slice(0, SLASH_ARGUMENTS_MAX_CHARS),
+      ...(source ? { source } : {}),
     }
   }
   return undefined
@@ -684,7 +690,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           segments.map((segment) => `${segment.kind ?? "t"}:${segment.text.length}:${segment.label ?? ""}`).join(","),
           attachments.map((attachment) => attachment.partID).join(","),
           comments.map((comment) => comment.partID).join(","),
-          slash ? `${slash.command}\u0000${slash.arguments ?? ""}` : "",
+          slash ? `${slash.command}\u0000${slash.arguments ?? ""}\u0000${slash.source ?? ""}` : "",
         ].join("§"),
         message: userMessage,
         text,

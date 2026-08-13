@@ -96,6 +96,13 @@ mock.module("@opencode-ai/app", () => ({
   // #925:生产的 `ServerConnection.Key.make` 就是 brand cast(packages/app/src/context/server.tsx:238),
   // 这里如实照抄 —— 收口 effect 写回 draft 的值不经任何变换。
   ServerConnection: { Key: { make: (v: string) => v } },
+  // #582(PR#954 审计 Major-2):真 SessionComposerDock 也要在本 harness 挂得起来。
+  // dock 只从这个 barrel 取 ServerSDK/ServerSync/审批双通道;斜杠登记判据用不到审批面与
+  // 模型用量环,全部给成惰性缺席(client 缺席 ⇒ modelContract.list 拒绝 ⇒ 用量环隐藏;
+  // dir 上下文缺席 ⇒ 审批 feed 不建,fail-closed 无审批挂起)—— onSlashCommand 与它们无关。
+  useServerSDK: () => () => ({ client: undefined, ensureDirSdkContext: () => undefined }),
+  useServerSync: () => () => ({ session: { data: { message: {}, todo: {}, question: {}, info: {} } } }),
+  createPermissionChannelSource: () => ({ list: async () => [], subscribe: () => () => {} }),
 }))
 /** #894:叶真正跳去了哪里。路由本体不参与 —— 记的是叶交给 `useNavigate()` 的那个 href,
  *  再由生产的 `parseRoute` 读回去,编码与解码是两条相反的路,不构成自指等价链。 */
@@ -132,6 +139,14 @@ const { SessionComposerMount } = await import(
 )
 const { createComposerDraftStash } = await import(
   "../src/renderer/alpha-ui/session-workspace/session-dock-core"
+)
+// #582(PR#954 审计 Major-2):斜杠 source 的登记判据必须穿过**真 dock**(它才是
+// recordSessionSlashOrigin 的生产调用点);registry 的读口用来断言登记结果。
+const { SessionComposerDock } = await import(
+  "../src/renderer/alpha-ui/session-workspace/session-composer-dock"
+)
+const { resetSessionSlashOrigins, sessionSlashOriginsFor } = await import(
+  "../src/renderer/alpha-ui/session-workspace/session-slash-origin"
 )
 
 const DEFAULT_WORKSPACE = "/Users/tester/Alpha"
@@ -192,6 +207,10 @@ const project = (name: string, worktree: string): AlphaProject => ({
 const startChatCalls: Array<{ directory: string; body: string; parts: unknown[] }> = []
 /** #888:会话页那一侧**真发**出去的载荷。chip 只证明界面显示对了,这里证明它真的上了线。 */
 const promptAsyncCalls: Array<Record<string, unknown>> = []
+/** #582:引擎 `/command` 注册表(斜杠发送路径读它;条目的 `source` 是注册方声明,唯一真源)。 */
+let commandListEntries: Array<Record<string, unknown>> = []
+/** #582:真走了引擎命令通道的调用(斜杠命中注册表时composer 走 session.command,不走 promptAsync)。 */
+const sessionCommandCalls: Array<Record<string, unknown>> = []
 /** #894:让「会话创建在途」这段窗口真的存在 —— 生产上正是这段时间里用户可以切 server。 */
 let startChatGate: { promise: Promise<void>; release: () => void } | undefined
 function gateStartChat() {
@@ -212,7 +231,7 @@ function projectsApi(projects: AlphaProject[]): AlphaProjectsApi {
     },
     sdk: () =>
       ({
-        command: { list: async () => ({ data: [] }) },
+        command: { list: async () => ({ data: commandListEntries }) },
         find: { files: async () => ({ data: [] }) },
         vcs: { status: async () => ({ data: [] }) },
         // #652 起会话内发送与首页 startChat 同走 v1 session.promptAsync。
@@ -220,6 +239,11 @@ function projectsApi(projects: AlphaProject[]): AlphaProjectsApi {
           promptAsync: async (args: Record<string, unknown>) => {
             promptAsyncCalls.push(args)
             return {}
+          },
+          // #582:斜杠命中注册表 ⇒ 走引擎命令通道;返回的 assistant id 是登记的对齐锚。
+          command: async (args: Record<string, unknown>) => {
+            sessionCommandCalls.push(args)
+            return { data: { info: { id: `msg_slash_${sessionCommandCalls.length}` } } }
           },
         },
         v2: {
@@ -377,6 +401,9 @@ beforeEach(() => {
   updateDraftCalls.splice(0)
   startChatCalls.splice(0)
   promptAsyncCalls.splice(0)
+  commandListEntries = []
+  sessionCommandCalls.splice(0)
+  resetSessionSlashOrigins()
   navigateCalls.splice(0)
   startChatGate = undefined
   pickerCalls.splice(0)
@@ -1211,5 +1238,83 @@ describe("#925 上游入口建的 draft(带 active server)在唯一消费者处�
     for (let i = 0; i < 20 && draft().server !== STORE_SERVER_KEY; i++) await flush()
     expect(updateDraftCalls).toEqual([{ draftID: "draft-1", patch: { server: STORE_SERVER_KEY } }])
     expect(draft().server).toBe(STORE_SERVER_KEY)
+  })
+})
+
+/* ── #582(PR#954 审计 Major-2)斜杠 source 的生产接线 ─────────────────────────────────
+   本票唯一的取数点是两跳:composer 在发送当下读引擎 `/command` 声明的 source
+   (alpha-composer.tsx 的 `slashSourceOf(matched)` + capture 展开),真 dock 的
+   `onSlashCommand` 再把 `capture.source` 透传进 `recordSessionSlashOrigin`
+   (session-composer-dock.tsx)。此前三层判据全部从「已带 source 的登记」开始注入 ——
+   删掉任一跳,生产上 source 永远到不了 chip、技能/MCP 命令全退回通用灰,而闸门全绿。
+   这里挂**生产 SessionComposerDock**(内含生产 SessionComposerMount 与 AlphaComposer),
+   从输入框真发斜杠,断言 registry 的读口 —— 一条判据同时穿过两跳。
+   (alpha-composer-model.cases.ts 的原则同样适用:用测试自建复刻一份 dock 绑定不算证据。) */
+describe("#582 斜杠 source 生产接线:composer 发送 → 真 dock 捕获 → 登记", () => {
+  const SLASH_IDENTITY = { serverKey: STORE_SERVER_KEY, directory: DEFAULT_WORKSPACE, sessionID: "session-9" }
+
+  function mountRealDock(projects: AlphaProjectsApi) {
+    return mountDisposable(() =>
+      createComponent(SessionComposerDock, {
+        live: {
+          current: () => ({ identity: SLASH_IDENTITY, project: "alpha-code", title: "会话", activity: "idle" }),
+          accepts: (candidate: typeof SLASH_IDENTITY) =>
+            candidate.serverKey === SLASH_IDENTITY.serverKey &&
+            candidate.directory === SLASH_IDENTITY.directory &&
+            candidate.sessionID === SLASH_IDENTITY.sessionID,
+        },
+        projects,
+      } as never),
+    )
+  }
+
+  async function sendSlash(host: HTMLElement, body: string) {
+    const sendButton = () => host.querySelector<HTMLButtonElement>(".a-comp-send")!
+    const before = sessionCommandCalls.length
+    type(textarea(host)!, body)
+    for (let i = 0; i < 60 && sendButton().disabled; i++) await flush()
+    expect(sendButton().disabled).toBe(false)
+    sendButton().click()
+    for (let i = 0; i < 30 && sessionCommandCalls.length === before; i++) await flush()
+    // 发送落定(setText("") 在 await 之后)再返回,下一次输入才不会被这次的清空抹掉(#888 实测)。
+    for (let i = 0; i < 30 && textarea(host)!.value !== ""; i++) await flush()
+  }
+
+  test("command.list 声明 skill/mcp → 登记逐条带对应 source(两个不同字面量,写死单值满足不了)", async () => {
+    commandListEntries = [
+      { name: "helios-brief", description: "周报", source: "skill" },
+      { name: "atlas9:pull-issues", description: "拉取 issue", source: "mcp" },
+    ]
+    const dock = mountRealDock(projectsApi([project("alpha-code", "/ws/a")]))
+    for (let i = 0; i < 20 && !textarea(dock.host); i++) await flush()
+
+    await sendSlash(dock.host, "/helios-brief 本周")
+    expect(sessionCommandCalls).toHaveLength(1)
+    expect(sessionCommandCalls[0]).toMatchObject({ command: "helios-brief", arguments: "本周", sessionID: "session-9" })
+    let origins = sessionSlashOriginsFor(SLASH_IDENTITY)
+    expect(origins).toHaveLength(1)
+    expect(origins[0]).toMatchObject({ command: "helios-brief", source: "skill", assistantMessageID: "msg_slash_1" })
+
+    await sendSlash(dock.host, "/atlas9:pull-issues")
+    origins = sessionSlashOriginsFor(SLASH_IDENTITY)
+    expect(origins).toHaveLength(2)
+    expect(origins[1]).toMatchObject({ command: "atlas9:pull-issues", source: "mcp" })
+    // 斜杠命中注册表的发送只走引擎命令通道 —— 登记不可能来自别的路径。
+    expect(promptAsyncCalls).toHaveLength(0)
+    dock.dispose()
+  })
+
+  test("声明缺席或非法 → 登记不带 source 键(fail-closed;名字里有 skill 也不反推)", async () => {
+    commandListEntries = [{ name: "triage-board" }, { name: "skill-sync", source: "wizard" }]
+    const dock = mountRealDock(projectsApi([project("alpha-code", "/ws/a")]))
+    for (let i = 0; i < 20 && !textarea(dock.host); i++) await flush()
+
+    await sendSlash(dock.host, "/triage-board")
+    await sendSlash(dock.host, "/skill-sync now")
+    const origins = sessionSlashOriginsFor(SLASH_IDENTITY)
+    expect(origins).toHaveLength(2)
+    expect(Object.hasOwn(origins[0]!, "source")).toBe(false)
+    expect(Object.hasOwn(origins[1]!, "source")).toBe(false)
+    dock.dispose()
   })
 })

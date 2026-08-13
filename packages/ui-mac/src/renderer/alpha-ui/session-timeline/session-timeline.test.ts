@@ -34,7 +34,8 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     // #586:websearch 富链接(字母徽/标题/域名 + 头部结果数)(49 → 50)。
     // R1 Minor-A #583:截断集下 footer 计数与头部同规则缺席(50 → 51)。
     // R1 Minor-B #586:结构化结果缺 url 键被丢弃时出缺席提示(51 → 52)。
-    expect(output).toContain("52 pass")
+    // #582:E3/E4 斜杠 chip 来源分型(skill 橙/mcp 紫/command 通用 + source 缺席负向)(52 → 56)。
+    expect(output).toContain("56 pass")
     expect(output).toContain("0 fail")
   })
 })

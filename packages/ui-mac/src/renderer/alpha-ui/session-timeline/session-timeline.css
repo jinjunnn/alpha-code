@@ -526,6 +526,36 @@ button.a-tl-cmd-chip:focus-visible {
   font-family: var(--a-font-mono);
 }
 
+/* E3/E4 来源分型(对照稿 user 帧1):data-source 只来自引擎注册方声明的 source;
+   缺席时无该属性,chip 保持通用形。橙紫令牌明暗两主题各自定义,双主题自动一致。 */
+.a-tl-cmd-slash svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-tl-cmd-chip[data-source="skill"] .a-tl-cmd-slash {
+  background: var(--a-orange-subtle);
+  color: var(--a-orange);
+}
+
+.a-tl-cmd-chip[data-source="skill"] .a-tl-cmd-name {
+  color: var(--a-orange);
+}
+
+.a-tl-cmd-chip[data-source="mcp"] .a-tl-cmd-slash {
+  background: var(--a-purple-subtle);
+  color: var(--a-purple);
+}
+
+.a-tl-cmd-chip[data-source="mcp"] .a-tl-cmd-name {
+  color: var(--a-purple);
+}
+
 .a-tl-cmd-lab {
   flex: none;
   color: var(--a-text-tertiary);

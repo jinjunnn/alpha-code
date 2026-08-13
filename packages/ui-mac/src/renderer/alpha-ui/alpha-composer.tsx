@@ -68,8 +68,10 @@ import {
   setComposerAgent,
   setComposerModel,
   setComposerPerm,
+  slashSourceOf,
   suspendComposerModel,
   type PermMode,
+  type SlashCommandSource,
 } from "./composer-state"
 import {
   checkSelectedModel,
@@ -516,6 +518,8 @@ export type ComposerSlashCapture = {
   arguments: string
   /** 引擎返回的 assistant message id(session.command response.info.id)。 */
   assistantMessageID?: string
+  /** 引擎 `/command` 注册方声明的来源(E3/E4 chip 分型);缺席 = chip 回通用形,不猜。 */
+  source?: SlashCommandSource
 }
 
 /**
@@ -1490,7 +1494,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           .list({ directory: dir } as any)
           .catch(() => ({ data: undefined }) as const)
         if (interrupted()) return
-        if (Array.isArray(cmds) && cmds.some((x: any) => x?.name === slash.name)) {
+        const matched = Array.isArray(cmds) ? cmds.find((x: any) => x?.name === slash.name) : undefined
+        if (matched) {
           const { data: commanded, error } = await c.session.command({
             sessionID: sid,
             directory: dir,
@@ -1503,13 +1508,17 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
             return
           }
           // REQ-125 C7:send 当下捕获命令来源(上游不保留);assistant messageID 用于时间线对齐。
+          // E3/E4:来源只读 `/command` 响应里注册方声明的 `source`(基线 §6/T3 禁从名字反推);
+          // 声明缺席/非法 → 不带 source,chip 回通用形。
           const assistantMessageID = (commanded as { info?: { id?: string } } | undefined)?.info?.id
+          const slashSource = slashSourceOf(matched)
           props.sessionDock?.onSlashCommand?.({
             sessionID: sid,
             directory: dir,
             command: slash.name,
             arguments: slash.args,
             ...(typeof assistantMessageID === "string" && assistantMessageID ? { assistantMessageID } : {}),
+            ...(slashSource ? { source: slashSource } : {}),
           })
           setText("")
           setMentions([])

@@ -14,6 +14,8 @@ export type SessionSlashOrigin = {
   arguments: string
   /** 引擎对该命令回复的 assistant message id(response.info.id);对齐用户消息 = 其前一条。 */
   assistantMessageID?: string
+  /** 引擎 `/command` 注册方声明的来源(E3/E4 chip 分型);缺席 = 通用 chip,不猜。 */
+  source?: "command" | "mcp" | "skill"
   at: number
 }
 

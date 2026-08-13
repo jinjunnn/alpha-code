@@ -1912,6 +1912,106 @@ describe("#568 斜杠命令 chip(消费可选 typed 接口)", () => {
     })
   }
 
+  // E3/E4 来源分型:同一投影管线,只换登记(source 由引擎注册方声明,基线禁从名字反推)。
+  // PR#954 审计 Major-1:`expandedText` 决定 chip 走哪个渲染分支 —— 引擎给该用户消息带上
+  // 展开提示词文本(生产常态)⇒ row.text 非空 ⇒ button 分支;缺席 ⇒ span 折叠形。
+  // 两个分支各自有一行 data-source,判据必须两边都压住(E3 压 button,E4/负向压 span)。
+  function slashRowsFor(origin: Record<string, unknown>, shape: { expandedText?: string } = {}) {
+    return model.projectTimelineRows({
+      messages: [
+        {
+          id: "msg_u1",
+          sessionID: "ses_1",
+          role: "user",
+          time: { created: 1000 },
+          agent: "build",
+          model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+        },
+        {
+          id: "msg_a1",
+          sessionID: "ses_1",
+          role: "assistant",
+          time: { created: 10, completed: 20 },
+          parentID: "msg_u1",
+          modelID: "deepseek-reasoner",
+          providerID: "deepseek",
+          mode: "build",
+          agent: "build",
+          path: { cwd: "/tmp", root: "/tmp" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      ] as never,
+      partsOf: ((messageID: string) =>
+        shape.expandedText && messageID === "msg_u1"
+          ? [{ id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: shape.expandedText }]
+          : []) as never,
+      status: "idle",
+      slashOrigins: [{ assistantMessageID: "msg_a1", ...origin }] as never,
+    })
+  }
+
+  const chipOf = (host: HTMLElement) => host.querySelector("[data-alpha-timeline-slash] .a-tl-cmd-chip")!
+
+  test("E3 技能 chip(生产常态 button 形:引擎带展开提示词):data-source=skill、星形图标、「运行技能 ·」文案", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      slashRowsFor({ command: "orbit-docs", source: "skill" }, { expandedText: "整理 orbit 文档索引并汇报" }),
+    )
+    await flush()
+    // 判据钉在 **button** 分支上(视图 :592-606):真实斜杠发送后引擎给用户消息带展开文本,
+    // chip 就是这个带「查看展开提示词」的 button —— 删掉它那行 data-source,本条当场红。
+    const chip = host.querySelector<HTMLButtonElement>("[data-alpha-timeline-slash] button.a-tl-cmd-chip")!
+    expect(chip).not.toBeNull()
+    expect(chip.getAttribute("data-source")).toBe("skill")
+    expect(chip.querySelector(".a-tl-cmd-slash svg")).not.toBeNull()
+    expect(chip.querySelector(".a-tl-cmd-lab")!.textContent).toBe("运行技能 ·")
+    expect(chip.querySelector(".a-tl-cmd-name")!.textContent).toBe("orbit-docs")
+  })
+
+  test("E4 MCP chip:data-source=mcp、立方图标、「MCP ·」文案,合成键整串显示不切分", async () => {
+    const host = mount()
+    runtime.setTimelineRows(slashRowsFor({ command: "atlas7:fetch-spec", arguments: "graphql", source: "mcp" }))
+    await flush()
+    const chip = chipOf(host)
+    // 无展开文本的折叠形:span 分支(视图 :587)—— 与 E3 的 button 分支各压一行 data-source。
+    expect((chip as HTMLElement).tagName).toBe("SPAN")
+    expect(chip.getAttribute("data-source")).toBe("mcp")
+    expect(chip.querySelector(".a-tl-cmd-slash svg")).not.toBeNull()
+    expect(chip.querySelector(".a-tl-cmd-lab")!.textContent).toBe("MCP ·")
+    // 已裁决(票面 4c):引擎给的是 sanitize(server)+":"+sanitize(prompt) 合成键,整串显示,不从名字拆 server。
+    expect(chip.querySelector(".a-tl-cmd-name")!.textContent).toBe("atlas7:fetch-spec")
+    expect(chip.querySelector(".a-tl-cmd-args")!.textContent).toBe("graphql")
+  })
+
+  test("配置命令 chip:data-source=command,仍是「/」字形与「运行命令 ·」通用文案", async () => {
+    const host = mount()
+    runtime.setTimelineRows(slashRowsFor({ command: "triage-notes", source: "command" }))
+    await flush()
+    const chip = chipOf(host)
+    expect(chip.getAttribute("data-source")).toBe("command")
+    expect(chip.querySelector(".a-tl-cmd-slash svg")).toBeNull()
+    expect(chip.querySelector(".a-tl-cmd-slash")!.textContent).toBe("/")
+    expect(chip.querySelector(".a-tl-cmd-lab")!.textContent).toBe("运行命令 ·")
+  })
+
+  test("负向:source 缺席或未知值 → 无 data-source 属性,chip 保持今天的通用形(不猜来源)", async () => {
+    const host = mount()
+    runtime.setTimelineRows(slashRowsFor({ command: "mystery-verb" }))
+    await flush()
+    const absent = chipOf(host)
+    expect(absent.hasAttribute("data-source")).toBe(false)
+    expect(absent.querySelector(".a-tl-cmd-slash svg")).toBeNull()
+    expect(absent.querySelector(".a-tl-cmd-slash")!.textContent).toBe("/")
+    expect(absent.querySelector(".a-tl-cmd-lab")!.textContent).toBe("运行命令 ·")
+
+    runtime.setTimelineRows(slashRowsFor({ command: "mystery-verb", source: "wizard" }))
+    await flush()
+    const unknown = chipOf(host)
+    expect(unknown.hasAttribute("data-source")).toBe(false)
+    expect(unknown.querySelector(".a-tl-cmd-lab")!.textContent).toBe("运行命令 ·")
+  })
+
   test("登记在场:气泡换 chip(命令+参数),展开提示词默认折叠、点击展开;登记缺席零渲染", async () => {
     const host = mount()
     runtime.setTimelineRows(slashRows(true))
