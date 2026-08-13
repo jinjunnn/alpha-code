@@ -1411,6 +1411,8 @@ export const dict = {
   "alpha.timeline.tokens": "{{tokens}} tokens",
   "alpha.timeline.turnDiffs": "Changes this turn · {{count}} files",
   "alpha.timeline.slashCommand": "Ran command ·",
+  "alpha.timeline.slashSkill": "Ran skill ·",
+  "alpha.timeline.slashMcp": "MCP ·",
   "alpha.timeline.slashViewPrompt": "View expanded prompt",
   "alpha.timeline.diagError": "ERR",
 

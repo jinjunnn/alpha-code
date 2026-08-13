@@ -490,12 +490,32 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }>; displayNa
       </Show>
     </>
   )
-  const chipInner = (slash: { command: string; arguments?: string }) => (
+  // E3/E4(对照稿 `#user` 帧1):chip 按引擎声明的 source 分型 —— skill 橙星形、mcp 紫立方、
+  // 其余(含 source 缺席)保持通用「运行命令」形。来源只读声明,不从命令名反推(基线 §6/T3)。
+  const chipInner = (slash: { command: string; arguments?: string; source?: "command" | "mcp" | "skill" }) => (
     <>
       <span class="a-tl-cmd-slash" aria-hidden="true">
-        /
+        {slash.source === "skill" ? (
+          <svg viewBox="0 0 24 24">
+            <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
+          </svg>
+        ) : slash.source === "mcp" ? (
+          <svg viewBox="0 0 24 24">
+            <path d="M4 7l8-4 8 4-8 4z" />
+            <path d="M4 7v10l8 4 8-4V7" />
+            <path d="M12 11v10" />
+          </svg>
+        ) : (
+          "/"
+        )}
       </span>
-      <span class="a-tl-cmd-lab">{t("alpha.timeline.slashCommand")}</span>
+      <span class="a-tl-cmd-lab">
+        {slash.source === "skill"
+          ? t("alpha.timeline.slashSkill")
+          : slash.source === "mcp"
+            ? t("alpha.timeline.slashMcp")
+            : t("alpha.timeline.slashCommand")}
+      </span>
       <span class="a-tl-cmd-name">{slash.command}</span>
       <Show when={slash.arguments}>
         <span class="a-tl-cmd-args">{slash.arguments}</span>
@@ -561,10 +581,18 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }>; displayNa
       >
         {(slash) => (
           <div class="a-tl-cmd" data-alpha-timeline-slash data-open={promptOpen() ? "true" : undefined}>
-            <Show when={props.row.text} fallback={<span class="a-tl-cmd-chip">{chipInner(slash())}</span>}>
+            <Show
+              when={props.row.text}
+              fallback={
+                <span class="a-tl-cmd-chip" data-source={slash().source}>
+                  {chipInner(slash())}
+                </span>
+              }
+            >
               <button
                 type="button"
                 class="a-tl-cmd-chip"
+                data-source={slash().source}
                 aria-expanded={promptOpen()}
                 onClick={() => setPromptOpen((value) => !value)}
               >

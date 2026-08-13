@@ -186,6 +186,7 @@ export function SessionComposerDock(props: {
         command: capture.command,
         arguments: capture.arguments,
         ...(capture.assistantMessageID ? { assistantMessageID: capture.assistantMessageID } : {}),
+        ...(capture.source ? { source: capture.source } : {}),
         at: Date.now(),
       })
     },

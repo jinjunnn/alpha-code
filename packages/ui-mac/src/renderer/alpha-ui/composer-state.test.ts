@@ -7,6 +7,7 @@ import {
   composerModelSuspended,
   filterAgents,
   routeSlash,
+  slashSourceOf,
   setComposerModel,
   suspendComposerModel,
   READONLY_AGENT,
@@ -62,6 +63,22 @@ describe("routeSlash", () => {
   test("非斜杠/裸斜杠 → null", () => {
     expect(routeSlash("hello /x")).toBeNull()
     expect(routeSlash("/")).toBeNull()
+  })
+})
+
+describe("slashSourceOf — E3/E4 来源只读引擎声明,fail-closed", () => {
+  test("三个注册方字面量原样透传", () => {
+    expect(slashSourceOf({ name: "orbit-docs", source: "skill" })).toBe("skill")
+    expect(slashSourceOf({ name: "atlas7:fetch-spec", source: "mcp" })).toBe("mcp")
+    expect(slashSourceOf({ name: "triage-notes", source: "command" })).toBe("command")
+  })
+  test("声明缺席/未知值/非对象 → undefined(chip 回通用形,禁止从名字反推)", () => {
+    expect(slashSourceOf({ name: "orbit-docs" })).toBeUndefined()
+    expect(slashSourceOf({ name: "mystery", source: "wizard" })).toBeUndefined()
+    expect(slashSourceOf({ name: "mystery", source: 3 })).toBeUndefined()
+    expect(slashSourceOf(undefined)).toBeUndefined()
+    expect(slashSourceOf(null)).toBeUndefined()
+    expect(slashSourceOf("skill")).toBeUndefined()
   })
 })
 
