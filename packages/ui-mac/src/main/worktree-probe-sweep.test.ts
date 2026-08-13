@@ -288,8 +288,8 @@ describe("生产接线:真跑 scripts/assert-worktree-bootstrap.sh(alpha-check �
     expect(names.filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
     expect(names).toContain("lane-620-continue")
     expect(hooksPathOf(repo, home)).toBe(".lane-928-hooks")
-    // `#941`:可达性共识探测(两轮 × 3 发,发间隔 1s)让离线夹具里的完整一跑确定性多花 ~4s,
-    // 默认 5s 超时会被顶破 —— 与同组其余用例一致取 30s。
+    // `#941`:可达性共识探测(两轮;非 reachable 两发定局早退,发间隔 1s)让离线夹具里的
+    // 完整一跑确定性多花 ~2s,默认 5s 超时仍可能被顶破 —— 与同组其余用例一致取 30s。
   }, 30_000)
 
   test("被信号打断(SIGTERM 落在探针已建出之后):同样零残留,且 core.hooksPath 还原", async () => {
@@ -618,5 +618,24 @@ describe("可达性判别依据(#941):半通不通降级,恒 'network' 硬红", 
     expect(r.err).not.toContain("能力判据失守")
     expect(registeredWorktreeNames(fx.repo, fx.home).filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
     expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941g-hooks")
+  }, 60_000)
+
+  test("R1 Minor(hang 形状耗时):共识对非 reachable 结论两发定局 —— 全程不可达的一跑恰好 5 发探测,exit 2", () => {
+    const fx = initFlakyFixture(".lane-941h-hooks")
+    // `#928` 的因果链:挂起代理(accept 后不回数据,非 connection-refused —— 127.0.0.1:9 是
+    // 后者,量不出这个形状)下每发 curl 吃满 --max-time 8s,恒 3 发共识 = 26s/轮,整道门
+    // +50s ⇒ 抬高被外层工具超时 SIGKILL 打进 bun install 窗口的概率(#945/#928 竞态的触发
+    // 条件)。实测(2026-08-13,本机挂起端口):修前 69.9s / 9 发,修后 51.8s / 7 发。
+    // fail 侧早退不降任何判据:unreachable/unstable 在全部消费点同义(都落未验证、都不发
+    // 硬红许可),reachable 仍要 3 发全成 —— 硬红许可证的样本量不降。
+    // 本条用探测计数钉死早退真的发生:[5/6] classify 1 发 + c1 两发定局 + [6/6](a) 两发定局
+    // = 恰好 5 发。两个方向都红:回退成恒 3 发 ⇒ 7 发(门被拉长);共识被砍到单发 ⇒ 3 发
+    // (#941 的地基被拆)。
+    const r = run(fx.repo, ["bash", "scripts/assert-worktree-bootstrap.sh"], fx.home, flakyEnv(fx, "http://registry.hang-941h.invalid", "", "fail"))
+    expect(r.code).toBe(2)
+    expect(r.out).toContain("registry 这一刻不可达")
+    expect(r.err).not.toContain("能力判据失守")
+    expect(readFileSync(join(fx.root, "curl-calls.n"), "utf8").trim()).toBe("5")
+    expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941h-hooks")
   }, 60_000)
 })

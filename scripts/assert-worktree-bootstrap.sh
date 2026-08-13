@@ -48,7 +48,9 @@
 #  [6/6] 判别依据**真的判别**,且网络档**不报绿**:
 #      (a) registry 可达时必须判 `real`(直接杀掉「一律算网络」)。「可达」不许由**单发**探测
 #          断言(`#941`:代理半通不通时,两发相隔几秒的 curl 会落在矛盾的两侧,健康仓库被硬红
-#          成「判据失守」)——先对可达性测 3 次取共识,共识可达而判别依据说 'network' 时再复核
+#          成「判据失守」)——先对可达性取共识(可达要 3 发全成;非可达两发定局早退,R1 Minor:
+#          挂起代理下第三发只花 8s 不改结论,门被拉长会抬高外层超时 SIGKILL 的概率 `#928`),
+#          共识可达而判别依据说 'network' 时再复核
 #          一轮(判别依据复测 + 再一轮共识)才许硬红;任何一处前后矛盾 ⇒ **本次测量作废**
 #          (未验证档,exit 2),真离线 ⇒ 未验证。恒 'network' 的退化实现复测不会改口,
 #          在健康网络下**确定性**仍然硬红 —— 两个方向都留着判据,[6/6] 不是摆设。
@@ -221,21 +223,27 @@ live_registry_reachable() {
 # 所以判决前先把「可达性」这一个事实测多次取一致;测不出一致 ⇒ **本次测量作废**(未验证档),
 # 不给判决 —— 与本仓「观测手段自己有盲区」那张表同一条判据。
 #
-# 对「registry 此刻可达吗」连续测 3 次(间隔 1s,把采样窗摊开)。打印一个词:
-#   reachable   — 3/3 可达
-#   unreachable — 0/3 可达(真离线)
-#   unstable    — 结果互相矛盾(半通不通)⇒ 这一刻不存在可信的地面真相
+# 对「registry 此刻可达吗」串行采样(间隔 1s,把采样窗摊开)。打印一个词:
+#   reachable   — 3 发全成。唯一会给硬红开门的共识(degraded 硬红与 note 的 real 硬红都以它
+#                 为前提),样本量**不降** —— `#941` 的地基就是「单发不构成地面真相」,两发同理。
+#   unreachable — 前两发全败,**两发定局早退**(`#941` R1 Minor)。挂起代理(accept 后不回
+#                 数据,非 connection-refused)下每发吃满 --max-time 8s,恒 3 发 = 26s/轮,
+#                 整道门 +50s(实测 2026-08-13,本机挂起端口:69.9s → ~52s)。省掉的第三发
+#                 不砍任何判据:unreachable 与 unstable 在**全部**消费点同义(都落未验证、
+#                 都不发硬红许可),它只花 8s 不改任何结论。门被拉长的真实代价不是等待,是
+#                 抬高被外层工具超时 SIGKILL 打进 bun install 窗口的概率(`#928`/`#945` 那条
+#                 竞态的触发条件)。
+#   unstable    — 两发矛盾即定局(半通不通;unanimity 下第三发翻不了案,早退零语义变化)⇒
+#                 这一刻不存在可信的地面真相;或前两发全成而第三发矛盾。
 registry_reachability_consensus() {
-  local i ok=0
-  for i in 1 2 3; do
-    [ "$i" -gt 1 ] && sleep 1
-    live_registry_reachable && ok=$((ok+1))
-  done
-  case "$ok" in
-    3) printf 'reachable' ;;
-    0) printf 'unreachable' ;;
-    *) printf 'unstable' ;;
-  esac
+  local a b
+  live_registry_reachable; a=$?
+  sleep 1
+  live_registry_reachable; b=$?
+  if [ "$a" -ne "$b" ]; then printf 'unstable'; return 0; fi
+  if [ "$a" -ne 0 ]; then printf 'unreachable'; return 0; fi
+  sleep 1
+  if live_registry_reachable; then printf 'reachable'; else printf 'unstable'; fi
 }
 
 # 判别依据说了 'network' 之后的复核:是判别依据退化,还是网络在抖?打印一个词:
@@ -483,7 +491,7 @@ case "$(registry_reachability_consensus)" in
     ;;
   *)
     unverified=1
-    echo "    ⚠️  未验证:可达性探测三次结果不一(半通不通)—— 本次测量作废,'可达 ⇒ real' 这一半证不了"
+    echo "    ⚠️  未验证:可达性探测结果前后不一(半通不通)—— 本次测量作废,'可达 ⇒ real' 这一半证不了"
     ;;
 esac
 # (c) 报告契约:套跑一遍并注入不可达 registry —— 必须 exit 2 + 说「未验证」+ 不说那句全绿话
