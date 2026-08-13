@@ -4,7 +4,7 @@ kind: design
 status: active
 owners:
   - alpha-code product and design maintainers
-last_reviewed: 2026-08-09
+last_reviewed: 2026-08-13
 review_after: 2027-01-16
 ---
 
@@ -32,7 +32,7 @@ review_after: 2027-01-16
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 产物链接行 + 右栏预览联动 | `#artifacts` | `2026-07-21-req124-timeline-artifact-rows/` | 2026-07-23 | ac#454 · ac#865 | 2026-08-08 | `cards/tool-cards.tsx` (`TimelineArtifactRows`) · 接线 `session-timeline-view.tsx` · capability 复用 artifact renderer registry | **已实现·REQ-124 票未关** |
 | 用户气泡(附件 / 提及 / 连接器 / 脚注动作) | `#user` | `2026-06-28-timeline-overhaul/` | — | ac#862 | 2026-08-08 | `session-timeline-view.tsx` · 编辑接线 `session-workspace/` | 已实现 |
-| 斜杠输入(命令 / 技能 / MCP) | `#user` | `2026-06-28-timeline-overhaul/` | — | ac#861 | 2026-08-08 | `session-timeline-view.tsx` | 已实现 |
+| 斜杠输入(命令 / 技能 / MCP) | `#user` | `2026-06-28-timeline-overhaul/` | — | ac#861 · ac#582 | 2026-08-08(命令面) | `session-timeline-view.tsx` | **部分实现**:命令展开体已交付(ac#861);**类型分型(橙技能 / 紫 MCP,矩阵行 E3/E4)未做** —— ac#861 的 Out of scope 头一句就点名它归 ac#582,而 ac#582 今天开不了工(数据面缺失,见票内订正块) |
 | 行内代码评论(用户消息内) | `#user` | — | 2026-07-23 | — | — | — | 未登记(历史) |
 | 助手 Markdown · 脚注 · 流式 · 中断 | `#ai` | `2026-06-28-timeline-overhaul/` | — | — | — | `timeline-markdown.tsx` | 未登记(历史) |
 | 推理 / 思考块(折叠 + 进行中) | `#ai` | `2026-06-28-timeline-overhaul/` | — | ac#863 | 2026-08-08 | `session-timeline-view.tsx` | 已实现 |
@@ -41,7 +41,7 @@ review_after: 2027-01-16
 | 助手侧截图 / 图片 / 媒体预览行 | `#ai` | — | 2026-07-24 | — | — | — | 未登记(历史) |
 | 通用工具卡四态(运行 / 完成 / 错误 / 待批) | `#tools` | `2026-06-28-timeline-overhaul/` | — | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
 | 各工具类型卡(read / grep / bash / edit / MCP …) | `#tools` | `2026-06-28-timeline-overhaul/` | — | — | — | `cards/tool-cards.tsx` | 未登记(历史) |
-| 全来源工具卡来源徽标 + 安全通用降级 | `#tool-provenance` | `2026-08-08-req125-tool-card-provenance/` | 2026-08-09 | ac#878 · ac#879 · ac#587 | — | — | **待实现** |
+| 全来源工具卡来源徽标 + 安全通用降级 | `#tool-provenance` | `2026-08-08-req125-tool-card-provenance/` | 2026-08-09 | ac#878 · ac#879 · ac#587 | 2026-08-12 | `cards/tool-card-model.ts`(identity 分派 + 规则表) · `cards/tool-cards.tsx`(来源徽标 / 安全通用卡 / 折叠开发者详情) · `cards/tool-redactor.ts`(共享脱敏) | 已实现 |
 | glob(按模式匹配文件)工具卡 | `#tools` | — | 2026-07-23 | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
 | bash 运行中的流式输出子消息 | `#tools` | — | 2026-07-24 | — | — | `cards/tool-card-model.ts` | 未登记(历史) |
 | 文件 part 徽章六态 | `#tools` | — | 2026-07-24 | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
