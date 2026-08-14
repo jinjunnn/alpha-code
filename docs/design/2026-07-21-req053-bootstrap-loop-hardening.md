@@ -1,6 +1,6 @@
 # REQ-053 设计基线 — C16 悬空配置引用 → bootstrap 死循环事故整改
 
-- **需求**:#218 [REQ-053](P1 incident,scope L)
+- **需求**:#218 REQ-053(P1 incident,scope L)
 - **子票**:#468 `[CODE]` 清除/启动双入口剥离悬空引用(AC1/AC2)· #469 `[CODE]` 日志失控断路器 + 每次 spawn 轮转(AC3/AC4)· #470 `[VERIFY]` 打包事故回归三有界(AC2 打包/AC5)
 - **事故档(地面真相)**:[`docs/audits/2026-07-07-req053-home-instance-loop.md`](../audits/2026-07-07-req053-home-instance-loop.md)
 - **状态**:基线已批(owner 采纳);L 级方案门产物。所有断言以 2026-07-21 `alpha` 分支实读代码为据。
@@ -18,7 +18,20 @@
 - **勘破修正(重要)**:REQ-059 之后 alpha 真源已从事故当天的 `~/.opencode/opencode.jsonc` 迁到 `<alphaGlobal>/alpha.jsonc`(`engine-config-truth.ts:20-22`)。而 data 级清除把 alphaGlobal 整根删掉(`data-clear.ts:171-177` 的 `alpha-global` 项,rel `"."`)——alpha.jsonc 本体随根消失,**data 级不再留下 alpha.jsonc 内的悬空引用**。今天的活体复现面是:
   - **凭证级清除**(`data-clear-boot.ts:90-127`):删 `alpha-mcp-secrets/`、`alpha-secrets`、`alpha.env`(`executeClear` 且 `includeShared:true`,:115),但 alpha.jsonc 存活,其 `mcp.<name>.environment/headers` 里的 `{file:}` 引用悬空;随后 `logout()`(:117)立刻 respawn sidecar → **与事故同构的循环当场开始,应用还在运行**。这是当前最危险的一条路径。
   - **data 级 + 未迁移/bail-out 机器**:legacy `~/.opencode/opencode.jsonc` 不在删除清单,对话框文案甚至**明文承诺不碰它**(`data-clear-boot.ts:167-168`)——正是事故里留下两条悬空引用的那份文件。
-- 引擎侧失败语义确认:`{file:}` 目标 ENOENT → `InvalidError` 抛出(上游 `packages/opencode/src/config/variable.ts:67-81`;`missing` 默认 `"error"`,:34)→ `config.get()` 失败;file 型 plugin import 失败同理(`bootstrap.ts:37-39`)。任一者 = instance 创建中断。
+- 引擎侧失败语义确认:`{file:}` 目标 ENOENT → `InvalidError` 抛出(上游 `packages/opencode/src/config/variable.ts:67-81`;`missing` 默认 `"error"`,:34)→ `config.get()` 失败;~~file 型 plugin import 失败同理(`bootstrap.ts:37-39`)。任一者 = instance 创建中断。~~
+
+> **订正(2026-08-14,`#218` 勘破实测)**:上面划掉的那半句今天不成立。
+>
+> - **旧口径为何不成立**:执行 `node_modules` 里装着的那份上游 `packages/opencode/src/plugin/loader.ts`,
+>   对一个**缺失的绝对路径 plugin** 调 `PluginLoader.loadExternal` —— 它**不抛**,正常返回 `loaded = 0`,
+>   只在 `reports` 里留一条 `error(stage=load): ResolveMessage: Cannot find module '<path>'`。
+>   `bootstrap.ts:34-44` 里唯一**不被 catch** 的致命项是 `config.get()`(即 `{file:}` 替换失败);
+>   `plugin.init()` 虽然也不被 catch,但它内部不抛。
+> - **什么仍成立**:悬空 `{file:}` 仍然致命(实测上游 `ConfigVariable.substitute` 对事故档那两条引用的
+>   原形抛 `ConfigInvalidError`);上游 `instance-store.ts` 仍是零退避、零失败记忆(`completeLoad` 失败即
+>   `removeEntry`,:72-77),循环机制本身没变。
+> - **后果(直接改变 `#470` 的夹具设计)**:**只种 `plugin[]` 造不出这个循环** —— 那样的夹具会得到一个
+>   「启动正常」的假绿,而它证明不了 AC2。`#470` 的夹具**必须带 `{file:}`**。
 
 ### 2. 上游重试风暴(READ-ONLY,禁改)
 
@@ -88,7 +101,38 @@
 - **信号**:sidecar ready 后每 60s 对 `serverLogRoots()` 活跃 `opencode.log` 做一次 `statSync`(每 tick 一次系统调用,零解析零采样)。判失控:**连续 2 个窗口增量 > 64MB**(事故速率 ~30MB/min 的 2 倍裕度,合法日志差 2-3 个数量级)**或绝对尺寸 > 512MB**(运行期硬帽;因 AC4 使每次 spawn 起点 <25MB,绝对帽不会被陈年存量误触)。
 - **执行器**:strike 1-2 → 直接 kill sidecar 子进程(**不置空 `server`**,让 exit 走既有 `handleSidecarExit` → `planSelfHeal` 梯子 respawn,`index.ts:174-211`;respawn 顺路轮转 + sweep);strike 3 → 按蓄意 kill 纪律置空 `server` 后 kill,**不再自动 respawn**,注册 RecoveryService incident(镜像 give-up 块 :183-204,`retryEngine` 动作复位 strikes)——引擎停机 = CPU 归零、实例数归零、日志冻结,UI 收到可区分的"引擎反复失控,已暂停"可恢复事故卡。strikes 30 分钟无判定自然衰减。**guard 自带 strike 计数,不复用 self-heal 的 60s-健康重置**(勘破 §4:该重置语义与"活着但失控"互斥)。
 - **为什么不是通用看门狗(显式拒绝审计 §2 的引申)**:CPU 采样跨平台脏且对合法高载(编译/索引/首扫)假阳性高;日志内容解析的 I/O 与洪水同阶;进程表监控/B11 监控框架是为"未来所有病"预付的无底洞。本断路器只证明一件事:**引擎日志以病理速率增长**——这恰是本事故类(以及任何 flood 类)的充分信号,且 AC4 反正需要这次 stat。
-- **被否决的其它替代**:*改上游加 backoff*(fork 纪律禁);*renderer 限流*(勘破 §2:风暴在引擎内部调用面 + 无失败 memoization,alpha renderer 本就只有手动重试 Banner,`AlphaHome.tsx:73-79`,无可限之流);*什么都不做,只靠 AC1/AC2*(AC3 要求的是**类**边界——未知病因的 flood 同样要有界,instance-vs-class 纪律);*只留绝对帽不做速率规则*(慢烧循环在帽下可长时间烧 CPU,速率规则 2 分钟内断路,两规则共享同一次 stat,边际成本为零)。
+- **被否决的其它替代**:*改上游加 backoff*(fork 纪律禁);*renderer 限流*(勘破 §2:风暴在引擎内部调用面 + 无失败 memoization,alpha renderer 本就只有手动重试 Banner,`AlphaHome.tsx:73-79`,无可限之流);*什么都不做,只靠 AC1/AC2*(AC3 要求的是**类**边界——未知病因的 flood 同样要有界,instance-vs-class 纪律);*只留绝对帽不做速率规则*(慢烧循环在帽下可长时间烧 CPU,~~速率规则 2 分钟内断路~~,两规则共享同一次 stat,边际成本为零)。
+
+> **订正(2026-08-14,`#218` 实测驱动出货的 `decideEngineRunawayGuard`)**:上面划掉的
+> 「速率规则 2 分钟内断路」对**本事故类**不成立,而且 W5 的「有界」在一个具体区间里也不成立。
+> 两条都只**登记**,本轮**不动任何阈值**(阈值是产品裁决,已交回 owner)。
+>
+> **① 本事故类只有绝对帽有效,速率规则一次都不触发。**
+> 判据来源说明(执行 #470 的人必读):**生产在断路那一刻只写 `{ strikes }`**
+> (`index.ts:386` / `:396` 两条 `writeLog("utility", …, { strikes }, "error")`),`decideEngineRunawayGuard`
+> 的返回值里也只有 `action` —— **没有任何日志/返回值直接说出「是哪条规则」**。规则归属只能由夹具
+> **自己独立记录的逐分钟尺寸序列**反推:全程窗口增量 Δ < 64MB ⇒ `fastWindows` 恒 0 ⇒ 速率规则结构上
+> 不可能触发 ⇒ 首次 verdict 必由 `size > 512MB` 给出。
+>
+> | 事故速率 | 第一击 | 第三击(停机) | 累计写盘 | 触发规则 |
+> |---|---|---|---|---|
+> | 30 MB/min(1.8GB / 1h) | 第 **18** 个 60s 窗,`t=+18min`,**540MB** | `t=+54min` | ≈ 3 × 540MB ≈ **1.6GB** | `absolute-cap`(`fastWindows` 全程 0) |
+> | 35 MB/min(21GB / 夜) | 第 **15** 窗,`t=+15min`,**525MB** | `t=+45min` | ≈ **1.5GB** | 同上 |
+>
+> 建模约定(**别把 17 和 18 当成矛盾**):512MB 这条帽在 `t = 512/30 ≈ 17.1min` 就被越过,但判定
+> **只在 60s 采样点做出** ⇒ 第一次**看见**它的是第 18 窗。窗序随「起表时刻与写入起点的相位差」±1。
+> 每次 `kill-and-respawn` 后 `spawnLocalServer` 会轮转掉那 540MB(AC4)⇒ 尺寸归零、重新起表,
+> 所以三击的间隔是等长的。
+>
+> **② 慢烧区间(< 512MB ÷ 29min ≈ 17.7 MB/min)里断路器永远停在第一击。**
+> `ENGINE_RUNAWAY_STRIKE_DECAY_MS`(30min)与 512MB 帽的比值给出一个临界速率:比它慢的循环,
+> 两次判定的间隔 ≥ 30min ⇒ `decideEngineRunawayGuard` 开头那个衰减分支先把 `strikes` 清零,
+> **strikes 永远回不到 2**。10 小时窗口实测:17.6 MB/min ⇒ **20 次** kill/respawn、15 MB/min ⇒ **17 次**、
+> 10 MB/min ⇒ **11 次**,`stop-and-report` **一次都没到达**(17.7 MB/min 则正常三击停机)。
+> 后果:日志确实有界(≤ 525MB + 3 份归档),但**引擎被无限重启、循环无限重来、CPU 不有界,
+> 而且用户永远看不到那张可恢复事故卡** —— AC3 的「loud、可恢复」与 AC5 的「CPU 有界」在这个区间不成立。
+> ⚠️ 本条是**决策核建模实测**(按 `index.ts:360-362`/`:380-391` 的真实路径复现 respawn 后的
+> 轮转 + 重新 arm),**不是打包实测**;打包侧验证挂 `#470` / 新票。跟踪:`alpha-code#967`(产品裁决)。
 - **更简单的正确解?** 有人会提"只在 give-up 弹 recovery"——但 self-heal 永不触发(进程不退)。断路器已是能满足"CPU/日志双有界 + loud recoverable"的最小机器:一个 stat、两条阈值规则、一个 strike 计数、复用两套既有机器(self-heal 梯子 + RecoveryService)。
 - **AC3 是否需要 DECIDE 票:不需要**。机制在此设计锁定;按 L 级契约,开发前 Codex 一轮对抗"是否有更简单正确解"即为裁决点,结论回写本基线。无未决技术路径。
 
@@ -100,11 +144,42 @@
 
 **诚实边界**:单 run 活跃文件上界 ≈ 512MB + 一个窗口增量;目录总量 ≈ 活跃 + 3 份归档(`pruneServerArchives`)。相对 21GB 是 40 倍级收敛;AC5 断言"有界",不承诺"很小"。
 
+> **补记(2026-08-14,`#218` 实测)**:这条「诚实边界」本身仍然成立,但它只覆盖**单 run 的日志**。
+> 实测把两件事补全:①**累计**写盘量 = 每一击 ~520–540MB × 3 击 ≈ **1.5–1.6GB**(每次 kill→respawn
+> 都轮转,所以盘上同时存在的量有界,写下去的总量没有);②在 **< 17.7 MB/min** 的慢烧区间里,
+> kill/respawn 无限循环,累计写盘随时间线性增长而**永不停机**(10 小时实测 11–20 次),
+> 此时「CPU 有界」不成立。详见 §AC3 的订正块与 `alpha-code#967`。
+
 **被否决**:*copytruncate 在线截断*(引擎虽 O_APPEND 但截断有丢行窗口,且为省一次 respawn 引入第二套机制);*让引擎自转*(上游禁改);*缩短 60s 窗口/调低帽*(把正常长会话推进"为轮转杀会话"的体验坑)。**更简单的正确解?** 若只做"每次 spawn 轮转"而无运行帽,单 run 仍无界,AC4 字面 FAIL;当前组合已最小。
 
 ### AC5 — 打包事故回归
 
-**选定**:VERIFY 票,复用 packaged smoke 范式(`docs/verification/2026-07-17-packaged-macos-rc-smoke.md` 先例):夹具 A(启动前种悬空 plugin[]+{file:} 于 alpha.jsonc/legacy)证 boot 自愈 + "creating instance 恰 1 次";夹具 B(运行中制造悬空触发活循环)证断路器 ≤3 窗口断路、recovery 卡可见、终态 CPU <10%、opencode.log ≤ 帽 + 裕度、无第二实例风暴。不新建 harness 框架。
+**选定**:VERIFY 票,复用 packaged smoke 范式(`docs/verification/2026-07-17-packaged-macos-rc-smoke.md` 先例):夹具 A(启动前种悬空 plugin[]+{file:} 于 alpha.jsonc/legacy)证 boot 自愈 + "creating instance 恰 1 次";夹具 B(运行中制造悬空触发活循环)证断路器 ~~≤3 窗口断路~~、recovery 卡可见、终态 CPU <10%、opencode.log ≤ 帽 + 裕度、无第二实例风暴。不新建 harness 框架。
+
+> **订正(2026-08-14,`#218`)**:`≤3 窗口断路` 这条退出条件今天为假 —— 照它写断言**必红**,
+> 而红了以后最省事的「修法」正好是把阈值调小,那等于把一道真闸门当噪声处置。见 §AC3 订正块:
+> 事故自身速率下第一击落在**第 18 个**窗(30MB/min)/ 第 **15** 窗(35MB/min),由 `absolute-cap` 给出。
+>
+> **AC5 的退出条件改写为**:夹具 B 逐分钟记录 `serverLogRoots()[0]/opencode.log` 的尺寸序列,
+> 断言 **哪条规则 / 第几窗 / 多少字节 / 多少分钟** 触发,而不是断言一个窗口数。
+> 「哪条规则」**没有直接来源**(生产只 log `{strikes}`,见 §AC3 订正块),必须由夹具自己的
+> 尺寸序列反推:全程 Δ<64MB ⇒ `fastWindows` 恒 0 ⇒ 首次 verdict 必由 `size>512MB` 给出。
+>
+> **`#470` 的夹具清单(四条,缺一条就有一整类不被证)**:
+> - **A 冷启动自愈** —— `<alphaGlobal>/alpha.jsonc` 与 legacy `~/.opencode/opencode.jsonc` 各种一条事故原形。
+>   **必须带 `{file:}`**(见 §①.1 订正块:只用 `plugin[]` 造不出循环)。断言:①引擎日志 `creating instance`
+>   **恰 1 次**(事故档 10:31 恢复确认用的就是这个数)②main.log 出现 `[req053-dangling-sweep] … stripped=2`
+>   ③两条键真消失,而同夹具里的**活引用 + npm 包名条目 + 一条落在守卫根外的 user-foreign 绝对路径**
+>   逐字节保留 ④预置的 XDG `~/.config/opencode/opencode.jsonc` 的 inode+mtime 不变。
+> - **A2 fail-closed 单独一格** —— legacy 文件多一个用户手写顶层键(如 `theme`)+ 同样两条悬空 ⇒ 断言 app
+>   **不 spawn sidecar**、退出码 1、日志有 boot enforcement gap。没有这一格,把 `index.ts:821-826` 删掉夹具 A 照样全绿。
+> - **B 运行期断路** —— 逐分钟尺寸序列 + 上面那条改写后的判据;strike3 后 RecoveryService 事故卡可见 +
+>   引擎停机 + 全进程 CPU<10% + 目录总量 ≤ 活跃(≤576MB)+ 3 份归档。单次跑到 strike-3 约 **45–54 分钟**真实时间。
+> - **C 速率规则单独证活** —— **不要指望 B 覆盖它**(实测 B 全程 `fastWindows=0`)。用
+>   `engine-runaway-guard.test.ts` 已有的 rate 夹具保住,并在证据里留一条绕过实验记录:
+>   「把 `decideEngineRunawayGuard` 的 `fastWindows >= 2` 删掉,夹具 B 仍全绿」。
+>
+> 证据落 `docs/verification/<日期>-req053-packaged-incident-regression/`;本轮(`#966`)只写清落点与清单,不创建。
 
 ---
 
