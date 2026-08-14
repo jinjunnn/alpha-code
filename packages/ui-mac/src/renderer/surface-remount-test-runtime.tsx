@@ -40,6 +40,8 @@ import { createEffect, createMemo, createResource, createSignal, onCleanup, Show
 import { render } from "solid-js/web"
 import type { SidecarGenerationState } from "../preload/types"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
+import { installHomeDraftDiscardNotice } from "./alpha-ui/home-draft-discard-notice"
+import { ToastViewport } from "./alpha-ui/Toast"
 import { AlphaNewSession } from "./alpha-ui/alpha-new-session"
 import { ContractHealthProvider } from "./alpha-ui/providers"
 import { alphaSessionWorkspaceSurface } from "./alpha-ui/session-workspace/alpha-session-workspace"
@@ -380,6 +382,10 @@ export function AlphaSurfaceShell() {
       ServerConnection.Key.make(availableStartupServer(defaultServer.latest, wslServers.data)),
     )
 
+    // #927:与原件同一行(锚点钉死)。执行的是生产模块 —— 身份切换丢首页草稿的提示逻辑
+    // 全在 home-draft-discard-notice.ts 里,这行只是接线;复刻少了它 = 行为测试测不到生产代码。
+    installHomeDraftDiscardNotice(effectiveDefaultServer)
+
     const alphaProjects = useAlphaProjects(sidebarServer)
     projectsApiRef = alphaProjects
     onCleanup(() => {
@@ -416,6 +422,10 @@ export function AlphaSurfaceShell() {
               surfaces={surfaceComponents()}
             >
               <ServerListProbe />
+              {/* #927:生产 ToastViewport 与原件同位(keyed 树内、AppInterface children)——
+                  提示 push 发生在旧树 dispose 期间,判据必须证明它熬得过重挂本身:
+                  viewport 随树重建,靠模块级 store 把这条重新渲染出来。 */}
+              <ToastViewport />
             </AppInterface>
           )}
         </Show>

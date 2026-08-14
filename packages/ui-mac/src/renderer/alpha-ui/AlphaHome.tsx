@@ -10,6 +10,7 @@ import { useNavigate } from "@solidjs/router"
 import { type AlphaProjectsApi } from "../sidebar/use-projects"
 import { hrefFor } from "../../shared/route-manifest"
 import { AlphaComposer } from "./alpha-composer"
+import { noteHomeComposerUnmountDraft } from "./home-draft-discard-notice"
 import { createDefaultWorkspaceDir } from "./default-workspace"
 import { AlphaWorkspaceChip, visibleWorkspaces } from "./workspace-chip"
 import { pushToast } from "./Toast"
@@ -133,6 +134,11 @@ export function AlphaHome(props: {
             projects={props.projects}
             directory={activeWs}
             serverKey={props.serverKey}
+            // #927:首页 composer 的草稿是组件本地信号,没有任何暂存 —— 默认服务器身份切换
+            // (keyed 重挂)会把它连树一起丢掉。owner 裁决是丢弃但先提示:卸载时把「还有没有
+            // 未发送内容」交给 notice 模块,身份切换那一拍据此弹一句说明(导航等卸载不误报,
+            // 判据见 home-draft-discard-notice.ts)。
+            onDraftSnapshot={noteHomeComposerUnmountDraft}
             onNeedWorkspace={() => {
               // 零工作区不留死点(REQ-054①):任何需要工作区的控件都引导到选择器
               setWsOpen(true)

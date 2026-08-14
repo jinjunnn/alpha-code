@@ -929,6 +929,8 @@ export const dict = {
   "alpha.home.openProject": "打开项目",
   "alpha.home.openProjectEllipsis": "打开项目…",
   "alpha.home.openProjectFailed": "打开项目失败,请重试",
+  "alpha.home.serverSwitched": "已切换服务器",
+  "alpha.home.serverSwitchedDraftDiscarded": "刚才未发送的草稿未保留",
   "alpha.newSession.title": "新会话",
   "alpha.newSession.directoryPending": "草稿目录未就绪",
   "alpha.newSession.directoryLoading": "等待草稿状态加载",
