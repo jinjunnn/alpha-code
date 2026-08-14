@@ -877,6 +877,44 @@ describe("#949 生产铸形:read 的 directory 分支落目录网格(引擎无 i
     const fileRead = part("read", { status: "completed", input: { filePath: "/w/a.ts" }, metadata: { loaded: [] } })
     expect(contextGroupSummaryOf([dirReadPart(), fileRead])).toEqual({ reads: 1, searches: 0, lists: 1 })
   })
+
+  test("模型多给引擎不读的 path 键时,目标取引擎真读的 filePath(头部 + 「已探索」行)", () => {
+    // 生产可达形状:read.ts 只读 params.filePath;tool/json-schema.ts 以
+    // additionalProperties:true 生成 schema ⇒ 模型多给的 `path` 键原样存进
+    // part.state.input(session/tools.ts running 态 input=args,完成时原样继承)。
+    // 判据落在用户可观察的卡面目标上:标题与折叠行必须指向引擎真正列的目录,
+    // 引擎从不读的 `path` 键的值不得出现。
+    const display = (dir: string, entries: string[]) => ({
+      type: "directory",
+      path: dir,
+      entries,
+      offset: 1,
+      totalEntries: entries.length,
+      truncated: false,
+    })
+
+    const head = toolCardHeadOf(
+      part("read", {
+        status: "completed",
+        input: { filePath: "/Users/kai/lab/audio-mix", path: "/Users/kai/.ssh" },
+        metadata: { display: display("/Users/kai/lab/audio-mix", ["takes/", "master.wav"]) },
+      }),
+    )
+    expect(head.titleKey).toBe("alpha.timeline.tool.list")
+    expect(head.target).toBe("~/lab/audio-mix")
+    expect(head.target).not.toContain(".ssh")
+
+    const row = contextRowOf(
+      part("read", {
+        status: "completed",
+        input: { filePath: "/Users/kai/notes/journal", path: "/Users/kai/secrets/vault" },
+        metadata: { display: display("/Users/kai/notes/journal", ["2026/"]) },
+      }),
+    )
+    expect(row.titleKey).toBe("alpha.timeline.tool.list")
+    expect(row.target).toBe("~/notes/journal")
+    expect(row.target).not.toContain("secrets")
+  })
 })
 
 describe("#584 grep 命中高亮模型(G7:文件/行号结构化 + 字面量高亮 + 失败整字段隐藏)", () => {

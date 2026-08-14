@@ -445,9 +445,12 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
       return head
     }
     case "list": {
-      // #949:生产铸形是 read 工具的 directory 分支,入参键是 filePath;
-      // `path` 键保留给 #583 的 list 形态夹具(两者在生产上不并存)。
-      const path = redactedPathOf(input.path ?? input.filePath)
+      // #949:生产铸形是 read 工具的 directory 分支,引擎只读 filePath
+      // (read.ts 的 params.filePath);schema 以 additionalProperties:true 生成 ⇒
+      // 模型多给的 `path` 键会原样存进 input —— 优先级必须让引擎真正读的键赢,
+      // 否则卡面目标可被引擎从不读的键改写(#879)。`path` 兜底只为 #583 的
+      // list 形态夹具(无 filePath 时才生效)。
+      const path = redactedPathOf(input.filePath ?? input.path)
       if (path.hidden) head.targetHidden = true
       else if (path.value !== undefined) head.target = cappedItem(path.value)
       // #583:完成态头部计数「共 N 项」。只有解析出完整(未截断)条目集时才出计数 ——
@@ -1322,8 +1325,8 @@ export function contextRowOf(part: ToolPart): ContextRowInfo {
       }
     }
     case "list": {
-      // #949:同 toolCardHeadOf 的 list 分支 —— 生产入参键是 filePath。
-      const path = redactedPathOf(input.path ?? input.filePath)
+      // #949:同 toolCardHeadOf 的 list 分支 —— 引擎只读 filePath,`path` 只兜底夹具。
+      const path = redactedPathOf(input.filePath ?? input.path)
       return { ...base, titleKey: TITLE_KEYS.list, target: path.value, targetHidden: path.hidden || undefined }
     }
     case "glob": {
