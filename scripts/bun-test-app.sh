@@ -147,9 +147,16 @@ fi
 # 与 CI=1 钉在同一处。改动 alpha 判据用例后把下表改成实测值,让评审读这一行 diff。
 # 表与补丁 delta **双向核对**:补丁里有而表里没有 = 红(新增判据文件必须登记);
 # 表里有而补丁里没有 = 红(文件退场必须删行)—— 哪个方向都不许静默漂移。
+#
+# `src/context/terminal-command.test.ts` 登记 1 条是**对的**:它是子进程宿主(`#579`),
+# 判据主体在同目录的 `terminal-command.cases.ts` —— 那 4 条必须跑 solid 的 **dom** 构建
+# (本 lane 不带 `--conditions=browser`,真 `createWorkspaceTerminalSession` 会在
+# `utils/persist.ts` 的 `createResource` 处直接抛)。cases 的精确条数登记在宿主自己的断言里
+# (取回真实 pass/fail/文件数再比,不是 `toContain`),`.cases.ts` 不被 bun 自动发现。
 REGISTERED_COUNTS="
 src/components/prompt-input/submit.test.ts 8
 src/context/permission-auto-respond.test.ts 12
+src/context/terminal-command.test.ts 1
 src/pages/layout/helpers.test.ts 22
 src/utils/session-route.test.ts 10
 "

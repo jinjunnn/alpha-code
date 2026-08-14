@@ -15,6 +15,8 @@ export interface TerminalEnginePTY {
   id: string
   title: string
   titleNumber: number
+  /** 服务端起这条 PTY 用的 shell 命令(`Pty.Info.command`,如 `/bin/zsh`);缺席即缺席。 */
+  command?: string
   cols?: number
   rows?: number
 }
@@ -58,15 +60,32 @@ export function terminalInstanceTitle(
 }
 
 /**
+ * 环境段的展示投影:把引擎给的 shell **命令**(绝对路径居多,如 `/bin/zsh`)投成脚条上
+ * 那个短名(`zsh`)。口径参照 `packages/core/src/shell.ts` 的 `Shell.name()`
+ * (win32 走 `path.win32.parse().name.toLowerCase()`,否则 `path.basename().toLowerCase()`),
+ * 但**自己实现、不 import** —— `@opencode-ai/core/shell` 是 node-only 模块,renderer 不能碰。
+ * 且**不声称与之等价**:POSIX 下遇到字面名为 `foo.exe` 的可执行文件两者行为不同,本函数
+ * 是显示口径,没有 AC 要求跨平台等价。缺数据(空/全空白/只有分隔符)→ undefined,不伪造。
+ */
+export function terminalShellName(command: string | undefined): string | undefined {
+  if (command === undefined) return undefined
+  const trimmed = command.trim()
+  if (!trimmed) return undefined
+  // 两种分隔符都吃:引擎命令可能来自 win32(反斜杠)。
+  const base = trimmed.slice(Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\")) + 1)
+  const withoutExt = base.replace(/\.exe$/i, "")
+  return withoutExt ? withoutExt.toLowerCase() : undefined
+}
+
+/**
  * 脚条投影(与 instances 同一存活语义):上游生命周期真相是 `pty.exited` 事件即从
  * store 移除 —— 在列 = 存活;引擎不暴露更细的任务级活动信号。诚实映射:存活即
  * running,实例缺席 = false;尺寸透传持久 cols×rows,任一维缺失即整段省略。
- * 环境(shell)段本票不投影:真值是服务端 `Pty.Info.command`/`cwd`,而客户端 `LocalPTY`
- * 只同步 title、丢弃 command/cwd —— 需客户端窄改经 patch 通道供给,已拆独立票(见 #576
- * 评论)。今日缺数据,故不伪造环境段。
+ * 环境(shell)段来自服务端 `Pty.Info.command`,经上游 `LocalPTY.command`(#579 的 patch
+ * 通道窄改)到达引擎侧,本处只做展示投影;引擎没给 command 时该段缺席,不伪造。
  */
 export function terminalFootStatus(pty: TerminalEnginePTY | undefined): AlphaTerminalFootStatus {
-  return { running: pty !== undefined, cols: pty?.cols, rows: pty?.rows }
+  return { running: pty !== undefined, shell: terminalShellName(pty?.command), cols: pty?.cols, rows: pty?.rows }
 }
 
 /**

@@ -19,7 +19,16 @@ mock.module("solid-js/store", () => solidStore)
 
 // ── 假引擎:上游 useTerminal 的最小同形面(focus store 语义照搬 context/terminal.tsx;
 //    ops.update 真实落 store,让新挂载能捕获回写后的 buffer/cursor) ──
-type FakePTY = { id: string; title: string; titleNumber: number; cols?: number; rows?: number; cursor?: number; buffer?: string }
+type FakePTY = {
+  id: string
+  title: string
+  titleNumber: number
+  command?: string
+  cols?: number
+  rows?: number
+  cursor?: number
+  buffer?: string
+}
 
 function createFakeEngine(initial: FakePTY[], options?: { silentCleanup?: boolean; manualFlush?: boolean }) {
   const [focus, setFocus] = solid.createSignal<{ id?: string } | undefined>(undefined)
@@ -129,6 +138,10 @@ Bun.plugin({
 })
 
 const adapter = await import("../src/renderer/alpha-ui/session-rail/terminal/terminal-engine-adapter")
+// #579:环境段的端到端取证要挂真面板(真适配器 → 真投影 → 真 DOM),故一并加载面板与
+// 身份校验器 —— 必须排在 Bun.plugin 注册之后(它们的 tsx 要过 solid dom 变换)。
+const railPanel = await import("../src/renderer/alpha-ui/session-rail/terminal/terminal-rail-panel")
+const workspaceCore = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-core")
 const disposers: Array<() => void> = []
 
 afterEach(() => {
@@ -173,6 +186,22 @@ function mountEngineOutput(instanceID: string) {
 async function macrotask() {
   await new Promise((resolve) => setTimeout(resolve, 1))
   await flush()
+}
+
+/** #579:真适配器 channel 直接喂进真面板(组件按函数调用 —— .cases.ts 不过 JSX 变换)。 */
+function mountRailPanel() {
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(
+    solidWeb.render(() => {
+      const accessor = adapter.useAlphaTerminalEngineChannel(() => snapshot)
+      return railPanel.TerminalRailPanel({
+        channel: accessor(),
+        accepts: (identity) => workspaceCore.sameSessionIdentity(identity, snapshot.identity),
+      }) as never
+    }, host),
+  )
+  return host
 }
 
 describe("REQ-125 #554 keep-alive × autoFocus one-shot, two-phase remount (audit rounds 4-5)", () => {
@@ -329,5 +358,39 @@ describe("REQ-125 #554 keep-alive × autoFocus one-shot, two-phase remount (audi
     const term = host.querySelector("[data-fake-terminal]")!
     expect(term.getAttribute("data-theme-bg")).toBe("#0a0b0d") // = --a-term-stage-bg
     expect(term.getAttribute("data-theme-fg")).toBe("#d4d4d8") // = --a-term-stage-text
+  })
+
+  test("the foot's environment segment renders the engine command's shell name (REQ-125 #579)", async () => {
+    // 端到端唯一一条:引擎 PTY 带 command → 真适配器 → 真投影 → 真面板 DOM。
+    // 既有的 terminal-rail.cases.ts 那条 `foot.textContent).toContain("zsh")` **今天就是绿的**
+    // (值来自 terminal-rail-test-runtime 硬喂的 shell 夹具),对本缺陷零敏感,不能当修复证据。
+    currentEngine = createFakeEngine([
+      { id: "pty_1", title: "终端 1", titleNumber: 1, cols: 80, rows: 24, command: "/bin/zsh" },
+    ])
+    const host = mountRailPanel()
+    await flush()
+
+    const foot = host.querySelector<HTMLElement>("[data-alpha-terminal-foot]")!
+    const env = foot.querySelector<HTMLElement>("[data-alpha-terminal-foot-env]")
+    expect(env).not.toBeNull()
+    // 恰好等于,不是 toContain:整条脚条扫描在「zsh 混进尺寸段」时也绿(粗一格)。
+    expect(env!.textContent).toBe("zsh")
+
+    // 已批稿钉死的次序:运行状态 · 环境 · 尺寸(design.html:374)。
+    const children = Array.from(foot.children)
+    const stateIndex = children.indexOf(foot.querySelector("[data-alpha-terminal-foot-state]")!)
+    const envIndex = children.indexOf(env!)
+    const sizeIndex = children.indexOf(foot.querySelector(".a-term-foot-size")!)
+    expect(stateIndex).toBeGreaterThanOrEqual(0)
+    expect(sizeIndex).toBeGreaterThan(envIndex)
+    expect(envIndex).toBeGreaterThan(stateIndex)
+
+    // 反向对照:引擎不给 command → 整段消失(<Show> 关掉),状态段与尺寸段仍在。
+    // 抓的是「shell 恒为真值」的伪造实现。
+    currentEngine.setAll([{ id: "pty_1", title: "终端 1", titleNumber: 1, cols: 80, rows: 24 }])
+    await flush()
+    expect(foot.querySelector("[data-alpha-terminal-foot-env]")).toBeNull()
+    expect(foot.querySelector("[data-alpha-terminal-foot-state]")).not.toBeNull()
+    expect(foot.querySelector(".a-term-foot-size")!.textContent).toBe("80×24")
   })
 })
