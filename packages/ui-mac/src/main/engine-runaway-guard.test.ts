@@ -116,17 +116,10 @@ describe("engine runaway guard", () => {
   })
 })
 
-describe("spawn log rotation wiring", () => {
-  test("exports rotation and calls it inside spawnLocalServer before utilityProcess.fork", async () => {
-    const serverSource = await Bun.file(new URL("./server.ts", import.meta.url)).text()
-    const loggingSource = await Bun.file(new URL("./logging.ts", import.meta.url)).text()
-    const spawn = serverSource.indexOf("export async function spawnLocalServer")
-    const rotate = serverSource.indexOf("rotateServerLogs()", spawn)
-    const fork = serverSource.indexOf("utilityProcess.fork", spawn)
-
-    expect(loggingSource).toContain("export function rotateServerLogs()")
-    expect(spawn).toBeGreaterThanOrEqual(0)
-    expect(rotate).toBeGreaterThan(spawn)
-    expect(fork).toBeGreaterThan(rotate)
-  })
-})
+// AC4「每次 spawn 前轮转」的判据**不在本文件**,在 `req053-spawn-rotation.test.ts`
+// (它起子进程跑生产 `spawnLocalServer`,由注入的 fork 桩在被调用的那一刻观察真实文件系统)。
+//
+// 这里原先有一条 `serverSource.indexOf("rotateServerLogs()") < indexOf("utilityProcess.fork")`
+// 的断言,`#966` 把它删了而不是留着当「双保险」:它只比较源码字符串下标 —— 把轮转**挪到**
+// fork 之后、把 `pruneServerArchives` 删掉、把归档改成截断,它一条都不会红,而留着它会让
+// 下一个人以为这处接线有守。本文件从此只负责 `decideEngineRunawayGuard` 纯决策核的 W1–W5。

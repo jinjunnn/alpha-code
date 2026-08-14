@@ -390,6 +390,10 @@ describe("config target safety and writes", () => {
   })
 })
 
+// 注意边界:下面这条用例**手工拼装** executeClear + withConfigWriteLock + sweep 的等价链 ——
+// 它证明的是「这三步合起来能得到正确结果」,**不是**「生产真的这么接线了」。把
+// `data-clear-boot.ts` 里那次 sweep 调用整段删掉,它仍然全绿(本仓假闸形态⑧)。
+// 生产接线的判据在 `req053-clear-wiring.test.ts`。
 test("credential-level clear leaves alpha.jsonc with no guarded dangling refs and preserves the mcp leaf", () => {
   const plugin = join(roots.userData, "alpha-secrets", "plugin.js")
   const secret = join(roots.userData, "alpha-mcp-secrets", "demo", "TOKEN")
@@ -461,7 +465,22 @@ test("credential-level clear leaves alpha.jsonc with no guarded dangling refs an
   }).edits).toEqual([])
 })
 
-test("wiring orders boot and respawn sweeps before their sidecar forks", () => {
+// ⚠️ ANCHOR,不是闸门。`#966` 保留它是因为这处接线今天**没有别的东西守着**,但必须写清它守不住什么:
+//
+//   它只比较 `index.ts` 源码里几个字符串的下标。下面**三个变异**会让接线彻底失效,而它照绿:
+//     ① 把 `index.ts:820` 的 `recordDanglingSweep("boot", dangling)` 换成丢弃返回值;
+//     ② 把 `index.ts:821-826` 的 `if (dangling.enforcementGap.length > 0)` 整块删掉(fail-closed 拒启没了);
+//     ③ 把 `index.ts:1268` 与 `:1403` 的 `armEngineRunawayMeter(spawnGen)` 注释掉(断路器从不起表)。
+//
+//   真判据在 `#470` 的打包证据:生产日志行(`[req053-dangling-sweep] … stripped=N` / `boot enforcement gap`)
+//   + config 文件的前后内容差 + 进程/尺寸读数。写「app 正常启动」等于什么都没证。
+//
+//   为什么本仓拿不到机器判据(实测,不是畏难):`index.ts:1497` 是模块作用域的 `Effect.runFork(main)`
+//   —— import 它就等于启动整个 app;而 `index.ts:8` 静态 import 的 `node:tls#setDefaultCACertificates`
+//   在 **bun 1.3.14 不存在**(实测 `"setDefaultCACertificates" in tls === false`,`getCACertificates` 则有;
+//   Node 22 / Electron 有),ESM **链接期**就失败,`app.whenReady()` 一次都没被调到;即便链接得上,
+//   走到 :815 的 boot sweep 之前还有 ~217 行真实环境自举与 58 个本地模块。整类处置见 `alpha-code#968`。
+test("ANCHOR (not a gate): boot/respawn sweep source order in index.ts", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
   const reconcile = source.indexOf("reconcileEngineConfigTruth(logger")
   const bootSweep = source.indexOf('phase: "boot"')
@@ -475,19 +494,8 @@ test("wiring orders boot and respawn sweeps before their sidecar forks", () => {
   expect(secondFork).toBeGreaterThan(respawnSweep)
 })
 
-test("clear wiring sweeps after deletion and before logout/exit under the config lock", () => {
-  const source = readFileSync(join(import.meta.dir, "data-clear-boot.ts"), "utf8")
-  const execute = source.indexOf("const results = DataClear.executeClear")
-  const lock = source.indexOf("const locked = withConfigWriteLock", execute)
-  const sweep = source.indexOf("sweepEngineConfigDanglingUnlocked", lock)
-  const credentialCall = source.indexOf('executeClearWithDanglingSweep("credentials"')
-  const logout = source.indexOf("await logout()", credentialCall)
-  const dataCall = source.indexOf('executeClearWithDanglingSweep("data"')
-  const exit = source.indexOf("app.exit(0)", dataCall)
-  expect(lock).toBeGreaterThan(execute)
-  expect(sweep).toBeGreaterThan(lock)
-  expect(logout).toBeGreaterThan(credentialCall)
-  expect(exit).toBeGreaterThan(dataCall)
-  expect(source).toContain("Alpha 自有配置中指向已清除数据的悬空连接器/插件引用会一并清理")
-  expect(source).not.toContain("事后手动清理其条目")
-})
+// 这里原先有一条 `clear wiring sweeps after deletion and before logout/exit under the config lock`,
+// 读 `data-clear-boot.ts` 源码比下标。`#966` 把它删了(不是留着当双保险):把 sweep 的返回值丢掉、
+// 把 data 级那次 sweep 挪到 `app.exit(0)` 之后、把对话框文案只改在注释里 —— 它都不会红。
+// 生产接线的判据现在在 `req053-clear-wiring.test.ts`(子进程跑真
+// `createDataClearAction().clearData()`,在 `logout()` 与 `app.exit(0)` **被调用的那一刻**取快照)。

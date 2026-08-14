@@ -43,10 +43,39 @@
 | `~/Library/Application Support/alpha-code-state/cas/` | dev/prod/beta 共享的可重建 CAS，由 GC 管理；app 内 data-clear 不删除，避免跨环境误删。彻底卸载全部 channel 后可手动删除整个 `alpha-code-state/` |
 | `~/Library/Application Support/alpha-code-state/env/<其它环境>/` | 其它 channel 的 mutable root；必须从对应 channel 清除，或在全部 channel 均卸载后手动删除共享 base |
 | `~/.alpha/` | 已退休旧根；当前版本零读取、零迁移、零 dual-read，也不会替用户删除其中历史内容 |
-| `~/.opencode/opencode.jsonc` | 引擎共享配置。经定制中心装过连接器/插件的,**建议卸载前先在定制中心逐项卸载**(会净除对应条目);历史悬空引用需手动删除对应 `mcp.*` / `plugin[]` 条目 |
+| `~/.opencode/opencode.jsonc` | 引擎共享配置。经定制中心装过连接器/插件的,**建议卸载前先在定制中心逐项卸载**(会净除对应条目);~~历史悬空引用需手动删除对应 `mcp.*` / `plugin[]` 条目~~ —— 见下方「悬空引用:什么自动、什么必须手动」订正块 |
 | `~/.opencode/` 内你自建的 skill/agent/command 等 | 用户内容红线,永不代删 |
 | 钥匙串 safeStorage 密钥项 | macOS 管理的加密密钥(Electron safeStorage),无 API 可代删。加密文件删除后该项已无泄密面;要彻底清可打开「钥匙串访问」搜索 `alpha-code` 手动删除 |
 | `/Applications/alpha-code.app` | 应用本体,拖废纸篓 |
+
+### 悬空引用:什么自动、什么必须手动
+
+> **订正(2026-08-14,REQ-053 `#966`)**:上表原来那句「历史悬空引用需手动删除对应 `mcp.*` / `plugin[]` 条目」
+> 写于产品还不会自动剥离的时候,今天**过宽**。但也**不能简单改成「无需手动」** —— 产品是按**两条轴**分流的
+> (`engine-config-dangling.ts:188-242`),只看其中一条会在最需要这段文字的那个状态下给出错误指引。
+
+**自动剥离(无需手动)** —— 必须**同时**满足两条:
+
+1. **引用目标**解析后落在四个守卫根内:`~/Library/Application Support/alpha-code/`(userData)、
+   当前环境 root(`alpha-code-state/env/<环境>/`)、引擎数据目录(`~/.local/share/opencode/` 或 `$XDG_DATA_HOME/opencode/`)、
+   退休根 `~/.alpha/`;**且**
+2. **该引用所在的配置文件**是 alpha 拥有的:`<当前环境 root>/alpha.jsonc`(恒),
+   或 legacy `~/.opencode/opencode.jsonc` **且**该文件的顶层键全部 ∈ `$schema` / `mcp` / `plugin` / `agent` / `permission` / `command` / `provider`。
+
+满足这两条的悬空 `mcp.<名>.environment/headers` 的 `{file:}` 值与 `plugin[]` 绝对路径条目,会在
+**清除凭证 / 清除全部数据 / 每次开机 / 每次引擎重启**四个时机自动剥掉(只删那一个叶键或那一个数组元素,
+连接器条目本身、注释、npm 包名 plugin 条目一律保留)。
+
+**产品不代改(必须手动)** —— 下面四种情形产品**一个字节都不写**。其中前三种还会让开机
+**直接拒绝启动**(弹「扩展安全状态无法确保」并退出;这是有意的 fail-closed:宁可不启动,也不进死循环。
+唯一的例外是「XDG 用户配置**读不出**」—— 那一种只记警告,不拒启):
+
+| 情形 | 为什么 | 你要做什么 |
+|---|---|---|
+| 引用写在 XDG 用户配置(`~/.config/opencode/opencode.jsonc` 或 `$XDG_CONFIG_HOME/opencode/*`)里 | 用户外来配置恒为只读,哪怕引用目标就在守卫根里也永不代改 | 手动删掉该 `mcp.*` / `plugin[]` 条目 |
+| 引用写在 `~/.opencode/opencode.jsonc`,但该文件含 `theme` / `model` / `keybinds` / `share` 等**上面白名单之外的顶层键** | 判定为用户手写混入 ⇒ 整份文件所有权 bail-out、零剥离。**单独装过 opencode CLI 的机器几乎必然落进这一格** | 手动删掉该条目(或先把非 alpha 顶层键挪走) |
+| 配置文件读不出(权限/IO 错误)、或 JSONC 解析失败(半截文件、非法语法) | 以残基底重写会抹掉未解析出的内容,比留着悬空引用更危险 ⇒ 该文件本轮零写入 | 先修好该文件的权限/语法,再重启 |
+| **引用目标**落在四个守卫根**之外**(例如 `~/dev/myplugin/index.js`) | 那是你自己的路径,产品无权判定它「该不该在」 | 目标确实不要了就手动删掉该条目 |
 
 ## 复核(验收③:清除后残留归零)
 
