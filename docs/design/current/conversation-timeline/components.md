@@ -41,6 +41,7 @@ review_after: 2027-01-16
 | 助手侧截图 / 图片 / 媒体预览行 | `#ai` | — | 2026-07-24 | — | — | — | 未登记(历史) |
 | 通用工具卡四态(运行 / 完成 / 错误 / 待批) | `#tools` | `2026-06-28-timeline-overhaul/` | — | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
 | 各工具类型卡(read / grep / bash / edit / MCP …) | `#tools` | `2026-06-28-timeline-overhaul/` | — | — | — | `cards/tool-cards.tsx` | 未登记(历史) |
+| 技能执行卡(助手回合) | `#tools` | `2026-06-28-timeline-overhaul/` | — | ~~ac#585~~ | — | `cards/tool-cards.tsx`(走通用工具卡) | **已被取代**:活稿 ③ 节曾画内联 `.skill-chip`,与 ⑥ 节的整宽工具卡冲突;2026-08-09 已批增量要求每张工具卡常驻来源徽标 + 折叠开发者详情(chip 放不下)⇒ owner 2026-08-13 裁决保持工具卡形态,ac#585 关票。帧已就地标注 |
 | 全来源工具卡来源徽标 + 安全通用降级 | `#tool-provenance` | `2026-08-08-req125-tool-card-provenance/` | 2026-08-09 | ac#878 · ac#879 · ac#587 | 2026-08-12 | `cards/tool-card-model.ts`(identity 分派 + 规则表) · `cards/tool-cards.tsx`(来源徽标 / 安全通用卡 / 折叠开发者详情) · `cards/tool-redactor.ts`(共享脱敏) | 已实现 |
 | glob(按模式匹配文件)工具卡 | `#tools` | — | 2026-07-23 | — | — | `cards/tool-cards.tsx` · `cards/tool-card-model.ts` | 未登记(历史) |
 | bash 运行中的流式输出子消息 | `#tools` | — | 2026-07-24 | — | — | `cards/tool-card-model.ts` | 未登记(历史) |

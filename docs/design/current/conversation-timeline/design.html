@@ -18,7 +18,7 @@
   <div class="sec-kicker">P0 · 时间线全量重做</div>
   <h2 class="t">把整条时间线统一成一套克制、信息密度高的 alpha 卡片语言</h2>
   <p class="lede">本稿覆盖经真机 DOM 核对的 <b>全部 ~52 个构件</b>(取代旧稿只覆盖 1/3)。设计取向:开发者工具应当<strong>安静、可扫读、密而不噪</strong> —— 中性灰底 + 单一克制 indigo 强调,工具按类型着色,运动只用在状态变化的高价值瞬间。每块都标注了真机 <span class="mono">data-component/data-slot</span> 钩子 + 接缝 + 现状(<span class="badge-st done" style="margin:0">已优化</span> / <span class="badge-st part" style="margin:0">部分</span> / <span class="badge-st gap" style="margin:0">裸样式</span>),因此它也是落地 spec。</p>
-  <div class="note"><b>本稿同时是时间线组件的全量活稿</b>:组件帧按 ①–⑤ 分区陈列;已批的「产物链接行与右栏预览联动」增量已并入 ⑥ 节(帧 verbatim 引自增量稿);各消息类型的帧覆盖情况与缺帧待补,见 ⑦「<a href="#inventory">组件索引与待补</a>」。整页装配(单一顶栏 / 右栏四面板 / 输入框停靠)见 <a href="../session-workspace/design.html">session-workspace 整页稿</a>;本稿只管时间线行类型本身,两稿表述冲突时组件形态以本稿为准。<br><b>2026-07-23 补帧更新</b>:新增回合级错误卡(②)、匹配文件卡(③)、用户消息内联代码评论卡(①)三帧;附件卡与子任务卡重锚 v2 形态(帧外注记「由 v1 形态更新」);渲染位 / 回合分隔 / 右栏历史参照三处帧外注记修正;待补清单同步。<br><b>2026-07-24 补帧更新</b>:新增 bash 流式输出帧(③)、文件行徽章六态一览(③)、助手侧媒体预览行(②)、会话内空态帧(④)四帧;待补仅剩「消息导航(代码未接线)」一项。<br><b>2026-08-09 已批增量</b>:③ 新增全来源来源徽标、安全通用降级与默认折叠开发者详情；未知 / 第三方工具严格 metadata-only。</div>
+  <div class="note"><b>本稿同时是时间线组件的全量活稿</b>:组件帧按 ①–⑤ 分区陈列;已批的「产物链接行与右栏预览联动」增量已并入 ⑥ 节(帧 verbatim 引自增量稿);各消息类型的帧覆盖情况与缺帧待补,见 ⑦「<a href="#inventory">组件索引与待补</a>」。整页装配(单一顶栏 / 右栏四面板 / 输入框停靠)见 <a href="../session-workspace/design.html">session-workspace 整页稿</a>;本稿只管时间线行类型本身,两稿表述冲突时组件形态以本稿为准。<br><b>2026-07-23 补帧更新</b>:新增回合级错误卡(②)、匹配文件卡(③)、用户消息内联代码评论卡(①)三帧;附件卡与子任务卡重锚 v2 形态(帧外注记「由 v1 形态更新」);渲染位 / 回合分隔 / 右栏历史参照三处帧外注记修正;待补清单同步。<br><b>2026-07-24 补帧更新</b>:新增 bash 流式输出帧(③)、文件行徽章六态一览(③)、助手侧媒体预览行(②)、会话内空态帧(④)四帧;待补仅剩「消息导航(代码未接线)」一项。<br><b>2026-08-09 已批增量</b>:③ 新增全来源来源徽标、安全通用降级与默认折叠开发者详情；未知 / 第三方工具严格 metadata-only。<br><b>2026-08-13 取代记录</b>:③ 节的内联 <span class="mono">.skill-chip</span> 帧(技能执行)被 2026-08-09 增量取代 —— 技能执行保持工具卡形态;帧保留并就地标注,<span class="mono">ac#585</span> 判被取代关票。</div>
 
   <!-- ════════════════ USER INPUT ════════════════ -->
   <div class="sec-kicker" id="user" style="margin-top:40px">① 用户输入侧</div>
@@ -228,7 +228,8 @@ admission · 阈值边界 …<span class="cur"></span></div></div></div>
     <!-- diagnostics -->
     <div class="diag"><div class="diag-row"><span class="lvl">ERR</span><span class="loc">prompt_builder.py:102</span><span class="msg">"kama_latest" is possibly unbound</span></div></div>
 
-    <!-- skill card (execution) -->
+    <!-- skill card (execution) —— 已被 2026-08-09 已批增量取代,见下方 note(ac#585 判被取代) -->
+    <div class="note"><b>⚠️ 2026-08-13:本帧(内联 <span class="mono">.skill-chip</span>)已被取代,保留仅为可追溯</b>。同一件事(一次技能执行)本稿曾画过两遍:此处的内联 chip,与 ⑥ 节 <span class="mono">.tc</span> 整宽工具卡(「技能 · 文档产出」,2026-07-21 已批增量原样并入)。更晚的 <b>2026-08-09 已批增量</b>(见 ③ 节 <a href="#tool-provenance">全来源工具卡与安全通用降级</a>)要求<b>每张工具卡常驻来源徽标 + 默认折叠的开发者详情</b> —— 内联 chip 结构上放不下这两样,也承载不了「technical-id 默认折叠、提上主标题即红」那条判据。三份权威按时间排,最新的赢 ⇒ <b>技能执行保持工具卡形态</b>。本稿 ① 节的注记(「执行时另有『技能工具卡』」)与该结论一致,此处的 chip 帧是与它冲突的那一份。owner 于 2026-08-13 裁决 <span class="mono">ac#585</span> 判被取代、关票。<b>用户侧</b>的「运行技能 chip」(① 节,橙色变体)不受影响,已由 <span class="mono">ac#582</span> 交付。</div>
     <div class="skill-chip"><span class="tico"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"/></svg></span><span style="color:var(--a-text-tertiary)">技能 ·</span><span class="name">cloudflare</span><span class="state">已加载</span><svg class="ic sm go" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
 
     <!-- task subagent running(v2 形态:agent 色点 + 环形进度 + 打开子会话) -->
