@@ -42,8 +42,15 @@ function uploadError(code: Extract<CloudUploadResult, { status: "failed" }>["err
   if (code === "upload-consent-issuance-failed" || code === "upload-consent-invalid") {
     return t("alpha.cloud.consent.errToken")
   }
-  if (code === "upload-dispatch-failed") return t("alpha.cloud.consent.errDispatch")
-  return t("alpha.cloud.consent.errScope")
+  // [#940] 本地准入面的其余码 = 范围问题。判据是**结构**的,不手抄名单:本地准入码全是
+  // `upload-` 前缀 kebab(UploadErrorCode,alpha-upload-manifest.ts),而平台分类码的文法
+  // /^[a-z][a-z0-9_]{2,63}$/(platform-error-code.ts)不含连字符 —— 两个域在这个前缀上
+  // 不相交,新增本地准入码自动落回这里,不会静默漏出一份手抄清单。
+  if (code.startsWith("upload-")) return t("alpha.cloud.consent.errScope")
+  // 派发腿不再坍缩成 "upload-dispatch-failed":到这里的是平台分类码(upload_reserved_input …)
+  // 或 unauthorized / network / http-<status> 回退,与 dispatch 面同一呈现纪律 ——
+  // 认识的给人话,不认识的原样透出,不假装认识。
+  return dispatchError(code)
 }
 
 export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolean }) {

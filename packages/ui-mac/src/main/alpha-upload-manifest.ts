@@ -25,7 +25,7 @@ export type UploadErrorCode =
   | "upload-not-text"
   | "upload-consent-issuance-failed"
   | "upload-consent-invalid"
-  | "upload-dispatch-failed"
+  // [#940] "upload-dispatch-failed" 已删:派发腿的错误不再坍缩,分类码原样上抛(alpha-upload.ts)。
   | "upload-main-gate-required"
 
 export class UploadAdmissionError extends Error {

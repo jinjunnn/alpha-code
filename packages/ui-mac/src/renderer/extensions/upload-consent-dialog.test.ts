@@ -323,4 +323,37 @@ describe("four approved upload UI outcomes", () => {
     expect(document.querySelector("[role=dialog]")).toBeNull()
     expect(document.querySelector(".alpha-ext-card-err")?.textContent).toContain(zh["alpha.cloud.consent.errToken"])
   })
+
+  // [#940] 用户可观察的那一端:平台分类码必须**原样**到达 `.alpha-ext-card-err`,而不是被本地
+  // 兜底吞成「范围问题」。这是本票症状的 renderer 半场 —— 把 uploadError 的兜底改回
+  // `t("alpha.cloud.consent.errScope")`(#940 之前的写法),下面两条当场红;main 侧的判据
+  // (alpha-upload.test.ts)抓不到这一跳。两条用**不同**的平台码,杀掉「点名放行第一个码」的错误实现。
+  test("platform classification code from the dispatch leg surfaces verbatim in the error line", async () => {
+    mountDispatch({ status: "failed", error: "upload_reserved_input" })
+    document.querySelector<HTMLButtonElement>('.alpha-ext-add[data-variant="primary"]')!.click()
+    await flush()
+    const err = document.querySelector(".alpha-ext-card-err")?.textContent ?? ""
+    expect(err).toContain("upload_reserved_input")
+    expect(err).not.toContain(zh["alpha.cloud.consent.errScope"])
+  })
+
+  test("a second, different platform code also passes through untranslated", async () => {
+    mountDispatch({ status: "failed", error: "upload_consent_replayed" })
+    document.querySelector<HTMLButtonElement>('.alpha-ext-add[data-variant="primary"]')!.click()
+    await flush()
+    const err = document.querySelector(".alpha-ext-card-err")?.textContent ?? ""
+    expect(err).toContain("upload_consent_replayed")
+    expect(err).not.toContain(zh["alpha.cloud.consent.errScope"])
+  })
+
+  // [#940] 反向判据:本地准入码(`upload-` 前缀 kebab)仍然给人话「范围」文案、裸码不上屏 ——
+  // 一个「什么都原样透出」的恒显实现能过上面两条正向,但过不了这条。
+  test("a local admission code still renders the scope message, never the raw code", async () => {
+    mountDispatch({ status: "failed", error: "upload-main-gate-required" })
+    document.querySelector<HTMLButtonElement>('.alpha-ext-add[data-variant="primary"]')!.click()
+    await flush()
+    const err = document.querySelector(".alpha-ext-card-err")?.textContent ?? ""
+    expect(err).toContain(zh["alpha.cloud.consent.errScope"])
+    expect(err).not.toContain("upload-main-gate-required")
+  })
 })

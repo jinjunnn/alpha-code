@@ -102,6 +102,65 @@ describe("main upload admission and one-shot consent", () => {
     expect(await service.confirm(7, prepared.requestId)).toEqual({ status: "failed", error: "upload-selection-invalid" })
   })
 
+  // [#940] 派发腿的分类错误不再坍缩成 "upload-dispatch-failed":平台分类码 / unauthorized /
+  // network / http-<status> 回退,原样过 IPC 到 renderer 的错误行(那是用户可观察的那一端)。
+  // 两条腿各用不同字面量 —— 期望值恰好等于一个可硬编码常量的判据杀不掉写死。
+  test("dispatch-leg classified errors propagate verbatim instead of collapsing to a generic code", async () => {
+    writeFileSync(join(root, "clean.ts"), "export const ok = true\n")
+    const service = createMainUploadService({
+      identity: () => ({ accessToken: "access-secret", tenantId: "tenant-a" }),
+      issue: async () => "unused",
+      dispatch: async () => ({ error: "billing_unready" }),
+      log: () => {},
+      id: () => "manifest-clean",
+    })
+    const result = await service.prepare(
+      1,
+      { kind: "code-review" },
+      { projectDirectory: root, files: [join(root, "clean.ts")] },
+    )
+    expect(result).toEqual({ status: "failed", error: "billing_unready" })
+    expect(() => assertSafeUploadResult(result)).not.toThrow()
+  })
+
+  test("consent-leg dispatch rejections keep their platform code through confirm", async () => {
+    const selected = join(root, "contact.txt")
+    writeFileSync(selected, "Call 13800138000。\n")
+    const now = new Date("2026-07-22T12:00:00.000Z")
+    const service = createMainUploadService({
+      identity: () => ({ accessToken: "access-secret", tenantId: "tenant-a" }),
+      issue: async (input) => {
+        const manifest = JSON.parse(input.manifestJson) as { manifest_id: string; egress: unknown }
+        return jwt({
+          schema_version: 1,
+          iss: "alpha-web",
+          aud: "alpha-platform-upload",
+          sub: "tenant-a",
+          token_use: "upload_consent",
+          purpose: "artifact.upload",
+          scope: ["artifact.upload"],
+          iat: Math.floor(now.getTime() / 1000),
+          exp: Math.floor(now.getTime() / 1000) + 300,
+          jti: "consent-940",
+          manifest_id: manifest.manifest_id,
+          manifest_sha256: input.manifestSha256,
+          egress: manifest.egress,
+        })
+      },
+      dispatch: async () => ({ error: "upload_consent_replayed" }),
+      log: () => {},
+      now: () => now,
+      id: () => "manifest-sensitive",
+    })
+    const prepared = await service.prepare(
+      7,
+      { kind: "code-review" },
+      { projectDirectory: root, files: [selected] },
+    )
+    if (prepared.status !== "consent-required") throw new Error("expected consent")
+    expect(await service.confirm(7, prepared.requestId)).toEqual({ status: "failed", error: "upload_consent_replayed" })
+  })
+
   test("cancelled consent and cancelled picker semantics never issue or upload", async () => {
     writeFileSync(join(root, "contact.txt"), "hi@example.com")
     const calls = { issue: 0, dispatch: 0 }
