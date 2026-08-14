@@ -166,11 +166,32 @@
 > 尺寸序列反推:全程 Δ<64MB ⇒ `fastWindows` 恒 0 ⇒ 首次 verdict 必由 `size>512MB` 给出。
 >
 > **`#470` 的夹具清单(四条,缺一条就有一整类不被证)**:
-> - **A 冷启动自愈** —— `<alphaGlobal>/alpha.jsonc` 与 legacy `~/.opencode/opencode.jsonc` 各种一条事故原形。
->   **必须带 `{file:}`**(见 §①.1 订正块:只用 `plugin[]` 造不出循环)。断言:①引擎日志 `creating instance`
->   **恰 1 次**(事故档 10:31 恢复确认用的就是这个数)②main.log 出现 `[req053-dangling-sweep] … stripped=2`
->   ③两条键真消失,而同夹具里的**活引用 + npm 包名条目 + 一条落在守卫根外的 user-foreign 绝对路径**
->   逐字节保留 ④预置的 XDG `~/.config/opencode/opencode.jsonc` 的 inode+mtime 不变。
+> - **A 冷启动自愈** —— `<alphaGlobal>/alpha.jsonc` 与 legacy `~/.opencode/opencode.jsonc` **各**种一条事故原形
+>   (一条 = `plugin[]` 绝对路径 + `{file:}` 各一条 ⇒ **每份 2 条**)。**必须带 `{file:}`**(见 §①.1 订正块:
+>   只用 `plugin[]` 造不出循环)。断言:①引擎日志 `creating instance` **恰 1 次**(事故档 10:31 恢复确认用的
+>   就是这个数)②main.log 的判据行是 `[req053-dangling-sweep] confirmed-absent Alpha config references stripped`
+>   (`index.ts:296`),数量不在这一行的文本里,而在**随行对象**里、写作 `stripped: 4`(冒号+空格)。
+>   ③**每份**配置里那 2 条键真消失,而同夹具里的**活引用 + npm 包名条目 + 一条落在守卫根外的 user-foreign
+>   绝对路径**逐字节保留 ④预置的 XDG `~/.config/opencode/opencode.jsonc` 的 inode+mtime 不变。
+>
+>   > **订正(2026-08-14,`#218` R2)**:本条断言 ② 原文写「main.log 出现 `… stripped=2`」,两处都错,
+>   > 而这个订正块的全部作用就是当 `#470` 的执行地图 —— 照原文 grep 恒零命中。
+>   > **(a) 形态**:`stripped=<n>` 这个 `key=value` 形态**只属于清除路径**(`data-clear-boot.ts:90`,
+>   > `[req053-dangling-sweep] level=${level} stripped=${n} files=...`),而夹具 A 走的是**冷启动**路径,
+>   > 它在 `index.ts:296` 是 `logger.warn("[req053-dangling-sweep] confirmed-absent Alpha config references stripped",
+>   > { context, stripped, files })` —— 数量是**对象字段**。`logging.ts` 只覆写了 `transports.file.maxSize`
+>   > 与 `resolvePathFn`(`:26-27`),**没有**覆写 `transports.file.format` ⇒ 走 electron-log 默认
+>   > `[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}]{scope} {text}`,对象经 `util.formatWithOptions` 渲染。
+>   > 实跑装着的那份(`electron-log@5.4.4`,同一 warn 调用形态)落盘是:
+>   > `[2026-08-14 11:34:06.981] [warn]  [req053-dangling-sweep] confirmed-absent Alpha config references stripped {`
+>   > 换行 `  context: 'boot',` / `  stripped: 4,` / `  files: [ … ]` / `}` —— 带真实绝对路径时单行超
+>   > `breakLength` **必然换行展开**(短对象则不换行,两种形态都出现过)。⇒ **判据不得写成一条同时要求
+>   > 标记与数字的单行 grep**;用 `grep -a -A4 "confirmed-absent Alpha config references stripped" main.log`
+>   > 读整块,或把标记与 `stripped: <n>` 拆成两条断言。
+>   > **(b) 数**:boot 一次 sweep 覆盖 `[alpha.jsonc, legacy]` **两份**,`outcome.stripped` 是**跨文件汇总**
+>   > (`engine-config-dangling.ts:258` 把每份的 `plan.edits` 推进同一个数组)且 `recordDanglingSweep`
+>   > **只发一行** ⇒ 本夹具是 **`stripped: 4`**(2 份 × 2 条)。③ 里的「2 条」是**单文件**维度 ——
+>   > 同一条清单里的这两个数指的不是同一件事,按夹具实际种子数重算,别照抄 4。
 > - **A2 fail-closed 单独一格** —— legacy 文件多一个用户手写顶层键(如 `theme`)+ 同样两条悬空 ⇒ 断言 app
 >   **不 spawn sidecar**、退出码 1、日志有 boot enforcement gap。没有这一格,把 `index.ts:821-826` 删掉夹具 A 照样全绿。
 > - **B 运行期断路** —— 逐分钟尺寸序列 + 上面那条改写后的判据;strike3 后 RecoveryService 事故卡可见 +
