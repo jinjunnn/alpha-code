@@ -728,6 +728,157 @@ describe("#583 list 目录网格模型(G6:目录/文件分类 + 计数 + 有界)
   })
 })
 
+describe("#949 生产铸形:read 的 directory 分支落目录网格(引擎无 id=list 的 builtin)", () => {
+  /** 生产形态:identity name=read、入参 filePath、输出带 XML 包装、metadata.display 结构化条目集。 */
+  function dirReadPart(overrides?: {
+    display?: Record<string, unknown> | undefined
+    metadata?: Record<string, unknown>
+  }) {
+    const display = overrides && "display" in overrides ? overrides.display : {
+      type: "directory",
+      path: "/Users/kai/ws/tooling",
+      entries: ["bin/", "conf/", "run.sh", "readme.txt"],
+      offset: 1,
+      totalEntries: 4,
+      truncated: false,
+    }
+    return part("read", {
+      status: "completed",
+      input: { filePath: "/Users/kai/ws/tooling" },
+      output: [
+        "<path>/Users/kai/ws/tooling</path>",
+        "<type>directory</type>",
+        "<entries>",
+        "bin/",
+        "conf/",
+        "run.sh",
+        "readme.txt",
+        "\n(4 entries)",
+        "</entries>",
+      ].join("\n"),
+      metadata: {
+        preview: "bin/",
+        truncated: false,
+        loaded: [] as string[],
+        ...(display !== undefined ? { display } : {}),
+        ...overrides?.metadata,
+      },
+    })
+  }
+
+  test("目录 read:头部列目录语义(目标路径 + 「共 N 项」),体是净条目网格,XML 包装行进不来", () => {
+    const head = toolCardHeadOf(dirReadPart())
+    expect(head.titleKey).toBe("alpha.timeline.tool.list")
+    expect(head.target).toBe("~/ws/tooling")
+    expect(head.count).toEqual({ unit: "items", value: 4 })
+
+    const body = toolCardBodyOf(dirReadPart())
+    if (body.type !== "dir") throw new Error("expected dir body")
+    // 条目全集来自结构化 display,`<path>`/`<type>`/`<entries>` 包装行一条都不得混入。
+    expect(body.entries).toEqual([
+      { name: "bin", dir: true },
+      { name: "conf", dir: true },
+      { name: "run.sh", dir: false },
+      { name: "readme.txt", dir: false },
+    ])
+    expect(body.truncated).toBe(false)
+  })
+
+  test("display 缺失或形状非法 ⇒ 回落 read 卡(fail-closed:不出目录网格)", () => {
+    const missing = dirReadPart({ display: undefined })
+    expect(toolCardHeadOf(missing).titleKey).toBe("alpha.timeline.tool.read")
+    expect(toolCardBodyOf(missing).type).toBe("none")
+
+    const malformed = dirReadPart({ display: { type: "directory", entries: "bin/,conf/" } })
+    expect(toolCardHeadOf(malformed).titleKey).toBe("alpha.timeline.tool.read")
+    expect(toolCardBodyOf(malformed).type).toBe("none")
+
+    // 文件 read 的 display(type:"file")绝不改派 —— 内容长得像目录清单也不行。
+    const fileRead = part("read", {
+      status: "completed",
+      input: { filePath: "/Users/kai/ws/listing.txt" },
+      output: "docs/\nsrc/\nnotes.md",
+      metadata: {
+        loaded: [] as string[],
+        display: {
+          type: "file",
+          path: "/Users/kai/ws/listing.txt",
+          text: "docs/\nsrc/\nnotes.md",
+          lineStart: 1,
+          lineEnd: 3,
+          totalLines: 3,
+          truncated: false,
+        },
+      },
+    })
+    expect(toolCardHeadOf(fileRead).titleKey).toBe("alpha.timeline.tool.read")
+    expect(toolCardBodyOf(fileRead).type).toBe("none")
+  })
+
+  test("引擎截断页与 offset>1 分页:「共 N 项」诚实缺席;非法条目整项丢弃并标记截断", () => {
+    // 引擎明示截断(60 项里只给 2 项)⇒ 计数缺席,截断如实上抛。
+    const truncatedPage = dirReadPart({
+      display: {
+        type: "directory",
+        path: "/Users/kai/ws/tooling",
+        entries: ["alpha.md", "beta.md"],
+        offset: 1,
+        totalEntries: 60,
+        truncated: true,
+      },
+    })
+    expect(toolCardHeadOf(truncatedPage).count).toBeUndefined()
+    const truncatedBody = toolCardBodyOf(truncatedPage)
+    if (truncatedBody.type !== "dir") throw new Error("expected dir body")
+    expect(truncatedBody.truncated).toBe(true)
+
+    // offset>1 的分页:引擎说 truncated=false,但这 3 条不是目录总量 ⇒ 计数仍缺席。
+    const pagedTail = dirReadPart({
+      display: {
+        type: "directory",
+        path: "/Users/kai/ws/tooling",
+        entries: ["x.log", "y.log", "z.log"],
+        offset: 9,
+        totalEntries: 11,
+        truncated: false,
+      },
+    })
+    expect(toolCardHeadOf(pagedTail).count).toBeUndefined()
+    const pagedBody = toolCardBodyOf(pagedTail)
+    if (pagedBody.type !== "dir") throw new Error("expected dir body")
+    expect(pagedBody.truncated).toBe(true)
+
+    // 控制字符条目 redactPath 失败 ⇒ 整项丢弃 + truncated(不低报也不透传)。
+    const withBad = dirReadPart({
+      display: {
+        type: "directory",
+        path: "/Users/kai/ws/tooling",
+        entries: ["ok.md", "bad\u0007entry", 42, "sub/"],
+        offset: 1,
+        totalEntries: 4,
+        truncated: false,
+      },
+    })
+    const badBody = toolCardBodyOf(withBad)
+    if (badBody.type !== "dir") throw new Error("expected dir body")
+    expect(badBody.entries).toEqual([
+      { name: "ok.md", dir: false },
+      { name: "sub", dir: true },
+    ])
+    expect(badBody.truncated).toBe(true)
+    expect(toolCardHeadOf(withBad).count).toBeUndefined()
+  })
+
+  test("「已探索」折叠组:目录 read 记为列目录语义,行目标是完整路径", () => {
+    const row = contextRowOf(dirReadPart())
+    expect(row.titleKey).toBe("alpha.timeline.tool.list")
+    expect(row.target).toBe("~/ws/tooling")
+
+    const fileRead = part("read", { status: "completed", input: { filePath: "/w/a.ts" }, metadata: { loaded: [] } })
+    expect(contextGroupSummaryOf([dirReadPart(), fileRead])).toEqual({ reads: 1, searches: 0, lists: 1 })
+  })
+})
+
 describe("#584 grep 命中高亮模型(G7:文件/行号结构化 + 字面量高亮 + 失败整字段隐藏)", () => {
   test("引擎行文法解析:header 跳过、文件行脱敏分组、匹配行带行号与命中 span", () => {
     const output = [

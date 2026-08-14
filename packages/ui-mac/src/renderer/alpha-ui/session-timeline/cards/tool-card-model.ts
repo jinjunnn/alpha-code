@@ -242,7 +242,18 @@ export function toolCardDispatchOf(part: ToolPart): ToolCardDispatch {
   const category = categoryOf(identity, authority)
   if ((identity.source === "builtin" || identity.source === "builtin-v2") && identity.origin === "") {
     const kind = HOST_BUILTIN_RULES.get(identity.name)
-    if (kind !== undefined) return { kind, category, metadataOnly: false, name: sanitizedName(identity.name) }
+    if (kind !== undefined) {
+      // #949:引擎没有 id=list 的 builtin —— 目录读取走 read 工具的 directory 分支
+      // (packages/opencode/src/tool/read.ts 的 stat.type === "Directory"),注册表
+      // 只铸 name="read" 的 identity,`kind="list"` 在生产上没有任何铸造点。这里
+      // 消费引擎专为渲染层铸的结构化 metadata.display(type:"directory")把 read
+      // 的目录形态改派到 #583 的目录网格卡。识别输入是宿主 builtin read 工具执行期
+      // 铸的 metadata,不是远端内容/别名/标题 —— identity 闸(上一行)仍是准入
+      // 前提,冒名的第三方工具到不了这条分支;display 缺失或形状非法一律回落
+      // read 卡(fail-closed)。
+      const effective = kind === "read" && dirDisplayOf(metadataOf(part)) !== undefined ? "list" : kind
+      return { kind: effective, category, metadataOnly: false, name: sanitizedName(identity.name) }
+    }
   }
   // #587 Alpha Cloud 专用卡:资格闸是 category(= 当次持久化 authority 铸出的
   // "alpha-cloud"),不是 origin / 别名字符串 —— authority 缺席时同名工具落到下面的
@@ -434,7 +445,9 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
       return head
     }
     case "list": {
-      const path = redactedPathOf(input.path)
+      // #949:生产铸形是 read 工具的 directory 分支,入参键是 filePath;
+      // `path` 键保留给 #583 的 list 形态夹具(两者在生产上不并存)。
+      const path = redactedPathOf(input.path ?? input.filePath)
       if (path.hidden) head.targetHidden = true
       else if (path.value !== undefined) head.target = cappedItem(path.value)
       // #583:完成态头部计数「共 N 项」。只有解析出完整(未截断)条目集时才出计数 ——
@@ -605,10 +618,62 @@ export type ToolCardBody =
  * 不显示带用户名的 home 前缀);失败项整项丢弃并以截断标记诚实呈现(同 read/glob
  * 列表纪律)。双约束:项数帽 + 行迭代预算 + 扫描预算(I7)。
  */
+/**
+ * #949:read 目录分支为渲染层铸的结构化 display(引擎 read.ts 的 Display 联合的
+ * directory 形态)。防御读取:type 必须是 "directory" 且 entries 是数组,否则视为
+ * 无(分派回落 read 卡)。truncated 只在引擎明示 `truncated === false` **且**是
+ * 首页(offset 缺席或 === 1)时才为 false —— offset>1 的分页视图条数不是目录
+ * 总量,「共 N 项」按截断语义诚实缺席(不低报)。
+ */
+function dirDisplayOf(
+  metadata: Record<string, unknown>,
+): { entries: readonly unknown[]; truncated: boolean } | undefined {
+  const display = metadata.display
+  if (typeof display !== "object" || display === null) return undefined
+  const record = display as { type?: unknown; entries?: unknown; truncated?: unknown; offset?: unknown }
+  if (record.type !== "directory" || !Array.isArray(record.entries)) return undefined
+  const firstPage = record.offset === undefined || record.offset === 1
+  return { entries: record.entries, truncated: record.truncated !== false || !firstPage }
+}
+
 export function dirEntriesOf(
   output: string,
   metadata: Record<string, unknown>,
 ): { entries: DirEntry[]; truncated: boolean } {
+  // #949:结构化 display 优先 —— 生产的 read 目录输出带 `<path>/<type>/<entries>`
+  // 包装行,按文本逐行解析会把包装行误收成条目;display.entries 是引擎铸的净条目集
+  // (尾随 `/` = 目录),同一套 redactor + 双约束纪律逐项过。文本路径保留给 #583 的
+  // list 形态输出(无结构化 display 的行)。
+  const display = dirDisplayOf(metadata)
+  if (display !== undefined) {
+    let truncated = display.truncated || metadata.truncated === true
+    const entries: DirEntry[] = []
+    for (let index = 0; index < display.entries.length; index += 1) {
+      if (index >= TOOL_LIST_SCAN_MAX || entries.length >= TOOL_LIST_MAX_ITEMS) {
+        truncated = true
+        break
+      }
+      const item = display.entries[index]
+      const line = typeof item === "string" ? cappedItem(item).trim() : ""
+      if (line.length === 0) {
+        truncated = true
+        continue
+      }
+      const dir = line.endsWith("/")
+      const clean = redactPath(line, TOOL_PATH_MAX_CHARS)
+      if (!clean.ok || clean.value.length === 0) {
+        truncated = true
+        continue
+      }
+      const name = clean.value.endsWith("/") ? clean.value.slice(0, -1) : clean.value
+      if (name.length === 0) {
+        truncated = true
+        continue
+      }
+      entries.push({ name: cappedItem(name), dir })
+    }
+    return { entries, truncated }
+  }
   const scan = output.slice(0, TOOL_SCAN_MAX_CHARS)
   let truncated = output.length > scan.length || metadata.truncated === true
   const entries: DirEntry[] = []
@@ -1257,7 +1322,8 @@ export function contextRowOf(part: ToolPart): ContextRowInfo {
       }
     }
     case "list": {
-      const path = redactedPathOf(input.path)
+      // #949:同 toolCardHeadOf 的 list 分支 —— 生产入参键是 filePath。
+      const path = redactedPathOf(input.path ?? input.filePath)
       return { ...base, titleKey: TITLE_KEYS.list, target: path.value, targetHidden: path.hidden || undefined }
     }
     case "glob": {
