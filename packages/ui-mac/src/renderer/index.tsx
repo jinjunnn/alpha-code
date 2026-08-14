@@ -32,6 +32,7 @@ import "./sidebar/sidebar.css"
 import "./sidebar/account-popover.css"
 import "./alpha-ui/composer-reskin.css"
 import { ToastViewport } from "./alpha-ui/Toast"
+import { installHomeDraftDiscardNotice } from "./alpha-ui/home-draft-discard-notice"
 import { ContractFailureBanner } from "./alpha-ui/Banner"
 import { AlphaBoundary } from "./alpha-ui/alpha-boundary"
 import { ContractHealthProvider } from "./alpha-ui/providers"
@@ -472,6 +473,11 @@ render(() => {
     const effectiveDefaultServer = createMemo(() =>
       ServerConnection.Key.make(availableStartupServer(defaultServer.latest, wslServers.data)),
     )
+
+    // #927:上面这个 key 翻转(默认服务器 = WSL 且迟到就绪)时,下方按 key 重挂的 Show 会
+    // 合法重建整棵树,首页 composer 正在打的草稿随之丢弃 —— owner 裁决保持丢弃语义,但不再
+    // 静默。这里是唯一跨重挂看得见 key 翻转的位置;弹与不弹的判据在 home-draft-discard-notice.ts。
+    installHomeDraftDiscardNotice(effectiveDefaultServer)
 
     // A3: one shared projects store for the whole alpha shell — sidebar + home consume the same
     // instance instead of each running its own (was ×2 project.list / ×2N session.list + an extra SSE).

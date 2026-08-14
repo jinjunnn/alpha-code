@@ -942,6 +942,8 @@ export const dict = {
   "alpha.home.openProject": "Open project",
   "alpha.home.openProjectEllipsis": "Open project…",
   "alpha.home.openProjectFailed": "Could not open the project. Try again.",
+  "alpha.home.serverSwitched": "Server switched",
+  "alpha.home.serverSwitchedDraftDiscarded": "Your unsent draft was not kept",
   "alpha.newSession.title": "New session",
   "alpha.newSession.directoryPending": "Draft directory is not ready",
   "alpha.newSession.directoryLoading": "Waiting for the draft state",
