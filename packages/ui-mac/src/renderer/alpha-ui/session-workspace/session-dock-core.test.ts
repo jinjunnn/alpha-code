@@ -353,16 +353,26 @@ describe("session-slash-origin:发送时捕获,绑完整会话身份,有界存�
 
 // ── `#953`:斜杠 chip 活过重启 ──────────────────────────────────────────────────
 // 判据取在**用户看得见的那一行**上(时间线用户行的 `slash`),不断言内层登记的值。
-// 「重启」= renderer 进程内存全丢、盘上的字节还在:因此每条用例都在一块**只装着上一轮
-// 落盘快照**的全新 storage 上取结果。#953 之前的形态(模块级 signal、零写盘)在这里
-// 拿到的是空盘 ⇒ 零 chip ⇒ 全组必红。
+//
+// 「重启」在这里必须同时成立两件事,少一件判据就废:
+//   ① 盘上的字节还在 —— 用上一轮写盘的快照重建一块新 storage;
+//   ② **renderer 进程的内存全丢** —— 读那一半必须由一个**全新的模块实例**来做
+//      (`?restart=<n>` 让 bun 重新求值该模块,实测函数标识都不同)。
+// 只做 ① 是不够的,这一点是实测出来的:第一版判据只换了 storage,把生产实现改回
+// `#953` 之前的形态(模块级数组持有登记、零写盘)之后,两条正向用例**照样全绿** ——
+// 因为读路径拿的是同一个模块实例里那份还活着的内存。补上 ② 之后它们才转红。
 describe("#953 斜杠命令 chip 活过重启:来源落盘,回放按落盘的字节重建", () => {
   const bound = { serverKey: "sidecar", directory: "/tmp/ws", sessionID: "ses_953" }
 
-  const restart = (disk: ReturnType<typeof diskStorage>) => diskStorage(disk.snapshot())
+  /** 重启后的读侧:全新模块实例 + 只装着那些字节的 storage。 */
+  let restartSeq = 0
+  async function readAfterRestart(bytes: Record<string, string>) {
+    const fresh = (await import(`${"./session-slash-origin"}.ts?restart=${++restartSeq}`)) as typeof import("./session-slash-origin")
+    return fresh.sessionSlashOriginsFor(bound, diskStorage(bytes))
+  }
 
   /** 一个只有一个回合的会话:用户消息 msg_u1(内容 = 展开后的模板文本)+ 助手回复 msg_a1。 */
-  function replayedTurnSlash(storage: Parameters<typeof sessionSlashOriginsFor>[1]) {
+  function replayedTurnSlash(slashOrigins: readonly { command: string }[]) {
     const rows = projectTimelineRows({
       messages: [
         {
@@ -393,24 +403,29 @@ describe("#953 斜杠命令 chip 活过重启:来源落盘,回放按落盘的字
           ? ([{ id: "prt_u1", sessionID: bound.sessionID, messageID: "msg_u1", type: "text", text: "展开后的模板正文" }] as never)
           : [],
       status: "idle",
-      slashOrigins: sessionSlashOriginsFor(bound, storage),
+      slashOrigins,
     })
     const user = rows.find((row) => row.kind === "user")
     if (!user || user.kind !== "user") throw new Error("expected a user row")
     return user.slash
   }
 
-  test("技能命令:重启后 chip 还在,且类型仍是 skill", () => {
+  /** 发一条斜杠命令 → 重启 → 时间线那一行上的 chip。 */
+  async function chipAfterRestart(disk: ReturnType<typeof diskStorage>) {
+    return replayedTurnSlash(await readAfterRestart(disk.snapshot()))
+  }
+
+  test("技能命令:重启后 chip 还在,且类型仍是 skill", async () => {
     const disk = diskStorage()
     resetSessionSlashOrigins(disk)
     recordSessionSlashOrigin(
       { identity: bound, command: "orbit-docs", arguments: "", source: "skill", assistantMessageID: "msg_a1", at: 1 },
       disk,
     )
-    expect(replayedTurnSlash(restart(disk))).toEqual({ command: "orbit-docs", source: "skill" })
+    expect(await chipAfterRestart(disk)).toEqual({ command: "orbit-docs", source: "skill" })
   })
 
-  test("MCP 命令:重启后 chip 还在,参数与 mcp 类型一并还原(与上一条不同字面量)", () => {
+  test("MCP 命令:重启后 chip 还在,参数与 mcp 类型一并还原(与上一条不同字面量)", async () => {
     const disk = diskStorage()
     resetSessionSlashOrigins(disk)
     recordSessionSlashOrigin(
@@ -424,24 +439,24 @@ describe("#953 斜杠命令 chip 活过重启:来源落盘,回放按落盘的字
       },
       disk,
     )
-    expect(replayedTurnSlash(restart(disk))).toEqual({
+    expect(await chipAfterRestart(disk)).toEqual({
       command: "atlas-sync",
       arguments: "prod --dry-run",
       source: "mcp",
     })
   })
 
-  test("T4 反向:落盘的登记对不上本回合的助手消息 ⇒ 重启后零 chip(不显示一个错的)", () => {
+  test("T4 反向:落盘的登记对不上本回合的助手消息 ⇒ 重启后零 chip(不显示一个错的)", async () => {
     const disk = diskStorage()
     resetSessionSlashOrigins(disk)
     recordSessionSlashOrigin(
       { identity: bound, command: "ledger-audit", arguments: "", source: "command", assistantMessageID: "msg_a99", at: 3 },
       disk,
     )
-    expect(replayedTurnSlash(restart(disk))).toBeUndefined()
+    expect(await chipAfterRestart(disk)).toBeUndefined()
   })
 
-  test("T4 反向:盘上是别的会话/别的 server 的登记 ⇒ 本会话重启后零 chip", () => {
+  test("T4 反向:盘上是别的会话/别的 server 的登记 ⇒ 本会话重启后零 chip", async () => {
     const disk = diskStorage()
     resetSessionSlashOrigins(disk)
     recordSessionSlashOrigin(
@@ -456,35 +471,33 @@ describe("#953 斜杠命令 chip 活过重启:来源落盘,回放按落盘的字
       { identity: { ...bound, directory: "/tmp/elsewhere" }, command: "lint-all", arguments: "", assistantMessageID: "msg_a1", at: 6 },
       disk,
     )
-    expect(replayedTurnSlash(restart(disk))).toBeUndefined()
+    expect(await chipAfterRestart(disk)).toBeUndefined()
   })
 
-  test("T4 反向:盘上的字节被改坏 ⇒ 重启后零 chip,且不抛", () => {
+  test("T4 反向:盘上的字节被改坏 ⇒ 重启后零 chip,且不抛", async () => {
     const KEY = "alpha-session-slash-origins-v1"
-    const hostile = (raw: string) => diskStorage({ [KEY]: raw })
+    const hostile = async (raw: string) => replayedTurnSlash(await readAfterRestart({ [KEY]: raw }))
     const aligned = { assistantMessageID: "msg_a1" }
-    expect(replayedTurnSlash(hostile("{ 不是 JSON"))).toBeUndefined()
-    expect(replayedTurnSlash(hostile(JSON.stringify({ identity: bound, command: "x" })))).toBeUndefined()
+    expect(await hostile("{ 不是 JSON")).toBeUndefined()
+    expect(await hostile(JSON.stringify({ identity: bound, command: "x" }))).toBeUndefined()
     // 缺 command / arguments 不是字符串 / identity 缺一段 —— 逐条丢,不糊成空串。
-    expect(replayedTurnSlash(hostile(JSON.stringify([{ identity: bound, arguments: "", ...aligned }])))).toBeUndefined()
+    expect(await hostile(JSON.stringify([{ identity: bound, arguments: "", ...aligned }]))).toBeUndefined()
     expect(
-      replayedTurnSlash(hostile(JSON.stringify([{ identity: bound, command: "grep-todo", arguments: 42, ...aligned }]))),
+      await hostile(JSON.stringify([{ identity: bound, command: "grep-todo", arguments: 42, ...aligned }])),
     ).toBeUndefined()
     expect(
-      replayedTurnSlash(
-        hostile(
-          JSON.stringify([
-            { identity: { serverKey: "sidecar", sessionID: bound.sessionID }, command: "grep-todo", arguments: "", ...aligned },
-          ]),
-        ),
+      await hostile(
+        JSON.stringify([
+          { identity: { serverKey: "sidecar", sessionID: bound.sessionID }, command: "grep-todo", arguments: "", ...aligned },
+        ]),
       ),
     ).toBeUndefined()
   })
 
-  test("T4 反向:盘上写着一个不认识的 source ⇒ chip 仍在但回通用形,不猜类型", () => {
+  test("T4 反向:盘上写着一个不认识的 source ⇒ chip 仍在但回通用形,不猜类型", async () => {
     const KEY = "alpha-session-slash-origins-v1"
     const slash = replayedTurnSlash(
-      diskStorage({
+      await readAfterRestart({
         [KEY]: JSON.stringify([
           { identity: bound, command: "spellcheck", arguments: "", source: "wizard", assistantMessageID: "msg_a1", at: 8 },
         ]),
