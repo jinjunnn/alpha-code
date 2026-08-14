@@ -3,6 +3,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, ModelV2Info, QuestionInfo, Session, Todo } from "@opencode-ai/sdk/v2/client"
 import { hrefFor } from "../../../shared/route-manifest"
+import { projectTimelineRows } from "../session-timeline/timeline-model"
 import {
   childParentHref,
   childSessionFacts,
@@ -281,38 +282,214 @@ describe("createComposerDraftStash:per-identity 草稿暂存,门翻转不丢草�
   })
 })
 
+/** 一块可快照的「盘」;`snapshot()` 就是重启之后还留在机器上的那些字节。 */
+function diskStorage(initial?: Record<string, string>) {
+  const map = new Map(Object.entries(initial ?? {}))
+  return {
+    getItem: (key: string) => map.get(key) ?? null,
+    setItem: (key: string, value: string) => void map.set(key, value),
+    snapshot: () => Object.fromEntries(map) as Record<string, string>,
+  }
+}
+
 describe("session-slash-origin:发送时捕获,绑完整会话身份,有界存储", () => {
   const identity = (sessionID: string) => ({ serverKey: "sidecar", directory: "/tmp/ws", sessionID })
 
   test("登记绑 serverKey+directory+sessionID,读取按身份过滤", () => {
-    resetSessionSlashOrigins()
-    recordSessionSlashOrigin({ identity: identity("ses_a"), command: "review", arguments: "pr 12", assistantMessageID: "msg_9", at: 1 })
-    recordSessionSlashOrigin({ identity: identity("ses_b"), command: "test", arguments: "", at: 2 })
+    const disk = diskStorage()
+    resetSessionSlashOrigins(disk)
+    recordSessionSlashOrigin({ identity: identity("ses_a"), command: "review", arguments: "pr 12", assistantMessageID: "msg_9", at: 1 }, disk)
+    recordSessionSlashOrigin({ identity: identity("ses_b"), command: "test", arguments: "", at: 2 }, disk)
 
-    const forA = sessionSlashOriginsFor(identity("ses_a"))
+    const forA = sessionSlashOriginsFor(identity("ses_a"), disk)
     expect(forA).toHaveLength(1)
     expect(forA[0]).toMatchObject({ command: "review", arguments: "pr 12", assistantMessageID: "msg_9" })
-    expect(sessionSlashOriginsFor({ ...identity("ses_a"), serverKey: "other" })).toHaveLength(0)
+    expect(sessionSlashOriginsFor({ ...identity("ses_a"), serverKey: "other" }, disk)).toHaveLength(0)
   })
 
   test("E3/E4:登记可携带引擎声明的 source,读取原样返还;未带则诚实缺席", () => {
-    resetSessionSlashOrigins()
-    recordSessionSlashOrigin({ identity: identity("ses_s"), command: "orbit-docs", arguments: "", source: "skill", assistantMessageID: "msg_1", at: 1 })
-    recordSessionSlashOrigin({ identity: identity("ses_s"), command: "triage-notes", arguments: "", at: 2 })
-    const kept = sessionSlashOriginsFor(identity("ses_s"))
+    const disk = diskStorage()
+    resetSessionSlashOrigins(disk)
+    recordSessionSlashOrigin({ identity: identity("ses_s"), command: "orbit-docs", arguments: "", source: "skill", assistantMessageID: "msg_1", at: 1 }, disk)
+    recordSessionSlashOrigin({ identity: identity("ses_s"), command: "triage-notes", arguments: "", at: 2 }, disk)
+    const kept = sessionSlashOriginsFor(identity("ses_s"), disk)
     expect(kept).toHaveLength(2)
     expect(kept[0]).toMatchObject({ command: "orbit-docs", source: "skill" })
     expect(kept[1]!.source).toBeUndefined()
   })
 
   test("单会话超限丢最旧(有界,I7)", () => {
-    resetSessionSlashOrigins()
+    const disk = diskStorage()
+    resetSessionSlashOrigins(disk)
     for (let index = 0; index < 20; index++) {
-      recordSessionSlashOrigin({ identity: identity("ses_a"), command: `cmd-${index}`, arguments: "", at: index })
+      recordSessionSlashOrigin({ identity: identity("ses_a"), command: `cmd-${index}`, arguments: "", at: index }, disk)
     }
-    const kept = sessionSlashOriginsFor(identity("ses_a"))
+    const kept = sessionSlashOriginsFor(identity("ses_a"), disk)
     expect(kept).toHaveLength(16)
     expect(kept[0]!.command).toBe("cmd-4")
     expect(kept.at(-1)!.command).toBe("cmd-19")
+  })
+
+  test("存储不可用(无 localStorage / 抛异常)时:不抛、零登记 —— 缺席即零渲染", () => {
+    expect(() =>
+      recordSessionSlashOrigin({ identity: identity("ses_n"), command: "review", arguments: "", at: 1 }, null),
+    ).not.toThrow()
+    expect(sessionSlashOriginsFor(identity("ses_n"), null)).toHaveLength(0)
+
+    const hostile = {
+      getItem: () => {
+        throw new Error("SecurityError")
+      },
+      setItem: () => {
+        throw new DOMException("QuotaExceededError", "QuotaExceededError")
+      },
+    }
+    expect(() =>
+      recordSessionSlashOrigin({ identity: identity("ses_n"), command: "review", arguments: "", at: 1 }, hostile),
+    ).not.toThrow()
+    expect(sessionSlashOriginsFor(identity("ses_n"), hostile)).toHaveLength(0)
+  })
+})
+
+// ── `#953`:斜杠 chip 活过重启 ──────────────────────────────────────────────────
+// 判据取在**用户看得见的那一行**上(时间线用户行的 `slash`),不断言内层登记的值。
+// 「重启」= renderer 进程内存全丢、盘上的字节还在:因此每条用例都在一块**只装着上一轮
+// 落盘快照**的全新 storage 上取结果。#953 之前的形态(模块级 signal、零写盘)在这里
+// 拿到的是空盘 ⇒ 零 chip ⇒ 全组必红。
+describe("#953 斜杠命令 chip 活过重启:来源落盘,回放按落盘的字节重建", () => {
+  const bound = { serverKey: "sidecar", directory: "/tmp/ws", sessionID: "ses_953" }
+
+  const restart = (disk: ReturnType<typeof diskStorage>) => diskStorage(disk.snapshot())
+
+  /** 一个只有一个回合的会话:用户消息 msg_u1(内容 = 展开后的模板文本)+ 助手回复 msg_a1。 */
+  function replayedTurnSlash(storage: Parameters<typeof sessionSlashOriginsFor>[1]) {
+    const rows = projectTimelineRows({
+      messages: [
+        {
+          id: "msg_u1",
+          sessionID: bound.sessionID,
+          role: "user",
+          time: { created: 1000 },
+          agent: "build",
+          model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+        } as Message,
+        {
+          id: "msg_a1",
+          sessionID: bound.sessionID,
+          role: "assistant",
+          parentID: "msg_u1",
+          time: { created: 1010, completed: 1020 },
+          modelID: "deepseek-reasoner",
+          providerID: "deepseek",
+          mode: "build",
+          agent: "build",
+          path: { cwd: "/tmp/ws", root: "/tmp/ws" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        } as Message,
+      ],
+      partsOf: (id) =>
+        id === "msg_u1"
+          ? ([{ id: "prt_u1", sessionID: bound.sessionID, messageID: "msg_u1", type: "text", text: "展开后的模板正文" }] as never)
+          : [],
+      status: "idle",
+      slashOrigins: sessionSlashOriginsFor(bound, storage),
+    })
+    const user = rows.find((row) => row.kind === "user")
+    if (!user || user.kind !== "user") throw new Error("expected a user row")
+    return user.slash
+  }
+
+  test("技能命令:重启后 chip 还在,且类型仍是 skill", () => {
+    const disk = diskStorage()
+    resetSessionSlashOrigins(disk)
+    recordSessionSlashOrigin(
+      { identity: bound, command: "orbit-docs", arguments: "", source: "skill", assistantMessageID: "msg_a1", at: 1 },
+      disk,
+    )
+    expect(replayedTurnSlash(restart(disk))).toEqual({ command: "orbit-docs", source: "skill" })
+  })
+
+  test("MCP 命令:重启后 chip 还在,参数与 mcp 类型一并还原(与上一条不同字面量)", () => {
+    const disk = diskStorage()
+    resetSessionSlashOrigins(disk)
+    recordSessionSlashOrigin(
+      {
+        identity: bound,
+        command: "atlas-sync",
+        arguments: "prod --dry-run",
+        source: "mcp",
+        assistantMessageID: "msg_a1",
+        at: 7,
+      },
+      disk,
+    )
+    expect(replayedTurnSlash(restart(disk))).toEqual({
+      command: "atlas-sync",
+      arguments: "prod --dry-run",
+      source: "mcp",
+    })
+  })
+
+  test("T4 反向:落盘的登记对不上本回合的助手消息 ⇒ 重启后零 chip(不显示一个错的)", () => {
+    const disk = diskStorage()
+    resetSessionSlashOrigins(disk)
+    recordSessionSlashOrigin(
+      { identity: bound, command: "ledger-audit", arguments: "", source: "command", assistantMessageID: "msg_a99", at: 3 },
+      disk,
+    )
+    expect(replayedTurnSlash(restart(disk))).toBeUndefined()
+  })
+
+  test("T4 反向:盘上是别的会话/别的 server 的登记 ⇒ 本会话重启后零 chip", () => {
+    const disk = diskStorage()
+    resetSessionSlashOrigins(disk)
+    recordSessionSlashOrigin(
+      { identity: { ...bound, sessionID: "ses_other" }, command: "release-notes", arguments: "", assistantMessageID: "msg_a1", at: 4 },
+      disk,
+    )
+    recordSessionSlashOrigin(
+      { identity: { ...bound, serverKey: "ssh:build-box" }, command: "deploy-check", arguments: "", assistantMessageID: "msg_a1", at: 5 },
+      disk,
+    )
+    recordSessionSlashOrigin(
+      { identity: { ...bound, directory: "/tmp/elsewhere" }, command: "lint-all", arguments: "", assistantMessageID: "msg_a1", at: 6 },
+      disk,
+    )
+    expect(replayedTurnSlash(restart(disk))).toBeUndefined()
+  })
+
+  test("T4 反向:盘上的字节被改坏 ⇒ 重启后零 chip,且不抛", () => {
+    const KEY = "alpha-session-slash-origins-v1"
+    const hostile = (raw: string) => diskStorage({ [KEY]: raw })
+    const aligned = { assistantMessageID: "msg_a1" }
+    expect(replayedTurnSlash(hostile("{ 不是 JSON"))).toBeUndefined()
+    expect(replayedTurnSlash(hostile(JSON.stringify({ identity: bound, command: "x" })))).toBeUndefined()
+    // 缺 command / arguments 不是字符串 / identity 缺一段 —— 逐条丢,不糊成空串。
+    expect(replayedTurnSlash(hostile(JSON.stringify([{ identity: bound, arguments: "", ...aligned }])))).toBeUndefined()
+    expect(
+      replayedTurnSlash(hostile(JSON.stringify([{ identity: bound, command: "grep-todo", arguments: 42, ...aligned }]))),
+    ).toBeUndefined()
+    expect(
+      replayedTurnSlash(
+        hostile(
+          JSON.stringify([
+            { identity: { serverKey: "sidecar", sessionID: bound.sessionID }, command: "grep-todo", arguments: "", ...aligned },
+          ]),
+        ),
+      ),
+    ).toBeUndefined()
+  })
+
+  test("T4 反向:盘上写着一个不认识的 source ⇒ chip 仍在但回通用形,不猜类型", () => {
+    const KEY = "alpha-session-slash-origins-v1"
+    const slash = replayedTurnSlash(
+      diskStorage({
+        [KEY]: JSON.stringify([
+          { identity: bound, command: "spellcheck", arguments: "", source: "wizard", assistantMessageID: "msg_a1", at: 8 },
+        ]),
+      }),
+    )
+    expect(slash).toEqual({ command: "spellcheck" })
   })
 })
