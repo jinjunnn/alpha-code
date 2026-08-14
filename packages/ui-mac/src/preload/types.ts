@@ -204,8 +204,13 @@ export type AccountTransaction = {
   externalRef?: string
   createdAt: number
 }
-/** Result envelope: the payload, or an error code (not-authenticated / unauthorized / http-NNN / network). */
-export type AccountResult<T> = T | { error: string }
+/** Result envelope: the payload, or an error code (not-authenticated / unauthorized / http-NNN / network).
+ *  [#965] HTTP 拒绝额外带 `status`(**结构槽**):`error` 是**呈现槽**(经 platform-error-code 咽喉的
+ *  分类码,无码时回落 `http-<status>`,进 UI),`status` 是原始 HTTP status,**只给控制流判定用**。
+ *  非 HTTP 结局(not-authenticated / unauthorized / contract-incompatible / network)**不带 status** ——
+ *  消费方据此区分「服务拒绝了」与「根本没走到服务 / 服务没拒绝」。与 #963 在
+ *  alpha-cloud-schedules.ts 的 CloudErr 同形。 */
+export type AccountResult<T> = T | { error: string; status?: number }
 
 // Extension-hub install receipts (REQ-018): alpha's record of installed items and the files/config
 // keys each install owns. Engine visibility truth remains the SDK (mcp.status / app.skills / …);

@@ -207,6 +207,9 @@ inactive-plan payloads.
   it does not gate local/BYOK catalog rows. During transient recovery the
   renderer keeps previously rendered rows with a syncing state. An expired,
   unverified platform token is recovering and is never presented as usable.
+  The transient/permanent split is decided by the HTTP status class of the
+  rejection, never by the shape of the error string; a platform classification
+  code changes what the user reads, not whether the client keeps retrying.
 
 Login activates platform mode through a structural sidecar respawn when the
 first fork does not already contain that auth generation. Logout clears token
