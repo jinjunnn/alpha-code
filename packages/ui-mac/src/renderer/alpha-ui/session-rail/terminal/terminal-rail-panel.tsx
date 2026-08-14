@@ -212,7 +212,7 @@ export function TerminalRailPanel(props: {
                           <span class="a-term-foot-sep" aria-hidden="true">
                             ·
                           </span>
-                          <span>{shell()}</span>
+                          <span data-alpha-terminal-foot-env>{shell()}</span>
                         </>
                       )}
                     </Show>

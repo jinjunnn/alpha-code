@@ -13,6 +13,7 @@ import {
   sameIdentityProjection,
   terminalFootStatus,
   terminalInstanceTitle,
+  terminalShellName,
   type TerminalEngineHandle,
   type TerminalEnginePTY,
   type TerminalEngineSurface,
@@ -43,7 +44,11 @@ const pty = (id: string, extra?: Partial<TerminalEnginePTY>): TerminalEnginePTY 
   ...extra,
 })
 
-function fakeEngine(all: TerminalEnginePTY[] = [pty("pty_1", { cols: 80, rows: 24 }), pty("pty_2")]) {
+// 默认夹具:pty_1 带服务端下发的 command(#579),pty_2 **不带** —— 「缺数据不伪造」的
+// 负向对照必须与正向对照在同一次挂载里并存。
+function fakeEngine(
+  all: TerminalEnginePTY[] = [pty("pty_1", { cols: 80, rows: 24, command: "/bin/zsh" }), pty("pty_2")],
+) {
   const calls: string[] = []
   const surface: TerminalEngineSurface = {
     ready: () => true,
@@ -156,15 +161,41 @@ describe("REQ-125 #554 channel minting (I8 identity binding, fail-closed)", () =
     expect(anyTerminalRunning(channel.instances())).toBe(false)
   })
 
-  test("foot status shares the alive semantics and passes persisted size through", () => {
+  test("foot status shares the alive semantics, projects the shell, and passes persisted size through", () => {
     const { handle } = fakeEngine()
     const channel = mintTerminalEngineChannel({ engine: handle, identity: identityOf("ses_a"), labels })!
-    // 脚条 = 运行状态 + 尺寸(持久 cols×rows 有则出、任一维缺则整段省略)。
-    expect(channel.footStatus("pty_1")).toEqual({ running: true, cols: 80, rows: 24 })
-    expect(channel.footStatus("pty_2")).toEqual({ running: true, cols: undefined, rows: undefined })
-    // 实例缺席(已退出/未知 id)= false;环境段本票不投影(descope #576,见评论),缺项不伪造。
-    expect(channel.footStatus("pty_gone")).toEqual({ running: false, cols: undefined, rows: undefined })
-    expect(terminalFootStatus(undefined)).toEqual({ running: false, cols: undefined, rows: undefined })
+    // 脚条 = 运行状态 + 环境 + 尺寸(持久 cols×rows 有则出、任一维缺则整段省略)。环境段
+    // 走的是真链路 `mintTerminalEngineChannel → engine.all().find() → terminalFootStatus`,
+    // 不是直接调纯函数 —— 只写了纯函数却没接到投影上的实现必须在这里红(#579)。
+    // 期望值 "zsh" 锚回已批稿 docs/design/current/session-workspace/design.html:374 的
+    // `<span>zsh</span>`,不从生产常量 import(自指等价链会一起改错一起自洽)。
+    expect(channel.footStatus("pty_1")).toEqual({ running: true, shell: "zsh", cols: 80, rows: 24 })
+    // 缺数据不伪造:`toEqual` 分辨不出「键缺席」与「键存在但为 undefined」(bun 1.3.14 实测),
+    // 所以「没有 shell」一律显式单独断言 —— 把 shell 伪造成 ""/"unknown" 的实现在旧写法下全绿。
+    const absent = channel.footStatus("pty_2")
+    expect(absent.shell).toBeUndefined()
+    expect(absent).toEqual({ running: true, shell: undefined, cols: undefined, rows: undefined })
+    // 实例缺席(已退出/未知 id)= false,环境段随之缺席。
+    const gone = channel.footStatus("pty_gone")
+    expect(gone.running).toBe(false)
+    expect(gone.shell).toBeUndefined()
+    expect(terminalFootStatus(undefined).shell).toBeUndefined()
+    expect(terminalFootStatus(undefined).running).toBe(false)
+  })
+
+  test("terminalShellName projects a display shell name from the engine command", () => {
+    // 期望值全是字面量(权威来源 = 已批稿的 `zsh`),不 import 任何生产常量。
+    // 负向夹具刻意非退化:`/bin/zsh` 不得原样透传;win32 那条同时非退化于两个维度
+    // (反斜杠分隔符 + `.exe` 扩展名);`zsh` 无分隔符;`/bin/` 尾随分隔符。
+    expect(terminalShellName("/bin/zsh")).toBe("zsh")
+    expect(terminalShellName("/usr/local/bin/fish")).toBe("fish")
+    expect(terminalShellName("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")).toBe("powershell")
+    expect(terminalShellName("/opt/homebrew/bin/BASH")).toBe("bash")
+    expect(terminalShellName("zsh")).toBe("zsh")
+    expect(terminalShellName("/bin/")).toBeUndefined()
+    expect(terminalShellName("")).toBeUndefined()
+    expect(terminalShellName("   ")).toBeUndefined()
+    expect(terminalShellName(undefined)).toBeUndefined()
   })
 
   test("tab titles prefer engine data and fall back without inventing labels", () => {
@@ -245,7 +276,7 @@ describe("REQ-125 #554 I1 whitelist channel static ratchets", () => {
     expect(adapterSource).toContain("setTimeout(() => completeRemount(epoch), REMOUNT_FLUSH_TIMEOUT_MS)")
   })
 
-  test("engine output cases run green in a real Solid mount (one-shot autoFocus semantics)", () => {
+  test("engine output cases run green in a real Solid mount (one-shot autoFocus + foot environment segment)", () => {
     const result = Bun.spawnSync({
       cmd: [
         process.execPath,
@@ -257,8 +288,10 @@ describe("REQ-125 #554 I1 whitelist channel static ratchets", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("6 pass")
-    expect(output).toContain("0 fail")
+    // 本断言就是那个 cases 文件的登记簿:取回真实数字再比,不用 `toContain("7 pass")`
+    // —— 后者会被 "17 pass" 满足,粗一格就守不住自己(范式同 terminal-rail.test.ts)。
+    expect(output.match(/(\d+) pass\b/)?.[1]).toBe("7")
+    expect(output.match(/(\d+) fail\b/)?.[1]).toBe("0")
   })
 
   test("the workspace wires the real channel into the shell", () => {
