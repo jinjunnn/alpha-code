@@ -27,8 +27,12 @@ import { resolveEndpoints } from "./alpha-endpoints"
 import { getAccessToken } from "./alpha-auth"
 import { httpErrorCode } from "./platform-error-code"
 
-type CloudResult<T> = T | { error: string }
-const isErr = (r: unknown): r is { error: string } => !!r && typeof r === "object" && "error" in (r as object)
+// [#963] HTTP 拒绝的错误形状:`error` 是呈现槽(经 platform-error-code 咽喉的分类码或
+// http-<status>,进 UI),`status` 是结构槽(原始 HTTP status,给幂等一类的控制流判定用)。
+// 非 HTTP 失败(network / not-authenticated / no-cloud-endpoint / unauthorized)不带 status。
+type CloudErr = { error: string; status?: number }
+type CloudResult<T> = T | CloudErr
+const isErr = (r: unknown): r is CloudErr => !!r && typeof r === "object" && "error" in (r as object)
 
 async function authed<T>(path: string, init?: { method?: string; body?: unknown }): Promise<CloudResult<T>> {
   try {
@@ -47,9 +51,9 @@ async function authed<T>(path: string, init?: { method?: string; body?: unknown 
     })
     if (res.status === 401) return { error: "unauthorized" }
     // [#940] 与 alpha-cloud-jobs 同一咽喉:分类码优先(如 429 的 `rate_limited`),无码保持
-    // `http-<status>`。schedule 404 无码(实读 ap gateway routes/cloud-schedules.ts)⇒ 仍是
-    // `http-404`,deleteCloudSchedule 的已删容忍不受影响。
-    if (!res.ok) return { error: await httpErrorCode(res) }
+    // `http-<status>`。[#963] status 另走结构槽 —— 控制流判定(deleteCloudSchedule 的已删
+    // 容忍)不再寄生在呈现字符串上,平台给 404 补不补分类码都无所谓。
+    if (!res.ok) return { error: await httpErrorCode(res), status: res.status }
     return (await res.json().catch(() => null)) as T
   } catch (error) {
     getLogger().warn("alpha-cloud-schedules: fetch failed", error)
@@ -83,7 +87,11 @@ export async function upsertCloudSchedule(task: AutomationTask): Promise<{ ok: t
 
 export async function deleteCloudSchedule(scheduleId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   const r = await authed<{ deleted: string }>(`/v1/cloud/schedules/${encodeURIComponent(scheduleId)}`, { method: "DELETE" })
-  if (isErr(r) && r.error !== "http-404") return { ok: false, reason: `云端删除失败:${r.error}` }
+  // [#963] 幂等容忍按结构化 status 判:404 = 云端那行本来就没了(另一台设备删过 / 清理过 /
+  // 上次删除超时后重试)= 已删即成功。旧写法 `r.error !== "http-404"` 拿呈现字符串比字面量,
+  // 靠「平台不给 404 补分类码」才成立 —— 补上码用户就永远删不掉那条自动化。
+  // 非 HTTP 失败(network 等)无 status ⇒ 仍 fail-closed,不删本地。
+  if (isErr(r) && r.status !== 404) return { ok: false, reason: `云端删除失败:${r.error}` }
   return { ok: true }
 }
 
