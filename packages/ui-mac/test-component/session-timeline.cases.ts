@@ -1141,6 +1141,104 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(card.textContent).not.toContain("项")
   })
 
+  test("#949 生产铸形:read 的 directory 分支(引擎无 id=list 的 builtin)⇒ 目录网格卡,XML 包装行不混入", async () => {
+    const host = mount()
+    // 引擎真实铸形(packages/opencode/src/tool/read.ts 的 directory 分支):
+    // identity name=read、入参 filePath、输出带 <path>/<type>/<entries> 包装、
+    // metadata.display 是结构化条目集 —— #583 的 list 形态在生产上没有铸造点。
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_r9", "read", {
+          status: "completed",
+          input: { filePath: "/Users/kai/lab/ops-kit" },
+          output: [
+            "<path>/Users/kai/lab/ops-kit</path>",
+            "<type>directory</type>",
+            "<entries>",
+            "hooks/",
+            "vendor/",
+            "workers/",
+            "Justfile",
+            "deploy.toml",
+            "pipeline.yml",
+            "seed.sql",
+            "\n(7 entries)",
+            "</entries>",
+          ].join("\n"),
+          title: "ops-kit",
+          metadata: {
+            preview: "hooks/",
+            truncated: false,
+            loaded: [],
+            display: {
+              type: "directory",
+              path: "/Users/kai/lab/ops-kit",
+              entries: ["hooks/", "vendor/", "workers/", "Justfile", "deploy.toml", "pipeline.yml", "seed.sql"],
+              offset: 1,
+              totalEntries: 7,
+              truncated: false,
+            },
+          },
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    // 用户可观察结果:铸出来的是目录网格卡(列目录语义),不是 read 文件卡。
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='read']")!
+    expect(card.querySelector(".a-tc-title b")!.textContent).toBe("列出目录")
+    expect(card.querySelector(".a-tc-target")!.textContent).toBe("~/lab/ops-kit")
+    expect(card.textContent).not.toContain("/Users/")
+    expect(card.querySelector(".a-tc-status")!.textContent).toBe("共 7 项")
+    ;(card.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const grid = card.querySelector("[data-alpha-dir-grid]")!
+    const dirs = [...grid.querySelectorAll(".a-tc-dir-item[data-entry='dir']")].map((node) => node.textContent)
+    const files = [...grid.querySelectorAll(".a-tc-dir-item[data-entry='file']")].map((node) => node.textContent)
+    expect(dirs).toEqual(["hooks", "vendor", "workers"])
+    expect(files).toEqual(["Justfile", "deploy.toml", "pipeline.yml", "seed.sql"])
+    // 包装行是引擎输出格式,不是目录条目 —— 一条都不得进网格。
+    expect(grid.textContent).not.toContain("<path>")
+    expect(grid.textContent).not.toContain("<entries>")
+    expect(grid.querySelector(".a-tc-dircount")!.textContent).toBe("共 7 项")
+  })
+
+  test("#949 fail-closed:文件 read(display.type=file)绝不改派 —— 内容长得像目录清单也还是 read 卡", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_r10", "read", {
+          status: "completed",
+          input: { filePath: "/Users/kai/lab/manifest.txt" },
+          output: "assets/\nsrc/\nindex.html",
+          title: "manifest.txt",
+          metadata: {
+            preview: "assets/",
+            truncated: false,
+            loaded: [],
+            display: {
+              type: "file",
+              path: "/Users/kai/lab/manifest.txt",
+              text: "assets/\nsrc/\nindex.html",
+              lineStart: 1,
+              lineEnd: 3,
+              totalLines: 3,
+              truncated: false,
+            },
+          },
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='read']")!
+    expect(card.querySelector(".a-tc-title b")!.textContent).toBe("读取")
+    expect(card.querySelector("[data-alpha-dir-grid]")).toBeNull()
+    expect(card.textContent).not.toContain("项")
+  })
+
   test("#584 grep 卡:文件名/行号分色 + 命中高亮;路径脱敏失败 ⇒ 整字段隐藏且出确定标记", async () => {
     const host = mount()
     runtime.setTimelineRows(
