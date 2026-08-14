@@ -14,14 +14,37 @@ const drain = async () => {
 
 afterEach(() => vi.useRealTimers())
 
+// [#965] 本 describe 是 accountResultState 的**形状契约**,不是主判据 —— 主判据在
+// src/main/alpha-account.test.ts,它从假 fetch 驱动真 createAuthedGet 一路跑到这里,证明
+// 生产产出点真的填了 status。只改这里够不着分流层:本函数收 `unknown`,产出点漏写 `status:`
+// 时编译器与这些字面量断言都不会红。删主判据只留这里 = 把闸门换掉一半而不红。
 describe("model recovery state semantics", () => {
   test("distinguishes loading, transient recovery, hard failure, and success", () => {
     const initial = "loading"
     expect(initial).toBe("loading")
     expect(accountResultState({ error: "network" })).toBe("recovering")
-    expect(accountResultState({ error: "http-503" })).toBe("recovering")
     expect(accountResultState({ error: "contract-incompatible" })).toBe("failed")
     expect(accountResultState({ balanceFen: 0 })).toBe("ready")
+  })
+
+  // [#965] HTTP 拒绝按 status 分流,与 error 字符串长什么样无关。
+  test("[#965] HTTP 拒绝按状态类分流,不看 error 字符串", () => {
+    expect(accountResultState({ error: "billing_unready", status: 503 })).toBe("recovering")
+    expect(accountResultState({ error: "http-503", status: 503 })).toBe("recovering")
+    expect(accountResultState({ error: "rate_limited", status: 429 })).toBe("recovering")
+    expect(accountResultState({ error: "plan_forbidden", status: 403 })).toBe("failed")
+    expect(accountResultState({ error: "http-403", status: 403 })).toBe("failed")
+  })
+
+  // [#965] 反向:字符串里的数字**不再**参与判定。生产已不产出无 status 的 http-5xx
+  //(createAuthedGet 的 HTTP 拒绝臂必带 status),所以这条钉的是「有人把正则当 fallback
+  // 加回来」——「先看 status,没有再用正则兜底」能满足全部其它断言(生产路径永远带
+  // status),只有这条杀得掉它。
+  test("[#965] 无 status 时 http-503 不再被当成 transient;具名本地结局仍走白名单", () => {
+    expect(accountResultState({ error: "http-503" })).toBe("failed")
+    expect(accountResultState({ error: "http-429" })).toBe("failed")
+    expect(accountResultState({ error: "unauthorized" })).toBe("recovering")
+    expect(accountResultState({ error: "not-authenticated" })).toBe("recovering")
   })
 })
 

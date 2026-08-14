@@ -16,17 +16,23 @@ export function shouldApplySidecarState(
   return previous.status === "recovering" && next.status !== "recovering"
 }
 
+// [#965] transient 判定读**结构化 status**,不再从错误字符串抠数字。旧实现
+// /^http-(408|425|429|5\d\d)$/ 成立的前提是「平台不给 5xx 补分类码」—— 一旦补上,error 变成
+// 那个码,正则不匹配,本该「正在恢复」的状态显示成「失败」,而两边的门都不会红。
+// 判据是**状态类**而不是码名单(平台侧同一裁决有书面理由:alpha-platform
+// lib/cloud-core.ts:160-164 与 docs/contracts/cloud-jobs-v1.md:211 ——「码名单会漂移」)。
 export function accountResultState(result: unknown): "ready" | "recovering" | "failed" {
   if (!result || typeof result !== "object" || !("error" in result)) return "ready"
+  // 结构槽优先:HTTP 拒绝一律按状态类分流,与 error 字符串长什么样无关。顺序承重 ——
+  // 分类码正则是 /^[a-z][a-z0-9_]{2,63}$/,`network` 是合法码,白名单先判会让一个
+  // 403 code:"network" 被误判成 recovering。
+  const status = (result as { status?: unknown }).status
+  if (typeof status === "number")
+    return status === 408 || status === 425 || status === 429 || status >= 500 ? "recovering" : "failed"
+  // 非 HTTP 结局(createAuthedGet 本地铸造的封闭集):具名白名单,**默认方向仍是 failed** ——
+  // status 缺席时不得因为「它是个 error 对象」就 recovering。
   const error = String(result.error)
-  if (
-    error === "network" ||
-    error === "unauthorized" ||
-    error === "not-authenticated" ||
-    /^http-(408|425|429|5\d\d)$/.test(error)
-  )
-    return "recovering"
-  return "failed"
+  return error === "network" || error === "unauthorized" || error === "not-authenticated" ? "recovering" : "failed"
 }
 
 // #594 闩死点二:引擎模型列表拉取的无上限封顶退避循环(单测覆盖)。旧实现是 20×1s 预算,

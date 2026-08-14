@@ -54,7 +54,12 @@ export function createAuthedGet(deps: {
         if (retried) refreshLockedAtEpoch.set(purpose, epoch)
         return { error: "unauthorized" }
       }
-      if (!res.ok) return { error: await httpErrorCode(res) }
+      // [#965] status 走结构槽:transient 判定(renderer accountResultState)不再从 error 字符串
+      // 抠数字 —— 平台哪天给 5xx 补分类码,呈现变了、控制流不变。呈现槽仍走咽喉,#940 的
+      // fail-closed 纪律(无合法 code ⇒ 保持 http-<status>,不猜)一个字不动。
+      // 上面 401 那条**刻意不带 status**:它的语义是「去重新登录」(transient),带上 401 会被
+      // 新判定算进状态类 ⇒ 从 recovering 翻成 failed。
+      if (!res.ok) return { error: await httpErrorCode(res), status: res.status }
       // R1 Major2:「非 401 成功」必须包含 decode 成功 —— 否则 malformed 200 也解锁,
       // 服务在 malformed 200 与 401 之间抖动时仍能周期性驱动 refresh+换血。
       const decoded = decode(await res.text())
