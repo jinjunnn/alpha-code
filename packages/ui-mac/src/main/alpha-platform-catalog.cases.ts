@@ -271,5 +271,24 @@ describe("#681:fetch → LKG → 投影 全程只认 ModelCatalogV2", () => {
     expect(getEffectiveCatalog(userData).platformModels.length).toBe(12)
   })
 })
+// ── ac#962:gateway 嵌套信封的分类码要穿过**生产接线**,不只是纯函数 ───────────────────────
+describe("ac#962:平台拒绝的分类码穿过生产 fetchPlatformModels()", () => {
+  test("429 + {error:{message,code}} ⇒ 返回那个码,不是 http-429", async () => {
+    // 响应字节照抄 alpha-platform packages/gateway/src/worker.ts 的 rateLimitRequest 拒绝体
+    // (本票勘破轮把真 worker 跑起来捕获到的那一份)。期望值是独立字面量,不 import 生产常量。
+    globalThis.fetch = (async () =>
+      new Response('{"error":{"message":"rate limited: too many requests from this IP","code":"rate_limited"}}', {
+        status: 429,
+      })) as unknown as typeof fetch
+
+    // 断言的是**生产函数**的返回值:把 alpha-platform-models.ts:52 的 `await httpErrorCode(res)`
+    // 换成自拼 `http-${res.status}`,platform-error-code.test.ts 那 6 条纯函数判据全绿,只有这一条红。
+    expect(await fetchPlatformModels()).toEqual({ error: "rate_limited" })
+  })
+})
+// 诚实标注(降级,不假装有闸):这条判据到得了生产函数的返回值,**到不了用户** ——
+// /v1/models 的失败结局今天在 main/index.ts 的两处 `.catch(() => {})` 被丢弃,
+// models-platform-live IPC 有 preload 桥但零 renderer 调用方。见 ac#962 票面的订正块。
+
 // 「sidecar 引擎配置与 IPC 投影不再分叉」的闸在 models-catalog-v2.wiring.cases.ts —— 那里从**真实**
 // registerModelsIpcHandlers 出发观察,而不是直接调内部函数。

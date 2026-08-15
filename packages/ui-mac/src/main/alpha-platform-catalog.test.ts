@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test"
 import { join } from "node:path"
 
-test("effective catalog 失败域隔离 + BYOK 目录主权 + V2 硬切(#595 退出条件 4/5,#681)", () => {
+test("effective catalog 失败域隔离 + BYOK 目录主权 + V2 硬切(#595 退出条件 4/5,#681)+ ac#962 分类码接线", () => {
   const result = Bun.spawnSync({
     cmd: [process.execPath, "test", join(import.meta.dir, "alpha-platform-catalog.cases.ts")],
     cwd: join(import.meta.dir, "../.."),
@@ -11,6 +11,6 @@ test("effective catalog 失败域隔离 + BYOK 目录主权 + V2 硬切(#595 退
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain("11 pass")
+  expect(output).toContain("12 pass")
   expect(output).toContain("0 fail")
 })
