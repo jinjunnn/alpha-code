@@ -94,7 +94,8 @@ describe("retired global-root operational ratchet", () => {
     expect(violations).toEqual([])
   })
 
-  test("startup 把 engine reconcile 异常置为 sidecar fail-closed gate", () => {
+  // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+  test("ANCHOR (not a gate): startup 把 engine reconcile 异常置为 sidecar fail-closed gate", () => {
     const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
     const failure = source.indexOf("bootEnforcementGap = [`engine config reconcile failed:")
     const gate = source.indexOf("if (bootEnforcementGap)")

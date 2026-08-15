@@ -130,7 +130,8 @@ describe("ensureGovernedMcpConnectTimeouts — boot reconcile", () => {
     expect(fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8")).toBe(first)
   })
 
-  test("main boot calls the reconcile before the first sidecar fork", () => {
+  // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+  test("ANCHOR (not a gate): main boot calls the reconcile before the first sidecar fork", () => {
     const source = fs.readFileSync(path.join(import.meta.dir, "index.ts"), "utf8")
     const reconcile = source.indexOf("  ensureGovernedMcpConnectTimeouts()")
     const firstFork = source.indexOf("spawnLocalServer(hostname, port, password")

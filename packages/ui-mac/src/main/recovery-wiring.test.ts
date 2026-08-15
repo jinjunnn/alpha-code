@@ -5,7 +5,9 @@ import { join } from "node:path"
 const read = (file: string) => readFileSync(join(import.meta.dir, file), "utf8")
 
 describe("REQ-090 Recovery wiring ratchet", () => {
-  test("DbSafety Recovery is presented before the product window is created", () => {
+  // 分类与「这几处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验);
+  // 本文件另外几条(Recovery 窗口的安全开关、负全称、唯一性计数)是正当的源码文本闸,刻意不降级。
+  test("ANCHOR (not a gate): DbSafety Recovery is presented before the product window is created", () => {
     const index = read("index.ts")
     expect(index.indexOf("runDbPreflightBoot({")).toBeGreaterThan(-1)
     expect(index.indexOf("runDbPreflightBoot({")).toBeLessThan(index.indexOf("mainWindow = createMainWindow()"))
@@ -25,7 +27,7 @@ describe("REQ-090 Recovery wiring ratchet", () => {
     expect(recovery).toContain('loadWindow(win, "recovery.html")')
   })
 
-  test("every fatal boot-host event emits only a fixed reason to the shared settlement path", () => {
+  test("ANCHOR (not a gate): every fatal boot-host event emits only a fixed reason to the shared settlement path", () => {
     const windows = read("windows.ts")
     const index = read("index.ts")
     const start = windows.indexOf("export function createRecoveryWindow(")
@@ -37,7 +39,7 @@ describe("REQ-090 Recovery wiring ratchet", () => {
     expect(index).toContain("if (isRecoveryWebContents(webContents)) return")
   })
 
-  test("the active boot and close settlement are installed before its renderer starts loading", () => {
+  test("ANCHOR (not a gate): the active boot and close settlement are installed before its renderer starts loading", () => {
     const ipc = read("recovery-ipc.ts")
     expect(ipc.indexOf("boot = { incident, senderID: win.webContents.id, finish }")).toBeLessThan(
       ipc.indexOf("loadRecoveryWindow(win)"),

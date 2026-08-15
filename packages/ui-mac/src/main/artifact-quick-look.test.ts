@@ -102,7 +102,8 @@ describe("production Quick Look IPC entry", () => {
     })
   })
 
-  test("the production artifact IPC and preload entries install and invoke the identity-only channel", () => {
+  // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+  test("ANCHOR (not a gate): the production artifact IPC and preload entries install and invoke the identity-only channel", () => {
     expect(readFileSync(join(import.meta.dir, "artifact-ipc.ts"), "utf8")).toContain(
       "registerArtifactQuickLookIpcHandler({",
     )

@@ -66,7 +66,8 @@ describe("sidecar initial location prewarm", () => {
     expect(paths).toEqual(["/api/provider/alpha-internal-catalog-ready", "/api/model"])
   })
 
-  test("production starts prewarm before listen and withholds ready until it settles", () => {
+  // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+  test("ANCHOR (not a gate): production starts prewarm before listen and withholds ready until it settles", () => {
     const source = readFileSync(import.meta.dir + "/sidecar.ts", "utf8")
     const start = source.indexOf("const prewarm = prewarmInitialLocation(")
     const listen = source.indexOf("listener = await Server.listen(")

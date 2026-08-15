@@ -16,7 +16,9 @@ const windows = readFileSync(join(import.meta.dir, "windows.ts"), "utf8")
 const adapter = readFileSync(join(import.meta.dir, "deep-links.ts"), "utf8")
 
 describe("REQ-089 deep-link ingress wiring ratchet", () => {
-  test("every OS entry point feeds the one queue", () => {
+  // 分类与「这两处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验);
+  // 下面两条(唯一性 / 负全称)是正当的源码文本闸,刻意不降级。
+  test("ANCHOR (not a gate): every OS entry point feeds the one queue", () => {
     // Windows/Linux cold start: the first process holds the single-instance lock, so this is the
     // ONLY chance to see the link (no second-instance, no macOS open-url).
     expect(index).toContain("deepLinks.ingest(process.argv)")
@@ -33,7 +35,7 @@ describe("REQ-089 deep-link ingress wiring ratchet", () => {
     expect(index).not.toContain('"deep-link"')
   })
 
-  test("both halves of the retained-copy protocol are wired to the one queue", () => {
+  test("ANCHOR (not a gate): both halves of the retained-copy protocol are wired to the one queue", () => {
     // The renderer's acknowledgement is what retires main's copy; without this wire every batch
     // would sit in flight forever and every reload would replay it.
     expect(index).toContain("deepLinks.consumeInitial(rendererId)")

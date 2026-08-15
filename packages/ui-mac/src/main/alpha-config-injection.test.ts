@@ -363,7 +363,8 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
   // 顶层 getParentPort 必抛)。R1 实证纯文本锚锁不住值上车 —— 「失败字段真的在 ready 消息上」
   // 已迁入真执行的 buildReadyMessage(sidecar-ready-message.test.ts)。留给源码锚的只剩
   // bun 无法运行时验证的接线事实,按 rev2c ③″3-2 锁位置/顺序与唯一通路:
-  test("#613 接线锚:sidecar.ts 的 ready 上报必须走 buildReadyMessage(injection),别无通路", () => {
+  // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+  test("ANCHOR (not a gate): #613 sidecar.ts 的 ready 上报必须走 buildReadyMessage(injection),别无通路", () => {
     const source = fs.readFileSync(path.join(import.meta.dir, "sidecar.ts"), "utf8")
 
     // ① start() 捕获注入结果,ready 发送在捕获之后、以捕获值**整体**入参 —— 精确到字符:

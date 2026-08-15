@@ -149,7 +149,8 @@ describe("recovery gate 准入(review #380 minor:journal 在场的真实行为)"
 })
 
 describe("#356 wiring:触发面在 trust-check 两个早退之前(源文本合同)", () => {
-  test("adoption 调用位置先于「无 executable 早退」与「已有决策早退」", () => {
+  // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+  test("ANCHOR (not a gate): adoption 调用位置先于「无 executable 早退」与「已有决策早退」", () => {
     const src = readFileSync(join(import.meta.dir, "ext-ipc.ts"), "utf8")
     const posAdopt = src.indexOf("adoptProjectLedger(directory")
     const posNoExec = src.indexOf("exec.mcp.length === 0 && exec.plugins.length === 0")
