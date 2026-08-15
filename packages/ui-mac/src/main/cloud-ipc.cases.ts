@@ -142,7 +142,9 @@ describe("#660 A1 cloud-run-saved broadcast wiring", () => {
   })
 })
 
-// `#970`:main → renderer 之间还隔着**这一跳**(cloud-artifact-download 的真 handler)。
+// `#970`:main → renderer 之间隔着**两跳有逻辑的转发**,这里钉的是靠上的那一跳
+// (cloud-artifact-download 的真 handler);低一层的 downloadCloudArtifactTo 由
+// src/main/alpha-cloud-jobs.cases.ts 钉同样两个方向。
 // 判据不能在两端各自绿而中间没人跑 —— 今天这一跳是原样直传,但它正是最容易长出
 // 「规整返回形状 / 只挑白名单字段」的地方(同文件上方已经在自己铸造 invalid-request /
 // invalid-artifact / unsafe-path 信封)。哪天有人加个 normalizer 把结构槽挑掉,用户可观察的

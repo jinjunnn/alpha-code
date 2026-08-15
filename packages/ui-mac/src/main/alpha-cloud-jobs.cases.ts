@@ -49,10 +49,13 @@ mock.module("./alpha-contract-health", () => ({
 
 /** artifact 内容下载走独立传输契约(alpha-artifact-download),不经 authed。 */
 const downloads: Array<{ token: string; base: string }> = []
+/** `#970`:下一次 downloadArtifactToFile 的返回值。默认成功;失败信封的用例就地改再还原。 */
+const DOWNLOAD_OK = { ok: true, path: "/tmp/unused", bytes: 0 }
+let downloadOutcome: unknown = DOWNLOAD_OK
 mock.module("./alpha-artifact-download", () => ({
   downloadArtifactToFile: async (_req: unknown, opts: { token: string; base: string }) => {
     downloads.push({ token: opts.token, base: opts.base })
-    return { ok: true, path: "/tmp/unused", bytes: 0 }
+    return downloadOutcome
   },
 }))
 
@@ -178,6 +181,31 @@ test("artifact bytes keep their separate transport contract, still on artifact.r
   expect(wire).toEqual([])
   expect(requested).toEqual(["artifact.read"])
   expect(downloads).toEqual([{ token: tokenFor("artifact.read"), base: BASE }])
+})
+
+// `#970`:downloadCloudArtifactTo 是 main → renderer 链上 IPC handler 之下的**第二跳**,
+// 今天是 `return outcome`,但它自己有三条早退臂(token / base),正是最容易长出
+// 「规整返回形状 / 只挑白名单字段」的地方。两端与 IPC 那一跳各自绿也测不到它 ⇒ 两个方向都钉:
+// 既不许吞掉 `cancelled: true`(用户按的取消会被显示成失败),也不许凭空补上它
+// (平台伪造的 cancelled 分类码会被显示成「你取消了」)。
+test("`#970` 失败信封逐字穿过 downloadCloudArtifactTo:结构槽既不被吞掉也不被补上", async () => {
+  const call = () =>
+    jobs.downloadCloudArtifactTo(
+      { jobId: JOB, artifactId: "art_job_test_0001_1_0000abcd" } as never,
+      (() => ({ ok: true })) as never,
+    )
+  try {
+    downloadOutcome = { ok: false, error: "cancelled", cancelled: true }
+    expect(await call()).toEqual({ ok: false, error: "cancelled", cancelled: true } as never)
+
+    downloadOutcome = { ok: false, error: "cancelled" }
+    const forged = await call()
+    expect(forged).toEqual({ ok: false, error: "cancelled" } as never)
+    // toEqual 对「键在、值是 undefined」不敏感 ⇒ 单独钉键的不存在。
+    expect("cancelled" in (forged as object)).toBe(false)
+  } finally {
+    downloadOutcome = DOWNLOAD_OK
+  }
 })
 
 // ---- #400(REQ-109 / platform#255):取消是服务端可判定结果,不是本地乐观覆盖 ----
