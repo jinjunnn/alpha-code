@@ -3,6 +3,7 @@ import presetTypescript from "@babel/preset-typescript"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, afterEach, describe, expect, mock, test } from "bun:test"
 import presetSolid from "babel-preset-solid"
+import { existsSync } from "node:fs"
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
@@ -31,6 +32,11 @@ Bun.plugin({
 
 const runtime = await import("../src/renderer/alpha-ui/session-rail/artifacts/artifacts-test-runtime")
 const i18n = await import("../src/renderer/i18n")
+// `#970`:下面两条判据用的信封**不许手写** —— 由真的 downloadArtifactToFile 跑出来。
+// 手写信封 = 锚点等于被测对象自己:main 侧把结构槽改坏了,renderer 侧照绿。
+// 这两个模块都不牵 solid-js(只用 node:crypto/fs/path),放在 mock.module 之后静态引入是安全的。
+const artifactDownload = await import("../src/main/alpha-artifact-download")
+const artifactDescriptor = await import("../src/shared/cloud-artifact-descriptor")
 const disposers: Array<() => void> = []
 
 afterEach(() => {
@@ -817,5 +823,95 @@ describe("#660 cross-run browsing and the run-saved push (real shell)", () => {
     expect(landed.getAttribute("data-state")).toBe("verified")
     expect(landed.querySelector("[data-download-done]")).toBeNull()
     expect(landed.querySelector(".alpha-wb-card-actions")).toBeNull()
+  })
+})
+
+// ── `#970`:平台伪造的 cancelled 分类码不打穿「本地取消」分流 ──────────────────────────
+// 两个信封由**真的** downloadArtifactToFile 跑出来(假 fetch / 已 abort 的 AbortController),
+// 再交给容器的下载通道;断言落在用户可观察的 DOM 上,不落在 reducer 的返回值上 ——
+// 断言内层纯函数会让分流层的绕过照样绿。
+const NEVER_WRITTEN = "/tmp/alpha-970-never-written.bin"
+
+function artifact970() {
+  return {
+    schemaVersion: artifactDescriptor.ARTIFACT_SCHEMA_VERSION,
+    id: "art_job_abcd_0_ab12cd34",
+    source: "cloud",
+    name: "out.bin",
+    trust: "sandboxed",
+    role: "primary",
+    contentRef: { kind: "http-stream", url: "/v1/cloud/artifacts/art_job_abcd_0_ab12cd34/content", auth: "bearer" },
+    verification: { status: "unverified" },
+    provenance: { producer: "pipeline", jobId: "job_abcd" },
+  }
+}
+
+async function realDownloadOutcome(opts: { fetchImpl?: typeof fetch; signal?: AbortSignal }) {
+  const outcome = await artifactDownload.downloadArtifactToFile(
+    { artifact: artifact970(), targetPath: NEVER_WRITTEN, signal: opts.signal },
+    {
+      token: "TOKEN-970",
+      base: "https://cloud.test",
+      fetchImpl:
+        opts.fetchImpl ??
+        ((async () => {
+          throw new Error("this fixture must never reach the network")
+        }) as unknown as typeof fetch),
+      finalize: () => ({ ok: false, error: "disk", detail: "never finalizes in this fixture" }),
+    },
+  )
+  // 两条路径都在开 .part 之前就返回;夹具零写盘(残留会让下一次跑读到别人的状态)。
+  expect(existsSync(NEVER_WRITTEN)).toBe(false)
+  return outcome
+}
+
+describe("#970 取消是本地事实:平台补一个 cancelled 分类码只改文案,不改分流(真 Solid 挂载)", () => {
+  const cloudListing = () => ({
+    schema_version: 1,
+    job_id: "job_1",
+    status: "completed",
+    artifacts: [{ id: "art_cloud_9", name: "云端附录.pdf", size: 9 }],
+    artifact_ids: ["art_cloud_9"],
+    result: null,
+  })
+
+  async function mountAndDownload(envelope: unknown) {
+    installFakeRunArtifacts(
+      { job_1: [manifestEntry("art-1", "架构说明.md")] },
+      { cloudArtifacts: cloudListing, download: async () => envelope },
+    )
+    const shell = runtime.createArtifactsShellHarness()
+    const host = mount(shell.Shell)
+    await openArtifactsTab(host)
+    await flushTimers()
+    const card = () => host.querySelector("[data-artifact-card='art_cloud_9']")!.closest(".alpha-wb-card")!
+    card().querySelector<HTMLButtonElement>(".alpha-wb-card-actions .a-wb-btn")!.click()
+    await flushTimers()
+    await flushTimers()
+    return { host, card }
+  }
+
+  test("平台在 409 上发 code:cancelled ⇒ 卡片落失败态(错误 chip + 重试 + 失败通知),不是中性「下载」", async () => {
+    const envelope = await realDownloadOutcome({
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ error: "conflict", code: "cancelled" }), { status: 409 })) as unknown as typeof fetch,
+    })
+    // 前置断言:呈现槽上的碰撞**确实发生了**(夹具状态码选歪时整条用例会改前改后都绿)。
+    expect(envelope).toMatchObject({ ok: false, error: "cancelled" })
+    const { host, card } = await mountAndDownload(envelope)
+    expect(card().querySelector("[data-download-error]")).not.toBeNull()
+    expect(card().querySelector(".alpha-wb-card-actions .a-wb-btn")!.textContent).toBe(i18n.t("alpha.wb.retry"))
+    expect(host.querySelector("[data-download-failure]")).not.toBeNull()
+  })
+
+  test("用户真的按了取消 ⇒ 卡片回中性「下载」态,无错误 chip、无失败通知", async () => {
+    const aborted = new AbortController()
+    aborted.abort()
+    const envelope = await realDownloadOutcome({ signal: aborted.signal })
+    expect(envelope).toMatchObject({ ok: false, error: "cancelled", cancelled: true })
+    const { host, card } = await mountAndDownload(envelope)
+    expect(card().querySelector("[data-download-error]")).toBeNull()
+    expect(host.querySelector("[data-download-failure]")).toBeNull()
+    expect(card().querySelector(".alpha-wb-card-actions .a-wb-btn")!.textContent).toBe(i18n.t("alpha.wb.download"))
   })
 })

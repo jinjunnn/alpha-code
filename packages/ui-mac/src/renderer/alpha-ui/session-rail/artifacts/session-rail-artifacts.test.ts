@@ -26,7 +26,7 @@ describe("REQ-125 C4 artifacts panel real Solid mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("19 pass")
+    expect(output).toContain("21 pass")
     expect(output).toContain("0 fail")
   })
 })

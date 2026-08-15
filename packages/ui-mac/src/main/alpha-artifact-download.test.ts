@@ -1,6 +1,11 @@
 // REQ-092 A 侧单测 —— 流式 artifact 下载器(alpha-artifact-download.ts)。
-// 真实 temp dir + mock fetch(alpha-workdir.test.ts 同款纪律):空文件/正常文件/三道限额闸/
-// 长度欺骗/断流/取消/sha256 不符/重试不撞 .part/token 卫生/legacy 拒绝。
+// 真实 temp dir + mock fetch(与 alpha-workdir 的单测同款可测性纪律):空文件/正常文件/
+// 三道限额闸/长度欺骗/断流/取消/sha256 不符/重试不撞 .part/token 卫生/legacy 拒绝。
+//
+// `#970` 起本文件登记进 scripts/gate-files.tsv(精确条数)。新增的那三条守的是一条**仓库级
+// 保证**:平台的分类码到不了 `cancelled` 这个结构槽 —— 也就是「服务端拒绝不会被显示成
+// 『你取消了』」。ui-mac 整包地板 3000 对实测 4100+ 有上千条余量,不登记 = 这三条可以被整段
+// 删掉而三层全绿。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as crypto from "node:crypto"
@@ -241,7 +246,9 @@ describe("streaming download (descriptor path)", () => {
       },
       deps(fetchImpl),
     )
-    expect(res).toEqual({ ok: false, error: "cancelled" })
+    // `#970`:精确形状 —— 流中途取消这条臂必须带结构槽(把 `cancelled: true` 只补给
+    // authedFetch 两条臂、漏掉写入器三条臂的半吊子实现,在这里当场红)。
+    expect(res).toEqual({ ok: false, error: "cancelled", cancelled: true })
     expect(fs.existsSync(target())).toBe(false)
     expect(residueIn(dir)).toEqual([])
   })
@@ -293,6 +300,54 @@ describe("streaming download (descriptor path)", () => {
     )
     const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(fetchImpl))
     expect(res).toMatchObject({ ok: false, error: "upload_reserved_input" })
+  })
+
+  // ── `#970` 平台伪造 `cancelled` 分类码:呈现槽会碰撞,结构槽结构上到不了 ────────────
+  // 夹具刻意用 **409**:实测 12 个状态码,只有 400/409/410/416/429/5xx 到得了咽喉,
+  // 401/403/404/413 各自被本文件上方 streamStage 的本地早退臂吃掉。票面 AC3 原文写的 403
+  // **产生不了碰撞**(它回 "forbidden"),照原文写出来的判据改前改后都绿 —— 已订正。
+  // 409 还是这条路由今天真的会带 code 的状态(alpha-platform 的 artifact_digest_mismatch)。
+  test("`#970` 平台伪造的 cancelled 分类码撞进呈现槽,但拿不到「本地取消」的结构槽", async () => {
+    const { fetchImpl } = mockFetch(
+      () => new Response(JSON.stringify({ error: "conflict", code: "cancelled" }), { status: 409 }),
+    )
+    const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(fetchImpl))
+    // 前置断言:碰撞**确实发生了**。没有这一条,夹具状态码选歪时整条用例会改前改后都绿 ——
+    // 它守的是「这个夹具真的走到了咽喉」,不是装饰。
+    expect(res).toMatchObject({ ok: false, error: "cancelled" })
+    // 本体:结构槽缺席 ⇒ 这不是本地取消。消费端因此不会把一次服务端拒绝显示成「你取消了」。
+    expect("cancelled" in res).toBe(false)
+    expect(residueIn(dir)).toEqual([])
+  })
+
+  test("`#970` 外部 AbortSignal 已 abort:预检臂零网络回本地取消,且带结构槽", async () => {
+    const ctrl = new AbortController()
+    ctrl.abort()
+    const { fetchImpl, calls } = mockFetch(() => okResponse([new Uint8Array(4)]))
+    const res = await downloadArtifactToFile(
+      { artifact: descriptor(), targetPath: target(), signal: ctrl.signal },
+      deps(fetchImpl),
+    )
+    expect(res).toEqual({ ok: false, error: "cancelled", cancelled: true })
+    expect(calls).toHaveLength(0) // 走的是 authedFetch 的预检臂,不是别的分支冒名顶替
+    expect(residueIn(dir)).toEqual([])
+  })
+
+  test("`#970` 对照臂:真实平台码与无码拒绝都只落呈现槽,咽喉输出不被吞成裸状态", async () => {
+    // 期望值是**独立字面量**,不从生产常量 import —— 锚点等于被测对象自己就是自指等价链。
+    const { fetchImpl: withCode } = mockFetch(
+      () => new Response(JSON.stringify({ error: "digest mismatch", code: "artifact_digest_mismatch" }), { status: 409 }),
+    )
+    const coded = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(withCode))
+    expect(coded).toMatchObject({ ok: false, error: "artifact_digest_mismatch" })
+    expect("cancelled" in coded).toBe(false)
+
+    const { fetchImpl: noCode } = mockFetch(
+      () => new Response(JSON.stringify({ error: "service unavailable" }), { status: 503 }),
+    )
+    const bare = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(noCode))
+    expect(bare).toMatchObject({ ok: false, error: "http-503" })
+    expect("cancelled" in bare).toBe(false)
   })
 
   test("unknown schemaVersion → unsupported-schema, no request (read-only/error rule)", async () => {

@@ -227,6 +227,18 @@ inactive-plan payloads.
   gate** on the cross-repository shape: the desktop criteria are synthetic
   fixtures, so a platform change to either envelope will not turn this
   repository red on its own.
+- **Error-code namespaces overlap by construction:** a rejection's `error`
+  string is a presentation slot that carries both platform classification codes
+  and desktop-minted names. The platform code shape
+  (`/^[a-z][a-z0-9_]{2,63}$/`) has no hyphen, so every single-word local name —
+  `cancelled`, `network`, `disk`, `forbidden`, `unauthorized`, `retryable` — is
+  a string the platform can also emit; only hyphenated local names such as
+  `not-found` or `sha256-mismatch` are structurally unforgeable. No control
+  flow may compare that string. Facts the desktop owns travel in structural
+  slots that only the main process writes: an artifact download that the user
+  cancelled carries `cancelled: true`, and the chokepoint arm that surfaces a
+  platform code never writes it. Adding a platform code named after a local
+  mint therefore changes what the user reads and nothing else.
 
 Login activates platform mode through a structural sidecar respawn when the
 first fork does not already contain that auth generation. Logout clears token
