@@ -138,7 +138,7 @@ export const dict = {
   "alpha.auto.cloudErrEnvelopeTooLarge": "执行内容太长,超出云端单次请求的体积上限 —— 精简后重试。",
   "alpha.auto.cloudErrRateLimited": "操作太频繁,云端正在限流 —— 稍等片刻再保存。",
   "alpha.auto.cloudErrTenantRateLimited": "本账户当前时段的云端请求配额已用完 —— 过一会儿再保存。",
-  "alpha.auto.cloudErrFormUnsupported": "云端档只支持 cron 与 60 分钟以内的间隔;「一次性」和更长的间隔请改用本地档。",
+  "alpha.auto.cloudErrFormUnsupported": "云端档支持 cron、60 分钟以内的间隔,以及整小时的间隔(最长 24 小时);「一次性」和其余间隔请改用本地档。",
   "alpha.auto.cloudErrUnknown": "云端拒绝了这次操作:{{code}}",
   "alpha.ext.customMcp": "添加自定义连接器",
   "alpha.ext.customMcpSub": "任意 MCP server(命令或 URL),不限于精选目录",

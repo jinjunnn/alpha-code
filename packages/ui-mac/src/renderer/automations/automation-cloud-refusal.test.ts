@@ -222,11 +222,15 @@ describe("[#969] 云档拒绝到达用户的那一跳", () => {
     expect(errorLine()).not.toContain("not-authenticated")
   })
 
+  // 码取删除腿**真到得了**的那一个:DELETE /v1/cloud/schedules/:id 走的是
+  // `schedAuth(c, "cloud.dispatch")`(rateLimit 默认 false)⇒ 两个 429 桶在这条腿上结构上发不出,
+  // 拿 `rate_limited` 当夹具就是锚在到不了的形状上。`network` 由桌面自己的 authed() 铸,
+  // 任何一条腿都到得了,且是有映射文案的码(不落回落模板 ⇒ 这条仍然断的是「给人话」)。
   test("云档改本地时云端删除被拒 ⇒ 同一行也给人话(main 走的是另一条腿,呈现必须一致)", async () => {
-    runtime.queueSaveResult({ ok: false, reason: "云端删除失败:rate_limited", code: "rate_limited" })
+    runtime.queueSaveResult({ ok: false, reason: "云端删除失败:network", code: "network" })
     await saveAsCloudTask()
 
-    expect(errorLine()).toBe(zh["alpha.auto.cloudErrRateLimited"])
+    expect(errorLine()).toBe(zh["alpha.ext.cloudErrNetwork"])
     expect(errorLine()).not.toContain("云端删除失败")
   })
 

@@ -143,7 +143,7 @@ export const dict = {
   "alpha.auto.cloudErrRateLimited": "Too many requests too fast; the cloud is throttling — wait a moment and save again.",
   "alpha.auto.cloudErrTenantRateLimited": "This account has used up its cloud request allowance for now — save again a little later.",
   "alpha.auto.cloudErrFormUnsupported":
-    "Cloud execution supports cron and intervals under 60 minutes; use local execution for one-off runs and longer intervals.",
+    "Cloud execution supports cron, intervals under 60 minutes, and whole-hour intervals up to 24 hours; use local execution for one-off runs and any other interval.",
   "alpha.auto.cloudErrUnknown": "The cloud refused this operation: {{code}}",
   "alpha.ext.customMcp": "Add custom connector",
   "alpha.ext.customMcpSub": "Any MCP server (command or URL), beyond the curated catalog",

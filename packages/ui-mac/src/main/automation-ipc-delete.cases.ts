@@ -133,6 +133,9 @@ test("平台给 404 补上分类码 ⇒ 仍然删得掉(#963 存在的理由:幂
   expect(wire).toEqual([{ method: "DELETE", path: "/v1/cloud/schedules/sched_gone_2" }])
 })
 
+// [#969] 注意:`tenant_forbidden` 是**合成夹具码,平台不产出** —— schedule 面的 403 今天是
+// `{error:"forbidden"}` 无码(ap routes/cloud-schedules.ts:53)。这条用例守的是「带码的 403
+// 也不删本地」这条与码的字面量无关的性质,故 `#963` 的原夹具保留;别拿这一行反推平台契约。
 test("云端删除因别的原因失败(403 带码)⇒ 不删本地,不留离线幽灵触发", async () => {
   wire.length = 0
   seed("auto-keep-403", "sched_live_3")
@@ -177,15 +180,18 @@ test("[#969] 云档保存被平台按分类码拒绝 ⇒ automations-save 的返
   expect(wire).toEqual([{ method: "POST", path: "/v1/cloud/schedules" }])
 })
 
+// 夹具形状取自平台**今天真实产出**的那一条:schedule 面的 403 是 `{error:"forbidden"}`,
+// **无 code**(ap gateway routes/cloud-schedules.ts:53)⇒ 咽喉铸 `http-403`。透传丢了 `code`
+// 这一条照样红(toEqual 精确比对),而夹具不再教下一个人一个平台不产出的码。
 test("[#969] 云档改本地、云端删除被拒 ⇒ 同一个 automations-save 的返回也带 code", async () => {
   wire.length = 0
   seed("auto-save-tolocal", "sched_live_5")
-  responses.push({ status: 403, body: JSON.stringify({ error: "tenant mismatch for this schedule", code: "tenant_forbidden" }) })
+  responses.push({ status: 403, body: JSON.stringify({ error: "forbidden" }) })
 
   expect(await invoke("automations-save", taskOf("auto-save-tolocal", { execution: "local" }))).toEqual({
     ok: false,
-    reason: "云端删除失败:tenant_forbidden",
-    code: "tenant_forbidden",
+    reason: "云端删除失败:http-403",
+    code: "http-403",
   })
   // 云侧还在 ⇒ 本地那条保持云档(不能悄悄改成本地,否则云端幽灵触发且本地不可管)。
   expect(auto.getAutomation("auto-save-tolocal")?.cloudScheduleId).toBe("sched_live_5")

@@ -117,9 +117,13 @@ test("每租户上限(ap#329 之后带 code)⇒ 结构槽是裸的分类码,散�
 
 // [#969] 桌面自己的早返(平台侧刻意无码:请求根本发不出去)。它今天是一句硬编码中文,
 // 会原样出现在 16 个语种的界面上 —— 所以它也得带一个码,交给 renderer 的 i18n 那一层。
-test("云档发不出的周期(once)⇒ 桌面自铸本地码,且一次网络请求都不发", async () => {
+// 驱动输入取**面板真的构造得出**的那一种:`{kind:"once"}` 在 shared/automation-types.ts 里
+// 写着「A1 UI 不产,实体预留」,automation-panel.tsx 的 fromForm 没有 once 分支 ⇒ 拿它当夹具
+// 等于锚在走我们自己的代码到不了的形状上。间隔输入框只有 min=5、没有上界,fromForm 也只判
+// 下界 ⇒ 90 分钟直达这条早返(scheduleToCron 对非整点超长间隔返回 null)。
+test("云档发不出的周期(90 分钟间隔)⇒ 桌面自铸本地码,且一次网络请求都不发", async () => {
   wire.length = 0
-  const r = await schedules.upsertCloudSchedule({ ...TASK, schedule: { kind: "once", at: "2026-09-01T09:00:00.000Z" } })
+  const r = await schedules.upsertCloudSchedule({ ...TASK, schedule: { kind: "interval", everyMinutes: 90 } })
 
   expect(r.ok).toBe(false)
   // 本地码是 kebab —— 与平台分类码的文法 /^[a-z][a-z0-9_]{2,63}$/ 结构上不相交。
@@ -137,13 +141,17 @@ test("删除的 404 容忍在咽喉切换后仍成立:schedule not found(无 cod
 
 // [#969] 删除腿也带 code:`automations-save` 在「云档改本地」那一跳调它,失败原因落到面板
 // **同一行** `.alpha-auto-err`(automation-ipc.ts)。少这个槽,那条路径的用户就只剩裸码。
-test("删除因别的原因失败(403 带码)⇒ 结构槽透出该码,供呈现层换人话", async () => {
+// 夹具形状取自平台**今天真实产出**的那一条:schedule 面的 403 是 `{error:"forbidden"}`,
+// **无 code**(ap gateway routes/cloud-schedules.ts:53;lib/schedules.ts 抬头写明传输层
+// 401/403/404 有意无码)⇒ 咽喉铸 `http-403`。不要在夹具里编一个平台不产出的分类码:下一个
+// 人按「读用例反推平台契约」做勘破时会拿到一份假的地面真相。
+test("删除因别的原因失败(403 无码)⇒ 结构槽透出咽喉铸的 http-403,供呈现层换人话", async () => {
   wire.length = 0
-  responses.push({ status: 403, body: JSON.stringify({ error: "tenant mismatch for this schedule", code: "tenant_forbidden" }) })
+  responses.push({ status: 403, body: JSON.stringify({ error: "forbidden" }) })
 
   expect(await schedules.deleteCloudSchedule("sched_0002")).toEqual({
     ok: false,
-    reason: "云端删除失败:tenant_forbidden",
-    code: "tenant_forbidden",
+    reason: "云端删除失败:http-403",
+    code: "http-403",
   })
 })
