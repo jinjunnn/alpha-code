@@ -271,7 +271,10 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
           dispatch(card.key, { type: "success" })
           pushToast({ kind: "success", title: t("alpha.wb.downloadDone"), detail: card.name })
           bump() // manifest/usage 都变了
-        } else if (r.error === "cancelled") {
+          // `#970`:同 session-rail 读结构槽。⚠️ 本组件自 `#662`(a44c3decf)下线整页工作台起
+          // 零 importer、零挂载点 —— 这一行今天用户到不了,改它只是为了不留一个活着的错误范例;
+          // 本票**刻意不**为它写判据(没有挂载点的组件只能用源码文本闸 = 本仓定义的假闸门)。
+        } else if (r.cancelled) {
           dispatch(card.key, { type: "cancelled" })
         } else {
           const message = r.detail ? `${r.error}(${r.detail})` : r.error

@@ -212,7 +212,9 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
           // Not an optimistic update: the download wrote the manifest back; re-read it.
           void refetchList()
           void refetchUsage()
-        } else if (result.error === "cancelled") {
+          // `#970`:分流读**结构槽**(只有 main 写得进),不比 error 字符串 —— 那个字符串
+          // 的内容由平台决定,平台补一个叫 cancelled 的分类码只该改变用户读到的文案。
+        } else if (result.cancelled) {
           dispatch(id, { type: "cancelled" })
         } else {
           dispatch(id, { type: "failure", message: result.detail ? `${result.error}(${result.detail})` : result.error })

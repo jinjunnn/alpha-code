@@ -217,7 +217,9 @@ export async function downloadCloudArtifactTo(
   const base = cloudBase()
   if (!base) return { ok: false, error: "no-cloud-endpoint" }
   const outcome = await downloadArtifactToFile(req, { token, base, finalize })
-  if (!outcome.ok && outcome.error !== "cancelled") {
+  // `#970`:抑制日志的条件读**结构槽** —— 比 `outcome.error !== "cancelled"` 会让平台发的
+  // 一条叫 cancelled 的拒绝**不留痕**,而那恰恰是最需要留痕的一刻。
+  if (!outcome.ok && !outcome.cancelled) {
     getLogger().warn(`alpha-cloud-jobs: artifact download failed (${outcome.error})`)
   }
   return outcome

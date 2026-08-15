@@ -71,7 +71,19 @@ export type ArtifactDownloadOutcome =
       verification: "verified" | "unverified"
       via: "stream"
     }
-  | { ok: false; error: ArtifactDownloadErrorCode; detail?: string }
+  | {
+      ok: false
+      /** **呈现槽**(平台写得进):`:455` 的咽喉把平台的分类码原样交出来,与本地铸造的名字
+       *  共用这一个字段。`CLASSIFICATION_CODE = /^[a-z][a-z0-9_]{2,63}$/` 不含连字符 ⇒ 单词形的
+       *  本地名(`cancelled` / `network` / `disk` / …)与平台码**结构上同形**。所以它只管展示,
+       *  任何控制流都不得比较它的字面量(`#918`→`#940`、`#963`→`#965`、`#970` 已三次同形)。 */
+      error: ArtifactDownloadErrorCode
+      detail?: string
+      /** **结构槽**(只有 main 写得进,`#970`):这一次失败是**用户按了取消**。取消是本地事实 ——
+       *  平台的任何字节都到不了这个槽,咽喉臂一个字不写它。消费端要区分「服务端拒绝」与
+       *  「本地取消」一律读这里,照 `#963`/`#965` 已合入的「呈现槽 / 结构槽」二分。 */
+      cancelled?: true
+    }
 
 export type ArtifactDownloadRequest = {
   /** Pinned ArtifactDescriptorV1. Legacy metadata is rejected without fallback. */
@@ -291,7 +303,7 @@ export async function writeChunksChecked(
     for await (const chunk of chunks) {
       if (opts.signal?.aborted) {
         await cleanup()
-        return { ok: false, error: "cancelled" }
+        return { ok: false, error: "cancelled", cancelled: true }
       }
       bytes += chunk.byteLength
       if (bytes > opts.maxBytes) {
@@ -320,13 +332,13 @@ export async function writeChunksChecked(
   } catch (error) {
     // 读取侧失败(断流/abort)。写入侧失败已在内层归类为 disk。
     await cleanup()
-    if (opts.signal?.aborted) return { ok: false, error: "cancelled" }
+    if (opts.signal?.aborted) return { ok: false, error: "cancelled", cancelled: true }
     return { ok: false, error: "network", detail: sanitizeTransportError(errMsg(error)) }
   }
 
   if (opts.signal?.aborted) {
     await cleanup()
-    return { ok: false, error: "cancelled" }
+    return { ok: false, error: "cancelled", cancelled: true }
   }
   if (opts.declaredLength !== undefined && bytes !== opts.declaredLength) {
     await cleanup()
@@ -380,7 +392,7 @@ async function authedFetch(
   const ctrl = new AbortController()
   const onAbort = () => ctrl.abort()
   if (external) {
-    if (external.aborted) return { err: { ok: false, error: "cancelled" } }
+    if (external.aborted) return { err: { ok: false, error: "cancelled", cancelled: true } }
     external.addEventListener("abort", onAbort, { once: true })
   }
   const done = () => external?.removeEventListener("abort", onAbort)
@@ -398,7 +410,7 @@ async function authedFetch(
     return { res, done }
   } catch (error) {
     done()
-    if (external?.aborted) return { err: { ok: false, error: "cancelled" } }
+    if (external?.aborted) return { err: { ok: false, error: "cancelled", cancelled: true } }
     if (error instanceof IdleTimeoutError || ctrl.signal.aborted) {
       return { err: { ok: false, error: "network", detail: `no response headers within ${headerTimeoutMs}ms` } }
     }

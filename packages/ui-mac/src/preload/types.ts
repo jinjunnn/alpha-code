@@ -395,7 +395,11 @@ export type CloudArtifactDownloadResult =
       verification: "verified" | "unverified"
       via: "stream"
     }
-  | { ok: false; error: string; detail?: string }
+  /** `#970`(同 `#965` 给 AccountResult 写的二分):`error` 是**呈现槽** —— 平台的分类码经
+   *  main 的咽喉原样落进来,与本地铸造的名字共用这一个字段,故只管展示;`cancelled` 是
+   *  **结构槽**,只有 main 写得进(平台的字节到不了),renderer 区分「服务端拒绝」与
+   *  「用户按了取消」一律读它,不得比较 `error === "cancelled"`。 */
+  | { ok: false; error: string; detail?: string; cancelled?: true }
 /** #660 裁决 A1:run 回流落盘 settle 后 main 向全部窗口广播的最小提示事件。只有这两个字段 ——
  *  它是「去重读」的提示,不是数据源;消费端收到后仍走 projectUsage / list 重新取真相。 */
 export type CloudRunSavedEvent = { directory: string; runId: string }
