@@ -82,6 +82,9 @@ bash scripts/alpha-check.sh
     `ANCHOR (not a gate): …`(只写在注释里不算 —— 注释拆得掉,CI 输出里下一个人只读得到标题)。
   - 主语**就是文本本身**(负全称「全仓不存在第二处 X」、唯一性计数、跨文件/跨包逐字一致、
     声明式配置的字面声明)→ `KEPT_SOURCE_TEXT_READS`。这类没有更细的粒度,文本正是正确的粒度。
+    **选它要连带把这个测试文件登记进 `scripts/gate-files.tsv`**(`.cases.ts` 除外,它归上一条的
+    反向那半):这张表说它是真闸门,而真闸门不许「删掉不红」—— 把文件连同表里那一行一起删掉,
+    第 ⑤ 层其余几条全绿、第 ① 层对这些名字失明、整包地板也吸收得掉。
   **两张表都不是免费出口**:都要写 `why`(> 40 字)、都要给一个能解析的证据指针(`#<数字>` 或一个
   盘上真实存在的 `docs/…` 路径)、都要登记**精确命中行数** —— 只按文件分类的话,一个已在册的文件里
   再加第 8 处同形态锚是默认放行的,而这道闸要治的正是「默认放行」。
@@ -89,7 +92,10 @@ bash scripts/alpha-check.sh
   链接不起来(`index.ts:8` 静态具名 import `node:tls` 的 `setDefaultCACertificates`;实测直接 import、
   `mock.module`、`Bun.plugin` 三条路径全败,最后一条被 bun 明文拒绝覆盖 builtin)⇒ 那批锚不是
   「还没写真判据」,是**写不了**。把它们变回真闸门的唯一路子登记在 `#982`;辖区往全仓推是 `#981`;
-  谓词对「路径经变量间接传入」的已知盲区登记在 `#983`。
+  谓词的两支已知盲区登记在 `#983` —— ①路径经变量/助手间接传入;②**目录遍历**(`readdirSync`
+  递归枚举后逐个 `readFileSync(join(dir, f))`,行内没有路径字面量),今天的活实例是
+  [`platform-error-code-gate.test.ts`](../../packages/ui-mac/src/main/platform-error-code-gate.test.ts)。
+  两支都不靠放宽正则修(实测会把精度打崩)。
 - **同一个路径不得同时出现在 `scripts/gate-files.tsv` 和 `NOT_GATES` 里。** 两张表互斥(`#893`)。
   此前它们在代码里从不相遇,于是一个路径可以同时被登记为闸门、又被写明「不是闸门」而无人吭声。
 - **上游包** = `packages/{opencode,core,server,tui,sdk,protocol,schema,client}`(**8 个**;`app`/`ui`

@@ -31,8 +31,11 @@
 // `#982`(在可 import 的 `server.ts` 咽喉加运行期闩),那要动启动路径、需 owner 裁决。
 //
 // ── 边界(闸门不假装比自己强)────────────────────────────────────────────────────────────
-//   · 谓词判的是**一行代码里同时出现读调用与一个 `.ts`/`.tsx` 路径字面量**。路径经变量/助手
-//     间接传入(`const F = "index.ts"; read(F)`)会静默漏检 —— 已知边界,登记在 `#983`。
+//   · 谓词判的是**一行代码里同时出现读调用与一个 `.ts`/`.tsx` 路径字面量**。两支逃逸,都登记在 `#983`:
+//     ①路径经变量/助手间接传入(`const F = "index.ts"; read(F)`);
+//     ②**目录遍历** —— `readdirSync` 递归枚举出一批源文件名,再逐个 `readFileSync(join(dir, f))`,
+//       行内一个路径字面量都没有。今天树上的活实例:`platform-error-code-gate.test.ts`
+//       (它对 `src/main/` 全树的源码文本做负全称/唯一性断言,按本分类法归 KEPT)。
 //     不靠放宽正则修:实测放宽会把命中从 39 打到 62/110 并把精度打崩(那就是「手写别人文法的替身」)。
 //   · 范围今天锁死在 `packages/ui-mac/src/main/` 与 `packages/ui-mac/test-component/`。往全仓推是 `#981`。
 //   · 分类是**按文件**的。一个文件里既有锚又有正当的文本闸时,归 ANCHOR(fail-closed),并由
@@ -174,7 +177,9 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
 
 /**
  * **文本就是被守的产物**,或者「是锚但降级归别的票」。后者必须点名归谁 —— 写「以后再说」等于没写。
- * 选这张表不是零成本:`why` 与 `evidence` 的机械要求与上表完全相同。
+ * 选这张表不是零成本:`why` 与 `evidence` 的机械要求与上表完全相同,**而且**以 `.test.ts` 结尾的键
+ * 必须登记进 `scripts/gate-files.tsv`(第 ⑤ 层机械校验)—— 这张表说它是真闸门,真闸门不许「删掉不红」。
+ * `.cases.ts` 键豁免:它们不进整包计数,由第 ④ 层反向那半(每个 cases 文件必须被一个已登记宿主跑到)兜住。
  */
 export const KEPT_SOURCE_TEXT_READS: Record<string, SourceTextEntry> = {
   "packages/ui-mac/src/main/alpha-environment.test.ts": {
