@@ -38,4 +38,62 @@ describe("httpErrorCode — 平台拒绝的唯一出口", () => {
     expect(out).toBe("http-400")
     expect(out).not.toContain("secret-project")
   })
+
+  // ── [ac#962] 第二种信封形状:嵌套 `{ error: { message, code } }`(gateway wire) ──────────
+  // 三个期望码都是**测试内的独立字面量**,不从生产 import、也不从 alpha-platform import ——
+  // 比较基准与被测对象同源就是自指等价链,一起改错就一起自洽。
+  test("[ac#962] 嵌套信封 {error:{message,code}} 的码同样被取出来,不再压成 http-<status>", async () => {
+    // alpha-platform packages/gateway/src/worker.ts 的 rateLimitRequest(429)。
+    expect(
+      await httpErrorCode(
+        res(429, JSON.stringify({ error: { message: "rate limited: too many requests from this IP", code: "rate_limited" } })),
+      ),
+    ).toBe("rate_limited")
+    // 同文件 envIdentityServeGate(500)。
+    expect(
+      await httpErrorCode(
+        res(
+          500,
+          JSON.stringify({ error: { message: "refusing to serve: PLATFORM_ENV=dev …", code: "dev_semantics_on_production_target" } }),
+        ),
+      ),
+    ).toBe("dev_semantics_on_production_target")
+    // anthropic-wire 变体:多一个 `type` 兄弟键与 `missing` 数组。码值取自 gateway readiness.ts
+    // 的 BILLING_UNREADY_CODE(**注意**是 `billing_dependencies_unready`;本文件上面那条
+    // `billing_unready` 是合成字面量,不对应任何真实平台码)。
+    expect(
+      await httpErrorCode(
+        res(
+          503,
+          JSON.stringify({
+            type: "error",
+            error: { type: "api_error", message: "m", code: "billing_dependencies_unready", missing: ["account_url"] },
+          }),
+        ),
+      ),
+    ).toBe("billing_dependencies_unready")
+  })
+
+  test("[ac#962] 嵌套形状的 fail-closed 半场不松;两槽都有码时**顶层赢**;嵌套 message 仍不透出", async () => {
+    // 无码 —— 负向夹具刻意不用「空 body / 无 error 键」这种最退化形状。
+    expect(await httpErrorCode(res(500, JSON.stringify({ error: { message: "boom" } })))).toBe("http-500")
+    // 有码但违文法 / 越 64 界 —— 加嵌套时最容易漏套的就是这道正则。
+    expect(await httpErrorCode(res(400, JSON.stringify({ error: { message: "m", code: "NOT_A_CODE" } })))).toBe("http-400")
+    expect(await httpErrorCode(res(400, JSON.stringify({ error: { message: "m", code: "has space" } })))).toBe("http-400")
+    expect(await httpErrorCode(res(400, JSON.stringify({ error: { code: `a${"b".repeat(64)}` } })))).toBe("http-400")
+    // `error` 是数组 / `code` 是对象 / `error` 是 null —— 都是**正常形状**,不许靠外层 catch 兜。
+    expect(await httpErrorCode(res(400, JSON.stringify({ error: [{ code: "sneaky_code" }] })))).toBe("http-400")
+    expect(await httpErrorCode(res(400, JSON.stringify({ error: { code: { deeper: "x" } } })))).toBe("http-400")
+    expect(await httpErrorCode(res(400, JSON.stringify({ error: null })))).toBe("http-400")
+    // 优先级:两个槽都有合法码时顶层赢。钉的是**解析优先级本身**(「先读嵌套」「两槽都取后写覆盖」
+    // 在今天的真实输入上与本实现等价,不钉就会随手分叉);这个双槽输入今天到不了 —— cloud 面的
+    // `error` 是字符串,要走到这里平台得先做一次 wire breaking change。它是防分叉的锚,不是闸。
+    expect(await httpErrorCode(res(400, JSON.stringify({ code: "top_level_wins", error: { code: "nested_loses" } })))).toBe(
+      "top_level_wins",
+    )
+    // #940 的「`error` 是散文槽」纪律扩到嵌套:无码时**不得**回落到 error.message。
+    const leaky = await httpErrorCode(res(400, JSON.stringify({ error: { message: "/Users/someone/secret-project rejected" } })))
+    expect(leaky).toBe("http-400")
+    expect(leaky).not.toContain("secret-project")
+  })
 })

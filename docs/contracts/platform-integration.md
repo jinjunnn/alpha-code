@@ -210,6 +210,23 @@ inactive-plan payloads.
   The transient/permanent split is decided by the HTTP status class of the
   rejection, never by the shape of the error string; a platform classification
   code changes what the user reads, not whether the client keeps retrying.
+- **Classification-code envelope shapes:** a rejected platform request carries
+  its stable classification code in one of two slots. The cloud surface uses a
+  flat body, `{"error": "<prose>", "code": "<code>"}`; the gateway surface uses
+  a nested one, `{"error": {"message": "<prose>", "code": "<code>"}}`, which is
+  structurally required on the Anthropic wire it also serves. The desktop reads
+  both, **top level first**, and treats only a code matching
+  `/^[a-z][a-z0-9_]{2,63}$/` as a code. When neither slot carries one the
+  desktop keeps `http-<status>` rather than guessing, and it never falls back
+  to either prose slot — `error` and `error.message` may carry paths or tenant
+  identifiers and do not reach the UI. Reading is one-way: this repository does
+  not require the platform to converge the two shapes, and adding the nested
+  slot leaves the producer-side rule of `alpha-platform`'s
+  `docs/contracts/cloud-jobs-v1.md` (schedule refusal codes stay in the
+  top-level slot, never under `details`) untouched. There is **no continuous
+  gate** on the cross-repository shape: the desktop criteria are synthetic
+  fixtures, so a platform change to either envelope will not turn this
+  repository red on its own.
 
 Login activates platform mode through a structural sidecar respawn when the
 first fork does not already contain that auth generation. Logout clears token
