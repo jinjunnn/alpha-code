@@ -308,4 +308,36 @@ describe("#976 生产接线(减速带,不是闸门)", () => {
       "scripts/alpha-check.sh 没有调用 scripts/assert-frontend-patch-roundtrip.sh —— 本地那道门不存在了,而 CI 那一格在 --admin 合并路径下是被绕过的那道",
     ).toBe(true)
   })
+
+  // 这道门要比**哪些包**写死在生产脚本的 `PACKAGES=` 那一行,而**决定 sync 会重写哪些目录**的
+  // 真源是 .github/workflows/sync-upstream.yml 的 `rm -rf …` 那一行。两处今天一致,但仓内没有
+  // 任何东西断言它们相同 ⇒ 有人按 ADR 加第三个前端包、改了 sync 的删除范围而没改这里,
+  // 「改了那两个目录必须重生补丁」这句话在新成员上就不成立:sync 会重写它、本门不比它,
+  // `#976` 要消灭的静默删除在新成员上原样复活,而所有门全绿。枚举漏是九形态④,同形先例
+  // `#889`/`#637`(UPSTREAM_PATHS 与收编白名单两处副本只同步了一半)。
+  // ⚠️ **诚实边界**:这一条比的是两份**源码文本**,是减速带不是闸门 —— 它只钉住「这两行互相
+  // 一致」,钉不住「sync 的删除范围是不是真的等于 sync 实际重写的目录」(那要跑整条 workflow)。
+  // 仓内另有两份可各自漂移的副本(frontend/README.md 块 4 的补丁 pathspec、
+  // scripts/verify-freeze-restore.sh),本条不覆盖它们。
+  test("闸门枚举的包 == sync-upstream 会 rm -rf 的目录(两处一改就红)", () => {
+    const gate = readFileSync(SCRIPT, "utf8")
+    const declared = /^PACKAGES="([^"]+)"$/m.exec(gate)
+    // 读不出就说「测量作废」,不能因为下面的 includes 没红就报绿(`#890`/`#946` 同款语义)。
+    expect(
+      declared,
+      "从 scripts/assert-frontend-patch-roundtrip.sh 里读不出 `PACKAGES=\"…\"` —— 本条测量作废(不是通过),枚举的写法变了就要改这条判据",
+    ).not.toBeNull()
+    const packages = declared![1]
+    const sync = readFileSync(resolve(REPO_ROOT, ".github/workflows/sync-upstream.yml"), "utf8")
+    // **整行相等**,不是 `includes`。子串匹配在这里粗一格,而且恰好对本条要抓的那个方向失明:
+    // sync 加第三个包写成 `rm -rf packages/app packages/ui packages/next` 时,
+    // `includes("rm -rf packages/app packages/ui")` 仍为真 ⇒ 判据全绿而新成员无人比。
+    // (2026-08-15 实测:先写的 includes 版在「缩小」方向红、在「新增」方向绿。)
+    const rmLine = new RegExp(String.raw`^[ \t]*rm -rf ${packages.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[ \t]*$`, "m")
+    expect(
+      rmLine.test(sync),
+      `sync-upstream.yml 里没有**恰好** \`rm -rf ${packages}\` 这一行 —— 本门枚举的包与 sync 实际重写的目录已经漂开:` +
+        "受 sync 重写而本门不比的那些目录上,改动仍会被静默删除,而所有门全绿。两处要一起改。",
+    ).toBe(true)
+  })
 })

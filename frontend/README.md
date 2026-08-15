@@ -93,8 +93,22 @@ cd "$(git rev-parse --show-toplevel)"
 PIN="$(sed -n 's/^pin=\([0-9a-f]\{7,40\}\).*/\1/p' frontend/frontend-pin.lock)"
 [ -n "$PIN" ] || { echo "frontend/frontend-pin.lock 缺 pin=<sha>"; exit 1; }
 git diff --binary "$PIN" -- packages/app packages/ui > frontend/alpha-patches/alpha-frontend.patch
-git add packages/app packages/ui frontend/alpha-patches/alpha-frontend.patch frontend/frontend-pin.lock
-git commit -m "chore(frontend): regenerate alpha frontend SOT patch"
+# 提交范围必须钉死在这四条路径上:`git commit` **不带 pathspec 提交的是整个 index**,
+# 你手上任何无关的已暂存改动都会被裹进这条署名 chore(frontend) 的提交里 —— 月更 bump 走
+# 块 1→5 时,块 1 的 `git checkout $NEWPIN -- …` 就已经在 index 里留了东西。
+# `git add` 那行不能省(它才带得上**未跟踪**的新 seam 文件),`--only` 负责把提交范围收窄。
+# 2026-08-15 实测(git 2.50.1):add 四条 + `commit --only` 四条 ⇒ 新增的未跟踪文件进了提交,
+# 无关的暂存改动**原样留在暂存区**。
+# 干净树上这四条路径无改动时 `git commit` 以 1 退出("nothing to commit"),`set -e` 会让它在
+# 跑到最后那行自检**之前**中止 —— 所以先问一句有没有东西要提交;不用 `|| true` 吞掉 commit 的
+# 失败,那样真正的提交失败(钩子拒绝、pathspec 打错)也会被读成「没什么要提交」。
+if [ -n "$(git status --porcelain -- packages/app packages/ui frontend/alpha-patches/alpha-frontend.patch frontend/frontend-pin.lock)" ]; then
+  git add packages/app packages/ui frontend/alpha-patches/alpha-frontend.patch frontend/frontend-pin.lock
+  git commit --only packages/app packages/ui frontend/alpha-patches/alpha-frontend.patch frontend/frontend-pin.lock \
+    -m "chore(frontend): regenerate alpha frontend SOT patch"
+else
+  echo "  (这四条路径与 HEAD 一致,没有要提交的东西 —— 直接跑自检)"
+fi
 bash scripts/assert-frontend-patch-roundtrip.sh
 ```
 
