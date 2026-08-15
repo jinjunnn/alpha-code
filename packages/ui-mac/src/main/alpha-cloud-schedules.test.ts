@@ -11,6 +11,8 @@ test("cloud schedule error-surfacing cases run green in an isolated child proces
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain(" 3 pass")
+  expect(output).toContain(" 6 pass")
   expect(output).toContain(" 0 fail")
+  // [#969] 「跑了 0 个文件」也是 `0 fail`。核对 bun 自己报的文件数与条数,否则这一步能假绿。
+  expect(output).toContain("Ran 6 tests across 1 file")
 })

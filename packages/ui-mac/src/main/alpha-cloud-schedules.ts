@@ -72,26 +72,46 @@ export type CloudScheduleView = {
   disabled_reason: string | null
 }
 
+// [#969] 拒绝结果的**结构槽**。`reason` 是 main 自己拼的日志串(带中文前缀,main 无 i18n);
+// `code` 是呈现槽 —— 经 IPC 原样带到 renderer,由那里唯一有 i18n 的一层选文案。renderer
+// **不许**去解析 `reason` 的前缀:那是手写别人文法的替身,前缀一改呈现就静默退化成裸码。
+export type CloudScheduleRefusal = { ok: false; reason: string; code: string }
 
-/** 保存云档任务时注册/更新 B schedule;返回 schedule id 或可读错误。 */
-export async function upsertCloudSchedule(task: AutomationTask): Promise<{ ok: true; scheduleId: string } | { ok: false; reason: string }> {
+/**
+ * [#969] 桌面自铸的本地拒绝码。刻意用 **kebab**:平台分类码的文法是
+ * `/^[a-z][a-z0-9_]{2,63}$/`(platform-error-code.ts,不含连字符),两个域因此结构上不相交,
+ * 本地码永远不会被误当成平台新增的码,反之亦然。`authed()` 铸的四个传输伪码同属这个域。
+ */
+export const SCHEDULE_FORM_UNSUPPORTED_CODE = "cloud-schedule-form-unsupported"
+
+/** 保存云档任务时注册/更新 B schedule;返回 schedule id 或(分类码 + 日志用 reason)。 */
+export async function upsertCloudSchedule(task: AutomationTask): Promise<{ ok: true; scheduleId: string } | CloudScheduleRefusal> {
   const cron = scheduleToCron(task.schedule)
-  if (!cron) return { ok: false, reason: "云档只支持 cron / 60 分钟内的间隔(once 与超长间隔请用本地档)" }
+  // 这一条**发不出请求**,所以平台侧刻意无码(ap lib/schedules.ts 的 `cron required (5-field)`
+  // 注释点名了这件事)—— 码只能由桌面自己铸,否则英文界面会读到下面这句中文。
+  if (!cron)
+    return {
+      ok: false,
+      reason: "云档只支持 cron / 60 分钟内的间隔(once 与超长间隔请用本地档)",
+      code: SCHEDULE_FORM_UNSUPPORTED_CODE,
+    }
   const body = cloudScheduleRegistrationFor(task, cron)
   const r = task.cloudScheduleId
     ? await authed<CloudScheduleView>(`/v1/cloud/schedules/${encodeURIComponent(task.cloudScheduleId)}`, { method: "PATCH", body })
     : await authed<CloudScheduleView>("/v1/cloud/schedules", { method: "POST", body })
-  if (isErr(r)) return { ok: false, reason: `云端注册失败:${r.error}` }
+  if (isErr(r)) return { ok: false, reason: `云端注册失败:${r.error}`, code: r.error }
   return { ok: true, scheduleId: r.id }
 }
 
-export async function deleteCloudSchedule(scheduleId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+// [#969] 删除也带 code:`automations-save` 在「云档改本地」那一跳调它(automation-ipc.ts),
+// 失败原因会原样落到面板同一行 `.alpha-auto-err` 上 —— 与注册失败是同一个用户可观察面。
+export async function deleteCloudSchedule(scheduleId: string): Promise<{ ok: true } | CloudScheduleRefusal> {
   const r = await authed<{ deleted: string }>(`/v1/cloud/schedules/${encodeURIComponent(scheduleId)}`, { method: "DELETE" })
   // [#963] 幂等容忍按结构化 status 判:404 = 云端那行本来就没了(另一台设备删过 / 清理过 /
   // 上次删除超时后重试)= 已删即成功。旧写法 `r.error !== "http-404"` 拿呈现字符串比字面量,
   // 靠「平台不给 404 补分类码」才成立 —— 补上码用户就永远删不掉那条自动化。
   // 非 HTTP 失败(network 等)无 status ⇒ 仍 fail-closed,不删本地。
-  if (isErr(r) && r.status !== 404) return { ok: false, reason: `云端删除失败:${r.error}` }
+  if (isErr(r) && r.status !== 404) return { ok: false, reason: `云端删除失败:${r.error}`, code: r.error }
   return { ok: true }
 }
 

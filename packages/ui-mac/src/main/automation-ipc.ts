@@ -37,7 +37,9 @@ export function registerAutomationIpcHandlers() {
     const wasCloud = !!prev?.cloudScheduleId
     if (task?.execution === "cloud") {
       const up = await upsertCloudSchedule({ ...task, cloudScheduleId: prev?.cloudScheduleId })
-      if (!up.ok) return { ok: false as const, reason: up.reason }
+      // [#969] `code` 是承重接线:renderer 唯一有 i18n 的那一层据它选文案。丢掉这个槽 ⇒
+      // 面板永远走回落 ⇒ 用户照旧读到「云端注册失败:schedule_limit_reached」。
+      if (!up.ok) return { ok: false as const, reason: up.reason, code: up.code }
       task.cloudScheduleId = up.scheduleId
       const res = saveAutomation(task)
       if (!res.ok && !wasCloud) {
@@ -52,7 +54,9 @@ export function registerAutomationIpcHandlers() {
     }
     if (prev?.cloudScheduleId) {
       const del = await deleteCloudSchedule(prev.cloudScheduleId)
-      if (!del.ok) return { ok: false as const, reason: del.reason }
+      // [#969] 「云档改本地」这一跳的失败也走 automations-save 的返回值 → 面板同一行
+      // `.alpha-auto-err`。它与上面的注册失败是同一个用户可观察面,所以同样带 code。
+      if (!del.ok) return { ok: false as const, reason: del.reason, code: del.code }
       delete task.cloudScheduleId
     }
     const res = saveAutomation(task)

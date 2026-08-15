@@ -130,6 +130,21 @@ export const dict = {
   "alpha.auto.runNowBusy": "Running…",
   "alpha.auto.runNowHint": "Run once manually; does not shift the schedule, counts toward the daily cap",
   "alpha.auto.disabledBreaker": "Auto-disabled (3 consecutive failures) — fix and re-enable",
+  // [#969] The line the user reads when a cloud save is refused. Deliberately does not restate the
+  // platform's numeric caps (count / name length / interval / bytes) — those live in alpha-platform,
+  // and a copy here would drift silently (see schedule-refusal-copy.ts header).
+  "alpha.auto.cloudErrLimitReached":
+    "The cloud is already holding as many scheduled tasks as it allows — delete an existing cloud task, then save this one.",
+  "alpha.auto.cloudErrNameInvalid": "The cloud rejected this task name (empty or too long) — pick a shorter one and save again.",
+  "alpha.auto.cloudErrCronInvalid":
+    "The cloud cannot work out when this schedule would next run — use the daily/weekly/monthly options above, or fix the cron expression.",
+  "alpha.auto.cloudErrIntervalTooTight": "The runs are spaced too closely for the cloud — widen the interval and save again.",
+  "alpha.auto.cloudErrEnvelopeTooLarge": "This instruction is too big for a single cloud request — shorten it and retry.",
+  "alpha.auto.cloudErrRateLimited": "Too many requests too fast; the cloud is throttling — wait a moment and save again.",
+  "alpha.auto.cloudErrTenantRateLimited": "This account has used up its cloud request allowance for now — save again a little later.",
+  "alpha.auto.cloudErrFormUnsupported":
+    "Cloud execution supports cron, intervals under 60 minutes, and whole-hour intervals up to 24 hours; use local execution for one-off runs and any other interval.",
+  "alpha.auto.cloudErrUnknown": "The cloud refused this operation: {{code}}",
   "alpha.ext.customMcp": "Add custom connector",
   "alpha.ext.customMcpSub": "Any MCP server (command or URL), beyond the curated catalog",
   "alpha.ext.customMcpTitle": "Add custom connector (MCP)",
