@@ -85,7 +85,9 @@ describe("httpErrorCode — 平台拒绝的唯一出口", () => {
     expect(await httpErrorCode(res(400, JSON.stringify({ error: [{ code: "sneaky_code" }] })))).toBe("http-400")
     expect(await httpErrorCode(res(400, JSON.stringify({ error: { code: { deeper: "x" } } })))).toBe("http-400")
     expect(await httpErrorCode(res(400, JSON.stringify({ error: null })))).toBe("http-400")
-    // 优先级:两个槽都有合法码时顶层赢(cloud 面今天靠顶层码工作,不许被静默改掉)。
+    // 优先级:两个槽都有合法码时顶层赢。钉的是**解析优先级本身**(「先读嵌套」「两槽都取后写覆盖」
+    // 在今天的真实输入上与本实现等价,不钉就会随手分叉);这个双槽输入今天到不了 —— cloud 面的
+    // `error` 是字符串,要走到这里平台得先做一次 wire breaking change。它是防分叉的锚,不是闸。
     expect(await httpErrorCode(res(400, JSON.stringify({ code: "top_level_wins", error: { code: "nested_loses" } })))).toBe(
       "top_level_wins",
     )

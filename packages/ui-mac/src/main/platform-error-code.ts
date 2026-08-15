@@ -18,9 +18,12 @@
 //   · 嵌套(gateway 面,alpha-platform `packages/gateway/src/worker.ts`):`{ error: { message, code } }`
 //     —— 这一种在 `/v1/messages` 上是**结构性必需**(Anthropic wire,Claude Code 认得),
 //     不是平台随手写的,所以消费端认两种形状而不是要求对方统一。
-// 顺序写死 **顶层优先**:cloud 面(含唯一真用户出口 renderer 的 dispatchError)今天靠顶层码
-// 工作;反过来先读嵌套的话,平台哪天在 cloud 面同时给出两个槽,已工作的路径会**静默换码**
-// 而没有任何判据变红。fail-closed 那一半不因此变松:两个槽都没有合法码 ⇒ 仍是 `http-<status>`,
+// 顺序写死 **顶层优先**,并有判据钉住(platform-error-code.test.ts)。它守的是**解析优先级本身** ——
+// 「先读嵌套」「两个槽都取后写覆盖」与本实现在今天的真实输入上等价,不钉就会随手分叉。
+// 诚实标注:两个槽**同时**给出合法码的输入今天到不了 —— cloud 面的 `error` 是字符串(`cloud.ts`
+// 零个嵌套 `error: {`),要走到那个状态平台得先把它从字符串改成对象,那本身是一次 wire breaking
+// change。所以这条断言是防分叉的锚,不是拦一条真实路径的闸,别把它读成后者。
+// fail-closed 那一半不因加嵌套而变松:两个槽都没有合法码 ⇒ 仍是 `http-<status>`,
 // 不猜、不回落到 `error.message`(那是散文槽)。
 const CLASSIFICATION_CODE = /^[a-z][a-z0-9_]{2,63}$/
 
