@@ -17,6 +17,7 @@ import { hrefFor } from "../../shared/route-manifest"
 import { subscribeAuthState } from "../auth-recovery"
 import { Svg } from "../extensions/ext-presentation"
 import { automationOpen, setAutomationOpen } from "./automation-state"
+import { scheduleRefusalCopy } from "./schedule-refusal-copy"
 import "./automation-panel.css"
 
 type ListedTask = AutomationTask & { nextFireAt: number | null; running: boolean }
@@ -293,7 +294,9 @@ export function AutomationPanel(props: {
     setSaving(true)
     try {
       const r = await window.api.automations.save(task)
-      if (!r.ok) return setFErr(r.reason)
+      // [#969] 云档腿的拒绝带**结构槽** `code`(注册被拒 / 改本地时云端删除被拒都走这里)——
+      // 换成人话再上屏。没有 code 的是本地落盘失败一类,main 的 reason 就是它能给的全部。
+      if (!r.ok) return setFErr(r.code ? scheduleRefusalCopy(r.code) : r.reason)
       pushToast({ kind: "success", title: t("alpha.auto.saved") })
       setNlInput("")
       await refresh()

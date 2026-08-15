@@ -129,6 +129,17 @@ export const dict = {
   "alpha.auto.runNowBusy": "运行中…",
   "alpha.auto.runNowHint": "手动执行一次;不影响排程时间,计入每日上限",
   "alpha.auto.disabledBreaker": "已自动停用(连续失败 3 次)—— 修复后重新启用",
+  // [#969] 云档保存被拒时用户读到的那一行。刻意不复述平台的数值上限(条数/字数/间隔/字节)——
+  // 那些数字住在 alpha-platform,抄一份就会静默漂移(见 schedule-refusal-copy.ts 抬头)。
+  "alpha.auto.cloudErrLimitReached": "云端定时任务的数量已达上限 —— 先删掉一条已有的云端任务,再保存这一条。",
+  "alpha.auto.cloudErrNameInvalid": "云端不接受这个任务名称(太长或为空)—— 换一个更短的名称再保存。",
+  "alpha.auto.cloudErrCronInvalid": "云端算不出这条周期的下次执行时间 —— 改用上面的每天/每周/每月档,或修正 cron 表达式。",
+  "alpha.auto.cloudErrIntervalTooTight": "两次执行之间隔得太近,云端不接受 —— 把间隔调长一些再保存。",
+  "alpha.auto.cloudErrEnvelopeTooLarge": "执行内容太长,超出云端单次请求的体积上限 —— 精简后重试。",
+  "alpha.auto.cloudErrRateLimited": "操作太频繁,云端正在限流 —— 稍等片刻再保存。",
+  "alpha.auto.cloudErrTenantRateLimited": "本账户当前时段的云端请求配额已用完 —— 过一会儿再保存。",
+  "alpha.auto.cloudErrFormUnsupported": "云端档只支持 cron 与 60 分钟以内的间隔;「一次性」和更长的间隔请改用本地档。",
+  "alpha.auto.cloudErrUnknown": "云端拒绝了这次操作:{{code}}",
   "alpha.ext.customMcp": "添加自定义连接器",
   "alpha.ext.customMcpSub": "任意 MCP server(命令或 URL),不限于精选目录",
   "alpha.ext.customMcpTitle": "添加自定义连接器(MCP)",

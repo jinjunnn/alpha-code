@@ -232,6 +232,50 @@ Login activates platform mode through a structural sidecar respawn when the
 first fork does not already contain that auth generation. Logout clears token
 state and structurally re-forks without platform credentials.
 
+### Presenting a refused cloud schedule
+
+A platform classification code is a *structural* slot, not display text. Main
+carries it out of `upsertCloudSchedule` / `deleteCloudSchedule` and through the
+`automations-save` IPC result as `code`; the renderer — the only layer that has
+i18n — turns it into a sentence. The renderer must never parse main's `reason`
+string: that string is a log line whose Chinese prefix is a main-side literal,
+and deriving presentation from it would make the copy collapse back to a raw
+code the moment the prefix changes.
+
+- **Coded refusals get human copy.** The mapped set is exactly what the desktop
+  registration envelope can actually provoke: the schedule validator's
+  `schedule_name_invalid`, `schedule_cron_invalid`,
+  `schedule_interval_too_tight`; the per-tenant `schedule_limit_reached`; the
+  413 `control_envelope_too_large`; and the two 429 buckets `rate_limited` and
+  `account_admission_rate_exceeded`. The four transport pseudo-codes minted
+  desktop-side (`not-authenticated`, `unauthorized`, `no-cloud-endpoint`,
+  `network`) reuse the dispatch surface's existing copy.
+- **Four registered codes are deliberately not mapped.** The envelope built by
+  `cloud-schedule-config.ts` is structurally fixed
+  (`autonomy: "pipeline"`, `kind: "research"`, `input: { question }`, no
+  `budget`, no `policy`), so `schedule_autonomy_unsupported`,
+  `schedule_upload_unsupported`, `schedule_budget_cap_exceeded`, and
+  `denied_paths_unenforceable_for_execution_form` cannot be reached from this
+  surface. Writing copy for them would be a branch that never executes.
+  (`denied_paths_…` *is* reachable on the **dispatch** surface and has copy
+  there; the schedule surface is a different envelope.)
+- **Unknown codes pass through verbatim.** An unrecognised code is rendered
+  inside a localized template that still contains the code itself, so a newly
+  registered platform code gives the user something searchable and reportable
+  rather than a generic apology — and makes a stale desktop mapping visible.
+- **Desktop copy never restates the platform's numeric caps** (schedules per
+  tenant, name length, minimum interval, envelope bytes). Those numbers live in
+  alpha-platform; a copy here is a cross-repo constant duplicate that drifts
+  silently. Refusals that the desktop decides *before* sending (a schedule
+  shape the cloud leg cannot express) carry a desktop-minted kebab-case code,
+  which is grammatically disjoint from platform snake_case classification
+  codes.
+
+There is no automated cross-repo check that the desktop's mapped set still
+matches the platform registry: when alpha-platform renames or adds a schedule
+refusal code, the desktop silently falls back to showing the raw code and
+nothing turns red. That gap is tracked separately.
+
 ## Explicit cloud file upload and conditional consent
 
 Only the desktop's explicit Cloud Jobs file picker enters the upload-consent

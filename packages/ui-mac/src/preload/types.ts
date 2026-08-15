@@ -1170,7 +1170,12 @@ export type ElectronAPI = {
       state: AutomationGlobalState
       loginItem: boolean
     }>
-    save: (task: AutomationTask) => Promise<{ ok: true } | { ok: false; reason: string }>
+    /**
+     * [#969] `code` = 拒绝的**结构槽**(平台分类码如 `schedule_limit_reached`,或桌面自铸的
+     * kebab 本地/传输码)。只有云档腿会带它;本地落盘失败一类没有分类码,故可选。renderer
+     * 据 `code` 选人话文案,`reason` 只是 main 拼的日志串,不许被解析。
+     */
+    save: (task: AutomationTask) => Promise<{ ok: true } | { ok: false; reason: string; code?: string }>
     remove: (id: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     toggle: (id: string, enabled: boolean) => Promise<{ ok: true } | { ok: false; reason: string }>
     pauseAll: (paused: boolean) => Promise<{ ok: true }>
