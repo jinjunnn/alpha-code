@@ -210,7 +210,8 @@ describe("#858 token-only 换血:主动关活动连接,而不是等超时", () =
       expect(parseSidecarStopCommand(value)).toBeUndefined()
   })
 
-  test("接线锚:sidecar.ts 的 stop 走共享执行器,不再自己决定关不关连接", () => {
+  // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+  test("ANCHOR (not a gate): sidecar.ts 的 stop 走共享执行器,不再自己决定关不关连接", () => {
     // sidecar.ts 顶层的 registerHooks / getParentPort() 让它无法被 import,所以这一跳只能锚源码。
     // 上面四条才是行为判据 —— 这一条只保证生产真的接在那上面。
     const source = readFileSync(join(import.meta.dir, "sidecar.ts"), "utf8")

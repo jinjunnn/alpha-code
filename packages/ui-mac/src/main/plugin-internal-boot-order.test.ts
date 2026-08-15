@@ -66,7 +66,8 @@ describe("PluginInternal models.dev boot order (#857)", () => {
     )
   })
 
-  test("prebuild invokes the strict patch after the embedded server is rebuilt", () => {
+  // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+  test("ANCHOR (not a gate): prebuild invokes the strict patch after the embedded server is rebuilt", () => {
     const prebuild = readFileSync(resolve(import.meta.dir, "../../scripts/prebuild.ts"), "utf8")
     const build = prebuild.indexOf("script/build-node.ts")
     const patch = prebuild.indexOf("patch-plugin-internal-models.ts")

@@ -69,6 +69,27 @@ bash scripts/alpha-check.sh
   做法:加一行(`delegates_to` 通常是 `-`),再跑
   `bash scripts/assert-gate-files.sh --update` 把精确条数写回。反向那一半同样成立:
   每个 `*.cases.ts` 必须被至少一个**已登记**的宿主跑到,删掉宿主留下 cases 文件 = 孤儿 = 红。
+- **在 `packages/ui-mac/src/main/` 或 `packages/ui-mac/test-component/` 下写了一个读仓内
+  `.ts`/`.tsx` **源码文本**做断言的测试?必须显式分类。** `#968` 起这是**默认拒**:不分类,
+  [`gate-file-registry.test.ts`](../../packages/ui-mac/src/main/gate-file-registry.test.ts) 的第 ⑤ 层
+  当场红。两张表在
+  [`source-text-anchors.ts`](../../packages/ui-mac/src/main/source-text-anchors.ts)(刻意是**非测试模块**
+  —— 它们以测试文件路径为键,写进闸门文件正文会被第 ③ 层的引用绊线全部要求分类,而三条出口没有一条诚实)。
+  按**断言的主语**二选一:
+  - 主语是**运行期行为**(顺序 / 接线 / 生命周期 / 呈现)而算子是文本 → `DOWNGRADED_ANCHORS`。
+    这是**减速带不是闸门**:把接线掏空、把返回值丢掉、把分支包进恒假条件,被比较的文本一个字符
+    都不变,断言照绿。登记时必须点名 **≥2 个不会让它变红的具体变异**,并把测试标题改成
+    `ANCHOR (not a gate): …`(只写在注释里不算 —— 注释拆得掉,CI 输出里下一个人只读得到标题)。
+  - 主语**就是文本本身**(负全称「全仓不存在第二处 X」、唯一性计数、跨文件/跨包逐字一致、
+    声明式配置的字面声明)→ `KEPT_SOURCE_TEXT_READS`。这类没有更细的粒度,文本正是正确的粒度。
+  **两张表都不是免费出口**:都要写 `why`(> 40 字)、都要给一个能解析的证据指针(`#<数字>` 或一个
+  盘上真实存在的 `docs/…` 路径)、都要登记**精确命中行数** —— 只按文件分类的话,一个已在册的文件里
+  再加第 8 处同形态锚是默认放行的,而这道闸要治的正是「默认放行」。
+  为什么这一类值得单独一层:最贵的一批锚的是 `src/main/index.ts`,而它在 bun 1.3.14 下**结构上**
+  链接不起来(`index.ts:8` 静态具名 import `node:tls` 的 `setDefaultCACertificates`;实测直接 import、
+  `mock.module`、`Bun.plugin` 三条路径全败,最后一条被 bun 明文拒绝覆盖 builtin)⇒ 那批锚不是
+  「还没写真判据」,是**写不了**。把它们变回真闸门的唯一路子登记在 `#982`;辖区往全仓推是 `#981`;
+  谓词对「路径经变量间接传入」的已知盲区登记在 `#983`。
 - **同一个路径不得同时出现在 `scripts/gate-files.tsv` 和 `NOT_GATES` 里。** 两张表互斥(`#893`)。
   此前它们在代码里从不相遇,于是一个路径可以同时被登记为闸门、又被写明「不是闸门」而无人吭声。
 - **上游包** = `packages/{opencode,core,server,tui,sdk,protocol,schema,client}`(**8 个**;`app`/`ui`

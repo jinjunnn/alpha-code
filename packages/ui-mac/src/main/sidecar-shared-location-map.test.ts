@@ -92,7 +92,8 @@ describe("sidecar shared location map generated patch (#857)", () => {
     )
   })
 
-  test("prebuild invokes the strict patch after build-node and before the models boot-order patch", () => {
+  // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+  test("ANCHOR (not a gate): prebuild invokes the strict patch after build-node and before the models boot-order patch", () => {
     const prebuild = readFileSync(resolve(import.meta.dir, "../../scripts/prebuild.ts"), "utf8")
     const build = prebuild.indexOf("script/build-node.ts")
     const shared = prebuild.indexOf("patch-sidecar-shared-routes.ts")

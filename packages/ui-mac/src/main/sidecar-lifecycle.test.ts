@@ -216,7 +216,8 @@ describe("forked token generation commits", () => {
 //    (server.ts 的 health 只在「探到健康」或「子进程退出」时结束,pollUntilHealthy 无限轮询
 //    ⇒ 进程活着但永不健康时它永远 pending),也不得留下绕过终态的 `spawning.catch` 结算;
 // ⑤ 仅 healthy settle 经 commitForkedTokenGeneration 提交;旧的 fork 前直接记账不得复活。
-test("#600/#859 接线锚:boot token 代先标 in-flight,结算独家挂在有上界的终态上", () => {
+// 分类与「这两处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+test("ANCHOR (not a gate): #600/#859 boot token 代先标 in-flight,结算独家挂在有上界的终态上", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
 
   const bootStart = source.indexOf('reason: "boot"')
@@ -471,7 +472,7 @@ describe("#859 boot fork 与 token 换血的竞态", () => {
   })
 })
 
-test("#858 接线锚:token-only 换血用短收口预算,结构换血与退出保留 graceful", () => {
+test("ANCHOR (not a gate): #858 token-only 换血用短收口预算,结构换血与退出保留 graceful", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
   expect(source).toContain("async function killSidecar(reason?: SidecarRespawnReason)")
   expect(source).toContain('await current.stop(reason === "token-only" ? "token-rotation" : "graceful")')

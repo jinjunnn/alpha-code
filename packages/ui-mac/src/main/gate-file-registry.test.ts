@@ -7,7 +7,7 @@
 // 同一条规律,只应用了一次。这就是本文件存在的理由:**让「又冒出一个闸门文件却没登记」变成红灯**,
 // 而不是靠下一个人记得。
 //
-// 本文件有**四层**检查,一层比一层不依赖措辞:
+// 本文件有**五层**检查,一层比一层不依赖措辞:
 //
 // ① 命名习惯(启发式)。仓库对闸门文件有稳定的命名词(ratchet / lock / anchors / contract /
 //    copies / snapshot / drift / hygiene / rebrand / seam / coexistence / census)。命中即必须
@@ -38,6 +38,21 @@
 //    判据本身有正/反向自检(合成正例必须命中、只提名字不 spawn 与 spawn 别的程序必须不命中),
 //    否则一个退化成恒假的谓词会让这一整层空对空全绿。
 //
+// ⑤ 源码文本读取方(`#968`,**结构性**,与文件名和措辞都无关)。仓里另有一类测试:它读仓内某个
+//    `.ts`/`.tsx` 的**源码文本**,再 `indexOf` 比下标 / `toContain` 比字符串。这一类里有真闸门
+//    (负全称、唯一性、跨包逐字一致、声明式配置),也有**减速带** —— 主语是运行期行为而算子是文本,
+//    把接线掏空、把返回值丢掉、把分支包进恒假条件,被比较的文本一个字符都不变,断言照绿。
+//    最贵的一批锚的是 `src/main/index.ts`,而 bun 1.3.14 **结构上**链接不起它(实测三条路径全败,
+//    见 `./source-text-anchors.ts` 抬头)⇒ 那批不是「还没写真判据」,是写不了。
+//    规则:辖区内命中的文件,必须**显式**落进 `DOWNGRADED_ANCHORS` 或 `KEPT_SOURCE_TEXT_READS`
+//    其一(默认拒);两张表互斥、不许有死条目、每条都要写清守不住什么 + 一个能解析的证据指针 +
+//    **精确命中行数**(同一文件里新增一处同形态断言即红,而不是只拦新文件)。
+//    落进前者的文件必须真的把测试标题改成 `ANCHOR (not a gate): …` —— 只写在注释里不算,
+//    CI 输出里读不到的降级等于没降级。
+//    两张表**刻意住在非测试模块** `./source-text-anchors.ts`:它们以测试文件路径为键,而第 ③ 层
+//    读的是本文件未剥注释的原始 body ⇒ 写在这里会让那 23 条路径全部要求分类,而三条出口没有一条
+//    诚实(详见该模块抬头)。
+//
 // ⚠️ 诚实边界:
 //   · ①命名不含那些词、且②③④都没命中的闸门文件,本文件**检测不到**。登记簿因此仍是**显式**
 //     清单,不是自动推导的结果 —— 新写闸门时该登记还是要登记。
@@ -54,6 +69,14 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { describe, expect, test } from "bun:test"
+import {
+  ANCHOR_TEST_LABEL,
+  DOWNGRADED_ANCHORS,
+  KEPT_SOURCE_TEXT_READS,
+  SOURCE_TEXT_SCOPE_PREFIXES,
+  sourceTextReadLines,
+  type SourceTextEntry,
+} from "./source-text-anchors"
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..", "..")
 
@@ -207,6 +230,27 @@ function gitListedCases(): string[] {
     .filter((path) => path.endsWith(".cases.ts") && CASES_IN_SCOPE.some((prefix) => path.startsWith(prefix)))
 }
 const CASES_FILES = gitListedCases()
+
+// ── `#968` ⑤ 源码文本读取方的辖区与实测命中 ───────────────────────────────────────────
+// 枚举面刻意是 `gitListedTests() ∪ gitListedCases()`:前者结构上返回不了 `.cases.ts`
+// (它自己 filter 掉了),而 `src/main/` 下今天就有 8 个 `.cases.ts`,`test-component/`
+// 更是新测试的默认落点 —— 少任何一半,新成员就从那个口子默认放行。
+const SOURCE_TEXT_IN_SCOPE = [...new Set([...ALL_TESTS, ...CASES_FILES])]
+  .filter((path) => SOURCE_TEXT_SCOPE_PREFIXES.some((prefix) => path.startsWith(prefix)))
+  .filter((path) => path !== SELF)
+  .filter((path) => existsSync(join(REPO_ROOT, path)))
+  .sort()
+
+/** 命中方 → 它今天命中的代码行。行数是登记的一部分(只拦新文件 = 同一文件里加第 8 处仍默认放行)。 */
+const SOURCE_TEXT_HITS = new Map<string, string[]>(
+  SOURCE_TEXT_IN_SCOPE.map((path) => [path, sourceTextReadLines(readFileSync(join(REPO_ROOT, path), "utf8"))] as const)
+    .filter(([, lines]) => lines.length > 0),
+)
+
+const SOURCE_TEXT_ENTRIES: [string, SourceTextEntry][] = [
+  ...Object.entries(DOWNGRADED_ANCHORS),
+  ...Object.entries(KEPT_SOURCE_TEXT_READS),
+]
 
 /**
  * 哪些宿主跑得到这个 cases 文件。按文件名匹配,但**要求前面是路径分隔符或引号** ——
@@ -436,5 +480,127 @@ describe("闸门文件登记簿完备性 (#647)", () => {
 
   test("REFERENCED_BUT_UNREGISTERED 里的文件都真的存在(免得理由挂在一个已删的路径上)", () => {
     for (const path of Object.keys(REFERENCED_BUT_UNREGISTERED)) expect(ALL_TESTS).toContain(path)
+  })
+
+  // ── `#968` ⑤ 源码文本读取方:命中即必须显式分类 ─────────────────────────────────────
+  // 这里同样刻意**不是**「当前这几个文件都分类了」式的枚举。判据从**形状**出发:凡在辖区内
+  // 读了仓内 `.ts`/`.tsx` 源码文本的测试/用例文件,都得表态。第 ① 层按文件名正则发现闸门,
+  // 而这一类里七成的文件名一个都不命中 `GATE_NAME_TOKENS` —— 往正则里再加两个词是原地打转,
+  // 因为下一个同形文件的名字照样不在里面。
+  test("⑤ 读仓内源码文本的测试文件必须显式分类(默认拒;两张表都要写明理由)", () => {
+    const unclassified = [...SOURCE_TEXT_HITS.keys()].filter(
+      (path) => !(path in DOWNGRADED_ANCHORS) && !(path in KEPT_SOURCE_TEXT_READS),
+    )
+    expect(
+      unclassified,
+      [
+        "下列测试/用例文件读了仓内源码文件的**文本**做断言,却没有在 source-text-anchors.ts 里表态。",
+        "",
+        "这一类里有真闸门也有减速带,差别在**断言的主语**:",
+        "  · 主语是运行期行为(顺序/接线/生命周期/呈现)而算子是文本 → 它是**减速带**。",
+        "    把接线掏空、把返回值丢掉、把分支包进恒假条件,被比较的文本一个字符都不变,断言照绿。",
+        "    → 落进 DOWNGRADED_ANCHORS,把测试标题改成 `ANCHOR (not a gate): …`,",
+        "      并在 why 里点名 ≥2 个不会让它变红的具体变异。",
+        "  · 主语就是文本本身(负全称「全仓没有第二处」、唯一性计数、跨包逐字一致、声明式配置)",
+        "    → 落进 KEPT_SOURCE_TEXT_READS,写清为什么文本就是正确粒度。",
+        "",
+        "两张表**都不是免费的出口**:两边都要写 why(> 40 字)、都要给一个能解析的证据指针、",
+        "都要登记精确命中行数。选 KEPT 而理由写不出来,通常说明它其实是减速带。",
+      ].join("\n"),
+    ).toEqual([])
+  })
+
+  test("⑤ 两张表互斥,且不得有死条目(登记一个今天并不命中的文件 = 登记簿在骗人)", () => {
+    const both = Object.keys(DOWNGRADED_ANCHORS).filter((path) => path in KEPT_SOURCE_TEXT_READS)
+    expect(
+      both,
+      "下列路径同时被登记为「减速带」和「文本就是产物」。两边都留着 = 谁都不是权威,删掉任何一边都不会红。",
+    ).toEqual([])
+
+    const dead = SOURCE_TEXT_ENTRIES.map(([path]) => path).filter((path) => !SOURCE_TEXT_HITS.has(path))
+    expect(
+      dead,
+      [
+        "下列路径登记在 source-text-anchors.ts 里,但今天**根本不命中**这一类(文件被删了,",
+        "或者那几处源码文本断言已经被换成真判据)。死条目让登记簿越读越假:",
+        "  · 断言换成真判据了 → 删掉这条登记(这是好事,顺手把它从表里去掉)。",
+        "  · 文件被删了       → 同上,并确认那条保证是有意去掉的。",
+      ].join("\n"),
+    ).toEqual([])
+  })
+
+  test("⑤ 每条登记的命中行数必须与实测精确相等(同一文件里新增一处同形态断言即红)", () => {
+    const drift = SOURCE_TEXT_ENTRIES.filter(([path, entry]) => (SOURCE_TEXT_HITS.get(path)?.length ?? 0) !== entry.lines)
+      .map(([path, entry]) => `${path}: 登记 ${entry.lines} 行,实测 ${SOURCE_TEXT_HITS.get(path)?.length ?? 0} 行`)
+    expect(
+      drift,
+      [
+        "下列文件的源码文本断言条数与登记对不上。这一条存在的理由:只按文件分类的话,",
+        "一个**已经在册**的文件里再加第 8 处同形态锚是默认放行的 —— 而本闸要治的正是「默认放行」。",
+        "改法:去读那几行,判断新增的是减速带还是文本闸,更新 why,再把 lines 改成实测值。",
+      ].join("\n"),
+    ).toEqual([])
+  })
+
+  test("⑤ 每条登记都写清了守不住什么,且证据指针可解析", () => {
+    const bad: string[] = []
+    for (const [path, entry] of SOURCE_TEXT_ENTRIES) {
+      if (entry.why.trim().length <= 40) bad.push(`${path}: why 为空或过短(装饰性表格对读者零信息)`)
+      const resolvable =
+        /^#\d+$/.test(entry.evidence) ||
+        (entry.evidence.startsWith("docs/") && existsSync(join(REPO_ROOT, entry.evidence)))
+      if (!resolvable) bad.push(`${path}: evidence 不解析 —— ${entry.evidence}`)
+    }
+    expect(
+      bad,
+      [
+        "登记要么写清了守不住什么、要么就是一张橡皮图章表。evidence 只接受两种形态:",
+        "  · `#<数字>`(票号)",
+        "  · 一个**在盘上真实存在**的 docs/… 路径",
+        "注意期望值刻意不是从被测对象抄回来的常量,而是「这个路径在文件系统上存在吗」这个外部事实。",
+      ].join("\n"),
+    ).toEqual([])
+  })
+
+  test("⑤ 被登记为减速带的文件必须真的带上 ANCHOR (not a gate) 标签", () => {
+    const unlabelled = Object.keys(DOWNGRADED_ANCHORS).filter(
+      (path) => !readFileSync(join(REPO_ROOT, path), "utf8").includes(ANCHOR_TEST_LABEL),
+    )
+    expect(
+      unlabelled,
+      [
+        "下列文件登记为减速带,却没有任何一条测试的**标题**带上 `ANCHOR (not a gate): ` 前缀。",
+        "判据刻意连 `test(\"` 一起比:只写在注释里不算 —— 注释拆得掉,而 CI 输出里下一个人只读得到标题。",
+        "⚠️ 诚实标注:这一条本身也是源码文本断言。它断的对象**就是一段文本(标签)**,",
+        "粒度与缺陷相等,不是拿文本冒充行为 —— 它是减速带不是闸门,别把它当成「降级真的发生了」的证明。",
+      ].join("\n"),
+    ).toEqual([])
+  })
+
+  test("⑤ 谓词自检:合成正例必须命中、反例必须不命中、真实枚举达到下界,且不含本文件", () => {
+    // 正例四种写法,全部抄自今天树上的真实代码行。
+    expect(sourceTextReadLines('const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")')).toHaveLength(1)
+    expect(
+      sourceTextReadLines('const source = fs.readFileSync(path.join(import.meta.dir, "index.ts"), "utf8")'),
+    ).toHaveLength(1)
+    expect(sourceTextReadLines('const index = read("index.ts")')).toHaveLength(1)
+    expect(
+      sourceTextReadLines('const banner = await Bun.file(resolve(import.meta.dir, "../alpha-ui/Banner.tsx")).text()'),
+    ).toHaveLength(1)
+    // 反例①:整行注释 —— 注释里举例说明不算(少了这一步,一句解释性抬头就能把自己算进来)。
+    expect(sourceTextReadLines('  // const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")')).toEqual([])
+    // 反例②:读了东西,但读的不是仓内源码路径。
+    expect(sourceTextReadLines('const fixture = readFileSync(join(dir, "manifest.json"), "utf8")')).toEqual([])
+    // 反例③:确实是一次读,但读的路径本身是**测试文件** —— 那是第 ③ 层的辖区,不是生产源码。
+    expect(sourceTextReadLines('const s = readFileSync(join(dir, "nonexistent-fixture.test.ts"), "utf8")')).toEqual([])
+    // 谓词刻意**不**区分读/写:没有任何 `writeFileSync` 特判(特判换个写法就失效,而且没人说得清边界)。
+    // 过度命中由 KEPT 表吸收 —— 谓词保持愚蠢 + 默认拒,判断留在人读的表里。
+    //
+    // 真实枚举达到下界:谓词或 git 枚举退化成空集时,上面四条闸会**空对空全绿**(`0 fail` 恒成立)。
+    // 23 就是今天的实测值,不留余量 —— 删掉任何一个命中方都当场红。
+    expect(SOURCE_TEXT_HITS.size).toBeGreaterThanOrEqual(23)
+    expect(SOURCE_TEXT_IN_SCOPE.length).toBeGreaterThanOrEqual(200)
+    // 自指:本文件正文里必然写着谓词的正例夹具,不排除自己就把自己算成命中方。
+    expect([...SOURCE_TEXT_HITS.keys()]).not.toContain(SELF)
   })
 })

@@ -194,7 +194,8 @@ test("#613 冷启动:健康失败 + 注入失败 → 仍是恰好一个 failed �
 //    避免有人绕过 spawn-失败分支);
 // ④ 位置:spawn promise 创建 → 武装 → 交回 fiber(`return spawning`),顺序不得错;
 // ⑤ 武装调用确实拿到了那个 spawn promise(`spawning,`),而不是别的东西。
-test("#577 接线锚:终态生产者必须在 spawn promise 交回 fiber 之前 detached 武装", () => {
+// 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+test("ANCHOR (not a gate): #577 终态生产者必须在 spawn promise 交回 fiber 之前 detached 武装", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
 
   expect(source.split("void armBootGenerationTerminal(").length - 1).toBe(1)

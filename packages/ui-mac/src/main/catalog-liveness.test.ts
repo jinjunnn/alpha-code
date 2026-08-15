@@ -324,7 +324,8 @@ describe("catalog-liveness probe(真执行,fetch 注入)", () => {
 // ⑧ R2 Minor:探针 promise 链尾必须有 .catch(回调体任一抛出不得成为 main 的 unhandled
 //    rejection),且 catch 内复位 probeInFlight(否则 probeCatalogMarker 意外 reject 会让
 //    每个后续 tick 空转、看门狗静默失效)。
-test("#564 接线锚:看门狗武装/停表/裁决消费必须留在 index.ts 的接线形状里", () => {
+// 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+test("ANCHOR (not a gate): #564 看门狗武装/停表/裁决消费必须留在 index.ts 的接线形状里", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
 
   expect(source.split("armCatalogLivenessWatchdog(spawnGen)").length - 1).toBe(2)
