@@ -25,7 +25,7 @@ cd "$(git rev-parse --show-toplevel)"
 # DEGRADED:<理由>(跑不了/跑的是降级档 —— 必须写清降级了什么)。没有第四种。
 CI_STEPS=(
   # `#895`:四个 required job 各自的第一步 —— 证明 alpha-ci 的分类步 detect 真的给出了结论。
-  # 本地没有这个状态可言:alpha-check 一律跑全部七步,没有 docs-only 快路径、没有分类步,
+  # 本地没有这个状态可言:alpha-check 一律跑全部十步,没有 docs-only 快路径、没有分类步,
   # 所以「分类步失败 ⇒ 闸门集体静默跳过」在本地结构上到不了 —— 本地严格更强,故 SUPERSET。
   "upstream-guard|Assert detect classified this diff (#895)|SUPERSET:本地无条件跑全部闸门,不存在分类步 ⇒ 无「分类失败则闸门静默跳过」这一状态"
   "typecheck|Assert detect classified this diff (#895)|SUPERSET:同上"
@@ -33,6 +33,11 @@ CI_STEPS=(
   "docs-gate|Assert detect classified this diff (#895)|SUPERSET:同上"
   "upstream-guard|No literal NUL bytes in version-controlled files|MIRRORED"
   "upstream-guard|Fail on any modification to upstream package files|SUPERSET:committed delta ∪ 未提交工作树改动"
+  # `#976`:本地与 CI 跑同一个脚本,但**档位不同** —— 主 checkout 本身是浅克隆(.git/shallow 在),
+  # pin 对象取不到时本地判「未比对」(exit 2)只记 unverified、不拦 push;CI 侧 ROUNDTRIP_REQUIRE_PIN=1,
+  # 同一状态硬红(CI 自己控制 checkout 深度,取不到 pin 是接线坏了)。登记成 MIRRORED 会让
+  # 「本地绿 ⇒ CI 会绿」的依据变假 —— 那正是 `#777` 治的病。
+  "upstream-guard|Assert packages/app + packages/ui == pinned upstream + SOT patch (#976)|DEGRADED:本地 pin 取不到时判「未比对」(exit 2)不拦 push;CI 侧 ROUNDTRIP_REQUIRE_PIN=1,同一状态硬红"
   "typecheck|typecheck @alpha-code/contracts-consumer|MIRRORED"
   "typecheck|typecheck @alpha-code/ext|MIRRORED"
   "typecheck|typecheck ui-mac|MIRRORED"
@@ -59,10 +64,10 @@ if [ "${ALPHA_HOOKS_DISABLE:-}" != "1" ]; then
 fi
 
 fail=0
-# `#890`:「本次没能比对真源」是**第三种**结局,不是绿也不是红 —— 见第 [9/9] 步。
+# `#890`:「本次没能比对真源」是**第三种**结局,不是绿也不是红 —— 见第 [10/10] 步。
 unverified=0
 
-echo "▶ [1/9] north-star guard (zero upstream edits)"
+echo "▶ [1/10] north-star guard (zero upstream edits)"
 # `#889`:守卫本体住在 scripts/north-star-guard.sh —— 内联时它一个判据都没有(断言 shell
 # 源码文本按本仓定义是假闸门:守卫被整段注释掉时那种断言照样绿)。真判据 =
 # packages/ui-mac/src/main/north-star-guard.test.ts,它起真 git 仓、造真的上游改动、跑
@@ -74,7 +79,30 @@ else
   fail=1
 fi
 
-echo "▶ [2/9] no literal NUL bytes in version-controlled files"
+echo "▶ [2/10] packages/{app,ui} == pin + SOT 补丁(round-trip,#976)"
+# `#976`:ADR-034 起 packages/{app,ui} 是「上游 pin + frontend/alpha-patches/alpha-frontend.patch」
+# 的投影。sync-upstream 的还原步(`rm -rf` → `checkout $PIN --` → `git apply`)与月更 bump 的
+# 第一块都会**据此重写那两个目录** ⇒ 改了它们而没重生补丁,改动会被**静默删除**(不是报错)。
+# 这在已合并历史上真的发生过:f420fe2bb…7281627ed 四个提交补丁缺 vendored `.tgz`,存活两天、
+# 零变红;没出事只因为 sync 那阵子一直红着没跑到还原步。
+#
+# 判据本体在 scripts/assert-frontend-patch-roundtrip.sh —— 它比的是 **git tree sha**
+# (临时 index → read-tree pin → apply --cached --binary 补丁 → write-tree),不是文件名集:
+# 名字集比较对内容漂移结构性失明(实测:改一行 packages/app 源码不重生补丁,bun-test-app.sh
+# 的两轴交叉 5 == 5 绿,扩到全部文件 46 == 46 仍绿)。行为判据 =
+# packages/ui-mac/src/main/frontend-patch-roundtrip.test.ts(起真 git 仓、造真的漂移、跑那个脚本本体)。
+# 三档结局(与 [9/10]/[10/10] 同形):0 一致 / 1 真漂移或测量作废(拦住)/ 2 未比对(浅克隆
+# 取不到 pin —— 不拦 push,但总结行不许再说「全绿」)。实测 0.2s。
+bash scripts/assert-frontend-patch-roundtrip.sh
+frontend_roundtrip_rc=$?
+case "$frontend_roundtrip_rc" in
+0) ;; # 脚本自己打了 ✓
+2) unverified=1 ;; # 脚本自己打了「未比对」
+*) echo "    ✗ packages/{app,ui} 与 SOT 补丁不一致 —— 下一次 sync/月更 bump 会把上面点名的改动静默删掉"; fail=1 ;;
+esac
+unset frontend_roundtrip_rc
+
+echo "▶ [3/10] no literal NUL bytes in version-controlled files"
 # #760:字面 NUL 不会让运行时出错,它坏的是**验证手段** —— BSD grep / rg / file(1) 看到 NUL 就把
 # 整个文件判成二进制并静默返回空,于是「我 grep 过了,没有」变成假话。本仓 CLAUDE.md 要求
 # 「大文件 Edit 后 grep + git show 双验」,而在这些文件上 grep 会安静地说「没有」。
@@ -86,7 +114,7 @@ else
   echo "    ✗ literal NUL bytes found"; fail=1
 fi
 
-echo "▶ [3/9] typecheck (alpha packages: contracts-consumer + ext + ui-mac)"
+echo "▶ [4/10] typecheck (alpha packages: contracts-consumer + ext + ui-mac)"
 # REQ-027:flag 必须在 `run` 之后 —— `bun --cwd X run Y` 在 bun 1.3.x 打印 usage 后静默退出 0(不执行脚本)。
 if bun run --cwd packages/alpha-contracts-consumer typecheck \
   && bun run --cwd packages/ext typecheck \
@@ -96,7 +124,7 @@ else
   echo "    ✗ typecheck failed"; fail=1
 fi
 
-echo "▶ [4/9] contract lock + unit tests (contracts-consumer + ext + ui-mac + app)"
+echo "▶ [5/10] contract lock + unit tests (contracts-consumer + ext + ui-mac + app)"
 # REQ-062:ext 测试入门 —— 其中 prompt-rebrand drift 锁逐条断言转写子串仍在上游底座原文,
 # 上游 sync 改写底座即红(ADR-015 合并验证的机械化)。
 #
@@ -120,23 +148,23 @@ else
   echo "    ✗ tests failed"; fail=1
 fi
 
-# `#777`:下面三步此前**本地完全没有**,而 CI 有。缺 [5/9] 尤其贵 —— 登记闸门里
+# `#777`:下面三步此前**本地完全没有**,而 CI 有。缺 [6/10] 尤其贵 —— 登记闸门里
 # llm / core / opencode 那几个只在这一步执行,别的步骤一条都不覆盖它们。
-echo "▶ [5/9] assert gate files (逐个点名;整包地板抓不到单个闸门文件消失)"
+echo "▶ [6/10] assert gate files (逐个点名;整包地板抓不到单个闸门文件消失)"
 if bash scripts/assert-gate-files.sh; then
   echo "    ✓ gate files"
 else
   echo "    ✗ gate files failed"; fail=1
 fi
 
-echo "▶ [6/9] seed assets present (B7)"
+echo "▶ [7/10] seed assets present (B7)"
 if bash scripts/assert-seed-assets.sh; then
   echo "    ✓ seed assets"
 else
   echo "    ✗ seed assets missing"; fail=1
 fi
 
-echo "▶ [7/9] docs gate (relative-link validity in changed Markdown)"
+echo "▶ [8/10] docs gate (relative-link validity in changed Markdown)"
 # CI 只查**这次改动过的** Markdown(detect job 收集)。本地口径同构:相对 origin/alpha 的
 # 提交 delta ∪ 未提交工作树改动,再滤成 *.md。一个都没有 ⇒ 与 CI 一样是 no-op。
 md_committed="$(git diff --name-only --diff-filter=d origin/alpha...HEAD -- '*.md' 2>/dev/null || true)"
@@ -154,9 +182,9 @@ else
   fi
 fi
 
-echo "▶ [8/9] worktree bootstrap 能力(新建 worktree 自己就能跑出可信 typecheck)(#916)"
+echo "▶ [9/10] worktree bootstrap 能力(新建 worktree 自己就能跑出可信 typecheck)(#916)"
 # 这一步在 alpha-ci 里**没有对应**,所以它不进 CI_STEPS(那张表是 CI 步骤的对照表)——
-# 与第 [9/9] 步同为「只能落在本地」的门,但理由不同:CI 的每个 job 都是一次全新
+# 与第 [10/10] 步同为「只能落在本地」的门,但理由不同:CI 的每个 job 都是一次全新
 # `actions/checkout` + `bun install`,**结构上不存在 worktree**;这道门守的是本机多 lane
 # 并行时的那条能力。缺了它的世界长这样(`#916` 票面记录的实证):worktree 里拿不到真
 # typecheck ⇒ 每条 lane 为了下结论都得去动**共享**主 checkout ⇒ 谁先跑谁量到别人的树。
@@ -166,10 +194,10 @@ echo "▶ [8/9] worktree bootstrap 能力(新建 worktree 自己就能跑出可�
 # 「文件里写着 bun install」(按本仓定义那是假闸门),而是真建 worktree、真跑 typecheck,
 # 并且**先证明没 bootstrap 的树确实会红**,再用同一个探针判 bootstrap 过的树绿。
 # 代价:本机实测约 40s(3 棵探针树 + 一次 `bun install` 9.5s + 三次 ui-mac typecheck)。
-# 退出码三档(与第 [9/9] 步同形):0 已验证 / 1 真失守拦住 / 2 本次未验证不拦。
+# 退出码三档(与第 [10/10] 步同形):0 已验证 / 1 真失守拦住 / 2 本次未验证不拦。
 # 第 2 档的理由(owner 裁决,`#916` R2):`bun install` **依赖网络**(实测:已装好的树指向
 # 不可达 registry 也会 `failed to resolve` / exit 1),而这一步每次 push 都跑 ⇒ 不给豁免的话
-# 网络一抖就拦住 push,理由与本次改动无关 ⇒ 人会 `--no-verify` ⇒ **九道门一起关掉**。
+# 网络一抖就拦住 push,理由与本次改动无关 ⇒ 人会 `--no-verify` ⇒ **十道门一起关掉**。
 # 豁免不许变成万能挡箭牌:判别依据是**独立探一次 registry 可达性**(不解析 bun 的报错措辞),
 # 拿不准一律倒向「拦住」;而且脚本自己有两条判据钉着它 —— 非网络失败必须仍判 real(`[5/6]`)、
 # 判别依据必须双向可分且网络档不报绿(`[6/6]`)。
@@ -182,10 +210,10 @@ case "$worktree_bootstrap_rc" in
 esac
 unset worktree_bootstrap_rc
 
-echo "▶ [9/9] required contexts vs GitHub 分支保护真源 (#890)"
+echo "▶ [10/10] required contexts vs GitHub 分支保护真源 (#890)"
 # 这一步在 alpha-ci 里**没有对应**,所以它不进 CI_STEPS(那张表是 CI 步骤的对照表)。
 # 理由:读分支保护要带令牌,而 alpha-ci 触发在 `pull_request` —— fork PR 结构上拿不到
-# secrets。有鉴权的地方是这台机器,所以这道门只能落在本地。放最后,因为它是八步真闸门跑完
+# secrets。有鉴权的地方是这台机器,所以这道门只能落在本地。放最后,因为它是九步真闸门跑完
 # 之后的一次网络往返。
 bash scripts/assert-required-contexts.sh
 required_contexts_rc=$?
@@ -215,12 +243,12 @@ echo
 if [ "$fail" -ne 0 ]; then
   echo "❌ local gates failed — fix before pushing (alpha-ci would fail the same way)."
 elif [ "$unverified" -ne 0 ]; then
-  # `#890`:门都绿了,但**有一步这次没验成**(第 [8/9] 的 registry 不可达,或第 [9/9] 的
+  # `#890`:门都绿了,但**有一步这次没验成**(第 [9/10] 的 registry 不可达,或第 [10/10] 的
   # 分支保护真源读不到)。说「全绿」会把
   # 「没检查」读成「检查过了」—— 那正是这道门要消掉的形态,所以这里换一句话。
   echo "⚠️  local gates passed, but **有一步这次没验成**(见上面标了「未验证 / 未比对」的那一步)。"
-  echo "    可以 push;但本次运行不构成那一步的证据 —— 第 [8/9] 未验证 = worktree bootstrap 能力"
-  echo "    这次没被验证(registry 不可达);第 [9/9] 未比对 = 仓内记录与 alpha 分支保护是否一致没读到真源。"
+  echo "    可以 push;但本次运行不构成那一步的证据 —— 第 [9/10] 未验证 = worktree bootstrap 能力"
+  echo "    这次没被验证(registry 不可达);第 [10/10] 未比对 = 仓内记录与 alpha 分支保护是否一致没读到真源。"
 else
   echo "✅ all local gates green — safe to push (alpha-ci will mirror this)."
 fi

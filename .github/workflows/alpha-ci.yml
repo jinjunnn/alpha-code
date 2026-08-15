@@ -10,7 +10,7 @@
 # were --admin-merged with zero gating (broken relative links shipped silently).
 #
 #   detect          — classify the diff (code vs docs-only), collect changed Markdown.
-#   upstream-guard  — two source-hygiene assertions over the checkout.
+#   upstream-guard  — three source-hygiene assertions over the checkout.
 #                     ① north star (冲突文件数 = 0, ADR-004/B10): fail if this branch
 #                     MODIFIES/DELETES/RENAMES any upstream package file relative to dev. Uses a
 #                     merge-base three-dot diff so it measures alpha's OWN delta and stays green when
@@ -20,6 +20,14 @@
 #                     grep/rg/file classify the whole file as binary and return **nothing**, so
 #                     "I grepped, there is none" becomes a lie. Runs on docs-only PRs too, hence
 #                     this job's checkout is unconditional.
+#                     ③ packages/{app,ui} == pin + SOT patch (#976, ADR-034): sync-upstream rebuilds
+#                     those two directories from `frontend/frontend-pin.lock` + `frontend/alpha-patches/
+#                     alpha-frontend.patch`, so anything committed there but NOT regenerated into the
+#                     patch is deleted silently on the next sync (it really happened: f420fe2bb…7281627ed
+#                     carried a vendored .tgz the patch did not have, for two days, with nothing red).
+#                     Lives in THIS job because it needs the pin object — the `test` job checkout is
+#                     shallow, which is why the same-family axis inside scripts/bun-test-app.sh has
+#                     never once executed in CI ("未比对: pin … 的对象本地取不到").
 #   typecheck       — tsgo on the Alpha packages a PR can actually touch.
 #   test            — vendored contract hashes/fixtures plus alpha package unit tests.
 #   seed-assets     — B7: asserts electron-builder extraResources (REQ-023 vendored agent/plugin,
@@ -98,7 +106,7 @@ jobs:
         run: bash scripts/assert-detect-classified.sh
       # #760:源码里的字面 NUL 让 grep 静默失明 —— 危害不是漏看,是给出一个假的「没有」让人
       # 据此下结论(alpha-web#109 的实现方 `grep "secret"` 得 0 命中,差点断定「测试被删了」)。
-      # 这是**兜底**,真正的门是本地 scripts/alpha-check.sh 第 [2/4] 步(docs/runbooks/ci.md §6)。
+      # 这是**兜底**,真正的门是本地 scripts/alpha-check.sh 第 [3/10] 步(docs/runbooks/ci.md §6)。
       # 刻意不新开 job:按本仓纪律,新增检查 = 往 bin/check 加一步,CI 只镜像它。
       - name: No literal NUL bytes in version-controlled files
         run: python3 scripts/assert-no-nul-bytes.py
@@ -120,6 +128,20 @@ jobs:
         # 不存在。行为判据 = packages/ui-mac/src/main/north-star-guard.test.ts(起真 git 仓、
         # 造真的上游改动、跑这个脚本本体,断言它真的点名了那个文件)。
         run: bash scripts/north-star-guard.sh
+      # `#976`:第三条源码卫生断言 —— `packages/{app,ui}` 必须能由 pin + SOT 补丁逐字重建。
+      # 它落在**这个** job 而不是 test job:test 的 checkout 是浅的(fetch-depth 默认 1),
+      # 而 scripts/bun-test-app.sh 里那半边同类判据因此在 CI 上**从来没执行过** —— 实测 CI 日志
+      # 原文「未比对:pin 849c2598 的对象本地取不到(浅克隆/未 fetch)」。这里 fetch-depth: 0,
+      # 且 pin 是 alpha 历史的祖先 ⇒ 对象必然在,取不到只可能是接线坏了,故 ROUNDTRIP_REQUIRE_PIN=1
+      # 关掉本地那一档 exit 2 逃生门。
+      # `if:` 刻意**不是** `needs.detect.outputs.code == 'true'`:`packages/{app,ui}` 下有 6 个
+      # tracked 的 .md,纯 .md 变更被 detect 判成 code=false,而它们同样在 sync 的 `rm -rf` 覆盖面里。
+      # 本门的判据面是「pin+patch 重建出来的那棵树」,与 detect 的代码/文档分类不是同一个集合。
+      - name: Assert packages/app + packages/ui == pinned upstream + SOT patch (#976)
+        if: ${{ !cancelled() }}
+        env:
+          ROUNDTRIP_REQUIRE_PIN: "1"
+        run: bash scripts/assert-frontend-patch-roundtrip.sh
 
   typecheck:
     name: typecheck (alpha packages)
