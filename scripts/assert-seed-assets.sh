@@ -44,6 +44,7 @@ office_skill="$res/factory-skills/office-docs/SKILL.md"
 advisories_ts="$root/packages/ui-mac/src/shared/office-advisories.ts"
 need_file "$seed_catalog"
 need_file "$advisories_ts"
+need_file "$res/office-mcp/server.py"     # REQ-133 bundled Alpha office stdio server
 
 # ADR-040 / #841:engine plugin 已从线上货架与离线快照成对退休。随包字节和 catalog id
 # 任一回流都会让离线路径重新展示一个只能被 planner 拒绝的条目。

@@ -7,12 +7,21 @@ import { alphaOfficeInstallCommand, type AlphaOfficeFormat } from "../shared/off
 const server = resolve(import.meta.dir, "../../resources/office-mcp/server.py")
 const uv = Bun.which("uv")
 const python = Bun.which("python3")
-const testPython = test.skipIf(!python)
-const enabledFormats = new Set((process.env.ALPHA_OFFICE_MCP_TEST_FORMATS ?? "word,excel,powerpoint,pdf").split(","))
-const testFormat = (format: AlphaOfficeFormat) => test.skipIf(!uv || !enabledFormats.has(format))
+const enabledFormats = new Set(
+  (process.env.ALPHA_OFFICE_MCP_TEST_FORMATS ?? "word,excel,powerpoint,pdf")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean),
+)
+const testFormat = (format: AlphaOfficeFormat) => test.skipIf(!enabledFormats.has(format))
 let workspace: string
 
 beforeAll(() => {
+  if (!python) throw new Error("本次测量作废: office-mcp tests require python3 on PATH (missing toolchain must not skip-green)")
+  if (!uv) throw new Error("本次测量作废: office-mcp tests require uv on PATH (missing toolchain must not skip-green)")
+  if (enabledFormats.size === 0) {
+    throw new Error("本次测量作废: ALPHA_OFFICE_MCP_TEST_FORMATS is empty")
+  }
   workspace = mkdtempSync(join(tmpdir(), "alpha-office-mcp-"))
 })
 
@@ -156,7 +165,7 @@ describe("REQ-133 Alpha first-party Office MCP resources", () => {
     180_000,
   )
 
-  testPython("absolute paths with traversal segments are rejected before format code runs", async () => {
+  test("absolute paths with traversal segments are rejected before format code runs", async () => {
     const path = `${workspace}/nested/../escape.docx`
     const messages = await exchange(
       [python!, server, "word", workspace],
@@ -167,7 +176,7 @@ describe("REQ-133 Alpha first-party Office MCP resources", () => {
     expect(response?.result?.content?.[0]?.text).toContain("path traversal")
   })
 
-  testPython("four stdio entry modes expose only their format-specific read/write tools", async () => {
+  test("four stdio entry modes expose only their format-specific read/write tools", async () => {
     const expected = {
       word: ["read_docx", "write_docx"],
       excel: ["read_xlsx", "write_xlsx"],
@@ -185,7 +194,7 @@ describe("REQ-133 Alpha first-party Office MCP resources", () => {
     }
   })
 
-  testPython("server CLI has no network transport, host, port, or SSE flags", () => {
+  test("server CLI has no network transport, host, port, or SSE flags", () => {
     for (const extra of [["sse"], ["--host", "0.0.0.0"], ["--port", "8017"], ["--transport", "streamable-http"]]) {
       const result = Bun.spawnSync([python!, server, "word", workspace, ...extra])
       expect(result.exitCode, extra.join(" ")).not.toBe(0)

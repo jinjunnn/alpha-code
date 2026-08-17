@@ -263,8 +263,7 @@ def write_docx(path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
         document.add_heading(title, level=0)
     for paragraph in paragraphs:
         document.add_paragraph(paragraph)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    document.save(path)
+    replace_file(path, document.save)
     return {"path": str(path), "paragraphsWritten": len(paragraphs), "appended": append}
 
 
@@ -305,8 +304,7 @@ def write_xlsx(path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
         touched.append(item["name"])
     if created and "Sheet" in workbook.sheetnames and "Sheet" not in touched and len(workbook.sheetnames) > 1:
         workbook.remove(workbook["Sheet"])
-    path.parent.mkdir(parents=True, exist_ok=True)
-    workbook.save(path)
+    replace_file(path, workbook.save)
     return {"path": str(path), "sheetsUpdated": touched}
 
 
@@ -348,8 +346,7 @@ def write_pptx(path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
         slide = presentation.slides.add_slide(presentation.slide_layouts[1])
         slide.shapes.title.text = item["title"]
         slide.placeholders[1].text = body
-    path.parent.mkdir(parents=True, exist_ok=True)
-    presentation.save(path)
+    replace_file(path, presentation.save)
     return {"path": str(path), "slidesWritten": len(slides), "appended": append}
 
 
@@ -416,6 +413,18 @@ def render_text_pdf(path: Path, pages: list[str]) -> None:
         pdf.drawText(text)
         pdf.showPage()
     pdf.save()
+
+
+def replace_file(path: Path, write: Callable[[Path], None]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(suffix=path.suffix, dir=path.parent, delete=False) as temporary:
+        generated = Path(temporary.name)
+    try:
+        write(generated)
+        os.replace(generated, path)
+    except Exception:
+        generated.unlink(missing_ok=True)
+        raise
 
 
 def require_string_list(value: Any, name: str) -> list[str]:
