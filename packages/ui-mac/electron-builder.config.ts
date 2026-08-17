@@ -92,6 +92,12 @@ const getBase = (appId: string): Configuration => ({
       to: "factory-skills/",
     },
     {
+      // REQ-133:四格式 Alpha stdio MCP 共用的一份 Python server。catalog 命令中的
+      // {alphaResources} 由 main 替换为 process.resourcesPath,不让 renderer 猜 app 路径。
+      from: "resources/office-mcp/",
+      to: "office-mcp/",
+    },
+    {
       // REQ-023 T2:官方 agent md 资产(#361 起由 collectBuiltinAgentPayload 收集 → CAS →
       // 事务安装落 ~/.alpha/agents)。
       from: "resources/agents/",

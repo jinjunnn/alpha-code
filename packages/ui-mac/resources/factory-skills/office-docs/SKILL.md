@@ -6,39 +6,37 @@ license: Apache-2.0 (alpha-code original — no Anthropic skill text)
 
 # Office documents
 
-You help the user produce and read real office files. alpha-code's office capability is built on
-**connectors (MCP)** where a trusted one exists, and **small local scripts** where it doesn't —
-pick the right path, and be honest when neither is available.
+You help the user produce and read real office files. The primary path is Alpha's four first-party
+local stdio MCP connectors. Use a small local script only when a connector is unavailable or the
+request is outside its deliberately narrow tool contract.
 
-> Security note (REQ-105, 2026-07): the Word and PowerPoint writer connectors formerly listed
-> here were retired — their upstream repositories are archived and unmaintained (supply-chain
-> risk). Do NOT recommend installing them. If the user already has them installed, the Extension
-> Hub (定制中心 → 已安装) shows an archived advisory with disable/uninstall guidance — never
-> remove anything on the user's behalf. The maintained path for docx/pptx creation is a local
-> script (below).
+> Security note: the old community `mcp:word` and `mcp:powerpoint` connectors remain archived and
+> unsupported; do not recommend or relabel them. The primary cards are the distinct Alpha-authored
+> ids below. They run over stdio, accept only absolute paths inside the granted workspace, and do
+> not expose host, port, HTTP, or SSE modes.
 
 ## Which tool for which job
 
-| Job | Use | Notes |
+| Job | Primary connector and tools | Notes |
 |---|---|---|
-| **Read/extract** any document (PDF/Word/PPT/Excel/HTML/images) | markitdown connector (`convert_to_markdown`) | read-only, converts to Markdown |
-| **Create/edit xlsx** | excel-mcp-server connector | formulas, charts, pivot tables; no Excel install needed (openpyxl-based). Security-audit pinned to an exact version (0.1.8); local stdio only |
-| **Create/edit docx** | local Python script with `python-docx` | no maintained connector — write a small script (user consent to run code first) |
-| **Create/edit pptx** | local Python script with `python-pptx` | no maintained connector — same script path |
-| **Create/merge/split PDF** | no trusted connector exists (ecosystem gap) | write a small Python script with `reportlab` / `pypdf` (see below) |
+| **Read/write docx** | `mcp:alpha-word` (`read_docx`, `write_docx`) | `python-docx`; text, headings, and paragraphs |
+| **Read/write xlsx** | `mcp:alpha-excel` (`read_xlsx`, `write_xlsx`) | `openpyxl`; sheet/cell data without Microsoft Excel |
+| **Read/write pptx** | `mcp:alpha-powerpoint` (`read_pptx`, `write_pptx`) | `python-pptx`; slide titles and text bodies |
+| **Read/write PDF text pages** | `mcp:alpha-pdf` (`read_pdf`, `write_pdf`) | `pypdf` + `reportlab`; replace/generate or append text pages, not layout design |
+| **Broad read/conversion** | markitdown (`convert_to_markdown`) | optional secondary path for formats outside the four focused tools |
 
-The Excel connector runs via `uvx` (Python fetched at first run) — same on macOS and Windows, no
-Microsoft Office needed. `python-docx` / `python-pptx` / `openpyxl` / `pypdf` / `reportlab` are
-BSD/MIT-licensed and installable with `uv pip` / `pip`.
+All four Alpha connectors run with pinned Python libraries through `uv`; they need no Microsoft
+Office installation. The old community `excel-mcp-server` is a separate REQ-105-governed connector,
+not the implementation or authorship source for `mcp:alpha-excel`.
 
 ## If the tool is not available
 
 Check your tool list first. If the needed tools are absent:
 
-1. For **xlsx**: point the user to the **Extension Hub (定制中心) → 连接器 → 办公** for the Excel
-   connector, or the 办公套件 bundle (first run downloads from PyPI — may take a minute).
-2. For **docx/pptx** — and as an xlsx fallback, only with the user's consent to run code — write a
-   local Python script using `python-docx` (docx), `python-pptx` (pptx), `openpyxl` (xlsx).
+1. Point the user to **Extension Hub (定制中心) → 连接器 → 办公** and the matching Alpha Word,
+   Excel, PowerPoint, or PDF card (first run may download its pinned Python library).
+2. As a fallback, only with the user's consent to run code, write a local Python script using
+   `python-docx`, `openpyxl`, `python-pptx`, `pypdf`, or `reportlab`.
 3. Never fake success: if you can neither use a connector nor run code, say exactly that.
 
 ## Spreadsheet conventions (xlsx)
@@ -57,7 +55,7 @@ When you build workbooks, default to these habits unless the user says otherwise
 - The Excel connector works on **absolute paths inside the user's workspace** — never reach
   outside the workspace or use `..` path segments.
 
-## docx / pptx script snippets
+## Fallback docx / pptx script snippets
 
 Create a simple report (`python-docx`, MIT):
 
@@ -85,7 +83,7 @@ slide.placeholders[1].text = "First bullet"
 prs.save("deck.pptx")
 ```
 
-## PDF creation/manipulation snippets
+## Fallback PDF creation/manipulation snippets
 
 Create a simple PDF report (`reportlab`, BSD):
 

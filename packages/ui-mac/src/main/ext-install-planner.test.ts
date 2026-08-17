@@ -807,6 +807,29 @@ describe("other kinds — derivation & records", () => {
     if (!r.ok) expect(r.reason).toContain("required bundle child")
   })
 
+  test("REQ-133 bundle policy comes from the shared workspace registry, not an Excel package-name hole", async () => {
+    const alphaWord: CatalogEntry = {
+      ...mcpEntry,
+      id: "mcp:alpha-word",
+      name: "alpha-word",
+      installSpec: {
+        kind: "mcp",
+        mcpType: "local",
+        command: ["uv", "run", "--no-project", "--with", "python-docx==1.2.0", "{alphaResources}/office-mcp/server.py", "word", "{workspace}"],
+      },
+    }
+    const office: CatalogEntry = {
+      ...bundleEntry,
+      id: "bundle:alpha-office",
+      name: "alpha-office",
+      bundleItems: [{ catalogEntryId: alphaWord.id, optional: false, installOrder: 1 }],
+    }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, alphaWord, office] })
+    const result = await installAuthorized({ catalogId: office.id, scope: { scope: "global" } }, deps)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toContain("workspace-policy")
+  })
+
   test("bundle: skill(generation)+ 无密钥 MCP(config)一次原子提交(REQ-100 #311)", async () => {
     const cleanMcp: CatalogEntry = { ...mcpEntry, id: "mcp:clean", name: "clean", installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "clean-mcp@1.0.0"] } }
     const cleanBundle: CatalogEntry = { ...bundleEntry, id: "bundle:clean", name: "cleanb", bundleItems: [{ catalogEntryId: "skill:demo", optional: false, installOrder: 1 }, { catalogEntryId: "mcp:clean", optional: false, installOrder: 2 }] }
@@ -1399,6 +1422,32 @@ describe("deriveMcpConfig — boundary cases", () => {
     const r = deriveMcpConfig({ kind: "mcp", mcpType: "local", command: ["x"], requiredEnvVars: ["A", "B"] }, { secrets: { A: "v", B: "" } })
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.secretVars).toEqual(["A"])
+  })
+  test("main substitutes bundled Alpha resources next to the granted workspace", () => {
+    const result = deriveMcpConfig(
+      { kind: "mcp", mcpType: "local", command: ["uv", "{alphaResources}/office-mcp/server.py", "word", "{workspace}"] },
+      { workspace: "/workspace" },
+      "/alpha/resources",
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.config.command).toEqual(["uv", "/alpha/resources/office-mcp/server.py", "word", "/workspace"])
+  })
+  test("workspace grants cannot inject engine config substitutions", () => {
+    const result = deriveMcpConfig(
+      { kind: "mcp", mcpType: "local", command: ["x", "{workspace}"] },
+      { workspace: "{file:/etc/passwd}" },
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toContain("substitution syntax")
+  })
+  test("the Alpha resource placeholder cannot select another bundled path", () => {
+    const result = deriveMcpConfig(
+      { kind: "mcp", mcpType: "local", command: ["python", "{alphaResources}/other.py", "{workspace}"] },
+      { workspace: "/workspace" },
+      "/alpha/resources",
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toContain("reserved")
   })
 })
 

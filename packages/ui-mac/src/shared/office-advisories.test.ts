@@ -4,9 +4,13 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  ALPHA_OFFICE_CONNECTORS,
   ARCHIVED_OFFICE_ADVISORIES,
   EXCEL_MCP_PIN,
+  alphaOfficeInstallCommand,
+  checkAlphaOfficeMcpSafety,
   checkExcelMcpSafety,
+  isWorkspacePolicyMcp,
   officeAdvisoryFor,
 } from "./office-advisories"
 
@@ -129,5 +133,61 @@ describe("checkExcelMcpSafety(REQ-105 AC3:拒绝 0.0.0.0 / workspace 外 / 遍�
     expect(EXCEL_MCP_PIN.pinnedSpec).toBe(`${EXCEL_MCP_PIN.pypiPackage}@${EXCEL_MCP_PIN.version}`)
     expect(EXCEL_MCP_PIN.sdistSha256).toMatch(/^[0-9a-f]{64}$/)
     expect(EXCEL_MCP_PIN.wheelSha256).toMatch(/^[0-9a-f]{64}$/)
+  })
+})
+
+describe("REQ-133 Alpha Office connector registry and stdio safety", () => {
+  const resources = "/Applications/Alpha.app/Contents/Resources"
+  const workspace = "/Users/x/Alpha"
+  const config = (format: "word" | "excel" | "powerpoint" | "pdf") => ({
+    type: "local",
+    command: alphaOfficeInstallCommand(format).map((argument) =>
+      argument.replace("{alphaResources}", resources).replace("{workspace}", workspace),
+    ),
+  })
+
+  test("four new ids and exact catalog command arrays are stable", () => {
+    expect(ALPHA_OFFICE_CONNECTORS.map((connector) => connector.catalogId)).toEqual([
+      "mcp:alpha-word",
+      "mcp:alpha-excel",
+      "mcp:alpha-powerpoint",
+      "mcp:alpha-pdf",
+    ])
+    expect(alphaOfficeInstallCommand("word")).toEqual([
+      "uv", "run", "--no-project", "--with", "python-docx==1.2.0",
+      "{alphaResources}/office-mcp/server.py", "word", "{workspace}",
+    ])
+    expect(alphaOfficeInstallCommand("excel")).toEqual([
+      "uv", "run", "--no-project", "--with", "openpyxl==3.1.5",
+      "{alphaResources}/office-mcp/server.py", "excel", "{workspace}",
+    ])
+    expect(alphaOfficeInstallCommand("powerpoint")).toEqual([
+      "uv", "run", "--no-project", "--with", "python-pptx==1.0.2",
+      "{alphaResources}/office-mcp/server.py", "powerpoint", "{workspace}",
+    ])
+    expect(alphaOfficeInstallCommand("pdf")).toEqual([
+      "uv", "run", "--no-project", "--with", "pypdf==6.16.1", "--with", "reportlab==5.0.0",
+      "{alphaResources}/office-mcp/server.py", "pdf", "{workspace}",
+    ])
+  })
+
+  test("all four exact local commands pass and share the workspace-policy registry", () => {
+    for (const connector of ALPHA_OFFICE_CONNECTORS) {
+      const server = config(connector.format)
+      expect(checkAlphaOfficeMcpSafety(connector.name, server, workspace, resources)).toEqual({ ok: true })
+      expect(isWorkspacePolicyMcp(connector.name, server)).toBe(true)
+    }
+    expect(isWorkspacePolicyMcp(EXCEL_MCP_PIN.name, GOOD_EXCEL)).toBe(true)
+  })
+
+  test("remote, unpinned, extra transport flags, traversal, and network env fail closed", () => {
+    for (const connector of ALPHA_OFFICE_CONNECTORS) {
+      expect(checkAlphaOfficeMcpSafety(connector.name, { type: "remote", url: "http://127.0.0.1/mcp" }, workspace, resources).ok).toBe(false)
+      expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), command: ["uv", "run", "latest"] }, workspace, resources).ok).toBe(false)
+      expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), command: [...config(connector.format).command, "--host", "0.0.0.0"] }, workspace, resources).ok).toBe(false)
+      expect(checkAlphaOfficeMcpSafety(connector.name, config(connector.format), `${workspace}/../etc`, resources).ok).toBe(false)
+      expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), environment: { MCP_TRANSPORT: "sse" } }, workspace, resources).ok).toBe(false)
+      expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), environment: { PYTHONPATH: "/tmp/inject" } }, workspace, resources).ok).toBe(false)
+    }
   })
 })

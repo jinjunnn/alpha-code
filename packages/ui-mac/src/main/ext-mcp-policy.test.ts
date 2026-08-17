@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { EXCEL_MCP_PIN } from "../shared/office-advisories"
+import { EXCEL_MCP_PIN, alphaOfficeInstallCommand } from "../shared/office-advisories"
 import { excelWorkspaceRoot, persistMcpWithPolicy } from "./ext-mcp-policy"
 
 let tmp: string
@@ -63,5 +63,31 @@ describe("persistMcpWithPolicy — Excel workspace sandbox", () => {
     const r = persistMcpWithPolicy("markitdown", server)
     expect(r.ok).toBe(true)
     expect(server.environment).toBeUndefined()
+  })
+})
+
+describe("persistMcpWithPolicy — REQ-133 Alpha Office workspace sandbox", () => {
+  test("main canonicalizes the granted workspace and bundled server path", () => {
+    const workspace = path.join(tmp, "project")
+    fs.mkdirSync(workspace)
+    const server = {
+      type: "local",
+      command: alphaOfficeInstallCommand("word").map((argument) => argument.replace("{workspace}", workspace)),
+    } as Record<string, unknown>
+    const result = persistMcpWithPolicy("alpha-word", server)
+    expect(result.ok).toBe(true)
+    const command = server.command as string[]
+    expect(command.at(-1)).toBe(fs.realpathSync(workspace))
+    expect(command.at(-3)).toBe(fs.realpathSync(path.resolve(import.meta.dir, "../../resources/office-mcp/server.py")))
+  })
+
+  test("remote configs and missing workspace grants fail closed", () => {
+    expect(persistMcpWithPolicy("alpha-word", { type: "remote", url: "http://127.0.0.1/mcp" }).ok).toBe(false)
+    const missing = path.join(tmp, "missing")
+    const server = {
+      type: "local",
+      command: alphaOfficeInstallCommand("pdf").map((argument) => argument.replace("{workspace}", missing)),
+    }
+    expect(persistMcpWithPolicy("alpha-pdf", server).ok).toBe(false)
   })
 })
