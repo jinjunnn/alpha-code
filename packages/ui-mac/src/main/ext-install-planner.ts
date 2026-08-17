@@ -27,6 +27,7 @@ import { fileURLToPath } from "node:url"
 import type { InstallReceiptType } from "../preload/types"
 import type { CatalogEntry, McpInstallSpec } from "../renderer/extensions/catalog-types"
 import { isExtensionName } from "../shared/extension-name"
+import { isAlphaOfficeMcp, isWorkspacePolicyMcp } from "../shared/office-advisories"
 import type { AppEnvironment } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
 import type { AdvisoryGate } from "./ext-advisory-gate"
@@ -169,7 +170,7 @@ import { casBlobPath, materializeFilesFromCas, putCasBlobFromBuffer, readCasBlob
 import { isSafeRelPath } from "./ext-atomic-fs"
 import { validateServer } from "./ext-config"
 import { prepareConfigTx, applyConfigImage, type ConfigEdit } from "./ext-config-tx"
-import { collectImportSkillPayload } from "./ext-fs-installer"
+import { collectImportSkillPayload, resourcesRoot } from "./ext-fs-installer"
 import { checkUncuratedConflict, type UncuratedOrigin } from "./ext-uncurated-record"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
@@ -438,6 +439,7 @@ const CN_MIRROR_ENV: Record<string, string> = {
 export function deriveMcpConfig(
   spec: McpInstallSpec,
   grants: InstallGrants,
+  alphaResources = resourcesRoot(),
 ): { ok: true; config: Record<string, unknown>; secretVars: string[] } | { ok: false; reason: string } {
   const declared = new Set(spec.requiredEnvVars ?? [])
   for (const k of Object.keys(grants.secrets ?? {})) {
@@ -467,10 +469,24 @@ export function deriveMcpConfig(
   }
   const command = spec.command ?? []
   if (command.length === 0) return { ok: false, reason: "catalog entry has no command" }
+  const alphaResourceArgs = command.filter((argument) => argument.includes("{alphaResources}"))
+  if (
+    alphaResourceArgs.length > 0 &&
+    (alphaResourceArgs.length !== 1 || alphaResourceArgs[0] !== "{alphaResources}/office-mcp/server.py" || !isAlphaOfficeMcp("", { type: "local", command }))
+  ) {
+    return { ok: false, reason: "{alphaResources} is reserved for the bundled Alpha Office server entrypoints — refused" }
+  }
   const needsWorkspace = command.some((a) => a.includes("{workspace}"))
   if (needsWorkspace && !grants.workspace) return { ok: false, reason: "workspace grant required by this entry" }
   if (!needsWorkspace && grants.workspace) return { ok: false, reason: "workspace grant not used by this entry — refused" }
-  const cmd = command.map((a) => (grants.workspace ? a.split("{workspace}").join(grants.workspace) : a))
+  if (grants.workspace && /\{(file|env):/.test(grants.workspace)) {
+    return { ok: false, reason: "workspace grant contains config substitution syntax ({file:}/{env:}) — refused" }
+  }
+  const cmd = command.map((argument) =>
+    argument
+      .split("{alphaResources}").join(alphaResources)
+      .split("{workspace}").join(grants.workspace ?? "{workspace}"),
+  )
   const environment = { ...(grants.cnMirror ? CN_MIRROR_ENV : {}), ...subst }
   return {
     ok: true,
@@ -881,17 +897,16 @@ async function classifyBundleChild(
     // 会「账本记 active、引擎读不到」。fatal(required 子项拒整单,与单装一致 fail-closed)。
     const bundleTruth = configTruthInRootGate(deps.globalRoot(), deps.installers.mcpConfigTruthPath())
     if (!bundleTruth.ok) return { status: "fatal", id, reason: bundleTruth.reason }
-    // 首期排除需密钥 / workspace / Excel 的 MCP —— 它们的 secret 文件写、workspace 沙箱不在 config
+    // 首期排除需密钥 / workspace-policy 的 MCP —— 它们的 secret 文件写、workspace 沙箱不在 config
     // action 的原子边界内(REQ-105 Excel 闸口、fileifyMcpSecrets 独立文件)。fail-closed。
     if ((spec.requiredEnvVars?.length ?? 0) > 0)
       return { status: "skip", id, reason: "secret-bearing MCP not supported in atomic bundle (phase 1)" }
+    if (isWorkspacePolicyMcp(entry.name, { type: spec.mcpType, ...(spec.command ? { command: spec.command } : {}), ...(spec.url ? { url: spec.url } : {}) }))
+      return { status: "skip", id, reason: "workspace-policy MCP not supported in atomic bundle (phase 1)" }
     const derived = deriveMcpConfig(spec, {})
     if (!derived.ok) return { status: "skip", id, reason: `MCP needs grants not supported in bundle: ${derived.reason}` }
-    // Excel MCP(workspace 沙箱走 REQ-105 闸口,不在 config action 边界内)= fail-closed。
-    const cmd = Array.isArray(derived.config.command) ? (derived.config.command as unknown[]) : []
-    const touchesExcel = entry.name === "excel-mcp-server" || cmd.some((a) => typeof a === "string" && a.includes("excel-mcp-server"))
-    if (derived.secretVars.length > 0 || touchesExcel)
-      return { status: "skip", id, reason: "secret/Excel MCP not supported in atomic bundle (phase 1)" }
+    if (derived.secretVars.length > 0)
+      return { status: "skip", id, reason: "secret-bearing MCP not supported in atomic bundle (phase 1)" }
     const key = bundleKeyFor("mcp", entry.name)
     return {
       status: "install",
@@ -2180,6 +2195,10 @@ async function installSeedMcp(args: {
     rollback("secret-bearing MCP")
     return { ok: false, reason: "secret-bearing MCP is not seed-installable (seed intent has no grants channel, phase 1) — refused" }
   }
+  if (isWorkspacePolicyMcp(entry.name, { type: spec.mcpType, ...(spec.command ? { command: spec.command } : {}), ...(spec.url ? { url: spec.url } : {}) })) {
+    rollback("workspace-policy MCP")
+    return { ok: false, reason: "workspace-policy MCP is not seed-installable (managed workspace is outside the config-action boundary) — refused" }
+  }
   const derived = deriveMcpConfig(spec, {})
   if (!derived.ok) {
     rollback(derived.reason)
@@ -2188,12 +2207,6 @@ async function installSeedMcp(args: {
   if (derived.secretVars.length > 0) {
     rollback("secret-bearing MCP")
     return { ok: false, reason: "secret-bearing MCP is not seed-installable (phase 1) — refused" }
-  }
-  const cmd = Array.isArray(derived.config.command) ? (derived.config.command as unknown[]) : []
-  const touchesExcel = entry.name === "excel-mcp-server" || cmd.some((a) => typeof a === "string" && a.includes("excel-mcp-server"))
-  if (touchesExcel) {
-    rollback("Excel MCP")
-    return { ok: false, reason: "Excel MCP is not seed-installable (REQ-105 managed workspace is outside the config-action boundary) — refused" }
   }
   // 纯 validator(裁决 B):命令头/inline-eval/URL/危险 env 安全门,零写盘。
   const valid = validateServer(derived.config)

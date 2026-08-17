@@ -897,7 +897,7 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
     expect(findRecordV2(globalRoot, "mcp", "demo")).toBeNull()
   })
 
-  test("phase-1 fail-closed:secret-bearing / workspace / Excel 一律拒(seed intent 无 grants 通道)", async () => {
+  test("phase-1 fail-closed:secret-bearing / workspace / workspace-policy MCP 一律拒(seed intent 无 grants 通道)", async () => {
     buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
     const secret = await installAuthorized(mcpSeedIntent, mcpDeps({ installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "x"], requiredEnvVars: ["API_KEY"] } }))
     expect(secret.ok).toBe(false)
@@ -918,7 +918,29 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
       }),
     )
     expect(excel.ok).toBe(false)
-    if (!excel.ok) expect(excel.reason).toContain("Excel")
+    if (!excel.ok) expect(excel.reason).toContain("workspace-policy")
+
+    const alphaFiles = [{ path: "x.md", content: "alpha word" }]
+    buildSeed([{ id: "mcp:alpha-word", files: alphaFiles }])
+    const alphaWord = await installAuthorized(
+      { source: "seed", assetId: "mcp:alpha-word", scope: { scope: "global" } },
+      makeSeedDeps({
+        bundledEntries: [
+          bundledMcpEntry({
+            id: "mcp:alpha-word",
+            name: "alpha-word",
+            installSpec: {
+              kind: "mcp",
+              mcpType: "local",
+              command: ["uv", "run", "--no-project", "--with", "python-docx==1.2.0", "{alphaResources}/office-mcp/server.py", "word", "{workspace}"],
+            },
+            remoteAsset: { version: "1.0.0", files: lockFileEntries(alphaFiles, { writeBlobs: false }) },
+          }),
+        ],
+      }),
+    )
+    expect(alphaWord.ok).toBe(false)
+    if (!alphaWord.ok) expect(alphaWord.reason).toContain("workspace-policy")
   })
 
   test("纯 validator 在 plan 生成前拦危险配置(inline-eval / 非白名单命令头)", async () => {

@@ -1,4 +1,4 @@
-// office-advisories — REQ-105 Office Catalog 安全纠偏,A 侧数据真源(jinjunnn/alpha-code#197)。
+// office-advisories — REQ-105 community Office safety + REQ-133 Alpha first-party registry.
 //
 // 背景：2026-07-10 安全复核，交付记录见 GitHub issue #197。
 //   * REQ-080 上架的 Word/PPT MCP 上游仓库已于 2026-03-03 被作者归档(不再维护 → 供应链风险)。
@@ -13,6 +13,8 @@
 //     否则 alpha-catalog.test.ts 与 scripts/assert-seed-assets.sh 的守卫直接红(AC2)。
 //   * checkExcelMcpSafety —— persistMcp 写盘闸口(ext-ipc)的 Excel sandbox 校验:拒绝远程
 //     transport、未钉版本、非 stdio 子命令、host/port 绑定(0.0.0.0)与 workspace 外 / 遍历路径。
+//   * ALPHA_OFFICE_CONNECTORS / checkAlphaOfficeMcpSafety —— four Alpha-authored bundled stdio
+//     entrypoints, exact dependency pins, and the shared workspace-policy membership for REQ-133.
 //
 // 远程签名 advisory 通道是 REQ-101 的未来工作;本表是其之前的最小诚实路径(随包静态数据)。
 
@@ -63,6 +65,62 @@ export const EXCEL_MCP_PIN = {
   fixedAdvisory: "path traversal + unauthenticated remote read/write(< 0.1.8)",
 } as const
 
+export type AlphaOfficeFormat = "word" | "excel" | "powerpoint" | "pdf"
+
+/** REQ-133 first-party Office MCP facts. This is the single code-side authority consumed by the
+ *  planner, write policy, tests, and factory skill; the signed web catalog remains the card source. */
+export const ALPHA_OFFICE_CONNECTORS = [
+  {
+    catalogId: "mcp:alpha-word",
+    name: "alpha-word",
+    format: "word",
+    extension: ".docx",
+    dependencies: ["python-docx==1.2.0"],
+  },
+  {
+    catalogId: "mcp:alpha-excel",
+    name: "alpha-excel",
+    format: "excel",
+    extension: ".xlsx",
+    dependencies: ["openpyxl==3.1.5"],
+  },
+  {
+    catalogId: "mcp:alpha-powerpoint",
+    name: "alpha-powerpoint",
+    format: "powerpoint",
+    extension: ".pptx",
+    dependencies: ["python-pptx==1.0.2"],
+  },
+  {
+    catalogId: "mcp:alpha-pdf",
+    name: "alpha-pdf",
+    format: "pdf",
+    extension: ".pdf",
+    dependencies: ["pypdf==6.16.1", "reportlab==5.0.0"],
+  },
+] as const satisfies ReadonlyArray<{
+  catalogId: string
+  name: string
+  format: AlphaOfficeFormat
+  extension: string
+  dependencies: readonly string[]
+}>
+
+/** Exact local command copied by each alpha-web catalog card. Main owns both substitutions. */
+export function alphaOfficeInstallCommand(format: AlphaOfficeFormat): string[] {
+  const connector = ALPHA_OFFICE_CONNECTORS.find((candidate) => candidate.format === format)
+  if (!connector) throw new Error(`unknown Alpha Office format: ${format}`)
+  return [
+    "uv",
+    "run",
+    "--no-project",
+    ...connector.dependencies.flatMap((dependency) => ["--with", dependency]),
+    "{alphaResources}/office-mcp/server.py",
+    format,
+    "{workspace}",
+  ]
+}
+
 /** 按 catalog id / 安装名匹配 advisory(receipts.id、receipts.name、live MCP server 名都可传)。 */
 export function officeAdvisoryFor(ref: { id?: string; name?: string }): OfficeAdvisory | undefined {
   return ARCHIVED_OFFICE_ADVISORIES.find(
@@ -75,9 +133,19 @@ export type OfficeSafetyVerdict = { ok: true } | { ok: false; reason: string }
 const EXCEL_BANNED_TRANSPORTS = new Set(["sse", "http", "streamable-http"])
 // excel-mcp-server(fastmcp 系)的宿主/端口绑定通道 —— 任何一个出现都可能把 server 开到网络上。
 const EXCEL_BANNED_ENV = new Set(["FASTMCP_HOST", "FASTMCP_PORT", "EXCEL_MCP_HOST", "EXCEL_MCP_PORT", "HOST", "PORT"])
+const ALPHA_OFFICE_BANNED_ENV = new Set(["HOST", "PORT", "MCP_HOST", "MCP_PORT", "MCP_TRANSPORT", "FASTMCP_HOST", "FASTMCP_PORT"])
+const ALPHA_OFFICE_ALLOWED_ENV = new Set(["UV_DEFAULT_INDEX", "PIP_INDEX_URL", "npm_config_registry"])
 
 function isExcelCommand(command: readonly string[]): boolean {
   return command.some((arg) => arg === EXCEL_MCP_PIN.pypiPackage || arg.startsWith(`${EXCEL_MCP_PIN.pypiPackage}@`) || arg.startsWith(`${EXCEL_MCP_PIN.pypiPackage}>`) || arg.startsWith(`${EXCEL_MCP_PIN.pypiPackage}<`) || arg.startsWith(`${EXCEL_MCP_PIN.pypiPackage}=`))
+}
+
+function alphaOfficeConnector(name: string, command: readonly string[]) {
+  const named = ALPHA_OFFICE_CONNECTORS.find((connector) => connector.name === name)
+  if (named) return named
+  const script = command.findIndex((argument) => normalizeSlashes(argument).endsWith("/office-mcp/server.py"))
+  if (script < 0) return undefined
+  return ALPHA_OFFICE_CONNECTORS.find((connector) => command[script + 1] === connector.format)
 }
 
 /** 纯字符串路径检查(shared 模块不引 node:path,renderer 亦可用)。 */
@@ -181,9 +249,61 @@ export function checkExcelMcpSafety(
   return { ok: true }
 }
 
+/** REQ-133 persistence gate: only the exact Alpha-authored bundled stdio command may be durable. */
+export function checkAlphaOfficeMcpSafety(
+  name: string,
+  server: Record<string, unknown>,
+  workspace?: string,
+  alphaResources?: string,
+): OfficeSafetyVerdict {
+  const command = Array.isArray(server.command) ? (server.command as unknown[]).filter((argument): argument is string => typeof argument === "string") : []
+  const connector = alphaOfficeConnector(name, command)
+  if (!connector) return { ok: true }
+  if (server.type !== "local" || ["url", "host", "port", "transport"].some((key) => key in server)) {
+    return { ok: false, reason: `${connector.name} only allows local stdio; remote transport is refused (REQ-133)` }
+  }
+  if (!workspace || !alphaResources || !isAbsolutePath(workspace) || !isAbsolutePath(alphaResources)) {
+    return { ok: false, reason: `${connector.name} requires absolute managed workspace and Alpha resource roots (REQ-133)` }
+  }
+  if (hasTraversal(workspace) || hasTraversal(alphaResources)) {
+    return { ok: false, reason: `${connector.name} path contains traversal segments (REQ-133)` }
+  }
+  const expected = alphaOfficeInstallCommand(connector.format).map((argument) =>
+    argument
+      .split("{alphaResources}")
+      .join(normalizeSlashes(alphaResources).replace(/\/+$/, ""))
+      .split("{workspace}")
+      .join(workspace),
+  )
+  if (command.length !== expected.length || command.some((argument, index) => normalizeSlashes(argument) !== normalizeSlashes(expected[index]!))) {
+    return { ok: false, reason: `${connector.name} command must match the pinned bundled stdio command exactly (REQ-133)` }
+  }
+  const env =
+    server.environment && typeof server.environment === "object" && !Array.isArray(server.environment)
+      ? (server.environment as Record<string, unknown>)
+      : {}
+  for (const [key, value] of Object.entries(env)) {
+    if (!ALPHA_OFFICE_ALLOWED_ENV.has(key) || ALPHA_OFFICE_BANNED_ENV.has(key.toUpperCase()) || (typeof value === "string" && value.includes("0.0.0.0"))) {
+      return { ok: false, reason: `${connector.name} unapproved runtime environment is refused (REQ-133)` }
+    }
+  }
+  return { ok: true }
+}
+
 /** persistMcp 前置识别:该 server 是否触及 Excel MCP(名字点名或命令含审计包)。main 侧策略
  *  包装器用它决定是否注入受管 workspace 根(REQ-105 #254)。 */
 export function isExcelMcp(name: string, server: Record<string, unknown>): boolean {
   const command = Array.isArray(server.command) ? (server.command as unknown[]).filter((a): a is string => typeof a === "string") : []
   return name === EXCEL_MCP_PIN.name || isExcelCommand(command)
+}
+
+/** First-party Office recognition by stable name or bundled script + format entrypoint. */
+export function isAlphaOfficeMcp(name: string, server: Record<string, unknown>): boolean {
+  const command = Array.isArray(server.command) ? (server.command as unknown[]).filter((argument): argument is string => typeof argument === "string") : []
+  return alphaOfficeConnector(name, command) !== undefined
+}
+
+/** Planner/persistence registry: no sole package-name hole for workspace-scoped Office MCPs. */
+export function isWorkspacePolicyMcp(name: string, server: Record<string, unknown>): boolean {
+  return isExcelMcp(name, server) || isAlphaOfficeMcp(name, server)
 }
