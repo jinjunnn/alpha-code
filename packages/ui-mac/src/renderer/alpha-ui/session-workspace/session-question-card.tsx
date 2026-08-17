@@ -1,4 +1,6 @@
-// SessionQuestionCard —— 提问卡(question typed 通道;回答绑 sessionID+requestID)。
+// SessionQuestionCard —— 提问卡(question typed 通道;回答绑 requestID)。
+// #1008:提交必须走 v1 `client.question.reply/reject`(#652 会话发送同一代次)。v2
+// `session.question.reply` 写的是另一份空账本,桌面点「提交回答」恒 404。
 //
 // 从 session-composer-dock 抽出:这一族是纯呈现,一切从 props 进来,不碰 ServerSDK/Router
 // 上下文 —— 与 files-view / terminal-rail-panel 同形制,于是能被真 Solid 挂载测试直接驱动。
@@ -64,12 +66,12 @@ export function SessionQuestionCard(props: {
     setFailed(false)
     const call =
       kind === "reply"
-        ? client.v2.session.question.reply({
-            sessionID: bound.sessionID,
+        ? client.question.reply({
             requestID: props.request.id,
-            questionV2Reply: { answers: answers() as string[][] },
+            directory: bound.directory,
+            answers: answers() as string[][],
           })
-        : client.v2.session.question.reject({ sessionID: bound.sessionID, requestID: props.request.id })
+        : client.question.reject({ requestID: props.request.id, directory: bound.directory })
     call.then(
       (result) => {
         // throwOnError:false 档位的 { error } 信封同样是失败(审计 minor:4xx 不装成功)。

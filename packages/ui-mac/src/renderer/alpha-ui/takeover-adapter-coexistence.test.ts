@@ -128,6 +128,17 @@ describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
     expect(dock).not.toContain("sessionAgent")
   })
 
+  test("#1008 提问卡提交与会话发送同一代次:不得再走 v2 session.question", () => {
+    // #652 把发送锁回 v1 promptAsync;提问工具把待答记在 Question.Service。
+    // 提问卡若走 v2.session.question.reply,打的是另一份空账本,提交恒 404。
+    const card = read(path.join(ALPHA_UI, "session-workspace", "session-question-card.tsx"))
+    expect(card).toContain("client.question.reply({")
+    expect(card).toContain("client.question.reject({")
+    expect(card).not.toMatch(/v2\.session\.question\.reply/)
+    expect(card).not.toMatch(/v2\.session\.question\.reject/)
+    expect(card).not.toContain("questionV2Reply")
+  })
+
   test("审计修复轮棘轮:停止键走已批稿 accent 令牌", () => {
     // (原「always 项目身份取会话精确 projectID」棘轮随 dock 审批卡删除而失去主体:
     // dock 已无任何放行动作;独立 Permission surface 的 always 项目身份由
