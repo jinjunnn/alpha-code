@@ -1,1527 +1,35 @@
 {
-  "schema": "alpha-code/req109-110-t7-runtime/v1",
+  "schema": "alpha-code/req109-110-t7-runtime/v2",
   "issue": "alpha-code#536",
-  "capturedAt": "2026-08-06T10:43:18.789Z",
-  "commit": "606e27db924267132e16767bf52ce90d42e9ff45",
-  "appSha256": "06e2cb71e9263adc60c8dc6c15a74190396562d1ed1caab878bf110c6a0202d1",
+  "capturedAt": "2026-08-17T04:51:29.255Z",
+  "commit": "5f8d6096d9b7e38f58b0fde06d127f9044f604c1",
+  "appSha256": "98ccbc4bc6d7f2922561efda2b29f0c11a6d24be90fb4212fe95f4143f45eab2",
   "endpoint": "loopback (URL redacted; no real credential)",
   "latency": {
-    "samples": 21,
-    "p95Ms": 10148.378375,
-    "maxMs": 10169.957208
+    "samples": 5,
+    "p95Ms": 4395.078459,
+    "maxMs": 4395.078459
   },
   "results": [
     {
-      "scenario": "latency-50ms",
-      "sample": 1,
-      "startupMs": 3079.464458,
-      "refreshDurationMs": 111.50787499999996,
-      "refreshResult": "refreshed",
-      "grace": "refreshed",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012900338,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 46.7629579999998,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786011999788.133
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 206.68679099999997,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 206.831208
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.rotation",
-          "t": 318.10754099999997,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 8,
-          "name": "main.auth.refresh.end",
-          "t": 318.33908299999996,
-          "durationMs": 111.50670899999994,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 11,
-          "name": "main.auth.boot.grace",
-          "t": 318.608375,
-          "outcome": "refreshed"
-        },
-        {
-          "seq": 12,
-          "name": "main.sidecar.generation.emit",
-          "t": 318.990041,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 17,
-          "name": "main.sidecar.generation.emit",
-          "t": 986.828958,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 18,
-          "name": "renderer.root.mount",
-          "t": 1153.77925,
-          "source": "renderer",
-          "rendererNow": 193.69999998807907,
-          "occurrence": 1
-        },
-        {
-          "seq": 23,
-          "name": "main.sidecar.generation.emit",
-          "t": 2024.476666,
-          "generation": 1,
-          "phase": "failed",
-          "reason": "boot"
-        },
-        {
-          "seq": 26,
-          "name": "main.sidecar.generation.emit",
-          "t": 2616.583333,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 27,
-          "name": "main.renderer.reload.skipped",
-          "t": 2616.794833,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 30,
-          "name": "renderer.home.model_list.start",
-          "t": 2663.346291,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 1692.7999999821186,
-          "occurrence": 1
-        },
-        {
-          "seq": 33,
-          "name": "renderer.home.model_list.end",
-          "t": 3079.464458,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 426.5,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2119.4000000059605,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "latency-50ms",
-      "sample": 2,
-      "startupMs": 2893.810583,
-      "refreshDurationMs": 111.14316700000006,
-      "refreshResult": "refreshed",
-      "grace": "refreshed",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012904232,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 46.562875000000076,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012003677.497
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 197.21162499999997,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 197.37204099999997
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.rotation",
-          "t": 308.30116599999997,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 8,
-          "name": "main.auth.refresh.end",
-          "t": 308.51520800000003,
-          "durationMs": 111.14229199999994,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 11,
-          "name": "main.auth.boot.grace",
-          "t": 308.737625,
-          "outcome": "refreshed"
-        },
-        {
-          "seq": 12,
-          "name": "main.sidecar.generation.emit",
-          "t": 309.063541,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 17,
-          "name": "main.sidecar.generation.emit",
-          "t": 974.2006660000001,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 18,
-          "name": "renderer.root.mount",
-          "t": 1147.8232910000002,
-          "source": "renderer",
-          "rendererNow": 194.7999999821186,
-          "occurrence": 1
-        },
-        {
-          "seq": 23,
-          "name": "main.sidecar.generation.emit",
-          "t": 2011.869791,
-          "generation": 1,
-          "phase": "failed",
-          "reason": "boot"
-        },
-        {
-          "seq": 26,
-          "name": "main.sidecar.generation.emit",
-          "t": 2620.807916,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 27,
-          "name": "main.renderer.reload.skipped",
-          "t": 2620.983791,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 30,
-          "name": "renderer.home.model_list.start",
-          "t": 2667.3707910000003,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 1702.199999988079,
-          "occurrence": 1
-        },
-        {
-          "seq": 33,
-          "name": "renderer.home.model_list.end",
-          "t": 2893.810583,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 238.5,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 1940.699999988079,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "latency-50ms",
-      "sample": 3,
-      "startupMs": 3088.230458,
-      "refreshDurationMs": 109.84929200000002,
-      "refreshResult": "refreshed",
-      "grace": "refreshed",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012907925,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 48.739915999999994,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012007360.767
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 206.338333,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 206.50508299999998
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.rotation",
-          "t": 316.11812499999996,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 8,
-          "name": "main.auth.refresh.end",
-          "t": 316.354375,
-          "durationMs": 109.848458,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 11,
-          "name": "main.auth.boot.grace",
-          "t": 316.590833,
-          "outcome": "refreshed"
-        },
-        {
-          "seq": 12,
-          "name": "main.sidecar.generation.emit",
-          "t": 316.9203749999999,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 17,
-          "name": "main.sidecar.generation.emit",
-          "t": 982.7203329999999,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 18,
-          "name": "renderer.root.mount",
-          "t": 1148.103791,
-          "source": "renderer",
-          "rendererNow": 192.7000000178814,
-          "occurrence": 1
-        },
-        {
-          "seq": 23,
-          "name": "main.sidecar.generation.emit",
-          "t": 2020.4654580000001,
-          "generation": 1,
-          "phase": "failed",
-          "reason": "boot"
-        },
-        {
-          "seq": 26,
-          "name": "main.sidecar.generation.emit",
-          "t": 2611.227,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 27,
-          "name": "main.renderer.reload.skipped",
-          "t": 2611.361,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 30,
-          "name": "renderer.home.model_list.start",
-          "t": 2659.966916,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 1691.7000000178814,
-          "occurrence": 1
-        },
-        {
-          "seq": 33,
-          "name": "renderer.home.model_list.end",
-          "t": 3088.230458,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 441.09999999403954,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2132.800000011921,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "latency-50ms",
-      "sample": 4,
-      "startupMs": 3088.1863329999996,
-      "refreshDurationMs": 113.03583299999997,
-      "refreshResult": "refreshed",
-      "grace": "refreshed",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012911817,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 48.67225000000053,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012011264.68
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 206.997208,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 207.15045800000001
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.rotation",
-          "t": 319.96737500000006,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 8,
-          "name": "main.auth.refresh.end",
-          "t": 320.186291,
-          "durationMs": 113.03454200000004,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 11,
-          "name": "main.auth.boot.grace",
-          "t": 320.41279099999997,
-          "outcome": "refreshed"
-        },
-        {
-          "seq": 12,
-          "name": "main.sidecar.generation.emit",
-          "t": 320.81612500000006,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 17,
-          "name": "main.sidecar.generation.emit",
-          "t": 982.773083,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 18,
-          "name": "renderer.root.mount",
-          "t": 1155.084041,
-          "source": "renderer",
-          "rendererNow": 192.30000001192093,
-          "occurrence": 1
-        },
-        {
-          "seq": 23,
-          "name": "main.sidecar.generation.emit",
-          "t": 2019.419083,
-          "generation": 1,
-          "phase": "failed",
-          "reason": "boot"
-        },
-        {
-          "seq": 26,
-          "name": "main.sidecar.generation.emit",
-          "t": 2612.0775409999997,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 27,
-          "name": "main.renderer.reload.skipped",
-          "t": 2612.2694579999998,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 30,
-          "name": "renderer.home.model_list.start",
-          "t": 2660.749791,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 1685.5,
-          "occurrence": 1
-        },
-        {
-          "seq": 33,
-          "name": "renderer.home.model_list.end",
-          "t": 3088.1863329999996,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 439.90000000596046,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2125.4000000059605,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "latency-50ms",
-      "sample": 5,
-      "startupMs": 2982.105542,
-      "refreshDurationMs": 110.60870799999998,
-      "refreshResult": "refreshed",
-      "grace": "refreshed",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012915686,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 47.336125000000266,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012015138.775
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 205.035208,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 205.18737499999997
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.rotation",
-          "t": 315.533417,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 8,
-          "name": "main.auth.refresh.end",
-          "t": 315.79608299999995,
-          "durationMs": 110.608,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 11,
-          "name": "main.auth.boot.grace",
-          "t": 316.31991700000003,
-          "outcome": "refreshed"
-        },
-        {
-          "seq": 12,
-          "name": "main.sidecar.generation.emit",
-          "t": 316.65645800000004,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 17,
-          "name": "main.sidecar.generation.emit",
-          "t": 991.3588329999999,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 18,
-          "name": "renderer.root.mount",
-          "t": 1166.6665830000002,
-          "source": "renderer",
-          "rendererNow": 201.5,
-          "occurrence": 1
-        },
-        {
-          "seq": 23,
-          "name": "main.sidecar.generation.emit",
-          "t": 2028.431708,
-          "generation": 1,
-          "phase": "failed",
-          "reason": "boot"
-        },
-        {
-          "seq": 26,
-          "name": "main.sidecar.generation.emit",
-          "t": 2623.484083,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 27,
-          "name": "main.renderer.reload.skipped",
-          "t": 2623.5952079999997,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 30,
-          "name": "renderer.home.model_list.start",
-          "t": 2670.820208,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 1694.199999988079,
-          "occurrence": 1
-        },
-        {
-          "seq": 33,
-          "name": "renderer.home.model_list.end",
-          "t": 2982.105542,
-          "attempt": 1,
-          "chain": 2,
-          "count": 37,
-          "durationMs": 322.80000001192093,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2017,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "latency-1500ms",
-      "sample": 1,
-      "startupMs": 4204.149708999999,
-      "refreshDurationMs": 1562.384083,
-      "refreshResult": "refreshed",
-      "grace": "timeout",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012920920,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 46.329792,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012018913.498
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 211.847375,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 212.00429199999996
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1416.24125,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1419.752375,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 10,
-          "name": "main.auth.rotation",
-          "t": 1774.197584,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 11,
-          "name": "main.auth.refresh.end",
-          "t": 1774.388375,
-          "durationMs": 1562.3825000000002,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 14,
-          "name": "main.auth.rotation",
-          "t": 1774.540459,
-          "generation": 2,
-          "reason": "boot-grace",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 18,
-          "name": "main.sidecar.generation.emit",
-          "t": 2112.1855,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 19,
-          "name": "renderer.root.mount",
-          "t": 2278.001667,
-          "source": "renderer",
-          "rendererNow": 192.89999997615814,
-          "occurrence": 1
-        },
-        {
-          "seq": 24,
-          "name": "main.sidecar.generation.emit",
-          "t": 3150.316542,
-          "generation": 1,
-          "phase": "failed",
-          "reason": "boot"
-        },
-        {
-          "seq": 27,
-          "name": "main.sidecar.generation.emit",
-          "t": 3746.805375,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 28,
-          "name": "main.renderer.reload.skipped",
-          "t": 3746.9476250000002,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 31,
-          "name": "renderer.home.model_list.start",
-          "t": 3793.135167,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 1697.8999999761581,
-          "occurrence": 1
-        },
-        {
-          "seq": 34,
-          "name": "renderer.home.model_list.end",
-          "t": 4204.149708999999,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 421.10000002384186,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2119.0999999940395,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "latency-1500ms",
-      "sample": 2,
-      "startupMs": 4039.354958,
-      "refreshDurationMs": 1561.209833,
-      "refreshResult": "refreshed",
-      "grace": "timeout",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012926012,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 46.001124999999774,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012024016.101
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 205.99083299999998,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 206.14325
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1411.195375,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1414.432208,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 10,
-          "name": "main.auth.rotation",
-          "t": 1767.038708,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 11,
-          "name": "main.auth.refresh.end",
-          "t": 1767.353083,
-          "durationMs": 1561.208166,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 14,
-          "name": "main.auth.rotation",
-          "t": 1767.515917,
-          "generation": 2,
-          "reason": "boot-grace",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 18,
-          "name": "main.sidecar.generation.emit",
-          "t": 2116.8035,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 19,
-          "name": "renderer.root.mount",
-          "t": 2283.200958,
-          "source": "renderer",
-          "rendererNow": 192.7999999821186,
-          "occurrence": 1
-        },
-        {
-          "seq": 24,
-          "name": "main.sidecar.generation.emit",
-          "t": 3154.2778749999998,
-          "generation": 1,
-          "phase": "failed",
-          "reason": "boot"
-        },
-        {
-          "seq": 27,
-          "name": "main.sidecar.generation.emit",
-          "t": 3773.903375,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 28,
-          "name": "main.renderer.reload.skipped",
-          "t": 3774.0824169999996,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 32,
-          "name": "renderer.home.model_list.start",
-          "t": 3819.9044999999996,
-          "attempt": 1,
-          "chain": 3,
-          "source": "renderer",
-          "rendererNow": 1717.5999999940395,
-          "occurrence": 1
-        },
-        {
-          "seq": 35,
-          "name": "renderer.home.model_list.end",
-          "t": 4039.354958,
-          "attempt": 1,
-          "chain": 3,
-          "count": 6132,
-          "durationMs": 231.30000001192093,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 1948.9000000059605,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "latency-1500ms",
-      "sample": 3,
-      "startupMs": 4016.3663749999996,
-      "refreshDurationMs": 1560.175458,
-      "refreshResult": "refreshed",
-      "grace": "timeout",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012930934,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 46.05887500000017,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012028926.17
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 208.105166,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 208.26208300000002
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1412.828125,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1416.280125,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 10,
-          "name": "main.auth.rotation",
-          "t": 1768.250916,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 11,
-          "name": "main.auth.refresh.end",
-          "t": 1768.437541,
-          "durationMs": 1560.173917,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 14,
-          "name": "main.auth.rotation",
-          "t": 1768.5825829999999,
-          "generation": 2,
-          "reason": "boot-grace",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 18,
-          "name": "main.sidecar.generation.emit",
-          "t": 2113.233541,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 19,
-          "name": "renderer.root.mount",
-          "t": 2277.878583,
-          "source": "renderer",
-          "rendererNow": 192.19999998807907,
-          "occurrence": 1
-        },
-        {
-          "seq": 24,
-          "name": "main.sidecar.generation.emit",
-          "t": 3150.118708,
-          "generation": 1,
-          "phase": "failed",
-          "reason": "boot"
-        },
-        {
-          "seq": 27,
-          "name": "main.sidecar.generation.emit",
-          "t": 3742.697041,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 28,
-          "name": "main.renderer.reload.skipped",
-          "t": 3742.918541,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 31,
-          "name": "renderer.home.model_list.start",
-          "t": 3788.755916,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 1693.4000000059605,
-          "occurrence": 1
-        },
-        {
-          "seq": 34,
-          "name": "renderer.home.model_list.end",
-          "t": 4016.3663749999996,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 237.2999999821186,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 1930.699999988079,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "latency-1500ms",
-      "sample": 4,
-      "startupMs": 4009.538292,
-      "refreshDurationMs": 1564.537709,
-      "refreshResult": "refreshed",
-      "grace": "timeout",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012935864,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 47.22991699999966,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012033858.644
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 204.076875,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 204.225083
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1408.0510829999998,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1411.1277499999999,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 10,
-          "name": "main.auth.rotation",
-          "t": 1768.569125,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 11,
-          "name": "main.auth.refresh.end",
-          "t": 1768.762792,
-          "durationMs": 1564.535958,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 14,
-          "name": "main.auth.rotation",
-          "t": 1768.922083,
-          "generation": 2,
-          "reason": "boot-grace",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 18,
-          "name": "main.sidecar.generation.emit",
-          "t": 2100.375,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 19,
-          "name": "renderer.root.mount",
-          "t": 2265.562625,
-          "source": "renderer",
-          "rendererNow": 191.90000000596046,
-          "occurrence": 1
-        },
-        {
-          "seq": 24,
-          "name": "main.sidecar.generation.emit",
-          "t": 3138.1810419999997,
-          "generation": 1,
-          "phase": "failed",
-          "reason": "boot"
-        },
-        {
-          "seq": 27,
-          "name": "main.sidecar.generation.emit",
-          "t": 3734.505125,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 28,
-          "name": "main.renderer.reload.skipped",
-          "t": 3734.6485,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 31,
-          "name": "renderer.home.model_list.start",
-          "t": 3781.735042,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 1696.9000000059605,
-          "occurrence": 1
-        },
-        {
-          "seq": 34,
-          "name": "renderer.home.model_list.end",
-          "t": 4009.538292,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 238.89999997615814,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 1935.7999999821186,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "latency-1500ms",
-      "sample": 5,
-      "startupMs": 4212.727083,
-      "refreshDurationMs": 1564.966834,
-      "refreshResult": "refreshed",
-      "grace": "timeout",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012940771,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 51.68650000000025,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012038756.359
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 210.51100000000002,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 210.68345800000003
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1414.602667,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1417.765,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 10,
-          "name": "main.auth.rotation",
-          "t": 1775.358417,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 11,
-          "name": "main.auth.refresh.end",
-          "t": 1775.650292,
-          "durationMs": 1564.964542,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 14,
-          "name": "main.auth.rotation",
-          "t": 1775.83175,
-          "generation": 2,
-          "reason": "boot-grace",
-          "renewal": "refreshed",
-          "outcome": "pending"
-        },
-        {
-          "seq": 18,
-          "name": "main.sidecar.generation.emit",
-          "t": 2111.153792,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 19,
-          "name": "renderer.root.mount",
-          "t": 2282.053,
-          "source": "renderer",
-          "rendererNow": 194.5,
-          "occurrence": 1
-        },
-        {
-          "seq": 24,
-          "name": "main.sidecar.generation.emit",
-          "t": 3148.774292,
-          "generation": 1,
-          "phase": "failed",
-          "reason": "boot"
-        },
-        {
-          "seq": 27,
-          "name": "main.sidecar.generation.emit",
-          "t": 3745.075583,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 28,
-          "name": "main.renderer.reload.skipped",
-          "t": 3745.252958,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 31,
-          "name": "renderer.home.model_list.start",
-          "t": 3796.762083,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 1697.2999999821186,
-          "occurrence": 1
-        },
-        {
-          "seq": 34,
-          "name": "renderer.home.model_list.end",
-          "t": 4212.727083,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 427.80000001192093,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2125.0999999940395,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
       "scenario": "latency-3000ms",
       "sample": 1,
-      "startupMs": 10114.452625,
-      "bootReadyMs": 2102.3002909999996,
-      "refreshDurationMs": 9695.474958,
+      "startupMs": 4395.078459,
+      "bootReadyMs": 2567.608375,
+      "catalogReady": {
+        "atMs": 4387.251792,
+        "barrierMs": 3.299999998882413,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 2496.882,
+        "outcome": "ready",
+        "durationMs": 172.00120899999996,
+        "status": 200
+      },
+      "refreshDurationMs": 3796.9759999999997,
       "refreshResult": "refreshed",
       "grace": "timeout",
       "rotations": 1,
@@ -1534,18 +42,21 @@
           "email": "synthetic@example.invalid",
           "plan": "test"
         },
-        "expiresAt": 1786012947379,
+        "expiresAt": 1786943130599,
         "platformStatus": "ready"
       },
       "unavailableVisible": false,
-      "readyRetryMs": 1.2120410000006814,
+      "readyRetryMs": 1.528041999999914,
       "secretHygiene": {
         "authMode": 384,
         "tokenInTimeline": false,
         "refreshTokenInTimeline": false,
         "tokenInProcessEnv": false,
         "tokenInAuthState": false,
-        "tokenInRendererSurface": false
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
       },
       "events": [
         {
@@ -1553,2433 +64,1272 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1786012043857.469
+          "timeOrigin": 1786942226635.886
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 209.738875,
+          "t": 585.59325,
           "expired": true
         },
         {
           "seq": 6,
           "name": "main.auth.refresh.start",
-          "t": 209.88524999999998
+          "t": 585.7455
         },
         {
           "seq": 7,
           "name": "main.auth.boot.grace",
-          "t": 1415.307375,
+          "t": 1790.6421249999999,
           "outcome": "timeout"
         },
         {
           "seq": 8,
           "name": "main.sidecar.generation.emit",
-          "t": 1419.684125,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 13,
-          "name": "main.sidecar.generation.emit",
-          "t": 2102.3002909999996,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 14,
-          "name": "renderer.root.mount",
-          "t": 2280.4279159999996,
-          "source": "renderer",
-          "rendererNow": 193.59999999403954,
-          "occurrence": 1
-        },
-        {
-          "seq": 19,
-          "name": "renderer.home.model_list.start",
-          "t": 2410.0692499999996,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 315,
-          "occurrence": 1
-        },
-        {
-          "seq": 20,
-          "name": "main.auth.rotation",
-          "t": 3270.307791,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "requested"
-        },
-        {
-          "seq": 21,
-          "name": "main.sidecar.generation.emit",
-          "t": 3286.789541,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 3290.128041,
-          "attempt": 1,
-          "chain": 2,
-          "durationMs": 887.7999999821186,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 1202.7999999821186,
-          "occurrence": 1
-        },
-        {
-          "seq": 25,
-          "name": "renderer.home.model_list.start",
-          "t": 4292.778416,
-          "attempt": 2,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 2204,
-          "occurrence": 2
-        },
-        {
-          "seq": 26,
-          "name": "renderer.home.model_list.end",
-          "t": 4293.912375,
-          "attempt": 2,
-          "chain": 2,
-          "durationMs": 0.30000001192092896,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 2204.199999988079,
-          "occurrence": 2
-        },
-        {
-          "seq": 28,
-          "name": "renderer.home.model_list.start",
-          "t": 6293.909333,
-          "attempt": 3,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 4205.0999999940395,
-          "occurrence": 3
-        },
-        {
-          "seq": 29,
-          "name": "renderer.home.model_list.end",
-          "t": 6294.718,
-          "attempt": 3,
-          "chain": 2,
-          "durationMs": 0.19999998807907104,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 4205.299999982119,
-          "occurrence": 3
-        },
-        {
-          "seq": 33,
-          "name": "main.sidecar.generation.emit",
-          "t": 9904.87325,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 34,
-          "name": "main.renderer.reload.skipped",
-          "t": 9905.0435,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 36,
-          "name": "main.auth.refresh.end",
-          "t": 9905.360208,
-          "durationMs": 9695.474375,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 39,
-          "name": "main.auth.rotation",
-          "t": 9905.50625,
-          "generation": 2,
-          "reason": "boot-grace",
-          "renewal": "refreshed",
-          "outcome": "already-current"
-        },
-        {
-          "seq": 42,
-          "name": "renderer.home.model_list.start",
-          "t": 9906.085291000001,
-          "attempt": 1,
-          "chain": 3,
-          "source": "renderer",
-          "rendererNow": 7818.5,
-          "occurrence": 4
-        },
-        {
-          "seq": 44,
-          "name": "renderer.home.model_list.start",
-          "t": 9907.574,
-          "attempt": 1,
-          "chain": 4,
-          "source": "renderer",
-          "rendererNow": 7820.299999982119,
-          "occurrence": 5
-        },
-        {
-          "seq": 47,
-          "name": "renderer.home.model_list.end",
-          "t": 10114.452625,
-          "attempt": 1,
-          "chain": 3,
-          "count": 6132,
-          "durationMs": 209.09999999403954,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 8027.5999999940395,
-          "occurrence": 4
-        }
-      ]
-    },
-    {
-      "scenario": "latency-3000ms",
-      "sample": 2,
-      "startupMs": 10120.93525,
-      "bootReadyMs": 2090.506416,
-      "refreshDurationMs": 9704.447124999999,
-      "refreshResult": "refreshed",
-      "grace": "timeout",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012958624,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 1.3445410000003903,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012055118.814
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 212.16229099999998,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 212.309166
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1416.576333,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1420.441458,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 13,
-          "name": "main.sidecar.generation.emit",
-          "t": 2090.506416,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 14,
-          "name": "renderer.root.mount",
-          "t": 2273.34825,
-          "source": "renderer",
-          "rendererNow": 196.5,
-          "occurrence": 1
-        },
-        {
-          "seq": 19,
-          "name": "renderer.home.model_list.start",
-          "t": 2403.44225,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 317.40000000596046,
-          "occurrence": 1
-        },
-        {
-          "seq": 20,
-          "name": "main.auth.rotation",
-          "t": 3274.9145,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "requested"
-        },
-        {
-          "seq": 21,
-          "name": "main.sidecar.generation.emit",
-          "t": 3294.09925,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 3296.742166,
-          "attempt": 1,
-          "chain": 2,
-          "durationMs": 902.5999999940395,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 1220,
-          "occurrence": 1
-        },
-        {
-          "seq": 25,
-          "name": "renderer.home.model_list.start",
-          "t": 4300.815541,
-          "attempt": 2,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 2221.300000011921,
-          "occurrence": 2
-        },
-        {
-          "seq": 26,
-          "name": "renderer.home.model_list.end",
-          "t": 4301.923666000001,
-          "attempt": 2,
-          "chain": 2,
-          "durationMs": 0.29999998211860657,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 2221.5999999940395,
-          "occurrence": 2
-        },
-        {
-          "seq": 28,
-          "name": "renderer.home.model_list.start",
-          "t": 6300.960208,
-          "attempt": 3,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 4222.800000011921,
-          "occurrence": 3
-        },
-        {
-          "seq": 29,
-          "name": "renderer.home.model_list.end",
-          "t": 6301.455541,
-          "attempt": 3,
-          "chain": 2,
-          "durationMs": 0,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 4222.800000011921,
-          "occurrence": 3
-        },
-        {
-          "seq": 33,
-          "name": "main.sidecar.generation.emit",
-          "t": 9916.245875,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 34,
-          "name": "main.renderer.reload.skipped",
-          "t": 9916.465833,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 36,
-          "name": "main.auth.refresh.end",
-          "t": 9916.756291,
-          "durationMs": 9704.446457999999,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 39,
-          "name": "main.auth.rotation",
-          "t": 9916.885291,
-          "generation": 2,
-          "reason": "boot-grace",
-          "renewal": "refreshed",
-          "outcome": "already-current"
-        },
-        {
-          "seq": 42,
-          "name": "renderer.home.model_list.start",
-          "t": 9917.590416000001,
-          "attempt": 1,
-          "chain": 3,
-          "source": "renderer",
-          "rendererNow": 7839.9000000059605,
-          "occurrence": 4
-        },
-        {
-          "seq": 44,
-          "name": "renderer.home.model_list.start",
-          "t": 9918.939208,
-          "attempt": 1,
-          "chain": 4,
-          "source": "renderer",
-          "rendererNow": 7841.699999988079,
-          "occurrence": 5
-        },
-        {
-          "seq": 47,
-          "name": "renderer.home.model_list.end",
-          "t": 10120.93525,
-          "attempt": 1,
-          "chain": 3,
-          "count": 6132,
-          "durationMs": 204.19999998807907,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 8044.0999999940395,
-          "occurrence": 4
-        }
-      ]
-    },
-    {
-      "scenario": "latency-3000ms",
-      "sample": 3,
-      "startupMs": 5164.445542,
-      "bootReadyMs": 2072.68025,
-      "refreshDurationMs": 4732.097917,
-      "refreshResult": "refreshed",
-      "grace": "timeout",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012969900,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 1.8965830000006463,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012066380.235
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 204.972583,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 205.19299999999998
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1410.488625,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1414.3815,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 13,
-          "name": "main.sidecar.generation.emit",
-          "t": 2072.68025,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 14,
-          "name": "renderer.root.mount",
-          "t": 2253.501875,
-          "source": "renderer",
-          "rendererNow": 193.90000000596046,
-          "occurrence": 1
-        },
-        {
-          "seq": 19,
-          "name": "renderer.home.model_list.start",
-          "t": 2383.317708,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 315.60000002384186,
-          "occurrence": 1
-        },
-        {
-          "seq": 20,
-          "name": "main.auth.rotation",
-          "t": 3283.247,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "requested"
-        },
-        {
-          "seq": 21,
-          "name": "main.sidecar.generation.emit",
-          "t": 3299.15125,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 3301.84175,
-          "attempt": 1,
-          "chain": 2,
-          "durationMs": 926.5999999940395,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 1242.2000000178814,
-          "occurrence": 1
-        },
-        {
-          "seq": 25,
-          "name": "renderer.home.model_list.start",
-          "t": 4302.757,
-          "attempt": 2,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 2242.800000011921,
-          "occurrence": 2
-        },
-        {
-          "seq": 26,
-          "name": "renderer.home.model_list.end",
-          "t": 4303.043625,
-          "attempt": 2,
-          "chain": 2,
-          "durationMs": 0,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 2242.800000011921,
-          "occurrence": 2
-        },
-        {
-          "seq": 30,
-          "name": "main.sidecar.generation.emit",
-          "t": 4936.617125,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 31,
-          "name": "main.renderer.reload.skipped",
-          "t": 4936.787125,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 33,
-          "name": "main.auth.refresh.end",
-          "t": 4937.290917,
-          "durationMs": 4732.097667,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 36,
-          "name": "main.auth.rotation",
-          "t": 4937.47,
-          "generation": 2,
-          "reason": "boot-grace",
-          "renewal": "refreshed",
-          "outcome": "already-current"
-        },
-        {
-          "seq": 39,
-          "name": "renderer.home.model_list.start",
-          "t": 4938.513708,
-          "attempt": 1,
-          "chain": 3,
-          "source": "renderer",
-          "rendererNow": 2877.5,
-          "occurrence": 3
-        },
-        {
-          "seq": 41,
-          "name": "renderer.home.model_list.start",
-          "t": 4939.621958,
-          "attempt": 1,
-          "chain": 4,
-          "source": "renderer",
-          "rendererNow": 2879.5,
-          "occurrence": 4
-        },
-        {
-          "seq": 44,
-          "name": "renderer.home.model_list.end",
-          "t": 5164.445542,
-          "attempt": 1,
-          "chain": 3,
-          "count": 6132,
-          "durationMs": 227.2000000178814,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 3104.7000000178814,
-          "occurrence": 3
-        }
-      ]
-    },
-    {
-      "scenario": "latency-3000ms",
-      "sample": 4,
-      "startupMs": 10148.378375,
-      "bootReadyMs": 2085.6797500000002,
-      "refreshDurationMs": 9728.172,
-      "refreshResult": "refreshed",
-      "grace": "timeout",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012976224,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 1.1466250000012224,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012072690.519
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 215.270042,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 215.41833400000002
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1419.844625,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1423.595125,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 13,
-          "name": "main.sidecar.generation.emit",
-          "t": 2085.6797500000002,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 14,
-          "name": "renderer.root.mount",
-          "t": 2265.725084,
-          "source": "renderer",
-          "rendererNow": 192.90000000596046,
-          "occurrence": 1
-        },
-        {
-          "seq": 19,
-          "name": "renderer.home.model_list.start",
-          "t": 2399.684084,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 316.09999999403954,
-          "occurrence": 1
-        },
-        {
-          "seq": 20,
-          "name": "main.auth.rotation",
-          "t": 3298.0870840000002,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "requested"
-        },
-        {
-          "seq": 21,
-          "name": "main.sidecar.generation.emit",
-          "t": 3319.186334,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 3322.4560420000003,
-          "attempt": 1,
-          "chain": 2,
-          "durationMs": 933.5,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 1249.5999999940395,
-          "occurrence": 1
-        },
-        {
-          "seq": 25,
-          "name": "renderer.home.model_list.start",
-          "t": 4325.464709,
-          "attempt": 2,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 2250.7999999821186,
-          "occurrence": 2
-        },
-        {
-          "seq": 26,
-          "name": "renderer.home.model_list.end",
-          "t": 4326.600584,
-          "attempt": 2,
-          "chain": 2,
-          "durationMs": 0.20000001788139343,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 2251,
-          "occurrence": 2
-        },
-        {
-          "seq": 28,
-          "name": "renderer.home.model_list.start",
-          "t": 6325.954667,
-          "attempt": 3,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 4251.9000000059605,
-          "occurrence": 3
-        },
-        {
-          "seq": 29,
-          "name": "renderer.home.model_list.end",
-          "t": 6326.483209,
-          "attempt": 3,
-          "chain": 2,
-          "durationMs": 0.19999998807907104,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 4252.0999999940395,
-          "occurrence": 3
-        },
-        {
-          "seq": 33,
-          "name": "main.sidecar.generation.emit",
-          "t": 9943.124416999999,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 34,
-          "name": "main.renderer.reload.skipped",
-          "t": 9943.310375,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 36,
-          "name": "main.auth.refresh.end",
-          "t": 9943.590334,
-          "durationMs": 9728.171417000001,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 39,
-          "name": "main.auth.rotation",
-          "t": 9943.716,
-          "generation": 2,
-          "reason": "boot-grace",
-          "renewal": "refreshed",
-          "outcome": "already-current"
-        },
-        {
-          "seq": 42,
-          "name": "renderer.home.model_list.start",
-          "t": 9944.271042,
-          "attempt": 1,
-          "chain": 3,
-          "source": "renderer",
-          "rendererNow": 7870.699999988079,
-          "occurrence": 4
-        },
-        {
-          "seq": 44,
-          "name": "renderer.home.model_list.start",
-          "t": 9945.721583999999,
-          "attempt": 1,
-          "chain": 4,
-          "source": "renderer",
-          "rendererNow": 7872.4000000059605,
-          "occurrence": 5
-        },
-        {
-          "seq": 47,
-          "name": "renderer.home.model_list.end",
-          "t": 10148.378375,
-          "attempt": 1,
-          "chain": 3,
-          "count": 6132,
-          "durationMs": 204.80000001192093,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 8075.5,
-          "occurrence": 4
-        }
-      ]
-    },
-    {
-      "scenario": "latency-3000ms",
-      "sample": 5,
-      "startupMs": 10169.957208,
-      "bootReadyMs": 2085.3634169999996,
-      "refreshDurationMs": 9752.913666999999,
-      "refreshResult": "refreshed",
-      "grace": "timeout",
-      "rotations": 1,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012987519,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 1.2169169999997393,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012084003.725
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 207.834125,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 207.998958
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1413.013625,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1416.194917,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 13,
-          "name": "main.sidecar.generation.emit",
-          "t": 2085.3634169999996,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 14,
-          "name": "renderer.root.mount",
-          "t": 2266.0537919999997,
-          "source": "renderer",
-          "rendererNow": 193.5,
-          "occurrence": 1
-        },
-        {
-          "seq": 19,
-          "name": "renderer.home.model_list.start",
-          "t": 2390.914292,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 310.30000001192093,
-          "occurrence": 1
-        },
-        {
-          "seq": 20,
-          "name": "main.auth.rotation",
-          "t": 3290.499167,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "requested"
-        },
-        {
-          "seq": 21,
-          "name": "main.sidecar.generation.emit",
-          "t": 3312.070292,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 3315.388208,
-          "attempt": 1,
-          "chain": 2,
-          "durationMs": 932.5,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 1242.800000011921,
-          "occurrence": 1
-        },
-        {
-          "seq": 25,
-          "name": "renderer.home.model_list.start",
-          "t": 4318.303457999999,
-          "attempt": 2,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 2243.7000000178814,
-          "occurrence": 2
-        },
-        {
-          "seq": 26,
-          "name": "renderer.home.model_list.end",
-          "t": 4319.497542,
-          "attempt": 2,
-          "chain": 2,
-          "durationMs": 0.19999998807907104,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 2243.9000000059605,
-          "occurrence": 2
-        },
-        {
-          "seq": 28,
-          "name": "renderer.home.model_list.start",
-          "t": 6321.735708,
-          "attempt": 3,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 4246.9000000059605,
-          "occurrence": 3
-        },
-        {
-          "seq": 29,
-          "name": "renderer.home.model_list.end",
-          "t": 6322.9619999999995,
-          "attempt": 3,
-          "chain": 2,
-          "durationMs": 0.30000001192092896,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 4247.200000017881,
-          "occurrence": 3
-        },
-        {
-          "seq": 33,
-          "name": "main.sidecar.generation.emit",
-          "t": 9960.45075,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 34,
-          "name": "main.renderer.reload.skipped",
-          "t": 9960.6185,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 36,
-          "name": "main.auth.refresh.end",
-          "t": 9960.912624999999,
-          "durationMs": 9752.913167,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 39,
-          "name": "main.auth.rotation",
-          "t": 9961.041041999999,
-          "generation": 2,
-          "reason": "boot-grace",
-          "renewal": "refreshed",
-          "outcome": "already-current"
-        },
-        {
-          "seq": 42,
-          "name": "renderer.home.model_list.start",
-          "t": 9961.667667,
-          "attempt": 1,
-          "chain": 3,
-          "source": "renderer",
-          "rendererNow": 7888.4000000059605,
-          "occurrence": 4
-        },
-        {
-          "seq": 44,
-          "name": "renderer.home.model_list.start",
-          "t": 9963.255417,
-          "attempt": 1,
-          "chain": 4,
-          "source": "renderer",
-          "rendererNow": 7890.300000011921,
-          "occurrence": 5
-        },
-        {
-          "seq": 47,
-          "name": "renderer.home.model_list.end",
-          "t": 10169.957208,
-          "attempt": 1,
-          "chain": 3,
-          "count": 6132,
-          "durationMs": 208.90000000596046,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 8097.300000011921,
-          "occurrence": 4
-        }
-      ]
-    },
-    {
-      "scenario": "timeout-10000ms",
-      "sample": 1,
-      "startupMs": 4859.536958,
-      "bootReadyMs": 2088.412958,
-      "refreshDurationMs": 10006.234416999998,
-      "refreshResult": "transient-failure",
-      "grace": "timeout",
-      "rotations": 0,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012094600,
-        "platformStatus": "recovering"
-      },
-      "unavailableVisible": false,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012095328.848
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 219.380625,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 219.532041
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1422.607541,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1426.775625,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 13,
-          "name": "main.sidecar.generation.emit",
-          "t": 2088.412958,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 14,
-          "name": "renderer.root.mount",
-          "t": 2265.759791,
-          "source": "renderer",
-          "rendererNow": 194.5,
-          "occurrence": 1
-        },
-        {
-          "seq": 19,
-          "name": "renderer.home.model_list.start",
-          "t": 2405.556583,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 327.10000002384186,
-          "occurrence": 1
-        },
-        {
-          "seq": 20,
-          "name": "renderer.home.model_list.end",
-          "t": 4859.536958,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 2461.0999999940395,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2788.2000000178814,
-          "occurrence": 1
-        },
-        {
-          "seq": 22,
-          "name": "renderer.home.model_list.start",
-          "t": 4962.732083,
-          "attempt": 1,
-          "chain": 1,
-          "source": "renderer",
-          "rendererNow": 2891.100000023842,
-          "occurrence": 2
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 4998.663541,
-          "attempt": 1,
-          "chain": 1,
-          "count": 37,
-          "durationMs": 36.29999998211861,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2927.4000000059605,
-          "occurrence": 2
-        },
-        {
-          "seq": 25,
-          "name": "main.auth.refresh.end",
-          "t": 10225.766457999998,
-          "durationMs": 10006.227417,
-          "outcome": "ok",
-          "result": "transient-failure",
-          "generation": 1
-        },
-        {
-          "seq": 28,
-          "name": "main.auth.rotation",
-          "t": 10227.495625,
-          "generation": 1,
-          "reason": "boot-grace",
-          "renewal": "transient-failure",
-          "outcome": "kept"
-        }
-      ]
-    },
-    {
-      "scenario": "timeout-10000ms",
-      "sample": 2,
-      "startupMs": 4977.667208,
-      "bootReadyMs": 2093.1022909999997,
-      "refreshDurationMs": 10008.138541,
-      "refreshResult": "transient-failure",
-      "grace": "timeout",
-      "rotations": 0,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012106046,
-        "platformStatus": "recovering"
-      },
-      "unavailableVisible": false,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012106772.025
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 206.987875,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 207.14025
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1409.9589580000002,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1413.549083,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 13,
-          "name": "main.sidecar.generation.emit",
-          "t": 2093.1022909999997,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 14,
-          "name": "renderer.root.mount",
-          "t": 2272.049833,
-          "source": "renderer",
-          "rendererNow": 192.60000002384186,
-          "occurrence": 1
-        },
-        {
-          "seq": 19,
-          "name": "renderer.home.model_list.start",
-          "t": 2404.795083,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 316.40000000596046,
-          "occurrence": 1
-        },
-        {
-          "seq": 20,
-          "name": "renderer.home.model_list.end",
-          "t": 4977.667208,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 2581.7000000178814,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2898.100000023842,
-          "occurrence": 1
-        },
-        {
-          "seq": 22,
-          "name": "renderer.home.model_list.start",
-          "t": 5078.785291,
-          "attempt": 1,
-          "chain": 1,
-          "source": "renderer",
-          "rendererNow": 2998.9000000059605,
-          "occurrence": 2
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 5115.2973329999995,
-          "attempt": 1,
-          "chain": 1,
-          "count": 37,
-          "durationMs": 36.900000005960464,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 3035.800000011921,
-          "occurrence": 2
-        },
-        {
-          "seq": 25,
-          "name": "main.auth.refresh.end",
-          "t": 10215.278791,
-          "durationMs": 10008.131458,
-          "outcome": "ok",
-          "result": "transient-failure",
-          "generation": 1
-        },
-        {
-          "seq": 28,
-          "name": "main.auth.rotation",
-          "t": 10216.914791000001,
-          "generation": 1,
-          "reason": "boot-grace",
-          "renewal": "transient-failure",
-          "outcome": "kept"
-        }
-      ]
-    },
-    {
-      "scenario": "timeout-10000ms",
-      "sample": 3,
-      "startupMs": 4845.335959,
-      "bootReadyMs": 2082.328334,
-      "refreshDurationMs": 10007.71275,
-      "refreshResult": "transient-failure",
-      "grace": "timeout",
-      "rotations": 0,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012117434,
-        "platformStatus": "recovering"
-      },
-      "unavailableVisible": false,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012118151.877
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 208.68825,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 208.85216699999998
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.boot.grace",
-          "t": 1412.2647089999998,
-          "outcome": "timeout"
-        },
-        {
-          "seq": 8,
-          "name": "main.sidecar.generation.emit",
-          "t": 1415.952834,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 13,
-          "name": "main.sidecar.generation.emit",
-          "t": 2082.328334,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 14,
-          "name": "renderer.root.mount",
-          "t": 2261.029625,
-          "source": "renderer",
-          "rendererNow": 193.7000000178814,
-          "occurrence": 1
-        },
-        {
-          "seq": 19,
-          "name": "renderer.home.model_list.start",
-          "t": 2404.885667,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 330.60000002384186,
-          "occurrence": 1
-        },
-        {
-          "seq": 20,
-          "name": "renderer.home.model_list.end",
-          "t": 4845.335959,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 2447.2999999821186,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2777.9000000059605,
-          "occurrence": 1
-        },
-        {
-          "seq": 22,
-          "name": "renderer.home.model_list.start",
-          "t": 4945.872959,
-          "attempt": 1,
-          "chain": 1,
-          "source": "renderer",
-          "rendererNow": 2878.100000023842,
-          "occurrence": 2
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 4982.964792000001,
-          "attempt": 1,
-          "chain": 1,
-          "count": 37,
-          "durationMs": 37.5,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2915.600000023842,
-          "occurrence": 2
-        },
-        {
-          "seq": 25,
-          "name": "main.auth.refresh.end",
-          "t": 10216.564917,
-          "durationMs": 10007.705791999999,
-          "outcome": "ok",
-          "result": "transient-failure",
-          "generation": 1
-        },
-        {
-          "seq": 28,
-          "name": "main.auth.rotation",
-          "t": 10218.498334,
-          "generation": 1,
-          "reason": "boot-grace",
-          "renewal": "transient-failure",
-          "outcome": "kept"
-        }
-      ]
-    },
-    {
-      "scenario": "http-502",
-      "sample": 1,
-      "startupMs": 4839.020708,
-      "bootReadyMs": 943.7054169999999,
-      "refreshDurationMs": 80.14354199999994,
-      "refreshResult": "transient-failure",
-      "grace": "transient-failure",
-      "rotations": 0,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012128849,
-        "platformStatus": "recovering"
-      },
-      "unavailableVisible": false,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012129576.956
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 217.983708,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 218.14025
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.refresh.end",
-          "t": 298.28379199999995,
-          "durationMs": 80.14050000000003,
-          "outcome": "ok",
-          "result": "transient-failure",
-          "generation": 1
-        },
-        {
-          "seq": 10,
-          "name": "main.auth.boot.grace",
-          "t": 298.57741699999997,
-          "outcome": "transient-failure"
-        },
-        {
-          "seq": 11,
-          "name": "main.sidecar.generation.emit",
-          "t": 298.915708,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 16,
-          "name": "main.sidecar.generation.emit",
-          "t": 943.7054169999999,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 17,
-          "name": "renderer.root.mount",
-          "t": 1125.779792,
-          "source": "renderer",
-          "rendererNow": 195.60000002384186,
-          "occurrence": 1
-        },
-        {
-          "seq": 22,
-          "name": "renderer.home.model_list.start",
-          "t": 1252.935125,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 314.60000002384186,
-          "occurrence": 1
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 4839.020708,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 3594.0999999940395,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 3908.800000011921,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "http-502",
-      "sample": 2,
-      "startupMs": 4243.73,
-      "bootReadyMs": 980.301917,
-      "refreshDurationMs": 103.00866599999992,
-      "refreshResult": "transient-failure",
-      "grace": "transient-failure",
-      "rotations": 0,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012134921,
-        "platformStatus": "recovering"
-      },
-      "unavailableVisible": false,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012135640.997
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 217.73108299999998,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 217.89954200000003
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.refresh.end",
-          "t": 320.90820799999995,
-          "durationMs": 103.005,
-          "outcome": "ok",
-          "result": "transient-failure",
-          "generation": 1
-        },
-        {
-          "seq": 10,
-          "name": "main.auth.boot.grace",
-          "t": 321.266292,
-          "outcome": "transient-failure"
-        },
-        {
-          "seq": 11,
-          "name": "main.sidecar.generation.emit",
-          "t": 321.649583,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 16,
-          "name": "main.sidecar.generation.emit",
-          "t": 980.301917,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 17,
-          "name": "renderer.root.mount",
-          "t": 1161.663833,
-          "source": "renderer",
-          "rendererNow": 195.09999999403954,
-          "occurrence": 1
-        },
-        {
-          "seq": 22,
-          "name": "renderer.home.model_list.start",
-          "t": 1296.958708,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 321.90000000596046,
-          "occurrence": 1
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 4243.73,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 2955.300000011921,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 3277.2000000178814,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "http-502",
-      "sample": 3,
-      "startupMs": 3341.879958,
-      "bootReadyMs": 954.9839999999999,
-      "refreshDurationMs": 102.90887499999997,
-      "refreshResult": "transient-failure",
-      "grace": "transient-failure",
-      "rotations": 0,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786012140388,
-        "platformStatus": "recovering"
-      },
-      "unavailableVisible": false,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012141105.104
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 206.23987499999998,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 206.38879100000003
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.refresh.end",
-          "t": 309.297666,
-          "durationMs": 102.90599999999995,
-          "outcome": "ok",
-          "result": "transient-failure",
-          "generation": 1
-        },
-        {
-          "seq": 10,
-          "name": "main.auth.boot.grace",
-          "t": 309.633583,
-          "outcome": "transient-failure"
-        },
-        {
-          "seq": 11,
-          "name": "main.sidecar.generation.emit",
-          "t": 310.02504100000004,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 16,
-          "name": "main.sidecar.generation.emit",
-          "t": 954.9839999999999,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 17,
-          "name": "renderer.root.mount",
-          "t": 1135.270583,
-          "source": "renderer",
-          "rendererNow": 195.09999999403954,
-          "occurrence": 1
-        },
-        {
-          "seq": 22,
-          "name": "renderer.home.model_list.start",
-          "t": 1263.147291,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 314.09999999403954,
-          "occurrence": 1
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 3341.879958,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 2087.5999999940395,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2401.699999988079,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "invalid-400",
-      "sample": 1,
-      "startupMs": 3702.379375,
-      "bootReadyMs": 974.592416,
-      "refreshDurationMs": 103.60862499999999,
-      "refreshResult": "invalid-grant",
-      "grace": "invalid-grant",
-      "rotations": 0,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-out",
-        "mode": "byok"
-      },
-      "unavailableVisible": false,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012145670.809
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 214.84679100000002,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 214.999625
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.refresh.end",
-          "t": 318.60825,
-          "durationMs": 103.60629200000005,
-          "outcome": "ok",
-          "result": "invalid-grant",
-          "generation": 2
-        },
-        {
-          "seq": 10,
-          "name": "main.auth.boot.grace",
-          "t": 318.896333,
-          "outcome": "invalid-grant"
-        },
-        {
-          "seq": 11,
-          "name": "main.sidecar.generation.emit",
-          "t": 319.261083,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 16,
-          "name": "main.sidecar.generation.emit",
-          "t": 974.592416,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 17,
-          "name": "renderer.root.mount",
-          "t": 1151.8075000000001,
-          "source": "renderer",
-          "rendererNow": 194.2999999821186,
-          "occurrence": 1
-        },
-        {
-          "seq": 22,
-          "name": "renderer.home.model_list.start",
-          "t": 1280.31775,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 312.19999998807907,
-          "occurrence": 1
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 3702.379375,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 2432.5999999940395,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2744.7999999821186,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "invalid-401",
-      "sample": 1,
-      "startupMs": 7434.435917,
-      "bootReadyMs": 973.643417,
-      "refreshDurationMs": 103.14475000000007,
-      "refreshResult": "invalid-grant",
-      "grace": "invalid-grant",
-      "rotations": 0,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-out",
-        "mode": "byok"
-      },
-      "unavailableVisible": false,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012150554.285
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 217.441042,
-          "expired": true
-        },
-        {
-          "seq": 6,
-          "name": "main.auth.refresh.start",
-          "t": 217.60212499999997
-        },
-        {
-          "seq": 7,
-          "name": "main.auth.refresh.end",
-          "t": 320.74687500000005,
-          "durationMs": 103.14195799999999,
-          "outcome": "ok",
-          "result": "invalid-grant",
-          "generation": 2
-        },
-        {
-          "seq": 10,
-          "name": "main.auth.boot.grace",
-          "t": 321.0277090000001,
-          "outcome": "invalid-grant"
-        },
-        {
-          "seq": 11,
-          "name": "main.sidecar.generation.emit",
-          "t": 321.384375,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 16,
-          "name": "main.sidecar.generation.emit",
-          "t": 973.643417,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 17,
-          "name": "renderer.root.mount",
-          "t": 1152.96775,
-          "source": "renderer",
-          "rendererNow": 193.2000000178814,
-          "occurrence": 1
-        },
-        {
-          "seq": 22,
-          "name": "renderer.home.model_list.start",
-          "t": 1280.6110840000001,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 310.40000000596046,
-          "occurrence": 1
-        },
-        {
-          "seq": 23,
-          "name": "renderer.home.model_list.end",
-          "t": 7434.435917,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 6164.300000011921,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 6474.700000017881,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "byok-only",
-      "sample": 1,
-      "startupMs": 4027.3595419999997,
-      "bootReadyMs": 895.981125,
-      "grace": "not-applicable",
-      "rotations": 0,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-out",
-        "mode": "byok"
-      },
-      "unavailableVisible": false,
-      "secretHygiene": {
-        "authMode": null,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012159139.012
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 147.85224999999997,
-          "expired": false
-        },
-        {
-          "seq": 4,
-          "name": "main.sidecar.generation.emit",
-          "t": 217.41441700000001,
+          "t": 1795.2638339999999,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
         },
         {
           "seq": 9,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 1795.5042089999997,
+          "generation": 1
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.ready_ipc",
+          "t": 2496.882,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 172.00120899999996,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 11,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 2497.3804999999998,
+          "durationMs": 701.8818329999999,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 13,
           "name": "main.sidecar.generation.emit",
-          "t": 895.981125,
+          "t": 2567.608375,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
         },
         {
-          "seq": 10,
+          "seq": 14,
           "name": "renderer.root.mount",
-          "t": 1077.8482079999999,
+          "t": 3108.807375,
           "source": "renderer",
-          "rendererNow": 195.40000000596046,
-          "occurrence": 1
-        },
-        {
-          "seq": 15,
-          "name": "renderer.home.model_list.start",
-          "t": 1207.737542,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 316,
-          "occurrence": 1
-        },
-        {
-          "seq": 16,
-          "name": "renderer.home.model_list.end",
-          "t": 4027.3595419999997,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 2828.9000000059605,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 3144.9000000059605,
-          "occurrence": 1
-        }
-      ]
-    },
-    {
-      "scenario": "hot-renderer",
-      "sample": 1,
-      "startupMs": 4478.239415999999,
-      "bootReadyMs": 942.175666,
-      "grace": "not-applicable",
-      "rotations": 0,
-      "reloads": 0,
-      "mounts": 6,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786013064693,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 120.22762500000044,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012164413.835
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 210.29500000000002,
-          "expired": false
-        },
-        {
-          "seq": 4,
-          "name": "main.sidecar.generation.emit",
-          "t": 293.41420800000003,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 9,
-          "name": "main.sidecar.generation.emit",
-          "t": 942.175666,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 10,
-          "name": "renderer.root.mount",
-          "t": 1122.2330000000002,
-          "source": "renderer",
-          "rendererNow": 193.5,
-          "occurrence": 1
-        },
-        {
-          "seq": 15,
-          "name": "renderer.home.model_list.start",
-          "t": 1259.163708,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 322.7000000178814,
+          "rendererNow": 556.1999999992549,
           "occurrence": 1
         },
         {
           "seq": 18,
-          "name": "renderer.home.model_list.end",
-          "t": 4478.239415999999,
+          "name": "renderer.home.model_list.start",
+          "t": 3200.11425,
           "attempt": 1,
           "chain": 2,
-          "count": 6132,
-          "durationMs": 3226.699999988079,
-          "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 3549.4000000059605,
+          "rendererNow": 633.5,
           "occurrence": 1
         },
         {
           "seq": 19,
-          "name": "renderer.root.mount",
-          "t": 4507.6230829999995,
-          "source": "renderer",
-          "rendererNow": 25,
-          "occurrence": 2
+          "name": "main.auth.rotation",
+          "t": 3651.5442089999997,
+          "generation": 2,
+          "reason": "renewal",
+          "renewal": "refreshed",
+          "outcome": "requested"
+        },
+        {
+          "seq": 20,
+          "name": "main.sidecar.generation.emit",
+          "t": 3663.719709,
+          "generation": 2,
+          "phase": "recovering",
+          "reason": "token-only"
         },
         {
           "seq": 22,
-          "name": "renderer.home.model_list.start",
-          "t": 4566.112875,
+          "name": "renderer.home.model_list.end",
+          "t": 3666.2727919999998,
           "attempt": 1,
           "chain": 2,
+          "durationMs": 480.09999999962747,
+          "outcome": "error:request",
           "source": "renderer",
-          "rendererNow": 77,
-          "occurrence": 2
+          "rendererNow": 1113.5999999996275,
+          "occurrence": 1
         },
         {
-          "seq": 25,
-          "name": "renderer.home.model_list.end",
-          "t": 4627.850708,
-          "attempt": 1,
-          "chain": 2,
-          "count": 37,
-          "durationMs": 68.09999999403954,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 145.2000000178814,
-          "occurrence": 2
+          "seq": 24,
+          "name": "main.sidecar.ready_ipc",
+          "t": 4377.779292,
+          "context": "respawn",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 158.41949999999997,
+          "prewarmStatus": 200
         },
         {
           "seq": 26,
-          "name": "renderer.root.mount",
-          "t": 4675.246208,
-          "source": "renderer",
-          "rendererNow": 23.700000017881393,
-          "occurrence": 3
+          "name": "main.sidecar.generation.emit",
+          "t": 4381.9860419999995,
+          "generation": 2,
+          "phase": "ready",
+          "reason": "token-only"
+        },
+        {
+          "seq": 27,
+          "name": "main.renderer.reload.skipped",
+          "t": 4382.387875,
+          "generation": 2,
+          "reason": "token-only",
+          "outcome": "continuity"
         },
         {
           "seq": 29,
-          "name": "renderer.home.model_list.start",
-          "t": 4727.854915999999,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 69.59999999403954,
-          "occurrence": 3
+          "name": "main.auth.refresh.end",
+          "t": 4382.7215,
+          "durationMs": 3796.975458,
+          "outcome": "ok",
+          "result": "refreshed",
+          "generation": 2
         },
         {
           "seq": 32,
-          "name": "renderer.home.model_list.end",
-          "t": 4788.781666,
-          "attempt": 1,
-          "chain": 2,
-          "count": 37,
-          "durationMs": 67.60000002384186,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 137.2000000178814,
-          "occurrence": 3
-        },
-        {
-          "seq": 33,
-          "name": "renderer.root.mount",
-          "t": 4815.962041,
-          "source": "renderer",
-          "rendererNow": 24.099999994039536,
-          "occurrence": 4
+          "name": "main.auth.rotation",
+          "t": 4382.856959,
+          "generation": 2,
+          "reason": "boot-grace",
+          "renewal": "refreshed",
+          "outcome": "already-current"
         },
         {
           "seq": 36,
           "name": "renderer.home.model_list.start",
-          "t": 4851.104875,
+          "t": 4383.5140839999995,
           "attempt": 1,
-          "chain": 2,
+          "chain": 3,
           "source": "renderer",
-          "rendererNow": 53.39999997615814,
-          "occurrence": 4
+          "rendererNow": 1829.7999999988824,
+          "occurrence": 2
+        },
+        {
+          "seq": 38,
+          "name": "renderer.home.model_list.start",
+          "t": 4384.431167,
+          "attempt": 1,
+          "chain": 4,
+          "source": "renderer",
+          "rendererNow": 1831.2999999988824,
+          "occurrence": 3
         },
         {
           "seq": 39,
           "name": "renderer.home.model_list.end",
-          "t": 4913.187790999999,
+          "t": 4384.559792,
           "attempt": 1,
-          "chain": 2,
-          "count": 37,
-          "durationMs": 67.90000000596046,
-          "outcome": "ok",
+          "chain": 3,
+          "durationMs": 1.700000001117587,
+          "outcome": "error:request",
           "source": "renderer",
-          "rendererNow": 121.2999999821186,
-          "occurrence": 4
+          "rendererNow": 1831.5,
+          "occurrence": 2
         },
         {
-          "seq": 40,
-          "name": "renderer.root.mount",
-          "t": 4954.535083,
+          "seq": 42,
+          "name": "renderer.home.catalog_ready",
+          "t": 4387.251792,
+          "barrierMs": 3.299999998882413,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
           "source": "renderer",
-          "rendererNow": 22.19999998807907,
-          "occurrence": 5
+          "rendererNow": 1834.699999999255,
+          "occurrence": 1
         },
         {
           "seq": 43,
-          "name": "renderer.home.model_list.start",
-          "t": 4989.920166,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 51.89999997615814,
-          "occurrence": 5
-        },
-        {
-          "seq": 46,
           "name": "renderer.home.model_list.end",
-          "t": 5050.142083,
+          "t": 4395.078459,
           "attempt": 1,
-          "chain": 2,
-          "count": 37,
-          "durationMs": 65.90000000596046,
+          "chain": 4,
+          "count": 12,
+          "durationMs": 11.200000001117587,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 117.7999999821186,
-          "occurrence": 5
+          "rendererNow": 1842.5,
+          "occurrence": 3
+        }
+      ]
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 2,
+      "startupMs": 4016.963208,
+      "bootReadyMs": 2171.835917,
+      "catalogReady": {
+        "atMs": 4009.4781249999996,
+        "barrierMs": 3.699999999254942,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 2101.436542,
+        "outcome": "ready",
+        "durationMs": 152.64658400000002,
+        "status": 200
+      },
+      "refreshDurationMs": 3783.395541,
+      "refreshResult": "refreshed",
+      "grace": "timeout",
+      "rotations": 1,
+      "reloads": 0,
+      "mounts": 1,
+      "auth": {
+        "status": "logged-in",
+        "mode": "platform",
+        "account": {
+          "email": "synthetic@example.invalid",
+          "plan": "test"
+        },
+        "expiresAt": 1786943135732,
+        "platformStatus": "ready"
+      },
+      "unavailableVisible": false,
+      "readyRetryMs": 1.3071250000002692,
+      "secretHygiene": {
+        "authMode": 384,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1786942232218.028
         },
         {
-          "seq": 47,
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 220.50091700000002,
+          "expired": true
+        },
+        {
+          "seq": 6,
+          "name": "main.auth.refresh.start",
+          "t": 220.658792
+        },
+        {
+          "seq": 7,
+          "name": "main.auth.boot.grace",
+          "t": 1425.87075,
+          "outcome": "timeout"
+        },
+        {
+          "seq": 8,
+          "name": "main.sidecar.generation.emit",
+          "t": 1429.720542,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 1429.920833,
+          "generation": 1
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.ready_ipc",
+          "t": 2101.436542,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 152.64658400000002,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 11,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 2101.939875,
+          "durationMs": 672.0242080000003,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 13,
+          "name": "main.sidecar.generation.emit",
+          "t": 2171.835917,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 14,
           "name": "renderer.root.mount",
-          "t": 5095.2012079999995,
+          "t": 2352.220625,
           "source": "renderer",
-          "rendererNow": 22.900000005960464,
-          "occurrence": 6
+          "rendererNow": 193.09999999962747,
+          "occurrence": 1
         },
         {
-          "seq": 50,
+          "seq": 18,
           "name": "renderer.home.model_list.start",
-          "t": 5130.194208,
+          "t": 2432.981333,
           "attempt": 1,
           "chain": 2,
           "source": "renderer",
-          "rendererNow": 52.10000002384186,
-          "occurrence": 6
+          "rendererNow": 266.09999999962747,
+          "occurrence": 1
         },
         {
-          "seq": 53,
+          "seq": 19,
+          "name": "main.auth.rotation",
+          "t": 3282.767875,
+          "generation": 2,
+          "reason": "renewal",
+          "renewal": "refreshed",
+          "outcome": "requested"
+        },
+        {
+          "seq": 20,
+          "name": "main.sidecar.generation.emit",
+          "t": 3297.3675,
+          "generation": 2,
+          "phase": "recovering",
+          "reason": "token-only"
+        },
+        {
+          "seq": 22,
           "name": "renderer.home.model_list.end",
-          "t": 5191.142540999999,
+          "t": 3302.532208,
           "attempt": 1,
           "chain": 2,
-          "count": 37,
-          "durationMs": 66.7999999821186,
+          "durationMs": 877.4000000003725,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 1143.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "main.sidecar.ready_ipc",
+          "t": 3999.8141669999995,
+          "context": "respawn",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 153.860542,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 26,
+          "name": "main.sidecar.generation.emit",
+          "t": 4003.486083,
+          "generation": 2,
+          "phase": "ready",
+          "reason": "token-only"
+        },
+        {
+          "seq": 27,
+          "name": "main.renderer.reload.skipped",
+          "t": 4003.7748330000004,
+          "generation": 2,
+          "reason": "token-only",
+          "outcome": "continuity"
+        },
+        {
+          "seq": 29,
+          "name": "main.auth.refresh.end",
+          "t": 4004.054333,
+          "durationMs": 3783.3950000000004,
+          "outcome": "ok",
+          "result": "refreshed",
+          "generation": 2
+        },
+        {
+          "seq": 32,
+          "name": "main.auth.rotation",
+          "t": 4004.1885,
+          "generation": 2,
+          "reason": "boot-grace",
+          "renewal": "refreshed",
+          "outcome": "already-current"
+        },
+        {
+          "seq": 36,
+          "name": "renderer.home.model_list.start",
+          "t": 4004.793208,
+          "attempt": 1,
+          "chain": 3,
+          "source": "renderer",
+          "rendererNow": 1844.9000000003725,
+          "occurrence": 2
+        },
+        {
+          "seq": 38,
+          "name": "renderer.home.model_list.start",
+          "t": 4006.3316670000004,
+          "attempt": 1,
+          "chain": 4,
+          "source": "renderer",
+          "rendererNow": 1846.7000000011176,
+          "occurrence": 3
+        },
+        {
+          "seq": 39,
+          "name": "renderer.home.model_list.end",
+          "t": 4006.528333,
+          "attempt": 1,
+          "chain": 3,
+          "durationMs": 1.900000000372529,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 1846.800000000745,
+          "occurrence": 2
+        },
+        {
+          "seq": 42,
+          "name": "renderer.home.catalog_ready",
+          "t": 4009.4781249999996,
+          "barrierMs": 3.699999999254942,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 1850.4000000003725,
+          "occurrence": 1
+        },
+        {
+          "seq": 43,
+          "name": "renderer.home.model_list.end",
+          "t": 4016.963208,
+          "attempt": 1,
+          "chain": 4,
+          "count": 12,
+          "durationMs": 11.299999998882413,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 118.90000000596046,
-          "occurrence": 6
+          "rendererNow": 1858,
+          "occurrence": 3
+        }
+      ]
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 3,
+      "startupMs": 4019.1454169999997,
+      "bootReadyMs": 2159.61,
+      "catalogReady": {
+        "atMs": 4011.2752499999997,
+        "barrierMs": 3.400000000372529,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 2094.424042,
+        "outcome": "ready",
+        "durationMs": 149.515,
+        "status": 200
+      },
+      "refreshDurationMs": 3794.911791,
+      "refreshResult": "refreshed",
+      "grace": "timeout",
+      "rotations": 1,
+      "reloads": 0,
+      "mounts": 1,
+      "auth": {
+        "status": "logged-in",
+        "mode": "platform",
+        "account": {
+          "email": "synthetic@example.invalid",
+          "plan": "test"
+        },
+        "expiresAt": 1786943140514,
+        "platformStatus": "ready"
+      },
+      "unavailableVisible": false,
+      "readyRetryMs": 1.4269589999994423,
+      "secretHygiene": {
+        "authMode": 384,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1786942237021.286
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 211.319375,
+          "expired": true
+        },
+        {
+          "seq": 6,
+          "name": "main.auth.refresh.start",
+          "t": 211.477542
+        },
+        {
+          "seq": 7,
+          "name": "main.auth.boot.grace",
+          "t": 1416.122917,
+          "outcome": "timeout"
+        },
+        {
+          "seq": 8,
+          "name": "main.sidecar.generation.emit",
+          "t": 1421.3145829999999,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 1421.606667,
+          "generation": 1
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.ready_ipc",
+          "t": 2094.424042,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 149.515,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 11,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 2094.98025,
+          "durationMs": 673.3810419999998,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 13,
+          "name": "main.sidecar.generation.emit",
+          "t": 2159.61,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 14,
+          "name": "renderer.root.mount",
+          "t": 2341.384083,
+          "source": "renderer",
+          "rendererNow": 194.09999999962747,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.home.model_list.start",
+          "t": 2423.473375,
+          "attempt": 1,
+          "chain": 2,
+          "source": "renderer",
+          "rendererNow": 268.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 19,
+          "name": "main.auth.rotation",
+          "t": 3275.871083,
+          "generation": 2,
+          "reason": "renewal",
+          "renewal": "refreshed",
+          "outcome": "requested"
+        },
+        {
+          "seq": 20,
+          "name": "main.sidecar.generation.emit",
+          "t": 3296.188125,
+          "generation": 2,
+          "phase": "recovering",
+          "reason": "token-only"
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.model_list.end",
+          "t": 3302.510792,
+          "attempt": 1,
+          "chain": 2,
+          "durationMs": 886.6999999992549,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 1155.199999999255,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "main.sidecar.ready_ipc",
+          "t": 4002.2024170000004,
+          "context": "respawn",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 150.96191699999997,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 26,
+          "name": "main.sidecar.generation.emit",
+          "t": 4005.7467080000006,
+          "generation": 2,
+          "phase": "ready",
+          "reason": "token-only"
+        },
+        {
+          "seq": 27,
+          "name": "main.renderer.reload.skipped",
+          "t": 4006.0933750000004,
+          "generation": 2,
+          "reason": "token-only",
+          "outcome": "continuity"
+        },
+        {
+          "seq": 29,
+          "name": "main.auth.refresh.end",
+          "t": 4006.389333,
+          "durationMs": 3794.911292,
+          "outcome": "ok",
+          "result": "refreshed",
+          "generation": 2
+        },
+        {
+          "seq": 32,
+          "name": "main.auth.rotation",
+          "t": 4006.527083,
+          "generation": 2,
+          "reason": "boot-grace",
+          "renewal": "refreshed",
+          "outcome": "already-current"
+        },
+        {
+          "seq": 36,
+          "name": "renderer.home.model_list.start",
+          "t": 4007.173667,
+          "attempt": 1,
+          "chain": 3,
+          "source": "renderer",
+          "rendererNow": 1858.9000000003725,
+          "occurrence": 2
+        },
+        {
+          "seq": 38,
+          "name": "renderer.home.model_list.start",
+          "t": 4008.308,
+          "attempt": 1,
+          "chain": 4,
+          "source": "renderer",
+          "rendererNow": 1860.5999999996275,
+          "occurrence": 3
+        },
+        {
+          "seq": 39,
+          "name": "renderer.home.model_list.end",
+          "t": 4008.6312500000004,
+          "attempt": 1,
+          "chain": 3,
+          "durationMs": 2,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 1860.9000000003725,
+          "occurrence": 2
+        },
+        {
+          "seq": 42,
+          "name": "renderer.home.catalog_ready",
+          "t": 4011.2752499999997,
+          "barrierMs": 3.400000000372529,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 1864,
+          "occurrence": 1
+        },
+        {
+          "seq": 43,
+          "name": "renderer.home.model_list.end",
+          "t": 4019.1454169999997,
+          "attempt": 1,
+          "chain": 4,
+          "count": 12,
+          "durationMs": 11.300000000745058,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 1871.9000000003725,
+          "occurrence": 3
+        }
+      ]
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 4,
+      "startupMs": 4031.440459,
+      "bootReadyMs": 2169.876792,
+      "catalogReady": {
+        "atMs": 4023.247334,
+        "barrierMs": 3.599999999627471,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 2098.570584,
+        "outcome": "ready",
+        "durationMs": 150.91995899999995,
+        "status": 200
+      },
+      "refreshDurationMs": 3805.709417,
+      "refreshResult": "refreshed",
+      "grace": "timeout",
+      "rotations": 1,
+      "reloads": 0,
+      "mounts": 1,
+      "auth": {
+        "status": "logged-in",
+        "mode": "platform",
+        "account": {
+          "email": "synthetic@example.invalid",
+          "plan": "test"
+        },
+        "expiresAt": 1786943145326,
+        "platformStatus": "ready"
+      },
+      "unavailableVisible": false,
+      "readyRetryMs": 1.5458330000001297,
+      "secretHygiene": {
+        "authMode": 384,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1786942241839.784
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 212.149917,
+          "expired": true
+        },
+        {
+          "seq": 6,
+          "name": "main.auth.refresh.start",
+          "t": 212.30466699999997
+        },
+        {
+          "seq": 7,
+          "name": "main.auth.boot.grace",
+          "t": 1417.7537089999998,
+          "outcome": "timeout"
+        },
+        {
+          "seq": 8,
+          "name": "main.sidecar.generation.emit",
+          "t": 1422.0673339999998,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 1422.3021669999998,
+          "generation": 1
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.ready_ipc",
+          "t": 2098.570584,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 150.91995899999995,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 11,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 2099.063375,
+          "durationMs": 676.7684999999999,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 13,
+          "name": "main.sidecar.generation.emit",
+          "t": 2169.876792,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 14,
+          "name": "renderer.root.mount",
+          "t": 2349.556834,
+          "source": "renderer",
+          "rendererNow": 194.19999999925494,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.home.model_list.start",
+          "t": 2432.5605840000003,
+          "attempt": 1,
+          "chain": 2,
+          "source": "renderer",
+          "rendererNow": 269.19999999925494,
+          "occurrence": 1
+        },
+        {
+          "seq": 19,
+          "name": "main.auth.rotation",
+          "t": 3274.247875,
+          "generation": 2,
+          "reason": "renewal",
+          "renewal": "refreshed",
+          "outcome": "requested"
+        },
+        {
+          "seq": 20,
+          "name": "main.sidecar.generation.emit",
+          "t": 3292.32575,
+          "generation": 2,
+          "phase": "recovering",
+          "reason": "token-only"
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.model_list.end",
+          "t": 3296.959542,
+          "attempt": 1,
+          "chain": 2,
+          "durationMs": 872.4000000003725,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 1141.5999999996275,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "main.sidecar.ready_ipc",
+          "t": 4013.247084,
+          "context": "respawn",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 154.80912500000005,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 26,
+          "name": "main.sidecar.generation.emit",
+          "t": 4017.275542,
+          "generation": 2,
+          "phase": "ready",
+          "reason": "token-only"
+        },
+        {
+          "seq": 27,
+          "name": "main.renderer.reload.skipped",
+          "t": 4017.6874170000006,
+          "generation": 2,
+          "reason": "token-only",
+          "outcome": "continuity"
+        },
+        {
+          "seq": 29,
+          "name": "main.auth.refresh.end",
+          "t": 4018.014084,
+          "durationMs": 3805.708416,
+          "outcome": "ok",
+          "result": "refreshed",
+          "generation": 2
+        },
+        {
+          "seq": 32,
+          "name": "main.auth.rotation",
+          "t": 4018.15475,
+          "generation": 2,
+          "reason": "boot-grace",
+          "renewal": "refreshed",
+          "outcome": "already-current"
+        },
+        {
+          "seq": 36,
+          "name": "renderer.home.model_list.start",
+          "t": 4018.821375,
+          "attempt": 1,
+          "chain": 3,
+          "source": "renderer",
+          "rendererNow": 1862.3999999985099,
+          "occurrence": 2
+        },
+        {
+          "seq": 38,
+          "name": "renderer.home.model_list.start",
+          "t": 4019.956667,
+          "attempt": 1,
+          "chain": 4,
+          "source": "renderer",
+          "rendererNow": 1864.2999999988824,
+          "occurrence": 3
+        },
+        {
+          "seq": 39,
+          "name": "renderer.home.model_list.end",
+          "t": 4020.0644589999997,
+          "attempt": 1,
+          "chain": 3,
+          "durationMs": 2,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 1864.3999999985099,
+          "occurrence": 2
+        },
+        {
+          "seq": 42,
+          "name": "renderer.home.catalog_ready",
+          "t": 4023.247334,
+          "barrierMs": 3.599999999627471,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 1867.8999999985099,
+          "occurrence": 1
+        },
+        {
+          "seq": 43,
+          "name": "renderer.home.model_list.end",
+          "t": 4031.440459,
+          "attempt": 1,
+          "chain": 4,
+          "count": 12,
+          "durationMs": 11.800000000745058,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 1876.0999999996275,
+          "occurrence": 3
+        }
+      ]
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 5,
+      "startupMs": 4014.923083,
+      "bootReadyMs": 2166.9330830000004,
+      "catalogReady": {
+        "atMs": 4007.0277499999997,
+        "barrierMs": 3.5,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 2098.560583,
+        "outcome": "ready",
+        "durationMs": 151.39237500000002,
+        "status": 200
+      },
+      "refreshDurationMs": 3789.478125,
+      "refreshResult": "refreshed",
+      "grace": "timeout",
+      "rotations": 1,
+      "reloads": 0,
+      "mounts": 1,
+      "auth": {
+        "status": "logged-in",
+        "mode": "platform",
+        "account": {
+          "email": "synthetic@example.invalid",
+          "plan": "test"
+        },
+        "expiresAt": 1786943150168,
+        "platformStatus": "ready"
+      },
+      "unavailableVisible": false,
+      "readyRetryMs": 1.4004580000000715,
+      "secretHygiene": {
+        "authMode": 384,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1786942246680.398
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 212.33308300000002,
+          "expired": true
+        },
+        {
+          "seq": 6,
+          "name": "main.auth.refresh.start",
+          "t": 212.48183300000002
+        },
+        {
+          "seq": 7,
+          "name": "main.auth.boot.grace",
+          "t": 1417.8072909999999,
+          "outcome": "timeout"
+        },
+        {
+          "seq": 8,
+          "name": "main.sidecar.generation.emit",
+          "t": 1421.906583,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 1422.171958,
+          "generation": 1
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.ready_ipc",
+          "t": 2098.560583,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 151.39237500000002,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 11,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 2099.0696660000003,
+          "durationMs": 676.9030000000002,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 13,
+          "name": "main.sidecar.generation.emit",
+          "t": 2166.9330830000004,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 14,
+          "name": "renderer.root.mount",
+          "t": 2348.1228330000004,
+          "source": "renderer",
+          "rendererNow": 195,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.home.model_list.start",
+          "t": 2432.485833,
+          "attempt": 1,
+          "chain": 2,
+          "source": "renderer",
+          "rendererNow": 271.30000000074506,
+          "occurrence": 1
+        },
+        {
+          "seq": 19,
+          "name": "main.auth.rotation",
+          "t": 3276.998666,
+          "generation": 2,
+          "reason": "renewal",
+          "renewal": "refreshed",
+          "outcome": "requested"
+        },
+        {
+          "seq": 20,
+          "name": "main.sidecar.generation.emit",
+          "t": 3294.4734160000003,
+          "generation": 2,
+          "phase": "recovering",
+          "reason": "token-only"
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.model_list.end",
+          "t": 3302.1674580000004,
+          "attempt": 1,
+          "chain": 2,
+          "durationMs": 877.6999999992549,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 1149,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "main.sidecar.ready_ipc",
+          "t": 3997.502333,
+          "context": "respawn",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 149.83279199999998,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 26,
+          "name": "main.sidecar.generation.emit",
+          "t": 4001.3326250000005,
+          "generation": 2,
+          "phase": "ready",
+          "reason": "token-only"
+        },
+        {
+          "seq": 27,
+          "name": "main.renderer.reload.skipped",
+          "t": 4001.668625,
+          "generation": 2,
+          "reason": "token-only",
+          "outcome": "continuity"
+        },
+        {
+          "seq": 29,
+          "name": "main.auth.refresh.end",
+          "t": 4001.959958,
+          "durationMs": 3789.477125,
+          "outcome": "ok",
+          "result": "refreshed",
+          "generation": 2
+        },
+        {
+          "seq": 32,
+          "name": "main.auth.rotation",
+          "t": 4002.093875,
+          "generation": 2,
+          "reason": "boot-grace",
+          "renewal": "refreshed",
+          "outcome": "already-current"
+        },
+        {
+          "seq": 36,
+          "name": "renderer.home.model_list.start",
+          "t": 4002.7330830000005,
+          "attempt": 1,
+          "chain": 3,
+          "source": "renderer",
+          "rendererNow": 1848.7000000011176,
+          "occurrence": 2
+        },
+        {
+          "seq": 38,
+          "name": "renderer.home.model_list.start",
+          "t": 4004.063208,
+          "attempt": 1,
+          "chain": 4,
+          "source": "renderer",
+          "rendererNow": 1850.4000000003725,
+          "occurrence": 3
+        },
+        {
+          "seq": 39,
+          "name": "renderer.home.model_list.end",
+          "t": 4004.20225,
+          "attempt": 1,
+          "chain": 3,
+          "durationMs": 2,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 1850.6000000014901,
+          "occurrence": 2
+        },
+        {
+          "seq": 42,
+          "name": "renderer.home.catalog_ready",
+          "t": 4007.0277499999997,
+          "barrierMs": 3.5,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 1853.9000000003725,
+          "occurrence": 1
+        },
+        {
+          "seq": 43,
+          "name": "renderer.home.model_list.end",
+          "t": 4014.923083,
+          "attempt": 1,
+          "chain": 4,
+          "count": 12,
+          "durationMs": 11.400000000372529,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 1861.800000000745,
+          "occurrence": 3
         }
       ]
     },
     {
       "scenario": "active-stream-rotation",
       "sample": 1,
-      "startupMs": 3865.7154579999997,
-      "bootReadyMs": 953.448083,
-      "refreshDurationMs": 1816.5393339999973,
+      "startupMs": 15323.336792,
+      "bootReadyMs": 1027.7074169999999,
+      "catalogReady": {
+        "atMs": 15320.151917000001,
+        "barrierMs": 103,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 959.9602499999999,
+        "outcome": "ready",
+        "durationMs": 150.00699999999995,
+        "status": 200
+      },
+      "refreshDurationMs": 826.4421250000014,
       "refreshResult": "refreshed",
       "grace": "not-applicable",
       "rotations": 1,
@@ -3992,14 +1342,14 @@
           "email": "synthetic@example.invalid",
           "plan": "test"
         },
-        "expiresAt": 1786013102015,
+        "expiresAt": 1786943187379,
         "platformStatus": "ready"
       },
       "unavailableVisible": false,
       "interruption": {
         "seen": true,
         "draftPreserved": true,
-        "sessionID": "ses_02960f5caffelPAifew1eeAAqe"
+        "sessionID": "ses_ff1f0cf6bffeF6atBS9rjh5m7r"
       },
       "postRotationTurn": {
         "status": 200,
@@ -4012,7 +1362,10 @@
         "refreshTokenInTimeline": false,
         "tokenInProcessEnv": false,
         "tokenInAuthState": false,
-        "tokenInRendererSurface": false
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
       },
       "events": [
         {
@@ -4020,26 +1373,49 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1786012170788.471
+          "timeOrigin": 1786942256072.864
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 212.4675,
+          "t": 227.66545899999997,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 301.4757910000001,
+          "t": 306.879375,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
         },
         {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 306.96633399999996,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 959.9602499999999,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 150.00699999999995,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 960.4736249999999,
+          "durationMs": 653.5064580000001,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 953.448083,
+          "t": 1027.7074169999999,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -4047,593 +1423,330 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1134.772041,
+          "t": 1210.7002499999999,
           "source": "renderer",
-          "rendererNow": 194.2999999821186,
-          "occurrence": 1
-        },
-        {
-          "seq": 15,
-          "name": "renderer.home.model_list.start",
-          "t": 1273.608708,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 325.5,
-          "occurrence": 1
-        },
-        {
-          "seq": 18,
-          "name": "renderer.home.model_list.end",
-          "t": 3865.7154579999997,
-          "attempt": 1,
-          "chain": 2,
-          "count": 6132,
-          "durationMs": 2599.7999999821186,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 2925.2999999821186,
-          "occurrence": 1
-        },
-        {
-          "seq": 22,
-          "name": "main.auth.refresh.start",
-          "t": 30945.429291
-        },
-        {
-          "seq": 23,
-          "name": "main.auth.rotation",
-          "t": 31000.652625,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "requested"
-        },
-        {
-          "seq": 25,
-          "name": "main.sidecar.generation.emit",
-          "t": 31015.728291,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 27,
-          "name": "renderer.generation.interruption",
-          "t": 31016.46475,
-          "generation": 2,
-          "reason": "token-only",
-          "source": "renderer",
-          "rendererNow": 30075.69999998808,
-          "occurrence": 1
-        },
-        {
-          "seq": 31,
-          "name": "main.sidecar.generation.emit",
-          "t": 32761.574958,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 32,
-          "name": "main.renderer.reload.skipped",
-          "t": 32761.710958,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 34,
-          "name": "main.auth.refresh.end",
-          "t": 32761.968624999998,
-          "durationMs": 1816.538625000001,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        }
-      ]
-    },
-    {
-      "scenario": "long-session-two-ttl",
-      "sample": 1,
-      "startupMs": 12707.699084,
-      "bootReadyMs": 884.1995000000001,
-      "refreshDurationMs": 1712.916208999999,
-      "refreshResult": "refreshed",
-      "grace": "not-applicable",
-      "rotations": 2,
-      "reloads": 0,
-      "mounts": 1,
-      "auth": {
-        "status": "logged-in",
-        "mode": "platform",
-        "account": {
-          "email": "synthetic@example.invalid",
-          "plan": "test"
-        },
-        "expiresAt": 1786013041347,
-        "platformStatus": "ready"
-      },
-      "unavailableVisible": false,
-      "readyRetryMs": 1.2449590000032913,
-      "secretHygiene": {
-        "authMode": 384,
-        "tokenInTimeline": false,
-        "refreshTokenInTimeline": false,
-        "tokenInProcessEnv": false,
-        "tokenInAuthState": false,
-        "tokenInRendererSurface": false
-      },
-      "events": [
-        {
-          "seq": 1,
-          "name": "main.timeline.epoch",
-          "t": 0,
-          "epoch": "main-module-load",
-          "timeOrigin": 1786012933479.505
-        },
-        {
-          "seq": 3,
-          "name": "main.auth.boot.token_check",
-          "t": 193.25279200000003,
-          "expired": false
-        },
-        {
-          "seq": 4,
-          "name": "main.sidecar.generation.emit",
-          "t": 245.70254200000002,
-          "generation": 1,
-          "phase": "recovering",
-          "reason": "boot"
-        },
-        {
-          "seq": 9,
-          "name": "main.sidecar.generation.emit",
-          "t": 884.1995000000001,
-          "generation": 1,
-          "phase": "ready",
-          "reason": "boot"
-        },
-        {
-          "seq": 10,
-          "name": "renderer.root.mount",
-          "t": 1060.2915839999998,
-          "source": "renderer",
-          "rendererNow": 190.7999999821186,
+          "rendererNow": 195.89999999850988,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.home.model_list.start",
-          "t": 1140.070084,
+          "t": 1297.717417,
           "attempt": 1,
           "chain": 2,
           "source": "renderer",
-          "rendererNow": 261.90000000596046,
+          "rendererNow": 272.7999999988824,
           "occurrence": 1
         },
         {
-          "seq": 17,
+          "seq": 18,
           "name": "renderer.home.model_list.end",
-          "t": 11134.251792,
+          "t": 11290.210125000001,
           "attempt": 1,
           "chain": 2,
-          "durationMs": 10002.299999982119,
+          "durationMs": 10002.5,
           "outcome": "error:request",
           "source": "renderer",
-          "rendererNow": 10264.199999988079,
+          "rendererNow": 10275.39999999851,
           "occurrence": 1
         },
         {
           "seq": 19,
-          "name": "renderer.home.model_list.start",
-          "t": 12136.36325,
+          "name": "renderer.home.model_list.retry_tick",
+          "t": 12295.078584,
           "attempt": 2,
           "chain": 2,
+          "count": 1,
+          "delayMs": 1000,
+          "reason": "request-error",
           "source": "renderer",
-          "rendererNow": 11266.40000000596,
-          "occurrence": 2
+          "rendererNow": 11279.099999999627,
+          "occurrence": 1
         },
         {
           "seq": 20,
-          "name": "renderer.home.model_list.end",
-          "t": 12707.699084,
+          "name": "renderer.home.model_list.start",
+          "t": 12297.125125,
           "attempt": 2,
           "chain": 2,
-          "count": 37,
-          "durationMs": 571.7999999821186,
-          "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 11838.199999988079,
+          "rendererNow": 11279.39999999851,
           "occurrence": 2
         },
         {
-          "seq": 22,
+          "seq": 21,
+          "name": "renderer.home.model_list.end",
+          "t": 15193.77275,
+          "attempt": 2,
+          "chain": 2,
+          "durationMs": 2886.800000000745,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 14166.199999999255,
+          "occurrence": 2
+        },
+        {
+          "seq": 23,
           "name": "renderer.home.model_list.start",
-          "t": 12786.342166999999,
+          "t": 15217.645875,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 11916.40000000596,
+          "rendererNow": 14202.39999999851,
           "occurrence": 3
         },
         {
-          "seq": 25,
+          "seq": 26,
+          "name": "renderer.home.catalog_ready",
+          "t": 15320.151917000001,
+          "barrierMs": 103,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 14305.39999999851,
+          "occurrence": 1
+        },
+        {
+          "seq": 27,
           "name": "renderer.home.model_list.end",
-          "t": 12831.618625,
+          "t": 15323.336792,
           "attempt": 1,
           "chain": 1,
-          "count": 37,
-          "durationMs": 45.69999998807907,
+          "count": 12,
+          "durationMs": 106.20000000111759,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 11962.09999999404,
+          "rendererNow": 14308.599999999627,
           "occurrence": 3
-        },
-        {
-          "seq": 28,
-          "name": "main.auth.refresh.start",
-          "t": 30873.6055
-        },
-        {
-          "seq": 29,
-          "name": "main.auth.rotation",
-          "t": 30929.561417,
-          "generation": 2,
-          "reason": "renewal",
-          "renewal": "refreshed",
-          "outcome": "requested"
         },
         {
           "seq": 31,
-          "name": "renderer.home.model_list.start",
-          "t": 30931.265417000002,
-          "attempt": 1,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 30061.09999999404,
-          "occurrence": 4
+          "name": "main.auth.refresh.start",
+          "t": 31019.534499999998
         },
         {
           "seq": 32,
-          "name": "main.sidecar.generation.emit",
-          "t": 30955.005417,
-          "generation": 2,
-          "phase": "recovering",
-          "reason": "token-only"
-        },
-        {
-          "seq": 34,
-          "name": "renderer.home.model_list.end",
-          "t": 30957.206417,
-          "attempt": 1,
-          "chain": 2,
-          "durationMs": 26.69999998807907,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 30087.79999998212,
-          "occurrence": 4
-        },
-        {
-          "seq": 36,
-          "name": "renderer.home.model_list.start",
-          "t": 31960.225875,
-          "attempt": 2,
-          "chain": 2,
-          "source": "renderer",
-          "rendererNow": 31088.59999999404,
-          "occurrence": 5
-        },
-        {
-          "seq": 37,
-          "name": "renderer.home.model_list.end",
-          "t": 31961.0845,
-          "attempt": 2,
-          "chain": 2,
-          "durationMs": 0.30000001192092896,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 31088.90000000596,
-          "occurrence": 5
-        },
-        {
-          "seq": 41,
-          "name": "main.sidecar.generation.emit",
-          "t": 32586.012125,
-          "generation": 2,
-          "phase": "ready",
-          "reason": "token-only"
-        },
-        {
-          "seq": 42,
-          "name": "main.renderer.reload.skipped",
-          "t": 32586.186709,
-          "generation": 2,
-          "reason": "token-only",
-          "outcome": "continuity"
-        },
-        {
-          "seq": 44,
-          "name": "main.auth.refresh.end",
-          "t": 32586.521709,
-          "durationMs": 1712.9151669999992,
-          "outcome": "ok",
-          "result": "refreshed",
-          "generation": 2
-        },
-        {
-          "seq": 51,
-          "name": "renderer.home.model_list.start",
-          "t": 32587.257084000004,
-          "attempt": 1,
-          "chain": 3,
-          "source": "renderer",
-          "rendererNow": 31717,
-          "occurrence": 6
-        },
-        {
-          "seq": 53,
-          "name": "renderer.home.model_list.start",
-          "t": 32588.800209,
-          "attempt": 1,
-          "chain": 4,
-          "source": "renderer",
-          "rendererNow": 31718.79999998212,
-          "occurrence": 7
-        },
-        {
-          "seq": 56,
-          "name": "renderer.home.model_list.end",
-          "t": 32786.684417000004,
-          "attempt": 1,
-          "chain": 3,
-          "count": 6132,
-          "durationMs": 200.19999998807907,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 31917.19999998808,
-          "occurrence": 6
-        },
-        {
-          "seq": 57,
-          "name": "renderer.home.model_list.end",
-          "t": 32878.912667000004,
-          "attempt": 1,
-          "chain": 4,
-          "count": 6132,
-          "durationMs": 290.60000002384186,
-          "outcome": "ok",
-          "source": "renderer",
-          "rendererNow": 32009.40000000596,
-          "occurrence": 7
-        },
-        {
-          "seq": 60,
-          "name": "main.auth.refresh.start",
-          "t": 62587.958834000005
-        },
-        {
-          "seq": 61,
           "name": "main.auth.rotation",
-          "t": 62651.537292,
-          "generation": 3,
+          "t": 31083.156084,
+          "generation": 2,
           "reason": "renewal",
           "renewal": "refreshed",
           "outcome": "requested"
         },
         {
-          "seq": 63,
+          "seq": 33,
           "name": "main.sidecar.generation.emit",
-          "t": 62681.150459000004,
-          "generation": 3,
+          "t": 31107.711792,
+          "generation": 2,
           "phase": "recovering",
           "reason": "token-only"
         },
         {
-          "seq": 64,
-          "name": "renderer.home.model_list.start",
-          "t": 62683.312875,
-          "attempt": 1,
-          "chain": 5,
+          "seq": 36,
+          "name": "renderer.generation.interruption",
+          "t": 31109.314416999998,
+          "generation": 2,
+          "reason": "token-only",
           "source": "renderer",
-          "rendererNow": 61786,
-          "occurrence": 8
+          "rendererNow": 30093.5,
+          "occurrence": 1
         },
         {
-          "seq": 66,
-          "name": "renderer.home.model_list.end",
-          "t": 62686.888917000004,
-          "attempt": 1,
-          "chain": 5,
-          "durationMs": 31.400000005960464,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 61817.40000000596,
-          "occurrence": 8
+          "seq": 38,
+          "name": "main.sidecar.ready_ipc",
+          "t": 31841.335334,
+          "context": "respawn",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 151.74354099999994,
+          "prewarmStatus": 200
         },
         {
-          "seq": 68,
-          "name": "renderer.home.model_list.start",
-          "t": 63689.173959,
-          "attempt": 2,
-          "chain": 5,
-          "source": "renderer",
-          "rendererNow": 62817.90000000596,
-          "occurrence": 9
-        },
-        {
-          "seq": 69,
-          "name": "renderer.home.model_list.end",
-          "t": 63690.03925,
-          "attempt": 2,
-          "chain": 5,
-          "durationMs": 0.09999999403953552,
-          "outcome": "error:request",
-          "source": "renderer",
-          "rendererNow": 62818,
-          "occurrence": 9
-        },
-        {
-          "seq": 73,
+          "seq": 40,
           "name": "main.sidecar.generation.emit",
-          "t": 64299.935542,
-          "generation": 3,
+          "t": 31845.301625,
+          "generation": 2,
           "phase": "ready",
           "reason": "token-only"
         },
         {
-          "seq": 74,
+          "seq": 41,
           "name": "main.renderer.reload.skipped",
-          "t": 64300.105209,
-          "generation": 3,
+          "t": 31845.661667,
+          "generation": 2,
           "reason": "token-only",
           "outcome": "continuity"
         },
         {
-          "seq": 76,
+          "seq": 43,
           "name": "main.auth.refresh.end",
-          "t": 64300.349,
-          "durationMs": 1712.3897079999952,
+          "t": 31845.976625,
+          "durationMs": 826.4433330000029,
           "outcome": "ok",
           "result": "refreshed",
-          "generation": 3
-        },
-        {
-          "seq": 83,
-          "name": "renderer.home.model_list.start",
-          "t": 64301.107959,
-          "attempt": 1,
-          "chain": 6,
-          "source": "renderer",
-          "rendererNow": 63430.90000000596,
-          "occurrence": 10
-        },
-        {
-          "seq": 85,
-          "name": "renderer.home.model_list.start",
-          "t": 64302.437375,
-          "attempt": 1,
-          "chain": 7,
-          "source": "renderer",
-          "rendererNow": 63432.5,
-          "occurrence": 11
+          "generation": 2
         }
       ]
     }
   ],
   "serverFacts": [
     {
-      "scenario": "latency-50ms",
+      "scenario": "latency-3000ms",
+      "sample": 1,
+      "request": "catalog",
+      "credentialGeneration": "seed"
+    },
+    {
+      "scenario": "latency-3000ms",
       "sample": 1,
       "path": "/auth/token",
       "grant": "refresh_token",
-      "delayMs": 50,
+      "delayMs": 3000,
       "status": 200
     },
     {
-      "scenario": "latency-50ms",
+      "scenario": "latency-3000ms",
+      "sample": 1,
+      "request": "account",
+      "credentialGeneration": "seed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 1,
+      "request": "catalog",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 1,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 1,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 2,
+      "request": "catalog",
+      "credentialGeneration": "seed"
+    },
+    {
+      "scenario": "latency-3000ms",
       "sample": 2,
       "path": "/auth/token",
       "grant": "refresh_token",
-      "delayMs": 50,
+      "delayMs": 3000,
       "status": 200
     },
     {
-      "scenario": "latency-50ms",
+      "scenario": "latency-3000ms",
+      "sample": 2,
+      "request": "account",
+      "credentialGeneration": "seed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 2,
+      "request": "catalog",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 2,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 2,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 3,
+      "request": "catalog",
+      "credentialGeneration": "seed"
+    },
+    {
+      "scenario": "latency-3000ms",
       "sample": 3,
       "path": "/auth/token",
       "grant": "refresh_token",
-      "delayMs": 50,
+      "delayMs": 3000,
       "status": 200
     },
     {
-      "scenario": "latency-50ms",
+      "scenario": "latency-3000ms",
+      "sample": 3,
+      "request": "account",
+      "credentialGeneration": "seed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 3,
+      "request": "catalog",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 3,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 3,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 4,
+      "request": "catalog",
+      "credentialGeneration": "seed"
+    },
+    {
+      "scenario": "latency-3000ms",
       "sample": 4,
       "path": "/auth/token",
       "grant": "refresh_token",
-      "delayMs": 50,
-      "status": 200
-    },
-    {
-      "scenario": "latency-50ms",
-      "sample": 5,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 50,
-      "status": 200
-    },
-    {
-      "scenario": "latency-1500ms",
-      "sample": 1,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 1500,
-      "status": 200
-    },
-    {
-      "scenario": "latency-1500ms",
-      "sample": 2,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 1500,
-      "status": 200
-    },
-    {
-      "scenario": "latency-1500ms",
-      "sample": 3,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 1500,
-      "status": 200
-    },
-    {
-      "scenario": "latency-1500ms",
-      "sample": 4,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 1500,
-      "status": 200
-    },
-    {
-      "scenario": "latency-1500ms",
-      "sample": 5,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 1500,
-      "status": 200
-    },
-    {
-      "scenario": "latency-3000ms",
-      "sample": 1,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 3000,
-      "status": 200
-    },
-    {
-      "scenario": "latency-3000ms",
-      "sample": 2,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 3000,
-      "status": 200
-    },
-    {
-      "scenario": "latency-3000ms",
-      "sample": 3,
-      "path": "/auth/token",
-      "grant": "refresh_token",
       "delayMs": 3000,
       "status": 200
     },
     {
       "scenario": "latency-3000ms",
       "sample": 4,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 3000,
-      "status": 200
+      "request": "account",
+      "credentialGeneration": "seed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 4,
+      "request": "catalog",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 4,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 4,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 5,
+      "request": "catalog",
+      "credentialGeneration": "seed"
     },
     {
       "scenario": "latency-3000ms",
@@ -4644,68 +1757,64 @@
       "status": 200
     },
     {
-      "scenario": "timeout-10000ms",
+      "scenario": "latency-3000ms",
+      "sample": 5,
+      "request": "account",
+      "credentialGeneration": "seed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 5,
+      "request": "catalog",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 5,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "latency-3000ms",
+      "sample": 5,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "active-stream-rotation",
       "sample": 1,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 10500,
-      "status": 200
+      "request": "catalog",
+      "credentialGeneration": "seed"
     },
     {
-      "scenario": "timeout-10000ms",
-      "sample": 2,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 10500,
-      "status": 200
-    },
-    {
-      "scenario": "timeout-10000ms",
-      "sample": 3,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 10500,
-      "status": 200
-    },
-    {
-      "scenario": "http-502",
+      "scenario": "active-stream-rotation",
       "sample": 1,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 20,
-      "status": 502
+      "request": "account",
+      "credentialGeneration": "seed"
     },
     {
-      "scenario": "http-502",
-      "sample": 2,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 20,
-      "status": 502
-    },
-    {
-      "scenario": "http-502",
-      "sample": 3,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 20,
-      "status": 502
-    },
-    {
-      "scenario": "invalid-400",
+      "scenario": "active-stream-rotation",
       "sample": 1,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 20,
-      "status": 400
+      "request": "account",
+      "credentialGeneration": "seed"
     },
     {
-      "scenario": "invalid-401",
+      "scenario": "active-stream-rotation",
       "sample": 1,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 20,
-      "status": 401
+      "request": "account",
+      "credentialGeneration": "seed"
+    },
+    {
+      "scenario": "active-stream-rotation",
+      "sample": 1,
+      "request": "account",
+      "credentialGeneration": "seed"
+    },
+    {
+      "scenario": "active-stream-rotation",
+      "sample": 1,
+      "request": "account",
+      "credentialGeneration": "seed"
     },
     {
       "scenario": "active-stream-rotation",
@@ -4727,26 +1836,28 @@
     {
       "scenario": "active-stream-rotation",
       "sample": 1,
+      "request": "catalog",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "active-stream-rotation",
+      "sample": 1,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "active-stream-rotation",
+      "sample": 1,
+      "request": "account",
+      "credentialGeneration": "renewed"
+    },
+    {
+      "scenario": "active-stream-rotation",
+      "sample": 1,
       "path": "/v1/chat/completions",
       "request": "chat.completions",
       "script": "2x30ms",
       "credentialGeneration": "renewed",
-      "status": 200
-    },
-    {
-      "scenario": "long-session-two-ttl",
-      "sample": 1,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 50,
-      "status": 200
-    },
-    {
-      "scenario": "long-session-two-ttl",
-      "sample": 1,
-      "path": "/auth/token",
-      "grant": "refresh_token",
-      "delayMs": 50,
       "status": 200
     }
   ]
