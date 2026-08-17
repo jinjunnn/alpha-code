@@ -5,6 +5,7 @@ import {
   ENGINE_RUNAWAY_STRIKE_DECAY_MS,
   armEngineRunawayGuard,
   decideEngineRunawayGuard,
+  disarmEngineRunawayGuard,
   initialEngineRunawayGuardState,
   resetEngineRunawayGuard,
   type EngineRunawayGuardState,
@@ -18,8 +19,27 @@ function sample(state: EngineRunawayGuardState, now: number, size: number) {
 }
 
 function absoluteVerdict(state: EngineRunawayGuardState, now: number) {
-  const baseline = sample(armEngineRunawayGuard(state), now, 0)
+  const baseline = sample(armEngineRunawayGuard(state, now), now, 0)
   return sample(baseline.state, now + 60_000, ENGINE_RUNAWAY_ABSOLUTE_BYTES + 1)
+}
+
+function modelRunaway(rateMBPerMinute: number, minutes = 10 * 60) {
+  let state = sample(armEngineRunawayGuard(initialEngineRunawayGuardState(), T0), T0, 0).state
+  let size = 0
+  const verdicts: { action: "kill-and-respawn" | "stop-and-report"; minute: number }[] = []
+
+  for (let minute = 1; minute <= minutes; minute++) {
+    size += Math.round(rateMBPerMinute * MB)
+    const decision = sample(state, T0 + minute * 60_000, size)
+    state = decision.state
+    if (decision.action === "none") continue
+    verdicts.push({ action: decision.action, minute })
+    if (decision.action === "stop-and-report") break
+    size = 0
+    state = sample(armEngineRunawayGuard(state, T0 + minute * 60_000), T0 + minute * 60_000, size).state
+  }
+
+  return verdicts
 }
 
 describe("engine runaway guard", () => {
@@ -29,7 +49,7 @@ describe("engine runaway guard", () => {
     expect(unarmed.state.previousSize).toBeNull()
 
     const baseline = sample(
-      armEngineRunawayGuard(unarmed.state),
+      armEngineRunawayGuard(unarmed.state, T0 + 60_000),
       T0 + 60_000,
       ENGINE_RUNAWAY_ABSOLUTE_BYTES + 1,
     )
@@ -38,7 +58,7 @@ describe("engine runaway guard", () => {
   })
 
   test("rate decisions use delta rather than the existing file size (W2)", () => {
-    const baseline = sample(armEngineRunawayGuard(initialEngineRunawayGuardState()), T0, 400 * MB)
+    const baseline = sample(armEngineRunawayGuard(initialEngineRunawayGuardState(), T0), T0, 400 * MB)
     const growth = sample(baseline.state, T0 + 60_000, 465 * MB)
     const normal = sample(growth.state, T0 + 120_000, 466 * MB)
     expect(growth.action).toBe("none")
@@ -47,7 +67,7 @@ describe("engine runaway guard", () => {
   })
 
   test("a single fast window is not a verdict and a normal window breaks the chain (W1)", () => {
-    const baseline = sample(armEngineRunawayGuard(initialEngineRunawayGuardState()), T0, 0)
+    const baseline = sample(armEngineRunawayGuard(initialEngineRunawayGuardState(), T0), T0, 0)
     const spike = sample(baseline.state, T0 + 60_000, ENGINE_RUNAWAY_RATE_BYTES + 1)
     expect(spike.action).toBe("none")
     expect(spike.state.strikes).toBe(0)
@@ -58,7 +78,7 @@ describe("engine runaway guard", () => {
   })
 
   test("two consecutive windows above 64MB produce one strike (W1)", () => {
-    const baseline = sample(armEngineRunawayGuard(initialEngineRunawayGuardState()), T0, 0)
+    const baseline = sample(armEngineRunawayGuard(initialEngineRunawayGuardState(), T0), T0, 0)
     const first = sample(baseline.state, T0 + 60_000, ENGINE_RUNAWAY_RATE_BYTES + 1)
     const second = sample(first.state, T0 + 120_000, 2 * (ENGINE_RUNAWAY_RATE_BYTES + 1))
     expect(second.action).toBe("kill-and-respawn")
@@ -84,8 +104,28 @@ describe("engine runaway guard", () => {
     expect(third.state.armed).toBeFalse()
   })
 
+  test.each([
+    [17.6, 90],
+    [15, 105],
+    [10, 156],
+  ])("a %p MB/min slow burn stops at minute %p within the ten-hour model", (rate, stopMinute) => {
+    expect(modelRunaway(rate)).toEqual([
+      { action: "kill-and-respawn", minute: stopMinute / 3 },
+      { action: "kill-and-respawn", minute: (stopMinute / 3) * 2 },
+      { action: "stop-and-report", minute: stopMinute },
+    ])
+  })
+
+  test("the existing 30 MB/min path still stops at minute 54", () => {
+    expect(modelRunaway(30)).toEqual([
+      { action: "kill-and-respawn", minute: 18 },
+      { action: "kill-and-respawn", minute: 36 },
+      { action: "stop-and-report", minute: 54 },
+    ])
+  })
+
   test("an unavailable stat sample is no verdict and breaks rate continuity (W4)", () => {
-    const baseline = sample(armEngineRunawayGuard(initialEngineRunawayGuardState()), T0, 0)
+    const baseline = sample(armEngineRunawayGuard(initialEngineRunawayGuardState(), T0), T0, 0)
     const first = sample(baseline.state, T0 + 60_000, ENGINE_RUNAWAY_RATE_BYTES + 1)
     const unavailable = decideEngineRunawayGuard(T0 + 120_000, { status: "unavailable" }, first.state)
     const next = sample(unavailable.state, T0 + 180_000, 2 * (ENGINE_RUNAWAY_RATE_BYTES + 1))
@@ -95,16 +135,18 @@ describe("engine runaway guard", () => {
     expect(next.state.strikes).toBe(0)
   })
 
-  test("strikes decay after 30 minutes without another verdict (W5)", () => {
+  test("only a completed healthy generation decays strikes (W5)", () => {
     const verdict = absoluteVerdict(initialEngineRunawayGuardState(), T0)
-    const decayed = decideEngineRunawayGuard(
-      verdict.state.lastVerdictAt! + ENGINE_RUNAWAY_STRIKE_DECAY_MS,
-      { status: "unavailable" },
-      armEngineRunawayGuard(verdict.state),
-    )
-    expect(decayed.action).toBe("none")
-    expect(decayed.state.strikes).toBe(0)
-    expect(decayed.state.lastVerdictAt).toBeNull()
+    const armedAt = verdict.state.lastVerdictAt! + 60_000
+    const generation = armEngineRunawayGuard(verdict.state, armedAt)
+    const stillArmed = sample(generation, armedAt + ENGINE_RUNAWAY_STRIKE_DECAY_MS, 0)
+    const short = disarmEngineRunawayGuard(generation, armedAt + ENGINE_RUNAWAY_STRIKE_DECAY_MS - 1)
+    const healthy = disarmEngineRunawayGuard(stillArmed.state, armedAt + ENGINE_RUNAWAY_STRIKE_DECAY_MS)
+
+    expect(stillArmed.state.strikes).toBe(1)
+    expect(short.strikes).toBe(1)
+    expect(healthy.strikes).toBe(0)
+    expect(healthy.lastVerdictAt).toBeNull()
   })
 
   test("retry-engine reset clears strikes and requires a new ready-time arm (W5)", () => {
