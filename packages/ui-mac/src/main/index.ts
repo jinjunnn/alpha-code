@@ -345,7 +345,7 @@ function handleSidecarExit(gen: number, code: number) {
 function stopEngineRunawayMeter() {
   if (engineRunawayTimer) clearInterval(engineRunawayTimer)
   engineRunawayTimer = null
-  engineRunawayGuard = disarmEngineRunawayGuard(engineRunawayGuard)
+  engineRunawayGuard = disarmEngineRunawayGuard(engineRunawayGuard, Date.now())
 }
 
 // #564:sidecar 停止/退出时看门狗必须一起停(与 stopEngineRunawayMeter 同纪律),
@@ -359,7 +359,7 @@ function stopCatalogLivenessWatchdog() {
 
 function armEngineRunawayMeter(gen: number) {
   stopEngineRunawayMeter()
-  engineRunawayGuard = armEngineRunawayGuard(engineRunawayGuard)
+  engineRunawayGuard = armEngineRunawayGuard(engineRunawayGuard, Date.now())
   const activeLog = join(serverLogRoots()[0], "opencode.log")
   engineRunawayTimer = setInterval(() => {
     if (gen !== sidecarGen || !server) {

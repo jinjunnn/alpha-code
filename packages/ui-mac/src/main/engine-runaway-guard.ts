@@ -7,6 +7,7 @@ export type EngineRunawaySample = { status: "available"; size: number } | { stat
 
 export type EngineRunawayGuardState = {
   armed: boolean
+  armedAt: number | null
   strikes: number
   previousSize: number | null
   fastWindows: number
@@ -18,6 +19,7 @@ export type EngineRunawayGuardAction = "none" | "kill-and-respawn" | "stop-and-r
 export function initialEngineRunawayGuardState(): EngineRunawayGuardState {
   return {
     armed: false,
+    armedAt: null,
     strikes: 0,
     previousSize: null,
     fastWindows: 0,
@@ -25,12 +27,23 @@ export function initialEngineRunawayGuardState(): EngineRunawayGuardState {
   }
 }
 
-export function armEngineRunawayGuard(state: EngineRunawayGuardState): EngineRunawayGuardState {
-  return { ...state, armed: true, previousSize: null, fastWindows: 0 }
+export function armEngineRunawayGuard(state: EngineRunawayGuardState, now: number): EngineRunawayGuardState {
+  return { ...state, armed: true, armedAt: now, previousSize: null, fastWindows: 0 }
 }
 
-export function disarmEngineRunawayGuard(state: EngineRunawayGuardState): EngineRunawayGuardState {
-  return { ...state, armed: false, previousSize: null, fastWindows: 0 }
+export function disarmEngineRunawayGuard(state: EngineRunawayGuardState, now: number): EngineRunawayGuardState {
+  // Commit health only when a generation ends without a verdict. Eager decay while armed would
+  // erase a slow burn's strikes before the absolute cap can prove that generation was runaway.
+  const healthy = state.armed && state.armedAt !== null && now - state.armedAt >= ENGINE_RUNAWAY_STRIKE_DECAY_MS
+  return {
+    ...state,
+    armed: false,
+    armedAt: null,
+    strikes: healthy ? 0 : state.strikes,
+    previousSize: null,
+    fastWindows: 0,
+    lastVerdictAt: healthy ? null : state.lastVerdictAt,
+  }
 }
 
 export function resetEngineRunawayGuard(): EngineRunawayGuardState {
@@ -40,12 +53,8 @@ export function resetEngineRunawayGuard(): EngineRunawayGuardState {
 export function decideEngineRunawayGuard(
   now: number,
   sample: EngineRunawaySample,
-  previous: EngineRunawayGuardState,
+  state: EngineRunawayGuardState,
 ): { state: EngineRunawayGuardState; action: EngineRunawayGuardAction } {
-  const state =
-    previous.lastVerdictAt !== null && now - previous.lastVerdictAt >= ENGINE_RUNAWAY_STRIKE_DECAY_MS
-      ? { ...previous, strikes: 0, lastVerdictAt: null }
-      : previous
   if (!state.armed) return { state, action: "none" }
   if (sample.status === "unavailable") {
     return { state: { ...state, previousSize: null, fastWindows: 0 }, action: "none" }
@@ -65,6 +74,7 @@ export function decideEngineRunawayGuard(
   return {
     state: {
       armed: false,
+      armedAt: null,
       strikes,
       previousSize: null,
       fastWindows: 0,
