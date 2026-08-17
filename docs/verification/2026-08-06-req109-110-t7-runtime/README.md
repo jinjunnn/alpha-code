@@ -370,3 +370,18 @@ were not run, and no production or real-credential probe was attempted. The
 preserved raw facts and screenshots are
 [`results/byok-only-f991100a.json`](./results/byok-only-f991100a.json) and
 `results/byok-only-f991100a-{1..5}.png`.
+
+## #858 close evidence (2026-08-17)
+
+Signed candidate at `alpha@5f8d6096d` (app executable SHA-256
+`98ccbc4bc6d7f2922561efda2b29f0c11a6d24be90fb4212fe95f4143f45eab2`).
+
+| Cell | n | refreshDuration P95 | notes |
+| --- | ---: | ---: | --- |
+| latency-3000ms | 5 | **3805.7 ms** | includes the intentional 3 s refresh delay; stop/fork overhead ≈ **797 ms** (was ≈6 s + delay → ~10 s) |
+| active-stream-rotation | 1 | 826.4 ms | interruption seen, draft preserved, mount=1, reload=0, first recovered request 200 with `renewed` only |
+
+Also: readyRetryMs 1.3–1.5 ms; mounts=1; reloads=0 on every latency sample. The 6 s stop-ceiling platform is gone.
+
+Raw: `results/results.json` from this rerun.
+
