@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, persistMcp, persistProvider, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
+import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, persistMcp, persistProvider, releasePreparedMcpSecretVersion, releasePreparedTxResources, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
 import { newMcpSecretVersionId, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
@@ -289,6 +289,120 @@ describe("persistMcp — accept paths write mcp[name]", () => {
     } finally {
       fs.chmodSync(legacyFile, 0o644)
     }
+  })
+
+  test("REQ-136 project remove edits only D/alpha.jsonc; global same-name bytes stay exact and replay is idempotent", () => {
+    expect(persistMcp("demo", { type: "local", command: ["npx", "global-demo"] }).ok).toBe(true)
+    const globalFile = path.join(alphaTmp, "alpha.jsonc")
+    const globalBefore = fs.readFileSync(globalFile, "utf8")
+    const project = path.join(tmp, "project-remove")
+    fs.mkdirSync(path.join(project, ".alpha"), { recursive: true })
+    const projectRoot = path.join(fs.realpathSync(project), ".alpha")
+    const projectFile = path.join(projectRoot, "alpha.jsonc")
+    fs.writeFileSync(
+      projectFile,
+      '{\n  // project-owned config\n  "mcp": {\n    "demo": { "type": "local", "command": ["npx", "project-demo"] },\n    "keep": { "type": "local", "command": ["bun", "keep"] }\n  }\n}\n',
+    )
+
+    expect(removeProjectMcpConfigInLock(projectRoot, "demo")).toEqual({ ok: true })
+    expect(fs.readFileSync(globalFile, "utf8")).toBe(globalBefore)
+    const projectAfterFirst = fs.readFileSync(projectFile, "utf8")
+    const parsed = JSON.parse(projectAfterFirst.replace(/^\s*\/\/.*$/gm, ""))
+    expect(parsed.mcp.demo).toBeUndefined()
+    expect(parsed.mcp.keep.command).toEqual(["bun", "keep"])
+
+    expect(removeProjectMcpConfigInLock(projectRoot, "demo")).toEqual({ ok: true })
+    expect(fs.readFileSync(projectFile, "utf8")).toBe(projectAfterFirst)
+    expect(fs.readFileSync(globalFile, "utf8")).toBe(globalBefore)
+  })
+
+  test("REQ-136 global remove leaves D byte-for-byte intact; missing project config stays absent", () => {
+    expect(persistMcp("demo", { type: "local", command: ["npx", "global-demo"] }).ok).toBe(true)
+    const project = path.join(tmp, "project-global-remove")
+    fs.mkdirSync(path.join(project, ".alpha"), { recursive: true })
+    const projectRoot = path.join(fs.realpathSync(project), ".alpha")
+    const projectFile = path.join(projectRoot, "alpha.jsonc")
+    fs.writeFileSync(projectFile, JSON.stringify({ mcp: { demo: { type: "local", command: ["npx", "project-demo"] } } }, null, 4) + "\n")
+    const projectBefore = fs.readFileSync(projectFile, "utf8")
+
+    expect(removeMcpConfigInLock("demo")).toEqual({ ok: true })
+    expect(fs.readFileSync(projectFile, "utf8")).toBe(projectBefore)
+    expect(readAlphaConfig().mcp?.demo).toBeUndefined()
+
+    const emptyProject = path.join(tmp, "project-empty")
+    fs.mkdirSync(path.join(emptyProject, ".alpha"), { recursive: true })
+    const emptyRoot = path.join(fs.realpathSync(emptyProject), ".alpha")
+    expect(removeProjectMcpConfigInLock(emptyRoot, "demo")).toEqual({ ok: true })
+    expect(fs.existsSync(path.join(emptyRoot, "alpha.jsonc"))).toBe(false)
+  })
+
+  test("REQ-136 malformed project config fails closed without touching global bytes", () => {
+    expect(persistMcp("demo", { type: "local", command: ["npx", "global-demo"] }).ok).toBe(true)
+    const globalFile = path.join(alphaTmp, "alpha.jsonc")
+    const globalBefore = fs.readFileSync(globalFile, "utf8")
+    const project = path.join(tmp, "project-malformed")
+    fs.mkdirSync(path.join(project, ".alpha"), { recursive: true })
+    const projectRoot = path.join(fs.realpathSync(project), ".alpha")
+    const projectFile = path.join(projectRoot, "alpha.jsonc")
+    fs.writeFileSync(projectFile, '{"mcp":{"demo":')
+    const projectBefore = fs.readFileSync(projectFile, "utf8")
+
+    const result = removeProjectMcpConfigInLock(projectRoot, "demo")
+    expect(result.ok).toBe(false)
+    expect(fs.readFileSync(projectFile, "utf8")).toBe(projectBefore)
+    expect(fs.readFileSync(globalFile, "utf8")).toBe(globalBefore)
+  })
+
+  test("REQ-136 project remove rejects an alpha.jsonc symlink without reading through it", () => {
+    const project = path.join(tmp, "project-config-symlink")
+    const projectRoot = path.join(project, ".alpha")
+    fs.mkdirSync(projectRoot, { recursive: true })
+    const outside = path.join(tmp, "outside-alpha.jsonc")
+    const outsideBefore = JSON.stringify({ mcp: { demo: { type: "local", command: ["npx", "outside"] } } })
+    fs.writeFileSync(outside, outsideBefore)
+    fs.symlinkSync(outside, path.join(projectRoot, "alpha.jsonc"))
+
+    const result = removeProjectMcpConfigInLock(path.join(fs.realpathSync(project), ".alpha"), "demo")
+    expect(result.ok).toBe(false)
+    expect(fs.readFileSync(outside, "utf8")).toBe(outsideBefore)
+    expect(fs.lstatSync(path.join(projectRoot, "alpha.jsonc")).isSymbolicLink()).toBe(true)
+  })
+
+  test("REQ-136 project remove never uses legacy predictable scratch paths", () => {
+    const project = path.join(tmp, "project-scratch-symlink")
+    const projectRoot = path.join(project, ".alpha")
+    fs.mkdirSync(projectRoot, { recursive: true })
+    const projectFile = path.join(projectRoot, "alpha.jsonc")
+    const projectBefore = JSON.stringify({ mcp: { demo: { type: "local", command: ["npx", "project"] } } })
+    fs.writeFileSync(projectFile, projectBefore)
+    const outside = path.join(tmp, "outside-scratch")
+    fs.writeFileSync(outside, "outside-stays-exact")
+    fs.symlinkSync(outside, `${projectFile}.tmp`)
+
+    const result = removeProjectMcpConfigInLock(path.join(fs.realpathSync(project), ".alpha"), "demo")
+    expect(result.ok).toBe(true)
+    expect(JSON.parse(fs.readFileSync(projectFile, "utf8")).mcp?.demo).toBeUndefined()
+    expect(fs.readFileSync(outside, "utf8")).toBe("outside-stays-exact")
+    expect(fs.lstatSync(`${projectFile}.tmp`).isSymbolicLink()).toBe(true)
+  })
+
+  test("REQ-136 project remove rejects a symlinked capability store before config or grants can change", () => {
+    const project = path.join(tmp, "project-store-symlink")
+    const projectRoot = path.join(project, ".alpha")
+    fs.mkdirSync(projectRoot, { recursive: true })
+    const projectFile = path.join(projectRoot, "alpha.jsonc")
+    const projectBefore = JSON.stringify({ mcp: { demo: { type: "local", command: ["npx", "project"] } } })
+    fs.writeFileSync(projectFile, projectBefore)
+    const outsideStore = path.join(tmp, "outside-store")
+    const outsideGrant = path.join(outsideStore, "mcp--demo", "grants.json")
+    fs.mkdirSync(path.dirname(outsideGrant), { recursive: true })
+    fs.writeFileSync(outsideGrant, "outside-grant-stays-exact")
+    fs.symlinkSync(outsideStore, path.join(projectRoot, "ext-store"))
+
+    const result = removeProjectMcpConfigInLock(path.join(fs.realpathSync(project), ".alpha"), "demo")
+    expect(result.ok).toBe(false)
+    expect(fs.readFileSync(projectFile, "utf8")).toBe(projectBefore)
+    expect(fs.readFileSync(outsideGrant, "utf8")).toBe("outside-grant-stays-exact")
   })
 })
 

@@ -26,6 +26,30 @@ function makeHarness(admit: boolean) {
   }
   const roots: WriteChannelRoots = {
     global: () => ({ ok: true, root: GLOBAL }),
+    catalogIntent: async (intent) => {
+      if (!intent || typeof intent !== "object" || Array.isArray(intent))
+        return { ok: false, reason: "catalog intent: invalid scope" }
+      const scope = (intent as { scope?: unknown }).scope
+      if (!scope || typeof scope !== "object" || Array.isArray(scope))
+        return { ok: false, reason: "catalog intent: invalid scope" }
+      const record = scope as Record<string, unknown>
+      if (record.scope === "global" && Object.keys(record).every((key) => key === "scope"))
+        return { ok: true, root: GLOBAL }
+      if (
+        record.scope === "project" &&
+        typeof record.projectDir === "string" &&
+        Object.keys(record).every((key) => key === "scope" || key === "projectDir")
+      ) {
+        const catalogId = (intent as { catalogId?: unknown }).catalogId
+        return catalogId === "mcp:demo"
+          ? { ok: true, root: PROJECT }
+          : { ok: false, reason: "project-scoped catalog/seed installation supports verified MCP entries only" }
+      }
+      return {
+        ok: false,
+        reason: record.scope === "global" ? "catalog intent: invalid global scope" : "catalog intent: invalid project scope",
+      }
+    },
     uninstallIntent: (intent) =>
       intent === "bad" ? { ok: false, reason: "bad uninstall intent" } : { ok: true, root: intent === "proj" ? PROJECT : GLOBAL },
     setStateIntent: (intent) => (intent === "proj" ? { ok: true, root: PROJECT } : { ok: true, root: GLOBAL }),
@@ -118,7 +142,7 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
   test("放行:全部 12 通道 body 收到原实参,gate 收到该通道的解析 root", async () => {
     const h = makeHarness(true)
     const w = buildGatedWriteChannels(h)
-    await w.installCatalog({ catalogId: "x" })
+    await w.installCatalog({ catalogId: "mcp:demo", scope: { scope: "project", projectDir: "/p" } })
     await w.uninstallV2("proj")
     await w.uninstallPackage("package:kit")
     await w.rollback({ type: "skill" }, "gen-000001-abcdef12")
@@ -145,7 +169,7 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
       "importSkillGit",
     ])
     // root 断言:global 面 / intent 定根 / 项目面 / 导入 target 定根
-    expect(h.gateLog).toEqual([GLOBAL, PROJECT, GLOBAL, GLOBAL, PROJECT, PROJECT, GLOBAL, GLOBAL, GLOBAL, GLOBAL, PROJECT, GLOBAL])
+    expect(h.gateLog).toEqual([PROJECT, PROJECT, GLOBAL, GLOBAL, PROJECT, PROJECT, GLOBAL, GLOBAL, GLOBAL, GLOBAL, PROJECT, GLOBAL])
     // 实参透传抽查
     expect(h.bodyLog[7]?.args).toEqual(["m", { type: "local" }, ["K"]])
     expect(h.bodyLog[3]?.args).toEqual([{ type: "skill" }, "gen-000001-abcdef12"])
@@ -160,7 +184,7 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
     const h = makeHarness(false)
     const w = buildGatedWriteChannels(h)
     const results = await Promise.all([
-      w.installCatalog({}),
+      w.installCatalog({ catalogId: "x", scope: { scope: "global" } }),
       w.uninstallV2({}),
       w.uninstallPackage("package:kit"),
       w.rollback({}, "g"),
@@ -186,6 +210,27 @@ describe("逐通道:gate 先行、root 正确、拒绝短路、实参透传", ()
     expect(h.gateLog).toEqual([])
     expect(h.bodyLog).toEqual([])
   })
+
+  test("catalog scope 定根严格:畸形 scope 不进 gate，project 只交 project resolver", async () => {
+    const h = makeHarness(true)
+    const w = buildGatedWriteChannels(h)
+    expect(await w.installCatalog({ catalogId: "x", scope: { scope: "global", projectDir: "/p" } })).toEqual({
+      ok: false,
+      reason: "catalog intent: invalid global scope",
+    })
+    expect(await w.installCatalog({ catalogId: "x", scope: { scope: "project" } })).toEqual({
+      ok: false,
+      reason: "catalog intent: invalid project scope",
+    })
+    expect(
+      await w.installCatalog({ catalogId: "skill:demo", scope: { scope: "project", projectDir: "/p" } }),
+    ).toEqual({
+      ok: false,
+      reason: "project-scoped catalog/seed installation supports verified MCP entries only",
+    })
+    expect(h.gateLog).toEqual([])
+    expect(h.bodyLog).toEqual([])
+  })
 })
 
 describe("真根集成:真实 gate × 真盘 journal × 表构造通道", () => {
@@ -208,13 +253,115 @@ describe("真根集成:真实 gate × 真盘 journal × 表构造通道", () => 
       )
       const gate = makeRecoveryGate(() => ({ commitUninstall: () => {}, uninstallArtifacts: () => {} }))
       const h = makeHarness(true)
-      const w = buildGatedWriteChannels({ gate, roots: { ...h.roots, global: () => ({ ok: true, root }) }, bodies: h.bodies })
-      const r = await w.installCatalog({ catalogId: "x" })
+      const w = buildGatedWriteChannels({
+        gate,
+        roots: {
+          ...h.roots,
+          global: () => ({ ok: true, root }),
+          catalogIntent: async () => ({ ok: true, root }),
+        },
+        bodies: h.bodies,
+      })
+      const r = await w.installCatalog({ catalogId: "x", scope: { scope: "global" } })
       expect(r).toEqual({ ok: true, via: "installCatalog" })
       const converged = probeTransactionJournals(root)
       expect(converged.entries.map((j) => `${j.txId}:${j.state}`)).toEqual(["tx-open:uninstalled"])
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test("project catalog write lazily recovers exactly D root and leaves global journal untouched", async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "ext-wc-project-"))
+    const globalRoot = path.join(base, "global")
+    const projectRoot = path.join(base, "project", ".alpha")
+    const writeOpen = (target: string, txId: string) => {
+      const journal = path.join(target, "ext-tx", "journal")
+      fs.mkdirSync(journal, { recursive: true })
+      fs.writeFileSync(
+        path.join(journal, `${txId}.json`),
+        JSON.stringify({
+          v: 1,
+          txId,
+          op: "uninstall",
+          state: "uninstalling",
+          createdAt: "2026-08-18T00:00:00.000Z",
+          updatedAt: "2026-08-18T00:00:00.000Z",
+          items: [{ key: "skill--demo", genId: "gen-000000-000000", files: [] }],
+        }),
+      )
+    }
+    try {
+      writeOpen(globalRoot, "tx-global-open")
+      writeOpen(projectRoot, "tx-project-open")
+      const gate = makeRecoveryGate(() => ({ commitUninstall: () => {}, uninstallArtifacts: () => {} }))
+      const h = makeHarness(true)
+      const w = buildGatedWriteChannels({
+        gate,
+        roots: {
+          ...h.roots,
+          global: () => ({ ok: true, root: globalRoot }),
+          catalogIntent: async () => ({ ok: true, root: projectRoot }),
+          projectDir: () => ({ ok: true, root: projectRoot }),
+        },
+        bodies: h.bodies,
+      })
+
+      expect(
+        await w.installCatalog({
+          catalogId: "mcp:demo",
+          scope: { scope: "project", projectDir: path.dirname(projectRoot) },
+        }),
+      ).toEqual({ ok: true, via: "installCatalog" })
+      expect(probeTransactionJournals(projectRoot).entries.map((entry) => entry.state)).toEqual(["uninstalled"])
+      expect(probeTransactionJournals(globalRoot).entries.map((entry) => entry.state)).toEqual(["uninstalling"])
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true })
+    }
+  })
+
+  test("project non-MCP refusal happens before D recovery and leaves its open journal byte-exact", async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "ext-wc-project-refused-"))
+    const projectRoot = path.join(base, "project", ".alpha")
+    const journalDir = path.join(projectRoot, "ext-tx", "journal")
+    const journalFile = path.join(journalDir, "tx-project-open.json")
+    fs.mkdirSync(journalDir, { recursive: true })
+    fs.writeFileSync(
+      journalFile,
+      JSON.stringify({
+        v: 1,
+        txId: "tx-project-open",
+        op: "uninstall",
+        state: "uninstalling",
+        createdAt: "2026-08-18T00:00:00.000Z",
+        updatedAt: "2026-08-18T00:00:00.000Z",
+        items: [{ key: "skill--demo", genId: "gen-000000-000000", files: [] }],
+      }),
+    )
+    const before = fs.readFileSync(journalFile, "utf8")
+    try {
+      const gate = makeRecoveryGate(() => ({ commitUninstall: () => {}, uninstallArtifacts: () => {} }))
+      const h = makeHarness(true)
+      const w = buildGatedWriteChannels({
+        gate,
+        roots: {
+          ...h.roots,
+          catalogIntent: async () => ({ ok: false, reason: "verified project kind is skill — refused" }),
+        },
+        bodies: h.bodies,
+      })
+
+      expect(
+        await w.installCatalog({
+          catalogId: "skill:demo",
+          scope: { scope: "project", projectDir: path.dirname(projectRoot) },
+        }),
+      ).toEqual({ ok: false, reason: "verified project kind is skill — refused" })
+      expect(h.bodyLog).toEqual([])
+      expect(fs.readFileSync(journalFile, "utf8")).toBe(before)
+      expect(probeTransactionJournals(projectRoot).entries[0]?.state).toBe("uninstalling")
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true })
     }
   })
 })

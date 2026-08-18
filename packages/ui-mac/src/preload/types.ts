@@ -856,12 +856,13 @@ export type ElectronAPI = {
             /** package 重驱还必须原样带回四组 digest binding；legacy 仍只交 confirmed。 */
             authorization?: AuthorizationConfirmationWire | PackageAdmissionAuthorizationV1
           }
-        /** REQ-102 #317:选中随包 seed 资产安装(skill/global-only 首期);字节从共享 CAS 事务物化,
-         *  seedDir/清单/版本/receipt 语义全 main-owned。 */
+        /** REQ-102 #317 / REQ-136:选中随包 seed 资产。Global generation 载荷从共享 CAS
+         *  事务物化；project 仅容已验 MCP 的 config-only transaction。seedDir/清单/版本/
+         *  receipt 语义全 main-owned。 */
         | {
             source: "seed"
             assetId: string
-            scope: { scope: "global" }
+            scope: InstallTarget
             authorization?: AuthorizationConfirmationWire
           },
     ) => Promise<

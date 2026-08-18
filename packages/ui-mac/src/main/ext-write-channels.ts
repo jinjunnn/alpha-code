@@ -64,8 +64,10 @@ export const LOCAL_PACKAGE_READ_CHANNELS = {
 } as const
 
 export type WriteChannelRoots = {
-  /** 恒全局根(catalog 安装/回滚/未策展 mcp/plugin/agent 导入 —— 全部只写全局面)。 */
+  /** 恒全局根(rollback/未策展 mcp/plugin/agent 导入等 global-only 写面)。 */
   global: (...args: unknown[]) => RootResolution
+  /** Catalog/seed/package admission resolves verified project kind facts before D recovery. */
+  catalogIntent: (intent: unknown) => Promise<RootResolution>
   /** 严格卸载意图解码定根(project identity fail-closed)。 */
   uninstallIntent: (intent: unknown) => RootResolution
   /** 严格 set-state 意图解码定根。 */
@@ -100,7 +102,13 @@ export type GatedWriteHandlers = {
 export function buildGatedWriteChannels(deps: { gate: RecoveryGate; roots: WriteChannelRoots; bodies: WriteChannelBodies }): GatedWriteHandlers {
   const { gate, roots, bodies } = deps
   return {
-    installCatalog: gatedWriteHandler(gate, roots.global, bodies.installCatalog),
+    // REQ-136 C1:project recovery is itself a mutation, so verified-MCP admission must finish
+    // before the gate may replay D. The body re-resolves facts for the actual transaction.
+    installCatalog: async (intent) => {
+      const resolved = await roots.catalogIntent(intent)
+      if (!resolved.ok) return resolved
+      return gate.withRecoveredWrite(resolved.root, () => bodies.installCatalog(intent))
+    },
     uninstallV2: gatedWriteHandler(gate, roots.uninstallIntent, bodies.uninstallV2),
     // package 恒全局面(admission 只接受 global scope),定根与 catalog 安装同一个。
     uninstallPackage: gatedWriteHandler(gate, roots.global, bodies.uninstallPackage),

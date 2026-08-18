@@ -32,6 +32,8 @@ import { alphaJsoncPath } from "./engine-config-truth"
 import { sealEnginePluginAdditions } from "./engine-plugin-seal"
 import { commandHeadBase } from "./platform"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
+import { assertProjectAlphaRootIdentity } from "./alpha-workdir"
+import { writeFileAtomicSync } from "./ext-atomic-fs"
 
 export type ConfigResult = { ok: true } | { ok: false; reason: string }
 
@@ -561,9 +563,10 @@ export function readMcpLeaf(name: string): Record<string, unknown> | undefined {
  *  undefined)与「不可读/形状异常」(必须写前拒绝,否则失败补偿会把未知内容当 undefined 删掉)。 */
 export function readMcpLeafStrict(
   name: string,
+  targetPath?: string,
 ): { ok: true; value: Record<string, unknown> | undefined } | { ok: false; reason: string } {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
-  const target = mcpPluginTargetPath()
+  const target = targetPath ?? mcpPluginTargetPath()
   try {
     if (!fs.existsSync(target)) return { ok: true, value: undefined }
     // review #379 Major:jsonc-parser 容错解析不抛错(损坏文本静默给部分对象)—— 必须收集
@@ -854,6 +857,66 @@ export function removeMcpConfigInLock(name: string): ConfigResult {
   return { ok: true }
 }
 
+/** REQ-136 project MCP removal primitive. The caller already owns this root's Bundle lock; this
+ *  function revalidates the project endpoint immediately before mutation and edits only
+ *  `<projectRoot>/alpha.jsonc`. Missing file/leaf is an idempotent success and no file is created.
+ *  Global/legacy config enumeration, receipts and secret stores are unreachable by construction. */
+export function removeProjectMcpConfigInLock(projectRoot: string, name: string): ConfigResult {
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
+  try {
+    assertProjectMcpTransactionRootIdentity(projectRoot)
+  } catch {
+    return { ok: false, reason: "project MCP transaction root identity cannot be confirmed — removal refused" }
+  }
+  const target = path.join(projectRoot, "alpha.jsonc")
+  const removed = removeMcpLeafFromExistingFile(target, name, writeProjectConfigTextAtomic)
+  return removed.ok ? { ok: true } : removed
+}
+
+/** REQ-136 C2/C3/C6:validate every existing endpoint the project MCP transaction algebra may
+ * mutate or trust. The root itself, config, ledger, journal/lock/staging tree, and capability store
+ * must be real filesystem objects beneath D; a symlink or non-regular leaf fails closed. */
+export function assertProjectMcpTransactionRootIdentity(projectRoot: string): void {
+  assertProjectAlphaRootIdentity(projectRoot)
+  assertRegularFileOrMissing(path.join(projectRoot, "alpha.jsonc"))
+  assertRegularFileOrMissing(path.join(projectRoot, "installs.json"))
+  assertRealTreeOrMissing(path.join(projectRoot, "ext-tx"))
+  assertRealTreeOrMissing(path.join(projectRoot, "ext-store"))
+}
+
+function assertRegularFileOrMissing(target: string): void {
+  try {
+    const stat = fs.lstatSync(target)
+    if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`not a regular file: ${target}`)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === "ENOENT" || code === "ENOTDIR") return
+    throw error
+  }
+}
+
+function assertRealTreeOrMissing(target: string): void {
+  let stat: fs.Stats
+  try {
+    stat = fs.lstatSync(target)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === "ENOENT" || code === "ENOTDIR") return
+    throw error
+  }
+  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`not a real directory: ${target}`)
+  fs.readdirSync(target).forEach((name) => {
+    const child = path.join(target, name)
+    const childStat = fs.lstatSync(child)
+    if (childStat.isSymbolicLink()) throw new Error(`symlink in project transaction tree: ${child}`)
+    if (childStat.isDirectory()) {
+      assertRealTreeOrMissing(child)
+      return
+    }
+    if (!childStat.isFile()) throw new Error(`non-regular project transaction entry: ${child}`)
+  })
+}
+
 /**
  * REQ-135 boot teardown: delete mcp[name] from the live engine target and every retained
  * legacy copy the engine still merges. Missing files and missing leaves are successful
@@ -877,6 +940,7 @@ export function removeMcpLeafCopiesUnlocked(
 function removeMcpLeafFromExistingFile(
   target: string,
   name: string,
+  write: (target: string, before: string, result: string) => ConfigResult = writeConfigTextAtomic,
 ): { ok: true; removed: boolean } | { ok: false; reason: string } {
   let text: string
   try {
@@ -909,9 +973,28 @@ function removeMcpLeafFromExistingFile(
       formattingOptions: { tabSize: 2, insertSpaces: true },
     }),
   )
-  const written = writeConfigTextAtomic(target, text, result)
+  const written = write(target, text, result)
   if (!written.ok) return { ok: false, reason: `config teardown write failed: ${target}: ${written.reason}` }
   return { ok: true, removed: true }
+}
+
+function writeProjectConfigTextAtomic(target: string, before: string, result: string): ConfigResult {
+  try {
+    assertProjectMcpTransactionRootIdentity(path.dirname(target))
+  } catch {
+    return { ok: false, reason: "project MCP transaction root identity changed before config write — refused" }
+  }
+  const sealed = sealEnginePluginAdditions(target, before, result)
+  if (!sealed.ok) return sealed
+  const errors: ParseError[] = []
+  parse(result, errors, { allowTrailingComma: true })
+  if (errors.length > 0) return { ok: false, reason: "resulting project config is not valid jsonc" }
+  try {
+    writeFileAtomicSync(target, result)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to write project config" }
+  }
 }
 
 function removeMcpUnlocked(name: string): ConfigResult {

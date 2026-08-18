@@ -11,14 +11,14 @@ import { homedir } from "node:os"
 import * as path from "node:path"
 import { toolProbe } from "./platform"
 import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
-import { assertProjectAlphaRootIdentity, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
+import { readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import { projectIpcHandler, resolveProjectIpcEntry, withProjectIpcEntryIdentity } from "./ext-project-entry"
 import type { InstalledPackagesResultV1, InstallTarget, ServerReadyData } from "../preload/types"
 import { isExtensionName } from "../shared/extension-name"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, releasePreparedTxResources, removeCommandEntry, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, withConfigWriteLock } from "./ext-config"
+import { assertProjectMcpTransactionRootIdentity, collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, releasePreparedTxResources, removeCommandEntry, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, withConfigWriteLock } from "./ext-config"
 import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { reloadInstalledMcp } from "./ext-mcp-activation"
@@ -58,7 +58,7 @@ import {
   type PackageArtifactInstallersV1,
   type PackageArtifactRemovalV1,
 } from "./ext-package-uninstall"
-import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, installUncuratedAgentImport, installUncuratedSkillImport, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
+import { decodeCatalogInstallIntent, decodeSetStateIntent, decodeUninstallIntent, installCatalog, installUncuratedAgentImport, installUncuratedSkillImport, listGenerationsByKey, removeInstallGrants, resolveCatalogInstallWriteRoot, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { fetchCurationBlob } from "./curation-blobs"
 import { makeRecoveryGate, runVerifiedMutation } from "./ext-recovery-gate"
 // #408:session-grant 会话级启用(main 内存登记 + 栅栏;生命周期接线在 index.ts)。
@@ -642,8 +642,8 @@ export function registerExtIpcHandlers(
   // 事务在恢复期用同一 probe 重验健康(而非 health-by-assumption),健康则从 journal 的 receipt 模板
   // 前滚落账,不健康/账本写失败则 fail-closed 全回滚(账本零漂移)。journal 目录不存在时为 no-op。
   // #347:恢复参数按 root 构造 —— startup 与写方 gate 三处共用;commitReceipt/commitUninstall
-  // 全部写**传入的 root**(此前硬编码全局根,Codex 裁决点名);MCP artifact seam 只允许全局根
-  // (mcp 不进 project scope,项目根 journal 里出现 mcp-- key = 异常,保持非终态待诊断)。
+  // 全部写**传入的 root**(此前硬编码全局根,Codex 裁决点名)。REQ-136 的 project MCP
+  // artifact seam 只删已验证 D 的 leaf+grant；global seam 保留 legacy/secret cleanup。
   // REQ-102 #358(review Blocker 1):恢复接线必须支持 file(agent)事务 —— 探针 = skill
   // generation + agent file 组合(未知 file item 由 agentFileProbe fail-closed 拒),receipt
   // 前滚经 recoveryReceiptInputs 过滤无 receipt 的副 item(与安装路径同一过滤;裸 map 会让
@@ -656,7 +656,10 @@ export function registerExtIpcHandlers(
     // REQ-128 `#706`:前滚与主提交共用 `commitTransactionLedger` —— journal 里带着 package
     // mutation 的事务在恢复期也必须重建**同一份** V3 mutation,否则前滚会写出一本没有
     // graph/claims 的账本(而 child records 已 durable),owner 集合从此失据。
-    commitReceipt: (recs) => commitTransactionLedger(root, recs),
+    commitReceipt: (recs) => {
+      if (root !== alphaGlobalRoot()) assertProjectMcpTransactionRootIdentity(root)
+      return commitTransactionLedger(root, recs)
+    },
     // #336 r3(r2 Major 1):receipt durable 证伪 —— 恢复进入任何回滚分支前读账本判定。
     // valid + 同 txId = durable(**任一** item 在账即禁回滚,防半批分叉);absent/v1/异 txId =
     // 确证未落(允许回滚);corrupt/ledger-corrupt = 无法证伪 → 抛错(引擎 fail-closed 保留
@@ -675,6 +678,7 @@ export function registerExtIpcHandlers(
     // REQ-100 #313:卸载恢复的账本删除(幂等去账;去账失败抛错 → 保持 uninstalling 供下次前滚)。
     // review #374 Major:非法/未知 key 必须抛错(journal 保持非终态待诊断),绝不静默假终态。
     commitUninstall: (key) => {
+      if (root !== alphaGlobalRoot()) assertProjectMcpTransactionRootIdentity(root)
       const parsed = parseUninstallLedgerKey(key)
       if (!parsed) throw new Error(`unrecognized uninstall ledger key "${key}" — retained for diagnosis`)
       const rm = removeRecordV2(root, parsed.kind, parsed.name)
@@ -683,8 +687,18 @@ export function registerExtIpcHandlers(
     // #346:config 卸载恢复的 artifact seam(恢复锁内 —— 只用 in-lock/strict 原语,绝不重取锁)。
     uninstallArtifacts: (key) => {
       if (!key.startsWith("mcp--")) throw new Error(`no artifact seam for uninstall key: ${key}`)
-      if (root !== alphaGlobalRoot()) throw new Error(`mcp artifact seam is global-only — refused for root: ${root}`)
       const name = key.slice("mcp--".length)
+      if (root !== alphaGlobalRoot()) {
+        // A non-current environment root must not be guessed to be a project. Revalidate the
+        // exact D/.alpha identity before choosing the project-only cleanup algebra.
+        assertProjectMcpTransactionRootIdentity(root)
+        const cfg = removeProjectMcpConfigInLock(root, name)
+        if (!cfg.ok) throw new Error(cfg.reason)
+        assertProjectMcpTransactionRootIdentity(root)
+        const grants = removeInstallGrants(root, [key])
+        if (!grants.ok) throw new Error(grants.reason)
+        return
+      }
       const cfg = removeMcpConfigInLock(name)
       if (!cfg.ok) throw new Error(cfg.reason)
       // r8 Major:恢复 seam 同款活体排除 —— 在册名读不出 = 吊销失败(journal 保持非终态前滚)。
@@ -700,7 +714,11 @@ export function registerExtIpcHandlers(
     // #712:崩溃在 populatePrepared 之后、提交之前 —— 受限密钥版本已在盘上而 live config 从未
     // 指向它。恢复把 journal 收敛成 aborted/rolled-back 时按 journal 里的类型化身份释放它,
     // 与安装路径同一份实现(合并引用视图复核:仍被引用/来源不可读/身份不可判一律不删)。
-    releasePrepared: (resources) => releasePreparedTxResources(userDataPath, resources),
+    // REQ-136 C3/C6:prepared identities name the process-global MCP secret store. Project plans
+    // never produce them, and a D journal must never gain a global cleanup capability.
+    ...(root === alphaGlobalRoot()
+      ? { releasePrepared: (resources) => releasePreparedTxResources(userDataPath, resources) }
+      : {}),
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
   })
   assertAlphaEnvironmentIdentity()
@@ -713,7 +731,7 @@ export function registerExtIpcHandlers(
       assertAlphaEnvironmentIdentity()
       return
     }
-    assertProjectAlphaRootIdentity(root)
+    assertProjectMcpTransactionRootIdentity(root)
   }
   const recoveryGate = makeRecoveryGate(recoveryOpts, (m) => getLogger().log(m), verifyRecoveryRoot)
   // #390(review r1 Blocker):启动期全局生态导入必须过恢复 gate,不能只靠 ledgerReady barrier ——
@@ -889,6 +907,7 @@ export function registerExtIpcHandlers(
         legacyMcpRefPaths: (name) => collectLegacyMcpRefPathsStrict(name),
         // #346:journaled MCP 卸载的两个 in-lock/strict 原语(引擎事务锁内调用)。
         removeMcpConfigInLock,
+        removeProjectMcpConfigInLock,
         removeMcpSecretsStrict: (name) => {
           // r8 Major:兄弟备份删除的活体排除种子 —— 在册名集合读不出 = 吊销失败(可观察),
           // 绝不冒险把可能是另一在册 server 的目录当备份删。
@@ -1073,6 +1092,7 @@ export function registerExtIpcHandlers(
     gate: recoveryGate,
     roots: {
       global: globalWriteRoot,
+      catalogIntent: (intent) => resolveCatalogInstallWriteRoot(intent, plannerDeps()),
       uninstallIntent: uninstallIntentRoot,
       setStateIntent: setStateIntentRoot,
       importTarget: importTargetRoot,
@@ -1094,6 +1114,11 @@ export function registerExtIpcHandlers(
         // legacy planner(catalog entry 意图):一次只装一个 live MCP,判据与 `#697` 之前逐字相同。
         if (!("activateMcp" in result)) {
           if (result.kind !== "mcp" || result.installedDisabled) return result
+          // REQ-136 C5:the existing reload helper is name-only and global. A project commit must
+          // not borrow a same-name global status or report it connected before consent. #1017 will
+          // consume the safe D-scoped activation probe; until then return only the durable result.
+          const decoded = decodeCatalogInstallIntent(intent)
+          if (decoded.ok && decoded.intent.scope.scope === "project") return result
           return { ...result, mcpActivation: await reloadInstalledMcp(result.name, awaitServer) }
         }
         // `#697` package 图:一个 Bundle 可以带**多个** MCP 组件,而 live 重载的对象是组件不是包。
