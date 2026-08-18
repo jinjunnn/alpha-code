@@ -4,6 +4,20 @@
 - 关联:ADR-028(Registry v2 / main-only 安装计划)、REQ-098(#209)、#303/#318 完成矩阵、派生实现票见 #362 评论
 - 决策记录真源:本文;A 侧契约落点随实现票更新 `docs/contracts/extension-cas-seed.md`
 
+## MCP-only carve-out(2026-08-17,REQ-136 #1013 / DECIDE #1014)
+
+本 ADR **不整体废止**。REQ-136 只批准一个窄例外:main 从已验真源解析出的独立 catalog MCP,
+以及 type 与 bundled catalog 同为 MCP 的 packaged seed 资产,可按
+[`docs/design/req-136-project-mcp-install.md`](../../../docs/design/req-136-project-mcp-install.md)
+进入 project scope。两者都必须是 `<project>/.alpha/alpha.jsonc` 的 config-only 事务;
+project seed 只做零写入字节校验、不提升 CAS。需密钥、当前 workspace-policy、bundle/package、
+plugin/cloud 及未点名形态仍拒绝;skill/agent 的新增 project catalog 安装拒绝与遗留清理通道原样保留。
+
+下文的全称「project catalog/seed 收回」是本 carve-out 之前的历史基线,此后须与本节合读。
+在对应 CODE 合入前,运行时仍以当前 broad guard 的全拒绝为真;不得只放开 Hub 开关,也不得仅把
+`mcp` 塞进遗留管理 allowlist。发现、按项目 lazy recovery、root-parametric 卸载、同名 shadow
+披露与零 CAS 行为闸必须同批落地。
+
 ## 背景
 
 planner 允许 project scope 的受管安装(`PROJECT_SCOPED_KINDS = {skill, agent}`,事务根切

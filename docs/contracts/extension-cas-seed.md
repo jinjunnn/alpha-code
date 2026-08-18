@@ -275,6 +275,9 @@ CAS 补充语义:
 
 ## 6. project scope 收回(ADR-030,REQ-098 #362/#372)
 
+REQ-136 的窄例外仅允许已验 MCP 走 project config-only 安装,其完整边界与落地前 runtime 状态见
+[`../design/req-136-project-mcp-install.md`](../design/req-136-project-mcp-install.md);skill/agent 与其它未点名 project 安装仍按本节拒绝。
+
 - **新增安装**:`installCatalog` 在 decode 后、resolveEntry/seed 分流与任何副作用之前统一拒绝
   `scope=project`(catalog / seed / bundle 三形态同一合同),稳定 reason:
   `project-scoped catalog/seed installation is unsupported — use project-local import/register`;

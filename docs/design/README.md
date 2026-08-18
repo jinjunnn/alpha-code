@@ -116,6 +116,7 @@ and indexed in `PAGE-MAP.md`.
 | Family | Design history | Current authority |
 | --- | --- | --- |
 | Extension Hub / 定制中心 | `extension-hub.md` → `2026-06-22-arch-extension-hub.md` → `2026-07-04-extension-hub-v3-universal.md` → `2026-07-13-req103-hub-governance/` (治理三归位 v3) → `2026-07-15-capability-authorize-dialog/` (authorize 确认框增量) → `2026-07-17-req103-remaining/` (scope 分组做实 + 已授权能力段 v4) → `2026-07-17-req104-pack-facts/` (Pack 整包事实 + 第三方默认关 v5) → `2026-07-18-req104-four-shelf/` (四级货架 v6) → `2026-07-30-req128-extension-package-baseline.md` (标准 package、外部 Plugin 适配与兼容宿主安装) → `2026-08-02-req128-local-plugin-import/` (本地插件包导入的增量提案 — 提案未批,实现先落地;**其数字与状态划分已被上线实况取代,以 `current/customization-center/design.html` 的 §9 为准**) | current extension code/tests and ADR-014/ADR-028/ADR-030 |
+| Project-scoped catalog MCP | [`req-136-project-mcp-install.md`](req-136-project-mcp-install.md) (accepted — config-only project lifecycle and MCP-only ADR-030 carve-out) | current extension code/tests and ADR-030; selected behavior in REQ-136 is CODE-pending |
 | Alpha system surfaces | `2026-07-20-req090-alpha-surfaces/` (Settings / Permission / Model / Dialog / Recovery bundle) | current alpha-ui code and REQ-090 |
 | Product visual language | `2026-06-25-cool-graphite-visual-system.md` plus protected prototypes under `docs/archive/assets/design-program/` | current UI tokens, components, and visual tests |
 | Frontend/upstream boundary | `2026-07-03-frontend-decoupling-options.md` | `docs/architecture/upstream-integration.md`, sync workflows, ADR-020/ADR-029 |
