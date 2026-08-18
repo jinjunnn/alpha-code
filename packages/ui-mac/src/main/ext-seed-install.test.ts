@@ -20,6 +20,8 @@ import { resolveLiveGenerationDir } from "./ext-transaction"
 import { installSkillGeneration, skillGenerationKey } from "./ext-skill-generations"
 import { seedBlobPath, type SeedLock } from "./ext-seed"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
+import { evaluateAdvisoryGate } from "./ext-advisory-gate"
+import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import {
   compareVersionsSafe,
   installCatalog,
@@ -170,7 +172,7 @@ function bundledAgentEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry 
   } as CatalogEntry
 }
 
-/** seed 路径的完成定义之一:planner installers 一个都不许被触碰。
+/** seed 路径的完成定义之一:除纯 MCP 写策略外,planner installers 都不许被触碰。
  *  review #384 r2/r3:对象字面量按 PlannerInstallers 全量成员书写、不 as unknown ——
  *  结构偏差在编辑器/类型感知 lint 层可见(CI 的 tsgo 不含测试文件,tsconfig exclude,
  *  存量债不在本票开线);运行时另加 Proxy 拦截:访问表外成员(接口新增后未同步、或
@@ -182,7 +184,7 @@ function forbiddenInstallers(): PlannerInstallers {
   const table: PlannerInstallers = {
     // #378:直写 seam(persistMcp/fileifyMcpSecrets/restoreMcpLeaf/persistPlugin/
     // removePluginEntryExact/installVendoredPlugin)已随事务化退役,表随接口同步。
-    applyMcpWritePolicy: forbid("applyMcpWritePolicy"),
+    applyMcpWritePolicy,
     mcpSecretRefFor: forbid("mcpSecretRefFor"),
     claimMcpSecretVersionDir: forbid("claimMcpSecretVersionDir"),
     writeMcpSecretVersioned: forbid("writeMcpSecretVersioned"),
@@ -897,7 +899,7 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
     expect(findRecordV2(globalRoot, "mcp", "demo")).toBeNull()
   })
 
-  test("phase-1 fail-closed:secret-bearing / workspace / workspace-policy MCP 一律拒(seed intent 无 grants 通道)", async () => {
+  test("phase-1 fail-closed:secret-bearing / workspace / workspace-policy MCP are refused", async () => {
     buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
     const secret = await installAuthorized(mcpSeedIntent, mcpDeps({ installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "x"], requiredEnvVars: ["API_KEY"] } }))
     expect(secret.ok).toBe(false)
@@ -906,19 +908,6 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
     const ws = await installAuthorized(mcpSeedIntent, mcpDeps({ installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "{workspace}/x"] } }))
     expect(ws.ok).toBe(false)
     if (!ws.ok) expect(ws.reason).toContain("workspace")
-
-    const excelFiles = [{ path: "x.md", content: "excel" }]
-    buildSeed([{ id: "mcp:excel-mcp-server", files: excelFiles }])
-    const excel = await installAuthorized(
-      { source: "seed", assetId: "mcp:excel-mcp-server", scope: { scope: "global" } },
-      makeSeedDeps({
-        bundledEntries: [
-          bundledMcpEntry({ id: "mcp:excel-mcp-server", name: "excel-mcp-server", remoteAsset: { version: "1.0.0", files: lockFileEntries(excelFiles, { writeBlobs: false }) } }),
-        ],
-      }),
-    )
-    expect(excel.ok).toBe(false)
-    if (!excel.ok) expect(excel.reason).toContain("workspace-policy")
 
     const alphaFiles = [{ path: "x.md", content: "alpha word" }]
     buildSeed([{ id: "mcp:alpha-word", files: alphaFiles }])
@@ -941,6 +930,62 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
     )
     expect(alphaWord.ok).toBe(false)
     if (!alphaWord.ok) expect(alphaWord.reason).toContain("workspace-policy")
+  })
+
+  test("REQ-135 community Excel seed is denial-only and stops before CAS/config writes", async () => {
+    const excelFiles = [{ path: "LICENSE", content: "MIT" }, { path: "x.md", content: "excel" }]
+    buildSeed([{ id: "mcp:excel", files: excelFiles, source: "community" }])
+    const deps = makeSeedDeps({
+      bundledEntries: [
+        bundledMcpEntry({
+          id: "mcp:excel",
+          name: "excel-mcp-server",
+          source: "community",
+          installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "excel-mcp-server@0.1.8", "stdio"] },
+          remoteAsset: { version: "1.0.0", files: lockFileEntries(excelFiles, { writeBlobs: false }) },
+        }),
+      ],
+    })
+    const excel = await installAuthorized(
+      { source: "seed", assetId: "mcp:excel", scope: { scope: "global" } },
+      { ...deps, advisoryGate: (input) => evaluateAdvisoryGate(null, input) },
+    )
+    expect(excel.ok).toBe(false)
+    if (!excel.ok) {
+      expect(excel.reason).toContain("retired community")
+      expect(excel.reason).toContain("REQ-135")
+    }
+    expect(fs.existsSync(path.join(casBase, "cas"))).toBe(false)
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+  })
+
+  test("REQ-135 seed write policy rejects a renamed excel-mcp-server command", async () => {
+    const excelFiles = [{ path: "LICENSE", content: "MIT" }, { path: "x.md", content: "excel" }]
+    const entry = bundledMcpEntry({
+      id: "mcp:renamed-sheets",
+      name: "renamed-sheets",
+      source: "community",
+      installSpec: {
+        kind: "mcp",
+        mcpType: "local",
+        command: ["uvx", "excel-mcp-server@0.1.8", "stdio"],
+      },
+      remoteAsset: {
+        version: "1.0.0",
+        files: lockFileEntries(excelFiles, { writeBlobs: false }),
+      },
+    })
+    buildSeed([{ id: entry.id, files: excelFiles, source: "community" }])
+
+    const result = await installAuthorized(
+      { source: "seed", assetId: entry.id, scope: { scope: "global" } },
+      makeSeedDeps({ bundledEntries: [entry] }),
+    )
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toContain("excel-mcp-server is retired")
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+    expect(findRecordV2(globalRoot, "mcp", entry.name)).toBeNull()
   })
 
   test("纯 validator 在 plan 生成前拦危险配置(inline-eval / 非白名单命令头)", async () => {

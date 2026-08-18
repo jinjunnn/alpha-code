@@ -235,6 +235,8 @@ export const dict = {
   "alpha.ext.reviewExpiredChip": "Review expired",
   "alpha.ext.archivedNoInstall": "Unavailable",
   "alpha.ext.archivedNoInstallHint": "The upstream project is archived — new installs are no longer offered; existing installs keep working",
+  "alpha.ext.retiredCommunityNoInstall": "Retired",
+  "alpha.ext.retiredCommunityNoInstallHint": "This separate community Excel connector is retired and cannot be installed. Use Alpha Excel instead.",
   "alpha.ext.sessionOnlyRefused": "This extension only turns on per session \u2014 use its session switch",
   "alpha.ext.sessionOffRow": "Turn on per session \u00b7 off automatically when the session ends",
   "alpha.ext.sessionOnRow": "On for this session \u00b7 off automatically when it ends",
@@ -703,7 +705,7 @@ export const dict = {
   "alpha.ext.removeWholePackage": "Remove the whole package",
   "alpha.ext.verifyPending": "Unverified",
   "alpha.ext.verifyNoteTitle": "Pending verification",
-  // REQ-105 (#197): archived-connector advisory + Excel audited pin
+  // REQ-105 (#197) archived-connector advisory + REQ-135 community Excel retirement
   "alpha.ext.advArchivedChip": "Archived",
   "alpha.ext.advArchivedUnsupported": "Archived · unmaintained",
   "alpha.ext.advArchivedTitle": "Upstream archived — no longer maintained",
@@ -711,9 +713,10 @@ export const dict = {
     "The upstream repositories of {{names}} were archived on {{date}} (unmaintained — supply-chain risk). Your installs stay untouched: nothing is auto-updated or removed. We recommend disabling or uninstalling them. Keep using markitdown for reading documents; create docx/pptx via local scripts (python-docx / python-pptx) in a session.",
   "alpha.ext.advArchivedDetail":
     "This connector's upstream repository was archived on {{date}}: it no longer receives security fixes and is a supply-chain risk. Installed users are never force-handled — nothing is auto-updated or silently removed. We recommend disabling it, or uninstalling from Installed (auditable removal). Alternatives: markitdown for reading; local scripts (python-docx / python-pptx) for creation.",
-  "alpha.ext.excelPinTitle": "Security-audit pinned",
-  "alpha.ext.excelPinBody":
-    "Pinned to audited version {{version}} (fixes path traversal / unauthenticated remote read-write in earlier releases; pypi sha256 {{hash}}…). Local stdio only — no network listener; this connector can write files in your workspace. Upgrades require a new security intake.",
+  "alpha.ext.retiredCommunityChip": "Community connector retired",
+  "alpha.ext.retiredCommunityTitle": "This community Excel connector has been retired",
+  "alpha.ext.retiredCommunityBody":
+    "This is the old, separate community Excel connector—not Alpha Excel. Alpha removes its existing configuration and install record and no longer installs or reactivates it. Use Alpha Excel for .xlsx work.",
   "alpha.ext.boundaryLocalOnly": "Local only \u2014 definition files stay on this machine and send nothing on their own.",
   "alpha.ext.boundaryLocalCmd": "The command runs locally; network access depends on the service this connector talks to.",
   "alpha.ext.detailSource": "Source",

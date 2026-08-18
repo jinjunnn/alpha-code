@@ -877,7 +877,8 @@ export function registerExtIpcHandlers(
       platform: () => process.platform,
       globalRoot: alphaGlobalRoot,
       installers: {
-        // #378:MCP 策略闸口(Excel workspace;非权威 provisioning,引擎 config action 落盘)
+        // #378:MCP 策略闸口(REQ-135 退役拒绝 + REQ-133 Alpha Office 路径收敛,
+        // 引擎 config action 落盘)
         // + 版本化密钥原语(裁决 Q1:只增不覆盖;引用纯推导与落盘同参)。
         applyMcpWritePolicy,
         mcpSecretRefFor: (name, verId, varName) => mcpSecretVersionedRef(userDataPath, name, verId, varName),

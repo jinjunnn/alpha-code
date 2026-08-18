@@ -51,6 +51,7 @@ import {
 } from "./package-installability"
 import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 import { isLocalPackageId, LOCAL_PACKAGE_ID_PREFIX } from "../shared/local-package-namespace"
+import { isRetiredOfficeMcp, retiredCommunityOfficeFor } from "../shared/office-advisories"
 import type { MarkdownAssetRefV1 } from "../shared/host-extension-package-contract/decoder"
 import { HOST_EXTENSION_PACKAGE_LIMITS_V1 } from "../shared/host-extension-package-contract/registry"
 import type {
@@ -549,6 +550,20 @@ async function resolvePreparedPackage(
     const routed = packageChildKindV1(component.profileId)
     if (!routed.ok) return { ok: false, reason: `package admission: ${routed.reason}`, package: view }
     const kind = routed.kind
+    // Signed packages build config transaction items directly, so they never traverse the
+    // single-entry MCP write policy. Retire the exact old identity/command before preview or plan.
+    if (
+      kind === "mcp" &&
+      (retiredCommunityOfficeFor({ id: selected.prelude.packageId }) ||
+        retiredCommunityOfficeFor({ id: component.id, name }) ||
+        (entry.payload.schema === "alpha.host-extension-package.payload.mcp-local.v1" &&
+          isRetiredOfficeMcp(name, { type: "local", command: entry.payload.behavior.command })))
+    )
+      return {
+        ok: false,
+        reason: "package admission: community excel-mcp-server is retired; use mcp:alpha-excel (REQ-135)",
+        package: view,
+      }
     // ADR-040(`#825` 第 5 条):带可执行 plugin 组件的包**整包拒绝**,拒在资产下载之前 ——
     // 那份字节的唯一用途就是被写进引擎 `plugin[]` 以同等权限执行。
     // **整包拒而不是跳过这一个组件**:跳过会让用户拿到一个「装上了但少一半」的包,而包的

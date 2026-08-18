@@ -26,6 +26,7 @@ import { projectLabel } from "../sidebar/route"
 import { subscribeAuthState } from "../auth-recovery"
 import { BuiltinControlsPanel } from "./builtin-controls-panel"
 import { catalog, catalogSource, entryVersion, refreshCatalog } from "./catalog-source"
+import { installableCatalogEntries, installableCatalogPackages } from "./catalog-installable-view"
 import { Dialog } from "../alpha-ui/Dialog"
 import { Button } from "../alpha-ui/Button"
 import { pushToast } from "../alpha-ui/Toast"
@@ -47,7 +48,7 @@ import { hubSection, setHubSection, type HubSection } from "./ext-hub-state"
 import { catalogDescription, iconFor, iconForRow, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
 import { inventoryInstallRow, healthPresentation } from "./ext-inventory-present"
 import { ExtensionDetail, type DetailTarget } from "./extension-detail"
-import { officeAdvisoryFor } from "../../shared/office-advisories"
+import { officeAdvisoryFor, retiredCommunityOfficeFor } from "../../shared/office-advisories"
 // #397 PR-B:四级货架与策展呈现(纯派生层;解码真源 = shared/catalog-curation,fail-closed)。
 import {
   SHELF_CHIP_KEYS,
@@ -837,9 +838,17 @@ export function ExtensionHub(props: {
       .toLowerCase()
       .includes(q)
   }
-  const byType = (type: CatalogEntry["type"]) => catalog().entries.filter((e) => e.type === type)
+  // REQ-135:the signed snapshot remains byte-honest for installed-item identity, while every surface
+  // that can lead to installation consumes this retirement-filtered view.
+  const installableEntries = createMemo(() => installableCatalogEntries(catalog().entries))
+  const installablePackages = createMemo(() =>
+    installableCatalogPackages(catalog().packages ?? [], catalog().entries),
+  )
+  const byType = (type: CatalogEntry["type"]) => installableEntries().filter((e) => e.type === type)
   // 浏览区/搜索共用的筛选视图(T7/E11:来源+许可证)。
   const byTypeF = (type: CatalogEntry["type"]) => byType(type).filter(filterMatch)
+  // Full-catalog lookup is intentional: an installed retired connector still needs honest name,
+  // provenance, and retirement guidance until boot teardown has completed.
   const byId = (id: string) => catalog().entries.find((e) => e.id === id)
 
   // Global search (REQ-019 T1): a non-empty query searches ALL types at once, grouped by type —
@@ -855,7 +864,7 @@ export function ExtensionHub(props: {
     return groups
   })
   const searchPackages = createMemo(() =>
-    searching() ? (catalog().packages ?? []).filter(matchesPackage) : [],
+    searching() ? installablePackages().filter(matchesPackage) : [],
   )
   // REQ-079 curation:浏览/搜索面只出现「自建」agent;引擎原生内置(build/plan/general/…)
   // 不再平铺 —— 其查看与管理唯一入口 = 已安装 → 内置 治理面板(governance-panel)。
@@ -885,7 +894,7 @@ export function ExtensionHub(props: {
   // 推荐页四货架(固定序 核心→精选→接入→实验室;空货架隐藏;未策展/归档/失养/过期/公示不进)。
   // 公示事实未就绪 = 零货架(保守;featured JSX 按 advisoryState 给诚实降级态)。
   const shelves = createMemo(() =>
-    advisoryState() === "ready" ? buildShelves(catalog().entries, curationById(), nowIso(), advisoryBlocked()) : [],
+    advisoryState() === "ready" ? buildShelves(installableEntries(), curationById(), nowIso(), advisoryBlocked()) : [],
   )
 
   // Connectors grouped by category (fixed order) — drives the 连接器 tab subheaders.
@@ -908,7 +917,7 @@ export function ExtensionHub(props: {
   // 状态(connected/error)。live-but-unrecorded 的 MCP(手动加/迁移前)也并入,合成最小 receipt
   // 以支持卸载。MCP 有开关(connected 真相取 SDK);fs/plugin 只有卸载。
   const installedAll = createMemo((): ManageRow[] => {
-    const mcpByName = new Map(byType("mcp").map((e) => [e.name, e] as const))
+    const mcpByName = new Map(catalog().entries.filter((e) => e.type === "mcp").map((e) => [e.name, e] as const))
     const rows: ManageRow[] = []
     const seenMcp = new Set<string>()
     for (const r of ext.store.receipts) {
@@ -981,6 +990,7 @@ export function ExtensionHub(props: {
         r.origin !== "imported" &&
         r.origin !== "created" &&
         !officeAdvisoryFor({ id: r.id, name: r.name }) &&
+        !retiredCommunityOfficeFor({ id: r.id, name: r.name }) &&
         !!r.version &&
         !!byId(r.id) &&
         versionLess(r.version, entryVersion(byId(r.id))),
@@ -1348,6 +1358,10 @@ export function ExtensionHub(props: {
   //   plugin → 详情页先行(风险最高:运行于引擎进程 + npm 下载),页内安装再过风险确认框;
   //   mcp / bundle → 确认框(密钥采集 / 选目录 / 组合清单)。
   const stageInstall = (e: CatalogEntry) => {
+    if (retiredCommunityOfficeFor({ id: e.id, name: e.name })) {
+      setErrFor(e.id, t("alpha.ext.retiredCommunityNoInstallHint"))
+      return
+    }
     if (e.type === "skill") return void addDirect(e)
     // plugin(引擎进程内运行)/ agent(带权限档)/ cloud(数据出境,上行明细在详情页)=
     // 详情页先行档:先看清楚再启用。
@@ -1357,6 +1371,10 @@ export function ExtensionHub(props: {
   // Install action coming FROM the detail page: plugin now goes to its risk confirm dialog
   // (the user has just seen the hooks/risk sections); skill stays direct; the rest confirm.
   const stageInstallFromDetail = (e: CatalogEntry) => {
+    if (retiredCommunityOfficeFor({ id: e.id, name: e.name })) {
+      setErrFor(e.id, t("alpha.ext.retiredCommunityNoInstallHint"))
+      return
+    }
     // 用户已在详情页看过内容/权限:skill/agent 直装;cloud 直启用(上行明细刚看过);
     // plugin 仍过风险确认框;MCP/套件过确认框。
     if (e.type === "skill" || e.type === "agent" || e.type === "cloud") return void addDirect(e)
@@ -1423,7 +1441,7 @@ export function ExtensionHub(props: {
       const skillNames = new Set(inventory.skills)
       const mcpNames = new Set(inventory.mcp.map((m) => m.name))
       const pluginBases = new Set(inventory.plugins.map((p) => p.split("@")[0]))
-      const named = catalog().entries.filter((e) => {
+      const named = installableEntries().filter((e) => {
         if (e.type === "skill") return skillNames.has(e.name)
         if (e.type === "mcp") return mcpNames.has(e.name)
         if (e.type === "plugin" && e.installSpec?.kind === "plugin") return pluginBases.has(e.installSpec.package.split("@")[0])
@@ -1559,6 +1577,7 @@ export function ExtensionHub(props: {
     const cst = createMemo(() => statusOf(e.id))
     const curated = () => curatedOf(cst())
     const archivedNow = () => isArchived(cst())
+    const retiredNow = () => retiredCommunityOfficeFor({ id: e.id, name: e.name }) !== undefined
     return (
       <div class="alpha-ext-card" data-clickable="" onClick={() => openEntryDetail(e)}>
         <div class="alpha-ext-card-top">
@@ -1591,6 +1610,9 @@ export function ExtensionHub(props: {
               {/* REQ-105:归档连接器如经远程/缓存 catalog 露出,卡片即带 archived 警示(legacy optional) */}
               <Show when={!archivedNow() && officeAdvisoryFor({ id: e.id, name: e.name })}>
                 <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.advArchivedChip")}</span>
+              </Show>
+              <Show when={retiredNow()}>
+                <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.retiredCommunityChip")}</span>
               </Show>
             </div>
           </div>
@@ -1637,13 +1659,18 @@ export function ExtensionHub(props: {
                 </button>
               }
             >
-              {/* #397:归档 = 禁新安装(合同 §7.2;main 已拒,这里如实置灰给原因);
-                  未分级卡按钮降为 ghost(可装但不促装,安装后默认关闭)。 */}
+              {/* #397/REQ-135:archived and retired are both unavailable but use distinct copy;
+                  ungraded cards remain ghost actions(default-disabled after install). */}
               <Show
-                when={!archivedNow()}
+                when={!archivedNow() && !retiredNow()}
                 fallback={
-                  <button class="alpha-ext-add" disabled title={t("alpha.ext.archivedNoInstallHint")} onClick={(ev) => ev.stopPropagation()}>
-                    {t("alpha.ext.archivedNoInstall")}
+                  <button
+                    class="alpha-ext-add"
+                    disabled
+                    title={t(retiredNow() ? "alpha.ext.retiredCommunityNoInstallHint" : "alpha.ext.archivedNoInstallHint")}
+                    onClick={(ev) => ev.stopPropagation()}
+                  >
+                    {t(retiredNow() ? "alpha.ext.retiredCommunityNoInstall" : "alpha.ext.archivedNoInstall")}
                   </button>
                 }
               >
@@ -2153,6 +2180,11 @@ export function ExtensionHub(props: {
                 {t("alpha.ext.advArchivedUnsupported")}
               </span>
             </Show>
+            <Show when={retiredCommunityOfficeFor({ id: row.receipt.id, name: row.name })}>
+              <span class="alpha-ext-verify-chip" data-archived="">
+                {t("alpha.ext.retiredCommunityChip")}
+              </span>
+            </Show>
           </div>
           {/* 状态行:健康点 + 健康文字 · 启用态(来源/类型/版本收进详情页) */}
           <div class="alpha-ext-man-st">
@@ -2438,9 +2470,9 @@ export function ExtensionHub(props: {
                       </div>
                     </Show>
 
-                    <Show when={(catalog().packages ?? []).length > 0}>
-                      <SecRow label={t("alpha.ext.packageType")} count={catalog().packages!.length} />
-                      <PackageGrid items={catalog().packages!} />
+                    <Show when={installablePackages().length > 0}>
+                      <SecRow label={t("alpha.ext.packageType")} count={installablePackages().length} />
+                      <PackageGrid items={installablePackages()} />
                     </Show>
 
                     {/* #397 改动一:推荐 = 甄选驱动四货架(固定序 核心→精选→接入→实验室;空货架

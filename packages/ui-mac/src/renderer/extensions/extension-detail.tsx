@@ -15,7 +15,7 @@ import { catalogDescription, iconFor, iconForRow, sourceLabel, typeLabel, Svg, L
 import { ExtGrantedCapRow } from "./ext-authz"
 import { inventoryRowFor, inventoryInstallRow, ownershipRows, trustRows, runtimeSurfaceLabelKey, supportTierLabelKey, type PresentRow } from "./ext-inventory-present"
 import { derivePackFacts, formatPackBytes } from "./ext-pack-facts"
-import { EXCEL_MCP_PIN, officeAdvisoryFor, type OfficeAdvisory } from "../../shared/office-advisories"
+import { officeAdvisoryFor, retiredCommunityOfficeFor, type OfficeAdvisory } from "../../shared/office-advisories"
 // #397 PR-B:策展呈现(签名摘要真源;curated 整段切换,uncurated 走旧真源,两真源不混排)。
 import { CAPABILITY_LABEL_KEYS, SHELF_CHIP_KEYS, curatedOf, foldDomains, isArchived, isExpired, isSessionGrant } from "./ext-curation-view"
 import type { SessionToggleView } from "./ext-session-toggle"
@@ -64,9 +64,9 @@ function verifyText(e: CatalogEntry): string | undefined {
 function advisoryOf(e: CatalogEntry): OfficeAdvisory | undefined {
   return officeAdvisoryFor({ id: e.id, name: e.name })
 }
-/** REQ-105:Excel 连接器 = 审计锁定条目 —— 详情页展示锁定版本 + digest 与文件写权限说明。 */
-function isExcelPinned(e: CatalogEntry): boolean {
-  return e.id === EXCEL_MCP_PIN.catalogId || e.name === EXCEL_MCP_PIN.name
+/** REQ-135:the stale signed snapshot may still expose this card; presentation must say retired. */
+function isRetiredCommunityOffice(e: CatalogEntry): boolean {
+  return retiredCommunityOfficeFor({ id: e.id, name: e.name }) !== undefined
 }
 function hostOf(url: string | undefined): string {
   if (!url) return ""
@@ -409,6 +409,10 @@ export function ExtensionDetail(props: {
   })
   const curated = () => curatedOf(cst())
   const archivedNow = () => isArchived(cst())
+  const retiredNow = () => {
+    const e = entry()
+    return e ? isRetiredCommunityOffice(e) : false
+  }
   const expiredNow = () => isExpired(cst(), props.nowIso())
   const sessionGrantNow = () => isSessionGrant(cst())
   // 组件清单 / 来源快照:进详情页即拉(v6 稿 Q5=A;main 全量采信前置,失败逐行 loud + 重试;
@@ -621,6 +625,9 @@ export function ExtensionDetail(props: {
             <Show when={!archivedNow() && entry() && advisoryOf(entry()!)}>
               <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.advArchivedUnsupported")}</span>
             </Show>
+            <Show when={retiredNow()}>
+              <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.retiredCommunityChip")}</span>
+            </Show>
           </div>
           <div class="alpha-ext-dhead-meta">
             <code class="alpha-ext-dhead-id">{header().name}</code>
@@ -646,12 +653,18 @@ export function ExtensionDetail(props: {
             {(e) => (
               <>
                 <Show when={!installed()}>
-                  {/* #397:归档 = 禁新安装(main 闸已拒;此处如实置灰给原因) */}
+                  {/* #397/REQ-135:archived and retired connectors are both unavailable, but their
+                      reasons and existing-install semantics remain distinct. */}
                   <Show
-                    when={!archivedNow()}
+                    when={!archivedNow() && !retiredNow()}
                     fallback={
-                      <button class="alpha-ext-add" data-size="lg" disabled title={t("alpha.ext.archivedNoInstallHint")}>
-                        {t("alpha.ext.archivedNoInstall")}
+                      <button
+                        class="alpha-ext-add"
+                        data-size="lg"
+                        disabled
+                        title={t(retiredNow() ? "alpha.ext.retiredCommunityNoInstallHint" : "alpha.ext.archivedNoInstallHint")}
+                      >
+                        {t(retiredNow() ? "alpha.ext.retiredCommunityNoInstall" : "alpha.ext.archivedNoInstall")}
                       </button>
                     }
                   >
@@ -758,16 +771,10 @@ export function ExtensionDetail(props: {
             </div>
           )}
         </Show>
-        {/* REQ-105:Excel 审计锁定说明 —— 精确版本 + digest,本地 stdio + 文件写权限如实展示。 */}
-        <Show when={entry() && isExcelPinned(entry()!)}>
-          <div class="alpha-ext-verify-note" data-info="">
-            <b>{t("alpha.ext.excelPinTitle")}</b>
-            <p>
-              {t("alpha.ext.excelPinBody", {
-                version: EXCEL_MCP_PIN.version,
-                hash: EXCEL_MCP_PIN.sdistSha256.slice(0, 12),
-              })}
-            </p>
+        <Show when={retiredNow()}>
+          <div class="alpha-ext-verify-note" data-archived="" role="alert">
+            <b>{t("alpha.ext.retiredCommunityTitle")}</b>
+            <p>{t("alpha.ext.retiredCommunityBody")}</p>
           </div>
         </Show>
         <Show when={entry() && verifyText(entry()!)}>
@@ -1019,6 +1026,7 @@ export function ExtensionDetail(props: {
                       if (!sub) return null
                       const ic = iconFor(sub)
                       const subInstalled = () => props.ext.isInstalled(sub)
+                      const subRetired = () => isRetiredCommunityOffice(sub)
                       return (
                         <div
                           class="alpha-ext-dbundle-row"
@@ -1046,13 +1054,18 @@ export function ExtensionDetail(props: {
                             fallback={
                               <button
                                 class="alpha-ext-add"
-                                disabled={props.busy() === sub.id}
+                                disabled={props.busy() === sub.id || subRetired()}
+                                title={subRetired() ? t("alpha.ext.retiredCommunityNoInstallHint") : undefined}
                                 onClick={(ev) => {
                                   ev.stopPropagation()
                                   props.onInstall(sub)
                                 }}
                               >
-                                {props.busy() === sub.id ? t("alpha.ext.adding") : t("alpha.ext.add")}
+                                {subRetired()
+                                  ? t("alpha.ext.retiredCommunityNoInstall")
+                                  : props.busy() === sub.id
+                                    ? t("alpha.ext.adding")
+                                    : t("alpha.ext.add")}
                               </button>
                             }
                           >

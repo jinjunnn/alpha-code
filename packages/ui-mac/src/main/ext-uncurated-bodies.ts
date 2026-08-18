@@ -79,9 +79,8 @@ export function makeUncuratedInstallBodies(deps: UncuratedBodyDeps) {
         }
       }
     }
-    // REQ-105 #254:MCP 写盘唯一策略入口。Excel sandbox 闸口(local stdio + 审计钉版 + 零网络
-    // 绑定 + 受管 workspace 强制)由 persistMcpWithPolicy 统一执行 —— main 注入固定 EXCEL_FILES_PATH,
-    // 结构上消除「调用点忘传 workspace」的 fail-open。
+    // MCP write-policy entrypoint: REQ-135 retired connectors are refused and REQ-133 Alpha Office
+    // commands are validated before durable config is written.
     const r = persistMcpWithPolicy(name, server, undefined)
     if (!r.ok) {
       // r6 Major:清理失败不许吞 —— 0600 明文残留位置如实并入错误(GC 兜底,用户可定位)。

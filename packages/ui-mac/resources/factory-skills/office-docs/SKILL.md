@@ -11,9 +11,10 @@ local stdio MCP connectors. Use a small local script only when a connector is un
 request is outside its deliberately narrow tool contract.
 
 > Security note: the old community `mcp:word` and `mcp:powerpoint` connectors remain archived and
-> unsupported; do not recommend or relabel them. The primary cards are the distinct Alpha-authored
-> ids below. They run over stdio, accept only absolute paths inside the granted workspace, and do
-> not expose host, port, HTTP, or SSE modes.
+> unsupported; do not recommend or relabel them. The separate community `mcp:excel` /
+> `excel-mcp-server` connector is retired and is not an install option. The primary cards are the
+> distinct Alpha-authored ids below. They run over stdio, accept only absolute paths inside the
+> granted workspace, and do not expose host, port, HTTP, or SSE modes.
 
 ## Which tool for which job
 
@@ -26,8 +27,8 @@ request is outside its deliberately narrow tool contract.
 | **Broad read/conversion** | markitdown (`convert_to_markdown`) | optional secondary path for formats outside the four focused tools |
 
 All four Alpha connectors run with pinned Python libraries through `uv`; they need no Microsoft
-Office installation. The old community `excel-mcp-server` is a separate REQ-105-governed connector,
-not the implementation or authorship source for `mcp:alpha-excel`.
+Office installation. Hub Excel means `mcp:alpha-excel` only. Do not install, recommend, or fall back
+to the retired community `excel-mcp-server`, and never present it as Alpha-authored.
 
 ## If the tool is not available
 

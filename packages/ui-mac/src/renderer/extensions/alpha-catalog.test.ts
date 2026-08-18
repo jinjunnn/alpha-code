@@ -10,7 +10,12 @@ import { describe, expect, test } from "bun:test"
 import rawCatalog from "./alpha-catalog.json"
 import snapshotMeta from "./alpha-catalog.snapshot.json"
 import type { Catalog, CatalogEntry, McpInstallSpec } from "./catalog-types"
-import { ARCHIVED_OFFICE_ADVISORIES, EXCEL_MCP_PIN, checkExcelMcpSafety } from "../../shared/office-advisories"
+import { installableCatalogEntries } from "./catalog-installable-view"
+import {
+  ARCHIVED_OFFICE_ADVISORIES,
+  RETIRED_COMMUNITY_OFFICE_CONNECTORS,
+  retiredCommunityOfficeFor,
+} from "../../shared/office-advisories"
 
 const catalog = rawCatalog as unknown as Catalog
 
@@ -105,7 +110,7 @@ describe("alpha-catalog 完整性", () => {
 // Word/PPT 一旦混进来,离线/回退路径会把不再维护的连接器重新推给新用户。快照刷新走
 // sync-catalog-snapshot.mjs(字节级复制 C 已发布产物),所以这组断言实质上是对「未来快照」的
 // 准入闸:C 端(alpha-web#21)不下架,A 端快照就刷不进来。
-describe("REQ-105 Office 纠偏守卫(归档连接器禁入离线 seed;Excel 锁审计版本)", () => {
+describe("REQ-105/REQ-135 Office retirement guards", () => {
   const rawText = readFileSync(join(import.meta.dir, "alpha-catalog.json"), "utf8")
 
   test("归档 Word/PPT 连接器不得出现在内置快照(catalog id + pypi 包名逐字扫描)", () => {
@@ -127,27 +132,26 @@ describe("REQ-105 Office 纠偏守卫(归档连接器禁入离线 seed;Excel 锁
     }
   })
 
-  test("excel-mcp-server 在场且精确钉审计版本、通过 sandbox 闸口(升级不重审计即红)", () => {
-    // 2026-07-13.1 快照起 mcp:excel 在场(C 端纠偏 alpha-web 上架后刷入,REQ-105 收口)。
-    // 先锁在场 —— 否则条目静默消失会让下方钉版/闸口断言退化为空转;再对每个引用 excel 包的
-    // 命令断言:版本逐字 = EXCEL_MCP_PIN.pinnedSpec(0.1.8 审计记录),local stdio、零 host/port 绑定。
+  test("signed snapshot still contains community Excel while alpha-web#155 is pending; desktop denies it", () => {
+    // Do not turn this into an absence assertion until sync-catalog-snapshot.mjs imports signed bytes
+    // that actually drop the entry. The stale byte truth and the current desktop policy are separate.
+    expect(catalog.entries.some((entry) => entry.id === "mcp:excel")).toBe(true)
+    const staleEntry = catalog.entries.find((entry) => entry.id === "mcp:excel")
+    expect(staleEntry?.name).toBe("excel-mcp-server")
+    expect((staleEntry?.installSpec as McpInstallSpec | undefined)?.command).toContain("excel-mcp-server@0.1.8")
+
+    expect(RETIRED_COMMUNITY_OFFICE_CONNECTORS.map((connector) => connector.catalogId)).toEqual(["mcp:excel"])
+    expect(retiredCommunityOfficeFor({ id: "mcp:excel", name: "excel-mcp-server" })).toBeDefined()
+    expect(retiredCommunityOfficeFor({ id: "mcp:alpha-excel", name: "alpha-excel" })).toBeUndefined()
+    const installable = installableCatalogEntries(catalog.entries)
+    expect(installable.map((entry) => entry.id)).not.toContain("mcp:excel")
     expect(
-      catalog.entries.some((e) => e.id === EXCEL_MCP_PIN.catalogId),
-      `${EXCEL_MCP_PIN.catalogId} 应在场(2026-07-13.1 快照携带审计钉版条目)`,
-    ).toBe(true)
-    for (const entry of catalog.entries.filter((e) => e.type === "mcp")) {
-      const spec = entry.installSpec as McpInstallSpec
-      const cmds = [...(spec.command ?? []), ...(spec.mirrorCommand ?? [])]
-      if (!cmds.some((a) => a.includes(EXCEL_MCP_PIN.pypiPackage))) continue
-      expect(spec.mcpType, `${entry.id} 仅允许 local stdio`).toBe("local")
-      expect(spec.command, `${entry.id} 必须钉 ${EXCEL_MCP_PIN.pinnedSpec}`).toContain(EXCEL_MCP_PIN.pinnedSpec)
-      const verdict = checkExcelMcpSafety(entry.name, { type: "local", command: spec.command ?? [] })
-      expect(verdict.ok, `${entry.id} 未通过 REQ-105 Excel sandbox 闸口:${verdict.ok ? "" : verdict.reason}`).toBe(true)
-      if (spec.mirrorCommand) {
-        const mirror = checkExcelMcpSafety(entry.name, { type: "local", command: spec.mirrorCommand })
-        expect(mirror.ok, `${entry.id} mirror 命令未通过闸口`).toBe(true)
-      }
-    }
+      installable.some(
+        (entry) =>
+          entry.type === "bundle" &&
+          (entry.bundleItems ?? []).some((item) => item.catalogEntryId === "mcp:excel"),
+      ),
+    ).toBe(false)
   })
 })
 

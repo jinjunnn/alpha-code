@@ -115,7 +115,7 @@ mock.module("../src/main/ext-mcp-activation", () => ({
 // 随包 catalog 四条套件的必需成员全都带 `{workspace}` 占位(planner 无 workspace grant 即拒),
 // 所以这里另立两条**只含一个真实成员**的套件:一条给成功路径,一条给「引擎重扫失败」路径。
 // 成员是随包 catalog 里真实的 `mcp:markitdown` / `mcp:fetch`(uvx,无占位、无必填环境变量;
-// `mcp:excel` 试过,legacy planner 对它有具名的「atomic bundle 不支持」拒绝,不适合当成功路径)。
+// `mcp:excel` 是 REQ-135 退役负例,不得用作成功夹具)。
 const BUNDLE_OK = "bundle:req810-reload"
 const BUNDLE_PENDING = "bundle:req810-reload-pending"
 const BUNDLE_OK_NAME = "req810-reload-suite"

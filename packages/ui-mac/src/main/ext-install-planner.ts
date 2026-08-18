@@ -27,7 +27,11 @@ import { fileURLToPath } from "node:url"
 import type { InstallReceiptType } from "../preload/types"
 import type { CatalogEntry, McpInstallSpec } from "../renderer/extensions/catalog-types"
 import { isExtensionName } from "../shared/extension-name"
-import { isAlphaOfficeMcp, isWorkspacePolicyMcp } from "../shared/office-advisories"
+import {
+  isAlphaOfficeMcp,
+  isWorkspacePolicyMcp,
+  retiredCommunityOfficeFor,
+} from "../shared/office-advisories"
 import type { AppEnvironment } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
 import type { AdvisoryGate } from "./ext-advisory-gate"
@@ -505,9 +509,9 @@ export type InstallMetaArg = { catalogId?: string; version?: string }
 export type TargetArg = { scope: "global" } | { scope: "project"; projectDir: string }
 
 export type PlannerInstallers = {
-  /** #378(Codex 裁决 Q2):MCP 写盘策略注入(Excel 受管 workspace mkdir+realpath+fail-closed
-   *  校验;**非权威 provisioning** —— authorize 暂停后残留的只是一个空受管目录,零 config/账本/
-   *  密钥副作用)。原地修改 server;单装事务与未策展通道共用同一闸口。 */
+  /** #378(Codex 裁决 Q2):MCP 写盘策略闸口。REQ-135 retired package denial and REQ-133
+   *  Alpha Office resource/workspace canonicalization share this main-owned seam. It may update the
+   *  server in place; single-install transactions and uncurated writes consume the same verdict. */
   applyMcpWritePolicy(name: string, server: Record<string, unknown>): ConfigOutcome
   /** #378(Codex 裁决 Q1):版本化密钥原语 —— 引用纯推导(零写盘,planner 先构造 durable config)
    *  与落盘(硬化写:tmp→rename、0600、lstat 圈禁)必须同参;removeMcpSecretVersionDir 只删
@@ -801,7 +805,7 @@ const bundleKeyFor = (kind: string, name: string): string => `${kind}--${name}`
 
 /**
  * 把一个 bundle 子条目分类为原子事务里的一项。首期(REQ-100 #311)支持 skill(generation)+ 无密钥
- * 非-Excel MCP(config)+ cloud(receipt);agent / vendored·npm plugin / 需密钥或 workspace 的 MCP
+ * 且无 workspace policy 的 MCP(config)+ cloud(receipt);agent / vendored·npm plugin / 需密钥或 workspace 的 MCP
  * 一律 fail-closed(它们不在现有 generation/config action 的原子边界内)。 */
 async function classifyBundleChild(
   child: VerifiedCatalogEntry,
@@ -897,8 +901,8 @@ async function classifyBundleChild(
     // 会「账本记 active、引擎读不到」。fatal(required 子项拒整单,与单装一致 fail-closed)。
     const bundleTruth = configTruthInRootGate(deps.globalRoot(), deps.installers.mcpConfigTruthPath())
     if (!bundleTruth.ok) return { status: "fatal", id, reason: bundleTruth.reason }
-    // 首期排除需密钥 / workspace-policy 的 MCP —— 它们的 secret 文件写、workspace 沙箱不在 config
-    // action 的原子边界内(REQ-105 Excel 闸口、fileifyMcpSecrets 独立文件)。fail-closed。
+    // 首期排除需密钥 / workspace-policy 的 MCP —— 它们的 secret 文件写或 REQ-133 Alpha
+    // Office workspace canonicalization 不在 config action 的原子边界内。fail-closed。
     if ((spec.requiredEnvVars?.length ?? 0) > 0)
       return { status: "skip", id, reason: "secret-bearing MCP not supported in atomic bundle (phase 1)" }
     if (isWorkspacePolicyMcp(entry.name, { type: spec.mcpType, ...(spec.command ? { command: spec.command } : {}), ...(spec.url ? { url: spec.url } : {}) }))
@@ -907,6 +911,8 @@ async function classifyBundleChild(
     if (!derived.ok) return { status: "skip", id, reason: `MCP needs grants not supported in bundle: ${derived.reason}` }
     if (derived.secretVars.length > 0)
       return { status: "skip", id, reason: "secret-bearing MCP not supported in atomic bundle (phase 1)" }
+    const policy = deps.installers.applyMcpWritePolicy(entry.name, derived.config)
+    if (!policy.ok) return { status: "fatal", id, reason: `MCP write policy refused: ${policy.reason}` }
     const key = bundleKeyFor("mcp", entry.name)
     return {
       status: "install",
@@ -1005,10 +1011,16 @@ async function installBundleAtomic(
   const bundleWarnings: string[] = []
   for (const it of items) {
     const child = resolved.get(it.catalogEntryId)!
-    // #315(并入 REQ-105 静态基线):advisory 命中的子条目绝不经 bundle 通道铺给用户 ——
-    // 恒跳过(即使 required,沿用 REQ-105 语义);跳过决策落 main(非 renderer)。
+    // #315(并入 REQ-105 静态基线):advisory 命中的子条目绝不经 bundle 通道铺给用户。
+    // 归档子项沿用 REQ-105 语义跳过;REQ-135 退役的 required 子项则拒绝整包,
+    // 避免旧 Office 包在丢掉 Excel 后仍谎报安装成功。决策落 main(非 renderer)。
     const childAdv = deps.advisoryGate(advisoryInputOf(child.entry, verified.channel))
     if (!childAdv.allowed) {
+      if (!it.optional && retiredCommunityOfficeFor({ id: child.entry.id, name: child.entry.name }))
+        return {
+          ok: false,
+          reason: `required bundle child "${child.entry.id}" is retired and cannot be installed: ${childAdv.reason}`,
+        }
       skipped.push({ id: child.entry.id, reason: `advisory ${childAdv.advisoryId}: ${childAdv.reason}` })
       continue
     }
@@ -1257,9 +1269,8 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       }
       refs = sub.substituted
     }
-    // #378(Codex 裁决 Q2):Excel 受管 workspace 策略注入(原 persistMcpWithPolicy 闸口,持久化
-    // 剥离)—— mkdir/realpath 属非权威 provisioning:authorize 暂停残留的只是空受管目录,零
-    // config/账本/密钥副作用(测试钉)。live 从策略后 durable 派生,不缺策略字段。
+    // #378(Codex 裁决 Q2):main-owned write policy checks the retired-package deny and
+    // canonicalizes REQ-133 Alpha Office paths before the durable config action is built.
     const pol = deps.installers.applyMcpWritePolicy(entry.name, durable)
     if (!pol.ok) {
       if (verId) deps.installers.removeMcpSecretVersionDir(entry.name, verId) // 已认领的空目录随拒绝清理
@@ -2165,8 +2176,10 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
  * mcp seed 安装(REQ-102 #359):config action 单事务 —— 安装语义派生自 bundled entry 的
  * installSpec(CAS blob 只是离线携带字节,**不是运行载荷**:本通道只承诺「离线完成配置安装」,
  * local npm/uvx MCP 首次运行仍可能联网)。phase-1 fail-closed(裁决 Q1):seed intent 无 grants
- * 通道 —— 需密钥/workspace/Excel 的一律拒;纯 validator(validateServer)在 plan 生成前跑安全门
- * (ext-config-tx 只保证 JSONC/顶层键)。事务内绝不触 persistMcp/withConfigWriteLock(自锁)。
+ * 通道 —— 需密钥/workspace/workspace-policy 的一律拒;retired connectors are rejected by the
+ * identity advisory first and the package-aware main write policy before a config action is built.
+ * The pure validator(validateServer) then runs before a plan is generated (ext-config-tx 只保证
+ * JSONC/顶层键)。事务内绝不触 persistMcp/withConfigWriteLock(自锁)。
  */
 async function installSeedMcp(args: {
   deps: PlannerDeps
@@ -2207,6 +2220,11 @@ async function installSeedMcp(args: {
   if (derived.secretVars.length > 0) {
     rollback("secret-bearing MCP")
     return { ok: false, reason: "secret-bearing MCP is not seed-installable (phase 1) — refused" }
+  }
+  const policy = deps.installers.applyMcpWritePolicy(entry.name, derived.config)
+  if (!policy.ok) {
+    rollback(policy.reason)
+    return { ok: false, reason: `seed MCP write policy refused: ${policy.reason}` }
   }
   // 纯 validator(裁决 B):命令头/inline-eval/URL/危险 env 安全门,零写盘。
   const valid = validateServer(derived.config)

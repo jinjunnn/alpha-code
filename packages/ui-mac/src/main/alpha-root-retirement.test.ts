@@ -92,6 +92,12 @@ describe("retired global-root operational ratchet", () => {
         .map((rule) => `${file.path}: ${rule.name}`),
     )
     expect(violations).toEqual([])
+
+    const mcpPolicy = files.find((file) => file.path.endsWith(join("main", "ext-mcp-policy.ts")))
+    expect(mcpPolicy, "ext-mcp-policy.ts must remain in the operational-source retirement scan").toBeDefined()
+    expect(mcpPolicy?.text ?? "").not.toMatch(
+      /\b(?:excelWorkspaceRoot|ensureExcelWorkspaceRoot|applyExcelWorkspacePolicy|EXCEL_FILES_PATH)\b|excel-workspace/,
+    )
   })
 
   // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
