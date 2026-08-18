@@ -143,13 +143,12 @@ export interface ExtensionsApi {
   refresh(): Promise<void>
   /**
    * Persist and activate an MCP catalog entry through main. `secrets` fills requiredEnvVars and is
-   * routed to the {file:} channel on disk (never plaintext); `env` is non-secret substitution
-   * (headers/workspace). Renderer receives only activation status.
+   * routed to the {file:} channel on disk (never plaintext); `env` is non-secret substitution for
+   * headers. Renderer receives only activation status.
    */
   addMcp(
     entry: CatalogEntry,
     env?: Record<string, string>,
-    workspace?: string,
     secrets?: Record<string, string>,
     authorization?: AuthorizationConfirmationWire,
   ): Promise<ActionResult>
@@ -313,17 +312,15 @@ const CN_MIRROR_ENV: Record<string, string> = IS_CN
     }
   : {}
 
-function toMcpConfig(spec: McpInstallSpec, env: Record<string, string>, workspace?: string): McpConfig {
+function toMcpConfig(spec: McpInstallSpec, env: Record<string, string>): McpConfig {
   if (spec.mcpType === "remote") {
     const headers = renderHeaders(spec.headersTemplate, env)
     return { type: "remote", url: spec.url ?? "", ...(headers ? { headers } : {}) }
   }
-  // Substitute the {workspace} placeholder — filesystem/git need a real directory the user picked.
-  const command = (spec.command ?? []).map((arg) => (workspace ? arg.split("{workspace}").join(workspace) : arg))
   const environment = { ...CN_MIRROR_ENV, ...env }
   return {
     type: "local",
-    command,
+    command: spec.command ?? [],
     ...(Object.keys(environment).length ? { environment } : {}),
   }
 }
@@ -429,7 +426,6 @@ export function useExtensions(
   async function addMcp(
     entry: CatalogEntry,
     env?: Record<string, string>,
-    workspace?: string,
     secrets?: Record<string, string>,
     authorization?: AuthorizationConfirmationWire,
   ): Promise<ActionResult> {
@@ -438,14 +434,13 @@ export function useExtensions(
     const spec = entry.installSpec
     if (!spec || spec.kind !== "mcp") return { ok: false, reason: "not an MCP entry" }
     // REQ-099 #305:catalog MCP 切 main-owned installCatalog —— name/config 由 main 从已验签 catalog
-    // 派生,renderer 只交 grants(secrets/env/workspace)+ cnMirror 偏好(镜像 env 值为 main 侧常量,
+    // 派生,renderer 只交 grants(secrets/env)+ cnMirror 偏好(镜像 env 值为 main 侧常量,
     // 顶替此前 renderer 侧的 CN_MIRROR_ENV 注入)。durable 落盘含 {file:} 引用与 main 策略(如 Excel
     // 受管根);durable commit 后由 main 经已认证 engine route 重载 `{file:}` 引用并返回状态。
     const secretsClean = secrets ? Object.fromEntries(Object.entries(secrets).filter(([, v]) => (v ?? "").length > 0)) : {}
     const grants = {
       ...(Object.keys(secretsClean).length ? { secrets: secretsClean } : {}),
       ...(env && Object.keys(env).length ? { env } : {}),
-      ...(workspace ? { workspace } : {}),
       ...(IS_CN ? { cnMirror: true } : {}),
     }
     const r = await extIpc.installCatalog({

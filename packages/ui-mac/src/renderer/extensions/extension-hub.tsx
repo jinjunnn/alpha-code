@@ -134,8 +134,8 @@ function versionLess(a: string, b: string): boolean {
   return false
 }
 
-// Compact "what this needs" pills shown on a card foot (runtime deps, key requirement, pick-dir,
-// license, restart, item count). lock=true renders a small padlock before the text.
+// Compact "what this needs" pills shown on a card foot (runtime deps, key requirement, license,
+// restart, item count). lock=true renders a small padlock before the text.
 // #397:curated 条目的密钥/依赖/体积事实真源切到甄选摘要(签名真源;诚实口径 —— unknown 不估算)。
 function metaPills(e: CatalogEntry, curation?: Curation | null): { text: string; lock?: boolean }[] {
   if (curation) {
@@ -155,7 +155,6 @@ function metaPills(e: CatalogEntry, curation?: Curation | null): { text: string;
   const spec = e.installSpec
   if (e.type === "mcp" && spec?.kind === "mcp") {
     if (spec.runtimeDep?.length) out.push({ text: t("alpha.ext.metaRuntime", { dep: spec.runtimeDep.join(" · ") }) })
-    if (spec.command?.some((a) => a.includes("{workspace}"))) out.push({ text: t("alpha.ext.metaPickDir") })
     if (spec.requiredEnvVars?.length) out.push({ text: t("alpha.ext.metaKey"), lock: true })
   } else if (e.type === "skill") {
     if (e.license) out.push({ text: e.license })
@@ -1123,14 +1122,7 @@ export function ExtensionHub(props: {
       const rc = await ext.checkRuntime(spec?.runtimeDep)
       if (!rc.ok) return { ok: false, reason: t("alpha.ext.runtimeMissing", { tool: rc.missing }) }
     }
-    let workspace: string | undefined
-    if (spec?.command?.some((a) => a.includes("{workspace}"))) {
-      const picked = await window.api.openDirectoryPicker({ title: t("alpha.ext.pickWorkspace") })
-      const dir = Array.isArray(picked) ? picked[0] : picked
-      if (!dir) return { ok: false, reason: t("alpha.ext.cancelled") }
-      workspace = dir
-    }
-    return ext.addMcp(e, undefined, workspace, secrets, authorization)
+    return ext.addMcp(e, undefined, secrets, authorization)
   }
 
   // Bundle = alpha-defined manifest: fan out to install each referenced entry by its own type
@@ -1356,7 +1348,7 @@ export function ExtensionHub(props: {
   // 「添加」三档分流(2026-07-04 拍板,Q1/Q2):
   //   skill  → 直装(零配置零密钥,免确认框);
   //   plugin → 详情页先行(风险最高:运行于引擎进程 + npm 下载),页内安装再过风险确认框;
-  //   mcp / bundle → 确认框(密钥采集 / 选目录 / 组合清单)。
+  //   mcp / bundle → 确认框(密钥采集 / 组合清单)。
   const stageInstall = (e: CatalogEntry) => {
     if (retiredCommunityOfficeFor({ id: e.id, name: e.name })) {
       setErrFor(e.id, t("alpha.ext.retiredCommunityNoInstallHint"))

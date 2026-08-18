@@ -216,6 +216,35 @@ it.instance(
   { init: (directory) => Effect.promise(() => Bun.$`mkdir -p ${path.join(directory, "plugins/sub")}`.quiet()) },
 )
 
+it.instance("local mcp substitutes exact workspace arguments with the instance directory", () =>
+  Effect.gen(function* () {
+    const mcp = yield* MCP.Service
+    const test = yield* TestInstance
+    yield* mcp.add("workspace-args", {
+      type: "local",
+      command: [process.execPath, stdioFixture, "{workspace}"],
+    })
+
+    expect((yield* mcp.tools())["workspace-args_command_arguments"]?.def.description).toBe(
+      JSON.stringify([test.directory]),
+    )
+  }),
+)
+
+it.instance("local mcp leaves workspace marker substrings untouched", () =>
+  Effect.gen(function* () {
+    const mcp = yield* MCP.Service
+    yield* mcp.add("workspace-substrings", {
+      type: "local",
+      command: [process.execPath, stdioFixture, "prefix-{workspace}", "{workspace}/suffix"],
+    })
+
+    expect((yield* mcp.tools())["workspace-substrings_command_arguments"]?.def.description).toBe(
+      JSON.stringify(["prefix-{workspace}", "{workspace}/suffix"]),
+    )
+  }),
+)
+
 it.instance("tools() reuses cached definitions until a protocol notification", () =>
   Effect.gen(function* () {
     const server = yield* lifecycleServer({ capabilities: { tools: { listChanged: true } } })

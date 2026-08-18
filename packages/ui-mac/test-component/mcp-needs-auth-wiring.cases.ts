@@ -50,6 +50,8 @@ Bun.plugin({
 type StatusMap = Record<string, { status: string; error?: string }>
 let engineStatus: StatusMap = {}
 const authenticateCalls: Array<{ name: string }> = []
+const installCatalogCalls: unknown[] = []
+let directoryPickerCalls = 0
 /** authenticate 返回什么由用例决定:
  *   - `succeed`  = 授权后引擎报 connected;
  *   - `reject`   = SDK 以 `{error}` resolve(v2 默认 `throwOnError:false`,HTTP 400/404 **不会抛**);
@@ -101,6 +103,10 @@ mock.module("../src/renderer/alpha-ui/Banner", () => ({ Banner: () => null }))
 Object.defineProperty(window, "api", {
   configurable: true,
   value: {
+    openDirectoryPicker: async () => {
+      directoryPickerCalls++
+      return "/picked-during-install"
+    },
     updater: { check: async () => {} },
     auth: { start: async () => {} },
     ext: {
@@ -114,6 +120,16 @@ Object.defineProperty(window, "api", {
       migrateScan: async () => ({ enabled: false, inventory: { skills: [], mcp: [], plugins: [] } }),
       remoteCatalog: async () => ({ ok: false as const, reason: "not used by this case file" }),
       checkRuntime: async () => ({ ok: true as const }),
+      installCatalog: async (intent: unknown) => {
+        installCatalogCalls.push(intent)
+        engineStatus = { ...engineStatus, filesystem: { status: "connected" } }
+        return {
+          ok: true as const,
+          kind: "mcp",
+          name: "filesystem",
+          mcpActivation: { reference: "filesystem", status: "connected" as const },
+        }
+      },
       builtinRead: async () => ({ tools: [], agents: [], protection: { hard: [], alphaInjected: [] } }),
       curationBlob: async () => undefined,
       migrateVerify: async () => ({ ok: true as const }),
@@ -146,7 +162,7 @@ async function waitFor(assertion: () => void) {
   throw failure
 }
 
-function mount(section: "installed" | "cloud") {
+function mount(section: "installed" | "cloud" | "connectors") {
   setHubSection(section)
   const root = document.createElement("div")
   root.id = "root"
@@ -173,6 +189,8 @@ function reset() {
   // 这类断言会读到上一条的残留而假绿/假红。id 单调递增,逐个撤掉即可(幂等)。
   for (let id = 1; id <= 500; id++) dismissToast(id)
   authenticateCalls.length = 0
+  installCatalogCalls.length = 0
+  directoryPickerCalls = 0
   authenticateBehaviour = "succeed"
 }
 
@@ -298,4 +316,30 @@ test("云连接器卡在 needs_auth 时说「需要重新登录」并给出同�
   await waitFor(() => expect(authenticateCalls).toEqual([{ name: "cloud" }]))
   await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnConnected"]))
   expect(authorizeButtons().length).toBe(0)
+})
+
+test("带 {workspace} 的 Hub MCP 安装不打开目录选择器,只发送全局 catalog intent", async () => {
+  reset()
+  engineStatus = {}
+  mount("connectors")
+
+  let filesystemCard: HTMLElement | undefined
+  await waitFor(() => {
+    filesystemCard = Array.from(document.querySelectorAll<HTMLElement>(".alpha-ext-card")).find((card) =>
+      card.textContent?.includes("文件系统"),
+    )
+    expect(filesystemCard).toBeInstanceOf(HTMLElement)
+  })
+  filesystemCard!.querySelector<HTMLButtonElement>(".alpha-ext-add")!.click()
+
+  let confirm: HTMLButtonElement | null = null
+  await waitFor(() => {
+    confirm = document.querySelector<HTMLButtonElement>("[role='dialog'] .a-dialog-footer .a-btn:last-child")
+    expect(confirm).toBeInstanceOf(HTMLButtonElement)
+  })
+  confirm!.click()
+
+  await waitFor(() => expect(installCatalogCalls).toHaveLength(1))
+  expect(directoryPickerCalls).toBe(0)
+  expect(installCatalogCalls[0]).toEqual({ catalogId: "mcp:filesystem", scope: { scope: "global" } })
 })

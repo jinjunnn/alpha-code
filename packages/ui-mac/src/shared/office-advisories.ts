@@ -68,6 +68,7 @@ export const RETIRED_COMMUNITY_OFFICE_CONNECTORS: readonly RetiredCommunityOffic
 ] as const
 
 export type AlphaOfficeFormat = "word" | "excel" | "powerpoint" | "pdf"
+export const WORKSPACE_MARKER = "{workspace}"
 
 /** REQ-133 first-party Office MCP facts. This is the single code-side authority consumed by the
  *  planner, write policy, tests, and factory skill; the signed web catalog remains the card source. */
@@ -119,7 +120,7 @@ export function alphaOfficeInstallCommand(format: AlphaOfficeFormat): string[] {
     ...connector.dependencies.flatMap((dependency) => ["--with", dependency]),
     "{alphaResources}/office-mcp/server.py",
     format,
-    "{workspace}",
+    WORKSPACE_MARKER,
   ]
 }
 
@@ -181,8 +182,8 @@ export function checkAlphaOfficeMcpSafety(
   if (server.type !== "local" || ["url", "host", "port", "transport"].some((key) => key in server)) {
     return { ok: false, reason: `${connector.name} only allows local stdio; remote transport is refused (REQ-133)` }
   }
-  if (!workspace || !alphaResources || !isAbsolutePath(workspace) || !isAbsolutePath(alphaResources)) {
-    return { ok: false, reason: `${connector.name} requires absolute managed workspace and Alpha resource roots (REQ-133)` }
+  if (!workspace || !alphaResources || (workspace !== WORKSPACE_MARKER && !isAbsolutePath(workspace)) || !isAbsolutePath(alphaResources)) {
+    return { ok: false, reason: `${connector.name} requires the workspace marker or absolute managed workspace plus an absolute Alpha resource root (REQ-134)` }
   }
   if (hasTraversal(workspace) || hasTraversal(alphaResources)) {
     return { ok: false, reason: `${connector.name} path contains traversal segments (REQ-133)` }
@@ -191,7 +192,7 @@ export function checkAlphaOfficeMcpSafety(
     argument
       .split("{alphaResources}")
       .join(normalizeSlashes(alphaResources).replace(/\/+$/, ""))
-      .split("{workspace}")
+      .split(WORKSPACE_MARKER)
       .join(workspace),
   )
   if (command.length !== expected.length || command.some((argument, index) => normalizeSlashes(argument) !== normalizeSlashes(expected[index]!))) {

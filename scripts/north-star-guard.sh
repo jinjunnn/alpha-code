@@ -86,6 +86,10 @@ UPSTREAM_EXCLUDES=(
   ':(exclude)packages/schema/src/v1/session.ts'
   ':(exclude)packages/sdk/js/src/gen/types.gen.ts'
   ':(exclude)packages/opencode/src/mcp/index.ts'
+  # REQ-134 #1011: argv observation for `{workspace}` → InstanceState.directory must live next to
+  # connectLocal. New files under packages/opencode/test would still be DMR-modified siblings.
+  ':(exclude)packages/opencode/test/mcp/lifecycle.test.ts'
+  ':(exclude)packages/opencode/test/fixture/mcp-lifecycle-stdio.ts'
   ':(exclude)packages/opencode/src/plugin/index.ts'
   ':(exclude)packages/opencode/src/tool/registry.ts'
   ':(exclude)packages/opencode/src/tool/code-mode.ts'

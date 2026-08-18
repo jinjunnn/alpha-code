@@ -133,6 +133,11 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
     evidence: "#551",
     lines: 1,
   },
+  "packages/ui-mac/src/main/mcp-workspace-marker.test.ts": {
+    why: "锚 index.ts 里 marker reconcile 接在 timeout reconcile 后且排在第一次 spawnLocalServer( 之前。两个不会让它变红的变异:①把 reconcileMcpWorkspaceMarkers 的函数体改成直接 return;②让它返回改写后的文本却丢弃写盘结果。index.ts 结构上进不了 bun。",
+    evidence: "#1011",
+    lines: 1,
+  },
   "packages/ui-mac/src/main/ext-project-adopt.test.ts": {
     why: "锚 ext-ipc.ts 里 adoptProjectLedger(directory 必须排在两条早退之前 —— 同样是下标比较。两个不会让它变红的变异:①把 adoption 调用包进一个恒假分支;②在它前面再加第三条早退。ext-ipc.ts 是可 import 的,换成真判据做得到,但那是 #356 的题目。",
     evidence: "#356",

@@ -367,7 +367,7 @@ const layer = Layer.effect(
       const transport = new StdioClientTransport({
         stderr: "pipe",
         command: cmd,
-        args,
+        args: args.map((arg) => (arg === "{workspace}" ? baseDir : arg)),
         cwd,
         env: {
           ...process.env,

@@ -19,6 +19,11 @@ server.setRequestHandler(ListToolsRequestSchema, () =>
         description: process.cwd(),
         inputSchema: { type: "object", properties: {} },
       },
+      {
+        name: "command_arguments",
+        description: JSON.stringify(process.argv.slice(2)),
+        inputSchema: { type: "object", properties: {} },
+      },
     ],
   }),
 )
