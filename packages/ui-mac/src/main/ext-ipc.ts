@@ -13,7 +13,7 @@ import { toolProbe } from "./platform"
 import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
 import { readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import { projectIpcHandler, resolveProjectIpcEntry, withProjectIpcEntryIdentity } from "./ext-project-entry"
-import type { InstalledPackagesResultV1, InstallTarget, ServerReadyData } from "../preload/types"
+import type { InstalledPackagesResultV1, InstallTarget, ProjectMcpState, ServerReadyData } from "../preload/types"
 import { isExtensionName } from "../shared/extension-name"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
@@ -21,7 +21,7 @@ import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, t
 import { assertProjectMcpTransactionRootIdentity, collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, releasePreparedTxResources, removeCommandEntry, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, withConfigWriteLock } from "./ext-config"
 import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
-import { reloadInstalledMcp } from "./ext-mcp-activation"
+import { probeProjectMcpActivation, reloadInstalledMcp } from "./ext-mcp-activation"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, removeFsInstallFilesOnly, resourcesRoot } from "./ext-fs-installer"
 import { intakeImportDir, type LocalPackagePreviewV1 } from "./claude-plugin-intake"
@@ -102,6 +102,13 @@ export function registerExtIpcHandlers(
 ) {
   assertAlphaEnvironmentIdentity()
   const resolveProjectEntry = (projectDir: unknown) => resolveProjectIpcEntry(projectDir, homeDir)
+  const projectMcpState = async (name: string, projectDir: string, disabled: boolean): Promise<ProjectMcpState> => {
+    const prefs = readProjectPrefs(projectDir)
+    if (!hasExtensionsDecision(prefs)) return "awaiting-consent"
+    if (!extensionsGranted(prefs)) return "consent-denied"
+    if (disabled) return "disabled"
+    return probeProjectMcpActivation(name, projectDir, awaitServer)
+  }
   // REQ-099 #305:未策展自定义 MCP 专用通道(catalog MCP 走 ext-install-catalog)与未策展 npm
   // plugin 导入的 body —— #336(残留4)抽至 electron-free 的 ext-uncurated-bodies(账本写失败的
   // fail-closed 返回 + 精确补偿可注入测试);此处只接线,注册仍经写通道表(文件尾),过恢复
@@ -426,10 +433,34 @@ export function registerExtIpcHandlers(
     return { ok: true, srcDir: result.filePaths[0]! }
   }
   // REQ-018 安装账本:合并只读视图(current-environment global + 可选 project .alpha)
-  ipcMain.handle("ext-list-installs", (_event: IpcMainInvokeEvent, projectDir?: string) => {
+  ipcMain.handle("ext-list-installs", async (_event: IpcMainInvokeEvent, projectDir?: string) => {
     if (projectDir === undefined) return listInstalls()
     const resolved = resolveProjectEntry(projectDir)
-    if (resolved.ok) return listInstalls(resolved.projectDir)
+    if (resolved.ok) {
+      const view = listInstalls(resolved.projectDir)
+      const disabledMcpNames = new Set(
+        readLedgerV2(resolved.root, { sideEffectFree: true }).records
+          .filter((record) => record.kind === "mcp" && record.desiredState === "disabled")
+          .map((record) => record.name),
+      )
+      return {
+        ...view,
+        project: await Promise.all(
+          view.project.map(async (receipt) =>
+            receipt.type === "mcp"
+              ? {
+                  ...receipt,
+                  projectMcpState: await projectMcpState(
+                    receipt.name,
+                    resolved.projectDir,
+                    disabledMcpNames.has(receipt.name),
+                  ),
+                }
+              : receipt,
+          ),
+        ),
+      }
+    }
     const view = listInstalls()
     view.warnings.push(resolved.reason)
     return view
@@ -1113,12 +1144,13 @@ export function registerExtIpcHandlers(
         if (!result.ok) return result
         // legacy planner(catalog entry 意图):一次只装一个 live MCP,判据与 `#697` 之前逐字相同。
         if (!("activateMcp" in result)) {
-          if (result.kind !== "mcp" || result.installedDisabled) return result
-          // REQ-136 C5:the existing reload helper is name-only and global. A project commit must
-          // not borrow a same-name global status or report it connected before consent. #1017 will
-          // consume the safe D-scoped activation probe; until then return only the durable result.
+          if (result.kind !== "mcp") return result
+          // REQ-136 C4/C5:the existing reload helper is name-only and global. A project commit
+          // instead lets the project-aware installed read below return the consent-gated D-scoped
+          // projection; it must not reload or report a same-name global server here.
           const decoded = decodeCatalogInstallIntent(intent)
           if (decoded.ok && decoded.intent.scope.scope === "project") return result
+          if (result.installedDisabled) return result
           return { ...result, mcpActivation: await reloadInstalledMcp(result.name, awaitServer) }
         }
         // `#697` package 图:一个 Bundle 可以带**多个** MCP 组件,而 live 重载的对象是组件不是包。

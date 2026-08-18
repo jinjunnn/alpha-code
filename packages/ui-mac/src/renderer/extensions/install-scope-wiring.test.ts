@@ -1,12 +1,10 @@
-// ADR-030(REQ-098 #372)wiring 合同:六个第一方生产动作(MCP / skill / plugin / agent / cloud /
-// bundle)传给 window.api.ext.installCatalog 的 intent 必须 scope=global —— project 受管安装已收回。
-// 强制层在 main(planner decode 后 policy guard,ext-install-planner.test.ts 的运行时拒绝用例);
-// 本测试锁第一方调用图:renderer 不发注定被拒的 project intent,新增第 9 个调用点或改动既有
-// scope 字面量都会在此显形。hook 挂载依赖引擎 client + Solid 运行时,bun test 下不可复现
-//(use-extensions-ipc.test.ts 同款约束),故按源文本逐调用点断言。
+// REQ-136 wiring contract:the one verified catalog MCP exit may carry the route's project D;
+// skill/agent/plugin/cloud/bundle/package remain global-only. Main remains the admission authority.
+// Hook mounting depends on the engine client + Solid browser runtime, so this file locks the
+// production call graph while use-extensions-ipc.test.ts exercises the pure target/state helpers.
 import { describe, expect, test } from "bun:test"
-import * as fs from "node:fs"
-import * as path from "node:path"
+import { readFileSync, readdirSync } from "node:fs"
+import { join, relative, resolve } from "node:path"
 
 const here = import.meta.dir
 
@@ -33,17 +31,33 @@ function installCatalogCallArgs(source: string): string[] {
   return out
 }
 
-const read = (rel: string) => fs.readFileSync(path.join(here, rel), "utf8")
+const read = (rel: string) => readFileSync(join(here, rel), "utf8")
+const functionSlice = (source: string, name: string, nextName: string) =>
+  source.slice(source.indexOf(`async function ${name}(`), source.indexOf(`async function ${nextName}(`))
 
-describe("ADR-030 wiring: 第一方 installCatalog 调用全部 scope=global", () => {
-  // `#810`:package 首驱 / 确认屏 / 套件三条原本在 `extension-hub.tsx` 里直连 `extIpc`,
-  // 现已收口到 `use-extensions.installCatalogIntent`(引擎重扫接在那一层)。于是本文件的
-  // 计数从 5 + 3 变成 6 + 0,而 `scope` 只在**一处**写出来:那正是收口的意义。
-  test("use-extensions.ts:五个既有动作(mcp/skill/plugin/agent/cloud)+ package/套件收口点", () => {
-    const calls = installCatalogCallArgs(read("use-extensions.ts"))
-    expect(calls).toHaveLength(6) // 新增调用点必须来此登记并保持 global
-    for (const args of calls) expect(args).toContain(`scope: { scope: "global" }`)
-    for (const args of calls) expect(args).not.toContain(`"project"`)
+describe("REQ-136 wiring: only catalog MCP may submit Current project", () => {
+  test("use-extensions.ts keeps one scoped MCP exit and five literal-global non-MCP exits", () => {
+    const source = read("use-extensions.ts")
+    const calls = installCatalogCallArgs(source)
+    expect(calls).toHaveLength(6)
+
+    const mcpCalls = installCatalogCallArgs(functionSlice(source, "addMcp", "liveAddAndConnect"))
+    expect(mcpCalls).toHaveLength(1)
+    expect(mcpCalls[0]).toContain("scope: target.target")
+
+    const globalOnly = [
+      ["installSkill", "installPlugin"],
+      ["installPlugin", "installAgentEntry"],
+      ["installAgentEntry", "installCatalogIntent"],
+      ["installCatalogIntent", "importSkillFolder"],
+      ["enableCloud", "updateEntry"],
+    ] as const
+    for (const [name, nextName] of globalOnly) {
+      const exit = installCatalogCallArgs(functionSlice(source, name, nextName))
+      expect(exit).toHaveLength(1)
+      expect(exit[0]).toContain(`scope: { scope: "global" }`)
+      expect(exit[0]).not.toContain(`"project"`)
+    }
   })
 
   test("extension-hub.tsx:一个 installCatalog 调用都不许有(`#810` 收口)", () => {
@@ -53,22 +67,114 @@ describe("ADR-030 wiring: 第一方 installCatalog 调用全部 scope=global", (
   })
 
   test("整个 renderer 树无其它 installCatalog 调用文件(新入口必须显式登记)", () => {
-    const rendererRoot = path.resolve(here, "..")
+    const rendererRoot = resolve(here, "..")
     const withCalls: string[] = []
     const walk = (dir: string): void => {
-      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        const abs = path.join(dir, e.name)
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const abs = join(dir, e.name)
         if (e.isDirectory()) walk(abs)
         else if (
           (e.name.endsWith(".ts") || e.name.endsWith(".tsx")) &&
           !e.name.endsWith(".test.ts") &&
           !e.name.endsWith(".test.tsx") &&
-          installCatalogCallArgs(fs.readFileSync(abs, "utf8")).length > 0
+          installCatalogCallArgs(readFileSync(abs, "utf8")).length > 0
         )
-          withCalls.push(path.relative(rendererRoot, abs))
+          withCalls.push(relative(rendererRoot, abs))
       }
     }
     walk(rendererRoot)
     expect(withCalls.sort()).toEqual(["extensions/use-extensions.ts"])
+  })
+
+  test("MCP confirmation uses route-gated native radios and no install-time directory picker", () => {
+    const source = read("extension-hub.tsx")
+    const start = source.indexOf('<fieldset class="alpha-ext-install-scope" data-install-scope="mcp">')
+    const scope = source.slice(start, source.indexOf("</fieldset>", start))
+    const confirmation = source.slice(source.indexOf("{/* Install confirmation"))
+    expect(start).toBeGreaterThan(0)
+    expect(scope).toContain('type="radio"')
+    expect(scope).toContain('value="global"')
+    expect(scope).toContain('checked={installScope() === "global"}')
+    expect(scope).toContain('<Show when={projectDir()}>')
+    expect(scope).toContain('value="project"')
+    expect(scope).not.toMatch(/openFilePicker|showOpenDialog|workspaceDefaultDir|workspaceEnsureDefault|type="file"/)
+    expect(confirmation).not.toMatch(/openFilePicker|showOpenDialog|workspaceDefaultDir|workspaceEnsureDefault|type="file"/)
+    expect(source).toContain('const [installScope, setInstallScope] = createSignal<CatalogInstallScopeChoice>(DEFAULT_CATALOG_INSTALL_SCOPE)')
+    const open = source.slice(source.indexOf("const openInstallConfirmation ="), source.indexOf("// T5:", source.indexOf("const openInstallConfirmation =")))
+    expect(open.indexOf("setInstallScope(DEFAULT_CATALOG_INSTALL_SCOPE)")).toBeLessThan(
+      open.indexOf("setConfirming(entry)"),
+    )
+    expect(source.match(/setConfirming\((?!null\))/g)).toHaveLength(1)
+    expect(source.slice(source.lastIndexOf("<Show", start), start)).toContain(
+      '<Show when={entry().type === "mcp"}>',
+    )
+  })
+
+  test("authorization redrive keeps the chosen scope and project rows consume main's safe state", () => {
+    const source = read("extension-hub.tsx")
+    const hook = read("use-extensions.ts")
+    expect(source).toContain("projectDir: selectedProjectDir")
+    expect(source).toContain("onAdd(e, secretsArg, undefined, scope, selectedProjectDir)")
+    expect(source).toContain("onAdd(a.entry, a.secrets, decision, a.scope, a.projectDir)")
+    expect(source).toContain('const selectedProjectDir = scope === "project" ? projectDir() : undefined')
+    expect(source).toContain("addMcpEntry(e, secrets, true, authorization, scope, selectedProjectDir)")
+    expect(source).toContain("projectMcpStatusView(row.receipt.projectMcpState)")
+    expect(source).toContain("sdkMcpStatusForReceipt(r, ext.store.mcp)")
+    expect(source).toContain("nameOnlyLiveMcpIsUnambiguousGlobal(s.name, ext.store.projectReceipts)")
+    expect(hook).toContain('if (r.mcpActivation?.status === "reload-pending") return { ok: true, reason: "reload-pending" }')
+    expect(source).toContain('else if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))')
+    expect(hook).toContain("c.instance.dispose({ directory: projectDir })")
+    expect(hook).toContain("c.event.subscribe({ directory: projectDir }, { signal: abort.signal })")
+    expect(hook).toContain('event.type === "server.instance.disposed"')
+    expect(hook).toContain("loadInstalls(target.target.projectDir, refreshed ? undefined : r.name)")
+    const onAdd = source.slice(source.indexOf("const onAdd = async"), source.indexOf("const closeAuthz ="))
+    expect(onAdd.indexOf('if (scope === "project" && e.type !== "mcp")')).toBeLessThan(
+      onAdd.indexOf('if (e.type === "mcp")'),
+    )
+  })
+
+  test("same-name scoped rows stay independent through rendering and project uninstall", () => {
+    const source = read("extension-hub.tsx")
+    const hook = read("use-extensions.ts")
+    expect(source).toContain('key: `${r.type}:${r.name}:project`')
+    expect(source).toContain('for (const r of ext.store.receipts)')
+    expect(source).toContain('for (const r of ext.store.projectReceipts)')
+    expect(source).toContain("data-project-mcp-state={project().state}")
+    const routeEffect = hook.slice(hook.lastIndexOf("createEffect(() =>"), hook.indexOf("// #408:会话结束事件"))
+    expect(routeEffect).toContain("withoutProjectOnlyLiveMcp(mcp, projectReceipts, receipts)")
+    expect(routeEffect.indexOf('setStore("projectReceipts", [])')).toBeLessThan(
+      routeEffect.indexOf("void loadInstalls()"),
+    )
+    expect(routeEffect.indexOf('setStore("projectReceipts", [])')).toBeLessThan(
+      routeEffect.indexOf("void loadStatus()"),
+    )
+    const uninstall = functionSlice(hook, "uninstall", "setInstallState")
+    expect(uninstall).toContain('receipt.scope === "project"')
+    expect(uninstall).toContain("refreshProjectEngine(selectedProjectDir!)")
+    expect(uninstall.indexOf('receipt.scope === "project"')).toBeLessThan(
+      uninstall.indexOf("client?.mcp.disconnect"),
+    )
+    expect(source).toContain('res.reason === "reload-pending"')
+    expect(source).toContain('t("alpha.ext.statePendingReload")')
+  })
+
+  test("main projects consent first and probes only the resolved current project", () => {
+    const source = read("../../main/ext-ipc.ts")
+    const state = source.slice(source.indexOf("const projectMcpState ="), source.indexOf("const { persistMcpBody }"))
+    expect(state).toContain('return "awaiting-consent"')
+    expect(state).toContain('return "consent-denied"')
+    expect(state).toContain('return "disabled"')
+    expect(state).toContain("probeProjectMcpActivation(name, projectDir, awaitServer)")
+    expect(state.indexOf("hasExtensionsDecision")).toBeLessThan(state.indexOf("extensionsGranted"))
+    expect(state.indexOf("extensionsGranted")).toBeLessThan(state.indexOf('if (disabled) return "disabled"'))
+    expect(state.indexOf('if (disabled) return "disabled"')).toBeLessThan(
+      state.indexOf("probeProjectMcpActivation"),
+    )
+    expect(state).not.toContain("withExtensionsConsent")
+    expect(source).toContain("disabledMcpNames.has(receipt.name)")
+    expect(source).toContain('if (decoded.ok && decoded.intent.scope.scope === "project") return result')
+    expect(source.indexOf('decoded.intent.scope.scope === "project"')).toBeLessThan(
+      source.indexOf("if (result.installedDisabled) return result"),
+    )
   })
 })

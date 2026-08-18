@@ -111,6 +111,7 @@ mock.module("../src/main/remote-catalog", () => ({
 
 mock.module("../src/main/ext-mcp-activation", () => ({
   reloadInstalledMcp: async (name: string) => ({ reference: name, status: "connected" }),
+  probeProjectMcpActivation: async () => "unverifiable" as const,
 }))
 
 const originalFetch = globalThis.fetch

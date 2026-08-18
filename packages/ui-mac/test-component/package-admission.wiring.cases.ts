@@ -119,6 +119,7 @@ mock.module("../src/main/ext-mcp-activation", () => ({
     reference: name,
     status: "connected",
   }),
+  probeProjectMcpActivation: async () => "unverifiable" as const,
 }))
 
 const originalFetch = globalThis.fetch

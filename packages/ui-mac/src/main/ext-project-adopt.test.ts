@@ -152,9 +152,14 @@ describe("#356 wiring:触发面在 trust-check 两个早退之前(源文本合�
   // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
   test("ANCHOR (not a gate): adoption 调用位置先于「无 executable 早退」与「已有决策早退」", () => {
     const src = readFileSync(join(import.meta.dir, "ext-ipc.ts"), "utf8")
-    const posAdopt = src.indexOf("adoptProjectLedger(directory")
-    const posNoExec = src.indexOf("exec.mcp.length === 0 && exec.plugins.length === 0")
-    const posDecision = src.indexOf("hasExtensionsDecision(prefs)")
+    const trustStart = src.indexOf('ipcMain.handle("ext-trust-check"')
+    const trustEnd = src.indexOf('ipcMain.handle("ext-external-check"', trustStart)
+    expect(trustStart).toBeGreaterThan(0)
+    expect(trustEnd).toBeGreaterThan(trustStart)
+    const trust = src.slice(trustStart, trustEnd)
+    const posAdopt = trust.indexOf("adoptProjectLedger(directory")
+    const posNoExec = trust.indexOf("exec.mcp.length === 0 && exec.plugins.length === 0")
+    const posDecision = trust.indexOf("hasExtensionsDecision(prefs)")
     expect(posAdopt).toBeGreaterThan(0)
     expect(posNoExec).toBeGreaterThan(0)
     expect(posDecision).toBeGreaterThan(0)

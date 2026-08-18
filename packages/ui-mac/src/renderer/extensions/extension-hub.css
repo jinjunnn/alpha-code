@@ -1300,6 +1300,65 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   line-height: var(--a-leading-snug);
 }
 
+/* REQ-136 #1017:MCP install scope (Global / Current project) */
+.alpha-ext-install-scope {
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.alpha-ext-install-scope legend {
+  padding: 0;
+  font-size: 11px;
+  font-weight: var(--a-weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-install-scope-options {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.alpha-ext-install-scope-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: 10px;
+  background: var(--a-bg-subtle);
+  cursor: pointer;
+}
+.alpha-ext-install-scope-option[data-selected] {
+  border-color: color-mix(in srgb, var(--a-accent) 45%, var(--a-border-faint));
+  background: color-mix(in srgb, var(--a-accent) 6%, var(--a-bg-subtle));
+}
+.alpha-ext-install-scope-option[data-disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.alpha-ext-install-scope-option input {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+.alpha-ext-install-scope-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.alpha-ext-install-scope-option b {
+  font-size: var(--a-text-sm);
+  color: var(--a-text-primary);
+}
+.alpha-ext-install-scope-option small {
+  font-size: 11.5px;
+  line-height: var(--a-leading-snug);
+  color: var(--a-text-tertiary);
+}
+
 /* ── REQ-019 T3:详情页类型专属区块 ─────────────────────────────────────────── */
 .alpha-ext-dsub {
   margin-top: 14px;

@@ -228,6 +228,15 @@ export interface AlphaBuiltinPolicy {
 export type InstallReceiptType = "mcp" | "skill" | "agent" | "command" | "plugin" | "bundle" | "cloud"
 export type InstallReceiptScope = "global" | "project"
 export type InstallReceiptOrigin = "catalog" | "created" | "imported" | "imported-claude" | "imported-agents"
+/** REQ-136 C4/C5:renderer-safe project MCP state. Config/status bytes never cross IPC. */
+export type ProjectMcpState =
+  | "awaiting-consent"
+  | "consent-denied"
+  | "disabled"
+  | "reload-pending"
+  | "active"
+  | "shadowed"
+  | "unverifiable"
 export type InstallReceipt = {
   /** catalog entry id (e.g. "mcp:markitdown") or "user:<name>" for created/imported items */
   id: string
@@ -243,6 +252,8 @@ export type InstallReceipt = {
   files?: string[]
   /** config ownership, e.g. "mcp.markitdown" / "plugin:example@1.0.0" */
   configKey?: string
+  /** Main supplies consent/disabled/probe state; a failed D-scoped reload may overlay pending. Never persisted. */
+  projectMcpState?: ProjectMcpState
 }
 export type InstallLedgerView = { global: InstallReceipt[]; project: InstallReceipt[]; warnings: string[] }
 /** REQ-100 #313:key-based 卸载/列代/回滚意图 —— renderer 不供 receipt/绝对路径(ADR-028 §1)。 */

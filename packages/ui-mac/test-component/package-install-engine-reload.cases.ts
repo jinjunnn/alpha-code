@@ -108,6 +108,7 @@ mock.module("../src/main/ext-advisory-gate", () => ({
 }))
 mock.module("../src/main/ext-mcp-activation", () => ({
   reloadInstalledMcp: async (name: string) => ({ reference: name, status: "connected" }),
+  probeProjectMcpActivation: async () => "unverifiable" as const,
 }))
 
 // ── ③ catalog:随包条目 + 两条本票自有的套件 + 一个签名 package ──────────────────────────

@@ -110,6 +110,7 @@ mock.module("../src/main/remote-catalog", () => ({
 
 mock.module("../src/main/ext-mcp-activation", () => ({
   reloadInstalledMcp: async (name: string) => ({ reference: name, status: "connected" }),
+  probeProjectMcpActivation: async () => "unverifiable" as const,
 }))
 
 const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex")

@@ -11,7 +11,7 @@
 // SDK v2 生成类型与 server 实际接受/返回形状的已知偏斜(directory/scope/roots 扩展参数、data
 // 数组元素形状、event 信封)。上游 codegen 修齐后应成批删除,不新增其它用途的 as any。
 import { createStore } from "solid-js/store"
-import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
+import { createEffect, createSignal, onCleanup, untrack, type Accessor } from "solid-js"
 // CLIENT subpath only — the v2 barrel pulls Node-only deps that break the renderer (see ADR-008).
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerInfo } from "../sidebar/use-projects"
@@ -19,12 +19,15 @@ import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCh
 import type {
   ElectronAPI,
   InstallReceipt,
+  InstallTarget,
   InstalledPackagesResultV1,
   LocalPackagePreviewV1,
+  ProjectMcpState,
   SetStateRefusalCodeWire,
   UninstallKeyIntent,
 } from "../../preload/types"
 import { isExtensionName } from "../../shared/extension-name"
+import { isWorkspacePolicyMcp } from "../../shared/office-advisories"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
 import type { SessionGrantRefusalCode, SessionGrantWire } from "../../shared/ext-session-grant-wire"
 import { connectOutcome, grantsToReassert, sessionGrantKeyOf } from "./ext-session-toggle"
@@ -54,8 +57,8 @@ export interface ExtensionsStore {
   /** Install receipts (REQ-018): alpha's record of what we installed — the "installed" truth for
    *  skill/agent/plugin, which the SDK MCP status can't cover. Global scope for the hub list. */
   receipts: InstallReceipt[]
-  /** REQ-099(#307)项目账本视图:当前打开项目的 scope=project 收据(导入/收编产物;ADR-030 下
-   *  无受管 project 安装)。无项目上下文时恒空。catalog「已安装」判定仍只看 global receipts。 */
+  /** REQ-099/136 项目账本视图:当前打开项目的 scope=project 收据(导入/收编与合规 MCP 安装)。
+   *  无项目上下文时恒空。catalog「已安装」判定仍只看 global receipts,以保留独立全局安装入口。 */
   projectReceipts: InstallReceipt[]
   /** Agents the engine knows (REQ-018 T7 Agent tab): built-in + alpha-created (via SDK app.agents). */
   agents: HubAgent[]
@@ -83,7 +86,7 @@ export type ActionResult =
    *  三次事故都出在这句话身上:一条类型注释管不住新增的调用点。
    *  projectionLag(#336 r1)= 账本已 durable 但 skills 允许集发布失败(本次未注入,重启自愈)
    *  —— UI 据此给「重启后生效」级用户提示,那**仍然**是调用方的事(它决定文案,不是原样透传)。 */
-  | { ok: true; reason?: string; warning?: string; projectionLag?: string }
+  | { ok: true; reason?: string; warning?: string; projectionLag?: string; projectMcpState?: ProjectMcpState }
   | { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string }
   | { ok: false; reason?: string; stage?: TxStageNonAuthorizeWire; code?: SetStateRefusalCodeWire }
 
@@ -110,8 +113,8 @@ export type LocalPackageUninstallResult =
 
 // ── REQ-128 Phase 4 `#810`:签名 package / 套件安装意图的数据层形状 ──────────────────────────
 //
-// 同样**从 wire 派生**。`scope` 被 `Omit` 掉:ADR-030 之下受管安装恒 global,由数据层钉死一次,
-// 调用方连写错的机会都没有(此前三个 hub 调用点各自手写一遍同一个字面量)。
+// 同样**从 wire 派生**。package / bundle 的 `scope` 被 `Omit` 掉并由数据层钉死 global;
+// REQ-136 的 project 例外仅属于上面的 catalog MCP 出站点。
 type InstallCatalogWireResult = Awaited1<ReturnType<ExtApi["installCatalog"]>>
 export type CatalogInstallIntentV1 = Omit<
   Extract<Parameters<ExtApi["installCatalog"]>[0], { catalogId: string }>,
@@ -133,6 +136,149 @@ export function isLocalPluginRoute(
 
 export type { LocalPackagePreviewV1 }
 
+export const DEFAULT_CATALOG_INSTALL_SCOPE = "global" as const
+export type CatalogInstallScopeChoice = "global" | "project"
+
+/**
+ * REQ-136 renderer UX gate. The only project path this helper can produce is the route's current
+ * D supplied by the hook caller; main still re-decodes, resolves verified catalog facts, and
+ * canonicalizes the directory before any write.
+ */
+export function catalogInstallTargetFor(
+  entry: Pick<CatalogEntry, "type" | "name" | "installSpec">,
+  selection: CatalogInstallScopeChoice = DEFAULT_CATALOG_INSTALL_SCOPE,
+  routeProjectDir?: string,
+  selectedProjectDir: string | undefined = routeProjectDir,
+): { ok: true; target: InstallTarget } | { ok: false; reason: string } {
+  if (selection === "global") return { ok: true, target: { scope: "global" } }
+  if (entry.type !== "mcp" || entry.installSpec?.kind !== "mcp")
+    return { ok: false, reason: "project-scope-mcp-only" }
+  if (!routeProjectDir || !selectedProjectDir)
+    return { ok: false, reason: "project-scope-missing-current-project" }
+  if (routeProjectDir !== selectedProjectDir)
+    return { ok: false, reason: "project-scope-current-project-changed" }
+  if ((entry.installSpec.requiredEnvVars?.length ?? 0) > 0)
+    return { ok: false, reason: "project-scope-secret-bearing-mcp" }
+  if (
+    entry.installSpec.command?.some((argument) => argument.includes("{workspace}")) ||
+    isWorkspacePolicyMcp(entry.name, {
+      type: entry.installSpec.mcpType,
+      ...(entry.installSpec.command ? { command: entry.installSpec.command } : {}),
+      ...(entry.installSpec.url ? { url: entry.installSpec.url } : {}),
+    })
+  )
+    return { ok: false, reason: "project-scope-workspace-policy-mcp" }
+  return { ok: true, target: { scope: "project", projectDir: selectedProjectDir } }
+}
+
+/** Project rows consume only main's safe projection. Missing state fails closed to unverifiable. */
+export function projectMcpStatusView(state: ProjectMcpState | undefined) {
+  if (state === "awaiting-consent")
+    return {
+      state,
+      connected: false,
+      tone: "muted" as const,
+      textKey: "alpha.ext.projectMcpAwaitingConsent" as const,
+    }
+  if (state === "consent-denied")
+    return {
+      state,
+      connected: false,
+      tone: "warn" as const,
+      textKey: "alpha.ext.projectMcpConsentDenied" as const,
+    }
+  if (state === "disabled")
+    return {
+      state,
+      connected: false,
+      tone: "muted" as const,
+      textKey: "alpha.ext.projectMcpDisabled" as const,
+    }
+  if (state === "reload-pending")
+    return {
+      state,
+      connected: false,
+      tone: "warn" as const,
+      textKey: "alpha.ext.addedPendingReload" as const,
+    }
+  if (state === "active")
+    return { state, connected: true, tone: "ok" as const, textKey: "alpha.ext.enabledLive" as const }
+  if (state === "shadowed")
+    return {
+      state,
+      connected: false,
+      tone: "warn" as const,
+      textKey: "alpha.ext.projectMcpShadowed" as const,
+    }
+  return {
+    state: "unverifiable" as const,
+    connected: false,
+    tone: "muted" as const,
+    textKey: "alpha.ext.projectMcpUnverifiable" as const,
+  }
+}
+
+/** Name-only live MCP status is valid only for a global receipt, never for a project receipt. */
+export function sdkMcpStatusForReceipt(
+  receipt: Pick<InstallReceipt, "name" | "scope">,
+  live: Readonly<Record<string, InstalledState>>,
+): InstalledState | undefined {
+  if (receipt.scope === "project") return undefined
+  return live[receipt.name]
+}
+
+/** A name-only live row cannot prove Global ownership when this project owns the same MCP name. */
+export function nameOnlyLiveMcpIsUnambiguousGlobal(
+  name: string,
+  projectReceipts: readonly Pick<InstallReceipt, "name" | "type">[],
+): boolean {
+  return !projectReceipts.some((receipt) => receipt.type === "mcp" && receipt.name === name)
+}
+
+/** Remove route-D-only name status before its project receipts leave the renderer. */
+export function withoutProjectOnlyLiveMcp(
+  live: Readonly<Record<string, InstalledState>>,
+  projectReceipts: readonly Pick<InstallReceipt, "name" | "type">[],
+  globalReceipts: readonly Pick<InstallReceipt, "name" | "type">[],
+): Record<string, InstalledState> {
+  const globalMcpNames = new Set(
+    globalReceipts.filter((receipt) => receipt.type === "mcp").map((receipt) => receipt.name),
+  )
+  const projectOnlyMcpNames = new Set(
+    projectReceipts
+      .filter((receipt) => receipt.type === "mcp" && !globalMcpNames.has(receipt.name))
+      .map((receipt) => receipt.name),
+  )
+  return Object.fromEntries(
+    Object.entries(live).filter(([name]) => !projectOnlyMcpNames.has(name)),
+  )
+}
+
+/** A failed D-scoped reload outranks a probe against the stale instance, but never hides consent/off. */
+export function projectMcpStateAfterReload(
+  state: ProjectMcpState | undefined,
+  reloadSucceeded: boolean,
+): ProjectMcpState {
+  if (
+    reloadSucceeded ||
+    state === "awaiting-consent" ||
+    state === "consent-denied" ||
+    state === "disabled"
+  )
+    return state ?? "unverifiable"
+  return "reload-pending"
+}
+
+/** Ignore a late project-ledger response after the route has moved to another directory. */
+export function projectReceiptResponseForRoute(
+  requestedProjectDir: string | undefined,
+  currentProjectDir: string | undefined,
+  receipts: InstallReceipt[],
+): InstallReceipt[] | undefined {
+  if ((requestedProjectDir ?? undefined) !== (currentProjectDir ?? undefined)) return undefined
+  return currentProjectDir ? receipts : []
+}
+
 /** stage="authorize" 拦截守卫:diff 在场才算(引擎契约保证成对出现)。 */
 export function isAuthzRequired(res: ActionResult): res is { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string } {
   return !res.ok && res.stage === "authorize" && Array.isArray(res.authorization) && res.authorization.length > 0
@@ -142,15 +288,17 @@ export interface ExtensionsApi {
   store: ExtensionsStore
   refresh(): Promise<void>
   /**
-   * Persist and activate an MCP catalog entry through main. `secrets` fills requiredEnvVars and is
-   * routed to the {file:} channel on disk (never plaintext); `env` is non-secret substitution for
-   * headers. Renderer receives only activation status.
+   * Persist an MCP catalog entry through main and report its honest activation state. `secrets`
+   * fills requiredEnvVars and is routed to the {file:} channel on disk (never plaintext); `env` is
+   * non-secret substitution for headers. Renderer receives only activation status.
    */
   addMcp(
     entry: CatalogEntry,
     env?: Record<string, string>,
     secrets?: Record<string, string>,
     authorization?: AuthorizationConfirmationWire,
+    scope?: CatalogInstallScopeChoice,
+    selectedProjectDir?: string,
   ): Promise<ActionResult>
   /** REQ-033:catalog 外任意 MCP(local command / remote url + env/密钥);白名单校验在 main 不放宽。 */
   addCustomMcp(
@@ -182,7 +330,7 @@ export interface ExtensionsApi {
   revokeSession(catalogId: string, directory: string, name: string): Promise<ActionResult>
   /** Uninstall any installed item by its receipt (fs/plugin/mcp) — files/config/secrets + receipt. */
   uninstall(receipt: InstallReceipt): Promise<ActionResult>
-  /** REQ-104 #395:启停(global 收据;project 组只读无开关)。main 侧账本+投影原子翻转;
+  /** REQ-104 #395:启停(global 收据;project 组无开关)。main 侧账本+投影原子翻转;
    *  fs 类翻转后 dispose 引擎使投影生效;mcp 的 live connect 由调用方按需衔接。 */
   setInstallState(receipt: InstallReceipt, state: "enabled" | "disabled", opts?: { confirmExpiredReview?: boolean }): Promise<ActionResult>
   /** True if this catalog entry is already installed (MCP via SDK truth; others via receipts). */
@@ -367,14 +515,34 @@ export function useExtensions(
   // Codex r1 B2 + r2 修正:project 部分按发起时的目录判有效(迟到响应不把 A 的行摆进 B 的组头);
   // global 账本与目录无关,任何有效响应都应用 —— 整体丢弃会让"切换后替代请求失败"的场景把 global
   // 面冻在旧值上。切换瞬间的 project 清空由 projectDir effect 负责。
-  async function loadInstalls() {
-    const dir = projectDir?.()
+  async function loadInstalls(
+    requestedProjectDir: string | undefined = projectDir?.(),
+    reloadFailedMcpName?: string,
+  ): Promise<InstallReceipt[]> {
     try {
-      const view = await extIpc.listInstalls(dir)
+      const view = await extIpc.listInstalls(requestedProjectDir)
       setStore("receipts", view.global)
-      if ((projectDir?.() ?? undefined) === (dir ?? undefined)) setStore("projectReceipts", dir ? view.project : [])
+      const project = projectReceiptResponseForRoute(
+        requestedProjectDir,
+        projectDir?.(),
+        reloadFailedMcpName
+          ? view.project.map((receipt) =>
+              receipt.type === "mcp" && receipt.name === reloadFailedMcpName
+                ? {
+                    ...receipt,
+                    projectMcpState: projectMcpStateAfterReload(receipt.projectMcpState, false),
+                  }
+                : receipt,
+            )
+          : view.project,
+      )
+      if (project) {
+        setStore("projectReceipts", project)
+      }
+      return project ?? []
     } catch {
       /* transient — keep previous(project 行与目录不符的窗口已被切换清空堵死) */
+      return []
     }
   }
 
@@ -428,11 +596,15 @@ export function useExtensions(
     env?: Record<string, string>,
     secrets?: Record<string, string>,
     authorization?: AuthorizationConfirmationWire,
+    scope: CatalogInstallScopeChoice = DEFAULT_CATALOG_INSTALL_SCOPE,
+    selectedProjectDir?: string,
   ): Promise<ActionResult> {
     const c = client
     if (!c) return { ok: false, reason: "no server" }
     const spec = entry.installSpec
     if (!spec || spec.kind !== "mcp") return { ok: false, reason: "not an MCP entry" }
+    const target = catalogInstallTargetFor(entry, scope, projectDir?.(), selectedProjectDir)
+    if (!target.ok) return target
     // REQ-099 #305:catalog MCP 切 main-owned installCatalog —— name/config 由 main 从已验签 catalog
     // 派生,renderer 只交 grants(secrets/env)+ cnMirror 偏好(镜像 env 值为 main 侧常量,
     // 顶替此前 renderer 侧的 CN_MIRROR_ENV 注入)。durable 落盘含 {file:} 引用与 main 策略(如 Excel
@@ -445,19 +617,31 @@ export function useExtensions(
     }
     const r = await extIpc.installCatalog({
       catalogId: entry.id,
-      scope: { scope: "global" },
+      scope: target.target,
       ...(Object.keys(grants).length ? { grants } : {}),
       ...(authorization ? { authorization } : {}),
     })
     if (!r.ok) return r
+    if (r.kind !== "mcp") {
+      await Promise.all([loadStatus(), loadInstalls()])
+      return { ok: false, reason: `catalog kind mismatch: expected mcp, got "${r.kind}"(条目已按实际类型落盘,未激活连接)` }
+    }
+    if (target.target.scope === "project") {
+      // Never use reloadInstalledMcp here:its result is keyed only by name and can belong to Global.
+      // Dispose exactly D so the subsequent main-owned probe sees D's rebuilt effective config.
+      const refreshed = r.installedDisabled || (await refreshProjectEngine(target.target.projectDir))
+      const receipts = await loadInstalls(target.target.projectDir, refreshed ? undefined : r.name)
+      return {
+        ok: true,
+        projectMcpState:
+          receipts.find((receipt) => receipt.type === "mcp" && receipt.name === r.name)?.projectMcpState ??
+          (refreshed ? "unverifiable" : "reload-pending"),
+      }
+    }
     // #395(Codex r8 M4):第三方 MCP 默认关。这是成功的「装 ≠ 跑」,不是失败。
     if (r.installedDisabled) {
       await Promise.all([loadStatus(), loadInstalls()])
       return { ok: true, reason: "installed-disabled" }
-    }
-    if (r.kind !== "mcp") {
-      await Promise.all([loadStatus(), loadInstalls()])
-      return { ok: false, reason: `catalog kind mismatch: expected mcp, got "${r.kind}"(条目已按实际类型落盘,未激活连接)` }
     }
     await Promise.all([loadStatus(), loadInstalls()])
     if (r.mcpActivation?.status === "connected") return { ok: true }
@@ -671,7 +855,12 @@ export function useExtensions(
   function isInstalled(entry: CatalogEntry): boolean {
     // MCP: live SDK truth (also covers pre-receipt installs). skill/agent/plugin/bundle: receipts,
     // matched by catalog id (bundle = all its required items present).
-    if (entry.type === "mcp") return entry.name in store.mcp || store.receipts.some((r) => r.id === entry.id)
+    if (entry.type === "mcp")
+      return (
+        store.receipts.some((receipt) => receipt.id === entry.id) ||
+        (entry.name in store.mcp &&
+          nameOnlyLiveMcpIsUnambiguousGlobal(entry.name, store.projectReceipts))
+      )
     if (entry.type === "bundle") {
       const required = (entry.bundleItems ?? []).filter((it) => !it.optional).map((it) => it.catalogEntryId)
       return required.length > 0 && required.every((id) => store.receipts.some((r) => r.id === id) || mcpNameForId(id))
@@ -695,10 +884,18 @@ export function useExtensions(
     // 由 main 按项目账本自查,绝不落进按名字操作全局 config 的旧路。
     if (receipt.type === "mcp" && receipt.scope !== "project" && !store.receipts.some((r) => r.type === "mcp" && r.name === receipt.name))
       return removeMcp(receipt.name)
-    const built = uninstallIntentFor(receipt, projectDir?.())
+    const selectedProjectDir = receipt.scope === "project" ? projectDir?.() : undefined
+    const built = uninstallIntentFor(receipt, selectedProjectDir)
     if (!built.ok) return { ok: false, reason: built.reason }
     const res = await extIpc.uninstallV2(built.intent)
-    if (res.ok && receipt.type === "mcp") await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
+    if (res.ok && receipt.type === "mcp" && receipt.scope === "project") {
+      const refreshed = await refreshProjectEngine(selectedProjectDir!)
+      setStore("mcp", withoutProjectOnlyLiveMcp(store.mcp, [receipt], store.receipts))
+      await Promise.all([loadInstalls(selectedProjectDir), loadStatus()])
+      return refreshed ? res : { ...res, reason: "reload-pending" }
+    }
+    if (res.ok && receipt.type === "mcp")
+      await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
     await Promise.all([loadStatus(), loadInstalls()])
     // fs/plugin removal needs a rescan;cloud 只动账本(引擎无状态)无需 dispose。
     if (res.ok && receipt.type !== "mcp" && receipt.type !== "cloud") await refreshEngine()
@@ -706,7 +903,7 @@ export function useExtensions(
     return res
   }
 
-  /** REQ-104 #395:启停(仅 global 收据;project 组只读)。main 侧原子翻转(mcp/agent/plugin =
+  /** REQ-104 #395:启停(仅 global 收据;project 组无开关)。main 侧原子翻转(mcp/agent/plugin =
    *  journaled config 事务 + 账本;skill = 账本,投影由引擎侧注入门消费);fs 类随后 dispose 引擎
    *  使投影立即生效;mcp 的 live connect/disconnect 由调用方(hub 开关)按语义衔接。 */
   async function setInstallState(
@@ -714,7 +911,7 @@ export function useExtensions(
     state: "enabled" | "disabled",
     opts?: { confirmExpiredReview?: boolean },
   ): Promise<ActionResult> {
-    if (receipt.scope === "project") return { ok: false, reason: "project-scoped records have no enable switch (read-only group)" }
+    if (receipt.scope === "project") return { ok: false, reason: "project-scoped records have no enable switch" }
     const res = await extIpc.setInstallState({
       type: receipt.type,
       name: receipt.name,
@@ -751,6 +948,36 @@ export function useExtensions(
       return connectOutcome(r as { error?: unknown } | null | undefined)
     } catch {
       return false
+    }
+  }
+
+  /** REQ-136:reload only D's instance before consuming the D-scoped activation probe. */
+  async function refreshProjectEngine(projectDir: string): Promise<boolean> {
+    const c = client
+    if (!c) return false
+    const abort = new AbortController()
+    try {
+      // The dispose HTTP response is emitted before teardown. Subscribe first, then wait for the
+      // D-scoped lifecycle event; only that event proves the cached instance is gone.
+      const subscription = await withTimeout(
+        c.event.subscribe({ directory: projectDir }, { signal: abort.signal }),
+        5000,
+      )
+      if (subscription === TIMED_OUT) return false
+      const disposed = (async () => {
+        for await (const event of subscription.stream) {
+          if (event.type === "server.instance.disposed") return true
+        }
+        return false
+      })()
+      const result = await withTimeout(c.instance.dispose({ directory: projectDir }), 5000)
+      if (result === TIMED_OUT || !connectOutcome(result)) return false
+      const confirmed = await withTimeout(disposed, 5000)
+      return confirmed !== TIMED_OUT && confirmed
+    } catch {
+      return false
+    } finally {
+      abort.abort()
     }
   }
 
@@ -809,10 +1036,16 @@ export function useExtensions(
   // REQ-099(#307):项目上下文切换(换项目会话 / 回 home)→ 重读账本,project 视图跟随当前目录。
   // Codex r1 B2:切换瞬间先清空 project 行 —— 绝不把上一项目的行显示在新目录组头下(那扇窗口里
   // 点卸载会用新目录构造意图,同 key 时删错对象);新目录的行等它自己的账本响应到达再出现。
+  let lastProjectDir: string | undefined
   createEffect(() => {
-    projectDir?.()
+    const dir = projectDir?.()
     if (!activated) return
+    if (dir === lastProjectDir) return
+    lastProjectDir = dir
+    const [mcp, projectReceipts, receipts] = untrack(() => [store.mcp, store.projectReceipts, store.receipts] as const)
+    setStore("mcp", withoutProjectOnlyLiveMcp(mcp, projectReceipts, receipts))
     setStore("projectReceipts", [])
+    void loadStatus()
     void loadInstalls()
   })
 
@@ -885,7 +1118,7 @@ export function useExtensions(
   /**
    * `#810`:签名 package / 套件安装的**唯一**出站点(合同见 `ExtensionsApi.installCatalogIntent`)。
    *
-   * 三件事都只在这里发生一次:`scope` 钉死 global(ADR-030)、成功后刷新账本、
+   * 三件事都只在这里发生一次:package / bundle 的 `scope` 钉死 global、成功后刷新账本、
    * **成功后让引擎当场重扫**。`refreshEngine()` 在本方法里只有这一处 —— 这就是它的全部意义。
    *
    * `!r.ok` 原样上抛,一个字不折叠:`stage: "authorize"` 那条臂(package 首驱恒走它)带着
