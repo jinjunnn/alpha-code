@@ -81,12 +81,20 @@ export function ModelPickPop(props: {
   let loadedEpoch: string | undefined
   let lastAuthSignature: string | undefined
   let immediateRetryQueued = false
+  let silentTokenOnlyGeneration: number | null = null
   let retryImmediately = (_reason: string) => {}
 
   const epochKey = () => `${props.directory() ?? ""}\u0000${composerModelProjection().sessionID ?? ""}`
   const isCurrent = (seq: number, epoch: string) => !disposed && seq === loadSeq && epoch === epochKey()
   const authSignature = (state: AuthState) =>
     `${state.status}\u0000${state.mode}\u0000${state.platformStatus ?? "ready"}\u0000${state.account?.email ?? ""}`
+  const authIdentitySignature = (state: AuthState) =>
+    JSON.stringify({
+      status: state.status,
+      mode: state.mode,
+      email: state.account?.email ?? "",
+      plan: state.account?.plan ?? null,
+    })
 
   const loadCatalog = (seq: number, epoch: string) => {
     void window.api.models
@@ -278,6 +286,15 @@ export function ModelPickPop(props: {
     const unsubscribe = subscribeAuthState((state) => {
       if (authSignature(state) === lastAuthSignature) return
       lastAuthSignature = authSignature(state)
+      const current = auth()
+      if (
+        state.status === "logged-in" &&
+        state.platformStatus === "recovering" &&
+        current.status === "ready" &&
+        current.data.status === "logged-in" &&
+        authIdentitySignature(state) === authIdentitySignature(current.data)
+      )
+        return
       loadAll(state)
     })
     let receivedRuntimeState = false
@@ -291,14 +308,25 @@ export function ModelPickPop(props: {
         if (state.status !== "recovering") return
       }
       if (state.status === "recovering") {
+        if (state.reason === "token-only" && models().length > 0) {
+          silentTokenOnlyGeneration = state.generation
+          return
+        }
+        silentTokenOnlyGeneration = null
         if (models().length > 0) setListState("recovering")
         return
       }
       if (state.status === "failed") {
+        if (silentTokenOnlyGeneration === state.generation) {
+          silentTokenOnlyGeneration = null
+          if (models().length > 0) setListState("recovering")
+          retryImmediately("generation-failed")
+        }
         // #577 终态:引擎未通过健康线,不得当成 ready 触发立即重试;
         // 弹窗自身的封顶退避(REQ-083 scheduleRetry)继续自证。
         return
       }
+      silentTokenOnlyGeneration = null
       // ready 与 injection-failed(#613)都证明引擎可达:唤醒停跑的链。注入失败下 list
       // 会成功返回引擎的真实清单,行按事实置灰,横幅解释真因 —— 不再是「正在同步」的谎。
       retryImmediately(state.status === "ready" ? "generation-ready" : "engine-config-lost")

@@ -150,6 +150,7 @@ type ApiFixture = {
   catalog?: () => Promise<EffectiveCatalog>
   add?: (input: unknown) => Promise<{ ok: true } | { ok: false; reason: string }>
   onLogin?: () => void
+  onAuthSubscribe?: (listener: (state: AuthState) => void) => void
 }
 
 function installApi(fixture: ApiFixture = {}) {
@@ -161,7 +162,10 @@ function installApi(fixture: ApiFixture = {}) {
       models: { catalog: fixture.catalog ?? (async () => catalog) },
       auth: {
         getState: fixture.auth ?? (async () => loggedIn),
-        subscribe: () => () => {},
+        subscribe: (listener) => {
+          fixture.onAuthSubscribe?.(listener)
+          return () => {}
+        },
         start: async () => fixture.onLogin?.(),
       },
       account: { summary: fixture.account ?? (async () => summary) },
@@ -982,6 +986,47 @@ describe("ModelPickPop production component", () => {
     expect(platform?.disabled).toBe(true)
     platform?.click()
     expect(selectedCalls).toBe(0)
+    mounted.dispose()
+  })
+
+  test("已打开 picker 的 token-only 换血保持已渲染账户/模型静默，失败终态才回到 Syncing", async () => {
+    resetComposerModelProjection()
+    let authListener: ((state: AuthState) => void) | undefined
+    installApi({
+      onAuthSubscribe: (listener) => {
+        authListener = listener
+      },
+    })
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: { list: async () => platformModels, current: async () => undefined, switch: async () => {} },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async () => {},
+        onPicked: () => {},
+      }),
+    )
+
+    await waitFor(() => expect(mounted.host.textContent).toContain("Pro"))
+    expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"])
+
+    authListener?.({ status: "logged-in", mode: "platform", platformStatus: "recovering", account: loggedIn.account })
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "recovering", generation: 11, reason: "token-only" },
+      }),
+    )
+    await flush()
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.syncing"])
+    expect(mounted.host.textContent).toContain("Pro")
+    expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"])
+
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "failed", generation: 11, reason: "token-only" },
+      }),
+    )
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
     mounted.dispose()
   })
 
