@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { alphaOfficeInstallCommand, type AlphaOfficeFormat } from "../shared/office-advisories"
 
 const server = resolve(import.meta.dir, "../../resources/office-mcp/server.py")
@@ -174,6 +174,16 @@ describe("REQ-133 Alpha first-party Office MCP resources", () => {
     const response = messages.find((message) => message.id === 2)
     expect(response?.result?.isError).toBe(true)
     expect(response?.result?.content?.[0]?.text).toContain("path traversal")
+  })
+
+  test("absolute paths outside the granted workspace are rejected before format code runs", async () => {
+    const messages = await exchange(
+      [python!, server, "word", workspace],
+      [initialize(), call(2, "read_docx", { path: join(dirname(workspace), "outside.docx") })],
+    )
+    const response = messages.find((message) => message.id === 2)
+    expect(response?.result?.isError).toBe(true)
+    expect(response?.result?.content?.[0]?.text).toContain("path is outside the granted workspace")
   })
 
   test("four stdio entry modes expose only their format-specific read/write tools", async () => {

@@ -5,7 +5,7 @@
 // config, npm package, asset key, owned paths — is re-derived here from the VERIFIED catalog
 // (ed25519-verified remote/cache → bundled byte snapshot) and from main's own ledger. Forged
 // renderer facts have no channel: unknown intent keys are rejected by the strict decoders, and
-// grants are validated against what the catalog entry declares (requiredEnvVars / {workspace}).
+// grants are validated against what the catalog entry declares (requiredEnvVars).
 //
 // Phase 1: before any disk side effect the planner synthesizes an ExtensionManifestV2 from the
 // verified entry and STRICT-validates it (ext-manifest-v2.ts — unknown key/version/digest/
@@ -185,8 +185,6 @@ export type InstallGrants = {
   secrets?: Record<string, string>
   /** 非密钥替换值;键同样必须 ⊆ requiredEnvVars。 */
   env?: Record<string, string>
-  /** {workspace} 占位替换(条目声明了占位才允许)。 */
-  workspace?: string
   /** 中国镜像 env(值为 main 侧常量,renderer 只表达偏好)。 */
   cnMirror?: boolean
 }
@@ -332,7 +330,7 @@ export function decodeCatalogInstallIntent(input: unknown): { ok: true; intent: 
   if (input.grants !== undefined) {
     if (!isObj(input.grants)) return { ok: false, reason: "intent.grants: must be an object" }
     for (const key of Object.keys(input.grants)) {
-      if (!["secrets", "env", "workspace", "cnMirror"].includes(key))
+      if (!["secrets", "env", "cnMirror"].includes(key))
         return { ok: false, reason: `intent.grants: unknown key "${key}" — refused` }
     }
     grants = {}
@@ -345,11 +343,6 @@ export function decodeCatalogInstallIntent(input: unknown): { ok: true; intent: 
       const m = decodeStringMap(input.grants.env, "intent.grants.env")
       if (!m.ok) return m
       grants.env = m.map
-    }
-    if (input.grants.workspace !== undefined) {
-      if (typeof input.grants.workspace !== "string" || !path.isAbsolute(input.grants.workspace))
-        return { ok: false, reason: "intent.grants.workspace: must be an absolute path" }
-      grants.workspace = input.grants.workspace
     }
     if (input.grants.cnMirror !== undefined) {
       if (typeof input.grants.cnMirror !== "boolean") return { ok: false, reason: "intent.grants.cnMirror: must be a boolean" }
@@ -480,17 +473,7 @@ export function deriveMcpConfig(
   ) {
     return { ok: false, reason: "{alphaResources} is reserved for the bundled Alpha Office server entrypoints — refused" }
   }
-  const needsWorkspace = command.some((a) => a.includes("{workspace}"))
-  if (needsWorkspace && !grants.workspace) return { ok: false, reason: "workspace grant required by this entry" }
-  if (!needsWorkspace && grants.workspace) return { ok: false, reason: "workspace grant not used by this entry — refused" }
-  if (grants.workspace && /\{(file|env):/.test(grants.workspace)) {
-    return { ok: false, reason: "workspace grant contains config substitution syntax ({file:}/{env:}) — refused" }
-  }
-  const cmd = command.map((argument) =>
-    argument
-      .split("{alphaResources}").join(alphaResources)
-      .split("{workspace}").join(grants.workspace ?? "{workspace}"),
-  )
+  const cmd = command.map((argument) => argument.split("{alphaResources}").join(alphaResources))
   const environment = { ...(grants.cnMirror ? CN_MIRROR_ENV : {}), ...subst }
   return {
     ok: true,
@@ -905,7 +888,10 @@ async function classifyBundleChild(
     // Office workspace canonicalization 不在 config action 的原子边界内。fail-closed。
     if ((spec.requiredEnvVars?.length ?? 0) > 0)
       return { status: "skip", id, reason: "secret-bearing MCP not supported in atomic bundle (phase 1)" }
-    if (isWorkspacePolicyMcp(entry.name, { type: spec.mcpType, ...(spec.command ? { command: spec.command } : {}), ...(spec.url ? { url: spec.url } : {}) }))
+    if (
+      spec.command?.some((argument) => argument.includes("{workspace}")) ||
+      isWorkspacePolicyMcp(entry.name, { type: spec.mcpType, ...(spec.command ? { command: spec.command } : {}), ...(spec.url ? { url: spec.url } : {}) })
+    )
       return { status: "skip", id, reason: "workspace-policy MCP not supported in atomic bundle (phase 1)" }
     const derived = deriveMcpConfig(spec, {})
     if (!derived.ok) return { status: "skip", id, reason: `MCP needs grants not supported in bundle: ${derived.reason}` }
@@ -2208,7 +2194,10 @@ async function installSeedMcp(args: {
     rollback("secret-bearing MCP")
     return { ok: false, reason: "secret-bearing MCP is not seed-installable (seed intent has no grants channel, phase 1) — refused" }
   }
-  if (isWorkspacePolicyMcp(entry.name, { type: spec.mcpType, ...(spec.command ? { command: spec.command } : {}), ...(spec.url ? { url: spec.url } : {}) })) {
+  if (
+    spec.command?.some((argument) => argument.includes("{workspace}")) ||
+    isWorkspacePolicyMcp(entry.name, { type: spec.mcpType, ...(spec.command ? { command: spec.command } : {}), ...(spec.url ? { url: spec.url } : {}) })
+  ) {
     rollback("workspace-policy MCP")
     return { ok: false, reason: "workspace-policy MCP is not seed-installable (managed workspace is outside the config-action boundary) — refused" }
   }

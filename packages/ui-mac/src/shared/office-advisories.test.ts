@@ -7,6 +7,7 @@ import {
   ALPHA_OFFICE_CONNECTORS,
   ARCHIVED_OFFICE_ADVISORIES,
   RETIRED_COMMUNITY_OFFICE_CONNECTORS,
+  WORKSPACE_MARKER,
   alphaOfficeInstallCommand,
   checkAlphaOfficeMcpSafety,
   isRetiredOfficeMcp,
@@ -116,6 +117,13 @@ describe("REQ-133 Alpha Office connector registry and stdio safety", () => {
     for (const connector of ALPHA_OFFICE_CONNECTORS) {
       const server = config(connector.format)
       expect(checkAlphaOfficeMcpSafety(connector.name, server, workspace, resources)).toEqual({ ok: true })
+      const marked = {
+        ...server,
+        command: alphaOfficeInstallCommand(connector.format).map((argument) =>
+          argument.replace("{alphaResources}", resources),
+        ),
+      }
+      expect(checkAlphaOfficeMcpSafety(connector.name, marked, WORKSPACE_MARKER, resources)).toEqual({ ok: true })
       expect(isWorkspacePolicyMcp(connector.name, server)).toBe(true)
     }
     expect(isWorkspacePolicyMcp("excel-mcp-server", { type: "local", command: ["uvx", "excel-mcp-server@0.1.8", "stdio"] })).toBe(false)
@@ -127,6 +135,19 @@ describe("REQ-133 Alpha Office connector registry and stdio safety", () => {
       expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), command: ["uv", "run", "latest"] }, workspace, resources).ok).toBe(false)
       expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), command: [...config(connector.format).command, "--host", "0.0.0.0"] }, workspace, resources).ok).toBe(false)
       expect(checkAlphaOfficeMcpSafety(connector.name, config(connector.format), `${workspace}/../etc`, resources).ok).toBe(false)
+      expect(
+        checkAlphaOfficeMcpSafety(
+          connector.name,
+          {
+            ...config(connector.format),
+            command: alphaOfficeInstallCommand(connector.format).map((argument) =>
+              argument.replace("{alphaResources}", resources).replace("{workspace}", "prefix-{workspace}"),
+            ),
+          },
+          "prefix-{workspace}",
+          resources,
+        ).ok,
+      ).toBe(false)
       expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), environment: { MCP_TRANSPORT: "sse" } }, workspace, resources).ok).toBe(false)
       expect(checkAlphaOfficeMcpSafety(connector.name, { ...config(connector.format), environment: { PYTHONPATH: "/tmp/inject" } }, workspace, resources).ok).toBe(false)
     }

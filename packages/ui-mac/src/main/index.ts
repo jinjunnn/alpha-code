@@ -115,6 +115,7 @@ import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 import { sweepEngineConfigDanglingUnlocked, type DanglingSweepOutcome } from "./engine-config-dangling"
 import { ensureGovernedMcpConnectTimeouts, withConfigWriteLock } from "./ext-config"
 import { retireCommunityExcelAfterRecovery } from "./community-excel-retirement"
+import { reconcileMcpWorkspaceMarkers } from "./mcp-workspace-marker"
 import { engineDataDir } from "./data-clear"
 import { reconcileDesiredStateAtBoot } from "./ext-install-planner"
 import { alphaGlobalRoot } from "./alpha-installs"
@@ -833,6 +834,7 @@ const main = Effect.gen(function* () {
     }
   }
   ensureGovernedMcpConnectTimeouts()
+  reconcileMcpWorkspaceMarkers()
   ensureAlphaLayoutDefault()
   // Packaged builds only: on macOS this sets the user-level Launch Services handler pref to the
   // bundle the process runs from — in dev that is node_modules' bare Electron.app, which then hijacks

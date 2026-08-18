@@ -81,12 +81,12 @@ const mcpEntry: CatalogEntry = {
   installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "markitdown-mcp@0.0.1a4"], requiredEnvVars: ["API_KEY"] },
 }
 const mcpWorkspaceEntry: CatalogEntry = {
-  id: "mcp:workspace-demo",
+  id: "mcp:filesystem",
   type: "mcp",
-  name: "workspace-demo",
+  name: "filesystem",
   ...base,
-  version: "1.0.0",
-  installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "workspace-demo-mcp@1.0.0", "{workspace}"] },
+  version: "2026.1.14",
+  installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "{workspace}"] },
 }
 const retiredCommunityExcelEntry: CatalogEntry = {
   id: "mcp:excel",
@@ -406,6 +406,9 @@ describe("intent decoding — forged renderer facts have no channel (AC#2)", () 
   test("grants: unknown grant keys refused; scope strict", () => {
     const rogueGrant = decodeCatalogInstallIntent({ catalogId: "x", scope: { scope: "global" }, grants: { command: ["evil"] } })
     expect(rogueGrant.ok).toBe(false)
+    const workspaceGrant = decodeCatalogInstallIntent({ catalogId: "x", scope: { scope: "global" }, grants: { workspace: "/ws" } })
+    expect(workspaceGrant.ok).toBe(false)
+    if (!workspaceGrant.ok) expect(workspaceGrant.reason).toContain('unknown key "workspace"')
     const rogueScope = decodeCatalogInstallIntent({ catalogId: "x", scope: { scope: "global", projectDir: "/p" } })
     expect(rogueScope.ok).toBe(false)
     const relDir = decodeCatalogInstallIntent({ catalogId: "x", scope: { scope: "project", projectDir: "not/abs" } })
@@ -636,17 +639,22 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     expect(called(calls, "fileifyMcpSecrets")).toHaveLength(0)
   })
 
-  test("workspace grant: required when declared, refused when not declared", async () => {
+  test("workspace marker is durable and renderer workspace grants are refused", async () => {
     const { deps } = makeDeps()
-    const missing = await installAuthorized({ catalogId: "mcp:workspace-demo", scope: { scope: "global" } }, deps)
-    expect(missing.ok).toBe(false)
-    if (!missing.ok) expect(missing.reason).toContain("workspace grant required")
-    const undeclared = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { workspace: "/ws" } }, deps)
-    expect(undeclared.ok).toBe(false)
-    const { deps: deps2 } = makeDeps()
-    const ok = await installAuthorized({ catalogId: "mcp:workspace-demo", scope: { scope: "global" }, grants: { workspace: "/ws/demo" } }, deps2)
+    const ok = await installAuthorized({ catalogId: "mcp:filesystem", scope: { scope: "global" } }, deps)
     expect(ok.ok).toBe(true)
-    expect(mcpLeafOnDisk("workspace-demo")?.command).toEqual(["uvx", "workspace-demo-mcp@1.0.0", "/ws/demo"])
+    expect(mcpLeafOnDisk("filesystem")?.command).toEqual([
+      "npx",
+      "-y",
+      "@modelcontextprotocol/server-filesystem@2026.1.14",
+      "{workspace}",
+    ])
+    const refused = decodeCatalogInstallIntent({
+      catalogId: "mcp:filesystem",
+      scope: { scope: "global" },
+      grants: { workspace: "/ws" },
+    })
+    expect(refused.ok).toBe(false)
   })
 
   test("remote MCP: url from catalog, headers from template + granted secret", async () => {
@@ -664,9 +672,9 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
 
   test("cnMirror env values are main-side constants (renderer only expresses the preference)", async () => {
     const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "mcp:workspace-demo", scope: { scope: "global" }, grants: { workspace: "/ws", cnMirror: true } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:filesystem", scope: { scope: "global" }, grants: { cnMirror: true } }, deps)
     expect(r.ok).toBe(true)
-    const env = recOf(mcpLeafOnDisk("workspace-demo")?.environment)
+    const env = recOf(mcpLeafOnDisk("filesystem")?.environment)
     expect(env.npm_config_registry).toBe("https://registry.npmmirror.com")
     expect(strOf(env.PIP_INDEX_URL)).toContain("tuna.tsinghua.edu.cn")
   })
@@ -1464,27 +1472,27 @@ describe("deriveMcpConfig — boundary cases", () => {
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.secretVars).toEqual(["A"])
   })
-  test("main substitutes bundled Alpha resources next to the granted workspace", () => {
+  test("main substitutes bundled Alpha resources and preserves the workspace marker", () => {
     const result = deriveMcpConfig(
       { kind: "mcp", mcpType: "local", command: ["uv", "{alphaResources}/office-mcp/server.py", "word", "{workspace}"] },
-      { workspace: "/workspace" },
+      {},
       "/alpha/resources",
     )
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.config.command).toEqual(["uv", "/alpha/resources/office-mcp/server.py", "word", "/workspace"])
+    if (result.ok) expect(result.config.command).toEqual(["uv", "/alpha/resources/office-mcp/server.py", "word", "{workspace}"])
   })
-  test("workspace grants cannot inject engine config substitutions", () => {
+  test("workspace marker substrings are preserved without planner substitution", () => {
     const result = deriveMcpConfig(
-      { kind: "mcp", mcpType: "local", command: ["x", "{workspace}"] },
-      { workspace: "{file:/etc/passwd}" },
+      { kind: "mcp", mcpType: "local", command: ["x", "prefix-{workspace}", "{workspace}"] },
+      {},
     )
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.reason).toContain("substitution syntax")
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.config.command).toEqual(["x", "prefix-{workspace}", "{workspace}"])
   })
   test("the Alpha resource placeholder cannot select another bundled path", () => {
     const result = deriveMcpConfig(
       { kind: "mcp", mcpType: "local", command: ["python", "{alphaResources}/other.py", "{workspace}"] },
-      { workspace: "/workspace" },
+      {},
       "/alpha/resources",
     )
     expect(result.ok).toBe(false)

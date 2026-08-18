@@ -18,10 +18,11 @@ Parent requirement: [jinjunnn/alpha-work#64](https://github.com/jinjunnn/alpha-w
 
 The Hub does not manufacture install facts in the renderer. A verified signed catalog entry supplies
 the id, name, source, and local MCP command; the main-only planner re-derives the durable config from
-the selected entry and the user's grants. `{workspace}` was already the catalog's explicit directory
-grant. REQ-133 adds `{alphaResources}`, which main alone replaces with the packaged resource root.
-The packaged file is `resources/office-mcp/server.py`; a catalog cannot choose another host resource
-root through either placeholder.
+the selected entry and the user's grants. `{workspace}` is the catalog's explicit runtime workspace
+marker; [REQ-134](req-134-mcp-workspace-follows-instance.md) keeps it in durable config and binds it
+to the current instance directory at stdio spawn. REQ-133 adds `{alphaResources}`, which main alone
+replaces with the packaged resource root. The packaged file is `resources/office-mcp/server.py`; a
+catalog cannot choose another host resource root through either placeholder.
 
 The production MCP write choke point is `applyMcpWritePolicy`. Before REQ-133 it only provisioned and
 checked the community `excel-mcp-server`. Bundle and seed planning repeated that fact as a literal
@@ -54,8 +55,8 @@ The catalog ids, server names, tools, pins, and exact command arrays are one map
 
 These are the exact commands the alpha-web catalog cards should copy. Each card is independently
 installable. A bundle may reference them later, but phase-one atomic bundle/seed installation cannot
-carry a workspace grant and therefore rejects these members rather than persisting an unsandboxed
-config. The former community Excel coexistence allowance is superseded by
+install workspace-policy members and therefore rejects these commands rather than bypassing their
+sandbox contract. The former community Excel coexistence allowance is superseded by
 [REQ-135](req-135-retire-community-excel.md): the four-card Alpha Office shelf points at the four new
 ids above, and Hub Excel is `mcp:alpha-excel` only.
 
@@ -70,16 +71,19 @@ remains an optional, secondary read/conversion connector.
 - The only runtime transport is newline-delimited JSON-RPC over process stdin/stdout. The server CLI
   accepts exactly `<format> <absolute-workspace>`; it has no host, port, SSE, HTTP, or
   streamable-HTTP mode.
-- Main replaces `{alphaResources}` and `{workspace}`, then the MCP write policy canonicalizes the
-  packaged server file and existing granted directory before durable config is committed. Missing
-  resources or directories fail closed.
+- Main replaces `{alphaResources}`, canonicalizes the packaged server file, and requires the
+  workspace command slot to remain exactly `{workspace}` before durable config is committed. At
+  stdio spawn, the engine replaces that exact argument with the current `InstanceState.directory`;
+  a missing instance directory fails closed.
 - Every tool call requires an absolute path with the selected extension, rejects any literal `..`
   segment, resolves existing symlink components, and requires the result to remain below the
   canonical workspace root. The server never receives a general host filesystem root.
 - `office-advisories` accepts only the registry's exact `uv run --no-project`, dependency pins,
-  bundled script, format mode, and workspace command shape. Remote configs, URLs, extra transport or
-  host/port args, network-binding environment variables, `0.0.0.0`, relative paths, traversal, and
-  dependency drift fail loudly. Dependency upgrades require a new intake and pin change.
+  bundled script, format mode, and either the durable `{workspace}` marker or the exact absolute
+  workspace supplied to its runtime safety check. The main write policy narrows durable commands to
+  the marker. Remote configs, URLs, extra transport or host/port args, network-binding environment
+  variables, `0.0.0.0`, relative paths, traversal, and dependency drift fail loudly. Dependency
+  upgrades require a new intake and pin change.
 - The old archived Word/PowerPoint packages and ids stay denied. REQ-135 retires the separate
   community Excel pin; Alpha Excel still must not collapse its source, author, receipt, or provenance.
 - PDF write is bounded to textual document replacement/generation and appending text pages. It is

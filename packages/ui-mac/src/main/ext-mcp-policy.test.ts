@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { alphaOfficeInstallCommand } from "../shared/office-advisories"
+import { WORKSPACE_MARKER, alphaOfficeInstallCommand } from "../shared/office-advisories"
 import { applyMcpWritePolicy, persistMcpWithPolicy } from "./ext-mcp-policy"
 
 let tmp: string
@@ -57,22 +57,27 @@ describe("persistMcpWithPolicy — REQ-135 community Excel retirement", () => {
 })
 
 describe("persistMcpWithPolicy — REQ-133 Alpha Office workspace sandbox", () => {
-  test("main canonicalizes the granted workspace and bundled server path", () => {
-    const workspace = path.join(tmp, "project")
-    fs.mkdirSync(workspace)
+  test("main preserves the workspace marker and canonicalizes the bundled server path", () => {
     const server = {
       type: "local",
-      command: alphaOfficeInstallCommand("word").map((argument) => argument.replace("{workspace}", workspace)),
+      command: alphaOfficeInstallCommand("word"),
     } as Record<string, unknown>
     const result = persistMcpWithPolicy("alpha-word", server)
     expect(result.ok).toBe(true)
     const command = server.command as string[]
-    expect(command.at(-1)).toBe(fs.realpathSync(workspace))
+    expect(command.at(-1)).toBe(WORKSPACE_MARKER)
     expect(command.at(-3)).toBe(fs.realpathSync(path.resolve(import.meta.dir, "../../resources/office-mcp/server.py")))
   })
 
-  test("remote configs and missing workspace grants fail closed", () => {
+  test("remote configs and concrete or missing workspace arguments fail closed", () => {
     expect(persistMcpWithPolicy("alpha-word", { type: "remote", url: "http://127.0.0.1/mcp" }).ok).toBe(false)
+    const workspace = path.join(tmp, "project")
+    fs.mkdirSync(workspace)
+    const concrete = {
+      type: "local",
+      command: alphaOfficeInstallCommand("word").map((argument) => argument.replace("{workspace}", workspace)),
+    }
+    expect(persistMcpWithPolicy("alpha-word", concrete).ok).toBe(false)
     const missing = path.join(tmp, "missing")
     const server = {
       type: "local",

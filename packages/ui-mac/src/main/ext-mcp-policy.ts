@@ -11,6 +11,7 @@ import type { ConfigResult } from "./ext-config"
 import { persistMcp } from "./ext-config"
 import {
   ALPHA_OFFICE_CONNECTORS,
+  WORKSPACE_MARKER,
   alphaOfficeInstallCommand,
   checkAlphaOfficeMcpSafety,
   isAlphaOfficeMcp,
@@ -18,8 +19,9 @@ import {
 } from "../shared/office-advisories"
 import { resourcesRoot } from "./ext-fs-installer"
 
-/** Canonicalize the granted workspace and replace the catalog resource placeholder with Alpha's
- *  actual bundled server. Static command tokens/pins must already match the registry exactly. */
+/** Require the spawn-time workspace marker and replace the catalog resource placeholder with
+ *  Alpha's actual bundled server. Boot reconciliation owns legacy concrete-path migration.
+ *  Static command tokens/pins must already match the registry exactly. */
 function applyAlphaOfficeWorkspacePolicy(name: string, server: Record<string, unknown>): ConfigResult {
   if (!isAlphaOfficeMcp(name, server)) return { ok: true }
   const command = Array.isArray(server.command) && server.command.every((argument) => typeof argument === "string")
@@ -33,28 +35,27 @@ function applyAlphaOfficeWorkspacePolicy(name: string, server: Record<string, un
   if (
     command.length !== template.length ||
     template.some((argument, index) =>
-      argument !== "{workspace}" && !argument.includes("{alphaResources}") && command[index] !== argument,
+      argument !== WORKSPACE_MARKER && !argument.includes("{alphaResources}") && command[index] !== argument,
     )
   ) {
     return { ok: false, reason: `${connector.name} command differs from the pinned Alpha stdio command (REQ-133)` }
   }
-  const workspaceArg = command[template.indexOf("{workspace}")]
-  if (!workspaceArg || !path.isAbsolute(workspaceArg) || workspaceArg.split(/[\\/]/).includes("..")) {
-    return { ok: false, reason: `${connector.name} requires an absolute traversal-free workspace grant (REQ-133)` }
+  const workspaceArg = command[template.indexOf(WORKSPACE_MARKER)]
+  if (workspaceArg !== WORKSPACE_MARKER) {
+    return { ok: false, reason: `${connector.name} requires the exact workspace marker (REQ-134)` }
   }
   try {
-    const workspace = fs.realpathSync(workspaceArg)
     const alphaResources = fs.realpathSync(resourcesRoot())
     const serverPath = fs.realpathSync(path.join(alphaResources, "office-mcp", "server.py"))
     if (path.relative(alphaResources, serverPath).startsWith(`..${path.sep}`)) {
       return { ok: false, reason: `${connector.name} bundled server escaped Alpha resources (REQ-133)` }
     }
     server.command = template.map((argument) =>
-      argument.replace("{alphaResources}/office-mcp/server.py", serverPath).replace("{workspace}", workspace),
+      argument.replace("{alphaResources}/office-mcp/server.py", serverPath),
     )
-    return checkAlphaOfficeMcpSafety(name, server, workspace, alphaResources)
+    return checkAlphaOfficeMcpSafety(name, server, WORKSPACE_MARKER, alphaResources)
   } catch {
-    return { ok: false, reason: `${connector.name} workspace or bundled server is unavailable (REQ-133 fail-closed)` }
+    return { ok: false, reason: `${connector.name} bundled server is unavailable (REQ-133 fail-closed)` }
   }
 }
 
