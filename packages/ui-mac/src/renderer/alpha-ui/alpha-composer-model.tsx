@@ -81,12 +81,23 @@ export function ModelPickPop(props: {
   let loadedEpoch: string | undefined
   let lastAuthSignature: string | undefined
   let immediateRetryQueued = false
+  let silentTokenOnlyGeneration: number | null = null
+  // #1022 成功腿:静默换血成功后必然跟一次 SSE 重连(sidecar 换了),它是同一事件的回声 ——
+  // 消费一次并忽略,窗口外的 sse-reconnected 行为不变。
+  let sseQuietAfterSilentRotation = false
   let retryImmediately = (_reason: string) => {}
 
   const epochKey = () => `${props.directory() ?? ""}\u0000${composerModelProjection().sessionID ?? ""}`
   const isCurrent = (seq: number, epoch: string) => !disposed && seq === loadSeq && epoch === epochKey()
   const authSignature = (state: AuthState) =>
     `${state.status}\u0000${state.mode}\u0000${state.platformStatus ?? "ready"}\u0000${state.account?.email ?? ""}`
+  const authIdentitySignature = (state: AuthState) =>
+    JSON.stringify({
+      status: state.status,
+      mode: state.mode,
+      email: state.account?.email ?? "",
+      plan: state.account?.plan ?? null,
+    })
 
   const loadCatalog = (seq: number, epoch: string) => {
     void window.api.models
@@ -245,6 +256,9 @@ export function ModelPickPop(props: {
     clearTimeout(accountRetryTimer)
     retryAttempt = 0
     accountRetryAttempt = 0
+    // 全量重载开启新的呈现周期:上一个静默换血窗口(及其 SSE 回声抑制)不得跨周期存活。
+    silentTokenOnlyGeneration = null
+    sseQuietAfterSilentRotation = false
     setCatalog(null)
     setCatalogError(false)
     setAuth(knownAuth ? { status: "ready", data: knownAuth } : { status: "loading" })
@@ -278,6 +292,26 @@ export function ModelPickPop(props: {
     const unsubscribe = subscribeAuthState((state) => {
       if (authSignature(state) === lastAuthSignature) return
       lastAuthSignature = authSignature(state)
+      const current = auth()
+      // #1022:token-only 换血 = 同一身份下「recovering → ready」的一对 auth 事件,凭据换了、
+      // 目录没变 —— 两次都不重载,已渲染的账户/模型不得闪断(platformStatus 只有这两个值,
+      // 判据落在身份 + token 新鲜度上)。skip 的前提是 fail-closed 的:
+      //   · token 必须未过期 —— deriveState 对已过期 token 同样给 recovering 且不 respawn,
+      //     那种 recovering 没有 rotation 事件会来,skip 它就是把行留成可点的谎(B2)。
+      //     缺席 / 非有限 / 已到期一律视为过期,走 loadAll 如实呈现恢复中。正当的预换血路径
+      //     在发布 recovering 之前已写入新 token 的未来 expiresAt,不会被这道闸拦下。
+      //   · 当前视图必须已是同身份的 ready —— 视图还在 recovering 时收到 ready,必须重载恢复。
+      if (
+        state.status === "logged-in" &&
+        typeof state.expiresAt === "number" &&
+        Number.isFinite(state.expiresAt) &&
+        state.expiresAt > Date.now() &&
+        current.status === "ready" &&
+        current.data.status === "logged-in" &&
+        (current.data.platformStatus ?? "ready") === "ready" &&
+        authIdentitySignature(state) === authIdentitySignature(current.data)
+      )
+        return
       loadAll(state)
     })
     let receivedRuntimeState = false
@@ -291,19 +325,50 @@ export function ModelPickPop(props: {
         if (state.status !== "recovering") return
       }
       if (state.status === "recovering") {
+        if (state.reason === "token-only" && models().length > 0) {
+          silentTokenOnlyGeneration = state.generation
+          return
+        }
+        silentTokenOnlyGeneration = null
+        sseQuietAfterSilentRotation = false
         if (models().length > 0) setListState("recovering")
         return
       }
       if (state.status === "failed") {
+        sseQuietAfterSilentRotation = false
+        if (silentTokenOnlyGeneration === state.generation) {
+          silentTokenOnlyGeneration = null
+          if (models().length > 0) setListState("recovering")
+          retryImmediately("generation-failed")
+        }
         // #577 终态:引擎未通过健康线,不得当成 ready 触发立即重试;
         // 弹窗自身的封顶退避(REQ-083 scheduleRetry)继续自证。
         return
       }
+      // #1022 成功腿:静默窗口内的同代 token-only ready 不唤醒任何重载 —— 凭据换了、目录没变,
+      // retryImmediately 会把已 ready 的 listState 打回 recovering(「正在同步…」),正是本票
+      // 要消灭的闪断。只留一次 SSE 回声抑制,其余终态照旧唤醒。
+      if (state.status === "ready" && state.reason === "token-only" && silentTokenOnlyGeneration === state.generation) {
+        silentTokenOnlyGeneration = null
+        sseQuietAfterSilentRotation = true
+        return
+      }
+      silentTokenOnlyGeneration = null
+      sseQuietAfterSilentRotation = false
       // ready 与 injection-failed(#613)都证明引擎可达:唤醒停跑的链。注入失败下 list
       // 会成功返回引擎的真实清单,行按事实置灰,横幅解释真因 —— 不再是「正在同步」的谎。
       retryImmediately(state.status === "ready" ? "generation-ready" : "engine-config-lost")
     })
-    const unsubscribeSse = subscribeSseReconnected(() => retryImmediately("sse-reconnected"))
+    const unsubscribeSse = subscribeSseReconnected(() => {
+      // #1022:token-only 换血必然带来一次 SSE 重连。静默窗口内(rotation 还在跑)或刚静默
+      // 成功结束的那一次,都不得借 retryImmediately 把已渲染列表降成 recovering;窗口外照旧。
+      if (silentTokenOnlyGeneration !== null) return
+      if (sseQuietAfterSilentRotation) {
+        sseQuietAfterSilentRotation = false
+        return
+      }
+      retryImmediately("sse-reconnected")
+    })
     queueMicrotask(() => search?.focus())
     onCleanup(() => {
       unsubscribe?.()
