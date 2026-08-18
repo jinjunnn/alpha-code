@@ -989,10 +989,155 @@ describe("ModelPickPop production component", () => {
     mounted.dispose()
   })
 
-  test("已打开 picker 的 token-only 换血保持已渲染账户/模型静默，失败终态才回到 Syncing", async () => {
+  test("已打开 picker 的 token-only 换血:recovering 静默,成功腿 ready + SSE 重连仍静默且不重拉 list", async () => {
+    // #1022 B1(AC1 主路径):成功续期会再发 auth ready、同代 generation ready、SSE 重连 ——
+    // 三路都不得把已渲染的账户/模型打回「正在同步…」/「正在连接引擎」。listReads 是承重断言:
+    // 任何一路走了 loadAll / retryImmediately 都会多打一次 list。
     resetComposerModelProjection()
+    const account = { email: "quiet@alpha.dev", plan: "pro" }
+    let authNow: AuthState = {
+      status: "logged-in",
+      mode: "platform",
+      platformStatus: "ready",
+      account,
+      expiresAt: Date.now() + 15 * 60_000,
+    }
+    let authReads = 0
+    let authListener: ((state: AuthState) => void) | undefined
+    let listReads = 0
+    installApi({
+      auth: async () => {
+        authReads++
+        return authNow
+      },
+      onAuthSubscribe: (listener) => {
+        authListener = listener
+      },
+    })
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: {
+          list: async () => {
+            listReads++
+            return platformModels
+          },
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async () => {},
+        onPicked: () => {},
+      }),
+    )
+
+    await waitFor(() => expect(mounted.host.textContent).toContain("Pro"))
+    expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"])
+    await flush()
+    const settledListReads = listReads
+
+    // 预换血:main 先写入新 token 的未来 expiresAt,再发布同身份 recovering(经 owner 自读证实)。
+    authNow = { ...authNow, platformStatus: "recovering" }
+    const readsBeforeRecovering = authReads
+    authListener?.(authNow)
+    await waitFor(() => expect(authReads).toBeGreaterThan(readsBeforeRecovering))
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "recovering", generation: 11, reason: "token-only" },
+      }),
+    )
+    await flush()
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.syncing"])
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.engineConnecting"])
+    expect(mounted.host.textContent).toContain("Pro")
+    expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"])
+
+    // 成功腿三路:auth 回 ready、同代 generation ready、SSE 重连 —— 全部静默,一次 list 都不多打。
+    authNow = { ...authNow, platformStatus: "ready" }
+    const readsBeforeReady = authReads
+    authListener?.(authNow)
+    await waitFor(() => expect(authReads).toBeGreaterThan(readsBeforeReady))
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "ready", generation: 11, reason: "token-only" },
+      }),
+    )
+    window.dispatchEvent(new Event("alpha:sse-reconnected"))
+    await flush()
+    await flush()
+    expect(listReads).toBe(settledListReads)
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.syncing"])
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.engineConnecting"])
+    expect(mounted.host.textContent).toContain("Pro")
+    expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"])
+    mounted.dispose()
+  })
+
+  test("token-only 换血失败终态:如实回到 Syncing 并真的重拉 list(只改文案不重试必须红)", async () => {
+    // #1022 闸 2:同代 failed 除了呈现恢复语义,还必须真的走 retryImmediately —— 只断文案的话,
+    // 删掉 retryImmediately 照样绿(setListState("recovering") 也会让行显示「正在同步…」)。
+    resetComposerModelProjection()
+    installApi()
+    let listReads = 0
+    let holdRetry = false
+    const held = deferred<ModelV2Info[]>()
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: {
+          list: async () => {
+            listReads++
+            if (holdRetry) return held.promise
+            return platformModels
+          },
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async () => {},
+        onPicked: () => {},
+      }),
+    )
+
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"]))
+    await flush()
+    expect(listReads).toBe(1)
+
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "recovering", generation: 12, reason: "token-only" },
+      }),
+    )
+    await flush()
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.syncing"])
+
+    holdRetry = true
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "failed", generation: 12, reason: "token-only" },
+      }),
+    )
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    await waitFor(() => expect(listReads).toBe(2))
+    held.resolve(platformModels)
+    mounted.dispose()
+  })
+
+  test("过期凭据、无 rotation 在飞:同身份 recovering 不得静默,必须回到恢复语义(B2 fail-closed)", async () => {
+    // deriveState 对已过期 token 同样发同身份 recovering,且不 respawn —— 没有 generation 事件
+    // 会来收尾。skip 它就是 fail-open:行仍可点、横幅仍说 Pro。判据:expiresAt 已过期 ⇒ loadAll。
+    resetComposerModelProjection()
+    const account = { email: "quiet@alpha.dev", plan: "pro" }
+    let authNow: AuthState = {
+      status: "logged-in",
+      mode: "platform",
+      platformStatus: "ready",
+      account,
+      expiresAt: Date.now() + 15 * 60_000,
+    }
     let authListener: ((state: AuthState) => void) | undefined
     installApi({
+      auth: async () => authNow,
       onAuthSubscribe: (listener) => {
         authListener = listener
       },
@@ -1010,22 +1155,121 @@ describe("ModelPickPop production component", () => {
     await waitFor(() => expect(mounted.host.textContent).toContain("Pro"))
     expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"])
 
-    authListener?.({ status: "logged-in", mode: "platform", platformStatus: "recovering", account: loggedIn.account })
+    // token 已过期;不 dispatch 任何 runtime-recovery 事件 —— 这正是「没有 rotation 在飞」。
+    authNow = { ...authNow, platformStatus: "recovering", expiresAt: Date.now() - 1_000 }
+    authListener?.(authNow)
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    expect(mounted.host.textContent).not.toContain("本周期额度充足")
+    mounted.dispose()
+  })
+
+  test("#577 负向:从未进入静默窗口的 failed(structural / 代不匹配)不得触发额外 list 重拉", async () => {
+    // 静默腿的「同代 failed 立即重试」若回流到所有 failed,就推翻 #577 的终态语义。
+    resetComposerModelProjection()
+    installApi()
+    let listReads = 0
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: {
+          list: async () => {
+            listReads++
+            return platformModels
+          },
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async () => {},
+        onPicked: () => {},
+      }),
+    )
+
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"]))
+    await flush()
+    expect(listReads).toBe(1)
+
+    // structural recovering → failed:非 token-only,从未静默 —— failed 不得唤醒立即重试。
     window.dispatchEvent(
       new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "recovering", generation: 11, reason: "token-only" },
+        detail: { status: "recovering", generation: 5, reason: "structural" },
+      }),
+    )
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "failed", generation: 5, reason: "structural" },
       }),
     )
     await flush()
-    expect(mounted.host.textContent).not.toContain(zh["alpha.model.syncing"])
-    expect(mounted.host.textContent).toContain("Pro")
-    expect(mounted.host.textContent).toContain(zh["alpha.model.platformGroup"])
+    await flush()
+    expect(listReads).toBe(1)
 
+    // token-only 静默窗口开着,但 failed 的 generation 对不上 —— 同样不得重试。
     window.dispatchEvent(
       new CustomEvent("alpha:runtime-recovery", {
-        detail: { status: "failed", generation: 11, reason: "token-only" },
+        detail: { status: "recovering", generation: 6, reason: "token-only" },
       }),
     )
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "failed", generation: 7, reason: "boot" },
+      }),
+    )
+    await flush()
+    await flush()
+    expect(listReads).toBe(1)
+    mounted.dispose()
+  })
+
+  test("身份负向:不同 email 的 recovering 不得静默,必须重载(身份判据不能是常量)", async () => {
+    resetComposerModelProjection()
+    const account = { email: "quiet@alpha.dev", plan: "pro" }
+    let authNow: AuthState = {
+      status: "logged-in",
+      mode: "platform",
+      platformStatus: "ready",
+      account,
+      expiresAt: Date.now() + 15 * 60_000,
+    }
+    let authListener: ((state: AuthState) => void) | undefined
+    let listReads = 0
+    installApi({
+      auth: async () => authNow,
+      onAuthSubscribe: (listener) => {
+        authListener = listener
+      },
+    })
+    const mounted = mount(() =>
+      createComponent(ModelPickPop, {
+        contract: {
+          list: async () => {
+            listReads++
+            return platformModels
+          },
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        directory: () => "/workspace",
+        selected: () => null,
+        onSelect: async () => {},
+        onPicked: () => {},
+      }),
+    )
+
+    await waitFor(() => expect(mounted.host.textContent).toContain("Pro"))
+    await flush()
+    const settledListReads = listReads
+
+    // 换了身份的 recovering:token 新鲜也不许静默 —— 目录/账户语境已经换人。
+    authNow = {
+      status: "logged-in",
+      mode: "platform",
+      platformStatus: "recovering",
+      account: { email: "other@alpha.dev", plan: "pro" },
+      expiresAt: Date.now() + 15 * 60_000,
+    }
+    authListener?.(authNow)
+    await waitFor(() => expect(listReads).toBeGreaterThan(settledListReads))
     await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
     mounted.dispose()
   })
