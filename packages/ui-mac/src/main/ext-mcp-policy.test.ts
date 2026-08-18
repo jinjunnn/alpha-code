@@ -1,11 +1,11 @@
-// REQ-105 #254:MCP 写盘策略闸口 —— Excel workspace 沙箱强制(fail-closed)。
+// REQ-133 + REQ-135:MCP 写盘策略闸口 —— Alpha Office 固定命令与社区 Excel 退役。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { EXCEL_MCP_PIN, alphaOfficeInstallCommand } from "../shared/office-advisories"
-import { excelWorkspaceRoot, persistMcpWithPolicy } from "./ext-mcp-policy"
+import { alphaOfficeInstallCommand } from "../shared/office-advisories"
+import { applyMcpWritePolicy, persistMcpWithPolicy } from "./ext-mcp-policy"
 
 let tmp: string
 let prevWorkspace: string | undefined
@@ -27,42 +27,32 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true })
 })
 
-const excelServer = (env?: Record<string, unknown>) => ({
-  type: "local",
-  command: ["uvx", EXCEL_MCP_PIN.pinnedSpec, "stdio"],
-  ...(env ? { environment: env } : {}),
-})
-
-describe("persistMcpWithPolicy — Excel workspace sandbox", () => {
-  test("main 注入受管 EXCEL_FILES_PATH,覆盖 renderer 提供的越界值", () => {
-    const server = excelServer({ EXCEL_FILES_PATH: "/etc" }) as Record<string, unknown>
-    const r = persistMcpWithPolicy("excel-mcp-server", server)
-    expect(r.ok).toBe(true)
-    const managed = fs.realpathSync(excelWorkspaceRoot())
-    const env = server.environment as Record<string, unknown>
-    expect(env.EXCEL_FILES_PATH).toBe(managed) // 恶意 /etc 被 main 覆盖为受管根
-    expect(String(env.EXCEL_FILES_PATH)).toContain(path.join("Alpha", "excel-workspace"))
-    expect(fs.statSync(managed).isDirectory()).toBe(true) // 受管根已建立
+describe("persistMcpWithPolicy — REQ-135 community Excel retirement", () => {
+  test.each([
+    ["excel-mcp-server", ["uvx", "excel-mcp-server@0.1.8", "stdio"]],
+    ["renamed-sheets", ["uvx", "excel-mcp-server@0.1.8", "stdio"]],
+    ["renamed-sheets", ["uv", "run", "--with=excel-mcp-server==0.1.8", "server.py"]],
+    ["renamed-sheets", ["uv", "run", "-wexcel-mcp-server==0.1.8", "server.py"]],
+    ["renamed-sheets", ["uv", "run", "-qwexcel-mcp-server==0.1.8", "server.py"]],
+    ["renamed-sheets", ["uv", "run", "--with", " excel-mcp-server==0.1.8 ", "server.py"]],
+  ])("retired community Excel is denied by direct or renamed package identity (%s)", (name, command) => {
+    expect(persistMcpWithPolicy(name, { type: "local", command }).ok).toBe(false)
+    expect(fs.existsSync(path.join(tmp, "dot-alpha", "alpha.jsonc"))).toBe(false)
+    expect(fs.existsSync(path.join(tmp, "Alpha", "excel-workspace"))).toBe(false)
   })
 
-  test("缺 EXCEL_FILES_PATH 的 Excel server 被注入而非放行(不再 fail-open)", () => {
-    const server = excelServer() as Record<string, unknown>
-    const r = persistMcpWithPolicy("excel-mcp-server", server)
-    expect(r.ok).toBe(true)
-    const env = server.environment as Record<string, unknown>
-    expect(env.EXCEL_FILES_PATH).toBe(fs.realpathSync(excelWorkspaceRoot()))
-  })
+  test("ordinary MCP passthrough does not mutate its environment or provision the retired workspace", () => {
+    const environment = { KEEP_ME: "yes" }
+    const server = {
+      type: "local",
+      command: ["uvx", "markitdown-mcp@0.0.1a4"],
+      environment,
+    } as Record<string, unknown>
 
-  test("Excel server 违反其它不变量(远程 transport)仍 fail-closed", () => {
-    const r = persistMcpWithPolicy("excel-mcp-server", { type: "remote", url: "http://0.0.0.0:8017/sse" })
-    expect(r.ok).toBe(false)
-  })
-
-  test("非 Excel server 透传(零 workspace 干预)", () => {
-    const server = { type: "local", command: ["uvx", "markitdown-mcp@0.0.1a4"] } as Record<string, unknown>
-    const r = persistMcpWithPolicy("markitdown", server)
-    expect(r.ok).toBe(true)
-    expect(server.environment).toBeUndefined()
+    expect(applyMcpWritePolicy("markitdown", server)).toEqual({ ok: true })
+    expect(server.environment).toBe(environment)
+    expect(environment).toEqual({ KEEP_ME: "yes" })
+    expect(fs.existsSync(path.join(tmp, "Alpha", "excel-workspace"))).toBe(false)
   })
 })
 

@@ -129,7 +129,7 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
     lines: 1,
   },
   "packages/ui-mac/src/main/ext-config.test.ts": {
-    why: "锚 index.ts 里 ensureGovernedMcpConnectTimeouts() 必须排在第一次 spawnLocalServer( 之前 —— 比的是 indexOf 下标,不是执行序。两个不会让它变红的变异:①把该函数体改成直接 return(调用文本仍在);②把它算出来的超时值丢掉不写盘。index.ts 结构上进不了 bun。",
+    why: "锚 index.ts 里社区 Excel 退役必须以 extLedgerReady 为恢复 barrier,且主进程必须在第一次 spawnLocalServer( 前 await 它;ensureGovernedMcpConnectTimeouts() 也仍在第一次 spawn 之前 —— 比的是 indexOf 下标,不是执行序。两个不会让它变红的变异:①把退役或 timeout 函数体改成直接 return(调用文本仍在);②把算出的变更丢掉不写盘。index.ts 结构上进不了 bun;恢复等待/持锁/非终态 journal 的行为证据在 community-excel-retirement.test.ts。",
     evidence: "#551",
     lines: 1,
   },

@@ -32,6 +32,7 @@ import {
   LEGACY_PROTECTED_OWNER,
   PACKAGE_LEDGER_ENVELOPE_VERSION,
   bundleOwner,
+  computeInstalledGraphDigest,
   decodePackageClaimV1,
   decodePackageGraphV1,
   directUninstallVerdict,
@@ -1061,6 +1062,102 @@ export function removeRecordV2(root: string, kind: InstallReceiptType, name: str
   )
   if (!written.ok) return written
   return { ok: true, removed }
+}
+
+/**
+ * REQ-135 #1012: one-way retirement for the exact community Excel MCP. Unlike ordinary uninstall,
+ * this product migration must remove the record even when a package owns it. Any package graph that
+ * names the retired child is narrowed and re-digested in the same ledger commit, so no dangling claim
+ * or unknown graph child is ever durable. Unrelated records remain installed with valid ownership.
+ */
+export function retireCommunityExcelRecordV2(
+  root: string,
+): { ok: true; removed: boolean } | { ok: false; reason: string } {
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing community Excel retirement` }
+  if (corrupt)
+    return {
+      ok: false,
+      reason: `installs.json unreadable: ${ledgerPath(root)} — refusing community Excel retirement`,
+    }
+
+  const kind = "mcp"
+  const name = "excel-mcp-server"
+  const target = key(kind, name)
+  if (parsed.corruptRecords.corruptKeys.has(target))
+    return {
+      ok: false,
+      reason: `refusing community Excel retirement: ledger holds a corrupt v2 record for ${target}`,
+    }
+  if (parsed.corruptRecords.unattributable)
+    return {
+      ok: false,
+      reason: "refusing community Excel retirement: ledger holds an unattributable corrupt v2 record",
+    }
+
+  const inbound = validateV3State({
+    recordKeys: recordKeysOf([...parsed.records, ...parsed.rawCorruptRecords]),
+    packageGraphs: parsed.packageGraphs,
+    claims: parsed.claims,
+  })
+  if (!inbound.ok)
+    return {
+      ok: false,
+      reason: `refusing community Excel retirement: ledger state is not self-consistent: ${inbound.reason}`,
+    }
+
+  const graphMentionsTarget = parsed.packageGraphs.some(
+    (graph) =>
+      key(graph.root.kind, graph.root.name) === target ||
+      graph.children.some((child) => key(child.kind, child.name) === target),
+  )
+  const hasTarget =
+    graphMentionsTarget ||
+    parsed.claims.some((claim) => key(claim.kind, claim.name) === target) ||
+    parsed.records.some((record) => key(record.kind, record.name) === target) ||
+    parsed.receipts.some((receipt) => key(receipt.type, receipt.name) === target)
+  if (!hasTarget) return { ok: true, removed: false }
+
+  const removedGraphOwners = new Set(
+    parsed.packageGraphs
+      .filter((graph) => key(graph.root.kind, graph.root.name) === target)
+      .map((graph) => bundleOwner(graph.packageId, graph.root.manifestDigest)),
+  )
+  const packageGraphs = parsed.packageGraphs.flatMap((graph) => {
+    if (key(graph.root.kind, graph.root.name) === target) return []
+    const children = graph.children.filter((child) => key(child.kind, child.name) !== target)
+    if (children.length === graph.children.length) return [graph]
+    const narrowed = { ...graph, children }
+    return [{ ...narrowed, installedGraphDigest: computeInstalledGraphDigest(narrowed) }]
+  })
+  const claims = parsed.claims.flatMap((claim) => {
+    if (key(claim.kind, claim.name) === target) return []
+    const owners = claim.owners.filter((owner) => !removedGraphOwners.has(owner))
+    if (owners.length > 0) return [{ ...claim, owners }]
+    return [{ ...claim, owners: [LEGACY_PROTECTED_OWNER] }]
+  })
+  const nextRecords = [
+    ...parsed.records.filter((record) => key(record.kind, record.name) !== target),
+    ...parsed.rawCorruptRecords,
+  ]
+  const outbound = validateV3State({
+    recordKeys: recordKeysOf(nextRecords),
+    packageGraphs,
+    claims,
+  })
+  if (!outbound.ok)
+    return {
+      ok: false,
+      reason: `refusing community Excel retirement: outbound ledger would not be self-consistent: ${outbound.reason}`,
+    }
+  const written = writeLedgerFile(
+    root,
+    [...parsed.receipts.filter((receipt) => key(receipt.type, receipt.name) !== target), ...parsed.rawInvalidReceipts],
+    nextRecords,
+    { packageGraphs, claims },
+  )
+  if (!written.ok) return written
+  return { ok: true, removed: true }
 }
 
 export type DirectUninstallPlan =

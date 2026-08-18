@@ -23,6 +23,8 @@ import { setDesiredStateV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { probeTransactionJournals, resolveLiveGenerationDir } from "./ext-transaction"
 import { skillStorePaths } from "./ext-skill-generations"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
+import { evaluateAdvisoryGate } from "./ext-advisory-gate"
+import { applyMcpWritePolicy } from "./ext-mcp-policy"
 
 // #348:capability→authorize 闸生效后,首装会零副作用停在 stage="authorize"。本 helper 按生产
 // 同路重驱(确认展示的完整 requested 集);非 authorize 失败原样透传,不掩盖任何拒绝语义。
@@ -79,12 +81,21 @@ const mcpEntry: CatalogEntry = {
   installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "markitdown-mcp@0.0.1a4"], requiredEnvVars: ["API_KEY"] },
 }
 const mcpWorkspaceEntry: CatalogEntry = {
+  id: "mcp:workspace-demo",
+  type: "mcp",
+  name: "workspace-demo",
+  ...base,
+  version: "1.0.0",
+  installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "workspace-demo-mcp@1.0.0", "{workspace}"] },
+}
+const retiredCommunityExcelEntry: CatalogEntry = {
   id: "mcp:excel",
   type: "mcp",
-  name: "excel-mcp",
+  name: "excel-mcp-server",
   ...base,
-  version: "0.1.8",
-  installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "excel-mcp-server@0.1.8", "{workspace}"] },
+  source: "community",
+  version: "1.0.0",
+  installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "excel-mcp-server@0.1.8", "stdio"] },
 }
 const mcpRemoteEntry: CatalogEntry = {
   id: "mcp:linear",
@@ -204,11 +215,11 @@ function makeDeps(opts: {
     return ret
   }
   const installers: PlannerInstallers = {
-    // #378:策略闸口(缺省透传 ok;Excel 策略语义在专项测试注入)+ 版本化密钥原语(真写 tmp
+    // #378:策略闸口(缺省走生产纯策略;专项测试可注入故障)+ 版本化密钥原语(真写 tmp
     // 密钥目录,引用与落盘同参 —— live 回填/GC 断言拿真实路径)。
     applyMcpWritePolicy: (name: string, server: Record<string, unknown>) => {
       calls.push({ fn: "applyMcpWritePolicy", args: [name, server] })
-      return { ok: true as const }
+      return applyMcpWritePolicy(name, server)
     },
     mcpSecretRefFor: (name: string, verId: string, varName: string) => `{file:${path.join(tmp, "mcp-secrets", name, verId, varName)}}`,
     claimMcpSecretVersionDir: (name: string, verId: string) => {
@@ -522,7 +533,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
   test("REQ-099 #305 + #378:策略后 durable config 只保留策略字段与 {file:} 引用", async () => {
     const { deps } = makeDeps({
       installers: {
-        // 模拟策略闸口:main 策略原地注入受管字段(如 Excel EXCEL_FILES_PATH)
+        // Simulate a generic main-owned durable policy field.
         applyMcpWritePolicy: (_name, config) => {
           const c = config as { environment?: Record<string, unknown> }
           c.environment = { ...(c.environment ?? {}), MANAGED_ROOT: "/managed/root" }
@@ -627,15 +638,15 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
 
   test("workspace grant: required when declared, refused when not declared", async () => {
     const { deps } = makeDeps()
-    const missing = await installAuthorized({ catalogId: "mcp:excel", scope: { scope: "global" } }, deps)
+    const missing = await installAuthorized({ catalogId: "mcp:workspace-demo", scope: { scope: "global" } }, deps)
     expect(missing.ok).toBe(false)
     if (!missing.ok) expect(missing.reason).toContain("workspace grant required")
     const undeclared = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { workspace: "/ws" } }, deps)
     expect(undeclared.ok).toBe(false)
     const { deps: deps2 } = makeDeps()
-    const ok = await installAuthorized({ catalogId: "mcp:excel", scope: { scope: "global" }, grants: { workspace: "/ws/excel" } }, deps2)
+    const ok = await installAuthorized({ catalogId: "mcp:workspace-demo", scope: { scope: "global" }, grants: { workspace: "/ws/demo" } }, deps2)
     expect(ok.ok).toBe(true)
-    expect(mcpLeafOnDisk("excel-mcp")?.command).toEqual(["uvx", "excel-mcp-server@0.1.8", "/ws/excel"])
+    expect(mcpLeafOnDisk("workspace-demo")?.command).toEqual(["uvx", "workspace-demo-mcp@1.0.0", "/ws/demo"])
   })
 
   test("remote MCP: url from catalog, headers from template + granted secret", async () => {
@@ -653,9 +664,9 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
 
   test("cnMirror env values are main-side constants (renderer only expresses the preference)", async () => {
     const { deps } = makeDeps()
-    const r = await installAuthorized({ catalogId: "mcp:excel", scope: { scope: "global" }, grants: { workspace: "/ws", cnMirror: true } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:workspace-demo", scope: { scope: "global" }, grants: { workspace: "/ws", cnMirror: true } }, deps)
     expect(r.ok).toBe(true)
-    const env = recOf(mcpLeafOnDisk("excel-mcp")?.environment)
+    const env = recOf(mcpLeafOnDisk("workspace-demo")?.environment)
     expect(env.npm_config_registry).toBe("https://registry.npmmirror.com")
     expect(strOf(env.PIP_INDEX_URL)).toContain("tuna.tsinghua.edu.cn")
   })
@@ -843,6 +854,36 @@ describe("other kinds — derivation & records", () => {
     expect(cfg.mcp.clean).toEqual({ type: "local", command: ["uvx", "clean-mcp@1.0.0"] }) // MCP 进 config
     expect(findRecordV2(globalRoot, "skill", "demo")).not.toBeNull()
     expect(findRecordV2(globalRoot, "mcp", "clean")).not.toBeNull()
+  })
+
+  test("REQ-135 bundle rejects a renamed child that invokes excel-mcp-server", async () => {
+    const renamedExcel: CatalogEntry = {
+      ...mcpEntry,
+      id: "mcp:renamed-sheets",
+      name: "renamed-sheets",
+      installSpec: {
+        kind: "mcp",
+        mcpType: "local",
+        command: ["uvx", "excel-mcp-server@0.1.8", "stdio"],
+      },
+    }
+    const bundle: CatalogEntry = {
+      ...bundleEntry,
+      id: "bundle:renamed-sheets",
+      name: "renamed-sheets-bundle",
+      bundleItems: [{ catalogEntryId: renamedExcel.id, optional: false, installOrder: 1 }],
+    }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, renamedExcel, bundle] })
+
+    const result = await installAuthorized(
+      { catalogId: bundle.id, scope: { scope: "global" } },
+      deps,
+    )
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toContain("excel-mcp-server is retired")
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+    expect(findRecordV2(globalRoot, "mcp", renamedExcel.name)).toBeNull()
   })
 
   test("#303 bundle: skill child blobs go through shared CAS; populate materializes from CAS", async () => {
@@ -1466,6 +1507,51 @@ describe("#315 advisory 激活闸接线", () => {
     expect(r.reason).toContain("adv-test-1")
     expect(r.reason).toContain("R14")
     expect(calls.filter((c) => c.fn !== "downloadRemoteAsset").length).toBe(0) // 任何安装器都未被触达
+  })
+
+  test("REQ-135 community Excel synthetic catalog entry is denial-only; Alpha Excel identity is not matched", async () => {
+    const { deps, calls } = makeDeps({ entries: [retiredCommunityExcelEntry] })
+    const gated: PlannerDeps = {
+      ...deps,
+      advisoryGate: (input) => evaluateAdvisoryGate(null, input),
+    }
+    const retired = await installAuthorized({ catalogId: "mcp:excel", scope: { scope: "global" } }, gated)
+    expect(retired.ok).toBe(false)
+    if (!retired.ok) {
+      expect(retired.reason).toContain("retired community")
+      expect(retired.reason).toContain("REQ-135")
+    }
+    expect(installerCallCount(calls)).toBe(0)
+    expect(evaluateAdvisoryGate(null, { catalogId: "mcp:alpha-excel", name: "alpha-excel", provenance: "bundled" })).toEqual({ allowed: true })
+  })
+
+  test("REQ-135 stale office bundle cannot report success after its required community Excel child retires", async () => {
+    const staleOffice: CatalogEntry = {
+      ...bundleEntry,
+      id: "bundle:stale-office",
+      name: "stale-office",
+      bundleItems: [
+        { catalogEntryId: retiredCommunityExcelEntry.id, optional: false, installOrder: 1 },
+      ],
+    }
+    const { deps } = makeDeps({ entries: [retiredCommunityExcelEntry, staleOffice] })
+    const gated: PlannerDeps = {
+      ...deps,
+      advisoryGate: (input) =>
+        input.catalogId === retiredCommunityExcelEntry.id
+          ? evaluateAdvisoryGate(null, input)
+          : { allowed: true },
+    }
+
+    const result = await installAuthorized(
+      { catalogId: staleOffice.id, scope: { scope: "global" } },
+      gated,
+    )
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toContain("required bundle child \"mcp:excel\" is retired")
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+    expect(findRecordV2(globalRoot, "mcp", retiredCommunityExcelEntry.name)).toBeNull()
   })
 
   test("bundle child:命中 advisory 的子条目恒跳过(即使 required;REQ-105 语义并入统一闸)", async () => {

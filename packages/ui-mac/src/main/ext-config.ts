@@ -853,6 +853,67 @@ export function removeMcpConfigInLock(name: string): ConfigResult {
   }
   return { ok: true }
 }
+
+/**
+ * REQ-135 boot teardown: delete mcp[name] from the live engine target and every retained
+ * legacy copy the engine still merges. Missing files and missing leaves are successful
+ * no-ops and never create a file (`writeKeyUnlocked` would seed `{}`). Unreadable or
+ * unparseable copies fail closed. Caller must already hold the global bundle lock.
+ */
+export function removeMcpLeafCopiesUnlocked(
+  name: string,
+): { ok: true; removed: boolean } | { ok: false; reason: string } {
+  if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
+  const primary = mcpPluginTargetPath()
+  let removed = false
+  for (const target of [primary, ...legacyConfigPaths(primary)]) {
+    const one = removeMcpLeafFromExistingFile(target, name)
+    if (!one.ok) return one
+    if (one.removed) removed = true
+  }
+  return { ok: true, removed }
+}
+
+function removeMcpLeafFromExistingFile(
+  target: string,
+  name: string,
+): { ok: true; removed: boolean } | { ok: false; reason: string } {
+  let text: string
+  try {
+    text = fs.readFileSync(target, "utf8")
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === "ENOENT" || code === "ENOTDIR") return { ok: true, removed: false }
+    return {
+      ok: false,
+      reason: `config unreadable (fail closed): ${target}: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+
+  const errors: ParseError[] = []
+  const parsed: unknown = parse(text, errors, { allowTrailingComma: true, disallowComments: false })
+  if (errors.length > 0)
+    return { ok: false, reason: `config unparsable (fail closed): ${target}: ${errors.length} parse error(s)` }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return { ok: false, reason: `config root is not an object (fail closed): ${target}` }
+
+  const mcp = (parsed as Record<string, unknown>).mcp
+  if (mcp === undefined) return { ok: true, removed: false }
+  if (!mcp || typeof mcp !== "object" || Array.isArray(mcp))
+    return { ok: false, reason: `mcp key is not an object (fail closed): ${target}` }
+  if (!Object.hasOwn(mcp, name)) return { ok: true, removed: false }
+
+  const result = applyEdits(
+    text,
+    modify(text, ["mcp", name], undefined, {
+      formattingOptions: { tabSize: 2, insertSpaces: true },
+    }),
+  )
+  const written = writeConfigTextAtomic(target, text, result)
+  if (!written.ok) return { ok: false, reason: `config teardown write failed: ${target}: ${written.reason}` }
+  return { ok: true, removed: true }
+}
+
 function removeMcpUnlocked(name: string): ConfigResult {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid server name" }
   const primary = writeKeyUnlocked(mcpPluginTargetPath(), ["mcp", name], undefined)

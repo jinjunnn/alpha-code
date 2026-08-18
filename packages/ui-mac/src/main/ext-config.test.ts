@@ -131,13 +131,19 @@ describe("ensureGovernedMcpConnectTimeouts — boot reconcile", () => {
   })
 
   // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
-  test("ANCHOR (not a gate): main boot calls the reconcile before the first sidecar fork", () => {
+  test("ANCHOR (not a gate): main boot awaits recovered community Excel retirement before first fork", () => {
     const source = fs.readFileSync(path.join(import.meta.dir, "index.ts"), "utf8")
-    const reconcile = source.indexOf("  ensureGovernedMcpConnectTimeouts()")
+    const recovery = source.indexOf("  const { ledgerReady: extLedgerReady, ecosystemGlobalSkillInstaller }")
+    const retirement = source.indexOf("    : retireCommunityExcelAfterRecovery(extLedgerReady)")
+    const retirementAwait = source.indexOf("    const communityExcel = yield* Effect.promise(() => communityExcelRetirement)")
+    const timeout = source.indexOf("  ensureGovernedMcpConnectTimeouts()")
     const firstFork = source.indexOf("spawnLocalServer(hostname, port, password")
 
-    expect(reconcile).toBeGreaterThan(-1)
-    expect(firstFork).toBeGreaterThan(reconcile)
+    expect(recovery).toBeGreaterThan(-1)
+    expect(retirement).toBeGreaterThan(recovery)
+    expect(retirementAwait).toBeGreaterThan(retirement)
+    expect(firstFork).toBeGreaterThan(timeout)
+    expect(firstFork).toBeGreaterThan(retirementAwait)
   })
 })
 

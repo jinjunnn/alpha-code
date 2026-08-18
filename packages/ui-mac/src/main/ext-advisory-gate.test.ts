@@ -10,6 +10,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { evaluateAdvisoryGate, listAdvisoryBlockedFacts, makeAdvisoryGate } from "./ext-advisory-gate"
+import { ARCHIVED_OFFICE_ADVISORIES, RETIRED_COMMUNITY_OFFICE_CONNECTORS } from "../shared/office-advisories"
 import { setInstallStateByKey } from "./ext-install-planner"
 import { validateAdvisoriesDoc, type AdvisoriesDoc } from "./catalog-channels"
 import { refreshChannelCatalog } from "./catalog-channels"
@@ -103,17 +104,30 @@ describe("#315 新鲜度与来源(绝不退空集)", () => {
     expect(evaluateAdvisoryGate(stale, { catalogId: "skill:vector-demo", provenance: "seed" }).allowed).toBe(false) // stale 命中照拦
   })
 
-  test("office 静态基线(随包)对一切来源生效", () => {
-    const office = evaluateAdvisoryGate(null, { catalogId: "mcp:excel", provenance: "seed" })
-    // ARCHIVED_OFFICE_ADVISORIES 若含 excel 类条目则拦;至少断言机制在(以真实表首条为准)
-    void office
-    const { ARCHIVED_OFFICE_ADVISORIES } = require("../shared/office-advisories") as typeof import("../shared/office-advisories")
-    if (ARCHIVED_OFFICE_ADVISORIES.length > 0) {
-      const first = ARCHIVED_OFFICE_ADVISORIES[0]!
-      const hit = evaluateAdvisoryGate(null, { catalogId: first.catalogId, provenance: "seed" })
+  test("office 静态基线(随包)对一切来源生效;community Excel retired,Alpha Excel remains distinct", () => {
+    for (const provenance of ["remote", "cache", "bundled", "seed"] as const) {
+      const hit = evaluateAdvisoryGate(null, { catalogId: "mcp:excel", provenance })
       expect(hit.allowed).toBe(false)
       if (hit.allowed) throw new Error("unreachable")
-      expect(hit.advisoryId).toBe(`office:${first.catalogId}`)
+      expect(hit.advisoryId).toBe("office:mcp:excel")
+      expect(hit.reason).toContain("retired community")
+      expect(hit.reason).toContain("REQ-135")
+    }
+    const renamed = evaluateAdvisoryGate(null, {
+      catalogId: "mcp:renamed-sheets",
+      name: "excel-mcp-server",
+      provenance: "bundled",
+    })
+    expect(renamed.allowed).toBe(false)
+    if (renamed.allowed) throw new Error("unreachable")
+    expect(renamed.advisoryId).toBe("office:mcp:excel")
+    expect(evaluateAdvisoryGate(null, { catalogId: "mcp:alpha-excel", name: "alpha-excel", provenance: "seed" })).toEqual({ allowed: true })
+
+    for (const office of ARCHIVED_OFFICE_ADVISORIES) {
+      const hit = evaluateAdvisoryGate(null, { catalogId: office.catalogId, provenance: "seed" })
+      expect(hit.allowed).toBe(false)
+      if (hit.allowed) throw new Error("unreachable")
+      expect(hit.advisoryId).toBe(`office:${office.catalogId}`)
     }
   })
 })
@@ -283,11 +297,13 @@ describe("#315 review M3:非规范 catalog id 保守拦(catalog 面来源)", () 
 
 // ── #397 PR-B:浏览/推荐面的公示阻断事实(main 派生;renderer 禁静态表自判)────────────────────
 describe("#397 listAdvisoryBlockedFacts(只读呈现事实)", () => {
-  test("无已验公示:ids = 随包 office 基线;fresh = false(不可判定 ≠ 空集,如实上报)", () => {
-    const { ARCHIVED_OFFICE_ADVISORIES } = require("../shared/office-advisories") as typeof import("../shared/office-advisories")
+  test("无已验公示:ids = 随包 archived + retired office 基线;fresh = false", () => {
     const r = listAdvisoryBlockedFacts(dir)
     expect(r.fresh).toBe(false)
-    // office 静态基线全部在列(REQ-105 归档连接器)。
+    // Both static policies reach the Hub; archived Word/PPT and retired Excel retain distinct copy.
     for (const office of ARCHIVED_OFFICE_ADVISORIES) expect(r.ids).toContain(office.catalogId)
+    for (const office of RETIRED_COMMUNITY_OFFICE_CONNECTORS) expect(r.ids).toContain(office.catalogId)
+    expect(r.ids).toContain("mcp:excel")
+    expect(r.ids).not.toContain("mcp:alpha-excel")
   })
 })

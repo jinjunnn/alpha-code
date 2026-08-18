@@ -30,10 +30,11 @@ registry, so all four Alpha connectors take the same main-side path canonicaliza
 fail-closed treatment without four more package-name holes.
 
 The archived `office-word-mcp-server` and `office-powerpoint-mcp-server` advisories remain in force,
-including their old `mcp:word` and `mcp:powerpoint` ids. The existing `mcp:excel` /
-`excel-mcp-server@0.1.8` record remains a community connector governed by REQ-103 and REQ-105. It is
-not renamed, relabelled, or made the implementation of the Alpha Excel card. The checked-in
-`alpha-catalog.json` is a generated/offline snapshot and is not edited by this decision.
+including their old `mcp:word` and `mcp:powerpoint` ids. At REQ-133 acceptance, the existing
+`mcp:excel` / `excel-mcp-server@0.1.8` record remained a separate community connector; REQ-135 now
+supersedes that coexistence and retires it without renaming, relabelling, or making it the
+implementation of the Alpha Excel card. The checked-in `alpha-catalog.json` is a generated/offline
+snapshot and is not edited by either decision.
 
 ## Selected B
 
@@ -54,8 +55,9 @@ The catalog ids, server names, tools, pins, and exact command arrays are one map
 These are the exact commands the alpha-web catalog cards should copy. Each card is independently
 installable. A bundle may reference them later, but phase-one atomic bundle/seed installation cannot
 carry a workspace grant and therefore rejects these members rather than persisting an unsandboxed
-config. The former community Excel card may coexist as legacy catalog history, but the four-card
-Alpha Office shelf points at the four new ids above and never rewrites its authorship.
+config. The former community Excel coexistence allowance is superseded by
+[REQ-135](req-135-retire-community-excel.md): the four-card Alpha Office shelf points at the four new
+ids above, and Hub Excel is `mcp:alpha-excel` only.
 
 Third-party pinned intake (option A) is rejected for the card surface: it would retain four external
 MCP maintenance and transport contracts and would contradict the owner decision that the wrappers
@@ -78,8 +80,8 @@ remains an optional, secondary read/conversion connector.
   bundled script, format mode, and workspace command shape. Remote configs, URLs, extra transport or
   host/port args, network-binding environment variables, `0.0.0.0`, relative paths, traversal, and
   dependency drift fail loudly. Dependency upgrades require a new intake and pin change.
-- The old archived Word/PowerPoint packages and ids stay denied. The old community Excel safety pin
-  remains separate; adding Alpha Excel must not collapse source, author, receipt, or provenance.
+- The old archived Word/PowerPoint packages and ids stay denied. REQ-135 retires the separate
+  community Excel pin; Alpha Excel still must not collapse its source, author, receipt, or provenance.
 - PDF write is bounded to textual document replacement/generation and appending text pages. It is
   not a layout designer, print-fidelity editor, Office converter, digital-signature tool, or arbitrary
   PDF object editor.

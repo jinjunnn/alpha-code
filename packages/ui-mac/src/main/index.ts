@@ -114,6 +114,7 @@ import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byo
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 import { sweepEngineConfigDanglingUnlocked, type DanglingSweepOutcome } from "./engine-config-dangling"
 import { ensureGovernedMcpConnectTimeouts, withConfigWriteLock } from "./ext-config"
+import { retireCommunityExcelAfterRecovery } from "./community-excel-retirement"
 import { engineDataDir } from "./data-clear"
 import { reconcileDesiredStateAtBoot } from "./ext-install-planner"
 import { alphaGlobalRoot } from "./alpha-installs"
@@ -797,7 +798,7 @@ const main = Effect.gen(function* () {
         for (const w of ds.warnings) logger.warn(`[req104-395] desired-state reconcile: ${w}`)
         // r6 B2/B3:有未能保证的禁用项 → 置 fail-closed 位(spawn 前阻断引擎)。
         if (ds.enforcementGap && ds.enforcementGap.length > 0) {
-          bootEnforcementGap = ds.enforcementGap
+          bootEnforcementGap = [...(bootEnforcementGap ?? []), ...ds.enforcementGap]
           logger.error(
             "[req104-395] desired-state enforcement gap — disabled extensions cannot be guaranteed; blocking sidecar",
             { gap: ds.enforcementGap },
@@ -806,6 +807,7 @@ const main = Effect.gen(function* () {
       } catch (error) {
         // reconcile 自身抛错(不该发生 — 内部已捕获)= 无法确认禁用态 → fail-closed。
         bootEnforcementGap = [
+          ...(bootEnforcementGap ?? []),
           `desired-state reconcile threw: ${error instanceof Error ? error.message : String(error)}`,
         ]
         logger.error("[req104-395] desired-state reconcile crashed — blocking sidecar (fail closed)", error)
@@ -902,6 +904,11 @@ const main = Effect.gen(function* () {
     registryChannel,
     () => Effect.runPromise(Deferred.await(serverReady)),
   )
+  // REQ-135 retirement is a ledger mutation, so it waits for crash recovery and then takes the
+  // same global extension lock before touching config/receipts. The result is awaited pre-sidecar.
+  const communityExcelRetirement = TEST_ONBOARDING
+    ? Promise.resolve({ ok: true as const, configRemoved: false, receiptRemoved: false })
+    : retireCommunityExcelAfterRecovery(extLedgerReady)
   // REQ-032:启动预热远端 catalog(ETag 缓存;失败静默回退,进 hub 时再刷)
   void refreshRemoteCatalog(app.getPath("userData"), registryChannel).catch(() => {})
   // REQ-102 #318:CAS GC 生产触发(5min 首跑 + 24h 链式周期;锁忙/mark 根损坏 = 本轮跳过等下轮)。
@@ -1161,6 +1168,20 @@ const main = Effect.gen(function* () {
               outcome: errorOutcome(error),
             }),
         )
+    }
+
+    const communityExcel = yield* Effect.promise(() => communityExcelRetirement)
+    if (!communityExcel.ok) {
+      const gap = `REQ-135 community Excel retirement failed: ${communityExcel.reason}`
+      bootEnforcementGap = [...(bootEnforcementGap ?? []), gap]
+      logger.error("[req135-1012] community Excel retirement failed — blocking sidecar (fail closed)", {
+        reason: communityExcel.reason,
+      })
+    } else if (communityExcel.configRemoved || communityExcel.receiptRemoved) {
+      logger.log("[req135-1012] community Excel install retired", {
+        configRemoved: communityExcel.configRemoved,
+        receiptRemoved: communityExcel.receiptRemoved,
+      })
     }
 
     // S17 T3(C17+B14)DB 安全带预检:水位比对 → DB 超前阻断 / 将前进先备份 / 损坏走恢复

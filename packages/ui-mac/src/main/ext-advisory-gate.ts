@@ -9,7 +9,7 @@
 //     多记录命中任一 active 即拒;withdrawn 永不拦(rationale 仅留档);
 //   - 新鲜度(最大 stale 窗口 = advisories doc expires):remote/cache 来源的激活要求已验
 //     advisories LKG 在场且未过期,否则拦(冷启动/长期离线不得以"没有公示"放行 —— 绝不退
-//     空集);bundled/seed 来源(离线基线)由随包静态 office advisory 表兜底,LKG 在场时
+//     空集);bundled/seed 来源(离线基线)由随包静态 archived/retired office 表兜底,LKG 在场时
 //     (含 stale)其命中同样拦;
 //   - 每个操作**冻结一份 advisory 视图**(makeAdvisoryGate 一次读取),bundle fan-out 内
 //     多子条目共享同一视图,不受操作中途的公示刷新影响。
@@ -17,7 +17,12 @@
 // 非目标(#315 票面外,票面注记):app 启动/MCP 重连对**已启用存量**的再生效(仅告警面,
 // REQ-105 UI 已示);事务 crash recovery 前滚(恢复的是已授权操作,授权时点已过闸)。
 
-import { ARCHIVED_OFFICE_ADVISORIES, officeAdvisoryFor } from "../shared/office-advisories"
+import {
+  ARCHIVED_OFFICE_ADVISORIES,
+  RETIRED_COMMUNITY_OFFICE_CONNECTORS,
+  officeAdvisoryFor,
+  retiredCommunityOfficeFor,
+} from "../shared/office-advisories"
 import {
   BUILTIN_CATALOG_PUBKEY_B64,
   readAdvisoriesLKG,
@@ -70,7 +75,17 @@ export function evaluateAdvisoryGate(
   verified: { doc: AdvisoriesDoc; stale: boolean } | null,
   input: AdvisoryGateInput,
 ): AdvisoryGateResult {
-  // 随包静态基线(office 下架表,id/name 键):对一切来源生效(离线可判)。
+  // REQ-135 retired community connector is a teardown/deny fact, not an archived keep-installed
+  // advisory. It wins before remote freshness so offline seed/bundled activation cannot revive it.
+  const retiredOffice = retiredCommunityOfficeFor({ id: input.catalogId, name: input.name })
+  if (retiredOffice) {
+    return {
+      allowed: false,
+      advisoryId: `office:${retiredOffice.catalogId}`,
+      reason: "retired community office connector (REQ-135 bundled baseline)",
+    }
+  }
+  // REQ-105 archived Word/PPT baseline remains unchanged: deny new activation, keep installed rows.
   const officeHit = officeAdvisoryFor({ id: input.catalogId, name: input.name })
   if (officeHit) {
     return { allowed: false, advisoryId: `office:${officeHit.catalogId}`, reason: "archived office connector (REQ-105 bundled baseline)" }
@@ -126,7 +141,8 @@ export function makeAdvisoryGate(userDataPath: string, deps: ChannelClientDeps =
 /** #397 PR-B:浏览/推荐面的**只读公示阻断事实**(main 派生;renderer 不得用静态表自判)。
  *  ids = 当前会拦「新激活」的 catalogId 集:已验公示 LKG 的 active 记录(digest-scoped 记录同列 ——
  *  货架排除是保守方向,展示面不携带 digest 上下文,与闸的「缺 digest 保守拦」同语义)∪ 随包
- *  office 静态基线。fresh = 已验公示在场且未过 stale 窗(不可判定时如实 false —— 推荐面对
+ *  archived/retired office 静态基线。fresh = 已验公示在场且未过 stale 窗(不可判定时如实
+ *  false —— 推荐面对
  *  签名目录内容按闸语义整体保守,由调用方决定呈现)。 */
 export function listAdvisoryBlockedFacts(
   userDataPath: string,
@@ -138,6 +154,7 @@ export function listAdvisoryBlockedFacts(
   const verified = trust ? readAdvisoriesLKG(userDataPath, trust.doc, nowMs) : null
   const ids = new Set<string>()
   for (const office of ARCHIVED_OFFICE_ADVISORIES) ids.add(office.catalogId)
+  for (const office of RETIRED_COMMUNITY_OFFICE_CONNECTORS) ids.add(office.catalogId)
   if (verified) for (const r of verified.doc.records) if (r.status === "active") ids.add(r.catalogId)
   return { ids: [...ids].sort(), fresh: verified !== null && !verified.stale }
 }
