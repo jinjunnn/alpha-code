@@ -22,8 +22,9 @@ test(
     // #679:本文件已作为受托方登记进 scripts/gate-files.tsv,而 `pass > 0` 对受托方太松:
     // 把 cases 文件删到只剩一条,本闸照样绿,委派方就成了假闸门。改成**下界**(当前 45,留 ~11%
     // 余量吸收正常增删) —— 抓成片消失,不抓少一条。
-    const fail = output.match(/(\d+) fail\b/)?.[1]
-    const pass = Number(output.match(/(\d+) pass\b/)?.[1] ?? 0)
+    // 只认 bun 摘要行(`  0 fail`),不要匹配用例标题里的 `B2 fail-closed` / `10 fail` 子串。
+    const fail = output.match(/^\s*(\d+) fail\s*$/m)?.[1]
+    const pass = Number(output.match(/^\s*(\d+) pass\s*$/m)?.[1] ?? 0)
     expect({ fail, ranAtLeast40: pass >= 40 }, `子进程只跑了 ${pass} 条`).toEqual({ fail: "0", ranAtLeast40: true })
   },
   60_000,

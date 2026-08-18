@@ -1123,7 +1123,7 @@ describe("ModelPickPop production component", () => {
     mounted.dispose()
   })
 
-  test("过期凭据、无 rotation 在飞:同身份 recovering 不得静默,必须回到恢复语义(B2 fail-closed)", async () => {
+  test("过期凭据、无 rotation 在飞:同身份 recovering 不得静默,必须回到恢复语义", async () => {
     // deriveState 对已过期 token 同样发同身份 recovering,且不 respawn —— 没有 generation 事件
     // 会来收尾。skip 它就是 fail-open:行仍可点、横幅仍说 Pro。判据:expiresAt 已过期 ⇒ loadAll。
     resetComposerModelProjection()
