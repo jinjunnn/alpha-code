@@ -98,12 +98,13 @@ CAS 补充语义:
    bundled catalog entry**(绝不 effective remote/cache;id/type/version/逐文件
    path+sha256+bytes/聚合 payloadDigest/lock.catalogVersion 逐项交叉一致,任一漂移
    fail-closed)→ `verifySeedAsset` 两遍式(S6 symlink/realpath、S9、S10、S11 逐文件
-   sha256/bytes,**展开前拒绝**)→ `promoteSeedAssetToCas` 把**所选资产**的 blob 原子提升
-   进共享 CAS(不复制整个 seed)→ REQ-100 generation 事务从 CAS 物化(`populateFromCas`,
-   读取重验,缺失/篡改 = staging abort:零 live/staging/generation 残留,终态 aborted
-   journal 按引擎语义保留作恢复/审计证据)→ receipt v2 落账(语义派生自 bundled
-   entry;`ownership.distributed` 如实记 `bundled`)。边界:**skill + agent,global-only**
-   (mcp/plugin → #359);skill 版本门在**引擎 Bundle 锁内**经 precondition hook
+   sha256/bytes,**展开前拒绝**)后分流:global skill/agent/MCP 才以
+   `promoteSeedAssetToCas` 把**所选资产**的 blob 原子提升进共享 CAS(不复制整个 seed),其中
+   generation 从 CAS 物化(`populateFromCas`,读取重验);REQ-136 project 只接受 seed asset 与
+   bundled entry 均已验为 MCP 的形状,跳过 CAS promotion,直接提交 D/.alpha 下 config-only
+   transaction。两路 receipt v2 语义都派生自 bundled entry,且
+   `ownership.distributed` 如实记 `bundled`。Global skill 版本门在**引擎 Bundle 锁内**经
+   precondition hook
    执行(锁外判定有 TOCTOU):账本 strict 四态,损坏/已装无版本/不可比/更高已装一律
    fail-closed 拒,同版本重装幂等;安装**不 pin**(generation content rehash 即 GC mark
    root,#318)。
@@ -123,17 +124,19 @@ CAS 补充语义:
    `agent--<name>`;config 副 item **不声明** capabilities,不参与授权评估也不落授权账)。
    卸载(flat 通道)联动清除 `ext-store/agent--<name>[--config]/grants.json`(删除失败 =
    卸载失败且账本不动),重装重新弹确认。
-   **mcp seed(#359,2026-07-16 Codex 裁决)**:共享回表/交叉/CAS promote 后分派 config action
-   单事务(`mcp--<name>` item 写 `mcp.<name>` 叶)—— 安装语义派生自 bundled entry 的
+   **mcp seed(#359,REQ-136)**:共享回表/交叉/逐 blob 验证后分派 config action 单事务
+   (`mcp--<name>` item 写 `mcp.<name>` 叶)。Global 路径仍可 promote seed blob；project
+   路径不调用 CAS,因为该 blob 不是运行载荷。安装语义派生自 bundled entry 的
    `installSpec`,**CAS blob 只是离线携带字节,不是运行载荷**:本通道只承诺「离线完成配置
    安装」,local npm/uvx MCP 首次运行仍可能联网(诚实边界)。phase-1 fail-closed:seed intent
    无 grants 通道 —— secret-bearing(requiredEnvVars)/ workspace 占位 / Excel 族一律拒;
    纯 validator(`validateServer`,零写盘)在 plan 生成前跑命令头/inline-eval/URL/危险 env
-   安全门。锁内门 = 账本写前探测 + 版本门(kind 泛化:downgrade/不可比拒,同版本幂等)+
+   安全门；project 同时要求 `requiredEnvVars=[]` 并拒 `{workspace}`/workspace-policy 分类。
+   锁内门 = 账本写前探测 + 版本门(kind 泛化:downgrade/不可比拒,同版本幂等)+
    无账 config 叶拒认领 + 形状异常 fail-closed。成功 outcome 不回传 config；main 在 durable
-   commit 后经 authenticated v2 client `POST /global/dispose` → `GET /mcp` 让 engine
-   重载并即时建连，preload 只返回 MCP reference + status。事务内绝不触 `persistMcp`/
-   `withConfigWriteLock`(非重入自锁)。
+   global commit 后经 authenticated v2 client `POST /global/dispose` → `GET /mcp` 让 engine
+   重载并即时建连；project commit 在 consent 与 D-scoped provenance 未证明前不借用 name-only
+   status。事务内绝不触 `persistMcp`/`withConfigWriteLock`(非重入自锁)。
    **plugin seed(#359,r1 review 结构性修正)**:CAS 字节 = 离线运行载荷(payload 必含顶层
    `plugin.js`;npm plugin 显式拒 —— 无 seed blob 保证的离线运行语义;名称含 `--` 拒,同 agent
    key 方案纪律)。载荷**不做锁外 staging** —— 每个载荷文件是同一事务里的 **file action item**
@@ -243,10 +246,11 @@ CAS 补充语义:
   入口及冻结配置；`inspect` 只改 `dryRun=true`，`collect` 使用 `dryRun=false`。手动轮次之间在
   adapter 内单飞，跨定时轮次/进程/事务仍由上述 CAS/Bundle 锁裁决。renderer 只收到稳定状态码
   与五项聚合计数，不收到 `reason`、digest、路径或 warning 明细。
-- **project 根不参与 mark = 合同行为**
-  (ADR-030 / #362 裁决:project-scoped catalog/seed generation 已收回,受支持的 catalog
-  generation 仅存在于 dev/prod/beta 环境根 —— 见 §6;#318 完成矩阵的 project 项由验收
-  owner 按该措辞修订)。
+- **project 根不参与 mark = 合同行为**。REQ-136 的 direct/seed project MCP 都只有一个
+  config action：journal `files` 恰为空、generation id 为 `gen-000000-000000`、无 generation
+  与 prepared resource，且 seed 仅执行 read-only `verifySeedAsset`、不调用 CAS promotion。
+  因而受支持的 catalog generation 仍只存在于 dev/prod/beta；任一未来 project kind/payload
+  破坏这些前提前必须先设计 project GC。
 
 ## 4. 兼容红线
 
@@ -269,23 +273,37 @@ CAS 补充语义:
 | file action 引擎语义(#358:file+config 原子 / 缺席≠零字节 / 崩溃恢复前滚·回滚 / 旁路改写 fail-closed) | `packages/ui-mac/src/main/ext-transaction-file.test.ts` |
 | GC 生产触发(#318:调度语义 / 权威配置取值点 / outcome 分类;promote 窗口 mtime 回归在 gc.test。#367:worker 事件终态矩阵(fake 驱动)+ workerData/摘要严格解码矩阵 + 真 worker 冒烟 + 构建入口 wiring 守卫) | `packages/ui-mac/src/main/ext-cas-gc-scheduler.test.ts` |
 | Settings/CAS-GC typed adapter(#432:校验、revision CAS、失败恢复、脱敏、手动轮次与 renderer 聚合白名单) | `packages/ui-mac/src/main/settings-adapters.test.ts` |
-| project 收回:catalog/seed/bundle 统一拒绝 + 遗留管理面 + generation teardown(#372) | `packages/ui-mac/src/main/ext-install-planner.test.ts` |
+| project verified-MCP kind gate + direct config-only/零 CAS + root-local removal；其它 kind 继续拒绝(REQ-136/#372) | `packages/ui-mac/src/main/ext-install-planner.test.ts` |
+| project seed MCP typed intent + verify-only/零 CAS/config-only journal + tamper refusal | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
+| project exact-root lazy recovery + crash-replayed MCP uninstall | `packages/ui-mac/src/main/ext-write-channels.test.ts` / `packages/ui-mac/src/main/ext-recovery-gate.test.ts` |
+| project/global same-name byte-preserving removal | `packages/ui-mac/src/main/ext-config.test.ts` |
+| project activation provenance: global hit/leaf mismatch shadowed，JSONC/identity/status 不可证明时 unverifiable，name-only status 不得借用 | `packages/ui-mac/src/main/ext-mcp-activation.test.ts` |
 | project 残留检测/显式清理(journal 在场 fail-closed / 幂等 / 移动项目单项拒) | `packages/ui-mac/src/main/ext-project-residuals.test.ts` |
 | 第一方六动作 wiring:installCatalog intent 恒 scope=global | `packages/ui-mac/src/renderer/extensions/install-scope-wiring.test.ts` |
 
-## 6. project scope 收回(ADR-030,REQ-098 #362/#372)
+## 6. project scope 窄例外(ADR-030,REQ-136)
 
 REQ-136 的窄例外仅允许已验 MCP 走 project config-only 安装,其完整边界与落地前 runtime 状态见
 [`../design/req-136-project-mcp-install.md`](../design/req-136-project-mcp-install.md);skill/agent 与其它未点名 project 安装仍按本节拒绝。
 
-- **新增安装**:`installCatalog` 在 decode 后、resolveEntry/seed 分流与任何副作用之前统一拒绝
-  `scope=project`(catalog / seed / bundle 三形态同一合同),稳定 reason:
-  `project-scoped catalog/seed installation is unsupported — use project-local import/register`;
-  wire/decode 形状保留(协议不破坏),`resolveScope` 另有防御性拒绝。项目本地技能能力
-  不受影响 —— 走 `<project>/.alpha/skills` + project config hook 的非 generation 路径。
-- **遗留管理面独立**:卸载/禁用的 project allowlist(skill/agent)与安装策略分离,
-  绝不因收回而封死残留清理;project skill 残留带 generation store 时,卸载走 journaled
-  store+ledger teardown(删受控 `ext-store` + 对应账本),不落 flat 删除。
+- **新增安装**:`installCatalog` 严格 decode 后由 main 解析已验事实。Standalone 仅
+  `entry.type === "mcp"` 可进 project；seed 必须 selected asset 与同包 bundled entry 都解析为
+  MCP 且 `verifySeedAsset` 全过。Renderer id 前缀不算 kind 证据；skill/agent/plugin/bundle/cloud/
+  signed-package/unlisted 均拒。事务根由 canonical D 派生为 `D/.alpha`，唯一 config target 是
+  `D/.alpha/alpha.jsonc`，receipt/journal 同根；不写 `extensionsConsent`，不写进
+  `OPENCODE_CONFIG`/`OPENCODE_CONFIG_CONTENT`，也不造第二个项目注册表。
+- **安全子集与管理面**:project MCP 要求零 required env、零 secret version、零 secret/workspace
+  grant，并拒 literal `{workspace}` 与 workspace-policy classifier 命中。每次 project write/uninstall
+  经 per-root gate 惰性恢复恰好 D；D 根及 `alpha.jsonc`/`installs.json`/`ext-tx`/`ext-store`
+  既有端点在恢复前与 transaction 紧前复验，symlink/非常规文件 fail-closed。MCP 卸载只删 D 的
+  config leaf、D 授权账与 D receipt，绝不调用 global legacy-config/secret/connection cleanup。
+  Global 与 project 同名卸载互不改写对方字节。
+  Project skill/agent 历史残留仍保留原管理面；generation-backed skill 继续 journaled teardown。
+- **发现与激活**:project MCP 仍只由既有 per-instance hook 读取 `D/.alpha/alpha.jsonc`；安装不写
+  `extensionsConsent`，也不执行 session-switch writer。Main 的 D-scoped probe 先排除 effective global
+  同名项，再要求 D 的 effective MCP leaf 与 durable project leaf 精确一致，最后才查询 D-scoped
+  name-only status；只返回 `active | shadowed | unverifiable`，不回传 config bytes，shadowed/
+  unverifiable 永不折叠成 connected。Hub copy/controls 由 #1017 接线。
 - **残留处置**:项目打开位点(`ext-external-check`)只读 loud 报告;
   `ext-project-residuals-check`(只读)/`ext-project-residuals-clean`(显式)双通道。
   清理的可证明性前提(任一失据即**整单拒**,零自动删除、零全盘扫描):账本文件可读、

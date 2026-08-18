@@ -12,11 +12,12 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { CatalogEntry } from "../renderer/extensions/catalog-types"
+import type { ElectronAPI } from "../preload/types"
 import { curationBlobUrl } from "../shared/catalog-curation"
 import { casBlobPath, hasCasBlob } from "./ext-cas"
 import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from "./ext-manifest-v2"
 import { findRecordV2, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
-import { resolveLiveGenerationDir } from "./ext-transaction"
+import { probeTransactionJournals, readTransactionJournal, resolveLiveGenerationDir } from "./ext-transaction"
 import { installSkillGeneration, skillGenerationKey } from "./ext-skill-generations"
 import { seedBlobPath, type SeedLock } from "./ext-seed"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
@@ -25,6 +26,7 @@ import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import {
   compareVersionsSafe,
   installCatalog,
+  resolveCatalogInstallWriteRoot,
   setInstallStateByKey,
   synthesizeManifest,
   uninstallByKey,
@@ -193,6 +195,7 @@ function forbiddenInstallers(): PlannerInstallers {
     legacyMcpRefPaths: forbid("legacyMcpRefPaths"),
     readMcpLeafStrict: forbid("readMcpLeafStrict"),
     removeMcpConfigInLock: forbid("removeMcpConfigInLock"),
+    removeProjectMcpConfigInLock: forbid("removeProjectMcpConfigInLock"),
     removeMcpSecretsStrict: forbid("removeMcpSecretsStrict"),
     releaseAlphaConnectionBindings: forbid("releaseAlphaConnectionBindings"),
     findPluginBaseConflictStrict: forbid("findPluginBaseConflictStrict"),
@@ -307,12 +310,14 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
     expect(fs.readFileSync(blob, "utf8")).toBe(SKILL_MD)
   })
 
-  test("refuses non-global scope (ADR-030 统一收回合同,先于 seed 通道)", async () => {
+  test("project seed resolves and verifies both seed + bundled facts, then rejects a non-MCP kind before CAS", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
     const r = await installAuthorized({ source: "seed", assetId: "skill:hello", scope: { scope: "project", projectDir: tmp } }, makeSeedDeps())
     expect(r.ok).toBe(false)
     if (r.ok) return
-    expect(r.reason).toContain("project-scoped catalog/seed installation is unsupported")
+    expect(r.reason).toContain("supports verified MCP entries only")
+    expect(fs.existsSync(path.join(casBase, "cas"))).toBe(false)
+    expect(fs.existsSync(path.join(tmp, ".alpha"))).toBe(false)
   })
 
   test("refuses unknown keys / grants / non-seed source on the seed intent form", async () => {
@@ -855,6 +860,12 @@ function bundledMcpEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
   } as CatalogEntry
 }
 const mcpSeedIntent = { source: "seed", assetId: "mcp:demo", scope: { scope: "global" } }
+const projectMcpSeedIntent = (projectDir: string) =>
+  ({
+    source: "seed",
+    assetId: "mcp:demo",
+    scope: { scope: "project", projectDir },
+  }) satisfies Parameters<ElectronAPI["ext"]["installCatalog"]>[0]
 const mcpDeps = (overrides: Partial<CatalogEntry> = {}) => makeSeedDeps({ bundledEntries: [bundledMcpEntry(overrides)] })
 const readCfg = (): Record<string, unknown> => {
   const cfg: unknown = parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
@@ -883,6 +894,112 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
     expect(rec!.version).toBe("1.0.0")
     expect(rec!.payloadDigest).toBe(aggregateFilesDigest(lockFileEntries(MCP_FILES, { writeBlobs: false })))
     expect(fs.existsSync(capabilityGrantPath(globalRoot, "mcp--demo"))).toBe(true)
+  })
+
+  test("REQ-136 typed project MCP seed verifies bytes and commits one D-only config item with zero CAS", async () => {
+    buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
+    const project = path.join(tmp, "project-seed-mcp")
+    const projectRoot = path.join(project, ".alpha")
+    fs.mkdirSync(project, { recursive: true })
+    let casCalls = 0
+    const deps: PlannerDeps = {
+      ...mcpDeps(),
+      casBaseRoot: () => {
+        casCalls++
+        throw new Error("project MCP seed must not resolve the CAS base")
+      },
+    }
+
+    expect(await resolveCatalogInstallWriteRoot(projectMcpSeedIntent(project), deps)).toEqual({
+      ok: true,
+      root: path.join(fs.realpathSync(project), ".alpha"),
+    })
+
+    const result = await installAuthorized(projectMcpSeedIntent(project), deps)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.kind).toBe("mcp")
+    const config: unknown = parse(fs.readFileSync(path.join(projectRoot, "alpha.jsonc"), "utf8"))
+    if (!isRec(config) || !isRec(config.mcp)) throw new Error("project mcp config missing")
+    expect(config.mcp.demo).toEqual(EXPECTED_MCP)
+    const record = findRecordV2(projectRoot, "mcp", "demo")
+    expect(record?.scope.kind).toBe("project")
+    if (record?.scope.kind === "project") expect(record.scope.projectPath).toBe(fs.realpathSync(project))
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+    expect(fs.existsSync(path.join(globalRoot, "installs.json"))).toBe(false)
+    expect(fs.existsSync(path.join(casBase, "cas"))).toBe(false)
+    expect(casCalls).toBe(0)
+
+    const journals = probeTransactionJournals(projectRoot)
+    expect(journals.entries).toHaveLength(1)
+    const journal = readTransactionJournal(projectRoot, journals.entries[0]!.txId)
+    expect(journal?.items).toHaveLength(1)
+    expect(journal?.items[0]).toMatchObject({
+      key: "mcp--demo",
+      action: "config",
+      genId: "gen-000000-000000",
+      files: [],
+      config: { target: path.join(fs.realpathSync(project), ".alpha", "alpha.jsonc") },
+    })
+    expect(journal?.prepared ?? []).toEqual([])
+    expect(fs.existsSync(path.join(projectRoot, "ext-store", "mcp--demo", "generations"))).toBe(false)
+    expect(fs.existsSync(path.join(projectRoot, "prefs.json"))).toBe(false)
+  })
+
+  test("REQ-136 project MCP seed rejects a tampered selected blob before config/CAS", async () => {
+    const lock = buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
+    const project = path.join(tmp, "project-seed-tampered")
+    fs.mkdirSync(project, { recursive: true })
+    fs.writeFileSync(seedBlobPath(seedDir, lock.assets[0]!.files[0]!.sha256)!, "tampered")
+    let casCalls = 0
+    const deps: PlannerDeps = {
+      ...mcpDeps(),
+      casBaseRoot: () => {
+        casCalls++
+        return casBase
+      },
+    }
+
+    const admission = await resolveCatalogInstallWriteRoot(projectMcpSeedIntent(project), deps)
+    expect(admission.ok).toBe(false)
+    const result = await installAuthorized(projectMcpSeedIntent(project), deps)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/size MISMATCH|sha256 MISMATCH/)
+    expect(casCalls).toBe(0)
+    expect(fs.existsSync(path.join(project, ".alpha"))).toBe(false)
+    expect(fs.existsSync(path.join(casBase, "cas"))).toBe(false)
+  })
+
+  test("REQ-136 project MCP seed revalidates D after verification and refuses a late root swap", async () => {
+    buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
+    const project = path.join(tmp, "project-seed-late-swap")
+    const projectRoot = path.join(project, ".alpha")
+    const outside = path.join(tmp, "outside-seed-root")
+    fs.mkdirSync(project, { recursive: true })
+    fs.mkdirSync(outside, { recursive: true })
+    const sentinel = path.join(outside, "sentinel")
+    fs.writeFileSync(sentinel, "outside-stays-exact")
+    const base = mcpDeps()
+    const deps: PlannerDeps = {
+      ...base,
+      installers: {
+        ...base.installers,
+        applyMcpWritePolicy: () => {
+          fs.symlinkSync(outside, projectRoot)
+          return { ok: true }
+        },
+      },
+    }
+
+    const result = await installCatalog(projectMcpSeedIntent(project), deps)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toContain("root identity changed")
+    expect(fs.lstatSync(projectRoot).isSymbolicLink()).toBe(true)
+    expect(fs.readFileSync(sentinel, "utf8")).toBe("outside-stays-exact")
+    expect(fs.existsSync(path.join(outside, "ext-tx"))).toBe(false)
+    expect(fs.existsSync(path.join(outside, "alpha.jsonc"))).toBe(false)
+    expect(fs.existsSync(path.join(outside, "installs.json"))).toBe(false)
+    expect(fs.existsSync(path.join(casBase, "cas"))).toBe(false)
   })
 
   test("首装停在 authorize(requested = 严格解码 manifest 能力集),零权威副作用", async () => {

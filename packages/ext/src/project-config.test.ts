@@ -80,6 +80,26 @@ describe("mergeProjectConfig — trust gate on executable mcp", () => {
     expect(r.gatedExecutable).toEqual([])
   })
 
+  test("TRUSTED same-name MCP preserves the effective/global leaf and only adds absent project names", () => {
+    const globalLeaf = { type: "local", command: ["npx", "global-owner"] }
+    const cfg: Record<string, unknown> = { mcp: { shared: globalLeaf } }
+    const result = mergeProjectConfig(
+      cfg,
+      j({
+        mcp: {
+          shared: { type: "local", command: ["npx", "project-owner"] },
+          extra: { type: "local", command: ["npx", "project-extra"] },
+        },
+      }),
+      { trustExecutable: true },
+    )
+
+    if (!cfg.mcp || typeof cfg.mcp !== "object" || Array.isArray(cfg.mcp)) throw new Error("mcp merge missing")
+    expect((cfg.mcp as Record<string, unknown>).shared).toBe(globalLeaf)
+    expect((cfg.mcp as Record<string, unknown>).extra).toEqual({ type: "local", command: ["npx", "project-extra"] })
+    expect(result.added).toContain("mcp.*")
+  })
+
   test("no mcp in project → nothing gated even when untrusted", () => {
     const cfg: Record<string, any> = {}
     const r = mergeProjectConfig(cfg, j({ agent: { a: { prompt: "x" } } }))

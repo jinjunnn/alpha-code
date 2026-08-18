@@ -99,6 +99,23 @@ function configTruthInRootGate(root: string, truthPath: string): { ok: true } | 
   }
 }
 
+/** REQ-136 C2:the write-channel gate proves D before asynchronous catalog work. Reprove the exact
+ * project root and every transaction-owned endpoint immediately before the transaction creates its
+ * lock, then repeat inside the lock before config preparation. */
+function projectMcpWriteIdentityGate(
+  root: string,
+  target: string,
+): { ok: true } | { ok: false; reason: string } {
+  try {
+    assertProjectMcpTransactionRootIdentity(root)
+  } catch {
+    return { ok: false, reason: "project MCP root identity changed before commit — refused" }
+  }
+  if (path.resolve(target) !== path.resolve(path.join(root, "alpha.jsonc")))
+    return { ok: false, reason: "project MCP config target is not D/.alpha/alpha.jsonc — refused" }
+  return { ok: true }
+}
+
 /** #378 r1(Major):cloud 重装的锁内 desiredState 漂移门 —— plan 快照在锁外读,锁内重读
  *  不一致即拒(否则并发 disable 会被旧快照写回 enabled)。导出供直接单测。 */
 export function cloudDesiredStateGate(
@@ -169,10 +186,10 @@ import {
   type SkillGenerationEntry,
   type SkillPayloadFile,
 } from "./ext-skill-generations"
-import { promoteSeedAssetToCas, readPackagedSeed, type SeedAsset } from "./ext-seed"
+import { promoteSeedAssetToCas, readPackagedSeed, verifySeedAsset, type SeedAsset } from "./ext-seed"
 import { casBlobPath, materializeFilesFromCas, putCasBlobFromBuffer, readCasBlobVerified } from "./ext-cas"
 import { isSafeRelPath } from "./ext-atomic-fs"
-import { validateServer } from "./ext-config"
+import { assertProjectMcpTransactionRootIdentity, validateServer } from "./ext-config"
 import { prepareConfigTx, applyConfigImage, type ConfigEdit } from "./ext-config-tx"
 import { collectImportSkillPayload, resourcesRoot } from "./ext-fs-installer"
 import { checkUncuratedConflict, type UncuratedOrigin } from "./ext-uncurated-record"
@@ -512,10 +529,13 @@ export type PlannerInstallers = {
   /** #354(必改 2):可失败的严格 leaf 前像读 —— 「不存在」= 合法 undefined,「不可读/形状异常」
    *  必须写前拒绝(#378 起前像本体由引擎 config action 整文件 image journaled,此读只作产品语义
    *  早拒 + 锁内 precondition 重验)。 */
-  readMcpLeafStrict(name: string): { ok: true; value: Record<string, unknown> | undefined } | { ok: false; reason: string }
+  readMcpLeafStrict(name: string, targetPath?: string): { ok: true; value: Record<string, unknown> | undefined } | { ok: false; reason: string }
   /** #346:journaled MCP 卸载的 in-lock 原语 —— 仅删配置副本(主+legacy),零账本副作用,
    *  失败如实返回(legacy 不可读也算失败)。**只在 uninstallExtensionTransaction 锁内调用**。 */
   removeMcpConfigInLock(name: string): ConfigOutcome
+  /** REQ-136:project MCP 的 root-parametric in-lock 删除原语。只删 `<root>/alpha.jsonc`
+   *  的目标 leaf；不触碰 global/legacy 配置、密钥或连接绑定。 */
+  removeProjectMcpConfigInLock(root: string, name: string): ConfigOutcome
   /** #346:严格密钥吊销 —— 失败可观察(journal 据此保持非终态);目录缺失 = 幂等成功。
    *  整 server 目录删除,天然覆盖 #378 的全部版本目录 + legacy flat。 */
   removeMcpSecretsStrict(name: string): { ok: true } | { ok: false; reason: string }
@@ -756,24 +776,30 @@ function stampAuthorization(
 
 // ── scope 解析(项目闭环:identity fail-closed)──────────────────────────────────────────────────
 
-/** ADR-030(#372):新增 project-scope catalog/seed 受管安装已收回 —— 稳定拒绝 reason(wire 形状
- *  保留,decode 不拒;语义层统一拒)。项目本地技能走 `<project>/.alpha/skills` + project config
- *  hook 的非 generation 路径(importExternalSkills / registerProjectSkillsPath)。 */
+/** REQ-136:project catalog/seed 的窄例外只属于 main 已验 MCP；其余 kind 仍稳定拒绝。 */
 export const PROJECT_INSTALL_UNSUPPORTED_REASON =
-  "project-scoped catalog/seed installation is unsupported — use project-local import/register"
+  "project-scoped catalog/seed installation supports verified MCP entries only"
 
-/** ADR-030:遗留可管理 kind(历史残留的卸载/禁用/清理通道)。这是**管理面**的 allowlist,
- *  与「新增安装策略 = 无 project kind」分离 —— 清空它会封死残留清理,绝不与安装策略共用。 */
-const LEGACY_PROJECT_MANAGEABLE_KINDS = new Set<string>(["skill", "agent"])
+/** Project 管理面 allowlist。MCP 仅在 root-parametric config remove + exact-root recovery
+ *  与本次变更一同存在后加入；skill/agent 仍只服务历史残留。 */
+const LEGACY_PROJECT_MANAGEABLE_KINDS = new Set<string>(["skill", "agent", "mcp"])
 
 function resolveScope(
   scope: InstallScope,
-  _kind: string,
+  kind: string,
 ): { ok: true; root: (deps: PlannerDeps) => string; identity: ScopeIdentity; target: TargetArg } | { ok: false; reason: string } {
   if (scope.scope === "global") return { ok: true, root: (d) => d.globalRoot(), identity: { kind: "global" }, target: { scope: "global" } }
-  // ADR-030 防御性拒绝:权威拒绝点在 installCatalog 的 decode 后 policy guard(seed/bundle 分支
-  // 不经过本函数,不能只靠这里);任何 kind 一律拒,不再有 project 安装根。
-  return { ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON }
+  if (kind !== "mcp") return { ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON }
+  const identity = projectScopeIdentity(scope.projectDir)
+  if (!identity.ok) return { ok: false, reason: `fail closed: ${identity.reason}` }
+  const root = alphaRoot(identity.scope.projectPath)
+  if (!root) return { ok: false, reason: `fail closed: invalid project root: ${scope.projectDir}` }
+  return {
+    ok: true,
+    root: () => root,
+    identity: identity.scope,
+    target: { scope: "project", projectDir: identity.scope.projectPath },
+  }
 }
 
 // ── install ─────────────────────────────────────────────────────────────────────────────────────
@@ -1113,15 +1139,16 @@ async function installBundleAtomic(
 export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Promise<CatalogInstallOutcome> {
   const decodedIntent = decodeCatalogInstallIntent(rawIntent)
   if (!decodedIntent.ok) return decodedIntent
-  // ADR-030(#372)权威拒绝点:decode 后、resolveEntry/seed 分流与任何副作用之前 —— catalog、
-  // seed、bundle 三形态同一合同,任何 catalog 拉取/CAS promotion/事务/写盘都不会为 project 发生。
-  if (decodedIntent.intent.scope.scope === "project") return { ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON }
   if ("source" in decodedIntent.intent) return installSeedAsset(decodedIntent.intent, deps)
   const intent = decodedIntent.intent
 
   const verified = await deps.resolveEntry(intent.catalogId)
   if (!verified) return { ok: false, reason: `entry not in verified catalog: ${intent.catalogId}` }
   const entry = verified.entry
+  // REQ-136 C1:renderer id/prefix/claimed kind 没有权威性。project carve-out 只在 main 已解析
+  // verified catalog entry 后接受真实 `entry.type === "mcp"`；其余类型在任何写/CAS 前拒绝。
+  if (intent.scope.scope === "project" && entry.type !== "mcp")
+    return { ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON }
 
   // #315:advisory 激活闸(bundle 本体 id 也在此过;children 在 fan-out 内逐个过)。
   const adv = deps.advisoryGate(advisoryInputOf(entry, verified.channel))
@@ -1200,19 +1227,48 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       rollback("entry has no mcp installSpec")
       return { ok: false, reason: "entry has no mcp installSpec" }
     }
+    const projectMcp = intent.scope.scope === "project"
+    // REQ-136 C3/C9:project channel is the config-only safety subset. Reject before derive can
+    // claim a secret version or the Office policy can canonicalize a workspace-bearing command.
+    if (projectMcp && (spec.requiredEnvVars?.length ?? 0) > 0) {
+      rollback("secret-bearing project MCP")
+      return { ok: false, reason: "project MCP requires zero requiredEnvVars — refused" }
+    }
+    if (
+      projectMcp &&
+      (spec.command?.some((argument) => argument.includes("{workspace}")) ||
+        isWorkspacePolicyMcp(entry.name, {
+          type: spec.mcpType,
+          ...(spec.command ? { command: spec.command } : {}),
+          ...(spec.url ? { url: spec.url } : {}),
+        }))
+    ) {
+      rollback("workspace-policy project MCP")
+      return { ok: false, reason: "workspace-policy MCP is not project-installable — refused" }
+    }
+    const mcpRoot = scope.root(deps)
+    const mcpConfigTarget = path.join(mcpRoot, "alpha.jsonc")
     // r7 Major:escape-hatch 环境下引擎配置真源不在事务根 → fail-closed 拒(不写账谎报 active)。
-    const mcpTruth = configTruthInRootGate(scope.root(deps), deps.installers.mcpConfigTruthPath())
-    if (!mcpTruth.ok) {
-      rollback(mcpTruth.reason)
-      return mcpTruth
+    // Project discovery is the existing per-instance D/.alpha hook, not the process-wide global
+    // truth path. Consulting that global path here would reject D or, worse, redirect D into it.
+    if (!projectMcp) {
+      const mcpTruth = configTruthInRootGate(mcpRoot, deps.installers.mcpConfigTruthPath())
+      if (!mcpTruth.ok) {
+        rollback(mcpTruth.reason)
+        return mcpTruth
+      }
     }
     const derived = deriveMcpConfig(spec, grants)
     if (!derived.ok) {
       rollback(derived.reason)
       return derived
     }
+    if (projectMcp && derived.secretVars.length > 0) {
+      rollback("secret-bearing project MCP")
+      return { ok: false, reason: "project MCP cannot create a secret version — refused" }
+    }
     // #354 语义保留(产品早拒):不可读/形状异常的前像写前拒绝(锁内 precondition 重验)。
-    const leafBefore = deps.installers.readMcpLeafStrict(entry.name)
+    const leafBefore = deps.installers.readMcpLeafStrict(entry.name, projectMcp ? mcpConfigTarget : undefined)
     if (!leafBefore.ok) {
       rollback(leafBefore.reason)
       return leafBefore
@@ -1283,8 +1339,6 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         }
       }
     }
-    const mcpRoot = scope.root(deps)
-    const mcpConfigTarget = path.join(mcpRoot, "alpha.jsonc")
     const mcpNow = deps.now?.() ?? new Date().toISOString()
     // #397(r3):计划期只**计算**消费事实(纯,零账本写);session-grant 的归位 = receipt 写点
     // 例外(UpsertInput.sessionGrantEnforced,与 receipt 同原子)。drift 基线在 forced 场景取
@@ -1329,6 +1383,10 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       // 本次密钥文件仍在场(r1 Major:锁外写文件与取锁之间若被并发 GC/外部清理收走,提交会
       // 落一份引用悬空文件的 config —— 锁内逐引用 lstat 实文件,缺任一即拒,用户重试)。
       precondition: () => {
+        if (projectMcp) {
+          const identity = projectMcpWriteIdentityGate(mcpRoot, mcpConfigTarget)
+          if (!identity.ok) return identity
+        }
         const ledger = probeLedgerForWrite(mcpRoot)
         if (!ledger.ok) return { ok: false, reason: `refusing mcp install: ${ledger.reason}` }
         // Codex r9 B2:desiredState 漂移钉死(镜像 plugin replacement)—— config edit 与 live outcome
@@ -1341,7 +1399,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         const mcpDriftBaseline = mcpSessionGrantForced ? mcpPlanObservedPrior : mcpReceipt.desiredState
         if ((prior?.desiredState ?? mcpDriftBaseline) !== mcpDriftBaseline)
           return { ok: false, reason: `mcp desired state changed since plan — retry the install` }
-        const leaf = deps.installers.readMcpLeafStrict(entry.name)
+        const leaf = deps.installers.readMcpLeafStrict(entry.name, projectMcp ? mcpConfigTarget : undefined)
         if (!leaf.ok) return { ok: false, reason: `refusing mcp install: ${leaf.reason}` }
         for (const p of refPaths) {
           try {
@@ -1353,9 +1411,20 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         return { ok: true }
       },
       commitReceipt: (records: TxCommitRecord[]) => {
+        if (projectMcp) {
+          const identity = projectMcpWriteIdentityGate(mcpRoot, mcpConfigTarget)
+          if (!identity.ok) throw new Error(identity.reason)
+        }
         const written = upsertRecordsV2(mcpRoot, recoveryReceiptInputs(records))
         if (!written.ok) throw new Error(`mcp receipt commit failed: ${written.reason}`)
       },
+    }
+    if (projectMcp) {
+      const identity = projectMcpWriteIdentityGate(mcpRoot, mcpConfigTarget)
+      if (!identity.ok) {
+        rollback(identity.reason)
+        return identity
+      }
     }
     const result = await runExtensionTransaction(mcpRoot, plan, hooks)
     if (!result.ok) {
@@ -1432,7 +1501,9 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     }
     ;(deps.transaction ?? passthroughTx).commit(tx.txId)
     // 提交成功:收未被当前 leaf 引用且过宽限的旧版本/flat/快照残留(锁内对账;busy 跳过)。
-    const gc = deps.installers.gcMcpSecrets(entry.name)
+    // Project installs never create secrets and must not collect a same-name global server's
+    // versions as a side effect of a D-scoped config commit.
+    const gc = projectMcp ? { removed: [], warnings: [] } : deps.installers.gcMcpSecrets(entry.name)
     const mcpWarnings = [...result.warnings, ...gc.warnings]
     return {
       ok: true,
@@ -1988,17 +2059,79 @@ function crossCheckSeedAssetAgainstEntry(asset: SeedAsset, entry: CatalogEntry):
   return null
 }
 
+/** Resolve the exact recovery root without mutating it. Global intents need only strict wire
+ * decoding. Project intents additionally need main-owned verified MCP facts (and complete seed
+ * byte verification) before the write channel may replay D's journal. */
+export async function resolveCatalogInstallWriteRoot(
+  rawIntent: unknown,
+  deps: PlannerDeps,
+): Promise<{ ok: true; root: string } | { ok: false; reason: string }> {
+  if (isObj(rawIntent) && Object.hasOwn(rawIntent, "attemptId")) {
+    const allowed = new Set(["catalogId", "scope", "attemptId", "grants", "authorization"])
+    const unknown = Object.keys(rawIntent).find((key) => !allowed.has(key))
+    if (unknown) return { ok: false, reason: `package admission: renderer-supplied key "${unknown}" is refused` }
+    if (!isObj(rawIntent.scope)) return { ok: false, reason: "package admission: invalid scope" }
+    if (rawIntent.scope.scope === "global" && Object.keys(rawIntent.scope).every((key) => key === "scope"))
+      return { ok: true, root: deps.globalRoot() }
+    if (
+      rawIntent.scope.scope === "project" &&
+      Object.keys(rawIntent.scope).every((key) => key === "scope" || key === "projectDir") &&
+      typeof rawIntent.scope.projectDir === "string" &&
+      path.isAbsolute(rawIntent.scope.projectDir)
+    )
+      return { ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON }
+    return { ok: false, reason: "package admission: invalid scope" }
+  }
+
+  const decoded = decodeCatalogInstallIntent(rawIntent)
+  if (!decoded.ok) return decoded
+  if (decoded.intent.scope.scope === "global") return { ok: true, root: deps.globalRoot() }
+
+  if ("catalogId" in decoded.intent) {
+    const verified = await deps.resolveEntry(decoded.intent.catalogId)
+    if (!verified) return { ok: false, reason: `entry not in verified catalog: ${decoded.intent.catalogId}` }
+    if (verified.entry.type !== "mcp") return { ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON }
+    const scope = resolveScope(decoded.intent.scope, verified.entry.type)
+    return scope.ok ? { ok: true, root: scope.root(deps) } : scope
+  }
+
+  const seedIntent = "source" in decoded.intent ? decoded.intent : undefined
+  if (!seedIntent) return { ok: false, reason: "decoded install intent has no catalog or seed discriminator — refused" }
+  const seedDeps = deps.seed
+  if (!seedDeps) return { ok: false, reason: "seed install channel not available" }
+  const seedDir = seedDeps.seedDir()
+  if (!seedDir) return { ok: false, reason: "no packaged seed available" }
+  const read = readPackagedSeed(seedDir)
+  if (!read.ok) return { ok: false, reason: `packaged seed rejected (fail closed): ${read.error}` }
+  const asset = read.seed.assets.find((candidate) => candidate.id === seedIntent.assetId)
+  if (!asset) return { ok: false, reason: `asset not in packaged seed: ${seedIntent.assetId}` }
+  const verified = seedDeps.resolveBundledEntry(asset.id)
+  if (!verified) return { ok: false, reason: `asset ${asset.id} not in bundled catalog — refusing (seed/catalog drift)` }
+  if (verified.channel !== "bundled")
+    return { ok: false, reason: "seed install must resolve against the bundled catalog snapshot — refused" }
+  if (read.seed.lock.catalogVersion !== verified.catalogVersion)
+    return {
+      ok: false,
+      reason: `seed lock catalogVersion ${read.seed.lock.catalogVersion} ≠ bundled catalog ${verified.catalogVersion} — refusing (drift)`,
+    }
+  const drift = crossCheckSeedAssetAgainstEntry(asset, verified.entry)
+  if (drift) return { ok: false, reason: `seed/catalog drift for ${asset.id}: ${drift} — refused` }
+  const assetVerified = verifySeedAsset(seedDir, read.seed.lock, asset.id)
+  if (!assetVerified.ok) return { ok: false, reason: assetVerified.reason }
+  if (asset.type !== "mcp" || verified.entry.type !== "mcp")
+    return { ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON }
+  const scope = resolveScope(seedIntent.scope, verified.entry.type)
+  return scope.ok ? { ok: true, root: scope.root(deps) } : scope
+}
+
 /**
  * 选中 seed 资产安装(REQ-102 #317):严格意图 → 随包 seed 读取 → 回表同包 bundled catalog(绝不
- * 用 effective remote/cache)→ 双真源交叉验证 → blob 提升进共享 CAS → generation 事务从 CAS 物化
- * (populateFromCas)。skill-only + global-only 首期(agent → #358,mcp/plugin → #359);不 pin
- * (generation content rehash 即 GC mark root);已装更高/不可比版本 fail-closed 拒(downgrade 无
- * 偶然通道)。互斥:CAS promotion 在事务锁前(不可变、幂等、同 digest 原子写);写互斥由
- * runExtensionTransaction 的引擎锁承担 —— 此处不得先拿 bundle 锁(非重入会自锁)。
+ * 用 effective remote/cache)→ 双真源交叉验证。global 载荷提升进共享 CAS 后由 generation/config
+ * 事务消费；REQ-136 project 只允许 verified MCP，运行 verifySeedAsset 后直接走 config-only
+ * transaction，绝不提升 CAS。互斥:global CAS promotion 在事务锁前(不可变、幂等、同 digest
+ * 原子写);写互斥由 runExtensionTransaction 的引擎锁承担 —— 此处不得先拿 bundle 锁。
  */
 async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): Promise<CatalogInstallOutcome> {
-  if (intent.scope.scope !== "global")
-    return { ok: false, reason: "seed install is global-only in this phase (project generation lifecycle is not closed yet) — refused" }
   const seedDeps = deps.seed
   if (!seedDeps) return { ok: false, reason: "seed install channel not available" }
   const seedDir = seedDeps.seedDir()
@@ -2012,12 +2145,12 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   // ADR-040(`#825` 第 4 条,seed 半场):`plugin` 从可 seed 安装的类型里移除。seed lock 的 type
   // 枚举里至今仍有 `plugin`,且构建器只按「有没有 remoteAsset」筛、零类型闸(ADR-040 §后果 7)——
   // 所以这道拒绝必须落在**装载侧**,不能指望「今天随包里恰好没有可执行载荷」。
-  if (asset.type === "plugin")
+  if (intent.scope.scope === "global" && asset.type === "plugin")
     return {
       ok: false,
       reason: `asset ${asset.id} is an engine plugin — Alpha no longer installs executable plugins into the engine (ADR-040); refusing`,
     }
-  if (asset.type !== "skill" && asset.type !== "agent" && asset.type !== "mcp")
+  if (intent.scope.scope === "global" && asset.type !== "skill" && asset.type !== "agent" && asset.type !== "mcp")
     return { ok: false, reason: `seed install for type "${asset.type}" is not installable from seed — refused` }
   if (!asset.platformCompatible) return { ok: false, reason: `asset ${asset.id} is not built for this platform — refused` }
 
@@ -2030,6 +2163,15 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   const entry = verified.entry
   const drift = crossCheckSeedAssetAgainstEntry(asset, entry)
   if (drift) return { ok: false, reason: `seed/catalog drift for ${asset.id}: ${drift} — refused` }
+  if (intent.scope.scope === "project") {
+    // The packaged lock alone proves metadata, not the selected blob bytes. Project admission
+    // therefore verifies the whole selected asset before accepting its MCP kind, while remaining
+    // read-only and CAS-free.
+    const assetVerified = verifySeedAsset(seedDir, view.lock, asset.id)
+    if (!assetVerified.ok) return { ok: false, reason: assetVerified.reason }
+    if (asset.type !== "mcp" || entry.type !== "mcp")
+      return { ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON }
+  }
   // #315:seed(离线随包)激活同样过闸(office 静态基线 + 已验公示若在场)。
   const seedAdv = deps.advisoryGate(advisoryInputOf(entry, "seed"))
   if (!seedAdv.allowed) return { ok: false, reason: `advisory ${seedAdv.advisoryId}: ${seedAdv.reason} — activation refused (R14)` }
@@ -2049,9 +2191,28 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
     return { ok: false, reason: `platform ${deps.platform()} not supported by this entry — refusing before any disk write` }
   const manifestDigest = computeManifestDigest(manifest)
   const payloadDigest = aggregateFilesDigest(entry.remoteAsset!.files)
+  const scope = resolveScope(intent.scope, entry.type)
+  if (!scope.ok) return scope
+  const installRoot = scope.root(deps)
 
-  const tx = (deps.transaction ?? passthroughTx).begin({ op: "install", kind: entry.type, name: entry.name, scope: "global", manifestDigest })
+  const tx = (deps.transaction ?? passthroughTx).begin({ op: "install", kind: entry.type, name: entry.name, scope: intent.scope.scope, manifestDigest })
   const rollback = (reason: string): void => (deps.transaction ?? passthroughTx).rollback(tx.txId, reason)
+
+  // REQ-136 C8:project MCP's verified seed bytes are distribution evidence only. They are not a
+  // runtime payload, so no CAS base is even resolved and the plan remains one files:[] config item.
+  if (intent.scope.scope === "project")
+    return installSeedMcp({
+      deps,
+      entry,
+      manifest,
+      manifestDigest,
+      payloadDigest,
+      intent,
+      rollback,
+      root: installRoot,
+      scope: scope.identity,
+      txId: tx.txId,
+    })
 
   // verify-all-then-promote:任一文件校验不过在展开前拒;成功后 blob 进共享 CAS(幂等,失败残留由
   // GC 语义处理 —— 仍属当前 seed 的 digest 本就是 mark root,#318)。
@@ -2077,8 +2238,8 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
       rollback("agent seed asset must contain exactly one file")
       return { ok: false, reason: `agent seed asset must contain exactly one file (got ${promoted.files.length}) — refused` }
     }
-    const configTarget = path.join(deps.globalRoot(), "alpha.jsonc")
-    const agentGen = await installAgentFromCas(deps.globalRoot(), {
+    const configTarget = path.join(installRoot, "alpha.jsonc")
+    const agentGen = await installAgentFromCas(installRoot, {
       name: entry.name,
       id: entry.id,
       environment: deps.environment(),
@@ -2119,11 +2280,22 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   // ── mcp seed(REQ-102 #359,2026-07-16 Codex 裁决,见 issue 评论)────────────────────────────
   // plugin seed 随 ADR-040 退场,拒绝点在本函数上方(promotion 之前)。
   if (asset.type === "mcp")
-    return installSeedMcp({ deps, entry, manifest, manifestDigest, payloadDigest, intent, rollback, txId: tx.txId })
+    return installSeedMcp({
+      deps,
+      entry,
+      manifest,
+      manifestDigest,
+      payloadDigest,
+      intent,
+      rollback,
+      root: installRoot,
+      scope: scope.identity,
+      txId: tx.txId,
+    })
 
   // downgrade 门作为锁内 precondition:持 Bundle 锁后、写盘前重读账本判定(同版本重装 = 幂等允许,
   // generation 追加可回滚)。锁外判定有确定 TOCTOU(并发 catalog 安装可在窗口内提交更高版本)。
-  const gen = await installSkillGeneration(deps.globalRoot(), {
+  const gen = await installSkillGeneration(installRoot, {
     name: entry.name,
     id: entry.id,
     environment: deps.environment(),
@@ -2175,20 +2347,23 @@ async function installSeedMcp(args: {
   payloadDigest: string
   intent: SeedInstallIntent
   rollback: (reason: string) => void
+  root: string
+  scope: ScopeIdentity
   txId: string
 }): Promise<CatalogInstallOutcome> {
-  const { deps, entry, manifest, manifestDigest, payloadDigest, intent, rollback } = args
-  const root = deps.globalRoot()
+  const { deps, entry, manifest, manifestDigest, payloadDigest, intent, rollback, root, scope } = args
   const spec = entry.installSpec
   if (spec?.kind !== "mcp") {
     rollback("entry has no mcp installSpec")
     return { ok: false, reason: "entry has no mcp installSpec" }
   }
   // #378 r7 Major:真源路由门(seed MCP 同样只写 <root>/alpha.jsonc)。
-  const seedMcpTruth = configTruthInRootGate(root, deps.installers.mcpConfigTruthPath())
-  if (!seedMcpTruth.ok) {
-    rollback(seedMcpTruth.reason)
-    return seedMcpTruth
+  if (intent.scope.scope === "global") {
+    const seedMcpTruth = configTruthInRootGate(root, deps.installers.mcpConfigTruthPath())
+    if (!seedMcpTruth.ok) {
+      rollback(seedMcpTruth.reason)
+      return seedMcpTruth
+    }
   }
   if ((spec.requiredEnvVars?.length ?? 0) > 0) {
     rollback("secret-bearing MCP")
@@ -2222,6 +2397,7 @@ async function installSeedMcp(args: {
     return { ok: false, reason: `seed MCP config failed validation: ${valid.reason} — refused` }
   }
   const configTarget = path.join(root, "alpha.jsonc")
+  const projectMcp = scope.kind === "project"
   const now = deps.now?.() ?? new Date().toISOString()
   // #397 r3:纯计算;session-grant 归位 = receipt 写点例外标记,drift 基线取计划期观测 prior 态。
   const seedMcpPolicyFacts = curationPolicyFactsOf(entry, now)
@@ -2232,7 +2408,7 @@ async function installSeedMcp(args: {
     name: entry.name,
     kind: "mcp",
     environment: deps.environment(),
-    scope: { kind: "global" },
+    scope,
     version: manifest.version,
     manifestDigest,
     payloadDigest,
@@ -2261,18 +2437,34 @@ async function installSeedMcp(args: {
     populate: () => {}, // config action 无 staging 载荷
     // #397 r3:forced 场景 drift 基线 = 计划期观测 prior 态(无 prior 时用计划值,gate 的
     // `prior ?? planned` 折叠正确处理 fresh);只拦真正的并发变化,归位交 receipt 写点例外。
-    precondition: () =>
-      mcpSeedGate(
+    precondition: () => {
+      if (projectMcp) {
+        const identity = projectMcpWriteIdentityGate(root, configTarget)
+        if (!identity.ok) return identity
+      }
+      return mcpSeedGate(
         root,
         entry.name,
         configTarget,
         manifest.version,
         seedMcpSessionGrantForced ? (seedMcpPlanObservedPrior ?? receiptTemplate.desiredState) : receiptTemplate.desiredState,
-      ),
+      )
+    },
     commitReceipt: (records: TxCommitRecord[]) => {
+      if (projectMcp) {
+        const identity = projectMcpWriteIdentityGate(root, configTarget)
+        if (!identity.ok) throw new Error(identity.reason)
+      }
       const written = upsertRecordsV2(root, recoveryReceiptInputs(records))
       if (!written.ok) throw new Error(`seed mcp receipt commit failed: ${written.reason}`)
     },
+  }
+  if (projectMcp) {
+    const identity = projectMcpWriteIdentityGate(root, configTarget)
+    if (!identity.ok) {
+      rollback(identity.reason)
+      return identity
+    }
   }
   const result = await runExtensionTransaction(root, plan, hooks)
   if (!result.ok) {
@@ -2340,6 +2532,12 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
     root = deps.globalRoot()
     target = { scope: "global" }
   }
+  if (
+    intent.scope === "project" &&
+    intent.type === "mcp" &&
+    typeof deps.installers.removeProjectMcpConfigInLock !== "function"
+  )
+    return { ok: false, reason: "project MCP removal seam unavailable — refused before journaling" }
 
   // main 自己的账本才是事实源;renderer 只提供了 key。单次解析、单次决策:损坏 v2 record 绝不
   // 静默回退同账本 v1 receipt(REQ-099 #256 fail-closed)。
@@ -2413,10 +2611,29 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
     // #346:journaled 单锁序列 config→secrets→ledger(Codex 裁决:配置先消失,残留密钥不可达;
     // 反序会复现 #351 规避的「配置在、密钥毁」)。任一步失败 = journal 保持 uninstalling,
     // recoverExtensionTransactions 经 uninstallArtifacts seam 幂等前滚 —— 绝不谎报卸载完成。
+    if (intent.scope === "project") {
+      const identity = projectMcpWriteIdentityGate(root, path.join(root, "alpha.jsonc"))
+      if (!identity.ok) {
+        rollback(identity.reason)
+        return identity
+      }
+    }
     ;(deps.transaction ?? passthroughTx).commit(tx.txId) // 外层通知钩子无副作用;真事务在引擎内
     const r = await uninstallExtensionTransaction(root, `mcp--${intent.name}`, {
       action: "config",
       removeArtifacts: () => {
+        if (intent.scope === "project") {
+          // REQ-136 C6:project journals own only D's config leaf and D's authorization record.
+          // Global/legacy config, global secret stores and shared connection bindings are
+          // deliberately unreachable from this branch.
+          const cfg = deps.installers.removeProjectMcpConfigInLock(root, intent.name)
+          if (!cfg.ok) throw new Error(cfg.reason)
+          const identity = projectMcpWriteIdentityGate(root, path.join(root, "alpha.jsonc"))
+          if (!identity.ok) throw new Error(identity.reason)
+          const grants = removeInstallGrants(root, [`mcp--${intent.name}`])
+          if (!grants.ok) throw new Error(grants.reason)
+          return
+        }
         const cfg = deps.installers.removeMcpConfigInLock(intent.name)
         if (!cfg.ok) throw new Error(cfg.reason)
         const sec = deps.installers.removeMcpSecretsStrict(intent.name)
@@ -2432,6 +2649,10 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
         deps.installers.releaseAlphaConnectionBindings(`mcp:${intent.name}`)
       },
       commitLedger: () => {
+        if (intent.scope === "project") {
+          const identity = projectMcpWriteIdentityGate(root, path.join(root, "alpha.jsonc"))
+          if (!identity.ok) throw new Error(identity.reason)
+        }
         const rm = removeRecordV2(root, "mcp", intent.name)
         if (!rm.ok) throw new Error(rm.reason)
       },
@@ -2740,6 +2961,11 @@ export async function setInstallStateByKey(
   } else {
     root = deps.globalRoot()
   }
+  // #1017 owns project controls/consent-aware activation. Until that path can re-prove the
+  // verified safe subset, this generic state channel may disable a project MCP but never enable
+  // one (including a legacy or externally modified workspace/secret-bearing leaf).
+  if (intent.scope === "project" && intent.type === "mcp" && intent.state === "enabled")
+    return { ok: false, reason: "project MCP enable is unavailable until consent-aware scoped activation — refused" }
   // ── #397(Codex 裁决必改⑤ + r1-5):enable 方向的 curation 闸,resolveEntry 是异步 → **锁外**
   //    冻结决策(已验 entry 身份 + 解码结果),锁内重读 record 并要求 record 与**已验 entry**
   //    身份四元组(id/kind/name/version)精确相等才采信;不一致拒绝重试 —— 既有锁内 TOCTOU
@@ -2797,9 +3023,17 @@ export async function setInstallStateByKey(
   // record 重读 + advisory 全部**在锁内**(闭 TOCTOU)。两写按方向排序保证安全侧不因崩溃/错误破窗
   // (Codex r3 Blocker):disable → config 先(运行立即禁用,即便账本随后失败也已禁);enable → 账本
   // 先(账本写失败即止,不动 config → 保持 disabled)。config apply 抛错则回滚已翻的账本(错误路径原子)。
+  if (intent.scope === "project" && intent.type === "mcp") {
+    const identity = projectMcpWriteIdentityGate(root, path.join(root, "alpha.jsonc"))
+    if (!identity.ok) return identity
+  }
   const held = tryAcquireBundleLock(root, { txId: `set-state-${randomUUID()}` })
   if (!held.ok) return { ok: false, reason: `ledger busy: ${held.reason} — retry after the in-flight transaction` }
   try {
+    if (intent.scope === "project" && intent.type === "mcp") {
+      const identity = projectMcpWriteIdentityGate(root, path.join(root, "alpha.jsonc"))
+      if (!identity.ok) return identity
+    }
     const record = findRecordV2(root, intent.type, intent.name)
     if (!record) return { ok: false, reason: `no v2 record for ${intent.type}:${intent.name} in this scope — fail closed (v1-only installs have no desired-state channel)` }
     // Codex r12 Major3:command/bundle 无禁用生效面(引擎 config.command/bundle 无 disable 键,alpha 无

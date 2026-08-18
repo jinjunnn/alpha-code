@@ -12,6 +12,10 @@ import * as path from "node:path"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { gatedWriteHandler, makeRecoveryGate, runVerifiedMutation, type RecoveryGate } from "./ext-recovery-gate"
 import { probeTransactionJournals, type RecoverOptions } from "./ext-transaction"
+import { assertProjectMcpTransactionRootIdentity, removeProjectMcpConfigInLock } from "./ext-config"
+import { removeInstallGrants } from "./ext-install-planner"
+import { capabilityGrantPath } from "./ext-capability-grants"
+import { findRecordV2, projectScopeIdentity, removeRecordV2, upsertRecordV2 } from "./ext-receipt-v2"
 
 let root: string
 beforeEach(() => {
@@ -28,10 +32,11 @@ afterEach(() => {
 
 const journalDir = () => path.join(root, "ext-tx", "journal")
 
-function writeUninstallJournal(txId: string, key = "skill--demo"): void {
-  fs.mkdirSync(journalDir(), { recursive: true })
+function writeUninstallJournal(txId: string, key = "skill--demo", targetRoot = root, action?: "config"): void {
+  const targetJournal = path.join(targetRoot, "ext-tx", "journal")
+  fs.mkdirSync(targetJournal, { recursive: true })
   fs.writeFileSync(
-    path.join(journalDir(), `${txId}.json`),
+    path.join(targetJournal, `${txId}.json`),
     JSON.stringify({
       v: 1,
       txId,
@@ -39,7 +44,7 @@ function writeUninstallJournal(txId: string, key = "skill--demo"): void {
       state: "uninstalling",
       createdAt: "2026-07-15T00:00:00.000Z",
       updatedAt: "2026-07-15T00:00:00.000Z",
-      items: [{ key, genId: "gen-000000-000000", files: [] }],
+      items: [{ key, ...(action ? { action } : {}), genId: "gen-000000-000000", files: [] }],
     }),
   )
 }
@@ -96,6 +101,32 @@ describe("withRecoveredWrite — 准入判据", () => {
     expect(bodyCalls).toBe(0)
   })
 
+  test("REQ-136 project gate rejects a symlinked ext-tx tree before recovery can follow it", async () => {
+    let project = path.join(root, "D")
+    fs.mkdirSync(path.join(project, ".alpha"), { recursive: true })
+    project = fs.realpathSync(project)
+    const projectRoot = path.join(project, ".alpha")
+    const outside = path.join(root, "outside-tx")
+    fs.mkdirSync(outside, { recursive: true })
+    const sentinel = path.join(outside, "sentinel")
+    fs.writeFileSync(sentinel, "outside-stays-exact")
+    fs.symlinkSync(outside, path.join(projectRoot, "ext-tx"))
+    let bodyCalls = 0
+    const gate = makeRecoveryGate(
+      () => ({}),
+      undefined,
+      assertProjectMcpTransactionRootIdentity,
+    )
+
+    const result = await gate.withRecoveredWrite(projectRoot, async () => {
+      bodyCalls++
+      return { ok: true as const }
+    })
+    expect(result).toEqual({ ok: false, reason: "root identity cannot be confirmed — operation refused (fail closed)" })
+    expect(bodyCalls).toBe(0)
+    expect(fs.readFileSync(sentinel, "utf8")).toBe("outside-stays-exact")
+  })
+
   test("非终态 journal → 先收敛再执行 op(op 看到的是全终态账本)", async () => {
     writeUninstallJournal("tx-open-1")
     const gate = gateWith(fullOpts)
@@ -107,6 +138,86 @@ describe("withRecoveredWrite — 准入判据", () => {
     })
     expect(r).toEqual({ ok: true })
     expect(sawTerminal).toBe(true)
+  })
+
+  test("REQ-136 crash-replayed project MCP uninstall is idempotent and cannot touch global", async () => {
+    let project = path.join(root, "D")
+    const globalRoot = path.join(root, "global")
+    fs.mkdirSync(path.join(project, ".alpha"), { recursive: true })
+    project = fs.realpathSync(project)
+    const projectRoot = path.join(project, ".alpha")
+    fs.mkdirSync(globalRoot, { recursive: true })
+    const projectConfig = path.join(projectRoot, "alpha.jsonc")
+    const globalConfig = path.join(globalRoot, "alpha.jsonc")
+    fs.writeFileSync(projectConfig, JSON.stringify({ mcp: { demo: { type: "local", command: ["npx", "project"] } } }, null, 2))
+    fs.writeFileSync(globalConfig, JSON.stringify({ mcp: { demo: { type: "local", command: ["npx", "global"] } } }, null, 4) + "\n")
+    const globalBefore = fs.readFileSync(globalConfig, "utf8")
+    const identity = projectScopeIdentity(project)
+    if (!identity.ok) throw new Error(identity.reason)
+    expect(
+      upsertRecordV2(projectRoot, {
+        id: "mcp:demo",
+        name: "demo",
+        kind: "mcp",
+        environment: "prod",
+        scope: identity.scope,
+        desiredState: "enabled",
+        origin: "catalog",
+        configKey: "mcp.demo",
+        installedAt: "2026-08-18T00:00:00.000Z",
+      }).ok,
+    ).toBe(true)
+    const grant = capabilityGrantPath(projectRoot, "mcp--demo")
+    fs.mkdirSync(path.dirname(grant), { recursive: true })
+    fs.writeFileSync(grant, '{"v":1}\n')
+    writeUninstallJournal("tx-project-mcp", "mcp--demo", projectRoot, "config")
+
+    let commits = 0
+    let bodyCalls = 0
+    const gate = makeRecoveryGate(
+      (seenRoot) => ({
+        uninstallArtifacts: (key) => {
+          expect(seenRoot).toBe(projectRoot)
+          const removed = removeProjectMcpConfigInLock(seenRoot, key.slice("mcp--".length))
+          if (!removed.ok) throw new Error(removed.reason)
+          const grants = removeInstallGrants(seenRoot, [key])
+          if (!grants.ok) throw new Error(grants.reason)
+        },
+        commitUninstall: () => {
+          commits++
+          if (commits === 1) throw new Error("simulated crash before ledger commit")
+          const removed = removeRecordV2(seenRoot, "mcp", "demo")
+          if (!removed.ok) throw new Error(removed.reason)
+        },
+      }),
+      undefined,
+      (seenRoot) => {
+        expect(seenRoot).toBe(projectRoot)
+      },
+    )
+
+    const first = await gate.withRecoveredWrite(projectRoot, async () => {
+      bodyCalls++
+      return { ok: true as const }
+    })
+    expect(first.ok).toBe(false)
+    expect(bodyCalls).toBe(0)
+    expect(fs.existsSync(grant)).toBe(false)
+    expect(JSON.parse(fs.readFileSync(projectConfig, "utf8")).mcp?.demo).toBeUndefined()
+    expect(findRecordV2(projectRoot, "mcp", "demo")).not.toBeNull()
+    expect(fs.readFileSync(globalConfig, "utf8")).toBe(globalBefore)
+    expect(probeTransactionJournals(projectRoot).entries[0]?.state).toBe("uninstalling")
+
+    const second = await gate.withRecoveredWrite(projectRoot, async () => {
+      bodyCalls++
+      return { ok: true as const }
+    })
+    expect(second).toEqual({ ok: true })
+    expect(bodyCalls).toBe(1)
+    expect(commits).toBe(2)
+    expect(findRecordV2(projectRoot, "mcp", "demo")).toBeNull()
+    expect(probeTransactionJournals(projectRoot).entries[0]?.state).toBe("uninstalled")
+    expect(fs.readFileSync(globalConfig, "utf8")).toBe(globalBefore)
   })
 
   test("收敛不了(缺 seam,journal 保持非终态)→ 拒且 op 不执行", async () => {

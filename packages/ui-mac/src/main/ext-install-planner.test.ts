@@ -20,11 +20,12 @@ import { hasCasBlob } from "./ext-cas"
 import { computeGrantDigest, findRecordV2, projectScopeIdentity, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
 import { readCapabilityGrant, writeCapabilityGrantSync } from "./ext-capability-grants"
 import { setDesiredStateV2, upsertRecordsV2 } from "./ext-receipt-v2"
-import { probeTransactionJournals, resolveLiveGenerationDir } from "./ext-transaction"
+import { probeTransactionJournals, readTransactionJournal, resolveLiveGenerationDir } from "./ext-transaction"
 import { skillStorePaths } from "./ext-skill-generations"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { evaluateAdvisoryGate } from "./ext-advisory-gate"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
+import { removeProjectMcpConfigInLock } from "./ext-config"
 
 // #348:capability→authorize 闸生效后,首装会零副作用停在 stage="authorize"。本 helper 按生产
 // 同路重驱(确认展示的完整 requested 集);非 authorize 失败原样透传,不掩盖任何拒绝语义。
@@ -46,6 +47,7 @@ import {
   installCatalog,
   listGenerationsByKey,
   PROJECT_INSTALL_UNSUPPORTED_REASON,
+  resolveCatalogInstallWriteRoot,
   rollbackGenerationByKey,
   setInstallStateByKey,
   synthesizeManifest,
@@ -87,6 +89,14 @@ const mcpWorkspaceEntry: CatalogEntry = {
   ...base,
   version: "2026.1.14",
   installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "{workspace}"] },
+}
+const mcpProjectEntry: CatalogEntry = {
+  id: "mcp:project-demo",
+  type: "mcp",
+  name: "project-demo",
+  ...base,
+  version: "1.0.0",
+  installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "-y", "project-demo-mcp@1.0.0"] },
 }
 const retiredCommunityExcelEntry: CatalogEntry = {
   id: "mcp:excel",
@@ -197,7 +207,7 @@ const bundleEntry: CatalogEntry = {
   ],
 }
 
-const ALL_ENTRIES = [mcpEntry, mcpWorkspaceEntry, mcpRemoteEntry, skillBuiltinEntry, skillRemoteEntry, pluginVendoredEntry, pluginNpmEntry, cloudEntry, bundleEntry]
+const ALL_ENTRIES = [mcpEntry, mcpWorkspaceEntry, mcpProjectEntry, mcpRemoteEntry, skillBuiltinEntry, skillRemoteEntry, pluginVendoredEntry, pluginNpmEntry, cloudEntry, bundleEntry]
 
 // ── harness ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -250,8 +260,8 @@ function makeDeps(opts: {
       return { ok: true as const, refs: [] as string[] }
     },
     // #354:提交面 fail-closed 的前像原语(缺省 = 无前像、agent 不在场)。
-    readMcpLeafStrict: (name: string) => {
-      calls.push({ fn: "readMcpLeafStrict", args: [name] })
+    readMcpLeafStrict: (name: string, targetPath?: string) => {
+      calls.push({ fn: "readMcpLeafStrict", args: [name, targetPath] })
       return { ok: true as const, value: undefined }
     },
     // #378 r6/r7:legacy 源 strict 读(缺省零源;legacy 冲突语义在专项测试注入)+ 真源路由门。
@@ -301,6 +311,10 @@ function makeDeps(opts: {
       return false
     },
     removeMcpConfigInLock: record("removeMcpConfigInLock", { ok: true as const }),
+    removeProjectMcpConfigInLock: (root: string, name: string) => {
+      calls.push({ fn: "removeProjectMcpConfigInLock", args: [root, name] })
+      return removeProjectMcpConfigInLock(root, name)
+    },
     removeMcpSecretsStrict: record("removeMcpSecretsStrict", { ok: true as const }),
     releaseAlphaConnectionBindings: record("releaseAlphaConnectionBindings", { ok: true as const }),
     removePlugin: record("removePlugin", { ok: true as const }),
@@ -704,13 +718,132 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     expect(findRecordV2(globalRoot, "mcp", "markitdown")).toBeNull()
   })
 
-  test("mcp cannot be project-scoped (ADR-030 recall guard fires first)", async () => {
+  test("REQ-136 direct project MCP is one D-only config action with no CAS, secret, prepared resource, generation, or consent", async () => {
     const proj = makeProject("proj-mcp")
+    const projectRoot = path.join(proj, ".alpha")
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), '{"mcp":{"project-demo":{"type":"local","command":["npx","global-canary"]}}}\n')
+    fs.writeFileSync(path.join(globalRoot, "installs.json"), "global-ledger-canary\n")
+    const globalConfigBefore = fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")
+    const globalLedgerBefore = fs.readFileSync(path.join(globalRoot, "installs.json"), "utf8")
     const { deps, calls } = makeDeps()
-    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "project", projectDir: proj } }, deps)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
-    expect(installerCallCount(calls)).toBe(0)
+    let casCalls = 0
+    let truthCalls = 0
+    const projectDeps: PlannerDeps = {
+      ...deps,
+      installers: {
+        ...deps.installers,
+        mcpConfigTruthPath: () => {
+          truthCalls++
+          return path.join(globalRoot, "alpha.jsonc")
+        },
+      },
+      casBaseRoot: () => {
+        casCalls++
+        return path.join(tmp, "cas-base")
+      },
+    }
+
+    const r = await installAuthorized(
+      { catalogId: "mcp:project-demo", scope: { scope: "project", projectDir: proj } },
+      projectDeps,
+    )
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const config: unknown = JSON.parse(fs.readFileSync(path.join(projectRoot, "alpha.jsonc"), "utf8"))
+    expect(recOf(recOf(config).mcp)["project-demo"]).toEqual({
+      type: "local",
+      command: ["npx", "-y", "project-demo-mcp@1.0.0"],
+    })
+    const record = findRecordV2(projectRoot, "mcp", "project-demo")
+    expect(record?.scope.kind).toBe("project")
+    if (record?.scope.kind === "project") expect(record.scope.projectPath).toBe(proj)
+    expect(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")).toBe(globalConfigBefore)
+    expect(fs.readFileSync(path.join(globalRoot, "installs.json"), "utf8")).toBe(globalLedgerBefore)
+
+    const journals = probeTransactionJournals(projectRoot)
+    expect(journals.entries).toHaveLength(1)
+    const journal = readTransactionJournal(projectRoot, journals.entries[0]!.txId)
+    expect(journal?.items).toHaveLength(1)
+    expect(journal?.items[0]).toMatchObject({
+      key: "mcp--project-demo",
+      action: "config",
+      genId: "gen-000000-000000",
+      files: [],
+      config: { target: path.join(projectRoot, "alpha.jsonc") },
+    })
+    expect(journal?.prepared ?? []).toEqual([])
+    expect(fs.existsSync(path.join(projectRoot, "ext-store", "mcp--project-demo", "generations"))).toBe(false)
+    expect(fs.existsSync(path.join(projectRoot, "prefs.json"))).toBe(false)
+    expect(fs.existsSync(path.join(tmp, "cas-base"))).toBe(false)
+    expect(casCalls).toBe(0)
+    expect(truthCalls).toBe(0)
+    expect(called(calls, "claimMcpSecretVersionDir")).toHaveLength(0)
+    expect(called(calls, "writeMcpSecretVersioned")).toHaveLength(0)
+    expect(called(calls, "legacyMcpRefPaths")).toHaveLength(0)
+    expect(called(calls, "gcMcpSecrets")).toHaveLength(0)
+    expect(called(calls, "readMcpLeafStrict").every((call) => call.args[1] === path.join(projectRoot, "alpha.jsonc"))).toBe(true)
+  })
+
+  test("REQ-136 project MCP safety subset rejects secrets and workspace-policy entries before project writes", async () => {
+    const proj = makeProject("proj-mcp-safety")
+    const classifierEntry: CatalogEntry = {
+      ...mcpProjectEntry,
+      id: "mcp:alpha-word",
+      name: "alpha-word",
+      installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "-y", "harmless-looking"] },
+    }
+    const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, classifierEntry] })
+    const secret = await installAuthorized(
+      { catalogId: "mcp:markitdown", scope: { scope: "project", projectDir: proj }, grants: { secrets: { API_KEY: "x" } } },
+      deps,
+    )
+    expect(secret.ok).toBe(false)
+    if (!secret.ok) expect(secret.reason).toContain("zero requiredEnvVars")
+    const marker = await installAuthorized(
+      { catalogId: "mcp:filesystem", scope: { scope: "project", projectDir: proj } },
+      deps,
+    )
+    expect(marker.ok).toBe(false)
+    if (!marker.ok) expect(marker.reason).toContain("workspace-policy")
+    const classified = await installAuthorized(
+      { catalogId: "mcp:alpha-word", scope: { scope: "project", projectDir: proj } },
+      deps,
+    )
+    expect(classified.ok).toBe(false)
+    if (!classified.ok) expect(classified.reason).toContain("workspace-policy")
+    expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false)
+    expect(called(calls, "claimMcpSecretVersionDir")).toHaveLength(0)
+    expect(called(calls, "writeMcpSecretVersioned")).toHaveLength(0)
+    expect(fs.existsSync(path.join(tmp, "cas-base"))).toBe(false)
+  })
+
+  test("REQ-136 revalidates D after catalog awaits and refuses a late .alpha symlink swap", async () => {
+    const proj = makeProject("proj-mcp-late-swap")
+    const projectRoot = path.join(proj, ".alpha")
+    const outside = path.join(tmp, "outside-project-root")
+    fs.mkdirSync(outside, { recursive: true })
+    const sentinel = path.join(outside, "sentinel")
+    fs.writeFileSync(sentinel, "outside-stays-exact")
+    const { deps } = makeDeps({
+      installers: {
+        applyMcpWritePolicy: () => {
+          fs.symlinkSync(outside, projectRoot)
+          return { ok: true }
+        },
+      },
+    })
+
+    const result = await installCatalog(
+      { catalogId: "mcp:project-demo", scope: { scope: "project", projectDir: proj } },
+      deps,
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toContain("root identity changed")
+    expect(fs.lstatSync(projectRoot).isSymbolicLink()).toBe(true)
+    expect(fs.readFileSync(sentinel, "utf8")).toBe("outside-stays-exact")
+    expect(fs.existsSync(path.join(outside, "ext-tx"))).toBe(false)
+    expect(fs.existsSync(path.join(outside, "alpha.jsonc"))).toBe(false)
+    expect(fs.existsSync(path.join(outside, "installs.json"))).toBe(false)
   })
 })
 
@@ -1028,7 +1161,7 @@ describe("other kinds — derivation & records", () => {
   })
 })
 
-// ── ADR-030(#372):新增 project 安装收回(fail-closed)+ 遗留管理面(AC#3/AC#4 语义保留)────────
+// ── REQ-136 project verified-kind gate + scope-independent management ─────────────────────────
 
 /** 直接落一条 project catalog 残留账(模拟收回前的历史安装;identity 走真 projectScopeIdentity)。 */
 function seedProjectCatalogRecord(projDir: string, name = "demo", kind: UpsertInput["kind"] = "skill"): string {
@@ -1049,37 +1182,62 @@ function seedProjectCatalogRecord(projDir: string, name = "demo", kind: UpsertIn
   return root
 }
 
-describe("ADR-030 (#372): project catalog/seed install recalled — refused before any side effect", () => {
-  test("skill/agent symmetric: refused with the stable reason before resolveEntry", async () => {
-    const proj = makeProject("proj-recall")
+describe("REQ-136 project catalog admission is verified-MCP-only", () => {
+  test("write-root admission resolves verified MCP facts before exposing D to recovery", async () => {
+    const proj = makeProject("proj-write-root-admission")
+    const { deps } = makeDeps()
+    const denied = await resolveCatalogInstallWriteRoot(
+      { catalogId: "skill:demo", scope: { scope: "project", projectDir: proj } },
+      deps,
+    )
+    expect(denied).toEqual({ ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON })
+    const forged = await resolveCatalogInstallWriteRoot(
+      { catalogId: "mcp:project-demo", scope: { scope: "project", projectDir: proj }, kind: "mcp" },
+      deps,
+    )
+    expect(forged.ok).toBe(false)
+    const signedPackage = await resolveCatalogInstallWriteRoot(
+      {
+        catalogId: "package:demo",
+        attemptId: "attempt-12345678",
+        scope: { scope: "project", projectDir: proj },
+      },
+      deps,
+    )
+    expect(signedPackage).toEqual({ ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON })
+    expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false)
+
+    const admitted = await resolveCatalogInstallWriteRoot(
+      { catalogId: "mcp:project-demo", scope: { scope: "project", projectDir: proj } },
+      deps,
+    )
+    expect(admitted).toEqual({ ok: true, root: path.join(proj, ".alpha") })
+    expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false)
+  })
+
+  test("non-MCP verified kinds and an mcp-prefixed spoof are rejected after main resolution, before side effects", async () => {
+    const proj = makeProject("proj-kind-gate")
+    const spoof: CatalogEntry = { ...skillBuiltinEntry, id: "mcp:spoofed-skill", name: "spoofed-skill" }
     const { deps, calls } = makeDeps()
     let resolveCalls = 0
-    const spied: PlannerDeps = { ...deps, resolveEntry: async (id) => (resolveCalls++, deps.resolveEntry(id)) }
-    for (const catalogId of ["skill:demo", "agent:whatever", "skill:remote-demo"]) {
+    const entries = [...ALL_ENTRIES, agentBuiltinEntry, spoof]
+    const spied: PlannerDeps = {
+      ...deps,
+      resolveEntry: async (id) => {
+        resolveCalls++
+        const entry = entries.find((candidate) => candidate.id === id)
+        return entry ? { entry, channel: "remote", catalogVersion: "2026-07-13.1" } : null
+      },
+    }
+    const rejected = ["skill:demo", "agent:helper", "plugin:np", "cloud:research", "bundle:office", "mcp:spoofed-skill"]
+    for (const catalogId of rejected) {
       const r = await installAuthorized({ catalogId, scope: { scope: "project", projectDir: proj } }, spied)
       expect(r.ok).toBe(false)
       if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
     }
-    expect(resolveCalls).toBe(0)
+    expect(resolveCalls).toBe(rejected.length)
     expect(installerCallCount(calls)).toBe(0)
-    // 零状态变更:项目根没有任何事务/账本落盘
     expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false)
-  })
-
-  test("seed intent with project scope: same stable refusal before the seed channel", async () => {
-    const proj = makeProject("proj-seed-recall")
-    const { deps, calls } = makeDeps()
-    let seedTouched = 0
-    const withSeed: PlannerDeps = {
-      ...deps,
-      seed: { seedDir: () => (seedTouched++, null), resolveBundledEntry: () => (seedTouched++, null) },
-    }
-    const r = await installAuthorized({ source: "seed", assetId: "skills/foo", scope: { scope: "project", projectDir: proj } }, withSeed)
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
-    expect(seedTouched).toBe(0) // 拒绝先于 seed 通道的任何触碰
-    expect(installerCallCount(calls)).toBe(0)
-    expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false) // 零项目根变更
   })
 
   test("global install behavior unchanged by the guard", async () => {
@@ -1091,6 +1249,51 @@ describe("ADR-030 (#372): project catalog/seed install recalled — refused befo
 })
 
 describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () => {
+  test("REQ-136 project MCP uninstall removes only D leaf/grant/receipt and leaves same-name global bytes exact", async () => {
+    const proj = makeProject("proj-mcp-uninstall")
+    const projectRoot = path.join(proj, ".alpha")
+    const { deps, calls } = makeDeps()
+    expect(
+      (await installAuthorized({ catalogId: "mcp:project-demo", scope: { scope: "global" } }, deps)).ok,
+    ).toBe(true)
+    expect(
+      (
+        await installAuthorized(
+          { catalogId: "mcp:project-demo", scope: { scope: "project", projectDir: proj } },
+          deps,
+        )
+      ).ok,
+    ).toBe(true)
+    const enabled = await setInstallStateByKey(
+      { type: "mcp", name: "project-demo", scope: "project", projectDir: proj, state: "enabled" },
+      deps,
+    )
+    expect(enabled.ok).toBe(false)
+    if (!enabled.ok) expect(enabled.reason).toContain("consent-aware scoped activation")
+    const globalConfigBefore = fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")
+    const globalLedgerBefore = fs.readFileSync(path.join(globalRoot, "installs.json"), "utf8")
+    calls.length = 0
+
+    const removed = await uninstallByKey(
+      { type: "mcp", name: "project-demo", scope: "project", projectDir: proj },
+      deps,
+    )
+    expect(removed.ok).toBe(true)
+    expect(called(calls, "removeProjectMcpConfigInLock").map((call) => call.args)).toEqual([
+      [projectRoot, "project-demo"],
+    ])
+    expect(called(calls, "removeMcpConfigInLock")).toHaveLength(0)
+    expect(called(calls, "removeMcpSecretsStrict")).toHaveLength(0)
+    expect(called(calls, "releaseAlphaConnectionBindings")).toHaveLength(0)
+    expect(findRecordV2(projectRoot, "mcp", "project-demo")).toBeNull()
+    const projectConfig: unknown = JSON.parse(fs.readFileSync(path.join(projectRoot, "alpha.jsonc"), "utf8"))
+    expect(recOf(recOf(projectConfig).mcp)["project-demo"]).toBeUndefined()
+    expect(fs.existsSync(path.join(projectRoot, "ext-store", "mcp--project-demo", "grants.json"))).toBe(false)
+    expect(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")).toBe(globalConfigBefore)
+    expect(fs.readFileSync(path.join(globalRoot, "installs.json"), "utf8")).toBe(globalLedgerBefore)
+    expect(probeTransactionJournals(projectRoot).entries.some((entry) => entry.op === "uninstall" && entry.state === "uninstalled")).toBe(true)
+  })
+
   test("residual records in global + two projects stay independently manageable", async () => {
     const projA = makeProject("proj-a")
     const projB = makeProject("proj-b")
