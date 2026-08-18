@@ -106,7 +106,9 @@ let extIpcRef:
     }
   | undefined
 
+const realUseExtensionsModule = await import("../src/renderer/extensions/use-extensions")
 mock.module("../src/renderer/extensions/use-extensions", () => ({
+  ...realUseExtensionsModule,
   useExtensions: () => extensions,
   isAuthzRequired: () => false,
   isLocalPluginRoute: () => false,

@@ -33,10 +33,16 @@ import { pushToast } from "../alpha-ui/Toast"
 import { Banner } from "../alpha-ui/Banner"
 import type { ServerInfo } from "../sidebar/use-projects"
 import {
+  catalogInstallTargetFor,
+  DEFAULT_CATALOG_INSTALL_SCOPE,
+  sdkMcpStatusForReceipt,
+  nameOnlyLiveMcpIsUnambiguousGlobal,
+  projectMcpStatusView,
   useExtensions,
   isAuthzRequired,
   isLocalPluginRoute,
   type ActionResult,
+  type CatalogInstallScopeChoice,
   type HubAgent,
   type LocalPackagePreviewV1,
 } from "./use-extensions"
@@ -416,6 +422,13 @@ export function ExtensionHub(props: {
   // The entry awaiting install confirmation (MCP/bundle/plugin 档). Skill never lands here —
   // it installs directly (Q1). Plugin reaches here only from its detail page (Q2).
   const [confirming, setConfirming] = createSignal<CatalogEntry | null>(null)
+  // REQ-136:Hub scope is a UX choice, not a path picker. Every fresh confirmation resets Global;
+  // project submission resolves the route's current D again inside useExtensions before IPC.
+  const [installScope, setInstallScope] = createSignal<CatalogInstallScopeChoice>(DEFAULT_CATALOG_INSTALL_SCOPE)
+  const openInstallConfirmation = (entry: CatalogEntry) => {
+    setInstallScope(DEFAULT_CATALOG_INSTALL_SCOPE)
+    setConfirming(entry)
+  }
   // T5:确认弹窗采集的 requiredEnvVars 密钥值(仅内存;安装后清空)。经 addMcp → 主进程 {file:}
   // 通道落盘,绝不明文进 opencode.jsonc。切换/关闭弹窗即重置。
   const [envValues, setEnvValues] = createSignal<Record<string, string>>({})
@@ -430,6 +443,8 @@ export function ExtensionHub(props: {
     mode: "install" | "update"
     host: "standalone" | "confirm"
     secrets?: Record<string, string>
+    scope?: CatalogInstallScopeChoice
+    projectDir?: string
     diffs: CapabilityDiffWire[]
   }
   const [authz, setAuthz] = createSignal<AuthzState | null>(null)
@@ -931,12 +946,13 @@ export function ExtensionHub(props: {
         version: r.version,
         receipt: r,
         entry,
-        mcp: r.type === "mcp" ? ext.store.mcp[r.name] : undefined,
+        mcp: r.type === "mcp" ? sdkMcpStatusForReceipt(r, ext.store.mcp) : undefined,
       })
     }
     // live MCP the SDK knows but we have no receipt for (manual / pre-migration) — allow uninstall.
     for (const s of Object.values(ext.store.mcp)) {
-      if (seenMcp.has(s.name)) continue
+      if (seenMcp.has(s.name) || !nameOnlyLiveMcpIsUnambiguousGlobal(s.name, ext.store.projectReceipts))
+        continue
       const entry = mcpByName.get(s.name)
       rows.push({
         key: `mcp:${s.name}`,
@@ -949,8 +965,8 @@ export function ExtensionHub(props: {
         mcp: s,
       })
     }
-    // REQ-099(#307)项目账本行(scope=project:导入/收编产物)。无 live MCP join —— 项目组按
-    // ADR-030 只读+卸载;key 加 scope 后缀,AC5 同名并存不撞。
+    // REQ-099/136 项目账本行(scope=project:导入/收编与合规 MCP 安装)。无 live MCP join ——
+    // project MCP 只消费 main 的 D-scoped verdict;key 加 scope 后缀,AC5 同名并存不撞。
     for (const r of ext.store.projectReceipts) {
       const entry = byId(r.id)
       rows.push({
@@ -983,7 +999,7 @@ export function ExtensionHub(props: {
   const updatable = createMemo(() =>
     ext.store.receipts.filter(
       // REQ-032:条目级更新判定(receipt.version vs entry.version;X7:非 catalog 来源不参与角标)
-      // #307:恒 global —— updatable 只扫 global receipts;project 组只读+卸载(ADR-030 无受管更新)。
+      // #307/REQ-136:updatable 只扫 global receipts;project 行没有 name-only 受管更新入口。
       (r) =>
         r.scope !== "project" &&
         r.origin !== "imported" &&
@@ -1055,7 +1071,7 @@ export function ExtensionHub(props: {
     setUpdErr((prev) => ({ ...prev, [r.id]: "" }))
     // MCP:persistMcp 为覆盖写,静默重装会丢 {file:} 密钥引用 → 走确认框重装(密钥可重填)。
     if (target.type === "mcp") {
-      setConfirming(target)
+      openInstallConfirmation(target)
       return "mcp-confirm"
     }
     setUpdBusy(r.id)
@@ -1116,13 +1132,15 @@ export function ExtensionHub(props: {
     secrets?: Record<string, string>,
     skipCheck?: boolean, // onAdd 已做「检查中」阶段时跳过重复 which
     authorization?: AuthorizationConfirmationWire,
+    scope: CatalogInstallScopeChoice = DEFAULT_CATALOG_INSTALL_SCOPE,
+    selectedProjectDir?: string,
   ): Promise<ActionResult> => {
     const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
     if (!skipCheck) {
       const rc = await ext.checkRuntime(spec?.runtimeDep)
       if (!rc.ok) return { ok: false, reason: t("alpha.ext.runtimeMissing", { tool: rc.missing }) }
     }
-    return ext.addMcp(e, undefined, secrets, authorization)
+    return ext.addMcp(e, undefined, secrets, authorization, scope, selectedProjectDir)
   }
 
   // Bundle = alpha-defined manifest: fan out to install each referenced entry by its own type
@@ -1153,6 +1171,8 @@ export function ExtensionHub(props: {
     e: CatalogEntry,
     secrets?: Record<string, string>,
     authorization?: AuthorizationConfirmationWire,
+    scope: CatalogInstallScopeChoice = DEFAULT_CATALOG_INSTALL_SCOPE,
+    selectedProjectDir?: string,
   ): Promise<CapabilityDiffWire[] | null> => {
     setBusy(e.id)
     setErrFor(e.id, null)
@@ -1176,6 +1196,8 @@ export function ExtensionHub(props: {
     const addedFlash = (fallbackKey: "alpha.ext.added" | "alpha.ext.addedLive" | "alpha.ext.pluginRestart") =>
       flash(willBeDisabled ? t("alpha.ext.addedDisabled") : t(fallbackKey), "success")
     try {
+      if (scope === "project" && e.type !== "mcp")
+        return failOr({ ok: false, reason: "project-scope-mcp-only" })
       // `#765`:这里**不再**有 warning 呈现。`#698` 把它收成本函数的单点出口,但那只覆盖一个
       // 函数 —— 详情页装 package 走确认屏,压根不经过这里。现在呈现在 `extIpc`(IPC 包装层),
       // 对**任何**返回具名 warning 的调用默认生效,不必逐入口登记。
@@ -1188,14 +1210,31 @@ export function ExtensionHub(props: {
           return null
         }
         setStageFor(e.id, "installing")
-        const res = await addMcpEntry(e, secrets, true, authorization)
+        const res = await addMcpEntry(e, secrets, true, authorization, scope, selectedProjectDir)
         if (!res.ok) {
           // hook 返回稳定 reason code,文案在这一层映射(hook 不持有 i18n)。
           if (res.reason === "connect-failed") {
             setErrFor(e.id, t("alpha.ext.mcpConnectFailed"))
             return null
           }
+          if (res.reason?.startsWith("project-scope-")) {
+            setErrFor(
+              e.id,
+              t(
+                res.reason === "project-scope-missing-current-project" ||
+                  res.reason === "project-scope-current-project-changed"
+                  ? "alpha.ext.installScopeProjectLost"
+                  : "alpha.ext.installScopeProjectUnavailable",
+              ),
+            )
+            return null
+          }
           return failOr(res)
+        }
+        if (res.projectMcpState) {
+          const state = projectMcpStatusView(res.projectMcpState)
+          flash(t(state.textKey), state.connected ? "success" : "info")
+          return null
         }
         // #395(Codex r8 M4):第三方 MCP 默认关 —— 装成功但未激活连接,如实提示「已装未启用」。
         if (res.reason === "installed-disabled") flash(t("alpha.ext.installedDisabled"))
@@ -1244,6 +1283,7 @@ export function ExtensionHub(props: {
     setAuthz(null)
     setConfirming(null)
     setEnvValues({})
+    setInstallScope(DEFAULT_CATALOG_INSTALL_SCOPE)
   }
   const closePackageAuthz = () => {
     const pending = packageAuthz()
@@ -1312,7 +1352,9 @@ export function ExtensionHub(props: {
     setAuthzBusy(true)
     try {
       const next =
-        a.mode === "update" ? await runUpdateRedrive(a.entry, decision) : await onAdd(a.entry, a.secrets, decision)
+        a.mode === "update"
+          ? await runUpdateRedrive(a.entry, decision)
+          : await onAdd(a.entry, a.secrets, decision, a.scope, a.projectDir)
       // 重驱再遇 authorize(授权与重驱之间 grants/catalog 变化)→ 最新 diff 原地替换,不只拦第一次。
       if (next) {
         setAuthz({ ...a, diffs: next })
@@ -1358,7 +1400,7 @@ export function ExtensionHub(props: {
     // plugin(引擎进程内运行)/ agent(带权限档)/ cloud(数据出境,上行明细在详情页)=
     // 详情页先行档:先看清楚再启用。
     if (e.type === "plugin" || e.type === "agent" || e.type === "cloud") return openEntryDetail(e)
-    setConfirming(e)
+    openInstallConfirmation(e)
   }
   // Install action coming FROM the detail page: plugin now goes to its risk confirm dialog
   // (the user has just seen the hooks/risk sections); skill stays direct; the rest confirm.
@@ -1370,7 +1412,7 @@ export function ExtensionHub(props: {
     // 用户已在详情页看过内容/权限:skill/agent 直装;cloud 直启用(上行明细刚看过);
     // plugin 仍过风险确认框;MCP/套件过确认框。
     if (e.type === "skill" || e.type === "agent" || e.type === "cloud") return void addDirect(e)
-    setConfirming(e)
+    openInstallConfirmation(e)
   }
 
   const onUninstall = async (receipt: InstallReceipt) => {
@@ -1393,8 +1435,12 @@ export function ExtensionHub(props: {
       return
     }
     flash(
-      res.ok ? t("alpha.ext.removed") : `${t("alpha.ext.removeFailed")}${res.reason ? `: ${res.reason}` : ""}`,
-      res.ok ? "success" : "error",
+      res.ok
+        ? res.reason === "reload-pending"
+          ? t("alpha.ext.statePendingReload")
+          : t("alpha.ext.removed")
+        : `${t("alpha.ext.removeFailed")}${res.reason ? `: ${res.reason}` : ""}`,
+      res.ok ? (res.reason === "reload-pending" ? "info" : "success") : "error",
     )
     if (res.ok) await refetchPackages()
     // `#706` 的「它还属于某个扩展包 —— 只移除了你的独立安装,文件保留」正是走这条 warning;
@@ -2068,7 +2114,7 @@ export function ExtensionHub(props: {
     }
     // Codex r1 B1:project 行不下钻详情 —— 详情页的收据解析是 global 语义面(receipt memo 只查
     // global 账本),legacy 项目账本若存 catalog-id 记录,下钻后「卸载」会误落同 id 的 global 安装。
-    // project 组 = 只读+卸载(ADR-030),行内动作已完备,详情留给 global/目录语义。
+    // project 行的独立移除动作已完备,详情留给 global/目录语义。
     const clickable = () =>
       row.receipt.scope !== "project" &&
       (!!row.entry || (row.type === "agent" && ext.store.agents.some((x) => x.name === row.name)))
@@ -2105,22 +2151,22 @@ export function ExtensionHub(props: {
     const rowCst = createMemo(() => statusOf(row.receipt.id))
     const rowSessionGrant = () => isSessionGrant(rowCst())
     const rowSessionView = createMemo(() => sessionViewFor(row.receipt.id))
-    const activationText = () =>
-      rowSessionGrant()
-        ? row.type === "mcp"
-          ? t(rowSessionView().textKey)
-          : t("alpha.ext.sessionKindUnsupportedRow")
-        : row.type === "mcp"
-          ? // `#733`:`needs_auth` 不是「未连接」——它是一个用户能自己修好的状态,
-            // 说成「未连接」等于把唯一的补救路径从界面上抹掉。
-            row.mcp?.needsAuth
-            ? t("alpha.ext.mcpNeedsAuth")
-            : row.mcp?.connected
-              ? t("alpha.ext.enabledLive")
-              : t("alpha.ext.disabled")
-          : desiredOn()
-            ? t("alpha.ext.installed")
-            : t("alpha.ext.notEnabledHint") // #395:默认关/手动关的状态行提示
+    const projectMcpView = createMemo(() =>
+      row.type === "mcp" && row.receipt.scope === "project"
+        ? projectMcpStatusView(row.receipt.projectMcpState)
+        : undefined,
+    )
+    const activationText = () => {
+      const project = projectMcpView()
+      if (project) return t(project.textKey)
+      if (rowSessionGrant())
+        return row.type === "mcp" ? t(rowSessionView().textKey) : t("alpha.ext.sessionKindUnsupportedRow")
+      if (row.type !== "mcp") return desiredOn() ? t("alpha.ext.installed") : t("alpha.ext.notEnabledHint")
+      // `#733`:`needs_auth` 不是「未连接」——它是一个用户能自己修好的状态,
+      // 说成「未连接」等于把唯一的补救路径从界面上抹掉。
+      if (row.mcp?.needsAuth) return t("alpha.ext.mcpNeedsAuth")
+      return row.mcp?.connected ? t("alpha.ext.enabledLive") : t("alpha.ext.disabled")
+    }
     const isUpdatable = () =>
       updatable().some((r) => r.id === row.receipt.id && r.name === row.name && r.scope === row.receipt.scope)
     return (
@@ -2181,33 +2227,50 @@ export function ExtensionHub(props: {
           {/* 状态行:健康点 + 健康文字 · 启用态(来源/类型/版本收进详情页) */}
           <div class="alpha-ext-man-st">
             <Show
-              when={row.type === "mcp" && row.mcp?.error}
+              when={projectMcpView()}
               fallback={
                 <Show
-                  when={health()}
+                  when={row.type === "mcp" && row.mcp?.error}
                   fallback={
-                    <>
-                      {/* #408:会话行的点随开关状态机走(ok=已启用已连接 / warn=已开但连接未成功 / muted=关) */}
-                      <span
-                        class="alpha-ext-man-dot"
-                        data-tone={rowSessionGrant() && row.type === "mcp" ? rowSessionView().tone : undefined}
-                        data-on={!rowSessionGrant() && (row.type !== "mcp" || row.mcp?.connected) ? "" : undefined}
-                      />
-                      {activationText()}
-                    </>
+                    <Show
+                      when={health()}
+                      fallback={
+                        <>
+                          {/* #408:会话行的点随开关状态机走(ok=已启用已连接 / warn=已开但连接未成功 / muted=关) */}
+                          <span
+                            class="alpha-ext-man-dot"
+                            data-tone={rowSessionGrant() && row.type === "mcp" ? rowSessionView().tone : undefined}
+                            data-on={!rowSessionGrant() && (row.type !== "mcp" || row.mcp?.connected) ? "" : undefined}
+                          />
+                          {activationText()}
+                        </>
+                      }
+                    >
+                      {(hp) => (
+                        <>
+                          <span class="alpha-ext-man-dot" data-tone={hp().tone} />
+                          {t(hp().textKey)} · {activationText()}
+                        </>
+                      )}
+                    </Show>
                   }
                 >
-                  {(hp) => (
-                    <>
-                      <span class="alpha-ext-man-dot" data-tone={hp().tone} />
-                      {t(hp().textKey)} · {activationText()}
-                    </>
-                  )}
+                  <span class="alpha-ext-man-dot" data-err="" />
+                  {row.mcp?.error}
                 </Show>
               }
             >
-              <span class="alpha-ext-man-dot" data-err="" />
-              {row.mcp?.error}
+              {(project) => (
+                <>
+                  <span
+                    class="alpha-ext-man-dot"
+                    data-tone={project().tone}
+                    data-project-mcp-state={project().state}
+                  />
+                  {activationText()}
+                  <Show when={health()}>{(hp) => <> · {t(hp().textKey)}</>}</Show>
+                </>
+              )}
             </Show>
           </div>
           {/* `#784` 第 8 跳:单独移除被拒 ⇒ **明确拒绝 + 指向正确动作**,不是静默什么都不做,
@@ -2974,9 +3037,19 @@ export function ExtensionHub(props: {
                     void (async () => {
                       setConfirmBusy(true)
                       try {
-                        const diffs = await onAdd(e, secretsArg)
+                        const scope = installScope()
+                        const selectedProjectDir = scope === "project" ? projectDir() : undefined
+                        const diffs = await onAdd(e, secretsArg, undefined, scope, selectedProjectDir)
                         if (diffs) {
-                          setAuthz({ entry: e, mode: "install", host: "confirm", secrets: secretsArg, diffs })
+                          setAuthz({
+                            entry: e,
+                            mode: "install",
+                            host: "confirm",
+                            secrets: secretsArg,
+                            scope,
+                            projectDir: selectedProjectDir,
+                            diffs,
+                          })
                           return
                         }
                         closeAuthz()
@@ -3101,6 +3174,58 @@ export function ExtensionHub(props: {
                     }}
                   </For>
                 </div>
+                <Show when={entry().type === "mcp"}>
+                  <fieldset class="alpha-ext-install-scope" data-install-scope="mcp">
+                    <legend>{t("alpha.ext.installScopeTitle")}</legend>
+                    <div class="alpha-ext-install-scope-options">
+                      <label
+                        class="alpha-ext-install-scope-option"
+                        data-selected={installScope() === "global" ? "" : undefined}
+                      >
+                        <input
+                          type="radio"
+                          name="alpha-ext-install-scope"
+                          value="global"
+                          checked={installScope() === "global"}
+                          onChange={() => setInstallScope("global")}
+                        />
+                        <span>
+                          <b>{t("alpha.ext.installScopeGlobal")}</b>
+                          <small>{t("alpha.ext.installScopeGlobalHint")}</small>
+                        </span>
+                      </label>
+                      <Show when={projectDir()}>
+                        {(dir) => {
+                          const projectTarget = () => catalogInstallTargetFor(entry(), "project", dir())
+                          return (
+                            <label
+                              class="alpha-ext-install-scope-option"
+                              data-selected={installScope() === "project" ? "" : undefined}
+                              data-disabled={!projectTarget().ok ? "" : undefined}
+                            >
+                              <input
+                                type="radio"
+                                name="alpha-ext-install-scope"
+                                value="project"
+                                checked={installScope() === "project"}
+                                disabled={!projectTarget().ok}
+                                onChange={() => setInstallScope("project")}
+                              />
+                              <span>
+                                <b>{t("alpha.ext.installScopeProject")}</b>
+                                <small>
+                                  {projectTarget().ok
+                                    ? t("alpha.ext.installScopeProjectHint", { project: projectLabel(dir()) })
+                                    : t("alpha.ext.installScopeProjectUnavailable")}
+                                </small>
+                              </span>
+                            </label>
+                          )
+                        }}
+                      </Show>
+                    </div>
+                  </fieldset>
+                </Show>
                 <Show when={entry().type === "plugin"}>
                   <p class="alpha-ext-confirm-risk">⚠ {t("alpha.ext.pluginRisk")}</p>
                 </Show>
@@ -3131,7 +3256,15 @@ export function ExtensionHub(props: {
                     <p class="alpha-ext-key-hint">{t("alpha.ext.keyHint")}</p>
                   </div>
                 </Show>
-                <p class="alpha-ext-confirm-note">{t("alpha.ext.confirmNote")}</p>
+                <p class="alpha-ext-confirm-note">
+                  {entry().type === "mcp"
+                    ? t(
+                        installScope() === "project"
+                          ? "alpha.ext.confirmNoteProjectMcp"
+                          : "alpha.ext.confirmNoteGlobalMcp",
+                      )
+                    : t("alpha.ext.confirmNote")}
+                </p>
               </div>
             )}
           </Show>

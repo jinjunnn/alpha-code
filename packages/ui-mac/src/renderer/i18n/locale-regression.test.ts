@@ -109,6 +109,26 @@ describe("locale regression gate", () => {
     setLocale("en")
   })
 
+  test("project MCP consent, reload, shadowing, and unverifiable states stay distinct", () => {
+    const keys = [
+      "alpha.ext.projectMcpAwaitingConsent",
+      "alpha.ext.projectMcpConsentDenied",
+      "alpha.ext.projectMcpDisabled",
+      "alpha.ext.addedPendingReload",
+      "alpha.ext.projectMcpShadowed",
+      "alpha.ext.projectMcpUnverifiable",
+    ] as const
+    for (const locale of ["en", "zh"] as const) {
+      setLocale(locale)
+      const copy = keys.map((key) => t(key))
+      expect(copy.every((value, index) => value !== keys[index])).toBe(true)
+      expect(new Set(copy).size).toBe(keys.length)
+    }
+    expect(en["alpha.ext.projectMcpShadowed"]).toBe("Shadowed by global")
+    expect(en["alpha.ext.projectMcpUnverifiable"]).toBe("Activation unverifiable")
+    setLocale("en")
+  })
+
   test("model row labels omit the trailing separator when status is empty", () => {
     (["en", "zh"] as const).forEach((locale) => {
       setLocale(locale)
