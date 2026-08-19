@@ -75,6 +75,7 @@ import { listTransactionJournals, recoverExtensionTransactions, recoverExtension
 import { getLogger } from "./logging"
 import { resolveVerifiedPackageV1, runCatalogInstallWithPackagePreflight } from "./package-installability"
 import { createPackageAdmissionCoordinator } from "./package-admission"
+import { createPackageMcpOauthEngineV1 } from "./package-mcp-oauth"
 
 // REQ-076 T2(阻断②):原实现硬编码 `which` + `:` 拼接的 unix PATH,Windows 上恒报「未安装」
 // (MCP 安装预检全线误报)。改经 platform seam:posix = which + 补包管理器目录(原 mac 行为
@@ -376,6 +377,9 @@ export function registerExtIpcHandlers(
     // 实现。接缝缺席时 admission 响亮拒绝该次更新(见 executePreparedPackage),不会留下
     // 「账本说没了、MCP server 还在跑」。
     removePackageChildArtifacts: (children) => packageChildFileCleanup(children),
+    // `#703`:required MCP OAuth 的就绪判据问引擎(authenticated typed route)。接缝缺席时
+    // admission 对声明了 mcp-oauth 的包 fail-closed,所以这里必须真接,不是可选优化。
+    mcpOauthEngine: createPackageMcpOauthEngineV1(awaitServer),
   })
   // REQ-128 `#698`:某个 package 在本机装没装(**只读**,不进写通道注册表)。详情页据此决定
   // 要不要显示「移除此扩展包」。只回安全投影:componentId / kind / name / required 与图摘要 ——

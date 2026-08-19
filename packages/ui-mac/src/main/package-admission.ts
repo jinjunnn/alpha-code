@@ -72,6 +72,7 @@ import {
   type PackageConnectionReferenceV1,
 } from "../shared/package-alpha-connection"
 import { lookupAlphaConnectionHandlerV1, ALPHA_CONNECTION_HANDLERS_V1 } from "./alpha-connection-handlers"
+import { probePackageMcpOauthPrerequisiteV1, type PackageMcpOauthEngineV1 } from "./package-mcp-oauth"
 import {
   bindAlphaConnectionPackageV1,
   readAlphaConnectionRecordsV1,
@@ -150,6 +151,12 @@ export type PackageAdmissionOutcome =
        * account" rather than "turn it on".
        */
       connectionUnavailable?: true
+      /**
+       * Installed, but an optional MCP OAuth prerequisite is not satisfied (the engine holds no
+       * valid token for the signed server URL). Same honesty contract as `connectionUnavailable`:
+       * the user is told "authorize this service" rather than "turn it on".
+       */
+      mcpOauthUnavailable?: true
       warning?: string
     }
   | {
@@ -190,6 +197,12 @@ export type PackageAdmissionDeps = {
    * 绝不让「账本说没了、实物还在跑」这种状态发生。
    */
   removePackageChildArtifacts?: (children: Array<{ kind: string; name: string }>) => PackageArtifactRemovalV1
+  /**
+   * `#703`:MCP OAuth readiness 的引擎接缝(生产 = `createPackageMcpOauthEngineV1(awaitServer)`)。
+   * 可选,但**不是可跳过**:包声明了 mcp-oauth 前置而接缝缺席时,required 直接拒、optional 落
+   * unavailable —— 绝不把「没法问引擎」静默当成「已就绪」。
+   */
+  mcpOauthEngine?: PackageMcpOauthEngineV1
 }
 
 /**
@@ -364,14 +377,58 @@ export function createPackageAdmissionCoordinator(deps: PackageAdmissionDeps) {
     const connection = resolveConnectionBinding(revalidated.prepared, deps)
     if (!connection.ok) return { ok: false, reason: `package admission: ${connection.reasonCode}` }
 
+    // §2.7's "required MCP OAuth ready" is the same step for the other authorization kind, with
+    // one structural difference: readiness is asked of the *engine* (its token store is the only
+    // durable record, and its URL binding is the fail-closed check), never of a main-side cache.
+    // The probe runs on the revalidated signed facts, so the URL it asks about is the envelope's.
+    //
+    // A required OAuth prerequisite that is not ready ends the attempt here, with zero transaction
+    // calls; an optional one installs disabled and says why.
+    const oauth = await resolveMcpOauthBinding(revalidated.prepared, deps)
+    if (!oauth.ok) return { ok: false, reason: `package admission: ${oauth.reasonCode}` }
+
     // `#698`:判决在**执行期重算**,不吃 preview 时那份。两次之间账本可能被别的操作改过
     // (另一个包装了同一个 child、用户单装了它、另一版本落了地),而这里算错的后果是删错东西。
     const lifecycle = resolvePackageLifecyclePlan(deps.root(), revalidated.prepared)
     if (!lifecycle.ok) return { ok: false, reason: `package admission: ${lifecycle.reason}` }
     if (lifecycle.plan.conflicts.length > 0) return { ok: false, reason: conflictReason(lifecycle.plan.conflicts) }
 
-    return executePreparedPackage(revalidated.prepared, intent, deps, connection, lifecycle.plan)
+    return executePreparedPackage(revalidated.prepared, intent, deps, connection, oauth, lifecycle.plan)
   }
+}
+
+export type ResolvedPackageMcpOauthV1 = {
+  ok: true
+  /** An optional OAuth prerequisite that is not ready: install, but land disabled and say so. */
+  unavailable: boolean
+}
+
+/**
+ * Answer the MCP OAuth question for one prepared package from signed facts plus the engine's own
+ * token authority. Required and optional diverge on exactly one point, same as connections: a
+ * required prerequisite that is not ready refuses the install, an optional one lets it land in the
+ * "installed, not authorized" state — visible, honest, and authorizable without reinstalling.
+ */
+async function resolveMcpOauthBinding(
+  prepared: PreparedPackage,
+  deps: PackageAdmissionDeps,
+): Promise<ResolvedPackageMcpOauthV1 | { ok: false; reasonCode: string }> {
+  const items = prepared.components.flatMap((component) => component.accepted.oauth.items)
+  if (items.length === 0) return { ok: true, unavailable: false }
+  let unavailable = false
+  for (const item of items) {
+    // No engine seam wired is answered per-item, not globally: an optional prerequisite degrades
+    // to unavailable exactly as an unreachable engine would, a required one refuses. "Cannot ask"
+    // must never be softer than "asked and told no".
+    const evaluated = deps.mcpOauthEngine
+      ? await probePackageMcpOauthPrerequisiteV1(deps.mcpOauthEngine, item)
+      : ({ state: "blocked", reasonCode: "mcp-oauth-engine-unavailable" } as const)
+    if (evaluated.state !== "ready") {
+      if (item.required) return { ok: false, reasonCode: evaluated.reasonCode }
+      unavailable = true
+    }
+  }
+  return { ok: true, unavailable }
 }
 
 export type ResolvedPackageConnectionV1 = {
@@ -785,6 +842,7 @@ async function executePreparedPackage(
   intent: PackageIntent,
   deps: PackageAdmissionDeps,
   connection: ResolvedPackageConnectionV1,
+  oauth: ResolvedPackageMcpOauthV1,
   lifecycle: PackageLifecyclePlanV1,
 ): Promise<PackageAdmissionOutcome> {
   const root = deps.root()
@@ -838,7 +896,7 @@ async function executePreparedPackage(
     //
     // It has to stay *above* `common`: since #705 the ledger template is handed to the builders, so
     // this is the last point at which one write reaches every builder and every item they emit.
-    if (connection.unavailable) receipt.desiredState = "disabled"
+    if (connection.unavailable || oauth.unavailable) receipt.desiredState = "disabled"
     // #705:计划构造归 builders(Bundle 与单装同一真源),本函数只负责执行与结果映射。
     const common = {
       root,
@@ -984,6 +1042,7 @@ async function executePreparedPackage(
     rootManifestDigest,
     builds,
     connection,
+    oauth,
     [bindConnectionsAfterCommit(result, connection, deps), ...cleanupWarnings].filter((entry): entry is string => !!entry).join("; ") || undefined,
   )
 }
@@ -1186,6 +1245,7 @@ function transactionOutcome(
   rootManifestDigest: string,
   builds: Array<{ component: PreparedComponent; desiredState: "enabled" | "disabled" }>,
   connection: ResolvedPackageConnectionV1,
+  oauth: ResolvedPackageMcpOauthV1,
   connectionWarning?: string,
 ): PackageAdmissionOutcome {
   if (!result.ok) {
@@ -1214,6 +1274,7 @@ function transactionOutcome(
       ? { installedDisabled: true as const }
       : {}),
     ...(connection.unavailable ? { connectionUnavailable: true as const } : {}),
+    ...(oauth.unavailable ? { mcpOauthUnavailable: true as const } : {}),
     ...(warnings.length ? { warning: warnings.join("; ") } : {}),
   }
 }

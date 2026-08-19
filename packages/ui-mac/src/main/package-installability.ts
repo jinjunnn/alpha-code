@@ -31,6 +31,10 @@ import {
   type AlphaConnectionHandlerTableV1,
   type PackageConnectionPrerequisiteProfileV1,
 } from "../shared/package-alpha-connection"
+import {
+  decodePackageMcpOauthPrerequisiteProfileV1,
+  type PackageMcpOauthPrerequisiteProfileV1,
+} from "../shared/package-mcp-oauth"
 import { lookupAlphaConnectionHandlerV1, ALPHA_CONNECTION_HANDLERS_V1 } from "./alpha-connection-handlers"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 
@@ -71,6 +75,8 @@ export type PackageAcceptedComponentV1 = {
   prerequisite: Extract<PackageSecretPrerequisiteProfileDecodeV1, { ok: true }>["profile"]
   /** Alpha Connection prerequisites declared by this component. Empty for every other profile. */
   connection: PackageConnectionPrerequisiteProfileV1
+  /** MCP OAuth prerequisites (engine-owned protocol). Empty for every other auth kind. */
+  oauth: PackageMcpOauthPrerequisiteProfileV1
 }
 
 export type PackageAcceptedFactsV1 = {
@@ -334,12 +340,17 @@ export async function evaluatePackageForHost(
         componentViews,
         presentation,
       )
+    // MCP OAuth needs no allowlist lookup: the engine is its single protocol authority, compiled
+    // into every build. Readiness is main's answer at admission time (asked of the engine), not
+    // the browse surface's — same division of labour as the secret prerequisites above.
+    const oauth = decodePackageMcpOauthPrerequisiteProfileV1(component, decoded.payload)
     accepted.push({
       component,
       role: entry.role,
       payload: decoded.payload,
       prerequisite: prerequisite.profile,
       connection,
+      oauth,
     })
   }
 
@@ -475,6 +486,7 @@ function compatibleView(
     [
       ...entry.prerequisite.items,
       ...entry.connection.items,
+      ...entry.oauth.items,
     ].map((item) => ({
       prerequisiteId: item.prerequisiteId,
       label: item.label,
