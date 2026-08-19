@@ -1,9 +1,9 @@
 {
   "v": 1,
-  "version": "2026-08-06.1",
-  "entries": 25,
-  "sha256": "e37a4cf3142e12169fa5bd0a2b6907189499122f7ae578a22ffa5a731dc1e874",
-  "source": "file:/private/tmp/issue143-web/public/catalog/v1/catalog.json",
-  "fetchedAt": "2026-08-06T07:27:53.997Z",
+  "version": "2026-08-17.3",
+  "entries": 28,
+  "sha256": "ba40b79b1a4410847344cdc3a5d13ffc77bcaf2b15d85ad72fc0bb295b63a786",
+  "source": "file:/Users/tide/app/alpha-web/public/catalog/v1/catalog.json",
+  "fetchedAt": "2026-08-19T02:12:51.284Z",
   "_note": "由 scripts/sync-catalog-snapshot.mjs 生成;alpha-catalog.json 禁手编(REQ-046),上架/撤架唯一动作在 alpha-web catalog-src。"
 }

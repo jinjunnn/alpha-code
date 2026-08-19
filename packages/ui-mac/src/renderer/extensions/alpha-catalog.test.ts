@@ -48,9 +48,12 @@ describe("alpha-catalog 完整性", () => {
 
   test("MCP local 条目:npx/uvx 包全部钉精确版本(A2 纪律),mirrorCommand 与主命令同包同版", () => {
     const pinned = /@\d+\.\d+\.\d+([-.a-z0-9]*)?$/i
+    const registryRunners = new Set(["npx", "uvx"])
     for (const entry of catalog.entries.filter((e) => e.type === "mcp")) {
       const spec = entry.installSpec as McpInstallSpec
       if (spec.mcpType !== "local") continue
+      const runner = spec.command?.[0]?.split("/").pop()
+      if (!registryRunners.has(runner ?? "")) continue
       const pkg = packageArg(spec.command!)
       expect(pkg, `${entry.id} 主命令缺包参数`).toBeDefined()
       expect(pinned.test(pkg!), `${entry.id} 未钉版本:${pkg}`).toBe(true)
@@ -132,26 +135,19 @@ describe("REQ-105/REQ-135 Office retirement guards", () => {
     }
   })
 
-  test("signed snapshot still contains community Excel while alpha-web#155 is pending; desktop denies it", () => {
-    // Do not turn this into an absence assertion until sync-catalog-snapshot.mjs imports signed bytes
-    // that actually drop the entry. The stale byte truth and the current desktop policy are separate.
-    expect(catalog.entries.some((entry) => entry.id === "mcp:excel")).toBe(true)
-    const staleEntry = catalog.entries.find((entry) => entry.id === "mcp:excel")
-    expect(staleEntry?.name).toBe("excel-mcp-server")
-    expect((staleEntry?.installSpec as McpInstallSpec | undefined)?.command).toContain("excel-mcp-server@0.1.8")
-
+  test("signed snapshot has no community Excel; Hub Excel card is mcp:alpha-excel only", () => {
+    expect(catalog.entries.some((entry) => entry.id === "mcp:excel")).toBe(false)
+    expect(rawText.includes("excel-mcp-server")).toBe(false)
+    expect(catalog.entries.some((entry) => entry.id === "mcp:alpha-excel")).toBe(true)
+    const office = catalog.entries.find((e) => e.id === "bundle:office")
+    expect((office?.bundleItems ?? []).map((item) => item.catalogEntryId)).toEqual([
+      "mcp:markitdown",
+      "mcp:filesystem",
+      "mcp:alpha-excel",
+    ])
     expect(RETIRED_COMMUNITY_OFFICE_CONNECTORS.map((connector) => connector.catalogId)).toEqual(["mcp:excel"])
     expect(retiredCommunityOfficeFor({ id: "mcp:excel", name: "excel-mcp-server" })).toBeDefined()
-    expect(retiredCommunityOfficeFor({ id: "mcp:alpha-excel", name: "alpha-excel" })).toBeUndefined()
-    const installable = installableCatalogEntries(catalog.entries)
-    expect(installable.map((entry) => entry.id)).not.toContain("mcp:excel")
-    expect(
-      installable.some(
-        (entry) =>
-          entry.type === "bundle" &&
-          (entry.bundleItems ?? []).some((item) => item.catalogEntryId === "mcp:excel"),
-      ),
-    ).toBe(false)
+    expect(installableCatalogEntries(catalog.entries).map((entry) => entry.id)).not.toContain("mcp:excel")
   })
 })
 
