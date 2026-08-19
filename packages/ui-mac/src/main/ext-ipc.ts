@@ -18,7 +18,7 @@ import { isExtensionName } from "../shared/extension-name"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { assertProjectMcpTransactionRootIdentity, collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, releasePreparedTxResources, removeCommandEntry, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, withConfigWriteLock } from "./ext-config"
+import { assertProjectMcpTransactionRootIdentity, assertProjectRecoveryJournalAlgebra, collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, releasePreparedTxResources, removeCommandEntry, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, removeProjectMcpConfigInLock, withConfigWriteLock } from "./ext-config"
 import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
 import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { probeProjectMcpActivation, reloadInstalledMcp } from "./ext-mcp-activation"
@@ -71,7 +71,7 @@ import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedge
 import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
 import { releaseAlphaConnectionBindingsV1 } from "./alpha-connection-store"
-import { recoverExtensionTransactions, recoverExtensionTransactionsInHeldLock, recoveryClean, type RecoverOptions } from "./ext-transaction"
+import { listTransactionJournals, recoverExtensionTransactions, recoverExtensionTransactionsInHeldLock, recoveryClean, type RecoverOptions } from "./ext-transaction"
 import { getLogger } from "./logging"
 import { resolveVerifiedPackageV1, runCatalogInstallWithPackagePreflight } from "./package-installability"
 import { createPackageAdmissionCoordinator } from "./package-admission"
@@ -763,6 +763,7 @@ export function registerExtIpcHandlers(
       return
     }
     assertProjectMcpTransactionRootIdentity(root)
+    assertProjectRecoveryJournalAlgebra(root, listTransactionJournals(root))
   }
   const recoveryGate = makeRecoveryGate(recoveryOpts, (m) => getLogger().log(m), verifyRecoveryRoot)
   // #390(review r1 Blocker):启动期全局生态导入必须过恢复 gate,不能只靠 ledgerReady barrier ——
@@ -1102,7 +1103,20 @@ export function registerExtIpcHandlers(
     retire: (ref, req) =>
       retireTransactionJournal(ref, req, {
         // 裁决 Q1:锁内最后收敛必须用 InHeldLock 核心(文件锁非重入,公共入口必然 busy-skip)。
-        recoverInHeldLock: (root, onProgress) => recoverExtensionTransactionsInHeldLock(root, { ...recoveryOpts(root), onProgress }),
+        recoverInHeldLock: (root, onProgress) => {
+          if (ref.identity.startsWith("project:")) {
+            try {
+              assertProjectRecoveryJournalAlgebra(root, listTransactionJournals(root))
+            } catch {
+              return Promise.resolve({
+                ok: false,
+                reason: "project recovery journal is outside the admitted transaction algebra",
+                reports: [],
+              })
+            }
+          }
+          return recoverExtensionTransactionsInHeldLock(root, { ...recoveryOpts(root), onProgress })
+        },
       }),
   })
   ipcMain.handle(JOURNAL_ADMIN_CHANNELS.retainedList, async (_event: IpcMainInvokeEvent, intent: unknown) => {

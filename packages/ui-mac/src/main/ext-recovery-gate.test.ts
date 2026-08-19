@@ -11,8 +11,8 @@ import * as path from "node:path"
 
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { gatedWriteHandler, makeRecoveryGate, runVerifiedMutation, type RecoveryGate } from "./ext-recovery-gate"
-import { probeTransactionJournals, type RecoverOptions } from "./ext-transaction"
-import { assertProjectMcpTransactionRootIdentity, removeProjectMcpConfigInLock } from "./ext-config"
+import { listTransactionJournals, probeTransactionJournals, type RecoverOptions } from "./ext-transaction"
+import { assertProjectMcpTransactionRootIdentity, assertProjectRecoveryJournalAlgebra, removeProjectMcpConfigInLock } from "./ext-config"
 import { removeInstallGrants } from "./ext-install-planner"
 import { capabilityGrantPath } from "./ext-capability-grants"
 import { findRecordV2, projectScopeIdentity, removeRecordV2, upsertRecordV2 } from "./ext-receipt-v2"
@@ -127,6 +127,128 @@ describe("withRecoveredWrite — 准入判据", () => {
     expect(fs.readFileSync(sentinel, "utf8")).toBe("outside-stays-exact")
   })
 
+  test("REQ-136 project gate rejects a prefs.json config journal before recovery can replay consent", async () => {
+    let project = path.join(root, "D")
+    fs.mkdirSync(path.join(project, ".alpha", "ext-tx", "journal"), { recursive: true })
+    project = fs.realpathSync(project)
+    const projectRoot = path.join(project, ".alpha")
+    const prefs = path.join(projectRoot, "prefs.json")
+    fs.writeFileSync(prefs, '{"extensionsConsent":"granted"}\n')
+    const before = fs.readFileSync(prefs, "utf8")
+    fs.writeFileSync(
+      path.join(projectRoot, "ext-tx", "journal", "tx-crafted.json"),
+      JSON.stringify({
+        v: 1,
+        txId: "tx-crafted",
+        op: "install",
+        state: "switching",
+        createdAt: "2026-08-18T00:00:00.000Z",
+        updatedAt: "2026-08-18T00:00:00.000Z",
+        items: [
+          {
+            key: "mcp--demo",
+            action: "config",
+            genId: "gen-000000-000000",
+            files: [],
+            config: { target: prefs, slot: 0, preDigest: "a".repeat(64), nextDigest: "b".repeat(64) },
+          },
+        ],
+      }),
+    )
+    let bodyCalls = 0
+    const gate = makeRecoveryGate(
+      () => ({}),
+      undefined,
+      (seenRoot) => assertProjectRecoveryJournalAlgebra(seenRoot, listTransactionJournals(seenRoot)),
+    )
+
+    const result = await gate.withRecoveredWrite(projectRoot, async () => {
+      bodyCalls++
+      return { ok: true as const }
+    })
+
+    expect(result).toEqual({ ok: false, reason: "root identity cannot be confirmed — operation refused (fail closed)" })
+    expect(bodyCalls).toBe(0)
+    expect(fs.readFileSync(prefs, "utf8")).toBe(before)
+    expect(probeTransactionJournals(projectRoot).entries[0]?.state).toBe("switching")
+  })
+
+  test("REQ-136 project gate rejects prepared-resource journals before any global release seam", async () => {
+    let project = path.join(root, "D")
+    fs.mkdirSync(path.join(project, ".alpha", "ext-tx", "journal"), { recursive: true })
+    project = fs.realpathSync(project)
+    const projectRoot = path.join(project, ".alpha")
+    const globalCanary = path.join(root, "global-secret-version")
+    fs.writeFileSync(globalCanary, "global-secret-stays-exact")
+    fs.writeFileSync(
+      path.join(projectRoot, "ext-tx", "journal", "tx-prepared.json"),
+      JSON.stringify({
+        v: 1,
+        txId: "tx-prepared",
+        op: "install",
+        state: "staging",
+        createdAt: "2026-08-18T00:00:00.000Z",
+        updatedAt: "2026-08-18T00:00:00.000Z",
+        prepared: [
+          { kind: "mcp-secret-version", store: "alpha-mcp-secrets", server: "demo", version: "v-deadbeefcafe" },
+        ],
+        items: [
+          {
+            key: "mcp--demo",
+            action: "config",
+            genId: "gen-000000-000000",
+            files: [],
+            config: {
+              target: path.join(projectRoot, "alpha.jsonc"),
+              slot: 0,
+              preDigest: "a".repeat(64),
+              nextDigest: "b".repeat(64),
+            },
+            receipt: { kind: "mcp", name: "demo", scope: { kind: "project", projectPath: project } },
+          },
+        ],
+      }),
+    )
+    let releaseCalls = 0
+    let bodyCalls = 0
+    const gate = makeRecoveryGate(
+      () => ({
+        releasePrepared: () => {
+          releaseCalls++
+          fs.rmSync(globalCanary, { force: true })
+        },
+      }),
+      undefined,
+      (seenRoot) => assertProjectRecoveryJournalAlgebra(seenRoot, listTransactionJournals(seenRoot)),
+    )
+
+    const result = await gate.withRecoveredWrite(projectRoot, async () => {
+      bodyCalls++
+      return { ok: true as const }
+    })
+
+    expect(result).toEqual({ ok: false, reason: "root identity cannot be confirmed — operation refused (fail closed)" })
+    expect(releaseCalls).toBe(0)
+    expect(bodyCalls).toBe(0)
+    expect(fs.readFileSync(globalCanary, "utf8")).toBe("global-secret-stays-exact")
+  })
+
+  test("REQ-136 project recovery algebra preserves legacy generation-only skill replay", async () => {
+    let project = path.join(root, "D")
+    fs.mkdirSync(path.join(project, ".alpha"), { recursive: true })
+    project = fs.realpathSync(project)
+    const projectRoot = path.join(project, ".alpha")
+    writeUninstallJournal("tx-project-skill", "skill--demo", projectRoot)
+    const gate = makeRecoveryGate(
+      () => fullOpts(),
+      undefined,
+      (seenRoot) => assertProjectRecoveryJournalAlgebra(seenRoot, listTransactionJournals(seenRoot)),
+    )
+
+    expect(await gate.withRecoveredWrite(projectRoot, async () => ({ ok: true as const }))).toEqual({ ok: true })
+    expect(probeTransactionJournals(projectRoot).entries[0]?.state).toBe("uninstalled")
+  })
+
   test("非终态 journal → 先收敛再执行 op(op 看到的是全终态账本)", async () => {
     writeUninstallJournal("tx-open-1")
     const gate = gateWith(fullOpts)
@@ -193,6 +315,7 @@ describe("withRecoveredWrite — 准入判据", () => {
       undefined,
       (seenRoot) => {
         expect(seenRoot).toBe(projectRoot)
+        assertProjectRecoveryJournalAlgebra(seenRoot, listTransactionJournals(seenRoot))
       },
     )
 
