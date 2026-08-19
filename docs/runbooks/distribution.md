@@ -53,12 +53,29 @@ xcrun stapler validate dist/mac-arm64/alpha-code.app    # 期望 "The validate a
 spctl -a -vvv -t install dist/mac-arm64/alpha-code.app  # 期望 "accepted / source=Notarized Developer ID"
 ls dist/alpha-code-mac-arm64.dmg dist/alpha-code-mac-arm64.zip dist/latest-mac.yml   # 三件齐
 
-# ④ 发 GitHub Release(dmg + zip + 两个 .blockmap + latest-mac.yml 一起传,tag = v<版本>)
+# ③′ 产签名 release manifest(#175;契约 docs/contracts/desktop-release-manifest.md)。
+#    从最终 dist 字节计算全部事实(size/digest/签名/公证/SBOM/updater metadata),任何缺失或
+#    不一致会打印全部错误并 exit 1 —— 此时**禁止发布**,先修再重打。含 Windows 产物时,把
+#    alpha-windows-build 的两个 artifact(exe/blockmap 与 *-release-facts)解到一个目录,
+#    加 --windows-dir <目录>(beta/prod 的未签名 Windows 包在 CI 就已经红了,到不了这一步)。
+#    签名私钥:~/.alpha-code-signing/release-manifest-ed25519.pem(没有则先
+#    `bun scripts/release-manifest.ts keygen --out <该路径>` 并把打印的 trust entry 落进
+#    docs/contracts/desktop-release-manifest.trust.json)。
+OPENCODE_CHANNEL=prod bun scripts/release-manifest.ts produce \
+  --channel prod --dist dist \
+  --key ~/.alpha-code-signing/release-manifest-ed25519.pem
+# 期望:"[release-manifest] OK: …/alpha-release-manifest.json (+.sig)";产物三件:
+# dist/alpha-release-manifest.json + .sig + dist/alpha-code-<版本>-sbom.cdx.json
+
+# ④ 发 GitHub Release(dmg + zip + 两个 .blockmap + latest-mac.yml + manifest 三件一起传,
+#    tag = v<版本>)。manifest 是 alpha-web 消费的唯一发布真相,漏传 = 该版本对 web 不存在。
 cd dist
 gh release create v0.1.1 \
   alpha-code-mac-arm64.dmg alpha-code-mac-arm64.zip \
   alpha-code-mac-arm64.dmg.blockmap alpha-code-mac-arm64.zip.blockmap \
   latest-mac.yml \
+  alpha-release-manifest.json alpha-release-manifest.json.sig \
+  alpha-code-0.1.1-sbom.cdx.json \
   --repo jinjunnn/alpha-code --target alpha \
   --title "alpha-code 0.1.1" --notes "……"
 
@@ -84,7 +101,13 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 - **appId 变更**(如从旧 `ai.opencode.desktop.*` 迁到 `com.tide.alphacode.*`)= app 存储一次性重置(会话/最近项目/登录),**磁盘项目文件不受影响**,重开即可。
 
 ## 4. 下一个真实版本怎么发(TL;DR)
-改 `package.json` 版本 → `source signing.env && OPENCODE_CHANNEL=prod bun run build && bun run package:mac` → stapler/spctl 验证 → `gh release create v<ver> …` → curl feed 得 200。整条链(签名→公证→feed)v0.1.0 已端到端验证。
+改 `package.json` 版本 → `source signing.env && OPENCODE_CHANNEL=prod bun run build && bun run package:mac` → stapler/spctl 验证 → `bun scripts/release-manifest.ts produce --channel prod --dist dist --key ~/.alpha-code-signing/release-manifest-ed25519.pem`(拒绝即停,禁止绕过)→ `gh release create v<ver> …`(含 manifest+sig+SBOM)→ curl feed 得 200。签名→公证→feed 链 v0.1.0 已端到端验证;manifest 链自 #175 起为发布必经步骤。
+
+**Windows(beta/prod)**:`alpha-windows-build.yml` 打包后自带 Authenticode 硬门 ——
+未签名、签名不可验证、或 publisher 不在白名单(REQ-076 T3 采购落地前白名单为空 = 全拒)
+⇒ job 红、不出 artifact。dev 渠道照旧出未签名内测包,但事实(status/publisher/sha256)
+必须如实落进 `windows-signing-facts.json` 随 artifact 上传。见
+[../contracts/desktop-release-manifest.md](../contracts/desktop-release-manifest.md) §5–6。
 
 ## 5. 硬化面(C27/C24,2026-07-04,S11 T6/T7)
 - **Electron fuses**(`electron-builder.config.ts` electronFuses):`RunAsNode` / `NODE_OPTIONS` / node-inspect 三注入原语关闭;`EmbeddedAsarIntegrityValidation` + `OnlyLoadAppFromAsar` + `CookieEncryption` 开启。sidecar 走 utilityProcess 不受影响;全仓无 `ELECTRON_RUN_AS_NODE` 用法。
