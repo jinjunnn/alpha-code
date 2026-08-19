@@ -9,6 +9,13 @@
 # 故本 workflow 出**未签名**包;Authenticode/Trusted Signing 接线归 REQ-076 T3(证书拍板
 # 「T3 时再定」;上游用 Azure Trusted Signing,可作 T3 采购先例)。
 # 发布:workflow_dispatch 非 tag 且不注入 GH_TOKEN → electron-builder 不 publish,只出 artifact。
+#
+# #175(alpha-work#11):上面那个「优雅自跳」对 dev 是便利,对 beta/prod 是 fail-open。
+# 打包后新增两步把它关死:① pwsh 从最终 .exe 采集 Authenticode 事实(status/publisher/
+# 文件 sha256,绑定到具体字节)写 windows-signing-facts.json;② scripts/verify-windows-signing.ts
+# 按出厂策略裁决 —— beta/prod 未签名、status 非 Valid、或 publisher 不在白名单(REQ-076 T3
+# 落地前白名单为空 = 全拒)⇒ job 红,artifact 不出。facts JSON 随 artifact 上传,
+# 是发版机 release-manifest producer(docs/contracts/desktop-release-manifest.md)的必需输入。
 name: alpha-windows-build
 
 on:
@@ -67,6 +74,39 @@ jobs:
             exit 1
           }
           Write-Host "OK: win32 natives + installer present"
+      # #175 ①:从最终 .exe 字节采集 Authenticode 事实。sha256 一并记录 —— producer 会拿它与
+      # 最终 inventory 比对,旧 facts 配新包必炸(R7)。采集本身不裁决,裁决在下一步的 bun 门里
+      # (纯逻辑,负向测试在 packages/ui-mac/src/main/release-manifest.test.ts)。
+      - name: collect Authenticode signing facts
+        shell: pwsh
+        env:
+          OPENCODE_CHANNEL: ${{ inputs.channel }}
+        run: |
+          $exe = "packages/ui-mac/dist/alpha-code-win-x64.exe"
+          $sig = Get-AuthenticodeSignature $exe
+          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+          $facts = [ordered]@{
+            schema = "alpha.release.windows-signing-facts.v1"
+            channel = $env:OPENCODE_CHANNEL
+            collectedAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            artifacts = @([ordered]@{
+              filename = "alpha-code-win-x64.exe"
+              sha256 = $hash
+              status = $sig.Status.ToString()
+              signed = ($sig.Status -eq "Valid")
+              publisher = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { $null }
+              thumbprint = if ($sig.SignerCertificate) { $sig.SignerCertificate.Thumbprint } else { $null }
+            })
+          }
+          $facts | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 "packages/ui-mac/dist/windows-signing-facts.json"
+          Get-Content "packages/ui-mac/dist/windows-signing-facts.json"
+      # #175 ②:硬门。beta/prod 上未签名 / 不可验证 / publisher 不在白名单 ⇒ 红,不出 artifact。
+      # dev 放行但事实必须完整如实(dev 包不发布,发布链只认 beta/prod)。
+      - name: windows signing gate (fail unsigned beta/prod)
+        shell: pwsh
+        env:
+          OPENCODE_CHANNEL: ${{ inputs.channel }}
+        run: bun packages/ui-mac/scripts/verify-windows-signing.ts --channel $env:OPENCODE_CHANNEL --facts packages/ui-mac/dist/windows-signing-facts.json
       - name: upload installer artifact
         uses: actions/upload-artifact@v4
         with:
@@ -74,5 +114,17 @@ jobs:
           path: |
             packages/ui-mac/dist/alpha-code-win-x64.exe
             packages/ui-mac/dist/alpha-code-win-x64.exe.blockmap
+          if-no-files-found: error
+          retention-days: 14
+      # #175:release-manifest producer 的输入面 —— facts JSON(恒在)+ electron-builder 的
+      # updater feed(latest.yml/beta.yml,--publish never 下是否落盘随 electron-builder 行为;
+      # 缺了不在这里裁决,producer 侧 R4 会因「win32 有产物而无 feed」硬拒,门不在传输层)。
+      - name: upload release facts (manifest producer inputs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpha-code-win-x64-${{ inputs.channel }}-release-facts
+          path: |
+            packages/ui-mac/dist/windows-signing-facts.json
+            packages/ui-mac/dist/*.yml
           if-no-files-found: error
           retention-days: 14

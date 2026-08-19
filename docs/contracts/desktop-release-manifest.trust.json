@@ -1,0 +1,14 @@
+{
+  "schema": "alpha.release-manifest.trust.v1",
+  "sequence": 1,
+  "publishedAt": "2026-08-19T05:08:13Z",
+  "keys": [
+    {
+      "keyId": "a4062792c8fcc960cf1f80e98e63eccc48fb7741cf736da5eb42f169b2e1379c",
+      "publicKey": "MCowBQYDK2VwAyEAyVdUiUPH+RxkmIYROyBFyxL0R3ev1GWH++DBbJS3yCw=",
+      "status": "active",
+      "notBefore": "2026-08-19T05:08:13Z"
+    }
+  ],
+  "revokedManifests": []
+}
