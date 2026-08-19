@@ -884,12 +884,100 @@ export function assertProjectMcpTransactionRootIdentity(projectRoot: string): vo
   assertRealTreeOrMissing(path.join(projectRoot, "ext-store"))
 }
 
+/** A project gate must not feed arbitrary root-confined transaction actions into the generic
+ * recovery engine. In particular, a crafted config journal targeting prefs.json could otherwise
+ * replay consent bytes. Admit only REQ-136's one-leaf MCP algebra plus the generation-only
+ * skill/agent journals retained from the pre-ADR-030 project management surface. */
+export function assertProjectRecoveryJournalAlgebra(projectRoot: string, journals: readonly unknown[]): void {
+  assertProjectMcpTransactionRootIdentity(projectRoot)
+  for (const value of journals) {
+    if (!isUnknownRecord(value)) continue
+    const journal = value
+    if (["committed", "rolled-back", "aborted", "uninstalled"].includes(String(journal.state))) continue
+    if (journal.prepared !== undefined && (!Array.isArray(journal.prepared) || journal.prepared.length > 0))
+      throw new Error("project recovery journal carries a prepared resource")
+    if (!Array.isArray(journal.items) || journal.items.length === 0)
+      throw new Error("project recovery journal has no typed items")
+    if (projectMcpRecoveryJournalAllowed(projectRoot, journal, journal.items)) continue
+    if (legacyProjectGenerationJournalAllowed(projectRoot, journal.authorization, journal.items)) continue
+    throw new Error("project recovery journal is outside the admitted project transaction algebra")
+  }
+}
+
+function projectMcpRecoveryJournalAllowed(
+  projectRoot: string,
+  journal: Record<string, unknown>,
+  items: unknown[],
+): boolean {
+  if (items.length !== 1 || !isUnknownRecord(items[0])) return false
+  const item = items[0]
+  if (typeof item.key !== "string" || !item.key.startsWith("mcp--")) return false
+  const name = item.key.slice("mcp--".length)
+  if (!isExtensionName(name) || item.action !== "config") return false
+  if (item.genId !== "gen-000000-000000" || !Array.isArray(item.files) || item.files.length !== 0) return false
+  if (item.file !== undefined || item.packageMutation !== undefined) return false
+  if (!projectJournalAuthorizationAllowed(journal.authorization, new Set([item.key]))) return false
+  const op = journal.op ?? "install"
+  if (op !== "install" && op !== "uninstall") return false
+  if (item.config !== undefined) {
+    if (!isUnknownRecord(item.config)) return false
+    if (item.config.target !== path.join(projectRoot, "alpha.jsonc")) return false
+  }
+  if (op === "install" && item.config === undefined) return false
+  if (item.receipt === undefined) return op === "uninstall"
+  return projectReceiptMatches(item.receipt, "mcp", name, projectRoot)
+}
+
+function legacyProjectGenerationJournalAllowed(
+  projectRoot: string,
+  authorization: unknown,
+  items: unknown[],
+): boolean {
+  const keys = new Set<string>()
+  const allowed = items.every((value) => {
+    if (!isUnknownRecord(value)) return false
+    const item = value
+    if (item.action !== undefined && item.action !== "generation") return false
+    if (typeof item.key !== "string" || !Array.isArray(item.files)) return false
+    if (item.config !== undefined || item.file !== undefined || item.packageMutation !== undefined) return false
+    const kind = item.key.startsWith("skill--") ? "skill" : item.key.startsWith("agent--") ? "agent" : undefined
+    if (!kind) return false
+    const name = item.key.slice(`${kind}--`.length)
+    if (!isExtensionName(name)) return false
+    keys.add(item.key)
+    return item.receipt === undefined || projectReceiptMatches(item.receipt, kind, name, projectRoot)
+  })
+  return allowed && projectJournalAuthorizationAllowed(authorization, keys)
+}
+
+function projectJournalAuthorizationAllowed(authorization: unknown, keys: ReadonlySet<string>): boolean {
+  if (authorization === undefined) return true
+  if (!isUnknownRecord(authorization) || !Array.isArray(authorization.items)) return false
+  if (authorization.skippedOptional !== undefined) {
+    if (!Array.isArray(authorization.skippedOptional) || authorization.skippedOptional.length > 0) return false
+  }
+  return authorization.items.every((value) => isUnknownRecord(value) && typeof value.key === "string" && keys.has(value.key))
+}
+
+function projectReceiptMatches(receipt: unknown, kind: "mcp" | "skill" | "agent", name: string, projectRoot: string): boolean {
+  if (!isUnknownRecord(receipt)) return false
+  const value = receipt
+  if (value.kind !== kind || value.name !== name) return false
+  if (!isUnknownRecord(value.scope)) return false
+  const scope = value.scope
+  return scope.kind === "project" && scope.projectPath === path.dirname(projectRoot)
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
 function assertRegularFileOrMissing(target: string): void {
   try {
     const stat = fs.lstatSync(target)
     if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`not a regular file: ${target}`)
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
+    const code = isUnknownRecord(error) && typeof error.code === "string" ? error.code : undefined
     if (code === "ENOENT" || code === "ENOTDIR") return
     throw error
   }
@@ -900,7 +988,7 @@ function assertRealTreeOrMissing(target: string): void {
   try {
     stat = fs.lstatSync(target)
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
+    const code = isUnknownRecord(error) && typeof error.code === "string" ? error.code : undefined
     if (code === "ENOENT" || code === "ENOTDIR") return
     throw error
   }

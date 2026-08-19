@@ -295,7 +295,10 @@ REQ-136 的窄例外仅允许已验 MCP 走 project config-only 安装,其完整
 - **安全子集与管理面**:project MCP 要求零 required env、零 secret version、零 secret/workspace
   grant，并拒 literal `{workspace}` 与 workspace-policy classifier 命中。每次 project write/uninstall
   经 per-root gate 惰性恢复恰好 D；D 根及 `alpha.jsonc`/`installs.json`/`ext-tx`/`ext-store`
-  既有端点在恢复前与 transaction 紧前复验，symlink/非常规文件 fail-closed。MCP 卸载只删 D 的
+  既有端点在恢复前与 transaction 紧前复验，symlink/非常规文件 fail-closed。恢复前另验 journal
+  algebra：REQ-136 MCP 只容单一 `mcp--*` config item 指向 D 的 `alpha.jsonc`、空 files/placeholder
+  generation/零 prepared；保留的旧管理面只容 skill/agent generation journal。其它 config/file/
+  receipt/package 形状拒绝，不交给 generic replay（尤其不能写 `prefs.json`/consent）。MCP 卸载只删 D 的
   config leaf、D 授权账与 D receipt，绝不调用 global legacy-config/secret/connection cleanup。
   Global 与 project 同名卸载互不改写对方字节。
   Project skill/agent 历史残留仍保留原管理面；generation-backed skill 继续 journaled teardown。
