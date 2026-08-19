@@ -12,6 +12,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | System structure and upstream boundary                               | [`architecture/`](architecture/)                                     |
 | Host extension package contract/host decision boundary               | [`architecture/host-extension-package-contract-boundary.md`](architecture/host-extension-package-contract-boundary.md) |
 | Alpha Connection record lifetime and handler allowlist               | [`architecture/alpha-connection-lifetime.md`](architecture/alpha-connection-lifetime.md) |
+| Package MCP OAuth ownership boundary (engine protocol / main attempt) | [`architecture/package-mcp-oauth-boundary.md`](architecture/package-mcp-oauth-boundary.md) |
 | Which quality gate really runs in which environment (and where the environment is declared) | [`architecture/quality-gate-environments.md`](architecture/quality-gate-environments.md) |
 | How many components a real Claude plugin becomes (measurement rule + distribution) | [`architecture/claude-plugin-corpus-component-scale.md`](architecture/claude-plugin-corpus-component-scale.md) |
 | What the engine's `command` is, what its event/hook surface is, and how Claude's hooks actually map | [`architecture/engine-command-and-event-surface.md`](architecture/engine-command-and-event-surface.md) |
