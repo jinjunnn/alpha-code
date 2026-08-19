@@ -1,5 +1,5 @@
 {
-  "version": "2026-08-06.1",
+  "version": "2026-08-17.3",
   "_note": "alpha-code 扩展目录 —— 远程分发真源(REQ-032:alphacodeone.com/catalog/v1,ed25519 签名,ETag 缓存;A 侧回退链 远端→缓存→内置)。schema 同 A 侧 alpha-catalog.json + 条目级 version + remoteAsset(下载清单,sha256 钉死)。编辑本文件后跑 scripts/build-catalog.mjs 再 git commit + deploy。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
@@ -9,7 +9,7 @@
     "内置 skill 资产(builtinAssetKey → resources/skills/):alpha-upstream-sync / safe-refactor(MIT,自写)+ skill-creator(Apache-2.0,Anthropic 官方,S12 T7 已打包,见 NOTICE)。mcp-builder / canvas-design / brand-guidelines 及空壳 bundle:design 已撤(REQ-044:资产从未打包 → 安装恒失败;S21 真机实锤)——资产就绪后经远程 catalog(REQ-032)上架,零发版,不再内置无资产条目。",
     "tools[]/hooks[] 是精选元数据(详情页展示用),非全集;引擎无 tools 查询路由,实时探测为 flag 内 V2(REQ-019 T8)。标 _verify 条目的 tools[] 同属待核实。",
     "agent 类条目 = vendored md 资产(resources/agents/),安装经 writeAgent 同管线(桥+账本);legacy catalog 的 plugin entry type 只保留为货架词汇,ADR-040 后当前目录不再发布会写入引擎 plugin[] 的条目。",
-    "REQ-105(2026-07-13,alpha-web#21):REQ-080 上架的 Word/PPT 社区连接器上游已于 2026-03-03 归档(不再维护)→ 从 stable catalog 下架。处置 = 条目移除而非 tombstone/archived 标记(A 侧 schema 无此字段,且其快照守卫禁归档包名逐字出现);已装用户由 A 侧随包 advisory 静态表 + receipts 如实警示,不静默删除。Excel 连接器审计钉版 0.1.8、仅 local stdio(详见条目 _provenance);回流/漂移由 tests/catalog-guard.test.mjs 拦截。"
+    "REQ-105/REQ-135(2026-08-18,alpha-web#21/#155):Word/PPT 社区连接器因上游归档从 stable catalog 下架;社区 Excel 连接器也按 owner lock 从推荐面退役。处置 = 条目移除而非 tombstone/legacy 卡;Hub Excel 仅 mcp:alpha-excel。退役 id、bundle 引用与包名回流由 tests/catalog-guard.test.mjs 拦截。"
   ],
   "entries": [
     {
@@ -96,12 +96,12 @@
       }
     },
     {
-      "id": "mcp:excel",
+      "id": "mcp:alpha-word",
       "type": "mcp",
-      "name": "excel-mcp-server",
-      "displayName": "Excel 表格读写(excel-mcp)",
-      "description": "创建/编辑 xlsx:数据、公式、图表、透视表、格式化。免装 Excel(openpyxl 实现),macOS/Windows 通用;仅 local stdio 运行(REQ-105 审计钉版,禁远程监听),文件路径须用绝对路径。",
-      "source": "community",
+      "name": "alpha-word",
+      "displayName": "Word 文档读写",
+      "description": "读写 .docx:提取正文与结构、生成或改写文档。Alpha 出品(随 app 内置的小型 stdio 连接器,python-docx 实现),不需要安装 Microsoft Office;仅 local stdio,读写限制在已授权的项目目录内,须用绝对路径。",
+      "source": "alpha",
       "category": "office",
       "license": "MIT",
       "redistributable": true,
@@ -110,43 +110,336 @@
         "kind": "mcp",
         "mcpType": "local",
         "command": [
-          "uvx",
-          "excel-mcp-server@0.1.8",
-          "stdio"
+          "uv",
+          "run",
+          "--no-project",
+          "--with",
+          "python-docx==1.2.0",
+          "{alphaResources}/office-mcp/server.py",
+          "word",
+          "{workspace}"
         ],
         "requiredEnvVars": [],
         "runtimeDep": [
           "uv"
-        ]
+        ],
+        "_note": "{alphaResources} 只由桌面端 main 替换为随包资源根,{workspace} 替换为当前项目目录(即本连接器的可访问白名单);renderer 与 catalog 都选不了别的资源根。"
       },
       "tools": [
         {
-          "name": "create_workbook",
-          "description": "新建 xlsx 工作簿"
+          "name": "read_docx",
+          "description": "读取 .docx 正文与结构"
         },
         {
-          "name": "write_data_to_excel",
-          "description": "向工作表写入数据"
-        },
-        {
-          "name": "read_data_from_excel",
-          "description": "读取工作表数据(含元数据)"
-        },
-        {
-          "name": "apply_formula",
-          "description": "写入公式"
-        },
-        {
-          "name": "create_chart",
-          "description": "创建图表"
-        },
-        {
-          "name": "create_pivot_table",
-          "description": "创建透视表"
+          "name": "write_docx",
+          "description": "生成 / 改写 .docx"
         }
       ],
-      "_verify": "社区包(haris-musa,GitHub ~4.0k★);仓库 LICENSE=MIT,但 pypi license 元数据缺失。",
-      "_provenance": "REQ-105 审计钉版(2026-07-13,与 A 侧 EXCEL_MCP_PIN 逐字一致):version 0.1.8 修复 < 0.1.8 的 path traversal + 未认证远程读写;pypi 工件 sha256(2026-07-12 与 pypi 实测复核)sdist=98f6b25957cc105a0d68d9a98a5830204ab3f3f7a79de27a91ae8d1a9291fdcd,wheel=c75668094697152b9d749939c071ea02ac418635c8a11636396bd9797609f5a5(uvx 无逐工件校验通道,digest 为审计/追溯记录)。政策:command 必须逐字含钉版 spec,仅 stdio 子命令;禁网络 transport 子命令(sse/streamable-http 等)、宿主/端口绑定参数与环境变量、全网卡监听地址。升级 = 重新 intake + 同步 bump A 侧 EXCEL_MCP_PIN 与本仓 tests/catalog-guard.test.mjs。"
+      "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。与 2026-03-03 归档的社区 Word 连接器无关(其 id 与包名仍在禁列)。",
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "connector",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-08-17T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "full",
+          "reviewBefore": "2027-02-17T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [
+            "fs:read"
+          ],
+          "networkDomains": [],
+          "requiredSecrets": [],
+          "runtimeDependencies": [],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "98c4db8c6daf40c20f89f4ac44f7c5b304dbc875b92e39989ab4a0896af0bab0",
+            "bytes": 258,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.alpha-word/1.0.0/alpha-curation/sbom/98c4db8c6daf40c20f89f4ac44f7c5b304dbc875b92e39989ab4a0896af0bab0.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "ecb50d32547e9772e007b83b536039d7d77cc402ff39c0a9ba37ffb92625e713",
+            "bytes": 488,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.alpha-word/1.0.0/alpha-curation/intake-provenance/ecb50d32547e9772e007b83b536039d7d77cc402ff39c0a9ba37ffb92625e713.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
+    },
+    {
+      "id": "mcp:alpha-excel",
+      "type": "mcp",
+      "name": "alpha-excel",
+      "displayName": "Excel 表格读写",
+      "description": "读写 .xlsx:读取工作表数据、写入单元格与新建工作簿。Alpha 出品(随 app 内置的小型 stdio 连接器,openpyxl 实现),不需要安装 Microsoft Office;仅 local stdio,读写限制在已授权的项目目录内,须用绝对路径。Hub Excel 仅提供本条目。",
+      "source": "alpha",
+      "category": "office",
+      "license": "MIT",
+      "redistributable": true,
+      "version": "1.0.0",
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": [
+          "uv",
+          "run",
+          "--no-project",
+          "--with",
+          "openpyxl==3.1.5",
+          "{alphaResources}/office-mcp/server.py",
+          "excel",
+          "{workspace}"
+        ],
+        "requiredEnvVars": [],
+        "runtimeDep": [
+          "uv"
+        ],
+        "_note": "{alphaResources} 只由桌面端 main 替换为随包资源根,{workspace} 替换为当前项目目录(即本连接器的可访问白名单);renderer 与 catalog 都选不了别的资源根。"
+      },
+      "tools": [
+        {
+          "name": "read_xlsx",
+          "description": "读取 .xlsx 工作表数据"
+        },
+        {
+          "name": "write_xlsx",
+          "description": "写入 / 新建 .xlsx"
+        }
+      ],
+      "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。REQ-135(2026-08-18,alpha-work#65;alpha-web#155):Hub Excel owner lock 仅保留本 Alpha 条目;社区实现从推荐面退役,不改标、不保留 legacy 卡。",
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "connector",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-08-17T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "full",
+          "reviewBefore": "2027-02-17T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [
+            "fs:read"
+          ],
+          "networkDomains": [],
+          "requiredSecrets": [],
+          "runtimeDependencies": [],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "b7ae51c57f71697da6a5f8776bd91448bf64386a22ce8f5e2f9e198a305c700e",
+            "bytes": 260,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.alpha-excel/1.0.0/alpha-curation/sbom/b7ae51c57f71697da6a5f8776bd91448bf64386a22ce8f5e2f9e198a305c700e.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "93ccef93fc7455f918fb8e7d910c207bc9793e6d09b6168396ff1cf4f524abc3",
+            "bytes": 489,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.alpha-excel/1.0.0/alpha-curation/intake-provenance/93ccef93fc7455f918fb8e7d910c207bc9793e6d09b6168396ff1cf4f524abc3.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
+    },
+    {
+      "id": "mcp:alpha-powerpoint",
+      "type": "mcp",
+      "name": "alpha-powerpoint",
+      "displayName": "PowerPoint 幻灯片读写",
+      "description": "读写 .pptx:读取幻灯片文本与结构、生成或改写演示文稿。Alpha 出品(随 app 内置的小型 stdio 连接器,python-pptx 实现),不需要安装 Microsoft Office;仅 local stdio,读写限制在已授权的项目目录内,须用绝对路径。",
+      "source": "alpha",
+      "category": "office",
+      "license": "MIT",
+      "redistributable": true,
+      "version": "1.0.0",
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": [
+          "uv",
+          "run",
+          "--no-project",
+          "--with",
+          "python-pptx==1.0.2",
+          "{alphaResources}/office-mcp/server.py",
+          "powerpoint",
+          "{workspace}"
+        ],
+        "requiredEnvVars": [],
+        "runtimeDep": [
+          "uv"
+        ],
+        "_note": "{alphaResources} 只由桌面端 main 替换为随包资源根,{workspace} 替换为当前项目目录(即本连接器的可访问白名单);renderer 与 catalog 都选不了别的资源根。"
+      },
+      "tools": [
+        {
+          "name": "read_pptx",
+          "description": "读取 .pptx 幻灯片文本与结构"
+        },
+        {
+          "name": "write_pptx",
+          "description": "生成 / 改写 .pptx"
+        }
+      ],
+      "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。与 2026-03-03 归档的社区 PowerPoint 连接器无关(其 id 与包名仍在禁列)。",
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "connector",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-08-17T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "full",
+          "reviewBefore": "2027-02-17T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [
+            "fs:read"
+          ],
+          "networkDomains": [],
+          "requiredSecrets": [],
+          "runtimeDependencies": [],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "933a611997a603ce9d3858cd7eb8a77bdfe9c251f64ebf0b0d195cdc602053b8",
+            "bytes": 270,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.alpha-powerpoint/1.0.0/alpha-curation/sbom/933a611997a603ce9d3858cd7eb8a77bdfe9c251f64ebf0b0d195cdc602053b8.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "dafd6bb7b2772b81fcc64abc1531cf0d2ff870143489fae23be52f05588a3a50",
+            "bytes": 494,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.alpha-powerpoint/1.0.0/alpha-curation/intake-provenance/dafd6bb7b2772b81fcc64abc1531cf0d2ff870143489fae23be52f05588a3a50.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
+    },
+    {
+      "id": "mcp:alpha-pdf",
+      "type": "mcp",
+      "name": "alpha-pdf",
+      "displayName": "PDF 读写",
+      "description": "读写 PDF:提取文本内容、生成文本型 PDF、替换正文或追加文本页(pypdf + reportlab 实现)。Alpha 出品(随 app 内置的小型 stdio 连接器);仅 local stdio,读写限制在已授权的项目目录内,须用绝对路径。写入面只做文本型文档,不做版式设计、印刷保真编辑、Office 转换、数字签名或任意 PDF 对象编辑。",
+      "source": "alpha",
+      "category": "office",
+      "license": "MIT",
+      "redistributable": true,
+      "version": "1.0.0",
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": [
+          "uv",
+          "run",
+          "--no-project",
+          "--with",
+          "pypdf==6.16.1",
+          "--with",
+          "reportlab==5.0.0",
+          "{alphaResources}/office-mcp/server.py",
+          "pdf",
+          "{workspace}"
+        ],
+        "requiredEnvVars": [],
+        "runtimeDep": [
+          "uv"
+        ],
+        "_note": "{alphaResources} 只由桌面端 main 替换为随包资源根,{workspace} 替换为当前项目目录(即本连接器的可访问白名单);renderer 与 catalog 都选不了别的资源根。"
+      },
+      "tools": [
+        {
+          "name": "read_pdf",
+          "description": "提取 PDF 文本内容"
+        },
+        {
+          "name": "write_pdf",
+          "description": "生成文本型 PDF / 替换正文 / 追加文本页"
+        }
+      ],
+      "_provenance": "REQ-133(2026-08-17,alpha-work#64;已批基线 alpha-code#1005 docs/design/req-133-office-four-format-hub.md):Alpha 出品四格式办公连接器之一,文件级薄包装。命令数组逐字取自该基线;唯一 transport 是进程 stdin/stdout 上的 JSON-RPC,CLI 只接受 <format> <absolute-workspace>。依赖钉版升级 = 重新 intake + 同步改 A 侧 office-advisories 与本仓 tests/catalog-guard.test.mjs。写入面的边界(仅文本型文档)是已批基线的安全不变量,不得在文案或工具面外扩。",
+      "curation": {
+        "schema": "alpha.catalog.curation.v1",
+        "tier": "connector",
+        "activationPolicy": "default-disabled",
+        "deliveryMode": "installable",
+        "review": {
+          "reviewedAt": "2026-08-17T00:00:00Z",
+          "reviewedBy": "jinjunnn",
+          "upstreamStatus": "active",
+          "supportTier": "full",
+          "reviewBefore": "2027-02-17T00:00:00Z"
+        },
+        "applicability": {
+          "frameworks": [
+            "*"
+          ]
+        },
+        "summaries": {
+          "capabilities": [
+            "fs:read"
+          ],
+          "networkDomains": [],
+          "requiredSecrets": [],
+          "runtimeDependencies": [],
+          "download": {
+            "bytes": null,
+            "basis": "unknown"
+          }
+        },
+        "refs": {
+          "sbom": {
+            "sha256": "6d80eb343ef52efc3fc0fb2a8ce448f18ff5e6ca3875dbb64967a9e84add6652",
+            "bytes": 256,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.alpha-pdf/1.0.0/alpha-curation/sbom/6d80eb343ef52efc3fc0fb2a8ce448f18ff5e6ca3875dbb64967a9e84add6652.cdx.json",
+            "format": "cyclonedx-1.6+json"
+          },
+          "intakeProvenance": {
+            "sha256": "4dd1861808a98bf0592e4b0f69a00d76490b000f5f19967ad6c48b4b92cf70e1",
+            "bytes": 487,
+            "url": "https://alphacodeone.com/catalog/assets/mcp.alpha-pdf/1.0.0/alpha-curation/intake-provenance/4dd1861808a98bf0592e4b0f69a00d76490b000f5f19967ad6c48b4b92cf70e1.json",
+            "format": "alpha.intake-provenance.v1+json"
+          }
+        }
+      }
     },
     {
       "id": "mcp:filesystem",
@@ -1813,12 +2106,12 @@
       "type": "bundle",
       "name": "office-suite",
       "displayName": "办公套件",
-      "description": "办公套件:markitdown 读取 + 文件系统 + Excel 表格读写。创建 docx/pptx 由桌面端出厂技能(office-docs,随 app 内置)引导本地脚本完成,无需另装连接器。",
+      "description": "办公套件:markitdown 读取 + 文件系统 + Alpha Excel 表格读写。创建 docx/pptx 由桌面端出厂技能(office-docs,随 app 内置)引导本地脚本完成,无需另装连接器。",
       "source": "alpha",
       "category": "office",
       "license": "mixed",
       "redistributable": true,
-      "version": "1.2.0",
+      "version": "1.3.0",
       "bundleItems": [
         {
           "catalogEntryId": "mcp:markitdown",
@@ -1831,12 +2124,12 @@
           "installOrder": 2
         },
         {
-          "catalogEntryId": "mcp:excel",
+          "catalogEntryId": "mcp:alpha-excel",
           "optional": false,
           "installOrder": 3
         }
       ],
-      "_provenance": "REQ-105(2026-07-13,alpha-web#21):Word/PPT 写作连接器上游 2026-03-03 归档 → 移出本套件与 stable catalog(移除而非 tombstone;已装用户由 A 侧 advisory 静态表如实警示,不静默删除)。成员真变 → 1.1.0 → 1.2.0。"
+      "_provenance": "REQ-105(2026-07-13,alpha-web#21):Word/PPT 写作连接器上游 2026-03-03 归档 → 移出本套件与 stable catalog。REQ-135(2026-08-18,alpha-work#65;alpha-web#155):社区 Excel 从推荐面退役,套件表格成员改为 mcp:alpha-excel;成员真变 → 1.2.0 → 1.3.0。"
     },
     {
       "id": "bundle:research",
