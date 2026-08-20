@@ -22,6 +22,7 @@ import { ensureEngineScratchCwd } from "./engine-scratch-cwd"
 import { markStartupTimeline } from "./startup-timeline"
 import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
 import { buildSidecarStopCommand, type SidecarStopMode } from "./sidecar-stop"
+import { consumeDanglingSweepCredit } from "./dangling-sweep-latch"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -237,6 +238,10 @@ export async function spawnLocalServer(
   password: string,
   options: SpawnLocalServerOptions,
 ) {
+  // REQ-053 `#982`: refuse fork unless this generation credited a dangling sweep
+  // (boot / respawn). Fail closed before secrets sync or utilityProcess.fork.
+  consumeDanglingSweepCredit()
+
   // A6: mirror the secret env vars into the {file:} channel on EVERY fork (login/logout/key changes
   // respawn the sidecar through here, so the files always track the current auth/BYOK state), then
   // fork with the allowlisted env — secrets never enter the sidecar's process.env. Loud on failure:

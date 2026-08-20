@@ -114,6 +114,7 @@ import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byo
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 import { sweepEngineConfigDanglingUnlocked, type DanglingSweepOutcome } from "./engine-config-dangling"
 import { runBootDanglingSweep } from "./boot-dangling-sweep"
+import { creditDanglingSweepForSpawn } from "./dangling-sweep-latch"
 import { ensureGovernedMcpConnectTimeouts, withConfigWriteLock } from "./ext-config"
 import { retireCommunityExcelAfterRecovery } from "./community-excel-retirement"
 import { reconcileMcpWorkspaceMarkers } from "./mcp-workspace-marker"
@@ -826,6 +827,9 @@ const main = Effect.gen(function* () {
   recordDanglingSweep("boot", danglingBoot.outcome)
   if (danglingBoot.enforcementGap.length > 0) {
     bootEnforcementGap = [...(bootEnforcementGap ?? []), ...danglingBoot.enforcementGap]
+  } else {
+    // `#982`: only a gap-free sweep credits the spawn throat latch.
+    creditDanglingSweepForSpawn()
   }
   ensureGovernedMcpConnectTimeouts()
   reconcileMcpWorkspaceMarkers()
@@ -1368,6 +1372,8 @@ const main = Effect.gen(function* () {
         })
         return false
       }
+      // `#982`: gap-free respawn sweep credits the next spawnLocalServer fork.
+      creditDanglingSweepForSpawn()
       const spawnGen = ++sidecarGen
       // #600:「当前 sidecar 携带的 token 代」只能在健康换血成功后记账。旧接线在 fork 前就记,
       // 失败后 latch 误判该代已应用(同代永不再试),而此刻根本没有活着的 sidecar。

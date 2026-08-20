@@ -52,6 +52,7 @@ mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {
 // 陷阱:`await import("./server")` 必须排在 mock.module("electron", ...) **之后**,否则真 electron
 // 会被拉起来。
 const { spawnLocalServer } = await import("./server")
+const { creditDanglingSweepForSpawn, resetDanglingSweepLatchForTests } = await import("./dangling-sweep-latch")
 
 /**
  * 假 sidecar 子进程。stop 分支就是 sidecar.ts 的那两行(parse → 交给共享执行器),
@@ -116,6 +117,7 @@ const managedEnv = ["SHELL", "ALPHA_SECRETS_DISABLE", "ALPHA_CLOUD_MCP_URL", "AL
 
 beforeEach(() => {
   userDataPath = mkdtempSync(join(tmpdir(), "sidecar-stop-"))
+  resetDanglingSweepLatchForTests()
   for (const key of managedEnv) {
     savedEnv[key] = process.env[key]
     delete process.env[key]
@@ -134,6 +136,7 @@ afterEach(() => {
 })
 
 async function spawn(child: SidecarChild | DeafChild, port: number) {
+  creditDanglingSweepForSpawn()
   const result = await spawnLocalServer("127.0.0.1", port, "password", {
     userDataPath,
     healthCheck: async () => true,
