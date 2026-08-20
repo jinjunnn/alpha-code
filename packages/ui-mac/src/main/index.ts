@@ -1205,6 +1205,11 @@ const main = Effect.gen(function* () {
       logger.error("[req104-395] refusing to spawn sidecar — extension disable state cannot be guaranteed", {
         gap: bootEnforcementGap,
       })
+      // Packaged VERIFY (OPENCODE_TEST_ONBOARDING) must observe exit 1 without dismissing a modal.
+      if (TEST_ONBOARDING) {
+        app.exit(1)
+        return
+      }
       dialog.showErrorBox(
         "扩展安全状态无法确保",
         "扩展配置或历史桥接状态无法确认已经安全收敛(可能因磁盘空间、权限或配置文件损坏)。为避免旧桥或本应关闭的扩展被意外加载,已暂停启动。请检查磁盘与目录权限后重新打开应用;若持续出现,请联系支持并附上日志。",

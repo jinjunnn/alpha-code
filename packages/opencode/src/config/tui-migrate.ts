@@ -112,9 +112,13 @@ async function backupAndStripLegacy(file: string, source: string) {
     .catch(() => false)
 }
 
+function globalConfigDir() {
+  return Flag.OPENCODE_CONFIG_DIR ?? Global.Path.config
+}
+
 async function opencodeFiles(input: { directories: string[]; cwd: string }) {
   const files = [
-    ...ConfigPaths.fileInDirectory(Global.Path.config, "opencode"),
+    ...ConfigPaths.fileInDirectory(globalConfigDir(), "opencode"),
     ...(await Filesystem.findUp(["opencode.json", "opencode.jsonc"], input.cwd, undefined, { rootFirst: true })),
   ]
   for (const dir of unique(input.directories)) {
