@@ -113,6 +113,7 @@ import { RECOVERY_ACTIONS } from "../shared/recovery"
 import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byok-keys"
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 import { sweepEngineConfigDanglingUnlocked, type DanglingSweepOutcome } from "./engine-config-dangling"
+import { runBootDanglingSweep } from "./boot-dangling-sweep"
 import { ensureGovernedMcpConnectTimeouts, withConfigWriteLock } from "./ext-config"
 import { retireCommunityExcelAfterRecovery } from "./community-excel-retirement"
 import { reconcileMcpWorkspaceMarkers } from "./mcp-workspace-marker"
@@ -814,24 +815,17 @@ const main = Effect.gen(function* () {
         logger.error("[req104-395] desired-state reconcile crashed — blocking sidecar (fail closed)", error)
       }
     }
-    try {
-      const dangling = sweepEngineConfigDanglingUnlocked({
-        phase: "boot",
-        userDataPath: app.getPath("userData"),
-        engineDataPath: engineDataDir(process.env, homedir()),
-      })
-      recordDanglingSweep("boot", dangling)
-      if (dangling.enforcementGap.length > 0) {
-        bootEnforcementGap = [...(bootEnforcementGap ?? []), ...dangling.enforcementGap]
-        logger.error("[req053-dangling-sweep] boot enforcement gap — blocking sidecar", {
-          gap: dangling.enforcementGap,
-        })
-      }
-    } catch (error) {
-      const gap = `dangling sweep crashed: ${error instanceof Error ? error.message : String(error)}`
-      bootEnforcementGap = [...(bootEnforcementGap ?? []), gap]
-      logger.error("[req053-dangling-sweep] boot sweep crashed — blocking sidecar (fail closed)", error)
-    }
+  }
+  // REQ-053 AC2: boot dangling sweep is not skipped under OPENCODE_TEST_ONBOARDING.
+  // Isolation still omits REQ-059/065/104 reconcile and the global ecosystem gate.
+  const danglingBoot = runBootDanglingSweep({
+    userDataPath: app.getPath("userData"),
+    engineDataPath: engineDataDir(process.env, homedir()),
+    log: logger,
+  })
+  recordDanglingSweep("boot", danglingBoot.outcome)
+  if (danglingBoot.enforcementGap.length > 0) {
+    bootEnforcementGap = [...(bootEnforcementGap ?? []), ...danglingBoot.enforcementGap]
   }
   ensureGovernedMcpConnectTimeouts()
   reconcileMcpWorkspaceMarkers()
