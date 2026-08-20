@@ -12,13 +12,13 @@ review_after: 2026-11-17
 
 规格来源:[`docs/design/2026-07-21-req053-bootstrap-loop-hardening.md`](../../design/2026-07-21-req053-bootstrap-loop-hardening.md) §AC5 订正块。父票 `#218` REQ-053。本目录只验证打包面 AC2/AC5;不修生产代码。
 
-**本轮结论:不能关 `#470`。** `#1033` 已闭合 `#1031`(boot sweep 在 `OPENCODE_TEST_ONBOARDING=1` 下会跑)。夹具 A 剩 1 条判据 FAIL;夹具 A2 fail-closed 行为已证活但 **exit 1 未落地**。夹具 C 仍 PASS;夹具 B 仍 pending/KNOWN GAP。
+**本轮结论:仍不能关 `#470`。** `#1033`+#1036` 已闭合 boot sweep / XDG I1 / A2 exit 1。夹具 **A / A2 / C = PASS**(`9bcb82c92`);夹具 **B 仍 pending**(live runaway 45–54min,未在本轮重跑)。
 
 ## 被测件
 
 | 项 | 值 |
 | --- | --- |
-| git SHA | `6e0fd40cc2005ab1b58bb0c24314d9d0301d8fa0` |
+| git SHA | `9bcb82c923e7ff7727992ae5afe1555a39703529` |
 | 产物 | worktree 内 `packages/ui-mac`:**`OPENCODE_CHANNEL=prod` 必须同时作用于 build 与 package**;否则 bundle id 落 `com.tide.alphacode.dev`,packaged 启动在 `app.whenReady()` 前挂起(9 行 main.log,零 sidecar)。 |
 | 命令 | `OPENCODE_CHANNEL=prod bun run build && OPENCODE_CHANNEL=prod bun run package:mac` |
 | 签名 | ad-hoc:`codesign --force --deep --sign - dist/mac-arm64/alpha-code.app`。**KNOWN GAP**:`ALPHA_SIGN=1` 在 `codesign --timestamp` 上失败(`The timestamp service is not available`)。 |
@@ -31,7 +31,7 @@ Runner:`bun docs/verification/2026-08-19-req053-packaged-incident-regression/run
 
 ## 四条夹具
 
-### A 冷启动自愈 — **FAIL**(8/9 判据 PASS)
+### A 冷启动自愈 — **PASS**
 
 命令:
 
@@ -49,14 +49,12 @@ bun docs/verification/2026-08-19-req053-packaged-incident-regression/run.ts \
 | 判据 | 结果 |
 | --- | --- |
 | `grep -a -A4 "confirmed-absent Alpha config references stripped"` 且对象字段 `stripped: 4` | **PASS** |
-| 引擎日志 `creating instance` 恰 1 次 / 无三行循环 | **PASS**(`creating=1 fromDirectory=1 bootstrapping=1`) |
+| 引擎日志 `creating instance` 恰 1 次 / 无三行循环 | **PASS** |
 | 两份配置悬空 plugin+`{file:}` 消失;活引用 / npm 包名 / 守卫根外路径保留 | **PASS** |
-| 预置 XDG `opencode.jsonc` inode+mtime | **FAIL**:inode 同,mtime 被改(`1787195476992 → 1787195478186`,Δ≈1.2s) |
+| 预置 XDG `opencode.jsonc` inode+mtime | **PASS**(`#1036` 路由 `OPENCODE_CONFIG_DIR`) |
 | 真实 home 根未写 | **PASS** |
 
-**残余 FAIL:** 隔离根内 `config/opencode/opencode.jsonc`(XDG 重定向)mtime 在 boot 期间被触碰。基线 I1 要求 sweep 写路径不得含 XDG;需 CODE 票跟进(不是 `#1031` 原根因)。
-
-### A2 fail-closed — **FAIL**(3/4 判据 PASS)
+### A2 fail-closed — **PASS**
 
 命令:同上,`--fixture A2`。
 
@@ -67,13 +65,11 @@ bun docs/verification/2026-08-19-req053-packaged-incident-regression/run.ts \
 | 不 spawn sidecar | **PASS** |
 | `boot enforcement gap` 日志 | **PASS** |
 | `refusing to spawn sidecar` 或 gap | **PASS** |
-| 进程 exit 1 | **FAIL**(`exitCode=null`;runner 超时 kill;app 弹 `showErrorBox` 后仍存活) |
-
-legacy 混写 fail-closed **行为**已证活;缺的是 enforcement gap 后 **process exit 1**。
+| 进程 exit 1 | **PASS**(`exitCode=1`;`#1036` onboarding 跳过 modal) |
 
 ### B 运行期断路 — **pending / KNOWN GAP**
 
-未重跑(54 分钟;sidecar 未要求)。上轮 FAIL 形态仍有效;待 A/A2 全绿后再采 B 序列。
+未重跑(54 分钟;sidecar 未要求)。A/A2 已绿;B 仍为 `#470` 关票前缺口。
 
 ### C 速率规则单独证活 — **PASS**(未重跑)
 
