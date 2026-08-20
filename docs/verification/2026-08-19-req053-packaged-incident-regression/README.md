@@ -12,7 +12,7 @@ review_after: 2026-11-17
 
 规格来源:[`docs/design/2026-07-21-req053-bootstrap-loop-hardening.md`](../../design/2026-07-21-req053-bootstrap-loop-hardening.md) §AC5 订正块。父票 `#218` REQ-053。本目录只验证打包面 AC2/AC5;不修生产代码。
 
-**本轮结论:仍不能关 `#470`。** `#1033`+#1036` 已闭合 boot sweep / XDG I1 / A2 exit 1。夹具 **A / A2 / C = PASS**(`9bcb82c92`);夹具 **B 仍 pending**(live runaway 45–54min,未在本轮重跑)。
+**本轮结论:仍不能关 `#470`。** `#1033`+#1036` 已闭合 boot sweep / XDG I1 / A2 exit 1。夹具 **A / A2 / C = PASS**;夹具 **B = FAIL**(70min live:日志不涨、无 strike-3/recovery)。速率规则仍由 C 证活;打包面运行期断路证据缺口需 owner waive 或新 CODE 改夹具/接线。
 
 ## 被测件
 
@@ -67,13 +67,26 @@ bun docs/verification/2026-08-19-req053-packaged-incident-regression/run.ts \
 | `refusing to spawn sidecar` 或 gap | **PASS** |
 | 进程 exit 1 | **PASS**(`exitCode=1`;`#1036` onboarding 跳过 modal) |
 
-### B 运行期断路 — **pending / KNOWN GAP**
+### B 运行期断路 — **FAIL**
 
-未重跑(54 分钟;sidecar 未要求)。A/A2 已绿;B 仍为 `#470` 关票前缺口。
+命令:同上,`--fixture B`。墙钟约 70 分钟(`2026-08-20T04:01Z`–`05:11Z`)。
+
+原始结果:[`results/fixture-b.json`](results/fixture-b.json)
+
+| 判据 | 结果 |
+| --- | --- |
+| strike-3 + `sidecar paused for explicit recovery` | **FAIL**(`recovery=false`,`strikeLines=0`) |
+| 绝对帽 >512MB 或任一分 Δ>64MB | **FAIL**(70 样本;日志终态 11392B,仅 min61 Δ=541) |
+| 断后 CPU <10% | **PASS**(`cpuSum=7.30`) |
+| 日志目录有界 | **PASS** |
+| 无第二实例风暴 | **PASS** |
+| 逐分钟尺寸序列 | **PASS**(`n=70`) |
+
+**根因形态(观测):** `server ready` 后 sidecar 仍活(health 401);每分钟注入悬空 plugin/`{file:}` **未能**再打出可持续 bootstrap 洪泛——`opencode.log` 几乎不涨,断路器无输入信号。与「旧事故 21GB 失控」不同:boot sweep(`#1033`)后,隔离口下「运行中再种悬空」灌不出 AC5 要的 live runaway。**不**据此宣称断路器坏;速率决策核仍由夹具 C 绿。AC5 打包面「recovery 卡可见 + 断路」仍缺证据。
 
 ### C 速率规则单独证活 — **PASS**(未重跑)
 
-上轮 [`results/fixture-c.json`](results/fixture-c.json) 仍有效:`bun test src/main/engine-runaway-guard.test.ts` → 13 pass / 0 fail。
+上轮 [`results/fixture-c.json`](results/fixture-c.json) 仍有效:`bun test src/main/engine-runaway-guard.test.ts` → 13 pass / 0 fail。基线明确:B 的 Δ 若永 <64MB,**不得**把 B 当 rate-rule 证据 —— 本轮正是该形态。
 
 ## 本地确定性门
 
@@ -84,19 +97,19 @@ bun docs/verification/2026-08-19-req053-packaged-incident-regression/run.ts \
 | `alpha-check.sh` | 未跑(并行 lane 会写共享 `core.hooksPath`) | — |
 | 未 `bun install` / `worktree-bootstrap` | 编排者已 bootstrap | — |
 
-## FAIL → bug
+## FAIL → bug / owner
 
-- `#1031` / `#1033`:已闭合;boot sweep 在 TEST_ONBOARDING 下会跑。
-- **新开(待主 session 路由):**
-  1. 夹具 A — 隔离 XDG `opencode.jsonc` mtime 被 boot 路径触碰(违反 I1)。
-  2. 夹具 A2 — enforcement gap 后进程应 exit 1,实际弹窗阻塞。
+- `#1031` / `#1033` / `#1034` / `#1036`:已闭合。
+- **夹具 B FAIL(本轮):** 不是「sidecar 端口死后日志死」旧形态;sidecar 活着但洪泛灌不出来。可选路由:
+  1. Owner **waive** AC5 打包 live 断路证据,认 C + A/A2 为本期退出(需票面裁决);
+  2. 新 CODE:改夹具 B 注入面(使运行期能持续触发循环),或改接线使 TEST_ONBOARDING 下可观测 strike-3;
+  3. `#982` spawn 咽喉闩仍 blocked-by `#470`,勿与 B 夹具缺口混为一谈。
 
 ## 主动没做
 
-- 不改生产 `index.ts` / sweep 实现
-- 不跑夹具 B(54 分钟)
+- 不改生产 `index.ts` / sweep / runaway-guard 实现(本目录只产证据)
 - 不杀/不写入用户现役 `/Applications/alpha-code.app`
-- 不 `Fixes #218` / 不 `Fixes #470`(A/A2 未全 PASS)
-- 不 merge / 不开 draft PR(A/A2 FAIL)
-- 不 `alpha-check.sh`
+- 不 `Fixes #218`(父票由 owner 逐 AC 收口)
+- 不 `Fixes #470`(B 未 PASS)
+- 不 `alpha-check.sh`(并行 lane 会写共享 `core.hooksPath`)
 - Windows 半场

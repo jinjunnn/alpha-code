@@ -1,10 +1,398 @@
 {
   "schema": "alpha-code/req053-packaged-incident-regression/v1",
   "fixture": "B",
-  "gitSha": "48bf3cd4bf5c1cb4fee099aaaccb8e4af1e632a9",
+  "gitSha": "55415171696eddaa4e61a35417dbb17f6b974730",
+  "startedAt": "2026-08-20T04:01:05.014Z",
+  "app": "packages/ui-mac/dist/mac-arm64/alpha-code.app",
   "verdict": "FAIL",
-  "reason": "Under OPENCODE_TEST_ONBOARDING the sidecar listen port died after server ready; opencode.log stayed ~3KB with creating instance=1. No per-minute size series, no strike-3, no recovery card. Not silently downgraded to unpackaged/dev.",
+  "checks": [
+    {
+      "id": "strike3-recovery-log",
+      "ok": false,
+      "detail": "recovery=false samples=70"
+    },
+    {
+      "id": "rule-inferred-absolute-cap",
+      "ok": false,
+      "detail": "first>512MB@min none anyΔ>64MB=false"
+    },
+    {
+      "id": "cpu-lt-10-after-stop",
+      "ok": true,
+      "detail": "cpuSum=7.30 pids=81006,81024,81025,81026,81040"
+    },
+    {
+      "id": "dir-bounded",
+      "ok": true,
+      "detail": "dirBytes=11392 active=11392 archives=0 bound=2302672896"
+    },
+    {
+      "id": "no-second-instance-storm",
+      "ok": true,
+      "detail": "procHits=0"
+    },
+    {
+      "id": "minute-series",
+      "ok": true,
+      "detail": "n=70"
+    }
+  ],
+  "root": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-35e8ca25-b246-400b-b4c8-32b3ab78e441",
   "notes": [
-    "Did not run the full 45–54 minute wall clock because the flood signal never appeared in the first minute."
-  ]
+    "isolation=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-35e8ca25-b246-400b-b4c8-32b3ab78e441",
+    "strikeLines=0"
+  ],
+  "series": [
+    {
+      "tMin": 1,
+      "size": 10851,
+      "delta": 10851
+    },
+    {
+      "tMin": 2,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 3,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 4,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 5,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 6,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 7,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 8,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 9,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 10,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 11,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 12,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 13,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 14,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 15,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 16,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 17,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 18,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 19,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 20,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 21,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 22,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 23,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 24,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 25,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 26,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 27,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 28,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 29,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 30,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 31,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 32,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 33,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 34,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 35,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 36,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 37,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 38,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 39,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 40,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 41,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 42,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 43,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 44,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 45,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 46,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 47,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 48,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 49,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 50,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 51,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 52,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 53,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 54,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 55,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 56,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 57,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 58,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 59,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 60,
+      "size": 10851,
+      "delta": 0
+    },
+    {
+      "tMin": 61,
+      "size": 11392,
+      "delta": 541
+    },
+    {
+      "tMin": 62,
+      "size": 11392,
+      "delta": 0
+    },
+    {
+      "tMin": 63,
+      "size": 11392,
+      "delta": 0
+    },
+    {
+      "tMin": 64,
+      "size": 11392,
+      "delta": 0
+    },
+    {
+      "tMin": 65,
+      "size": 11392,
+      "delta": 0
+    },
+    {
+      "tMin": 66,
+      "size": 11392,
+      "delta": 0
+    },
+    {
+      "tMin": 67,
+      "size": 11392,
+      "delta": 0
+    },
+    {
+      "tMin": 68,
+      "size": 11392,
+      "delta": 0
+    },
+    {
+      "tMin": 69,
+      "size": 11392,
+      "delta": 0
+    },
+    {
+      "tMin": 70,
+      "size": 11392,
+      "delta": 0
+    }
+  ],
+  "finishedAt": "2026-08-20T05:11:13.380Z"
 }
