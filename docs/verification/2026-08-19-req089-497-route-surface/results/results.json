@@ -1,0 +1,35 @@
+{
+  "source_commit": "9bcb82c923e7ff7727992ae5afe1555a39703529",
+  "captured_at": "2026-08-20T03:46:36Z",
+  "runner": "bun test v1.3.14",
+  "cwd": "packages/ui-mac",
+  "runs": [
+    {
+      "id": "manifest-seam-ac6",
+      "command": "bash -c 'bun test --cwd packages/ui-mac src/renderer/alpha-ui/surface-seam-contract.test.ts src/main/alpha-surfaces.test.ts src/renderer/alpha-ui/surface-boundary.test.ts src/renderer/route-composition.test.ts src/shared/route-manifest.test.ts src/shared/route-manifest-packaging.test.ts src/shared/route-upstream-shape.test.ts src/shared/route-deep-link-consumer.test.ts src/shared/route-authority-ratchet.test.ts src/main/ext-security-boundaries.test.ts'",
+      "enumerated_files": 10,
+      "summary": "Ran 130 tests across 10 files. [428.00ms]",
+      "pass": 130,
+      "fail": 0,
+      "expect_calls": 1311,
+      "exit_code": 0,
+      "verdict": "true-green"
+    },
+    {
+      "id": "memory-router-provider-remount",
+      "command": "bash -c 'bun test --cwd packages/ui-mac src/renderer/surface-remount.test.ts'",
+      "enumerated_files": 1,
+      "summary": "Ran 8 tests across 1 file. [8.96s]",
+      "pass": 8,
+      "fail": 0,
+      "expect_calls": 39,
+      "exit_code": 0,
+      "verdict": "true-green"
+    }
+  ],
+  "totals": {
+    "files": 11,
+    "pass": 138,
+    "fail": 0
+  }
+}
