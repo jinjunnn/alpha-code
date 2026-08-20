@@ -54,6 +54,9 @@ mock.module("../src/main/store", () => ({
 
 const { spawnLocalServer } = await import("../src/main/server")
 const { serverLogRoots } = await import("../src/main/logging")
+const { creditDanglingSweepForSpawn, resetDanglingSweepLatchForTests } = await import(
+  "../src/main/dangling-sweep-latch"
+)
 
 // `MAX_SERVER_LOG_BYTES` 是 logging.ts 的**私有**常量(未导出)。判据的锚点刻意写成独立字面量:
 // 26 MiB > 25 MiB 阈值、1 MiB < 阈值。从被测模块 import 阈值 = 自指等价链(改错它一起自洽)。
@@ -117,6 +120,7 @@ beforeEach(() => {
   process.env.SHELL = "nu"
   expectedLogDirs = [join(xdgDataHome, "opencode", "log"), join(userDataPath, "opencode", "log")]
   expectedLogDirs.forEach((dir) => mkdirSync(dir, { recursive: true }))
+  resetDanglingSweepLatchForTests()
 })
 
 afterEach(() => {
@@ -130,6 +134,7 @@ afterEach(() => {
 
 /** 起一次真 spawn,并把「fork 被调用的那一刻」两个根的活跃日志状态带回来。 */
 async function forkAndObserve() {
+  creditDanglingSweepForSpawn()
   const forkTimeActive: Array<number | "ENOENT"> = []
   const forkCalls: string[] = []
   const fakeFork = ((file: string) => {

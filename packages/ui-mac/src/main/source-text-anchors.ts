@@ -27,8 +27,9 @@
 // SyntaxError,`0 pass / 1 fail`;③`Bun.plugin` 的 `build.module` ⇒ bun 明文拒绝
 // `module() cannot be used to override builtin module "node:tls"`。
 // ⇒ **bun 侧不存在把 index.ts 链接起来的办法**;`Effect.runFork(main)`(文件最后一行)只是第二堵墙。
-// 也就是说这批锚不是「暂时还没写真判据」,是**结构上写不了**。把它们变成真闸门的唯一路子登记在
-// `#982`(在可 import 的 `server.ts` 咽喉加运行期闩),那要动启动路径、需 owner 裁决。
+// 也就是说这批锚不是「暂时还没写真判据」,是**结构上写不了**。boot/respawn 悬空 sweep → fork
+// 的真闸门已落在 `#982`:`dangling-sweep-latch.ts` + `spawnLocalServer` 消费 credit(可 import,
+// bun 可测)。本文件里的 ANCHOR 条目仍只是索引,不是那道闸。
 //
 // ── 边界(闸门不假装比自己强)────────────────────────────────────────────────────────────
 //   · 谓词判的是**一行代码里同时出现读调用与一个 `.ts`/`.tsx` 路径字面量**。两支逃逸,都登记在 `#983`:

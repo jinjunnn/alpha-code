@@ -49,6 +49,7 @@ mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {
 const { hasSecretFile } = await import("./alpha-secret-files")
 const { writeShellEnvCache } = await import("./shell-env-cache")
 const { preferAppEnv, spawnLocalServer } = await import("./server")
+const { creditDanglingSweepForSpawn, resetDanglingSweepLatchForTests } = await import("./dangling-sweep-latch")
 
 let userDataPath = ""
 const keylessWebSearchFlags = [
@@ -71,6 +72,8 @@ const savedEnv: Partial<Record<(typeof managedEnv)[number], string>> = {}
 
 beforeEach(() => {
   forkCalls.length = 0
+  resetDanglingSweepLatchForTests()
+  creditDanglingSweepForSpawn()
   userDataPath = mkdtempSync(join(tmpdir(), "server-scratch-cwd-"))
   for (const key of managedEnv) {
     savedEnv[key] = process.env[key]
@@ -96,6 +99,7 @@ const fakeFork = ((file: string, args: string[], options: Record<string, unknown
 
 /** Fork the sidecar the way boot/respawn does and hand back the env it was forked with. */
 async function forkSidecar() {
+  creditDanglingSweepForSpawn()
   const result = await spawnLocalServer("127.0.0.1", 4096, "password", {
     userDataPath,
     healthCheck: async () => true,
@@ -345,6 +349,7 @@ describe("spawnLocalServer", () => {
     }
 
     const run = async (mode: "token-rotation" | "graceful", beforeKillMs: number) => {
+      creditDanglingSweepForSpawn()
       const child = new HangingStopChild()
       const result = await spawnLocalServer("127.0.0.1", 4098, "password", {
         userDataPath,
