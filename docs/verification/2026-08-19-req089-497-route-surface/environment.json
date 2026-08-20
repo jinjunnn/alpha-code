@@ -1,0 +1,18 @@
+{
+  "captured_at": "2026-08-20T03:46:36Z",
+  "source_commit": "9bcb82c923e7ff7727992ae5afe1555a39703529",
+  "issue": "alpha-code#497",
+  "requirement": "REQ-089",
+  "parent": "alpha-code#182",
+  "baseline": "docs/design/2026-07-22-req089-route-manifest-authority/baseline.md",
+  "baseline_section": "§4 child 4",
+  "worktree": ".worktrees/ac-497",
+  "branch": "feat/497-route-surface-verify",
+  "platform": {
+    "os": "darwin 25.3.0",
+    "arch": "arm64",
+    "bun": "1.3.14"
+  },
+  "bootstrap": "bash scripts/worktree-bootstrap.sh ac-497 -b feat/497-route-surface-verify",
+  "layer": "L1 capability harness (bun test). No L2 live Electron / CDP recapture."
+}
