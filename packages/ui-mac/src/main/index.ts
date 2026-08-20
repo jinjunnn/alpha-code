@@ -119,6 +119,7 @@ import { ensureGovernedMcpConnectTimeouts, withConfigWriteLock } from "./ext-con
 import { retireCommunityExcelAfterRecovery } from "./community-excel-retirement"
 import { reconcileMcpWorkspaceMarkers } from "./mcp-workspace-marker"
 import { engineDataDir } from "./data-clear"
+import { isCloudMcpOAuthInflight } from "./cloud-mcp-oauth-gate"
 import { reconcileDesiredStateAtBoot } from "./ext-install-planner"
 import { alphaGlobalRoot } from "./alpha-installs"
 import { factorySkillSources, reconcileFactorySkills } from "./factory-skills"
@@ -1332,6 +1333,12 @@ const main = Effect.gen(function* () {
   // SDK/SSE reconnection so the renderer tree remains mounted.
   const doRespawnSidecar = async (reason: SidecarRespawnReason) => {
     if (quittingApp) return false
+    // #1044:token-only 换血会杀掉正在 waitForCallback 的 MCP.authenticate(云 OAuth)。
+    // 引擎在等待回环回调期间落盘 inflight 标记;此处推迟换血,latch 会按 TOKEN_ROTATION_RETRY_MS 再试。
+    if (reason === "token-only" && isCloudMcpOAuthInflight(engineDataDir(process.env, homedir()))) {
+      logger.warn("#1044 deferring token-only respawn: cloud MCP OAuth in flight")
+      return false
+    }
     // #600:发出 recovering 之后必须恰好发布一个终态。终态生产者(armRespawnGenerationTerminal)
     // 一经武装就独占发布权;它武装之前出错的路径由下面的 catch 兜住那唯一一个 failed。
     let announcedGeneration: number | null = null
