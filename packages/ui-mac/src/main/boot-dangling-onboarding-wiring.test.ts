@@ -106,3 +106,14 @@ test("index.ts calls runBootDanglingSweep outside every TEST_ONBOARDING skip", (
   expect(factorySkip).toBeDefined()
   expect(bootCall).toBeGreaterThan(factorySkip!.close)
 })
+
+test("OPENCODE_TEST_ONBOARDING exits before modal on boot enforcement gap (REQ-053 A2)", () => {
+  const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
+  const gap = source.indexOf("if (bootEnforcementGap)")
+  expect(gap).toBeGreaterThan(-1)
+  const onboardingExit = source.indexOf("if (TEST_ONBOARDING)", gap)
+  const showBox = source.indexOf("dialog.showErrorBox", gap)
+  expect(onboardingExit).toBeGreaterThan(gap)
+  expect(onboardingExit).toBeLessThan(showBox)
+  expect(source.slice(onboardingExit, onboardingExit + 200)).toContain("app.exit(1)")
+})

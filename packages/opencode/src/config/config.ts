@@ -136,10 +136,14 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Co
 
 export const use = serviceUse(Service)
 
+/** Alpha REQ-053 I1: honor OPENCODE_CONFIG_DIR for global config I/O; do not touch user XDG when rerouted. */
+function globalConfigDir() {
+  return Flag.OPENCODE_CONFIG_DIR ?? Global.Path.config
+}
+
 function globalConfigFile() {
-  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) =>
-    path.join(Global.Path.config, file),
-  )
+  const dir = globalConfigDir()
+  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) => path.join(dir, file))
   for (const file of candidates) {
     if (existsSync(file)) return file
   }
@@ -255,11 +259,12 @@ const layer = Layer.effect(
             .pipe(Effect.catch(() => Effect.void))
         }
       }
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "config.json"), env))
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.json"), env))
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.jsonc"), env))
+      const configDir = globalConfigDir()
+      result = mergeConfig(result, yield* loadFile(path.join(configDir, "config.json"), env))
+      result = mergeConfig(result, yield* loadFile(path.join(configDir, "opencode.json"), env))
+      result = mergeConfig(result, yield* loadFile(path.join(configDir, "opencode.jsonc"), env))
 
-      const legacy = path.join(Global.Path.config, "config")
+      const legacy = path.join(configDir, "config")
       if (existsSync(legacy)) {
         yield* Effect.promise(() =>
           import(pathToFileURL(legacy).href, { with: { type: "toml" } })
@@ -268,7 +273,7 @@ const layer = Layer.effect(
               if (provider && model) result.model = `${provider}/${model}`
               result["$schema"] = "https://opencode.ai/config.json"
               result = mergeConfig(result, rest)
-              await fsNode.writeFile(path.join(Global.Path.config, "config.json"), JSON.stringify(result, null, 2))
+              await fsNode.writeFile(path.join(configDir, "config.json"), JSON.stringify(result, null, 2))
               await fsNode.unlink(legacy)
             })
             .catch(() => {}),
@@ -396,7 +401,7 @@ const layer = Layer.effect(
         }
 
         const global = Object.keys(authEnv).length ? yield* loadGlobal(authEnv) : yield* getGlobal()
-        yield* merge(Global.Path.config, global, "global")
+        yield* merge(globalConfigDir(), global, "global")
 
         if (Flag.OPENCODE_CONFIG) {
           yield* merge(Flag.OPENCODE_CONFIG, yield* loadFile(Flag.OPENCODE_CONFIG, authEnv))
