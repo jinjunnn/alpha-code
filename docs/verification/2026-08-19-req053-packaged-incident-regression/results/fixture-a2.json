@@ -1,10 +1,10 @@
 {
   "schema": "alpha-code/req053-packaged-incident-regression/v1",
   "fixture": "A2",
-  "gitSha": "6e0fd40cc2005ab1b58bb0c24314d9d0301d8fa0",
-  "startedAt": "2026-08-20T03:11:26.238Z",
-  "app": "packages/ui-mac/dist/mac-arm64/alpha-code.app",
-  "verdict": "FAIL",
+  "gitSha": "9bcb82c923e7ff7727992ae5afe1555a39703529",
+  "startedAt": "2026-08-20T03:38:10.084Z",
+  "app": "/Users/tide/app/alpha-code/.worktrees/ac-470/packages/ui-mac/dist/mac-arm64/alpha-code.app",
+  "verdict": "PASS",
   "checks": [
     {
       "id": "no-sidecar-spawn",
@@ -23,14 +23,14 @@
     },
     {
       "id": "exit-1",
-      "ok": false,
-      "detail": "exitCode=null"
+      "ok": true,
+      "detail": "exitCode=1"
     }
   ],
-  "root": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-98d510b0-b897-4c1a-9a75-6e66a1d2dac3",
+  "root": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-6e9ee210-68b5-4298-9b9a-4bbdb8d08902",
   "notes": [
-    "isolation=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-98d510b0-b897-4c1a-9a75-6e66a1d2dac3"
+    "isolation=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-6e9ee210-68b5-4298-9b9a-4bbdb8d08902"
   ],
-  "exitCode": null,
-  "finishedAt": "2026-08-20T03:11:35.125Z"
+  "exitCode": 1,
+  "finishedAt": "2026-08-20T03:38:11.851Z"
 }

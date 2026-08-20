@@ -1,15 +1,15 @@
 {
   "schema": "alpha-code/req053-packaged-incident-regression/v1",
   "fixture": "A",
-  "gitSha": "6e0fd40cc2005ab1b58bb0c24314d9d0301d8fa0",
-  "startedAt": "2026-08-20T03:11:16.769Z",
-  "app": "packages/ui-mac/dist/mac-arm64/alpha-code.app",
-  "verdict": "FAIL",
+  "gitSha": "9bcb82c923e7ff7727992ae5afe1555a39703529",
+  "startedAt": "2026-08-20T03:37:40.464Z",
+  "app": "/Users/tide/app/alpha-code/.worktrees/ac-470/packages/ui-mac/dist/mac-arm64/alpha-code.app",
+  "verdict": "PASS",
   "checks": [
     {
       "id": "stripped-block",
       "ok": true,
-      "detail": "[2026-08-19 23:11:17.118] [warn]                     [req053-dangling-sweep] confirmed-absent Alpha config references stripped {\n  context: 'boot',\n  stripped: 4,\n  files: [\n    '/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-3376619e-bf34-423f-8a93-2ba2d54b1524/alpha-code-state/env/prod/alpha.jsonc',\n"
+      "detail": "[2026-08-19 23:37:59.589] [warn]                     [req053-dangling-sweep] confirmed-absent Alpha config references stripped {\n  context: 'boot',\n  stripped: 4,\n  files: [\n    '/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-889a166f-e8fd-4cfa-a88c-c070998ea1b8/alpha-code-state/env/prod/alpha.jsonc',\n"
     },
     {
       "id": "creating-instance-eq-1",
@@ -29,33 +29,33 @@
     {
       "id": "alpha-dangling-gone",
       "ok": true,
-      "detail": "{\"plugin\":[\"opencode-notify\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-3376619e-bf34-423f-8a93-2ba2d54b1524/desktop/plugins/keep-alive.js\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/req053-470-foreign/plugin.js\"],\"env\":{\"LIVE\":\"{file:/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-3376619e-bf34-423f-8a93-2ba2d54b1524/desktop/alpha-mcp-secrets/req053/LIVE}\"}}"
+      "detail": "{\"plugin\":[\"opencode-notify\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-889a166f-e8fd-4cfa-a88c-c070998ea1b8/desktop/plugins/keep-alive.js\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/req053-470-foreign/plugin.js\"],\"env\":{\"LIVE\":\"{file:/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-889a166f-e8fd-4cfa-a88c-c070998ea1b8/desktop/alpha-mcp-secrets/req053/LIVE}\"}}"
     },
     {
       "id": "legacy-dangling-gone",
       "ok": true,
-      "detail": "{\"plugin\":[\"opencode-notify\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-3376619e-bf34-423f-8a93-2ba2d54b1524/desktop/plugins/keep-alive.js\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/req053-470-foreign/plugin.js\"],\"env\":{\"LIVE\":\"{file:/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-3376619e-bf34-423f-8a93-2ba2d54b1524/desktop/alpha-mcp-secrets/req053/LIVE}\"}}"
+      "detail": "{\"plugin\":[\"opencode-notify\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-889a166f-e8fd-4cfa-a88c-c070998ea1b8/desktop/plugins/keep-alive.js\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/req053-470-foreign/plugin.js\"],\"env\":{\"LIVE\":\"{file:/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-889a166f-e8fd-4cfa-a88c-c070998ea1b8/desktop/alpha-mcp-secrets/req053/LIVE}\"}}"
     },
     {
       "id": "keeps-live-npm-foreign",
       "ok": true,
-      "detail": "{\"plugin\":[\"opencode-notify\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-3376619e-bf34-423f-8a93-2ba2d54b1524/desktop/plugins/keep-alive.js\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/req053-470-foreign/plugin.js\"],\"LIVE\":\"{file:/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-3376619e-bf34-423f-8a93-2ba2d54b1524/desktop/alpha-mcp-secrets/req053/LIVE}\"}"
+      "detail": "{\"plugin\":[\"opencode-notify\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-889a166f-e8fd-4cfa-a88c-c070998ea1b8/desktop/plugins/keep-alive.js\",\"/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/req053-470-foreign/plugin.js\"],\"LIVE\":\"{file:/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-889a166f-e8fd-4cfa-a88c-c070998ea1b8/desktop/alpha-mcp-secrets/req053/LIVE}\"}"
     },
     {
       "id": "xdg-inode-mtime",
-      "ok": false,
-      "detail": "before ino=204362127 mtime=1787195476992.8635 after ino=204362127 mtime=1787195478186.3247"
+      "ok": true,
+      "detail": "before ino=204896316 mtime=1787197060748.779 after ino=204896316 mtime=1787197060748.779"
     },
     {
       "id": "real-homes-untouched",
       "ok": true,
-      "detail": "{\"before\":{\"/Users/tide/.alpha\":{\"exists\":true,\"mtimeMs\":1784449990369.516,\"ino\":36937065},\"/Users/tide/.opencode\":{\"exists\":false,\"mtimeMs\":null,\"ino\":null},\"/Users/tide/.config/opencode\":{\"exists\":true,\"mtimeMs\":1784863576481.5188,\"ino\":22015767},\"/Users/tide/Library/Application Support/ai.opencode.desktop\":{\"exists\":true,\"mtimeMs\":1787195416257.2869,\"ino\":22015695},\"/Users/tide/Library/Application Support/com.tide.alphacode\":{\"exists\":false,\"mtimeMs\":null,\"ino\":null}},\"after\":{\"/Users/tide/.alpha\":{\"exists\":true,\"mtimeMs\":1784449990369.516,\"ino\":36937065},\"/Users/tide/.opencode\":{\"exists\":false,\"mtimeMs\":null,\"ino\":null},\"/Users/tide/.config/opencode\":{\"exists\":true,\"mtimeMs\":1784863576481.5188,\"ino\":22015767},\"/Users/tide/Library/Application Support/ai.opencode.desktop\":{\"exists\":true,\"mtimeMs\":1787195416257.2869,\"ino\":22015695},\"/Users/tide/Library/Application Support/com.tide.alphacode\":{\"exists\":false,\"mtimeMs\":null,\"ino\":null}}}"
+      "detail": "{\"before\":{\"/Users/tide/.alpha\":{\"exists\":true,\"mtimeMs\":1784449990369.516,\"ino\":36937065},\"/Users/tide/.opencode\":{\"exists\":false,\"mtimeMs\":null,\"ino\":null},\"/Users/tide/.config/opencode\":{\"exists\":true,\"mtimeMs\":1784863576481.5188,\"ino\":22015767},\"/Users/tide/Library/Application Support/ai.opencode.desktop\":{\"exists\":true,\"mtimeMs\":1787197059015.2483,\"ino\":22015695},\"/Users/tide/Library/Application Support/com.tide.alphacode\":{\"exists\":false,\"mtimeMs\":null,\"ino\":null}},\"after\":{\"/Users/tide/.alpha\":{\"exists\":true,\"mtimeMs\":1784449990369.516,\"ino\":36937065},\"/Users/tide/.opencode\":{\"exists\":false,\"mtimeMs\":null,\"ino\":null},\"/Users/tide/.config/opencode\":{\"exists\":true,\"mtimeMs\":1784863576481.5188,\"ino\":22015767},\"/Users/tide/Library/Application Support/ai.opencode.desktop\":{\"exists\":true,\"mtimeMs\":1787197059015.2483,\"ino\":22015695},\"/Users/tide/Library/Application Support/com.tide.alphacode\":{\"exists\":false,\"mtimeMs\":null,\"ino\":null}}}"
     }
   ],
-  "root": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-3376619e-bf34-423f-8a93-2ba2d54b1524",
+  "root": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-889a166f-e8fd-4cfa-a88c-c070998ea1b8",
   "notes": [
-    "isolation=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-3376619e-bf34-423f-8a93-2ba2d54b1524",
-    "planted alpha=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-3376619e-bf34-423f-8a93-2ba2d54b1524/alpha-code-state/env/prod/alpha.jsonc legacy=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-3376619e-bf34-423f-8a93-2ba2d54b1524/opencode-home/opencode.jsonc"
+    "isolation=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-889a166f-e8fd-4cfa-a88c-c070998ea1b8",
+    "planted alpha=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-889a166f-e8fd-4cfa-a88c-c070998ea1b8/alpha-code-state/env/prod/alpha.jsonc legacy=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-889a166f-e8fd-4cfa-a88c-c070998ea1b8/opencode-home/opencode.jsonc"
   ],
-  "finishedAt": "2026-08-20T03:11:22.798Z"
+  "finishedAt": "2026-08-20T03:38:05.321Z"
 }
