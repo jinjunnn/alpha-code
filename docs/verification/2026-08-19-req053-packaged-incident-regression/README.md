@@ -12,7 +12,7 @@ review_after: 2026-11-17
 
 规格来源:[`docs/design/2026-07-21-req053-bootstrap-loop-hardening.md`](../../design/2026-07-21-req053-bootstrap-loop-hardening.md) §AC5 订正块。父票 `#218` REQ-053。本目录只验证打包面 AC2/AC5;不修生产代码。
 
-**本轮结论:仍不能关 `#470`。** `#1033`+#1036` 已闭合 boot sweep / XDG I1 / A2 exit 1。夹具 **A / A2 / C = PASS**;夹具 **B = FAIL**(70min live:日志不涨、无 strike-3/recovery)。速率规则仍由 C 证活;打包面运行期断路证据缺口需 owner waive 或新 CODE 改夹具/接线。
+**本轮结论:`#470` 按 owner 裁决关闭。** `#1033`+#1036` 已闭合 boot sweep / XDG I1 / A2 exit 1。夹具 **A / A2 / C = PASS**。夹具 **B = FAIL**(70min live:日志不涨、无 strike-3/recovery)。**Owner waive(2026-08-20):** AC5 打包 live 断路证据本期不作为关票条件;速率规则认夹具 C,冷启动/fail-closed 认 A/A2。父票 `#218` 仍由 owner 逐 AC 勾选,本目录不 `Fixes #218`。
 
 ## 被测件
 
@@ -97,19 +97,18 @@ bun docs/verification/2026-08-19-req053-packaged-incident-regression/run.ts \
 | `alpha-check.sh` | 未跑(并行 lane 会写共享 `core.hooksPath`) | — |
 | 未 `bun install` / `worktree-bootstrap` | 编排者已 bootstrap | — |
 
-## FAIL → bug / owner
+## FAIL → owner waive
 
 - `#1031` / `#1033` / `#1034` / `#1036`:已闭合。
-- **夹具 B FAIL(本轮):** 不是「sidecar 端口死后日志死」旧形态;sidecar 活着但洪泛灌不出来。可选路由:
-  1. Owner **waive** AC5 打包 live 断路证据,认 C + A/A2 为本期退出(需票面裁决);
-  2. 新 CODE:改夹具 B 注入面(使运行期能持续触发循环),或改接线使 TEST_ONBOARDING 下可观测 strike-3;
-  3. `#982` spawn 咽喉闩仍 blocked-by `#470`,勿与 B 夹具缺口混为一谈。
+- **夹具 B FAIL(本轮):** sidecar 活着但洪泛灌不出来;断路器无输入信号。速率决策核仍由夹具 C 绿。
+- **Owner waive(2026-08-20):** 不把 AC5 打包 live 断路(strike-3 / recovery 卡)作为 `#470` 退出条件。未开 CODE 改夹具。
+- `#982` spawn 咽喉闩曾 blocked-by `#470`;本 waive 不代替 `#982` 自己的裁决。
 
 ## 主动没做
 
 - 不改生产 `index.ts` / sweep / runaway-guard 实现(本目录只产证据)
 - 不杀/不写入用户现役 `/Applications/alpha-code.app`
-- 不 `Fixes #218`(父票由 owner 逐 AC 收口)
-- 不 `Fixes #470`(B 未 PASS)
+- 不 `Fixes #218`
 - 不 `alpha-check.sh`(并行 lane 会写共享 `core.hooksPath`)
 - Windows 半场
+- 不把 `gate:waived` 贴到本票(`gate:waived` 只用于 Iteration 卫生闸,不是 AC waive)
