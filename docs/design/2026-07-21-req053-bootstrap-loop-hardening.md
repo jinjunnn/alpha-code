@@ -87,6 +87,7 @@
 - 无悬空 → no-op(幂等,常态零成本);
 - 有悬空且可剥 → 剥 + loud log(事故机自愈,含"清除后 crash 未来得及剥"的窗口);
 - 有悬空但**不可证/不可写**(parse error、身份 uncertain、写失败)→ 置 `bootEnforcementGap`,复用既有 fail-closed 拒 spawn 闸(`index.ts:729-738`)——宁可不启动,不进 21GB 循环。
+- **隔离 onboarding(`OPENCODE_TEST_ONBOARDING=1`)仍跑这次 boot sweep**(以及 `bootEnforcementGap` 的 dangling 分支);仍跳过 REQ-059/065/104 reconcile 与全局 ecosystem gate(`#1031`)。packaged 隔离夹具不能再靠该 env 把 AC2 整段关掉。
 - 附加一处零成本接线:sidecar **respawn 路径**也调 sweep(锁 busy 则跳过 loud)——补上"respawn 不重跑 reconcile"(`index.ts:727-728`)留下的运行期悬空洞,让 AC3 断路器的 kill→respawn 对已知病因一次即愈。
 
 **被否决**:

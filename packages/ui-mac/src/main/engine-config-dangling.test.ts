@@ -468,22 +468,21 @@ test("credential-level clear leaves alpha.jsonc with no guarded dangling refs an
 // ⚠️ ANCHOR,不是闸门。`#966` 保留它是因为这处接线今天**没有别的东西守着**,但必须写清它守不住什么:
 //
 //   它只比较 `index.ts` 源码里几个字符串的下标。下面**三个变异**会让接线彻底失效,而它照绿:
-//     ① 把 `index.ts:820` 的 `recordDanglingSweep("boot", dangling)` 换成丢弃返回值;
-//     ② 把 `index.ts:821-826` 的 `if (dangling.enforcementGap.length > 0)` 整块删掉(fail-closed 拒启没了);
-//     ③ 把 `index.ts:1268` 与 `:1403` 的 `armEngineRunawayMeter(spawnGen)` 注释掉(断路器从不起表)。
+//     ① 把 `recordDanglingSweep("boot", danglingBoot.outcome)` 换成丢弃返回值;
+//     ② 把 `if (danglingBoot.enforcementGap.length > 0)` 整块删掉(fail-closed 拒启没了);
+//     ③ 把两处 `armEngineRunawayMeter(spawnGen)` 注释掉(断路器从不起表)。
 //
-//   真判据在 `#470` 的打包证据:生产日志行(`[req053-dangling-sweep] … stripped=N` / `boot enforcement gap`)
-//   + config 文件的前后内容差 + 进程/尺寸读数。写「app 正常启动」等于什么都没证。
+//   `#1031` 把「TEST_ONBOARDING 下仍跑 boot sweep」拆成可执行闸:
+//     · `boot-dangling-sweep.test.ts` —— 删掉 `runBootDanglingSweep` 内的 sweep 调用即红;
+//     · `boot-dangling-onboarding-wiring.test.ts` —— 把调用塞回 `if (!TEST_ONBOARDING)` 即红。
+//   本条仍只守 boot/respawn 相对 spawn 的文本顺序。
 //
-//   为什么本仓拿不到机器判据(实测,不是畏难):`index.ts:1497` 是模块作用域的 `Effect.runFork(main)`
-//   —— import 它就等于启动整个 app;而 `index.ts:8` 静态 import 的 `node:tls#setDefaultCACertificates`
-//   在 **bun 1.3.14 不存在**(实测 `"setDefaultCACertificates" in tls === false`,`getCACertificates` 则有;
-//   Node 22 / Electron 有),ESM **链接期**就失败,`app.whenReady()` 一次都没被调到;即便链接得上,
-//   走到 :815 的 boot sweep 之前还有 ~217 行真实环境自举与 58 个本地模块。整类处置见 `alpha-code#968`。
+//   为什么 index.ts 本身进不了 bun:静态 import `node:tls#setDefaultCACertificates` 在 bun 1.3.14
+//   链接期失败。整类处置见 `alpha-code#968`。
 test("ANCHOR (not a gate): boot/respawn sweep source order in index.ts", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
   const reconcile = source.indexOf("reconcileEngineConfigTruth(logger")
-  const bootSweep = source.indexOf('phase: "boot"')
+  const bootSweep = source.indexOf("runBootDanglingSweep(")
   const firstFork = source.indexOf("spawnLocalServer(hostname, port, password")
   const respawnSweep = source.indexOf('phase: "respawn"')
   const secondFork = source.indexOf("spawnLocalServer(hostname, port, password", firstFork + 1)

@@ -187,6 +187,11 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
  * `.cases.ts` 键豁免:它们不进整包计数,由第 ④ 层反向那半(每个 cases 文件必须被一个已登记宿主跑到)兜住。
  */
 export const KEPT_SOURCE_TEXT_READS: Record<string, SourceTextEntry> = {
+  "packages/ui-mac/src/main/boot-dangling-onboarding-wiring.test.ts": {
+    why: "主语是负全称加唯一性:index.ts 每个 `if (!TEST_ONBOARDING)` 块不得包含 boot dangling sweep;REQ-059/065/104 与 ecosystem gate 必须仍在该守卫内;runBootDanglingSweep 恰好一次且排在首个 spawnLocalServer 之前。index.ts 结构上进不了 bun,这份布局就是接线契约。删掉 sweep 调用会由 boot-dangling-sweep.test.ts 的可执行闸变红,本条守的是「调用点不在 skip 里」。",
+    evidence: "#1031",
+    lines: 1,
+  },
   "packages/ui-mac/src/main/alpha-environment.test.ts": {
     why: "两处在同一条 grep 守卫里:main 侧 handler 必须零参数、preload 侧 invoke 必须不带参数,且两侧都**不得**出现任何环境写面通道名。主语是负全称(「不存在第二个写面」)—— 没有比源码文本更细的粒度能表达「全仓没有」。",
     evidence: "#239",
