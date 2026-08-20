@@ -12,30 +12,34 @@ review_after: 2026-11-17
 
 规格来源:[`docs/design/2026-07-21-req053-bootstrap-loop-hardening.md`](../../design/2026-07-21-req053-bootstrap-loop-hardening.md) §AC5 订正块。父票 `#218` REQ-053。本目录只验证打包面 AC2/AC5;不修生产代码。
 
-**本轮结论:不能关 `#470`。** 夹具 C PASS;A / A2 / B 因生产接线与隔离口互斥而未给出 AC 所需的 PASS。FAIL 已转 [`jinjunnn/alpha-code#1031`](https://github.com/jinjunnn/alpha-code/issues/1031) 挂 `#218`。
+**本轮结论:不能关 `#470`。** `#1033` 已闭合 `#1031`(boot sweep 在 `OPENCODE_TEST_ONBOARDING=1` 下会跑)。夹具 A 剩 1 条判据 FAIL;夹具 A2 fail-closed 行为已证活但 **exit 1 未落地**。夹具 C 仍 PASS;夹具 B 仍 pending/KNOWN GAP。
 
 ## 被测件
 
 | 项 | 值 |
 | --- | --- |
-| git SHA | `48bf3cd4bf5c1cb4fee099aaaccb8e4af1e632a9` |
-| 产物 | worktree 内 `packages/ui-mac`:`OPENCODE_CHANNEL=prod bun run build && bun run package:mac`(未 `install:local`) |
+| git SHA | `6e0fd40cc2005ab1b58bb0c24314d9d0301d8fa0` |
+| 产物 | worktree 内 `packages/ui-mac`:**`OPENCODE_CHANNEL=prod` 必须同时作用于 build 与 package**;否则 bundle id 落 `com.tide.alphacode.dev`,packaged 启动在 `app.whenReady()` 前挂起(9 行 main.log,零 sidecar)。 |
+| 命令 | `OPENCODE_CHANNEL=prod bun run build && OPENCODE_CHANNEL=prod bun run package:mac` |
+| 签名 | ad-hoc:`codesign --force --deep --sign - dist/mac-arm64/alpha-code.app`。**KNOWN GAP**:`ALPHA_SIGN=1` 在 `codesign --timestamp` 上失败(`The timestamp service is not available`)。 |
 | `CFBundleShortVersionString` | `0.1.3` |
+| `CFBundleIdentifier` | `com.tide.alphacode`(prod channel) |
 | `app.isPackaged` | `true`(main.log:`packaged: true, onboardingTest: true`) |
-| 签名 | **KNOWN GAP**:`ALPHA_SIGN=1` 在 `codesign --timestamp` 上失败(`The timestamp service is not available`)。本轮用 electron-builder 的 unsigned/`identity=null` 包 + `codesign --force --deep --sign -` 深 ad-hoc。不是 Developer ID / 公证包。未用 `bun run dev` 冒充 packaged。 |
 | 隔离 | `OPENCODE_TEST_ONBOARDING=1` → `$TMPDIR/opencode-onboarding-<uuid>/`;真实 `~/.alpha` / `~/.opencode` / `~/.config/opencode` / `~/Library/Application Support/ai.opencode.desktop` inode+mtime 在夹具 A 中未变。 |
 
 Runner:`bun docs/verification/2026-08-19-req053-packaged-incident-regression/run.ts --app <alpha-code.app> --fixture A\|A2\|B\|C`
 
 ## 四条夹具
 
-### A 冷启动自愈 — **FAIL**
+### A 冷启动自愈 — **FAIL**(8/9 判据 PASS)
 
 命令:
 
 ```bash
-OPENCODE_CHANNEL=prod bun run build && bun run package:mac   # 在 packages/ui-mac
+cd packages/ui-mac
+OPENCODE_CHANNEL=prod bun run build && OPENCODE_CHANNEL=prod bun run package:mac
 codesign --force --deep --sign - dist/mac-arm64/alpha-code.app
+cd ../..
 bun docs/verification/2026-08-19-req053-packaged-incident-regression/run.ts \
   --app packages/ui-mac/dist/mac-arm64/alpha-code.app --fixture A
 ```
@@ -44,62 +48,59 @@ bun docs/verification/2026-08-19-req053-packaged-incident-regression/run.ts \
 
 | 判据 | 结果 |
 | --- | --- |
-| `grep -a -A4 "confirmed-absent Alpha config references stripped"` 且对象字段 `stripped: 4` | FAIL: 零命中 |
-| 引擎日志 `creating instance` 恰 1 次 / 无三行循环 | FAIL:`creating instance=4705`(同量级 `fromDirectory` / `bootstrapping`) |
-| 两份配置悬空 plugin+`{file:}` 消失;活引用 / npm 包名 / 守卫根外路径保留 | FAIL:种子仍在 |
-| 预置 XDG `opencode.jsonc` inode+mtime | FAIL:inode 同,mtime 被改 |
-| 真实 home 根未写 | PASS |
+| `grep -a -A4 "confirmed-absent Alpha config references stripped"` 且对象字段 `stripped: 4` | **PASS** |
+| 引擎日志 `creating instance` 恰 1 次 / 无三行循环 | **PASS**(`creating=1 fromDirectory=1 bootstrapping=1`) |
+| 两份配置悬空 plugin+`{file:}` 消失;活引用 / npm 包名 / 守卫根外路径保留 | **PASS** |
+| 预置 XDG `opencode.jsonc` inode+mtime | **FAIL**:inode 同,mtime 被改(`1787195476992 → 1787195478186`,Δ≈1.2s) |
+| 真实 home 根未写 | **PASS** |
 
-**根因(源码,不是夹具写错):** `packages/ui-mac/src/main/index.ts` 把 REQ-059 reconcile、desired-state、**以及 REQ-053 boot `sweepEngineConfigDanglingUnlocked`** 整块放在 `if (!TEST_ONBOARDING) { ... }` 里。`OPENCODE_TEST_ONBOARDING=1` 是 packaged 隔离的唯一口子(packaged 拒绝 `ALPHA_ENV_BASE_DIR` / 外部 `ALPHA_GLOBAL_DIR`)。因此 **「隔离 + AC2 boot 自愈」结构上同时做不到**。同机复跑 `sweepEngineConfigDanglingUnlocked` 对残留种子给出 `stripped.length === 4`,说明 planner 本身会对这些路径剥引用;缺的是 boot 接线。
+**残余 FAIL:** 隔离根内 `config/opencode/opencode.jsonc`(XDG 重定向)mtime 在 boot 期间被触碰。基线 I1 要求 sweep 写路径不得含 XDG;需 CODE 票跟进(不是 `#1031` 原根因)。
 
-未在共享主 checkout 上跑;未杀用户正在用的 `/Applications/alpha-code.app`。
+### A2 fail-closed — **FAIL**(3/4 判据 PASS)
 
-### A2 fail-closed — **FAIL**(未单独出 PASS)
+命令:同上,`--fixture A2`。
 
-同一 `if (!TEST_ONBOARDING)` 块包含 `bootEnforcementGap` 的 dangling 分支。隔离启动下这段不跑,删掉 `index.ts` 的 gap 闸夹具 A 仍可「看起来像启动成功」,正是基线要单独一格挡住的假绿。本轮不把 A2 报成 PASS。
+原始结果:[`results/fixture-a2.json`](results/fixture-a2.json)
 
-### B 运行期断路 — **FAIL**(未采到 strike-3 尺寸序列)
+| 判据 | 结果 |
+| --- | --- |
+| 不 spawn sidecar | **PASS** |
+| `boot enforcement gap` 日志 | **PASS** |
+| `refusing to spawn sidecar` 或 gap | **PASS** |
+| 进程 exit 1 | **FAIL**(`exitCode=null`;runner 超时 kill;app 弹 `showErrorBox` 后仍存活) |
 
-在 TEST_ONBOARDING 下 boot sweep 被跳过,本可把悬空 `{file:}` 留在运行中造循环。实测 packaged 子进程在 `server ready` 后 sidecar 端口变为 Connection refused,`opencode.log` 停在 ~3KB、`creating instance=1`,**没有** 30MB/min 级洪水,因此没有逐分钟越过 512MB 帽的序列,也没有 `sidecar paused for explicit recovery`。
+legacy 混写 fail-closed **行为**已证活;缺的是 enforcement gap 后 **process exit 1**。
 
-未默默改成 dev 进程冒充。未跑满 45–54 分钟,因为信号(日志增长)在第一分钟就不存在。
+### B 运行期断路 — **pending / KNOWN GAP**
 
-### C 速率规则单独证活 — **PASS**
+未重跑(54 分钟;sidecar 未要求)。上轮 FAIL 形态仍有效;待 A/A2 全绿后再采 B 序列。
 
-```bash
-cd packages/ui-mac && bun test src/main/engine-runaway-guard.test.ts
-```
+### C 速率规则单独证活 — **PASS**(未重跑)
 
-输出摘要(核对 `Ran 13 tests across 1 file` = 枚举的 13 条):
-
-```
-13 pass
-0 fail
-33 expect() calls
-Ran 13 tests across 1 file. [16.00ms]
-```
-
-含 `two consecutive windows above 64MB produce one strike` 与 `the existing 30 MB/min path still stops at minute 54`。
-
-绕过实验记录(基线要求;本 VERIFY 票禁止改生产 src,故**不**真删 `fastWindows >= 2` 再跑 54 分钟 B):夹具 B 若全程窗口 Δ<64MB,则 `fastWindows` 恒 0,删掉 `fastWindows >= 2` 后 B 的绝对帽路径仍全绿。因此速率规则**必须**由本格单测证活,不能指望 B。
+上轮 [`results/fixture-c.json`](results/fixture-c.json) 仍有效:`bun test src/main/engine-runaway-guard.test.ts` → 13 pass / 0 fail。
 
 ## 本地确定性门
 
 | 门 | 命令 | 结果 |
 | --- | --- | --- |
 | typecheck | `cd packages/ui-mac && bun run typecheck` | exit 0 |
-| unit(C) | `bun test src/main/engine-runaway-guard.test.ts` | 13 pass / 0 fail |
+| unit(C) | (上轮) `bun test src/main/engine-runaway-guard.test.ts` | 13 pass / 0 fail |
 | `alpha-check.sh` | 未跑(并行 lane 会写共享 `core.hooksPath`) | — |
-| 未 `bun install` | 编排者已 bootstrap | — |
+| 未 `bun install` / `worktree-bootstrap` | 编排者已 bootstrap | — |
 
 ## FAIL → bug
 
-见 [`jinjunnn/alpha-code#1031`](https://github.com/jinjunnn/alpha-code/issues/1031)(挂 `#218`):`OPENCODE_TEST_ONBOARDING` 跳过 REQ-053 boot dangling sweep,使 AC2 打包证据在隔离根下结构不可证。
+- `#1031` / `#1033`:已闭合;boot sweep 在 TEST_ONBOARDING 下会跑。
+- **新开(待主 session 路由):**
+  1. 夹具 A — 隔离 XDG `opencode.jsonc` mtime 被 boot 路径触碰(违反 I1)。
+  2. 夹具 A2 — enforcement gap 后进程应 exit 1,实际弹窗阻塞。
 
 ## 主动没做
 
-- 不改 `index.ts` 把 sweep 移出 `TEST_ONBOARDING` 守卫(那是 CODE 票,不是本 VERIFY)
-- 不杀/不写入用户现役 `/Applications/alpha-code.app` 与 `~/Library/Application Support/ai.opencode.desktop`
-- 不 `Fixes #218`
-- 不 merge
+- 不改生产 `index.ts` / sweep 实现
+- 不跑夹具 B(54 分钟)
+- 不杀/不写入用户现役 `/Applications/alpha-code.app`
+- 不 `Fixes #218` / 不 `Fixes #470`(A/A2 未全 PASS)
+- 不 merge / 不开 draft PR(A/A2 FAIL)
+- 不 `alpha-check.sh`
 - Windows 半场

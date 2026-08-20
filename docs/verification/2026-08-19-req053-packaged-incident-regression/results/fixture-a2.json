@@ -1,7 +1,36 @@
 {
   "schema": "alpha-code/req053-packaged-incident-regression/v1",
   "fixture": "A2",
-  "gitSha": "48bf3cd4bf5c1cb4fee099aaaccb8e4af1e632a9",
+  "gitSha": "6e0fd40cc2005ab1b58bb0c24314d9d0301d8fa0",
+  "startedAt": "2026-08-20T03:11:26.238Z",
+  "app": "packages/ui-mac/dist/mac-arm64/alpha-code.app",
   "verdict": "FAIL",
-  "reason": "Same TEST_ONBOARDING skip as fixture A: boot dangling sweep and bootEnforcementGap wiring live inside if (!TEST_ONBOARDING). Isolated packaged launch cannot exercise the fail-closed spawn refusal."
+  "checks": [
+    {
+      "id": "no-sidecar-spawn",
+      "ok": true,
+      "detail": "no spawn"
+    },
+    {
+      "id": "enforcement-gap",
+      "ok": true,
+      "detail": "gap logged"
+    },
+    {
+      "id": "refused-or-gap",
+      "ok": true,
+      "detail": "refused=true gap=true"
+    },
+    {
+      "id": "exit-1",
+      "ok": false,
+      "detail": "exitCode=null"
+    }
+  ],
+  "root": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-98d510b0-b897-4c1a-9a75-6e66a1d2dac3",
+  "notes": [
+    "isolation=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-98d510b0-b897-4c1a-9a75-6e66a1d2dac3"
+  ],
+  "exitCode": null,
+  "finishedAt": "2026-08-20T03:11:35.125Z"
 }
