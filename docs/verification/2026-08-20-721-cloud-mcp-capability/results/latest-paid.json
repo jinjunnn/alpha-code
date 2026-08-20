@@ -1,0 +1,748 @@
+{
+  "probe": "alpha-code#721 cloud MCP capability matrix",
+  "phase": "paid",
+  "paid": true,
+  "mcpUrl": "https://alpha-cloud.tidelabs.click/mcp",
+  "collectedAt": "2026-08-20T09:51:08.903Z",
+  "build": {
+    "app": "/Applications/alpha-code.app",
+    "asarSha256": "80c1022dbeaac2a921f292e4490d38058c11f0addf771395fa9996949655a9c8",
+    "asarBuiltAt": "2026-08-17T10:40:16.153Z",
+    "shortVersion": "0.1.2",
+    "bundleId": "com.tide.alphacode",
+    "userData": "/Users/tide/Library/Application Support/ai.opencode.desktop"
+  },
+  "exitCode": 1,
+  "summary": {
+    "pass": 27,
+    "fail": 5,
+    "blocked": 5,
+    "notProducible": 3,
+    "requiredFailures": [
+      "A-SUM",
+      "R3"
+    ]
+  },
+  "checks": [
+    {
+      "id": "P0.1",
+      "ac": "evidence",
+      "title": "被测构建身份已记录(sha256 + 版本 + 构建时刻)",
+      "status": "pass",
+      "required": true,
+      "criterion": "app.asar sha256 / CFBundleShortVersionString / mtime all readable",
+      "observed": {
+        "app": "/Applications/alpha-code.app",
+        "asarSha256": "80c1022dbeaac2a921f292e4490d38058c11f0addf771395fa9996949655a9c8",
+        "asarBuiltAt": "2026-08-17T10:40:16.153Z",
+        "shortVersion": "0.1.2",
+        "bundleId": "com.tide.alphacode",
+        "userData": "/Users/tide/Library/Application Support/ai.opencode.desktop"
+      },
+      "at": "2026-08-20T09:42:22.473Z"
+    },
+    {
+      "id": "P0.2",
+      "ac": "evidence",
+      "title": "被测 commit 可从产物机械恢复",
+      "status": "blocked",
+      "required": false,
+      "criterion": "app.asar or Info.plist carries the source commit sha",
+      "observed": {
+        "embeddedCommitMarkers": 0,
+        "note": "provenance is inferential only — see README §1"
+      },
+      "note": "本 build 不含 commit 标记;E7 的做法(干净提交 → ship:mac → 把 sha256 钉进探针)未在本 build 上执行",
+      "at": "2026-08-20T09:42:22.473Z"
+    },
+    {
+      "id": "P0.3",
+      "ac": "AC1",
+      "title": "登录身份类型 = 订阅登录(platform_access JWT),非 Cloud API key",
+      "status": "pass",
+      "required": true,
+      "criterion": "ALPHA_CLOUD_TOKEN decodes to token_use=platform_access with a single purpose",
+      "observed": {
+        "claims": {
+          "alg": "ES256",
+          "kid": "alpha-web-platform-access-2026-07-23",
+          "iss": "alpha-web",
+          "aud": "alpha-platform-api",
+          "token_use": "platform_access",
+          "purpose": "cloud.dispatch",
+          "scope": [
+            "cloud.dispatch"
+          ],
+          "iat": 1787218563,
+          "exp": 1787219463,
+          "sub": "pseudo:5d6953ec453b",
+          "jti": "pseudo:e3b4f951e7e0"
+        },
+        "lifetimeSec": 900
+      },
+      "at": "2026-08-20T09:42:22.473Z"
+    },
+    {
+      "id": "P0.4",
+      "ac": "AC3",
+      "title": "Cloud API key(sk-alpha-*)可用",
+      "status": "blocked",
+      "required": false,
+      "criterion": "a secret file holds an sk-alpha-* Cloud API key",
+      "observed": {
+        "found": [],
+        "alphaApiKeyIsJwtNotKey": true
+      },
+      "note": "本机 ALPHA_API_KEY 是 purpose=model.invoke 的 platform_access JWT,不是 sk-alpha-* API key",
+      "at": "2026-08-20T09:42:22.473Z"
+    },
+    {
+      "id": "P0.5",
+      "ac": "AC3",
+      "title": "云 MCP 的 OAuth 授权已完成(mcp_access 令牌在位)",
+      "status": "blocked",
+      "required": false,
+      "criterion": "mcp-auth.json entry `cloud` holds tokens.accessToken",
+      "observed": {
+        "file": "/Users/tide/.local/share/opencode/mcp-auth.json",
+        "entryPresent": true,
+        "fields": [
+          "codeVerifier",
+          "oauthState"
+        ],
+        "hasAccessToken": false,
+        "hasRefreshToken": false,
+        "mtime": "2026-08-20T09:36:12.649Z"
+      },
+      "note": "只有 codeVerifier/oauthState —— 授权流被发起过但从未完成,该 server 处于 needs_auth",
+      "at": "2026-08-20T09:42:22.473Z"
+    },
+    {
+      "id": "P0.6",
+      "ac": "AC1",
+      "title": "sidecar 主权事实 = 平台代付(本地 keyless websearch 被压制)",
+      "status": "pass",
+      "required": false,
+      "criterion": "sidecar env has ALPHA_LOCAL_WEBSEARCH_DENY=1 and OPENCODE_ENABLE_EXA=0",
+      "observed": {
+        "ALPHA_CLOUD_MCP_URL": "https://alpha-cloud.tidelabs.click/mcp",
+        "ALPHA_LOCAL_WEBSEARCH_DENY": "1",
+        "OPENCODE_ENABLE_EXA": "0",
+        "OPENCODE_ENABLE_PARALLEL": "0",
+        "note": "`ps eww` 在 macOS 上会截断,未出现的变量名不构成缺席证据"
+      },
+      "at": "2026-08-20T09:42:22.494Z"
+    },
+    {
+      "id": "P0.7",
+      "ac": "AC6",
+      "title": "CDP 可用(引擎侧观测的唯一通道)",
+      "status": "blocked",
+      "required": false,
+      "criterion": "http://127.0.0.1:9222/json/version responds",
+      "observed": {
+        "port": 9222,
+        "reachable": false
+      },
+      "note": "应用未以 ALPHA_CDP=1 启动 ⇒ 引擎 /mcp 状态、模型工具表、账本差分不可观测",
+      "at": "2026-08-20T09:42:22.497Z"
+    },
+    {
+      "id": "T1",
+      "ac": "AC1",
+      "title": "无 Authorization 的 tools/list → 401 + 完整 challenge,且不泄露任何工具名",
+      "required": true,
+      "criterion": "HTTP 401 ∧ WWW-Authenticate params === contract §5 401 row ∧ no approved tool name in body",
+      "status": "pass",
+      "observed": {
+        "http": 401,
+        "challenge": {
+          "error": "invalid_token",
+          "error_description": "Missing or invalid access token for the alpha-cloud MCP resource",
+          "scope": "artifact.read cloud.dispatch cloud.read model.invoke",
+          "resource_metadata": "https://alpha-cloud.tidelabs.click/.well-known/oauth-protected-resource/mcp"
+        },
+        "leaksToolName": false,
+        "body": {
+          "error": "invalid_token",
+          "error_description": "Missing or invalid access token for the alpha-cloud MCP resource"
+        }
+      },
+      "at": "2026-08-20T09:42:23.110Z"
+    },
+    {
+      "id": "T2",
+      "ac": "AC1",
+      "title": "语法非法的 bearer → 401 + challenge",
+      "required": true,
+      "criterion": "HTTP 401 ∧ challenge.error === invalid_token",
+      "status": "pass",
+      "observed": {
+        "http": 401,
+        "challenge": {
+          "error": "invalid_token",
+          "error_description": "Missing or invalid access token for the alpha-cloud MCP resource",
+          "scope": "artifact.read cloud.dispatch cloud.read model.invoke",
+          "resource_metadata": "https://alpha-cloud.tidelabs.click/.well-known/oauth-protected-resource/mcp"
+        }
+      },
+      "at": "2026-08-20T09:42:23.312Z"
+    },
+    {
+      "id": "T3",
+      "ac": "AC1",
+      "title": "签名伪造(声称 cloud.read+artifact.read)→ 401,不因 claims 好看而放行",
+      "required": true,
+      "criterion": "HTTP 401 ∧ challenge.error === invalid_token",
+      "status": "pass",
+      "observed": {
+        "http": 401,
+        "challenge": {
+          "error": "invalid_token",
+          "error_description": "Missing or invalid access token for the alpha-cloud MCP resource",
+          "scope": "artifact.read cloud.dispatch cloud.read model.invoke",
+          "resource_metadata": "https://alpha-cloud.tidelabs.click/.well-known/oauth-protected-resource/mcp"
+        },
+        "forgedPurpose": "cloud.read"
+      },
+      "at": "2026-08-20T09:42:23.589Z"
+    },
+    {
+      "id": "T5",
+      "ac": "AC10",
+      "title": "cloud_schedule_* 不出现在 tools/list",
+      "required": true,
+      "criterion": "no name in tools/list matches cloud_schedule_*",
+      "status": "pass",
+      "observed": {
+        "names": [
+          "cloud_dispatch",
+          "cloud_status",
+          "cloud_await",
+          "cloud_artifacts",
+          "cloud_cancel",
+          "cloud_web_search"
+        ]
+      },
+      "at": "2026-08-20T09:42:23.824Z"
+    },
+    {
+      "id": "T6",
+      "ac": "AC2",
+      "title": "批准的 5 个工具全部在册",
+      "required": true,
+      "criterion": "every approved tool name appears in tools/list",
+      "status": "pass",
+      "observed": {
+        "missingApproved": [],
+        "extraBeyondApprovedFive": [
+          "cloud_cancel"
+        ],
+        "total": 6
+      },
+      "at": "2026-08-20T09:42:23.825Z"
+    },
+    {
+      "id": "T7",
+      "ac": "AC10",
+      "title": "工具集合精确等于批准的 5 个",
+      "status": "fail",
+      "required": false,
+      "criterion": "tools/list set === the five approved names",
+      "observed": {
+        "extraBeyondApprovedFive": [
+          "cloud_cancel"
+        ]
+      },
+      "note": "本面已由平台按各自裁决增列;#721 的 5 列基线是 2026-07-31 快照,不再等于当前注册权威",
+      "at": "2026-08-20T09:42:23.825Z"
+    },
+    {
+      "id": "T8",
+      "ac": "AC5",
+      "title": "JSON-RPC batch → 400 batch_not_supported(不是 200)",
+      "required": false,
+      "criterion": "HTTP 400 ∧ body.code === batch_not_supported",
+      "status": "pass",
+      "observed": {
+        "http": 400,
+        "body": "{\"error\":\"JSON-RPC batch requests are not supported on this endpoint\",\"code\":\"batch_not_supported\"}"
+      },
+      "at": "2026-08-20T09:42:24.028Z"
+    },
+    {
+      "id": "A-cloud_dispatch",
+      "ac": "AC2",
+      "title": "cloud_dispatch:授权咽喉判决可辨(HTTP 200)",
+      "status": "pass",
+      "required": true,
+      "criterion": "HTTP 200 ∧ the callback ran (a result object came back)",
+      "observed": {
+        "http": 200,
+        "challenge": null,
+        "registryRequiredAction": "cloud.dispatch",
+        "payload": "Input validation error: Invalid arguments for tool cloud_dispatch: autonomy: Invalid discriminator value. Expected 'pipeline' | 'bounded-agent'"
+      },
+      "at": "2026-08-20T09:42:24.241Z"
+    },
+    {
+      "id": "A-cloud_status",
+      "ac": "AC2",
+      "title": "cloud_status:授权咽喉判决可辨(HTTP 403,scope=cloud.read)",
+      "status": "pass",
+      "required": true,
+      "criterion": "HTTP 403 ∧ error=insufficient_scope ∧ scope === registry requiredAction (cloud.read)",
+      "observed": {
+        "http": 403,
+        "challenge": {
+          "error": "insufficient_scope",
+          "error_description": "The presented credential is not authorized for this tool",
+          "scope": "cloud.read",
+          "resource_metadata": "https://alpha-cloud.tidelabs.click/.well-known/oauth-protected-resource/mcp"
+        },
+        "registryRequiredAction": "cloud.read"
+      },
+      "note": "以本机登录凭证(purpose=cloud.dispatch 单值)恒被拒 —— 这是 REQ-129 要消除的结构性 forbidden",
+      "at": "2026-08-20T09:42:24.544Z"
+    },
+    {
+      "id": "A-cloud_await",
+      "ac": "AC2",
+      "title": "cloud_await:授权咽喉判决可辨(HTTP 403,scope=cloud.read)",
+      "status": "pass",
+      "required": true,
+      "criterion": "HTTP 403 ∧ error=insufficient_scope ∧ scope === registry requiredAction (cloud.read)",
+      "observed": {
+        "http": 403,
+        "challenge": {
+          "error": "insufficient_scope",
+          "error_description": "The presented credential is not authorized for this tool",
+          "scope": "cloud.read",
+          "resource_metadata": "https://alpha-cloud.tidelabs.click/.well-known/oauth-protected-resource/mcp"
+        },
+        "registryRequiredAction": "cloud.read"
+      },
+      "note": "以本机登录凭证(purpose=cloud.dispatch 单值)恒被拒 —— 这是 REQ-129 要消除的结构性 forbidden",
+      "at": "2026-08-20T09:42:24.752Z"
+    },
+    {
+      "id": "A-cloud_artifacts",
+      "ac": "AC2",
+      "title": "cloud_artifacts:授权咽喉判决可辨(HTTP 403,scope=artifact.read)",
+      "status": "pass",
+      "required": true,
+      "criterion": "HTTP 403 ∧ error=insufficient_scope ∧ scope === registry requiredAction (artifact.read)",
+      "observed": {
+        "http": 403,
+        "challenge": {
+          "error": "insufficient_scope",
+          "error_description": "The presented credential is not authorized for this tool",
+          "scope": "artifact.read",
+          "resource_metadata": "https://alpha-cloud.tidelabs.click/.well-known/oauth-protected-resource/mcp"
+        },
+        "registryRequiredAction": "artifact.read"
+      },
+      "note": "以本机登录凭证(purpose=cloud.dispatch 单值)恒被拒 —— 这是 REQ-129 要消除的结构性 forbidden",
+      "at": "2026-08-20T09:42:24.957Z"
+    },
+    {
+      "id": "A-cloud_cancel",
+      "ac": "AC2",
+      "title": "cloud_cancel:授权咽喉判决可辨(HTTP 200)",
+      "status": "pass",
+      "required": true,
+      "criterion": "HTTP 200 ∧ the callback ran (a result object came back)",
+      "observed": {
+        "http": 200,
+        "challenge": null,
+        "registryRequiredAction": "cloud.dispatch",
+        "payload": {
+          "error": "job not found"
+        }
+      },
+      "at": "2026-08-20T09:42:25.200Z"
+    },
+    {
+      "id": "A-cloud_web_search",
+      "ac": "AC2",
+      "title": "cloud_web_search:授权咽喉判决可辨(HTTP 200)",
+      "status": "pass",
+      "required": true,
+      "criterion": "HTTP 200 ∧ the callback ran (a result object came back)",
+      "observed": {
+        "http": 200,
+        "challenge": null,
+        "registryRequiredAction": "cloud.dispatch model.invoke",
+        "payload": "Input validation error: Invalid arguments for tool cloud_web_search: query: Invalid input: expected string, received undefined"
+      },
+      "at": "2026-08-20T09:42:25.419Z"
+    },
+    {
+      "id": "A-SUM",
+      "ac": "AC3",
+      "title": "订阅登录凭证可调通批准的 5 个工具",
+      "status": "fail",
+      "required": true,
+      "criterion": "none of the five approved tools answers 403 with the desktop's own logged-in credential",
+      "observed": {
+        "credentialPurpose": "cloud.dispatch",
+        "credentialScope": [
+          "cloud.dispatch"
+        ],
+        "structurallyForbidden": [
+          "cloud_status",
+          "cloud_await",
+          "cloud_artifacts"
+        ],
+        "perTool": {
+          "cloud_dispatch": {
+            "http": 200
+          },
+          "cloud_status": {
+            "http": 403,
+            "scope": "cloud.read"
+          },
+          "cloud_await": {
+            "http": 403,
+            "scope": "cloud.read"
+          },
+          "cloud_artifacts": {
+            "http": 403,
+            "scope": "artifact.read"
+          },
+          "cloud_cancel": {
+            "http": 200
+          },
+          "cloud_web_search": {
+            "http": 200
+          }
+        }
+      },
+      "note": "两条臂必须分开读:(a) **应用今天实际呈给 /mcp 的凭证** —— 自 ADR-009 2026-08-03 就地修订起云 MCP 定义里没有任何凭证通道,只走 OAuth;本机该 server 停在 needs_auth(P0.5)⇒ 应用自己一个云工具也够不着。(b) 本组测的是应用**另外持有**的 purpose=cloud.dispatch platform_access 令牌(传输面照常接受它)—— 它把单值 purpose 与单 bearer 传输面的结构冲突照出来。本组的 403 不等于「应用会吃到 403」,而是「回落凭证形态下会」。",
+      "at": "2026-08-20T09:42:25.419Z"
+    },
+    {
+      "id": "N-cloud_schedule_create",
+      "ac": "AC10",
+      "title": "cloud_schedule_create:按未注册工具拒绝且无副作用",
+      "required": true,
+      "criterion": "JSON-RPC error -32602 `Tool <name> not found` ∧ no result payload",
+      "status": "pass",
+      "observed": {
+        "http": 200,
+        "rpcError": {
+          "code": -32602,
+          "message": "Tool cloud_schedule_create not found"
+        }
+      },
+      "at": "2026-08-20T09:42:25.630Z"
+    },
+    {
+      "id": "N-cloud_schedule_list",
+      "ac": "AC10",
+      "title": "cloud_schedule_list:按未注册工具拒绝且无副作用",
+      "required": true,
+      "criterion": "JSON-RPC error -32602 `Tool <name> not found` ∧ no result payload",
+      "status": "pass",
+      "observed": {
+        "http": 200,
+        "rpcError": {
+          "code": -32602,
+          "message": "Tool cloud_schedule_list not found"
+        }
+      },
+      "at": "2026-08-20T09:42:25.837Z"
+    },
+    {
+      "id": "N-cloud_schedule_delete",
+      "ac": "AC10",
+      "title": "cloud_schedule_delete:按未注册工具拒绝且无副作用",
+      "required": true,
+      "criterion": "JSON-RPC error -32602 `Tool <name> not found` ∧ no result payload",
+      "status": "pass",
+      "observed": {
+        "http": 200,
+        "rpcError": {
+          "code": -32602,
+          "message": "Tool cloud_schedule_delete not found"
+        }
+      },
+      "at": "2026-08-20T09:42:26.054Z"
+    },
+    {
+      "id": "N-ORDER",
+      "ac": "AC1",
+      "title": "未注册工具 + 无凭证 → 401(认证排在注册表之前)",
+      "required": true,
+      "criterion": "HTTP 401 ∧ challenge.error === invalid_token",
+      "status": "pass",
+      "observed": {
+        "http": 401,
+        "challenge": {
+          "error": "invalid_token",
+          "error_description": "Missing or invalid access token for the alpha-cloud MCP resource",
+          "scope": "artifact.read cloud.dispatch cloud.read model.invoke",
+          "resource_metadata": "https://alpha-cloud.tidelabs.click/.well-known/oauth-protected-resource/mcp"
+        }
+      },
+      "at": "2026-08-20T09:42:26.252Z"
+    },
+    {
+      "id": "N-NOACTION",
+      "ac": "AC2",
+      "title": "已认证 + 未注册工具名(无 requiredAction 可解析)→ 403",
+      "status": "fail",
+      "required": false,
+      "criterion": "HTTP 403 — #721 2026-07-31 增补:「缺 requiredAction 断言 HTTP 403」",
+      "observed": {
+        "http": 200,
+        "challenge": null,
+        "rpcError": {
+          "code": -32602,
+          "message": "Tool alpha_probe_unknown_tool not found"
+        }
+      },
+      "note": "实测:已认证 + 未注册名走 SDK 的未注册分支(200 + -32602),传输闸不 403。平台契约(public-cloud-mcp.md §3)本就把未注册名定为 -32602,#721 增补那句针对的是**已注册但解析不出 action**的情形 —— 两份文字对同一格给出不同断言。无 handler 执行 ⇒ 不是可达的授权绕过,只是判据措辞需收敛。",
+      "at": "2026-08-20T09:42:26.461Z"
+    },
+    {
+      "id": "H1",
+      "ac": "AC10",
+      "title": "schedule 的 HTTP 面在 MCP 剔除后仍在(403 授权拒绝,不是 404 路由消失)",
+      "required": true,
+      "criterion": "GET /v1/cloud/schedules → 403 while a bogus sibling route under the same prefix → 404",
+      "status": "pass",
+      "observed": {
+        "schedules": {
+          "http": 403,
+          "body": "{\"error\":\"forbidden\"}"
+        },
+        "controlRoute": {
+          "http": 404,
+          "body": "404 Not Found"
+        }
+      },
+      "at": "2026-08-20T09:42:26.863Z"
+    },
+    {
+      "id": "H2",
+      "ac": "AC5",
+      "title": "cloud-jobs HTTP 面的拒绝形状(与 MCP 面对照)",
+      "status": "pass",
+      "required": false,
+      "criterion": "GET /v1/cloud/schedules without credential → HTTP 401",
+      "observed": {
+        "noAuth": {
+          "http": 401,
+          "body": "{\"error\":\"unauthorized\"}"
+        },
+        "mcpFaceEmitsChallenge": true,
+        "httpFaceEmitsChallenge": false
+      },
+      "note": "HTTP 面回裸 {\"error\":\"unauthorized\"} 且不带 WWW-Authenticate;MCP 面带完整 challenge。两面状态码一致、challenge 不一致,如实登记。",
+      "at": "2026-08-20T09:42:27.067Z"
+    },
+    {
+      "id": "L1",
+      "ac": "AC9",
+      "title": "桌面端日志不含凭证形状(JWT / Bearer / sk-*)",
+      "required": true,
+      "criterion": "no credential-shaped string in any file under <userData>/logs",
+      "status": "pass",
+      "observed": {
+        "logRoot": "/Users/tide/Library/Application Support/ai.opencode.desktop/logs",
+        "scannedFiles": 34,
+        "filesWithHits": []
+      },
+      "at": "2026-08-20T09:42:27.086Z"
+    },
+    {
+      "id": "L2",
+      "ac": "AC4",
+      "title": "sidecar 重生节奏(长任务读取的客户端前提)",
+      "status": "pass",
+      "required": false,
+      "criterion": "count engine (re)starts in the newest server.log — informational",
+      "observed": {
+        "log": "logs/20260820T083552/server.log",
+        "engineStarts": 7,
+        "stamps": [
+          "2026-08-20 04:35:53.913",
+          "2026-08-20 04:45:55.429",
+          "2026-08-20 04:55:55.470",
+          "2026-08-20 05:05:55.773",
+          "2026-08-20 05:15:56.069",
+          "2026-08-20 05:25:56.525",
+          "2026-08-20 05:35:56.727"
+        ]
+      },
+      "note": "每次 alpha-secrets sync(约 10 分钟)重写 purpose-bound 令牌并重生 sidecar;云作业在平台侧不受影响,本地在途回合会被打断(ADR-036 后果,另有窄票)",
+      "at": "2026-08-20T09:42:27.086Z"
+    },
+    {
+      "id": "E1",
+      "ac": "AC8/AC9",
+      "title": "alpha-cloud → AGENT 的 dispatch/status 不逐字下传调用方 Authorization",
+      "status": "not-producible",
+      "required": false,
+      "criterion": "requires observing Worker-internal hops or injecting provider failures",
+      "observed": {
+        "evidenceOwner": "alpha-platform#171 / #54"
+      },
+      "note": "客户端不在这条链上,任何从桌面端「取证」都只是猜测;判据归平台仓的确定性测试",
+      "at": "2026-08-20T09:42:27.086Z"
+    },
+    {
+      "id": "E2",
+      "ac": "AC8/AC9",
+      "title": "web search provider 429/timeout/5xx/no-backend:无成功外观、无 settle、余额不减",
+      "status": "not-producible",
+      "required": false,
+      "criterion": "requires observing Worker-internal hops or injecting provider failures",
+      "observed": {
+        "evidenceOwner": "alpha-platform#105(AC8)"
+      },
+      "note": "客户端不在这条链上,任何从桌面端「取证」都只是猜测;判据归平台仓的确定性测试",
+      "at": "2026-08-20T09:42:27.086Z"
+    },
+    {
+      "id": "E3",
+      "ac": "AC8/AC9",
+      "title": "同一 reservation 的 direct/Queue 结算重放幂等",
+      "status": "not-producible",
+      "required": false,
+      "criterion": "requires observing Worker-internal hops or injecting provider failures",
+      "observed": {
+        "evidenceOwner": "alpha-platform#90/#103/#104"
+      },
+      "note": "客户端不在这条链上,任何从桌面端「取证」都只是猜测;判据归平台仓的确定性测试",
+      "at": "2026-08-20T09:42:27.086Z"
+    },
+    {
+      "id": "R1",
+      "ac": "AC4",
+      "title": "cloud_web_search 真调:返回真实搜索结果",
+      "required": true,
+      "criterion": "HTTP 200 ∧ isError !== true ∧ payload.results non-empty ∧ does not match a known provider-failure signature",
+      "status": "pass",
+      "observed": {
+        "http": 200,
+        "isError": false,
+        "query": "alpha-code REQ-129 cloud mcp verification probe",
+        "resultsType": "string",
+        "resultsLength": 1531,
+        "providerPrefix": "[tavily]",
+        "matchedProviderFailureShape": false,
+        "sample": "[tavily] alpha-code REQ-129 cloud mcp verification probe\n- How to Detect Which AI Tools Call Your MCP Server (https://fingerprint.com/blog/how-to-detect-ai-tools-mcp-server)\n  3. Where the traffic physically comes from. The `ip_info` block "
+      },
+      "at": "2026-08-20T09:42:29.237Z"
+    },
+    {
+      "id": "R6",
+      "ac": "AC5",
+      "title": "cloud_web_search 的成功载荷形状(客户端可分类性)",
+      "status": "fail",
+      "required": false,
+      "criterion": "payload.results is structured (array of result objects), so a client can tell results from an error string",
+      "observed": {
+        "resultsType": "string",
+        "providerPrefix": "[tavily]"
+      },
+      "note": "实测 results 是一整段带 provider 前缀的**文本**。同一个槽位也是 provider 失败串的落点(平台 D2),客户端因此无法结构化区分「搜到了」与「上游报错」——只能靠字符串特征猜。",
+      "at": "2026-08-20T09:42:29.237Z"
+    },
+    {
+      "id": "R2",
+      "ac": "AC3",
+      "title": "cloud_dispatch 真调:作业被受理并返回 job_id",
+      "required": true,
+      "criterion": "HTTP 200 ∧ isError !== true ∧ payload.job_id is a string (≤3 attempts)",
+      "status": "pass",
+      "observed": {
+        "attempts": [
+          {
+            "attempt": 1,
+            "http": 200,
+            "isError": false,
+            "payload": {
+              "schema_version": 1,
+              "job_id": "pseudo:b1894e5dc13b",
+              "status": "queued",
+              "autonomy": "bounded-agent",
+              "urls": "<omitted>"
+            }
+          }
+        ],
+        "acceptedOnAttempt": 1
+      },
+      "at": "2026-08-20T09:42:32.179Z"
+    },
+    {
+      "id": "R3",
+      "ac": "AC3",
+      "title": "派发者可读回自己刚派出的作业状态",
+      "status": "fail",
+      "required": true,
+      "criterion": "cloud_status on the job this run dispatched answers HTTP 200",
+      "observed": {
+        "http": 403,
+        "challenge": {
+          "error": "insufficient_scope",
+          "error_description": "The presented credential is not authorized for this tool",
+          "scope": "cloud.read",
+          "resource_metadata": "https://alpha-cloud.tidelabs.click/.well-known/oauth-protected-resource/mcp"
+        },
+        "jobId": "pseudo:b1894e5dc13b"
+      },
+      "note": "同一凭证派得出、读不回 —— 长任务后续读取在本凭证形态下结构上不可能",
+      "at": "2026-08-20T09:42:32.403Z"
+    },
+    {
+      "id": "R4",
+      "ac": "AC4",
+      "title": "cloud_cancel 收回本次派发(止损,避免探针留下跑着的付费作业)",
+      "required": true,
+      "criterion": "HTTP 200 ∧ payload carries {job_id, status, accepted}",
+      "status": "pass",
+      "observed": {
+        "http": 200,
+        "accepted": true,
+        "status": "cancelling",
+        "jobId": "pseudo:b1894e5dc13b"
+      },
+      "at": "2026-08-20T09:42:34.134Z"
+    },
+    {
+      "id": "R5",
+      "ac": "AC4",
+      "title": "计费前后账本差分(reserve → provider → settle)",
+      "status": "blocked",
+      "required": false,
+      "criterion": "read the account ledger before/after the billed calls",
+      "observed": {
+        "reason": "本机无 purpose=account.read 凭证,且 CDP 未开 ⇒ 账本只能经应用自身读取"
+      },
+      "at": "2026-08-20T09:42:34.134Z"
+    },
+    {
+      "id": "T4",
+      "ac": "AC1",
+      "title": "过期凭证 → 401 + challenge(不是 200 + isError)",
+      "required": true,
+      "criterion": "HTTP 401 ∧ challenge.error === invalid_token, using the same credential after its own exp",
+      "status": "pass",
+      "observed": {
+        "http": 401,
+        "challenge": {
+          "error": "invalid_token",
+          "error_description": "Missing or invalid access token for the alpha-cloud MCP resource",
+          "scope": "artifact.read cloud.dispatch cloud.read model.invoke",
+          "resource_metadata": "https://alpha-cloud.tidelabs.click/.well-known/oauth-protected-resource/mcp"
+        },
+        "expAt": "2026-08-20T09:51:03.000Z",
+        "testedAt": "2026-08-20T09:51:08.902Z"
+      },
+      "at": "2026-08-20T09:51:08.902Z"
+    }
+  ]
+}
