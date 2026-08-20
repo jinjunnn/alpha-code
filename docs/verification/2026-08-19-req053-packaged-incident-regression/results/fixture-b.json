@@ -1,0 +1,10 @@
+{
+  "schema": "alpha-code/req053-packaged-incident-regression/v1",
+  "fixture": "B",
+  "gitSha": "48bf3cd4bf5c1cb4fee099aaaccb8e4af1e632a9",
+  "verdict": "FAIL",
+  "reason": "Under OPENCODE_TEST_ONBOARDING the sidecar listen port died after server ready; opencode.log stayed ~3KB with creating instance=1. No per-minute size series, no strike-3, no recovery card. Not silently downgraded to unpackaged/dev.",
+  "notes": [
+    "Did not run the full 45–54 minute wall clock because the flood signal never appeared in the first minute."
+  ]
+}

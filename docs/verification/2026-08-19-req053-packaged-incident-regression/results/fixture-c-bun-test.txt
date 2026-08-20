@@ -1,0 +1,21 @@
+bun test v1.3.14 (0d9b296a)
+
+src/main/engine-runaway-guard.test.ts:
+(pass) engine runaway guard > stays inert until armed and uses the first ready-time window as a baseline (W3) [0.80ms]
+(pass) engine runaway guard > rate decisions use delta rather than the existing file size (W2) [0.02ms]
+(pass) engine runaway guard > a single fast window is not a verdict and a normal window breaks the chain (W1) [0.02ms]
+(pass) engine runaway guard > two consecutive windows above 64MB produce one strike (W1) [0.02ms]
+(pass) engine runaway guard > an absolute size above 512MB produces one strike [0.02ms]
+(pass) engine runaway guard > strikes one and two kill for the existing respawn ladder; strike three stops for an incident (W4/W5) [0.35ms]
+(pass) engine runaway guard > a 17.6 MB/min slow burn stops at minute 90 within the ten-hour model [0.16ms]
+(pass) engine runaway guard > a 15 MB/min slow burn stops at minute 105 within the ten-hour model [0.04ms]
+(pass) engine runaway guard > a 10 MB/min slow burn stops at minute 156 within the ten-hour model [0.59ms]
+(pass) engine runaway guard > the existing 30 MB/min path still stops at minute 54 [0.03ms]
+(pass) engine runaway guard > an unavailable stat sample is no verdict and breaks rate continuity (W4) [0.03ms]
+(pass) engine runaway guard > only a completed healthy generation decays strikes (W5) [0.04ms]
+(pass) engine runaway guard > retry-engine reset clears strikes and requires a new ready-time arm (W5) [0.05ms]
+
+ 13 pass
+ 0 fail
+ 33 expect() calls
+Ran 13 tests across 1 file. [16.00ms]
