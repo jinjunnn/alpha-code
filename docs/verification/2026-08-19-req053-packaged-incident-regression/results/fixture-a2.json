@@ -1,0 +1,7 @@
+{
+  "schema": "alpha-code/req053-packaged-incident-regression/v1",
+  "fixture": "A2",
+  "gitSha": "48bf3cd4bf5c1cb4fee099aaaccb8e4af1e632a9",
+  "verdict": "FAIL",
+  "reason": "Same TEST_ONBOARDING skip as fixture A: boot dangling sweep and bootEnforcementGap wiring live inside if (!TEST_ONBOARDING). Isolated packaged launch cannot exercise the fail-closed spawn refusal."
+}

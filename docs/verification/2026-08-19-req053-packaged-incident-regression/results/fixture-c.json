@@ -1,0 +1,12 @@
+{
+  "schema": "alpha-code/req053-packaged-incident-regression/v1",
+  "fixture": "C",
+  "gitSha": "48bf3cd4bf5c1cb4fee099aaaccb8e4af1e632a9",
+  "verdict": "PASS",
+  "command": "cd packages/ui-mac && bun test src/main/engine-runaway-guard.test.ts",
+  "summary": "13 pass / 0 fail / 33 expect() / Ran 13 tests across 1 file",
+  "notes": [
+    "Rate-rule coverage lives in engine-runaway-guard.test.ts (two consecutive 64MB windows; 30 MB/min model stops at minute 54).",
+    "Bypass record: if fixture B has Δ<64MB every window, deleting fastWindows>=2 would leave B green; do not treat B as rate-rule evidence."
+  ]
+}
