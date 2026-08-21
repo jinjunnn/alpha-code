@@ -1,0 +1,175 @@
+{
+  "probe": "alpha-code#1050 ledger diff",
+  "collectedAt": "2026-08-21T04:34:28Z",
+  "credentialKind": "sk-alpha cloud scope",
+  "web_search_phase": {
+    "deltas": {
+      "balanceFen": 0,
+      "walletUsedFen": 0,
+      "window5hUsedCredits": 15,
+      "window7dUsedCredits": 15
+    },
+    "calls": {
+      "cloud_web_search": {
+        "http": 200,
+        "isError": false,
+        "provider": "tavily",
+        "resultsType": "list"
+      }
+    },
+    "verdict": {
+      "web_search_reservation_created": true,
+      "allowance_consumed": true,
+      "reservation_settled": true,
+      "new_fact_kinds": [
+        "allowance_consumed",
+        "reservation_created",
+        "reservation_settled"
+      ],
+      "new_action_ids": [
+        "tool.web_search"
+      ],
+      "pass_search_reserve_settle_chain": true,
+      "pass_dispatch_accepted": false,
+      "pass_status_artifacts_reachable": false,
+      "note": "status/artifacts/cancel produced no additional tool.web_search reservations in the new-fact window"
+    },
+    "newLedgerFacts": [
+      {
+        "seq": 482,
+        "kind": "reservation_settled",
+        "domain": "wallet",
+        "amount": 0,
+        "actionId": null,
+        "reservationId": "a2b4cb17-abf9-408c-a4e6-a44094f1dcc4",
+        "externalRef": null,
+        "createdAt": 1787286817978
+      },
+      {
+        "seq": 481,
+        "kind": "allowance_consumed",
+        "domain": "allowance",
+        "amount": -15,
+        "actionId": null,
+        "reservationId": "a2b4cb17-abf9-408c-a4e6-a44094f1dcc4",
+        "externalRef": "ak_GiqAKeH5",
+        "createdAt": 1787286817978
+      },
+      {
+        "seq": 480,
+        "kind": "allowance_consumed",
+        "domain": "allowance",
+        "amount": -15,
+        "actionId": null,
+        "reservationId": "a2b4cb17-abf9-408c-a4e6-a44094f1dcc4",
+        "externalRef": "ak_GiqAKeH5",
+        "createdAt": 1787286817978
+      },
+      {
+        "seq": 479,
+        "kind": "reservation_created",
+        "domain": "allowance",
+        "amount": 15,
+        "actionId": "tool.web_search",
+        "reservationId": "a2b4cb17-abf9-408c-a4e6-a44094f1dcc4",
+        "externalRef": null,
+        "createdAt": 1787286815367
+      },
+      {
+        "seq": 478,
+        "kind": "reservation_created",
+        "domain": "allowance",
+        "amount": 15,
+        "actionId": "tool.web_search",
+        "reservationId": "a2b4cb17-abf9-408c-a4e6-a44094f1dcc4",
+        "externalRef": null,
+        "createdAt": 1787286815366
+      },
+      {
+        "seq": 477,
+        "kind": "reservation_created",
+        "domain": "wallet",
+        "amount": 0,
+        "actionId": "tool.web_search",
+        "reservationId": "a2b4cb17-abf9-408c-a4e6-a44094f1dcc4",
+        "externalRef": null,
+        "createdAt": 1787286815366
+      }
+    ]
+  },
+  "dispatch_phase": {
+    "before": {
+      "balanceFen": 99910,
+      "walletUsedFen": 90,
+      "window5h": {
+        "usedCredits": 30,
+        "limitCredits": 2000,
+        "resetsInMin": 236
+      },
+      "window7d": {
+        "usedCredits": 113,
+        "limitCredits": 16000,
+        "resetsInMin": 8456
+      },
+      "maxSeq": 482
+    },
+    "after": {
+      "balanceFen": 99910,
+      "walletUsedFen": 90,
+      "window5h": {
+        "usedCredits": 30,
+        "limitCredits": 2000,
+        "resetsInMin": 235
+      },
+      "window7d": {
+        "usedCredits": 113,
+        "limitCredits": 16000,
+        "resetsInMin": 8455
+      },
+      "maxSeq": 482
+    },
+    "deltas": {
+      "balanceFen": 0,
+      "window5hUsedCredits": 0,
+      "window7dUsedCredits": 0
+    },
+    "dispatchAttempts": [
+      {
+        "attempt": 1,
+        "http": 200,
+        "isError": false,
+        "payload_keys": [
+          "schema_version",
+          "job_id",
+          "status",
+          "autonomy",
+          "urls"
+        ],
+        "err": null
+      }
+    ],
+    "jobIdPresent": true,
+    "cloud_status": {
+      "http": 200,
+      "isError": false
+    },
+    "cloud_artifacts": {
+      "http": 200,
+      "isError": false
+    },
+    "cloud_cancel": {
+      "http": 200,
+      "accepted": true
+    },
+    "newLedgerFacts": [],
+    "new_action_ids": [],
+    "new_kinds": []
+  },
+  "overall": {
+    "pass_search_reserve_settle": true,
+    "pass_dispatch_accepted": true,
+    "pass_status_artifacts_http200": true,
+    "pass_cancel_accepted": true,
+    "pass_readonly_no_extra_web_search_action": true
+  }
+}
