@@ -10,14 +10,10 @@
 // Usage:
 //   bun docs/verification/2026-08-20-721-cloud-mcp-capability/probe.ts            # no paid calls
 //   bun docs/verification/2026-08-20-721-cloud-mcp-capability/probe.ts --paid     # + real billed calls
+//   bun docs/verification/2026-08-20-721-cloud-mcp-capability/probe.ts --paid --skip-t4
 //
-// Exit codes: 0 = every required check passed · 1 = a required check failed
-//             2 = preflight blocked (no packaged app / no logged-in credential)
-//
-// `--paid` performs ONE real `cloud_web_search` and ONE real `cloud_dispatch` (immediately
-// cancelled). Without it the tool rows are proven at the authorization layer only, using
-// schema-invalid arguments that reach the callback and return a validation error with zero
-// side effect. Both modes are idempotent: nothing here mutates local app state.
+// When `mcp-auth.json` holds cloud OAuth tokens (P0.5), LIVE_AUTH prefers that `mcp_access`
+// JWT for AC3/AC4 rows. ALPHA_CLOUD_TOKEN remains the transport negative + A-FALLBACK control.
 
 import { createHash } from "node:crypto"
 import { execFileSync } from "node:child_process"
@@ -31,12 +27,17 @@ const ENGINE_DATA = process.env.ALPHA_721_ENGINE_DATA ?? path.join(homedir(), ".
 const CDP_PORT = Number(process.env.ALPHA_721_CDP_PORT ?? 9222)
 const MCP_URL = process.env.ALPHA_721_MCP_URL ?? "https://alpha-cloud.tidelabs.click/mcp"
 const PAID = process.argv.includes("--paid")
+/** Skip the multi-minute wait for the snapshotted ALPHA_CLOUD_TOKEN to expire (T4). */
+const SKIP_T4 = process.argv.includes("--skip-t4")
 const OUT_DIR = path.join(import.meta.dir, "results")
 
 /** The five columns owner narrowed #721 to on 2026-07-31 (alpha-platform#175). */
 const APPROVED_FIVE = ["cloud_dispatch", "cloud_status", "cloud_await", "cloud_artifacts", "cloud_web_search"] as const
 /** Removed from the MCP surface by alpha-platform#175 — must not appear and must not execute. */
 const REMOVED_SCHEDULE = ["cloud_schedule_create", "cloud_schedule_list", "cloud_schedule_delete"] as const
+/** Match the #1043 mcp_access matrix (Chrome UA). */
+const CHROME_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 /** `alpha-platform/docs/contracts/public-cloud-mcp.md` §5 — the full challenge parameter set. */
 const CHALLENGE_401 = {
@@ -148,6 +149,7 @@ async function mcp(method: string, params: unknown, auth?: string): Promise<McpR
     headers: {
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
+      "user-agent": CHROME_UA,
       ...(auth ? { authorization: auth } : {}),
     },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
@@ -173,7 +175,12 @@ async function mcp(method: string, params: unknown, auth?: string): Promise<McpR
 async function mcpRaw(body: string, auth?: string) {
   const res = await fetch(MCP_URL, {
     method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...(auth ? { authorization: auth } : {}) },
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      "user-agent": CHROME_UA,
+      ...(auth ? { authorization: auth } : {}),
+    },
     body,
     signal: AbortSignal.timeout(30_000),
   })
@@ -408,10 +415,15 @@ async function main() {
     { http: badSig.http, challenge: badSig.challenge, forgedPurpose: forgedClaims.purpose },
   )
 
-  // The app rotates the secret file; re-read so the rest of the run uses a live credential.
-  const live = secret("ALPHA_CLOUD_TOKEN")!
+  // AC3 / paid rows use the OAuth `mcp_access` token the desktop actually presents to /mcp
+  // (ADR-009). ALPHA_CLOUD_TOKEN remains the transport/fail-closed control (single purpose).
+  const mcpAccess = authorized ? String(cloudEntry.tokens.accessToken) : undefined
+  if (mcpAccess) registerSecret(mcpAccess)
+  const liveFallback = secret("ALPHA_CLOUD_TOKEN")!
+  const live = mcpAccess ?? liveFallback
   const LIVE_AUTH = `Bearer ${live}`
   const liveClaims = readJwtClaims(live)
+  const liveCredentialKind = mcpAccess ? "mcp_access" : "ALPHA_CLOUD_TOKEN_fallback"
 
   // ── T5/T6 · registry surface (AC2 / AC10) ─────────────────────────────────
 
@@ -493,13 +505,36 @@ async function main() {
     status: structurallyForbidden.length === 0 ? "pass" : "fail",
     required: true,
     criterion: "none of the five approved tools answers 403 with the desktop's own logged-in credential",
-    observed: { credentialPurpose: liveClaims.purpose, credentialScope: liveClaims.scope, structurallyForbidden, perTool: authzOutcome },
-    note:
-      "两条臂必须分开读:(a) **应用今天实际呈给 /mcp 的凭证** —— 自 ADR-009 2026-08-03 就地修订起云 MCP 定义里没有任何凭证通道," +
-      "只走 OAuth;本机该 server 停在 needs_auth(P0.5)⇒ 应用自己一个云工具也够不着。(b) 本组测的是应用**另外持有**的 " +
-      "purpose=cloud.dispatch platform_access 令牌(传输面照常接受它)—— 它把单值 purpose 与单 bearer 传输面的结构冲突照出来。" +
-      "本组的 403 不等于「应用会吃到 403」,而是「回落凭证形态下会」。",
+    observed: {
+      credentialKind: liveCredentialKind,
+      credentialPurpose: liveClaims.purpose,
+      credentialScope: liveClaims.scope,
+      structurallyForbidden,
+      perTool: authzOutcome,
+    },
+    note: mcpAccess
+      ? "LIVE_AUTH = mcp-auth.json cloud.tokens.accessToken (mcp_access; scopes cloud.dispatch/read + artifact.read)."
+      : "P0.5 未授权 ⇒ 回落 ALPHA_CLOUD_TOKEN(purpose=cloud.dispatch)。该回落对 read/artifact 工具的 403 是正确 fail-closed,不是 AC3 PASS。",
   })
+
+  // Control: single-purpose fallback must still fail closed on read/artifact tools.
+  if (mcpAccess) {
+    const fallbackAuth = `Bearer ${liveFallback}`
+    const fallbackForbidden: string[] = []
+    for (const tool of ["cloud_status", "cloud_await", "cloud_artifacts"] as const) {
+      const reply = await mcp("tools/call", { name: tool, arguments: ARGS[tool] ?? {} }, fallbackAuth)
+      if (reply.http === 403) fallbackForbidden.push(tool)
+    }
+    record({
+      id: "A-FALLBACK",
+      ac: "AC3",
+      title: "回落 ALPHA_CLOUD_TOKEN(purpose=cloud.dispatch)对 read/artifact 仍 403(fail-closed)",
+      status: fallbackForbidden.length === 3 ? "pass" : "fail",
+      required: false,
+      criterion: "cloud_status/await/artifacts each HTTP 403 with the dispatch-only secret",
+      observed: { fallbackForbidden },
+    })
+  }
 
   // ── N · removed tool names (AC10) ─────────────────────────────────────────
 
@@ -546,12 +581,13 @@ async function main() {
     })
     return { http: res.status, body: (await res.text()).slice(0, 200) }
   }
-  const sched = await httpGet("/v1/cloud/schedules", LIVE_AUTH)
-  const control = await httpGet("/v1/cloud/alpha-probe-definitely-not-a-route", LIVE_AUTH)
+  // Schedule HTTP face accepts platform_access JWTs, not the MCP OAuth access token.
+  const sched = await httpGet("/v1/cloud/schedules", `Bearer ${liveFallback}`)
+  const control = await httpGet("/v1/cloud/alpha-probe-definitely-not-a-route", `Bearer ${liveFallback}`)
   assertCheck(
-    { id: "H1", ac: "AC10", title: "schedule 的 HTTP 面在 MCP 剔除后仍在(403 授权拒绝,不是 404 路由消失)", required: true, criterion: "GET /v1/cloud/schedules → 403 while a bogus sibling route under the same prefix → 404" },
+    { id: "H1", ac: "AC10", title: "schedule 的 HTTP 面在 MCP 剔除后仍在(403 授权拒绝,不是 404 路由消失)", required: true, criterion: "GET /v1/cloud/schedules → 403 while a bogus sibling route under the same prefix → 404 (using ALPHA_CLOUD_TOKEN)" },
     sched.http === 403 && control.http === 404,
-    { schedules: sched, controlRoute: control },
+    { schedules: sched, controlRoute: control, auth: "ALPHA_CLOUD_TOKEN" },
   )
   const schedNoAuth = await httpGet("/v1/cloud/schedules")
   record({
@@ -641,7 +677,19 @@ async function main() {
     for (const id of ["R1", "R2", "R3", "R4"]) {
       record({ id, ac: "AC3/AC4", title: "真实计费调用", status: "blocked", required: false, criterion: "run with --paid", observed: { paid: false } })
     }
-    await checkExpiredCredential(AUTH, claims.exp)
+    if (SKIP_T4) {
+      record({
+        id: "T4",
+        ac: "AC1",
+        title: "过期凭证 → 401",
+        status: "blocked",
+        required: false,
+        criterion: "call after the snapshotted credential's own exp",
+        observed: { skipped: true, flag: "--skip-t4" },
+      })
+    } else {
+      await checkExpiredCredential(AUTH, claims.exp)
+    }
     finish(checks.some((c) => c.required && c.status !== "pass") ? 1 : 0, "readonly")
   }
 
@@ -741,10 +789,22 @@ async function main() {
     status: "blocked",
     required: false,
     criterion: "read the account ledger before/after the billed calls",
-    observed: { reason: "本机无 purpose=account.read 凭证,且 CDP 未开 ⇒ 账本只能经应用自身读取" },
+    observed: { reason: "本机无 purpose=account.read 凭证落盘;账本差分需 E7 runbook / 账户面板人工核对" },
   })
 
-  await checkExpiredCredential(AUTH, claims.exp)
+  if (SKIP_T4) {
+    record({
+      id: "T4",
+      ac: "AC1",
+      title: "过期凭证 → 401",
+      status: "blocked",
+      required: false,
+      criterion: "call after the snapshotted credential's own exp",
+      observed: { skipped: true, flag: "--skip-t4" },
+    })
+  } else {
+    await checkExpiredCredential(AUTH, claims.exp)
+  }
   finish(checks.some((c) => c.required && c.status !== "pass") ? 1 : 0, "paid")
 }
 
