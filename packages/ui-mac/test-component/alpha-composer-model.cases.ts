@@ -896,6 +896,54 @@ describe("AlphaComposer production model seam", () => {
     await waitFor(() => expect(submissions).toBe(1))
     mounted.dispose()
   })
+
+  test("REQ-085(#259):首条消息投递失败可原地重试,不重复建 session", async () => {
+    const created: string[] = []
+    let deliverOk = false
+    installApi({ auth: async () => loggedOut })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async (_dir, _text, _parts, opts) => {
+            if (opts?.existingSessionID) {
+              // 复用路径:绝不应该走到"新建"分支——如果走到了,`created` 会多一条,断言会抓到。
+              return deliverOk ? opts.existingSessionID : undefined
+            }
+            const id = `orphan-${created.length + 1}`
+            created.push(id)
+            opts?.onSessionCreated?.(id)
+            // 会话建成、但首条消息没能投递出去(网络抖动/引擎重启等)——函数整体仍报失败。
+            return deliverOk ? id : undefined
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          list: async () => [info("deepseek-byok", "deepseek-v4-flash")],
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "hello",
+      }),
+    )
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    await waitFor(() => expect(send.disabled).toBe(false))
+    send.click()
+    await waitFor(() => expect(created.length).toBe(1))
+    // 失败不清空草稿、不卡死发送按钮——用户能原地重试(AC3 的另一半:输入保持可恢复)。
+    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("hello")
+    await waitFor(() => expect(send.disabled).toBe(false))
+
+    deliverOk = true
+    send.click()
+    await waitFor(() => expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(""))
+    // 重试复用了第一次建成的孤儿 session,没有再建第二个——AC3 的核心断言。
+    expect(created).toEqual(["orphan-1"])
+    mounted.dispose()
+  })
 })
 
 describe("ModelPickPop production component", () => {

@@ -655,6 +655,14 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const [sending, setSending] = createSignal(false)
   // 提交发起时记录的已提交文本快照:区分「在途未编辑(=正在交付)」与「在途被改成新草稿」。
   let submittedText: string | undefined
+  // REQ-085(#259):home 模式下,`startChat` 可能"session 建成但首条消息没投递成功"——原地
+  // 重试如果无脑重跑 `startChat`,会在同一份失败草稿上再建一个新 session,留下一具打不开的
+  // 空壳(AC3 明令禁止"重试产生重复 Session")。这里记下上一次已建成但未投递成功的
+  // {directory, sessionID};下次提交若目录未变就把它传回 `startChat` 复用,只重投递消息、
+  // 不重建 session。目录变了(用户显式换了工作区,或换代/登出把整条链拉到不同 generation)
+  // 视为放弃那个孤儿——不同目录/generation 下这个 id 不一定还能用,盲目复用会把"投递失败"
+  // 换成"session not found"这种更难恢复的错误,不如老实重新建一个。
+  let homePendingSession: { directory: string; sessionID: string } | undefined
   // REQ-125 C558:卸载时把当前草稿交回宿主(seam dock 按身份暂存),避免门翻转卸载丢草稿。
   // 仅当发送在途**且文本仍等于已提交快照**(未编辑,正在交付)才跳过——否则切走再翻回会「复活」
   // 已发送文本、用户再发 = 重复发送。textarea 在途仍可编辑:改成不同内容即新草稿,照常捕获(不丢)。
@@ -1449,15 +1457,29 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     setSending(true)
     try {
       if (props.mode === "home") {
+        // REQ-085(#259):目录不变才复用上一次的孤儿 session——换目录等于放弃它,老实重建。
+        const reuseSessionID =
+          homePendingSession && homePendingSession.directory === dir ? homePendingSession.sessionID : undefined
         const id = await props.projects.startChat(dir, body, req.parts.slice(1), {
           model: req.model,
           agent: req.agent,
+          existingSessionID: reuseSessionID,
+          onSessionCreated: (createdId) => {
+            homePendingSession = { directory: dir, sessionID: createdId }
+          },
         })
-        if (interrupted()) return
+        if (interrupted()) {
+          // 换代/登出打断了在途请求:后续重试极可能落在不同的 generation 上,这个 id 未必
+          // 还能用——盲目复用会把"投递失败"换成"session not found",不如老实重建。
+          homePendingSession = undefined
+          return
+        }
         if (!id) {
           pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
           return
         }
+        // 整条链(含消息投递)成功落定:不再是待重试的孤儿,清掉记账。
+        homePendingSession = undefined
         // #570:这条消息用的档位就是新会话的开局档位 —— 不交给它,跳进会话页的瞬间 chip 熄灭、
         // 第二条消息掉回默认档,而用户明明在首页把计划模式开着发出了第一条。
         // #884:只读档同理 —— 第一条**已经**是以只读发出去的(req.agent = alpha-readonly),
