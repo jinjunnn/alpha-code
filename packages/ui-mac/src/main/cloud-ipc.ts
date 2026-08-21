@@ -13,7 +13,14 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { dispatchCloudJob, dispatchExplicitCloudUpload, getCloudJobStatus, cancelCloudJob, listCloudArtifacts, downloadCloudArtifactTo } from "./alpha-cloud-jobs"
 import { isTerminalCloudEvent, subscribeCloudJobEvents } from "./alpha-cloud-events"
-import { ensureAlphaScaffold, isSafeRunId, safeResolveInAlpha, sanitizeArtifactName, saveCloudRun } from "./alpha-workdir"
+import {
+  ensureAlphaScaffold,
+  isSafeRunId,
+  reserveArtifactSavedName,
+  safeResolveInAlpha,
+  sanitizeArtifactName,
+  saveCloudRun,
+} from "./alpha-workdir"
 import { mirrorRunArtifacts } from "./alpha-user-workspace"
 import { getLogger } from "./logging"
 import type { CloudJobEnvelope, CloudUploadIntent } from "../preload/types"
@@ -112,7 +119,12 @@ export function registerCloudIpcHandlers() {
     const artifactId = a && typeof a.id === "string" && a.id ? a.id : null
     if (!artifactId) return { ok: false, error: "invalid-artifact" }
     if (!ensureAlphaScaffold(directory)) return { ok: false, error: "invalid-directory" }
-    const name = sanitizeArtifactName(typeof a?.name === "string" ? a.name : undefined, `artifact-${artifactId}`)
+    const desiredName = sanitizeArtifactName(typeof a?.name === "string" ? a.name : undefined, `artifact-${artifactId}`)
+    const artifactsDir = safeResolveInAlpha(directory, "runs", runId, "artifacts")
+    if (!artifactsDir) return { ok: false, error: "unsafe-path" }
+    // #901: 折叠比较(NFC + toLowerCase)预约名字,挡住与既有产物只差大小写的静默覆盖——
+    // 每次读盘决定,跨"分开下载"的多次 IPC 调用成立,不是单次内存 set。
+    const name = reserveArtifactSavedName(artifactsDir, desiredName, artifactId)
     const target = safeResolveInAlpha(directory, "runs", runId, "artifacts", name)
     if (!target) return { ok: false, error: "unsafe-path" }
     const wc = e.sender

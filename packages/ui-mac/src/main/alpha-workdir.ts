@@ -37,6 +37,62 @@ export function sanitizeArtifactName(name: string | undefined, fallback: string)
   return base.length > 128 ? base.slice(0, 128) : base
 }
 
+// #901: macOS default volumes (APFS) are case-insensitive but case-preserving — "Report.pdf" and
+// "report.pdf" are the SAME directory entry on disk even though they compare unequal as strings.
+// Any code deciding a final artifact file name must compare against this folded key, not the raw
+// string, or two artifacts that only differ by case silently clobber each other on final rename.
+export function foldedArtifactNameKey(name: string): string {
+  return name.normalize("NFC").toLowerCase()
+}
+
+/**
+ * Reserve a collision-free artifact file name under `artifactsDir`, using a case-folded /
+ * NFC-normalized comparison so names that only differ by case are treated as taken. Reads the
+ * directory fresh on every call (not an in-memory cache) so the reservation holds across
+ * separate, sequential download invocations — not just within one batch. `taken` optionally
+ * seeds folded keys already claimed earlier in the *same* batch, before those files exist on
+ * disk (e.g. a single `saveCloudRun` pass over several just-listed artifacts).
+ *
+ * An EXACT on-disk name match is deliberately not treated as a collision (only a case-folded
+ * match with a *different* exact string is): re-fetching/refreshing the same artifact under the
+ * same name is a legitimate, pre-existing overwrite-in-place path (registerDownloadedArtifact's
+ * own idempotent-register contract), and that must keep working. `taken` is checked first and
+ * always blocks regardless — it represents names already spoken for earlier in *this* batch, so
+ * two distinct, not-yet-downloaded artifacts in one pass never end up racing for the same exact
+ * name either (pre-existing dedup-with-id-prefix behavior).
+ */
+export function reserveArtifactSavedName(
+  artifactsDir: string,
+  desiredName: string,
+  disambiguator: string,
+  taken?: Set<string>,
+): string {
+  const exactNames = new Set<string>()
+  const foldedNames = new Set<string>()
+  try {
+    for (const entry of fs.readdirSync(artifactsDir, { withFileTypes: true })) {
+      if (!entry.isFile() || entry.name.endsWith(".part")) continue
+      exactNames.add(entry.name)
+      foldedNames.add(foldedArtifactNameKey(entry.name))
+    }
+  } catch {
+    // artifacts dir not created yet — nothing on disk to collide with.
+  }
+  const isFree = (candidate: string) => {
+    if (taken?.has(foldedArtifactNameKey(candidate))) return false
+    if (exactNames.has(candidate)) return true
+    return !foldedNames.has(foldedArtifactNameKey(candidate))
+  }
+  let candidate = desiredName
+  if (!isFree(candidate)) {
+    candidate = `${disambiguator}-${desiredName}`
+    let suffix = 2
+    while (!isFree(candidate)) candidate = `${disambiguator}-${suffix++}-${desiredName}`
+  }
+  taken?.add(foldedArtifactNameKey(candidate))
+  return candidate
+}
+
 export type ProjectAlphaRootResolution =
   | { status: "project"; projectDir: string; root: string }
   | { status: "retired-home"; reason: string }
@@ -263,9 +319,10 @@ export async function saveCloudRun(
   // (.part + 限额前置 + 单遍 sha256 + 原子 rename;失败分类回警告,绝不产出看似成功的最终文件)。
   const used = new Set<string>()
   for (const meta of metas) {
-    let name = sanitizeArtifactName(meta.name, `artifact-${meta.id}`)
-    if (used.has(name)) name = `${meta.id}-${name}`
-    used.add(name)
+    const desired = sanitizeArtifactName(meta.name, `artifact-${meta.id}`)
+    // #901: 折叠比较(NFC + toLowerCase),跨大小写不敏感文件系统持续成立;读盘而非只查内存 set,
+    // 才能挡住"先后分开下载"的场次(不是同一批内的问题)。
+    const name = reserveArtifactSavedName(artifactsDir, desired, meta.id, used)
     const target = safeResolveInAlpha(projectDir, "runs", runId, "artifacts", name)
     if (!target) {
       warnings.push(`artifact ${meta.id}: refused unsafe name`)
