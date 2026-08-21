@@ -9,7 +9,7 @@ import type { TitlebarTheme } from "../preload/types"
 import { trackDeepLinkRenderer } from "./deep-links"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import { cspPlatformEligible } from "./platform"
-import { corsRelaxAllowed, RENDERER_CSP } from "./renderer-security"
+import { corsRelaxAllowed, createAlphaOriginRegistry, RENDERER_CSP } from "./renderer-security"
 import { HTML_PREVIEW_SCHEME } from "../shared/html-preview"
 import { getStore } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
@@ -37,6 +37,14 @@ const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
 // WSL 非回环地址风险与真机批验证注记见 platform/index.cspPlatformEligible);逃生 ALPHA_CSP_DISABLE=1。
 const rendererCsp = RENDERER_CSP
 const shouldInjectCsp = () => app.isPackaged && cspPlatformEligible() && process.env.ALPHA_CSP_DISABLE !== "1"
+
+// #898(SEC):唯一的 registered-origin 集合实例,只活在本模块闭包里 —— 从不经 preload/ipc.ts
+// 暴露写入口,renderer/扩展代码结构上无法自行注册。当前没有任何调用方往里 register(内嵌
+// sidecar 与 WSL 远端 sidecar 今天都只用 127.0.0.1 回环地址,已被 isLoopbackUrl 覆盖),留空
+// 即是默认拒:win32 上未注册的非回环 origin 不再拿到 ACAO。将来若出现需要放宽的非回环
+// Alpha 服务(例如真正的 WSL 远端地址),由该服务自己的启动/健康检查/退出路径调用
+// registry.register/revoke,不得走 IPC 让 renderer 决定放行谁。
+const alphaOriginRegistry = createAlphaOriginRegistry()
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -204,7 +212,8 @@ export function createMainWindow() {
 
   win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
     const { requestHeaders } = details
-    if (corsRelaxAllowed(details.url)) upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
+    if (corsRelaxAllowed(details.url, process.platform, alphaOriginRegistry))
+      upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
     callback({ requestHeaders })
   })
 
@@ -546,7 +555,7 @@ function isTrustedRendererUrl(value?: string) {
 }
 
 function addRendererHeaders(value: string, headers: Record<string, any>) {
-  if (corsRelaxAllowed(value)) {
+  if (corsRelaxAllowed(value, process.platform, alphaOriginRegistry)) {
     upsertKeyValue(headers, "Access-Control-Allow-Origin", ["*"])
     upsertKeyValue(headers, "Access-Control-Allow-Headers", ["*"])
   }
