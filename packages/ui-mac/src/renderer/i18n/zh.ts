@@ -938,6 +938,7 @@ export const dict = {
   "alpha.error.regionStopped": "{{name}} 区域已停止运行",
   "alpha.error.surfaceStopped": "页面已停止运行",
   "alpha.error.recoveryPrompt": "请在恢复面板中选择安全操作。",
+  "alpha.error.detailHidden": "错误详情已隐藏",
   "alpha.home.greetingLate": "夜深了",
   "alpha.home.greetingMorning": "早上好",
   "alpha.home.greetingNoon": "中午好",

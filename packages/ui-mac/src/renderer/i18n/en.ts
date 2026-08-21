@@ -954,6 +954,7 @@ export const dict = {
   "alpha.error.regionStopped": "{{name}} stopped running",
   "alpha.error.surfaceStopped": "This page stopped running",
   "alpha.error.recoveryPrompt": "Choose a safe action in the Recovery panel.",
+  "alpha.error.detailHidden": "Error detail redacted",
 
   "alpha.home.greetingLate": "Still up",
   "alpha.home.greetingMorning": "Good morning",
