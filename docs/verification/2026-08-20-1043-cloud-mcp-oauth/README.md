@@ -227,3 +227,30 @@ timestamp=2026-08-21T01:31:34.429Z level=ERROR run=3cb7e6ca message=failed ref=e
 
 **脱敏说明**:本目录不含任何 token、API key、`code`、`code_verifier`、`client_id` 明文;
 授权 URL 中的 `client_id` / `code_challenge` / `state` 均以 `<REDACTED>` 替换。
+
+## 8. 闭合(2026-08-20 晚 · alpha-web 部署后)
+
+**根因不在桌面发现链。** `auth.tidelabs.click/api/oauth/authorize` 曾用隧道 listen 地址
+`url.origin`(`https://localhost:3000`)拼同意页 `Location`。SDK 打开的 AS URL 是对的,
+浏览器跟随 302 后才落到本机死链。
+
+- 修复:[alpha-web#158](https://github.com/jinjunnn/alpha-web/issues/158) /
+  [PR #159](https://github.com/jinjunnn/alpha-web/pull/159),部署 tip `615ae04`。
+- 线上核对:`Location: https://auth.tidelabs.click/authorize?...`(不再 localhost)。
+- 本机完成手机号 OTP 同意后:`mcp-auth.json.cloud.tokens` 出现;
+  引擎 `GET /mcp` → `cloud.status=connected`;authenticate 回 `{"status":"connected"}`。
+- **mcp_access 授权矩阵**(Chrome UA 直打 RS,schema-invalid / 缺 job 参数,只判授权咽喉):
+
+| 工具 | HTTP | 含义 |
+| --- | --- | --- |
+| cloud_dispatch | 200 | 进入回调(校验错) |
+| cloud_status | 200 | 进入回调(job not found) |
+| cloud_await | 200 | 进入回调(job not found) |
+| cloud_artifacts | 200 | 进入回调(job not found) |
+| cloud_web_search | 200 | 进入回调(校验错) |
+
+⇒ 原先用 `purpose=cloud.dispatch` 回落令牌看到的 status/await/artifacts **结构性 403**
+在真正的 `mcp_access` 路径上**不复现**。#1043 按「OAuth 通路修复 + 授权矩阵」闭合;
+回落令牌的 fail-closed 仍是正确行为,不必放宽 `ALPHA_CLOUD_TOKEN`。
+
+#721 探针重跑片段: **P0.5 PASS**(mcp_access 在位)。A-SUM 对回落令牌仍 FAIL(预期)。
