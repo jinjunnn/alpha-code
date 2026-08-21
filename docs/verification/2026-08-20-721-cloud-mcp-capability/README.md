@@ -15,6 +15,18 @@ review_after: 2026-11-20
 
 ## 0. 2026-08-21 重跑(mcp_access 在位)
 
+## 0.1 2026-08-21 closeout（API-key 臂 + R6 部署后）
+
+| 项 | 结果 |
+| --- | --- |
+| `sk-alpha-*`（scope=`cloud`） | 门户代建；明文落 `~/Library/Application Support/alpha-verify/ALPHA_CLOUD_API_KEY`（勿放 `alpha-secrets/`，会被桌面 purpose 同步抹掉） |
+| API-key 授权 | 批准 5 工具 + cancel 全部 HTTP 200 |
+| ap#378 部署 | `alpha-gateway` `git:2a74c7e`（含 flash 价目裁决 ap#380）；`results` **list** `{title,url,snippet?}` |
+| R6 | **PASS**（provider=tavily, results_type=list） |
+| R5 | 仍归 [alpha-code#1050](https://github.com/jinjunnn/alpha-code/issues/1050) |
+
+
+
 OAuth 通路已通(alpha-web#159 + 本机 OTP)。探针改为:**P0.5 有 tokens 时 LIVE_AUTH 优先
 `mcp_access`**；`ALPHA_CLOUD_TOKEN` 只作传输负例与 `A-FALLBACK`。
 

@@ -31,8 +31,17 @@ const PAID = process.argv.includes("--paid")
 const SKIP_T4 = process.argv.includes("--skip-t4")
 const OUT_DIR = path.join(import.meta.dir, "results")
 
-/** The five columns owner narrowed #721 to on 2026-07-31 (alpha-platform#175). */
-const APPROVED_FIVE = ["cloud_dispatch", "cloud_status", "cloud_await", "cloud_artifacts", "cloud_web_search"] as const
+/** Approved MCP tool set after alpha-platform#258 added cancel (AC10, 2026-08-21). */
+const APPROVED_FIVE = [
+  "cloud_dispatch",
+  "cloud_status",
+  "cloud_await",
+  "cloud_artifacts",
+  "cloud_web_search",
+  "cloud_cancel",
+] as const
+/** @deprecated name kept for log stability; length is 6. */
+const APPROVED_TOOL_COUNT = APPROVED_FIVE.length
 /** Removed from the MCP surface by alpha-platform#175 — must not appear and must not execute. */
 const REMOVED_SCHEDULE = ["cloud_schedule_create", "cloud_schedule_list", "cloud_schedule_delete"] as const
 /** Match the #1043 mcp_access matrix (Chrome UA). */
@@ -300,10 +309,22 @@ async function main() {
     observed: { claims, lifetimeSec: claims.exp - claims.iat },
   })
 
-  // P0.4 — the API-key arm of the matrix needs an `sk-alpha-*` key. There is none on this machine.
+  // P0.4 — Cloud API key arm. Prefer alpha-secrets, then stable verify path (desktop secret sync
+  // only keeps purpose-bound JWT files and may wipe foreign names under alpha-secrets/).
+  const apiKeyFromVerifyPath = (() => {
+    const f = path.join(homedir(), "Library/Application Support/alpha-verify/ALPHA_CLOUD_API_KEY")
+    if (!existsSync(f)) return undefined
+    const value = readFileSync(f, "utf8").trim()
+    if (!value.startsWith("sk-alpha-")) return undefined
+    registerSecret(value)
+    return value
+  })()
   const apiKeyLike = ["ALPHA_API_KEY", "ALPHA_CLOUD_API_KEY"]
     .map((n) => ({ name: n, value: secret(n) }))
     .filter((e) => e.value?.startsWith("sk-alpha-"))
+  if (apiKeyFromVerifyPath && !apiKeyLike.some((e) => e.value === apiKeyFromVerifyPath)) {
+    apiKeyLike.push({ name: "alpha-verify/ALPHA_CLOUD_API_KEY", value: apiKeyFromVerifyPath })
+  }
   record({
     id: "P0.4",
     ac: "AC3",
@@ -533,6 +554,27 @@ async function main() {
       required: false,
       criterion: "cloud_status/await/artifacts each HTTP 403 with the dispatch-only secret",
       observed: { fallbackForbidden },
+    })
+  }
+
+  const apiKeyPlain = apiKeyLike[0]?.value
+  if (apiKeyPlain) {
+    const apiAuth = `Bearer ${apiKeyPlain}`
+    const apiForbidden: string[] = []
+    const apiOutcome: Record<string, number> = {}
+    for (const tool of APPROVED_FIVE) {
+      const reply = await mcp("tools/call", { name: tool, arguments: ARGS[tool] ?? {} }, apiAuth)
+      apiOutcome[tool] = reply.http
+      if (reply.http === 403) apiForbidden.push(tool)
+    }
+    record({
+      id: "A-APIKEY-SUM",
+      ac: "AC3",
+      title: "Cloud API key(sk-alpha-* cloud scope)可调通批准的 5 个工具",
+      status: apiForbidden.length === 0 ? "pass" : "fail",
+      required: true,
+      criterion: "none of the five approved tools answers 403 with sk-alpha-* cloud scope",
+      observed: { keySource: apiKeyLike[0]?.name, structurallyForbidden: apiForbidden, perTool: apiOutcome },
     })
   }
 
