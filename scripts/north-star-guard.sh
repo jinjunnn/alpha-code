@@ -107,6 +107,10 @@ UPSTREAM_EXCLUDES=(
   ':(exclude)packages/opencode/test/tool/registry.test.ts'
   ':(exclude)packages/core/src/tool/application-tools.ts'
   ':(exclude)packages/core/src/tool/registry.ts'
+  # ADR-042(#1047): OAuth loopback success/error HTML is product chrome; ADR-007
+  # Vite brand transform never reaches engine-served callback pages.
+  ':(exclude)packages/core/src/oauth/page.ts'
+  ':(exclude)packages/core/test/oauth-page.test.ts'
 )
 
 # ── fetch 失败时的降级,以及它为什么必须自报家门(`#913`)───────────────────────────
