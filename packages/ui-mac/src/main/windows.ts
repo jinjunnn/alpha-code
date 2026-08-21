@@ -11,6 +11,7 @@ import { exportDebugLogs, write as writeLog } from "./logging"
 import { cspPlatformEligible } from "./platform"
 import { corsRelaxAllowed, RENDERER_CSP } from "./renderer-security"
 import { HTML_PREVIEW_SCHEME } from "../shared/html-preview"
+import { safeErrorName, safeRouteLabel } from "./renderer-diagnostic-redaction"
 import { getStore } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
@@ -462,9 +463,8 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
         window: name,
         event,
         errorCode,
-        errorDescription,
-        validatedURL,
-        currentURL: win.webContents.getURL(),
+        routeId: safeRouteLabel(validatedURL),
+        currentRouteId: safeRouteLabel(win.webContents.getURL()),
         isMainFrame,
       },
       "error",
@@ -489,7 +489,7 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
     writeLog(
       "window",
       "renderer process gone",
-      { window: name, currentURL: win.webContents.getURL(), details },
+      { window: name, routeId: safeRouteLabel(win.webContents.getURL()), reason: details.reason, exitCode: details.exitCode },
       "error",
     )
     void show(
@@ -499,21 +499,23 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
     )
   })
   win.on("unresponsive", () => {
-    writeLog("window", "renderer unresponsive", { window: name, currentURL: win.webContents.getURL() }, "error")
+    writeLog("window", "renderer unresponsive", { window: name, routeId: safeRouteLabel(win.webContents.getURL()) }, "error")
     sampler.start()
     void show("OpenCode is not responding", "You can relaunch the app, open the logs, or keep waiting.", true)
   })
   win.on("responsive", () => {
-    writeLog("window", "renderer responsive", { window: name, currentURL: win.webContents.getURL() }, "error")
+    writeLog("window", "renderer responsive", { window: name, routeId: safeRouteLabel(win.webContents.getURL()) }, "error")
     sampler.stopAndFlush()
   })
   win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    // #900:message 是 renderer 里任意 console.* 调用的实参(工具/终端输出、用户数据),没有安全
+    // 的通用脱敏方式 —— 只保留触发匹配所需的字段,原文不落盘。
     if (message.toLowerCase().includes("terminal") || sourceId.toLowerCase().includes("terminal")) {
-      writeLog("pty", "console", { window: name, level, message, line, sourceId })
+      writeLog("pty", "console", { window: name, level, line, sourceId })
     }
   })
-  win.webContents.on("preload-error", (_event, preloadPath, error) => {
-    writeLog("preload", "preload error", { window: name, preloadPath, error }, "error")
+  win.webContents.on("preload-error", (_event, _preloadPath, error) => {
+    writeLog("preload", "preload error", { window: name, errorName: safeErrorName(error) }, "error")
   })
 }
 
