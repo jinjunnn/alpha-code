@@ -4,7 +4,7 @@ kind: verification
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-08-20
+last_reviewed: 2026-08-21
 review_after: 2026-11-20
 ---
 
@@ -13,11 +13,42 @@ review_after: 2026-11-20
 票:[alpha-code#721](https://github.com/jinjunnn/alpha-code/issues/721) ·
 父需求:[alpha-work#50](https://github.com/jinjunnn/alpha-work/issues/50)(REQ-129)
 
+## 0. 2026-08-21 重跑(mcp_access 在位)
+
+OAuth 通路已通(alpha-web#159 + 本机 OTP)。探针改为:**P0.5 有 tokens 时 LIVE_AUTH 优先
+`mcp_access`**；`ALPHA_CLOUD_TOKEN` 只作传输负例与 `A-FALLBACK`。
+
+| 相位 | 产物 | 摘要 |
+| --- | --- | --- |
+| readonly | [`results/latest-readonly.json`](results/latest-readonly.json) | **26 pass / 2 fail(非必需) / exit 0** |
+| paid | [`results/latest-paid.json`](results/latest-paid.json) | **30 pass / 3 fail(非必需) / exit 0** |
+
+关键必需项:
+
+| id | 结果 | 含义 |
+| --- | --- | --- |
+| P0.5 | PASS | `mcp-auth.json` 有 `cloud.tokens` |
+| A-SUM | **PASS** | 批准 5 工具 + cancel 全部 HTTP 200 进回调 |
+| A-FALLBACK | PASS | 回落 `purpose=cloud.dispatch` 对 status/await/artifacts 仍 403 |
+| R1–R4 | **PASS** | 真搜索、真派发、**派发者可读回 status**(R3)、cancel 止损 |
+| R5 | BLOCKED | 无 `account.read` 落盘 ⇒ 账本差分仍要人工/E7 |
+| R6 | FAIL(非必需) | 生产 `results` 仍是 `[tavily]…` **字符串**；`ap#378` 已合但公网 RS 尚未吃到 |
+| T7 / N-NOACTION | FAIL(非必需) | `cloud_cancel` 在册；未注册名回 `-32602`(契约原文) |
+
+⇒ **AC3 订阅臂 + 长任务回读在 mcp_access 路径上成立。** 父票关单前 owner 仍需对：
+API-key 臂(P0.4)、账本差分(R5)、生产 R6/`ap#378` 部署、AC10「恰好 5」vs `cloud_cancel`。
+
+以下 §1–§6 保留 2026-08-20 首轮(OAuth 未完成)原文，勿与本节混淆。
+
+---
+
+# （归档）2026-08-20 首轮取证
+
 矩阵按 owner 2026-07-31 的范围校正收敛为 **5 列**:`cloud_dispatch` · `cloud_status` ·
 `cloud_await` · `cloud_artifacts` · `cloud_web_search`,外加两条负例(`cloud_schedule_*`
 不在 `tools/list`、调用已剔除的名字按未注册拒绝)。
 
-**结论先说:矩阵不是 5/5。** 逐格结果在 §4;三条最重要的:
+**结论先说(首轮):矩阵不是 5/5。** 逐格结果在 §4;三条最重要的:
 
 1. **应用今天一个云工具也够不着** —— 云 MCP 自 [ADR-009](../../../.claude/rules/adrs/ADR-009-websearch-default.md) 2026-08-03 就地修订起走标准
    MCP OAuth,而本机该 server 停在 `needs_auth`(从未拿到 `mcp_access` 令牌),且每次

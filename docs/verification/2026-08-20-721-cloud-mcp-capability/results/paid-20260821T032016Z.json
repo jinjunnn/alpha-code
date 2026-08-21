@@ -3,7 +3,7 @@
   "phase": "paid",
   "paid": true,
   "mcpUrl": "https://alpha-cloud.tidelabs.click/mcp",
-  "collectedAt": "2026-08-21T03:21:12.974Z",
+  "collectedAt": "2026-08-21T03:20:16.464Z",
   "build": {
     "app": "/Applications/alpha-code.app",
     "asarSha256": "76444c455bf2b0c073e90b7f11e7f760fcf7b1f76f93d62c200462bc38fdac31",
@@ -12,13 +12,15 @@
     "bundleId": "com.tide.alphacode",
     "userData": "/Users/tide/Library/Application Support/ai.opencode.desktop"
   },
-  "exitCode": 0,
+  "exitCode": 1,
   "summary": {
-    "pass": 30,
-    "fail": 3,
+    "pass": 29,
+    "fail": 4,
     "blocked": 5,
     "notProducible": 3,
-    "requiredFailures": []
+    "requiredFailures": [
+      "H1"
+    ]
   },
   "checks": [
     {
@@ -36,7 +38,7 @@
         "bundleId": "com.tide.alphacode",
         "userData": "/Users/tide/Library/Application Support/ai.opencode.desktop"
       },
-      "at": "2026-08-21T03:20:58.463Z"
+      "at": "2026-08-21T03:19:57.553Z"
     },
     {
       "id": "P0.2",
@@ -50,7 +52,7 @@
         "note": "provenance is inferential only — see README §1"
       },
       "note": "本 build 不含 commit 标记;E7 的做法(干净提交 → ship:mac → 把 sha256 钉进探针)未在本 build 上执行",
-      "at": "2026-08-21T03:20:58.463Z"
+      "at": "2026-08-21T03:19:57.554Z"
     },
     {
       "id": "P0.3",
@@ -77,7 +79,7 @@
         },
         "lifetimeSec": 900
       },
-      "at": "2026-08-21T03:20:58.464Z"
+      "at": "2026-08-21T03:19:57.555Z"
     },
     {
       "id": "P0.4",
@@ -91,7 +93,7 @@
         "alphaApiKeyIsJwtNotKey": true
       },
       "note": "本机 ALPHA_API_KEY 是 purpose=model.invoke 的 platform_access JWT,不是 sk-alpha-* API key",
-      "at": "2026-08-21T03:20:58.464Z"
+      "at": "2026-08-21T03:19:57.555Z"
     },
     {
       "id": "P0.5",
@@ -112,7 +114,7 @@
         "scope": "cloud.dispatch cloud.read artifact.read",
         "mtime": "2026-08-21T03:16:23.219Z"
       },
-      "at": "2026-08-21T03:20:58.464Z"
+      "at": "2026-08-21T03:19:57.555Z"
     },
     {
       "id": "P0.6",
@@ -124,7 +126,7 @@
       "observed": {
         "note": "`ps eww` 在 macOS 上会截断,未出现的变量名不构成缺席证据"
       },
-      "at": "2026-08-21T03:20:58.484Z"
+      "at": "2026-08-21T03:19:57.576Z"
     },
     {
       "id": "P0.7",
@@ -137,7 +139,7 @@
         "port": 9222,
         "reachable": true
       },
-      "at": "2026-08-21T03:20:58.488Z"
+      "at": "2026-08-21T03:19:57.581Z"
     },
     {
       "id": "T1",
@@ -160,7 +162,7 @@
           "error_description": "Missing or invalid access token for the alpha-cloud MCP resource"
         }
       },
-      "at": "2026-08-21T03:20:59.230Z"
+      "at": "2026-08-21T03:19:58.376Z"
     },
     {
       "id": "T2",
@@ -178,7 +180,7 @@
           "resource_metadata": "https://alpha-cloud.tidelabs.click/.well-known/oauth-protected-resource/mcp"
         }
       },
-      "at": "2026-08-21T03:20:59.477Z"
+      "at": "2026-08-21T03:19:58.611Z"
     },
     {
       "id": "T3",
@@ -197,7 +199,7 @@
         },
         "forgedPurpose": "cloud.read"
       },
-      "at": "2026-08-21T03:21:00.044Z"
+      "at": "2026-08-21T03:19:59.138Z"
     },
     {
       "id": "T5",
@@ -216,7 +218,7 @@
           "cloud_web_search"
         ]
       },
-      "at": "2026-08-21T03:21:00.965Z"
+      "at": "2026-08-21T03:19:59.468Z"
     },
     {
       "id": "T6",
@@ -232,7 +234,7 @@
         ],
         "total": 6
       },
-      "at": "2026-08-21T03:21:00.966Z"
+      "at": "2026-08-21T03:19:59.468Z"
     },
     {
       "id": "T7",
@@ -247,7 +249,7 @@
         ]
       },
       "note": "本面已由平台按各自裁决增列;#721 的 5 列基线是 2026-07-31 快照,不再等于当前注册权威",
-      "at": "2026-08-21T03:21:00.966Z"
+      "at": "2026-08-21T03:19:59.468Z"
     },
     {
       "id": "T8",
@@ -260,7 +262,7 @@
         "http": 400,
         "body": "{\"error\":\"JSON-RPC batch requests are not supported on this endpoint\",\"code\":\"batch_not_supported\"}"
       },
-      "at": "2026-08-21T03:21:01.205Z"
+      "at": "2026-08-21T03:19:59.893Z"
     },
     {
       "id": "A-cloud_dispatch",
@@ -275,7 +277,7 @@
         "registryRequiredAction": "cloud.dispatch",
         "payload": "Input validation error: Invalid arguments for tool cloud_dispatch: autonomy: Invalid discriminator value. Expected 'pipeline' | 'bounded-agent'"
       },
-      "at": "2026-08-21T03:21:01.485Z"
+      "at": "2026-08-21T03:20:00.369Z"
     },
     {
       "id": "A-cloud_status",
@@ -292,7 +294,7 @@
           "error": "job not found"
         }
       },
-      "at": "2026-08-21T03:21:01.762Z"
+      "at": "2026-08-21T03:20:00.683Z"
     },
     {
       "id": "A-cloud_await",
@@ -309,7 +311,7 @@
           "error": "job not found"
         }
       },
-      "at": "2026-08-21T03:21:02.068Z"
+      "at": "2026-08-21T03:20:01.036Z"
     },
     {
       "id": "A-cloud_artifacts",
@@ -326,7 +328,7 @@
           "error": "job not found"
         }
       },
-      "at": "2026-08-21T03:21:02.360Z"
+      "at": "2026-08-21T03:20:01.400Z"
     },
     {
       "id": "A-cloud_cancel",
@@ -343,7 +345,7 @@
           "error": "job not found"
         }
       },
-      "at": "2026-08-21T03:21:02.771Z"
+      "at": "2026-08-21T03:20:01.691Z"
     },
     {
       "id": "A-cloud_web_search",
@@ -358,7 +360,7 @@
         "registryRequiredAction": "cloud.dispatch model.invoke",
         "payload": "Input validation error: Invalid arguments for tool cloud_web_search: query: Invalid input: expected string, received undefined"
       },
-      "at": "2026-08-21T03:21:02.986Z"
+      "at": "2026-08-21T03:20:01.983Z"
     },
     {
       "id": "A-SUM",
@@ -397,7 +399,7 @@
         }
       },
       "note": "LIVE_AUTH = mcp-auth.json cloud.tokens.accessToken (mcp_access; scopes cloud.dispatch/read + artifact.read).",
-      "at": "2026-08-21T03:21:02.987Z"
+      "at": "2026-08-21T03:20:01.984Z"
     },
     {
       "id": "A-FALLBACK",
@@ -413,7 +415,7 @@
           "cloud_artifacts"
         ]
       },
-      "at": "2026-08-21T03:21:03.862Z"
+      "at": "2026-08-21T03:20:02.826Z"
     },
     {
       "id": "N-cloud_schedule_create",
@@ -429,7 +431,7 @@
           "message": "Tool cloud_schedule_create not found"
         }
       },
-      "at": "2026-08-21T03:21:04.081Z"
+      "at": "2026-08-21T03:20:03.138Z"
     },
     {
       "id": "N-cloud_schedule_list",
@@ -445,7 +447,7 @@
           "message": "Tool cloud_schedule_list not found"
         }
       },
-      "at": "2026-08-21T03:21:04.299Z"
+      "at": "2026-08-21T03:20:03.455Z"
     },
     {
       "id": "N-cloud_schedule_delete",
@@ -461,7 +463,7 @@
           "message": "Tool cloud_schedule_delete not found"
         }
       },
-      "at": "2026-08-21T03:21:04.565Z"
+      "at": "2026-08-21T03:20:03.719Z"
     },
     {
       "id": "N-ORDER",
@@ -479,7 +481,7 @@
           "resource_metadata": "https://alpha-cloud.tidelabs.click/.well-known/oauth-protected-resource/mcp"
         }
       },
-      "at": "2026-08-21T03:21:05.177Z"
+      "at": "2026-08-21T03:20:03.937Z"
     },
     {
       "id": "N-NOACTION",
@@ -497,27 +499,27 @@
         }
       },
       "note": "实测:已认证 + 未注册名走 SDK 的未注册分支(200 + -32602),传输闸不 403。平台契约(public-cloud-mcp.md §3)本就把未注册名定为 -32602,#721 增补那句针对的是**已注册但解析不出 action**的情形 —— 两份文字对同一格给出不同断言。无 handler 执行 ⇒ 不是可达的授权绕过,只是判据措辞需收敛。",
-      "at": "2026-08-21T03:21:05.393Z"
+      "at": "2026-08-21T03:20:04.259Z"
     },
     {
       "id": "H1",
       "ac": "AC10",
-      "title": "schedule 的 HTTP 面在 MCP 剔除后仍在(403 授权拒绝,不是 404 路由消失)",
+      "title": "schedule 的 HTTP 面在 MCP 剔除后仍在(授权拒绝或列表,不是 404 路由消失)",
       "required": true,
-      "criterion": "GET /v1/cloud/schedules → 403 while a bogus sibling route under the same prefix → 404 (using ALPHA_CLOUD_TOKEN)",
-      "status": "pass",
+      "criterion": "GET /v1/cloud/schedules → 200|403 while a bogus sibling route under the same prefix → 404",
+      "status": "fail",
       "observed": {
         "schedules": {
-          "http": 403,
-          "body": "{\"error\":\"forbidden\"}"
+          "http": 401,
+          "body": "{\"error\":\"unauthorized\"}"
         },
         "controlRoute": {
           "http": 404,
           "body": "404 Not Found"
         },
-        "auth": "ALPHA_CLOUD_TOKEN"
+        "credentialKind": "mcp_access"
       },
-      "at": "2026-08-21T03:21:05.896Z"
+      "at": "2026-08-21T03:20:04.742Z"
     },
     {
       "id": "H2",
@@ -535,7 +537,7 @@
         "httpFaceEmitsChallenge": false
       },
       "note": "HTTP 面回裸 {\"error\":\"unauthorized\"} 且不带 WWW-Authenticate;MCP 面带完整 challenge。两面状态码一致、challenge 不一致,如实登记。",
-      "at": "2026-08-21T03:21:06.112Z"
+      "at": "2026-08-21T03:20:04.957Z"
     },
     {
       "id": "L1",
@@ -549,7 +551,7 @@
         "scannedFiles": 46,
         "filesWithHits": []
       },
-      "at": "2026-08-21T03:21:06.141Z"
+      "at": "2026-08-21T03:20:04.987Z"
     },
     {
       "id": "L2",
@@ -576,7 +578,7 @@
         ]
       },
       "note": "每次 alpha-secrets sync(约 10 分钟)重写 purpose-bound 令牌并重生 sidecar;云作业在平台侧不受影响,本地在途回合会被打断(ADR-036 后果,另有窄票)",
-      "at": "2026-08-21T03:21:06.142Z"
+      "at": "2026-08-21T03:20:04.987Z"
     },
     {
       "id": "E1",
@@ -589,7 +591,7 @@
         "evidenceOwner": "alpha-platform#171 / #54"
       },
       "note": "客户端不在这条链上,任何从桌面端「取证」都只是猜测;判据归平台仓的确定性测试",
-      "at": "2026-08-21T03:21:06.142Z"
+      "at": "2026-08-21T03:20:04.987Z"
     },
     {
       "id": "E2",
@@ -602,7 +604,7 @@
         "evidenceOwner": "alpha-platform#105(AC8)"
       },
       "note": "客户端不在这条链上,任何从桌面端「取证」都只是猜测;判据归平台仓的确定性测试",
-      "at": "2026-08-21T03:21:06.142Z"
+      "at": "2026-08-21T03:20:04.987Z"
     },
     {
       "id": "E3",
@@ -615,7 +617,7 @@
         "evidenceOwner": "alpha-platform#90/#103/#104"
       },
       "note": "客户端不在这条链上,任何从桌面端「取证」都只是猜测;判据归平台仓的确定性测试",
-      "at": "2026-08-21T03:21:06.142Z"
+      "at": "2026-08-21T03:20:04.987Z"
     },
     {
       "id": "R1",
@@ -634,7 +636,7 @@
         "matchedProviderFailureShape": false,
         "sample": "[tavily] alpha-code REQ-129 cloud mcp verification probe\n- Claude Code in the Enterprise: MCP Tool Scoping, Per-Developer Rate Limits, and Audit Trails (https://www.truefoundry.com/blog/claude-code-enterprise-mcp-gateway)\n  SSRF through the"
       },
-      "at": "2026-08-21T03:21:07.268Z"
+      "at": "2026-08-21T03:20:10.630Z"
     },
     {
       "id": "R6",
@@ -648,7 +650,7 @@
         "providerPrefix": "[tavily]"
       },
       "note": "实测 results 是一整段带 provider 前缀的**文本**。同一个槽位也是 provider 失败串的落点(平台 D2),客户端因此无法结构化区分「搜到了」与「上游报错」——只能靠字符串特征猜。",
-      "at": "2026-08-21T03:21:07.268Z"
+      "at": "2026-08-21T03:20:10.630Z"
     },
     {
       "id": "R2",
@@ -665,7 +667,7 @@
             "isError": false,
             "payload": {
               "schema_version": 1,
-              "job_id": "pseudo:d30feee50c05",
+              "job_id": "pseudo:e602fa0291e3",
               "status": "queued",
               "autonomy": "bounded-agent",
               "urls": "<omitted>"
@@ -674,7 +676,7 @@
         ],
         "acceptedOnAttempt": 1
       },
-      "at": "2026-08-21T03:21:10.470Z"
+      "at": "2026-08-21T03:20:14.321Z"
     },
     {
       "id": "R3",
@@ -686,9 +688,9 @@
       "observed": {
         "http": 200,
         "challenge": null,
-        "jobId": "pseudo:d30feee50c05"
+        "jobId": "pseudo:e602fa0291e3"
       },
-      "at": "2026-08-21T03:21:10.811Z"
+      "at": "2026-08-21T03:20:14.623Z"
     },
     {
       "id": "R4",
@@ -701,9 +703,9 @@
         "http": 200,
         "accepted": true,
         "status": "cancelling",
-        "jobId": "pseudo:d30feee50c05"
+        "jobId": "pseudo:e602fa0291e3"
       },
-      "at": "2026-08-21T03:21:12.970Z"
+      "at": "2026-08-21T03:20:16.464Z"
     },
     {
       "id": "R5",
@@ -715,7 +717,7 @@
       "observed": {
         "reason": "本机无 purpose=account.read 凭证落盘;账本差分需 E7 runbook / 账户面板人工核对"
       },
-      "at": "2026-08-21T03:21:12.972Z"
+      "at": "2026-08-21T03:20:16.464Z"
     },
     {
       "id": "T4",
@@ -728,7 +730,7 @@
         "skipped": true,
         "flag": "--skip-t4"
       },
-      "at": "2026-08-21T03:21:12.972Z"
+      "at": "2026-08-21T03:20:16.464Z"
     }
   ]
 }
