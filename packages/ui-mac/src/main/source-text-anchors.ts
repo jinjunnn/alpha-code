@@ -149,6 +149,11 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
     evidence: "#870",
     lines: 1,
   },
+  "packages/ui-mac/src/main/renderer-diagnostic-redaction.test.ts": {
+    why: "2 处读 windows.ts / logging.ts,锚四条崩溃/故障通道确实调用 safeRouteLabel/safeErrorName(而不是直落 win.webContents.getURL()/details/error/preloadPath)以及 spyRendererConsole 被关闭。两个不会让它变红的变异:①在同一条 writeLog 调用里,除已断言的 safeRouteLabel(...) 字段外再并列新增一个字段直接塞回原始 URL/details(正则只咬旧形态的精确并列写法,咬不到新增的第三个字段);②把 safeRouteLabel/safeErrorName 本身改坏成直接回传入参 —— 调用点文本一字不改,只有本文件的 behavior describe 块(真实调用两个函数并断言输出)才会为此变红。",
+    evidence: "#900",
+    lines: 2,
+  },
   "packages/ui-mac/src/main/recovery-wiring.test.ts": {
     why: "7 处里 3 条 test 是锚(index.ts 的 runDbPreflightBoot({ 早于 mainWindow = createMainWindow()、fatal 事件的固定 reason 接线、recovery-ipc 的安装顺序),其余是 Recovery 窗口的安全开关与负全称/唯一性锁(不降级)。锚的两个不会变红的变异:①把 runDbPreflightBoot 的 await 去掉让它与建窗并发;②把 presentRecovery 的实现改成空函数。index.ts 结构上进不了 bun。",
     evidence: "#445",

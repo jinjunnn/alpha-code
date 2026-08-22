@@ -29,7 +29,10 @@ export function initLogging() {
       run,
       `${safeLogName(message?.scope ?? (message?.variables?.processType === "renderer" ? "renderer" : "main"))}.log`,
     )
-  log.initialize({ preload: false, spyRendererConsole: true })
+  // #900:renderer console 流不做无差别采集——它原样落盘,而 renderer 的 console.log/error
+  // 参数可以是任意内容(工具/终端输出、用户数据),没有安全的通用脱敏方式。windows.ts 的
+  // console-message 监听器(仅 terminal 相关、且只落安全字段)是唯一保留的 renderer 控制台落盘口。
+  log.initialize({ preload: false, spyRendererConsole: false })
   initConsoleTransport()
   cleanup()
   rotateServerLogs()
