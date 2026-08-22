@@ -108,6 +108,11 @@ export function resolveDefaultModel(ctx: ModelResolveCtx): DefaultResolution {
   return { kind: "none" }
 }
 
+/** preflight(发送前最后一道)的结论。`not-ready` 是**「还不知道」**,不是一条拒绝理由 ——
+ *  它与其余三条的区别是:其余三条断言了一个事实(没登录 / 没有可用模型 / 引擎没注册这个节点),
+ *  而它只说本次结算所依赖的引擎事实尚未收敛,呈现面必须如实说「正在读取」而不是替引擎下结论。 */
+export type PreflightBlockReason = "not-ready" | "platform-needs-login" | "nothing-usable" | "byok-not-registered"
+
 /** preflight(发送前最后一道):平台代理模型在未登录态绝不出手 —— 用引导替代网关拒绝原文
  *  (网关校验保留为兜底防线,但正常流不该触达)。返回 null = 放行。
  *
@@ -116,20 +121,28 @@ export function resolveDefaultModel(ctx: ModelResolveCtx): DefaultResolution {
  *  上去。两个谓词各自执行:可选择性归本地事实,可执行性归引擎清单。
  *
  *  **空清单同样算不满足成员关系。** 本判据刻意**不**依赖「空清单 ⇒ 引擎未就绪」—— 那是一个状态机
- *  从未承诺的不变量:`model.list` 可以成功返回 `[]`,链照样进 `ready`。把「未就绪」的判断留在
- *  它真正的所有者(`modelChainState`)身上:调用方必须在链 ready 之后才让本结论生效
- *  (`canSend` 与 `submit` 都已先行把门),冷启动窗口因此不会被误杀。 */
+ *  从未承诺的不变量:`model.list` 可以成功返回 `[]`,链照样进 `ready`。
+ *
+ *  #686:「未就绪」因此必须由调用方**显式喂进来**(`engineFactsReady`),而不是靠一句注释请求调用方
+ *  自己先把门 —— 那种形态下每新增一个消费点就多一次漏掉的机会,而注释拦不住任何人。字段是**必填**的:
+ *  漏掉它是一个 typecheck 错误,不是一条运行时的假结论。未就绪时本判据一律返回 `not-ready`,
+ *  **一条事实性拒绝都不产出** —— 此刻 `loggedIn` / `hasConfiguredByok` / `engineModels` 三者同样处在
+ *  被链清空的中途(见 `runModelChain` 起手的复位),拿它们中的任何一个下结论都是在猜。 */
 export function preflightBlockReason(
   model: { providerID: string; id: string } | null,
   ctx: {
+    /** 本次引擎事实(下面三个字段)是否已收敛 —— 即 `modelChainState() === "ready"`。
+     *  false ⇒ 本判据只回 `not-ready`,不看下面任何一个字段。 */
+    engineFactsReady: boolean
     loggedIn: boolean
     platformProviderId: string | null
     hasConfiguredByok: boolean
     /** 引擎**本次实际注册**的模型。空数组不是「未知」而是「什么都没注册」——
-     *  调用方负责只在 `modelChainState === "ready"` 后消费本结论。 */
+     *  「未知」由 `engineFactsReady: false` 表达,两者不可混用。 */
     engineModels: EngineModelRef[]
   },
-): "platform-needs-login" | "nothing-usable" | "byok-not-registered" | null {
+): PreflightBlockReason | null {
+  if (!ctx.engineFactsReady) return "not-ready"
   if (model && ctx.platformProviderId && model.providerID === ctx.platformProviderId && !ctx.loggedIn)
     return "platform-needs-login"
   if (

@@ -3033,6 +3033,65 @@ describe("REQ-109 #595 BYOK 可选择性(真 DOM)", () => {
     mounted.dispose()
     toasts.dispose()
   })
+
+  /* #686 冷启动窗口:`model.list` 还没回来 —— 链停在 loading,`engineModelRefs` 是链起手复位后的
+     空数组,而 BYOK 选择(本地事实,#595 谓词 1)已经落进内存。此刻按 Enter(唯一绕过 disabled
+     按钮的真实入口)必须**如实说「正在读取」**,不得声称「本次引擎启动没有加载这个模型」——
+     那是链 ready 之后才成立的结论。上一条(链 ready + 清单确实缺该节点)是它的正向对照:
+     同一个入口、同一条判据,该拦的照样拦。 */
+  test("#686:冷启动窗口按 Enter —— 零 startChat,且不谎称引擎没加载这个模型", async () => {
+    installApi()
+    let chats = 0
+    const toasts = mount(() => createComponent(ToastViewport, {}))
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async () => {
+            chats++
+            return undefined
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        // 永不 settle —— 链因此永远停在 loading,即冷启动那段真实窗口。
+        modelContract: {
+          list: () => new Promise<never>(() => {}),
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "hello",
+      }),
+    )
+
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(byokRows(openPicker())).toHaveLength(1))
+    click(byokRows(openPicker())[0])
+    await waitFor(() => expect(composerModel()?.providerID).toBe(deepseekEngineId))
+
+    // toast store 是模块级单例(Toast.tsx),4s 自动消失比本套件跑得慢 —— 上一条用例真的推过一条
+    // modelNotLoaded。不先清干净,本条断言就会读到别人的残留而假红。
+    for (const close of [...document.body.querySelectorAll<HTMLButtonElement>(".a-toast-x")]) close.click()
+    await flush()
+    expect(document.body.textContent).not.toContain(zh["alpha.composer.modelNotLoadedDetail"])
+
+    const textarea = mounted.host.querySelector<HTMLTextAreaElement>("textarea")!
+    expect(textarea.value).toBe("hello")
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }))
+    await flush()
+    await flush()
+
+    // 未就绪 ⇒ 不提交(不装作发出去了),但告知必须是「正在读取」而不是一条编造的引擎结论。
+    expect(chats).toBe(0)
+    expect(document.body.textContent).not.toContain(zh["alpha.composer.modelNotLoadedDetail"])
+    expect(document.body.textContent).toContain(zh["alpha.composer.modelStateDetail"])
+    // 行内红条同样不得出现 —— 判据自己不产出该结论,消费点无从显示它。
+    expect(mounted.host.textContent).not.toContain(zh["alpha.composer.modelNotLoadedDetail"])
+    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("hello")
+    mounted.dispose()
+    toasts.dispose()
+  })
 })
 
 // C21 R3 F9:roving-focus.test.ts 的 `CROSS_FILE_COMBOBOX_EXCEPTIONS` 由这一条兑现。

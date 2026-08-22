@@ -52,12 +52,24 @@ KEY 的直连模型全体变灰。本契约把它拆成两个**互不推导**的
 
 **空清单同样算不满足成员关系。** `model.list` 可以**成功**返回 `[]`,而模型链照样进 `ready` ——
 「空清单 ⇒ 引擎未就绪」是一个**状态机从未承诺的不变量**,判据不得依赖它(依赖它就等于留了一条
-逃逸口:成功空清单 + 链 ready ⇒ 仍可提交)。「未就绪」由它真正的所有者 `modelChainState` 单独
-把门:发送门与行内说明都只在链 `ready` 之后消费本结论,冷启动窗口因此不会被误杀。
-支撑这条的实现侧不变量(由本仓自己维持,不是假设):`engineModelRefs` 的写入
-(`alpha-composer.tsx:997`)**早于** `setModelChainState("ready")`(`:1048`,全文件唯一一处
-`ready` 转换;链重跑先 `:824` 切 `loading` 再 `:829` 清空清单),
-链重跑时先切 `loading` 再清空 ⇒ 只要链是 `ready`,清单就是本次真实加载的结果。
+逃逸口:成功空清单 + 链 ready ⇒ 仍可提交)。
+
+**「未就绪」是判据自己的返回值,不是对调用方的口头约定(#686)。** 早期形态把这道闸留给调用方:
+判据只吃引擎清单,由一句注释请求每个消费点先自行确认 `modelChainState() === "ready"`。那种形状下
+**每新增一个消费点就多一次漏掉的机会**,而注释拦不住任何人 —— 冷启动窗口里(链复位后、
+`model.list` 回来之前)漏掉的消费点会拿一个被清空的清单,断言「本次引擎启动没有加载这个模型」,
+而那是链 ready 之后才成立的结论。现行契约:
+
+- 就绪与否经**必填**入参 `engineFactsReady` 喂进 `preflightBlockReason` —— 漏掉它是一个 typecheck
+  错误,不是一条运行时的假结论;
+- 未就绪时判据一律回 `not-ready`,**一条事实性拒绝都不产出**(`platform-needs-login` /
+  `nothing-usable` / `byok-not-registered` 全部让位)——`loggedIn`、`hasConfiguredByok`、
+  `engineModels` 三者在 `runModelChain` 起手时被整批复位,此刻拿其中任何一个下结论都是在猜;
+- `not-ready` 的用户可见文案只能说「正在读取模型状态」,不得断言引擎有没有加载某个模型。
+
+支撑这条的实现侧不变量(由本仓自己维持,不是假设):`engineModelRefs` 的写入**早于**
+`setModelChainState("ready")`(`alpha-composer.tsx` 全文件唯一一处 `ready` 转换;链重跑先切
+`loading` 再清空清单)⇒ 只要链是 `ready`,清单就是本次真实加载的结果。
 
 **执行失败不得反向改写谓词 1(硬约束)**:引擎恢复后回报的清单里没有某个本地 BYOK 节点,
 只允许让「当前可执行」为假(发送门关闭、切换门拒绝、如实报错),**不得撤销、挂起或清空**
@@ -152,6 +164,7 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
 | 引擎 ready 但清单缺该节点 → 发送门关闭 + 如实告知(且不撤销选择) | **父层发送门** | `model-default-core.test.ts`(纯核 `byok-not-registered`)、`test-component/alpha-composer-model.cases.ts`(真链:选择保留 + `send.disabled` + 常驻说明) |
 | 引擎**成功返回空清单**且链仍进 ready → 同样关闭发送门 | **父层发送门** | 同上两处(纯核 + 真链各一例) |
 | **Enter 键**(唯一能绕过 disabled 按钮的入口)→ 零 `startChat`,并如实告知 | **父层发送门** | `test-component/alpha-composer-model.cases.ts` |
+| **冷启动窗口**(链未 ready + 清单为空)按 Enter → 零 `startChat`,且**不谎称**引擎没加载该模型 | **判据自身**(`engineFactsReady` 必填 ⇒ `not-ready`) | `model-default-core.test.ts`(纯核三例)、`test-component/alpha-composer-model.cases.ts`(真链:`list` 永不 settle + Enter) |
 | 清单**含**该节点 → 发送门照常打开(不得过度收紧) | **父层发送门** | `test-component/alpha-composer-model.cases.ts` |
 | home 选择不得 supersede 在跑的模型链 / 账户链 | **父层生命周期** | `test-component/alpha-composer-model.cases.ts`(链恢复自愈 + 账户链存活 → `platformPermission` 回 ready) |
 | live allowlist 排除某供应商 / 平台不可达 → 仍在目录与注入中 | main | `alpha-models.test.ts`、`alpha-platform-catalog.cases.ts` |
