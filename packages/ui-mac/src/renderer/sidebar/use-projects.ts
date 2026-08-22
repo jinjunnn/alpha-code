@@ -71,12 +71,22 @@ export interface AlphaProjectsApi {
   /** Create a session AND send the first message (the home composer's submit). `extraParts` are
    *  additional prompt parts (agent/file mentions from the home @ menu, upstream
    *  build-request-parts shapes) appended after the text part (REQ-038). `opts`(REQ-055)是
-   *  AlphaComposer 的显式提交参数(Model.Ref/agent),未选不传 = 引擎默认。 */
+   *  AlphaComposer 的显式提交参数(Model.Ref/agent),未选不传 = 引擎默认。
+   *  REQ-085(#259):`existingSessionID` 存在时跳过 `session.create`,直接对该会话重投递首条
+   *  消息 —— 供调用方在"session 已建成但消息没发出去"后原地重试,不再每次重试都新建一个孤儿
+   *  session。`onSessionCreated` 在**真正新建**的那一刻同步回报新 id(即使随后投递失败也会被
+   *  调用),调用方据此记下这个 id 供下一次重试传回。返回值语义不变:只有整条链——含消息投递
+   *  ——都成功时才返回 id。 */
   startChat(
     worktree: string,
     text: string,
     extraParts?: unknown[],
-    opts?: { model?: ModelRef; agent?: string },
+    opts?: {
+      model?: ModelRef
+      agent?: string
+      existingSessionID?: string
+      onSessionCreated?: (id: string) => void
+    },
   ): Promise<string | undefined>
   /** The live SDK v2 client (undefined until the server is ready). Exposed so alpha composer
    *  surfaces (home slash/@ menus, REQ-038) query command/agent/find with the SAME client + auth
@@ -414,25 +424,44 @@ export function useAlphaProjects(
   // CUSTOM command and sends it via session.command (submit.ts:77-100) — plain promptAsync would
   // deliver the slash line as literal text. Mirror that here so the home slash menu's refilled
   // commands actually execute.
+  //
+  // REQ-085(#259):session 建成之后 command/promptAsync 失败时,函数整体仍返回 undefined ——
+  // 那个 session 是个没有首条消息的孤儿。若调用方原地重试,朴素重跑这个函数会再建一个新
+  // session,留下越来越多打不开的空壳(AC3 明令禁止"重试产生重复 Session")。修法两件:
+  // ① `opts.existingSessionID` 存在时跳过 `ensureDefaultWorkspace`/`session.create`/
+  // `upsertSession`,直接对该会话重投递消息;② 每次真正新建 session 都经
+  // `opts.onSessionCreated` 同步回报——即使随后投递失败也会被调用——调用方据此记下这个 id,
+  // 下次重试原样传回来复用,而不是再建一个。
   async function startChat(
     worktree: string,
     text: string,
     extraParts?: unknown[],
-    opts?: { model?: ModelRef; agent?: string },
+    opts?: {
+      model?: ModelRef
+      agent?: string
+      existingSessionID?: string
+      onSessionCreated?: (id: string) => void
+    },
   ): Promise<string | undefined> {
     const c = client
     if (!c) return undefined
     try {
-      // 同上:供给失败不建会话,由 AlphaComposer 的 `alpha.composer.sendFailed` toast 呈现。
-      if (!(await ensureDefaultWorkspace(worktree))) return undefined
-      const { data, error } = await c.session.create({
-        directory: worktree,
-        ...(opts?.model ? { model: opts.model } : {}),
-      } as any)
-      if (error || !data) return undefined
-      const id = (data as any).id as string
-      if (worktreeIndex(worktree) < 0) await loadProjects()
-      upsertSession(data)
+      let id: string
+      if (opts?.existingSessionID) {
+        id = opts.existingSessionID
+      } else {
+        // 同上:供给失败不建会话,由 AlphaComposer 的 `alpha.composer.sendFailed` toast 呈现。
+        if (!(await ensureDefaultWorkspace(worktree))) return undefined
+        const { data, error } = await c.session.create({
+          directory: worktree,
+          ...(opts?.model ? { model: opts.model } : {}),
+        } as any)
+        if (error || !data) return undefined
+        id = (data as any).id as string
+        if (worktreeIndex(worktree) < 0) await loadProjects()
+        upsertSession(data)
+        opts?.onSessionCreated?.(id)
+      }
       const body = text.trim()
       if (body) {
         let ranCommand = false
