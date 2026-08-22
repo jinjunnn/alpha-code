@@ -1897,6 +1897,58 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     ;(links[1] as HTMLButtonElement).click()
     expect(runtime.getIntentLog().focusArtifact).toEqual([{ name: "数据底表.parquet", runId: "job_7f3a" }])
   })
+
+  // `#906`:生产输出(ArtifactListV1 / CloudJobStatusV1)的 artifacts 项是完整 descriptor,
+  // 其 `id` 是产物面板**唯一**认得的匹配键。只递名字 = 永不命中 = 静默选中该 run 的第一个产物。
+  test("产物链接行:descriptor id 一路带到 intent —— 点第 3 行,递的是第 3 个产物的 id(#906)", async () => {
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    const descriptor = (index: number, name: string) => ({
+      schemaVersion: 1,
+      id: `art_job_7f3a_${index}_deadbeef`,
+      source: "cloud",
+      name,
+      trust: "sandboxed",
+      role: "primary",
+      contentRef: { kind: "http-stream", url: `/v1/cloud/artifacts/art_job_7f3a_${index}_deadbeef/content`, auth: "bearer" },
+      verification: { status: "verified" },
+      provenance: { producer: "pipeline", jobId: "job_7f3a" },
+    })
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture(
+          "prt_c2",
+          "cloud_artifacts",
+          {
+            status: "completed",
+            input: {},
+            output: JSON.stringify({
+              schema_version: 1,
+              job_id: "job_7f3a",
+              status: "completed",
+              artifacts: [descriptor(0, "概要.md"), descriptor(1, "明细.csv"), descriptor(2, "季度分析.md")],
+            }),
+            title: "artifacts",
+            metadata: {},
+            time: { start: 0, end: 1 },
+          },
+          {
+            identity: { source: "mcp", origin: "cloud", name: "artifacts" },
+            technicalId: "cloud_artifacts",
+            authority: { kind: "alpha-cloud", bindingId: "mcp:cloud", evidenceDigest: `sha256:${"c".repeat(64)}` },
+          },
+        ),
+      ]),
+    )
+    await flush()
+
+    const links = [...host.querySelectorAll("[data-alpha-timeline-row='artifacts'] .a-artrow")]
+    expect(links.map((el) => el.textContent)).toEqual(["概要.md", "明细.csv", "季度分析.md"])
+    ;(links[2] as HTMLButtonElement).click()
+    expect(runtime.getIntentLog().focusArtifact).toEqual([
+      { id: "art_job_7f3a_2_deadbeef", name: "季度分析.md", runId: "job_7f3a" },
+    ])
+  })
 })
 
 // ═══════════════ #568 — 富脚注 / pill / 斜杠 chip / 诊断行 / 改动汇总 ═══════════════

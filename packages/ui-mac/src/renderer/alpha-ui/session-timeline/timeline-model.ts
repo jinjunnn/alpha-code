@@ -101,6 +101,13 @@ export interface TimelineComment {
 export interface TimelineArtifactLink {
   runId: string
   name: string
+  /**
+   * `#906`:产物的稳定标识(平台 descriptor id)。产物面板按 descriptor id / card key 匹配
+   * (两者同一货币),名字**从不**是匹配键 —— 只递名字等于永不命中、静默选中该 run 的第一个
+   * 产物。契约输出(ArtifactListV1 / CloudJobStatusV1)的 artifacts 项就是完整 descriptor,
+   * 所以生产路径恒有 id;仅字符串降级形态缺席(那时按 fail-closed 处理:面板打开、不改选中)。
+   */
+  id?: string
 }
 
 /** 媒体预览行的数据快照(写一次:工具附件/顶层 file part 在完成后不再变)。 */
@@ -422,6 +429,8 @@ export function mediaSourceOfFilePart(part: FilePart): TimelineMediaSource {
 // fail-closed:identity 缺失(历史行)/形状非法 一律无产物行。
 export const ARTIFACT_LINKS_MAX = 12
 const ARTIFACT_OUTPUT_PARSE_MAX = 100_000
+/** `#906`:id 进 DOM 前的字段帽(平台 id 形如 `art_job_x_0_deadbeef`,远短于此)。 */
+const ARTIFACT_ID_MAX_CHARS = 200
 const artifactLinksCache = new WeakMap<object, { output: string; links: TimelineArtifactLink[] }>()
 
 function parseArtifactLinks(output: string): TimelineArtifactLink[] {
@@ -445,7 +454,11 @@ function parseArtifactLinks(output: string): TimelineArtifactLink[] {
     }
     if (typeof item === "object" && item !== null) {
       const name = (item as { name?: unknown }).name
-      if (typeof name === "string" && name) links.push({ runId: record.job_id, name })
+      if (typeof name !== "string" || !name) continue
+      // `#906`:descriptor id 是产物面板唯一认得的匹配键,必须一路带到 intent。
+      const id = (item as { id?: unknown }).id
+      const stable = typeof id === "string" && id.length > 0 && id.length <= ARTIFACT_ID_MAX_CHARS ? id : undefined
+      links.push(stable ? { runId: record.job_id, name, id: stable } : { runId: record.job_id, name })
     }
   }
   return links
@@ -736,7 +749,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         rows.push({
           kind: "artifacts",
           key: `artifacts:${part.id}`,
-          rev: links.map((link) => `${link.runId}/${link.name}`).join("|"),
+          rev: links.map((link) => `${link.runId}/${link.id ?? ""}/${link.name}`).join("|"),
           partID: part.id,
           links,
         })

@@ -37,6 +37,10 @@ const i18n = await import("../src/renderer/i18n")
 // 这两个模块都不牵 solid-js(只用 node:crypto/fs/path),放在 mock.module 之后静态引入是安全的。
 const artifactDownload = await import("../src/main/alpha-artifact-download")
 const artifactDescriptor = await import("../src/shared/cloud-artifact-descriptor")
+// `#906`:联动判据用的是**生产**的两半 —— 时间线侧的产物链接解析(artifactLinksOf)与
+// 绑定层的换算(bindFocusArtifact)。两个模块都是纯 TS(零 solid/DOM/preload 依赖)。
+const timelineModel = await import("../src/renderer/alpha-ui/session-timeline/timeline-model")
+const timelineIntents = await import("../src/renderer/alpha-ui/session-timeline/cards/timeline-intents")
 const disposers: Array<() => void> = []
 
 afterEach(() => {
@@ -475,6 +479,75 @@ describe("REQ-125 C4 artifacts container in the real shell (fake preload channel
     await flushTimers()
     expect(calls.projectUsage).toBe(2)
     expect(shell.rail().artifactTarget()).toBeUndefined()
+  })
+
+  // `#906` 退出条件:一个 run 里有 3 个产物,点时间线上第 3 行 → 面板选中的必须是第 3 个。
+  // 链路两半都是生产实现:artifactLinksOf 解析产物链接行(link 即 intent 的字段全集,
+  // tool-cards 原样铺进 intent),bindFocusArtifact 做时间线→面板的唯一换算。
+  // 反向:把 intent 退回只传 name(artifactFocusIdOf 返回 intent.name),名字对不上任何卡,
+  // 选中停在第 1 个 —— 下面的断言即刻变红。
+  test("timeline artifact row N selects card N — the linkage carries descriptor identity (#906)", async () => {
+    const ids = [0, 1, 2].map((index) => `art_job_7f3a_${index}_deadbeef`)
+    const names = ["概要.md", "明细.csv", "季度分析.md"]
+    installFakeRunArtifacts({
+      job_7f3a: ids.map((id, index) => manifestEntry(id, names[index]!)),
+    })
+    const shell = runtime.createArtifactsShellHarness()
+    const host = mount(shell.Shell)
+    await openArtifactsTab(host)
+
+    const cards = host.querySelectorAll(".alpha-wb-card")
+    expect(cards).toHaveLength(3)
+    // Positive control: without the linkage the panel sits on its default (the first card).
+    expect(cards[0]!.hasAttribute("data-active")).toBe(true)
+    expect(cards[2]!.hasAttribute("data-active")).toBe(false)
+
+    // Production timeline half: the cloud facade output → artifact link rows.
+    const links = timelineModel.artifactLinksOf({
+      id: "prt_c1",
+      sessionID: "ses_a",
+      messageID: "msg_a1",
+      type: "tool",
+      callID: "call_prt_c1",
+      tool: "cloud_artifacts",
+      display: {
+        identity: { source: "mcp", origin: "cloud", name: "artifacts" },
+        technicalId: "cloud_artifacts",
+        authority: { kind: "not-asserted" },
+      },
+      state: {
+        status: "completed",
+        input: {},
+        output: JSON.stringify({
+          schema_version: 1,
+          job_id: "job_7f3a",
+          status: "completed",
+          artifacts: ids.map((id, index) => ({
+            schemaVersion: 1,
+            id,
+            source: "cloud",
+            name: names[index],
+            trust: "sandboxed",
+            role: "primary",
+            contentRef: { kind: "http-stream", url: `/v1/cloud/artifacts/${id}/content`, auth: "bearer" },
+            verification: { status: "verified" },
+            provenance: { producer: "pipeline", jobId: "job_7f3a" },
+          })),
+        }),
+        title: "artifacts",
+        metadata: {},
+        time: { start: 0, end: 1 },
+      },
+    } as never)
+    expect(links.map((link) => link.id)).toEqual(ids)
+
+    // Production binding half: the third row's intent → the rail → the panel.
+    timelineIntents.bindFocusArtifact((artifactId) => shell.rail().focusArtifact(artifactId))(links[2]!)
+    await flushTimers()
+
+    const target = host.querySelector<HTMLButtonElement>(`[data-artifact-card='${ids[2]}']`)!
+    expect(target.closest(".alpha-wb-card")!.hasAttribute("data-active")).toBe(true)
+    expect(host.querySelectorAll(".alpha-wb-card")[0]!.hasAttribute("data-active")).toBe(false)
   })
 
   test("verify-before-open is a real barrier: no byte read until the re-check passes", async () => {

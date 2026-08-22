@@ -978,7 +978,7 @@ export function TimelineArtifactRows(props: { row: Extract<TimelineRow, { kind: 
             role="listitem"
             data-previewable={routeArtifact({ name: link.name }).rendererId !== "fallback" ? "true" : "false"}
             disabled={!intents.focusArtifact}
-            onClick={() => intents.focusArtifact?.({ name: link.name, runId: link.runId })}
+            onClick={() => intents.focusArtifact?.({ id: link.id, name: link.name, runId: link.runId })}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />

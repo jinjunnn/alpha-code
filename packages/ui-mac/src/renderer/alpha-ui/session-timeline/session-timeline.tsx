@@ -17,7 +17,7 @@ import { hrefFor } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
 import { useAlphaSessionLiveContext } from "../session-workspace/alpha-session-workspace"
 import type { SessionRailApi } from "../session-workspace/session-workspace-shell"
-import type { TimelineEditUserMessageIntent, TimelineIntents } from "./cards/timeline-intents"
+import { bindFocusArtifact, type TimelineEditUserMessageIntent, type TimelineIntents } from "./cards/timeline-intents"
 import { SessionTimelineView, type TimelineDisplayNames } from "./session-timeline-view"
 import {
   projectTimelineRows,
@@ -127,12 +127,14 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
         // 非法参数 → 不导航。
       }
     },
-    // 媒体/产物行 → 右栏产物面板。id 货币 = 产物名(manifest artifact id 的名字级
-    // 回落);对不上时面板打开但不改选中(artifacts-core 的 fail-closed 合同)。
+    // 媒体/产物行 → 右栏产物面板。`#906`:id 货币 = **descriptor id**(= 面板 card key),
+    // 不是产物名 —— 只递名字对不上任何卡,于是这条路径从来没有成功过,表现为静默选中该 run
+    // 的第一个产物。换算与绑定收在 bindFocusArtifact 一处;缺 id 的降级形态仍是面板打开但
+    // 不改选中(artifacts-core 的 fail-closed 合同)。
     get focusArtifact() {
       const rail = props.rail
       if (!rail) return undefined
-      return (intent: { name: string }) => rail.focusArtifact(intent.name)
+      return bindFocusArtifact((artifactId) => rail.focusArtifact(artifactId))
     },
     // write/edit pill 与 diffsum 行 → 右栏审查面板的文件卡。路径必须先被证明为
     // 安全 workspace-relative(reviewPathOf,审计 Major-2):证明不了 → 零动作,
