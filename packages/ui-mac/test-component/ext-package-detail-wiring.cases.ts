@@ -131,7 +131,7 @@ const { render } = solidWeb
 const { ExtensionHub } = await import("../src/renderer/extensions/extension-hub")
 // 必须**动态** import:静态 import 会在 registrator 之前牵出 solid-js,整个文件拿到 server 构建
 // (指纹 = 报错与改动无关且全文件一起挂)。这条纪律写在 CLAUDE.md 的《本机验证陷阱》里。
-const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
+const { ToastViewport, pushToast } = await import("../src/renderer/alpha-ui/Toast")
 extIpcRef = (await import("../src/renderer/extensions/ext-ipc")).extIpc as unknown as typeof extIpcRef
 const { setHubSection } = await import("../src/renderer/extensions/ext-hub-state")
 
@@ -589,6 +589,15 @@ function toastsContaining(canary: string): number {
   ).length
 }
 
+/** 同上,但只数**常驻**的那些(`data-persistent` 与「装没装拆除定时器」同源,见 Toast.tsx)。 */
+function persistentToastsContaining(canary: string): number {
+  return Array.from(document.querySelectorAll(".a-toast[data-persistent='true']"), (node) => node.textContent ?? "").filter(
+    (text) => text.includes(canary),
+  ).length
+}
+
+const sleep = (ms: number) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms))
+
 function packageCard(catalogId: string) {
   const card = document.querySelector<HTMLElement>(`[data-package-card="${catalogId}"]`)
   expect(card).toBeInstanceOf(HTMLElement)
@@ -789,6 +798,10 @@ function expectSafeView(value: unknown) {
 }
 
 afterEach(() => {
+  // `#771`:咽喉推的 warning toast 现在是**常驻**的 —— 它不会自己走,而 toast store 是模块
+  // 单例,`replaceChildren()` 只擦 DOM 不清 store。不在这里排空,下一条用例挂上新视口时会把
+  // 上一条留下的 toast 一起渲染出来。走用户真实的关闭路径(点 ×),不去碰 store 内部。
+  for (const close of document.body.querySelectorAll<HTMLElement>(".a-toast-x")) close.click()
   disposals.splice(0).forEach((dispose) => dispose())
   document.body.replaceChildren()
 })
@@ -1100,6 +1113,67 @@ describe("package detail production renderer path", () => {
     await flush()
     expect(toastsContaining(canary), "the same warning was presented more than once").toBe(1)
   })
+
+  /**
+   * `#771`:同一条 warning,判的是**它待多久**。
+   *
+   * `#765` 之前这条 warning 落在 `extension-detail` 的 `packageError` 槽里,一直显示到用户处理;
+   * 搬进 IPC 包装层之后变成默认 toast —— 4 秒自动消失。对「连接绑定没释放干净 / 残留没清掉」
+   * 这种东西,一条 4 秒的提示和丢掉的差别只是运气。重构不该顺带降低可见性。
+   *
+   * 判据分两半,各自抓不同的东西 —— 两条**都实跑过对应的变异**,不是看着像:
+   *   ① `data-persistent`(快、精确):抓「这条 warning 被当成短命的推出去了」。
+   *      变异 = 去掉 ext-ipc.ts 的 `duration: 0` ⇒ ① 当场红(它排在前面,② 到不了)。
+   *   ② 真的等过一闪而过的那个窗口(慢、行为):抓 ① **失效**的那种改动 —— `data-persistent`
+   *      与「装没装拆除定时器」在 Toast.tsx 里脱钩。变异 = 保留 persistent 字段但无条件
+   *      `setTimeout` ⇒ ① 照绿、② 红。所以 ② 不是 ① 的复读,是 ① 作为代理的守卫。
+   *      同时推一条**普通** toast 作正对照:它必须消失 —— 没有这条对照,「常驻 toast 还在」
+   *      在一个定时器根本不跑的环境里也会绿。
+   */
+  test("the uninstall warning stays put instead of expiring with the toast timer", async () => {
+    const canary = "PERSISTENT_UNINSTALL_WARNING_2c8b4e"
+    const harness = await mountHarness({ injectUninstallWarning: canary })
+    click(packageCard(MIXED_BUNDLE_PACKAGE_ID))
+    await waitFor(() =>
+      expect(document.querySelector(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeInstanceOf(HTMLElement),
+    )
+    const detail = () => document.querySelector<HTMLElement>(`[data-package-detail='${MIXED_BUNDLE_PACKAGE_ID}']`)!
+    click(detail().querySelector(".alpha-ext-dsub button"))
+    await waitForPackageAuthorization(MIXED_BUNDLE_PACKAGE_ID)
+    fillPackageSecret(secretCanary)
+    confirmPackageAuthorization()
+    await waitFor(() => expect(harness.installResults.at(-1)).toMatchObject({ ok: true }))
+    await waitFor(() =>
+      expect(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeInstanceOf(HTMLElement),
+    )
+
+    click(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`))
+    await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual([]))
+    await waitFor(() => expect(toastsContaining(canary)).toBe(1))
+
+    // ① 呈现出来的那条**就是**常驻的那条(不是「视口里另外还有一条常驻的」)。
+    expect(
+      persistentToastsContaining(canary),
+      "the uninstall warning was pushed as a self-expiring toast",
+    ).toBe(1)
+
+    // ② 正对照 + 真实等待:普通 toast 走了,warning 还在。
+    const control = "TRANSIENT_CONTROL_TOAST_9d10f7"
+    pushToast({ kind: "info", title: control })
+    expect(toastsContaining(control)).toBe(1)
+    expect(persistentToastsContaining(control)).toBe(0)
+
+    await sleep(4600)
+    await flush()
+    expect(
+      toastsContaining(control),
+      "the transient control toast never expired — timers are not running, so the assertion below would be vacuous",
+    ).toBe(0)
+    expect(
+      toastsContaining(canary),
+      "the uninstall warning expired with the toast timer — `#771` regressed",
+    ).toBe(1)
+  }, 20000)
 
   test("installing a Bundle reveals the remove-package action, and pressing it removes it through production main", async () => {
     const harness = await mountHarness()

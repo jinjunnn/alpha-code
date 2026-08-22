@@ -1,6 +1,7 @@
 @import "./tokens.css";
 
-/* alpha-ui Toast — transient feedback (install done, login, errors). Tokens only. */
+/* alpha-ui Toast — feedback (install done, login, errors). Tokens only.
+   4 秒自走是默认,不是全部:`duration <= 0` 的那些常驻到用户按 ×(`#771`,见 Toast.tsx)。 */
 .a-toast-viewport {
   position: fixed;
   right: var(--a-space-4);
