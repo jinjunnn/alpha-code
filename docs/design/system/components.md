@@ -22,7 +22,7 @@ the authority for exact behavior.
 | **Button** | `Button.tsx` + `button.css` | actions | default · hover · active · disabled · focus-ring; variants: neutral, accent-fill (`--a-accent-solid`), send (`--a-send`) |
 | **Input** | `Input.tsx` + `input.css` | text entry | default · hover · focus-within (`--a-ring-focus`) · disabled · sm size · icon slot (no error/validation state yet) |
 | **Dialog** | `Dialog.tsx` + `dialog.css` | modal | `--a-surface-raised` + `--a-scrim` + `--a-shadow-overlay`, `--a-z-modal` |
-| **Toast** | `Toast.tsx` + `toast.css` | transient notice | kinds: `info` / `success` / `error` (**no `warning`** — that's Banner-only); `ToastViewport`, `--a-z-toast` |
+| **Toast** | `Toast.tsx` + `toast.css` | overlay notice (transient by default) | kinds: `info` / `success` / `error` (**no `warning`** — that's Banner-only); `ToastViewport`, `--a-z-toast`; auto-dismisses after 4 s unless `duration <= 0`, which pins it until the viewer closes it (`data-persistent`, `#771` — used by the extension IPC warning chokepoint) |
 | **Tooltip** | `Tooltip.tsx` + `tooltip.css` | hover hint | positioned popover, four placements |
 | **Banner** | `Banner.tsx` + `banner.css` | inline persistent notice | `info` / `success` / `warning` / `error`, with inline actions |
 | **Base** | `base.css` | element resets / shared primitives for alpha-ui | — |
