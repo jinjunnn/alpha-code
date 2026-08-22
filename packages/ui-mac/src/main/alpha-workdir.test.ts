@@ -10,7 +10,9 @@ import {
   alphaRoot,
   assertProjectAlphaRootIdentity,
   ensureAlphaScaffold,
+  foldedArtifactNameKey,
   isSafeRunId,
+  reserveArtifactSavedName,
   resolveProjectAlphaRoot,
   sanitizeArtifactName,
   safeResolveInAlpha,
@@ -80,6 +82,74 @@ describe("sanitizeArtifactName", () => {
   test("control chars removed, length capped", () => {
     expect(sanitizeArtifactName("a\x00b\x1fc.txt", "fb")).toBe("abc.txt")
     expect(sanitizeArtifactName("x".repeat(300), "fb")).toHaveLength(128)
+  })
+})
+
+// #901: 折叠比较逻辑本身的单测——host-independent(不依赖测试机文件系统是否大小写敏感):我们只
+// 断言 reserveArtifactSavedName 读到磁盘上真实存在的 "Report.pdf" 之后,对折叠键相同的
+// "report.pdf" 请求做出的**决定**(是否改名),不依赖真实覆盖是否发生在这台机器上。把
+// foldedArtifactNameKey 改回恒等函数(退化为精确比较)会让这些断言变红。
+describe("foldedArtifactNameKey / reserveArtifactSavedName — #901", () => {
+  test("folded key is NFC + lowercase", () => {
+    expect(foldedArtifactNameKey("Report.PDF")).toBe("report.pdf")
+    expect(foldedArtifactNameKey("report.pdf")).toBe(foldedArtifactNameKey("REPORT.PDF"))
+  })
+
+  test("desired name unchanged when no existing entry folds to the same key", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-reserve-"))
+    try {
+      expect(reserveArtifactSavedName(dir, "totally-different.pdf", "a1")).toBe("totally-different.pdf")
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("mangles when an existing on-disk file folds to the same key, even though the exact string differs", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-reserve-"))
+    try {
+      fs.writeFileSync(path.join(dir, "Report.pdf"), "existing bytes")
+      const name = reserveArtifactSavedName(dir, "report.pdf", "a2")
+      expect(name).not.toBe("report.pdf")
+      expect(name).toBe("a2-report.pdf")
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("exact re-use of the same on-disk name is NOT treated as a collision (self, not a clash)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-reserve-"))
+    try {
+      fs.writeFileSync(path.join(dir, "report.pdf"), "existing bytes")
+      // requesting the exact same name back is a legitimate re-download/overwrite path (AC#6),
+      // not the case-collision this reservation exists to prevent.
+      expect(reserveArtifactSavedName(dir, "report.pdf", "a1")).toBe("report.pdf")
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("in-flight `.part` staging files never count as a collision", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-reserve-"))
+    try {
+      fs.writeFileSync(path.join(dir, "report.pdf.abc-def-ghi-12345678.part"), "")
+      expect(reserveArtifactSavedName(dir, "report.pdf", "a1")).toBe("report.pdf")
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("in-batch (not-yet-on-disk) collisions are caught via the `taken` seed set", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-reserve-"))
+    try {
+      const taken = new Set<string>()
+      const first = reserveArtifactSavedName(dir, "Report.pdf", "a1", taken)
+      const second = reserveArtifactSavedName(dir, "report.pdf", "a2", taken)
+      expect(first).toBe("Report.pdf")
+      expect(second).not.toBe("report.pdf")
+      expect(second).toBe("a2-report.pdf")
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
@@ -256,6 +326,60 @@ describe("saveCloudRun", () => {
     )
     expect(res.ok).toBe(true)
     if (res.ok) expect(res.files).toContain(path.join("artifacts", "a2-out.txt"))
+  })
+
+  // #901: 只差大小写(APFS 默认大小写不敏感)在同一批(内存 Set 也能挡)与跨两次分开调用
+  // (只能靠读盘)都必须被折叠比较挡住,否则第二次 rename 会静默覆盖第一次落盘的字节。
+  test("case-insensitive collision within one batch dedups even though exact strings differ", async () => {
+    const res = await saveCloudRun(
+      projectDir,
+      "job-1",
+      deps({
+        artifacts: async () => ({
+          job_id: "job-1",
+          status: "completed",
+          artifacts: [
+            { id: "a1", name: "Report.pdf" },
+            { id: "a2", name: "report.pdf" },
+          ],
+          artifact_ids: ["a1", "a2"],
+        }),
+      }),
+    )
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.files).toContain(path.join("artifacts", "Report.pdf"))
+    expect(res.files).toContain(path.join("artifacts", "a2-report.pdf"))
+  })
+
+  test("case-insensitive collision survives across separate saveCloudRun calls (not an in-memory set)", async () => {
+    const first = await saveCloudRun(
+      projectDir,
+      "job-1",
+      deps({
+        artifacts: async () => ({ job_id: "job-1", status: "completed", artifacts: [{ id: "a1", name: "Report.pdf" }], artifact_ids: ["a1"] }),
+        download: okDownload("first-content-AAA"),
+      }),
+    )
+    expect(first.ok).toBe(true)
+
+    const second = await saveCloudRun(
+      projectDir,
+      "job-1",
+      deps({
+        artifacts: async () => ({ job_id: "job-1", status: "completed", artifacts: [{ id: "a2", name: "report.pdf" }], artifact_ids: ["a2"] }),
+        download: okDownload("second-content-BBB"),
+      }),
+    )
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    expect(second.files).toContain(path.join("artifacts", "a2-report.pdf"))
+
+    const runDir = path.join(projectDir, ".alpha", "runs", "job-1", "artifacts")
+    // both files exist independently, each with the bytes its own download wrote — the first
+    // artifact's content must not have been clobbered by the second, differently-cased download.
+    expect(fs.readFileSync(path.join(runDir, "Report.pdf"), "utf8")).toBe("first-content-AAA")
+    expect(fs.readFileSync(path.join(runDir, "a2-report.pdf"), "utf8")).toBe("second-content-BBB")
   })
 
   test("download failure (e.g. over-limit at the streaming writer) degrades to warning, no file listed", async () => {

@@ -162,6 +162,20 @@ describe("registerDownloadedArtifact (#184 集成点)", () => {
     if (!res.ok) expect(res.reason).toContain("already registered")
   })
 
+  // #901: 大小写不敏感文件系统(APFS 默认)上 "artifacts/Report.pdf" 与 "artifacts/report.pdf" 是
+  // 同一份磁盘字节——manifest 的同名守卫必须用折叠键(NFC + toLowerCase)比较,不是精确字符串,
+  // 否则两个不同 id 的记录会各自"合法"地共享一份文件而互不知情。
+  test("同一 savedPath 折叠键相同、精确字符串不同 → 仍拒绝(#901)", () => {
+    const a = seedArtifact("Report.pdf", "AAA", 0)
+    expect(registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest }).ok).toBe(true)
+    const b = seedArtifact("report.pdf", "BBB", 1)
+    const res = registerDownloadedArtifact(projectDir, RUN, { descriptor: b.descriptor, savedPath: b.savedPath, verifiedSha256: b.digest })
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.reason).toContain("already registered")
+    const list = listRunArtifacts(projectDir, RUN)
+    expect(list.ok && list.entries.length).toBe(1)
+  })
+
   test("future-version manifest → register refused (read-only)", () => {
     fs.writeFileSync(manifestPath(), JSON.stringify({ schemaVersion: 99, runId: RUN, artifacts: [] }))
     const a = seedArtifact("report.md", "# hi")

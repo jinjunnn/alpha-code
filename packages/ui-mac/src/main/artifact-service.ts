@@ -20,7 +20,7 @@
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { isSafeRunId, safeResolveInAlpha } from "./alpha-workdir"
+import { foldedArtifactNameKey, isSafeRunId, safeResolveInAlpha } from "./alpha-workdir"
 import {
   ARTIFACT_MANIFEST_VERSION,
   RUN_ARTIFACTS_SUBDIR,
@@ -291,6 +291,11 @@ export async function finalizeArtifactWithQuota(
       // 自有预约是 rename 前最后一次路径读取;缺失、换 inode 或内容改变都可重试地中止。
       if (!(await ownArtifactQuotaReservationIsUnchanged(created.reservation)))
         return await release(quotaRetryable("own reservation changed"))
+      // #901:唯一 final 落名点前的最后一道折叠比较(NFC + toLowerCase)。调用方已按同一折叠键
+      // 预约过名字(reserveArtifactSavedName),这里是不可绕过的兜底——真出现同键冲突(如两个
+      // 并发下载各自预约时都还没写盘)一律拒绝,绝不静默改名或静默覆盖同名不同大小写的既有文件。
+      if (await hasConflictingArtifactCasing(artifactsDir, targetPath))
+        return await release(quotaDiskError("final name collides case-insensitively with an existing artifact"))
       try {
         await fs.promises.rename(partPath, targetPath)
       } catch {
@@ -306,6 +311,25 @@ export async function finalizeArtifactWithQuota(
   } finally {
     await closeStagedArtifactBeforeDeadline(staged.value, opts.testHooks)
   }
+}
+
+// #901:唯一 final 落名点(fs.promises.rename)前的最后一道折叠比较守卫。跳过 `.part` 暂存文件
+// 与目标自身的精确同名(同名覆盖是合法的重下/更新路径,AC#6 由调用方保 sha256 校验),只挡"存在
+// 一个大小写不同、折叠键相同"的既有文件——那才是会被 POSIX rename 静默替换的真实冲突。
+async function hasConflictingArtifactCasing(artifactsDir: string, targetPath: string): Promise<boolean> {
+  const targetName = path.basename(targetPath)
+  const targetKey = foldedArtifactNameKey(targetName)
+  let entries: fs.Dirent[]
+  try {
+    entries = await fs.promises.readdir(artifactsDir, { withFileTypes: true })
+  } catch {
+    return false
+  }
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.name.endsWith(".part") || entry.name === targetName) continue
+    if (foldedArtifactNameKey(entry.name) === targetKey) return true
+  }
+  return false
 }
 
 function quotaOverLimit(scope: string, next: number, limit: number): ArtifactQuotaFinalizeResult {
@@ -1139,7 +1163,13 @@ export function registerDownloadedArtifact(
   }
 
   // upsert by id;同一 savedPath 不允许被两个不同 id 占用(同名不覆盖 —— 写入器负责去重命名,AC#6)。
-  const pathOwner = manifest.artifacts.find((e) => e.local.savedPath === input.savedPath && e.descriptor.id !== d.id)
+  // #901:折叠比较(NFC + toLowerCase),不是精确字符串相等——大小写不敏感文件系统上
+  // "artifacts/Report.pdf" 与 "artifacts/report.pdf" 是同一份磁盘字节,精确相等会放过它们,
+  // 让 manifest 里出现两条记录共享一份文件而互不知情。
+  const targetKey = foldedArtifactNameKey(input.savedPath)
+  const pathOwner = manifest.artifacts.find(
+    (e) => foldedArtifactNameKey(e.local.savedPath) === targetKey && e.descriptor.id !== d.id,
+  )
   if (pathOwner) return { ok: false, reason: `savedPath already registered to artifact ${pathOwner.descriptor.id}` }
   const idx = manifest.artifacts.findIndex((e) => e.descriptor.id === d.id)
   if (idx >= 0) manifest.artifacts[idx] = entry

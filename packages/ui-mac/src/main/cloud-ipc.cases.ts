@@ -72,6 +72,7 @@ mock.module("./alpha-workdir", () => ({
   isSafeRunId: (id: unknown) => typeof id === "string" && /^job_[a-z0-9]+$/.test(id),
   safeResolveInAlpha: () => "/tmp/unused",
   sanitizeArtifactName: (name?: string) => name ?? "artifact",
+  reserveArtifactSavedName: (_artifactsDir: string, desiredName: string) => desiredName,
   saveCloudRun: async () => {
     order.push("save")
     return saveResult

@@ -275,6 +275,34 @@ describe("finalizeArtifactWithQuota", () => {
     expect(stagingResidue()).toEqual([])
   })
 
+  // #901: 唯一 final 落名点(fs.promises.rename)前的折叠比较(NFC + toLowerCase)兜底——callers
+  // (alpha-workdir.ts / cloud-ipc.ts)已按同一折叠键预约过名字,这里是不可绕过的最后一道:真出现
+  // 折叠键相同但字符串不同的既有文件时一律拒绝,绝不静默覆盖。host-independent:不依赖测试机文件
+  // 系统是否大小写敏感——判据是显式 readdir + 折叠比较,不是让 OS 的 rename 语义去揭示冲突。
+  test("final rename refuses a target that only differs from an existing artifact by case", async () => {
+    writeFileSync(target("Report.pdf"), "original-bytes")
+    const generousLimits = limits({ runMaxBytes: 1_000, projectMaxBytes: 2_000 })
+    const result = await write("report.pdf", "clobbering-bytes", { limits: generousLimits })
+
+    expect(result).toMatchObject({ ok: false, error: "disk" })
+    expect(String((result as { detail?: string }).detail)).toContain("case-insensitively")
+    // the pre-existing artifact must keep its original bytes — no silent overwrite. (Not asserting
+    // `existsSync(target("report.pdf"))` here: on a case-insensitive host that path *is*
+    // "Report.pdf", so that check would just re-test the OS, not our guard.)
+    expect(readFileSync(target("Report.pdf"), "utf8")).toBe("original-bytes")
+    expect(reservations()).toEqual([])
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("exact re-download of the same target name is still allowed (not a #901 false positive)", async () => {
+    writeFileSync(target("report.pdf"), "stale-bytes")
+    const generousLimits = limits({ runMaxBytes: 1_000, projectMaxBytes: 2_000 })
+    const result = await write("report.pdf", "refreshed-bytes", { limits: generousLimits })
+
+    expect(result.ok).toBe(true)
+    expect(readFileSync(target("report.pdf"), "utf8")).toBe("refreshed-bytes")
+  })
+
   test("replacement admission never subtracts a pre-scan target snapshot", async () => {
     writeFileSync(target("replace.bin"), "12345")
     writeFileSync(target("other.bin"), "12345")
