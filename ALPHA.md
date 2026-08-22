@@ -25,6 +25,10 @@ Markdown 不再复制活跃 backlog、优先级、负责人或 Sprint 状态。
 - **`dev` 分支** = `anomalyco/opencode:dev` 的纯镜像(永远 fast-forward,Sync fork 零冲突)。
 - **`alpha` 分支**(产品分支)= `dev` + 自有新增文件。日常开发在 `alpha`。
 - **自动同步**:`.github/workflows/sync-upstream.yml` 每天把 upstream 同步进 `dev`,再 merge 进 `alpha`。
+  拆成两个信任域(`#899`,SEC):`sync-upstream.yml` 是只读 candidate(无推送凭据,负责拉取上游、
+  合并、跑全部 guard/tripwire 与引擎冒烟,产出不可变的 git-bundle artifact);`sync-upstream-push.yml`
+  是独立的特权 workflow(持推送 token),只在 candidate 报告 `success` 后被 `workflow_run` 触发,
+  只解包并推送 candidate 已验证过的那份提交——推送凭据从不与任何来自上游的代码在同一进程存在。
 - **纪律(北极星)**:**只新增文件,从不编辑 opencode 自身的任何文件** → 每次 sync 零冲突。这是 fork 模型能保持干净的唯一要求。
 - **上游 roadmap 不是 Alpha backlog**:`specs/v2/`、
   `packages/opencode/specs/effect/`、`packages/codemode/` 与

@@ -18,6 +18,19 @@ Alpha delivery occurs on the Alpha branch. The
 [`alpha-ci.yml`](../../.github/workflows/alpha-ci.yml) are the executable source
 of truth for protected paths and synchronization gates.
 
+`#899` (SEC): the daily sync is split across two trust domains.
+[`sync-upstream.yml`](../../.github/workflows/sync-upstream.yml) is the untrusted
+candidate — `permissions: contents: read`, no reference to `secrets.SYNC_TOKEN`
+anywhere in the file, every `actions/checkout` uses `persist-credentials: false`.
+It merges upstream `dev` into `alpha`, runs every guard/tripwire and the engine
+smoke test, and only on success packages the resulting commits into an immutable
+git-bundle artifact. [`sync-upstream-push.yml`](../../.github/workflows/sync-upstream-push.yml)
+is the privileged half — `permissions: contents: write`, triggered by
+`workflow_run` only when the candidate reports `success` — and only downloads,
+verifies (exact commit-sha match), and pushes that bundle. It never executes any
+code from the merged tree, so the push token is never in the same process as
+code sourced from `anomalyco/opencode`.
+
 `packages/app` and `packages/ui` are not ordinary upstream mirrors. They are an
 L3 frozen takeover restored from `frontend-freeze-base-2` after sync. The
 restore must preserve the typed `AppSurfaces` seam and pass the freeze/anchor

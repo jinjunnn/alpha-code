@@ -148,12 +148,25 @@ bash scripts/alpha-check.sh
 
 本仓是 opencode 的 fork,继承了 ~26 个上游 workflow。它们要上游订阅的 **Blacksmith 自建 runner**(如 `runs-on: blacksmith-4vcpu-ubuntu-2404`),本 fork 没有这种机器 → 一触发就永久 `queued` 挂死。**这是历史上"CI 一直卡 / 连不通"的真因**(不是 API、不是限流、不是 alpha-ci)。
 
-2026-07-03 已 `gh workflow disable` 全部上游 workflow,**只保留**:
+2026-07-03 已 `gh workflow disable` 全部上游 workflow,alpha-owned 现役 workflow 见下表
+(`#899` 起 `sync-upstream` 拆成 candidate/push 两个信任域,详见下方"上游同步的信任域拆分"):
 
 | workflow | 作用 | 触发 |
 |---|---|---|
 | **`alpha-ci`** | 本仓 CI(上面三关) | `push` / `pull_request` → `alpha`;也可 `workflow_dispatch` |
-| **`sync-upstream`** | 每日上游 `dev → merge alpha` 同步 | 定时 + 手动 |
+| **`sync-upstream`** | 只读 candidate:合并上游、跑 guard/tripwire/引擎冒烟,产出待推送的 bundle artifact,**全程无推送凭据** | 定时 + 手动 |
+| **`sync-upstream-push`** | 特权推送:只解包并推送 candidate 已验证的提交,不执行任何上游代码 | `workflow_run`(仅当 `sync-upstream` 报告 `success`) |
+
+### 上游同步的信任域拆分(`#899`,SEC)
+
+原单一 job 的 `sync-upstream` 曾在整个 job 期间(含跑 `bun install`、启动合并后的引擎做冒烟测试)
+同时持有仓库推送凭据——一次被供应链攻破的上游 commit 理论上能在这段时间内从 `.git/config` 读走
+凭据。现拆成两个 workflow:`sync-upstream`(只读、`permissions: contents: read`、全文件零引用
+`secrets.SYNC_TOKEN`、`actions/checkout` 一律 `persist-credentials: false`)只负责合并与验证,
+成功后把 `dev`/`alpha` 的新提交打成不可变 git-bundle 上传为 artifact;`sync-upstream-push`
+(`permissions: contents: write`)只在前者 `success` 时被 `workflow_run` 触发,下载并校验该
+bundle(逐字比对提交 sha,防篡改),推送凭据仅在最后一步临时配置到 git remote——这个 job 全程
+不执行任何来自 `packages/opencode` / 上游的代码。
 
 - **分支保护 required contexts —— 幽灵 context 已消,记录落在仓内**(`#717`,2026-08-10 复核)。
   `alpha` 保护当前要求四个 context,与真实 job 名逐条对得上:

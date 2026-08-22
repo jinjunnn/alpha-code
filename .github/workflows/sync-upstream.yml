@@ -1,10 +1,27 @@
-# alpha-code auto-sync: keep `dev` a pristine mirror of anomalyco/opencode:dev,
-# then merge `dev` into the `alpha` product branch.
+# alpha-code auto-sync — CANDIDATE phase (untrusted, read-only, no push credentials).
 #
 # alpha only ADDS files, so the ONLY expected merge conflict is `bun.lock`
 # (adding workspace packages necessarily updates it). That case is auto-resolved
 # by taking upstream's lockfile and re-running `bun install`. Any OTHER conflict
 # means the "only-add" discipline was broken — the job fails loudly so a human looks.
+#
+# `#899`(SEC): this job used to also hold `contents: write` + a repo-push token in
+# `.git/config` for its whole duration WHILE running code fetched from the untrusted
+# upstream tree (`bun install` lifecycle scripts, then booting the merged engine for
+# the smoke test). A compromised upstream commit could read that credential out of
+# `.git/config` and push/exfiltrate with it. This job now has NO push credential at
+# all — `permissions: contents: read`, no `secrets.SYNC_TOKEN` reference anywhere in
+# this file, and every `actions/checkout` carries `persist-credentials: false`. It
+# does the merge, runs every guard/tripwire and the engine smoke test, and — only if
+# all of that succeeds — packages the resulting `dev`/`alpha` commits into an
+# immutable git-bundle artifact. It never pushes anything itself.
+#
+# The privileged half lives in `sync-upstream-push.yml`: a separate workflow, with
+# `contents: write` and the short-lived push token, triggered by `workflow_run` only
+# after this job reports `success` (i.e. only after every guard/smoke step passed).
+# It downloads the bundle this job produced, verifies it, and pushes the exact
+# commits validated here — it never executes any code from the merged tree, so the
+# push credential is never in the same process as untrusted code.
 name: sync-upstream
 
 on:
@@ -15,33 +32,30 @@ on:
     - cron: "0 6 * * *" # daily 06:00 UTC
   workflow_dispatch: {}
 
+# `#899`(SEC):只读。这个 job 全程不持有任何推送凭据——不要在这个文件里加 `contents: write`
+# 或引用 `secrets.SYNC_TOKEN`。推送凭据只属于 sync-upstream-push.yml。
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: sync-upstream
   cancel-in-progress: false
 
 jobs:
-  sync:
+  candidate:
     runs-on: ubuntu-latest
-    # 冲突路径的 `bun install` 会跑 husky prepare 重挂钩子,随后 push 被上游全量
+    # 冲突路径的 `bun install` 会跑 husky prepare 重挂钩子,随后 commit/push 被上游全量
     # turbo typecheck pre-push 挡死(冻结世界恒红,ADR-020 已知偏斜;2026-07-04~06
     # 连败三天即此)。权威门是 PR 的 alpha-ci,sync 机器人不走 husky 门。
     env:
       HUSKY: "0"
     steps:
-      - name: Checkout (full history)
+      - name: Checkout (full history, no push credential)
         uses: actions/checkout@v4
         with:
           ref: alpha
           fetch-depth: 0
-          # B19: the default GITHUB_TOKEN CANNOT push commits that touch .github/workflows/* (it
-          # lacks the `workflow` scope), and upstream syncs regularly change workflow files → every
-          # push failed. Provide a PAT (classic: `workflow` scope; or fine-grained: Contents +
-          # Workflows: write) as repo secret SYNC_TOKEN and this uses it; without the secret it
-          # falls back to GITHUB_TOKEN (still fails on workflow-file syncs — that's the known gap).
-          token: ${{ secrets.SYNC_TOKEN || github.token }}
+          persist-credentials: false
 
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
@@ -52,16 +66,20 @@ jobs:
         run: |
           git config user.name "alpha-code-bot"
           git config user.email "actions@users.noreply.github.com"
+          # jinjunnn/alpha-code and anomalyco/opencode are both public — plain
+          # anonymous HTTPS fetch works, no credential of any kind is needed here.
           git remote add upstream https://github.com/anomalyco/opencode.git
           git fetch --no-tags upstream dev
           git fetch --no-tags origin dev
+          # Captured before anything else touches the tree — this is the base the
+          # push workflow diffs its post-drift sanity check against.
+          echo "OLD_ALPHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
-      - name: Fast-forward `dev` mirror from upstream
+      - name: Fast-forward `dev` mirror from upstream (local only, no push)
         run: |
           old_dev="$(git rev-parse origin/dev)"
           git checkout -B dev origin/dev
           git merge --ff-only upstream/dev
-          git push --no-verify origin dev
           # SHAs are our own rev-parse output (not untrusted input) — safe to pass via env.
           echo "OLD_DEV=$old_dev" >> "$GITHUB_ENV"
           echo "NEW_DEV=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
@@ -88,7 +106,7 @@ jobs:
             echo "No upstream prompt/agent base changes this sync."
           fi
 
-      - name: Merge `dev` into `alpha` (auto-resolve bun.lock only)
+      - name: Merge `dev` into `alpha` (local only, no push)
         run: |
           git checkout alpha
           # B 方案(月更 pin+补丁,supersede ADR-020 冻结;owner 2026-07-21 拍板):packages/{app,ui}
@@ -135,7 +153,6 @@ jobs:
           }
           if git merge --no-edit --no-ff dev -m "chore(sync): merge upstream dev into alpha"; then
             apply_alpha_frontend_delta
-            git push --no-verify origin alpha
             exit 0
           fi
           conflicts="$(git diff --name-only --diff-filter=U)"
@@ -160,7 +177,6 @@ jobs:
             git add -A
             git commit --no-edit
             apply_alpha_frontend_delta
-            git push --no-verify origin alpha
           else
             echo "::error::Unexpected merge conflicts — the only-add discipline was broken:"
             echo "$unexpected"
@@ -196,9 +212,51 @@ jobs:
       # S39 复盘病灶 2(2026-07-12):ADR-020 预警过「冻结前端 ↔ 新引擎的运行时契约漂移,
       # typecheck 测不全,真机冒烟兜底」——此前冒烟从未机械化,sync 后引擎行为变化只能等真机撞见
       # (REQ-083 复验实锤:同一验收脚本 7-10 绿、合 sync 后 stage5 僵死)。本步无头启动合并后的
-      # 引擎 → 打关键端点 → 硬杀 → 同端口重启 → 再打(respawn 族覆盖)。失败 = 本 run 红:
-      # 引擎运行时冒烟破,发布/继续开发前必须人工排查(merge 已推送——红的意义是高声报警)。
+      # 引擎 → 打关键端点 → 硬杀 → 同端口重启 → 再打(respawn 族覆盖)。任一步失败 → 本 job 红,
+      # 不产出下面的 sync 产物 artifact,推送阶段永远不会看到这次改动(`#899`:smoke 通过之前
+      # 这个 job 连推送凭据都没有,失败即天然阻断推送,不需要额外的"先推后报警")。
       - name: Engine runtime smoke (S39 — boot/probe/kill/reboot)
         run: |
           bun install
           bash scripts/engine-smoke.sh
+
+      # `#899`(SEC):产出**不可变**的推送候选——把这次 sync 验证过的 `dev`/`alpha` 提交打包成
+      # git bundle。推送阶段只会解包并推送这些确切的 commit object,不会重新执行任何合并/安装/
+      # 冒烟逻辑(那些只发生在本 job、本 job 从不持有推送凭据)。范围严格限定在这次 sync 新增的
+      # 提交(排除 sync 开始前 origin 已有的历史),避免把整个 opencode 历史打进 artifact。
+      - name: Build sync bundle artifact
+        id: bundle
+        run: |
+          NEW_ALPHA="$(git rev-parse alpha)"
+          if [ "$OLD_DEV" = "$NEW_DEV" ] && [ "$OLD_ALPHA" = "$NEW_ALPHA" ]; then
+            echo "Nothing to sync this run — dev and alpha are unchanged. Skipping bundle/push." >> "$GITHUB_STEP_SUMMARY"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p sync-artifact
+          git bundle create sync-artifact/sync.bundle \
+            "$OLD_DEV..refs/heads/dev" "$OLD_ALPHA..refs/heads/alpha"
+          {
+            echo "old_dev=$OLD_DEV"
+            echo "new_dev=$NEW_DEV"
+            echo "old_alpha=$OLD_ALPHA"
+            echo "new_alpha=$NEW_ALPHA"
+          } > sync-artifact/manifest.env
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "## sync-upstream candidate ready to push"
+            echo ""
+            echo "| ref | before | after |"
+            echo "|---|---|---|"
+            echo "| dev | \`$OLD_DEV\` | \`$NEW_DEV\` |"
+            echo "| alpha | \`$OLD_ALPHA\` | \`$NEW_ALPHA\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sync bundle
+        if: steps.bundle.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-bundle
+          path: sync-artifact/
+          retention-days: 1
+          if-no-files-found: error

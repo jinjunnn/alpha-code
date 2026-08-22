@@ -1,0 +1,130 @@
+# alpha-code auto-sync — PUSH phase (privileged, short-lived token, zero untrusted execution).
+#
+# `#899`(SEC): this is the trusted half of the sync pipeline split off from
+# `sync-upstream.yml`. It holds `contents: write` and the repo push token, but it
+# never fetches, builds, or executes anything from the untrusted upstream tree —
+# it only downloads the immutable `sync-bundle` artifact that the candidate job
+# produced *after* the merge, every guard/tripwire, and the engine smoke test all
+# passed, verifies it, and pushes the exact `dev`/`alpha` commits it contains. No
+# `bun install`, no running the merged engine, no arbitrary shell over untrusted
+# content happens in this job — so the push credential is never in the same
+# process as code that came from `anomalyco/opencode`.
+#
+# Triggered by `workflow_run` so it only runs when `sync-upstream` (the candidate
+# workflow) reports `success` — a candidate run that failed a guard or the smoke
+# test never gets here, so nothing it produced is ever pushed.
+name: sync-upstream-push
+
+on:
+  workflow_run:
+    workflows: ["sync-upstream"]
+    types: [completed]
+
+# `#899`(SEC):这是唯一持有推送凭据的 job。`actions: read` 仅用于跨 run 下载候选 workflow
+# 产出的 artifact(同仓,`actions/download-artifact` 的标准跨 run 用法);`contents: write`
+# 仅用于最后的 `git push`。不要在这个文件里加任何构建/安装/执行步骤。
+permissions:
+  contents: write
+  actions: read
+
+# 与 sync-upstream.yml 共用同一个 concurrency group:一次完整的"候选→推送"周期跑完之前,
+# 下一次候选(定时或手动触发)排队等待——避免候选基于的 origin/dev、origin/alpha 在推送
+# 尚未落地时就被下一轮候选的 fetch 读到旧值,产生竞态。
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  push:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history, no push credential yet)
+        uses: actions/checkout@v4
+        with:
+          ref: alpha
+          fetch-depth: 0
+          persist-credentials: false
+
+      # 候选 job 在"什么都没变"(dev/alpha 相对上次 sync 均无新提交)时不上传 artifact——
+      # 这不是错误,是正常的"今天没有上游更新"。用 continue-on-error 让下载失败不把整个
+      # workflow run 标红,后续步骤按 outcome 判断是否有活干。
+      - name: Download sync bundle
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: sync-bundle
+          path: sync-artifact
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Nothing to push
+        if: steps.download.outcome != 'success'
+        run: echo "候选 run ${{ github.event.workflow_run.id }} 没有产出 sync-bundle(本轮上游无新提交)。Nothing to push."
+
+      - name: Verify + unbundle candidate commits
+        if: steps.download.outcome == 'success'
+        id: unbundle
+        run: |
+          set -euo pipefail
+          test -f sync-artifact/manifest.env
+          test -f sync-artifact/sync.bundle
+          # shellcheck disable=SC1091
+          source sync-artifact/manifest.env
+          echo "candidate manifest: dev $old_dev -> $new_dev, alpha $old_alpha -> $new_alpha"
+          git bundle verify sync-artifact/sync.bundle
+          git fetch sync-artifact/sync.bundle \
+            "refs/heads/dev:refs/candidate/dev" \
+            "refs/heads/alpha:refs/candidate/alpha"
+          # 防篡改/防校验绕过:解包出来的 commit 必须逐字等于清单里写的那两个 sha —— 不信任
+          # artifact 里任何"看起来对"的东西,只信任 git 自己算出来的哈希。
+          fetched_dev="$(git rev-parse refs/candidate/dev)"
+          fetched_alpha="$(git rev-parse refs/candidate/alpha)"
+          if [ "$fetched_dev" != "$new_dev" ]; then
+            echo "::error::候选 dev 提交($fetched_dev)与清单记录($new_dev)不一致 —— artifact 可能被篡改或损坏。Aborting."
+            exit 1
+          fi
+          if [ "$fetched_alpha" != "$new_alpha" ]; then
+            echo "::error::候选 alpha 提交($fetched_alpha)与清单记录($new_alpha)不一致 —— artifact 可能被篡改或损坏。Aborting."
+            exit 1
+          fi
+          echo "old_dev=$old_dev" >> "$GITHUB_OUTPUT"
+          echo "new_dev=$new_dev" >> "$GITHUB_OUTPUT"
+          echo "old_alpha=$old_alpha" >> "$GITHUB_OUTPUT"
+          echo "new_alpha=$new_alpha" >> "$GITHUB_OUTPUT"
+
+      # 推送凭据仅在这一步、仅为这一次 push 而配置——checkout 用的是
+      # `persist-credentials: false`,这之前的每一步(下载/校验/解包)全程无凭据。
+      #
+      # B19: the default GITHUB_TOKEN CANNOT push commits that touch .github/workflows/*
+      # (it lacks the `workflow` scope), and upstream syncs regularly change workflow
+      # files → every push would fail. Provide a PAT (classic: `workflow` scope; or
+      # fine-grained: Contents + Workflows: write) as repo secret SYNC_TOKEN and this
+      # uses it; without the secret it falls back to GITHUB_TOKEN (still fails on
+      # workflow-file syncs — that's the known gap, unchanged by this split).
+      - name: Configure push credential
+        if: steps.download.outcome == 'success'
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+        run: |
+          git remote set-url origin "https://x-access-token:${SYNC_TOKEN}@github.com/${{ github.repository }}.git"
+
+      # 非 force push:如果 origin/dev 或 origin/alpha 在候选 job 跑完之后、这次推送之前被
+      # 别的途径动过(人工推送 / 另一次并发的完整周期),这里会被 git 自然拒绝(非 fast-forward)
+      # 而不是覆盖——loud-fail,不静默覆盖别人的提交。
+      - name: Push validated dev + alpha
+        if: steps.download.outcome == 'success'
+        run: |
+          git push --no-verify origin refs/candidate/dev:refs/heads/dev
+          git push --no-verify origin refs/candidate/alpha:refs/heads/alpha
+          {
+            echo "## sync-upstream-push"
+            echo ""
+            echo "Pushed candidate from run ${{ github.event.workflow_run.id }}:"
+            echo ""
+            echo "| ref | before | after |"
+            echo "|---|---|---|"
+            echo "| dev | \`${{ steps.unbundle.outputs.old_dev }}\` | \`${{ steps.unbundle.outputs.new_dev }}\` |"
+            echo "| alpha | \`${{ steps.unbundle.outputs.old_alpha }}\` | \`${{ steps.unbundle.outputs.new_alpha }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
