@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, Show, type Accessor, type JSX } from "solid-js"
+import { AlphaBoundary } from "../alpha-boundary"
 import { t } from "../../i18n"
 import { rovingKey, rovingTabIndex } from "../roving-focus"
 import { acceptedEngineChannel, type AlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-rail-core"
@@ -74,6 +75,15 @@ function railPanelLabel(panel: SessionRailPanel) {
   if (panel === "files") return t("alpha.session.files")
   if (panel === "terminal") return t("alpha.session.terminal")
   return t("alpha.session.artifacts")
+}
+
+// #905:各区域独立的 AlphaBoundary 名字(区分崩溃提示/激活复验探针)。与时间线共用同一命名
+// 前缀,与 index.tsx 顶层注入件的 AlphaBoundary 名字空间不重叠。
+function railPanelBoundaryName(panel: SessionRailPanel) {
+  if (panel === "review") return "SessionPanelReview"
+  if (panel === "files") return "SessionPanelFiles"
+  if (panel === "terminal") return "SessionPanelTerminal"
+  return "SessionPanelArtifacts"
 }
 
 function WorkspaceTopbar(props: {
@@ -315,7 +325,10 @@ export function SessionWorkspaceShell(props: {
           data-alpha-session-timeline-host
           aria-label={t("alpha.session.timelineHost")}
         >
-          {typeof props.timeline === "function" ? props.timeline(rail) : props.timeline}
+          {/* #905:时间线自己的区域边界 —— 崩溃只降级本区域,composer 与其余骨架不受牵连。 */}
+          <AlphaBoundary name="SessionTimeline">
+            {typeof props.timeline === "function" ? props.timeline(rail) : props.timeline}
+          </AlphaBoundary>
         </section>
         <section
           class="a-swk-composer-dock"
@@ -405,7 +418,9 @@ export function SessionWorkspaceShell(props: {
                     data-alpha-session-rail-panel-host={kind}
                     classList={{ "a-swk-rail-panel--hidden": panel() !== kind }}
                   >
-                    {renderPanel(rail)}
+                    {/* #905:每个已访问面板各自的区域边界 —— 一个面板渲染期抛错,只降级该
+                        面板(可「重载此区域」),其余面板/时间线/composer 照常挂载。 */}
+                    <AlphaBoundary name={railPanelBoundaryName(kind)}>{renderPanel(rail)}</AlphaBoundary>
                   </div>
                 )
               }}

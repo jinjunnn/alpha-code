@@ -37,12 +37,14 @@ beforeEach(() => {
   document.body.replaceChildren()
 })
 
-afterEach(() =>
+afterEach(() => {
+  // #905:崩溃探针是模块级全局信号,任一用例断言失败于复位前抛出都会漏到下一条用例。
+  window.__alphaCrashProbe?.(null)
   disposers
     .splice(0)
     .reverse()
-    .forEach((dispose) => dispose()),
-)
+    .forEach((dispose) => dispose())
+})
 
 afterAll(() => GlobalRegistrator.unregister())
 
@@ -437,5 +439,47 @@ describe("REQ-125 session workspace real Solid mount", () => {
     await flush()
     expect(escape.defaultPrevented).toBe(false)
     expect(tab("review").classList.contains("a-swk-rail-tab--on")).toBe(true)
+  })
+
+  // #905:一个右栏面板渲染期抛错,只能降级它自己的区域 —— composer(含未发送草稿)与时间线
+  // 骨架必须原样留在 DOM 里,失败区域要给出可点击的重载动作。把 session-workspace-shell.tsx
+  // 的分区边界改回单一整页边界(或彻底移除)时,这条用例必崩:探针触发的 throw 不再被任何
+  // ErrorBoundary 拦下,会直接从 window.__alphaCrashProbe(...) 同步抛出,整条用例转红。
+  test("#905 a crashing rail panel degrades only that region — composer and timeline survive, reload action appears", async () => {
+    const host = mount()
+    await flush()
+
+    const composerStub = () => host.querySelector("[data-alpha-session-composer-stub]")
+    const timelineHost = () => host.querySelector("[data-alpha-session-timeline-host]")
+    const topbar = () => host.querySelector("[data-alpha-session-workspace-topbar]")
+    const composerBefore = composerStub()
+    const timelineBefore = timelineHost()
+    expect(composerBefore).not.toBeNull()
+    expect(timelineBefore).not.toBeNull()
+
+    // Default lane is "review" and it is already mounted — crash it in place.
+    window.__alphaCrashProbe?.("SessionPanelReview")
+    await flush()
+
+    // Composer, its (stub) draft node, timeline host, and topbar are the *same* DOM nodes —
+    // proof the workspace never unmounted/remounted, unlike the old single full-page boundary.
+    expect(composerStub()).toBe(composerBefore)
+    expect(timelineHost()).toBe(timelineBefore)
+    expect(topbar()).not.toBeNull()
+
+    // The failed region itself shows a local reload action, scoped to that panel's host.
+    const reviewPanelHost = host.querySelector("[data-alpha-session-rail-panel-host='review']")!
+    expect(reviewPanelHost.querySelector("[data-harness-panel='review']")).toBeNull()
+    const reloadButton = reviewPanelHost.querySelector<HTMLButtonElement>(".a-boundary-btn")
+    expect(reloadButton).not.toBeNull()
+
+    // Reload action recovers the region without touching the rest of the workspace. Clear the
+    // probe first — same discipline as the CDP recipe in alpha-boundary.tsx's own header comment
+    // (probe null, then click) — otherwise the remount would crash again on the same throw.
+    window.__alphaCrashProbe?.(null)
+    reloadButton!.click()
+    await flush()
+    expect(reviewPanelHost.querySelector("[data-harness-panel='review']")).not.toBeNull()
+    expect(composerStub()).toBe(composerBefore)
   })
 })
