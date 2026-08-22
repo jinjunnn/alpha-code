@@ -905,14 +905,18 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const authSignature = (state: AuthState) =>
     `${state.status}\u0000${state.mode}\u0000${state.platformStatus ?? "ready"}\u0000${state.account?.email ?? ""}`
   const preflightCtx = () => ({
+    // #686:链的引擎事实(下面四项)在 runModelChain 起手时被整批复位 —— 未就绪时把它们喂给判据
+    // 只会得到一条编造的拒绝。就绪与否因此是判据的**必填入参**,不再是一句请求调用方自觉的注释。
+    engineFactsReady: modelChainState() === "ready",
     loggedIn: lastAuth()?.status === "logged-in" && (lastAuth()?.platformStatus ?? "ready") === "ready",
     platformProviderId: platformId(),
     hasConfiguredByok: hasConfiguredByok(),
     engineModels: engineModelRefs(),
   })
   /** #595:已选的本地 BYOK 在引擎清单里查无对应节点(含引擎成功返回空清单)—— 可选择性照旧
-   *  (不撤销),但**不可执行**。判据自己不猜「就绪」:`engineModelRefs` 只在链 ready 之前写入
-   *  (:995 早于 :1046),消费方一律先过 `modelChainState() === "ready"`,冷启动窗口不会误杀。 */
+   *  (不撤销),但**不可执行**。
+   *  #686:「链是否就绪」现在经 `preflightCtx().engineFactsReady` 喂进判据本体,未就绪时它回
+   *  `not-ready` 而非本结论 —— 因此本 memo 与它的每一个消费点都不必(也不能)再各自记得先把门。 */
   const byokNotRegistered = createMemo(
     () => preflightBlockReason(composerModel(), preflightCtx()) === "byok-not-registered",
   )
@@ -1424,11 +1428,20 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
                 title: t("alpha.composer.modelNotLoaded", { model: composerModel()?.name ?? "" }),
                 detail: t("alpha.composer.modelNotLoadedDetail"),
               }
-            : {
-                kind: "info",
-                title: t("alpha.composer.noModel"),
-                detail: t("alpha.composer.noModelDetail"),
-              },
+            : // #686:未就绪只能说「正在读取」—— 断言「引擎没有加载这个模型」是链 ready 之后才成立的
+              // 结论。上面的 modelChainState 早退已覆盖本分支,这里是纵深:少了它,新增的 not-ready
+              // 会静默落进下面的「没有可用模型」文案,又是一条编造的结论。
+              block === "not-ready"
+              ? {
+                  kind: "info",
+                  title: t("alpha.composer.modelStateReading"),
+                  detail: t("alpha.composer.modelStateDetail"),
+                }
+              : {
+                  kind: "info",
+                  title: t("alpha.composer.noModel"),
+                  detail: t("alpha.composer.noModelDetail"),
+                },
       )
       return
     }
@@ -1708,7 +1721,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       </Show>
       {/* #595:发送门因「引擎没有这个直连节点」而关闭时,必须常驻如实说明 ——
           按钮已 disabled,toast 点不出来,不说等于静默失败。选择本身照旧保留。 */}
-      <Show when={modelChainState() === "ready" && byokNotRegistered()}>
+      {/* #686:不再在这里补一道 ready —— 判据自己就不会在未就绪时给出这个结论。 */}
+      <Show when={byokNotRegistered()}>
         <div class="a-comp-model-alert" role="status">
           <span>{t("alpha.composer.modelNotLoaded", { model: composerModel()?.name ?? "" })}</span>
           <span>{t("alpha.composer.modelNotLoadedDetail")}</span>

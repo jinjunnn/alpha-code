@@ -206,6 +206,7 @@ describe("preflightBlockReason(发送前最后一道)", () => {
   const pctx = (
     over: Partial<Parameters<typeof preflightBlockReason>[1]>,
   ): Parameters<typeof preflightBlockReason>[1] => ({
+    engineFactsReady: true,
     loggedIn: false,
     platformProviderId: PLATFORM,
     hasConfiguredByok: false,
@@ -259,6 +260,27 @@ describe("preflightBlockReason(发送前最后一道)", () => {
     expect(
       preflightBlockReason({ providerID: "my-endpoint", id: "x" }, pctx({ loggedIn: true, engineModels: engineWithDs })),
     ).toBeNull()
+  })
+  // #686 咽喉:「未就绪」是判据自己的返回值,不是一句请求调用方自觉的注释。冷启动窗口里
+  // engineModels 被链复位为空,而选择(内存写)已经在了 —— 此刻**任何**事实性拒绝都是编造的。
+  test("#686:链未就绪 + 空清单 + 已选 BYOK → not-ready(绝不是 byok-not-registered)", () => {
+    const byok = { providerID: "deepseek-byok", id: "deepseek-v4-flash" }
+    expect(preflightBlockReason(byok, pctx({ engineFactsReady: false }))).toBe("not-ready")
+  })
+  test("#686:链未就绪时其余事实性结论一并让位 —— 复位中的 auth/KEY 同样不可采信", () => {
+    // 三条事实性拒绝在 ready 态下各自成立(对照组),未就绪时必须全部收敛成 not-ready。
+    expect(preflightBlockReason(proxyModel, pctx({}))).toBe("platform-needs-login")
+    expect(preflightBlockReason(proxyModel, pctx({ engineFactsReady: false }))).toBe("not-ready")
+    expect(preflightBlockReason(null, pctx({}))).toBe("nothing-usable")
+    expect(preflightBlockReason(null, pctx({ engineFactsReady: false }))).toBe("not-ready")
+  })
+  test("#686:链 ready 后真·未注册照旧拦住(闸没有被 not-ready 顶掉)", () => {
+    const byok = { providerID: "deepseek-byok", id: "deepseek-v4-flash" }
+    expect(preflightBlockReason(byok, pctx({ engineFactsReady: true, engineModels: engineWithProxy }))).toBe(
+      "byok-not-registered",
+    )
+    // 而清单含该节点时仍然放行 —— 未就绪闸不得顺手收紧正常路径。
+    expect(preflightBlockReason(byok, pctx({ engineFactsReady: true, engineModels: [byok] }))).toBeNull()
   })
   test("catalog 未知(platformProviderId null)→ 平台判定不误伤", () => {
     expect(preflightBlockReason(proxyModel, pctx({ platformProviderId: null, hasConfiguredByok: true }))).toBeNull()
