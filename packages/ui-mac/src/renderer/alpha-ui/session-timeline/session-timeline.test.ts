@@ -36,7 +36,8 @@ describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () =
     // R1 Minor-B #586:结构化结果缺 url 键被丢弃时出缺席提示(51 → 52)。
     // #582:E3/E4 斜杠 chip 来源分型(skill 橙/mcp 紫/command 通用 + source 缺席负向)(52 → 56)。
     // #949:read 目录分支的生产铸形落目录网格 + 文件 read 不改派的 fail-closed 负向(56 → 58)。
-    expect(output).toContain("58 pass")
+    // `#906`:产物链接行把 descriptor id 一路带进 intent(点第 3 行递第 3 个的 id)(58 → 59)。
+    expect(output).toContain("59 pass")
     expect(output).toContain("0 fail")
   })
 })
