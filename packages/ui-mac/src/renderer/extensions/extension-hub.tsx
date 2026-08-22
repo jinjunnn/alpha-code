@@ -255,7 +255,36 @@ export function ExtensionHub(props: {
   // 云可用 ⟺ 已登录且 platform 模式(mcp.cloud 由 sidecar 在该态注入,ADR-013/ADR-016)。
   const [authState, setAuthState] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
   onCleanup(subscribeAuthState(setAuthState))
-  const cloudReady = () => authState().status === "logged-in" && authState().mode === "platform"
+  // 「人在平台上」——**身份轴**,不含凭证是否可用。只驱动**文案分支**,绝不单独放行能力。
+  const onPlatform = () => authState().status === "logged-in" && authState().mode === "platform"
+  // `#624`:平台凭证正在恢复。`platformStatus` 只在登录态出现(main/alpha-auth.ts deriveState),
+  // 故 `?? "ready"` 的缺席分支恒被 `onPlatform()` 先挡掉,与 alpha-composer.tsx:1110 同约定。
+  const cloudRecovering = () => onPlatform() && (authState().platformStatus ?? "ready") === "recovering"
+  // `#624`:**能力放行**判据 —— 恢复中 fail-close。此前只看 status+mode,recovering 照样放行。
+  //
+  // 为什么 fail-close(判断依据,退出条件 1 要求写下来而不是默默改掉):
+  //  ① `platformStatus:"recovering"` 的定义(preload/types.ts)就是「平台代理凭证**尚未**验证
+  //     可用」——app 自己已经不信这份凭证了。
+  //  ② 这个谓词放行的不是展示,是本渲染进程**权限最高**的两个动作:云派发(ADR-021 的代码
+  //     出境 + 平台计费)与 enableCloud。
+  //  ③ main **不会**替我们兜底:`getAccessToken`(alpha-auth.ts)只校验 token 的 purpose 声明、
+  //     不看有效期,`alpha-cloud-jobs.ts` 的 `authed()` 只判 token **在不在**。所以过期那一支里,
+  //     本谓词是「把 diff 发给平台」与用户之间的**唯一**一道闸 —— 放行的结果是代码先出境、
+  //     再收 401,而不是拦下来。
+  //  ④ 同一信号的其余**放行型**消费者早已 fail-close(alpha-composer.tsx:911/1110,以及同目录
+  //     下 composer 的模型链姊妹件里 loadSummary 的 recovering 短路 —— 那个模块名不写全,
+  //     REQ-090 的纯文本棘轮(takeover-adapter-coexistence.test.ts)按 token 计命中,
+  //     一句引用会被它记成「又一个挂载点」)。本谓词 2026-07-06 写成,`platformStatus` 2026-07-24 才
+  //     随 REQ-109/110 落地 —— 这是**契约落地前写的旧判据**漏了跟进,不是刻意豁免。
+  //  ⑤ fail-close 有界自证,不是死锁:auth-recovery.ts 不变量 A/B 保证 owner 持续重读到 ready。
+  //
+  // 接受的代价:`recovering` 有两支成因(凭证过期 / 续期未换血),后者 main 手上其实握着新
+  // token、派发本会成功,被一并拦下。renderer 收到的是**同一个** `recovering`,分辨不出来;
+  // 一对分辨不出的成因,安全方向是 fail-close。
+  //
+  // ⚠️ fail-close **不等于**复用未登录/BYOK 那套文案:此时用户确实已登录、确实在 platform 模式,
+  // 说「切换到平台模式」既是假话,按钮点下去还是 no-op。恢复中因此走自己的一支(见云 tab 门控条)。
+  const cloudReady = () => onPlatform() && !cloudRecovering()
   const cloudLive = () => ext.store.mcp["cloud"]
   const [query, setQuery] = createSignal("")
   const [busy, setBusy] = createSignal<string | null>(null)
@@ -2427,6 +2456,7 @@ export function ExtensionHub(props: {
                     onUninstall={(r) => void onUninstall(r)}
                     onOpenEntry={(e) => openEntryDetail(e)}
                     cloudReady={cloudReady}
+                    cloudRecovering={cloudRecovering}
                     onLogin={authState().status !== "logged-in" ? () => void window.api.auth.start() : undefined}
                     governance={governance}
                     onToggleState={runStateToggle}
@@ -2870,28 +2900,38 @@ export function ExtensionHub(props: {
                     {/* 门控条:未登录 → 登录 CTA;BYOK → 切平台模式说明(诚实:切换/登录后由
                         sidecar 注入 mcp.cloud,注入发生在启动装配,未点亮时重启完成注入)。 */}
                     <Show when={!cloudReady()}>
-                      <div class="alpha-ext-cloudgate">
+                      {/* `#624`:三态,不是两态。恢复中的用户**已登录、已在 platform 模式** ——
+                          落进「切换到平台模式」那一支会给出一句假话,而且按钮点下去是 no-op。
+                          恢复中因此自成一支:说清「凭证正在恢复、会自动重试」,**不给动作**
+                          (用户此刻无事可做,给按钮就是 placebo)。 */}
+                      <div class="alpha-ext-cloudgate" data-recovering={cloudRecovering() ? "" : undefined}>
                         <div class="alpha-ext-cloudgate-t">
-                          {authState().status !== "logged-in"
-                            ? t("alpha.ext.cloudGateTitleLogin")
-                            : t("alpha.ext.cloudGateTitleMode")}
+                          {cloudRecovering()
+                            ? t("alpha.ext.cloudGateTitleRecovering")
+                            : authState().status !== "logged-in"
+                              ? t("alpha.ext.cloudGateTitleLogin")
+                              : t("alpha.ext.cloudGateTitleMode")}
                         </div>
-                        <div class="alpha-ext-cloudgate-sub">{t("alpha.ext.cloudGateSub")}</div>
-                        <Show
-                          when={authState().status !== "logged-in"}
-                          fallback={
-                            <button
-                              class="alpha-ext-add"
-                              data-variant="primary"
-                              onClick={() => void window.api.auth.setMode("platform")}
-                            >
-                              {t("alpha.ext.cloudSwitchMode")}
+                        <div class="alpha-ext-cloudgate-sub">
+                          {cloudRecovering() ? t("alpha.ext.cloudGateSubRecovering") : t("alpha.ext.cloudGateSub")}
+                        </div>
+                        <Show when={!cloudRecovering()}>
+                          <Show
+                            when={authState().status !== "logged-in"}
+                            fallback={
+                              <button
+                                class="alpha-ext-add"
+                                data-variant="primary"
+                                onClick={() => void window.api.auth.setMode("platform")}
+                              >
+                                {t("alpha.ext.cloudSwitchMode")}
+                              </button>
+                            }
+                          >
+                            <button class="alpha-ext-add" data-variant="primary" onClick={() => void window.api.auth.start()}>
+                              {t("alpha.ext.cloudLoginCta")}
                             </button>
-                          }
-                        >
-                          <button class="alpha-ext-add" data-variant="primary" onClick={() => void window.api.auth.start()}>
-                            {t("alpha.ext.cloudLoginCta")}
-                          </button>
+                          </Show>
                         </Show>
                       </div>
                     </Show>
@@ -2918,9 +2958,20 @@ export function ExtensionHub(props: {
                           {/* `#733`:云连接器是用户看这条状态的**主要**地方 —— `needs_auth` 在这里
                               也必须说成「需要重新登录」并给出动作,否则用户读到的是「未连接(引擎会
                               自动重连)」,而引擎其实永远不会自己连上。 */}
+                          {/* `#624`:恢复中不能说「需登录平台模式」—— 用户已登录。 */}
                           <span
                             class="alpha-ext-cloudst"
-                            data-st={cloudReady() ? (cloudLive()?.needsAuth ? "idle" : cloudLive()?.connected ? "on" : "idle") : "off"}
+                            data-st={
+                              cloudReady()
+                                ? cloudLive()?.needsAuth
+                                  ? "idle"
+                                  : cloudLive()?.connected
+                                    ? "on"
+                                    : "idle"
+                                : cloudRecovering()
+                                  ? "idle"
+                                  : "off"
+                            }
                           >
                             {cloudReady()
                               ? cloudLive()?.needsAuth
@@ -2928,7 +2979,9 @@ export function ExtensionHub(props: {
                                 : cloudLive()?.connected
                                   ? t("alpha.ext.cloudConnConnected")
                                   : t("alpha.ext.cloudConnDisconnected")
-                              : t("alpha.ext.cloudConnNeedLogin")}
+                              : cloudRecovering()
+                                ? t("alpha.ext.cloudConnRecovering")
+                                : t("alpha.ext.cloudConnNeedLogin")}
                           </span>
                           {" · "}
                           {t("alpha.ext.cloudConnectorDesc")}

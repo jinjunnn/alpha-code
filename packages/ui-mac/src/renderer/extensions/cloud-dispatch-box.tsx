@@ -53,7 +53,9 @@ function uploadError(code: Extract<CloudUploadResult, { status: "failed" }>["err
   return dispatchError(code)
 }
 
-export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolean }) {
+/** `#624`:`ready` 是**放行**判据(恢复中为 false);`recovering` 只改那句「为什么不能点」——
+ *  恢复中说「需登录平台模式」是假话,用户已经登录了。 */
+export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolean; recovering?: boolean }) {
   const [state, setState] = createStore<{
     phase: Phase
     err: string
@@ -241,7 +243,9 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
           {t("alpha.cloud.consent.legacyDiff")}
         </button>
         <Show when={!props.ready}>
-          <span class="alpha-ext-meta">{t("alpha.ext.cloudNeedPlatformNote")}</span>
+          <span class="alpha-ext-meta">
+            {props.recovering ? t("alpha.ext.cloudRecoveringNote") : t("alpha.ext.cloudNeedPlatformNote")}
+          </span>
         </Show>
         <Show when={state.transparent}>
           <span class="alpha-ext-meta" data-live="">{t("alpha.cloud.consent.silentPass")}</span>
