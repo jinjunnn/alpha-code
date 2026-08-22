@@ -1211,14 +1211,57 @@ export function releaseStandaloneClaim(root: string, kind: InstallReceiptType, n
   return { ok: true, remainingOwners: findClaim(claims, kind, name)?.owners ?? [] }
 }
 
-/** 只读:某个 child 当前的 owner 集合(空 = 无 claim)。 */
-export function packageClaimOwners(root: string, kind: string, name: string): string[] {
-  return findClaim(parseLedger(root).parsed.claims, kind, name)?.owners ?? []
+export type PackageClaimOwnersReadV1 = { ok: true; owners: string[] } | { ok: false; reason: string }
+export type PackageGraphsReadV1 = { ok: true; packageGraphs: PackageGraphV1[] } | { ok: false; reason: string }
+
+/**
+ * `#773`:V3 段的**唯一**读闸。三条只读路径(图 / claim / 计划期状态)共用它,所以它们对
+ * 同一本坏账本给出**同一个诊断**。
+ *
+ * 为什么必须共用:此前 `readPackageGraphs` / `packageClaimOwners` 各自 `parseLedger(...).parsed.X`
+ * —— 而 `parseLedger` 在读失败、信封版本读不懂、V3 段解不开时返回的是那个 `empty` 常量。于是
+ * 「读不出来」与「本来就没有」在返回值上**逐字相同**:图退化成 `[]` = 装好的包呈现为「没装」
+ * (`docs/contracts/extension-package-lifecycle.md` 明写这是要消灭的状态),claim 退化成 `[]` =
+ * 「owner 集为空」= 删除三条件的第一条被满足,一次读失败就成了一张删除许可。
+ *
+ * 这比崩溃更坏:崩溃有人去查,「看起来没装」只会让人以为自己记错了。
+ *
+ * `what` 只进最后那句拒绝语,**诊断本身逐字相同** —— 一致性是可断言的(见
+ * `ext-receipt-v2.test.ts` 的 `#773` 组),而每条路径仍然说得出自己拒绝的是什么动作。
+ */
+function gatePackageLedgerRead(
+  root: string,
+  what: string,
+  options: LedgerReadOptions = {},
+): { ok: true; parsed: ParsedLedger } | { ok: false; reason: string } {
+  const { parsed, corrupt, readError } = parseLedger(root, options.sideEffectFree)
+  if (readError) return { ok: false, reason: `${readError} — refusing to ${what}` }
+  if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to ${what}` }
+  if (parsed.corruptRecords.unattributable)
+    return { ok: false, reason: `ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
+  const invariants = validateV3State({
+    recordKeys: recordKeysOf(parsed.records),
+    packageGraphs: parsed.packageGraphs,
+    claims: parsed.claims,
+  })
+  if (!invariants.ok)
+    return { ok: false, reason: `ledger state is not self-consistent: ${invariants.reason}; inspect ${ledgerPath(root)}` }
+  return { ok: true, parsed }
 }
 
-/** 只读:账本里的 package 图(渲染/诊断面;`#698` 的 diff 消费同一真源)。 */
-export function readPackageGraphs(root: string): PackageGraphV1[] {
-  return parseLedger(root).parsed.packageGraphs
+/** 只读:某个 child 当前的 owner 集合(`ok` 且空 = 无 claim;读不出来 = `ok:false`,不是空)。 */
+export function packageClaimOwners(root: string, kind: string, name: string): PackageClaimOwnersReadV1 {
+  const gate = gatePackageLedgerRead(root, "read package claims")
+  if (!gate.ok) return gate
+  return { ok: true, owners: findClaim(gate.parsed.claims, kind, name)?.owners ?? [] }
+}
+
+/** 只读:账本里的 package 图(渲染/诊断面;`#698` 的 diff 消费同一真源)。
+ *  读不出来 ⇒ `ok:false`,**绝不**是空数组:那正是「装好的包显示成没装」的入口。 */
+export function readPackageGraphs(root: string): PackageGraphsReadV1 {
+  const gate = gatePackageLedgerRead(root, "read package graphs")
+  if (!gate.ok) return gate
+  return { ok: true, packageGraphs: gate.parsed.packageGraphs }
 }
 
 export type PackageLedgerStateReadV1 =
@@ -1247,16 +1290,18 @@ export type PackageLedgerStateReadV1 =
  * 判据必须与写盘期**同一条**(`validateV3State`),否则两处会各自漂移。
  */
 export function readPackageLedgerStateV1(root: string, options: LedgerReadOptions = {}): PackageLedgerStateReadV1 {
-  const { parsed, corrupt, readError } = parseLedger(root, options.sideEffectFree)
-  if (readError) return { ok: false, reason: `${readError} — refusing to plan a package operation` }
-  if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to plan a package operation` }
-  if (parsed.corruptRecords.unattributable)
-    return { ok: false, reason: `ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
-  const recordKeys = recordKeysOf(parsed.records)
-  const invariants = validateV3State({ recordKeys, packageGraphs: parsed.packageGraphs, claims: parsed.claims })
-  if (!invariants.ok)
-    return { ok: false, reason: `ledger state is not self-consistent: ${invariants.reason}; inspect ${ledgerPath(root)}` }
-  return { ok: true, packageGraphs: parsed.packageGraphs, claims: parsed.claims, recordKeys, records: parsed.records }
+  // `#773`:与 `readPackageGraphs` / `packageClaimOwners` 同一道闸 —— 三条路径对同一本坏账本
+  // 给出同一个诊断。分三份写会漂移,而漂移的方向历史上恒定是「读路径悄悄降级成空」。
+  const gate = gatePackageLedgerRead(root, "plan a package operation", options)
+  if (!gate.ok) return gate
+  const { parsed } = gate
+  return {
+    ok: true,
+    packageGraphs: parsed.packageGraphs,
+    claims: parsed.claims,
+    recordKeys: recordKeysOf(parsed.records),
+    records: parsed.records,
+  }
 }
 
 /** desiredState 翻转(Hub 项目上下文「禁用」的 main 侧真源;引擎生效面由消费方处理)。

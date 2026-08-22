@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code
-last_reviewed: 2026-08-01
+last_reviewed: 2026-08-22
 review_after: 2027-02-01
 ---
 
@@ -17,7 +17,8 @@ and when the user removes it — and why a child can survive its package.
 
 The install half is [`host-extension-package-v1.md`](host-extension-package-v1.md);
 the ledger's V3 shape (`packageGraphs` / `claims` / owner tokens) is
-[`extension-install-ledger.md`](extension-install-ledger.md).
+[`extension-install-ledger.md`](extension-install-ledger.md) §6 — including the
+rule that an unreadable ledger is never read as an empty one.
 
 ## Identity: exact digests only
 

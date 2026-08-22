@@ -19,6 +19,9 @@ import {
   probeLedgerForWrite,
   projectScopeIdentity,
   readLedgerV2,
+  packageClaimOwners,
+  readPackageGraphs,
+  readPackageLedgerStateV1,
   removeRecordV2,
   setDesiredStateV2,
   toV1Receipt,
@@ -782,5 +785,73 @@ describe("#336 skills projection final-publish lag — 判别式如实上报", (
     expect(third.ok).toBe(true)
     if (!third.ok) throw new Error("unreachable")
     expect(third.projectionLag).toBeUndefined() // keys 集无变化(全 mcp)→ alreadyFinal 跳过 publish
+  })
+})
+
+// ── `#773`:V3 只读路径的一致失败(读不出来 ≠ 空)────────────────────────────────────────────
+//
+// 修复前:`readPackageGraphs` / `packageClaimOwners` 各自 `parseLedger(...).parsed.X`,而
+// `parseLedger` 对读失败返回的是 `empty` 常量 —— 于是它们对同一本坏账本返回 `[]`,与
+// 「本来就没有」在返回值上逐字相同,而同一本账本的 `readPackageLedgerStateV1` 已经在响亮失败。
+// 一本账本,两条读路径,相反的答案。
+//
+// 后果不是崩溃:图退化成 `[]` = 装好的包在界面上呈现为「没装」(移除按钮跟着消失、claim 无人认领,
+// 见 `docs/contracts/extension-package-lifecycle.md`「renders as not installed」);claim 退化成
+// `[]` = 删除三条件的第一条(owner 集为空)被满足 —— 一次读失败成了一张删除许可。
+//
+// 判据(本组存在的理由):把三条路径里的**任何一条**改回 `return parseLedger(root).parsed.X`,
+// 「三条给出同一个诊断」当场红。实测已做过这次反向绕过。
+describe("#773 —— 坏账本:三条 V3 只读路径给出一致的、可观察的失败", () => {
+  // 每种「坏」都在 parseLedger 里走不同的分支(readError / corrupt / 信封版本 / V3 段解不开),
+  // 而它们此前**全部**折叠成同一个 `empty` 常量。逐个都要钉,只钉一个会让另外三条继续静默。
+  const BROKEN: Array<{ label: string; seed: () => void }> = [
+    { label: "JSON 解不开", seed: () => fs.writeFileSync(ledgerFile(), "{ not json") },
+    { label: "records 不是数组", seed: () => fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 3, receipts: [], records: {} })) },
+    {
+      label: "信封版本比本构建新",
+      seed: () => fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 99, receipts: [], records: [] })),
+    },
+    {
+      label: "V3 段解不开(claims 形状非法)",
+      seed: () => fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 3, receipts: [], records: [], packageGraphs: [], claims: [{ nope: 1 }] })),
+    },
+  ]
+
+  for (const { label, seed } of BROKEN) {
+    test(`${label} —— 图与 claim 都不是空,而是与计划期同一个诊断`, () => {
+      seed()
+
+      const graphs = readPackageGraphs(root)
+      const owners = packageClaimOwners(root, "skill", "anything")
+      const planning = readPackageLedgerStateV1(root)
+
+      // ① 三条都失败。空数组冒充「没有」就是本票要消灭的那件事。
+      expect(graphs.ok).toBe(false)
+      expect(owners.ok).toBe(false)
+      expect(planning.ok).toBe(false)
+      if (graphs.ok || owners.ok || planning.ok) throw new Error("unreachable")
+
+      // ② 诊断逐字相同 —— 三条路径读的是同一本账本,不该讲三个故事。
+      //    尾部那句拒绝语是各自的动作名,把它剥掉之后必须完全相等。
+      const diagnosis = (reason: string) => reason.replace(/ — refusing to .*$/, "")
+      expect(diagnosis(graphs.reason)).toBe(diagnosis(planning.reason))
+      expect(diagnosis(owners.reason)).toBe(diagnosis(planning.reason))
+
+      // ③ 失败是**可定位**的:说得出是哪一本账本,而不是一句泛化的「失败」。
+      expect(graphs.reason).toContain(ledgerFile())
+      expect(owners.reason).toContain(ledgerFile())
+
+      // ④ 每条路径仍说得出自己拒绝的是什么动作(共用诊断 ≠ 共用文案)。
+      expect(graphs.reason).not.toBe(owners.reason)
+    })
+  }
+
+  test("账本真的空 ⇒ ok:true + 空集合 —— 「没装」与「读不出来」必须分得开", () => {
+    // 没有这一条,把三条读路径改成「永远 ok:false」也能让上面全绿。
+    const graphs = readPackageGraphs(root)
+    const owners = packageClaimOwners(root, "skill", "absent")
+    expect(graphs).toEqual({ ok: true, packageGraphs: [] })
+    expect(owners).toEqual({ ok: true, owners: [] })
+    expect(readPackageLedgerStateV1(root).ok).toBe(true)
   })
 })

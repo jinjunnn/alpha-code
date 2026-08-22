@@ -54,6 +54,19 @@ import {
 import { skillGenerationKey, skillStorePaths } from "./ext-skill-generations"
 import { resolveLiveGenerationDir, runExtensionTransaction } from "./ext-transaction"
 
+// `#773`:两个只读器不再用空值冒充「没有」—— 读不出来是 `ok:false`。测试要的是值,
+// 所以这里当场炸而不是静默降级;想断言失败本身的用例直接调原函数。
+const graphsOf = (r: string) => {
+  const read = readPackageGraphs(r)
+  if (!read.ok) throw new Error(read.reason)
+  return read.packageGraphs
+}
+const claimOwnersOf = (r: string, kind: string, name: string) => {
+  const read = packageClaimOwners(r, kind, name)
+  if (!read.ok) throw new Error(read.reason)
+  return read.owners
+}
+
 let tmp = ""
 let root = ""
 let casBase = ""
@@ -114,7 +127,7 @@ const ledgerFile = (): string => path.join(root, "installs.json")
 const ledgerBytes = (): string => (fs.existsSync(ledgerFile()) ? fs.readFileSync(ledgerFile(), "utf8") : "<absent>")
 const recordNames = (): string[] => readLedgerV2(root).records.map((r) => `${r.kind}:${r.name}`).sort()
 const graphKeys = (): string[] =>
-  readPackageGraphs(root).flatMap((g) => [g.root, ...g.children].map((n) => `${n.kind}:${n.name}`)).sort()
+  graphsOf(root).flatMap((g) => [g.root, ...g.children].map((n) => `${n.kind}:${n.name}`)).sort()
 const storeDirs = (): string[] => {
   try {
     return fs.readdirSync(path.join(root, "ext-store")).sort()
@@ -258,7 +271,7 @@ describe("G15 四集双射:装了 N 个,图里就得有 N 个", () => {
     expect(recordNames()).toEqual(expected)
     expect(graphKeys()).toEqual(expected)
     for (const name of ["premarket", "postmarket", "riskscan"])
-      expect(packageClaimOwners(root, "skill", name)).toEqual([bundleOwner("local:tide-plugin", readPackageGraphs(root)[0]!.root.manifestDigest)])
+      expect(claimOwnersOf(root, "skill", name)).toEqual([bundleOwner("local:tide-plugin", graphsOf(root)[0]!.root.manifestDigest)])
     expect(storeDirs()).toEqual(["skill--postmarket", "skill--premarket", "skill--riskscan"])
   })
 
@@ -271,7 +284,7 @@ describe("G15 四集双射:装了 N 个,图里就得有 N 个", () => {
     expect(recordNames()).toEqual([])
     expect(graphKeys()).toEqual([])
     expect(storeDirs()).toEqual([])
-    for (const name of ["premarket", "postmarket", "riskscan"]) expect(packageClaimOwners(root, "skill", name)).toEqual([])
+    for (const name of ["premarket", "postmarket", "riskscan"]) expect(claimOwnersOf(root, "skill", name)).toEqual([])
   })
 
   // 这条用例证明**这道闸是承重的,不是装饰**:把图里少写一个节点(item 照留),
@@ -309,8 +322,8 @@ describe("G15 四集双射:装了 N 个,图里就得有 N 个", () => {
     expect(
       validateV3State({
         recordKeys: new Set(recordNames()),
-        packageGraphs: readPackageGraphs(root),
-        claims: [{ kind: "skill", name: kept, owners: packageClaimOwners(root, "skill", kept) }],
+        packageGraphs: graphsOf(root),
+        claims: [{ kind: "skill", name: kept, owners: claimOwnersOf(root, "skill", kept) }],
       }),
     ).toEqual({ ok: true }) // ← 探针说这本账没问题
 
@@ -413,7 +426,7 @@ describe("G1 原子性:第 k 个装不上 ⇒ 一个都不留", () => {
     expect(fs.existsSync(path.join(root, "skills"))).toBe(false)
     for (const name of ["premarket", "postmarket", "riskscan"]) {
       expect(liveSkillDir(name)).toBeNull()
-      expect(packageClaimOwners(root, "skill", name)).toEqual([])
+      expect(claimOwnersOf(root, "skill", name)).toEqual([])
     }
   })
 })
@@ -677,7 +690,7 @@ describe("终态、root 选择与账本语义", () => {
   test("G14 root 是一个**真被装的 skill**(不是合成的 kind:plugin 节点),所以整包卸得掉", async () => {
     makePlugin("tide-plugin", [{ name: "premarket" }, { name: "postmarket" }])
     expect((await install()).ok).toBe(true)
-    const graph = readPackageGraphs(root)[0]!
+    const graph = graphsOf(root)[0]!
     expect(graph.root.kind).toBe("skill")
     // root 选择确定性:按组件名字典序取第一个通过判定的。
     expect(graph.root.name).toBe("postmarket")

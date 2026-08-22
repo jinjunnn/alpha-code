@@ -1095,7 +1095,7 @@ describe("package detail production renderer path", () => {
     expect(toastsContaining(canary)).toBe(0)
 
     click(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`))
-    await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual([]))
+    await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual({ ok: true, packageGraphs: [] }))
     await waitFor(() => expect(toastsContaining(canary)).toBe(1))
     await flush()
     expect(toastsContaining(canary), "the same warning was presented more than once").toBe(1)
@@ -1131,7 +1131,7 @@ describe("package detail production renderer path", () => {
     const uninstallsBefore = dataLayerPackageUninstalls.length
     click(remove)
     // 移除之后:图没了(main 说的),按钮跟着消失(renderer 重新问了 main,而不是自己乐观翻转)。
-    await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual([]))
+    await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual({ ok: true, packageGraphs: [] }))
     await waitFor(() =>
       expect(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`)).toBeNull(),
     )
