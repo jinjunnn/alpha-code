@@ -668,6 +668,11 @@ export const dict = {
   "session.new.workspace.existing": "工作区…",
   "session.new.git.none": "无 Git",
   "session.new.lastModified": "最后修改",
+
+  "session.draft.pending": "正在载入这份草稿…",
+  "session.draft.missing.title": "这份草稿已经不在了",
+  "session.draft.missing.description": "它可能已被删除,或这个链接指向一份从未存在过的草稿。你的其他对话没有受影响。",
+  "session.draft.missing.action": "返回首页",
   "session.header.search.placeholder": "搜索 {{project}}",
   "session.header.searchFiles": "搜索文件",
   "session.header.openIn": "打开方式",
