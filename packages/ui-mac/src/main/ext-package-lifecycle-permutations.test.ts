@@ -48,6 +48,19 @@ import {
   type PackageArtifactInstallersV1,
 } from "./ext-package-uninstall"
 
+// `#773`:两个只读器不再用空值冒充「没有」—— 读不出来是 `ok:false`。测试要的是值,
+// 所以这里当场炸而不是静默降级;想断言失败本身的用例直接调原函数。
+const graphsOf = (r: string) => {
+  const read = readPackageGraphs(r)
+  if (!read.ok) throw new Error(read.reason)
+  return read.packageGraphs
+}
+const claimOwnersOf = (r: string, kind: string, name: string) => {
+  const read = packageClaimOwners(r, kind, name)
+  if (!read.ok) throw new Error(read.reason)
+  return read.owners
+}
+
 let tmp = ""
 let root = ""
 
@@ -218,7 +231,7 @@ describe("REQ-128 #698 —— canonical permutations", () => {
   test("整包卸载:独占 child 真删、共享 child 保留并说得出理由、一次 mutation", () => {
     seedPackage(GRAPH_A, A_CHILDREN, OWNER_A, DIGEST_A)
     seedPackage(GRAPH_B, B_CHILDREN, OWNER_B, DIGEST_B)
-    expect(packageClaimOwners(root, "skill", "shared").sort()).toEqual([OWNER_A, OWNER_B].sort())
+    expect(claimOwnersOf(root, "skill", "shared").sort()).toEqual([OWNER_A, OWNER_B].sort())
 
     const calls: Calls = []
     const writes = countLedgerWrites()
@@ -236,14 +249,14 @@ describe("REQ-128 #698 —— canonical permutations", () => {
     expect(fs.existsSync(artifactPath("skill", "a-only"))).toBe(false)
     expect(findRecordV2(root, "skill", "shared")).not.toBeNull()
     expect(fs.existsSync(artifactPath("skill", "shared"))).toBe(true)
-    expect(packageClaimOwners(root, "skill", "shared")).toEqual([OWNER_B])
+    expect(claimOwnersOf(root, "skill", "shared")).toEqual([OWNER_B])
     expect(outcome.retained).toEqual([
       { kind: "skill", name: "shared", decision: "retain", remainingOwners: [OWNER_B], reasonCode: "shared-with-package" },
     ])
     // 共享 child 的实物删除接缝**一次都没被调用**(不是「调用了但恰好没删掉」)。
     expect(calls.filter((call) => call.includes("shared"))).toEqual([])
     // A 的图没了,B 的图逐字还在。
-    expect(readPackageGraphs(root).map((graph) => graph.packageId)).toEqual([PKG_B])
+    expect(graphsOf(root).map((graph) => graph.packageId)).toEqual([PKG_B])
 
     // 再卸 B:共享 child 此刻没有别的 owner ⇒ 该删了。
     const outcomeB = uninstallPackageV1(PKG_B, { globalRoot: () => root, installers: installers(calls) })
@@ -252,14 +265,14 @@ describe("REQ-128 #698 —— canonical permutations", () => {
     expect(outcomeB.removed.map((entry) => `${entry.kind}:${entry.name}`).sort()).toEqual(["agent:b-root", "skill:shared"])
     expect(findRecordV2(root, "skill", "shared")).toBeNull()
     expect(fs.existsSync(artifactPath("skill", "shared"))).toBe(false)
-    expect(readPackageGraphs(root)).toEqual([])
+    expect(graphsOf(root)).toEqual([])
   })
 
   test("standalone → Bundle:用户先单装,再被包收编;卸包时它留下,理由是「你自己也装过」", () => {
     // 用户先自己装 skill:shared(standalone claim 由生产写器在 V3 激活后自然产生)。
     seedPackage(GRAPH_B, B_CHILDREN, OWNER_B, DIGEST_B)
     expect(upsertRecordsV2(root, [upsertInput(A_CHILDREN[2]!, DIGEST_A)]).ok).toBe(true)
-    expect(packageClaimOwners(root, "skill", "shared").sort()).toEqual([OWNER_B, standaloneOwner("skill", "shared")].sort())
+    expect(claimOwnersOf(root, "skill", "shared").sort()).toEqual([OWNER_B, standaloneOwner("skill", "shared")].sort())
 
     const calls: Calls = []
     const outcome = uninstallPackageV1(PKG_B, { globalRoot: () => root, installers: installers(calls) })
@@ -276,7 +289,7 @@ describe("REQ-128 #698 —— canonical permutations", () => {
     ])
     expect(fs.existsSync(artifactPath("skill", "shared"))).toBe(true)
     expect(findRecordV2(root, "skill", "shared")).not.toBeNull()
-    expect(packageClaimOwners(root, "skill", "shared")).toEqual([standaloneOwner("skill", "shared")])
+    expect(claimOwnersOf(root, "skill", "shared")).toEqual([standaloneOwner("skill", "shared")])
   })
 
   test("Bundle → standalone:卸包之后,那个 child 变回一件普通的单装物,能被正常卸载", () => {
@@ -296,7 +309,7 @@ describe("REQ-128 #698 —— canonical permutations", () => {
     // V3 激活时,账本里已有的、没人认领的 record 一律 legacy-protected(生产行为)。
     expect(upsertRecordsV2(root, [upsertInput({ componentId: "skill:ancient", kind: "skill", name: "ancient" }, DIGEST_A)]).ok).toBe(true)
     seedPackage(GRAPH_A, A_CHILDREN, OWNER_A, DIGEST_A)
-    expect(packageClaimOwners(root, "skill", "ancient")).toEqual([LEGACY_PROTECTED_OWNER])
+    expect(claimOwnersOf(root, "skill", "ancient")).toEqual([LEGACY_PROTECTED_OWNER])
     // 把 legacy 存量也塞进 A 的 claim(模拟「它同时被一个包认领过」的最坏情形)。
     const applied = applyPackageMutation(root, {
       transactionId: "tx-legacy-adopt",
@@ -312,7 +325,7 @@ describe("REQ-128 #698 —— canonical permutations", () => {
     const calls: Calls = []
     expect(uninstallPackageV1(PKG_A, { globalRoot: () => root, installers: installers(calls) }).ok).toBe(true)
     expect(findRecordV2(root, "skill", "ancient")).not.toBeNull()
-    expect(packageClaimOwners(root, "skill", "ancient")).toEqual([LEGACY_PROTECTED_OWNER])
+    expect(claimOwnersOf(root, "skill", "ancient")).toEqual([LEGACY_PROTECTED_OWNER])
     expect(calls.filter((call) => call.includes("ancient"))).toEqual([])
   })
 
@@ -332,11 +345,11 @@ describe("REQ-128 #698 —— canonical permutations", () => {
     expect(upsertRecordsV2(root, [upsertInput(A_CHILDREN[2]!, DIGEST_A)]).ok).toBe(true)
     materialise([A_CHILDREN[2]!])
     expect(JSON.parse(readRaw()).v).toBe(2)
-    expect(packageClaimOwners(root, "skill", "shared")).toEqual([])
+    expect(claimOwnersOf(root, "skill", "shared")).toEqual([])
 
     // ② 第一个 Bundle 进来,含同名 child。
     seedPackage(GRAPH_A, A_CHILDREN, OWNER_A, DIGEST_A)
-    expect(packageClaimOwners(root, "skill", "shared").sort()).toEqual([LEGACY_PROTECTED_OWNER, OWNER_A].sort())
+    expect(claimOwnersOf(root, "skill", "shared").sort()).toEqual([LEGACY_PROTECTED_OWNER, OWNER_A].sort())
 
     // ③ 卸掉这个 Bundle:用户那份存量一件都不许动。
     const calls: Calls = []
@@ -349,7 +362,7 @@ describe("REQ-128 #698 —— canonical permutations", () => {
     expect(calls.filter((call) => call.includes("shared"))).toEqual([])
     expect(fs.existsSync(artifactPath("skill", "shared"))).toBe(true)
     expect(findRecordV2(root, "skill", "shared")).not.toBeNull()
-    expect(packageClaimOwners(root, "skill", "shared")).toEqual([LEGACY_PROTECTED_OWNER])
+    expect(claimOwnersOf(root, "skill", "shared")).toEqual([LEGACY_PROTECTED_OWNER])
   })
 
   test("unmanaged(账本里没有 v2 record)的图节点:判决是留,不是删", () => {
@@ -384,7 +397,7 @@ describe("REQ-128 #698 —— 顺序与故障", () => {
     }
     expect(writes()).toBe(0)
     expect(readRaw()).toBe(before)
-    expect(readPackageGraphs(root).map((graph) => graph.packageId)).toEqual([PKG_A])
+    expect(graphsOf(root).map((graph) => graph.packageId)).toEqual([PKG_A])
     // 前一个 child 的实物确实已经没了 —— 也就是说「账本没动」不是因为什么都没发生。
     expect(fs.existsSync(artifactPath("agent", "a-root"))).toBe(false)
 
@@ -392,7 +405,7 @@ describe("REQ-128 #698 —— 顺序与故障", () => {
     const retried = uninstallPackageV1(PKG_A, { globalRoot: () => root, installers: installers(calls) })
     expect(retried.ok).toBe(true)
     expect(writes()).toBe(1)
-    expect(readPackageGraphs(root)).toEqual([])
+    expect(graphsOf(root)).toEqual([])
     expect(findRecordV2(root, "skill", "a-only")).toBeNull()
   })
 
@@ -585,7 +598,7 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     seedPackage(GRAPH_A, A_CHILDREN, OWNER_A, DIGEST_A)
     expect(upsertRecordsV2(root, [upsertInput(A_CHILDREN[1]!, DIGEST_A)]).ok).toBe(true) // 用户也单装了 a-only
     const own = standaloneOwner("skill", "a-only")
-    expect(packageClaimOwners(root, "skill", "a-only").sort()).toEqual([OWNER_A, own].sort())
+    expect(claimOwnersOf(root, "skill", "a-only").sort()).toEqual([OWNER_A, own].sort())
     const before = readRaw()
 
     const base = (): PackageLedgerMutationV1 => ({
@@ -659,7 +672,7 @@ describe("REQ-128 #698 —— 篡改与越权一律响亮失败", () => {
     if (!refused.ok) expect(refused.reason).toContain("dangling claim skill:shared")
     expect(readRaw()).toBe(before)
     // 整次拒绝 ⇒ 连 A 自己那次合法的释放都没落盘(全或无),B 的 owner 当然也在。
-    expect(packageClaimOwners(root, "skill", "shared").sort()).toEqual([OWNER_A, OWNER_B].sort())
+    expect(claimOwnersOf(root, "skill", "shared").sort()).toEqual([OWNER_A, OWNER_B].sort())
     expect(findRecordV2(root, "skill", "shared")).not.toBeNull()
   })
 

@@ -64,6 +64,19 @@ import {
   type TargetArg,
 } from "./ext-install-planner"
 
+// `#773`:两个只读器不再用空值冒充「没有」—— 读不出来是 `ok:false`。测试要的是值,
+// 所以这里当场炸而不是静默降级;想断言失败本身的用例直接调原函数。
+const graphsOf = (r: string) => {
+  const read = readPackageGraphs(r)
+  if (!read.ok) throw new Error(read.reason)
+  return read.packageGraphs
+}
+const claimOwnersOf = (r: string, kind: string, name: string) => {
+  const read = packageClaimOwners(r, kind, name)
+  if (!read.ok) throw new Error(read.reason)
+  return read.owners
+}
+
 let tmp = ""
 let root = ""
 
@@ -288,13 +301,13 @@ describe("REQ-128 #706 —— 真实卸载:仍有 Bundle owner ⇒ 实物一件�
   for (const { kind, name } of SHARED) {
     test(`${kind}:${name} —— 只释放 standalone claim,零实物副作用,一次 mutation`, async () => {
       seedV3Ledger()
-      const graphsBefore = readPackageGraphs(root)
+      const graphsBefore = graphsOf(root)
       const artifact = artifactPath(kind, name)
       const artifactExisted = fs.existsSync(artifact)
       // 用户此前也单装过同一个 child:standalone owner 与 Bundle owner 并存(共享的真实形态)。
       const claimed = upsertRecordsV2(root, [upsertInput(kind, name)])
       expect(claimed.ok).toBe(true)
-      expect(packageClaimOwners(root, kind, name).sort()).toEqual([OWNER, standaloneOwner(kind, name)].sort())
+      expect(claimOwnersOf(root, kind, name).sort()).toEqual([OWNER, standaloneOwner(kind, name)].sort())
 
       const calls: Calls = []
       const writes = countLedgerWrites()
@@ -309,8 +322,8 @@ describe("REQ-128 #706 —— 真实卸载:仍有 Bundle owner ⇒ 实物一件�
       expect(writes()).toBe(1) // 只有「释放 claim」这一次提交
       // 账本:record 仍在(它还属于这个 package)、图逐字不变、claim 只少了用户那一份。
       expect(findRecordV2(root, kind, name)).not.toBeNull()
-      expect(readPackageGraphs(root)).toEqual(graphsBefore)
-      expect(packageClaimOwners(root, kind, name)).toEqual([OWNER])
+      expect(graphsOf(root)).toEqual(graphsBefore)
+      expect(claimOwnersOf(root, kind, name)).toEqual([OWNER])
     })
   }
 })
@@ -319,9 +332,9 @@ describe("REQ-128 #706 —— 真实卸载:没有别的 owner ⇒ 正常删,且 
   for (const { kind, name } of SOLO) {
     test(`${kind}:${name} —— record/claim 一并消失,packageGraphs 与他人 claim 原样`, async () => {
       seedV3Ledger()
-      const graphsBefore = readPackageGraphs(root)
+      const graphsBefore = graphsOf(root)
       const otherClaimsBefore = parsedLedger().claims?.filter((c) => !(c.kind === kind && c.name === name))
-      expect(packageClaimOwners(root, kind, name)).toEqual([standaloneOwner(kind, name)])
+      expect(claimOwnersOf(root, kind, name)).toEqual([standaloneOwner(kind, name)])
 
       const calls: Calls = []
       const writes = countLedgerWrites()
@@ -331,9 +344,9 @@ describe("REQ-128 #706 —— 真实卸载:没有别的 owner ⇒ 正常删,且 
       expect(calls.length).toBeGreaterThan(0) // 这一支必须真的走到 installer
       expect(writes()).toBe(1) // 一次 mutation —— 内层 receipt 副作用回来就是 2
       expect(findRecordV2(root, kind, name)).toBeNull()
-      expect(packageClaimOwners(root, kind, name)).toEqual([])
+      expect(claimOwnersOf(root, kind, name)).toEqual([])
       // V3 段活着:图逐字不变,其余 claim 逐字不变,信封仍是 v:3。
-      expect(readPackageGraphs(root)).toEqual(graphsBefore)
+      expect(graphsOf(root)).toEqual(graphsBefore)
       expect(parsedLedger().claims).toEqual(otherClaimsBefore)
       expect(parsedLedger().v).toBe(3)
     })
@@ -353,9 +366,9 @@ describe("REQ-128 #706 —— 真实卸载:**只有** Bundle owner(用户从没�
     test(`${kind}:${name} —— ok:false、字节零改动、零实物副作用、claim 原样`, async () => {
       seedV3Ledger()
       // 前置事实:这就是 fresh 安装的形状 —— owner 集合里只有 Bundle。
-      expect(packageClaimOwners(root, kind, name)).toEqual([OWNER])
+      expect(claimOwnersOf(root, kind, name)).toEqual([OWNER])
       const before = readRaw()
-      const graphsBefore = readPackageGraphs(root)
+      const graphsBefore = graphsOf(root)
       const artifact = artifactPath(kind, name)
       const artifactExisted = fs.existsSync(artifact)
 
@@ -379,8 +392,8 @@ describe("REQ-128 #706 —— 真实卸载:**只有** Bundle owner(用户从没�
       if (artifactExisted) expect(fs.existsSync(artifact)).toBe(true)
       // 账本语义面同样原样:record 在、图逐字不变、claim 一个 owner 都没少。
       expect(findRecordV2(root, kind, name)).not.toBeNull()
-      expect(readPackageGraphs(root)).toEqual(graphsBefore)
-      expect(packageClaimOwners(root, kind, name)).toEqual([OWNER])
+      expect(graphsOf(root)).toEqual(graphsBefore)
+      expect(claimOwnersOf(root, kind, name)).toEqual([OWNER])
     })
   }
 
@@ -392,14 +405,14 @@ describe("REQ-128 #706 —— 真实卸载:**只有** Bundle owner(用户从没�
     seedV3Ledger()
     // ① 纯 Bundle 拥有(refuse 支)。违规项不取集合首位。
     const bundleOnly = SHARED[SHARED.length - 1]!
-    expect(packageClaimOwners(root, bundleOnly.kind, bundleOnly.name)).toEqual([OWNER])
+    expect(claimOwnersOf(root, bundleOnly.kind, bundleOnly.name)).toEqual([OWNER])
     let before = readRaw()
     const refused = removeRecordV2(root, bundleOnly.kind, bundleOnly.name)
     expect(refused.ok).toBe(false)
     if (!refused.ok) expect(refused.reason).toContain("no standalone install to release")
     expect(readRaw()).toBe(before)
     expect(findRecordV2(root, bundleOnly.kind, bundleOnly.name)).not.toBeNull()
-    expect(packageClaimOwners(root, bundleOnly.kind, bundleOnly.name)).toEqual([OWNER])
+    expect(claimOwnersOf(root, bundleOnly.kind, bundleOnly.name)).toEqual([OWNER])
 
     // ② standalone + Bundle 并存(release-claim-only 支)—— 同样不得去账。
     const shared = SHARED[1]!
@@ -430,12 +443,12 @@ describe("REQ-128 #706 —— 真实卸载:**只有** Bundle owner(用户从没�
     if (!released.ok) expect(released.reason).toContain("no standalone claim to release")
     expect(writes()).toBe(0)
     expect(readRaw()).toBe(before)
-    expect(packageClaimOwners(root, victim.kind, victim.name)).toEqual([OWNER])
+    expect(claimOwnersOf(root, victim.kind, victim.name)).toEqual([OWNER])
     // 合法的那一支不受影响:solo child 的 standalone claim 照样释放得掉。
     const solo = SOLO[SOLO.length - 1]!
     const ok = releaseStandaloneClaim(root, solo.kind, solo.name)
     expect(ok.ok).toBe(true)
-    expect(packageClaimOwners(root, solo.kind, solo.name)).toEqual([])
+    expect(claimOwnersOf(root, solo.kind, solo.name)).toEqual([])
   })
 })
 
@@ -476,17 +489,17 @@ describe("REQ-128 #706 —— 第一次 V3 write 后全部扩展管理操作仍�
     // 单装一个全新的 child(V3 已激活 ⇒ 它自带 standalone claim)
     const fresh = upsertRecordV2(root, upsertInput("skill", "fresh-skill"))
     expect(fresh.ok).toBe(true)
-    expect(packageClaimOwners(root, "skill", "fresh-skill")).toEqual([standaloneOwner("skill", "fresh-skill")])
+    expect(claimOwnersOf(root, "skill", "fresh-skill")).toEqual([standaloneOwner("skill", "fresh-skill")])
 
     // 批装
     const batch = upsertRecordsV2(root, [upsertInput("agent", "fresh-agent"), upsertInput("mcp", "fresh-mcp")])
     expect(batch.ok).toBe(true)
 
     // 启停(对 V3 段是纯透传)
-    const graphsBefore = readPackageGraphs(root)
+    const graphsBefore = graphsOf(root)
     expect(setDesiredStateV2(root, "skill", "solo-skill", "disabled").ok).toBe(true)
     expect(findRecordV2(root, "skill", "solo-skill")?.desiredState).toBe("disabled")
-    expect(readPackageGraphs(root)).toEqual(graphsBefore)
+    expect(graphsOf(root)).toEqual(graphsBefore)
 
     // 去账
     expect(removeRecordV2(root, "skill", "fresh-skill").ok).toBe(true)
@@ -495,7 +508,7 @@ describe("REQ-128 #706 —— 第一次 V3 write 后全部扩展管理操作仍�
     // v1 → v2 迁移仍然跑得动(v:3 信封是它认得的形状)
     expect(migrateV1Ledger(root, "prod").ok).toBe(true)
     expect(parsedLedger().v).toBe(3)
-    expect(readPackageGraphs(root)).toEqual(graphsBefore)
+    expect(graphsOf(root)).toEqual(graphsBefore)
   })
 
   test("第二个物理写器(v1 addReceipt/removeReceipt)在 V3 账本上响亮拒绝,字节零改动", () => {
@@ -619,8 +632,8 @@ describe("REQ-128 #706 —— legacy / unmanaged 内容永不 GC", () => {
 
     const applied = applyPackageMutation(root, packageMutation())
     expect(applied.ok).toBe(true)
-    expect(packageClaimOwners(root, "skill", "ancient-skill")).toEqual([LEGACY_PROTECTED_OWNER])
-    expect(packageClaimOwners(root, "agent", "ancient-agent")).toEqual([LEGACY_PROTECTED_OWNER])
+    expect(claimOwnersOf(root, "skill", "ancient-skill")).toEqual([LEGACY_PROTECTED_OWNER])
+    expect(claimOwnersOf(root, "agent", "ancient-agent")).toEqual([LEGACY_PROTECTED_OWNER])
   })
 
   test("v1 存量迁移进 V3 账本一律 legacy-protected,且释放 standalone claim 不会把它摘掉", () => {
@@ -640,7 +653,7 @@ describe("REQ-128 #706 —— legacy / unmanaged 内容永不 GC", () => {
     const migrated = migrateV1Ledger(root, "prod")
     expect(migrated.ok).toBe(true)
     if (migrated.ok) expect(migrated.migrated).toBe(1)
-    expect(packageClaimOwners(root, "skill", "from-v1")).toEqual([LEGACY_PROTECTED_OWNER])
+    expect(claimOwnersOf(root, "skill", "from-v1")).toEqual([LEGACY_PROTECTED_OWNER])
 
     // 释放「用户那一份」摘不掉 legacy 保护。review #757 Major 之后这不再是**静默成功的空操作**:
     // 没有可释放的 owner 就在写盘之前响亮失败(空操作 + ok 正是「谎报已移除」的燃料)。
@@ -650,7 +663,7 @@ describe("REQ-128 #706 —— legacy / unmanaged 内容永不 GC", () => {
     expect(released.ok).toBe(false)
     if (!released.ok) expect(released.reason).toContain("no standalone claim to release")
     expect(readRaw()).toBe(before)
-    expect(packageClaimOwners(root, "skill", "from-v1")).toEqual([LEGACY_PROTECTED_OWNER])
+    expect(claimOwnersOf(root, "skill", "from-v1")).toEqual([LEGACY_PROTECTED_OWNER])
   })
 })
 
@@ -670,6 +683,6 @@ describe("REQ-128 #706 —— 崩溃前滚的 exact replay", () => {
     expect(second).toMatchObject({ ok: true, replayed: true })
     expect(writes()).toBe(0) // 重放不写盘
     expect(readRaw()).toBe(afterFirst)
-    for (const c of SHARED) expect(packageClaimOwners(root, c.kind, c.name)).toEqual([OWNER])
+    for (const c of SHARED) expect(claimOwnersOf(root, c.kind, c.name)).toEqual([OWNER])
   })
 })

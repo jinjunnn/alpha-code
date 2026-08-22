@@ -18,6 +18,19 @@ import {
   upsertRecordV2,
 } from "./ext-receipt-v2"
 
+// `#773`:两个只读器不再用空值冒充「没有」—— 读不出来是 `ok:false`。测试要的是值,
+// 所以这里当场炸而不是静默降级;想断言失败本身的用例直接调原函数。
+const graphsOf = (r: string) => {
+  const read = readPackageGraphs(r)
+  if (!read.ok) throw new Error(read.reason)
+  return read.packageGraphs
+}
+const claimOwnersOf = (r: string, kind: string, name: string) => {
+  const read = packageClaimOwners(r, kind, name)
+  if (!read.ok) throw new Error(read.reason)
+  return read.owners
+}
+
 let base = ""
 let root = ""
 let opencodeHome = ""
@@ -314,10 +327,10 @@ describe("retireCommunityExcelAfterRecovery", () => {
     expect(findRecordV2(root, "mcp", "excel-mcp-server")).toBeNull()
     expect(findRecordV2(root, "agent", "office-root")).toBeDefined()
     expect(findRecordV2(root, "mcp", "keep-mcp")).toBeDefined()
-    expect(packageClaimOwners(root, "mcp", "excel-mcp-server")).toEqual([])
-    expect(packageClaimOwners(root, "agent", "office-root")).toEqual([owner])
-    expect(packageClaimOwners(root, "mcp", "keep-mcp")).toEqual([owner])
-    const graphs = readPackageGraphs(root)
+    expect(claimOwnersOf(root, "mcp", "excel-mcp-server")).toEqual([])
+    expect(claimOwnersOf(root, "agent", "office-root")).toEqual([owner])
+    expect(claimOwnersOf(root, "mcp", "keep-mcp")).toEqual([owner])
+    const graphs = graphsOf(root)
     expect(graphs).toHaveLength(1)
     expect(graphs[0].children.map((child) => child.name)).toEqual(["keep-mcp"])
     expect(computeInstalledGraphDigest(graphs[0])).toBe(graphs[0].installedGraphDigest)
@@ -443,8 +456,8 @@ describe("retireCommunityExcelAfterRecovery", () => {
 
     expect(findRecordV2(root, "mcp", "excel-mcp-server")).toBeNull()
     expect(findRecordV2(root, "mcp", "keep-mcp")).toBeDefined()
-    expect(packageClaimOwners(root, "mcp", "keep-mcp")).toEqual([LEGACY_PROTECTED_OWNER])
-    expect(readPackageGraphs(root)).toEqual([])
+    expect(claimOwnersOf(root, "mcp", "keep-mcp")).toEqual([LEGACY_PROTECTED_OWNER])
+    expect(graphsOf(root)).toEqual([])
     expect(readPackageLedgerStateV1(root, { sideEffectFree: true }).ok).toBe(true)
   })
 })

@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-08-03
+last_reviewed: 2026-08-22
 review_after: 2026-10-14
 ---
 
@@ -251,7 +251,71 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
 则**反过来了**:不要再自己呈现一次,那会让用户读到两条一模一样的提示。复数 `warnings`
 (`InstallLedgerView` / `projectResidualsCheck`)不走这条通道 —— 它们是成批清单,各有各的呈现位置。
 
-## 6. 证据
+## 6. 信封 v:3 —— packageGraphs / claims / owner token 的形状
+
+同一个 `<root>/installs.json`,在 v1 `receipts[]` + v2 `records[]` 之外再挂**两个顶层数组**;
+信封 `v` 随之为 `3`(`PACKAGE_LEDGER_ENVELOPE_VERSION`)。真源 `ext-package-ledger-v3.ts`。
+
+**这一节回答的是「盘上长什么样」。** 同一批事实的**语义**半场 —— 更新怎么算、卸载三条件、
+child 为什么能活过它的 package —— 在
+[`extension-package-lifecycle.md`](extension-package-lifecycle.md),不在这里复述。
+
+### 6.1 `packageGraphs[]`:一个包 = 一张图
+
+一个 `packageId` 只有一张图(重复由 `validateV3State` 拒)。严格 schema,**未知键一律拒**
+(`GRAPH_KEYS` / `GRAPH_NODE_KEYS` 逐字枚举):
+
+| 键 | 形状 | 说明 |
+| --- | --- | --- |
+| `packageId` | 文法见宿主合同 `alpha-package-envelope-v1.schema.json` | 身份。**禁止从前缀反推结构**(`#737`) |
+| `envelopeDigest` | `sha256:<64 hex>` | catalog 安装 = 已验签信封摘要;本地 Claude 插件包 = 本机对规范化载荷算的摘要。**格式相同、语义不同,不要拿它读 provenance**(provenance 只有 child record 的 `origin`) |
+| `displayName` | 可选,非空、≤128、单行 | **只管显示**,缺席合法(存量图),没有任何判定读它 |
+| `installedGraphDigest` | `sha256:<64 hex>` | 账本的**篡改闸**,也是 `graphBeforeDigest` / `graphAfterDigest` 携带的值 |
+| `root` / `children[]` | 节点,键恰为 `componentId` / `kind` / `name` / `required` / `manifestDigest` | root 一个,children 若干 |
+
+`kind` 取自 `PACKAGE_LEDGER_KINDS`(`mcp` / `skill` / `agent` / `command` / `plugin` /
+`bundle` / `cloud`),与 v2 record 的 kind 集**逐字相等**:少一个 = 该类 child 无法被 claim
+保护,多一个 = claim 指向一个不可能存在的 record。
+
+**这里没有 package 级记录类型,这是一个决定,不是遗漏。** 「这个包是哪个版本」由 root 组件的
+v2 record 派生(`packageVersionFromRecordsV1`);另存一份 = 第二个会漂移的答案,而两处不一致时
+没有任何判据说哪一处对。
+
+### 6.2 `claims[]`:一个 child 的 owner 集合
+
+`{ kind, name, owners[] }`。`owners` 排序去重且**非空** —— 空集不是「没人要」,空集根本不该落盘
+(那时该删掉这条 claim)。
+
+owner token 三种形状,严格解析,**不认得的一律 `null` 并拒**(未知 owner 既不能被释放、也不能
+被证明为空;放行等于把「还有别人要」和「谁都不要」混进同一个格子):
+
+| token | 含义 |
+| --- | --- |
+| `standalone:<kind>:<name>` | 用户自己单装的那一份 |
+| `bundle:<packageId>@<root manifestDigest>` | 某个包装的。**root 内容一变,token 就变** —— 每个存活 child 必须被转移(先全部 release,再全部 acquire) |
+| `legacy-protected` | 早于 package 跟踪的存量安装 |
+
+### 6.3 读这一段的唯一规则:读不出来 ≠ 空(`#773`)
+
+V3 段解不开、信封版本本构建读不懂、文件读不出来 —— 一律是 **readError**:文件原样不动,
+**所有写路径拒绝**,且**不走 quarantine**(quarantine 会把 owner 事实连同证据一起搬走,而 claim
+恰恰是「这东西还能不能删」的唯一凭据)。
+
+三条只读路径 —— `readPackageGraphs` / `packageClaimOwners` / `readPackageLedgerStateV1` ——
+共用 `ext-receipt-v2.ts` 里的**同一道读闸**,因此对同一本坏账本给出**同一个诊断**。
+
+**为什么必须共用**:此前前两条各自 `parseLedger(...).parsed.X`,而 `parseLedger` 对读失败返回的是
+那个 `empty` 常量 —— 于是「读不出来」与「本来就没有」在返回值上逐字相同。后果不是崩溃:图退化成
+`[]` = 装好的包在界面上呈现为「没装」(移除按钮跟着消失、claim 无人认领);claim 退化成 `[]` =
+删除三条件的第一条(owner 集为空)被满足,**一次读失败成了一张删除许可**。
+崩溃有人去查,「看起来没装」只会让人以为自己记错了。
+
+判据在 `ext-receipt-v2.test.ts` 的 `#773` 组:四种坏法(JSON 解不开 / `records` 非数组 /
+信封版本更新 / V3 段解不开)各断言三条路径同时失败、诊断逐字相同、理由里带得出账本路径;
+另有一条空账本用例把 `ok:true` + 空集合钉住,防「永远失败」也能全绿。任一条读路径改回静默 `[]`
+即红(两个方向都实测反向绕过过)。
+
+## 7. 证据
 
 `ext-boot-reconcile.test.ts`(#395 startup reconcile:双向重投影/幂等零写盘/锁忙与损坏
 fail-closed/skills 派生允许集锁步 + boot 自愈)、`gen-skill-paths.test.ts`(允许集注入门
@@ -262,7 +326,7 @@ fail-closed)、`ext-install-planner.test.ts`(fail-closed ledger commit:逐类型
 `ext-config.test.ts` / `ext-fs-installer.test.ts` / `alpha-environment.test.ts`
 (eager v1 下线后的层级契约 + strict 读真实实现)、`ext-project-adopt.test.ts`
 (adoption 矩阵:纯文本收编/幂等不重写 env/scope 不符 retained/损坏零改动/busy 可重试/
-零存量零副作用/触发面源文本合同)、`ext-receipt-v2.test.ts`(**#336 projectionLag 判别式:
+零存量零副作用/触发面源文本合同)、`ext-receipt-v2.test.ts`(**`#773` V3 只读路径一致失败(§6.3)**;**#336 projectionLag 判别式:
 final-publish 窄 seam 注入 —— 账本 durable 后发布失败 → ok:true + projectionLag、收窄方向不受
 seam 影响、无变化不误报、boot 自愈闭环**)、`ext-uncurated-bodies.test.ts`(**#336 未策展提交面
 账本写失败注入:custom MCP 前像精确复原/密钥版本清理、npm plugin removePluginEntryExact、

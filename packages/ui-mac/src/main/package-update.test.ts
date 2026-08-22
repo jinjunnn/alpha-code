@@ -21,6 +21,19 @@ import { createPackageAdmissionCoordinator } from "./package-admission"
 import { bundleOwner } from "./ext-package-ledger-v3"
 import { findRecordV2, packageClaimOwners, readPackageGraphs, readPackageLedgerStateV1 } from "./ext-receipt-v2"
 import { recoverExtensionTransactions, runExtensionTransaction, TX_CRASH_POINTS, type TxCrashPoint } from "./ext-transaction"
+
+// `#773`:两个只读器不再用空值冒充「没有」—— 读不出来是 `ok:false`。测试要的是值,
+// 所以这里当场炸而不是静默降级;想断言失败本身的用例直接调原函数。
+const graphsOf = (r: string) => {
+  const read = readPackageGraphs(r)
+  if (!read.ok) throw new Error(read.reason)
+  return read.packageGraphs
+}
+const claimOwnersOf = (r: string, kind: string, name: string) => {
+  const read = packageClaimOwners(r, kind, name)
+  if (!read.ok) throw new Error(read.reason)
+  return read.owners
+}
 import { extensionHealthProbeRouter } from "./ext-health-probe-router"
 import { commitTransactionLedger } from "./ext-package-ledger-commit"
 import type { PackageArtifactRemovalV1 } from "./ext-package-uninstall"
@@ -235,14 +248,14 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
 
     const first = await install(admit, "attempt-v1", secretsFor(v1))
     expect(first.result.ok, JSON.stringify(first.result).slice(0, 300)).toBe(true)
-    const graphV1 = readPackageGraphs(root)[0]!
+    const graphV1 = graphsOf(root)[0]!
     expect([graphV1.root, ...graphV1.children].map((node) => node.componentId).sort()).toEqual([
       "agent:generic-bundle-agent",
       "mcp:generic-bundle-remote",
       "skill:generic-bundle-skill",
     ])
     const ownerV1 = bundleOwner("package:generic-bundle", graphV1.root.manifestDigest)
-    expect(packageClaimOwners(root, "skill", "generic-bundle-skill")).toEqual([ownerV1])
+    expect(claimOwnersOf(root, "skill", "generic-bundle-skill")).toEqual([ownerV1])
     expect(findRecordV2(root, "mcp", "generic-bundle-remote")).not.toBeNull()
     // `#764`:v2 提交之后这条 record 会被覆盖成新版本,所以「装完 v1 时账上写的是什么」必须
     // 在这里取,不能等 update 跑完再回头读。
@@ -284,7 +297,7 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     expect(removed).toEqual([[{ kind: "mcp", name: "generic-bundle-remote" }]])
 
     // 账本:一张图、新 owner、旧 owner 一条不剩、离场 child 去账、新 child 进账。
-    const graphs = readPackageGraphs(root)
+    const graphs = graphsOf(root)
     expect(graphs).toHaveLength(1) // 两版绝不同时激活
     const graphV2 = graphs[0]!
     const ownerV2 = bundleOwner("package:generic-bundle", graphV2.root.manifestDigest)
@@ -294,10 +307,10 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
       "skill:generic-bundle-extra",
       "skill:generic-bundle-skill",
     ])
-    expect(packageClaimOwners(root, "skill", "generic-bundle-skill")).toEqual([ownerV2])
-    expect(packageClaimOwners(root, "agent", "generic-bundle-agent")).toEqual([ownerV2])
-    expect(packageClaimOwners(root, "skill", "generic-bundle-extra")).toEqual([ownerV2])
-    expect(packageClaimOwners(root, "mcp", "generic-bundle-remote")).toEqual([])
+    expect(claimOwnersOf(root, "skill", "generic-bundle-skill")).toEqual([ownerV2])
+    expect(claimOwnersOf(root, "agent", "generic-bundle-agent")).toEqual([ownerV2])
+    expect(claimOwnersOf(root, "skill", "generic-bundle-extra")).toEqual([ownerV2])
+    expect(claimOwnersOf(root, "mcp", "generic-bundle-remote")).toEqual([])
     expect(findRecordV2(root, "mcp", "generic-bundle-remote")).toBeNull()
     expect(findRecordV2(root, "skill", "generic-bundle-extra")).not.toBeNull()
     // 整本账仍自洽(dangling claim / 孤儿 owner / unknown child 任一存在都会让下一次写被拒)。
@@ -354,7 +367,7 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     })
 
     expect((await install(admit, "attempt-v1", secretsFor(v1))).result.ok).toBe(true)
-    const graphBefore = readPackageGraphs(root)
+    const graphBefore = graphsOf(root)
     index = 1
     failNextTransaction = true
     const second = await install(admit, "attempt-v2")
@@ -365,7 +378,7 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     // ② 离场组件的 config 叶原样还在 ⇒ 旧版本仍然完整可跑。
     expect(mcpConfigKeys()).toEqual(["generic-bundle-remote"])
     // ③ 账本全旧。
-    expect(readPackageGraphs(root)).toEqual(graphBefore)
+    expect(graphsOf(root)).toEqual(graphBefore)
     expect(findRecordV2(root, "mcp", "generic-bundle-remote")).not.toBeNull()
     expect(findRecordV2(root, "skill", "generic-bundle-extra")).toBeNull()
   }, 60_000)
@@ -378,7 +391,7 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     // 接缝被调用的**那一刻**,账本必须已经是新图 —— 这条断言钉住的正是「destroy 在 decide 之后」。
     const graphWhenCalled: string[] = []
     const { admit, select } = coordinatorFor([v1, v2], removed, () => {
-      graphWhenCalled.push(readPackageGraphs(root)[0]?.installedGraphDigest ?? "<none>")
+      graphWhenCalled.push(graphsOf(root)[0]?.installedGraphDigest ?? "<none>")
       return { ok: false, reason: "injected artifact removal failure", removed: [], warnings: [] }
     })
 
@@ -391,7 +404,7 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     expect(second.result.warning).toContain("no longer active")
     expect(second.result.warning).toContain("nothing retries this automatically")
     // 账本是**新**版本,离场 child 已去账 —— 清理失败不回退这些。
-    const graphs = readPackageGraphs(root)
+    const graphs = graphsOf(root)
     expect(graphs).toHaveLength(1)
     expect(findRecordV2(root, "mcp", "generic-bundle-remote")).toBeNull()
     expect(findRecordV2(root, "skill", "generic-bundle-extra")).not.toBeNull()
@@ -433,7 +446,7 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     })
 
     expect((await install(admit, "attempt-v1", secretsFor(v1))).result.ok).toBe(true)
-    const graphBefore = readPackageGraphs(root)
+    const graphBefore = graphsOf(root)
     index = 1
     crashAt = point
     await install(admit, `attempt-${point}`).catch(() => undefined)
@@ -451,7 +464,7 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     })
     expect(recovered.ok, `crash ${point}: recovery itself failed`).toBe(true)
 
-    const graphNow = readPackageGraphs(root)
+    const graphNow = graphsOf(root)
     const ledgerIsOld = JSON.stringify(graphNow) === JSON.stringify(graphBefore)
     if (ledgerIsOld) {
       // 全旧 ⇒ 一次文件清理都不许发生,且离场组件的 config 叶必须还在(它还能跑 = 旧版本完好)。
@@ -556,7 +569,7 @@ describe("REQ-128 #698 —— Bundle update 的生产路径", () => {
     }
     // 计划期拒 = 用户还没看到确认屏就被挡下,事务一次都没跑。
     expect(transactionCalls).toBe(0)
-    expect(readPackageGraphs(root).map((graph) => graph.packageId)).toEqual(["package:generic-bundle"])
+    expect(graphsOf(root).map((graph) => graph.packageId)).toEqual(["package:generic-bundle"])
   }, 60_000)
 })
 
