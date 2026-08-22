@@ -1,4 +1,11 @@
-// REQ-096(#188):隔离 HTML preview host 单测(electron 打桩,alpha-surfaces.test.ts 同款)。
+// REQ-096(#188):隔离 HTML preview host 单测(electron 打桩,与 main 侧其它打桩单测同款)。
+//
+// `#907` 起本文件登记进 scripts/gate-files.tsv(精确 24 条),并被
+// src/renderer/alpha-ui/artifact-html-preview/artifact-html-preview.test.ts 的 delegates_to 点名:
+// 下面五条拦截策略(无 preload / 权限三面全拒 + 下载拦截 / webRequest 零网络 / 导航面全拒 /
+// 非白名单扩展 403)是隔离预览的安全承重墙,改预览 UI 时一条都不许放宽,删掉其中任何一条用例
+// 登记簿即红。原抬头点名的那份打桩范例是**写法**参照、不是判据委派 —— 措辞里带上它会被登记簿的
+// 「发现绊线」当成未分类的委派(该绊线只能按文本认,分不出两者),故改为不点名。
 // 契约:守卫拒绝(escape/未登记/missing/mismatch/非 HTML/预算)、一次性 token 失效、
 // window/session 硬化选项(sandbox/partition/无 preload/权限全拒/webRequest 拦截/导航全拒)、
 // 静态 CSP 注入、并发上限、关闭/崩溃清理、日志与 IPC 零 token/URL 泄漏。
