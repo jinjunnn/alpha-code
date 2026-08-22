@@ -8,6 +8,7 @@
 // throw;__alphaCrashProbe(null) 复位后点「重载此区域」恢复 —— CDP / 真机批均可用。
 import { createSignal, ErrorBoundary, type JSX } from "solid-js"
 import { t } from "../i18n"
+import { boundaryErrorText } from "./boundary-error-text"
 import "./alpha-boundary.css"
 
 const [probeTarget, setProbeTarget] = createSignal<string | null>(null)
@@ -38,7 +39,9 @@ export function AlphaBoundary(props: { name: string; children: JSX.Element }) {
         return (
           <div class="a-boundary" data-alpha-boundary={props.name}>
             <span class="a-boundary-name">{t("alpha.error.regionStopped", { name: props.name })}</span>
-            <span class="a-boundary-msg">{String((error as Error)?.message ?? error)}</span>
+            {/* [REQ-085][CODE]:恢复 UI 只渲染脱敏后的错误文本,redactText 失败一律隐藏原文
+                (与 084 fatal 的 SurfaceBoundary/#434 同一纪律,不允许回退到 raw string)。 */}
+            <span class="a-boundary-msg">{boundaryErrorText(error) ?? t("alpha.error.detailHidden")}</span>
             <button class="a-boundary-btn" onClick={reset}>
               {t("alpha.error.reloadRegion")}
             </button>

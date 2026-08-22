@@ -13,6 +13,7 @@
 import { createEffect, createMemo, createSignal, ErrorBoundary, For, Index, onCleanup, Show } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { t } from "../../../i18n"
+import { boundaryErrorText } from "../../boundary-error-text"
 import { MetadataView, STATE_LABEL_KEYS, TAB_LABEL_KEYS } from "../../artifact-workbench/artifact-workbench"
 import {
   downloadBusy,
@@ -576,7 +577,8 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
                           <ErrorBoundary
                             fallback={(err, reset) => (
                               <div class="a-wb-notice" data-kind="error" role="alert">
-                                {t("alpha.wb.previewCrashed")}:{String((err as Error)?.message ?? err)}
+                                {/* [REQ-085][CODE]:恢复 UI 只渲染脱敏后的错误文本,失败一律隐藏原文。 */}
+                                {t("alpha.wb.previewCrashed")}:{boundaryErrorText(err) ?? t("alpha.error.detailHidden")}
                                 <button type="button" class="a-wb-btn" onClick={reset}>
                                   {t("alpha.wb.retry")}
                                 </button>

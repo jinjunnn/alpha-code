@@ -15,6 +15,7 @@ import { Dynamic, Portal } from "solid-js/web"
 import { createStore } from "solid-js/store"
 import { useLocation } from "@solidjs/router"
 import { t } from "../../i18n"
+import { boundaryErrorText } from "../boundary-error-text"
 import { pushToast } from "../Toast"
 import { parseRoute } from "../../../shared/route-manifest"
 import type { ArtifactReadRef, CloudArtifactMeta } from "../../../preload/types"
@@ -646,7 +647,8 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
                               <ErrorBoundary
                                 fallback={(err, reset) => (
                                   <div class="a-wb-notice" data-kind="error" role="alert">
-                                    {t("alpha.wb.previewCrashed")}:{String((err as Error)?.message ?? err)}
+                                    {/* [REQ-085][CODE]:恢复 UI 只渲染脱敏后的错误文本,失败一律隐藏原文。 */}
+                                    {t("alpha.wb.previewCrashed")}:{boundaryErrorText(err) ?? t("alpha.error.detailHidden")}
                                     <button type="button" class="a-wb-btn" onClick={reset}>{t("alpha.wb.retry")}</button>
                                   </div>
                                 )}
