@@ -1273,6 +1273,12 @@ export const dict = {
   "alpha.autocomplete.searchFilesHint": "Type @ and a query to search project files…",
 
   "alpha.htmlPreview.requestFailed": "Preview request failed",
+  "alpha.htmlPreview.blockedCount": "Blocked {{count}} external resource(s) — the report may look broken as a result.",
+  "alpha.htmlPreview.blockedCountCapped": "Blocked at least {{count}} external resource(s) — the report may look broken as a result. The list is capped, so there may be more.",
+  "alpha.htmlPreview.blockedNote": "The isolated window never loads external content and never navigates. Entries are origins or in-run paths, not the full URLs the document requested. Copy the list to open anything yourself in your browser.",
+  "alpha.htmlPreview.copyBlocked": "Copy blocked list",
+  "alpha.htmlPreview.copied": "Copied",
+  "alpha.htmlPreview.copyFailed": "Copy failed",
   "alpha.htmlPreview.badge": "Isolated preview",
   "alpha.htmlPreview.hint": "Static HTML opens in an isolated sandbox window with no scripts, network, forms, or shared app state.",
   "alpha.htmlPreview.crashed": "The preview window exited unexpectedly. Only the preview was affected; you can reopen it.",

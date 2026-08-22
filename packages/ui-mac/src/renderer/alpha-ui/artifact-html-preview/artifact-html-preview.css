@@ -97,3 +97,50 @@
 .a-html-preview-btn:not(:disabled):hover {
   filter: brightness(1.05);
 }
+
+/* #907 —— 被阻止资源的诚实呈现(计数 + 清单 + 显式「复制」出口)。 */
+
+.a-html-preview-blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--a-radius-md, 8px);
+  border: 1px solid color-mix(in srgb, var(--a-warning, currentColor) 30%, transparent);
+  background: color-mix(in srgb, var(--a-warning, currentColor) 7%, transparent);
+}
+
+.a-html-preview-blocked-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--a-text, inherit);
+}
+
+.a-html-preview-blocked-list {
+  margin: 0;
+  padding-left: 18px;
+  max-height: 140px;
+  overflow-y: auto;
+  font-size: 11.5px;
+  color: var(--a-text-secondary, inherit);
+}
+
+.a-html-preview-blocked-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a-html-preview-blocked-note {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--a-text-secondary, inherit);
+  opacity: 0.85;
+}
+
+.a-html-preview-copy-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--a-success, inherit);
+}

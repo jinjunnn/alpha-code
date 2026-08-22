@@ -53,6 +53,7 @@ import { safeResolveInAlpha, sanitizeArtifactName } from "./alpha-workdir"
 import {
   canPreviewHtml,
   HTML_PREVIEW_CSP,
+  HTML_PREVIEW_MAX_BLOCKED_ENTRIES,
   HTML_PREVIEW_MAX_CONCURRENT,
   HTML_PREVIEW_SCHEME,
   type HtmlPreviewClosedEvent,
@@ -67,9 +68,6 @@ import {
 export const HTML_PREVIEW_MAX_DOC_BYTES = 32 * 1024 * 1024
 /** 单个 sibling 资产字节预算。 */
 export const HTML_PREVIEW_MAX_ASSET_BYTES = 32 * 1024 * 1024
-/** blockedPaths 记录上限(诊断供数,防无界增长)。 */
-const MAX_BLOCKED_ENTRIES = 50
-
 // 仅图片/字体可作 sibling 资产(REQ-096 交付 3 的白名单口径;CSS 走 inline style,外链 CSS/JS/
 // 子 html 一律 403)。SVG 只能经 <img> 进入(CSP img-src),SVG-as-image 按规范不执行脚本。
 const ASSET_MIME: Record<string, string> = {
@@ -120,7 +118,7 @@ const previews = new Map<string, PreviewRecord>()
 const tokens = new Map<string, PreviewRecord>()
 
 function recordBlocked(record: PreviewRecord, entry: string) {
-  if (record.blockedPaths.length >= MAX_BLOCKED_ENTRIES) return
+  if (record.blockedPaths.length >= HTML_PREVIEW_MAX_BLOCKED_ENTRIES) return
   if (!record.blockedPaths.includes(entry)) record.blockedPaths.push(entry)
 }
 

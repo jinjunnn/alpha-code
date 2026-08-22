@@ -15,6 +15,13 @@ export const HTML_PREVIEW_SCHEME = "alpha-artifact-preview"
 export const HTML_PREVIEW_MAX_CONCURRENT = 3
 
 /**
+ * blockedPaths 的记录上限(诊断供数,防无界增长)。#907 起落 shared:renderer 要拿它判「清单是否
+ * 已到上限」——到上限时界面必须说「至少 N 项」,不能把一个被截断的清单当成完整计数报出去。
+ * 提高/降低它就是同时改变 main 的记录面与界面的诚实口径,故只此一份真源。
+ */
+export const HTML_PREVIEW_MAX_BLOCKED_ENTRIES = 50
+
+/**
  * 默认静态 CSP(REQ-096 交付 3):default/script/connect/frame/object/form/base 全 'none';
  * 仅放行受控 inline style 与同 run artifacts/ 内经自定义协议供给的图片/字体(+ data: 内联形态)。
  * `sandbox` 裸指令追加一层文档级禁脚本/禁表单/禁弹窗(纵深防御,不依赖单点)。
