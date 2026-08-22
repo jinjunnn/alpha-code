@@ -58,6 +58,14 @@ describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
   test("draft leaf gets the narrow lifecycle contract, wrappers keep tab semantics", () => {
     expect(appTsx).toContain("<Leaf draftId={props.draftID} promoteDraft={promoteDraft} />")
     expect(appTsx).toContain("tabs.promoteDraft(props.draftID, {")
+    // #903 减速带(不是闸门):行为判据在 test-component/draft-route-gate.cases.ts —— 那里真挂载
+    // 守卫模块、真断 DOM。这里只钉「app.tsx 确实把这条路由接到了守卫上」,因为 app.tsx 结构上
+    // 进不了 bun(vite `?worker&url` 依赖),接线本身没有可执行的落点。接回上游那版
+    // `fallback={<Navigate href="/" />}`(静默弹回首页)时本条先红。
+    expect(appTsx).toContain("<DraftRouteGate")
+    expect(appTsx).toContain("t={language.t}")
+    expect(appTsx).toContain('onRecover={() => navigate("/")}')
+    expect(appTsx).not.toContain('fallback={<Navigate href="/" />}')
   })
 
   test("provider wrappers keep default lifecycles around the injected leaves", () => {

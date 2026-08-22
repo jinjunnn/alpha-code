@@ -703,6 +703,13 @@ export const dict = {
   "session.new.git.none": "No Git",
   "session.new.lastModified": "Last modified",
 
+  // alpha-code #903:/new-session?draftId=… 的两个非 happy-path 用户可见态。
+  "session.draft.pending": "Loading this draft…",
+  "session.draft.missing.title": "This draft is no longer available",
+  "session.draft.missing.description":
+    "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
+  "session.draft.missing.action": "Back to home",
+
   "session.header.search.placeholder": "Search {{project}}",
   "session.header.searchFiles": "Search files",
   "session.header.openIn": "Open in",

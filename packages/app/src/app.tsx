@@ -57,6 +57,7 @@ import { ServerConnection, ServerProvider, serverName, useServer } from "@/conte
 import { SettingsProvider, useSettings } from "@/context/settings"
 import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
 import { SDKProvider, useSDK } from "@/context/sdk"
+import { DraftRouteGate } from "@/pages/draft-route-gate"
 import {
   createPermissionSurfaceMount,
   type PermissionSurfaceComponent,
@@ -302,23 +303,27 @@ function createDraftRoute(Leaf: DraftSurfaceComponent) {
     const [search] = useSearchParams<{ draftId?: string }>()
     const settings = useSettings()
     const tabs = useTabs()
+    const language = useLanguage()
+    const navigate = useNavigate()
+    // alpha-code #903:两个非 happy-path 不再是「空白页」与「静默弹回首页」。守卫本体在
+    // `@/pages/draft-route-gate`(零上下文依赖,故可被真组件闸门挂载);这里只注入文案与
+    // 恢复动作。摘掉那两个 fallback ⇒ ui-mac 的 draft-route-gate.cases.ts 当场红。
     return (
-      <Show when={tabs.ready()}>
-        <Show
-          when={tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === search.draftId)}
-          keyed
-          fallback={<Navigate href="/" />}
-        >
-          {(draft) => (
-            <Show
-              when={settings.general.newLayoutDesigns()}
-              fallback={<Navigate href={`/${base64Encode(draft.directory)}/session`} />}
-            >
-              <ResolvedDraftRoute draftID={draft.draftID} draft={draft} />
-            </Show>
-          )}
-        </Show>
-      </Show>
+      <DraftRouteGate
+        ready={tabs.ready()}
+        draft={tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === search.draftId)}
+        t={language.t}
+        onRecover={() => navigate("/")}
+      >
+        {(draft) => (
+          <Show
+            when={settings.general.newLayoutDesigns()}
+            fallback={<Navigate href={`/${base64Encode(draft.directory)}/session`} />}
+          >
+            <ResolvedDraftRoute draftID={draft.draftID} draft={draft} />
+          </Show>
+        )}
+      </DraftRouteGate>
     )
   }
 }

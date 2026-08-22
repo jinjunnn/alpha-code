@@ -14,7 +14,7 @@ index faf019446..98b795648 100644
    "scripts": {
      "typecheck": "tsgo -b",
 diff --git a/packages/app/src/app.tsx b/packages/app/src/app.tsx
-index b4496ba7d..e7dd83c81 100644
+index b4496ba7d..1cec486a9 100644
 --- a/packages/app/src/app.tsx
 +++ b/packages/app/src/app.tsx
 @@ -1,7 +1,8 @@
@@ -35,10 +35,11 @@ index b4496ba7d..e7dd83c81 100644
  import {
    type Component,
    createEffect,
-@@ -57,6 +57,10 @@ import { ServerConnection, ServerProvider, serverName, useServer } from "@/conte
+@@ -57,6 +57,11 @@ import { ServerConnection, ServerProvider, serverName, useServer } from "@/conte
  import { SettingsProvider, useSettings } from "@/context/settings"
  import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
  import { SDKProvider, useSDK } from "@/context/sdk"
++import { DraftRouteGate } from "@/pages/draft-route-gate"
 +import {
 +  createPermissionSurfaceMount,
 +  type PermissionSurfaceComponent,
@@ -46,7 +47,7 @@ index b4496ba7d..e7dd83c81 100644
  import { WslServersProvider } from "@/wsl/context"
  import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
  import LegacyLayout from "@/pages/layout"
-@@ -66,44 +70,111 @@ import { useCheckServerHealth } from "./utils/server-health"
+@@ -66,44 +71,111 @@ import { useCheckServerHealth } from "./utils/server-health"
  import { legacySessionHref, legacySessionServer, requireServerKey, sessionHref } from "./utils/session-route"
  import { createSessionLineage } from "@/pages/session/session-lineage"
  
@@ -188,7 +189,7 @@ index b4496ba7d..e7dd83c81 100644
    )
  }
  
-@@ -127,11 +198,20 @@ function TargetServerRoute(props: ParentProps) {
+@@ -127,11 +199,20 @@ function TargetServerRoute(props: ParentProps) {
    )
  }
  
@@ -214,7 +215,7 @@ index b4496ba7d..e7dd83c81 100644
  
  function LegacyTargetSessionRoute() {
    const params = useParams<{ serverKey: string; id: string }>()
-@@ -182,53 +262,65 @@ function LegacyServerLayout(props: ParentProps<{ serverScoped?: JSX.Element }>)
+@@ -182,53 +263,69 @@ function LegacyServerLayout(props: ParentProps<{ serverScoped?: JSX.Element }>)
    )
  }
  
@@ -228,19 +229,6 @@ index b4496ba7d..e7dd83c81 100644
 -        when={tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === search.draftId)}
 -        keyed
 -        fallback={<Navigate href="/" />}
--      >
--        {(draft) => (
--          <Show
--            when={settings.general.newLayoutDesigns()}
--            fallback={<Navigate href={`/${base64Encode(draft.directory)}/session`} />}
--          >
--            <ResolvedDraftRoute draft={draft} />
--          </Show>
--        )}
--      </Show>
--    </Show>
--  )
--}
 +function createDraftRoute(Leaf: DraftSurfaceComponent) {
 +  function ResolvedDraftRoute(props: { draftID: string; draft: DraftTab }) {
 +    const tabs = useTabs()
@@ -250,36 +238,14 @@ index b4496ba7d..e7dd83c81 100644
 +    )
 +    const directory = () => props.draft.directory
 +    const serverKey = () => props.draft.server
- 
--function ResolvedDraftRoute(props: { draft: DraftTab }) {
--  const global = useGlobal()
--  const conn = createMemo(() => global.servers.list().find((item) => ServerConnection.key(item) === props.draft.server))
--  const directory = () => props.draft.directory
--  const serverKey = () => props.draft.server
++
 +    const promoteDraft: DraftSurfaceProps["promoteDraft"] = (session) => {
 +      tabs.promoteDraft(props.draftID, {
 +        server: props.draft.server,
 +        sessionId: session.sessionId,
 +      })
 +    }
- 
--  return (
--    <Show when={`${props.draft.server}\0${props.draft.directory}`} keyed>
--      <ServerSDKProvider server={conn}>
--        <ServerSyncProvider server={conn}>
--          <ModelsProvider directory={directory}>
--            <SDKProvider directory={directory}>
--              <DirectoryDataProvider directory={directory} server={serverKey}>
--                <DraftProviders>
--                  <NewSession />
--                </DraftProviders>
--              </DirectoryDataProvider>
--            </SDKProvider>
--          </ModelsProvider>
--        </ServerSyncProvider>
--      </ServerSDKProvider>
--    </Show>
--  )
++
 +    return (
 +      <Show when={`${props.draft.server}\0${props.draft.directory}`} keyed>
 +        <ServerSDKProvider server={conn}>
@@ -303,29 +269,62 @@ index b4496ba7d..e7dd83c81 100644
 +    const [search] = useSearchParams<{ draftId?: string }>()
 +    const settings = useSettings()
 +    const tabs = useTabs()
++    const language = useLanguage()
++    const navigate = useNavigate()
++    // alpha-code #903:两个非 happy-path 不再是「空白页」与「静默弹回首页」。守卫本体在
++    // `@/pages/draft-route-gate`(零上下文依赖,故可被真组件闸门挂载);这里只注入文案与
++    // 恢复动作。摘掉那两个 fallback ⇒ ui-mac 的 draft-route-gate.cases.ts 当场红。
 +    return (
-+      <Show when={tabs.ready()}>
-+        <Show
-+          when={tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === search.draftId)}
-+          keyed
-+          fallback={<Navigate href="/" />}
-+        >
-+          {(draft) => (
-+            <Show
-+              when={settings.general.newLayoutDesigns()}
-+              fallback={<Navigate href={`/${base64Encode(draft.directory)}/session`} />}
-+            >
-+              <ResolvedDraftRoute draftID={draft.draftID} draft={draft} />
-+            </Show>
-+          )}
-+        </Show>
-+      </Show>
++      <DraftRouteGate
++        ready={tabs.ready()}
++        draft={tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === search.draftId)}
++        t={language.t}
++        onRecover={() => navigate("/")}
+       >
+         {(draft) => (
+           <Show
+             when={settings.general.newLayoutDesigns()}
+             fallback={<Navigate href={`/${base64Encode(draft.directory)}/session`} />}
+           >
+-            <ResolvedDraftRoute draft={draft} />
++            <ResolvedDraftRoute draftID={draft.draftID} draft={draft} />
+           </Show>
+         )}
+-      </Show>
+-    </Show>
+-  )
+-}
+-
+-function ResolvedDraftRoute(props: { draft: DraftTab }) {
+-  const global = useGlobal()
+-  const conn = createMemo(() => global.servers.list().find((item) => ServerConnection.key(item) === props.draft.server))
+-  const directory = () => props.draft.directory
+-  const serverKey = () => props.draft.server
+-
+-  return (
+-    <Show when={`${props.draft.server}\0${props.draft.directory}`} keyed>
+-      <ServerSDKProvider server={conn}>
+-        <ServerSyncProvider server={conn}>
+-          <ModelsProvider directory={directory}>
+-            <SDKProvider directory={directory}>
+-              <DirectoryDataProvider directory={directory} server={serverKey}>
+-                <DraftProviders>
+-                  <NewSession />
+-                </DraftProviders>
+-              </DirectoryDataProvider>
+-            </SDKProvider>
+-          </ModelsProvider>
+-        </ServerSyncProvider>
+-      </ServerSDKProvider>
+-    </Show>
+-  )
++      </DraftRouteGate>
 +    )
 +  }
  }
  
  function UiI18nBridge(props: ParentProps) {
-@@ -238,9 +330,6 @@ function UiI18nBridge(props: ParentProps) {
+@@ -238,9 +335,6 @@ function UiI18nBridge(props: ParentProps) {
  
  declare global {
    interface Window {
@@ -335,7 +334,7 @@ index b4496ba7d..e7dd83c81 100644
      api?: {
        setTitlebar?: (theme: { mode: "light" | "dark"; scheme?: "system" | "light" | "dark" }) => Promise<void>
        exportDebugLogs?: () => Promise<string>
-@@ -338,11 +427,11 @@ function LegacyServerScopedShell(props: ServerScopedShellProps) {
+@@ -338,11 +432,11 @@ function LegacyServerScopedShell(props: ServerScopedShellProps) {
    )
  }
  
@@ -349,7 +348,7 @@ index b4496ba7d..e7dd83c81 100644
        </ServerScopedProviders>
      </SelectedServerProviders>
    )
-@@ -360,7 +449,7 @@ function DraftProviders(props: ParentProps) {
+@@ -360,7 +454,7 @@ function DraftProviders(props: ParentProps) {
    )
  }
  
@@ -358,7 +357,7 @@ index b4496ba7d..e7dd83c81 100644
    return (
      <MetaProvider>
        <Font />
-@@ -379,7 +468,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
+@@ -379,7 +473,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
              >
                <QueryProvider>
                  <WslServersProvider>
@@ -367,7 +366,7 @@ index b4496ba7d..e7dd83c81 100644
                      <MarkedProvider>
                        <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
                      </MarkedProvider>
-@@ -530,7 +619,19 @@ export function AppInterface(props: {
+@@ -530,7 +624,19 @@ export function AppInterface(props: {
    disableHealthCheck?: boolean
    startup?: Promise<void>
    serverScoped?: JSX.Element
@@ -387,7 +386,7 @@ index b4496ba7d..e7dd83c81 100644
    // The visual new layout lives in the router root so it remains mounted across
    // route changes. Draft and session routes override only their server-bound data
    // providers beneath it.
-@@ -561,7 +662,9 @@ export function AppInterface(props: {
+@@ -561,7 +667,9 @@ export function AppInterface(props: {
                        <NotificationProvider>
                          <ServerShell>
                            <Show when={useSettings().general.newLayoutDesigns()} fallback={routerProps.children}>
@@ -398,7 +397,7 @@ index b4496ba7d..e7dd83c81 100644
                            </Show>
                          </ServerShell>
                        </NotificationProvider>
-@@ -569,7 +672,13 @@ export function AppInterface(props: {
+@@ -569,7 +677,13 @@ export function AppInterface(props: {
                    </TabsProvider>
                  )}
                >
@@ -413,7 +412,7 @@ index b4496ba7d..e7dd83c81 100644
                </Dynamic>
              </Show>
            </ConnectionGate>
-@@ -579,8 +688,18 @@ export function AppInterface(props: {
+@@ -579,8 +693,18 @@ export function AppInterface(props: {
    )
  }
  
@@ -433,7 +432,7 @@ index b4496ba7d..e7dd83c81 100644
  
    return (
      <>
-@@ -592,7 +711,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+@@ -592,7 +716,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
          <Show when={!settings.general.newLayoutDesigns()}>
            {
              <>
@@ -442,7 +441,7 @@ index b4496ba7d..e7dd83c81 100644
                <Route path="/server/:serverKey/session/:id" component={LegacyTargetSessionRoute} />
              </>
            }
-@@ -603,7 +722,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+@@ -603,7 +727,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
          </Route>
        </Route>
        <Show when={settings.general.newLayoutDesigns()}>
@@ -451,7 +450,7 @@ index b4496ba7d..e7dd83c81 100644
          <Route path="/:dir/session/:id" component={NewLayoutLegacySessionRedirect} />
          <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
        </Show>
-@@ -619,16 +738,17 @@ function NewLayoutLegacySessionRedirect() {
+@@ -619,16 +743,17 @@ function NewLayoutLegacySessionRedirect() {
  
    return (
      <Show when={tabs.ready()}>
@@ -2120,6 +2119,40 @@ index d2d616248..4edcaba79 100644
            }
            batch(() => {
              setStore("all", store.all.length, newTerminal)
+diff --git a/packages/app/src/i18n/en.ts b/packages/app/src/i18n/en.ts
+index f03147f15..880ecb196 100644
+--- a/packages/app/src/i18n/en.ts
++++ b/packages/app/src/i18n/en.ts
+@@ -703,6 +703,13 @@ export const dict = {
+   "session.new.git.none": "No Git",
+   "session.new.lastModified": "Last modified",
+ 
++  // alpha-code #903:/new-session?draftId=… 的两个非 happy-path 用户可见态。
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description":
++    "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
++
+   "session.header.search.placeholder": "Search {{project}}",
+   "session.header.searchFiles": "Search files",
+   "session.header.openIn": "Open in",
+diff --git a/packages/app/src/i18n/zh.ts b/packages/app/src/i18n/zh.ts
+index 82d73ac3a..25efd7fd5 100644
+--- a/packages/app/src/i18n/zh.ts
++++ b/packages/app/src/i18n/zh.ts
+@@ -668,6 +668,11 @@ export const dict = {
+   "session.new.workspace.existing": "工作区…",
+   "session.new.git.none": "无 Git",
+   "session.new.lastModified": "最后修改",
++
++  "session.draft.pending": "正在载入这份草稿…",
++  "session.draft.missing.title": "这份草稿已经不在了",
++  "session.draft.missing.description": "它可能已被删除,或这个链接指向一份从未存在过的草稿。你的其他对话没有受影响。",
++  "session.draft.missing.action": "返回首页",
+   "session.header.search.placeholder": "搜索 {{project}}",
+   "session.header.searchFiles": "搜索文件",
+   "session.header.openIn": "打开方式",
 diff --git a/packages/app/src/index.ts b/packages/app/src/index.ts
 index d18e05fc9..b89f68a3c 100644
 --- a/packages/app/src/index.ts
@@ -2165,6 +2198,111 @@ index d18e05fc9..b89f68a3c 100644
  export { loadLocaleDict, normalizeLocale, type Locale } from "./context/language"
  export { useWslServers } from "./wsl/context"
  export { type DisplayBackend, type FatalRendererErrorLog, type Platform, PlatformProvider } from "./context/platform"
+diff --git a/packages/app/src/pages/draft-route-gate.tsx b/packages/app/src/pages/draft-route-gate.tsx
+new file mode 100644
+index 000000000..49a367ca0
+--- /dev/null
++++ b/packages/app/src/pages/draft-route-gate.tsx
+@@ -0,0 +1,99 @@
++// alpha-code #903 —— `/new-session?draftId=…` 的两个用户可见态。
++//
++// 上游把这条路由的两个非happy-path都做成了「什么都不显示」:
++//   · `<Show when={tabs.ready()}>` 无 fallback ⇒ 水合完成前是**空白页**;
++//   · 找不到 draft 时 `fallback={<Navigate href="/" />}` ⇒ **静默弹回首页**,零提示 ——
++//     用户分不清是自己点错了、草稿被删了、还是应用坏了。
++// REQ-085(#201)AC2 点名禁止的正是这两项。
++//
++// 为什么闸门能真的挂载它:本模块**零上下文依赖** —— 不 `useLanguage()`、不 `useNavigate()`、
++// 不碰 `@/*` 别名,文案与恢复动作都由调用方(app.tsx 的 `createDraftRoute`)注入。于是
++// packages/ui-mac 的真组件 lane 可以直接 import 它、真挂载、真断言 DOM,而不需要先立起
++// LanguageProvider / Router / TabsProvider 一整套 provider 栈。判据因此断的是**渲染结果**,
++// 不是源码文本(ADR-037 决策 4 的口径)。
++//
++// draft 用泛型而不是 `import type { DraftTab }`:类型导入要走 `@/context/tabs` 别名,
++// 而别名在 ui-mac 的 cwd 下解析不到 —— 泛型让本模块对任何 cwd 都可加载。
++import { type JSX, Show } from "solid-js"
++
++/** 本模块用到的全部 i18n 键。列成联合类型 = 调用方少传一条就 typecheck 红。 */
++export type DraftRouteGateKey =
++  | "session.draft.pending"
++  | "session.draft.missing.title"
++  | "session.draft.missing.description"
++  | "session.draft.missing.action"
++
++export interface DraftRouteGateProps<Draft> {
++  /** tab store 是否已水合完成(`tabs.ready()`)。false = 还不知道 draft 在不在。 */
++  ready: boolean
++  /** 命中的 draft;`undefined` = 缺失 / 已删除 / 非法 draftId。 */
++  draft: Draft | undefined
++  t: (key: DraftRouteGateKey) => string
++  /** 恢复动作:回首页。由调用方接 router,本模块不碰导航。 */
++  onRecover: () => void
++  children: (draft: Draft) => JSX.Element
++}
++
++/** 水合中的骨架 —— 占位而不是空白,并带无障碍的加载语义。 */
++export function DraftRoutePending(props: { label: string }) {
++  return (
++    <div
++      data-component="draft-route-pending"
++      role="status"
++      aria-busy="true"
++      aria-label={props.label}
++      class="flex h-full w-full flex-col items-center justify-center gap-3 p-8"
++    >
++      <div class="h-6 w-48 rounded-md bg-surface-raised-base opacity-60 animate-pulse" />
++      <div class="h-4 w-64 rounded-md bg-surface-raised-base opacity-40 animate-pulse" />
++      <div class="h-4 w-40 rounded-md bg-surface-raised-base opacity-40 animate-pulse" />
++    </div>
++  )
++}
++
++/** 具名错误态 + 一个恢复动作。刻意不自动跳转:静默跳转正是本票要修掉的行为。 */
++export function DraftRouteMissing(props: { title: string; description: string; action: string; onRecover: () => void }) {
++  return (
++    <div
++      data-component="draft-route-missing"
++      role="alert"
++      class="flex h-full w-full flex-col items-center justify-center gap-3 p-8 text-center"
++    >
++      <h1 class="text-base font-medium">{props.title}</h1>
++      <p class="max-w-md text-sm opacity-70">{props.description}</p>
++      <button
++        type="button"
++        data-component="draft-route-missing-action"
++        class="mt-2 rounded-md bg-surface-raised-base px-3 py-1.5 text-sm"
++        onClick={() => props.onRecover()}
++      >
++        {props.action}
++      </button>
++    </div>
++  )
++}
++
++/**
++ * draft 路由的守卫。两个 fallback 都必须在:摘掉任何一个,ui-mac 的
++ * `draft-route-gate.cases.ts` 当场红(那正是 #903 的退出条件)。
++ */
++export function DraftRouteGate<Draft>(props: DraftRouteGateProps<Draft>) {
++  return (
++    <Show when={props.ready} fallback={<DraftRoutePending label={props.t("session.draft.pending")} />}>
++      <Show
++        when={props.draft}
++        keyed
++        fallback={
++          <DraftRouteMissing
++            title={props.t("session.draft.missing.title")}
++            description={props.t("session.draft.missing.description")}
++            action={props.t("session.draft.missing.action")}
++            onRecover={() => props.onRecover()}
++          />
++        }
++      >
++        {(draft) => props.children(draft)}
++      </Show>
++    </Show>
++  )
++}
 diff --git a/packages/app/src/pages/home.tsx b/packages/app/src/pages/home.tsx
 index 215696d7d..ca677b349 100644
 --- a/packages/app/src/pages/home.tsx
