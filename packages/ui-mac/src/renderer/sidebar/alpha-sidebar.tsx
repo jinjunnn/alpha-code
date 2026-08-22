@@ -10,6 +10,7 @@ import { Portal } from "solid-js/web"
 import { useLocation, useNavigate, type NavigateOptions } from "@solidjs/router"
 import { ServerConnection, useCommand, useServer, useTabs } from "../alpha-ui/providers"
 import { createDefaultWorkspaceDir } from "../alpha-ui/default-workspace"
+import { beginLaunchDraftHandoff, endLaunchDraftHandoff } from "../alpha-ui/launch-draft-handoff"
 import { ProjectAvatar, type ProjectAvatarVariant } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
 import { useTheme } from "@opencode-ai/ui/theme/context"
@@ -696,11 +697,19 @@ export function AlphaSidebar(props: {
   // startDraft as the sidebar button (REQ-126 §4 序 3, one entry point), so cold start no longer mounts the
   // legacy shell either. No `replace` needed any more: the router already starts at "/", so Back
   // lands on home rather than bouncing through the admission route.
+  // #1056:交接位在**侧栏 setup 这一拍**就 armed —— 早于路由树挂 AlphaHome(上游
+  // `AppInterface` 的 ServerShell 先渲染 alpha children、后渲染路由 children)。放进下面那条
+  // 效应里就晚了:`store.ready` 在冷启动实测要 6–10s 才为真(#1053 的 13 个样本),而首页
+  // composer 早在 ~1.1s 就已经挂上并起了一条注定被取消的模型链。released 挂在启动这一次
+  // startDraft 的结算上(成功即已导航走;如实失败则首页当场拿回 composer),
+  // 侧栏卸载也算结算 —— 见 launch-draft-handoff.ts 的纪律段。
+  beginLaunchDraftHandoff()
+  onCleanup(endLaunchDraftHandoff)
   let didLaunchNav = false
   createEffect(() => {
     if (didLaunchNav || !store.ready) return
     didLaunchNav = true
-    void startDraft()
+    void startDraft().finally(endLaunchDraftHandoff)
   })
 
   // Mount our chrome INSIDE #root (not <body>). opencode's draggable-region CSS is scoped to

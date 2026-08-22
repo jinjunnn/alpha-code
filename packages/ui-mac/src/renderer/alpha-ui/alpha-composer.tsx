@@ -1043,7 +1043,12 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
               // #882:`error:catalog-not-ready` 这个分类跟着屏障 deadline 一起没了 —— 屏障不再
               // 自己判失败,能到这里的只有真正的请求失败或链被 supersede。留一个永不成立的标签
               // 只会让 #881 的归因把「假失败」和「真失败」混在一起数。
-              outcome: "error:request",
+              //
+              // #1056:那两种情形当时还共用 `error:request` 这**一个**标签,于是 #1053 的证据里
+              // 13/13 条「链被 supersede / composer 被卸载」全部读成了「客户端请求失败」,归因
+              // 因此写成了「首链撞上 10s 预算」。取消不是失败:这里按 `chainSignal.aborted`
+              // 分成 `cancelled`,让下一次归因不必再从时间戳去猜是谁结束了这条链。
+              outcome: chainSignal.aborted ? "cancelled" : "error:request",
             }),
         )
       return listing

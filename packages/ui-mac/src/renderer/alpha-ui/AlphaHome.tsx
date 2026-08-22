@@ -11,6 +11,7 @@ import { type AlphaProjectsApi } from "../sidebar/use-projects"
 import { hrefFor } from "../../shared/route-manifest"
 import { AlphaComposer } from "./alpha-composer"
 import { noteHomeComposerUnmountDraft } from "./home-draft-discard-notice"
+import { launchDraftPending } from "./launch-draft-handoff"
 import { createDefaultWorkspaceDir } from "./default-workspace"
 import { AlphaWorkspaceChip, visibleWorkspaces } from "./workspace-chip"
 import { pushToast } from "./Toast"
@@ -128,38 +129,47 @@ export function AlphaHome(props: {
             {greeting()},<span class="a-home-greet-dim"> {t("alpha.home.prompt")}</span>
           </h1>
 
-          {/* ── THE shared composer(与会话页同一组件,REQ-055)────────────── */}
-          <AlphaComposer
-            mode="home"
-            projects={props.projects}
-            directory={activeWs}
-            serverKey={props.serverKey}
-            // #927:首页 composer 的草稿是组件本地信号,没有任何暂存 —— 默认服务器身份切换
-            // (keyed 重挂)会把它连树一起丢掉。owner 裁决是丢弃但先提示:卸载时把「还有没有
-            // 未发送内容」交给 notice 模块,身份切换那一拍据此弹一句说明(导航等卸载不误报,
-            // 判据见 home-draft-discard-notice.ts)。
-            onDraftSnapshot={noteHomeComposerUnmountDraft}
-            onNeedWorkspace={() => {
-              // 零工作区不留死点(REQ-054①):任何需要工作区的控件都引导到选择器
-              setWsOpen(true)
-              pushToast({ kind: "info", title: t("alpha.home.workspaceRequired") })
-            }}
-            onSubmitted={(id, submitted) => {
-              // #894:落点 = **提交那一刻**的 server 快照。会话是 `projects.startChat` 在那个
-              // server 上建的,所以身份从来就在手上 —— 过去这里跳的是 legacy
-              // `/{目录}/session/{id}`(不带 server 段),壳只能事后反推:「完成时的 active
-              // server」或「同 id 的 tab」。多 server(WSL/remote)下 active 与 store 连的
-              // sidecar 不是同一个 ⇒ 跳去的 server 上根本没有这个会话;那边若恰好有同 id 会话,
-              // 打开并污染的是那个无关会话。
-              //
-              // 快照缺席 ⇒ **不跳**,不猜。走我们自己的代码到不了这个状态(`serverKey` 与
-              // `startChat` 用的 client 同源于 `initializationData(sidecar)` 的那个 url:
-              // client 不在时 `startChat` 返回 undefined,`onSubmitted` 根本不会被调),
-              // 真到了这里也只说明身份不成立 —— 那时随便跳一个 server 就是在制造上面那个事故。
-              if (!submitted.serverKey) return
-              navigate(hrefFor.session(submitted.serverKey, id))
-            }}
-          />
+          {/* ── THE shared composer(与会话页同一组件,REQ-055)──────────────
+              #1056:冷启动那一拍例外 —— 侧栏的启动效应必然把路由换到 `/new-session`
+              (REQ-126 §4 序 3),此刻的首页是过渡态。过去这里照挂一个 composer,于是
+              一次 root.mount 下有**两个** home 模式实例:先挂的那个起一条模型链
+              (auth/keyStatus/catalog + 目录就绪屏障探针 + 退避重试),再在导航那一拍被
+              卸载、链被取消 —— #1053 的 13/13 样本里那条被误读成「10s 客户端超时」的
+              `outcome:"error:request"` 就是它。判据是交接位而不是「路由是不是 /」:
+              后者在导航发生之前恒为真,分辨不出「过渡态」与「用户自己回到首页」。 */}
+          <Show when={!launchDraftPending()}>
+            <AlphaComposer
+              mode="home"
+              projects={props.projects}
+              directory={activeWs}
+              serverKey={props.serverKey}
+              // #927:首页 composer 的草稿是组件本地信号,没有任何暂存 —— 默认服务器身份切换
+              // (keyed 重挂)会把它连树一起丢掉。owner 裁决是丢弃但先提示:卸载时把「还有没有
+              // 未发送内容」交给 notice 模块,身份切换那一拍据此弹一句说明(导航等卸载不误报,
+              // 判据见 home-draft-discard-notice.ts)。
+              onDraftSnapshot={noteHomeComposerUnmountDraft}
+              onNeedWorkspace={() => {
+                // 零工作区不留死点(REQ-054①):任何需要工作区的控件都引导到选择器
+                setWsOpen(true)
+                pushToast({ kind: "info", title: t("alpha.home.workspaceRequired") })
+              }}
+              onSubmitted={(id, submitted) => {
+                // #894:落点 = **提交那一刻**的 server 快照。会话是 `projects.startChat` 在那个
+                // server 上建的,所以身份从来就在手上 —— 过去这里跳的是 legacy
+                // `/{目录}/session/{id}`(不带 server 段),壳只能事后反推:「完成时的 active
+                // server」或「同 id 的 tab」。多 server(WSL/remote)下 active 与 store 连的
+                // sidecar 不是同一个 ⇒ 跳去的 server 上根本没有这个会话;那边若恰好有同 id 会话,
+                // 打开并污染的是那个无关会话。
+                //
+                // 快照缺席 ⇒ **不跳**,不猜。走我们自己的代码到不了这个状态(`serverKey` 与
+                // `startChat` 用的 client 同源于 `initializationData(sidecar)` 的那个 url:
+                // client 不在时 `startChat` 返回 undefined,`onSubmitted` 根本不会被调),
+                // 真到了这里也只说明身份不成立 —— 那时随便跳一个 server 就是在制造上面那个事故。
+                if (!submitted.serverKey) return
+                navigate(hrefFor.session(submitted.serverKey, id))
+              }}
+            />
+          </Show>
 
           {/* workspace chip —— 与新对话页同源的受控组件(REQ-126 CODE-D) */}
           <AlphaWorkspaceChip
