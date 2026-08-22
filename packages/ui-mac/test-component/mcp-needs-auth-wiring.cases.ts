@@ -90,10 +90,13 @@ const fakeClient = {
 }
 mock.module("@opencode-ai/sdk/v2/client", () => ({ createOpencodeClient: () => fakeClient }))
 
+// 云连接器卡只在「已登录 + platform」时展示状态与动作。`#624` 起 `platformStatus` 也进判据,
+// 故这里改成**可驱动**的:用例设完 `authStateForCase` 再 mount,订阅时回放当前值。
+type CaseAuthState = { status: string; mode: string; platformStatus?: "ready" | "recovering" }
+let authStateForCase: CaseAuthState = { status: "logged-in", mode: "platform", platformStatus: "ready" }
 mock.module("../src/renderer/auth-recovery", () => ({
-  // 云连接器卡只在「已登录 + platform」时展示状态与动作。
-  subscribeAuthState: (listener: (state: { status: string; mode: string }) => void) => {
-    listener({ status: "logged-in", mode: "platform" })
+  subscribeAuthState: (listener: (state: CaseAuthState) => void) => {
+    listener(authStateForCase)
     return () => {}
   },
 }))
@@ -192,6 +195,7 @@ function reset() {
   installCatalogCalls.length = 0
   directoryPickerCalls = 0
   authenticateBehaviour = "succeed"
+  authStateForCase = { status: "logged-in", mode: "platform", platformStatus: "ready" }
 }
 
 const toastTexts = () => Array.from(document.querySelectorAll(".a-toast")).map((node) => node.textContent ?? "")
@@ -342,4 +346,104 @@ test("带 {workspace} 的 Hub MCP 安装不打开目录选择器,只发送全局
   await waitFor(() => expect(installCatalogCalls).toHaveLength(1))
   expect(directoryPickerCalls).toBe(0)
   expect(installCatalogCalls[0]).toEqual({ catalogId: "mcp:filesystem", scope: { scope: "global" } })
+})
+
+// ── `#624`:平台凭证恢复中,云能力 fail-close ────────────────────────────────────────────────
+//
+// 缺陷原形:`cloudReady` 只看 `status` + `mode`,`platformStatus:"recovering"` 照样放行。
+// 它放行的是本渲染进程权限最高的两个动作(云派发 = 代码出境 + 计费;enableCloud),而 main
+// **不会**替我们兜底 —— `getAccessToken` 不看有效期,`authed()` 只判 token 在不在。
+//
+// 判据取**用户真按的那颗按钮的 disabled**,不是谓词的返回值:谓词单测过不了「按钮忘了接线」。
+// 每一格都配一条 ready 的正向对照 —— 否则把按钮恒置 disabled 也能全绿。
+//
+// 反向验证(已实跑):把 `cloudReady` 改回 `onPlatform()`,下面 4 条 recovering 用例转红。
+
+const recoveringAuth = () => {
+  authStateForCase = { status: "logged-in", mode: "platform", platformStatus: "recovering" }
+}
+/** 详情页主操作按钮(「启用」/「添加」)。 */
+const primaryAddButton = () =>
+  Array.from(document.querySelectorAll<HTMLButtonElement>("button.alpha-ext-add")).find(
+    (b) => b.textContent === zh["alpha.ext.enableCloud"],
+  )
+/** 打开某个云条目的详情页(点卡片,走生产的 openEntryDetail)。 */
+async function openCloudEntry(displayName: string) {
+  await waitFor(() => {
+    const card = Array.from(document.querySelectorAll<HTMLElement>(".alpha-ext-card")).find((c) =>
+      c.querySelector(".alpha-ext-card-name b")?.textContent?.includes(displayName),
+    )
+    if (!card) throw new Error(`card not found: ${displayName}`)
+    card.click()
+  })
+}
+
+test("`#624` 恢复中:云条目的「启用」按钮禁用(ready 时可用)", async () => {
+  reset()
+  recoveringAuth()
+  engineStatus = { cloud: { status: "connected" } }
+  mount("cloud")
+  await openCloudEntry("云代码审查")
+  await waitFor(() => expect(primaryAddButton()).toBeDefined())
+  expect(primaryAddButton()!.disabled).toBe(true)
+
+  // 正向对照:同一条链、同一颗按钮,ready 时必须是可点的。
+  reset()
+  engineStatus = { cloud: { status: "connected" } }
+  mount("cloud")
+  await openCloudEntry("云代码审查")
+  await waitFor(() => expect(primaryAddButton()).toBeDefined())
+  expect(primaryAddButton()!.disabled).toBe(false)
+})
+
+test("`#624` 恢复中:code-review 详情的云派发按钮禁用(ready 时可用)", async () => {
+  // 派发区的按钮 = 真正把代码送出去的那两颗(上传 / legacy diff)。
+  const dispatchButtons = () =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>(".alpha-ext-cloudrun button.alpha-ext-add"))
+
+  reset()
+  recoveringAuth()
+  engineStatus = { cloud: { status: "connected" } }
+  mount("cloud")
+  await openCloudEntry("云代码审查")
+  await waitFor(() => expect(dispatchButtons().length).toBeGreaterThan(0))
+  expect(dispatchButtons().map((b) => b.disabled)).not.toContain(false)
+
+  reset()
+  engineStatus = { cloud: { status: "connected" } }
+  mount("cloud")
+  await openCloudEntry("云代码审查")
+  await waitFor(() => expect(dispatchButtons().length).toBeGreaterThan(0))
+  expect(dispatchButtons().map((b) => b.disabled)).toContain(false)
+})
+
+test("`#624` 恢复中的门控条不谎称「未登录 / BYOK」,也不给 no-op 按钮", async () => {
+  reset()
+  recoveringAuth()
+  engineStatus = { cloud: { status: "connected" } }
+  mount("cloud")
+
+  await waitFor(() =>
+    expect(document.querySelector(".alpha-ext-cloudgate-t")?.textContent).toBe(zh["alpha.ext.cloudGateTitleRecovering"]),
+  )
+  // 用户此刻**已登录**且**已在 platform 模式** —— 这两句都是假话。
+  expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudGateTitleMode"])
+  expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudGateTitleLogin"])
+  // 「切换到平台模式」点下去是 no-op;恢复中不给任何动作。
+  expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudSwitchMode"])
+  expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudLoginCta"])
+})
+
+test("`#624` 恢复中的连接器卡说「凭证恢复中」,不说「需登录平台模式」", async () => {
+  reset()
+  recoveringAuth()
+  engineStatus = { cloud: { status: "connected" } }
+  mount("cloud")
+
+  await waitFor(() =>
+    expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnRecovering"]),
+  )
+  expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudConnNeedLogin"])
+  // 恢复中不得谎称「已连接」—— 那正是这次要拦的放行。
+  expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudConnConnected"])
 })

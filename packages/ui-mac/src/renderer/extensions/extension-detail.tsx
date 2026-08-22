@@ -109,8 +109,12 @@ export function ExtensionDetail(props: {
   onUninstall: (receipt: InstallReceipt) => void
   /** Navigate the detail page to another entry (bundle item click). */
   onOpenEntry: (e: CatalogEntry) => void
-  /** REQ-020 T2:云门控(登录且 platform 模式)。cloud 条目「启用」与 dispatch 入口据此禁用。 */
+  /** REQ-020 T2:云门控(登录且 platform 模式)。cloud 条目「启用」与 dispatch 入口据此禁用。
+   *  `#624` 起额外含「平台凭证未在恢复中」——恢复中一律 fail-close(判断依据见 extension-hub.tsx)。 */
   cloudReady?: Accessor<boolean>
+  /** `#624`:已登录 platform 但凭证恢复中。**只驱动文案**,不参与放行(放行看 cloudReady)。
+   *  分出这一支是因为此时说「需登录平台模式」是假话 —— 用户已经登录了。 */
+  cloudRecovering?: Accessor<boolean>
   /** 未登录时云页的登录 CTA(window.api.auth.start,hub 持有)。 */
   onLogin?: () => void
   /** REQ-103(#195):governance 只读真源(逐扩展五维所有权 + 三态);详情页所有权/来源签名段据此渲染。 */
@@ -359,6 +363,7 @@ export function ExtensionDetail(props: {
   const agent = () => (props.target.kind === "agent" ? props.target.agent : undefined)
   const isCloudConnector = () => props.target.kind === "cloud-connector"
   const cloudReady = () => props.cloudReady?.() ?? false
+  const cloudRecovering = () => props.cloudRecovering?.() ?? false
   // 注入的 mcp.cloud 的 SDK 实时态(platform 模式下 sidecar 注入后才存在)。
   const cloudLive = () => props.ext.store.mcp["cloud"]
 
@@ -1005,13 +1010,16 @@ export function ExtensionDetail(props: {
                         </ul>
                       </div>
                       <p class="alpha-ext-dnote">{t("alpha.ext.cloudEnableNote")}</p>
+                      {/* `#624`:恢复中也禁用,但理由不同 —— 不能说「需登录」。 */}
                       <Show when={!cloudReady()}>
                         <p class="alpha-ext-dnote" data-err="">
-                          {t("alpha.ext.cloudNeedPlatformNote")}
+                          {cloudRecovering()
+                            ? t("alpha.ext.cloudRecoveringNote")
+                            : t("alpha.ext.cloudNeedPlatformNote")}
                         </p>
                       </Show>
                       <Show when={spec().pipelineKind === "code-review"}>
-                        <CloudDispatchBox spec={spec()} ready={cloudReady()} />
+                        <CloudDispatchBox spec={spec()} ready={cloudReady()} recovering={cloudRecovering()} />
                       </Show>
                     </>
                   )
@@ -1139,7 +1147,11 @@ export function ExtensionDetail(props: {
           <FactRow label={t("alpha.ext.cloudConnStatus")}>
             <Show
               when={cloudReady()}
-              fallback={<span class="alpha-ext-cloudst" data-st="off">{t("alpha.ext.cloudConnNeedLogin")}</span>}
+              fallback={
+                <span class="alpha-ext-cloudst" data-st={cloudRecovering() ? "idle" : "off"}>
+                  {cloudRecovering() ? t("alpha.ext.cloudConnRecovering") : t("alpha.ext.cloudConnNeedLogin")}
+                </span>
+              }
             >
               <span class="alpha-ext-cloudst" data-st={cloudLive()?.connected ? "on" : "idle"}>
                 {cloudLive()?.connected ? t("alpha.ext.cloudConnConnected") : t("alpha.ext.cloudConnDisconnected")}
