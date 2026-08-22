@@ -910,15 +910,22 @@ async function classifyBundleChild(
     // 会「账本记 active、引擎读不到」。fatal(required 子项拒整单,与单装一致 fail-closed)。
     const bundleTruth = configTruthInRootGate(deps.globalRoot(), deps.installers.mcpConfigTruthPath())
     if (!bundleTruth.ok) return { status: "fatal", id, reason: bundleTruth.reason }
-    // 首期排除需密钥 / workspace-policy 的 MCP —— 它们的 secret 文件写或 REQ-133 Alpha
-    // Office workspace canonicalization 不在 config action 的原子边界内。fail-closed。
+    // 首期排除需密钥的 MCP —— claimMcpSecretVersionDir/writeMcpSecretVersioned 的密钥文件写
+    // 发生在事务边界外(单装同款代码逐分支手写补偿式回滚),bundle 的多子项一次性回滚机制
+    // 还没有覆盖它。fail-closed(#823)。
+    //
+    // #823:此前这里还连带排除了「命令含 {workspace} 占位 / isWorkspacePolicyMcp」的 MCP
+    // (mcp:filesystem / mcp:git / mcp:alpha-excel 等),继承自 REQ-100 落地时(2026-07-13)
+    // deriveMcpConfig 的旧语义——那时 {workspace} 是一个必须由调用方显式提供的 grant,
+    // 空 grants 传入必然在 deriveMcpConfig 内部失败。REQ-134(#1011,2026-08-18)把语义改成
+    // 「{workspace} 留字面量写盘、由引擎在 spawn 时按当前 instance 目录替换」之后,
+    // deriveMcpConfig(spec, {}) 对 {workspace} 占位不再需要任何 grant、也不会失败——
+    // 这条早退分支从此再没有实际拦截作用之外的东西可拦,只是把本该走到
+    // applyMcpWritePolicy(单装同款策略闸,已经正确处理 {workspace} 字面量与 Alpha Office
+    // 校验)的合法安装,挡在了一句过期文案后面。四条随包套件全部经这条路被拒
+    // (jinjunnn/alpha-code#823)。
     if ((spec.requiredEnvVars?.length ?? 0) > 0)
       return { status: "skip", id, reason: "secret-bearing MCP not supported in atomic bundle (phase 1)" }
-    if (
-      spec.command?.some((argument) => argument.includes("{workspace}")) ||
-      isWorkspacePolicyMcp(entry.name, { type: spec.mcpType, ...(spec.command ? { command: spec.command } : {}), ...(spec.url ? { url: spec.url } : {}) })
-    )
-      return { status: "skip", id, reason: "workspace-policy MCP not supported in atomic bundle (phase 1)" }
     const derived = deriveMcpConfig(spec, {})
     if (!derived.ok) return { status: "skip", id, reason: `MCP needs grants not supported in bundle: ${derived.reason}` }
     if (derived.secretVars.length > 0)

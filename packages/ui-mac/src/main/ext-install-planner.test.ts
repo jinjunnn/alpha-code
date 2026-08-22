@@ -13,6 +13,8 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { CatalogEntry } from "../renderer/extensions/catalog-types"
+// #823:随包 catalog 快照本体(端到端回归专用,见文件末尾同号 describe)。
+import bundledCatalogSnapshot from "../renderer/extensions/alpha-catalog.json"
 import { curationBlobUrl } from "../shared/catalog-curation"
 import { addReceipt } from "./alpha-installs"
 import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from "./ext-manifest-v2"
@@ -959,7 +961,16 @@ describe("other kinds — derivation & records", () => {
     if (!r.ok) expect(r.reason).toContain("required bundle child")
   })
 
-  test("REQ-133 bundle policy comes from the shared workspace registry, not an Excel package-name hole", async () => {
+  // #823:此前 classifyBundleChild 对任何含 {workspace} 占位/isWorkspacePolicyMcp 命中的 MCP
+  // 无差别 skip("phase 1"),继承自 REQ-100 落地时 deriveMcpConfig 的旧语义(彼时 {workspace}
+  // 是必须显式传 grant 的占位,bundle 无 grant 通道故必然失败)。REQ-134(#1011)把语义改成
+  // 「{workspace} 留字面量写盘、引擎 spawn 时按 instance 目录替换」后,这条早退分支不再拦截
+  // 任何 deriveMcpConfig 会失败的东西,只是把随包四条套件(mcp:filesystem/git/alpha-excel)
+  // 的合法安装挡在一句过期文案后面——见 jinjunnn/alpha-code#823。REQ-133 的身份/安全校验从
+  // 未依赖这条早退分支,它是 applyMcpWritePolicy(单装同款策略闸)的职责,早退分支移除后依旧
+  // 逐字节生效:下面两个 case 分别钉住「合规条目现在装得上」与「classification 不是靠早退分支
+  // 撑着的——伪造/不合规条目照样被 applyMcpWritePolicy 挡」。
+  test("REQ-133/#823: well-formed Alpha Office bundle child installs (workspace marker is not an atomic-bundle blocker)", async () => {
     const alphaWord: CatalogEntry = {
       ...mcpEntry,
       id: "mcp:alpha-word",
@@ -978,8 +989,37 @@ describe("other kinds — derivation & records", () => {
     }
     const { deps } = makeDeps({ entries: [...ALL_ENTRIES, alphaWord, office] })
     const result = await installAuthorized({ catalogId: office.id, scope: { scope: "global" } }, deps)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.installed).toEqual(["mcp:alpha-word"])
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    // 字面量占位原样写盘(REQ-134),{alphaResources} 被解到真实随包 server.py。
+    expect(cfg.mcp["alpha-word"].command.at(-1)).toBe("{workspace}")
+    expect(cfg.mcp["alpha-word"].command).toContain("word")
+  })
+
+  test("REQ-133/#823: applyMcpWritePolicy — not classifyBundleChild's early-out — still rejects a malformed workspace argument", async () => {
+    const spoofed: CatalogEntry = {
+      ...mcpEntry,
+      id: "mcp:alpha-word-spoofed",
+      name: "alpha-word",
+      installSpec: {
+        kind: "mcp",
+        mcpType: "local",
+        // 具体路径替代字面量占位(REQ-134 要求 exact marker)——不是一个真实占位,伪造条目。
+        command: ["uv", "run", "--no-project", "--with", "python-docx==1.2.0", "{alphaResources}/office-mcp/server.py", "word", "/tmp/not-a-marker"],
+      },
+    }
+    const office: CatalogEntry = {
+      ...bundleEntry,
+      id: "bundle:alpha-office-spoofed",
+      name: "alpha-office-spoofed",
+      bundleItems: [{ catalogEntryId: spoofed.id, optional: false, installOrder: 1 }],
+    }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, spoofed, office] })
+    const result = await installAuthorized({ catalogId: office.id, scope: { scope: "global" } }, deps)
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.reason).toContain("workspace-policy")
+    if (!result.ok) expect(result.reason).toContain("REQ-134")
   })
 
   test("bundle: skill(generation)+ 无密钥 MCP(config)一次原子提交(REQ-100 #311)", async () => {
@@ -2809,4 +2849,72 @@ describe("ADR-040(`#825`):catalog plugin 条目在事务开始前具名拒绝", 
     expect(calls.length).toBeGreaterThan(0)
     expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(true)
   })
+})
+
+// ── #823:随包 catalog 的四条套件必须全部真能装(不是内部函数返回 ok,是端到端 installCatalog)──
+//
+// 勘破(见 jinjunnn/alpha-code#823):四条随包套件此前一条都装不上 —— bundle:office/research/dev
+// 的必需成员(mcp:filesystem/git/alpha-excel)全带 {workspace} 占位,撞在 classifyBundleChild 一条
+// 继承自 REQ-100(2026-07-13)落地时旧语义的早退分支上(见上面 classifyBundleChild 内的 #823 注释)。
+// bundle:design 的必需成员是两个远程技能、不含任何 MCP,从未受这个 bug 影响(它本来就走
+// authorize→confirm 就能装成;这里把它也钉进来只是为了让"随包四条套件全部可装"这句话对全部
+// 四条都有回归覆盖,不止对被这个 bug 影响的三条)。
+describe("#823:随包 catalog 四条套件端到端可装(真实 alpha-catalog.json,非内部函数返回值)", () => {
+  function bundledCatalogEntries(): CatalogEntry[] {
+    const raw = bundledCatalogSnapshot as unknown as { entries: CatalogEntry[] }
+    // bundle:design 的两个远程技能在真实 catalog 里指向线上资产 URL;测试离线跑,替换成
+    // 内容与声明 digest 精确匹配的 fixture 字节(不改变 bundleItems / installSpec 等安装事实,
+    // 只换 remoteAsset.files 好让 downloadRemoteAsset stub 能回放正确的 sha256)。
+    return raw.entries.map((entry) => {
+      if (entry.id !== "skill:canvas-design" && entry.id !== "skill:brand-guidelines") return entry
+      const content = `---\nname: ${entry.name}\ndescription: fixture\n---\nbody`
+      const sha256 = crypto.createHash("sha256").update(content).digest("hex")
+      return {
+        ...entry,
+        remoteAsset: {
+          version: entry.version,
+          files: [{ path: "SKILL.md", sha256, bytes: Buffer.byteLength(content), url: `https://fixture.example/${entry.name}/SKILL.md` }],
+        },
+      } as CatalogEntry
+    })
+  }
+
+  for (const bundleId of ["bundle:office", "bundle:research", "bundle:dev", "bundle:design"]) {
+    test(`${bundleId} 端到端装成(installCatalog → authorize 确认 → ok:true)`, async () => {
+      const entries = bundledCatalogEntries()
+      const { deps } = makeDeps({
+        entries,
+        installers: {
+          // 只覆盖需要精确字节回放的下载 stub;其余 installer(applyMcpWritePolicy 等)复用
+          // makeDeps 缺省的真实实现,与生产同一份判定逻辑。
+          downloadRemoteAsset: async (files) => {
+            const all = entries.flatMap((e) => e.remoteAsset?.files ?? [])
+            const contents = files.map((f) => {
+              const match = all.find((a) => a.sha256 === f.sha256 && a.path === f.path)
+              if (!match) throw new Error(`no fixture bytes registered for ${f.path} (${f.sha256})`)
+              const nameGuess = match.url.split("/").slice(-2, -1)[0]
+              return { path: f.path, data: Buffer.from(`---\nname: ${nameGuess}\ndescription: fixture\n---\nbody`) }
+            })
+            return { ok: true, contents }
+          },
+        },
+      })
+      const first = await installCatalog({ catalogId: bundleId, scope: { scope: "global" } }, deps)
+      const final = !first.ok && first.stage === "authorize"
+        ? await installCatalog(
+            {
+              catalogId: bundleId,
+              scope: { scope: "global" },
+              authorization: { confirmed: Object.fromEntries(first.authorization.filter((d) => d.requiresConfirmation).map((d) => [d.key, d.requested])) },
+            },
+            deps,
+          )
+        : first
+      expect(final.ok, `${bundleId}: ${!final.ok ? final.reason : ""}`).toBe(true)
+      if (!final.ok || final.kind !== "bundle") return
+      // 必需成员逐个真装成(不是 skipped)——四条套件的点睛不是"事务提交了",是"你要的东西在里面"。
+      const required = (entries.find((e) => e.id === bundleId)?.bundleItems ?? []).filter((it) => !it.optional).map((it) => it.catalogEntryId)
+      for (const id of required) expect(final.installed).toContain(id)
+    })
+  }
 })
