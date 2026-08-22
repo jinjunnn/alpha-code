@@ -265,6 +265,75 @@ describe("#927 身份切换吃掉首页草稿 ⇒ 丢弃但先提示(owner 裁�
   })
 })
 
+describe("#1056 冷启动只挂一次 home composer(启动 draft 交接闸)", () => {
+  // 实测事实(#1053 的 13/13 样本,docs/verification/2026-08-21-req109-1053-catalog-p95/):
+  // 一次 `renderer.root.mount` 下有**两条** home 模式模型链 —— `chain:2` 先起、以
+  // `outcome:"error:request"` 收场,`chain:1` 随后 30–50ms 内起并 `ok`,`catalog_ready` 只在
+  // 后者身上发过。两条链分属两个组件实例(`chainSeq` 是实例本地的 `let`),即 composer 挂了两次。
+  // 机制:路由起点恒为 `/` ⇒ AlphaHome 先挂;侧栏的启动效应(REQ-126 §4 序 3)在 `store.ready`
+  // 之后必然把路由换到 `/new-session`,首页那一个实例连同它的模型链一起被丢弃。
+  //
+  // 本组用**生产侧栏 + 生产首页 + 生产新对话页**跑完整条启动路径,判据仍是真机取证的那一个
+  // (`renderer.composer.mount` 计数),不断言任何内层信号。
+
+  async function bootWithSidebar() {
+    runtime.setSidebarMounted(true)
+    // 项目列表按住 = 侧栏启动 draft 的发车闸按住(它 gate 在 store.ready 上)。真机冷启动
+    // 这段窗口是 6–10s;这里由用例决定长短,好让「过渡态那一拍」可断言。
+    runtime.holdProjectList()
+    mountShell()
+    await settle()
+  }
+
+  // 判据取**存在与否的布尔**而不是节点本身:失败时 happy-dom 节点会被整棵序列化进 diff
+  // (实测把一次失败拖成 140s 的日志),这里只需要"在/不在"。
+  const newSessionMounted = () => document.querySelector("[data-alpha-new-session]") !== null
+  const homeMounted = () => document.querySelector("[data-alpha-home]") !== null
+  const homeComposerMounted = () => document.querySelector('[data-alpha-composer="home"]') !== null
+
+  test("控制组:交接位缺席时,同一条启动路径确实挂两次 composer", async () => {
+    // 抢先 arm 一个**当场到期**的交接位:侧栏自己的 arm 因一次性闩而成为 no-op,
+    // 于是首页照修复前的样子挂 composer —— 先证明这个计数器数得到已知的坏。
+    runtime.resetLaunchDraftHandoff()
+    runtime.beginLaunchDraftHandoff(0)
+    await bootWithSidebar()
+    await waitFor(() => runtime.composerMountCount() === 1, "首页(过渡态)composer 挂载")
+
+    runtime.releaseProjectList()
+    await waitFor(newSessionMounted, "启动 draft 落到新对话页")
+    await waitFor(() => runtime.composerMountCount() === 2, "新对话页 composer 的第二次挂载")
+  })
+
+  test("首页过渡态不挂 composer;落到新对话页后全程只挂过一次", async () => {
+    await bootWithSidebar()
+
+    // 首页**是**挂着的(不是整页被藏起来):骨架在,只是不掏 composer。
+    expect(homeMounted()).toBe(true)
+    expect(homeComposerMounted()).toBe(false)
+    expect(runtime.composerMountCount()).toBe(0)
+
+    runtime.releaseProjectList()
+    await waitFor(newSessionMounted, "启动 draft 落到新对话页")
+    await waitFor(() => runtime.composerMountCount() === 1, "新对话页 composer 挂载")
+
+    // 「不该再有第二次」这一侧 settle 后直接断言,不靠等待把它等没。
+    await settle()
+    expect(runtime.composerMountCount()).toBe(1)
+  })
+
+  test("启动 draft 如实失败(默认目录供给被拒)⇒ 首页当场拿回 composer,不留一个没有输入框的死首页", async () => {
+    runtime.setEnsureDefaultWorkspaceOk(false)
+    await bootWithSidebar()
+    expect(runtime.composerMountCount()).toBe(0)
+
+    runtime.releaseProjectList()
+    // 没有导航发生(仍在首页),但交接结束 ⇒ composer 补挂上来。
+    await waitFor(() => runtime.composerMountCount() === 1, "失败后首页补挂 composer")
+    expect(newSessionMounted()).toBe(false)
+    expect(homeComposerMounted()).toBe(true)
+  })
+})
+
 describe("#565 harness 复刻的原件形状锚点(renderer/index.tsx)", () => {
   // App() 的响应图无法 import(render() 入口)。这些锚点不判行为,只判「复刻还对不对得上原件」。
   // 判据是**整段精确文本**而不是 presence 探针:第四闪的历史触发点(REQ-088 的 resolvedSurfaces

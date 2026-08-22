@@ -40,6 +40,7 @@ import { createEffect, createMemo, createResource, createSignal, onCleanup, Show
 import { render } from "solid-js/web"
 import type { SidecarGenerationState } from "../preload/types"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
+import { AlphaSidebar } from "./sidebar/alpha-sidebar"
 import { installHomeDraftDiscardNotice } from "./alpha-ui/home-draft-discard-notice"
 import { ToastViewport } from "./alpha-ui/Toast"
 import { AlphaNewSession } from "./alpha-ui/alpha-new-session"
@@ -51,8 +52,17 @@ import { initializationData } from "./initialization"
 import { composeRoutes } from "./route-composition"
 import { type AlphaProjectsApi, useAlphaProjects } from "./sidebar/use-projects"
 import { availableStartupServer, readyWslConnections } from "./wsl/connections"
+import { resetLaunchDraftHandoff as resetHandoff } from "./alpha-ui/launch-draft-handoff"
 
 export { render }
+// #1056:交接位是模块级单例 —— 用例必须操作**打包进本 runtime 的那一份**,
+// 从源码另 import 一次拿到的是另一个实例(生产组件读不到它)。
+export {
+  beginLaunchDraftHandoff,
+  endLaunchDraftHandoff,
+  launchDraftPending,
+  resetLaunchDraftHandoff,
+} from "./alpha-ui/launch-draft-handoff"
 
 export const SIDECAR_URL = "http://127.0.0.1:4096"
 export const PROJECT_DIRECTORY = "/repos/alpha-code"
@@ -84,6 +94,26 @@ const sidecarInitBarrier = createBarrier()
 /** 按住 `window.api.awaitInitialization` → 复现「引擎 init 迟到」:壳先 splash,收敛后才挂路由树。 */
 export const holdSidecarInit = () => sidecarInitBarrier.hold()
 export const releaseSidecarInit = () => sidecarInitBarrier.release()
+
+// #1056:项目列表的迟到由用例控制 —— 侧栏的启动 draft 效应正是 gate 在 `store.ready` 上,
+// 真机冷启动实测它要 6–10s(#1053),那整段窗口就是首页 composer 白挂一次的地方。
+const projectListBarrier = createBarrier()
+export const holdProjectList = () => projectListBarrier.hold()
+export const releaseProjectList = () => projectListBarrier.release()
+
+// #1056:侧栏默认**不挂**(既有 #565/#927 用例的命题里没有它,挂上会把启动 draft 导航
+// 一起带进那些用例)。启动路径的用例显式打开。
+let sidebarMounted = false
+export const setSidebarMounted = (on: boolean) => {
+  sidebarMounted = on
+}
+
+// #1056:`ensureDefaultWorkspace` 是启动 draft 的硬前置(ADR-025 不变量 5)。被拒 ⇒ 侧栏
+// 如实失败、不导航 —— 用例据此驱动「交接结束但仍留在首页」这条反向路径。
+let ensureDefaultWorkspaceOk = true
+export const setEnsureDefaultWorkspaceOk = (ok: boolean) => {
+  ensureDefaultWorkspaceOk = ok
+}
 
 // —— 默认服务器(index.tsx 里 platform.getDefaultServer 的等价供给,挂载前配置)——————
 let defaultServerChoice = "sidecar"
@@ -248,6 +278,9 @@ export function installPreloadStub() {
     "contracts.health": async () => null,
     endpoints: async () => ({}),
     workspaceDefaultDir: async () => DEFAULT_WORKSPACE,
+    // 侧栏的启动 draft 在建 draft 之前必须真的供给成功(ADR-025 不变量 5);
+    // 缺省 Proxy 回 undefined ⇒ `result?.ok === true` 为假 ⇒ 只弹一句失败 toast,不会导航。
+    workspaceEnsureDefault: async () => ({ ok: ensureDefaultWorkspaceOk }),
     "models.catalog": async () => ({
       version: "harness",
       defaultModel: null,
@@ -287,9 +320,11 @@ export function installPreloadStub() {
       // 事件流保持挂起(闸门不跑服务器);其余给形状正确的响应,形状错会让上游走退避重试。
       if (path.endsWith("/event")) return new Promise(() => {})
       const body = path in FETCH_FIXTURES ? FETCH_FIXTURES[path] : {}
-      return Promise.resolve(
-        new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } }),
-      )
+      const respond = () =>
+        new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
+      // #1056:`/project` 是 `store.ready` 的前置 —— 按住它就按住了侧栏启动 draft 的发车时刻。
+      if (path === "/project") return projectListBarrier.wait().then(respond)
+      return Promise.resolve(respond())
     }) as unknown as typeof fetch,
   })
 }
@@ -304,6 +339,10 @@ export function installRootHost() {
 export function resetHarness() {
   storageCells.clear()
   sidecarInitBarrier.release()
+  projectListBarrier.release()
+  sidebarMounted = false
+  ensureDefaultWorkspaceOk = true
+  resetHandoff()
   defaultServerChoice = "sidecar"
   wslState = emptyWslState
   projectsApiRef = undefined
@@ -422,6 +461,8 @@ export function AlphaSurfaceShell() {
               surfaces={surfaceComponents()}
             >
               <ServerListProbe />
+              {/* #1056:生产侧栏本体(启动 draft 的唯一发起处)。默认不挂,见 setSidebarMounted。 */}
+              {sidebarMounted ? <AlphaSidebar projects={alphaProjects} serverKey={projectsServerKey} /> : null}
               {/* #927:生产 ToastViewport 与原件同位(keyed 树内、AppInterface children)——
                   提示 push 发生在旧树 dispose 期间,判据必须证明它熬得过重挂本身:
                   viewport 随树重建,靠模块级 store 把这条重新渲染出来。 */}
