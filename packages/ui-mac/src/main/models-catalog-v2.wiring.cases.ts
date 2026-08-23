@@ -78,6 +78,7 @@ const { registerModelsIpcHandlers } = await import("./models-ipc")
 const { buildAlphaModelConfig, getModelCatalog } = await import("./alpha-models")
 const { liveAllowlistPath } = await import("./alpha-live-allowlist")
 const { getContractFailure } = await import("./alpha-contract-health")
+const { registerCatalogHealthIpcHandlers } = await import("./alpha-catalog-health")
 const { initAlphaEnvironment } = await import("./alpha-environment")
 import type { EffectiveCatalog } from "../shared/alpha-model-types"
 
@@ -126,6 +127,20 @@ const invokePlatformLive = () => handlers.get("models-platform-live")!() as Prom
 /** 真实生产入口:renderer 调 window.api.models.catalog() 时跑的就是这个 handler。 */
 const invokeCatalog = () => handlers.get("models-catalog")!() as EffectiveCatalog
 
+// ── #1084:目录刷新失败的**用户可观察出口**。 ───────────────────────────────────────────────
+// 生产里 renderer 拿这个状态只有两条路,两条都必须真的送到:①挂载时 invoke
+// `alpha-catalog-health`(启动那次刷新早于 renderer 存在,只有推送的话它到不了);
+// ②`alpha-catalog-failure` 推送。所以下面既拿 handler、也拿一个记录 webContents.send 的假窗口。
+type CatalogPush = { channel: string; payload: unknown }
+const pushed: CatalogPush[] = []
+const fakeWindow = {
+  isDestroyed: () => false,
+  webContents: { send: (channel: string, payload: unknown) => pushed.push({ channel, payload }) },
+}
+/** renderer 调 window.api.models.refreshHealth() 时跑的就是这个 handler。 */
+const invokeRefreshHealth = () => handlers.get("alpha-catalog-health")!() as { code: string; at: string } | null
+const lastPush = () => pushed.filter((p) => p.channel === "alpha-catalog-failure").at(-1)?.payload
+
 beforeEach(() => {
   for (const key of MANAGED) {
     saved[key] = process.env[key]
@@ -133,7 +148,9 @@ beforeEach(() => {
   }
   userData = mkdtempSync(join(tmpdir(), "models-catalog-v2-wiring-"))
   handlers.clear()
+  pushed.length = 0
   registerModelsIpcHandlers(userData)
+  registerCatalogHealthIpcHandlers(() => fakeWindow as never)
   // 空 config dir → readUserProviderIds() 看不到用户自定义 provider(隔离本闸关心的平台段)。
   configDir = mkdtempSync(join(tmpdir(), "models-catalog-v2-config-"))
   process.env.OPENCODE_CONFIG_DIR = configDir
@@ -267,5 +284,54 @@ describe("#681 反分叉:sidecar 引擎配置与 IPC 投影是同一份投影", 
     expect(Object.values(models).every((m: any) => m.pricing === undefined)).toBe(true)
     // 但 variants 仍随投影下发(REQ-029 不能被本次切换弄丢)。
     expect(models["claude-opus-4.8"].variants["高"]).toEqual({ reasoning: { effort: "high" } })
+  })
+})
+
+// ── #1084(#987 CHOICE=A,DECIDE #1078):平台拒绝的分类码必须到得了用户 ────────────────────
+//
+// 在此之前这条链的终点是 `fetchPlatformModels()` 的返回值:main/index.ts 两处 `.catch(() => {})`
+// 把它扔掉,`models-platform-live` 有 preload 桥却零 renderer 消费者 —— 目录刷新失败在产品面上
+// 完全不存在。判据因此不看「函数返回了什么」,只看**renderer 拿得到什么**:renderer 侧只有
+// `alpha-catalog-health`(invoke)与 `alpha-catalog-failure`(push)这两个口子。
+//
+// 反向验证(已实跑,#1084 退出条件):把 alpha-platform-models.ts `syncLiveAllowlist` 里
+// `reportCatalogRefresh(r.error)` 那一行删掉 ⇒ 本组前两条转红(invoke 返回 null、零推送),
+// 即回到「吞掉失败」的原状。第三条钉的是清空:把 `reportCatalogRefresh(null)` 删掉 ⇒ 它转红
+// (横幅会永远挂着,即使目录早已刷新成功)。
+describe("#1084 目录刷新失败的用户可观察出口", () => {
+  const stubRejection = (status: number, body: string) => {
+    globalThis.fetch = (async () => new Response(body, { status })) as unknown as typeof fetch
+  }
+
+  test("网关拒绝 ⇒ 分类码经生产入口到达 renderer 的两个口子(不是被吞掉)", async () => {
+    // 响应字节照抄 alpha-platform packages/gateway/src/worker.ts 的 rateLimitRequest 拒绝体。
+    stubRejection(429, '{"error":{"message":"rate limited: too many requests from this IP","code":"rate_limited"}}')
+    expect(await invokePlatformLive()).toEqual({ error: "rate_limited" })
+
+    expect(invokeRefreshHealth()).toMatchObject({ code: "rate_limited" })
+    expect(lastPush()).toMatchObject({ code: "rate_limited" })
+  })
+
+  test("无码的拒绝也有出口(http-<status> 同样是分类结果,不许静默)", async () => {
+    stubRejection(503, "upstream is down")
+    expect(await invokePlatformLive()).toEqual({ error: "http-503" })
+    expect(invokeRefreshHealth()).toMatchObject({ code: "http-503" })
+  })
+
+  test("契约不兼容同样进出口(main 侧「最后一次刷新结局」是单一真源)", async () => {
+    stubFetch(catalogV1())
+    expect(await invokePlatformLive()).toEqual({ error: "contract-incompatible" })
+    expect(invokeRefreshHealth()).toMatchObject({ code: "contract-incompatible" })
+  })
+
+  test("下一次刷新成功 ⇒ 出口清空(横幅不许永远挂着)", async () => {
+    stubRejection(429, '{"error":{"message":"rate limited","code":"rate_limited"}}')
+    await invokePlatformLive()
+    expect(invokeRefreshHealth()).toMatchObject({ code: "rate_limited" })
+
+    stubFetch(catalogV2())
+    expect((await invokePlatformLive()).error).toBeUndefined()
+    expect(invokeRefreshHealth()).toBeNull()
+    expect(lastPush()).toBeNull()
   })
 })

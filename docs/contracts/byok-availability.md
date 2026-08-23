@@ -136,6 +136,15 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
   (`liveSync.status` 如实标 `cache` / `static`),BYOK 段原样返回。REQ-127 #681 起,平台段在没有
   有效 V2 快照时**额外**放弃一切价格主张(`pricingBasisModelId` 为 `null`、每行无 `pricing`);
   BYOK 段不受影响 —— 它本来就不经平台目录。
+- **失败域隔离 ≠ 失败静默**(#1084,#987 CHOICE=A / DECIDE #1078)。刷新失败只损失平台段,
+  但它必须**说出来**:`syncLiveAllowlist` 的每一条出路都经 `reportCatalogRefresh` 落到
+  `alpha-catalog-health` IPC + `alpha-catalog-failure` 推送,renderer 的 `CatalogFailureBanner`
+  以 warning 横幅(`.a-catalog-failure`)呈现那个稳定分类码;下一次刷新成功即清空。
+  此前分类码只到 `fetchPlatformModels()` 的返回值为止 —— 三个刷新入口(启动、登录后 respawn 前、
+  `models-platform-live` IPC)一个都不消费它,于是「失败处理」写得再好,用户永远看不到。
+  横幅是 warning 而不是 error:BYOK 与上次成功的缓存目录照常可用,这是降级不是阻断。
+  contract-incompatible 两个通道都记(main 侧「最后一次刷新结局」是单一真源),renderer 侧由
+  `CatalogFailureBanner` 在契约横幅在场时自抑制 —— 两条横幅是同一个 fixed 位。
 
 ## 实现锚点
 
@@ -147,6 +156,7 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
 | 谓词 2 的发送门约束(`byok-not-registered`) | `model-default-core.ts`(`preflightBlockReason`)+ `alpha-composer.tsx`(`canSend` / `submit` / 行内说明) |
 | 禁止引擎清单反向撤销已选本地 BYOK | `packages/ui-mac/src/renderer/alpha-ui/model-default-core.ts`(`checkSelectedModel`) |
 | 目录主权 + 失败域隔离 | `packages/ui-mac/src/main/alpha-platform-models.ts` |
+| 刷新失败的用户可观察出口 | `packages/ui-mac/src/main/alpha-catalog-health.ts` + `renderer/alpha-ui/Banner.tsx`(`CatalogFailureBanner`) |
 | 注入不受 allowlist 收窄 | `packages/ui-mac/src/main/alpha-models.ts` |
 | 缓存不含 BYOK 策略面 | `packages/ui-mac/src/main/alpha-live-allowlist.ts` |
 
@@ -169,6 +179,7 @@ BYOK 目录**只由本地 `alpha-models.json` 决定**。平台不得远程干�
 | home 选择不得 supersede 在跑的模型链 / 账户链 | **父层生命周期** | `test-component/alpha-composer-model.cases.ts`(链恢复自愈 + 账户链存活 → `platformPermission` 回 ready) |
 | live allowlist 排除某供应商 / 平台不可达 → 仍在目录与注入中 | main | `alpha-models.test.ts`、`alpha-platform-catalog.cases.ts` |
 | 平台目录 contract-incompatible → 本地 BYOK 仍返回 | main | `alpha-platform-catalog.cases.ts` |
+| 平台目录刷新失败 → 分类码到达 renderer(不被吞掉),成功刷新清空 | main + renderer | `models-catalog-v2.wiring.cases.ts`、`test-component/catalog-failure-banner.cases.ts` |
 | session recovering 下点击 → 零 `switchModel`,不呈现为已切换,行置灰且文案不说「可先选择」 | 点击层 + 呈现 | `test-component/alpha-composer-model.cases.ts` |
 | home 选中后发送门仍关闭 | 点击层 + 发送门 | 同上 |
 

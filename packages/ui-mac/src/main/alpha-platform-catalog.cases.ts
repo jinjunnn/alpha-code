@@ -286,9 +286,11 @@ describe("ac#962:平台拒绝的分类码穿过生产 fetchPlatformModels()", ()
     expect(await fetchPlatformModels()).toEqual({ error: "rate_limited" })
   })
 })
-// 诚实标注(降级,不假装有闸):这条判据到得了生产函数的返回值,**到不了用户** ——
-// /v1/models 的失败结局今天在 main/index.ts 的两处 `.catch(() => {})` 被丢弃,
-// models-platform-live IPC 有 preload 桥但零 renderer 调用方。见 ac#962 票面的订正块。
+// [#1084,取代上面那条「到不了用户」的诚实标注] 分类码现在有出口了:syncLiveAllowlist 的每一条
+// 出路都经 reportCatalogRefresh 落到 alpha-catalog-health,renderer 的 CatalogFailureBanner 渲染它。
+// 本文件仍只断言**生产函数的返回值**(它测的是分类,不是出口);出口那一跳的闸在
+// models-catalog-v2.wiring.cases.ts(main 半场)与 test-component/catalog-failure-banner.cases.ts
+// (renderer 半场,真 DOM)。
 
 // 「sidecar 引擎配置与 IPC 投影不再分叉」的闸在 models-catalog-v2.wiring.cases.ts —— 那里从**真实**
 // registerModelsIpcHandlers 出发观察,而不是直接调内部函数。

@@ -45,6 +45,7 @@ import type {
 } from "../shared/automation-types"
 import type {
   AlphaModelCatalog,
+  CatalogRefreshFailure,
   EffectiveCatalog,
   PricingMultiplier,
   ProviderInput,
@@ -53,6 +54,7 @@ import type {
   ProviderTestInput,
   ProviderTestResult,
 } from "../shared/alpha-model-types"
+export type { CatalogRefreshFailure } from "../shared/alpha-model-types"
 export type {
   WslDistroProbe,
   WslInstalledDistro,
@@ -1220,6 +1222,10 @@ export type ElectronAPI = {
     platformLive: () => Promise<
       CloudResult<{ models: PlatformLiveModel[]; edition?: string }>
     >
+    /** #1084:最近一次目录刷新的失败结局(`null` = 成功)。启动那次刷新早于 renderer 挂载,
+     *  所以出口必须同时提供「当前值」与「后续变化」两条。 */
+    refreshHealth: () => Promise<CatalogRefreshFailure | null>
+    subscribeRefreshHealth: (cb: (failure: CatalogRefreshFailure | null) => void) => () => void
   }
   // custom provider add/test (writes alpha.jsonc provider[], respawns sidecar; 1-token probe).
   providers: {

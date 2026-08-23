@@ -11,7 +11,8 @@
   line-height: 1.45;
 }
 
-.a-contract-failure {
+.a-contract-failure,
+.a-catalog-failure {
   position: fixed;
   z-index: 10000;
   top: 12px;
