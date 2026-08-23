@@ -20,12 +20,22 @@ export type CatalogReadyFact = {
   probes: number
   /** 走满一个兜底轮询周期的次数。事件路径恒为 0 —— 这是死信道的判别轴。 */
   pollWaits: number
+  /**
+   * #1083:**没在单探针期限内答上来**的探针轮数。恒 ≥ 0,健康路径恒为 0。
+   *
+   * 它是 #1080 那条尾巴在系统里的表示:那 6 个样本里每一条失败链都只发了 1 轮探针就被掀掉,
+   * 而屏障对「这一轮没答」的既定反应本该是换一轮重探。分项存在之前,这件事在证据里只表现为
+   * 一个 `outcome:"error:request"` + `durationMs≈10002`,与「引擎真的答了个 503」同形。
+   */
+  probeTimeouts: number
   /** 让**就绪那一轮**探针得以发出的唤醒来源。 */
-  wake: "first" | "event" | "poll"
+  wake: "first" | "event" | "poll" | "timeout"
 }
 
 type ModelContractOptions = {
   catalogReadyPollMs?: number
+  /** #1083:单探针期限。生产用 `CATALOG_READY_PROBE_TIMEOUT_MS`;用例调小以确定性地驱动到期分支。 */
+  probeTimeoutMs?: number
   now?: () => number
   wait?: (delayMs: number, signal?: AbortSignal) => Promise<void>
   /**
@@ -49,7 +59,7 @@ type ModelContractOptions = {
  * 自己会拖慢它要观测的那件事(#881 归因面)。报数时事件路径与兜底路径必须分开说,不能混成
  * 一个 P95:事件路径的「事件到达 → 请求发起」是 0 个计时器 tick,兜底路径最坏是一个周期。
  */
-const CATALOG_READY_POLL_MS = 250
+export const CATALOG_READY_POLL_MS = 250
 
 const wait = (delayMs: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -78,6 +88,32 @@ export class ModelContractError extends Error {
     super(`model contract ${operation} failed`)
     this.name = "ModelContractError"
   }
+}
+
+/**
+ * #1083:屏障自己的**单探针**期限 —— 与 `ENGINE_FETCH_TIMEOUT_MS` 是两件事,别再共用一个。
+ *
+ * `ENGINE_FETCH_TIMEOUT_MS`(10s)是**链级**的悬挂防御:到期 = 这次取数失败 = 掀掉整条链、
+ * 交给 1/2/4/8s 退避。屏障借用它是个类别错误 —— 屏障是个**轮询循环**,它对「这一轮没答」的
+ * 既定反应(#882)是换一轮重探,而不是判引擎坏了。
+ *
+ * #1080 的尾巴就是这个错误的样子(`docs/verification/2026-08-23-req109-1080-post1056-catalog-p95/`):
+ * 6/26 个样本里,首轮 marker 探针没答上来,10s 预算到期 → `outcome:"error:request"` → 退避 1s →
+ * 整条链重来 → 首轮探针再没答 → …。每条失败链的 `catalog_ready` 一条都没有,即**屏障一次都
+ * 没走到它自己的第二轮探针**:一个 250ms 的轮询循环被一个 10s 的链级预算按死在第一轮。
+ * 而同一次启动里,sidecar 早在 ~897ms 就对**同一个目录**(`alphaUserWorkspaceDir()`)prewarm
+ * 到了 `outcome:"ready" / status:200` —— 目录当时**已经收敛**,链却在退避里空转了 18.7–42.5s。
+ *
+ * 取值纪律(单测钉住):必须 > 兜底轮询档位(否则期限会抢在设计好的轮询节奏前面),必须 <
+ * `ENGINE_FETCH_TIMEOUT_MS`(否则探针又能走到链级预算,等于这条改动没发生)。abort 顺带关掉
+ * 底层连接,不让 Chromium 连接池继续复用一条死套接字(与 `ENGINE_FETCH_TIMEOUT_MS` 同款理由)。
+ */
+export const CATALOG_READY_PROBE_TIMEOUT_MS = 1_000
+
+/** 屏障探针的取消面:调用方 signal + 本轮重探取消 + 本轮期限。**不含**链级预算(见上)。 */
+const anySignal = (...signals: Array<AbortSignal | undefined>) => {
+  const present = signals.filter((candidate): candidate is AbortSignal => candidate !== undefined)
+  return present.length === 1 ? present[0]! : AbortSignal.any(present)
 }
 
 /** 单次网络往返的悬挂防御(2026-07-12 复验盲区)。屏障的**等待**不受它约束,只有请求受。 */
@@ -122,10 +158,13 @@ const catalogNotReady = (error: unknown, status: number | undefined) =>
  * 失败」在这里的形状恒为一个 `AbortError`,且必须发生在 `round.aborted` 之后 —— 没取消过,就
  * 不存在「自己取消」这回事。
  *
- * 落不进来的:401/503(引擎真的答了,body 是 `_tag` 形状的 POJO)、网络错(`TypeError`)、
- * 单次往返预算到期(`TimeoutError` —— `AbortSignal.timeout` 的名字不是 `AbortError`)。它们
+ * 落不进来的:401/503(引擎真的答了,body 是 `_tag` 形状的 POJO)、网络错(`TypeError`)。它们
  * 照旧抛 `ModelContractError`,**哪怕 `catalog.updated` 恰好在同一轮到达** —— 那正是 R2 点名的
  * 那条窄竞态。判错时的方向也是安全的那一侧:多抛一次 = 恢复链多重试一次,不是永久 loading。
+ *
+ * #1083:屏障自己的单探针期限**不走这条判据** —— 它由调用点直接看 `deadline.signal.aborted`
+ * 判定。理由同上:abort reason 的名字不是身份,`AbortSignal.any` 合成之后更分不清是谁点的火;
+ * 谁点的火只有点火的人知道,所以那个 controller 由屏障自己持有。
  */
 const cancelledByUs = (error: unknown, round: AbortSignal) =>
   round.aborted && typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
@@ -133,6 +172,7 @@ const cancelledByUs = (error: unknown, round: AbortSignal) =>
 /** The renderer-facing model contract. All calls go through the generated SDK v2 Model.Ref API. */
 export function createModelContract(sdk: () => Client | undefined, options: ModelContractOptions = {}) {
   const catalogReadyPollMs = options.catalogReadyPollMs ?? CATALOG_READY_POLL_MS
+  const probeTimeoutMs = options.probeTimeoutMs ?? CATALOG_READY_PROBE_TIMEOUT_MS
   const waitForNextProbe = options.wait ?? wait
   const now = options.now ?? (() => performance.now())
   const onCatalogReady = options.onCatalogReady
@@ -150,9 +190,14 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
    * notifyCatalogUpdated),事件到达即取消在途探针并重探,兜底轮询只在事件到不了时接住。
    *
    * 屏障不再因为「目录还没收敛」制造失败,也就不再喂退避;但它**不吞真实故障** —— 只有
-   * 404 / `ProviderNotFoundError` 算未收敛(见 `catalogNotReady`),401/503/网络错/单次超时
+   * 404 / `ProviderNotFoundError` 算未收敛(见 `catalogNotReady`),401/503/网络错
    * 照旧抛 `ModelContractError`,走既有的 recovering + 1/2/4/8s 恢复链。退出条件三个:
    * marker 答了、探针给出真实故障、或调用方取消。
+   *
+   * #1083 改的是**第四种情形**:探针**根本没答**。它以前借链级的 `ENGINE_FETCH_TIMEOUT_MS`
+   * (10s)当期限,到期被算作请求失败 —— 于是一轮不答就掀掉整条链。现在屏障有自己的单探针
+   * 期限(`CATALOG_READY_PROBE_TIMEOUT_MS`),到期只是「这一轮没答」:计一次 `probeTimeouts`、
+   * 换一轮重探。**没答不是回答**,不能拿它冒充引擎的故障判决。
    */
   const waitForCatalogReady = async (client: Client, directory: string, signal?: AbortSignal) => {
     // #881:分项计数。屏障是**唯一**知道这些事实的位置(就绪时刻、探针轮数、唤醒来源),
@@ -160,6 +205,7 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
     const startedAt = now()
     let probes = 0
     let pollWaits = 0
+    let probeTimeouts = 0
     let wakeSource: CatalogReadyFact["wake"] = "first"
     while (true) {
       if (signal?.aborted) throw new ModelContractError("list", signal.reason)
@@ -171,6 +217,11 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
       // 首探针悬挂时 `wake` 还没赋值(还没进 race),事件既叫不醒等待、也打不断请求,屏障只能
       // 挂到 10s 请求预算到期才发下一次。冷启动首探针恰恰是这个形态,所以那是主路径,不是边角。
       const round = new AbortController()
+      // #1083:屏障自己的单探针期限。它与 `round`(事件到达时的重探取消)是两个独立来源,
+      // 判决时必须分得开 —— 所以用一个我们自己持有的 controller,而不是去认 abort reason
+      // 的名字(`AbortError` / `TimeoutError` 那套在这里正是判错的来源)。
+      const deadline = new AbortController()
+      const deadlineTimer = setTimeout(() => deadline.abort(), probeTimeoutMs)
       const unsubscribe = subscribeCatalogUpdated(directory, () => {
         landed = true
         round.abort()
@@ -184,7 +235,9 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
           probes++
           const result = await client.v2.provider.get(
             { providerID: ALPHA_V2_CATALOG_READY_PROVIDER_ID, location: { directory } },
-            { signal: requestBudget(signal, round.signal) },
+            // #1083:**不含** `ENGINE_FETCH_TIMEOUT_MS`。那是链级预算,到期即整条链失败;
+            // 屏障要的是「这一轮没答就换一轮」,两者不是同一件事。
+            { signal: anySignal(signal, round.signal, deadline.signal) },
           )
           // The generated client returns fetch aborts as `{ error }` when throwOnError is false.
           // Preserve the caller's request-abort classification before anything else.
@@ -204,7 +257,7 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
           // #881:就绪时刻**只在真就绪时**发一次。放进 finally / 无条件发,等于拿「发起时刻」
           // 或「取消时刻」冒充就绪 —— 那正是本票要消灭的「客户端计时器冒充被测方答复」。
           try {
-            onCatalogReady?.({ barrierMs: now() - startedAt, probes, pollWaits, wake: wakeSource })
+            onCatalogReady?.({ barrierMs: now() - startedAt, probes, pollWaits, probeTimeouts, wake: wakeSource })
           } catch {
             // 观测绝不扰动被观测对象:上报抛出不得把屏障变成一次失败(= 用户停在 recovering)。
           }
@@ -213,7 +266,19 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
         // #882 R2:**真实失败先判,`landed` 后判**。反过来时,「引擎这一轮已经答了 503、而
         // `catalog.updated` 恰好同时到达」会被短路成「目录尚未收敛,继续等」——那份 503 既不
         // reject 也不进 recovering,而合同说只有 404/`ProviderNotFoundError` 算未就绪。
-        if (failed && !cancelledByUs(failure, round.signal)) throw new ModelContractError("list", failure)
+        if (failed && !cancelledByUs(failure, round.signal)) {
+          // #1083:本轮探针没在**我们自己的**期限内答上来 —— 这不是引擎的回答,所以不是故障。
+          // 换一轮重探(重新武装 `catalog.updated` 订阅 + 一条全新请求;abort 顺带关掉上一条
+          // 可能已经死掉的连接)。把它当成一次请求失败,会掀掉整条链、交给 1/2/4/8s 退避,
+          // 而退避窗口里一个探针都不发 —— #1080 的 6 个尾巴样本全部是这个形态:
+          // 每条失败链的 `probes` 都停在 1,屏障一次都没走到它自己的第二轮。
+          if (deadline.signal.aborted) {
+            probeTimeouts++
+            wakeSource = "timeout"
+            continue
+          }
+          throw new ModelContractError("list", failure)
+        }
         // 事件已落地(含「本轮探针正是被它取消的」那一支):立刻重探,不进等待,也不把这次
         // 主动中断当成故障 —— 取消是我们自己发的。
         if (landed) {
@@ -236,6 +301,7 @@ export function createModelContract(sdk: () => Client | undefined, options: Mode
           throw new ModelContractError("list", signal.reason)
         throw error
       } finally {
+        clearTimeout(deadlineTimer)
         unsubscribe()
       }
     }
