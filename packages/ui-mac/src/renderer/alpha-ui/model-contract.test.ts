@@ -4,7 +4,14 @@ import { ALPHA_V2_CATALOG_READY_PROVIDER_ID } from "../../shared/alpha-config"
 // #882:唤醒信道用的是**生产接线**本体(runtime-recovery 的同一对函数),不是测试替身。
 // 注入一个 subscribe 桩会让「删掉生产订阅仍全绿」重新成立 —— 那是本仓点名的第 ⑧ 类假闸门。
 import { notifyCatalogUpdated } from "../runtime-recovery"
-import { createModelContract, ModelContractError, type CatalogReadyFact } from "./model-contract"
+import {
+  CATALOG_READY_POLL_MS,
+  CATALOG_READY_PROBE_TIMEOUT_MS,
+  createModelContract,
+  ModelContractError,
+  type CatalogReadyFact,
+} from "./model-contract"
+import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
 // #882 R1 Major:「503 走既有 recovering 链」不能自己拼一条等价链 —— 直接驱动生产的那个循环。
 import { loadEngineModelsWithRetry } from "./model-recovery"
 
@@ -741,5 +748,148 @@ describe("typed model contract", () => {
       // 防御(2026-07-12)必须留在每次往返上,而不是从一个总 deadline 里切。
       expect(probeSignal).not.toBe(caller.signal)
     }
+  })
+})
+
+// ── #1083 的判官 ──────────────────────────────────────────────────────────────
+// 票面事实(`docs/verification/2026-08-23-req109-1080-post1056-catalog-p95/`):26 个样本里 6 个
+// 落在 31.9–55.7s 的尾巴上,每一条的形态都一样 —— marker 探针不答,10,002ms 处
+// `outcome:"error:request"`,退避 1s,整条链重来,再不答……而**每条失败链一次 `catalog_ready`
+// 都没发过**,即屏障连它自己的第二轮探针都没走到。同一次启动里 sidecar 早在 ~897ms 就对同一个
+// 目录 prewarm 到 `ready/200`,所以那段空转不是在等目录收敛,是在等一个已经不会来的回答。
+//
+// 判据落在**行为**上:一轮不答之后屏障必须自己再探,而不是把这一轮翻译成一次链级失败。
+describe("#1083 屏障单探针期限:没答 ≠ 故障", () => {
+  test("取值纪律:期限必须夹在兜底轮询与链级预算之间", () => {
+    // 小于等于轮询档位 ⇒ 期限会抢在设计好的重探节奏前面,合法的慢回答永远走不完一轮;
+    // 大于等于链级预算 ⇒ 探针又能走到 10s 那条线,这条改动等于没发生。
+    expect(CATALOG_READY_PROBE_TIMEOUT_MS).toBeGreaterThan(CATALOG_READY_POLL_MS)
+    expect(CATALOG_READY_PROBE_TIMEOUT_MS).toBeLessThan(ENGINE_FETCH_TIMEOUT_MS)
+  })
+
+  test("首轮探针永不答:屏障自己重探并就绪,不掀链、不喂退避", async () => {
+    let probes = 0
+    const abortedProbes: boolean[] = []
+    const facts: CatalogReadyFact[] = []
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              // 第 1 轮:永不 settle(连接被接受、响应永不到达 —— #1080 尾巴的真实形态)。
+              // 第 2 轮起:引擎照常在毫秒级答 ready(目录早已收敛)。
+              get: (_input: unknown, options?: { signal?: AbortSignal }) => {
+                const round = ++probes
+                if (round > 1) return Promise.resolve({ data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } })
+                return new Promise((resolve) => {
+                  options?.signal?.addEventListener(
+                    "abort",
+                    () => {
+                      abortedProbes.push(true)
+                      resolve({ error: options.signal?.reason })
+                    },
+                    { once: true },
+                  )
+                })
+              },
+            },
+            model: { list: async () => ({ data: { data: [model] } }) },
+          },
+        }) as never,
+      {
+        probeTimeoutMs: 5,
+        // 兜底轮询冻死:本用例里唯一还能推进屏障的,只有「期限到了自己重探」这一条。
+        // 若把到期实现成 `throw`(修复前的行为),`list()` 会 reject,下面两行当场红。
+        wait: () => new Promise<void>(() => {}),
+        onCatalogReady: (fact) => facts.push(fact),
+      },
+    )
+
+    const startedAt = performance.now()
+    expect(await contract.list("/wedged-first-probe")).toEqual([model])
+    const elapsed = performance.now() - startedAt
+    expect(probes).toBe(2)
+    // 到期必须**取消在途请求**,否则那条死连接会留在 Chromium 连接池里被复用
+    // (与 ENGINE_FETCH_TIMEOUT_MS 同款理由,model-picker-logic.ts 抬头已写明)。
+    expect(abortedProbes).toEqual([true])
+    // 而且必须是**屏障自己的**期限点的火。把 `deadline.signal` 从探针的取消面上摘掉,这条链
+    // 照样能就绪 —— 只是要等 10s 的链级预算来收尸。实测:摘掉后本用例仍绿、耗时从 65ms 涨到
+    // 40s(四轮 × 10s)。**一个只会变慢的闸不是闸**,所以判据钉在时间上:注入的期限是 5ms,
+    // 真跑完两轮应在毫秒量级,与 `ENGINE_FETCH_TIMEOUT_MS` 差两个数量级。
+    expect(elapsed).toBeLessThan(ENGINE_FETCH_TIMEOUT_MS / 5)
+    // 分项如实:没答的那一轮记 probeTimeouts,不记 pollWaits(它没走满兜底周期),
+    // 也不冒充 event 唤醒。
+    expect(facts).toHaveLength(1)
+    expect(facts[0]).toMatchObject({ probes: 2, pollWaits: 0, probeTimeouts: 1, wake: "timeout" })
+  })
+
+  test("期限到期不是失败:恢复链一次都不该被喂(没有 retry_tick 的等价物)", async () => {
+    // 上一条断的是「最终能就绪」;这一条断的是**中途没有失败被抛出去** —— #1080 的代价不是
+    // 「最终没好」,是每一轮不答都被翻译成一次 `error:request`,交给 1/2/4/8s 退避空转。
+    let probes = 0
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: (_input: unknown, options?: { signal?: AbortSignal }) => {
+                const round = ++probes
+                if (round > 3) return Promise.resolve({ data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } })
+                return new Promise((resolve) => {
+                  options?.signal?.addEventListener("abort", () => resolve({ error: options.signal?.reason }), {
+                    once: true,
+                  })
+                })
+              },
+            },
+            model: { list: async () => ({ data: { data: [model] } }) },
+          },
+        }) as never,
+      { probeTimeoutMs: 5, wait: () => new Promise<void>(() => {}) },
+    )
+
+    // 连着三轮不答,屏障必须自己走完三轮再就绪 —— 期间 `list()` 不得 reject 一次。
+    const attempts: unknown[] = []
+    const startedAt = performance.now()
+    const listed = await loadEngineModelsWithRetry({
+      initial: contract.list("/wedged-three-probes"),
+      read: () => contract.list("/wedged-three-probes"),
+      wait: async () => {},
+      clearWake: () => {},
+      isStale: () => false,
+      onAttemptFailed: () => attempts.push("failed"),
+      onRetryTick: () => attempts.push("retry"),
+    })
+
+    expect(listed.status).toBe("loaded")
+    expect(probes).toBe(4)
+    // 同上:三轮都必须由 5ms 的屏障期限推进,不是由 10s 链级预算兜底。
+    expect(performance.now() - startedAt).toBeLessThan(ENGINE_FETCH_TIMEOUT_MS / 5)
+    // 生产的恢复链一次都没被惊动:没有 recovering、没有退避 tick。
+    expect(attempts).toEqual([])
+  })
+
+  test("真实故障仍然抛:503 不因为『没答也不算失败』被一起吞掉", async () => {
+    // 反向护栏。上面两条把「没答」放行了,这条钉住放行面**只有**「没答」——
+    // 引擎真的答了 503,屏障照旧抛,走既有的 recovering + 1/2/4/8s 恢复链(#882 R1 Major)。
+    let probes = 0
+    const contract = createModelContract(
+      () =>
+        ({
+          v2: {
+            provider: {
+              get: async () => {
+                probes++
+                return { error: { _tag: "InternalError", message: "engine is on fire" }, response: { status: 503 } }
+              },
+            },
+            model: { list: async () => ({ data: { data: [model] } }) },
+          },
+        }) as never,
+      { probeTimeoutMs: 5, wait: () => new Promise<void>(() => {}) },
+    )
+
+    await expect(contract.list("/engine-503")).rejects.toMatchObject({ operation: "list" })
+    expect(probes).toBe(1)
   })
 })
