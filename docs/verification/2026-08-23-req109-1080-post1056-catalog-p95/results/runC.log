@@ -1,0 +1,93 @@
+[byok-only] 1/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=31942ms refresh=n/a
+[byok-only] 2/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=55698ms refresh=n/a
+[byok-only] 3/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=7338ms refresh=n/a
+[byok-only] 4/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=3987ms refresh=n/a
+[byok-only] 5/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=31959ms refresh=n/a
+[byok-only] 6/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=7270ms refresh=n/a
+[byok-only] 7/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=3929ms refresh=n/a
+[byok-only] 8/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=3982ms refresh=n/a
+[byok-only] 9/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=3894ms refresh=n/a
+[byok-only] 10/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=3976ms refresh=n/a
+[byok-only] 11/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=31958ms refresh=n/a
+[byok-only] 12/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=31967ms refresh=n/a
+[byok-only] 13/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+model-ready=7294ms refresh=n/a
+results: /Users/tide/app/alpha-code/.worktrees/verify-1080-post1056-p95/docs/verification/2026-08-06-req109-110-t7-runtime/results/results.json
+latency samples=0 p95=n/ams

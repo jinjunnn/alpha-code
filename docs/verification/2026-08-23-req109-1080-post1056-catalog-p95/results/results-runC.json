@@ -1,0 +1,2296 @@
+{
+  "schema": "alpha-code/req109-110-t7-runtime/v2",
+  "issue": "alpha-code#536",
+  "capturedAt": "2026-08-23T08:39:56.062Z",
+  "commit": "fe2e042f19a4a448165b023f23f664ab2b18760e",
+  "appSha256": "1183a64d23817f365125fc4a3b011cc02da8f504f6d75f45469b418f4926cb79",
+  "endpoint": "loopback (URL redacted; no real credential)",
+  "latency": {
+    "samples": 0,
+    "p95Ms": null,
+    "maxMs": null
+  },
+  "results": [
+    {
+      "scenario": "byok-only",
+      "sample": 1,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 31941.778292,
+      "bootReadyMs": 976.09525,
+      "catalogReady": {
+        "atMs": 31939.93475,
+        "barrierMs": 3,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 896.878333,
+        "outcome": "ready",
+        "durationMs": 152.99550000000005,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474157149.07
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 150.401542,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 220.932208,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 221.00324999999998,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 896.878333,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 152.99550000000005,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 897.426875,
+          "durationMs": 676.422458,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 976.09525,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1162.869208,
+          "source": "renderer",
+          "rendererNow": 201.79999995231628,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.model_list.start",
+          "t": 13219.276625,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 12256,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.model_list.end",
+          "t": 23220.28575,
+          "attempt": 1,
+          "chain": 1,
+          "durationMs": 10002.799999952316,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 22258.799999952316,
+          "occurrence": 1
+        },
+        {
+          "seq": 17,
+          "name": "renderer.home.model_list.retry_tick",
+          "t": 24223.01525,
+          "attempt": 2,
+          "chain": 1,
+          "count": 1,
+          "delayMs": 1000,
+          "reason": "request-error",
+          "source": "renderer",
+          "rendererNow": 23261.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.home.model_list.start",
+          "t": 24224.125249999997,
+          "attempt": 2,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 23261.600000023842,
+          "occurrence": 2
+        },
+        {
+          "seq": 19,
+          "name": "renderer.home.model_list.end",
+          "t": 31914.605499999998,
+          "attempt": 2,
+          "chain": 1,
+          "durationMs": 7671.299999952316,
+          "outcome": "cancelled",
+          "source": "renderer",
+          "rendererNow": 30932.899999976158,
+          "occurrence": 2
+        },
+        {
+          "seq": 21,
+          "name": "renderer.home.model_list.start",
+          "t": 31937.450542,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 30975.799999952316,
+          "occurrence": 3
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.catalog_ready",
+          "t": 31939.93475,
+          "barrierMs": 3,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 30978.899999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.home.model_list.end",
+          "t": 31941.778292,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 4.800000071525574,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 30980.700000047684,
+          "occurrence": 3
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 2,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 55698.002125,
+      "bootReadyMs": 969.6437080000001,
+      "catalogReady": {
+        "atMs": 55694.679458,
+        "barrierMs": 3.200000047683716,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 894.779583,
+        "outcome": "ready",
+        "durationMs": 155.54033299999998,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474190171.786
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 139.789125,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 209.49312499999996,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 209.568916,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 894.779583,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 155.54033299999998,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 895.413875,
+          "durationMs": 685.844333,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 969.6437080000001,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1157.243666,
+          "source": "renderer",
+          "rendererNow": 199.89999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.model_list.start",
+          "t": 13211.547999999999,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 12253.599999904633,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.model_list.end",
+          "t": 23213.315125,
+          "attempt": 1,
+          "chain": 1,
+          "durationMs": 10002,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 22255.699999928474,
+          "occurrence": 1
+        },
+        {
+          "seq": 17,
+          "name": "renderer.home.model_list.retry_tick",
+          "t": 24216.329375,
+          "attempt": 2,
+          "chain": 1,
+          "count": 1,
+          "delayMs": 1000,
+          "reason": "request-error",
+          "source": "renderer",
+          "rendererNow": 23258.599999904633,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.home.model_list.start",
+          "t": 24217.548875,
+          "attempt": 2,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 23258.699999928474,
+          "occurrence": 2
+        },
+        {
+          "seq": 19,
+          "name": "renderer.home.model_list.end",
+          "t": 34219.416958,
+          "attempt": 2,
+          "chain": 1,
+          "durationMs": 10002.899999976158,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 33261.59999990463,
+          "occurrence": 2
+        },
+        {
+          "seq": 20,
+          "name": "renderer.home.model_list.retry_tick",
+          "t": 36221.299875,
+          "attempt": 3,
+          "chain": 1,
+          "count": 2,
+          "delayMs": 2000,
+          "reason": "request-error",
+          "source": "renderer",
+          "rendererNow": 35263.299999952316,
+          "occurrence": 2
+        },
+        {
+          "seq": 21,
+          "name": "renderer.home.model_list.start",
+          "t": 36222.416458,
+          "attempt": 3,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 35263.59999990463,
+          "occurrence": 3
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.model_list.end",
+          "t": 46224.073791,
+          "attempt": 3,
+          "chain": 1,
+          "durationMs": 10002.899999976158,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 45266.39999997616,
+          "occurrence": 3
+        },
+        {
+          "seq": 23,
+          "name": "renderer.home.model_list.retry_tick",
+          "t": 50226.290791,
+          "attempt": 4,
+          "chain": 1,
+          "count": 3,
+          "delayMs": 4000,
+          "reason": "request-error",
+          "source": "renderer",
+          "rendererNow": 49268.699999928474,
+          "occurrence": 3
+        },
+        {
+          "seq": 24,
+          "name": "renderer.home.model_list.start",
+          "t": 50226.963375,
+          "attempt": 4,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 49268.799999952316,
+          "occurrence": 4
+        },
+        {
+          "seq": 25,
+          "name": "renderer.home.model_list.end",
+          "t": 55672.040875,
+          "attempt": 4,
+          "chain": 1,
+          "durationMs": 5435.799999952316,
+          "outcome": "cancelled",
+          "source": "renderer",
+          "rendererNow": 54704.59999990463,
+          "occurrence": 4
+        },
+        {
+          "seq": 27,
+          "name": "renderer.home.model_list.start",
+          "t": 55691.84,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 54734.09999990463,
+          "occurrence": 5
+        },
+        {
+          "seq": 28,
+          "name": "renderer.home.catalog_ready",
+          "t": 55694.679458,
+          "barrierMs": 3.200000047683716,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 54737.299999952316,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.home.model_list.end",
+          "t": 55698.002125,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 6.600000023841858,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 54740.699999928474,
+          "occurrence": 5
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 3,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 7338.180792,
+      "bootReadyMs": 985.427333,
+      "catalogReady": {
+        "atMs": 7336.320417,
+        "barrierMs": 2.700000047683716,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 911.7562079999999,
+        "outcome": "ready",
+        "durationMs": 160.361959,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474246935.962
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 147.29004199999997,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 224.54475000000002,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 224.617208,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 911.7562079999999,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 160.361959,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 912.2850420000001,
+          "durationMs": 687.666375,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 985.427333,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1171.4629169999998,
+          "source": "renderer",
+          "rendererNow": 199.60000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.model_list.start",
+          "t": 7334.325375,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 6361.700000047684,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.catalog_ready",
+          "t": 7336.320417,
+          "barrierMs": 2.700000047683716,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 6364.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 17,
+          "name": "renderer.home.model_list.end",
+          "t": 7338.180792,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 4.699999928474426,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 6366.399999976158,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 4,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 3986.9738750000006,
+      "bootReadyMs": 973.530834,
+      "catalogReady": {
+        "atMs": 3983.6574170000004,
+        "barrierMs": 6,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 897.413042,
+        "outcome": "ready",
+        "durationMs": 153.97270799999995,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474255338.636
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 143.822417,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 216.508834,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 216.58395900000002,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 897.413042,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 153.97270799999995,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 897.9398749999999,
+          "durationMs": 681.354916,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 973.530834,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1162.2034999999998,
+          "source": "renderer",
+          "rendererNow": 201.60000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.home.model_list.start",
+          "t": 3979.2622090000004,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 3016.899999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.catalog_ready",
+          "t": 3983.6574170000004,
+          "barrierMs": 6,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 3023.100000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.model_list.end",
+          "t": 3986.9738750000006,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 9.5,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 3026.399999976158,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 5,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 31959.019459,
+      "bootReadyMs": 990.9821670000001,
+      "catalogReady": {
+        "atMs": 31955.944709,
+        "barrierMs": 16,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 914.4710420000001,
+        "outcome": "ready",
+        "durationMs": 156.05025,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474260388.002
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 151.2465,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 228.52145900000002,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 228.591084,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 914.4710420000001,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 156.05025,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 914.9914590000001,
+          "durationMs": 686.3994170000001,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 990.9821670000001,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1178.9565,
+          "source": "renderer",
+          "rendererNow": 201.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.model_list.start",
+          "t": 13236.999959,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 12257.899999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.model_list.end",
+          "t": 23237.877624999997,
+          "attempt": 1,
+          "chain": 1,
+          "durationMs": 10002.200000047684,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 22260,
+          "occurrence": 1
+        },
+        {
+          "seq": 17,
+          "name": "renderer.home.model_list.retry_tick",
+          "t": 24240.375709,
+          "attempt": 2,
+          "chain": 1,
+          "count": 1,
+          "delayMs": 1000,
+          "reason": "request-error",
+          "source": "renderer",
+          "rendererNow": 23262.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.home.model_list.start",
+          "t": 24241.34175,
+          "attempt": 2,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 23262.600000023842,
+          "occurrence": 2
+        },
+        {
+          "seq": 19,
+          "name": "renderer.home.model_list.end",
+          "t": 31933.287874999998,
+          "attempt": 2,
+          "chain": 1,
+          "durationMs": 7674.299999952316,
+          "outcome": "cancelled",
+          "source": "renderer",
+          "rendererNow": 30936.899999976158,
+          "occurrence": 2
+        },
+        {
+          "seq": 21,
+          "name": "renderer.home.model_list.start",
+          "t": 31940.5055,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 30962.5,
+          "occurrence": 3
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.catalog_ready",
+          "t": 31955.944709,
+          "barrierMs": 16,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 30978.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.home.model_list.end",
+          "t": 31959.019459,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 19.200000047683716,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 30981.600000023842,
+          "occurrence": 3
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 6,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 7270.049625,
+      "bootReadyMs": 973.2845,
+      "catalogReady": {
+        "atMs": 7264.544583,
+        "barrierMs": 4.200000047683716,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 897.220333,
+        "outcome": "ready",
+        "durationMs": 156.553583,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474293402.573
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 145.3175,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 218.39579199999997,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 218.467125,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 897.220333,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 156.553583,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 897.788333,
+          "durationMs": 679.320458,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 973.2845,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1161.939792,
+          "source": "renderer",
+          "rendererNow": 201,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.model_list.start",
+          "t": 7260.89625,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 6299.299999952316,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.catalog_ready",
+          "t": 7264.544583,
+          "barrierMs": 4.200000047683716,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 6303.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 17,
+          "name": "renderer.home.model_list.end",
+          "t": 7270.049625,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 9.800000071525574,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 6309.100000023842,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 7,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 3929.156292,
+      "bootReadyMs": 978.4975830000001,
+      "catalogReady": {
+        "atMs": 3927.042083,
+        "barrierMs": 13.800000071525574,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 903.504167,
+        "outcome": "ready",
+        "durationMs": 153.99454200000002,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474301713.615
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 148.024417,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 219.99779199999998,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 220.07075,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 903.504167,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 153.99454200000002,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 904.0208749999999,
+          "durationMs": 683.9493340000001,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 978.4975830000001,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1169.620917,
+          "source": "renderer",
+          "rendererNow": 205,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.home.model_list.start",
+          "t": 3914.047333,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2948.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.catalog_ready",
+          "t": 3927.042083,
+          "barrierMs": 13.800000071525574,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2962.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.model_list.end",
+          "t": 3929.156292,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 16.09999990463257,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2964.5999999046326,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 8,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 3982.4828329999996,
+      "bootReadyMs": 985.898041,
+      "catalogReady": {
+        "atMs": 3979.719958,
+        "barrierMs": 7.599999904632568,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 905.5195829999999,
+        "outcome": "ready",
+        "durationMs": 159.28470800000002,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474306714.7
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 146.330333,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 219.422125,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 219.49287500000003,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 905.5195829999999,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 159.28470800000002,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 906.070625,
+          "durationMs": 686.5770830000001,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 985.898041,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1174.0604159999998,
+          "source": "renderer",
+          "rendererNow": 201.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.home.model_list.start",
+          "t": 3972.6991249999996,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2999.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.catalog_ready",
+          "t": 3979.719958,
+          "barrierMs": 7.599999904632568,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 3007.1999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.model_list.end",
+          "t": 3982.4828329999996,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 10.600000023841858,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 3010,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 9,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 3893.530917,
+      "bootReadyMs": 975.169834,
+      "catalogReady": {
+        "atMs": 3891.135917,
+        "barrierMs": 7.800000071525574,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 901.316959,
+        "outcome": "ready",
+        "durationMs": 155.33608400000003,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474311763.831
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 146.14587500000002,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 217.57062499999998,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 217.64029200000002,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 901.316959,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 155.33608400000003,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 901.9403749999999,
+          "durationMs": 684.298959,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 975.169834,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1163.1288339999999,
+          "source": "renderer",
+          "rendererNow": 200.29999995231628,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.home.model_list.start",
+          "t": 3884.112875,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2920.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.catalog_ready",
+          "t": 3891.135917,
+          "barrierMs": 7.800000071525574,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2928.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.model_list.end",
+          "t": 3893.530917,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 10.299999952316284,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2930.7999999523163,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 10,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 3976.3742920000004,
+      "bootReadyMs": 985.119792,
+      "catalogReady": {
+        "atMs": 3972.975458,
+        "barrierMs": 4.600000023841858,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 907.930042,
+        "outcome": "ready",
+        "durationMs": 160.29512500000004,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474316715.216
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 146.129958,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 221.34858300000002,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 221.42012499999998,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 907.930042,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 160.29512500000004,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 908.527333,
+          "durationMs": 687.105916,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 985.119792,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1173.529375,
+          "source": "renderer",
+          "rendererNow": 200.69999992847443,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.home.model_list.start",
+          "t": 3969.1320830000004,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2995.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.catalog_ready",
+          "t": 3972.975458,
+          "barrierMs": 4.600000023841858,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 3000.1999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.model_list.end",
+          "t": 3976.3742920000004,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 8.099999904632568,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 3003.5999999046326,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 11,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 31958.011749999998,
+      "bootReadyMs": 985.2025000000001,
+      "catalogReady": {
+        "atMs": 31947.839792,
+        "barrierMs": 6.100000023841858,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 909.8815,
+        "outcome": "ready",
+        "durationMs": 155.723833,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474321744.261
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 151.925375,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 224.78633299999998,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 224.860625,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 909.8815,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 155.723833,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 910.44775,
+          "durationMs": 685.5865419999999,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 985.2025000000001,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1171.3521250000001,
+          "source": "renderer",
+          "rendererNow": 201.20000004768372,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.model_list.start",
+          "t": 13223.833458,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 12253,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.model_list.end",
+          "t": 23227.199458,
+          "attempt": 1,
+          "chain": 1,
+          "durationMs": 10003.600000023842,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 22256.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 17,
+          "name": "renderer.home.model_list.retry_tick",
+          "t": 24229.139833,
+          "attempt": 2,
+          "chain": 1,
+          "count": 1,
+          "delayMs": 1000,
+          "reason": "request-error",
+          "source": "renderer",
+          "rendererNow": 23258.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.home.model_list.start",
+          "t": 24230.211792,
+          "attempt": 2,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 23258.700000047684,
+          "occurrence": 2
+        },
+        {
+          "seq": 19,
+          "name": "renderer.home.model_list.end",
+          "t": 31912.400417,
+          "attempt": 2,
+          "chain": 1,
+          "durationMs": 7669.299999952316,
+          "outcome": "cancelled",
+          "source": "renderer",
+          "rendererNow": 30928,
+          "occurrence": 2
+        },
+        {
+          "seq": 21,
+          "name": "renderer.home.model_list.start",
+          "t": 31942.051208,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 30971.400000095367,
+          "occurrence": 3
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.catalog_ready",
+          "t": 31947.839792,
+          "barrierMs": 6.100000023841858,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 30977.700000047684,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.home.model_list.end",
+          "t": 31958.011749999998,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 16.5,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 30987.900000095367,
+          "occurrence": 3
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 12,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 31966.500874999998,
+      "bootReadyMs": 970.6225,
+      "catalogReady": {
+        "atMs": 31958.279042,
+        "barrierMs": 8.299999952316284,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 894.530667,
+        "outcome": "ready",
+        "durationMs": 154.188042,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474354767.509
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 145.608625,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 216.20820899999998,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 216.278292,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 894.530667,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 154.188042,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 895.0899999999999,
+          "durationMs": 678.810667,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 970.6225,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1158.299459,
+          "source": "renderer",
+          "rendererNow": 200.10000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.model_list.start",
+          "t": 13216.267084000001,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 12257.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.model_list.end",
+          "t": 23219.508834,
+          "attempt": 1,
+          "chain": 1,
+          "durationMs": 10003.300000071526,
+          "outcome": "error:request",
+          "source": "renderer",
+          "rendererNow": 22260.800000071526,
+          "occurrence": 1
+        },
+        {
+          "seq": 17,
+          "name": "renderer.home.model_list.retry_tick",
+          "t": 24223.470749999997,
+          "attempt": 2,
+          "chain": 1,
+          "count": 1,
+          "delayMs": 1000,
+          "reason": "request-error",
+          "source": "renderer",
+          "rendererNow": 23264.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.home.model_list.start",
+          "t": 24224.240416999997,
+          "attempt": 2,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 23264.5,
+          "occurrence": 2
+        },
+        {
+          "seq": 19,
+          "name": "renderer.home.model_list.end",
+          "t": 31925.439166999997,
+          "attempt": 2,
+          "chain": 1,
+          "durationMs": 7693.100000023842,
+          "outcome": "cancelled",
+          "source": "renderer",
+          "rendererNow": 30957.600000023842,
+          "occurrence": 2
+        },
+        {
+          "seq": 21,
+          "name": "renderer.home.model_list.start",
+          "t": 31950.491625,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 30991.800000071526,
+          "occurrence": 3
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.catalog_ready",
+          "t": 31958.279042,
+          "barrierMs": 8.299999952316284,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 31000.100000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.home.model_list.end",
+          "t": 31966.500874999998,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 16.5,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 31008.300000071526,
+          "occurrence": 3
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 13,
+      "cdpAttachment": "refused-foreign-port",
+      "startupMs": 7294.399625,
+      "bootReadyMs": 989.34275,
+      "catalogReady": {
+        "atMs": 7291.51325,
+        "barrierMs": 14.899999976158142,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 913.5590420000001,
+        "outcome": "ready",
+        "durationMs": 156.999958,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": null,
+        "tokenInRendererSurface": null,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": null,
+        "byokKeyInRendererSurface": null
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787474387796.28
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 151.928833,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 226.90625,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 226.98116700000003,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 913.5590420000001,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 156.999958,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 914.100042,
+          "durationMs": 687.118042,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 989.34275,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "renderer.root.mount",
+          "t": 1176.324875,
+          "source": "renderer",
+          "rendererNow": 201.10000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.home.model_list.start",
+          "t": 7277.450083,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 6301.400000095367,
+          "occurrence": 1
+        },
+        {
+          "seq": 16,
+          "name": "renderer.home.catalog_ready",
+          "t": 7291.51325,
+          "barrierMs": 14.899999976158142,
+          "probes": 1,
+          "pollWaits": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 6316.300000071526,
+          "occurrence": 1
+        },
+        {
+          "seq": 17,
+          "name": "renderer.home.model_list.end",
+          "t": 7294.399625,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 17.799999952316284,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 6319.200000047684,
+          "occurrence": 1
+        }
+      ]
+    }
+  ],
+  "serverFacts": [
+    {
+      "scenario": "byok-only",
+      "sample": 1,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 2,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 3,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 4,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 5,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 6,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 7,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 8,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 9,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 10,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 11,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 12,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 13,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    }
+  ]
+}
