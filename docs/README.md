@@ -18,6 +18,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | What the engine's `command` is, what its event/hook surface is, and how Claude's hooks actually map | [`architecture/engine-command-and-event-surface.md`](architecture/engine-command-and-event-surface.md) |
 | Which signals really say a directory's model catalog converged (and which only look like they do) | [`architecture/2026-08-10-catalog-readiness-signals.md`](architecture/2026-08-10-catalog-readiness-signals.md) |
 | What the packaged first launch actually spends after sidecar ready (measured split, and what is still unverified) | [`architecture/2026-08-10-packaged-first-launch-catalog-cost.md`](architecture/2026-08-10-packaged-first-launch-catalog-cost.md) |
+| Which layer can actually contain tool-spawned processes, and which candidate seams cost an upstream adoption | [`architecture/2026-08-23-shell-sandbox-seam.md`](architecture/2026-08-23-shell-sandbox-seam.md) |
 | Platform and endpoint integration                                    | [`contracts/`](contracts/)                                           |
 | Session tool permission DTOs and decision receipts                   | [`contracts/session-permission.md`](contracts/session-permission.md) |
 | Build, distribution, CI, uninstall, and Settings recovery operations | [`runbooks/`](runbooks/)                                             |
