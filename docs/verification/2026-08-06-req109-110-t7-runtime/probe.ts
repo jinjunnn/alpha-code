@@ -57,9 +57,13 @@ type RunResult = {
   rotations: number
   reloads: number
   mounts: number
+  /** #1080: renderer.composer.mount count — the actual subject of #1056's single-mount fix. */
+  composerMounts?: number
   auth?: unknown
   unavailableVisible?: boolean
   readyRetryMs?: number
+  /** #1080: "attached" | "refused-foreign-port" — every CDP-derived field is void when refused. */
+  cdpAttachment?: string
   modelSet?: {
     firstEventCount: number | null
     firstCount: number
@@ -77,11 +81,12 @@ type RunResult = {
     tokenInTimeline: boolean
     refreshTokenInTimeline: boolean
     tokenInProcessEnv: boolean
-    tokenInAuthState: boolean
-    tokenInRendererSurface: boolean
+    /** #1080: `null` = CDP was refused, so this check never ran. Never report it as a clean `false`. */
+    tokenInAuthState: boolean | null
+    tokenInRendererSurface: boolean | null
     byokKeyInTimeline: boolean
-    byokKeyInAuthState: boolean
-    byokKeyInRendererSurface: boolean
+    byokKeyInAuthState: boolean | null
+    byokKeyInRendererSurface: boolean | null
   }
   events: TimelineRecord[]
 }
@@ -439,6 +444,35 @@ type Cdp = {
   close: () => void
 }
 
+// #1080: this machine can have a *second*, unrelated alpha-code already listening on the single
+// hardcoded CDP port (9222) — e.g. the owner's real /Applications instance. `connectCdp()` picks
+// the first `oc://` page it finds and cannot tell whose it is, so attaching would (a) minimize,
+// screenshot and `eval` into somebody else's live app, and (b) yield renderer-derived facts that
+// describe the wrong binary. Both are unacceptable: the first mutates state we were never
+// authorized to touch, the second silently fabricates evidence. So we refuse to attach at all
+// when the port was already occupied before we launched. Every number this scenario gates on
+// (`startupMs`, `catalogReady`, the governed first-`model.list` row count) is read off the
+// on-disk startup timeline, never off CDP, so refusing degrades secondary fields only.
+async function cdpPortOccupied(): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json`, { signal: AbortSignal.timeout(2_000) })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+const NOOP_CDP: Cdp = {
+  eval: async () => {
+    throw new Error("cdp-refused: port 9222 was occupied by a foreign app before launch")
+  },
+  screenshot: async () => {
+    throw new Error("cdp-refused: port 9222 was occupied by a foreign app before launch")
+  },
+  minimize: async () => {},
+  close: () => {},
+}
+
 async function connectCdp(): Promise<Cdp> {
   const target = await waitFor(async () => {
     try {
@@ -588,6 +622,7 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
   const cleanEnv = Object.fromEntries(
     Object.entries(process.env).filter(([name]) => !/(_API_KEY|_TOKEN|_SECRET|PASSWORD)$/i.test(name)),
   )
+  const foreignCdp = await cdpPortOccupied()
   const proc = Bun.spawn(["/usr/bin/open", "-g", "-j", "-n", "-W", APP_BUNDLE, "--args", `--${runTag}`], {
     env: {
       ...cleanEnv,
@@ -634,7 +669,15 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
       writeFileSync(file, JSON.stringify(authPayload(scenario.auth)), { encoding: "utf8", mode: 0o600 })
     }
 
-    cdp = await connectCdp()
+    if (foreignCdp) {
+      console.error(
+        `[diagnostic] cdp-refused: 127.0.0.1:${CDP_PORT} was already serving targets before this launch — ` +
+          `not attaching (would hit a foreign app). Timeline-derived facts are unaffected.`,
+      )
+      cdp = NOOP_CDP
+    } else {
+      cdp = await connectCdp()
+    }
     await cdp.minimize()
 
     await waitFor(() => {
@@ -663,6 +706,9 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
     let windowApiOk = true
     let windowApiCheckError: string | undefined
     try {
+      // #1080: with CDP deliberately refused there is nothing to ask; burning the 15s budget on a
+      // guaranteed failure only lengthens the run.
+      if (foreignCdp) throw new Error("cdp-refused: foreign app owns port 9222")
       await waitFor(async () => {
         return (
           (await cdp!.eval<boolean>("Boolean(window.api?.awaitInitialization && window.api?.auth?.getState)")) ||
@@ -677,10 +723,12 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
       // later screenshot/secretHygiene cdp.eval calls — which run for every scenario, not just
       // modelSetProbe ones — get a live connection instead of inheriting whatever state made
       // this check fail.
-      try {
-        cdp.close()
-      } catch {}
-      cdp = await connectCdp()
+      if (!foreignCdp) {
+        try {
+          cdp.close()
+        } catch {}
+        cdp = await connectCdp()
+      }
     }
 
     // #1053: dropped the reload-based "hot" re-check for this run. Attempting cdp.eval("location.
@@ -849,7 +897,7 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
       cdp.eval<boolean>(
         "document.body.innerText.includes('模型列表暂不可用') || document.body.innerText.includes('Model list unavailable')",
       ),
-      false,
+      undefined,
     )
     const events = readTimeline(appRoot)
     const refreshStart = events.find((event) => event.name === "main.auth.refresh.start")
@@ -875,9 +923,13 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
           (fact.request === "account" || fact.request === "catalog") && fact.credentialGeneration !== "missing",
       ).length
     }
+    const authProbed = auth !== undefined
+    const authJson = authProbed ? JSON.stringify(auth) ?? "" : ""
+    const surfaceProbed = rendererSurface !== ""
     const result: RunResult = {
       scenario: scenario.id,
       sample,
+      cdpAttachment: foreignCdp ? "refused-foreign-port" : "attached",
       startupMs: ready.t,
       bootReadyMs: readyEvents.find((event) => event.reason === "boot")?.t,
       catalogReady:
@@ -908,6 +960,7 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
       ).length,
       reloads: events.filter((event) => event.name === "main.renderer.reload.perform").length,
       mounts: events.filter((event) => event.name === "renderer.root.mount").length,
+      composerMounts: events.filter((event) => event.name === "renderer.composer.mount").length,
       auth,
       unavailableVisible,
       readyRetryMs: retryAfterReady && tokenReady ? retryAfterReady.t - tokenReady.t : undefined,
@@ -925,15 +978,17 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
                 .includes(secret),
             )
           : false,
-        tokenInAuthState: [jwt("model.invoke", "seed"), REFRESH_TOKEN].some((secret) =>
-          JSON.stringify(auth).includes(secret),
-        ),
-        tokenInRendererSurface: [jwt("model.invoke", "seed"), REFRESH_TOKEN].some((secret) =>
-          rendererSurface.includes(secret),
-        ),
+        // #1080: `auth`/`rendererSurface` come from CDP. When CDP was refused they are absent, and
+        // an absent read must not be serialised as a clean `false` — that is a fabricated pass.
+        tokenInAuthState: authProbed
+          ? [jwt("model.invoke", "seed"), REFRESH_TOKEN].some((secret) => authJson.includes(secret))
+          : null,
+        tokenInRendererSurface: surfaceProbed
+          ? [jwt("model.invoke", "seed"), REFRESH_TOKEN].some((secret) => rendererSurface.includes(secret))
+          : null,
         byokKeyInTimeline: rawTimeline.includes(SYNTHETIC_BYOK_KEY),
-        byokKeyInAuthState: JSON.stringify(auth).includes(SYNTHETIC_BYOK_KEY),
-        byokKeyInRendererSurface: rendererSurface.includes(SYNTHETIC_BYOK_KEY),
+        byokKeyInAuthState: authProbed ? authJson.includes(SYNTHETIC_BYOK_KEY) : null,
+        byokKeyInRendererSurface: surfaceProbed ? rendererSurface.includes(SYNTHETIC_BYOK_KEY) : null,
       },
       events: events.filter((event) =>
         [
@@ -952,6 +1007,13 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
           "main.renderer.reload.perform",
           "main.renderer.reload.skipped",
           "renderer.root.mount",
+          // #1080: `mounts` counts renderer.root.mount, which only proves "no page-level remount".
+          // #1056's fix is about how many times the *composer* mounts, and that event was filtered
+          // out of the stored evidence — so the one fact this recheck exists to confirm was not
+          // recoverable from results.json. Also keep the main-process catalog watchdog, whose
+          // elapsedMs is the only recorded view of server-side catalog convergence.
+          "renderer.composer.mount",
+          "main.sidecar.catalog_liveness.confirmed",
           "renderer.home.model_list.start",
           "renderer.home.catalog_ready",
           "renderer.home.model_list.end",

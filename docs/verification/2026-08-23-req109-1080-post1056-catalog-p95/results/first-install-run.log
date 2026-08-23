@@ -1,0 +1,92 @@
+[byok-only] 1/13 ... [0m[31m[diagnostic] cdp-refused: 127.0.0.1:9222 was already serving targets before this launch — not attaching (would hit a foreign app). Timeline-derived facts are unaffected.[0m
+[0m[31m[diagnostic] window.api check failed/timed out: Error: cdp-refused: foreign app owns port 9222[0m
+[0m[31m[diagnostic] boundedCdp "screenshot" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "auth.getState" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "rendererSurface" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] boundedCdp "unavailableVisible" threw: Error: cdp-refused: port 9222 was occupied by a foreign app before launch[0m
+[0m[31m[diagnostic] scenario=byok-only sample=1 exit=running root=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha536-j6jjzi/tmp/opencode-onboarding-697a6766-fb2b-4b43-817f-1fb81ffbf08e[0m
+[0m[31m[diagnostic] events=[{"seq":1,"name":"main.timeline.epoch","t":0},{"seq":2,"name":"main.app.ready","t":338.046042},{"seq":3,"name":"main.auth.boot.token_check","t":349.28004200000004},{"seq":4,"name":"main.sidecar.generation.emit","t":408.18579200000005,"phase":"recovering","reason":"boot"},{"seq":5,"name":"main.sidecar.boot.fork.start","t":408.26183299999997},{"seq":6,"name":"main.sidecar.ready_ipc","t":1107.211292},{"seq":7,"name":"main.sidecar.boot.fork.end","t":1107.757208,"outcome":"ok"},{"seq":8,"name":"main.auth.scheduler.arm","t":1175.117833,"outcome":"idle","reason":"startup"},{"seq":9,"name":"main.sidecar.generation.emit","t":1187.612292,"phase":"ready","reason":"boot"},{"seq":10,"name":"renderer.root.mount","t":1379.088958},{"seq":11,"name":"main.window.ready_to_show","t":1392.664083},{"seq":12,"name":"renderer.sidecar.generation.received","t":1408.232917,"phase":"ready","reason":"boot"},{"seq":13,"name":"main.sidecar.catalog_liveness.confirmed","t":6194.661333},{"seq":14,"name":"renderer.composer.mount","t":13435.980333},{"seq":15,"name":"renderer.home.model_list.start","t":13438.331625},{"seq":16,"name":"renderer.home.model_list.end","t":18152.337457999998,"outcome":"cancelled"},{"seq":17,"name":"renderer.composer.mount","t":18173.448291999997},{"seq":18,"name":"renderer.home.model_list.start","t":18173.948167},{"seq":19,"name":"renderer.home.catalog_ready","t":18176.782},{"seq":20,"name":"renderer.home.model_list.end","t":18179.473041999998,"outcome":"ok"}][0m
+[0m[31m[diagnostic] crash.log
+[2026-08-23 04:31:11.702] [info]  (crash) crash reporter started {
+  path: '/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha536-j6jjzi/tmp/opencode-onboarding-697a6766-fb2b-4b43-817f-1fb81ffbf08e/desktop/Crashpad'
+}
+[0m
+[0m[31m[diagnostic] main.log
+[2026-08-23 04:31:11.719] [info]          app starting { version: '0.1.3', packaged: true, onboardingTest: true }
+[2026-08-23 04:31:11.972] [info]          [server] Loaded shell environment with -il (21 vars)
+[2026-08-23 04:31:11.973] [info]  (main)  req047: rebuilt shell env cache after successful probe
+[2026-08-23 04:31:11.975] [info]          alpha environment resolved {
+  environment: 'dev',
+  registryChannel: 'dev',
+  mutableRoot: '/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha536-j6jjzi/tmp/opencode-onboarding-697a6766-fb2b-4b43-817f-1fb81ffbf08e/alpha-code-state/env/dev',
+  rootOverridden: true
+}
+[2026-08-23 04:31:12.046] [info]                     alpha: seeded new layout (newLayoutDesigns=true)
+[2026-08-23 04:31:12.063] [info]                     alpha: seeded custom agents visibility (showCustomAgents=true)
+[2026-08-23 04:31:12.079] [info]                     auto updater configured {
+  environment: 'dev',
+  channel: 'latest',
+  enabled: false,
+  allowPrerelease: false,
+  allowDowngrade: false,
+  currentVersion: '0.1.3'
+}
+[2026-08-23 04:31:12.081] [info]                     [req102-seed] bundled seed 2026-08-06.1: 5 assets, 5693155B (browse-only, not installed)
+[2026-08-23 04:31:12.090] [info]                     sidecar connection started { url: 'http://127.0.0.1:55359' }
+[2026-08-23 04:31:12.090] [info]                     db-safety: skip — OPENCODE_DB=:memory:(测试态)
+[2026-08-23 04:31:12.090] [info]                     spawning sidecar { url: 'http://127.0.0.1:55359' }
+[2026-08-23 04:31:12.091] [info]                     alpha-secrets sync: wrote [DEEPSEEK_API_KEY] removed []
+[2026-08-23 04:31:12.091] [info]                     alpha-ext: loading plugin bundle {
+  path: '/Users/tide/app/alpha-code/.worktrees/verify-1080-post1056-p95/packages/ui-mac/dist/mac-arm64/alpha-code.app/Contents/Resources/alpha-ext/plugin.js'
+}
+[2026-08-23 04:31:12.177] [info]                     alpha-platform-models: catalog snapshot synced {
+  edition: 'intl',
+  models: 12,
+  pricingBasisModelId: 'deepseek-v4-flash'
+}
+[2026-08-23 04:31:12.870] [info]                     loading task finished
+[2026-08-23 04:31:13.058] [info]                     awaiting server ready
+[2026-08-23 04:31:13.058] [info]                     server ready { url: 'http://127.0.0.1:55359' }
+[0m
+[0m[31m[diagnostic] server.log
+[2026-08-23 04:31:12.195] [warn]  (server)           stderr {
+  message: '[req104-397] session-grant determination unavailable in injection (no verified channel LKG and no verified v1 catalog cache — remote curation state is unknown) — forcing only the bundled-recognizable subset (boot reconcile holds the fail-closed gate)'
+}
+[2026-08-23 04:31:12.789] [info]  (server)           stdout { message: 'initial governed catalog location prewarmed' }
+[0m
+[0m[31m[diagnostic] startup-timeline.log
+[2026-08-23 04:31:11.975] [info]  (startup-timeline) {"seq":1,"name":"main.timeline.epoch","t":0,"epoch":"main-module-load","timeOrigin":1787473871392.689}
+[2026-08-23 04:31:12.020] [info]  (startup-timeline) {"seq":2,"name":"main.app.ready","t":338.046042}
+[2026-08-23 04:31:12.088] [info]  (startup-timeline) {"seq":3,"name":"main.auth.boot.token_check","t":349.28004200000004,"expired":false}
+[2026-08-23 04:31:12.093] [info]  (startup-timeline) {"seq":4,"name":"main.sidecar.generation.emit","t":408.18579200000005,"generation":1,"phase":"recovering","reason":"boot"}
+[2026-08-23 04:31:12.093] [info]  (startup-timeline) {"seq":5,"name":"main.sidecar.boot.fork.start","t":408.26183299999997,"generation":1}
+[2026-08-23 04:31:12.789] [info]  (startup-timeline) {"seq":6,"name":"main.sidecar.ready_ipc","t":1107.211292,"context":"boot","prewarmOutcome":"ready","prewarmMs":161.48299999999995,"prewarmStatus":200}
+[2026-08-23 04:31:12.859] [info]  (startup-timeline) {"seq":7,"name":"main.sidecar.boot.fork.end","t":1107.757208,"durationMs":699.494,"generation":1,"outcome":"ok"}
+[2026-08-23 04:31:12.859] [info]  (startup-timeline) {"seq":8,"name":"main.auth.scheduler.arm","t":1175.117833,"reason":"startup","outcome":"idle"}
+[2026-08-23 04:31:12.870] [info]  (startup-timeline) {"seq":9,"name":"main.sidecar.generation.emit","t":1187.612292,"generation":1,"phase":"ready","reason":"boot"}
+[2026-08-23 04:31:13.061] [info]  (startup-timeline) {"seq":10,"name":"renderer.root.mount","t":1379.088958,"source":"renderer","rendererNow":207.29999995231628,"occurrence":1}
+[2026-08-23 04:31:13.088] [info]  (startup-timeline) {"seq":11,"name":"main.window.ready_to_show","t":1392.664083}
+[2026-08-23 04:31:13.090] [info]  (startup-timeline) {"seq":12,"name":"renderer.sidecar.generation.received","t":1408.232917,"generation":1,"phase":"ready","reason":"boot","source":"renderer","rendererNow":223.10000002384186,"occurrence":1}
+[2026-08-23 04:31:17.877] [info]  (startup-timeline) {"seq":13,"name":"main.sidecar.catalog_liveness.confirmed","t":6194.661333,"generation":1,"directory":"/Users/tide/Alpha","elapsedMs":5007,"probes":1}
+[2026-08-23 04:31:25.118] [info]  (startup-timeline) {"seq":14,"name":"renderer.composer.mount","t":13435.980333,"mode":"home","source":"renderer","rendererNow":12264,"occurrence":1}
+[2026-08-23 04:31:25.121] [info]  (startup-timeline) {"seq":15,"name":"renderer.home.model_list.start","t":13438.331625,"attempt":1,"chain":1,"source":"renderer","rendererNow":12264.799999952316,"occurrence":1}
+[2026-08-23 04:31:29.835] [info]  (startup-timeline) {"seq":16,"name":"renderer.home.model_list.end","t":18152.337457999998,"attempt":1,"chain":1,"durationMs":4702,"outcome":"cancelled","source":"renderer","rendererNow":16966.799999952316,"occurrence":1}
+[2026-08-23 04:31:29.856] [info]  (startup-timeline) {"seq":17,"name":"renderer.composer.mount","t":18173.448291999997,"mode":"home","source":"renderer","rendererNow":17001.699999928474,"occurrence":2}
+[2026-08-23 04:31:29.856] [info]  (startup-timeline) {"seq":18,"name":"renderer.home.model_list.start","t":18173.948167,"attempt":1,"chain":1,"source":"renderer","rendererNow":17001.799999952316,"occurrence":2}
+[2026-08-23 04:31:29.859] [info]  (startup-timeline) {"seq":19,"name":"renderer.home.catalog_ready","t":18176.782,"barrierMs":3.200000047683716,"probes":1,"pollWaits":0,"wake":"first","source":"renderer","rendererNow":17005,"occurrence":1}
+[2026-08-23 04:31:29.862] [info]  (startup-timeline) {"seq":20,"name":"renderer.home.model_list.end","t":18179.473041999998,"attempt":1,"chain":1,"count":2,"durationMs":5.899999976158142,"outcome":"ok","source":"renderer","rendererNow":17007.699999928474,"occurrence":2}
+[0m
+[0m[1m970 |[0m                 .stdout[0m[3m[1m.toString[0m()
+[0m[1m971 |[0m                 [0m[3m[1m.includes[0m(secret),
+[0m[1m972 |[0m             )
+[0m[1m973 |[0m           : [0m[33mfalse[0m,
+[0m[1m974 |[0m         tokenInAuthState: [jwt([0m[32m"model.invoke"[0m, [0m[32m"seed"[0m), REFRESH_TOKEN][0m[3m[1m.some[0m((secret) =>
+[0m[1m975 |[0m           JSON[0m[3m[1m.stringify[0m(auth)[0m[3m[1m.includes[0m(secret),
+                                   [31m[1m^[0m
+[0m[31mTypeError[0m[2m:[0m [1mundefined is not an object (evaluating 'JSON.stringify(auth).includes')[0m
+[0m      [2mat [0m[0m[36m[2m/Users/tide/app/alpha-code/.worktrees/verify-1080-post1056-p95/[0m[36mdocs/verification/2026-08-06-req109-110-t7-runtime/probe.ts[0m[2m:[0m[33m975[0m[2m:[33m30[0m
+[0m      [2mat [0msome[2m ([0m[0m[36munknown[0m[2m:[0m[33m1[0m[2m:[33m11[0m[2m)[0m
+[0m      [2mat [0mrunOne[2m ([0m[0m[36m[2m/Users/tide/app/alpha-code/.worktrees/verify-1080-post1056-p95/[0m[36mdocs/verification/2026-08-06-req109-110-t7-runtime/probe.ts[0m[2m:[0m[33m974[0m[2m:[33m72[0m[2m)[0m
+[0m      [2mat [0mprocessTicksAndRejections[2m ([0m[0m[36munknown[0m[2m:[0m[33m7[0m[2m:[33m39[0m[2m)[0m
+[0m
+[2mBun v1.3.14 (macOS arm64)[0m
