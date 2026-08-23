@@ -1,0 +1,25 @@
+# base fail-set —— ui-mac 全量(`bun test src`)里**已知、被容忍**的红(#1086)。
+#
+# 消费方:scripts/bun-test-floor.sh(仅当 ALPHA_KNOWN_FAILS_FILE 置位;今天恰好两处 ——
+# alpha-check.sh 第 [5/10] 步的 ui-mac 全量,与 alpha-ci 的 `bun test (ui-mac)`,同一条命令)。
+# 判官:scripts/known-fails-compare.py。语义:清单内的红放行;**清单外的红拦住并逐条点名**。
+#
+# ── 棘轮方向(#1086 AC4)────────────────────────────────────────────────────────
+# 本文件是**静态**的:没有 --update,没有任何运行时写回 —— 运行时收编 = 每次自动把新红
+# 吃进基线,棘轮反向,比没有清单更坏。加长只能发生在人手写的 diff 里,由评审读到;
+# 缩短由判官提示(某行登记的红本次没失败 ⇒ 打印「清单可缩短」,不拦)。
+#
+# ── 行格式 ──────────────────────────────────────────────────────────────────────
+# 三列 TAB:<file(相对 bun 的工作目录,即 packages/ui-mac)> <test 显示名> <为什么还红着/对应 Issue>
+# 显示名 = console `(fail) ` 行里的那串(describe 链外→内 + 测试名),直接从失败输出复制。
+# 第三列不许空(AC5):只有测试名的行会被判官当不合形拦住,绿跑也拦。
+#
+# 注意:这里点名的是**外层运行**观察得到的失败。ext-package-detail-wiring 那条的成因是它
+# spawn 的子进程 cases 文件里一条用例红(外层日志里那段 `Ran 14 tests across 1 file /
+# 13 pass / 1 fail` 就是子进程的),但外层能归因的失败单位是宿主那条 test,故按宿主登记。
+#
+# 基线测量:origin/alpha@aded4ed59,2026-08-23,`cd packages/ui-mac && bun test src`
+# ⇒ Ran 4406 tests across 305 files,4403 pass / 3 fail。
+src/main/gate-file-registry.test.ts	闸门文件登记簿完备性 (#647) > ⑤ 每条登记的命中行数必须与实测精确相等(同一文件里新增一处同形态断言即红)	source-text-anchors.ts 给 boot-dangling-onboarding-wiring.test.ts 登记 lines:1,实测 2 —— 有人新增了一处源码文本锚没更新登记(#968 辖区)。修法=读那两行、判减速带还是文本闸、更新 why 与 lines。暂无在途修复票。
+src/main/extension-seed-snapshot.test.ts	extension-seed snapshot drift guard > cross-pin: lock.catalog == bundled catalog snapshot (both regenerate on stable promotion)	seed lock.catalog.sha256(e37a4cf3…)≠ bundled catalog 实测 sha(ba40b79b…)—— 两者约定在 stable promotion 时同步再生,有一侧被单独动了(REQ-102 辖区)。暂无在途修复票。
+src/renderer/extensions/ext-package-detail-wiring.test.ts	package safe view and admission traverse the production ExtensionHub card and ExtensionDetail paths	宿主钉子进程 test-component cases 恰 14 pass,实测 13 pass / 1 fail:#771 的「the uninstall warning stays put instead of expiring with the toast timer」在等待 packageGraphs 的 waitFor 超时 —— #771 判据已合入(fe2e042f1)但该用例在 base 上未绿。暂无在途修复票。

@@ -138,10 +138,16 @@ echo "▶ [5/10] contract lock + unit tests (contracts-consumer + ext + ui-mac +
 # 上游自己的 CI 口径(既有红被上游 skipIf 治住、新红默认拒),并把 alpha-frontend.patch
 # 里的 alpha 判据文件逐个点名重跑、逐文件判精确条数(删文件/删用例/skipIf 包住都当场红,
 # 整包地板抓不到)。
+# `#1086`:ui-mac 全量带 base fail-set 棘轮 —— scripts/known-fails.tsv(静态、人手维护、
+# 逐测试点名)里的已知红放行,**清单外的红拦住并点名**,无法逐测试归因的失败一律拦住
+# (判官 = scripts/known-fails-compare.py;junit 为权威、console 双轴交叉,轴打架即测量作废)。
+# 此前这里对「基线既有红」一票否决 ⇒ 每条 lane 只能手工重导基线,不导的默认动作是
+# `--no-verify`(一次关掉全部十道门,#754 演过)。与 CI 的 `bun test (ui-mac)` 同一条命令、
+# 同一份清单。注意清单只罩这一条全量;[6/10] 登记簿的逐文件精确点名**不**吸收已知红。
 if bun run --cwd packages/alpha-contracts-consumer check:vendor \
   && bash scripts/bun-test-floor.sh 15 packages/alpha-contracts-consumer \
   && bash scripts/bun-test-floor.sh 100 packages/ext \
-  && bash scripts/bun-test-floor.sh 3000 packages/ui-mac src \
+  && ALPHA_KNOWN_FAILS_FILE=scripts/known-fails.tsv bash scripts/bun-test-floor.sh 3000 packages/ui-mac src \
   && bash scripts/bun-test-app.sh; then
   echo "    ✓ tests"
 else
