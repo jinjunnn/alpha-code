@@ -97,6 +97,21 @@ const ALPHA_FILE = "packages/ui-mac/src/main/alpha-owned.ts"
  */
 const ALPHA_SIDE_DRIFT = "packages/core/src/upstream-drift.ts"
 
+// ── `#1085` 的夹具:UPSTREAM_PATHS 里住着的 alpha 自有文件 ────────────────────────
+// 谓词 = ①路径不在上游镜像 origin/dev 里 ∧ ②自报家门(alpha-* 命名 或 文件里写着 marker)。
+// 下面五个常量各钉谓词的一格,**两个因子各自的反例都在里面** —— 只有这样才杀得掉
+// 「只看 dev 出身」与「只看命名」这两个各自都能让上面全部用例变绿的错误实现。
+/** alpha 自有 + alpha-* 命名:落进 origin/alpha 之后改它必须绿(这张票要修的那个形状)。 */
+const ALPHA_OWNED_NAMED = "packages/core/test/alpha-owned-leaf.test.ts"
+/** alpha 自有 + 名字不合约定,靠文件里的 marker 自报家门(migration / tool-identity.ts 那一类)。 */
+const ALPHA_OWNED_MARKED = "packages/core/src/marked-alpha-leaf.ts"
+/** alpha 自有,但**没有**自报家门:因子②不成立 ⇒ 必须红(杀「只看 dev 出身」)。 */
+const ALPHA_OWNED_BARE = "packages/core/src/bare-alpha-leaf.ts"
+/** **真上游**文件,名字却是 alpha-*:因子①不成立 ⇒ 必须红(杀「只看命名」)。 */
+const UPSTREAM_ALPHA_NAMED = "packages/core/src/alpha-upstream-trap.ts"
+/** 守卫认的 marker token —— 与 scripts/north-star-guard.sh 的 ALPHA_OWNED_MARKER 同字面。 */
+const OWNED_MARKER = "north-star:alpha-owned"
+
 /**
  * 夹具形状 —— 真实世界的缩比:
  *
@@ -115,12 +130,20 @@ function forkFixture() {
     [TAKEN_OVER_FILE]: "export const permission = 1\n",
     [ALPHA_SIDE_DRIFT]: "export const drift = 1\n",
     [ALPHA_FILE]: "export const alphaOwned = 1\n",
+    // seed 在分叉之前 ⇒ 这一条**也在 dev 里**,于是它是货真价实的上游文件,名字只是碰巧
+    // 长得像 alpha 自有的。谓词的因子①必须据此否掉它。
+    [UPSTREAM_ALPHA_NAMED]: "export const trap = 1\n",
   })
   git(origin, ["checkout", "-q", "-b", "dev"])
   commit(origin, "upstream mirror moves on", { "packages/core/src/dev-only.ts": "export const devOnly = 1\n" })
   git(origin, ["checkout", "-q", "alpha"])
   commit(origin, "alpha takes over an upstream leaf (ADR-style)", {
     [ALPHA_SIDE_DRIFT]: "export const drift = 2\n",
+    // 这三条只落在 alpha 上 ⇒ origin/dev 里查不到它们(= 因子①成立)。它们已经在基准里,
+    // 所以 feature 分支再碰一下就是 `M` —— 正是 `#971` 说的「落地那一次绿、以后每一次红」。
+    [ALPHA_OWNED_NAMED]: "export const ownedByName = 1\n",
+    [ALPHA_OWNED_MARKED]: `// ${OWNED_MARKER}\nexport const ownedByMarker = 1\n`,
+    [ALPHA_OWNED_BARE]: "export const bare = 1\n",
   })
 
   const work = mkdtempSync(join(tmpdir(), "alpha-north-star-work-"))
@@ -291,6 +314,122 @@ describe("#889 north-star 守卫的行为", () => {
     // 无需 exclude」)。本条把那句散文变成判据:有人顺手加上 `A`,那两条 ADR 的前提当场失效,
     // 这里会红并逼他去读它们。`#889` 不改这个行为。
     expect(run.exitCode, `新增文件被守卫点名了 —— ADR-035/038 的「无需 exclude」前提已失效:\n${run.output}`).toBe(0)
+  })
+})
+
+// ── `#1085`:UPSTREAM_PATHS 里住着的 alpha 自有文件 ─────────────────────────────────
+//
+// 缺陷(`#971` 实测):我们自己写的一批文件住在上游包目录里(闸门测试、`tool-identity.ts` 本体、
+// ADR-033 的两条迁移…)。落地那一次是 `A`,DMR 不点名;进了 `origin/alpha` 之后**任何**修改都是
+// `M` ⇒ 守卫当场红。于是「给自己写的判据补一条用例」要先走一轮 owner 级 ADR 修订,而门红时最省事
+// 的反应是 `--no-verify`,那会把所有门一起关掉。owner 裁决(`#1079` CHOICE=2)= 结构性谓词。
+//
+// 判据为什么长这样:谓词是两个因子的**合取**,所以两个因子各自都要有一条**反例**用例 ——
+// 「只看 dev 出身」和「只看命名」这两个错误实现,各自都能让正向那两条绿。反例在这里:
+// ALPHA_OWNED_BARE(dev 里没有、但没自报家门 ⇒ 红)与 UPSTREAM_ALPHA_NAMED(名字是 alpha-*、
+// 但 dev 里有 ⇒ 红)。另外两条守的是这道门最容易被绕开的两个形状:把 marker 抄进真上游文件、
+// 以及把上游文件**改名**成 alpha-*(后者带控制组,证明夹具测得出已知的坏)。
+describe("#1085 alpha 自有文件的结构性谓词", () => {
+  test("alpha-* 命名的自有文件被改 ⇒ 绿,且输出把它点成 alpha 自有(豁免不许是静默的)", () => {
+    const { work } = forkFixture()
+    commit(work, "extend an alpha-owned gate that lives under an upstream package", {
+      [ALPHA_OWNED_NAMED]: "export const ownedByName = 2\n",
+    })
+    const run = runGuard(work)
+    expect(run.exitCode, `alpha 自有闸门被判成破北极星 —— 这正是 #971 的缺陷:\n${run.output}`).toBe(0)
+    // 一次静默的放行与一次没跑的门在输出上长得一模一样。豁免必须说出来,否则「今天绿」没有确定含义。
+    expect(run.output, `豁免了却一个字都没说 —— 静默放行:\n${run.output}`).toContain(ALPHA_OWNED_NAMED)
+  })
+
+  test("名字不合约定、靠文件里的 marker 自报家门 ⇒ 绿(migration / tool-identity.ts 那一类)", () => {
+    const { work } = forkFixture()
+    commit(work, "edit an alpha-owned file that cannot follow the alpha-* naming", {
+      [ALPHA_OWNED_MARKED]: `// ${OWNED_MARKER}\nexport const ownedByMarker = 2\n`,
+    })
+    const run = runGuard(work)
+    expect(run.exitCode, `带 marker 的 alpha 自有文件被判成破北极星:\n${run.output}`).toBe(0)
+    expect(run.output).toContain(ALPHA_OWNED_MARKED)
+  })
+
+  test("dev 里没有、但没自报家门 ⇒ 红(杀掉「只看 origin/dev 出身」的实现)", () => {
+    const { work } = forkFixture()
+    commit(work, "edit an unmarked file that upstream never had", { [ALPHA_OWNED_BARE]: "export const bare = 2\n" })
+    const run = runGuard(work)
+    // 因子①单独成立不够:origin/dev 是个会陈旧的 ref,fetch 失败的窗口里上游新增又被 sync 合进
+    // alpha 的文件,在本地 dev 里同样「查不到」。只认出身的实现会把那种**真上游**文件放行。
+    expect(run.exitCode, `只凭「dev 里没有」就放行了 —— 陈旧镜像会让真上游文件走同一条路:\n${run.output}`).not.toBe(0)
+    expect(run.output).toContain(ALPHA_OWNED_BARE)
+    expect(run.output, `红了却没告诉人怎么办(命名 / marker):\n${run.output}`).toContain(OWNED_MARKER)
+  })
+
+  test("真上游文件、名字却叫 alpha-* ⇒ 红(杀掉「只看命名」的实现)", () => {
+    const { work } = forkFixture()
+    commit(work, "touch an upstream file that happens to be alpha-named", {
+      [UPSTREAM_ALPHA_NAMED]: "export const trap = 999\n",
+    })
+    const run = runGuard(work)
+    expect(run.exitCode, `一个 dev 里就有的文件靠名字拿到了豁免:\n${run.output}`).not.toBe(0)
+    expect(run.output).toContain(UPSTREAM_ALPHA_NAMED)
+  })
+
+  test("把 marker 抄进一个真上游文件 ⇒ 仍然红(自报家门不是可伪造的通行证)", () => {
+    const { work } = forkFixture()
+    commit(work, "forge the ownership marker inside a genuine upstream file", {
+      [UPSTREAM_FILE]: `// ${OWNED_MARKER}\nexport const leaf = 999\n`,
+    })
+    const run = runGuard(work)
+    // 因子②取的是**改动后**的内容(被删掉的文件在工作树里没有内容,得往回退一层取)。这不是
+    // 漏洞,因为因子①对真上游文件不成立 —— 本条就是那句话的判据。
+    expect(run.exitCode, `伪造 marker 就能把上游改动洗白:\n${run.output}`).not.toBe(0)
+    expect(run.output).toContain(UPSTREAM_FILE)
+  })
+
+  test("把上游文件改名成 alpha-* ⇒ 红且点名**旧**路径(--no-renames;去掉它即漏)", () => {
+    const { work } = forkFixture()
+    const renamed = "packages/core/src/alpha-renamed-leaf.ts"
+    git(work, ["mv", UPSTREAM_FILE, renamed])
+    git(work, ["commit", "-q", "-m", "rename an upstream file into the alpha naming convention"])
+
+    // ── 控制组:先证明这个形状**真的**能绕过 ──────────────────────────────────────
+    // 默认开着的改名检测把这次改动压成一条 `R`,而 `--name-only` 对 `R` 只印目的路径 ——
+    // 目的路径在 dev 里没有、又叫 alpha-*,两个因子全中 ⇒ 被当成 alpha 自有放行,而上游那条
+    // 路径其实已经消失。把 `--no-renames` 拿掉的复制品必须绿,否则本条测的不是它要测的东西。
+    const mutated = join(mkdtempSync(join(tmpdir(), "alpha-north-star-rename-ctl-")), "guard-with-renames.sh")
+    writeFileSync(mutated, readFileSync(GUARD, "utf8").replaceAll("--no-renames ", ""))
+    const withRenames = runGuard(work, mutated)
+    expect(withRenames.exitCode, `控制组没绿 —— 这个夹具测不到 --no-renames 要防的那个形状:\n${withRenames.output}`).toBe(0)
+
+    // ── 生产:同一棵树必须红,且点名的是**消失的那条上游路径**,不是新名字 ────────────
+    const run = runGuard(work)
+    expect(run.exitCode, `把上游文件改名成 alpha-* 就绕过了守卫:\n${run.output}`).not.toBe(0)
+    expect(run.output, `红了但点的是新名字 —— 真正受害的是旧路径:\n${run.output}`).toContain(UPSTREAM_FILE)
+  })
+
+  test("marker 在一个**大**文件里也读得出来(管道 + pipefail 会把命中读成 141)", () => {
+    const { work } = forkFixture()
+    // 这不是凑一条用例。守卫开着 `pipefail`,而 `grep -q` 命中即退出、写端拿到 SIGPIPE ⇒
+    // `cat 文件 | grep -qF marker` 的退出码是 **141**,于是「找到了」被读成「没找到」。
+    // 实测:`bash -c 'set -uo pipefail; cat big.txt | grep -qF token; echo $?'` → 141。
+    // 方向是 fail-closed(假红,不是放行),但它取决于文件多大、marker 在第几行 —— 属于
+    // 「今天绿明天红」的不可复现门,而恰恰是本 ADR 要消灭的那种。小夹具测不到它,所以这里
+    // 的文件必须真的大到会触发 SIGPIPE。
+    const big = `// ${OWNED_MARKER}\n${"// ".repeat(4) + "x".repeat(60) + "\n"}`.padEnd(4_000_000, "// filler\n")
+    commit(work, "edit a large alpha-owned file whose marker sits at the top", { [ALPHA_OWNED_MARKED]: big })
+    const run = runGuard(work)
+    expect(run.exitCode, `大文件里的 marker 没被读出来(多半是管道 + pipefail 吃了 SIGPIPE):\n${run.output}`).toBe(0)
+    expect(run.output).toContain(ALPHA_OWNED_MARKED)
+  })
+
+  test("上游镜像 ref 取不到 ⇒ 豁免整体停用(fail-closed),且自报这一跑量的是什么", () => {
+    const { work } = forkFixture()
+    commit(work, "extend an alpha-owned gate", { [ALPHA_OWNED_NAMED]: "export const ownedByName = 3\n" })
+    // 镜像没了:remote-tracking ref 删掉 + fetch 一定失败(本地路径 ⇒ 立即 fatal,不碰网络)。
+    git(work, ["update-ref", "-d", "refs/remotes/origin/dev"])
+    git(work, ["remote", "set-url", "origin", `${work}-vanished`])
+    const run = runGuard(work)
+    // 反方向(「查不到镜像就当 alpha 自有」)会把每一次上游改动都放行,是这道门能犯的最贵的错。
+    expect(run.exitCode, `镜像取不到时守卫仍然发豁免 —— 那一刻它对上游改动全盲:\n${run.output}`).not.toBe(0)
+    expect(run.output, `停用了豁免却没说,人读不出这一跑为什么红:\n${run.output}`).toContain("origin/dev")
   })
 })
 

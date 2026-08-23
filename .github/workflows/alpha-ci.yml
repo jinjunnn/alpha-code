@@ -115,9 +115,12 @@ jobs:
       # dev 三周的合法分叉全算进窗口 ⇒ 一次不在白名单里的上游改动就让这道门在**每个 PR**
       # 上恒红。fetch 的 ref 与下一步 diff 的基准必须同一条,由
       # packages/ui-mac/src/main/local-gate-parity.test.ts 判(两者不一致即红)。
+      # `#1085`:一并取回上游镜像 `dev` —— 守卫用它判「UPSTREAM_PATHS 下这条路径到底是不是上游的」
+      # (ADR-043 的因子①)。它**不参与比较基准**(基准仍是 alpha)。取不到时守卫 fail-closed 停用
+      # 豁免,所以这一步只是把它显式化,不是新增依赖。
       - name: Ensure origin/alpha is available
         if: needs.detect.outputs.code == 'true'
-        run: git fetch --no-tags origin alpha
+        run: git fetch --no-tags origin alpha dev
       - name: Fail on any modification to upstream package files
         if: needs.detect.outputs.code == 'true'
         # `#889`:守卫本体 = scripts/north-star-guard.sh,CI 与本地 alpha-check.sh 跑的是

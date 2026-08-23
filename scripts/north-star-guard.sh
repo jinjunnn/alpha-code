@@ -113,6 +113,65 @@ UPSTREAM_EXCLUDES=(
   ':(exclude)packages/core/test/oauth-page.test.ts'
 )
 
+# ── UPSTREAM_PATHS 里住着的 alpha 自有文件:结构性谓词,不是逐文件清单(`#1085` / ADR-043)──
+#
+# 缺陷(`#971` 实测):我们有一批**自己写的**文件住在上游包目录里(闸门测试、`tool-identity.ts`
+# 本体、ADR-033 的两条迁移…)。落地那一次是 `A`,`--diff-filter=DMR` 不点名 —— ADR-041 第 72 行
+# 据此写下「新增文件因 guard 的 DMR 策略不需要排除」。**那个豁免只在落地那一刻成立**:文件进了
+# `origin/alpha` 之后,任何一次修改都是 `M`,守卫当场红。于是「给自己写的判据补一条用例」要先走
+# 一轮 owner 级 ADR 修订,而门红时最省事的反应是 `--no-verify` —— 那会把**所有**门一起关掉。
+#
+# owner 裁决(`#1079` CHOICE=2):走**结构性谓词**,不走逐文件 exclude 清单。清单对新成员默认
+# 放行(每来一个新人都要再走一轮收编),谓词对新成员默认覆盖。
+#
+# 谓词 = 两个因子的**合取**,缺一不豁免:
+#   ① 出身:这条路径在上游镜像 `origin/dev` 里**不存在**。dev 是上游纯镜像(ADR-005),
+#      真上游文件按定义在它里面 ⇒ 这一条单独就挡住了「把真上游改动放行」的绝大部分。
+#   ② 自报家门:basename 以 `alpha-` 开头,**或**文件里写着 `north-star:alpha-owned`。
+#
+# 为什么必须是合取,而不是任一条单独成立:
+#   · 只有①:`origin/dev` 是个会陈旧的 ref。fetch 失败(实测 3 次 1 次)+ 上游在这段窗口里
+#     新增一个文件并被 sync 合进 alpha ⇒ 那个**真上游**文件在本地 dev 里查不到 ⇒ 被放行。
+#   · 只有②:上游哪天新增一个 `alpha-*.ts`(或正文里恰好出现那个 token),就自动获得豁免。
+#   合取之后,要骗过它得同时满足「dev 陈旧到看不见它」和「它叫 alpha-* / 带着我们的 token」——
+#   把 token 抄进一个真上游文件不管用,因为①会否掉它(dev 里有这条路径)。
+#
+# ② 的内容取**改动后**的版本(工作树 → HEAD → 基准,取第一个取得到的)。这不是漏洞:伪造
+# marker 只在①也成立时才有效,而①对真上游文件不成立。
+#
+# 边界(诚实登记,不谎称穷尽):
+#   · `origin/dev` 整个 ref 取不到 ⇒ 豁免**整体停用**(fail-closed),回到本谓词之前的行为:
+#     UPSTREAM_PATHS 下的每一处改动都算上游改动。方向安全(过报,不漏报)。
+#   · 上游**删掉**、而 alpha 留着的文件,①成立 ⇒ 它要拿到豁免仍需②(得有人显式标记)。
+#   · 谓词判的是**路径**,不是内容:它回答「这条路径是不是上游的」,不回答「这次改动对不对」。
+UPSTREAM_MIRROR="origin/dev"
+ALPHA_OWNED_MARKER="north-star:alpha-owned"
+
+# 因子①:上游镜像里有没有这条路径。
+mirror_has() { git cat-file -e "${UPSTREAM_MIRROR}:$1" 2>/dev/null; }
+
+# 因子②:命名约定,或文件里显式写着 marker。内容按 工作树 → HEAD → 基准 取第一个取得到的版本
+# (被删掉的文件在工作树里没有内容,但它仍要判得出来)。
+#
+# **刻意不用管道**(`… | grep -qF`)。本脚本开着 `pipefail`,而 `grep -q` 命中即退出、写端拿到
+# SIGPIPE ⇒ 整条管道的退出码是 141 —— 文件一大就把「找到了 marker」读成「没找到」。实测:
+#   $ bash -c 'set -uo pipefail; cat big.txt | grep -qF token; echo $?'   → 141
+# 方向是 fail-closed(误判成上游 ⇒ 假红)而不是放行,但它取决于文件多大、marker 在第几行,
+# 是那种「今天绿明天红」的不可复现门。命令替换没有这个问题。
+declares_alpha_owned() {
+  case "${1##*/}" in alpha-*) return 0 ;; esac
+  local body
+  body="$(cat "$1" 2>/dev/null || git show "HEAD:$1" 2>/dev/null || git show "origin/alpha:$1" 2>/dev/null)" || return 1
+  case "$body" in *"$ALPHA_OWNED_MARKER"*) return 0 ;; esac
+  return 1
+}
+
+is_alpha_owned() {
+  [ "$mirror_ok" -eq 1 ] || return 1
+  mirror_has "$1" && return 1
+  declares_alpha_owned "$1"
+}
+
 # ── fetch 失败时的降级,以及它为什么必须自报家门(`#913`)───────────────────────────
 # 这条 fetch **间歇失败**(实测:`#889` 实现方约 3 次 1 次、主 session 复验 3 次撞到 1 次,
 # 手跑同一条命令 exit 0 —— 与 CLAUDE.md 记的 `api.github.com` 代理抖动同形)。失败时守卫按
@@ -128,6 +187,11 @@ if ! git fetch --no-tags origin alpha --quiet 2>/dev/null; then
   fetched=0
   echo "    (warn: could not fetch origin/alpha — comparing against last-known origin/alpha)"
 fi
+
+# 上游镜像只用来判「这条路径是不是上游的」,**不参与比较基准**(基准仍是 origin/alpha,`#889`)。
+# 取不到不致命:用本地上一次拿到的 origin/dev,并把它的身份与年龄报出来(同 `#913` 的纪律)。
+mirror_fetched=1
+git fetch --no-tags origin dev --quiet 2>/dev/null || mirror_fetched=0
 
 # 基准取不到就**当场红**,不是静默放行(`#889`)。原来的写法是
 # `git diff … origin/dev…HEAD … 2>/dev/null || true`:ref 不存在时 git 报错被吞掉、
@@ -154,19 +218,59 @@ if [ "$fetched" -eq 0 ]; then
   echo "      baseline: last-known origin/alpha @ ${base_sha} — dated ${base_date} (${base_age}); window origin/alpha..HEAD = ${base_window} commits"
 fi
 
+# 镜像 ref 取不到 ⇒ alpha 自有豁免整体停用,而不是「反正查不到就当 alpha 自有」。后者会把
+# 每一次上游改动都放行,是这道门能犯的最贵的错。
+mirror_ok=1
+if ! git rev-parse --verify --quiet "$UPSTREAM_MIRROR" >/dev/null; then
+  mirror_ok=0
+  echo "    (warn: 取不到上游镜像 ${UPSTREAM_MIRROR} — alpha 自有豁免本跑整体停用(fail-closed):UPSTREAM_PATHS 下每一处改动都按上游改动处理)"
+fi
+if [ "$mirror_ok" -eq 1 ] && [ "$mirror_fetched" -eq 0 ]; then
+  echo "      mirror: last-known ${UPSTREAM_MIRROR} @ $(git rev-parse --short "$UPSTREAM_MIRROR") — dated $(git log -1 --format=%cd --date=short "$UPSTREAM_MIRROR") ($(git log -1 --format=%cr "$UPSTREAM_MIRROR"))"
+fi
+
 # committed delta (mirrors CI) ∪ working-tree edits (earlier local feedback)
 # 同一条理由:diff 本身失败也是「测不到」,不是「没有改动」。宁可当场红。
-if ! committed="$(git diff --diff-filter=DMR --name-only origin/alpha...HEAD -- $UPSTREAM_PATHS "${UPSTREAM_EXCLUDES[@]}")"; then
+# `--no-renames` 是**判据的一部分**,不是风格(`#1085`)。默认开着的改名检测会把一次改名压成
+# 一条 `R`,而 `--name-only` 对 `R` 只印**目的路径** —— 于是「把上游文件改名成 alpha-foo.ts」
+# 在下面的谓词里两个因子全中,被当成 alpha 自有放行,而上游那条路径其实已经消失(fork-sync
+# 照样冲突)。关掉改名检测后,同一次改名回到 `D`(旧路径)+ `A`(新路径):`D` 落进 DMR 被点名,
+# 点的还正好是真正受害的那条路径。north-star-guard.test.ts 里有一条专钉这个形状。
+if ! committed="$(git diff --no-renames --diff-filter=DMR --name-only origin/alpha...HEAD -- $UPSTREAM_PATHS "${UPSTREAM_EXCLUDES[@]}")"; then
   echo "    ✗ 算不出与 origin/alpha 的提交差 —— 本次守卫作废(不是通过)。"; exit 1
 fi
-if ! worktree="$(git diff --diff-filter=DMR --name-only HEAD -- $UPSTREAM_PATHS "${UPSTREAM_EXCLUDES[@]}")"; then
+if ! worktree="$(git diff --no-renames --diff-filter=DMR --name-only HEAD -- $UPSTREAM_PATHS "${UPSTREAM_EXCLUDES[@]}")"; then
   echo "    ✗ 算不出工作树差 —— 本次守卫作废(不是通过)。"; exit 1
 fi
 changed="$(printf '%s\n%s\n' "$committed" "$worktree" | sed '/^$/d' | sort -u)"
-if [ -n "$changed" ]; then
+
+# 分类:被点名的每一条路径,按上面那个两因子谓词判「上游」还是「alpha 自有」。
+flagged=""
+exempt=""
+while IFS= read -r path; do
+  [ -n "$path" ] || continue
+  if is_alpha_owned "$path"; then
+    exempt="${exempt}${path}
+"
+  else
+    flagged="${flagged}${path}
+"
+  fi
+done <<CHANGED
+$changed
+CHANGED
+
+# 豁免必须**说出来**。一次静默的放行与一次没跑的门在输出上长得一模一样,而这道门的整个价值
+# 就在于「它今天绿」这句话有确定含义(`#913` 同一条纪律)。
+if [ -n "$exempt" ]; then
+  echo "    · alpha 自有(住在上游包里,但 ${UPSTREAM_MIRROR} 从来没有过这条路径)—— 不算上游改动:"
+  printf '%s' "$exempt" | sed 's/^/      /'
+fi
+if [ -n "$flagged" ]; then
   echo "    ✗ upstream files modified/deleted/renamed (fork-sync would conflict):"
-  echo "$changed" | sed 's/^/      /'
+  printf '%s' "$flagged" | sed 's/^/      /'
   echo "      → revert; extend via alpha files (packages/ext, packages/ui-mac) or seams (ADR-002/005)."
+  echo "      → 它其实是 alpha 自有文件?命名成 alpha-*,或在文件里写一行 '${ALPHA_OWNED_MARKER}'(ADR-043)。"
   exit 1
 fi
-echo "✓ zero upstream package edits (baseline origin/alpha; ADR-033 收编白名单除外)"
+echo "✓ zero upstream package edits (baseline origin/alpha; ADR-033 收编白名单 + ADR-043 alpha 自有谓词除外)"

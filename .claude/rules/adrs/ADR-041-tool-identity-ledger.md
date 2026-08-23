@@ -69,9 +69,40 @@ plugin、MCP、host 或 V2。因而从 alias、标题、URL、图标或 annotati
 - `packages/core/src/tool/registry.ts`
 
 `packages/opencode/src/permission/index.ts` 已由 ADR-038 接管；本 ADR 只在其现有期限语义旁增加正交的
-identity deny 判定，不扩大文件面。新增文件因 guard 的 DMR 策略不需要排除，但同样受本 ADR 所有：
+identity deny 判定，不扩大文件面。~~新增文件因 guard 的 DMR 策略不需要排除~~，但同样受本 ADR 所有：
 `packages/schema/src/tool-identity.ts`、`packages/plugin/src/alpha-cloud-authority.ts`、
 `packages/opencode/src/session/tool-display.ts` 及具名 `alpha-tool-identity` 闸门。
+
+> **订正 · 2026-08-23** —— `#971` 实测 → `#1079` owner 裁决 `CHOICE=2` → `#1085` 落地。
+> 上句「新增文件因 guard 的 DMR 策略不需要排除」按**永久**解读不成立，已划掉。
+>
+> 那句话把**一次性的**豁免写成了永久规则。守卫看的是 `--diff-filter=DMR`：新增确实是 `A`、不触发
+> ——**但只在落地那一次**。文件一旦进了 `origin/alpha`，以后任何修改都是 `M`，守卫当场红。
+> `#971` 的只读实测（2026-08-14）：
+>
+> ```
+> $ sha=$(git log --diff-filter=M --format=%h -1 -- packages/opencode/test/tool/alpha-tool-identity.test.ts)
+> 98acf36f8
+> $ git diff --diff-filter=DMR --name-only ${sha}^..${sha} -- $UPSTREAM_PATHS "${EX[@]}"
+> packages/opencode/test/tool/alpha-tool-identity.test.ts
+> ```
+>
+> 后果落在最坏的位置：本 ADR 点名的 `alpha-tool-identity` 闸门与 `tool-identity.ts` 本体，是我们
+> 最需要维护、却最难改的那批文件；而门红时最省事的反应是 `--no-verify`，那会把**所有**门一起关掉。
+>
+> **现在的规则**（[[ADR-043]]）：守卫用一条结构性谓词识别 UPSTREAM_PATHS 里的 alpha 自有文件 ——
+> ①路径不在上游镜像 `origin/dev` 里 **∧** ②自报家门（basename 以 `alpha-` 开头，**或**文件里写着
+> `north-star:alpha-owned`）。据此：
+>
+> - 本 ADR 的 `alpha-tool-identity` 闸门走①∧②的命名分支，**零登记**；「不需要排除」对它自本次
+>   订正起才是永久为真的。
+> - `packages/opencode/src/session/tool-display.ts` 与 `packages/schema/src/tool-identity.ts` 名字
+>   不合约定，已各自写上 `north-star:alpha-owned` 一行；删掉那一行，对它们的每一次修改都会重新变红。
+> - `packages/plugin/src/alpha-cloud-authority.ts` 不在 `UPSTREAM_PATHS` 内（`packages/plugin`
+>   从来不在守卫辖区），与本条无关。
+>
+> 本订正**不改变**本 ADR 的任何接管决定：下方「精确 L3 接管面」那张表一条未动，它仍是逐文件的、
+> 每条都受 `UPSTREAM_EXCLUDES` 与 ADR-029 §3 管辖。谓词管的是**从来不是上游的**文件，不是收编。
 
 守卫实现在 `scripts/alpha-check.sh` 与 `.github/workflows/alpha-ci.yml`，两张精确表必须保持 1:1。
 不得以目录级排除覆盖未来文件。
