@@ -55,6 +55,17 @@ test("green neighbour", () => { expect(1).toBe(1) })
 /** 同名但全绿的版本 —— AC3② 的「清单内的红修绿」。 */
 const FIXTURE_GREEN = FIXTURE_RED.replace("expect(1).toBe(2)", "expect(1).toBe(1)")
 
+/** R1 Major-1 的常驻夹具:同 describe 链下两条**同名**红 —— 一条对应清单行,一条是全新缺陷。 */
+const FIXTURE_DUP_RED = `import { describe, test, expect } from "bun:test"
+describe("outer ring", () => {
+  describe("inner ring", () => {
+    test("known red probe", () => { expect(1).toBe(2) })
+    test("known red probe", () => { expect(3).toBe(4) })
+  })
+})
+test("green neighbour", () => { expect(1).toBe(1) })
+`
+
 /** 显示名:console (fail) 行的那串。junit classname 是内→外倒序,重建必须把它转回来。 */
 const RED_DISPLAY = "outer ring > inner ring > known red probe"
 const LIST_HEADER = "# 合成清单(本测试夹具)\n"
@@ -179,6 +190,21 @@ test("同 display 的红落在清单未登记的文件 ⇒ 拦住并点名那个
     expect(r.code).not.toBe(0)
     expect(r.output).toContain("清单外新红")
     expect(r.output).toContain(`other.test.ts :: ${RED_DISPLAY}`)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("同 (file, display) 两条同名红且该键在清单内 ⇒ 测量作废拦住(一条清单行吸收不了第二条)", { timeout: 120_000 }, () => {
+  // R1 Major-1 常驻化(owner 裁决):set 去重会把同名失败塌成一条 ⇒ 一条清单行放行任意多条
+  // 同名新红,且两条交叉轴都拦不住(条数轴两侧同为 2、名字轴两条 (fail) 行文本相同)。
+  // 判官的修法是同键 >1 且在清单内 ⇒ 走「测量作废」分支 —— 把 dup 判重段删掉,本用例当场红。
+  const { dir, list } = fixture(FIXTURE_DUP_RED, LIST_HEADER + LIST_ENTRY)
+  try {
+    const r = runFloor(["1", dir, "kfprobe.test.ts"], list)
+    expect(r.code).not.toBe(0)
+    expect(r.output).toContain("测量作废")
+    expect(r.output).toContain("同名用例无法逐条归因")
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
