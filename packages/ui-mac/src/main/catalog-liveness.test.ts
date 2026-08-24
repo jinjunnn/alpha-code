@@ -2,11 +2,13 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import {
+  CATALOG_LIVENESS_PROBE_INTERVAL_MS,
   armCatalogLiveness,
   decideCatalogLiveness,
   initialCatalogLivenessState,
   probeCatalogMarker,
   resolveCatalogProbeDirectory,
+  startCatalogLivenessProbes,
   type CatalogLivenessSample,
   type CatalogLivenessState,
 } from "./catalog-liveness"
@@ -308,8 +310,47 @@ describe("catalog-liveness probe(真执行,fetch 注入)", () => {
   })
 })
 
+// #1098:看门狗的**第一次**巡查也空等满一个周期 —— setInterval 的首触发在 t=interval。
+// 实测四次 5010 / 5008 / 5010 / 5007 ms,每次 `probes: 1`(第一次问就通过)⇒ 等的不是引擎,
+// 是定时器。判据拆两半,免得一条断言同时管两件事:
+//   ①「装好那一刻已经巡查过一次」—— 周期取 60s 后同步断言,定时器结构上还没机会响,
+//     计数为 1 只可能来自立刻那一次(去掉生产里的 `probeTick()` 这一条当场红);
+//   ②「之后仍在真的重复,且返回的就是那个能停表的 interval 句柄」—— 句柄若不是真 interval,
+//     stopCatalogLivenessWatchdog() 就停不掉旧代的巡查(#564 的迟到样本防线连着这里)。
+describe("catalog-liveness 巡查器安装(#1098)", () => {
+  test("巡查周期仍是 5s —— 本票只让第一次更早,不动周期(独立字面量锚)", () => {
+    expect(CATALOG_LIVENESS_PROBE_INTERVAL_MS).toBe(5_000)
+  })
+
+  test("装好立刻巡查一次,不空等一个周期", () => {
+    let ticks = 0
+    const timer = startCatalogLivenessProbes(() => {
+      ticks++
+    }, 60_000)
+    try {
+      expect(ticks).toBe(1)
+    } finally {
+      clearInterval(timer)
+    }
+  })
+
+  test("之后仍按周期重复,且返回的句柄真的停得掉", async () => {
+    const ticks: number[] = []
+    const timer = startCatalogLivenessProbes(() => ticks.push(Date.now()), 10)
+    // 不写死等待时长(CPU 饥饿下会变成假红):等到出现足够多次重复,或 2s 上限。
+    const deadline = Date.now() + 2_000
+    while (ticks.length < 4 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5))
+    clearInterval(timer)
+    expect(ticks.length).toBeGreaterThanOrEqual(4) // 立刻那 1 次 + 至少 3 次周期性重复
+    // 停表是同步的:此后再等 10 个周期也不许有新 tick。
+    const stopped = ticks.length
+    await new Promise((r) => setTimeout(r, 100))
+    expect(ticks.length).toBe(stopped)
+  })
+})
+
 // #564 接线锚(index.ts 是本仓唯一跑不进单测的文件,生产接线的最后一英里只能锁源码形状;
-// 决策行为的真闸门在上面的纯函数用例里)。断言八件事:
+// 决策行为的真闸门在上面的纯函数用例里)。断言九件事:
 // ① 恰好两处武装(boot 终态continuation + respawn 健康线之后),条件形状逐字锁定 ——
 //    boot 只在干净 ready 终态武装(injection-failed 不武装),respawn 同判据;
 // ② 决策被消费恰好一次(decideCatalogLiveness);
@@ -324,6 +365,9 @@ describe("catalog-liveness probe(真执行,fetch 注入)", () => {
 // ⑧ R2 Minor:探针 promise 链尾必须有 .catch(回调体任一抛出不得成为 main 的 unhandled
 //    rejection),且 catch 内复位 probeInFlight(否则 probeCatalogMarker 意外 reject 会让
 //    每个后续 tick 空转、看门狗静默失效)。
+// ⑨ `#1098`:巡查器必须经 startCatalogLivenessProbes 安装(它保证「装好立刻巡查一次」),
+//    且武装体内不得再出现裸的定时器安装 —— 裸 setInterval 回来 = 第一次巡查又空等满一个周期,
+//    而上面的纯函数用例照绿(它们喂样本序列,一个定时器都不驱动)。
 // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
 test("ANCHOR (not a gate): #564 看门狗武装/停表/裁决消费必须留在 index.ts 的接线形状里", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
@@ -338,6 +382,10 @@ test("ANCHOR (not a gate): #564 看门狗武装/停表/裁决消费必须留在 
   expect(armStart).toBeGreaterThan(-1)
   expect(armEnd).toBeGreaterThan(armStart)
   const armBody = source.slice(armStart, armEnd)
+  // ⑨ #1098:立刻巡查一次由 startCatalogLivenessProbes 保证(行为判据在「巡查器安装」用例里);
+  //    这里只锁住生产真的走它,且武装体内没有第二条裸定时器路径。
+  expect(armBody).toContain("catalogLivenessTimer = startCatalogLivenessProbes(() => {")
+  expect(armBody.split("setInterval(").length - 1).toBe(0)
   expect(armBody).toContain('decision.action === "kill-and-respawn"')
   expect(armBody).toContain("current.kill()")
   expect(armBody).toContain("recoveryService.register")

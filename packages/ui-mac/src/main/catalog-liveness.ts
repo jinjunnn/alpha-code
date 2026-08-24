@@ -320,3 +320,19 @@ export async function probeCatalogMarker(opts: CatalogLivenessProbeOptions): Pro
     if (onAbort) signal.removeEventListener("abort", onAbort)
   }
 }
+
+// —— 巡查器安装(#1098)——
+// `setInterval` 的**第一次**触发要等满一个周期:装好之后的头一个 interval 里一次巡查都不发,
+// 引擎哪怕第 1 秒就收敛,confirmed 也最早只能记在 ~5,000ms(实测四次 5010/5008/5010/5007,
+// 每次 `probes: 1` —— 第一次问就通过,可见等的不是引擎,是定时器)。一个巡查间隔 5s 的看门狗、
+// 第一次巡查却拖满 5s,是它做本职工作的能力有缺陷,与启动快慢无关。
+// 装好立刻巡查一次,之后仍按 intervalMs 周期。DEADLINE / MAX_STRIKES / STRIKE_DECAY 一个都没动:
+// 本函数只让巡查**更早开始**,不让它**更晚判死**(deadline 仍从 armedAt 量)。
+// 先 tick 再 setInterval,不是反过来:tick 若同步抛出,反序会留下一个每周期都抛的孤儿定时器。
+export function startCatalogLivenessProbes(
+  probeTick: () => void,
+  intervalMs: number,
+): ReturnType<typeof setInterval> {
+  probeTick()
+  return setInterval(probeTick, intervalMs)
+}
