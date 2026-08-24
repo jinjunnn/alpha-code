@@ -51,6 +51,27 @@ esac
 count_file="${ALPHA_TEST_COUNT_FILE:-}"
 unset ALPHA_TEST_COUNT_FILE
 
+# ── `#1086`:base fail-set 棘轮(仅当 ALPHA_KNOWN_FAILS_FILE 置位)────────────────
+# 语义:测试失败不再一票否决 —— 失败名(由外层 junit 报告逐测试归因)与仓内静态清单
+# 比对:清单内的红容忍、**清单外的红拦住并逐条点名**、无法归因的失败一律拦住。
+# 判官 = scripts/known-fails-compare.py(三条 fail-closed 作废轴都在那边)。
+# 今天只有 ui-mac 全量置位它(alpha-check [5/10] 与 alpha-ci `bun test (ui-mac)`,同一条命令)。
+# 与 count_file 同款纪律:读入后立刻 unset —— 否则它会顺着 env 继承进被测用例自己
+# spawn 的 bun-test-floor.sh(gate-environment 的形状 B 探针、host 夹具),让那些子调用的
+# 失败判定被容忍语义静默软化。
+known_fails="${ALPHA_KNOWN_FAILS_FILE:-}"
+unset ALPHA_KNOWN_FAILS_FILE
+if [ -n "$known_fails" ] && [ -n "$exact" ]; then
+  # 精确条数模式(闸门登记簿的逐文件点名)与容忍语义互斥:登记的是「恰好 N 条 pass」,
+  # 容忍一条红等于把登记值静默降一,两个判据会互相打架 —— 配置错,直接拒。
+  echo "::error::ALPHA_KNOWN_FAILS_FILE 与精确条数模式(=N)互斥 —— 登记簿的逐文件点名不吸收已知红" >&2
+  exit 2
+fi
+if [ -n "$known_fails" ] && [ ! -f "$known_fails" ]; then
+  echo "::error::ALPHA_KNOWN_FAILS_FILE 指向的清单不存在:$known_fails" >&2
+  exit 2
+fi
+
 # ── 每条用例的默认超时(`#777` 的环境咽喉)──────────────────────────────────────
 # bun 默认 5000ms。本仓有 31 条 host 用例在子进程里跑**一整套** `.cases.ts`,5 秒对它们
 # 不是超时,是**机器速度在替断言下判决**:2026-08-02 起 alpha 主线 `unit tests (alpha packages)`
@@ -73,10 +94,19 @@ unset ALPHA_TEST_COUNT_FILE
 ALPHA_TEST_TIMEOUT_MS="${ALPHA_TEST_TIMEOUT_MS:-120000}"
 
 log="$(mktemp)"
-trap 'rm -f "$log"' EXIT
+junit="$(mktemp)"
+trap 'rm -f "$log" "$junit"' EXIT
 
 set +e
-(cd "$workdir" && bun test --timeout "$ALPHA_TEST_TIMEOUT_MS" "$@") 2>&1 | tee "$log"
+if [ -n "$known_fails" ]; then
+  # `#1086`:失败名的权威来源是外层进程写的 junit 报告,不是 console 文本 —— host 测试会把
+  # 子进程 bun run 的 `(fail)` 行与 summary 原样回显进外层日志,裸 grep console 会把子进程的
+  # 红当外层新红。junit 只由外层写(bun 1.3.14 实测:console 输出不受影响、退出码不变)。
+  # 判官会先拿 console 的外层 summary 与 (fail) 行交叉验证 junit,轴打架即测量作废。
+  (cd "$workdir" && bun test --timeout "$ALPHA_TEST_TIMEOUT_MS" --reporter=junit --reporter-outfile="$junit" "$@") 2>&1 | tee "$log"
+else
+  (cd "$workdir" && bun test --timeout "$ALPHA_TEST_TIMEOUT_MS" "$@") 2>&1 | tee "$log"
+fi
 status=${PIPESTATUS[0]}
 set -e
 
@@ -89,7 +119,15 @@ else
   echo "── bun exit=${status} · 实际通过 ${pass} 条 · 下界 ${floor} · (${workdir}: $*)"
 fi
 
-if [ "$status" -ne 0 ]; then
+if [ -n "$known_fails" ]; then
+  # `#1086`:判官**无条件**跑(绿跑也跑)—— 清单不合形(缺 reason、重复行)要当场红,
+  # 而不是等到下一次失败才发现;清单里已修绿的行也要在绿跑里被提示「可缩短」。
+  # 退出码:0 = 零清单外新红(继续走下方条数下界);1 = 清单外新红;2 = 测量作废/清单不合形。
+  if ! python3 "$(dirname "${BASH_SOURCE[0]}")/known-fails-compare.py" "$junit" "$known_fails" "$status" "$log"; then
+    echo "::error::${workdir} $* —— 测试失败(清单外新红,或失败无法逐测试归因;见上方判官输出)"
+    exit 1
+  fi
+elif [ "$status" -ne 0 ]; then
   echo "::error::${workdir} $* —— 测试失败"
   exit 1
 fi

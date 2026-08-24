@@ -251,7 +251,10 @@ jobs:
       #   · 单个闸门文件单独一步 —— 这一层才抓得到「某个闸门文件被删掉」。
       - name: bun test (ui-mac)
         if: needs.detect.outputs.code == 'true'
-        run: bash scripts/bun-test-floor.sh 3000 packages/ui-mac src
+        # `#1086`:ui-mac 全量带 base fail-set 棘轮 —— scripts/known-fails.tsv(静态,人手维护)
+        # 里逐测试点名的已知红放行,**清单外的红拦住并点名**;与 alpha-check [5/10] 同一条命令、
+        # 同一份清单。判官与作废轴见 scripts/known-fails-compare.py。
+        run: ALPHA_KNOWN_FAILS_FILE=scripts/known-fails.tsv bash scripts/bun-test-floor.sh 3000 packages/ui-mac src
       # `#946`:packages/app 走滚动 pin(ADR-034),上游测试随 pin 一起来,其中 i18n parity
       # 在 pin 849c2598 上就是红的(上游 locale 键滞后)—— 整包塞进 bun-test-floor 会造一道
       # 恒红门(#754 形态),而完全不跑则让写在 packages/app 里的 alpha 判据「合并前跑不到」
