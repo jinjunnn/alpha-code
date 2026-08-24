@@ -49,7 +49,7 @@ bash scripts/alpha-check.sh
 
 | 关 | 本地步骤 | CI job | 失败含义 |
 |---|---|---|---|
-| **北极星守卫**(零改上游) | `[1/10]` `scripts/north-star-guard.sh`;等价 `git diff --diff-filter=DMR --name-only origin/alpha...HEAD -- <上游 8 包>` 必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
+| **北极星守卫**(零改上游) | `[1/10]` `scripts/north-star-guard.sh`;等价 `git diff --no-renames --diff-filter=DMR --name-only origin/alpha...HEAD -- <上游 8 包>` 去掉 ADR-043 判为 alpha 自有的路径之后必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
 | **前端 SOT round-trip**(`#976`) | `[2/10]` `scripts/assert-frontend-patch-roundtrip.sh`:临时 index → `read-tree <pin>` → `apply --cached --binary` SOT 补丁 → `write-tree`,判 `packages/{app,ui}` 的 **tree sha** 是否逐字等于 `HEAD` 的 | 同上 job(`Assert packages/app + packages/ui == pinned upstream + SOT patch (#976)`;落在这个 job 是因为它 `fetch-depth: 0`,test job 是浅 checkout 取不到 pin) | `packages/{app,ui}` 的改动没进 `frontend/alpha-patches/alpha-frontend.patch` ⇒ **下一次 sync-upstream 或月更 bump 会把它静默删掉**(不是报错)。ADR-034 起那两个包是「pin + 补丁」的投影,sync 的 `apply_alpha_frontend_delta` 会 `rm -rf` 后按补丁重建。已发生过:`f420fe2bb`…`7281627ed` 四个提交补丁缺 vendored `.tgz` 而树里有,存活两天零变红。**修法**:按 [`frontend/README.md`](../../frontend/README.md) 块 4 重生补丁,并与源码改动放进**同一个提交**(判据锚在 HEAD,未提交的改动只会被列成 dirty 清单,不参与判决)。**三档结局**:一致 / 漂移或测量作废(红,点名到具体路径)/ **未比对**(本地浅克隆取不到 pin 对象 ⇒ exit 2,不拦 push 但不报绿;CI 侧 `ROUNDTRIP_REQUIRE_PIN=1` 没有这一档) |
 | **NUL 字节闸** | `[3/10]` `scripts/assert-no-nul-bytes.py` | 同上 job | 字面 NUL 让 `grep` 对整个文件静默失明(`#760`) |
 | **typecheck**(三个 alpha 包) | `[4/10]` contracts-consumer + ext + ui-mac | `typecheck (alpha packages)` | 类型不过 |
@@ -111,6 +111,25 @@ bash scripts/alpha-check.sh
   任何一次不在白名单里的合法上游改动,都会让这道门在**每个 PR** 上恒红(`#754` 那一类)。
   行为判据(造真的上游改动、跑守卫本体、断言它真的点名)在
   `packages/ui-mac/src/main/north-star-guard.test.ts`。
+- **UPSTREAM_PATHS 里住着的 alpha 自有文件,由一条结构性谓词识别**([`ADR-043`](../../.claude/rules/adrs/ADR-043-alpha-owned-files-under-upstream-paths.md),`#1085`)。
+  一批**从来不是上游的**文件必须住在上游包目录里(引擎侧闸门测试要 import 被测模块、
+  `packages/schema/src/tool-identity.ts` 是 `ToolAliasLedger` 本体、ADR-033 收编带进来两条迁移)。
+  它们落地那一次是 `A`、不触发 `--diff-filter=DMR`;**但只有那一次** —— 进了 `origin/alpha` 之后
+  任何修改都是 `M`,守卫当场红(`#971` 实测)。守卫因此不把它们当上游改动,判据是**两个因子的合取**:
+  - ① **出身**:这条路径在上游镜像 `origin/dev` 里不存在(`dev` 是上游纯镜像,ADR-005);
+  - ② **自报家门**:basename 以 `alpha-` 开头,**或**文件里写着 `north-star:alpha-owned`。
+
+  **加一个新成员**:命名成 `alpha-*` ⇒ 零仪式;名字改不了(迁移的时间戳名、被 import 的模块名)
+  ⇒ 在文件里写一行 `north-star:alpha-owned`。两条都不做 ⇒ 第一次修改就红,红的那一行会把这两条
+  出路印出来。**豁免是会被打印的** —— 输出里 `· alpha 自有(…)—— 不算上游改动:` 后面逐条列出。
+
+  **边界(不谎称穷尽)**:①`origin/dev` 整个 ref 取不到 ⇒ 豁免**整体停用**(fail-closed,回到谓词
+  之前的行为,守卫会说出来);②该 ref 陈旧时因子①会误判**新来的**上游文件,这正是因子②必须存在
+  的理由(fetch 失败时守卫会报出镜像的 sha 与年龄);③上游删掉、alpha 留着的文件仍需②才拿得到
+  豁免;④谓词判的是**路径**,不回答「这次改动对不对」。
+  它**不是一次收编**:`UPSTREAM_EXCLUDES`(ADR-033/035/038/041/042 那张表)一条未动,真正的接管
+  仍逐条走 ADR-029 §3。行为判据在 `packages/ui-mac/src/main/north-star-guard.test.ts`(八条,
+  两个因子各有反例,改名那条自带控制组)。
 - **本地跑时看到 `(warn: could not fetch origin/alpha …)` 怎么读**(`#913`)。守卫开跑前那条
   `git fetch` 会间歇失败(实测约 3 次 1 次,手跑同一条命令 exit 0);失败时它降级用**本地上一次
   拿到的** `origin/alpha` 当基准继续跑。**这不是假绿** —— 陈旧基准只把比较窗口撑得更宽 ⇒ 过报,
