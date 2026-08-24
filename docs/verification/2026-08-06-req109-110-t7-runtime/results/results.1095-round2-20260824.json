@@ -1,7 +1,7 @@
 {
   "schema": "alpha-code/req109-110-t7-runtime/v2",
   "issue": "alpha-code#536",
-  "capturedAt": "2026-08-24T05:45:48.843Z",
+  "capturedAt": "2026-08-24T05:42:41.009Z",
   "commit": "020f4ce7513da34a670e307b6588c20cf3b88af4",
   "appSha256": "a024a73bc58ddf6d5313827ddeea3272ca7055431b19a157d0a92cfb061cef34",
   "endpoint": "loopback (URL redacted; no real credential)",
@@ -15,26 +15,26 @@
       "scenario": "byok-only",
       "sample": 1,
       "cdpAttachment": "attached",
-      "startupMs": 7207.088875,
-      "bootReadyMs": 883.54075,
+      "startupMs": 20291.903584,
+      "bootReadyMs": 968.5260839999999,
       "catalogReady": {
-        "atMs": 7205.09675,
-        "barrierMs": 9.699999928474426,
+        "atMs": 20289.524417,
+        "barrierMs": 2.600000023841858,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 836.783041,
+        "atMs": 884.6119999999999,
         "outcome": "ready",
-        "durationMs": 145.48095899999998,
+        "durationMs": 155.923541,
         "status": 200
       },
       "grace": "not-applicable",
       "rotations": 0,
       "reloads": 0,
       "mounts": 1,
-      "composerMounts": 1,
+      "composerMounts": 2,
       "auth": {
         "status": "logged-out",
         "mode": "byok"
@@ -67,18 +67,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550275217.294
+          "timeOrigin": 1787550079577.564
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 142.66908299999997,
+          "t": 166.12437500000004,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 196.321791,
+          "t": 233.10566699999998,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -86,30 +86,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 196.39091599999998,
+          "t": 233.16683400000005,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 836.783041,
+          "t": 884.6119999999999,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 145.48095899999998,
+          "prewarmMs": 155.923541,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 837.4106660000001,
-          "durationMs": 641.0179579999999,
+          "t": 885.2896249999999,
+          "durationMs": 652.121958,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 883.54075,
+          "t": 968.5260839999999,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -117,64 +117,95 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1061.163,
+          "t": 1200.3677089999999,
           "source": "renderer",
-          "rendererNow": 189.39999997615814,
+          "rendererNow": 249.20000004768372,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "main.sidecar.catalog_liveness.confirmed",
-          "t": 5893.894583,
+          "t": 5977.355542,
           "generation": 1,
           "directory": "/Users/tide/Alpha",
-          "elapsedMs": 5010,
+          "elapsedMs": 5008,
           "probes": 1
         },
         {
           "seq": 15,
           "name": "renderer.composer.mount",
-          "t": 7194.810666,
+          "t": 13289.00875,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 6323.100000023842,
+          "rendererNow": 12337.600000023842,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.model_list.start",
-          "t": 7195.923666,
+          "t": 13291.343834000001,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 6323.5,
+          "rendererNow": 12338.399999976158,
           "occurrence": 1
         },
         {
           "seq": 17,
+          "name": "renderer.home.model_list.end",
+          "t": 20254.740917,
+          "attempt": 1,
+          "chain": 1,
+          "durationMs": 6953.200000047684,
+          "outcome": "cancelled",
+          "source": "renderer",
+          "rendererNow": 19291.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.composer.mount",
+          "t": 20286.847417,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 19335.700000047684,
+          "occurrence": 2
+        },
+        {
+          "seq": 19,
+          "name": "renderer.home.model_list.start",
+          "t": 20287.385959,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 19335.799999952316,
+          "occurrence": 2
+        },
+        {
+          "seq": 20,
           "name": "renderer.home.catalog_ready",
-          "t": 7205.09675,
-          "barrierMs": 9.699999928474426,
+          "t": 20289.524417,
+          "barrierMs": 2.600000023841858,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 6333.399999976158,
+          "rendererNow": 19338.399999976158,
           "occurrence": 1
         },
         {
-          "seq": 18,
+          "seq": 21,
           "name": "renderer.home.model_list.end",
-          "t": 7207.088875,
+          "t": 20291.903584,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 11.899999976158142,
+          "durationMs": 5,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 6335.399999976158,
-          "occurrence": 1
+          "rendererNow": 19340.799999952316,
+          "occurrence": 2
         }
       ]
     },
@@ -182,19 +213,19 @@
       "scenario": "byok-only",
       "sample": 2,
       "cdpAttachment": "attached",
-      "startupMs": 3709.299584,
-      "bootReadyMs": 905.252459,
+      "startupMs": 3328.005583,
+      "bootReadyMs": 921.350208,
       "catalogReady": {
-        "atMs": 3706.047667,
-        "barrierMs": 11.899999976158142,
+        "atMs": 3325.666166,
+        "barrierMs": 2.1999999284744263,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 859.475042,
+        "atMs": 874.7549580000001,
         "outcome": "ready",
-        "durationMs": 144.81270800000004,
+        "durationMs": 153.818584,
         "status": 200
       },
       "grace": "not-applicable",
@@ -234,18 +265,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550283719.01
+          "timeOrigin": 1787550101432.874
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 140.72075,
+          "t": 138.25083299999997,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 218.410667,
+          "t": 224.913875,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -253,30 +284,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 218.481834,
+          "t": 224.98737500000001,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 859.475042,
+          "t": 874.7549580000001,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 144.81270800000004,
+          "prewarmMs": 153.818584,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 860.0349590000001,
-          "durationMs": 641.5521250000002,
+          "t": 875.2934160000001,
+          "durationMs": 650.3040420000001,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 905.252459,
+          "t": 921.350208,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -284,54 +315,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1081.343834,
+          "t": 1098.796333,
           "source": "renderer",
-          "rendererNow": 186.80000007152557,
+          "rendererNow": 189.60000002384186,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.composer.mount",
-          "t": 3693.617792,
+          "t": 3322.992208,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 2799.100000023842,
+          "rendererNow": 2413.8000000715256,
           "occurrence": 1
         },
         {
           "seq": 15,
           "name": "renderer.home.model_list.start",
-          "t": 3694.813667,
+          "t": 3324.126666,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 2799.5,
+          "rendererNow": 2414.3000000715256,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.catalog_ready",
-          "t": 3706.047667,
-          "barrierMs": 11.899999976158142,
+          "t": 3325.666166,
+          "barrierMs": 2.1999999284744263,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 2811.600000023842,
+          "rendererNow": 2416.600000023842,
           "occurrence": 1
         },
         {
           "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 3709.299584,
+          "t": 3328.005583,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 15.399999976158142,
+          "durationMs": 4.5,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 2814.899999976158,
+          "rendererNow": 2418.8000000715256,
           "occurrence": 1
         }
       ]
@@ -340,19 +371,19 @@
       "scenario": "byok-only",
       "sample": 3,
       "cdpAttachment": "attached",
-      "startupMs": 3777.188666,
-      "bootReadyMs": 897.065625,
+      "startupMs": 3740.8995840000002,
+      "bootReadyMs": 912.6010839999999,
       "catalogReady": {
-        "atMs": 3774.160791,
-        "barrierMs": 4.800000071525574,
+        "atMs": 3738.7374170000003,
+        "barrierMs": 2.5,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 850.95775,
+        "atMs": 860.643292,
         "outcome": "ready",
-        "durationMs": 145.65066700000006,
+        "durationMs": 145.88195800000005,
         "status": 200
       },
       "grace": "not-applicable",
@@ -392,18 +423,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550288673.108
+          "timeOrigin": 1787550105995.89
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 132.89225000000002,
+          "t": 131.160417,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 208.71200000000002,
+          "t": 214.308042,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -411,30 +442,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 208.77866600000002,
+          "t": 214.37287500000002,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 850.95775,
+          "t": 860.643292,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 145.65066700000006,
+          "prewarmMs": 145.88195800000005,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 851.5248750000001,
-          "durationMs": 642.7440000000001,
+          "t": 861.320917,
+          "durationMs": 646.9490000000001,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 897.065625,
+          "t": 912.6010839999999,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -442,54 +473,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1073.357083,
+          "t": 1084.5752089999999,
           "source": "renderer",
-          "rendererNow": 187.40000009536743,
+          "rendererNow": 189.39999997615814,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.composer.mount",
-          "t": 3763.9964579999996,
+          "t": 3735.7586250000004,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 2878,
+          "rendererNow": 2840.5,
           "occurrence": 1
         },
         {
           "seq": 15,
           "name": "renderer.home.model_list.start",
-          "t": 3765.1281249999997,
+          "t": 3736.9740840000004,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 2878.5,
+          "rendererNow": 2841,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.catalog_ready",
-          "t": 3774.160791,
-          "barrierMs": 4.800000071525574,
+          "t": 3738.7374170000003,
+          "barrierMs": 2.5,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 2883.3000000715256,
+          "rendererNow": 2843.5,
           "occurrence": 1
         },
         {
           "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 3777.188666,
+          "t": 3740.8995840000002,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 12.700000047683716,
+          "durationMs": 4.699999928474426,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 2891.2000000476837,
+          "rendererNow": 2845.6999999284744,
           "occurrence": 1
         }
       ]
@@ -498,19 +529,19 @@
       "scenario": "byok-only",
       "sample": 4,
       "cdpAttachment": "attached",
-      "startupMs": 3786.172375,
-      "bootReadyMs": 909.259542,
+      "startupMs": 3744.603209,
+      "bootReadyMs": 900.81575,
       "catalogReady": {
-        "atMs": 3783.92075,
-        "barrierMs": 2.399999976158142,
+        "atMs": 3742.1445839999997,
+        "barrierMs": 2.1999999284744263,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 861.139375,
+        "atMs": 853.787167,
         "outcome": "ready",
-        "durationMs": 146.056042,
+        "durationMs": 143.85220800000002,
         "status": 200
       },
       "grace": "not-applicable",
@@ -550,18 +581,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550293746.058
+          "timeOrigin": 1787550111013.402
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 141.808834,
+          "t": 130.38933400000002,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 216.89695899999998,
+          "t": 210.938,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -569,30 +600,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 216.96525000000003,
+          "t": 211.005542,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 861.139375,
+          "t": 853.787167,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 146.056042,
+          "prewarmMs": 143.85220800000002,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 861.7238750000001,
-          "durationMs": 644.758958,
+          "t": 854.315834,
+          "durationMs": 643.309291,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 909.259542,
+          "t": 900.81575,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -600,54 +631,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1086.2714170000002,
+          "t": 1077.071042,
           "source": "renderer",
-          "rendererNow": 188.89999997615814,
+          "rendererNow": 188.20000004768372,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.composer.mount",
-          "t": 3781.054917,
+          "t": 3739.4129590000002,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 2883.7000000476837,
+          "rendererNow": 2850.600000023842,
           "occurrence": 1
         },
         {
           "seq": 15,
           "name": "renderer.home.model_list.start",
-          "t": 3782.251209,
+          "t": 3740.6313339999997,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 2884.2000000476837,
+          "rendererNow": 2851,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.catalog_ready",
-          "t": 3783.92075,
-          "barrierMs": 2.399999976158142,
+          "t": 3742.1445839999997,
+          "barrierMs": 2.1999999284744263,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 2886.600000023842,
+          "rendererNow": 2853.2999999523163,
           "occurrence": 1
         },
         {
           "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 3786.172375,
+          "t": 3744.603209,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 4.699999928474426,
+          "durationMs": 4.799999952316284,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 2888.899999976158,
+          "rendererNow": 2855.7999999523163,
           "occurrence": 1
         }
       ]
@@ -656,19 +687,19 @@
       "scenario": "byok-only",
       "sample": 5,
       "cdpAttachment": "attached",
-      "startupMs": 3647.195667,
-      "bootReadyMs": 920.3708330000001,
+      "startupMs": 4028.475875,
+      "bootReadyMs": 1074.0945000000002,
       "catalogReady": {
-        "atMs": 3645.277208,
-        "barrierMs": 2.399999976158142,
+        "atMs": 4026.4489590000003,
+        "barrierMs": 2.299999952316284,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 872.8678329999999,
+        "atMs": 1019.7162500000001,
         "outcome": "ready",
-        "durationMs": 146.83558399999993,
+        "durationMs": 167.71716700000002,
         "status": 200
       },
       "grace": "not-applicable",
@@ -708,18 +739,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550298803.422
+          "timeOrigin": 1787550115986.681
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 140.156708,
+          "t": 201.377667,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 223.37025000000003,
+          "t": 285.64595899999995,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -727,30 +758,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 223.43608300000002,
+          "t": 285.72570899999994,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 872.8678329999999,
+          "t": 1019.7162500000001,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 146.83558399999993,
+          "prewarmMs": 167.71716700000002,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 873.639667,
-          "durationMs": 650.202625,
+          "t": 1020.588959,
+          "durationMs": 734.8602499999998,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 920.3708330000001,
+          "t": 1074.0945000000002,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -758,54 +789,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1097.882292,
+          "t": 1278.0267920000001,
           "source": "renderer",
-          "rendererNow": 189.20000004768372,
+          "rendererNow": 217.09999990463257,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.composer.mount",
-          "t": 3642.256083,
+          "t": 4023.758084,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 2733.7000000476837,
+          "rendererNow": 2962.7999999523163,
           "occurrence": 1
         },
         {
           "seq": 15,
           "name": "renderer.home.model_list.start",
-          "t": 3643.460625,
+          "t": 4024.932834,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 2734,
+          "rendererNow": 2963.2999999523163,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.catalog_ready",
-          "t": 3645.277208,
-          "barrierMs": 2.399999976158142,
+          "t": 4026.4489590000003,
+          "barrierMs": 2.299999952316284,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 2736.7000000476837,
+          "rendererNow": 2965.5999999046326,
           "occurrence": 1
         },
         {
           "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 3647.195667,
+          "t": 4028.475875,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 4.600000023841858,
+          "durationMs": 4.299999952316284,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 2738.600000023842,
+          "rendererNow": 2967.5999999046326,
           "occurrence": 1
         }
       ]
@@ -814,19 +845,19 @@
       "scenario": "byok-only",
       "sample": 6,
       "cdpAttachment": "attached",
-      "startupMs": 5349.958957999999,
-      "bootReadyMs": 910.412708,
+      "startupMs": 3708.621292,
+      "bootReadyMs": 959.717584,
       "catalogReady": {
-        "atMs": 5347.081542,
-        "barrierMs": 4.399999976158142,
+        "atMs": 3706.163625,
+        "barrierMs": 12.100000023841858,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 862.987125,
+        "atMs": 912.336417,
         "outcome": "ready",
-        "durationMs": 144.78274999999996,
+        "durationMs": 147.11941600000006,
         "status": 200
       },
       "grace": "not-applicable",
@@ -866,18 +897,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550303766.744
+          "timeOrigin": 1787550121317.266
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 137.524375,
+          "t": 161.54112500000002,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 216.540292,
+          "t": 258.73175000000003,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -885,30 +916,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 216.60741700000003,
+          "t": 258.805375,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 862.987125,
+          "t": 912.336417,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 144.78274999999996,
+          "prewarmMs": 147.11941600000006,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 863.5685830000001,
-          "durationMs": 646.9599579999999,
+          "t": 912.8915,
+          "durationMs": 654.0851250000001,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 910.412708,
+          "t": 959.717584,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -916,54 +947,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1085.6242499999998,
+          "t": 1136.590459,
           "source": "renderer",
-          "rendererNow": 186.80000007152557,
+          "rendererNow": 188.79999995231628,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.composer.mount",
-          "t": 5342.15925,
+          "t": 3693.5586670000002,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 4443.400000095367,
+          "rendererNow": 2745.7999999523163,
           "occurrence": 1
         },
         {
           "seq": 15,
           "name": "renderer.home.model_list.start",
-          "t": 5343.278625,
+          "t": 3694.710542,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 4443.800000071526,
+          "rendererNow": 2746.2000000476837,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.catalog_ready",
-          "t": 5347.081542,
-          "barrierMs": 4.399999976158142,
+          "t": 3706.163625,
+          "barrierMs": 12.100000023841858,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 4448.200000047684,
+          "rendererNow": 2758.399999976158,
           "occurrence": 1
         },
         {
           "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 5349.958957999999,
+          "t": 3708.621292,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 7.399999976158142,
+          "durationMs": 14.699999928474426,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 4451.200000047684,
+          "rendererNow": 2760.899999976158,
           "occurrence": 1
         }
       ]
@@ -972,19 +1003,19 @@
       "scenario": "byok-only",
       "sample": 7,
       "cdpAttachment": "attached",
-      "startupMs": 7150.524792,
-      "bootReadyMs": 914.455042,
+      "startupMs": 3423.667166,
+      "bootReadyMs": 906.0457080000001,
       "catalogReady": {
-        "atMs": 7148.273375000001,
-        "barrierMs": 10.5,
+        "atMs": 3420.676875,
+        "barrierMs": 10.100000023841858,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 867.2541249999999,
+        "atMs": 859.298,
         "outcome": "ready",
-        "durationMs": 146.49633399999993,
+        "durationMs": 143.72962500000006,
         "status": 200
       },
       "grace": "not-applicable",
@@ -1024,18 +1055,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550310403.047
+          "timeOrigin": 1787550126326.975
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 135.563667,
+          "t": 131.372541,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 216.69020899999998,
+          "t": 212.32212500000003,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -1043,30 +1074,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 216.757209,
+          "t": 212.39,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 867.2541249999999,
+          "t": 859.298,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 146.49633399999993,
+          "prewarmMs": 143.72962500000006,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 867.93975,
-          "durationMs": 651.1816249999999,
+          "t": 859.8530410000001,
+          "durationMs": 647.462041,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 914.455042,
+          "t": 906.0457080000001,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -1074,63 +1105,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1090.59575,
+          "t": 1082.408125,
           "source": "renderer",
-          "rendererNow": 188.10000002384186,
+          "rendererNow": 188.20000004768372,
           "occurrence": 1
         },
         {
           "seq": 14,
-          "name": "main.sidecar.catalog_liveness.confirmed",
-          "t": 5922.9931670000005,
-          "generation": 1,
-          "directory": "/Users/tide/Alpha",
-          "elapsedMs": 5007,
-          "probes": 1
+          "name": "renderer.composer.mount",
+          "t": 3410.104,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 2515.899999976158,
+          "occurrence": 1
         },
         {
           "seq": 15,
-          "name": "renderer.composer.mount",
-          "t": 7137.230584000001,
-          "mode": "home",
+          "name": "renderer.home.model_list.start",
+          "t": 3411.224666,
+          "attempt": 1,
+          "chain": 1,
           "source": "renderer",
-          "rendererNow": 6234.700000047684,
+          "rendererNow": 2516.399999976158,
           "occurrence": 1
         },
         {
           "seq": 16,
-          "name": "renderer.home.model_list.start",
-          "t": 7138.376709,
-          "attempt": 1,
-          "chain": 1,
-          "source": "renderer",
-          "rendererNow": 6235.100000023842,
-          "occurrence": 1
-        },
-        {
-          "seq": 17,
           "name": "renderer.home.catalog_ready",
-          "t": 7148.273375000001,
-          "barrierMs": 10.5,
+          "t": 3420.676875,
+          "barrierMs": 10.100000023841858,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 6245.700000047684,
+          "rendererNow": 2526.5,
           "occurrence": 1
         },
         {
-          "seq": 18,
+          "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 7150.524792,
+          "t": 3423.667166,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 12.899999976158142,
+          "durationMs": 13.100000023841858,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 6248,
+          "rendererNow": 2529.5,
           "occurrence": 1
         }
       ]
@@ -1139,19 +1161,19 @@
       "scenario": "byok-only",
       "sample": 8,
       "cdpAttachment": "attached",
-      "startupMs": 3768.3111670000003,
-      "bootReadyMs": 911.8245419999998,
+      "startupMs": 4001.164542,
+      "bootReadyMs": 913.3654169999999,
       "catalogReady": {
-        "atMs": 3766.131625,
-        "barrierMs": 2.200000047683716,
+        "atMs": 3999.0068340000003,
+        "barrierMs": 2.5,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 864.9390839999999,
+        "atMs": 866.5057089999999,
         "outcome": "ready",
-        "durationMs": 148.09366699999998,
+        "durationMs": 146.62583300000006,
         "status": 200
       },
       "grace": "not-applicable",
@@ -1191,18 +1213,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550318815.554
+          "timeOrigin": 1787550131015.697
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 137.26070899999996,
+          "t": 138.08787500000003,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 217.17258399999997,
+          "t": 215.1165,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -1210,30 +1232,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 217.241417,
+          "t": 215.19079200000002,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 864.9390839999999,
+          "t": 866.5057089999999,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 148.09366699999998,
+          "prewarmMs": 146.62583300000006,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 865.6700839999999,
-          "durationMs": 648.4275829999999,
+          "t": 867.0562919999999,
+          "durationMs": 651.8646660000002,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 911.8245419999998,
+          "t": 913.3654169999999,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -1241,54 +1263,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1089.7973749999999,
+          "t": 1093.1202090000002,
           "source": "renderer",
-          "rendererNow": 189.70000004768372,
+          "rendererNow": 191.70000004768372,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.composer.mount",
-          "t": 3763.442292,
+          "t": 3995.992334,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 2863.399999976158,
+          "rendererNow": 3094.7000000476837,
           "occurrence": 1
         },
         {
           "seq": 15,
           "name": "renderer.home.model_list.start",
-          "t": 3764.600417,
+          "t": 3997.3267090000004,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 2863.7000000476837,
+          "rendererNow": 3095.100000023842,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.catalog_ready",
-          "t": 3766.131625,
-          "barrierMs": 2.200000047683716,
+          "t": 3999.0068340000003,
+          "barrierMs": 2.5,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 2866.100000023842,
+          "rendererNow": 3097.7000000476837,
           "occurrence": 1
         },
         {
           "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 3768.3111670000003,
+          "t": 4001.164542,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 4.5,
+          "durationMs": 4.800000071525574,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 2868.2000000476837,
+          "rendererNow": 3099.9000000953674,
           "occurrence": 1
         }
       ]
@@ -1297,19 +1319,19 @@
       "scenario": "byok-only",
       "sample": 9,
       "cdpAttachment": "attached",
-      "startupMs": 3912.3807089999996,
-      "bootReadyMs": 918.8812499999999,
+      "startupMs": 3491.728209,
+      "bootReadyMs": 911.598042,
       "catalogReady": {
-        "atMs": 3910.527084,
-        "barrierMs": 13.199999928474426,
+        "atMs": 3488.682167,
+        "barrierMs": 4.600000023841858,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 872.440875,
+        "atMs": 863.984417,
         "outcome": "ready",
-        "durationMs": 147.35845800000004,
+        "durationMs": 146.92337499999996,
         "status": 200
       },
       "grace": "not-applicable",
@@ -1349,18 +1371,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550323915.183
+          "timeOrigin": 1787550136283.135
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 136.234334,
+          "t": 134.581875,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 224.275959,
+          "t": 211.79133399999998,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -1368,30 +1390,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 224.351334,
+          "t": 211.86545900000002,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 872.440875,
+          "t": 863.984417,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 147.35845800000004,
+          "prewarmMs": 146.92337499999996,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 873.1141250000001,
-          "durationMs": 648.76125,
+          "t": 864.546042,
+          "durationMs": 652.678917,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 918.8812499999999,
+          "t": 911.598042,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -1399,54 +1421,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1095.96925,
+          "t": 1090.5149999999999,
           "source": "renderer",
-          "rendererNow": 188.79999995231628,
+          "rendererNow": 190.79999995231628,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.composer.mount",
-          "t": 3896.7687920000003,
+          "t": 3483.49125,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 2989.600000023842,
+          "rendererNow": 2583.7999999523163,
           "occurrence": 1
         },
         {
           "seq": 15,
           "name": "renderer.home.model_list.start",
-          "t": 3897.9797919999996,
+          "t": 3484.8869999999997,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 2990,
+          "rendererNow": 2584.1999999284744,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.catalog_ready",
-          "t": 3910.527084,
-          "barrierMs": 13.199999928474426,
+          "t": 3488.682167,
+          "barrierMs": 4.600000023841858,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 3003.399999976158,
+          "rendererNow": 2589,
           "occurrence": 1
         },
         {
           "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 3912.3807089999996,
+          "t": 3491.728209,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 15.299999952316284,
+          "durationMs": 7.899999976158142,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 3005.2999999523163,
+          "rendererNow": 2592.0999999046326,
           "occurrence": 1
         }
       ]
@@ -1455,19 +1477,19 @@
       "scenario": "byok-only",
       "sample": 10,
       "cdpAttachment": "attached",
-      "startupMs": 3482.411375,
-      "bootReadyMs": 921.5436669999999,
+      "startupMs": 3844.794167,
+      "bootReadyMs": 922.415542,
       "catalogReady": {
-        "atMs": 3479.9681250000003,
-        "barrierMs": 2.3000000715255737,
+        "atMs": 3839.486958,
+        "barrierMs": 8.299999952316284,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 873.677917,
+        "atMs": 873.216958,
         "outcome": "ready",
-        "durationMs": 148.19025,
+        "durationMs": 146.27745899999996,
         "status": 200
       },
       "grace": "not-applicable",
@@ -1507,18 +1529,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550329122.152
+          "timeOrigin": 1787550141070.451
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 135.94454199999998,
+          "t": 137.369917,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 217.779167,
+          "t": 216.163,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -1526,30 +1548,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 217.84591700000001,
+          "t": 216.23058299999997,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 873.677917,
+          "t": 873.216958,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 148.19025,
+          "prewarmMs": 146.27745899999996,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 874.3686250000001,
-          "durationMs": 656.5217089999999,
+          "t": 873.9366669999999,
+          "durationMs": 657.704792,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 921.5436669999999,
+          "t": 922.415542,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -1557,54 +1579,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1100.183834,
+          "t": 1100.898083,
           "source": "renderer",
-          "rendererNow": 190.39999997615814,
+          "rendererNow": 190.19999992847443,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.composer.mount",
-          "t": 3477.168834,
+          "t": 3830.720958,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 2567.399999976158,
+          "rendererNow": 2920.100000023842,
           "occurrence": 1
         },
         {
           "seq": 15,
           "name": "renderer.home.model_list.start",
-          "t": 3478.34875,
+          "t": 3831.928125,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 2567.7000000476837,
+          "rendererNow": 2920.5,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.catalog_ready",
-          "t": 3479.9681250000003,
-          "barrierMs": 2.3000000715255737,
+          "t": 3839.486958,
+          "barrierMs": 8.299999952316284,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 2570.2000000476837,
+          "rendererNow": 2928.899999976158,
           "occurrence": 1
         },
         {
           "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 3482.411375,
+          "t": 3844.794167,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 5,
+          "durationMs": 13.600000023841858,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 2572.7000000476837,
+          "rendererNow": 2934.100000023842,
           "occurrence": 1
         }
       ]
@@ -1613,19 +1635,19 @@
       "scenario": "byok-only",
       "sample": 11,
       "cdpAttachment": "attached",
-      "startupMs": 3747.4510419999997,
-      "bootReadyMs": 906.887834,
+      "startupMs": 3584.2686249999997,
+      "bootReadyMs": 912.436125,
       "catalogReady": {
-        "atMs": 3744.356209,
-        "barrierMs": 4.399999976158142,
+        "atMs": 3581.2402089999996,
+        "barrierMs": 4.5,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 860.1760840000001,
+        "atMs": 865.2462090000001,
         "outcome": "ready",
-        "durationMs": 147.08708399999995,
+        "durationMs": 147.753,
         "status": 200
       },
       "grace": "not-applicable",
@@ -1665,18 +1687,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550333929.469
+          "timeOrigin": 1787550146191.32
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 131.42091699999997,
+          "t": 129.71266699999998,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 211.457834,
+          "t": 210.41316700000002,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -1684,30 +1706,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 211.52299999999997,
+          "t": 210.477042,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 860.1760840000001,
+          "t": 865.2462090000001,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 147.08708399999995,
+          "prewarmMs": 147.753,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 860.7304170000001,
-          "durationMs": 649.2065420000001,
+          "t": 865.9092499999999,
+          "durationMs": 655.430458,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 906.887834,
+          "t": 912.436125,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -1715,54 +1737,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1086.191084,
+          "t": 1091.701125,
           "source": "renderer",
-          "rendererNow": 190.79999995231628,
+          "rendererNow": 191.29999995231628,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.composer.mount",
-          "t": 3739.422,
+          "t": 3571.5623339999997,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 2844.100000023842,
+          "rendererNow": 2671.0999999046326,
           "occurrence": 1
         },
         {
           "seq": 15,
           "name": "renderer.home.model_list.start",
-          "t": 3740.633625,
+          "t": 3572.6661249999997,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 2844.5,
+          "rendererNow": 2671.5,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.catalog_ready",
-          "t": 3744.356209,
-          "barrierMs": 4.399999976158142,
+          "t": 3581.2402089999996,
+          "barrierMs": 4.5,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 2849,
+          "rendererNow": 2676.0999999046326,
           "occurrence": 1
         },
         {
           "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 3747.4510419999997,
+          "t": 3584.2686249999997,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 7.600000023841858,
+          "durationMs": 12.399999976158142,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 2852.100000023842,
+          "rendererNow": 2683.899999976158,
           "occurrence": 1
         }
       ]
@@ -1771,19 +1793,19 @@
       "scenario": "byok-only",
       "sample": 12,
       "cdpAttachment": "attached",
-      "startupMs": 3631.888292,
-      "bootReadyMs": 903.2927500000001,
+      "startupMs": 3707.4535,
+      "bootReadyMs": 913.693459,
       "catalogReady": {
-        "atMs": 3629.680292,
-        "barrierMs": 12.799999952316284,
+        "atMs": 3705.04,
+        "barrierMs": 2.399999976158142,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 857.1455000000001,
+        "atMs": 866.3725840000001,
         "outcome": "ready",
-        "durationMs": 144.53854200000006,
+        "durationMs": 145.693083,
         "status": 200
       },
       "grace": "not-applicable",
@@ -1823,18 +1845,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550338956.342
+          "timeOrigin": 1787550151063.787
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 137.46150000000003,
+          "t": 140.95062499999997,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 201.60833399999999,
+          "t": 215.520209,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -1842,30 +1864,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 201.66912500000004,
+          "t": 215.598125,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 857.1455000000001,
+          "t": 866.3725840000001,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 144.53854200000006,
+          "prewarmMs": 145.693083,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 857.847375,
-          "durationMs": 656.177334,
+          "t": 866.913459,
+          "durationMs": 651.313917,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 903.2927500000001,
+          "t": 913.693459,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -1873,54 +1895,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1082.4627090000001,
+          "t": 1092.327209,
           "source": "renderer",
-          "rendererNow": 191,
+          "rendererNow": 190.39999997615814,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.composer.mount",
-          "t": 3616.422917,
+          "t": 3702.102792,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 2724.9000000953674,
+          "rendererNow": 2800.100000023842,
           "occurrence": 1
         },
         {
           "seq": 15,
           "name": "renderer.home.model_list.start",
-          "t": 3617.595084,
+          "t": 3703.296584,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 2725.4000000953674,
+          "rendererNow": 2800.600000023842,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.catalog_ready",
-          "t": 3629.680292,
-          "barrierMs": 12.799999952316284,
+          "t": 3705.04,
+          "barrierMs": 2.399999976158142,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 2738.2000000476837,
+          "rendererNow": 2803.100000023842,
           "occurrence": 1
         },
         {
           "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 3631.888292,
+          "t": 3707.4535,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 15,
+          "durationMs": 4.899999976158142,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 2740.4000000953674,
+          "rendererNow": 2805.5,
           "occurrence": 1
         }
       ]
@@ -1929,19 +1951,19 @@
       "scenario": "byok-only",
       "sample": 13,
       "cdpAttachment": "attached",
-      "startupMs": 3775.087875,
-      "bootReadyMs": 926.0928329999999,
+      "startupMs": 3701.884,
+      "bootReadyMs": 929.5896249999998,
       "catalogReady": {
-        "atMs": 3773.062166,
-        "barrierMs": 2.3000000715255737,
+        "atMs": 3698.926541,
+        "barrierMs": 4.400000095367432,
         "probes": 1,
         "pollWaits": 0,
         "wake": "first"
       },
       "prewarm": {
-        "atMs": 878.7479579999999,
+        "atMs": 881.286791,
         "outcome": "ready",
-        "durationMs": 146.85404100000005,
+        "durationMs": 155.67350000000005,
         "status": 200
       },
       "grace": "not-applicable",
@@ -1981,18 +2003,18 @@
           "name": "main.timeline.epoch",
           "t": 0,
           "epoch": "main-module-load",
-          "timeOrigin": 1787550343879.941
+          "timeOrigin": 1787550156075.524
         },
         {
           "seq": 3,
           "name": "main.auth.boot.token_check",
-          "t": 141.351,
+          "t": 136.56824999999998,
           "expired": false
         },
         {
           "seq": 4,
           "name": "main.sidecar.generation.emit",
-          "t": 224.22983299999999,
+          "t": 216.79566599999998,
           "generation": 1,
           "phase": "recovering",
           "reason": "boot"
@@ -2000,30 +2022,30 @@
         {
           "seq": 5,
           "name": "main.sidecar.boot.fork.start",
-          "t": 224.298583,
+          "t": 216.8625,
           "generation": 1
         },
         {
           "seq": 6,
           "name": "main.sidecar.ready_ipc",
-          "t": 878.7479579999999,
+          "t": 881.286791,
           "context": "boot",
           "prewarmOutcome": "ready",
-          "prewarmMs": 146.85404100000005,
+          "prewarmMs": 155.67350000000005,
           "prewarmStatus": 200
         },
         {
           "seq": 7,
           "name": "main.sidecar.boot.fork.end",
-          "t": 879.319708,
-          "durationMs": 655.0200830000001,
+          "t": 881.8435,
+          "durationMs": 664.979333,
           "generation": 1,
           "outcome": "ok"
         },
         {
           "seq": 9,
           "name": "main.sidecar.generation.emit",
-          "t": 926.0928329999999,
+          "t": 929.5896249999998,
           "generation": 1,
           "phase": "ready",
           "reason": "boot"
@@ -2031,54 +2053,54 @@
         {
           "seq": 10,
           "name": "renderer.root.mount",
-          "t": 1104.8597499999998,
+          "t": 1111.2091659999999,
           "source": "renderer",
-          "rendererNow": 190.5,
+          "rendererNow": 193.10000002384186,
           "occurrence": 1
         },
         {
           "seq": 14,
           "name": "renderer.composer.mount",
-          "t": 3770.218208,
+          "t": 3694.139041,
           "mode": "home",
           "source": "renderer",
-          "rendererNow": 2855.899999976158,
+          "rendererNow": 2776.100000023842,
           "occurrence": 1
         },
         {
           "seq": 15,
           "name": "renderer.home.model_list.start",
-          "t": 3771.4462909999997,
+          "t": 3695.37725,
           "attempt": 1,
           "chain": 1,
           "source": "renderer",
-          "rendererNow": 2856.2999999523163,
+          "rendererNow": 2776.4000000953674,
           "occurrence": 1
         },
         {
           "seq": 16,
           "name": "renderer.home.catalog_ready",
-          "t": 3773.062166,
-          "barrierMs": 2.3000000715255737,
+          "t": 3698.926541,
+          "barrierMs": 4.400000095367432,
           "probes": 1,
           "pollWaits": 0,
           "probeTimeouts": 0,
           "wake": "first",
           "source": "renderer",
-          "rendererNow": 2858.7999999523163,
+          "rendererNow": 2780.9000000953674,
           "occurrence": 1
         },
         {
           "seq": 17,
           "name": "renderer.home.model_list.end",
-          "t": 3775.087875,
+          "t": 3701.884,
           "attempt": 1,
           "chain": 1,
           "count": 2,
-          "durationMs": 4.5,
+          "durationMs": 7.5,
           "outcome": "ok",
           "source": "renderer",
-          "rendererNow": 2860.7999999523163,
+          "rendererNow": 2783.9000000953674,
           "occurrence": 1
         }
       ]
