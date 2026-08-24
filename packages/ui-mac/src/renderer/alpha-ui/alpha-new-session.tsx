@@ -22,6 +22,7 @@ import { AlphaWorkspaceChip, visibleWorkspaces, workspaceLabel } from "./workspa
 import { Banner } from "./Banner"
 import { pushToast } from "./Toast"
 import { t } from "../i18n"
+import { markStartupTimeline } from "../startup-timeline"
 import "./home.css"
 
 export function AlphaNewSession(props: {
@@ -37,6 +38,11 @@ export function AlphaNewSession(props: {
   draftId: string
   promoteDraft: (session: { directory: string; sessionId: string }) => void
 }) {
+  // #1099(REQ-109):启动窗口的最后一个交接点 —— 启动 draft 的导航真的落到了新对话页。
+  // 冷启动的 `renderer.composer.mount` 就挂在这一拍的渲染里,两者之间的差值 = 这个叶自己的
+  // 渲染成本。本叶按 `server\0directory` 被上游 keyed,重挂会再记一条(occurrence 自增)——
+  // 「导航到了但又整叶重挂了一次」此前在时间线里完全看不出来。
+  markStartupTimeline("renderer.new_session.surface.setup")
   const tabs = useTabs()
   const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
   const { store } = props.projects

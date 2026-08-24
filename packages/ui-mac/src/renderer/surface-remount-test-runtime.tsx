@@ -53,6 +53,7 @@ import { composeRoutes } from "./route-composition"
 import { type AlphaProjectsApi, useAlphaProjects } from "./sidebar/use-projects"
 import { availableStartupServer, readyWslConnections } from "./wsl/connections"
 import { resetLaunchDraftHandoff as resetHandoff } from "./alpha-ui/launch-draft-handoff"
+import { installShellBootTimeline } from "./alpha-ui/shell-boot-timeline"
 
 export { render }
 // #1056:交接位是模块级单例 —— 用例必须操作**打包进本 runtime 的那一份**,
@@ -115,6 +116,14 @@ export const setEnsureDefaultWorkspaceOk = (ok: boolean) => {
   ensureDefaultWorkspaceOk = ok
 }
 
+// #1099:把一段**已知长度**的延迟注进启动 draft 的这一步(默认目录供给 IPC)。判据要证明的
+// 不是「打点会发」,而是「记录能把延迟归到发生它的那一步上」—— 注入点必须不止一个,否则
+// 断言可以被一个只在某个固定位置记时的错误实现满足。
+let ensureDefaultWorkspaceDelayMs = 0
+export const setEnsureDefaultWorkspaceDelayMs = (ms: number) => {
+  ensureDefaultWorkspaceDelayMs = ms
+}
+
 // —— 默认服务器(index.tsx 里 platform.getDefaultServer 的等价供给,挂载前配置)——————
 let defaultServerChoice = "sidecar"
 export const setDefaultServerChoice = (key: string) => {
@@ -165,7 +174,9 @@ export function nextGeneration() {
 }
 
 // —— 判据捕获:生产 markStartupTimeline 打进来的每一条 —————————————————————————
-export type TimelineRecord = { name: string; extra?: Record<string, unknown> }
+// #1099:`rendererNow` 也收下 —— 判「记录能不能指出慢在哪一步」时,只有名字与 extra
+// 是不够的:那两样在任何实现下都长得一样,只有相邻两条的时间差能把延迟归到某一段上。
+export type TimelineRecord = { name: string; rendererNow: number; extra?: Record<string, unknown> }
 const timeline: TimelineRecord[] = []
 export function timelineMarks(): TimelineRecord[] {
   return [...timeline]
@@ -263,8 +274,12 @@ export function installPreloadStub() {
       return { url: SIDECAR_URL, username: "alpha", password: "generation-secret" }
     },
     getWindowCount: async () => 1,
-    "startupTimeline.mark": (name, _rendererNow, extra) => {
-      timeline.push({ name: String(name), extra: extra as Record<string, unknown> | undefined })
+    "startupTimeline.mark": (name, rendererNow, extra) => {
+      timeline.push({
+        name: String(name),
+        rendererNow: Number(rendererNow),
+        extra: extra as Record<string, unknown> | undefined,
+      })
     },
     "sidecarGeneration.subscribe": (cb) => {
       const listener = cb as (state: SidecarGenerationState) => void
@@ -280,7 +295,11 @@ export function installPreloadStub() {
     workspaceDefaultDir: async () => DEFAULT_WORKSPACE,
     // 侧栏的启动 draft 在建 draft 之前必须真的供给成功(ADR-025 不变量 5);
     // 缺省 Proxy 回 undefined ⇒ `result?.ok === true` 为假 ⇒ 只弹一句失败 toast,不会导航。
-    workspaceEnsureDefault: async () => ({ ok: ensureDefaultWorkspaceOk }),
+    workspaceEnsureDefault: async () => {
+      if (ensureDefaultWorkspaceDelayMs > 0)
+        await new Promise((resolve) => setTimeout(resolve, ensureDefaultWorkspaceDelayMs))
+      return { ok: ensureDefaultWorkspaceOk }
+    },
     "models.catalog": async () => ({
       version: "harness",
       defaultModel: null,
@@ -342,6 +361,7 @@ export function resetHarness() {
   projectListBarrier.release()
   sidebarMounted = false
   ensureDefaultWorkspaceOk = true
+  ensureDefaultWorkspaceDelayMs = 0
   resetHandoff()
   defaultServerChoice = "sidecar"
   wslState = emptyWslState
@@ -387,6 +407,10 @@ export function AlphaSurfaceShell() {
   // locale prop)不在命题上,已裁;但 loading 边必须在 —— 它进 ready(),锚点钉的原件文本里有它,
   // 复刻少了它就是审计点名过的那种静默漂移。
   const [locale] = createResource(async () => "harness-locale")
+
+  // #1099:与原件同一行(锚点钉死)。执行的是生产模块 —— 四个资源各自落定 / 壳门放行的
+  // 打点全在 shell-boot-timeline.ts 里,这行只是接线;复刻少了它 = 行为用例测不到生产代码。
+  installShellBootTimeline({ windowCount, sidecar, defaultServer, locale })
 
   function App() {
     const wslServers = useWslServers()

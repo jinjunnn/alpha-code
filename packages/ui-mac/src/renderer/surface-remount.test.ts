@@ -334,6 +334,159 @@ describe("#1056 冷启动只挂一次 home composer(启动 draft 交接闸)", ()
   })
 })
 
+describe("#1099 启动窗口不再是一段空白(REQ-109 观测闸)", () => {
+  // 实测事实(docs/verification/2026-08-24-req109-p95-post1083/ §4):`renderer.root.mount` 与
+  // `renderer.composer.mount` 之间**一条事件都没有**(seq 从 10 跳到 14),而同一轮里这段窗口
+  // 取到过 2,612 / 4,257 / 12,089 ms —— 两个样本的事件序列结构完全相同、前面每步耗时逐项接近,
+  // **整个方差都落在这段看不见的窗口里**。#1099 只做一件事:把这段窗口按真实交接点拆开。
+  //
+  // 本组要钉住的,是这个能力**不会静默消失**:打点写在生产代码里而没人驱动它、或者驱动到了
+  // 但记不出「慢在哪一步」,都属于修复被抽空。所以判据分两层:
+  //   ① 交接点真的会发,且顺序就是启动路径的顺序(驱动真实生产壳,不断言源码里有那行字符串);
+  //   ② 往**两个不同的**步骤里各注一段已知长度的延迟,记录必须把它归到发生它的那一步上 ——
+  //      只在窗口两端记时的粗实现能满足 ①,满足不了 ②。
+
+  const INJECTED_DELAY_MS = 200
+  /** 归因下限取得比注入值低一截:判的是「这段延迟落在这一步」,不是计时器精度。 */
+  const ATTRIBUTED_FLOOR_MS = 150
+
+  const marks = () => runtime.timelineMarks()
+  const markNames = () => marks().map((mark) => mark.name)
+  const firstIndexOf = (name: string) => markNames().indexOf(name)
+  const firstMark = (name: string) => marks().find((mark) => mark.name === name)
+  const stepMark = (step: string) =>
+    marks().find((mark) => mark.name === "renderer.launch_draft.step" && mark.extra?.step === step)
+  /** 相邻两个交接点之间的实际耗时(renderer 时钟)—— 归因就是这个差值。 */
+  const gapBetween = (from: string, to: string) => {
+    const a = firstMark(from)
+    const b = firstMark(to)
+    if (!a || !b) throw new Error(`时间线里缺 ${!a ? from : to}`)
+    return b.rendererNow - a.rendererNow
+  }
+
+  /** 冷启动全路径:侧栏在场(启动 draft 的唯一发起处),generation 到达即连引擎。 */
+  async function bootFullStartup() {
+    runtime.setSidebarMounted(true)
+    mountShell()
+    await settle()
+    // 显式给一次 ready generation:数据层据此当场建 client(与 bootToHome 同一条生产路径),
+    // 免得落到「从未收到 generation 状态」的 1s 兜底上,让注入的延迟被那 1 秒盖过去。
+    runtime.emitSidecarGeneration({ generation: runtime.nextGeneration(), status: "ready", reason: "boot" })
+  }
+
+  test("从壳门到 composer,每一个交接点都真的会发,顺序即启动路径的顺序", async () => {
+    await bootFullStartup()
+    await waitFor(() => runtime.composerMountCount() === 1, "启动 draft 落到新对话页并挂上 composer")
+
+    // ① 顺序:按首次出现的位置严格递增,且**只钉结构上必然的两条链** —— 渲染链与数据链在启动
+    //    路径上是并行的(数据层的 client 何时建起来,取决于 generation 状态是随壳一起到、还是
+    //    随后广播过来),把它们串成一条会把一个真实的非确定性写成判据(实测两种顺序都出现过)。
+    const renderChain = [
+      "renderer.shell.resource.settled",
+      "renderer.shell.ready",
+      "renderer.sidebar.setup",
+      "renderer.home.surface.setup",
+      "renderer.new_session.surface.setup",
+      "renderer.composer.mount",
+    ]
+    const dataChain = [
+      "renderer.shell.resource.settled",
+      "renderer.projects.connect",
+      "renderer.projects.store_ready",
+      "renderer.launch_draft.start",
+      "renderer.launch_draft.step",
+      "renderer.launch_draft.end",
+    ]
+    for (const chain of [renderChain, dataChain]) {
+      const positions = chain.map(firstIndexOf)
+      // 缺席 ⇒ indexOf 为 -1,严格递增当场断掉(-1 不小于其后的任何下标)。
+      expect(positions.every((position) => position >= 0)).toBe(true)
+      for (let i = 1; i < positions.length; i++) expect(positions[i]!).toBeGreaterThan(positions[i - 1]!)
+    }
+    // 两条链的交汇:新对话页是启动 draft 导航来的,不是自己冒出来的。
+    expect(firstIndexOf("renderer.new_session.surface.setup")).toBeGreaterThan(
+      firstIndexOf("renderer.launch_draft.start"),
+    )
+
+    // ② 壳门的四个收敛源逐个可归因 —— 集合相等,不是「至少有一条」。`ready()` 里新并一个资源
+    //    而没并进 installShellBootTimeline,splash 就又多一段没人记的等待:那正是本票在修的病。
+    const settledResources = marks()
+      .filter((mark) => mark.name === "renderer.shell.resource.settled")
+      .map((mark) => String(mark.extra?.resource))
+    expect(new Set(settledResources)).toEqual(new Set(["windowCount", "sidecar", "defaultServer", "locale"]))
+    expect(settledResources.length).toBe(4)
+
+    // ③ 首页那一拍确实是「挂上了但没有输入框」的过渡态(#1056 的交接位),这件事此前只能靠
+    //    推理,现在写在记录里。
+    expect(firstMark("renderer.home.surface.setup")?.extra?.composerPending).toBe(true)
+
+    // ④ 启动 draft 的四步逐个留痕,且这一轮是走到底的那条路(而不是半途失败)。
+    const stepNames = marks()
+      .filter((mark) => mark.name === "renderer.launch_draft.step")
+      .map((mark) => String(mark.extra?.step))
+    expect(stepNames).toEqual(["tabs_ready", "resolve_target", "ensure_workspace", "new_draft"])
+    expect(firstMark("renderer.launch_draft.start")?.extra?.trigger).toBe("launch")
+    expect(firstMark("renderer.launch_draft.end")?.extra?.outcome).toBe("navigated")
+    // 数据层是**经哪条路**连上的,同样是这段窗口的一部分(1s 兜底与封顶退避自探的时间特征
+    // 完全不同,混成一条就分不出慢在哪)。走哪条路依赖 generation 状态的到达时刻,不写死;
+    // 但它必须是**已命名的那几条之一** —— 打成空/undefined 就等于这条信息没记。
+    expect([
+      "bridge-absent",
+      "runtime-ready",
+      "generation-event",
+      "bridge-fallback-timer",
+      "self-probe",
+    ]).toContain(String(firstMark("renderer.projects.connect")?.extra?.reason))
+  })
+
+  test("归因之一:项目列表首拉被按住 ⇒ 这段延迟落在 connect→store_ready 上,不摊到别处", async () => {
+    runtime.holdProjectList()
+    await bootFullStartup()
+    await waitFor(() => markNames().includes("renderer.projects.connect"), "数据层连上引擎")
+    // 引擎已连、首拉在途:此刻按住的正是 connect 与 store_ready 之间那一段。
+    await new Promise((resolve) => setTimeout(resolve, INJECTED_DELAY_MS))
+    runtime.releaseProjectList()
+    await waitFor(() => runtime.composerMountCount() === 1, "释放后启动 draft 走完")
+
+    const held = gapBetween("renderer.projects.connect", "renderer.projects.store_ready")
+    expect(held).toBeGreaterThanOrEqual(ATTRIBUTED_FLOOR_MS)
+    // 而启动 draft 的每一步都没有被这段延迟污染 —— 「慢在哪一步」答得出来,不是「总共慢了」。
+    for (const mark of marks().filter((m) => m.name === "renderer.launch_draft.step"))
+      expect(Number(mark.extra?.durationMs)).toBeLessThan(ATTRIBUTED_FLOOR_MS)
+    expect(gapBetween("renderer.shell.ready", "renderer.sidebar.setup")).toBeLessThan(ATTRIBUTED_FLOOR_MS)
+  })
+
+  test("归因之二:默认目录供给 IPC 被拖慢 ⇒ 这段延迟落在 launch_draft 的 ensure_workspace 那一步", async () => {
+    runtime.setEnsureDefaultWorkspaceDelayMs(INJECTED_DELAY_MS)
+    await bootFullStartup()
+    await new Promise((resolve) => setTimeout(resolve, INJECTED_DELAY_MS + 60))
+    await waitFor(() => runtime.composerMountCount() === 1, "启动 draft 走完(供给 IPC 慢了一拍)")
+
+    // 注入点换了一个,记录跟着换了一步 —— 这是「粒度不比缺陷粗一格」的判据。
+    expect(Number(stepMark("ensure_workspace")?.extra?.durationMs)).toBeGreaterThanOrEqual(ATTRIBUTED_FLOOR_MS)
+    expect(Number(stepMark("tabs_ready")?.extra?.durationMs)).toBeLessThan(ATTRIBUTED_FLOOR_MS)
+    expect(Number(stepMark("resolve_target")?.extra?.durationMs)).toBeLessThan(ATTRIBUTED_FLOOR_MS)
+    expect(gapBetween("renderer.projects.connect", "renderer.projects.store_ready")).toBeLessThan(
+      ATTRIBUTED_FLOOR_MS,
+    )
+    // 整段窗口的总耗时仍然包含这 200ms —— 分项加起来对得上总数,不是两套互不相干的数字。
+    expect(Number(firstMark("renderer.launch_draft.end")?.extra?.durationMs)).toBeGreaterThanOrEqual(
+      ATTRIBUTED_FLOOR_MS,
+    )
+  })
+
+  test("启动 draft 如实失败时,记录指名是哪一步失败的(不是只剩一个「没成」)", async () => {
+    runtime.setEnsureDefaultWorkspaceOk(false)
+    await bootFullStartup()
+    await waitFor(() => runtime.composerMountCount() === 1, "失败后首页补挂 composer")
+
+    expect(stepMark("ensure_workspace")?.extra?.outcome).toBe("rejected")
+    expect(firstMark("renderer.launch_draft.end")?.extra?.outcome).toBe("workspace-failed")
+    // 没有导航发生 ⇒ 新对话页那条交接点不该出现(错误实现若把它写成无条件打点,这里红)。
+    expect(markNames()).not.toContain("renderer.new_session.surface.setup")
+  })
+})
+
 describe("#565 harness 复刻的原件形状锚点(renderer/index.tsx)", () => {
   // App() 的响应图无法 import(render() 入口)。这些锚点不判行为,只判「复刻还对不对得上原件」。
   // 判据是**整段精确文本**而不是 presence 探针:第四闪的历史触发点(REQ-088 的 resolvedSurfaces
@@ -386,6 +539,14 @@ describe("#565 harness 复刻的原件形状锚点(renderer/index.tsx)", () => {
     // REQ-089 删掉的异步 admission 不得回魂:
     expect(entry).not.toContain("resolvedSurfaces")
     expect(entry).not.toContain("surfaces.resolve")
+  })
+
+  test("#1099 壳门打点的安装线钉在原件与复刻上(同一行;逻辑全在生产模块里)", () => {
+    // 行为用例跑的是复刻 —— 只有这条锚点保证 index.tsx 原件也接着同一根线。删掉原件那行
+    // (splash 这一段静默退回没有记录)在这里红;删掉模块里的打点在行为用例红。
+    const anchor = "  installShellBootTimeline({ windowCount, sidecar, defaultServer, locale })"
+    expect(entry).toContain(anchor)
+    expect(replica).toContain(anchor)
   })
 
   test("#927 丢稿提示的安装线钉在原件与复刻上(同一行;逻辑全在生产模块里)", () => {
