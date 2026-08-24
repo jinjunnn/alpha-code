@@ -61,6 +61,7 @@ import { Splash } from "./logo-alpha"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { ALPHA_THEME, ALPHA_THEME_ID } from "./theme-alpha"
 import { composeRoutes } from "./route-composition"
+import { installShellBootTimeline } from "./alpha-ui/shell-boot-timeline"
 import { markStartupTimeline } from "./startup-timeline"
 
 // Every route composes exactly one Alpha surface. There is no second release state and no
@@ -402,6 +403,11 @@ render(() => {
 
   const [defaultServer] = createResource(() => platform.getDefaultServer?.())
   const [locale] = createResource(loadLocale)
+
+  // #1099(REQ-109):splash 这一段此前完全没有记录 —— `root.mount` 到 `composer.mount` 之间
+  // 一条事件都没有,而超线样本的方差全在那里。逻辑在 shell-boot-timeline.ts(与
+  // installHomeDraftDiscardNotice 同一形态:接线在原件,逻辑在模块里),这里只接一行。
+  installShellBootTimeline({ windowCount, sidecar, defaultServer, locale })
 
   function handleClick(e: MouseEvent) {
     const link = (e.target as HTMLElement).closest("a.external-link") as HTMLAnchorElement | null

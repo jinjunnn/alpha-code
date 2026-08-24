@@ -1013,6 +1013,20 @@ async function runOne(scenario: Scenario, sample: number): Promise<RunResult> {
           // recoverable from results.json. Also keep the main-process catalog watchdog, whose
           // elapsedMs is the only recorded view of server-side catalog convergence.
           "renderer.composer.mount",
+          // #1099:上面 root.mount → composer.mount 之间此前**一条事件都没有**,#1099 把那段窗口
+          // 按真实交接点拆成了十条。它们如果不进这张允许清单,埋点装了也白装 —— 时间线文件里有,
+          // 落库的 results.json 里没有,下一轮量到的仍是同一段空白。
+          // 这是同一形态第三次:`#881` 的 fork/ready_ipc 一次,`#1080` 的 composer.mount 一次。
+          "renderer.shell.resource.settled",
+          "renderer.shell.ready",
+          "renderer.sidebar.setup",
+          "renderer.home.surface.setup",
+          "renderer.projects.connect",
+          "renderer.projects.store_ready",
+          "renderer.launch_draft.start",
+          "renderer.launch_draft.step",
+          "renderer.launch_draft.end",
+          "renderer.new_session.surface.setup",
           "main.sidecar.catalog_liveness.confirmed",
           "renderer.home.model_list.start",
           "renderer.home.catalog_ready",

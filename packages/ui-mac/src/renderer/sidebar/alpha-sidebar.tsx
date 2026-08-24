@@ -20,6 +20,7 @@ import { Mark } from "../logo-alpha"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
 import { subscribeAuthState } from "../auth-recovery"
+import { markStartupTimeline } from "../startup-timeline"
 import { homeHref, projectLabel } from "./route"
 import { hrefFor, parseRoute } from "../../shared/route-manifest"
 import {
@@ -181,6 +182,11 @@ export function AlphaSidebar(props: {
    *  就是 #894 修掉的那个缺陷(跳去没有该会话的机器;那边若恰好有同 id 会话,污染的是它)。 */
   serverKey: () => string | undefined
 }) {
+  // #1099(REQ-109):启动窗口的第二个交接点 —— 上游 `AppInterface` 自己的 setup 跑完、渲染
+  // 到 alpha 侧栏的这一拍。刻意打在**组件体里**而不是 `onMount`:solid 的 onMount 是 user
+  // effect,整棵子树的 onMount 会在渲染结束后一起排队触发,时间戳全挤在同一刻 —— 那样分不出
+  // 「上游壳挂了多久」与「路由树挂了多久」。组件体是渲染期,拿到的才是这一段的真实边界。
+  markStartupTimeline("renderer.sidebar.setup")
   const { store, reload, createSession, renameSession, shareSession, deleteSession, copySession } = props.projects
   const routerNavigate = useNavigate()
   const location = useLocation()
@@ -646,7 +652,10 @@ export function AlphaSidebar(props: {
   // `/:dir/session` 路由本身**保留**给深链兼容(pages/layout/deep-links.ts 仍导航到它),本票只保证
   // alpha 自己的入口不再进它。
   let draftInFlight = false
-  const startDraft = async (): Promise<void> => {
+  // #1099(REQ-109):启动 draft 是 `root.mount → composer.mount` 那段空白的**后半程** ——
+  // 它有四个各自可能拖长的 await(tabs 水合 / 默认目录解析 / 默认目录供给 IPC / newDraft),
+  // 而此前整条链一个事件都没有。逐步记时,让「慢在哪一步」可答。只记,不改判断。
+  const startDraft = async (trigger: "launch" | "manual" = "manual"): Promise<void> => {
     // 关闭覆盖层属于导航**意图**,不属于导航结果(REQ-126 AC2 / #655 审计 Major):这里之后全是
     // await,等结果就等于让覆盖层继续压在目标页面上。
     closeAllOverlays()
@@ -655,22 +664,48 @@ export function AlphaSidebar(props: {
     // 重入,不是"一个会话只准有一个 draft"的锁。
     if (draftInFlight) return
     draftInFlight = true
+    // 打点在去重闸**之后**:被去重掉的那一下没有后续,记了就是一条永远配不上 `.end` 的孤儿。
+    const startedAt = performance.now()
+    let stepAt = startedAt
+    const step = (name: string, outcome: string) => {
+      const at = performance.now()
+      markStartupTimeline("renderer.launch_draft.step", { step: name, outcome, durationMs: at - stepAt })
+      stepAt = at
+    }
+    let outcome = "unknown"
+    markStartupTimeline("renderer.launch_draft.start", { trigger })
     try {
       // 上游 tabs 是 persisted store:水合完成前写进去的 tab 会被随后的读盘结果覆盖,
       // draft 连同它的目录一起消失。
-      if (!(await wait(() => tabs.ready()))) return
+      if (!(await wait(() => tabs.ready()))) {
+        step("tabs_ready", "cancelled")
+        outcome = "cancelled:tabs"
+        return
+      }
+      step("tabs_ready", "ok")
       const target = await resolveDraftTarget()
-      if (!sidebarAlive) return
+      if (!sidebarAlive) {
+        step("resolve_target", "cancelled")
+        outcome = "cancelled:unmounted"
+        return
+      }
+      step("resolve_target", target ? (target.isDefaultWorkspace ? "default-workspace" : "project") : "none")
       if (!target) {
         pushToast({ kind: "error", title: t("alpha.sidebar.newChatNoWorkspace") })
+        outcome = "no-workspace"
         return
       }
       // 不变量 5:目标是默认对话目录时,必须在**建 draft 之前**真的供给成功。这条 IPC 失败返回
       // `{ok:false}` 而不 throw,不看返回值 = 把会话开在一个不存在的目录上,而建 draft 又不碰引擎
       // (没有"引擎会如实报错"这层兜底),所以只能在这里拦。
-      if (target.isDefaultWorkspace && !(await props.projects.ensureDefaultWorkspace(target.directory))) {
-        pushToast({ kind: "error", title: t("alpha.sidebar.newChatWorkspaceFailed") })
-        return
+      if (target.isDefaultWorkspace) {
+        const provisioned = await props.projects.ensureDefaultWorkspace(target.directory)
+        step("ensure_workspace", provisioned ? "ok" : "rejected")
+        if (!provisioned) {
+          pushToast({ kind: "error", title: t("alpha.sidebar.newChatWorkspaceFailed") })
+          outcome = "workspace-failed"
+          return
+        }
       }
       // #925:draft 的 server 段 = **projects store 连着的那个 server**,不再是 active server。
       // 新对话页(AlphaNewSession)发第一条走 `props.projects.startChat` —— 会话**恒**建在
@@ -683,11 +718,19 @@ export function AlphaSidebar(props: {
       const projectsKey = props.serverKey()
       if (!projectsKey) {
         pushToast({ kind: "error", title: t("alpha.sidebar.newChatFailed") })
+        outcome = "no-server-key"
         return
       }
       await tabs.newDraft({ server: ServerConnection.Key.make(projectsKey), directory: target.directory })
+      step("new_draft", "ok")
+      outcome = "navigated"
     } finally {
       draftInFlight = false
+      markStartupTimeline("renderer.launch_draft.end", {
+        trigger,
+        outcome,
+        durationMs: performance.now() - startedAt,
+      })
     }
   }
 
@@ -709,7 +752,7 @@ export function AlphaSidebar(props: {
   createEffect(() => {
     if (didLaunchNav || !store.ready) return
     didLaunchNav = true
-    void startDraft().finally(endLaunchDraftHandoff)
+    void startDraft("launch").finally(endLaunchDraftHandoff)
   })
 
   // Mount our chrome INSIDE #root (not <body>). opencode's draggable-region CSS is scoped to

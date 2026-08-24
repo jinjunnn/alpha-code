@@ -23,6 +23,7 @@ import {
   notifySseReconnected,
   subscribeRuntimeRecovery,
 } from "../runtime-recovery"
+import { markStartupTimeline } from "../startup-timeline"
 import { nextEngineRetryDelay } from "../alpha-ui/model-picker-logic"
 
 export interface ServerInfo {
@@ -132,6 +133,10 @@ function toSession(raw: any): AlphaSession | undefined {
 function sortSessions(list: AlphaSession[]): AlphaSession[] {
   return [...list].sort((a, b) => b.updated - a.updated)
 }
+
+/** #1099:client 是**经哪条路**建起来的。四条路的时间特征完全不同(尤其 1s 兜底与
+ *  1/2/4/8s 封顶退避的自探),混成一条就分不出「慢在哪一步」。只进时间线。 */
+type ConnectReason = "bridge-absent" | "runtime-ready" | "generation-event" | "bridge-fallback-timer" | "self-probe"
 
 const GLOBAL_WORKTREE = "/"
 const GLOBAL_SESSION_PAGE_SIZE = 200
@@ -278,6 +283,9 @@ export function useAlphaProjects(
           }
         })
       })
+      // #1099:首拉项目列表返回 = 侧栏启动 draft 的发车时刻(它 gate 在 `store.ready` 上)。
+      // 只记**第一次**翻真:此后每次 reload 都会重写这个字段,记进去就是启动时间线里的噪声。
+      if (!store.ready) markStartupTimeline("renderer.projects.store_ready", { projects: incoming.length })
       setStore("ready", true)
       setStore("error", false)
       // 普通项目沿用 project scope;全局哨兵只查数据库级全局索引,绝不实例化根目录 `/`。
@@ -628,7 +636,10 @@ export function useAlphaProjects(
   let runtimeStateReceived = false
   let runtimeState: SidecarGenerationState | undefined
 
-  const connect = (info: ServerInfo, sidecarGeneration: number) => {
+  // #1099(REQ-109):`reason` 只进时间线,不参与任何判断。冷启动这一拍**可能等满 1 秒**
+  // (下面那条 `bridgeFallbackTimer`:从未收到 generation 状态时按 1s 兜底才建 client),
+  // 而这段等待此前在时间线里完全不存在 —— 它正落在 `root.mount → composer.mount` 的空白里。
+  const connect = (info: ServerInfo, sidecarGeneration: number, reason: ConnectReason) => {
     const gen = ++generation
     abortRef.abort()
     abortRef = new AbortController()
@@ -637,6 +648,7 @@ export function useAlphaProjects(
       baseUrl: info.baseUrl,
       headers: authHeaders(info),
     })
+    markStartupTimeline("renderer.projects.connect", { reason, generation: sidecarGeneration })
 
     void loadProjects()
     void subscribe()
@@ -691,7 +703,7 @@ export function useAlphaProjects(
     if (!reachable || !serverInfo) return scheduleSelfProbe()
     stopSelfProbe()
     provisionalClient = true
-    connect(serverInfo, runtimeState?.generation ?? connectedSidecarGeneration)
+    connect(serverInfo, runtimeState?.generation ?? connectedSidecarGeneration, "self-probe")
     // R1 Blocker2:重建 client 只修好数据层;composer/picker 的读取链可能早已停跑
     // (recovering 后无循环在等,而新 SSE 首连不触发 notifySseReconnected)。发本地
     // 传输恢复通知把全部消费链唤醒 —— 这正是它们已订阅的「传输已恢复」信号。
@@ -749,14 +761,14 @@ export function useAlphaProjects(
     }
     if (state.generation === connectedSidecarGeneration && client && !provisionalClient) return
     provisionalClient = false
-    connect(serverInfo, state.generation)
+    connect(serverInfo, state.generation, "generation-event")
   })
 
   createEffect(() => {
     serverInfo = server()
     if (!serverInfo) return
     if (!hasRuntimeRecoveryBridge()) {
-      connect(serverInfo, 0)
+      connect(serverInfo, 0, "bridge-absent")
       return
     }
     if (runtimeState?.status === "ready" || runtimeState?.status === "injection-failed") {
@@ -764,7 +776,7 @@ export function useAlphaProjects(
       // 否则「终态先到、server 后到」的窗口里 client 永不建立(自探已停、无新事件)。
       if (!client || runtimeState.generation !== connectedSidecarGeneration) {
         provisionalClient = false
-        connect(serverInfo, runtimeState.generation)
+        connect(serverInfo, runtimeState.generation, "runtime-ready")
       }
       return
     }
@@ -773,7 +785,7 @@ export function useAlphaProjects(
     if (runtimeStateReceived) return
     clearTimeout(bridgeFallbackTimer)
     bridgeFallbackTimer = setTimeout(() => {
-      if (serverInfo && !client) connect(serverInfo, connectedSidecarGeneration)
+      if (serverInfo && !client) connect(serverInfo, connectedSidecarGeneration, "bridge-fallback-timer")
     }, 1_000)
   })
 

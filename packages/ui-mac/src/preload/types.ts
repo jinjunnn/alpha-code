@@ -89,6 +89,23 @@ export type SidecarGenerationState = {
 export const STARTUP_TIMELINE_CHANNEL = "startup-timeline-mark"
 export const RENDERER_STARTUP_MARK_NAMES = [
   "renderer.root.mount",
+  // #1099(REQ-109):`renderer.root.mount` → `renderer.composer.mount` 之间此前**一条事件都没有**
+  // (`docs/verification/2026-08-24-req109-p95-post1083/` §4:最快样本 2,612 ms、超线样本 4,257 ms、
+  // 最慢一次 12,089 ms,而两个样本的事件序列结构完全相同 —— 差别全在这段空白里)。下面这十条把
+  // 那段窗口按**真实交接点**拆开,顺序即启动路径的顺序:
+  //   四个壳资源各自落定 → 壳门放行 → 上游 AppInterface 渲染到 alpha 侧栏 → 渲染到首页 surface
+  //   → projects 数据层连上引擎 → 首拉项目列表返回 → 启动 draft 的四步 → 落到新对话页 → composer 挂载。
+  // 只加观测,不改任何一步的行为(票面第三条)。
+  "renderer.shell.resource.settled",
+  "renderer.shell.ready",
+  "renderer.sidebar.setup",
+  "renderer.home.surface.setup",
+  "renderer.projects.connect",
+  "renderer.projects.store_ready",
+  "renderer.launch_draft.start",
+  "renderer.launch_draft.step",
+  "renderer.launch_draft.end",
+  "renderer.new_session.surface.setup",
   "renderer.composer.mount",
   "renderer.composer.auth_epoch.increment",
   "renderer.home.workspace.provisional_to_real",

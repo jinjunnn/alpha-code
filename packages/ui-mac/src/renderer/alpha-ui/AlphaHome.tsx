@@ -41,6 +41,11 @@ export function AlphaHome(props: {
    *  `/server/:serverKey/session/:id`,不再走 legacy href 让壳事后反推。 */
   serverKey: () => string | undefined
 }) {
+  // #1099(REQ-109):启动窗口的第三个交接点 —— 路由树渲染到首页 surface 的这一拍。
+  // 与侧栏那条同理打在组件体里(渲染期),不打在 onMount(user effect 全挤在渲染之后)。
+  // `composerPending` 记的是这一拍首页有没有掏 composer:冷启动它恒为 true(#1056 的交接位
+  // armed),于是「首页挂上了但输入框还没来」这件事第一次在时间线里有据可查。
+  markStartupTimeline("renderer.home.surface.setup", { composerPending: launchDraftPending() })
   const navigate = useNavigate()
   const { store } = props.projects
   const configHealth = useConfigHealth()
