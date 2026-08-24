@@ -225,7 +225,9 @@ test("仓内真实清单必须合形:三列齐、逐列非空、file 指向真�
   const rows = readFileSync(REAL_LIST, "utf8")
     .split("\n")
     .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
-  expect(rows.length).toBeGreaterThan(0)
+  // #1094:空清单是棘轮的**终态**(全部已知红修绿),合法且是最严状态,不得在这里判红。
+  // 为什么去掉非空断言不放松任何东西:行只会带来「容忍」,少行只会更严(fail-safe 方向);
+  // REAL_LIST 路径写歪由上面的 readFileSync 抛错兜住,不靠行数自证。
   const seen = new Set<string>()
   for (const row of rows) {
     const cols = row.split("\t")
