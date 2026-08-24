@@ -68,7 +68,7 @@ function fixture(testSource: string, listBody: string) {
   return { dir, list }
 }
 
-test("清单外的红必须拦住,并按 describe 外→内的真实顺序点名(AC3① 正向)", { timeout: 120_000 }, () => {
+test("清单外的红必须拦住,并按 describe 外→内的真实顺序点名;清单文件保持逐字节只读(AC3① + AC4)", { timeout: 120_000 }, () => {
   const { dir, list } = fixture(FIXTURE_RED, LIST_HEADER) // 空清单:零容忍
   try {
     const r = runFloor(["1", dir, "kfprobe.test.ts"], list)
@@ -77,6 +77,9 @@ test("清单外的红必须拦住,并按 describe 外→内的真实顺序点名
     // 点名必须是完整显示名 —— bun 1.3.14 的 junit classname 是「inner ring > outer ring」
     // 倒序;重建若不反转,这里就会点出一个用户在 console 里找不到的名字。
     expect(r.output).toContain(`kfprobe.test.ts :: ${RED_DISPLAY}`)
+    // R1 必修 3(AC4):拦截路径跑完后,清单必须与写入时逐字节相同 —— 「先拦后收编」
+    // (第一次红顺手 append 进清单,第二次就绿)是棘轮反向,此前只有散文守着。
+    expect(readFileSync(list, "utf8")).toBe(LIST_HEADER)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -159,6 +162,23 @@ test("echoing host stays green", () => {
     const r = runFloor(["1", dir, "kfprobe.test.ts"], list)
     expect(r.code).toBe(0)
     expect(r.output).not.toContain("清单外新红")
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("同 display 的红落在清单未登记的文件 ⇒ 拦住并点名那个文件(file 列参与匹配)", { timeout: 120_000 }, () => {
+  // R1 必修 2:实现本体按 (file, display) 匹配是对的,但此前没有用例钉住 file 那一半 ——
+  // 一个只比 display、无视 file 列的错误实现能通过其余全部用例而无一物变红。
+  const dir = mkdtempSync(join(tmpdir(), "kf-ratchet-"))
+  try {
+    writeFileSync(join(dir, "other.test.ts"), FIXTURE_RED) // 同一条 display,文件不同
+    const list = join(dir, "list.tsv")
+    writeFileSync(list, LIST_HEADER + LIST_ENTRY) // 清单登记的是 kfprobe.test.ts
+    const r = runFloor(["1", dir, "other.test.ts"], list)
+    expect(r.code).not.toBe(0)
+    expect(r.output).toContain("清单外新红")
+    expect(r.output).toContain(`other.test.ts :: ${RED_DISPLAY}`)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

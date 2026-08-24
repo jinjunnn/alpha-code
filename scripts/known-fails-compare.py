@@ -139,6 +139,20 @@ def main() -> None:
                 "倒序/转义重建与真实输出对不上(bun junit 格式变了?),本次测量作废"
             )
 
+    # R1 Major-1(#1086 审计):junit fails 里同一 (file, display) 出现多条、而该键又登记在
+    # 清单里 ⇒ 一条清单行会把同名的**全新**红一并吸收(set 去重塌缩,两条交叉轴都拦不住:
+    # 条数轴两侧同为 2,名字轴两条 (fail) 行文本相同)。同名用例无法逐条归因 —— 测量作废,
+    # fail-closed。自绕推演:改名逃逸 ⇒ 变 unlisted 照拦;保持重名 ⇒ 恒作废。
+    dup_counts: dict[tuple[str, str], int] = {}
+    for key in ((f, d) for f, d in fails):
+        dup_counts[key] = dup_counts.get(key, 0) + 1
+    for key, n in sorted(dup_counts.items()):
+        if n > 1 and key in entries:
+            void(
+                f"同一 (file, test) 有 {n} 条失败且该键登记在清单里:{key[0]} :: {key[1]} —— "
+                "同名用例无法逐条归因(一条清单行不得吸收多条同名红)。给用例改成可区分的名字再跑"
+            )
+
     fail_keys = {(f, d) for f, d in fails}
     unlisted = sorted(fail_keys - set(entries))
     tolerated = sorted(fail_keys & set(entries))
