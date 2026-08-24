@@ -18,8 +18,7 @@
 # spawn 的子进程 cases 文件里一条用例红(外层日志里那段 `Ran 14 tests across 1 file /
 # 13 pass / 1 fail` 就是子进程的),但外层能归因的失败单位是宿主那条 test,故按宿主登记。
 #
-# 基线测量:origin/alpha@aded4ed59,2026-08-23,`cd packages/ui-mac && bun test src`
-# ⇒ Ran 4406 tests across 305 files,4403 pass / 3 fail。
-src/main/gate-file-registry.test.ts	闸门文件登记簿完备性 (#647) > ⑤ 每条登记的命中行数必须与实测精确相等(同一文件里新增一处同形态断言即红)	source-text-anchors.ts 给 boot-dangling-onboarding-wiring.test.ts 登记 lines:1,实测 2 —— 有人新增了一处源码文本锚没更新登记(#968 辖区)。修法=读那两行、判减速带还是文本闸、更新 why 与 lines。暂无在途修复票。
-src/main/extension-seed-snapshot.test.ts	extension-seed snapshot drift guard > cross-pin: lock.catalog == bundled catalog snapshot (both regenerate on stable promotion)	seed lock.catalog.sha256(e37a4cf3…)≠ bundled catalog 实测 sha(ba40b79b…)—— 两者约定在 stable promotion 时同步再生,有一侧被单独动了(REQ-102 辖区)。暂无在途修复票。
-src/renderer/extensions/ext-package-detail-wiring.test.ts	package safe view and admission traverse the production ExtensionHub card and ExtensionDetail paths	宿主钉子进程 test-component cases 恰 14 pass,实测 13 pass / 1 fail:#771 的「the uninstall warning stays put instead of expiring with the toast timer」在等待 packageGraphs 的 waitFor 超时 —— #771 判据已合入(fe2e042f1)但该用例在 base 上未绿。暂无在途修复票。
+# 基线测量:fix/1094-gate-files-red(基于 origin/alpha@c25e3e636),2026-08-23,
+# `cd packages/ui-mac && bun test src` ⇒ Ran 4430 tests across 307 files,4430 pass / 0 fail。
+# #1094 修绿了此前登记的全部 3 条(gate-file-registry ⑤ / extension-seed-snapshot 互钉 /
+# ext-package-detail-wiring 宿主),清单现为空 —— 棘轮只朝收紧方向走,新红不得运行时收编。

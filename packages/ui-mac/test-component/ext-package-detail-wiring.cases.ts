@@ -1148,7 +1148,7 @@ describe("package detail production renderer path", () => {
     )
 
     click(detail().querySelector(`[data-package-uninstall='${MIXED_BUNDLE_PACKAGE_ID}']`))
-    await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual([]))
+    await waitFor(() => expect(readPackageGraphs(harness.globalRoot)).toEqual({ ok: true, packageGraphs: [] }))
     await waitFor(() => expect(toastsContaining(canary)).toBe(1))
 
     // ① 呈现出来的那条**就是**常驻的那条(不是「视口里另外还有一条常驻的」)。

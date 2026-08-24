@@ -194,9 +194,9 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
  */
 export const KEPT_SOURCE_TEXT_READS: Record<string, SourceTextEntry> = {
   "packages/ui-mac/src/main/boot-dangling-onboarding-wiring.test.ts": {
-    why: "主语是负全称加唯一性:index.ts 每个 `if (!TEST_ONBOARDING)` 块不得包含 boot dangling sweep;REQ-059/065/104 与 ecosystem gate 必须仍在该守卫内;runBootDanglingSweep 恰好一次且排在首个 spawnLocalServer 之前。index.ts 结构上进不了 bun,这份布局就是接线契约。删掉 sweep 调用会由 boot-dangling-sweep.test.ts 的可执行闸变红,本条守的是「调用点不在 skip 里」。",
+    why: "主语是负全称加唯一性:index.ts 每个 `if (!TEST_ONBOARDING)` 块不得包含 boot dangling sweep;REQ-059/065/104 与 ecosystem gate 必须仍在该守卫内;runBootDanglingSweep 恰好一次且排在首个 spawnLocalServer 之前。index.ts 结构上进不了 bun,这份布局就是接线契约。删掉 sweep 调用会由 boot-dangling-sweep.test.ts 的可执行闸变红,本条守的是「调用点不在 skip 里」。第 2 处(#1036,REQ-053 A2)锚 bootEnforcementGap 分支里 TEST_ONBOARDING 早退(app.exit(1))先于 dialog.showErrorBox 的下标先后 —— 按本分类法它是位置锚:把早退包进恒假条件、或把 app.exit(1) 换成只写日志,被比的文本仍在,断言照绿;A2 的行为真相在打包 VERIFY(#1034)。文件主判据仍是上面的负全称+唯一性文本闸,照 websearch-copies 先例如实登记混合、不整体降级(整体降级会把 #1031 那道真文本闸一并逐出 gate-files.tsv 的删除保护)。",
     evidence: "#1031",
-    lines: 1,
+    lines: 2,
   },
   "packages/ui-mac/src/main/alpha-environment.test.ts": {
     why: "两处在同一条 grep 守卫里:main 侧 handler 必须零参数、preload 侧 invoke 必须不带参数,且两侧都**不得**出现任何环境写面通道名。主语是负全称(「不存在第二个写面」)—— 没有比源码文本更细的粒度能表达「全仓没有」。",
