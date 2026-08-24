@@ -1,0 +1,4372 @@
+{
+  "schema": "alpha-code/req109-110-t7-runtime/v2",
+  "issue": "alpha-code#536",
+  "capturedAt": "2026-08-24T09:29:24.094Z",
+  "commit": "1cc646bb8ad473cdcb2bdf7c19b996852bda65ba",
+  "appSha256": "ac3065714df2b1639a32e3544daf736a758d8c1572cd36b512fe394e00595a2e",
+  "endpoint": "loopback (URL redacted; no real credential)",
+  "latency": {
+    "samples": 0,
+    "p95Ms": null,
+    "maxMs": null
+  },
+  "results": [
+    {
+      "scenario": "byok-only",
+      "sample": 1,
+      "cdpAttachment": "attached",
+      "startupMs": 7287.426375,
+      "bootReadyMs": 960.9529580000001,
+      "catalogReady": {
+        "atMs": 7284.169208,
+        "barrierMs": 4.5,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 910.6388749999999,
+        "outcome": "ready",
+        "durationMs": 152.26250000000005,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563688563.437
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 169.66270799999998,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 243.1095,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 243.174208,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 910.6388749999999,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 152.26250000000005,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 911.204833,
+          "durationMs": 668.029709,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 960.9529580000001,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 963.772166,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1146.505708,
+          "source": "renderer",
+          "rendererNow": 197.89999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1223.246291,
+          "resource": "windowCount",
+          "durationMs": 18.200000047683716,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 213,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1223.578458,
+          "resource": "sidecar",
+          "durationMs": 18.40000009536743,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 213.20000004768372,
+          "occurrence": 2
+        },
+        {
+          "seq": 16,
+          "name": "renderer.shell.resource.settled",
+          "t": 1223.706291,
+          "resource": "defaultServer",
+          "durationMs": 18.40000009536743,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 213.20000004768372,
+          "occurrence": 3
+        },
+        {
+          "seq": 18,
+          "name": "renderer.projects.connect",
+          "t": 1223.993833,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 214,
+          "occurrence": 1
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.resource.settled",
+          "t": 1224.224125,
+          "resource": "locale",
+          "durationMs": 80.60000002384186,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 275.39999997615814,
+          "occurrence": 4
+        },
+        {
+          "seq": 20,
+          "name": "renderer.shell.ready",
+          "t": 1224.306583,
+          "durationMs": 80.60000002384186,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 275.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1244.420375,
+          "source": "renderer",
+          "rendererNow": 295.7999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1260.640541,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 304.89999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 7217.996833,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 6269.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 7218.335583,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 6269.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 7218.651,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.3999999761581421,
+          "source": "renderer",
+          "rendererNow": 6270,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 7218.886625,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0.20000004768371582,
+          "source": "renderer",
+          "rendererNow": 6270.200000047684,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 7221.214583,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2.299999952316284,
+          "source": "renderer",
+          "rendererNow": 6272.5,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 7233.363208,
+          "source": "renderer",
+          "rendererNow": 6279.100000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 7250.918666,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 17.299999952316284,
+          "source": "renderer",
+          "rendererNow": 6289.799999952316,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 7252.2555,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 20.199999928474426,
+          "source": "renderer",
+          "rendererNow": 6289.799999952316,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 7279.140083,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 6330.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 7280.298166,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 6331,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 7284.169208,
+          "barrierMs": 4.5,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 6335.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 7287.426375,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 7.799999952316284,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 6338.799999952316,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 2,
+      "cdpAttachment": "attached",
+      "startupMs": 7328.676667,
+      "bootReadyMs": 923.7056249999999,
+      "catalogReady": {
+        "atMs": 7326.633834,
+        "barrierMs": 4.300000071525574,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 873.622125,
+        "outcome": "ready",
+        "durationMs": 152.27945800000003,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563697114.556
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 136.26795899999996,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 206.11733399999997,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 206.18845899999997,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 873.622125,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 152.27945800000003,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 874.145625,
+          "durationMs": 667.956292,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 923.7056249999999,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 926.229334,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1109.7187920000001,
+          "source": "renderer",
+          "rendererNow": 197.60000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1171.459292,
+          "resource": "windowCount",
+          "durationMs": 14.799999952316284,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 209.29999995231628,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1171.835709,
+          "resource": "sidecar",
+          "durationMs": 14.899999976158142,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 209.39999997615814,
+          "occurrence": 2
+        },
+        {
+          "seq": 16,
+          "name": "renderer.shell.resource.settled",
+          "t": 1171.956209,
+          "resource": "defaultServer",
+          "durationMs": 15,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 209.5,
+          "occurrence": 3
+        },
+        {
+          "seq": 18,
+          "name": "renderer.projects.connect",
+          "t": 1172.2544589999998,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 210.19999992847443,
+          "occurrence": 1
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.resource.settled",
+          "t": 1172.483875,
+          "resource": "locale",
+          "durationMs": 65.79999995231628,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 260.2999999523163,
+          "occurrence": 4
+        },
+        {
+          "seq": 20,
+          "name": "renderer.shell.ready",
+          "t": 1172.5641249999999,
+          "durationMs": 65.79999995231628,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 260.2999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1192.501084,
+          "source": "renderer",
+          "rendererNow": 280.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1209.4062089999998,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 289.6999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 7249.7575,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 6337.699999928474,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 7250.066125,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 6338,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 7250.411,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.3999999761581421,
+          "source": "renderer",
+          "rendererNow": 6338.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 7250.6407500000005,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0.10000002384185791,
+          "source": "renderer",
+          "rendererNow": 6338.5,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 7253.075042,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2.5,
+          "source": "renderer",
+          "rendererNow": 6341,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 7266.672542,
+          "source": "renderer",
+          "rendererNow": 6347.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 7282.762667,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 18,
+          "source": "renderer",
+          "rendererNow": 6359,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 7284.183459,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 21,
+          "source": "renderer",
+          "rendererNow": 6359,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 7321.755875,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 6409.699999928474,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 7322.892917,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 6410.199999928474,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 7326.633834,
+          "barrierMs": 4.300000071525574,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 6414.699999928474,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 7328.676667,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 6.5,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 6416.699999928474,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 3,
+      "cdpAttachment": "attached",
+      "startupMs": 3767.9107080000003,
+      "bootReadyMs": 920.1617079999999,
+      "catalogReady": {
+        "atMs": 3765.5797500000003,
+        "barrierMs": 9.399999976158142,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 871.034416,
+        "outcome": "ready",
+        "durationMs": 150.698709,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563705703.238
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 135.85954099999998,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 204.34170799999998,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 204.407958,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 871.034416,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 150.698709,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 871.598583,
+          "durationMs": 667.1889999999999,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 920.1617079999999,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 922.8241659999999,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1104.271333,
+          "source": "renderer",
+          "rendererNow": 196.20000004768372,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1170.4836659999999,
+          "resource": "windowCount",
+          "durationMs": 15.5,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 208.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1170.920791,
+          "resource": "sidecar",
+          "durationMs": 15.5,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 208.5,
+          "occurrence": 2
+        },
+        {
+          "seq": 16,
+          "name": "renderer.shell.resource.settled",
+          "t": 1171.10575,
+          "resource": "defaultServer",
+          "durationMs": 15.600000023841858,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 208.60000002384186,
+          "occurrence": 3
+        },
+        {
+          "seq": 18,
+          "name": "renderer.projects.connect",
+          "t": 1171.500041,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 209,
+          "occurrence": 1
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.resource.settled",
+          "t": 1171.858375,
+          "resource": "locale",
+          "durationMs": 70.40000009536743,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 263.40000009536743,
+          "occurrence": 4
+        },
+        {
+          "seq": 20,
+          "name": "renderer.shell.ready",
+          "t": 1171.947708,
+          "durationMs": 70.40000009536743,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 263.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1192.440083,
+          "source": "renderer",
+          "rendererNow": 284.3000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1209.906958,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 294.2000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 3722.840583,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 2814.7000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 3723.1919580000003,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 2814.9000000953674,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 3723.3214580000003,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.3999999761581421,
+          "source": "renderer",
+          "rendererNow": 2815.3000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 3723.4471660000004,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0,
+          "source": "renderer",
+          "rendererNow": 2815.3000000715256,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 3725.598458,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2.1999999284744263,
+          "source": "renderer",
+          "rendererNow": 2817.5,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 3735.7615410000003,
+          "source": "renderer",
+          "rendererNow": 2824.2000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 3750.889083,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 16,
+          "source": "renderer",
+          "rendererNow": 2833.5,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 3751.096875,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 18.59999990463257,
+          "source": "renderer",
+          "rendererNow": 2833.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 3755.734708,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 2847.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 3756.802833,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2848,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 3765.5797500000003,
+          "barrierMs": 9.399999976158142,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2857.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 3767.9107080000003,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 11.899999976158142,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2859.8000000715256,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 4,
+      "cdpAttachment": "attached",
+      "startupMs": 3673.9675420000003,
+      "bootReadyMs": 948.865084,
+      "catalogReady": {
+        "atMs": 3671.4341670000003,
+        "barrierMs": 12.200000047683716,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 896.1441669999999,
+        "outcome": "ready",
+        "durationMs": 152.014833,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563710703.792
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 148.69820900000002,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 215.98729200000002,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 216.055,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 896.1441669999999,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 152.014833,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 896.6671249999999,
+          "durationMs": 680.611292,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 948.865084,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 951.419292,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1135.270209,
+          "source": "renderer",
+          "rendererNow": 200.69999992847443,
+          "occurrence": 1
+        },
+        {
+          "seq": 13,
+          "name": "renderer.shell.resource.settled",
+          "t": 1151.10125,
+          "resource": "windowCount",
+          "durationMs": 15.299999952316284,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 212.79999995231628,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1151.243459,
+          "resource": "sidecar",
+          "durationMs": 15.399999976158142,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 212.89999997615814,
+          "occurrence": 2
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1151.342209,
+          "resource": "defaultServer",
+          "durationMs": 15.399999976158142,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 212.89999997615814,
+          "occurrence": 3
+        },
+        {
+          "seq": 17,
+          "name": "renderer.projects.connect",
+          "t": 1151.628584,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 213.19999992847443,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.shell.resource.settled",
+          "t": 1151.792584,
+          "resource": "locale",
+          "durationMs": 19.5,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 217.09999990463257,
+          "occurrence": 4
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.ready",
+          "t": 1151.873542,
+          "durationMs": 19.5,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 217.19999992847443,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1229.23175,
+          "source": "renderer",
+          "rendererNow": 294.6999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1245.78975,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 304,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 3605.0856670000003,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 2670.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 3605.4315840000004,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 2670.7999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 3605.7955,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.3999999761581421,
+          "source": "renderer",
+          "rendererNow": 2671.1999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 3605.957334,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0.10000002384185791,
+          "source": "renderer",
+          "rendererNow": 2671.2999999523163,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 3608.486375,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2.700000047683716,
+          "source": "renderer",
+          "rendererNow": 2674,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 3624.82375,
+          "source": "renderer",
+          "rendererNow": 2680.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 3639.268875,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 19.299999952316284,
+          "source": "renderer",
+          "rendererNow": 2693.2999999523163,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 3639.960125,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 22.5,
+          "source": "renderer",
+          "rendererNow": 2693.2999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 3658.608667,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 2724,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 3659.838209,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2724.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 3671.4341670000003,
+          "barrierMs": 12.200000047683716,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2736.899999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 3673.9675420000003,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 15,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2739.399999976158,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 5,
+      "cdpAttachment": "attached",
+      "startupMs": 3664.4815000000003,
+      "bootReadyMs": 934.764458,
+      "catalogReady": {
+        "atMs": 3662.216375,
+        "barrierMs": 10.300000071525574,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 885.8688330000001,
+        "outcome": "ready",
+        "durationMs": 150.85433399999994,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563715677.659
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 138.370458,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 222.25383300000001,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 222.319667,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 885.8688330000001,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 150.85433399999994,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 886.404083,
+          "durationMs": 664.0834580000001,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 934.764458,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 937.60425,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1118.11825,
+          "source": "renderer",
+          "rendererNow": 195.20000004768372,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1180.472417,
+          "resource": "windowCount",
+          "durationMs": 15.200000047683716,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 207.30000007152557,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1180.82325,
+          "resource": "sidecar",
+          "durationMs": 15.300000071525574,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 207.40000009536743,
+          "occurrence": 2
+        },
+        {
+          "seq": 16,
+          "name": "renderer.shell.resource.settled",
+          "t": 1180.960625,
+          "resource": "defaultServer",
+          "durationMs": 15.300000071525574,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 207.5,
+          "occurrence": 3
+        },
+        {
+          "seq": 18,
+          "name": "renderer.projects.connect",
+          "t": 1181.2745419999999,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 207.80000007152557,
+          "occurrence": 1
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.resource.settled",
+          "t": 1181.5071249999999,
+          "resource": "locale",
+          "durationMs": 66.30000007152557,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 258.40000009536743,
+          "occurrence": 4
+        },
+        {
+          "seq": 20,
+          "name": "renderer.shell.ready",
+          "t": 1181.581792,
+          "durationMs": 66.30000007152557,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 258.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1201.176667,
+          "source": "renderer",
+          "rendererNow": 278.3000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1217.73525,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 288.2000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 3610.601917,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 2687.7000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 3610.871583,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 2688,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 3611.0925,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.30000007152557373,
+          "source": "renderer",
+          "rendererNow": 2688.3000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 3611.222792,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0.10000002384185791,
+          "source": "renderer",
+          "rendererNow": 2688.4000000953674,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 3613.352167,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2.0999999046325684,
+          "source": "renderer",
+          "rendererNow": 2690.5,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 3623.065583,
+          "source": "renderer",
+          "rendererNow": 2697.100000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 3635.6892500000004,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 13.800000071525574,
+          "source": "renderer",
+          "rendererNow": 2704.3000000715256,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 3636.016125,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 16.300000071525574,
+          "source": "renderer",
+          "rendererNow": 2704.3000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 3651.534,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 2728.7000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 3652.634833,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2729,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 3662.216375,
+          "barrierMs": 10.300000071525574,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2739.4000000953674,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 3664.4815000000003,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 12.600000023841858,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2741.600000023842,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 6,
+      "cdpAttachment": "attached",
+      "startupMs": 3786.768458,
+      "bootReadyMs": 925.55625,
+      "catalogReady": {
+        "atMs": 3784.278875,
+        "barrierMs": 11.700000047683716,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 876.1196659999999,
+        "outcome": "ready",
+        "durationMs": 153.38112500000005,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563720602.24
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 140.25270799999998,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 206.124208,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 206.183875,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 876.1196659999999,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 153.38112500000005,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 876.6513329999999,
+          "durationMs": 670.4667079999999,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 925.55625,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 928.018375,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1108.6733749999999,
+          "source": "renderer",
+          "rendererNow": 194.79999995231628,
+          "occurrence": 1
+        },
+        {
+          "seq": 13,
+          "name": "renderer.shell.resource.settled",
+          "t": 1133.5882499999998,
+          "resource": "windowCount",
+          "durationMs": 15,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 206.59999990463257,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1133.847166,
+          "resource": "sidecar",
+          "durationMs": 15,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 206.59999990463257,
+          "occurrence": 2
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1133.978916,
+          "resource": "defaultServer",
+          "durationMs": 15.100000023841858,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 206.69999992847443,
+          "occurrence": 3
+        },
+        {
+          "seq": 17,
+          "name": "renderer.projects.connect",
+          "t": 1134.315333,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 207.09999990463257,
+          "occurrence": 1
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.resource.settled",
+          "t": 1163.2667499999998,
+          "resource": "locale",
+          "durationMs": 28.800000071525574,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 220.39999997615814,
+          "occurrence": 4
+        },
+        {
+          "seq": 20,
+          "name": "renderer.shell.ready",
+          "t": 1163.643375,
+          "durationMs": 28.800000071525574,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 220.39999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1183.6599580000002,
+          "source": "renderer",
+          "rendererNow": 269.7999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1200.257791,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 279.59999990463257,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 3721.85775,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 2808,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 3722.182083,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 2808.1999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 3722.557083,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.5,
+          "source": "renderer",
+          "rendererNow": 2808.6999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 3722.724083,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0,
+          "source": "renderer",
+          "rendererNow": 2808.6999999284744,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 3725.2274580000003,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2.600000023841858,
+          "source": "renderer",
+          "rendererNow": 2811.2999999523163,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 3741.764583,
+          "source": "renderer",
+          "rendererNow": 2817.6999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 3754.795583,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 19.600000023841858,
+          "source": "renderer",
+          "rendererNow": 2830.899999976158,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 3755.051,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 22.700000047683716,
+          "source": "renderer",
+          "rendererNow": 2830.899999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 3772.045583,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 2858.1999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 3773.216958,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2858.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 3784.278875,
+          "barrierMs": 11.700000047683716,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2870.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 3786.768458,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 14.399999976158142,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2872.899999976158,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 7,
+      "cdpAttachment": "attached",
+      "startupMs": 3800.990167,
+      "bootReadyMs": 933.739042,
+      "catalogReady": {
+        "atMs": 3797.962959,
+        "barrierMs": 4.399999976158142,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 885.25625,
+        "outcome": "ready",
+        "durationMs": 152.44525,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563725661.66
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 143.37120900000002,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 214.21329200000002,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 214.281042,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 885.25625,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 152.44525,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 885.783417,
+          "durationMs": 671.501625,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 933.739042,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 936.34675,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1117.810167,
+          "source": "renderer",
+          "rendererNow": 195.80000007152557,
+          "occurrence": 1
+        },
+        {
+          "seq": 13,
+          "name": "renderer.shell.resource.settled",
+          "t": 1133.687,
+          "resource": "windowCount",
+          "durationMs": 15,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 207.60000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1133.8612090000001,
+          "resource": "sidecar",
+          "durationMs": 15.200000047683716,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 207.80000007152557,
+          "occurrence": 2
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1133.977167,
+          "resource": "defaultServer",
+          "durationMs": 15.200000047683716,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 207.80000007152557,
+          "occurrence": 3
+        },
+        {
+          "seq": 17,
+          "name": "renderer.projects.connect",
+          "t": 1142.1582090000002,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 208.10000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.shell.resource.settled",
+          "t": 1142.5519170000002,
+          "resource": "locale",
+          "durationMs": 19.700000047683716,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 212.30000007152557,
+          "occurrence": 4
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.ready",
+          "t": 1142.6682500000002,
+          "durationMs": 19.700000047683716,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 212.30000007152557,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1205.094959,
+          "source": "renderer",
+          "rendererNow": 283,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1221.848625,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 292.10000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 3726.7653339999997,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 2804.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 3727.087,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 2805,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 3727.431959,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.30000007152557373,
+          "source": "renderer",
+          "rendererNow": 2805.3000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 3727.6760839999997,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0.19999992847442627,
+          "source": "renderer",
+          "rendererNow": 2805.5,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 3730.201334,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2.600000023841858,
+          "source": "renderer",
+          "rendererNow": 2808.100000023842,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 3747.484959,
+          "source": "renderer",
+          "rendererNow": 2814.899999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 3762.7772919999998,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 21,
+          "source": "renderer",
+          "rendererNow": 2829.100000023842,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 3763.873542,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 24.200000047683716,
+          "source": "renderer",
+          "rendererNow": 2829.2000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 3792.991459,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 2871,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 3794.308917,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2871.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 3797.962959,
+          "barrierMs": 4.399999976158142,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2875.899999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 3800.990167,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 7.5,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2878.899999976158,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 8,
+      "cdpAttachment": "attached",
+      "startupMs": 3634.808333,
+      "bootReadyMs": 929.099417,
+      "catalogReady": {
+        "atMs": 3631.818542,
+        "barrierMs": 13.300000071525574,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 879.8475420000001,
+        "outcome": "ready",
+        "durationMs": 150.91841699999998,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563730761.489
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 143.85633299999998,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 217.118208,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 217.18520800000002,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 879.8475420000001,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 150.91841699999998,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 880.3902080000001,
+          "durationMs": 663.204,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 929.099417,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 931.6218749999999,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1112.511417,
+          "source": "renderer",
+          "rendererNow": 194.89999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 13,
+          "name": "renderer.shell.resource.settled",
+          "t": 1136.275958,
+          "resource": "windowCount",
+          "durationMs": 14.599999904632568,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 206.39999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1157.544708,
+          "resource": "sidecar",
+          "durationMs": 14.699999928474426,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 206.5,
+          "occurrence": 2
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1157.978375,
+          "resource": "defaultServer",
+          "durationMs": 14.799999952316284,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 206.60000002384186,
+          "occurrence": 3
+        },
+        {
+          "seq": 18,
+          "name": "renderer.projects.connect",
+          "t": 1158.639917,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 207.30000007152557,
+          "occurrence": 1
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.resource.settled",
+          "t": 1163.9792499999999,
+          "resource": "locale",
+          "durationMs": 49.09999990463257,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 240.89999997615814,
+          "occurrence": 4
+        },
+        {
+          "seq": 20,
+          "name": "renderer.shell.ready",
+          "t": 1164.4184579999999,
+          "durationMs": 49.09999990463257,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 240.89999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1226.413,
+          "source": "renderer",
+          "rendererNow": 308.89999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1243.422208,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 318,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 3583.821042,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 2666.3000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 3584.200625,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 2666.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 3584.548208,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.2999999523162842,
+          "source": "renderer",
+          "rendererNow": 2666.899999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 3584.805542,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0.20000004768371582,
+          "source": "renderer",
+          "rendererNow": 2667.100000023842,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 3587.229667,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2.600000023841858,
+          "source": "renderer",
+          "rendererNow": 2669.7000000476837,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 3595.232333,
+          "source": "renderer",
+          "rendererNow": 2676.3000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 3612.6758750000004,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 16.199999928474426,
+          "source": "renderer",
+          "rendererNow": 2685.899999976158,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 3613.167917,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 19.299999952316284,
+          "source": "renderer",
+          "rendererNow": 2685.899999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 3618.0710830000003,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 2700.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 3619.202292,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2701,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 3631.818542,
+          "barrierMs": 13.300000071525574,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2714.3000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 3634.808333,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 16.200000047683716,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2717.3000000715256,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 9,
+      "cdpAttachment": "attached",
+      "startupMs": 3689.604334,
+      "bootReadyMs": 919.1610420000001,
+      "catalogReady": {
+        "atMs": 3687.444917,
+        "barrierMs": 10.600000023841858,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 870.054209,
+        "outcome": "ready",
+        "durationMs": 152.54333300000002,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563735695.866
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 140.216417,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 205.576334,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 205.641959,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 870.054209,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 152.54333300000002,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 870.5922919999999,
+          "durationMs": 664.9484170000001,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 919.1610420000001,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 921.841542,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1104.848792,
+          "source": "renderer",
+          "rendererNow": 197.80000007152557,
+          "occurrence": 1
+        },
+        {
+          "seq": 13,
+          "name": "renderer.shell.resource.settled",
+          "t": 1121.270834,
+          "resource": "windowCount",
+          "durationMs": 15.200000047683716,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 209.80000007152557,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1121.452292,
+          "resource": "sidecar",
+          "durationMs": 15.300000071525574,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 209.90000009536743,
+          "occurrence": 2
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1130.459375,
+          "resource": "defaultServer",
+          "durationMs": 15.399999976158142,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 210,
+          "occurrence": 3
+        },
+        {
+          "seq": 17,
+          "name": "renderer.projects.connect",
+          "t": 1131.0957919999998,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 210.40000009536743,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.shell.resource.settled",
+          "t": 1131.370542,
+          "resource": "locale",
+          "durationMs": 29.399999976158142,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 224,
+          "occurrence": 4
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.ready",
+          "t": 1131.4631669999999,
+          "durationMs": 29.399999976158142,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 224.10000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1193.7223749999998,
+          "source": "renderer",
+          "rendererNow": 286.60000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1210.0079589999998,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 295.8000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 3643.175167,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 2736.100000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 3643.449292,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 2736.3000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 3643.666042,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.3999999761581421,
+          "source": "renderer",
+          "rendererNow": 2736.7000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 3644.0865,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0.10000002384185791,
+          "source": "renderer",
+          "rendererNow": 2736.8000000715256,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 3645.945584,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2,
+          "source": "renderer",
+          "rendererNow": 2738.8000000715256,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 3656.139334,
+          "source": "renderer",
+          "rendererNow": 2745.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 3670.289042,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 15.899999976158142,
+          "source": "renderer",
+          "rendererNow": 2754.7000000476837,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 3670.776875,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 18.399999976158142,
+          "source": "renderer",
+          "rendererNow": 2754.8000000715256,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 3676.28525,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 2769.2000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 3677.383375,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2769.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 3687.444917,
+          "barrierMs": 10.600000023841858,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2780.4000000953674,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 3689.604334,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 13,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2782.600000023842,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 10,
+      "cdpAttachment": "attached",
+      "startupMs": 3757.8469999999998,
+      "bootReadyMs": 928.664791,
+      "catalogReady": {
+        "atMs": 3754.700625,
+        "barrierMs": 4.5,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 878.6841249999999,
+        "outcome": "ready",
+        "durationMs": 154.20404199999996,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563740642.699
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 137.86045800000002,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 207.44783300000003,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 207.514958,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 878.6841249999999,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 154.20404199999996,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 879.2442910000001,
+          "durationMs": 671.7274160000001,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 928.664791,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 931.1296659999999,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1116.128291,
+          "source": "renderer",
+          "rendererNow": 199.29999995231628,
+          "occurrence": 1
+        },
+        {
+          "seq": 13,
+          "name": "renderer.shell.resource.settled",
+          "t": 1142.1157500000002,
+          "resource": "windowCount",
+          "durationMs": 15.199999928474426,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 211.19999992847443,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1142.381583,
+          "resource": "sidecar",
+          "durationMs": 15.299999952316284,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 211.29999995231628,
+          "occurrence": 2
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1142.5065000000002,
+          "resource": "defaultServer",
+          "durationMs": 15.299999952316284,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 211.29999995231628,
+          "occurrence": 3
+        },
+        {
+          "seq": 17,
+          "name": "renderer.projects.connect",
+          "t": 1142.844791,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 211.69999992847443,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.shell.resource.settled",
+          "t": 1143.143708,
+          "resource": "locale",
+          "durationMs": 30,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 226,
+          "occurrence": 4
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.ready",
+          "t": 1143.3801250000001,
+          "durationMs": 30,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 226.10000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1209.6695000000002,
+          "source": "renderer",
+          "rendererNow": 292.7999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1226.372041,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 302.1999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 3685.688416,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 2768.7999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 3686.027333,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 2769,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 3686.290583,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.5,
+          "source": "renderer",
+          "rendererNow": 2769.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 3686.532791,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0.10000002384185791,
+          "source": "renderer",
+          "rendererNow": 2769.600000023842,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 3688.976041,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2.5,
+          "source": "renderer",
+          "rendererNow": 2772.100000023842,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 3703.616833,
+          "source": "renderer",
+          "rendererNow": 2778.6999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 3720.8668749999997,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 18.399999976158142,
+          "source": "renderer",
+          "rendererNow": 2790.5,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 3722.089833,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 21.600000023841858,
+          "source": "renderer",
+          "rendererNow": 2790.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 3749.610333,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 2832.6999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 3750.765333,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2833.1999999284744,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 3754.700625,
+          "barrierMs": 4.5,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2837.7999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 3757.8469999999998,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 7.800000071525574,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2841,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 11,
+      "cdpAttachment": "attached",
+      "startupMs": 3703.151792,
+      "bootReadyMs": 930.4175,
+      "catalogReady": {
+        "atMs": 3700.8885,
+        "barrierMs": 2.600000023841858,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 877.507417,
+        "outcome": "ready",
+        "durationMs": 154.29079199999995,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563745712.172
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 143.83775000000003,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 208.59050000000002,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 208.653208,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 877.507417,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 154.29079199999995,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 878.0355830000001,
+          "durationMs": 669.3809999999999,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 930.4175,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 933.0428750000001,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1118.327417,
+          "source": "renderer",
+          "rendererNow": 199.79999995231628,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1182.569583,
+          "resource": "windowCount",
+          "durationMs": 15.599999904632568,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 212.29999995231628,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1182.898208,
+          "resource": "sidecar",
+          "durationMs": 15.699999928474426,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 212.39999997615814,
+          "occurrence": 2
+        },
+        {
+          "seq": 16,
+          "name": "renderer.shell.resource.settled",
+          "t": 1183.021167,
+          "resource": "defaultServer",
+          "durationMs": 15.799999952316284,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 212.5,
+          "occurrence": 3
+        },
+        {
+          "seq": 18,
+          "name": "renderer.projects.connect",
+          "t": 1183.353417,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 212.79999995231628,
+          "occurrence": 1
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.resource.settled",
+          "t": 1183.617875,
+          "resource": "locale",
+          "durationMs": 68.19999992847443,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 264.89999997615814,
+          "occurrence": 4
+        },
+        {
+          "seq": 20,
+          "name": "renderer.shell.ready",
+          "t": 1183.694333,
+          "durationMs": 68.19999992847443,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 265,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1202.671958,
+          "source": "renderer",
+          "rendererNow": 284.2000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1219.4509170000001,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 293.89999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 3632.553792,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 2714.100000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 3632.912625,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 2714.2999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 3633.236583,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.40000009536743164,
+          "source": "renderer",
+          "rendererNow": 2714.7000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 3633.397542,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0.19999992847442627,
+          "source": "renderer",
+          "rendererNow": 2714.899999976158,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 3636.436167,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 3,
+          "source": "renderer",
+          "rendererNow": 2717.899999976158,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 3653.229583,
+          "source": "renderer",
+          "rendererNow": 2724.600000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 3671.032542,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 20.100000023841858,
+          "source": "renderer",
+          "rendererNow": 2738,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 3671.258083,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 23.700000047683716,
+          "source": "renderer",
+          "rendererNow": 2738.100000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 3697.798167,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 2779.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 3699.124292,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2779.7000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 3700.8885,
+          "barrierMs": 2.600000023841858,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2782.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 3703.151792,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 5,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2784.7000000476837,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 12,
+      "cdpAttachment": "attached",
+      "startupMs": 7213.6797910000005,
+      "bootReadyMs": 941.964958,
+      "catalogReady": {
+        "atMs": 7210.930166,
+        "barrierMs": 3,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 891.988916,
+        "outcome": "ready",
+        "durationMs": 151.94408300000003,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563750707.409
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 149.004166,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 216.895041,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 216.967333,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 891.988916,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 151.94408300000003,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 892.618416,
+          "durationMs": 675.6480000000001,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 941.964958,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 944.4215410000002,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1125.939333,
+          "source": "renderer",
+          "rendererNow": 195.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 13,
+          "name": "renderer.shell.resource.settled",
+          "t": 1142.182958,
+          "resource": "windowCount",
+          "durationMs": 15.600000023841858,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 208,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1142.325166,
+          "resource": "sidecar",
+          "durationMs": 15.600000023841858,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 208,
+          "occurrence": 2
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1142.477333,
+          "resource": "defaultServer",
+          "durationMs": 15.799999952316284,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 208.19999992847443,
+          "occurrence": 3
+        },
+        {
+          "seq": 17,
+          "name": "renderer.projects.connect",
+          "t": 1142.8415830000001,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 208.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 18,
+          "name": "renderer.shell.resource.settled",
+          "t": 1143.014625,
+          "resource": "locale",
+          "durationMs": 20,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 212.39999997615814,
+          "occurrence": 4
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.ready",
+          "t": 1143.090083,
+          "durationMs": 20,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 212.39999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1208.234875,
+          "source": "renderer",
+          "rendererNow": 277.7999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1225.426791,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 287,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 7139.109083,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 6208.699999928474,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 7139.473666,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 6208.899999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 7139.729375,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.3999999761581421,
+          "source": "renderer",
+          "rendererNow": 6209.299999952316,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 7139.901,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0.20000004768371582,
+          "source": "renderer",
+          "rendererNow": 6209.5,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 7142.353333,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2.399999976158142,
+          "source": "renderer",
+          "rendererNow": 6211.899999976158,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 7162.68425,
+          "source": "renderer",
+          "rendererNow": 6218.199999928474,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 7178.2955,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 23.799999952316284,
+          "source": "renderer",
+          "rendererNow": 6235.699999928474,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 7178.885833,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 26.799999952316284,
+          "source": "renderer",
+          "rendererNow": 6235.699999928474,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 7207.548958,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 6277.100000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 7208.595791000001,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 6277.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 7210.930166,
+          "barrierMs": 3,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 6280.5,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 7213.6797910000005,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 5.899999976158142,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 6283.299999952316,
+          "occurrence": 1
+        }
+      ]
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 13,
+      "cdpAttachment": "attached",
+      "startupMs": 3732.603458,
+      "bootReadyMs": 934.702375,
+      "catalogReady": {
+        "atMs": 3730.3673750000003,
+        "barrierMs": 11.100000023841858,
+        "probes": 1,
+        "pollWaits": 0,
+        "wake": "first"
+      },
+      "prewarm": {
+        "atMs": 885.426875,
+        "outcome": "ready",
+        "durationMs": 152.60116700000003,
+        "status": 200
+      },
+      "grace": "not-applicable",
+      "rotations": 0,
+      "reloads": 0,
+      "mounts": 1,
+      "composerMounts": 1,
+      "auth": {
+        "status": "logged-out",
+        "mode": "byok"
+      },
+      "unavailableVisible": false,
+      "modelSet": {
+        "firstEventCount": 2,
+        "firstCount": 2,
+        "firstSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "hotCount": 2,
+        "hotSha256": "not-computed:req1053-skipped-reload-hot-recheck",
+        "equal": true,
+        "accountRequests": 0,
+        "bearerRequests": 0
+      },
+      "secretHygiene": {
+        "authMode": null,
+        "tokenInTimeline": false,
+        "refreshTokenInTimeline": false,
+        "tokenInProcessEnv": false,
+        "tokenInAuthState": false,
+        "tokenInRendererSurface": false,
+        "byokKeyInTimeline": false,
+        "byokKeyInAuthState": false,
+        "byokKeyInRendererSurface": false
+      },
+      "events": [
+        {
+          "seq": 1,
+          "name": "main.timeline.epoch",
+          "t": 0,
+          "epoch": "main-module-load",
+          "timeOrigin": 1787563759192.607
+        },
+        {
+          "seq": 3,
+          "name": "main.auth.boot.token_check",
+          "t": 140.81758299999998,
+          "expired": false
+        },
+        {
+          "seq": 4,
+          "name": "main.sidecar.generation.emit",
+          "t": 221.26775,
+          "generation": 1,
+          "phase": "recovering",
+          "reason": "boot"
+        },
+        {
+          "seq": 5,
+          "name": "main.sidecar.boot.fork.start",
+          "t": 221.335792,
+          "generation": 1
+        },
+        {
+          "seq": 6,
+          "name": "main.sidecar.ready_ipc",
+          "t": 885.426875,
+          "context": "boot",
+          "prewarmOutcome": "ready",
+          "prewarmMs": 152.60116700000003,
+          "prewarmStatus": 200
+        },
+        {
+          "seq": 7,
+          "name": "main.sidecar.boot.fork.end",
+          "t": 885.954875,
+          "durationMs": 664.618334,
+          "generation": 1,
+          "outcome": "ok"
+        },
+        {
+          "seq": 9,
+          "name": "main.sidecar.generation.emit",
+          "t": 934.702375,
+          "generation": 1,
+          "phase": "ready",
+          "reason": "boot"
+        },
+        {
+          "seq": 10,
+          "name": "main.sidecar.catalog_liveness.confirmed",
+          "t": 937.273583,
+          "generation": 1,
+          "directory": "/Users/tide/Alpha",
+          "elapsedMs": 2,
+          "probes": 1
+        },
+        {
+          "seq": 11,
+          "name": "renderer.root.mount",
+          "t": 1117.9502499999999,
+          "source": "renderer",
+          "rendererNow": 195.60000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 14,
+          "name": "renderer.shell.resource.settled",
+          "t": 1178.27875,
+          "resource": "windowCount",
+          "durationMs": 14.700000047683716,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 207.10000002384186,
+          "occurrence": 1
+        },
+        {
+          "seq": 15,
+          "name": "renderer.shell.resource.settled",
+          "t": 1178.652875,
+          "resource": "sidecar",
+          "durationMs": 14.800000071525574,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 207.20000004768372,
+          "occurrence": 2
+        },
+        {
+          "seq": 16,
+          "name": "renderer.shell.resource.settled",
+          "t": 1178.785083,
+          "resource": "defaultServer",
+          "durationMs": 15.300000071525574,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 207.70000004768372,
+          "occurrence": 3
+        },
+        {
+          "seq": 18,
+          "name": "renderer.projects.connect",
+          "t": 1179.132917,
+          "reason": "generation-event",
+          "generation": 1,
+          "source": "renderer",
+          "rendererNow": 207.89999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 19,
+          "name": "renderer.shell.resource.settled",
+          "t": 1179.377333,
+          "resource": "locale",
+          "durationMs": 64.39999997615814,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 256.7999999523163,
+          "occurrence": 4
+        },
+        {
+          "seq": 20,
+          "name": "renderer.shell.ready",
+          "t": 1179.464583,
+          "durationMs": 64.39999997615814,
+          "resources": 4,
+          "source": "renderer",
+          "rendererNow": 256.7999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 21,
+          "name": "renderer.sidebar.setup",
+          "t": 1197.1425,
+          "source": "renderer",
+          "rendererNow": 274.7999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 22,
+          "name": "renderer.home.surface.setup",
+          "t": 1213.62025,
+          "composerPending": true,
+          "source": "renderer",
+          "rendererNow": 283.89999997615814,
+          "occurrence": 1
+        },
+        {
+          "seq": 23,
+          "name": "renderer.projects.store_ready",
+          "t": 3673.106292,
+          "projects": 1,
+          "source": "renderer",
+          "rendererNow": 2750.7000000476837,
+          "occurrence": 1
+        },
+        {
+          "seq": 24,
+          "name": "renderer.launch_draft.start",
+          "t": 3673.4550830000003,
+          "trigger": "launch",
+          "source": "renderer",
+          "rendererNow": 2751,
+          "occurrence": 1
+        },
+        {
+          "seq": 25,
+          "name": "renderer.launch_draft.step",
+          "t": 3673.856542,
+          "step": "tabs_ready",
+          "outcome": "ok",
+          "durationMs": 0.3999999761581421,
+          "source": "renderer",
+          "rendererNow": 2751.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 26,
+          "name": "renderer.launch_draft.step",
+          "t": 3674.0900420000003,
+          "step": "resolve_target",
+          "outcome": "default-workspace",
+          "durationMs": 0.10000002384185791,
+          "source": "renderer",
+          "rendererNow": 2751.5,
+          "occurrence": 2
+        },
+        {
+          "seq": 27,
+          "name": "renderer.launch_draft.step",
+          "t": 3676.4449170000003,
+          "step": "ensure_workspace",
+          "outcome": "ok",
+          "durationMs": 2.600000023841858,
+          "source": "renderer",
+          "rendererNow": 2754.100000023842,
+          "occurrence": 3
+        },
+        {
+          "seq": 28,
+          "name": "renderer.new_session.surface.setup",
+          "t": 3685.3929580000004,
+          "source": "renderer",
+          "rendererNow": 2760.7999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 29,
+          "name": "renderer.launch_draft.step",
+          "t": 3702.117917,
+          "step": "new_draft",
+          "outcome": "ok",
+          "durationMs": 14.899999976158142,
+          "source": "renderer",
+          "rendererNow": 2769.100000023842,
+          "occurrence": 4
+        },
+        {
+          "seq": 30,
+          "name": "renderer.launch_draft.end",
+          "t": 3702.4609170000003,
+          "trigger": "launch",
+          "outcome": "navigated",
+          "durationMs": 18.100000023841858,
+          "source": "renderer",
+          "rendererNow": 2769.100000023842,
+          "occurrence": 1
+        },
+        {
+          "seq": 31,
+          "name": "renderer.composer.mount",
+          "t": 3718.729917,
+          "mode": "home",
+          "source": "renderer",
+          "rendererNow": 2796.399999976158,
+          "occurrence": 1
+        },
+        {
+          "seq": 32,
+          "name": "renderer.home.model_list.start",
+          "t": 3719.88425,
+          "attempt": 1,
+          "chain": 1,
+          "source": "renderer",
+          "rendererNow": 2796.7999999523163,
+          "occurrence": 1
+        },
+        {
+          "seq": 33,
+          "name": "renderer.home.catalog_ready",
+          "t": 3730.3673750000003,
+          "barrierMs": 11.100000023841858,
+          "probes": 1,
+          "pollWaits": 0,
+          "probeTimeouts": 0,
+          "wake": "first",
+          "source": "renderer",
+          "rendererNow": 2808,
+          "occurrence": 1
+        },
+        {
+          "seq": 34,
+          "name": "renderer.home.model_list.end",
+          "t": 3732.603458,
+          "attempt": 1,
+          "chain": 1,
+          "count": 2,
+          "durationMs": 13.5,
+          "outcome": "ok",
+          "source": "renderer",
+          "rendererNow": 2810.2999999523163,
+          "occurrence": 1
+        }
+      ]
+    }
+  ],
+  "serverFacts": [
+    {
+      "scenario": "byok-only",
+      "sample": 1,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 2,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 3,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 4,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 5,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 6,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 7,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 8,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 9,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 10,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 11,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 12,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    },
+    {
+      "scenario": "byok-only",
+      "sample": 13,
+      "request": "catalog",
+      "credentialGeneration": "missing"
+    }
+  ]
+}
