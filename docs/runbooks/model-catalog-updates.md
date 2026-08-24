@@ -83,3 +83,7 @@ review_after: 2026-10-30
   (见 [engine-config-channels](../contracts/engine-config-channels.md)),
   本 runbook 的改动**不需要**碰引擎配置。
 - preview/实验模型在展示名里带 "Preview" 字样,避免用户当正式版依赖。
+- **同步失败现在有出口**(#1084):`GET /v1/models` 拉不下来时,窗口顶部会出现一条
+  warning 横幅,带平台给的分类码(`rate_limited` / `unauthorized` / `http-503` …)。
+  排障时先看它 —— 此前这类失败完全静默,只能去翻 main 日志。下一次同步成功横幅自动消失。
+  刷新点仍然只有启动与登录后 respawn 前两处(「打开 picker 不刷新」是既存缺陷,未修)。

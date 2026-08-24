@@ -106,6 +106,7 @@ import type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wi
 import { initEndpoints } from "./alpha-endpoints"
 import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
 import { registerContractHealthIpcHandlers, reportContractFailure } from "./alpha-contract-health"
+import { registerCatalogHealthIpcHandlers } from "./alpha-catalog-health"
 import { registerSurfaceIpc } from "./alpha-surfaces"
 import { createRecoveryService, type RecoveryService } from "./recovery-service"
 import { registerRecoveryIpcHandlers } from "./recovery-ipc"
@@ -737,6 +738,7 @@ const main = Effect.gen(function* () {
   injectByokKeysIntoEnv()
   // REQ-001:异步同步 B 网关 edition 白名单缓存(fire-and-forget,不阻塞窗口/首个 fork——B1 纪律)。
   // 首启无缓存 → 本次 fork 用内置 snapshot;同步成功后 picker 立即收窄,装配随下次 fork/respawn 生效。
+  // 这里的 catch 只吞 rejection;分类失败已由 syncLiveAllowlist 自己送到 alpha-catalog-health(#1084)。
   void syncLiveAllowlist(app.getPath("userData")).catch(() => {})
 
   if (!TEST_ONBOARDING) migrate()
@@ -936,6 +938,8 @@ const main = Effect.gen(function* () {
   registerProviderIpcHandlers()
   registerEndpointsIpcHandlers()
   registerContractHealthIpcHandlers(() => mainWindow)
+  // #1084:平台目录刷新失败的出口(启动那次刷新跑在本行之前 —— 所以它靠 invoke 取,不靠推送)。
+  registerCatalogHealthIpcHandlers(() => mainWindow)
   const recovery = recoveryService
   if (!recovery) throw new Error("Recovery service is unavailable")
   const recoveryIpc = registerRecoveryIpcHandlers(recovery)

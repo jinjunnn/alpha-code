@@ -1098,6 +1098,8 @@ export const dict = {
   "alpha.model.accountUnavailable": "账户状态暂不可用",
   "alpha.model.listLoading": "模型加载中",
   "alpha.model.listUnavailable": "模型列表暂不可用",
+  "alpha.model.refreshFailedTitle": "代理节点模型清单刷新失败",
+  "alpha.model.refreshFailedDetail": "当前显示的是上次拿到的清单;自带 KEY 的节点不受影响。原因:{{code}}",
   "alpha.model.syncing": "正在同步…",
   "alpha.model.pricingPair": "输入 {{input}}× · 输出 {{output}}×",
   "alpha.model.pricingUnavailable": "计价信息暂不可用",

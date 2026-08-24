@@ -105,6 +105,17 @@ export type EffectiveCatalog = AlphaModelCatalog & {
   pricingBasisModelId: string | null
 }
 
+/** #1084:平台模型目录**刷新**的失败结局(main → renderer 的可观察出口)。
+ *  `code` 是 `fetchPlatformModels()` 已经算出来的稳定分类码(`rate_limited` / `unauthorized` /
+ *  `http-503` / `network` / `contract-incompatible` …),或落盘侧的 `snapshot-rejected` /
+ *  `cache-write-failed`。**不是散文** —— 散文槽随时会变、可能带租户信息,不进 UI。
+ *  刷新成功 ⇒ 整个值为 `null`(出口清空)。 */
+export type CatalogRefreshFailure = {
+  code: string
+  /** ISO 时间戳:同一个码连续失败时,用户仍看得出「刚刚又失败了一次」。 */
+  at: string
+}
+
 // ── custom-provider add/test IPC (window.api.providers.*) ───────────────────────────────────────
 
 export type ProviderInput = {

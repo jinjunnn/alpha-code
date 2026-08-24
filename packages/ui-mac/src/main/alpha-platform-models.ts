@@ -19,6 +19,10 @@
 // alpha-models.json 决定。失败域也随之隔离:平台目录契约不兼容经 reportContractFailure 独立上报
 // (renderer Banner 的 a-contract-failure 面),**不得**再让 models-catalog IPC 整体失败 ——
 // 那会连本地 BYOK 一起阵亡。契约:docs/contracts/byok-availability.md。
+//
+// #1084(#987 CHOICE=A / DECIDE #1078):syncLiveAllowlist 的**每一条**出路都经 reportCatalogRefresh
+// 落到用户可观察出口(alpha-catalog-health → renderer Banner)。此前分类码只到函数返回值为止,
+// 三个刷新入口没有一个消费它 —— 「失败处理」写得再好,用户永远看不到。
 import { resolveEndpoints } from "./alpha-endpoints"
 import { httpErrorCode } from "./platform-error-code"
 import { ContractIncompatibleError, decodeJsonContract, isContractIncompatibleError } from "@alpha-code/contracts-consumer"
@@ -30,6 +34,7 @@ import type { EffectiveCatalog } from "../shared/alpha-model-types"
 import { getModelCatalog } from "./alpha-models"
 import { isTrustedPair, projectPlatformModels, readCatalogSnapshot, writeCatalogSnapshot } from "./alpha-live-allowlist"
 import { reportContractFailure } from "./alpha-contract-health"
+import { reportCatalogRefresh } from "./alpha-catalog-health"
 
 export type PlatformModelsResult = CloudResult<{
   models: PlatformLiveModel[]
@@ -87,7 +92,13 @@ export async function fetchPlatformModels(): Promise<PlatformModelsResult> {
 let syncedThisSession = false
 export async function syncLiveAllowlist(userDataPath: string): Promise<PlatformModelsResult> {
   const r = await fetchPlatformModels()
-  if ("error" in r) return r
+  // #1084(#987 CHOICE=A):刷新结局在**这里**落到用户可观察出口 —— 三个刷新入口(启动、登录后
+  // respawn 前、models-platform-live IPC)共用本函数,所以调用点上的 `.catch(() => {})` 再也吞不掉
+  // 分类码。成功走到末尾清空出口;下面每一条提前返回都必须先上报,否则那条路径又变回静默。
+  if ("error" in r) {
+    reportCatalogRefresh(r.error)
+    return r
+  }
   try {
     // writeCatalogSnapshot 再校验一次同一份判据后才落盘 —— 写侧与读侧共用一个校验函数,
     // 「什么算有效缓存」在本仓只有一份定义。
@@ -99,6 +110,8 @@ export async function syncLiveAllowlist(userDataPath: string): Promise<PlatformM
     })
     if (!written) {
       getLogger().warn("alpha-platform-models: refusing to overwrite last-known-good with an invalid snapshot")
+      // 拉到了,但那份快照过不了落盘侧的同一份判据 ⇒ 用户看到的目录仍是旧的。这也是刷新失败。
+      reportCatalogRefresh("snapshot-rejected")
       return r
     }
     syncedThisSession = true
@@ -107,8 +120,10 @@ export async function syncLiveAllowlist(userDataPath: string): Promise<PlatformM
       models: r.models.length,
       pricingBasisModelId: r.pricingBasisModelId,
     })
+    reportCatalogRefresh(null)
   } catch (error) {
     getLogger().warn("alpha-platform-models: cache write failed", error)
+    reportCatalogRefresh("cache-write-failed")
   }
   return r
 }

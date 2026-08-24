@@ -1120,6 +1120,10 @@ export const dict = {
   "alpha.model.accountUnavailable": "Account status unavailable",
   "alpha.model.listLoading": "Models loading",
   "alpha.model.listUnavailable": "Model list unavailable",
+  // #1084:平台模型目录刷新失败的横幅。code 是平台的稳定分类码,用户报障时贴得出来。
+  "alpha.model.refreshFailedTitle": "Proxy model list could not be refreshed",
+  "alpha.model.refreshFailedDetail":
+    "Showing the last known list. Your own API keys are unaffected. Reason: {{code}}",
   "alpha.model.syncing": "Syncing…",
   "alpha.model.pricingPair": "In {{input}}× · Out {{output}}×",
   "alpha.model.pricingUnavailable": "Pricing unavailable",
