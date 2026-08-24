@@ -98,6 +98,7 @@ import {
   resetCatalogLiveness,
   resolveCatalogProbeDirectory,
   probeCatalogMarker,
+  startCatalogLivenessProbes,
 } from "./catalog-liveness"
 import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
 // #408:session-grant 生命周期接线(会话边界 = sidecar 运行期;栅栏语义见 ext-session-grants.ts)。
@@ -1026,7 +1027,9 @@ const main = Effect.gen(function* () {
       return
     }
     catalogLiveness = armCatalogLiveness(catalogLiveness, Date.now())
-    catalogLivenessTimer = setInterval(() => {
+    // #1098:立刻巡查一次再进周期 —— 裸 setInterval 的首触发在 t=interval,
+    // 头 5 秒一次巡查都不发(deadline / strike 上界一个没动,见 catalog-liveness.ts)。
+    catalogLivenessTimer = startCatalogLivenessProbes(() => {
       if (gen !== sidecarGen || !server) {
         stopCatalogLivenessWatchdog()
         return
