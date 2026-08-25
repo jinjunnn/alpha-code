@@ -135,6 +135,17 @@ describe("`#733` 生产注入面(真 injectAlphaConfig / 真密钥文件 / 真 e
     process.env.ALPHA_GLOBAL_DIR = path.join(tmp, "global")
     plantSecret("ALPHA_CLOUD_TOKEN", "SECRET-CLOUD-TOKEN-VALUE")
     process.env.ALPHA_CLOUD_MCP_URL = CLOUD_URL
+    // `#1106` 起注入面会读引擎的 `<engineData>/mcp-auth.json`(engineDataDir 先看 XDG_DATA_HOME)。
+    // 不钉住它,这批测试就在读**开发机的真实凭证库** —— 结果随机器登录状态翻转。
+    // 本 describe 的既有用例写的是「平台代付的正常注入形状」,所以默认夹具 = 已授权
+    // (tokens 在且 serverUrl 匹配);doomed 各臂在下面 `#1106` 的 describe 里各自摆夹具。
+    process.env.XDG_DATA_HOME = path.join(tmp, "xdg-data")
+    const engineData = path.join(tmp, "xdg-data", "opencode")
+    fs.mkdirSync(engineData, { recursive: true })
+    fs.writeFileSync(
+      path.join(engineData, "mcp-auth.json"),
+      JSON.stringify({ cloud: { serverUrl: CLOUD_URL, tokens: { accessToken: "authorized" } } }),
+    )
   })
 
   afterEach(() => {
@@ -243,5 +254,120 @@ describe("`#733` 生产注入面(真 injectAlphaConfig / 真密钥文件 / 真 e
     expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
     const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!) as { permission?: Record<string, unknown> }
     expect(config.permission?.websearch).toBe("deny")
+  })
+})
+
+// ── `#1106`:注定 `needs_auth` 的云 server 不再挡引擎 boot ─────────────────────────────────
+//
+// owner 日志实测(2026-08-24,27 次令牌轮换 boot):每一次 1.79–9.67s 的阻塞段都以
+// `server unavailable key=cloud status=needs_auth` 收尾 —— 无凭证的云连接是唯一关键路径,
+// 而「有没有凭证」在 fork 前的 `<engineData>/mcp-auth.json` 里就已确定。
+// 注入面据此在 doomed 时写 `enabled:false`(引擎 `MCP.create` 对它零等待直接 disabled)。
+// 这里跑**真 injectAlphaConfig**,夹具逐臂摆引擎凭证库的真实形状。
+// **反向判据(票面 AC3 的单元级)**:把注入面的 doom 分支摘掉(恢复无条件 `cloud`),
+// 下面第一、二条当场红。
+describe("`#1106` doomed 云 server 的注入形状(真 injectAlphaConfig / 真 mcp-auth.json 夹具)", () => {
+  let tmp: string
+  let userData: string
+  let engineData: string
+  const saved = { ...process.env }
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ac1106-"))
+    userData = path.join(tmp, "userData")
+    fs.mkdirSync(path.join(userData, "alpha-secrets"), { recursive: true })
+    fs.writeFileSync(path.join(userData, "alpha-secrets", "ALPHA_CLOUD_TOKEN"), "SECRET", { mode: 0o600 })
+    for (const key of Object.keys(process.env)) if (key.startsWith("ALPHA_") || key.startsWith("OPENCODE_")) delete process.env[key]
+    process.env.ALPHA_JSONC_TRUTH_DISABLE = "1"
+    process.env.ALPHA_GLOBAL_DIR = path.join(tmp, "global")
+    process.env.ALPHA_CLOUD_MCP_URL = CLOUD_URL
+    process.env.XDG_DATA_HOME = path.join(tmp, "xdg-data")
+    engineData = path.join(tmp, "xdg-data", "opencode")
+    fs.mkdirSync(engineData, { recursive: true })
+  })
+
+  afterEach(() => {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]
+    Object.assign(process.env, saved)
+    fs.rmSync(tmp, { recursive: true, force: true })
+  })
+
+  const plantAuth = (data: unknown) => {
+    fs.writeFileSync(path.join(engineData, "mcp-auth.json"), typeof data === "string" ? data : JSON.stringify(data))
+  }
+  const injectedCloud = () => {
+    const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!) as { mcp?: Record<string, unknown> }
+    return config.mcp?.cloud as Record<string, unknown> | undefined
+  }
+
+  test("从未授权(mcp-auth.json 不存在)⇒ 注入 enabled:false,其余字段与真定义逐字相同", () => {
+    expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
+    const cloud = injectedCloud()
+    // 引擎自己的解码器判合法 —— enabled:false 的 Remote 是 schema 合法条目,boot 时
+    // `MCP.create` 对它直接 DISABLED_RESULT(零连接、零等待)。
+    const decoded = Schema.decodeUnknownSync(EngineRemoteSchema)(cloud)
+    expect(decoded.enabled).toBe(false)
+    // **只**翻 enabled 这一位:url/oauth 原样 ⇒ `getMcpConfig` 落到这份原始 config,
+    // `/mcp/cloud/auth/authenticate` 与 `/connect` 照常可用(授权补救入口不许被顺手关掉)。
+    expect(cloud).toEqual({ ...materializeCloudMcpConfig(CLOUD_URL), enabled: false })
+  })
+
+  test("owner 机器的真实形状(codeVerifier/oauthState/serverUrl 在、tokens 缺)⇒ enabled:false", () => {
+    plantAuth({ cloud: { codeVerifier: "v", oauthState: "s", serverUrl: CLOUD_URL } })
+    expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
+    expect(injectedCloud()?.enabled).toBe(false)
+  })
+
+  test("已授权(tokens 在且 serverUrl 匹配)⇒ 注入形状与今天逐字节相同(enabled:true)", () => {
+    plantAuth({ cloud: { serverUrl: CLOUD_URL, tokens: { accessToken: "tok" } } })
+    expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
+    expect(injectedCloud()).toEqual({ ...materializeCloudMcpConfig(CLOUD_URL) })
+  })
+
+  test("tokens 在但 serverUrl 不匹配 ⇒ doomed(镜像引擎 getForUrl 的 URL 绑定)", () => {
+    plantAuth({ cloud: { serverUrl: "https://old.example/mcp", tokens: { accessToken: "tok" } } })
+    expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
+    expect(injectedCloud()?.enabled).toBe(false)
+  })
+
+  test("doomed 不改 DEF/SERVER env 通道:ext 拿到的仍是 enabled:true 的真定义", () => {
+    // ext 的端点身份核验(alpha-cloud-authority isGovernedMcpEntry)与 kill-switch 写回
+    // 都消费 DEF —— 它是治理身份通道,不是 boot 行为通道,不许被 doom 判定牵连。
+    expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
+    expect(injectedCloud()?.enabled).toBe(false)
+    const def = JSON.parse(process.env[CLOUD_MCP_DEF_ENV]!) as Record<string, unknown>
+    expect(def).toEqual({ ...materializeCloudMcpConfig(CLOUD_URL) })
+    expect(process.env.ALPHA_CLOUD_MCP_SERVER).toBe("cloud")
+  })
+
+  test("kill-switch 优先:doomed 也不改 WITHHELD 分支的形状", () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    const errors: unknown[] = []
+    const original = console.error
+    console.error = (...args: unknown[]) => void errors.push(args)
+    try {
+      expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
+    } finally {
+      console.error = original
+    }
+    // WITHHELD 本身就是 enabled:false 的中和条目(127.0.0.1:1)—— doom 判定不得把真 URL 放回去。
+    expect(injectedCloud()).toEqual({
+      type: "remote",
+      url: "http://127.0.0.1:1/alpha-cloud-withheld",
+      enabled: false,
+      oauth: false,
+    })
+  })
+
+  test("mcp-auth.json 在但读不了 ⇒ fail-open 到今天的形状(enabled:true)", () => {
+    if (process.getuid?.() === 0) return // root 无视权限位
+    plantAuth({ cloud: { serverUrl: CLOUD_URL, tokens: { accessToken: "tok" } } })
+    fs.chmodSync(path.join(engineData, "mcp-auth.json"), 0o000)
+    try {
+      expect(injectAlphaConfig(userData, undefined, "stable")).toEqual({ ok: true })
+      expect(injectedCloud()?.enabled).toBe(true)
+    } finally {
+      fs.chmodSync(path.join(engineData, "mcp-auth.json"), 0o600)
+    }
   })
 })

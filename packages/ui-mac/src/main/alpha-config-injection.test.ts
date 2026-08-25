@@ -69,6 +69,9 @@ const MANAGED = [
   "OPENCODE_ENABLE_EXA",
   "OPENCODE_EXPERIMENTAL",
   "ALPHA_CLOUD_MCP_URL",
+  // `#1106`:注入面读引擎凭证库 `<engineData>/mcp-auth.json` 判云连接是否注定 needs_auth,
+  // 而 engineDataDir 先看 XDG_DATA_HOME —— 不钉住它,断言就在读宿主机的真实凭证库。
+  "XDG_DATA_HOME",
   // #223 R4/R5:注入面自己置位/删除的 ext 装载握手通道 + 云 server 身份(输出之三)。
   "ALPHA_CLOUD_MCP_ARM",
   "ALPHA_CLOUD_MCP_DEF",
@@ -105,7 +108,10 @@ beforeEach(() => {
   // 宿主机 ~/.config/opencode 与 ~/.opencode 不得渗进断言。
   process.env.XDG_CONFIG_HOME = path.join(tmp, "xdg")
   process.env.ALPHA_OPENCODE_HOME = path.join(tmp, "opencode-home")
-  for (const d of [process.env.XDG_CONFIG_HOME, process.env.ALPHA_OPENCODE_HOME]) fs.mkdirSync(d, { recursive: true })
+  // `#1106`:引擎数据目录(mcp-auth.json 的家)同样钉进 tmp —— 默认无凭证库文件。
+  process.env.XDG_DATA_HOME = path.join(tmp, "xdg-data")
+  for (const d of [process.env.XDG_CONFIG_HOME, process.env.ALPHA_OPENCODE_HOME, process.env.XDG_DATA_HOME])
+    fs.mkdirSync(d, { recursive: true })
   userData = path.join(tmp, "userdata")
   fs.mkdirSync(userData, { recursive: true })
 })
@@ -395,11 +401,19 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
 // 这里跑的是**真实生产 composition**(真 injectAlphaConfig、真密钥文件、真 env),
 // 不预置 config.permission。
 describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
-  /** main 侧 syncSecretFiles 落盘的登录态 + 主权闸对四个 keyless flag 的 force-off。 */
+  /** main 侧 syncSecretFiles 落盘的登录态 + 主权闸对四个 keyless flag 的 force-off。
+   *  `#1106`:连带把引擎凭证库摆成「云 MCP 已授权」—— 本 describe 写的是代付**正常态**的
+   *  主权判决;无凭证(doomed ⇒ enabled:false)各臂归 cloud-mcp-oauth.test.ts。 */
   const givenPlatformPaysUnderUmbrella = () => {
     givenLoggedInWithByok()
     plantSecret("ALPHA_CLOUD_TOKEN", "cloud-token")
     process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
+    const engineData = path.join(process.env.XDG_DATA_HOME!, "opencode")
+    fs.mkdirSync(engineData, { recursive: true })
+    fs.writeFileSync(
+      path.join(engineData, "mcp-auth.json"),
+      JSON.stringify({ cloud: { serverUrl: "https://cloud.example/mcp", tokens: { accessToken: "authorized" } } }),
+    )
     process.env.OPENCODE_EXPERIMENTAL = "1" // 用户 shell 的真 export —— env 层压不掉
     process.env.OPENCODE_ENABLE_EXA = "0" // 主权闸已经写过 "0",仍不足以关闭工具
   }
