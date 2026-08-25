@@ -1,0 +1,129 @@
+{
+  "workdir": "/private/tmp/claude-501/-Users-tide-app-alpha-work/56b887cb-21b9-4b80-a628-061484e36e1e/scratchpad/ac1108/selftest",
+  "ok": true,
+  "samples": [
+    {
+      "sample": "correct",
+      "expected": "GREEN",
+      "observed": "GREEN",
+      "asExpected": true,
+      "redChecks": []
+    },
+    {
+      "sample": "empty-file",
+      "expected": "RED",
+      "observed": "RED",
+      "asExpected": true,
+      "redChecks": [
+        "readable"
+      ]
+    },
+    {
+      "sample": "not-a-zip",
+      "expected": "RED",
+      "observed": "RED",
+      "asExpected": true,
+      "redChecks": [
+        "readable"
+      ]
+    },
+    {
+      "sample": "empty-workbook",
+      "expected": "RED",
+      "observed": "RED",
+      "asExpected": true,
+      "redChecks": [
+        "cell:AC4Ledger!A1",
+        "cell:AC4Ledger!B1",
+        "cell:AC4Ledger!A2",
+        "cell:AC4Ledger!B2",
+        "cell:AC4Ledger!A3",
+        "cell:AC4Ledger!B3",
+        "cell:AC4Structure!A1",
+        "kind:AC4Ledger!A1",
+        "kind:AC4Ledger!B2",
+        "kind:AC4Ledger!B3",
+        "kind:AC4Structure!A1"
+      ]
+    },
+    {
+      "sample": "wrong-cell-value",
+      "expected": "RED",
+      "observed": "RED",
+      "asExpected": true,
+      "redChecks": [
+        "cell:AC4Ledger!B2"
+      ]
+    },
+    {
+      "sample": "number-as-text",
+      "expected": "RED",
+      "observed": "RED",
+      "asExpected": true,
+      "redChecks": [
+        "cell:AC4Ledger!B2",
+        "kind:AC4Ledger!B2"
+      ]
+    },
+    {
+      "sample": "bool-as-number",
+      "expected": "RED",
+      "observed": "RED",
+      "asExpected": true,
+      "redChecks": [
+        "cell:AC4Ledger!B3",
+        "kind:AC4Ledger!B3"
+      ]
+    },
+    {
+      "sample": "missing-second-sheet",
+      "expected": "RED",
+      "observed": "RED",
+      "asExpected": true,
+      "redChecks": [
+        "sheetNamesInOrder",
+        "worksheetPartCount",
+        "cell:AC4Structure!A1",
+        "kind:AC4Structure!A1"
+      ]
+    },
+    {
+      "sample": "default-sheet-left",
+      "expected": "RED",
+      "observed": "RED",
+      "asExpected": true,
+      "redChecks": [
+        "sheetNamesInOrder",
+        "absentSheetNames",
+        "worksheetPartCount"
+      ]
+    },
+    {
+      "sample": "sheet-order-swapped",
+      "expected": "RED",
+      "observed": "RED",
+      "asExpected": true,
+      "redChecks": [
+        "sheetNamesInOrder"
+      ]
+    },
+    {
+      "sample": "renamed-sheet",
+      "expected": "RED",
+      "observed": "RED",
+      "asExpected": true,
+      "redChecks": [
+        "sheetNamesInOrder",
+        "cell:AC4Ledger!A1",
+        "cell:AC4Ledger!B1",
+        "cell:AC4Ledger!A2",
+        "cell:AC4Ledger!B2",
+        "cell:AC4Ledger!A3",
+        "cell:AC4Ledger!B3",
+        "kind:AC4Ledger!A1",
+        "kind:AC4Ledger!B2",
+        "kind:AC4Ledger!B3"
+      ]
+    }
+  ]
+}
