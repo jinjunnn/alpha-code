@@ -615,6 +615,9 @@ export const dict = {
   "alpha.ext.detailSecrets": "所需密钥",
   "alpha.ext.detailVersion": "版本",
   "alpha.ext.detailLicense": "许可证",
+  // REQ-105(#319):版本命名的是 catalog 卡片,这一条命名的是这次安装真正执行的字节。
+  "alpha.ext.detailArtifactDigest": "构件摘要",
+  "alpha.ext.detailArtifactDigestUnrecorded": "未记录",
   "alpha.ext.packageType": "扩展包",
   "alpha.ext.packageSourceRemote": "已验证的远程目录",
   "alpha.ext.packageSourceCache": "已验证的目录缓存",

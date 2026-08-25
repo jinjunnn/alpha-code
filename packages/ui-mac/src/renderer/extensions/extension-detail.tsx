@@ -16,6 +16,7 @@ import { ExtGrantedCapRow } from "./ext-authz"
 import { inventoryRowFor, inventoryInstallRow, ownershipRows, trustRows, runtimeSurfaceLabelKey, supportTierLabelKey, type PresentRow } from "./ext-inventory-present"
 import { derivePackFacts, formatPackBytes } from "./ext-pack-facts"
 import { officeAdvisoryFor, retiredCommunityOfficeFor, type OfficeAdvisory } from "../../shared/office-advisories"
+import { receiptArtifactFacts } from "../../shared/receipt-artifact-facts"
 // #397 PR-B:策展呈现(签名摘要真源;curated 整段切换,uncurated 走旧真源,两真源不混排)。
 import { CAPABILITY_LABEL_KEYS, SHELF_CHIP_KEYS, curatedOf, foldDomains, isArchived, isExpired, isSessionGrant } from "./ext-curation-view"
 import type { SessionToggleView } from "./ext-session-toggle"
@@ -387,6 +388,9 @@ export function ExtensionDetail(props: {
     if (e) return props.ext.isInstalled(e)
     return !!receipt()
   })
+  // REQ-105(#319):安装后头部同时说两件事 —— 卡片版本(receipt 记的那个,不是 catalog 当前的)
+  // 与**执行物**内容地址。digest 只来自 receipt;renderer 不推导、不回退 catalog、不自算。
+  const artifactFacts = createMemo(() => receiptArtifactFacts(receipt()))
   const mcpLive = () => {
     const e = entry()
     return e?.type === "mcp" ? props.ext.store.mcp[e.name] : undefined
@@ -644,6 +648,16 @@ export function ExtensionDetail(props: {
             <Show when={entry()}>
               <span>
                 {t("alpha.ext.detailVersion")} {receipt()?.version ?? props.catalogVersion}
+              </span>
+            </Show>
+            {/* REQ-105(#319):已安装项必须能说出它执行的是哪一份字节。没记就说「未记录」——
+                空着或拿 catalog 的数字顶上,就是把未验证的东西说成已审计(AC5)。 */}
+            <Show when={installed()}>
+              <span data-artifact-digest={artifactFacts().digest ?? ""}>
+                {t("alpha.ext.detailArtifactDigest")}{" "}
+                <code class="alpha-ext-dhead-id" title={artifactFacts().digest ?? undefined}>
+                  {artifactFacts().digestShort ?? t("alpha.ext.detailArtifactDigestUnrecorded")}
+                </code>
               </span>
             </Show>
             <Show when={installed()}>

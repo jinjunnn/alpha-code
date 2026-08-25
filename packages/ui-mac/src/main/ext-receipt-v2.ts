@@ -789,7 +789,10 @@ export function lookupForUninstall(root: string, kind: InstallReceiptType, name:
   return { status: "absent" }
 }
 
-/** v2 record → v1 兼容 receipt(回滚可读视图;字段有损但 v1 语义完整)。 */
+/** v2 record → v1 兼容 receipt(回滚可读视图;字段有损但 v1 语义完整)。
+ *  REQ-105(#319):`payloadDigest` 随投影带出 —— 它是 renderer 唯一读得到的账本视图
+ *  (`ext-list-installs` → `listInstalls`),digest 留在 records[] 里就等于「落了盘但用户看不到」。
+ *  缺省即缺省:v1 迁移件与无字节负载的安装如实不带,消费方不得从有无推断信任级别。 */
 export function toV1Receipt(record: InstallRecordV2): InstallReceipt {
   return {
     id: record.id,
@@ -797,6 +800,7 @@ export function toV1Receipt(record: InstallRecordV2): InstallReceipt {
     type: record.kind,
     scope: record.scope.kind,
     ...(record.version ? { version: record.version } : {}),
+    ...(record.payloadDigest ? { payloadDigest: record.payloadDigest } : {}),
     installedAt: record.installedAt,
     origin: record.origin,
     ...(record.files ? { files: record.files } : {}),

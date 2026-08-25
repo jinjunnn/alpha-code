@@ -502,6 +502,9 @@ export function deriveMcpConfig(
 // ── deps(注入面;ext-ipc 接真机器,测试接假)────────────────────────────────────────────────
 
 export type ConfigOutcome = { ok: true } | { ok: false; reason: string }
+/** REQ-105(#319):MCP 写盘策略闸口的裁决 —— 放行 Alpha Office 连接器时连带交出**实际执行物**
+ *  的内容地址。其余 MCP 恒缺省:缺省 = 「未记录」,绝不等于「已审计」。 */
+export type McpWritePolicyOutcome = { ok: true; artifactDigest?: string } | { ok: false; reason: string }
 export type FsOutcome = { ok: true; files?: string[] } | { ok: false; reason: string }
 export type RemoteFiles = Array<{ path: string; sha256: string; bytes: number; url: string }>
 export type DownloadOutcome = { ok: true; contents: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string }
@@ -511,8 +514,10 @@ export type TargetArg = { scope: "global" } | { scope: "project"; projectDir: st
 export type PlannerInstallers = {
   /** #378(Codex 裁决 Q2):MCP 写盘策略闸口。REQ-135 retired package denial and REQ-133
    *  Alpha Office resource/workspace canonicalization share this main-owned seam. It may update the
-   *  server in place; single-install transactions and uncurated writes consume the same verdict. */
-  applyMcpWritePolicy(name: string, server: Record<string, unknown>): ConfigOutcome
+   *  server in place; single-install transactions and uncurated writes consume the same verdict.
+   *  REQ-105(#319):放行 Alpha Office 连接器时,裁决连带交出 `artifactDigest` —— 本次安装将要
+   *  执行的随包字节的内容地址。planner 原样落账,绝不自算、不推断。 */
+  applyMcpWritePolicy(name: string, server: Record<string, unknown>): McpWritePolicyOutcome
   /** #378(Codex 裁决 Q1):版本化密钥原语 —— 引用纯推导(零写盘,planner 先构造 durable config)
    *  与落盘(硬化写:tmp→rename、0600、lstat 圈禁)必须同参;removeMcpSecretVersionDir 只删
    *  **本次尝试**的版本目录(失败/authorize 暂停清理;无引用,惰性);gcMcpSecrets = 提交后在
@@ -933,6 +938,8 @@ async function classifyBundleChild(
     const policy = deps.installers.applyMcpWritePolicy(entry.name, derived.config)
     if (!policy.ok) return { status: "fatal", id, reason: `MCP write policy refused: ${policy.reason}` }
     const key = bundleKeyFor("mcp", entry.name)
+    // REQ-105(#319):bundle 成员与单装同一份 receipt 事实 —— 经套件装的 Excel 与直装的 Excel
+    // 必须落同一个 payloadDigest,否则「装法不同 digest 不同」本身就是一次事实分叉。
     return {
       status: "install",
       id,
@@ -944,7 +951,12 @@ async function classifyBundleChild(
         manifestDigest,
         capabilities: decoded.manifest.capabilities,
       },
-      record: { ...baseRecord, kind: "mcp", configKey: `mcp.${entry.name}` },
+      record: {
+        ...baseRecord,
+        kind: "mcp",
+        configKey: `mcp.${entry.name}`,
+        ...(policy.artifactDigest ? { payloadDigest: policy.artifactDigest } : {}),
+      },
     }
   }
 
@@ -1361,6 +1373,10 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       scope: scope.identity,
       version: manifest.version,
       manifestDigest,
+      // REQ-105(#319):`version` 是 catalog 卡片版本 —— 它命名连接器,不命名它执行的字节
+      // (审计原文「receipt 记录条目版 1.0.0 而实际执行 0.1.8 且无包 digest 字段」)。随包
+      // Office 连接器的执行物内容地址由策略闸口在放行时交出,此处原样落账。
+      ...(pol.artifactDigest ? { payloadDigest: pol.artifactDigest } : {}),
       grantDigest: computeGrantDigest(grants),
       // #395:fresh-intake 初始态按来源分类(alpha=开,其余含 official=关);既有记录当前策略优先。
       // #397:有效 curation 的 activationPolicy 声明优先(session-grant 恒 disabled;纯计算)。

@@ -52,6 +52,10 @@ export function validateReceipt(receipt: InstallReceipt): string | null {
   if (typeof receipt.installedAt !== "string" || Number.isNaN(Date.parse(receipt.installedAt)))
     return "invalid installedAt"
   if (receipt.version !== undefined && typeof receipt.version !== "string") return "invalid version"
+  // REQ-105(#319):digest 只有「合法格式」与「不在场」两种状态。半个字符串会被呈现层当成
+  // 一个真 digest 展示,那正是 AC5 要禁的「把未验证的东西表示为已审计」。
+  if (receipt.payloadDigest !== undefined && !/^sha256:[0-9a-f]{64}$/.test(String(receipt.payloadDigest)))
+    return "invalid payloadDigest"
   if (receipt.configKey !== undefined && typeof receipt.configKey !== "string") return "invalid configKey"
   if (receipt.files !== undefined) {
     if (!Array.isArray(receipt.files)) return "invalid files"
