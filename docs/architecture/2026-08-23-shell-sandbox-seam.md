@@ -208,3 +208,30 @@ Alpha 无处注入 ⇒ **C3 必须收编其中一个热文件**（`north-star-gu
 本文档是 P0-1 实现票**开工前**的对照物：实现与合并前 review 都以这里的
 §2 为基准。任何与 §2 冲突的断言，先复跑再改文档，不要改实现去迁就散文。
 §5 的三条未验证项在实现票里必须变成实跑结论或显式风险接受。
+
+## 7. 实现落地（文件轴，收编 0）
+
+C1 选定后，文件轴按下述落地。此节校正 §2.4 里那处 spike 用的 `<userData>/bin`
+路径假设——它在 spike 里成立，但**不是**实现的落点：
+
+- **wrapper 与 profile 落在 `ALPHA_GLOBAL_DIR` 下**，即
+  `ALPHA_GLOBAL_DIR/bin/<真 shell 的 basename>` 与
+  `ALPHA_GLOBAL_DIR/sandbox/alpha-shell.sb`，**不落 `<userData>`**。原因是结构性的：
+  C1 的 `config(cfg)` hook 跑在 `@alpha-code/ext` 包内，而 `app.getPath("userData")`
+  只在 Electron **main** 里拿得到；`ext` 手上唯一能解析并 canonical 校验的 alpha 自有
+  可写根就是 `ALPHA_GLOBAL_DIR`（`= <appData>/alpha-code-state/env/<environment>`，
+  已被 `requireAlphaGlobalRoot()` 校验）。走它 = 保持 ext-only、收编 0；要落
+  `<userData>` 反而得把路径经 sidecar-env 白名单从 main 透传过来，扩面且多改文件。
+- **可写闭集（I2）= §2.5 那份**，登记为 `packages/ext/src/shell-sandbox.ts` 的
+  `SEATBELT_PROFILE` 常量（单一权威；新增前缀改这里，`alpha-sandbox-seam.test.ts`
+  逐 token 全等挡住拓宽）。
+- **fail-closed（I1）**：wrapper/profile 装不上时 `cfg.shell` 被顶成 deny stub
+  （`ALPHA_GLOBAL_DIR/bin/alpha-shell-denied`，可读拒绝 + exit 78），deny stub 也落不下
+  时退到 `/usr/bin/false`——**任何情况都不回落裸 shell**。
+- **§5 未验证项的状态**：§2.5/§2.6 的正反语料已实现为 darwin-only 单测
+  （`alpha-sandbox-escape.test.ts`，真 `sandbox-exec`，CI/ubuntu 上 skip、本机 macOS 真跑），
+  外加类边界探针（重定向 `>`/`>>`、`sh`/`python3`/`node` 解释器、`nohup` 脱离、
+  指向工作区外的 symlink）。**§5 第一条（打包后的 Electron sidecar 里复跑）仍未验证**，
+  归 `[REQ-138][VERIFY]`；rc 写盘那条同样留给打包复验。
+- **本接缝结构上管不到的面**不变（§4）：进程内 FS 工具、MCP stdio、LSP、网络（#1077）、
+  Windows。实现未声称超出该清单的保护。
