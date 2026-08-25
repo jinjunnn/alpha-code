@@ -1,0 +1,140 @@
+{
+  "checks": {
+    "declare-lie reaches the client as content-length: 209715200": true,
+    "chunked has no content-length": true,
+    "chunked body decodes to exactly 1 MiB": true,
+    "normal transfers 3 MiB with correct content-length": true,
+    "mid-stream reset surfaces as a client-side error, not a clean EOF": true,
+    "client stopping early shows up as the origin ceasing to push (<< the full 100 MiB)": true,
+    "a server-side reset is recorded as clientAbortedEarly (abort 计数在这一支是有效的)": true,
+    "range returns 206 with content-range and exactly 1024 bytes": true,
+    "forced 413 arrives as 413": true
+  },
+  "detail": {
+    "declaredLie": {
+      "label": "declare 200MiB, send 1MiB",
+      "status": 200,
+      "headers": {
+        "connection": "close",
+        "content-length": "209715200",
+        "content-type": "application/octet-stream"
+      },
+      "read": 0,
+      "error": null
+    },
+    "chunked": {
+      "label": "chunked",
+      "status": 200,
+      "headers": {
+        "connection": "close",
+        "content-type": "application/octet-stream",
+        "transfer-encoding": "chunked"
+      },
+      "read": 1048576,
+      "error": null
+    },
+    "normal": {
+      "label": "normal 3MiB",
+      "status": 200,
+      "headers": {
+        "connection": "close",
+        "content-length": "3145728",
+        "content-type": "application/octet-stream"
+      },
+      "read": 3145728,
+      "error": null
+    },
+    "reset": {
+      "label": "reset after 512KiB",
+      "status": 200,
+      "headers": {
+        "connection": "close",
+        "content-length": "8388608",
+        "content-type": "application/octet-stream"
+      },
+      "read": 524288,
+      "error": "Error: The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()"
+    },
+    "earlyStop": {
+      "read": 1114217,
+      "destroyed": true
+    },
+    "earlyStopStats": {
+      "requests": 1,
+      "written": 1900544,
+      "clientAbortedEarly": 0,
+      "writtenAtAbort": [],
+      "authorizations": [
+        "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+      ],
+      "ranges": [
+        null
+      ],
+      "statuses": [
+        200
+      ],
+      "declaredContentLength": [
+        "104857600"
+      ]
+    },
+    "declaredLieStats": {
+      "requests": 1,
+      "written": 1048576,
+      "clientAbortedEarly": 0,
+      "writtenAtAbort": [],
+      "authorizations": [
+        "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+      ],
+      "ranges": [
+        null
+      ],
+      "statuses": [
+        200
+      ],
+      "declaredContentLength": [
+        "209715200"
+      ]
+    },
+    "resetStats": {
+      "requests": 1,
+      "written": 524288,
+      "clientAbortedEarly": 1,
+      "writtenAtAbort": [
+        524288
+      ],
+      "authorizations": [
+        "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+      ],
+      "ranges": [
+        null
+      ],
+      "statuses": [
+        200
+      ],
+      "declaredContentLength": [
+        "8388608"
+      ]
+    },
+    "range": {
+      "status": 206,
+      "headers": {
+        "connection": "close",
+        "content-length": "1024",
+        "content-range": "bytes 0-1023/3145728",
+        "content-type": "application/octet-stream"
+      },
+      "bytes": 1024
+    },
+    "forced413": {
+      "label": "forced 413",
+      "status": 413,
+      "headers": {
+        "connection": "close",
+        "content-length": "22",
+        "content-type": "application/json"
+      },
+      "read": 0,
+      "error": null
+    }
+  }
+}

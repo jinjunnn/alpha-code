@@ -1,0 +1,702 @@
+[
+  {
+    "runtime": "node 22.22.3",
+    "failed": false,
+    "tinyVolume": "/Volumes/ALPHA402",
+    "cases": [
+      {
+        "id": "C4.0",
+        "what": "标定:残留检测器对一个真放进去的 `.part` 必须报警(否则后面每条「无残留」都是假绿)",
+        "value": {
+          "detected": {
+            "all": [
+              "out.bin.deadbeef-1-2-aabbccdd.part"
+            ],
+            "unexpected": [
+              "out.bin.deadbeef-1-2-aabbccdd.part"
+            ],
+            "parts": [
+              "out.bin.deadbeef-1-2-aabbccdd.part"
+            ]
+          },
+          "afterCleanup": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C4.1",
+        "what": "断流:origin 发 1 MiB 后重置连接 → typed network 错误,零残留,detail 不含 token",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "network",
+            "detail": "terminated"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1048576,
+            "clientAbortedEarly": 1,
+            "writtenAtAbort": [
+              1048576
+            ],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "8388608"
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          },
+          "actuallyStreamedBytes": 1048576,
+          "detailHasToken": false
+        },
+        "error": null
+      },
+      {
+        "id": "C4.2",
+        "what": "流中途取消:真 AbortSignal → {error:cancelled, cancelled:true},零残留,上游被 cancel",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "cancelled",
+            "cancelled": true
+          },
+          "origin": {
+            "requests": 1,
+            "written": 3997696,
+            "clientAbortedEarly": 1,
+            "writtenAtAbort": [
+              3997696
+            ],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              null
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          },
+          "streamedBeforeCancel": 3997696
+        },
+        "error": null
+      },
+      {
+        "id": "C4.3",
+        "what": "发起前就取消:零网络,且仍带结构槽 cancelled:true(平台的任何字节都到不了这个槽)",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "cancelled",
+            "cancelled": true
+          },
+          "origin": {
+            "requests": 0,
+            "written": 0,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [],
+            "ranges": [],
+            "statuses": [],
+            "declaredContentLength": []
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C4.4",
+        "what": "descriptor 摘要不符 → sha256-mismatch;字节收全了才判,所以必须确认盘上不留 final/.part",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "sha256-mismatch",
+            "detail": "expected sha256 0000000000000000000000000000000000000000000000000000000000000000, got 3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 3145728,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "3145728"
+            ]
+          },
+          "receivedAllBytes": 3145728,
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C4.5",
+        "what": "descriptor 摘要与 ETag 互相矛盾 → 读 body 前即拒(origin 几乎没发出字节)",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "sha256-mismatch",
+            "detail": "digest sources disagree (descriptor vs ETag/Digest headers)"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 524288,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "3145728"
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C4.6",
+        "what": "真 ENOSPC:目标落在一个只剩几百 KiB 的真实卷上,3 MiB 写到一半写满 → typed disk 错误,卷上零残留",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "disk",
+            "detail": "ENOSPC: no space left on device, write"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 2555904,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "3145728"
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          },
+          "before": [],
+          "detailMentionsEnospc": true,
+          "detailHasToken": false
+        },
+        "error": null
+      },
+      {
+        "id": "C4.7",
+        "what": "失败后重试同一件:成功落盘,且目录里只有 final(旧 `.part` 不许幸存)",
+        "value": {
+          "first": {
+            "ok": false,
+            "error": "network",
+            "detail": "terminated"
+          },
+          "midResidue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          },
+          "second": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-node-r8ANyi/c4-13j5xL/out.bin",
+            "bytes": 3145728,
+            "sha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "residue": {
+            "all": [
+              "out.bin"
+            ],
+            "unexpected": [],
+            "parts": []
+          },
+          "finalSize": 3145728
+        },
+        "error": null
+      },
+      {
+        "id": "C4.8",
+        "what": "僵死连接(发 1 MiB 后永久静默)+ 5s idle 看门狗 → typed network 错误,promise 不悬挂",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "network",
+            "detail": "stream idle for 5000ms (no bytes)"
+          },
+          "elapsedMs": 5002,
+          "origin": {
+            "requests": 1,
+            "written": 1048576,
+            "clientAbortedEarly": 1,
+            "writtenAtAbort": [
+              1048576
+            ],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "104857600"
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C4.9",
+        "what": "finalizer 拒绝准入(配额侧说不)→ 分类错误 + `.part` 被删,不留半成品",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "probe: quota says no"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 3145728,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "3145728"
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      }
+    ],
+    "stderr": ""
+  },
+  {
+    "runtime": "electron 42.3.3 / node 24.15.0",
+    "failed": false,
+    "tinyVolume": "/Volumes/ALPHA402",
+    "cases": [
+      {
+        "id": "C4.0",
+        "what": "标定:残留检测器对一个真放进去的 `.part` 必须报警(否则后面每条「无残留」都是假绿)",
+        "value": {
+          "detected": {
+            "all": [
+              "out.bin.deadbeef-1-2-aabbccdd.part"
+            ],
+            "unexpected": [
+              "out.bin.deadbeef-1-2-aabbccdd.part"
+            ],
+            "parts": [
+              "out.bin.deadbeef-1-2-aabbccdd.part"
+            ]
+          },
+          "afterCleanup": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C4.1",
+        "what": "断流:origin 发 1 MiB 后重置连接 → typed network 错误,零残留,detail 不含 token",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "network",
+            "detail": "terminated"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1048576,
+            "clientAbortedEarly": 1,
+            "writtenAtAbort": [
+              1048576
+            ],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "8388608"
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          },
+          "actuallyStreamedBytes": 1048576,
+          "detailHasToken": false
+        },
+        "error": null
+      },
+      {
+        "id": "C4.2",
+        "what": "流中途取消:真 AbortSignal → {error:cancelled, cancelled:true},零残留,上游被 cancel",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "cancelled",
+            "cancelled": true
+          },
+          "origin": {
+            "requests": 1,
+            "written": 3997696,
+            "clientAbortedEarly": 1,
+            "writtenAtAbort": [
+              3997696
+            ],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              null
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          },
+          "streamedBeforeCancel": 3997696
+        },
+        "error": null
+      },
+      {
+        "id": "C4.3",
+        "what": "发起前就取消:零网络,且仍带结构槽 cancelled:true(平台的任何字节都到不了这个槽)",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "cancelled",
+            "cancelled": true
+          },
+          "origin": {
+            "requests": 0,
+            "written": 0,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [],
+            "ranges": [],
+            "statuses": [],
+            "declaredContentLength": []
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C4.4",
+        "what": "descriptor 摘要不符 → sha256-mismatch;字节收全了才判,所以必须确认盘上不留 final/.part",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "sha256-mismatch",
+            "detail": "expected sha256 0000000000000000000000000000000000000000000000000000000000000000, got 3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 3145728,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "3145728"
+            ]
+          },
+          "receivedAllBytes": 3145728,
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C4.5",
+        "what": "descriptor 摘要与 ETag 互相矛盾 → 读 body 前即拒(origin 几乎没发出字节)",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "sha256-mismatch",
+            "detail": "digest sources disagree (descriptor vs ETag/Digest headers)"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 589824,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "3145728"
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C4.6",
+        "what": "真 ENOSPC:目标落在一个只剩几百 KiB 的真实卷上,3 MiB 写到一半写满 → typed disk 错误,卷上零残留",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "disk",
+            "detail": "ENOSPC: no space left on device, write"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 2555904,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "3145728"
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          },
+          "before": [],
+          "detailMentionsEnospc": true,
+          "detailHasToken": false
+        },
+        "error": null
+      },
+      {
+        "id": "C4.7",
+        "what": "失败后重试同一件:成功落盘,且目录里只有 final(旧 `.part` 不许幸存)",
+        "value": {
+          "first": {
+            "ok": false,
+            "error": "network",
+            "detail": "terminated"
+          },
+          "midResidue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          },
+          "second": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-electron-R9VUGe/c4-QnuMXO/out.bin",
+            "bytes": 3145728,
+            "sha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "residue": {
+            "all": [
+              "out.bin"
+            ],
+            "unexpected": [],
+            "parts": []
+          },
+          "finalSize": 3145728
+        },
+        "error": null
+      },
+      {
+        "id": "C4.8",
+        "what": "僵死连接(发 1 MiB 后永久静默)+ 5s idle 看门狗 → typed network 错误,promise 不悬挂",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "network",
+            "detail": "stream idle for 5000ms (no bytes)"
+          },
+          "elapsedMs": 5004,
+          "origin": {
+            "requests": 1,
+            "written": 1048576,
+            "clientAbortedEarly": 1,
+            "writtenAtAbort": [
+              1048576
+            ],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "104857600"
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C4.9",
+        "what": "finalizer 拒绝准入(配额侧说不)→ 分类错误 + `.part` 被删,不留半成品",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "probe: quota says no"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 3145728,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "3145728"
+            ]
+          },
+          "residue": {
+            "all": [],
+            "unexpected": [],
+            "parts": []
+          }
+        },
+        "error": null
+      }
+    ],
+    "stderr": ""
+  }
+]

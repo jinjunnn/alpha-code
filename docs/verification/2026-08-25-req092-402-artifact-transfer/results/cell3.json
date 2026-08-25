@@ -1,0 +1,1040 @@
+[
+  {
+    "runtime": "node 22.22.3",
+    "failed": false,
+    "contractMax": 104857600,
+    "cases": [
+      {
+        "id": "C3.1",
+        "what": "descriptor.size 越过契约上限 → 零网络拒绝(连请求都不发)",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "invalid-artifact",
+            "detail": "artifact descriptor failed pinned schema validation"
+          },
+          "elapsedMs": 95,
+          "origin": {
+            "requests": 0,
+            "written": 0,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [],
+            "ranges": [],
+            "statuses": [],
+            "declaredContentLength": []
+          },
+          "residue": []
+        },
+        "error": null
+      },
+      {
+        "id": "C3.2",
+        "what": "descriptor.size 恰好等于上限 → 不被这道闸拦(边界的另一侧)",
+        "value": {
+          "outcome": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-node-CSJngq/c3-aWLsCf/out.bin",
+            "bytes": 104857600,
+            "sha256": "5e9481e31f5fb6e4ba328a3d87063e22e4fcef4e9cc4931d9054bbcdbbeab5c0",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 104857600,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "104857600"
+            ]
+          },
+          "residue": [],
+          "finalSize": 104857600
+        },
+        "error": null
+      },
+      {
+        "id": "C3.3",
+        "what": "Content-Length 越限(声明 200 MiB)→ 读 body 前拒绝:origin 只被逼出 socket 缓冲那点字节并被 cancel",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "content-length 209715200 > max 104857600"
+          },
+          "elapsedMs": 2,
+          "origin": {
+            "requests": 1,
+            "written": 524288,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "209715200"
+            ]
+          },
+          "residue": []
+        },
+        "error": null
+      },
+      {
+        "id": "C3.3-control",
+        "what": "同一条路由,换成「读完整个 body」的朴素客户端 → origin 发满 200 MiB(证明尺子量得出没有闸的样子)",
+        "value": {
+          "bytesRead": 209715200,
+          "elapsedMs": 54,
+          "origin": {
+            "requests": 1,
+            "written": 209715200,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "209715200"
+            ]
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C3.4",
+        "what": "Content-Length = 上限 + 1 → 拒(边界:恰好越一个字节)",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "content-length 104857601 > max 104857600"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 524288,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "104857601"
+            ]
+          },
+          "residue": []
+        },
+        "error": null
+      },
+      {
+        "id": "C3.5",
+        "what": "Content-Length = 恰好上限 → 放行并完整落盘(边界另一侧;只测 max+1 会让「写死 max」的实现全绿)",
+        "value": {
+          "outcome": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-node-CSJngq/c3-AWoPmQ/out.bin",
+            "bytes": 104857600,
+            "sha256": "5e9481e31f5fb6e4ba328a3d87063e22e4fcef4e9cc4931d9054bbcdbbeab5c0",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 104857600,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "104857600"
+            ]
+          },
+          "residue": [],
+          "finalSize": 104857600
+        },
+        "error": null
+      },
+      {
+        "id": "C3.6",
+        "what": "无 Content-Length(chunked)且实际 120 MiB → 首次越界即 abort;origin 发出的字节必须止于上限附近",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "stream exceeded 104857600 bytes (declared unknown)"
+          },
+          "elapsedMs": 117,
+          "origin": {
+            "requests": 1,
+            "written": 106692608,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              null
+            ]
+          },
+          "residue": []
+        },
+        "error": null
+      },
+      {
+        "id": "C3.6-control",
+        "what": "同一条 chunked 路由的朴素客户端 → 收满 120 MiB",
+        "value": {
+          "bytesRead": 125829120,
+          "origin": {
+            "requests": 1,
+            "written": 125829120,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              null
+            ]
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C3.7",
+        "what": "少报 Content-Length(声明 1 MiB,实发 120 MiB)→ 累计越界 abort,不认那句谎话",
+        "value": {
+          "outcome": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-node-CSJngq/c3-LADbqZ/out.bin",
+            "bytes": 1048576,
+            "sha256": "964e5cee8f9b8df20311b0c203efb046dd570abc301d8bae4f671784a5bdb1fc",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1769472,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "1048576"
+            ]
+          },
+          "residue": [
+            "out.bin"
+          ]
+        },
+        "error": null
+      },
+      {
+        "id": "C3.8",
+        "what": "少报但都在限内(声明 1 MiB,实发 3 MiB)→ size-mismatch,且不留 final/.part",
+        "value": {
+          "outcome": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-node-CSJngq/c3-7lmswb/out.bin",
+            "bytes": 1048576,
+            "sha256": "62cee74bd18a6895a5c0260025ed08c8fc0ae6ea73efa70576d911fd08510a77",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 2031616,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "1048576"
+            ]
+          },
+          "residue": [
+            "out.bin"
+          ]
+        },
+        "error": null
+      },
+      {
+        "id": "C3.9",
+        "what": "多报 Content-Length(声明 3 MiB,实发 1 MiB)→ size-mismatch,不留成功外观的 final",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "network",
+            "detail": "terminated"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1048576,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "3145728"
+            ]
+          },
+          "residue": []
+        },
+        "error": null
+      },
+      {
+        "id": "C3.10",
+        "what": "小上限(1 MiB)+ chunked 8 MiB:越界必须发生在**第一个越界字节**,不是读完再判",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "stream exceeded 1048576 bytes (declared unknown)"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 2162688,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              null
+            ]
+          },
+          "residue": [],
+          "maxBytes": 1048576,
+          "chunk": 65536
+        },
+        "error": null
+      },
+      {
+        "id": "C3.12",
+        "what": "少报 Content-Length **且 descriptor 带 size**(全长 3 MiB)→ 尺寸不变量必须抓住这次截断",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "size-mismatch",
+            "detail": "descriptor size 3145728, received 1048576"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1769472,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "1048576"
+            ]
+          },
+          "residue": [],
+          "finalSize": null
+        },
+        "error": null
+      },
+      {
+        "id": "C3.13",
+        "what": "少报 Content-Length **且 descriptor 带正确 sha256**(全长内容的摘要)→ 摘要不变量必须抓住这次截断",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "sha256-mismatch",
+            "detail": "expected sha256 3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb, got 62cee74bd18a6895a5c0260025ed08c8fc0ae6ea73efa70576d911fd08510a77"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1769472,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "1048576"
+            ]
+          },
+          "residue": [],
+          "finalSize": null
+        },
+        "error": null
+      },
+      {
+        "id": "C3.14",
+        "what": "少报 Content-Length **且 descriptor 无 size 无 sha256**(合同允许的 unverified 形态)→ 记录实际发生了什么",
+        "value": {
+          "outcome": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-node-CSJngq/c3-wTHaLL/out.bin",
+            "bytes": 1048576,
+            "sha256": "62cee74bd18a6895a5c0260025ed08c8fc0ae6ea73efa70576d911fd08510a77",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1703936,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "1048576"
+            ]
+          },
+          "residue": [],
+          "finalSize": 1048576,
+          "finalSha": "62cee74bd18a6895a5c0260025ed08c8fc0ae6ea73efa70576d911fd08510a77",
+          "fullFixtureSha": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+          "firstMiBOfFixtureSha": "62cee74bd18a6895a5c0260025ed08c8fc0ae6ea73efa70576d911fd08510a77"
+        },
+        "error": null
+      },
+      {
+        "id": "C3.11",
+        "what": "平台自己回 413 → 归类 over-limit 且响应体被丢弃",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "platform rejected: artifact exceeds max size"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 0,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              413
+            ],
+            "declaredContentLength": [
+              null
+            ]
+          },
+          "residue": []
+        },
+        "error": null
+      }
+    ],
+    "stderr": ""
+  },
+  {
+    "runtime": "electron 42.3.3 / node 24.15.0",
+    "failed": false,
+    "contractMax": 104857600,
+    "cases": [
+      {
+        "id": "C3.1",
+        "what": "descriptor.size 越过契约上限 → 零网络拒绝(连请求都不发)",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "invalid-artifact",
+            "detail": "artifact descriptor failed pinned schema validation"
+          },
+          "elapsedMs": 72,
+          "origin": {
+            "requests": 0,
+            "written": 0,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [],
+            "ranges": [],
+            "statuses": [],
+            "declaredContentLength": []
+          },
+          "residue": []
+        },
+        "error": null
+      },
+      {
+        "id": "C3.2",
+        "what": "descriptor.size 恰好等于上限 → 不被这道闸拦(边界的另一侧)",
+        "value": {
+          "outcome": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-electron-EP5muX/c3-5gQ5dq/out.bin",
+            "bytes": 104857600,
+            "sha256": "5e9481e31f5fb6e4ba328a3d87063e22e4fcef4e9cc4931d9054bbcdbbeab5c0",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 104857600,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "104857600"
+            ]
+          },
+          "residue": [],
+          "finalSize": 104857600
+        },
+        "error": null
+      },
+      {
+        "id": "C3.3",
+        "what": "Content-Length 越限(声明 200 MiB)→ 读 body 前拒绝:origin 只被逼出 socket 缓冲那点字节并被 cancel",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "content-length 209715200 > max 104857600"
+          },
+          "elapsedMs": 3,
+          "origin": {
+            "requests": 1,
+            "written": 524288,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "209715200"
+            ]
+          },
+          "residue": []
+        },
+        "error": null
+      },
+      {
+        "id": "C3.3-control",
+        "what": "同一条路由,换成「读完整个 body」的朴素客户端 → origin 发满 200 MiB(证明尺子量得出没有闸的样子)",
+        "value": {
+          "bytesRead": 209715200,
+          "elapsedMs": 72,
+          "origin": {
+            "requests": 1,
+            "written": 209715200,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "209715200"
+            ]
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C3.4",
+        "what": "Content-Length = 上限 + 1 → 拒(边界:恰好越一个字节)",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "content-length 104857601 > max 104857600"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 524288,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "104857601"
+            ]
+          },
+          "residue": []
+        },
+        "error": null
+      },
+      {
+        "id": "C3.5",
+        "what": "Content-Length = 恰好上限 → 放行并完整落盘(边界另一侧;只测 max+1 会让「写死 max」的实现全绿)",
+        "value": {
+          "outcome": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-electron-EP5muX/c3-0uHotQ/out.bin",
+            "bytes": 104857600,
+            "sha256": "5e9481e31f5fb6e4ba328a3d87063e22e4fcef4e9cc4931d9054bbcdbbeab5c0",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 104857600,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "104857600"
+            ]
+          },
+          "residue": [],
+          "finalSize": 104857600
+        },
+        "error": null
+      },
+      {
+        "id": "C3.6",
+        "what": "无 Content-Length(chunked)且实际 120 MiB → 首次越界即 abort;origin 发出的字节必须止于上限附近",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "stream exceeded 104857600 bytes (declared unknown)"
+          },
+          "elapsedMs": 120,
+          "origin": {
+            "requests": 1,
+            "written": 106889216,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              null
+            ]
+          },
+          "residue": []
+        },
+        "error": null
+      },
+      {
+        "id": "C3.6-control",
+        "what": "同一条 chunked 路由的朴素客户端 → 收满 120 MiB",
+        "value": {
+          "bytesRead": 125829120,
+          "origin": {
+            "requests": 1,
+            "written": 125829120,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              null
+            ]
+          }
+        },
+        "error": null
+      },
+      {
+        "id": "C3.7",
+        "what": "少报 Content-Length(声明 1 MiB,实发 120 MiB)→ 累计越界 abort,不认那句谎话",
+        "value": {
+          "outcome": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-electron-EP5muX/c3-aT6Jz0/out.bin",
+            "bytes": 1048576,
+            "sha256": "964e5cee8f9b8df20311b0c203efb046dd570abc301d8bae4f671784a5bdb1fc",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1703936,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "1048576"
+            ]
+          },
+          "residue": [
+            "out.bin"
+          ]
+        },
+        "error": null
+      },
+      {
+        "id": "C3.8",
+        "what": "少报但都在限内(声明 1 MiB,实发 3 MiB)→ size-mismatch,且不留 final/.part",
+        "value": {
+          "outcome": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-electron-EP5muX/c3-Nvh9IX/out.bin",
+            "bytes": 1048576,
+            "sha256": "62cee74bd18a6895a5c0260025ed08c8fc0ae6ea73efa70576d911fd08510a77",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1638400,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "1048576"
+            ]
+          },
+          "residue": [
+            "out.bin"
+          ]
+        },
+        "error": null
+      },
+      {
+        "id": "C3.9",
+        "what": "多报 Content-Length(声明 3 MiB,实发 1 MiB)→ size-mismatch,不留成功外观的 final",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "network",
+            "detail": "terminated"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1048576,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "3145728"
+            ]
+          },
+          "residue": []
+        },
+        "error": null
+      },
+      {
+        "id": "C3.10",
+        "what": "小上限(1 MiB)+ chunked 8 MiB:越界必须发生在**第一个越界字节**,不是读完再判",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "stream exceeded 1048576 bytes (declared unknown)"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 2162688,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              null
+            ]
+          },
+          "residue": [],
+          "maxBytes": 1048576,
+          "chunk": 65536
+        },
+        "error": null
+      },
+      {
+        "id": "C3.12",
+        "what": "少报 Content-Length **且 descriptor 带 size**(全长 3 MiB)→ 尺寸不变量必须抓住这次截断",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "size-mismatch",
+            "detail": "descriptor size 3145728, received 1048576"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1769472,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "1048576"
+            ]
+          },
+          "residue": [],
+          "finalSize": null
+        },
+        "error": null
+      },
+      {
+        "id": "C3.13",
+        "what": "少报 Content-Length **且 descriptor 带正确 sha256**(全长内容的摘要)→ 摘要不变量必须抓住这次截断",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "sha256-mismatch",
+            "detail": "expected sha256 3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb, got 62cee74bd18a6895a5c0260025ed08c8fc0ae6ea73efa70576d911fd08510a77"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1703936,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "1048576"
+            ]
+          },
+          "residue": [],
+          "finalSize": null
+        },
+        "error": null
+      },
+      {
+        "id": "C3.14",
+        "what": "少报 Content-Length **且 descriptor 无 size 无 sha256**(合同允许的 unverified 形态)→ 记录实际发生了什么",
+        "value": {
+          "outcome": {
+            "ok": true,
+            "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-electron-EP5muX/c3-SEIT6A/out.bin",
+            "bytes": 1048576,
+            "sha256": "62cee74bd18a6895a5c0260025ed08c8fc0ae6ea73efa70576d911fd08510a77",
+            "verification": "unverified",
+            "via": "stream"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 1703936,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              200
+            ],
+            "declaredContentLength": [
+              "1048576"
+            ]
+          },
+          "residue": [],
+          "finalSize": 1048576,
+          "finalSha": "62cee74bd18a6895a5c0260025ed08c8fc0ae6ea73efa70576d911fd08510a77",
+          "fullFixtureSha": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+          "firstMiBOfFixtureSha": "62cee74bd18a6895a5c0260025ed08c8fc0ae6ea73efa70576d911fd08510a77"
+        },
+        "error": null
+      },
+      {
+        "id": "C3.11",
+        "what": "平台自己回 413 → 归类 over-limit 且响应体被丢弃",
+        "value": {
+          "outcome": {
+            "ok": false,
+            "error": "over-limit",
+            "detail": "platform rejected: artifact exceeds max size"
+          },
+          "origin": {
+            "requests": 1,
+            "written": 0,
+            "clientAbortedEarly": 0,
+            "writtenAtAbort": [],
+            "authorizations": [
+              "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+            ],
+            "ranges": [
+              null
+            ],
+            "statuses": [
+              413
+            ],
+            "declaredContentLength": [
+              null
+            ]
+          },
+          "residue": []
+        },
+        "error": null
+      }
+    ],
+    "stderr": ""
+  }
+]

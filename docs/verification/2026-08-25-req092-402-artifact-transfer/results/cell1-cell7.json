@@ -1,0 +1,207 @@
+{
+  "calibration": [
+    "bearer-wordform",
+    "binary-object",
+    "byte-array",
+    "content-base64:small-head64",
+    "content-bearing-key",
+    "content-hex:small-head64",
+    "data-url",
+    "long-base64",
+    "token-plaintext"
+  ],
+  "cell1_status": {
+    "value": {
+      "schema_version": 1,
+      "job_id": "job_probe402a",
+      "status": "completed",
+      "autonomy": "pipeline",
+      "kind": "office-report",
+      "progress": {
+        "phase": "completed",
+        "completed_steps": 3,
+        "total_steps": 3
+      },
+      "counters": {
+        "model_calls": 2,
+        "tokens_in": 10,
+        "tokens_out": 20,
+        "cost_usd": 0.01
+      },
+      "artifact_ids": [
+        "art_job_probe402a_0_ab12cd34"
+      ],
+      "artifacts": [
+        {
+          "schemaVersion": 1,
+          "id": "art_job_probe402a_0_ab12cd34",
+          "source": "cloud",
+          "name": "report.bin",
+          "size": 3145728,
+          "sha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+          "claimedMime": "application/octet-stream",
+          "trust": "sandboxed",
+          "role": "primary",
+          "contentRef": {
+            "kind": "http-stream",
+            "url": "/v1/cloud/artifacts/file_small.bin--probe_A1/content",
+            "auth": "bearer"
+          },
+          "verification": {
+            "status": "verified",
+            "verifiedAt": "2026-08-25T00:00:00.000Z"
+          },
+          "provenance": {
+            "producer": "pipeline",
+            "jobId": "job_probe402a",
+            "kind": "office-report",
+            "step": "run-sandbox",
+            "createdAt": "2026-08-25T00:00:00.000Z"
+          }
+        }
+      ],
+      "result": {
+        "summary": "3 MiB report produced",
+        "artifact_ids": [
+          "art_job_probe402a_0_ab12cd34"
+        ]
+      },
+      "error": null
+    },
+    "findings": []
+  },
+  "cell1_list": {
+    "value": {
+      "schema_version": 1,
+      "job_id": "job_probe402a",
+      "status": "completed",
+      "artifacts": [
+        {
+          "schemaVersion": 1,
+          "id": "art_job_probe402a_0_ab12cd34",
+          "source": "cloud",
+          "name": "report.bin",
+          "size": 3145728,
+          "sha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+          "claimedMime": "application/octet-stream",
+          "trust": "sandboxed",
+          "role": "primary",
+          "contentRef": {
+            "kind": "http-stream",
+            "url": "/v1/cloud/artifacts/file_small.bin--probe_A1/content",
+            "auth": "bearer"
+          },
+          "verification": {
+            "status": "verified",
+            "verifiedAt": "2026-08-25T00:00:00.000Z"
+          },
+          "provenance": {
+            "producer": "pipeline",
+            "jobId": "job_probe402a",
+            "kind": "office-report",
+            "step": "run-sandbox",
+            "createdAt": "2026-08-25T00:00:00.000Z"
+          }
+        }
+      ],
+      "artifact_ids": [
+        "art_job_probe402a_0_ab12cd34"
+      ],
+      "result": null
+    },
+    "findings": []
+  },
+  "cell1_adversarial": {
+    "descriptor_arm": {
+      "value": {
+        "error": "contract-incompatible"
+      },
+      "findings": []
+    },
+    "result_arm": {
+      "value": {
+        "schema_version": 1,
+        "job_id": "job_probe402c",
+        "status": "completed",
+        "autonomy": "pipeline",
+        "progress": {
+          "phase": "completed"
+        },
+        "artifact_ids": [],
+        "result": {
+          "report": {
+            "base64": "NFVszF1PTibSUHQqo5WSWKCQE39ZhCWNHqgiff/oLnzMFjEfFQ2hqioozSsbFhPjuNO+c5FlEuX2nO2C9/hCAQ=="
+          },
+          "preview": "data:image/png;base64,NFVszF1PTibSUHQqo5WSWKCQE39ZhCWNHqgiff/oLnzMFjEfFQ2hqioozSsbFhPjuNO+c5FlEuX2nO2C9/hCAQ=="
+        },
+        "error": null
+      },
+      "findings": [
+        {
+          "path": "result-smuggle.result.report.base64",
+          "kind": "content-bearing-key",
+          "sample": "NFVszF1PTibSUHQqo5WSWKCQE39ZhCWNHqgiff/oLnzMFjEfFQ2hqioozSsbFhPjuNO+c5FlEuX2nO2C9/hCAQ=="
+        },
+        {
+          "path": "result-smuggle.result.report.base64",
+          "kind": "content-base64:small-head64",
+          "sample": "NFVszF1PTibSUHQqo5WSWKCQE39ZhCWNHqgiff/oLnzMFjEfFQ2hqioozSsbFhPjuNO+c5FlEuX2nO2C9/hCAQ=="
+        },
+        {
+          "path": "result-smuggle.result.preview",
+          "kind": "data-url",
+          "sample": "data:image/png;base64,NFVszF1PTibSUHQqo5WSWKCQE39ZhCWNHqgiff/oLnzMFjEfFQ2hqioozSsbFhPjuNO+c5FlEuX2nO2C9/hCAQ=="
+        },
+        {
+          "path": "result-smuggle.result.preview",
+          "kind": "content-base64:small-head64",
+          "sample": "data:image/png;base64,NFVszF1PTibSUHQqo5WSWKCQE39ZhCWNHqgiff/oLnzMFjEfFQ2hqioozSsbFhPjuNO+c5FlEuX2nO2C9/hCAQ=="
+        }
+      ]
+    }
+  },
+  "cell7": {
+    "outcome": {
+      "ok": true,
+      "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-proj-X19H09/.alpha/runs/job_probe402a/artifacts/report.bin",
+      "bytes": 3145728,
+      "sha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+      "verification": "verified",
+      "via": "stream"
+    },
+    "onDisk": [
+      "report.bin"
+    ],
+    "diskSha": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+    "expectedSha": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+    "progressEventCount": 4,
+    "progressChannels": [
+      "cloud-artifact-progress"
+    ],
+    "logLineCount": 0,
+    "manifestBytes": 1321,
+    "findings": {
+      "invokeReturn": [],
+      "progressEvents": [],
+      "logs": [],
+      "manifest": [],
+      "fileNames": []
+    }
+  },
+  "cell7_control": {
+    "progress": [
+      {
+        "path": "wc.send[0].payload.token",
+        "kind": "token-plaintext",
+        "sample": "PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+      }
+    ],
+    "manifest": [
+      {
+        "path": "artifacts.json",
+        "kind": "token-plaintext",
+        "sample": "{\"artifacts\":[{\"id\":\"art_job_probe402a_0_ab12cd34\",\"savedPath\":\"artifacts/PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK.bin\"}]}"
+      }
+    ]
+  }
+}

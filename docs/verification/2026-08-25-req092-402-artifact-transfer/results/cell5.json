@@ -1,0 +1,379 @@
+{
+  "c5_1": {
+    "outcome": {
+      "ok": true,
+      "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5empty/artifacts/empty.bin",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verification": "verified",
+      "via": "stream"
+    },
+    "files": [
+      "empty.bin"
+    ],
+    "size": 0,
+    "sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "emptySha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "c5_2": {
+    "ranges": [
+      null,
+      null
+    ],
+    "requests": 2
+  },
+  "c5_3": {
+    "outcome": {
+      "ok": false,
+      "error": "size-mismatch",
+      "detail": "content-length declared 3145728, received 655360"
+    },
+    "files": [],
+    "fullSize": 3145728
+  },
+  "c5_4": {
+    "first": {
+      "ok": true,
+      "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5repeat/artifacts/same.bin",
+      "bytes": 3145728,
+      "sha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+      "verification": "unverified",
+      "via": "stream"
+    },
+    "second": {
+      "ok": true,
+      "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5repeat/artifacts/same.bin",
+      "bytes": 3145728,
+      "sha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+      "verification": "unverified",
+      "via": "stream"
+    },
+    "filesAfterFirst": [
+      "same.bin"
+    ],
+    "files": [
+      "same.bin"
+    ],
+    "shas": [
+      "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb"
+    ],
+    "expectedSha": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb"
+  },
+  "c5_5": {
+    "ra": {
+      "ok": true,
+      "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5samename/artifacts/report.bin",
+      "bytes": 3145728,
+      "sha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+      "verification": "unverified",
+      "via": "stream"
+    },
+    "rb": {
+      "ok": true,
+      "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5samename/artifacts/report.bin",
+      "bytes": 26214400,
+      "sha256": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+      "verification": "unverified",
+      "via": "stream"
+    },
+    "files": [
+      "report.bin"
+    ],
+    "shaByFile": {
+      "report.bin": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877"
+    },
+    "expectSmall": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+    "expect25": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+    "rawManifest": {
+      "schemaVersion": 1,
+      "runId": "job_c5samename",
+      "updatedAt": "2026-08-25T07:54:23.741Z",
+      "artifacts": [
+        {
+          "descriptor": {
+            "schemaVersion": 1,
+            "id": "art_job_c5samename_4_809278b1",
+            "source": "cloud",
+            "name": "report.bin",
+            "trust": "sandboxed",
+            "role": "primary",
+            "contentRef": {
+              "kind": "http-stream",
+              "url": "/v1/cloud/artifacts/file_small.bin--probe_c5/content",
+              "auth": "bearer"
+            },
+            "verification": {
+              "status": "unverified"
+            },
+            "provenance": {
+              "producer": "pipeline",
+              "jobId": "job_c5samename"
+            }
+          },
+          "local": {
+            "savedPath": "artifacts/report.bin",
+            "downloadedAt": "2026-08-25T07:54:23.741Z",
+            "bytesOnDisk": 3145728,
+            "state": "unverified",
+            "verifiedSha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+            "warnings": []
+          }
+        }
+      ]
+    },
+    "logsDuring": [
+      "cloud: artifact art_job_c5samename_5_ee12f433 downloaded but manifest register failed: savedPath already registered to artifact art_job_c5samename_4_809278b1"
+    ],
+    "aId": "art_job_c5samename_4_809278b1",
+    "bId": "art_job_c5samename_5_ee12f433",
+    "manifestEntries": [
+      {
+        "id": "art_job_c5samename_4_809278b1"
+      }
+    ],
+    "samePathForBothArtifacts": true
+  },
+  "c5_6": {
+    "files": [
+      "art_job_c5fold_7_21fa6b73-FOLD.BIN",
+      "fold.bin"
+    ],
+    "shaByFile": {
+      "art_job_c5fold_7_21fa6b73-FOLD.BIN": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+      "fold.bin": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb"
+    }
+  },
+  "c5_7": {
+    "outcomes": [
+      {
+        "ok": true,
+        "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5conc/artifacts/t1.bin",
+        "bytes": 1024,
+        "sha256": "8f967cb77d8493a8700d0362d4d4ba2c9abe1f92ff9913b6bd688f7914b9b2cc",
+        "verification": "unverified",
+        "via": "stream"
+      },
+      {
+        "ok": true,
+        "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5conc/artifacts/t2.bin",
+        "bytes": 1024,
+        "sha256": "8f967cb77d8493a8700d0362d4d4ba2c9abe1f92ff9913b6bd688f7914b9b2cc",
+        "verification": "unverified",
+        "via": "stream"
+      },
+      {
+        "ok": true,
+        "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5conc/artifacts/s1.bin",
+        "bytes": 3145728,
+        "sha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+        "verification": "unverified",
+        "via": "stream"
+      },
+      {
+        "ok": true,
+        "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5conc/artifacts/s2.bin",
+        "bytes": 3145728,
+        "sha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+        "verification": "unverified",
+        "via": "stream"
+      },
+      {
+        "ok": true,
+        "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5conc/artifacts/b1.bin",
+        "bytes": 26214400,
+        "sha256": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+        "verification": "unverified",
+        "via": "stream"
+      },
+      {
+        "ok": true,
+        "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5conc/artifacts/b2.bin",
+        "bytes": 26214400,
+        "sha256": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+        "verification": "unverified",
+        "via": "stream"
+      },
+      {
+        "ok": true,
+        "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5conc/artifacts/s3.bin",
+        "bytes": 3145728,
+        "sha256": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+        "verification": "unverified",
+        "via": "stream"
+      },
+      {
+        "ok": true,
+        "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5conc/artifacts/t3.bin",
+        "bytes": 1024,
+        "sha256": "8f967cb77d8493a8700d0362d4d4ba2c9abe1f92ff9913b6bd688f7914b9b2cc",
+        "verification": "unverified",
+        "via": "stream"
+      }
+    ],
+    "files": [
+      "b1.bin",
+      "b2.bin",
+      "s1.bin",
+      "s2.bin",
+      "s3.bin",
+      "t1.bin",
+      "t2.bin",
+      "t3.bin"
+    ],
+    "shaByFile": {
+      "b1.bin": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+      "b2.bin": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+      "s1.bin": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+      "s2.bin": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+      "s3.bin": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+      "t1.bin": "8f967cb77d8493a8700d0362d4d4ba2c9abe1f92ff9913b6bd688f7914b9b2cc",
+      "t2.bin": "8f967cb77d8493a8700d0362d4d4ba2c9abe1f92ff9913b6bd688f7914b9b2cc",
+      "t3.bin": "8f967cb77d8493a8700d0362d4d4ba2c9abe1f92ff9913b6bd688f7914b9b2cc"
+    },
+    "expectedByName": {
+      "t1.bin": "8f967cb77d8493a8700d0362d4d4ba2c9abe1f92ff9913b6bd688f7914b9b2cc",
+      "t2.bin": "8f967cb77d8493a8700d0362d4d4ba2c9abe1f92ff9913b6bd688f7914b9b2cc",
+      "s1.bin": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+      "s2.bin": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+      "b1.bin": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+      "b2.bin": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+      "s3.bin": "3758d9e6a0f4fba5f4d4eb53f461ff2285f60ff36912d1c226646f68dcdd81fb",
+      "t3.bin": "8f967cb77d8493a8700d0362d4d4ba2c9abe1f92ff9913b6bd688f7914b9b2cc"
+    }
+  },
+  "c5_8": {
+    "sameWindow": {
+      "a": {
+        "ok": true,
+        "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5dupe/artifacts/dupe.bin",
+        "bytes": 26214400,
+        "sha256": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+        "verification": "unverified",
+        "via": "stream"
+      },
+      "b": {
+        "ok": false,
+        "error": "already-downloading"
+      }
+    },
+    "crossWindow": {
+      "c": {
+        "ok": true,
+        "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5dupe2/artifacts/dupe2.bin",
+        "bytes": 26214400,
+        "sha256": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+        "verification": "unverified",
+        "via": "stream"
+      },
+      "e": {
+        "ok": true,
+        "path": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/alpha-402-c5-szfnjU/.alpha/runs/job_c5dupe2/artifacts/dupe2.bin",
+        "bytes": 26214400,
+        "sha256": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877",
+        "verification": "unverified",
+        "via": "stream"
+      }
+    },
+    "files2": [
+      "dupe2.bin"
+    ],
+    "shas2": [
+      "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877"
+    ],
+    "expected25": "aa1c4c4cfbfd6666ad2ecd0f02b08170bcd3b6fb9e01c2cb0ceb413d31d1a877"
+  },
+  "originRangeHeaders": {
+    "requests": 19,
+    "written": 208669696,
+    "clientAbortedEarly": 3,
+    "writtenAtAbort": [
+      26214400,
+      26214400,
+      26214400
+    ],
+    "authorizations": [
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK",
+      "Bearer PROBE-TOKEN-402-9f3c1d7a-DO-NOT-LEAK"
+    ],
+    "ranges": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "statuses": [
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200,
+      200
+    ],
+    "declaredContentLength": [
+      "0",
+      "3145728",
+      "3145728",
+      "3145728",
+      "3145728",
+      "26214400",
+      "3145728",
+      "26214400",
+      "1024",
+      "1024",
+      "3145728",
+      "3145728",
+      "26214400",
+      "26214400",
+      "3145728",
+      "1024",
+      "26214400",
+      "26214400",
+      "26214400"
+    ]
+  }
+}
