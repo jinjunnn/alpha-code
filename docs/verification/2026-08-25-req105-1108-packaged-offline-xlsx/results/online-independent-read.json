@@ -1,0 +1,86 @@
+{
+  "xlsx": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/req105-ac4-ws-5UDoin/req105-ac4-1108.xlsx",
+  "ok": true,
+  "checks": [
+    {
+      "id": "readable",
+      "ok": true,
+      "detail": "2 worksheet part(s), 7 populated cell(s)"
+    },
+    {
+      "id": "sheetNamesInOrder",
+      "ok": true,
+      "detail": "want=['AC4Ledger', 'AC4Structure'] got=['AC4Ledger', 'AC4Structure']"
+    },
+    {
+      "id": "absentSheetNames",
+      "ok": true,
+      "detail": "unexpectedly present=[]"
+    },
+    {
+      "id": "worksheetPartCount",
+      "ok": true,
+      "detail": "want=2 got=2"
+    },
+    {
+      "id": "zipEntriesPresent",
+      "ok": true,
+      "detail": "missing=[]"
+    },
+    {
+      "id": "cell:AC4Ledger!A1",
+      "ok": true,
+      "detail": "want='Item'(str) got='Item'(str)"
+    },
+    {
+      "id": "cell:AC4Ledger!B1",
+      "ok": true,
+      "detail": "want='Value'(str) got='Value'(str)"
+    },
+    {
+      "id": "cell:AC4Ledger!A2",
+      "ok": true,
+      "detail": "want='alpha-excel'(str) got='alpha-excel'(str)"
+    },
+    {
+      "id": "cell:AC4Ledger!B2",
+      "ok": true,
+      "detail": "want=1108(int) got=1108(int)"
+    },
+    {
+      "id": "cell:AC4Ledger!A3",
+      "ok": true,
+      "detail": "want='offline'(str) got='offline'(str)"
+    },
+    {
+      "id": "cell:AC4Ledger!B3",
+      "ok": true,
+      "detail": "want=True(bool) got=True(bool)"
+    },
+    {
+      "id": "cell:AC4Structure!A1",
+      "ok": true,
+      "detail": "want='second-sheet-marker'(str) got='second-sheet-marker'(str)"
+    },
+    {
+      "id": "kind:AC4Ledger!A1",
+      "ok": true,
+      "detail": "want=string got=string"
+    },
+    {
+      "id": "kind:AC4Ledger!B2",
+      "ok": true,
+      "detail": "want=number got=number"
+    },
+    {
+      "id": "kind:AC4Ledger!B3",
+      "ok": true,
+      "detail": "want=boolean got=boolean"
+    },
+    {
+      "id": "kind:AC4Structure!A1",
+      "ok": true,
+      "detail": "want=string got=string"
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "_note": "REQ-105 AC4 / alpha-code#1108 独立锚点。写入请求与复读断言都只引用本文件;两侧都不得从产出的 xlsx 反推期望值(自指等价链)。",
+  "workbookFileName": "req105-ac4-1108.xlsx",
+  "sheets": [
+    {
+      "name": "AC4Ledger",
+      "cells": {
+        "A1": "Item",
+        "B1": "Value",
+        "A2": "alpha-excel",
+        "B2": 1108,
+        "A3": "offline",
+        "B3": true
+      }
+    },
+    {
+      "name": "AC4Structure",
+      "cells": {
+        "A1": "second-sheet-marker"
+      }
+    }
+  ],
+  "expect": {
+    "sheetNamesInOrder": ["AC4Ledger", "AC4Structure"],
+    "absentSheetNames": ["Sheet"],
+    "worksheetPartCount": 2,
+    "cellValues": {
+      "AC4Ledger!A1": "Item",
+      "AC4Ledger!B1": "Value",
+      "AC4Ledger!A2": "alpha-excel",
+      "AC4Ledger!B2": 1108,
+      "AC4Ledger!A3": "offline",
+      "AC4Ledger!B3": true,
+      "AC4Structure!A1": "second-sheet-marker"
+    },
+    "cellKinds": {
+      "AC4Ledger!A1": "string",
+      "AC4Ledger!B2": "number",
+      "AC4Ledger!B3": "boolean",
+      "AC4Structure!A1": "string"
+    },
+    "zipEntriesPresent": [
+      "[Content_Types].xml",
+      "xl/workbook.xml",
+      "xl/_rels/workbook.xml.rels"
+    ]
+  }
+}
