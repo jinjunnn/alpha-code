@@ -1181,6 +1181,21 @@ export function registerDownloadedArtifact(
   return { ok: true, entry }
 }
 
+/**
+ * #1112:账本视角的名字归属 —— `artifacts/<name>`(折叠键,与 registerDownloadedArtifact 的
+ * pathOwner 检查同一比较)当前登记在哪个 artifactId 名下。预约(reserveArtifactSavedName)靠它
+ * 区分「同一件重下(覆盖合法)」与「精确同名的另一件(必须消歧)」—— 后者缺了这一问会先覆盖
+ * 字节、再被 register 拒绝,manifest 与盘面就地分叉(#402 格 5 C5.5 实测)。
+ * manifest 不可读(corrupt / 未来版本)⇒ 一律 undefined:该状态下 register 本就整体拒写,
+ * 预约退回纯磁盘判断,与今天一致。
+ */
+export function registeredArtifactNameOwner(projectDir: string, runId: string, name: string): string | undefined {
+  const read = readArtifactManifest(projectDir, runId)
+  if (!read.ok || !read.manifest) return undefined
+  const key = foldedArtifactNameKey(`${RUN_ARTIFACTS_SUBDIR}/${name}`)
+  return read.manifest.artifacts.find((e) => foldedArtifactNameKey(e.local.savedPath) === key)?.descriptor.id
+}
+
 // ---------------------------------------------------------------------------
 // 列表 + reconcile
 // ---------------------------------------------------------------------------

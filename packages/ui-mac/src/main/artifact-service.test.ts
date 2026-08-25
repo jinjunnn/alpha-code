@@ -14,6 +14,7 @@ import {
   listRunArtifacts,
   projectArtifactUsage,
   registerDownloadedArtifact,
+  registeredArtifactNameOwner,
   removeArtifact,
   resolveArtifact,
   runArtifactUsage,
@@ -192,6 +193,41 @@ describe("registerDownloadedArtifact (#184 集成点)", () => {
     const res = registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest })
     expect(res.ok).toBe(true)
     if (res.ok) expect(res.entry.local.warnings).toEqual([])
+  })
+})
+
+// #1112:预约端(reserveArtifactSavedName)靠这个查询区分「同一件重下」与「同名的另一件」。
+// 判据与 register 的 pathOwner 检查同一比较(折叠键、含盘上文件已消失的条目),两端不一致
+// 就会重现 C5.5:字节先覆盖、登记后拒绝、manifest 与盘面分叉。
+describe("registeredArtifactNameOwner (#1112)", () => {
+  test("registered exact name → owning artifactId;case-folded variant hits the same owner (#901 折叠键)", () => {
+    const a = seedArtifact("report.bin", "AAA")
+    expect(registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest }).ok).toBe(true)
+    expect(registeredArtifactNameOwner(projectDir, RUN, "report.bin")).toBe(a.descriptor.id)
+    expect(registeredArtifactNameOwner(projectDir, RUN, "REPORT.BIN")).toBe(a.descriptor.id)
+  })
+
+  test("unregistered name / no manifest yet → undefined", () => {
+    expect(registeredArtifactNameOwner(projectDir, RUN, "nothing.bin")).toBeUndefined()
+    const a = seedArtifact("report.bin", "AAA")
+    registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest })
+    expect(registeredArtifactNameOwner(projectDir, RUN, "other.bin")).toBeUndefined()
+  })
+
+  test("ledger claim outlives the on-disk file — the name stays owned after deletion", () => {
+    // register 对账本占用的名字一律拒写,与文件在不在无关;预约端读到的归属必须一致,
+    // 否则「文件被手动删掉后,同名的另一件」会走回覆盖-后拒绝那条路。
+    const a = seedArtifact("report.bin", "AAA")
+    registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest })
+    fs.rmSync(path.join(artifactsDir(), "report.bin"))
+    expect(registeredArtifactNameOwner(projectDir, RUN, "report.bin")).toBe(a.descriptor.id)
+  })
+
+  test("corrupt / future-version manifest → undefined(register 同态整体拒写,预约退回纯磁盘判断)", () => {
+    fs.writeFileSync(manifestPath(), "{ not json")
+    expect(registeredArtifactNameOwner(projectDir, RUN, "report.bin")).toBeUndefined()
+    fs.writeFileSync(manifestPath(), JSON.stringify({ schemaVersion: 99, runId: RUN, artifacts: [] }))
+    expect(registeredArtifactNameOwner(projectDir, RUN, "report.bin")).toBeUndefined()
   })
 })
 

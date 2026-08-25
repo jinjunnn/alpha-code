@@ -39,6 +39,8 @@ export type ArtifactDownloadErrorCode =
   | "over-limit"
   | "size-mismatch"
   | "sha256-mismatch"
+  // [#1111] descriptor 无 size 无 sha256、响应头也无可用 digest:零完整性证据,读 body 前拒绝。
+  | "unverifiable"
   | "cancelled"
   | "network"
   | "disk"
@@ -489,6 +491,19 @@ async function streamStage(
       }
       declaredLength = n
     }
+  }
+
+  // 完整性证据闸(#1111):descriptor 无 size 无 sha256、响应头也无 ETag/Digest 时,唯一剩下的
+  // 「校验」是 `实收 == Content-Length` —— 而 undici 按声明长度截流,对端少报时客户端**从来看不见**
+  // 多出来的字节,这个等式在 HTTP 框定下恒真。零证据 = 截断的前缀与完整文件不可区分 ⇒ fail-closed,
+  // 读 body 前拒绝,绝不落一个成功外观的 final 文件(alpha-work#1 AC#4)。带任一证据的形态不走这里:
+  // descriptor.size 由 size-mismatch 判(与传输框定无关),digest 由 sha256-mismatch 判。
+  if (expectedSha256 === undefined && ref.size === undefined) {
+    return discardAnd(res, {
+      ok: false,
+      error: "unverifiable",
+      detail: "no integrity evidence: descriptor carries neither size nor sha256 and the response has no usable digest",
+    })
   }
 
   return writeChunksChecked(res.body ? bodyChunks(res.body, idleMs) : noChunks(), {

@@ -60,12 +60,20 @@ export function foldedArtifactNameKey(name: string): string {
  * always blocks regardless — it represents names already spoken for earlier in *this* batch, so
  * two distinct, not-yet-downloaded artifacts in one pass never end up racing for the same exact
  * name either (pre-existing dedup-with-id-prefix behavior).
+ *
+ * `claimedByOther`(#1112):账本视角的占用谓词。「同一个精确名字当前归属**另一个** artifactId」
+ * 这件事目录列表里没有、manifest 里有 —— 缺了这一问,精确同名不同件会走进「同一件重下应覆盖」
+ * 那条路:字节先被覆盖,register 事后才发现冲突,而 renderer 已经收到成功。谓词命中 = 该名字
+ * 让路走 id 前缀消歧,与折叠碰撞同一条出路;返回 false 的名字照旧(含 manifest 不可读的退化态,
+ * 该状态下 register 本就整体拒写,预约退回纯磁盘判断)。谓词只对**有限**的账本名字集返回 true,
+ * 否则消歧循环不终止。
  */
 export function reserveArtifactSavedName(
   artifactsDir: string,
   desiredName: string,
   disambiguator: string,
   taken?: Set<string>,
+  claimedByOther?: (candidateName: string) => boolean,
 ): string {
   const exactNames = new Set<string>()
   const foldedNames = new Set<string>()
@@ -80,6 +88,10 @@ export function reserveArtifactSavedName(
   }
   const isFree = (candidate: string) => {
     if (taken?.has(foldedArtifactNameKey(candidate))) return false
+    // #1112:账本说这个名字属于别的 artifact ⇒ 占用。不以「文件还在不在盘上」为前提 ——
+    // register 对账本占用的名字一律拒写(pathOwner 检查),盘上文件没了也一样;预约必须与它一致,
+    // 否则字节落下去、登记被拒,manifest 与盘面就地分叉(#402 格 5 C5.5 的实测形态)。
+    if (claimedByOther?.(candidate)) return false
     if (exactNames.has(candidate)) return true
     return !foldedNames.has(foldedArtifactNameKey(candidate))
   }
@@ -269,6 +281,11 @@ export type SaveRunDeps = {
     savedPath: string
     verifiedSha256?: string
   }) => { ok: boolean; reason?: string }
+  /** #1112:账本视角的名字归属 —— `artifacts/<name>` 当前登记在哪个 artifactId 名下
+   *  (undefined = 无归属,或 manifest 不可读)。注入同样为避开 artifact-service 成环;
+   *  **必填**,因为这正是 C5.5 缺的那一问:少了它,精确同名不同件的第二次下载会先覆盖字节、
+   *  再被 register 拒绝,manifest 与盘面就地分叉。生产装配 = registeredArtifactNameOwner。 */
+  artifactNameOwner: (name: string) => string | undefined
 }
 
 /**
@@ -322,7 +339,11 @@ export async function saveCloudRun(
     const desired = sanitizeArtifactName(meta.name, `artifact-${meta.id}`)
     // #901: 折叠比较(NFC + toLowerCase),跨大小写不敏感文件系统持续成立;读盘而非只查内存 set,
     // 才能挡住"先后分开下载"的场次(不是同一批内的问题)。
-    const name = reserveArtifactSavedName(artifactsDir, desired, meta.id, used)
+    // #1112: 再问账本 —— 精确名归属另一个 artifactId 时让路(id 前缀消歧),同 id 重下照旧覆盖。
+    const name = reserveArtifactSavedName(artifactsDir, desired, meta.id, used, (candidate) => {
+      const owner = deps.artifactNameOwner(candidate)
+      return owner !== undefined && owner !== meta.id
+    })
     const target = safeResolveInAlpha(projectDir, "runs", runId, "artifacts", name)
     if (!target) {
       warnings.push(`artifact ${meta.id}: refused unsafe name`)

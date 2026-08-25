@@ -20,6 +20,9 @@ import {
   type SaveRunDeps,
 } from "./alpha-workdir"
 import type { CloudJobStatus } from "../preload/types"
+// #1112 回归走真账本:真 registerDownloadedArtifact + 真 registeredArtifactNameOwner(生产装配)。
+import { registerDownloadedArtifact, registeredArtifactNameOwner } from "./artifact-service"
+import { ARTIFACT_SCHEMA_VERSION, type ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 
 let projectDir: string
 beforeEach(() => {
@@ -61,6 +64,8 @@ function deps(overrides: Partial<SaveRunDeps> = {}): SaveRunDeps {
     status: async () => STATUS,
     artifacts: async () => ({ job_id: "job-1", status: "completed", artifacts: [{ id: "a1", name: "report.md" }], artifact_ids: ["a1"] }),
     download: okDownload("# hi"),
+    // #1112:默认 = 无账本(legacy meta 场次 register 也不会跑);真账本装配见下方 C5.5 回归。
+    artifactNameOwner: () => undefined,
     ...overrides,
   }
 }
@@ -147,6 +152,50 @@ describe("foldedArtifactNameKey / reserveArtifactSavedName — #901", () => {
       expect(first).toBe("Report.pdf")
       expect(second).not.toBe("report.pdf")
       expect(second).toBe("a2-report.pdf")
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  // ── #1112:账本占用谓词 —— 精确同名不同件必须让路,同件重下照旧覆盖 ────────────────────
+  test("#1112 exact on-disk name claimed by ANOTHER artifact per ledger → diverted to id prefix", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-reserve-"))
+    try {
+      fs.writeFileSync(path.join(dir, "report.pdf"), "someone else's bytes")
+      const claimed = (name: string) => foldedArtifactNameKey(name) === "report.pdf" // 账本:归 a1
+      expect(reserveArtifactSavedName(dir, "report.pdf", "a2", undefined, claimed)).toBe("a2-report.pdf")
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("#1112 exact on-disk name owned by SELF per ledger → overwrite-in-place path preserved", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-reserve-"))
+    try {
+      fs.writeFileSync(path.join(dir, "report.pdf"), "my own earlier bytes")
+      // 调用方组合的谓词形状:owner === self ⇒ false(不算他人占用)。
+      expect(reserveArtifactSavedName(dir, "report.pdf", "a1", undefined, () => false)).toBe("report.pdf")
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("#1112 ledger claim blocks even when the file is gone from disk (register would refuse it)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-reserve-"))
+    try {
+      const claimed = (name: string) => foldedArtifactNameKey(name) === "report.pdf"
+      expect(reserveArtifactSavedName(dir, "report.pdf", "a2", undefined, claimed)).toBe("a2-report.pdf")
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("#1112 claimed id-prefixed candidate falls through to the numbered form (termination on finite ledger)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-reserve-"))
+    try {
+      const owned = new Set(["report.pdf", "a2-report.pdf"])
+      const claimed = (name: string) => owned.has(foldedArtifactNameKey(name))
+      expect(reserveArtifactSavedName(dir, "report.pdf", "a2", undefined, claimed)).toBe("a2-2-report.pdf")
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }
@@ -380,6 +429,69 @@ describe("saveCloudRun", () => {
     // artifact's content must not have been clobbered by the second, differently-cased download.
     expect(fs.readFileSync(path.join(runDir, "Report.pdf"), "utf8")).toBe("first-content-AAA")
     expect(fs.readFileSync(path.join(runDir, "a2-report.pdf"), "utf8")).toBe("second-content-BBB")
+  })
+
+  // ── #1112 C5.5 回归:精确同名 + 不同 artifactId,跨两次 saveCloudRun,走真账本 ────────────
+  // #402 格 5 实测形态(修复前):第二件静默覆盖第一件的字节;register 事后发现冲突但只降级成
+  // warning;manifest 仍为第一件断言已不成立的尺寸/摘要;第二件不在账本上;两次都报成功。
+  // 本用例用真 registerDownloadedArtifact + 真 registeredArtifactNameOwner(与 cloud-ipc /
+  // alpha-cloud-schedules 相同的生产装配),在修复前的 reserveArtifactSavedName 上必红。
+  test("#1112 exact same name, different artifactId, across separate calls → second diverted, ledger and disk agree", async () => {
+    const mkDescriptor = (id: string, name: string, size: number): ArtifactDescriptor => ({
+      schemaVersion: ARTIFACT_SCHEMA_VERSION,
+      id,
+      source: "cloud",
+      name,
+      size,
+      trust: "sandboxed",
+      role: "primary",
+      contentRef: { kind: "http-stream", url: `/v1/cloud/artifacts/${id}/content`, auth: "bearer" },
+      verification: { status: "unverified" },
+      provenance: { producer: "pipeline", jobId: "job_c55same" },
+    })
+    const contentA = "AAA-first"
+    const contentB = "BBBB-second-BBBB"
+    const A = mkDescriptor("art_job_c55same_0_aaaaaaaa", "report.bin", Buffer.byteLength(contentA))
+    const B = mkDescriptor("art_job_c55same_1_bbbbbbbb", "report.bin", Buffer.byteLength(contentB))
+    const realLedgerDeps = (artifacts: ArtifactDescriptor[], content: string): SaveRunDeps => ({
+      status: async () => STATUS,
+      artifacts: async () => ({ job_id: "job-1", status: "completed", artifacts, artifact_ids: artifacts.map((a) => a.id), result: null }),
+      download: okDownload(content),
+      register: (input) => registerDownloadedArtifact(projectDir, "job-1", input),
+      artifactNameOwner: (name) => registeredArtifactNameOwner(projectDir, "job-1", name),
+    })
+
+    const first = await saveCloudRun(projectDir, "job-1", realLedgerDeps([A], contentA))
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    expect(first.files).toContain(path.join("artifacts", "report.bin"))
+    expect(first.warnings).toEqual([])
+
+    const second = await saveCloudRun(projectDir, "job-1", realLedgerDeps([B], contentB))
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    // 第二件让路(id 前缀消歧),登记成功 —— 没有任何「manifest 登记失败」的 warning。
+    expect(second.files).toContain(path.join("artifacts", `${B.id}-report.bin`))
+    expect(second.warnings).toEqual([])
+
+    const runDir2 = path.join(projectDir, ".alpha", "runs", "job-1", "artifacts")
+    // 盘面:第一件的字节原封未动,第二件在自己的名字下。
+    expect(fs.readFileSync(path.join(runDir2, "report.bin"), "utf8")).toBe(contentA)
+    expect(fs.readFileSync(path.join(runDir2, `${B.id}-report.bin`), "utf8")).toBe(contentB)
+    // 账本:两件各自在册,savedPath 与盘面一致,bytesOnDisk 与各自内容一致。
+    expect(registeredArtifactNameOwner(projectDir, "job-1", "report.bin")).toBe(A.id)
+    expect(registeredArtifactNameOwner(projectDir, "job-1", `${B.id}-report.bin`)).toBe(B.id)
+
+    // C5.4 保持:同一件重下(同 id、同名、同尺寸)仍旧原地覆盖,不产生第三个文件。
+    const refreshed = "AAA-2nd!!"
+    expect(Buffer.byteLength(refreshed)).toBe(Buffer.byteLength(contentA))
+    const third = await saveCloudRun(projectDir, "job-1", realLedgerDeps([A], refreshed))
+    expect(third.ok).toBe(true)
+    if (!third.ok) return
+    expect(third.files).toContain(path.join("artifacts", "report.bin"))
+    expect(third.warnings).toEqual([])
+    expect(fs.readFileSync(path.join(runDir2, "report.bin"), "utf8")).toBe(refreshed)
+    expect(fs.readdirSync(runDir2).sort()).toEqual([`${B.id}-report.bin`, "report.bin"])
   })
 
   test("download failure (e.g. over-limit at the streaming writer) degrades to warning, no file listed", async () => {
