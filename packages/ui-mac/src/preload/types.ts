@@ -264,6 +264,10 @@ export type InstallReceipt = {
   type: InstallReceiptType
   scope: InstallReceiptScope
   version?: string
+  /** REQ-105(#319):安装时记录的**执行物内容地址**(`sha256:<64 hex>`)。version 命名的是
+   *  catalog 卡片,digest 命名的是真正跑起来的字节。缺省 = 本次安装没有可寻址字节负载或该事实
+   *  未被记录 —— **绝不等于「已审计」**;呈现层必须把缺省说成「未记录」。 */
+  payloadDigest?: string
   /** ISO timestamp */
   installedAt: string
   origin: InstallReceiptOrigin

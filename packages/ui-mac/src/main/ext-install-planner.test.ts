@@ -26,7 +26,7 @@ import { probeTransactionJournals, readTransactionJournal, resolveLiveGeneration
 import { skillStorePaths } from "./ext-skill-generations"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { evaluateAdvisoryGate } from "./ext-advisory-gate"
-import { applyMcpWritePolicy } from "./ext-mcp-policy"
+import { BUNDLED_OFFICE_SERVER_PATH, applyMcpWritePolicy } from "./ext-mcp-policy"
 import { removeProjectMcpConfigInLock } from "./ext-config"
 
 // #348:capability→authorize 闸生效后,首装会零副作用停在 stage="authorize"。本 helper 按生产
@@ -2917,4 +2917,101 @@ describe("#823:随包 catalog 四条套件端到端可装(真实 alpha-catalog.j
       for (const id of required) expect(final.installed).toContain(id)
     })
   }
+})
+
+// ── REQ-105(#319):Excel 包版本 + 执行物 digest 落盘,且重启后仍取得回 ──────────────────────
+//
+// 现象定位(2026-07-14 逐需求审计 · REQ-105 原文:「receipt 记录条目版 1.0.0 而实际执行 0.1.8 且
+// 无包 digest 字段」):
+//   · `alpha-catalog.json` 的 `mcp:alpha-excel` 卡片版本是 `1.0.0`;
+//   · 它真正执行的是随包 `resources/office-mcp/server.py` + 钉版依赖 —— 卡片版本一个字都不描述它;
+//   · `synthesizeManifest` 的 `version` 取的就是卡片版本,`artifact` 只在 `remoteAsset.files` 在场时
+//     才有(MCP 条目没有)⇒ 修复前 receipt 上 **零** digest 能指认执行物。
+//
+// 判据分两层,缺一层就会留下一个「错误实现照样绿」的口子:
+//   ① 落盘 —— receipt 上有卡片版本**且**有执行物内容地址,后者不是 manifestDigest 的别名;
+//   ② 重启可恢复 —— 直接 `JSON.parse` 账本文件(不经任何本进程模块状态)两份视图都看得到它。
+//      只把 digest 记在内存里、或只回给本次调用方的实现,在②这里必红。
+describe("REQ-105 #319:Excel 包版本 + 执行物 digest 落盘并可在重启后取回", () => {
+  const bundledServer = path.resolve(import.meta.dir, `../../resources/${BUNDLED_OFFICE_SERVER_PATH}`)
+  /** 独立算出的执行物内容地址:锚点是**文件字节**,不是被测代码的返回值。 */
+  const expectedArtifactDigest = (): string =>
+    aggregateFilesDigest([
+      { path: BUNDLED_OFFICE_SERVER_PATH, sha256: crypto.createHash("sha256").update(fs.readFileSync(bundledServer)).digest("hex") },
+    ])
+
+  /** 随包 catalog 快照里**真实**的 Excel 条目(不是手搓夹具 —— 卡片版本 1.0.0 与钉版命令都要如实)。 */
+  function bundledExcelEntry(): CatalogEntry {
+    const raw = bundledCatalogSnapshot as unknown as { entries: CatalogEntry[] }
+    const entry = raw.entries.find((e) => e.id === "mcp:alpha-excel")
+    if (!entry) throw new Error("bundled catalog no longer ships mcp:alpha-excel")
+    return entry
+  }
+
+  /** 重启模拟:不用任何缓存了状态的读取器,直接把账本文件当字节读回来。 */
+  function ledgerOnDisk(): { receipts: Array<Record<string, unknown>>; records: Array<Record<string, unknown>> } {
+    const raw: unknown = JSON.parse(fs.readFileSync(path.join(globalRoot, "installs.json"), "utf8"))
+    const obj = isRec(raw) ? raw : {}
+    return {
+      receipts: (Array.isArray(obj.receipts) ? obj.receipts : []).filter(isRec),
+      records: (Array.isArray(obj.records) ? obj.records : []).filter(isRec),
+    }
+  }
+
+  test("single install records the catalog card version AND the content address of what it executes", async () => {
+    const excel = bundledExcelEntry()
+    expect(excel.version).toBe("1.0.0") // 审计原文里的那个 1.0.0 —— 它是卡片版本,不是执行物身份
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, excel] })
+    const result = await installAuthorized({ catalogId: excel.id, scope: { scope: "global" } }, deps)
+    expect(result.ok, result.ok ? "" : result.reason).toBe(true)
+
+    const record = findRecordV2(globalRoot, "mcp", "alpha-excel")
+    expect(record?.version).toBe("1.0.0")
+    expect(record?.payloadDigest).toBe(expectedArtifactDigest())
+    // digest 不是既有字段的别名:manifestDigest 覆盖的是合成 manifest 的 canonical JSON,
+    // 里面**没有** installSpec/命令/钉版 —— 换掉 server.py 它一个字都不变。
+    expect(record?.payloadDigest).not.toBe(record?.manifestDigest)
+  })
+
+  test("the recorded fact survives a restart: both on-disk ledger views carry it, byte for byte", async () => {
+    const excel = bundledExcelEntry()
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, excel] })
+    const result = await installAuthorized({ catalogId: excel.id, scope: { scope: "global" } }, deps)
+    expect(result.ok, result.ok ? "" : result.reason).toBe(true)
+
+    const disk = ledgerOnDisk()
+    const onDiskRecord = disk.records.find((r) => r.name === "alpha-excel")
+    // renderer 读的是 receipts[](`listInstalls` → `ext-list-installs`)—— digest 只落在
+    // records[] 里等于「落了盘但用户永远看不到」,所以两份视图都要判。
+    const onDiskReceipt = disk.receipts.find((r) => r.name === "alpha-excel")
+    expect(onDiskRecord?.payloadDigest).toBe(expectedArtifactDigest())
+    expect(onDiskReceipt?.payloadDigest).toBe(expectedArtifactDigest())
+    expect(onDiskReceipt?.version).toBe("1.0.0")
+  })
+
+  test("the bundled Office suite records the same artifact digest as a direct install", async () => {
+    const entries = (bundledCatalogSnapshot as unknown as { entries: CatalogEntry[] }).entries
+    const { deps } = makeDeps({ entries })
+    const result = await installAuthorized({ catalogId: "bundle:office", scope: { scope: "global" } }, deps)
+    expect(result.ok, result.ok ? "" : result.reason).toBe(true)
+    // 先证明这一轮真的把 Excel 装进去了 —— 否则下面那条断言在「压根没装」时也会以 undefined
+    // 对 undefined 之外的方式静默走偏(本仓教训:断言不能比缺陷粗一格)。
+    if (result.ok && result.kind === "bundle") expect(result.installed).toContain("mcp:alpha-excel")
+    else throw new Error("bundle:office did not install as a bundle")
+    const record = findRecordV2(globalRoot, "mcp", "alpha-excel")
+    expect(record?.payloadDigest).toBe(expectedArtifactDigest())
+  })
+
+  test("a non-Office MCP records no artifact digest — absent means 'not recorded', never 'audited'", async () => {
+    const { deps } = makeDeps()
+    const result = await installAuthorized(
+      { catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "k" } } },
+      deps,
+    )
+    expect(result.ok, result.ok ? "" : result.reason).toBe(true)
+    const record = findRecordV2(globalRoot, "mcp", "markitdown")
+    expect(record?.version).toBe("1.0.0")
+    expect(record?.payloadDigest).toBeUndefined()
+    expect(ledgerOnDisk().receipts.find((r) => r.name === "markitdown")?.payloadDigest).toBeUndefined()
+  })
 })

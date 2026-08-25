@@ -620,6 +620,9 @@ export const dict = {
   "alpha.ext.detailSecrets": "Required keys",
   "alpha.ext.detailVersion": "Version",
   "alpha.ext.detailLicense": "License",
+  // REQ-105 (#319): the version names the catalog card; this names the bytes the install runs.
+  "alpha.ext.detailArtifactDigest": "Artifact digest",
+  "alpha.ext.detailArtifactDigestUnrecorded": "not recorded",
   "alpha.ext.packageType": "Package",
   "alpha.ext.packageSourceRemote": "Verified remote catalog",
   "alpha.ext.packageSourceCache": "Verified catalog cache",
