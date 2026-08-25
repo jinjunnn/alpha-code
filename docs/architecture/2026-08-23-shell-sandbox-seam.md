@@ -189,7 +189,7 @@ Alpha 无处注入 ⇒ **C3 必须收编其中一个热文件**（`north-star-gu
 | `write`/`edit`/`read` | **不覆盖** | 进程内 FS（`packages/opencode/src/tool/write.ts:64`），子进程围栏管不到 |
 | MCP stdio | 不覆盖 | `packages/opencode/src/mcp/index.ts:229` 独立 spawn；该文件已在收编白名单内（ADR-041）⇒ 在那里加围栏新增收编为 0 |
 | LSP | 不覆盖 | `packages/opencode/src/lsp/launch.ts:11` 独立 spawn；**未收编** ⇒ +1 |
-| 网络 | 不覆盖 | 本 profile `allow default`，§2.8 的 curl 通。网络是独立一根轴 |
+| 网络 | 不覆盖 | 本 profile `allow default`，§2.8 的 curl 通。网络轴勘破见 [`2026-08-25-network-egress-seam.md`](2026-08-25-network-egress-seam.md) |
 | Windows | 不覆盖 | 无对应实现 |
 
 ## 5. 未验证 / 残余风险
