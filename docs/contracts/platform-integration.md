@@ -175,8 +175,18 @@ inactive-plan payloads.
   engine's OAuth credential store holds and refreshes the credential, keyed by
   server URL. A missing or rejected credential surfaces as `needs_auth`, which
   the desktop presents with a re-authorize action — rotating `ALPHA_CLOUD_TOKEN`
-  does not affect it. The MCP facade fronts the same Cloud Jobs model; it is
-  not a second execution truth.
+  does not affect it. Engine boot never waits on a connect that is already
+  doomed (`#1106`): at fork the sidecar reads the engine's own credential store
+  (`mcp-auth.json`, mirroring the engine's URL-bound lookup), and when no
+  stored credential matches the server URL it injects the same definition with
+  `enabled:false` — the engine marks the server disabled instantly instead of
+  spending seconds reaching `needs_auth` on every boot, which mattered because
+  token rotation restarts the sidecar roughly every ten minutes. The extension
+  hub issues the deferred connect when it observes the disabled entry, so the
+  status honestly lands on `needs_auth` (or `connected`) exactly where the user
+  looks, and the re-authorize action still hot-connects the server in place.
+  The MCP facade fronts the same Cloud Jobs model; it is not a second
+  execution truth.
 - **Account:** transactions are decoded as `LedgerPageV1`/`LedgerEntryV1`
   before renderer projection. Account summary remains outside this pinned
   contract until its producer publishes a schema and does not block the ledger

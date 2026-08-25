@@ -13,6 +13,7 @@
 // 真实爆炸半径 + 失败必须出声)。
 
 import * as fs from "node:fs"
+import { homedir } from "node:os"
 import * as path from "node:path"
 import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { buildAlphaCapabilities, buildAlphaIdentity } from "./alpha-identity"
@@ -30,6 +31,11 @@ import {
   WITHHELD_CLOUD_MCP,
 } from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
+// `#1106`:fork 前判「云 MCP 的 boot 连接是否注定 needs_auth」。注入跑在 sidecar 进程里,
+// 与引擎同进程同 env —— `engineDataDir(process.env, homedir())` 与引擎自己的 Global.Path.data
+// 按构造一致(xdg-basedir 同样先看 XDG_DATA_HOME,再落 ~/.local/share)。
+import { engineDataDir } from "./data-clear"
+import { isCloudMcpConnectDoomed } from "./cloud-mcp-doomed-connect"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
 import { injectMcpDefaultDeny } from "./mcp-default-deny"
 import { materializeCloudMcpConfig } from "./cloud-sidecar-config"
@@ -339,7 +345,30 @@ export function injectAlphaConfig(
       // 代付的两条分支上都置位(ARM 只在 kill-switch 分支置位;ARM/DEF 缺一 ext 什么都不装)。
       process.env[CLOUD_MCP_SERVER_ENV] = CLOUD_MCP_SERVER_NAME
       process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify(cloud)
-      config.mcp = { ...(config.mcp ?? {}), [CLOUD_MCP_SERVER_NAME]: killSwitch ? { ...WITHHELD_CLOUD_MCP } : cloud }
+      // `#1106`:引擎 boot 会 await **每一个**已配置 MCP server(`mcp/index.ts` MCP.state 的
+      // unbounded forEach),而无凭证的云 server 只能以 `needs_auth` 收场 —— owner 日志实测
+      // 27/27 次轮换 boot 的 1.79–9.67s 阻塞段全部以它收尾,是唯一关键路径。凭证有没有在
+      // fork 前就已确定(引擎取凭证走 `getForUrl(name, url)`,判据被 cloud-mcp-doomed-connect.ts
+      // 逐条镜像),所以注定连不上时把这份定义写成 `enabled:false`:boot 零等待
+      // (`MCP.create` 直接 DISABLED_RESULT),`/mcp/cloud/auth/authenticate` 与 `/connect`
+      // 照常可用(`getMcpConfig` 落到原始 config,不查 enabled),authenticate 成功即就地连上。
+      // hub 打开时对 disabled 的云条目补发一次 connect(use-extensions.ts),引擎状态回归
+      // `needs_auth` 真值,`#733` 的授权补救入口原样点亮。
+      // kill-switch 优先:WITHHELD 分支形状不变(它本身就是 enabled:false 的中和条目)。
+      const doomedConnect =
+        !killSwitch && isCloudMcpConnectDoomed(engineDataDir(process.env, homedir()), CLOUD_MCP_SERVER_NAME, mcpUrl)
+      if (doomedConnect)
+        console.log(
+          `[alpha-code#1106] cloud MCP has no stored OAuth credential for this URL — injected enabled:false so engine boot does not await a connect that can only end needs_auth; the extension hub hot-connects it on demand`,
+        )
+      config.mcp = {
+        ...(config.mcp ?? {}),
+        [CLOUD_MCP_SERVER_NAME]: killSwitch
+          ? { ...WITHHELD_CLOUD_MCP }
+          : doomedConnect
+            ? { ...cloud, enabled: false }
+            : cloud,
+      }
       injectedMcpNames.add(CLOUD_MCP_SERVER_NAME)
       if (killSwitch) {
         process.env[CLOUD_MCP_ARM_ENV] = CLOUD_MCP_SERVER_NAME

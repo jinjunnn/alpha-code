@@ -60,11 +60,29 @@ let directoryPickerCalls = 0
  *     审计 M1 正是这一格:按「不再 needs_auth」判成功,用户会看到「已重新登录」而 MCP 仍不可用。 */
 let authenticateBehaviour: "succeed" | "reject" | "http-200-but-failed" = "succeed"
 
+/** `#1106` connect 的引擎侧结局由用例决定(生产 `MCP.connect` 对 enabled:false 定义照常连,
+ *  结局只会是三臂之一,**不可能**回到 disabled):
+ *   - `needs_auth`    = doomed 真定义:401 → needs_auth(把 boot 里那次尝试搬到 hub 时刻的主线);
+ *   - `econnrefused`  = kill-switch 的 WITHHELD 中和条目:127.0.0.1:1 毫秒级拒绝 → failed;
+ *   - `connected`     = 凭证其实已经在(别处授权完成)。 */
+let connectBehaviour: "needs_auth" | "econnrefused" | "connected" = "needs_auth"
+const connectCalls: Array<{ name: string }> = []
+
 const emptyStream = { [Symbol.asyncIterator]: async function* () {} }
 const fakeClient = {
   mcp: {
     status: async () => ({ data: engineStatus as unknown, error: undefined }),
-    connect: async () => ({ data: {}, error: undefined }),
+    connect: async (parameters: { name: string }) => {
+      connectCalls.push({ name: parameters.name })
+      if (connectBehaviour === "econnrefused") {
+        engineStatus = { ...engineStatus, [parameters.name]: { status: "failed", error: "connect ECONNREFUSED 127.0.0.1:1" } }
+      } else if (connectBehaviour === "connected") {
+        engineStatus = { ...engineStatus, [parameters.name]: { status: "connected" } }
+      } else {
+        engineStatus = { ...engineStatus, [parameters.name]: { status: "needs_auth" } }
+      }
+      return { data: {}, error: undefined }
+    },
     disconnect: async () => ({ data: {}, error: undefined }),
     add: async () => ({ data: {}, error: undefined }),
     auth: {
@@ -193,8 +211,10 @@ function reset() {
   for (let id = 1; id <= 500; id++) dismissToast(id)
   authenticateCalls.length = 0
   installCatalogCalls.length = 0
+  connectCalls.length = 0
   directoryPickerCalls = 0
   authenticateBehaviour = "succeed"
+  connectBehaviour = "needs_auth"
   authStateForCase = { status: "logged-in", mode: "platform", platformStatus: "ready" }
 }
 
@@ -446,4 +466,61 @@ test("`#624` 恢复中的连接器卡说「凭证恢复中」,不说「需登录
   expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudConnNeedLogin"])
   // 恢复中不得谎称「已连接」—— 那正是这次要拦的放行。
   expect(document.body.textContent).not.toContain(zh["alpha.ext.cloudConnConnected"])
+})
+
+// ── `#1106`:注入面推迟的云连接,hub 观察到 disabled 时补上那一次 connect ────────────────────
+//
+// 注入面在「无已存 OAuth 凭证 ⇒ boot 连接注定 needs_auth」时把云 server 写成 enabled:false,
+// 引擎 boot 不再为它等 1.8–9.7 秒;这里验证被搬走的那次连接确实在 hub 时刻补上,
+// 且 `#733` 的补救链(needs_auth → 按钮 → authenticate)在其后原样成立。
+// 反向判据:把 use-extensions 的 kickDeferredCloudMcp 摘掉,下面第一、三条当场红。
+
+test("`#1106` 主线:disabled 云条目 → hub 补发一次 connect → needs_auth → 授权按钮点亮 → 授权成功", async () => {
+  reset()
+  engineStatus = { cloud: { status: "disabled" } }
+  mount("cloud")
+
+  // kick 恰好一次;引擎如实报回 needs_auth,`#733` 的卡片臂与按钮随之点亮。
+  await waitFor(() => expect(connectCalls).toEqual([{ name: "cloud" }]))
+  await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.mcpNeedsAuth"]))
+  await waitFor(() => expect(authorizeButtons().length).toBe(1))
+
+  // 其后的授权链与 `#733` 逐字相同 —— kick 不得再多发 connect。
+  authorizeButtons()[0]!.click()
+  await waitFor(() => expect(authenticateCalls).toEqual([{ name: "cloud" }]))
+  await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnConnected"]))
+  expect(connectCalls).toEqual([{ name: "cloud" }])
+})
+
+test("`#1106` 只认云条目的 disabled:needs_auth 的 cloud 与 disabled 的别家 server 都不触发 connect", async () => {
+  reset()
+  engineStatus = { cloud: { status: "needs_auth" }, filesystem: { status: "disabled" } }
+  mount("cloud")
+
+  // 等到状态真的被读进来(按钮出现 = loadStatus 已完成),再断零 —— 不然是「没跑」冒充「没发」。
+  await waitFor(() => expect(authorizeButtons().length).toBe(1))
+  expect(connectCalls).toEqual([])
+})
+
+test("`#1106` kill-switch 的中和条目:kick 连到 127.0.0.1:1 即刻失败,不出授权按钮", async () => {
+  reset()
+  connectBehaviour = "econnrefused"
+  engineStatus = { cloud: { status: "disabled" } }
+  mount("cloud")
+
+  await waitFor(() => expect(connectCalls).toEqual([{ name: "cloud" }]))
+  // 结局 failed:卡片说「未连接」,没有一颗点了必失败的授权按钮(与今天的 kill-switch 呈现一致)。
+  await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnDisconnected"]))
+  expect(authorizeButtons().length).toBe(0)
+})
+
+test("`#1106` 凭证其实已在(别处授权完成):kick 直接把它连上", async () => {
+  reset()
+  connectBehaviour = "connected"
+  engineStatus = { cloud: { status: "disabled" } }
+  mount("cloud")
+
+  await waitFor(() => expect(connectCalls).toEqual([{ name: "cloud" }]))
+  await waitFor(() => expect(document.querySelector(".alpha-ext-cloudst")?.textContent).toBe(zh["alpha.ext.cloudConnConnected"]))
+  expect(authorizeButtons().length).toBe(0)
 })

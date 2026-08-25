@@ -239,8 +239,10 @@ describe("websearch 执行副本普查(#223 R3 · R4 起降为纵深)", () => {
   // 这里钉住静态形状:kill-switch 下写进 config.mcp 的**只能**是中和条目。
   test("kill-switch 分支写的是中和条目,真定义只经 ARM/DEF 托管", () => {
     const injection = read("packages/ui-mac/src/main/alpha-config-injection.ts")
+    // `#1106` 起赋值多了 doomed 三分支(无凭证 ⇒ `{ ...cloud, enabled: false }`),但 kill-switch
+    // 臂**必须**仍是中和条目且排在最前(doomed 不得把真 URL 放回 kill-switch 态)。
     const assign = injection.match(
-      /config\.mcp = \{ \.\.\.\(config\.mcp \?\? \{\}\), \[CLOUD_MCP_SERVER_NAME\]: killSwitch \? \{ \.\.\.WITHHELD_CLOUD_MCP \} : cloud \}/,
+      /config\.mcp = \{\n\s*\.\.\.\(config\.mcp \?\? \{\}\),\n\s*\[CLOUD_MCP_SERVER_NAME\]: killSwitch\n\s*\? \{ \.\.\.WITHHELD_CLOUD_MCP \}\n\s*: doomedConnect\n\s*\? \{ \.\.\.cloud, enabled: false \}\n\s*: cloud,\n\s*\}/,
     )
     expect(assign).not.toBeNull()
     const branch = injection.indexOf("if (killSwitch) {")

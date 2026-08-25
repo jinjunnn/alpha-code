@@ -586,9 +586,43 @@ export function useExtensions(
       setStore("mcp", next)
       setStore("ready", true)
       setStore("error", false)
+      kickDeferredCloudMcp(next)
     } catch {
       /* transient — keep previous status */
     }
+  }
+
+  // ── `#1106`:被注入面推迟连接的云 server,在有人看的时刻补上那一次 connect ────────────────
+  //
+  // 注入面在「无已存 OAuth 凭证 ⇒ boot 连接注定 needs_auth」时把云 server 写成
+  // `enabled:false`(alpha-config-injection.ts),引擎 boot 因此不再为它等 1.8–9.7 秒;
+  // 代价是引擎状态停在 `disabled`,而 `#733` 的授权补救入口(McpNeedsAuthAction)只认
+  // `needs_auth`。这里把「今天 boot 里那次连接尝试」搬到 hub 真的在看状态的时刻:
+  // 观察到云条目 disabled 就补发一次 `/mcp/:name/connect`(引擎 MCP.connect 对 config 里
+  // enabled:false 的定义照常可用),结果由引擎如实报回 —— 无凭证 ⇒ `needs_auth`(按钮点亮),
+  // kill-switch 的中和条目 ⇒ 连 `127.0.0.1:1` 毫秒级失败 ⇒ `failed`(「未连接」,无按钮,
+  // 与今天一致)。
+  //
+  // 守卫只有 in-flight 一道,**没有** sticky「已 kick」标记 —— 那种标记要靠一次「非 disabled
+  // 的中间观察」来复位,而轮换(引擎重启)与下一次 loadStatus 之间不保证有这么一次观察,
+  // sticky 会让新一代引擎的 disabled 白等。connect 的结果不可能是 disabled(needs_auth /
+  // failed / connected 三者其一),所以「kick 落定 + 状态仍读到 disabled」只剩两种含义:
+  // 引擎换代了(该再 kick),或上次那刻引擎不可达(该再 kick)—— 两者复发一次都正确、
+  // 自愈,且每次重发都要等一次新的 loadStatus 观察,天然有界。
+  //
+  // server 名取**引擎报回来的那个**(与 hub 卡片同一把钥匙,extension-hub.tsx 的
+  // `store.mcp["cloud"]`),不在这里再写一遍注入面常量。
+  let cloudKickInFlight = false
+  function kickDeferredCloudMcp(next: Record<string, InstalledState>) {
+    const cloud = next["cloud"]
+    if (!cloud || cloud.enabled || cloud.connected) return // 非 disabled(含未注入:BYOK/登出)
+    if (cloudKickInFlight) return
+    cloudKickInFlight = true
+    void setMcpConnected(cloud.name, true)
+      .catch(() => {})
+      .finally(() => {
+        cloudKickInFlight = false
+      })
   }
 
   async function addMcp(
