@@ -1,0 +1,420 @@
+bun test v1.3.14 (0d9b296a)
+
+test/tool/alpha-725-policy-chokepoints.cases.ts:
+[09:47:05.806] ERROR (#14539): 416 |       const tools = yield* resolveTools(rulesFor(ID_MCP_PAID, "deny"))
+417 |       const exit = yield* Effect.promise(() =>
+418 |         tools[ALIAS_MCP_PAID]!.execute!({}, { toolCallId: "c1", messages: [] } as never),
+419 |       ).pipe(Effect.exit)
+420 |       const error = squashed(exit)
+421 |       expect(error).toBeDefined()
+      ^
+error: expect(received).toBeDefined()
+
+Received: undefined
+
+      at toBeDefined (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:421:21
+
+416 |       const tools = yield* resolveTools(rulesFor(ID_MCP_PAID, "deny"))
+417 |       const exit = yield* Effect.promise(() =>
+418 |         tools[ALIAS_MCP_PAID]!.execute!({}, { toolCallId: "c1", messages: [] } as never),
+419 |       ).pipe(Effect.exit)
+420 |       const error = squashed(exit)
+421 |       expect(error).toBeDefined()
+      ^
+error: expect(received).toBeDefined()
+
+Received: undefined
+
+      at toBeDefined (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:421:21
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at processTicksAndRejections (native:7:39)
+(fail) 咽喉 B —— 执行 (SessionTools.resolve 返回对象的 execute) > B1 mcp:policy:paid_action deny ⇒ execute 响亮拒绝,且 tools/call 计数 = 0 [23.56ms]
+[09:47:05.832] ERROR (#15440): 429 |       const { marker } = yield* setup()
+430 |       const tools = yield* resolveTools(rulesFor(ID_PLUGIN_PROBE, "deny"))
+431 |       const exit = yield* Effect.promise(() =>
+432 |         tools[ALIAS_PLUGIN_PROBE]!.execute!({}, { toolCallId: "c2", messages: [] } as never),
+433 |       ).pipe(Effect.exit)
+434 |       expect(yield* markerExists(marker)).toBe(false)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:434:43
+
+429 |       const { marker } = yield* setup()
+430 |       const tools = yield* resolveTools(rulesFor(ID_PLUGIN_PROBE, "deny"))
+431 |       const exit = yield* Effect.promise(() =>
+432 |         tools[ALIAS_PLUGIN_PROBE]!.execute!({}, { toolCallId: "c2", messages: [] } as never),
+433 |       ).pipe(Effect.exit)
+434 |       expect(yield* markerExists(marker)).toBe(false)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:434:43
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at processTicksAndRejections (native:7:39)
+(fail) 咽喉 B —— 执行 (SessionTools.resolve 返回对象的 execute) > B2 plugin:probe:default deny ⇒ execute 必须响亮拒绝,且 marker 文件不存在 [25.66ms]
+[09:47:05.860] ERROR (#16341): 446 |         tools[ALIAS_BUILTIN_WRITE]!.execute!(
+447 |           { filePath: target, content: "SIDE-EFFECT-EXECUTED" },
+448 |           { toolCallId: "c3", messages: [] } as never,
+449 |         ),
+450 |       ).pipe(Effect.exit)
+451 |       expect(yield* markerExists(target)).toBe(false)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:451:43
+
+446 |         tools[ALIAS_BUILTIN_WRITE]!.execute!(
+447 |           { filePath: target, content: "SIDE-EFFECT-EXECUTED" },
+448 |           { toolCallId: "c3", messages: [] } as never,
+449 |         ),
+450 |       ).pipe(Effect.exit)
+451 |       expect(yield* markerExists(target)).toBe(false)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:451:43
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at processTicksAndRejections (native:7:39)
+(fail) 咽喉 B —— 执行 (SessionTools.resolve 返回对象的 execute) > B3 builtin::write deny ⇒ execute 必须响亮拒绝,且目标文件没被写出来 [28.19ms]
+[09:47:05.885] ERROR (#17242): 458 |       const { counts } = yield* setup()
+459 |       const tools = yield* resolveTools(rulesFor(ID_HOST_LIST_RESOURCES, "deny"))
+460 |       const exit = yield* Effect.promise(() =>
+461 |         tools[ALIAS_HOST_LIST_RESOURCES]!.execute!({}, { toolCallId: "c4", messages: [] } as never),
+462 |       ).pipe(Effect.exit)
+463 |       expect(counts.listResources).toBe(0)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:463:36
+
+458 |       const { counts } = yield* setup()
+459 |       const tools = yield* resolveTools(rulesFor(ID_HOST_LIST_RESOURCES, "deny"))
+460 |       const exit = yield* Effect.promise(() =>
+461 |         tools[ALIAS_HOST_LIST_RESOURCES]!.execute!({}, { toolCallId: "c4", messages: [] } as never),
+462 |       ).pipe(Effect.exit)
+463 |       expect(counts.listResources).toBe(0)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:463:36
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at processTicksAndRejections (native:7:39)
+(fail) 咽喉 B —— 执行 (SessionTools.resolve 返回对象的 execute) > B4 host::list_mcp_resources deny ⇒ execute 必须响亮拒绝,且 resources/list 计数 = 0 [24.91ms]
+[09:47:07.215] ERROR (#18144): 501 |       const { counts } = yield* setup()
+502 |       const permission = yield* Permission.Service
+503 |       const tools = yield* resolveTools(rulesFor(ID_MCP_PAID, "ask"))
+504 |       const run = launch(tools[ALIAS_MCP_PAID]!, "c5")
+505 |       const pending = yield* awaitPending()
+506 |       expect(pending.length).toBe(1)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:506:30
+
+501 |       const { counts } = yield* setup()
+502 |       const permission = yield* Permission.Service
+503 |       const tools = yield* resolveTools(rulesFor(ID_MCP_PAID, "ask"))
+504 |       const run = launch(tools[ALIAS_MCP_PAID]!, "c5")
+505 |       const pending = yield* awaitPending()
+506 |       expect(pending.length).toBe(1)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:506:30
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+(fail) 三态 ask —— 批准前零副作用 > B5 mcp:policy:paid_action ask ⇒ 挂起等批准且 tools/call 计数 = 0;reject 之后仍为 0 [1330.56ms]
+[09:47:08.573] ERROR (#19045): 519 |       const { counts } = yield* setup()
+520 |       const permission = yield* Permission.Service
+521 |       const tools = yield* resolveTools(rulesFor(ID_MCP_PAID, "ask"))
+522 |       const first = launch(tools[ALIAS_MCP_PAID]!, "c7a")
+523 |       const p1 = yield* awaitPending()
+524 |       expect(p1.length).toBe(1)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:524:25
+
+519 |       const { counts } = yield* setup()
+520 |       const permission = yield* Permission.Service
+521 |       const tools = yield* resolveTools(rulesFor(ID_MCP_PAID, "ask"))
+522 |       const first = launch(tools[ALIAS_MCP_PAID]!, "c7a")
+523 |       const p1 = yield* awaitPending()
+524 |       expect(p1.length).toBe(1)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:524:25
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+(fail) 三态 ask —— 批准前零副作用 > B7 mcp ask ⇒ once 只放行这一次:同 session 第二次调用必须再问一遍 [1357.82ms]
+[09:47:09.944] ERROR (#19946): 542 |       const { counts } = yield* setup()
+543 |       const permission = yield* Permission.Service
+544 |       const tools = yield* resolveTools(rulesFor(ID_MCP_PAID, "ask"))
+545 |       const first = launch(tools[ALIAS_MCP_PAID]!, "c8a")
+546 |       const p1 = yield* awaitPending()
+547 |       expect(p1.length).toBe(1)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:547:25
+
+542 |       const { counts } = yield* setup()
+543 |       const permission = yield* Permission.Service
+544 |       const tools = yield* resolveTools(rulesFor(ID_MCP_PAID, "ask"))
+545 |       const first = launch(tools[ALIAS_MCP_PAID]!, "c8a")
+546 |       const p1 = yield* awaitPending()
+547 |       expect(p1.length).toBe(1)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:547:25
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+(fail) 三态 ask —— 批准前零副作用 > B8 mcp ask ⇒ always 之后同 session 同 identity 不再追问(#724 §4.5) [1370.59ms]
+[09:47:11.288] ERROR (#20847): 571 | 
+572 |       // ① 用户在「询问」态点了「总是允许」。
+573 |       const lenient = yield* resolveTools(rulesFor(ID_MCP_PAID, "ask"))
+574 |       const first = launch(lenient[ALIAS_MCP_PAID]!, "c9a")
+575 |       const pending = yield* awaitPending()
+576 |       expect(pending.length).toBe(1)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:576:30
+
+571 | 
+572 |       // ① 用户在「询问」态点了「总是允许」。
+573 |       const lenient = yield* resolveTools(rulesFor(ID_MCP_PAID, "ask"))
+574 |       const first = launch(lenient[ALIAS_MCP_PAID]!, "c9a")
+575 |       const pending = yield* awaitPending()
+576 |       expect(pending.length).toBe(1)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:576:30
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+(fail) 三态 ask —— 批准前零副作用 > B9 先 always、后把同一 identity 收紧成 deny ⇒ 第二次必须被拒,tools/call 不得增长 [1344.06ms]
+[09:47:12.676] ERROR (#21748): 599 |       expect(sessionA).not.toBe(sessionB)
+600 | 
+601 |       const toolsA = yield* resolveTools(rulesFor(ID_MCP_PAID, "ask"), sessionA)
+602 |       const first = launch(toolsA[ALIAS_MCP_PAID]!, "c13a")
+603 |       const pending = yield* awaitPending()
+604 |       expect(pending.length).toBe(1)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:604:30
+
+599 |       expect(sessionA).not.toBe(sessionB)
+600 | 
+601 |       const toolsA = yield* resolveTools(rulesFor(ID_MCP_PAID, "ask"), sessionA)
+602 |       const first = launch(toolsA[ALIAS_MCP_PAID]!, "c13a")
+603 |       const pending = yield* awaitPending()
+604 |       expect(pending.length).toBe(1)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:604:30
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+(fail) 三态 ask —— 批准前零副作用 > B13 会话 A 点了 always ⇒ 会话 B 必须重新询问(作用域不得串扰) [1388.40ms]
+[09:47:13.046] ERROR (#22649): 624 |       const permission = yield* Permission.Service
+625 |       const tools = yield* resolveTools(rulesFor(ID_PLUGIN_PROBE, "ask"))
+626 |       const run = launch(tools[ALIAS_PLUGIN_PROBE]!, "c6")
+627 |       const pending = yield* awaitPending(15)
+628 |       const markerBefore = yield* markerExists(marker)
+629 |       expect(markerBefore).toBe(false)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:629:28
+
+624 |       const permission = yield* Permission.Service
+625 |       const tools = yield* resolveTools(rulesFor(ID_PLUGIN_PROBE, "ask"))
+626 |       const run = launch(tools[ALIAS_PLUGIN_PROBE]!, "c6")
+627 |       const pending = yield* awaitPending(15)
+628 |       const markerBefore = yield* markerExists(marker)
+629 |       expect(markerBefore).toBe(false)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:629:28
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at processTicksAndRejections (native:7:39)
+(fail) 三态 ask —— 批准前零副作用 > B6 plugin:probe:default ask ⇒ 必须先请求批准;marker 在批准前不得出现 [369.67ms]
+[09:47:13.398] ERROR (#23550): 639 |       const { counts } = yield* setup()
+640 |       const permission = yield* Permission.Service
+641 |       const tools = yield* resolveTools(rulesFor(ID_HOST_LIST_RESOURCES, "ask"))
+642 |       const run = launch(tools[ALIAS_HOST_LIST_RESOURCES]!, "c11")
+643 |       const pending = yield* awaitPending(15)
+644 |       expect(counts.listResources).toBe(0)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:644:36
+
+639 |       const { counts } = yield* setup()
+640 |       const permission = yield* Permission.Service
+641 |       const tools = yield* resolveTools(rulesFor(ID_HOST_LIST_RESOURCES, "ask"))
+642 |       const run = launch(tools[ALIAS_HOST_LIST_RESOURCES]!, "c11")
+643 |       const pending = yield* awaitPending(15)
+644 |       expect(counts.listResources).toBe(0)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:644:36
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+(fail) 三态 ask —— 批准前零副作用 > B11 host::list_mcp_resources ask ⇒ 必须先请求批准;resources/list 在批准前计数 = 0 [352.40ms]
+[09:47:13.802] ERROR (#25355): 682 |         filePath: target,
+683 |         content: "SIDE-EFFECT-EXECUTED",
+684 |       })
+685 |       const pending = yield* awaitPending(15)
+686 |       const wroteBefore = yield* markerExists(target)
+687 |       expect(wroteBefore).toBe(false)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:687:27
+
+682 |         filePath: target,
+683 |         content: "SIDE-EFFECT-EXECUTED",
+684 |       })
+685 |       const pending = yield* awaitPending(15)
+686 |       const wroteBefore = yield* markerExists(target)
+687 |       expect(wroteBefore).toBe(false)
+      ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at toBe (unknown:1:1)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/packages/opencode/test/tool/alpha-725-policy-chokepoints.cases.ts:687:27
+      at ~effect/Effect/successCont (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/tide/app/alpha-code/.worktrees/ac-725/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at processTicksAndRejections (native:7:39)
+(fail) 三态 ask —— 批准前零副作用 > B10 builtin::write ask ⇒ 必须先请求批准;目标文件在批准前不得出现 [357.72ms]
+
+ 11 pass
+ 12 fail
+ 62 expect() calls
+Ran 23 tests across 1 file. [10.81s]
