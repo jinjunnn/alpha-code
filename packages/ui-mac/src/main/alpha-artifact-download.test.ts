@@ -193,24 +193,77 @@ describe("streaming download (descriptor path)", () => {
     const cancelled = { flag: false }
     const chunks = [new Uint8Array(40), new Uint8Array(40), new Uint8Array(40), new Uint8Array(40)]
     const { fetchImpl } = mockFetch(() => okResponse(chunks, {}, { cancelled }))
-    const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(fetchImpl, { maxBytes: 100 }))
+    // sha256 = 完整性证据在位(#1111 起零证据下载在读 body 前即拒,进不到累计越界分支)。
+    const res = await downloadArtifactToFile(
+      { artifact: descriptor({ sha256: "c".repeat(64) }), targetPath: target() },
+      deps(fetchImpl, { maxBytes: 100 }),
+    )
     expect(res).toMatchObject({ ok: false, error: "over-limit" })
     expect(cancelled.flag).toBe(true)
     expect(residueIn(dir)).toEqual([])
   })
 
-  test("lying Content-Length (under-declares) → abort at cumulative overrun", async () => {
-    const { fetchImpl } = mockFetch(() =>
-      okResponse([new Uint8Array(60), new Uint8Array(60), new Uint8Array(60)], { "content-length": "50" }),
-    )
-    const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(fetchImpl, { maxBytes: 100 }))
-    expect(res).toMatchObject({ ok: false, error: "over-limit" })
+  // ── #1111 完整性证据闸:descriptor 无 size 无 sha256、响应头无 digest = 零证据 ────────────
+  // 真 HTTP 上 undici 按 Content-Length 截流:对端少报时客户端只会收到**恰好** declared 字节,
+  // 「实收 == 声明」恒真,截断前缀与完整文件不可区分(#402 格 3 C3.7/C3.14 实测:1 MiB 截断
+  // 前缀落盘并报 {ok:true}"unverified")。旧用例的假 Response 没有 HTTP 框定,假 body 会把超出
+  // 声明的字节继续交给写入器 —— 那条「累计越界 abort」分支在真 HTTP 上根本不存在。
+  // 所以判据钉在它前面:零证据必须在读任何 body 字节之前拒绝。
+  test("#1111 under-declared Content-Length with zero integrity evidence → unverifiable, rejected before any body byte", async () => {
+    const pulled = { count: 0 }
+    const cancelled = { flag: false }
+    // 模拟 HTTP 框定后的可见形态:body 恰好 = 声明长度(多出的字节客户端永远看不见)。
+    const framed = [new Uint8Array(50)]
+    const { fetchImpl } = mockFetch(() => okResponse(framed, { "content-length": "50" }, { pulled, cancelled }))
+    const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(fetchImpl))
+    expect(res).toMatchObject({ ok: false, error: "unverifiable" })
+    expect(pulled.count).toBe(0) // 读 body 前拒绝,不是收完再后悔
+    expect(cancelled.flag).toBe(true) // 上游被 cancel,不悬挂
+    expect(fs.existsSync(target())).toBe(false)
     expect(residueIn(dir)).toEqual([])
+  })
+
+  test("#1111 zero evidence + chunked (no Content-Length at all) → unverifiable before any body byte", async () => {
+    const pulled = { count: 0 }
+    const { fetchImpl } = mockFetch(() => okResponse([new Uint8Array(8)], {}, { pulled }))
+    const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(fetchImpl))
+    expect(res).toMatchObject({ ok: false, error: "unverifiable" })
+    expect(pulled.count).toBe(0)
+    expect(residueIn(dir)).toEqual([])
+  })
+
+  test("#1111 header digest alone rescues the size-less descriptor — and catches the truncated prefix", async () => {
+    const full = Buffer.from("full content that the origin under-declared")
+    const truncated = full.subarray(0, 10) // HTTP 框定后客户端只看得见声明的 10 字节
+    const { fetchImpl } = mockFetch(() =>
+      okResponse([new Uint8Array(truncated)], {
+        "content-length": "10",
+        etag: `"sha256:${sha(full)}"`,
+      }),
+    )
+    const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(fetchImpl))
+    expect(res).toMatchObject({ ok: false, error: "sha256-mismatch" })
+    expect(fs.existsSync(target())).toBe(false)
+    expect(residueIn(dir)).toEqual([])
+  })
+
+  test("#1111 descriptor.size alone is real evidence: matching non-degenerate download stays an unverified success", async () => {
+    const content = Buffer.from("sized but digest-less artifact body")
+    const { fetchImpl } = mockFetch(() => okResponse([new Uint8Array(content)], { "content-length": String(content.length) }))
+    const res = await downloadArtifactToFile(
+      { artifact: descriptor({ size: content.length }), targetPath: target() },
+      deps(fetchImpl),
+    )
+    expect(res).toMatchObject({ ok: true, bytes: content.length, verification: "unverified" })
+    expect(fs.readFileSync(target())).toEqual(content)
   })
 
   test("lying Content-Length (over-declares, short body) → size-mismatch, no final file", async () => {
     const { fetchImpl } = mockFetch(() => okResponse([new Uint8Array(10)], { "content-length": "50" }))
-    const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(fetchImpl))
+    const res = await downloadArtifactToFile(
+      { artifact: descriptor({ sha256: "c".repeat(64) }), targetPath: target() },
+      deps(fetchImpl),
+    )
     expect(res).toMatchObject({ ok: false, error: "size-mismatch" })
     expect(fs.existsSync(target())).toBe(false)
     expect(residueIn(dir)).toEqual([])
@@ -225,7 +278,7 @@ describe("streaming download (descriptor path)", () => {
 
   test("disconnect mid-stream → classified network error, no residue, token scrubbed from detail", async () => {
     const { fetchImpl } = mockFetch(() => okResponse([new Uint8Array(10)], {}, { failAfter: 1 }))
-    const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(fetchImpl))
+    const res = await downloadArtifactToFile({ artifact: descriptor({ sha256: "c".repeat(64) }), targetPath: target() }, deps(fetchImpl))
     expect(res).toMatchObject({ ok: false, error: "network" })
     expect(JSON.stringify(res)).not.toContain(TOKEN)
     expect(fs.existsSync(target())).toBe(false)
@@ -239,7 +292,7 @@ describe("streaming download (descriptor path)", () => {
     )
     const res = await downloadArtifactToFile(
       {
-        artifact: descriptor(),
+        artifact: descriptor({ sha256: "c".repeat(64) }),
         targetPath: target(),
         signal: ctrl.signal,
         onProgress: () => ctrl.abort(), // 第一笔进度后取消
@@ -391,7 +444,7 @@ describe("streaming download (descriptor path)", () => {
     fs.writeFileSync(`${t}.stale.part`, "leftover from a crashed attempt")
     const content = Buffer.from("fresh")
     const { fetchImpl } = mockFetch(() => okResponse([new Uint8Array(content)]))
-    const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: t }, deps(fetchImpl))
+    const res = await downloadArtifactToFile({ artifact: descriptor({ sha256: sha(content) }), targetPath: t }, deps(fetchImpl))
     expect(res.ok).toBe(true)
     expect(fs.readFileSync(t)).toEqual(content)
     // 旧 .part 不被碰;本次尝试的 .part 已 rename 掉
@@ -408,7 +461,7 @@ describe("streaming download (descriptor path)", () => {
     fs.writeFileSync(t, "old contents")
     const content = Buffer.from("new contents")
     const { fetchImpl } = mockFetch(() => okResponse([new Uint8Array(content)]))
-    const res = await downloadArtifactToFile({ artifact: descriptor(), targetPath: t }, deps(fetchImpl))
+    const res = await downloadArtifactToFile({ artifact: descriptor({ sha256: sha(content) }), targetPath: t }, deps(fetchImpl))
     expect(res.ok).toBe(true)
     expect(fs.readFileSync(t)).toEqual(content)
   })
@@ -424,7 +477,7 @@ describe("streaming download (descriptor path)", () => {
     )
     const { fetchImpl } = mockFetch(() => fakeResponse(200, {}, stalled))
     const res = await downloadArtifactToFile(
-      { artifact: descriptor(), targetPath: target() },
+      { artifact: descriptor({ sha256: "c".repeat(64) }), targetPath: target() },
       deps(fetchImpl, { idleTimeoutMs: 25 }),
     )
     expect(res).toMatchObject({ ok: false, error: "network" })
@@ -445,7 +498,7 @@ describe("streaming download (descriptor path)", () => {
   test("disk failure (target dir missing) → classified disk error", async () => {
     const { fetchImpl } = mockFetch(() => okResponse([new Uint8Array(4)]))
     const res = await downloadArtifactToFile(
-      { artifact: descriptor(), targetPath: path.join(dir, "no-such-dir", "out.bin") },
+      { artifact: descriptor({ sha256: "c".repeat(64) }), targetPath: path.join(dir, "no-such-dir", "out.bin") },
       deps(fetchImpl),
     )
     expect(res).toMatchObject({ ok: false, error: "disk" })
