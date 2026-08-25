@@ -58,7 +58,7 @@ mock.module("./alpha-auth", () => ({ getAccessToken: () => "tok.cloud.dispatch" 
 mock.module("./alpha-endpoints", () => ({ resolveEndpoints: () => ({ cloud: BASE }) }))
 mock.module("./store", () => ({ getStore: () => ({ get: () => 0, set: () => {} }) }))
 mock.module("./alpha-workdir", () => ({ saveCloudRun: async () => ({ ok: false, reason: "unused" }) }))
-mock.module("./artifact-service", () => ({ finalizeArtifactWithQuota: () => ({ ok: true }), registerDownloadedArtifact: () => {} }))
+mock.module("./artifact-service", () => ({ finalizeArtifactWithQuota: () => ({ ok: true }), registerDownloadedArtifact: () => {}, registeredArtifactNameOwner: () => undefined }))
 mock.module("./alpha-cloud-jobs", () => ({
   downloadCloudArtifactTo: async () => ({ ok: false, error: "unused" }),
   getCloudJobStatus: async () => ({ error: "unused" }),

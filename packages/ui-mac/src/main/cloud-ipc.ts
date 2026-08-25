@@ -5,7 +5,7 @@
 // 阶段二:+ artifact 列表/下载(alpha-cloud-jobs)+ SSE 进度订阅(alpha-cloud-events)。SSE 事件经
 // event.sender.send("cloud-job-event", …) 推给对应 renderer;订阅按 (webContents, jobId) 记账,窗口销毁自动清。
 
-import { finalizeArtifactWithQuota, registerDownloadedArtifact } from "./artifact-service"
+import { finalizeArtifactWithQuota, registerDownloadedArtifact, registeredArtifactNameOwner } from "./artifact-service"
 import { validateArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron"
 import { execFile } from "node:child_process"
@@ -124,7 +124,13 @@ export function registerCloudIpcHandlers() {
     if (!artifactsDir) return { ok: false, error: "unsafe-path" }
     // #901: 折叠比较(NFC + toLowerCase)预约名字,挡住与既有产物只差大小写的静默覆盖——
     // 每次读盘决定,跨"分开下载"的多次 IPC 调用成立,不是单次内存 set。
-    const name = reserveArtifactSavedName(artifactsDir, desiredName, artifactId)
+    // #1112: 目录之外再问账本 —— 精确同名但归属另一个 artifactId 时让路(id 前缀消歧),
+    // 同 id 重下照旧覆盖。缺这一问的实测形态:字节先被覆盖、register 事后拒绝,
+    // manifest 仍为旧件断言已不成立的尺寸/摘要,而 renderer 两次都收到成功(#402 格 5 C5.5)。
+    const name = reserveArtifactSavedName(artifactsDir, desiredName, artifactId, undefined, (candidate) => {
+      const owner = registeredArtifactNameOwner(directory, runId, candidate)
+      return owner !== undefined && owner !== artifactId
+    })
     const target = safeResolveInAlpha(directory, "runs", runId, "artifacts", name)
     if (!target) return { ok: false, error: "unsafe-path" }
     const wc = e.sender
@@ -195,6 +201,8 @@ export function registerCloudIpcHandlers() {
           ),
         // REQ-093:下载成功即入 manifest(依赖注入,见 SaveRunDeps.register)。
         register: (input) => registerDownloadedArtifact(directory, runId, input),
+        // #1112:预约名字前问账本占用(精确同名不同件让路,同件重下照旧覆盖)。
+        artifactNameOwner: (name) => registeredArtifactNameOwner(directory, runId, name),
       },
       contract,
     )

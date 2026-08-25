@@ -10,7 +10,7 @@
 //  · B 端预算硬帽(15 iter/150k tok/300s)、每租户 ≤10 条、最小间隔 5 分钟 —— 超限 B 拒绝,
 //    错误经 platform-error-code 咽喉呈现([#940]:B 给稳定分类码则呈现 code,无码保持
 //    `http-<status>`;B 的 `error` 散文可能携带路径/租户且随时会变,不进 UI)。
-import { finalizeArtifactWithQuota, registerDownloadedArtifact } from "./artifact-service"
+import { finalizeArtifactWithQuota, registerDownloadedArtifact, registeredArtifactNameOwner } from "./artifact-service"
 import type { AutomationTask } from "../shared/automation-types"
 import { scheduleToCron } from "../shared/automation-schedule"
 import { downloadCloudArtifactTo, getCloudJobStatus, listCloudArtifacts } from "./alpha-cloud-jobs"
@@ -182,6 +182,8 @@ async function doPull(): Promise<{ pulled: number } | { error: string }> {
           ),
         // REQ-093:下载成功即入 manifest(依赖注入,见 SaveRunDeps.register)。
         register: (input) => registerDownloadedArtifact(task.target.projectDir, job.job_id, input),
+        // #1112:预约名字前问账本占用(精确同名不同件让路,同件重下照旧覆盖)。
+        artifactNameOwner: (name) => registeredArtifactNameOwner(task.target.projectDir, job.job_id, name),
       },
       cloudScheduleEnvelopeFor(task) as never,
     ).catch(() => ({ ok: false as const, reason: "save failed" }))

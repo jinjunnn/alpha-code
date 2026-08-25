@@ -37,7 +37,7 @@ mock.module("./store", () => ({ getStore: () => ({ get: () => 0, set: () => {} }
 mock.module("./alpha-automations", () => ({ getAutomation: () => null, listAutomations: () => [], saveAutomation: () => ({ ok: true }) }))
 mock.module("./alpha-workdir", () => ({ saveCloudRun: async () => ({ ok: false, reason: "unused" }) }))
 mock.module("./alpha-user-workspace", () => ({ mirrorRunArtifacts: () => {} }))
-mock.module("./artifact-service", () => ({ finalizeArtifactWithQuota: () => ({ ok: true }), registerDownloadedArtifact: () => {} }))
+mock.module("./artifact-service", () => ({ finalizeArtifactWithQuota: () => ({ ok: true }), registerDownloadedArtifact: () => {}, registeredArtifactNameOwner: () => undefined }))
 mock.module("./alpha-cloud-jobs", () => ({
   downloadCloudArtifactTo: async () => ({ ok: false, error: "unused" }),
   getCloudJobStatus: async () => ({ error: "unused" }),

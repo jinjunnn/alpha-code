@@ -35,6 +35,8 @@ const handlers = new Map<string, (...args: unknown[]) => unknown>()
 let saveResult: { ok: boolean; dir?: string; files?: string[]; warnings?: string[]; reason?: string } = { ok: true }
 /** `#970`:cloud-artifact-download handler 这一跳要转发的下载结局(逐条用例改写)。 */
 let downloadOutcome: unknown = { ok: false, error: "unused" }
+/** #1112:handler 每次预约名字的实参捕获(含账本占用谓词)。 */
+const reserveCalls: { desiredName: string; disambiguator: string; claimedByOther?: (candidateName: string) => boolean }[] = []
 
 mock.module("electron", () => ({
   BrowserWindow: {
@@ -51,9 +53,12 @@ mock.module("electron", () => ({
 mock.module("./logging", () => ({
   getLogger: () => ({ log: () => {}, warn: () => {}, error: () => {} }),
 }))
+/** #1112:账本归属 stub(name → owner artifactId);接线用例逐条改写。 */
+const ledgerOwners = new Map<string, string>()
 mock.module("./artifact-service", () => ({
   finalizeArtifactWithQuota: () => ({ ok: false, reason: "unused in this harness" }),
   registerDownloadedArtifact: () => ({ ok: false, reason: "unused in this harness" }),
+  registeredArtifactNameOwner: (_dir: string, _run: string, name: string) => ledgerOwners.get(name),
 }))
 mock.module("./alpha-cloud-jobs", () => ({
   dispatchCloudJob: async () => ({ error: "unused" }),
@@ -72,7 +77,16 @@ mock.module("./alpha-workdir", () => ({
   isSafeRunId: (id: unknown) => typeof id === "string" && /^job_[a-z0-9]+$/.test(id),
   safeResolveInAlpha: () => "/tmp/unused",
   sanitizeArtifactName: (name?: string) => name ?? "artifact",
-  reserveArtifactSavedName: (_artifactsDir: string, desiredName: string) => desiredName,
+  reserveArtifactSavedName: (
+    _artifactsDir: string,
+    desiredName: string,
+    disambiguator: string,
+    taken?: Set<string>,
+    claimedByOther?: (candidateName: string) => boolean,
+  ) => {
+    reserveCalls.push({ desiredName, disambiguator, claimedByOther })
+    return desiredName
+  },
   saveCloudRun: async () => {
     order.push("save")
     return saveResult
@@ -108,6 +122,8 @@ const artifactDownload = handlers.get("cloud-artifact-download")!
 beforeEach(() => {
   order.length = 0
   sent.length = 0
+  reserveCalls.length = 0
+  ledgerOwners.clear()
   saveResult = { ok: true, dir: "/proj/.alpha/runs/job_abc", files: ["artifacts/a.md"], warnings: [] }
   downloadOutcome = { ok: false, error: "unused" }
   windows = [fakeWindow("A"), fakeWindow("B")]
@@ -165,5 +181,23 @@ describe("#970 cloud-artifact-download 这一跳既不吞掉、也不凭空造�
     const result = (await invoke()) as Record<string, unknown>
     expect(result).toEqual({ ok: false, error: "cancelled" })
     expect("cancelled" in result).toBe(false)
+  })
+
+  // #1112:handler 必须把「账本占用 + 自身 id」组合成占用谓词交给预约 ——
+  // 归他人的名字算占用、归自己的与无主的名字不算(同件重下的原地覆盖因此保留)。
+  // 谓词语义的机械正确性在 alpha-workdir/artifact-service 各自的真测试里;这里钉的是
+  // 这一跳真的把两者接上了(漏传谓词 = 预约退回只读目录,C5.5 静默覆盖原样回来)。
+  test("#1112 预约收到账本占用谓词:他人名字 → 占用;自己/无主 → 放行", async () => {
+    ledgerOwners.set("owned-by-other.md", "art_someone_else")
+    ledgerOwners.set("owned-by-self.md", "art_1")
+    downloadOutcome = { ok: false, error: "network" }
+    await invoke() // artifact id = art_1
+    expect(reserveCalls.length).toBe(1)
+    const { disambiguator, claimedByOther } = reserveCalls[0]!
+    expect(disambiguator).toBe("art_1")
+    expect(claimedByOther).toBeDefined()
+    expect(claimedByOther!("owned-by-other.md")).toBe(true)
+    expect(claimedByOther!("owned-by-self.md")).toBe(false)
+    expect(claimedByOther!("unowned.md")).toBe(false)
   })
 })
