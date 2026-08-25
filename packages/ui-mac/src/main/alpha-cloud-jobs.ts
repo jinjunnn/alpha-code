@@ -29,6 +29,7 @@ import {
   type ArtifactFinalizer,
 } from "./alpha-artifact-download"
 import { getLogger } from "./logging"
+import { scrubInlineContent } from "../shared/cloud-artifact-descriptor"
 import { reportContractFailure } from "./alpha-contract-health"
 import type {
   CloudResult,
@@ -167,12 +168,18 @@ export async function dispatchExplicitCloudUpload(input: {
   }
 }
 
+// #1113(REQ-092 AC1 桌面消费侧):钉住 schema 里 `result` 是无约束的 `{}`(ArtifactListV1 为
+// anyOf[{},null])—— descriptor 面由闭合 schema(additionalProperties:false)结构性把守,
+// `result` 这个开放洞只能在消费侧关。解码成功后立即过 scrubInlineContent(剥内容承载键、
+// 替换 data URL 字符串,REQ-092):这里是 status/list 抵达一切公共视图 —— cloud-status /
+// cloud-artifacts IPC 原样返回 renderer、saveCloudRun 落盘 status.json —— 之前的唯一咽喉;
+// 在 IPC handler 层清洗会漏掉落盘出口。接线闸:cloud-result-scrub.cases.ts(真 handler 链,摘线即红)。
 export const getCloudJobStatus = (jobId: string): Promise<CloudResult<CloudJobStatus>> =>
   authed(
     `${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}`,
     "cloud.read",
     undefined,
-    (text) => decodeJsonContract("CloudJobStatusV1", text, "cloud-http"),
+    (text) => scrubInlineContent(decodeJsonContract("CloudJobStatusV1", text, "cloud-http")),
   )
 
 // 取消 job。#400 / platform#255:响应是版本化的 CloudJobCancelResultV1 —— 服务端可判定结果
@@ -197,7 +204,8 @@ export const listCloudArtifacts = (jobId: string): Promise<CloudResult<CloudArti
     `${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}/artifacts`,
     "artifact.read",
     undefined,
-    (text) => decodeJsonContract("ArtifactListV1", text, "artifact"),
+    // #1113:同 getCloudJobStatus —— `result` 的清洗咽喉(REQ-092 AC1)。
+    (text) => scrubInlineContent(decodeJsonContract("ArtifactListV1", text, "artifact")),
   )
 
 // REQ-092:artifact 内容唯一入口 —— pinned descriptor.contentRef 流式下载到磁盘
