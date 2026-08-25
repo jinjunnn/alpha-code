@@ -1,0 +1,70 @@
+{
+  "limitsFromContractFile": {
+    "schema_version": 1,
+    "CONTROL_ENVELOPE_MAX_BYTES": 262144,
+    "NON_STREAMING_PAYLOAD_MAX_BYTES": 524288
+  },
+  "c6_e1": {
+    "cap": 524288,
+    "exactBytes": 524288,
+    "overBytes": 524289,
+    "atCap": {
+      "keys": [
+        "schema_version",
+        "job_id",
+        "status",
+        "autonomy",
+        "progress",
+        "artifact_ids",
+        "result",
+        "error"
+      ],
+      "job_id": "job_env_exact",
+      "error": null
+    },
+    "overCap": {
+      "error": "contract-incompatible"
+    }
+  },
+  "c6_e2": {
+    "cap": 262144,
+    "padAtCap": 261955,
+    "serializedAtCap": 262144,
+    "serializedOverCap": 262145,
+    "atCap": {
+      "ok": true,
+      "envelope": {
+        "schema_version": 1,
+        "artifact_policy": {
+          "delivery": "descriptor_only"
+        },
+        "idempotency_key": "00000000-0000-4000-8000-000000000000",
+        "kind": "code-review",
+        "autonomy": "pipeline",
+        "input": {
+          "diff": {
+            "__elided__": "'d' x 261955"
+          }
+        }
+      }
+    },
+    "overCap": {
+      "ok": false,
+      "error": "envelope-too-large: 262145 bytes > 262144(diff-only 优先,勿传全库)"
+    }
+  },
+  "c6_e3": [
+    {
+      "bytes": 262143,
+      "ok": true
+    },
+    {
+      "bytes": 262144,
+      "ok": true
+    },
+    {
+      "bytes": 262145,
+      "ok": false
+    }
+  ]
+}

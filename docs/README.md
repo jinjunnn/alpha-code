@@ -26,6 +26,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | Product and visual design assets                                     | [`design/README.md`](design/README.md)                               |
 | Point-in-time audits and screenshots                                 | [`audits/README.md`](audits/README.md)                               |
 | Focused verification records                                         | [`verification/`](verification/)                                     |
+| REQ-092 #402 descriptor-only 有界产物传输七格矩阵(格 4/6/7 PASS;格 1/3/5 部分 FAIL;格 2 摘要 PASS、峰值 RSS 超顶) | [`verification/2026-08-25-req092-402-artifact-transfer/README.md`](verification/2026-08-25-req092-402-artifact-transfer/README.md) |
 | REQ-109 startup P95 after #1098/#1099 (FAIL 8,313ms; the tail is now named: first project-list fetch) | [`verification/2026-08-24-req109-p95-post1098-1099/README.md`](verification/2026-08-24-req109-p95-post1098-1099/README.md) |
 | REQ-109 packaged 稳态 catalog P95 after #1083 (FAIL: merged P95 5,347.1ms; new 5s-liveness + uninstrumented mount window) | [`verification/2026-08-24-req109-p95-post1083/README.md`](verification/2026-08-24-req109-p95-post1083/README.md) |
 | Lessons and retrospectives                                           | [`retrospectives/`](retrospectives/)                                 |
