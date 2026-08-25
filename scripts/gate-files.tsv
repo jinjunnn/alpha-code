@@ -51,6 +51,7 @@
 43	packages/ext	src/cloud-websearch-kill.test.ts	-	云 web search kill-switch 真能关(通用 Remote MCP 的钳制点)
 11	packages/ext	src/gen-skill-paths.test.ts	packages/ui-mac/src/main/ext-receipt-v2.test.ts	REQ-100 skill 注入门:只投影 main 派生的允许集(decoder 强度用例已移至受托方)
 4	packages/ext	src/cloud-contract-hook.test.ts	-	ext 侧契约解码钩子:契约不兼容必须 loud
+11	packages/ext	src/alpha-sandbox-seam.test.ts	-	REQ-138 引擎 shell 围栏接线:cfg.shell 恒指向 wrapper、profile 允许集是闭集、装不上 fail-closed 到 deny stub(真 sandbox-exec 正反语料是 darwin-only 的另一支,CI 上 skip)
 
 # ── llm(路由/凭证层;CI 不整包跑上游 llm 测试,只点名 alpha 自有的闸)────────────
 3	packages/llm	test/auth-fail-closed.test.ts	-	#652 凭证 fail-closed:未声明 auth 的 route 不得裸奔(0 次 HTTP + 具名失败),显式 Auth.none 仍放行

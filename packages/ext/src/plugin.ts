@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs"
+import { delimiter, join } from "node:path"
 import { pathToFileURL } from "node:url"
+import { wrapEngineShell } from "./shell-sandbox"
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
 import { mergeProjectConfig, projectDirectoryIdentity, requireAlphaGlobalRoot, withProjectDirectoryIdentity } from "./project-config"
@@ -93,6 +94,38 @@ export const AlphaExt: Plugin = async (input) => {
         console.log(
           `[@alpha-code/ext] cloud MCP server "${installed}" installed — the web search sovereignty gate is registered in this engine process`,
         )
+      // REQ-138 #1075:把「引擎为工具派生的 shell」围进工作区 —— 紧接装载回执之后、任何项目配置
+      // early return 之前,越界写入才无从静默得手(咽喉点与不变量见 shell-sandbox.ts)。云回执必须
+      // 仍是第一句(#223,websearch-copies.test.ts 钉住),故本块置于其后而非其前。
+      // fail-closed(I1):装不上时 cfg.shell 被顶成 deny stub / /usr/bin/false,绝不回落裸 shell。
+      // globalAlphaRoot 在插件初始化时已 canonical 校验过(校验失败则整个插件根本不加载)。
+      const fence = wrapEngineShell(cfg as { shell?: string }, globalAlphaRoot, process.env, {
+        platform: process.platform,
+        envShell: process.env.SHELL,
+        statIsFile: (p) => {
+          try {
+            return statSync(p).isFile()
+          } catch {
+            return false
+          }
+        },
+        which: (name) => whichSync(name, process.env.PATH),
+        mkdirSync: (p) => void mkdirSync(p, { recursive: true }),
+        writeFileSync: (p, data) => writeFileSync(p, data),
+        chmodSync: (p, mode) => chmodSync(p, mode),
+      })
+      if (fence.fenced) {
+        if (process.env.ALPHA_EXT_VERBOSE)
+          console.log(
+            `[@alpha-code/ext] engine shell fenced: cfg.shell=${fence.shell} real=${fence.realShell} profile=${fence.profile}`,
+          )
+      } else if (process.platform === "darwin") {
+        // darwin 上没围成 = 已 fail-closed 到 deny stub。响亮记录:引擎会吞掉 config hook 的抛错,
+        // 所以 I1 的「启动即失败可读」靠这条 loud log + deny stub 被调用时的可读拒绝共同兑现。
+        console.error(
+          `[@alpha-code/ext] engine shell sandbox FAILED to install (${fence.reason}) — cfg.shell forced to a deny stub (${fence.shell}); tool-derived shells will refuse to run rather than execute unfenced`,
+        )
+      }
       // #223 R7:归属在**本实例全部配置合并完成之后**才算 —— 下面的项目 alpha.jsonc 合并还会往
       // `cfg.mcp` 里加 server,先算就会漏掉它们(漏掉 foreign ⇒ 豁免可能错给)。放在 finally 里,
       // 上面那些 early return 也照样重算;合并中途**抛错**则 cfg 只合了一半,倒向 fail-closed。
@@ -391,6 +424,25 @@ function readProjectExtensionsConsent(
   } catch {
     return false
   }
+}
+
+/** REQ-138:裸名字 shell 的 PATH 解析(= `@opencode-ai/core` `which` 的常见路径,不引入 npm `which`
+ *  依赖)。含斜杠的名字直接当路径判存在;返回第一个存在的普通文件。找不到返回 undefined。 */
+function whichSync(name: string, pathEnv: string | undefined): string | undefined {
+  const isFile = (p: string): boolean => {
+    try {
+      return statSync(p).isFile()
+    } catch {
+      return false
+    }
+  }
+  if (name.includes("/")) return isFile(name) ? name : undefined
+  const dirs = (pathEnv ?? "").split(delimiter).filter(Boolean)
+  for (const dir of dirs) {
+    const candidate = join(dir, name)
+    if (isFile(candidate)) return candidate
+  }
+  return undefined
 }
 
 export default AlphaExt
