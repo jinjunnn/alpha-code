@@ -341,6 +341,15 @@ export type ToolPermissionSubject = { technicalId: string; identity: ToolIdentit
 // identityGate 约束。
 const INTERNAL_SENTINEL_CANONICALS: ReadonlySet<string> = new Set(["host::StructuredOutput"])
 
+/** #1129 文档轴目录闸的同一豁免口(exact canonical;identity 铸不出 canonical 不享豁免)。 */
+export function isInternalSentinelIdentity(identity: ToolIdentity): boolean {
+  try {
+    return INTERNAL_SENTINEL_CANONICALS.has(canonicalToolIdentity(identity))
+  } catch {
+    return false
+  }
+}
+
 export function disabled(
   tools: readonly (string | ToolPermissionSubject)[],
   ruleset: PermissionV1.Ruleset,

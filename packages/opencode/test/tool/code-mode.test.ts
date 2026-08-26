@@ -5,6 +5,7 @@ import type { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Agent } from "@/agent/agent"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
+import { inMemoryToolPolicyLayer } from "../fixture/alpha-tool-policy"
 import { Plugin } from "@/plugin"
 import { Session } from "@/session/session"
 import { Tool } from "@/tool/tool"
@@ -43,6 +44,8 @@ function harness(input: {
   servers: string[]
   permission?: PermissionV1.Rule[]
   trigger?: Plugin.Interface["trigger"]
+  /** #1129:E4 identity 闸经 gateToolExecution 走 Permission.Service(不再经 ctx.ask)。 */
+  ask?: (req: { permission: string }) => Effect.Effect<void>
 }) {
   const mcpTools = Object.fromEntries(
     Object.entries(input.mcpTools).map(([key, item]) => {
@@ -60,6 +63,11 @@ function harness(input: {
     }),
   )
   return Layer.mergeAll(
+    Layer.mock(Permission.Service, {
+      ask: ((req: { permission: string }) =>
+        Effect.suspend(() => (input.ask ? input.ask(req) : Effect.void))) as Permission.Interface["ask"],
+    }),
+    inMemoryToolPolicyLayer(),
     Layer.mock(Plugin.Service, {
       trigger: input.trigger ?? (((_name, _input, output) => Effect.succeed(output)) as Plugin.Interface["trigger"]),
     }),
@@ -75,6 +83,7 @@ function harness(input: {
     Layer.mock(MCP.Service, {
       tools: () => Effect.succeed(mcpTools),
       clients: () => Effect.succeed(Object.fromEntries(input.servers.map((name) => [name, {} as any]))),
+      bindingFacts: () => Effect.succeed(undefined),
     }),
   )
 }
@@ -88,12 +97,13 @@ function build(
   servers?: string[],
   permission?: PermissionV1.Rule[],
   trigger?: Plugin.Interface["trigger"],
+  ask?: (req: { permission: string }) => Effect.Effect<void>,
 ) {
   const names = serverNames(mcpTools, servers)
   return Effect.runPromise(
     CodeModeTool.pipe(
       Effect.flatMap(Tool.init),
-      Effect.provide(harness({ mcpTools, servers: names, permission, trigger })),
+      Effect.provide(harness({ mcpTools, servers: names, permission, trigger, ask })),
     ),
   )
 }
@@ -390,30 +400,35 @@ describe("code mode execute", () => {
   })
 
   test("asks permission before each child tool call", async () => {
-    const asked: unknown[] = []
-    const permissionCtx: Tool.Context = { ...ctx, ask: (req) => Effect.sync(() => void asked.push(req)) }
+    // #1129:identity ask 经 Permission 引擎(gateToolExecution),探头随之从 ctx.ask 移过去。
+    const asked: string[] = []
     const ok = () => ({ content: [{ type: "text", text: "ok" }] })
-    const tool = await build({ a_tool: mcpTool("tool", ok), b_tool: mcpTool("tool", ok) })
-
-    await Effect.runPromise(
-      tool.execute({ code: "await tools.a.tool({}); await tools.b.tool({}); return 'done'" }, permissionCtx),
+    const tool = await build({ a_tool: mcpTool("tool", ok), b_tool: mcpTool("tool", ok) }, undefined, undefined, undefined, (req) =>
+      Effect.sync(() => void asked.push(req.permission)),
     )
 
-    expect(asked.map((req: any) => req.permission)).toEqual(["mcp:a:tool", "mcp:b:tool"])
+    await Effect.runPromise(tool.execute({ code: "await tools.a.tool({}); await tools.b.tool({}); return 'done'" }, ctx))
+
+    expect(asked).toEqual(["mcp:a:tool", "mcp:b:tool"])
   })
 
   test("a denied permission fails the child call with a catchable message, not the whole execute", async () => {
-    const denyCtx: Tool.Context = { ...ctx, ask: () => Effect.die(new Error("permission denied by user")) }
     const called: string[] = []
-    const tool = await build({
-      a_tool: mcpTool("tool", () => {
-        called.push("a")
-        return { content: [{ type: "text", text: "ok" }] }
-      }),
-    })
+    const tool = await build(
+      {
+        a_tool: mcpTool("tool", () => {
+          called.push("a")
+          return { content: [{ type: "text", text: "ok" }] }
+        }),
+      },
+      undefined,
+      undefined,
+      undefined,
+      () => Effect.die(new Error("permission denied by user")) as Effect.Effect<void>,
+    )
 
     const output = await Effect.runPromise(
-      tool.execute({ code: "try { await tools.a.tool({}) } catch (e) { return 'denied: ' + e.message }" }, denyCtx),
+      tool.execute({ code: "try { await tools.a.tool({}) } catch (e) { return 'denied: ' + e.message }" }, ctx),
     )
 
     expect(output.output).toBe("denied: permission denied by user")
@@ -736,15 +751,16 @@ describe("code mode permission visibility", () => {
     expect(allowed.output).toBe("ok")
   })
 
-  test("an ask-level tool remains callable and still prompts via ctx.ask", async () => {
+  test("an ask-level tool remains callable and still prompts via the Permission engine", async () => {
     const asked: string[] = []
-    const askCtx: Tool.Context = { ...ctx, ask: (req) => Effect.sync(() => void asked.push(req.permission)) }
     const tool = await build(
       { github_list_issues: mcpTool("list_issues", ok) },
       ["github"],
       [askRule("github_list_issues")],
+      undefined,
+      (req) => Effect.sync(() => void asked.push(req.permission)),
     )
-    const out = await Effect.runPromise(tool.execute({ code: "return await tools.github.list_issues({})" }, askCtx))
+    const out = await Effect.runPromise(tool.execute({ code: "return await tools.github.list_issues({})" }, ctx))
     expect(out.output).toBe("ok")
     expect(asked).toEqual(["mcp:github:list_issues"])
   })

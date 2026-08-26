@@ -33,6 +33,8 @@ import { NamedError } from "@opencode-ai/core/util/error"
 import { SessionProcessor } from "./processor"
 import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
+import { AlphaToolPolicy } from "@/permission/alpha-tool-policy"
+import { AlphaToolPolicyGate } from "@/permission/alpha-tool-policy-gate"
 import { SessionStatus } from "./status"
 import { LLM } from "./llm"
 import { Shell } from "@opencode-ai/core/shell"
@@ -57,7 +59,7 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { attachToolDisplay } from "./tool-display"
-import { canonicalToolIdentity, type ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
+import { type ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -131,6 +133,7 @@ const layer = Layer.effect(
     const commands = yield* Command.Service
     const config = yield* Config.Service
     const permission = yield* Permission.Service
+    const toolPolicy = yield* AlphaToolPolicy.Service
     const fsys = yield* FSUtil.Service
     const mcp = yield* MCP.Service
     const lsp = yield* LSP.Service
@@ -288,19 +291,20 @@ const layer = Layer.effect(
         return yield* Effect.die(new PermissionV1.DeniedError({ ruleset: taskRuleset }))
       // #1129 / #724 §6 E6:direct subtask 绕过 SessionTools,上面的 disabled 检查只完成
       // deny;identity=ask 必须同样成立。在任何副作用(消息/part 持久化、plugin hook、
-      // subsession/Task execute)之前用同一个 Permission 引擎按 exact canonical identity
-      // 走三态:deny ⇒ 具名拒绝(与上面同型,双保险)、ask ⇒ 挂起等批准(reject/超时即
-      // fail-closed,什么都没写盘)、allow ⇒ 静默通过(agent 默认 `*: allow` 底保持现状)。
-      yield* permission
-        .ask({
-          permission: canonicalToolIdentity(taskTool.identity),
-          sessionID,
-          metadata: { agent: task.agent, description: task.description },
-          patterns: ["*"],
-          always: ["*"],
-          ruleset: taskRuleset,
-        })
-        .pipe(Effect.orDie)
+      // subsession/Task execute)之前走与 E1-E4 同一个 gate:ruleset 轴 + 策略**文档轴**
+      // (调用时重读;task 是 builtin 类,binding 为应用常量)。deny ⇒ 具名拒绝(与上面
+      // 同型,双保险)、ask ⇒ 挂起等批准(reject/超时即 fail-closed,什么都没写盘)、
+      // allow ⇒ 静默通过(builtin 类默认 enabled,agent 默认 `*: allow` 底保持现状)。
+      yield* AlphaToolPolicyGate.gateToolExecution({
+        policy: toolPolicy,
+        permission,
+        subject: Effect.succeed(
+          AlphaToolPolicyGate.builtinSubject(taskTool.identity, { kind: "not-asserted" }),
+        ),
+        ruleset: taskRuleset,
+        sessionID,
+        metadata: { agent: task.agent, description: task.description },
+      }).pipe(Effect.orDie)
       const assistantMessage: SessionV1.Assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
         role: "assistant",
@@ -1269,6 +1273,7 @@ const layer = Layer.effect(
               messages: msgs,
               promptOps,
             }).pipe(
+              Effect.provideService(AlphaToolPolicy.Service, toolPolicy),
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
               Effect.provideService(ToolRegistry.Service, registry),
@@ -1650,6 +1655,7 @@ export const node = LayerNode.make({
     Command.node,
     Config.node,
     Permission.node,
+    AlphaToolPolicy.node,
     FSUtil.node,
     MCP.node,
     LSP.node,

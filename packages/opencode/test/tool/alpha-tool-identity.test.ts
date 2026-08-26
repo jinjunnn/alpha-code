@@ -175,11 +175,20 @@ describe("stable tool identity", () => {
         authority: { kind: "not-asserted" },
       }),
     }
+    // #1129:第三参是策略文档轴动作(必传);本用例隔离 ruleset 轴 ⇒ 文档轴给 allow。
+    const docAllow = new Map([["visible_alias", "allow" as const]])
     expect(
-      workflowPreapprovedToolNames(tools, [{ permission: "mcp:server:remote_name", pattern: "*", action: "ask" }]),
+      workflowPreapprovedToolNames(tools, [{ permission: "mcp:server:remote_name", pattern: "*", action: "ask" }], docAllow),
     ).toEqual([])
-    expect(workflowPreapprovedToolNames(tools, [{ permission: "visible_alias", pattern: "*", action: "ask" }])).toEqual(
-      ["visible_alias"],
-    )
+    expect(
+      workflowPreapprovedToolNames(tools, [{ permission: "visible_alias", pattern: "*", action: "ask" }], docAllow),
+    ).toEqual(["visible_alias"])
+    // 文档轴 fail-closed:动作缺席 = 不预批(与 ask/deny 同待遇)。
+    expect(
+      workflowPreapprovedToolNames(tools, [], new Map()),
+    ).toEqual([])
+    expect(
+      workflowPreapprovedToolNames(tools, [], new Map([["visible_alias", "ask" as const]])),
+    ).toEqual([])
   })
 })

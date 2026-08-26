@@ -8,7 +8,9 @@ import { Agent } from "@/agent/agent"
 import { Session } from "@/session/session"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
-import { canonicalToolIdentity } from "@opencode-ai/schema/tool-identity"
+import type { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { AlphaToolPolicy, mcpBindingDigest } from "@/permission/alpha-tool-policy"
+import { AlphaToolPolicyGate } from "@/permission/alpha-tool-policy-gate"
 
 export const CODE_MODE_TOOL = "execute"
 
@@ -135,6 +137,10 @@ function toolTree(catalog: readonly CatalogEntry[], run: (entry: CatalogEntry) =
 
 const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: {
   plugin: Plugin.Interface
+  policy: AlphaToolPolicy.Interface
+  permission: Permission.Interface
+  mcp: MCP.Interface
+  ruleset: PermissionV1.Ruleset
   entry: CatalogEntry
   args: Record<string, unknown>
   callID: string
@@ -144,9 +150,26 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
   // register wrapper,这里是它唯一的 identity 闸。deny/ask 未放行前,插件钩子看不到这次
   // 调用,MCP 传输一个字节都不发。主权 kill-switch 钩子仍无条件先于传输执行,
   // 任何 ask 放行都跳不过它(ext 的 cloud-websearch-kill.test.ts 钉住这半边)。
+  // 与 E1-E3 同一 gate:策略文档轴在**每次子调用时重读**(§6 executor 重读),当前 binding
+  // 也重新派生 —— 子工具全是 MCP,rebind 后旧的 service/tool enabled 回 ask。
   const identity = input.entry.tool.identity
   if (!identity) throw new Error(`MCP tool ${input.entry.key} is missing its source identity`)
-  yield* input.ctx.ask({ permission: canonicalToolIdentity(identity), metadata: {}, patterns: ["*"], always: ["*"] })
+  yield* AlphaToolPolicyGate.gateToolExecution({
+    policy: input.policy,
+    permission: input.permission,
+    subject: Effect.gen(function* () {
+      const facts = input.mcp.bindingFacts ? yield* input.mcp.bindingFacts(identity.origin) : undefined
+      return {
+        identity,
+        authority: facts?.authority ?? ({ kind: "not-asserted" } as const),
+        bindingDigest: facts?.entry ? mcpBindingDigest(identity.origin, facts.entry) : undefined,
+      }
+    }),
+    ruleset: input.ruleset,
+    sessionID: input.ctx.sessionID,
+    tool: { messageID: input.ctx.messageID, callID: input.callID },
+    metadata: {},
+  }).pipe(Effect.orDie)
   yield* input.plugin.trigger(
     "tool.execute.before",
     { tool: input.entry.key, sessionID: input.ctx.sessionID, callID: input.callID },
@@ -200,6 +223,8 @@ export const CodeModeTool = Tool.define(
     const agents = yield* Agent.Service
     const sessions = yield* Session.Service
     const plugin = yield* Plugin.Service
+    const permission = yield* Permission.Service
+    const toolPolicy = yield* AlphaToolPolicy.Service
 
     const init: Tool.DefWithoutID<typeof Parameters, Metadata> = {
       description: DESCRIPTION,
@@ -215,7 +240,21 @@ export const CodeModeTool = Tool.define(
         const agent = yield* agents.get(ctx.agent)
         const session = yield* sessions.get(ctx.sessionID).pipe(Effect.orDie)
         const ruleset = Permission.merge(agent.permission, session.permission ?? [])
-        const mcpTools = Permission.visibleTools(yield* mcp.tools(), ruleset)
+        const rulesetVisible = Permission.visibleTools(yield* mcp.tools(), ruleset)
+        // #1129 / #724 §6 E4:「disabled child 也不进 child catalog」的第二条轴 ——
+        // 策略文档轴按当轮 snapshot 判 deny(ask 照旧进目录,由上面的执行闸负责问)。
+        const childPolicyDenied = yield* AlphaToolPolicyGate.snapshotCatalogDenied(
+          toolPolicy,
+          Object.entries(rulesetVisible).map(([technicalId, item]) => ({
+            technicalId,
+            identity: item.identity!,
+            authority: item.authority ?? ({ kind: "not-asserted" } as const),
+          })),
+          ruleset,
+        )
+        const mcpTools = Object.fromEntries(
+          Object.entries(rulesetVisible).filter(([technicalId]) => !childPolicyDenied.has(technicalId)),
+        )
         const catalog = [...groupByServer(mcpTools).values()].flat()
 
         const calls: CallEntry[] = []
@@ -229,6 +268,10 @@ export const CodeModeTool = Tool.define(
             childCalls += 1
             const result = yield* invokeChildTool({
               plugin,
+              policy: toolPolicy,
+              permission,
+              mcp,
+              ruleset,
               entry,
               args: (input ?? {}) as Record<string, unknown>,
               callID: `${ctx.callID ?? entry.key}/${childCalls}`,

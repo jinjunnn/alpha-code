@@ -17,6 +17,8 @@ import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "./message-v2"
 import { Plugin } from "@/plugin"
 import { Permission } from "@/permission"
+import { AlphaToolPolicy } from "@/permission/alpha-tool-policy"
+import { AlphaToolPolicyGate } from "@/permission/alpha-tool-policy-gate"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Wildcard } from "@/util/wildcard"
@@ -34,10 +36,19 @@ import { getToolDisplay } from "./tool-display"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
-export function workflowPreapprovedToolNames(tools: Record<string, Tool>, ruleset: PermissionV1.Ruleset) {
+// #1129 / #724 §6 E5:「preapproved 列表只收 effective enabled,ask/disabled 均不得预批」。
+// 两条轴都要过:ruleset 轴的 identity ask(既有判据)+ 策略**文档轴**的动作(snapshot)。
+// `docActions` 是**必传**参:漏一个调用点在 typecheck 就红,而不是静默退回单轴。
+// 查不到的 technicalId 按 fail-closed 处理(不预批 —— 至多多问,绝不少问)。
+export function workflowPreapprovedToolNames(
+  tools: Record<string, Tool>,
+  ruleset: PermissionV1.Ruleset,
+  docActions: ReadonlyMap<string, PermissionV1.Action>,
+) {
   return Object.keys(tools).filter((name) => {
     const display = getToolDisplay(tools[name]!)
     if (!display) return false
+    if (docActions.get(name) !== "allow") return false
     const identity = canonicalToolIdentity(display.identity)
     const match = ruleset.findLast((rule) => Wildcard.match(identity, rule.permission))
     return !match || match.action !== "ask"
@@ -79,6 +90,7 @@ const live: Layer.Layer<
   | Provider.Service
   | Plugin.Service
   | Permission.Service
+  | AlphaToolPolicy.Service
   | EventV2Bridge.Service
   | LLMClientService
   | RuntimeFlags.Service
@@ -90,6 +102,7 @@ const live: Layer.Layer<
     const provider = yield* Provider.Service
     const plugin = yield* Plugin.Service
     const perm = yield* Permission.Service
+    const toolPolicy = yield* AlphaToolPolicy.Service
     const events = yield* EventV2Bridge.Service
     const llmClient = yield* LLMClient.Service
     const flags = yield* RuntimeFlags.Service
@@ -120,6 +133,7 @@ const live: Layer.Layer<
         provider: item,
         auth: info,
         plugin,
+        toolPolicy,
         flags,
         isWorkflow,
       })
@@ -159,7 +173,18 @@ const live: Layer.Layer<
         }
 
         const ruleset = Permission.merge(input.agent.permission ?? [], input.permission ?? [])
-        workflowModel.sessionPreapprovedTools = workflowPreapprovedToolNames(prepared.tools, ruleset)
+        // 文档轴动作按当轮 snapshot 求值(§6 允许);subject 刻意不带 binding digest ——
+        // service/tool 层 enabled 记录会按 binding-changed 降为 ask ⇒ 不预批(fail-closed,
+        // 至多多问);executor 侧 identityGate 仍带真 digest 逐次重读,不多拦真实调用。
+        const docActions = yield* AlphaToolPolicyGate.snapshotDocActions(
+          toolPolicy,
+          Object.entries(prepared.tools).flatMap(([technicalId, item]) => {
+            const display = getToolDisplay(item)
+            return display ? [{ technicalId, identity: display.identity, authority: display.authority }] : []
+          }),
+          ruleset,
+        )
+        workflowModel.sessionPreapprovedTools = workflowPreapprovedToolNames(prepared.tools, ruleset, docActions)
 
         const approvedToolsForSession = new Set<string>()
         workflowModel.approvalHandler = bridge.bind(async (approvalTools) => {
@@ -404,6 +429,7 @@ export const node = LayerNode.make({
     Provider.node,
     Plugin.node,
     Permission.node,
+    AlphaToolPolicy.node,
     EventV2Bridge.node,
     llmClient,
     RuntimeFlags.node,

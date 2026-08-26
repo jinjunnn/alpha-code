@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, test } from "bun:test"
 import { CodeModeTool, describeCatalog } from "@/tool/code-mode"
 import { McpCatalog } from "@/mcp/catalog"
+import { Permission } from "@/permission"
+import { inMemoryToolPolicyLayer } from "../fixture/alpha-tool-policy"
 import { Agent } from "@/agent/agent"
 import { MCP } from "@/mcp"
 import { Plugin } from "@/plugin"
@@ -33,6 +35,9 @@ const ctx: Tool.Context = {
   metadata: () => Effect.void,
   ask: () => Effect.void,
 }
+
+/** #1129:Permission 引擎 mock 的 ask 记录(探针用例读它;每条用例前自行清零)。 */
+const askLog: string[] = []
 
 // Avoid the SDK Client here; other MCP tests mock it process-globally.
 class RawJsonRpcClient {
@@ -144,6 +149,11 @@ async function buildTool() {
   }
 
   const layer = Layer.mergeAll(
+    // #1129:identity ask 经 Permission 引擎(gateToolExecution),探头从 ctx.ask 移到这里。
+    Layer.mock(Permission.Service, {
+      ask: ((req: { permission: string }) => Effect.sync(() => void askLog.push(req.permission))) as Permission.Interface["ask"],
+    }),
+    inMemoryToolPolicyLayer(),
     Layer.mock(Plugin.Service, {
       trigger: ((_name: unknown, _input: unknown, output: unknown) =>
         Effect.succeed(output)) as Plugin.Interface["trigger"],
@@ -156,6 +166,7 @@ async function buildTool() {
     Layer.mock(MCP.Service, {
       tools: () => Effect.succeed(mcpTools),
       clients: () => Effect.succeed({ [SERVER]: {} as any }),
+      bindingFacts: () => Effect.succeed(undefined),
     }),
   )
   return {
@@ -300,8 +311,8 @@ describe("code mode integration (real MCP server)", () => {
   })
 
   test("asks permission for each MCP call, keyed by canonical identity", async () => {
-    const asked: string[] = []
-    const permCtx: Tool.Context = { ...ctx, ask: (req: any) => Effect.sync(() => void asked.push(req.permission)) }
+    // #1129:ask 经 Permission 引擎(gateToolExecution),探头在共享 Permission mock 上。
+    askLog.length = 0
     await Effect.runPromise(
       tool.execute(
         {
@@ -311,10 +322,10 @@ describe("code mode integration (real MCP server)", () => {
             return 'done'
           `,
         },
-        permCtx,
+        ctx,
       ),
     )
-    expect(asked).toEqual(["mcp:fixtures:add", "mcp:fixtures:get_text"])
+    expect(askLog).toEqual(["mcp:fixtures:add", "mcp:fixtures:get_text"])
   })
 
   test("streams running/completed metadata for child calls over a real transport", async () => {

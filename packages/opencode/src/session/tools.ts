@@ -23,7 +23,10 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { canonicalToolIdentity, ToolAliasLedger, type ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
+import { ToolAliasLedger, type ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
+import type { ToolPolicySubject } from "@opencode-ai/schema/alpha-tool-policy"
+import { AlphaToolPolicy, mcpBindingDigest } from "@/permission/alpha-tool-policy"
+import { AlphaToolPolicyGate } from "@/permission/alpha-tool-policy-gate"
 import { attachToolDisplay } from "./tool-display"
 
 const MCP_RESOURCE_TOOLS = {
@@ -54,6 +57,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const plugin = yield* Plugin.Service
   const permission = yield* Permission.Service
   const registry = yield* ToolRegistry.Service
+  const toolPolicy = yield* AlphaToolPolicy.Service
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
   const flags = yield* RuntimeFlags.Service
@@ -61,12 +65,35 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   // #1129 / #724 §6(E1/E2/E3)—— 所有来源共用的执行闸,包在公共 register() 上:
   // identity 三态早于 `tool.execute.before` 钩子与实现本体(闸在 wrapper、钩子在被包的
-  // execute 内,先后是结构性的,不靠纪律)。deny ⇒ 具名响亮拒绝、零 hook/零副作用;
-  // ask ⇒ 走现有 Permission 引擎挂起等批准(once/always 的会话语义在 permission/index.ts,
-  // #1128);allow ⇒ 不加 identity prompt,工具自身的 read/edit/bash/external_directory 等
-  // ability 闸原样留在 execute 内部。ruleset 在每次调用时重新求值(stale/cached 工具对象
-  // 拿不到旧宽松态);agent 默认 ruleset 的 `*: allow` 底(agent/agent.ts)保证无 identity
-  // 规则时行为不变。不放行任何缺 identity 的工具 —— display.identity 是 register 的必填参。
+  // execute 内,先后是结构性的,不靠纪律)。两条轴在 alpha-tool-policy-gate 里按 §4 合成:
+  // ruleset 轴(config/agent/session 的 identity 规则,#1121/#1135)deny 折进 cap、
+  // ask/allow 原地生效;**策略文档轴**(#1128 的 resolve:managed/entitlement cap →
+  // 用户 selector(binding guard)→ 四类默认)在**每次调用时重读** —— Settings/managed
+  // 在模型拿到旧 catalog 后收紧,缓存的工具对象也执行不了(§6 executor 重读)。
+  // deny ⇒ 具名响亮拒绝、零 hook/零副作用;ask ⇒ 同一次 Permission.ask 挂起等批准
+  // (once/always 会话语义在 permission/index.ts);allow ⇒ 不加 identity prompt,
+  // 工具自身的 read/edit/bash/external_directory 等 ability 闸原样留在 execute 内部。
+  // 不放行任何缺 identity 的工具 —— display.identity 是 register 的必填参。
+  //
+  // 当前 binding(§5)也在调用时重新派生:mcp = 生效配置 entry 的去秘密 digest
+  // (rebind 后与记录里的 digest 不等 ⇒ enabled 降回 ask),plugin = 本装载代 digest,
+  // builtin/host = 应用常量。
+  const currentSubject = (display: ToolDisplaySnapshotV1): Effect.Effect<ToolPolicySubject> =>
+    Effect.gen(function* () {
+      const identity = display.identity
+      if (identity.source === "mcp") {
+        const facts = mcp.bindingFacts ? yield* mcp.bindingFacts(identity.origin) : undefined
+        return {
+          identity,
+          authority: facts?.authority ?? { kind: "not-asserted" as const },
+          bindingDigest: facts?.entry ? mcpBindingDigest(identity.origin, facts.entry) : undefined,
+        }
+      }
+      if (identity.source === "plugin") {
+        return { identity, authority: display.authority, bindingDigest: yield* registry.pluginBinding(identity.origin) }
+      }
+      return AlphaToolPolicyGate.builtinSubject(identity, display.authority)
+    })
   const identityGate = (value: AITool, display: ToolDisplaySnapshotV1): AITool => {
     const execute = value.execute
     if (!execute) return value
@@ -75,17 +102,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute: (args, options) =>
         run
           .promise(
-            permission
-              .ask({
-                permission: canonicalToolIdentity(display.identity),
-                sessionID: input.session.id,
-                metadata: {},
-                patterns: ["*"],
-                always: ["*"],
-                tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-                ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
-              })
-              .pipe(Effect.orDie),
+            AlphaToolPolicyGate.gateToolExecution({
+              policy: toolPolicy,
+              permission,
+              subject: currentSubject(display),
+              ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+              sessionID: input.session.id,
+              tool: { messageID: input.processor.message.id, callID: options.toolCallId },
+              metadata: {},
+            }).pipe(Effect.orDie),
           )
           .then(() => execute.call(value, args, options)),
     } as AITool

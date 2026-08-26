@@ -64,6 +64,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
+import { AlphaToolPolicy } from "@/permission/alpha-tool-policy"
 import { Plugin } from "@/plugin"
 import type { Provider } from "@/provider/provider"
 import { MessageID, SessionID } from "@/session/schema"
@@ -259,6 +260,7 @@ const it = testEffect(
       MCP.node,
       Agent.node,
       Permission.node,
+      AlphaToolPolicy.node,
       Plugin.node,
       Truncate.node,
       RuntimeFlags.node,
