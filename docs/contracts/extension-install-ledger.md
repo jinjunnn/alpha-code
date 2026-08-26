@@ -127,7 +127,7 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   ——先到先得,如实固化,后到 channel 不重写。
 - **消费不变量**:environment 不是可见性、操作资格或 channel namespace —— 所有 channel 读同
   一本项目账本,任何读方(`readLedgerV2` / `findRecordV2` / `lookupForUninstall` /
-  `ext-list-installs-v2`)不得按 environment 过滤或授权;新增读方必须遵守。
+  `ext-list-installs`)不得按 environment 过滤或授权;新增读方必须遵守。
 - adoption 触发面 = 项目 lifecycle(`ext-trust-check`),在「无 executable / 已有信任决策」
   两个早退**之前**;顺序 = realpath 身份 → `ledgerReady` → project recovery gate →
   project bundle 锁 → `migrateV1Ledger`(迁移器自身不持锁);无 `.alpha` 存量零写副作用;

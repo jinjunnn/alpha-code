@@ -1291,18 +1291,6 @@ export function registerExtIpcHandlers(
     return gatedWrite.importSkillFolder(picked.srcDir, target)
   })
   ipcMain.handle(GATED_WRITE_CHANNELS.importSkillGit, barrier(gatedWrite.importSkillGit))
-  // REQ-099(ADR-028 §5):Hub 项目上下文读通道 —— global 与当前项目的 v2 账本分读(物理分域),
-  // records 带 environment/scope identity/desiredState/generation;v1Only 为只读兼容面。
-  ipcMain.handle("ext-list-installs-v2", async (_event: IpcMainInvokeEvent, projectDir?: unknown) => {
-    const resolved = projectDir === undefined ? null : resolveProjectEntry(projectDir)
-    await ledgerReady // #309:读方同 barrier(迁移中途的半程视图不外泄)
-    const global = readLedgerV2(alphaGlobalRoot())
-    if (resolved && !resolved.ok) return { global, project: null, projectError: resolved.reason }
-    if (!resolved) return { global, project: null }
-    const project = withProjectIpcEntryIdentity(resolved, homeDir, (current) => readLedgerV2(current.root))
-    if (!project.ok) return { global, project: null, projectError: project.reason }
-    return { global, project: project.value }
-  })
   // REQ-103 slice 2a(#195):governance 只读查询 —— 逐扩展五维所有权 + 三态(slice 1 聚合面)。
   // 唯一的 governance 通道,零写面:核心是 electron-free 的 createInventoryQuery(纯读契约与
   // 负向面在 ext-inventory(-boundaries).test 钉死);catalog 输入复用上面的已验 resolve 面。
