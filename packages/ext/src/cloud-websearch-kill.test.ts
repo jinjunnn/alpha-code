@@ -341,15 +341,23 @@ describe("上游次序前提(#1129:identity ask 早于 trigger,trigger 早于传
   test("普通 MCP 链:identity 闸在 register 咽喉上,MCP 循环里 trigger 直达传输、其后再无 ask", () => {
     const body = readFileSync(join(repoRoot, "packages/opencode/src/session/tools.ts"), "utf8")
     // ① register 咽喉上的 identity 闸在:闸在 wrapper、钩子在被包的 execute 内,
-    //    「ask 早于 trigger」是结构性的,不靠行序纪律。
+    //    「ask 早于 trigger」是结构性的,不靠行序纪律。#1129 reopen 后 wrapper 里的载体
+    //    是共享 gate(gateToolExecution:文档轴 deny → 单次 Permission.ask),锚点随之换。
     const gate = body.indexOf("const identityGate")
     expect(gate).toBeGreaterThanOrEqual(0)
     const registerFn = body.indexOf("const register =", gate)
     expect(registerFn).toBeGreaterThan(gate)
-    const gateAsk = body.indexOf(".ask(", gate)
-    expect(gateAsk).toBeGreaterThan(gate)
-    expect(gateAsk).toBeLessThan(registerFn)
+    const gateCall = body.indexOf("AlphaToolPolicyGate.gateToolExecution(", gate)
+    expect(gateCall).toBeGreaterThan(gate)
+    expect(gateCall).toBeLessThan(registerFn)
     expect(body.indexOf("identityGate(value, display)", registerFn)).toBeGreaterThan(registerFn)
+    // ①b gate 模块内部:deny 判定之后恰有一次 permission.ask(单一问询点;findLast 组合在其中)。
+    const gateBody = readFileSync(join(repoRoot, "packages/opencode/src/permission/alpha-tool-policy-gate.ts"), "utf8")
+    const gateFn = gateBody.indexOf("export const gateToolExecution")
+    expect(gateFn).toBeGreaterThanOrEqual(0)
+    const gateAsk = gateBody.indexOf("input.permission.ask(", gateFn)
+    expect(gateAsk).toBeGreaterThan(gateFn)
+    expect(gateBody.indexOf("input.permission.ask(", gateAsk + 1)).toBe(-1)
     // ② MCP 循环:trigger 之后直达传输,不许再有第二个 ask(旧的重复 canonical ask 位点)。
     const loop = body.indexOf("McpCatalog.convertTool(")
     expect(loop).toBeGreaterThanOrEqual(0)
@@ -359,13 +367,16 @@ describe("上游次序前提(#1129:identity ask 早于 trigger,trigger 早于传
     expect(transport).toBeGreaterThan(trigger)
     const staleAsk = body.indexOf("ctx.ask(", trigger)
     expect(staleAsk === -1 || staleAsk > transport).toBe(true)
+    const staleGate = body.indexOf("gateToolExecution(", trigger)
+    expect(staleGate === -1 || staleGate > transport).toBe(true)
   })
 
   test("code-mode 链:invokeChildTool 里 ask 在 trigger 之前,trigger 在 callTool 之前", () => {
     const body = readFileSync(join(repoRoot, "packages/opencode/src/tool/code-mode.ts"), "utf8")
     const fn = body.indexOf("invokeChildTool = Effect.fn")
     expect(fn).toBeGreaterThanOrEqual(0)
-    const ask = body.indexOf("ctx.ask(", fn)
+    // #1129 reopen:载体 = 共享 gate(文档轴 deny → 单次 Permission.ask),仍必须先于 trigger。
+    const ask = body.indexOf("AlphaToolPolicyGate.gateToolExecution(", fn)
     const trigger = body.indexOf('"tool.execute.before"', fn)
     const callTool = body.indexOf(".callTool(", fn)
     expect(ask).toBeGreaterThan(fn)
