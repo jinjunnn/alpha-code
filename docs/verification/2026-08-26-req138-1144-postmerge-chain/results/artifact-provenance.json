@@ -1,0 +1,122 @@
+{
+  "ticket": "jinjunnn/alpha-code#1144",
+  "purpose": "artifact provenance: the packaged app under test really contains #1147",
+  "at": "2026-08-26T17:55:42.843143+00:00",
+  "worktree": "/Users/tide/app/alpha-code/.worktrees/ac-1144b",
+  "headSha": "8a438007b2ae8b8da76137c68053916ac306f66a",
+  "headOneline": "8a438007b docs(verification): #1144 \u6253\u5305 shell \u5de5\u5177\u6574\u94fe\u7531 agent \u56de\u5408\u9a71\u52a8\u5b9e\u8dd1 + Developer ID/hardened runtime \u590d\u8dd1 (#1148)",
+  "baseComparedAgainst": "c3c58308f",
+  "gitStatusPorcelainLines": 2,
+  "gitStatusPorcelain": [
+    "M docs/verification/2026-08-26-req138-1144-packaged-shell-tool-chain/run.ts",
+    "?? docs/verification/2026-08-26-req138-1144-postmerge-chain/"
+  ],
+  "gitLsFilesUiMacIcons": 0,
+  "artifacts": {
+    "fencedApp": "/Users/tide/app/alpha-code/.worktrees/ac-1144b/packages/ui-mac/dist/mac-arm64/alpha-code.app",
+    "unfencedApp": "/Users/tide/app/alpha-code/.worktrees/ac-1144b/packages/ui-mac/dist/mac-arm64/alpha-code-unfenced.app",
+    "appAsarBytes": 182813235,
+    "appAsarSha256": "a03cccd8430efbe08627dde82d17730da63b9347ce627735a51b5d10964c136e",
+    "appAsarMtimeUtc": "2026-08-26T17:05:52.851531+00:00",
+    "extBundleFencedSha256": "72026e70094326ad6681b60f4d25e5dbc7dc58c764cf416c0471eaca62d07f80",
+    "extBundleUnfencedSha256": "9cc40e89fa5e026048782823dba27a256c9ec8afad90cf3ccccb27ca8c95d463",
+    "branchExtBundleSha256": "72026e70094326ad6681b60f4d25e5dbc7dc58c764cf416c0471eaca62d07f80",
+    "mainExecMtimeUtc": "2026-08-26T17:06:46.737311+00:00"
+  },
+  "instrumentValidation": [
+    {
+      "needle": "AlphaToolPolicy",
+      "path": "app.asar",
+      "expect": "present",
+      "hits": 9
+    },
+    {
+      "needle": "alpha-app-builtinXYZZY",
+      "path": "app.asar",
+      "expect": "absent",
+      "hits": 0
+    },
+    {
+      "needle": "sandbox-execXYZZY",
+      "path": "app.asar",
+      "expect": "absent",
+      "hits": 0
+    },
+    {
+      "needle": "sandbox-exec",
+      "path": "alpha-ext/plugin.js (fenced)",
+      "expect": "present",
+      "hits": 2
+    },
+    {
+      "needle": "sandbox-exec",
+      "path": "alpha-ext/plugin.js (unfenced)",
+      "expect": "present-minus-one",
+      "hits": 1
+    }
+  ],
+  "markers": [
+    {
+      "marker": "alpha-app-builtin",
+      "baseFiles": [],
+      "headFiles": [
+        "packages/opencode/src/permission/alpha-tool-policy-gate.ts"
+      ],
+      "newIn1147": true,
+      "asarLineHits": 1
+    },
+    {
+      "marker": "plugin-file",
+      "baseFiles": [],
+      "headFiles": [
+        "packages/opencode/src/tool/registry.ts"
+      ],
+      "newIn1147": true,
+      "asarLineHits": 1
+    },
+    {
+      "marker": "plugin-hook",
+      "baseFiles": [],
+      "headFiles": [
+        "packages/opencode/src/tool/registry.ts"
+      ],
+      "newIn1147": true,
+      "asarLineHits": 1
+    },
+    {
+      "marker": "gateToolExecution",
+      "baseFiles": [],
+      "headFiles": [
+        "packages/opencode/src/permission/alpha-tool-policy-gate.ts",
+        "packages/opencode/src/session/prompt.ts",
+        "packages/opencode/src/session/tools.ts",
+        "packages/opencode/src/tool/code-mode.ts"
+      ],
+      "newIn1147": true,
+      "asarLineHits": 5
+    },
+    {
+      "marker": "cap-hard-deny",
+      "baseFiles": [
+        "packages/opencode/src/permission/alpha-tool-policy.ts"
+      ],
+      "headFiles": [
+        "packages/opencode/src/permission/alpha-tool-inventory.ts",
+        "packages/opencode/src/permission/alpha-tool-policy-gate.ts",
+        "packages/opencode/src/permission/alpha-tool-policy.ts",
+        "packages/schema/src/alpha-tool-inventory.ts"
+      ],
+      "newIn1147": false,
+      "asarLineHits": 1
+    },
+    {
+      "marker": "permission-ruleset",
+      "baseFiles": [],
+      "headFiles": [
+        "packages/opencode/src/permission/alpha-tool-policy-gate.ts"
+      ],
+      "newIn1147": true,
+      "asarLineHits": 1
+    }
+  ]
+}

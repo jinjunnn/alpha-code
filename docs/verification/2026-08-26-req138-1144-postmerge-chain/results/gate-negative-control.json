@@ -1,0 +1,264 @@
+{
+  "ticket": "jinjunnn/alpha-code#1144",
+  "purpose": "negative control: the post-#1147 tool-execution gate can close this chain",
+  "at": "2026-08-26T17:52:22.695Z",
+  "app": "/Users/tide/app/alpha-code/.worktrees/ac-1144b/packages/ui-mac/dist/mac-arm64/alpha-code.app",
+  "gitSha": "8a438007b2ae8b8da76137c68053916ac306f66a",
+  "extBundleSha256": "72026e70094326ad6681b60f4d25e5dbc7dc58c764cf416c0471eaca62d07f80",
+  "canonicalUnderTest": "builtin::bash",
+  "summary": {
+    "pass": 8,
+    "fail": 0
+  },
+  "checks": [
+    {
+      "id": "control.bashAdvertised",
+      "ok": true,
+      "detail": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch",
+        "write"
+      ]
+    },
+    {
+      "id": "control.toolCompleted",
+      "ok": true,
+      "detail": "completed"
+    },
+    {
+      "id": "control.processStarted",
+      "ok": true,
+      "detail": "AC1144-STARTED\nzsh:1: operation not permitted: /Users/tide/.ac1144-negctl-escape-2jZq2k/pwned.txt\n"
+    },
+    {
+      "id": "control.workspaceFileLanded",
+      "ok": true,
+      "detail": true
+    },
+    {
+      "id": "deny.nothingExecuted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "deny.workspaceFileNotLanded",
+      "ok": true,
+      "detail": false
+    },
+    {
+      "id": "deny.escapeNotLanded",
+      "ok": true,
+      "detail": false
+    },
+    {
+      "id": "deny.refusalIsNamed",
+      "ok": true,
+      "detail": {
+        "bashAdvertised": false,
+        "toolError": "null",
+        "exposed": [
+          "alpha_echo",
+          "alpha_ping",
+          "alpha_register",
+          "alpha_reload",
+          "edit",
+          "glob",
+          "grep",
+          "question",
+          "read",
+          "skill",
+          "task",
+          "todowrite",
+          "webfetch",
+          "websearch",
+          "write"
+        ]
+      }
+    }
+  ],
+  "arms": {
+    "allow": {
+      "label": "allow (control)",
+      "permission": "{\"bash\":\"allow\",\"external_directory\":\"allow\"}",
+      "workspace": "/Users/tide/.ac1144-negctl-ws-GsgmSs",
+      "escapeTarget": "/Users/tide/.ac1144-negctl-escape-2jZq2k/pwned.txt",
+      "launchFlags": [
+        "--remote-debugging-port=63210",
+        "--use-mock-keychain"
+      ],
+      "providerAdded": true,
+      "sessionID": "ses_fc0ccb0f1ffe8X80J2xW9OpANL",
+      "command": "echo AC1144-STARTED; echo ok > inside.txt; echo pwned > /Users/tide/.ac1144-negctl-escape-2jZq2k/pwned.txt",
+      "httpStatus": 200,
+      "exposedToolNames": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch",
+        "write"
+      ],
+      "bashAdvertised": true,
+      "stubExchanges": [
+        {
+          "at": "2026-08-26T17:52:02.496Z",
+          "toolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "bash",
+            "edit",
+            "glob",
+            "grep",
+            "question",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch",
+            "write"
+          ],
+          "picked": "bash",
+          "callID": "call_negctl_1"
+        },
+        {
+          "at": "2026-08-26T17:52:02.928Z",
+          "toolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "bash",
+            "edit",
+            "glob",
+            "grep",
+            "question",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch",
+            "write"
+          ],
+          "picked": null,
+          "callID": null
+        }
+      ],
+      "stubPicked": [
+        "bash",
+        null
+      ],
+      "toolPartFound": true,
+      "toolStatus": "completed",
+      "toolOutput": "AC1144-STARTED\nzsh:1: operation not permitted: /Users/tide/.ac1144-negctl-escape-2jZq2k/pwned.txt\n",
+      "toolError": "null",
+      "processStarted": true,
+      "escapeLanded": false,
+      "workspaceFileLanded": true,
+      "assistantText": [
+        "Use the shell tool to run exactly this command, nothing else:\n\necho AC1144-STARTED; echo ok > inside.txt; echo pwned > /Users/tide/.ac1144-negctl-escape-2jZq2k/",
+        "NEGCTL-TURN-DONE"
+      ],
+      "namesAlphaToolPolicy": false,
+      "appStartingLine": "13:51:48.641         › app starting { version: '0.1.3', packaged: true, onboardingTest: true }"
+    },
+    "deny": {
+      "label": "deny builtin::bash",
+      "permission": "{\"bash\":\"allow\",\"external_directory\":\"allow\",\"builtin::bash\":\"deny\"}",
+      "workspace": "/Users/tide/.ac1144-negctl-ws-SnVzgt",
+      "escapeTarget": "/Users/tide/.ac1144-negctl-escape-WfH8cF/pwned.txt",
+      "launchFlags": [
+        "--remote-debugging-port=63503",
+        "--use-mock-keychain"
+      ],
+      "providerAdded": true,
+      "sessionID": "ses_fc0cc6cd9ffeH8caq4kRMZOgts",
+      "command": "echo AC1144-STARTED; echo ok > inside.txt; echo pwned > /Users/tide/.ac1144-negctl-escape-WfH8cF/pwned.txt",
+      "httpStatus": 200,
+      "exposedToolNames": [
+        "alpha_echo",
+        "alpha_ping",
+        "alpha_register",
+        "alpha_reload",
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "websearch",
+        "write"
+      ],
+      "bashAdvertised": false,
+      "stubExchanges": [
+        {
+          "at": "2026-08-26T17:52:19.925Z",
+          "toolNames": [
+            "alpha_echo",
+            "alpha_ping",
+            "alpha_register",
+            "alpha_reload",
+            "edit",
+            "glob",
+            "grep",
+            "question",
+            "read",
+            "skill",
+            "task",
+            "todowrite",
+            "webfetch",
+            "websearch",
+            "write"
+          ],
+          "picked": null,
+          "callID": null
+        }
+      ],
+      "stubPicked": [
+        null
+      ],
+      "toolPartFound": false,
+      "toolStatus": null,
+      "toolOutput": "",
+      "toolError": "null",
+      "processStarted": false,
+      "escapeLanded": false,
+      "workspaceFileLanded": false,
+      "assistantText": [
+        "Use the shell tool to run exactly this command, nothing else:\n\necho AC1144-STARTED; echo ok > inside.txt; echo pwned > /Users/tide/.ac1144-negctl-escape-WfH8cF/",
+        "NEGCTL-TURN-DONE"
+      ],
+      "namesAlphaToolPolicy": false,
+      "appStartingLine": "13:52:05.970         › app starting { version: '0.1.3', packaged: true, onboardingTest: true }"
+    }
+  }
+}
