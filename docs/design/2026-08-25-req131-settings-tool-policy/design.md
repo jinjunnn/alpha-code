@@ -8,7 +8,7 @@ relates:
   - jinjunnn/alpha-code#724(CLOSE_DECIDE 基线 §8/§9.3)
   - jinjunnn/alpha-code#1130(本增量的实现票)
   - jinjunnn/alpha-code#1128(已落地的三态 resolver / selector / 持久化)
-  - jinjunnn/alpha-code#1129(目录与执行咽喉 + inventory API,已合)
+  - jinjunnn/alpha-code#1129(目录与执行咽喉;**inventory API 未交付**,见 §9)
 ---
 
 # 设置「工具」节 —— 按来源服务编辑工具三态
@@ -79,10 +79,10 @@ hub-settings 时代的「仅 通用 + 快捷键」两项;现役实现已有第�
 | 损坏恢复横幅 + 重置 | user layer `quarantined` + `reset()`(返回备份路径) | 已落地 |
 | 逐条保存失败 | `ToolPolicyWriteError`(含 quarantine 拒写) | 已落地 |
 | 「仅当前账户与当前项目」 | `inspect().partition` | 已落地 |
-| 每类 / 每服务条数、工具清单本身 | live inventory(§5:identity + 可信 authority + 继承 + effective + binding change) | 已落地(#1129 已合,PR #1135) |
-| 「新发现」徽标 | 同上(§3:无 broad override 的新动态工具标「新发现」) | 已落地(#1129 已合,PR #1135) |
+| 每类 / 每服务条数、工具清单本身 | live inventory(§5:identity + 可信 authority + 继承 + effective + binding change) | **未落地 —— 见 §9 更正** |
+| 「新发现」徽标 | 同上(§3:无 broad override 的新动态工具标「新发现」) | **未落地 —— 见 §9 更正** |
 | 「计费:按用量 / 未知」 | `ToolBillingFact { class, evidenceId }`(宿主 / 服务端可信事实;缺失显示「未知」) | schema 已落地;供给随 inventory |
-| 「1 项注册身份无法核验」 | resolver `invalid-identity`;条目枚举依赖 inventory 是否暴露此类注册 | 已落地;Q1 已裁 = 暴露计数(见 §8) |
+| 「1 项注册身份无法核验」 | resolver `invalid-identity`;条目枚举依赖 inventory 是否暴露此类注册 | **未落地 —— 见 §9 更正**(Q1 已裁 = 暴露计数,见 §8) |
 | 「已核验」徽标(Alpha Cloud 组) | `ToolAuthority.kind = "alpha-cloud"`(verified) | 已落地 |
 
 reason → 文案(全部 9 型,一型不落):
@@ -183,3 +183,59 @@ reason → 文案(全部 9 型,一型不落):
 实现落地时把帧并入 [`current/settings/design.html`](../current/settings/design.html)
 的 `#set-tools` 锚,并新建 [`current/settings/components.md`](../current/settings/components.md) 台账;
 §1 记的那条已知漂移(活稿设置节仍是「仅 通用 + 快捷键」)**照旧不在本票修**,记进台账即可。
+
+## 9. 更正(2026-08-26)—— §8 批准时的一句前提为假
+
+**§8 写的「`#1128`/`#1129` 均已合并关闭 ⇒ §3 表里那三行都已落地,本稿不再有悬空依赖」是错的。**
+那句话是**只看了 issue 状态为 CLOSED 就下的**,没有读 `#1129` 的交付物 PR #1135 —— 而那份 PR
+的正文恰好声明了相反的事。**批准仍然有效,但它批的是「视觉与交互规范」,不是「依赖已就绪」。**
+
+### 实读地面真相(两条互相独立的检索轴,交叉一致)
+
+```
+轴1 符号名   grep -rn -a "ToolPolicy" packages --include=*.ts --include=*.tsx | 排除 test/cases
+轴2 键名     grep -rln -a "bindingDigest\|binding-changed" ...
+两轴命中完全一致,只有三个文件:
+   packages/schema/src/alpha-tool-policy.ts
+   packages/opencode/src/permission/alpha-tool-policy.ts
+   packages/opencode/src/permission/alpha-tool-policy-store.ts
+零 server route · 零 SDK 投影 · 零 preload/main IPC · 零 renderer 消费者
+```
+
+```
+AlphaToolPolicy 在模块外零引用     (对照:Permission.node 有 7 处装配点)
+执行咽喉读的是 ruleset 轴,不是策略文档轴:
+   packages/opencode/src/session/tools.ts:86  与 :128
+   ruleset: Permission.merge(input.agent.permission, input.session.permission ?? [])
+   而 agent.permission ← Permission.fromConfig(cfg.permission ?? {})(agent/agent.ts:138)
+```
+
+⇒ **用户在本节 `setRecord` 写下的 disabled/ask,目录与执行面今天读不到。**
+
+### 这不是推断 —— `#1129` 的交付方自己写明了
+
+PR #1135 正文「主动没做的」逐字:
+
+> **`AlphaToolPolicy.Service`(策略文档轴)未接进咽喉**:harness 的层图不含该节点……
+> 该文档轴的编译落点是 #1130 的 Settings 物化;咽喉消费的是同一引擎的 ruleset 轴。
+> **dynamic inventory/API 同理留给 #1130 消费面。**
+
+而 `#1129` 票面的**负责(基线原文)**一行写的是:
+「V1 catalog + E1–E6;E7/internal 排除 ratchet;**dynamic inventory/API**;stale/direct call 运行时重读」。
+⇒ `dynamic inventory/API` 是 `#1129` 名下的交付项,关票时未交付。**按契约 reopen `#1129`,不换编号。**
+
+### 照本稿原样实现会造成什么(所以必须先补缺口)
+
+Settings 面板显示「已停用」,而模型照调 —— 正是 `#1121` 那个已实测缺陷**在 Settings 层复活**。
+本 REQ 要杀死的就是它。
+
+### 绕过文档轴的替代路线被基线封死(不要顺手走)
+
+想学 `alpha-builtin-policy.ts` 把用户意图物化成 config ruleset:`#724` §3 明禁
+「Settings 和调用方不得手拼 wildcard」「禁止各处拼 `mcp:<server>:*`」;且 binding guard
+(enabled + digest,rebind 回 ask)与 9 型 reason 在 ruleset 语言里**不可表达**。
+
+### 本稿的状态
+
+`status: approved` **保留** —— 视觉、交互规范、9 型文案、六个状态帧都仍然是基线。
+变的只是:**§3 表里那三行回到「契约,未落地」**,实现票必须等缺口补齐。
