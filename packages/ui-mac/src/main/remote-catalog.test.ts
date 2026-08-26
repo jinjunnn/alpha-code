@@ -16,7 +16,9 @@ import { registryChannelFor } from "./alpha-environment"
 
 const NOW = Date.parse("2026-07-13T12:00:00.000Z")
 const CH_BASE = "https://channels.test/catalog/v1"
-const V1_URL = "https://alphacodeone.com/catalog/v1/catalog.json" // 生产常量(v1 兼容面,不可注入 = 不动现网语义)
+const V1_URL = "https://codepuppy.cn/catalog/v1/catalog.json" // 生产常量(v1 兼容面,不可注入 = 不动现网语义)
+// 刻意保持**独立字面量**而不是 import CATALOG_URL:比较基准与被测对象同源 = 自指等价链,
+// 两边一起改错就一起自洽。这一行是域名迁移的独立锚(ac#1132)。
 
 let dir: string
 beforeEach(() => {

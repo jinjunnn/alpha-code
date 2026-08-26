@@ -43,13 +43,13 @@
       "sbom": {
         "sha256": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
         "bytes": 2048,
-        "url": "https://alphacodeone.com/catalog/assets/cloud.figma/2026.07.0/alpha-curation/sbom/5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e.cdx.json",
+        "url": "https://codepuppy.cn/catalog/assets/cloud.figma/2026.07.0/alpha-curation/sbom/5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e.cdx.json",
         "format": "cyclonedx-1.6+json"
       },
       "intakeProvenance": {
         "sha256": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
         "bytes": 1024,
-        "url": "https://alphacodeone.com/catalog/assets/cloud.figma/2026.07.0/alpha-curation/intake-provenance/6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f.json",
+        "url": "https://codepuppy.cn/catalog/assets/cloud.figma/2026.07.0/alpha-curation/intake-provenance/6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f.json",
         "format": "alpha.intake-provenance.v1+json"
       }
     }

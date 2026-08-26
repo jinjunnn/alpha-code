@@ -3,19 +3,19 @@
   "sequence": 5,
   "publishedAt": "2026-07-13T00:00:00.000Z",
   "expires": "2036-01-01T00:00:00.000Z",
-  "keyId": "7866aa47792b362e76318c60a08af2caa565cfef90360370ccb211241feb24ac",
+  "keyId": "83b605a31d0332ff26a5dddaff71966e04574650f21173bf4911c13672cc1b28",
   "entries": {
     "trust": {
       "sequence": 3,
-      "sha256": "26c25a2906ef03d67c450bba8db2db8d569eb12b787c0af8c4addc69f30a5d92"
+      "sha256": "7e6abf9bf6817c2bc691db57ef3928fd88977f4900b0e4d31540b6ba1cb67033"
     },
     "stable": {
       "sequence": 7,
-      "sha256": "99dcdb90a3e0c785b6761e43449942b360901c9f62c2a8bee814001b3bfbcff5"
+      "sha256": "2fbdcb145d57c75f1387cb21894068e518e7bb1d8741a85cdba60af1dad27e9e"
     },
     "advisories": {
       "sequence": 2,
-      "sha256": "a2a58ab200e4c74e9aac27cf289b46fc10abedf62b0dc0533639ccd2ab74a2fa"
+      "sha256": "bfa9bd75debc2f25420360758921e5d7620973a2ee7587a25eecab2f94ad27c5"
     }
   }
 }

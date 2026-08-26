@@ -1,7 +1,7 @@
 {
   "_note": "机器可读索引:A 侧合同测试按 expected 断言。签名 = ed25519 over exact file bytes。由 scripts/gen-channel-testvectors.mjs 生成,勿手工编辑。",
-  "signingPublicKeySpkiDerB64": "MCowBQYDK2VwAyEAtyxEl+TpGJPjdVRvalOFsBdZjKOHyme6JFrGq3vvboA=",
-  "keyId": "7866aa47792b362e76318c60a08af2caa565cfef90360370ccb211241feb24ac",
+  "signingPublicKeySpkiDerB64": "MCowBQYDK2VwAyEAIOXw2YvrBHd03wQw0RQrzkLZbwkf1zKnmn9EqE7n4n0=",
+  "keyId": "83b605a31d0332ff26a5dddaff71966e04574650f21173bf4911c13672cc1b28",
   "payload": {
     "file": "payload.catalog.json",
     "sha256": "a2588c51381553b3769c4f85e9aead550bae25250d5c8c47159c340603d0064c",
