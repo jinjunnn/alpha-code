@@ -71,7 +71,7 @@ review_after: 2026-11-26
 | --- | --- |
 | 分支 / base | `ac-1144` @ `c3c58308f`(构建时的 `origin/alpha`) |
 | 构建 | `OPENCODE_CHANNEL=prod bun run build && OPENCODE_CHANNEL=prod bun run package:mac`(在 `packages/ui-mac` 下) |
-| 产物 | `packages/ui-mac/dist/mac-arm64/alpha-code.app`(457 MB) |
+| 产物 | `packages/ui-mac/dist/mac-arm64/alpha-code.app`(`du -sh`:构建直出 457 MB,ad-hoc 重签后 453 MB) |
 | `CFBundleIdentifier` / 版本 | `com.tide.alphacode` / `0.1.3` |
 | `app.isPackaged` | `true` —— 主进程自报,逐轮记进 `identity.appStartingLine` |
 | ext bundle | `Contents/Resources/alpha-ext/plugin.js` `sha256 72026e70…d07f80`,与分支内 `packages/ext/dist/plugin.js` **逐字节相同**(`identity.branchExtBundleSha256`) |
