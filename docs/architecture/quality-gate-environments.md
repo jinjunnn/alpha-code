@@ -463,6 +463,7 @@ ADR-043 的结构性谓词(不在 `origin/dev` 里 ∧ 自报家门)。两条独
 | --- | --- |
 | 有人往 `packages/opencode` 的 alpha 判据文件里写错类型 | `alpha-ci.yml` 的 `typecheck opencode …` 步 + `alpha-check.sh` 第 [4/10] 步(本机实测该包 typecheck **4 秒**) |
 | 有人把 CI 那一步删掉/改名,而本地没跟(或反过来) | `src/main/local-gate-parity.test.ts` —— 双向比对,档位只允许 `MIRRORED`/`SUPERSET:`/`DEGRADED:` |
+| 有人只把 `alpha-check.sh` 里那条命令删掉(CI 步与 `MIRRORED` 登记都留着) | 同上文件的**第十六条**(`#1134` 新增)。**在它之前这是个洞**:变异实测 15 pass / 0 fail,而本地那半道门已经不存在 —— 而本 portfolio 的合并路径是「本地判绿 ⇒ `--admin` 合」,CI 那一格恰恰是被绕过的那道,假绿的正是真正在用的那一半 |
 
 **诚实边界(不假装闭合)**:这一步跑的是**整个** `packages/opencode`,不只是那 18 个 alpha 文件 ——
 tsgo 的项目单位就是 tsconfig,而那个 tsconfig 是上游的、不能改。⇒ 一次把上游源码带红的 fork-sync
@@ -564,9 +565,10 @@ darwin 与 linux 同为 posix,钉 `win32` 会把路径语义改坏。
 | `assert gate files` 又被条件掉 | 同上(断言该步带 `!cancelled()`) |
 | 新增闸门文件没登记 | `src/main/gate-file-registry.test.ts`(既有) |
 | 往 `packages/opencode` 的 alpha 判据文件里写错类型 | `typecheck opencode …` 那一步(`#1134`,§3.11)。此前**无人判红** —— 门的清单里根本没有这个包 |
+| 只把 `alpha-check.sh` 里某条 typecheck 命令删掉,登记与 CI 都不动 | `local-gate-parity.test.ts` 第十六条(`#1134`)。此前**无人判红**:上面三条 CI_STEPS 断言比的全是步骤名,`MIRRORED` 只是一句登记,不是一条断言 |
 
 解析自检钉在 `local-gate-parity.test.ts` 里(`ciSteps ≥ 12`、守卫脚本的 `UPSTREAM_PATHS ≥ 8`
-与收编白名单 `≥ 20`、`jobNames ≥ 6`、`required ≥ 4`):一份退化成解析不出东西的解析器会让每条
+与收编白名单 `≥ 20`、`jobNames ≥ 6`、`required ≥ 4`、`#1134` 的 typecheck 命令 `≥ 4`):一份退化成解析不出东西的解析器会让每条
 断言空对空地全绿 —— 先证明手段能测出已知的坏,再用它判未知的好。
 
 ## 6. 已知不修(留痕)
