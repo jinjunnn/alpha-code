@@ -1,0 +1,103 @@
+{
+  "ticket": "jinjunnn/alpha-code#1144",
+  "kind": "observation (not an AC1 criterion)",
+  "claim": "under the shipped SEATBELT_PROFILE, exec of a setuid binary is denied; non-setuid binaries run normally",
+  "note": "Surfaced while running the AC1 tool chain: a `ps` probe returned 'zsh:1: operation not permitted: /bin/ps' in the fenced arm and printed a pid in the unfenced arm. This file characterises it directly against the same profile text, outside the app. Fence behaviour itself is Out of scope for #1144 (REQ-138 already accepted); recorded so it is not lost.",
+  "profileText": "(version 1)\n(allow default)\n(deny file-write*)\n(allow file-write*\n  (subpath (param \"WORKDIR\"))\n  (subpath \"/private/tmp\")\n  (subpath \"/private/var/folders\")\n  (literal \"/dev/null\")\n  (literal \"/dev/stdout\")\n  (literal \"/dev/stderr\")\n  (literal \"/dev/tty\")\n  (regex #\"^/dev/fd/\")\n)\n",
+  "host": {
+    "productVersion": "26.3.1",
+    "uname": "Darwin tidedeMac-mini.lan 25.3.0 Darwin Kernel Version 25.3.0: Wed Jan 28 20:51:28 PST 2026; root:xnu-12377.91.3~2/RELEASE_ARM64_T6041 arm64"
+  },
+  "rows": [
+    {
+      "bin": "/bin/ps",
+      "mode": "0o4755",
+      "setuid": true,
+      "setgid": false,
+      "sandboxed": {
+        "processStarted": true,
+        "execDenied": true,
+        "output": "AC1144-STARTED\nrc=126\n/bin/sh: /bin/ps: Operation not permitted"
+      },
+      "unsandboxedControl": {
+        "execDenied": false,
+        "output": "AC1144-STARTED\nrc=1\n  PID TTY           TIME CMD\n32852 ttys000    0:00.04 -zsh\n4"
+      }
+    },
+    {
+      "bin": "/usr/bin/top",
+      "mode": "0o4555",
+      "setuid": true,
+      "setgid": false,
+      "sandboxed": {
+        "processStarted": true,
+        "execDenied": true,
+        "output": "AC1144-STARTED\nrc=126\n/bin/sh: /usr/bin/top: Operation not permitted"
+      },
+      "unsandboxedControl": {
+        "execDenied": false,
+        "output": "AC1144-STARTED\nrc=1\nProcesses: 1127 total, 3 running, 1124 sleeping, 7486 thread"
+      }
+    },
+    {
+      "bin": "/usr/bin/su",
+      "mode": "0o4755",
+      "setuid": true,
+      "setgid": false,
+      "sandboxed": {
+        "processStarted": true,
+        "execDenied": true,
+        "output": "AC1144-STARTED\nrc=126\n/bin/sh: /usr/bin/su: Operation not permitted"
+      },
+      "unsandboxedControl": {
+        "execDenied": false,
+        "output": "AC1144-STARTED\nrc=1\nsu: Sorry"
+      }
+    },
+    {
+      "bin": "/bin/ls",
+      "mode": "0o755",
+      "setuid": false,
+      "setgid": false,
+      "sandboxed": {
+        "processStarted": true,
+        "execDenied": false,
+        "output": "AC1144-STARTED\nrc=1\nprobe.sb"
+      },
+      "unsandboxedControl": {
+        "execDenied": false,
+        "output": "AC1144-STARTED\nrc=1\nprobe.sb"
+      }
+    },
+    {
+      "bin": "/usr/bin/wc",
+      "mode": "0o755",
+      "setuid": false,
+      "setgid": false,
+      "sandboxed": {
+        "processStarted": true,
+        "execDenied": false,
+        "output": "AC1144-STARTED\nrc=1\n       0       0       0"
+      },
+      "unsandboxedControl": {
+        "execDenied": false,
+        "output": "AC1144-STARTED\nrc=1\n       0       0       0"
+      }
+    },
+    {
+      "bin": "/usr/bin/git",
+      "mode": "0o755",
+      "setuid": false,
+      "setgid": false,
+      "sandboxed": {
+        "processStarted": true,
+        "execDenied": false,
+        "output": "AC1144-STARTED\nrc=0\nusage: git [-v | --version] [-h | --help] [-C <path>] [-c <n"
+      },
+      "unsandboxedControl": {
+        "execDenied": false,
+        "output": "AC1144-STARTED\nrc=0\nusage: git [-v | --version] [-h | --help] [-C <path>] [-c <n"
+      }
+    }
+  ]
+}
