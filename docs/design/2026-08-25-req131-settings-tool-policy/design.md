@@ -2,13 +2,13 @@
 type: design
 slug: req131-settings-tool-policy
 date: 2026-08-25
-status: draft
+status: approved
 relates:
   - jinjunnn/alpha-code#723(REQ-131)
   - jinjunnn/alpha-code#724(CLOSE_DECIDE 基线 §8/§9.3)
   - jinjunnn/alpha-code#1130(本增量的实现票)
   - jinjunnn/alpha-code#1128(已落地的三态 resolver / selector / 持久化)
-  - jinjunnn/alpha-code#1129(目录与执行咽喉 + inventory API,在途)
+  - jinjunnn/alpha-code#1129(目录与执行咽喉 + inventory API,已合)
 ---
 
 # 设置「工具」节 —— 按来源服务编辑工具三态
@@ -79,10 +79,10 @@ hub-settings 时代的「仅 通用 + 快捷键」两项;现役实现已有第�
 | 损坏恢复横幅 + 重置 | user layer `quarantined` + `reset()`(返回备份路径) | 已落地 |
 | 逐条保存失败 | `ToolPolicyWriteError`(含 quarantine 拒写) | 已落地 |
 | 「仅当前账户与当前项目」 | `inspect().partition` | 已落地 |
-| 每类 / 每服务条数、工具清单本身 | live inventory(§5:identity + 可信 authority + 继承 + effective + binding change) | **契约,#1129 在途** |
-| 「新发现」徽标 | 同上(§3:无 broad override 的新动态工具标「新发现」) | **契约,#1129 在途** |
+| 每类 / 每服务条数、工具清单本身 | live inventory(§5:identity + 可信 authority + 继承 + effective + binding change) | 已落地(#1129 已合,PR #1135) |
+| 「新发现」徽标 | 同上(§3:无 broad override 的新动态工具标「新发现」) | 已落地(#1129 已合,PR #1135) |
 | 「计费:按用量 / 未知」 | `ToolBillingFact { class, evidenceId }`(宿主 / 服务端可信事实;缺失显示「未知」) | schema 已落地;供给随 inventory |
-| 「1 项注册身份无法核验」 | resolver `invalid-identity`;条目枚举依赖 inventory 是否暴露此类注册 | **待 #1129 定**(见 §7 Q1) |
+| 「1 项注册身份无法核验」 | resolver `invalid-identity`;条目枚举依赖 inventory 是否暴露此类注册 | 已落地;Q1 已裁 = 暴露计数(见 §8) |
 | 「已核验」徽标(Alpha Cloud 组) | `ToolAuthority.kind = "alpha-cloud"`(verified) | 已落地 |
 
 reason → 文案(全部 9 型,一型不落):
@@ -148,3 +148,38 @@ reason → 文案(全部 9 型,一型不落):
   开发者详情内给原因**,让「工具消失了」可解释。
 - **Q2 导航命名**:「工具」(推荐,与「扩展存储」同级简洁)vs「工具权限」。
   「权限」一词已被通知区的现有开关占用,复用易混。
+
+## 8. 批准记录(2026-08-26)
+
+**状态:approved。** 本稿即 `#1130` 的 UI 类 AC 验收基线,也是升 Ready 的门。
+
+批准时的地面真相变化(与 §3 表同步):`#1128` 与 `#1129` **均已合并关闭**,
+于是 §3 表里原标「契约,#1129 在途」的三行(live inventory、「新发现」徽标、
+无法核验注册的枚举)**都已落地**,本稿不再有悬空依赖。
+
+### §7 两个小裁决
+
+- **Q1 无法核验的注册要不要枚举 —— 裁:按推荐做,暴露计数 + 开发者详情内给原因。**
+  理由:两种失败里,「工具静默消失、用户无从解释」比「多一行只读提示」贵得多;
+  本仓已经在别处付过「静默」的学费。计数放服务展开区末尾的只读提示,原因归开发者详情
+  (沿用 REQ-125 「开发者详情默认折叠」的既有裁决),正文不因此变吵。
+- **Q2 导航命名 —— 裁:用「工具」。** 理由如稿:「权限」已被通知区现有开关占用,
+  复用会让「这里改了 = 永久」与「会话内 once/always」两种心智混在一起,
+  而 §4 刚刚花力气把它们分开。
+
+两条都属稿内既定范围,**不新增 AC**。
+
+### 批准同时确认的边界(不是新要求,是复述本稿已写明的)
+
+- 逐条即写、无整页保存键;写失败回退到权威值 + `role=alert` + 重试;
+- class / service 层选「启用」必须弹行内确认(broad intent 明示未来成员);
+  service/tool 层启用写入必须携带当前 `bindingDigest`,class 层必须不带;
+- cap 永远压住用户层;quarantine / managed-unreadable 为整节横幅 + 全部行只读;
+- `host::StructuredOutput` 与 `_noop` 不进本节,以窄测试锁死;
+- 本节不承担调用判决展示。
+
+### 落地要求(来自本稿 §引言,不是新增)
+
+实现落地时把帧并入 [`current/settings/design.html`](../current/settings/design.html)
+的 `#set-tools` 锚,并新建 [`current/settings/components.md`](../current/settings/components.md) 台账;
+§1 记的那条已知漂移(活稿设置节仍是「仅 通用 + 快捷键」)**照旧不在本票修**,记进台账即可。
