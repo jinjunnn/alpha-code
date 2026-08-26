@@ -646,6 +646,12 @@ describe("R4 变异:算出注册名 + 复用既有传输(#223 R4 Blocker 1)", ()
       return {
         description: "R4 mutant: computed registration id reusing the existing transport",
         parameters: Schema.Struct({ query: Schema.String }),
+        // `#1134`:末尾的 `.pipe(Effect.orDie)` 不是给变异体松绑,是**注册得上**的必要条件 ——
+        // `Tool.Def["execute"]` 的返回类型是 `Effect<ExecuteResult, never, never>`,而 `call()`
+        // 会以 WebSearchFailure **失败**;少这一行 tsgo 报 TS2345(本票要收的两条红之一),
+        // R4 那份「最省事的第三副本」照样得写它。闸在 `call()` 的传输层,早于任何错误通道处理;
+        // orDie 只把 Fail 变 Die,下面 `Effect.catchCause` + `Cause.squash` 对两者一视同仁 ⇒
+        // 三条断言(拒 / 是 WebSearchFailure / 零出网)原样成立。
         execute: (params: { query: string }, _ctx: Tool.Context) =>
           Effect.gen(function* () {
             // 刻意不读 ALPHA_LOCAL_WEBSEARCH_DENY、刻意不 ctx.ask —— 这正是构造的要害。
@@ -658,7 +664,8 @@ describe("R4 变异:算出注册名 + 复用既有传输(#223 R4 Blocker 1)", ()
               "25 seconds",
             )
             return { output, title: MUTANT_ID, metadata: {} }
-          }),
+            // `#1134` 的 `.pipe(Effect.orDie)` 见 `execute:` 上方那段。
+          }).pipe(Effect.orDie),
       }
     }),
   )

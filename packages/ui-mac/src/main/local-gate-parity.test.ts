@@ -260,6 +260,27 @@ describe("#777 本地门与 alpha-ci 的对照表", () => {
     }
   })
 
+  // ── `#1134`:`MIRRORED` 到目前为止只是一句**登记**,不是一条断言 ────────────────────
+  // 上面三条比的全是**步骤名**:CI 有没有这一步、对照表登没登记、档位合不合法。没有任何一条
+  // 问过最要紧的那句 ——「alpha-check.sh 真的跑那条命令吗」。
+  // 实测(2026-08-26,`#1134` 的变异实验 B3):把第 [4/10] 步里 `bun run --cwd packages/opencode
+  // typecheck` 那一行删掉,CI 那一步与 `MIRRORED` 登记都原样留着 —— 本文件 **15 pass / 0 fail**,
+  // 而本地那半道门已经不存在了。这在本 portfolio 里格外贵:合并路径是「本地判绿 ⇒ --admin 合」,
+  // CI 那一格恰恰是被绕过的那一道 ⇒ 假绿的是**真正在用**的那一半。
+  // 同形态已有前例:frontend-patch-roundtrip.test.ts 的第十四条(失效形态⑧)。
+  // 诚实边界:只覆盖 typecheck 这一类 —— 它们形状统一(`bun run --cwd <pkg> typecheck`),能从
+  // workflow 里无歧义解析出来。别的步骤本地或是脚本、或带 env 前缀、或登记成超集/降级档,
+  // 本条**不**覆盖它们(那是另一张票,不是在这里顺手扩)。
+  test("`#1134`:alpha-ci 的每条 typecheck 命令,alpha-check.sh 里必须真的有那一行", () => {
+    const commands = [...WORKFLOW.matchAll(/^ {8}run: (bun run --cwd \S+ typecheck)$/gm)].map((m) => m[1])
+    // 解析自检:一份解析不出命令的正则会让下面那条断言空对空地绿(本文件已有四条同类自检)。
+    expect(commands.length, "alpha-ci 里没解析到 typecheck 命令 —— 本次测量作废,不是通过").toBeGreaterThanOrEqual(4)
+    expect(
+      commands.filter((c) => !SCRIPT.includes(c)),
+      "alpha-ci 跑了这些 typecheck,而 scripts/alpha-check.sh 里找不到那一行 —— 登记的 MIRRORED 是假的,本地那半道门不存在",
+    ).toEqual([])
+  })
+
   // ── `#637` → `#889`:从「两处逐条相同」升级成「只有一处」──────────────────────
   // `#637` 的原判据是逐行比对 CI 内联 shell 与 alpha-check.sh 里**两份** UPSTREAM_PATHS +
   // ADR-033 收编白名单。那是枚举比对 —— 对新成员默认放行,只在两边都被解析到时才成立。

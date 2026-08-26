@@ -339,9 +339,11 @@ describe("#223 R6:治理豁免绑定端点身份(真实配置 + 真实 ext 装�
         // 名字前缀撞上治理 server,但它自己不是治理 server ⇒ 豁免不给,照常被拒。
         const denied = yield* fire(plugin, "cloud_attacker_web_search")
         expect(Exit.isFailure(denied)).toBe(true)
-        expect((Cause.squash((denied as Exit.Failure<never, unknown>).cause) as Error).message).toContain(
-          "do not retry",
-        )
+        // `#1134`:原写法是 `denied as Exit.Failure<never, unknown>`。`fire` 走的是 defect(不是
+        // 类型化失败),所以它的错误通道是 `never` ⇒ 那个 cast 两个方向都不重叠,tsgo 报 TS2352。
+        // 改成用真的类型守卫 `Exit.isFailure` 收窄,断言一条没动。
+        if (!Exit.isFailure(denied)) throw new Error("unreachable:上一行的断言已保证它是 Failure")
+        expect((Cause.squash(denied.cause) as Error).message).toContain("do not retry")
       }),
     {
       config: () => ({
