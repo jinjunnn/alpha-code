@@ -11,6 +11,7 @@ import { applyPackageMutation, findRecordV2, skillsEnabledPath, upsertRecordV2, 
 import { bundleOwner, computeInstalledGraphDigest, type PackageGraphNodeV1 } from "./ext-package-ledger-v3"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { packageEnvelopeIdentityV1, resolveVerifiedPackageV1 } from "./package-installability"
+import bundledCatalog from "../renderer/extensions/alpha-catalog.json"
 import type { CatalogEntry } from "../renderer/extensions/catalog-types"
 
 type SetStateDeps = Parameters<typeof setInstallStateByKey>[1]
@@ -550,6 +551,125 @@ describe("setInstallStateByKey(#817 双键精确选择,真 resolveVerifiedPackag
   })
 })
 
+// ── `ac#1136`:随包快照携带真实 package 后的 bundled 通道离线启停行为钉 ────────────────────────
+// 2026-08-25.2 快照第一次携带 raw `alpha.host-extension-package.v1` envelope,ext-ipc `#817`
+// 注释「bundled 不带 packages 键 ⇒ 离线解析诚实落 missing」的前提翻转:availability 类离线
+// (security 类在 ext-ipc resolvePackage 里先行拒绝)+ 无 LKG 时,解析从 bundled 落 **found**。
+// 本 describe 钉三件事:①快照确实携带该包(前提再翻转必须显式过这里,不许再静默);②found 的
+// 「为什么」—— enable 只在 envelopeDigest/payloadDigest 与准入期图逐项相等时放行,bundled 绝
+// 启不动一份字节不同的安装;③bundled missing 的拒绝文案不再谎称「快照无任何 package」。
+
+/** ext-ipc bundled 兜底分支的同形薄胶水(channel 标注 "bundled",与 realResolveOver 的 cache 对偶)。 */
+const bundledResolveOver =
+  (catalog: unknown): SetStateDeps["resolvePackage"] =>
+  async (pid, ver) => {
+    const r = resolveVerifiedPackageV1(catalog, pid, ver)
+    return r.status === "found"
+      ? { status: "found", channel: "bundled", identity: r.identity }
+      : r.status === "missing"
+        ? { status: "missing", channel: "bundled", anyVersionPresent: r.anyVersionPresent }
+        : r
+  }
+
+/** 随包快照里 `package:alpha-first` 的 raw envelope + 测试自读的 wire 事实(prelude/root/
+ *  components 直接来自快照字节 —— 独立于生产派生的输入轴)。快照若不再携带,响亮报错而不是
+ *  静默跳过:那正是 ext-ipc `#817` 注释前提的又一次翻转,注释与本 describe 必须一起重审。 */
+const bundledPackageFacts = () => {
+  const pkgs = (bundledCatalog as { packages?: unknown[] }).packages
+  const hit = (Array.isArray(pkgs) ? pkgs : []).find(
+    (p) => (p as { prelude?: { packageId?: unknown } })?.prelude?.packageId === "package:alpha-first",
+  )
+  if (!hit)
+    throw new Error(
+      "随包快照不再携带 package:alpha-first —— ext-ipc `#817` 注释前提再次翻转,注释与 #1136 describe 必须一起重审",
+    )
+  return {
+    envelope: hit,
+    wire: hit as {
+      prelude: { packageId: string; version: string }
+      root: string
+      components: Array<{ id: string; payloadRef: { sha256: string } }>
+    },
+  }
+}
+
+describe("setInstallStateByKey(#1136 随包快照携带真实 package:bundled 通道离线启停)", () => {
+  test("快照携带 raw envelope;resolveVerifiedPackageV1 解析 found,身份逐项等于快照自述字节", () => {
+    const { envelope, wire } = bundledPackageFacts()
+    const r = resolveVerifiedPackageV1(bundledCatalog, wire.prelude.packageId, wire.prelude.version)
+    expect(r.status).toBe("found")
+    if (r.status !== "found") return
+    expect(r.identity.packageId).toBe(wire.prelude.packageId)
+    expect(r.identity.version).toBe(wire.prelude.version)
+    // 快照字节(payloadRef.sha256)是测试自读的输入轴;identity 是生产派生轴 —— 两轴互证。
+    expect(r.identity.components).toEqual(wire.components.map((c) => ({ id: c.id, payloadSha256: c.payloadRef.sha256 })))
+    expect(r.identity.envelopeDigest).toMatch(/^sha256:[0-9a-f]{64}$/)
+    const produced = packageEnvelopeIdentityV1(envelope)
+    expect(produced.ok && produced.identity.envelopeDigest).toBe(r.identity.envelopeDigest)
+  })
+
+  test("已装 package 与随包 envelope 逐字节一致 ⇒ bundled 通道 enable 放行(#817 前提更新后的新行为)", async () => {
+    const { envelope, wire } = bundledPackageFacts()
+    // 具名锚:当前快照的 package root。快照演进换 root 时本行红 —— 连同 fixture 一起更新,
+    // 不要泛化(启停生效面随 kind 不同,泛化会把失败变成谜语)。
+    expect(wire.root).toBe("skill:alpha-first")
+    const produced = packageEnvelopeIdentityV1(envelope)
+    if (!produced.ok) throw new Error(`bundled envelope does not decode: ${produced.reason}`)
+    const rootComp = wire.components.find((c) => c.id === wire.root)
+    if (!rootComp) throw new Error("bundled envelope root component missing from components[]")
+    installPackageFixture({
+      packageId: wire.prelude.packageId,
+      version: wire.prelude.version,
+      envelopeDigest: produced.identity.envelopeDigest,
+      children: [{ kind: "skill", name: "alpha-first", payloadDigest: `sha256:${rootComp.payloadRef.sha256}` }],
+    })
+    const en = await setInstallStateByKey(
+      { type: "skill", name: "alpha-first", scope: "global", state: "enabled" },
+      pkgDeps({ resolvePackage: bundledResolveOver(bundledCatalog) }),
+    )
+    expect(en.ok).toBe(true)
+    expect(findRecordV2(root, "skill", "alpha-first")!.desiredState).toBe("enabled")
+    expect(readAllowSet()).toEqual({ v: 1, keys: ["skill--alpha-first"] })
+  })
+
+  test("已装 envelope 摘要与随包不同(同 packageId@version)⇒ 拒:content does not match;账本不动", async () => {
+    const { wire } = bundledPackageFacts()
+    const rootComp = wire.components.find((c) => c.id === wire.root)
+    if (!rootComp) throw new Error("bundled envelope root component missing from components[]")
+    installPackageFixture({
+      packageId: wire.prelude.packageId,
+      version: wire.prelude.version,
+      envelopeDigest: dg("stale-or-tampered-install"), // 与随包摘要必然不同
+      children: [{ kind: "skill", name: "alpha-first", payloadDigest: `sha256:${rootComp.payloadRef.sha256}` }],
+    })
+    const en = await setInstallStateByKey(
+      { type: "skill", name: "alpha-first", scope: "global", state: "enabled" },
+      pkgDeps({ resolvePackage: bundledResolveOver(bundledCatalog) }),
+    )
+    expect(en.ok).toBe(false)
+    if (!en.ok) {
+      expect(en.code).toBe("curation-unverifiable")
+      expect(en.reason).toContain("content does not match the installed package")
+    }
+    expect(findRecordV2(root, "skill", "alpha-first")!.desiredState).toBe("disabled")
+  })
+
+  test("随包快照不含该 packageId ⇒ bundled missing 拒绝文案具名到包,不再谎称快照无任何 package", async () => {
+    installPackageFixture({ packageId: "package:not-bundled", children: [{ kind: "skill", name: "nb-skill" }] })
+    const en = await setInstallStateByKey(
+      { type: "skill", name: "nb-skill", scope: "global", state: "enabled" },
+      pkgDeps({ resolvePackage: bundledResolveOver(bundledCatalog) }),
+    )
+    expect(en.ok).toBe(false)
+    if (!en.ok) {
+      expect(en.code).toBe("curation-unverifiable")
+      expect(en.reason).toContain("bundled snapshot does not carry package:not-bundled@1.0.0")
+      expect(en.reason).not.toContain("carries no signed packages")
+    }
+    expect(findRecordV2(root, "skill", "nb-skill")!.desiredState).toBe("disabled")
+  })
+})
+
 // ── `#817`:missing/delisted/security/catalog-unavailable/逐项 digest mismatch 负例矩阵 ─────────
 
 describe("setInstallStateByKey(#817 fail-closed 负例矩阵)", () => {
@@ -568,9 +688,9 @@ describe("setInstallStateByKey(#817 fail-closed 负例矩阵)", () => {
         needle: "no longer published",
       },
       {
-        label: "catalog-unavailable(bundled 无 packages)",
+        label: "bundled 快照不含该包(missing at bundled)",
         rp: async () => ({ status: "missing", channel: "bundled", anyVersionPresent: false }),
-        needle: "bundled snapshot carries no signed packages",
+        needle: "bundled snapshot does not carry",
       },
       {
         label: "security browse-only",

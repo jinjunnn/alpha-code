@@ -49,7 +49,7 @@ import {
 // REQ-099(ADR-028):main-only 安装计划 + v2 账本。随包 catalog 快照 = 验签远端/缓存不可用时的
 // 兜底真源(ADR-023 两级真源;与 renderer 的 B20 兜底同一字节)。
 import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
-import type { Catalog } from "../renderer/extensions/catalog-types"
+import type { BundledCatalogSnapshotV1, Catalog } from "../renderer/extensions/catalog-types"
 import { assertAlphaEnvironmentIdentity, environmentMutableRoot, getAlphaEnvironment } from "./alpha-environment"
 import { createInventoryQuery } from "./ext-inventory"
 import {
@@ -832,7 +832,7 @@ export function registerExtIpcHandlers(
       const cat = rc.catalog as Catalog
       return { entries: cat.entries ?? [], channel: rc.source, version: String(cat.version ?? rc.version) }
     }
-    const bundled = bundledCatalogJson as unknown as Catalog
+    const bundled = bundledCatalogJson as unknown as BundledCatalogSnapshotV1
     return { entries: bundled.entries, channel: "bundled" as const, version: bundled.version }
   }
   /**
@@ -875,7 +875,12 @@ export function registerExtIpcHandlers(
   const plannerDeps = (): PlannerDeps => {
     // 每次调用解析一次 effective catalog(bundle 会对逐子条目调 resolveEntry —— 不重复打网络)。
     // `#817`:raw 随行保留 —— 签名 package child 启停要从**同一份**已验 catalog 的 `packages[]`
-    // 解析(bundled 快照不带 packages 键,离线无缓存时 package 解析诚实落 missing)。
+    // 解析。`ac#1136` 勘破更新前提:随包快照自 2026-08-25.2 起**携带** raw package envelope ——
+    // 失败是 availability 类(security 类在下方 resolvePackage 里先行拒绝,不触 bundled)、又无
+    // LKG 时,resolvePackage 从 bundled 解析到 **found**,不再是 missing。收编理由:与 entries 的
+    // bundled 兜底同一信任根(随 app 签名分发),且 enable 侧还要 envelopeDigest / payloadDigest
+    // 与准入期 V3 图逐项相等(ext-install-planner.verifyPackageCandidate)—— bundled 永远启不动
+    // 一份不是逐字节同一 envelope 的安装。行为钉在 ext-set-state-tx.test.ts 的 `#1136` describe。
     let effective: Promise<{ entries: Catalog["entries"]; raw: unknown; channel: "remote" | "cache" | "bundled"; version: string }> | null = null
     const effectiveCatalog = () =>
       (effective ??= (async () => {
@@ -889,7 +894,7 @@ export function registerExtIpcHandlers(
           securityBlocked = true
           console.error(`[ext-ipc] catalog SECURITY failure (${rc.error}) — bundled catalog is browse-only; activation resolution REFUSED`)
         }
-        const bundled = bundledCatalogJson as unknown as Catalog
+        const bundled = bundledCatalogJson as unknown as BundledCatalogSnapshotV1
         return { entries: bundled.entries, raw: bundledCatalogJson as unknown, channel: "bundled" as const, version: bundled.version }
       })())
     // #315(review B1):advisory 视图**懒冻结** —— 首次取用发生在 resolveEntry 的 await
@@ -1001,7 +1006,7 @@ export function registerExtIpcHandlers(
           return fs.existsSync(dir) ? dir : null
         },
         resolveBundledEntry: (catalogId) => {
-          const bundled = bundledCatalogJson as unknown as Catalog
+          const bundled = bundledCatalogJson as unknown as BundledCatalogSnapshotV1
           const entry = (bundled.entries ?? []).find((e) => e.id === catalogId)
           return entry ? { entry, channel: "bundled" as const, catalogVersion: String(bundled.version) } : null
         },
