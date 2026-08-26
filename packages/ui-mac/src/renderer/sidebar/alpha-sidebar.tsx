@@ -380,7 +380,7 @@ export function AlphaSidebar(props: {
         class="alpha-acct-item"
         onClick={() => {
           setMenuOpen(false)
-          window.api.openLink("https://alphacodeone.com/feedback")
+          window.api.openLink("https://codepuppy.cn/feedback")
         }}
       >
         <span class="alpha-acct-ic">?</span>{t("alpha.sidebar.helpFeedback")}

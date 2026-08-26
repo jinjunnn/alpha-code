@@ -27,7 +27,7 @@ import { createHash, createPublicKey, verify as edVerify } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-export const CHANNEL_BASE_URL = "https://alphacodeone.com/catalog/v1"
+export const CHANNEL_BASE_URL = "https://codepuppy.cn/catalog/v1"
 /** 桌面端内置信任根(与 remote-catalog 现行 v1 验签公钥同源;spki der base64)。 */
 export const BUILTIN_CATALOG_PUBKEY_B64 = "MCowBQYDK2VwAyEAqBBmG0mbZ3tZF7Vt8VEWhgm1RQdF2boFU5uUTSmsgHI="
 

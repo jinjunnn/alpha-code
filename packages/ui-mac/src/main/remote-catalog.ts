@@ -1,6 +1,6 @@
 // remote-catalog — 定制中心 catalog 的远程分发客户端(REQ-032,收编 E10;REQ-101 A 侧接线)。
 //
-// 端点 = alpha-web(C)静态发布:`https://alphacodeone.com/catalog/v1/catalog.json`(+ .sig)。
+// 端点 = alpha-web(C)静态发布:`https://codepuppy.cn/catalog/v1/catalog.json`(+ .sig)。
 // 流程:ETag 条件请求(304 零成本)→ **ed25519 整体验签**(公钥内置,私钥在 C 侧发布机离线持有)
 // → 形状 sanity → 落 userData 缓存。**回退链 = 远端 → last-known 缓存 → 内置**(B20:永不空白;
 // 验签不过 = 拒用并 loud,绝不静默降级采信未签内容)。
@@ -21,6 +21,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import {
   BUILTIN_CATALOG_PUBKEY_B64,
+  CHANNEL_BASE_URL,
   catalogVersionLess,
   readRevokedTargets,
   refreshChannelCatalog,
@@ -39,7 +40,7 @@ import type { CatalogPackageViewV1 } from "../shared/catalog-package-view"
 
 export { catalogVersionLess } // 既有导出面保持(版本比较实现移居 catalog-channels,逐字未变)
 
-export const CATALOG_URL = "https://alphacodeone.com/catalog/v1/catalog.json"
+export const CATALOG_URL = `${CHANNEL_BASE_URL}/catalog.json`
 const SIG_URL = `${CATALOG_URL}.sig`
 /** C 侧签名公钥(spki der base64;换钥 = 发版,见 alpha-web docs/runbooks/catalog-publish.md)。 */
 const CATALOG_PUBKEY_B64 = BUILTIN_CATALOG_PUBKEY_B64

@@ -37,7 +37,7 @@ const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
   // the href + icon are hardcoded JSX, rewritten here. Feedback routes to alpha's web root until a
   // dedicated feedback page exists.
   "app/src/pages/error.tsx": [
-    ['platform.openLink("https://opencode.ai/desktop-feedback")', 'platform.openLink("https://alphacodeone.com")'],
+    ['platform.openLink("https://opencode.ai/desktop-feedback")', 'platform.openLink("https://codepuppy.cn")'],
     ['<Icon name="discord" class="text-text-interactive-base" />', ""],
   ],
   "app/src/i18n/en.ts": [

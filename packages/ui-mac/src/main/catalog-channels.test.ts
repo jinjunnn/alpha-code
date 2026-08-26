@@ -14,6 +14,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import {
+  CHANNEL_BASE_URL,
   catalogVersionLess,
   channelStatePath,
   keyIdOfSpkiDerB64,
@@ -33,9 +34,24 @@ import {
   type TrustDoc,
 } from "./catalog-channels"
 import { validateCatalogPackageShape } from "./package-installability"
+import { CATALOG_BASE_URL } from "../shared/catalog-curation"
 
 const NOW = Date.parse("2026-07-13T12:00:00.000Z")
 const BASE = "https://channels.test/catalog/v1"
+
+test("AC2: catalog base is codepuppy.cn; reverting it must fail this test", () => {
+  expect(CHANNEL_BASE_URL).toBe("https://codepuppy.cn/catalog/v1")
+  expect(CATALOG_BASE_URL).toBe("https://codepuppy.cn/catalog")
+  const src = fs.readFileSync(path.join(import.meta.dir, "catalog-channels.ts"), "utf8")
+  expect(src).toContain('export const CHANNEL_BASE_URL = "https://codepuppy.cn/catalog/v1"')
+  expect(src).not.toMatch(/CHANNEL_BASE_URL = "https:\/\/alphacodeone\.com/)
+  const seed = fs.readFileSync(path.join(import.meta.dir, "../scripts/sync-extension-seed.mjs"), "utf8")
+  const snap = fs.readFileSync(path.join(import.meta.dir, "../scripts/sync-catalog-snapshot.mjs"), "utf8")
+  expect(seed).not.toMatch(/https:\/\/alphacodeone\.com/)
+  expect(snap).not.toMatch(/https:\/\/alphacodeone\.com/)
+  expect(seed).toContain("CHANNEL_BASE_URL")
+  expect(snap).toContain("CHANNEL_BASE_URL")
+})
 
 let dir: string
 beforeEach(() => {
@@ -239,8 +255,8 @@ function vectorRoutes(stableFile: string, snapshotFile = "snapshot.json"): Recor
     [`${VEC_BASE}/channels/snapshot.json.sig`]: vecStr(`${snapshotFile}.sig`),
     [`${VEC_BASE}/channels/stable.json`]: vecStr(stableFile),
     [`${VEC_BASE}/channels/stable.json.sig`]: vecStr(`${stableFile}.sig`),
-    "https://alphacodeone.com/catalog/v1/releases/9.9.9/catalog.json": vecStr("payload.catalog.json"),
-    "https://alphacodeone.com/catalog/v1/releases/9.9.9/catalog.json.sig": vecStr("payload.catalog.json.sig"),
+    "https://codepuppy.cn/catalog/v1/releases/9.9.9/catalog.json": vecStr("payload.catalog.json"),
+    "https://codepuppy.cn/catalog/v1/releases/9.9.9/catalog.json.sig": vecStr("payload.catalog.json.sig"),
   }
 }
 const vecDeps = (fetchImpl: typeof fetch): ChannelClientDeps => ({
@@ -748,7 +764,7 @@ describe("基础件", () => {
     t1.target.mirror = "https://evil.example/x.json"
     expect(validateChannelDoc(t1).ok).toBe(false)
     const t2 = structuredClone(good)
-    t2.target.url = "http://alphacodeone.com/catalog/v1/x.json"
+    t2.target.url = "http://codepuppy.cn/catalog/v1/x.json"
     expect(validateChannelDoc(t2).ok).toBe(false)
     const t3 = structuredClone(good)
     t3.channel = "nightly"
