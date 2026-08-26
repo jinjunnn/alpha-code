@@ -188,6 +188,16 @@ jobs:
       - name: typecheck ui-mac
         if: needs.detect.outputs.code == 'true'
         run: bun run --cwd packages/ui-mac typecheck
+      # `#1134`:opencode 是**上游**包,但 alpha 自有的判据文件(ADR-043 谓词:不在 origin/dev
+      # 里 ∧ 自报家门)住在它的 test/ 下,而该包的 tsconfig 不排除 *.test.ts / *.cases.ts ⇒ 它们
+      # 是被 typecheck 的。此前这个包不在任何门里:2026-08-25 alpha 上 15 条真红(13 条在
+      # alpha-725-policy-chokepoints.cases.ts,2 条在两个 alpha-*.test.ts)既不红 CI 也不红本地,
+      # 还让另一条 lane 把它误诊成自己引入的。本机实测该包 typecheck 4 秒。
+      # 口径(为什么是「收进」而不是对齐 ui-mac 的 exclude)见
+      # docs/architecture/quality-gate-environments.md §3.11。
+      - name: typecheck opencode (alpha 自有判据住在上游包里)
+        if: needs.detect.outputs.code == 'true'
+        run: bun run --cwd packages/opencode typecheck
 
   test:
     name: unit tests (alpha packages)

@@ -398,6 +398,78 @@ pid 死了、或 pid 活着但 `ps` 说那不是探针本人 —— pid 会复�
 (要动 2.8 GB,是唯一的慢动作)—— 反过来排的话,清理跑到一半再被打断,丢的就是共享配置那一半,
 而两件事里只有它会影响别人。
 
+### 3.11 门覆盖到的**包**是哪些 —— `packages/opencode` 这一格(`#1134`)
+
+3.1~3.10 问的是「某道门在某个环境里真不真」。这一格问的是更上游的一句:
+**这道门跑到哪些包**。答案此前是一份没有任何东西对照的手抄清单。
+
+**实测(2026-08-25,`alpha@82bf5d152`)**:`bun run --cwd packages/opencode typecheck`
+**exit 2 / 15 条 `error TS`** —— 13 条在 `test/tool/alpha-725-policy-chokepoints.cases.ts`
+(`TS2345`,`#1123` 带入),各 1 条在 `alpha-websearch-failure.test.ts`(`TS2345`)与
+`alpha-mcp-websearch-gate.test.ts`(`TS2352`)。**CI 与本地都没有任何一步跑这个包的 typecheck**:
+`alpha-ci.yml` 的 typecheck job 与 `alpha-check.sh` 第 [4/10] 步当时都只列 contracts-consumer /
+ext / ui-mac 三个包。后果不是「少一道门」,是**主动骗人**:主 session 当天在 `#319` 上把这片红
+当成自己引入的,查了一轮才排除。
+
+#### 为什么 alpha 的判据会住在一个**上游**包里
+
+ADR-043 的结构性谓词(不在 `origin/dev` 里 ∧ 自报家门)。两条独立检索轴,`alpha@8e30bdb77` 实测:
+
+| 轴 | 命令 | 结果 |
+| --- | --- | --- |
+| 轴 1:命名 | `git ls-files -- packages/opencode` 中 basename 匹配 `alpha-*` | 17 |
+| 轴 2:出身 | 同一批里 `git cat-file -e origin/dev:<path>` **失败**者 | 18 |
+
+差集只有一条,而且方向是对的:`src/session/tool-display.ts` 不叫 `alpha-*`,靠文件首行的
+`north-star:alpha-owned` marker 自报家门(ADR-041)。⇒ **18 个 alpha 自有文件住在 `packages/opencode`
+里,其中 14 个在 `test/` 下,1 个是 `.cases.ts`。** 它们全都被该包的 tsconfig 收进 typecheck,
+而 typecheck 从没跑过。
+
+#### 口径裁决:`.cases.ts` / `.test.ts` 在 `packages/opencode` 里**收进** typecheck
+
+立票时的观察是两个包不一致:
+
+| 包 | tsconfig 对 `.test.ts` / `.cases.ts` | 谁拥有这个 tsconfig |
+| --- | --- | --- |
+| `packages/ui-mac` | `exclude: ['src/**/*.test.ts', 'src/**/*.cases.ts', …]` | alpha |
+| `packages/opencode` | **不排除**(整个文件没有 `include`/`exclude`)⇒ 收进 | **上游**(`origin/dev` 里有这条路径) |
+
+裁决是**收进**,理由两条,都不是偏好:
+
+1. **反方向做不到,而且是负收益。** 要让 opencode 也排除,得改
+   `packages/opencode/tsconfig.json` —— 它在 `origin/dev` 里,是 north-star 守卫下的上游文件,
+   动它要走 ADR-033 收编白名单(owner 级)。而它换来的是**更少**的检查:那 14 个 alpha 判据文件
+   跑在 bun 上,bun 直接剥类型 ⇒ typecheck 是它们唯一的编译期检查。
+2. **「让 ui-mac 也收进」不是这张票能装下的**,而且这句话本身要有数字才算勘破。本机实测
+   (`alpha@8e30bdb77`,把 exclude 项摘掉后跑 `tsgo --noEmit -p <探针 tsconfig>`):
+
+   | ui-mac 探针 | `error TS` 条数 |
+   | --- | --- |
+   | 摘掉 `*.test.ts` + `*.cases.ts` 两条 exclude(311 + 9 个文件) | **1264** |
+   | 只摘掉 `*.cases.ts` 一条(9 个文件) | **129** |
+
+   两种都不是「修几个类型」——首条就是 `Cannot find module 'bun:test'`(ui-mac 的
+   `compilerOptions.types` 是 `["vite/client","node","electron"]`,没有 bun 的类型)。
+   这是一张独立的票,不是本票的一部分。
+
+⇒ **写下来的口径**:*`.test.ts` / `.cases.ts` 是否进 typecheck,由拥有该 tsconfig 的一方决定;
+但凡一个包的 tsconfig 把它们收进来了,该包的 typecheck 就必须在门里。*
+今天的取值:`packages/opencode` **收进 + 在门里**(本节);`packages/ui-mac` **不收**
+(存量成本 1264 / 129 条,登记在 §6「已知不修」)。
+
+#### 门与防漂
+
+| 想让它红的东西 | 谁判红 |
+| --- | --- |
+| 有人往 `packages/opencode` 的 alpha 判据文件里写错类型 | `alpha-ci.yml` 的 `typecheck opencode …` 步 + `alpha-check.sh` 第 [4/10] 步(本机实测该包 typecheck **4 秒**) |
+| 有人把 CI 那一步删掉/改名,而本地没跟(或反过来) | `src/main/local-gate-parity.test.ts` —— 双向比对,档位只允许 `MIRRORED`/`SUPERSET:`/`DEGRADED:` |
+
+**诚实边界(不假装闭合)**:这一步跑的是**整个** `packages/opencode`,不只是那 18 个 alpha 文件 ——
+tsgo 的项目单位就是 tsconfig,而那个 tsconfig 是上游的、不能改。⇒ 一次把上游源码带红的 fork-sync
+会让这一步红在与 PR 无关的地方(`#754` 形态)。今天不成立(修完本票该包 exit 0 / 0 条),所以
+**不预先造逃生门**;真撞上时的处置是给它一份像 `scripts/known-fails.tsv` 那样的静态放行清单,
+或退回只跑 alpha 文件的独立 tsconfig,而不是把这一步删掉。
+
 ## 4. 咽喉:两处声明,覆盖仓内真实存在的两种运行形状
 
 仓内的 `bun test` 只有两种形状,咽喉必须两种都盖住:
@@ -491,6 +563,7 @@ darwin 与 linux 同为 posix,钉 `win32` 会把路径语义改坏。
 | north-star 的比较基准被改成别的 ref | `src/main/north-star-guard.test.ts` —— 造一个只落在 dev 窗口里的上游改动,断言守卫不点名它(§3.8) |
 | `assert gate files` 又被条件掉 | 同上(断言该步带 `!cancelled()`) |
 | 新增闸门文件没登记 | `src/main/gate-file-registry.test.ts`(既有) |
+| 往 `packages/opencode` 的 alpha 判据文件里写错类型 | `typecheck opencode …` 那一步(`#1134`,§3.11)。此前**无人判红** —— 门的清单里根本没有这个包 |
 
 解析自检钉在 `local-gate-parity.test.ts` 里(`ciSteps ≥ 12`、守卫脚本的 `UPSTREAM_PATHS ≥ 8`
 与收编白名单 `≥ 20`、`jobNames ≥ 6`、`required ≥ 4`):一份退化成解析不出东西的解析器会让每条
@@ -504,6 +577,10 @@ darwin 与 linux 同为 posix,钉 `win32` 会把路径语义改坏。
 - **CI 仍跑在 ubuntu**。换 macOS runner 能让平台那一格从「模拟」变成「真验」,代价是 10 倍
   Actions 分钟数。本票不做,记在这里;真要做是一张独立票。
 - **`#649` 的三份 opencode 测试仍无人执行**。逐份取舍要付 CI 时间的账,归 `#649`。
+- **`packages/ui-mac` 的 `*.test.ts` / `*.cases.ts` 仍在 typecheck 之外**(§3.11)。实测代价
+  1264 条(含 test)/ 129 条(只含 cases),首条是 `Cannot find module 'bun:test'` —— 要先给
+  ui-mac 的 `compilerOptions.types` 加 bun 类型再逐条收。`#1134` 不做,记在这里;真要做是一张
+  独立票。**在那之前,ui-mac 的 `.cases.ts` 写错类型不会有任何东西变红。**
 - ~~**分支保护的幽灵 context** 归 `#717`~~ —— **已闭合**(§3.5)。owner 2026-08-03 改掉分支保护设置,
   `#717` 补上仓内记录 [`.github/required-contexts.txt`](../../.github/required-contexts.txt) 与两条防漂断言。
   **残余缺口(有意留着,不假装闭合)**:真源是仓外的 GitHub 设置,CI 够不着 ⇒ 「只改 GitHub 设置」
