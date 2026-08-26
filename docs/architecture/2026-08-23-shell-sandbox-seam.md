@@ -201,12 +201,37 @@ Alpha 无处注入 ⇒ **C3 必须收编其中一个热文件**（`north-star-gu
   该文件内容与 `WRAPPER_SCRIPT` 逐字相同；§2.5 的 7 条语料**全部落不了盘**，同一套语料在
   **只把 wrapper 那一行换成 `exec "$ALPHA_REAL_SHELL" "$@"`** 的打包副本上**全部落盘**；
   §2.8 误伤集 9/9 通过，两臂逐格相同。两种 argv 形状各跑，各 2 轮，每轮 29 pass / 0 fail。
-  **残余两小块**：①shell **工具**的执行链没有在 sidecar 里真跑过（需要一次真模型回合；
-  已覆盖的是两条通路取的是同一个 `cfg.shell`，以及工具的 argv 形状在打包 wrapper 上同样 7/7 拦住）；
-  ②**hardened runtime 没测成** —— 只有出厂签名才开 `hardenedRuntime`，本机无 Developer ID 证书、
-  只能 ad-hoc 签，两次尝试分别卡在 library validation（ad-hoc 没有 Team ID）与钥匙串 ACL 授权等待上。
-  可静态确认的那一半仍然成立：`packages/ui-mac/resources/entitlements.plist` **没有**
-  `com.apple.security.app-sandbox`，不构成嵌套沙箱冲突。
+  该轮留下的两小块，**2026-08-26 由 [`#1144`](https://github.com/jinjunnn/alpha-code/issues/1144)
+  各推进一步**（取证见
+  [`docs/verification/2026-08-26-req138-1144-packaged-shell-tool-chain/`](../verification/2026-08-26-req138-1144-packaged-shell-tool-chain/README.md)）：
+
+  1. **shell 工具的执行链在打包 sidecar 里跑通了。** 由一次 agent 回合触发
+     （消息 → tool_call → 工具注册表 → `tool/shell.ts` → `ask()` → `cfg.shell` → wrapper →
+     `sandbox-exec`），runner 自己不 spawn 任何 shell。`ask()` 用产品自带的 `OPENCODE_PERMISSION`
+     解决，未改生产代码。§2.5 的 7 条语料在**工具通路**上 **28/28 不落盘**、反向臂 **28/28 落盘**
+     （四轮 = 未开 hardened ×2 + 开 hardened ×2）。
+     **仍未闭合的是「真模型」那一步**：决定去调 shell 工具的是一个本地 OpenAI-compatible 桩，
+     不是真模型。桩之后的每一格都是产品代码；没被验证的是模型自己会不会选这个工具。
+  2. **hardened runtime 测成了，结论与未开时逐格一致。** `#1076` 写的前提「本机无 Developer ID」
+     **是错的** —— `security find-identity -v -p codesigning` 实读到一张
+     `Developer ID Application: … (RQX6X6A635)`。用它 + `--options runtime` + **出厂三键 entitlements**
+     重签（`flags=0x10000(runtime)`、`TeamIdentifier=RQX6X6A635`、`codesign --verify --deep --strict` 通过），
+     两个驱动面各 7 条 × 2 轮：围栏 ON **28/28 不落盘**，围栏 OFF **28/28 落盘**。
+     `#1076` 那两条「死路」都是前提为假的推论：加 `disable-library-validation` 不再必要；
+     卡在钥匙串 ACL 的那条其实与 hardened runtime 无关，是**任何 ad-hoc 重签副本**都会撞的
+     代码身份变更（`--use-mock-keychain` 可绕，两臂同参）。
+     与出厂件仍有三处具名差异：无安全时间戳（`--timestamp=none`）、未公证未 staple、
+     签名由 `codesign` 自底向上逐个 Mach-O 完成而非 electron-builder。是否据此关闭 AC2 由 owner 裁。
+  - **静态确认 `packages/ui-mac/resources/entitlements.plist` 没有
+    `com.apple.security.app-sandbox`**，只说明「不构成嵌套沙箱冲突」这个**前提**为真，
+    **不构成** hardened runtime 那一条的证据。
+- **新增残余（`#1144` 实测）：沙箱进程不能 exec setuid 二进制。** profile 只写
+  `(allow default)` + `(deny file-write*)`，但 macOS seatbelt 固有地拒绝沙箱进程 exec setuid 程序：
+  `/bin/ps`（`0o4755`）、`/usr/bin/top`（`0o4555`）、`/usr/bin/su` 在围栏内全部
+  `Operation not permitted`，`/bin/ls`、`/usr/bin/wc`、`/usr/bin/git` 正常
+  （无围栏对照全部通过，见该目录 `results/setuid-exec-observation.json`）。
+  **用户可观察的后果**：agent 在 shell 工具里跑 `ps` / `top` 会拿到 `Operation not permitted`。
+  §2.8 的误伤集没有覆盖这一类；要不要把它登记为已知代价、或补进误伤集，尚未裁决。
 - ~~未验证：会写盘的 rc 脚本。~~ **2026-08-26 实跑**（同上目录 §6）。用产品自带的
   `ALPHA_ENV_ALLOWLIST_EXTRA=ZDOTDIR` 把引擎自己那条 `source "${ZDOTDIR:-$HOME}/.zshrc"`
   指到一份**故意会写盘**的 rc 上（`compinit -d` 写 `.zcompdump` + 历史式追加 + 一个 marker，
@@ -255,7 +280,10 @@ C1 选定后，文件轴按下述落地。此节校正 §2.4 里那处 spike 用
   外加类边界探针（重定向 `>`/`>>`、`sh`/`python3`/`node` 解释器、`nohup` 脱离、
   指向工作区外的 symlink）。**§5 前两条已由 [`#1076`](https://github.com/jinjunnn/alpha-code/issues/1076)
   在打包产物上实跑闭合**（取证见
-  [`docs/verification/2026-08-26-req138-1076-packaged-sandbox/`](../verification/2026-08-26-req138-1076-packaged-sandbox/README.md)），
-  两小块残余明确留在 §5 里（shell 工具在 sidecar 内的执行链、hardened runtime）。
+  [`docs/verification/2026-08-26-req138-1076-packaged-sandbox/`](../verification/2026-08-26-req138-1076-packaged-sandbox/README.md)）；
+  它留下的两小块由 [`#1144`](https://github.com/jinjunnn/alpha-code/issues/1144) 接着跑
+  （[取证目录](../verification/2026-08-26-req138-1144-packaged-shell-tool-chain/README.md)）——
+  shell **工具**的执行链在打包 sidecar 里由 agent 回合驱动跑通、hardened runtime 下结论一致，
+  仍未闭合的只剩「触发工具调用的是真模型」这一步与出厂签名形态的三处差异，均记在 §5。
 - **本接缝结构上管不到的面**不变（§4）：进程内 FS 工具、MCP stdio、LSP、网络（#1077）、
   Windows。实现未声称超出该清单的保护。
