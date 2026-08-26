@@ -22,6 +22,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | How long the two outbound fetch chains in `packages/core` can actually block, and which shipped shapes never reach them | [`architecture/2026-08-23-network-timeout-recon.md`](architecture/2026-08-23-network-timeout-recon.md) |
 | Platform and endpoint integration                                    | [`contracts/`](contracts/)                                           |
 | Session tool permission DTOs and decision receipts                   | [`contracts/session-permission.md`](contracts/session-permission.md) |
+| REQ-131 分层工具策略:三态/四类/selector、cap 合成、binding guard、分区持久化与 V1 session grant 语义 | [`contracts/tool-policy.md`](contracts/tool-policy.md)               |
 | Build, distribution, CI, uninstall, and Settings recovery operations | [`runbooks/`](runbooks/)                                             |
 | Product and visual design assets                                     | [`design/README.md`](design/README.md)                               |
 | Point-in-time audits and screenshots                                 | [`audits/README.md`](audits/README.md)                               |
