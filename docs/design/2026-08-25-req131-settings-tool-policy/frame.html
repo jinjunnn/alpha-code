@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>设置「工具」节增量 · 按来源管理工具三态</title>
+<link rel="stylesheet" href="../current/settings/design.css" />
+<style>
+/* 本稿自有类一律 tp- 前缀;基础元素样式与 --a-* token 来自链接的 settings/design.css。 */
+body{padding:0 0 72px}
+.bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--a-border);background:color-mix(in srgb,var(--a-surface) 94%,transparent);backdrop-filter:blur(14px)}
+.bar b{font-size:var(--a-text-sm)}.bar span{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}.grow{flex:1}
+.intro{margin:0 0 20px}.intro h1{margin:0 0 8px;font-size:24px}.intro p{margin:0;color:var(--a-text-secondary);line-height:1.65;max-width:760px}
+.kicker{margin:26px 0 9px;color:var(--a-text-tertiary);font-size:var(--a-text-xs);font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.statebar{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.statebar button{border:1px solid var(--a-border);background:var(--a-surface);color:var(--a-text-secondary);font-size:var(--a-text-xs);padding:5px 11px;border-radius:var(--a-radius-full)}
+.statebar button[aria-selected="true"]{border-color:var(--a-accent-border);background:var(--a-accent-subtle);color:var(--a-accent);font-weight:var(--a-weight-medium)}
+.caption{margin:12px 2px 0;color:var(--a-text-tertiary);font-size:var(--a-text-xs);line-height:1.6;max-width:860px}
+.a11y{margin-top:26px;padding:15px 17px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface)}
+.a11y h3{font-size:var(--a-text-md);margin:0 0 10px}
+.a11y-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.a11y-grid span{display:block;font-size:var(--a-text-2xs);font-weight:700;color:var(--a-text-tertiary);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px}
+.a11y-grid p{margin:0;font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:1.6}
+
+/* ── mock 帧 ─────────────────────────────────────────────────────────── */
+.tp-frame{display:none}.tp-frame.on{display:block}
+.tp-app{display:grid;grid-template-columns:212px minmax(0,1fr);min-height:560px;background:var(--a-bg-canvas)}
+.tp-side{display:flex;flex-direction:column;gap:2px;padding:14px 10px;border-right:1px solid var(--a-border-faint);background:var(--a-bg-subtle)}
+.tp-back{display:flex;align-items:center;gap:6px;margin:0 4px 10px;border:0;background:none;color:var(--a-text-secondary);font-size:var(--a-text-sm);padding:6px 8px;border-radius:var(--a-radius-md);text-align:left}
+.tp-back:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.tp-side h1{font-size:var(--a-text-xl);margin:0 4px 12px;padding:0 8px}
+.tp-nav{display:flex;flex-direction:column;gap:2px}
+.tp-nav button{display:block;width:100%;text-align:left;border:0;background:none;color:var(--a-text-secondary);font-size:var(--a-text-sm);padding:7px 12px;border-radius:var(--a-radius-md)}
+.tp-nav button:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.tp-nav button[aria-current="page"]{background:var(--a-accent-subtle);color:var(--a-accent);font-weight:var(--a-weight-medium)}
+.tp-main{min-width:0;padding:22px 26px 30px;overflow:auto;max-height:640px}
+.tp-pagehd{margin-bottom:16px}
+.tp-pagehd h2{font-size:var(--a-text-2xl)}
+.tp-pagehd p{margin:5px 0 0;color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+
+.tp-grp{margin-bottom:22px}
+.tp-grp-hd{display:flex;align-items:center;gap:9px;margin-bottom:7px;padding:0 2px}
+.tp-grp-hd h3{font-size:var(--a-text-md)}
+.tp-grp-hd .n{color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+.tp-grp-hd .sp{flex:1}
+.tp-grp-cap{margin:0 2px 8px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs)}
+.tp-card{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-shadow-xs);overflow:hidden}
+.tp-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--a-border-faint)}
+.tp-card > :last-child, .tp-svc-tools > :last-child{border-bottom:0}
+.tp-row .meta{min-width:0;flex:1}
+.tp-row .meta .nm{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.tp-row .meta b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.tp-row .meta small{display:block;margin-top:2px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs);line-height:1.5}
+.tp-exp{border:0;background:none;color:var(--a-text-tertiary);width:22px;height:22px;border-radius:var(--a-radius-sm);display:grid;place-items:center;flex:none}
+.tp-exp:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.tp-svc-tools{background:var(--a-bg-subtle)}
+.tp-svc-tools .tp-row{padding-left:34px}
+
+.tp-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:var(--a-radius-full);background:var(--a-bg-muted);color:var(--a-text-secondary);font-size:10px;font-weight:600;white-space:nowrap}
+.tp-badge.cloud{background:var(--a-accent-subtle);color:var(--a-accent)}
+.tp-badge.new{background:var(--a-accent-subtle);color:var(--a-accent)}
+.tp-badge.warn{background:var(--a-warning-subtle);color:var(--a-warning)}
+.tp-eff{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:var(--a-text-xs);white-space:nowrap}
+.tp-eff i{width:6px;height:6px;border-radius:99px;background:currentcolor}
+.tp-eff.ok{color:var(--a-success)}
+.tp-eff.ask{color:var(--a-info)}
+.tp-eff.off{color:var(--a-text-tertiary)}
+.tp-lock{color:var(--a-text-tertiary);font-size:12px;flex:none}
+
+.tp-seg{flex:none;display:inline-flex;padding:2px;gap:2px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-bg-subtle)}
+.tp-seg button{border:0;background:none;color:var(--a-text-tertiary);font-size:var(--a-text-2xs);font-weight:var(--a-weight-medium);padding:4px 9px;border-radius:calc(var(--a-radius-md) - 3px)}
+.tp-seg button:hover{color:var(--a-text)}
+.tp-seg button[aria-checked="true"]{background:var(--a-surface-raised);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.tp-seg[aria-disabled="true"]{opacity:.45;pointer-events:none}
+.tp-clear{border:0;background:none;color:var(--a-text-tertiary);width:24px;height:24px;border-radius:var(--a-radius-sm);display:grid;place-items:center;flex:none;font-size:13px}
+.tp-clear:hover{background:var(--a-bg-muted);color:var(--a-text)}
+
+.tp-confirm{display:flex;align-items:center;gap:10px;margin:0;padding:9px 14px 9px 34px;background:var(--a-warning-subtle);border-bottom:1px solid var(--a-border-faint);font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.tp-confirm b{color:var(--a-text)}
+.tp-confirm .sp{flex:1}
+.tp-btn{border:1px solid var(--a-border);background:var(--a-surface);color:var(--a-text);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 11px;border-radius:var(--a-radius-md)}
+.tp-btn.primary{border-color:transparent;background:var(--a-accent-solid);color:var(--a-text-on-accent)}
+.tp-btn.ghost{border-color:transparent;background:none;color:var(--a-text-secondary)}
+
+.tp-alert{display:flex;gap:9px;align-items:flex-start;margin:0 14px 10px 34px;padding:9px 12px;border:1px solid color-mix(in srgb,var(--a-error) 30%,var(--a-border));border-radius:var(--a-radius-md);background:var(--a-error-subtle);font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.tp-alert b{display:block;color:var(--a-text)}
+.tp-alert .dot{width:7px;height:7px;flex:none;margin-top:5px;border-radius:99px;background:var(--a-error)}
+.tp-banner{display:flex;gap:10px;align-items:flex-start;padding:13px 15px;border:1px solid color-mix(in srgb,var(--a-warning) 30%,var(--a-border));border-radius:var(--a-radius-lg);background:var(--a-warning-subtle);margin-bottom:16px}
+.tp-banner.err{border-color:color-mix(in srgb,var(--a-error) 30%,var(--a-border));background:var(--a-error-subtle)}
+.tp-banner .dot{width:8px;height:8px;flex:none;margin-top:5px;border-radius:99px;background:var(--a-warning)}
+.tp-banner.err .dot{background:var(--a-error)}
+.tp-banner b{display:block;font-size:var(--a-text-sm)}
+.tp-banner p{margin:3px 0 0;font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:1.55}
+.tp-banner .act{margin-top:8px;display:flex;gap:8px;align-items:center}
+.tp-banner .act small{color:var(--a-text-tertiary);font-size:var(--a-text-2xs)}
+
+details.tp-dev{border-top:1px dashed var(--a-border-faint)}
+details.tp-dev summary{cursor:pointer;list-style:none;padding:6px 14px 6px 34px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs)}
+details.tp-dev summary::-webkit-details-marker{display:none}
+details.tp-dev .dev{padding:0 14px 9px 34px;color:var(--a-text-tertiary);font:10.5px/1.7 var(--a-font-mono);overflow-wrap:anywhere}
+.tp-degraded{display:flex;gap:8px;align-items:center;padding:8px 14px 8px 34px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs);background:var(--a-bg-subtle)}
+.tp-foot{margin:4px 2px 0;color:var(--a-text-tertiary);font-size:var(--a-text-2xs)}
+.tp-skel{height:13px;border-radius:6px;background:var(--a-bg-muted);animation:tpPulse 1.4s ease-in-out infinite}
+@keyframes tpPulse{50%{opacity:.45}}
+@media (prefers-reduced-motion: reduce){.tp-skel{animation:none}}
+.tp-dim{opacity:.5;pointer-events:none}
+@media(max-width:760px){.tp-app{grid-template-columns:1fr}.tp-side{flex-direction:row;align-items:center;border-right:0;border-bottom:1px solid var(--a-border-faint);overflow-x:auto}.tp-nav{flex-direction:row}.bar span{display:none}}
+</style>
+</head>
+<body>
+<div class="bar"><b>α · 设置「工具」节增量</b><span>三态策略 · 分组、继承与原因均来自宿主核验的清单</span><div class="grow"></div><div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div></div>
+
+<main class="wrap">
+  <section class="intro">
+    <h1>每个工具为什么可用,一眼看得出;要改,只改一行</h1>
+    <p>设置新增「工具」一节:同一份宿主核验的清单按来源分成本地、Alpha Cloud、第三方 MCP、插件四组,服务可展开到单个工具。每一行同时给出四件事:用户自己的选择(若有)、继承自哪一层、最终生效的状态、以及被限制时的原因。启用 / 每次询问 / 停用三态即点即存;放宽有确认与绑定保护,收紧永远畅通。</p>
+  </section>
+
+  <div class="kicker">状态切换</div>
+  <div class="statebar" role="tablist" aria-label="mock 状态">
+    <button role="tab" aria-selected="true" data-state="default">默认 · 展开与继承</button>
+    <button role="tab" aria-selected="false" data-state="rebind">服务变更 · 回到询问</button>
+    <button role="tab" aria-selected="false" data-state="quarantine">策略文件损坏</button>
+    <button role="tab" aria-selected="false" data-state="savefail">保存失败</button>
+    <button role="tab" aria-selected="false" data-state="loading">加载中</button>
+    <button role="tab" aria-selected="false" data-state="loadfail">读取失败</button>
+  </div>
+
+  <div class="frame" id="tpDemo">
+
+    <!-- ══ 默认:四组、展开、继承与覆盖 ══ -->
+    <div class="tp-frame on" data-state="default">
+      <div class="tp-app">
+        <aside class="tp-side">
+          <button class="tp-back" type="button">‹ 返回应用</button>
+          <h1>设置</h1>
+          <nav class="tp-nav" aria-label="设置类别">
+            <button type="button">通用</button>
+            <button type="button">快捷键</button>
+            <button type="button">扩展存储</button>
+            <button type="button" aria-current="page">工具</button>
+          </nav>
+        </aside>
+        <div class="tp-main">
+          <div class="tp-pagehd">
+            <h2>工具</h2>
+            <p>决定各来源的工具能否被模型调用 · 仅作用于当前账户与当前项目</p>
+          </div>
+
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>本地工具</h3><span class="n">12 项</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="本地工具 · 整类">
+                <button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button>
+              </div>
+            </div>
+            <p class="tp-grp-cap">默认启用 · 整类开关作用于本组全部工具,包括以后新增的</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>读取文件</b></div><small>生效:启用 · 默认,本地工具无需单独批准</small></div>
+                <span class="tp-eff ok"><i></i>启用</span>
+                <div class="tp-seg" role="radiogroup" aria-label="读取文件"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>终端命令</b></div><small>生效:每次询问 · 你的设置,仅此工具</small></div>
+                <span class="tp-eff ask"><i></i>每次询问</span>
+                <div class="tp-seg" role="radiogroup" aria-label="终端命令"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="true">询问</button><button role="radio" aria-checked="false">停用</button></div>
+                <button class="tp-clear" type="button" title="恢复继承" aria-label="恢复继承">↺</button>
+              </div>
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>资源读取</b></div><small>生效:启用 · 默认,本地工具无需单独批准</small></div>
+                <span class="tp-eff ok"><i></i>启用</span>
+                <div class="tp-seg" role="radiogroup" aria-label="资源读取"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <details class="tp-dev"><summary>开发者详情 · 其余 9 项</summary><div class="dev">builtin::read · builtin::bash · host::mcp-resource-read …<br/>启用不豁免读写 / 终端 / 目录等能力审批,它们照常弹出。</div></details>
+            </div>
+          </div>
+
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>Alpha Cloud</h3><span class="n">2 项</span><span class="tp-badge cloud">已核验</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="Alpha Cloud · 整类"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+            </div>
+            <p class="tp-grp-cap">默认每次询问 · 云端调用可能计费;启用只免去询问,不能越过套餐限制</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>网页搜索</b><span class="tp-badge">按用量计费</span></div><small>生效:每次询问 · 默认,首次使用前询问</small></div>
+                <span class="tp-eff ask"><i></i>每次询问</span>
+                <div class="tp-seg" role="radiogroup" aria-label="网页搜索"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-row">
+                <div class="meta"><div class="nm"><b>文档生成</b><span class="tp-badge">计费:未知</span></div><small>生效:已停用 · 当前套餐不含此服务</small></div>
+                <span class="tp-eff off"><i></i>已停用</span>
+                <span class="tp-lock" aria-hidden="true">🔒</span>
+                <div class="tp-seg" role="radiogroup" aria-label="文档生成" aria-disabled="true"><button role="radio" aria-checked="false" disabled>启用</button><button role="radio" aria-checked="false" disabled>询问</button><button role="radio" aria-checked="false" disabled>停用</button></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>第三方 MCP</h3><span class="n">2 个服务 · 8 项</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="第三方 MCP · 整类"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+            </div>
+            <p class="tp-grp-cap">默认每次询问 · 第三方服务的自我描述不参与判定;计费与风险按服务标注,标不出即「未知」</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <button class="tp-exp" type="button" aria-expanded="true" aria-label="收起 context7">▾</button>
+                <div class="meta"><div class="nm"><b>context7</b><span class="tp-badge new">1 项新发现</span></div><small>6 个工具 · 计费:未知 · 继承:默认,每次询问</small></div>
+                <div class="tp-seg" role="radiogroup" aria-label="context7 · 整个服务"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-svc-tools">
+                <div class="tp-row">
+                  <div class="meta"><div class="nm"><b>resolve-library-id</b><span class="tp-badge new">新发现</span></div><small>生效:每次询问 · 默认,首次使用前询问</small></div>
+                  <span class="tp-eff ask"><i></i>每次询问</span>
+                  <div class="tp-seg" role="radiogroup" aria-label="resolve-library-id"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+                </div>
+                <div class="tp-row">
+                  <div class="meta"><div class="nm"><b>get-library-docs</b></div><small>生效:启用 · 你的设置,仅此工具</small></div>
+                  <span class="tp-eff ok"><i></i>启用</span>
+                  <div class="tp-seg" role="radiogroup" aria-label="get-library-docs"><button role="radio" aria-checked="true">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+                  <button class="tp-clear" type="button" title="恢复继承" aria-label="恢复继承">↺</button>
+                </div>
+                <details class="tp-dev"><summary>开发者详情</summary><div class="dev">mcp:context7:get-library-docs<br/>绑定指纹 sha256:3f21…9ce4 · 与当前服务配置一致</div></details>
+                <div class="tp-degraded"><span aria-hidden="true">◌</span><span>1 项注册身份无法核验,已自动停用,不会提供给模型。</span></div>
+              </div>
+              <div class="tp-row">
+                <button class="tp-exp" type="button" aria-expanded="false" aria-label="展开 抓取服务">▸</button>
+                <div class="meta"><div class="nm"><b>抓取服务</b></div><small>2 个工具 · 计费:未知 · 继承:默认,每次询问</small></div>
+                <div class="tp-seg" role="radiogroup" aria-label="抓取服务 · 整个服务"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-confirm" role="alertdialog" aria-label="确认启用整个服务">
+                <span><b>启用整个服务?</b> 该服务现有与以后新增的全部工具都将不再询问。</span>
+                <span class="sp"></span>
+                <button class="tp-btn primary" type="button">确认启用</button>
+                <button class="tp-btn ghost" type="button">取消</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>插件</h3><span class="n">1 个来源 · 3 项</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="插件 · 整类"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+            </div>
+            <p class="tp-grp-cap">默认每次询问 · 只治理插件的工具调用;插件本身的装载不在此列</p>
+            <div class="tp-card">
+              <div class="tp-row">
+                <button class="tp-exp" type="button" aria-expanded="true" aria-label="收起 团队脚本包">▾</button>
+                <div class="meta"><div class="nm"><b>团队脚本包</b></div><small>3 个工具 · 继承:默认,每次询问</small></div>
+                <div class="tp-seg" role="radiogroup" aria-label="团队脚本包 · 整个来源"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-svc-tools">
+                <div class="tp-row">
+                  <div class="meta"><div class="nm"><b>发布检查</b></div><small>生效:每次询问 · 默认,首次使用前询问</small></div>
+                  <span class="tp-eff ask"><i></i>每次询问</span>
+                  <div class="tp-seg" role="radiogroup" aria-label="发布检查"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+                </div>
+                <div class="tp-row">
+                  <div class="meta"><div class="nm"><b>部署脚本</b></div><small>生效:已停用 · 由设备管理策略停用,本机不可更改</small></div>
+                  <span class="tp-eff off"><i></i>已停用</span>
+                  <span class="tp-lock" aria-hidden="true">🔒</span>
+                  <div class="tp-seg" role="radiogroup" aria-label="部署脚本" aria-disabled="true"><button role="radio" aria-checked="false" disabled>启用</button><button role="radio" aria-checked="false" disabled>询问</button><button role="radio" aria-checked="false" disabled>停用</button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p class="tp-foot">对话中的「本次允许 / 本会话允许」只在当次会话内生效,不会改动这里的长期设置。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 服务变更:binding 不一致,旧「启用」回到询问 ══ -->
+    <div class="tp-frame" data-state="rebind">
+      <div class="tp-app">
+        <aside class="tp-side">
+          <button class="tp-back" type="button">‹ 返回应用</button>
+          <h1>设置</h1>
+          <nav class="tp-nav" aria-label="设置类别">
+            <button type="button">通用</button><button type="button">快捷键</button><button type="button">扩展存储</button><button type="button" aria-current="page">工具</button>
+          </nav>
+        </aside>
+        <div class="tp-main">
+          <div class="tp-pagehd"><h2>工具</h2><p>决定各来源的工具能否被模型调用 · 仅作用于当前账户与当前项目</p></div>
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>第三方 MCP</h3><span class="n">2 个服务 · 8 项</span><span class="sp"></span>
+              <div class="tp-seg" role="radiogroup" aria-label="第三方 MCP · 整类"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+            </div>
+            <div class="tp-card">
+              <div class="tp-row">
+                <button class="tp-exp" type="button" aria-expanded="true" aria-label="收起 context7">▾</button>
+                <div class="meta"><div class="nm"><b>context7</b><span class="tp-badge warn">服务已变更</span></div><small>服务的连接配置与你上次授权时不同;之前的「启用」已暂停,改回每次询问。</small></div>
+                <div class="tp-seg" role="radiogroup" aria-label="context7 · 整个服务"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-svc-tools">
+                <div class="tp-row">
+                  <div class="meta"><div class="nm"><b>get-library-docs</b></div><small>生效:每次询问 · 服务配置已变更,你之前的「启用」不再沿用</small></div>
+                  <span class="tp-eff ask"><i></i>每次询问</span>
+                  <button class="tp-btn" type="button">重新启用</button>
+                  <button class="tp-clear" type="button" title="恢复继承" aria-label="恢复继承">↺</button>
+                </div>
+                <details class="tp-dev" open><summary>开发者详情</summary><div class="dev">mcp:context7:get-library-docs<br/>记录的绑定指纹 sha256:3f21…9ce4 ≠ 当前 sha256:b07a…52d1(连接地址已变)<br/>「重新启用」将按当前配置重新记录绑定。</div></details>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 策略文件损坏:全部停用 + 可恢复入口 ══ -->
+    <div class="tp-frame" data-state="quarantine">
+      <div class="tp-app">
+        <aside class="tp-side">
+          <button class="tp-back" type="button">‹ 返回应用</button>
+          <h1>设置</h1>
+          <nav class="tp-nav" aria-label="设置类别">
+            <button type="button">通用</button><button type="button">快捷键</button><button type="button">扩展存储</button><button type="button" aria-current="page">工具</button>
+          </nav>
+        </aside>
+        <div class="tp-main">
+          <div class="tp-pagehd"><h2>工具</h2><p>决定各来源的工具能否被模型调用 · 仅作用于当前账户与当前项目</p></div>
+          <div class="tp-banner err" role="alert" tabindex="-1">
+            <span class="dot" aria-hidden="true"></span>
+            <div>
+              <b>工具设置暂不可用,已全部改为停用</b>
+              <p>这份设置文件无法安全读取。为避免沿用其中可能被破坏的授权,所有可配置的工具已暂时停用;设备管理与套餐限制不受影响,仍然生效。</p>
+              <div class="act"><button class="tp-btn primary" type="button">重置为安全默认</button><small>原文件会保留一份备份,不会被覆盖删除。</small></div>
+            </div>
+          </div>
+          <div class="tp-grp tp-dim" aria-hidden="true">
+            <div class="tp-grp-hd"><h3>本地工具</h3><span class="n">12 项</span></div>
+            <div class="tp-card">
+              <div class="tp-row"><div class="meta"><div class="nm"><b>读取文件</b></div><small>生效:已停用 · 设置文件待恢复</small></div><span class="tp-eff off"><i></i>已停用</span></div>
+              <div class="tp-row"><div class="meta"><div class="nm"><b>终端命令</b></div><small>生效:已停用 · 设置文件待恢复</small></div><span class="tp-eff off"><i></i>已停用</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 保存失败:该行回到之前的状态 + 重试 ══ -->
+    <div class="tp-frame" data-state="savefail">
+      <div class="tp-app">
+        <aside class="tp-side">
+          <button class="tp-back" type="button">‹ 返回应用</button>
+          <h1>设置</h1>
+          <nav class="tp-nav" aria-label="设置类别">
+            <button type="button">通用</button><button type="button">快捷键</button><button type="button">扩展存储</button><button type="button" aria-current="page">工具</button>
+          </nav>
+        </aside>
+        <div class="tp-main">
+          <div class="tp-pagehd"><h2>工具</h2><p>决定各来源的工具能否被模型调用 · 仅作用于当前账户与当前项目</p></div>
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><h3>第三方 MCP</h3><span class="n">2 个服务 · 8 项</span></div>
+            <div class="tp-card">
+              <div class="tp-row">
+                <button class="tp-exp" type="button" aria-expanded="true" aria-label="收起 context7">▾</button>
+                <div class="meta"><div class="nm"><b>context7</b></div><small>6 个工具 · 继承:默认,每次询问</small></div>
+                <div class="tp-seg" role="radiogroup" aria-label="context7 · 整个服务"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+              </div>
+              <div class="tp-svc-tools">
+                <div class="tp-row">
+                  <div class="meta"><div class="nm"><b>resolve-library-id</b></div><small>生效:每次询问 · 默认,首次使用前询问</small></div>
+                  <span class="tp-eff ask"><i></i>每次询问</span>
+                  <div class="tp-seg" role="radiogroup" aria-label="resolve-library-id"><button role="radio" aria-checked="false">启用</button><button role="radio" aria-checked="false">询问</button><button role="radio" aria-checked="false">停用</button></div>
+                </div>
+                <div class="tp-alert" role="alert" tabindex="-1">
+                  <span class="dot" aria-hidden="true"></span>
+                  <div><b>这项更改没有保存</b>已恢复为之前的状态,模型仍按之前的设置执行。<div class="act" style="margin-top:7px"><button class="tp-btn" type="button">重试</button></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 加载中 ══ -->
+    <div class="tp-frame" data-state="loading">
+      <div class="tp-app">
+        <aside class="tp-side">
+          <button class="tp-back" type="button">‹ 返回应用</button>
+          <h1>设置</h1>
+          <nav class="tp-nav" aria-label="设置类别">
+            <button type="button">通用</button><button type="button">快捷键</button><button type="button">扩展存储</button><button type="button" aria-current="page">工具</button>
+          </nav>
+        </aside>
+        <div class="tp-main" aria-busy="true">
+          <div class="tp-pagehd"><h2>工具</h2><p>正在读取工具列表…</p></div>
+          <div class="tp-grp">
+            <div class="tp-grp-hd"><div class="tp-skel" style="width:90px"></div></div>
+            <div class="tp-card">
+              <div class="tp-row"><div class="meta"><div class="tp-skel" style="width:140px"></div><div class="tp-skel" style="width:220px;margin-top:7px;height:9px"></div></div><div class="tp-skel" style="width:130px;height:24px"></div></div>
+              <div class="tp-row"><div class="meta"><div class="tp-skel" style="width:110px"></div><div class="tp-skel" style="width:180px;margin-top:7px;height:9px"></div></div><div class="tp-skel" style="width:130px;height:24px"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 读取失败 ══ -->
+    <div class="tp-frame" data-state="loadfail">
+      <div class="tp-app">
+        <aside class="tp-side">
+          <button class="tp-back" type="button">‹ 返回应用</button>
+          <h1>设置</h1>
+          <nav class="tp-nav" aria-label="设置类别">
+            <button type="button">通用</button><button type="button">快捷键</button><button type="button">扩展存储</button><button type="button" aria-current="page">工具</button>
+          </nav>
+        </aside>
+        <div class="tp-main">
+          <div class="tp-pagehd"><h2>工具</h2><p>决定各来源的工具能否被模型调用 · 仅作用于当前账户与当前项目</p></div>
+          <div class="tp-banner err" role="alert" tabindex="-1">
+            <span class="dot" aria-hidden="true"></span>
+            <div>
+              <b>无法读取工具列表</b>
+              <p>暂时读不到可用工具。这不影响已生效的限制:读不到清单时,不会有任何工具被放宽。</p>
+              <div class="act"><button class="tp-btn" type="button">重试</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="caption">帧外说明一:内部协议工具(结构化输出的强制通道)与历史回放占位符不在本节出现 —— 前者不可配置、强制可用,后者不是真实工具;二者由窄测试锁死,不作为「缺身份也能跑」的先例。</p>
+  <p class="caption">帧外说明二:「新发现」「服务已变更」「计费」与「无法核验的注册」四类标记全部来自宿主核验清单的事实字段;第三方服务的自我描述(标题、说明、annotation)只能展示,不参与任何标记与判定。完整字段映射见同目录 design.md。</p>
+  <p class="caption">帧外说明三:精确 canonical 身份与绑定指纹只出现在「开发者详情」折叠区;正文行只用展示名。展示名撞名不借用身份 —— 判定一律走结构化 selector。</p>
+
+  <section class="a11y">
+    <h3>可访问性与两种外观</h3>
+    <div class="a11y-grid">
+      <div><span>键盘</span><p>焦点顺序:返回 → 类别导航 → 组开关 → 行内控件(展开 → 三态 → 恢复继承 → 开发者详情)。三态是 radiogroup,左右键切换、空格确认;展开按钮 aria-expanded;Esc 关闭设置整页(沿用现有行为)。</p></div>
+      <div><span>读屏</span><p>每行朗读:名称 → 生效状态 → 原因(即「生效:…」一行)。写入成功以 polite 状态播报;保存失败与损坏横幅是 role=alert 并接管焦点,可 Tab 到「重试 / 重置」。锁定行朗读「不可更改」及原因。</p></div>
+      <div><span>浅色 / 深色</span><p>全部取 --a-* token,两种外观都按正文 ≥ 4.5:1、次要 ≥ 3:1 核对;状态点不是唯一信号,始终伴随文字。</p></div>
+      <div><span>Reduced motion</span><p>展开 / 收起与骨架闪烁在 prefers-reduced-motion 下取消动画,只保留最终布局;加载态用文字「正在读取…」兜底。</p></div>
+    </div>
+  </section>
+</main>
+
+<script>
+(function(){
+  var seg=document.getElementById("themeSeg");
+  seg.addEventListener("click",function(e){
+    var b=e.target.closest("button");if(!b)return;
+    document.documentElement.dataset.theme=b.dataset.theme;
+    seg.querySelectorAll("button").forEach(function(x){x.classList.toggle("on",x===b)});
+  });
+  var tabs=document.querySelectorAll(".statebar [data-state]");
+  tabs.forEach(function(t){t.addEventListener("click",function(){
+    tabs.forEach(function(x){x.setAttribute("aria-selected",String(x===t))});
+    document.querySelectorAll(".tp-frame").forEach(function(f){f.classList.toggle("on",f.dataset.state===t.dataset.state)});
+  })});
+})();
+</script>
+</body>
+</html>
