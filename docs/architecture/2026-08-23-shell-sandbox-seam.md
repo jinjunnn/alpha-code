@@ -4,8 +4,8 @@ kind: architecture
 status: active
 owners:
   - alpha-code desktop maintainers
-last_reviewed: 2026-08-23
-review_after: 2026-11-23
+last_reviewed: 2026-08-26
+review_after: 2026-11-26
 ---
 
 # 三个候选接缝，只有一个不用收编上游
@@ -194,12 +194,34 @@ Alpha 无处注入 ⇒ **C3 必须收编其中一个热文件**（`north-star-gu
 
 ## 5. 未验证 / 残余风险
 
-- **未验证：Electron utilityProcess 内的行为。** §2.1–2.8 都在裸 node 下跑。
-  `packages/ui-mac/resources/entitlements.plist` 只有 hardened-runtime 三项、**没有**
-  `com.apple.security.app-sandbox`，因此不构成嵌套沙箱冲突；但「打包后的 sidecar 里
-  同样成立」这句话本身尚未实跑。实现票必须在打包产物上复跑 §2.5 + §2.6。
-- **未验证：会写盘的 rc 脚本。** §2.7 的宿主 zshrc 恰好不写盘。会写
-  `.zcompdump` / 历史文件的 rc 在写禁止下的表现未测。
+- ~~未验证：Electron utilityProcess 内的行为。~~ **2026-08-26 在打包产物上实跑，结论一致**
+  （[`#1076`](https://github.com/jinjunnn/alpha-code/issues/1076)，取证见
+  [`docs/verification/2026-08-26-req138-1076-packaged-sandbox/`](../verification/2026-08-26-req138-1076-packaged-sandbox/README.md)）。
+  prod 频道打包、`app.isPackaged=true` 的 sidecar 里：`cfg.shell` 指向 `ALPHA_GLOBAL_DIR/bin/zsh`，
+  该文件内容与 `WRAPPER_SCRIPT` 逐字相同；§2.5 的 7 条语料**全部落不了盘**，同一套语料在
+  **只把 wrapper 那一行换成 `exec "$ALPHA_REAL_SHELL" "$@"`** 的打包副本上**全部落盘**；
+  §2.8 误伤集 9/9 通过，两臂逐格相同。两种 argv 形状各跑，各 2 轮，每轮 29 pass / 0 fail。
+  **残余两小块**：①shell **工具**的执行链没有在 sidecar 里真跑过（需要一次真模型回合；
+  已覆盖的是两条通路取的是同一个 `cfg.shell`，以及工具的 argv 形状在打包 wrapper 上同样 7/7 拦住）；
+  ②**hardened runtime 没测成** —— 只有出厂签名才开 `hardenedRuntime`，本机无 Developer ID 证书、
+  只能 ad-hoc 签，两次尝试分别卡在 library validation（ad-hoc 没有 Team ID）与钥匙串 ACL 授权等待上。
+  可静态确认的那一半仍然成立：`packages/ui-mac/resources/entitlements.plist` **没有**
+  `com.apple.security.app-sandbox`，不构成嵌套沙箱冲突。
+- ~~未验证：会写盘的 rc 脚本。~~ **2026-08-26 实跑**（同上目录 §6）。用产品自带的
+  `ALPHA_ENV_ALLOWLIST_EXTRA=ZDOTDIR` 把引擎自己那条 `source "${ZDOTDIR:-$HOME}/.zshrc"`
+  指到一份**故意会写盘**的 rc 上（`compinit -d` 写 `.zcompdump` + 历史式追加 + 一个 marker，
+  三处写全在可写闭集外）。三句结论：
+  1. **rc 照常跑到最后一行**（它 export 的变量在命令里读得到）；写被拒**不中断** rc，
+     也不中断随后的命令。
+  2. **三处写一次都没落盘** —— 一轮 19 次 shell 派生、每次都 source 一遍，rc 目录自始至终
+     没多出任何文件；反向臂同一份 rc 三处写全部落盘，证明这份夹具能测出「写得进去」。
+  3. **用户什么都看不见** —— `Shell.args` 那行是 `source ... >/dev/null 2>&1 || true`。
+     把同一份 rc 不加抑制地再 source 一次才看得到真实回执：普通重定向报
+     `operation not permitted`，而 **`compinit` 写不进去时是静默失败，一个字都不报**。
+
+  **实际影响是成本面不是崩溃面**：宿主 rc 里往 `$HOME` 写的东西（completion 缓存这类）
+  在工具派生的 shell 里静默失效，命令本身照常工作，代价是每次派生都重算 completion 而缓存
+  永远存不下；引擎的 shell 是非交互 `-c` shell，zsh 本来就不写历史，历史那半边不产生额外损失。
 - **`sandbox-exec` 被 Apple 标记为 deprecated**，但仍随系统分发（§2.5 实跑），
   且 Chrome 与 codex 均在用。无替代 API 之前这是唯一可用面。
 
@@ -231,7 +253,9 @@ C1 选定后，文件轴按下述落地。此节校正 §2.4 里那处 spike 用
 - **§5 未验证项的状态**：§2.5/§2.6 的正反语料已实现为 darwin-only 单测
   （`alpha-sandbox-escape.test.ts`，真 `sandbox-exec`，CI/ubuntu 上 skip、本机 macOS 真跑），
   外加类边界探针（重定向 `>`/`>>`、`sh`/`python3`/`node` 解释器、`nohup` 脱离、
-  指向工作区外的 symlink）。**§5 第一条（打包后的 Electron sidecar 里复跑）仍未验证**，
-  归 `[REQ-138][VERIFY]`；rc 写盘那条同样留给打包复验。
+  指向工作区外的 symlink）。**§5 前两条已由 [`#1076`](https://github.com/jinjunnn/alpha-code/issues/1076)
+  在打包产物上实跑闭合**（取证见
+  [`docs/verification/2026-08-26-req138-1076-packaged-sandbox/`](../verification/2026-08-26-req138-1076-packaged-sandbox/README.md)），
+  两小块残余明确留在 §5 里（shell 工具在 sidecar 内的执行链、hardened runtime）。
 - **本接缝结构上管不到的面**不变（§4）：进程内 FS 工具、MCP stdio、LSP、网络（#1077）、
   Windows。实现未声称超出该清单的保护。

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ac#1076 取证夹具 —— **不是**出厂 entitlements,不要拿它签发布包。
+
+  出厂那份是 packages/ui-mac/resources/entitlements.plist(三键:allow-jit /
+  allow-unsigned-executable-memory / device.audio-input),只在 CI 或 ALPHA_SIGN=1
+  且有 Developer ID 证书时才配 hardenedRuntime 一起用。
+
+  本机没有该证书,只能 ad-hoc 签。ad-hoc 签名**没有 Team ID**,而 hardened runtime 会开
+  library validation ⇒ 主二进制加载 Electron Framework 时被 dyld 拒:
+    "code signature ... not valid for use in process: mapping process and mapped file
+     (non-platform) have different Team IDs"
+  (实测原文见 results/hardened-libval-failure.json 的 appLogTail)。
+
+  于是本夹具 = 出厂三键 + **一键** com.apple.security.cs.disable-library-validation,
+  只为把 hardened runtime 在本机跑起来。这一键管的是「能不能加载别的 Team 签的 dylib」,
+  与 sandbox-exec / seatbelt 无关,所以它不影响本票要问的那个问题
+  (hardened runtime 会不会让 sandbox-exec 失效)。这是**放宽**,不是收紧 ——
+  用它得到的结论对出厂那份签名是必要非充分的,README 的「未验证项」里如实记了这一条。
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
