@@ -47,13 +47,13 @@
       "sbom": {
         "sha256": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
         "bytes": 6000000,
-        "url": "https://alphacodeone.com/catalog/assets/mcp.github/1.0.0/alpha-curation/sbom/1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a.cdx.json",
+        "url": "https://codepuppy.cn/catalog/assets/mcp.github/1.0.0/alpha-curation/sbom/1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a.cdx.json",
         "format": "cyclonedx-1.6+json"
       },
       "intakeProvenance": {
         "sha256": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
         "bytes": 1024,
-        "url": "https://alphacodeone.com/catalog/assets/mcp.github/1.0.0/alpha-curation/intake-provenance/2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b.json",
+        "url": "https://codepuppy.cn/catalog/assets/mcp.github/1.0.0/alpha-curation/intake-provenance/2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b.json",
         "format": "alpha.intake-provenance.v1+json"
       }
     }

@@ -4,12 +4,12 @@
   "sequence": 9,
   "publishedAt": "2026-07-13T00:00:00.000Z",
   "expires": "2036-01-01T00:00:00.000Z",
-  "keyId": "7866aa47792b362e76318c60a08af2caa565cfef90360370ccb211241feb24ac",
+  "keyId": "83b605a31d0332ff26a5dddaff71966e04574650f21173bf4911c13672cc1b28",
   "target": {
     "catalogVersion": "9.9.9",
     "sha256": "a2588c51381553b3769c4f85e9aead550bae25250d5c8c47159c340603d0064c",
     "bytes": 251,
-    "url": "https://alphacodeone.com/catalog/v1/releases/9.9.9/catalog.json",
-    "sigUrl": "https://alphacodeone.com/catalog/v1/releases/9.9.9/catalog.json.sig"
+    "url": "https://codepuppy.cn/catalog/v1/releases/9.9.9/catalog.json",
+    "sigUrl": "https://codepuppy.cn/catalog/v1/releases/9.9.9/catalog.json.sig"
   }
 }

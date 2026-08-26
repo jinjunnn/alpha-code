@@ -24,7 +24,16 @@ const metaPath = path.join(extDir, "alpha-catalog.snapshot.json")
 // (REQ-102-A 修复:原 remote-catalog.ts 正则已抓不到常量,脚本会在提钥处 die)。
 const catalogChannelsTs = path.resolve(here, "../src/main/catalog-channels.ts")
 
-const CATALOG_URL = "https://alphacodeone.com/catalog/v1/catalog.json"
+function catalogUrlFromSource() {
+  const src = fs.readFileSync(catalogChannelsTs, "utf8")
+  const m = src.match(/export const CHANNEL_BASE_URL = "(https:\/\/[^"]+)"/)
+  if (!m) throw new Error(`cannot extract CHANNEL_BASE_URL from ${catalogChannelsTs}`)
+  const channel = m[1]
+  if (!channel.endsWith("/catalog/v1")) throw new Error(`CHANNEL_BASE_URL must end with /catalog/v1, got ${channel}`)
+  return `${channel}/catalog.json`
+}
+
+const CATALOG_URL = catalogUrlFromSource()
 
 function pubkeyFromSource() {
   const src = fs.readFileSync(catalogChannelsTs, "utf8")

@@ -39,13 +39,13 @@
       "sbom": {
         "sha256": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c",
         "bytes": 2048,
-        "url": "https://alphacodeone.com/catalog/assets/bundle.office-suite/2026.07.1/alpha-curation/sbom/9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c.cdx.json",
+        "url": "https://codepuppy.cn/catalog/assets/bundle.office-suite/2026.07.1/alpha-curation/sbom/9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c.cdx.json",
         "format": "cyclonedx-1.6+json"
       },
       "intakeProvenance": {
         "sha256": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
         "bytes": 1024,
-        "url": "https://alphacodeone.com/catalog/assets/bundle.office-suite/2026.07.1/alpha-curation/intake-provenance/0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d.json",
+        "url": "https://codepuppy.cn/catalog/assets/bundle.office-suite/2026.07.1/alpha-curation/intake-provenance/0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d.json",
         "format": "alpha.intake-provenance.v1+json"
       }
     }

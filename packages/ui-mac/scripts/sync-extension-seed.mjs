@@ -32,7 +32,15 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const outDir = path.resolve(here, "../resources/extension-seed")
 const catalogChannelsTs = path.resolve(here, "../src/main/catalog-channels.ts")
 
-const BASE_URL = "https://alphacodeone.com"
+function publicOrigin() {
+  const src = fs.readFileSync(catalogChannelsTs, "utf8")
+  const m = src.match(/export const CHANNEL_BASE_URL = "(https:\/\/[^"]+)"/)
+  if (!m) die(`cannot extract CHANNEL_BASE_URL from ${catalogChannelsTs}`)
+  const channel = m[1]
+  if (!channel.endsWith("/catalog/v1")) die(`CHANNEL_BASE_URL must end with /catalog/v1, got ${channel}`)
+  return channel.slice(0, -"/catalog/v1".length)
+}
+
 const SEED_LICENSE_ALLOWLIST = new Set([
   "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC-BY-4.0", "CC0-1.0", "ISC", "MIT", "OFL-1.1", "Unlicense",
 ])
@@ -44,6 +52,7 @@ const die = (msg) => {
   process.exit(1)
 }
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex")
+const BASE_URL = publicOrigin()
 
 // ── 信任根(单源提取,不复制常量) ──────────────────────────────────────────────────────────────
 function builtinPubkeyB64() {

@@ -3,11 +3,11 @@
   "sequence": 3,
   "publishedAt": "2026-07-13T00:00:00.000Z",
   "expires": "2036-01-01T00:00:00.000Z",
-  "keyId": "7866aa47792b362e76318c60a08af2caa565cfef90360370ccb211241feb24ac",
+  "keyId": "83b605a31d0332ff26a5dddaff71966e04574650f21173bf4911c13672cc1b28",
   "keys": [
     {
-      "keyId": "7866aa47792b362e76318c60a08af2caa565cfef90360370ccb211241feb24ac",
-      "publicKey": "MCowBQYDK2VwAyEAtyxEl+TpGJPjdVRvalOFsBdZjKOHyme6JFrGq3vvboA=",
+      "keyId": "83b605a31d0332ff26a5dddaff71966e04574650f21173bf4911c13672cc1b28",
+      "publicKey": "MCowBQYDK2VwAyEAIOXw2YvrBHd03wQw0RQrzkLZbwkf1zKnmn9EqE7n4n0=",
       "status": "active",
       "notBefore": "2026-07-13T00:00:00.000Z"
     },

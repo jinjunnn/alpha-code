@@ -105,7 +105,8 @@ describe("fetchCurationBlob(合同 §7.3 采信前置)", () => {
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.data).toEqual(SBOM_OK)
     expect(calls).toHaveLength(1)
-    expect(calls[0]!.url).toBe(`https://alphacodeone.com/catalog/assets/mcp.blobber/1.0.0/alpha-curation/sbom/${sha256Hex(bytes)}.cdx.json`)
+    // ac#1132 域名切换:独立字面量刻意不 import 生产常量(自指等价链纪律,同 catalog-curation.test.ts)。
+    expect(calls[0]!.url).toBe(`https://codepuppy.cn/catalog/assets/mcp.blobber/1.0.0/alpha-curation/sbom/${sha256Hex(bytes)}.cdx.json`)
     expect((calls[0]!.init as { redirect?: string } | undefined)?.redirect).toBe("error")
     const again = await fetchCurationBlob(deps, "mcp:blobber", "sbom")
     expect(again.ok).toBe(true)

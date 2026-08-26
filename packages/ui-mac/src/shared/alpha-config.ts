@@ -21,7 +21,7 @@ export const ALPHA_V2_CATALOG_READY_PROVIDER_ID = "alpha-internal-catalog-ready"
 
 export const ALPHA_ENDPOINTS = {
   /** alpha-web (C): identity / login / token / billing portal. */
-  web: "https://alphacodeone.com",
+  web: "https://codepuppy.cn",
   /** alpha-platform (B): model proxy (/v1). Custom domain since B PR #20 (REQ-070) — `*.workers.dev`
    *  is widely DNS-poisoned/TLS-reset in mainland China, and the zone domain unlocks B-side WAF/rate
    *  limits. Live-probed 2026-07-08: /health 200, /v1/models 200. The old
@@ -29,7 +29,7 @@ export const ALPHA_ENDPOINTS = {
    *  A confirms rollout). Override per-deploy with ALPHA_PLATFORM_URL. */
   platform: "https://alpha-gateway.tidelabs.click",
   /** alpha-platform (B) account-server (境内 PII/金融): balance / membership / usage ledger. */
-  account: "https://account.alphacodeone.com",
+  account: "https://account.codepuppy.cn",
   /** alpha-platform (B) cloud jobs API (ADR-016): unified dispatch/status + MCP facade (/mcp). A
    *  SEPARATE worker from the model gateway (the gateway 404s /mcp) — `alpha-cloud`. Custom domain
    *  since B PR #20 (REQ-070; old workers.dev URL online during the migration window). Override

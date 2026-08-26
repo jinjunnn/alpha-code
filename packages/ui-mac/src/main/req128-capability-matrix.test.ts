@@ -91,11 +91,14 @@ describe("REQ-128 Phase 1 capability evidence matrix", () => {
         reason_code: "cut-owner-directed-current-host-only",
       }),
     )
+    // ac#1132:快照 2026-08-25.2 起随包 Catalog 携带第一个真实 package,原「deferred →
+    // alpha-web#108」的 fixture 边界随之解除 —— pin 翻转成对真实字节形状闸的那一格。
+    // 打包/线上域的真实安装验证仍归 alpha-web#108(解除条件已由 ac#1132 裁决改写)。
     expect(rows).toContainEqual(
       expect.objectContaining({
         phase1_item: "producer-to-signed-catalog",
-        expected_verdict: "deferred",
-        reason_code: "deferred-alpha-web-108",
+        expected_verdict: "pinned",
+        reason_code: "real-package-shape-pinned",
       }),
     )
     // #737 已合并(1b808f23):宿主的契约文法替身已删除并收口到 shared/extension-name.ts,

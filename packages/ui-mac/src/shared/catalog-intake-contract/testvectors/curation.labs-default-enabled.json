@@ -34,13 +34,13 @@
       "sbom": {
         "sha256": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
         "bytes": 2048,
-        "url": "https://alphacodeone.com/catalog/assets/skill.experimental-viz/0.3.1/alpha-curation/sbom/3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c.cdx.json",
+        "url": "https://codepuppy.cn/catalog/assets/skill.experimental-viz/0.3.1/alpha-curation/sbom/3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c.cdx.json",
         "format": "cyclonedx-1.6+json"
       },
       "intakeProvenance": {
         "sha256": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d",
         "bytes": 1024,
-        "url": "https://alphacodeone.com/catalog/assets/skill.experimental-viz/0.3.1/alpha-curation/intake-provenance/4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d.json",
+        "url": "https://codepuppy.cn/catalog/assets/skill.experimental-viz/0.3.1/alpha-curation/intake-provenance/4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d.json",
         "format": "alpha.intake-provenance.v1+json"
       }
     }

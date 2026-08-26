@@ -22,7 +22,7 @@ export const INTAKE_PROVENANCE_SCHEMA_ID = "alpha.intake-provenance.v1"
 export const CURATION_ASSET_NAMESPACE = "alpha-curation"
 
 /** 与发布端 BASE_URL 同源;blob URL 必须由此推导,禁止来自任何运行时输入(合同 §6)。 */
-export const CATALOG_BASE_URL = "https://alphacodeone.com/catalog"
+export const CATALOG_BASE_URL = "https://codepuppy.cn/catalog"
 
 /** blob 单文件上限(5 MiB;消费端采信前置之一,合同 §7.3)。 */
 export const MAX_CURATION_BLOB_BYTES = 5 * 1024 * 1024
