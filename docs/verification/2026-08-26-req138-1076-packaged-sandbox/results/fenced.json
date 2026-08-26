@@ -1,0 +1,468 @@
+{
+  "ticket": "alpha-code#1076",
+  "arm": "fenced",
+  "identity": {
+    "arm": "fenced",
+    "app": "packages/ui-mac/dist/mac-arm64/alpha-code.app",
+    "appExecExists": true,
+    "bundleId": "com.tide.alphacode",
+    "version": "0.1.3",
+    "extBundleSha256": "72026e70094326ad6681b60f4d25e5dbc7dc58c764cf416c0471eaca62d07f80",
+    "bundleWrapperIsFenced": true,
+    "codesign": [
+      "Identifier=com.tide.alphacode",
+      "CodeDirectory v=20400 size=299 flags=0x2(adhoc) hashes=3+3 location=embedded",
+      "Signature=adhoc",
+      "TeamIdentifier=not set"
+    ],
+    "workspace": "/Users/tide/.ac1076-ws-qvXjlZ",
+    "escapeTarget": "/Users/tide/.ac1076-escape-72WyZl/pwned.txt",
+    "rcHome": "/Users/tide/.ac1076-rchome-VwE6JF",
+    "ports": {
+      "engine": 54546,
+      "cdp": 54547
+    },
+    "startedAt": "2026-08-26T08:02:02.460Z",
+    "engineUrl": "http://127.0.0.1:54546",
+    "appStartingLine": "04:02:04.719         › app starting { version: '0.1.3', packaged: true, onboardingTest: true }",
+    "cfgShell": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-31414b4f-c872-4832-a766-82b52fc12c7d/alpha-code-state/env/prod/bin/zsh",
+    "wrapperText": "#!/bin/sh\nexec /usr/bin/sandbox-exec -f \"$ALPHA_SB_PROFILE\" -D WORKDIR=\"$(pwd)\" \"$ALPHA_REAL_SHELL\" \"$@\"\n",
+    "profilePath": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-31414b4f-c872-4832-a766-82b52fc12c7d/alpha-code-state/env/prod/sandbox/alpha-shell.sb",
+    "profileText": "(version 1)\n(allow default)\n(deny file-write*)\n(allow file-write*\n  (subpath (param \"WORKDIR\"))\n  (subpath \"/private/tmp\")\n  (subpath \"/private/var/folders\")\n  (literal \"/dev/null\")\n  (literal \"/dev/stdout\")\n  (literal \"/dev/stderr\")\n  (literal \"/dev/tty\")\n  (regex #\"^/dev/fd/\")\n)\n",
+    "sessionID": "ses_fc2e6d93effepZv9NVWmIqLTo2",
+    "agent": "build",
+    "agentsSeen": [
+      "build",
+      "alpha-automation",
+      "alpha-automation-standard",
+      "alpha-readonly",
+      "compaction",
+      "explore",
+      "general",
+      "plan",
+      "summary",
+      "title"
+    ],
+    "observedSbProfile": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-31414b4f-c872-4832-a766-82b52fc12c7d/alpha-code-state/env/prod/sandbox/alpha-shell.sb",
+    "observedRealShell": "/bin/zsh"
+  },
+  "probes": [
+    {
+      "id": "identity.armMatchesBundle",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "arm": "fenced",
+        "bundleWrapperIsFenced": true,
+        "sha": "72026e70094326ad6681b60f4d25e5dbc7dc58c764cf416c0471eaca62d07f80"
+      }
+    },
+    {
+      "id": "identity.appIsPackaged",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "line": "04:02:04.719         › app starting { version: '0.1.3', packaged: true, onboardingTest: true }"
+      }
+    },
+    {
+      "id": "m1.cfgShellIsWrapper",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "cfgShell": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-31414b4f-c872-4832-a766-82b52fc12c7d/alpha-code-state/env/prod/bin/zsh",
+        "wrapperText": "#!/bin/sh\nexec /usr/bin/sandbox-exec -f \"$ALPHA_SB_PROFILE\" -D WORKDIR=\"$(pwd)\" \"$ALPHA_REAL_SHELL\" \"$@\"\n",
+        "profileExists": true
+      }
+    },
+    {
+      "id": "m1.wrapperRunsSandboxExec",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "arm": "fenced",
+        "wrapperText": "#!/bin/sh\nexec /usr/bin/sandbox-exec -f \"$ALPHA_SB_PROFILE\" -D WORKDIR=\"$(pwd)\" \"$ALPHA_REAL_SHELL\" \"$@\"\n"
+      }
+    },
+    {
+      "id": "m2.escape/redirect >",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; echo pwned > /Users/tide/.ac1076-escape-72WyZl/pwned.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\n(eval):1: operation not permitted: /Users/tide/.ac1076-escape-72WyZl/pwned.txt\n"
+      }
+    },
+    {
+      "id": "m2.escape/redirect >>",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; echo pwned >> /Users/tide/.ac1076-escape-72WyZl/pwned.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\n(eval):1: operation not permitted: /Users/tide/.ac1076-escape-72WyZl/pwned.txt\n"
+      }
+    },
+    {
+      "id": "m2.escape/via /bin/sh",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; /bin/sh -c 'echo pwned > /Users/tide/.ac1076-escape-72WyZl/pwned.txt'",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\n/bin/sh: /Users/tide/.ac1076-escape-72WyZl/pwned.txt: Operation not permitted\n"
+      }
+    },
+    {
+      "id": "m2.escape/via python3",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; python3 -c 'open(\"/Users/tide/.ac1076-escape-72WyZl/pwned.txt\",\"w\").write(\"x\")'",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nPermissionError: [Errno 1] Operation not permitted: '/Users/tide/.ac1076-escape-72WyZl/pwned.txt'\n"
+      }
+    },
+    {
+      "id": "m2.escape/via node",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; node -e 'require(\"fs\").writeFileSync(\"/Users/tide/.ac1076-escape-72WyZl/pwned.txt\",\"x\")'",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\nnode:fs:2398\n    return binding.writeFileUtf8(\n                   ^\n\nError: EPERM: operation not permitted, open '/Users/tide/.ac1076-escape-72WyZl/pwned.txt'\n    at Object.writeFileSync (node:fs:2398:20)\n    at [eval]:1:15\n    at runScriptInThisContext (node:internal/vm:219:10)\n    at node:internal/process/execution:451:12\n    at [eval]-wrapper:6:24\n    at runScriptInContext (node:internal/process/execution:449:60)\n    at evalFunction (node:internal/process/execution:283:30)\n    at evalTypeScript (node:internal/process/execution:295:3)\n    at node:internal/main/eval_string:71:3"
+      }
+    },
+    {
+      "id": "m2.escape/nohup detach",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; nohup sh -c 'echo pwned > /Users/tide/.ac1076-escape-72WyZl/pwned.txt' >/dev/null 2>&1 || true",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\n"
+      }
+    },
+    {
+      "id": "m2.escape/symlink out",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; ln -sf /Users/tide/.ac1076-escape-72WyZl/pwned.txt link && echo pwned > link",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\n(eval):1: operation not permitted: link\n"
+      }
+    },
+    {
+      "id": "m2b.envReachesSidecarShell",
+      "kind": "identity",
+      "command": "(read ALPHA_SB_PROFILE / ALPHA_REAL_SHELL from inside the packaged sidecar's shell)",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "sbp": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-31414b4f-c872-4832-a766-82b52fc12c7d/alpha-code-state/env/prod/sandbox/alpha-shell.sb",
+        "rsh": "/bin/zsh",
+        "expectedProfile": "/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-31414b4f-c872-4832-a766-82b52fc12c7d/alpha-code-state/env/prod/sandbox/alpha-shell.sb",
+        "output": "AC1076-STARTED\nSBP=/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-31414b4f-c872-4832-a766-82b52fc12c7d/alpha-code-state/env/prod/sandbox/alpha-shell.sb RSH=/bin/zsh\n"
+      }
+    },
+    {
+      "id": "m2b.toolArgv/redirect >",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; echo pwned > /Users/tide/.ac1076-escape-72WyZl/pwned.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "exitCode": 1,
+        "output": "AC1076-STARTED\nzsh:1: operation not permitted: /Users/tide/.ac1076-escape-72WyZl/pwned.txt\n"
+      }
+    },
+    {
+      "id": "m2b.toolArgv/redirect >>",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; echo pwned >> /Users/tide/.ac1076-escape-72WyZl/pwned.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "exitCode": 1,
+        "output": "AC1076-STARTED\nzsh:1: operation not permitted: /Users/tide/.ac1076-escape-72WyZl/pwned.txt\n"
+      }
+    },
+    {
+      "id": "m2b.toolArgv/via /bin/sh",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; /bin/sh -c 'echo pwned > /Users/tide/.ac1076-escape-72WyZl/pwned.txt'",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "exitCode": 1,
+        "output": "AC1076-STARTED\n/bin/sh: /Users/tide/.ac1076-escape-72WyZl/pwned.txt: Operation not permitted\n"
+      }
+    },
+    {
+      "id": "m2b.toolArgv/via python3",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; python3 -c 'open(\"/Users/tide/.ac1076-escape-72WyZl/pwned.txt\",\"w\").write(\"x\")'",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "exitCode": 1,
+        "output": "AC1076-STARTED\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nPermissionError: [Errno 1] Operation not permitted: '/Users/tide/.ac1076-escape-72WyZl/pwned.txt'\n"
+      }
+    },
+    {
+      "id": "m2b.toolArgv/via node",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; node -e 'require(\"fs\").writeFileSync(\"/Users/tide/.ac1076-escape-72WyZl/pwned.txt\",\"x\")'",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "exitCode": 1,
+        "output": "AC1076-STARTED\nnode:fs:2430\n    return binding.writeFileUtf8(\n                   ^\n\nError: EPERM: operation not permitted, open '/Users/tide/.ac1076-escape-72WyZl/pwned.txt'\n    at Object.writeFileSync (node:fs:2430:20)\n    at [eval]:1:15\n    at runScriptInThisContext (node:internal/vm:209:10)\n    at node:internal/process/execution:446:12\n    at [eval]-wrapper:6:24\n    at runScriptInContext (node:internal/process/execution:444:60)\n    at evalFunction (node:internal/process/execution:279:30)\n    at evalTypeScript (node:internal/process/execution:291:3)\n    at node:internal/main/eval_string:74:3"
+      }
+    },
+    {
+      "id": "m2b.toolArgv/nohup detach",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; nohup sh -c 'echo pwned > /Users/tide/.ac1076-escape-72WyZl/pwned.txt' >/dev/null 2>&1 || true",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "exitCode": 0,
+        "output": "AC1076-STARTED\n"
+      }
+    },
+    {
+      "id": "m2b.toolArgv/symlink out",
+      "kind": "escape",
+      "command": "echo AC1076-STARTED; ln -sf /Users/tide/.ac1076-escape-72WyZl/pwned.txt link && echo pwned > link",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "exitCode": 1,
+        "output": "AC1076-STARTED\nzsh:1: operation not permitted: link\n"
+      }
+    },
+    {
+      "id": "m4.benign/workspace write (WORKDIR)",
+      "kind": "benign",
+      "command": "echo AC1076-STARTED; echo ok > inside.txt; ls inside.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\ninside.txt\n",
+        "file": "/Users/tide/.ac1076-ws-qvXjlZ/inside.txt"
+      }
+    },
+    {
+      "id": "m4.benign//private/tmp write",
+      "kind": "benign",
+      "command": "echo AC1076-STARTED; echo ok > /private/tmp/ac1076-tmp-probe.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\n"
+      }
+    },
+    {
+      "id": "m4.benign/git init + commit",
+      "kind": "benign",
+      "command": "echo AC1076-STARTED; mkdir -p fp-git && cd fp-git && git init -q . && echo hi > a.txt && git add a.txt && git -c user.email=ac1076@example.com -c user.name=ac1076 commit -q -m probe && git rev-parse HEAD",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\naac031545d814629de21b3e2676df98eb31bfcb2\n",
+        "sha40": true
+      }
+    },
+    {
+      "id": "m4.benign/node writes TMPDIR",
+      "kind": "benign",
+      "command": "echo AC1076-STARTED; node -e 'const os=require(\"os\"),fs=require(\"fs\"),p=os.tmpdir()+\"/ac1076-node-\"+process.pid+\".txt\";fs.writeFileSync(p,\"ok\");console.log(\"NODEWROTE=\"+p)'",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\nNODEWROTE=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/ac1076-node-28339.txt\n",
+        "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/ac1076-node-28339.txt"
+      }
+    },
+    {
+      "id": "m4.benign/read repo file",
+      "kind": "benign",
+      "command": "echo AC1076-STARTED; head -c 40 /Users/tide/app/alpha-code/.worktrees/ac-1076/package.json",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\n{\n  \"$schema\": \"https://json.schemastore",
+        "file": "/Users/tide/app/alpha-code/.worktrees/ac-1076/package.json"
+      }
+    },
+    {
+      "id": "m4.benign/curl",
+      "kind": "benign",
+      "command": "echo AC1076-STARTED; curl -sS -o /dev/null -m 20 -w 'CURL=%{http_code}' https://example.com; echo",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\nCURL=200\n",
+        "code": "200"
+      }
+    },
+    {
+      "id": "m4.benign/mkdir -p deep",
+      "kind": "benign",
+      "command": "echo AC1076-STARTED; mkdir -p d1/d2/d3/d4 && test -d d1/d2/d3/d4 && echo MKDIR-OK",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\nMKDIR-OK\n"
+      }
+    },
+    {
+      "id": "m4.benign/grep",
+      "kind": "benign",
+      "command": "echo AC1076-STARTED; printf 'aaa\\nbbb\\n' > g.txt && grep -c bbb g.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\n1\n"
+      }
+    },
+    {
+      "id": "m4.benign/which git node",
+      "kind": "benign",
+      "command": "echo AC1076-STARTED; which git node",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\n/usr/bin/git\n/opt/homebrew/bin/node\n"
+      }
+    },
+    {
+      "id": "m5.rcWritingStartupFile",
+      "kind": "rc",
+      "command": "(engine's own Shell.args login script sources ${ZDOTDIR}/.zshrc)",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\nRCSOURCED=1 ZSHENV=1\n",
+        "rcSourced": true,
+        "zcompdump": false,
+        "rcHistory": false,
+        "rcMarker": false,
+        "rcHomeBefore": [
+          ".zshenv",
+          ".zshrc"
+        ],
+        "rcHomeAfter": [
+          ".zshenv",
+          ".zshrc"
+        ]
+      }
+    },
+    {
+      "id": "m5.rcErrorsAsSeenByUser",
+      "kind": "rc",
+      "command": "(same writing rc, sourced again with stderr NOT suppressed)",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": null,
+      "detail": {
+        "httpStatus": 200,
+        "output": "AC1076-STARTED\n/Users/tide/.ac1076-rchome-VwE6JF/.zshrc:4: operation not permitted: /Users/tide/.ac1076-rchome-VwE6JF/.rc-history\n/Users/tide/.ac1076-rchome-VwE6JF/.zshrc:5: operation not permitted: /Users/tide/.ac1076-rchome-VwE6JF/.rc-ran\nRC-AFTER-SOURCE-CONTINUED\n",
+        "shellContinuedAfterRc": true
+      }
+    }
+  ],
+  "summary": {
+    "total": 30,
+    "pass": 29,
+    "fail": 0,
+    "observational": 1
+  },
+  "appLogHead": "04:02:04.702 (crash) › crash reporter started {\n  path: '/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-31414b4f-c872-4832-a766-82b52fc12c7d/desktop/Crashpad'\n}\n04:02:04.719         › app starting { version: '0.1.3', packaged: true, onboardingTest: true }\n04:02:04.890         › [server] Loaded shell environment with -il (21 vars)\n04:02:04.890 (main)  › req047: rebuilt shell env cache after successful probe\n04:02:04.892         › alpha environment resolved {\n  environment: 'prod',\n  registryChannel: 'stable',\n  mutableRoot: '/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-31414b4f-c872-4832-a766-82b52fc12c7d/alpha-code-state/env/prod',\n  rootOverridden: true\n}\n04:02:04.892 (startup-timeline) › {\"seq\":1,\"name\":\"main.timeline.epoch\",\"t\":0,\"epoch\":\"main-module-load\",\"timeOrigin\":1787731324429.471}\n\nDevTools listening on ws://127.0.0.1:54547/devtools/browser/14e492e3-8dbf-4a42-ba4e-f550361dd24e\n04:02:04.949 (startup-timeline) › {\"seq\":2,\"name\":\"main.app.ready\",\"t\":263.39741599999996}\n[req109-535] local MCP timeout reconcile skipped; config unreadable: /private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-31414b4f-c872-4832-a766-82b52fc12c7d/alpha-code-state/env/prod/alpha.jsonc (ENOENT: no such file or directory, open '/private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/opencode-onboarding-31414b4f-c872-4832-a766-82b52fc12c7d/alpha-code-state/env/prod/alpha.jsonc')\n04:02:04.985                    › alpha: seeded new layout (newLayoutDesigns=true)\n04:02:05.008                    › alpha: seeded custom agents visibility (showCustomAgents=true)\n04:02:05.022                    › auto updater configured {\n  environment: 'prod',\n  channel: 'latest',\n  enabled: true,\n  allowPrerelease: false,\n  allowDowngrade: false,\n  currentVersion: '0.1.3'\n}\n04:02:05.025                    › [req102-seed] bundled seed 2026-08-25.2: 5 assets, 5693155B (browse-only, not installed)\n04:02:05.027 (startup-timeline) › {\"seq\":3,\"name\":\"main.auth.boot.token_check\",\"t\":283.70491599999997,\"expired\":false}\n04:02:05.028                    › updater state changed { from: 'idle', to: 'checking' }\n04:02:05.028                    › Checking for update\n04:02:05.029                    › sidecar connection started { url: 'http://127.0.0.1:54546' }\n04:02:05.029                    › db-safety: skip — OPENCODE_DB=:memory:(测试态)\n04:02:05.030                    › spawning sidecar { url: 'http://127.0.0.1:54546' }\n04:02:05.030                    › alpha-secrets sync: wrote [] removed []\n04:02:05.030                    › alpha-ext: loading plugin bundle {\n  path: '/Users/tide/app/alpha-code/.worktrees/ac-1076/packages/ui-mac/dist/mac-arm64/alpha-code.app/Contents/Resources/alpha-ext/plugin.js'\n}\n04:02:05.032 (startup-timeline) › {\"seq\":4,\"name\":\"main.sidecar.generation.emit\",\"t\":344.62395799999996,\"generation\":1,\"phase\":\"recovering\",\"reason\":\"boot\"}\n04:02:05.032 (startup-timeline) › {\"seq\":5,\"name\":\"main.sidecar.boot.fork.start\",\"t\":344.70370799999995,\"generation\":1}\n04:02:05.033                    › Error: Error: ENOENT: no such file or directory, open '/Users/tide/app/alpha-code/.worktrees/ac-1076/packages/ui-mac/dist/mac-arm64/alpha-code.app/Contents/Resources/app-update.yml'\n04:02:05.033                    › updater state changed { from: 'checking', to: 'error' }\n04:02:06.304 (server)           › stdout { message: 'initial governed catalog location prewarmed' }\n04:02:06.305 (startup-timeline) › {\"seq\":6,\"name\":\"main.sidecar.ready_ipc\",\"t\":1619.473166,\"context\":\"boot\",\"prewarmOutcome\":\"ready\",\"prewarmMs\":151.00299999999993,\"prewarmStatus\":200}\n04:02:06.352 (startup-timeline) › {\"seq\":7,\"name\":\"main.sidecar.boot.fork.end\",\"t\":1620.0443329999998,\"durationMs\":1275.3401669999998,\"generation\":1,\"outcome\":\"ok\"}\n04:02:06.352 (startup-timeline) › {\"seq\":8,\"name\":\"main.auth.scheduler.arm\",\"t\":1664.378166,\"reason\":\"startup\",\"outcome\":\"idle\"}\n04:02:06.361                    › loading task finished\n04:02:06.36",
+  "appLogTail": "ok\",\"source\":\"renderer\",\"rendererNow\":466.39999997615814,\"occurrence\":3}\n04:02:06.850 (startup-timeline) › {\"seq\":16,\"name\":\"renderer.sidecar.generation.received\",\"t\":2165.144083,\"generation\":1,\"phase\":\"ready\",\"reason\":\"boot\",\"source\":\"renderer\",\"rendererNow\":466.5,\"occurrence\":1}\n04:02:06.850 (startup-timeline) › {\"seq\":17,\"name\":\"renderer.projects.connect\",\"t\":2165.2715,\"reason\":\"generation-event\",\"generation\":1,\"source\":\"renderer\",\"rendererNow\":466.7999999523163,\"occurrence\":1}\n04:02:06.851 (startup-timeline) › {\"seq\":18,\"name\":\"renderer.shell.resource.settled\",\"t\":2165.554,\"resource\":\"locale\",\"durationMs\":55,\"outcome\":\"ok\",\"source\":\"renderer\",\"rendererNow\":503.39999997615814,\"occurrence\":4}\n04:02:06.851 (startup-timeline) › {\"seq\":19,\"name\":\"renderer.shell.ready\",\"t\":2165.641833,\"durationMs\":55,\"resources\":4,\"source\":\"renderer\",\"rendererNow\":503.39999997615814,\"occurrence\":1}\n04:02:06.870 (startup-timeline) › {\"seq\":20,\"name\":\"renderer.sidebar.setup\",\"t\":2185.334458,\"source\":\"renderer\",\"rendererNow\":523.5,\"occurrence\":1}\n04:02:06.882 (startup-timeline) › {\"seq\":21,\"name\":\"main.window.first_show\",\"t\":2197.298125}\n04:02:06.891 (startup-timeline) › {\"seq\":22,\"name\":\"renderer.home.surface.setup\",\"t\":2205.882416,\"composerPending\":true,\"source\":\"renderer\",\"rendererNow\":533,\"occurrence\":1}\n04:02:12.197 (startup-timeline) › {\"seq\":23,\"name\":\"renderer.projects.store_ready\",\"t\":7511.867875,\"projects\":1,\"source\":\"renderer\",\"rendererNow\":5849.899999976158,\"occurrence\":1}\n04:02:12.197 (startup-timeline) › {\"seq\":24,\"name\":\"renderer.launch_draft.start\",\"t\":7512.215041,\"trigger\":\"launch\",\"source\":\"renderer\",\"rendererNow\":5850.199999928474,\"occurrence\":1}\n04:02:12.197 (startup-timeline) › {\"seq\":25,\"name\":\"renderer.launch_draft.step\",\"t\":7512.345666,\"step\":\"tabs_ready\",\"outcome\":\"ok\",\"durationMs\":0.30000007152557373,\"source\":\"renderer\",\"rendererNow\":5850.5,\"occurrence\":1}\n04:02:12.198 (startup-timeline) › {\"seq\":26,\"name\":\"renderer.launch_draft.step\",\"t\":7512.4735,\"step\":\"resolve_target\",\"outcome\":\"default-workspace\",\"durationMs\":0,\"source\":\"renderer\",\"rendererNow\":5850.5,\"occurrence\":2}\n04:02:12.200 (startup-timeline) › {\"seq\":27,\"name\":\"renderer.launch_draft.step\",\"t\":7514.651416,\"step\":\"ensure_workspace\",\"outcome\":\"ok\",\"durationMs\":2.1999999284744263,\"source\":\"renderer\",\"rendererNow\":5852.699999928474,\"occurrence\":3}\n04:02:12.209 (startup-timeline) › {\"seq\":28,\"name\":\"renderer.new_session.surface.setup\",\"t\":7523.792,\"source\":\"renderer\",\"rendererNow\":5857.799999952316,\"occurrence\":1}\n04:02:12.231 (startup-timeline) › {\"seq\":29,\"name\":\"renderer.launch_draft.step\",\"t\":7545.471041,\"step\":\"new_draft\",\"outcome\":\"ok\",\"durationMs\":14.800000071525574,\"source\":\"renderer\",\"rendererNow\":5867.5,\"occurrence\":4}\n04:02:12.232 (startup-timeline) › {\"seq\":30,\"name\":\"renderer.launch_draft.end\",\"t\":7546.514541,\"trigger\":\"launch\",\"outcome\":\"navigated\",\"durationMs\":17.300000071525574,\"source\":\"renderer\",\"rendererNow\":5867.5,\"occurrence\":1}\n04:02:12.236 (startup-timeline) › {\"seq\":31,\"name\":\"renderer.composer.mount\",\"t\":7550.698791,\"mode\":\"home\",\"source\":\"renderer\",\"rendererNow\":5888.799999952316,\"occurrence\":1}\n04:02:12.237 (startup-timeline) › {\"seq\":32,\"name\":\"renderer.home.model_list.start\",\"t\":7551.749458,\"attempt\":1,\"chain\":1,\"source\":\"renderer\",\"rendererNow\":5889.100000023842,\"occurrence\":1}\n04:02:12.248 (startup-timeline) › {\"seq\":33,\"name\":\"renderer.home.catalog_ready\",\"t\":7562.799916,\"barrierMs\":11.5,\"probes\":1,\"pollWaits\":0,\"probeTimeouts\":0,\"wake\":\"first\",\"source\":\"renderer\",\"rendererNow\":5900.899999976158,\"occurrence\":1}\n04:02:12.251 (startup-timeline) › {\"seq\":34,\"name\":\"renderer.home.model_list.end\",\"t\":7565.416583,\"attempt\":1,\"chain\":1,\"count\":0,\"durationMs\":14.399999976158142,\"outcome\":\"ok\",\"source\":\"renderer\",\"rendererNow\":5903.5,\"occurrence\":1}\n04:02:12.625                    › awaiting server ready\n04:02:12.626                    › server ready { url: 'http://127.0.0.1:54546' }\n04:04:26.930 (utility)          › sidecar exited { code: 0 }\n",
+  "finishedAt": "2026-08-26T08:04:28.365Z"
+}

@@ -1,0 +1,59 @@
+{
+  "ticket": "alpha-code#1076",
+  "arm": "hardened",
+  "identity": {
+    "arm": "hardened",
+    "app": "packages/ui-mac/dist/mac-arm64/alpha-code-hardened.app",
+    "appExecExists": true,
+    "bundleId": "com.tide.alphacode",
+    "version": "0.1.3",
+    "extBundleSha256": "72026e70094326ad6681b60f4d25e5dbc7dc58c764cf416c0471eaca62d07f80",
+    "bundleWrapperIsFenced": true,
+    "codesign": [
+      "Identifier=com.tide.alphacode",
+      "CodeDirectory v=20500 size=435 flags=0x10002(adhoc,runtime) hashes=3+7 location=embedded",
+      "Signature=adhoc",
+      "TeamIdentifier=not set"
+    ],
+    "workspace": "/Users/tide/.ac1076-ws-D6YslU",
+    "escapeTarget": "/Users/tide/.ac1076-escape-n6Lkcv/pwned.txt",
+    "rcHome": "/Users/tide/.ac1076-rchome-fmDAwz",
+    "ports": {
+      "engine": 58425,
+      "cdp": 58426
+    },
+    "startedAt": "2026-08-26T07:25:24.140Z"
+  },
+  "probes": [
+    {
+      "id": "identity.armMatchesBundle",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "arm": "hardened",
+        "bundleWrapperIsFenced": true,
+        "sha": "72026e70094326ad6681b60f4d25e5dbc7dc58c764cf416c0471eaca62d07f80"
+      }
+    },
+    {
+      "id": "runner.fatal",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": false,
+      "detail": "Error: no CDP page on :58426"
+    }
+  ],
+  "summary": {
+    "total": 2,
+    "pass": 1,
+    "fail": 1,
+    "observational": 0
+  },
+  "appLogTail": "dyld[85134]: Library not loaded: @rpath/Electron Framework.framework/Electron Framework\n  Referenced from: <4C4C4446-5555-3144-A108-7B168BC42273> /Users/tide/app/alpha-code/.worktrees/ac-1076/packages/ui-mac/dist/mac-arm64/alpha-code-hardened.app/Contents/MacOS/alpha-code\n  Reason: tried: '/Users/tide/app/alpha-code/.worktrees/ac-1076/packages/ui-mac/dist/mac-arm64/alpha-code-hardened.app/Contents/Frameworks/Electron Framework.framework/Electron Framework' (code signature in <4C4C4447-5555-3144-A1A0-C7FE26A14BE6> '/Users/tide/app/alpha-code/.worktrees/ac-1076/packages/ui-mac/dist/mac-arm64/alpha-code-hardened.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework' not valid for use in process: mapping process and mapped file (non-platform) have different Team IDs), '/Users/tide/app/alpha-code/.worktrees/ac-1076/packages/ui-mac/dist/mac-arm64/alpha-code-hardened.app/Contents/Frameworks/Electron Framework.framework/Electron Framework' (code signature in <4C4C4447-5555-3144-A1A0-C7FE26A14BE6> '/Users/tide/app/alpha-code/.worktrees/ac-1076/packages/ui-mac/dist/mac-arm64/alpha-code-hardened.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework' not valid for use in process: mapping process and mapped file (non-platform) have different Team IDs)\n",
+  "finishedAt": "2026-08-26T07:28:25.883Z"
+}
