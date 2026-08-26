@@ -1,0 +1,139 @@
+# 独立取证 —— curl 直取,不经任何生产代码(2026-08-26)
+
+$ date -u +%FT%TZ
+2026-08-26T07:16:20Z
+
+$ curl -sS -o - -w 'http=%{http_code} time=%{time_total}s size=%{size_download}
+' https://codepuppy.cn/catalog/v1/channels/stable.json
+{
+  "schema": "alpha.catalog.channel-metadata.v1",
+  "channel": "stable",
+  "sequence": 11,
+  "publishedAt": "2026-08-26T02:45:03.344Z",
+  "expires": "2026-09-25T02:45:03.344Z",
+  "keyId": "0e20b8a13fbe8cfb8fbfe87249eb2e5289eb4962e45525cc9e8df7dc18a031fe",
+  "target": {
+    "catalogVersion": "2026-08-25.2",
+    "sha256": "1bdc9ad8d1bff83252eaa41cb1bc48b4bced7553e570439b4f1379b65c14b99d",
+    "bytes": 95220,
+    "url": "https://codepuppy.cn/catalog/v1/releases/2026-08-25.2/catalog.json",
+    "sigUrl": "https://codepuppy.cn/catalog/v1/releases/2026-08-25.2/catalog.json.sig"
+  }
+}
+http=200 time=0.044680s size=584
+
+$ curl -sS -o - -w 'http=%{http_code} time=%{time_total}s size=%{size_download}
+' https://codepuppy.cn/catalog/v1/channels/trust.json
+{
+  "schema": "alpha.catalog.trust.v1",
+  "sequence": 1,
+  "publishedAt": "2026-07-13T02:48:02.297Z",
+  "expires": "2026-11-10T02:48:02.297Z",
+  "keyId": "0e20b8a13fbe8cfb8fbfe87249eb2e5289eb4962e45525cc9e8df7dc18a031fe",
+  "keys": [
+    {
+      "keyId": "0e20b8a13fbe8cfb8fbfe87249eb2e5289eb4962e45525cc9e8df7dc18a031fe",
+      "publicKey": "MCowBQYDK2VwAyEAqBBmG0mbZ3tZF7Vt8VEWhgm1RQdF2boFU5uUTSmsgHI=",
+      "status": "active",
+      "notBefore": "2026-07-13T02:48:02.297Z"
+    }
+  ],
+  "revokedTargets": []
+}
+http=200 time=0.040364s size=513
+
+$ curl -sS -o - -w 'http=%{http_code} time=%{time_total}s size=%{size_download}
+' https://codepuppy.cn/catalog/v1/channels/snapshot.json
+{
+  "schema": "alpha.catalog.snapshot.v1",
+  "sequence": 29,
+  "publishedAt": "2026-08-26T02:45:03.344Z",
+  "expires": "2026-09-25T02:45:03.344Z",
+  "keyId": "0e20b8a13fbe8cfb8fbfe87249eb2e5289eb4962e45525cc9e8df7dc18a031fe",
+  "entries": {
+    "trust": {
+      "sequence": 1,
+      "sha256": "7f08f2740e0999092663f7840c84651453e9689f88e300a2cedbc788cdc1c2c1"
+    },
+    "stable": {
+      "sequence": 11,
+      "sha256": "a32a5fa9a763c9b9265b90d2b4482c0c745be28c9c187c838d7792f83bea48fb"
+    },
+    "preview": {
+      "sequence": 11,
+      "sha256": "5f7be723d49d470b9aa4251b19297dd47d4018dd44cb6a5dd1541dc0d5042d4e"
+    },
+    "dev": {
+      "sequence": 10,
+      "sha256": "3fc9570175382d17ed9ff17dbf4181d9d99f3bafcbc288353dd327c5a80356fc"
+    },
+    "advisories": {
+      "sequence": 1,
+      "sha256": "64cd1d14a8eb94b3a6a5d71e2d3ea7e8523cf2ccff5b25206343dad73e1ad251"
+    }
+  }
+}
+http=200 time=0.042629s size=884
+
+$ curl -sS https://codepuppy.cn/catalog/v1/releases/2026-08-25.2/catalog.json | shasum -a 256
+1bdc9ad8d1bff83252eaa41cb1bc48b4bced7553e570439b4f1379b65c14b99d  -
+
+$ curl -sS .../catalog.json | python3 -c "…" (entries/packages 计数 + envelope 全文)
+version= 2026-08-25.2
+entries= 28 packages= 1
+{
+  "capabilities": [],
+  "components": [
+    {
+      "capabilities": [],
+      "dependencies": [],
+      "id": "skill:alpha-first",
+      "payloadRef": {
+        "bytes": 624,
+        "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
+        "sha256": "495b415b54f2821efd267a7f0199ef8662e144aaa640efb3cf12b00386db45dc",
+        "url": "https://codepuppy.cn/catalog/assets/skill.alpha-first/1.0.0/alpha-package/495b415b54f2821efd267a7f0199ef8662e144aaa640efb3cf12b00386db45dc.json"
+      },
+      "profileId": "skill",
+      "profileVersion": 1,
+      "required": true
+    }
+  ],
+  "prelude": {
+    "packageId": "package:alpha-first",
+    "version": "1.0.0"
+  },
+  "presentation": {
+    "description": "A single first-party skill that checks an Alpha extension package finished installing and reports what landed on disk. Local state only: no network, no credentials, no writes.",
+    "displayName": "Alpha install check"
+  },
+  "root": "skill:alpha-first",
+  "schema": "alpha.host-extension-package.v1"
+}
+
+$ curl -sS <payloadRef.url> | shasum -a 256 && python3 -m json.tool
+495b415b54f2821efd267a7f0199ef8662e144aaa640efb3cf12b00386db45dc  -
+{
+    "behavior": {
+        "files": [
+            {
+                "bytes": 1065,
+                "path": "LICENSE.txt",
+                "sha256": "91d6e75b756d929a8cfa1bb0de0de5b1b945e3ac9f2c9c6212c8400ed993dde5",
+                "url": "https://codepuppy.cn/catalog/assets/skill.alpha-first/1.0.0/LICENSE.txt"
+            },
+            {
+                "bytes": 2679,
+                "path": "SKILL.md",
+                "sha256": "27e1b014f09ec6db8a9b74442d3614efaabf9599705d134d26229a1a99d3cdca",
+                "url": "https://codepuppy.cn/catalog/assets/skill.alpha-first/1.0.0/SKILL.md"
+            }
+        ],
+        "targetDir": "alpha-skills"
+    },
+    "schema": "alpha.host-extension-package.payload.skill.v1"
+}
+
+$ curl -sS --max-time 12 https://alphacodeone.com/catalog/v1/channels/stable.json  # 旧域,预期失败
+curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to alphacodeone.com:443 
+curl exit=35
