@@ -188,6 +188,20 @@ export interface Interface {
   readonly clients: () => Effect.Effect<Record<string, MCPClient>>
   readonly instructions: () => Effect.Effect<ServerInstructions[]>
   readonly tools: () => Effect.Effect<Record<string, McpTool>>
+  /**
+   * #1129(REQ-131)—— 某个 MCP 配置键(= `ToolIdentity.origin`)的**当前** binding 事实:
+   * 生效的配置 entry(动态 `add` 的覆盖静态 config)与当前 authority。执行咽喉在每次调用时
+   * 由此重新派生 binding digest(§5:rebind 后旧的 service/tool enabled 必须失效回 ask),
+   * inventory 由此给 Settings 发放写 enabled 记录所需的 digest。entry 完全未知返回 undefined
+   * (⇒ 调用方派生不出 digest ⇒ 依赖 digest 的放宽按 binding-changed 回 ask,fail-closed)。
+   *
+   * 方法**可选**是刻意的:上游测试里存量的 `MCP.Service.of` 全量 stub(north-star 不许改)
+   * 不必逐个补桩 —— 方法缺席与「facts 未知」同义,方向只会更严(派生不出当前 digest ⇒
+   * enabled 记录按 binding-changed 回 ask),永远不会更松。生产 layer 恒有实现。
+   */
+  readonly bindingFacts?: (
+    origin: string,
+  ) => Effect.Effect<{ entry?: ConfigMCPV1.Info; authority: ToolAuthority } | undefined>
   readonly prompts: () => Effect.Effect<Record<string, PromptInfo & { client: string }>>
   readonly resources: (clientName?: string) => Effect.Effect<Record<string, ResourceInfo & { client: string }>>
   readonly resourceTemplates: (
@@ -725,6 +739,17 @@ const layer = Layer.effect(
       return result
     })
 
+    const bindingFacts = Effect.fn("MCP.bindingFacts")(function* (origin: string) {
+      const s = yield* InstanceState.get(state)
+      const cfg = yield* cfgSvc.get()
+      const configured = (cfg.mcp ?? {})[origin]
+      const raw = s.config[origin] ?? configured
+      const entry = raw !== undefined && isMcpConfigured(raw) ? raw : undefined
+      const authority = s.authority[origin]
+      if (entry === undefined && authority === undefined) return undefined
+      return { entry, authority: authority ?? ({ kind: "not-asserted" } as const) }
+    })
+
     function collectFromConnected<T extends { name: string }>(
       s: State,
       listFn: (c: Client, timeout?: number) => Promise<T[]>,
@@ -1044,6 +1069,7 @@ const layer = Layer.effect(
       clients,
       instructions,
       tools,
+      bindingFacts,
       prompts,
       resources,
       resourceTemplates,

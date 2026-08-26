@@ -584,6 +584,17 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
           list: () => Effect.succeed([]),
           init: () => Effect.void,
         } as any,
+        // #1129:prepare 的策略文档轴走 handle;本用例只测 provider options 变换,
+        // 给一个「文档为空、managed ok」的最小 snapshot(与全新用户一致)。
+        toolPolicy: {
+          snapshot: () =>
+            Effect.succeed({
+              partition: { account: "anonymous", workspace: "transform-test" },
+              managed: { status: "ok", ruleset: [], sources: [] },
+              user: { status: "absent" },
+              load: { status: "absent" },
+            }),
+        } as any,
         flags: { outputTokenMax: 32_000, client: "test" } as any,
         isWorkflow: false,
       }),

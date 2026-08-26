@@ -4,6 +4,8 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceState } from "@/effect/instance-state"
 import { Permission } from "@/permission"
+import type { AlphaToolPolicy } from "@/permission/alpha-tool-policy"
+import { AlphaToolPolicyGate } from "@/permission/alpha-tool-policy-gate"
 import { attachToolDisplay, getToolDisplay } from "../tool-display"
 import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "../message-v2"
@@ -32,6 +34,7 @@ type PrepareInput = {
   readonly provider: Provider.Info
   readonly auth: Auth.Info | undefined
   readonly plugin: Plugin.Interface
+  readonly toolPolicy: AlphaToolPolicy.Interface
   readonly flags: RuntimeFlags.Info
   readonly isWorkflow: boolean
 }
@@ -146,7 +149,19 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     },
   )
 
-  const tools = resolveTools(input)
+  // #1129 / #724 §6:目录闸的第二条轴 —— 策略**文档轴**按当轮 snapshot 判 deny
+  // (「disabled:目录不广告;ask 照旧广告」)。ruleset 轴的既有过滤在 resolveTools 里原样保留;
+  // 两轴对 deny 取并集。`host::StructuredOutput` 的 sentinel 豁免在 gate 里(exact canonical)。
+  const policyDenied = yield* AlphaToolPolicyGate.snapshotCatalogDenied(
+    input.toolPolicy,
+    Object.entries(input.tools).map(([technicalId, item]) => {
+      const display = getToolDisplay(item)
+      if (!display) throw new Error(`tool ${technicalId} is missing its source identity`)
+      return { technicalId, identity: display.identity, authority: display.authority }
+    }),
+    Permission.merge(input.agent.permission, input.permission ?? []),
+  )
+  const tools = resolveTools(input, policyDenied)
   // Codex parity: OpenAI Responses-family providers hardcode `strict: false`
   // on every function tool so MCP-sourced and dynamic schemas that don't
   // satisfy OpenAI's structured-outputs constraints still register.
@@ -211,7 +226,10 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   }
 })
 
-function resolveTools(input: Pick<PrepareInput, "tools" | "agent" | "permission" | "user">) {
+function resolveTools(
+  input: Pick<PrepareInput, "tools" | "agent" | "permission" | "user">,
+  policyDenied: ReadonlySet<string>,
+) {
   const disabled = Permission.disabled(
     Object.entries(input.tools).map(([technicalId, tool]) => {
       const display = getToolDisplay(tool)
@@ -220,7 +238,10 @@ function resolveTools(input: Pick<PrepareInput, "tools" | "agent" | "permission"
     }),
     Permission.merge(input.agent.permission, input.permission ?? []),
   )
-  return Record.filter(input.tools, (_, k) => input.user.tools?.[k] !== false && !disabled.has(k))
+  return Record.filter(
+    input.tools,
+    (_, k) => input.user.tools?.[k] !== false && !disabled.has(k) && !policyDenied.has(k),
+  )
 }
 
 export function hasToolCalls(messages: ModelMessage[]): boolean {

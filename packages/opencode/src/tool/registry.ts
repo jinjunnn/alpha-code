@@ -55,6 +55,10 @@ import { MCP } from "@/mcp"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
 import { ToolAliasLedger, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
+import { readFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { canonicalJsonDigest } from "@/permission/alpha-tool-policy-store"
+import { AlphaToolPolicy } from "@/permission/alpha-tool-policy"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel
@@ -69,6 +73,8 @@ type State = {
   builtin: RegisteredTool[]
   task: TaskDef
   read: ReadDef
+  /** #1129(REQ-131 §5):plugin origin → 本次装载代的 binding digest(loader generation)。 */
+  pluginBindings: Record<string, string>
 }
 
 export interface Interface {
@@ -81,6 +87,14 @@ export interface Interface {
     agent: Agent.Info
     permission?: PermissionV1.Ruleset
   }) => Effect.Effect<RegisteredTool[]>
+  /**
+   * #1129(REQ-131 §5):某个 plugin origin **当前装载代**的 binding digest。
+   * 目录插件 = 源文件内容哈希(重装/更新 ⇒ 下次装载 digest 变 ⇒ 旧的 service/tool enabled
+   * 记录按 binding-changed 回 ask);hook 插件 = origin spec 本身(它没有更细的安装回执,
+   * 版本随 origin 变则 identity 整个变)。未知 origin 返回 undefined(fail-closed:
+   * 依赖 digest 的放宽派生不出来,回 ask)。
+   */
+  readonly pluginBinding: (origin: string) => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ToolRegistry") {}
@@ -180,6 +194,7 @@ const layer = Layer.effect(
           }
         }
 
+        const pluginBindings: Record<string, string> = {}
         const dirs = yield* config.directories()
         const matches = dirs.flatMap((dir) =>
           Glob.scanSync("{tool,tools}/*.{js,ts}", { cwd: dir, absolute: true, dot: true, symlink: true }),
@@ -187,6 +202,12 @@ const layer = Layer.effect(
         if (matches.length) yield* config.waitForDependencies()
         for (const match of matches) {
           const namespace = path.basename(match, path.extname(match))
+          // #1129 / #724 §5:binding = 本次装载代的源文件内容(load 之后文件再变,跑的仍是这一代)。
+          pluginBindings[namespace] = canonicalJsonDigest({
+            kind: "plugin-file",
+            origin: namespace,
+            contentDigest: createHash("sha256").update(readFileSync(match)).digest("hex"),
+          })
           // `match` is an absolute filesystem path from `Glob.scanSync(..., { absolute: true })`.
           // Import it as `file://` so Node on Windows accepts the dynamic import.
           const mod = yield* Effect.promise(() => import(pathToFileURL(match).href))
@@ -198,6 +219,7 @@ const layer = Layer.effect(
 
         const plugins = yield* plugin.tools()
         for (const p of plugins) {
+          pluginBindings[p.origin] ??= canonicalJsonDigest({ kind: "plugin-hook", origin: p.origin })
           for (const [id, def] of Object.entries(p.tools)) {
             custom.push(fromPlugin(id, p.origin, id, def))
           }
@@ -258,6 +280,7 @@ const layer = Layer.effect(
           builtin,
           task: builtin.find((item) => item.id === tool.task.id)! as TaskDef,
           read: builtin.find((item) => item.id === tool.read.id)! as ReadDef,
+          pluginBindings,
         }
       }),
     )
@@ -269,6 +292,12 @@ const layer = Layer.effect(
 
     const ids: Interface["ids"] = Effect.fn("ToolRegistry.ids")(function* () {
       return (yield* all()).map((tool) => tool.id)
+    })
+
+    const pluginBinding: Interface["pluginBinding"] = Effect.fn("ToolRegistry.pluginBinding")(function* (
+      origin: string,
+    ) {
+      return (yield* InstanceState.get(state)).pluginBindings[origin]
     })
 
     const describeTask = Effect.fn("ToolRegistry.describeTask")(function* (agent: Agent.Info) {
@@ -354,7 +383,7 @@ const layer = Layer.effect(
       return { task: s.task, read: s.read }
     })
 
-    return Service.of({ ids, all, named, tools })
+    return Service.of({ ids, all, named, tools, pluginBinding })
   }),
 )
 
@@ -440,6 +469,8 @@ export const node = LayerNode.make({
   deps: [
     Config.node,
     Plugin.node,
+    Permission.node,
+    AlphaToolPolicy.node,
     Question.node,
     Todo.node,
     Agent.node,

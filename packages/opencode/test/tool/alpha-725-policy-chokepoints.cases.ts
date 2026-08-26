@@ -63,6 +63,9 @@ import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
+import { AlphaToolPolicy } from "@/permission/alpha-tool-policy"
+import { AlphaToolPolicyGate } from "@/permission/alpha-tool-policy-gate"
+import { getToolDisplay } from "@/session/tool-display"
 import { Plugin } from "@/plugin"
 import type { Provider } from "@/provider/provider"
 import { MessageID, SessionID } from "@/session/schema"
@@ -280,6 +283,7 @@ const prepareCatalog = Effect.fn("alpha725.prepareCatalog")(function* (ruleset: 
     provider: { id: "test", options: {} } as never,
     auth: undefined,
     plugin,
+    toolPolicy: yield* AlphaToolPolicy.Service,
     flags,
     isWorkflow: false,
   })
@@ -297,6 +301,7 @@ const it = testEffect(
       MCP.node,
       Agent.node,
       Permission.node,
+      AlphaToolPolicy.node,
       Plugin.node,
       Truncate.node,
       RuntimeFlags.node,
@@ -309,12 +314,22 @@ const it = testEffect(
         }),
       ],
       [RuntimeFlags.node, RuntimeFlags.layer({ experimentalCodeMode: false })],
+      [AlphaToolPolicy.node, AlphaToolPolicy.layer({ account: Effect.sync(() => policyAccount) })],
     ],
   ),
 )
 
 afterEach(async () => {
   await disposeAllInstances()
+})
+
+
+// 分区隔离:tmpdir instance 的 project.id 在本文件多个用例间相同 ⇒ (anonymous, workspace)
+// 策略文件会跨用例泄漏(前一条写的 disabled 咬到后一条)。用生产层自己的 account 注入口
+// (#1128 的测试口)给每条用例独立分区;层其余部分全是生产的。
+let policyAccount = "anonymous"
+const freshPolicyAccount = Effect.sync(() => {
+  policyAccount = `t-${Math.random().toString(36).slice(2)}`
 })
 
 /** 「全允许」的底。所有 ability 闸(edit/read/bash/…)都放行 ⇒ 剩下的唯一变量是 identity 策略。*/
@@ -324,8 +339,15 @@ const rulesFor = (identity: string, action: "deny" | "ask"): PermissionV1.Rule[]
   { permission: identity, pattern: "*", action },
 ]
 
-/** 装好一套完整现场:真 MCP server + 真插件工具。返回 marker 路径与服务器计数器。*/
+/** 装好一套完整现场:真 MCP server + 真插件工具。返回 marker 路径与服务器计数器。
+ *
+ * #1129 reopen 后的中性底:除 ALLOW_ALL ruleset 外,策略**文档轴**写入 class 层 enabled
+ * (走生产 `setRecord`;class 层是 broad intent,schema 禁携带 digest)。没有这两条记录,
+ * 四类默认会让 mcp/plugin 默认 ask —— 那是文档轴自己的判据(在 doc-axis 闸里量),
+ * 本探针矩阵量的是 **ruleset 轴** 的 deny/ask/once/always 语义,中性底必须把另一条轴放平。
+ * 这个状态用户可达:Settings 里把「第三方 MCP」「Plugins」两类总开关设为启用。*/
 const setup = Effect.fn("alpha725.setup")(function* () {
+  yield* freshPolicyAccount
   const test = yield* TestInstance
   const marker = path.join(test.directory, "PLUGIN-SIDE-EFFECT.txt")
   yield* writeProbePlugin(marker)
@@ -333,6 +355,9 @@ const setup = Effect.fn("alpha725.setup")(function* () {
   const running = yield* server.handle
   const mcp = yield* MCP.Service
   yield* mcp.add("policy", remote(running.url))
+  const policy = yield* AlphaToolPolicy.Service
+  yield* policy.setRecord({ selector: { level: "class", class: "third-party-mcp" }, state: "enabled" })
+  yield* policy.setRecord({ selector: { level: "class", class: "plugin" }, state: "enabled" })
   return { marker, counts: server.counts }
 })
 
@@ -704,6 +729,22 @@ describe("三态 ask —— 批准前零副作用", () => {
   )
 })
 
+/** 与 `session/llm.ts` 预批调用点同一派生:snapshot 文档轴动作(subject 不带 digest)。 */
+const docActionsFor = Effect.fn("alpha725.docActionsFor")(function* (
+  prepared: Record<string, { execute?: unknown }>,
+  _ruleset: PermissionV1.Ruleset,
+) {
+  const policy = yield* AlphaToolPolicy.Service
+  return yield* AlphaToolPolicyGate.snapshotDocActions(
+    policy,
+    Object.entries(prepared).flatMap(([technicalId, item]) => {
+      const display = getToolDisplay(item as never)
+      return display ? [{ technicalId, identity: display.identity, authority: display.authority }] : []
+    }),
+    _ruleset,
+  )
+})
+
 // ── E5(DWS workflow):**单元级**,不冒充链路证据 ────────────────────────────────
 // `workflowPreapprovedToolNames` 是 `session/llm.ts:162` 在 GitLab workflow 模型上调用的
 // 那个导出函数;本机没有 DWS 服务端,整条链路跑不起来 ⇒ 这里只喂**真的** prepared 工具表
@@ -714,7 +755,7 @@ describe("E5 DWS 预批清单(单元级)", () => {
     Effect.gen(function* () {
       yield* setup()
       const prepared = yield* prepareCatalog(rulesFor(ID_MCP_PAID, "ask"))
-      const names = workflowPreapprovedToolNames(prepared, rulesFor(ID_MCP_PAID, "ask"))
+      const names = workflowPreapprovedToolNames(prepared, rulesFor(ID_MCP_PAID, "ask"), yield* docActionsFor(prepared, rulesFor(ID_MCP_PAID, "ask")))
       expect(Object.keys(prepared)).toContain(ALIAS_MCP_PAID)
       expect(names).not.toContain(ALIAS_MCP_PAID)
       expect(names).toContain(ALIAS_MCP_FREE)
@@ -725,7 +766,7 @@ describe("E5 DWS 预批清单(单元级)", () => {
     Effect.gen(function* () {
       yield* setup()
       const prepared = yield* prepareCatalog(rulesFor(ID_BUILTIN_WRITE, "ask"))
-      const names = workflowPreapprovedToolNames(prepared, rulesFor(ID_BUILTIN_WRITE, "ask"))
+      const names = workflowPreapprovedToolNames(prepared, rulesFor(ID_BUILTIN_WRITE, "ask"), yield* docActionsFor(prepared, rulesFor(ID_BUILTIN_WRITE, "ask")))
       expect(Object.keys(prepared)).toContain(ALIAS_BUILTIN_WRITE)
       expect(names).not.toContain(ALIAS_BUILTIN_WRITE)
     }),

@@ -182,12 +182,33 @@ export interface ResolveCapsInput {
   readonly hardDeny?: readonly string[]
 }
 
+/** 当轮 snapshot(§6:目录/预批/inventory 可用;executor 不得拿它替代 `resolve` 的重读)。 */
+export interface ToolPolicySnapshot {
+  readonly partition: ToolPolicyPartition
+  readonly managed: ManagedPolicyResult
+  readonly user: ToolPolicyUserLayer
+  readonly load: PolicyLoadResult
+}
+
+export function userLayerFrom(load: PolicyLoadResult): ToolPolicyUserLayer {
+  switch (load.status) {
+    case "ok":
+      return { status: "ok", records: load.doc.records }
+    case "absent":
+      return { status: "absent" }
+    case "quarantined":
+      return { status: "quarantined", reason: load.reason }
+  }
+}
+
 export interface Interface {
   /** 每次调用重读当前 cap 与用户文档(§6:executor 必须在调用时重读,不缓存旧对象)。 */
   readonly resolve: (
     subject: ToolPolicySubject,
     caps?: ResolveCapsInput,
   ) => Effect.Effect<EffectiveToolPolicy>
+  /** 一次读盘取整份现状(#1129:目录 / DWS 预批 / inventory 的 snapshot 口)。 */
+  readonly snapshot: () => Effect.Effect<ToolPolicySnapshot>
   readonly inspect: () => Effect.Effect<{ partition: ToolPolicyPartition; user: PolicyLoadResult }>
   readonly setRecord: (record: ToolPolicyRecord) => Effect.Effect<void, ToolPolicyWriteError>
   readonly removeRecord: (selector: ToolPolicySelector) => Effect.Effect<void, ToolPolicyWriteError>
@@ -219,23 +240,22 @@ export const layer = (options?: LayerOptions) =>
         return { account, workspace: String(ctx.project.id) }
       })
 
+      const snapshot = Effect.fn("AlphaToolPolicy.snapshot")(function* () {
+        const managed = yield* Effect.promise(managedRead)
+        const part = yield* partition
+        const loaded = loadPolicyDocument(baseDir, part)
+        return { partition: part, managed, user: userLayerFrom(loaded), load: loaded } satisfies ToolPolicySnapshot
+      })
+
       const resolve = Effect.fn("AlphaToolPolicy.resolve")(function* (
         subject: ToolPolicySubject,
         caps?: ResolveCapsInput,
       ) {
-        const managed = yield* Effect.promise(managedRead)
-        const part = yield* partition
-        const loaded = loadPolicyDocument(baseDir, part)
-        const user: ToolPolicyUserLayer =
-          loaded.status === "ok"
-            ? { status: "ok", records: loaded.doc.records }
-            : loaded.status === "absent"
-              ? { status: "absent" }
-              : { status: "quarantined", reason: loaded.reason }
+        const snap = yield* snapshot()
         return resolveToolPolicy({
           subject,
-          caps: { managed, entitlement: caps?.entitlement, hardDeny: caps?.hardDeny },
-          user,
+          caps: { managed: snap.managed, entitlement: caps?.entitlement, hardDeny: caps?.hardDeny },
+          user: snap.user,
         })
       })
 
@@ -283,7 +303,7 @@ export const layer = (options?: LayerOptions) =>
         return resetPolicyDocument(baseDir, part)
       })
 
-      return Service.of({ resolve, inspect, setRecord, removeRecord, reset })
+      return Service.of({ resolve, snapshot, inspect, setRecord, removeRecord, reset })
     }),
   )
 

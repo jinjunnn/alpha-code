@@ -31,6 +31,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js"
 import type { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Cause, Effect, Exit, Layer } from "effect"
+import { Permission } from "@/permission"
+import type { ToolPolicyRecord } from "@opencode-ai/schema/alpha-tool-policy"
+import { inMemoryToolPolicyLayer } from "../fixture/alpha-tool-policy"
 
 const SERVER = "fixtures"
 
@@ -106,6 +109,8 @@ async function buildTool(input: {
   probe: Probe
   ask: (permission: string) => Effect.Effect<void>
   ruleset?: PermissionV1.Rule[]
+  /** 文档轴用户记录(可变引用 —— 重读判据靠调用后改它)。缺省为空 ⇒ 四类默认。 */
+  records?: ToolPolicyRecord[]
 }) {
   const server = new Server({ name: SERVER, version: "1.0.0" }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOL_DEFS }))
@@ -132,7 +137,18 @@ async function buildTool(input: {
   }
 
   const ruleset = input.ruleset ?? [ALLOW_ALL]
+  const records = input.records ?? []
   const layer = Layer.mergeAll(
+    // #1129:E4 的 identity 闸经 gateToolExecution 走 **Permission.Service**(不再经 ctx.ask);
+    // ask 探头随之移到这里 —— 事件名与断言不变。
+    Layer.mock(Permission.Service, {
+      ask: ((req: { permission: string }) =>
+        Effect.suspend(() => {
+          input.probe.events.push(`ask:${req.permission}`)
+          return input.ask(req.permission)
+        })) as Permission.Interface["ask"],
+    }),
+    inMemoryToolPolicyLayer(records),
     Layer.mock(Plugin.Service, {
       trigger: ((name: unknown, hookInput: unknown, output: unknown) => {
         const tool = (hookInput as { tool?: string })?.tool
@@ -148,6 +164,7 @@ async function buildTool(input: {
     Layer.mock(MCP.Service, {
       tools: () => Effect.succeed(mcpTools),
       clients: () => Effect.succeed({ [SERVER]: {} as any }),
+      bindingFacts: () => Effect.succeed(undefined),
     }),
   )
 
@@ -237,5 +254,61 @@ describe("#1129 E4:code-mode child 的 identity 闸在 hook 之前、传输之�
     expect(out.output).toBe("SIDE-EFFECT-EXECUTED")
     expect(p.transport["add"]).toBe(1)
     expect(p.events).toContain(`ask:${ID_CHILD_ADD}`)
+  })
+
+  // ── #1129 reopen:策略**文档轴**抵达 E4(同一 resolver,不是 ruleset 轴的复读)────────
+  test("文档轴 tool 层 disabled ⇒ child 不进 catalog、held 调用零 ask/零 hook/零传输", async () => {
+    const p = probe()
+    const built = await buildTool({
+      probe: p,
+      // 文档轴 deny 走目录闸 + gate 的具名拒绝,不该走到 Permission.ask;走到就当场炸。
+      ask: (permission) =>
+        permission === ID_CHILD_GET_TEXT
+          ? (Effect.die(new Error(`unexpected ask for policy-disabled ${permission}`)) as Effect.Effect<void>)
+          : Effect.void,
+      records: [{ selector: { level: "tool", canonical: ID_CHILD_GET_TEXT }, state: "disabled" }],
+    })
+    const error = await runFailed(built, "return await tools.fixtures.get_text({ name: 'world' })")
+    expect(error.message).not.toContain("identity policy")
+    expect(p.transport["get_text"] ?? 0).toBe(0)
+    expect(p.events.filter((event) => event.startsWith("hook:tool.execute.before"))).toEqual([])
+    // 兄弟工具照常(文档轴默认 ask ⇒ mock 放行)。
+    const out = await Effect.runPromise(
+      built.tool.execute({ code: "return await tools.fixtures.add({ a: 1, b: 2 })" }, built.ctx),
+    )
+    expect(out.output).toBe("SIDE-EFFECT-EXECUTED")
+    expect(p.transport["add"]).toBe(1)
+  })
+
+  test("executor 调用时重读:child catalog 发出后收紧文档轴 ⇒ 同一 held 闭包的下一次调用当场 deny", async () => {
+    // code-mode 每次 execute 重建子目录 ⇒ 「held」必须钉在**同一次 execute 内**捕获的
+    // callTool 闭包上:程序连调两次,mock 在放行第一问的同时把文档轴收紧成 disabled ——
+    // 目录与闭包都是收紧**前**的,第二次调用只有「调用时重读」能拦住。
+    const p = probe()
+    const records: ToolPolicyRecord[] = []
+    let armed = true
+    const built = await buildTool({
+      probe: p,
+      ask: () => {
+        if (armed) {
+          armed = false
+          records.push({ selector: { level: "tool", canonical: ID_CHILD_GET_TEXT }, state: "disabled" })
+        }
+        return Effect.void
+      },
+      records,
+    })
+    const error = await runFailed(
+      built,
+      "await tools.fixtures.get_text({ name: 'a' }); return await tools.fixtures.get_text({ name: 'b' })",
+    )
+    // 第一次:默认 ask ⇒ 放行 ⇒ 恰一次传输;第二次:重读到 disabled ⇒ 具名拒绝,传输不再增长。
+    expect(String(error.message)).toContain(ID_CHILD_GET_TEXT)
+    expect(p.transport["get_text"]).toBe(1)
+    expect(p.events.filter((event) => event === `ask:${ID_CHILD_GET_TEXT}`)).toHaveLength(1)
+    // 还原 ⇒ 恢复可调(证明上面不是把 rig 弄坏了)。
+    records.pop()
+    await Effect.runPromise(built.tool.execute({ code: "return await tools.fixtures.get_text({ name: 'w2' })" }, built.ctx))
+    expect(p.transport["get_text"]).toBe(2)
   })
 })

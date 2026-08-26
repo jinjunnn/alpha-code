@@ -79,10 +79,10 @@ hub-settings 时代的「仅 通用 + 快捷键」两项;现役实现已有第�
 | 损坏恢复横幅 + 重置 | user layer `quarantined` + `reset()`(返回备份路径) | 已落地 |
 | 逐条保存失败 | `ToolPolicyWriteError`(含 quarantine 拒写) | 已落地 |
 | 「仅当前账户与当前项目」 | `inspect().partition` | 已落地 |
-| 每类 / 每服务条数、工具清单本身 | live inventory(§5:identity + 可信 authority + 继承 + effective + binding change) | **未落地 —— 见 §9 更正** |
-| 「新发现」徽标 | 同上(§3:无 broad override 的新动态工具标「新发现」) | **未落地 —— 见 §9 更正** |
+| 每类 / 每服务条数、工具清单本身 | live inventory(§5:identity + 可信 authority + 继承 + effective + binding change) | 已落地(#1129 reopen;`AlphaToolInventory.list()`,wire 形状 `packages/schema/src/alpha-tool-inventory.ts`,闸 `test/permission/alpha-tool-inventory.test.ts` I1) |
+| 「新发现」徽标 | 同上(§3:无 broad override 的新动态工具标「新发现」) | 已落地(#1129 reopen;`tools[].newlyDiscovered`,闸 I1) |
 | 「计费:按用量 / 未知」 | `ToolBillingFact { class, evidenceId }`(宿主 / 服务端可信事实;缺失显示「未知」) | schema 已落地;供给随 inventory |
-| 「1 项注册身份无法核验」 | resolver `invalid-identity`;条目枚举依赖 inventory 是否暴露此类注册 | **未落地 —— 见 §9 更正**(Q1 已裁 = 暴露计数,见 §8) |
+| 「1 项注册身份无法核验」 | resolver `invalid-identity`;条目枚举依赖 inventory 是否暴露此类注册 | 已落地(#1129 reopen;`invalid.count` + `entries[].detail` 归开发者详情,Q1 裁决原样;闸 I1) |
 | 「已核验」徽标(Alpha Cloud 组) | `ToolAuthority.kind = "alpha-cloud"`(verified) | 已落地 |
 
 reason → 文案(全部 9 型,一型不落):
@@ -235,7 +235,28 @@ Settings 面板显示「已停用」,而模型照调 —— 正是 `#1121` 那�
 「Settings 和调用方不得手拼 wildcard」「禁止各处拼 `mcp:<server>:*`」;且 binding guard
 (enabled + digest,rebind 回 ask)与 9 型 reason 在 ruleset 语言里**不可表达**。
 
+### 缺口补齐(2026-08-26,#1129 reopen 交付)
+
+上表三行由 `#1129` reopen 后的交付补齐 —— 这次不是看 issue 状态,是看得见的落点:
+
+- **inventory/API**:`packages/opencode/src/permission/alpha-tool-inventory.ts`
+  (`AlphaToolInventory.Service.list()`,从 live ToolRegistry / MCP / host 谓词派生);
+  wire 形状(renderer 可 import)在 `packages/schema/src/alpha-tool-inventory.ts`,
+  返回值经 schema decode 自证。常驻闸 `test/permission/alpha-tool-inventory.test.ts`
+  (I1–I5:成员/徽标真话/binding change/cap 折叠/quarantine)。
+- **策略文档轴抵达咽喉**:目录(`session/llm/request.ts`)与执行
+  (`session/tools.ts` identityGate、`tool/code-mode.ts` child、`session/prompt.ts` subtask)
+  经同一 `alpha-tool-policy-gate.ts` 消费同一 resolver;executor 调用时重读。
+  常驻闸 `test/tool/alpha-tool-policy-doc-axis-gate.test.ts`(D1–D7,含 held 对象重读与
+  rebind 回 ask 的变异式判据)。
+- **本节 `setRecord` 写下的 disabled/ask,目录与执行面现在读得到** —— §9 指出的
+  「面板显示已停用而模型照调」在引擎侧已不可达(D3/D4/I2)。
+
+仍然悬空的一跳(#1130 落地前要自己解决的):引擎 API ↔ main/preload/renderer 的**传输**。
+sidecar 的 HTTP 面(`httpapi/api.ts`)是上游文件,新增 route 需要一次 ADR 级收编;
+这属于 #1130 的「main/preload/renderer」边界,不在 #1129 的边界文件清单内。
+
 ### 本稿的状态
 
 `status: approved` **保留** —— 视觉、交互规范、9 型文案、六个状态帧都仍然是基线。
-变的只是:**§3 表里那三行回到「契约,未落地」**,实现票必须等缺口补齐。
+§3 表里那三行曾回到「契约,未落地」;2026-08-26 由 #1129 reopen 交付补齐(见上节坐标)。

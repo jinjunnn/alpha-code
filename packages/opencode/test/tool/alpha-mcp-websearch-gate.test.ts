@@ -31,7 +31,9 @@ import { Cause, Effect, Exit, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { MCP } from "../../src/mcp/index"
 import { McpCatalog } from "../../src/mcp/catalog"
+import { Permission } from "../../src/permission"
 import { Plugin } from "../../src/plugin"
+import { inMemoryToolPolicyLayer } from "../fixture/alpha-tool-policy"
 import { Session } from "../../src/session/session"
 import { CodeModeTool } from "../../src/tool/code-mode"
 import { Tool } from "../../src/tool/tool"
@@ -147,6 +149,12 @@ const agentStub = Layer.mock(Agent.Service, {
   get: () => Effect.succeed({ name: "build", mode: "all", permission: [], options: {} } as never),
 })
 const sessionStub = Layer.mock(Session.Service, { get: () => Effect.succeed({ permission: [] } as never) })
+// #1129:code-mode child 的 identity 闸经 Permission 引擎;本文件量的是主权 kill-switch
+// (hook 层)对传输的拦截 —— identity ask 一律自动放行,放行之后 kill-switch 仍必须拦得住。
+const permissionAutoApprove = Layer.mock(Permission.Service, {
+  ask: (() => Effect.void) as Permission.Interface["ask"],
+})
+const codeModePolicyStubs = Layer.mergeAll(permissionAutoApprove, inMemoryToolPolicyLayer())
 
 const toolContext = (over?: Partial<Tool.Context>): Tool.Context => ({
   sessionID: "ses_mcp_gate" as never,
@@ -252,7 +260,7 @@ describe("#223 R5:用户自带的 remote MCP web search 同受主权判决(真�
         const error = Exit.isFailure(exit) ? (Cause.squash(exit.cause) as Error) : new Error("unreachable")
         expect(error.message).toContain("do not retry")
         expect(deniedCodeMode.calls).toEqual([])
-      }).pipe(Effect.provide(Layer.mergeAll(truncateStub, agentStub, sessionStub))),
+      }).pipe(Effect.provide(Layer.mergeAll(truncateStub, agentStub, sessionStub, codeModePolicyStubs))),
     { config: configWith(() => deniedCodeMode) },
     30_000,
   )
@@ -270,7 +278,7 @@ describe("#223 R5:用户自带的 remote MCP web search 同受主权判决(真�
 
         expect(result.output).toContain("search results")
         expect(allowedCodeMode.calls).toEqual([EXA_TOOL])
-      }).pipe(Effect.provide(Layer.mergeAll(truncateStub, agentStub, sessionStub))),
+      }).pipe(Effect.provide(Layer.mergeAll(truncateStub, agentStub, sessionStub, codeModePolicyStubs))),
     { config: configWith(() => allowedCodeMode) },
     30_000,
   )

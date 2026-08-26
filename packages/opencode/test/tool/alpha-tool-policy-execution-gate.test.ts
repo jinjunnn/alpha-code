@@ -37,6 +37,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
+import { AlphaToolPolicy } from "@/permission/alpha-tool-policy"
 import { Plugin } from "@/plugin"
 import type { Provider } from "@/provider/provider"
 import { MessageID, SessionID } from "@/session/schema"
@@ -208,6 +209,7 @@ const it = testEffect(
       MCP.node,
       Agent.node,
       Permission.node,
+      AlphaToolPolicy.node,
       Plugin.node,
       Truncate.node,
       RuntimeFlags.node,
@@ -220,6 +222,7 @@ const it = testEffect(
         }),
       ],
       [RuntimeFlags.node, RuntimeFlags.layer({ experimentalCodeMode: false })],
+      [AlphaToolPolicy.node, AlphaToolPolicy.layer({ account: Effect.sync(() => policyAccount) })],
     ],
   ),
 )
@@ -229,12 +232,24 @@ afterEach(async () => {
 })
 
 const ALLOW_ALL: PermissionV1.Rule = { permission: "*", pattern: "*", action: "allow" }
+
+// 分区隔离:tmpdir instance 的 project.id 在本文件多个用例间相同 ⇒ (anonymous, workspace)
+// 策略文件会跨用例泄漏(前一条写的 disabled 咬到后一条)。用生产层自己的 account 注入口
+// (#1128 的测试口)给每条用例独立分区;层其余部分全是生产的。
+let policyAccount = "anonymous"
+const freshPolicyAccount = Effect.sync(() => {
+  policyAccount = `t-${Math.random().toString(36).slice(2)}`
+})
 const rulesFor = (identity: string, action: "deny" | "ask"): PermissionV1.Rule[] => [
   ALLOW_ALL,
   { permission: identity, pattern: "*", action },
 ]
 
+// #1129 reopen 后的中性底:文档轴写 class 层 enabled(生产 `setRecord`;用户可达 ——
+// Settings 把「第三方 MCP」「Plugins」总开关设为启用)。本文件量 ruleset 轴语义,
+// 文档轴自己的判据在 alpha-tool-policy-doc-axis-gate.test.ts。
 const setup = Effect.fn("alpha1129.setup")(function* () {
+  yield* freshPolicyAccount
   const test = yield* TestInstance
   const marker = path.join(test.directory, "PLUGIN-SIDE-EFFECT.txt")
   yield* writeProbePlugin(marker)
@@ -242,6 +257,9 @@ const setup = Effect.fn("alpha1129.setup")(function* () {
   const running = yield* server.handle
   const mcp = yield* MCP.Service
   yield* mcp.add("policy", remote(running.url))
+  const policy = yield* AlphaToolPolicy.Service
+  yield* policy.setRecord({ selector: { level: "class", class: "third-party-mcp" }, state: "enabled" })
+  yield* policy.setRecord({ selector: { level: "class", class: "plugin" }, state: "enabled" })
   return { marker, counts: server.counts }
 })
 
@@ -434,6 +452,7 @@ describe("#1129 internal sentinel(#724 §6:窄例外,不扩张)", () => {
         provider: { id: "github-copilot", options: {} } as never,
         auth: undefined,
         plugin,
+        toolPolicy: yield* AlphaToolPolicy.Service,
         flags,
         isWorkflow: false,
       })

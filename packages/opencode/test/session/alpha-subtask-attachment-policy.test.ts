@@ -29,6 +29,7 @@ import { Config } from "@/config/config"
 import { LSP } from "@/lsp/lsp"
 import { MCP } from "../../src/mcp"
 import { Permission } from "../../src/permission"
+import { AlphaToolPolicy } from "../../src/permission/alpha-tool-policy"
 import { Plugin } from "../../src/plugin"
 import { Provider as ProviderSvc } from "@/provider/provider"
 import { Env } from "../../src/env"
@@ -103,6 +104,7 @@ const mcp = Layer.succeed(
     clients: () => Effect.succeed({}),
     instructions: () => Effect.succeed([]),
     tools: () => Effect.succeed({}),
+    bindingFacts: () => Effect.succeed(undefined),
     prompts: () => Effect.succeed({}),
     resources: () => Effect.succeed({}),
     resourceTemplates: () => Effect.succeed({}),
@@ -132,6 +134,7 @@ const promptRoot = LayerNode.group([
   AgentSvc.node,
   Command.node,
   Permission.node,
+  AlphaToolPolicy.node,
   Plugin.node,
   Config.node,
   ProviderSvc.node,
@@ -307,6 +310,40 @@ it.instance(
       if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
       expect(yield* sessions.children(chat.id)).toEqual([])
       expect(yield* assistantToolParts(chat.id)).toEqual([])
+    }),
+  { config: cfg },
+)
+
+// ── #1129 reopen:策略**文档轴**抵达 E6(真 store 写入,同一 resolver)────────────────
+it.instance(
+  "E6 文档轴:Settings 写 builtin::task=disabled(真 setRecord)⇒ loop 具名拒绝,零子会话零持久化",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const permission = yield* Permission.Service
+      const policy = yield* AlphaToolPolicy.Service
+      // 生产写入口(#1130 Settings 将走的同一条):tool 层 disabled,收紧不需要 digest。
+      yield* policy.setRecord({ selector: { level: "tool", canonical: ID_BUILTIN_TASK }, state: "disabled" })
+      const chat = yield* sessions.create({ title: "policy disabled" })
+      const msg = yield* user(chat.id, "hello")
+      yield* addSubtask(chat.id, msg.id)
+
+      const exit = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const squashed = Cause.squash(exit.cause)
+        expect(squashed).toBeInstanceOf(PermissionV1.DeniedError)
+        // 具名:拒绝信息点名 canonical 与文档轴来源(不是一句裸 deny)。
+        expect(String((squashed as Error).message)).toContain(ID_BUILTIN_TASK)
+      }
+      expect(yield* sessions.children(chat.id)).toEqual([])
+      expect(yield* assistantToolParts(chat.id)).toEqual([])
+      // 全程零待批 —— 文档轴 disabled 不是 ask,session grant 结构性接触不到它。
+      expect(yield* permission.list()).toEqual([])
+      // 「还原后恢复」不在这里补跑第二条 loop:假 provider 会让它进入分钟级重试(实测 180s
+      // 超时);removeRecord 的恢复语义已由 doc-axis 闸 D4 与 E4 重读用例(真实计数)钉住。
+      yield* policy.removeRecord({ level: "tool", canonical: ID_BUILTIN_TASK })
     }),
   { config: cfg },
 )
