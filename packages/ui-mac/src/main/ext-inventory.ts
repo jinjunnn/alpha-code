@@ -302,7 +302,7 @@ function collectInventoryWithWarnings(opts: CollectInventoryOpts, priorWarnings:
 // electron-free 工厂:ext-ipc 只做一行 ipcMain.handle 接线(通道名单点定义在 ext-ipc)。
 // 契约(负向面在 ext-security-boundaries.test 钉死):
 //   · 纯读 —— 本函数与其全部被调面零写入(不动账本/配置/磁盘);
-//   · renderer 唯一输入 = projectDir(与既有 ext-list-installs(-v2) 同信任面:当前打开项目);
+//   · renderer 唯一输入 = projectDir(与既有 ext-list-installs 同信任面:当前打开项目);
 //     非 string / 空串输入如实丢弃并留 warning,绝不抛错;
 //   · catalog resolve 失败不清零其它真源:catalog=null + warning,账本/seed 行照常返回;
 //   · 输出 = ExtInventory 纯 JSON(结构化克隆安全,零函数/句柄)。

@@ -9,7 +9,7 @@
 // project `.alpha` 跨 app channel 共用且不做环境分根;adoption 将执行时 main 的 environment
 // **如实**写入 record(先到先得的归因事实);environment 对 project 记录是归因字段,不是可见性、
 // 操作资格或 channel namespace —— 任何读方不得按它过滤(readLedgerV2/findRecordV2/
-// lookupForUninstall/ext-list-installs-v2 均按 ledger/key/scope 操作,现状即如此)。
+// lookupForUninstall/ext-list-installs 均按 ledger/key/scope 操作,现状即如此)。
 //
 // 纪律:migrateV1Ledger 自身不持锁 —— 新的 installs.json 写方不得置身受控写体系之外,
 // 故顺序 = 身份(realpath)→ recovery gate 准入(恢复收敛 + 终态探测,per-root mutex)→
