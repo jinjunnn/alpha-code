@@ -332,6 +332,15 @@ export function merge(...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule[] 
 
 export type ToolPermissionSubject = { technicalId: string; identity: ToolIdentity }
 
+// #1129 / #724 §6 internal sentinel:`host::StructuredOutput` 是用户请求 json_schema 输出时的
+// 内部必需协议工具 —— 强制 enabled,目录闸对它免疫(ability 轴与 identity 轴都不得移除),
+// 否则一条 `*: deny` 或手写 identity deny 会让结构化输出静默失效。例外只认 exact canonical
+// (身份必须完整在场),不给「缺 identity 的普通工具也能跑」任何口子;`_noop` 不经此闸
+// (llm/request.ts 在目录过滤之后注入,且 execute 为空操作)。执行面无需对应例外:
+// StructuredOutput 不经 SessionTools.register(在 prompt.ts 里直接挂进工具表),天然不受
+// identityGate 约束。
+const INTERNAL_SENTINEL_CANONICALS: ReadonlySet<string> = new Set(["host::StructuredOutput"])
+
 export function disabled(
   tools: readonly (string | ToolPermissionSubject)[],
   ruleset: PermissionV1.Ruleset,
@@ -340,6 +349,8 @@ export function disabled(
   const reads = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]
   return new Set(
     tools.flatMap((subject) => {
+      if (typeof subject !== "string" && INTERNAL_SENTINEL_CANONICALS.has(canonicalToolIdentity(subject.identity)))
+        return []
       const tool = typeof subject === "string" ? subject : subject.technicalId
       const permission = edits.includes(tool) ? "edit" : reads.includes(tool) ? "read" : tool
       const ability = ruleset.findLast((rule) => Wildcard.match(permission, rule.permission))

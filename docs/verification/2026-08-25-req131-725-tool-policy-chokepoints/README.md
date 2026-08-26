@@ -21,6 +21,13 @@ identity 合同:[#731](https://github.com/jinjunnn/alpha-code/issues/731) / ADR-
 
 ## 0. 结论先说
 
+> **2026-08-25 落地附注(#1129)**:本节以下的结论是对 base `alpha@c3d0d0569` 的取证记录,
+> 保持原样。执行咽喉的 identity 三态(E1/E2 + E3 去重 + E4/E6 前置 ask)已由
+> [#1129](https://github.com/jinjunnn/alpha-code/issues/1129) 落地(公共 `register()` 上的
+> identityGate;#1121 的 B2/B3/B4/B6/B10/B11 与 #1122 的 B9/B13 —— 后者由
+> [#1128](https://github.com/jinjunnn/alpha-code/issues/1128) 修)。落地树上本探针实测
+> **23 PASS / 0 FAIL**;按基线 §9 重写完整矩阵与打包证据仍归 #725 VERIFY 复跑,本附注不代替它。
+
 **票面标题的那句话,今天只有一半成立。**
 
 | 判定 | 内容 |

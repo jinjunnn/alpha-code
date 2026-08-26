@@ -140,15 +140,19 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
   callID: string
   ctx: Tool.Context
 }) {
+  // #1129 / #724 §6 E4:identity 三态在 `tool.execute.before` **之前**解析 —— 子工具不走
+  // register wrapper,这里是它唯一的 identity 闸。deny/ask 未放行前,插件钩子看不到这次
+  // 调用,MCP 传输一个字节都不发。主权 kill-switch 钩子仍无条件先于传输执行,
+  // 任何 ask 放行都跳不过它(ext 的 cloud-websearch-kill.test.ts 钉住这半边)。
+  const identity = input.entry.tool.identity
+  if (!identity) throw new Error(`MCP tool ${input.entry.key} is missing its source identity`)
+  yield* input.ctx.ask({ permission: canonicalToolIdentity(identity), metadata: {}, patterns: ["*"], always: ["*"] })
   yield* input.plugin.trigger(
     "tool.execute.before",
     { tool: input.entry.key, sessionID: input.ctx.sessionID, callID: input.callID },
     { args: input.args },
   )
   const result: CallToolResult = yield* Effect.gen(function* () {
-    const identity = input.entry.tool.identity
-    if (!identity) throw new Error(`MCP tool ${input.entry.key} is missing its source identity`)
-    yield* input.ctx.ask({ permission: canonicalToolIdentity(identity), metadata: {}, patterns: ["*"], always: ["*"] })
     // Deliberately mirrors McpCatalog.convertTool's transport call so the MCP service stays free of tool-loop concerns.
     return yield* Effect.promise(async () => {
       const raw = await input.entry.tool.client.callTool(

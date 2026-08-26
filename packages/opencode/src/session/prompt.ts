@@ -57,7 +57,7 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { attachToolDisplay } from "./tool-display"
-import type { ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
+import { canonicalToolIdentity, type ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -286,6 +286,21 @@ const layer = Layer.effect(
         Permission.disabled([{ technicalId: TaskTool.id, identity: taskTool.identity }], taskRuleset).has(TaskTool.id)
       )
         return yield* Effect.die(new PermissionV1.DeniedError({ ruleset: taskRuleset }))
+      // #1129 / #724 §6 E6:direct subtask 绕过 SessionTools,上面的 disabled 检查只完成
+      // deny;identity=ask 必须同样成立。在任何副作用(消息/part 持久化、plugin hook、
+      // subsession/Task execute)之前用同一个 Permission 引擎按 exact canonical identity
+      // 走三态:deny ⇒ 具名拒绝(与上面同型,双保险)、ask ⇒ 挂起等批准(reject/超时即
+      // fail-closed,什么都没写盘)、allow ⇒ 静默通过(agent 默认 `*: allow` 底保持现状)。
+      yield* permission
+        .ask({
+          permission: canonicalToolIdentity(taskTool.identity),
+          sessionID,
+          metadata: { agent: task.agent, description: task.description },
+          patterns: ["*"],
+          always: ["*"],
+          ruleset: taskRuleset,
+        })
+        .pipe(Effect.orDie)
       const assistantMessage: SessionV1.Assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
         role: "assistant",

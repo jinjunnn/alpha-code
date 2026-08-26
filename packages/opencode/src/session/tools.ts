@@ -59,10 +59,42 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const flags = yield* RuntimeFlags.Service
   const aliases = new ToolAliasLedger()
 
+  // #1129 / #724 §6(E1/E2/E3)—— 所有来源共用的执行闸,包在公共 register() 上:
+  // identity 三态早于 `tool.execute.before` 钩子与实现本体(闸在 wrapper、钩子在被包的
+  // execute 内,先后是结构性的,不靠纪律)。deny ⇒ 具名响亮拒绝、零 hook/零副作用;
+  // ask ⇒ 走现有 Permission 引擎挂起等批准(once/always 的会话语义在 permission/index.ts,
+  // #1128);allow ⇒ 不加 identity prompt,工具自身的 read/edit/bash/external_directory 等
+  // ability 闸原样留在 execute 内部。ruleset 在每次调用时重新求值(stale/cached 工具对象
+  // 拿不到旧宽松态);agent 默认 ruleset 的 `*: allow` 底(agent/agent.ts)保证无 identity
+  // 规则时行为不变。不放行任何缺 identity 的工具 —— display.identity 是 register 的必填参。
+  const identityGate = (value: AITool, display: ToolDisplaySnapshotV1): AITool => {
+    const execute = value.execute
+    if (!execute) return value
+    return {
+      ...value,
+      execute: (args, options) =>
+        run
+          .promise(
+            permission
+              .ask({
+                permission: canonicalToolIdentity(display.identity),
+                sessionID: input.session.id,
+                metadata: {},
+                patterns: ["*"],
+                always: ["*"],
+                tool: { messageID: input.processor.message.id, callID: options.toolCallId },
+                ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+              })
+              .pipe(Effect.orDie),
+          )
+          .then(() => execute.call(value, args, options)),
+    } as AITool
+  }
+
   const register = (technicalId: string, value: AITool, display: ToolDisplaySnapshotV1) => {
     aliases.add(technicalId, display.identity)
     input.processor.registerToolDisplay(technicalId, display)
-    tools[technicalId] = attachToolDisplay(value, display)
+    tools[technicalId] = attachToolDisplay(identityGate(value, display), display)
   }
 
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
@@ -434,13 +466,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
             { args },
           )
+          // #1129 / #724 §6 E3:这里原有一条 hook 之后的 canonical identity ask。它已并入
+          // register() 的 identityGate(在 hook **之前**问)—— 留着会把同一次调用问两遍,
+          // `once` 放行第一问后第二问再挂起,用户一次批准走不完一次调用。
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
-            yield* ctx.ask({
-              permission: canonicalToolIdentity(entry.identity!),
-              metadata: {},
-              patterns: ["*"],
-              always: ["*"],
-            })
             return yield* Effect.promise(() => execute(args, opts))
           }).pipe(
             Effect.withSpan("Tool.execute", {
