@@ -711,7 +711,9 @@ try {
     arm: ARM,
     providerMode: PROVIDER,
     at: new Date().toISOString(),
-    gitSha: spawnSync("git", ["rev-parse", "HEAD"], { cwd: HERE, encoding: "utf8" }).stdout.trim(),
+    // cwd 若在跑动期间被删掉,spawnSync 的 stdout 是 null ⇒ `.trim()` 在 finally 里抛错,
+    // 整轮结果 JSON 一个字都写不出来(#1144 上一轮实测)。取值失败就留空,不要连累结果落盘。
+    gitSha: spawnSync("git", ["rev-parse", "HEAD"], { cwd: HERE, encoding: "utf8" }).stdout?.trim() ?? "",
     summary: {
       pass: probes.filter((p) => p.ok === true).length,
       fail: fails.length,
