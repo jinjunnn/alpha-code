@@ -200,6 +200,11 @@ AUTHORIZE URL: https://auth.tidelabs.click/api/oauth/authorize?...
 那是打包步的副产物、不是改动。提交前必须 `git checkout -- packages/ui-mac/resources/icons`,
 否则会把一堆无意义的二进制 diff 带进 PR。
 
+> ⟨2026-08-26 起本节不再成立(`#1115`)⟩ `packages/ui-mac/resources/icons` 已移出版本控制
+> (`packages/ui-mac/.gitignore`),`ship:mac` 不再产生任何被追踪文件的 diff,也不再需要
+> 那条 `git checkout --`(该路径已不被 git 追踪,那条命令现在会直接报 pathspec 错)。
+> 本节按证据记录原样保留 —— 它记的是当天的真实处境。
+
 ## 7. 原始日志摘录
 
 `~/Library/Application Support/ai.opencode.desktop/logs/20260821T013646/main.log`

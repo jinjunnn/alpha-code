@@ -10,3 +10,10 @@ resources/db-expected-migrations.json
 # Python bytecode caches (skill-creator eval-viewer tooling)
 __pycache__/
 *.pyc
+
+# 构建产物:频道图标(#1115)。scripts/copy-icons.ts 做 `rm -rf resources/icons &&
+# cp -R icons/<channel> resources/icons`,内容随 OPENCODE_CHANNEL 变。packages/desktop/.gitignore
+# 一直有这一行,ui-mac fork 时漏了 ⇒ 53 个 dev 字节进了版本控制、无人记着它们是哪个频道:
+# 每次非 dev 的 packaged 构建改脏 43 个被追踪文件,而一次 git add -A 就能把整仓图标翻频道
+# 且没有任何闸会红。刻意**不带**结尾斜杠(与 packages/desktop 逐字相同):目录与同名文件都罩住。
+resources/icons

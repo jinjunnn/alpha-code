@@ -14,6 +14,10 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 res="$root/packages/ui-mac/resources"
+# `#1115`:频道图标是**生成物** —— scripts/copy-icons.ts 在 prebuild 里把
+# icons/<channel>/ 铺进 $res/icons,内容随 OPENCODE_CHANNEL 变,已移出版本控制。
+# CI 的 seed-assets job 跑的是裸 checkout(不构建)⇒ 本守卫只能断言它的**输入**。
+icons_src="$root/packages/ui-mac/icons"
 fail=0
 
 # GitHub Actions renders `::error::` as an annotation; harmless plain text locally.
@@ -33,7 +37,12 @@ done
 need_file "$res/agents/code-reviewer.md"  # REQ-023 vendored agent (zero-network install)
 need_file "$res/NOTICE.txt"               # B15 MIT / third-party attribution — license compliance
 need_file "$res/entitlements.plist"       # mac signing entitlements
-need_file "$res/icons/icon.icns"          # mac app icon
+# `#1115`:此处原为 `need_file "$res/icons/icon.icns"`,而那份字节是 copy-icons.ts 的产物。
+# 移出版本控制后它在裸 checkout 上不存在,断言产物会让这道门恒红;改断言**输入**,
+# 并按频道逐个点名 —— 原来只罩得住「碰巧躺在 resources/ 里的那一个频道」。
+for ch in dev beta prod; do
+  need_file "$icons_src/$ch/icon.icns"    # mac app icon(electron-builder.config.ts mac.icon)
+done
 
 # ── REQ-105 (#197) / REQ-135 (#1012) Office retirement guard ───────────────────────────────
 # Word/PPT MCP 上游已归档(2026-03-03,不再维护 → 供应链风险):归档连接器不得以任何形态回流
