@@ -3,7 +3,7 @@
 // extension-hub 共同消费;refreshCatalog() 在 hub 打开时调用(main 侧另有启动预热)。
 import { createSignal } from "solid-js"
 import catalogJson from "./alpha-catalog.json"
-import type { Catalog, CatalogEntry } from "./catalog-types"
+import type { BundledCatalogSnapshotV1, Catalog, CatalogEntry } from "./catalog-types"
 import { extIpc } from "./ext-ipc"
 
 // REQ-128 不变量(catalog-types.ts):`Catalog.packages` 是 main 评估后的 CatalogPackageViewV1[],
@@ -13,7 +13,7 @@ import { extIpc } from "./ext-ipc"
 // 原样喂给 Hub 则挂载即崩(`componentId` 全是 undefined,ac#1136)。所以 builtin 与 IPC 投影
 // (projectRemoteCatalogForRenderer)同款显式投影:只带 entries;package 卡片只在 main 评估过的
 // IPC 结果落地后出现。离线要不要供 package 卡片是 ac#1136 里的产品决策,不在这里偷跑。
-const rawBundled = catalogJson as unknown as { version: string; entries: Catalog["entries"] }
+const rawBundled = catalogJson as unknown as BundledCatalogSnapshotV1
 const BUNDLED: Catalog = { version: rawBundled.version, entries: rawBundled.entries }
 
 const [catalogSig, setCatalogSig] = createSignal<Catalog>(BUNDLED)

@@ -2926,7 +2926,7 @@ function verifyPackageCandidate(
     if (resolution.channel === "bundled")
       return {
         ok: false,
-        reason: `signed package ${candidate.packageId} cannot be verified: the live verified catalog is unavailable and the bundled snapshot carries no signed packages`,
+        reason: `signed package ${candidate.packageId} cannot be verified: the live verified catalog is unavailable and the bundled snapshot does not carry ${candidate.packageId}@${record.version ?? "unversioned"} (offline verification covers only packages bundled with this app build)`,
       }
     return resolution.anyVersionPresent
       ? {

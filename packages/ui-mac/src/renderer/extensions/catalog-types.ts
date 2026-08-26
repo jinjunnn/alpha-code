@@ -140,6 +140,18 @@ export interface Catalog {
   packages?: CatalogPackageViewV1[]
 }
 
+/** ac#1136(REQ-128):随包 `alpha-catalog.json` 的**诚实 wire 形状** —— 已签名 release 的逐字
+ *  镜像。`packages` 存在时是 raw `alpha.host-extension-package.v1` envelope(payloadRef 含 URL),
+ *  **不是** `CatalogPackageViewV1`,故声明为 `unknown[]`:唯一采信入口 = main 侧
+ *  package-installability 的解码器(resolveVerifiedPackageV1 / evaluateCatalogPackagesForHost)。
+ *  把这个值铸成 `Catalog`(把 raw 说成 view)正是 ac#1136 崩溃能瞒过 typecheck 的原因;任何要把
+ *  `packages` 递给 renderer 的路径必须先经 main 评估投影,不得直接赋值。 */
+export interface BundledCatalogSnapshotV1 {
+  version: string
+  entries: CatalogEntry[]
+  packages?: unknown[]
+}
+
 /** Live install state of one extension, derived from SDK truth (NOT persisted by alpha). */
 export interface InstalledState {
   name: string

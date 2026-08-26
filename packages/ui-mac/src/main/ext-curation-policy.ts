@@ -15,6 +15,7 @@
 //     的不可判定态必须 fail-closed 置 enforcementGap 阻断 sidecar,见 ext-install-planner)。
 
 import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
+import type { BundledCatalogSnapshotV1 } from "../renderer/extensions/catalog-types"
 import { decodeEntryCuration, type CurationEntryLike } from "../shared/catalog-curation"
 import { readCachedTrust, readChannelLastKnownGood, readRevokedTargets, BUILTIN_CATALOG_PUBKEY_B64, type ChannelName } from "./catalog-channels"
 import { readCachedCatalog } from "./remote-catalog"
@@ -63,7 +64,7 @@ function mergeWithBundled(verifiedEntries: unknown[], bundledEntries: unknown[])
 /** 同步读取当前可验证 catalog 的 session-grant id 集(投影面专用;不打网络)。 */
 export function readSessionGrantIdsSync(userDataPath: string, channel: ChannelName): SessionGrantOracle {
   const nowMs = Date.now()
-  const bundledEntries = (bundledCatalogJson as { entries: unknown[] }).entries
+  const bundledEntries = (bundledCatalogJson as unknown as BundledCatalogSnapshotV1).entries
   try {
     // 1) channel LKG(与安装面同一 channel-first 采信序)。
     const trust = readCachedTrust(userDataPath, BUILTIN_CATALOG_PUBKEY_B64, nowMs)
