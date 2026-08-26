@@ -70,6 +70,11 @@ export interface Interface {
   readonly ask: (input: PermissionV1.AskInput) => Effect.Effect<void, PermissionV1.Error>
   readonly reply: (input: PermissionV1.ReplyInput) => Effect.Effect<void, PermissionV1.NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<PermissionV1.Request>>
+  /**
+   * 清空 session grant(#724 §5:切账户/登出必须清 session grant)。不带参数清全部;
+   * 带 `sessionID` 只清该会话。#1129/#1130 在账户切换/登出路径上接线。
+   */
+  readonly clearGrants: (input?: { sessionID?: string }) => Effect.Effect<void>
 }
 
 interface PendingEntry {
@@ -77,9 +82,23 @@ interface PendingEntry {
   deferred: Deferred.Deferred<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>
 }
 
+/**
+ * `always` 产生的 **session grant**(#1128 / #724 §4.4)。它不是一条规则:
+ * - 只在 `sessionID + permission + resource pattern` 内成立 —— 换会话必须重新评估
+ *   (#1122 B13 的根因正是旧 `approved: Rule[]` 不带 sessionID,instance 级串扰);
+ * - 只能 **discharge 一个 ask**,永远不参与与 deny 的竞争 —— 旧实现把它混进
+ *   `[...ruleset, ...approved]` 的 findLast,approved 排在后面赢过任何 deny
+ *   (#1122 B9)。现在 deny/allow 只由 ruleset 决定,grant 只在 ask 态被查询。
+ */
+interface SessionGrant {
+  sessionID: string
+  permission: string
+  pattern: string
+}
+
 interface State {
   pending: Map<PermissionV1.ID, PendingEntry>
-  approved: PermissionV1.Rule[]
+  granted: SessionGrant[]
 }
 
 export function evaluate(permission: string, pattern: string, ...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule {
@@ -94,6 +113,21 @@ export function evaluate(permission: string, pattern: string, ...rulesets: Permi
   )
 }
 
+/** grant 对 (session, permission, pattern) 的匹配 —— 与 evaluate 的规则匹配同一套 Wildcard 语义。 */
+function grantDischarges(
+  granted: readonly SessionGrant[],
+  sessionID: string,
+  permission: string,
+  pattern: string,
+): boolean {
+  return granted.some(
+    (grant) =>
+      grant.sessionID === sessionID &&
+      Wildcard.match(permission, grant.permission) &&
+      Wildcard.match(pattern, grant.pattern),
+  )
+}
+
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
 
 const layer = Layer.effect(
@@ -103,9 +137,9 @@ const layer = Layer.effect(
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* (ctx) {
         void ctx
-        const state = {
+        const state: State = {
           pending: new Map<PermissionV1.ID, PendingEntry>(),
-          approved: [],
+          granted: [],
         }
 
         yield* Effect.addFinalizer(() =>
@@ -122,12 +156,15 @@ const layer = Layer.effect(
     )
 
     const ask = Effect.fn("Permission.ask")(function* (input: PermissionV1.AskInput) {
-      const { approved, pending } = yield* InstanceState.get(state)
+      const { granted, pending } = yield* InstanceState.get(state)
       const { ruleset, ...request } = input
       let needsAsk = false
 
+      // #1128 / #724 §4:deny 与 allow 只由 ruleset 决定;session grant 不参与这一步 ——
+      // 它只能在 ask 态 discharge。旧实现把 approved 拼在 ruleset 之后取 findLast,
+      // 一张旧批条赢过后来收紧的 deny(#1122 B9);现在 deny 结构性不可被 grant 突破。
       for (const pattern of request.patterns) {
-        const rule = evaluate(request.permission, pattern, ruleset, approved)
+        const rule = evaluate(request.permission, pattern, ruleset)
         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
         if (rule.action === "deny") {
           return yield* new PermissionV1.DeniedError({
@@ -135,6 +172,7 @@ const layer = Layer.effect(
           })
         }
         if (rule.action === "allow") continue
+        if (grantDischarges(granted, request.sessionID, request.permission, pattern)) continue
         needsAsk = true
       }
 
@@ -190,7 +228,7 @@ const layer = Layer.effect(
     })
 
     const reply = Effect.fn("Permission.reply")(function* (input: PermissionV1.ReplyInput) {
-      const { approved, pending } = yield* InstanceState.get(state)
+      const { granted, pending } = yield* InstanceState.get(state)
       const existing = pending.get(input.requestID)
       if (!existing) return yield* new PermissionV1.NotFoundError({ requestID: input.requestID })
 
@@ -225,18 +263,20 @@ const layer = Layer.effect(
       yield* Deferred.succeed(existing.deferred, undefined)
       if (input.reply === "once") return
 
+      // `always` 仅在当前 sessionID 内保存(#724 §4.4)。换会话 / 换账户工作区都要
+      // 重新评估(#1122 B13)—— grant 带着 sessionID 落账,别的会话查不到它。
       for (const pattern of existing.info.always) {
-        approved.push({
+        granted.push({
+          sessionID: existing.info.sessionID,
           permission: existing.info.permission,
           pattern,
-          action: "allow",
         })
       }
 
       for (const [id, item] of pending.entries()) {
         if (item.info.sessionID !== existing.info.sessionID) continue
-        const ok = item.info.patterns.every(
-          (pattern) => evaluate(item.info.permission, pattern, approved).action === "allow",
+        const ok = item.info.patterns.every((pattern) =>
+          grantDischarges(granted, item.info.sessionID, item.info.permission, pattern),
         )
         if (!ok) continue
         pending.delete(id)
@@ -254,7 +294,13 @@ const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.info)
     })
 
-    return Service.of({ ask, reply, list })
+    const clearGrants = Effect.fn("Permission.clearGrants")(function* (input?: { sessionID?: string }) {
+      const s = yield* InstanceState.get(state)
+      s.granted =
+        input?.sessionID === undefined ? [] : s.granted.filter((grant) => grant.sessionID !== input.sessionID)
+    })
+
+    return Service.of({ ask, reply, list, clearGrants })
   }),
 )
 
