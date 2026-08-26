@@ -203,6 +203,11 @@ export const KEPT_SOURCE_TEXT_READS: Record<string, SourceTextEntry> = {
     evidence: "#239",
     lines: 2,
   },
+  "packages/ui-mac/src/main/catalog-channels.test.ts": {
+    why: "ac#1132 AC2 域名棘轮:主语是声明本身与负全称 —— catalog-channels.ts 的 CHANNEL_BASE_URL 声明必须逐字是新域字面量,且不得存在旧域声明。值断言(toBe)骗得过「常量对、声明被第二处覆盖」这类漂移,声明文本正是正确粒度。同测试对两个 sync 脚本的负全称(.mjs 读取,不在本谓词命中集内)属同一条棘轮。守不住:base 若改由运行时拼装绕开该常量,文本闸不红 —— 那一半由同文件的值断言与 remote-catalog.test.ts 的独立字面量兜住。",
+    evidence: "#1132",
+    lines: 1,
+  },
   "packages/ui-mac/src/main/cloud-web-search.test.ts": {
     why: "主语是**跨包逐字一致**:主权信道名的声明点在传输层、叶子只转出,两侧字面量对不上就等于信道断掉而没有任何行为测试会红。其中一句 toContain 是接线锚,但同文件另有四条真实驱动拒绝路径的行为判据 ⇒ 它不是那条保证的唯一守卫。",
     evidence: "#650",

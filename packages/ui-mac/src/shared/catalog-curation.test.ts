@@ -222,7 +222,8 @@ describe("canonical 字节执行器(合同 §4/§6,消费端逐字节复验)", (
   test("blob URL 推导逐字(id 冒号转点 + content-addressed 文件名)", () => {
     const sha = "a".repeat(64)
     expect(curationBlobUrl("mcp:github", "1.0.0", "sbom", sha)).toBe(
-      `https://alphacodeone.com/catalog/assets/mcp.github/1.0.0/alpha-curation/sbom/${sha}.cdx.json`,
+      // ac#1132 域名切换:独立字面量刻意不 import 生产常量(比较基准与被测对象同源 = 自指等价链)。
+      `https://codepuppy.cn/catalog/assets/mcp.github/1.0.0/alpha-curation/sbom/${sha}.cdx.json`,
     )
     expect(() => curationBlobUrl("mcp:../evil", "1.0.0", "sbom", sha)).toThrow("invalid catalogId")
     expect(() => curationBlobUrl("mcp:github", "../v", "sbom", sha)).toThrow("invalid version")

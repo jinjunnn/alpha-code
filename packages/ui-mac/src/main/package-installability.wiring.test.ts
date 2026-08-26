@@ -1,7 +1,8 @@
-// REQ-128 production wiring gate. The repository's shipped Catalog currently has no packages[]
-// instances, so the packages below are explicit host-owned constructions that reuse the pinned
-// alpha-web corpus's identity. This is a reachability harness for the new path, not a claim that
-// production traffic already exercises it.
+// REQ-128 production wiring gate. Since snapshot 2026-08-25.2 (ac#1132) the shipped bundled
+// Catalog carries its first real package instance (package:alpha-first); the bottom test pins that
+// premise against the real bytes. The packages below remain explicit host-owned constructions that
+// reuse the pinned alpha-web corpus's identity — a reachability harness for every path the single
+// real instance does not reach (blocked verdicts, skips, admission failures).
 //
 // The one place the *actual* vendored producer bytes are read is the §5.1 transition gate at the
 // bottom, which now asserts the re-vendored v2 artifact is accepted end to end (`#759`).
@@ -15,6 +16,7 @@ import type { AlphaPackageEnvelopeV1, PackageProfilePayloadV1 } from "../shared/
 import {
   evaluatePackageForHost,
   runCatalogInstallWithPackagePreflight,
+  validateCatalogPackageShape,
   type PackageEvaluator,
 } from "./package-installability"
 import {
@@ -503,8 +505,18 @@ describe("package installability production wiring", () => {
     expect(detail.components).toHaveLength(envelope.components.length)
   })
 
-  test("the real bundled Catalog has no package instance; this gate marks its constructed reachability", () => {
-    expect(Object.hasOwn(bundledCatalog, "packages")).toBe(false)
+  test("the real bundled Catalog ships exactly one package instance, and it passes the production shape gate", () => {
+    // ac#1132:快照 2026-08-25.2 起,内置 catalog 第一次携带真实 package。此前这条闸的陈述是
+    // 「真 catalog 无 package;上面的构造件只是可达性外骨骼」—— 前提翻转,改的是前提陈述而非
+    // 放宽断言:现在断**真实随包字节**过生产形状闸并精确点名身份集合。快照重生成若产出形状
+    // 不合法 / 重复身份 / 意外增删的 package,这里先于线上 fail-closed 变红,逼一次有意识的
+    // 前提更新(正如本次)。raw envelope 停在 main;renderer 的 builtin 投影只带 entries
+    // (catalog-source.ts,ac#1136)。
+    const shape = validateCatalogPackageShape(bundledCatalog)
+    if (!shape.ok) throw new Error(`bundled catalog failed the production shape gate: ${shape.error}`)
+    expect(shape.packages.map((item) => `${item.prelude.packageId}@${item.prelude.version}`)).toEqual([
+      "package:alpha-first@1.0.0",
+    ])
     expect((bundledCatalog as { entries: unknown[] }).entries.length).toBeGreaterThan(0)
   })
 })
