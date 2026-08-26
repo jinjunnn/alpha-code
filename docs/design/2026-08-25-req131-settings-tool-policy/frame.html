@@ -33,7 +33,7 @@ body{padding:0 0 72px}
 .tp-nav button{display:block;width:100%;text-align:left;border:0;background:none;color:var(--a-text-secondary);font-size:var(--a-text-sm);padding:7px 12px;border-radius:var(--a-radius-md)}
 .tp-nav button:hover{background:var(--a-bg-muted);color:var(--a-text)}
 .tp-nav button[aria-current="page"]{background:var(--a-accent-subtle);color:var(--a-accent);font-weight:var(--a-weight-medium)}
-.tp-main{min-width:0;padding:22px 26px 30px;overflow:auto;max-height:640px}
+.tp-main{min-width:0;padding:22px 26px 30px}
 .tp-pagehd{margin-bottom:16px}
 .tp-pagehd h2{font-size:var(--a-text-2xl)}
 .tp-pagehd p{margin:5px 0 0;color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
@@ -65,7 +65,8 @@ body{padding:0 0 72px}
 .tp-eff.ok{color:var(--a-success)}
 .tp-eff.ask{color:var(--a-info)}
 .tp-eff.off{color:var(--a-text-tertiary)}
-.tp-lock{color:var(--a-text-tertiary);font-size:12px;flex:none}
+.tp-lock{color:var(--a-text-tertiary);flex:none}
+.tp-lock svg{width:13px;height:13px;fill:none;stroke:currentcolor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 
 .tp-seg{flex:none;display:inline-flex;padding:2px;gap:2px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-bg-subtle)}
 .tp-seg button{border:0;background:none;color:var(--a-text-tertiary);font-size:var(--a-text-2xs);font-weight:var(--a-weight-medium);padding:4px 9px;border-radius:calc(var(--a-radius-md) - 3px)}
@@ -189,7 +190,7 @@ details.tp-dev .dev{padding:0 14px 9px 34px;color:var(--a-text-tertiary);font:10
               <div class="tp-row">
                 <div class="meta"><div class="nm"><b>文档生成</b><span class="tp-badge">计费:未知</span></div><small>生效:已停用 · 当前套餐不含此服务</small></div>
                 <span class="tp-eff off"><i></i>已停用</span>
-                <span class="tp-lock" aria-hidden="true">🔒</span>
+                <span class="tp-lock" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
                 <div class="tp-seg" role="radiogroup" aria-label="文档生成" aria-disabled="true"><button role="radio" aria-checked="false" disabled>启用</button><button role="radio" aria-checked="false" disabled>询问</button><button role="radio" aria-checked="false" disabled>停用</button></div>
               </div>
             </div>
@@ -255,7 +256,7 @@ details.tp-dev .dev{padding:0 14px 9px 34px;color:var(--a-text-tertiary);font:10
                 <div class="tp-row">
                   <div class="meta"><div class="nm"><b>部署脚本</b></div><small>生效:已停用 · 由设备管理策略停用,本机不可更改</small></div>
                   <span class="tp-eff off"><i></i>已停用</span>
-                  <span class="tp-lock" aria-hidden="true">🔒</span>
+                  <span class="tp-lock" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
                   <div class="tp-seg" role="radiogroup" aria-label="部署脚本" aria-disabled="true"><button role="radio" aria-checked="false" disabled>启用</button><button role="radio" aria-checked="false" disabled>询问</button><button role="radio" aria-checked="false" disabled>停用</button></div>
                 </div>
               </div>
