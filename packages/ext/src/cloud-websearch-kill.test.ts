@@ -278,21 +278,22 @@ describe("治理豁免绑定端点身份,名字伪造不了(R6 Blocker)", () => 
 })
 
 // 反向测试:R2/R3 的判据是「可覆盖的 permission 不能证明 kill-switch 真能关」。这里复刻引擎两条
-// 云工具执行链的**次序**(hook → ask → callTool),把 ask 配成「后置 agent/session allow +
-// approved 全开」的最有利于绕过的状态,断言 callTool 一次都没被打到。
+// 云工具执行链的**次序**(#1129 起:identity ask → hook → callTool),把 ask 配成「后置
+// agent/session allow + approved 全开」的最有利于绕过的状态,断言 callTool 一次都没被打到 ——
+// ask 先跑并且放行了,也照样到不了传输:kill-switch 钩子不是 permission,不参与被覆盖。
 describe("后置 allow / approved 覆盖不了 kill-switch", () => {
   type Chain = { calls: string[]; run: (tool: string) => void }
 
-  /** `session/tools.ts` 与 `tool/code-mode.ts` 的共同骨架:先 trigger 钩子,再 ask,再 callTool。 */
+  /** `session/tools.ts`(register 的 identityGate)与 `tool/code-mode.ts` 的共同骨架(#1129 / #724 §6):
+   *  先 identity ask,再 trigger 钩子,再 callTool。 */
   const engineChain = (env: Record<string, string | undefined>): Chain => {
     const calls: string[] = []
     const ownership = owned(env)
     return {
       calls,
       run(tool) {
-        assertWebSearchToolAllowed(tool, env, ownership) // = plugin.trigger("tool.execute.before", ...)
         // 最有利于绕过的 permission 状态:全局 deny 之后还有 agent wildcard allow、持久化到
-        // session 的 allow、以及排在整个 ruleset 之后的 approved —— 三条都放行。
+        // session 的 allow、以及 discharge ask 的 session grant —— 三条都放行。
         const ruleset = [
           { action: tool, effect: "deny" },
           { action: "*", effect: "allow" }, // 后加载的 agent wildcard
@@ -302,6 +303,7 @@ describe("后置 allow / approved 覆盖不了 kill-switch", () => {
         const decision = approved ? "allow" : ruleset.findLast((rule) => rule.action === tool || rule.action === "*")!.effect
         calls.push(`ask:${decision}`)
         if (decision !== "allow") return
+        assertWebSearchToolAllowed(tool, env, ownership) // = plugin.trigger("tool.execute.before", ...)
         calls.push(`callTool:${tool}`)
       },
     }
@@ -310,7 +312,7 @@ describe("后置 allow / approved 覆盖不了 kill-switch", () => {
   test("kill-switch 下 cloud_web_search 到不了 callTool(两条链同一个骨架)", () => {
     const chain = engineChain(ON)
     expect(() => chain.run("cloud_web_search")).toThrow(WebSearchSovereigntyError)
-    expect(chain.calls).toEqual([]) // 连 ask 都没走到,approved 无从生效
+    expect(chain.calls).toEqual(["ask:allow"]) // ask 已经放行,callTool 仍为零 —— 覆盖失败
   })
 
   test("同一条链上,兄弟云工具照常执行", () => {
@@ -328,34 +330,47 @@ describe("后置 allow / approved 覆盖不了 kill-switch", () => {
   })
 })
 
-// 上面那个骨架的前提是引擎**真的**先触发钩子再 ask。这条锁把该前提机械化:上游 sync 一旦把
-// trigger 挪到 ask 之后(或删掉),云侧最终闸就退化成可覆盖的 permission,必须立刻变红。
-describe("上游次序前提(trigger 早于 ask)", () => {
+// 上面那个骨架的前提是:钩子**无条件**先于传输执行,任何 permission 结论都插不进钩子与传输
+// 之间去改写它。#1129(#724 §6)把 identity ask 上移到钩子之前(E1/E3 在 register 的
+// identityGate、E4 在 invokeChildTool 顶部),钩子与传输之间从此不允许再出现任何 ask ——
+// 那正是旧形态里「once 被问两次 / permission 站在钩子之后」的位置。上游 sync 一旦把 trigger
+// 挪到传输之后、删掉、或把 ask 塞回钩子后面,这里必须立刻变红。
+describe("上游次序前提(#1129:identity ask 早于 trigger,trigger 早于传输)", () => {
   const repoRoot = join(import.meta.dir, "..", "..", "..")
-  const between = (body: string, from: number) => {
-    const trigger = body.indexOf('"tool.execute.before"', from)
-    const ask = body.indexOf("ctx.ask(", trigger)
-    return { trigger, ask }
-  }
 
-  test("普通 MCP 链:session/tools.ts 的 MCP 循环里 trigger 在 ask 之前", () => {
+  test("普通 MCP 链:identity 闸在 register 咽喉上,MCP 循环里 trigger 直达传输、其后再无 ask", () => {
     const body = readFileSync(join(repoRoot, "packages/opencode/src/session/tools.ts"), "utf8")
+    // ① register 咽喉上的 identity 闸在:闸在 wrapper、钩子在被包的 execute 内,
+    //    「ask 早于 trigger」是结构性的,不靠行序纪律。
+    const gate = body.indexOf("const identityGate")
+    expect(gate).toBeGreaterThanOrEqual(0)
+    const registerFn = body.indexOf("const register =", gate)
+    expect(registerFn).toBeGreaterThan(gate)
+    const gateAsk = body.indexOf(".ask(", gate)
+    expect(gateAsk).toBeGreaterThan(gate)
+    expect(gateAsk).toBeLessThan(registerFn)
+    expect(body.indexOf("identityGate(value, display)", registerFn)).toBeGreaterThan(registerFn)
+    // ② MCP 循环:trigger 之后直达传输,不许再有第二个 ask(旧的重复 canonical ask 位点)。
     const loop = body.indexOf("McpCatalog.convertTool(")
     expect(loop).toBeGreaterThanOrEqual(0)
-    const { trigger, ask } = between(body, loop)
+    const trigger = body.indexOf('"tool.execute.before"', loop)
     expect(trigger).toBeGreaterThan(loop)
-    expect(ask).toBeGreaterThan(trigger)
+    const transport = body.indexOf("Effect.promise(() => execute(args, opts))", trigger)
+    expect(transport).toBeGreaterThan(trigger)
+    const staleAsk = body.indexOf("ctx.ask(", trigger)
+    expect(staleAsk === -1 || staleAsk > transport).toBe(true)
   })
 
-  test("code-mode 链:invokeChildTool 里 trigger 在 ask 与 callTool 之前", () => {
+  test("code-mode 链:invokeChildTool 里 ask 在 trigger 之前,trigger 在 callTool 之前", () => {
     const body = readFileSync(join(repoRoot, "packages/opencode/src/tool/code-mode.ts"), "utf8")
     const fn = body.indexOf("invokeChildTool = Effect.fn")
     expect(fn).toBeGreaterThanOrEqual(0)
-    const { trigger, ask } = between(body, fn)
+    const ask = body.indexOf("ctx.ask(", fn)
+    const trigger = body.indexOf('"tool.execute.before"', fn)
     const callTool = body.indexOf(".callTool(", fn)
-    expect(trigger).toBeGreaterThan(fn)
-    expect(ask).toBeGreaterThan(trigger)
-    expect(callTool).toBeGreaterThan(ask)
+    expect(ask).toBeGreaterThan(fn)
+    expect(trigger).toBeGreaterThan(ask)
+    expect(callTool).toBeGreaterThan(trigger)
   })
 
   test("Plugin.trigger 不吞钩子抛出的错(Effect.promise = 抛即 defect)", () => {

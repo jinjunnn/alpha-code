@@ -479,9 +479,13 @@ describe("咽喉 B —— 执行 (SessionTools.resolve 返回对象的 execute)"
  * 世界上已经发生了什么」。用裸 Promise 而不是 fiber:`Effect.promise` 把 reject 当 defect,
  * 包一层就读不出「拒绝」和「崩了」的差别。
  */
-function launch(tool: { execute?: (args: unknown, opts: unknown) => unknown }, callID: string, args: unknown = {}) {
+// 参数类型取 `(...args: never[]) => unknown`(参数逆变的底):任何 AI SDK Tool 都可直接传入。
+// 此前的 `(args: unknown, opts: unknown) => unknown` 让 13 处 `launch(tools[...]!)` 调用点
+// 各红一条 TS2345(#1134;packages/opencode 不在任何 typecheck 门内所以一直没人看见)。
+// 本次只改类型标注与体内两处 cast,零断言变动。
+function launch(tool: { execute?: (...args: never[]) => unknown }, callID: string, args: unknown = {}) {
   let outcome: { ok: true; value: unknown } | { ok: false; error: unknown } | undefined
-  const promise = Promise.resolve(tool.execute!(args, { toolCallId: callID, messages: [] } as never)).then(
+  const promise = Promise.resolve(tool.execute!(args as never, { toolCallId: callID, messages: [] } as never)).then(
     (value) => {
       outcome = { ok: true, value }
     },
