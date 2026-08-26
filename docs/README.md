@@ -27,6 +27,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | Product and visual design assets                                     | [`design/README.md`](design/README.md)                               |
 | Point-in-time audits and screenshots                                 | [`audits/README.md`](audits/README.md)                               |
 | Focused verification records                                         | [`verification/`](verification/)                                     |
+| REQ-128 桌面端对公网 stable 的 `package:alpha-first` 浏览/详情/安装取证(四条 AC 全 PASS;目录安装落 `disabled` 是既定策略) | [`verification/2026-08-26-req128-163-desktop-live-package/README.md`](verification/2026-08-26-req128-163-desktop-live-package/README.md) |
 | REQ-131 #725 工具策略双咽喉矩阵(模型目录闸真绿;执行咽喉只对 MCP 成立 —— builtin/plugin/host 的 `ask` 不问、`deny` 照跑;`always` 跨会话且压得过后来的 `deny`) | [`verification/2026-08-25-req131-725-tool-policy-chokepoints/README.md`](verification/2026-08-25-req131-725-tool-policy-chokepoints/README.md) |
 | REQ-092 #402 descriptor-only 有界产物传输七格矩阵(格 4/6/7 PASS;格 1/3/5 部分 FAIL;格 2 摘要 PASS、峰值 RSS 超顶) | [`verification/2026-08-25-req092-402-artifact-transfer/README.md`](verification/2026-08-25-req092-402-artifact-transfer/README.md) |
 | REQ-109 startup P95 after #1098/#1099 (FAIL 8,313ms; the tail is now named: first project-list fetch) | [`verification/2026-08-24-req109-p95-post1098-1099/README.md`](verification/2026-08-24-req109-p95-post1098-1099/README.md) |

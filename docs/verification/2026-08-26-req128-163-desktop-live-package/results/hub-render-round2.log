@@ -1,0 +1,17 @@
+bun test v1.3.14 (0d9b296a)
+
+test-component/aw163-live-catalog-hub.live-cases.ts:
+[AC1] data-package-card = ["package:alpha-first"]
+[AC1] ext-remote-catalog → source=remote via=channel-stable channel=stable version=2026-08-25.2
+[AC1] card = {"catalogId":"package:alpha-first","verdict":"compatible","prerequisite":"ready","action":"安装"}
+[AC2] ext-package-detail → {"catalogId":"package:alpha-first","verdict":"compatible","action":{"kind":"install","enabled":true,"reasonCode":"package-compatible"},"components":[{"componentId":"skill:alpha-first","role":"root","required":true,"included":true,"skipReasonCode":null}],"prerequisites":{"status":"ready","items":[]},"presentation":{"displayName":"Alpha install check","description":"A single first-party skill that checks an Alpha extension package finished installing and reports what landed on disk. Local state only: no network, no credentials, no writes.","version":"1.0.0"}}
+[AC2] detail h2 = "Alpha install check"
+[AC2] detail about = "A single first-party skill that checks an Alpha extension package finished installing and reports what landed on disk. Local state only: no network, no credentials, no writes."
+[AC2] detail version = "版本 1.0.0"
+[AC2] detail sections = ["简介","可安装性","组件与前置条件","原因","动作"]
+[AC1/AC2] package 面过线字节 = {"packages":[{"catalogId":"package:alpha-first","verdict":"compatible","action":{"kind":"install","enabled":true,"reasonCode":"package-compatible"},"components":[{"componentId":"skill:alpha-first","role":"root","required":true,"included":true,"skipReasonCode":null}],"prerequisites":{"status":"ready","items":[]},"presentation":{"displayName":"Alpha install check","description":"A single first-party skill that checks an Alpha extension package finished installing and reports what landed on disk. Local state only: no network, no credentials, no writes.","version":"1.0.0"}}],"detail":{"catalogId":"package:alpha-first","verdict":"compatible","action":{"kind":"install","enabled":true,"reasonCode":"package-compatible"},"components":[{"componentId":"skill:alpha-first","role":"root","required":true,"included":true,"skipReasonCode":null}],"prerequisites":{"status":"ready","items":[]},"presentation":{"displayName":"Alpha install check","description":"A single first-party skill that checks an Alpha extension package finished installing and reports what landed on disk. Local state only: no network, no credentials, no writes.","version":"1.0.0"}}}
+
+ 1 pass
+ 0 fail
+ 152 expect() calls
+Ran 1 test across 1 file. [736.00ms]

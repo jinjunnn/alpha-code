@@ -1,0 +1,263 @@
+# aw#163 · REQ-128 桌面端浏览/详情/安装 package:alpha-first(公网 stable)
+started      2026-08-26T07:15:35.680Z
+tmp root     /var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/aw163-live-Zb2850
+runtime      node v24.3.0 / bun 1.3.14
+
+## §0 独立取证 —— 裸 fetch,不经生产代码
+  stable.json    http=200 bytes=584 sequence=11
+  snapshot.json  http=200 bytes=884 sha256=e9f813c5c24aaa3ddab75bddd77b8f61395ffa207c91b9ef4a14f5fd683d4243
+  trust.json     http=200 bytes=513 sha256=7f08f2740e0999092663f7840c84651453e9689f88e300a2cedbc788cdc1c2c1
+  release        http=200 bytes=95220 sha256=1bdc9ad8d1bff83252eaa41cb1bc48b4bced7553e570439b4f1379b65c14b99d
+  skill payload  http=200 bytes=624 sha256=495b415b54f2821efd267a7f0199ef8662e144aaa640efb3cf12b00386db45dc
+  PASS  裸取 stable.json sequence
+        actual   = 11
+  PASS  裸取 target.catalogVersion
+        actual   = "2026-08-25.2"
+  PASS  裸取 release catalog sha256
+        actual   = "1bdc9ad8d1bff83252eaa41cb1bc48b4bced7553e570439b4f1379b65c14b99d"
+  PASS  裸取 release catalog bytes
+        actual   = 95220
+  PASS  裸取 skill payload sha256
+        actual   = "495b415b54f2821efd267a7f0199ef8662e144aaa640efb3cf12b00386db45dc"
+  PASS  裸取 entries/packages 条数
+        actual   = [28,1]
+  PASS  裸取 envelope prelude
+        actual   = {"packageId":"package:alpha-first","version":"1.0.0"}
+  PASS  裸取 envelope presentation
+        actual   = {"description":"A single first-party skill that checks an Alpha extension package finished installing and reports what landed on disk. Local state only: no network, no credentials, no writes.","displayName":"Alpha install check"}
+  PASS  裸取 payload.behavior.targetDir
+        actual   = "alpha-skills"
+  PASS  裸取 payload.behavior.files(名/字节/sha256)
+        actual   = [{"bytes":1065,"path":"LICENSE.txt","sha256":"91d6e75b756d929a8cfa1bb0de0de5b1b945e3ac9f2c9c6212c8400ed993dde5"},{"bytes":2679,"path":"SKILL.md","sha256":"27e1b014f09ec6db8a9b74442d3614efaabf9599705d134d26229a1a99d3cdca"}]
+
+## 前置 —— 生产编译进桌面端的 catalog host
+  PASS  CHANNEL_BASE_URL(packages/ui-mac/src/main/catalog-channels.ts:30)
+        actual   = "https://codepuppy.cn/catalog/v1"
+
+  PASS  注册到 ipcMain 的读通道
+        actual   = ["ext-package-detail","ext-remote-catalog"]
+
+## §1 · AC1 —— package-capable desktop build 在 Extensions hub 浏览到 package:alpha-first
+   ipcMain.handle("ext-remote-catalog") → refreshRemoteCatalog(userData,"stable")
+   → catalog-channels 全链验签(trust → snapshot → channel → payload)
+   → evaluateCatalogPackagesForHost → projectRemoteCatalogForRenderer
+   → renderer installableCatalogPackages()(extension-hub.tsx:886-888 喂给浏览区的同一个函数)
+  → source=remote via=channel-stable channel=stable version=2026-08-25.2 error=null (96 ms)
+  PASS  IPC source(远端已验签,不是缓存/内置)
+        actual   = "remote"
+  PASS  IPC via(channel-first 指针链,不是 legacy v1)
+        actual   = "channel-stable"
+  PASS  IPC channel
+        actual   = "stable"
+  PASS  catalog.version
+        actual   = "2026-08-25.2"
+  PASS  catalog.entries 条数
+        actual   = 28
+  PASS  catalog.packages 条数(main 评估过的 view)
+        actual   = 1
+  PASS  过线的是 view 不是 raw envelope(renderer 拿不到 payloadRef/url)
+  PASS  Hub 浏览区可安装 package 的 catalogId 清单
+        actual   = ["package:alpha-first"]
+  PASS  Hub 浏览区确有 package:alpha-first 卡片
+  PASS  卡片 displayName
+        actual   = "Alpha install check"
+  PASS  卡片 description
+        actual   = "A single first-party skill that checks an Alpha extension package finished installing and reports what landed on disk. Local state only: no network, no credentials, no writes."
+  PASS  卡片 version
+        actual   = "1.0.0"
+  PASS  卡片 verdict
+        actual   = "compatible"
+  PASS  卡片 action
+        actual   = {"enabled":true,"kind":"install","reasonCode":"package-compatible"}
+
+## §2 · AC2 —— 详情页正确
+   preload/index.ts:228 packageDetail() → ipcMain.handle("ext-package-detail")
+   → extension-detail.tsx:148-152 createResource 消费的就是这个返回值
+  ext-package-detail("package:alpha-first") → {
+    "catalogId": "package:alpha-first",
+    "verdict": "compatible",
+    "action": {
+      "kind": "install",
+      "enabled": true,
+      "reasonCode": "package-compatible"
+    },
+    "components": [
+      {
+        "componentId": "skill:alpha-first",
+        "role": "root",
+        "required": true,
+        "included": true,
+        "skipReasonCode": null
+      }
+    ],
+    "prerequisites": {
+      "status": "ready",
+      "items": []
+    },
+    "presentation": {
+      "displayName": "Alpha install check",
+      "description": "A single first-party skill that checks an Alpha extension package finished installing and reports what landed on disk. Local state only: no network, no credentials, no writes.",
+      "version": "1.0.0"
+    }
+  }
+  PASS  详情 IPC 返回非 null
+  PASS  detail.catalogId
+        actual   = "package:alpha-first"
+  PASS  detail.presentation(逐字段)
+        actual   = {"description":"A single first-party skill that checks an Alpha extension package finished installing and reports what landed on disk. Local state only: no network, no credentials, no writes.","displayName":"Alpha install check","version":"1.0.0"}
+  PASS  detail.verdict
+        actual   = "compatible"
+  PASS  detail.action
+        actual   = {"enabled":true,"kind":"install","reasonCode":"package-compatible"}
+  PASS  detail.components(逐字段)
+        actual   = [{"componentId":"skill:alpha-first","included":true,"required":true,"role":"root","skipReasonCode":null}]
+  PASS  detail.prerequisites
+        actual   = {"items":[],"status":"ready"}
+  PASS  detail 的 wire 键集(不多不少)
+        actual   = ["action","catalogId","components","prerequisites","presentation","verdict"]
+  PASS  详情面不泄漏 payloadRef / 资产 URL / digest
+  PASS  负向:未知 catalogId 的详情
+        actual   = null
+  PASS  负向:非字符串 catalogId
+        actual   = null
+
+## §3 · AC3 —— 安装成功;skill 落到预期的 targetDir
+   ext-ipc.ts:359-380 createPackageAdmissionCoordinator(生产接线同形,零 deps 注入)
+   两趟:①preview(stage=authorize)→ ②带 binding 确认 → runExtensionTransaction
+  preview → ok=false stage=authorize reason="package admission: exact package plan requires confirmation"
+  PASS  preview 是授权阶段(不是一键直装)
+        actual   = {"ok":false,"stage":"authorize"}
+  preview.plan = {
+    "packageId": "package:alpha-first",
+    "version": "1.0.0",
+    "scope": {
+      "scope": "global"
+    },
+    "items": [
+      {
+        "included": true,
+        "componentId": "skill:alpha-first",
+        "role": "root",
+        "required": true,
+        "key": "skill--alpha-first",
+        "kind": "skill",
+        "name": "alpha-first",
+        "manifestDigest": "sha256:66293f4afa603497a96eade91525f423423269a205b8c899308876cee8737769",
+        "payloadDigest": "sha256:495b415b54f2821efd267a7f0199ef8662e144aaa640efb3cf12b00386db45dc",
+        "capabilities": [],
+        "prerequisites": [],
+        "operations": [
+          "write-generation",
+          "write-install-record",
+          "write-capability-grant"
+        ]
+      }
+    ]
+  }
+  preview.binding = {
+    "snapshotDigest": "e9f813c5c24aaa3ddab75bddd77b8f61395ffa207c91b9ef4a14f5fd683d4243",
+    "envelopeDigest": "c936363bf4354ba551a2478611878da9b221b74020ee8c4c39f3a00e23a1161a",
+    "graphDigest": "8b16b387b5d9ebde202225dc45a3aba3488413e96de83c8385a757440f453491",
+    "itemDigests": {
+      "skill:alpha-first": "66293f4afa603497a96eade91525f423423269a205b8c899308876cee8737769"
+    },
+    "capabilityDigest": "e5ae6b63968c6f0a1c033f6acab4c842406eb8d21fec627541126502f2029bd7"
+  }
+  PASS  plan.packageId / version
+        actual   = ["package:alpha-first","1.0.0"]
+  PASS  plan 组件
+        actual   = ["skill:alpha-first"]
+  PASS  plan item kind/name/key
+        actual   = [["skill","alpha-first","skill--alpha-first"]]
+  PASS  plan item payloadDigest(= 独立取到的载荷 sha256)
+        actual   = "sha256:495b415b54f2821efd267a7f0199ef8662e144aaa640efb3cf12b00386db45dc"
+  PASS  binding.snapshotDigest(= §0 裸取 snapshot.json 的 sha256)
+        actual   = "e9f813c5c24aaa3ddab75bddd77b8f61395ffa207c91b9ef4a14f5fd683d4243"
+  PASS  binding.itemDigests 的键
+        actual   = ["skill:alpha-first"]
+  PASS  授权 diff(纯 skill 包:一行空 capability、无需确认)
+        actual   = [{"added":[],"key":"skill--alpha-first","previous":null,"removed":[],"requested":[],"requiresConfirmation":false}]
+[ext-transaction] tx-committed {"txId":"tx-mt9reurx-53de22bf","items":["skill--alpha-first@gen-000001-53de22bf"]}
+  commit → {
+    "ok": true,
+    "kind": "skill",
+    "name": "alpha-first",
+    "manifestDigest": "sha256:66293f4afa603497a96eade91525f423423269a205b8c899308876cee8737769",
+    "installed": [
+      "skill:alpha-first"
+    ],
+    "skipped": [],
+    "activateMcp": []
+  }
+  PASS  安装结果 ok
+        actual   = true
+  PASS  安装结果 kind/name
+        actual   = {"kind":"skill","name":"alpha-first"}
+  PASS  installed / skipped
+        actual   = {"installed":["skill:alpha-first"],"skipped":[]}
+  resolveLiveGenerationDir(root, "skill--alpha-first") = /var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/aw163-live-Zb2850/alpha-root/ext-store/skill--alpha-first/generations/gen-000001-53de22bf
+  PASS  live generation 目录解析得出(current.json 指针有效)
+  PASS  落点 = <globalRoot>/ext-store/skill--alpha-first/generations/<genId>  [ext-store/skill--alpha-first/generations/gen-000001-53de22bf]
+  PASS  落地文件(名/字节/sha256 逐字段 = 公网资产)
+        actual   = [{"bytes":1065,"path":"LICENSE.txt","sha256":"91d6e75b756d929a8cfa1bb0de0de5b1b945e3ac9f2c9c6212c8400ed993dde5"},{"bytes":2679,"path":"SKILL.md","sha256":"27e1b014f09ec6db8a9b74442d3614efaabf9599705d134d26229a1a99d3cdca"}]
+  PASS  SKILL.md frontmatter name(生产 parseSkillFrontmatter)
+        actual   = "alpha-first"
+  PASS  flat 旧路径 <root>/skills/alpha-first 不存在(单一真源)
+  PASS  账本可读
+  PASS  账本 packageGraphs 的 packageId
+        actual   = ["package:alpha-first"]
+  PASS  账本图的 root 组件
+        actual   = [["skill","alpha-first"]]
+  PASS  账本有 skill:alpha-first 记录
+  ledger record: kind=skill name=alpha-first origin=catalog desiredState=disabled
+  PASS  记录 origin
+        actual   = "catalog"
+  PASS  记录 desiredState(目录安装保守面 = 已安装但未启用)
+        actual   = "disabled"
+
+### §3.1 引擎侧的读 —— packages/ext/src/gen-skill-paths.ts::injectSkillGenerationPaths
+  PASS  未启用时引擎注入的 skills.paths(fail-closed 允许集)
+        actual   = []
+   经生产启停通道 setInstallStateByKey({type:"skill",name:"alpha-first",scope:"global",state:"enabled"})
+  setInstallStateByKey → {"ok":true}
+  PASS  启停通道 ok
+        actual   = true
+  injectSkillGenerationPaths → {
+    "skills": {
+      "paths": [
+        "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/aw163-live-Zb2850/alpha-root/ext-store/skill--alpha-first/generations/gen-000001-53de22bf"
+      ]
+    }
+  }
+  PASS  启用后引擎注入的 skills.paths 恰是 live generation 目录
+        actual   = ["/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/aw163-live-Zb2850/alpha-root/ext-store/skill--alpha-first/generations/gen-000001-53de22bf"]
+  PASS  cfg.skills.paths 被真的写进配置对象
+        actual   = ["/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/aw163-live-Zb2850/alpha-root/ext-store/skill--alpha-first/generations/gen-000001-53de22bf"]
+  PASS  引擎注入的那个目录里确有 SKILL.md
+
+## §4 负向对照(证明上面的绿不是「下载了什么就报什么」)
+[catalog-channels] stable: trust refresh rejected — keeping cached trust (R1 trust signature INVALID (no trusted key verifies these bytes))
+[catalog-channels] stable: no verifiable trust (trust refresh rejected: R1 trust signature INVALID (no trusted key verifies these bytes)) — fail closed
+[remote-catalog] stable channel SECURITY failure (no verifiable trust (trust refresh rejected: R1 trust signature INVALID (no trusted key verifies these bytes)) — fail closed) — legacy v1 fallback FORBIDDEN (fail closed)
+  换错内置公钥 → {"source":"none","reasonClass":"security","error":"no verifiable trust (trust refresh rejected: R1 trust signature INVALID (no trusted key verifies these bytes)) — fail closed"}
+  PASS  4a 换错内置公钥后的 source
+        actual   = "none"
+  PASS  4a 失败类(security ⇒ 禁 legacy v1 回退)
+        actual   = "security"
+  篡改载荷 → source=remote view={"verdict":"blocked","action":{"kind":"none","enabled":false,"reasonCode":"package-payload-integrity"}}
+  PASS  4b 篡改载荷后的 verdict/action
+        actual   = {"action":{"enabled":false,"kind":"none","reasonCode":"package-payload-integrity"},"verdict":"blocked"}
+  admission(未发布 id) → {"ok":false,"reason":"package admission: catalogId not found in verified Catalog"}
+  PASS  4c 未发布 id 的 admission ok
+        actual   = false
+  重放已消费的 attemptId → {"ok":false,"reason":"package admission: stale or replayed attempt"}
+  PASS  4d 重放 attemptId 的结果
+        actual   = {"ok":false,"reason":"package admission: stale or replayed attempt"}
+[catalog-channels] stable: no verifiable trust (trust fetch failed: fetch failed: unknown certificate verification error: https://alphacodeone.com/catalog/v1/channels/trust.json; fetch failed: unknown certificate verification error: https://alphacodeone.com/catalog/v1/channels/trust.json.sig) — fail closed
+[remote-catalog] stable channel SECURITY failure (no verifiable trust (trust fetch failed: fetch failed: unknown certificate verification error: https://alphacodeone.com/catalog/v1/channels/trust.json; fetch failed: unknown certificate verification error: https://alphacodeone.com/catalog/v1/channels/trust.json.sig) — fail closed) — legacy v1 fallback FORBIDDEN (fail closed)
+  旧域 alphacodeone.com → {"source":"none","reasonClass":"security","error":"no verifiable trust (trust fetch failed: fetch failed: unknown certificate verification error: https://alphacodeone.com/catalog/v1/channels/trust.json; fetch failed: unknown certificate verification error: https://alphacodeone.com/catalog/v1/channels/trust.json.sig) — fail closed"} (3147 ms)
+  PASS  4e 旧域的 source(已停用 ⇒ 拿不到任何内容)
+        actual   = "none"
+
+checks=70 failures=0
+finished     2026-08-26T07:15:39.466Z
