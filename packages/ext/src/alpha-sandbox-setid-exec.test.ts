@@ -39,7 +39,8 @@
 // ps / top / quota / write 覆盖,不必拿一条会挂住 harness 的成员去凑。
 //
 // 需要真 /usr/bin/sandbox-exec(darwin),CI(ubuntu)上整块 skip —— 与 alpha-sandbox-escape.test.ts
-// 同一支,故同样不进 scripts/gate-files.tsv(那里是精确条数,linux 上量到 0 会恒红)。
+// 同一支。`#1153` 起两支都以 [平台:darwin] 登记进 scripts/gate-files.tsv:darwin 上钉精确条数
+// (删本文件当场红),非 darwin 上登记簿仍真跑本文件并按「自报 0 条」验证标注,不再恒红。
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { spawnSync, type SpawnSyncReturns } from "node:child_process"

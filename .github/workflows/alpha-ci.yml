@@ -296,7 +296,22 @@ jobs:
       # 用 `!cancelled()` 而不是 `always()`:cancel-in-progress 取消掉的 run 不必再跑一遍。
       - name: assert gate files (逐个点名,整包地板抓不到单文件消失)
         if: ${{ !cancelled() && needs.detect.outputs.code == 'true' }}
-        run: bash scripts/assert-gate-files.sh
+        # `#1153`:脚本退出码三档(0 已验证 / 1 真失守 / 2 门绿但存在「本平台不适用」的平台
+        # 条件行)。darwin-only 行(真 sandbox-exec 语料)在本 runner(ubuntu)上结构性不适用:
+        # 登记簿仍会真跑那些文件并要求它们**自报 0 条**(标注不是免检牌 —— 该跑的文件被误标
+        # 会 >0 条当场红,文件被删也当场红),但它们的保证只能在 darwin 本地门 [6/10] 被验证。
+        # 硬红会训练下一个人把它们摘出登记簿(#1153 的病根),故把 2 消费为「不拦 + 留痕」;
+        # 1 照旧红。与本地 alpha-check [6/10] 的三档消费同形。
+        run: |
+          set +e
+          bash scripts/assert-gate-files.sh
+          rc=$?
+          set -e
+          if [ "$rc" -eq 2 ]; then
+            echo "::notice::平台条件闸在本 runner 不适用(见上方 ⊘ 清单)—— 本 run 不构成它们的证据;它们由 darwin 本地门执行"
+            exit 0
+          fi
+          exit "$rc"
 
   seed-assets:
     name: seed assets present
