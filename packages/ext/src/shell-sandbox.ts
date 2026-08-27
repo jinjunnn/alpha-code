@@ -23,6 +23,14 @@
 //     恒为 ["-c", cmd]、prompt 的为 ["-l","-c",script,"opencode",cwd];wrapper 一旦解释命令就是
 //     在手写别人文法的替身。
 //
+// ── 已知代价 K1(#1149):围栏内 set-ID 二进制不可 exec ──────────────────────────
+// macOS seatbelt **固有地**拒绝沙箱进程 exec set-user-ID / set-group-ID 程序,与本 profile 写了
+// 什么无关(它只有 `(allow default)` + `(deny file-write*)`)。用户可观察的后果:agent 在 shell
+// 工具里跑 `ps` / `top` 一类命令会拿到 `Operation not permitted`,而失败信息不解释原因。
+// **成员不在这里枚举**(散文清单漏掉的永远是最新那一项)—— 权威语料与**双向**判据在
+// alpha-sandbox-setid-exec.test.ts:它起真 sandbox-exec 跑真二进制,每个成员该被拒还是该通过
+// 由盘上的**真实 mode** 派生。放宽围栏让 set-ID 可 exec 不在本接缝的选项里(#1149 Out of scope)。
+
 // 平台:仅 darwin(sandbox-exec)。其余平台本接缝结构上不适用(基线 §4),wrapEngineShell
 // 在非 darwin 上不动 cfg.shell。网络轴不在本票(见 #1077)。
 

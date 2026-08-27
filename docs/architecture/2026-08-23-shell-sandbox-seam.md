@@ -231,7 +231,17 @@ Alpha 无处注入 ⇒ **C3 必须收编其中一个热文件**（`north-star-gu
   `Operation not permitted`，`/bin/ls`、`/usr/bin/wc`、`/usr/bin/git` 正常
   （无围栏对照全部通过，见该目录 `results/setuid-exec-observation.json`）。
   **用户可观察的后果**：agent 在 shell 工具里跑 `ps` / `top` 会拿到 `Operation not permitted`。
-  §2.8 的误伤集没有覆盖这一类；要不要把它登记为已知代价、或补进误伤集，尚未裁决。
+  §2.8 的误伤集没有覆盖这一类。**2026-08-26 裁定（[`#1149`](https://github.com/jinjunnn/alpha-code/issues/1149)）：
+  登记为已知代价，不改用户可见行为**。单一权威 = `packages/ext/src/alpha-sandbox-setid-exec.test.ts`：
+  它经生产的 `wrapEngineShell` 起**真** `sandbox-exec` 跑真二进制，每个成员“该被拒还是该通过”
+  由盘上的**真实 mode** 派生（不写死清单 ⇒ 换台机器不会假绿/假红），并且**双向**：
+  围栏意外恢复 set-ID exec 判红，把非 set-ID 的 `ls`/`git` 也拦了同样判红。
+  同时修正本条上面的描述：这一类**不止于 setuid**。`#1149` 实测 `/usr/bin/write`
+  （`0o2555`，**setgid-only**，setuid 位为 0）在围栏内同样 `operation not permitted` ——
+  判据因此取 `S_ISUID|S_ISGID`（0o6000）而不是 0o4000；若只看 setuid 位，`write` 会被归入
+  “该通过”那一类而制造假红。另：`/usr/bin/su` 虽然是该类成员，但**不进语料** ——
+  有控制终端时它会打印 `Password:` 并阻塞读 `/dev/tty`（stdin 给 pipe 也拦不住），
+  无围栏对照臂会真的把它 exec 起来，把 `bun test` 挂死。
 - ~~未验证：会写盘的 rc 脚本。~~ **2026-08-26 实跑**（同上目录 §6）。用产品自带的
   `ALPHA_ENV_ALLOWLIST_EXTRA=ZDOTDIR` 把引擎自己那条 `source "${ZDOTDIR:-$HOME}/.zshrc"`
   指到一份**故意会写盘**的 rc 上（`compinit -d` 写 `.zcompdump` + 历史式追加 + 一个 marker，
