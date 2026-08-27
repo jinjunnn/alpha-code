@@ -6,7 +6,9 @@
 //
 // 只在 darwin 上比对:core Shell 的 fallback 依平台(darwin=/bin/zsh、linux=which bash),而
 // resolveRealShell 按 darwin 复刻,linux 上比对无意义 ⇒ describe.skip。因此本文件是平台变量
-// 计数(darwin 1 / linux 0),只喂 ext 整包地板(≥100),**不**登记进 gate-files.tsv 的精确条数。
+// 计数(darwin 1 / linux 0)。**#1153 起已登记进 gate-files.tsv**,用它的 `[平台:darwin]` 档:
+// darwin 上按精确条数钉死,非 darwin 上按「自报 0 条」验证标注(第三档,不拦也不算绿)。
+// 在 #1153 之前登记簿没有平台档,那时不登记是对的;现在有了,所以这段旧理由已作废。
 // 命名不含闸门词(见 gate-file-registry.test.ts 的 GATE_NAME_TOKENS),不触发命名启发式。
 
 import { describe, expect, test } from "bun:test"
