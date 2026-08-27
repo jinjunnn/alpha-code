@@ -1,0 +1,65 @@
+{
+  "ticket": "jinjunnn/alpha-code#1144",
+  "at": "2026-08-27T02:40:31Z",
+  "gitSha": "6d7b5b6e66cadd7f5ec73a586684f047f782495a",
+  "note": "针对 app.asar 的标记检索。**不用 grep** —— 该文件含大量字面 NUL,默认 grep 会给出假的「没有」;这里逐字节计数,并带两根故意不存在的针自证。",
+  "appAsar": {
+    "path": "/Users/tide/app/alpha-code/.worktrees/ac-1144c/packages/ui-mac/dist/mac-arm64/alpha-code.app/Contents/Resources/app.asar",
+    "bytes": 182813235,
+    "sha256": "4b69c82650d8b495c8092156ce5d14596909dab9ea9e43651b1501fdda386e4d",
+    "literalNulBytes": 2689313
+  },
+  "extBundleFenced": {
+    "path": "/Users/tide/app/alpha-code/.worktrees/ac-1144c/packages/ui-mac/dist/mac-arm64/alpha-code.app/Contents/Resources/alpha-ext/plugin.js",
+    "sha256": "72026e70094326ad6681b60f4d25e5dbc7dc58c764cf416c0471eaca62d07f80"
+  },
+  "extBundleUnfenced": {
+    "path": "/Users/tide/app/alpha-code/.worktrees/ac-1144c/packages/ui-mac/dist/mac-arm64/alpha-code-unfenced.app/Contents/Resources/alpha-ext/plugin.js",
+    "sha256": "9cc40e89fa5e026048782823dba27a256c9ec8afad90cf3ccccb27ca8c95d463"
+  },
+  "branchExtBundle": {
+    "path": "/Users/tide/app/alpha-code/.worktrees/ac-1144c/packages/ext/dist/plugin.js",
+    "sha256": "72026e70094326ad6681b60f4d25e5dbc7dc58c764cf416c0471eaca62d07f80"
+  },
+  "sandboxExecOccurrences": {
+    "fenced": 2,
+    "unfenced": 1
+  },
+  "markerProbes": [
+    {
+      "needle": "AlphaToolPolicy",
+      "expect": "present",
+      "hits": 9,
+      "ok": true
+    },
+    {
+      "needle": "gateToolExecution",
+      "expect": "present",
+      "hits": 6,
+      "ok": true
+    },
+    {
+      "needle": "alpha-app-builtin",
+      "expect": "present",
+      "hits": 1,
+      "ok": true
+    },
+    {
+      "needle": "alpha-app-builtinXYZZY",
+      "expect": "absent",
+      "hits": 0,
+      "ok": true
+    },
+    {
+      "needle": "sandbox-execXYZZY",
+      "expect": "absent",
+      "hits": 0,
+      "ok": true
+    }
+  ],
+  "codeDiffVsPreviousRoundSha": {
+    "previousRoundSha": "8a438007b2ae8b8da76137c68053916ac306f66a",
+    "filesChangedUnderPackages": []
+  },
+  "allMarkerProbesOk": true
+}
