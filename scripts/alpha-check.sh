@@ -47,7 +47,9 @@ CI_STEPS=(
   "test|bun test (ext)|MIRRORED"
   "test|bun test (ui-mac)|MIRRORED"
   "test|bun test (app rolling pin, alpha 判据入门)|MIRRORED"
-  "test|assert gate files (逐个点名,整包地板抓不到单文件消失)|MIRRORED"
+    # `#1153`:同一脚本、两个平台档 —— darwin-only 平台条件闸(真 sandbox-exec 语料)只在本地
+  # (darwin)真执行;CI(ubuntu)对那几行按「本平台不适用」(exit 2)消费为不拦。本地严格更强。
+  "test|assert gate files (逐个点名,整包地板抓不到单文件消失)|SUPERSET:darwin-only 平台条件闸只在本地(darwin)真执行,CI(ubuntu)对它们判「本平台不适用」(exit 2 不拦,#1153)"
   "seed-assets|Assert seed/vendored resources present (B7)|MIRRORED"
   "docs-gate|Relative-link validity in changed Markdown|MIRRORED"
 )
@@ -163,11 +165,18 @@ fi
 # `#777`:下面三步此前**本地完全没有**,而 CI 有。缺 [6/10] 尤其贵 —— 登记闸门里
 # llm / core / opencode 那几个只在这一步执行,别的步骤一条都不覆盖它们。
 echo "▶ [6/10] assert gate files (逐个点名;整包地板抓不到单个闸门文件消失)"
-if bash scripts/assert-gate-files.sh; then
-  echo "    ✓ gate files"
-else
-  echo "    ✗ gate files failed"; fail=1
-fi
+# `#1153`:三档结局(与 [2/10]/[9/10]/[10/10] 同形):0 全部适用行已验证 / 1 真失守拦住 /
+# 2 门绿但存在「本平台不适用」的平台条件行(darwin-only 的 sandbox-exec 语料在非 darwin 上
+# 自报 0 条,登记簿验证标注相符后记「未验证」)。本机是 darwin 而今天登记的平台条件行全是
+# darwin ⇒ 本地到不了第 2 档;到得了的是 CI(ubuntu),那边同一脚本同样按三档消费。
+bash scripts/assert-gate-files.sh
+gate_files_rc=$?
+case "$gate_files_rc" in
+0) echo "    ✓ gate files" ;;
+2) unverified=1 ;; # 脚本自己打了「本平台不适用」清单;不拦 push,但总结行不许再说「全绿」
+*) echo "    ✗ gate files failed"; fail=1 ;;
+esac
+unset gate_files_rc
 
 echo "▶ [7/10] seed assets present (B7)"
 if bash scripts/assert-seed-assets.sh; then

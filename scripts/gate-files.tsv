@@ -31,9 +31,26 @@
 # 该状态,含两条 guarantee 明写「不留余量」的,#844 实测)。改动闸门文件后跑
 #   bash scripts/assert-gate-files.sh --update
 # 从实测自动写回本列,让评审读 TSV 的 diff。
-# `>=N` = 具名例外(下界语义),仅限条数真的会随平台/环境变化的行;guarantee 列必须含
-# 完整且理由有非空白字符的 `[例外:<理由>]`,否则判红。登记值(含例外)必须 > 0。当前**零例外**:89 个文件零平台/环境条件注册,条数逐
-# commit 确定(#844 勘破,两条独立测量轴一致)。
+# `>=N` = 具名例外(下界语义),仅限条数真的会随**环境**变化的行;guarantee 列必须含
+# 完整且理由有非空白字符的 `[例外:<理由>]`,否则判红。登记值(含例外)必须 > 0。当前**零范围例外**
+# (#844 勘破实测,两条独立测量轴一致;条数逐 commit 确定)。
+#
+# ── 平台条件闸(`#1153`)──────────────────────────────────────────────────────
+# guarantee 列含**逐字** `[平台:darwin]`(或 `[平台:linux]`,至多一个,词表 = process.platform
+# 取值)= 该行只在那个平台上适用。语义三档,谁都不豁免:
+#   · 适用平台:照常精确条数(与普通行无异,--update 也照常测量写回);
+#   · 不适用平台:**仍然真跑该文件**,要求它**自报 0 条**(实测 bun 1.3.14 对整文件
+#     describe.skip 打 `0 pass … Ran N tests across 1 file` 且 exit 0)——「不适用」由
+#     登记标注 × 文件自报**两者一致**派生,不是人手标签说了算:该跑的文件被误标 ⇒ 它在本
+#     平台跑出 >0 条 ⇒ 当场红;文件被删 ⇒ 匹配 0 个文件 ⇒ 当场红;
+#   · 存在不适用行的一跑,整体退出码是 2(门绿但那几行的保证本次未被验证),消费方
+#     (alpha-check [6/10] / alpha-ci 的 assert gate files 步)记「未验证」不拦 —— 恒红只会
+#     训练下一个人把 darwin-only 判据摘出登记簿,那正是 #1153 的病根。
+# 平台条件行不得与 `>=N` 例外叠加;标注写歪(平台词不在词表/一行多个)当场红,不静默退化。
+# 为什么需要这一档:REQ-138 的真 sandbox-exec 语料(escape / setid-exec)只在 darwin 存在,
+# 精确条数在 linux 上量到 0 恒红 ⇒ 此前只能不登记 ⇒ 整文件可被静默删掉(上文「整包地板
+# 抓不到单个文件消失」正是为它写的)。
+#
 # 新增闸门文件忘了登记 → packages/ui-mac/src/main/gate-file-registry.test.ts 判红。
 #
 # count	workdir	path	delegates_to	guarantee
@@ -52,6 +69,9 @@
 11	packages/ext	src/gen-skill-paths.test.ts	packages/ui-mac/src/main/ext-receipt-v2.test.ts	REQ-100 skill 注入门:只投影 main 派生的允许集(decoder 强度用例已移至受托方)
 4	packages/ext	src/cloud-contract-hook.test.ts	-	ext 侧契约解码钩子:契约不兼容必须 loud
 11	packages/ext	src/alpha-sandbox-seam.test.ts	-	REQ-138 引擎 shell 围栏接线:cfg.shell 恒指向 wrapper、profile 允许集是闭集、装不上 fail-closed 到 deny stub(真 sandbox-exec 正反语料是 darwin-only 的另一支,CI 上 skip)
+5	packages/ext	src/alpha-sandbox-escape.test.ts	-	REQ-138/#1075 AC2「越界写入落不了盘」的唯一执行者:经生产 wrapEngineShell 装出的 wrapper+profile 真跑 /usr/bin/sandbox-exec,整类逃逸语料正反两跑(围栏 ON 落不了盘 / 同语料围栏 OFF 全部落盘 —— 先证明语料能测出已知的坏)。#1153 前未登记,整删无一门变红(ext 地板 161−13=148>100)。[平台:darwin] 真围栏语料只在 darwin 存在,非 darwin 上文件自报 skip,由本登记簿按「自报 0 条」验证标注,不豁免
+4	packages/ext	src/alpha-sandbox-reassert.test.ts	-	REQ-138/#1075 AC3「用户改 config 不产生无围栏执行」的唯一执行者:每次加载重新包裹 —— cfg.shell 恒指向 wrapper、用户真 shell 记进 ALPHA_REAL_SHELL、填 wrapper 路径不自嵌套。纯逻辑(platform 用 seam 强制 darwin,fs 捕获式 mock),全平台照跑 —— #1153 票面称它 darwin-only 系误记,实测文件零平台门控,故为普通行
+4	packages/ext	src/alpha-sandbox-setid-exec.test.ts	-	#1149 已知代价 K1 的单一权威:围栏开着时 set-ID 二进制在围栏内不可 exec(用户可观察:shell 工具跑 ps/top 得 Operation not permitted)。判据双向各有正样本(意外恢复 exec 红 / 误伤非 set-ID 也红),成员资格从盘上 mode 的 S_ISUID|S_ISGID 派生不靠清单,空输出不算拦住(STARTED 标记缺席 = 测量作废)。真跑 sandbox-exec。[平台:darwin] 非 darwin 上文件自报 skip,由本登记簿按「自报 0 条」验证标注
 
 # ── llm(路由/凭证层;CI 不整包跑上游 llm 测试,只点名 alpha 自有的闸)────────────
 3	packages/llm	test/auth-fail-closed.test.ts	-	#652 凭证 fail-closed:未声明 auth 的 route 不得裸奔(0 次 HTTP + 具名失败),显式 Auth.none 仍放行
