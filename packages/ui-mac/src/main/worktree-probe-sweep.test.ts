@@ -47,7 +47,7 @@
 // 而没有任何东西变红(泄漏本身是不可见的 —— 下一个人只会看见 `git worktree list` 越来越长)。
 // 它因此登记在 scripts/gate-files.tsv 里,拿精确条数。
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -168,6 +168,35 @@ function hooksPathOf(repo: string, home: string): string {
   const r = run(repo, ["git", "config", "--local", "--get", "core.hooksPath"], home)
   return r.out.trim()
 }
+
+/**
+ * `#1156`:**布防轮询专用**的直读版本 —— 不起子进程。
+ *
+ * 病灶(2026-08-28 复现):两处布防循环每 25ms 起 1~2 个 `git` 子进程去看状态。空闲时一次 spawn
+ * ~10ms,采样密;**6 路并发跑整文件时一次 spawn 要 100~500ms**,采样周期塌陷到秒级 ——
+ * 而被观察的窗口是**固定 3 秒**的墙钟(`holdSeconds: 3` / `typecheckScript: "sleep 3"`)。
+ * 于是采样点可能整个错过那个窗口:布防没成,`expect(armed).toBe(true)` 翻红。
+ * 实测复现:6 路并发 × 3 轮 = 18 次整文件,1 次红,**红在 3199ms**(不是 30s 超时)⇒
+ * 循环是从 `proc.exitCode !== null` 早退的,即**窗口被错过**,不是产品竞态。
+ *
+ * 这两个读法直接读 `.git` 下的文件,微秒级、与负载无关 ⇒ 采样率不再随机器忙闲塌陷。
+ * **断言仍走上面基于 `git` 的权威版本**(每格只跑几次,不在热循环里)。
+ */
+function hooksPathFast(repo: string): string {
+  const m = /^\s*hooksPath\s*=\s*(.+?)\s*$/m.exec(readFileSync(join(repo, ".git", "config"), "utf8"))
+  return m ? m[1] : ""
+}
+
+function probeWorktreeNamesFast(repo: string): string[] {
+  try {
+    return readdirSync(join(repo, ".git", "worktrees")).filter((n) => n.startsWith("wtboot-probe-"))
+  } catch {
+    return [] // 一个 worktree 都还没建时该目录不存在
+  }
+}
+
+/** 布防窗口的墙钟预算(远小于每格 30s 超时,留足 quiesce 与断言的余量)。 */
+const ARM_BUDGET_MS = 12_000
 
 /**
  * 等 fixture 相关的进程**全部死透**再断言(`#945`):判「core.hooksPath 还原了」必须在所有
@@ -304,15 +333,16 @@ describe("生产接线:真跑 scripts/assert-worktree-bootstrap.sh(alpha-check �
 
     // 等到「脚本已经动过共享配置(把 core.hooksPath 设成 .githooks)且已经建出自己的探针」——
     // 只有落在这个窗口里,这条用例才同时对两件事有话说。
+    // `#1156`:墙钟预算 + 直读采样(不起子进程)—— 采样率不再随负载塌陷,窗口不会被错过。
     let armed = false
-    for (let i = 0; i < 400; i++) {
-      const probes = registeredWorktreeNames(repo, home).filter((n) => n.startsWith("wtboot-probe-"))
-      if (probes.length > 0 && hooksPathOf(repo, home) === ".githooks") {
+    const armDeadline = Date.now() + ARM_BUDGET_MS
+    while (Date.now() < armDeadline) {
+      if (probeWorktreeNamesFast(repo).length > 0 && hooksPathFast(repo) === ".githooks") {
         armed = true
         break
       }
       if (proc.exitCode !== null) break
-      await Bun.sleep(25)
+      await Bun.sleep(5)
     }
     // 测不到就打印本次测量作废,而不是给一个绿。
     expect(armed).toBe(true)
@@ -343,14 +373,16 @@ describe("生产接线:真跑 scripts/assert-worktree-bootstrap.sh(alpha-check �
     // 等到「install 已把共享值写脏」:此刻必然 bootstrap 子进程活着、它自己的 restore 还没跑。
     // SIGTERM 落在这里,旧实现的孤儿覆写是**确定性**的(#945 时序实测:父的 EXIT trap 立即跑
     // 并正确还原,孤儿 bootstrap 带着「[3/6] 前置之后」的陈旧基线晚 2s 覆写)——不再依赖负载。
+    // `#1156`:同上 —— 本格正是 6 路并发下实测翻红的那一个(红在 3199ms = 窗口被错过)。
     let armed = false
-    for (let i = 0; i < 400; i++) {
-      if (hooksPathOf(repo, home) === ".husky-sim-77/_") {
+    const armDeadline = Date.now() + ARM_BUDGET_MS
+    while (Date.now() < armDeadline) {
+      if (hooksPathFast(repo) === ".husky-sim-77/_") {
         armed = true
         break
       }
       if (proc.exitCode !== null) break
-      await Bun.sleep(25)
+      await Bun.sleep(5)
     }
     expect(armed).toBe(true)
 
@@ -638,4 +670,28 @@ describe("可达性判别依据(#941):半通不通降级,恒 'network' 硬红", 
     expect(readFileSync(join(fx.root, "curl-calls.n"), "utf8").trim()).toBe("5")
     expect(hooksPathOf(fx.repo, fx.home)).toBe(".lane-941h-hooks")
   }, 60_000)
+
+  // `#1156`:布防轮询必须**便宜**,否则并发下采样率塌陷、固定 3s 的观察窗口会被整个错过。
+  // 这两格是那条修复的判据 —— 有人把直读换回子进程轮询,它们当场红。
+  test("`#1156` 判据①:直读版与 git 权威版**读到同一个值**(便宜不能以读错为代价)", () => {
+    const { home, repo } = initFixture({ hooksPath: ".lane-1156-hooks", typecheckScript: "exit 0" })
+    expect(hooksPathFast(repo)).toBe(hooksPathOf(repo, home))
+    expect(hooksPathFast(repo)).toBe(".lane-1156-hooks")
+    // 探针目录还没建 ⇒ 两边都是空集(直读要能扛住目录不存在)
+    expect(probeWorktreeNamesFast(repo)).toEqual([])
+    expect(registeredWorktreeNames(repo, home).filter((n) => n.startsWith("wtboot-probe-"))).toEqual([])
+  }, 30_000)
+
+  test("`#1156` 判据②:200 次直读比 2 次 git 子进程还快 —— 采样率不随负载塌陷", () => {
+    const { home, repo } = initFixture({ hooksPath: ".lane-1156b-hooks", typecheckScript: "exit 0" })
+    const t0 = Date.now()
+    for (let i = 0; i < 200; i++) hooksPathFast(repo)
+    const fastMs = Date.now() - t0
+    const t1 = Date.now()
+    for (let i = 0; i < 2; i++) hooksPathOf(repo, home)
+    const spawnMs = Date.now() - t1
+    // 比值极其宽松(直读单次微秒级、spawn 单次毫秒级),但把「轮询里不许起子进程」钉死:
+    // 换回 spawn 轮询 ⇒ 200 次 spawn 远慢于 2 次 spawn ⇒ 当场红。
+    expect(fastMs).toBeLessThan(spawnMs)
+  }, 30_000)
 })
