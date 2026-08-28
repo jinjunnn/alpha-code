@@ -31,7 +31,7 @@ body{padding:0 0 72px}
 .fv-seg button[aria-checked="true"]{background:var(--a-bg-canvas);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
 .fv-kebab{width:26px;height:26px;border:0;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-tertiary);display:grid;place-items:center;flex:none;cursor:pointer}
 .fv-kebab:hover{background:var(--a-bg-muted);color:var(--a-text)}
-.fv-body{flex:1;min-height:0;overflow-y:auto;background:var(--a-bg-canvas)}
+.fv-body{flex:1;min-height:0;overflow-y:auto;background:var(--a-bg-canvas);display:flex;flex-direction:column}
 .fv-state{display:none}.fv-state.on{display:flex;flex-direction:column;flex:1;min-height:0}
 
 /* markdown 预览体 */
@@ -73,13 +73,8 @@ body{padding:0 0 72px}
 .fv-htmldemo .hp{height:8px;border-radius:4px;background:var(--a-bg-muted)}
 .fv-htmldemo .hp.w2{width:86%}.fv-htmldemo .hp.w3{width:72%}
 .fv-htmldemo .himg{height:74px;width:100%;border-radius:6px;background:var(--a-bg-subtle);border:1px dashed var(--a-border)}
-.fv-pdfchrome{display:flex;align-items:center;gap:10px;height:30px;padding:0 10px;background:#323639;color:#e8eaed;font-size:var(--a-text-2xs);flex:none}
-.fv-pdfchrome .sp{flex:1}
-.fv-pdfstage{flex:1;min-height:0;display:flex;background:#525659}
-.fv-pdfthumbs{width:56px;flex:none;display:flex;flex-direction:column;gap:8px;padding:10px 8px;background:#3c4043}
-.fv-pdfthumbs i{display:block;height:52px;border-radius:2px;background:#f2f2f2;opacity:.9}
-.fv-pdfthumbs i.on{outline:2px solid #8ab4f8}
-.fv-pdfpage{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:hidden}
+.fv-pdfstage{flex:1;min-height:0;display:flex;flex-direction:column;background:#525659;overflow:hidden}
+.fv-pdfpage{display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:hidden}
 .fv-pdfpaper{width:82%;background:#fff;border-radius:2px;box-shadow:0 2px 8px rgba(0,0,0,.4);padding:18px 20px;display:flex;flex-direction:column;gap:8px}
 .fv-pdfpaper .l{height:8px;border-radius:3px;background:#d7d9dd}
 .fv-pdfpaper .l.t{height:12px;width:55%;background:#b9bcc2}
@@ -192,11 +187,12 @@ body{padding:0 0 72px}
           </div>
           <!-- ⑤ PDF -->
           <div class="fv-state" data-state="pdf">
-            <div class="fv-pdfchrome"><span>季度报告.pdf</span><span class="sp"></span><span>1 / 4</span><span>75%</span></div>
             <div class="fv-pdfstage">
-              <div class="fv-pdfthumbs"><i class="on"></i><i></i><i></i><i></i></div>
               <div class="fv-pdfpage"><div class="fv-pdfpaper">
                 <div class="l t"></div><div class="l"></div><div class="l w2"></div><div class="l w3"></div><div class="l"></div><div class="l w2"></div><div class="l w3"></div>
+              </div></div>
+              <div class="fv-pdfpage" style="padding-top:0"><div class="fv-pdfpaper" style="opacity:.55">
+                <div class="l t" style="width:40%"></div><div class="l w2"></div><div class="l w3"></div>
               </div></div>
             </div>
           </div>
@@ -247,7 +243,7 @@ body{padding:0 0 72px}
         <div class="note"><b>头部合同</b>:返回 + 文件名(带上级目录暗示)恒在;模式切换只在该格式有两种呈现时出现(Markdown:预览 | 源码,默认预览);「更多」菜单收纳 在系统中打开 / 打开所在目录 / 另存副本 —— 与格式无关,恒可用(不安全态除外,见下)。</div>
         <div class="note"><b>读取中</b>:读取是有界、分段、可取消的。进度显示已读字节;「取消」立即停止并回到树;切换文件、切换面板、收起右栏、切换会话,读取同样立即停止,不留后台任务。</div>
         <div class="note warn"><b>四种打不开,四种说法</b>:过大(给节选 + 系统打开)、不安全(只说明,零动作 —— 不把可疑文件转交任何应用)、读取失败(可重试)、不支持(事实行 + 系统通道)。每一种都有原因行,不合并、不留白屏。</div>
-        <div class="note"><b>网页与 PDF 就地呈现</b>:内容在查看器主体内的隔离内容区里渲染 —— 网页预览沿用既有隔离通道(无网络、外部资源全拦,拦截数如实显示在顶部状态行);PDF 用内置查看器,含页码缩略图与缩放。两者都不再新开独立窗口。</div>
+        <div class="note"><b>网页与 PDF 就地呈现</b>:内容在查看器主体内的隔离内容区里渲染 —— 网页预览沿用既有隔离通道(无网络、外部资源全拦,拦截数如实显示在顶部状态行);PDF 以精简形态嵌入:不带查看器自带的工具栏(下载 / 打印随之不存在),翻页靠滚动,需要的动作走查看器头部。两者都不再新开独立窗口。</div>
       </div>
     </div>
     <p class="cap">帧内数据均为演示值。隔离内容区(网页 / PDF)的骨架图为示意:实际内容由隔离通道渲染,查看器只画头部、状态行与容器边界。</p>
