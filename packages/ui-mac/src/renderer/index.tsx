@@ -305,9 +305,13 @@ const createPlatform = (): Platform => {
       const focused = await window.api.getWindowFocused().catch(() => document.hasFocus())
       if (focused) return
 
+      // `ac#1160`: no `icon` here on purpose. It used to be a remote URL
+      // (`https://opencode.ai/favicon-96x96-v3.png`) — a live network fetch on every
+      // notification, pointing at a third party's favicon. Omitting the field makes
+      // Notification Center fall back to the app's own bundle icon, which is the icon we
+      // actually ship; a bundled asset would only reintroduce a second copy to keep in sync.
       const notification = new Notification(title, {
         body: description ?? "",
-        icon: "https://opencode.ai/favicon-96x96-v3.png",
       })
       notification.onclick = () => {
         void window.api.showWindow()
