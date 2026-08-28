@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>会话右栏宽度规则增量 · 随窗口计算的上限 + 会话列下限</title>
+<link rel="stylesheet" href="../current/session-workspace/design.css" />
+<style>
+/* 本稿自有类一律 rw- 前缀;基础样式与 --a-* token 来自链接的 session-workspace/design.css。 */
+body{padding:0 0 72px}
+.rw-bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--a-border);background:color-mix(in srgb,var(--a-bg-canvas) 94%,transparent);backdrop-filter:blur(14px)}
+.rw-bar b{font-size:var(--a-text-sm)}.rw-bar span{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}.rw-grow{flex:1}
+.rw-wrap{max-width:1060px;margin:0 auto;padding:26px 24px 0}
+.rw-intro h1{margin:0 0 8px;font-size:24px}
+.rw-intro p{margin:0;color:var(--a-text-secondary);line-height:1.65;max-width:780px}
+
+/* 比例示意条 */
+.rw-scale{margin-top:10px}
+.rw-scalebar{display:flex;height:44px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);overflow:hidden;background:var(--a-bg-canvas);box-shadow:var(--a-shadow-xs)}
+.rw-seg{display:flex;align-items:center;justify-content:center;font-size:var(--a-text-2xs);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;min-width:0}
+.rw-seg.side{background:var(--a-bg-inset);color:var(--a-text-tertiary);flex:none}
+.rw-seg.chat{background:var(--a-bg-canvas);color:var(--a-text-secondary)}
+.rw-seg.rail{background:var(--a-accent-subtle);color:var(--a-accent);border-left:2px solid var(--a-accent);font-weight:var(--a-weight-medium);flex:none}
+.rw-scalecap{display:flex;justify-content:space-between;margin:5px 2px 0;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
+
+/* 近景:拖到上限 */
+.rw-stage{display:flex;height:340px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);overflow:hidden;background:var(--a-bg-canvas);box-shadow:var(--a-shadow-sm);margin-top:10px}
+.rw-chat{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:8px;padding:18px 16px;background:var(--a-bg-canvas);position:relative}
+.rw-line{height:9px;border-radius:5px;background:var(--a-bg-muted);width:100%;max-width:300px}
+.rw-line.w2{max-width:260px}.rw-line.w3{max-width:280px}.rw-line.short{max-width:170px;background:var(--a-accent-subtle)}
+.rw-chatfloor{position:absolute;left:12px;right:12px;bottom:10px;display:flex;align-items:center;gap:8px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs);font-variant-numeric:tabular-nums}
+.rw-chatfloor::before,.rw-chatfloor::after{content:"";flex:1;height:1px;background:var(--a-border)}
+.rw-railmock{flex:none;display:flex;flex-direction:column;background:var(--a-bg-subtle);border-left:1px solid var(--a-border-faint);position:relative}
+.rw-railbody{flex:1;margin:12px;border:1px dashed var(--a-border);border-radius:var(--a-radius-md);display:flex;align-items:center;justify-content:center;color:var(--a-text-tertiary);font-size:var(--a-text-xs);text-align:center;line-height:1.7;background:var(--a-bg-canvas)}
+.rw-gripline{position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--a-accent)}
+.rw-measure{position:absolute;top:8px;left:10px;right:10px;display:flex;align-items:center;gap:8px;color:var(--a-accent);font-size:var(--a-text-2xs);font-variant-numeric:tabular-nums}
+.rw-measure::before,.rw-measure::after{content:"";flex:1;height:1px;background:var(--a-accent-border,var(--a-accent))}
+</style>
+</head>
+<body>
+<div class="rw-bar"><b>会话工作区 · 右栏宽度</b><span>规则增量 · 上限随窗口计算,会话列保下限</span><div class="rw-grow"></div>
+  <div class="seg" id="themeSeg"><button data-theme="light">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="rw-wrap">
+  <div class="rw-intro">
+    <h1>右栏可以拉到会话列让出的一切空间</h1>
+    <p>右栏不再有固定的像素上限:能拉多宽,取决于窗口给了多少 —— 唯一的约束是会话列(时间线 + 输入框)保住自己的最小可用宽度。窗口越大,右栏可用的上限越高;窗口收窄时,右栏先让步,直到自己的下限为止。</p>
+  </div>
+
+  <!-- 规则 -->
+  <section class="sec">
+    <div class="sec-kicker">规则 · 全部约束一张表</div>
+    <h2 class="t">宽度契约</h2>
+    <table class="spec">
+      <tr><th>项</th><th>值 / 规则</th><th>说明</th></tr>
+      <tr><td>右栏最小宽</td><td>320px</td><td>沿用现行契约,不变。</td></tr>
+      <tr><td>右栏默认宽</td><td>400px</td><td>沿用,不变;宽度仍按面板分别记忆。</td></tr>
+      <tr><td>会话列最小可用宽</td><td>480px</td><td>新增。时间线 + 输入框所在列的下限;右栏拉宽永远不把它挤到 480 以下。</td></tr>
+      <tr><td>右栏上限</td><td>会话工作区宽 − 480px</td><td>新规则,取代固定上限。会话工作区 = 窗口除去左侧项目栏后的区域。无固定像素天花板。</td></tr>
+      <tr><td>两条约束冲突时</td><td>右栏下限赢</td><td>工作区不足 800px(320 + 480)时,右栏钉在 320px,会话列吃剩余空间 —— 右栏先让步,让完为止。</td></tr>
+      <tr><td>窗口变化</td><td>实时按当下工作区宽收敛</td><td>收窄:超出上限的右栏立刻缩回;拉宽:记忆宽度不超上限则完整恢复。</td></tr>
+      <tr><td>拖拽 / 键盘</td><td>到达边界即停</td><td>拖拽与 ←/→(步长 16px)在上下限处硬停,无回弹;拖动中左缘 2px 强调线常亮(沿用)。</td></tr>
+      <tr><td>记忆</td><td>记用户选的宽</td><td>按面板记忆沿用;读取时按当下上限收敛显示,记忆值本身不被窗口变化改写。</td></tr>
+    </table>
+    <p class="cap">辅助技术合同:拖宽分隔条的 aria-valuemax 跟随当下的有效上限(动态值),不再是常量;aria-valuemin 恒为 320。</p>
+  </section>
+
+  <!-- 比例示意 -->
+  <section class="sec">
+    <div class="sec-kicker">比例示意 · 同一规则在三种窗口下</div>
+    <h2 class="t">窗口越大,右栏上限越高</h2>
+    <p class="lede">左侧项目栏按现值 256px 计。示意条为等比缩放,标注为真实像素值。</p>
+
+    <div class="rw-scale">
+      <div class="label">窗口 1280px · 上限 544px(会话列正好保住 480)</div>
+      <div class="rw-scalebar" style="max-width:640px">
+        <div class="rw-seg side" style="width:128px">项目栏 256</div>
+        <div class="rw-seg chat" style="flex:1">会话列 ≥480</div>
+        <div class="rw-seg rail" style="width:272px">右栏最宽 544</div>
+      </div>
+    </div>
+    <div class="rw-scale">
+      <div class="label">窗口 1728px · 上限 992px</div>
+      <div class="rw-scalebar" style="max-width:864px">
+        <div class="rw-seg side" style="width:128px">项目栏 256</div>
+        <div class="rw-seg chat" style="flex:1">会话列 ≥480</div>
+        <div class="rw-seg rail" style="width:496px">右栏最宽 992</div>
+      </div>
+    </div>
+    <div class="rw-scale">
+      <div class="label">窗口 2560px · 上限 1824px</div>
+      <div class="rw-scalebar" style="max-width:1024px">
+        <div class="rw-seg side" style="width:102px">项目栏 256</div>
+        <div class="rw-seg chat" style="width:192px">会话列 ≥480</div>
+        <div class="rw-seg rail" style="flex:1">右栏最宽 1824</div>
+      </div>
+    </div>
+    <p class="cap">1280 窗口下新上限是 544px —— 比旧的固定上限还小 16px。这是有意的:旧规则允许把会话列挤到 464px,新规则把这 16px 还给会话列的下限。</p>
+  </section>
+
+  <!-- 近景:拖到上限 -->
+  <section class="sec">
+    <div class="sec-kicker">近景 · 拖到上限时</div>
+    <h2 class="t">硬停在会话列的边上</h2>
+    <div class="panelrow">
+      <div style="flex:2;min-width:420px">
+        <div class="rw-stage">
+          <div class="rw-chat">
+            <div class="rw-line"></div><div class="rw-line w2"></div><div class="rw-line w3"></div><div class="rw-line short"></div><div class="rw-line w2"></div>
+            <div class="rw-chatfloor">会话列 480px · 下限</div>
+          </div>
+          <div class="rw-railmock" style="width:56%">
+            <div class="rw-gripline"></div>
+            <div class="rw-measure">右栏 = 上限</div>
+            <div class="rw-railbody">面板内容随宽度铺满<br/>(预览类内容最受益)</div>
+          </div>
+        </div>
+        <p class="cap">拖到上限:左缘强调线常亮,继续拖无位移。松手记忆当前宽度。</p>
+      </div>
+      <div class="aside">
+        <div class="note"><b>窄窗口(工作区 &lt; 800px)</b>:右栏钉在 320px 下限,不再让步;会话列吃剩余空间,可能低于 480 —— 此时是窗口太小,不是右栏侵占。两个下限都到底后,再窄由窗口自身的最小宽度兜底。</div>
+        <div class="note"><b>不变的部分</b>:tab 条、收起行为、按面板记忆、左缘 6px 拖宽热区与强调线、收起后时间线回中 —— 全部沿用现行形态,本稿只改上限规则。</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  var seg=document.getElementById('themeSeg');
+  var mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function mark(t){seg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.theme===t)});}
+  mark(mq.matches?'dark':'light');
+  seg.querySelectorAll('button').forEach(function(b){b.onclick=function(){document.documentElement.setAttribute('data-theme',b.dataset.theme);mark(b.dataset.theme);};});
+})();
+</script>
+</body>
+</html>
