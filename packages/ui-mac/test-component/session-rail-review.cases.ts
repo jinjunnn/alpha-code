@@ -213,8 +213,9 @@ describe("REQ-125 C2 review panel real Solid mount", () => {
     await flush()
     expect(host.querySelector('[data-review-empty="no-vcs"]')).toBeNull()
     const clean = host.querySelector('[data-review-empty="clean"]')!
-    expect(clean.textContent).toContain("没有未提交的变更")
-    expect(clean.textContent).toContain("本回合还没有改动文件")
+    // REQ-142 AC4: the clean copy states the turn-level semantics honestly.
+    expect(clean.textContent).toContain("本回合没有文件变更")
+    expect(clean.textContent).toContain("助手在回合中修改文件后")
     expect(clean.querySelector("svg path")!.getAttribute("d")).not.toBe(
       noVcs.querySelector("svg path")!.getAttribute("d"),
     )
@@ -330,38 +331,78 @@ describe("REQ-125 C2 review panel real Solid mount", () => {
   })
 })
 
-describe("REQ-125 C2 data container against the typed channel (Major-2)", () => {
-  test("loads the session diff once through the channel and renders arriving data", async () => {
+describe("REQ-125 C2 / REQ-142 data container against the typed channel", () => {
+  test("syncs the session's messages once and renders the latest turn's diffs as they arrive", async () => {
     const host = mountContainer()
     await flush()
 
-    expect(fakeSync.fakeSyncDiffCalls()).toEqual(["ses_a"])
+    expect(fakeSync.fakeSyncSyncCalls()).toEqual(["ses_a"])
     const root = host.querySelector<HTMLElement>("[data-alpha-session-review]")!
     expect(root.getAttribute("data-review-phase")).toBe("loading")
     expect(host.querySelectorAll("[data-review-file]")).toHaveLength(0)
 
-    fakeSync.fakeSyncSetSessionDiff("ses_a", [containerRuntime.containerDiffFixture()])
+    // REQ-142 supply shape: the turn's user message carries summary.diffs.
+    fakeSync.fakeSyncSetMessages("ses_a", [
+      fakeSync.fakeSyncUserMessage("msg_u1", [containerRuntime.containerDiffFixture()]),
+    ])
     await flush()
 
     expect(root.getAttribute("data-review-phase")).toBe("changes")
     expect(host.querySelectorAll("[data-review-file]")).toHaveLength(1)
     // Data arrival must not re-trigger the loader (idempotent load).
-    expect(fakeSync.fakeSyncDiffCalls()).toEqual(["ses_a"])
+    expect(fakeSync.fakeSyncSyncCalls()).toEqual(["ses_a"])
   })
 
-  test("malformed channel payloads degrade to the clean empty state without crashing", async () => {
+  test("a new turn without file changes clears the previous turn's cards (REQ-142 AC4)", async () => {
+    const host = mountContainer()
+    await flush()
+    fakeSync.fakeSyncSetMessages("ses_a", [
+      fakeSync.fakeSyncUserMessage("msg_u1", [containerRuntime.containerDiffFixture()]),
+    ])
+    await flush()
+    const root = host.querySelector<HTMLElement>("[data-alpha-session-review]")!
+    expect(root.getAttribute("data-review-phase")).toBe("changes")
+
+    // Next turn begins: a fresh user message lands; it changed nothing.
+    fakeSync.fakeSyncSetMessages("ses_a", [
+      fakeSync.fakeSyncUserMessage("msg_u1", [containerRuntime.containerDiffFixture()]),
+      fakeSync.fakeSyncUserMessage("msg_u2"),
+    ])
+    await flush()
+    expect(root.getAttribute("data-review-phase")).toBe("clean")
+    expect(host.querySelector('[data-review-empty="clean"]')).not.toBeNull()
+    // No residue from turn 1 (never aggregate across turns).
+    expect(host.querySelectorAll("[data-review-file]")).toHaveLength(0)
+
+    // The empty turn's summarize then lands an explicit empty diff set — still clean.
+    fakeSync.fakeSyncSetMessages("ses_a", [
+      fakeSync.fakeSyncUserMessage("msg_u1", [containerRuntime.containerDiffFixture()]),
+      fakeSync.fakeSyncUserMessage("msg_u2", []),
+    ])
+    await flush()
+    expect(root.getAttribute("data-review-phase")).toBe("clean")
+  })
+
+  test("malformed store payloads degrade to the clean empty state without crashing", async () => {
     const host = mountContainer()
     await flush()
 
-    fakeSync.fakeSyncSetSessionDiff("ses_a", [null, 42, {}, { file: "" }, { file: 7 }, { file: "ok.ts", patch: 9 }])
+    fakeSync.fakeSyncSetMessages("ses_a", [
+      fakeSync.fakeSyncUserMessage("msg_u1", [null, 42, {}, { file: "" }, { file: 7 }, { file: "ok.ts", patch: 9 }]),
+    ])
     await flush()
     const root = host.querySelector<HTMLElement>("[data-alpha-session-review]")!
     expect(root.getAttribute("data-review-phase")).toBe("clean")
     expect(host.querySelector('[data-review-empty="clean"]')).not.toBeNull()
     expect(host.querySelectorAll("[data-review-file]")).toHaveLength(0)
 
-    // Even a non-array value in the keyed store must not throw.
-    fakeSync.fakeSyncSetSessionDiff("ses_a", { corrupt: true })
+    // Hostile store content around the projection must not throw either:
+    // non-object messages, a non-array diffs value, a summary that is not an object.
+    fakeSync.fakeSyncSetMessages("ses_a", [
+      null,
+      42,
+      { role: "user", id: "msg_u2", summary: { diffs: { corrupt: true } } },
+    ])
     await flush()
     expect(root.getAttribute("data-review-phase")).toBe("clean")
     expect(host.querySelectorAll("[data-review-file]")).toHaveLength(0)
@@ -370,7 +411,9 @@ describe("REQ-125 C2 data container against the typed channel (Major-2)", () => 
   test("the comment intent flows out through the container wiring", async () => {
     const host = mountContainer()
     await flush()
-    fakeSync.fakeSyncSetSessionDiff("ses_a", [containerRuntime.containerDiffFixture()])
+    fakeSync.fakeSyncSetMessages("ses_a", [
+      fakeSync.fakeSyncUserMessage("msg_u1", [containerRuntime.containerDiffFixture()]),
+    ])
     await flush()
 
     host.querySelector<HTMLButtonElement>(".a-rvw-fhead")!.click()
@@ -387,22 +430,24 @@ describe("REQ-125 C2 data container against the typed channel (Major-2)", () => 
   test("a stale result for the previous session is never rendered after switching (I8)", async () => {
     const host = mountContainer()
     await flush()
-    expect(fakeSync.fakeSyncDiffCalls()).toEqual(["ses_a"])
+    expect(fakeSync.fakeSyncSyncCalls()).toEqual(["ses_a"])
 
     // Switch to session B while A's load is still outstanding.
     containerRuntime.setContainerSession("ses_b")
     await flush()
-    expect(fakeSync.fakeSyncDiffCalls()).toEqual(["ses_a", "ses_b"])
+    expect(fakeSync.fakeSyncSyncCalls()).toEqual(["ses_a", "ses_b"])
 
-    fakeSync.fakeSyncSetSessionDiff("ses_b", [
-      { file: "b-file.ts", additions: 1, deletions: 0, status: "added" },
+    fakeSync.fakeSyncSetMessages("ses_b", [
+      fakeSync.fakeSyncUserMessage("msg_u1", [{ file: "b-file.ts", additions: 1, deletions: 0, status: "added" }]),
     ])
     await flush()
 
     // A's stale result arrives late — it lands keyed under A and must not surface.
-    fakeSync.fakeSyncSetSessionDiff("ses_a", [
-      { file: "a-file.ts", additions: 3, deletions: 3, status: "modified" },
-      { file: "a2.ts", additions: 1, deletions: 1, status: "modified" },
+    fakeSync.fakeSyncSetMessages("ses_a", [
+      fakeSync.fakeSyncUserMessage("msg_u2", [
+        { file: "a-file.ts", additions: 3, deletions: 3, status: "modified" },
+        { file: "a2.ts", additions: 1, deletions: 1, status: "modified" },
+      ]),
     ])
     await flush()
 
@@ -411,7 +456,7 @@ describe("REQ-125 C2 data container against the typed channel (Major-2)", () => 
     // Switching back reads A from the keyed store without a duplicate load.
     containerRuntime.setContainerSession("ses_a")
     await flush()
-    expect(fakeSync.fakeSyncDiffCalls()).toEqual(["ses_a", "ses_b"])
+    expect(fakeSync.fakeSyncSyncCalls()).toEqual(["ses_a", "ses_b"])
     expect(host.querySelectorAll("[data-review-file]")).toHaveLength(2)
   })
 })

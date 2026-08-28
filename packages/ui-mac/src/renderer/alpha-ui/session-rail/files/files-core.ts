@@ -122,17 +122,20 @@ export function toTreeEntries(parent: string, nodes: readonly unknown[] | undefi
   return entries
 }
 
-/** Session change set → map of workspace-relative file path → change kind. */
-export function statusByFile(
-  diffs: readonly { file?: string; status?: string }[] | undefined,
-  root: string,
-): Map<string, FileChangeKind> {
+/**
+ * Turn change set (REQ-142 `turnDiffsOf` projection) → map of workspace-relative
+ * file path → change kind. Entries arrive unnarrowed from the message store, so
+ * every field is guarded here (fail-closed: malformed entries carry no badge).
+ */
+export function statusByFile(diffs: readonly unknown[] | undefined, root: string): Map<string, FileChangeKind> {
   const map = new Map<string, FileChangeKind>()
   for (const diff of diffs ?? []) {
-    const status = diff.status
+    if (typeof diff !== "object" || diff === null) continue
+    const record = diff as { file?: unknown; status?: unknown }
+    const status = record.status
     if (status !== "added" && status !== "modified" && status !== "deleted") continue
-    if (typeof diff.file !== "string") continue
-    const rel = normalizeToRel(root, diff.file)
+    if (typeof record.file !== "string") continue
+    const rel = normalizeToRel(root, record.file)
     if (!rel) continue
     map.set(rel, status)
   }

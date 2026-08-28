@@ -22,7 +22,7 @@ describe("REQ-125 C2 review panel behavior", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("16 pass")
+    expect(output).toContain("17 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -51,6 +51,10 @@ describe("REQ-125 C2 I1 whitelist and token static ratchets", () => {
 
   test("data flows only through the typed channel in the container; the view is channel-free", () => {
     expect(container).toContain('import { useServerSync } from "@opencode-ai/app"')
+    // REQ-142: the panel projects the latest turn's diffs from the synced message
+    // store; the structurally-dead session_diff channel must stay gone.
+    expect(container).toContain("turnDiffsOf(")
+    expect(container).not.toContain("session_diff")
     expect(view).not.toContain("@opencode-ai/app")
     // The diff itself is never recomputed: the server patch is parsed with the
     // whitelisted jsdiff engine, in core only.

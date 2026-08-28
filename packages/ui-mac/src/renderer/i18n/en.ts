@@ -1494,8 +1494,8 @@ export const dict = {
   "alpha.review.oversized": "Change too large — kept collapsed",
   "alpha.review.emptyNoVcsTitle": "This project is not under version control yet",
   "alpha.review.emptyNoVcsBody": "Put the project under version control and the changes from each turn will show up here.",
-  "alpha.review.emptyCleanTitle": "No uncommitted changes",
-  "alpha.review.emptyCleanBody": "No files changed this turn yet; edits made by the assistant will appear here in real time.",
+  "alpha.review.emptyCleanTitle": "No file changes this turn",
+  "alpha.review.emptyCleanBody": "When the assistant edits files during a turn, the changes show up here.",
 
   "alpha.sidebar.appearance": "Appearance",
   "alpha.sidebar.themeLight": "Light",
