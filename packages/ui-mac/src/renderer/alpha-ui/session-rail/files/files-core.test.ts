@@ -18,6 +18,7 @@ import {
   toTreeEntries,
   watcherRefreshTarget,
 } from "./files-core"
+import { turnDiffsOf } from "../review/review-turn-diffs"
 
 const ROOT = "/Users/demo/app/workspace"
 
@@ -155,6 +156,30 @@ describe("REQ-125 C3 files-core — path discipline (baseline §③.3)", () => {
     expect(map.get("docs/说明.md")).toBe("added")
     expect(map.get("gone.ts")).toBe("deleted")
     expect(map.size).toBe(3)
+  })
+
+  test("badges derive from the REQ-142 turn projection over a real-shaped user message", () => {
+    // Real message shape as persisted by the engine (verified 2026-08-28 against a live
+    // session: user message info carries summary.diffs after the turn's summarize).
+    const messages = [
+      {
+        id: "msg_u1",
+        role: "user",
+        time: { created: 1 },
+        agent: "build",
+        model: { providerID: "deepseek", modelID: "deepseek-v4-flash" },
+        summary: {
+          diffs: [{ file: "notes.txt", patch: "…", additions: 1, deletions: 1, status: "modified" }],
+        },
+      },
+      { id: "msg_a1", role: "assistant", parentID: "msg_u1", time: { created: 2 } },
+    ]
+    const map = statusByFile(turnDiffsOf(messages), ROOT)
+    expect(map.get("notes.txt")).toBe("modified")
+    expect(map.size).toBe(1)
+    // Store not loaded → no badges; malformed entries → no badges (fail-closed).
+    expect(statusByFile(turnDiffsOf(undefined), ROOT).size).toBe(0)
+    expect(statusByFile([null, 42, { file: 7, status: "modified" }], ROOT).size).toBe(0)
   })
 
   test("sanitizeSearchRows bounds, dedupes, and normalizes results", () => {

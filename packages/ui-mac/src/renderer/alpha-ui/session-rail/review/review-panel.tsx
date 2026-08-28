@@ -1,15 +1,18 @@
-// REQ-125 C2 — right-rail review panel, typed data container.
+// REQ-125 C2 / REQ-142 — right-rail review panel, typed data container.
 //
-// Reads the session's diff records from the typed `useServerSync` channel keyed
-// by the C1 live identity, and triggers the idempotent SDK-side load. All async
-// results stay inside the upstream keyed store — the panel keeps no local copy,
-// so a session switch can never surface another session's diff (I8). Form and
-// interaction live in `review-panel-view.tsx` (I1: alpha-owned, layout-free of
-// upstream session components).
+// Reads the latest turn's diff records by projecting the synced message store
+// (`turnDiffsOf`: the engine persists each turn's changes into that turn's
+// user message, REQ-142) keyed by the C1 live identity, and triggers the
+// idempotent message sync. All async results stay inside the upstream keyed
+// store — the panel keeps no local copy, so a session switch can never surface
+// another session's diff (I8). Form and interaction live in
+// `review-panel-view.tsx` (I1: alpha-owned, layout-free of upstream session
+// components).
 import { useServerSync } from "@opencode-ai/app"
 import { createEffect, createMemo, untrack } from "solid-js"
 import type { AlphaSessionLiveContext, SessionRailApi } from "../../session-workspace/session-workspace-shell"
 import { projectVcsFor, reviewFileChangeOf, reviewIdentityKeyOf, reviewPhaseOf } from "./review-core"
+import { turnDiffsOf } from "./review-turn-diffs"
 import { SessionRailReviewPanelView, type ReviewLineCommentIntent } from "./review-panel-view"
 
 export function SessionRailReviewPanel(props: {
@@ -24,7 +27,7 @@ export function SessionRailReviewPanel(props: {
   const changes = createMemo(() => {
     const id = identity()
     if (!id) return undefined
-    return serverSync().session.data.session_diff[id.sessionID]
+    return turnDiffsOf(serverSync().session.data.message[id.sessionID])
   })
   // Fail-closed narrowing of the channel payload: a non-array or malformed
   // record never reaches the view (it degrades to the clean empty state).
@@ -48,15 +51,16 @@ export function SessionRailReviewPanel(props: {
     })
   })
 
-  // Idempotent initial load: the result lands in the upstream store keyed by
-  // sessionID (no panel-local async state); live `session.diff` events keep it fresh.
+  // Idempotent initial load: sync the session's messages into the upstream
+  // store keyed by sessionID (no panel-local async state); live
+  // `message.updated` events keep the projection fresh afterwards.
   createEffect(() => {
     const id = identity()
     if (!id) return
     if (!serverSync().ready) return
     if (!props.live.accepts(id)) return
-    if (untrack(() => serverSync().session.data.session_diff[id.sessionID] !== undefined)) return
-    void serverSync().session.diff(id.sessionID)
+    if (untrack(() => serverSync().session.data.message[id.sessionID] !== undefined)) return
+    void serverSync().session.sync(id.sessionID)
   })
 
   return (

@@ -72,7 +72,10 @@ describe("REQ-125 C3 I1 whitelist ratchet (baseline §③)", () => {
     expect(wiring).toContain("useServerSync")
     expect(wiring).toContain("useLayout")
     expect(wiring).toContain("props.live.accepts(identity)")
-    expect(wiring).toContain("session_diff")
+    // REQ-142: badges derive from the turn-level projection over the synced
+    // message store; the structurally-dead session_diff channel must stay gone.
+    expect(wiring).toContain("turnDiffsOf(")
+    expect(wiring).not.toContain("session_diff")
   })
 })
 

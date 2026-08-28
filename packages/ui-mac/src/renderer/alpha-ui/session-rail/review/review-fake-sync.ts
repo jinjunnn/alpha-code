@@ -1,9 +1,9 @@
-// REQ-125 C2 — test-only fake of the `useServerSync` typed channel.
+// REQ-125 C2 / REQ-142 — test-only fake of the `useServerSync` typed channel.
 // The component cases install it via `mock.module("@opencode-ai/app", …)` so the
-// real data container (`SessionRailReviewPanel`) runs against a controllable,
-// keyed store with the same shape as the upstream channel: `session_diff`
-// keyed by sessionID, an idempotent `session.diff` loader, `ready`, and the
-// global project list.
+// real data containers run against a controllable, keyed store with the same
+// shape as the upstream channel: the synced `message` store keyed by sessionID
+// (REQ-142: turn diffs live on the turn's user message), an idempotent
+// `session.sync` loader, `ready`, and the global project list.
 import { createSignal } from "solid-js"
 
 export interface FakeProject {
@@ -15,8 +15,8 @@ const DEFAULT_PROJECTS: FakeProject[] = [{ worktree: "/tmp/workspace", vcs: "git
 
 const [ready, setReady] = createSignal(true)
 const [projects, setProjects] = createSignal<FakeProject[]>(DEFAULT_PROJECTS)
-const [sessionDiffs, setSessionDiffs] = createSignal<Record<string, unknown>>({})
-const diffCalls: string[] = []
+const [messages, setMessages] = createSignal<Record<string, unknown[] | undefined>>({})
+const syncCalls: string[] = []
 
 const sync = () => ({
   get ready() {
@@ -29,12 +29,12 @@ const sync = () => ({
   },
   session: {
     data: {
-      get session_diff() {
-        return sessionDiffs()
+      get message() {
+        return messages()
       },
     },
-    diff(sessionID: string) {
-      diffCalls.push(sessionID)
+    sync(sessionID: string) {
+      syncCalls.push(sessionID)
       return Promise.resolve()
     },
   },
@@ -45,13 +45,25 @@ export function useServerSync() {
   return sync
 }
 
-export function fakeSyncDiffCalls(): readonly string[] {
-  return diffCalls
+export function fakeSyncSyncCalls(): readonly string[] {
+  return syncCalls
 }
 
-/** Simulate a load result (or a live event) landing in the keyed store. */
-export function fakeSyncSetSessionDiff(sessionID: string, value: unknown) {
-  setSessionDiffs((current) => ({ ...current, [sessionID]: value }))
+/** Simulate a message page (or a live `message.updated` batch) landing in the keyed store. */
+export function fakeSyncSetMessages(sessionID: string, value: unknown[]) {
+  setMessages((current) => ({ ...current, [sessionID]: value }))
+}
+
+/** A real-shaped user message carrying the turn's diff records (REQ-142 supply shape). */
+export function fakeSyncUserMessage(id: string, diffs?: unknown) {
+  return {
+    id,
+    role: "user",
+    time: { created: Date.now() },
+    agent: "build",
+    model: { providerID: "deepseek", modelID: "deepseek-v4-flash" },
+    ...(diffs === undefined ? {} : { summary: { diffs } }),
+  }
 }
 
 export function fakeSyncSetReady(next: boolean) {
@@ -65,6 +77,6 @@ export function fakeSyncSetProjects(next: FakeProject[]) {
 export function resetFakeSync() {
   setReady(true)
   setProjects(DEFAULT_PROJECTS)
-  setSessionDiffs({})
-  diffCalls.length = 0
+  setMessages({})
+  syncCalls.length = 0
 }

@@ -3,7 +3,9 @@
  *
  * Data comes exclusively from whitelisted public typed channels (baseline I1):
  * - workspace tree + name filter: directory-scoped SDK (`useServerSDK` → file.list / find.files)
- * - session change badges: `useServerSync().session` change set (session_diff, event-fed)
+ * - session change badges: the turn-level diff projection over the synced message store
+ *   (REQ-142 `turnDiffsOf`: the engine persists each turn's changes into that turn's user
+ *   message; `message.updated` events keep it fresh)
  * - opened files: the upstream layout session-tab store (`useLayout().tabs`), shared via the
  *   parity session state key so both surfaces see the same opened set
  * Rendering is fully alpha-held; no upstream session DOM/components are touched.
@@ -16,6 +18,7 @@
 import { useLayout, useServerSDK, useServerSync } from "@opencode-ai/app"
 import { createEffect, createMemo, onCleanup, Show } from "solid-js"
 import type { AlphaSessionLiveContext, SessionRailApi } from "../../session-workspace/session-workspace-shell"
+import { turnDiffsOf } from "../review/review-turn-diffs"
 import { sessionStateKey, statusByFile } from "./files-core"
 import { createFilesPanelState } from "./files-state"
 import { SessionRailFilesView } from "./files-view"
@@ -49,12 +52,14 @@ function FilesPanel(props: { live: AlphaSessionLiveContext; rail: SessionRailApi
   const dirContext = createMemo(() => serverSDK().ensureDirSdkContext(identity.directory))
   const tabs = layout.tabs(() => sessionStateKey(serverSDK().scope, identity.directory, identity.sessionID))
   const changeKinds = createMemo(() =>
-    statusByFile(serverSync().session.data.session_diff[identity.sessionID], identity.directory),
+    statusByFile(turnDiffsOf(serverSync().session.data.message[identity.sessionID]), identity.directory),
   )
 
-  // Load the session change set once; server events keep it fresh afterwards.
+  // Idempotent initial load of the session's messages; `message.updated` events
+  // keep the badge projection fresh afterwards.
   createEffect(() => {
-    void serverSync().session.diff(identity.sessionID)
+    if (serverSync().session.data.message[identity.sessionID] !== undefined) return
+    void serverSync().session.sync(identity.sessionID)
   })
 
   const state = createFilesPanelState({
