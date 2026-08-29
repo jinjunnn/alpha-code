@@ -636,6 +636,57 @@ body[data-alpha-sidebar="open"] .alpha-wb-page {
   color: var(--a-text-secondary);
   font-size: var(--a-text-md);
 }
+/* REQ-123(#1175):提取内容视图 —— pass 分支默认呈现;排版不保真,只有纯文本流。 */
+.a-wb-office-content {
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-bg-subtle);
+  font-size: var(--a-text-sm);
+}
+.a-wb-office-fidelity {
+  margin: 0 0 10px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+.a-wb-office-para {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.a-wb-office-slide {
+  padding: 8px 0;
+  border-top: 1px solid var(--a-border-faint);
+}
+.a-wb-office-slide:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.a-wb-office-slide-h {
+  margin: 0 0 6px;
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-semibold);
+  color: var(--a-text-secondary);
+  text-transform: none;
+}
+.a-wb-office-notes {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--a-border-strong);
+  background: var(--a-bg-muted);
+  border-radius: var(--a-radius-sm);
+}
+.a-wb-office-notes > b {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+}
+.a-wb-office-extract-failed code {
+  font-size: var(--a-text-2xs);
+}
 .a-wb-office-actions .a-wb-btn {
   min-height: 34px;
 }

@@ -30,6 +30,7 @@ import {
   type OfficeRejectionCategory,
   type OfficeStructurePresentation,
 } from "./office-structure"
+import type { OfficeTextExtraction, OfficeTextModel } from "./office-text"
 import { ArtifactHtmlPreview, canPreviewHtml } from "../../artifact-html-preview"
 
 export type PreviewContext = {
@@ -40,6 +41,9 @@ export type PreviewContext = {
   decision: RouteDecision
   card: ArtifactCard
   officeStructure: OfficeStructurePresentation | null
+  // REQ-123(#1175)接线缝:pass 分支的默认内容视图。undefined = 提取通路尚未接线
+  // (#1174 的取字节咽喉 + 共享安全解析落地后由调用方装配),呈现为诚实占位。
+  officeText?: OfficeTextExtraction
 }
 
 export type PreviewProps = { ctx: PreviewContext }
@@ -315,6 +319,47 @@ const OFFICE_REJECTION_KEYS = {
   "type-mismatch": "alpha.wb.office.rejection.type",
 } as const satisfies Record<OfficeRejectionCategory, Parameters<typeof t>[0]>
 
+// REQ-123(#1175)AC1/AC3/AC6:提取文本内容视图 —— pass 分支的默认呈现。
+// 一切文本只经 Solid 文本节点(基线 ③ 类 3/5:纯数据文本,无 innerHTML 注入路径);
+// 保真声明明写排版不保真(AC6);pptx 按权威页序分页呈现,备注独立成块。
+const OfficeTextContent: Component<{ model: OfficeTextModel }> = (props) => {
+  const nonEmpty = (lines: string[]) => lines.filter((line) => line.trim().length > 0)
+  return (
+    <div class="a-wb-office-content" data-office-content aria-label={t("alpha.wb.office.contentTitle")}>
+      <p class="a-wb-office-fidelity" data-office-fidelity>{t("alpha.wb.office.fidelityNote")}</p>
+      <Show when={props.model.kind === "docx" ? props.model : undefined} keyed>
+        {(docx) => (
+          <For each={nonEmpty(docx.paragraphs)}>
+            {(paragraph) => <p class="a-wb-office-para">{paragraph}</p>}
+          </For>
+        )}
+      </Show>
+      <Show when={props.model.kind === "pptx" ? props.model : undefined} keyed>
+        {(pptx) => (
+          <For each={pptx.slides}>
+            {(slide, index) => (
+              <section class="a-wb-office-slide" data-office-slide={index() + 1}>
+                <h4 class="a-wb-office-slide-h">{t("alpha.wb.office.slideLabel", { n: index() + 1 })}</h4>
+                <For each={nonEmpty(slide.paragraphs)}>
+                  {(paragraph) => <p class="a-wb-office-para">{paragraph}</p>}
+                </For>
+                <Show when={nonEmpty(slide.notes).length > 0}>
+                  <div class="a-wb-office-notes" data-office-notes>
+                    <b>{t("alpha.wb.office.notesLabel")}</b>
+                    <For each={nonEmpty(slide.notes)}>
+                      {(note) => <p class="a-wb-office-para">{note}</p>}
+                    </For>
+                  </div>
+                </Show>
+              </section>
+            )}
+          </For>
+        )}
+      </Show>
+    </div>
+  )
+}
+
 export const OfficeArtifactView: Component<PreviewProps> = (props) => {
   const [quickLookFailure, setQuickLookFailure] = createSignal<string | null>(null)
   const [quickLookBusy, setQuickLookBusy] = createSignal(false)
@@ -322,6 +367,15 @@ export const OfficeArtifactView: Component<PreviewProps> = (props) => {
   let quickLookButton: HTMLButtonElement | undefined
   const rejection = () =>
     props.ctx.officeStructure?.status === "rejected" ? props.ctx.officeStructure : undefined
+  // REQ-123 IA(基线 ②-5):提取内容视图是 pass 分支的默认呈现,Quick Look 降为次级动作。
+  const extractedModel = () => {
+    const extraction = props.ctx.officeText
+    return extraction?.status === "extracted" ? extraction.model : undefined
+  }
+  const extractionFailure = () => {
+    const extraction = props.ctx.officeText
+    return extraction?.status === "failed" ? extraction : undefined
+  }
 
   createEffect(() => {
     props.ctx.card.key
@@ -492,14 +546,37 @@ export const OfficeArtifactView: Component<PreviewProps> = (props) => {
             </div>
           )}
         </Show>
-        <div
-          class="a-wb-office-placeholder"
-          role="img"
-          aria-label={t("alpha.wb.office.contentAria")}
+        <Show
+          when={extractedModel()}
+          keyed
+          fallback={
+            <Show
+              when={extractionFailure()}
+              keyed
+              fallback={
+                <div
+                  class="a-wb-office-placeholder"
+                  role="img"
+                  aria-label={t("alpha.wb.office.contentAria")}
+                >
+                  <b>{t("alpha.wb.office.contentTitle")}</b>
+                  <span>{t("alpha.wb.office.contentNote")}</span>
+                </div>
+              }
+            >
+              {(failure) => (
+                // 提取失败 = 诚实降级卡(基线 ③ 类 6):不空白、不伪造;原件与其余动作不受影响。
+                <div class="a-wb-notice a-wb-office-extract-failed" data-kind="warn" role="status" data-office-extract-failed>
+                  <b>{t("alpha.wb.office.extractFailed")}</b>
+                  <span>{t("alpha.wb.office.extractFailedDetail")}</span>
+                  <code>{failure.code}</code>
+                </div>
+              )}
+            </Show>
+          }
         >
-          <b>{t("alpha.wb.office.contentTitle")}</b>
-          <span>{t("alpha.wb.office.contentNote")}</span>
-        </div>
+          {(model) => <OfficeTextContent model={model} />}
+        </Show>
         <div class="a-wb-toolbar a-wb-office-actions">
           <Show when={props.ctx.card.descriptor}>
             <button
@@ -507,7 +584,6 @@ export const OfficeArtifactView: Component<PreviewProps> = (props) => {
               type="button"
               class="a-wb-btn"
               data-office-action="quick-look"
-              data-variant="primary"
               disabled={quickLookBusy()}
               onClick={quickLook}
             >
