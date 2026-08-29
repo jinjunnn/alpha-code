@@ -33,6 +33,76 @@ describe("detectOoxmlContainer:canonical real fixtures", () => {
   })
 })
 
+describe("REQ-123 #1174:content-part retention through the single inflate pass", () => {
+  const encoder = new TextEncoder()
+
+  test("allowlisted xlsx parts come back byte-for-byte on the detected result, others do not", async () => {
+    const sheet = `<worksheet><sheetData/></worksheet>`
+    const extras: FixtureEntry[] = [
+      ["xl/worksheets/sheet1.xml", sheet],
+      ["xl/worksheets/_rels/sheet1.xml.rels", `<Relationships/>`],
+      ["xl/sharedStrings.xml", `<sst/>`],
+      ["xl/_rels/workbook.xml.rels", `<Relationships/>`],
+      ["docProps/core.xml", `<coreProperties/>`],
+    ]
+    const result = await detectOoxmlContainer(await makeZip([...fixtureEntries("xlsx"), ...extras]), {
+      retainContentParts: true,
+    })
+    expect(result.status).toBe("detected")
+    if (result.status !== "detected") return
+    expect([...result.parts!.keys()].sort()).toEqual([
+      "xl/_rels/workbook.xml.rels",
+      "xl/sharedStrings.xml",
+      "xl/workbook.xml",
+      "xl/worksheets/_rels/sheet1.xml.rels",
+      "xl/worksheets/sheet1.xml",
+    ])
+    expect([...result.parts!.get("xl/worksheets/sheet1.xml")!]).toEqual([...encoder.encode(sheet)])
+    expect([...result.parts!.get("xl/workbook.xml")!]).toEqual([...encoder.encode(mainPartXml("xlsx"))])
+  })
+
+  test("pptx prefixes cover slides, notesSlides, and their _rels;presentation rels is exact", async () => {
+    const extras: FixtureEntry[] = [
+      ["ppt/slides/slide1.xml", `<p:sld/>`],
+      ["ppt/slides/_rels/slide1.xml.rels", `<Relationships/>`],
+      ["ppt/notesSlides/notesSlide1.xml", `<p:notes/>`],
+      ["ppt/_rels/presentation.xml.rels", `<Relationships/>`],
+      ["ppt/theme/theme1.xml", `<a:theme/>`],
+    ]
+    const result = await detectOoxmlContainer(await makeZip([...fixtureEntries("pptx"), ...extras]), {
+      retainContentParts: true,
+    })
+    expect(result.status).toBe("detected")
+    if (result.status !== "detected") return
+    expect([...result.parts!.keys()].sort()).toEqual([
+      "ppt/_rels/presentation.xml.rels",
+      "ppt/notesSlides/notesSlide1.xml",
+      "ppt/presentation.xml",
+      "ppt/slides/_rels/slide1.xml.rels",
+      "ppt/slides/slide1.xml",
+    ])
+  })
+
+  test("without the opt-in, the detected result carries no parts field at all", async () => {
+    const result = await detectOoxmlContainer(await makeOoxmlFixture("docx"))
+    expect(result.status).toBe("detected")
+    expect("parts" in result).toBe(false)
+  })
+
+  test("AC7:a rejection after parts were already inflated still returns no bytes, structurally", async () => {
+    // word/document.xml is allowlisted and inflates before the main-part-conflict check fires,
+    // so retention has happened internally — and none of it may leave on the rejected branch.
+    const result = await detectOoxmlContainer(
+      await makeZip([...fixtureEntries("xlsx"), ["word/document.xml", `<w:document/>`]]),
+      { retainContentParts: true },
+    )
+    expect(result.status).toBe("rejected")
+    if (result.status !== "rejected") return
+    expect(result.code).toBe("OOXML_MAIN_PART_CONFLICT")
+    expect("parts" in result).toBe(false)
+  })
+})
+
 describe("canonical EOCD and central-directory interpretation", () => {
   test("truncated local-file container has no EOCD", async () => {
     await expectCode(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00]), "ZIP_EOCD_MISSING")
