@@ -62,6 +62,8 @@ export interface FilesPanelIO {
     setActive: (tab: string) => void
   }
   jumpToReview: (path: string) => void
+  /** REQ-108(#244):打开文件查看器(文件面板的下钻层)。缺席时保持旧行为(只记 tab)。 */
+  openViewer?: (path: string) => void
   searchLimit?: number
   searchDebounceMs?: number
   /** I7 bounds for the lazily loaded tree (tests inject small values). */
@@ -224,7 +226,10 @@ export function createFilesPanelState(io: FilesPanelIO) {
   const selectOpened = (tab: string) => {
     io.openedTabs.setActive(tab)
     const path = relPathFromTab(tab)
-    if (path) setSelected(path)
+    if (path) {
+      setSelected(path)
+      io.openViewer?.(path)
+    }
   }
 
   const closeOpened = (tab: string) => {
@@ -234,8 +239,8 @@ export function createFilesPanelState(io: FilesPanelIO) {
   // ── rows ───────────────────────────────────────────────────────────────────────────────
   const badge = (path: string) => io.changeKinds().get(path)
 
-  // Approved linkage contract: a badged (session-changed) file jumps to the review panel's
-  // file card; a plain file opens as a session tab.
+  // Approved linkage contract(REQ-108 修订):带改动标的行跳审查(改动优先看 diff);
+  // 无改动标的行打开文件查看器(下钻层)。打开列表仍然登记(「已打开」组的数据源)。
   const activateFile = (path: string) => {
     setSelected(path)
     if (badge(path)) {
@@ -243,6 +248,7 @@ export function createFilesPanelState(io: FilesPanelIO) {
       return
     }
     io.openedTabs.open(relPathToTab(path))
+    io.openViewer?.(path)
   }
 
   const dirState = (path: string): DirState | undefined => tree.dir[path]

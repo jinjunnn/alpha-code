@@ -471,3 +471,32 @@
     transition: none;
   }
 }
+
+/* ── REQ-108:文件卡头部「查看整份文件」 ─────────────────────────────────────────────── */
+
+.a-rvw-fhead-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.a-rvw-fhead-row .a-rvw-fhead {
+  flex: 1;
+  min-width: 0;
+}
+
+.a-rvw-fopen {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+}
+
+.a-rvw-fopen:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}

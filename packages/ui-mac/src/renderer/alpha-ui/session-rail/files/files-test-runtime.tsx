@@ -4,7 +4,7 @@
  * behavior (lazy tree loads, debounce/abort, identity binding) without app contexts.
  */
 
-import { createSignal } from "solid-js"
+import { createSignal, Show } from "solid-js"
 import {
   sameSessionIdentity,
   type AlphaSessionIdentity,
@@ -19,6 +19,17 @@ import {
 import type { FileChangeKind } from "./files-core"
 import { createFilesPanelState, type FilesPanelIO, type FilesPanelState } from "./files-state"
 import { SessionRailFilesView } from "./files-view"
+import type {
+  FileViewerRefusal,
+  RailPreviewBounds,
+  RailPreviewClosedEvent,
+  RailPreviewOpenResult,
+  WorkspaceFileChunkResult,
+} from "../../../../shared/file-viewer"
+import { FILE_VIEWER_CHUNK_BYTES } from "../../../../shared/file-viewer"
+import type { FileViewerOverlayIO } from "./file-viewer-io"
+import { createFileViewerState, type FileViewerState } from "./file-viewer-state"
+import { FileViewerView } from "./file-viewer-view"
 
 export interface FilesHarnessCalls {
   listDir: string[]
@@ -27,6 +38,7 @@ export interface FilesHarnessCalls {
   open: string[]
   close: string[]
   setActive: string[]
+  openViewer: string[]
 }
 
 export function createFilesHarness(options?: {
@@ -36,7 +48,15 @@ export function createFilesHarness(options?: {
   treeDirCap?: number
   treeTotalCap?: number
 }) {
-  const calls: FilesHarnessCalls = { listDir: [], findFiles: [], jumpToReview: [], open: [], close: [], setActive: [] }
+  const calls: FilesHarnessCalls = {
+    listDir: [],
+    findFiles: [],
+    jumpToReview: [],
+    open: [],
+    close: [],
+    setActive: [],
+    openViewer: [],
+  }
   const [tabsAll, setTabsAll] = createSignal<string[]>([])
   const [tabActive, setTabActive] = createSignal<string | undefined>()
   const [changeKinds, setChangeKinds] = createSignal<ReadonlyMap<string, FileChangeKind>>(new Map())
@@ -77,6 +97,9 @@ export function createFilesHarness(options?: {
     jumpToReview: (path) => {
       calls.jumpToReview.push(path)
     },
+    openViewer: (path) => {
+      calls.openViewer.push(path)
+    },
     searchDebounceMs: options?.searchDebounceMs ?? 0,
   }
 
@@ -112,4 +135,142 @@ export function createShellCaseHarness() {
     review: (rail) => <div data-fake-review-panel>{rail.reviewTarget()?.file ?? ""}</div>,
   })
   return { Shell: harness.Shell, rail: () => railApi, setSnapshot: harness.setSnapshot, identity: harness.identity }
+}
+
+
+// ── REQ-108 file viewer harness ──────────────────────────────────────────────────────────
+
+export interface ViewerFakeFile {
+  content?: string | Uint8Array
+  /** openRead 报告的总大小(缺省 = content 长度;override 用来演过大文件)。 */
+  totalBytes?: number
+  refusal?: FileViewerRefusal
+}
+
+export interface ViewerHarnessCalls {
+  openRead: string[]
+  readChunk: Array<{ readId: string; offset: number; length: number }>
+  closeRead: string[]
+  openExternal: string[]
+  reveal: string[]
+  saveCopy: string[]
+  overlayOpen: Array<{ path: string; kind: string; bounds: RailPreviewBounds }>
+  overlayClose: string[]
+  overlaySetBounds: string[]
+}
+
+export function createViewerHarness(options: {
+  files: Record<string, ViewerFakeFile>
+  /** true = readChunk 挂起,由 releaseChunk() 手动放行(测取消/迟到内容)。 */
+  gated?: boolean
+  overlayOpenResult?: RailPreviewOpenResult
+}) {
+  const calls: ViewerHarnessCalls = {
+    openRead: [],
+    readChunk: [],
+    closeRead: [],
+    openExternal: [],
+    reveal: [],
+    saveCopy: [],
+    overlayOpen: [],
+    overlayClose: [],
+    overlaySetBounds: [],
+  }
+  let nextRead = 0
+  const contents = new Map<string, Uint8Array>()
+  const totals = new Map<string, number>()
+  const pending: Array<() => void> = []
+  const overlayClosedCbs = new Set<(e: RailPreviewClosedEvent) => void>()
+
+  const bytesOf = (file: ViewerFakeFile): Uint8Array => {
+    if (file.content === undefined) return new Uint8Array(0)
+    return typeof file.content === "string" ? new TextEncoder().encode(file.content) : file.content
+  }
+
+  const io = {
+    openRead: (path: string) => {
+      calls.openRead.push(path)
+      const file = options.files[path]
+      if (!file) return Promise.resolve({ ok: false as const, code: "not-found" as const })
+      if (file.refusal) return Promise.resolve({ ok: false as const, code: file.refusal })
+      const readId = `read_${++nextRead}`
+      const bytes = bytesOf(file)
+      contents.set(readId, bytes)
+      totals.set(readId, file.totalBytes ?? bytes.length)
+      return Promise.resolve({ ok: true as const, readId, totalBytes: file.totalBytes ?? bytes.length })
+    },
+    readChunk: (readId: string, offset: number, length: number) => {
+      calls.readChunk.push({ readId, offset, length })
+      const compute = (): WorkspaceFileChunkResult => {
+        const bytes = contents.get(readId)
+        if (!bytes) return { ok: false, code: "read-failed" }
+        const want = Math.min(length, FILE_VIEWER_CHUNK_BYTES)
+        const slice = bytes.subarray(offset, Math.min(offset + want, bytes.length))
+        return { ok: true, bytes: slice, eof: offset + slice.length >= bytes.length }
+      }
+      if (!options.gated) return Promise.resolve(compute())
+      return new Promise<WorkspaceFileChunkResult>((resolve) => {
+        pending.push(() => resolve(compute()))
+      })
+    },
+    closeRead: (readId: string) => {
+      calls.closeRead.push(readId)
+      contents.delete(readId)
+    },
+    openExternal: (path: string) => calls.openExternal.push(path),
+    reveal: (path: string) => calls.reveal.push(path),
+    saveCopy: (path: string) => calls.saveCopy.push(path),
+  }
+
+  const overlayIO: FileViewerOverlayIO = {
+    open: (path, kind, bounds) => {
+      calls.overlayOpen.push({ path, kind, bounds })
+      return Promise.resolve(options.overlayOpenResult ?? { ok: true, previewId: `rp_${calls.overlayOpen.length}` })
+    },
+    setBounds: (previewId) => void calls.overlaySetBounds.push(previewId),
+    close: (previewId) => void calls.overlayClose.push(previewId),
+    status: (previewId) => Promise.resolve({ ok: true, previewId, open: true, blockedPaths: [] }),
+    onClosed: (cb) => {
+      overlayClosedCbs.add(cb)
+      return () => overlayClosedCbs.delete(cb)
+    },
+  }
+
+  const [active, setActive] = createSignal(true)
+  let viewer: FileViewerState | undefined
+  const exits: number[] = []
+
+  // 组合形态与生产 wiring 同构:树层常驻 + 查看器覆盖层(inert 效果由 wiring 持有,这里不复制)。
+  const View = () => {
+    viewer = createFileViewerState(io)
+    return (
+      <div data-viewer-harness>
+        <button type="button" data-fake-tree-row>
+          tree
+        </button>
+        <Show when={viewer!.current()}>
+          <FileViewerView
+            state={viewer!}
+            overlayIO={overlayIO}
+            active={active}
+            onExit={() => {
+              exits.push(Date.now())
+              viewer!.close()
+            }}
+          />
+        </Show>
+      </div>
+    )
+  }
+
+  return {
+    View,
+    calls,
+    viewer: () => viewer!,
+    setActive,
+    releaseChunk: () => pending.shift()?.(),
+    pendingChunks: () => pending.length,
+    emitOverlayClosed: (e: RailPreviewClosedEvent) => overlayClosedCbs.forEach((cb) => cb(e)),
+    exits,
+  }
 }

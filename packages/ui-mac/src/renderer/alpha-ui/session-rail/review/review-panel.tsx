@@ -17,8 +17,9 @@ import { SessionRailReviewPanelView, type ReviewLineCommentIntent } from "./revi
 
 export function SessionRailReviewPanel(props: {
   live: AlphaSessionLiveContext
-  /** Rail linkage api: `reviewTarget` (identity-gated in the shell) opens + focuses a file card. */
-  rail?: Pick<SessionRailApi, "reviewTarget">
+  /** Rail linkage api: `reviewTarget` (identity-gated in the shell) opens + focuses a file card;
+   *  `openFileViewer` (REQ-108) hands a file to the files-panel viewer. */
+  rail?: Pick<SessionRailApi, "reviewTarget" | "openFileViewer">
   onLineComment?: (intent: ReviewLineCommentIntent) => void
 }) {
   const serverSync = useServerSync()
@@ -70,6 +71,7 @@ export function SessionRailReviewPanel(props: {
       resetKey={reviewIdentityKeyOf(identity())}
       onLineComment={props.onLineComment}
       focusTarget={props.rail?.reviewTarget()}
+      onOpenFile={props.rail?.openFileViewer ? (file) => props.rail!.openFileViewer!(file) : undefined}
     />
   )
 }

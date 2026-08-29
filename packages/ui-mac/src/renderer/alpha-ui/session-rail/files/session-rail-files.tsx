@@ -22,6 +22,9 @@ import { turnDiffsOf } from "../review/review-turn-diffs"
 import { sessionStateKey, statusByFile } from "./files-core"
 import { createFilesPanelState } from "./files-state"
 import { SessionRailFilesView } from "./files-view"
+import { createFileViewerIO, createFileViewerOverlayIO } from "./file-viewer-io"
+import { createFileViewerState } from "./file-viewer-state"
+import { FileViewerView } from "./file-viewer-view"
 import "./session-rail-files.css"
 
 const SEARCH_LIMIT = 100
@@ -62,6 +65,28 @@ function FilesPanel(props: { live: AlphaSessionLiveContext; rail: SessionRailApi
     void serverSync().session.sync(identity.sessionID)
   })
 
+  const overlayIO = createFileViewerOverlayIO(identity.directory)
+  const viewer = createFileViewerState(createFileViewerIO(identity.directory))
+  onCleanup(() => viewer.dispose())
+
+  let treeLayer: HTMLDivElement | undefined
+  let origin: HTMLElement | undefined
+
+  const openViewer = (path: string) => {
+    if (!viewer.current()) {
+      const active = document.activeElement
+      origin = active instanceof HTMLElement ? active : undefined
+    }
+    viewer.open(path)
+  }
+
+  const exitViewer = () => {
+    viewer.close()
+    // 焦点回到来源行(交互契约);来源已不可达则不抢焦点。
+    if (origin?.isConnected) origin.focus()
+    origin = undefined
+  }
+
   const state = createFilesPanelState({
     root: identity.directory,
     stillCurrent: () => props.live.accepts(identity),
@@ -82,6 +107,7 @@ function FilesPanel(props: { live: AlphaSessionLiveContext; rail: SessionRailApi
       setActive: (tab) => tabs.setActive(tab),
     },
     jumpToReview: (path) => props.rail.jumpToReview(path),
+    openViewer,
     searchLimit: SEARCH_LIMIT,
   })
 
@@ -95,5 +121,38 @@ function FilesPanel(props: { live: AlphaSessionLiveContext; rail: SessionRailApi
     onCleanup(off)
   })
 
-  return <SessionRailFilesView state={state} />
+  // REQ-108(#244):查看器 = 文件面板的下钻覆盖层。树保持挂载(滚动/展开/焦点原样保留),
+  // 查看器打开期间对树加 inert(覆盖层下的内容不进 Tab 序列、不进 AT)。
+  createEffect(() => {
+    if (treeLayer) treeLayer.inert = viewer.current() !== undefined
+  })
+
+  // rail linkage:审查文件卡「查看整份文件」→ 查看器(seq 让同文件重复请求也触发)。
+  createEffect(() => {
+    const target = props.rail.fileViewerTarget?.()
+    if (target) openViewer(target.file)
+  })
+
+  // AC5:面板被切走 → 读取立即终止(叠放销毁由查看器自身 effect 的 active 依赖兑现)。
+  createEffect((previous: string | undefined) => {
+    const active = props.rail.activePanel?.()
+    if (previous === "files" && active !== "files") viewer.deactivate()
+    return active
+  })
+
+  return (
+    <div class="a-srf-stack">
+      <div class="a-srf-tree-layer" ref={treeLayer} aria-hidden={viewer.current() ? "true" : undefined}>
+        <SessionRailFilesView state={state} />
+      </div>
+      <Show when={viewer.current()}>
+        <FileViewerView
+          state={viewer}
+          overlayIO={overlayIO}
+          active={() => (props.rail.activePanel?.() ?? "files") === "files"}
+          onExit={exitViewer}
+        />
+      </Show>
+    </div>
+  )
 }

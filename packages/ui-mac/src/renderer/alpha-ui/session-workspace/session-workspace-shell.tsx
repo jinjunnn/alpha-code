@@ -42,6 +42,14 @@ export interface SessionRailReviewTarget {
   file: string
 }
 
+// REQ-108(#244):files→viewer linkage 的孪生形状。`seq` 让同一文件的重复请求也能被消费端
+// 识别为新请求(与 review focusTarget 的「fresh request retriggers」同一语义)。
+export interface SessionRailFileViewerTarget {
+  identity: AlphaSessionIdentity
+  file: string
+  seq: number
+}
+
 // Narrow api handed to injected panels. `jumpToReview` implements the approved linkage contract
 // (badged file row → review panel's file card); the review lane consumes `reviewTarget`.
 // `focusArtifact` is the C4 twin for timeline artifact rows; the artifacts panel consumes
@@ -51,6 +59,11 @@ export interface SessionRailApi {
   jumpToReview: (file: string) => void
   artifactTarget: Accessor<ArtifactFocusRequest | undefined>
   focusArtifact: (artifactId: string) => void
+  /** REQ-108(#244):审查文件卡「查看整份文件」→ 文件面板查看器(一跳可达的第二跳)。 */
+  fileViewerTarget: Accessor<SessionRailFileViewerTarget | undefined>
+  openFileViewer: (file: string) => void
+  /** 当前激活面板 —— files 面板据此兑现「切面板 = 读取终止 / 叠放销毁」(AC5/设计 §4)。 */
+  activePanel: Accessor<SessionRailPanel | undefined>
 }
 
 // Panels are injected by the workspace (which owns the app contexts) so the shell itself stays
@@ -187,6 +200,8 @@ export function SessionWorkspaceShell(props: {
   const [visited, setVisited] = createSignal<readonly SessionRailPanel[]>(firstAvailable ? [firstAvailable] : [])
   const [reviewTarget, setReviewTarget] = createSignal<SessionRailReviewTarget>()
   const [artifactTarget, setArtifactTarget] = createSignal<ArtifactFocusRequest>()
+  const [fileViewerTarget, setFileViewerTarget] = createSignal<SessionRailFileViewerTarget>()
+  let fileViewerSeq = 0
   // I8: any change of the live session identity (including to undefined) invalidates every
   // pending linkage target — none may ever be consumed by another session.
   createEffect((previous: AlphaSessionIdentity | undefined) => {
@@ -194,6 +209,7 @@ export function SessionWorkspaceShell(props: {
     if (previous && !sameSessionIdentity(previous, identity)) {
       setReviewTarget(undefined)
       setArtifactTarget(undefined)
+      setFileViewerTarget(undefined)
     }
     return identity
   })
@@ -278,6 +294,17 @@ export function SessionWorkspaceShell(props: {
       setArtifactTarget({ identity, artifactId, origin: active instanceof HTMLElement ? active : undefined })
       openPanel("artifacts")
     },
+    fileViewerTarget: () => {
+      const target = fileViewerTarget()
+      return target && props.live.accepts(target.identity) ? target : undefined
+    },
+    openFileViewer: (file) => {
+      const identity = props.live.current()?.identity
+      if (!identity) return
+      setFileViewerTarget({ identity, file, seq: ++fileViewerSeq })
+      openPanel("files")
+    },
+    activePanel: panel,
   }
 
   const enabledPanels = () => RAIL_PANELS.filter(available)

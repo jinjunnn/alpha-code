@@ -70,7 +70,8 @@ export const HTML_PREVIEW_MAX_DOC_BYTES = 32 * 1024 * 1024
 export const HTML_PREVIEW_MAX_ASSET_BYTES = 32 * 1024 * 1024
 // 仅图片/字体可作 sibling 资产(REQ-096 交付 3 的白名单口径;CSS 走 inline style,外链 CSS/JS/
 // 子 html 一律 403)。SVG 只能经 <img> 进入(CSP img-src),SVG-as-image 按规范不执行脚本。
-const ASSET_MIME: Record<string, string> = {
+// REQ-108(#244):rail-preview-host 复用同一份白名单(sibling 资产口径只此一份真源)。
+export const ASSET_MIME: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",

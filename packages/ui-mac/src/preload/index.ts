@@ -9,6 +9,7 @@ import {
   type DeepLinkBatch,
   type ElectronAPI,
   type HtmlPreviewClosedEvent,
+  type RailPreviewClosedEvent,
   type RendererStartupMarkName,
   type SidecarGenerationState,
   STARTUP_TIMELINE_CHANNEL,
@@ -320,6 +321,27 @@ const api: ElectronAPI = {
       const handler = (_: unknown, e: HtmlPreviewClosedEvent) => cb(e)
       ipcRenderer.on("html-preview-closed", handler)
       return () => ipcRenderer.removeListener("html-preview-closed", handler)
+    },
+  },
+  // REQ-108(#244):右栏文件查看器 —— workspace 文件有界读取 + html/pdf 叠放载体。
+  workspaceFile: {
+    openRead: (directory, relPath) => ipcRenderer.invoke("workspace-file-open-read", directory, relPath),
+    readChunk: (readId, offset, length) => ipcRenderer.invoke("workspace-file-read-chunk", readId, offset, length),
+    closeRead: (readId) => ipcRenderer.invoke("workspace-file-close-read", readId),
+    openExternal: (directory, relPath) => ipcRenderer.invoke("workspace-file-open-external", directory, relPath),
+    reveal: (directory, relPath) => ipcRenderer.invoke("workspace-file-reveal", directory, relPath),
+    saveCopy: (directory, relPath) => ipcRenderer.invoke("workspace-file-save-copy", directory, relPath),
+  },
+  railPreview: {
+    open: (directory, relPath, kind, bounds) => ipcRenderer.invoke("rail-preview-open", directory, relPath, kind, bounds),
+    setBounds: (previewId, bounds) => ipcRenderer.invoke("rail-preview-set-bounds", previewId, bounds),
+    setVisible: (previewId, visible) => ipcRenderer.invoke("rail-preview-set-visible", previewId, visible),
+    close: (previewId) => ipcRenderer.invoke("rail-preview-close", previewId),
+    status: (previewId) => ipcRenderer.invoke("rail-preview-status", previewId),
+    onClosed: (cb) => {
+      const handler = (_: unknown, e: RailPreviewClosedEvent) => cb(e)
+      ipcRenderer.on("rail-preview-closed", handler)
+      return () => ipcRenderer.removeListener("rail-preview-closed", handler)
     },
   },
   automations: {
