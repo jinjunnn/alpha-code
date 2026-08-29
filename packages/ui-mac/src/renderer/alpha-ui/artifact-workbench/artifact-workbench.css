@@ -706,3 +706,35 @@ body[data-alpha-sidebar="open"] .alpha-wb-page {
   .alpha-wb-page { animation: none; }
   .a-wb-spinner { animation: none; }
 }
+
+/* REQ-123(#1176):xlsx 工作表切换 + 表格 */
+.a-wb-xlsx {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.a-wb-xlsx-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.a-wb-xlsx-tab {
+  padding: 3px 10px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+}
+.a-wb-xlsx-tab[aria-selected="true"] {
+  background: var(--a-bg-subtle);
+  color: var(--a-text);
+  font-weight: var(--a-weight-semibold);
+}
+.a-wb-xlsx .a-wb-tablewrap th[scope="row"] {
+  color: var(--a-text-secondary);
+  font-weight: var(--a-weight-normal);
+  text-align: right;
+}
