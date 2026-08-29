@@ -596,6 +596,31 @@ export type {
   HtmlPreviewStatus,
 } from "../shared/html-preview"
 
+// REQ-108(#244):右栏文件查看器 —— workspace 文件有界读取 + html/pdf 叠放载体的契约转口
+// (真源 shared/file-viewer.ts;守卫与 host 在 main/workspace-file-service.ts / rail-preview-host.ts)。
+import type {
+  RailPreviewBounds,
+  RailPreviewClosedEvent,
+  RailPreviewKind,
+  RailPreviewOpenResult,
+  RailPreviewStatus,
+  WorkspaceFileActionResult,
+  WorkspaceFileChunkResult,
+  WorkspaceFileOpenResult,
+} from "../shared/file-viewer"
+export type {
+  FileViewerRefusal,
+  RailPreviewBounds,
+  RailPreviewClosedEvent,
+  RailPreviewCloseReason,
+  RailPreviewKind,
+  RailPreviewOpenResult,
+  RailPreviewStatus,
+  WorkspaceFileActionResult,
+  WorkspaceFileChunkResult,
+  WorkspaceFileOpenResult,
+} from "../shared/file-viewer"
+
 /** REQ-098:App 运行环境快照(main 启动时由打包状态 + 构建渠道解析后冻结;renderer 只读,无写面)。 */
 export type AlphaEnvironmentInfo = {
   environment: "prod" | "beta" | "dev"
@@ -1200,6 +1225,31 @@ export type ElectronAPI = {
     status: (previewId: string) => Promise<HtmlPreviewStatus>
     /** 预览关闭/崩溃推送(用户直接关窗也会触发;返回退订函数)。 */
     onClosed: (cb: (e: HtmlPreviewClosedEvent) => void) => () => void
+  }
+  // REQ-108(#244):右栏文件查看器。workspaceFile = main-owned descriptor/有界读取
+  // (fd 绑定、可取消、chunk 与累计双上限)与守卫化的诚实动作;railPreview = html/pdf 叠放载体
+  // (WebContentsView,与隔离 HTML host 同一 deny 组)。renderer 只持 workspace 相对路径与
+  // opaque id —— 绝对路径/fd/token 永不过 IPC。
+  workspaceFile: {
+    openRead: (directory: string, relPath: string) => Promise<WorkspaceFileOpenResult>
+    readChunk: (readId: string, offset: number, length: number) => Promise<WorkspaceFileChunkResult>
+    closeRead: (readId: string) => Promise<void>
+    openExternal: (directory: string, relPath: string) => Promise<WorkspaceFileActionResult>
+    reveal: (directory: string, relPath: string) => Promise<WorkspaceFileActionResult>
+    saveCopy: (directory: string, relPath: string) => Promise<WorkspaceFileActionResult>
+  }
+  railPreview: {
+    open: (
+      directory: string,
+      relPath: string,
+      kind: RailPreviewKind,
+      bounds: RailPreviewBounds,
+    ) => Promise<RailPreviewOpenResult>
+    setBounds: (previewId: string, bounds: RailPreviewBounds) => Promise<{ ok: boolean }>
+    setVisible: (previewId: string, visible: boolean) => Promise<{ ok: boolean }>
+    close: (previewId: string) => Promise<{ ok: boolean }>
+    status: (previewId: string) => Promise<RailPreviewStatus>
+    onClosed: (cb: (e: RailPreviewClosedEvent) => void) => () => void
   }
   // 自动化定时任务(REQ-021 A1/ADR-022):CRUD + 全局暂停 + 登录时启动;调度/执行全在 main,
   // renderer 只读列表(含 nextFireAt/running 计算态)并订阅 automation-event 推送。

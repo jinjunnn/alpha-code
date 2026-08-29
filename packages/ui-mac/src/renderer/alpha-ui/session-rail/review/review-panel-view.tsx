@@ -40,6 +40,8 @@ export interface ReviewPanelViewProps {
    * for the same file (the container hands through the identity-gated target).
    */
   focusTarget?: { file: string }
+  /** REQ-108(#244):文件卡头部「查看整份文件」→ 文件面板查看器(改动看 diff,整份看查看器)。 */
+  onOpenFile?: (file: string) => void
 }
 
 function reducedMotion(): boolean {
@@ -156,6 +158,7 @@ function ReviewFileCard(props: {
   view: ReviewDiffView
   onToggle: () => void
   onLineComment?: ReviewPanelViewProps["onLineComment"]
+  onOpenFile?: (file: string) => void
   registerHeader?: (el: HTMLButtonElement) => void
 }) {
   const kindKey = () =>
@@ -167,24 +170,39 @@ function ReviewFileCard(props: {
 
   return (
     <article class="a-rvw-file" classList={{ "a-rvw-file--open": props.open }} data-review-file={props.change.file}>
-      <button
-        type="button"
-        class="a-rvw-fhead"
-        aria-expanded={props.open}
-        onClick={props.onToggle}
-        ref={(el) => props.registerHeader?.(el)}
-      >
-        <FileGlyph />
-        <span class="a-rvw-fn">
-          <Show when={props.change.dir}>
-            <span class="a-rvw-dir">{props.change.dir}</span>
-          </Show>
-          {props.change.name}
-        </span>
-        <span class={`a-rvw-kind a-rvw-kind--${props.change.kind}`}>{t(kindKey())}</span>
-        <StatPair additions={props.change.additions} deletions={props.change.deletions} />
-        <ChevronGlyph class="a-rvw-chev" />
-      </button>
+      <div class="a-rvw-fhead-row">
+        <button
+          type="button"
+          class="a-rvw-fhead"
+          aria-expanded={props.open}
+          onClick={props.onToggle}
+          ref={(el) => props.registerHeader?.(el)}
+        >
+          <FileGlyph />
+          <span class="a-rvw-fn">
+            <Show when={props.change.dir}>
+              <span class="a-rvw-dir">{props.change.dir}</span>
+            </Show>
+            {props.change.name}
+          </span>
+          <span class={`a-rvw-kind a-rvw-kind--${props.change.kind}`}>{t(kindKey())}</span>
+          <StatPair additions={props.change.additions} deletions={props.change.deletions} />
+          <ChevronGlyph class="a-rvw-chev" />
+        </button>
+        {/* REQ-108 一跳可达的第二跳:改动看 diff(本卡),整份文件去查看器。删除的文件没有整份可看。 */}
+        <Show when={props.onOpenFile && props.change.kind !== "deleted"}>
+          <button
+            type="button"
+            class="a-rvw-fopen"
+            data-review-open-file={props.change.file}
+            title={t("alpha.review.viewWholeFile")}
+            aria-label={t("alpha.review.viewWholeFile")}
+            onClick={() => props.onOpenFile!(props.change.file)}
+          >
+            <FileGlyph />
+          </button>
+        </Show>
+      </div>
       <Show when={props.open}>
         <ReviewFileBody
           change={props.change}
@@ -458,6 +476,7 @@ export function SessionRailReviewPanelView(props: ReviewPanelViewProps) {
                 view={view()}
                 onToggle={() => toggleFile(change.file)}
                 onLineComment={props.onLineComment}
+                onOpenFile={props.onOpenFile}
                 registerHeader={(el) => headerEls.set(change.file, el)}
               />
             )}

@@ -391,10 +391,356 @@
   line-height: var(--a-leading-snug);
 }
 
+/* ── REQ-108 file viewer(文件面板的下钻覆盖层)──────────────────────────────────────── */
+
+.a-srf-stack {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.a-srf-tree-layer {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.a-fv-root {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--a-bg-canvas);
+}
+
+.a-fv-root svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.a-fv-root svg circle {
+  fill: currentColor;
+  stroke: none;
+}
+
+.a-fv-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--a-border);
+}
+
+.a-fv-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.a-fv-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  color: var(--a-text-secondary);
+  cursor: pointer;
+}
+
+.a-fv-iconbtn:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-fv-title {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.a-fv-name {
+  overflow: hidden;
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a-fv-dir {
+  overflow: hidden;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a-fv-seg {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-subtle);
+}
+
+.a-fv-seg button {
+  border: 0;
+  border-radius: var(--a-radius-full);
+  padding: 2px 10px;
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+  cursor: pointer;
+}
+
+.a-fv-seg button[aria-checked="true"] {
+  background: var(--a-surface);
+  color: var(--a-text);
+  font-weight: var(--a-weight-medium);
+  box-shadow: var(--a-shadow-sm);
+}
+
+.a-fv-kebab-wrap {
+  position: relative;
+  flex: none;
+}
+
+.a-fv-menu {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  background: var(--a-surface-raised);
+  box-shadow: var(--a-shadow-lg);
+}
+
+.a-fv-menu button {
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  padding: 6px 10px;
+  background: transparent;
+  color: var(--a-text);
+  font-size: var(--a-text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.a-fv-menu button:hover {
+  background: var(--a-bg-muted);
+}
+
+.a-fv-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.a-fv-content {
+  padding: 10px 12px;
+}
+
+.a-fv-notice {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-sm);
+  background: var(--a-warning-subtle);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+}
+
+.a-fv-center {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.a-fv-card-title {
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-fv-card-title[data-tone="warn"] {
+  color: var(--a-warning);
+}
+
+.a-fv-card-title[data-tone="err"] {
+  color: var(--a-error);
+}
+
+.a-fv-card-detail {
+  max-width: 34ch;
+  margin: 0;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  line-height: var(--a-leading-snug);
+}
+
+.a-fv-card-fact {
+  padding: 3px 8px;
+  border-radius: var(--a-radius-sm);
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+  word-break: break-all;
+}
+
+.a-fv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.a-fv-btn {
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  padding: 5px 12px;
+  background: var(--a-surface);
+  color: var(--a-text);
+  font-size: var(--a-text-xs);
+  cursor: pointer;
+}
+
+.a-fv-btn:hover {
+  background: var(--a-bg-muted);
+}
+
+.a-fv-btn[data-variant="primary"] {
+  border-color: var(--a-accent);
+  background: var(--a-accent);
+  color: var(--a-text-on-accent);
+}
+
+.a-fv-prog {
+  position: relative;
+  width: 180px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-inset);
+}
+
+.a-fv-prog i {
+  position: absolute;
+  inset: 0 60%;
+  border-radius: var(--a-radius-full);
+  background: var(--a-accent);
+  animation: a-fv-prog-slide 1.2s var(--a-ease-out) infinite;
+}
+
+@keyframes a-fv-prog-slide {
+  0% {
+    inset: 0 100% 0 0;
+  }
+  50% {
+    inset: 0 20% 0 40%;
+  }
+  100% {
+    inset: 0 0 0 100%;
+  }
+}
+
+.a-fv-progcap {
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+
+.a-fv-image {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+  padding: 12px;
+}
+
+.a-fv-image img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-sm);
+}
+
+.a-fv-image figcaption {
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+
+.a-fv-overlay {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.a-fv-isobar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--a-border);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+}
+
+.a-fv-isodot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-accent);
+}
+
+/* 真内容画在 main 的 WebContentsView 上;这里只是 bounds 容器(证据形态见设计 §4)。 */
+.a-fv-isoregion {
+  flex: 1;
+  min-height: 0;
+  background: var(--a-bg-subtle);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .a-srf-search,
   .a-srf-caret,
   .a-srf-opentab-close {
     transition: none;
+  }
+
+  .a-fv-prog i {
+    animation: none;
+    inset: 0 30%;
   }
 }
