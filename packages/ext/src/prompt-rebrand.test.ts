@@ -28,7 +28,7 @@ describe("rebrandSystem — 8 底座真实样本零残留", () => {
       const r = rebrandSystem([src])
       expect(r.changed).toBe(true)
       expect(/opencode/i.test(r.system[0])).toBe(false)
-      expect(r.system[0].includes("alpha-code")).toBe(true)
+      expect(r.system[0].includes("Code Puppy")).toBe(true)
       expect(r.warnings).toEqual([]) // 全部命中,无残留告警
     })
   }

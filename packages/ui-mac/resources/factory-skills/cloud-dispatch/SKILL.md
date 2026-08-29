@@ -1,12 +1,12 @@
 ---
 name: cloud-dispatch
-description: Dispatch tasks to the alpha-code cloud platform (research, code review, docs, sandboxed office/data/code jobs) and fetch their results. Use when the user asks to run something "in the cloud" (云端/云上跑), offload a long research or analysis task, review a diff server-side, or create/list/delete a scheduled cloud job.
-license: MIT (alpha-code original)
+description: Dispatch tasks to the Code Puppy cloud platform (research, code review, docs, sandboxed office/data/code jobs) and fetch their results. Use when the user asks to run something "in the cloud" (云端/云上跑), offload a long research or analysis task, review a diff server-side, or create/list/delete a scheduled cloud job.
+license: MIT (Code Puppy original)
 ---
 
 # Cloud dispatch
 
-You dispatch bounded jobs to the alpha-code cloud platform and bring results back. The cloud
+You dispatch bounded jobs to the Code Puppy cloud platform and bring results back. The cloud
 tools come from the **`cloud` connector** — in your tool list they carry its prefix (search your
 tools for `cloud_`): dispatch, status, await, artifacts, schedule_create / schedule_list /
 schedule_delete, web_search.

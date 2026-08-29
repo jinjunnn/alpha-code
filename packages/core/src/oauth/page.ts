@@ -6,7 +6,7 @@
 // offline and drop into any transport (`res.end(...)`, Effect `response.end`,
 // etc.).
 //
-// #1047 / ADR-042: product identity is **alpha-code** (not upstream OpenCode).
+// #1047 / ADR-042: product identity is **Code Puppy** (not upstream OpenCode).
 // Layout tokens remain a curated subset of OC-2 (`packages/ui` theme) so the
 // card still matches the desktop chrome; the wordmark and copy are alpha's.
 
@@ -17,7 +17,7 @@ export interface CallbackPageOptions {
   autoClose?: boolean
 }
 
-const PRODUCT = "alpha-code"
+const PRODUCT = "Code Puppy"
 
 export function success(options?: CallbackPageOptions) {
   const provider = options?.provider
@@ -119,8 +119,8 @@ function bootstrapScript(options: BootstrapOptions) {
 var TOKEN_URL=new URL(${scriptString(options.tokenPath)},window.location.origin).href;
 (function(){
   var card=document.getElementById("oc-card"),headline=document.getElementById("oc-headline"),message=document.getElementById("oc-message"),detail=document.getElementById("oc-detail"),footnote=document.getElementById("oc-footnote");
-  function fail(text){card.dataset.status="error";headline.textContent="Authorization failed";message.textContent=PROVIDER?("alpha-code couldn't finish connecting to "+PROVIDER+"."):"alpha-code couldn't complete authorization.";if(text){detail.textContent=text;detail.hidden=false}footnote.textContent="Close this window and try again from alpha-code."}
-  function ok(){card.dataset.status="success";headline.textContent="Authorization successful";message.textContent=PROVIDER?("alpha-code is now connected to "+PROVIDER+"."):"alpha-code is now authorized.";detail.hidden=true;footnote.textContent="You can close this window.";setTimeout(function(){try{window.close()}catch(e){}},2500)}
+  function fail(text){card.dataset.status="error";headline.textContent="Authorization failed";message.textContent=PROVIDER?("Code Puppy couldn't finish connecting to "+PROVIDER+"."):"Code Puppy couldn't complete authorization.";if(text){detail.textContent=text;detail.hidden=false}footnote.textContent="Close this window and try again from Code Puppy."}
+  function ok(){card.dataset.status="success";headline.textContent="Authorization successful";message.textContent=PROVIDER?("Code Puppy is now connected to "+PROVIDER+"."):"Code Puppy is now authorized.";detail.hidden=true;footnote.textContent="You can close this window.";setTimeout(function(){try{window.close()}catch(e){}},2500)}
   try{
     var hash=new URLSearchParams((window.location.hash||"").slice(1));
     var search=new URLSearchParams(window.location.search||"");
@@ -259,7 +259,7 @@ const STYLES = `
 `
 
 // Text wordmark — matches `alpha.brand.product` / auth.tidelabs.click (ADR-042).
-const WORDMARK = `<span class="wordmark-text" aria-label="alpha-code" role="img">alpha-code</span>`
+const WORDMARK = `<span class="wordmark-text" aria-label="Code Puppy" role="img">Code Puppy</span>`
 
 const ICON_CHECK = `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="m8.5 12.5 2.4 2.4 4.6-5.4" /></svg>`
 

@@ -62,7 +62,7 @@ const getBase = (appId: string): Configuration => ({
   artifactName: "alpha-code-${os}-${arch}.${ext}",
   // MIT requires OpenCode's copyright + permission notice ship with the app (B15 / D10);
   // full text in resources/NOTICE.txt, also surfaced via app.setAboutPanelOptions.
-  copyright: "© 2025 opencode (MIT). alpha-code fork build.",
+  copyright: "© 2025 opencode (MIT). Code Puppy fork build.",
   directories: {
     output: "dist",
     buildResources: "resources",
@@ -206,7 +206,7 @@ export function getConfig(target: Channel = channel) {
       return {
         ...base,
         appId,
-        productName: "alpha-code",
+        productName: "Code Puppy",
         rpm: { packageName: "alpha-code" },
       }
     }
@@ -214,7 +214,7 @@ export function getConfig(target: Channel = channel) {
       return {
         ...base,
         appId,
-        productName: "alpha-code Beta",
+        productName: "Code Puppy Beta",
         protocols: { name: "alpha-code Beta", schemes: [...DEEP_LINK_SCHEMES] },
         // Own public release repo (jinjunnn/alpha-code) — NOT anomalyco/opencode, which would auto-
         // download upstream OpenCode over alpha (B9). `beta` channel = pre-release feed.
@@ -226,7 +226,7 @@ export function getConfig(target: Channel = channel) {
       return {
         ...base,
         appId,
-        productName: "alpha-code",
+        productName: "Code Puppy",
         protocols: { name: "alpha-code", schemes: [...DEEP_LINK_SCHEMES] },
         // Own public release repo (jinjunnn/alpha-code) — NOT anomalyco/opencode (B9 wrong-owner feed,
         // which would auto-download upstream OpenCode over alpha). `latest` = stable feed.

@@ -17,7 +17,7 @@
 //   - 底座改版复核:tests 逐条断言 from 子串仍存在于上游 .txt(sync 后红 = 清单需复核,
 //     与 ADR-015 合并验证 / sync tripwire 呼应)。
 
-export const REBRAND_TO = "alpha-code"
+export const REBRAND_TO = "Code Puppy"
 
 export type RebrandRule = {
   id: string
@@ -33,43 +33,43 @@ export const REBRAND_RULES: readonly RebrandRule[] = [
   {
     id: "identity-anthropic-codex",
     from: "You are OpenCode, the best coding agent on the planet.",
-    to: "You are alpha-code, the best coding agent on the planet.",
+    to: "You are Code Puppy, the best coding agent on the planet.",
     file: "anthropic.txt",
   },
   {
     id: "identity-default-trinity",
     from: "You are opencode, an interactive CLI tool that helps users with software engineering tasks.",
-    to: "You are alpha-code, an interactive coding agent that helps users with software engineering tasks.",
+    to: "You are Code Puppy, an interactive coding agent that helps users with software engineering tasks.",
     file: "default.txt",
   },
   {
     id: "identity-beast",
     from: "You are opencode, an agent - please keep going",
-    to: "You are alpha-code, an agent - please keep going",
+    to: "You are Code Puppy, an agent - please keep going",
     file: "beast.txt",
   },
   {
     id: "identity-kimi",
     from: "You are OpenCode, an interactive general AI agent running on a user's computer.",
-    to: "You are alpha-code, an interactive general AI agent running on a user's computer.",
+    to: "You are Code Puppy, an interactive general AI agent running on a user's computer.",
     file: "kimi.txt",
   },
   {
     id: "identity-gpt",
     from: "You are OpenCode, You and the user share the same workspace",
-    to: "You are alpha-code, You and the user share the same workspace",
+    to: "You are Code Puppy, You and the user share the same workspace",
     file: "gpt.txt",
   },
   {
     id: "identity-gemini",
     from: "You are opencode, an interactive CLI agent specializing in software engineering tasks.",
-    to: "You are alpha-code, an interactive coding agent specializing in software engineering tasks.",
+    to: "You are Code Puppy, an interactive coding agent specializing in software engineering tasks.",
     file: "gemini.txt",
   },
   {
     id: "identity-copilot",
     from: "Your name is opencode",
-    to: "Your name is alpha-code",
+    to: "Your name is Code Puppy",
     file: "copilot-gpt-5.txt",
   },
   // ── help/feedback 指引块(指向上游 TUI 快捷键与 GitHub 仓,对 alpha 用户全部失实 → 整块剔除)──
@@ -89,20 +89,20 @@ export const REBRAND_RULES: readonly RebrandRule[] = [
   {
     id: "docs-guidance-anthropic",
     from: 'When the user directly asks about OpenCode (eg. "can OpenCode do...", "does OpenCode have..."), or asks in second person (eg. "are you able...", "can you do..."), or asks how to use a specific OpenCode feature (eg. implement a hook, write a slash command, or install an MCP server), use the WebFetch tool to gather information to answer the question from OpenCode docs. The list of available docs is available at https://opencode.ai/docs',
-    to: 'When the user directly asks about this product (eg. "can it do...", "does it have..."), or asks in second person (eg. "are you able...", "can you do..."), answer as alpha-code from what you can observe in this session and its configuration; do not point the user at external docs you have not verified.',
+    to: 'When the user directly asks about this product (eg. "can it do...", "does it have..."), or asks in second person (eg. "are you able...", "can you do..."), answer as Code Puppy from what you can observe in this session and its configuration; do not point the user at external docs you have not verified.',
     file: "anthropic.txt",
   },
   {
     id: "docs-guidance-default",
     from: "When the user directly asks about opencode (eg 'can opencode do...', 'does opencode have...') or asks in second person (eg 'are you able...', 'can you do...'), first use the WebFetch tool to gather information to answer the question from opencode docs at https://opencode.ai",
-    to: "When the user directly asks about this product (eg 'can it do...', 'does it have...') or asks in second person (eg 'are you able...', 'can you do...'), answer as alpha-code from what you can observe in this session and its configuration.",
+    to: "When the user directly asks about this product (eg 'can it do...', 'does it have...') or asks in second person (eg 'are you able...', 'can you do...'), answer as Code Puppy from what you can observe in this session and its configuration.",
     file: "default.txt",
   },
   // ── 正文自指(anthropic 客观性段)──────────────────────────────────────────
   {
     id: "objectivity-anthropic",
     from: "It is best for the user if OpenCode honestly applies the same rigorous standards",
-    to: "It is best for the user if alpha-code honestly applies the same rigorous standards",
+    to: "It is best for the user if Code Puppy honestly applies the same rigorous standards",
     file: "anthropic.txt",
   },
 ] as const

@@ -156,7 +156,7 @@ export function createMainWindow() {
     height: state.height,
     show: false,
     autoHideMenuBar: true,
-    title: "alpha-code",
+    title: "Code Puppy",
     icon: iconPath(),
     backgroundColor: backgroundColor ?? defaultBackgroundColor(),
     ...(process.platform === "darwin"
@@ -325,7 +325,7 @@ export function createRecoveryWindow(onFatal: (reason: RecoveryWindowFatalReason
     minimizable: false,
     maximizable: false,
     autoHideMenuBar: true,
-    title: "alpha-code · Recovery",
+    title: "Code Puppy · Recovery",
     icon: iconPath(),
     backgroundColor: defaultBackgroundColor(),
     ...(process.platform === "darwin" ? { titleBarStyle: "hidden" as const } : {}),

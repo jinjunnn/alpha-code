@@ -114,7 +114,7 @@ export const SLASH_DESC_ZH: Record<string, string> = {
   agents: "打开 Agent 管理(消息内用 @ 指派)",
   "skill-creator": "创建自定义技能",
   "agent-creator": "创建自定义 Agent",
-  "customize-alpha": "配置与定制 alpha-code(连接器 / 技能 / 治理)",
+  "customize-alpha": "配置与定制 Code Puppy(连接器 / 技能 / 治理)",
   "integrate-project": "导入外部生态内容(.claude / .agents)",
   "alpha-workspace": "总结与记忆写入 Alpha 工作目录(Journal / Memory)",
 }

@@ -67,7 +67,7 @@ export function createMenu(deps: Deps) {
     template.push({
       label: "帮助",
       submenu: [
-        { label: "关于 alpha-code", click: () => showAboutDialog() },
+        { label: "关于 Code Puppy", click: () => showAboutDialog() },
         { label: "开源声明(NOTICE)", click: () => void shell.openPath(noticePath()) },
       ],
     })
@@ -97,9 +97,9 @@ function noticePath() {
 function showAboutDialog() {
   void dialog.showMessageBox({
     type: "info",
-    title: "关于 alpha-code",
-    message: `alpha-code ${app.getVersion()}`,
-    detail: "© 2025 opencode (MIT). alpha-code fork build.\n完整许可与归属见「帮助 → 开源声明(NOTICE)」。",
+    title: "关于 Code Puppy",
+    message: `Code Puppy ${app.getVersion()}`,
+    detail: "© 2025 opencode (MIT). Code Puppy fork build.\n完整许可与归属见「帮助 → 开源声明(NOTICE)」。",
   })
 }
 

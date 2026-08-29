@@ -1,7 +1,7 @@
 ---
 name: agent-creator
 description: Create a new opencode agent (subagent or primary) from a natural-language description, and know the alpha-specific registration + hot-reload steps for ANY created extension. Use when the user asks to create/add/build an agent, a reviewer/researcher persona, or a recurring role — and ALSO after creating a skill (e.g. via skill-creator) to place it where the engine discovers it and make it take effect without restarting.
-license: MIT (alpha-code original)
+license: MIT (Code Puppy original)
 ---
 
 # Agent Creator

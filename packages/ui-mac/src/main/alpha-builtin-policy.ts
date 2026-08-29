@@ -188,7 +188,7 @@ export function materializeEdits(gov: BuiltinPolicy, visibleAgents: string[]): B
       edits.push({ path: ["permission", "skill", n], value: "deny" })
       // 键入兜底占位(REQ-066 后菜单已隐藏,此模板只服务手动键入全名):诚实说明,非误导执行。
       // REQ-062 T4:customize-opencode 的占位额外指路接替者 customize-alpha。
-      const successor = n === "customize-opencode" ? `定制 alpha-code 请改用 /customize-alpha(alpha 自带的定制指南技能)。` : ""
+      const successor = n === "customize-opencode" ? `定制 Code Puppy 请改用 /customize-alpha(alpha 自带的定制指南技能)。` : ""
       edits.push({ path: ["command", n, "description"], value: `(已禁用)该技能已在 alpha 治理中禁用` })
       edits.push({ path: ["command", n, "template"], value: `该技能(${n})已在 alpha 的治理设置中被禁用。请告知用户:此技能不可用;如需恢复,到 定制中心 → 已安装 → 内置(上游) 解除禁用。${successor}不要尝试其它方式执行该技能。` })
     }
