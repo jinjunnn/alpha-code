@@ -1,7 +1,7 @@
 // REQ-123(#1176)—— xlsx 表格呈现组件用例(真 Solid + happy-dom 挂载)。
 // 驱动器:src/renderer/alpha-ui/artifact-workbench/renderers/xlsx-view.test.ts(子进程绿判据)。
 // 模型来自真实生成器夹具(xlsxwriter,共享串 + 数值 + 多 sheet + 缓存公式);
-// 字节 → 文档在生产里必须走 #1174 的共享解析闸,这里的 parsePart 是同一份临时辅助(见模型测试文件头)。
+// 字节 → 文档在 buildXlsxWorkbook 内部走 #1174 的 parseOoxmlContentPart,与生产同一条路。
 
 import { transformAsync } from "@babel/core"
 import presetTypescript from "@babel/preset-typescript"
@@ -42,19 +42,15 @@ const { XlsxWorkbookView } = viewModule as unknown as {
   XlsxWorkbookView: (props: { workbook: import("../src/renderer/alpha-ui/artifact-workbench/renderers/xlsx-model").XlsxWorkbook }) => unknown
 }
 
-function parsePart(bytes: Uint8Array): Document {
-  return new DOMParser().parseFromString(new TextDecoder().decode(bytes), "text/xml") as unknown as Document
-}
-
-function loadFixtureParts(generator: string): Map<string, Document> {
+function loadFixtureParts(generator: string): Map<string, Uint8Array> {
   const root = resolve(import.meta.dir, "../src/renderer/alpha-ui/artifact-workbench/renderers/fixtures/xlsx", generator)
-  const parts = new Map<string, Document>()
+  const parts = new Map<string, Uint8Array>()
   const walk = (dir: string, prefix: string) => {
     for (const entry of readdirSync(dir)) {
       const abs = join(dir, entry)
       const rel = prefix === "" ? entry : `${prefix}/${entry}`
       if (statSync(abs).isDirectory()) walk(abs, rel)
-      else parts.set(rel, parsePart(readFileSync(abs)))
+      else parts.set(rel, new Uint8Array(readFileSync(abs)))
     }
   }
   walk(root, "")

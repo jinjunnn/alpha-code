@@ -3,14 +3,15 @@
 //   · xlsxwriter 3.2.9:共享串(t="s")+ 无 t 数值 + 布尔 + 带缓存值的公式 + 相对 rels 目标;
 //   · openpyxl 3.1.5:内联串(t="inlineStr")+ t="n" 数值 + 空 <v/> 公式 + 绝对 rels 目标 + 空表。
 // 生成命令留档:xlsxwriter/openpyxl 写最小工作簿后 unzip 取 xl/ 下相关 part,未做任何手改。
-//
-// ⚠️ 临时辅助声明:本文件里的 parsePart(字节 → 文档)只为在 #1174 的共享解析闸落地前
-// 驱动纯模型 —— 生产接线时由那个共享函数(解码 + DOCTYPE 文本闸)替换,本辅助不导出、不进生产。
+// 字节 → 文档走生产同一条路:#1174 的 parseOoxmlContentPart(在 buildXlsxWorkbook 内部);
+// 测试喂的就是 part 字节,不存在第二条解析路径。DOM 由 happy-dom 提供(实体行为的断言归
+// t4 真 Chromium,本文件不做)。
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { OOXML_CONTENT_LIMITS } from "./ooxml-content"
 import {
   buildXlsxWorkbook,
   columnLabel,
@@ -23,25 +24,18 @@ import {
 GlobalRegistrator.register()
 afterAll(() => GlobalRegistrator.unregister())
 
-// —— 临时辅助(见文件头声明)——
-function parsePart(bytes: Uint8Array): Document {
-  return new DOMParser().parseFromString(new TextDecoder().decode(bytes), "text/xml") as unknown as Document
-}
-
-function parseXml(xml: string): Document {
-  return new DOMParser().parseFromString(xml, "text/xml") as unknown as Document
-}
+const xmlBytes = (xml: string): Uint8Array => new TextEncoder().encode(xml)
 
 /** 读夹具目录:递归收集文件,键 = 相对 part 名(posix 分隔)。测试直接吃夹具字节。 */
-function loadFixtureParts(generator: "xlsxwriter" | "openpyxl"): Map<string, Document> {
+function loadFixtureParts(generator: "xlsxwriter" | "openpyxl"): Map<string, Uint8Array> {
   const root = join(import.meta.dir, "fixtures/xlsx", generator)
-  const parts = new Map<string, Document>()
+  const parts = new Map<string, Uint8Array>()
   const walk = (dir: string, prefix: string) => {
     for (const entry of readdirSync(dir)) {
       const abs = join(dir, entry)
       const rel = prefix === "" ? entry : `${prefix}/${entry}`
       if (statSync(abs).isDirectory()) walk(abs, rel)
-      else parts.set(rel, parsePart(readFileSync(abs)))
+      else parts.set(rel, new Uint8Array(readFileSync(abs)))
     }
   }
   walk(root, "")
@@ -143,10 +137,10 @@ describe("REQ-123 AC2 xlsx model — openpyxl 夹具(内联串 + 绝对 rels 目
 describe("REQ-123 AC2 xlsx model — 清单顺序与 rels 间接寻址(手写对抗夹具)", () => {
   // workbook 顺序 = [Zeta→sheet2.xml, Alpha→sheet1.xml],且 rId 数字与文件名故意错位:
   // 按文件名排序、或假定 rIdN↔sheetN.xml 的实现在此变红。
-  const parts = new Map<string, Document>([
+  const parts = new Map<string, Uint8Array>([
     [
       "xl/workbook.xml",
-      parseXml(
+      xmlBytes(
         `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>` +
           `<sheet name="Zeta" sheetId="7" r:id="rId9"/><sheet name="Alpha" sheetId="8" r:id="rId1"/>` +
           `</sheets></workbook>`,
@@ -154,15 +148,15 @@ describe("REQ-123 AC2 xlsx model — 清单顺序与 rels 间接寻址(手写对
     ],
     [
       "xl/_rels/workbook.xml.rels",
-      parseXml(
+      xmlBytes(
         `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
           `<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>` +
           `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>` +
           `</Relationships>`,
       ),
     ],
-    ["xl/worksheets/sheet1.xml", parseXml(worksheetWithA1inline("from-sheet1"))],
-    ["xl/worksheets/sheet2.xml", parseXml(worksheetWithA1inline("from-sheet2"))],
+    ["xl/worksheets/sheet1.xml", xmlBytes(worksheetWithA1inline("from-sheet1"))],
+    ["xl/worksheets/sheet2.xml", xmlBytes(worksheetWithA1inline("from-sheet2"))],
   ])
 
   test("顺序权威是 workbook.xml,目标经 rels 间接解析", () => {
@@ -184,12 +178,12 @@ function worksheetWithA1inline(text: string): string {
 
 describe("REQ-123 xlsx model — rels 目标校验(基线③.4:逃逸/外部/带 scheme 一律拒)", () => {
   const relsXml = (target: string, mode = "") =>
-    parseXml(
+    xmlBytes(
       `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
         `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${target}"${mode}/>` +
         `</Relationships>`,
     )
-  const workbookXml = parseXml(
+  const workbookXml = xmlBytes(
     `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`,
   )
 
@@ -203,10 +197,10 @@ describe("REQ-123 xlsx model — rels 目标校验(基线③.4:逃逸/外部/带
   ]
   for (const [label, target, mode] of hostile) {
     test(`${label} → 该表进清单但标记 unresolved-rel,不当作可取路径`, () => {
-      const parts = new Map<string, Document>([
+      const parts = new Map<string, Uint8Array>([
         ["xl/workbook.xml", workbookXml],
         ["xl/_rels/workbook.xml.rels", relsXml(target, mode)],
-        ["xl/worksheets/sheet1.xml", parseXml(worksheetWithA1inline("safe"))],
+        ["xl/worksheets/sheet1.xml", xmlBytes(worksheetWithA1inline("safe"))],
       ])
       const result = buildXlsxWorkbook(parts)
       if (!result.ok) throw new Error(result.code)
@@ -215,7 +209,7 @@ describe("REQ-123 xlsx model — rels 目标校验(基线③.4:逃逸/外部/带
   }
 
   test("rels 指向的 part 不在输入里 → missing-part(清单仍完整)", () => {
-    const parts = new Map<string, Document>([
+    const parts = new Map<string, Uint8Array>([
       ["xl/workbook.xml", workbookXml],
       ["xl/_rels/workbook.xml.rels", relsXml("worksheets/sheetX.xml")],
     ])
@@ -227,22 +221,22 @@ describe("REQ-123 xlsx model — rels 目标校验(基线③.4:逃逸/外部/带
 
 describe("REQ-123 xlsx model — 降级态与帽", () => {
   test("共享串缺席时 t=\"s\" 格是 unresolved,不显示索引数字", () => {
-    const parts = new Map<string, Document>([
+    const parts = new Map<string, Uint8Array>([
       [
         "xl/workbook.xml",
-        parseXml(
+        xmlBytes(
           `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`,
         ),
       ],
       [
         "xl/_rels/workbook.xml.rels",
-        parseXml(
+        xmlBytes(
           `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
         ),
       ],
       [
         "xl/worksheets/sheet1.xml",
-        parseXml(
+        xmlBytes(
           `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>3</v></c></row></sheetData></worksheet>`,
         ),
       ],
@@ -259,10 +253,10 @@ describe("REQ-123 xlsx model — 降级态与帽", () => {
   })
 
   test("零工作表 → NO_SHEETS", () => {
-    const parts = new Map<string, Document>([
+    const parts = new Map<string, Uint8Array>([
       [
         "xl/workbook.xml",
-        parseXml(`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets/></workbook>`),
+        xmlBytes(`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets/></workbook>`),
       ],
     ])
     expect(buildXlsxWorkbook(parts)).toEqual({ ok: false, code: "NO_SHEETS" })
@@ -272,22 +266,22 @@ describe("REQ-123 xlsx model — 降级态与帽", () => {
     const bigRow = `<row r="${XLSX_MAX_ROWS + 1}"><c r="A${XLSX_MAX_ROWS + 1}" t="inlineStr"><is><t>over</t></is></c></row>`
     // GS1 = 第 201 列(0 起 200)——正好越过列帽。
     const wideCell = `<row r="1"><c r="A1" t="inlineStr"><is><t>keep</t></is></c><c r="GS1" t="inlineStr"><is><t>wide</t></is></c></row>`
-    const parts = new Map<string, Document>([
+    const parts = new Map<string, Uint8Array>([
       [
         "xl/workbook.xml",
-        parseXml(
+        xmlBytes(
           `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`,
         ),
       ],
       [
         "xl/_rels/workbook.xml.rels",
-        parseXml(
+        xmlBytes(
           `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
         ),
       ],
       [
         "xl/worksheets/sheet1.xml",
-        parseXml(
+        xmlBytes(
           `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${wideCell}${bigRow}</sheetData></worksheet>`,
         ),
       ],
@@ -300,6 +294,38 @@ describe("REQ-123 xlsx model — 降级态与帽", () => {
     expect(grid.rows.length).toBeLessThanOrEqual(XLSX_MAX_ROWS)
     expect(grid.columnCount).toBeLessThanOrEqual(XLSX_MAX_COLUMNS)
     expect(grid.rows[0]![0]!.text).toBe("keep")
+  })
+})
+
+describe("REQ-123 xlsx model — 解析闸真的在路径上(#1174 parseOoxmlContentPart)", () => {
+  const minimalWorkbook = xmlBytes(
+    `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+  )
+  const minimalRels = xmlBytes(
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
+  )
+
+  test("带 DOCTYPE 的 workbook 被闸拒 → WORKBOOK_PART_UNREADABLE(闸被绕开时本条红)", () => {
+    const parts = new Map<string, Uint8Array>([
+      ["xl/workbook.xml", xmlBytes(`<!DOCTYPE x><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets><sheet name="S" sheetId="1"/></sheets></workbook>`)],
+    ])
+    expect(buildXlsxWorkbook(parts)).toEqual({
+      ok: false,
+      code: "WORKBOOK_PART_UNREADABLE",
+      detail: "CONTENT_PART_FORBIDDEN_MARKUP",
+    })
+  })
+
+  test("超 4 MiB 的 sheet part 走诚实降级(part-unreadable),不冻结不伪造", () => {
+    const oversized = new Uint8Array(OOXML_CONTENT_LIMITS.maxPartParseBytes + 1)
+    const parts = new Map<string, Uint8Array>([
+      ["xl/workbook.xml", minimalWorkbook],
+      ["xl/_rels/workbook.xml.rels", minimalRels],
+      ["xl/worksheets/sheet1.xml", oversized],
+    ])
+    const result = buildXlsxWorkbook(parts)
+    if (!result.ok) throw new Error(result.code)
+    expect(result.workbook.sheets[0]).toEqual({ name: "S", status: "missing", reason: "part-unreadable" })
   })
 })
 

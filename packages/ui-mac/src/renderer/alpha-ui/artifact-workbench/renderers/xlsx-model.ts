@@ -1,14 +1,17 @@
 // REQ-123(#1176)—— xlsx 工作表提取模型(AC2)。纯逻辑:输入是已解析的 part 文档,
 // 输出是渲染端可直接呈现的工作表模型(工作表清单 + 每表的单元格网格)。
 // 铁律(方案基线 docs/design/2026-08-29-req123-office-extraction/baseline.md):
-//   · 本模块不解 zip、不做「字节 → 文档」—— 那条通路是 #1174 的共享解析闸(解码 + DOCTYPE 文本闸),
-//     这里只消费其产物(已解析文档),结构上绕不开那道闸;
+//   · 本模块不解 zip、不自碰 DOM 解析 ——「字节 → 文档」只经 #1174 的共享解析闸
+//     parseOoxmlContentPart(解码 + DOCTYPE/ENTITY/CDATA 文本闸 + 4 MiB 单 part 帽),
+//     src/ooxml-chokepoint.test.ts 看住第二条路径;
 //   · 公式永不求值:<f> 原文保留,显示缓存 <v>(生产器算好的)或公式文本本身;
 //   · 工作表清单以 xl/workbook.xml 的 <sheets> 顺序为权威,目标经 workbook.xml.rels 解析 ——
 //     不按文件名排序、不猜「rIdN ↔ sheetN.xml」(实测二者不对应);
 //   · rels 目标校验在本层(基线③.4):拒外部目标 / 带 scheme / 逃逸路径,只接受 xl/worksheets/ 下的 part;
 //   · 行列有帽 + 诚实截断标记(极端大工作表出范围,基线出范围段);
 //   · 解析不出的格给明确的降级态(unresolved),不显示共享串索引数字、不伪造内容。
+
+import { parseOoxmlContentPart } from "./ooxml-content"
 
 export const XLSX_WORKBOOK_PART = "xl/workbook.xml"
 export const XLSX_WORKBOOK_RELS_PART = "xl/_rels/workbook.xml.rels"
@@ -38,14 +41,14 @@ export type XlsxSheetGrid = {
 
 export type XlsxSheetEntry =
   | { name: string; status: "ok"; grid: XlsxSheetGrid }
-  /** 清单仍然如实列出,但该表读不出:rels 解析不到安全目标 / part 不在输入里。 */
-  | { name: string; status: "missing"; reason: "unresolved-rel" | "missing-part" }
+  /** 清单仍然如实列出,但该表读不出:rels 解析不到安全目标 / part 不在输入里 / 没过解析闸。 */
+  | { name: string; status: "missing"; reason: "unresolved-rel" | "missing-part" | "part-unreadable" }
 
 export type XlsxWorkbook = { sheets: XlsxSheetEntry[] }
 
 export type XlsxWorkbookResult =
   | { ok: true; workbook: XlsxWorkbook }
-  | { ok: false; code: "WORKBOOK_PART_MISSING" | "NO_SHEETS" }
+  | { ok: false; code: "WORKBOOK_PART_MISSING" | "WORKBOOK_PART_UNREADABLE" | "NO_SHEETS"; detail?: string }
 
 /** 0 → A,25 → Z,26 → AA … 列头字母。 */
 export function columnLabel(index: number): string {
@@ -59,33 +62,48 @@ export function columnLabel(index: number): string {
 }
 
 /**
- * 从已解析的 part 文档构建工作表模型。
- * @param partDocs 规范 part 名(不带前导 `/`,与解压咽喉的 retained 键一致)→ 已解析文档。
- *                 生产接线时每个文档都必须来自 #1174 的共享解析闸。
+ * 从 part 字节构建工作表模型(基线③签名不变量:只接受字节,不接受路径 / URL / 回调)。
+ * @param partBytes 规范 part 名(不带前导 `/`,与 detectOoxmlContainer 的 parts 键一致)→ 字节。
+ *                  每个 part 都经 #1174 的共享解析闸;没过闸的 part 走诚实降级,不静默清洗。
  */
-export function buildXlsxWorkbook(partDocs: ReadonlyMap<string, Document>): XlsxWorkbookResult {
-  const workbookDoc = partDocs.get(XLSX_WORKBOOK_PART)
-  const workbookRoot = workbookDoc?.documentElement
-  if (!workbookRoot || workbookRoot.localName !== "workbook") return { ok: false, code: "WORKBOOK_PART_MISSING" }
+export function buildXlsxWorkbook(partBytes: ReadonlyMap<string, Uint8Array>): XlsxWorkbookResult {
+  const workbookBytes = partBytes.get(XLSX_WORKBOOK_PART)
+  if (!workbookBytes) return { ok: false, code: "WORKBOOK_PART_MISSING" }
+  const workbookParse = parseOoxmlContentPart(workbookBytes)
+  if (!workbookParse.ok) return { ok: false, code: "WORKBOOK_PART_UNREADABLE", detail: workbookParse.code }
+  const workbookRoot = workbookParse.document.documentElement
+  if (!workbookRoot || workbookRoot.localName !== "workbook")
+    return { ok: false, code: "WORKBOOK_PART_UNREADABLE", detail: "not-a-workbook" }
 
   const sheetsEl = childrenByLocalName(workbookRoot, "sheets")[0]
   const sheetEls = sheetsEl ? childrenByLocalName(sheetsEl, "sheet") : []
   if (sheetEls.length === 0) return { ok: false, code: "NO_SHEETS" }
 
-  const rels = parseWorksheetRels(partDocs.get(XLSX_WORKBOOK_RELS_PART))
-  const shared = parseSharedStrings(partDocs.get(XLSX_SHARED_STRINGS_PART))
+  const rels = parseWorksheetRels(parseOptionalPart(partBytes, XLSX_WORKBOOK_RELS_PART))
+  const shared = parseSharedStrings(parseOptionalPart(partBytes, XLSX_SHARED_STRINGS_PART))
 
   const sheets = sheetEls.map((el, i): XlsxSheetEntry => {
     const name = el.getAttribute("name") || `Sheet${i + 1}`
     const rid = relationshipIdOf(el)
     const partName = rid ? rels.get(rid) : undefined
     if (!partName) return { name, status: "missing", reason: "unresolved-rel" }
-    const doc = partDocs.get(partName)
-    const root = doc?.documentElement
-    if (!root || root.localName !== "worksheet") return { name, status: "missing", reason: "missing-part" }
+    const bytes = partBytes.get(partName)
+    if (!bytes) return { name, status: "missing", reason: "missing-part" }
+    const parsed = parseOoxmlContentPart(bytes)
+    if (!parsed.ok) return { name, status: "missing", reason: "part-unreadable" }
+    const root = parsed.document.documentElement
+    if (!root || root.localName !== "worksheet") return { name, status: "missing", reason: "part-unreadable" }
     return { name, status: "ok", grid: buildSheetGrid(root, shared) }
   })
   return { ok: true, workbook: { sheets } }
+}
+
+/** 可选 part(rels / sharedStrings):缺席或没过解析闸都退到 null,由各自的降级语义兜住。 */
+function parseOptionalPart(partBytes: ReadonlyMap<string, Uint8Array>, name: string): Document | undefined {
+  const bytes = partBytes.get(name)
+  if (!bytes) return undefined
+  const parsed = parseOoxmlContentPart(bytes)
+  return parsed.ok ? parsed.document : undefined
 }
 
 // ── workbook.xml.rels:rId → 已校验的 worksheet part 名 ─────────────────────────
