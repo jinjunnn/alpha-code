@@ -168,16 +168,83 @@ describe("Office preview production component", () => {
     expect(document.querySelector(".a-wb-office-channel-notice code")?.textContent).toBe("PREVIEW_UNAVAILABLE")
     expect(document.querySelector<HTMLButtonElement>('[data-office-action="quick-look"]')?.disabled).toBe(false)
   })
+
+  // ── REQ-123(#1175):提取内容视图 = pass 分支默认;Quick Look 降次级(基线 ②-5)──
+
+  test("PASS with an extracted docx model renders content as the default view with the fidelity note", async () => {
+    mount(
+      { status: "pass", quickLook: true, subtype: "docx" },
+      {
+        status: "extracted",
+        model: { kind: "docx", paragraphs: ["Quarterly Report Heading", "Intro paragraph with bold emphasis", ""] },
+      },
+    )
+    const content = document.querySelector("[data-office-content]")
+    expect(content).not.toBeNull()
+    expect(content!.textContent).toContain("Quarterly Report Heading")
+    expect(content!.textContent).toContain("Intro paragraph with bold emphasis")
+    // AC6:保真声明明写排版不保真
+    expect(document.querySelector("[data-office-fidelity]")?.textContent).toContain("不保留原件的排版")
+    // 占位卡让位于内容视图
+    expect(document.querySelector(".a-wb-office-placeholder")).toBeNull()
+    // IA 翻转:Quick Look 仍可用,但不再是 primary 动作
+    const quickLook = document.querySelector<HTMLButtonElement>('[data-office-action="quick-look"]')
+    expect(quickLook).not.toBeNull()
+    expect(quickLook!.getAttribute("data-variant")).toBeNull()
+  })
+
+  test("PASS with an extracted pptx model renders slides in authoritative order with notes blocks", async () => {
+    mount(
+      { status: "pass", quickLook: true, subtype: "pptx" },
+      {
+        status: "extracted",
+        model: {
+          kind: "pptx",
+          slides: [
+            { paragraphs: ["Charlie Slide Three"], notes: ["note for charlie"] },
+            { paragraphs: ["Alpha Slide One"], notes: [] },
+          ],
+        },
+      },
+    )
+    const slides = Array.from(document.querySelectorAll("[data-office-slide]"))
+    expect(slides.length).toBe(2)
+    expect(slides[0]!.textContent).toContain("Charlie Slide Three")
+    expect(slides[0]!.querySelector("[data-office-notes]")?.textContent).toContain("note for charlie")
+    expect(slides[1]!.textContent).toContain("Alpha Slide One")
+    expect(slides[1]!.querySelector("[data-office-notes]")).toBeNull()
+  })
+
+  test("PASS with a failed extraction shows the honest degradation card and keeps Quick Look reachable", async () => {
+    mount(
+      { status: "pass", quickLook: true, subtype: "pptx" },
+      { status: "failed", code: "PPTX_SLIDE_PART_MISSING" },
+    )
+    const failed = document.querySelector("[data-office-extract-failed]")
+    expect(failed).not.toBeNull()
+    expect(failed!.querySelector("code")?.textContent).toBe("PPTX_SLIDE_PART_MISSING")
+    expect(document.querySelector("[data-office-content]")).toBeNull()
+    expect(document.querySelector('[data-office-action="quick-look"]')).not.toBeNull()
+  })
+
+  test("PASS with no extraction wired keeps the honest placeholder (pre-#1174 state)", async () => {
+    mount({ status: "pass", quickLook: true, subtype: "docx" })
+    expect(document.querySelector(".a-wb-office-placeholder")).not.toBeNull()
+    expect(document.querySelector("[data-office-content]")).toBeNull()
+  })
 })
 
-function mount(officeStructure: PreviewContext["officeStructure"]) {
+function mount(
+  officeStructure: PreviewContext["officeStructure"],
+  officeText?: PreviewContext["officeText"],
+) {
   const host = document.createElement("div")
   document.body.append(host)
   disposers.push(
     runtime.render(
       () =>
         runtime.createComponent(runtime.OfficeArtifactView, {
-          ctx: context(officeStructure),
+          ctx: context(officeStructure, officeText),
         }),
       host,
     ),
@@ -195,7 +262,10 @@ async function flush() {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-function context(officeStructure: PreviewContext["officeStructure"]): PreviewContext {
+function context(
+  officeStructure: PreviewContext["officeStructure"],
+  officeText?: PreviewContext["officeText"],
+): PreviewContext {
   const card: ArtifactCard = {
     key: "art_job_1_0",
     name: "report.docx",
@@ -233,5 +303,6 @@ function context(officeStructure: PreviewContext["officeStructure"]): PreviewCon
     },
     card,
     officeStructure,
+    officeText,
   }
 }

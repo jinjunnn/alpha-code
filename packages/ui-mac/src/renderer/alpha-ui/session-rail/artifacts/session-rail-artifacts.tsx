@@ -28,6 +28,7 @@ import {
 import { detectOoxmlContainer, OOXML_LIMITS } from "../../artifact-workbench/renderers/ooxml"
 import { routeArtifact, shouldDetectOoxml } from "../../artifact-workbench/renderers/registry"
 import { presentOfficeStructure } from "../../artifact-workbench/renderers/office-structure"
+import { officeTextExtractionOf } from "../../artifact-workbench/renderers/office-text"
 import { cardPreviewable } from "../../artifact-workbench/workbench-core"
 import type { PreviewContext } from "../../artifact-workbench/renderers/renderer-views"
 import type { AlphaSessionLiveContext, SessionRailApi } from "../../session-workspace/session-workspace-shell"
@@ -370,7 +371,8 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
           reason: "unexpected read kind",
         },
       }
-    return { key: target.key, detection: await detectOoxmlContainer(read.bytes) }
+    // REQ-123(#1175):opt-in 取回白名单内容 part 字节 —— 字节只随 detected 返回(AC7)。
+    return { key: target.key, detection: await detectOoxmlContainer(read.bytes, { retainContentParts: true }) }
   })
 
   // Preview context — registry-decided routing, verbatim workbench assembly (REQ-095);
@@ -398,6 +400,7 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
       decision: routeArtifact({ ...claim, ooxml }),
       card,
       officeStructure: presentOfficeStructure({ ...claim, detection: ooxml }),
+      officeText: officeTextExtractionOf(ooxml),
     }
   })
 
