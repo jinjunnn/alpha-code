@@ -1,0 +1,173 @@
+{
+  "identity": {
+    "electronVersion": "42.3.3",
+    "chromeVersion": "148.0.7778.218",
+    "pid": 11924,
+    "bundlePath": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/req123-1177-probe-0wXprK/probe-bundle.js",
+    "at": "2026-08-29T12:48:16.972Z"
+  },
+  "probe": {
+    "arms": [
+      {
+        "arm": "gate:gate-xxe-file",
+        "detail": {
+          "ok": false,
+          "code": "CONTENT_PART_FORBIDDEN_MARKUP",
+          "reason": "CONTENT_PART_FORBIDDEN_MARKUP:<!DOCTYPE"
+        }
+      },
+      {
+        "arm": "gate:gate-xxe-http",
+        "detail": {
+          "ok": false,
+          "code": "CONTENT_PART_FORBIDDEN_MARKUP",
+          "reason": "CONTENT_PART_FORBIDDEN_MARKUP:<!DOCTYPE"
+        }
+      },
+      {
+        "arm": "gate:gate-external-dtd",
+        "detail": {
+          "ok": false,
+          "code": "CONTENT_PART_FORBIDDEN_MARKUP",
+          "reason": "CONTENT_PART_FORBIDDEN_MARKUP:<!DOCTYPE"
+        }
+      },
+      {
+        "arm": "gate:gate-url-in-text",
+        "detail": {
+          "ok": true
+        }
+      },
+      {
+        "arm": "raw:raw-xxe-file",
+        "detail": {
+          "parsererror": false,
+          "textLen": 0,
+          "textSample": "",
+          "threw": null
+        }
+      },
+      {
+        "arm": "raw:raw-xxe-http",
+        "detail": {
+          "parsererror": false,
+          "textLen": 0,
+          "textSample": "",
+          "threw": null
+        }
+      },
+      {
+        "arm": "raw:raw-external-dtd",
+        "detail": {
+          "parsererror": false,
+          "textLen": 3,
+          "textSample": "dtd",
+          "threw": null
+        }
+      },
+      {
+        "arm": "raw:raw-internal-entity",
+        "detail": {
+          "parsererror": false,
+          "textLen": 30,
+          "textSample": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "threw": null
+        }
+      },
+      {
+        "arm": "production:xxe-file-entity",
+        "detail": {
+          "detectionStatus": "detected",
+          "extraction": {
+            "status": "failed",
+            "code": "CONTENT_PART_FORBIDDEN_MARKUP"
+          }
+        }
+      },
+      {
+        "arm": "production:xxe-http-entity",
+        "detail": {
+          "detectionStatus": "detected",
+          "extraction": {
+            "status": "failed",
+            "code": "CONTENT_PART_FORBIDDEN_MARKUP"
+          }
+        }
+      },
+      {
+        "arm": "production:external-dtd",
+        "detail": {
+          "detectionStatus": "detected",
+          "extraction": {
+            "status": "failed",
+            "code": "CONTENT_PART_FORBIDDEN_MARKUP"
+          }
+        }
+      },
+      {
+        "arm": "production:url-in-text-and-rels",
+        "detail": {
+          "detectionStatus": "detected",
+          "extraction": {
+            "status": "extracted",
+            "model": {
+              "kind": "docx",
+              "paragraphs": [
+                "visit http://127.0.0.1:38999/url-in-text now"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "arm": "production:xlsx-hostile-sheet",
+        "detail": {
+          "detectionStatus": "detected",
+          "workbook": {
+            "ok": true,
+            "workbook": {
+              "sheets": [
+                {
+                  "name": "S1",
+                  "status": "missing",
+                  "reason": "part-unreadable"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "arm": "positive-control",
+        "detail": {
+          "fetchOk": true,
+          "err": null
+        }
+      }
+    ]
+  },
+  "observers": {
+    "sinkHits": [
+      {
+        "url": "/positive-control",
+        "method": "GET",
+        "at": 1788007695465
+      }
+    ],
+    "webRequestHits": [
+      {
+        "url": "file:///var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/req123-1177-probe-0wXprK/probe-page.html",
+        "method": "GET",
+        "resourceType": "mainFrame"
+      },
+      {
+        "url": "http://127.0.0.1:38999/positive-control",
+        "method": "GET",
+        "resourceType": "xhr"
+      }
+    ]
+  },
+  "consoleLines": [
+    "%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult\nhttps://electronjs.org/docs/tutorial/security.\nThis warning will not show up\nonce the app is packaged."
+  ]
+}
