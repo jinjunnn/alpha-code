@@ -16,7 +16,7 @@
 // explanation/analysis answers feel clipped. This calibrates length to the substance of the request
 // without licensing filler.
 
-export const ALPHA_BEHAVIOR_MD = `# alpha-code response guidance
+export const ALPHA_BEHAVIOR_MD = `# Code Puppy response guidance
 
 The base prompt optimizes for terse, command-line output. Keep that brevity for routine actions,
 confirmations, and simple lookups.

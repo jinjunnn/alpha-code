@@ -495,9 +495,9 @@ const main = Effect.gen(function* () {
   // B15: surface the MIT attribution in the native About panel (opencode is MIT — its copyright +
   // permission notice must ship with the app; full text in resources/NOTICE.txt).
   app.setAboutPanelOptions({
-    applicationName: "alpha-code",
+    applicationName: "Code Puppy",
     applicationVersion: app.getVersion(),
-    copyright: "© 2025 opencode (MIT). alpha-code fork build.",
+    copyright: "© 2025 opencode (MIT). Code Puppy fork build.",
     credits: "Built on OpenCode (MIT) — https://github.com/anomalyco/opencode",
   })
   app.setPath(

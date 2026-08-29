@@ -1,12 +1,12 @@
 ---
 name: integrate-project
-description: Import or re-import external ecosystem content (.claude/.agents skills, CLAUDE.md) into alpha-code's native .alpha layout. Use when the user asks to import external skills/instructions, bring over Claude Code content, refresh a previous import after the external directory changed, or wonders why .claude/.agents content is not visible in alpha-code.
-license: MIT (alpha-code original)
+description: Import or re-import external ecosystem content (.claude/.agents skills, CLAUDE.md) into Code Puppy's native .alpha layout. Use when the user asks to import external skills/instructions, bring over Claude Code content, refresh a previous import after the external directory changed, or wonders why .claude/.agents content is not visible in Code Puppy.
+license: MIT (Code Puppy original)
 ---
 
 # Integrate Project — external content import
 
-alpha-code deliberately does **not** read other tools' directories (`.claude/`, `.agents/`,
+Code Puppy deliberately does **not** read other tools' directories (`.claude/`, `.agents/`,
 `CLAUDE.md`) — unreviewed content must not silently enter the model context. Import converts that
 content into native alpha assets (a **snapshot**, decoupled from the source; re-running this skill
 is the way to refresh after the external directory changes).
@@ -29,7 +29,7 @@ is the way to refresh after the external directory changes).
      root). For project scope, then call `alpha_register` with `type=skill` to register the skills
      path. For a name that already exists in `.alpha/skills`, ask before replacing.
    - **CLAUDE.md**: if `AGENTS.md` does not exist, create it from the CLAUDE.md content with a first
-     line `<!-- imported from CLAUDE.md by alpha-code (snapshot; re-import to refresh) -->`. If
+     line `<!-- imported from CLAUDE.md by Code Puppy (snapshot; re-import to refresh) -->`. If
      `AGENTS.md` exists, do NOT overwrite or append blindly — show both and help the user merge.
 5. **Activate** — call `alpha_reload`; the imported items are available from the NEXT message.
 6. **Report** — list what was imported, what was skipped and why. Be honest about partial results.

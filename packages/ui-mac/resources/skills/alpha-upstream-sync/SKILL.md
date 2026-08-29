@@ -3,9 +3,9 @@ name: alpha-upstream-sync
 description: Sync opencode upstream into the alpha fork and re-validate alpha's prompt/agent overrides against the refreshed base. Use when pulling upstream, after `git merge dev`, or before shipping a build that includes an upstream bump.
 ---
 
-# Upstream sync + override re-validation (alpha-code)
+# Upstream sync + override re-validation (Code Puppy)
 
-alpha-code is a fork of opencode with a zero-edit discipline: own code is *added*, upstream files
+Code Puppy (repo `alpha-code`) is a fork of opencode with a zero-edit discipline: own code is *added*, upstream files
 are never modified. The North Star is "conflict files = 0" after every sync. This skill walks the
 sync and the one check CI cannot do for you.
 

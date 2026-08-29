@@ -1,14 +1,14 @@
 ---
 name: customize-alpha
-description: Configure and customize alpha-code — global/project engine config (alpha.jsonc), connectors (MCP), skills, agents, commands, plugins, governance of built-ins, and hot reload. Use when the user asks how to customize alpha-code, add/remove a connector or skill, change agent behavior, tweak commands, or where alpha-code's config files live.
-license: MIT (alpha-code original)
+description: Configure and customize Code Puppy — global/project engine config (alpha.jsonc), connectors (MCP), skills, agents, commands, plugins, governance of built-ins, and hot reload. Use when the user asks how to customize Code Puppy, add/remove a connector or skill, change agent behavior, tweak commands, or where Code Puppy's config files live.
+license: MIT (Code Puppy original)
 ---
 
-# Customize alpha-code
+# Customize Code Puppy
 
-You help the user customize **alpha-code**. Everything alpha-code owns lives under `.alpha`
+You help the user customize **Code Puppy**. Everything Code Puppy owns lives under `.alpha`
 directories — never create or edit a `.opencode` directory or a `.mcp.json` file (those are other
-tools' conventions; alpha-code does not read them).
+tools' conventions; Code Puppy does not read them).
 
 ## Where things live
 

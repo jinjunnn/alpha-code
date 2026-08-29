@@ -8,7 +8,7 @@ import { COMPOSER_PLACEHOLDER, COMPOSER_PLACEHOLDER_UPSTREAM_LITERAL } from "../
 // Per the only-add discipline (.claude/rules/DECISIONS.md ADR-005/007) we must NOT edit them
 // on disk — that would conflict on every upstream sync. Instead we rewrite the string literals
 // during the renderer bundle: the git-tracked source stays byte-identical to upstream (so
-// `git merge dev` never conflicts), while the shipped UI reads "alpha-code". This is the
+// `git merge dev` never conflicts), while the shipped UI reads "Code Puppy". This is the
 // "patch layer" for workspace source — bun's patches/ only patch installed npm deps, not
 // workspace packages.
 //
@@ -41,40 +41,40 @@ const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
     ['<Icon name="discord" class="text-text-interactive-base" />', ""],
   ],
   "app/src/i18n/en.ts": [
-    ["OpenCode Desktop", "alpha-code"],
-    ["Change the display language for OpenCode", "Change the display language for alpha-code"],
-    ["Customise how OpenCode looks on your device", "Customise how alpha-code looks on your device"],
+    ["OpenCode Desktop", "Code Puppy"],
+    ["Change the display language for OpenCode", "Change the display language for Code Puppy"],
+    ["Customise how OpenCode looks on your device", "Customise how Code Puppy looks on your device"],
     [
       "Choose whether OpenCode follows the system, light, or dark theme",
-      "Choose whether alpha-code follows the system, light, or dark theme",
+      "Choose whether Code Puppy follows the system, light, or dark theme",
     ],
-    ["Customise how OpenCode is themed.", "Customise how alpha-code is themed."],
-    ["Automatically check for updates when OpenCode launches", "Automatically check for updates when alpha-code launches"],
-    ["You're running the latest version of OpenCode.", "You're running the latest version of alpha-code."],
+    ["Customise how OpenCode is themed.", "Customise how Code Puppy is themed."],
+    ["Automatically check for updates when OpenCode launches", "Automatically check for updates when Code Puppy launches"],
+    ["You're running the latest version of OpenCode.", "You're running the latest version of Code Puppy."],
     [
       "A new version of OpenCode ({{version}}) is now available to install.",
-      "A new version of alpha-code ({{version}}) is now available to install.",
+      "A new version of Code Puppy ({{version}}) is now available to install.",
     ],
     [
       "OpenCode includes free models so you can start immediately.",
-      "alpha-code includes free models so you can start immediately.",
+      "Code Puppy includes free models so you can start immediately.",
     ],
     // Crash screen (C28)
-    ["Please report this error to the OpenCode team", "Please report this error to the alpha-code team"],
+    ["Please report this error to the OpenCode team", "Please report this error to the Code Puppy team"],
     ['"on Discord"', '"on our feedback page"'],
   ],
   "app/src/i18n/zh.ts": [
-    ["OpenCode Desktop", "alpha-code"],
-    ["更改 OpenCode 的显示语言", "更改 alpha-code 的显示语言"],
-    ["自定义 OpenCode 在你的设备上的外观", "自定义 alpha-code 在你的设备上的外观"],
-    ["选择 OpenCode 跟随系统、浅色或深色主题", "选择 alpha-code 跟随系统、浅色或深色主题"],
-    ["自定义 OpenCode 的主题。", "自定义 alpha-code 的主题。"],
-    ["在 OpenCode 启动时自动检查更新", "在 alpha-code 启动时自动检查更新"],
-    ["你正在使用最新版本的 OpenCode。", "你正在使用最新版本的 alpha-code。"],
-    ["OpenCode 有新版本 ({{version}}) 可安装。", "alpha-code 有新版本 ({{version}}) 可安装。"],
-    ["OpenCode 提供免费模型，你可以立即开始使用。", "alpha-code 提供免费模型，你可以立即开始使用。"],
+    ["OpenCode Desktop", "Code Puppy"],
+    ["更改 OpenCode 的显示语言", "更改 Code Puppy 的显示语言"],
+    ["自定义 OpenCode 在你的设备上的外观", "自定义 Code Puppy 在你的设备上的外观"],
+    ["选择 OpenCode 跟随系统、浅色或深色主题", "选择 Code Puppy 跟随系统、浅色或深色主题"],
+    ["自定义 OpenCode 的主题。", "自定义 Code Puppy 的主题。"],
+    ["在 OpenCode 启动时自动检查更新", "在 Code Puppy 启动时自动检查更新"],
+    ["你正在使用最新版本的 OpenCode。", "你正在使用最新版本的 Code Puppy。"],
+    ["OpenCode 有新版本 ({{version}}) 可安装。", "Code Puppy 有新版本 ({{version}}) 可安装。"],
+    ["OpenCode 提供免费模型，你可以立即开始使用。", "Code Puppy 提供免费模型，你可以立即开始使用。"],
     // Crash screen (C28)
-    ["请将此错误报告给 OpenCode 团队", "请将此错误报告给 alpha-code 团队"],
+    ["请将此错误报告给 OpenCode 团队", "请将此错误报告给 Code Puppy 团队"],
     ["在 Discord 上", "在反馈页"],
     // Sound option fix: upstream zh machine-transliterated "staplebops" to the garbled "斯泰普博普斯"
     // (sound.option.staplebops01..07). One substring swap cleans all 7 (the " 01".."07" suffix stays);
@@ -83,7 +83,7 @@ const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
   ],
   "app/src/i18n/zht.ts": [
     // Crash screen (C28)
-    ["請將此錯誤回報給 OpenCode 團隊", "請將此錯誤回報給 alpha-code 團隊"],
+    ["請將此錯誤回報給 OpenCode 團隊", "請將此錯誤回報給 Code Puppy 團隊"],
     ["在 Discord 上", "在反饋頁"],
     // Traditional-zh has the same garbled staplebops transliteration.
     ["斯泰普博普斯", "嗒啵"],

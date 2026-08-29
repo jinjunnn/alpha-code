@@ -42,7 +42,7 @@ export function applyFactoryDeny(cfg: Record<string, unknown>, deniedJson: strin
     if (!(n in command)) {
       command[n] = {
         description: "(已禁用)该技能已由 alpha 出厂默认禁用",
-        template: `该技能(${n})已由 alpha 出厂默认禁用。请告知用户:此技能不可用;定制 alpha-code 请改用 /customize-alpha;如需恢复,到 定制中心 → 已安装 → 内置(上游) 解除禁用。不要尝试其它方式执行该技能。`,
+        template: `该技能(${n})已由 alpha 出厂默认禁用。请告知用户:此技能不可用;定制 Code Puppy 请改用 /customize-alpha;如需恢复,到 定制中心 → 已安装 → 内置(上游) 解除禁用。不要尝试其它方式执行该技能。`,
       }
     }
   }

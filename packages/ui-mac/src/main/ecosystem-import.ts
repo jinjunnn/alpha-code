@@ -155,7 +155,7 @@ export function importProjectClaudeMd(projectDir: string, claudeMdPath: string):
   const agentsMd = path.join(projectDir, "AGENTS.md")
   if (fs.existsSync(agentsMd)) return "agents-md-exists"
   const body = fs.readFileSync(claudeMdPath, "utf8")
-  const provenance = `<!-- imported from ${path.basename(path.dirname(claudeMdPath)) === ".claude" ? ".claude/CLAUDE.md" : "CLAUDE.md"} by alpha-code (REQ-063 snapshot import; re-import to refresh) -->\n\n`
+  const provenance = `<!-- imported from ${path.basename(path.dirname(claudeMdPath)) === ".claude" ? ".claude/CLAUDE.md" : "CLAUDE.md"} by Code Puppy (REQ-063 snapshot import; re-import to refresh) -->\n\n`
   fs.writeFileSync(agentsMd, provenance + body)
   return "agents-md-created"
 }

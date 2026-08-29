@@ -11,12 +11,12 @@ export const dict = {
   "desktop.updater.checkFailed.title": "Update Check Failed",
   "desktop.updater.checkFailed.message": "Failed to check for updates",
   "desktop.updater.none.title": "No Update Available",
-  "desktop.updater.none.message": "You are already using the latest version of alpha-code",
+  "desktop.updater.none.message": "You are already using the latest version of Code Puppy",
   "desktop.updater.downloadFailed.title": "Update Failed",
   "desktop.updater.downloadFailed.message": "Failed to download update",
   "desktop.updater.downloaded.title": "Update Downloaded",
   "desktop.updater.downloaded.prompt":
-    "Version {{version}} of alpha-code has been downloaded, would you like to install it and relaunch?",
+    "Version {{version}} of Code Puppy has been downloaded, would you like to install it and relaunch?",
   "desktop.updater.installFailed.title": "Update Failed",
   "desktop.updater.installFailed.message": "Failed to install update",
 
@@ -43,7 +43,7 @@ export const dict = {
   "alpha.auto.newTitle": "New automation",
   "alpha.auto.editTitle": "Task details",
   "alpha.auto.offlineNote": "Tasks run only while the app is open — nothing runs when it isn't (this is not a background service).",
-  "alpha.auto.loginItem": "Launch alpha-code at login",
+  "alpha.auto.loginItem": "Launch Code Puppy at login",
   "alpha.auto.pauseAll": "Pause all",
   "alpha.auto.platformCost": "Platform-pays mode is active: task runs consume your platform quota.",
   "alpha.auto.nlPlaceholder": "Describe it in one line: every day at 9am, list unhandled TODOs in this project",
@@ -944,9 +944,9 @@ export const dict = {
   "alpha.wb.office.structurePassLocal": "This Mac · passed",
 
   // Alpha-owned renderer surfaces (C20 locale completion).
-  "alpha.brand.product": "alpha-code",
+  "alpha.brand.product": "Code Puppy",
   "alpha.brand.short": "Alpha",
-  "alpha.brand.wordmark": "ALPHA CODE",
+  "alpha.brand.wordmark": "CODE PUPPY",
   "alpha.common.back": "Back",
   "alpha.common.close": "Close",
   "alpha.common.remove": "Remove",
@@ -987,7 +987,7 @@ export const dict = {
   "alpha.newSession.directoryLoading": "Waiting for the draft state",
   "alpha.newSession.attachmentReadPending": "An attachment is still loading — switching workspaces would discard it. Try again in a moment.",
 
-  "alpha.onboarding.title": "Welcome to alpha-code",
+  "alpha.onboarding.title": "Welcome to Code Puppy",
   "alpha.onboarding.subtitle": "Start your first project in three steps",
   "alpha.onboarding.signIn": "Sign in",
   "alpha.onboarding.chooseModel": "Choose a model",
@@ -1051,7 +1051,7 @@ export const dict = {
   "alpha.recovery.dbCorruptBackup": "Restore the latest available backup. Corrupt data is preserved and never silently deleted.",
   "alpha.recovery.dbCorruptNoBackup": "No verified backup is available. Exit and repair the data, or explicitly continue startup.",
   "alpha.recovery.tooNewTitle": "Data is newer than this app",
-  "alpha.recovery.tooNewSummary": "This data was created by a newer alpha-code version. Continuing may write incompatible data.",
+  "alpha.recovery.tooNewSummary": "This data was created by a newer Code Puppy version. Continuing may write incompatible data.",
   "alpha.recovery.tooNewCard": "Incompatible version",
   "alpha.recovery.tooNewDetail": "Exit and upgrade the app. If you must continue, create a verified backup first.",
   "alpha.recovery.engineTitle": "Local engine stopped",

@@ -1,7 +1,7 @@
 ---
 name: office-docs
 description: Create, edit, and read office documents — Excel (xlsx), Word (docx), PowerPoint (pptx), and PDF. Use when the user asks to build a spreadsheet, write a report or slide deck as a real document file, extract content from office files, or generate/merge/split PDFs.
-license: Apache-2.0 (alpha-code original — no Anthropic skill text)
+license: Apache-2.0 (Code Puppy original — no Anthropic skill text)
 ---
 
 # Office documents

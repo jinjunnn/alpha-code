@@ -1,7 +1,7 @@
 ---
 name: alpha-workspace
 description: Write summaries, journals, and memory notes into the user's Alpha workspace (~/Alpha) following its directory contract (Journal/Memory/Outputs). Use when the user asks to summarize the day or a session, keep a journal/diary, remember something for later, or save notes/results without naming a target path.
-license: MIT (alpha-code original)
+license: MIT (Code Puppy original)
 ---
 
 # Alpha 工作目录写入约定
