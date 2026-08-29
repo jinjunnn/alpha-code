@@ -51,6 +51,8 @@ review_after: 2027-01-16
 | 空态(会话内轻着陆) | `#struct` | — | 2026-07-24 | — | — | `session-timeline-view.tsx` | 未登记(历史) |
 | 消息导航(上一条 / 下一条) | `#struct` | — | **无帧** | — | — | 代码未接线(仅有「滚动到底」) | **待补** |
 | 右栏审查 / 终端(换肤基线) | `#panel` | `2026-06-28-timeline-overhaul/` | — | — | — | 整页四面板形态见 `../session-workspace/` | 未登记(历史) |
+| 产物链接行「可预览」标示(注册表单一权威) | `#artifacts` | [`2026-08-28-req108-rail-file-viewer/`](../../2026-08-28-req108-rail-file-viewer/frame.html)(§诚实性) | — | 待立(诚实性窄票,主 session 另立) | — | 现状:`cards/tool-cards.tsx:979`(`rendererId !== "fallback"` 推断,待改为注册表标注)· `renderers/registry.ts` | 设计中 |
+| 产物预览面 html/pdf 就地呈现(共享隔离内容区) | `#artifacts` | [`2026-08-28-req108-rail-file-viewer/`](../../2026-08-28-req108-rail-file-viewer/frame.html)(§4 载体) | — | ac#244(子票 ac#246) | — | 现状:html 开独立窗口(`main/html-preview-host.ts`)、pdf 到站诚实卡(`renderers/renderer-views.tsx` PdfCard);就地载体待实现 | 设计中 |
 
 ## 本次登记时发现的两处不一致
 
