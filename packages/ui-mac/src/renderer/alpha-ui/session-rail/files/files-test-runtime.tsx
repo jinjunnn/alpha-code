@@ -16,6 +16,7 @@ import {
   type SessionRailApi,
   type SessionRailPanelRenderers,
 } from "../../session-workspace/session-workspace-shell"
+import { Dialog } from "../../Dialog"
 import type { FileChangeKind } from "./files-core"
 import { createFilesPanelState, type FilesPanelIO, type FilesPanelState } from "./files-state"
 import { SessionRailFilesView } from "./files-view"
@@ -157,6 +158,7 @@ export interface ViewerHarnessCalls {
   overlayOpen: Array<{ path: string; kind: string; bounds: RailPreviewBounds }>
   overlayClose: string[]
   overlaySetBounds: string[]
+  overlaySetVisible: Array<{ previewId: string; visible: boolean }>
 }
 
 export function createViewerHarness(options: {
@@ -175,6 +177,7 @@ export function createViewerHarness(options: {
     overlayOpen: [],
     overlayClose: [],
     overlaySetBounds: [],
+    overlaySetVisible: [],
   }
   let nextRead = 0
   const contents = new Map<string, Uint8Array>()
@@ -228,6 +231,7 @@ export function createViewerHarness(options: {
       return Promise.resolve(options.overlayOpenResult ?? { ok: true, previewId: `rp_${calls.overlayOpen.length}` })
     },
     setBounds: (previewId) => void calls.overlaySetBounds.push(previewId),
+    setVisible: (previewId, visible) => void calls.overlaySetVisible.push({ previewId, visible }),
     close: (previewId) => void calls.overlayClose.push(previewId),
     status: (previewId) => Promise.resolve({ ok: true, previewId, open: true, blockedPaths: [] }),
     onClosed: (cb) => {
@@ -237,6 +241,10 @@ export function createViewerHarness(options: {
   }
 
   const [active, setActive] = createSignal(true)
+  // #1173:强模态驱动 —— 挂的是**生产的** alpha-ui/Dialog(权限审批/能力授权同一个组件),
+  // 所以用例驱动的是真实模态源(Dialog → dialog-core.registerDialog → modal-presence),
+  // 不是一个替身信号。
+  const [modalOpen, setModalOpen] = createSignal(false)
   let viewer: FileViewerState | undefined
   const exits: number[] = []
 
@@ -259,6 +267,11 @@ export function createViewerHarness(options: {
             }}
           />
         </Show>
+        <Dialog open={modalOpen()} onClose={() => setModalOpen(false)} title="Approve tool run">
+          <button type="button" data-fake-modal-approve>
+            approve
+          </button>
+        </Dialog>
       </div>
     )
   }
@@ -268,6 +281,7 @@ export function createViewerHarness(options: {
     calls,
     viewer: () => viewer!,
     setActive,
+    setModalOpen,
     releaseChunk: () => pending.shift()?.(),
     pendingChunks: () => pending.length,
     emitOverlayClosed: (e: RailPreviewClosedEvent) => overlayClosedCbs.forEach((cb) => cb(e)),

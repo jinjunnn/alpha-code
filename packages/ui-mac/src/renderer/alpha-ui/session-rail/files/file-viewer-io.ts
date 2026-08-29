@@ -15,6 +15,8 @@ import type { FileViewerIO } from "./file-viewer-state"
 export interface FileViewerOverlayIO {
   open: (path: string, kind: RailPreviewKind, bounds: RailPreviewBounds) => Promise<RailPreviewOpenResult>
   setBounds: (previewId: string, bounds: RailPreviewBounds) => void
+  /** #1173:强模态期间让位(隐藏而非销毁 —— 模态关闭后原样恢复,用户不必重开文件)。 */
+  setVisible: (previewId: string, visible: boolean) => void
   close: (previewId: string) => void
   status: (previewId: string) => Promise<RailPreviewStatus>
   onClosed: (cb: (event: RailPreviewClosedEvent) => void) => () => void
@@ -35,6 +37,7 @@ export function createFileViewerOverlayIO(directory: string): FileViewerOverlayI
   return {
     open: (path, kind, bounds) => window.api.railPreview.open(directory, path, kind, bounds),
     setBounds: (previewId, bounds) => void window.api.railPreview.setBounds(previewId, bounds),
+    setVisible: (previewId, visible) => void window.api.railPreview.setVisible(previewId, visible),
     close: (previewId) => void window.api.railPreview.close(previewId),
     status: (previewId) => window.api.railPreview.status(previewId),
     onClosed: (cb) => window.api.railPreview.onClosed(cb),

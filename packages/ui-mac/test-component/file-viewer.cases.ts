@@ -267,6 +267,50 @@ describe("REQ-108 file viewer real Solid mount", () => {
     expect(harness.calls.overlayOpen).toHaveLength(2)
   })
 
+  // #1173 —— 遮挡合同的另一半。叠放层活在**原生**层级上:它不在主文档 DOM 里,
+  // 任何 z-index/inert 都管不到它,所以判据只能落在朝 main 去的那条边(setVisible),
+  // 绝不能用 DOM 存在性("region 还在" 与 "它盖住了弹窗" 是两件事)。
+  test("a strong modal hides the overlay carrier and closing it restores the carrier (#1173)", async () => {
+    const harness = runtime.createViewerHarness({ files: {} })
+    mount(harness.View)
+    await flush()
+    harness.viewer().open("report.pdf")
+    await flushTimers()
+    expect(harness.calls.overlayOpen).toHaveLength(1)
+    // 无模态时不发多余的 setVisible —— 这条也钉住"每次打开都响一声"的稀释写法。
+    expect(harness.calls.overlaySetVisible).toEqual([])
+
+    // 真模态:生产的 alpha-ui/Dialog(= 权限审批/能力授权走的同一个组件)。
+    harness.setModalOpen(true)
+    await flushTimers()
+    expect(document.querySelector("[role='dialog'][aria-modal='true']")).not.toBeNull()
+    expect(harness.calls.overlaySetVisible).toEqual([{ previewId: "rp_1", visible: false }])
+    // 让位 ≠ 销毁:模态期间叠放层必须还活着,否则关掉弹窗用户得重开文件。
+    expect(harness.calls.overlayClose).toEqual([])
+
+    harness.setModalOpen(false)
+    await flushTimers()
+    expect(document.querySelector("[role='dialog'][aria-modal='true']")).toBeNull()
+    expect(harness.calls.overlaySetVisible).toEqual([
+      { previewId: "rp_1", visible: false },
+      { previewId: "rp_1", visible: true },
+    ])
+    expect(harness.calls.overlayOpen).toHaveLength(1)
+    expect(harness.calls.overlayClose).toEqual([])
+  })
+
+  test("a modal already up when the carrier opens hides it on arrival (#1173)", async () => {
+    const harness = runtime.createViewerHarness({ files: {} })
+    mount(harness.View)
+    await flush()
+    harness.setModalOpen(true)
+    await flushTimers()
+    harness.viewer().open("report.pdf")
+    await flushTimers()
+    expect(harness.calls.overlayOpen).toHaveLength(1)
+    expect(harness.calls.overlaySetVisible).toEqual([{ previewId: "rp_1", visible: false }])
+  })
+
   test("overlay refusal from main lands in the honest oversize/fail states, never a blank region (AC6)", async () => {
     const harness = runtime.createViewerHarness({
       files: {},

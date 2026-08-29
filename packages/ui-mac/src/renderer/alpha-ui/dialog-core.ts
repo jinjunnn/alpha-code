@@ -1,3 +1,5 @@
+import { enterModal } from "./modal-presence"
+
 export type DialogFocusTarget = HTMLElement | SVGElement
 export type DialogRestoreFocus = DialogFocusTarget | (() => DialogFocusTarget | null | undefined)
 
@@ -97,6 +99,9 @@ export function registerDialog(options: {
   }
   stack.entries.push(entry)
   updateLayers(stack, options.panel.ownerDocument)
+  // #1173:模态栈是 renderer 里「强模态在场」的唯一真相,把它广播出去 —— 原生叠放层
+  // (右栏预览的 WebContentsView)不在 DOM 里,inert/aria-hidden 对它无效,只能靠这个信号让位。
+  const releaseModal = enterModal()
   const isTop = () => stack.entries.at(-1) === entry
   let registered = true
 
@@ -108,6 +113,8 @@ export function registerDialog(options: {
     unregister() {
       if (!registered) return
       registered = false
+      // 先于任何提前 return 释放:unregister 被调用就意味着这个模态已经不在场了。
+      releaseModal()
       const index = stack.entries.indexOf(entry)
       if (index < 0) return
       const wasTop = index === stack.entries.length - 1
