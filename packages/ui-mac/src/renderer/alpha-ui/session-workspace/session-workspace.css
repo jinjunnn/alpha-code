@@ -506,7 +506,10 @@
   flex-direction: column;
   width: 400px;
   min-width: 320px;
-  max-width: 560px;
+  /* REQ-140: no fixed ceiling — the session column keeps 480px. CSS min-width beats max-width,
+   * so a workspace narrower than 320+480 pins the rail at its floor (approved conflict rule).
+   * JS twin: railMaxWidth() in rail-width.ts. */
+  max-width: calc(100% - 480px);
   min-height: 0;
   overflow: hidden;
   border-left: 1px solid var(--a-border-faint);
@@ -673,10 +676,10 @@
   }
 }
 
-/* Narrow windows compress the topbar only. The rail keeps the 320–560 width contract
- * (single source of truth = rail-width.ts constants); on a viewport too narrow for a
- * 320px rail the user collapses the rail — the contract is never silently undercut
- * (integration audit Major-5). */
+/* Narrow windows compress the topbar only. The rail keeps the REQ-140 width contract
+ * (floor 320px, ceiling = workspace − 480px; single source of truth = rail-width.ts); on a
+ * viewport too narrow for a 320px rail the user collapses the rail — the contract is never
+ * silently undercut, and no media query may re-declare the rail's bounds (audit Major-5). */
 @media (max-width: 860px) {
   .a-swk-project-label {
     max-width: 110px;

@@ -271,24 +271,93 @@ describe("REQ-125 session workspace real Solid mount", () => {
     expect(dot()).toBeNull()
   })
 
-  test("width grip drags within 320-560, remembers per panel, and persists", async () => {
+  // REQ-140 (docs/design/2026-08-28-req140-rail-width): floor 320, no fixed ceiling, effective
+  // ceiling = workspace − 480. Every number below is an approved-value instance, never a
+  // production constant — the retired contract's assertions passed for any ceiling at all.
+  test("width grip drags past the retired 560 ceiling, up to workspace - 480", async () => {
     const host = mount()
     await flush()
+    const root = () => host.querySelector<HTMLElement>("[data-alpha-session-workspace]")!
     const rail = () => host.querySelector<HTMLElement>("[data-alpha-session-rail-host]")!
     const grip = () => host.querySelector<HTMLElement>(".a-swk-rail-grip")!
+    // Production measures `.a-swk-root`'s clientWidth on mount and on window resize; happy-dom
+    // has no layout engine, so the case states the width the same way a real resize delivers it.
+    const setWorkspace = async (width: number) => {
+      Object.defineProperty(root(), "clientWidth", { value: width, configurable: true })
+      window.dispatchEvent(new Event("resize"))
+      await flush()
+    }
+
+    await setWorkspace(1200)
     expect(rail().style.width).toBe("400px")
     expect(grip().getAttribute("aria-valuenow")).toBe("400")
+    expect(grip().getAttribute("aria-valuemin")).toBe("320")
+    expect(grip().getAttribute("aria-valuemax")).toBe("720")
 
     grip().dispatchEvent(pointer("pointerdown", 1000))
     window.dispatchEvent(pointer("pointermove", 940))
     await flush()
     expect(rail().style.width).toBe("460px")
+    // Straight past 560 — the drag only stops where the session column's 480px begins.
     window.dispatchEvent(pointer("pointermove", 200))
     await flush()
-    expect(rail().style.width).toBe("560px")
+    expect(rail().style.width).toBe("720px")
     window.dispatchEvent(pointer("pointerup", 200))
     await flush()
-    expect(JSON.parse(localStorage.getItem("alpha-session-rail-widths-v1")!)).toEqual({ review: 560 })
+    expect(JSON.parse(localStorage.getItem("alpha-session-rail-widths-v1")!)).toEqual({ review: 720 })
+
+    // Keyboard shares the same ceiling: widening at the ceiling is a no-op.
+    grip().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }))
+    await flush()
+    expect(rail().style.width).toBe("720px")
+  })
+
+  test("a narrowing window converges the display but never rewrites the remembered width", async () => {
+    const host = mount()
+    await flush()
+    const root = () => host.querySelector<HTMLElement>("[data-alpha-session-workspace]")!
+    const rail = () => host.querySelector<HTMLElement>("[data-alpha-session-rail-host]")!
+    const grip = () => host.querySelector<HTMLElement>(".a-swk-rail-grip")!
+    const setWorkspace = async (width: number) => {
+      Object.defineProperty(root(), "clientWidth", { value: width, configurable: true })
+      window.dispatchEvent(new Event("resize"))
+      await flush()
+    }
+
+    await setWorkspace(1200)
+    grip().dispatchEvent(pointer("pointerdown", 1000))
+    window.dispatchEvent(pointer("pointermove", 200))
+    window.dispatchEvent(pointer("pointerup", 200))
+    await flush()
+    expect(rail().style.width).toBe("720px")
+
+    // Workspace below 320+480: the rail's floor wins and the session column takes the remainder.
+    await setWorkspace(760)
+    expect(rail().style.width).toBe("320px")
+    expect(grip().getAttribute("aria-valuemax")).toBe("320")
+    expect(JSON.parse(localStorage.getItem("alpha-session-rail-widths-v1")!)).toEqual({ review: 720 })
+
+    // Widening restores what the user chose — the memory was never touched.
+    await setWorkspace(1500)
+    expect(rail().style.width).toBe("720px")
+    expect(grip().getAttribute("aria-valuemax")).toBe("1020")
+  })
+
+  test("rail width is remembered per panel and restored on tab switch", async () => {
+    const host = mount()
+    await flush()
+    const root = () => host.querySelector<HTMLElement>("[data-alpha-session-workspace]")!
+    const rail = () => host.querySelector<HTMLElement>("[data-alpha-session-rail-host]")!
+    const grip = () => host.querySelector<HTMLElement>(".a-swk-rail-grip")!
+    Object.defineProperty(root(), "clientWidth", { value: 1200, configurable: true })
+    window.dispatchEvent(new Event("resize"))
+    await flush()
+
+    grip().dispatchEvent(pointer("pointerdown", 1000))
+    window.dispatchEvent(pointer("pointermove", 900))
+    window.dispatchEvent(pointer("pointerup", 900))
+    await flush()
+    expect(rail().style.width).toBe("500px")
 
     // Per-panel memory: the files panel keeps its own width.
     host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='files']")!.click()
@@ -299,12 +368,12 @@ describe("REQ-125 session workspace real Solid mount", () => {
     grip().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
     await flush()
     expect(rail().style.width).toBe("384px")
-    expect(JSON.parse(localStorage.getItem("alpha-session-rail-widths-v1")!)).toEqual({ review: 560, files: 384 })
+    expect(JSON.parse(localStorage.getItem("alpha-session-rail-widths-v1")!)).toEqual({ review: 500, files: 384 })
 
     // Back to review: remembered width is restored.
     host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='review']")!.click()
     await flush()
-    expect(rail().style.width).toBe("560px")
+    expect(rail().style.width).toBe("500px")
   })
 
   test("arrow keys move between enabled tabs only", async () => {

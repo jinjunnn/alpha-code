@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createSignal, For, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js"
 import { AlphaBoundary } from "../alpha-boundary"
 import { t } from "../../i18n"
 import { rovingKey, rovingTabIndex } from "../roving-focus"
@@ -7,8 +7,8 @@ import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"
 import { terminalRailAnyRunning } from "../session-rail/terminal/terminal-rail-state"
 import {
   clampRailWidth,
-  RAIL_MAX_WIDTH,
   RAIL_MIN_WIDTH,
+  railMaxWidth,
   readRailWidths,
   rememberRailWidth,
 } from "./rail-width"
@@ -197,12 +197,25 @@ export function SessionWorkspaceShell(props: {
     }
     return identity
   })
-  // Per-panel rail width, persisted (approved contract: 320–560, remembered per panel).
+  // Per-panel rail width, persisted (REQ-140 contract: floor 320, ceiling = workspace − 480,
+  // remembered per panel). The remembered value is the user's choice and is never rewritten by a
+  // window change; only the displayed width converges onto the current ceiling.
   const [widths, setWidths] = createSignal<Record<string, number>>(readRailWidths())
   const [resizing, setResizing] = createSignal(false)
+  // Measured width of `.a-swk-root` (window minus the project sidebar). 0 = not measured yet;
+  // the CSS twin `max-width: calc(100% - 480px)` caps the paint either way.
+  const [workspaceWidth, setWorkspaceWidth] = createSignal(0)
+  let rootEl: HTMLDivElement | undefined
+  const measureWorkspace = () => setWorkspaceWidth(rootEl?.clientWidth ?? 0)
+  onMount(() => {
+    measureWorkspace()
+    window.addEventListener("resize", measureWorkspace)
+    onCleanup(() => window.removeEventListener("resize", measureWorkspace))
+  })
+  const railMax = () => railMaxWidth(workspaceWidth())
   const railWidth = () => {
     const kind = panel()
-    return clampRailWidth(kind ? widths()[kind] : undefined)
+    return clampRailWidth(kind ? widths()[kind] : undefined, workspaceWidth())
   }
   // #554 焦点交接请求端(上游 terminal.toggle 语义):终端面板从关到开 → 对当前激活实例发
   // 聚焦请求(须先于面板挂载,上游 Terminal 挂载时一次性消费);从开到关 → 撤销未消费的
@@ -275,7 +288,7 @@ export function SessionWorkspaceShell(props: {
     })
 
   const applyWidth = (kind: SessionRailPanel, value: number) => {
-    setWidths((current) => ({ ...current, [kind]: clampRailWidth(value) }))
+    setWidths((current) => ({ ...current, [kind]: clampRailWidth(value, workspaceWidth()) }))
   }
   const startResize = (event: PointerEvent) => {
     const kind = panel()
@@ -289,7 +302,7 @@ export function SessionWorkspaceShell(props: {
       window.removeEventListener("pointermove", move)
       window.removeEventListener("pointerup", stop)
       setResizing(false)
-      rememberRailWidth(kind, clampRailWidth(widths()[kind] ?? startWidth))
+      rememberRailWidth(kind, clampRailWidth(widths()[kind] ?? startWidth, workspaceWidth()))
     }
     window.addEventListener("pointermove", move)
     window.addEventListener("pointerup", stop)
@@ -300,7 +313,7 @@ export function SessionWorkspaceShell(props: {
     const step = event.key === "ArrowLeft" ? 16 : event.key === "ArrowRight" ? -16 : 0
     if (step === 0) return
     event.preventDefault()
-    const next = clampRailWidth(railWidth() + step)
+    const next = clampRailWidth(railWidth() + step, workspaceWidth())
     applyWidth(kind, next)
     rememberRailWidth(kind, next)
   }
@@ -311,7 +324,7 @@ export function SessionWorkspaceShell(props: {
   const terminalRunning = () => (props.railMeta?.terminalRunning?.() ?? terminalRailAnyRunning()) === true
 
   return (
-    <div class="a-ui a-swk-root" data-alpha-session-workspace>
+    <div class="a-ui a-swk-root" data-alpha-session-workspace ref={rootEl}>
       <main class="a-swk-main">
         <WorkspaceTopbar
           live={props.live}
@@ -357,7 +370,7 @@ export function SessionWorkspaceShell(props: {
               aria-orientation="vertical"
               aria-label={t("alpha.session.railResize")}
               aria-valuemin={RAIL_MIN_WIDTH}
-              aria-valuemax={RAIL_MAX_WIDTH}
+              aria-valuemax={railMax()}
               aria-valuenow={railWidth()}
               tabIndex={0}
               onPointerDown={startResize}
