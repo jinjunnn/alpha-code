@@ -137,6 +137,12 @@ export type OoxmlDetection =
       mime: (typeof OOXML_SUBTYPES)[OoxmlSubtype]["mime"]
       entryCount: number
       uncompressedBytes: number
+      /**
+       * REQ-123 (#1174):bytes of allowlisted content parts, present iff the caller passed
+       * `retainContentParts: true`. Only this "detected" variant carries the field — the
+       * rejected / not-ooxml variants structurally have no bytes to hand out (AC7).
+       */
+      parts?: ReadonlyMap<string, Uint8Array>
     }
   | { status: "not-ooxml"; code: OoxmlErrorCode; reason: string }
   | { status: "rejected"; code: OoxmlErrorCode; reason: string }
@@ -150,6 +156,43 @@ export type OoxmlClaimInput = {
 export type OoxmlDetectionOptions = {
   /** Test/diagnostic observation after each bounded compressed-input delivery, before fallback inflate. */
   onInflateInput?: (input: { filename: string; compressedBytes: number }) => void
+  /**
+   * REQ-123 (#1174):retain the bytes of content parts matching OOXML_CONTENT_PART_ALLOWLIST
+   * during the same single inflate pass (same preflight, same caps — never a second pass).
+   * The chokepoint only matches names against the static allowlist;it never accepts
+   * caller-supplied part names. Retained bytes come back on the detected result only.
+   */
+  retainContentParts?: boolean
+}
+
+/**
+ * REQ-123 (#1174):the only part bytes that may leave the detection chokepoint. The shape is
+ * ruled in docs/design/2026-08-29-req123-office-extraction/baseline.md ②-1 (consultation B1):
+ * static exact names ∪ bounded directory prefixes. pptx/xlsx content part names are decided by
+ * rels *inside* the container, so a caller cannot enumerate them before extraction — hence the
+ * bounded prefixes, and hence no caller-supplied name list. rels *parsing* and target checking
+ * belong to the extractors, not here;the chokepoint does name matching plus the existing caps.
+ * `xl/_rels/workbook.xml.rels` / `ppt/_rels/presentation.xml.rels` are the rels counterparts of
+ * the exact names (sheet order and slide order resolve through them);the three prefixes cover
+ * their own `_rels/` subtrees by prefix.
+ */
+export const OOXML_CONTENT_PART_ALLOWLIST = {
+  exact: [
+    "word/document.xml",
+    "xl/workbook.xml",
+    "xl/sharedStrings.xml",
+    "xl/_rels/workbook.xml.rels",
+    "ppt/presentation.xml",
+    "ppt/_rels/presentation.xml.rels",
+  ],
+  prefixes: ["xl/worksheets/", "ppt/slides/", "ppt/notesSlides/"],
+} as const
+
+export function isRetainableContentPart(filename: string): boolean {
+  return (
+    (OOXML_CONTENT_PART_ALLOWLIST.exact as readonly string[]).includes(filename) ||
+    OOXML_CONTENT_PART_ALLOWLIST.prefixes.some((prefix) => filename.startsWith(prefix))
+  )
 }
 
 const CONTENT_TYPES_NAME = "[Content_Types].xml"
@@ -362,7 +405,11 @@ export async function detectOoxmlContainer(
             limitError = new OoxmlLimitError(code, canonical.filename)
             throw limitError
           }
-          if (canonical.filename === CONTENT_TYPES_NAME || canonical.filename === ROOT_RELS_NAME)
+          if (
+            canonical.filename === CONTENT_TYPES_NAME ||
+            canonical.filename === ROOT_RELS_NAME ||
+            (options.retainContentParts === true && isRetainableContentPart(canonical.filename))
+          )
             chunks.push(chunk.slice())
         },
       })
@@ -419,13 +466,17 @@ export async function detectOoxmlContainer(
     if (relationship.target !== facts.mainPart)
       return rejected("ROOT_RELS_TARGET_MISMATCH", `${relationship.target} != ${facts.mainPart}`)
 
-    return {
+    const detected = {
       status: "detected",
       subtype,
       mime: facts.mime,
       entryCount: preflight.entries.length,
       uncompressedBytes: total,
-    }
+    } as const
+    if (options.retainContentParts !== true) return detected
+    const parts = new Map<string, Uint8Array>()
+    for (const [name, bytes] of retained) if (isRetainableContentPart(name)) parts.set(name, bytes)
+    return { ...detected, parts }
   } catch (error) {
     if (limitError) return rejected(limitError.code, limitError.message)
     if (error instanceof OoxmlLimitError) return rejected(error.code, error.message)
