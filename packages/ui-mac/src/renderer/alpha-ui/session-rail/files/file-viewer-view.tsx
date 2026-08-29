@@ -21,6 +21,7 @@ import { parseMarkdownModel } from "../../artifact-workbench/renderers/markdown-
 import { extensionOf } from "../../artifact-workbench/renderers/registry"
 import { HTML_PREVIEW_MAX_BLOCKED_ENTRIES } from "../../../../shared/html-preview"
 import type { RailPreviewBounds } from "../../../../shared/file-viewer"
+import { modalPresent, subscribeModalPresence } from "../../modal-presence"
 import type { FileViewerOverlayIO } from "./file-viewer-io"
 import type { FileViewerState, ViewerFilePhase } from "./file-viewer-state"
 
@@ -291,6 +292,15 @@ function OverlayRegion(props: {
         return
       }
       previewId = result.previewId
+      // 开的时候可能已经有强模态在场(例如审批弹窗挂着时用户切到了另一份 pdf)——
+      // 只在那一刻才发,免得把「让位」这条通道稀释成每次打开都响一声。
+      if (modalPresent()) props.overlayIO.setVisible(previewId, false)
+    })
+
+    // 强模态在场 ⇒ 藏起来;模态关闭 ⇒ 恢复。叠放层活在原生层级上,DOM 的 z-index/inert
+    // 对它无效,这是唯一能让它给弹窗让位的接缝(main 侧执行面 = setRailPreviewVisible)。
+    const offModal = subscribeModalPresence((present) => {
+      if (previewId) props.overlayIO.setVisible(previewId, !present)
     })
 
     const push = () => {
@@ -315,6 +325,7 @@ function OverlayRegion(props: {
     onCleanup(() => {
       disposed = true
       clearInterval(poll)
+      offModal()
       offClosed()
       observer.disconnect()
       window.removeEventListener("resize", push)

@@ -9,6 +9,7 @@ import {
 } from "../../shared/settings-adapters"
 import { Banner } from "./Banner"
 import { Button } from "./Button"
+import { enterModal } from "./modal-presence"
 import { settingsSurfaceApi, type SettingsSurfaceApi } from "./settings-authority-client"
 import { t } from "../i18n"
 import "./settings.css"
@@ -207,6 +208,13 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
     loadSettings()
     loadStorage()
     queueMicrotask(() => closeButton?.focus())
+  })
+
+  // #1173:本面自报 role=dialog + aria-modal=true 且 position:fixed/inset:0 —— 它是强模态,
+  // 但不走 dialog-core 的模态栈,所以在这里自己上报,否则右栏的原生叠放预览会盖在它上面。
+  createEffect(() => {
+    if (!props.open) return
+    onCleanup(enterModal())
   })
 
   const close = () => {
