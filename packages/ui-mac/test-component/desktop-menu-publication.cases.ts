@@ -11,6 +11,10 @@
 //   · 保留项:点得出来,且 id 与发布面一致 —— 这些 id 由渲染侧闸门(shell-commands.test.ts)
 //     进一步要求「在真实壳里确实注册且触发有可观察结果」。
 // 上游日后新增菜单命令会默认落进发布面,直接被那道闸门抓住,而不是悄悄多出一个死入口。
+//
+// 同一副 harness 上还挂着第二条命题(REQ-139 / #1178):App 菜单的 about / hide / quit 三个角色
+// 在 label 缺省时由 Electron 直接填 `app.name` —— 而 `app.name` 是被 AC5 冻结的**身份名**
+// "alpha-code"。所以「label 缺省」等价于「用户看见旧名」,判据同样落在真模板上。
 
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import { DESKTOP_MENU, desktopMenuVisible, type DesktopMenuPlatform } from "@opencode-ai/app/desktop-menu"
@@ -172,5 +176,40 @@ describe("alpha 桌面菜单只发布接得住的命令", () => {
       expect(published).not.toContain(gone)
     for (const kept of ["settings.open", "session.new", "project.open", "sidebar.toggle", "logs.export"])
       expect(published).toContain(kept)
+  })
+})
+
+// REQ-139(#1178):App 菜单的 About / Hide / Quit 文案 —— 显示名,不是身份名。
+//
+// 保证(删掉本块会失去什么):`menu.ts` 里那三条显式 label 被删掉/写错时,菜单会静默回落成
+// 「About alpha-code」「Hide alpha-code」「Quit alpha-code」,而**没有任何东西会红** ——
+// 源码文本闸门(brand-guard)守的是有限坐标,守不住「角色缺省时 Electron 替我们填了什么」。
+//
+// 一个错误实现能不能满足它:不能。断言逐字等于展示名 ⇒ 去掉 label(→ undefined)红、
+// 写成默认文案红、写回身份名红(还有一条独立的「不含 alpha-code」兜底)。
+// 期望值是**独立字面量**,不 import 生产常量 —— 否则改错生产值时测试跟着一起改错、自洽全绿。
+describe("REQ-139(#1178):App 菜单三个角色显示的是展示名,不是身份名", () => {
+  const EXPECTED: Record<string, string> = {
+    about: "About Code Puppy",
+    hide: "Hide Code Puppy",
+    quit: "Quit Code Puppy",
+  }
+
+  test("macos:真模板里 about / hide / quit 各带显式 label,逐字为展示名且不含身份名 alpha-code", () => {
+    const { template } = buildFor("macos")
+    const found: Record<string, string | undefined> = {}
+    let seen = 0
+    for (const menu of template) {
+      for (const item of menu.submenu ?? []) {
+        if (!item.role || !(item.role in EXPECTED)) continue
+        seen++
+        found[item.role] = item.label
+      }
+    }
+    // 先证明这个手段测得到东西:三个角色必须真的在模板里各出现一次,零命中不算通过。
+    expect(seen, "about / hide / quit 应各在真模板里恰好出现一次").toBe(3)
+    expect(found).toEqual(EXPECTED)
+    for (const [role, label] of Object.entries(found))
+      expect(label ?? "", `角色 ${role} 的 label 漏了身份名`).not.toContain("alpha-code")
   })
 })
