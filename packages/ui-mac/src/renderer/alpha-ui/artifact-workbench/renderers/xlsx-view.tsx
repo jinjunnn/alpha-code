@@ -4,6 +4,7 @@
 
 import { createSignal, For, Show } from "solid-js"
 import { t } from "../../../i18n"
+import { rovingKey, rovingTabIndex } from "../../roving-focus"
 import {
   columnLabel,
   XLSX_MAX_COLUMNS,
@@ -16,18 +17,27 @@ export function XlsxWorkbookView(props: { workbook: XlsxWorkbook }) {
   const [active, setActive] = createSignal(0)
   const sheets = () => props.workbook.sheets
   const activeSheet = () => sheets()[Math.min(active(), sheets().length - 1)]
+  // W3C Tabs Pattern:tablist 内 ←→/Home/End 巡航焦点(roving tabindex),↑↓ 留给页面。
+  const tabItems = () => sheets().map((_, i) => String(i))
+  const onTabKey = (event: KeyboardEvent) =>
+    rovingKey(event, "horizontal-tabs", tabItems(), String(active()), (next) => {
+      setActive(Number(next))
+      document.getElementById(`a-wb-xlsx-tab-${next}`)?.focus()
+    })
   return (
     <div class="a-wb-xlsx">
       <Show when={sheets().length > 1}>
-        <div class="a-wb-xlsx-tabs" role="tablist" aria-label={t("alpha.wb.xlsxSheets")}>
+        <div class="a-wb-xlsx-tabs" role="tablist" aria-label={t("alpha.wb.xlsxSheets")} onKeyDown={onTabKey}>
           <For each={sheets()}>
             {(sheet, i) => (
               <button
                 type="button"
                 role="tab"
+                id={`a-wb-xlsx-tab-${i()}`}
                 class="a-wb-xlsx-tab"
                 data-alpha-xlsx-tab={sheet.name}
                 aria-selected={i() === active()}
+                tabIndex={rovingTabIndex(i() === active())}
                 onClick={() => setActive(i())}
               >
                 {sheet.name}

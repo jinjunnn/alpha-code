@@ -136,6 +136,20 @@ describe("REQ-123 AC2 xlsx view real Solid mount", () => {
     expect(texts.includes("Widget")).toBe(false)
   })
 
+  test("tablist 键盘巡航:→ 移到第二张表并切换内容(W3C Tabs Pattern 接线)", async () => {
+    const host = mount(() => XlsxWorkbookView({ workbook: buildFixtureWorkbook() }))
+    await flush()
+    const firstTab = host.querySelector('[data-alpha-xlsx-tab="Overview"]') as HTMLButtonElement
+    // roving tabindex:恰好一个落点在 Tab 序列里。
+    const tabs = Array.from(host.querySelectorAll("[data-alpha-xlsx-tab]"))
+    expect(tabs.map((el) => el.getAttribute("tabindex"))).toEqual(["0", "-1"])
+    firstTab.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
+    await flush()
+    const secondTab = host.querySelector('[data-alpha-xlsx-tab="数据"]')
+    expect(secondTab?.getAttribute("aria-selected")).toBe("true")
+    expect(tdTexts(host).includes("华东")).toBe(true)
+  })
+
   test("单工作表不出清单;空表给诚实空态", async () => {
     const workbook = {
       sheets: [
