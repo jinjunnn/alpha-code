@@ -1,10 +1,20 @@
-// REQ-125 C4 — right-rail width memory (approved contract: 320–560px, remembered per panel).
+// REQ-140 — right-rail width memory. Approved contract (docs/design/2026-08-28-req140-rail-width):
+// floor 320px, default 400px, and NO fixed ceiling — the effective ceiling is
+// `workspace width − 480px`, where 480px is the session column's minimum usable width and the
+// workspace is `.a-swk-root`'s measured width (window minus the project sidebar).
 // Mirrors workbench-state.ts storage discipline: localStorage is a convenience cache, every
 // read is re-validated and clamped, and storage failures can never throw into the UI.
+//
+// Two clamps, deliberately different (design §3 「窗口变化」):
+//   - storage (readRailWidths / rememberRailWidth) clamps the floor only, so a narrow window
+//     never rewrites what the user chose; widening the window restores it;
+//   - display (the shell) passes the measured workspace width, so the visible rail converges
+//     onto the current ceiling in real time.
 
 export const RAIL_MIN_WIDTH = 320
-export const RAIL_MAX_WIDTH = 560
 export const RAIL_DEFAULT_WIDTH = 400
+/** Session column's minimum usable width — owner decision 2026-08-28. */
+export const SESSION_MIN_WIDTH = 480
 
 const WIDTHS_KEY = "alpha-session-rail-widths-v1"
 
@@ -18,9 +28,23 @@ function defaultStorage(): StorageLike | null {
   }
 }
 
-export function clampRailWidth(value: number | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return RAIL_DEFAULT_WIDTH
-  return Math.min(RAIL_MAX_WIDTH, Math.max(RAIL_MIN_WIDTH, Math.round(value)))
+/**
+ * Effective rail ceiling for a measured workspace width, or `undefined` while the workspace is
+ * unmeasured (no JS ceiling; the CSS twin `max-width: calc(100% - 480px)` still caps the paint).
+ * Below a 800px workspace the floor wins, so this never reports less than RAIL_MIN_WIDTH —
+ * that is the approved conflict rule, and it is also what `aria-valuemax` must announce.
+ */
+export function railMaxWidth(workspaceWidth: number | undefined): number | undefined {
+  if (typeof workspaceWidth !== "number" || !Number.isFinite(workspaceWidth) || workspaceWidth <= 0) return undefined
+  return Math.max(RAIL_MIN_WIDTH, Math.round(workspaceWidth) - SESSION_MIN_WIDTH)
+}
+
+export function clampRailWidth(value: number | undefined, workspaceWidth?: number): number {
+  const width = typeof value !== "number" || !Number.isFinite(value) ? RAIL_DEFAULT_WIDTH : Math.round(value)
+  const max = railMaxWidth(workspaceWidth)
+  // Floor last, mirroring CSS (min-width beats max-width): a workspace narrower than 320+480
+  // pins the rail at 320 and the session column takes whatever is left.
+  return Math.max(RAIL_MIN_WIDTH, max === undefined ? width : Math.min(max, width))
 }
 
 export function readRailWidths(storage: StorageLike | null = defaultStorage()): Record<string, number> {

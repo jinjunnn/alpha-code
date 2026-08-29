@@ -154,11 +154,14 @@ describe("REQ-125 C4 shell seam: fourth tab, badge, dot, grip, and the focus mou
     expect(shellCss).toContain("@media (prefers-reduced-motion: reduce)")
   })
 
-  test("the 320-560 width contract is never undercut by responsive rules (audit Major-5)", () => {
+  test("the REQ-140 width contract is never undercut by responsive rules (audit Major-5)", () => {
     const railHost = shellCss.match(/\.a-swk-rail-host \{[^}]*\}/)?.[0] ?? ""
+    // Anchors are the approved values (docs/design/2026-08-28-req140-rail-width), not the
+    // production constants: floor 320px, and a ceiling that leaves the session column 480px.
     expect(railHost).toContain("min-width: 320px")
-    expect(railHost).toContain("max-width: 560px")
-    // No media query may re-declare the rail host's width bounds — the JS constants
+    expect(railHost).toContain("max-width: calc(100% - 480px)")
+    expect(railHost).not.toMatch(/max-width:\s*\d+px/)
+    // No media query may re-declare the rail host's width bounds — the JS contract
     // (rail-width.ts), storage clamp, ARIA range, and CSS must state one contract.
     const mediaBlocks = shellCss.split("@media").slice(1)
     mediaBlocks.forEach((block) => expect(block).not.toContain("a-swk-rail-host"))
