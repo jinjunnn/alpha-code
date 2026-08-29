@@ -29,7 +29,7 @@ export function createMenu(deps: Deps) {
   // 随上游叶退役的命令必须显式处置(承接或退休),退休项在那里剔除,渲染进程的运行时闸门按同一份
   // 发布面逐个要求「真注册且可触发」。平台可见性过滤已在策略里做过,这里不再重复。
   const template: MenuItemConstructorOptions[] = alphaDesktopMenu(target).map((menu) => {
-    if (menu.role) return { role: nativeRole(menu.role) }
+    if (menu.role) return roleItem(menu.role)
     return {
       label: menu.label,
       submenu: menu.items?.map((entry) => nativeItem(entry, deps, target)),
@@ -105,7 +105,7 @@ function showAboutDialog() {
 
 function nativeItem(entry: DesktopMenuEntry, deps: Deps, target: DesktopMenuPlatform): MenuItemConstructorOptions {
   if (entry.type === "separator") return { type: "separator" }
-  if (entry.role) return { role: nativeRole(entry.role) }
+  if (entry.role) return roleItem(entry.role)
 
   const item: MenuItemConstructorOptions = {
     label: entry.label,
@@ -133,6 +133,21 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps, target: DesktopMenuPlat
   return item
 }
 
-function nativeRole(role: DesktopMenuRole) {
-  return role as NonNullable<MenuItemConstructorOptions["role"]>
+// REQ-139(#1178):Electron 的 about / hide / quit 三个角色在 label 缺省时**直接用 `app.name`**,
+// 于是 App 菜单显示「About alpha-code」「Hide alpha-code」「Quit alpha-code」。而
+// `app.setName(... "alpha-code")`(main/index.ts)被 REQ-139 AC5 **有意冻结** —— 它决定 macOS 钥匙串
+// 项名 "alpha-code Safe Storage",动了存量登录态与 BYOK 密钥永久解不开。
+// 身份名与显示名是两个旋钮,这里只拧显示名那个:给这三个角色显式 label,身份面一个字符不动。
+// 其余角色(hideOthers / unhide / close / undo …)的默认文案不含应用名,不给 label,保留系统本地化。
+const ROLE_LABELS: Partial<Record<DesktopMenuRole, string>> = {
+  about: "About Code Puppy",
+  hide: "Hide Code Puppy",
+  quit: "Quit Code Puppy",
+}
+
+function roleItem(role: DesktopMenuRole): MenuItemConstructorOptions {
+  const item: MenuItemConstructorOptions = { role: role as NonNullable<MenuItemConstructorOptions["role"]> }
+  const label = ROLE_LABELS[role]
+  if (label) item.label = label
+  return item
 }
