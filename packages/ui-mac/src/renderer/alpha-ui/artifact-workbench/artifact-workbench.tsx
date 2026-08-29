@@ -40,6 +40,7 @@ import {
   presentOfficeStructure,
   type OfficeStructurePresentation,
 } from "./renderers/office-structure"
+import { officeTextExtractionOf } from "./renderers/office-text"
 import { RENDERER_COMPONENTS, SourceView, type PreviewContext } from "./renderers/renderer-views"
 import "./artifact-workbench.css"
 
@@ -248,7 +249,7 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
           reason: "unexpected read kind",
         },
       }
-    return { key: target.key, detection: await detectOoxmlContainer(read.bytes) }
+    return { key: target.key, detection: await detectOoxmlContainer(read.bytes, { retainContentParts: true }) }
   })
 
   // ── 下载状态机(纯 reducer;进度事件按 artifactId 全局到达)──
@@ -337,6 +338,7 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
       decision,
       card,
       officeStructure: presentOfficeStructure({ ...claim, detection: ooxml }),
+      officeText: officeTextExtractionOf(ooxml),
     }
   })
 

@@ -1,17 +1,18 @@
 // REQ-123(#1175)— docx / pptx 文本提取:对已解析 OOXML part 的纯模型构建。
 //
 // 铁律(方案基线 docs/design/2026-08-29-req123-office-extraction/baseline.md ③):
-//   · 输入只有已解析的 XML Document(由 #1174 的共享「字节→Document」安全解析函数产出;
-//     本模块不解压、不调 DOMParser、不接受路径 / URL / 回调 —— 出网面结构性关死);
+//   · 字节 → Document 的唯一通路是 #1174 的 `parseOoxmlContentPart`(ooxml-content.ts);
+//     本模块不解压、不自建任何 XML 解析入口(src/ooxml-chokepoint.test.ts 是文本闸),
+//     签名只接受字节 / 已解析 part,不接受路径 / URL / 回调 —— 出网面结构性关死;
 //   · 输出是纯数据文本模型,呈现层只经 Solid 文本节点渲染(基线 ③ 类 3/5);
 //   · pptx 页序唯一权威 = presentation.xml 的 sldIdLst 经 rels 解;禁止按文件名排序
 //     (勘破实测 rId 与 slide 文件号不对应,真实重排后 sldIdLst ≠ 文件名序);
 //   · 遍历只用 childNodes + localName/namespaceURI 扫描 —— 生产 Chromium 与测试 DOM 的
-//     共同最小面(happy-dom 20.9 实测:getElementsByTagNameNS / getAttributeNS 均不可用);
+//     共同最小面(happy-dom 20.9 实测:NS 变体的元素/属性查询均不可用);
 //   · 结构缺失一律 fail-closed 返回带 code 的失败,不伪造部分内容(基线 ③ 类 6)。
-//
-// 接线(等 #1174 落地):字节侧包装 `(bytes) => OfficeTextResult` = 共享安全解析 ∘ 本模块,
-// 由 detectOoxmlContainer 的 retained 白名单供 part 字节;本模块刻意不含那一步。
+
+import { parseOoxmlContentPart, type OoxmlContentErrorCode } from "./ooxml-content"
+import type { OoxmlDetection } from "./ooxml"
 
 const NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 const NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -22,6 +23,7 @@ const REL_TYPE_NOTES_SLIDE = "http://schemas.openxmlformats.org/officeDocument/2
 
 export const PPTX_PRESENTATION_PART = "ppt/presentation.xml"
 const PPTX_PRESENTATION_RELS_PART = "ppt/_rels/presentation.xml.rels"
+const DOCX_DOCUMENT_PART = "word/document.xml"
 
 export type OfficeTextModel =
   | { kind: "docx"; paragraphs: string[] }
@@ -37,17 +39,60 @@ export type OfficeTextErrorCode =
   | "PPTX_SLIDE_PART_MISSING"
   | "PPTX_NOTES_PART_MISSING"
 
+/** 解析层的失败原因类别(#1174 的四个 code)原样上浮,不另造一套错误分类。 */
+export type OfficeTextFailureCode = OfficeTextErrorCode | OoxmlContentErrorCode
+
 export type OfficeTextResult =
   | { ok: true; model: OfficeTextModel }
-  | { ok: false; code: OfficeTextErrorCode }
+  | { ok: false; code: OfficeTextFailureCode }
 
-/** 接线缝:呈现层消费的提取结果;undefined = 提取通路尚未接线(#1174)。 */
+/** 呈现层消费的提取结果;undefined = 该 subtype 不在本提取器覆盖内或字节未随检测返回。 */
 export type OfficeTextExtraction =
   | { status: "extracted"; model: OfficeTextModel }
-  | { status: "failed"; code: OfficeTextErrorCode }
+  | { status: "failed"; code: OfficeTextFailureCode }
 
-function fail(code: OfficeTextErrorCode): OfficeTextResult {
+function fail(code: OfficeTextFailureCode): OfficeTextResult {
   return { ok: false, code }
+}
+
+// ---------------------------------------------------------------------------
+// 字节侧提取器(基线 ③ 签名不变量:只接受字节)与呈现装配
+// ---------------------------------------------------------------------------
+
+/** `detectOoxmlContainer(bytes, { retainContentParts: true })` 的 retained 字节 → docx 文本模型。 */
+export function extractDocxText(parts: ReadonlyMap<string, Uint8Array>): OfficeTextResult {
+  const bytes = parts.get(DOCX_DOCUMENT_PART)
+  if (!bytes) return fail("DOCX_DOCUMENT_MISSING")
+  const parsed = parseOoxmlContentPart(bytes)
+  if (!parsed.ok) return fail(parsed.code)
+  return docxTextModelOf(parsed.document)
+}
+
+/** retained 字节 → pptx 文本模型;任一 ppt part 未过解析闸即整体 fail-closed。 */
+export function extractPptxText(parts: ReadonlyMap<string, Uint8Array>): OfficeTextResult {
+  const documents = new Map<string, Document>()
+  for (const [name, bytes] of parts) {
+    if (!name.startsWith("ppt/")) continue
+    const parsed = parseOoxmlContentPart(bytes)
+    if (!parsed.ok) return fail(parsed.code)
+    documents.set(name, parsed.document)
+  }
+  return pptxTextModelOf(documents)
+}
+
+/**
+ * 检测结果 → pass 分支的内容视图输入。字节只在 `status:"detected"` 且调用方 opt-in 了
+ * `retainContentParts` 时存在(AC7 的结构保证);xlsx 归 #1176,此处刻意不越界。
+ */
+export function officeTextExtractionOf(detection: OoxmlDetection | undefined): OfficeTextExtraction | undefined {
+  if (!detection || detection.status !== "detected" || !detection.parts) return undefined
+  if (detection.subtype === "docx") return extractionOf(extractDocxText(detection.parts))
+  if (detection.subtype === "pptx") return extractionOf(extractPptxText(detection.parts))
+  return undefined
+}
+
+function extractionOf(result: OfficeTextResult): OfficeTextExtraction {
+  return result.ok ? { status: "extracted", model: result.model } : { status: "failed", code: result.code }
 }
 
 // ---------------------------------------------------------------------------

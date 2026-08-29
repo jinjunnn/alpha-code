@@ -6,7 +6,14 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { docxTextModelOf, pptxTextModelOf, type OfficeTextModel } from "./office-text"
+import {
+  docxTextModelOf,
+  extractDocxText,
+  extractPptxText,
+  pptxTextModelOf,
+  type OfficeTextModel,
+} from "./office-text"
+import { parseOoxmlContentPart } from "./ooxml-content"
 
 GlobalRegistrator.register()
 afterAll(async () => {
@@ -16,29 +23,30 @@ afterAll(async () => {
 const FIXTURES = join(import.meta.dir, "fixtures/office-text")
 
 // ---------------------------------------------------------------------------
-// 临时解析辅助 —— 只服务测试,不是生产 API。
-// 接线时(#1174)替换为共享的「字节→Document」安全解析函数(解码 + DOCTYPE/ENTITY 文本闸
-// + parseFromString);本辅助刻意保持同一形状(bytes 进、Document 出)。
-//
-// happy-dom 20.9 已探明缺陷(本票勘破,3 组探针实测):当同一元素上存在 localName 相同的
-// 两个属性且未加前缀者在前(真实 presentation.xml 的 `<p:sldId id=".." r:id="..">`),
-// 解析期直接丢弃后者,r:id 不可恢复;Chromium 无此问题。下面的换序对 XML infoset 等价
-// (属性序无语义),只为让测试 DOM 保住 Chromium 本来就有的属性;pptx 用例里有正对照
-// 断言(每个 sldId 的 r:id 都解析得出),换序失手时用例翻红而不是静默变假。
+// 测试走生产的字节→Document 通路(#1174 `parseOoxmlContentPart`),但先做一层
+// **只针对 happy-dom 已探明解析缺陷**的字节补偿(bun test 的 DOM 是 happy-dom 20.9,
+// 生产 Chromium 无此二病;两处替换都是 XML infoset 等价改写,不改变任何内容):
+//   1. 同一元素上 localName 相同的两个属性且未加前缀者在前(真实 presentation.xml 的
+//      `<p:sldId id=".." r:id="..">`)—— 解析期直接丢弃后者,r:id 不可恢复 ⇒ 换属性序;
+//   2. XML 声明里的单引号(lxml 产物)被拒为 parsererror ⇒ 声明内引号归一。
+// pptx 用例里有正对照断言(每个 sldId 的 r:id 都解析得出),补偿失手时用例翻红而不是
+// 静默变假;实体/DOCTYPE 行为的真 Chromium 证据归 #1177(VERIFY)。
 // ---------------------------------------------------------------------------
-function parseXmlPartForTest(bytes: Uint8Array): Document {
+function compensateHappyDom(bytes: Uint8Array): Uint8Array {
   let text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
-  // happy-dom 缺陷之二(实测):XML 声明里的单引号(lxml 产物)被拒为 parsererror,
-  // Chromium 接受(合法 XML)。只在声明内做引号归一,infoset 等价。
   text = text.replace(/^<\?xml[^?]*\?>/, (declaration) => declaration.replaceAll("'", '"'))
   text = text.replace(/<p:sldId id="([^"]+)" r:id="([^"]+)"/g, '<p:sldId r:id="$2" id="$1"')
-  const parsed = new DOMParser().parseFromString(text, "application/xml") as unknown as Document
-  expect(parsed.getElementsByTagName("parsererror").length).toBe(0)
-  return parsed
+  return new TextEncoder().encode(text)
+}
+
+function fixtureBytes(relativePath: string): Uint8Array {
+  return compensateHappyDom(readFileSync(join(FIXTURES, relativePath)))
 }
 
 function fixtureDocument(relativePath: string): Document {
-  return parseXmlPartForTest(readFileSync(join(FIXTURES, relativePath)))
+  const parsed = parseOoxmlContentPart(fixtureBytes(relativePath))
+  if (!parsed.ok) throw new Error(`fixture ${relativePath} failed the content gate: ${parsed.reason}`)
+  return parsed.document
 }
 
 function pptxParts(): Map<string, Document> {
@@ -92,11 +100,13 @@ describe("docx text extraction (AC1)", () => {
   })
 
   test("missing w:body fails closed with a code", () => {
-    const empty = new DOMParser().parseFromString(
-      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>`,
-      "application/xml",
-    ) as unknown as Document
-    expect(docxTextModelOf(empty)).toEqual({ ok: false, code: "DOCX_BODY_MISSING" })
+    const parsed = parseOoxmlContentPart(
+      new TextEncoder().encode(
+        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>`,
+      ),
+    )
+    if (!parsed.ok) throw new Error(parsed.reason)
+    expect(docxTextModelOf(parsed.document)).toEqual({ ok: false, code: "DOCX_BODY_MISSING" })
   })
 })
 
@@ -155,5 +165,55 @@ describe("pptx text extraction (AC3)", () => {
     const parts = pptxParts()
     parts.delete("ppt/_rels/presentation.xml.rels")
     expect(pptxTextModelOf(parts)).toEqual({ ok: false, code: "PPTX_RELS_MISSING" })
+  })
+})
+
+describe("byte-facing extractors over the #1174 content-part gate", () => {
+  function pptxPartBytes(): Map<string, Uint8Array> {
+    const names = [
+      "ppt/presentation.xml",
+      "ppt/_rels/presentation.xml.rels",
+      "ppt/slides/slide1.xml",
+      "ppt/slides/slide2.xml",
+      "ppt/slides/slide3.xml",
+      "ppt/slides/_rels/slide1.xml.rels",
+      "ppt/slides/_rels/slide2.xml.rels",
+      "ppt/slides/_rels/slide3.xml.rels",
+      "ppt/notesSlides/notesSlide1.xml",
+      "ppt/notesSlides/notesSlide2.xml",
+    ]
+    return new Map(names.map((name) => [name, fixtureBytes(join("py-pptx", name))]))
+  }
+
+  test("extractDocxText: retained bytes in, content strings out", () => {
+    const parts = new Map([["word/document.xml", fixtureBytes("py-docx/word/document.xml")]])
+    const result = extractDocxText(parts)
+    if (!result.ok || result.model.kind !== "docx") throw new Error("extraction failed")
+    expect(result.model.paragraphs).toContain("Quarterly Report Heading")
+    expect(result.model.paragraphs).toContain("Intro paragraph with bold emphasis")
+  })
+
+  test("extractDocxText: missing main part fails closed", () => {
+    expect(extractDocxText(new Map())).toEqual({ ok: false, code: "DOCX_DOCUMENT_MISSING" })
+  })
+
+  test("extractPptxText: retained bytes in, authoritative slide order out", () => {
+    const result = extractPptxText(pptxPartBytes())
+    if (!result.ok || result.model.kind !== "pptx") throw new Error("extraction failed")
+    const texts = result.model.slides.map((slide) => slide.paragraphs.join("\n"))
+    expect(texts.length).toBe(3)
+    expect(texts[0]).toContain("Charlie Slide Three")
+    expect(texts[1]).toContain("Alpha Slide One")
+    expect(texts[2]).toContain("Bravo Slide Two")
+    expect(result.model.slides[0]!.notes.join("\n")).toContain("note for charlie")
+  })
+
+  test("a part carrying DOCTYPE is stopped by the shared gate and surfaces its code", () => {
+    const parts = pptxPartBytes()
+    const poisoned = new TextEncoder().encode(
+      `<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "b">]><p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>`,
+    )
+    parts.set("ppt/slides/slide1.xml", poisoned)
+    expect(extractPptxText(parts)).toEqual({ ok: false, code: "CONTENT_PART_FORBIDDEN_MARKUP" })
   })
 })
