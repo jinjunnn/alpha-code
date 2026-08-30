@@ -956,7 +956,7 @@ export const dict = {
 
   // Alpha-owned renderer surfaces (C20 locale completion).
   "alpha.brand.product": "Code Puppy",
-  "alpha.brand.short": "Alpha",
+  "alpha.brand.short": "Code Puppy",
   "alpha.brand.wordmark": "CODE PUPPY",
   "alpha.common.back": "Back",
   "alpha.common.close": "Close",

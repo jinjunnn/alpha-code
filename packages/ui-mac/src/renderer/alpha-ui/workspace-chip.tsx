@@ -72,7 +72,7 @@ export function AlphaWorkspaceChip(props: {
                 onClick={() => choose(props.defaultWorkspace!)}
               >
                 <span class="a-pico" style={{ background: "var(--a-accent)" }}>
-                  A
+                  {t("alpha.brand.short").slice(0, 1).toUpperCase()}
                 </span>
                 {t("alpha.brand.short")}
                 <span class="a-pop-desc">{t("alpha.home.defaultWorkspace")}</span>
