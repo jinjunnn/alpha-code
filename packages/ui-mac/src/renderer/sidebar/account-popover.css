@@ -221,6 +221,15 @@
   background: var(--a-border-faint);
   margin: 6px 0;
 }
+
+/* ac#1187: current app version, pinned at the popover's bottom (read-only, muted) */
+.alpha-acct-version {
+  padding: 6px 16px 2px;
+  font-size: 11px;
+  color: var(--a-text-tertiary);
+  text-align: center;
+  user-select: text;
+}
 .alpha-acct-item {
   display: flex;
   align-items: center;

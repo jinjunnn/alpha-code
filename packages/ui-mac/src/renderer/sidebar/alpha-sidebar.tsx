@@ -344,6 +344,14 @@ export function AlphaSidebar(props: {
     )
   }
 
+  // ac#1187:账户浮层底部显示当前版本号。取值经 preload 的 app-version IPC(唯一真源 =
+  // app.getVersion() = package.json 的 version);取不到就整行不渲染,不落任何版本字面量兜底。
+  const [appVersion, setAppVersion] = createSignal("")
+  void window.api
+    .appVersion()
+    .then((v) => setAppVersion(typeof v === "string" ? v : ""))
+    .catch(() => {})
+
   const MenuCommon = () => (
     <>
       <button
@@ -1466,6 +1474,9 @@ export function AlphaSidebar(props: {
                   >
                     <span class="alpha-acct-ic">⎋</span>{t("alpha.sidebar.signOut")}
                   </button>
+                </Show>
+                <Show when={appVersion()}>
+                  <div class="alpha-acct-version">{t("alpha.sidebar.version")} {appVersion()}</div>
                 </Show>
               </div>
             </Show>

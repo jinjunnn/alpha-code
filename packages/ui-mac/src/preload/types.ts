@@ -726,6 +726,8 @@ export type ElectronAPI = {
   /** Resolved backend endpoints (env > userData pin > login discovery > default). Renderer reads these
    *  instead of baking the URLs. */
   endpoints: () => Promise<AlphaEndpoints>
+  /** ac#1187:当前应用版本(app.getVersion(),唯一真源 = package.json;账户浮层显示用,只读)。 */
+  appVersion: () => Promise<string>
   /** REQ-098:App 环境快照(只读)。main 启动时解析后冻结;此 IPC 无参数、无对应写面 —— renderer
    *  既不能伪造环境,也没有任何通道改写环境根(AC#6)。 */
   environment: () => Promise<AlphaEnvironmentInfo>
