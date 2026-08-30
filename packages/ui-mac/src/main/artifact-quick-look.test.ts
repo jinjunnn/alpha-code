@@ -27,7 +27,7 @@ let artifactPath: string
 
 beforeEach(() => {
   projectDir = mkdtempSync(join(tmpdir(), "artifact-quick-look-"))
-  mkdirSync(join(projectDir, ".alpha", "runs", RUN, "artifacts"), { recursive: true })
+  mkdirSync(join(projectDir, ".code-puppy", "runs", RUN, "artifacts"), { recursive: true })
 })
 
 afterEach(() => rmSync(projectDir, { recursive: true, force: true }))
@@ -169,7 +169,7 @@ function register(
   claimedMime?: string,
   detectedMime: string | null = "application/zip",
 ): RunArtifactIdentity {
-  artifactPath = join(projectDir, ".alpha", "runs", RUN, "artifacts", name)
+  artifactPath = join(projectDir, ".code-puppy", "runs", RUN, "artifacts", name)
   mkdirSync(dirname(artifactPath), { recursive: true })
   writeFileSync(artifactPath, bytes)
   const digest = createHash("sha256").update(bytes).digest("hex")

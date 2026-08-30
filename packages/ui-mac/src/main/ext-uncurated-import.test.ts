@@ -284,8 +284,8 @@ describe("ecosystem-import 路由 wiring(#390)", () => {
     const r = await importExternalSkills(skills, { scope: "project", projectDir: proj }, installer)
     expect(called).toBe(false)
     expect(r.importedSkills).toEqual(["projskill"])
-    // flat 路径:落项目 .alpha/skills。
-    expect(fs.existsSync(path.join(proj, ".alpha", "skills", "projskill", "SKILL.md"))).toBe(true)
+    // flat 路径:落项目 .code-puppy/skills。
+    expect(fs.existsSync(path.join(proj, ".code-puppy", "skills", "projskill", "SKILL.md"))).toBe(true)
     fs.rmSync(proj, { recursive: true, force: true })
   })
 })

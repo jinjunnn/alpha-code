@@ -722,7 +722,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
 
   test("REQ-136 direct project MCP is one D-only config action with no CAS, secret, prepared resource, generation, or consent", async () => {
     const proj = makeProject("proj-mcp")
-    const projectRoot = path.join(proj, ".alpha")
+    const projectRoot = path.join(proj, ".code-puppy")
     fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), '{"mcp":{"project-demo":{"type":"local","command":["npx","global-canary"]}}}\n')
     fs.writeFileSync(path.join(globalRoot, "installs.json"), "global-ledger-canary\n")
     const globalConfigBefore = fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")
@@ -813,15 +813,15 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     )
     expect(classified.ok).toBe(false)
     if (!classified.ok) expect(classified.reason).toContain("workspace-policy")
-    expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false)
+    expect(fs.existsSync(path.join(proj, ".code-puppy"))).toBe(false)
     expect(called(calls, "claimMcpSecretVersionDir")).toHaveLength(0)
     expect(called(calls, "writeMcpSecretVersioned")).toHaveLength(0)
     expect(fs.existsSync(path.join(tmp, "cas-base"))).toBe(false)
   })
 
-  test("REQ-136 revalidates D after catalog awaits and refuses a late .alpha symlink swap", async () => {
+  test("REQ-136 revalidates D after catalog awaits and refuses a late .code-puppy symlink swap", async () => {
     const proj = makeProject("proj-mcp-late-swap")
-    const projectRoot = path.join(proj, ".alpha")
+    const projectRoot = path.join(proj, ".code-puppy")
     const outside = path.join(tmp, "outside-project-root")
     fs.mkdirSync(outside, { recursive: true })
     const sentinel = path.join(outside, "sentinel")
@@ -1207,7 +1207,7 @@ describe("other kinds — derivation & records", () => {
 function seedProjectCatalogRecord(projDir: string, name = "demo", kind: UpsertInput["kind"] = "skill"): string {
   const identity = projectScopeIdentity(projDir)
   if (!identity.ok) throw new Error(identity.reason)
-  const root = path.join(identity.scope.projectPath, ".alpha")
+  const root = path.join(identity.scope.projectPath, ".code-puppy")
   const w = upsertRecordV2(root, {
     id: `${kind}:${name}`,
     name,
@@ -1245,14 +1245,14 @@ describe("REQ-136 project catalog admission is verified-MCP-only", () => {
       deps,
     )
     expect(signedPackage).toEqual({ ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON })
-    expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false)
+    expect(fs.existsSync(path.join(proj, ".code-puppy"))).toBe(false)
 
     const admitted = await resolveCatalogInstallWriteRoot(
       { catalogId: "mcp:project-demo", scope: { scope: "project", projectDir: proj } },
       deps,
     )
-    expect(admitted).toEqual({ ok: true, root: path.join(proj, ".alpha") })
-    expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false)
+    expect(admitted).toEqual({ ok: true, root: path.join(proj, ".code-puppy") })
+    expect(fs.existsSync(path.join(proj, ".code-puppy"))).toBe(false)
   })
 
   test("non-MCP verified kinds and an mcp-prefixed spoof are rejected after main resolution, before side effects", async () => {
@@ -1277,7 +1277,7 @@ describe("REQ-136 project catalog admission is verified-MCP-only", () => {
     }
     expect(resolveCalls).toBe(rejected.length)
     expect(installerCallCount(calls)).toBe(0)
-    expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false)
+    expect(fs.existsSync(path.join(proj, ".code-puppy"))).toBe(false)
   })
 
   test("global install behavior unchanged by the guard", async () => {
@@ -1291,7 +1291,7 @@ describe("REQ-136 project catalog admission is verified-MCP-only", () => {
 describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () => {
   test("REQ-136 project MCP uninstall removes only D leaf/grant/receipt and leaves same-name global bytes exact", async () => {
     const proj = makeProject("proj-mcp-uninstall")
-    const projectRoot = path.join(proj, ".alpha")
+    const projectRoot = path.join(proj, ".code-puppy")
     const { deps, calls } = makeDeps()
     expect(
       (await installAuthorized({ catalogId: "mcp:project-demo", scope: { scope: "global" } }, deps)).ok,
@@ -1390,7 +1390,7 @@ describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () =>
       expect(r.reason).toContain("NOT falling back to global")
     }
     expect(called(calls, "removeFsInstall")).toHaveLength(0)
-    expect(findRecordV2(path.join(projMoved, ".alpha"), "skill", "demo")).not.toBeNull()
+    expect(findRecordV2(path.join(projMoved, ".code-puppy"), "skill", "demo")).not.toBeNull()
     // 老路径已不存在 → 同样 fail closed
     const gone = await uninstallByKey({ type: "skill", name: "demo", scope: "project", projectDir: projA }, deps)
     expect(gone.ok).toBe(false)
@@ -1403,7 +1403,7 @@ describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () =>
     fs.renameSync(projA, projMoved)
     const r = await setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projMoved, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }), resolveEntry: async () => null })
     expect(r.ok).toBe(false)
-    expect(findRecordV2(path.join(projMoved, ".alpha"), "skill", "demo")?.desiredState).toBe("enabled")
+    expect(findRecordV2(path.join(projMoved, ".code-puppy"), "skill", "demo")?.desiredState).toBe("enabled")
   })
 
   test("project-scoped record reached via global intent → fail closed", async () => {

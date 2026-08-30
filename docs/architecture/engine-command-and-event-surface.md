@@ -123,7 +123,7 @@ try { return matter(content) } catch { return matter(sanitize(content)) }
 ```text
 桌面解析 @alpha-code/ext bundle → 注入 OPENCODE_CONFIG_CONTENT.plugin[]
   → 上游 PluginLoader import() → 插件 tool map 暴露 alpha_register
-  → 模型调用 alpha_register(type="command") → applyRegister 写 .alpha/alpha.jsonc 的 command.<name>
+  → 模型调用 alpha_register(type="command") → applyRegister 写 .code-puppy/alpha.jsonc 的 command.<name>
   → session.idle 后 instance.dispose() → 新 instance 的 config hook 读项目 alpha.jsonc
   → mergeProjectConfig 合入 cfg.command → Command.init 建表
   → command.list 出现在斜杠菜单 → session.command → SessionPrompt.command → prompt
@@ -228,7 +228,7 @@ try { return matter(content) } catch { return matter(sanitize(content)) }
 - **上游 loader**：从 config origin resolve/install/entry/compatibility 后 `import()`
   （`plugin/loader.ts:76`、`:203`），能返回完整 `Hooks`。
 - **Alpha 项目 fan-out**（`packages/ext/src/plugin-fanout.ts`）：只加载经 consent 的
-  `<project>/.alpha/plugins/*.js`，**原始 TS 拒绝**（`:52`）；同一个 `PluginInput` 调用（`:81`）；
+  `<project>/.code-puppy/plugins/*.js`，**原始 TS 拒绝**（`:52`）；同一个 `PluginInput` 调用（`:81`）；
   `tool` 浅合并且 **Alpha 自有工具优先**，其余**函数型**键按 own→project 串行（`:18`、`:26`）；
   最终仍只返回一个合并后的 Hooks 给上游（`ext/src/plugin.ts:355`）。
   ⇒ 项目插件拿得到 `config`/`event`/`dispose` 与全部 14 个活钩子，也能加工具；

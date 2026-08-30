@@ -1098,9 +1098,9 @@ export function registerDownloadedArtifact(
 ): RegisterArtifactResult {
   if (!isSafeRunId(runId)) return { ok: false, reason: "invalid run id" }
   if (!isSafeSavedPath(input.savedPath)) return { ok: false, reason: "savedPath violates the relative-path invariant" }
-  // ADR-019 守卫:realpath 防逃逸(symlink 文件解析到 .alpha 外也在此被拒)。
+  // ADR-019 守卫:realpath 防逃逸(symlink 文件解析到 .code-puppy 外也在此被拒)。
   const target = safeResolveInAlpha(projectDir, "runs", runId, ...input.savedPath.split("/"))
-  if (!target) return { ok: false, reason: "path escapes .alpha" }
+  if (!target) return { ok: false, reason: "path escapes .code-puppy" }
   let st: fs.Stats
   try {
     st = fs.statSync(target)
@@ -1247,7 +1247,7 @@ function walkArtifactFiles(runDir: string): LegacyRunFile[] {
 export function listRunArtifacts(projectDir: string, runId: string): RunArtifactsListResult {
   if (!isSafeRunId(runId)) return { ok: false, reason: "invalid run id" }
   const runDir = safeResolveInAlpha(projectDir, "runs", runId)
-  if (!runDir) return { ok: false, reason: "path escapes .alpha" }
+  if (!runDir) return { ok: false, reason: "path escapes .code-puppy" }
   const read = readArtifactManifest(projectDir, runId)
   if (!read.ok) {
     if (read.reason === "unsupported-version")
@@ -1350,7 +1350,7 @@ export async function verifyArtifact(
   const entry = manifest.artifacts.find((e) => e.descriptor.id === artifactId)
   if (!entry) return { ok: false, reason: "artifact not found" }
   const target = safeResolveInAlpha(projectDir, "runs", runId, ...entry.local.savedPath.split("/"))
-  if (!target) return { ok: false, reason: "path escapes .alpha" }
+  if (!target) return { ok: false, reason: "path escapes .code-puppy" }
 
   const persist = (): ArtifactInspectResult => {
     manifest.updatedAt = new Date().toISOString()
@@ -1412,7 +1412,7 @@ export async function verifyArtifact(
 // 字节访问模式(决策记录):renderer 侧 Workbench/renderer 不拿 file:// 自由寻径,也不开新
 // protocol —— 全库唯一的本地文件到 renderer 先例是「有界字节过 IPC」(read-picked-file /
 // read-clipboard-image),本表面沿用同款并收得更窄:
-//   · 只可寻址 `.alpha/runs/<runId>/artifacts/` 内的文件(isSafeSavedPath + safeResolveInAlpha,
+//   · 只可寻址 `.code-puppy/runs/<runId>/artifacts/` 内的文件(isSafeSavedPath + safeResolveInAlpha,
 //     ADR-019 守卫复用;artifactId 经 manifest 解析,savedPath 直读仅限 legacy 只读发现);
 //   · text 模式:上限 2 MiB,超限截断 + 诚实 truncated 标记(REQ-095 的 range/stream 全量虚拟化
 //     属后续深化,此处先保证「大文件绝不整段进 IPC/store」的硬边界);
@@ -1472,7 +1472,7 @@ export function readArtifactContent(
   }
 
   const target = safeResolveInAlpha(projectDir, "runs", runId, ...savedPath.split("/"))
-  if (!target) return { ok: false, reason: "path escapes .alpha" }
+  if (!target) return { ok: false, reason: "path escapes .code-puppy" }
   let st: fs.Stats
   try {
     st = fs.statSync(target)
@@ -1569,7 +1569,7 @@ export function removeArtifact(projectDir: string, runId: string, artifactId: st
   if (idx < 0) return { ok: false, reason: "artifact not found" }
   const entry = manifest.artifacts[idx]
   const target = safeResolveInAlpha(projectDir, "runs", runId, ...entry.local.savedPath.split("/"))
-  if (!target) return { ok: false, reason: "path escapes .alpha" }
+  if (!target) return { ok: false, reason: "path escapes .code-puppy" }
   let removedFile = false
   try {
     fs.unlinkSync(target)
@@ -1614,7 +1614,7 @@ export type RunUsageResult = { ok: true; usage: RunArtifactUsage } | { ok: false
 export function runArtifactUsage(projectDir: string, runId: string): RunUsageResult {
   if (!isSafeRunId(runId)) return { ok: false, reason: "invalid run id" }
   const runDir = safeResolveInAlpha(projectDir, "runs", runId)
-  if (!runDir) return { ok: false, reason: "path escapes .alpha" }
+  if (!runDir) return { ok: false, reason: "path escapes .code-puppy" }
   const files = walkArtifactFiles(runDir)
   const diskBytes = files.reduce((sum, f) => sum + f.bytesOnDisk, 0)
   const read = readArtifactManifest(projectDir, runId)
@@ -1664,7 +1664,7 @@ export type ProjectArtifactUsage = {
 
 export type ProjectUsageResult = { ok: true; usage: ProjectArtifactUsage } | { ok: false; reason: string }
 
-/** 项目级(managed project)核算:遍历 `.alpha/runs/*` 逐 run 汇总。 */
+/** 项目级(managed project)核算:遍历 `.code-puppy/runs/*` 逐 run 汇总。 */
 export function projectArtifactUsage(projectDir: string): ProjectUsageResult {
   const runsDir = safeResolveInAlpha(projectDir, "runs")
   if (!runsDir) return { ok: false, reason: "invalid project dir" }

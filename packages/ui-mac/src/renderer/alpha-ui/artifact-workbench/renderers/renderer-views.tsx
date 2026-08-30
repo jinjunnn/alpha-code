@@ -54,7 +54,7 @@ function openExternally(ctx: PreviewContext): void {
 }
 
 function revealRunDir(ctx: PreviewContext): void {
-  void window.api.openPath(`${ctx.directory}/.alpha/runs/${ctx.runId}`)
+  void window.api.openPath(`${ctx.directory}/.code-puppy/runs/${ctx.runId}`)
 }
 
 // ---------------------------------------------------------------------------

@@ -122,5 +122,5 @@ fidelity; don't silently pick one.
 ## Output location
 
 Write files where the user says; in a project, prefer the project directory. With no project
-context, follow the `~/Alpha` workspace conventions (deliverables are user-visible files — never
-write into `.alpha/`).
+context, follow the `~/code-puppy` workspace conventions (deliverables are user-visible files — never
+write into `.code-puppy/`).

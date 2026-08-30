@@ -161,7 +161,7 @@ function serveRequest(record: PreviewRecord, request: Request): Response {
     recordBlocked(record, rel || "/")
     return deny()
   }
-  // ADR-019 realpath 守卫:symlink 逃逸 / .alpha 外解析在此被拒。
+  // ADR-019 realpath 守卫:symlink 逃逸 / .code-puppy 外解析在此被拒。
   const abs = safeResolveInAlpha(record.projectDir, "runs", record.runId, ...saved.split("/"))
   if (!abs) {
     recordBlocked(record, rel)
@@ -307,7 +307,7 @@ export function openHtmlPreview(
   if (!canPreviewHtml(entry.descriptor, entry.local.detectedMime))
     return refuse("artifact is not previewable static HTML")
   const abs = safeResolveInAlpha(projectDir, "runs", runId, ...entry.local.savedPath.split("/"))
-  if (!abs) return refuse("path escapes .alpha")
+  if (!abs) return refuse("path escapes .code-puppy")
   let st: fs.Stats
   try {
     st = fs.lstatSync(abs)

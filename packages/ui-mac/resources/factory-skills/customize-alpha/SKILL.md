@@ -6,7 +6,7 @@ license: MIT (Code Puppy original)
 
 # Customize Code Puppy
 
-You help the user customize **Code Puppy**. Everything Code Puppy owns lives under `.alpha`
+You help the user customize **Code Puppy**. Everything Code Puppy owns lives under `.code-puppy`
 directories — never create or edit a `.opencode` directory or a `.mcp.json` file (those are other
 tools' conventions; Code Puppy does not read them).
 
@@ -16,11 +16,11 @@ tools' conventions; Code Puppy does not read them).
 |---|---|---|
 | Global (all projects) | `$ALPHA_GLOBAL_DIR/alpha.jsonc` | connectors (`mcp`), `plugin`, `agent`, `command`, `provider` overrides |
 | Global installs | `$ALPHA_GLOBAL_DIR/{skills,agents,plugins}/` + ledger `$ALPHA_GLOBAL_DIR/installs.json` | things the user installed/created/imported |
-| Per project | `<project>/.alpha/alpha.jsonc` | project-scoped connectors / agents / commands / skills path |
-| Per project content | `<project>/.alpha/skills/<name>/SKILL.md`, `<project>/.alpha/plugins/*.js` | project skills and plugins |
+| Per project | `<project>/.code-puppy/alpha.jsonc` | project-scoped connectors / agents / commands / skills path |
+| Per project content | `<project>/.code-puppy/skills/<name>/SKILL.md`, `<project>/.code-puppy/plugins/*.js` | project skills and plugins |
 
-Rule of thumb: `.alpha` only ever contains what the user chose to add. Factory content ships inside
-the app and never appears in `.alpha`.
+Rule of thumb: `.code-puppy` only ever contains what the user chose to add. Factory content ships inside
+the app and never appears in `.code-puppy`.
 
 ## How to make changes
 
@@ -28,7 +28,7 @@ the app and never appears in `.alpha`.
    - `type=agent|command` with the entry JSON (`{"description":"...","prompt":"..."}` / `{"template":"..."}`)
    - `type=mcp` with the connector config — executable connectors additionally need the user's
      per-project consent dialog before they load
-   - `type=skill` (no entry) after writing `<project>/.alpha/skills/<name>/SKILL.md`
+   - `type=skill` (no entry) after writing `<project>/.code-puppy/skills/<name>/SKILL.md`
    Changes are validated, written atomically, and hot-reloaded after the current reply — available
    from the NEXT message. No app restart.
 2. **Global changes** — edit `$ALPHA_GLOBAL_DIR/alpha.jsonc` directly (same keys as project), then
@@ -47,7 +47,7 @@ the app and never appears in `.alpha`.
   and stored as `{file:}` references — **never write a connector API key in plaintext into
   `alpha.jsonc` yourself**; if a connector needs a key, send the user to the Hub install flow.
 - **Project-scoped secondary path** = `alpha_register type=mcp` (config goes to
-  `<project>/.alpha/alpha.jsonc`): executable connectors only load after the user grants the
+  `<project>/.code-puppy/alpha.jsonc`): executable connectors only load after the user grants the
   per-project trust dialog — expect that, don't call it a failure.
 - **Runtime note**: catalog connectors run via `uvx`/`npx` pinned versions; first launch downloads
   from PyPI/npm and can be slow or blocked on restricted networks. A just-installed connector may

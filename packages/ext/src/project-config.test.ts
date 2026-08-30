@@ -28,8 +28,8 @@ describe("mergeProjectConfig — text-class domains (agent/command/skills, alway
 
   test("skills.paths union (OBJECT schema, not array), dedup, existing first", () => {
     const cfg: Record<string, any> = { skills: { paths: ["/global/skills"] } }
-    mergeProjectConfig(cfg, j({ skills: { paths: ["/global/skills", "/proj/.alpha/skills"] } }))
-    expect(cfg.skills).toEqual({ paths: ["/global/skills", "/proj/.alpha/skills"] })
+    mergeProjectConfig(cfg, j({ skills: { paths: ["/global/skills", "/proj/.code-puppy/skills"] } }))
+    expect(cfg.skills).toEqual({ paths: ["/global/skills", "/proj/.code-puppy/skills"] })
   })
 
   test("malformed json → no-op, no throw", () => {
@@ -50,7 +50,7 @@ describe("mergeProjectConfig — text-class domains (agent/command/skills, alway
 
   test("plugin domain NOT merged here (goes via host fan-out, ADR-006)", () => {
     const cfg: Record<string, any> = {}
-    const { added } = mergeProjectConfig(cfg, j({ plugin: ["/proj/.alpha/plugins/x.js"] }), { trustExecutable: true })
+    const { added } = mergeProjectConfig(cfg, j({ plugin: ["/proj/.code-puppy/plugins/x.js"] }), { trustExecutable: true })
     expect(cfg.plugin).toBeUndefined()
     expect(added).not.toContain("plugin")
   })
@@ -63,13 +63,13 @@ describe("mergeProjectConfig — trust gate on executable mcp", () => {
       mcp: { projmcp: { type: "local" } },
       agent: { a: { prompt: "x" } },
       command: { c: { template: "t" } },
-      skills: { paths: ["/proj/.alpha/skills"] },
+      skills: { paths: ["/proj/.code-puppy/skills"] },
     }))
     expect(cfg.mcp).toBeUndefined() // executable gated — engine can't discover it
     expect(r.gatedExecutable).toContain("mcp")
     expect(cfg.agent.a).toBeDefined() // text-class loads regardless
     expect(cfg.command.c).toBeDefined()
-    expect(cfg.skills.paths).toContain("/proj/.alpha/skills")
+    expect(cfg.skills.paths).toContain("/proj/.code-puppy/skills")
   })
 
   test("TRUSTED: mcp loads", () => {
@@ -135,7 +135,7 @@ describe("project/root identity fail-closed", () => {
     expect(projectDirectoryIdentity(alias, home).status).toBe("retired-home")
     const admitted = projectDirectoryIdentity(project, home)
     expect(admitted.status).toBe("project")
-    if (admitted.status === "project") expect(admitted.root).toBe(join(realpathSync(project), ".alpha"))
+    if (admitted.status === "project") expect(admitted.root).toBe(join(realpathSync(project), ".code-puppy"))
     expect(projectDirectoryIdentity(join(root, "missing"), home).status).toBe("unknown")
   })
 
@@ -143,7 +143,7 @@ describe("project/root identity fail-closed", () => {
     const retired = join(home, ".alpha")
     mkdirSync(join(retired, "nested"), { recursive: true })
     writeFileSync(join(retired, "sentinel"), "untouched")
-    symlinkSync(retired, join(project, ".alpha"), "dir")
+    symlinkSync(retired, join(project, ".code-puppy"), "dir")
 
     expect(projectDirectoryIdentity(project, home).status).toBe("unknown")
     expect(projectDirectoryIdentity(join(retired, "nested"), home).status).toBe("retired-home")
@@ -167,8 +167,8 @@ describe("project/root identity fail-closed", () => {
 
   test("分类后 `.alpha` 换链 → config 不读、alpha_register 不写、plugin 不 import", () => {
     const retired = join(home, ".alpha")
-    const admittedRoot = join(project, ".alpha")
-    const moved = join(project, ".alpha-before-race")
+    const admittedRoot = join(project, ".code-puppy")
+    const moved = join(project, ".code-puppy-before-race")
     mkdirSync(retired)
     mkdirSync(admittedRoot)
     writeFileSync(join(retired, "sentinel"), "untouched")
@@ -227,7 +227,7 @@ describe("project/root identity fail-closed", () => {
     writeFileSync(join(retired, "prefs.json"), JSON.stringify({ extensionsConsent: { version: 1, granted: true } }))
     writeFileSync(join(retired, "plugins", "retired.js"), "export default async () => ({ tool: { retired_tool: {} } })")
     writeFileSync(join(retired, "sentinel"), "untouched")
-    symlinkSync(retired, join(project, ".alpha"), "dir")
+    symlinkSync(retired, join(project, ".code-puppy"), "dir")
 
     const global = join(root, "global", "env", "dev")
     mkdirSync(global, { recursive: true })

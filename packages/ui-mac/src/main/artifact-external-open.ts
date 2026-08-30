@@ -128,7 +128,7 @@ export function isManagedRunArtifactPath(value: unknown): boolean {
   return paths.some((candidate) => {
     const segments = candidate.split(/[\\/]+/).map((segment) => segment.toLowerCase())
     return segments.some((segment, index) =>
-      segment === ".alpha" &&
+      segment === ".code-puppy" &&
       segments[index + 1] === "runs" &&
       Boolean(segments[index + 2]) &&
       segments[index + 3] === "artifacts" &&

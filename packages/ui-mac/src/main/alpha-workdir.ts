@@ -1,10 +1,10 @@
-// alpha project workdir (`.alpha/`) writer — ADR-019. Main-process only, but electron-free and
+// alpha project workdir (`.code-puppy/`) writer — ADR-019. Main-process only, but electron-free and
 // root-parameterized so the whole surface is unit-testable against a temp dir.
 //
-// Layout (ADR-019 §2 修订): <projectDir>/.alpha/runs/<runId>/{contract.json,status.json,artifacts/*}
-// Guards mirror ext-fs-installer.safeResolve (realpath anti-escape, ADR-014 §8) with root = .alpha;
+// Layout (ADR-019 §2 修订): <projectDir>/.code-puppy/runs/<runId>/{contract.json,status.json,artifacts/*}
+// Guards mirror ext-fs-installer.safeResolve (realpath anti-escape, ADR-014 §8) with root = .code-puppy;
 // artifact names come from the platform (B) and are treated as hostile until sanitized.
-// The dir self-ignores via a seeded `.alpha/.gitignore` (`*`) — ADR-019 §5: runtime artifacts,
+// The dir self-ignores via a seeded `.code-puppy/.gitignore` (`*`) — ADR-019 §5: runtime artifacts,
 // no user .gitignore edit required.
 
 import * as fs from "node:fs"
@@ -110,7 +110,7 @@ export type ProjectAlphaRootResolution =
   | { status: "retired-home"; reason: string }
   | { status: "unknown"; reason: string }
 
-/** main 项目入口的统一三态身份：返回 canonical project + 已验证 `.alpha` endpoint。 */
+/** main 项目入口的统一三态身份：返回 canonical project + 已验证 `.code-puppy` endpoint。 */
 export function resolveProjectAlphaRoot(projectDir: string, homeDir: string = os.homedir()): ProjectAlphaRootResolution {
   if (typeof projectDir !== "string" || !path.isAbsolute(projectDir) || projectDir === path.parse(projectDir).root)
     return { status: "unknown", reason: "project directory must be an absolute non-root path" }
@@ -136,7 +136,7 @@ export function resolveProjectAlphaRoot(projectDir: string, homeDir: string = os
     }
   })()
   if (!retired.ok) return { status: "unknown", reason: "retired global root identity cannot be confirmed" }
-  const root = path.join(project, ".alpha")
+  const root = path.join(project, ".code-puppy")
   if (sameOrInside(project, retired.path) || related(root, retiredLexical) || related(root, retired.path))
     return { status: "retired-home", reason: "project alpha root is related to the retired global root" }
 
@@ -153,15 +153,15 @@ export function resolveProjectAlphaRoot(projectDir: string, homeDir: string = os
   return { status: "project", projectDir: project, root }
 }
 
-/** `<projectDir>/.alpha`, or null unless the unified three-state resolver admits it. */
+/** `<projectDir>/.code-puppy`, or null unless the unified three-state resolver admits it. */
 export function alphaRoot(projectDir: string): string | null {
   const resolved = resolveProjectAlphaRoot(projectDir)
   return resolved.status === "project" ? resolved.root : null
 }
 
-/** Recovery gate 的 project-root 复验：root 必须仍是同一 canonical 项目的已验证 `.alpha` endpoint。 */
+/** Recovery gate 的 project-root 复验：root 必须仍是同一 canonical 项目的已验证 `.code-puppy` endpoint。 */
 export function assertProjectAlphaRootIdentity(root: string): void {
-  if (!path.isAbsolute(root) || path.basename(root) !== ".alpha") throw new Error("invalid project alpha root")
+  if (!path.isAbsolute(root) || path.basename(root) !== ".code-puppy") throw new Error("invalid project alpha root")
   const resolved = resolveProjectAlphaRoot(path.dirname(root))
   if (resolved.status !== "project" || resolved.root !== path.normalize(root))
     throw new Error("project alpha root identity cannot be confirmed")
@@ -176,7 +176,7 @@ function sameOrInside(child: string, parent: string): boolean {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
-// Resolve a target inside <projectDir>/.alpha and assert (via realpath of the nearest existing
+// Resolve a target inside <projectDir>/.code-puppy and assert (via realpath of the nearest existing
 // ancestor) that it cannot escape through symlinks or `..` — same walk as ext-fs-installer.ts.
 export function safeResolveInAlpha(projectDir: string, ...segments: string[]): string | null {
   const root = alphaRoot(projectDir)
@@ -192,7 +192,7 @@ export function safeResolveInAlpha(projectDir: string, ...segments: string[]): s
   try {
     const real = fs.realpathSync(probe)
     const realRoot = fs.existsSync(root) ? fs.realpathSync(root) : root
-    // before .alpha exists the nearest ancestor is the project dir itself — that is still in-bounds.
+    // before .code-puppy exists the nearest ancestor is the project dir itself — that is still in-bounds.
     const realProject = fs.realpathSync(projectDir)
     if (real !== realRoot && !real.startsWith(realRoot + path.sep) && real !== realProject) return null
   } catch {
@@ -208,7 +208,7 @@ function writeFileAtomic(file: string, data: string | Buffer): void {
 }
 
 /**
- * 项目偏好 `.alpha/prefs.json`(ADR-019 落点)读写。B16 云同意等 per-project 偏好的落点;缺失/损坏
+ * 项目偏好 `.code-puppy/prefs.json`(ADR-019 落点)读写。B16 云同意等 per-project 偏好的落点;缺失/损坏
  * 读为 {}(不误判);写走 ensureAlphaScaffold + 守卫 + 原子写。
  */
 export function readProjectPrefs(projectDir: string): ProjectPrefs {
@@ -224,7 +224,7 @@ export function readProjectPrefs(projectDir: string): ProjectPrefs {
 export function writeProjectPrefs(projectDir: string, prefs: ProjectPrefs): { ok: true } | { ok: false; reason: string } {
   if (!ensureAlphaScaffold(projectDir)) return { ok: false, reason: "invalid project dir" }
   const target = safeResolveInAlpha(projectDir, "prefs.json")
-  if (!target) return { ok: false, reason: "path escapes .alpha" }
+  if (!target) return { ok: false, reason: "path escapes .code-puppy" }
   try {
     writeFileAtomic(target, JSON.stringify(prefs, null, 2) + "\n")
     return { ok: true }
@@ -233,7 +233,7 @@ export function writeProjectPrefs(projectDir: string, prefs: ProjectPrefs): { ok
   }
 }
 
-/** Create `.alpha/` and seed its self-ignoring .gitignore (idempotent). */
+/** Create `.code-puppy/` and seed its self-ignoring .gitignore (idempotent). */
 export function ensureAlphaScaffold(projectDir: string): string | null {
   const root = alphaRoot(projectDir)
   if (!root) return null
@@ -244,7 +244,7 @@ export function ensureAlphaScaffold(projectDir: string): string | null {
 }
 
 /**
- * 通用 run 目录写入(REQ-021 自动化用;复用 .alpha 守卫 + 原子写)。files = 文件名 → 文本内容;
+ * 通用 run 目录写入(REQ-021 自动化用;复用 .code-puppy 守卫 + 原子写)。files = 文件名 → 文本内容;
  * 文件名过 sanitizeArtifactName(拒路径分隔/dotfile)。失败返回 reason,不抛。
  */
 export function writeRunFiles(
@@ -255,7 +255,7 @@ export function writeRunFiles(
   if (!isSafeRunId(runId)) return { ok: false, reason: "unsafe run id" }
   if (!ensureAlphaScaffold(projectDir)) return { ok: false, reason: "invalid project dir" }
   const dir = safeResolveInAlpha(projectDir, "runs", runId)
-  if (!dir) return { ok: false, reason: "path escapes .alpha" }
+  if (!dir) return { ok: false, reason: "path escapes .code-puppy" }
   try {
     fs.mkdirSync(dir, { recursive: true })
     for (const [name, content] of Object.entries(files)) {
@@ -289,7 +289,7 @@ export type SaveRunDeps = {
 }
 
 /**
- * Persist one cloud run under `<projectDir>/.alpha/runs/<runId>/` — status.json (always),
+ * Persist one cloud run under `<projectDir>/.code-puppy/runs/<runId>/` — status.json (always),
  * contract.json (when the caller knows the dispatch envelope) and artifacts/* (fetched in main,
  * bearer never leaves the main process). Partial artifact failures degrade to warnings; the run
  * dir + status.json are the success criterion.
@@ -303,7 +303,7 @@ export async function saveCloudRun(
   if (!isSafeRunId(runId)) return { ok: false, reason: "invalid run id" }
   if (!ensureAlphaScaffold(projectDir)) return { ok: false, reason: "invalid project directory" }
   const runDir = safeResolveInAlpha(projectDir, "runs", runId)
-  if (!runDir) return { ok: false, reason: "refused: path escapes .alpha" }
+  if (!runDir) return { ok: false, reason: "refused: path escapes .code-puppy" }
 
   // transport-error envelope = bare {error}; a real CloudJobStatus always carries job_id (its own
   // `error` field is null on success and a message on failed jobs — both still savable states).
@@ -332,7 +332,7 @@ export async function saveCloudRun(
   const metas = list && typeof list === "object" && !("error" in list) ? list.artifacts : []
   if (list && typeof list === "object" && "error" in list) warnings.push(`artifacts: ${list.error}`)
 
-  // REQ-092:字节不再进本模块 —— 名字净化 + .alpha 逃逸守卫后,把目标路径交给流式下载器
+  // REQ-092:字节不再进本模块 —— 名字净化 + .code-puppy 逃逸守卫后,把目标路径交给流式下载器
   // (.part + 限额前置 + 单遍 sha256 + 原子 rename;失败分类回警告,绝不产出看似成功的最终文件)。
   const used = new Set<string>()
   for (const meta of metas) {

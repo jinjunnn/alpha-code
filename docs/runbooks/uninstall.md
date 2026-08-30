@@ -39,7 +39,7 @@
 
 | 路径 | 说明 |
 |---|---|
-| 你的项目文件、各项目内 `.alpha/` 目录 | ADR-019 §4:项目级产物属用户项目(云任务 run 记录、项目偏好);清理=进各项目手删 `.alpha/` |
+| 你的项目文件、各项目内 `.code-puppy/` 目录 | ADR-019 §4:项目级产物属用户项目(云任务 run 记录、项目偏好);清理=进各项目手删 `.code-puppy/` |
 | `~/Library/Application Support/alpha-code-state/cas/` | dev/prod/beta 共享的可重建 CAS，由 GC 管理；app 内 data-clear 不删除，避免跨环境误删。彻底卸载全部 channel 后可手动删除整个 `alpha-code-state/` |
 | `~/Library/Application Support/alpha-code-state/env/<其它环境>/` | 其它 channel 的 mutable root；必须从对应 channel 清除，或在全部 channel 均卸载后手动删除共享 base |
 | `~/.alpha/` | 已退休旧根；当前版本零读取、零迁移、零 dual-read，也不会替用户删除其中历史内容 |
@@ -89,6 +89,6 @@ du -sh ~/Library/Application\ Support/alpha-code-state 2>/dev/null
 ls -la ~/.opencode 2>/dev/null   # 只应剩你自建的内容与 opencode.jsonc(见上表)
 ```
 
-保留项(设计内不归零):各项目 `.alpha/`、退休根 `~/.alpha` 的历史内容、`~/.opencode`
+保留项(设计内不归零):各项目 `.code-puppy/`、退休根 `~/.alpha` 的历史内容、`~/.opencode`
 用户自建内容与 opencode.jsonc、钥匙串项。共享 `alpha-code-state/cas` 和其它环境根仅在所有
 channel 均卸载后手动整 base 清理。

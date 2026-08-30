@@ -14,7 +14,7 @@ import type { InstallReceipt } from "../preload/types"
 
 let tmp: string
 let projectDir: string
-const alphaDir = () => join(projectDir, ".alpha")
+const alphaDir = () => join(projectDir, ".code-puppy")
 const gate = () => makeRecoveryGate(() => ({}))
 
 beforeEach(() => {
@@ -115,7 +115,7 @@ describe("adoptProjectLedger (REQ-099 #356)", () => {
     expect(retry.ok && retry.migrated === 1).toBe(true)
   })
 
-  test("无 .alpha 存量 → 零写副作用(不为纯净项目制造 .alpha/lock/journal)", async () => {
+  test("无 .code-puppy 存量 → 零写副作用(不为纯净项目制造 .code-puppy/lock/journal)", async () => {
     const r = await adoptProjectLedger(projectDir, { environment: "prod", gate: gate() })
     expect(r.ok && r.migrated === 0).toBe(true)
     expect(existsSync(alphaDir())).toBe(false)

@@ -233,7 +233,7 @@ export function createDataClearAction(opts: {
         `· 应用数据(设置/日志/密钥/凭证):${DataClear.formatBytes(localBytes)}\n` +
         `· 当前环境安装物及其在 ~/.opencode 的桥接链接(${plan.bridgeLinks.length} 条)\n` +
         `· 引擎数据(会话数据库/项目元数据/引擎凭证):${DataClear.formatBytes(sharedBytes)} —— 见下方勾选\n\n` +
-        "不会触碰:你的项目文件、各项目内 .alpha/ 目录、~/.opencode 内你自建的内容。" +
+        "不会触碰:你的项目文件、各项目内 .code-puppy/ 目录、~/.opencode 内你自建的内容。" +
         "Alpha 自有配置中指向已清除数据的悬空连接器/插件引用会一并清理。\n" +
         safeStorageResidueNote(),
       checkboxLabel: "同时删除引擎数据(与独立安装的 opencode CLI 共享 —— 若你单独使用 opencode,请勿勾选)",

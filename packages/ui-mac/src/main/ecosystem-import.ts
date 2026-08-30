@@ -12,7 +12,7 @@
 //   - 全局 CLAUDE.md → `<current-environment-root>/instructions/imported-claude-code.md`(sidecar injectAlphaConfig
 //              扫描该目录并入 instructions —— alpha 原生通道)。
 //
-// 记账:项目决策 = `.alpha/prefs.json` 的 externalImport(版本化,REQ-060 extensionsConsent 同款);
+// 记账:项目决策 = `.code-puppy/prefs.json` 的 externalImport(版本化,REQ-060 extensionsConsent 同款);
 // 全局一次性迁移门 = `<current-environment-root>/ecosystem-import.json`(marker,防重复弹)。
 
 import * as fs from "node:fs"
@@ -85,7 +85,7 @@ export type ImportOutcome = {
 }
 
 /** skills 转换导入(项目/全局同一管线,只差 target 与 origin)。
- *  项目 scope 成功导入 ≥1 项时,补项目 `alpha.jsonc` 的 skills.paths 注册("./.alpha/skills",
+ *  项目 scope 成功导入 ≥1 项时,补项目 `alpha.jsonc` 的 skills.paths 注册("./.code-puppy/skills",
  *  与 alpha_register type=skill 同形状)—— 引擎经 ext config hook 按此发现项目技能;漏注册 =
  *  文件落了但引擎永远看不见(2026-07-08 真机验收当场抓到的缺口)。 */
 /** #390:global 未策展技能安装器 —— 由 electron 侧调用方注入(planner 的 CAS 事务路径),使本
@@ -127,9 +127,9 @@ export async function importExternalSkills(
   return { importedSkills, skipped }
 }
 
-/** 项目 `alpha.jsonc`:确保 skills.paths 含 "./.alpha/skills"(相对路径,项目可移动;幂等原子写)。 */
+/** 项目 `alpha.jsonc`:确保 skills.paths 含 "./.code-puppy/skills"(相对路径,项目可移动;幂等原子写)。 */
 export function registerProjectSkillsPath(projectDir: string): void {
-  const file = path.join(projectDir, ".alpha", "alpha.jsonc")
+  const file = path.join(projectDir, ".code-puppy", "alpha.jsonc")
   let cfg: Record<string, unknown> = {}
   try {
     const parsed: unknown = parseJsonc(fs.readFileSync(file, "utf8"))
@@ -142,8 +142,8 @@ export function registerProjectSkillsPath(projectDir: string): void {
       ? (cfg.skills as Record<string, unknown>)
       : ((cfg.skills = {}) as Record<string, unknown>)
   const paths = Array.isArray(skills.paths) ? (skills.paths as unknown[]) : ((skills.paths = []) as unknown[])
-  if (paths.includes("./.alpha/skills")) return
-  paths.push("./.alpha/skills")
+  if (paths.includes("./.code-puppy/skills")) return
+  paths.push("./.code-puppy/skills")
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const tmp = file + ".tmp"
   fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + "\n")

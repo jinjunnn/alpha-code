@@ -1,7 +1,7 @@
 // B3 云任务终态自动回流 watcher — headless AppInterface child(仿 AlphaOnboarding:
 // 无 UI、app 启动即活、与路由无关)。agent 经 MCP facade 调 cloud_* 时 app 不知道 jobId,唯一发现
 // 通道是 opencode firehose 的 tool part(解析核 cloud-run-core.ts);发现终态 → main 侧
-// window.api.cloud.saveRun 把 status/artifacts 落 <worktree>/.alpha/runs/<runId>/(ADR-019)→ toast。
+// window.api.cloud.saveRun 把 status/artifacts 落 <worktree>/.code-puppy/runs/<runId>/(ADR-019)→ toast。
 // 订阅范式照抄 use-extensions.ts(client + AbortController + generation + onCleanup)。
 
 import { createEffect, onCleanup, type Accessor } from "solid-js"
@@ -43,7 +43,7 @@ export function CloudRunWatcher(props: { server: Accessor<ServerInfo | undefined
       pushToast({
         kind: hit.terminal === "completed" ? "success" : "info",
         title: t(hit.terminal === "completed" ? "alpha.cloud.runSaved" : "alpha.cloud.runEnded"),
-        detail: `${hit.runId} → .alpha/runs`,
+        detail: `${hit.runId} → .code-puppy/runs`,
       })
     } else {
       pushToast({ kind: "error", title: t("alpha.cloud.runSaveFailed"), detail: r.reason })

@@ -44,7 +44,7 @@ review_after: 2026-10-14
 > | `ext-config.ts` `applyBuiltinPolicyEditsUnlocked`(自己的 tmp+rename 写 `alpha.jsonc`) | `builtinPolicyPathAllowed` 具名路径白名单(只放 `agent` / `permission.skill` / `command` 叶子,`plugin` 不是合法首段,落盘前逐条判) |
 > | `alpha-config-injection` | 只在真源**缺席**时 seed 字面量 `{$schema}`,内容里没有 `plugin` 键 |
 > | `alpha-migrate` legacy 臂 | 目标是 legacy `opencode.jsonc`,只做减法,且要 `ALPHA_MIGRATE_ENABLE=1` |
-> | **`ecosystem-import.ts` `registerProjectSkillsPath`**(整文件写**项目级** `<proj>/.alpha/alpha.jsonc`) | **它自己没有任何白名单**;挡住 `plugin` 的闸在另一个包:`packages/ext/src/project-config.ts` 的 `mergeProjectConfig` 只合 `mcp`(信任门)/`agent`/`command`/`skills.paths`。同族的 `packages/ext/src/register.ts`(引擎进程侧整文件序列化同一文件)靠 `RegisterType` 类型白名单 |
+> | **`ecosystem-import.ts` `registerProjectSkillsPath`**(整文件写**项目级** `<proj>/.code-puppy/alpha.jsonc`) | **它自己没有任何白名单**;挡住 `plugin` 的闸在另一个包:`packages/ext/src/project-config.ts` 的 `mergeProjectConfig` 只合 `mcp`(信任门)/`agent`/`command`/`skills.paths`。同族的 `packages/ext/src/register.ts`(引擎进程侧整文件序列化同一文件)靠 `RegisterType` 类型白名单 |
 >
 > 最后一行是 `#832` 审计补上的,也是唯一一条「今天只写 `skills.paths`」属于**恰好**而非被挡:实测在
 > `registerProjectSkillsPath` 里加一行 `cfg.plugin=[…]`,盘上当场多出该条目而咽喉用例全绿;同一份文本
@@ -97,7 +97,7 @@ review_after: 2026-10-14
 | agent(seed #358 + catalog #361,同一载体) | fresh-only 双层门:catalog 锁外快速拒(有账 v2/v1、md 文件、或手工 `agent.<name>` 配置项 —— strict 读,不可读按在场)+ **引擎锁内 precondition**(`agentFreshGate`)重读封 TOCTOU;catalog 另拒 `entry.id ≠ agent:<name>` 身份漂移与含 `--` 名 | 引擎回滚(file 前像恢复缺席/旧字节 + config 叶复原) |
 | signed-package command(#840) | `init`/`review`/`customize-opencode` 下载前拒；模板摘要/字节数双查后严格 UTF-8；fresh 未登记 live 叶拒认领，锁内重查封 TOCTOU；disabled receipt 具名拒绝 | 引擎回滚(config 整文件复原)；成功即 enabled；更新与整包卸载只改同一 `command.<name>` 叶和对应 grants/账本 |
 | cloud | 账本可写探测 | receipt action 零盘副作用;失败 = 零账本;**卸载 = grants 清除成功前置 + ledger 删除失败 `ok:false`**(receipts-only,账没去=没卸载);重装显式继承 `desiredState` |
-| 未策展导入(#390:folder/git 技能 + imported agent,**仅 global**) | fresh-only:skill = `uncuratedSkillFreshGate`(catalog/损坏冲突 + 账本可写 + 有账 v2/v1 拒 + 无账 flat `skills/<name>` 目录拒),agent = `agentFreshGate(channel="import")`;`id=user:<name>`、`capabilities=[]`、**不携供给链摘要**(#306 非 catalog 不变量);内容自算地址进验证共享 CAS | 技能走 generation 载体、agent 走 file+config 载体,引擎回滚(前像恢复缺席/旧字节);project scope 不走本路径(ADR-030:维持 `<project>/.alpha/skills` flat sanctioned) |
+| 未策展导入(#390:folder/git 技能 + imported agent,**仅 global**) | fresh-only:skill = `uncuratedSkillFreshGate`(catalog/损坏冲突 + 账本可写 + 有账 v2/v1 拒 + 无账 flat `skills/<name>` 目录拒),agent = `agentFreshGate(channel="import")`;`id=user:<name>`、`capabilities=[]`、**不携供给链摘要**(#306 非 catalog 不变量);内容自算地址进验证共享 CAS | 技能走 generation 载体、agent 走 file+config 载体,引擎回滚(前像恢复缺席/旧字节);project scope 不走本路径(ADR-030:维持 `<project>/.code-puppy/skills` flat sanctioned) |
 
 MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而非拒绝;agent 的覆盖更新在
 产品上不存在(`updateEntry` 不支持 agent),故拒绝无回归。未策展导入(#390)同 agent:无就地
@@ -122,7 +122,7 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
 
 ## 4. project 账本共享与 environment 归因不变量(REQ-099 #356,Codex 裁决 A+C)
 
-- project `.alpha` 跨 app channel(prod/beta/dev)共用,**不做**环境分根(env 隔离只作用于
+- project `.code-puppy` 跨 app channel(prod/beta/dev)共用,**不做**环境分根(env 隔离只作用于
   全局根);`InstallRecordV2.environment` 对 project 记录是 **adoption/安装时点的归因字段**
   ——先到先得,如实固化,后到 channel 不重写。
 - **消费不变量**:environment 不是可见性、操作资格或 channel namespace —— 所有 channel 读同
@@ -130,7 +130,7 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   `ext-list-installs`)不得按 environment 过滤或授权;新增读方必须遵守。
 - adoption 触发面 = 项目 lifecycle(`ext-trust-check`),在「无 executable / 已有信任决策」
   两个早退**之前**;顺序 = realpath 身份 → `ledgerReady` → project recovery gate →
-  project bundle 锁 → `migrateV1Ledger`(迁移器自身不持锁);无 `.alpha` 存量零写副作用;
+  project bundle 锁 → `migrateV1Ledger`(迁移器自身不持锁);无 `.code-puppy` 存量零写副作用;
   拒绝 loud log 零改动,busy/transient 下次打开自然重试(幂等)。
 
 ## 5. desiredState:初始分类、当前策略优先与投影权威(REQ-104 #395)

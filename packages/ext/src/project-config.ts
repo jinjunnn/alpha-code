@@ -1,4 +1,4 @@
-// REQ-060 项目级扩展物 `.alpha`-only:把 `<project>/.alpha/alpha.jsonc` 的项目级引擎配置合并进一份
+// REQ-060 项目级扩展物 `.code-puppy`-only:把 `<project>/.code-puppy/alpha.jsonc` 的项目级引擎配置合并进一份
 // per-instance cfg(纯逻辑,electron-free,单测覆盖)。消费方 = @alpha-code/ext 的 config hook。
 //
 // 合并语义:项目级条目补进 cfg 的命名域(mcp/agent/command),existing(全局)优先不覆盖(项目「新增」
@@ -14,7 +14,7 @@ export type ProjectDirectoryIdentity =
   | { status: "retired-home"; reason: string }
   | { status: "unknown"; reason: string }
 
-/** home 项目边界三态：project 分支携带唯一可供消费者使用的已验证 `.alpha` root。 */
+/** home 项目边界三态：project 分支携带唯一可供消费者使用的已验证 `.code-puppy` root。 */
 export function projectDirectoryIdentity(directory: string, homeDir: string = homedir()): ProjectDirectoryIdentity {
   if (!isAbsolute(directory)) return { status: "unknown", reason: "project directory must be absolute" }
   let candidate: string
@@ -38,7 +38,7 @@ export function projectDirectoryIdentity(directory: string, homeDir: string = ho
     }
   })()
   if (!retired.ok) return { status: "unknown", reason: "retired global root identity cannot be confirmed" }
-  const root = join(candidate, ".alpha")
+  const root = join(candidate, ".code-puppy")
   if (sameOrInside(candidate, retired.path) || related(root, retiredLexical) || related(root, retired.path))
     return { status: "retired-home", reason: "project alpha root is related to the retired global root" }
 

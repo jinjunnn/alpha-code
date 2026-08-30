@@ -16,7 +16,7 @@ let artifactPath: string
 
 beforeEach(() => {
   projectDir = mkdtempSync(join(tmpdir(), "artifact-external-open-"))
-  mkdirSync(join(projectDir, ".alpha", "runs", RUN, "artifacts"), { recursive: true })
+  mkdirSync(join(projectDir, ".code-puppy", "runs", RUN, "artifacts"), { recursive: true })
 })
 
 afterEach(() => rmSync(projectDir, { recursive: true, force: true }))
@@ -132,14 +132,14 @@ describe("main-owned artifact external-open gate", () => {
 
 describe("generic open-path bypass classification", () => {
   test("managed artifact paths and realpath aliases are blocked, but the run directory is not", () => {
-    artifactPath = join(projectDir, ".alpha", "runs", RUN, "artifacts", "book.xlsx")
+    artifactPath = join(projectDir, ".code-puppy", "runs", RUN, "artifacts", "book.xlsx")
     writeFileSync(artifactPath, "x")
     const alias = join(projectDir, "artifact-alias")
     symlinkSync(artifactPath, alias)
     expect(isManagedRunArtifactPath(artifactPath)).toBe(true)
     expect(isManagedRunArtifactPath(alias)).toBe(true)
-    expect(isManagedRunArtifactPath(join(projectDir, ".alpha", "runs", RUN))).toBe(false)
-    expect(isManagedRunArtifactPath(join(projectDir, ".alpha", "runs", RUN, "artifacts-other", "x"))).toBe(false)
+    expect(isManagedRunArtifactPath(join(projectDir, ".code-puppy", "runs", RUN))).toBe(false)
+    expect(isManagedRunArtifactPath(join(projectDir, ".code-puppy", "runs", RUN, "artifacts-other", "x"))).toBe(false)
   })
 })
 
@@ -149,7 +149,7 @@ function register(
   claimedMime?: string,
   detectedMime: string | null = "application/zip",
 ): ArtifactDescriptor {
-  artifactPath = join(projectDir, ".alpha", "runs", RUN, "artifacts", name)
+  artifactPath = join(projectDir, ".code-puppy", "runs", RUN, "artifacts", name)
   writeFileSync(artifactPath, bytes)
   const digest = createHash("sha256").update(bytes).digest("hex")
   const id = artifactIdFor(RUN, 0, { name, size: bytes.byteLength, sha256: digest })

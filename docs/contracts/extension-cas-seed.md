@@ -101,7 +101,7 @@ CAS 补充语义:
    sha256/bytes,**展开前拒绝**)后分流:global skill/agent/MCP 才以
    `promoteSeedAssetToCas` 把**所选资产**的 blob 原子提升进共享 CAS(不复制整个 seed),其中
    generation 从 CAS 物化(`populateFromCas`,读取重验);REQ-136 project 只接受 seed asset 与
-   bundled entry 均已验为 MCP 的形状,跳过 CAS promotion,直接提交 D/.alpha 下 config-only
+   bundled entry 均已验为 MCP 的形状,跳过 CAS promotion,直接提交 D/.code-puppy 下 config-only
    transaction。两路 receipt v2 语义都派生自 bundled entry,且
    `ownership.distributed` 如实记 `bundled`。Global skill 版本门在**引擎 Bundle 锁内**经
    precondition hook
@@ -289,8 +289,8 @@ REQ-136 的窄例外仅允许已验 MCP 走 project config-only 安装,其完整
 - **新增安装**:`installCatalog` 严格 decode 后由 main 解析已验事实。Standalone 仅
   `entry.type === "mcp"` 可进 project；seed 必须 selected asset 与同包 bundled entry 都解析为
   MCP 且 `verifySeedAsset` 全过。Renderer id 前缀不算 kind 证据；skill/agent/plugin/bundle/cloud/
-  signed-package/unlisted 均拒。事务根由 canonical D 派生为 `D/.alpha`，唯一 config target 是
-  `D/.alpha/alpha.jsonc`，receipt/journal 同根；不写 `extensionsConsent`，不写进
+  signed-package/unlisted 均拒。事务根由 canonical D 派生为 `D/.code-puppy`，唯一 config target 是
+  `D/.code-puppy/alpha.jsonc`，receipt/journal 同根；不写 `extensionsConsent`，不写进
   `OPENCODE_CONFIG`/`OPENCODE_CONFIG_CONTENT`，也不造第二个项目注册表。
 - **安全子集与管理面**:project MCP 要求零 required env、零 secret version、零 secret/workspace
   grant，并拒 literal `{workspace}` 与 workspace-policy classifier 命中。每次 project write/uninstall
@@ -302,7 +302,7 @@ REQ-136 的窄例外仅允许已验 MCP 走 project config-only 安装,其完整
   config leaf、D 授权账与 D receipt，绝不调用 global legacy-config/secret/connection cleanup。
   Global 与 project 同名卸载互不改写对方字节。
   Project skill/agent 历史残留仍保留原管理面；generation-backed skill 继续 journaled teardown。
-- **发现与激活**:project MCP 仍只由既有 per-instance hook 读取 `D/.alpha/alpha.jsonc`；安装不写
+- **发现与激活**:project MCP 仍只由既有 per-instance hook 读取 `D/.code-puppy/alpha.jsonc`；安装不写
   `extensionsConsent`，也不执行 session-switch writer。Main 的 D-scoped probe 先排除 effective global
   同名项，再要求 D 的 effective MCP leaf 与 durable project leaf 精确一致，最后才查询 D-scoped
   name-only status；只返回 `active | shadowed | unverifiable`，不回传 config bytes，shadowed/
@@ -315,7 +315,7 @@ REQ-136 的窄例外仅允许已验 MCP 走 project config-only 安装,其完整
   ① project-identity 的 catalog record(identity 不符单项 fail-closed);② 账本判 absent 且
   形状为 `skill--<safe>`、具 generation-store 结构的 ghost 店。其余一律只报告:非该形状的
   ext-store 条目、误置(非 project scope)record、v1 占位、以及 orphan agent 面
-  (`.alpha/agents/*.md`、`alpha.jsonc` agent 条目)—— 永不自动清。
+  (`.code-puppy/agents/*.md`、`alpha.jsonc` agent 条目)—— 永不自动清。
 
 ## 附:seed 安装的初始启用态(REQ-104 #395)
 
