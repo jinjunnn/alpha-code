@@ -344,6 +344,17 @@ export function AlphaSidebar(props: {
     )
   }
 
+  // ac#1187:账户浮层底部显示当前版本号。取值经 preload 的 app-version IPC(唯一真源 =
+  // app.getVersion() = package.json 的 version);取不到就整行不渲染,不落任何版本字面量兜底。
+  // 经 Promise 链取而不是裸调:桥上缺这个方法时(窄桩的测试壳、或真桥退化)失败单元必须是
+  // 「版本行不渲染」,不是同步 TypeError 拖死整个侧栏 —— 首版裸调把 7 个挂生产侧栏的既有
+  // 闸门一起打红(它们的 preload 桩是显式对象,没有 appVersion)。
+  const [appVersion, setAppVersion] = createSignal("")
+  void Promise.resolve()
+    .then(() => window.api.appVersion())
+    .then((v) => setAppVersion(typeof v === "string" ? v : ""))
+    .catch(() => {})
+
   const MenuCommon = () => (
     <>
       <button
@@ -1466,6 +1477,9 @@ export function AlphaSidebar(props: {
                   >
                     <span class="alpha-acct-ic">⎋</span>{t("alpha.sidebar.signOut")}
                   </button>
+                </Show>
+                <Show when={appVersion()}>
+                  <div class="alpha-acct-version">{t("alpha.sidebar.version")} {appVersion()}</div>
                 </Show>
               </div>
             </Show>
