@@ -1511,6 +1511,7 @@ export const dict = {
   "alpha.sidebar.themeSystem": "系统",
   "alpha.sidebar.helpFeedback": "帮助与反馈",
   "alpha.sidebar.checkUpdates": "检查更新",
+  "alpha.sidebar.version": "版本",
   "alpha.sidebar.rename": "重命名",
   "alpha.sidebar.share": "分享",
   "alpha.sidebar.copyConversation": "复制对话",

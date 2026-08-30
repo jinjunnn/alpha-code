@@ -108,6 +108,7 @@ import { sessionGrantRegistry } from "./ext-session-grants"
 import type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import { initEndpoints } from "./alpha-endpoints"
 import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
+import { registerAppVersionIpcHandler } from "./app-version-ipc"
 import { registerContractHealthIpcHandlers, reportContractFailure } from "./alpha-contract-health"
 import { registerCatalogHealthIpcHandlers } from "./alpha-catalog-health"
 import { registerSurfaceIpc } from "./alpha-surfaces"
@@ -943,6 +944,7 @@ const main = Effect.gen(function* () {
   registerModelsIpcHandlers(app.getPath("userData"))
   registerProviderIpcHandlers()
   registerEndpointsIpcHandlers()
+  registerAppVersionIpcHandler()
   registerContractHealthIpcHandlers(() => mainWindow)
   // #1084:平台目录刷新失败的出口(启动那次刷新跑在本行之前 —— 所以它靠 invoke 取,不靠推送)。
   registerCatalogHealthIpcHandlers(() => mainWindow)

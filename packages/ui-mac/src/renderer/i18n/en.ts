@@ -1543,6 +1543,7 @@ export const dict = {
   "alpha.sidebar.themeSystem": "System",
   "alpha.sidebar.helpFeedback": "Help & feedback",
   "alpha.sidebar.checkUpdates": "Check for updates",
+  "alpha.sidebar.version": "Version",
   "alpha.sidebar.rename": "Rename",
   "alpha.sidebar.share": "Share",
   "alpha.sidebar.copyConversation": "Copy conversation",
