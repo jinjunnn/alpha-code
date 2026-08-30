@@ -853,7 +853,10 @@ describe("REQ-126 CODE-D 首页:chip 抽取行为保持 + 默认落 ~/Alpha", ()
     chipButton(host).click()
     await flush()
     const labels = popItems(host).map((button) => button.textContent ?? "")
-    expect(labels[0]).toContain("Alpha") // 默认工作区常驻首项(未注册为项目)
+    // [ac#1186] 常驻首项读 `alpha.brand.short`,它是产品名不是目录名 —— owner 在这里看到的必须是 Code Puppy。
+    // 「不含 Alpha」不能省:缺陷的用户可观察形态就是这一行写着「Alpha」,只断言含新名会漏掉两名并存。
+    expect(labels[0]).toContain("Code Puppy") // 默认工作区常驻首项(未注册为项目)
+    expect(labels[0]).not.toContain("Alpha")
     expect(popItems(host)[0]?.className).toContain("is-on") // 未选时选中态在它身上
     expect(labels.some((label) => label.includes("alpha-code"))).toBe(true)
     expect(labels.some((label) => label.includes("beta"))).toBe(true)
