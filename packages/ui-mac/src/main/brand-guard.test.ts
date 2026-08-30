@@ -8,6 +8,9 @@
 // ② AC1/AC3 展示面坐标:逐点断言显示 "Code Puppy" / "CODE PUPPY",漏一格红一格。
 //
 // 变异自证(2026-08-29,见 PR):把 index.ts 的 APP_IDS.prod 改一个字符 → 本文件当场红;还原后绿。
+//
+// [ac#1186] `alpha.brand.short` 补进 ②:改名那轮漏了它,工作区弹层的默认工作区因此仍显示「Alpha」。
+// 取 `Code Puppy`(与 product 同口径 —— `code-puppy`/`codepuppy` 在本仓只做域名与标识符,不做展示名)。
 
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
@@ -56,14 +59,16 @@ describe("AC1 展示面坐标 — ui-mac 自有面显示 Code Puppy", () => {
     expect(src.split('productName: "Code Puppy",').length - 1).toBe(2) // dev + prod
     expect(src).toContain('productName: "Code Puppy Beta",')
   })
-  test("i18n 品牌键 en(product / wordmark)", () => {
+  test("i18n 品牌键 en(product / short / wordmark)", () => {
     const src = read("packages/ui-mac/src/renderer/i18n/en.ts")
     expect(src).toContain('"alpha.brand.product": "Code Puppy",')
+    expect(src).toContain('"alpha.brand.short": "Code Puppy",')
     expect(src).toContain('"alpha.brand.wordmark": "CODE PUPPY",')
   })
-  test("i18n 品牌键 zh(product / wordmark)", () => {
+  test("i18n 品牌键 zh(product / short / wordmark)", () => {
     const src = read("packages/ui-mac/src/renderer/i18n/zh.ts")
     expect(src).toContain('"alpha.brand.product": "Code Puppy",')
+    expect(src).toContain('"alpha.brand.short": "Code Puppy",')
     expect(src).toContain('"alpha.brand.wordmark": "CODE PUPPY",')
   })
   test("i18n en 其余品牌文案五处", () => {

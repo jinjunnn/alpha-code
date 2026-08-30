@@ -940,7 +940,7 @@ export const dict = {
 
   // Alpha 自有 renderer 界面(C20 国际化补全)。
   "alpha.brand.product": "Code Puppy",
-  "alpha.brand.short": "Alpha",
+  "alpha.brand.short": "Code Puppy",
   "alpha.brand.wordmark": "CODE PUPPY",
   "alpha.common.back": "返回",
   "alpha.common.close": "关闭",
