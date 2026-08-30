@@ -23,7 +23,7 @@ import {
 
 let projectDir: string
 const RUN = "job_1234"
-const runDir = () => path.join(projectDir, ".alpha", "runs", RUN)
+const runDir = () => path.join(projectDir, ".code-puppy", "runs", RUN)
 const artifactsDir = () => path.join(runDir(), "artifacts")
 const manifestPath = () => path.join(runDir(), ARTIFACT_MANIFEST_FILE)
 
@@ -134,8 +134,8 @@ describe("registerDownloadedArtifact (#184 集成点)", () => {
     expect(res.ok).toBe(false)
   })
 
-  test("symlinked artifact escaping .alpha is rejected by the realpath guard", () => {
-    const outside = path.join(projectDir, "outside.txt") // 项目内但 .alpha 外
+  test("symlinked artifact escaping .code-puppy is rejected by the realpath guard", () => {
+    const outside = path.join(projectDir, "outside.txt") // 项目内但 .code-puppy 外
     fs.writeFileSync(outside, "secret")
     fs.symlinkSync(outside, path.join(artifactsDir(), "link.txt"))
     const a = seedArtifact("report.md", "# hi")
@@ -407,7 +407,7 @@ describe("byte accounting", () => {
     const a = seedArtifact("report.md", "# hi")
     registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest })
     // 第二个 run(legacy,无 manifest)
-    const run2 = path.join(projectDir, ".alpha", "runs", "job_2", "artifacts")
+    const run2 = path.join(projectDir, ".code-puppy", "runs", "job_2", "artifacts")
     fs.mkdirSync(run2, { recursive: true })
     fs.writeFileSync(path.join(run2, "x.bin"), "12345")
     const res = projectArtifactUsage(projectDir)
@@ -478,7 +478,7 @@ describe("byte accounting", () => {
   test("no runs dir yet → zero usage, not an error", () => {
     const fresh = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-empty-"))
     try {
-      fs.mkdirSync(path.join(fresh, ".alpha"), { recursive: true })
+      fs.mkdirSync(path.join(fresh, ".code-puppy"), { recursive: true })
       const res = projectArtifactUsage(fresh)
       expect(res.ok && res.usage.totalDiskBytes).toBe(0)
       expect(res.ok && res.usage.runs).toEqual([])

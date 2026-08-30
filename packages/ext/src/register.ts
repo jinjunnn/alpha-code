@@ -1,12 +1,12 @@
-// REQ-060 T2 `alpha_register` 纯逻辑:把一条项目级扩展条目登记进 `<proj>/.alpha/alpha.jsonc`。
+// REQ-060 T2 `alpha_register` 纯逻辑:把一条项目级扩展条目登记进 `<proj>/.code-puppy/alpha.jsonc`。
 // 模型不手改 config —— 校验(SAFE_NAME + 逐 type 字段白名单)与序列化都在这里,写坏面收敛;
 // 消费方 = plugin.ts 的 alpha_register tool(读现文本 → applyRegister → 原子写 → 登记 reload)。
 //
 // type 语义:
 //   mcp / agent / command → `alpha.jsonc` 对应命名域条目(同名 = 更新,创建流会迭代);
-//   skill → 无 entry:确保 skills.paths 含 "./.alpha/skills"(相对路径,config hook 按项目根解析,
-//            项目可移动)—— skill 本体是 `<proj>/.alpha/skills/<name>/SKILL.md` 文件,模型直接写盘;
-//   plugin 不在此注册:`.alpha/plugins/*.js` 由 host fan-out 自动发现(必须自包含 ESM .js,ADR-006)。
+//   skill → 无 entry:确保 skills.paths 含 "./.code-puppy/skills"(相对路径,config hook 按项目根解析,
+//            项目可移动)—— skill 本体是 `<proj>/.code-puppy/skills/<name>/SKILL.md` 文件,模型直接写盘;
+//   plugin 不在此注册:`.code-puppy/plugins/*.js` 由 host fan-out 自动发现(必须自包含 ESM .js,ADR-006)。
 
 import { stripJsonc } from "./project-config"
 
@@ -39,17 +39,17 @@ export function applyRegister(
       cfg = parsed as Record<string, unknown>
     } catch {
       // 现文件坏 → 拒绝写(覆盖坏文件可能吞用户内容;loud 让人修)
-      return { ok: false, reason: "existing .alpha/alpha.jsonc is invalid JSONC — fix it manually first" }
+      return { ok: false, reason: "existing .code-puppy/alpha.jsonc is invalid JSONC — fix it manually first" }
     }
   }
 
   if (type === "skill") {
     const skills = isObj(cfg.skills) ? { ...(cfg.skills as Record<string, unknown>) } : {}
     const paths = Array.isArray(skills.paths) ? [...(skills.paths as unknown[])] : []
-    if (!paths.includes("./.alpha/skills")) paths.push("./.alpha/skills")
+    if (!paths.includes("./.code-puppy/skills")) paths.push("./.code-puppy/skills")
     skills.paths = paths
     cfg.skills = skills
-    return { ok: true, next: serialize(cfg), summary: `skills path registered (./.alpha/skills); put the skill at .alpha/skills/<name>/SKILL.md` }
+    return { ok: true, next: serialize(cfg), summary: `skills path registered (./.code-puppy/skills); put the skill at .code-puppy/skills/<name>/SKILL.md` }
   }
 
   if (!SAFE_NAME.test(name)) return { ok: false, reason: `invalid name: ${JSON.stringify(name)} (allowed: ${SAFE_NAME})` }
@@ -63,7 +63,7 @@ export function applyRegister(
   const existed = name in domain
   domain[name] = entry
   cfg[type] = domain
-  return { ok: true, next: serialize(cfg), summary: `${type} "${name}" ${existed ? "updated" : "registered"} in .alpha/alpha.jsonc` }
+  return { ok: true, next: serialize(cfg), summary: `${type} "${name}" ${existed ? "updated" : "registered"} in .code-puppy/alpha.jsonc` }
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)

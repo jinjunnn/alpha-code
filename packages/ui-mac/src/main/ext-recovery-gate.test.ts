@@ -103,9 +103,9 @@ describe("withRecoveredWrite — 准入判据", () => {
 
   test("REQ-136 project gate rejects a symlinked ext-tx tree before recovery can follow it", async () => {
     let project = path.join(root, "D")
-    fs.mkdirSync(path.join(project, ".alpha"), { recursive: true })
+    fs.mkdirSync(path.join(project, ".code-puppy"), { recursive: true })
     project = fs.realpathSync(project)
-    const projectRoot = path.join(project, ".alpha")
+    const projectRoot = path.join(project, ".code-puppy")
     const outside = path.join(root, "outside-tx")
     fs.mkdirSync(outside, { recursive: true })
     const sentinel = path.join(outside, "sentinel")
@@ -129,9 +129,9 @@ describe("withRecoveredWrite — 准入判据", () => {
 
   test("REQ-136 project gate rejects a prefs.json config journal before recovery can replay consent", async () => {
     let project = path.join(root, "D")
-    fs.mkdirSync(path.join(project, ".alpha", "ext-tx", "journal"), { recursive: true })
+    fs.mkdirSync(path.join(project, ".code-puppy", "ext-tx", "journal"), { recursive: true })
     project = fs.realpathSync(project)
-    const projectRoot = path.join(project, ".alpha")
+    const projectRoot = path.join(project, ".code-puppy")
     const prefs = path.join(projectRoot, "prefs.json")
     fs.writeFileSync(prefs, '{"extensionsConsent":"granted"}\n')
     const before = fs.readFileSync(prefs, "utf8")
@@ -175,9 +175,9 @@ describe("withRecoveredWrite — 准入判据", () => {
 
   test("REQ-136 project gate rejects prepared-resource journals before any global release seam", async () => {
     let project = path.join(root, "D")
-    fs.mkdirSync(path.join(project, ".alpha", "ext-tx", "journal"), { recursive: true })
+    fs.mkdirSync(path.join(project, ".code-puppy", "ext-tx", "journal"), { recursive: true })
     project = fs.realpathSync(project)
-    const projectRoot = path.join(project, ".alpha")
+    const projectRoot = path.join(project, ".code-puppy")
     const globalCanary = path.join(root, "global-secret-version")
     fs.writeFileSync(globalCanary, "global-secret-stays-exact")
     fs.writeFileSync(
@@ -235,9 +235,9 @@ describe("withRecoveredWrite — 准入判据", () => {
 
   test("REQ-136 project recovery algebra preserves legacy generation-only skill replay", async () => {
     let project = path.join(root, "D")
-    fs.mkdirSync(path.join(project, ".alpha"), { recursive: true })
+    fs.mkdirSync(path.join(project, ".code-puppy"), { recursive: true })
     project = fs.realpathSync(project)
-    const projectRoot = path.join(project, ".alpha")
+    const projectRoot = path.join(project, ".code-puppy")
     writeUninstallJournal("tx-project-skill", "skill--demo", projectRoot)
     const gate = makeRecoveryGate(
       () => fullOpts(),
@@ -265,9 +265,9 @@ describe("withRecoveredWrite — 准入判据", () => {
   test("REQ-136 crash-replayed project MCP uninstall is idempotent and cannot touch global", async () => {
     let project = path.join(root, "D")
     const globalRoot = path.join(root, "global")
-    fs.mkdirSync(path.join(project, ".alpha"), { recursive: true })
+    fs.mkdirSync(path.join(project, ".code-puppy"), { recursive: true })
     project = fs.realpathSync(project)
-    const projectRoot = path.join(project, ".alpha")
+    const projectRoot = path.join(project, ".code-puppy")
     fs.mkdirSync(globalRoot, { recursive: true })
     const projectConfig = path.join(projectRoot, "alpha.jsonc")
     const globalConfig = path.join(globalRoot, "alpha.jsonc")

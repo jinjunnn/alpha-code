@@ -203,7 +203,7 @@ function makeDescriptor(meta: { name: string; size?: number; mime?: string; dete
 }
 
 function writeArtifactFile(rel: string, content: Buffer | string) {
-  const abs = path.join(projectDir, ".alpha", "runs", RUN_ID, "artifacts", ...rel.split("/"))
+  const abs = path.join(projectDir, ".code-puppy", "runs", RUN_ID, "artifacts", ...rel.split("/"))
   fs.mkdirSync(path.dirname(abs), { recursive: true })
   fs.writeFileSync(abs, content)
   return abs
@@ -250,7 +250,7 @@ const fakeSender = () => {
 
 beforeEach(() => {
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "html-preview-host-"))
-  fs.mkdirSync(path.join(projectDir, ".alpha", "runs", RUN_ID, "artifacts"), { recursive: true })
+  fs.mkdirSync(path.join(projectDir, ".code-puppy", "runs", RUN_ID, "artifacts"), { recursive: true })
   htmlId = registerHtml()
 })
 
@@ -289,7 +289,7 @@ describe("openHtmlPreview — 守卫拒绝(不开窗、不建 session)", () => {
   })
 
   test("盘上文件消失(missing)拒绝", () => {
-    fs.rmSync(path.join(projectDir, ".alpha", "runs", RUN_ID, "artifacts", "report.html"))
+    fs.rmSync(path.join(projectDir, ".code-puppy", "runs", RUN_ID, "artifacts", "report.html"))
     const r = openHtmlPreview(projectDir, RUN_ID, htmlId)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("missing")

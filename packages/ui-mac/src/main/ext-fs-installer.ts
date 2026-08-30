@@ -1,6 +1,6 @@
 // Extension Hub file installer (main process) — REQ-018 T2 rework. User-authored / catalog skills
 // and agents now land in the ALPHA truth root (`<current-environment-root>/{skills,agents}` for global scope,
-// `<project>/.alpha/...` for project scope) and reach the engine through the `.opencode` symlink
+// `<project>/.code-puppy/...` for project scope) and reach the engine through the `.opencode` symlink
 // bridge (alpha-bridge.ts, REQ-004-validated). Every successful install writes a receipt
 // (alpha-installs.ts) recording the exact files it owns, so installed-state/uninstall/update work.
 // Legacy behavior (writing the shared XDG config dir) is gone — migration of old installs is T3
@@ -80,7 +80,7 @@ function resolveRoots(target: InstallTarget | undefined): Roots | { error: strin
   if (typeof t.projectDir !== "string") return { error: "invalid project directory" }
   const root = alphaRoot(t.projectDir)
   if (!root) return { error: `invalid project directory: ${t.projectDir}` }
-  if (!ensureAlphaScaffold(t.projectDir)) return { error: "failed to prepare .alpha" }
+  if (!ensureAlphaScaffold(t.projectDir)) return { error: "failed to prepare .code-puppy" }
   const identity = projectScopeIdentity(t.projectDir)
   if (!identity.ok) return { error: `fail closed: ${identity.reason}` }
   return { alphaDir: root, opencodeDir: path.join(t.projectDir, ".opencode"), scope: "project", identity: identity.scope }
@@ -192,7 +192,7 @@ export function writeSkill(
 /** Write an agent definition (caller composes the markdown) into the alpha truth root + config entry + receipt.
  *  REQ-059 T3b 桥退役:引擎经 alpha.jsonc 的 `agent.<name>` 条目(md 先过 agentMdToEntry 转换,fail-closed)
  *  见到 agent,不再造 `.opencode` 桥(不变量:任何层级零 `.opencode`)。md 文件仍写盘 = 内容真源/人读;
- *  编辑文件不生效(诚实边界:改 agent 走重装/hub)。项目 target 同构(条目写 <proj>/.alpha/alpha.jsonc)。 */
+ *  编辑文件不生效(诚实边界:改 agent 走重装/hub)。项目 target 同构(条目写 <proj>/.code-puppy/alpha.jsonc)。 */
 export function writeAgent(name: string, content: string, target?: InstallTarget, meta?: InstallMeta, origin?: InstallReceipt["origin"]): FsResult {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid agent name" }
   const normalized = content.endsWith("\n") ? content : `${content}\n`
@@ -392,7 +392,7 @@ function resolveRootsReadonly(target: InstallTarget | undefined): Roots | { erro
 }
 
 /**
- * Uninstall a skill/agent: remove its truth dir/file under .alpha and unbridge its .opencode link.
+ * Uninstall a skill/agent: remove its truth dir/file under .code-puppy and unbridge its .opencode link.
  * REQ-128 `#706`:**不动账本** —— 去账只归外层单点提交。Legacy installs
  * (ALPHA_LEGACY_INSTALL_ROOT era, no bridge/receipt) are removed from the old XDG root by name.
  * Missing target = already-gone success (idempotent).
@@ -459,7 +459,7 @@ function removeFsInstallImpl(type: "skill" | "agent", name: string, target: Inst
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // REQ-019 T6:导入(folder / git)。外来内容纪律(PR #73 教训):只解析 frontmatter、只复制文件,
-// 绝不执行导入内容;git 先浅克隆到临时目录、校验通过才入 .alpha;symlink 一律不跟随不复制。
+// 绝不执行导入内容;git 先浅克隆到临时目录、校验通过才入 .code-puppy;symlink 一律不跟随不复制。
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 /** **单个技能目录**的体积/条数帽。导出的理由(REQ-128 `#782`):包级预算必须**夹在**
@@ -671,7 +671,7 @@ export async function cloneSkillGitToTmp(
   }
 }
 
-/** 导入本地技能文件夹:校验 SKILL.md frontmatter → 逐文件复制入 .alpha + receipt。
+/** 导入本地技能文件夹:校验 SKILL.md frontmatter → 逐文件复制入 .code-puppy + receipt。
  *  origin 默认 imported;REQ-063 外部生态转换导入传 imported-claude / imported-agents(hub 可溯源)。
  *  #390:global 未策展导入的生产路径已改走 planner 的 CAS 事务(installUncuratedSkillImport);
  *  本 flat 实现保留给 project scope 的 sanctioned 路径(ADR-030)与既有测试。 */

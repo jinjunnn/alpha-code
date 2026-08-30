@@ -4,7 +4,7 @@
 //
 // T3 `/init` `/review`:同名覆盖为 alpha 模板(用户拍板 2026-07-08:两个都换,内容层主权归 alpha,
 //    不因上游 review.txt 恰好无品牌字样而豁免 —— 初版只换 init 是执行偏差,已纠正)。init 面向
-//    AGENTS.md 与 `.alpha` 约定;review 保持上游语义(alpha 承载内容,后续随质量评估自行演进)。
+//    AGENTS.md 与 `.code-puppy` 约定;review 保持上游语义(alpha 承载内容,后续随质量评估自行演进)。
 // T6 general/explore:同名覆盖 prompt(agent.ts config prompt 优先;request.ts 里 agent.prompt
 //    与 provider 底座**二选一**)→ 两个单一任务型 subagent 的内容 100% alpha 承载;名字与
 //    task 委托接线全保留(不走禁用+另建)。
@@ -26,7 +26,7 @@ Read the highest-value sources first:
 - build, test, lint, formatter, typecheck, and codegen config
 - CI workflows and pre-commit / task runner config
 - existing instruction files (\`AGENTS.md\`, \`CLAUDE.md\`, \`.cursor/rules/\`, \`.github/copilot-instructions.md\`)
-- project-local agent config such as \`.alpha/alpha.jsonc\` (Code Puppy's per-project extensions: connectors, agents, commands, skills)
+- project-local agent config such as \`.code-puppy/alpha.jsonc\` (Code Puppy's per-project extensions: connectors, agents, commands, skills)
 
 If architecture is still unclear after reading config and docs, inspect a small number of representative code files to find the real entrypoints, package boundaries, and execution flow. Prefer reading the files that explain how the system is wired together over random leaf files.
 

@@ -28,7 +28,7 @@ beforeEach(() => {
     savedEnv[k] = process.env[k]
     delete process.env[k]
   }
-  process.env.ALPHA_GLOBAL_DIR = path.join(tmp, ".alpha")
+  process.env.ALPHA_GLOBAL_DIR = path.join(tmp, ".code-puppy")
 })
 afterEach(() => {
   for (const k of ENV_KEYS) {
@@ -110,18 +110,18 @@ describe("转换导入 — 快照 + 溯源 + 不碰源", () => {
     expect(r.skipped.map((s) => s.name).sort()).toEqual(["graphify", "helper"])
     expect(r.skipped.every((s) => s.reason.includes("fail-closed"))).toBe(true)
     // 未走 flat:~/.alpha/skills 未创建,源目录不动。
-    expect(fs.existsSync(path.join(tmp, ".alpha", "skills", "graphify"))).toBe(false)
+    expect(fs.existsSync(path.join(tmp, ".code-puppy", "skills", "graphify"))).toBe(false)
     expect(fs.existsSync(path.join(home, ".claude", "skills", "graphify", "SKILL.md"))).toBe(true)
   })
   test("project scope 同名已存在 → 该项诚实失败,不覆盖既有内容(flat sanctioned 路径)", async () => {
     const proj = path.join(tmp, "proj-dup")
     mkSkill(proj, ".claude", "graphify")
-    fs.mkdirSync(path.join(proj, ".alpha", "skills", "graphify"), { recursive: true })
-    fs.writeFileSync(path.join(proj, ".alpha", "skills", "graphify", "SKILL.md"), "user's own\n")
+    fs.mkdirSync(path.join(proj, ".code-puppy", "skills", "graphify"), { recursive: true })
+    fs.writeFileSync(path.join(proj, ".code-puppy", "skills", "graphify", "SKILL.md"), "user's own\n")
     const r = await importExternalSkills(detectExternal(proj, "project").skills, { scope: "project", projectDir: proj })
     expect(r.importedSkills).toEqual([])
     expect(r.skipped[0].name).toBe("graphify")
-    expect(fs.readFileSync(path.join(proj, ".alpha", "skills", "graphify", "SKILL.md"), "utf8")).toBe("user's own\n")
+    expect(fs.readFileSync(path.join(proj, ".code-puppy", "skills", "graphify", "SKILL.md"), "utf8")).toBe("user's own\n")
   })
   test("项目 CLAUDE.md → AGENTS.md(带快照溯源头);已存在 AGENTS.md → 不动 + 如实报告", () => {
     const proj = path.join(tmp, "proj")
@@ -156,7 +156,7 @@ describe("记账 — 项目 prefs 版本化 + 全局 marker 一次性", () => {
     expect(readGlobalGateMarker()).toBeNull()
     writeGlobalGateMarker({ version: EXTERNAL_IMPORT_VERSION, decision: "imported", at: "2026-07-08T00:00:00Z", imported: ["graphify"] })
     expect(readGlobalGateMarker()?.decision).toBe("imported")
-    fs.writeFileSync(path.join(tmp, ".alpha", "ecosystem-import.json"), "{corrupt")
+    fs.writeFileSync(path.join(tmp, ".code-puppy", "ecosystem-import.json"), "{corrupt")
     expect(readGlobalGateMarker()).toBeNull()
   })
 })
@@ -167,21 +167,21 @@ describe("registerProjectSkillsPath — 项目 skills 注册(2026-07-08 真机�
     mkSkill(proj, ".claude", "demo")
     const r = await importExternalSkills(detectExternal(proj, "project").skills, { scope: "project", projectDir: proj })
     expect(r.importedSkills).toEqual(["demo"])
-    const cfg = JSON.parse(fs.readFileSync(path.join(proj, ".alpha", "alpha.jsonc"), "utf8"))
-    expect(cfg.skills.paths).toEqual(["./.alpha/skills"])
+    const cfg = JSON.parse(fs.readFileSync(path.join(proj, ".code-puppy", "alpha.jsonc"), "utf8"))
+    expect(cfg.skills.paths).toEqual(["./.code-puppy/skills"])
   })
   test("幂等 + 既有配置(含注释 JSONC)保留", () => {
     const proj = path.join(tmp, "proj-reg2")
-    fs.mkdirSync(path.join(proj, ".alpha"), { recursive: true })
-    fs.writeFileSync(path.join(proj, ".alpha", "alpha.jsonc"), '{\n  // user comment\n  "mcp": { "x": { "type": "remote", "url": "https://e" } },\n  "skills": { "paths": ["./.alpha/skills"] }\n}\n')
+    fs.mkdirSync(path.join(proj, ".code-puppy"), { recursive: true })
+    fs.writeFileSync(path.join(proj, ".code-puppy", "alpha.jsonc"), '{\n  // user comment\n  "mcp": { "x": { "type": "remote", "url": "https://e" } },\n  "skills": { "paths": ["./.code-puppy/skills"] }\n}\n')
     registerProjectSkillsPath(proj) // 已含 → no-op(文件不被重写破坏注释)
-    expect(fs.readFileSync(path.join(proj, ".alpha", "alpha.jsonc"), "utf8")).toContain("user comment")
+    expect(fs.readFileSync(path.join(proj, ".code-puppy", "alpha.jsonc"), "utf8")).toContain("user comment")
     const proj3 = path.join(tmp, "proj-reg3")
-    fs.mkdirSync(path.join(proj3, ".alpha"), { recursive: true })
-    fs.writeFileSync(path.join(proj3, ".alpha", "alpha.jsonc"), '{ "mcp": { "x": { "type": "remote", "url": "https://e" } } }')
+    fs.mkdirSync(path.join(proj3, ".code-puppy"), { recursive: true })
+    fs.writeFileSync(path.join(proj3, ".code-puppy", "alpha.jsonc"), '{ "mcp": { "x": { "type": "remote", "url": "https://e" } } }')
     registerProjectSkillsPath(proj3)
-    const cfg3 = JSON.parse(fs.readFileSync(path.join(proj3, ".alpha", "alpha.jsonc"), "utf8"))
+    const cfg3 = JSON.parse(fs.readFileSync(path.join(proj3, ".code-puppy", "alpha.jsonc"), "utf8"))
     expect(cfg3.mcp.x.url).toBe("https://e") // 既有条目保留
-    expect(cfg3.skills.paths).toEqual(["./.alpha/skills"])
+    expect(cfg3.skills.paths).toEqual(["./.code-puppy/skills"])
   })
 })

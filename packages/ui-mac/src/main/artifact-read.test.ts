@@ -14,7 +14,7 @@ import {
 
 let projectDir: string
 const RUN = "job_read1"
-const artifactsDir = () => path.join(projectDir, ".alpha", "runs", RUN, "artifacts")
+const artifactsDir = () => path.join(projectDir, ".code-puppy", "runs", RUN, "artifacts")
 
 beforeEach(() => {
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-read-"))
@@ -129,7 +129,7 @@ describe("守卫", () => {
     expect(r.text).toBe("old content")
   })
   test("savedPath 逃逸形态一律拒绝(artifacts/ 之外不可寻址)", () => {
-    fs.writeFileSync(path.join(projectDir, ".alpha", "runs", RUN, "status.json"), "{}")
+    fs.writeFileSync(path.join(projectDir, ".code-puppy", "runs", RUN, "status.json"), "{}")
     for (const bad of [
       "../../../etc/passwd",
       "/etc/passwd",
@@ -152,7 +152,7 @@ describe("守卫", () => {
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("missing")
   })
-  test("symlink 指向 .alpha 外 → 拒绝(realpath 反逃逸)", () => {
+  test("symlink 指向 .code-puppy 外 → 拒绝(realpath 反逃逸)", () => {
     const outside = path.join(projectDir, "secret.txt")
     fs.writeFileSync(outside, "secret")
     fs.symlinkSync(outside, path.join(artifactsDir(), "link.txt"))

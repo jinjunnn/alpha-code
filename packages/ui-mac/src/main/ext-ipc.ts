@@ -436,7 +436,7 @@ export function registerExtIpcHandlers(
     if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true, reason: "已取消" }
     return { ok: true, srcDir: result.filePaths[0]! }
   }
-  // REQ-018 安装账本:合并只读视图(current-environment global + 可选 project .alpha)
+  // REQ-018 安装账本:合并只读视图(current-environment global + 可选 project .code-puppy)
   ipcMain.handle("ext-list-installs", async (_event: IpcMainInvokeEvent, projectDir?: string) => {
     if (projectDir === undefined) return listInstalls()
     const resolved = resolveProjectEntry(projectDir)
@@ -472,11 +472,11 @@ export function registerExtIpcHandlers(
   // REQ-100 #313:旧 receipt-based ext-uninstall 通道已下线 —— renderer 提供的 receipt.files/configKey
   // 直达 rmSync/removePluginPath 是任意路径删除通道(startsWith 前缀挡不住 `..`,Codex review #345
   // critical);卸载只走 ext-uninstall-v2(key-based,receipt 事实由 main 账本自查,ADR-028 §1)。
-  // REQ-018 T3:存量迁移(旧 XDG 根 → .alpha)。scan 报告 + removeLegacy 删旧位;新位由 renderer
+  // REQ-018 T3:存量迁移(旧 XDG 根 → .code-puppy)。scan 报告 + removeLegacy 删旧位;新位由 renderer
   // 复用既有 installer 重装(顺带 A2 钉版 + secret file 化)。用户面触发受 ALPHA_MIGRATE_ENABLE 门控
   // (A6 真机验证后开,S12 T8)。
-  // REQ-060 信任门 UI:renderer 打开项目时调用。项目 `.alpha` 含可执行扩展(mcp/plugins)且无当前
-  // 版本决策 → 弹 per-project 原生确认(B16/ADR-021 同款);granted/denied 都写 `.alpha/prefs.json`
+  // REQ-060 信任门 UI:renderer 打开项目时调用。项目 `.code-puppy` 含可执行扩展(mcp/plugins)且无当前
+  // 版本决策 → 弹 per-project 原生确认(B16/ADR-021 同款);granted/denied 都写 `.code-puppy/prefs.json`
   // 的 extensionsConsent(@alpha-code/ext 信任门读同一字段)。granted 后由 renderer 调 dispose 免重启
   // 生效(链路已真机证通,audits/2026-07-07-req060-fanout-realmachine)。写盘失败不静默放行(反 placebo):
   // 不落决策 + 返回 denied,下次仍会弹。
@@ -524,7 +524,7 @@ export function registerExtIpcHandlers(
 
     const items = [
       ...exec.mcp.map((n) => `· 连接器(MCP):${n}`),
-      ...exec.plugins.map((f) => `· 插件:.alpha/plugins/${f}`),
+      ...exec.plugins.map((f) => `· 插件:.code-puppy/plugins/${f}`),
     ].join("\n")
     const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined
     const opts = {
@@ -535,7 +535,7 @@ export function registerExtIpcHandlers(
         `发现以下可执行扩展:\n${items}\n\n` +
         "允许加载 = 在本机运行该项目提供的程序代码。若这不是你信任的项目,请选择「仅文本扩展」——\n" +
         "技能 / Agent / 命令等文本类扩展不受影响,仍正常生效。\n\n" +
-        "本决定按项目记录一次(存于本项目 .alpha/prefs.json),之后不再重复询问。",
+        "本决定按项目记录一次(存于本项目 .code-puppy/prefs.json),之后不再重复询问。",
       buttons: ["允许加载", "仅文本扩展(不加载)"],
       defaultId: 1,
       cancelId: 1,
@@ -561,7 +561,7 @@ export function registerExtIpcHandlers(
 
   // REQ-063(ADR-024):外部生态 consent 导入门(项目级)。default-deny 后引擎不再读项目自带的
   // `.claude`/`.agents` skills 与 CLAUDE.md;首次进入检测到外来内容 → 原生确认 → 「导入」= 安装期
-  // 转换为本项目 `.alpha` 原生扩展(快照、脱钩,ADR-023);两种决策都记 `.alpha/prefs.json` 不再弹。
+  // 转换为本项目 `.code-puppy` 原生扩展(快照、脱钩,ADR-023);两种决策都记 `.code-puppy/prefs.json` 不再弹。
   // 逃生 ALPHA_ECOSYSTEM_INHERIT=1 → 全程静默(上游继承已恢复,alpha 不检测不弹窗,ADR-024 §5)。
   ipcMain.handle("ext-external-check", async (event: IpcMainInvokeEvent, requestedDirectory: string) => {
     const none = { prompted: false, imported: false, importedSkills: [] as string[], skipped: [] as Array<{ name: string; reason: string }>, claudeMd: "none" as const }
@@ -606,9 +606,9 @@ export function registerExtIpcHandlers(
       message: "此项目自带 Claude Code / .agents 生态内容,导入为本项目的 alpha 扩展?",
       detail:
         `Code Puppy 默认不读取其它工具的目录(防止陌生项目的自带内容未经确认进入模型上下文)。\n发现:\n${items}\n\n` +
-        "「导入」= 转换为本项目 .alpha 下的原生扩展(快照,与原目录脱钩,原文件不动):技能进 .alpha/skills;" +
+        "「导入」= 转换为本项目 .code-puppy 下的原生扩展(快照,与原目录脱钩,原文件不动):技能进 .code-puppy/skills;" +
         "CLAUDE.md 转为 AGENTS.md(引擎原生约定;已存在 AGENTS.md 时不覆盖、提示手动合并)。\n" +
-        "「忽略」= 保持不可见。本决定按项目记录一次(存于本项目 .alpha/prefs.json),之后不再询问;" +
+        "「忽略」= 保持不可见。本决定按项目记录一次(存于本项目 .code-puppy/prefs.json),之后不再询问;" +
         "以后想导入/更新快照,在会话里说「导入这个项目的外部扩展」即可(integrate-project 技能)。",
       buttons: ["导入", "忽略(保持不可见)"],
       defaultId: 1,
@@ -725,7 +725,7 @@ export function registerExtIpcHandlers(
       const name = key.slice("mcp--".length)
       if (root !== alphaGlobalRoot()) {
         // A non-current environment root must not be guessed to be a project. Revalidate the
-        // exact D/.alpha identity before choosing the project-only cleanup algebra.
+        // exact D/.code-puppy identity before choosing the project-only cleanup algebra.
         assertProjectMcpTransactionRootIdentity(root)
         const cfg = removeProjectMcpConfigInLock(root, name)
         if (!cfg.ok) throw new Error(cfg.reason)
@@ -1206,7 +1206,7 @@ export function registerExtIpcHandlers(
       importAgentConfirm: importAgentConfirmBody,
       importClaudePluginConfirm: importClaudePluginConfirmBody,
       // #390:global 未策展技能导入走 planner 的 CAS + generation 事务(取代 flat copy 的崩溃半成品窗);
-      // project scope 维持 `<project>/.alpha/skills` sanctioned flat 路径(ADR-030,不 reopen project generation)。
+      // project scope 维持 `<project>/.code-puppy/skills` sanctioned flat 路径(ADR-030,不 reopen project generation)。
       // 生产 renderer 从 hub 导入恒 global(不传 target);project 仅经 ecosystem-import 通道,不走本 body。
       importSkillFolder: async (srcDir, target) =>
         isProjectTarget(target)

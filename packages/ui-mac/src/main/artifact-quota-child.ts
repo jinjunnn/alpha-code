@@ -28,7 +28,7 @@ const deadline = Number(deadlineText)
 const startedAt = Number(startedAtText)
 if (!Number.isSafeInteger(deadline) || deadline <= 0) throw new Error("artifact quota child: invalid deadline")
 if (!Number.isSafeInteger(startedAt) || startedAt <= 0) throw new Error("artifact quota child: invalid startedAt")
-const targetPath = join(projectDir, ".alpha", "runs", runId, "artifacts", name)
+const targetPath = join(projectDir, ".code-puppy", "runs", runId, "artifacts", name)
 const waitFor = async (marker: string, reason: string) => {
   while (!existsSync(join(barrierDir, marker))) {
     if (Date.now() >= deadline) throw new Error(reason)

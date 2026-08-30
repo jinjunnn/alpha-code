@@ -13,10 +13,10 @@ const durableLeaf = { type: "local", command: ["npx", "-y", "demo-mcp@1.0.0"] }
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), "project-mcp-activation-"))
   project = join(tmp, "D")
-  mkdirSync(join(project, ".alpha"), { recursive: true })
+  mkdirSync(join(project, ".code-puppy"), { recursive: true })
   project = realpathSync(project)
   writeFileSync(
-    join(project, ".alpha", "alpha.jsonc"),
+    join(project, ".code-puppy", "alpha.jsonc"),
     JSON.stringify({ mcp: { demo: durableLeaf } }, null, 2),
   )
   delete process.env.OPENCODE_CONFIG_CONTENT
@@ -69,7 +69,7 @@ describe("project MCP activation provenance probe (REQ-136 C5)", () => {
 
   test("accepts JSONC trailing commas in both the durable project file and injected global config", async () => {
     writeFileSync(
-      join(project, ".alpha", "alpha.jsonc"),
+      join(project, ".code-puppy", "alpha.jsonc"),
       `{
         "mcp": {
           "demo": {
@@ -148,7 +148,7 @@ describe("project MCP activation provenance probe (REQ-136 C5)", () => {
     expect(verdict).toBe("unverifiable")
     expect(requests.map((url) => url.pathname)).toEqual(["/global/config"])
 
-    writeFileSync(join(project, ".alpha", "alpha.jsonc"), '{"mcp":{"demo":')
+    writeFileSync(join(project, ".code-puppy", "alpha.jsonc"), '{"mcp":{"demo":')
     const malformed = await probeProjectMcpActivation("demo", project, ready, {
       configuredGlobalNames: emptyGlobalNames,
       fetch: (async () => {
@@ -159,7 +159,7 @@ describe("project MCP activation provenance probe (REQ-136 C5)", () => {
   })
 
   test("a symlinked durable project config is unverifiable before any engine request", async () => {
-    const target = join(project, ".alpha", "alpha.jsonc")
+    const target = join(project, ".code-puppy", "alpha.jsonc")
     const outside = join(tmp, "outside-alpha.jsonc")
     writeFileSync(outside, JSON.stringify({ mcp: { demo: durableLeaf } }))
     unlinkSync(target)

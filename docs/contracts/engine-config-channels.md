@@ -73,7 +73,7 @@ ConfigProvider 合并完文件来源,不得用局部 early set 冒充完整目�
 
 正确的早提交仍不等于首个 HTTP 请求没有启动成本:`/api/provider` 与 `/api/model` 共用的
 `LocationMiddleware` 会在首次目录请求时构建整张 per-location 服务图。首屏默认目录由 main 的
-`alphaUserWorkspaceDir()` 唯一解析为 `~/Alpha`;sidecar 把这个精确值随 start command 带入,并在
+`alphaUserWorkspaceDir()` 唯一解析为 `~/code-puppy`;sidecar 把这个精确值随 start command 带入,并在
 `Server.listen` 同时经引擎已有的 `Server.Default().app` 发一次带 sidecar Basic auth 的真实 V2
 marker 请求。上游 `Default` 与 `listen` 原本各自调用 `createRoutes` 并使用不同 memo map,无法共享
 `LocationServiceMap`;Alpha production prebuild 因而只对 gitignored embedded-server 生成物施加严格
@@ -83,7 +83,7 @@ memo map,其他调用仍走原 `createRoutes(opts)`。预热在 marker 证明治
 提前并与 listen 并行,不是另造 catalog API、缓存或 renderer 假数据。sidecar 在 listen 与预热都完成后才发布 ready,
 避免 renderer 启动与首次服务图构建互相争用;这道本地门不读取账户,也不改变目录/账户并行。预热
 失败只记具名诊断,renderer 仍保留上述 marker barrier 并照常 fail-closed。
-这项预热保证只覆盖默认 `~/Alpha` 首页流;任何其它 directory/workspace ref 都必须按真实冷路径
+这项预热保证只覆盖默认 `~/code-puppy` 首页流;任何其它 directory/workspace ref 都必须按真实冷路径
 建立自己的 location graph,不得把首页一次预热宣称成全目录缓存。预热等待最多 2 秒,超时后
 sidecar 仍发布 ready。renderer marker barrier 自身以 1.5 秒 wall-clock 为上限(包括挂起的
 `provider.get`),不得被更宽的 model request abort budget 延长;时间线以
@@ -136,7 +136,7 @@ sidecar 仍发布 ready。renderer marker barrier 自身以 1.5 秒 wall-clock �
   provider/model 仍只来自既有完整配置投影,不得在 core/server 新增第二套过滤器。
 - **首页目录预热必须复用真实 V2 handler 与共享 LocationServiceMap**:
   `sidecar-location-prewarm.test.ts` 锁住精确
-  `/api/provider/alpha-internal-catalog-ready?location[directory]=<~/Alpha>` → 同目录 `/api/model` 请求、与真实 sidecar
+  `/api/provider/alpha-internal-catalog-ready?location[directory]=<~/code-puppy>` → 同目录 `/api/model` 请求、与真实 sidecar
   password 对应的 `opencode` Basic auth、相对路径零调用、socket listen 前即启动、ready IPC 必须
   等它结束,以及任一 handler 非 2xx/异常只形成具名诊断。`sidecar-shared-location-map.test.ts` 锁住只有固定 Electron CORS shape 才复用
   singleton routes + 全局 memo map,其他 listener 保留 `createRoutes(opts)`;编译变量漂移可兼容,缺失、

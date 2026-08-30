@@ -1,4 +1,4 @@
-// Unit tests for the `.alpha/` project workdir writer (ADR-019 / B3 artifact 回流). The module is
+// Unit tests for the `.code-puppy/` project workdir writer (ADR-019 / B3 artifact 回流). The module is
 // electron-free and root-parameterized, so unlike ext-fs-installer we exercise REAL writes against a
 // temp dir: scaffold seeding, run persistence, hostile artifact names, escape refusal, size caps.
 
@@ -203,8 +203,8 @@ describe("foldedArtifactNameKey / reserveArtifactSavedName — #901", () => {
 })
 
 describe("safeResolveInAlpha", () => {
-  test("resolves inside .alpha", () => {
-    expect(safeResolveInAlpha(projectDir, "runs", "r1")).toBe(path.join(fs.realpathSync(projectDir), ".alpha", "runs", "r1"))
+  test("resolves inside .code-puppy", () => {
+    expect(safeResolveInAlpha(projectDir, "runs", "r1")).toBe(path.join(fs.realpathSync(projectDir), ".code-puppy", "runs", "r1"))
   })
   test("refuses .. escape", () => {
     expect(safeResolveInAlpha(projectDir, "..", "outside")).toBeNull()
@@ -215,10 +215,10 @@ describe("safeResolveInAlpha", () => {
     expect(safeResolveInAlpha(path.join(projectDir, "nope"), "runs")).toBeNull()
     expect(safeResolveInAlpha(path.parse(projectDir).root, "runs")).toBeNull()
   })
-  test("refuses symlinked .alpha pointing outside the project", () => {
+  test("refuses symlinked .code-puppy pointing outside the project", () => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-outside-"))
     try {
-      fs.symlinkSync(outside, path.join(projectDir, ".alpha"))
+      fs.symlinkSync(outside, path.join(projectDir, ".code-puppy"))
       expect(safeResolveInAlpha(projectDir, "runs", "r1")).toBeNull()
     } finally {
       fs.rmSync(outside, { recursive: true, force: true })
@@ -227,7 +227,7 @@ describe("safeResolveInAlpha", () => {
 })
 
 describe("main project identity 三态", () => {
-  test("real home、home alias、unknown 在任何 `.alpha` 读取/写入前拒绝", () => {
+  test("real home、home alias、unknown 在任何 `.code-puppy` 读取/写入前拒绝", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-main-project-id-"))
     const home = path.join(root, "home")
     const project = path.join(root, "project")
@@ -241,13 +241,13 @@ describe("main project identity 三态", () => {
       expect(resolveProjectAlphaRoot(path.join(root, "missing"), home).status).toBe("unknown")
       const admitted = resolveProjectAlphaRoot(project, home)
       expect(admitted.status).toBe("project")
-      if (admitted.status === "project") expect(admitted.root).toBe(path.join(fs.realpathSync(project), ".alpha"))
+      if (admitted.status === "project") expect(admitted.root).toBe(path.join(fs.realpathSync(project), ".code-puppy"))
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
   })
 
-  test("`.alpha → retired root` 与退休根内项目拒绝，sentinel 原样且无 scaffold", () => {
+  test("`.code-puppy → retired root` 与退休根内项目拒绝，sentinel 原样且无 scaffold", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-main-retired-"))
     const home = path.join(root, "home")
     const retired = path.join(home, ".alpha")
@@ -255,7 +255,7 @@ describe("main project identity 三态", () => {
     fs.mkdirSync(path.join(retired, "nested"), { recursive: true })
     fs.mkdirSync(project)
     fs.writeFileSync(path.join(retired, "sentinel"), "untouched")
-    fs.symlinkSync(retired, path.join(project, ".alpha"), "dir")
+    fs.symlinkSync(retired, path.join(project, ".code-puppy"), "dir")
     try {
       expect(resolveProjectAlphaRoot(project, home).status).toBe("unknown")
       expect(resolveProjectAlphaRoot(path.join(retired, "nested"), home).status).toBe("retired-home")
@@ -302,7 +302,7 @@ describe("main project identity 三态", () => {
 })
 
 describe("ensureAlphaScaffold", () => {
-  test("creates .alpha and seeds self-ignoring .gitignore once", () => {
+  test("creates .code-puppy and seeds self-ignoring .gitignore once", () => {
     const root = ensureAlphaScaffold(projectDir)!
     expect(fs.readFileSync(path.join(root, ".gitignore"), "utf8")).toBe("*\n")
     fs.writeFileSync(path.join(root, ".gitignore"), "custom\n")
@@ -318,11 +318,11 @@ describe("saveCloudRun", () => {
     if (!res.ok) return
     expect(res.files.sort()).toEqual(["artifacts/report.md", "contract.json", "status.json"].sort())
     expect(res.warnings).toEqual([])
-    const runDir = path.join(projectDir, ".alpha", "runs", "job-1")
+    const runDir = path.join(projectDir, ".code-puppy", "runs", "job-1")
     expect(JSON.parse(fs.readFileSync(path.join(runDir, "status.json"), "utf8")).status).toBe("completed")
     expect(JSON.parse(fs.readFileSync(path.join(runDir, "contract.json"), "utf8")).kind).toBe("research")
     expect(fs.readFileSync(path.join(runDir, "artifacts", "report.md"), "utf8")).toBe("# hi")
-    expect(fs.existsSync(path.join(projectDir, ".alpha", ".gitignore"))).toBe(true)
+    expect(fs.existsSync(path.join(projectDir, ".code-puppy", ".gitignore"))).toBe(true)
   })
 
   test("no contract → only status + artifacts", async () => {
@@ -338,7 +338,7 @@ describe("saveCloudRun", () => {
   test("status error → ok:false, nothing written", async () => {
     const res = await saveCloudRun(projectDir, "job-1", deps({ status: async () => ({ error: "unauthorized" }) }))
     expect(res).toEqual({ ok: false, reason: "status: unauthorized" })
-    expect(fs.existsSync(path.join(projectDir, ".alpha", "runs", "job-1", "status.json"))).toBe(false)
+    expect(fs.existsSync(path.join(projectDir, ".code-puppy", "runs", "job-1", "status.json"))).toBe(false)
   })
 
   test("artifact list error degrades to warning; run still ok", async () => {
@@ -356,7 +356,7 @@ describe("saveCloudRun", () => {
       }),
     )
     expect(res.ok).toBe(true)
-    expect(fs.existsSync(path.join(projectDir, ".alpha", "runs", "job-1", "artifacts", "pwned"))).toBe(true)
+    expect(fs.existsSync(path.join(projectDir, ".code-puppy", "runs", "job-1", "artifacts", "pwned"))).toBe(true)
     expect(fs.existsSync(path.join(projectDir, "pwned"))).toBe(false)
   })
 
@@ -424,7 +424,7 @@ describe("saveCloudRun", () => {
     if (!second.ok) return
     expect(second.files).toContain(path.join("artifacts", "a2-report.pdf"))
 
-    const runDir = path.join(projectDir, ".alpha", "runs", "job-1", "artifacts")
+    const runDir = path.join(projectDir, ".code-puppy", "runs", "job-1", "artifacts")
     // both files exist independently, each with the bytes its own download wrote — the first
     // artifact's content must not have been clobbered by the second, differently-cased download.
     expect(fs.readFileSync(path.join(runDir, "Report.pdf"), "utf8")).toBe("first-content-AAA")
@@ -474,7 +474,7 @@ describe("saveCloudRun", () => {
     expect(second.files).toContain(path.join("artifacts", `${B.id}-report.bin`))
     expect(second.warnings).toEqual([])
 
-    const runDir2 = path.join(projectDir, ".alpha", "runs", "job-1", "artifacts")
+    const runDir2 = path.join(projectDir, ".code-puppy", "runs", "job-1", "artifacts")
     // 盘面:第一件的字节原封未动,第二件在自己的名字下。
     expect(fs.readFileSync(path.join(runDir2, "report.bin"), "utf8")).toBe(contentA)
     expect(fs.readFileSync(path.join(runDir2, `${B.id}-report.bin`), "utf8")).toBe(contentB)
@@ -505,11 +505,11 @@ describe("saveCloudRun", () => {
       expect(res.warnings.some((w) => w.includes("over-limit"))).toBe(true)
       expect(res.files).toEqual(["status.json"])
       // REQ-092 AC#4:失败绝不产出看似成功的最终文件
-      expect(fs.readdirSync(path.join(projectDir, ".alpha", "runs", "job-1", "artifacts"))).toEqual([])
+      expect(fs.readdirSync(path.join(projectDir, ".code-puppy", "runs", "job-1", "artifacts"))).toEqual([])
     }
   })
 
-  test("download dep receives the guarded in-.alpha target path (path-escape guard reuse)", async () => {
+  test("download dep receives the guarded in-.code-puppy target path (path-escape guard reuse)", async () => {
     let seenTarget = ""
     const res = await saveCloudRun(
       projectDir,
@@ -523,6 +523,6 @@ describe("saveCloudRun", () => {
       }),
     )
     expect(res.ok).toBe(true)
-    expect(seenTarget).toBe(path.join(fs.realpathSync(projectDir), ".alpha", "runs", "job-1", "artifacts", "report.md"))
+    expect(seenTarget).toBe(path.join(fs.realpathSync(projectDir), ".code-puppy", "runs", "job-1", "artifacts", "report.md"))
   })
 })

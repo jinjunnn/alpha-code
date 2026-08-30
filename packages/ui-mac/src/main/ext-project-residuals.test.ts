@@ -31,7 +31,7 @@ function makeProject(name: string): string {
 function seedRecord(projDir: string, name: string, kind: UpsertInput["kind"], origin: UpsertInput["origin"] = "catalog", scope?: ScopeIdentity): string {
   const identity = projectScopeIdentity(projDir)
   if (!identity.ok) throw new Error(identity.reason)
-  const root = path.join(identity.scope.projectPath, ".alpha")
+  const root = path.join(identity.scope.projectPath, ".code-puppy")
   const w = upsertRecordV2(root, {
     id: origin === "catalog" ? `${kind}:${name}` : `user:${name}`,
     name,
@@ -105,7 +105,7 @@ describe("detectProjectCatalogResiduals — 只读报告", () => {
     expect(detectProjectCatalogResiduals(42).ok).toBe(false)
   })
 
-  test("空项目 → 全空报告(零写入:不创建 .alpha)", () => {
+  test("空项目 → 全空报告(零写入:不创建 .code-puppy)", () => {
     const proj = makeProject("clean")
     const r = detectProjectCatalogResiduals(proj)
     expect(r.ok).toBe(true)
@@ -114,7 +114,7 @@ describe("detectProjectCatalogResiduals — 只读报告", () => {
     expect(r.ghostStoreKeys).toEqual([])
     expect(r.openJournals).toEqual([])
     expect(r.cleanBlockers).toEqual([])
-    expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false)
+    expect(fs.existsSync(path.join(proj, ".code-puppy"))).toBe(false)
   })
 
   test("catalog 账(带店/不带店)+ ghost 店 + 非终态 journal 各归各位;imported 来源不算残留", () => {
@@ -154,7 +154,7 @@ describe("detectProjectCatalogResiduals — 只读报告", () => {
 
   test("B1 回归:账本文件损坏 → cleanBlockers,店绝不判 ghost", () => {
     const proj = makeProject("ledger-corrupt")
-    const root = path.join(proj, ".alpha")
+    const root = path.join(proj, ".code-puppy")
     seedStore(root, "victim")
     fs.writeFileSync(path.join(root, "installs.json"), "{broken json")
     const r = detectProjectCatalogResiduals(proj)
@@ -166,7 +166,7 @@ describe("detectProjectCatalogResiduals — 只读报告", () => {
 
   test("B1 回归:该 key 的 v2 record 损坏(可归属)→ cleanBlockers,不判 ghost", () => {
     const proj = makeProject("record-corrupt")
-    const root = path.join(proj, ".alpha")
+    const root = path.join(proj, ".code-puppy")
     seedStore(root, "victim")
     fs.mkdirSync(root, { recursive: true })
     fs.writeFileSync(path.join(root, "installs.json"), JSON.stringify({ records: [{ kind: "skill", name: "victim", bogus: true }] }))
@@ -179,7 +179,7 @@ describe("detectProjectCatalogResiduals — 只读报告", () => {
 
   test("B2 回归:非 skill--* 形状 / 无 generation 结构的 ext-store 条目 → 只报告", () => {
     const proj = makeProject("unknown-store")
-    const root = path.join(proj, ".alpha")
+    const root = path.join(proj, ".code-puppy")
     fs.mkdirSync(path.join(root, "ext-store", "hand-made"), { recursive: true })
     fs.mkdirSync(path.join(root, "ext-store", "skill--hollow"), { recursive: true }) // 无 generations/current
     const r = detectProjectCatalogResiduals(proj)
@@ -230,7 +230,7 @@ describe("cleanProjectCatalogResiduals — 显式清理", () => {
 
   test("B1 回归:账本损坏 → 整单 fail-closed,店与账都不动", async () => {
     const proj = makeProject("blocked-ledger")
-    const root = path.join(proj, ".alpha")
+    const root = path.join(proj, ".code-puppy")
     seedStore(root, "victim")
     fs.writeFileSync(path.join(root, "installs.json"), "{broken json")
     const r = await cleanProjectCatalogResiduals(proj, makeDeps())
@@ -300,7 +300,7 @@ describe("cleanProjectCatalogResiduals — 显式清理", () => {
     expect(r.ok).toBe(false) // #336:失败项在场 = 整单 ok:false
     if (r.ok) return
     expect(r.failed?.some((f) => f.item === "skill:demo" && f.reason.includes("identity mismatch"))).toBe(true)
-    const movedRoot = path.join(moved, ".alpha")
+    const movedRoot = path.join(moved, ".code-puppy")
     expect(findRecordV2(movedRoot, "skill", "demo")).not.toBeNull()
     expect(fs.existsSync(skillStorePaths(movedRoot, "demo").store)).toBe(true)
   })

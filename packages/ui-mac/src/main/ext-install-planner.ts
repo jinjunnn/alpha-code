@@ -112,7 +112,7 @@ function projectMcpWriteIdentityGate(
     return { ok: false, reason: "project MCP root identity changed before commit — refused" }
   }
   if (path.resolve(target) !== path.resolve(path.join(root, "alpha.jsonc")))
-    return { ok: false, reason: "project MCP config target is not D/.alpha/alpha.jsonc — refused" }
+    return { ok: false, reason: "project MCP config target is not D/.code-puppy/alpha.jsonc — refused" }
   return { ok: true }
 }
 
@@ -1268,7 +1268,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     const mcpRoot = scope.root(deps)
     const mcpConfigTarget = path.join(mcpRoot, "alpha.jsonc")
     // r7 Major:escape-hatch 环境下引擎配置真源不在事务根 → fail-closed 拒(不写账谎报 active)。
-    // Project discovery is the existing per-instance D/.alpha hook, not the process-wide global
+    // Project discovery is the existing per-instance D/.code-puppy hook, not the process-wide global
     // truth path. Consulting that global path here would reject D or, worse, redirect D into it.
     if (!projectMcp) {
       const mcpTruth = configTruthInRootGate(mcpRoot, deps.installers.mcpConfigTruthPath())
@@ -1889,7 +1889,7 @@ function agentFreshGate(root: string, name: string, configTarget: string, channe
 // flat copy。裁决 A(2026-07-17 Codex DECIDE):flat 路径崩溃留可加载半成品 / agent active-无账本
 // fail-open;事务载体(installSkillGeneration / installAgentFromCas)封窗:staging→verify→
 // materialize→switch,journal + 崩溃可恢复,commitReceipt 失败回滚+quarantine。scope 限 global
-// (ADR-030:project 本地技能维持 `<project>/.alpha/skills` sanctioned flat 路径,不 reopen
+// (ADR-030:project 本地技能维持 `<project>/.code-puppy/skills` sanctioned flat 路径,不 reopen
 // project generation)。capabilities=[](未策展无 manifest 能力);id=`user:<name>` 保留既有账本身份。
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 

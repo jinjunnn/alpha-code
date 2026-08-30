@@ -317,7 +317,7 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
     if (r.ok) return
     expect(r.reason).toContain("supports verified MCP entries only")
     expect(fs.existsSync(path.join(casBase, "cas"))).toBe(false)
-    expect(fs.existsSync(path.join(tmp, ".alpha"))).toBe(false)
+    expect(fs.existsSync(path.join(tmp, ".code-puppy"))).toBe(false)
   })
 
   test("refuses unknown keys / grants / non-seed source on the seed intent form", async () => {
@@ -899,7 +899,7 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
   test("REQ-136 typed project MCP seed verifies bytes and commits one D-only config item with zero CAS", async () => {
     buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
     const project = path.join(tmp, "project-seed-mcp")
-    const projectRoot = path.join(project, ".alpha")
+    const projectRoot = path.join(project, ".code-puppy")
     fs.mkdirSync(project, { recursive: true })
     let casCalls = 0
     const deps: PlannerDeps = {
@@ -912,7 +912,7 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
 
     expect(await resolveCatalogInstallWriteRoot(projectMcpSeedIntent(project), deps)).toEqual({
       ok: true,
-      root: path.join(fs.realpathSync(project), ".alpha"),
+      root: path.join(fs.realpathSync(project), ".code-puppy"),
     })
 
     const result = await installAuthorized(projectMcpSeedIntent(project), deps)
@@ -939,7 +939,7 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
       action: "config",
       genId: "gen-000000-000000",
       files: [],
-      config: { target: path.join(fs.realpathSync(project), ".alpha", "alpha.jsonc") },
+      config: { target: path.join(fs.realpathSync(project), ".code-puppy", "alpha.jsonc") },
     })
     expect(journal?.prepared ?? []).toEqual([])
     expect(fs.existsSync(path.join(projectRoot, "ext-store", "mcp--demo", "generations"))).toBe(false)
@@ -966,14 +966,14 @@ describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.reason).toMatch(/size MISMATCH|sha256 MISMATCH/)
     expect(casCalls).toBe(0)
-    expect(fs.existsSync(path.join(project, ".alpha"))).toBe(false)
+    expect(fs.existsSync(path.join(project, ".code-puppy"))).toBe(false)
     expect(fs.existsSync(path.join(casBase, "cas"))).toBe(false)
   })
 
   test("REQ-136 project MCP seed revalidates D after verification and refuses a late root swap", async () => {
     buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
     const project = path.join(tmp, "project-seed-late-swap")
-    const projectRoot = path.join(project, ".alpha")
+    const projectRoot = path.join(project, ".code-puppy")
     const outside = path.join(tmp, "outside-seed-root")
     fs.mkdirSync(project, { recursive: true })
     fs.mkdirSync(outside, { recursive: true })

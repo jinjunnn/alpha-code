@@ -240,7 +240,7 @@ describe("collectInventory(薄采集器,零写入)", () => {
     const globalRoot = path.join(tmp, "global")
     const projectDir = path.join(tmp, "project")
     fs.mkdirSync(globalRoot, { recursive: true })
-    fs.mkdirSync(path.join(projectDir, ".alpha"), { recursive: true })
+    fs.mkdirSync(path.join(projectDir, ".code-puppy"), { recursive: true })
 
     const g = upsertRecordV2(globalRoot, {
       id: "user:my-mcp",
@@ -253,7 +253,7 @@ describe("collectInventory(薄采集器,零写入)", () => {
       installedAt: "2026-07-13T00:00:00.000Z",
     })
     expect(g.ok).toBe(true)
-    const p = upsertRecordV2(path.join(projectDir, ".alpha"), {
+    const p = upsertRecordV2(path.join(projectDir, ".code-puppy"), {
       id: "skill:writer",
       name: "writer",
       kind: "skill",
@@ -373,8 +373,8 @@ describe("createInventoryQuery(IPC 通道核心:只读、fail-closed、纯 JSON)
     const globalRoot = path.join(tmp, "gq-ro")
     const projectDir = path.join(tmp, "gq-ro-project")
     seedGlobalLedger(globalRoot)
-    fs.mkdirSync(path.join(projectDir, ".alpha"), { recursive: true })
-    const p = upsertRecordV2(path.join(projectDir, ".alpha"), {
+    fs.mkdirSync(path.join(projectDir, ".code-puppy"), { recursive: true })
+    const p = upsertRecordV2(path.join(projectDir, ".code-puppy"), {
       id: "skill:writer",
       name: "writer",
       kind: "skill",
@@ -453,7 +453,7 @@ describe("#392 已授权能力聚合(grants join,只读)", () => {
   test("collectInventory:真盘 grant 随行返回(global+project);孤儿 grant(无账本记录)不进读面;坏 JSON 如实无记录", () => {
     const globalRoot = path.join(tmp, "g392")
     const projectDir = path.join(tmp, "p392")
-    const projectRoot = path.join(projectDir, ".alpha")
+    const projectRoot = path.join(projectDir, ".code-puppy")
     fs.mkdirSync(globalRoot, { recursive: true })
     fs.mkdirSync(projectRoot, { recursive: true })
 

@@ -1,4 +1,4 @@
-// Local artifact manifest — `.alpha/runs/<runId>/artifacts.json`(REQ-093 A 侧,alpha-code#185)。
+// Local artifact manifest — `.code-puppy/runs/<runId>/artifacts.json`(REQ-093 A 侧,alpha-code#185)。
 // Main-process only, but electron-free and root-parameterized (alpha-workdir.ts style) so the whole
 // surface is unit-testable against a temp dir.
 //
@@ -215,7 +215,7 @@ export function writeArtifactManifest(projectDir: string, runId: string, manifes
   const validated = validateArtifactManifest(manifest)
   if (!validated.ok) return { ok: false, reason: `invalid manifest: ${validated.errors.join("; ")}` }
   const file = safeResolveInAlpha(projectDir, "runs", runId, ARTIFACT_MANIFEST_FILE)
-  if (!file) return { ok: false, reason: "path escapes .alpha" }
+  if (!file) return { ok: false, reason: "path escapes .code-puppy" }
   const tmp = `${file}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 10)}`
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true })

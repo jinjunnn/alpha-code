@@ -1,4 +1,4 @@
-// Unit tests for ~/Alpha user workspace supply (REQ-071 / ADR-025). The module reads its root from
+// Unit tests for ~/code-puppy user workspace supply (REQ-071 / ADR-025). The module reads its root from
 // ALPHA_USER_WORKSPACE_DIR, so all cases run against a temp dir: lazy supply scoping (only the
 // default dir is ever created), file-squatting honesty, and the Outputs visible-copy guard.
 
@@ -20,7 +20,7 @@ const envBefore = process.env.ALPHA_USER_WORKSPACE_DIR
 
 beforeEach(() => {
   base = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-userws-"))
-  ws = path.join(base, "Alpha")
+  ws = path.join(base, "code-puppy")
   process.env.ALPHA_USER_WORKSPACE_DIR = ws
 })
 afterEach(() => {
@@ -30,15 +30,15 @@ afterEach(() => {
 })
 
 describe("alphaUserWorkspaceDir / isUserWorkspaceDir", () => {
-  test("env override wins; default is ~/Alpha", () => {
+  test("env override wins; default is ~/code-puppy", () => {
     expect(alphaUserWorkspaceDir()).toBe(ws)
     delete process.env.ALPHA_USER_WORKSPACE_DIR
-    expect(alphaUserWorkspaceDir()).toBe(path.join(os.homedir(), "Alpha"))
+    expect(alphaUserWorkspaceDir()).toBe(path.join(os.homedir(), "code-puppy"))
   })
 
   test("identity is path-resolved, not string equality", () => {
     expect(isUserWorkspaceDir(ws)).toBe(true)
-    expect(isUserWorkspaceDir(path.join(base, ".", "Alpha"))).toBe(true)
+    expect(isUserWorkspaceDir(path.join(base, ".", "code-puppy"))).toBe(true)
     expect(isUserWorkspaceDir(path.join(base, "Other"))).toBe(false)
     expect(isUserWorkspaceDir(undefined)).toBe(false)
   })
@@ -79,7 +79,7 @@ describe("saveVisibleOutputs (Outputs contract)", () => {
     return p
   }
 
-  test("copies deliverables into ~/Alpha/Outputs/<date>-<runId>/", () => {
+  test("copies deliverables into ~/code-puppy/Outputs/<date>-<runId>/", () => {
     ensureUserWorkspaceDir()
     const from = seedSource("report.md", "# hi")
     const r = saveVisibleOutputs(ws, "run-1", [{ name: "report.md", from }], NOW)
@@ -125,7 +125,7 @@ describe("saveVisibleOutputs (Outputs contract)", () => {
 })
 
 describe("mirrorRunArtifacts (cloud manifest → Outputs)", () => {
-  test("mirrors artifacts/* only; machine files stay in .alpha", () => {
+  test("mirrors artifacts/* only; machine files stay in .code-puppy", () => {
     ensureUserWorkspaceDir()
     const runDir = path.join(base, "rundir")
     fs.mkdirSync(path.join(runDir, "artifacts"), { recursive: true })

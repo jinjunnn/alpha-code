@@ -78,7 +78,7 @@ export const AlphaExt: Plugin = async (input) => {
     "tool.execute.after": async (hookInput, output) => {
       validateCloudToolOutput(hookInput.tool, output)
     },
-    // REQ-060 项目级扩展物 `.alpha`-only:config hook 按 instance 读 `<directory>/.alpha/alpha.jsonc`
+    // REQ-060 项目级扩展物 `.code-puppy`-only:config hook 按 instance 读 `<directory>/.code-puppy/alpha.jsonc`
     // 并把项目级 mcp / agent / command / skills.paths 合并进 cfg —— 引擎经 config 消费,项目不产生
     // `.opencode`(零桥)。变异可见性由真机 spike 验(hook "Notify" 语义,T0 gate)。dispose 重建重
     // 触发 = 免重启。信任门(项目自带 mcp/plugin = 加载可执行物)= T1 后续,当前 spike 只验通道。
@@ -140,7 +140,7 @@ export const AlphaExt: Plugin = async (input) => {
             return
           }
           if (present.value) {
-            // 信任门:项目自带 mcp(可执行连接器)只在项目已 consent 时加载。consent 落 `.alpha/prefs.json`
+            // 信任门:项目自带 mcp(可执行连接器)只在项目已 consent 时加载。consent 落 `.code-puppy/prefs.json`
             // 的 extensionsConsent(版本化,ADR-021 模式);未 consent → mcp 被 gated,记 loud 供 renderer 弹窗。
             const trustExecutable = readProjectExtensionsConsent(project)
             if (trustExecutable === null) {
@@ -242,11 +242,11 @@ export const AlphaExt: Plugin = async (input) => {
       }),
       alpha_register: tool({
         description:
-          "Register a project-scoped extension entry into <project>/.alpha/alpha.jsonc (the ONLY alpha directory in a project — never create .opencode). " +
+          "Register a project-scoped extension entry into <project>/.code-puppy/alpha.jsonc (the ONLY alpha directory in a project — never create .opencode). " +
           "Use type=agent|command with an entry object (agent: {description,prompt,mode,...}; command: {template,description,...}); " +
           "type=mcp with the connector config (loading executable connectors additionally requires the user's per-project consent dialog); " +
-          "type=skill takes no entry — it registers the ./.alpha/skills path; write the skill itself to .alpha/skills/<name>/SKILL.md. " +
-          "Plugins are NOT registered here: drop a self-contained ESM .js into .alpha/plugins/ (raw TypeScript is rejected). " +
+          "type=skill takes no entry — it registers the ./.code-puppy/skills path; write the skill itself to .code-puppy/skills/<name>/SKILL.md. " +
+          "Plugins are NOT registered here: drop a self-contained ESM .js into .code-puppy/plugins/ (raw TypeScript is rejected). " +
           "The change is validated, written atomically, and auto-reloaded after this reply finishes (available from the NEXT message).",
         args: {
           type: tool.schema.enum(["mcp", "agent", "command", "skill"]).describe("Extension kind to register"),
@@ -385,7 +385,7 @@ export const AlphaExt: Plugin = async (input) => {
     },
   }
 
-  // REQ-060 plugin host fan-out:加载项目 `.alpha/plugins/*.js`(信任门:未 consent 不加载可执行物)
+  // REQ-060 plugin host fan-out:加载项目 `.code-puppy/plugins/*.js`(信任门:未 consent 不加载可执行物)
   // 并与 ownHooks 合并 return —— 项目插件的 hook 经引擎照常派发,项目零 `.opencode`/零 config.plugin[]。
   const project = projectRootFor(input.directory)
   const consent = project ? readProjectExtensionsConsent(project) : false
@@ -408,7 +408,7 @@ export const AlphaExt: Plugin = async (input) => {
   >
 }
 
-/** 项目扩展信任门 consent:`<dir>/.alpha/prefs.json` 的 `extensionsConsent.granted === true`(版本化,
+/** 项目扩展信任门 consent:`<dir>/.code-puppy/prefs.json` 的 `extensionsConsent.granted === true`(版本化,
  *  ADR-021 模式)。缺失/坏/未授 = 不信任(默认拒绝可执行物,安全红线)。 */
 function readProjectExtensionsConsent(
   project: Extract<ReturnType<typeof projectDirectoryIdentity>, { status: "project" }>,

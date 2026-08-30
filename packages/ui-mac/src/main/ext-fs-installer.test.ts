@@ -113,16 +113,16 @@ describe("writeAgent — global scope", () => {
 })
 
 describe("project scope", () => {
-  test("writes under <project>/.alpha + <project>/.opencode bridge + project receipt", () => {
+  test("writes under <project>/.code-puppy + <project>/.opencode bridge + project receipt", () => {
     const projectDir = path.join(base, "proj")
     fs.mkdirSync(projectDir, { recursive: true })
     const r = writeSkill("proj-skill", "d", "b", { scope: "project", projectDir })
     expect(r.ok).toBe(true)
-    expect(fs.existsSync(path.join(projectDir, ".alpha", "skills", "proj-skill", "SKILL.md"))).toBe(true)
+    expect(fs.existsSync(path.join(projectDir, ".code-puppy", "skills", "proj-skill", "SKILL.md"))).toBe(true)
     expect(fs.existsSync(path.join(projectDir, ".opencode", "skills"))).toBe(false) // T3:skills 桥退役
-    // .alpha self-ignores (ADR-019 §5)
-    expect(fs.readFileSync(path.join(projectDir, ".alpha", ".gitignore"), "utf8")).toBe("*\n")
-    const { receipts } = readLedger(path.join(projectDir, ".alpha"))
+    // .code-puppy self-ignores (ADR-019 §5)
+    expect(fs.readFileSync(path.join(projectDir, ".code-puppy", ".gitignore"), "utf8")).toBe("*\n")
+    const { receipts } = readLedger(path.join(projectDir, ".code-puppy"))
     expect(receipts[0]).toMatchObject({ scope: "project", name: "proj-skill" })
     // global ledger untouched
     expect(readLedger(alphaDir).receipts).toHaveLength(0)
@@ -152,7 +152,7 @@ describe("installBuiltinSkill — name + asset-key guards", () => {
     expect((r as any).reason).toContain("未随此版本打包")
   })
 
-  test("bundled asset installs into .alpha + bridge + catalog receipt", () => {
+  test("bundled asset installs into .code-puppy + bridge + catalog receipt", () => {
     // safe-refactor ships in repo resources/skills (E1b)
     const r = installBuiltinSkill("skills/safe-refactor", "safe-refactor", { scope: "global" }, { catalogId: "skill:safe-refactor" })
     expect(r.ok).toBe(true)

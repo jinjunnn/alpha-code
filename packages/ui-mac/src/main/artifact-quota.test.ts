@@ -39,7 +39,7 @@ const RACE_STARTED_AT = Date.parse("2026-07-20T12:00:00.000Z")
 let projectDir: string
 let reservationCounter: number
 let machineId: string
-const artifactsDir = (runId = RUN) => join(projectDir, ".alpha", "runs", runId, "artifacts")
+const artifactsDir = (runId = RUN) => join(projectDir, ".code-puppy", "runs", runId, "artifacts")
 const target = (name: string) => join(artifactsDir(), name)
 
 beforeEach(async () => {
@@ -784,7 +784,7 @@ describe("finalizeArtifactWithQuota", () => {
     const artifactsPerRun = 245
     expect(runCount * artifactsPerRun).toBeGreaterThan(10_000)
     Array.from({ length: runCount }, (_, runIndex) => {
-      const dir = join(projectDir, ".alpha", "runs", `job-large-${runIndex}`, "artifacts")
+      const dir = join(projectDir, ".code-puppy", "runs", `job-large-${runIndex}`, "artifacts")
       mkdirSync(dir, { recursive: true })
       Array.from({ length: artifactsPerRun }, (_, artifactIndex) =>
         writeFileSync(join(dir, `artifact-${artifactIndex}.bin`), ""),

@@ -11,7 +11,7 @@ review_after: 2026-10-18
 # Artifact quota reservation recovery
 
 Each managed-project artifact finalization attempt owns one immutable file at
-`<project>/.alpha/runs/<run>/reservations/<startedAt>-<uuid>.json`. Its record is
+`<project>/.code-puppy/runs/<run>/reservations/<startedAt>-<uuid>.json`. Its record is
 `{pid, machineId, declaredBytes, startedAt, uuid}`. `startedAt` is sortable but
 is sourced from millisecond wall-clock time. The finalizer counts all readable
 reservations before scanning committed final files, so a residual
@@ -40,8 +40,8 @@ and the later open/rename.
 Confirm placement manually before enabling managed cloud artifact downloads:
 
 1. Identify the artifact root at
-   `<project>/.alpha/runs/<run>/artifacts/`; if it does not exist yet, inspect
-   the deepest existing parent below `<project>/.alpha`.
+   `<project>/.code-puppy/runs/<run>/artifacts/`; if it does not exist yet, inspect
+   the deepest existing parent below `<project>/.code-puppy`.
 2. Run `df -P "<artifact-root-or-parent>"` and record the filesystem source and
    owning mount point. Then inspect the matching entry in `/sbin/mount`.
 3. Treat network-style sources and filesystem types such as `nfs`, `smbfs`,
