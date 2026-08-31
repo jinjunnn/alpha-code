@@ -4,7 +4,7 @@
 // 存量已守卫分支(windows.ts titlebar / apps.ts 探测 / migrate.ts 目录等)渐进收编,不强制一次性重构。
 // 全部函数为纯函数(platform 可注入,默认 process.platform),electron-free,单测两平台皆可在 mac 上跑。
 //
-// 路径纪律(ADR-026 §2):全局状态走平台 appData；`~/Alpha` / 项目 `.alpha` 全平台同构(os.homedir()),
+// 路径纪律(ADR-026 §2):全局状态走平台 appData；`~/Alpha` / 项目 `.code-puppy` 全平台同构(os.homedir()),
 // 不在本模块做任何 %APPDATA% 特例 —— 这里只收敛「行为」差异,不收敛「落点」差异(落点无差异)。
 
 import * as os from "node:os"

@@ -1,7 +1,7 @@
 // Artifact Workbench — REQ-094(#186)Alpha-owned 产物工作台(shell + run 发现 + 卡片 + 预览)。
 // 形制镜像 automation-panel.tsx(Portal 全页覆盖、--a-* token、Esc 关闭、不落盘的开合状态)。
 // 数据面:
-//   · run 发现 = runArtifacts.projectUsage(遍历 `.alpha/runs/*`,REQ-093 manifest 真相)—— 不闻
+//   · run 发现 = runArtifacts.projectUsage(遍历 `.code-puppy/runs/*`,REQ-093 manifest 真相)—— 不闻
 //     不问引擎/时间线,重启后照常恢复(AC#3);
 //   · 每 run:runArtifacts.list(manifest+reconcile+legacy 只读发现)⊗ cloud.artifacts(平台侧,
 //     可离线降级)→ deriveCards(诚实状态:verified/unverified/mismatch/missing/legacy/cloud-only);
@@ -81,7 +81,7 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
   document.addEventListener("keydown", onKey)
   onCleanup(() => document.removeEventListener("keydown", onKey))
 
-  // ── 项目上下文:默认跟随当前路由的项目,可用顶部切换;全局 "/" 桶不参与(无 .alpha 归属) ──
+  // ── 项目上下文:默认跟随当前路由的项目,可用顶部切换;全局 "/" 桶不参与(无 .code-puppy 归属) ──
   const concreteProjects = createMemo(() => props.projects.store.projects.filter((p) => p.worktree !== "/"))
   const routeDir = createMemo<string | undefined>(() => {
     const r = parseRoute(location.pathname)
@@ -92,7 +92,7 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
   const [dirOverride, setDirOverride] = createSignal<string | null>(null)
   const directory = createMemo<string | undefined>(() => dirOverride() ?? routeDir() ?? concreteProjects()[0]?.worktree)
 
-  // ── run 发现(REQ-093 projectUsage 遍历 .alpha/runs/*)──
+  // ── run 发现(REQ-093 projectUsage 遍历 .code-puppy/runs/*)──
   const [refreshTick, setRefreshTick] = createSignal(0)
   const bump = () => setRefreshTick((n) => n + 1)
   // 面板每次打开时刷新(usage/manifest 是快照)

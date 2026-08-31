@@ -303,7 +303,7 @@ export type SkillGenerationInfo = {
   installedAt?: string
   eligible: boolean
 }
-/** Legacy installs found in the shared XDG config dir, offered for migration to .alpha (REQ-018 T3). */
+/** Legacy installs found in the shared XDG config dir, offered for migration to the current-environment root (REQ-018 T3). */
 export type LegacyInventory = {
   root: string
   skills: string[]
@@ -328,7 +328,7 @@ export type ProvenanceRequest =
     }
   | { type: "plugin"; name: string; package: string }
 export type ProvenanceVerdict = { type: "skill" | "mcp" | "plugin"; name: string; verified: boolean; reason: string }
-/** Install destination: the frozen current-environment root or a specific project's .alpha. */
+/** Install destination: the frozen current-environment root or a specific project's .code-puppy. */
 export type InstallTarget = { scope: "global" } | { scope: "project"; projectDir: string }
 /** Catalog provenance recorded into the receipt (id + catalog snapshot version for update checks). */
 export type InstallMeta = { catalogId?: string; version?: string }
@@ -437,7 +437,7 @@ export type CloudArtifactDownloadResult =
 /** #660 裁决 A1:run 回流落盘 settle 后 main 向全部窗口广播的最小提示事件。只有这两个字段 ——
  *  它是「去重读」的提示,不是数据源;消费端收到后仍走 projectUsage / list 重新取真相。 */
 export type CloudRunSavedEvent = { directory: string; runId: string }
-/** B3/ADR-019 artifact 回流:写 <projectDir>/.alpha/runs/<runId>/ 的结果清单(main 侧 alpha-workdir.ts)。 */
+/** B3/ADR-019 artifact 回流:写 <projectDir>/.code-puppy/runs/<runId>/ 的结果清单(main 侧 alpha-workdir.ts)。 */
 export type CloudRunManifest =
   | { ok: true; dir: string; files: string[]; warnings: string[] }
   | { ok: false; reason: string }
@@ -966,7 +966,7 @@ export type ElectronAPI = {
       builtinAssetKey: string,
     ) => Promise<{ ok: true; content: string } | { ok: false; reason: string }>
     // REQ-019 T6:导入。folder = main 自弹目录选择器,用户实选目录即来源(REQ-098 #255:renderer
-    // 不再传 srcDir),校验 SKILL.md frontmatter → 复制入 .alpha + receipt(imported);git = https-only
+    // 不再传 srcDir),校验 SKILL.md frontmatter → 复制入 target 指定的根(hub 恒 global)+ receipt(imported);git = https-only
     // 浅克隆临时目录 → 同校验。外来内容绝不执行,symlink 不复制。
     /** #336 r1:成功臂 warning = loud 诊断透传;projectionLag = 账本已 durable 但 skills 允许集
      *  发布失败(本次未注入,重启自愈)—— renderer 必须据此呈现「重启后生效」级提示。 */
@@ -996,7 +996,7 @@ export type ElectronAPI = {
       | { ok: true; files?: string[]; name?: string; warning?: string; projectionLag?: string }
       | { ok: false; reason: string }
     >
-    // REQ-018 安装账本:current-environment global + project(<dir>/.alpha) receipts 合并只读视图
+    // REQ-018 安装账本:current-environment global + project(<dir>/.code-puppy) receipts 合并只读视图
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
     /** REQ-100 #313:key-based v2 卸载 —— renderer 只提供 type/name/scope,receipt 事实由 main
      *  账本自查(ADR-028 §1);generation skill 走锁内 journaled store+ledger teardown。 */
@@ -1058,7 +1058,7 @@ export type ElectronAPI = {
       intent: UninstallKeyIntent,
       genId: string,
     ) => Promise<{ ok: true; previous: string | null } | { ok: false; reason: string }>
-    // REQ-018 T3:存量迁移(旧 XDG 根 → .alpha)。scan 报告 legacy 清单 + enabled 门控;removeLegacy 删旧位。
+    // REQ-018 T3:存量迁移(旧 XDG 根 → current-environment 根)。scan 报告 legacy 清单 + enabled 门控;removeLegacy 删旧位。
     migrateScan: () => Promise<{ enabled: boolean; inventory: LegacyInventory }>
     // REQ-044:候选 provenance 终审(排除项 main.log [req044-provenance] 留痕)。
     migrateVerify: (requests: ProvenanceRequest[]) => Promise<ProvenanceVerdict[]>
@@ -1069,7 +1069,7 @@ export type ElectronAPI = {
     /** REQ-060 信任门:项目含可执行扩展且未决策 → main 弹 per-project 确认;granted 后调用方 dispose 生效。 */
     trustCheck: (directory: string) => Promise<{ prompted: boolean; granted: boolean; persistError?: string }>
     /** REQ-063 外部生态导入门:项目含 .claude/.agents skills / CLAUDE.md 且未决策 → main 弹确认;
-     *  「导入」= 转换落项目 .alpha(imported 后调用方 dispose 生效)。 */
+     *  「导入」= 转换落项目 .code-puppy(imported 后调用方 dispose 生效)。 */
     externalCheck: (directory: string) => Promise<{
       prompted: boolean
       imported: boolean
@@ -1164,7 +1164,7 @@ export type ElectronAPI = {
     cancel: (jobId: string) => Promise<CloudResult<CloudJobCancelResult>>
     artifacts: (jobId: string) => Promise<CloudResult<CloudArtifactList>>
     /** REQ-092:descriptor-only 下载 —— renderer 只送 descriptor/meta,main 流式写入
-     *  <directory>/.alpha/runs/<runId>/artifacts/(bearer 与内容字节都不过 IPC);
+     *  <directory>/.code-puppy/runs/<runId>/artifacts/(bearer 与内容字节都不过 IPC);
      *  进度经 onArtifactProgress 推回,结果 = 落盘路径或分类错误。 */
     downloadArtifact: (
       directory: string,
@@ -1175,7 +1175,7 @@ export type ElectronAPI = {
     cancelArtifactDownload: (artifactId: string) => Promise<{ ok: boolean }>
     /** 订阅下载进度(既有事件订阅 preload 模式;返回退订函数)。 */
     onArtifactProgress: (cb: (p: CloudArtifactProgress) => void) => () => void
-    // B3/ADR-019 回流:终态后把 run(status/contract/artifacts)写进 <directory>/.alpha/runs/<runId>/。
+    // B3/ADR-019 回流:终态后把 run(status/contract/artifacts)写进 <directory>/.code-puppy/runs/<runId>/。
     saveRun: (directory: string, runId: string, contract?: CloudJobEnvelope) => Promise<CloudRunManifest>
     /** #660 A1:订阅「run 回流已落盘」最小提示事件(全窗口广播;返回退订函数)。 */
     onRunSaved: (cb: (e: CloudRunSavedEvent) => void) => () => void

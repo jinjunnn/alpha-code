@@ -425,7 +425,7 @@ export function writeConfigLeafEditsUnlocked(
  * 各自靠**另一道**闸:`applyBuiltinPolicyEditsUnlocked`(本文件,自己的 tmp+rename)靠
  * `builtinPolicyPathAllowed` 具名路径白名单;`alpha-config-injection` 只在真源缺席时 seed `{$schema}`;
  * `alpha-migrate` 的 legacy 臂只做减法;**`ecosystem-import.ts` 的 `registerProjectSkillsPath`**
- * 整文件写项目级 `<proj>/.alpha/alpha.jsonc`,而且**它自己没有任何白名单** —— 挡住 `plugin` 的是
+ * 整文件写项目级 `<proj>/.code-puppy/alpha.jsonc`,而且**它自己没有任何白名单** —— 挡住 `plugin` 的是
  * 另一个包里的 `mergeProjectConfig`(与同族的 `packages/ext/src/register.ts` 类型白名单)。
  * 完整一栏与实测在 `engine-plugin-seal.ts` 抬头,改这一族之前先读那里。
  */
@@ -794,7 +794,7 @@ export function readAgentEntry(name: string, targetPath?: string): Record<string
 }
 
 /** REQ-059 T3b:agent 条目写 alpha.jsonc 的 agent.<name>(桥退役后引擎经 G1 见到全局 agent)。
- *  targetPath 可覆盖(项目分支写 <proj>/.alpha/alpha.jsonc);条目由 agent-md-entry 转换器产出。 */
+ *  targetPath 可覆盖(项目分支写 <proj>/.code-puppy/alpha.jsonc);条目由 agent-md-entry 转换器产出。 */
 export function persistAgentEntry(name: string, entry: Record<string, unknown>, targetPath?: string): ConfigResult {
   if (!isExtensionName(name)) return { ok: false, reason: "invalid agent name" }
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) return { ok: false, reason: "invalid agent entry" }

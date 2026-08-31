@@ -234,7 +234,7 @@ export type CollectInventoryOpts = {
   platformToken?: string
   /** 全局账本根(frozen current-environment root,REQ-098 main 真源)。 */
   globalRoot: string
-  /** 当前项目目录(可选;项目账本 = `<project>/.alpha`,fail-closed 由 alphaRoot/readLedgerV2 承载)。 */
+  /** 当前项目目录(可选;项目账本 = `<project>/.code-puppy`,fail-closed 由 alphaRoot/readLedgerV2 承载)。 */
   projectDir?: string
 }
 

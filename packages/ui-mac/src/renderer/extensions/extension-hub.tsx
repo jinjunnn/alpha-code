@@ -1526,7 +1526,7 @@ export function ExtensionHub(props: {
     if (props.open()) void scanMigration()
   })
 
-  // Migrate each candidate: reinstall to .alpha via the existing installer (pins MCP version from
+  // Migrate each candidate: reinstall into the current-environment root via the existing installer (pins MCP version from
   // catalog + moves inline secrets to the {file:} channel), then remove the legacy copy.
   const runMigration = async () => {
     setMigrating(true)

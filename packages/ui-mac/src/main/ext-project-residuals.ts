@@ -1,5 +1,5 @@
 // ADR-030(REQ-098 #372):project-scope catalog/seed 受管安装已收回(planner 写盘前稳定拒绝),
-// 但历史残留不可假设为零 —— 测试/dev 构建/直连 IPC 都可能在 <project>/.alpha 留下 catalog 账、
+// 但历史残留不可假设为零 —— 测试/dev 构建/直连 IPC 都可能在 <project>/.code-puppy 留下 catalog 账、
 // generation store 或事务 journal。本模块提供两件事:
 //   1. detect:只读报告(项目打开/显式检查时呈现;零写入,identity fail-closed);
 //   2. clean:显式触发、幂等、受控面内的 generation-aware 清理 —— 有账走 uninstallByKey
@@ -11,7 +11,7 @@
 //   · ghost 判定只认 `skill--<safe-name>` 且具 generation-store 结构的目录;其余 ext-store
 //     条目一律只报告(unknownStoreEntries),绝不删;
 //   · 非终态/不可读 journal、journal 目录不可枚举 → 整单拒,零自动删除;
-//   · orphan agent 面(.alpha/agents/*.md、alpha.jsonc agent 条目)只报告,永不自动清;
+//   · orphan agent 面(.code-puppy/agents/*.md、alpha.jsonc agent 条目)只报告,永不自动清;
 //   · 绝不做全盘项目扫描 —— 只看调用方交来的这个项目根。
 // 并发窗口:detect→clean 非原子;兜底 = 清理起步前重新巡检 journal(拒绝新在途),且 skill
 // 店删除本身是持 Bundle 锁的 journaled 事务(与任何并发事务串行);flat agent 删除由
@@ -42,7 +42,7 @@ export type ProjectResidualReport = {
   ghostStoreKeys: string[]
   /** 非 skill--* 形状 / 无 generation-store 结构的 ext-store 条目 —— 只报告,绝不清。 */
   unknownStoreEntries: string[]
-  /** 无任何账面依据的 agent 残留面(.alpha/agents/*.md 文件名、alpha.jsonc agent 键)—— 只报告。 */
+  /** 无任何账面依据的 agent 残留面(.code-puppy/agents/*.md 文件名、alpha.jsonc agent 键)—— 只报告。 */
   orphanAgentFiles: string[]
   orphanAgentConfigEntries: string[]
   /** 非终态或不可读 journal —— 在场即阻断清理。 */
