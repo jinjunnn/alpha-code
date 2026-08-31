@@ -93,6 +93,7 @@ const PURPOSES = [
 const MANAGED_ENV = [
   "ALPHA_API_KEY",
   "ALPHA_CLOUD_TOKEN",
+  "ALPHA_MCP_TOKEN",
   "ALPHA_BASE_URL",
   "ALPHA_CLOUD_MCP_URL",
   "DEV_PLATFORM_TOKEN",
@@ -132,6 +133,7 @@ function tokenBundle(generation = "old") {
 
 function storeAuth(value: {
   platformAccessTokens?: Partial<Record<RoutePurpose, string>>
+  mcpAccessToken?: string
   refreshToken?: string
   sessionId?: string
   expiresAt?: number
@@ -305,6 +307,30 @@ describe("purpose-keyed platform access token response", () => {
     })
   })
 
+  test("`#1195` optional top-level mcp_access_token: absent is legal, present rides through opaquely", () => {
+    const bundle = tokenBundle()
+    // 缺席 ⇒ 结果里没有这个键(不是 undefined 值,是不存在)。
+    expect("mcp_access_token" in decodeTokenResponse({ platform_access_tokens: bundle })).toBe(false)
+    // 在场 ⇒ 不透明传递:不是 JWT 也照收(decodeTokenClaims 钉的是 platform_access,
+    // 对本 token 结构性不适用;真伪由 RS 验)。
+    expect(
+      decodeTokenResponse({ platform_access_tokens: bundle, mcp_access_token: "opaque-mcp-credential" }),
+    ).toMatchObject({ mcp_access_token: "opaque-mcp-credential" })
+  })
+
+  test("`#1195` a present-but-broken mcp_access_token fails loud as a contract error, not a bundle error", () => {
+    for (const broken of ["", 42, null, { token: "x" }]) {
+      let thrown: unknown
+      try {
+        decodeTokenResponse({ platform_access_tokens: tokenBundle(), mcp_access_token: broken })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(ContractIncompatibleError)
+      expect(thrown).not.toBeInstanceOf(PlatformAccessTokenBundleError)
+    }
+  })
+
   test("malformed JWT remains a token-schema failure rather than masquerading as a bundle error", () => {
     const bundle = tokenBundle()
     bundle["artifact.read"] = "not-a-jwt"
@@ -328,6 +354,22 @@ describe("stored bundle consumption", () => {
     applyAuthEnv()
     expect(process.env.ALPHA_API_KEY).toBe(bundle["model.invoke"])
     expect(process.env.ALPHA_CLOUD_TOKEN).toBe(bundle["cloud.dispatch"])
+  })
+
+  test("`#1195` applyAuthEnv writes ALPHA_MCP_TOKEN from the stored opaque credential, and clears a stale one", () => {
+    process.env.ALPHA_MCP_TOKEN = "stale-from-previous-identity"
+    storeAuth({ platformAccessTokens: tokenBundle(), mcpAccessToken: "minted-mcp-token" })
+    expect(process.env.ALPHA_MCP_TOKEN).toBe("minted-mcp-token")
+
+    // 缺席 ⇒ 权威清除(A8 同款):不残留上一身份/上一信封的值。
+    process.env.ALPHA_MCP_TOKEN = "stale-again"
+    storeAuth({ platformAccessTokens: tokenBundle() })
+    expect(process.env.ALPHA_MCP_TOKEN).toBeUndefined()
+
+    // DEV_PLATFORM_TOKEN 不得顶进来:它是 platform_access 形状的静态短路,受众错了(I4)。
+    process.env.DEV_PLATFORM_TOKEN = jwt("model.invoke", "dev")
+    storeAuth({ platformAccessTokens: tokenBundle() })
+    expect(process.env.ALPHA_MCP_TOKEN).toBeUndefined()
   })
 
   test("DEV_PLATFORM_TOKEN keeps precedence while still enforcing the requested purpose", () => {
@@ -418,6 +460,40 @@ describe("refresh bundle rotation", () => {
       sessionId: "session-new",
       lifetimeMs: 3_600_000,
     })
+  })
+
+  test("`#1195` refresh rotates the mcp credential with the envelope, and an envelope without it clears everything (I6)", async () => {
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      mcpAccessToken: "mcp-old",
+      refreshToken: "refresh-old",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    expect(process.env.ALPHA_MCP_TOKEN).toBe("mcp-old")
+
+    // ① 信封带新值 ⇒ env 与持久态一起轮换。
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        platform_access_tokens: tokenBundle("new"),
+        mcp_access_token: "mcp-new",
+        refresh_token: "refresh-new",
+        expires_in: 3600,
+      })) as typeof fetch
+    expect(await refreshTokens()).toMatchObject({ outcome: "refreshed" })
+    expect(process.env.ALPHA_MCP_TOKEN).toBe("mcp-new")
+    expect(readStoredAuth()).toMatchObject({ mcpAccessToken: "mcp-new" })
+
+    // ② 信封缺席 ⇒ 整体清除,不保留旧值当回退(15 分钟 TTL 的旧值只会 401;I6 无回退)。
+    globalThis.fetch = (async () =>
+      jsonResponse({
+        platform_access_tokens: tokenBundle("newer"),
+        refresh_token: "refresh-newer",
+        expires_in: 3600,
+      })) as typeof fetch
+    expect(await refreshTokens()).toMatchObject({ outcome: "refreshed" })
+    expect(process.env.ALPHA_MCP_TOKEN).toBeUndefined()
+    expect(readStoredAuth()).not.toMatchObject({ mcpAccessToken: expect.anything() })
   })
 
   test("an incomplete refreshed bundle is rejected without replacing the last validated tokens", async () => {
@@ -625,6 +701,7 @@ describe("refresh compare-and-set before commit", () => {
     const newBundle = tokenBundle("new")
     storeAuth({
       platformAccessTokens: tokenBundle(),
+      mcpAccessToken: "mcp-live", // #1195:让下面的 logout 断言真的有值可清
       refreshToken: "refresh-old",
       expiresAt: 1,
       lifetimeMs: 1000,
@@ -663,6 +740,7 @@ describe("refresh compare-and-set before commit", () => {
     PURPOSES.forEach((purpose) => expect(getAccessToken(purpose)).toBeUndefined())
     expect(process.env.ALPHA_API_KEY).toBeUndefined()
     expect(process.env.ALPHA_CLOUD_TOKEN).toBeUndefined()
+    expect(process.env.ALPHA_MCP_TOKEN).toBeUndefined() // #1195:登出同样清 mcp 凭证 env
     // 丢弃 = 不持久化、不发布、不换血(structural respawn 只有 logout 自己那一次)
     expect(readStoredAuth()).toEqual({ mode: "byok" })
     expect(sends.length).toBe(publishedByLogout)

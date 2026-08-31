@@ -139,7 +139,7 @@ type EngineConfig = {
 export type WebSearchSovereignty = {
   /** `ALPHA_WEBSEARCH_DISABLE`:与登录态无关的能力总闸(B2)。 */
   killSwitch: boolean
-  /** 平台代付(`ALPHA_CLOUD_MCP_URL` + `ALPHA_CLOUD_TOKEN` 密钥文件同在):云工具权威(B1)。 */
+  /** 平台代付(`ALPHA_CLOUD_MCP_URL` + `ALPHA_MCP_TOKEN` 密钥文件同在,`#1195` 换轴):云工具权威(B1)。 */
   platformPays: boolean
 }
 

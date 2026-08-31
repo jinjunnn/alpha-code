@@ -13,6 +13,7 @@ describe("createSidecarEnv — default-deny", () => {
     const env = createSidecarEnv({
       ALPHA_API_KEY: "jwt",
       ALPHA_CLOUD_TOKEN: "bearer",
+      ALPHA_MCP_TOKEN: "mcp-bearer",
       DEEPSEEK_API_KEY: "sk-1",
       MOONSHOT_API_KEY: "sk-2",
       EXA_API_KEY: "exa",
@@ -21,6 +22,7 @@ describe("createSidecarEnv — default-deny", () => {
     })
     expect(env.ALPHA_API_KEY).toBeUndefined()
     expect(env.ALPHA_CLOUD_TOKEN).toBeUndefined()
+    expect(env.ALPHA_MCP_TOKEN).toBeUndefined()
     expect(env.DEEPSEEK_API_KEY).toBeUndefined()
     expect(env.MOONSHOT_API_KEY).toBeUndefined()
     expect(env.EXA_API_KEY).toBeUndefined()
@@ -135,10 +137,12 @@ describe("createSidecarEnv — escape hatch", () => {
       ALPHA_ENV_ALLOWLIST_EXTRA: "ALPHA_API_KEY,ALPHA_CLOUD_TOKEN,DEV_PLATFORM_TOKEN",
       ALPHA_API_KEY: "jwt",
       ALPHA_CLOUD_TOKEN: "bearer",
+      ALPHA_MCP_TOKEN: "mcp-bearer",
       DEV_PLATFORM_TOKEN: "dev",
     })
     expect(env.ALPHA_API_KEY).toBeUndefined()
     expect(env.ALPHA_CLOUD_TOKEN).toBeUndefined()
+    expect(env.ALPHA_MCP_TOKEN).toBeUndefined()
     expect(env.DEV_PLATFORM_TOKEN).toBeUndefined()
   })
 
@@ -256,6 +260,8 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
   const MUST_DENY = [
     "ALPHA_API_KEY",
     "ALPHA_CLOUD_TOKEN",
+    // #1195: the login-minted cloud MCP credential travels ONLY via the {file:} channel.
+    "ALPHA_MCP_TOKEN",
     "DEV_PLATFORM_TOKEN",
     "EXA_API_KEY",
     "DEEPSEEK_API_KEY",
@@ -325,7 +331,7 @@ describe("createSidecarEnv — SECRETISH word boundary (#605)", () => {
     }
     // …and the run was not vacuous: the hatch really was live on this call.
     expect(env.MY_CUSTOM_VAR).toBe("kept")
-    expect(MUST_DENY.length).toBe(30)
+    expect(MUST_DENY.length).toBe(31) // #1195: +ALPHA_MCP_TOKEN
   })
 
   test("reverse gate: the predicate itself vetoes every must-deny name (hatch/EXACT/prefix)", () => {

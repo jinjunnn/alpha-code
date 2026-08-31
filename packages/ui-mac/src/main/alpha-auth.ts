@@ -7,7 +7,8 @@
 //   ② 回调   handleAuthDeepLink(url): manifest auth callback + code/state → 校验 state → 换 token
 //            → safeStorage 加密存(系统钥匙串,不落明文 alpha.env)。
 //   ③ 消费   applyAuthEnv(): 据 purpose-keyed token bundle+mode 写 process.env(ALPHA_BASE_URL/ALPHA_API_KEY →
-//            alpha-models.ts 的模型代理 provider;ALPHA_CLOUD_MCP_URL/ALPHA_CLOUD_TOKEN →
+//            alpha-models.ts 的模型代理 provider;ALPHA_MCP_TOKEN → 云 MCP 的 {file:} header 通道,#1195;
+//            ALPHA_CLOUD_MCP_URL/ALPHA_CLOUD_TOKEN →
 //            sidecar.ts 的 mcp.cloud)。env 在 sidecar fork 前算一次(server.ts 注释),所以运行时
 //            变化通过同 host/port/password 的受控 sidecar respawn 继承。
 //
@@ -43,11 +44,18 @@ type StoredAuth = {
   expiresAt?: number
   /** access token 的签发寿命(ms)——B2 刷新提前量按它算(见 alpha-auth-clock.ts);旧凭证可缺。 */
   lifetimeMs?: number
+  /** `#1195`(REQ-144 T2):登录铸的云 MCP 凭证(`token_use=mcp_access`,aud = …/mcp)。
+   *  不透明保存 —— 不经 `decodeTokenClaims`(那个 decoder 钉死 platform_access/alpha-platform-api,
+   *  对本 token 结构性不适用);随每次信封轮换整体覆盖,信封缺席 ⇒ 清除(I6 fail-closed)。 */
+  mcpAccessToken?: string
   account?: { email?: string; plan?: string }
 }
 
 export type TokenResponse = {
   platform_access_tokens: Record<RoutePurpose, string>
+  /** `#1195`:可选顶层字段(基线 §2.2 —— 永不进 `platform_access_tokens` map)。缺席合法
+   *  (alpha-web T1 未部署时就是缺席);存在则必须是非空字符串,余下当不透明凭证。 */
+  mcp_access_token?: string
   refresh_token?: string
   session_id?: string
   expires_in?: number
@@ -281,6 +289,7 @@ export function applyAuthEnv() {
   const base = ep.platform
   delete process.env.ALPHA_API_KEY
   delete process.env.ALPHA_CLOUD_TOKEN
+  delete process.env.ALPHA_MCP_TOKEN
   if (!loggedInPlatform || !base) return
   if (!process.env.ALPHA_BASE_URL) process.env.ALPHA_BASE_URL = `${base}${ALPHA_PATHS.modelProxy}`
   // mcp: a discovered/pinned mcp URL wins; else derive from the CLOUD worker base (ADR-016: the MCP
@@ -301,6 +310,11 @@ export function applyAuthEnv() {
       reportContractFailure(error)
     }
   })
+  // `#1195`:云 MCP 凭证走同一 A6 通道(env → syncSecretFiles → {file:})。不透明写入,
+  // 不经 requireTokenPurpose(它是 platform_access 的形状闸);**不**让 DEV_PLATFORM_TOKEN
+  // 顶进来 —— 那是 platform_access 形状的静态短路,受众错了,静默挪用正是 I4 要禁止的。
+  // 缺席 ⇒ 上面已 delete ⇒ 密钥文件被 syncSecretFiles 收走 ⇒ 注入面 fail-closed(I6)。
+  if (stored.mcpAccessToken) process.env.ALPHA_MCP_TOKEN = stored.mcpAccessToken
 }
 
 // Called once at startup, AFTER preferAppEnv() and BEFORE the sidecar forks (index.ts), so the
@@ -473,6 +487,7 @@ async function completeAuth(parsed: URL) {
     // deep-link callback can cold-start the app, and ad-hoc-signed builds quit on relaunch (see ADR-017).
     mode: "platform",
     platformAccessTokens: tokens.platform_access_tokens,
+    mcpAccessToken: tokens.mcp_access_token,
     refreshToken: tokens.refresh_token,
     sessionId: tokens.session_id,
     // #600 B3:换算出的期限必须真的还有可用余量,否则视为「未知」→ fail-closed recovering
@@ -553,6 +568,10 @@ export function decodeTokenResponse(value: unknown): TokenResponse {
     }
     platformAccessTokens[purpose] = token
   })
+  // `#1195`:可选顶层 `mcp_access_token`。缺席合法;存在则必须是非空字符串(空串/非字符串
+  // 是签发端契约破损,fail-loud),内容当不透明凭证 —— 真伪由 RS(MCP 面)验。
+  if (response.mcp_access_token !== undefined && (typeof response.mcp_access_token !== "string" || !response.mcp_access_token))
+    throw invalidTokenResponse()
   if (response.refresh_token !== undefined && typeof response.refresh_token !== "string") throw invalidTokenResponse()
   if (response.session_id !== undefined && typeof response.session_id !== "string") throw invalidTokenResponse()
   if (response.expires_in !== undefined && typeof response.expires_in !== "number") throw invalidTokenResponse()
@@ -564,6 +583,7 @@ export function decodeTokenResponse(value: unknown): TokenResponse {
   const endpoints = response.endpoints !== undefined ? decodeEndpointDiscovery(response.endpoints) : undefined
   return {
     platform_access_tokens: platformAccessTokens,
+    ...(response.mcp_access_token !== undefined ? { mcp_access_token: response.mcp_access_token } : {}),
     ...(response.refresh_token !== undefined ? { refresh_token: response.refresh_token } : {}),
     ...(response.session_id !== undefined ? { session_id: response.session_id } : {}),
     ...(expiresIn !== undefined ? { expires_in: expiresIn } : {}),
@@ -807,6 +827,9 @@ async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
   stored = {
     ...stored,
     platformAccessTokens: tokens.platform_access_tokens,
+    // `#1195`:整体覆盖,**不** `?? stored.mcpAccessToken` —— 信封缺席就清除。留旧值没有意义
+    // (15 分钟 TTL,留到下个周期已过期)且违反 I6 的「缺席无回退」。
+    mcpAccessToken: tokens.mcp_access_token,
     refreshToken: tokens.refresh_token ?? stored.refreshToken,
     sessionId: tokens.session_id ?? stored.sessionId,
     expiresAt: refreshedExpiresAt,
@@ -887,6 +910,7 @@ export async function logout(): Promise<void> {
   // sidecar kept billing on the old token and a later login could bleed the prior identity.
   delete process.env.ALPHA_API_KEY
   delete process.env.ALPHA_CLOUD_TOKEN
+  delete process.env.ALPHA_MCP_TOKEN
   try {
     rmSync(authFilePath(), { force: true })
   } catch {}

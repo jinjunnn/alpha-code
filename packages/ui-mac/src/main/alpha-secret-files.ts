@@ -30,10 +30,12 @@ import type { AlphaModelCatalog } from "../shared/alpha-model-types"
 
 const SECRET_DIR = "alpha-secrets"
 
-/** Every env var main materializes into the file channel: platform + cloud MCP + all catalog BYOK keys. */
+/** Every env var main materializes into the file channel: platform + cloud MCP + all catalog BYOK keys.
+ * `ALPHA_MCP_TOKEN`(#1195 / REQ-144 T2)= 登录铸的 `mcp_access` token(aud = 云 MCP resource),
+ * 云 MCP 定义经 `{file:}` 引用消费它;缺席时本函数的删除分支负责把旧文件收走(登出/旧信封)。 */
 export function secretEnvVars(): string[] {
   const byok = (catalog as unknown as AlphaModelCatalog).byokProviders.map((p) => p.keyEnv).filter(Boolean)
-  return ["ALPHA_API_KEY", "ALPHA_CLOUD_TOKEN", ...byok]
+  return ["ALPHA_API_KEY", "ALPHA_CLOUD_TOKEN", "ALPHA_MCP_TOKEN", ...byok]
 }
 
 export function secretFilePath(userDataPath: string, varName: string): string {

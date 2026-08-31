@@ -62,6 +62,7 @@ const managedEnv = [
   "SHELL",
   "ALPHA_CLOUD_MCP_URL",
   "ALPHA_CLOUD_TOKEN",
+  "ALPHA_MCP_TOKEN",
   "ALPHA_ENV_FILE",
   "ALPHA_SECRETS_DISABLE",
   "ALPHA_WEBSEARCH_DISABLE",
@@ -115,17 +116,20 @@ async function forkSidecar() {
 function applyAuthEnvLikeLogin() {
   process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
   process.env.ALPHA_CLOUD_TOKEN = "token"
+  // #1195:登录信封带 mcp_access_token 时 applyAuthEnv 同步写它;它是 #1195 起的代付判据文件源。
+  process.env.ALPHA_MCP_TOKEN = "mcp-token"
 }
 
 function applyAuthEnvLikeLogout() {
   delete process.env.ALPHA_CLOUD_TOKEN
+  delete process.env.ALPHA_MCP_TOKEN
 }
 
 function webSearchToolSnapshot(env: Record<string, string | undefined>) {
   const local = keylessWebSearchFlags.some((key) => env[key] === "1")
   return [
     ...(local ? ["websearch"] : []),
-    ...(process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")
+    ...(process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_MCP_TOKEN")
       ? ["cloud_web_search"]
       : []),
   ]
@@ -233,6 +237,18 @@ describe("web search sovereignty at sidecar fork (#621)", () => {
     applyAuthEnvLikeLogin()
 
     expect((await forkSidecar()).ALPHA_LOCAL_WEBSEARCH_DENY).toBe("1")
+  })
+
+  test("`#1195` 判据换轴:登录但无 mcp_access(旧轴文件在、新轴文件缺)不算代付,keyless 保持可用", async () => {
+    // pre-T1 服务端 / 信封未带字段的真实形态:applyAuthEnv 写了 ALPHA_CLOUD_TOKEN,没写 ALPHA_MCP_TOKEN。
+    // 旧轴(ALPHA_CLOUD_TOKEN)的错误实现会在这里把 keyless 关掉 —— 当场红。
+    preferAppEnv(userDataPath)
+    applyAuthEnvLikeLogin()
+    delete process.env.ALPHA_MCP_TOKEN
+
+    const env = await forkSidecar()
+    expect(env.ALPHA_LOCAL_WEBSEARCH_DENY).toBeUndefined()
+    expect(webSearchToolSnapshot(env)).toEqual(["websearch"])
   })
 
   test("logout respawn clears the sovereignty verdict instead of leaving the tool dead", async () => {

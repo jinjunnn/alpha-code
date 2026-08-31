@@ -13,7 +13,7 @@ test(
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("42 pass")
+    expect(output).toContain("46 pass")
   },
   60_000,
 )

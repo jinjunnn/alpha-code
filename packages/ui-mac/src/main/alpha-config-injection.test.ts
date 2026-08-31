@@ -402,18 +402,13 @@ describe("injectAlphaConfig —— 注入组合体的执行级闸门(#607)", () 
 // 不预置 config.permission。
 describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
   /** main 侧 syncSecretFiles 落盘的登录态 + 主权闸对四个 keyless flag 的 force-off。
-   *  `#1106`:连带把引擎凭证库摆成「云 MCP 已授权」—— 本 describe 写的是代付**正常态**的
-   *  主权判决;无凭证(doomed ⇒ enabled:false)各臂归 cloud-mcp-oauth.test.ts。 */
+   *  `#1195`:代付判据 = `ALPHA_MCP_TOKEN` 密钥文件(登录铸 mcp_access);无凭证
+   *  (⇒ enabled:false)各臂归 cloud-mcp-header.test.ts。 */
   const givenPlatformPaysUnderUmbrella = () => {
     givenLoggedInWithByok()
     plantSecret("ALPHA_CLOUD_TOKEN", "cloud-token")
+    plantSecret("ALPHA_MCP_TOKEN", "mcp-token-value")
     process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
-    const engineData = path.join(process.env.XDG_DATA_HOME!, "opencode")
-    fs.mkdirSync(engineData, { recursive: true })
-    fs.writeFileSync(
-      path.join(engineData, "mcp-auth.json"),
-      JSON.stringify({ cloud: { serverUrl: "https://cloud.example/mcp", tokens: { accessToken: "authorized" } } }),
-    )
     process.env.OPENCODE_EXPERIMENTAL = "1" // 用户 shell 的真 export —— env 层压不掉
     process.env.OPENCODE_ENABLE_EXA = "0" // 主权闸已经写过 "0",仍不足以关闭工具
   }
@@ -485,10 +480,11 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
         type: "remote",
         url: "https://cloud.example/mcp",
       })
-      // `#733`:A6 从「引用而非明文」升级成**根本没有凭证通道** —— 云 MCP 走标准 OAuth,
-      // 托管定义里既没有 token 值,也没有 {file:} 引用可解。
-      expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("{file:")
-      expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("Authorization")
+      // `#1195`:托管定义带 {file:} 引用(ext 的 installCloudMcp 自己解析,读不到响亮不装),
+      // 但**绝不带 token 值** —— A6 的「引用而非明文」在 env 托管通道同样成立。
+      expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("{file:")
+      expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("ALPHA_MCP_TOKEN")
+      expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("mcp-token-value")
       expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("cloud-token")
       expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")
       expect(errors.flat().join("\n")).toContain("WITHHELD from the engine config")
@@ -533,9 +529,10 @@ describe("web search 主权在 umbrella 下仍成立(#223 Blocker)", () => {
       type: "remote",
       url: "https://cloud.example/mcp",
     })
-    // `#733`:同上 —— 托管定义里没有任何凭证通道。
-    expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("{file:")
-    expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("Authorization")
+    // `#1195`:同上 —— 托管定义带 {file:} 引用,不带 token 值。
+    expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("{file:")
+    expect(process.env[CLOUD_MCP_DEF_ENV]).toContain("ALPHA_MCP_TOKEN")
+    expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("mcp-token-value")
     expect(process.env[CLOUD_MCP_DEF_ENV]).not.toContain("cloud-token")
     // 闸要能把「alpha 治理的云 server」与用户自带的 web-search MCP 区分开(R5 Blocker)。
     expect(process.env[CLOUD_MCP_SERVER_ENV]).toBe("cloud")

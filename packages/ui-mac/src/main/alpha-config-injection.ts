@@ -13,15 +13,15 @@
 // 真实爆炸半径 + 失败必须出声)。
 
 import * as fs from "node:fs"
-import { homedir } from "node:os"
 import * as path from "node:path"
 import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { buildAlphaCapabilities, buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
-// `#733`:`secretFileRef` 随静态 bearer 一起从本文件退场 —— 云 MCP 的 Authorization 头没了,
-// 就没有第二个 `{file:}` 引用要发。`hasSecretFile` 留着:它是 ADR-009 的「平台代付」判据
-// (见下方 `platformPays`),与 MCP 怎么认证无关,删掉会顺手关掉 web search 主权闸。
-import { hasSecretFile } from "./alpha-secret-files"
+// `#1195`(REQ-144 T2):`secretFileRef` 回来了 —— 云 MCP 的 Authorization 头装的是登录铸
+// `mcp_access` token 的 `{file:…ALPHA_MCP_TOKEN}` 引用(A6 通道,值不进 config 字面量)。
+// `hasSecretFile` 同时是 ADR-009 的「平台代付」判据(见下方 `platformPays`,`#1195` 起换轴到
+// 同一个 `ALPHA_MCP_TOKEN` 文件 —— 凭证在场性与代付判据从此是同一件事)。
+import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
 import {
   applyWebSearchDenies,
   CLOUD_MCP_ARM_ENV,
@@ -31,11 +31,6 @@ import {
   WITHHELD_CLOUD_MCP,
 } from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
-// `#1106`:fork 前判「云 MCP 的 boot 连接是否注定 needs_auth」。注入跑在 sidecar 进程里,
-// 与引擎同进程同 env —— `engineDataDir(process.env, homedir())` 与引擎自己的 Global.Path.data
-// 按构造一致(xdg-basedir 同样先看 XDG_DATA_HOME,再落 ~/.local/share)。
-import { engineDataDir } from "./data-clear"
-import { isCloudMcpConnectDoomed } from "./cloud-mcp-doomed-connect"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
 import { injectMcpDefaultDeny } from "./mcp-default-deny"
 import { materializeCloudMcpConfig } from "./cloud-sidecar-config"
@@ -92,8 +87,12 @@ export function injectAlphaConfig(
     const existing = process.env.OPENCODE_CONFIG_CONTENT
     const config = existing ? JSON.parse(existing) : { $schema: "https://opencode.ai/config.json" }
     // ADR-009 B1 的「平台代付」判据(云 MCP URL + 密钥文件同在)。caps 事实、云 MCP 注册与
-    // web search 主权 deny 三处共用同一个判据,不许各算各的。
-    const platformPays = Boolean(process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN"))
+    // web search 主权 deny 三处共用同一个判据,不许各算各的。`#1195` 起判据文件从
+    // `ALPHA_CLOUD_TOKEN`(错受众的 platform_access,只当在场性证据)换轴到
+    // `ALPHA_MCP_TOKEN`(登录铸 mcp_access)—— 它同时就是云 MCP 定义要引用的那份凭证,
+    // 「代付成立」与「凭证可用」从此结构上不可能分叉。main 侧同一判据在
+    // `server.ts` 的 `applyWebSearchSovereignty`,两处必须同轴。
+    const platformPays = Boolean(process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_MCP_TOKEN"))
     // ADR-009 B2 的能力总闸。main 在每次 fork 前用同一个表达式判过一次并把判决写进
     // `ALPHA_CLOUD_WEBSEARCH_DENY`(server.ts);这里重算是因为注入面自己也要用(见下方云 MCP 注册)。
     const killSwitch = Boolean(process.env.ALPHA_WEBSEARCH_DISABLE)
@@ -296,23 +295,19 @@ export function injectAlphaConfig(
       }
     }
 
-    //   3. Cloud tool gateway (alpha-platform B). Registered only when platform-pays is active —
-    //      main derives the login state (alpha-auth.ts §③) from the presence of the
-    //      ALPHA_CLOUD_TOKEN secret file, so logged-out / BYOK leaves it dark.
-    //      (see docs/contracts/platform-integration.md).
-    //
-    //      `#733`: this server carries NO credential channel any more. It used to attach a static
-    //      `Bearer {file:…ALPHA_CLOUD_TOKEN}` header with `oauth:false`; it now declares a standard
-    //      MCP OAuth client and the engine holds/refreshes the credential itself. Two consequences
-    //      worth spelling out here, because both were invisible before:
-    //        - ALPHA_CLOUD_TOKEN is still read — but only as the platform-pays predicate above.
-    //          It is no longer the MCP Authorization source. Rotating it does NOT fix an
-    //          unauthenticated cloud MCP; the user re-authorizes from the extension hub instead.
-    //        - `oauth:false` was not a neutral setting: it made `needs_auth` structurally
-    //          unreachable for this server (engine `mcp/index.ts:241`), so a missing credential
-    //          could only ever surface as `failed` with no user-visible remedy.
+    //   3. Cloud tool gateway (alpha-platform B). `#1195`(REQ-144 T2):凭证 = 登录铸的
+    //      `mcp_access` token,经 A6 `{file:…ALPHA_MCP_TOKEN}` 引用装进静态 Authorization header,
+    //      `oauth:false` 把交互式 OAuth 那条路(被 ~10 分钟换血必然打断,`ac#721`/`ac#1044`)
+    //      整个关掉。凭证文件缺席(登出 / alpha-web T1 未部署 / 信封未带字段)⇒ 写一份
+    //      **无凭证通道**的 `enabled:false` 定义:不回退到 `ALPHA_CLOUD_TOKEN` header(错受众)、
+    //      不回退到交互式 OAuth(I6);条目本身必须在 —— 深合并里缺键不会删除继承来源的同名
+    //      定义(#223 R6),`enabled:false` 的形状把它压掉。也绝不能发 `{file:}` 引用指向缺席
+    //      文件:引擎对它 fail-loud 到整个 config 装载失败(`config/variable.ts` missing:"error")。
+    //      `#1106` 的 doomed-connect 判据(镜像引擎 mcp-auth.json)随之就地退役:引擎不再持有
+    //      云凭证,「boot 连接注定失败」的判据现在就是 platformPays 自己 —— 缺凭证 ⇒
+    //      `enabled:false` ⇒ `MCP.create` 直接 DISABLED_RESULT,boot 零等待,形态不变。
     const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
-    if (mcpUrl && platformPays) {
+    if (mcpUrl) {
       // #223 R4→R5 fail-closed:kill-switch 下 `cloud_web_search` 的**最终**闸住在 @alpha-code/ext
       // 的 tool.execute.before 钩子里(远端 MCP 无 per-tool 注册期过滤,permission deny 可被后置
       // allow 顶掉)。R3 用「extPluginPath 路径是否存在」判 ext 在不在场 —— R4 证明那不成立:
@@ -335,39 +330,30 @@ export function injectAlphaConfig(
       // 可发)压成一个连不上的 `127.0.0.1:1` 端点;ext 确认装载后由 `installCloudMcp()` 整条
       // 替换它。ext 缺席 ⇒ 留下的是中和条目 ⇒ `/connect` 连不上任何东西(连兄弟工具一起损失)——
       // 诚实降级,不是 AC4 的「误杀」:AC4 管的是闸生效时的正常态。
-      // `#733`:这份定义里**没有任何凭证通道** —— 没有 `headers`、没有 `{file:}` 引用。
-      // 云 MCP 走标准 OAuth,凭证由引擎自己的凭证库按 server URL 绑定持久化并自动刷新;
-      // 拿不到令牌时该 server 进 `needs_auth`(而不是像 `oauth:false` 时那样只能 `failed`),
-      // 用户在扩展中心有一个能点的补救入口。定义与常量见 `cloud-sidecar-config.ts`。
-      const cloud = materializeCloudMcpConfig(mcpUrl)
+      // `#1195`:代付态的真定义带 `{file:…ALPHA_MCP_TOKEN}` header;缺席态(platformPays=false)
+      // 由同一工厂给出无引用的 `enabled:false` 形状(见 `cloud-sidecar-config.ts` 文件头)。
+      // DEF 托管通道恒发**真定义**(带引用):ext 的 `installCloudMcp` 自己解析 `{file:}`,
+      // 读不到时响亮不装(fail-closed)—— 治理身份通道不因凭证缺席而失明(#223 R6 Blocker)。
+      const cloud = materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_MCP_TOKEN"))
       // ext 的闸靠这两个变量核验「哪个 MCP server 真的是 alpha 治理的云通道」——
       // #223 R6 Blocker:判据是 DEF 里那份定义的**端点身份**(URL),不再是名字前缀,所以 DEF 在
       // 代付的两条分支上都置位(ARM 只在 kill-switch 分支置位;ARM/DEF 缺一 ext 什么都不装)。
       process.env[CLOUD_MCP_SERVER_ENV] = CLOUD_MCP_SERVER_NAME
       process.env[CLOUD_MCP_DEF_ENV] = JSON.stringify(cloud)
-      // `#1106`:引擎 boot 会 await **每一个**已配置 MCP server(`mcp/index.ts` MCP.state 的
-      // unbounded forEach),而无凭证的云 server 只能以 `needs_auth` 收场 —— owner 日志实测
-      // 27/27 次轮换 boot 的 1.79–9.67s 阻塞段全部以它收尾,是唯一关键路径。凭证有没有在
-      // fork 前就已确定(引擎取凭证走 `getForUrl(name, url)`,判据被 cloud-mcp-doomed-connect.ts
-      // 逐条镜像),所以注定连不上时把这份定义写成 `enabled:false`:boot 零等待
-      // (`MCP.create` 直接 DISABLED_RESULT),`/mcp/cloud/auth/authenticate` 与 `/connect`
-      // 照常可用(`getMcpConfig` 落到原始 config,不查 enabled),authenticate 成功即就地连上。
-      // hub 打开时对 disabled 的云条目补发一次 connect(use-extensions.ts),引擎状态回归
-      // `needs_auth` 真值,`#733` 的授权补救入口原样点亮。
-      // kill-switch 优先:WITHHELD 分支形状不变(它本身就是 enabled:false 的中和条目)。
-      const doomedConnect =
-        !killSwitch && isCloudMcpConnectDoomed(engineDataDir(process.env, homedir()), CLOUD_MCP_SERVER_NAME, mcpUrl)
-      if (doomedConnect)
+      // 缺席 ⇒ enabled:false(`#1106` 的「boot 零等待」形态在新轴上保持:`MCP.create` 对
+      // enabled:false 直接 DISABLED_RESULT)。kill-switch 优先:WITHHELD 分支形状不变
+      // (它本身就是 enabled:false 的中和条目)。
+      if (!killSwitch && !platformPays)
         console.log(
-          `[alpha-code#1106] cloud MCP has no stored OAuth credential for this URL — injected enabled:false so engine boot does not await a connect that can only end needs_auth; the extension hub hot-connects it on demand`,
+          `[alpha-code#1195] cloud MCP has no login-minted mcp_access credential (ALPHA_MCP_TOKEN secret file absent) — injected a credential-free enabled:false definition; no fallback to ALPHA_CLOUD_TOKEN or interactive OAuth`,
         )
       config.mcp = {
         ...(config.mcp ?? {}),
         [CLOUD_MCP_SERVER_NAME]: killSwitch
           ? { ...WITHHELD_CLOUD_MCP }
-          : doomedConnect
-            ? { ...cloud, enabled: false }
-            : cloud,
+          : platformPays
+            ? cloud
+            : materializeCloudMcpConfig(mcpUrl, undefined),
       }
       injectedMcpNames.add(CLOUD_MCP_SERVER_NAME)
       if (killSwitch) {
