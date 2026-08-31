@@ -4,8 +4,8 @@
 //   REQ-036 初版:`~/.opencode/skill/<name>` 直链 app 资源(违反 .alpha 中转不变量,已迁移);
 //   REQ-052:两跳桥 `<global-root>/skills/<name>` → app 资源 + `~/.opencode/skills` 桥;
 //   REQ-059 T3:桥退役,引擎经 alpha.jsonc `skills.paths:[<global-root>/skills]`(文件通道)发现;
-//   **REQ-065(现行)**:`.code-puppy` 纯度反向收口 —— `.code-puppy` 只承载**用户自有**内容(有用户动作、
-//   receipts 可溯);出厂件(零用户动作预置)不落 `.code-puppy`,由 `skills.paths` **直指 app 资源目录**
+//   **REQ-065(现行)**:真源根纯度反向收口 —— `alphaGlobalRoot()` 只承载**用户自有**内容(有用户动作、
+//   receipts 可溯);出厂件(零用户动作预置)不落真源根,由 `skills.paths` **直指 app 资源目录**
 //   (boot reconcile 每启动重写该组条目,跟随 app 路径/版本变化,见 engine-config-truth 的
 //   rewriteFactorySkillPaths)。本模块职责收敛为:存量清理(拆我方旧链)+ 注入组计算(eligibility)。
 //

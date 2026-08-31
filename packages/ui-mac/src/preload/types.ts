@@ -303,7 +303,7 @@ export type SkillGenerationInfo = {
   installedAt?: string
   eligible: boolean
 }
-/** Legacy installs found in the shared XDG config dir, offered for migration to .code-puppy (REQ-018 T3). */
+/** Legacy installs found in the shared XDG config dir, offered for migration to the current-environment root (REQ-018 T3). */
 export type LegacyInventory = {
   root: string
   skills: string[]
@@ -966,7 +966,7 @@ export type ElectronAPI = {
       builtinAssetKey: string,
     ) => Promise<{ ok: true; content: string } | { ok: false; reason: string }>
     // REQ-019 T6:导入。folder = main 自弹目录选择器,用户实选目录即来源(REQ-098 #255:renderer
-    // 不再传 srcDir),校验 SKILL.md frontmatter → 复制入 .code-puppy + receipt(imported);git = https-only
+    // 不再传 srcDir),校验 SKILL.md frontmatter → 复制入 target 指定的根(hub 恒 global)+ receipt(imported);git = https-only
     // 浅克隆临时目录 → 同校验。外来内容绝不执行,symlink 不复制。
     /** #336 r1:成功臂 warning = loud 诊断透传;projectionLag = 账本已 durable 但 skills 允许集
      *  发布失败(本次未注入,重启自愈)—— renderer 必须据此呈现「重启后生效」级提示。 */
@@ -1058,7 +1058,7 @@ export type ElectronAPI = {
       intent: UninstallKeyIntent,
       genId: string,
     ) => Promise<{ ok: true; previous: string | null } | { ok: false; reason: string }>
-    // REQ-018 T3:存量迁移(旧 XDG 根 → .code-puppy)。scan 报告 legacy 清单 + enabled 门控;removeLegacy 删旧位。
+    // REQ-018 T3:存量迁移(旧 XDG 根 → current-environment 根)。scan 报告 legacy 清单 + enabled 门控;removeLegacy 删旧位。
     migrateScan: () => Promise<{ enabled: boolean; inventory: LegacyInventory }>
     // REQ-044:候选 provenance 终审(排除项 main.log [req044-provenance] 留痕)。
     migrateVerify: (requests: ProvenanceRequest[]) => Promise<ProvenanceVerdict[]>
