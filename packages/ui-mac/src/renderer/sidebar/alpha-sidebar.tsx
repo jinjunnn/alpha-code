@@ -319,6 +319,20 @@ export function AlphaSidebar(props: {
   // plan claim before the summary lands, so the header chip / footer never contradict the card.
   const acctIsPro = () => !!activePlan() || isPro()
   const acctPlanName = () => activePlan()?.name ?? plan()
+  // REQ-146(#1194) chip 三态。「按量付费」不是审美偏好:发送门的真实判据是
+  // alpha-composer.tsx 的 summaryUsable = plan active || balanceFen > 0 —— 有余额的人
+  // 在系统眼里本来就不是「免费」,chip 标「免费版」是界面与行为不符。summary 未落地时
+  // 维持既有回落(JWT claim → 免费版),不臆测余额。
+  const acctTier = (): "pro" | "payg" | "free" => {
+    if (acctIsPro()) return "pro"
+    const s = summary()
+    return s && s.balanceFen > 0 ? "payg" : "free"
+  }
+  const acctTierLabel = () => {
+    const tier = acctTier()
+    if (tier === "pro") return acctPlanName().toUpperCase()
+    return tier === "payg" ? t("alpha.sidebar.payAsYouGo") : t("alpha.sidebar.freePlan")
+  }
 
   // Tiny inline sparkline for the 14-day usage series (no chart lib). Empty series → caller shows
   // a placeholder instead of rendering this.
@@ -1399,7 +1413,7 @@ export function AlphaSidebar(props: {
                       <div class="alpha-acct-email">{accountLabel()}</div>
                     </div>
                     <span class="alpha-acct-plan" data-pro={acctIsPro() ? "" : undefined}>
-                      {acctIsPro() ? acctPlanName().toUpperCase() : t("alpha.sidebar.freePlan")}
+                      {acctTierLabel()}
                     </span>
                   </div>
                   <div class="alpha-acct-card">
@@ -1419,10 +1433,18 @@ export function AlphaSidebar(props: {
                         <span class="alpha-acct-v">{fmtYuan(summary()!.balanceFen)}</span>
                       </Show>
                     </div>
+                    {/* REQ-146(#1194):window5h/window7d 只有订阅计划才有;未订阅时这两行
+                        改显示 summary.usage 的真实用量(而不是「按量计费」占位),标签随之
+                        换成「今日/7 日用量」。已订阅仍显示订阅额度窗口。 */}
                     <div class="alpha-acct-row">
-                      <span class="alpha-acct-k">{t("alpha.sidebar.fiveHour")}</span>
+                      <span class="alpha-acct-k">
+                        {activePlan() ? t("alpha.sidebar.fiveHour") : t("alpha.sidebar.todayUsage")}
+                      </span>
                       <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
-                        <Show when={activePlan()} fallback={<span class="alpha-acct-pending">{t("alpha.sidebar.metered")}</span>}>
+                        <Show
+                          when={activePlan()}
+                          fallback={<span class="alpha-acct-v">{fmtTokens(summary()!.usage.todayTokens)}</span>}
+                        >
                           <span class="alpha-acct-v">
                             {activePlan()!.window5h.usedCredits.toLocaleString()} /{" "}
                             {activePlan()!.window5h.limitCredits.toLocaleString()}
@@ -1431,9 +1453,14 @@ export function AlphaSidebar(props: {
                       </Show>
                     </div>
                     <div class="alpha-acct-row">
-                      <span class="alpha-acct-k">{t("alpha.sidebar.sevenDay")}</span>
+                      <span class="alpha-acct-k">
+                        {activePlan() ? t("alpha.sidebar.sevenDay") : t("alpha.sidebar.weekUsage")}
+                      </span>
                       <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
-                        <Show when={activePlan()} fallback={<span class="alpha-acct-pending">{t("alpha.sidebar.metered")}</span>}>
+                        <Show
+                          when={activePlan()}
+                          fallback={<span class="alpha-acct-v">{fmtTokens(summary()!.usage.weekTokens)}</span>}
+                        >
                           <span class="alpha-acct-v">
                             {activePlan()!.window7d.usedCredits.toLocaleString()} /{" "}
                             {activePlan()!.window7d.limitCredits.toLocaleString()}
@@ -1497,11 +1524,7 @@ export function AlphaSidebar(props: {
                   {authState().status === "logged-in" ? accountLabel() : t("alpha.auth.signIn")}
                 </span>
                 <span class="alpha-sidebar-account-sub">
-                  {authState().status === "logged-in"
-                    ? acctIsPro()
-                      ? acctPlanName().toUpperCase()
-                      : t("alpha.sidebar.freePlan")
-                    : t("alpha.sidebar.clickLogin")}
+                  {authState().status === "logged-in" ? acctTierLabel() : t("alpha.sidebar.clickLogin")}
                 </span>
               </span>
               <svg class="alpha-acct-chev" viewBox="0 0 12 12" fill="none" aria-hidden="true">
