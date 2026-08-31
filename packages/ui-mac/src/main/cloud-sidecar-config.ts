@@ -23,19 +23,6 @@
 //     它压掉任何继承来源的同名 `cloud` 定义(#223 R6 的教训 —— 缺键不会删除先前来源的定义)。
 
 /**
- * 云 MCP 的 OAuth 客户端标识(CIMD URL)。
- *
- * `#1195` 起生产定义不再引用它(`oauth:false`);常量与 alpha-web 侧托管文档
- * (`alpha-web#127`)的退役归 T3(`#1196`),本票不动。
- */
-export const CLOUD_MCP_OAUTH_CLIENT_ID = "https://auth.tidelabs.click/oauth/clients/alpha-code-mcp.json"
-
-/**
- * 交互式 OAuth 的本机回环回调地址。同上:`#1195` 起生产定义不再引用,退役归 T3(`#1196`)。
- */
-export const CLOUD_MCP_OAUTH_REDIRECT_URI = "http://127.0.0.1:19876/callback"
-
-/**
  * 云 MCP server 定义。
  *
  * @param mcpTokenFileRef 登录铸 `mcp_access` token 的 `{file:}` 引用

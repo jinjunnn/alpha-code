@@ -124,7 +124,7 @@ import { ensureGovernedMcpConnectTimeouts, withConfigWriteLock } from "./ext-con
 import { retireCommunityExcelAfterRecovery } from "./community-excel-retirement"
 import { reconcileMcpWorkspaceMarkers } from "./mcp-workspace-marker"
 import { engineDataDir } from "./data-clear"
-import { isCloudMcpOAuthInflight } from "./cloud-mcp-oauth-gate"
+import { sweepLegacyCloudMcpAuthEntry } from "./cloud-mcp-auth-sweep"
 import { reconcileDesiredStateAtBoot } from "./ext-install-planner"
 import { alphaGlobalRoot } from "./alpha-installs"
 import { factorySkillSources, reconcileFactorySkills } from "./factory-skills"
@@ -838,6 +838,16 @@ const main = Effect.gen(function* () {
     // `#982`: only a gap-free sweep credits the spawn throat latch.
     creditDanglingSweepForSpawn()
   }
+  // REQ-144 T3(#1196):退役交互式 OAuth 后,引擎共享凭证库 mcp-auth.json 里遗留的
+  // `cloud` entry(codeVerifier/oauthState 中间态或旧 tokens)一次性清扫。只摘 `cloud`
+  // 这一个 alpha 治理的键,第三方 entry 逐字保留;`oauth:false`(#1195)后引擎不再写它,
+  // 首次摘除后收敛为 no-op。清扫失败不阻断启动(是清理,不是执法)。
+  try {
+    const swept = sweepLegacyCloudMcpAuthEntry(engineDataDir(process.env, homedir()))
+    if (swept.action === "removed") logger.log("[req144-t3] removed legacy interactive-OAuth cloud entry from mcp-auth.json")
+  } catch (error) {
+    logger.warn("[req144-t3] legacy cloud mcp-auth sweep failed (non-fatal)", error)
+  }
   ensureGovernedMcpConnectTimeouts()
   reconcileMcpWorkspaceMarkers()
   ensureAlphaLayoutDefault()
@@ -1347,12 +1357,6 @@ const main = Effect.gen(function* () {
   // SDK/SSE reconnection so the renderer tree remains mounted.
   const doRespawnSidecar = async (reason: SidecarRespawnReason) => {
     if (quittingApp) return false
-    // #1044:token-only 换血会杀掉正在 waitForCallback 的 MCP.authenticate(云 OAuth)。
-    // 引擎在等待回环回调期间落盘 inflight 标记;此处推迟换血,latch 会按 TOKEN_ROTATION_RETRY_MS 再试。
-    if (reason === "token-only" && isCloudMcpOAuthInflight(engineDataDir(process.env, homedir()))) {
-      logger.warn("#1044 deferring token-only respawn: cloud MCP OAuth in flight")
-      return false
-    }
     // #600:发出 recovering 之后必须恰好发布一个终态。终态生产者(armRespawnGenerationTerminal)
     // 一经武装就独占发布权;它武装之前出错的路径由下面的 catch 兜住那唯一一个 failed。
     let announcedGeneration: number | null = null

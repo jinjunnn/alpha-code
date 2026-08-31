@@ -181,7 +181,10 @@ inactive-plan payloads.
   `oauth: false` the engine constructs no OAuth provider, touches no
   `mcp-auth.json` entry, and opens no loopback: the interactive second
   authorization (structurally broken by ten-minute sidecar rotation,
-  `#721`/`#1044`) is no longer a path, not a fixed one. When the credential is
+  `#721`/`#1044`) is no longer a path, not a fixed one. At boot, before the
+  sidecar forks, main sweeps the legacy interactive-OAuth `cloud` entry out of
+  the shared `mcp-auth.json` once (third-party entries untouched; an
+  unparseable file is left alone). When the credential is
   absent (logged out, or the issuer does not mint the field yet) the sidecar
   injects a credential-free `enabled:false` definition — no fallback to
   `ALPHA_CLOUD_TOKEN`, no fallback to interactive OAuth, and never a `{file:}`
