@@ -349,11 +349,10 @@ export const CLOUD_MCP_ARM_ENV = "ALPHA_CLOUD_MCP_ARM"
 /**
  * 与 ARM 配对的 server 定义(JSON)。
  *
- * `#733` 起 alpha 治理的云 server 走标准 MCP OAuth,这份定义里**没有任何凭证通道**
- * (无 `headers.Authorization`、无 `{file:…}` 引用)。下面的 `resolveFileRefs` 因此对它
- * 是个 no-op —— 保留它不是为了将来:注入面托管的是一个任意 JSON,含 `{file:}` 时那条
- * fail-closed(读不到就整个不装)仍然是这里唯一的把关,删掉它等于对未来任何带引用的定义
- * 默认放行。
+ * `#1195`(REQ-144 T2)起 alpha 治理的云 server 定义携带
+ * `headers.Authorization = "Bearer {file:…ALPHA_MCP_TOKEN}"`(`oauth:false`)——
+ * 下面的 `resolveFileRefs` 对它**真的在解析**:读不到引用文件就整个不装(fail-closed),
+ * 这条把关是解析后 Bearer 值进引擎前的唯一一跳。
  */
 type McpHost = { mcp?: Record<string, unknown> }
 

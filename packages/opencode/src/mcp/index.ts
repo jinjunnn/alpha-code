@@ -1,7 +1,6 @@
 import path from "node:path"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
-import { writeFileSync, unlinkSync } from "node:fs"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
@@ -26,7 +25,6 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import { McpOAuthPendingProvider, McpOAuthProvider, OAUTH_CALLBACK_PATH } from "./oauth-provider"
 import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
-import { Global } from "@opencode-ai/core/global"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { TuiEvent } from "@/server/tui-event"
 import { Cause, Effect, Exit, Layer, Context, Schema, Stream } from "effect"
@@ -969,37 +967,13 @@ const layer = Layer.effect(
       const callbackPromise = McpOAuthCallback.waitForCallback(result.oauthState, mcpName)
       onAuthorization?.(result.authorizationUrl)
 
-      // #1044: tell alpha-code main to defer token-only sidecar respawn while we wait for the
-      // loopback callback. Without this, ~10 min platform_access refresh kills this process mid-auth
-      // and mcp-auth.json never gets tokens (needs_auth forever). Basename must match
-      // packages/ui-mac/src/main/cloud-mcp-oauth-gate.ts.
-      const inflightPath =
-        mcpName === "cloud" ? path.join(Global.Path.data, "cloud-mcp-oauth-inflight.json") : undefined
-      if (inflightPath) {
-        try {
-          writeFileSync(inflightPath, JSON.stringify({ mcpName, startedAt: Date.now() }), { mode: 0o600 })
-        } catch {
-          /* best-effort — missing marker only means rotation is not deferred */
-        }
-      }
-      const clearInflight = () => {
-        if (!inflightPath) return
-        try {
-          unlinkSync(inflightPath)
-        } catch {
-          /* already gone */
-        }
-      }
-
       yield* browser.open(result.authorizationUrl).pipe(
         Effect.catch(() => {
           return events.publish(BrowserOpenFailed, { mcpName, url: result.authorizationUrl }).pipe(Effect.ignore)
         }),
       )
 
-      const code = yield* Effect.promise(() => callbackPromise).pipe(
-        Effect.ensuring(Effect.sync(clearInflight)),
-      )
+      const code = yield* Effect.promise(() => callbackPromise)
 
       const storedState = yield* auth.getOAuthState(mcpName)
       if (storedState !== result.oauthState) {

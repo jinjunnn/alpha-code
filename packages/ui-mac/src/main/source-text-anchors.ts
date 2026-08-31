@@ -213,6 +213,11 @@ export const KEPT_SOURCE_TEXT_READS: Record<string, SourceTextEntry> = {
     evidence: "#1132",
     lines: 1,
   },
+  "packages/ui-mac/src/main/cloud-mcp-auth-sweep.test.ts": {
+    why: "#1196(REQ-144 T3)退役 ratchet,主语是**负全称**:ui-mac main 对 inflight 闸零引用、引擎 authenticate 路径对 inflight 标记零引用、CIMD 常量零复活 —— 票面退出条件逐字就是「cloud 路径上零引用」,源码文本正是正确粒度;每个被扫文件带一条已知在场符号的正样本自证手段没失灵(读错文件/空串时正样本先红)。守不住:同语义换名复活(换个符号名重写 inflight 闸)不红 —— 那是新代码新审,不是残留回流。",
+    evidence: "#1196",
+    lines: 3,
+  },
   "packages/ui-mac/src/main/cloud-web-search.test.ts": {
     why: "主语是**跨包逐字一致**:主权信道名的声明点在传输层、叶子只转出,两侧字面量对不上就等于信道断掉而没有任何行为测试会红。其中一句 toContain 是接线锚,但同文件另有四条真实驱动拒绝路径的行为判据 ⇒ 它不是那条保证的唯一守卫。",
     evidence: "#650",
