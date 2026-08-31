@@ -1,0 +1,77 @@
+# .alpha 路径残留登记表 —— alpha-code#1206
+#
+# 这张表是 packages/**/src/** 里**每一处**仍然写着 `.alpha` 的残留的**唯一**清单。
+# 判官:packages/ui-mac/src/main/alpha-path-residue.test.ts,**双向**比对:
+#   · 扫描命中不在表里 ⇒ 红(新长出来的残留被拦住)
+#   · 表里的行扫不到 ⇒ 红(表项失效后不会变成僵尸)
+# 单向的门会让这张表变成僵尸 —— 某处 `.alpha` 被删了而表项还在,门照样绿。
+#
+# 为什么需要它:`#1202` 用**手工枚举**列了 13 处,漏掉了 45 处注释里的大部分,而漏掉的
+# 那部分不会被任何东西发现。判据必须会自己长出来,不能是散文清单。
+#
+# 类别(固定枚举,新增类别要连同判官一起改):
+#   media-type      已发布扩展包的格式契约标识符 application/vnd.alpha.* —— 改它既有包解不开
+#   retired-guard   认「退役根 ~/.alpha / 退役 symlink」用的路径与诊断字符串 —— 改名守卫就失灵,且没有测试会红
+#   historical      记录历史事实或已删规则的注释 —— 改它等于篡改历史记录
+#   signed-snapshot alpha-catalog.json 的云端签名字节快照,禁手编(REQ-046 守卫);归 alpha-web#173
+#   provider-id     引擎 config 的 provider 键 `provider.alpha`,不是路径(id 字面量见 alpha-models.json)
+#
+# 不在本表覆盖面内(判官同样不扫):`*.test.ts` / `*.cases.ts` / `*.spec.ts`、`packages/**/src/**` 以外
+# (docs/、ADR、resources/、scripts/)。那些是各自独立的事。
+#
+# 格式:文件 \t 行号 \t 类别 \t 理由(制表符分隔;行号会随该文件上方增删行而失效 —— 那正是本表
+# 想让你重新过一遍分类的时刻,不要只把数字改对)。
+packages/ext/src/project-config.ts	30	retired-guard	退役全局根 `~/.alpha` 的词法守卫(retiredLexical):职责就是认出旧址。改名 ⇒ 守卫指向不存在的路径,而没有任何测试会红。
+packages/ext/src/project-config.ts	77	retired-guard	退役全局根 `~/.alpha` 的守卫:project admission 拿它比对,命中即拒。改名 ⇒ 守卫认不出旧址,而没有任何测试会红。
+packages/ext/src/project-config.ts	90	retired-guard	退役全局根 `~/.alpha` 的守卫:退役根不存在时的 canonical 派生兜底。改名 ⇒ 派生出一个不存在的路径,守卫恒不命中。
+packages/ui-mac/src/main/alpha-auth.ts	510	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径 —— id 字面量在 alpha-models.json:8 `"id": "alpha"`。改名会指向一个不存在的 provider。
+packages/ui-mac/src/main/alpha-auth.ts	925	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径;id 字面量在 alpha-models.json:8。
+packages/ui-mac/src/main/alpha-auth.ts	945	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径;id 字面量在 alpha-models.json:8。
+packages/ui-mac/src/main/alpha-environment.ts	288	retired-guard	assertOutsideRetiredRoot 的退役根 `~/.alpha`;环境根与它有关系即抛错。
+packages/ui-mac/src/main/alpha-environment.ts	299	retired-guard	retiredCanonical 在 ENOENT 时派生退役全局根 `~/.alpha`;assertOutsideRetiredRoot 据它拒绝落在旧址里的环境根。
+packages/ui-mac/src/main/alpha-migrate.ts	3	historical	过去时记述:REQ-018 T2 当时把安装迁到了名为 `.alpha` 的真源根(并配 `~/.opencode` 桥,该桥已于 REQ-059 T3 退役)。改它 = 篡改历史记录。
+packages/ui-mac/src/main/alpha-workdir.ts	128	retired-guard	项目三态解析里的退役根比对。
+packages/ui-mac/src/main/cloud-envelope-guard.ts	11	historical	`#918` 已删除规则的**逐字引用**(原 denied_paths 缺省注入清单 `.env* / *.pem / .alpha/ / .git/`)。改引用内容 = 伪造那条规则曾经的样子。
+packages/ui-mac/src/main/engine-config-dangling.ts	200	retired-guard	dangling 清扫的 guardRoots 之一 —— 退役根仍须被认出。
+packages/ui-mac/src/main/engine-config-truth-boot.ts	243	retired-guard	boot truth reconcile 的退役根比对。
+packages/ui-mac/src/main/ext-install-planner.ts	437	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/main/factory-skills.ts	4	historical	抬头「通道演进」列表里的 REQ-036 初版条目,行内自带「已迁移」。记的是当时违反的那条不变量的当时叫法。
+packages/ui-mac/src/main/factory-skills.ts	163	historical	标注的是「拆 REQ-052 遗留的存量出厂链」这段代码;它拆的正是退役 `.alpha` 链,且与同段落 173 行那条不可改的字符串字面量成对。改注释会让它与所标注的代码脱节。
+packages/ui-mac/src/main/factory-skills.ts	173	retired-guard	字符串字面量(诊断 reason),不是注释;语义正确 —— 它说的就是退役的 `.alpha` symlink。
+packages/ui-mac/src/main/index.ts	752	historical	同 factory-skills.ts:163 的同一操作(boot 期先行 reconcile 拆存量退役链);与 index.ts:772 的字符串字面量成对。
+packages/ui-mac/src/main/index.ts	772	retired-guard	字符串字面量(boot 日志行),不是注释;语义正确 —— 拆掉的正是退役的 `.alpha` symlink。
+packages/ui-mac/src/main/package-installability.ts	565	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2223	signed-snapshot	alpha-catalog.json 是云端签名的字节快照,禁手编(REQ-046 守卫);文案更正归 alpha-web#173。
+packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2260	signed-snapshot	alpha-catalog.json 是云端签名的字节快照,禁手编(REQ-046 守卫);文案更正归 alpha-web#173。
+packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2296	signed-snapshot	alpha-catalog.json 是云端签名的字节快照,禁手编(REQ-046 守卫);文案更正归 alpha-web#173。
+packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2382	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。 本文件整体亦为签名快照。
+packages/ui-mac/src/shared/host-extension-package-contract/generate-artifact.ts	324	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/generate-artifact.ts	447	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/host-extension-package.registry.v1.json	7	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/host-extension-package.registry.v1.json	13	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/host-extension-package.registry.v1.json	19	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/host-extension-package.registry.v1.json	25	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/host-extension-package.registry.v1.json	31	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	32	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	97	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	148	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	202	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	275	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	289	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	345	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	393	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	455	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	513	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	553	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	597	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	637	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	676	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	757	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	771	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	787	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	850	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	866	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	927	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	941	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	989	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
+packages/ui-mac/src/shared/host-extension-package-contract/testvectors/decoder-corpus.v1.json	1003	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。

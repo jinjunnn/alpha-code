@@ -5,7 +5,7 @@
 //
 // 执行链只走 SDK(ADR-002):session.create(标题「⏱ 自动化 · <name>」)→ session.prompt
 // (agent=alpha-automation readonly 档,阻塞到回复完成)→ 最终回复落 report.md + status.json
-// 进目标项目 .alpha/runs/auto-<id>-<ts>/(alpha-workdir 守卫)。超 maxDurationMin 中断(abort)。
+// 进目标项目 .code-puppy/runs/auto-<id>-<ts>/(alpha-workdir 守卫)。超 maxDurationMin 中断(abort)。
 
 import { join } from "node:path"
 import { BrowserWindow, Notification, powerMonitor } from "electron"

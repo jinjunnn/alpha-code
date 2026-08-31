@@ -218,9 +218,9 @@ export function preferAppEnv(userDataPath: string) {
   process.env.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY ??= "true"
   process.env.OPENCODE_EXPERIMENTAL_FILEWATCHER ??= "true"
   // REQ-063(ADR-024):外部生态继承 default-deny —— `.claude`/`.agents` skills 与 CLAUDE.md 不再
-  // 静默进上下文(提示注入面 + 破坏 .alpha 单一真源心智)。set-if-unset:shell 显式 export 优先
+  // 静默进上下文(提示注入面 + 破坏 .code-puppy 单一真源心智)。set-if-unset:shell 显式 export 优先
   // (B21 同款纪律);ALPHA_ECOSYSTEM_INHERIT=1 = 不注入两 flag,整机恢复上游继承且 alpha 不再
-  // 检测/弹窗(ADR-024 §5)。同意后的进入通道 = 安装期转换导入 .alpha(ecosystem-import.ts),非重开继承。
+  // 检测/弹窗(ADR-024 §5)。同意后的进入通道 = 安装期转换导入 .code-puppy(ecosystem-import.ts),非重开继承。
   applyEcosystemDefaultDeny(process.env)
   Object.assign(process.env, {
     OPENCODE_CLIENT: "desktop",
@@ -288,7 +288,7 @@ export async function spawnLocalServer(
   else getLogger()?.warn(`alpha-ext: NOT loaded — ${ext.reason}`)
 
   // REQ-065:出厂技能 reconcile 已上移至 boot(index.ts,truth reconcile 之前)—— skills.paths
-  // 直指 app 资源、.alpha 不再落出厂链;fork 前无需重复(app 路径仅跨重启变化)。
+  // 直指 app 资源、.code-puppy 不再落出厂链;fork 前无需重复(app 路径仅跨重启变化)。
 
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   rotateServerLogs()

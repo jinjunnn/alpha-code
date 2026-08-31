@@ -183,7 +183,7 @@ export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions
   // T3:全局 skills 经 skills.paths(文件通道生效)发现当前环境 skills —— 恒定注入(非迁移物,独立于
   // ownership bail),使桥退役后引擎仍能发现**用户装的**技能。幂等。
   const skillsAdded = ensureSkillsPath(plan.merged, alphaSkillsDir())
-  // REQ-065:出厂技能条目组重写 —— 直指 app 资源(不再经全局 skills 链中转;.alpha 只承载
+  // REQ-065:出厂技能条目组重写 —— 直指 app 资源(不再经全局 skills 链中转;.code-puppy 只承载
   // 用户自有内容)。每启动重写,跟随 app 安装路径/版本变化;stale 出厂路径按名单+布局判定移除。
   const factoryRewritten = opts?.factorySkillDirs
     ? rewriteFactorySkillPaths(plan.merged, opts.factorySkillDirs, FACTORY_SKILL_IDS)

@@ -36,7 +36,7 @@
 //   · `alpha-config-injection`:只在真源**缺席**时 seed 字面量 `{$schema}`,内容里没有 `plugin` 键;
 //   · `alpha-migrate` 的 legacy 臂:目标是 legacy `opencode.jsonc`,且只做减法,还要 `ALPHA_MIGRATE_ENABLE=1`;
 //   · **`ecosystem-import.ts` 的 `registerProjectSkillsPath`(`#832` 审计补的第四条,这条最值得记住)**:
-//     整文件 `JSON.stringify` + tmp+rename 写**项目级** `<proj>/.alpha/alpha.jsonc` —— 与上面三条不同,
+//     整文件 `JSON.stringify` + tmp+rename 写**项目级** `<proj>/.code-puppy/alpha.jsonc` —— 与上面三条不同,
 //     **它自己没有任何路径白名单**;今天只写 `skills.paths` 是「它恰好只写这个」,不是被谁挡着。
 //     真正挡住 `plugin` 的闸**在另一个包里**:`packages/ext/src/project-config.ts` 的 `mergeProjectConfig`
 //     只合 `mcp`(信任门)/ `agent` / `command` / `skills.paths`,`plugin` 结构性不合。同族还有

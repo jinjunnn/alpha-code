@@ -3,7 +3,7 @@
 
 export type ProjectPrefs = Record<string, unknown>
 
-/** 安全解析 .alpha/prefs.json 文本;缺失/损坏/非对象 → {}(不抛,不误判为已同意)。 */
+/** 安全解析 .code-puppy/prefs.json 文本;缺失/损坏/非对象 → {}(不抛,不误判为已同意)。 */
 export function parsePrefs(json: string | null | undefined): ProjectPrefs {
   if (!json) return {}
   try {

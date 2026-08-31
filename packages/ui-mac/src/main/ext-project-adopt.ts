@@ -2,11 +2,11 @@
 //
 // migrateV1Ledger 的 project adoption 规则(realpath+hash 身份绑定、scope 不符/重复 retained、
 // fail-closed 信封)早已完备(ext-receipt-v2),但只在 ledgerReady 对全局根调用过 —— project
-// `.alpha/installs.json` 的 v1 存量从未被收编。本模块补齐触发面:项目 lifecycle 事件
+// `.code-puppy/installs.json` 的 v1 存量从未被收编。本模块补齐触发面:项目 lifecycle 事件
 // (ext-trust-check,main 首次得知已确认项目目录)中调用。
 //
 // 共享语义(Codex 裁决 A + 消费不变量 C,契约档 docs/contracts/extension-install-ledger.md §4):
-// project `.alpha` 跨 app channel 共用且不做环境分根;adoption 将执行时 main 的 environment
+// project `.code-puppy` 跨 app channel 共用且不做环境分根;adoption 将执行时 main 的 environment
 // **如实**写入 record(先到先得的归因事实);environment 对 project 记录是归因字段,不是可见性、
 // 操作资格或 channel namespace —— 任何读方不得按它过滤(readLedgerV2/findRecordV2/
 // lookupForUninstall/ext-list-installs 均按 ledger/key/scope 操作,现状即如此)。
@@ -40,8 +40,8 @@ export async function adoptProjectLedger(
   const projectPath = identity.scope.projectPath
   const root = alphaRoot(projectPath)
   if (!root) return { ok: false, transient: false, reason: `invalid project root: ${projectDir}` }
-  // 无账本 = 无可收编:零写入直接返回(gate/锁会在 .alpha 里落地 lock/journal 目录 ——
-  // 不给没有 .alpha 存量的项目制造写副作用)。幂等,存量出现后下次触发自然收编。
+  // 无账本 = 无可收编:零写入直接返回(gate/锁会在 .code-puppy 里落地 lock/journal 目录 ——
+  // 不给没有 .code-puppy 存量的项目制造写副作用)。幂等,存量出现后下次触发自然收编。
   if (!existsSync(join(root, "installs.json"))) return { ok: true, migrated: 0, retained: 0, warnings: [] }
 
   const res = await deps.gate.withRecoveredWrite(root, async (): Promise<AdoptOutcome> => {
