@@ -38,6 +38,8 @@ import {
   toggleSidebar,
 } from "./sidebar-state"
 import { type AlphaProject, type AlphaSession, type AlphaProjectsApi } from "./use-projects"
+import { updaterSurfaceFor } from "./updater-state-surface"
+import type { UpdaterState } from "@opencode-ai/app/updater"
 import { projectSidebarGroups } from "./project-display"
 import type { AuthState, AccountSummary } from "../../preload/types"
 import { setExtHubOpen, toggleExtHub } from "../extensions/ext-hub-state"
@@ -369,6 +371,27 @@ export function AlphaSidebar(props: {
     .then((v) => setAppVersion(typeof v === "string" ? v : ""))
     .catch(() => {})
 
+  // [ac#1207] REQ-147:更新状态的消费端。通道早就通着(main updater-controller →
+  // ipc "updater-state" → preload subscribe),此前 renderer 零消费 —— 点「检查更新」
+  // 界面毫无反应,而后端把 160MB 下载、校验、落盘全做完了。这里订同一条既有通道
+  // (preload 的回调集支持多订阅者并回放当前值),不另造数据通路。
+  // 呈现由 updater-state-surface.ts 的映射驱动(AC1:对 status 联合类型穷尽)。
+  // Promise 链取而不裸调,理由同上面 appVersion:窄桩测试壳没有这个方法时,失败单元
+  // 必须是「更新条不渲染」,不是同步 TypeError 拖死整个侧栏。
+  const [updaterState, setUpdaterState] = createSignal<UpdaterState>({ status: "disabled" })
+  // 用户是否在本侧栏主动检查过:up-to-date/error 是检查反馈,只对主动检查显示 ——
+  // 否则启动自检每次都会挂一条永久的「已是最新」噪声(映射的 unsolicited 字段)。
+  const [updaterSolicited, setUpdaterSolicited] = createSignal(false)
+  let updaterUnsub: (() => void) | undefined
+  void Promise.resolve()
+    .then(() => window.api.updater.subscribe(setUpdaterState))
+    .then((unsub) => {
+      updaterUnsub = typeof unsub === "function" ? unsub : undefined
+    })
+    .catch(() => {})
+  onCleanup(() => updaterUnsub?.())
+  const updaterSurface = () => updaterSurfaceFor(updaterState(), updaterSolicited())
+
   const MenuCommon = () => (
     <>
       <button
@@ -413,8 +436,12 @@ export function AlphaSidebar(props: {
       <button
         type="button"
         class="alpha-acct-item"
+        data-alpha-acct-item="check-updates"
         onClick={() => {
           setMenuOpen(false)
+          // [ac#1207] 主动检查:放行 up-to-date/error 这类检查反馈的呈现(见 updaterSolicited)。
+          // 结果不再被丢弃 —— 状态经订阅推回,footer 更新条全程可见。
+          setUpdaterSolicited(true)
           void window.api.updater.check()
         }}
       >
@@ -1379,6 +1406,39 @@ export function AlphaSidebar(props: {
           {/* Footer = ONE account entry → upward popover. Settings / appearance / help / update /
               membership / sign-in/out all live in this single popover (user request). */}
           <footer class="alpha-sidebar-footer" data-menu-open={menuOpen() ? "" : undefined}>
+            {/* [ac#1207] REQ-147 更新条:呈现完全由 updater-state-surface.ts 的映射驱动。
+                挂在 footer(账户按钮上方)而不是浮层里 —— AC2 要求「已就绪,重启安装」在
+                重启后不依赖任何菜单/对话框恰好开着就能看见。 */}
+            <Show when={updaterSurface()} keyed>
+              {(surface) => (
+                <div class="alpha-updater-note" data-status={updaterState().status} role="status">
+                  <span class="alpha-updater-text">{t(surface.textKey, surface.params)}</span>
+                  <Show when={surface.action === "install"}>
+                    <button
+                      type="button"
+                      class="alpha-updater-install"
+                      onClick={() => {
+                        // 点安装也算主动:恢复态的重验若落 error/up-to-date,反馈必须可见。
+                        setUpdaterSolicited(true)
+                        void window.api.updater.install()
+                      }}
+                    >
+                      {t("alpha.updater.installNow")}
+                    </button>
+                  </Show>
+                  <Show when={surface.dismissible}>
+                    <button
+                      type="button"
+                      class="alpha-updater-dismiss"
+                      aria-label={t("alpha.updater.dismiss")}
+                      onClick={() => setUpdaterSolicited(false)}
+                    >
+                      ×
+                    </button>
+                  </Show>
+                </div>
+              )}
+            </Show>
             <Show when={menuOpen()}>
               <div class="alpha-acct-backdrop" onClick={() => setMenuOpen(false)} />
               <div class="alpha-acct-pop" role="menu">

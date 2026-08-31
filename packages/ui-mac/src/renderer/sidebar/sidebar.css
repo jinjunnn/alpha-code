@@ -267,6 +267,55 @@ svg[viewBox="0 0 720.002 129.001"] {
   border-top: 1px solid var(--a-border-faint);
 }
 
+/* [ac#1207] 更新状态条(footer,账户按钮上方)。状态语义在 updater-state-surface.ts。 */
+.alpha-updater-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--a-text-secondary);
+  background: var(--a-overlay-hover);
+}
+.alpha-updater-note[data-status="ready"] {
+  color: var(--a-accent);
+}
+.alpha-updater-note[data-status="error"] {
+  color: var(--a-error);
+}
+.alpha-updater-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alpha-updater-install {
+  flex: 0 0 auto;
+  border: 1px solid var(--a-accent);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--a-accent);
+  background: transparent;
+  cursor: pointer;
+}
+.alpha-updater-install:hover {
+  background: var(--a-overlay-hover);
+}
+.alpha-updater-dismiss {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
 /* ── projects + sessions ─────────────────────────────────────────────────────────────── */
 
 .alpha-project-row {
