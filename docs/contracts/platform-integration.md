@@ -168,25 +168,30 @@ inactive-plan payloads.
     as contract-incompatible; there is no compatibility branch.
   - *Status:* `cancelling` decodes as itself, and a dead dispatch arrives as
     `failed` plus `reason: "dispatch_dead"`, not as an eighth status value.
-- **MCP facade:** the sidecar receives the Cloud MCP URL and a standard MCP
-  OAuth client declaration (`clientId` is a Client ID Metadata Document URL;
-  `redirectUri` is the loopback callback the engine's own callback server
-  binds). The sidecar does **not** receive a bearer for this server: the
-  engine's OAuth credential store holds and refreshes the credential, keyed by
-  server URL. A missing or rejected credential surfaces as `needs_auth`, which
-  the desktop presents with a re-authorize action — rotating `ALPHA_CLOUD_TOKEN`
-  does not affect it. Engine boot never waits on a connect that is already
-  doomed (`#1106`): at fork the sidecar reads the engine's own credential store
-  (`mcp-auth.json`, mirroring the engine's URL-bound lookup), and when no
-  stored credential matches the server URL it injects the same definition with
-  `enabled:false` — the engine marks the server disabled instantly instead of
-  spending seconds reaching `needs_auth` on every boot, which mattered because
-  token rotation restarts the sidecar roughly every ten minutes. The extension
-  hub issues the deferred connect when it observes the disabled entry, so the
-  status honestly lands on `needs_auth` (or `connected`) exactly where the user
-  looks, and the re-authorize action still hot-connects the server in place.
-  The MCP facade fronts the same Cloud Jobs model; it is not a second
-  execution truth.
+- **MCP facade:** the desktop login envelope carries an optional top-level
+  `mcp_access_token` (REQ-144, `#1195`): a login-minted credential whose
+  audience is the Cloud MCP resource, rotated with every ~10-minute envelope
+  refresh and held opaquely by main (it never passes the `platform_access`
+  claims decoder). The credential reaches the engine only through the A6
+  `{file:}` secret channel: main mirrors it into the `ALPHA_MCP_TOKEN` secret
+  file, and the injected cloud server definition is
+  `headers.Authorization = "Bearer {file:…ALPHA_MCP_TOKEN}"` plus
+  `oauth: false` — the engine substitutes the file at config load, so the token
+  value enters neither the sidecar env nor `OPENCODE_CONFIG_CONTENT`. With
+  `oauth: false` the engine constructs no OAuth provider, touches no
+  `mcp-auth.json` entry, and opens no loopback: the interactive second
+  authorization (structurally broken by ten-minute sidecar rotation,
+  `#721`/`#1044`) is no longer a path, not a fixed one. When the credential is
+  absent (logged out, or the issuer does not mint the field yet) the sidecar
+  injects a credential-free `enabled:false` definition — no fallback to
+  `ALPHA_CLOUD_TOKEN`, no fallback to interactive OAuth, and never a `{file:}`
+  reference to a missing file (the engine fails the whole config load on one);
+  the disabled entry still overrides any inherited same-name definition. This
+  also preserves `#1106`'s boot property on the new axis: a credential-less
+  cloud server is disabled instantly instead of stalling boot. Third-party MCP
+  servers keep their own `oauth`-object declarations and interactive flows
+  untouched. The MCP facade fronts the same Cloud Jobs model; it is not a
+  second execution truth.
 - **Account:** transactions are decoded as `LedgerPageV1`/`LedgerEntryV1`
   before renderer projection. Account summary remains outside this pinned
   contract until its producer publishes a schema and does not block the ledger
@@ -196,11 +201,13 @@ inactive-plan payloads.
 - **Secret transport:** on each sidecar fork, login and BYOK secrets are
   mirrored into `0600` secret files. The sidecar allowlist carries non-secret
   endpoint configuration, while provider configuration carries file references
-  rather than token values. `ALPHA_CLOUD_TOKEN` is still written and is still
-  the platform-pays predicate (its presence, together with the Cloud MCP URL,
-  gates cloud registration and web-search sovereignty), but it is no longer a
-  credential source for the Cloud MCP server — that server's configuration
-  carries neither a token value nor a file reference.
+  rather than token values. Since `#1195` the platform-pays predicate is the
+  `ALPHA_MCP_TOKEN` secret file (its presence, together with the Cloud MCP URL,
+  gates the live cloud registration and web-search sovereignty) — the predicate
+  and the credential the cloud definition references are now the same fact.
+  `ALPHA_CLOUD_TOKEN` is still written and mirrored (it remains the
+  `cloud.dispatch` purpose token for main-held Cloud Jobs calls) but is not a
+  credential source for the Cloud MCP server and no longer gates it.
 - **Sidecar continuity:** main publishes token-free `recovering` and `ready`
   states with a monotonically increasing sidecar generation. Pure token
   rotation re-forks on the same URL and password, rebuilds renderer SDK/SSE
