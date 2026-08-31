@@ -1053,7 +1053,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(mcpCard.querySelector("[data-alpha-source-badge]")!.textContent).toBe("第三方 MCP")
     const mcpSafe = mcpCard.querySelector("[data-alpha-safe-card]")!
     expect(mcpSafe.textContent).toContain("详情未展示")
-    expect(mcpSafe.textContent).toContain("没有命中 Alpha 拥有的展示规则")
+    expect(mcpSafe.textContent).toContain("没有命中 Code Puppy 拥有的展示规则")
 
     const unknownCard = host.querySelector("[data-alpha-tool-card][data-category='unknown']")!
     expect(unknownCard.querySelector("[data-alpha-source-badge]")!.textContent).toBe("未知来源")

@@ -204,9 +204,9 @@ export const KEPT_SOURCE_TEXT_READS: Record<string, SourceTextEntry> = {
     lines: 2,
   },
   "packages/ui-mac/src/main/brand-guard.test.ts": {
-    why: "ac#1160 REQ-139 品牌守卫,两半主语都是文本本身:①AC5 身份面五组字面量(APP_IDS/APP_NAMES+setName/bundle id/更新 feed/URL schemes+CLIENT_ID)的**逐字冻结** —— 被守的正是「声明文本一个字符都没变」(变了 = 钥匙串项名/userData 目录/OAuth wire 标识换名,存量破坏),值断言表达不了「连写法都不许动」;index.ts/electron-builder.config.ts 在 bun 侧也结构上 import 不了。②AC1/AC3 展示面有限坐标清单的声明式字面量(productName/i18n 品牌键/窗口标题/提示词 to 串)逐点断言 —— 显示串就是声明,文本即产物。守不住:文本在而消费链断掉(如 wordmark 键没人读)不红,那一半由 L2 packaged 视觉取证(REQ-139 VERIFY 票)兜。",
+    why: "ac#1160 REQ-139 品牌守卫,两半主语都是文本本身:①AC5 身份面五组字面量(APP_IDS/APP_NAMES+setName/bundle id/更新 feed/URL schemes+CLIENT_ID)的**逐字冻结** —— 被守的正是「声明文本一个字符都没变」(变了 = 钥匙串项名/userData 目录/OAuth wire 标识换名,存量破坏),值断言表达不了「连写法都不许动」;index.ts/electron-builder.config.ts 在 bun 侧也结构上 import 不了。②AC1/AC3 展示面有限坐标清单的声明式字面量(productName/i18n 品牌键/窗口标题/提示词 to 串)逐点断言 —— 显示串就是声明,文本即产物。守不住:文本在而消费链断掉(如 wordmark 键没人读)不红,那一半由 L2 packaged 视觉取证(REQ-139 VERIFY 票)兜。第 25 处([ac#1198])是同型展示面文本闸:zht.ts updater 两句的值断言(REQ-139 zht 漏网,与 zh/en 同句同型)。",
     evidence: "#1160",
-    lines: 24,
+    lines: 25,
   },
   "packages/ui-mac/src/main/catalog-channels.test.ts": {
     why: "ac#1132 AC2 域名棘轮:主语是声明本身与负全称 —— catalog-channels.ts 的 CHANNEL_BASE_URL 声明必须逐字是新域字面量,且不得存在旧域声明。值断言(toBe)骗得过「常量对、声明被第二处覆盖」这类漂移,声明文本正是正确粒度。同测试对两个 sync 脚本的负全称(.mjs 读取,不在本谓词命中集内)属同一条棘轮。守不住:base 若改由运行时拼装绕开该常量,文本闸不红 —— 那一半由同文件的值断言与 remote-catalog.test.ts 的独立字面量兜住。",
