@@ -1,6 +1,6 @@
 // alpha-governance — 上游能力治理层(REQ-037):原生 agent/skill/command 的隐藏/禁用/重写。
 //
-// 真源 = `~/.alpha/governance.json`(用户意图);物化 = `~/.opencode/opencode.jsonc` 的受控**叶子键**
+// 真源 = `alphaGlobalRoot()/governance.json`(用户意图);物化 = `~/.opencode/opencode.jsonc` 的受控**叶子键**
 // (ADR-014 v3 文件通道,dispose 后引擎重读 → 热生效)。只写叶子(agent.<n>.hidden 而非整个 agent.<n>)
 // → 用户自有的同名兄弟字段不被清除(验收⑥);`_materialized` 记录我们写过的每个叶子路径,重放时
 // 先移除 stale、重置时全量净除(卸载净除纪律,同 REQ-023)。

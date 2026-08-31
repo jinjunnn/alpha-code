@@ -1,7 +1,7 @@
 // REQ-060 信任门(项目自带可执行扩展的 per-project consent)—— 纯核。
 //
-// 语义:项目 `.alpha/alpha.jsonc` 的 mcp 与 `.alpha/plugins/*.js` 是**可执行物**(打开陌生仓库即
-// 在本机跑其代码),@alpha-code/ext 的信任门只在 `.alpha/prefs.json` 的 `extensionsConsent.granted
+// 语义:项目 `.code-puppy/alpha.jsonc` 的 mcp 与 `.code-puppy/plugins/*.js` 是**可执行物**(打开陌生仓库即
+// 在本机跑其代码),@alpha-code/ext 的信任门只在 `.code-puppy/prefs.json` 的 `extensionsConsent.granted
 // === true` 时加载它们(plugin.ts:readProjectExtensionsConsent)。本模块负责决策记录的读写语义与
 // 可执行物清单派生;弹窗在 ext-ipc(B16/ADR-021 同款分层:纯核可单测,对话框在 IPC 层)。
 //

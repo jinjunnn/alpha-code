@@ -4,7 +4,7 @@
 // receipts add the "what did WE install and what do we own" half so installed-state, uninstall
 // and update work for fs/config types too (designs/2026-07-04-extension-hub-v3-universal.md §4.1).
 //
-// Storage: <root>/installs.json, root = frozen current-environment root (global scope) or <projectDir>/.alpha (project
+// Storage: <root>/installs.json, root = frozen current-environment root (global scope) or <projectDir>/.code-puppy (project
 // scope). Electron-free and root-parameterized (same testability pattern as alpha-workdir.ts).
 // A corrupt ledger is never silently clobbered: reads surface a warning, and the next write
 // quarantines the corrupt file as installs.json.corrupt-<ts> before starting fresh.
