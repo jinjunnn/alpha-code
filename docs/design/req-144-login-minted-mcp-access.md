@@ -257,9 +257,15 @@ vendored lock(schema 零字节变化)、引擎零改动(分化判据是 config �
   信封与 5 分钟 TTL(不动);consent 页文案(建议项,见 §6)。
 - 退出条件:①桌面信封(code + refresh 两条 grant)含非空 `mcp_access_token`,解出
   `token_use=mcp_access`、`aud=…/mcp`、scope 恰三值、`exp−iat = PLATFORM_ACCESS_TTL_SECONDS`;
-  ②RFC 信封响应键集回归不变;③`platform_access_tokens` 键集回归不变(I1)。
+  ②RFC 信封响应键集回归不变,**且 RFC 路径 token 的 `exp − iat === 300`** —— 锚点用
+  **独立字面量 300**(来源:公开契约 `credential-ttl.ts` 的 5 分钟撤销窗,是独立契约文件,
+  合「锚点不得与被测对象同源」);③`platform_access_tokens` 键集回归不变(I1)。
   判据自检:全部是既有测试基建上的信封/claims 断言,今天就能写,错误实现(复用 5 分钟 TTL、
   塞进 map、投影桌面 scope)分别在 ①③ 上当场红。
+  **②的第三方 TTL 断言是咨询轮 M1 补的**:给 `issueMcpAccess` 加 `ttlSeconds` 参数,正是把
+  「第三方撤销窗被放宽」这个风险引进来的那一刀 —— 默认值写错或 RFC 路径传错常量,第三方
+  `mcp_access` 会从 5 分钟变 15 分钟,而那**恰是 §2.4 自己否决掉的替代**从后门溜回来,
+  且原先列出的全部退出条件仍然全绿(键集没变、字段还在)。
 - **顺序:先落、先部署**(部署对存活客户端不可见,§1.2)。
 
 ### T2 `[REQ-144][CODE]` alpha-code:云 MCP 凭证改走登录铸 token 的 `{file:}` header 通道(M)
@@ -308,7 +314,13 @@ vendored lock(schema 零字节变化)、引擎零改动(分化判据是 config �
   一次非 401/非 403 完成即同时证明「tools/call 完成」与「凭证是 `mcp_access`」,零计费;
   服务端持久判别子 = D1 `job_admissions` `surface='mcp' AND caller_ref='mcp:access'`。
 - out-of-scope:AC4(依赖 `ap#226` 收紧步落地,见 §5);打包 RC smoke(L3 随发布节奏)。
-- 顺序:T1 部署 + T2 发版(或 dev 构建)之后。
+- 顺序:T1 部署 + T2 发版之后。**④格必须跑在发布件本体**(release asset;
+  `sha256(app.asar)` 与发布资产核对相符,沿 `ap#226` 2026-08-25 那次测量的纪律),
+  ①–③格允许 dev 构建。
+  **理由(咨询轮 B1)**:`ap#226` 的准入原文是「**已发布的**桌面版**实际**以 `mcp_access`
+  完成过一次 `tools/call`」,而服务端判别子(D1)**分不出 dev 构建与发布件** —— 在 dev 构建上
+  跑④格产出的证据一旦入库,**没有任何闸会红**。#226 的 thread 自己刚抓过一次同型事故
+  (装机版本号冒充、asar 哈希不符)。
 
 ## 5. 与 `alpha-platform#226` 的关系
 
