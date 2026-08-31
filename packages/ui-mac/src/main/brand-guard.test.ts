@@ -87,6 +87,11 @@ describe("AC1 展示面坐标 — ui-mac 自有面显示 Code Puppy", () => {
     expect(src).toContain('"alpha.onboarding.title": "欢迎来到 Code Puppy",')
     expect(src).toContain("此数据由更新版本的 Code Puppy 创建")
   })
+  test("i18n zht updater 两处([ac#1198] REQ-139 残留:zht 漏网,与 zh/en 同句同型)", () => {
+    const src = read("packages/ui-mac/src/renderer/i18n/zht.ts")
+    expect(src).toContain('"desktop.updater.none.message": "你已在使用最新版的 Code Puppy",')
+    expect(src).toContain('"desktop.updater.downloaded.prompt": "已下載 Code Puppy {{version}} 版本，是否安裝並重新啟動？",')
+  })
   test("主窗标题(index.html + windows.ts)", () => {
     expect(read("packages/ui-mac/src/renderer/index.html")).toContain("<title>Code Puppy</title>")
     expect(read("packages/ui-mac/src/main/windows.ts")).toContain('title: "Code Puppy",')

@@ -58,7 +58,7 @@ const STATES = {
     prerequisite: "ready",
     prerequisiteText: "已就绪",
     prerequisites: [],
-    reason: "此扩展包与当前 Alpha 版本兼容。",
+    reason: "此扩展包与当前 Code Puppy 版本兼容。",
     action: "安装",
     actionKind: "install",
     enabled: true,
@@ -88,11 +88,11 @@ const STATES = {
     description: "Generic Phase 1 compiler corpus input.",
     version: "1.0.0",
     verdict: "update-required",
-    verdictText: "需要更新 Alpha",
+    verdictText: "需要更新 Code Puppy",
     prerequisite: "ready",
     prerequisiteText: "已就绪",
     prerequisites: [],
-    reason: "此扩展包需要较新 Alpha 版本提供的能力。",
+    reason: "此扩展包需要较新 Code Puppy 版本提供的能力。",
     action: "检查更新",
     actionKind: "update-alpha",
     enabled: true,
@@ -273,7 +273,7 @@ if (view.authorization) {
                   placeholder="粘贴密钥…(必填)" required>
               </label>
               <p class="alpha-ext-key-hint" role="status">全部密钥均为必填;填写完整后才能确认安装。</p>
-              <p class="alpha-ext-key-hint">密钥保存在本机 alpha 安全文件(0600),配置里只存引用、绝不明文。</p>
+              <p class="alpha-ext-key-hint">密钥保存在本机 Code Puppy 安全文件(0600),配置里只存引用、绝不明文。</p>
             </div>
             <p class="alpha-ext-confirm-note">将写入你的 ~/.opencode/opencode.jsonc(仅白名单字段),当场生效、免重启。</p>
           </div>
