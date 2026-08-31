@@ -1,4 +1,4 @@
-// REQ-060 plugin host fan-out:项目级 plugin(`<dir>/.alpha/plugins/*.js`)不能经 config.plugin[] 加载
+// REQ-060 plugin host fan-out:项目级 plugin(`<dir>/.code-puppy/plugins/*.js`)不能经 config.plugin[] 加载
 // —— config hook 是引擎「插件已加载完」后的 Notify,改 plugin[] 太晚(鸡生蛋)。故由 host 插件
 // (@alpha-code/ext)在 per-instance init 时动态 import 项目插件、拿到它们的 Hooks,与自身 Hooks **合并**
 // 后一并 return,引擎照常派发 —— 项目插件的 hook 得以生效,项目零 `.opencode`、零 config.plugin[]。
@@ -50,7 +50,7 @@ export type FanoutDeps = {
 }
 
 /**
- * 加载项目 `.alpha/plugins/*.js` 并调用得到 Hooks[]。信任门:trusted=false → 直接返回 []
+ * 加载项目 `.code-puppy/plugins/*.js` 并调用得到 Hooks[]。信任门:trusted=false → 直接返回 []
  * (可执行物未 consent 不加载)。逐个 import + 调用 Plugin(input);失败 loud 跳过(不阻断整体)。
  */
 export async function loadProjectPlugins(

@@ -92,7 +92,7 @@ export type LocalPackageInstallInputV1 = {
   readonly preview: LocalPackagePreviewV1
   /** preview 期留下的载荷字节,逐条与预览的 `install` 组件对应。 */
   readonly payloads: readonly LocalPackagePayloadV1[]
-  /** ADR-030:project 本地技能维持 `<project>/.alpha/skills` 的 sanctioned flat 路径,
+  /** ADR-030:project 本地技能维持 `<project>/.code-puppy/skills` 的 sanctioned flat 路径,
    *  本期不 reopen project generation。传 project ⇒ **显式拒绝**,绝不悄悄落回 flat。 */
   readonly scope?: InstallScope
 }

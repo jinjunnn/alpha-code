@@ -110,7 +110,7 @@ export function registerCloudIpcHandlers() {
   ipcMain.handle("cloud-artifacts", (_e: IpcMainInvokeEvent, jobId: string) => listCloudArtifacts(jobId))
 
   // REQ-092:descriptor-only IPC —— renderer 只送 descriptor(或旧部署 meta),main 流式写入
-  // <directory>/.alpha/runs/<runId>/artifacts/(ADR-019 守卫复用:isSafeRunId + sanitizeArtifactName +
+  // <directory>/.code-puppy/runs/<runId>/artifacts/(ADR-019 守卫复用:isSafeRunId + sanitizeArtifactName +
   // safeResolveInAlpha)。进度经 "cloud-artifact-progress" 推回发起窗口;字节永不过 IPC。
   ipcMain.handle("cloud-artifact-download", async (e: IpcMainInvokeEvent, directory: string, runId: string, artifact: unknown) => {
     if (typeof directory !== "string" || !directory || typeof runId !== "string" || !isSafeRunId(runId))
@@ -185,7 +185,7 @@ export function registerCloudIpcHandlers() {
   ipcMain.handle("cloud-git-diff", (_e: IpcMainInvokeEvent, directory: string) =>
     typeof directory === "string" && directory ? gitDiff(directory) : { ok: false, reason: "invalid directory" })
 
-  // B3/ADR-019:把一个终态 run 回流写进 <directory>/.alpha/runs/<runId>/(status/contract/artifacts)。
+  // B3/ADR-019:把一个终态 run 回流写进 <directory>/.code-puppy/runs/<runId>/(status/contract/artifacts)。
   // renderer 提供 directory(main 不知道当前项目目录);字节在 main 侧取,bearer 不进 renderer。
   ipcMain.handle("cloud-save-run", async (_e: IpcMainInvokeEvent, directory: string, runId: string, contract?: CloudJobEnvelope) => {
     const saved = await saveCloudRun(
