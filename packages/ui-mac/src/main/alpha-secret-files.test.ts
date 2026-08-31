@@ -23,6 +23,7 @@ describe("secretEnvVars", () => {
     const vars = secretEnvVars()
     expect(vars).toContain("ALPHA_API_KEY")
     expect(vars).toContain("ALPHA_CLOUD_TOKEN")
+    expect(vars).toContain("ALPHA_MCP_TOKEN") // #1195:登录铸 mcp_access → 云 MCP {file:} header
     expect(vars).toContain("DEEPSEEK_API_KEY") // catalog byok provider
   })
 })

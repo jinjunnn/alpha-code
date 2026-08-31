@@ -131,7 +131,10 @@ function captureKeylessWebSearchBaseline(source: Record<string, string | undefin
  */
 export function applyWebSearchSovereignty(userDataPath: string) {
   const killSwitch = Boolean(process.env.ALPHA_WEBSEARCH_DISABLE)
-  const platformPays = Boolean(process.env.ALPHA_CLOUD_MCP_URL) && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")
+  // `#1195`(REQ-144 T2):代付判据文件换轴到 `ALPHA_MCP_TOKEN`(登录铸 mcp_access,云 MCP
+  // 定义引用的就是它)—— 与注入面 `alpha-config-injection.ts` 的同名判据必须同轴(ADR-009 B1
+  // 「三处共用同一个判据,不许各算各的」)。凭证缺席 ⇒ 不代付 ⇒ keyless 本地 websearch 保持可用。
+  const platformPays = Boolean(process.env.ALPHA_CLOUD_MCP_URL) && hasSecretFile(userDataPath, "ALPHA_MCP_TOKEN")
   // #223 R3:云侧判决与本地侧分开 —— 平台代付时云工具正是**权威**通道,只有 kill-switch 才关它。
   // 与本地那条同纪律:两个方向都写,判决由 main 在每次 fork 前同步落定,sidecar 只读不算。
   // 不让 ext 直接读 `ALPHA_WEBSEARCH_DISABLE`:那样真值判定会在两个包里各写一份(main 用
@@ -267,7 +270,7 @@ export async function spawnLocalServer(
 
   // #621:web search 主权闸重算,**每次 fork 都跑**,且必须排在 syncSecretFiles 之后 —— 它的两个
   // 判据在 preferAppEnv 时都还不成立:`ALPHA_CLOUD_MCP_URL` 由 initAuthEnv(whenReady 之后)写,
-  // `ALPHA_CLOUD_TOKEN` 密钥文件由上面这次 sync 刚落盘/刚删除。冷启动登录用户此前恒判「登出」,
+  // `ALPHA_MCP_TOKEN` 密钥文件由上面这次 sync 刚落盘/刚删除。冷启动登录用户此前恒判「登出」,
   // 本地 keyless 与 cloud_web_search 双活(ADR-009 B1 破)。幂等 ⇒ 登录/登出 respawn 自动收敛。
   applyWebSearchSovereignty(options.userDataPath)
 
