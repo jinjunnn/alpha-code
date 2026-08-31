@@ -1,7 +1,7 @@
 {
   "name": "ui-mac",
   "private": true,
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "alpha-code self-owned Mac Electron shell. A re-themed clone of opencode's packages/desktop (the proven thin shell around the shared @opencode-ai/app renderer). Custom theme + incremental screen customization live on top; opencode source stays untouched.",
   "license": "MIT",
