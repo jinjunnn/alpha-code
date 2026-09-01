@@ -151,9 +151,9 @@ function violationsFor(file: SourceFile) {
 
   if (
     file.path !== routeManifestPath &&
-    (/["'`](?:opencode|alpha-code):\/\//.test(source) ||
-      /["'`](?:opencode|alpha-code):["'`]/.test(source) ||
-      /\bsetAsDefaultProtocolClient\s*\(\s*["'`](?:opencode|alpha-code)["'`]/.test(source))
+    (/["'`](?:opencode|alpha-code|code-puppy):\/\//.test(source) ||
+      /["'`](?:opencode|alpha-code|code-puppy):["'`]/.test(source) ||
+      /\bsetAsDefaultProtocolClient\s*\(\s*["'`](?:opencode|alpha-code|code-puppy)["'`]/.test(source))
   ) {
     violations.push({ path, rule: "deep-link scheme literal outside the manifest" })
   }
@@ -181,7 +181,7 @@ async function sourcesUnder(root: string) {
 }
 
 const DEEP_LINK_CODEC_RULES = [
-  { rule: "deep-link scheme literal outside the manifest", pattern: /["'`](?:opencode|alpha-code):\/\// },
+  { rule: "deep-link scheme literal outside the manifest", pattern: /["'`](?:opencode|alpha-code|code-puppy):\/\// },
   { rule: "deep-link URL codec outside the manifest", pattern: /\bnew URL\s*\(|\.hostname\b|\bsearchParams\b/ },
 ] as const
 

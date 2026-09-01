@@ -23,7 +23,7 @@ describe("rebrandSystem — 8 底座真实样本零残留", () => {
   // → 转写后应当一个 opencode 都不剩(大小写不敏感)。
   const BASES = ["anthropic.txt", "codex.txt", "default.txt", "trinity.txt", "beast.txt", "kimi.txt", "gpt.txt", "gemini.txt", "copilot-gpt-5.txt"]
   for (const f of BASES) {
-    test(`${f} 转写后零 opencode 痕迹 + 自称 alpha-code`, () => {
+    test(`${f} 转写后零 opencode 痕迹 + 自称 Code Puppy`, () => {
       const src = read(f)
       const r = rebrandSystem([src])
       expect(r.changed).toBe(true)

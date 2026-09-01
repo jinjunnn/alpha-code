@@ -42,13 +42,13 @@ export async function runGlobalEcosystemGate(
   const opts = {
     type: "info" as const,
     title: "外部技能/指令处理(本版本起,一次性)",
-    message: `检测到 ${detected.skills.length + (detected.claudeMd ? 1 : 0)} 项其它工具的全局内容,导入为 alpha 原生?`,
+    message: `检测到 ${detected.skills.length + (detected.claudeMd ? 1 : 0)} 项其它工具的全局内容,导入为 Code Puppy 原生内容?`,
     detail:
-      "本版本起,alpha-code 默认不再读取其它工具的目录(~/.claude、~/.agents)——防止未经确认的内容进入模型上下文。\n" +
+      "本版本起,Code Puppy 默认不再读取其它工具的目录(~/.claude、~/.agents)——防止未经确认的内容进入模型上下文。\n" +
       `发现:\n${items}\n\n` +
-      "「导入」= 转换到当前 alpha 环境的原生资产(快照,原文件不动;技能进定制中心「已安装」,可卸载可更新)。\n" +
-      "「不导入」= 这些内容从此在 alpha-code 中不可见(原文件仍在,之后可在会话里说「导入外部技能」补做)。",
-    buttons: ["导入为 alpha 原生", "不导入(从此不可见)"],
+      "「导入」= 转换到当前 Code Puppy 环境的原生资产(快照,原文件不动;技能进定制中心「已安装」,可卸载可更新)。\n" +
+      "「不导入」= 这些内容从此在 Code Puppy 中不可见(原文件仍在,之后可在会话里说「导入外部技能」补做)。",
+    buttons: ["导入到 Code Puppy", "不导入(从此不可见)"],
     defaultId: 0,
     cancelId: 1,
   }

@@ -165,7 +165,7 @@ const getBase = (appId: string): Configuration => ({
     sign: shouldSign,
   },
   protocols: {
-    name: "alpha-code",
+    name: "Code Puppy",
     schemes: [...DEEP_LINK_SCHEMES],
   },
   win: {
@@ -215,7 +215,7 @@ export function getConfig(target: Channel = channel) {
         ...base,
         appId,
         productName: "Code Puppy Beta",
-        protocols: { name: "alpha-code Beta", schemes: [...DEEP_LINK_SCHEMES] },
+        protocols: { name: "Code Puppy Beta", schemes: [...DEEP_LINK_SCHEMES] },
         // Own public release repo (jinjunnn/alpha-code) — NOT anomalyco/opencode, which would auto-
         // download upstream OpenCode over alpha (B9). `beta` channel = pre-release feed.
         publish: { provider: "github", owner: "jinjunnn", repo: "alpha-code", channel: "beta" },
@@ -227,7 +227,7 @@ export function getConfig(target: Channel = channel) {
         ...base,
         appId,
         productName: "Code Puppy",
-        protocols: { name: "alpha-code", schemes: [...DEEP_LINK_SCHEMES] },
+        protocols: { name: "Code Puppy", schemes: [...DEEP_LINK_SCHEMES] },
         // Own public release repo (jinjunnn/alpha-code) — NOT anomalyco/opencode (B9 wrong-owner feed,
         // which would auto-download upstream OpenCode over alpha). `latest` = stable feed.
         publish: { provider: "github", owner: "jinjunnn", repo: "alpha-code", channel: "latest" },

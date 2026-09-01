@@ -15,6 +15,7 @@ describe("installer protocol registration comes from the route manifest", () => 
     const protocols = getConfig(channel).protocols
     expect(protocols).toBeDefined()
     expect((protocols as { schemes: string[] }).schemes).toEqual(DEEP_LINK_SCHEMES)
+    expect((protocols as { name: string }).name).toMatch(/^Code Puppy(?: Beta)?$/)
   })
 
   test("the manifest is the only place a scheme is spelled out", () => {
@@ -24,5 +25,10 @@ describe("installer protocol registration comes from the route manifest", () => 
     const schemeLists = [...config.matchAll(/schemes\s*:\s*\[([^\]]*)\]/g)].map((match) => match[1]!)
     expect(schemeLists.length).toBeGreaterThan(0)
     expect(schemeLists.filter((list) => /["'`]/.test(list))).toEqual([])
+  })
+
+  test("runtime registration consumes every manifest scheme", () => {
+    const main = readFileSync(join(import.meta.dir, "../main/index.ts"), "utf8")
+    expect(main).toContain("DEEP_LINK_SCHEMES.forEach((scheme) => app.setAsDefaultProtocolClient(scheme))")
   })
 })

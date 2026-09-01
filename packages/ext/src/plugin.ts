@@ -323,7 +323,7 @@ export const AlphaExt: Plugin = async (input) => {
       }),
       alpha_echo: tool({
         description:
-          "Echo back the provided text. Proof that an alpha-code plugin-registered tool is available with zero opencode source edits.",
+          "Echo back the provided text. Proof that a Code Puppy plugin-registered tool is available with zero opencode source edits.",
         args: {
           text: tool.schema.string().describe("The text to echo back"),
           shout: tool.schema.boolean().describe("Uppercase the echoed text").default(false),
@@ -339,7 +339,7 @@ export const AlphaExt: Plugin = async (input) => {
       }),
       alpha_ping: tool({
         description:
-          "Health-check tool: returns 'pong' plus the session directory. Proof that the alpha-code extension is loaded.",
+          "Health-check tool: returns 'pong' plus the session directory. Proof that the Code Puppy extension is loaded.",
         args: {
           note: tool.schema.string().describe("Optional note echoed back with the pong").default(""),
         },
