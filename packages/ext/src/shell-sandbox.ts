@@ -80,7 +80,7 @@ exec /usr/bin/sandbox-exec -f "$ALPHA_SB_PROFILE" -D WORKDIR="$(pwd)" "$ALPHA_RE
  * 它拒绝运行任何命令、打印可读错误、exit 78。绝不让会话落回裸 shell。
  */
 export const DENY_SHELL_SCRIPT = `#!/bin/sh
-echo "alpha-code: shell sandbox unavailable — refusing to run an unfenced shell (see engine logs)" >&2
+echo "Code Puppy: shell sandbox unavailable — refusing to run an unfenced shell (see engine logs)" >&2
 exit 78
 `
 

@@ -3,14 +3,14 @@ title: Mac release runbook (signing, notarization, auto-update)
 kind: runbook
 status: active
 owners:
-  - alpha-code maintainers
+  - Code Puppy maintainers
 last_reviewed: 2026-07-22
 review_after: 2026-10-14
 ---
 
-# 发版 runbook — alpha-code Mac(签名 · 公证 · 自动更新)
+# 发版 runbook — Code Puppy Mac(签名 · 公证 · 自动更新)
 
-> 权威发版文档。把 alpha(opencode 引擎 + 自有前端/后端)打成**你自己**的、签名+公证、可分发给任意 Mac 的 app,并经 GitHub Release 走自动更新。
+> 权威发版文档。把 Code Puppy(opencode 引擎 + 自有前端/后端)打成**你自己**的、签名+公证、可分发给任意 Mac 的 app,并经 GitHub Release 走自动更新。
 > 首个签名+公证发布:**v0.1.0**(2026-07-03,`jinjunnn/alpha-code`),下述流程即由它验证。
 > 卸载与数据残留:见 [uninstall.md](uninstall.md)(C16;app 内入口 = 数据 ▸ 清除数据…)。
 
@@ -22,7 +22,7 @@ review_after: 2026-10-14
 - `signing.env` 导出 `ALPHA_SIGN=1` + `APPLE_API_KEY`/`APPLE_API_KEY_ID`/`APPLE_API_ISSUER` + `APPLE_TEAM_ID`。
 
 **打包配置**(`packages/ui-mac/electron-builder.config.ts` + `scripts/*`,零改上游):
-- prod/beta productName `alpha-code`、appId `com.tide.alphacode`(dev/beta 加后缀)、URL scheme `alpha-code`、artifact `alpha-code-*`。
+- prod/beta productName `Code Puppy`、appId `com.tide.alphacode`(dev/beta 加后缀)、登录 URL scheme `code-puppy`、artifact `alpha-code-*`。
 - 更新源 = 自有 public repo `jinjunnn/alpha-code`(prod=`latest` 渠道,beta=`beta`),**不是** `anomalyco/opencode`。
 - `ALPHA_SIGN=1` → Developer ID 签名 + 公证;否则 ad-hoc(仅本机双击)。
 - `notarize` 是 boolean(electron-builder 26.x);team/凭证走 env。
@@ -39,6 +39,9 @@ review_after: 2026-10-14
 # ①′ 刷新内置 catalog 快照(REQ-046):cd packages/ui-mac && node scripts/sync-catalog-snapshot.mjs
 #    (拉已发布 catalog + 验签 + 字节快照;alpha-catalog.json 禁手编 —— 单测守卫,手编即红。
 #     上架/撤架条目一律在 alpha-web catalog-src 操作,联网用户即时生效,发版只是刷新离线底座。)
+# ①′′ 刷新随包 extension seed(REQ-102):node scripts/sync-extension-seed.mjs
+#    (同样走 trust→stable→payload 全链验签,并与上一步 catalog 字节互钉;resources/extension-seed 禁手编。
+#     离线演练可用 --from-dir <alpha-web checkout>,但仍必须验签。脚本连跑两次后 git diff 必须不再变化。)
 # ① 版本号:改 packages/ui-mac/package.json 的 "version"(唯一真源;About/崩溃屏/updater 都读它)
 #    例:0.1.0 → 0.1.1。用真实 semver,别回 0.0.0。
 
@@ -77,7 +80,7 @@ gh release create v0.1.1 \
   alpha-release-manifest.json alpha-release-manifest.json.sig \
   alpha-code-0.1.1-sbom.cdx.json \
   --repo jinjunnn/alpha-code --target alpha \
-  --title "alpha-code 0.1.1" --notes "……"
+  --title "Code Puppy 0.1.1" --notes "……"
 
 # ⑤ 确认自动更新 feed 通(electron-updater 就读这个 URL)
 curl -sL -o /dev/null -w "%{http_code}\n" \

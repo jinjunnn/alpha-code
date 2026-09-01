@@ -3,7 +3,7 @@ title: Alpha Code platform integration
 kind: contract
 status: active
 owners:
-  - alpha-code maintainers
+  - Code Puppy maintainers
 last_reviewed: 2026-07-24
 review_after: 2026-10-13
 ---
@@ -109,7 +109,7 @@ inactive-plan payloads.
 
 1. The main process creates PKCE S256 verifier/challenge and state, then opens
    `GET <web>/auth/authorize` with client `alpha-code`, redirect
-   `alpha-code://auth/callback`, and OAuth grant metadata scope
+   `code-puppy://auth/callback`, and OAuth grant metadata scope
    `openid profile platform`.
 2. Alpha Web authenticates the user and returns a one-time authorization code.
 3. The desktop validates state and exchanges the code and verifier at

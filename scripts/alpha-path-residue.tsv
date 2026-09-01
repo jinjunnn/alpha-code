@@ -41,9 +41,6 @@ packages/ui-mac/src/main/factory-skills.ts	173	retired-guard	字符串字面量(
 packages/ui-mac/src/main/index.ts	752	historical	同 factory-skills.ts:163 的同一操作(boot 期先行 reconcile 拆存量退役链);与 index.ts:772 的字符串字面量成对。
 packages/ui-mac/src/main/index.ts	772	retired-guard	字符串字面量(boot 日志行),不是注释;语义正确 —— 拆掉的正是退役的 `.alpha` symlink。
 packages/ui-mac/src/main/package-installability.ts	565	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
-packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2223	signed-snapshot	alpha-catalog.json 是云端签名的字节快照,禁手编(REQ-046 守卫);文案更正归 alpha-web#173。
-packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2260	signed-snapshot	alpha-catalog.json 是云端签名的字节快照,禁手编(REQ-046 守卫);文案更正归 alpha-web#173。
-packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2296	signed-snapshot	alpha-catalog.json 是云端签名的字节快照,禁手编(REQ-046 守卫);文案更正归 alpha-web#173。
 packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2382	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。 本文件整体亦为签名快照。
 packages/ui-mac/src/shared/host-extension-package-contract/generate-artifact.ts	324	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
 packages/ui-mac/src/shared/host-extension-package-contract/generate-artifact.ts	447	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。

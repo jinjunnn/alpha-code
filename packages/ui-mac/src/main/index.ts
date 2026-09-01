@@ -720,7 +720,7 @@ const main = Effect.gen(function* () {
   // Windows/Linux cold start: the OS launches the FIRST process with the link on its command
   // line. That process wins the single-instance lock, so "second-instance" never fires, and there
   // is no macOS "open-url" either — without this the link is lost outright. Deliberately AFTER
-  // initAuthEnv: an `alpha-code://auth/callback` can arrive this way too (browser wakes a closed
+  // initAuthEnv: a `code-puppy://auth/callback` can arrive this way too (browser wakes a closed
   // app on Windows/Linux), and the PKCE exchange needs safeStorage, which is only usable now.
   {
     const urls = process.argv.filter(isDeepLink)

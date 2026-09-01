@@ -30,7 +30,7 @@ import { sweepEngineConfigDanglingUnlocked, type DanglingSweepOutcome } from "./
 function safeStorageResidueNote(): string {
   return safeStorageBackend() === "dpapi"
     ? "safeStorage 加密密钥由 Windows 用户账户(DPAPI)管理,加密文件删除后无需额外手动清理。"
-    : "钥匙串中的 safeStorage 密钥项由 macOS 管理,可在「钥匙串访问」搜索 alpha-code 手动删除(加密文件删除后该项已无泄密面)。"
+    : "钥匙串中的 safeStorage 密钥项由 macOS 管理,可在「钥匙串访问」搜索 “Safe Storage”,确认是 Code Puppy 对应项后手动删除(加密文件删除后该项已无泄密面)。"
 }
 
 const fsDeps: DataClear.FsDeps = {

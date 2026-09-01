@@ -46,7 +46,7 @@ describe("canonical route manifest", () => {
     expect(ROUTE_MANIFEST.version).toBe(ROUTE_MANIFEST_VERSION)
     expect(ROUTE_MANIFEST.deepLinks.schemes).toEqual([
       { id: "application", value: "opencode" },
-      { id: "auth", value: "alpha-code" },
+      { id: "auth", value: "code-puppy" },
     ])
     expect(
       ROUTE_MANIFEST.deepLinks.routes.map((route) => ({
@@ -171,12 +171,13 @@ describe("manifest-derived deep links", () => {
   })
 
   test("auth transport scheme and callback endpoint are manifest-derived", () => {
-    expect(deepLinkFor.authCallback()).toBe("alpha-code://auth/callback")
-    const callback = matchAuthDeepLink("alpha-code://auth/callback?code=one&state=two")
+    expect(deepLinkFor.authCallback()).toBe("code-puppy://auth/callback")
+    const callback = matchAuthDeepLink("code-puppy://auth/callback?code=one&state=two")
     expect(callback.kind).toBe("callback")
     if (callback.kind !== "callback") return
     expect(callback.url.searchParams.get("code")).toBe("one")
-    expect(matchAuthDeepLink("alpha-code://other/path")).toEqual({ kind: "ignored", path: "other/path" })
+    expect(matchAuthDeepLink("code-puppy://other/path")).toEqual({ kind: "ignored", path: "other/path" })
+    expect(matchAuthDeepLink("alpha-code://auth/callback?code=old&state=old")).toEqual({ kind: "outside" })
     expect(matchAuthDeepLink(deepLinkFor.openProject("/tmp"))).toEqual({ kind: "outside" })
   })
 
@@ -225,6 +226,7 @@ describe("decoded deep-link deliveries", () => {
       "opencode://open-project?directory=",
       "opencode://open-project?directory=%2Ftmp&unknown=x",
       "opencode://open-project/%E0%A4%A%",
+      "code-puppy://auth/callback",
       "alpha-code://auth/callback",
       "not a url",
     ).forEach((link) => expect(decodeDeepLink(link)).toBeUndefined())

@@ -43,10 +43,10 @@ describe("AC5 身份面冻结 — 五组字面量逐字未变", () => {
     expect(src).toContain('if (env === "prod") return "latest"')
     expect(src).toContain('if (env === "beta") return "beta"')
   })
-  test("URL schemes(opencode 深链 + alpha-code auth)", () => {
+  test("URL schemes(opencode 深链 + code-puppy auth)", () => {
     const src = read("packages/ui-mac/src/shared/route-manifest.ts")
     expect(src).toContain('{ id: "application", value: "opencode" }')
-    expect(src).toContain('{ id: "auth", value: "alpha-code" }')
+    expect(src).toContain('{ id: "auth", value: "code-puppy" }')
   })
   test("OAuth CLIENT_ID(wire 标识,非展示名)", () => {
     expect(read("packages/ui-mac/src/main/alpha-auth.ts")).toContain('const CLIENT_ID = "alpha-code"')
@@ -117,8 +117,25 @@ describe("AC1 展示面坐标 — ui-mac 自有面显示 Code Puppy", () => {
     expect(src).toContain("Code Puppy is now connected to ")
     expect(src).toContain("Code Puppy couldn't finish connecting to ")
   })
-  test("钥匙串清理指引仍指向真实项名 alpha-code(身份未改,文案改了反而失实)", () => {
-    expect(read("packages/ui-mac/src/main/data-clear-boot.ts")).toContain("搜索 alpha-code 手动删除")
+  test("钥匙串清理指引不把兼容身份当产品名展示", () => {
+    const src = read("packages/ui-mac/src/main/data-clear-boot.ts")
+    expect(src).toContain("确认是 Code Puppy 对应项后手动删除")
+    expect(src).not.toContain("搜索 alpha-code 手动删除")
+
+    const builder = read("packages/ui-mac/electron-builder.config.ts")
+    expect(builder).toContain('protocols: { name: "Code Puppy Beta"')
+    expect(builder).toContain('protocols: { name: "Code Puppy"')
+    expect(builder).not.toMatch(/protocols:\s*\{\s*name:\s*"alpha-code/)
+
+    const ecosystem = read("packages/ui-mac/src/main/ecosystem-gate.ts")
+    expect(ecosystem).toContain("导入到 Code Puppy")
+    expect(ecosystem).not.toMatch(/alpha-code|alpha 原生|alpha 环境/)
+
+    const shell = read("packages/ext/src/shell-sandbox.ts")
+    const plugin = read("packages/ext/src/plugin.ts")
+    expect(shell).toContain('echo "Code Puppy: shell sandbox unavailable')
+    expect(plugin).toContain("Proof that a Code Puppy plugin-registered tool")
+    expect(plugin).toContain("Proof that the Code Puppy extension is loaded")
   })
 })
 
