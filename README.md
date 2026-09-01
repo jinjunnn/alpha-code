@@ -43,8 +43,8 @@
 
 ---
 
-> **Alpha governance:** active work lives in
-> [alpha-code Issues](https://github.com/jinjunnn/alpha-code/issues) and
+> **Code Puppy governance:** active work lives in
+> [Code Puppy Issues](https://github.com/jinjunnn/alpha-code/issues) and
 > [Alpha Delivery](https://github.com/users/jinjunnn/projects/2). Repository
 > documents are indexed at [`docs/README.md`](docs/README.md) and follow the
 > [Alpha documentation standard](https://github.com/jinjunnn/alpha-work/blob/main/governance/documentation-standard.md).

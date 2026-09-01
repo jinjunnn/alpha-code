@@ -3,7 +3,7 @@ title: Artifact quota reservation recovery
 kind: runbook
 status: active
 owners:
-  - alpha-code maintainers
+  - Code Puppy maintainers
 last_reviewed: 2026-07-20
 review_after: 2026-10-18
 ---

@@ -1,4 +1,4 @@
-# CI 规范(alpha-code)
+# CI 规范（Code Puppy）
 
 > 一句话:**本地先跑,CI 兜底**。CI 不是你第一次看到失败的地方——它是 merge 前的强制关卡。
 > 权威触发定义在 `.github/workflows/alpha-ci.yml`;北极星守卫语义见 ADR-004,fork 纪律见 ADR-005。

@@ -3,7 +3,7 @@ title: Extension transaction journal diagnosis
 kind: runbook
 status: active
 owners:
-  - alpha-code maintainers
+  - Code Puppy maintainers
 last_reviewed: 2026-08-01
 review_after: 2026-10-15
 ---

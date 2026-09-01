@@ -52,8 +52,8 @@ OPENCODE_CHANNEL=prod bun run build                     # prebuild(含 A4 patch)
 OPENCODE_CHANNEL=prod bun run package:mac               # 签名 → 上传 Apple 公证(在线,几分钟)→ dmg/zip
 
 # ③ 验证产物真的签名+公证了(必须都过)
-xcrun stapler validate dist/mac-arm64/alpha-code.app    # 期望 "The validate action worked!"
-spctl -a -vvv -t install dist/mac-arm64/alpha-code.app  # 期望 "accepted / source=Notarized Developer ID"
+xcrun stapler validate "dist/mac-arm64/Code Puppy.app"    # 期望 "The validate action worked!"
+spctl -a -vvv -t install "dist/mac-arm64/Code Puppy.app"  # 期望 "accepted / source=Notarized Developer ID"
 ls dist/alpha-code-mac-arm64.dmg dist/alpha-code-mac-arm64.zip dist/latest-mac.yml   # 三件齐
 
 # ③′ 产签名 release manifest(#175;契约 docs/contracts/desktop-release-manifest.md)。
