@@ -3,14 +3,14 @@ title: Mac release runbook (signing, notarization, auto-update)
 kind: runbook
 status: active
 owners:
-  - alpha-code maintainers
+  - Code Puppy maintainers
 last_reviewed: 2026-07-22
 review_after: 2026-10-14
 ---
 
-# 发版 runbook — alpha-code Mac(签名 · 公证 · 自动更新)
+# 发版 runbook — Code Puppy Mac(签名 · 公证 · 自动更新)
 
-> 权威发版文档。把 alpha(opencode 引擎 + 自有前端/后端)打成**你自己**的、签名+公证、可分发给任意 Mac 的 app,并经 GitHub Release 走自动更新。
+> 权威发版文档。把 Code Puppy(opencode 引擎 + 自有前端/后端)打成**你自己**的、签名+公证、可分发给任意 Mac 的 app,并经 GitHub Release 走自动更新。
 > 首个签名+公证发布:**v0.1.0**(2026-07-03,`jinjunnn/alpha-code`),下述流程即由它验证。
 > 卸载与数据残留:见 [uninstall.md](uninstall.md)(C16;app 内入口 = 数据 ▸ 清除数据…)。
 
@@ -80,7 +80,7 @@ gh release create v0.1.1 \
   alpha-release-manifest.json alpha-release-manifest.json.sig \
   alpha-code-0.1.1-sbom.cdx.json \
   --repo jinjunnn/alpha-code --target alpha \
-  --title "alpha-code 0.1.1" --notes "……"
+  --title "Code Puppy 0.1.1" --notes "……"
 
 # ⑤ 确认自动更新 feed 通(electron-updater 就读这个 URL)
 curl -sL -o /dev/null -w "%{http_code}\n" \

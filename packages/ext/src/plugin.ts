@@ -22,7 +22,7 @@ import {
 } from "./cloud-websearch-kill"
 
 /**
- * alpha-code backend isolation extension.
+ * Code Puppy backend isolation extension.
  *
  * A zero-edit opencode server plugin. In the fork model this package is a NATIVE
  * workspace member, so `@opencode-ai/plugin` resolves via `workspace:*` with no

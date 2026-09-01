@@ -3,7 +3,7 @@ title: Alpha Code platform integration
 kind: contract
 status: active
 owners:
-  - alpha-code maintainers
+  - Code Puppy maintainers
 last_reviewed: 2026-07-24
 review_after: 2026-10-13
 ---
