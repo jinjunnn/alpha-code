@@ -1468,6 +1468,77 @@ index cf343bfa7..6bb9ae19a 100644
    /** Application-global desktop updater */
    updater?: UpdaterPlatform
  
+diff --git a/packages/app/src/context/server-sdk.tsx b/packages/app/src/context/server-sdk.tsx
+index 06597e56e..dfad5b72e 100644
+--- a/packages/app/src/context/server-sdk.tsx
++++ b/packages/app/src/context/server-sdk.tsx
+@@ -2,7 +2,7 @@ import type { Event } from "@opencode-ai/sdk/v2/client"
+ import { createSimpleContext } from "@opencode-ai/ui/context"
+ import { createGlobalEmitter } from "@solid-primitives/event-bus"
+ import { makeEventListener } from "@solid-primitives/event-listener"
+-import { type Accessor, batch, createMemo, onCleanup, onMount } from "solid-js"
++import { type Accessor, batch, createMemo, createRoot, onCleanup, onMount } from "solid-js"
+ import { createSdkForServer } from "@/utils/server"
+ import { useLanguage } from "./language"
+ import { usePlatform } from "./platform"
+@@ -286,9 +286,34 @@ export type ServerSDK = ServerSDKBase & {
+ 
+ export function createServerSdkContext(server: ServerConnection.Any, scope: ServerScope): ServerSDK {
+   const sdk = createServerSdkContextBase(server, scope)
+-  return Object.assign(sdk, {
+-    ensureDirSdkContext: createRefCountMap((dir) => createDirSdkContext(dir, sdk)),
++  // #1214:dir ctx 的事件订阅寿命必须跟随**引用计数**,不能跟随首建者的 reactive 作用域。
++  //
++  // 失聪机制(真机 4/4 复现同形):`serverSDK.event.on` 经 @solid-primitives/event-bus 的
++  // `tryOnCleanup` 把退订绑在**调用时的当前 owner** 上。`createRefCountMap` 的 `create`
++  // 在首个消费者调用 `ensureDirSdkContext` 时同步执行 ⇒ 订阅退订绑到了首建者的 owner。
++  // 首建者先销毁(页面切换/面板开合)而其他消费者仍持有同一 dir ctx 时,缓存发给所有人的
++  // 那个 emitter 的 server 订阅已被退订 —— client(list)照常工作、事件订阅静默死掉。
++  //
++  // 修复:每个 dir ctx 跑在自己的 `createRoot` 里(订阅清理落到这个 root,与任何消费者
++  // 的 owner 无关),引用计数归零时才 dispose 这个 root;server ctx 整体销毁时兜底清全部。
++  // permission-event-arrival.test.ts 的 refcount 用例锁定这一行为。
++  const roots = new Map<string, () => void>()
++  const ensureDirSdkContext = createRefCountMap(
++    (dir) =>
++      createRoot((dispose) => {
++        roots.set(dir, dispose)
++        return createDirSdkContext(dir, sdk)
++      }),
++    (dir) => {
++      roots.get(dir)?.()
++      roots.delete(dir)
++    },
++  )
++  onCleanup(() => {
++    roots.forEach((dispose) => dispose())
++    roots.clear()
+   })
++  return Object.assign(sdk, { ensureDirSdkContext })
+ }
+ 
+ export const { use: useServerSDK, provider: ServerSDKProvider } = createSimpleContext({
+@@ -320,10 +345,17 @@ function createDirSdkContext(directory: string, serverSDK: ServerSDKBase) {
+ 
+   const emitter = createGlobalEmitter<SDKEventMap>()
+ 
+-  const unsub = serverSDK.event.on(directory, (event) => {
++  // 订阅寿命跟随本 dir ctx 自己的 createRoot(见 createServerSdkContext),不再跟随首建者。
++  onCleanup(serverSDK.event.on(directory, (event) => {
+     emitter.emit(event.type, event)
+-  })
+-  onCleanup(unsub)
++  }))
++  // #1214:`server.connected` 在 wire 上是裸 payload(handlers/global.ts 不带 directory
++  // 信封),按 `event.directory ?? "global"` 只落在 "global" 键 —— 而订阅面(permission
++  // adapter 的重连兜底 `connected → feed.load()` 等)挂在**目录** emitter 上,此前永远等
++  // 不到它。只转发这一种类型:目录事件本身已由上面那条订阅覆盖,不能双投。
++  onCleanup(serverSDK.event.on("global", (event) => {
++    if (event.type === "server.connected") emitter.emit("server.connected", event)
++  }))
+ 
+   return {
+     scope: serverSDK.scope,
 diff --git a/packages/app/src/context/settings.tsx b/packages/app/src/context/settings.tsx
 index c2b568041..ed440ade9 100644
 --- a/packages/app/src/context/settings.tsx
