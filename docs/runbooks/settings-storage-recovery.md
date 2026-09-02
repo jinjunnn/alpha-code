@@ -3,7 +3,7 @@ title: Settings storage recovery
 kind: runbook
 status: active
 owners:
-  - alpha-code maintainers
+  - Code Puppy maintainers
 last_reviewed: 2026-07-20
 review_after: 2026-10-18
 ---
@@ -25,7 +25,7 @@ fsync」的提交顺序，也不会使一次未完成提交变成成功；后续
 
 只有同时满足以下条件才可删除候选临时文件：
 
-1. 停止所有能访问同一 `userData` 目录的 alpha-code 实例及其它 Settings writer；若目录由多台
+1. 停止所有能访问同一 `userData` 目录的 Code Puppy 实例及其它 Settings writer；若目录由多台
    主机共享，必须在每台主机上完成并确认全局静默。无法证明全共享范围静默时保留文件。
 2. 解析出确切的权威文件路径，只检查其同一目录、且 basename 以
    `.${权威 basename}.tmp-` 开头的普通文件。临时名称只用于发现候选，不证明所有权；PID 已死亡、

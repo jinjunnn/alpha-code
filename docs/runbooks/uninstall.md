@@ -1,4 +1,4 @@
-# 卸载 alpha-code 与数据残留清单(C16)
+# 卸载 Code Puppy 与数据残留清单(C16)
 
 > 单一真源声明:本清单与 app 内「数据 ▸ 清除数据…」的清除引擎同源
 > (`packages/ui-mac/src/main/data-clear.ts` 的 manifest/planClear)。改引擎清单必须同步本文档。
@@ -9,7 +9,10 @@
 1. **先在 app 内清除数据**:菜单 **数据 ▸ 清除数据… ▸ 全部数据(为卸载做准备)**。
    会依次:提示先导出会话数据库 → 列出将删内容与体积、红色终确认(引擎数据共享面单独勾选)→
    停止内嵌引擎 → 删除 → 退出应用。逐项结果留痕 main.log(`[c16-data-clear]`,日志目录最后删)。
-2. **再把 alpha-code.app 拖进废纸篓**。
+2. **再把 Code Puppy.app 拖进废纸篓**。
+
+> 下列 `alpha-code` / `alpha-code-state` 路径和钥匙串项是为保留既有登录、设置与升级能力而冻结的
+> 兼容存储标识，不是产品展示名；卸载 Code Puppy 时仍需按这些实际路径清理。
 
 ## 残留路径清单(app 内清除各级覆盖范围)
 
@@ -46,7 +49,7 @@
 | `~/.opencode/opencode.jsonc` | 引擎共享配置。经定制中心装过连接器/插件的,**建议卸载前先在定制中心逐项卸载**(会净除对应条目);~~历史悬空引用需手动删除对应 `mcp.*` / `plugin[]` 条目~~ —— 见下方「悬空引用:什么自动、什么必须手动」订正块 |
 | `~/.opencode/` 内你自建的 skill/agent/command 等 | 用户内容红线,永不代删 |
 | 钥匙串 safeStorage 密钥项 | macOS 管理的加密密钥(Electron safeStorage),无 API 可代删。加密文件删除后该项已无泄密面;要彻底清可打开「钥匙串访问」搜索 `alpha-code` 手动删除 |
-| `/Applications/alpha-code.app` | 应用本体,拖废纸篓 |
+| `/Applications/Code Puppy.app` | 应用本体,拖废纸篓 |
 
 ### 悬空引用:什么自动、什么必须手动
 

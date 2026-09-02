@@ -21,7 +21,9 @@ const channel = (() => {
   const raw = process.env.OPENCODE_CHANNEL
   return raw === "prod" || raw === "beta" ? raw : "dev"
 })()
-const PRODUCT_NAMES = { dev: "alpha-code", beta: "alpha-code Beta", prod: "alpha-code" } as const
+// These are bundle display names and must stay in lockstep with electron-builder.config.ts.
+// Compatibility identities (bundle ids, userData and Keychain names) remain unchanged below.
+const PRODUCT_NAMES = { dev: "Code Puppy", beta: "Code Puppy Beta", prod: "Code Puppy" } as const
 const APP_IDS = {
   dev: "com.tide.alphacode.dev",
   beta: "com.tide.alphacode.beta",
@@ -87,7 +89,7 @@ if (verify.status !== 0) {
 }
 
 // 4. Drop the redundant build artifact so Spotlight only ever shows ONE
-//    "alpha-code" (the /Applications install). The dist copy is just an
+//    "Code Puppy" (the /Applications install). The dist copy is just an
 //    intermediate; /Applications is canonical. Unregister it from
 //    LaunchServices first so Cmd+Space forgets it immediately.
 if (existsSync(lsregister)) spawnSync(lsregister, ["-u", SRC], { stdio: "ignore" })
@@ -104,7 +106,7 @@ spawnSync("mdimport", [DEST], { stdio: "ignore" })
 
 console.log(`✓ installed → ${DEST}`)
 console.log(`  removed redundant dist artifact (Spotlight now shows one app)`)
-console.log(`  Open with Cmd+Space → "alpha-code". (No dev instance needed.)`)
+console.log(`  Open with Cmd+Space → "Code Puppy". (No dev instance needed.)`)
 
 function resolveSigningIdentity(): string {
   const override = process.env.ALPHA_MAC_SIGN_IDENTITY

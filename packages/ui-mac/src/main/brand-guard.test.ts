@@ -59,6 +59,13 @@ describe("AC1 展示面坐标 — ui-mac 自有面显示 Code Puppy", () => {
     expect(src.split('productName: "Code Puppy",').length - 1).toBe(2) // dev + prod
     expect(src).toContain('productName: "Code Puppy Beta",')
   })
+  test("本机安装脚本与打包后的 bundle 展示名一致", () => {
+    const src = read("packages/ui-mac/scripts/install-local.ts")
+    expect(src).toContain('const PRODUCT_NAMES = { dev: "Code Puppy", beta: "Code Puppy Beta", prod: "Code Puppy" } as const')
+    expect(src).toContain('Open with Cmd+Space → "Code Puppy"')
+    expect(src).not.toMatch(/PRODUCT_NAMES\s*=\s*\{[^}]*alpha-code/)
+    expect(src).not.toContain('Open with Cmd+Space → "alpha-code"')
+  })
   test("i18n 品牌键 en(product / short / wordmark)", () => {
     const src = read("packages/ui-mac/src/renderer/i18n/en.ts")
     expect(src).toContain('"alpha.brand.product": "Code Puppy",')

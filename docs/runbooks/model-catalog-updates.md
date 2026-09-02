@@ -3,7 +3,7 @@ title: Model catalog updates (platform proxy & BYOK)
 kind: runbook
 status: active
 owners:
-  - alpha-code maintainers
+  - Code Puppy maintainers
 last_reviewed: 2026-07-30
 review_after: 2026-10-30
 ---
@@ -15,7 +15,7 @@ review_after: 2026-10-30
 - **代理节点(经 ALPHA 代理)**:真源 = alpha-platform 网关 registry
   (`packages/gateway/src/models.config.json`)+ edition 白名单。app 启动/开
   picker 时经 `GET /v1/models` 同步,**加模型不需要发 app 版本**。
-- **BYOK(自带 KEY 直连)**:真源 = alpha-code 本地 catalog
+- **BYOK(自带 KEY 直连)**:真源 = Code Puppy 本地 catalog
   (`packages/ui-mac/src/main/alpha-models.json`),打进安装包,**改完必须
   `ship:mac` 重建安装**。内置 BYOK provider 的**显隐**额外受网关 edition
   白名单控制(模型 id 不受)。
@@ -42,11 +42,11 @@ review_after: 2026-10-30
    - `packages/gateway/wrangler.jsonc` `vars.EDITION_CONFIG`(运行时权威)。
 3. 测试:gateway 包 `bun test`(models-config/edition 套件校验配置形状)。
 4. 部署:gateway worker `wrangler deploy`。
-5. (可选,建议)alpha-code `alpha-models.json` → `platformModels` 加**展示富化**
+5. (可选,建议)Code Puppy `alpha-models.json` → `platformModels` 加**展示富化**
    条目(name/reasoning/web/variants)——不加也能用,picker 会显示裸 id 但
    **倍数照常正确**;variants 即推理档位(REQ-029/055)。此项要 `ship:mac` 才生效。
    ⚠️ 这里**不配任何价格**。计价倍数随 `GET /v1/models` 的 `pricing_multiplier`
-   下发(REQ-127 #679 / ADR-039),alpha-code 侧一个价格字段都不许有 —— 曾经有
+   下发(REQ-127 #679 / ADR-039),Code Puppy 侧一个价格字段都不许有 —— 曾经有
    过一张本地档位表,它对本地没收录的线上模型一律显示成最便宜的一档
    (claude-fable-5 真实 输入 71.4× / 输出 178.6×,当时显示「标准 ×1」)。
    `src/shared/platform-pricing-authority-ratchet.test.ts` 会拦住它回来。
