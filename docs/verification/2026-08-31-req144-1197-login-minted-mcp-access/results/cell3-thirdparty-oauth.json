@@ -1,0 +1,24 @@
+{
+  "cell": "3_thirdparty_mcp_oauth_regression",
+  "add_status": "needs_auth",
+  "startAuth_has_authorizationUrl": true,
+  "authorize_host": "127.0.0.1:39871",
+  "authorize_path": "/authorize",
+  "authorizationUrl_query_keys": [
+    "client_id",
+    "code_challenge",
+    "code_challenge_method",
+    "redirect_uri",
+    "resource",
+    "response_type",
+    "state"
+  ],
+  "response_type": "code",
+  "code_challenge_method": "S256",
+  "has_code_challenge": true,
+  "redirect_uri": "http://127.0.0.1:19876/mcp/oauth/callback",
+  "has_oauthState": true,
+  "loopback_callback_listening": "127.0.0.1:19876 (verified via lsof, owned by isolated Electron pid 73321)",
+  "verdict": "PASS",
+  "note": "third-party remote MCP (401+OAuth discovery) routed to interactive OAuth; T3 diff (42e47e670) removed only mcpName==='cloud'-guarded code, third-party path byte-identical"
+}
