@@ -1382,6 +1382,8 @@ export const dict = {
   "alpha.timeline.safeHiddenError": "错误详情已隐藏",
   "alpha.timeline.hiddenNoRule": "这个工具没有命中 Code Puppy 拥有的展示规则;参数、错误和输出保持隐藏。",
   "alpha.timeline.hiddenNoSnapshot": "这条记录缺少完整来源快照;不查询实时目录,也不从名称猜测。",
+  "alpha.timeline.askTimeout": "审批已超时,未获批准",
+  "alpha.timeline.askTimeoutBody": "这次调用在等待你批准时超时,已按安全策略拒绝(不会自动放行)。重新发起会再次询问;需要长期放行,请在权限规则中配置允许。",
   "alpha.timeline.devDetails": "开发者详情",
   "alpha.timeline.cloud.webSearch": "网页搜索",
   "alpha.timeline.cloud.dispatch": "下发云端任务",

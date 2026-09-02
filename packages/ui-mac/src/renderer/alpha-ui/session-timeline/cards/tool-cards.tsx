@@ -688,13 +688,26 @@ export function TimelineToolCard(props: { part: ToolPart }) {
         </div>
       </Show>
       {/* #587 安全通用卡(AC2):metadata-only 降级卡陈述确定的隐藏理由;
-          纯静态文案,不携带参数/错误/输出,也没有任何展开入口。 */}
+          纯静态文案,不携带参数/错误/输出,也没有任何展开入口。
+          #1214 AC2:审批超时(fail-closed)是确定结局,不是「被隐藏的错误详情」——
+          分类来自引擎 UnansweredError 首行形态(tool-card-model 钉住),文案仍纯静态,
+          错误原文零字符进 DOM。 */}
       <Show when={head().metadataOnly && head().hiddenReason}>
         {(reason) => (
           <div class="a-tc-body">
             <div class="a-tc-safe" data-alpha-safe-card>
-              <b>{head().status === "error" ? t("alpha.timeline.safeHiddenError") : t("alpha.timeline.safeHidden")}</b>
-              <span>{t(HIDDEN_REASON_KEYS[reason()] as Parameters<typeof t>[0])}</span>
+              <Show
+                when={head().askTimedOut}
+                fallback={
+                  <>
+                    <b>{head().status === "error" ? t("alpha.timeline.safeHiddenError") : t("alpha.timeline.safeHidden")}</b>
+                    <span>{t(HIDDEN_REASON_KEYS[reason()] as Parameters<typeof t>[0])}</span>
+                  </>
+                }
+              >
+                <b data-alpha-ask-timeout>{t("alpha.timeline.askTimeout")}</b>
+                <span>{t("alpha.timeline.askTimeoutBody")}</span>
+              </Show>
             </div>
           </div>
         )}
