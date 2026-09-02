@@ -1,0 +1,171 @@
+[
+  {
+    "id": "21983562-3814-47dd-9547-215d4965dde5",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "author_email": "jinjunnm@gmail.com",
+    "annotations": {
+      "workers/message": "git:6d718c82b416edf13c78ae0845a7fb73f1ddf9b6 (摘除 ap#343 临时诊断)",
+      "workers/triggered_by": "deployment"
+    },
+    "versions": [
+      {
+        "version_id": "6baa2afb-d3ce-4764-a10e-a0d53e9c38d3",
+        "percentage": 100
+      }
+    ],
+    "created_on": "2026-08-14T07:42:15.673041Z"
+  },
+  {
+    "id": "52ab55ef-0afc-4323-8615-dd1a93c42d5d",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "author_email": "jinjunnm@gmail.com",
+    "annotations": {
+      "workers/triggered_by": "secret"
+    },
+    "versions": [
+      {
+        "version_id": "3c982995-ec6c-4137-82d9-368ef91984f5",
+        "percentage": 100
+      }
+    ],
+    "created_on": "2026-08-14T07:42:41.961782Z"
+  },
+  {
+    "id": "254360e4-2248-4eba-91a6-ba8434652a49",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "author_email": "jinjunnm@gmail.com",
+    "annotations": {
+      "workers/message": "git:2a74c7e75b29c5d9e180c0962f2916c52a772265",
+      "workers/triggered_by": "deployment"
+    },
+    "versions": [
+      {
+        "version_id": "57b62890-a0a2-4c39-aff0-0bcc1acbc316",
+        "percentage": 100
+      }
+    ],
+    "created_on": "2026-08-21T03:37:19.820622Z"
+  },
+  {
+    "id": "a5780fc8-43ff-4a70-a3d5-4e3c9e5704e9",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "author_email": "jinjunnm@gmail.com",
+    "annotations": {
+      "workers/message": "git:b0d8036dd070a965312f58a1c92404244d87e7eb",
+      "workers/triggered_by": "deployment"
+    },
+    "versions": [
+      {
+        "version_id": "1d7ac3f9-c440-4a9c-a198-c875e0435d71",
+        "percentage": 100
+      }
+    ],
+    "created_on": "2026-08-26T07:27:14.177313Z"
+  },
+  {
+    "id": "354c768f-04e6-4562-a750-30703dadfed1",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "author_email": "jinjunnm@gmail.com",
+    "annotations": {
+      "workers/message": "git:aff489ad2088ae2f4bdb0b6ff634ee306eafdd4b",
+      "workers/triggered_by": "deployment"
+    },
+    "versions": [
+      {
+        "version_id": "c4b10c97-fa0a-4af8-8b9d-ec709f16dc7b",
+        "percentage": 100
+      }
+    ],
+    "created_on": "2026-08-27T08:04:57.693526Z"
+  },
+  {
+    "id": "5607be34-b22a-47eb-b558-ee51530e27b6",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "author_email": "jinjunnm@gmail.com",
+    "annotations": {
+      "workers/message": "git:2baa1b7db6dce8961f43c33d3cf1570b9292602e",
+      "workers/triggered_by": "deployment"
+    },
+    "versions": [
+      {
+        "version_id": "336be7d9-e035-401a-aa83-9ea4837ce414",
+        "percentage": 100
+      }
+    ],
+    "created_on": "2026-08-27T08:16:25.259666Z"
+  },
+  {
+    "id": "a786e6c8-02cf-4b0a-8219-66bce6ad4127",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "author_email": "jinjunnm@gmail.com",
+    "annotations": {
+      "workers/message": "git:2bc07b72209b98920e87d08a44fbd99626ec17a8",
+      "workers/triggered_by": "deployment"
+    },
+    "versions": [
+      {
+        "version_id": "c356587e-3c32-4d9a-8ed4-e6021747f2b1",
+        "percentage": 100
+      }
+    ],
+    "created_on": "2026-08-27T08:32:51.542182Z"
+  },
+  {
+    "id": "571fbda4-6817-43f9-9871-6b98e3858c0f",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "author_email": "jinjunnm@gmail.com",
+    "annotations": {
+      "workers/message": "git:42fc60835a372e518f317e0e5e60086b6b4e7025",
+      "workers/triggered_by": "deployment"
+    },
+    "versions": [
+      {
+        "version_id": "508438c7-67ae-4cc8-878a-3901bf05c5ba",
+        "percentage": 100
+      }
+    ],
+    "created_on": "2026-08-27T08:35:44.899775Z"
+  },
+  {
+    "id": "02111e48-bd6c-4bf5-b022-7f42f2de7dfd",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "author_email": "jinjunnm@gmail.com",
+    "annotations": {
+      "workers/message": "git:e20c5bd03722b798d077ac1026ced4eada1a4b9b",
+      "workers/triggered_by": "upload"
+    },
+    "versions": [
+      {
+        "version_id": "4dac2f56-43f7-4526-b9e9-d2471a65010f",
+        "percentage": 100
+      }
+    ],
+    "created_on": "2026-08-28T02:09:16.730112Z"
+  },
+  {
+    "id": "324566f8-d522-4104-aeff-6872a9282f95",
+    "source": "wrangler",
+    "strategy": "percentage",
+    "author_email": "jinjunnm@gmail.com",
+    "annotations": {
+      "workers/message": "git:11176caf09fae424a3f33389883fc4eab42f2c5d",
+      "workers/triggered_by": "deployment"
+    },
+    "versions": [
+      {
+        "version_id": "b67728e4-9bcf-4be3-8220-7bcf4b96fe69",
+        "percentage": 100
+      }
+    ],
+    "created_on": "2026-08-28T02:42:08.572969Z"
+  }
+]
