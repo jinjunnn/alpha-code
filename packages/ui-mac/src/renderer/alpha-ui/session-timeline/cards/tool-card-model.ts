@@ -4,8 +4,11 @@
 // **专用卡只由完整稳定 identity(#878 的 ToolDisplaySnapshotV1)命中宿主拥有的
 // 精确展示规则**;`part.tool` 是模型别名(technicalId),不再参与任何分派判定。
 // identity 缺失 / 非法、规则未命中、第三方 MCP / plugin 一律 metadata-only:
-// 只显示来源分类、被动净化且有界的名称与结构化状态,**不读 input / metadata /
-// output / error 任何字段**。命中规则的卡,字段先走类别 allowlist 与 typed
+// 只显示来源分类、被动净化且有界的名称与结构化状态,**input / metadata / output /
+// error 的内容一律不进投影**。唯一的例外读取是 #1214 AC2 的审批超时分类
+// (`permissionAskTimedOut`):它读 error 只为与引擎 UnansweredError 的固定首行形态
+// 做匹配,产出一个布尔,错误原文零字符进入投影 —— 内容不泄漏的纪律不变。
+// 命中规则的卡,字段先走类别 allowlist 与 typed
 // normalization(I2 防御读取),再过共享 redactor(tool-redactor);redactor
 // 任一步失败即隐藏整字段(AC5),不回退 raw string。
 import type { ToolAuthority, ToolIdentity, ToolPart, ToolState } from "@opencode-ai/sdk/v2/client"
@@ -378,6 +381,8 @@ export interface ToolCardHead {
   origin?: string
   /** metadata-only 降级卡的确定隐藏理由(安全通用卡文案分支,AC2)。 */
   hiddenReason?: ToolHiddenReason
+  /** #1214 AC2:error 态且失败原因是「审批等待超时,fail-closed 拒绝」(纯分类,不携带错误原文)。 */
+  askTimedOut?: boolean
 }
 
 const TITLE_KEYS: Partial<Record<ToolCardKind, string>> = {
@@ -409,6 +414,20 @@ function assignPathTarget(head: ToolCardHead, value: unknown) {
   }
 }
 
+// ── #1214 AC2:fail-closed 审批超时的确定分类 ────────────────────────────────
+/**
+ * 引擎 `UnansweredError`(packages/opencode/src/permission/index.ts)detail 的首行形态。
+ * 分类只产布尔:错误原文零字符进投影,#587 AC2「降级卡不携带调用数据」的纪律不变。
+ * 形态契约由 tool-card-provenance-gates.test.ts 用**真引擎构造的 UnansweredError** 钉住:
+ * 引擎措辞漂移 ⇒ 那条契约用例先红,本正则跟着改,不会静默退回「错误详情已隐藏」而无人知晓。
+ */
+const PERMISSION_ASK_TIMEOUT_PATTERN = /^审批请求等待 \d+ 秒无人应答/
+
+/** true = 这次工具调用的失败是「权限审批等待超时,fail-closed 拒绝」这一确定结局。 */
+export function permissionAskTimedOut(state: ToolState): boolean {
+  return state.status === "error" && typeof state.error === "string" && PERMISSION_ASK_TIMEOUT_PATTERN.test(state.error)
+}
+
 export function toolCardHeadOf(part: ToolPart): ToolCardHead {
   const dispatch = toolCardDispatchOf(part)
   const status = toolCardStatusOf(part.state)
@@ -421,6 +440,8 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
     origin: dispatch.origin,
     hiddenReason: dispatch.hiddenReason,
   }
+  // #1214 AC2:审批超时是确定结局,所有来源(含降级卡)都要能陈述它 —— 分类见上,零内容泄漏。
+  if (permissionAskTimedOut(part.state)) head.askTimedOut = true
   // AC2:降级卡不读 input / metadata —— 到此为止。
   if (dispatch.metadataOnly) return head
   head.titleKey = TITLE_KEYS[dispatch.kind]

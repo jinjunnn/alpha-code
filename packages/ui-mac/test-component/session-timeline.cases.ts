@@ -1073,6 +1073,63 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(pluginDev.textContent).toContain("plugin:sample-plugin:bash")
   })
 
+  test("#1214 AC2 审批超时呈现:mcp 降级卡出「审批已超时,未获批准」而非通用隐藏文案;错误原文零泄漏;普通错误不受影响", async () => {
+    const host = mount()
+    // 引擎 UnansweredError 的 message 形态(首行契约由 tool-card-provenance-gates.test.ts
+    // 用真引擎构造钉住;此处按同形态字面量驱动 DOM 半场)。
+    const askTimeoutMessage =
+      "审批请求等待 300 秒无人应答,已按 fail-closed 结束:本次操作**没有**被放行。\n" +
+      '请求:permission=mcp:cloud:cloud_web_search patterns=["*"]\n' +
+      "常见原因:审批对话框所在的会话页没有打开(切到了别的会话/别的页面),或审批面未连上本会话。"
+    runtime.setTimelineRows(
+      assistantFixture([
+        // 审批超时的 mcp 工具:必须能读出可辨识原因(已超时 / 未获批准)。
+        toolPartFixture(
+          "prt_t1",
+          "cloud_cloud_web_search",
+          { status: "error", input: { query: "秘密查询词" }, error: askTimeoutMessage, time: { start: 0, end: 1 } },
+          {
+            identity: { source: "mcp", origin: "cloud", name: "cloud_web_search" },
+            technicalId: "cloud_cloud_web_search",
+            authority: { kind: "not-asserted" },
+          },
+        ),
+        // 普通错误的 mcp 工具:照旧「错误详情已隐藏」,不冒充审批超时。
+        toolPartFixture(
+          "prt_t2",
+          "context7_resolve-library-id",
+          { status: "error", input: {}, error: "ENOTREACHABLE", time: { start: 0, end: 1 } },
+          {
+            identity: { source: "mcp", origin: "context7", name: "resolve-library-id" },
+            technicalId: "context7_resolve-library-id",
+            authority: { kind: "not-asserted" },
+          },
+        ),
+      ]),
+    )
+    await flush()
+
+    const timeoutCard = host.querySelector("[data-alpha-tool-card][data-tool='cloud_cloud_web_search']")!
+    expect(timeoutCard.getAttribute("data-status")).toBe("error")
+    const timeoutSafe = timeoutCard.querySelector("[data-alpha-safe-card]")!
+    // 可辨识原因:包含「已超时」与「未获批准」两类词,替换回通用失败文案即红(#1214 AC2 变异判据)。
+    expect(timeoutSafe.textContent).toContain("审批已超时,未获批准")
+    expect(timeoutSafe.textContent).toContain("重新发起会再次询问")
+    expect(timeoutSafe.textContent).not.toContain("错误详情已隐藏")
+    expect(timeoutSafe.querySelector("[data-alpha-ask-timeout]")).not.toBeNull()
+    // 错误原文与请求内容零字符进 DOM(#587 AC2 纪律不变)。canonical identity 出现在
+    // 默认折叠的开发者详情里是 #587 AC4 的既有特性,不算错误原文泄漏,故不以它作针。
+    expect(timeoutCard.textContent).not.toContain("常见原因")
+    expect(timeoutCard.textContent).not.toContain("没有**被放行")
+    expect(timeoutCard.textContent).not.toContain("秘密查询词")
+
+    const genericCard = host.querySelector("[data-alpha-tool-card][data-tool='context7_resolve-library-id']")!
+    const genericSafe = genericCard.querySelector("[data-alpha-safe-card]")!
+    expect(genericSafe.textContent).toContain("错误详情已隐藏")
+    expect(genericSafe.querySelector("[data-alpha-ask-timeout]")).toBeNull()
+    expect(genericCard.textContent).not.toContain("ENOTREACHABLE")
+  })
+
   test("#583 list 卡:目录网格 + 目录/文件分类图标 + 「共 N 项」计数(头徽标与 footer);home 前缀不显示", async () => {
     const host = mount()
     runtime.setTimelineRows(

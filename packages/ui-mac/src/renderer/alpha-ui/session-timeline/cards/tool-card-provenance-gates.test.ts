@@ -1042,3 +1042,68 @@ describe("#934(#879 R1 Minor-3)— AC5 确定标记补齐:副行字段脱敏失�
     expect(absent).toBeUndefined()
   })
 })
+
+// ── #1214 AC2 — fail-closed 审批超时:降级卡也要陈述确定结局,且错误原文零泄漏 ──
+//
+// 与本文件抬头「锚点不 import 被测对象常量」不冲突:这里 import 的是**引擎**的
+// UnansweredError(投影模型的上游生产者,不是被测对象)——它是分类形态的唯一权威。
+// 引擎措辞漂移 ⇒ 第一条用例当场红(分类静默失配、卡面退回「错误详情已隐藏」的形态
+// 在这里被钉死)。变异自证:把 tool-card-model 的 PERMISSION_ASK_TIMEOUT_PATTERN 改到
+// 不匹配 ⇒ 第一条红;把 toolCardHeadOf 里 askTimedOut 赋值删掉 ⇒ 第一、三条红。
+describe("#1214 AC2 — 审批超时分类:真引擎 UnansweredError 驱动,降级卡出确定结局", () => {
+  test("真引擎 UnansweredError 的 message → mcp 降级卡 askTimedOut=true,错误原文零字符进投影", async () => {
+    const { Permission } = await import("../../../../../../opencode/src/permission/index")
+    const engineError = new Permission.UnansweredError({
+      permission: "mcp:cloud:cloud_web_search",
+      patterns: ["*"],
+      timeoutMs: 300_000,
+    })
+    const part = toolPart({
+      tool: "cloud_cloud_web_search",
+      display: mcp("cloud", "cloud_web_search"),
+      state: errored({ query: "秘密查询词" }, engineError.message),
+    })
+    const head = toolCardHeadOf(part)
+    expect([head.metadataOnly, head.status, head.askTimedOut]).toEqual([true, "error", true])
+    // 分类是布尔,不是转述:引擎错误原文与请求内容零字符进入任何投影面。
+    const surface = projectedSurface(part)
+    for (const leaked of ["mcp:cloud:cloud_web_search", "常见原因", "秘密查询词", "300"]) {
+      expect({ leaked, present: surface.includes(leaked) }).toEqual({ leaked, present: false })
+    }
+  })
+
+  test("普通错误不冒充审批超时:mcp 降级卡 askTimedOut 缺席;中段撞词也不算", () => {
+    const generic = toolCardHeadOf(
+      toolPart({
+        tool: "context7_resolve-library-id",
+        display: mcp("context7", "resolve-library-id"),
+        state: errored({}, "ENOTREACHABLE"),
+      }),
+    )
+    expect([generic.metadataOnly, generic.askTimedOut]).toEqual([true, undefined])
+    // 形态锚定在首行行首:错误正文中段出现同款句式(如远端回显)不触发分类。
+    const midMatch = toolCardHeadOf(
+      toolPart({
+        tool: "context7_resolve-library-id",
+        display: mcp("context7", "resolve-library-id"),
+        state: errored({}, "remote said: 审批请求等待 300 秒无人应答"),
+      }),
+    )
+    expect(midMatch.askTimedOut).toBeUndefined()
+  })
+
+  test("分类对所有来源一致:builtin 错误卡同样打 askTimedOut(其错误体本就可见,分类不改变它)", async () => {
+    const { Permission } = await import("../../../../../../opencode/src/permission/index")
+    const engineError = new Permission.UnansweredError({ permission: "bash", patterns: ["rm -rf /tmp/x"], timeoutMs: 60_000 })
+    const part = toolPart({
+      tool: "bash",
+      display: builtin("bash"),
+      state: errored({ command: "rm -rf /tmp/x" }, engineError.message),
+    })
+    const head = toolCardHeadOf(part)
+    expect([head.metadataOnly, head.askTimedOut]).toEqual([false, true])
+    // 匹配卡的错误体照旧走 redactor 后可见 —— 分类不隐藏、不替换正文。
+    const body = toolCardBodyOf(part)
+    expect(body.type).toBe("error")
+  })
+})

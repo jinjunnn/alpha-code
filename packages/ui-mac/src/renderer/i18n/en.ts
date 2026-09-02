@@ -1412,6 +1412,8 @@ export const dict = {
   "alpha.timeline.safeHiddenError": "Error details hidden",
   "alpha.timeline.hiddenNoRule": "This tool did not match a Code Puppy-owned display rule; parameters, errors, and output stay hidden.",
   "alpha.timeline.hiddenNoSnapshot": "This record is missing a complete provenance snapshot; no live registry lookup, no guessing from the name.",
+  "alpha.timeline.askTimeout": "Approval timed out — not granted",
+  "alpha.timeline.askTimeoutBody": "This call timed out waiting for your approval and was denied fail-closed (it is never auto-approved). Retry to be asked again; to allow it long-term, add a permission rule.",
   "alpha.timeline.devDetails": "Developer details",
   "alpha.timeline.cloud.webSearch": "Web search",
   "alpha.timeline.cloud.dispatch": "Dispatch cloud job",
