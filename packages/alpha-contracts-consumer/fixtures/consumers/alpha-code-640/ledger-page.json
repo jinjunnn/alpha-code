@@ -2,7 +2,7 @@
   "kind": "schema",
   "contract": "LedgerPageV1",
   "consumer": "alpha-code",
-  "consumer_version": "0.1.8",
+  "consumer_version": "0.1.9",
   "expect": "valid",
   "value": {
     "schema_version": 1,
