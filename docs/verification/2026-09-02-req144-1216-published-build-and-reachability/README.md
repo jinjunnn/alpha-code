@@ -1,15 +1,16 @@
 # REQ-144 / alpha-code#1216 — ④格:发布件钉扎(AC2)与 `mcp:access` dispatch 可达性勘破(AC1)
 
 承接 `#1197` 的④格(`docs/verification/2026-08-31-req144-1197-login-minted-mcp-access/`)。
-本轮:**AC2 PASS**(钉扎重做到 0.1.9);**AC1 未取得,且勘破证明它今天结构上到不了** ——
-阻塞方不是 `#1214`(已修并发布),是 `#793`。
 
 结论矩阵:
 
 | AC | 判定 | 一句话 |
 | --- | --- | --- |
 | AC2 发布件本体钉扎 | **PASS** | 已验签 manifest → release 资产 → 装机件 `app.asar` 三方逐字一致,标记检索命中、负针零命中 |
-| AC1 D1 准入判别子 | **未取得(不可达)** | `surface='mcp' AND caller_ref='mcp:access'` 只由 MCP 面 `cloud_dispatch` 写,而该工具**广播出来的 inputSchema 是空的**,模型只能发 `{}`,服务端在 handler 之前就拒 ⇒ 永不落行 |
+| AC1(原判据)D1 `job_admissions` 准入行 | **结构上不可达** | 该行只由 MCP 面 `cloud_dispatch` 写,而该工具**广播出来的 inputSchema 是空的**,模型只能发 `{}`,服务端在 handler 之前就拒 ⇒ 永不落行。阻塞方是 `#793`,不是 `#1214` |
+| AC1(改判后,owner 2026-09-02 裁决) | **PASS** | 判据换成 `ap#226` 白纸黑字要的那句「已发布桌面版实际以 `mcp_access` 完成过一次 `tools/call`」;证据 = 0.1.9 app 内端到端见证 + `settle_intent` 时间对齐行 |
+
+阅读顺序:先看 AC2,再看「AC1 —— 勘破」(为什么原判据到不了),最后看「AC1 改判」(新判据与证据)。
 
 ---
 
@@ -152,3 +153,75 @@ handler 没跑 ⇒ `dispatchJob` 没跑 ⇒ `admitJob` 没跑 ⇒ **`job_admissi
 - 请 owner「在发布件里点一次云任务」**产生不了**这条判别子 —— 那是《勘破先于闸门设计》里
   「finding 论证充分 ≠ 场景可达」的同一个坑,只是这次坑在我们自己的票面上。
 - `#1216` 的 AC1 保持未完成,阻塞方改记为 `#793`(不是 `#1214`)。
+
+---
+
+## AC1 改判(owner 裁决,2026-09-02):判据换成 `ap#226` 白纸黑字要的那句
+
+原 AC1 要的 `job_admissions` 行,上一节已证明**结构上取不到**。改判的理由不是「取不到就降格」,
+而是**原判据本来就比它服务的那张票要得多**:
+
+`ap#226`(REQ-130 收紧步)的准入原文是
+
+> 已发布的桌面版**实际**以 `mcp_access` 完成过一次 `tools/call`。
+
+不是「一条 dispatch 准入行」。`#1197` 当初挑 `job_admissions` 做判别子,是因为它是当时能想到的
+**服务端持久记录**;但那张表恰好落在唯一一条结构不可达的路上,而 `ap#226` 从未要求过它。
+
+**新 AC1**:已发布的桌面端(0.1.9)以登录铸的 `mcp_access` 在云 MCP 面完成过一次真实
+`tools/call`,且服务端留有与该次调用时刻对得上的持久痕迹。
+
+### 证据
+
+**① 端到端见证(app 内,发布件本体)**
+
+0.1.9 装机后新建会话发起云端联网搜索:
+
+- 审批对话框呈现,Action 逐字为 `mcp:cloud:cloud_web_search`(即云 MCP 面的工具调用,
+  不是 HTTP 面),含主体 / 资源 / Scope / 有效期共 5 条事实与 3 个决策按钮;
+- 点「允许一次」后搜索**完成**,返回真实答案(2.9 秒 / 882 tokens)。
+
+对照:同一路径在 0.1.8 及之前**四次复现全部等满 5 分钟 fail-closed**(`#1214`),
+所以「出结果」本身就是发布件走通了这条路的证据,不是可以碰巧发生的事。
+
+云 MCP 面消费的凭证是登录铸的 `mcp_access`(`{file:}` header 通道,`oauth:false`),
+其 `aud` 逐字为云 MCP 资源、且为标量 —— 已在 `#1197` ②格进程内解码断言(PASS),
+本轮不重复取证。
+
+**② 服务端持久痕迹(D1 `alpha-settle-intent`)**
+
+`cloud_web_search` 经 gateway 的封印路由 `/v1/tools/web_search` 按次计费到调用租户
+(`worker.ts:2433`,该路由是**唯一**额外接受 `mcp_access` 的路由,`ap#228`)。查 `settle_intent`:
+
+```
+action_id=tool.web_search  state=delivered  created=2026-09-02 09:21:22 UTC  charged_fen=15  billing_path=wallet
+```
+
+**时间对齐**:v0.1.9 的 release 发布时刻是 `2026-09-02T09:19:13Z`;该表里
+`tool.web_search` 共 6 行,**发布时刻之后有且仅有这一行**(上一行是同日 03:41:19,
+属发布前的编排者直连探针)。
+
+**查询手段先做正样本对照**:同一查询给出 `model.invoke.chat` 58 行 delivered / 23 行 void、
+`model.invoke.messages` 5 行 void,并逐行给出时间戳 ⇒ 空结果会是真空,不是瞎查。
+
+### 如实声明证据强度(不粉饰)
+
+`settle_intent` 的列里**没有凭证类别**(`0001_settle_intent.sql:13`:只有 `tenant_ref` /
+`action_id` / `state` / 时间 / receipt)。带 `caller_ref` 的那张表正是打不开的 `job_admissions`。
+所以服务端痕迹**不是**「字段上写着 via=mcp」,归因靠三条合起来:
+
+1. app 内审批框逐字显示 `mcp:cloud:cloud_web_search` ⇒ 走的是云 MCP 面,不是 HTTP 面;
+2. 云 MCP 的 `cloud_web_search` 原样转发调用方 Authorization(`cloud-mcp.ts:201`),
+   而桌面在该通道上带的就是 `mcp_access`(`#1197` ②格);
+3. 计费行时刻与该次调用对得上,且是 0.1.9 发布之后唯一一行。
+
+**这比原 AC1 的判据更强,不是更弱**:`job_admissions` 的行同样分不出「发布件发的」还是
+「持 token 直连发的」(`#1197` 自己写过这一点),它从来只是「有过一次 dispatch」的代理;
+而这里有的是**发布件本体内被见证的那一次调用**,代理不再必要。
+
+**判定:AC1 PASS。** `ap#226` 的准入条件因此满足。
+
+### 遗留
+
+`cloud_dispatch` 桌面侧不可用这件事本身仍未修,已从本票剥离为 alpha-platform 一侧的
+独立 CODE 票(`#793` 的服务端半场);它是产品能力,不是本票的证据格。
