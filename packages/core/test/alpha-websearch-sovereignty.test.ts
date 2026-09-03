@@ -25,6 +25,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { LayerNodePlatform } from "@opencode-ai/core/effect/app-node-platform"
 import { PermissionV2 } from "@opencode-ai/core/permission"
 import { SessionV2 } from "@opencode-ai/core/session"
+import { ToolFailure } from "@opencode-ai/llm"
 import { Tool } from "@opencode-ai/core/tool/tool"
 import { Tools } from "@opencode-ai/core/tool/tools"
 import { ToolRegistry } from "@opencode-ai/core/tool/registry"
@@ -154,7 +155,16 @@ const mutantNode = makeLocationNode({
                 type: "auto",
                 numResults: 8,
                 livecrawl: "fallback",
-              }).pipe(Effect.map((text) => ({ text: text ?? "" }))),
+              }).pipe(
+                Effect.map((text) => ({ text: text ?? "" })),
+                // `Tool.make` 的错误通道是 `ToolFailure`(`packages/llm/src/tool.ts:24`);
+                // 生产侧 websearch 用的就是这个映射(`src/tool/websearch.ts:306-311`)。
+                // `instanceof` 分支是承重的:传输层闸失败时抛的正是 `ToolFailure`,
+                // 必须逐字透传,否则下面那条断言看到的就不再是 LOCAL_WEBSEARCH_DENIED_MESSAGE。
+                Effect.mapError((error) =>
+                  error instanceof ToolFailure ? error : new ToolFailure({ message: String(error) }),
+                ),
+              ),
           }),
         })
         .pipe(Effect.orDie)
