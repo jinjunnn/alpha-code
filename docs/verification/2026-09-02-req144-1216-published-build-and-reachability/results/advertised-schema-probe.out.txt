@@ -1,0 +1,13 @@
+# bun advertised-schema-probe.ts  (alpha-platform/packages/gateway, 2026-09-02)
+# @modelcontextprotocol/sdk 1.29.0 · zod 4.4.3
+
+cloud_dispatch {"type":"object","properties":{}}
+control_plain {"type":"object","properties":{"query":{"type":"string"},"n":{"type":"number"}},"required":["query"],"$schema":"http://json-schema.org/draft-07/schema#"}
+
+empty isError=true MCP error -32602: Input validation error: Invalid arguments for tool cloud_dispatch: [   {     "code": "invalid_union",
+valid isError=false handler ran with autonomy=bounded-agent
+
+# 候选形状(同一探针,另一轮):
+now_discriminated_union  字段数=0  (空)
+cand_a_flat_object       字段数=7  schema_version,idempotency_key,autonomy,kind,input,objective,capabilities
+cand_b_plain_union       字段数=0  (空)
