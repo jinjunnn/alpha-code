@@ -1,0 +1,30 @@
+{
+  "rel": "probe.docx",
+  "kind": "office-docx",
+  "open": {
+    "ok": true,
+    "previewId": "rp_e46da8e534b7"
+  },
+  "status": {
+    "ok": true,
+    "previewId": "rp_e46da8e534b7",
+    "open": true,
+    "blockedPaths": [],
+    "office": {
+      "status": "rendered",
+      "detail": "1 page(s)"
+    }
+  },
+  "sampledPixels": 226065,
+  "inkPercent": 2.84,
+  "hostLog": [
+    "rail-preview: opened {\"previewId\":\"rp_e46da8e534b7\",\"kind\":\"office-docx\"}",
+    "rail-preview: closed {\"previewId\":\"rp_e46da8e534b7\",\"reason\":\"closed\"}"
+  ],
+  "verdict": "PASS",
+  "checks": {
+    "rendered": true,
+    "noNetwork": true,
+    "hasInk": true
+  }
+}

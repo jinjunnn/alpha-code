@@ -466,54 +466,69 @@ async function mountOffice(path: string, bytes: Uint8Array) {
   return { harness, host }
 }
 
-describe("#1227 office extraction in the rail file viewer", () => {
-  test("docx renders extracted paragraphs with the fidelity note — not the unsupported card", async () => {
-    const { host } = await mountOffice("report.docx", officeFixtures.docxContainer())
-    expect(host.querySelector("[data-alpha-fv-card]")).toBeNull()
-    const content = host.querySelector("[data-office-content]")
-    expect(content).not.toBeNull()
-    expect(content!.textContent!.trim().length).toBeGreaterThan(0)
-    expect(host.querySelector("[data-office-fidelity]")).not.toBeNull()
-    expect(host.querySelector("[data-alpha-fv-office]")?.getAttribute("data-alpha-fv-office")).toBe("docx")
-  })
+describe("#1229 office layout rendering in the rail file viewer", () => {
+  // 默认画布是隔离叠放层里的版式渲染;判据不是 DOM 里有内容(内容画在另一个进程上),
+  // 而是**载体按检测出的子类型被打开了**,且工作区路径确实递了过去。
+  for (const [name, file, kind] of [
+    ["report.docx", "docxContainer", "office-docx"],
+    ["deck.pptx", "pptxContainer", "office-pptx"],
+    ["book.xlsx", "xlsxContainer", "office-xlsx"],
+  ] as const) {
+    test(`${name} opens the isolated layout carrier as ${kind}`, async () => {
+      const { harness, host } = await mountOffice(name, officeFixtures[file]())
+      expect(harness.calls.overlayOpen.map((c) => ({ path: c.path, kind: c.kind }))).toEqual([
+        { path: name, kind },
+      ])
+      // 版式在另一个进程 —— 主文档 DOM 里只有占位容器,不该同时画一份文字提取。
+      expect(host.querySelector("[data-alpha-fv-overlay-region]")).not.toBeNull()
+      expect(host.querySelector("[data-office-content]")).toBeNull()
+      expect(host.querySelector("[data-alpha-xlsx-sheet]")).toBeNull()
+    })
+  }
 
-  test("pptx renders one block per slide in authoritative order", async () => {
-    const { host } = await mountOffice("deck.pptx", officeFixtures.pptxContainer())
-    const slides = Array.from(host.querySelectorAll("[data-office-slide]"))
-    expect(slides.length).toBeGreaterThan(1)
-    expect(slides[0]!.textContent!.trim().length).toBeGreaterThan(0)
-  })
-
-  test("xlsx renders the worksheet grid — the view #1176 built and nothing ever mounted", async () => {
-    const { host } = await mountOffice("book.xlsx", officeFixtures.xlsxContainer())
-    const sheet = host.querySelector("[data-alpha-xlsx-sheet]")
-    expect(sheet).not.toBeNull()
-    expect(sheet!.querySelectorAll("tbody tr").length).toBeGreaterThan(0)
-    // 多表清单可切换(xlsxwriter 夹具是双表)。
-    expect(host.querySelectorAll("[data-alpha-xlsx-tab]").length).toBeGreaterThan(1)
-  })
-
-  test("a non-OOXML file wearing a .docx name is refused honestly — no fabricated content", async () => {
-    const { host } = await mountOffice("fake.docx", new TextEncoder().encode("this is not a zip at all"))
-    expect(host.querySelector("[data-office-content]")).toBeNull()
-    expect(host.querySelector("[data-alpha-xlsx-sheet]")).toBeNull()
-    const card = host.querySelector("[data-alpha-fv-card]")
-    expect(card).not.toBeNull()
-    expect(card!.textContent).toContain("NOT_ZIP")
-  })
-
-  test("structure wins over the extension: xlsx bytes named .docx are refused, not shown as a document", async () => {
-    const { host } = await mountOffice("mislabelled.docx", officeFixtures.xlsxContainer())
-    // 冲突由 presentOfficeStructure 裁为 type-mismatch → 拒绝卡,绝不按任一方猜着渲染。
-    expect(host.querySelector("[data-office-content]")).toBeNull()
+  test("载体子类型由容器结构决定,不由扩展名:xlsx 字节戴 .docx 名 ⇒ 结构闸拒,零载体", async () => {
+    const { harness, host } = await mountOffice("mislabelled.docx", officeFixtures.xlsxContainer())
+    // 冲突由 presentOfficeStructure 裁为 type-mismatch —— 既不按扩展名渲染,也不按结构渲染。
+    expect(harness.calls.overlayOpen).toEqual([])
     const card = host.querySelector("[data-alpha-fv-card]")
     expect(card).not.toBeNull()
     expect(card!.textContent).toContain("OOXML_CLAIM_CONFLICT")
   })
 
-  test("macro-enabled and template variants stay unsupported (they never reach the extractor)", async () => {
-    const { host } = await mountOffice("macros.docm", officeFixtures.docxContainer())
+  test("没过结构闸的容器绝不进渲染库:非 zip 戴 .docx 名 ⇒ 零载体 + 诚实卡", async () => {
+    const { harness, host } = await mountOffice("fake.docx", new TextEncoder().encode("this is not a zip at all"))
+    expect(harness.calls.overlayOpen).toEqual([])
     expect(host.querySelector("[data-office-content]")).toBeNull()
+    const card = host.querySelector("[data-alpha-fv-card]")
+    expect(card).not.toBeNull()
+    expect(card!.textContent).toContain("NOT_ZIP")
+  })
+
+  test("宿主页报渲染失败 ⇒ 换回文字提取那块画布,并说明为什么(不是空白等下去)", async () => {
+    const harness = runtime.createViewerHarness({
+      files: { "report.docx": { content: officeFixtures.docxContainer() } },
+      overlayOfficeOutcome: { status: "failed", code: "RENDER_FAILED", detail: "boom in the renderer" },
+    })
+    const host = mount(harness.View)
+    harness.viewer().open("report.docx")
+    for (let i = 0; i < 6; i++) await flushTimers()
+    // 载体先被打开过(默认走版式),随后 status 轮询把失败带回来。
+    expect(harness.calls.overlayOpen.length).toBe(1)
+    await new Promise((r) => setTimeout(r, 1700))
+    await flushTimers()
+    const content = host.querySelector("[data-office-content]")
+    expect(content).not.toBeNull()
+    expect(content!.textContent!.trim().length).toBeGreaterThan(0)
+    const degraded = host.querySelector("[data-alpha-fv-office-degraded]")
+    expect(degraded).not.toBeNull()
+    expect(degraded!.textContent).toContain("boom in the renderer")
+    // 降级是换画布,不是重读文件:不该出现第二次 openRead。
+    expect(harness.calls.openRead.filter((p) => p === "report.docx").length).toBe(1)
+  })
+
+  test("macro-enabled and template variants stay unsupported (they never reach any carrier)", async () => {
+    const { harness, host } = await mountOffice("macros.docm", officeFixtures.docxContainer())
+    expect(harness.calls.overlayOpen).toEqual([])
     expect(host.querySelector("[data-alpha-fv-office]")).toBeNull()
     expect(host.querySelector("[data-alpha-fv-card]")).not.toBeNull()
   })

@@ -29,14 +29,17 @@
   },
   "dependencies": {
     "@alpha-code/contracts-consumer": "workspace:*",
+    "@file-viewer/pptx": "3.0.0",
+    "@file-viewer/renderer-spreadsheet": "3.0.0",
     "@zip.js/zip.js": "2.7.62",
-    "jsonc-parser": "3.3.1",
+    "docx-preview": "0.4.0",
     "effect": "catalog:",
     "electron-context-menu": "4.1.2",
     "electron-log": "^5",
     "electron-store": "11.0.2",
     "electron-updater": "6.8.9",
     "electron-window-state": "^5.0.3",
+    "jsonc-parser": "3.3.1",
     "marked": "^15"
   },
   "devDependencies": {

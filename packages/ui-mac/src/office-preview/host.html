@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>Office preview</title>
+    <style>
+      /* 宿主页只负责给渲染库一块干净画布 + 一个与右栏一致的底色。
+         主题跟随系统:右栏叠放在应用窗口上,底色不一致会像贴了一张纸。 */
+      :root { color-scheme: light dark; --alpha-office-bg: #f4f4f5; }
+      @media (prefers-color-scheme: dark) { :root { --alpha-office-bg: #1c1c1e; } }
+      html, body { margin: 0; height: 100%; background: var(--alpha-office-bg); }
+      body { overflow: auto; -webkit-font-smoothing: antialiased; }
+      /* 文档流(docx/pptx):内容多长就多长,body 滚。 */
+      #root { min-height: 100%; }
+      /*
+        表格载体是 canvas 虚拟滚动,它按**容器的确定高度**算画布尺寸 —— 父链上只要有一处是
+        auto/min-height,它算出来就是 0:标签条与状态栏(flex 外壳)照常出现,中间的网格却
+        一个像素都不画。这个形态只有真跑一遍才看得见(#1229 的取证第一版就是这样:
+        宿主页自报 rendered、blockedPaths 为空,而位图上只有外壳)。
+        所以按 kind 给一条确定高度的链,别指望 :has() 或渲染库自己兜。
+      */
+      html[data-alpha-office-kind="xlsx"], html[data-alpha-office-kind="xlsx"] body { overflow: hidden; }
+      html[data-alpha-office-kind="xlsx"] #root { height: 100%; min-height: 0; }
+      /* docx-preview 的页面容器:居中 + 阴影,让"这是一页纸"这件事看得出来。 */
+      #root .alpha-docx-wrapper { background: transparent; padding: 16px 0; }
+      #root .alpha-docx-wrapper > section.alpha-docx {
+        margin: 0 auto 16px; box-shadow: 0 1px 3px rgba(0,0,0,.18), 0 8px 24px rgba(0,0,0,.10);
+      }
+      /* 表格载体自己撑满(它内部是 canvas 虚拟滚动)。 */
+      #root > .excel-wrapper { height: 100%; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -21,6 +21,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | Which layer can actually contain tool-spawned processes, and which candidate seams cost an upstream adoption | [`architecture/2026-08-23-shell-sandbox-seam.md`](architecture/2026-08-23-shell-sandbox-seam.md) |
 | How long the two outbound fetch chains in `packages/core` can actually block, and which shipped shapes never reach them | [`architecture/2026-08-23-network-timeout-recon.md`](architecture/2026-08-23-network-timeout-recon.md) |
 | 为什么 Chromium 内置 PDF viewer 在隔离 session 里画不出页面(两条独立成因,都不报错) | [`architecture/2026-09-03-electron-pdf-viewer-session.md`](architecture/2026-09-03-electron-pdf-viewer-session.md) |
+| 第三方 Office 渲染库放在哪里跑,为此放宽了什么(以及负向控制证明没削弱 HTML 那条路) | [`architecture/2026-09-03-office-layout-isolation.md`](architecture/2026-09-03-office-layout-isolation.md) |
 | Platform and endpoint integration                                    | [`contracts/`](contracts/)                                           |
 | Session tool permission DTOs and decision receipts                   | [`contracts/session-permission.md`](contracts/session-permission.md) |
 | REQ-131 分层工具策略:三态/四类/selector、cap 合成、binding guard、分区持久化与 V1 session grant 语义 | [`contracts/tool-policy.md`](contracts/tool-policy.md)               |
@@ -38,6 +39,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | REQ-109 startup P95 after #1098/#1099 (FAIL 8,313ms; the tail is now named: first project-list fetch) | [`verification/2026-08-24-req109-p95-post1098-1099/README.md`](verification/2026-08-24-req109-p95-post1098-1099/README.md) |
 | REQ-109 packaged 稳态 catalog P95 after #1083 (FAIL: merged P95 5,347.1ms; new 5s-liveness + uninstrumented mount window) | [`verification/2026-08-24-req109-p95-post1083/README.md`](verification/2026-08-24-req109-p95-post1083/README.md) |
 | `#1227` 右栏 PDF 叠放载体真 Chromium 取证(修复前非暗像素 0%/两个 frame;修复后 93.6%/三个 frame,分区目录关闭即收) | [`verification/2026-09-03-1227-rail-pdf-session/README.md`](verification/2026-09-03-1227-rail-pdf-session/README.md) |
+| `#1229` 右栏 Office 版式载体真 Chromium 取证(docx/pptx/xlsx 三格全 PASS;抓到「自报渲染成功而画布只有外壳」与「仓内夹具不能判版式」两件事) | [`verification/2026-09-03-1229-office-layout/README.md`](verification/2026-09-03-1229-office-layout/README.md) |
 | Lessons and retrospectives                                           | [`retrospectives/`](retrospectives/)                                 |
 | User-visible shipped changes                                         | [`../CHANGELOG.md`](../CHANGELOG.md)                                 |
 | Retired developer prose                                              | [`archive/DEPRECATED.md`](archive/DEPRECATED.md)                     |

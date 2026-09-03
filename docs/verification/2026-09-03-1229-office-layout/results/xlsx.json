@@ -1,0 +1,30 @@
+{
+  "rel": "probe.xlsx",
+  "kind": "office-xlsx",
+  "open": {
+    "ok": true,
+    "previewId": "rp_cb71f592736b"
+  },
+  "status": {
+    "ok": true,
+    "previewId": "rp_cb71f592736b",
+    "open": true,
+    "blockedPaths": [],
+    "office": {
+      "status": "rendered",
+      "detail": "workbook"
+    }
+  },
+  "sampledPixels": 226065,
+  "inkPercent": 6.37,
+  "hostLog": [
+    "rail-preview: opened {\"previewId\":\"rp_cb71f592736b\",\"kind\":\"office-xlsx\"}",
+    "rail-preview: closed {\"previewId\":\"rp_cb71f592736b\",\"reason\":\"closed\"}"
+  ],
+  "verdict": "PASS",
+  "checks": {
+    "rendered": true,
+    "noNetwork": true,
+    "hasInk": true
+  }
+}

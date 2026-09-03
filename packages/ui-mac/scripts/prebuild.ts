@@ -10,6 +10,10 @@ await $`bun ./scripts/copy-metainfo.ts ${channel}`
 // S17 T3(C17):派生 DB 迁移支持面清单 → resources/db-expected-migrations.json(extraResources 进包;
 // db-safety 预检据此判定「DB 超前 / 将前进迁移」。构建期生成 = 不运行时 import core,守 ARCHITECTURE 硬约束②)
 await $`bun ./scripts/gen-db-expected.ts`
+// #1229:Office 版式预览宿主页(跑在隔离 WebContentsView 里,与主渲染世界零共享)。
+// 单独打包的理由见该脚本文件头;产物落 out/office-preview/,由 rail-preview-host 按固定资产表服务。
+await $`bun ./scripts/build-office-preview.ts`
+
 
 // Bundle @alpha-code/ext to self-contained ESM so the embedded Node server can load it
 // without resolving raw TS at runtime (see .claude/rules/DECISIONS.md ADR-006).

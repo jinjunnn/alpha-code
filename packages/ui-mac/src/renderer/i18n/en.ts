@@ -1519,6 +1519,9 @@ export const dict = {
     "The extension says {{claimed}}, but the package structure is {{detected}} — showing it as {{detected}}.",
   "alpha.fileViewer.officeExtractFailedDetail":
     "The file is saved and unmodified; open it in a system app to see the full document.",
+  // #1229 —— 版式画布画不出来时的降级说明。
+  "alpha.fileViewer.officeLayoutFailed":
+    "Could not render the original layout; showing extracted text and tables instead.",
   "alpha.fileViewer.isolationHtml": "Isolated preview · no network access",
   "alpha.fileViewer.isolationBlocked": "{{count}} blocked",
   "alpha.fileViewer.isolationBlockedAtLeast": "at least {{count}} blocked",

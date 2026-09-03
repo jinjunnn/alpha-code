@@ -24,6 +24,7 @@ import type {
   FileViewerRefusal,
   RailPreviewBounds,
   RailPreviewClosedEvent,
+  RailPreviewOfficeOutcome,
   RailPreviewOpenResult,
   WorkspaceFileChunkResult,
 } from "../../../../shared/file-viewer"
@@ -166,6 +167,8 @@ export function createViewerHarness(options: {
   /** true = readChunk 挂起,由 releaseChunk() 手动放行(测取消/迟到内容)。 */
   gated?: boolean
   overlayOpenResult?: RailPreviewOpenResult
+  /** #1229:让用例驱动「版式宿主页报了什么」——降级路只能从这里进。 */
+  overlayOfficeOutcome?: RailPreviewOfficeOutcome
 }) {
   const calls: ViewerHarnessCalls = {
     openRead: [],
@@ -233,7 +236,14 @@ export function createViewerHarness(options: {
     setBounds: (previewId) => void calls.overlaySetBounds.push(previewId),
     setVisible: (previewId, visible) => void calls.overlaySetVisible.push({ previewId, visible }),
     close: (previewId) => void calls.overlayClose.push(previewId),
-    status: (previewId) => Promise.resolve({ ok: true, previewId, open: true, blockedPaths: [] }),
+    status: (previewId) =>
+      Promise.resolve({
+        ok: true,
+        previewId,
+        open: true,
+        blockedPaths: [],
+        ...(options.overlayOfficeOutcome ? { office: options.overlayOfficeOutcome } : {}),
+      }),
     onClosed: (cb) => {
       overlayClosedCbs.add(cb)
       return () => overlayClosedCbs.delete(cb)

@@ -1,0 +1,30 @@
+{
+  "rel": "probe.pptx",
+  "kind": "office-pptx",
+  "open": {
+    "ok": true,
+    "previewId": "rp_70bd16ef02ff"
+  },
+  "status": {
+    "ok": true,
+    "previewId": "rp_70bd16ef02ff",
+    "open": true,
+    "blockedPaths": [],
+    "office": {
+      "status": "rendered",
+      "detail": "5 slide(s)"
+    }
+  },
+  "sampledPixels": 226065,
+  "inkPercent": 57.92,
+  "hostLog": [
+    "rail-preview: opened {\"previewId\":\"rp_70bd16ef02ff\",\"kind\":\"office-pptx\"}",
+    "rail-preview: closed {\"previewId\":\"rp_70bd16ef02ff\",\"reason\":\"closed\"}"
+  ],
+  "verdict": "PASS",
+  "checks": {
+    "rendered": true,
+    "noNetwork": true,
+    "hasInk": true
+  }
+}
