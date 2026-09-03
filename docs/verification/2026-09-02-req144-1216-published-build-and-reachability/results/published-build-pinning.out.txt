@@ -1,0 +1,30 @@
+# ④格 AC2 钉扎重做到 0.1.9(2026-09-02)
+
+## manifest 验签(仓内 verifyReleaseManifestBytes + docs/contracts/desktop-release-manifest.trust.json)
+真件  : {"ok":true,"manifest":{"schema":"alpha.release.manifest.v1","channel":"prod","version":"0.1.9",...,"keyId":"a4062792c8fcc960cf1f80e9...
+篡改件: {"ok":false,"error":"manifest not valid JSON"}
+错签名: {"ok":false,"error":"signature verification failed"}
+
+## release 资产 ↔ manifest
+15c5be089926daa2d54621af9ec229122f3ebd03aaf0612b9d102fb65bf87b01  alpha-code-mac-arm64.zip
+manifest artifacts[].sha256 (kind=updater-archive, size=160032724) = 同值
+signing: signed/notarized/stapled = true, Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)
+
+## release 资产 ↔ 装机件(app.asar)
+release zip 内 : a9b5ae6faa49093b03c06fb84b9b7d8f01ab0ef07f28f49f58d0552f4bf32b51
+装机件         : a9b5ae6faa49093b03c06fb84b9b7d8f01ab0ef07f28f49f58d0552f4bf32b51
+装机版本号     : 0.1.9
+校准(翻转 offset 1000000 一个字节): release == 装机 True / release == 变异件 False
+
+## 装机件签名面
+spctl -a -vvv -t install → accepted, source=Notarized Developer ID,
+  origin=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)
+xcrun stapler validate  → The validate action worked!
+
+## 标记检索(grep -a,asar 含大量字面 NUL)
+ALPHA_MCP_TOKEN                  8 命中
+sweepLegacyCloudMcpAuthEntry     2 命中
+engineMcpAuthPath                2 命中
+审批请求等待                     3 命中
+ensureDirSdkContext              6 命中
+zzz-t1216-nonexistent-needle-8f2a  0 命中 (rc=1)   ← 负针
