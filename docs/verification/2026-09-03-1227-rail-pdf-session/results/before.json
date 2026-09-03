@@ -1,0 +1,32 @@
+{
+  "rel": "probe.pdf",
+  "open": {
+    "ok": true,
+    "previewId": "rp_0b15c29d2f6a"
+  },
+  "size": {
+    "width": 1720,
+    "height": 1400
+  },
+  "sampledPixels": 65082,
+  "nonDarkPixels": 0,
+  "nonDarkPercent": 0,
+  "frames": [
+    "alpha-artifact-preview://<token>/probe.pdf",
+    "chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/index.html"
+  ],
+  "frameCount": 2,
+  "partitionsOnDisk": [],
+  "status": {
+    "ok": true,
+    "previewId": "rp_0b15c29d2f6a",
+    "open": true,
+    "blockedPaths": []
+  },
+  "hostLog": [
+    "rail-preview: opened {\"previewId\":\"rp_0b15c29d2f6a\",\"kind\":\"pdf\"}",
+    "rail-preview: closed {\"previewId\":\"rp_0b15c29d2f6a\",\"reason\":\"closed\"}"
+  ],
+  "partitionsAfterClose": [],
+  "verdict": "FAIL"
+}

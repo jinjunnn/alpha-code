@@ -14,6 +14,19 @@
 // PDF 响应不带 HTML_PREVIEW_CSP(那是 HTML 文档策略,`sandbox` 指令会禁掉 viewer 插件);
 // 隔离不靠它 —— 进程/session/网络/导航面与 html 完全同组。
 //
+// ⚠️ #1227 的黑屏有**两条**独立成因,少修一条仍然全黑,而且两条都不报错:
+//   (一) partition 必须带 `persist:`;(二) 网络白名单必须放行 `chrome://resources/`。
+// partition 那条:Chromium 的 PDF viewer 是一个内建扩展,
+// 而扩展在 **off-the-record(内存态)profile** 里不装载 —— Electron 的无 `persist:` 分区正是
+// OTR。症状不是报错,是**看起来正常的黑屏**:mime handler 仍会把 `chrome-extension://
+// mhjfbmdgcfjbbpaeojofohoefgiehjai/index.html` 挂上,但真正渲染页面的那个 plugin OOPIF
+// 永远建不出来,用户看到 viewer 的深色底 + 空白。实测(见
+// docs/architecture/2026-09-03-electron-pdf-viewer-session.md):同一份配置,
+// 内存分区 0% 非暗像素 / 两个 frame;`persist:` 分区 93.6% / 三个 frame。
+// 隔离面不因此放宽:分区名仍是一次性的(每个 preview 独一份、互不寻址),session 的
+// 权限/网络/导航/下载全拒组一条不动;代价只有「落盘」,故 close 时 clearStorageData +
+// 删除该分区目录,启动时再扫一遍残留(purgeRailPreviewPartitions)。
+//
 // 生命周期(设计 §4 遮挡合同):销毁而非隐藏 —— 返回树/切文件/切面板/收起右栏/切会话/
 // 窗口关闭都由 renderer 侧 effect 的 cleanup 触发 close;窗口关闭与 sender 销毁在本模块兜底。
 
@@ -73,6 +86,60 @@ const BASE_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
   "Cache-Control": "no-store",
+}
+
+/**
+ * 分区名前缀。`persist:` 不是可选的 —— 见文件头:内存分区里 Chromium PDF viewer 不装载。
+ * 前缀之后是一次性的 previewId,故每个 preview 仍是自己的 session(互不寻址不变)。
+ */
+export const RAIL_PREVIEW_PARTITION_PREFIX = "persist:alpha-rail-preview-"
+
+/** `persist:` 之后的那一段就是 userData/Partitions 下的目录名(Electron 直接以它建目录)。 */
+const PARTITION_DIR_PREFIX = RAIL_PREVIEW_PARTITION_PREFIX.slice("persist:".length)
+
+function partitionsRoot(): string | null {
+  try {
+    return path.join(electronRef.app.getPath("userData"), "Partitions")
+  } catch {
+    return null
+  }
+}
+
+/** 落盘代价的收口:preview 关掉就把它的分区目录删掉(best-effort,失败留给启动时的扫尾)。 */
+function removePartitionDir(partition: string) {
+  const root = partitionsRoot()
+  if (!root) return
+  const dirName = partition.startsWith("persist:") ? partition.slice("persist:".length) : partition
+  if (!dirName.startsWith(PARTITION_DIR_PREFIX)) return
+  try {
+    fs.rmSync(path.join(root, dirName), { recursive: true, force: true, maxRetries: 3 })
+  } catch {
+    // 仍被 Chromium 持有 —— 下次启动的 purge 会收掉
+  }
+}
+
+/**
+ * 启动扫尾:上次运行崩溃/强杀会留下分区目录(close 路径没跑到)。只删本模块自己的前缀,
+ * 且跳过本次运行仍活着的分区 —— 幂等,可反复调用。
+ */
+export function purgeRailPreviewPartitions() {
+  const root = partitionsRoot()
+  if (!root) return
+  const live = new Set([...previews.values()].map((r) => r.partition.slice("persist:".length)))
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(root)
+  } catch {
+    return // 目录还不存在 —— 无残留
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith(PARTITION_DIR_PREFIX) || live.has(entry)) continue
+    try {
+      fs.rmSync(path.join(root, entry), { recursive: true, force: true, maxRetries: 3 })
+    } catch {
+      // 下次再说
+    }
+  }
 }
 
 type RailPreviewRecord = {
@@ -208,9 +275,13 @@ function hardenSession(ses: Session, record: RailPreviewRecord) {
     const allowed =
       details.url.startsWith(`${HTML_PREVIEW_SCHEME}://`) ||
       (!electronRef.app.isPackaged && details.url.startsWith("devtools://")) ||
-      // Chromium PDF viewer 自身以 chrome-extension:// 装载(mhjfbmdgcfjbbpaeojofohoefgiehjai);
-      // 这不是文档能发起的外网面,拦掉它 = PDF 载体整个不工作。
-      (record.kind === "pdf" && details.url.startsWith("chrome-extension://"))
+      // Chromium PDF viewer 自身以 chrome-extension:// 装载(mhjfbmdgcfjbbpaeojofohoefgiehjai),
+      // 它的界面又整个由 chrome://resources/ 下的 Lit / mojo / cr_elements 拼出来
+      // (#1227 实测被拦的五条:text_defaults_md.css、lit.rollup.js、load_time_data.js、
+      // mojo/public/js/bindings.js、cr_a11y_announcer.css)。两者都是编译进 Chromium 的静态
+      // 资源,不是文档能发起的外网面;拦掉任一条 = PDF 载体整个不工作(黑屏,且不报错)。
+      (record.kind === "pdf" &&
+        (details.url.startsWith("chrome-extension://") || details.url.startsWith("chrome://resources/")))
     if (!allowed) {
       recordBlocked(record, safeOrigin(details.url))
       writeLog("rail-preview", "blocked request", { previewId: record.previewId, target: safeOrigin(details.url) }, "warn")
@@ -256,9 +327,13 @@ function closeRecord(record: RailPreviewRecord, reason: RailPreviewCloseReason) 
     // handler 已不在 —— 幂等
   }
   try {
-    void record.ses.clearStorageData().catch(() => {})
+    void record.ses
+      .clearStorageData()
+      .catch(() => {})
+      .finally(() => removePartitionDir(record.partition))
   } catch {
-    // best-effort
+    // best-effort —— 目录仍要试着收掉
+    removePartitionDir(record.partition)
   }
   try {
     if (!record.win.isDestroyed()) record.win.contentView.removeChildView(record.view)
@@ -323,7 +398,7 @@ export function openRailPreview(
 
   const token = crypto.randomBytes(16).toString("hex")
   const previewId = `rp_${crypto.randomBytes(6).toString("hex")}`
-  const partition = `alpha-rail-preview-${previewId}`
+  const partition = `${RAIL_PREVIEW_PARTITION_PREFIX}${previewId}`
   const ses = electronRef.session.fromPartition(partition)
 
   const record: RailPreviewRecord = {

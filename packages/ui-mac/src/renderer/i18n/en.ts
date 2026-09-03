@@ -1514,6 +1514,11 @@ export const dict = {
   "alpha.fileViewer.unsupportedTitle": "This format has no inline preview yet",
   "alpha.fileViewer.unsupportedBinary": "This is a binary file; it will not be displayed as fake text.",
   "alpha.fileViewer.unsupportedDetail": "You can open it in a system app, or reveal it in its folder.",
+  // #1227 —— 右栏文件面的 Office 提取视图。
+  "alpha.fileViewer.officeMismatch":
+    "The extension says {{claimed}}, but the package structure is {{detected}} — showing it as {{detected}}.",
+  "alpha.fileViewer.officeExtractFailedDetail":
+    "The file is saved and unmodified; open it in a system app to see the full document.",
   "alpha.fileViewer.isolationHtml": "Isolated preview · no network access",
   "alpha.fileViewer.isolationBlocked": "{{count}} blocked",
   "alpha.fileViewer.isolationBlockedAtLeast": "at least {{count}} blocked",

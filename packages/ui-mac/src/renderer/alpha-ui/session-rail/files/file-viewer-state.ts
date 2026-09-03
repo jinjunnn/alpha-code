@@ -11,6 +11,15 @@
  */
 
 import { createSignal } from "solid-js"
+import { detectOoxmlContainer, OOXML_LIMITS, type OoxmlSubtype } from "../../artifact-workbench/renderers/ooxml"
+import {
+  presentOfficeStructure,
+  type OfficeStructurePresentation,
+} from "../../artifact-workbench/renderers/office-structure"
+import {
+  officeViewerContentOf,
+  type OfficeViewerContent,
+} from "../../artifact-workbench/renderers/office-content"
 import {
   FILE_VIEWER_CHUNK_BYTES,
   FILE_VIEWER_EXCERPT_BYTES,
@@ -44,6 +53,18 @@ export type ViewerFilePhase =
     }
   | { phase: "image"; bytes: Uint8Array; mime: string; totalBytes: number }
   | { phase: "overlay"; overlay: "html" | "pdf" }
+  /**
+   * OOXML(#1227):`subtype` 是**检测出来的**身份(与扩展名冲突时按检测为准并给 warning);
+   * `structure` 复用产物面板同一份结构闸呈现;content 为 undefined 表示没过闸(只画 structure)。
+   */
+  | {
+      phase: "office"
+      subtype: OoxmlSubtype | null
+      claimedSubtype: OoxmlSubtype
+      structure: OfficeStructurePresentation
+      content: OfficeViewerContent | undefined
+      totalBytes: number
+    }
   | { phase: "oversize"; totalBytes: number; excerptAvailable: boolean }
   | { phase: "unsafe"; code: FileViewerRefusal }
   | { phase: "fail"; code: FileViewerRefusal }
@@ -148,6 +169,45 @@ export function createFileViewerState(io: FileViewerIO) {
     if (entry.plan.kind === "unsupported") {
       // 只取事实(大小),不取内容 —— 诚实卡用。
       done({ phase: "unsupported", totalBytes, binary: false })
+      return
+    }
+
+    if (entry.plan.kind === "office") {
+      // 预算取检测闸自己的上限 —— 超了它必拒,没有必要先把字节拉过来。
+      if (totalBytes > OOXML_LIMITS.maxCompressedBytes) {
+        done({ phase: "oversize", totalBytes, excerptAvailable: false })
+        return
+      }
+      const officeBytes = await pump(opened.readId, totalBytes, OOXML_LIMITS.maxCompressedBytes, mine)
+      if (officeBytes === undefined) {
+        io.closeRead(opened.readId)
+        return
+      }
+      if (!(officeBytes instanceof Uint8Array)) {
+        done(refusalPhase(officeBytes.failed, entry.plan))
+        return
+      }
+      // 检测是异步的(zip.js 动态 import + 有界 inflate)—— 之后必须再过一次 epoch 闸,
+      // 否则切文件/返回树期间到站的结果会覆盖新选中的内容。
+      const detection = await detectOoxmlContainer(officeBytes, { retainContentParts: true })
+      if (epoch !== mine) {
+        io.closeRead(opened.readId)
+        return
+      }
+      // 结构闸的判据与产物面板同一份(扩展名/检测冲突也在它里面裁);plan 已保证这是
+      // Office 家族,故 presentOfficeStructure 不会返回 null —— 兜底只是不让类型带 null 往下走。
+      const structure = presentOfficeStructure({ name: entry.name, detection }) ?? {
+        status: "checking" as const,
+        quickLook: false as const,
+      }
+      done({
+        phase: "office",
+        subtype: detection.status === "detected" ? detection.subtype : null,
+        claimedSubtype: entry.plan.claimedSubtype,
+        structure,
+        content: structure.status === "pass" ? officeViewerContentOf(detection) : undefined,
+        totalBytes,
+      })
       return
     }
 
