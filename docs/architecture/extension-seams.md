@@ -16,7 +16,18 @@
 | 4 | **MCP server**(独立进程暴露 tools/resources/prompts) | config `mcp.servers`(`{type:"local",command}` 或 `{type:"remote",url,headers,oauth}`)。host 用 `@modelcontextprotocol/sdk` 桥接,合并进工具表 | ✅ 确认 |
 | 5 | 声明式 agents/commands/skills/themes | `.opencode/{agent,command,skill,theme}/...`(themes 是 JSON) | ✅ |
 
-**稳定 hooks 全集**:`tool`、`event`(观测全部 server 事件)、`config`、`auth`、`provider`、`chat.message`、`chat.params`、`chat.headers`、`permission.ask`(自动 allow/deny 策略)、`command.execute.before`、`tool.execute.before/after`、`tool.definition`(改写工具对 LLM 的描述,含内置工具)、`shell.env`、`dispose`。
+**稳定 hooks 全集**:`tool`、`event`(观测全部 server 事件)、`config`、`auth`、`provider`、`chat.message`、`chat.params`、`chat.headers`、`permission.ask`(自动 allow/deny 策略)、`command.execute.before`、`tool.execute.before/after`、`tool.definition`(改写工具对 LLM 的描述与 `parameters`;**触发面 = 内置工具 + 插件工具,不含 MCP 工具**,见下)、`shell.env`、`dispose`。
+> **`tool.definition` 够不到 MCP 工具(`#793` 实测,2026-09-03)。** 全仓只有一处触发点 ——
+> `packages/opencode/src/tool/registry.ts:356` 的 `plugin.trigger("tool.definition", …)`,它住在
+> `ToolRegistry.tools()` 里;而 `ToolRegistry.all()` 返回的是 `[...builtin, ...custom]`,`custom`
+> 只装 `.opencode/tool/*` 与插件工具。MCP 工具走的是另一条路:`session/tools.ts` 的
+> `for (const [key, entry] of Object.entries(yield* mcp.tools()))` 循环里由
+> `McpCatalog.convertTool` 现场合成,**从不进 registry**。
+> ⇒ 要改 MCP 工具交给模型的 `description` / `inputSchema`,`packages/ext` 这一层(L0)结构上做不到;
+> 落点只能是 `session/tools.ts` 那个循环(已按 ADR-041 收编,`#793` 的修复即落在那里)。
+> 两条独立检索轴:①`plugin.trigger("tool.definition"` 全仓 1 处;②`registry.ts` 的 `all()` 构成里
+> 没有任何 `mcp.tools()`。
+
 **PluginInput 给你**:`client`(连到运行中 server 的 `OpencodeClient`)、`project/directory/worktree`、`serverUrl`、`$`(Bun shell,完整宿主权限)、`experimental_workspace.register(type, adapter)`(自定义沙箱/工作区后端)。
 
 ### 唯一需 fork 的场景:新增 HTTP `/api/*` 路由

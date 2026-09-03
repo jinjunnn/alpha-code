@@ -4,6 +4,7 @@ import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { MCP } from "@/mcp"
 import { McpCatalog } from "@/mcp/catalog"
+import { repairBranchedRootSchema } from "@/mcp/alpha-branched-input-schema"
 import { Permission } from "@/permission"
 import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
@@ -479,7 +480,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     const execute = item.execute
     if (!execute) continue
 
-    const schema = yield* Effect.promise(() => Promise.resolve(asSchema(item.inputSchema).jsonSchema))
+    // `#793`:`convertTool` 无条件给根戴上 `additionalProperties:false`,而根上的这顶帽子
+    // 看不见 `oneOf`/`anyOf` 分支里的字段 ⇒ 分支型 MCP 工具广播给模型的是一份自相矛盾的
+    // schema(根禁一切字段、分支各要求 5 个),模型只能发 `{}`。这里是 MCP 工具广播 schema
+    // 的唯一生产咽喉,修在这一层;理由与刻意不做的事见 mcp/alpha-branched-input-schema.ts。
+    const schema = repairBranchedRootSchema(
+      yield* Effect.promise(() => Promise.resolve(asSchema(item.inputSchema).jsonSchema)),
+    )
     const transformed = ProviderTransform.schema(input.model, { ...schema, properties: schema.properties ?? {} })
     item.inputSchema = jsonSchema(transformed)
     item.execute = (args, opts) =>
