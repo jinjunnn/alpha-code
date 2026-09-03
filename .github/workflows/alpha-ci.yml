@@ -198,6 +198,22 @@ jobs:
       - name: typecheck opencode (alpha 自有判据住在上游包里)
         if: needs.detect.outputs.code == 'true'
         run: bun run --cwd packages/opencode typecheck
+      # `#1222`:`#1134` 同一类的第二、三个实例。按 ADR-043 谓词枚举「上游包里的 alpha 自有
+      # 文件」:opencode 24 · core 4 · schema 4 · sdk/js 1 · 其余四包 0。core 与 schema 此前
+      # 不在任何门里 —— 2026-09-02 alpha 上 `packages/core` 一条真红(#223 主权闸判据文件)
+      # 既不红 CI 也不红本地,还挡住了 pre-push 的每一次 push。
+      # 两个包各自经**注入已知类型错误**证明会红(非安慰剂),判据见 `#1222`。
+      #
+      # ⚠️ `packages/sdk/js` **刻意不加**:实测往它的 alpha 自有文件
+      # `test/permission-decision-command.test.ts` 注入已知类型错误,该包 typecheck 仍然**绿**
+      # —— `packages/sdk/js/tsconfig.json` 是 `"include": ["src"]` + `"rootDir": "src"`,`test/`
+      # 结构性不在 program 里。加进来会是安慰剂闸。缺口留在 `#1222`,改 tsconfig 需单独定选型。
+      - name: typecheck core (alpha 自有判据住在上游包里)
+        if: needs.detect.outputs.code == 'true'
+        run: bun run --cwd packages/core typecheck
+      - name: typecheck schema (alpha 自有判据住在上游包里)
+        if: needs.detect.outputs.code == 'true'
+        run: bun run --cwd packages/schema typecheck
 
   test:
     name: unit tests (alpha packages)

@@ -42,6 +42,8 @@ CI_STEPS=(
   "typecheck|typecheck @alpha-code/ext|MIRRORED"
   "typecheck|typecheck ui-mac|MIRRORED"
   "typecheck|typecheck opencode (alpha 自有判据住在上游包里)|MIRRORED"
+  "typecheck|typecheck core (alpha 自有判据住在上游包里)|MIRRORED"
+  "typecheck|typecheck schema (alpha 自有判据住在上游包里)|MIRRORED"
   "test|verify immutable Alpha contract vendor lock|SUPERSET:开发机有兄弟仓 ⇒ 跑的是 provenance 已验档,CI 是降级档(#769)"
   "test|bun test (contracts consumer fixtures)|MIRRORED"
   "test|bun test (ext)|MIRRORED"
@@ -117,16 +119,21 @@ else
   echo "    ✗ literal NUL bytes found"; fail=1
 fi
 
-echo "▶ [4/10] typecheck (alpha packages: contracts-consumer + ext + ui-mac + opencode)"
+echo "▶ [4/10] typecheck (alpha packages: contracts-consumer + ext + ui-mac + opencode + core + schema)"
 # REQ-027:flag 必须在 `run` 之后 —— `bun --cwd X run Y` 在 bun 1.3.x 打印 usage 后静默退出 0(不执行脚本)。
 # `#1134`:opencode 也在这里。它是上游包,但 alpha 自有的判据文件(ADR-043 谓词:不在 origin/dev
 # 里 ∧ 自报家门)住在它的 test/ 下,而该包的 tsconfig **不排除** *.test.ts / *.cases.ts ⇒ 那些文件
 # 是被 typecheck 的;此前没有任何门跑这个包的 typecheck,于是 15 条真红在 alpha 上活了一整天,
 # 还让别的 lane 误以为是自己引入的。口径与实测见 docs/architecture/quality-gate-environments.md §3.11。
+# `#1222`:同一形态又发生在 core(与 schema 一起补进来)。`packages/sdk/js` **刻意不加** ——
+# 实测它的 tsconfig 是 `"include": ["src"]`,alpha 自有的 test/ 结构性不在 program 里,
+# 加进来是安慰剂闸;缺口具名留在 `#1222`。
 if bun run --cwd packages/alpha-contracts-consumer typecheck \
   && bun run --cwd packages/ext typecheck \
   && bun run --cwd packages/ui-mac typecheck \
-  && bun run --cwd packages/opencode typecheck; then
+  && bun run --cwd packages/opencode typecheck \
+  && bun run --cwd packages/core typecheck \
+  && bun run --cwd packages/schema typecheck; then
   echo "    ✓ typecheck"
 else
   echo "    ✗ typecheck failed"; fail=1
