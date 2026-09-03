@@ -30,7 +30,7 @@ import { registerCloudIpcHandlers } from "./cloud-ipc"
 import { registerArtifactIpcHandlers } from "./artifact-ipc"
 import { initializeArtifactQuotaEnvironment } from "./artifact-service"
 import { registerHtmlPreviewIpcHandlers } from "./html-preview-host"
-import { registerRailPreviewIpcHandlers } from "./rail-preview-host"
+import { purgeRailPreviewPartitions, registerRailPreviewIpcHandlers } from "./rail-preview-host"
 import { registerWorkspaceFileIpcHandlers } from "./workspace-file-service"
 import { registerAutomationIpcHandlers } from "./automation-ipc"
 import { startAutomationScheduler } from "./automation-scheduler"
@@ -944,6 +944,9 @@ const main = Effect.gen(function* () {
   // REQ-108(#244):右栏文件查看器 —— workspace 文件 descriptor/有界读取 + html/pdf 叠放载体。
   registerWorkspaceFileIpcHandlers()
   registerRailPreviewIpcHandlers()
+  // 叠放载体的 session 必须落盘(PDF viewer 是扩展,内存 profile 里不装载 —— 见
+  // rail-preview-host 文件头)。上次运行崩溃会留下分区目录,开机扫一次尾。
+  purgeRailPreviewPartitions()
   // 自动化(REQ-021 A1/ADR-022):IPC + 主进程调度器。执行链等 serverReady(与 renderer 同一
   // Deferred;respawn 后 url/password 不变故一次 await 长期有效)。应用未运行不执行(诚实边界)。
   registerAutomationIpcHandlers()

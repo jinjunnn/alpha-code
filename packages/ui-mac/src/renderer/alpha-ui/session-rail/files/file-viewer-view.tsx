@@ -14,7 +14,14 @@ import { createEffect, createSignal, Match, onCleanup, onMount, Show, Switch } f
 import { t } from "../../../i18n"
 import { rovingKey, rovingTabIndex } from "../../roving-focus"
 import { formatBytes } from "../../artifact-workbench/workbench-core"
-import { JsonNodeView, LinesView, MdBlockView } from "../../artifact-workbench/renderers/content-views"
+import {
+  JsonNodeView,
+  LinesView,
+  MdBlockView,
+  OfficeTextContent,
+} from "../../artifact-workbench/renderers/content-views"
+import { XlsxWorkbookView } from "../../artifact-workbench/renderers/xlsx-view"
+import type { OfficeRejectionCategory } from "../../artifact-workbench/renderers/office-structure"
 import { parseCsvModel } from "../../artifact-workbench/renderers/csv-model"
 import { parseJsonModel } from "../../artifact-workbench/renderers/json-model"
 import { parseMarkdownModel } from "../../artifact-workbench/renderers/markdown-model"
@@ -256,6 +263,89 @@ function ImageContent(props: { state: FileViewerState; phase: Extract<ViewerFile
   )
 }
 
+const OFFICE_REJECTION_KEYS = {
+  "invalid-document": "alpha.wb.office.rejection.invalid",
+  encrypted: "alpha.wb.office.rejection.encrypted",
+  "safety-limit": "alpha.wb.office.rejection.limit",
+  "unsafe-path": "alpha.wb.office.rejection.path",
+  "incomplete-structure": "alpha.wb.office.rejection.incomplete",
+  "type-mismatch": "alpha.wb.office.rejection.type",
+} as const satisfies Record<OfficeRejectionCategory, Parameters<typeof t>[0]>
+
+/**
+ * Office(#1227):结构闸过了就画内容(docx/pptx 文本、xlsx 工作表),没过就诚实说为什么。
+ * 内容装配在 file-viewer-state 完成 —— 本组件只挑分支,不碰字节、不做第二次判定。
+ */
+function OfficeContent(props: {
+  state: FileViewerState
+  phase: Extract<ViewerFilePhase, { phase: "office" }>
+}) {
+  const rejected = () => (props.phase.structure.status === "rejected" ? props.phase.structure : undefined)
+  const mismatched = () =>
+    props.phase.subtype !== null && props.phase.subtype !== props.phase.claimedSubtype
+      ? props.phase.subtype
+      : undefined
+  return (
+    <div class="a-fv-content a-wb-office" data-alpha-fv-office={props.phase.subtype ?? props.phase.claimedSubtype}>
+      <Show when={rejected()} keyed>
+        {(rejection) => (
+          <CenterCard
+            tone="err"
+            title={t("alpha.wb.office.rejectedTitle")}
+            detail={t("alpha.wb.office.rejectedDetail", { reason: t(OFFICE_REJECTION_KEYS[rejection.category]) })}
+            fact={`${props.state.current()?.name} · ${rejection.code}`}
+          >
+            <button type="button" class="a-fv-btn" onClick={() => props.state.openExternal()}>
+              {t("alpha.fileViewer.openSystem")}
+            </button>
+            <button type="button" class="a-fv-btn" onClick={() => props.state.reveal()}>
+              {t("alpha.fileViewer.revealDir")}
+            </button>
+          </CenterCard>
+        )}
+      </Show>
+      <Show when={mismatched()}>
+        {(subtype) => (
+          <div class="a-fv-notice" data-kind="warn" role="note" data-alpha-fv-office-mismatch>
+            {t("alpha.fileViewer.officeMismatch", { claimed: props.phase.claimedSubtype, detected: subtype() })}
+          </div>
+        )}
+      </Show>
+      <Show when={props.phase.content} keyed>
+        {(content) => (
+          <Switch>
+            <Match when={content.status === "text" ? content.model : undefined} keyed>
+              {(model) => <OfficeTextContent model={model} />}
+            </Match>
+            <Match when={content.status === "sheets" ? content.workbook : undefined} keyed>
+              {(workbook) => (
+                <>
+                  <p class="a-wb-office-fidelity" data-office-fidelity>{t("alpha.wb.office.fidelityNote")}</p>
+                  <XlsxWorkbookView workbook={workbook} />
+                </>
+              )}
+            </Match>
+            <Match when={content.status === "failed" ? content.code : undefined} keyed>
+              {(code) => (
+                <CenterCard
+                  tone="warn"
+                  title={t("alpha.wb.office.extractFailed")}
+                  detail={t("alpha.fileViewer.officeExtractFailedDetail")}
+                  fact={code}
+                >
+                  <button type="button" class="a-fv-btn" onClick={() => props.state.openExternal()}>
+                    {t("alpha.fileViewer.openSystem")}
+                  </button>
+                </CenterCard>
+              )}
+            </Match>
+          </Switch>
+        )}
+      </Show>
+    </div>
+  )
+}
+
 /**
  * 叠放内容区:effect 独占 open/close;bounds 由 ResizeObserver + window resize 跟随。
  * DOM 里只有这个占位容器 —— 真内容画在 main 的 WebContentsView 上。
@@ -426,6 +516,9 @@ export function FileViewerView(props: {
           </Match>
           <Match when={phase()?.phase === "image"}>
             <ImageContent state={props.state} phase={phase() as Extract<ViewerFilePhase, { phase: "image" }>} />
+          </Match>
+          <Match when={phase()?.phase === "office"}>
+            <OfficeContent state={props.state} phase={phase() as Extract<ViewerFilePhase, { phase: "office" }>} />
           </Match>
           <Match when={phase()?.phase === "overlay"}>
             <OverlayRegion

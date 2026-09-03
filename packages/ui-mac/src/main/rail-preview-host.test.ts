@@ -294,7 +294,11 @@ describe("view creation & lifecycle", () => {
     expect(view.opts.webPreferences.nodeIntegration).toBe(false)
     expect(view.opts.webPreferences.webviewTag).toBe(false)
     expect("preload" in view.opts.webPreferences).toBe(false)
-    expect(String(view.opts.webPreferences.partition)).toStartWith("alpha-rail-preview-")
+    // #1227:`persist:` 不是风格选择 —— Chromium 的 PDF viewer 是内建扩展,扩展在
+    // off-the-record(无 persist: 的内存)profile 里不装载,症状是**看起来正常的黑屏**:
+    // mime handler 仍挂上 chrome-extension://…/index.html,真正渲染页面的 plugin OOPIF
+    // 永远建不出来。真 Chromium 实测见 docs/architecture/2026-09-03-electron-pdf-viewer-session.md。
+    expect(String(view.opts.webPreferences.partition)).toStartWith("persist:alpha-rail-preview-")
     expect(win.children).toEqual([view])
     expect(view.bounds).toEqual({ x: 701, y: 0, width: 380, height: 501 })
     const url = view.webContents.loadedUrls[0]!

@@ -1483,6 +1483,9 @@ export const dict = {
   "alpha.fileViewer.unsupportedTitle": "该格式暂不支持内联预览",
   "alpha.fileViewer.unsupportedBinary": "这是一个二进制文件,不会伪装成文本显示。",
   "alpha.fileViewer.unsupportedDetail": "可以在系统应用中打开,或打开所在目录。",
+  // #1227 —— 右栏文件面的 Office 提取视图。
+  "alpha.fileViewer.officeMismatch": "扩展名声称 {{claimed}},但容器结构是 {{detected}} —— 按 {{detected}} 呈现。",
+  "alpha.fileViewer.officeExtractFailedDetail": "文件已保存且未被改动;在系统应用中打开可看到完整文档。",
   "alpha.fileViewer.isolationHtml": "隔离预览 · 无网络访问",
   "alpha.fileViewer.isolationBlocked": "已拦下 {{count}} 项",
   "alpha.fileViewer.isolationBlockedAtLeast": "至少已拦下 {{count}} 项",

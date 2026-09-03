@@ -7,7 +7,29 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, afterEach, describe, expect, mock, test } from "bun:test"
 import presetSolid from "babel-preset-solid"
 
+// #1227:happy-dom 把 DecompressionStream / TransformStream / AbortSignal 换成了自己的实现,
+// 而 zip.js 的 inflate 走的正是这几个 —— 于是**任何**真 OOXML 容器在这个环境里都会以
+// ZIP_DECOMPRESSION_FAILED 被拒(实测两种报错:`writable.getWriter is not a function`、
+// `options.signal must be AbortSignal`)。那是环境坏了,不是被测代码坏了:同一份夹具字节在
+// 裸 bun 下三个容器全部 detected。所以先把原生实现存下来,注册完 DOM 再放回去 —— DOM 仍是
+// happy-dom 的,解压回到真实现,用例测的才是生产那条 inflate 路。
+const NATIVE_STREAM_GLOBALS = [
+  "DecompressionStream",
+  "CompressionStream",
+  "TransformStream",
+  "ReadableStream",
+  "WritableStream",
+  "Response",
+  "Blob",
+  "AbortSignal",
+  "AbortController",
+] as const
+const nativeGlobals = new Map<string, unknown>(
+  NATIVE_STREAM_GLOBALS.map((key) => [key, (globalThis as Record<string, unknown>)[key]]),
+)
 GlobalRegistrator.register()
+for (const [key, value] of nativeGlobals)
+  Object.defineProperty(globalThis, key, { value, writable: true, configurable: true })
 const solid = await import("solid-js/dist/solid.js")
 mock.module("solid-js", () => solid)
 const solidWeb = await import("solid-js/web/dist/web.js")
@@ -423,5 +445,76 @@ describe("REQ-108 shell linkage (openFileViewer / activePanel)", () => {
     })
     await flush()
     expect(shell.rail()!.fileViewerTarget()).toBeUndefined()
+  })
+})
+
+// ── #1227:Office(docx/pptx/xlsx)在右栏文件面的提取呈现 ──────────────────────────
+//
+// 这三种格式此前一律落到「该格式暂不支持内联预览」卡 —— #1175/#1176 的提取视图只接在产物
+// 面板上,xlsx 更是一处也没接。以下用例喂的是**真容器字节**(office-container.fixture:仓内
+// py-docx / py-pptx / xlsxwriter 原样 part + OPC 外壳),整条路与生产同源:
+// viewerPlanFor → 有界 chunk 读 → detectOoxmlContainer → officeViewerContentOf → 视图。
+
+const officeFixtures = await import("./office-container.fixture")
+
+async function mountOffice(path: string, bytes: Uint8Array) {
+  const harness = runtime.createViewerHarness({ files: { [path]: { content: bytes } } })
+  const host = mount(harness.View)
+  harness.viewer().open(path)
+  // 检测是异步的(zip.js 动态 import + inflate);给它多于一个微任务轮次。
+  for (let i = 0; i < 6; i++) await flushTimers()
+  return { harness, host }
+}
+
+describe("#1227 office extraction in the rail file viewer", () => {
+  test("docx renders extracted paragraphs with the fidelity note — not the unsupported card", async () => {
+    const { host } = await mountOffice("report.docx", officeFixtures.docxContainer())
+    expect(host.querySelector("[data-alpha-fv-card]")).toBeNull()
+    const content = host.querySelector("[data-office-content]")
+    expect(content).not.toBeNull()
+    expect(content!.textContent!.trim().length).toBeGreaterThan(0)
+    expect(host.querySelector("[data-office-fidelity]")).not.toBeNull()
+    expect(host.querySelector("[data-alpha-fv-office]")?.getAttribute("data-alpha-fv-office")).toBe("docx")
+  })
+
+  test("pptx renders one block per slide in authoritative order", async () => {
+    const { host } = await mountOffice("deck.pptx", officeFixtures.pptxContainer())
+    const slides = Array.from(host.querySelectorAll("[data-office-slide]"))
+    expect(slides.length).toBeGreaterThan(1)
+    expect(slides[0]!.textContent!.trim().length).toBeGreaterThan(0)
+  })
+
+  test("xlsx renders the worksheet grid — the view #1176 built and nothing ever mounted", async () => {
+    const { host } = await mountOffice("book.xlsx", officeFixtures.xlsxContainer())
+    const sheet = host.querySelector("[data-alpha-xlsx-sheet]")
+    expect(sheet).not.toBeNull()
+    expect(sheet!.querySelectorAll("tbody tr").length).toBeGreaterThan(0)
+    // 多表清单可切换(xlsxwriter 夹具是双表)。
+    expect(host.querySelectorAll("[data-alpha-xlsx-tab]").length).toBeGreaterThan(1)
+  })
+
+  test("a non-OOXML file wearing a .docx name is refused honestly — no fabricated content", async () => {
+    const { host } = await mountOffice("fake.docx", new TextEncoder().encode("this is not a zip at all"))
+    expect(host.querySelector("[data-office-content]")).toBeNull()
+    expect(host.querySelector("[data-alpha-xlsx-sheet]")).toBeNull()
+    const card = host.querySelector("[data-alpha-fv-card]")
+    expect(card).not.toBeNull()
+    expect(card!.textContent).toContain("NOT_ZIP")
+  })
+
+  test("structure wins over the extension: xlsx bytes named .docx are refused, not shown as a document", async () => {
+    const { host } = await mountOffice("mislabelled.docx", officeFixtures.xlsxContainer())
+    // 冲突由 presentOfficeStructure 裁为 type-mismatch → 拒绝卡,绝不按任一方猜着渲染。
+    expect(host.querySelector("[data-office-content]")).toBeNull()
+    const card = host.querySelector("[data-alpha-fv-card]")
+    expect(card).not.toBeNull()
+    expect(card!.textContent).toContain("OOXML_CLAIM_CONFLICT")
+  })
+
+  test("macro-enabled and template variants stay unsupported (they never reach the extractor)", async () => {
+    const { host } = await mountOffice("macros.docm", officeFixtures.docxContainer())
+    expect(host.querySelector("[data-office-content]")).toBeNull()
+    expect(host.querySelector("[data-alpha-fv-office]")).toBeNull()
+    expect(host.querySelector("[data-alpha-fv-card]")).not.toBeNull()
   })
 })

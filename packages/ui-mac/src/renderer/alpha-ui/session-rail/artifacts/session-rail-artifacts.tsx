@@ -28,7 +28,7 @@ import {
 import { detectOoxmlContainer, OOXML_LIMITS } from "../../artifact-workbench/renderers/ooxml"
 import { routeArtifact, shouldDetectOoxml } from "../../artifact-workbench/renderers/registry"
 import { presentOfficeStructure } from "../../artifact-workbench/renderers/office-structure"
-import { officeTextExtractionOf } from "../../artifact-workbench/renderers/office-text"
+import { officeViewerContentOf } from "../../artifact-workbench/renderers/office-content"
 import { cardPreviewable } from "../../artifact-workbench/workbench-core"
 import type { PreviewContext } from "../../artifact-workbench/renderers/renderer-views"
 import type { AlphaSessionLiveContext, SessionRailApi } from "../../session-workspace/session-workspace-shell"
@@ -400,7 +400,7 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
       decision: routeArtifact({ ...claim, ooxml }),
       card,
       officeStructure: presentOfficeStructure({ ...claim, detection: ooxml }),
-      officeText: officeTextExtractionOf(ooxml),
+      officeContent: officeViewerContentOf(ooxml),
     }
   })
 

@@ -8,6 +8,7 @@ import { t } from "../../../i18n"
 import { highlightCode } from "./highlight"
 import type { JsonNode } from "./json-model"
 import type { MdBlock, MdInline } from "./markdown-model"
+import type { OfficeTextModel } from "./office-text"
 
 export const MAX_RENDER_LINES = 5000
 
@@ -190,3 +191,43 @@ export function JsonNodeView(props: { node: JsonNode; depth: number }) {
   )
 }
 
+// REQ-123(#1175)AC1/AC3/AC6:提取文本内容视图 —— pass 分支的默认呈现。
+// 一切文本只经 Solid 文本节点(基线 ③ 类 3/5:纯数据文本,无 innerHTML 注入路径);
+// 保真声明明写排版不保真(AC6);pptx 按权威页序分页呈现,备注独立成块。
+export function OfficeTextContent(props: { model: OfficeTextModel }) {
+  const nonEmpty = (lines: string[]) => lines.filter((line) => line.trim().length > 0)
+  return (
+    <div class="a-wb-office-content" data-office-content aria-label={t("alpha.wb.office.contentTitle")}>
+      <p class="a-wb-office-fidelity" data-office-fidelity>{t("alpha.wb.office.fidelityNote")}</p>
+      <Show when={props.model.kind === "docx" ? props.model : undefined} keyed>
+        {(docx) => (
+          <For each={nonEmpty(docx.paragraphs)}>
+            {(paragraph) => <p class="a-wb-office-para">{paragraph}</p>}
+          </For>
+        )}
+      </Show>
+      <Show when={props.model.kind === "pptx" ? props.model : undefined} keyed>
+        {(pptx) => (
+          <For each={pptx.slides}>
+            {(slide, index) => (
+              <section class="a-wb-office-slide" data-office-slide={index() + 1}>
+                <h4 class="a-wb-office-slide-h">{t("alpha.wb.office.slideLabel", { n: index() + 1 })}</h4>
+                <For each={nonEmpty(slide.paragraphs)}>
+                  {(paragraph) => <p class="a-wb-office-para">{paragraph}</p>}
+                </For>
+                <Show when={nonEmpty(slide.notes).length > 0}>
+                  <div class="a-wb-office-notes" data-office-notes>
+                    <b>{t("alpha.wb.office.notesLabel")}</b>
+                    <For each={nonEmpty(slide.notes)}>
+                      {(note) => <p class="a-wb-office-para">{note}</p>}
+                    </For>
+                  </div>
+                </Show>
+              </section>
+            )}
+          </For>
+        )}
+      </Show>
+    </div>
+  )
+}

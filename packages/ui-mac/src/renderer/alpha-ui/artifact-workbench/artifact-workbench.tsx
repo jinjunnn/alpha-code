@@ -40,7 +40,7 @@ import {
   presentOfficeStructure,
   type OfficeStructurePresentation,
 } from "./renderers/office-structure"
-import { officeTextExtractionOf } from "./renderers/office-text"
+import { officeViewerContentOf } from "./renderers/office-content"
 import { RENDERER_COMPONENTS, SourceView, type PreviewContext } from "./renderers/renderer-views"
 import "./artifact-workbench.css"
 
@@ -338,7 +338,7 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
       decision,
       card,
       officeStructure: presentOfficeStructure({ ...claim, detection: ooxml }),
-      officeText: officeTextExtractionOf(ooxml),
+      officeContent: officeViewerContentOf(ooxml),
     }
   })
 

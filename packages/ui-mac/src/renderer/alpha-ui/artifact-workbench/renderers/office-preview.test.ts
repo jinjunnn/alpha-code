@@ -175,7 +175,7 @@ describe("Office preview production component", () => {
     mount(
       { status: "pass", quickLook: true, subtype: "docx" },
       {
-        status: "extracted",
+        status: "text",
         model: { kind: "docx", paragraphs: ["Quarterly Report Heading", "Intro paragraph with bold emphasis", ""] },
       },
     )
@@ -197,7 +197,7 @@ describe("Office preview production component", () => {
     mount(
       { status: "pass", quickLook: true, subtype: "pptx" },
       {
-        status: "extracted",
+        status: "text",
         model: {
           kind: "pptx",
           slides: [
@@ -227,6 +227,43 @@ describe("Office preview production component", () => {
     expect(document.querySelector('[data-office-action="quick-look"]')).not.toBeNull()
   })
 
+  test("PASS with an xlsx workbook renders the sheet grid — #1176 的表格视图此前一处也没接", async () => {
+    mount(
+      { status: "pass", quickLook: true, subtype: "xlsx" },
+      {
+        status: "sheets",
+        workbook: {
+          sheets: [
+            {
+              name: "Sales",
+              status: "ok",
+              grid: {
+                rows: [[{ text: "Region", kind: "text" }, { text: "42", kind: "number" }]],
+                columnCount: 2,
+                truncatedRows: false,
+                truncatedColumns: false,
+              },
+            },
+            { name: "Notes", status: "missing", reason: "missing-part" },
+          ],
+        },
+      },
+    )
+    const sheet = document.querySelector("[data-alpha-xlsx-sheet]")
+    expect(sheet).not.toBeNull()
+    expect(sheet!.textContent).toContain("Region")
+    expect(sheet!.textContent).toContain("42")
+    // 多表清单如实列出(读不出的那张也在,不静默吞掉)。
+    expect(Array.from(document.querySelectorAll("[data-alpha-xlsx-tab]")).map((el) => el.textContent)).toEqual([
+      "Sales",
+      "Notes",
+    ])
+    // 表格是内容视图,占位卡与提取失败卡都不该同时在场。
+    expect(document.querySelector(".a-wb-office-placeholder")).toBeNull()
+    expect(document.querySelector("[data-office-extract-failed]")).toBeNull()
+    expect(document.querySelector("[data-office-fidelity]")).not.toBeNull()
+  })
+
   test("PASS with no extraction wired keeps the honest placeholder (pre-#1174 state)", async () => {
     mount({ status: "pass", quickLook: true, subtype: "docx" })
     expect(document.querySelector(".a-wb-office-placeholder")).not.toBeNull()
@@ -236,7 +273,7 @@ describe("Office preview production component", () => {
 
 function mount(
   officeStructure: PreviewContext["officeStructure"],
-  officeText?: PreviewContext["officeText"],
+  officeContent?: PreviewContext["officeContent"],
 ) {
   const host = document.createElement("div")
   document.body.append(host)
@@ -244,7 +281,7 @@ function mount(
     runtime.render(
       () =>
         runtime.createComponent(runtime.OfficeArtifactView, {
-          ctx: context(officeStructure, officeText),
+          ctx: context(officeStructure, officeContent),
         }),
       host,
     ),
@@ -264,7 +301,7 @@ async function flush() {
 
 function context(
   officeStructure: PreviewContext["officeStructure"],
-  officeText?: PreviewContext["officeText"],
+  officeContent?: PreviewContext["officeContent"],
 ): PreviewContext {
   const card: ArtifactCard = {
     key: "art_job_1_0",
@@ -303,6 +340,6 @@ function context(
     },
     card,
     officeStructure,
-    officeText,
+    officeContent,
   }
 }
