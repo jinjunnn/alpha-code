@@ -287,6 +287,14 @@ function OfficeContent(props: {
       : undefined
   return (
     <div class="a-fv-content a-wb-office" data-alpha-fv-office={props.phase.subtype ?? props.phase.claimedSubtype}>
+      <Show when={props.phase.layoutFailure}>
+        {(reason) => (
+          <div class="a-fv-notice" data-kind="warn" role="status" data-alpha-fv-office-degraded>
+            {t("alpha.fileViewer.officeLayoutFailed")}
+            <code>{reason()}</code>
+          </div>
+        )}
+      </Show>
       <Show when={rejected()} keyed>
         {(rejection) => (
           <CenterCard
@@ -355,6 +363,8 @@ function OverlayRegion(props: {
   overlayIO: FileViewerOverlayIO
   phase: Extract<ViewerFilePhase, { phase: "overlay" }>
   active: () => boolean
+  /** 仅 office 载体使用:宿主页报渲染失败时的回调。 */
+  onLayoutFailed?: (reason: string) => void
 }) {
   let region: HTMLDivElement | undefined
   const [blocked, setBlocked] = createSignal<number>(0)
@@ -403,7 +413,11 @@ function OverlayRegion(props: {
     const poll = setInterval(() => {
       if (!previewId) return
       void props.overlayIO.status(previewId).then((status) => {
-        if (!disposed && status.ok) setBlocked(status.blockedPaths.length)
+        if (disposed || !status.ok) return
+        setBlocked(status.blockedPaths.length)
+        // #1229:版式宿主页在另一个进程里,它画没画出来只能经 main 转告。
+        // 报「失败」就换回文字提取那块画布 —— 不让用户对着空白等下去。
+        if (status.office?.status === "failed") props.onLayoutFailed?.(status.office.detail || status.office.code)
       })
     }, 1500)
 
@@ -518,7 +532,30 @@ export function FileViewerView(props: {
             <ImageContent state={props.state} phase={phase() as Extract<ViewerFilePhase, { phase: "image" }>} />
           </Match>
           <Match when={phase()?.phase === "office"}>
-            <OfficeContent state={props.state} phase={phase() as Extract<ViewerFilePhase, { phase: "office" }>} />
+            {(() => {
+              const office = () => phase() as Extract<ViewerFilePhase, { phase: "office" }>
+              const overlayKind = () => {
+                const subtype = office().subtype
+                return subtype ? (`office-${subtype}` as const) : null
+              }
+              return (
+                <Show
+                  when={office().carrier === "layout" ? overlayKind() : undefined}
+                  keyed
+                  fallback={<OfficeContent state={props.state} phase={office()} />}
+                >
+                  {(kind) => (
+                    <OverlayRegion
+                      state={props.state}
+                      overlayIO={props.overlayIO}
+                      phase={{ phase: "overlay", overlay: kind }}
+                      active={props.active}
+                      onLayoutFailed={(reason) => props.state.demoteOfficeToText(reason)}
+                    />
+                  )}
+                </Show>
+              )
+            })()}
           </Match>
           <Match when={phase()?.phase === "overlay"}>
             <OverlayRegion

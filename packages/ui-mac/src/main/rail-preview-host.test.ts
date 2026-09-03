@@ -4,7 +4,7 @@
 // 叠放 + bounds)与内容来源(workspace 守卫)不同。PDF 专属:plugins 只开本 view、
 // #toolbar=0 装载、Cmd+P / Cmd+S 拦截、根文档以外一律 403。
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -158,6 +158,10 @@ const fakeElectron = {
     get isPackaged() {
       return appState.packaged
     },
+    // 生产用 app.getAppPath() 当锚点(见 officePreviewDir 的注释:__dirname 会随 rollup
+    // 拆不拆 chunk 漂移,而漂了只表现为运行时静默 404)。fake 指向 ui-mac 包根,与真实同形。
+    getAppPath: () => path.join(import.meta.dir, "..", ".."),
+    getPath: (_name: string) => path.join(os.tmpdir(), "alpha-rail-preview-test-userdata"),
   },
   session: {
     fromPartition: (partition: string) => {
@@ -198,6 +202,13 @@ const {
   __setRailPreviewLogSink,
 } = await import("./rail-preview-host")
 const { HTML_PREVIEW_CSP, HTML_PREVIEW_SCHEME } = await import("../shared/html-preview")
+const {
+  OFFICE_PREVIEW_ASSETS,
+  OFFICE_PREVIEW_CSP,
+  OFFICE_PREVIEW_DOCUMENT_PATH,
+  OFFICE_PREVIEW_HOST_PATH,
+  OFFICE_PREVIEW_OUT_DIR,
+} = await import("../shared/office-preview")
 const { FILE_VIEWER_DOC_MAX_BYTES } = await import("../shared/file-viewer")
 
 __setRailPreviewElectron(fakeElectron as never)
@@ -588,5 +599,117 @@ describe("IPC + hygiene", () => {
     const token = tokenOf(FakeWebContentsView.instances[0]!)
     expect(JSON.stringify(result).includes(token)).toBe(false)
     expect(logLines.some((line) => line.includes(token))).toBe(false)
+  })
+})
+
+
+describe("#1229 office 载体:同一套隔离,第三块画布", () => {
+  // 宿主页与它的资产是**我们自己的打包产物**,住在 out/office-preview/;测试里就地造一份,
+  // 免得判据依赖「有没有跑过 build」这个与被测行为无关的前提(那正是本仓点名过的假红/假绿源)。
+  const outDir = path.join(import.meta.dir, "..", "..", "out", OFFICE_PREVIEW_OUT_DIR)
+  let madeAssets = false
+  beforeAll(() => {
+    if (fs.existsSync(path.join(outDir, "app.js"))) return
+    fs.mkdirSync(outDir, { recursive: true })
+    for (const name of Object.keys(OFFICE_PREVIEW_ASSETS)) fs.writeFileSync(path.join(outDir, name), `/*${name}*/`)
+    madeAssets = true
+  })
+  afterAll(() => {
+    if (madeAssets) fs.rmSync(outDir, { recursive: true, force: true })
+  })
+
+  test("装载的是宿主页 + 检测出的子类型,工作区路径根本不进 URL", () => {
+    const { sender } = attach()
+    write("q3.xlsx", "PK\u0003\u0004 fake")
+    expect(openRailPreview(sender as never, root, "q3.xlsx", "office-xlsx", BOUNDS).ok).toBe(true)
+    const view = FakeWebContentsView.instances[0]!
+    const url = new URL(view.webContents.loadedUrls[0]!)
+    expect(url.pathname).toBe(`/${OFFICE_PREVIEW_HOST_PATH}`)
+    expect(url.search).toBe("?kind=xlsx")
+    // 文件名不出现在 URL 里 —— 叠放层的地址不泄露工作区内容。
+    expect(view.webContents.loadedUrls[0]!).not.toContain("q3")
+    // Office 是纯 DOM/canvas 渲染,不需要插件面。
+    expect(view.opts.webPreferences.plugins).toBe(false)
+    expect(view.opts.webPreferences.sandbox).toBe(true)
+    expect("preload" in view.opts.webPreferences).toBe(false)
+    expect(String(view.opts.webPreferences.partition)).toStartWith("persist:alpha-rail-preview-")
+  })
+
+  test("资产面是定长白名单:表内的给,表外的一律 403 并记账", async () => {
+    const { sender } = attach()
+    write("a.docx", "PK\u0003\u0004 fake")
+    const opened = openRailPreview(sender as never, root, "a.docx", "office-docx", BOUNDS)
+    expect(opened.ok).toBe(true)
+    const ses = sessions[0]!
+    const token = tokenOf(FakeWebContentsView.instances[0]!)
+    for (const name of Object.keys(OFFICE_PREVIEW_ASSETS)) {
+      const res = await serve(ses, `${HTML_PREVIEW_SCHEME}://${token}/__alpha_office__/${name}`)
+      expect({ name, status: res.status }).toEqual({ name, status: 200 })
+      expect(res.headers.get("Content-Security-Policy")).toBe(OFFICE_PREVIEW_CSP)
+    }
+    for (const bad of ["__alpha_office__/other.js", "__alpha_office__/sub/app.js", "__alpha_office__/../main/index.js"]) {
+      const res = await serve(ses, `${HTML_PREVIEW_SCHEME}://${token}/${bad}`)
+      expect({ bad, status: res.status }).toEqual({ bad, status: 403 })
+    }
+    const status = railPreviewStatus((opened as { previewId: string }).previewId)
+    expect(status.ok && status.blockedPaths.length > 0).toBe(true)
+  })
+
+  test("文档只在定长地址上供给;按它自己的工作区路径取不到,同伴文件也一概取不到", async () => {
+    const { sender } = attach()
+    write("a.docx", "DOCXBYTES")
+    write("sibling.txt", "SECRET-SIBLING")
+    expect(openRailPreview(sender as never, root, "a.docx", "office-docx", BOUNDS).ok).toBe(true)
+    const ses = sessions[0]!
+    const token = tokenOf(FakeWebContentsView.instances[0]!)
+
+    const doc = await serve(ses, `${HTML_PREVIEW_SCHEME}://${token}/${OFFICE_PREVIEW_DOCUMENT_PATH}`)
+    expect(doc.status).toBe(200)
+    expect(await doc.text()).toBe("DOCXBYTES")
+    // html 载体会按根文档路径供给,office 载体**刻意不会** —— 那条路只剩定长地址一条。
+    expect((await serve(ses, `${HTML_PREVIEW_SCHEME}://${token}/a.docx`)).status).toBe(403)
+    expect((await serve(ses, `${HTML_PREVIEW_SCHEME}://${token}/sibling.txt`)).status).toBe(403)
+  })
+
+  test("盘上被换即 409:文档字节不静默变成另一份", async () => {
+    const { sender } = attach()
+    write("a.docx", "ORIGINAL")
+    expect(openRailPreview(sender as never, root, "a.docx", "office-docx", BOUNDS).ok).toBe(true)
+    const ses = sessions[0]!
+    const token = tokenOf(FakeWebContentsView.instances[0]!)
+    write("a.docx", "REPLACED-WITH-A-LONGER-PAYLOAD")
+    const res = await serve(ses, `${HTML_PREVIEW_SCHEME}://${token}/${OFFICE_PREVIEW_DOCUMENT_PATH}`)
+    expect(res.status).toBe(409)
+  })
+
+  test("宿主页产物不在时诚实 404(而不是白屏)—— 构建步骤没跑到要看得见", async () => {
+    const { sender } = attach()
+    write("a.pptx", "PK fake")
+    expect(openRailPreview(sender as never, root, "a.pptx", "office-pptx", BOUNDS).ok).toBe(true)
+    const ses = sessions[0]!
+    const token = tokenOf(FakeWebContentsView.instances[0]!)
+    const missingDir = path.join(outDir, "__absent__")
+    // 用一个表内但盘上不存在的名字模拟「打包步骤没跑」:临时把 app.js 挪走。
+    const appJs = path.join(outDir, "app.js")
+    const stash = `${appJs}.stash`
+    fs.renameSync(appJs, stash)
+    try {
+      const res = await serve(ses, `${HTML_PREVIEW_SCHEME}://${token}/__alpha_office__/app.js`)
+      expect(res.status).toBe(404)
+    } finally {
+      fs.renameSync(stash, appJs)
+      fs.rmSync(missingDir, { recursive: true, force: true })
+    }
+  })
+
+  test("IPC 只受理已知载体名", () => {
+    const handler = ipcHandlers.get("rail-preview-open")!
+    const { sender } = attach()
+    write("a.docx", "PK fake")
+    expect(handler({ sender } as never, root, "a.docx", "office-msword", BOUNDS)).toEqual({
+      ok: false,
+      code: "invalid-path",
+    })
+    expect(handler({ sender } as never, root, "a.docx", "office-docx", BOUNDS)).toMatchObject({ ok: true })
   })
 })

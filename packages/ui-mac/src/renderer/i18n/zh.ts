@@ -1486,6 +1486,8 @@ export const dict = {
   // #1227 —— 右栏文件面的 Office 提取视图。
   "alpha.fileViewer.officeMismatch": "扩展名声称 {{claimed}},但容器结构是 {{detected}} —— 按 {{detected}} 呈现。",
   "alpha.fileViewer.officeExtractFailedDetail": "文件已保存且未被改动;在系统应用中打开可看到完整文档。",
+  // #1229 —— 版式画布画不出来时的降级说明。
+  "alpha.fileViewer.officeLayoutFailed": "无法还原原始版式,已改为呈现提取出的文字与表格。",
   "alpha.fileViewer.isolationHtml": "隔离预览 · 无网络访问",
   "alpha.fileViewer.isolationBlocked": "已拦下 {{count}} 项",
   "alpha.fileViewer.isolationBlockedAtLeast": "至少已拦下 {{count}} 项",

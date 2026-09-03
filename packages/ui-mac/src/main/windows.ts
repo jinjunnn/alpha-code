@@ -59,7 +59,12 @@ protocol.registerSchemesAsPrivileged([
   // REQ-096(#188):隔离 HTML preview 的一次性静态 host scheme。registerSchemesAsPrivileged
   // 全应用只允许调用一次,故在此挂载;仅 standard(host/相对路径解析必需)—— 不给 secure、
   // 不给 supportFetchAPI,能力面最小化。handler 本体按 preview session 注册于 html-preview-host.ts。
-  { scheme: HTML_PREVIEW_SCHEME, privileges: { standard: true } },
+  // `supportFetchAPI`(#1229):Office 宿主页要用同源 fetch 把文档字节当**数据**取回来,
+  // 没有它会被拒为 `URL scheme "alpha-artifact-preview" is not supported`。
+  // 已实测这不放宽 HTML 产物那条路 —— 那份 CSP 的裸 `sandbox` 在 fetch 之前就把脚本整个禁掉了
+  // (控制台 `Blocked script execution … because the document's frame is sandboxed`),
+  // 恶意 HTML 连发起 fetch 的机会都没有。仍然不给 secure。
+  { scheme: HTML_PREVIEW_SCHEME, privileges: { standard: true, supportFetchAPI: true } },
 ])
 
 let backgroundColor: string | undefined

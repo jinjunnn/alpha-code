@@ -27,6 +27,13 @@
 // 权限/网络/导航/下载全拒组一条不动;代价只有「落盘」,故 close 时 clearStorageData +
 // 删除该分区目录,启动时再扫一遍残留(purgeRailPreviewPartitions)。
 //
+// Office 版式预览(#1229):第三种载体,**同一套隔离,第三块画布**。宿主页与渲染库是我们
+// 自己打包进去的一段代码(out/office-preview/),文档字节只作为**数据**经同源 fetch 交给它;
+// 因此这条路的 CSP 换成 OFFICE_PREVIEW_CSP —— `script-src 'self'` 且 `'self'` 下只服务
+// OFFICE_PREVIEW_ASSETS 那张固定表,并且**不服务工作区里的任何同伴文件**(与 html 载体的
+// 关键差别:版式所需的图片/字体都在容器内部,渲染库自己解)。裸 `sandbox` 在这条路上不能带
+// —— 它会连我们自己的脚本一起禁掉(实测控制台只剩 `Blocked script execution … sandboxed`)。
+//
 // 生命周期(设计 §4 遮挡合同):销毁而非隐藏 —— 返回树/切文件/切面板/收起右栏/切会话/
 // 窗口关闭都由 renderer 侧 effect 的 cleanup 触发 close;窗口关闭与 sender 销毁在本模块兜底。
 
@@ -53,8 +60,19 @@ import {
   HTML_PREVIEW_SCHEME,
 } from "../shared/html-preview"
 import {
+  OFFICE_PREVIEW_ASSETS,
+  OFFICE_PREVIEW_CSP,
+  OFFICE_PREVIEW_DOCUMENT_PATH,
+  OFFICE_PREVIEW_HOST_PATH,
+  OFFICE_PREVIEW_OUT_DIR,
+  OFFICE_PREVIEW_PREFIX,
+} from "../shared/office-preview"
+import {
   FILE_VIEWER_DOC_MAX_BYTES,
+  isRailPreviewKind,
+  officeSubtypeOfKind,
   type FileViewerRefusal,
+  type RailPreviewOfficeOutcome,
   type RailPreviewBounds,
   type RailPreviewClosedEvent,
   type RailPreviewCloseReason,
@@ -160,6 +178,8 @@ type RailPreviewRecord = {
   blockedPaths: string[]
   /** 挂在宿主窗口/发起 renderer 上的清理监听(closeRecord 时摘除,防累积)。 */
   detach?: () => void
+  /** Office 宿主页最近一次上报的结局(#1229);非 office 载体恒 undefined。 */
+  office?: RailPreviewOfficeOutcome
 }
 
 const previews = new Map<string, RailPreviewRecord>()
@@ -184,6 +204,71 @@ function deny(status = 404, body = "Not found"): Response {
   return new Response(body, { status, headers: { ...BASE_HEADERS, "Content-Security-Policy": HTML_PREVIEW_CSP } })
 }
 
+/**
+ * out/office-preview/ 的绝对路径。
+ *
+ * 刻意**不**用 `__dirname` 推:main 是 rollup 打包产物,本模块可能落在 `out/main/index.js`
+ * 里,也可能被拆进 `out/main/chunks/*.js` —— 两者的 `__dirname` 差一层,而差错的表现是
+ * 运行时静默 404(宿主页白屏),构建期一点声音都没有。`app.getAppPath()` 在开发与打包
+ * (app.asar 根)两种形态下都指向同一个锚点,`out/` 在它下面。
+ */
+function officePreviewDir(): string {
+  return path.join(electronRef.app.getAppPath(), "out", OFFICE_PREVIEW_OUT_DIR)
+}
+
+/**
+ * Office 载体的静态面:**只有** OFFICE_PREVIEW_ASSETS 里登记的四个文件 + 文档本身。
+ * 工作区路径从不出现在 URL 里 —— 文档地址是定长的,由本函数按记录解析回工作区文件。
+ */
+function serveOfficeRequest(record: RailPreviewRecord, rel: string): Response {
+  if (rel === OFFICE_PREVIEW_DOCUMENT_PATH) {
+    const resolved = resolveWorkspaceFile(record.workspaceDir, record.rootRelPath)
+    if (!resolved.ok) {
+      recordBlocked(record, OFFICE_PREVIEW_DOCUMENT_PATH)
+      return deny()
+    }
+    if (resolved.file.size !== record.rootBytes) {
+      writeLog("rail-preview", "root document changed on disk", { previewId: record.previewId }, "warn")
+      return deny(409, "File changed on disk")
+    }
+    let bytes: Buffer
+    try {
+      bytes = fs.readFileSync(resolved.file.abs)
+    } catch {
+      return deny()
+    }
+    // 文档以 octet-stream 交付:宿主页只把它当字节读,永不让浏览器按类型自行处置。
+    return new Response(new Uint8Array(bytes), {
+      status: 200,
+      headers: {
+        ...BASE_HEADERS,
+        "Content-Type": "application/octet-stream",
+        "Content-Security-Policy": OFFICE_PREVIEW_CSP,
+      },
+    })
+  }
+
+  const assetName = rel.startsWith(`${OFFICE_PREVIEW_PREFIX}/`) ? rel.slice(OFFICE_PREVIEW_PREFIX.length + 1) : null
+  const mime = assetName !== null ? OFFICE_PREVIEW_ASSETS[assetName] : undefined
+  if (assetName === null || mime === undefined || assetName.includes("/")) {
+    recordBlocked(record, rel || "/")
+    writeLog("rail-preview", "blocked office asset", { previewId: record.previewId, path: rel }, "warn")
+    return deny(403, "Blocked by preview policy")
+  }
+  let bytes: Buffer
+  try {
+    bytes = fs.readFileSync(path.join(officePreviewDir(), assetName))
+  } catch {
+    // 产物不在 = 构建步骤没跑到。诚实 404(右栏会因此换回文字提取兜底),不静默空白。
+    writeLog("rail-preview", "office preview asset missing", { previewId: record.previewId, path: assetName }, "error")
+    return deny()
+  }
+  return new Response(new Uint8Array(bytes), {
+    status: 200,
+    headers: { ...BASE_HEADERS, "Content-Type": mime, "Content-Security-Policy": OFFICE_PREVIEW_CSP },
+  })
+}
+
 function serveRequest(record: RailPreviewRecord, request: Request): Response {
   if (record.closed || tokens.get(record.token) !== record) return deny()
   if (request.method !== "GET" && request.method !== "HEAD") return deny(405, "Method not allowed")
@@ -201,6 +286,8 @@ function serveRequest(record: RailPreviewRecord, request: Request): Response {
     return deny()
   }
   const rel = pathname.replace(/^\/+/, "")
+
+  if (officeSubtypeOfKind(record.kind) !== null) return serveOfficeRequest(record, rel)
 
   if (rel === record.rootRelPath) {
     // 根文档:身份/圈禁重证 + 尺寸复核(盘上被换即拒,不静默换内容)。
@@ -432,6 +519,7 @@ export function openRailPreview(
       safeDialogs: true,
       spellcheck: false,
       // plugins 只开在 pdf 载体的这个 view 上(内置 Chromium PDF viewer);主窗口不动。
+      // Office 载体不需要插件面 —— 它是纯 DOM/canvas 渲染。
       plugins: kind === "pdf",
       // ⚠️ 刻意无 preload —— 与 html-preview-host 同一条铁律:预览上下文零 Alpha bridge。
     },
@@ -452,9 +540,16 @@ export function openRailPreview(
   previews.set(previewId, record)
   tokens.set(token, record)
 
-  const encodedPath = relPath.split("/").map(encodeURIComponent).join("/")
-  const fragment = kind === "pdf" ? "#toolbar=0" : ""
-  void Promise.resolve(view.webContents.loadURL(`${HTML_PREVIEW_SCHEME}://${token}/${encodedPath}${fragment}`)).catch(
+  const officeSubtype = officeSubtypeOfKind(kind)
+  // Office 载体装的是**我们自己的宿主页**,工作区路径根本不进 URL(文档在定长地址上供给);
+  // html/pdf 仍然直接装载那份文档本身。
+  const target =
+    officeSubtype !== null
+      ? `${HTML_PREVIEW_SCHEME}://${token}/${OFFICE_PREVIEW_HOST_PATH}?kind=${officeSubtype}`
+      : `${HTML_PREVIEW_SCHEME}://${token}/${relPath.split("/").map(encodeURIComponent).join("/")}${
+          kind === "pdf" ? "#toolbar=0" : ""
+        }`
+  void Promise.resolve(view.webContents.loadURL(target)).catch(
     (error) => {
       writeLog("rail-preview", "load failed", { previewId, code: (error as { errno?: number })?.errno ?? -1 }, "error")
     },
@@ -489,7 +584,45 @@ export function closeRailPreview(previewId: string): { ok: boolean } {
 export function railPreviewStatus(previewId: string): RailPreviewStatus {
   const record = previews.get(previewId)
   if (!record) return { ok: false, reason: "unknown or closed preview" }
-  return { ok: true, previewId, open: !record.closed, blockedPaths: [...record.blockedPaths] }
+  const base = { ok: true as const, previewId, open: !record.closed, blockedPaths: [...record.blockedPaths] }
+  return officeSubtypeOfKind(record.kind) === null ? base : { ...base, office: record.office ?? { status: "pending" } }
+}
+
+/**
+ * status 的**唯一生产入口**:先把宿主页的结局刷新一遍,再读。IPC handler 与取证 harness
+ * 都走这一个函数 —— 免得「测的那条路」和「用户走的那条路」是两条(本仓点名过的假绿形态)。
+ */
+export async function railPreviewStatusRefreshed(previewId: string): Promise<RailPreviewStatus> {
+  const record = previews.get(previewId)
+  if (record) await refreshOfficeOutcome(record)
+  return railPreviewStatus(previewId)
+}
+
+/**
+ * 把 Office 宿主页写下的结局取回来。宿主页在隔离世界里只暴露一个属性,这里**只读它**、
+ * 只接受三种已知形状、并把 detail 截短 —— 宿主页说什么都不会成为 main 的行为。
+ * 读不到(还没渲染完 / 已关闭)一律当 `pending`,绝不当成功。
+ */
+async function refreshOfficeOutcome(record: RailPreviewRecord): Promise<void> {
+  if (record.closed || officeSubtypeOfKind(record.kind) === null) return
+  if (record.view.webContents.isDestroyed()) return
+  try {
+    const raw = (await record.view.webContents.executeJavaScript(
+      "window.__alphaOfficeOutcome ?? null",
+      false,
+    )) as { status?: unknown; code?: unknown; detail?: unknown } | null
+    if (!raw || typeof raw.status !== "string") return
+    const detail = typeof raw.detail === "string" ? raw.detail.slice(0, 200) : ""
+    if (raw.status === "rendered") record.office = { status: "rendered", detail }
+    else if (raw.status === "failed")
+      record.office = {
+        status: "failed",
+        code: typeof raw.code === "string" ? raw.code.slice(0, 64) : "RENDER_FAILED",
+        detail,
+      }
+  } catch {
+    // 宿主页还没就绪 / 已销毁 —— 保持 pending
+  }
 }
 
 export function closeAllRailPreviews() {
@@ -504,7 +637,7 @@ export function registerRailPreviewIpcHandlers() {
   electronRef.ipcMain.handle(
     "rail-preview-open",
     (e: IpcMainInvokeEvent, dir: unknown, rel: unknown, kind: unknown, bounds: unknown) =>
-      str(dir) && str(rel) && (kind === "html" || kind === "pdf")
+      str(dir) && str(rel) && isRailPreviewKind(kind)
         ? openRailPreview(e.sender, dir, rel, kind, bounds as RailPreviewBounds)
         : ({ ok: false, code: "invalid-path" } satisfies RailPreviewOpenResult),
   )
@@ -519,7 +652,9 @@ export function registerRailPreviewIpcHandlers() {
   electronRef.ipcMain.handle("rail-preview-close", (_e: IpcMainInvokeEvent, previewId: unknown) =>
     str(previewId) ? closeRailPreview(previewId) : { ok: false as const },
   )
-  electronRef.ipcMain.handle("rail-preview-status", (_e: IpcMainInvokeEvent, previewId: unknown) =>
-    str(previewId) ? railPreviewStatus(previewId) : ({ ok: false, reason: "invalid arguments" } satisfies RailPreviewStatus),
+  electronRef.ipcMain.handle("rail-preview-status", async (_e: IpcMainInvokeEvent, previewId: unknown) =>
+    str(previewId)
+      ? await railPreviewStatusRefreshed(previewId)
+      : ({ ok: false, reason: "invalid arguments" } satisfies RailPreviewStatus),
   )
 }

@@ -13,7 +13,7 @@ export const FILE_VIEWER_TEXT_MAX_BYTES = 4 * 1024 * 1024
 export const FILE_VIEWER_EXCERPT_BYTES = 256 * 1024
 /** 图片内联预算(与 artifact 二进制预览上限同值)。 */
 export const FILE_VIEWER_IMAGE_MAX_BYTES = 20 * 1024 * 1024
-/** html/pdf 叠放载体的根文档预算(与既有隔离 HTML host 的 32MB 口径一致)。 */
+/** html/pdf/office 叠放载体的根文档预算(与既有隔离 HTML host 的 32MB 口径一致)。 */
 export const FILE_VIEWER_DOC_MAX_BYTES = 32 * 1024 * 1024
 /** 单次 chunk 读取上限(main 侧强制;renderer 请求更大也会被夹到这个值)。 */
 export const FILE_VIEWER_CHUNK_BYTES = 256 * 1024
@@ -57,7 +57,31 @@ export type WorkspaceFileActionResult = { ok: true } | { ok: false; code: FileVi
 
 // ---- 右栏叠放预览(html/pdf;WebContentsView)----
 
-export type RailPreviewKind = "html" | "pdf"
+/**
+ * 叠放载体的形态。`office-*` 三种由 **OOXML 结构检测的结论**决定,绝不由扩展名合成
+ * (#1229);它们共用一个宿主页,子类型经 URL query 传给它。
+ */
+export type RailPreviewKind = "html" | "pdf" | "office-docx" | "office-pptx" | "office-xlsx"
+
+export const RAIL_PREVIEW_KINDS: readonly RailPreviewKind[] = [
+  "html",
+  "pdf",
+  "office-docx",
+  "office-pptx",
+  "office-xlsx",
+]
+
+export function isRailPreviewKind(value: unknown): value is RailPreviewKind {
+  return typeof value === "string" && (RAIL_PREVIEW_KINDS as readonly string[]).includes(value)
+}
+
+/** `office-docx` → `docx`;非 Office 载体返回 null。 */
+export function officeSubtypeOfKind(kind: RailPreviewKind): "docx" | "pptx" | "xlsx" | null {
+  if (kind === "office-docx") return "docx"
+  if (kind === "office-pptx") return "pptx"
+  if (kind === "office-xlsx") return "xlsx"
+  return null
+}
 
 export type RailPreviewBounds = { x: number; y: number; width: number; height: number }
 
@@ -70,6 +94,23 @@ export type RailPreviewCloseReason = "closed" | "crashed" | "shutdown" | "replac
 export type RailPreviewClosedEvent = { previewId: string; reason: RailPreviewCloseReason }
 
 /** blockedPaths 语义与 HtmlPreviewStatus 相同:相对路径或外部 origin,绝无 token/绝对路径。 */
+/**
+ * Office 宿主页的结局(#1229)。叠放层的内容在另一个进程,renderer 的 DOM 里没有它的节点 ——
+ * 「画出来了没有」只能由 main 读宿主页写下的结论再转告。`pending` = 还在渲染;
+ * `failed` ⇒ 右栏换回文字提取兜底(而不是让用户对着一块空白等)。
+ */
+export type RailPreviewOfficeOutcome =
+  | { status: "pending" }
+  | { status: "rendered"; detail: string }
+  | { status: "failed"; code: string; detail: string }
+
 export type RailPreviewStatus =
-  | { ok: true; previewId: string; open: boolean; blockedPaths: string[] }
+  | {
+      ok: true
+      previewId: string
+      open: boolean
+      blockedPaths: string[]
+      /** 仅 office 载体存在。 */
+      office?: RailPreviewOfficeOutcome
+    }
   | { ok: false; reason: string }

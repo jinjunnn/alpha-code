@@ -26,6 +26,7 @@ import {
   FILE_VIEWER_IMAGE_MAX_BYTES,
   FILE_VIEWER_TEXT_MAX_BYTES,
   type FileViewerRefusal,
+  type RailPreviewKind,
   type WorkspaceFileChunkResult,
   type WorkspaceFileOpenResult,
 } from "../../../../shared/file-viewer"
@@ -52,10 +53,15 @@ export type ViewerFilePhase =
       totalBytes: number
     }
   | { phase: "image"; bytes: Uint8Array; mime: string; totalBytes: number }
-  | { phase: "overlay"; overlay: "html" | "pdf" }
+  | { phase: "overlay"; overlay: RailPreviewKind }
   /**
    * OOXML(#1227):`subtype` 是**检测出来的**身份(与扩展名冲突时按检测为准并给 warning);
    * `structure` 复用产物面板同一份结构闸呈现;content 为 undefined 表示没过闸(只画 structure)。
+   */
+  /**
+   * `carrier` = 这一刻用哪块画布(#1229)。`layout` 走隔离叠放层里的版式渲染(默认);
+   * 宿主页报「渲染失败」时翻成 `text`,回到 #1227 那条文字提取 —— 用户看到降级的内容,
+   * 而不是对着一块空白等。结构闸没过时恒 `text`(那时压根不该把字节交给渲染库)。
    */
   | {
       phase: "office"
@@ -64,6 +70,9 @@ export type ViewerFilePhase =
       structure: OfficeStructurePresentation
       content: OfficeViewerContent | undefined
       totalBytes: number
+      carrier: "layout" | "text"
+      /** 仅 carrier 从 layout 翻成 text 时存在 —— 供诚实说明「为什么不是版式」。 */
+      layoutFailure?: string
     }
   | { phase: "oversize"; totalBytes: number; excerptAvailable: boolean }
   | { phase: "unsafe"; code: FileViewerRefusal }
@@ -207,6 +216,8 @@ export function createFileViewerState(io: FileViewerIO) {
         structure,
         content: structure.status === "pass" ? officeViewerContentOf(detection) : undefined,
         totalBytes,
+        // 只有过了结构闸的容器才配拿到版式画布 —— 畸形/加密/超限的一律不进渲染库。
+        carrier: structure.status === "pass" ? "layout" : "text",
       })
       return
     }
@@ -285,6 +296,16 @@ export function createFileViewerState(io: FileViewerIO) {
     setFilePhase(refusalPhase(code, entry.plan))
   }
 
+  /**
+   * 版式画布画不出来时的降级(#1229):不重读文件、不重跑检测 —— 内容早就装配好了,
+   * 这里只是换一块画布,并留下原因。幂等:已经在 text 上就什么都不做。
+   */
+  const demoteOfficeToText = (reason: string) => {
+    const phase = filePhase()
+    if (phase?.phase !== "office" || phase.carrier === "text") return
+    setFilePhase({ ...phase, carrier: "text", layoutFailure: reason.slice(0, 200) })
+  }
+
   const loadExcerpt = () => {
     const entry = current()
     if (entry) void load(entry, { excerpt: true })
@@ -323,6 +344,7 @@ export function createFileViewerState(io: FileViewerIO) {
     deactivate,
     retry,
     applyRefusal,
+    demoteOfficeToText,
     loadExcerpt,
     setMode,
     openExternal,
