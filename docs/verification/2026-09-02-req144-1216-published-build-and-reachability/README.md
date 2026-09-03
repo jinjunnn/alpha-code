@@ -7,7 +7,7 @@
 | AC | 判定 | 一句话 |
 | --- | --- | --- |
 | AC2 发布件本体钉扎 | **PASS** | 已验签 manifest → release 资产 → 装机件 `app.asar` 三方逐字一致,标记检索命中、负针零命中 |
-| AC1(原判据)D1 `job_admissions` 准入行 | **结构上不可达** | 该行只由 MCP 面 `cloud_dispatch` 写,而该工具**广播出来的 inputSchema 是空的**,模型只能发 `{}`,服务端在 handler 之前就拒 ⇒ 永不落行。阻塞方是 `#793`,不是 `#1214` |
+| AC1(原判据)D1 `job_admissions` 准入行 | **结构上不可达** | 该行只由 MCP 面 `cloud_dispatch` 写;服务端广播的是完整的顶层 `oneOf`,但桌面 `convertTool`(`packages/opencode/src/mcp/catalog.ts:43-48`)把根覆写成 `properties:{}` + `additionalProperties:false`,模型拿到一份自相矛盾的 schema ⇒ 只能发 `{}` ⇒ handler 之前被拒 ⇒ 永不落行。**结论不变,机制描述已于 2026-09-03 更正**(原写「服务端没广播 union」是错的,见下)。阻塞方是 `#793`,不是 `#1214` |
 | AC1(改判后,owner 2026-09-02 裁决) | **PASS** | 判据换成 `ap#226` 白纸黑字要的那句「已发布桌面版实际以 `mcp_access` 完成过一次 `tools/call`」;证据 = 0.1.9 app 内端到端见证 + `settle_intent` 时间对齐行 |
 
 阅读顺序:先看 AC2,再看「AC1 —— 勘破」(为什么原判据到不了),最后看「AC1 改判」(新判据与证据)。
@@ -111,7 +111,7 @@ T2/T3 计数与 v0.1.7 那轮逐项相同。依《本机验证陷阱》:asar 哈
 
 | 臂 | 广播出的 inputSchema |
 | --- | --- |
-| `cloud_dispatch`(真实 schema,逐字 import 生产源) | `{"type":"object","properties":{}}` — **整个 union 被静默丢掉** |
+| `cloud_dispatch`(**注意:这一行的探针挑错了包,见下方更正**) | `{"type":"object","properties":{}}` — 这是 `sdk@1.29` **当 server** 时的行为,**不是生产行为** |
 | 对照臂:普通 `z.object({query,n?})` | `{"type":"object","properties":{query,n},"required":["query"],…}` |
 
 对照臂非空 ⇒ 探针不是瞎的。**模型收到的是「这个工具没有任何参数」。**
@@ -125,28 +125,44 @@ T2/T3 计数与 v0.1.7 那轮逐项相同。依《本机验证陷阱》:asar 哈
 
 handler 没跑 ⇒ `dispatchJob` 没跑 ⇒ `admitJob` 没跑 ⇒ **`job_admissions` 不落行**。
 
-### `#793` 的诊断需要更正一处
+### ~~`#793` 的诊断需要更正一处~~ —— **2026-09-03:这一整段是错的,由我写的,现更正**
 
-`#793` 记的是「桌面 `convertTool` 无条件写死 `properties:{} + additionalProperties:false`,
-把服务端的 `oneOf` 分支全禁掉」。实测:**服务端根本没广播 `oneOf`** —— union 在
-`registerTool` 那一步就丢了。所以:
+> **下面保留原文并划掉,因为它被引用过。真相在本节末尾。**
+>
+> ~~`#793` 记的是「桌面 `convertTool` 无条件写死 `properties:{} + additionalProperties:false`,
+> 把服务端的 `oneOf` 分支全禁掉」。实测:**服务端根本没广播 `oneOf`** —— union 在
+> `registerTool` 那一步就丢了。所以只修桌面侧修不好。~~
 
-- `packages/opencode/src/mcp/catalog.ts:43-48` 的 `convertTool` 确实还在写死那三行(现状核对属实);
-- 但**只修桌面侧修不好**:桌面从未收到过分支信息。
-- 另测:`convertTool` 合成的 `{type:object,properties:{},additionalProperties:false}` 交给
-  引擎实际使用的 `jsonSchema()`(`ai@6.0.168`),其 `validate` 为 `undefined` ⇒ **本地不做校验**。
-  所以本地校验不是拦路点,**「模型不知道要传什么」才是**。
+**我的探针挑错了包。** 上一节那句「用 `packages/gateway/node_modules` 里装着的**那个**版本」
+只做到了字面 —— 我 import 的是 `@modelcontextprotocol/sdk@1.29.0` 的 `McpServer`,
+而**生产 MCP 面不用它**:
 
-修法的方向因此落在 alpha-platform 一侧。已实测的候选形状(同一探针):
+- 生产是 `packages/gateway/src/cloud-mcp.ts:10` 的 `import { McpServer } from "@modelcontextprotocol/server"`
+  (**`@modelcontextprotocol/server@2.0.0`**,`package.json` 的 `dependencies`),
+  经 `src/cloud.ts:236` 的 `createMcpHandler` 承载(`#176`,2026-08-02 合入);
+- `@modelcontextprotocol/sdk@1.29.0` 在该包里的 devDependency 别名就叫 **`mcp-sdk-desktop`**
+  —— 名字本身写着它是**桌面侧**的那一代。
 
-| 候选 | 广播字段数 |
+照生产接线(`buildMcpServer` + fixture env,同 `test/mcp-tool-surface.test.ts` 的形态)重跑:
+
+| 臂 | 结果 |
 | --- | --- |
-| 现状 `z.discriminatedUnion` | 0 |
-| 扁平 `z.object`(`autonomy` 为 enum、分支字段 optional) | **7**(`schema_version,idempotency_key,autonomy,kind,input,objective,capabilities`) |
-| 非判别 `z.union` | 0 |
+| `cloud_dispatch` 广播出的 inputSchema | `{ type:"object", $schema, oneOf:[2 个分支] }` |
+| ↳ 分支 0(pipeline) | `properties` 9 个 / `required` 5 个 |
+| ↳ 分支 1(bounded-agent) | `properties` 9 个 / `required` 5 个 |
+| **对照臂** `cloud_status` | `properties=[job_id]` ⇒ 探针不瞎 |
+| `tools/call {}` | `Invalid discriminator value…`,handler 没跑 |
+| `tools/call` 合法 bounded-agent 信封 | **handler 跑到了**(抵达 `dispatchJob`,fixture 下响亮返回 `job_ledger_unavailable`) |
 
-真正的判别仍可留在 handler 内用 `CloudJobRequestV1Schema.parse` 执行,服务端语义不放松。
-**但这改的是公共 Cloud MCP 面广播出去的形状(REQ-130 契约面),选型归 owner,本文不代为决定。**
+**⇒ union 没有被丢掉,服务端广播的是完整的顶层 `oneOf`;`#793` 的原诊断是对的,我的「更正」是错的。**
+
+真正的断点仍在 `packages/opencode/src/mcp/catalog.ts:43-48`:它 spread 时**保留**了 `oneOf`,
+却把根上覆写成 `properties: {}` + `additionalProperties: false` —— 模型拿到一份**自相矛盾**的
+schema(分支要求字段、根上禁止一切字段),于是发 `{}` 是它对这份 schema 的合理服从。
+
+**这个错的形态值得记住**:仓里可以同时装着同一协议**两代**的库(这里是服务端 `server@2.0.0`
+与桌面端 `sdk@1.29.0`),按名字挑一个 import 进来跑,跑的就不是生产那条路。
+《勘破先于闸门设计》要的是**执行生产接线**,不是「import 一个装着的库」。
 
 ### 因此
 
