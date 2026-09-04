@@ -3,11 +3,11 @@
   "kind": "office-pptx",
   "open": {
     "ok": true,
-    "previewId": "rp_c2a6e632e045"
+    "previewId": "rp_9b9ac2afa2a7"
   },
   "status": {
     "ok": true,
-    "previewId": "rp_c2a6e632e045",
+    "previewId": "rp_9b9ac2afa2a7",
     "open": true,
     "blockedPaths": [],
     "office": {
@@ -18,8 +18,8 @@
   "sampledPixels": 226065,
   "inkPercent": 57.92,
   "hostLog": [
-    "rail-preview: opened {\"previewId\":\"rp_c2a6e632e045\",\"kind\":\"office-pptx\"}",
-    "rail-preview: closed {\"previewId\":\"rp_c2a6e632e045\",\"reason\":\"closed\"}"
+    "rail-preview: opened {\"previewId\":\"rp_9b9ac2afa2a7\",\"kind\":\"office-pptx\"}",
+    "rail-preview: closed {\"previewId\":\"rp_9b9ac2afa2a7\",\"reason\":\"closed\"}"
   ],
   "verdict": "PASS",
   "checks": {
