@@ -5,6 +5,6 @@
   "noticeSha256": "30cff2600b2e3b1951abd5a2847f7d12de8b5b84c42dfcc101d9cf7dda7796cb",
   "blobCount": 98,
   "blobBytes": 5670465,
-  "source": "alpha-web-checkout",
+  "source": "remote",
   "_note": "由 scripts/sync-extension-seed.mjs 生成;resources/extension-seed 禁手编(REQ-102 #194)。stable 晋级后必须重跑本脚本 + sync-catalog-snapshot.mjs(extension-seed-snapshot.test.ts 互钉守卫)。"
 }
