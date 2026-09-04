@@ -3,11 +3,11 @@
   "kind": "office-docx",
   "open": {
     "ok": true,
-    "previewId": "rp_e46da8e534b7"
+    "previewId": "rp_683700bb8dce"
   },
   "status": {
     "ok": true,
-    "previewId": "rp_e46da8e534b7",
+    "previewId": "rp_683700bb8dce",
     "open": true,
     "blockedPaths": [],
     "office": {
@@ -18,8 +18,8 @@
   "sampledPixels": 226065,
   "inkPercent": 2.84,
   "hostLog": [
-    "rail-preview: opened {\"previewId\":\"rp_e46da8e534b7\",\"kind\":\"office-docx\"}",
-    "rail-preview: closed {\"previewId\":\"rp_e46da8e534b7\",\"reason\":\"closed\"}"
+    "rail-preview: opened {\"previewId\":\"rp_683700bb8dce\",\"kind\":\"office-docx\"}",
+    "rail-preview: closed {\"previewId\":\"rp_683700bb8dce\",\"reason\":\"closed\"}"
   ],
   "verdict": "PASS",
   "checks": {
