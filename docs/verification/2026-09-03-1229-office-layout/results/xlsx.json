@@ -3,11 +3,11 @@
   "kind": "office-xlsx",
   "open": {
     "ok": true,
-    "previewId": "rp_cb71f592736b"
+    "previewId": "rp_9293578d504f"
   },
   "status": {
     "ok": true,
-    "previewId": "rp_cb71f592736b",
+    "previewId": "rp_9293578d504f",
     "open": true,
     "blockedPaths": [],
     "office": {
@@ -18,8 +18,8 @@
   "sampledPixels": 226065,
   "inkPercent": 6.37,
   "hostLog": [
-    "rail-preview: opened {\"previewId\":\"rp_cb71f592736b\",\"kind\":\"office-xlsx\"}",
-    "rail-preview: closed {\"previewId\":\"rp_cb71f592736b\",\"reason\":\"closed\"}"
+    "rail-preview: opened {\"previewId\":\"rp_9293578d504f\",\"kind\":\"office-xlsx\"}",
+    "rail-preview: closed {\"previewId\":\"rp_9293578d504f\",\"reason\":\"closed\"}"
   ],
   "verdict": "PASS",
   "checks": {
