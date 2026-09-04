@@ -6,8 +6,17 @@
     <style>
       /* 宿主页只负责给渲染库一块干净画布 + 一个与右栏一致的底色。
          主题跟随系统:右栏叠放在应用窗口上,底色不一致会像贴了一张纸。 */
-      :root { color-scheme: light dark; --alpha-office-bg: #f4f4f5; }
-      @media (prefers-color-scheme: dark) { :root { --alpha-office-bg: #1c1c1e; } }
+      :root {
+        color-scheme: light dark;
+        --alpha-office-bg: #f4f4f5;
+        /* 表格右侧「纸张之外」那片地方。必须与网格的白明显区分,否则一张窄表看起来就是
+           「被切成两半、右边空白」(owner 2026-09-04 实报)。第一版用了 --alpha-office-bg,
+           太接近白,改不动那个观感 —— 这里单独给一档更实的灰。 */
+        --alpha-office-void: #e4e4e7;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --alpha-office-bg: #1c1c1e; --alpha-office-void: #0f0f11; }
+      }
       html, body { margin: 0; height: 100%; background: var(--alpha-office-bg); }
       body { overflow: auto; -webkit-font-smoothing: antialiased; }
       /* 文档流(docx/pptx):内容多长就多长,body 滚。 */
@@ -30,7 +39,11 @@
         背景上,读作「一张这么宽的表」,而不是「一个空掉的右半边」——与 docx 那张纸落在
         灰底上是同一套语言。列宽超过面板时行为不变(canvas 撑满 + 库自己的横向虚拟滚动)。
       */
-      html[data-alpha-office-kind="xlsx"] #root .table-wrapper { background: var(--alpha-office-bg); }
+      html[data-alpha-office-kind="xlsx"] #root .table-wrapper { background: var(--alpha-office-void); }
+      /* 网格右缘给一道阴影,让「纸到这里为止」这件事看得出来,而不是像被裁断。 */
+      html[data-alpha-office-kind="xlsx"] #root .e-virt-table-stage canvas {
+        box-shadow: 1px 0 0 rgba(0, 0, 0, 0.10), 6px 0 14px -6px rgba(0, 0, 0, 0.18);
+      }
       /* docx-preview 的页面容器:居中 + 阴影,让"这是一页纸"这件事看得出来。 */
       #root .alpha-docx-wrapper { background: transparent; padding: 16px 0; }
       #root .alpha-docx-wrapper > section.alpha-docx {
