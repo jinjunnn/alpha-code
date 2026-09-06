@@ -23,6 +23,7 @@ related: [ADR-002, ADR-004, ADR-005, ADR-007, ADR-009, ADR-014]
 
 - **Tier 3 — 提示词行为有限调优(新接缝,本 ADR 引入)**:允许在 **alpha 自有指令层**有限地调优 agent 行为,两条通道:
   - **全局行为层** `alpha-behavior.ts` → `alpha-behavior.md`:**与 identity 物理分离**、独立可关(`ALPHA_BEHAVIOR_DISABLE`)。首个实例(2026-06-23):"按问题实质校准回答长度"修复回答过短——routine 操作保持简洁,explain/analyze/design 类给出完整推理与取舍,且**不许 filler**。
+    **第二个实例(2026-09-06,REQ-154 / `#1240`)**:补产出物质量基线 —— 结构深度(标题最多两级)、表格/列表/散文的取用时机、中文排版(全角标点、中西文间距、数字与单位、标题不加句号、不谎称字体)。仍是**叠加**:它删不掉 `default.txt:17` 的长度压制,只在其上追加要求;需要整段甩掉底座的文档类任务走 `#1241` 的 `docs` agent(`request.ts:64` 二选一)。本实例**只承诺注入这一结构事实**,不承诺"输出变长/变好"(该行为结果零 A/B 实测,见 `docs/design/req-153-output-capability.md` §6.1)。判据:`packages/ui-mac/src/main/alpha-behavior.test.ts`(真跑 `injectAlphaConfig`,三份不同底座路由下落盘正文逐字节相同)。
   - **per-agent prompt**:`.opencode/agent/*.md` 各自的 system prompt(alpha 自有 agent),针对子 agent 局部调优,**不动全局底座**。
   - **硬约束**:Tier-3 必须**小、叠加、不硬覆盖底座规则**——校准底座,而非对抗它。
 
@@ -52,4 +53,4 @@ related: [ADR-002, ADR-004, ADR-005, ADR-007, ADR-009, ADR-014]
    - **配套五件**(同属 REQ-062):`alpha-identity.md` 删 "built on opencode" 措辞;`/init` `/review` 经 config `command.init/review` 同名覆盖换 alpha 模板(上游 schema 无 disable 字段,换芯即接管——`initialize.txt` 含 3 处 OpenCode 自指);已禁的 customize-opencode 坑位补 **customize-alpha** skill(教 `.alpha/alpha.jsonc`/治理/定制中心约定,接管「定制引导」心智);**general/explore 子 agent 同名 prompt 重写为 alpha 自写**(用户 2026-07-08 追加拍板;`agent.ts:283` config 优先,同名接管保 task 委托接线;单一任务型 prompt 无逐模型负担,故进 A 期不等 B);`tool/lsp.txt:22` 一处经稳定 hook `tool.definition` 顺带转写(量级小,lsp 工具默认实验关闭,可后置)。
 2. **路线B(演进方向,[[REQ-064]] parked)= config `agent.<name>.prompt` 受控替换底座 + 内置 agent 内容全面接管**:`request.ts:60` 实证 agent.prompt 与底座是**二选一**——config 赋 `agent.build.prompt` / `agent.plan.prompt` 即整体替换,纯 config 接缝零改上游;compaction/title/summary 内部机件 prompt 同名覆盖按质量评估纳入(引擎与治理层均允许覆盖,HARD_PROTECTED 只拦 disable/hide)。至此全部内置 agent 内容层由 alpha 承载(用户 2026-07-08 拍板方向);**接管姿势一律同名覆盖、不走禁用+另建**(build/plan/内部三件的引擎接线按名字焊死)。启动硬前置 = 路线A 稳定运行 + alpha 自有 prompt 逐模型质量评估过关 + **本 ADR 再修订**(Tier 0 精神中的「不硬覆盖底座」在路线B 下正式退役——等同前端 ADR-016/020「接管即放弃白嫖」的抉择,接管后 prompt 质量维护面归 alpha)。
 3. **不变项**:Tier 0 ①(不移植 FABLE-5)、③(identity 不塞行为覆盖)不变;Tier 1/2/3 分层不变——路线A 归类为 Tier-3 的**机制升级**(instructions 叠加 → transform 转写),Tier-3「小、克制」的精神对转写子串清单同样适用(精确子串 + 漏改 warn,ADR-007 同款纪律)。
-4. **关联**:外部生态继承 default-deny + consent 导入门同日拍板,独立成 [[ADR-024]](REQ-063)。
+4. **关联**:外部生态继承 default-deny + consent 导入门同日拍板,独立成 [[ADR-024]] (随 REQ-063 拍板)。
