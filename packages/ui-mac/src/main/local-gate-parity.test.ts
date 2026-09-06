@@ -39,6 +39,9 @@ const SCRIPT = readFileSync(resolve(REPO_ROOT, "scripts/alpha-check.sh"), "utf8"
 /** `#889`:north-star 守卫本体 —— CI 与本地跑的是同一份字节。 */
 const NORTH_STAR_GUARD = "scripts/north-star-guard.sh"
 const GUARD_SCRIPT = readFileSync(resolve(REPO_ROOT, NORTH_STAR_GUARD), "utf8")
+/** `#1247`:north-star 把 packages/{app,ui} 让给了这道门 —— 两处的覆盖面必须是同一条线。 */
+const ROUNDTRIP_GUARD = "scripts/assert-frontend-patch-roundtrip.sh"
+const ROUNDTRIP_GUARD_SCRIPT = readFileSync(resolve(REPO_ROOT, ROUNDTRIP_GUARD), "utf8")
 const REQUIRED_CONTEXTS_FILE = readFileSync(resolve(REPO_ROOT, ".github/required-contexts.txt"), "utf8")
 /** `#895` 的判据本体 —— 四个必需 job 的第一步跑的就是这个文件。 */
 const DETECT_CLASSIFIED_SCRIPT = "scripts/assert-detect-classified.sh"
@@ -300,8 +303,44 @@ describe("#777 本地门与 alpha-ci 的对照表", () => {
     expect(/UPSTREAM_PATHS\s*[:=]/.test(WORKFLOW), "workflow 里又出现了 UPSTREAM_PATHS 定义").toBe(false)
 
     // 清单本身必须真的在脚本里(解析自检:脚本被清空时上面两条会空对空地绿)。
-    expect(/^UPSTREAM_PATHS="([^"]+)"/m.exec(GUARD_SCRIPT)?.[1].split(/\s+/).length, "守卫脚本里没解析到 UPSTREAM_PATHS").toBeGreaterThanOrEqual(8)
+    // `#1247`/ADR-044:辖区不再是一张枚举(枚举对上游**新增的包默认放行** —— 实测 8 个包
+    // 对 32 个包,22 个零机制),而是「整棵 packages/ 减两张显式 carve-out」。所以这里钉的
+    // 不再是「枚举有多长」,而是**三样东西都在**:辖区就是 `packages`、两张 carve-out 都解析
+    // 得到。谁把辖区改回一张枚举,这一条当场红。
+    expect(/^UPSTREAM_PATHS="([^"]+)"/m.exec(GUARD_SCRIPT)?.[1], "守卫辖区不再是整棵 packages/ —— 上游新增的包又变回默认放行").toBe(
+      "packages",
+    )
+    expect(
+      /^ALPHA_OWNED_PACKAGES="([^"]+)"/m.exec(GUARD_SCRIPT)?.[1].trim().split(/\s+/).length,
+      "守卫脚本里没解析到 ALPHA_OWNED_PACKAGES",
+    ).toBeGreaterThanOrEqual(3)
+    expect(
+      /^ROUNDTRIP_PACKAGES="([^"]+)"/m.exec(GUARD_SCRIPT)?.[1].trim().split(/\s+/).length,
+      "守卫脚本里没解析到 ROUNDTRIP_PACKAGES",
+    ).toBeGreaterThanOrEqual(2)
     expect(bashArrayItems(GUARD_SCRIPT, "UPSTREAM_EXCLUDES").length, "守卫脚本里的 ADR-033 收编白名单没解析到").toBeGreaterThanOrEqual(20)
+  })
+
+  // ── `#1247` / ADR-044:两道门的边界必须是同一条线 ──────────────────────────────
+  // north-star 把 `packages/{app,ui}` 排除在辖区外,理由是「ADR-034 的 roundtrip 门盖着它们,
+  // 而且判据比本门更强(tree sha 逐字节)」。那句话写在守卫的注释里,是**散文** —— 有人把
+  // roundtrip 门的 `PACKAGES` 改小(比如只留 app),空档立刻出现:`packages/ui` 从此两道门都
+  // 不管,而两边都不会红。反方向同样坏:north-star 的 carve-out 少一个 ⇒ ADR-034 明写的日常
+  // seam 变更被判成破北极星 ⇒ 恒红门 ⇒ `--no-verify`。
+  // 这一条把「无空档、无重复覆盖」变成断言:两处清单逐条相同。
+  // 诚实边界:它钉的是**两行配置互相一致**,钉不住「roundtrip 门真的覆盖了那两棵树」——
+  // 后者的行为判据在 packages/ui-mac/src/main/frontend-patch-roundtrip.test.ts(已在登记簿里),
+  // 那里另有一条把 `PACKAGES` 与 sync-upstream.yml 的 `rm -rf` 行钉在一起。
+  test("#1247:north-star 的 roundtrip carve-out == assert-frontend-patch-roundtrip.sh 的 PACKAGES", () => {
+    const carveOut = /^ROUNDTRIP_PACKAGES="([^"]+)"/m.exec(GUARD_SCRIPT)?.[1].trim().split(/\s+/)
+    expect(carveOut, "守卫脚本里没解析到 ROUNDTRIP_PACKAGES —— 本条会空对空地绿").toBeDefined()
+    const roundtrip = /^PACKAGES="([^"]+)"/m.exec(ROUNDTRIP_GUARD_SCRIPT)?.[1].trim().split(/\s+/)
+    expect(roundtrip, `${ROUNDTRIP_GUARD} 里没解析到 PACKAGES —— 本条会空对空地绿`).toBeDefined()
+    expect(carveOut!.length, "解析退化成空清单").toBeGreaterThanOrEqual(2)
+    expect(
+      [...carveOut!].sort(),
+      `north-star 的 carve-out 与 ${ROUNDTRIP_GUARD} 的覆盖面不是同一条线 —— 有包掉进了两道门之间`,
+    ).toEqual([...roundtrip!].map((p) => p.replace(/^packages\//, "")).sort())
   })
 
   // ── `#889`:比较基准只有一个家 ────────────────────────────────────────────────

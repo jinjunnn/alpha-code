@@ -129,7 +129,6 @@ function forkFixture() {
     [UPSTREAM_FILE]: "export const leaf = 1\n",
     [TAKEN_OVER_FILE]: "export const permission = 1\n",
     [ALPHA_SIDE_DRIFT]: "export const drift = 1\n",
-    [ALPHA_FILE]: "export const alphaOwned = 1\n",
     // seed 在分叉之前 ⇒ 这一条**也在 dev 里**,于是它是货真价实的上游文件,名字只是碰巧
     // 长得像 alpha 自有的。谓词的因子①必须据此否掉它。
     [UPSTREAM_ALPHA_NAMED]: "export const trap = 1\n",
@@ -139,6 +138,11 @@ function forkFixture() {
   git(origin, ["checkout", "-q", "alpha"])
   commit(origin, "alpha takes over an upstream leaf (ADR-style)", {
     [ALPHA_SIDE_DRIFT]: "export const drift = 2\n",
+    // `#1247`:ALPHA_FILE 住在 alpha 自有包 packages/ui-mac 下,它必须**只**落在 alpha 侧 ——
+    // 原来它在 seed 里,于是夹具的 dev 分支也有 `packages/ui-mac/`,而真实世界里 origin/dev
+    // 根本没有这条路径(2026-09-06 实测)。守卫新增的 ALPHA_OWNED_PACKAGES 自检正是拿镜像
+    // 验这一点,夹具不修就会在一个**现实中不存在**的状态上恒红。
+    [ALPHA_FILE]: "export const alphaOwned = 1\n",
     // 这三条只落在 alpha 上 ⇒ origin/dev 里查不到它们(= 因子①成立)。它们已经在基准里,
     // 所以 feature 分支再碰一下就是 `M` —— 正是 `#971` 说的「落地那一次绿、以后每一次红」。
     [ALPHA_OWNED_NAMED]: "export const ownedByName = 1\n",
@@ -499,5 +503,187 @@ describe("#913 fetch 失败降级时,基准的身份与年龄必须可读", () =
     expect(run.output, `这一跑没走降级路径,本条用例测的不是它要测的东西:\n${run.output}`).toContain(
       stale.baselineSha.slice(0, 7),
     )
+  })
+})
+
+// ── `#1247`:辖区 = `packages/` 全树,不是一张会漂的 8 个包的枚举 ────────────────────
+//
+// 缺陷(2026-09-06 实测):`UPSTREAM_PATHS` 原本是
+// `packages/{opencode,core,server,tui,sdk,protocol,schema,client}` —— **8 个包**,而上游镜像
+// `origin/dev` 当天有 **32** 个(`git ls-tree --name-only origin/dev packages/ | wc -l`)。
+// 24 个包在辖区外,其中 `app`/`ui` 由 ADR-034 的 pin+补丁 roundtrip 门盖住,其余 **22 个零机制**:
+// 往 `packages/plugin/src/index.ts`(**Hooks 契约本体**)与 `packages/llm/src/index.ts` 各写一行,
+// 守卫报 `✓ zero upstream package edits` 且 `exit 0`。这不是少拦一个坏输入 —— 是这道门(alpha
+// 分支保护上的必需 context)对一大半地盘根本没在看,而下一次 fork-sync 照样冲突。
+//
+// 根因是**数据模型**,不是某一行写错:辖区是一张枚举,枚举对**新成员默认放行** —— 上游每加
+// 一个包就多一个盲区,而没有任何东西会变红。ADR-043(`#1079` owner CHOICE=2)在**文件**这一层
+// 已经因为同一条理由否掉过逐文件 exclude 清单。所以辖区改成「`packages/` 全树 − 两张显式
+// carve-out」:例外默认拒,新成员默认覆盖。
+//
+// 判据为什么长这样:
+//   · **每条正向断言都带控制组** —— 把生产脚本复制一份、只把被测的那一格改回缺陷态(辖区换回
+//     8 包 / 抹掉 alpha 自有包 carve-out / 抹掉 roundtrip carve-out),先证明这个夹具**测得出
+//     已知的坏**,再用它判未知的好。没有控制组的「它红了」可能只是夹具在别处红。
+//   · 夹具的上游镜像里放一个守卫**从没听说过**的包(`brand-new-upstream-pkg`)。它钉的正是
+//     「上游明天加一个包,谁会变红」—— 枚举式辖区对它默认放行。
+//   · **carve-out 也要有反向判据**。`app`/`ui` 不被本门点名是**有意**的(ADR-034:那两个包是
+//     `frontend/frontend-pin.lock` 的 pin + `frontend/alpha-patches/alpha-frontend.patch` 的投影,
+//     由 `scripts/assert-frontend-patch-roundtrip.sh` 用 **tree sha 逐字节**判,比本门更强;
+//     本门若也盖它们,每一次合法的 seam 变更都会被判成破北极星 ⇒ 恒红门 ⇒ `--no-verify`)。
+//     没有控制组的话,一个「辖区根本没生效」的实现也能满足「app/ui 不被点名」。
+//     两处清单相同由 packages/ui-mac/src/main/local-gate-parity.test.ts 判(空档即红)。
+//   · **把一个真上游包写进 alpha 自有清单**是绕开整道门最便宜的一步:一行配置换一整个包的
+//     豁免,而上面每一条断言照样绿。所以守卫自己拿上游镜像验那张清单,这里钉住它真的会红。
+
+/** ADR-034 pin+补丁 roundtrip 覆盖的前端包 —— 本门刻意不盖(理由见上)。 */
+const ROUNDTRIP_PACKAGES = ["app", "ui"]
+/** alpha 自有的 workspace 包 —— `origin/dev` 里根本没有这三条路径(2026-09-06 实测)。 */
+const ALPHA_OWNED_PACKAGES = ["ext", "ui-mac", "alpha-contracts-consumer"]
+/** `#1247` 之前的辖区,控制组用 —— 逐字来自被本票替换掉的那一行。 */
+const PRE_1247_JURISDICTION =
+  "packages/opencode packages/core packages/server packages/tui packages/sdk packages/protocol packages/schema packages/client"
+/**
+ * 夹具里上游镜像 `dev` 拥有的包:`core` 是 `#1247` 之前就在辖区里的对照,中间五个是实测盲区
+ * (`plugin` = Hooks 契约本体),`brand-new-upstream-pkg` 是「上游明天新加的那个包」,
+ * 最后两个是 ADR-034 的 carve-out。
+ */
+const BLIND_SPOT_PACKAGES = ["plugin", "llm", "desktop", "session-ui", "web", "brand-new-upstream-pkg"]
+const MIRROR_PACKAGES = ["core", ...BLIND_SPOT_PACKAGES, ...ROUNDTRIP_PACKAGES]
+
+const leafOf = (pkg: string) => `packages/${pkg}/src/leaf.ts`
+
+/**
+ * 每个上游包一个叶子,全部落在 `dev` 与 `alpha` 的共同祖先里;alpha 自有包只在 alpha 侧存在
+ * (⇒ ADR-043 因子① 对它们成立,而它们的叶子既不叫 `alpha-*` 也不带 marker ⇒ 因子② 不成立 ——
+ * 这正是「整包 carve-out」这一层必须存在的理由,逐文件谓词接不住它们)。
+ */
+function allPackagesFixture() {
+  const origin = mkdtempSync(join(tmpdir(), "alpha-north-star-pkgs-origin-"))
+  git(origin, ["init", "-q", "-b", "alpha"])
+  const seeded: Record<string, string> = {}
+  for (const pkg of MIRROR_PACKAGES) seeded[leafOf(pkg)] = "export const leaf = 1\n"
+  commit(origin, "seed: the upstream mirror owns one leaf per package", seeded)
+  git(origin, ["checkout", "-q", "-b", "dev"])
+  commit(origin, "upstream mirror moves on", { "packages/core/src/dev-only.ts": "export const devOnly = 1\n" })
+  git(origin, ["checkout", "-q", "alpha"])
+  const alphaOnly: Record<string, string> = {}
+  for (const pkg of ALPHA_OWNED_PACKAGES) alphaOnly[leafOf(pkg)] = "export const leaf = 1\n"
+  commit(origin, "alpha adds its own workspace packages", alphaOnly)
+
+  const work = mkdtempSync(join(tmpdir(), "alpha-north-star-pkgs-work-"))
+  const cloned = Bun.spawnSync(["git", "clone", "-q", origin, work], { env: { ...GIT_ENV } })
+  if (cloned.exitCode !== 0) throw new Error(`git clone 失败:${cloned.stderr.toString()}`)
+  git(work, ["checkout", "-q", "-b", "feature", "origin/alpha"])
+  return { origin, work }
+}
+
+/**
+ * 生产脚本的复制品,只把某一格改回缺陷态 —— **控制组专用**,不要拿它做正向判据。
+ * 改动为空即抛:一个什么都没改的「控制组」会和生产跑出一样的结果,然后空对空地绿。
+ */
+function mutatedGuard(tag: string, edit: (src: string) => string): string {
+  const path = join(mkdtempSync(join(tmpdir(), `alpha-north-star-${tag}-`)), "guard.sh")
+  const before = readFileSync(GUARD, "utf8")
+  const after = edit(before)
+  if (after === before) throw new Error(`控制组没能改动生产脚本(${tag})—— 本次测量作废`)
+  writeFileSync(path, after)
+  return path
+}
+
+describe("#1247 辖区覆盖上游镜像里的每一个包", () => {
+  test("每个上游包各改一行 ⇒ 逐个被点名(控制组:旧的 8 包辖区放行其中六个)", () => {
+    const { work } = allPackagesFixture()
+    const edits: Record<string, string> = {}
+    for (const pkg of MIRROR_PACKAGES) edits[leafOf(pkg)] = "export const leaf = 999\n"
+    commit(work, "touch one file in every upstream package", edits)
+
+    // ── 控制组:辖区换回 `#1247` 之前那 8 个包 —— 六个盲区包一个都不许被点名 ────────
+    const old = runGuard(
+      work,
+      mutatedGuard("pre1247", (s) => s.replace(/^UPSTREAM_PATHS="[^"]*"$/m, `UPSTREAM_PATHS="${PRE_1247_JURISDICTION}"`)),
+    )
+    expect(old.output, `控制组连 packages/core 都没点名 —— 夹具坏了,本条测量作废:\n${old.output}`).toContain(leafOf("core"))
+    for (const pkg of BLIND_SPOT_PACKAGES) {
+      expect(old.output, `控制组点名了 ${pkg},那它就不是 #1247 要修的那个缺陷态:\n${old.output}`).not.toContain(leafOf(pkg))
+    }
+
+    // ── 生产:同一棵树,每一个上游包都必须被点名 ────────────────────────────────
+    const run = runGuard(work)
+    expect(run.exitCode, `改了每一个上游包,守卫却放行:\n${run.output}`).not.toBe(0)
+    for (const pkg of MIRROR_PACKAGES) {
+      if (ROUNDTRIP_PACKAGES.includes(pkg)) continue
+      expect(run.output, `packages/${pkg} 仍在辖区外 —— 改它没有任何东西变红:\n${run.output}`).toContain(leafOf(pkg))
+    }
+  })
+
+  test("上游明天新增的包默认在辖区内 —— 不需要任何人记得去登记它", () => {
+    const { work } = allPackagesFixture()
+    commit(work, "touch a package the guard has never heard of", {
+      [leafOf("brand-new-upstream-pkg")]: "export const leaf = 999\n",
+    })
+    const run = runGuard(work)
+    // 这一条杀的是「换一张更长的枚举」这个修法:枚举再长,对**下一个**新成员仍然默认放行。
+    // 「恒红实现也能满足它」由下面两条绿向用例杀掉。
+    expect(run.exitCode, `上游新增的包默认在辖区外 —— 枚举式辖区的缺陷原样还在:\n${run.output}`).not.toBe(0)
+    expect(run.output, `红了但没点名那个新包:\n${run.output}`).toContain(leafOf("brand-new-upstream-pkg"))
+  })
+
+  test("alpha 自有包整包豁免 ⇒ 绿(控制组:抹掉 carve-out 即红且点名)", () => {
+    const { work } = allPackagesFixture()
+    const edits: Record<string, string> = {}
+    for (const pkg of ALPHA_OWNED_PACKAGES) edits[leafOf(pkg)] = "export const leaf = 2\n"
+    commit(work, "edit the alpha-owned workspace packages", edits)
+
+    const run = runGuard(work)
+    expect(run.exitCode, `改 alpha 自有包被判成破北极星 —— 恒红的门等于没有门:\n${run.output}`).toBe(0)
+
+    // 控制组:抹掉整包 carve-out 之后同一棵树必须红。那些叶子既不叫 `alpha-*` 也没写 marker,
+    // ADR-043 的逐文件谓词接不住 —— 所以「整包豁免」这一层不是冗余。
+    const without = runGuard(
+      work,
+      mutatedGuard("no-alpha-pkgs", (s) => s.replace(/^ALPHA_OWNED_PACKAGES="[^"]*"$/m, 'ALPHA_OWNED_PACKAGES=""')),
+    )
+    expect(without.exitCode, `抹掉 carve-out 之后还是绿 —— 上面那条绿不是 carve-out 挣来的:\n${without.output}`).not.toBe(0)
+    for (const pkg of ALPHA_OWNED_PACKAGES) {
+      expect(without.output, `控制组没点名 packages/${pkg}:\n${without.output}`).toContain(leafOf(pkg))
+    }
+  })
+
+  test("ADR-034 roundtrip 包不由本门覆盖 ⇒ 绿(控制组:抹掉 carve-out 即红且点名)", () => {
+    const { work } = allPackagesFixture()
+    const edits: Record<string, string> = {}
+    for (const pkg of ROUNDTRIP_PACKAGES) edits[leafOf(pkg)] = "export const leaf = 3\n"
+    commit(work, "change the frontend seam (ADR-034 pin + patch governs those two packages)", edits)
+
+    const run = runGuard(work)
+    expect(run.exitCode, `合法的 seam 变更被本门判红 —— ADR-034 的日常工作流会恒红:\n${run.output}`).toBe(0)
+    for (const pkg of ROUNDTRIP_PACKAGES) {
+      expect(run.output, `carve-out 的包不该出现在本门的输出里:\n${run.output}`).not.toContain(leafOf(pkg))
+    }
+
+    const without = runGuard(
+      work,
+      mutatedGuard("no-roundtrip", (s) => s.replace(/^ROUNDTRIP_PACKAGES="[^"]*"$/m, 'ROUNDTRIP_PACKAGES=""')),
+    )
+    expect(without.exitCode, `抹掉 carve-out 之后还是绿 —— 那上面那条绿说明的是「辖区没生效」:\n${without.output}`).not.toBe(0)
+    for (const pkg of ROUNDTRIP_PACKAGES) {
+      expect(without.output, `控制组没点名 packages/${pkg}:\n${without.output}`).toContain(leafOf(pkg))
+    }
+  })
+
+  test("把真上游包写进 alpha 自有清单 ⇒ 守卫自己红并点名那条声明,不是发一整个包的豁免", () => {
+    const { work } = allPackagesFixture()
+    commit(work, "touch the hooks contract", { [leafOf("plugin")]: "export const leaf = 999\n" })
+    // 先证明这棵树本来就该红,否则下面那条红可能来自别处。
+    expect(runGuard(work).exitCode, "夹具本身没红 —— 本条测量作废").not.toBe(0)
+
+    const forged = runGuard(
+      work,
+      mutatedGuard("forged-owner", (s) => s.replace(/^ALPHA_OWNED_PACKAGES="([^"]*)"$/m, 'ALPHA_OWNED_PACKAGES="$1 plugin"')),
+    )
+    expect(forged.exitCode, `一行配置就把整个上游包移出了辖区:\n${forged.output}`).not.toBe(0)
+    expect(forged.output, `红了,但没说清问题出在那条声明上:\n${forged.output}`).toContain("ALPHA_OWNED_PACKAGES")
+    expect(forged.output, `红了,但没点名是哪个包被冒领了:\n${forged.output}`).toContain("packages/plugin")
   })
 })

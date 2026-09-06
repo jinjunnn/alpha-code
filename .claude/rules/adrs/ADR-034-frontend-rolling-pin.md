@@ -49,7 +49,12 @@ loud-fail);开 PR 供人视觉抽查后合。冲突(尤其 app.tsx 高 churn 枢
 `frontend/README.md`。
 
 ### 4. 守卫映射(北极星不变)
-`packages/{app,ui}` 本就不在 `UPSTREAM_PATHS`(ADR-020 已移出),北极星守卫零改。前端锚点 tripwire
+`packages/{app,ui}` 本就不在 `UPSTREAM_PATHS`(ADR-020 已移出),北极星守卫零改。
+**2026-09-06([[ADR-044]])更正这句话的形式,不改其实质**:守卫的辖区已从 8 个包的枚举换成
+「`packages/` 全树 − 例外清单」,`app`/`ui` 因此从「碰巧不在名单里」变成 `ROUNDTRIP_PACKAGES`
+里的**显式 carve-out**,理由逐字写在那里 —— 本门若也盖它们,§2 的日常工作流(改 seam = 改补丁
++ 重生那两棵树)每一次都会被判成破北极星。两处清单相同由 `local-gate-parity.test.ts` 判:
+有人把 `scripts/assert-frontend-patch-roundtrip.sh` 的 `PACKAGES` 改小,空档即红。前端锚点 tripwire
 (REQ-012,sync-upstream.yml 内)保留——它在上游改名/删锚点时 warning 要求人工视觉复验。
 
 ## 后果
