@@ -134,6 +134,11 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
     evidence: "#551",
     lines: 1,
   },
+  "packages/ui-mac/src/main/alpha-office-instance.test.ts": {
+    why: "锚 index.ts 里 Office 实例 reconcile 排在 timeout reconcile / marker reconcile 之前、且在第一次 spawnLocalServer( 之前 —— 比的是 indexOf 下标。两个不会让它变红的变异:①把 reconcileAlphaOfficeInstalls 的函数体改成直接 return(调用文本仍在);②让它算出收养结果却不写账本/配置。index.ts 结构上进不了 bun;收养/重锚/幂等/回滚的行为判据在同文件其余用例里(它们跑的是模块本体)。",
+    evidence: "#1244",
+    lines: 1,
+  },
   "packages/ui-mac/src/main/mcp-workspace-marker.test.ts": {
     why: "锚 index.ts 里 marker reconcile 接在 timeout reconcile 后且排在第一次 spawnLocalServer( 之前。两个不会让它变红的变异:①把 reconcileMcpWorkspaceMarkers 的函数体改成直接 return;②让它返回改写后的文本却丢弃写盘结果。index.ts 结构上进不了 bun。",
     evidence: "#1011",

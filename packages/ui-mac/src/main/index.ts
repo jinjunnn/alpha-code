@@ -77,6 +77,7 @@ import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
 import { catalogRegistryChannel, initAlphaEnvironment } from "./alpha-environment"
+import { reconcileAlphaOfficeInstalls } from "./alpha-office-instance"
 import { productionCasGcConfig, startCasGcScheduler } from "./ext-cas-gc-scheduler"
 import { registerSettingsIpcHandlers } from "./settings-ipc"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
@@ -848,6 +849,11 @@ const main = Effect.gen(function* () {
   } catch (error) {
     logger.warn("[req144-t3] legacy cloud mcp-auth sweep failed (non-fatal)", error)
   }
+  // REQ-155 `#1244`:随包 Office 连接器跟随运行中的实例 —— 当前根里指着旧 bundle 的 server 路径重锚到
+  // 本 bundle;当前根里没有、兄弟渠道根里有的 committed 记录经安装同一道写策略收养进来。排在 timeout /
+  // marker 两个 reconcile 之前:收养进来的叶子要吃到 governed timeout,marker reconcile 认模板需要当前
+  // server 路径。锚在 alpha-office-instance.test.ts。
+  reconcileAlphaOfficeInstalls()
   ensureGovernedMcpConnectTimeouts()
   reconcileMcpWorkspaceMarkers()
   ensureAlphaLayoutDefault()
