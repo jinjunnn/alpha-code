@@ -40,21 +40,49 @@ Check your tool list first. If the needed tools are absent:
    `python-docx`, `openpyxl`, `python-pptx`, `pypdf`, or `reportlab`.
 3. Never fake success: if you can neither use a connector nor run code, say exactly that.
 
+## What each writer really accepts
+
+These are the connectors' actual tool schemas (`additionalProperties: false` — anything else is
+rejected or silently dropped). Read them before you promise a user any formatting.
+
+| Tool | Accepts | Cannot do, at all |
+|---|---|---|
+| `write_docx` | `{path, title, paragraphs[], append}` | fonts, sizes, colours, tables, lists, page breaks, headers/footers, page numbers, images, margins, table of contents. Only `title` becomes a heading (level 0); **every** entry in `paragraphs` lands as Normal body text, so "一、总体情况" stays body text, not a heading |
+| `write_xlsx` | `{path, sheets:[{name, cells}]}` where `cells` maps `"A1"` to a value | number formats, cell styles, column widths, merged cells, freeze panes, autofilter, charts, pivots, conditional formatting |
+| `write_pptx` | `{path, slides:[{title, body}], append}` | layouts, themes, images, speaker notes, per-run formatting |
+| `write_pdf` | `{path, pages[], mode}` | layout, fonts, images, headers/footers — it renders plain text pages |
+
+Two consequences you must act on:
+
+- **Never describe the file as styled when you did not style it.** Say plainly which parts of the
+  requested formatting the connector cannot produce, and offer the fallback script (below) as the
+  way to get them. Silently returning success on a request for "a formatted report" is the failure
+  mode this section exists to prevent.
+- Passing an unsupported key (`font`, `size`, `number_format`) does **not** raise — it is dropped.
+  A "success" response is not evidence that formatting was applied.
+
 ## Spreadsheet conventions (xlsx)
 
-When you build workbooks, default to these habits unless the user says otherwise:
+Verified against the shipped connector (`openpyxl==3.1.5`, the pinned version), by writing a
+workbook and reading the cells back:
+
+- **Numbers stay numbers.** Send `3` or `4.5`, not `"3"` — they land as numeric cells.
+- **Formulas work.** A string that starts with `=` (`"=SUM(B2:B3)"`) is stored as a real formula,
+  so prefer formulas over precomputed constants whenever the sheet is meant to be edited later.
+- **Dates do not.** `"2026-09-06"` lands as *text*, not a date cell, and there is no way to set a
+  date format through this connector. If the user needs real date cells, say so and use the
+  fallback script.
+- **Every cell keeps `General` format.** Currency, percent, thousands separators and date formats
+  are unreachable. If a column is a percentage, put that in the header text (`Share (%)`) rather
+  than pretending the cell is formatted.
+
+Layout habits that still apply, because they are about the data rather than the styling:
 
 - One logical table per sheet; row 1 is the header row; give sheets meaningful names.
-- Store real types: numbers as numbers, dates as dates — not preformatted strings. Apply number
-  formats (currency, percent, date) via cell format, not by baking text.
-- Don't merge cells inside a data range (it breaks sorting/filtering); merging is fine for titles
-  above the table.
-- Use formulas (`=SUM(...)` etc.) rather than precomputed constants when the sheet is meant to be
-  edited later; recompute totals when source cells change.
-- Charts and pivots should reference ranges, so they update when data changes.
-- For large data dumps, freeze the header row and add an autofilter.
-- The Excel connector works on **absolute paths inside the user's workspace** — never reach
-  outside the workspace or use `..` path segments.
+- Do not scatter a data range across merged-looking gaps — you cannot merge cells here anyway, and
+  blank spacer rows break sorting and filtering for whoever opens the file.
+- The connector works on **absolute paths inside the user's workspace** — never reach outside the
+  workspace or use `..` path segments.
 
 ## Fallback docx / pptx script snippets
 
@@ -118,6 +146,38 @@ with open("merged.pdf", "wb") as f:
 For "document → PDF" requests, prefer generating the document (docx/xlsx) first, then ask how the
 user wants the PDF: printing to PDF manually, or a reportlab re-render — each has different
 fidelity; don't silently pick one.
+
+## What the document itself should look like
+
+The connectors decide what you *can* render; this section decides whether the result is worth
+reading. It applies to every office file you produce, and to the fallback-script path too.
+
+- **Lead with the conclusion.** First paragraph (or first sheet, or first slide) answers the
+  question that made the user ask for the document. Background comes after it, never before.
+- **One idea per section, and let the section title say what it concludes** — "Costs rose because
+  of retries", not "Cost analysis".
+- **Depth follows the material, not a word count.** A number without its source is noise: give the
+  date, the range, the query, or the file it came from.
+- **Two heading levels at most.** Needing a third means the document should be split. With
+  `write_docx` you only get one real heading anyway (see the table above), so express structure as
+  short titled paragraphs and say that is what you did.
+- **A table only when rows share fields and are meant to be compared.** Never leave a cell blank —
+  write why it is blank. A list only for three or more peer items; two bullets are a sentence.
+  Arguments and causal chains stay prose: bullets delete what made them an argument.
+- **No emoji, no decorative separators, no whole-paragraph bolding.**
+- **End with what is still open** — unknowns, risks, next step — when such things exist, and drop
+  the section entirely when they do not.
+
+When the document is in Chinese:
+
+- Full-width punctuation (,。、;:?!) for the Chinese text; ASCII punctuation stays inside code,
+  paths, commands, and identifiers.
+- One space between Chinese characters and adjacent Latin letters or digits; no space next to
+  full-width punctuation.
+- Half-width digits, and a space between a number and its unit (12 ms, 3 GB, 45%).
+- Headings take no trailing period; number them (一、/ 1.) only when the order matters.
+- The connectors do not set an East Asian font — the generated files leave `eastAsia` empty and the
+  reader's default applies. Do not tell the user you chose a Chinese typeface.
 
 ## Output location
 
