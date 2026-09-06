@@ -1,6 +1,6 @@
 import type { ModelRef, ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { EffectiveCatalog, PricingMultiplier, ProviderKeyStatus } from "../../shared/alpha-model-types"
-import { byokEngineId, byokModelMeta } from "../../shared/alpha-model-types"
+import { byokEngineId, byokModelMeta, isByokEngineId } from "../../shared/alpha-model-types"
 import type { ComposerModel } from "./composer-state"
 import { t } from "../i18n"
 
@@ -64,10 +64,13 @@ export function composerModelFromRef(ref: ModelRef, catalog: EffectiveCatalog | 
     catalog?.platformProvider.id === ref.providerID
       ? catalog.platformModels.find((model) => model.id === ref.id)
       : undefined
+  // REQ-153 #1266:直连 BYOK 节点的档位与 picker 行 / sidecar 注入同一份派生 —— 会话投影回来的 BYOK
+  // 模型此前恒 `variants: []`,进会话后档位 chip 又变回「不支持」。
+  const byok = catalog && isByokEngineId(ref.providerID) ? byokModelMeta(catalog.platformModels, ref.id) : undefined
   return {
     ...ref,
     name: platform?.name ?? ref.id,
-    variants: platform?.variants ? Object.keys(platform.variants) : [],
+    variants: Object.keys(platform?.variants ?? byok?.variants ?? {}),
   }
 }
 
@@ -156,11 +159,13 @@ export function buildModelPickerRows(input: {
       // to the injected node. Display id (provider.id) stays for keyStatus/pico/name/key above.
       // REQ-153 #1236:name/reasoning 与 sidecar 注入(main/alpha-models.ts)同一个函数派生 —— 徽标
       // 亮 ⇔ 引擎 capabilities.reasoning === true。
+      // REQ-153 #1266:variants 同源 —— 此前这里写死 `[]`,直连 deepseek-v4-pro / glm-5.2 亮着徽标
+      // 却一档都选不到,默认发出的请求零推理参数。
       const meta = byokModelMeta(input.catalog.platformModels, id)
       return {
         key: `${provider.id}:${id}`,
         group: "byok",
-        model: { id, providerID: byokEngineId(provider.id), name: meta.name, variants: [] },
+        model: { id, providerID: byokEngineId(provider.id), name: meta.name, variants: Object.keys(meta.variants ?? {}) },
         providerName: provider.name,
         pico: provider.pico,
         reasoning: meta.reasoning,

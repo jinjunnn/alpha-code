@@ -15,7 +15,7 @@
 //   4. 全无 → none:composer 保持引导占位,picker 内登录/配 KEY 双出口,发送前 preflight 拦截。
 
 import type { ModelRef } from "@opencode-ai/sdk/v2/client"
-import { isByokEngineId } from "../../shared/alpha-model-types"
+import { byokModelMeta, isByokEngineId } from "../../shared/alpha-model-types"
 
 export type EngineModelRef = Pick<ModelRef, "providerID" | "id">
 
@@ -41,7 +41,7 @@ export type ModelResolveCtx = {
     /** #679:平台代理自动默认的**唯一**依据,裸 model id。null / 不在 platformModels 中 ⇒ 不默认。 */
     defaultPlatformModel: string | null
     /** 刻意**不含** pricing:解析链根本不该看见价格 —— 看得见就迟早会拿它排序。 */
-    platformModels: Array<{ id: string; name: string; variants?: Record<string, unknown> }>
+    platformModels: Array<{ id: string; name: string; reasoning?: boolean; variants?: Record<string, Record<string, unknown>> }>
   } | null
 }
 
@@ -102,7 +102,11 @@ export function resolveDefaultModel(ctx: ModelResolveCtx): DefaultResolution {
   for (const pid of ctx.configuredProviders) {
     if (pid === ctx.platformProviderId) continue
     const m = ctx.engineModels.find((e) => e.providerID === pid)
-    if (m) return { kind: "model", model: { providerID: m.providerID, id: m.id, name: m.id, variants: [] } }
+    if (!m) continue
+    // REQ-153 #1266:目录 BYOK 节点的档位与 picker 行同一份派生(平台同名条目);用户自定义节点仍无档
+    // (它们的档位表只在引擎清单里,本解析链看不见)。
+    const variants = isByokEngineId(m.providerID) ? Object.keys(byokModelMeta(cat?.platformModels ?? [], m.id).variants ?? {}) : []
+    return { kind: "model", model: { providerID: m.providerID, id: m.id, name: m.id, variants } }
   }
 
   return { kind: "none" }

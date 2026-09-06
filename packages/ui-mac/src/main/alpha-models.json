@@ -70,12 +70,38 @@
     },
     {
       "id": "gpt-5.4-nano",
-      "name": "GPT-5.4 Nano"
+      "name": "GPT-5.4 Nano",
+      "reasoning": true,
+      "variants": {
+        "低": {
+          "reasoningEffort": "low"
+        },
+        "中": {
+          "reasoningEffort": "medium"
+        },
+        "高": {
+          "reasoningEffort": "high"
+        }
+      }
     },
     {
       "id": "deepseek-v4-pro",
       "name": "DeepSeek V4 Pro",
-      "reasoning": true
+      "reasoning": true,
+      "variants": {
+        "低": {
+          "reasoningEffort": "low"
+        },
+        "中": {
+          "reasoningEffort": "medium"
+        },
+        "高": {
+          "reasoningEffort": "high"
+        },
+        "最高": {
+          "reasoningEffort": "max"
+        }
+      }
     },
     {
       "id": "deepseek-v4-flash",
@@ -84,7 +110,15 @@
     {
       "id": "glm-5.2",
       "name": "GLM-5.2",
-      "reasoning": true
+      "reasoning": true,
+      "variants": {
+        "高": {
+          "reasoningEffort": "high"
+        },
+        "最高": {
+          "reasoningEffort": "max"
+        }
+      }
     },
     {
       "id": "glm-5-turbo",

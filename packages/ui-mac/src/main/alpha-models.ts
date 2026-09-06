@@ -71,9 +71,17 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
     // REQ-153 #1236:`reasoning` 是引擎 `capabilities.reasoning` 的唯一来源(config schema
     // core/src/v1/config/provider.ts:14,消费 provider/provider.ts:1457;models.dev 对 `<id>-byok`
     // 这个 provider id 没有条目,fallback 恒 false)。不转发 ⇒ transform.variants() 首行 return {}。
-    const models: Record<string, { name: string; reasoning?: boolean }> = {}
+    // REQ-153 #1266:`variants`(档位 → 引擎 options)与 picker 的 BYOK 行同一份派生(byokModelMeta),
+    // 引擎侧 provider.ts:1503-1507 把它与自己按 npm 派生的档位表 mergeDeep —— 桌面 chip 列出的每个
+    // 标签,引擎 `model.variants[variant]` 都查得到。
+    const models: Record<string, { name: string; reasoning?: boolean; variants?: Record<string, Record<string, unknown>> }> = {}
     for (const m of p.models) {
-      models[m] = { name: m, ...(byokModelMeta(platformModels, m).reasoning ? { reasoning: true } : {}) }
+      const meta = byokModelMeta(platformModels, m)
+      models[m] = {
+        name: m,
+        ...(meta.reasoning ? { reasoning: true } : {}),
+        ...(meta.variants ? { variants: meta.variants } : {}),
+      }
     }
     // Inject under a non-models.dev engine id (`<id>-byok`) so opencode's availability gate doesn't
     // filter these out via the models.dev integration collision (see byokEngineId). Display id, key

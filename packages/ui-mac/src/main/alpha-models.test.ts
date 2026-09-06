@@ -344,10 +344,35 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     const cfg = buildAlphaModelConfig(userData)!
     const deepseek = (cfg.provider["deepseek-byok"] as { models: Record<string, { reasoning?: boolean }> }).models
     const zhipu = (cfg.provider["zhipuai-byok"] as { models: Record<string, { reasoning?: boolean }> }).models
-    expect(deepseek["deepseek-v4-pro"]).toEqual({ name: "deepseek-v4-pro", reasoning: true })
+    // #1266 起同名条目的 variants 也一并派生(见下一条),这里只看 reasoning 与「未标即缺席」。
+    expect(deepseek["deepseek-v4-pro"]).toMatchObject({ name: "deepseek-v4-pro", reasoning: true })
     expect(deepseek["deepseek-v4-flash"]).toEqual({ name: "deepseek-v4-flash" })
-    expect(zhipu["glm-5.2"]).toEqual({ name: "glm-5.2", reasoning: true })
+    expect(zhipu["glm-5.2"]).toMatchObject({ name: "glm-5.2", reasoning: true })
     expect(zhipu["glm-4.5-air"]).toEqual({ name: "glm-4.5-air" })
+  })
+
+  // REQ-153 #1266:BYOK 段的 `variants` 与平台同名条目逐字相同,且与 picker BYOK 行的档位列表同源。
+  // 此前注入不写 variants、picker 写死 `[]` ⇒ 直连 deepseek-v4-pro / glm-5.2 亮着徽标一档都选不到。
+  // 档位表的 wire 形状按平台 provider 的 npm 写,直连节点能复用的前提是每个 BYOK provider 都是
+  // openai-compat(上面「every catalog BYOK provider is openai-compat」那条钉着)——这里再钉 npm 逐字相等。
+  test("BYOK 段:同名平台条目的 variants 逐字注入;无同名条目的 BYOK-only id 一无所有;npm 与平台 provider 相同", () => {
+    keyEverything()
+    const cfg = buildAlphaModelConfig(userData)!
+    const platform = getModelCatalog().platformModels
+    const platformNpm = getModelCatalog().platformProvider.npm
+    let derived = 0
+    for (const provider of getModelCatalog().byokProviders) {
+      const injected = cfg.provider[`${provider.id}-byok`] as { npm: string; models: Record<string, { variants?: unknown }> }
+      expect({ provider: provider.id, npm: injected.npm }).toEqual({ provider: provider.id, npm: platformNpm })
+      for (const id of provider.models) {
+        const twin = platform.find((model) => model.id === id)
+        expect({ provider: provider.id, id, variants: injected.models[id]?.variants }).toEqual({ provider: provider.id, id, variants: twin?.variants })
+        if (twin?.variants) derived++
+      }
+    }
+    // 空集会让上面的逐项断言空转:至少两个直连模型真的派生到了档位,且 BYOK-only 的 glm-4.5-air 没有。
+    expect(derived).toBeGreaterThanOrEqual(2)
+    expect((cfg.provider["zhipuai-byok"] as { models: Record<string, { variants?: unknown }> }).models["glm-4.5-air"]?.variants).toBeUndefined()
   })
 
   test("徽标集合 == 引擎注入 reasoning 集合 —— 同一份目录、同一份 live 快照,两边必须走同一投影", () => {

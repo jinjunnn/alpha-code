@@ -158,6 +158,35 @@ describe("真实 alpha-models.json → picker 两组", () => {
   })
 })
 
+// REQ-153 #1266:BYOK 行的档位与 sidecar 注入同一派生(byokModelMeta 取平台同名条目的 variants 键)。
+// 此前这里写死 `variants: []` —— 直连 deepseek-v4-pro / glm-5.2 亮着徽标却一档都选不到。
+describe("BYOK 行的推理档位从平台同名条目派生(#1266)", () => {
+  test("有徽标的直连模型列出平台同名条目的档位;无同名条目 / 未标推理的直连模型零档", () => {
+    const actual = rows({
+      keyStatus: Object.fromEntries(catalog.byokProviders.map((provider) => [provider.id, { configured: true, source: "keychain" as const }])),
+    }).filter((row) => row.group === "byok")
+    const twin = (id: string) => Object.keys(catalog.platformModels.find((model) => model.id === id)?.variants ?? {})
+    expect(twin("deepseek-v4-pro").length).toBeGreaterThan(0) // 夹具自证:平台条目真有档位,否则下面空对空
+    for (const row of actual) {
+      expect({ key: row.key, variants: row.model.variants }).toEqual({ key: row.key, variants: twin(row.model.id) })
+      // 徽标 ⇒ 有档;无档 ⇒ 无徽标(目录里徽标与档位同一个条目给出)。
+      expect({ key: row.key, badgeImpliesVariants: !row.reasoning || row.model.variants.length > 0 }).toEqual({ key: row.key, badgeImpliesVariants: true })
+    }
+    expect(actual.find((row) => row.key === "deepseek:deepseek-v4-pro")?.model.variants).toEqual(twin("deepseek-v4-pro"))
+    expect(actual.find((row) => row.key === "deepseek:deepseek-v4-flash")?.model.variants).toEqual([])
+    expect(actual.find((row) => row.key === "zhipuai:glm-4.5-air")?.model.variants).toEqual([])
+  })
+
+  test("会话投影(composerModelFromRef)对直连 BYOK ref 给出同一份档位,不再回到「不支持」", () => {
+    const projected = composerModelFromRef({ providerID: byokEngineId("deepseek"), id: "deepseek-v4-pro", variant: "最高" }, catalog)
+    expect(projected.variants).toEqual(Object.keys(catalog.platformModels.find((model) => model.id === "deepseek-v4-pro")!.variants!))
+    expect(projected.variant).toBe("最高")
+    expect(withModelVariant(projected, "不存在").variant).toBeUndefined()
+    // 无目录(冷启动首次投影)时仍是空档,不发明。
+    expect(composerModelFromRef({ providerID: byokEngineId("deepseek"), id: "deepseek-v4-pro" }, null).variants).toEqual([])
+  })
+})
+
 describe("Model.Ref 统一与 session 真值投影", () => {
   test("上游 session ref 覆盖 UI 旧投影，variant 与 id/providerID 不拆成两份", () => {
     const upstream = { providerID: "alpha", id: "claude-opus-4.8", variant: "高" }

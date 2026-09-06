@@ -104,3 +104,34 @@ packages/opencode/src/session/llm/request.ts:84-87
 (档位 chip 的不支持态)**行为已正确、现在也有闸了**。上游 CLI 的那条路径按
 「已知不修」记在本文件 §1/§4,前提是「alpha 不发 CLI」——
 **这个前提若变(哪天我们真的发一个命令行入口),本条必须重开。**
+
+## 7. 追记(2026-09-06 同日,`#1266` / `#1267`):chip 的档位从哪来,以及它与引擎请求体的对账
+
+§5 写的「12 个平台模型里只有 2 个有 `variants`」是当日上午的地面真相;`#1239` 矩阵随后翻出
+它的另一面 —— **有徽标的模型在 chip 上选不到档**(`deepseek-v4-pro`、`glm-5.2`,平台与直连都是),
+以及**没徽标的模型在悄悄推理**(`gpt-5.4-nano` 默认 `reasoning_effort: medium`)。修法与判据:
+
+- **档位的唯一 alpha 侧来源仍是 `alpha-models.json` 的 `variants`**(ADR-014 的 config 杠杆)。
+  平台条目补齐:`gpt-5.4-nano`(`reasoning: true` + 低/中/高)、`deepseek-v4-pro`(低/中/高/最高)、
+  `glm-5.2`(高/最高);wire 值(`reasoningEffort`)逐条对照上游 `transform.variants()` 对
+  `@ai-sdk/openai-compatible` 的派生表写,不发引擎不认识的值。
+- **BYOK 行不再写死 `variants: []`**:与 `reasoning`/`name` 一样经 `byokModelMeta` 从平台**同名**
+  条目派生,同一份数据同时进 sidecar 注入(config `models.<id>.variants`)与 picker 行、会话投影
+  (`composerModelFromRef`)、自动默认(`model-default-core` 第③级)。引擎侧(`provider.ts:1503-1507`)
+  把 config 档位表与自己按 npm 派生的表 mergeDeep,所以 chip 上每个标签 `model.variants[variant]`
+  都查得到。
+- **为什么不改成「chip 读引擎清单」**(`#1266` 票面的非 AC 建议):桌面的模型清单来自 V2
+  `model.list`,其档位由 `packages/core/src/plugin/variant.ts` `generate()` 产出 —— 只认 glm-5.2;
+  而请求装配走 v1 `transform.variants()`(deepseek-v4 有 low/medium/high/max)。两份不是同一份
+  (基线 `req-153-output-capability.md` §6.5),读 V2 清单会让 deepseek-v4-pro 在 chip 上仍然零档。
+- **判据是双向的、走真引擎**:`packages/ui-mac/src/main/alpha-reasoning-badge-parity.test.ts`
+  对生产 `buildModelPickerRows` 的每一行,用生产 `buildAlphaModelConfig` 的配置起本仓
+  `packages/opencode/src/index.ts run`(与打包 sidecar 同一份 v1 装配)打到测试进程里的假上游:
+  有徽标 ⇒ chip 每一档的主请求体带推理参数且 `reasoning_effort` 值逐字对上;无徽标 ⇒ 零档且默认
+  请求不带。未修的树上它点名 5 行红(见 PR `#1266` 正文的变异输出)。
+- **已知不修**:`zhipuai-byok/glm-4.5-air` 仍是「无徽标却带 `thinking: enabled`」—— 它是 BYOK-only 的
+  id,平台目录没有同名条目可派生,而 BYOK 目录 `models` 是 `string[]`,**没有逐模型元数据槽**;补槽是
+  目录 schema 扩面,不在 `#1266`/`#1267` 边界内,由父需求 jinjunnn/alpha-work#94 裁。判据里以
+  `KNOWN_UNFIXED` 登记,且登记自带过期断言(一旦有人补了槽让它亮徽标,登记本身会红)。
+- **未验**:`deepseek-v4-pro` 直连与平台节点收到 `reasoning_effort: max` 的真实受理情况(无凭据;
+  `#1239` 只对智谱回放过 `max`)。

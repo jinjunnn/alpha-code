@@ -381,6 +381,12 @@ config `provider.<id>.models` 的 **KEY**(`provider.ts:1433`),alpha 注入时不
    吐不吐** —— 未测,属 gateway 侧勘破。
 5. **picker(V2 catalog)与引擎(v1)两份 variants 是否一致** —— 两份不是同一份
    (`provider.ts:1343` 走 `ModelsDev.Service` 而非 V2 catalog),未端到端验证。
+   **2026-09-06 更新(`#1266`)**:picker 的平台行 / BYOK 行**不读** V2 清单的档位(V2 的
+   `core/src/plugin/variant.ts` `generate()` 只认 glm-5.2,读它会让 deepseek-v4-pro 零档),
+   读的是 alpha 目录自己的 `variants`;「chip 标签 → v1 请求体」这一段已由
+   `packages/ui-mac/src/main/alpha-reasoning-badge-parity.test.ts` 用真引擎逐档验证。
+   V2 清单那一份与 v1 的差异仍未比对,仅用户自定义节点行(`model-picker-core.ts` 的 custom 段)
+   读它。
 6. **`alpha/claude-*` 因 `api.id.includes("claude")` 被判 anthropic 家族,
    真往网关发 `cache_control:{ephemeral}`** —— 需 Claude key 才能验后果,本轮不做(§4.3)。
 7. **`worker.ts:1928` 把 `thinking` 原样透传而 `:1924` 强制下调 `max_tokens`**,
