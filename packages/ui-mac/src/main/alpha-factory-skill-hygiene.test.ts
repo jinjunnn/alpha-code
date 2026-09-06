@@ -152,6 +152,20 @@ describe("office-docs 说明书不得再教做不到的事(`#1242` 的另一半)
     expect(serverPy.includes('"type": {"const": "heading"}')).toBe(true)
     expect(serverPy.includes('counts = {"paragraph": 0, "heading": 0, "table": 0}')).toBe(true)
   })
+  test("说明书不得否认 server.py 已有的能力(反向漂移锁)", () => {
+    // #1245 扩面后出现过的真实缺陷:说明书还在教模型「否认」一个已经存在的能力。
+    // 正向锁(说明书别吹牛)与反向锁(说明书别贬低)是两个方向,都要有。
+    const eastAsiaIsSet = serverPy.includes('DOCX_DEFAULT_EAST_ASIA_FONT = "宋体"')
+    const refusesUnknown = serverPy.includes("def reject_unknown_keys(")
+    expect(eastAsiaIsSet).toBe(true)
+    expect(refusesUnknown).toBe(true)
+    // server.py 设了中文字体 ⇒ 说明书不得说它没设、也不得叫模型别提
+    expect(officeDocs).not.toContain("do not set an East Asian font")
+    expect(officeDocs).not.toContain("Do not tell the user you chose a Chinese typeface")
+    // server.py 显式拒绝未知键 ⇒ 说明书不得说它静默丢弃
+    expect(officeDocs).not.toContain("does **not** raise — it is dropped")
+  })
+
   test("schema 做不到的承诺已从说明书里清除(逐条点名)", () => {
     for (const promise of [
       "freeze the header row",
@@ -174,7 +188,9 @@ describe("office-docs 说明书不得再教做不到的事(`#1242` 的另一半)
       "Lead with the conclusion",
       "Two heading levels at most",
       "Full-width punctuation",
-      "Do not tell the user you chose a Chinese typeface",
+      // #1245 之后中文字体是真设的(server.py DOCX_DEFAULT_EAST_ASIA_FONT = 宋体),
+      // 原先那句「不要告诉用户你选了中文字体」已反向漂移,改断言新的真话。
+      "Say which typeface you set",
       "Dates do not",
     ]) {
       expect(flat, `office-docs 少了这条要求:${requirement}`).toContain(requirement)
