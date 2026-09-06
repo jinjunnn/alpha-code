@@ -58,8 +58,10 @@ Two consequences you must act on:
   requested formatting the connector cannot produce, and offer the fallback script (below) as the
   way to get them. Silently returning success on a request for "a formatted report" is the failure
   mode this section exists to prevent.
-- Passing an unsupported key (`font`, `size`, `number_format`) does **not** raise — it is dropped.
-  A "success" response is not evidence that formatting was applied.
+- Passing an unsupported key **is refused**, not dropped (`server.py` `reject_unknown_keys`). A
+  request that names a field the tool does not declare fails loudly, so a "success" response now
+  does mean the declared fields were applied. Fields the tool never declared (e.g. `number_format`
+  on `write_xlsx`) remain impossible — the refusal tells you so instead of pretending.
 
 ## Spreadsheet conventions (xlsx)
 
@@ -176,8 +178,10 @@ When the document is in Chinese:
   full-width punctuation.
 - Half-width digits, and a space between a number and its unit (12 ms, 3 GB, 45%).
 - Headings take no trailing period; number them (一、/ 1.) only when the order matters.
-- The connectors do not set an East Asian font — the generated files leave `eastAsia` empty and the
-  reader's default applies. Do not tell the user you chose a Chinese typeface.
+- `write_docx` **does** set an East Asian font: `eastAsia` defaults to 宋体 and is written to both
+  places Word actually reads (`theme1.xml` major/minor `<a:ea>` and the `docDefaults` run properties).
+  Pass `font.eastAsia` to choose another. Say which typeface you set — it is a real fact now, not a
+  claim you must avoid.
 
 ## Output location
 

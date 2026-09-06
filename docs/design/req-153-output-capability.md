@@ -196,6 +196,15 @@ config `provider.<id>.models` 的 **KEY**(`provider.ts:1433`),alpha 注入时不
 生效路径只有两条:`~/.config/opencode/skills/`(17 个,经 `config/paths.ts:26`)
 + `ALPHA_FACTORY_SKILL_DIRS` 注入的 7 个出厂技能,加内置 `customize-opencode`(被 deny)
 = 25,与引擎日志 `message=init count=25` 算术吻合。
+
+**更正(2026-09-06,`#1250` 实测)**:上面这条只数了**通道 A(出厂注入)**。alpha 实际有
+**两条**装载通道 —— 通道 B 是定制中心按需安装(catalog 条目 `installSpec.source==="builtin"`
++ `builtinAssetKey` → `installBuiltinSkill` → `<alphaGlobalRoot>/skills/<name>` →
+`ensureSkillsPath` 写进 `skills.paths` → 同一个引擎扫描)。`resources/skills/` 下的
+`alpha-upstream-sync` / `safe-refactor` 走的正是通道 B。**只看通道 A 会得出「永不装载」的错误
+结论**(本 session 的 `#1250` 票面就是这么写的),而据此从打包中移除会让两张已发布的 catalog
+卡片变成恒失败安装。判据已落成 `packages/ui-mac/src/main/alpha-skill-packaging-census.test.ts`:
+普查对象从磁盘派生,两条通道各自从权威重算,不写散文枚举。
 **`~/.claude/skills`、`~/.agents/skills`、项目 `.claude/` 默认不继承** ——
 `ui-mac/src/main/ecosystem-import.ts:28-32` set-if-unset 注入 `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`
 (ADR-024 安全裁决;`ALPHA_ECOSYSTEM_INHERIT=1` 逃生;同意后的进入通道是安装期转换导入,
