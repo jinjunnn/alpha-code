@@ -170,6 +170,23 @@ export function assertAlphaEnvironmentIdentity(): void {
   if (roots[info.environment] !== info.mutableRoot) throw new Error("frozen alpha root mapping changed")
 }
 
+/** 三根恒为兄弟(见文件头③):当前环境之外的另外两根,固定序 prod → beta → dev。
+ *  REQ-155 `#1244`:随包 Office 连接器的 boot reconcile(alpha-office-instance.ts)只**读**它们,绝不写。 */
+export function siblingEnvironmentRoots(
+  environment: AppEnvironment,
+  baseRoot: string,
+): Array<{ environment: AppEnvironment; root: string }> {
+  return (["prod", "beta", "dev"] as const)
+    .filter((candidate) => candidate !== environment)
+    .map((candidate) => ({ environment: candidate, root: environmentMutableRoot(candidate, baseRoot) }))
+}
+
+/** 冻结快照派生的兄弟根;未初始化即抛(与 getAlphaEnvironment 同一 fail-fast)。 */
+export function alphaSiblingEnvironmentRoots(): Array<{ environment: AppEnvironment; root: string }> {
+  const info = getAlphaEnvironment()
+  return siblingEnvironmentRoots(info.environment, info.casBaseRoot)
+}
+
 function environmentRoots(baseRoot: string): Record<AppEnvironment, string> {
   return {
     dev: environmentMutableRoot("dev", baseRoot),

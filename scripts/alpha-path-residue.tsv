@@ -27,8 +27,8 @@ packages/ext/src/project-config.ts	90	retired-guard	退役全局根 `~/.alpha` �
 packages/ui-mac/src/main/alpha-auth.ts	510	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径 —— id 字面量在 alpha-models.json:8 `"id": "alpha"`。改名会指向一个不存在的 provider。
 packages/ui-mac/src/main/alpha-auth.ts	925	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径;id 字面量在 alpha-models.json:8。
 packages/ui-mac/src/main/alpha-auth.ts	945	provider-id	`provider.alpha` 是引擎 config 的 provider 键,不是路径;id 字面量在 alpha-models.json:8。
-packages/ui-mac/src/main/alpha-environment.ts	288	retired-guard	assertOutsideRetiredRoot 的退役根 `~/.alpha`;环境根与它有关系即抛错。
-packages/ui-mac/src/main/alpha-environment.ts	299	retired-guard	retiredCanonical 在 ENOENT 时派生退役全局根 `~/.alpha`;assertOutsideRetiredRoot 据它拒绝落在旧址里的环境根。
+packages/ui-mac/src/main/alpha-environment.ts	305	retired-guard	assertOutsideRetiredRoot 的退役根 `~/.alpha`;环境根与它有关系即抛错。
+packages/ui-mac/src/main/alpha-environment.ts	316	retired-guard	retiredCanonical 在 ENOENT 时派生退役全局根 `~/.alpha`;assertOutsideRetiredRoot 据它拒绝落在旧址里的环境根。
 packages/ui-mac/src/main/alpha-migrate.ts	3	historical	过去时记述:REQ-018 T2 当时把安装迁到了名为 `.alpha` 的真源根(并配 `~/.opencode` 桥,该桥已于 REQ-059 T3 退役)。改它 = 篡改历史记录。
 packages/ui-mac/src/main/alpha-workdir.ts	128	retired-guard	项目三态解析里的退役根比对。
 packages/ui-mac/src/main/cloud-envelope-guard.ts	11	historical	`#918` 已删除规则的**逐字引用**(原 denied_paths 缺省注入清单 `.env* / *.pem / .alpha/ / .git/`)。改引用内容 = 伪造那条规则曾经的样子。
@@ -38,8 +38,8 @@ packages/ui-mac/src/main/ext-install-planner.ts	437	media-type	已发布扩展�
 packages/ui-mac/src/main/factory-skills.ts	4	historical	抬头「通道演进」列表里的 REQ-036 初版条目,行内自带「已迁移」。记的是当时违反的那条不变量的当时叫法。
 packages/ui-mac/src/main/factory-skills.ts	163	historical	标注的是「拆 REQ-052 遗留的存量出厂链」这段代码;它拆的正是退役 `.alpha` 链,且与同段落 173 行那条不可改的字符串字面量成对。改注释会让它与所标注的代码脱节。
 packages/ui-mac/src/main/factory-skills.ts	173	retired-guard	字符串字面量(诊断 reason),不是注释;语义正确 —— 它说的就是退役的 `.alpha` symlink。
-packages/ui-mac/src/main/index.ts	752	historical	同 factory-skills.ts:163 的同一操作(boot 期先行 reconcile 拆存量退役链);与 index.ts:772 的字符串字面量成对。
-packages/ui-mac/src/main/index.ts	772	retired-guard	字符串字面量(boot 日志行),不是注释;语义正确 —— 拆掉的正是退役的 `.alpha` symlink。
+packages/ui-mac/src/main/index.ts	753	historical	同 factory-skills.ts:163 的同一操作(boot 期先行 reconcile 拆存量退役链);与 index.ts:773 的字符串字面量成对。
+packages/ui-mac/src/main/index.ts	773	retired-guard	字符串字面量(boot 日志行),不是注释;语义正确 —— 拆掉的正是退役的 `.alpha` symlink。
 packages/ui-mac/src/main/package-installability.ts	565	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
 packages/ui-mac/src/renderer/extensions/alpha-catalog.json	2382	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。 本文件整体亦为签名快照。
 packages/ui-mac/src/shared/host-extension-package-contract/generate-artifact.ts	324	media-type	已发布扩展包的格式契约标识符(application/vnd.alpha.*)。改它 = 既有包解不开;换标识符是独立立项的事,不是改名。
