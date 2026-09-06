@@ -20,7 +20,7 @@ request is outside its deliberately narrow tool contract.
 
 | Job | Primary connector and tools | Notes |
 |---|---|---|
-| **Read/write docx** | `mcp:alpha-word` (`read_docx`, `write_docx`) | `python-docx`; text, headings, and paragraphs |
+| **Read/write docx** | `mcp:alpha-word` (`read_docx`, `write_docx`) | `python-docx`; title, body paragraphs, `heading` blocks (levels 1–9), `table` blocks, `page` (A4 default or Letter, orientation, margins in mm), `font` (`eastAsia` defaults to 宋体; `latin`; `size` in pt). Put section titles such as 一、总体情况 in `heading` blocks, never as body text. Undeclared fields are refused, not dropped |
 | **Read/write xlsx** | `mcp:alpha-excel` (`read_xlsx`, `write_xlsx`) | `openpyxl`; sheet/cell data without Microsoft Excel |
 | **Read/write pptx** | `mcp:alpha-powerpoint` (`read_pptx`, `write_pptx`) | `python-pptx`; slide titles and text bodies |
 | **Read/write PDF text pages** | `mcp:alpha-pdf` (`read_pdf`, `write_pdf`) | `pypdf` + `reportlab`; replace/generate or append text pages, not layout design |
