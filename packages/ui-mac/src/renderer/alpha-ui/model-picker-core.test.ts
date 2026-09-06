@@ -185,7 +185,7 @@ describe("BYOK 行的推理档位从平台同名条目或自己的 modelMeta 槽
     expect({ reasoning: air.reasoning, name: air.model.name, variants: air.model.variants, providerID: air.model.providerID }).toEqual({
       reasoning: true,
       name: "GLM-4.5-Air",
-      variants: ["开", "关"],
+      variants: ["关", "开"], // #1237:关在第一位 —— 上游 smallOptions() 把档位表第一项喂给标题辅助调用
       providerID: byokEngineId("zhipuai"),
     })
   })
@@ -200,7 +200,7 @@ describe("BYOK 行的推理档位从平台同名条目或自己的 modelMeta 槽
     // #1267:BYOK-only id 的会话投影从槽拿档位与展示名 —— 否则进会话后 chip 又变回「不支持」。
     expect(composerModelFromRef({ providerID: byokEngineId("zhipuai"), id: "glm-4.5-air", variant: "关" }, catalog)).toMatchObject({
       name: "glm-4.5-air",
-      variants: ["开", "关"],
+      variants: ["关", "开"], // #1237:关在第一位 —— 上游 smallOptions() 把档位表第一项喂给标题辅助调用
       variant: "关",
     })
   })

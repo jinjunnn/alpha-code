@@ -32,6 +32,14 @@
 // `thinking: enabled`。修法是 BYOK 目录的逐模型元数据槽(`byokProviders[].modelMeta`,shared/alpha-model-types.ts):
 // 徽标 + 开/关两档,同一个 byokModelMeta 派生进 picker 行与 sidecar 注入。原先登记它的 KNOWN_UNFIXED 已按其
 // 自带的过期断言删除;本文件不再有任何已知不修的行。
+//
+// #1237(2026-09-06):上游黑名单族里 wire 形状已实打的三个平台模型拿到档位 —— `alpha/glm-5-turbo` 走 zhipu 直连腿的
+// `thinking:{type}` 开/关(直连对 reasoning_effort accepted-and-ignored,网关拒转),`alpha/qwen3.7-max|plus` 走 OR 腿的
+// `reasoning_effort` 关(none,0 reasoning tokens)/ 开(medium)。形状与出处钉在 alpha-models.test.ts 的 #1237 节;本文件
+// 负责两件只有真引擎能证的事:①每一档的主请求体逐字带上那条腿的形状(矩阵原有判据自动覆盖新行);②上游
+// `transform.smallOptions()` 把档位表**第一项**喂给标题等辅助调用(`request.ts:88-89`,基线 §3.8a)—— 有徽标的每一行,
+// 默认那次 run 捕到的标题请求体必须与第一档声明逐字对上;目录把「关」放第一位正是为了让辅助调用不思考。
+// 手段自证的「已知的坏」随之换成 `minimax-byok/MiniMax-M2`(仍是黑名单族、目录未标 reasoning、本机无凭据 ⇒ #1237 钉在无档)。
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
@@ -176,11 +184,14 @@ function configFor(tag: string) {
   return cfg
 }
 
-type RunResult = { tag: string; rc: number; main: Record<string, unknown> | null; posts: number; log: string }
+type RunResult = { tag: string; rc: number; main: Record<string, unknown> | null; title: Record<string, unknown> | null; posts: number; log: string }
 
 /** 一次真引擎 `run`:隔离 HOME/XDG/DB,stdin 关死(打开不关的管道会让 run 在 session 建立前无限挂住)。 */
 async function engineRun(providerID: string, id: string, variant?: string): Promise<RunResult> {
   const tag = tagOf(providerID, id, variant)
+  // #1237:同一 (provider, model, variant) 可能跑两次(手段自证 + 矩阵)。捕获桶按 tag 累加,不清空的话第二次
+  // 会看到 4 条 POST / 2 条主请求 ⇒ main=null ⇒ 「测量作废」—— 那是判据自己的坑,不是引擎的。每次 run 从空桶开始。
+  captures.delete(tag)
   const dir = path.join(root, "runs", tag)
   for (const sub of ["home", "xdg-config", "xdg-data", "xdg-cache", "xdg-state", "proj"]) fs.mkdirSync(path.join(dir, sub), { recursive: true })
   const configPath = path.join(dir, "config.json")
@@ -235,10 +246,13 @@ async function engineRun(providerID: string, id: string, variant?: string): Prom
       (message) => message.role === "system" && String(message.content).slice(0, 200).includes("title generator"),
     )
   const mains = posts.filter((entry) => !isTitle(entry.body))
+  // #1237:标题那条也留下 —— 它走 smallOptions(),带的是档位表第一项,与用户选档无关。
+  const titles = posts.filter((entry) => isTitle(entry.body))
   return {
     tag,
     rc,
     main: mains.length === 1 ? mains[0]!.body : null,
+    title: titles.length === 1 ? titles[0]!.body : null,
     posts: posts.length,
     log: `${stdout}\n${stderr}`.slice(-1200),
   }
@@ -344,6 +358,27 @@ function judge(row: ModelPickerRow, variant: string | undefined, body: Record<st
   return failures
 }
 
+/** #1237:辅助调用(标题)的判据 —— 上游 smallOptions() 取档位表第一项,所以标题请求体必须与**第一档**的声明逐字对上。
+ *  这条把「目录把关放第一位」从散文变成机制事实:第一档是关 ⇒ 标题调用不思考。 */
+function judgeAux(row: ModelPickerRow, title: Record<string, unknown>): string[] {
+  const key = rowKey(row)
+  const first = row.model.variants[0]
+  if (!row.reasoning || first === undefined) return []
+  const declared = declaredControl(row, first)
+  const controls = reasoningControls(title)
+  const wireThinking = (title.thinking as { type?: unknown } | undefined)?.type
+  const failures: string[] = []
+  if (declared.reasoningEffort !== undefined && title.reasoning_effort !== declared.reasoningEffort)
+    failures.push(`${key}(标题辅助调用): 第一档 ${first} 声明 reasoningEffort=${declared.reasoningEffort},标题请求体 reasoning_effort=${String(title.reasoning_effort)}`)
+  if (declared.thinkingType !== undefined && wireThinking !== declared.thinkingType)
+    failures.push(`${key}(标题辅助调用): 第一档 ${first} 声明 thinking.type=${declared.thinkingType},标题请求体 thinking.type=${String(wireThinking)}`)
+  if (declared.thinkingType === "disabled" && Object.keys(controls).length > 0)
+    failures.push(`${key}(标题辅助调用): 第一档是显式关闭,标题请求体却带 ${JSON.stringify(controls)}`)
+  if (declared.reasoningEffort === undefined && declared.thinkingType === undefined && Object.keys(controls).length === 0)
+    failures.push(`${key}(标题辅助调用): 第一档 ${first} 应带推理参数,标题请求体却零推理参数`)
+  return failures
+}
+
 describe("REQ-153 #1266/#1267:徽标集合 == 引擎实际带推理参数的集合(真引擎 · 假上游 · 双向)", () => {
   test("手段自证:假上游的捕获不是恒空;无徽标模型 + --variant high 不带参数(判据会红)", async () => {
     const probe = await fetch(`${upstream}/run/__probe__/v1/chat/completions`, {
@@ -353,15 +388,27 @@ describe("REQ-153 #1266/#1267:徽标集合 == 引擎实际带推理参数的集�
     expect(probe.ok).toBe(true)
     expect(captures.get("__probe__")?.[0]?.body.probe).toBe("KNOWN-GOOD")
 
-    // 已知的坏:目录未标 reasoning 的 glm-5-turbo(上游黑名单族)硬塞 --variant high ⇒ 主请求体零推理键。
-    const control = await engineRun("alpha", "glm-5-turbo", "high")
+    // 已知的坏:目录未标 reasoning 的 MiniMax-M2(上游黑名单族;本机无凭据未实打 ⇒ #1237 钉在无档)硬塞 --variant high
+    // ⇒ 主请求体零推理键。(#1237 前这一格用的是 alpha/glm-5-turbo,它现在有档了。)
+    const control = await engineRun("minimax-byok", "MiniMax-M2", "high")
     expect({ rc: control.rc, main: control.main !== null, log: control.main ? "" : control.log }).toEqual({ rc: 0, main: true, log: "" })
     expect(reasoningControls(control.main!)).toEqual({})
+
+    // 已知的坏(#1237 方向):把 qwen3.7-max「开」档(reasoning_effort=medium)那次 run 的**主**请求体冒充标题请求体交给
+    // judgeAux —— 第一档是「关」(none),判据必须点名 medium ≠ none。证明「标题调用取第一档」的判据测得出错档。
+    const qwen = pickerRows().find((row) => rowKey(row) === "alpha:qwen3.7-max")
+    expect({ found: qwen !== undefined, badge: qwen?.reasoning, chip: qwen?.model.variants }).toEqual({ found: true, badge: true, chip: ["关", "开"] })
+    const on = await engineRun("alpha", "qwen3.7-max", "开")
+    expect({ rc: on.rc, main: on.main !== null, title: on.title !== null, log: on.main ? "" : on.log }).toEqual({ rc: 0, main: true, title: true, log: "" })
+    expect(on.main!.reasoning_effort).toBe("medium")
+    expect(judgeAux(qwen!, on.main!)).toEqual(["alpha:qwen3.7-max(标题辅助调用): 第一档 关 声明 reasoningEffort=none,标题请求体 reasoning_effort=medium"])
+    // 而真正的标题请求体带的是第一档(关):这一格同时是 #1237 对基线 §3.8a 的实证。
+    expect(judgeAux(qwen!, on.title!)).toEqual([])
 
     // 已知的坏(#1267 方向):glm-4.5-air 硬塞一个目录里没有的档 ⇒ 引擎查不到 variant、只剩上游无条件写的
     // thinking:enabled(#1267 票面缺陷的原样)。把这个请求体交给「关」档的判据,必须点名 thinking.type 不对。
     const air = pickerRows().find((row) => rowKey(row) === "zhipuai-byok:glm-4.5-air")
-    expect({ found: air !== undefined, badge: air?.reasoning, chip: air?.model.variants }).toEqual({ found: true, badge: true, chip: ["开", "关"] })
+    expect({ found: air !== undefined, badge: air?.reasoning, chip: air?.model.variants }).toEqual({ found: true, badge: true, chip: ["关", "开"] }) // #1237:关调到第一位(smallOptions 取第一项)
     const stuck = await engineRun("zhipuai-byok", "glm-4.5-air", "x-not-a-tier")
     expect({ rc: stuck.rc, main: stuck.main !== null, log: stuck.main ? "" : stuck.log }).toEqual({ rc: 0, main: true, log: "" })
     expect((stuck.main!.thinking as { type?: unknown } | undefined)?.type).toBe("enabled")
@@ -411,6 +458,14 @@ describe("REQ-153 #1266/#1267:徽标集合 == 引擎实际带推理参数的集�
         `${label} badge=${row.reasoning} chip=[${row.model.variants.join("|")}] request=${JSON.stringify(reasoningControls(result.main))} thinking=${JSON.stringify(result.main.thinking ?? null)}`,
       )
       failures.push(...judge(row, variant, result.main))
+      // #1237:有档位的行,默认那次 run 的标题辅助调用必须带第一档 —— 没捕到标题请求 = 本格测量作废,不是通过。
+      if (variant === undefined && row.reasoning && row.model.variants.length > 0) {
+        if (!result.title) harness.push(`${label}: 标题辅助调用未捕获(posts=${result.posts})—— 第一档判据本格作废`)
+        else {
+          verdicts.push(`${label} title=${JSON.stringify(reasoningControls(result.title))} title.thinking=${JSON.stringify(result.title.thinking ?? null)}`)
+          failures.push(...judgeAux(row, result.title))
+        }
+      }
     }
     // 引擎没跑起来 / 没捕到主请求 = 本次测量作废,不是通过也不是红 —— 单独报,先于判据。
     expect(harness, "引擎侧 harness 故障(测量作废)").toEqual([])
