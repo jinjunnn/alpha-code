@@ -17,8 +17,26 @@
 // 异源 symlink(哪怕同名)一律跳过 + 如实上报(ADR-019 §4);同名被用户内容占位时**不注入**该出厂
 // 路径(避免引擎同名双源)。
 //
+// ── 技能资产随包发出去之后,有**两条**装载通道(`#1250`,别只看一条就下结论)────────────
+//
+//   通道 A —— **出厂注入**(零用户动作):本文件的 `FACTORY_SKILL_IDS` + `factorySkillSources()`
+//     是唯一权威 → `reconcileFactorySkills().paths` → env `ALPHA_FACTORY_SKILL_DIRS` →
+//     `packages/ext/src/factory-paths.ts` 内存注入 `cfg.skills.paths` → 引擎扫描。
+//   通道 B —— **定制中心按需安装**(Extension Hub E1b,ADR-014):catalog 条目的
+//     `installSpec.source === "builtin"` + `builtinAssetKey: "skills/<name>"` →
+//     `ext-install-planner.ts` 的 builtin 分支 → `ext-fs-installer.ts` 的
+//     `installBuiltinSkill` 复制进 `<alphaGlobalRoot>/skills/<name>` →
+//     `engine-config-truth.ts` 的 `ensureSkillsPath` 把那个目录写进 alpha.jsonc 的
+//     `skills.paths` → 同一个引擎扫描。
+//
+// 所以「某个目录不在 `ALPHA_FACTORY_SKILL_DIRS` 里」**不等于**「它永不装载」——
+// `resources/skills/` 下的 `alpha-upstream-sync` / `safe-refactor` 走的正是通道 B
+// (`#1250` 的票面前提据此更正)。判据不写在这段散文里:
+// `alpha-skill-packaging-census.test.ts` 每次跑都从两条通道的**权威**重算一遍归属,
+// 并要求 `resources/{skills,factory-skills}/` 下的每个目录至少被一条通道够到。
+//
 // 资产两处(S18 冲突矩阵 X1:skill-creator 的 catalog 条目保持可安装,供关掉出厂注入的用户手动装):
-//   resources/skills/skill-creator(Anthropic,Apache-2.0,catalog 资产原位复用)
+//   resources/skills/skill-creator(Anthropic,Apache-2.0,catalog 资产原位复用;**两条通道都覆盖**)
 //   resources/factory-skills/agent-creator(alpha 自写)
 
 import * as fs from "node:fs"
