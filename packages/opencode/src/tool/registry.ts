@@ -61,7 +61,12 @@ import { canonicalJsonDigest } from "@/permission/alpha-tool-policy-store"
 import { AlphaToolPolicy } from "@/permission/alpha-tool-policy"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
-  return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel
+  return (
+    providerID === ProviderV2.ID.opencode ||
+    providerID === ProviderV2.ID.make("opencode-go") ||
+    flags.exa ||
+    flags.parallel
+  )
 }
 
 export type RegisteredTool<T extends Tool.Def = Tool.Def> = T & { readonly identity: ToolIdentity }
