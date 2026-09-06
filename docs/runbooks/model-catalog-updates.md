@@ -66,14 +66,21 @@ review_after: 2026-10-30
      keyEnv, pico, models }`;要出现在「添加节点」快捷卡加 `preset: true` +
      `presetIds`。**同时**去 alpha-platform 把 id 加进 edition 白名单
      `byokProviders`(双落点同上),否则 cn 版被网关隐藏。
-   - **BYOK 模型没有自己的元数据槽**(`models` 是 `string[]`):它的展示名、「推理」
-     徽标与推理档位一律从 `platformModels` 里**同名 id** 的条目派生(`byokModelMeta`,
-     REQ-153 #1236/#1266),sidecar 注入与 picker 行同一份。要让一个直连模型亮徽标 /
-     给档位,平台段必须有同名条目;**只在 BYOK 段出现的 id(如 `glm-4.5-air`)拿不到任何
-     元数据**,今天没有别的旋钮 —— 这是目录 schema 的边界,归父需求
-     jinjunnn/alpha-work#94 裁。档位表的 wire 形状按平台 provider 的 npm
-     (`@ai-sdk/openai-compatible`)写,直连节点能原样复用的前提是每个 BYOK provider 都是
-     `compat: "openai"`(alpha-models 套件钉着)。
+   - **BYOK 模型的展示名 / 「推理」徽标 / 推理档位,两个来源,同一个派生函数**(`byokModelMeta`,
+     REQ-153 #1236/#1266/#1267;sidecar 注入、picker 行、会话投影、自动默认四处同一份):
+     - 平台段有**同名 id** 的条目 ⇒ 从那个条目派生,BYOK 段**不要**再写一份(两处同时写会被
+       alpha-models 套件判红 —— 一个 id 两份元数据就是两份判据);
+     - **只在 BYOK 段出现的 id**(如 `glm-4.5-air`)⇒ 写进该 provider 的 `modelMeta` 槽
+       (`#1267`):`"modelMeta": { "<id>": { "name", "reasoning", "variants" } }`,键必须是
+       `models` 里列出的 id(打错 id 的槽是静默 no-op,套件判红)。徽标 ⇒ 必须给出 ≥1 档。
+     - 档位表的 wire 形状按 `@ai-sdk/openai-compatible` 写,直连节点能原样复用的前提是每个
+       BYOK provider 都是 `compat: "openai"`(alpha-models 套件钉着)。**显式关闭档**写
+       `{ "thinking": { "type": "disabled" } }`,值必须逐字 `disabled`:智谱 2026-09-06 实打,
+       `type` 写错(如 `bogus`)会被上游**静默忽略并继续思考,HTTP 仍 200** —— 所以「上游返回 200」
+       不是受理证据,`reasoning_content` 有没有才是(勘破记录见
+       [`model-variant-reachability`](../architecture/2026-09-06-model-variant-reachability.md) §5)。
+       上游 `transform.options()` 对 `zhipuai*` 直连**无条件**写 `thinking: enabled`,所以智谱
+       直连的每个模型要么标徽标并给「关」档,要么接受它总在思考。
 2. `bun test src`(alpha-models 套件校验 catalog 形状;`alpha-reasoning-badge-parity`
    套件起真引擎对账「徽标 ⇔ 请求体带推理参数」,两个方向都判)。
 3. `ship:mac` 重建安装(catalog 打包进 app;install-local 会用稳定 Developer
