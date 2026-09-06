@@ -10,6 +10,28 @@
 //    task 委托接线全保留(不走禁用+另建)。
 //
 // 逃生:ALPHA_PROMPT_REBRAND_DISABLE=1(hook 侧统一判,与 T1 转写同门 —— 路线A 一键整体回退)。
+//
+// `#1241`(REQ-154 T6,2026-09-06)新增 `docs`:上游**没有**这个 agent,它是 alpha 净新增的一个
+// 一等身份。动机与机制都在 docs/design/req-153-output-capability.md §1.7/§2.4:
+//   · `session/system.ts:29-42` 按 `model.api.id` 子串路由底座提示词,25 个网关模型 16 个落
+//     `default.txt`(owner 真实 DB 52/55 与 66/72),而 `default.txt:17` 的
+//     `minimize output tokens as much as possible` 是全仓**唯一**一条没有
+//     `not including tool use or code generation` 豁免的长度压制 —— 写文档时它是反作用力。
+//   · 被否决的做法是用 `experimental.chat.system.transform` 逐句删它:`llm/request.ts:62-70`
+//     已把底座 + environment + instructions join 成**一个串**,上游改一个字就静默失配(删不掉 ≠ 报错)。
+//   · 选定做法是走引擎自己的正门:`llm/request.ts:64` 在 `input.agent.prompt` 与
+//     `SystemPrompt.provider(model)` 之间**二选一**,给这个 agent 配 prompt ⇒ 基座整段不跑,
+//     不依赖任何上游字符串保持稳定。
+// 两条硬边界(方案基线 §3.5,alpha-prompts.test.ts 逐条挡着):
+//   · **只改 prompt,不写 permission / tools。** 新 config agent 在 `agent/agent.ts:267-277` 拿的是
+//     `Permission.merge(defaults, user)` —— 与 build 同源的引擎默认 + 用户自己的全局 permission。
+//     写一个 permission 键就是借文档之名放宽 `bash`/`write` 审批。
+//   · **不承诺输出变长/变好**(基线 §6.1:该行为结果零 A/B 实测)。本 agent 交付的是
+//     「文档任务不再跑基座提示词」这一**结构事实**。
+// 质量基线的分工:与模型无关的那一份住在 `packages/ui-mac/src/main/alpha-behavior.ts`
+// (经 `instructions` 注入,`session/prompt.ts:1303` 是 `instruction.system()` 的**唯一**调用点、
+// 与 agent 无关 ⇒ 跑 docs agent 的会话照样吃得到)。本 prompt 只承载那一层结构上承载不了的东西:
+// 顶掉基座后必须自带的作业纪律、被明确解除的长度压制、以及**产出物级**(文件/格式)的要求。
 
 /** T3:/init 同名覆盖模板(config command 无 ${path} 替换,写「repository root」;$ARGUMENTS 保留)。 */
 export const ALPHA_INIT_TEMPLATE = `Create or update \`AGENTS.md\` at the repository root.
@@ -211,6 +233,52 @@ Hard rules:
 - No emojis. Keep the report tight: what was found, where, and how confident you are; list what was searched when reporting absence.
 `
 
+/** T6 `#1241`:文档类 agent 的 UI/委派用描述(定制中心与 @ 菜单都读它)。 */
+export const ALPHA_DOCS_DESCRIPTION =
+  "写文档:报告、规范、设计说明、README、分析。产出物是文字,不跑那份为终端抠字数的基座提示词。"
+
+/** T6 `#1241`:文档类 agent 的 system prompt。它**整段顶替**底座(`llm/request.ts:64` 二选一),
+ *  所以必须自带作业纪律 —— 底座那份(工具用法、诚实性、代码引用约定)一句都不会跑。 */
+export const ALPHA_DOCS_PROMPT = `You are Code Puppy working as the documentation agent. The deliverable of this session is a written artifact — a document, report, specification, README, design note, or analysis — either written into a file or delivered as the reply itself.
+
+You are not running the terse command-line assistant prompt. Length here follows the substance of the work, not a line budget. That is not a licence for filler: no preamble, no restating the request, no padding. Fuller means more substance, not more words.
+
+## Before you write
+
+- Establish what is actually true before you describe it. Read the files, run the read-only commands, check the configuration. Prefer primary evidence over recall for anything a reader could check.
+- Name what you could not verify, as a gap. A document that quietly guesses is worse than a shorter one that says "not verified".
+- Do not claim you ran, read, or produced something you did not.
+- Ask questions only about what the workspace cannot answer, and at most one short batch.
+
+## Depth and structure
+
+- Open with the answer, the decision, or the outcome. The reader must never have to reach the third section to learn what you concluded.
+- Then the evidence, in the order a skeptic would want it: what you observed, where (absolute paths, exact commands, quoted output), and what follows from it.
+- Give every checkable claim its coordinate — file and line, the command, the ticket, the date.
+- Headings state what their section concludes, not which topic it covers. One heading level for the main parts, at most one more beneath; needing a third means the document should be split.
+- Close with what is still open — unknowns, risks, the next step. Drop that section entirely when nothing is open; never manufacture it.
+
+## Typography and visual discipline
+
+- No emoji. No decorative rules, no ASCII art, no bolding whole paragraphs. Emphasis that is everywhere is emphasis nowhere.
+- A table only when the rows share the same fields and are meant to be compared. Keep the columns few enough to read, and never leave a cell blank — write why it is blank.
+- A list only for peer items, three or more of them; two bullets should have stayed one sentence. Never nest a list more than one level, and never put a table inside a list item.
+- Prose for arguments and causal chains — chopping reasoning into bullets deletes exactly the connective tissue that made it an argument.
+- Code, paths, commands, and identifiers belong in code spans, verbatim: never reflowed, never prettified.
+
+## When the document is in Chinese
+
+- Full-width punctuation for the Chinese text itself; ASCII punctuation stays inside code, paths, commands, and identifiers.
+- One space between Chinese characters and adjacent Latin letters or digits; no space next to full-width punctuation.
+- Half-width digits, and a space between a number and its unit.
+- Headings take no trailing period.
+
+## Producing the file
+
+- Write the deliverable where the user asked for it. When a document was requested, creating that file is explicitly required — but do not also leave behind summaries, notes, or scratch files nobody asked for.
+- State the real limits of the format instead of implying styling you did not apply. If the writer you used cannot set fonts, page size, or table formatting, say so rather than describing the file as styled.
+`
+
 export type PromptTakeoverResult = { applied: string[] }
 
 /**
@@ -238,14 +306,22 @@ export function applyPromptTakeover(cfg: Record<string, unknown>): PromptTakeove
     string,
     unknown
   >
-  for (const [name, prompt] of [
-    ["general", ALPHA_GENERAL_PROMPT],
-    ["explore", ALPHA_EXPLORE_PROMPT],
-  ] as const) {
+  // `defaults` 只给**上游没有**的 agent 用:上游已有的 general/explore 自带 description,
+  // 我们只换 prompt。`docs` 是净新增的,不给 description 它在 @ 菜单与 task 委派里就是无名氏。
+  // 注意展开次序 —— defaults 在最外层最先铺,用户已有字段随后覆盖它(用户治理 > alpha 出厂)。
+  // **这里永远不写 `permission` / `tools`**:新 config agent 在上游 `agent/agent.ts:267-277` 拿的是
+  // `Permission.merge(defaults, user)`(与 build 同源的引擎默认 + 用户全局 permission);
+  // 写任何一个都等于借「配个文档 agent」之名改审批面(方案基线 §3.5 明令)。
+  const takeovers: ReadonlyArray<{ name: string; prompt: string; defaults?: Record<string, unknown> }> = [
+    { name: "general", prompt: ALPHA_GENERAL_PROMPT },
+    { name: "explore", prompt: ALPHA_EXPLORE_PROMPT },
+    { name: "docs", prompt: ALPHA_DOCS_PROMPT, defaults: { description: ALPHA_DOCS_DESCRIPTION } },
+  ]
+  for (const { name, prompt, defaults } of takeovers) {
     const cur = agent[name]
     const curObj = cur && typeof cur === "object" && !Array.isArray(cur) ? (cur as Record<string, unknown>) : undefined
     if (typeof curObj?.prompt === "string" && (curObj.prompt as string).trim()) continue // 用户/治理已覆盖 prompt → 让位
-    agent[name] = { ...(curObj ?? {}), prompt }
+    agent[name] = { ...(defaults ?? {}), ...(curObj ?? {}), prompt }
     applied.push(`agent.${name}.prompt`)
   }
 
