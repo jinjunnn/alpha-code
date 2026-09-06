@@ -8,18 +8,34 @@ callers can only pass absolute paths below that directory.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from html import escape
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 from typing import Any, Callable
 
 
 PROTOCOL_VERSION = "2025-06-18"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
 FORMATS = {"word", "excel", "powerpoint", "pdf"}
 EXTENSIONS = {"word": ".docx", "excel": ".xlsx", "powerpoint": ".pptx", "pdf": ".pdf"}
+
+# REQ-155 #1245 — write_docx typography surface. Only layout fields: no path / command / URL inputs
+# beyond the workspace-bound `path` every tool already takes (REQ-133 §3.6).
+DOCX_PAGE_SIZES_MM: dict[str, tuple[float, float]] = {"A4": (210.0, 297.0), "Letter": (215.9, 279.4)}
+DOCX_DEFAULT_PAGE_SIZE = "A4"
+DOCX_DEFAULT_MARGIN_MM = 25.4
+DOCX_MAX_MARGIN_MM = 100.0
+# Owner writes Chinese documents; the python-docx template leaves the theme's East Asian typeface
+# empty, so CJK text falls back to whatever the viewer picks. 宋体 is the template's own `Hans` script
+# mapping, so it is consistent with what the theme already declares for that script.
+DOCX_DEFAULT_EAST_ASIA_FONT = "宋体"
+DOCX_MAX_HEADING_LEVEL = 9
+DOCX_FONT_NAME_RE = re.compile(r"^[^\x00-\x1f\x7f<>&\"']{1,64}$")
 
 
 def main(argv: list[str]) -> int:
@@ -107,12 +123,81 @@ def tools_for(format_name: str) -> list[dict[str, Any]]:
             tool("read_docx", "Read paragraphs and tables from a Word document", path_property, ["path"]),
             tool(
                 "write_docx",
-                "Create, replace, or append text to a Word document",
+                "Create, replace, or append to a Word document: title, body paragraphs, multi-level "
+                "headings, tables, page size/margins (A4 default) and fonts (East Asian font set by default). "
+                "Unknown fields are refused, never silently dropped.",
                 {
                     **path_property,
-                    "title": {"type": "string"},
-                    "paragraphs": {"type": "array", "items": {"type": "string"}},
+                    "title": {"type": "string", "description": "Document title (Title style), written before the blocks"},
+                    "paragraphs": {
+                        "type": "array",
+                        "description": "Document body in order. A bare string is a body paragraph; use heading "
+                        "blocks for section titles (e.g. 一、总体情况) instead of body text.",
+                        "items": {
+                            "oneOf": [
+                                {"type": "string"},
+                                {
+                                    "type": "object",
+                                    "properties": {"type": {"const": "paragraph"}, "text": {"type": "string"}},
+                                    "required": ["type", "text"],
+                                    "additionalProperties": False,
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {"const": "heading"},
+                                        "text": {"type": "string"},
+                                        "level": {"type": "integer", "minimum": 1, "maximum": DOCX_MAX_HEADING_LEVEL},
+                                    },
+                                    "required": ["type", "text", "level"],
+                                    "additionalProperties": False,
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {"const": "table"},
+                                        "rows": {
+                                            "type": "array",
+                                            "minItems": 1,
+                                            "description": "Rectangular grid of cell strings; row 0 is the header when header=true",
+                                            "items": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                                        },
+                                        "header": {"type": "boolean", "default": True},
+                                    },
+                                    "required": ["type", "rows"],
+                                    "additionalProperties": False,
+                                },
+                            ]
+                        },
+                    },
                     "append": {"type": "boolean", "default": False},
+                    "page": {
+                        "type": "object",
+                        "description": "Page geometry. New documents default to A4 portrait with 25.4 mm margins; "
+                        "when appending, page is only changed if this field is given (then unspecified margins reset to 25.4 mm).",
+                        "properties": {
+                            "size": {"type": "string", "enum": sorted(DOCX_PAGE_SIZES_MM), "default": DOCX_DEFAULT_PAGE_SIZE},
+                            "orientation": {"type": "string", "enum": ["portrait", "landscape"], "default": "portrait"},
+                            "margins": {
+                                "type": "object",
+                                "description": "Millimetres, 0–100",
+                                "properties": {side: {"type": "number", "minimum": 0, "maximum": DOCX_MAX_MARGIN_MM} for side in ("top", "bottom", "left", "right")},
+                                "additionalProperties": False,
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
+                    "font": {
+                        "type": "object",
+                        "description": "Document-default fonts. New documents always get an East Asian font "
+                        f"({DOCX_DEFAULT_EAST_ASIA_FONT} unless eastAsia is given); when appending, fonts only change if this field is given.",
+                        "properties": {
+                            "eastAsia": {"type": "string", "description": "CJK font family, e.g. 宋体 / 黑体 / 微软雅黑"},
+                            "latin": {"type": "string", "description": "Latin font family, e.g. Times New Roman"},
+                            "size": {"type": "number", "minimum": 6, "maximum": 72, "description": "Body text size in points"},
+                        },
+                        "additionalProperties": False,
+                    },
                 },
                 ["path", "paragraphs"],
             ),
@@ -204,6 +289,10 @@ def call_tool(format_name: str, workspace: Path, name: str, arguments: dict[str,
     handler = handlers[format_name].get(name)
     if handler is None:
         raise ValueError(f"unknown {format_name} tool: {name}")
+    declared = next(spec for spec in tools_for(format_name) if spec["name"] == name)
+    # #1245: every tool schema declares additionalProperties:false; enforce it here so an argument
+    # the tool cannot honour is refused instead of accepted-and-dropped (a success that lies).
+    reject_unknown_keys(arguments, declared["inputSchema"]["properties"].keys(), name)
     path = require_workspace_path(workspace, arguments.get("path"), EXTENSIONS[format_name])
     return handler(path, arguments)
 
@@ -251,20 +340,253 @@ def read_docx(path: Path, _: dict[str, Any]) -> dict[str, Any]:
 def write_docx(path: Path, arguments: dict[str, Any]) -> dict[str, Any]:
     from docx import Document
 
-    paragraphs = require_string_list(arguments.get("paragraphs"), "paragraphs")
+    # Validate everything before touching the file: a refused call must leave no product behind.
+    blocks = parse_docx_blocks(arguments.get("paragraphs"))
     append = arguments.get("append", False)
     if not isinstance(append, bool):
         raise ValueError("append must be a boolean")
-    document = Document(path) if append and path.exists() else Document()
     title = arguments.get("title")
+    if title is not None and not isinstance(title, str):
+        raise ValueError("title must be a string")
+    page = parse_docx_page(arguments.get("page"))
+    font = parse_docx_font(arguments.get("font"))
+
+    existing = append and path.exists()
+    document = Document(path) if existing else Document()
+    # New documents always get deterministic geometry and an East Asian font. An appended document keeps
+    # whatever it had unless the caller asks explicitly.
+    applied_page = apply_docx_page(document, page or {}) if (not existing or page is not None) else None
+    applied_font = apply_docx_fonts(document, font or {}) if (not existing or font is not None) else None
+
     if title is not None:
-        if not isinstance(title, str):
-            raise ValueError("title must be a string")
         document.add_heading(title, level=0)
-    for paragraph in paragraphs:
-        document.add_paragraph(paragraph)
+    counts = {"paragraph": 0, "heading": 0, "table": 0}
+    for block in blocks:
+        kind = block["type"]
+        if kind == "paragraph":
+            document.add_paragraph(block["text"])
+        elif kind == "heading":
+            document.add_heading(block["text"], level=block["level"])
+        else:
+            render_docx_table(document, block["rows"], block["header"])
+        counts[kind] += 1
+
+    now = datetime.now(timezone.utc).replace(microsecond=0, tzinfo=None)
+    if not existing:
+        document.core_properties.created = now
+    document.core_properties.modified = now
     replace_file(path, document.save)
-    return {"path": str(path), "paragraphsWritten": len(paragraphs), "appended": append}
+    return {
+        "path": str(path),
+        "paragraphsWritten": counts["paragraph"],
+        "headingsWritten": counts["heading"],
+        "tablesWritten": counts["table"],
+        "appended": append,
+        "page": applied_page,
+        "font": applied_font,
+    }
+
+
+def reject_unknown_keys(arguments: dict[str, Any], allowed: Any, label: str) -> None:
+    unknown = sorted(str(key) for key in arguments if key not in allowed)
+    if unknown:
+        raise ValueError(f"{label} does not accept: {', '.join(unknown)} (accepted: {', '.join(sorted(allowed))})")
+
+
+def parse_docx_blocks(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError("paragraphs must be an array of strings or block objects")
+    blocks: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
+        label = f"paragraphs[{index}]"
+        if isinstance(item, str):
+            blocks.append({"type": "paragraph", "text": item})
+            continue
+        if not isinstance(item, dict):
+            raise ValueError(f"{label} must be a string or a block object")
+        kind = item.get("type")
+        if kind == "paragraph":
+            reject_unknown_keys(item, {"type", "text"}, label)
+            blocks.append({"type": "paragraph", "text": require_string(item.get("text"), f"{label}.text")})
+        elif kind == "heading":
+            reject_unknown_keys(item, {"type", "text", "level"}, label)
+            level = item.get("level")
+            if isinstance(level, bool) or not isinstance(level, int) or not 1 <= level <= DOCX_MAX_HEADING_LEVEL:
+                raise ValueError(f"{label}.level must be an integer from 1 to {DOCX_MAX_HEADING_LEVEL}")
+            blocks.append({"type": "heading", "text": require_string(item.get("text"), f"{label}.text"), "level": level})
+        elif kind == "table":
+            reject_unknown_keys(item, {"type", "rows", "header"}, label)
+            rows = item.get("rows")
+            if not isinstance(rows, list) or not rows:
+                raise ValueError(f"{label}.rows must be a non-empty array of rows")
+            width: int | None = None
+            for row_index, row in enumerate(rows):
+                cells = require_string_list(row, f"{label}.rows[{row_index}]")
+                if not cells:
+                    raise ValueError(f"{label}.rows[{row_index}] must have at least one cell")
+                if width is None:
+                    width = len(cells)
+                elif len(cells) != width:
+                    raise ValueError(f"{label}.rows must be rectangular: row {row_index} has {len(cells)} cells, row 0 has {width}")
+            header = item.get("header", True)
+            if not isinstance(header, bool):
+                raise ValueError(f"{label}.header must be a boolean")
+            blocks.append({"type": "table", "rows": rows, "header": header})
+        else:
+            raise ValueError(f"{label}.type must be paragraph, heading, or table")
+    return blocks
+
+
+def parse_docx_page(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("page must be an object")
+    reject_unknown_keys(value, {"size", "orientation", "margins"}, "page")
+    size = value.get("size", DOCX_DEFAULT_PAGE_SIZE)
+    if size not in DOCX_PAGE_SIZES_MM:
+        raise ValueError(f"page.size must be one of {', '.join(sorted(DOCX_PAGE_SIZES_MM))}")
+    orientation = value.get("orientation", "portrait")
+    if orientation not in {"portrait", "landscape"}:
+        raise ValueError("page.orientation must be portrait or landscape")
+    margins_in = value.get("margins", {})
+    if not isinstance(margins_in, dict):
+        raise ValueError("page.margins must be an object")
+    reject_unknown_keys(margins_in, {"top", "bottom", "left", "right"}, "page.margins")
+    margins: dict[str, float] = {}
+    for side in ("top", "bottom", "left", "right"):
+        raw = margins_in.get(side, DOCX_DEFAULT_MARGIN_MM)
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not 0 <= raw <= DOCX_MAX_MARGIN_MM:
+            raise ValueError(f"page.margins.{side} must be a number of millimetres from 0 to {DOCX_MAX_MARGIN_MM:g}")
+        margins[side] = float(raw)
+    return {"size": size, "orientation": orientation, "margins": margins}
+
+
+def parse_docx_font(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("font must be an object")
+    reject_unknown_keys(value, {"eastAsia", "latin", "size"}, "font")
+    font: dict[str, Any] = {}
+    for key in ("eastAsia", "latin"):
+        if key in value:
+            name = value[key]
+            if not isinstance(name, str) or not DOCX_FONT_NAME_RE.match(name):
+                raise ValueError(f"font.{key} must be a font family name (1-64 printable characters)")
+            font[key] = name
+    if "size" in value:
+        size = value["size"]
+        if isinstance(size, bool) or not isinstance(size, (int, float)) or not 6 <= size <= 72:
+            raise ValueError("font.size must be a number of points from 6 to 72")
+        font["size"] = float(size)
+    return font
+
+
+def apply_docx_page(document: Any, page: dict[str, Any]) -> dict[str, Any]:
+    from docx.enum.section import WD_ORIENT
+    from docx.shared import Mm
+
+    size = page.get("size", DOCX_DEFAULT_PAGE_SIZE)
+    orientation = page.get("orientation", "portrait")
+    margins = page.get("margins") or {side: DOCX_DEFAULT_MARGIN_MM for side in ("top", "bottom", "left", "right")}
+    width_mm, height_mm = DOCX_PAGE_SIZES_MM[size]
+    if orientation == "landscape":
+        width_mm, height_mm = height_mm, width_mm
+    section = document.sections[-1]
+    section.orientation = WD_ORIENT.LANDSCAPE if orientation == "landscape" else WD_ORIENT.PORTRAIT
+    section.page_width = Mm(width_mm)
+    section.page_height = Mm(height_mm)
+    for side, value in margins.items():
+        setattr(section, f"{side}_margin", Mm(value))
+    return {"size": size, "orientation": orientation, "marginsMm": margins}
+
+
+def apply_docx_fonts(document: Any, font: dict[str, Any]) -> dict[str, Any]:
+    """Set document-default fonts in the two places Word consults.
+
+    1. theme1.xml: the template's major/minor `<a:ea typeface="">` is empty, and every style in the
+       template references fonts by theme (`w:eastAsiaTheme`), so this is what leaves CJK text with no
+       font at all. python-docx exposes the theme only as a raw part, so it is patched as XML text.
+    2. styles.xml docDefaults: an explicit `w:eastAsia` (and `w:ascii`/`w:hAnsi` when latin is given).
+       A theme attribute wins over its explicit sibling, so the theme attribute is removed when the
+       explicit one is written.
+    """
+    from docx.oxml.ns import qn
+
+    east_asia = font.get("eastAsia", DOCX_DEFAULT_EAST_ASIA_FONT)
+    latin = font.get("latin")
+    size = font.get("size")
+
+    theme = next((part for part in document.part.package.iter_parts() if str(part.partname).endswith("/theme/theme1.xml")), None)
+    if theme is not None:
+        xml = theme.blob.decode("utf-8")
+        xml = re.sub(r'(<a:ea typeface=")[^"]*(")', lambda m: f"{m.group(1)}{escape(east_asia, quote=True)}{m.group(2)}", xml)
+        if latin:
+            xml = re.sub(r'(<a:latin typeface=")[^"]*(")', lambda m: f"{m.group(1)}{escape(latin, quote=True)}{m.group(2)}", xml)
+        theme._blob = xml.encode("utf-8")
+
+    styles = document.styles.element
+    defaults = ensure_child(styles, "w:docDefaults")
+    rpr_default = ensure_child(defaults, "w:rPrDefault")
+    rpr = ensure_child(rpr_default, "w:rPr")
+    rfonts = ensure_child(rpr, "w:rFonts")
+    for attribute in ("w:eastAsiaTheme",):
+        if rfonts.get(qn(attribute)) is not None:
+            del rfonts.attrib[qn(attribute)]
+    rfonts.set(qn("w:eastAsia"), east_asia)
+    if latin:
+        for attribute in ("w:asciiTheme", "w:hAnsiTheme"):
+            if rfonts.get(qn(attribute)) is not None:
+                del rfonts.attrib[qn(attribute)]
+        rfonts.set(qn("w:ascii"), latin)
+        rfonts.set(qn("w:hAnsi"), latin)
+    lang = ensure_child(rpr, "w:lang")
+    lang.set(qn("w:eastAsia"), "zh-CN")
+    if size is not None:
+        half_points = str(int(round(size * 2)))
+        for tag in ("w:sz", "w:szCs"):
+            ensure_child(rpr, tag).set(qn("w:val"), half_points)
+
+    applied: dict[str, Any] = {"eastAsia": east_asia}
+    if latin:
+        applied["latin"] = latin
+    if size is not None:
+        applied["size"] = size
+    return applied
+
+
+def ensure_child(parent: Any, tag: str) -> Any:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    child = parent.find(qn(tag))
+    if child is None:
+        child = OxmlElement(tag)
+        parent.append(child)
+    return child
+
+
+def render_docx_table(document: Any, rows: list[list[str]], header: bool) -> None:
+    table = document.add_table(rows=len(rows), cols=len(rows[0]))
+    try:
+        table.style = document.styles["Table Grid"]
+    except KeyError:
+        pass  # a foreign document being appended to may lack the template style; the grid is still a table
+    for row_index, row in enumerate(rows):
+        for column_index, value in enumerate(row):
+            cell = table.cell(row_index, column_index)
+            cell.text = value
+            if header and row_index == 0:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.bold = True
+
+
+def require_string(value: Any, name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    return value
 
 
 def read_xlsx(path: Path, _: dict[str, Any]) -> dict[str, Any]:

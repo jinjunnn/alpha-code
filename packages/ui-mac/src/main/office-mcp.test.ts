@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { alphaOfficeInstallCommand, type AlphaOfficeFormat } from "../shared/office-advisories"
@@ -88,6 +88,48 @@ function payload(messages: ResponseMessage[], id: number) {
   return JSON.parse(text) as Record<string, unknown>
 }
 
+function refusal(messages: ResponseMessage[], id: number) {
+  const response = messages.find((message) => message.id === id)
+  expect(response?.result?.isError, `id ${id} must be an explicit refusal: ${JSON.stringify(response)}`).toBe(true)
+  return response?.result?.content?.[0]?.text ?? ""
+}
+
+/** #1245:判据读的是产物本身(解包 OOXML),不是工具返回值 —— 上一轮的教训正是「返回成功而产物里一个字段都没有」。 */
+function ooxmlPart(file: string, part: string) {
+  const result = Bun.spawnSync([
+    python!,
+    "-c",
+    "import sys, zipfile; sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]).decode('utf-8'))",
+    file,
+    part,
+  ])
+  if (result.exitCode !== 0) throw new Error(`cannot read ${part} from ${file}: ${result.stderr.toString()}`)
+  return result.stdout.toString()
+}
+
+/** 三项事实的判官(与 VERIFY 子票同一口径):eastAsia 非空 / 标题段带 Heading pStyle / sectPr A4。 */
+function docxFacts(file: string, headingText: string) {
+  const theme = ooxmlPart(file, "word/theme/theme1.xml")
+  const styles = ooxmlPart(file, "word/styles.xml")
+  const document = ooxmlPart(file, "word/document.xml")
+  const eastAsiaTypefaces = [...theme.matchAll(/<a:ea typeface="([^"]*)"/g)].map((match) => match[1])
+  const docDefaults = /<w:docDefaults>.*?<\/w:docDefaults>/s.exec(styles)?.[0] ?? ""
+  const docDefaultsEastAsia = /<w:rFonts[^>]*\bw:eastAsia="([^"]*)"/.exec(docDefaults)?.[1] ?? null
+  const headingParagraph = [...document.matchAll(/<w:p\b.*?<\/w:p>/gs)]
+    .map((match) => match[0])
+    .find((paragraph) => paragraph.replace(/<[^>]+>/g, "").includes(headingText))
+  const headingStyle = headingParagraph ? (/<w:pStyle w:val="([^"]*)"/.exec(headingParagraph)?.[1] ?? "Normal") : null
+  const pageSize = /<w:pgSz w:w="(\d+)" w:h="(\d+)"/.exec(document)
+  return {
+    eastAsiaTypefaces,
+    docDefaultsEastAsia,
+    headingStyle,
+    pageSize: pageSize ? [Number(pageSize[1]), Number(pageSize[2])] : null,
+    tables: document.split("<w:tbl>").length - 1,
+    created: /<dcterms:created[^>]*>([^<]*)</.exec(ooxmlPart(file, "docProps/core.xml"))?.[1] ?? null,
+  }
+}
+
 describe("REQ-133 Alpha first-party Office MCP resources", () => {
   testFormat("word")(
     "Word creates and reads docx without Microsoft Word",
@@ -100,6 +142,143 @@ describe("REQ-133 Alpha first-party Office MCP resources", () => {
       ])
       expect(payload(messages, 2).paragraphsWritten).toBe(2)
       expect(payload(messages, 3).paragraphs).toEqual(["Alpha", "First paragraph", "Second paragraph"])
+    },
+    180_000,
+  )
+
+  testFormat("word")(
+    "write_docx refuses undeclared arguments instead of silently dropping them, and leaves no file behind",
+    async () => {
+      const refused = join(workspace, "refused.docx")
+      const messages = await exchange(commandFor("word"), [
+        initialize(),
+        // 票面现状:多传 font/size 曾被收下并返回成功(产物零 rPr)。
+        call(2, "write_docx", { path: refused, paragraphs: ["x"], font: "宋体", size: 12 }),
+        call(3, "write_docx", { path: refused, paragraphs: ["x"], page: { size: "A4", color: "red" } }),
+        call(4, "write_docx", { path: refused, paragraphs: ["x"], font: { eastAsia: "宋体", weight: "bold" } }),
+        call(5, "write_docx", { path: refused, paragraphs: [{ type: "heading", text: "x", level: 10 }] }),
+        call(6, "write_docx", { path: refused, paragraphs: [{ type: "table", rows: [["a", "b"], ["c"]] }] }),
+        call(7, "write_docx", { path: refused, paragraphs: [{ type: "image", src: "x.png" }] }),
+        call(8, "write_docx", { path: refused, paragraphs: ["x"], page: { size: "B5" } }),
+      ])
+      expect(refusal(messages, 2)).toContain("does not accept: size")
+      expect(refusal(messages, 2)).toContain("accepted: append, font, page, paragraphs, path, title")
+      expect(refusal(messages, 3)).toContain("page does not accept: color")
+      expect(refusal(messages, 4)).toContain("font does not accept: weight")
+      expect(refusal(messages, 5)).toContain("level must be an integer from 1 to 9")
+      expect(refusal(messages, 6)).toContain("rows must be rectangular")
+      expect(refusal(messages, 7)).toContain("type must be paragraph, heading, or table")
+      expect(refusal(messages, 8)).toContain("page.size must be one of A4, Letter")
+      expect(existsSync(refused)).toBe(false)
+    },
+    180_000,
+  )
+
+  testFormat("word")(
+    "write_docx product carries an East Asian font, real heading styles, A4 geometry and a table (read back from OOXML)",
+    async () => {
+      // 先证明判官测得出已知的坏:裸 python-docx 模板(= 旧 server 的产物形状)eastAsia 为空、US Letter、created=2013。
+      const control = join(workspace, "control.docx")
+      const bare = Bun.spawnSync(
+        ["uv", "run", "--no-project", "--with", "python-docx==1.2.0", "python", "-c", "import sys; from docx import Document; d = Document(); d.add_paragraph('一、总体情况'); d.save(sys.argv[1])", control],
+        { env: process.env },
+      )
+      if (bare.exitCode !== 0) throw new Error(`本次测量作废: control docx not produced: ${bare.stderr.toString()}`)
+      const controlFacts = docxFacts(control, "一、总体情况")
+      expect(controlFacts.eastAsiaTypefaces).toEqual(["", ""])
+      expect(controlFacts.docDefaultsEastAsia).toBeNull()
+      expect(controlFacts.headingStyle).toBe("Normal")
+      expect(controlFacts.pageSize).toEqual([12240, 15840])
+      expect(controlFacts.created?.startsWith("2013-")).toBe(true)
+
+      const path = join(workspace, "recon.docx")
+      const messages = await exchange(commandFor("word"), [
+        initialize(),
+        call(2, "write_docx", {
+          path,
+          title: "调研报告",
+          paragraphs: [
+            { type: "heading", text: "一、总体情况", level: 1 },
+            "正文中文段落。",
+            { type: "heading", text: "1.1 细分", level: 2 },
+            { type: "paragraph", text: "第二段" },
+            { type: "table", rows: [["项目", "数值"], ["甲", "1"]] },
+          ],
+        }),
+        call(3, "read_docx", { path }),
+      ])
+      expect(payload(messages, 2)).toMatchObject({
+        paragraphsWritten: 2,
+        headingsWritten: 2,
+        tablesWritten: 1,
+        appended: false,
+        page: { size: "A4", orientation: "portrait", marginsMm: { top: 25.4, bottom: 25.4, left: 25.4, right: 25.4 } },
+        font: { eastAsia: "宋体" },
+      })
+      // path 由 server 解析成 realpath(macOS 的 tmpdir 是 /var → /private/var 的链),只比内容。
+      expect(payload(messages, 3)).toMatchObject({
+        paragraphs: ["调研报告", "一、总体情况", "正文中文段落。", "1.1 细分", "第二段"],
+        tables: [[["项目", "数值"], ["甲", "1"]]],
+      })
+
+      const facts = docxFacts(path, "一、总体情况")
+      expect(facts.eastAsiaTypefaces).toEqual(["宋体", "宋体"]) // major + minor
+      expect(facts.docDefaultsEastAsia).toBe("宋体")
+      expect(facts.headingStyle).toBe("Heading1")
+      expect(docxFacts(path, "1.1 细分").headingStyle).toBe("Heading2")
+      expect(docxFacts(path, "调研报告").headingStyle).toBe("Title")
+      expect(docxFacts(path, "正文中文段落。").headingStyle).toBe("Normal")
+      expect(facts.pageSize).toEqual([11906, 16838])
+      expect(facts.tables).toBe(1)
+      expect(facts.created?.startsWith("2013-")).toBe(false)
+      const document = ooxmlPart(path, "word/document.xml")
+      expect(document).toContain('<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"')
+      expect(document).toContain('<w:tblStyle w:val="TableGrid"/>')
+      expect(document.split("<w:tr").length - 1).toBe(2)
+      const styles = ooxmlPart(path, "word/styles.xml")
+      expect(styles).not.toMatch(/<w:docDefaults>.*w:eastAsiaTheme=.*<\/w:docDefaults>/s)
+      expect(styles).toMatch(/<w:docDefaults>.*<w:lang [^>]*w:eastAsia="zh-CN".*<\/w:docDefaults>/s)
+    },
+    180_000,
+  )
+
+  testFormat("word")(
+    "write_docx honours explicit page (Letter landscape, margins) and fonts, and append leaves geometry alone unless asked",
+    async () => {
+      const path = join(workspace, "letter.docx")
+      const messages = await exchange(commandFor("word"), [
+        initialize(),
+        call(2, "write_docx", {
+          path,
+          paragraphs: ["Landscape"],
+          page: { size: "Letter", orientation: "landscape", margins: { top: 20, bottom: 20, left: 20, right: 20 } },
+          font: { eastAsia: "黑体", latin: "Times New Roman", size: 12 },
+        }),
+        call(3, "write_docx", { path, paragraphs: [{ type: "heading", text: "二、追加", level: 1 }], append: true }),
+        call(4, "read_docx", { path }),
+      ])
+      expect(payload(messages, 2)).toMatchObject({
+        page: { size: "Letter", orientation: "landscape", marginsMm: { top: 20, bottom: 20, left: 20, right: 20 } },
+        font: { eastAsia: "黑体", latin: "Times New Roman", size: 12 },
+      })
+      expect(payload(messages, 3)).toMatchObject({ appended: true, headingsWritten: 1, page: null, font: null })
+      expect(payload(messages, 4).paragraphs).toEqual(["Landscape", "二、追加"])
+
+      const document = ooxmlPart(path, "word/document.xml")
+      expect(document).toContain('<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>')
+      expect(document).toContain('<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"')
+      const facts = docxFacts(path, "二、追加")
+      expect(facts.eastAsiaTypefaces).toEqual(["黑体", "黑体"])
+      expect(facts.headingStyle).toBe("Heading1")
+      const theme = ooxmlPart(path, "word/theme/theme1.xml")
+      expect([...theme.matchAll(/<a:latin typeface="([^"]*)"/g)].map((match) => match[1])).toEqual(["Times New Roman", "Times New Roman"])
+      const styles = ooxmlPart(path, "word/styles.xml")
+      const docDefaults = /<w:docDefaults>.*?<\/w:docDefaults>/s.exec(styles)?.[0] ?? ""
+      expect(docDefaults).toContain('w:eastAsia="黑体"')
+      expect(docDefaults).toContain('w:ascii="Times New Roman"')
+      expect(docDefaults).toContain('w:hAnsi="Times New Roman"')
+      expect(docDefaults).not.toContain("w:asciiTheme")
+      expect(docDefaults).toContain('<w:sz w:val="24"/>')
     },
     180_000,
   )
