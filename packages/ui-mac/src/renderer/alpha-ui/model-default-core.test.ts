@@ -178,6 +178,22 @@ describe("resolveDefaultModel(第②③④级:自动默认)", () => {
       model: { providerID: "deepseek", id: "deepseek-chat", name: "deepseek-chat", variants: [] },
     })
   })
+  // REQ-153 #1266:目录 BYOK 节点(`<id>-byok`)自动默认时,档位与 picker 行同一份派生(平台同名条目)。
+  test("第③级默认到目录 BYOK 节点时带上平台同名条目的档位;自定义节点仍零档", () => {
+    const withTwin = ctx({
+      engineModels: [{ providerID: "zhipuai-byok", id: "claude-sonnet-5" }],
+      configuredProviders: ["zhipuai-byok"],
+    })
+    expect(resolveDefaultModel(withTwin)).toEqual({
+      kind: "model",
+      model: { providerID: "zhipuai-byok", id: "claude-sonnet-5", name: "claude-sonnet-5", variants: ["低", "中", "高"] },
+    })
+    const noTwin = ctx({ engineModels: [{ providerID: "zhipuai-byok", id: "glm-4.5-air" }], configuredProviders: ["zhipuai-byok"] })
+    expect(resolveDefaultModel(noTwin)).toEqual({
+      kind: "model",
+      model: { providerID: "zhipuai-byok", id: "glm-4.5-air", name: "glm-4.5-air", variants: [] },
+    })
+  })
   test("登录但账户不可用 → 同样不默认平台模型,走 BYOK", () => {
     const r = resolveDefaultModel(
       ctx({

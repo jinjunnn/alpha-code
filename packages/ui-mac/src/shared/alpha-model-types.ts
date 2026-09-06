@@ -45,18 +45,29 @@ export const byokEngineId = (id: string): string => `${id}-byok`
  *  it does not depend on platform login/entitlement or on the engine's model list being loaded". */
 export const isByokEngineId = (providerID: string): boolean => providerID.endsWith("-byok")
 
-/** BYOK 行的展示名与推理能力从**平台目录同名条目**派生 —— BYOK 目录本身只有 id 列表,没有逐模型元数据。
+/** BYOK 行的展示名、推理能力与**推理档位**从**平台目录同名条目**派生 —— BYOK 目录本身只有 id 列表,
+ *  没有逐模型元数据。
  *  REQ-153 #1236:picker 打「推理」徽标(renderer/model-picker-core.ts)与 sidecar 往引擎写
  *  `capabilities.reasoning`(main/alpha-models.ts)必须都走这一个函数。此前两边各查一次:picker 查
  *  平台目录、注入只写 `{name}` ⇒ 徽标亮着而引擎 `reasoning === false`,`transform.ts:712` 首行即
  *  `return {}` —— UI 对用户说了假话。传入的 `platformModels` 应是 `projectPlatformModels` 的产物
- *  (两边同一份投影),不是裸 JSON。 */
+ *  (两边同一份投影),不是裸 JSON。
+ *  REQ-153 #1266:`variants` 同样由这里派生,同一份数据同时进 sidecar 注入(config `models.<id>.variants`,
+ *  引擎与自己派生的档位表 mergeDeep)与 picker 的 BYOK 行(档位 chip 的列表)。此前 BYOK 行恒 `variants: []`
+ *  ⇒ 直连 deepseek-v4-pro / glm-5.2 亮着徽标却一档都选不到。档位表的 wire 形状(`reasoningEffort` →
+ *  `reasoning_effort`)按平台 provider 的 npm(`@ai-sdk/openai-compatible`)写,直连节点能原样复用,
+ *  前提是目录里每个 BYOK provider 都是 `compat: "openai"` —— alpha-models.test.ts 钉着这条不变量。
+ *  没有同名平台条目的 BYOK-only id(如 `glm-4.5-air`)拿不到任何元数据:这是目录 schema 的边界,不是本函数的。 */
 export function byokModelMeta(
-  platformModels: readonly PlatformModel[],
+  platformModels: readonly Pick<PlatformModel, "id" | "name" | "reasoning" | "variants">[],
   id: string,
-): { name: string; reasoning: boolean } {
+): { name: string; reasoning: boolean; variants?: Record<string, Record<string, unknown>> } {
   const display = platformModels.find((model) => model.id === id)
-  return { name: display?.name ?? id, reasoning: !!display?.reasoning }
+  return {
+    name: display?.name ?? id,
+    reasoning: !!display?.reasoning,
+    ...(display?.variants ? { variants: display.variants } : {}),
+  }
 }
 
 /** #681 / ADR-039:平台下发的**双倍数**。相对基准模型(`EffectiveCatalog.pricingBasisModelId`)
