@@ -47,7 +47,7 @@ rejected or silently dropped). Read them before you promise a user any formattin
 
 | Tool | Accepts | Cannot do, at all |
 |---|---|---|
-| `write_docx` | `{path, title, paragraphs[], append}` | fonts, sizes, colours, tables, lists, page breaks, headers/footers, page numbers, images, margins, table of contents. Only `title` becomes a heading (level 0); **every** entry in `paragraphs` lands as Normal body text, so "一、总体情况" stays body text, not a heading |
+| `write_docx` | `{path, title, paragraphs[], append}` | colours, bullet/numbered lists, explicit page breaks, headers/footers, page numbers, images, table of contents. Headings, tables, page geometry and fonts **are** supported since `#1245` — see the capability row above; undeclared fields are refused, not silently dropped |
 | `write_xlsx` | `{path, sheets:[{name, cells}]}` where `cells` maps `"A1"` to a value | number formats, cell styles, column widths, merged cells, freeze panes, autofilter, charts, pivots, conditional formatting |
 | `write_pptx` | `{path, slides:[{title, body}], append}` | layouts, themes, images, speaker notes, per-run formatting |
 | `write_pdf` | `{path, pages[], mode}` | layout, fonts, images, headers/footers — it renders plain text pages |
@@ -158,9 +158,9 @@ reading. It applies to every office file you produce, and to the fallback-script
   of retries", not "Cost analysis".
 - **Depth follows the material, not a word count.** A number without its source is noise: give the
   date, the range, the query, or the file it came from.
-- **Two heading levels at most.** Needing a third means the document should be split. With
-  `write_docx` you only get one real heading anyway (see the table above), so express structure as
-  short titled paragraphs and say that is what you did.
+- **Two heading levels at most.** Needing a third means the document should be split.
+  `write_docx` accepts `heading` blocks at levels 1–9, but that is a capability, not a licence:
+  keep to two levels and let the heading text state a conclusion, not a topic.
 - **A table only when rows share fields and are meant to be compared.** Never leave a cell blank —
   write why it is blank. A list only for three or more peer items; two bullets are a sentence.
   Arguments and causal chains stay prose: bullets delete what made them an argument.

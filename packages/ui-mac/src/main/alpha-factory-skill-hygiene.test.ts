@@ -146,9 +146,11 @@ describe("office-docs 说明书不得再教做不到的事(`#1242` 的另一半)
     expect(serverPy.includes('"additionalProperties": False,')).toBe(true)
     expect(serverPy.includes('"write_xlsx",')).toBe(true)
   })
-  test("drift 锁:write_docx 仍然只有一个 level=0 的 title 槽,正文全是 Normal 段落", () => {
-    expect(serverPy.includes("document.add_heading(title, level=0)")).toBe(true)
-    expect(serverPy.includes("document.add_paragraph(paragraph)")).toBe(true)
+  test("drift 锁:write_docx 的 heading/table 块与 level 透传仍在(#1245 落地后的现实)", () => {
+    // 说明书第 23、50 行那两格能力表的依据。这三条任一消失 ⇒ 说明书又在教做不到的事,先红。
+    expect(serverPy.includes("document.add_heading(block[\"text\"], level=block[\"level\"])")).toBe(true)
+    expect(serverPy.includes('"type": {"const": "heading"}')).toBe(true)
+    expect(serverPy.includes('counts = {"paragraph": 0, "heading": 0, "table": 0}')).toBe(true)
   })
   test("schema 做不到的承诺已从说明书里清除(逐条点名)", () => {
     for (const promise of [
