@@ -31,12 +31,53 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-# Keep in lockstep with .github/workflows/alpha-ci.yml (env.UPSTREAM_PATHS + the guard's excludes)
-# and ADR-004. Drift here is worse than no gate: a permanently-red local guard trains you to ignore it.
-# ADR-020(REQ-017 修):packages/{app,ui} 已冻结(frontend-freeze-base-2,ADR-027),相对上游镜像的
-# diff 是冻结本意 → 移出守卫,与 alpha-ci.yml env.UPSTREAM_PATHS 恢复 1:1(此前本地恒假红)。
-# ADR-033(#456):守卫盲区补全 —— permission wire 契约的 SOT 有一半在 protocol/schema/client。
-UPSTREAM_PATHS="packages/opencode packages/core packages/server packages/tui packages/sdk packages/protocol packages/schema packages/client"
+# ── 辖区 = `packages/` 全树 −(两张显式 carve-out)。ADR-044 / `#1247` ────────────────
+#
+# 缺陷(2026-09-06 实测):辖区原本是一张 8 个包的枚举
+# `packages/{opencode,core,server,tui,sdk,protocol,schema,client}`,而上游镜像 `origin/dev`
+# 当天有 **32** 个包(`git ls-tree --name-only origin/dev packages/ | wc -l` → 32)。
+# 24 个包在辖区外;其中 `app`/`ui` 由 ADR-034 的 roundtrip 门盖住,**其余 22 个零机制**:
+# 往 `packages/plugin/src/index.ts`(**Hooks 契约本体**)与 `packages/llm/src/index.ts` 各写一行,
+# 这道门报 `✓ zero upstream package edits` 且 `exit 0`。它是 alpha 分支保护上的必需 context,
+# 于是「北极星绿」这句话对一大半地盘什么都没说,而下一次 fork-sync 照样冲突。
+#
+# 根因是**数据模型**,不是某一行写错:枚举对**新成员默认放行** —— 上游每加一个包就多一个盲区,
+# 而没有任何东西会变红。ADR-043(`#1079` owner CHOICE=2)在**文件**那一层已经因为同一条理由
+# 否掉过逐文件清单、改用结构性谓词。这里把同一条纪律搬到**包**这一层:辖区是整棵 `packages/`,
+# **例外**才是清单 —— 例外默认拒,新成员默认覆盖。
+#
+# 行为判据在 packages/ui-mac/src/main/north-star-guard.test.ts 的 `#1247` 那一节:每一类包各造
+# 一个已知该红的输入,并各带一个控制组(辖区换回 8 包 / 抹掉 carve-out),先证明夹具测得出
+# 已知的坏。防漂断言在 packages/ui-mac/src/main/local-gate-parity.test.ts。
+UPSTREAM_PATHS="packages"
+
+# carve-out ①:alpha 自有的 workspace 包 —— `origin/dev` 里**根本没有**这三条路径
+# (ADR-004 后果②:新增 workspace 包必然改写根 bun.lock;ADR-016 前端接管;REQ-224 契约消费者)。
+# 为什么是整包豁免、而不是走 ADR-043 的逐文件谓词:那个谓词要求每个文件**自报家门**
+# (`alpha-*` 命名或写一行 marker),而这三个包里成千上万个文件全是 alpha 写的 —— 逐文件登记
+# 只会把「改自己的代码」变成一道恒红门。
+# **这张清单由下面的运行期自检逐条对着上游镜像验一遍**:把一个真上游包写进来,是绕开整道门
+# 最便宜的一步(一行配置换一整个包的豁免),它不能只靠人看。
+ALPHA_OWNED_PACKAGES="ext ui-mac alpha-contracts-consumer"
+
+# carve-out ②:由 ADR-034 的 pin + SOT 补丁 roundtrip 盖住的前端包。
+# 它们**不是** alpha 自有(`origin/dev` 里有,alpha 也确实在改),但覆盖它们的不是本门:
+#   · 无空档 —— `scripts/assert-frontend-patch-roundtrip.sh` 判的是「HEAD 的这两棵树必须能由
+#     `frontend/frontend-pin.lock` 的 pin + `frontend/alpha-patches/alpha-frontend.patch`
+#     **逐字节重建**」(比 tree sha),它比本门**更强**:连「改了但没重生补丁」都当场红,
+#     而本门只判「有没有改」。它跑在 alpha-ci 的同一个 job 里,且刻意用 `if: !cancelled()`。
+#   · 无重复 —— 本门若也盖它们,ADR-034 明写的日常工作流(改 seam = 改补丁 + 重生那两棵树)
+#     每一次都会被判成破北极星 ⇒ 恒红门 ⇒ `--no-verify` ⇒ 十道门一起关掉(`#754` 形态)。
+# 两处清单相同由 local-gate-parity.test.ts 判(有人把 roundtrip 门的 PACKAGES 改小 = 空档,即红)。
+ROUNDTRIP_PACKAGES="app ui"
+
+# 两张 carve-out 落成 pathspec。刻意**不**并进下面的 UPSTREAM_EXCLUDES:那张表的语义是
+# 「ADR-033/035/038/041/042 逐文件**收编**」,与「这个包根本不归本门管」不是一回事,混在
+# 一起会让「新增收编须自己的 ADR」这条纪律在阅读时失焦。
+CARVEOUT_PATHSPECS=()
+for pkg in $ALPHA_OWNED_PACKAGES $ROUNDTRIP_PACKAGES; do
+  CARVEOUT_PATHSPECS+=(":(exclude)packages/$pkg")
+done
 # 被接管/生成文件的例外,与 alpha-ci.yml 的 `excludes=()` 逐条对齐。新增收编须自己的 ADR,
 # 不得静默加 exclude(ADR-029 §3)。两处逐条相同由 local-gate-parity.test.ts 判(`#637`)。
 UPSTREAM_EXCLUDES=(
@@ -229,6 +270,25 @@ if [ "$mirror_ok" -eq 1 ] && [ "$mirror_fetched" -eq 0 ]; then
   echo "      mirror: last-known ${UPSTREAM_MIRROR} @ $(git rev-parse --short "$UPSTREAM_MIRROR") — dated $(git log -1 --format=%cd --date=short "$UPSTREAM_MIRROR") ($(git log -1 --format=%cr "$UPSTREAM_MIRROR"))"
 fi
 
+# ── ALPHA_OWNED_PACKAGES 的运行期自检(ADR-044 / `#1247`)────────────────────────────
+# 辖区变成「整棵 packages/ 减 carve-out」之后,**那张 carve-out 清单就是这道门的软肋**:往
+# ALPHA_OWNED_PACKAGES 里加一个词,就把一整个上游包移出辖区,而其余每一条断言照样绿。
+# 所以它必须有机械判据 —— 判据现成:alpha 自有包按定义在上游镜像里**查无此路径**。
+# 镜像取不到时跳过(上面已经因此发过警告);那一档只是「这一跑没验」,不是放行,因为辖区
+# 本身不依赖镜像。
+if [ "$mirror_ok" -eq 1 ]; then
+  forged=""
+  for pkg in $ALPHA_OWNED_PACKAGES; do
+    if mirror_has "packages/$pkg"; then forged="${forged} packages/$pkg"; fi
+  done
+  if [ -n "$forged" ]; then
+    echo "    ✗ ALPHA_OWNED_PACKAGES 里有上游镜像 ${UPSTREAM_MIRROR} 里就存在的包:${forged}"
+    echo "      → 上游有的包不是 alpha 自有。把它写进那张清单等于给整个包发豁免,本次守卫作废(不是通过)。"
+    echo "      → 真要接管上游文件,走 ADR-029 的阶梯并逐文件登记进 UPSTREAM_EXCLUDES,不要动包级 carve-out。"
+    exit 1
+  fi
+fi
+
 # committed delta (mirrors CI) ∪ working-tree edits (earlier local feedback)
 # 同一条理由:diff 本身失败也是「测不到」,不是「没有改动」。宁可当场红。
 # `--no-renames` 是**判据的一部分**,不是风格(`#1085`)。默认开着的改名检测会把一次改名压成
@@ -236,10 +296,10 @@ fi
 # 在下面的谓词里两个因子全中,被当成 alpha 自有放行,而上游那条路径其实已经消失(fork-sync
 # 照样冲突)。关掉改名检测后,同一次改名回到 `D`(旧路径)+ `A`(新路径):`D` 落进 DMR 被点名,
 # 点的还正好是真正受害的那条路径。north-star-guard.test.ts 里有一条专钉这个形状。
-if ! committed="$(git diff --no-renames --diff-filter=DMR --name-only origin/alpha...HEAD -- $UPSTREAM_PATHS "${UPSTREAM_EXCLUDES[@]}")"; then
+if ! committed="$(git diff --no-renames --diff-filter=DMR --name-only origin/alpha...HEAD -- $UPSTREAM_PATHS "${UPSTREAM_EXCLUDES[@]}" "${CARVEOUT_PATHSPECS[@]}")"; then
   echo "    ✗ 算不出与 origin/alpha 的提交差 —— 本次守卫作废(不是通过)。"; exit 1
 fi
-if ! worktree="$(git diff --no-renames --diff-filter=DMR --name-only HEAD -- $UPSTREAM_PATHS "${UPSTREAM_EXCLUDES[@]}")"; then
+if ! worktree="$(git diff --no-renames --diff-filter=DMR --name-only HEAD -- $UPSTREAM_PATHS "${UPSTREAM_EXCLUDES[@]}" "${CARVEOUT_PATHSPECS[@]}")"; then
   echo "    ✗ 算不出工作树差 —— 本次守卫作废(不是通过)。"; exit 1
 fi
 changed="$(printf '%s\n%s\n' "$committed" "$worktree" | sed '/^$/d' | sort -u)"
@@ -273,4 +333,6 @@ if [ -n "$flagged" ]; then
   echo "      → 它其实是 alpha 自有文件?命名成 alpha-*,或在文件里写一行 '${ALPHA_OWNED_MARKER}'(ADR-043)。"
   exit 1
 fi
-echo "✓ zero upstream package edits (baseline origin/alpha; ADR-033 收编白名单 + ADR-043 alpha 自有谓词除外)"
+# 绿也要说清「这一跑量的是什么」(`#913` 同一条纪律):辖区不再是读者背得出来的 8 个包,
+# 而是「整棵 packages/ 减两张 carve-out」—— 不把 carve-out 打出来,「今天绿」就又变成隐含知识。
+echo "✓ zero upstream package edits (辖区 = packages/ 全树 − alpha 自有包 [${ALPHA_OWNED_PACKAGES}] − ADR-034 roundtrip 包 [${ROUNDTRIP_PACKAGES}];baseline origin/alpha;ADR-033 收编白名单 + ADR-043 alpha 自有谓词除外)"
