@@ -282,6 +282,40 @@ config `provider.<id>.models` 的 **KEY**(`provider.ts:1433`),alpha 注入时不
 7. **上游隔离是硬不变量。** 任一子票的 diff 触碰 `UPSTREAM_PATHS` = 该票做错了,
    不是闸门太严。T11 扩守卫辖区后,该不变量的覆盖面从 8 包升到 32 包。
 
+8. **本方案会激活两条此前的死代码路径 —— 必须同批验,不得事后补。**
+   两者今天都无害,恰恰因为 `capabilities.reasoning === false` 让 `variants()`
+   首行 `return {}`;而 T1 要做的事就是推翻这个前提。**用一个即将被自己推翻的前提
+   去筛 finding,是本基线 §6 反复警告的同一个错。**
+
+   **8a — 辅助调用的推理档位。** `session/llm/request.ts:88-89` 对 `input.small === true`
+   的辅助调用(标题、摘要)改走 `ProviderTransform.smallOptions()`,其首行
+   (`transform.ts:1304`)是 `Object.values(model.variants ?? {})[0]` —— 取档位表**第一项**,
+   与用户选择无关。`request.ts:84-87` 的 `!input.small &&` 守卫是**故意**的,意图正确
+   (辅助调用不该用贵档)。风险在"第一项是否便宜"随模型族而变:
+
+   | 模型族 | 档位表 | 第一项 |
+   |---|---|---|
+   | OpenAI 系 | `[none, minimal, low, medium, high, xhigh]` | `none` ✅ |
+   | 通用 | `[low, medium, high]` | `low` ✅ |
+   | **glm-5.2 / openai-compatible**(`transform.ts:742-747`) | `{high, max}` | **`high`** ❌ |
+
+   不变量:**辅助调用不得取到比用户主调用更贵的档位。** 判据落在 T1 的验收里
+   (触发一次标题生成并捕获请求体);修法只能在 config 侧,不得改上游。
+
+   **8b — 采样参数缺能力门。** `request.ts:129` 的 `temperature` 被
+   `capabilities.temperature` 挡着,而紧邻的 `:131-132` 的 `topP`/`topK` **没有门**。
+   取值见 `transform.ts:538-555`:qwen → `top_p: 1`(数学上空操作)、
+   minimax-m2 / gemini / kimi-k2.5 → `0.95`;topK:minimax-m2 → 20/40、gemini → 64。
+   T4 会让**恰好带 `top_p` 的那几族**(qwen / minimax / kimi)首次同时带上
+   `reasoning_effort` —— 而推理模型拒收采样参数是常见行为,`temperature` 有门保护、
+   它们没有。
+
+   不变量:**任一模型不得同时收到它会拒绝的采样参数与推理参数。** 判据落在 T4 的
+   验收里(每个新获推理档的在册模型实发一次真请求确认受理),**不得用合成夹具顶替**
+   —— 要判的正是上游对这个组合的反应;凭据不可得的模型显式记为未验,不得默认通过。
+
+   两者原先被记为「已知不修」(`alpha-code#1249`),该判断已于 2026-09-06 复核作废。
+
 ## 4. owner 裁决记录(2026-09-06)
 
 1. **所有 route 的 `maxOutputTokens` 取上游允许的最大值。** 逐字:「全部都按照最大即可」。
