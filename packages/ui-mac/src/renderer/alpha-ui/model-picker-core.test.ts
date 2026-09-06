@@ -64,6 +64,19 @@ const rows = (over: Partial<Parameters<typeof buildModelPickerRows>[0]> = {}) =>
   })
 
 describe("真实 alpha-models.json → picker 两组", () => {
+  // REQ-153 #1236:徽标与引擎注入同一派生(shared/alpha-model-types byokModelMeta)。
+  test("推理徽标:平台行按目录 reasoning;BYOK 行按平台同名条目派生(deepseek-v4-pro 亮、v4-flash 不亮)", () => {
+    const actual = rows()
+    const platform = actual.filter((row) => row.group === "platform")
+    expect(platform.filter((row) => row.reasoning).map((row) => row.model.id)).toEqual(
+      catalog.platformModels.filter((model) => model.reasoning).map((model) => model.id),
+    )
+    expect(platform.find((row) => row.model.id === "glm-5.2")?.reasoning).toBe(true)
+    const deepseek = actual.filter((row) => row.model.providerID === byokEngineId("deepseek"))
+    expect(deepseek.find((row) => row.model.id === "deepseek-v4-pro")?.reasoning).toBe(true)
+    expect(deepseek.find((row) => row.model.id === "deepseek-v4-flash")?.reasoning).toBe(false)
+  })
+
   test("平台代理模型与供应商逐项取自目录，不发明 id", () => {
     const actual = rows()
     const platform = actual.filter((row) => row.group === "platform")

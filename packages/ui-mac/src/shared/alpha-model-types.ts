@@ -45,6 +45,20 @@ export const byokEngineId = (id: string): string => `${id}-byok`
  *  it does not depend on platform login/entitlement or on the engine's model list being loaded". */
 export const isByokEngineId = (providerID: string): boolean => providerID.endsWith("-byok")
 
+/** BYOK 行的展示名与推理能力从**平台目录同名条目**派生 —— BYOK 目录本身只有 id 列表,没有逐模型元数据。
+ *  REQ-153 #1236:picker 打「推理」徽标(renderer/model-picker-core.ts)与 sidecar 往引擎写
+ *  `capabilities.reasoning`(main/alpha-models.ts)必须都走这一个函数。此前两边各查一次:picker 查
+ *  平台目录、注入只写 `{name}` ⇒ 徽标亮着而引擎 `reasoning === false`,`transform.ts:712` 首行即
+ *  `return {}` —— UI 对用户说了假话。传入的 `platformModels` 应是 `projectPlatformModels` 的产物
+ *  (两边同一份投影),不是裸 JSON。 */
+export function byokModelMeta(
+  platformModels: readonly PlatformModel[],
+  id: string,
+): { name: string; reasoning: boolean } {
+  const display = platformModels.find((model) => model.id === id)
+  return { name: display?.name ?? id, reasoning: !!display?.reasoning }
+}
+
 /** #681 / ADR-039:平台下发的**双倍数**。相对基准模型(`EffectiveCatalog.pricingBasisModelId`)
  *  未缓存 token 单价之比;平台已 half-up 到一位小数。客户端只本地化展示 —— 不做除法、不 rounding、
  *  不加权、不折叠成单一 scalar(折叠对至少一侧必然错)。 */

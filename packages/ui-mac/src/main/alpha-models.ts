@@ -24,7 +24,7 @@
 
 import catalog from "./alpha-models.json"
 import type { AlphaModelCatalog } from "../shared/alpha-model-types"
-import { byokEngineId } from "../shared/alpha-model-types"
+import { byokEngineId, byokModelMeta } from "../shared/alpha-model-types"
 import { projectPlatformModels, readCatalogSnapshot } from "./alpha-live-allowlist"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
 import { readUserProviderIds } from "./ext-config"
@@ -56,6 +56,9 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   // readUserProviderIds)不受限;BYOK 目录自 REQ-109 #595 起也不受限 —— owner 裁决 BYOK 走全主权,
   // 本地 alpha-models.json 即权威,平台不得远程干预(契约 docs/contracts/byok-availability.md)。
   const snapshot = readCatalogSnapshot(userDataPath)
+  // REQ-127 #681:平台段的**唯一**投影,算一次。平台节点直接用它;BYOK 节点的 reasoning 元数据也从它
+  // 派生(byokModelMeta),与 picker 的 BYOK 行(getEffectiveCatalog → 同一投影)同一份判据。
+  const platformModels = projectPlatformModels(CATALOG.platformModels, snapshot)
 
   // (1) BYOK 直连节点 (方案 C): inject each catalog provider that HAS a key (opt-in) as a FULL custom
   // provider — npm/baseURL/models come from the catalog (alpha-code defines them, independent of
@@ -65,8 +68,13 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   for (const p of CATALOG.byokProviders) {
     if (!p.keyEnv || !hasSecretFile(userDataPath, p.keyEnv)) continue
     const npm = p.compat === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible"
-    const models: Record<string, { name: string }> = {}
-    for (const m of p.models) models[m] = { name: m }
+    // REQ-153 #1236:`reasoning` 是引擎 `capabilities.reasoning` 的唯一来源(config schema
+    // core/src/v1/config/provider.ts:14,消费 provider/provider.ts:1457;models.dev 对 `<id>-byok`
+    // 这个 provider id 没有条目,fallback 恒 false)。不转发 ⇒ transform.variants() 首行 return {}。
+    const models: Record<string, { name: string; reasoning?: boolean }> = {}
+    for (const m of p.models) {
+      models[m] = { name: m, ...(byokModelMeta(platformModels, m).reasoning ? { reasoning: true } : {}) }
+    }
     // Inject under a non-models.dev engine id (`<id>-byok`) so opencode's availability gate doesn't
     // filter these out via the models.dev integration collision (see byokEngineId). Display id, key
     // status, gateway allowlist and the key store all keep the plain `p.id`.
@@ -90,11 +98,24 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
     // REQ-127 #681:平台段走与 picker 完全相同的那一份投影。此前这里自制 nameById/variantsById/source
     // 三段装配,于是「什么算有效缓存」有两份定义 —— 空缓存时 picker 给 0 行、引擎配置给静态 9 行。
     // REQ-029:variants(推理档)随投影下发 —— 引擎 request 层 merge 进 options(echo 实验实锤
-    // reasoningEffort→reasoning_effort / reasoning:{effort} 原样透传,网关 spread 透传)。
+    // reasoningEffort→reasoning_effort / reasoning:{effort} 原样透传到 harness 请求体)。
+    // ⚠️ REQ-153 #1236 实读(2026-09-06,alpha-platform `lib/openai-wire.ts` rebuildOpenAIRequest 生产函数):
+    // 网关自 #107 起按显式白名单重组上游 body,**只转发 messages/tools/tool_choice/stop/response_format/
+    // temperature/top_p**,`reasoning_effort` / `reasoning` / `thinking` / `top_k` 一律剥掉 ——
+    // 「网关 spread 透传」已不成立。平台节点的档位只到 harness 为止;直连 BYOK 节点不经网关,档位真到上游。
     // 引擎配置**不写 pricing**:那是展示用的,不进 opencode 的 provider 契约。
-    const models: Record<string, { name: string; variants?: Record<string, Record<string, unknown>> }> = {}
-    for (const m of projectPlatformModels(CATALOG.platformModels, snapshot)) {
-      models[m.id] = { name: m.name, ...(m.variants ? { variants: m.variants } : {}) }
+    // REQ-153 #1236:`reasoning` 同样转发(见 BYOK 段注释)。单变量实测:只补这一处,同一条
+    // `run --model alpha/glm-5.2 --variant max` 的请求体立刻出现 `"reasoning_effort":"max"`。
+    const models: Record<
+      string,
+      { name: string; reasoning?: boolean; variants?: Record<string, Record<string, unknown>> }
+    > = {}
+    for (const m of platformModels) {
+      models[m.id] = {
+        name: m.name,
+        ...(m.reasoning ? { reasoning: true } : {}),
+        ...(m.variants ? { variants: m.variants } : {}),
+      }
     }
     provider[pp.id] = {
       npm: pp.npm,

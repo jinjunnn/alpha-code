@@ -9,8 +9,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { writeCatalogSnapshot } from "./alpha-live-allowlist"
+import { projectPlatformModels, readCatalogSnapshot, writeCatalogSnapshot } from "./alpha-live-allowlist"
 import { buildAlphaModelConfig, getModelCatalog } from "./alpha-models"
+import type { EffectiveCatalog } from "../shared/alpha-model-types"
+import { buildModelPickerRows } from "../renderer/alpha-ui/model-picker-core"
 import { secretFilePath, syncSecretFiles } from "./alpha-secret-files"
 import { persistProviderAndRefresh, setProviderLifecycleDeps } from "./provider-lifecycle"
 
@@ -298,5 +300,99 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(catalog LKG)", () 
     fs.writeFileSync(path.join(userData, "alpha-live-models.json"), "{corrupt")
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
     expect(Object.keys(p.models).length).toBe(getModelCatalog().platformModels.length)
+  })
+})
+
+// REQ-153 #1236:目录里的 `reasoning` 是引擎 `capabilities.reasoning` 的唯一来源(config schema
+// core/src/v1/config/provider.ts:14 → provider/provider.ts:1457;`alpha` / `<id>-byok` 在 models.dev 里
+// 没有条目,fallback 恒 false)。此前注入只写 name/variants ⇒ 引擎里**每个**模型都不会思考,
+// transform.ts:712 首行 `return {}`;而 picker 读的是 JSON 的 `reasoning` ⇒ 徽标亮着说假话。
+// 判据:注入的 reasoning 集合 == 目录声明集合 == picker 徽标集合。三者缺一都是两份判据。
+describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎能力同源", () => {
+  const liveBase = { fetchedAt: "2026-09-06T00:00:00Z", edition: "cn", pricingBasisModelId: "deepseek-v4-flash" }
+  const pair = { input: 1, output: 1 }
+  const keyEverything = () => {
+    for (const p of getModelCatalog().byokProviders) plantSecret(p.keyEnv, `sk-${p.id}`)
+    process.env.ALPHA_BASE_URL = "https://gw.example/v1"
+    plantSecret("ALPHA_API_KEY", "jwt")
+  }
+  /** 引擎会读到 `reasoning: true` 的 `<providerID>:<modelID>` 全集(providerID = 注入用的引擎 id)。 */
+  const injectedReasoning = (cfg: NonNullable<ReturnType<typeof buildAlphaModelConfig>>) => {
+    const out: string[] = []
+    for (const [providerID, provider] of Object.entries(cfg.provider)) {
+      const models = (provider as { models: Record<string, { reasoning?: boolean }> }).models
+      for (const [modelID, model] of Object.entries(models)) if (model.reasoning === true) out.push(`${providerID}:${modelID}`)
+    }
+    return out.sort()
+  }
+
+  test("平台段:JSON 标 reasoning:true 的每个模型注入后带 reasoning:true;未标的**缺席**(不是 false)", () => {
+    keyEverything()
+    const p = buildAlphaModelConfig(userData)!.provider.alpha as { models: Record<string, { reasoning?: boolean }> }
+    const flagged = getModelCatalog().platformModels.filter((m) => m.reasoning).map((m) => m.id)
+    // 空集会让下面的逐项断言空转 —— 先钉住集合非空,且含本票实打确认「默认即思考」的 glm-5.2。
+    expect(flagged.length).toBeGreaterThan(0)
+    expect(flagged).toContain("glm-5.2")
+    for (const m of getModelCatalog().platformModels) {
+      expect({ id: m.id, reasoning: p.models[m.id]?.reasoning }).toEqual({ id: m.id, reasoning: m.reasoning ? true : undefined })
+    }
+  })
+
+  test("BYOK 段:同名平台条目标 reasoning 的模型注入后带 reasoning:true(与 picker 的 BYOK 徽标同一派生)", () => {
+    plantSecret("DEEPSEEK_API_KEY", "sk-1")
+    plantSecret("ZHIPU_API_KEY", "sk-2")
+    const cfg = buildAlphaModelConfig(userData)!
+    const deepseek = (cfg.provider["deepseek-byok"] as { models: Record<string, { reasoning?: boolean }> }).models
+    const zhipu = (cfg.provider["zhipuai-byok"] as { models: Record<string, { reasoning?: boolean }> }).models
+    expect(deepseek["deepseek-v4-pro"]).toEqual({ name: "deepseek-v4-pro", reasoning: true })
+    expect(deepseek["deepseek-v4-flash"]).toEqual({ name: "deepseek-v4-flash" })
+    expect(zhipu["glm-5.2"]).toEqual({ name: "glm-5.2", reasoning: true })
+    expect(zhipu["glm-4.5-air"]).toEqual({ name: "glm-4.5-air" })
+  })
+
+  test("徽标集合 == 引擎注入 reasoning 集合 —— 同一份目录、同一份 live 快照,两边必须走同一投影", () => {
+    keyEverything()
+    // live 快照收窄平台段(且把一个未标 reasoning 的模型留在册上):picker 与注入若各查一份目录,
+    // 这里就会分叉。
+    writeCatalogSnapshot(userData, {
+      ...liveBase,
+      models: [
+        { id: "glm-5.2", pricing: pair },
+        { id: "deepseek-v4-pro", pricing: pair },
+        { id: "claude-fable-5", pricing: pair },
+      ],
+    })
+    const cfg = buildAlphaModelConfig(userData)!
+    const injected = injectedReasoning(cfg)
+
+    const base = getModelCatalog()
+    const catalog: EffectiveCatalog = {
+      ...base,
+      platformModels: projectPlatformModels(base.platformModels, readCatalogSnapshot(userData)),
+      liveSync: { status: "cache" },
+      pricingBasisModelId: liveBase.pricingBasisModelId,
+    }
+    const rows = buildModelPickerRows({
+      catalog,
+      models: [],
+      listState: "ready",
+      keyStatusState: "ready",
+      keyStatus: Object.fromEntries(base.byokProviders.map((p) => [p.id, { configured: true, source: "keychain" as const }])),
+      accountState: "member",
+      sessionScoped: false,
+      query: "",
+    })
+    const badged = rows
+      .filter((row) => row.reasoning)
+      .map((row) => `${row.model.providerID}:${row.model.id}`)
+      .sort()
+
+    expect(badged.length).toBeGreaterThan(0)
+    expect(injected).toEqual(badged)
+    // 反例钉死方向:快照里未标 reasoning 的 claude-fable-5 两边都不亮;deepseek BYOK 的 v4-flash 也不亮。
+    expect(badged).not.toContain("alpha:claude-fable-5")
+    expect(badged).not.toContain("deepseek-byok:deepseek-v4-flash")
+    expect(badged).toContain("alpha:glm-5.2")
+    expect(badged).toContain("zhipuai-byok:glm-5.2")
   })
 })

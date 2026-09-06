@@ -1,6 +1,6 @@
 import type { ModelRef, ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { EffectiveCatalog, PricingMultiplier, ProviderKeyStatus } from "../../shared/alpha-model-types"
-import { byokEngineId } from "../../shared/alpha-model-types"
+import { byokEngineId, byokModelMeta } from "../../shared/alpha-model-types"
 import type { ComposerModel } from "./composer-state"
 import { t } from "../i18n"
 
@@ -154,14 +154,16 @@ export function buildModelPickerRows(input: {
       // The engine injects BYOK nodes under `<id>-byok` (byokEngineId) to dodge the models.dev
       // collision, so carry the engine id as the selectable model's providerID — inference must route
       // to the injected node. Display id (provider.id) stays for keyStatus/pico/name/key above.
-      const display = input.catalog.platformModels.find((model) => model.id === id)
+      // REQ-153 #1236:name/reasoning 与 sidecar 注入(main/alpha-models.ts)同一个函数派生 —— 徽标
+      // 亮 ⇔ 引擎 capabilities.reasoning === true。
+      const meta = byokModelMeta(input.catalog.platformModels, id)
       return {
         key: `${provider.id}:${id}`,
         group: "byok",
-        model: { id, providerID: byokEngineId(provider.id), name: display?.name ?? id, variants: [] },
+        model: { id, providerID: byokEngineId(provider.id), name: meta.name, variants: [] },
         providerName: provider.name,
         pico: provider.pico,
-        reasoning: !!display?.reasoning,
+        reasoning: meta.reasoning,
         availability: "available",
         // 「当前可执行」是另一个谓词:引擎未 ready 时如实说明还要等什么,但不撤销可选择性。
         // session 与 home 的可做之事不同,文案必须分开 —— 否则会出现「说可先选却点不了」。
