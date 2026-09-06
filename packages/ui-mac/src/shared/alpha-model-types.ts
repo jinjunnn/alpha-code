@@ -25,6 +25,23 @@ export type ByokProvider = {
   keyEnv: string
   pico: { letter: string; color: string }
   models: string[]
+  /** REQ-153 #1267:BYOK-only id 的**逐模型元数据槽**(键 = `models` 里的 id)。此前 BYOK 目录只有 id 列表,
+   *  展示名 / 「推理」徽标 / 档位一律从平台**同名**条目派生;`glm-4.5-air` 平台侧没有同名条目,于是它无徽标、
+   *  零档,而上游 `transform.options()` 对 `zhipuai*` + openai-compatible **无条件**写 `thinking: enabled` ——
+   *  用户看到「不思考的快模型」,请求却锁在思考档。这个槽是 alpha 自有目录里给它徽标 + 开/关两档的唯一旋钮。
+   *  读它的只有 {@link byokModelMeta};键不在 `models` 里、或与平台同名条目重叠,alpha-models.test.ts 当场红。 */
+  modelMeta?: Record<string, ByokModelMeta>
+}
+
+/** {@link ByokProvider.modelMeta} 的值:与 `PlatformModel` 的展示元数据同形(刻意没有 pricing —— 直连节点不经网关,
+ *  没有平台计价倍数;REQ-127 #679 / ADR-039 不允许本地出现任何价格主张)。 */
+export type ByokModelMeta = {
+  name?: string
+  reasoning?: boolean
+  /** 档名 → 引擎 request 参数,wire 形状按 `@ai-sdk/openai-compatible` 写(BYOK provider 全部 `compat: "openai"`)。
+   *  `{ thinking: { type: "disabled" } }` 是**显式关闭**:智谱 2026-09-06 实打,`disabled` 真的不再回 `reasoning_content`,
+   *  而 `type` 写错(如 `bogus`)会被上游**静默忽略并继续思考**(HTTP 仍 200)—— 值必须逐字是 `disabled`。 */
+  variants?: Record<string, Record<string, unknown>>
 }
 
 /** Engine-facing provider id for an injected BYOK direct node. We deliberately DON'T reuse the display
@@ -45,24 +62,32 @@ export const byokEngineId = (id: string): string => `${id}-byok`
  *  it does not depend on platform login/entitlement or on the engine's model list being loaded". */
 export const isByokEngineId = (providerID: string): boolean => providerID.endsWith("-byok")
 
-/** BYOK 行的展示名、推理能力与**推理档位**从**平台目录同名条目**派生 —— BYOK 目录本身只有 id 列表,
- *  没有逐模型元数据。
+/** BYOK 行的展示名、推理能力与**推理档位**的**唯一**派生函数。两个来源,显式优先:
+ *  ① `ByokProvider.modelMeta[id]`(REQ-153 #1267,BYOK-only id 自己的元数据槽);
+ *  ② 平台目录**同名条目**(`PlatformModel`),没有槽时的派生路径。
  *  REQ-153 #1236:picker 打「推理」徽标(renderer/model-picker-core.ts)与 sidecar 往引擎写
  *  `capabilities.reasoning`(main/alpha-models.ts)必须都走这一个函数。此前两边各查一次:picker 查
  *  平台目录、注入只写 `{name}` ⇒ 徽标亮着而引擎 `reasoning === false`,`transform.ts:712` 首行即
  *  `return {}` —— UI 对用户说了假话。传入的 `platformModels` 应是 `projectPlatformModels` 的产物
  *  (两边同一份投影),不是裸 JSON。
  *  REQ-153 #1266:`variants` 同样由这里派生,同一份数据同时进 sidecar 注入(config `models.<id>.variants`,
- *  引擎与自己派生的档位表 mergeDeep)与 picker 的 BYOK 行(档位 chip 的列表)。此前 BYOK 行恒 `variants: []`
- *  ⇒ 直连 deepseek-v4-pro / glm-5.2 亮着徽标却一档都选不到。档位表的 wire 形状(`reasoningEffort` →
- *  `reasoning_effort`)按平台 provider 的 npm(`@ai-sdk/openai-compatible`)写,直连节点能原样复用,
+ *  引擎与自己派生的档位表 mergeDeep)与 picker 的 BYOK 行(档位 chip 的列表)、会话投影
+ *  (`composerModelFromRef`)、自动默认(`model-default-core` 第③级)。档位表的 wire 形状
+ *  (`reasoningEffort` → `reasoning_effort`、`thinking` 原样透传)按 `@ai-sdk/openai-compatible` 写,
  *  前提是目录里每个 BYOK provider 都是 `compat: "openai"` —— alpha-models.test.ts 钉着这条不变量。
- *  没有同名平台条目的 BYOK-only id(如 `glm-4.5-air`)拿不到任何元数据:这是目录 schema 的边界,不是本函数的。 */
+ *  REQ-153 #1267:`engineProviderID` 是引擎侧 id(`<id>-byok`,{@link byokEngineId}),四个调用点手里都有它;
+ *  槽与同名平台条目**不得同时存在**(alpha-models.test.ts 钉着),所以「显式优先」在出货目录上永远不被触发,
+ *  只是给一个确定的读法。 */
 export function byokModelMeta(
-  platformModels: readonly Pick<PlatformModel, "id" | "name" | "reasoning" | "variants">[],
+  catalog: {
+    platformModels: readonly Pick<PlatformModel, "id" | "name" | "reasoning" | "variants">[]
+    byokProviders: readonly Pick<ByokProvider, "id" | "modelMeta">[]
+  },
+  engineProviderID: string,
   id: string,
 ): { name: string; reasoning: boolean; variants?: Record<string, Record<string, unknown>> } {
-  const display = platformModels.find((model) => model.id === id)
+  const own = catalog.byokProviders.find((provider) => byokEngineId(provider.id) === engineProviderID)?.modelMeta?.[id]
+  const display = own ?? catalog.platformModels.find((model) => model.id === id)
   return {
     name: display?.name ?? id,
     reasoning: !!display?.reasoning,

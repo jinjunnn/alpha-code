@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-30.1",
+  "version": "2026-09-06.1",
   "_byokNote": "BYOK 目录一律用 OpenAI 兼容端点(compat:openai)。引擎机制(provider.ts apiNpm 链,S34 真机实锤):models.dev 合并进来的模型保留 models.dev 的 npm(@ai-sdk/openai-compatible),只有本目录 declared 的模型用我们的 npm——若目录配 anthropic 端点,合并模型会以 openai 拼法打 anthropic baseURL(四不像 URL)。anthropic compat 仅供用户自定义节点(自担模型清单)。",
   "_note": "Single source of truth for alpha's model catalog (ADR-014 config-driven). Edit here to add/retire models, retune 展示元数据(显示名 / reasoning / web / variants), or change presets — no code change. Consumed by main/alpha-models.ts (opencode config injection) and the renderer model picker (via window.api.models.catalog). REQ-127 #679:平台代理的计价倍数由网关 GET /v1/models 下发(ADR-039),本文件不得出现任何价格主张。",
   "defaultModel": null,
@@ -166,7 +166,25 @@
       "models": [
         "glm-5.2",
         "glm-4.5-air"
-      ]
+      ],
+      "modelMeta": {
+        "glm-4.5-air": {
+          "name": "GLM-4.5-Air",
+          "reasoning": true,
+          "variants": {
+            "开": {
+              "thinking": {
+                "type": "enabled"
+              }
+            },
+            "关": {
+              "thinking": {
+                "type": "disabled"
+              }
+            }
+          }
+        }
+      }
     },
     {
       "id": "minimax",

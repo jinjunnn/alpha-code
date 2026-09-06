@@ -16,6 +16,8 @@ const CATALOG: ModelResolveCtx["catalog"] = {
     { id: "claude-sonnet-5", name: "Claude Sonnet 5", variants: { 低: {}, 中: {}, 高: {} } },
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
   ],
+  // REQ-153 #1267:BYOK-only id 的元数据槽;第③级自动默认到它时档位从这里派生(与 picker 行同一函数)。
+  byokProviders: [{ id: "zhipuai", modelMeta: { "glm-4.5-air": { reasoning: true, variants: { 开: { thinking: { type: "enabled" } }, 关: { thinking: { type: "disabled" } } } } } }],
 }
 
 const ctx = (over: Partial<ModelResolveCtx>): ModelResolveCtx => ({
@@ -179,7 +181,8 @@ describe("resolveDefaultModel(第②③④级:自动默认)", () => {
     })
   })
   // REQ-153 #1266:目录 BYOK 节点(`<id>-byok`)自动默认时,档位与 picker 行同一份派生(平台同名条目)。
-  test("第③级默认到目录 BYOK 节点时带上平台同名条目的档位;自定义节点仍零档", () => {
+  // REQ-153 #1267:没有平台同名条目的 BYOK-only id 从目录自己的 modelMeta 槽派生;既无同名条目也无槽 ⇒ 零档。
+  test("第③级默认到目录 BYOK 节点时带上平台同名条目 / modelMeta 槽的档位;两者皆无与自定义节点仍零档", () => {
     const withTwin = ctx({
       engineModels: [{ providerID: "zhipuai-byok", id: "claude-sonnet-5" }],
       configuredProviders: ["zhipuai-byok"],
@@ -188,10 +191,15 @@ describe("resolveDefaultModel(第②③④级:自动默认)", () => {
       kind: "model",
       model: { providerID: "zhipuai-byok", id: "claude-sonnet-5", name: "claude-sonnet-5", variants: ["低", "中", "高"] },
     })
-    const noTwin = ctx({ engineModels: [{ providerID: "zhipuai-byok", id: "glm-4.5-air" }], configuredProviders: ["zhipuai-byok"] })
-    expect(resolveDefaultModel(noTwin)).toEqual({
+    const withSlot = ctx({ engineModels: [{ providerID: "zhipuai-byok", id: "glm-4.5-air" }], configuredProviders: ["zhipuai-byok"] })
+    expect(resolveDefaultModel(withSlot)).toEqual({
       kind: "model",
-      model: { providerID: "zhipuai-byok", id: "glm-4.5-air", name: "glm-4.5-air", variants: [] },
+      model: { providerID: "zhipuai-byok", id: "glm-4.5-air", name: "glm-4.5-air", variants: ["开", "关"] },
+    })
+    const neither = ctx({ engineModels: [{ providerID: "zhipuai-byok", id: "glm-nowhere" }], configuredProviders: ["zhipuai-byok"] })
+    expect(resolveDefaultModel(neither)).toEqual({
+      kind: "model",
+      model: { providerID: "zhipuai-byok", id: "glm-nowhere", name: "glm-nowhere", variants: [] },
     })
   })
   test("登录但账户不可用 → 同样不默认平台模型,走 BYOK", () => {

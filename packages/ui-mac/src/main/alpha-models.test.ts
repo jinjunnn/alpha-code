@@ -348,31 +348,75 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     expect(deepseek["deepseek-v4-pro"]).toMatchObject({ name: "deepseek-v4-pro", reasoning: true })
     expect(deepseek["deepseek-v4-flash"]).toEqual({ name: "deepseek-v4-flash" })
     expect(zhipu["glm-5.2"]).toMatchObject({ name: "glm-5.2", reasoning: true })
-    expect(zhipu["glm-4.5-air"]).toEqual({ name: "glm-4.5-air" })
+    // #1267:BYOK-only 的 glm-4.5-air 没有平台同名条目,徽标来自目录自己的 modelMeta 槽(下一节逐字判)。
+    expect(zhipu["glm-4.5-air"]).toMatchObject({ name: "glm-4.5-air", reasoning: true })
   })
 
   // REQ-153 #1266:BYOK 段的 `variants` 与平台同名条目逐字相同,且与 picker BYOK 行的档位列表同源。
   // 此前注入不写 variants、picker 写死 `[]` ⇒ 直连 deepseek-v4-pro / glm-5.2 亮着徽标一档都选不到。
   // 档位表的 wire 形状按平台 provider 的 npm 写,直连节点能复用的前提是每个 BYOK provider 都是
   // openai-compat(上面「every catalog BYOK provider is openai-compat」那条钉着)——这里再钉 npm 逐字相等。
-  test("BYOK 段:同名平台条目的 variants 逐字注入;无同名条目的 BYOK-only id 一无所有;npm 与平台 provider 相同", () => {
+  test("BYOK 段:同名平台条目的 variants 逐字注入;无同名条目的 BYOK-only id 只从自己的 modelMeta 槽拿;npm 与平台 provider 相同", () => {
     keyEverything()
     const cfg = buildAlphaModelConfig(userData)!
     const platform = getModelCatalog().platformModels
     const platformNpm = getModelCatalog().platformProvider.npm
     let derived = 0
+    let own = 0
     for (const provider of getModelCatalog().byokProviders) {
       const injected = cfg.provider[`${provider.id}-byok`] as { npm: string; models: Record<string, { variants?: unknown }> }
       expect({ provider: provider.id, npm: injected.npm }).toEqual({ provider: provider.id, npm: platformNpm })
       for (const id of provider.models) {
+        const slot = provider.modelMeta?.[id]
         const twin = platform.find((model) => model.id === id)
-        expect({ provider: provider.id, id, variants: injected.models[id]?.variants }).toEqual({ provider: provider.id, id, variants: twin?.variants })
-        if (twin?.variants) derived++
+        const expected = slot ? slot.variants : twin?.variants
+        expect({ provider: provider.id, id, variants: injected.models[id]?.variants }).toEqual({ provider: provider.id, id, variants: expected })
+        if (slot?.variants) own++
+        else if (twin?.variants) derived++
       }
     }
-    // 空集会让上面的逐项断言空转:至少两个直连模型真的派生到了档位,且 BYOK-only 的 glm-4.5-air 没有。
+    // 空集会让上面的逐项断言空转:至少两个直连模型真的从平台同名条目派生到了档位,至少一个从自己的槽拿到。
     expect(derived).toBeGreaterThanOrEqual(2)
-    expect((cfg.provider["zhipuai-byok"] as { models: Record<string, { variants?: unknown }> }).models["glm-4.5-air"]?.variants).toBeUndefined()
+    expect(own).toBeGreaterThanOrEqual(1)
+  })
+
+  // REQ-153 #1267:BYOK-only id(平台无同名条目)的徽标 / 档位来自 `byokProviders[].modelMeta` 槽。上游
+  // transform.options() 对 zhipuai* + openai-compatible 无条件写 thinking:enabled,此前 glm-4.5-air 无徽标、
+  // 零档,请求却锁在思考档;`关` 档(thinking.type=disabled)是用户关掉它的唯一途径,而它要被引擎查到就必须
+  // 从这里逐字注入(engine provider.ts:1507 把 config variants 与自己派生的表 mergeDeep)。
+  // 槽的形状纪律(读它的只有 byokModelMeta,所以这里必须替它把关):
+  //   · 键 ∈ 该 provider 的 models —— 打错 id 的槽是静默 no-op,徽标不亮、档位不出、无人变红;
+  //   · 键不得与平台同名条目重叠 —— 一个 id 两处元数据 = 两份判据,「显式优先」不该在出货目录上被触发;
+  //   · 显式关闭档的 wire 值必须逐字 `disabled`:智谱 2026-09-06 实打,`type` 写错会被上游静默忽略并继续思考(HTTP 仍 200)。
+  test("#1267:glm-4.5-air 的 modelMeta 槽逐字注入(reasoning:true + 开/关);槽键 ∈ models 且不与平台同名条目重叠;关档 wire 值逐字 disabled", () => {
+    keyEverything()
+    const cfg = buildAlphaModelConfig(userData)!
+    const catalog = getModelCatalog()
+    const zhipu = (cfg.provider["zhipuai-byok"] as { models: Record<string, { name: string; reasoning?: boolean; variants?: Record<string, Record<string, unknown>> }> }).models
+    const slot = catalog.byokProviders.find((provider) => provider.id === "zhipuai")!.modelMeta!["glm-4.5-air"]!
+    expect(slot).toEqual({
+      name: "GLM-4.5-Air",
+      reasoning: true,
+      variants: { 开: { thinking: { type: "enabled" } }, 关: { thinking: { type: "disabled" } } },
+    })
+    expect(zhipu["glm-4.5-air"]).toEqual({ name: "glm-4.5-air", reasoning: true, variants: slot.variants })
+
+    const platformIds = new Set(catalog.platformModels.map((model) => model.id))
+    let slots = 0
+    for (const provider of catalog.byokProviders) {
+      for (const [id, meta] of Object.entries(provider.modelMeta ?? {})) {
+        slots++
+        expect({ provider: provider.id, id, listed: provider.models.includes(id) }).toEqual({ provider: provider.id, id, listed: true })
+        expect({ provider: provider.id, id, overlapsPlatform: platformIds.has(id) }).toEqual({ provider: provider.id, id, overlapsPlatform: false })
+        // 徽标 ⇒ 有档(#1266 的不变量对槽同样成立);每个显式关闭档的值逐字是 disabled。
+        expect({ provider: provider.id, id, badgeImpliesVariants: !meta.reasoning || Object.keys(meta.variants ?? {}).length > 0 }).toEqual({ provider: provider.id, id, badgeImpliesVariants: true })
+        for (const [label, options] of Object.entries(meta.variants ?? {})) {
+          const thinking = (options as { thinking?: { type?: unknown } }).thinking
+          if (thinking) expect({ provider: provider.id, id, label, type: thinking.type }).toEqual({ provider: provider.id, id, label, type: ["enabled", "disabled"].includes(String(thinking.type)) ? thinking.type : "<enabled|disabled>" })
+        }
+      }
+    }
+    expect(slots).toBeGreaterThanOrEqual(1) // 零个槽会让上面的逐项断言空转
   })
 
   test("徽标集合 == 引擎注入 reasoning 集合 —— 同一份目录、同一份 live 快照,两边必须走同一投影", () => {
@@ -419,5 +463,7 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     expect(badged).not.toContain("deepseek-byok:deepseek-v4-flash")
     expect(badged).toContain("alpha:glm-5.2")
     expect(badged).toContain("zhipuai-byok:glm-5.2")
+    // #1267:BYOK-only 的槽也在同一集合里 —— 平台快照收窄不影响它(它根本不从平台派生)。
+    expect(badged).toContain("zhipuai-byok:glm-4.5-air")
   })
 })

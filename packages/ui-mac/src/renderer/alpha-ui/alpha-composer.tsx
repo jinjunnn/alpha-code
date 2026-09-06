@@ -1224,6 +1224,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           defaultModel: cat.data.defaultModel,
           defaultPlatformModel: cat.data.defaultPlatformModel,
           platformModels: cat.data.platformModels,
+          byokProviders: cat.data.byokProviders,
         },
         engineModels,
       }

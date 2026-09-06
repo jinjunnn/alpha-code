@@ -129,9 +129,33 @@ packages/opencode/src/session/llm/request.ts:84-87
   `packages/opencode/src/index.ts run`(与打包 sidecar 同一份 v1 装配)打到测试进程里的假上游:
   有徽标 ⇒ chip 每一档的主请求体带推理参数且 `reasoning_effort` 值逐字对上;无徽标 ⇒ 零档且默认
   请求不带。未修的树上它点名 5 行红(见 PR `#1266` 正文的变异输出)。
-- **已知不修**:`zhipuai-byok/glm-4.5-air` 仍是「无徽标却带 `thinking: enabled`」—— 它是 BYOK-only 的
-  id,平台目录没有同名条目可派生,而 BYOK 目录 `models` 是 `string[]`,**没有逐模型元数据槽**;补槽是
-  目录 schema 扩面,不在 `#1266`/`#1267` 边界内,由父需求 jinjunnn/alpha-work#94 裁。判据里以
-  `KNOWN_UNFIXED` 登记,且登记自带过期断言(一旦有人补了槽让它亮徽标,登记本身会红)。
+- **`zhipuai-byok/glm-4.5-air`(`#1267`,2026-09-06 已修)**:它是 BYOK-only 的 id,平台目录没有同名
+  条目可派生,而 BYOK 目录 `models` 曾是纯 `string[]`,没有逐模型元数据槽 ⇒ 无徽标、零档,而上游
+  `transform.options()`(`transform.ts:1184-1192`)对 `providerID` 含 `zhipuai` + `@ai-sdk/openai-compatible`
+  **无条件**写 `thinking: { type: "enabled", clear_thinking: false }`。修法是目录 schema 扩面:
+  `byokProviders[].modelMeta[<id>]`(`shared/alpha-model-types.ts` `ByokModelMeta`),仍由同一个
+  `byokModelMeta` 派生(显式槽优先于平台同名条目;两者不得同时存在,alpha-models 套件钉着)。glm-4.5-air
+  现在标徽标并给 `开` / `关` 两档:`开 = { thinking: { type: "enabled" } }`、`关 = { thinking: { type: "disabled" } }`,
+  经 `request.ts:95` 的 mergeDeep 与上游默认合成 `{ type, clear_thinking: false }` 原样进请求体(假上游捕获实证)。
+  原先 `KNOWN_UNFIXED` 登记已按其过期断言删除;判据扩为「显式关闭档 ⇒ 请求体 `thinking.type` 逐字 `disabled`
+  且零推理控制参数」,并新增一条手段自证:硬塞不存在的档 ⇒ 上游默认 `enabled` 原样出现,交给「关」档判据必红。
+
+## 5. 智谱直连对 `thinking.type` 的真实受理(2026-09-06 实打,`glm-4.5-air`)
+
+`#1267` 的两条修法都要把 `thinking: { type: "disabled" }` 这个**上游 wire 形状**写进 alpha 自有文件;本 portfolio
+记录在案最贵的返工形态就是「手写一个别人文法的替身」,所以先实打再落笔。`POST https://open.bigmodel.cn/api/paas/v4/chat/completions`,
+`model: glm-4.5-air`,`max_tokens: 128`,同一句提问,只变 `thinking`(`clear_thinking: false` 随行,与引擎实际发出的一致):
+
+| 发出的 `thinking` | HTTP | `message` 键 | `reasoning_content` | `completion_tokens` | `finish_reason` |
+| --- | --- | --- | --- | --- | --- |
+| `{ type: "enabled", clear_thinking: false }` | 200 | content / reasoning_content / role | 249 字 | 128 | `length`(全花在思考上,正文为空) |
+| `{ type: "disabled", clear_thinking: false }` | 200 | content / role | **无** | 4 | `stop`(正文「等于2。」) |
+| `{ type: "bogus", clear_thinking: false }`(已知的坏) | **200** | content / reasoning_content / role | 260 字 | 128 | `length` |
+
+三条结论:①`disabled` **真的**关掉思考(无 `reasoning_content`,token 128 → 4);②`type` 写错**不报错**,上游静默
+回落到思考 —— **HTTP 200 不是受理证据**,`reasoning_content` 有没有才是;③因此目录里的关闭档值必须逐字 `disabled`,
+alpha-models 套件钉住每个 `thinking.type ∈ {enabled, disabled}`(变异实测:写成 `disable` 当场红)。
+端到端复核:用生产 `buildAlphaModelConfig` 的配置起本仓引擎 `run --model zhipuai-byok/glm-4.5-air`,默认 / `--variant 开` /
+`--variant 关` 三次都 rc=0 并拿到回答(3.5 s / 3.0 s / 2.4 s)—— 引擎实际发出的三种请求体上游都受理。
 - **未验**:`deepseek-v4-pro` 直连与平台节点收到 `reasoning_effort: max` 的真实受理情况(无凭据;
   `#1239` 只对智谱回放过 `max`)。
