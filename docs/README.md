@@ -22,6 +22,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | How long the two outbound fetch chains in `packages/core` can actually block, and which shipped shapes never reach them | [`architecture/2026-08-23-network-timeout-recon.md`](architecture/2026-08-23-network-timeout-recon.md) |
 | 为什么 Chromium 内置 PDF viewer 在隔离 session 里画不出页面(两条独立成因,都不报错) | [`architecture/2026-09-03-electron-pdf-viewer-session.md`](architecture/2026-09-03-electron-pdf-viewer-session.md) |
 | 第三方 Office 渲染库放在哪里跑,为此放宽了什么(以及负向控制证明没削弱 HTML 那条路) | [`architecture/2026-09-03-office-layout-isolation.md`](architecture/2026-09-03-office-layout-isolation.md) |
+| 外部技能目录(`~/.claude/skills` 等)为什么维持关闭:那行 flag 是 ADR-024 的安全裁决、同意门三条入口已上线且在本机弹过四次、打开会裸露的七类面逐一对照导入门 | [`architecture/2026-09-06-external-skills-inheritance-decision.md`](architecture/2026-09-06-external-skills-inheritance-decision.md) |
 | Platform and endpoint integration                                    | [`contracts/`](contracts/)                                           |
 | Session tool permission DTOs and decision receipts                   | [`contracts/session-permission.md`](contracts/session-permission.md) |
 | REQ-131 分层工具策略:三态/四类/selector、cap 合成、binding guard、分区持久化与 V1 session grant 语义 | [`contracts/tool-policy.md`](contracts/tool-policy.md)               |

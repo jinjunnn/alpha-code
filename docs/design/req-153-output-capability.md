@@ -185,8 +185,11 @@ config `provider.<id>.models` 的 **KEY**(`provider.ts:1433`),alpha 注入时不
 生效路径只有两条:`~/.config/opencode/skills/`(17 个,经 `config/paths.ts:26`)
 + `ALPHA_FACTORY_SKILL_DIRS` 注入的 7 个出厂技能,加内置 `customize-opencode`(被 deny)
 = 25,与引擎日志 `message=init count=25` 算术吻合。
-**`~/.claude/skills`、`~/.agents/skills`、项目 `.claude/` 全部关闭** ——
-`ui-mac/src/main/ecosystem-import.ts:28-33` 无条件注入 `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`。
+**`~/.claude/skills`、`~/.agents/skills`、项目 `.claude/` 默认不继承** ——
+`ui-mac/src/main/ecosystem-import.ts:28-32` set-if-unset 注入 `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`
+(ADR-024 安全裁决;`ALPHA_ECOSYSTEM_INHERIT=1` 逃生;同意后的进入通道是安装期转换导入,
+本机当前 dev 环境的迁移门 2026-07-23 已弹过并被选「不导入」)。本文首版写的「无条件注入」是误述,
+勘破与裁决见 [`../architecture/2026-09-06-external-skills-inheritance-decision.md`](../architecture/2026-09-06-external-skills-inheritance-decision.md)(`#1243`)。
 
 - **空壳技能 3 个**(`canvas-design`/`brand-guidelines`/`mcp-builder`,各 8 行,正文
   「请补充上游内容」)。system 段只注入 name+description+location(`skill/index.ts:321`),
