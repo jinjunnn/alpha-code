@@ -72,6 +72,7 @@
 5	packages/ext	src/alpha-sandbox-escape.test.ts	-	REQ-138/#1075 AC2「越界写入落不了盘」的唯一执行者:经生产 wrapEngineShell 装出的 wrapper+profile 真跑 /usr/bin/sandbox-exec,整类逃逸语料正反两跑(围栏 ON 落不了盘 / 同语料围栏 OFF 全部落盘 —— 先证明语料能测出已知的坏)。#1153 前未登记,整删无一门变红(ext 地板 161−13=148>100)。[平台:darwin] 真围栏语料只在 darwin 存在,非 darwin 上文件自报 skip,由本登记簿按「自报 0 条」验证标注,不豁免
 4	packages/ext	src/alpha-sandbox-reassert.test.ts	-	REQ-138/#1075 AC3「用户改 config 不产生无围栏执行」的唯一执行者:每次加载重新包裹 —— cfg.shell 恒指向 wrapper、用户真 shell 记进 ALPHA_REAL_SHELL、填 wrapper 路径不自嵌套。纯逻辑(platform 用 seam 强制 darwin,fs 捕获式 mock),全平台照跑 —— #1153 票面称它 darwin-only 系误记,实测文件零平台门控,故为普通行
 4	packages/ext	src/alpha-sandbox-setid-exec.test.ts	-	#1149 已知代价 K1 的单一权威:围栏开着时 set-ID 二进制在围栏内不可 exec(用户可观察:shell 工具跑 ps/top 得 Operation not permitted)。判据双向各有正样本(意外恢复 exec 红 / 误伤非 set-ID 也红),成员资格从盘上 mode 的 S_ISUID|S_ISGID 派生不靠清单,空输出不算拦住(STARTED 标记缺席 = 测量作废)。真跑 sandbox-exec。[平台:darwin] 非 darwin 上文件自报 skip,由本登记簿按「自报 0 条」验证标注
+7	packages/ext	src/platform-output-cap.test.ts	-	REQ-153 #1238 harness 侧 max_tokens 跟随 route 上限的唯一执行者:平台代理节点(provider.options.baseURL 逐字 == ALPHA_BASE_URL)的 chat.params 把 maxOutputTokens 置空(请求体不带 max_tokens,网关按 route 上限填),直连 BYOK / 自定义节点 / 无 ALPHA_BASE_URL 时保持上游 32000;判据形状域(尾斜杠、大小写、非字符串)+ 真 AlphaExt 钩子两层。删掉它,平台节点回落 32000 硬顶而无其它测试变红。精确条数=实测 7,不留余量
 
 # ── llm(路由/凭证层;CI 不整包跑上游 llm 测试,只点名 alpha 自有的闸)────────────
 3	packages/llm	test/auth-fail-closed.test.ts	-	#652 凭证 fail-closed:未声明 auth 的 route 不得裸奔(0 次 HTTP + 具名失败),显式 Auth.none 仍放行

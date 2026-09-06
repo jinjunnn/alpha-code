@@ -40,8 +40,19 @@ anthropic 腿落 `worker.ts:1924`。实跑生产函数确认:客户端不传 →
 于是实际链路 = `harness 32000` → `gateway clamp 8192` → `上游允许 131072`。
 **两层都低于上游,只抬一层会撞上另一层。**
 
-`32000` 的来源尚未定位 —— 它不是 `packages/llm/src/protocols/anthropic-messages.ts:509`
-的 `outputLimit`(该缺省为 4096,不在这条路径上)。**定位它是 T3 的第一步,不是本基线的结论。**
+`32000` 的来源(T3 `alpha-code#1238` 2026-09-06 实跑定位,单变量,假上游捕获本仓真 CLI):
+`packages/opencode/src/provider/transform.ts:18` `OUTPUT_TOKEN_MAX = 32_000`,经 `:1394-1396`
+`maxOutputTokens(model, cap = OUTPUT_TOKEN_MAX) = Math.min(model.limit.output, cap) || cap`,由
+`session/llm/request.ts:133` 以 `flags.outputTokenMax`(env `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX`,
+`effect/runtime-flags.ts:52`)当 cap 调用;config 声明的模型 `limit.output` 缺省 0(`provider.ts:1497`)
+⇒ `Math.min(0, 32000) = 0 || 32000`。它不是 `packages/llm/src/protocols/anthropic-messages.ts:509`
+的 `outputLimit`(该缺省为 4096,不在这条路径上)。实测:`limit.output=100` → 100;
+`limit.output=131072` → **仍 32000**(config 只能往低调,抬不上去);env 200000 + `limit.output=131072`
+→ 131072;env 200000 单独 → 200000。**结论:config `limit.output` 单独做不到 T3;而全局 env cap 会同时
+抬直连 BYOK 节点并改变 `session/overflow.ts` 的 compaction 阈值。** T3 的落点因此是 alpha 插件的
+`chat.params`:对平台代理节点把 `maxOutputTokens` 置空(请求体不带 `max_tokens`),网关按上文
+`min(客户端值(如有), route.maxOutputTokens)` 填 route 值 —— 零常量、零同步,网关抬多少 harness 跟多少
+(上游同款先例 `plugin/cloudflare.ts:64-74`)。
 
 ### 1.2 `maxOutputTokens` 现值与上游允许值(2026-09-06 实读,exit=0,公开 GET,零费用)
 
