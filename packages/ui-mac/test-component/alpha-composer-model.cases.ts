@@ -526,6 +526,87 @@ describe("AlphaComposer production model seam", () => {
     mounted.dispose()
   })
 
+  // ── `#1249`:模型没有推理档位时,那个入口必须**说出来**,不能沉默地什么都不做 ─────────
+  //
+  // 票面的形状是上游 CLI:`--variant high` 打在没有 variants 的模型上静默无效
+  // (`packages/opencode/src/cli/cmd/run.ts:212` 把它收下 → `src/session/llm/request.ts:84-87`
+  // 拿 `input.model.variants[input.user.model.variant]` 一查为空 ⇒ 合并进 options 的是
+  // `undefined` ⇒ 无声无息)。那两处都在 UPSTREAM_PATHS 里,不改;而**产品这一侧根本不出 CLI**
+  // (`packages/ui-mac/package.json` 无 `bin`、electron-builder 的 extraResources 里没有可执行
+  // 文件、`src/main/server.ts:295` fork sidecar 时 argv 是 `[]`),所以用户表达「用高强度思考」
+  // 的唯一入口就是这颗档位 chip。可达性勘破见 docs/architecture/2026-09-06-model-variant-reachability.md。
+  //
+  // 「不发引擎不认识的档」那一半已经有闸(composer-state.test.ts 的 C28 三条 +
+  // model-picker-core.test.ts 的 `withModelVariant("不存在")`)。**「告诉用户为什么没生效」这一半
+  // 今天是真的做了、却没有任何判据** —— 而 `alpha-models.json` 的 12 个平台模型里有 10 个没有
+  // 档位,所以那是常态而不是边角。把 `supported()` 的分支删掉、或把弹层那段 hint 换成空,
+  // 用户点开档位入口看到的就是一片空白 —— 正是票面描述的那种沉默,而没有任何东西会变红。
+  //
+  // 控制组在同一条用例里:**有**档位的模型必须给出每一档。没有它,一个「弹层根本没渲染」的
+  // 实现也能满足下面每一条否定断言(空对空地绿)。
+  test("#1249 无档位模型:档位入口如实说明不支持,不静默 —— 有档位的模型作控制组", async () => {
+    installApi()
+    const withVariants = catalog.platformModels.find((model) => model.variants)
+    const withoutVariants = catalog.platformModels.find((model) => !model.variants)
+    // 夹具取自生产的 alpha-models.json。两类各要有一个,否则这条用例测不到它要测的东西。
+    expect(
+      { withVariants: withVariants?.id, withoutVariants: withoutVariants?.id },
+      "alpha-models.json 里凑不出「有档位」+「无档位」各一个模型 —— 本次测量作废(不是通过)",
+    ).toEqual({ withVariants: expect.any(String), withoutVariants: expect.any(String) })
+
+    const contractFor = (id: string): ModelContract => ({
+      list: async () => platformModels,
+      current: async () => ({ providerID: catalog.platformProvider.id, id }),
+      switch: async () => {},
+    })
+    const mountWith = (id: string) =>
+      mount(() =>
+        createComponent(AlphaComposerRuntime, {
+          mode: "session",
+          projects,
+          directory: () => "/A",
+          sessionID: () => "A",
+          command,
+          modelContract: contractFor(id),
+        }),
+      )
+    const chipOf = (host: HTMLElement) => host.querySelector<HTMLButtonElement>('[data-kind="effort"] > button')!
+    const popItems = () => [...document.body.querySelectorAll<HTMLButtonElement>(".a-pop-item")].map((b) => b.textContent?.trim() ?? "")
+
+    // ── 控制组:有档位的模型 ⇒ chip 不 muted,弹层逐档给出按钮 ────────────────────
+    const on = mountWith(withVariants!.id)
+    const onChip = chipOf(on.host)
+    await waitFor(() => expect(onChip.disabled).toBe(false))
+    expect(onChip.getAttribute("data-muted"), "有档位的模型也被画成不可用 —— 控制组本身坏了").toBeNull()
+    click(onChip)
+    await waitFor(() => {
+      for (const tier of Object.keys(withVariants!.variants!))
+        expect(popItems(), `有档位的模型没有列出档位 ${tier} —— 这条用例测不到目标`).toContain(tier)
+    })
+    on.dispose()
+    document.body.replaceChildren()
+
+    // ── 生产:无档位的模型 ⇒ chip 静默不了 ────────────────────────────────────
+    const off = mountWith(withoutVariants!.id)
+    const offChip = chipOf(off.host)
+    await waitFor(() => expect(offChip.disabled).toBe(false))
+    // ① chip 自身就已经在说话:muted + 值位显式的「—」,不是一个看起来能选的档位。
+    expect(offChip.getAttribute("data-muted"), "无档位的模型,档位入口看起来仍然可选").toBe("")
+    expect(offChip.querySelector(".a-comp-eff")?.textContent?.trim()).toBe("—")
+    // ② 悬停/无障碍那一层给出原因(zh 由 scripts/test-preload.ts 钉死)。
+    expect(offChip.title, "档位入口没说清为什么用不了").toBe("当前模型不支持推理档")
+    // ③ 点开之后**点名那个模型**,而不是一片空白 —— 票面那种「你以为设上了」的沉默正是这里。
+    click(offChip)
+    await waitFor(() => {
+      const note = document.body.querySelector(".a-pop-note")?.textContent ?? ""
+      expect(note, "点开档位入口是空的 —— 用户拿不到任何解释").toContain(withoutVariants!.name)
+      expect(note).toContain("未提供推理档位")
+    })
+    // ④ 且**一个档位按钮都不给** —— 给了就等于让用户去选一个引擎不认识的档。
+    expect(popItems(), "无档位的模型仍然列出了可点的档位").toEqual([])
+    off.dispose()
+  })
+
   test("真实 composer 打开 picker 时恰好挂载一个 canonical owner 实例", async () => {
     installApi()
     const contract: ModelContract = {
