@@ -42,8 +42,19 @@ review_after: 2026-10-14
 # ①′′ 刷新随包 extension seed(REQ-102):node scripts/sync-extension-seed.mjs
 #    (同样走 trust→stable→payload 全链验签,并与上一步 catalog 字节互钉;resources/extension-seed 禁手编。
 #     离线演练可用 --from-dir <alpha-web checkout>,但仍必须验签。脚本连跑两次后 git diff 必须不再变化。)
-# ① 版本号:改 packages/ui-mac/package.json 的 "version"(唯一真源;About/崩溃屏/updater 都读它)
+# ① 版本号:改 packages/ui-mac/package.json 的 "version"(语义真源;About/崩溃屏/updater 都读它)
 #    例:0.1.0 → 0.1.1。用真实 semver,别回 0.0.0。
+# ①a 同一个字面量还被抄在**另外三处**,必须同批抬(`#1255`:0.1.10 那次只抬了真源,于是两条
+#    consumer-pin 断言在 alpha 基线上恒红了两天,与任何人的改动无关,并诱发 `--no-verify`):
+#      · packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-640/ledger-page.json 的 consumer_version
+#      · packages/alpha-contracts-consumer/fixtures/consumers/alpha-code-681/model-catalog-v2.json 的 consumer_version
+#        (这两格是 alpha-platform 的 cutover gate 读的「本仓已切到哪一版」)
+#      · bun.lock 里 workspaces["packages/ui-mac"].version —— **不要手改**,在仓根跑一次
+#        `bun install` 让 bun 自己写回;漏掉它,之后每一次 bun install(含 worktree-bootstrap.sh)
+#        都会把工作树弄脏。注意 `bun install --frozen-lockfile` **不**报这个不一致(实测 exit 0)。
+#    别照这段清单手工核对 —— 跑判据:
+#      bun test --cwd packages/ui-mac src/main/shipped-version-propagation.test.ts
+#    它枚举全部 consumer-pin 夹具 + bun.lock,把所有没跟上的格子连同改法一次打出来。
 
 # ② 打签名+公证包(package:mac,不装机)
 source ~/.alpha-code-signing/signing.env               # ALPHA_SIGN=1 + Apple 凭证
