@@ -13,6 +13,7 @@ import { injectFactorySkillPaths } from "./factory-paths"
 import { injectSkillGenerationPaths } from "./gen-skill-paths"
 import { rebrandSystem } from "./prompt-rebrand"
 import { validateCloudToolInput, validateCloudToolOutput } from "./cloud-contract-hook"
+import { platformOutputCap } from "./platform-output-cap"
 import {
   assertWebSearchToolAllowed,
   computeMcpOwnership,
@@ -77,6 +78,16 @@ export const AlphaExt: Plugin = async (input) => {
     },
     "tool.execute.after": async (hookInput, output) => {
       validateCloudToolOutput(hookInput.tool, output)
+    },
+    // REQ-153 #1238:平台代理节点不发 `max_tokens`,由网关按 route 上限填(32000 的来源、为什么是
+    // 「不发」、以及判据,见 platform-output-cap.ts)。跑在 transform 之后(request.ts:118),只改这一次
+    // 请求;直连 BYOK / 自定义节点原样。
+    "chat.params": async (hookInput, output) => {
+      const decision = platformOutputCap({
+        providerBaseURL: hookInput.provider.options?.baseURL,
+        alphaBaseURL: process.env.ALPHA_BASE_URL,
+      })
+      if (decision.omit) output.maxOutputTokens = undefined
     },
     // REQ-060 项目级扩展物 `.code-puppy`-only:config hook 按 instance 读 `<directory>/.code-puppy/alpha.jsonc`
     // 并把项目级 mcp / agent / command / skills.paths 合并进 cfg —— 引擎经 config 消费,项目不产生
