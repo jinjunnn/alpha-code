@@ -1,0 +1,14 @@
+$ python3 probe.py            # 2026-09-07,owner 授权实打,本机 alpha-secrets 里的真实凭据
+leg/model                    probe                      HTTP   detail
+zhipuai/glm-5.2              ceiling probe (99999999)   400    {"error":{"code":"1210","message":"max_tokens参数非法：限制数值范围[1,131072]"}}
+                             accept @131072             200    completion_tokens=16 finish=stop
+                             reject @131073             400    {"error":{"code":"1210","message":"max_tokens参数非法：限制数值范围[1,131072]"}}
+zhipuai/glm-4.5-air          ceiling probe (99999999)   400    {"error":{"code":"1210","message":"max_tokens参数非法：限制数值范围[1,98304]"}}
+                             accept @98304              200    completion_tokens=35 finish=stop
+                             reject @98305              400    {"error":{"code":"1210","message":"max_tokens参数非法：限制数值范围[1,98304]"}}
+deepseek/deepseek-v4-flash   ceiling probe (99999999)   400    {"error":{"message":"Invalid max_tokens value, the valid range of max_tokens is [1, 393216]","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}
+                             accept @393216             200    completion_tokens=9 finish=stop
+                             reject @393217             400    {"error":{"message":"Invalid max_tokens value, the valid range of max_tokens is [1, 393216]","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}
+deepseek/deepseek-v4-pro     ceiling probe (99999999)   400    {"error":{"message":"Invalid max_tokens value, the valid range of max_tokens is [1, 393216]","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}
+                             accept @393216             200    completion_tokens=9 finish=stop
+                             reject @393217             400    {"error":{"message":"Invalid max_tokens value, the valid range of max_tokens is [1, 393216]","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}

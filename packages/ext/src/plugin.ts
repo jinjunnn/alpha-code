@@ -14,6 +14,7 @@ import { injectSkillGenerationPaths } from "./gen-skill-paths"
 import { rebrandSystem } from "./prompt-rebrand"
 import { validateCloudToolInput, validateCloudToolOutput } from "./cloud-contract-hook"
 import { platformOutputCap } from "./platform-output-cap"
+import { byokOutputCap } from "./byok-output-cap"
 import {
   assertWebSearchToolAllowed,
   computeMcpOwnership,
@@ -79,15 +80,31 @@ export const AlphaExt: Plugin = async (input) => {
     "tool.execute.after": async (hookInput, output) => {
       validateCloudToolOutput(hookInput.tool, output)
     },
-    // REQ-153 #1238:平台代理节点不发 `max_tokens`,由网关按 route 上限填(32000 的来源、为什么是
-    // 「不发」、以及判据,见 platform-output-cap.ts)。跑在 transform 之后(request.ts:118),只改这一次
-    // 请求;直连 BYOK / 自定义节点原样。
+    // 输出上限两条腿,都跑在 transform 之后(request.ts:118),都只改这一次请求:
+    //   · 平台代理节点(REQ-153 #1238):**不发** `max_tokens`,由网关按 route 上限填(platform-output-cap.ts);
+    //   · 直连 BYOK 节点(REQ-156):没有网关替它填,按**逐模型实读上限**写(byok-output-cap.ts);
+    //   · 用户自定义节点、以及本表没有读数的 BYOK 模型:原样(上游的 32000)。
     "chat.params": async (hookInput, output) => {
       const decision = platformOutputCap({
         providerBaseURL: hookInput.provider.options?.baseURL,
         alphaBaseURL: process.env.ALPHA_BASE_URL,
       })
-      if (decision.omit) output.maxOutputTokens = undefined
+      if (decision.omit) {
+        output.maxOutputTokens = undefined
+        return
+      }
+      // REQ-156:直连 BYOK 节点没有网关替它填,于是它一直发上游默认的 32000。查得到实读上限就抬到
+      // 那个数(逐模型、只抬不降、无读数不动),理由与三点实打证据见 byok-output-cap.ts。
+      // `?.` 不是防御性洁癖:本钩子里抛出去会**打死整条请求**(比不抬上限严重得多),而 `model` 是
+      // 引擎递进来的对象 —— 类型说 `api` 必在,但类型不是运行时保证。取不到就查不到读数 ⇒ 不改,
+      // 正是 fail-closed 想要的那一支。
+      const byok = byokOutputCap({
+        engineProviderID: hookInput.model?.providerID,
+        apiModelID: hookInput.model?.api?.id,
+        providerBaseURL: hookInput.provider.options?.baseURL,
+        current: output.maxOutputTokens,
+      })
+      if (byok.raise) output.maxOutputTokens = byok.value
     },
     // REQ-060 项目级扩展物 `.code-puppy`-only:config hook 按 instance 读 `<directory>/.code-puppy/alpha.jsonc`
     // 并把项目级 mcp / agent / command / skills.paths 合并进 cfg —— 引擎经 config 消费,项目不产生

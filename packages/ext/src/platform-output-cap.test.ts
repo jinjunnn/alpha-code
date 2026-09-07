@@ -85,7 +85,10 @@ describe("真 AlphaExt 的 chat.params 钩子", () => {
       options: { reasoningEffort: "high" },
     })
   })
-  test("直连 BYOK 节点:maxOutputTokens 原样(上游的 32000)", async () => {
+  // REQ-156 起这句话有了前提:直连 BYOK 节点**没有读数时**才停在 32000 —— 有读数的由
+  // `byok-output-cap.ts` 抬到该模型实读上限(见 byok-output-cap.test.ts)。这里的 `model: {}`
+  // 取不到 providerID/api.id ⇒ 查不到读数 ⇒ 走的正是「无读数」那一支。
+  test("直连 BYOK 节点:本模块不省略;无读数时仍是上游的 32000", async () => {
     process.env.ALPHA_BASE_URL = GW
     const out = await call(await load(), "https://api.deepseek.com/v1")
     expect(out.maxOutputTokens).toBe(32000)
