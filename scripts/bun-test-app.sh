@@ -50,8 +50,10 @@ log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 
 run_bun_test() {
-  # CI=1 的理由见抬头;--preload 与上游 package.json 的 test:unit 同款。
-  (cd "$WORKDIR" && CI=1 bun test --timeout "$ALPHA_TEST_TIMEOUT_MS" --preload ./happydom.ts "$@") >"$log" 2>&1
+  # CI=1 的理由见抬头;--conditions=solid 与 --preload 与上游 package.json 的 test:unit 同款
+  # (pin e11dbd020 起上游自己加了 --conditions=solid:少了它,solid-js/web 解析到 server 构建,
+  # 十余个上游测试文件在加载期就死于 `Export named 'use' not found`)。
+  (cd "$WORKDIR" && CI=1 bun test --conditions=solid --timeout "$ALPHA_TEST_TIMEOUT_MS" --preload ./happydom.ts "$@") >"$log" 2>&1
 }
 
 summarize() {
@@ -154,10 +156,10 @@ fi
 # `utils/persist.ts` 的 `createResource` 处直接抛)。cases 的精确条数登记在宿主自己的断言里
 # (取回真实 pass/fail/文件数再比,不是 `toContain`),`.cases.ts` 不被 bun 自动发现。
 REGISTERED_COUNTS="
-src/components/prompt-input/submit.test.ts 8
+src/components/prompt-input/submit.test.ts 9
 src/context/permission-auto-respond.test.ts 12
 src/context/terminal-command.test.ts 1
-src/pages/layout/helpers.test.ts 22
+src/pages/layout/helpers.test.ts 24
 src/utils/session-route.test.ts 10
 "
 
