@@ -4,8 +4,8 @@ kind: architecture
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-28
-review_after: 2026-10-28
+last_reviewed: 2026-09-06
+review_after: 2026-12-06
 ---
 
 # Upstream integration
@@ -31,10 +31,51 @@ verifies (exact commit-sha match), and pushes that bundle. It never executes any
 code from the merged tree, so the push token is never in the same process as
 code sourced from `anomalyco/opencode`.
 
-`packages/app` and `packages/ui` are not ordinary upstream mirrors. They are an
-L3 frozen takeover restored from `frontend-freeze-base-2` after sync. The
-restore must preserve the typed `AppSurfaces` seam and pass the freeze/anchor
-tests.
+`packages/app` and `packages/ui` are not ordinary upstream mirrors. Under
+ADR-034 (B: monthly pin + patch) they are a **projection** of the upstream pin
+recorded in [`frontend/frontend-pin.lock`](../../frontend/frontend-pin.lock)
+plus the single Alpha SOT patch
+[`frontend/alpha-patches/alpha-frontend.patch`](../../frontend/alpha-patches/alpha-frontend.patch).
+After every merge, `apply_alpha_frontend_delta` rebuilds them
+(`rm -rf` → `git checkout <pin> --` → `git apply --3way`) and must preserve the
+typed `AppSurfaces` seam, the REQ-088 narrow export, and the vendored client
+tarball; each is a loud-fail. The frontend only moves forward through the
+monthly bump described in [`frontend/README.md`](../../frontend/README.md).
+
+### Step order on the conflict path is load-bearing (`#1272`)
+
+`packages/session-ui/package.json` depends on the vendored client tarball
+directly (`"@opencode-ai/client": "file:../app/vendor/<name>.tgz"`), and that
+binary exists **only inside the SOT patch** — the pin has no
+`packages/app/vendor` at all (measured 2026-09-06:
+`git ls-tree 849c2598 packages/app/vendor` prints nothing). So any `bun install`
+that runs before `apply_alpha_frontend_delta` re-applies the patch is looking at
+a tree where the file it needs is absent, and it dies with
+`… failed to resolve`.
+
+Until `#1272` the conflict branch did exactly that — it resolved conflicts by
+checking out the bare pin, then ran `bun install`, and only afterwards re-applied
+the patch. That path was therefore **structurally unusable**, and the
+`VENDORED` loud-fail written for precisely this case (it names the exact file and
+points at `git diff --binary` / the monthly bump) never got the chance to print.
+The judgement was right; the order was wrong.
+
+The order is now: conclude the merge → `apply_alpha_frontend_delta` → `bun install`
+→ commit the regenerated `bun.lock`. The lockfile step is not optional: the
+conflict branch resolves `bun.lock` with `--theirs`, i.e. upstream's copy, which
+does not contain Alpha's workspace packages; only an install that runs against
+the final tree regenerates a lockfile that matches what gets pushed.
+
+The gate is
+[`packages/ui-mac/src/main/sync-upstream-merge-order.test.ts`](../../packages/ui-mac/src/main/sync-upstream-merge-order.test.ts).
+It parses that step's `run` body out of the workflow with `Bun.YAML`, executes it
+with `bash -e` (what Actions uses for a `run:` with no `shell:` key) against a
+real throwaway git repository, and observes a stub `bun` that records whether the
+vendored asset was on disk at the moment install was called. Two of its nine
+cases are **mutation arms**: they swap the two lines back to the pre-`#1272`
+order and assert the same fixture dies with `failed to resolve` and prints no
+`::error::` at all — the gate is proven to detect the known-bad before it is
+trusted about the unknown-good.
 
 ## Sovereignty ladder
 
