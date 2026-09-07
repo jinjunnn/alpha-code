@@ -25,19 +25,25 @@ import { COMPOSER_PLACEHOLDER, COMPOSER_PLACEHOLDER_UPSTREAM_LITERAL } from "../
 // Per-locale [from, to] pairs. `from` must be an exact substring of the upstream source.
 // Keyed by the locale dict path so we only ever touch the intended file.
 const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
-  // In-session composer placeholder is a HARDCODED literal (not i18n). The 849c2598 frontend pin
-  // moved it out of prompt-input.tsx into prompt-input/placeholder.ts:promptDesignPlaceholder().
-  // Rewrite it to the SAME text the alpha home composer uses — ONE constant serves both surfaces
-  // (src/shared/composer-copy.ts, REQ-038 目标⑥). Zero disk edit (ADR-005/007).
-  "app/src/components/prompt-input/placeholder.ts": [
-    [COMPOSER_PLACEHOLDER_UPSTREAM_LITERAL, JSON.stringify(COMPOSER_PLACEHOLDER)],
+  // In-session composer placeholder. Pin 849c2598 had it as a HARDCODED literal in
+  // prompt-input/placeholder.ts:promptDesignPlaceholder(); pin e11dbd020 turned it into the
+  // `ui.promptInput.placeholder.normal` i18n key of packages/ui (one value per locale). Rewrite the
+  // en/zh/zht values to the SAME text the alpha home composer uses — ONE constant serves both surfaces
+  // (src/shared/composer-copy.ts, REQ-038 目标⑥). Zero disk edit (ADR-005/007). The key is prefixed
+  // with `packages/` so it cannot match a same-named file under another package.
+  "packages/ui/src/i18n/en.ts": [[COMPOSER_PLACEHOLDER_UPSTREAM_LITERAL, JSON.stringify(COMPOSER_PLACEHOLDER)]],
+  "packages/ui/src/i18n/zh.ts": [
+    ['"随便问点什么， {{slash}} 可查看命令， {{at}} 可添加上下文..."', JSON.stringify(COMPOSER_PLACEHOLDER)],
+  ],
+  "packages/ui/src/i18n/zht.ts": [
+    ['"想問什麼都可以， {{slash}} 可使用命令， {{at}} 可加入上下文..."', JSON.stringify(COMPOSER_PLACEHOLDER)],
   ],
   // Crash screen (C28): rewrite the OpenCode-branded feedback link + Discord icon in the
   // ErrorBoundary fallback JSX. The visible "report to … team" / "on Discord" TEXT is i18n (below);
   // the href + icon are hardcoded JSX, rewritten here. Feedback routes to alpha's web root until a
   // dedicated feedback page exists.
   "app/src/pages/error.tsx": [
-    ['platform.openLink("https://opencode.ai/desktop-feedback")', 'platform.openLink("https://codepuppy.cn")'],
+    ['platform.openExternal("https://opencode.ai/desktop-feedback")', 'platform.openExternal("https://codepuppy.cn")'],
     ['<Icon name="discord" class="text-text-interactive-base" />', ""],
   ],
   "app/src/i18n/en.ts": [
@@ -76,17 +82,14 @@ const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
     // Crash screen (C28)
     ["请将此错误报告给 OpenCode 团队", "请将此错误报告给 Code Puppy 团队"],
     ["在 Discord 上", "在反馈页"],
-    // Sound option fix: upstream zh machine-transliterated "staplebops" to the garbled "斯泰普博普斯"
-    // (sound.option.staplebops01..07). One substring swap cleans all 7 (the " 01".."07" suffix stays);
-    // "嗒啵" matches the 哔啵 (bipbop) style. Upstream source untouched (ADR-005/007).
-    ["斯泰普博普斯", "嗒啵"],
+    // (Retired at pin e11dbd020: upstream fixed its own garbled "斯泰普博普斯" staplebops transliteration
+    // — sound.option.staplebops01..07 now read "Staplebops 01".."07" — so the swap has no target left.)
   ],
   "app/src/i18n/zht.ts": [
     // Crash screen (C28)
     ["請將此錯誤回報給 OpenCode 團隊", "請將此錯誤回報給 Code Puppy 團隊"],
     ["在 Discord 上", "在反饋頁"],
-    // Traditional-zh has the same garbled staplebops transliteration.
-    ["斯泰普博普斯", "嗒啵"],
+    // (Retired at pin e11dbd020 for the same reason as zh above.)
   ],
 }
 

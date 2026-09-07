@@ -17,8 +17,8 @@ const PATCHES: Record<string, ReadonlyArray<readonly [string, string]>> = {
   // entrypoint on the same host as the legacy composer without modifying the frozen app source.
   "app/src/components/prompt-input-v2.tsx": [
     [
-      "dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />),",
-      "dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />, undefined, { host: true }),",
+      "dialog.show(() => <ImagePreview src={attachment.blob.url} alt={attachment.filename} />),",
+      "dialog.show(() => <ImagePreview src={attachment.blob.url} alt={attachment.filename} />, undefined, { host: true }),",
     ],
   ],
 

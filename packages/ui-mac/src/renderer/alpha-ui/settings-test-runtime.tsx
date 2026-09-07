@@ -33,10 +33,8 @@ export function SettingsProductionHarness(props: {
     platform: "desktop",
     os: "macos",
     settings: props.coordinator,
-    openLink() {},
+    openExternal() {},
     restart: async () => undefined,
-    back() {},
-    forward() {},
     notify: async () => undefined,
     openDirectoryPickerDialog: async () => null,
   }

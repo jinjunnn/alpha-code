@@ -17,7 +17,8 @@
 // "alpha-code"。所以「label 缺省」等价于「用户看见旧名」,判据同样落在真模板上。
 
 import { afterEach, describe, expect, mock, test } from "bun:test"
-import { DESKTOP_MENU, desktopMenuVisible, type DesktopMenuPlatform } from "@opencode-ai/app/desktop-menu"
+import { DESKTOP_MENU, desktopMenuVisible, type DesktopMenu, type DesktopMenuPlatform } from "@opencode-ai/app/desktop-menu"
+import { DESKTOP_NATIVE_ENGLISH } from "@opencode-ai/app/i18n/desktop-native"
 import { RETIRED_MENU_COMMANDS, alphaDesktopMenu, publishedMenuCommands } from "../src/shared/desktop-menu-policy"
 
 type NativeItem = {
@@ -68,13 +69,20 @@ function buildFor(platform: DesktopMenuPlatform) {
   return { template, clickAndCollect }
 }
 
+/** pin e11dbd020 起上游模型只带 labelKey;`main/menu.ts` 用同一张英文表落成展示名。 */
+const menuTitle = (menu: DesktopMenu) => DESKTOP_NATIVE_ENGLISH[menu.labelKey]
+
 /** 模型侧命令项(所属菜单 + label + command),用来在原生模板里按 label 找到同一条并真的点它。 */
 function modelCommands(platform: DesktopMenuPlatform) {
   const out: { menu: string; label: string; command: string }[] = []
   for (const menu of alphaDesktopMenu(platform)) {
     for (const entry of menu.items ?? []) {
       if (entry.type === "item" && entry.command)
-        out.push({ menu: menu.label, label: entry.label ?? "", command: entry.command })
+        out.push({
+          menu: menuTitle(menu),
+          label: entry.labelKey ? DESKTOP_NATIVE_ENGLISH[entry.labelKey] : "",
+          command: entry.command,
+        })
     }
   }
   return out
@@ -122,8 +130,8 @@ describe("alpha 桌面菜单只发布接得住的命令", () => {
       for (const [index, menu] of model.entries()) {
         const native = template[index]!
         if (menu.role) continue
-        expect(native.label, `第 ${index} 个菜单标题不一致`).toBe(menu.label)
-        expect(native.submenu ?? [], `菜单「${menu.label}」条目数不一致`).toHaveLength((menu.items ?? []).length)
+        expect(native.label, `第 ${index} 个菜单标题不一致`).toBe(menuTitle(menu))
+        expect(native.submenu ?? [], `菜单「${menuTitle(menu)}」条目数不一致`).toHaveLength((menu.items ?? []).length)
       }
     })
 
@@ -131,12 +139,12 @@ describe("alpha 桌面菜单只发布接得住的命令", () => {
       for (const menu of alphaDesktopMenu(platform)) {
         if (menu.role) continue
         const items = menu.items ?? []
-        expect(items.length, `菜单「${menu.label}」被掏空还留在菜单栏上`).toBeGreaterThan(0)
-        expect(items[0]!.type, `菜单「${menu.label}」以分隔符开头`).not.toBe("separator")
-        expect(items[items.length - 1]!.type, `菜单「${menu.label}」以分隔符结尾`).not.toBe("separator")
+        expect(items.length, `菜单「${menuTitle(menu)}」被掏空还留在菜单栏上`).toBeGreaterThan(0)
+        expect(items[0]!.type, `菜单「${menuTitle(menu)}」以分隔符开头`).not.toBe("separator")
+        expect(items[items.length - 1]!.type, `菜单「${menuTitle(menu)}」以分隔符结尾`).not.toBe("separator")
         for (let i = 1; i < items.length; i++) {
           const consecutive = items[i]!.type === "separator" && items[i - 1]!.type === "separator"
-          expect(consecutive, `菜单「${menu.label}」有连续分隔符`).toBe(false)
+          expect(consecutive, `菜单「${menuTitle(menu)}」有连续分隔符`).toBe(false)
         }
       }
     })

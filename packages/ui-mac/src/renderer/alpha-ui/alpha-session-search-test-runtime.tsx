@@ -74,10 +74,8 @@ function RouteProbe() {
 const platform: Platform = {
   platform: "desktop",
   os: "macos",
-  openLink: () => {},
+  openExternal: () => {},
   restart: async () => {},
-  back: () => {},
-  forward: () => {},
   notify: async () => {},
   openDirectoryPickerDialog: async () => ({ paths: [] }) as never,
 }
@@ -99,7 +97,7 @@ export function installPreloadStub() {
     account: { summary: async () => null },
     contracts: { health: async () => null, subscribe: noop },
     endpoints: async () => undefined,
-    openLink: () => {},
+    openExternal: () => {},
     updater: { check: async () => {}, subscribe: noop },
     setTitlebar: async () => {},
     setBackgroundColor: async () => {},
