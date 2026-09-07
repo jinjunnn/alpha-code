@@ -1,8 +1,8 @@
 diff --git a/packages/app/package.json b/packages/app/package.json
-index faf019446..98b795648 100644
+index 6d38562a1..af5045859 100644
 --- a/packages/app/package.json
 +++ b/packages/app/package.json
-@@ -9,7 +9,9 @@
+@@ -10,7 +10,9 @@
      "./updater": "./src/updater.ts",
      "./wsl/types": "./src/wsl/types.ts",
      "./vite": "./vite.js",
@@ -14,7 +14,7 @@ index faf019446..98b795648 100644
    "scripts": {
      "typecheck": "tsgo -b",
 diff --git a/packages/app/src/app.tsx b/packages/app/src/app.tsx
-index b4496ba7d..1cec486a9 100644
+index 0c950871a..c1f00cbc9 100644
 --- a/packages/app/src/app.tsx
 +++ b/packages/app/src/app.tsx
 @@ -1,7 +1,8 @@
@@ -25,9 +25,9 @@ index b4496ba7d..1cec486a9 100644
 -import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 +import { DialogProvider, type DialogHost } from "@opencode-ai/ui/context/dialog"
  import { FileComponentProvider } from "@opencode-ai/ui/context/file"
- import { MarkedProvider } from "@opencode-ai/ui/context/marked"
  import { File } from "@opencode-ai/session-ui/file"
-@@ -21,7 +22,6 @@ import {
+ import { Font } from "@opencode-ai/ui/font"
+@@ -20,7 +21,6 @@ import {
  } from "@solidjs/router"
  import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
  import { Effect } from "effect"
@@ -35,7 +35,7 @@ index b4496ba7d..1cec486a9 100644
  import {
    type Component,
    createEffect,
-@@ -57,6 +57,11 @@ import { ServerConnection, ServerProvider, serverName, useServer } from "@/conte
+@@ -56,6 +56,11 @@ import { ServerConnection, ServerProvider, serverName, useServer } from "@/conte
  import { SettingsProvider, useSettings } from "@/context/settings"
  import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
  import { SDKProvider, useSDK } from "@/context/sdk"
@@ -47,13 +47,14 @@ index b4496ba7d..1cec486a9 100644
  import { WslServersProvider } from "@/wsl/context"
  import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
  import LegacyLayout from "@/pages/layout"
-@@ -66,44 +71,111 @@ import { useCheckServerHealth } from "./utils/server-health"
+@@ -65,45 +70,112 @@ import { useCheckServerHealth } from "./utils/server-health"
  import { legacySessionHref, legacySessionServer, requireServerKey, sessionHref } from "./utils/session-route"
  import { createSessionLineage } from "@/pages/session/session-lineage"
  
 -import { SessionPage, SessionRouteErrorBoundary, TargetSessionRouteContent } from "@/pages/session"
 +import { SessionProviders, SessionRouteErrorBoundary, TargetSessionRouteContent } from "@/pages/session"
- import { NewHome, LegacyHome } from "@/pages/home"
+ import { NewHome } from "@/pages/home"
+ import { LegacyHome } from "@/pages/home/legacy-home"
  
 +const Session = lazy(() => import("@/pages/session"))
  const NewSession = lazy(() => import("@/pages/new-session"))
@@ -324,7 +325,7 @@ index b4496ba7d..1cec486a9 100644
  }
  
  function UiI18nBridge(props: ParentProps) {
-@@ -238,9 +335,6 @@ function UiI18nBridge(props: ParentProps) {
+@@ -268,9 +365,6 @@ function LayoutCompatibility(props: ParentProps) {
  
  declare global {
    interface Window {
@@ -334,7 +335,7 @@ index b4496ba7d..1cec486a9 100644
      api?: {
        setTitlebar?: (theme: { mode: "light" | "dark"; scheme?: "system" | "light" | "dark" }) => Promise<void>
        exportDebugLogs?: () => Promise<string>
-@@ -338,11 +432,11 @@ function LegacyServerScopedShell(props: ServerScopedShellProps) {
+@@ -368,11 +462,11 @@ function LegacyServerScopedShell(props: ServerScopedShellProps) {
    )
  }
  
@@ -348,25 +349,24 @@ index b4496ba7d..1cec486a9 100644
        </ServerScopedProviders>
      </SelectedServerProviders>
    )
-@@ -360,7 +454,7 @@ function DraftProviders(props: ParentProps) {
-   )
- }
- 
--export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
-+export function AppBaseProviders(props: ParentProps<{ locale?: Locale; dialogHost?: DialogHost }>) {
-   return (
-     <MetaProvider>
-       <Font />
-@@ -379,7 +473,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
+@@ -393,6 +487,7 @@ function DraftProviders(props: ParentProps) {
+ export function AppBaseProviders(
+   props: ParentProps<{
+     locale?: Locale
++    dialogHost?: DialogHost
+     onNativeTranslations?: Parameters<typeof LanguageProvider>[0]["onNativeTranslations"]
+   }>,
+ ) {
+@@ -414,7 +509,7 @@ export function AppBaseProviders(
              >
                <QueryProvider>
                  <WslServersProvider>
 -                  <DialogProvider>
 +                  <DialogProvider host={props.dialogHost}>
-                     <MarkedProvider>
-                       <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
-                     </MarkedProvider>
-@@ -530,7 +624,19 @@ export function AppInterface(props: {
+                     <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
+                   </DialogProvider>
+                 </WslServersProvider>
+@@ -563,7 +658,19 @@ export function AppInterface(props: {
    disableHealthCheck?: boolean
    startup?: Promise<void>
    serverScoped?: JSX.Element
@@ -386,7 +386,7 @@ index b4496ba7d..1cec486a9 100644
    // The visual new layout lives in the router root so it remains mounted across
    // route changes. Draft and session routes override only their server-bound data
    // providers beneath it.
-@@ -561,7 +667,9 @@ export function AppInterface(props: {
+@@ -594,7 +701,9 @@ export function AppInterface(props: {
                        <NotificationProvider>
                          <ServerShell>
                            <Show when={useSettings().general.newLayoutDesigns()} fallback={routerProps.children}>
@@ -397,7 +397,7 @@ index b4496ba7d..1cec486a9 100644
                            </Show>
                          </ServerShell>
                        </NotificationProvider>
-@@ -569,7 +677,13 @@ export function AppInterface(props: {
+@@ -602,7 +711,13 @@ export function AppInterface(props: {
                    </TabsProvider>
                  )}
                >
@@ -412,7 +412,7 @@ index b4496ba7d..1cec486a9 100644
                </Dynamic>
              </Show>
            </ConnectionGate>
-@@ -579,8 +693,18 @@ export function AppInterface(props: {
+@@ -612,8 +727,18 @@ export function AppInterface(props: {
    )
  }
  
@@ -432,7 +432,7 @@ index b4496ba7d..1cec486a9 100644
  
    return (
      <>
-@@ -592,7 +716,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+@@ -625,7 +750,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
          <Show when={!settings.general.newLayoutDesigns()}>
            {
              <>
@@ -441,7 +441,7 @@ index b4496ba7d..1cec486a9 100644
                <Route path="/server/:serverKey/session/:id" component={LegacyTargetSessionRoute} />
              </>
            }
-@@ -603,7 +727,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+@@ -636,7 +761,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
          </Route>
        </Route>
        <Show when={settings.general.newLayoutDesigns()}>
@@ -450,7 +450,7 @@ index b4496ba7d..1cec486a9 100644
          <Route path="/:dir/session/:id" component={NewLayoutLegacySessionRedirect} />
          <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
        </Show>
-@@ -619,16 +743,17 @@ function NewLayoutLegacySessionRedirect() {
+@@ -652,16 +777,17 @@ function NewLayoutLegacySessionRedirect() {
  
    return (
      <Show when={tabs.ready()}>
@@ -478,7 +478,7 @@ index b4496ba7d..1cec486a9 100644
    )
  }
 diff --git a/packages/app/src/components/dialog-fork.tsx b/packages/app/src/components/dialog-fork.tsx
-index 601f03084..0bf52ef11 100644
+index 5187d980e..9a78c224d 100644
 --- a/packages/app/src/components/dialog-fork.tsx
 +++ b/packages/app/src/components/dialog-fork.tsx
 @@ -2,6 +2,9 @@ import { Component, createMemo } from "solid-js"
@@ -499,15 +499,15 @@ index 601f03084..0bf52ef11 100644
    const prompt = usePrompt()
    const dialog = useDialog()
    const language = useLanguage()
-@@ -77,7 +81,10 @@ export const DialogFork: Component = () => {
-         }
+@@ -73,7 +77,10 @@ export const DialogFork: Component = () => {
+       .then((forked) => {
          dialog.close()
-         prompt.set(restored, undefined, { dir, id: forked.data.id })
--        navigate(`/${dir}/session/${forked.data.id}`)
+         prompt.set(restored, undefined, { dir, id: forked.id })
+-        navigate(`/${dir}/session/${forked.id}`)
 +        // #933:fork 是 `sdk()` 连着的那台 server 执行的,分叉出的会话就长在那台上 —— href 钉
 +        // canonical 的 server+id 身份。旧的 legacy 形状(`/{目录}/session/{id}`)会让壳按 active
 +        // server 反推,多 server 下把新分叉导向没有它的机器(#894 同形)。
-+        navigate(sessionHref(ServerConnection.key(serverSDK().server), forked.data.id))
++        navigate(sessionHref(ServerConnection.key(serverSDK().server), forked.id))
        })
        .catch((err: unknown) => {
          const message = err instanceof Error ? err.message : String(err)
@@ -566,34 +566,34 @@ index 31b15b7a6..bc25db15d 100644
    }
  }
 diff --git a/packages/app/src/components/prompt-input.tsx b/packages/app/src/components/prompt-input.tsx
-index bcc5acc0b..a20656ea3 100644
+index 41cf7d30c..9f4659012 100644
 --- a/packages/app/src/components/prompt-input.tsx
 +++ b/packages/app/src/components/prompt-input.tsx
 @@ -1489,7 +1489,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
          <PromptImageAttachments
            attachments={imageAttachments()}
            onOpen={(attachment) =>
--            dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)
-+            dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />, undefined, {
+-            dialog.show(() => <ImagePreview src={attachment.blob.url} alt={attachment.filename} />)
++            dialog.show(() => <ImagePreview src={attachment.blob.url} alt={attachment.filename} />, undefined, {
 +              host: true,
 +            })
            }
            onRemove={removeAttachment}
            removeLabel={language.t("prompt.attachment.remove")}
 diff --git a/packages/app/src/components/prompt-input/submit.test.ts b/packages/app/src/components/prompt-input/submit.test.ts
-index f563a5098..0f789dbae 100644
+index b3201b3ef..00d3ec2e6 100644
 --- a/packages/app/src/components/prompt-input/submit.test.ts
 +++ b/packages/app/src/components/prompt-input/submit.test.ts
-@@ -23,6 +23,8 @@ const promoted: Array<{ directory: string; sessionID: string }> = []
- const sentShell: string[] = []
- const syncedDirectories: string[] = []
- const promotedDrafts: Array<{ draftID: string; server: string; sessionId: string }> = []
+@@ -33,6 +33,8 @@ const promptInputs: unknown[] = []
+ const sentCommands: unknown[] = []
+ const commands: Array<{ name: string }> = []
+ let serverSessionSyncs = 0
 +// #933:submit 的非 draft 兜底导航落点(见下面 useNavigate mock)。
 +const navigated: string[] = []
  
  let params: { id?: string } = {}
  let search: { draftId?: string } = {}
-@@ -93,7 +95,10 @@ beforeAll(async () => {
+@@ -119,7 +121,10 @@ beforeAll(async () => {
    const rootClient = clientFor("/repo/main")
  
    mock.module("@solidjs/router", () => ({
@@ -605,7 +605,16 @@ index f563a5098..0f789dbae 100644
      useParams: () => params,
      useLocation: () => ({}),
      useSearchParams: () => [search, () => undefined],
-@@ -111,7 +116,13 @@ beforeAll(async () => {
+@@ -132,12 +137,22 @@ beforeAll(async () => {
+     },
+   }))
+ 
++  // pin e11dbd020:上游多了 `toaster` 等命名导出;整体替换命名空间会让单跑本文件在加载期死于
++  // `Export named 'toaster' not found`(全量跑时别的文件先把真模块装进来了,所以只有单跑红)。
++  const realToastModule = { ...(await import("@opencode-ai/ui/toast")) }
+   mock.module("@opencode-ai/ui/toast", () => ({
++    ...realToastModule,
+     Toast: { Region: () => null },
      showToast: () => 0,
    }))
  
@@ -619,7 +628,7 @@ index f563a5098..0f789dbae 100644
      base64Encode: (value: string) => value,
    }))
  
-@@ -141,10 +152,24 @@ beforeAll(async () => {
+@@ -167,10 +182,24 @@ beforeAll(async () => {
      return { usePermission: () => ({ currentServerState: () => state(permissionServer) }) }
    })
  
@@ -644,15 +653,15 @@ index f563a5098..0f789dbae 100644
    mock.module("@/context/tabs", () => ({
      useTabs: () => ({
        draft: () => ({ server: "project-server" }),
-@@ -258,6 +283,7 @@ beforeEach(() => {
-   promotedDrafts.length = 0
+@@ -294,6 +323,7 @@ beforeEach(() => {
+   promptValue = [{ type: "text", content: "ls", start: 0, end: 2 }]
    params = {}
    search = {}
 +  navigated.length = 0
    sentShell.length = 0
    syncedDirectories.length = 0
    selected = "/repo/worktree-a"
-@@ -394,6 +420,37 @@ describe("prompt submit worktree selection", () => {
+@@ -447,6 +477,37 @@ describe("prompt submit worktree selection", () => {
      expect(promotedDrafts).toEqual([{ draftID: "draft-1", server: "project-server", sessionId: "session-1" }])
    })
  
@@ -691,7 +700,7 @@ index f563a5098..0f789dbae 100644
      params = { id: "session-1" }
      variant = "high"
 diff --git a/packages/app/src/components/prompt-input/submit.ts b/packages/app/src/components/prompt-input/submit.ts
-index 203722fc6..287ca4a2f 100644
+index c82c3a439..e5a1726d5 100644
 --- a/packages/app/src/components/prompt-input/submit.ts
 +++ b/packages/app/src/components/prompt-input/submit.ts
 @@ -12,6 +12,9 @@ import { useLocal, type ModelSelection } from "@/context/local"
@@ -704,7 +713,7 @@ index 203722fc6..287ca4a2f 100644
  import { useSync, type DirectorySync } from "@/context/sync"
  import { Identifier } from "@/utils/id"
  import { Worktree as WorktreeState } from "@/utils/worktree"
-@@ -197,6 +200,7 @@ type PromptSubmitInput = {
+@@ -234,6 +237,7 @@ type PromptSubmitInput = {
  export function createPromptSubmit(input: PromptSubmitInput) {
    const navigate = useNavigate()
    const sdk = useSDK()
@@ -712,7 +721,7 @@ index 203722fc6..287ca4a2f 100644
    const sync = useSync()
    const serverSync = useServerSync()
    const local = useLocal()
-@@ -388,7 +392,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
+@@ -428,7 +432,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
            layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
            const draftID = search.draftId
            if (draftID) tabs.promoteDraft(draftID, { server: tabs.draft(draftID).server, sessionId: session.id })
@@ -749,10 +758,10 @@ index 46dd89ade..3637c7536 100644
      const sessionID = params.id
      void import("@/components/settings-v2").then((module) => {
 diff --git a/packages/app/src/components/status-popover-body.tsx b/packages/app/src/components/status-popover-body.tsx
-index 68a3f6b22..1b3814aba 100644
+index 97982fa21..0e1c14e7f 100644
 --- a/packages/app/src/components/status-popover-body.tsx
 +++ b/packages/app/src/components/status-popover-body.tsx
-@@ -161,7 +161,7 @@ export function StatusPopoverServerBody() {
+@@ -162,7 +162,7 @@ export function StatusPopoverServerBody() {
            const run = ++dialogRun
            void import("./dialog-select-server").then((x) => {
              if (dialogDead || dialogRun !== run) return
@@ -761,7 +770,7 @@ index 68a3f6b22..1b3814aba 100644
            })
          },
        }}
-@@ -377,7 +377,7 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
+@@ -386,7 +386,7 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                      const run = ++dialogRun
                      void import("./dialog-select-server").then((x) => {
                        if (dialogDead || dialogRun !== run) return
@@ -771,7 +780,7 @@ index 68a3f6b22..1b3814aba 100644
                    }}
                  >
 diff --git a/packages/app/src/components/terminal.tsx b/packages/app/src/components/terminal.tsx
-index c512e782c..266572533 100644
+index 0ca42b35b..8ea2a3c52 100644
 --- a/packages/app/src/components/terminal.tsx
 +++ b/packages/app/src/components/terminal.tsx
 @@ -28,6 +28,14 @@ export interface TerminalProps extends ComponentProps<"div"> {
@@ -798,7 +807,7 @@ index c512e782c..266572533 100644
    background: string
    foreground: string
    cursor: string
-@@ -194,6 +202,7 @@ export const Terminal = (props: TerminalProps) => {
+@@ -193,6 +201,7 @@ export const Terminal = (props: TerminalProps) => {
      "onAutoFocus",
      "onConnect",
      "onConnectError",
@@ -806,7 +815,7 @@ index c512e782c..266572533 100644
    ])
    const id = local.pty.id
    const restore = typeof local.pty.buffer === "string" ? local.pty.buffer : ""
-@@ -276,7 +285,12 @@ export const Terminal = (props: TerminalProps) => {
+@@ -286,7 +295,12 @@ export const Terminal = (props: TerminalProps) => {
      }
    }
  
@@ -834,7 +843,7 @@ index 058f7cc4b..761b46f69 100644
          })
          .catch(() => undefined)
 diff --git a/packages/app/src/context/notification.tsx b/packages/app/src/context/notification.tsx
-index 9bfa13d85..2fdcbdc04 100644
+index 799c4713d..8613ca083 100644
 --- a/packages/app/src/context/notification.tsx
 +++ b/packages/app/src/context/notification.tsx
 @@ -15,7 +15,7 @@ import { playSoundById } from "@/utils/sound"
@@ -846,7 +855,7 @@ index 9bfa13d85..2fdcbdc04 100644
  import type { ServerScope } from "@/utils/server-scope"
  
  type NotificationBase = {
-@@ -351,7 +351,10 @@ function createServerNotificationState(input: {
+@@ -354,7 +354,10 @@ function createServerNotificationState(input: {
          session: sessionID,
        })
  
@@ -856,9 +865,9 @@ index 9bfa13d85..2fdcbdc04 100644
 +      // active server 反推(多 server 下点通知会落到没有该会话的机器,#894 同形)。
 +      const href = sessionHref(ServerConnection.key(serverSDK().server), session.id)
        if (settings.notifications.agent()) {
-         void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, href)
-       }
-@@ -384,7 +387,11 @@ function createServerNotificationState(input: {
+         void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, () =>
+           input.navigate(href),
+@@ -389,7 +392,11 @@ function createServerNotificationState(input: {
        const description =
          session?.title ??
          (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
@@ -869,7 +878,7 @@ index 9bfa13d85..2fdcbdc04 100644
 +        ? sessionHref(ServerConnection.key(serverSDK().server), sessionID)
 +        : `/${base64Encode(directory)}`
        if (settings.notifications.errors()) {
-         void platform.notify(language.t("notification.session.error.title"), description, href)
+         void platform.notify(language.t("notification.session.error.title"), description, () => input.navigate(href))
        }
 diff --git a/packages/app/src/context/permission-auto-respond.test.ts b/packages/app/src/context/permission-auto-respond.test.ts
 index 794e03ae4..683c41a37 100644
@@ -1363,10 +1372,10 @@ index 000000000..0c5ff0ff5
 +  })
 +}
 diff --git a/packages/app/src/context/permission.tsx b/packages/app/src/context/permission.tsx
-index 496d1ab4a..92da5272a 100644
+index d6d801926..dc4f7c616 100644
 --- a/packages/app/src/context/permission.tsx
 +++ b/packages/app/src/context/permission.tsx
-@@ -187,6 +187,9 @@ type PermissionState = ReturnType<typeof createServerPermissionState>
+@@ -188,6 +188,9 @@ type PermissionState = ReturnType<typeof createServerPermissionState>
  type PermissionEvent = Parameters<Parameters<ServerSDK["event"]["listen"]>[0]>[0]
  
  function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }) {
@@ -1376,7 +1385,7 @@ index 496d1ab4a..92da5272a 100644
    const [store, setStore, _, ready] = persisted(
      {
        ...Persist.serverGlobal(input.sdk.scope, "permission", ["permission.v3"]),
-@@ -270,7 +273,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+@@ -288,7 +291,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
    }
  
    function isAutoAccepting(sessionID: string, directory?: string) {
@@ -1385,7 +1394,7 @@ index 496d1ab4a..92da5272a 100644
    }
  
    function isAutoAcceptingDirectory(directory: string) {
-@@ -278,7 +281,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+@@ -296,7 +299,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
    }
  
    function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
@@ -1394,7 +1403,7 @@ index 496d1ab4a..92da5272a 100644
    }
  
    function isPending(permission: PermissionRequest) {
-@@ -287,7 +290,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+@@ -305,7 +308,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
    }
  
    async function shouldAutoRespondResolved(permission: PermissionRequest, directory?: string) {
@@ -1403,7 +1412,7 @@ index 496d1ab4a..92da5272a 100644
      if (override !== undefined) return override
      if (input.sync.session.lineage.peek(permission.sessionID)) return shouldAutoRespond(permission, directory)
      const lineage = await input.sync.session.lineage.resolve(permission.sessionID).catch(() => undefined)
-@@ -295,14 +298,39 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
+@@ -313,14 +316,39 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
      return shouldAutoRespond(permission, directory)
    }
  
@@ -1444,18 +1453,18 @@ index 496d1ab4a..92da5272a 100644
    }
  
 diff --git a/packages/app/src/context/platform.tsx b/packages/app/src/context/platform.tsx
-index cf343bfa7..6bb9ae19a 100644
+index 0408b233f..edac2aa9a 100644
 --- a/packages/app/src/context/platform.tsx
 +++ b/packages/app/src/context/platform.tsx
-@@ -5,6 +5,7 @@ import type { DesktopMenuAction } from "../desktop-menu"
- import { ServerConnection } from "./server"
+@@ -6,6 +6,7 @@ import { ServerConnection } from "./server"
  import type { WslServersPlatform } from "../wsl/types"
  import type { UpdaterPlatform } from "../updater"
+ import type { DraftStore } from "@/utils/draft-store"
 +import type { SettingsAuthorityCoordinator } from "./settings"
  
  type PickerPaths = string | string[] | null
  type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
-@@ -70,6 +71,12 @@ type PlatformBase = {
+@@ -71,6 +72,12 @@ type PlatformBase = {
    /** Stable platform window identity for window-scoped persistence */
    windowID?: string
  
@@ -1469,19 +1478,19 @@ index cf343bfa7..6bb9ae19a 100644
    updater?: UpdaterPlatform
  
 diff --git a/packages/app/src/context/server-sdk.tsx b/packages/app/src/context/server-sdk.tsx
-index 06597e56e..dfad5b72e 100644
+index 7dd2a6e59..ca30c3729 100644
 --- a/packages/app/src/context/server-sdk.tsx
 +++ b/packages/app/src/context/server-sdk.tsx
-@@ -2,7 +2,7 @@ import type { Event } from "@opencode-ai/sdk/v2/client"
+@@ -3,7 +3,7 @@ import type { Event } from "@opencode-ai/sdk/v2/client"
  import { createSimpleContext } from "@opencode-ai/ui/context"
  import { createGlobalEmitter } from "@solid-primitives/event-bus"
  import { makeEventListener } from "@solid-primitives/event-listener"
--import { type Accessor, batch, createMemo, onCleanup, onMount } from "solid-js"
-+import { type Accessor, batch, createMemo, createRoot, onCleanup, onMount } from "solid-js"
- import { createSdkForServer } from "@/utils/server"
+-import { type Accessor, batch, createMemo, createResource, onCleanup, onMount } from "solid-js"
++import { type Accessor, batch, createMemo, createResource, createRoot, onCleanup, onMount } from "solid-js"
+ import { createApiForServer, createSdkForServer, type ServerApi } from "@/utils/server"
  import { useLanguage } from "./language"
  import { usePlatform } from "./platform"
-@@ -286,9 +286,34 @@ export type ServerSDK = ServerSDKBase & {
+@@ -378,9 +378,34 @@ export type ServerSDK = ServerSDKBase & {
  
  export function createServerSdkContext(server: ServerConnection.Any, scope: ServerScope): ServerSDK {
    const sdk = createServerSdkContextBase(server, scope)
@@ -1518,7 +1527,7 @@ index 06597e56e..dfad5b72e 100644
  }
  
  export const { use: useServerSDK, provider: ServerSDKProvider } = createSimpleContext({
-@@ -320,10 +345,17 @@ function createDirSdkContext(directory: string, serverSDK: ServerSDKBase) {
+@@ -417,10 +442,17 @@ function createDirSdkContext(directory: string, serverSDK: ServerSDKBase) {
  
    const emitter = createGlobalEmitter<SDKEventMap>()
  
@@ -1540,18 +1549,18 @@ index 06597e56e..dfad5b72e 100644
    return {
      scope: serverSDK.scope,
 diff --git a/packages/app/src/context/settings.tsx b/packages/app/src/context/settings.tsx
-index c2b568041..ed440ade9 100644
+index 1a118b654..fbf45a7ca 100644
 --- a/packages/app/src/context/settings.tsx
 +++ b/packages/app/src/context/settings.tsx
 @@ -1,5 +1,5 @@
 -import { createStore, reconcile } from "solid-js/store"
--import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+-import { batch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 +import { createStore, reconcile, type Store } from "solid-js/store"
 +import { createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
  import { createSimpleContext } from "@opencode-ai/ui/context"
  import { persisted } from "@/utils/persist"
  import { usePlatform } from "@/context/platform"
-@@ -53,6 +53,17 @@ export interface Settings {
+@@ -54,6 +54,17 @@ export interface Settings {
    sounds: SoundSettings
  }
  
@@ -1569,7 +1578,7 @@ index c2b568041..ed440ade9 100644
  export const monoDefault = "System Mono"
  export const sansDefault = "System Sans"
  export const terminalDefault = "JetBrainsMono Nerd Font Mono"
-@@ -215,12 +226,66 @@ function withFallback<T>(read: () => T | undefined, fallback: T) {
+@@ -225,12 +236,73 @@ function withFallback<T>(read: () => T | undefined, fallback: T) {
    return createMemo(() => read() ?? fallback)
  }
  
@@ -1580,6 +1589,8 @@ index c2b568041..ed440ade9 100644
 +function createSettingsState(coordinator: SettingsAuthorityCoordinator | undefined): {
 +  store: Store<Settings>
 +  ready: Accessor<boolean>
++  /** Raw persisted payload (null = nothing stored yet); upstream's hasExistingWebState() reads it. */
++  init: Promise<string> | string | null
 +  update(change: (current: Settings) => Settings): void
 +} {
 +  if (!coordinator) {
@@ -1587,6 +1598,7 @@ index c2b568041..ed440ade9 100644
 +    return {
 +      store: state[0],
 +      ready: state[3],
++      init: state[2],
 +      update(change) {
 +        state[1](reconcile(change(cloneSettings(state[0]))))
 +      },
@@ -1606,6 +1618,9 @@ index c2b568041..ed440ade9 100644
 +  return {
 +    store,
 +    ready,
++    // Host-owned authority has no web-storage payload; "returning user" then rests on the
++    // persisted app-version launch record alone (hasExistingWebState's second operand).
++    init: null,
 +    update(change) {
 +      setStore(reconcile(change(cloneSettings(store))))
 +      void coordinator.update(change).then(adopt, () => coordinator.read().then(adopt, () => undefined))
@@ -1618,10 +1633,11 @@ index c2b568041..ed440ade9 100644
    gate: false,
    init: () => {
      const platform = usePlatform()
--    const [store, setStore, _, ready] = persisted("settings.v3", createStore<Settings>(defaultSettings))
+-    const [store, setStore, settingsInit, ready] = persisted("settings.v3", createStore<Settings>(defaultSettings))
 +    const state = createSettingsState(platform.settings)
 +    const store = state.store
 +    const ready = state.ready
++    const settingsInit = state.init
 +    const setGeneral = <Key extends keyof Settings["general"]>(key: Key, value: Settings["general"][Key]) =>
 +      state.update((current) => ({ ...current, general: { ...current.general, [key]: value } }))
 +    const setAppearance = <Key extends keyof Settings["appearance"]>(
@@ -1637,7 +1653,30 @@ index c2b568041..ed440ade9 100644
      const [launch, setLaunch, , launchReady] = persisted(
        "app-version.v1",
        createStore<{ version?: string }>({ version: undefined }),
-@@ -296,7 +361,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+@@ -280,10 +352,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+     const initializeAgentVisibility = (existing: boolean) => {
+       const initial = initialAgentVisibility(store.general?.agentVisibilityInitialized, existing, launchState.previous)
+       if (initial === undefined) return
+-      batch(() => {
+-        setStore("general", "showCustomAgents", initial)
+-        setStore("general", "agentVisibilityInitialized", true)
+-      })
++      state.update((current) => ({
++        ...current,
++        general: { ...current.general, showCustomAgents: initial, agentVisibilityInitialized: true },
++      }))
+     }
+ 
+     if (sunset && !oldInterfaceRetired()) {
+@@ -314,14 +386,14 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+     createEffect(() => {
+       if (!ready() || !launchState.classified || platform.platform !== "web") return
+       const existing = hasExistingWebState(settingsInit, launchState.previous)
+-      if (!layoutTransitionClassified()) setStore("general", "layoutTransitionEligible", existing)
++      if (!layoutTransitionClassified()) setGeneral("layoutTransitionEligible", existing)
+       initializeAgentVisibility(existing)
+     })
+ 
      createEffect(() => {
        if (!ready() || !launchState.classified || launchState.migrationApplied) return
        if (layoutUpgrade() && store.general?.newLayoutDesigns !== true) {
@@ -1646,7 +1685,7 @@ index c2b568041..ed440ade9 100644
        }
        setLaunchState("migrationApplied", true)
      })
-@@ -305,8 +370,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+@@ -330,8 +402,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
        if (!ready() || !launchState.classified) return
        if (typeof store.general?.shouldDisplayTabsToast === "boolean") return
        if (!launchState.previous && !layoutTransitionClassified()) return
@@ -1656,7 +1695,7 @@ index c2b568041..ed440ade9 100644
          "shouldDisplayTabsToast",
          shouldDisplayTabsToast(launchState.previous, platform.version, layoutTransitionEligible()),
        )
-@@ -315,7 +379,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+@@ -340,7 +411,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
      createEffect(() => {
        if (!ready() || !oldInterfaceRetired()) return
        if (store.general?.newLayoutDesigns === true) return
@@ -1665,7 +1704,7 @@ index c2b568041..ed440ade9 100644
      })
  
      createEffect(() => {
-@@ -327,7 +391,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+@@ -352,7 +423,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
  
      createEffect(() => {
        if (store.general?.followup !== "queue") return
@@ -1674,7 +1713,7 @@ index c2b568041..ed440ade9 100644
      })
  
      return {
-@@ -338,92 +402,92 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+@@ -363,93 +434,93 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
        general: {
          autoSave: withFallback(() => store.general?.autoSave, defaultSettings.general.autoSave),
          setAutoSave(value: boolean) {
@@ -1771,6 +1810,7 @@ index c2b568041..ed440ade9 100644
 -          setStore("general", "layoutTransitionEligible", eligible)
 +          setGeneral("layoutTransitionEligible", eligible)
          },
+         initializeAgentVisibility,
          layoutTransitionAvailable: createMemo(() => ready() && layoutTransition().available),
          newInterfaceNoticeVisible: createMemo(() => ready() && layoutTransition().notice),
          dismissNewInterfaceNotice() {
@@ -1784,7 +1824,7 @@ index c2b568041..ed440ade9 100644
          },
        },
        visibility: {
-@@ -435,85 +499,85 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+@@ -461,85 +532,85 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
        appearance: {
          fontSize: withFallback(() => store.appearance?.fontSize, defaultSettings.appearance.fontSize),
          setFontSize(value: number) {
@@ -1893,10 +1933,10 @@ index c2b568041..ed440ade9 100644
      }
 diff --git a/packages/app/src/context/terminal-command.cases.ts b/packages/app/src/context/terminal-command.cases.ts
 new file mode 100644
-index 000000000..9ca93b85c
+index 000000000..579a2a565
 --- /dev/null
 +++ b/packages/app/src/context/terminal-command.cases.ts
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,188 @@
 +// REQ-125 #579 —— alpha 判据:客户端 PTY store 必须留住服务端下发的 `Pty.Info.command`。
 +//
 +// 为什么是 `.cases.ts` 而不是 `.test.ts`:本文件必须跑 solid 的 **dom** 构建。
@@ -1958,6 +1998,9 @@ index 000000000..9ca93b85c
 +function fakeSDK(queue: ServerPty[]) {
 +  const created: Array<{ title?: string }> = []
 +  const sdk = {
++    // pin e11dbd020 起 new()/clone() 先问 `sdk.protocol` 再选 v1 `client.pty` 或 v2 `api.pty`;
++    // 本夹具钉 v1 —— 两条腿在 `.then((data) => …)` 之后共用同一段 command 归一化,那才是本文件的判据。
++    protocol: Promise.resolve("v1"),
 +    client: {
 +      pty: {
 +        create: (input: { title?: string }) => {
@@ -2123,7 +2166,7 @@ index 000000000..0dc65da45
 +  })
 +})
 diff --git a/packages/app/src/context/terminal.tsx b/packages/app/src/context/terminal.tsx
-index d2d616248..4edcaba79 100644
+index df575b71f..32c3f1881 100644
 --- a/packages/app/src/context/terminal.tsx
 +++ b/packages/app/src/context/terminal.tsx
 @@ -14,6 +14,8 @@ export type LocalPTY = {
@@ -2160,41 +2203,259 @@ index d2d616248..4edcaba79 100644
    sdk: DirectorySDK,
    dir: string,
    scope: ServerScopeValue,
-@@ -282,6 +286,9 @@ function createWorkspaceTerminalSession(
-         id: next.data.id,
-         title: next.data.title ?? pty.title,
+@@ -299,6 +303,9 @@ function createWorkspaceTerminalSession(
+         id: data.id,
+         title: data.title ?? pty.title,
          titleNumber: pty.titleNumber,
 +        // setStore merges shallowly: without an explicit write the replaced tab would keep
 +        // the *previous* PTY's shell name. Mirror whatever the server reports for the new one.
-+        command: next.data.command,
++        command: data.command,
          buffer: undefined,
          cursor: undefined,
          scrollY: undefined,
-@@ -310,16 +317,18 @@ function createWorkspaceTerminalSession(
- 
-       sdk.client.pty
-         .create({ title: defaultTitle(nextNumber) })
--        .then((pty: { data?: { id?: string; title?: string } }) => {
-+        .then((pty: { data?: { id?: string; title?: string; command?: string } }) => {
-           const id = pty.data?.id
-           if (!id) {
+@@ -338,10 +345,12 @@ function createWorkspaceTerminalSession(
              if (focusRequest !== undefined) cancelFocus(focusRequest)
              return
            }
-+          const command = pty.data?.command
++          const command = data?.command
            const newTerminal = {
              id,
-             title: pty.data?.title ?? defaultTitle(nextNumber),
+             title: data?.title ?? defaultTitle(nextNumber),
              titleNumber: nextNumber,
 +            ...(command !== undefined ? { command } : {}),
            }
            batch(() => {
              setStore("all", store.all.length, newTerminal)
+diff --git a/packages/app/src/i18n/am.ts b/packages/app/src/i18n/am.ts
+index bda48350e..b03f7e894 100644
+--- a/packages/app/src/i18n/am.ts
++++ b/packages/app/src/i18n/am.ts
+@@ -1127,4 +1127,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} ክፍለ-ጊዜዎች በማህደር ይቀመጣሉ።",
+   "workspace.reset.note": "ይህ workspaceን ከነባሪው ቅርንጫፍ ጋር እንዲመሳሰል ዳግም ያስጀምረዋል።",
+   "dialog.usageExceeded.dontShowAgain": "እንደገና አታሳይ",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/ar.ts b/packages/app/src/i18n/ar.ts
+index 3f55b3084..9388cbf98 100644
+--- a/packages/app/src/i18n/ar.ts
++++ b/packages/app/src/i18n/ar.ts
+@@ -1168,4 +1168,9 @@ export const dict = {
+   "error.childStore.persistedProjectIconCreateFailed": "فشل إنشاء أيقونة المشروع الدائمة",
+   "error.childStore.storeCreateFailed": "فشل إنشاء المخزن",
+   "terminal.connectionLost.abnormalClose": "تم إغلاق WebSocket بشكل غير طبيعي: {{code}}",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/az.ts b/packages/app/src/i18n/az.ts
+index d818ae57f..948ace13e 100644
+--- a/packages/app/src/i18n/az.ts
++++ b/packages/app/src/i18n/az.ts
+@@ -1165,4 +1165,9 @@ export const dict = {
+   "workspace.reset.archived.one": "1 sessiya arxivlənəcək.",
+   "workspace.reset.archived.many": "{{count}} sessiya arxivlənəcək.",
+   "workspace.reset.note": "Bu iş sahəsini standart branch ilə uyğunlaşdırmaq üçün sıfırlayacaq.",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/bg.ts b/packages/app/src/i18n/bg.ts
+index 7f63d1fa4..3201912a3 100644
+--- a/packages/app/src/i18n/bg.ts
++++ b/packages/app/src/i18n/bg.ts
+@@ -1167,4 +1167,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} сесии ще бъдат архивирани.",
+   "workspace.reset.note": "Това ще нулира работното пространство, за да съответства на клона по подразбиране.",
+   "dialog.usageExceeded.dontShowAgain": "Не показвай отново",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/bn.ts b/packages/app/src/i18n/bn.ts
+index 5f0698ab6..f2fda6c87 100644
+--- a/packages/app/src/i18n/bn.ts
++++ b/packages/app/src/i18n/bn.ts
+@@ -1149,4 +1149,9 @@ export const dict: Record<string, string> = {
+   "workspace.reset.archived.many": "{{count}} সেশন আর্কাইভ করা হবে।",
+   "workspace.reset.note": "এটি ডিফল্ট শাখার সাথে মেলে ওয়ার্কস্পেস রিসেট করবে।",
+   "dialog.usageExceeded.dontShowAgain": "আবার দেখাবেন না",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/br.ts b/packages/app/src/i18n/br.ts
+index 09da845cc..6c9a26679 100644
+--- a/packages/app/src/i18n/br.ts
++++ b/packages/app/src/i18n/br.ts
+@@ -1178,4 +1178,9 @@ export const dict = {
+   "error.childStore.persistedProjectIconCreateFailed": "Falha ao criar ícone de projeto persistente",
+   "error.childStore.storeCreateFailed": "Falha ao criar armazenamento",
+   "terminal.connectionLost.abnormalClose": "WebSocket fechado anormalmente: {{code}}",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/bs.ts b/packages/app/src/i18n/bs.ts
+index feb41c651..0544e4aaf 100644
+--- a/packages/app/src/i18n/bs.ts
++++ b/packages/app/src/i18n/bs.ts
+@@ -1254,4 +1254,9 @@ export const dict = {
+   "error.childStore.persistedProjectIconCreateFailed": "Nije uspjelo kreiranje trajne ikone projekta",
+   "error.childStore.storeCreateFailed": "Nije uspjelo kreiranje skladišta",
+   "terminal.connectionLost.abnormalClose": "WebSocket zatvoren nenormalno: {{code}}",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/ca.ts b/packages/app/src/i18n/ca.ts
+index 21ad32560..6e67997ae 100644
+--- a/packages/app/src/i18n/ca.ts
++++ b/packages/app/src/i18n/ca.ts
+@@ -1170,4 +1170,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} sessions s'arxivaran.",
+   "workspace.reset.note": "Això restablirà l'espai de treball perquè coincideixi amb la branca predeterminada.",
+   "dialog.usageExceeded.dontShowAgain": "No ho tornis a mostrar",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/cs.ts b/packages/app/src/i18n/cs.ts
+index d79d4eb5a..b6da45041 100644
+--- a/packages/app/src/i18n/cs.ts
++++ b/packages/app/src/i18n/cs.ts
+@@ -1160,4 +1160,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} relací bude archivováno.",
+   "workspace.reset.note": "Tím se pracovní prostor resetuje tak, aby odpovídal výchozí větvi.",
+   "dialog.usageExceeded.dontShowAgain": "Znovu nezobrazovat",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/da.ts b/packages/app/src/i18n/da.ts
+index 87737b094..a5f350a45 100644
+--- a/packages/app/src/i18n/da.ts
++++ b/packages/app/src/i18n/da.ts
+@@ -1245,4 +1245,9 @@ export const dict = {
+   "help.tabs.persistence": "Dine faner er stadig åbne, når du åbner appen igen.",
+   "help.tabs.worktrees":
+     "Det nye design understøtter endnu ikke Git Worktrees, men understøttelsen kommer snart. Hvis du foretrækker at fortsætte med det tidligere layout, kan du skifte mellem layoutene under Indstillinger. Bemærk, at det nye layout bliver permanent om nogle få uger.",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/de.ts b/packages/app/src/i18n/de.ts
+index 00849598c..d78ad3ad6 100644
+--- a/packages/app/src/i18n/de.ts
++++ b/packages/app/src/i18n/de.ts
+@@ -1182,4 +1182,9 @@ export const dict = {
+   "help.tabs.persistence": "Wenn Sie die App erneut öffnen, sind Ihre Tabs weiterhin geöffnet.",
+   "help.tabs.worktrees":
+     "Das neue Design unterstützt Git-Worktrees noch nicht. Diese Funktion folgt in Kürze. Wenn Sie das bisherige Layout vorerst weiterverwenden möchten, können Sie in den Einstellungen zwischen den Layouts wechseln. Beachten Sie jedoch, dass das neue Layout in einigen Wochen dauerhaft verwendet wird.",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ } satisfies Partial<Record<Keys, string>>
+diff --git a/packages/app/src/i18n/desktop-native.ts b/packages/app/src/i18n/desktop-native.ts
+index 1aa9bd39f..3e1663407 100644
+--- a/packages/app/src/i18n/desktop-native.ts
++++ b/packages/app/src/i18n/desktop-native.ts
+@@ -202,7 +202,7 @@ export function detectDesktopNativeLocale(languages: readonly string[]): Desktop
+     if (["no", "nb", "nn"].includes(source.language)) return "no"
+     const match = DESKTOP_NATIVE_LOCALES.find((candidate) => {
+       const target = locale(DESKTOP_NATIVE_LOCALE_TAGS[candidate])
+-      return target?.language === source.language && target.script === source.script
++      return target?.language === source.language && script(target) === script(source)
+     })
+     if (match) return match
+   }
+@@ -221,6 +221,15 @@ function locale(value: string) {
+   }
+ }
+ 
++// alpha (frontend pin e11dbd020 bump): newer CLDR data (the ICU inside bun 1.3.14, which both the local
++// gate and alpha-ci run) maximizes `pa-PK` to the Nastaliq variant `pa-Aran-PK`, while the bundle tag
++// above is `pa-Arab-PK`. Aran is a stylistic variant of Arab (Unicode ISO 15924), so compare them as one
++// script — otherwise Punjabi (Pakistan) falls through to "en" and upstream's own
++// desktop-native.test.ts ("uses Unicode likely subtags") is red on this bun.
++function script(value: Intl.Locale) {
++  return value.script === "Aran" ? "Arab" : value.script
++}
++
+ export const DESKTOP_NATIVE_ENGLISH = {
+   "desktop.menu.app": "OpenCode",
+   "desktop.menu.file": "File",
+diff --git a/packages/app/src/i18n/dv.ts b/packages/app/src/i18n/dv.ts
+index 27b5fea86..b77e4aa75 100644
+--- a/packages/app/src/i18n/dv.ts
++++ b/packages/app/src/i18n/dv.ts
+@@ -1174,4 +1174,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} ސެޝަންތައް އަރުޝީފް ކުރެވޭނެއެވެ.",
+   "workspace.reset.note": "މިއީ ޑިފޯލްޓް ބްރާންޗާ އެއްގޮތްވާ ގޮތަށް ވޯކްސްޕޭސް ރީސެޓް ކުރާނެ ކަމެކެވެ.",
+   "dialog.usageExceeded.dontShowAgain": "އަލުން ނުދައްކާ",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/dz.ts b/packages/app/src/i18n/dz.ts
+index 3b2ad46ca..62c5f4252 100644
+--- a/packages/app/src/i18n/dz.ts
++++ b/packages/app/src/i18n/dz.ts
+@@ -1178,4 +1178,9 @@ export const dict: Record<string, string> = {
+   "workspace.reset.archived.many": "{{count}} ལཱ་ཡུན་ཚུ་ཡིག་མཛོད་ནང་བཞག་འོང་།",
+   "workspace.reset.note": "འདི་གིས་ སྔོན་སྒྲིག་ཡན་ལག་མཐུན་སྒྲིག་འབད་ནི་ལུ་ ལཱ་གི་ས་སྒོ་འདི་སླར་སྒྲིག་འབད་འོང་།",
+   "dialog.usageExceeded.dontShowAgain": "ལོག་སྟེ་མ་སྟོན།",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/el.ts b/packages/app/src/i18n/el.ts
+index 8f91b46af..dcb1525da 100644
+--- a/packages/app/src/i18n/el.ts
++++ b/packages/app/src/i18n/el.ts
+@@ -1170,4 +1170,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} θα αρχειοθετηθούν οι περίοδοι σύνδεσης.",
+   "workspace.reset.note": "Αυτό θα επαναφέρει τον χώρο εργασίας ώστε να ταιριάζει με τον προεπιλεγμένο κλάδο.",
+   "dialog.usageExceeded.dontShowAgain": "Να μην εμφανιστεί ξανά",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
 diff --git a/packages/app/src/i18n/en.ts b/packages/app/src/i18n/en.ts
-index f03147f15..880ecb196 100644
+index 62d4dc1ae..b9bfc4cb3 100644
 --- a/packages/app/src/i18n/en.ts
 +++ b/packages/app/src/i18n/en.ts
-@@ -703,6 +703,13 @@ export const dict = {
+@@ -736,6 +736,13 @@ export const dict = {
    "session.new.git.none": "No Git",
    "session.new.lastModified": "Last modified",
  
@@ -2208,11 +2469,641 @@ index f03147f15..880ecb196 100644
    "session.header.search.placeholder": "Search {{project}}",
    "session.header.searchFiles": "Search files",
    "session.header.openIn": "Open in",
+diff --git a/packages/app/src/i18n/es.ts b/packages/app/src/i18n/es.ts
+index 9e9ff2c36..e43ca5e44 100644
+--- a/packages/app/src/i18n/es.ts
++++ b/packages/app/src/i18n/es.ts
+@@ -1262,4 +1262,9 @@ export const dict = {
+   "error.childStore.persistedProjectIconCreateFailed": "Error al crear icono de proyecto persistente",
+   "error.childStore.storeCreateFailed": "Error al crear almacén",
+   "terminal.connectionLost.abnormalClose": "WebSocket cerrado anormalmente: {{code}}",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/et.ts b/packages/app/src/i18n/et.ts
+index d78296675..63a5317a2 100644
+--- a/packages/app/src/i18n/et.ts
++++ b/packages/app/src/i18n/et.ts
+@@ -1148,4 +1148,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} seanssi arhiivitakse.",
+   "workspace.reset.note": "See lähtestab tööruumi, et see vastaks vaikeharule.",
+   "dialog.usageExceeded.dontShowAgain": "Ära kuva enam",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/fa.ts b/packages/app/src/i18n/fa.ts
+index 0d3d721b5..b5366ce57 100644
+--- a/packages/app/src/i18n/fa.ts
++++ b/packages/app/src/i18n/fa.ts
+@@ -1152,4 +1152,9 @@ export const dict = {
+   "workspace.reset.archived.many": "جلسات {{count}} بایگانی خواهد شد.",
+   "workspace.reset.note": "این کار فضای کاری را برای مطابقت با شاخه پیش فرض بازنشانی می کند.",
+   "dialog.usageExceeded.dontShowAgain": "دیگر نشان نده",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/fi.ts b/packages/app/src/i18n/fi.ts
+index aa9c92574..ad199b94c 100644
+--- a/packages/app/src/i18n/fi.ts
++++ b/packages/app/src/i18n/fi.ts
+@@ -1165,4 +1165,9 @@ export const dict = {
+   "help.tabs.persistence": "Kun avaat sovelluksen uudelleen, välilehtesi ovat yhä avoinna.",
+   "help.tabs.worktrees":
+     "Uusi ulkoasu ei vielä tue Git-työpuita, mutta tuki on tulossa pian. Jos haluat jatkaa aiemman ulkoasun käyttöä, voit vaihtaa ulkoasua asetuksissa. Huomaa kuitenkin, että uudesta ulkoasusta tulee pysyvä muutaman viikon kuluttua.",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/fo.ts b/packages/app/src/i18n/fo.ts
+index 4329a35b4..f76f21b42 100644
+--- a/packages/app/src/i18n/fo.ts
++++ b/packages/app/src/i18n/fo.ts
+@@ -1151,4 +1151,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} setur verða arkiveraðar.",
+   "workspace.reset.note": "Hetta nullstillar workspace til at passa til forsettu greinina.",
+   "dialog.usageExceeded.dontShowAgain": "Vís ikki aftur",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/fr.ts b/packages/app/src/i18n/fr.ts
+index 3c89860a4..7415b7fe4 100644
+--- a/packages/app/src/i18n/fr.ts
++++ b/packages/app/src/i18n/fr.ts
+@@ -1196,4 +1196,9 @@ export const dict = {
+ 
+   "titlebar.update": "Mettre à jour",
+   "titlebar.updateVersion": "Mettre à jour {{version}}",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/hi.ts b/packages/app/src/i18n/hi.ts
+index 0aaf8e14d..7c8685860 100644
+--- a/packages/app/src/i18n/hi.ts
++++ b/packages/app/src/i18n/hi.ts
+@@ -1160,4 +1160,9 @@ export const dict = {
+   "workspace.reset.archived.one": "1 सेशन संग्रहित किया जाएगा।",
+   "workspace.reset.archived.many": "{{count}} सेशन संग्रहित किए जाएँगे।",
+   "workspace.reset.note": "यह डिफ़ॉल्ट शाखा से मिलान करने के लिए वर्कस्पेस को रीसेट कर देगा।",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/hr.ts b/packages/app/src/i18n/hr.ts
+index 2130c88ad..4f8ec4ff4 100644
+--- a/packages/app/src/i18n/hr.ts
++++ b/packages/app/src/i18n/hr.ts
+@@ -1165,4 +1165,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} sesije će biti arhivirane.",
+   "workspace.reset.note": "Ovo će resetirati radni prostor kako bi odgovarao zadanoj grani.",
+   "dialog.usageExceeded.dontShowAgain": "Ne prikazuj ponovno",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/hu.ts b/packages/app/src/i18n/hu.ts
+index 664abf8ee..78b3489d9 100644
+--- a/packages/app/src/i18n/hu.ts
++++ b/packages/app/src/i18n/hu.ts
+@@ -1167,4 +1167,9 @@ export const dict = {
+   "workspace.reset.archived.many": "A {{count}} munkamenetek archiválva lesznek.",
+   "workspace.reset.note": "Ezzel visszaállítja a munkaterületet, hogy megfeleljen az alapértelmezett ágnak.",
+   "dialog.usageExceeded.dontShowAgain": "Ne jelenjen meg újra",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/hy.ts b/packages/app/src/i18n/hy.ts
+index 6eac43b5e..d80becdb3 100644
+--- a/packages/app/src/i18n/hy.ts
++++ b/packages/app/src/i18n/hy.ts
+@@ -1162,4 +1162,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} նիստերը կարխիվացվեն։",
+   "workspace.reset.note": "Սա կվերակայի աշխատանքային տարածքը, որպեսզի համապատասխանի լռելյայն ճյուղին:",
+   "dialog.usageExceeded.dontShowAgain": "Այլևս չցուցադրել",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/id.ts b/packages/app/src/i18n/id.ts
+index 96dc3c759..9a1ccef61 100644
+--- a/packages/app/src/i18n/id.ts
++++ b/packages/app/src/i18n/id.ts
+@@ -1247,4 +1247,9 @@ export const dict = {
+   "workspace.reset.archived.one": "1 sesi akan diarsipkan.",
+   "workspace.reset.archived.many": "{{count}} sesi akan diarsipkan.",
+   "workspace.reset.note": "Ini akan mengatur ulang ruang kerja agar cocok dengan cabang bawaan.",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/is.ts b/packages/app/src/i18n/is.ts
+index a45ed9a40..cc999ad6c 100644
+--- a/packages/app/src/i18n/is.ts
++++ b/packages/app/src/i18n/is.ts
+@@ -1154,4 +1154,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} setur verða settar í geymslu.",
+   "workspace.reset.note": "Þetta mun endurstilla vinnusvæðið til að passa við sjálfgefna útibúið.",
+   "dialog.usageExceeded.dontShowAgain": "Ekki sýna aftur",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/it.ts b/packages/app/src/i18n/it.ts
+index a093e1148..5cff96cb7 100644
+--- a/packages/app/src/i18n/it.ts
++++ b/packages/app/src/i18n/it.ts
+@@ -1173,4 +1173,9 @@ export const dict = {
+   "desktop.wsl.error.failedPort": "Impossibile ottenere la porta",
+   "desktop.picker.error.notSelected": "Il file non è stato selezionato nella finestra di selezione",
+   "desktop.picker.error.sizeLimit": "Gli allegati selezionati superano il limite di {{limit}} MB",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/ja.ts b/packages/app/src/i18n/ja.ts
+index b96e8b544..63272712f 100644
+--- a/packages/app/src/i18n/ja.ts
++++ b/packages/app/src/i18n/ja.ts
+@@ -1166,4 +1166,9 @@ export const dict = {
+ 
+   "titlebar.update": "アップデート",
+   "titlebar.updateVersion": "アップデート {{version}}",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/ka.ts b/packages/app/src/i18n/ka.ts
+index be052930a..fddfae156 100644
+--- a/packages/app/src/i18n/ka.ts
++++ b/packages/app/src/i18n/ka.ts
+@@ -1153,4 +1153,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} სესია დაარქივდება.",
+   "workspace.reset.note": "ეს აღადგენს სამუშაო სივრცეს ნაგულისხმევი ფილიალის შესატყვისად.",
+   "dialog.usageExceeded.dontShowAgain": "აღარ მაჩვენო",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/km.ts b/packages/app/src/i18n/km.ts
+index 7f1b61fe3..ae8c3308a 100644
+--- a/packages/app/src/i18n/km.ts
++++ b/packages/app/src/i18n/km.ts
+@@ -1148,4 +1148,9 @@ export const dict = {
+   "workspace.reset.archived.many": "សម័យ {{count}} នឹងត្រូវបានទុកក្នុងប័ណ្ណសារ។",
+   "workspace.reset.note": "វានឹងកំណត់កន្លែងធ្វើការឡើងវិញដើម្បីផ្គូផ្គងសាខាលំនាំដើម។",
+   "dialog.usageExceeded.dontShowAgain": "កុំបង្ហាញម្តងទៀត",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/ko.ts b/packages/app/src/i18n/ko.ts
+index b96fb4c59..642e994d7 100644
+--- a/packages/app/src/i18n/ko.ts
++++ b/packages/app/src/i18n/ko.ts
+@@ -1164,4 +1164,9 @@ export const dict = {
+ 
+   "desktop.picker.error.notSelected": "선택기에서 파일을 선택하지 않았습니다",
+   "desktop.picker.error.sizeLimit": "선택한 첨부 파일이 {{limit}} MB 제한을 초과합니다",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/lo.ts b/packages/app/src/i18n/lo.ts
+index acdc26df0..8a81f2628 100644
+--- a/packages/app/src/i18n/lo.ts
++++ b/packages/app/src/i18n/lo.ts
+@@ -1145,4 +1145,9 @@ export const dict = {
+   "workspace.reset.archived.many": "ເຊດຊັນ {{count}} ຈະຖືກເກັບໄວ້.",
+   "workspace.reset.note": "ນີ້ຈະຣີເຊັດພື້ນທີ່ເຮັດວຽກໃຫ້ກົງກັບສາຂາເລີ່ມຕົ້ນ.",
+   "dialog.usageExceeded.dontShowAgain": "ຢ່າສະແດງອີກ",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/lt.ts b/packages/app/src/i18n/lt.ts
+index ba161eb31..2144e4bf2 100644
+--- a/packages/app/src/i18n/lt.ts
++++ b/packages/app/src/i18n/lt.ts
+@@ -1170,4 +1170,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} sesijos bus archyvuojamos.",
+   "workspace.reset.note": "Tai iš naujo nustatys darbo sritį, kad ji atitiktų numatytąją šaką.",
+   "dialog.usageExceeded.dontShowAgain": "Daugiau nerodyti",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/lv.ts b/packages/app/src/i18n/lv.ts
+index df4c5b2dc..5c662cba3 100644
+--- a/packages/app/src/i18n/lv.ts
++++ b/packages/app/src/i18n/lv.ts
+@@ -1159,4 +1159,9 @@ export const dict = {
+   "workspace.reset.archived.many": "Tiks arhivētas {{count}} sesijas.",
+   "workspace.reset.note": "Darbvieta tiks atiestatīta uz noklusējuma zara stāvokli.",
+   "dialog.usageExceeded.dontShowAgain": "Vairs nerādīt",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/mk.ts b/packages/app/src/i18n/mk.ts
+index 01e60baa4..c8543ace5 100644
+--- a/packages/app/src/i18n/mk.ts
++++ b/packages/app/src/i18n/mk.ts
+@@ -1163,4 +1163,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} сесиите ќе бидат архивирани.",
+   "workspace.reset.note": "Ова ќе го ресетира работниот простор за да одговара на стандардната гранка.",
+   "dialog.usageExceeded.dontShowAgain": "Не прикажувај повторно",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/mn.ts b/packages/app/src/i18n/mn.ts
+index 41c4fa085..8c603434c 100644
+--- a/packages/app/src/i18n/mn.ts
++++ b/packages/app/src/i18n/mn.ts
+@@ -1165,4 +1165,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} сессийг архивлах болно.",
+   "workspace.reset.note": "Энэ нь ажлын талбарыг анхдагч салбартай тааруулахын тулд дахин тохируулах болно.",
+   "dialog.usageExceeded.dontShowAgain": "Дахин бүү харуул",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/ms.ts b/packages/app/src/i18n/ms.ts
+index 2c3783d43..02ce7201b 100644
+--- a/packages/app/src/i18n/ms.ts
++++ b/packages/app/src/i18n/ms.ts
+@@ -1154,4 +1154,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} sesi akan diarkibkan.",
+   "workspace.reset.note": "Ini akan menetap semula ruang kerja agar sepadan dengan cawangan lalai.",
+   "dialog.usageExceeded.dontShowAgain": "Jangan tunjukkan lagi",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/my.ts b/packages/app/src/i18n/my.ts
+index 6046f337f..aefa3fe6a 100644
+--- a/packages/app/src/i18n/my.ts
++++ b/packages/app/src/i18n/my.ts
+@@ -1173,4 +1173,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} ဆက်ရှင်များကို သိမ်းဆည်းထားပါမည်။",
+   "workspace.reset.note": "၎င်းသည် မူရင်းဌာနခွဲနှင့် ကိုက်ညီစေရန် အလုပ်ခွင်ကို ပြန်လည်သတ်မှတ်ပါမည်။",
+   "dialog.usageExceeded.dontShowAgain": "ထပ်မပြပါနှင့်",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/ne.ts b/packages/app/src/i18n/ne.ts
+index cc60bff9f..f39f2e100 100644
+--- a/packages/app/src/i18n/ne.ts
++++ b/packages/app/src/i18n/ne.ts
+@@ -1154,4 +1154,9 @@ export const dict: Record<string, string> = {
+   "workspace.reset.archived.many": "{{count}} सत्रहरू अभिलेख गरिनेछ।",
+   "workspace.reset.note": "यसले पूर्वनिर्धारित शाखासँग मिलाउन कार्यस्थान रिसेट गर्नेछ।",
+   "dialog.usageExceeded.dontShowAgain": "फेरि नदेखाउनुहोस्",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/nl.ts b/packages/app/src/i18n/nl.ts
+index 6fb1dc09f..1682e509d 100644
+--- a/packages/app/src/i18n/nl.ts
++++ b/packages/app/src/i18n/nl.ts
+@@ -1168,4 +1168,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} sessies worden gearchiveerd.",
+   "workspace.reset.note":
+     "Hierdoor wordt de werkruimte opnieuw ingesteld zodat deze overeenkomt met de standaardbranch.",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/no.ts b/packages/app/src/i18n/no.ts
+index 11958029d..6a7502d4c 100644
+--- a/packages/app/src/i18n/no.ts
++++ b/packages/app/src/i18n/no.ts
+@@ -1264,4 +1264,9 @@ export const dict = {
+   "settings.general.row.pinchZoom.description": "Tillat knipebevegelser på styreflaten og Ctrl-rulling for å zoome",
+   "settings.updates.action.downloading": "Laster ned...",
+   "settings.updates.action.installing": "Installerer...",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ } satisfies Partial<Record<Keys, string>>
+diff --git a/packages/app/src/i18n/pa.ts b/packages/app/src/i18n/pa.ts
+index 6298581c0..e81e6ec00 100644
+--- a/packages/app/src/i18n/pa.ts
++++ b/packages/app/src/i18n/pa.ts
+@@ -1158,4 +1158,9 @@ export const dict = {
+   "workspace.reset.archived.one": "1 سیشن آرکائیو کیتا جائے گا۔",
+   "workspace.reset.archived.many": "{{count}} سیشن آرکائیو کیتے جان گے۔",
+   "workspace.reset.note": "ایہ ورک اسپیس نو ڈیفالٹ برانچ نال ملاون لئی ری سیٹ کرے گا۔",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/pl.ts b/packages/app/src/i18n/pl.ts
+index 9b3c92749..9710aeeb6 100644
+--- a/packages/app/src/i18n/pl.ts
++++ b/packages/app/src/i18n/pl.ts
+@@ -1181,4 +1181,9 @@ export const dict = {
+   "error.childStore.persistedProjectIconCreateFailed": "Nie udało się utworzyć trwałej ikony projektu",
+   "error.childStore.storeCreateFailed": "Nie udało się utworzyć magazynu",
+   "terminal.connectionLost.abnormalClose": "WebSocket zamknięty nieprawidłowo: {{code}}",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/ro.ts b/packages/app/src/i18n/ro.ts
+index c84f9a4ee..74a922f05 100644
+--- a/packages/app/src/i18n/ro.ts
++++ b/packages/app/src/i18n/ro.ts
+@@ -1159,4 +1159,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} sesiuni vor fi arhivate.",
+   "workspace.reset.note": "Aceasta va reseta spațiul de lucru la ramura implicită.",
+   "dialog.usageExceeded.dontShowAgain": "Nu mai afișa",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/ru.ts b/packages/app/src/i18n/ru.ts
+index cf4fa8d8f..698867de0 100644
+--- a/packages/app/src/i18n/ru.ts
++++ b/packages/app/src/i18n/ru.ts
+@@ -1259,4 +1259,9 @@ export const dict = {
+   "error.childStore.persistedProjectIconCreateFailed": "Не удалось создать постоянный значок проекта",
+   "error.childStore.storeCreateFailed": "Не удалось создать хранилище",
+   "terminal.connectionLost.abnormalClose": "WebSocket закрыт аварийно: {{code}}",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/si.ts b/packages/app/src/i18n/si.ts
+index 00ca188b1..297d813aa 100644
+--- a/packages/app/src/i18n/si.ts
++++ b/packages/app/src/i18n/si.ts
+@@ -1150,4 +1150,9 @@ export const dict: Record<string, string> = {
+   "workspace.reset.archived.many": "සැසි {{count}} සංරක්ෂිත වනු ඇත.",
+   "workspace.reset.note": "මෙය පෙරනිමි ශාඛාවට ගැලපෙන පරිදි වැඩබිම නැවත සකසනු ඇත.",
+   "dialog.usageExceeded.dontShowAgain": "නැවත නොපෙන්වන්න",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/sk.ts b/packages/app/src/i18n/sk.ts
+index 9992e06cc..a62403c71 100644
+--- a/packages/app/src/i18n/sk.ts
++++ b/packages/app/src/i18n/sk.ts
+@@ -1156,4 +1156,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} relácií bude archivovaných.",
+   "workspace.reset.note": "Týmto sa pracovný priestor obnoví podľa predvolenej vetvy.",
+   "dialog.usageExceeded.dontShowAgain": "Znova nezobrazovať",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/sl.ts b/packages/app/src/i18n/sl.ts
+index 3c23fcd7f..2dccbd3b7 100644
+--- a/packages/app/src/i18n/sl.ts
++++ b/packages/app/src/i18n/sl.ts
+@@ -1160,4 +1160,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} seje bodo arhivirane.",
+   "workspace.reset.note": "To bo ponastavilo delovni prostor, da bo ustrezal privzeti veji.",
+   "dialog.usageExceeded.dontShowAgain": "Ne prikaži več",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/sq.ts b/packages/app/src/i18n/sq.ts
+index ca94793ab..3a7944812 100644
+--- a/packages/app/src/i18n/sq.ts
++++ b/packages/app/src/i18n/sq.ts
+@@ -1160,4 +1160,9 @@ export const dict = {
+   "workspace.reset.archived.many": "Seancat {{count}} do të arkivohen.",
+   "workspace.reset.note": "Kjo do të rivendosë hapësirën e punës që të përputhet me degën e paracaktuar.",
+   "dialog.usageExceeded.dontShowAgain": "Mos e shfaq përsëri",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/sr.ts b/packages/app/src/i18n/sr.ts
+index f05916008..782b0517c 100644
+--- a/packages/app/src/i18n/sr.ts
++++ b/packages/app/src/i18n/sr.ts
+@@ -1158,4 +1158,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} сесије ће бити архивиране.",
+   "workspace.reset.note": "Ово ће ресетовати радни простор тако да одговара подразумеваној грани.",
+   "dialog.usageExceeded.dontShowAgain": "Не приказуј поново",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/sv.ts b/packages/app/src/i18n/sv.ts
+index 39b363c6b..299545717 100644
+--- a/packages/app/src/i18n/sv.ts
++++ b/packages/app/src/i18n/sv.ts
+@@ -1157,4 +1157,9 @@ export const dict = {
+   "workspace.reset.archived.one": "1 session kommer att arkiveras.",
+   "workspace.reset.archived.many": "{{count}} sessioner kommer att arkiveras.",
+   "workspace.reset.note": "Detta kommer att återställa arbetsytan så att den matchar standardgrenen.",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/tg.ts b/packages/app/src/i18n/tg.ts
+index ffa08409f..491dfbc70 100644
+--- a/packages/app/src/i18n/tg.ts
++++ b/packages/app/src/i18n/tg.ts
+@@ -1161,4 +1161,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} сессия архив карда мешаванд.",
+   "workspace.reset.note": "Ин фазои кориро барои мувофиқ кардани филиали пешфарз барқарор мекунад.",
+   "dialog.usageExceeded.dontShowAgain": "Дигар нишон надиҳед",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/th.ts b/packages/app/src/i18n/th.ts
+index 1a0e9db72..d1515b264 100644
+--- a/packages/app/src/i18n/th.ts
++++ b/packages/app/src/i18n/th.ts
+@@ -1235,4 +1235,9 @@ export const dict = {
+   "error.childStore.persistedProjectIconCreateFailed": "ไม่สามารถสร้างไอคอนโปรเจกต์ถาวร",
+   "error.childStore.storeCreateFailed": "ไม่สามารถสร้างที่เก็บ",
+   "terminal.connectionLost.abnormalClose": "WebSocket ปิดอย่างผิดปกติ: {{code}}",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/tk.ts b/packages/app/src/i18n/tk.ts
+index 2b144c6a2..625b2ba9e 100644
+--- a/packages/app/src/i18n/tk.ts
++++ b/packages/app/src/i18n/tk.ts
+@@ -1156,4 +1156,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} sessiýalary arhiwlener.",
+   "workspace.reset.note": "Bu workspace-i adaty şaha gabat getirmek üçin täzeden düzer.",
+   "dialog.usageExceeded.dontShowAgain": "Gaýtadan görkezme",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/tr.ts b/packages/app/src/i18n/tr.ts
+index 85623036e..61503079b 100644
+--- a/packages/app/src/i18n/tr.ts
++++ b/packages/app/src/i18n/tr.ts
+@@ -1257,4 +1257,9 @@ export const dict = {
+   "error.childStore.persistedProjectIconCreateFailed": "Kalıcı proje simgesi oluşturulamadı",
+   "error.childStore.storeCreateFailed": "Depo oluşturulamadı",
+   "terminal.connectionLost.abnormalClose": "WebSocket anormal şekilde kapandı: {{code}}",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ } satisfies Partial<Record<Keys, string>>
+diff --git a/packages/app/src/i18n/uk.ts b/packages/app/src/i18n/uk.ts
+index 54732a87b..d3cc89cfc 100644
+--- a/packages/app/src/i18n/uk.ts
++++ b/packages/app/src/i18n/uk.ts
+@@ -1264,4 +1264,9 @@ export const dict = {
+   "workspace.reset.archived.one": "1 сесію буде заархівовано.",
+   "workspace.reset.archived.many": "{{count}} сесій буде заархівовано.",
+   "workspace.reset.note": "Це скине робочу область, щоб вона відповідала гілці за замовчуванням.",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/ur.ts b/packages/app/src/i18n/ur.ts
+index 2ab69e7ae..975aabf8a 100644
+--- a/packages/app/src/i18n/ur.ts
++++ b/packages/app/src/i18n/ur.ts
+@@ -1161,4 +1161,9 @@ export const dict = {
+   "workspace.reset.archived.one": "1 سیشن آرکائیو کیا جائے گا۔",
+   "workspace.reset.archived.many": "{{count}} سیشنز آرکائیو کیے جائیں گے۔",
+   "workspace.reset.note": "یہ ڈیفالٹ برانچ سے ملنے کے لیے ورک اسپیس کو دوبارہ ترتیب دے گا۔",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/uz.ts b/packages/app/src/i18n/uz.ts
+index 8cb7097fc..772b6eb3e 100644
+--- a/packages/app/src/i18n/uz.ts
++++ b/packages/app/src/i18n/uz.ts
+@@ -1168,4 +1168,9 @@ export const dict = {
+   "workspace.reset.archived.many": "{{count}} seanslari arxivlanadi.",
+   "workspace.reset.note": "Bu standart filialga mos keladigan ish maydonini tiklaydi.",
+   "dialog.usageExceeded.dontShowAgain": "Boshqa ko‘rsatma",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
+diff --git a/packages/app/src/i18n/vi.ts b/packages/app/src/i18n/vi.ts
+index 06fda4ce7..2692d9fd8 100644
+--- a/packages/app/src/i18n/vi.ts
++++ b/packages/app/src/i18n/vi.ts
+@@ -1166,4 +1166,9 @@ export const dict = {
+   "workspace.reset.archived.one": "1 phiên sẽ được lưu trữ.",
+   "workspace.reset.archived.many": "{{count}} phiên sẽ được lưu trữ.",
+   "workspace.reset.note": "Điều này sẽ thiết lập lại không gian làm việc để phù hợp với nhánh mặc định.",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "Loading this draft…",
++  "session.draft.missing.title": "This draft is no longer available",
++  "session.draft.missing.description": "It was deleted, or this link points to a draft that never existed. Nothing was lost from your other conversations.",
++  "session.draft.missing.action": "Back to home",
+ }
 diff --git a/packages/app/src/i18n/zh.ts b/packages/app/src/i18n/zh.ts
-index 82d73ac3a..25efd7fd5 100644
+index b0ba04534..368b3ed00 100644
 --- a/packages/app/src/i18n/zh.ts
 +++ b/packages/app/src/i18n/zh.ts
-@@ -668,6 +668,11 @@ export const dict = {
+@@ -800,6 +800,11 @@ export const dict = {
    "session.new.workspace.existing": "工作区…",
    "session.new.git.none": "无 Git",
    "session.new.lastModified": "最后修改",
@@ -2224,8 +3115,22 @@ index 82d73ac3a..25efd7fd5 100644
    "session.header.search.placeholder": "搜索 {{project}}",
    "session.header.searchFiles": "搜索文件",
    "session.header.openIn": "打开方式",
+diff --git a/packages/app/src/i18n/zht.ts b/packages/app/src/i18n/zht.ts
+index 6cc3d5552..185f50e15 100644
+--- a/packages/app/src/i18n/zht.ts
++++ b/packages/app/src/i18n/zht.ts
+@@ -1220,4 +1220,9 @@ export const dict = {
+   "error.childStore.persistedProjectIconCreateFailed": "建立持續性專案圖示失敗",
+   "error.childStore.storeCreateFailed": "建立儲存區失敗",
+   "terminal.connectionLost.abnormalClose": "WebSocket 異常關閉：{{code}}",
++  // alpha-code #903(en/zh 已有;其余 locale 为英文回退,满足上游 parity 判据):
++  "session.draft.pending": "正在載入這份草稿…",
++  "session.draft.missing.title": "這份草稿已經不在了",
++  "session.draft.missing.description": "它可能已被刪除,或這個連結指向一份從未存在過的草稿。你的其他對話沒有受影響。",
++  "session.draft.missing.action": "返回首頁",
+ } satisfies Partial<Record<Keys, string>>
 diff --git a/packages/app/src/index.ts b/packages/app/src/index.ts
-index d18e05fc9..b89f68a3c 100644
+index 0e0ed0286..7f7ae2454 100644
 --- a/packages/app/src/index.ts
 +++ b/packages/app/src/index.ts
 @@ -1,4 +1,27 @@
@@ -2266,7 +3171,7 @@ index d18e05fc9..b89f68a3c 100644
 +  type SettingsAuthorityCoordinator,
 +  type SettingsAuthoritySnapshot,
 +} from "./context/settings"
- export { loadLocaleDict, normalizeLocale, type Locale } from "./context/language"
+ export { loadLocaleDict, normalizeLocale, type Locale, useLanguage } from "./context/language"
  export { useWslServers } from "./wsl/context"
  export { type DisplayBackend, type FatalRendererErrorLog, type Platform, PlatformProvider } from "./context/platform"
 diff --git a/packages/app/src/pages/draft-route-gate.tsx b/packages/app/src/pages/draft-route-gate.tsx
@@ -2374,20 +3279,24 @@ index 000000000..49a367ca0
 +    </Show>
 +  )
 +}
-diff --git a/packages/app/src/pages/home.tsx b/packages/app/src/pages/home.tsx
-index 215696d7d..ca677b349 100644
---- a/packages/app/src/pages/home.tsx
-+++ b/packages/app/src/pages/home.tsx
-@@ -553,7 +553,7 @@ export function NewHome() {
- 
-   function editProject(conn: ServerConnection.Any, project: LocalProject) {
-     void import("@/components/dialog-edit-project-v2").then((x) => {
--      void dialog.show(() => <x.DialogEditProjectV2 server={conn} project={project} />)
-+      void dialog.show(() => <x.DialogEditProjectV2 server={conn} project={project} />, undefined, { host: true })
-     })
-   }
- 
-@@ -1753,7 +1753,7 @@ export function LegacyHome() {
+diff --git a/packages/app/src/pages/home/home-projects-controller.tsx b/packages/app/src/pages/home/home-projects-controller.tsx
+index 18c58bd29..53caa748c 100644
+--- a/packages/app/src/pages/home/home-projects-controller.tsx
++++ b/packages/app/src/pages/home/home-projects-controller.tsx
+@@ -73,7 +73,7 @@ export function createHomeProjectsController(home: HomeController) {
+       openNewSession: home.project.openProjectNewSession,
+       edit: (conn: ServerConnection.Any, project: LocalProject) => {
+         void import("@/components/dialog-edit-project-v2").then(({ DialogEditProjectV2 }) => {
+-          void dialog.show(() => <DialogEditProjectV2 server={conn} project={project} />)
++          void dialog.show(() => <DialogEditProjectV2 server={conn} project={project} />, undefined, { host: true })
+         })
+       },
+       unseenCount: (conn: ServerConnection.Any, project: LocalProject) => {
+diff --git a/packages/app/src/pages/home/legacy-home.tsx b/packages/app/src/pages/home/legacy-home.tsx
+index 0556f7cf6..bb12f6ef9 100644
+--- a/packages/app/src/pages/home/legacy-home.tsx
++++ b/packages/app/src/pages/home/legacy-home.tsx
+@@ -72,7 +72,7 @@ export function LegacyHome() {
          size="large"
          variant="ghost"
          class="mt-4 mx-auto text-14-regular text-text-weak"
@@ -2397,28 +3306,24 @@ index 215696d7d..ca677b349 100644
          <div
            classList={{
 diff --git a/packages/app/src/pages/layout-new.tsx b/packages/app/src/pages/layout-new.tsx
-index c6fed8f6d..4ce6fd511 100644
+index 6d76ca840..8d3dffca3 100644
 --- a/packages/app/src/pages/layout-new.tsx
 +++ b/packages/app/src/pages/layout-new.tsx
-@@ -1,19 +1,26 @@
+@@ -1,15 +1,22 @@
 -import { createEffect, Suspense, type ParentProps } from "solid-js"
 +import { createEffect, Show, Suspense, type ParentProps } from "solid-js"
  import { createStore } from "solid-js/store"
- import { useNavigate } from "@solidjs/router"
  import { DebugBar } from "@/components/debug-bar"
  import { TabsInfoPopup } from "@/components/help-button"
  import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
 +import { useLayout } from "@/context/layout"
  import { usePlatform } from "@/context/platform"
- import { setNavigate } from "@/utils/notification-click"
  import { setV2Toast, ToastRegion } from "@/utils/toast"
  
 -export default function NewLayout(props: ParentProps) {
 +export default function NewLayout(props: ParentProps<{ sessionOwnsTitlebar?: boolean }>) {
    const platform = usePlatform()
 +  const layout = useLayout()
-   const navigate = useNavigate()
-   setNavigate(navigate)
    const [state, setState] = createStore({ debugTools: true })
  
 +  // REQ-125 (#574): an injected session surface that owns its top bar replaces the Titlebar
@@ -2429,7 +3334,7 @@ index c6fed8f6d..4ce6fd511 100644
    createEffect(() => setV2Toast(true))
  
    const update: TitlebarUpdate = {
-@@ -34,14 +41,16 @@ export default function NewLayout(props: ParentProps) {
+@@ -30,14 +37,16 @@ export default function NewLayout(props: ParentProps) {
          "padding-bottom": "env(safe-area-inset-bottom, 0px)",
        }}
      >
@@ -2455,7 +3360,7 @@ index c6fed8f6d..4ce6fd511 100644
          <Suspense>{props.children}</Suspense>
        </main>
 diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
-index 812a479b2..a30ecde90 100644
+index 95f8c0184..1910081ba 100644
 --- a/packages/app/src/pages/layout.tsx
 +++ b/packages/app/src/pages/layout.tsx
 @@ -67,12 +67,7 @@ import {
@@ -2486,7 +3391,7 @@ index 812a479b2..a30ecde90 100644
      const run = ++dialogRun
      const module = settings.general.newLayoutDesigns()
        ? import("@/components/settings-v2")
-@@ -1256,36 +1252,28 @@ export default function LegacyLayout(props: ParentProps) {
+@@ -1260,36 +1256,28 @@ export default function LegacyLayout(props: ParentProps) {
      if (navigate) return navigateToProject(directory)
    }
  
@@ -2543,7 +3448,7 @@ index 812a479b2..a30ecde90 100644
    })
  
    async function renameProject(project: LocalProject, next: string) {
-@@ -1348,7 +1336,7 @@ export default function LegacyLayout(props: ParentProps) {
+@@ -1361,7 +1349,7 @@ export default function LegacyLayout(props: ParentProps) {
      const run = ++dialogRun
      void import("@/components/dialog-edit-project").then((x) => {
        if (dialogDead || dialogRun !== run) return
@@ -2552,7 +3457,7 @@ index 812a479b2..a30ecde90 100644
      })
    }
  
-@@ -1879,9 +1867,9 @@ export default function LegacyLayout(props: ParentProps) {
+@@ -1889,9 +1877,9 @@ export default function LegacyLayout(props: ParentProps) {
      workspaceExpanded: (directory, local) => store.workspaceExpanded[directory] ?? local,
      setWorkspaceExpanded: (directory, value) => setStore("workspaceExpanded", directory, value),
      showResetWorkspaceDialog: (root, directory) =>
@@ -2715,7 +3620,7 @@ index 5dca421f7..566391c28 100644
 +  applyDeepLinks(drainPendingDeepLinks(deps.buffer()), deps)
  }
 diff --git a/packages/app/src/pages/layout/helpers.test.ts b/packages/app/src/pages/layout/helpers.test.ts
-index df87ddfec..c18719130 100644
+index cb58b6f8b..d17f9b49b 100644
 --- a/packages/app/src/pages/layout/helpers.test.ts
 +++ b/packages/app/src/pages/layout/helpers.test.ts
 @@ -1,10 +1,10 @@
@@ -2731,7 +3636,7 @@ index df87ddfec..c18719130 100644
  } from "./deep-links"
  import { type Session } from "@opencode-ai/sdk/v2/client"
  import {
-@@ -37,76 +37,96 @@ const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
+@@ -39,76 +39,96 @@ const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
    }) as Session
  
  describe("layout deep links", () => {
@@ -2883,10 +3788,10 @@ index df87ddfec..c18719130 100644
  })
  
 diff --git a/packages/app/src/pages/session.tsx b/packages/app/src/pages/session.tsx
-index 3ce284167..02f4c33c7 100644
+index 2e647e0f4..6058cb560 100644
 --- a/packages/app/src/pages/session.tsx
 +++ b/packages/app/src/pages/session.tsx
-@@ -15,6 +15,7 @@ import {
+@@ -16,6 +16,7 @@ import {
    createSignal,
    on,
    onMount,
@@ -2894,7 +3799,7 @@ index 3ce284167..02f4c33c7 100644
    type ParentProps,
    untrack,
  } from "solid-js"
-@@ -155,7 +156,7 @@ export function SessionPage() {
+@@ -156,7 +157,7 @@ export function SessionPage() {
  // remount around the server-scoped providers. Nothing here may key on the
  // session ID: session tabs on the same server share this route instance, and
  // workspace-scoped state (terminal, directory providers) lives below.
@@ -2903,7 +3808,7 @@ index 3ce284167..02f4c33c7 100644
    const params = useParams<{ serverKey: string; id: string }>()
    const serverSync = useServerSync()
    const directory = createMemo(() => serverSync().session.lineage.peek(params.id)?.session.directory)
-@@ -165,7 +166,7 @@ export function TargetSessionRouteContent() {
+@@ -166,7 +167,7 @@ export function TargetSessionRouteContent() {
      <TargetServerScopedProviders directory={directory} sessionID={() => params.id}>
        <TargetSessionSettingsCommand />
        <SessionRouteErrorBoundary sessionID={params.id} serverKey={requireServerKey(params.serverKey)} padded>
@@ -2912,7 +3817,7 @@ index 3ce284167..02f4c33c7 100644
        </SessionRouteErrorBoundary>
      </TargetServerScopedProviders>
    )
-@@ -242,7 +243,7 @@ function SessionErrorFallback(props: { error: unknown; sessionID?: string; serve
+@@ -243,7 +244,7 @@ function SessionErrorFallback(props: { error: unknown; sessionID?: string; serve
    return <ErrorPage error={props.error} />
  }
  
@@ -2921,7 +3826,7 @@ index 3ce284167..02f4c33c7 100644
    const params = useParams<{ serverKey: string; id: string }>()
    const tabs = useTabs()
    const sync = useServerSync()
-@@ -271,7 +272,7 @@ function ResolvedTargetSessionRoute() {
+@@ -272,7 +273,7 @@ function ResolvedTargetSessionRoute() {
      <Show when={directory()}>
        <SDKProvider directory={targetDirectory}>
          <DirectoryDataProvider directory={targetDirectory} server={serverKey}>
@@ -2930,7 +3835,7 @@ index 3ce284167..02f4c33c7 100644
          </DirectoryDataProvider>
        </SDKProvider>
      </Show>
-@@ -281,12 +282,18 @@ function ResolvedTargetSessionRoute() {
+@@ -282,12 +283,18 @@ function ResolvedTargetSessionRoute() {
  // Owns the workspace-identity remount. Must not include the session ID in the
  // key: SessionPage handles session changes reactively, and remounting here
  // destroys workspace-scoped state (terminal PTYs, file/prompt providers).
@@ -2951,7 +3856,7 @@ index 3ce284167..02f4c33c7 100644
      </Show>
    )
  }
-@@ -313,7 +320,7 @@ function MarkSessionNotificationsViewed(props: { sessionID?: () => string | unde
+@@ -314,7 +321,7 @@ function MarkSessionNotificationsViewed(props: { sessionID?: () => string | unde
    return null
  }
  
@@ -2995,7 +3900,7 @@ index 600ff41e3..4c8581e03 100644
            <Show when={controller.dock()}>
              <div
 diff --git a/packages/app/src/pages/session/composer/session-composer-state.ts b/packages/app/src/pages/session/composer/session-composer-state.ts
-index 45f5e4cb2..7f757a98a 100644
+index f54e0c9e4..7f757a98a 100644
 --- a/packages/app/src/pages/session/composer/session-composer-state.ts
 +++ b/packages/app/src/pages/session/composer/session-composer-state.ts
 @@ -1,14 +1,10 @@
@@ -3066,7 +3971,7 @@ index 45f5e4cb2..7f757a98a 100644
 -
 -    setStore("responding", perm.id)
 -    sdk()
--      .client.permission.respond({ sessionID: perm.sessionID, permissionID: perm.id, response })
+-      .api.permission.reply({ sessionID: perm.sessionID, requestID: perm.id, reply: response })
 -      .catch((err: unknown) => {
 -        const description = err instanceof Error ? err.message : String(err)
 -        showToast({ title: language.t("common.requestFailed"), description })
@@ -3170,10 +4075,10 @@ index 35a62f75c..000000000
 -  )
 -}
 diff --git a/packages/app/src/pages/session/session-side-panel.tsx b/packages/app/src/pages/session/session-side-panel.tsx
-index 571428e29..26ad6fdc6 100644
+index 6f074fa20..0e0c9cb3a 100644
 --- a/packages/app/src/pages/session/session-side-panel.tsx
 +++ b/packages/app/src/pages/session/session-side-panel.tsx
-@@ -458,7 +458,11 @@ export function SessionSidePanel(props: {
+@@ -454,7 +454,11 @@ export function SessionSidePanel(props: {
                                      class="!rounded-md"
                                      onClick={() => {
                                        void import("@/components/dialog-select-file").then((x) => {
@@ -3187,10 +4092,10 @@ index 571428e29..26ad6fdc6 100644
                                      }}
                                      aria-label={language.t("command.file.open")}
 diff --git a/packages/app/src/pages/session/timeline/message-timeline.tsx b/packages/app/src/pages/session/timeline/message-timeline.tsx
-index 2959e9f8a..21ad01c06 100644
+index 25abdc9e7..9acec788a 100644
 --- a/packages/app/src/pages/session/timeline/message-timeline.tsx
 +++ b/packages/app/src/pages/session/timeline/message-timeline.tsx
-@@ -1562,7 +1562,9 @@ export function MessageTimeline(props: {
+@@ -1598,7 +1598,9 @@ export function MessageTimeline(props: {
                                  </DropdownMenu.Item>
                                  <DropdownMenu.Separator />
                                  <DropdownMenu.Item
@@ -3201,7 +4106,7 @@ index 2959e9f8a..21ad01c06 100644
                                  >
                                    <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
                                  </DropdownMenu.Item>
-@@ -1632,7 +1634,11 @@ export function MessageTimeline(props: {
+@@ -1671,7 +1673,11 @@ export function MessageTimeline(props: {
                                  {language.t("common.archive")}
                                </MenuV2.Item>
                                <MenuV2.Separator />
@@ -3297,10 +4202,10 @@ index d56fa3d1f..fd38b0dd1 100644
      }),
    )
 diff --git a/packages/app/src/pages/session/use-session-commands.tsx b/packages/app/src/pages/session/use-session-commands.tsx
-index 275e6ec4b..bb4a5bc79 100644
+index c4c8c44a9..196d6ada2 100644
 --- a/packages/app/src/pages/session/use-session-commands.tsx
 +++ b/packages/app/src/pages/session/use-session-commands.tsx
-@@ -234,7 +234,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
+@@ -261,7 +261,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
    const openFile = () => {
      void openDialog(
        () => import("@/components/dialog-select-file"),
@@ -3309,7 +4214,7 @@ index 275e6ec4b..bb4a5bc79 100644
      )
    }
  
-@@ -280,7 +280,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
+@@ -307,7 +307,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
    const chooseMcp = () => {
      void openDialog(
        () => import("@/components/dialog-select-mcp"),
@@ -3318,7 +4223,7 @@ index 275e6ec4b..bb4a5bc79 100644
      )
    }
  
-@@ -385,7 +385,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
+@@ -415,7 +415,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
    const fork = () => {
      void openDialog(
        () => import("@/components/dialog-fork"),
@@ -5152,18 +6057,19 @@ index 39ef8ea1c..343854e94 100644
 +  return useContext(HostContext)
 +}
 diff --git a/packages/ui/src/v2/components/dialog-v2.tsx b/packages/ui/src/v2/components/dialog-v2.tsx
-index b9dd2521e..cd6a501a0 100644
+index 8f083f929..331d318a5 100644
 --- a/packages/ui/src/v2/components/dialog-v2.tsx
 +++ b/packages/ui/src/v2/components/dialog-v2.tsx
-@@ -1,5 +1,7 @@
+@@ -1,6 +1,8 @@
  import { Dialog as Kobalte } from "@kobalte/core/dialog"
  import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
+ import { useI18n } from "../../context/i18n"
 +import { Dynamic } from "solid-js/web"
 +import { useDialogHost } from "../../context/dialog"
  import "./dialog-v2.css"
  
  export interface DialogProps extends ParentProps {
-@@ -80,6 +82,31 @@ export function DialogHeader(props: DialogHeaderProps) {
+@@ -82,6 +84,31 @@ export function DialogHeader(props: DialogHeaderProps) {
  }
  
  export function Dialog(props: DialogProps) {

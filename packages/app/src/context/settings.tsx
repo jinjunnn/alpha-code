@@ -36,6 +36,7 @@ export interface Settings {
     mobileTitlebarPosition: "top" | "bottom"
     newLayoutDesigns?: boolean
     layoutTransitionEligible?: boolean
+    agentVisibilityInitialized?: boolean
     newInterfaceNoticeDismissed?: boolean
     shouldDisplayTabsToast?: boolean
   }
@@ -98,6 +99,15 @@ export function shouldDisplayTabsToast(
   existingInstall: boolean,
 ) {
   return isAppUpgrade(previous, current) || (!previous && existingInstall)
+}
+
+export function hasExistingWebState(settings: Promise<string> | string | null, previousVersion: string | undefined) {
+  return settings !== null || previousVersion !== undefined
+}
+
+export function initialAgentVisibility(initialized: boolean | undefined, existing: boolean, previousVersion?: string) {
+  if (initialized === true) return
+  return existing || previousVersion !== undefined
 }
 
 export function shouldEnableNewLayout(previous: string | undefined, current: string | undefined) {
@@ -233,6 +243,8 @@ function cloneSettings(value: Settings) {
 function createSettingsState(coordinator: SettingsAuthorityCoordinator | undefined): {
   store: Store<Settings>
   ready: Accessor<boolean>
+  /** Raw persisted payload (null = nothing stored yet); upstream's hasExistingWebState() reads it. */
+  init: Promise<string> | string | null
   update(change: (current: Settings) => Settings): void
 } {
   if (!coordinator) {
@@ -240,6 +252,7 @@ function createSettingsState(coordinator: SettingsAuthorityCoordinator | undefin
     return {
       store: state[0],
       ready: state[3],
+      init: state[2],
       update(change) {
         state[1](reconcile(change(cloneSettings(state[0]))))
       },
@@ -259,6 +272,9 @@ function createSettingsState(coordinator: SettingsAuthorityCoordinator | undefin
   return {
     store,
     ready,
+    // Host-owned authority has no web-storage payload; "returning user" then rests on the
+    // persisted app-version launch record alone (hasExistingWebState's second operand).
+    init: null,
     update(change) {
       setStore(reconcile(change(cloneSettings(store))))
       void coordinator.update(change).then(adopt, () => coordinator.read().then(adopt, () => undefined))
@@ -274,6 +290,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
     const state = createSettingsState(platform.settings)
     const store = state.store
     const ready = state.ready
+    const settingsInit = state.init
     const setGeneral = <Key extends keyof Settings["general"]>(key: Key, value: Settings["general"][Key]) =>
       state.update((current) => ({ ...current, general: { ...current.general, [key]: value } }))
     const setAppearance = <Key extends keyof Settings["appearance"]>(
@@ -332,6 +349,14 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       )
     })
     const visible = (preference: () => boolean) => createMemo(() => !newLayoutDesigns() || preference())
+    const initializeAgentVisibility = (existing: boolean) => {
+      const initial = initialAgentVisibility(store.general?.agentVisibilityInitialized, existing, launchState.previous)
+      if (initial === undefined) return
+      state.update((current) => ({
+        ...current,
+        general: { ...current.general, showCustomAgents: initial, agentVisibilityInitialized: true },
+      }))
+    }
 
     if (sunset && !oldInterfaceRetired()) {
       const timeout = { current: undefined as ReturnType<typeof setTimeout> | undefined }
@@ -356,6 +381,13 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       })
       if (!platform.version || launch.version === platform.version) return
       setLaunch("version", platform.version)
+    })
+
+    createEffect(() => {
+      if (!ready() || !launchState.classified || platform.platform !== "web") return
+      const existing = hasExistingWebState(settingsInit, launchState.previous)
+      if (!layoutTransitionClassified()) setGeneral("layoutTransitionEligible", existing)
+      initializeAgentVisibility(existing)
     })
 
     createEffect(() => {
@@ -480,6 +512,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
           if (typeof current === "boolean") return
           setGeneral("layoutTransitionEligible", eligible)
         },
+        initializeAgentVisibility,
         layoutTransitionAvailable: createMemo(() => ready() && layoutTransition().available),
         newInterfaceNoticeVisible: createMemo(() => ready() && layoutTransition().notice),
         dismissNewInterfaceNotice() {

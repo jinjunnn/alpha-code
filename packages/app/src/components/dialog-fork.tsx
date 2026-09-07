@@ -73,18 +73,14 @@ export const DialogFork: Component = () => {
     const dir = base64Encode(sdk().directory)
 
     sdk()
-      .client.session.fork({ sessionID, messageID: item.id })
+      .api.session.fork({ sessionID, messageID: item.id })
       .then((forked) => {
-        if (!forked.data) {
-          showToast({ title: language.t("common.requestFailed") })
-          return
-        }
         dialog.close()
-        prompt.set(restored, undefined, { dir, id: forked.data.id })
+        prompt.set(restored, undefined, { dir, id: forked.id })
         // #933:fork 是 `sdk()` 连着的那台 server 执行的,分叉出的会话就长在那台上 —— href 钉
         // canonical 的 server+id 身份。旧的 legacy 形状(`/{目录}/session/{id}`)会让壳按 active
         // server 反推,多 server 下把新分叉导向没有它的机器(#894 同形)。
-        navigate(sessionHref(ServerConnection.key(serverSDK().server), forked.data.id))
+        navigate(sessionHref(ServerConnection.key(serverSDK().server), forked.id))
       })
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err)
