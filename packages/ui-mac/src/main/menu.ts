@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron"
 import type { MenuItemConstructorOptions } from "electron"
 import { join } from "node:path"
 import { type DesktopMenuEntry, type DesktopMenuPlatform, type DesktopMenuRole } from "@opencode-ai/app/desktop-menu"
+import { DESKTOP_NATIVE_ENGLISH } from "@opencode-ai/app/i18n/desktop-native"
 
 import { alphaDesktopMenu } from "../shared/desktop-menu-policy"
 import { UPDATER_ENABLED } from "./constants"
@@ -30,8 +31,10 @@ export function createMenu(deps: Deps) {
   // 发布面逐个要求「真注册且可触发」。平台可见性过滤已在策略里做过,这里不再重复。
   const template: MenuItemConstructorOptions[] = alphaDesktopMenu(target).map((menu) => {
     if (menu.role) return roleItem(menu.role)
+    // 上游 e11dbd020 起菜单项只带 labelKey;英文表就是上游此前内联的那些字面量。渲染进程的
+    // onNativeTranslations → 主进程 bundle 那条本地化通道本次未接(main 无 i18n,ADR-022 先例)。
     return {
-      label: menu.label,
+      label: DESKTOP_NATIVE_ENGLISH[menu.labelKey],
       submenu: menu.items?.map((entry) => nativeItem(entry, deps, target)),
     }
   })
@@ -108,7 +111,7 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps, target: DesktopMenuPlat
   if (entry.role) return roleItem(entry.role)
 
   const item: MenuItemConstructorOptions = {
-    label: entry.label,
+    label: entry.labelKey ? DESKTOP_NATIVE_ENGLISH[entry.labelKey] : undefined,
     accelerator: entry.accelerator?.[target],
     enabled: entry.enabled === "updater" ? UPDATER_ENABLED : undefined,
   }

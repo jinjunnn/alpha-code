@@ -191,8 +191,8 @@ export function navigateTo(href: string) {
   }
 }
 
-/** #933:被交给 OS 通知层(platform.notify)的每一条 —— 用户点通知后会去的就是这个 href。 */
-export type OsNotification = { title: string; description?: string; href?: string }
+/** #933:被交给 OS 通知层(platform.notify)的每一条 —— 按下 onClick,用户点通知后去的地方就落在 router 上。 */
+export type OsNotification = { title: string; description?: string; onClick?: () => void }
 const [osNotifications, setOsNotifications] = createSignal<OsNotification[]>([])
 export { osNotifications }
 
@@ -299,14 +299,13 @@ const platform: Platform = {
   platform: "desktop",
   os: "macos",
   storage: harnessStorage,
-  openLink: () => {},
+  openExternal: () => {},
   restart: async () => {},
-  back: () => {},
-  forward: () => {},
-  // #933:生产里这个 href 原样交给 OS 通知的 onclick → handleNotificationClick(href) → router。
-  // 记录它 = 记录「用户点通知会落到哪」。
-  notify: async (title: string, description?: string, href?: string) => {
-    setOsNotifications((seen) => [...seen, { title, description, href }])
+  // #933:生产里 OS 通知的 onclick 直接调用这个 onClick(上游 e11dbd020 起 notify 不再收 href,
+  // 而是收一个已经绑好落点的 `() => navigate(href)`)。记录它 = 记录「用户点通知会落到哪」——
+  // 用例按下它,再读真实 router 的落点。
+  notify: async (title: string, description?: string, onClick?: () => void) => {
+    setOsNotifications((seen) => [...seen, { title, description, onClick }])
   },
   openDirectoryPickerDialog: async () => ({ paths: [] }) as never,
   // 与 renderer/index.tsx 逐字同义:上游那几处 `settings.open` 注册都以
@@ -382,7 +381,7 @@ export function installPreloadStub() {
     account: { summary: async () => null },
     contracts: { health: async () => null, subscribe: noop },
     endpoints: async () => undefined,
-    openLink: () => {},
+    openExternal: () => {},
     updater: { check: async () => {}, subscribe: noop },
     setTitlebar: async () => {},
     setBackgroundColor: async () => {},
@@ -431,6 +430,10 @@ export function installPreloadStub() {
 
 /** 上游按端点解析响应;形状不对会触发重试退避,叶被 Suspense 压住,"看起来没挂载"。 */
 const FETCH_FIXTURES: Record<string, unknown> = {
+  // pin e11dbd020:上游客户端先探 `/global/health`(答 `{healthy:true}` ⇒ v1)再探 `/api/health`;
+  // 兜底默认 v2。本 harness 只铺了 v1 legacy 端点,所以显式自报 v1 —— 否则上游走 v2 的
+  // `api.session.list`,拿到 `{}` 就在 `.data.map` 上 TypeError,壳"点了没反应"。
+  "/global/health": { healthy: true },
   "/provider": { all: [], connected: [], default: {} },
   "/path": { state: "", config: "", worktree: FIXTURE_DIRECTORY, directory: FIXTURE_DIRECTORY, home: "/Users/tester" },
   "/project": [],

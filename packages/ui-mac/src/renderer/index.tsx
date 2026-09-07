@@ -6,7 +6,6 @@ import {
   AppInterface,
   type AppSurfaces,
   type DraftSurfaceProps,
-  handleNotificationClick,
   loadLocaleDict,
   normalizeLocale,
   type Locale,
@@ -261,7 +260,7 @@ const createPlatform = (): Platform => {
       })
     },
 
-    openLink(url: string) {
+    openExternal(url: string) {
       window.api.openLink(url)
     },
     async openPath(path: string, app?: string) {
@@ -272,16 +271,8 @@ const createPlatform = (): Platform => {
       return window.api.openPath(path, app)
     },
 
-    back() {
-      window.history.back()
-    },
-
     openSettings() {
       setSettingsOpen(true)
-    },
-
-    forward() {
-      window.history.forward()
     },
 
     storage,
@@ -301,7 +292,7 @@ const createPlatform = (): Platform => {
       window.api.relaunch()
     },
 
-    notify: async (title, description, href) => {
+    notify: async (title, description, onClick) => {
       const focused = await window.api.getWindowFocused().catch(() => document.hasFocus())
       if (focused) return
 
@@ -316,7 +307,7 @@ const createPlatform = (): Platform => {
       notification.onclick = () => {
         void window.api.showWindow()
         void window.api.setWindowFocus()
-        handleNotificationClick(href)
+        onClick?.()
         notification.close()
       }
     },
@@ -354,8 +345,6 @@ const createPlatform = (): Platform => {
     setDisplayBackend: async (backend) => {
       await window.api.setDisplayBackend(backend)
     },
-
-    parseMarkdown: (markdown: string) => window.api.parseMarkdownCommand(markdown),
 
     webviewZoom,
 
@@ -417,7 +406,7 @@ render(() => {
     const link = (e.target as HTMLElement).closest("a.external-link") as HTMLAnchorElement | null
     if (link?.href) {
       e.preventDefault()
-      platform.openLink(link.href)
+      platform.openExternal(link.href)
     }
   }
 

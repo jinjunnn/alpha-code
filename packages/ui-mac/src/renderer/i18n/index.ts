@@ -54,7 +54,9 @@ export type Locale =
   | "bs"
 
 type RawDictionary = typeof appEn & typeof desktopEn
-type Dictionary = i18n.Flatten<RawDictionary>
+// Values widened to `string` (same as upstream packages/desktop): since pin e11dbd020 the app dict spreads
+// DESKTOP_NATIVE_ENGLISH, and its literal-typed entries collide with ui-mac's own desktop.* copies.
+type Dictionary = Record<keyof i18n.Flatten<RawDictionary>, string>
 
 const LOCALES: readonly Locale[] = [
   "en",

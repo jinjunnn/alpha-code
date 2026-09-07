@@ -101,6 +101,8 @@ function createScriptedEngine() {
   }
   const fetchImpl = (async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+    // pin e11dbd020:上游先探 `/global/health` 判协议;本引擎只会说 v1 的话,显式自报。
+    if (url.pathname === "/global/health") return Response.json({ healthy: true })
     if (url.pathname === "/global/event") {
       state.connects++
       let controller!: ReadableStreamDefaultController<Uint8Array>
