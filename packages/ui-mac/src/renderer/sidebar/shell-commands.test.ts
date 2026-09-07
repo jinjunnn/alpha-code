@@ -635,9 +635,12 @@ describe("#933 legacy 会话 href 咽喉收口:反推默认拒绝 + 侧栏身份
     await waitFor(() => runtime.osNotifications().length > 0, "OS 通知发出")
 
     // 用户点这条通知会去的地方:canonical、钉在事件来源那台(sidecar),不是 active(wsl:ubuntu)。
-    const href = runtime.osNotifications()[0]!.href
-    expect(href).toBeDefined()
-    const landing = parseRoute(href!)
+    // 上游 e11dbd020 起 notify 收的是绑好落点的 onClick(不再是 href):按下它,落点落在真实 router 上。
+    const notification = runtime.osNotifications()[0]!
+    expect(notification.onClick).toBeDefined()
+    notification.onClick!()
+    await waitFor(() => runtime.routerPath().includes("/session/"), "点通知后真实 router 落地")
+    const landing = parseRoute(runtime.routerPath())
     expect({ kind: landing.kind, routeId: landing.identity.routeId }).toEqual({ kind: "session", routeId: "session" })
     expect((landing as { serverKey?: string }).serverKey).toBe("sidecar")
     expect((landing as { serverKey?: string }).serverKey).not.toBe("wsl:ubuntu")
@@ -651,9 +654,12 @@ describe("#933 legacy 会话 href 咽喉收口:反推默认拒绝 + 侧栏身份
     runtime.emitSessionIdle(runtime.WSL_ARCH_URL, runtime.FIXTURE_DIRECTORY, runtime.NOTIFIED_SESSION_ID)
     await waitFor(() => runtime.osNotifications().length > 0, "OS 通知发出")
 
-    const href = runtime.osNotifications()[0]!.href
-    expect(href).toBeDefined()
-    const landing = parseRoute(href!)
+    // 上游 e11dbd020 起 notify 收的是绑好落点的 onClick(不再是 href):按下它,落点落在真实 router 上。
+    const notification = runtime.osNotifications()[0]!
+    expect(notification.onClick).toBeDefined()
+    notification.onClick!()
+    await waitFor(() => runtime.routerPath().includes("/session/"), "点通知后真实 router 落地")
+    const landing = parseRoute(runtime.routerPath())
     expect({ kind: landing.kind, routeId: landing.identity.routeId }).toEqual({ kind: "session", routeId: "session" })
     // 与上一条用例的 key("sidecar")相异 —— 写死单值或按 active 反推的实现两条不可能同时绿。
     expect((landing as { serverKey?: string }).serverKey).toBe("wsl:arch")

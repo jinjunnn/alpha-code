@@ -14,7 +14,9 @@ describe("REQ-090 upstream Dialog migration ratchet", () => {
   test("active generic entrypoints explicitly select the Alpha host", () => {
     const expectations: Record<string, { anchors: string[]; hosts: number }> = {
       "app/src/context/highlights.tsx": { anchors: ["<DialogReleaseNotes"], hosts: 1 },
-      "app/src/pages/home.tsx": { anchors: ["<x.DialogEditProject", "<DialogSelectServer"], hosts: 2 },
+      // pin e11dbd020:上游把 home.tsx 拆成 home/*;两个入口各自搬家,主机选择跟着走。
+      "app/src/pages/home/home-projects-controller.tsx": { anchors: ["<DialogEditProjectV2"], hosts: 1 },
+      "app/src/pages/home/legacy-home.tsx": { anchors: ["<DialogSelectServer"], hosts: 1 },
       "app/src/pages/layout.tsx": {
         anchors: ["<x.DialogSelectServer", "<DialogResetWorkspace", "<DialogDeleteWorkspace"],
         hosts: 4,
@@ -41,9 +43,9 @@ describe("REQ-090 upstream Dialog migration ratchet", () => {
 
     const promptV2 = read("app/src/components/prompt-input-v2.tsx")
     const patch = read("ui-mac/scripts/patch-upstream.ts")
-    const source = `dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />),`
+    const source = `dialog.show(() => <ImagePreview src={attachment.blob.url} alt={attachment.filename} />),`
     const hosted =
-      `dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />, ` +
+      `dialog.show(() => <ImagePreview src={attachment.blob.url} alt={attachment.filename} />, ` +
       `undefined, { host: true }),`
     expect(promptV2).toContain(source)
     expect(patch).toContain(`"app/src/components/prompt-input-v2.tsx"`)

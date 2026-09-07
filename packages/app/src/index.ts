@@ -36,7 +36,7 @@ export {
   type SettingsAuthorityCoordinator,
   type SettingsAuthoritySnapshot,
 } from "./context/settings"
-export { loadLocaleDict, normalizeLocale, type Locale } from "./context/language"
+export { loadLocaleDict, normalizeLocale, type Locale, useLanguage } from "./context/language"
 export { useWslServers } from "./wsl/context"
 export { type DisplayBackend, type FatalRendererErrorLog, type Platform, PlatformProvider } from "./context/platform"
 export { type UpdaterPlatform, type UpdaterState } from "./updater"
@@ -55,4 +55,4 @@ export {
   type WslServersState,
 } from "./wsl/types"
 export { ServerConnection } from "./context/server"
-export { handleNotificationClick } from "./utils/notification-click"
+export { createDraftStore, type DraftStore } from "./utils/draft-store"

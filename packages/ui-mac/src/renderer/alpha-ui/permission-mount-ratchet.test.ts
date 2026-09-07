@@ -160,11 +160,26 @@ describe("审批决定提交入口:单一引用面白名单棘轮(#619 R3 Blocke
    *     但它在 #668 里被接上了 `permissions.autoApprove` 这个此前的死开关:关(默认)= 该
    *     入口不会提交任何决定。登记保留,因为引用面确实还在。
    *
-   *  新增任何引用面都必须先动这份清单 —— 那是一次显式的架构决策,不是顺手的代码改动。 */
+   *  新增任何引用面都必须先动这份清单 —— 那是一次显式的架构决策,不是顺手的代码改动。
+   *
+   *  ── 前端 pin 849c2598 → e11dbd020(ADR-034 月更 bump)显式更新 ─────────────────────────
+   *
+   *  4) `context/permission.tsx` 的登记从 `permission.respond` 改成 `permission.reply`:同一个
+   *     上游 legacy 自动应答器、同一行代码,只是上游把它从 `sdk.client.permission.respond`
+   *     改写成了 `sdk.api.permission.reply`(v2 命名)。入口总数不变,`permissions.autoApprove`
+   *     那道死开关照旧。
+   *
+   *  5) 新增 `utils/server-compat.ts`(`permission.reply` + `permission.respond`):上游新加的
+   *     v1↔v2 协议兼容层 —— `createCompatibleApi` 在引擎报 v1 时把每一次 v2 `permission.reply`
+   *     翻译成 legacy `permission.respond` 发出。它**不是**一个新的决定面(没有任何人从它读请求、
+   *     也没有 UI 挂在它上面),是所有 v2 提交入口在 v1 引擎上的物理出口;不登记它,上面 1)~4)
+   *     的每一条在 v1 引擎上都发不出去。同一份 SOT 补丁把它原样带进来,alpha 零改动。 */
   const SANCTIONED_ENTRY_HOLDERS = [
     { file: "packages/app/src/context/permission-surface.tsx", token: "permission.reply" },
     { file: "packages/app/src/context/permission-v1-adapter.ts", token: "permission.reply" },
-    { file: "packages/app/src/context/permission.tsx", token: "permission.respond" },
+    { file: "packages/app/src/context/permission.tsx", token: "permission.reply" },
+    { file: "packages/app/src/utils/server-compat.ts", token: "permission.reply" },
+    { file: "packages/app/src/utils/server-compat.ts", token: "permission.respond" },
   ] as const
 
   test("permission 决定提交入口(reply/respond,含方括号等义形态)只出现在白名单接线点", () => {

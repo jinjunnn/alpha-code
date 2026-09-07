@@ -225,10 +225,8 @@ const platform: Platform = {
   platform: "desktop",
   os: "macos",
   storage: harnessStorage,
-  openLink: () => {},
+  openExternal: () => {},
   restart: async () => {},
-  back: () => {},
-  forward: () => {},
   notify: async () => {},
   openDirectoryPickerDialog: async () => ({ paths: [] }) as never,
   wslServers: {
@@ -252,6 +250,10 @@ const platform: Platform = {
 
 /** 上游按端点解析响应;形状不对会触发重试退避,让叶"看起来没挂载"。 */
 const FETCH_FIXTURES: Record<string, unknown> = {
+  // pin e11dbd020:上游客户端先探 `/global/health`(答 `{healthy:true}` ⇒ v1)再探 `/api/health`;
+  // 兜底默认 v2。本 harness 只铺了 v1 legacy 端点,所以显式自报 v1 —— 否则上游走 v2 的
+  // `api.session.list`,拿到 `{}` 就在 `.data.map` 上 TypeError,壳"点了没反应"。
+  "/global/health": { healthy: true },
   "/provider": { all: [], connected: [], default: {} },
   "/path": { state: "", config: "", worktree: DEFAULT_WORKSPACE, directory: DEFAULT_WORKSPACE, home: "/Users/tester" },
   // 非空:换血后 loadProjects 会整体重建这个数组(setStore("projects", prev => incoming.map(...)))

@@ -59,6 +59,9 @@ type ServerPty = { id: string; title: string; command: string; args: string[]; c
 function fakeSDK(queue: ServerPty[]) {
   const created: Array<{ title?: string }> = []
   const sdk = {
+    // pin e11dbd020 起 new()/clone() 先问 `sdk.protocol` 再选 v1 `client.pty` 或 v2 `api.pty`;
+    // 本夹具钉 v1 —— 两条腿在 `.then((data) => …)` 之后共用同一段 command 归一化,那才是本文件的判据。
+    protocol: Promise.resolve("v1"),
     client: {
       pty: {
         create: (input: { title?: string }) => {
