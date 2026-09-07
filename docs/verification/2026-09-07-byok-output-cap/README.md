@@ -43,6 +43,27 @@ REQ-153 基线 §1.2 记录过:「10 条直连腿的上限本机结构性探不�
 `maxOutputTokens = Math.min(model.limit.output, cap) || cap`,而 config 声明的模型 `limit.output`
 缺省为 0 ⇒ `Math.min(0, 32000) = 0 || 32000`。定位过程见基线 §1.1。
 
+## 第一个前提:裸 body 量出来的数,在**生产 body** 上还成立吗
+
+对抗审计(2026-09-07)开的唯一一条 Major:上面那组探针发的是裸 body(`{model, messages,
+max_tokens, stream}`),而 `transform.ts:1202-1209` 对 `providerID.includes("zhipuai")` +
+openai-compatible 的模型**无条件**写 `thinking: { type: "enabled", clear_thinking: false }` ——
+`zhipuai-byok` 命中,**默认档就到得了**。若 thinking 模式下 `max_tokens` 的合法区间不同,
+glm 两个模型改完之后**每一发都是硬 400**,而改动前的 32000 不会。
+
+这条 finding 是对的形状:**「在这个 body 上测出来」≠「在生产那个 body 上成立」。**
+补测([`probe-thinking.py`](probe-thinking.py)):
+
+```
+glm-5.2      thinking:enabled  @131072 → HTTP 200  finish=stop
+glm-5.2      thinking:enabled  @131073 → HTTP 400  限制数值范围[1,131072]
+glm-4.5-air  thinking:enabled   @98304 → HTTP 200  finish=stop
+glm-4.5-air  thinking:enabled   @98305 → HTTP 400  限制数值范围[1,98304]
+```
+
+**区间一模一样** —— `thinking` 不参与 `max_tokens` 的校验。读数在生产 body 下成立。
+(DeepSeek 侧 harness 不写 thinking 类字段,裸 body 本身就更接近它的生产形状。)
+
 ## 第二个前提:`max_tokens` 是上限,不是预留
 
 抬输出上限有一个**会把长会话变成硬 400** 的失败形态,必须单独证伪:如果上游校验的是

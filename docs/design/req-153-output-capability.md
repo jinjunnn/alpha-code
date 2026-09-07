@@ -236,8 +236,9 @@ config `provider.<id>.models` 的 **KEY**(`provider.ts:1433`),alpha 注入时不
 
 `#1238` 落的判据是「`provider.options.baseURL` 逐字 == `ALPHA_BASE_URL` ⇒ 不发 `max_tokens`,
 由网关按 route 上限填」。**直连 BYOK 节点没有网关**,没人替它填,于是 §1.1 那个 `32000`
-在它身上原封不动地留着 —— `platform-output-cap.test.ts` 里那条「直连 BYOK 节点:maxOutputTokens
-原样(上游的 32000)」正是把这个状态钉住的断言。
+在它身上原封不动地留着 —— `platform-output-cap.test.ts` 里判「直连节点仍是上游 32000」的那条用例
+正是把这个状态钉住的断言(REQ-156 同批把它改题为「直连 BYOK 节点:本模块不省略;无读数时仍是
+上游的 32000」)。
 
 这不是 `#1238` 的缺陷:aw#94 的 Scope 写的就是「route 上限」,Non-goals 明写「不做任何需要
 provider 凭据的实调验证」,而「直连腿真实受理上限(本机无 key)」当时列在 §6.3 的未验前提里。

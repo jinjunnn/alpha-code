@@ -2,8 +2,9 @@
 //
 // `#1238`(REQ-153 AC2)只解决了平台代理节点那一半 —— 它的判据是「baseURL 逐字 == ALPHA_BASE_URL
 // ⇒ 不发 max_tokens,由网关按 route 上限填」。直连 BYOK 节点**没有网关**,没人替它填,于是它一直
-// 发着上游默认的 `OUTPUT_TOKEN_MAX = 32_000`(`platform-output-cap.test.ts` 那条
-// 「直连 BYOK 节点:maxOutputTokens 原样(上游的 32000)」正是把这个状态钉住的)。
+// 发着上游默认的 `OUTPUT_TOKEN_MAX = 32_000`(`platform-output-cap.test.ts` 里判「直连节点仍是
+// 上游 32000」的那条用例正是把这个状态钉住的;REQ-156 同批把它改题为「直连 BYOK 节点:本模块
+// 不省略;无读数时仍是上游的 32000」)。
 //
 // ── 为什么不能用 config `limit.output`,也不能用全局 env ────────────────────────────────
 //   `transform.ts:1418` `maxOutputTokens(model, cap) = Math.min(model.limit.output, cap) || cap`。
@@ -112,9 +113,12 @@ export type ByokOutputCapDecision =
 /**
  * 该请求要不要把 `maxOutputTokens` 抬到实读上限。
  *
- * **只抬不降**:`current` 已经 ≥ 读数时不动。理由是 config `limit.output` 是用户/配置**主动往低调**
- * 的合法旋钮(上游语义就是 `Math.min`),我们没有理由去覆盖一个比我们更保守的显式选择;
- * `current` 不是数(别的插件已置空 = 「这次别发 max_tokens」)时同样不动。
+ * **只抬不降**:`current` 已经 ≥ 读数时不动(例如全局 env cap 比读数还高),`current` 不是数
+ * (别的插件已置空 = 「这次别发 max_tokens」)时同样不动。
+ *
+ * ⚠️ **它不保护「用户显式调低」**:显式写 `limit.output: 5000` 照样会被抬到读数。这不是疏忽 ——
+ * 钩子拿到的只是 transform 算完的那个数字,**显式的 5000 与缺省的 32000 在这里长得一模一样**,
+ * 分辨不出来。要保住用户的低值,判据得能看见 config 原文,那是另一件事。
  */
 export function byokOutputCap(input: ByokOutputCapInput): ByokOutputCapDecision {
   const reading = BYOK_OUTPUT_CAP_READINGS.find(

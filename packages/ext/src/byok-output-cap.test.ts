@@ -10,6 +10,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { BYOK_OUTPUT_CAP_READINGS, BYOK_OUTPUT_CAP_UNREAD, byokOutputCap } from "./byok-output-cap"
 import catalog from "../../ui-mac/src/main/alpha-models.json"
+// 生产公式,不手抄 —— 抄一份的话公式变了,readings 里写死的 `zhipuai-byok` 会在生产上静默
+// 查不到(fail-closed ⇒ AC1 无声丢失),而漂移锁照样绿。
+import { byokEngineId } from "../../ui-mac/src/shared/alpha-model-types"
 
 const ZHIPU = "https://open.bigmodel.cn/api/paas/v4"
 const DEEPSEEK = "https://api.deepseek.com/v1"
@@ -146,7 +149,7 @@ describe("真 AlphaExt 的 chat.params 钩子", () => {
 
 describe("双向漂移锁:实读表 ↔ 出货目录 alpha-models.json", () => {
   const byok = (catalog as { byokProviders: { id: string; baseURL: string; models: string[] }[] }).byokProviders
-  const engineId = (id: string) => `${id}-byok`
+  const engineId = byokEngineId
   const catalogPairs = byok.flatMap((p) => p.models.map((m) => `${engineId(p.id)}/${m}`))
 
   test("方向一:表里的每条读数,目录里都真有这个 provider + 模型,且 baseURL 逐字相同", () => {
