@@ -232,6 +232,55 @@ config `provider.<id>.models` 的 **KEY**(`provider.ts:1433`),alpha 注入时不
   `level=0` 的 title 槽)。
 - HTML 无专门通路,即 `write` 工具写文件。
 
+### 1.9 直连 BYOK 腿:同一个封顶,`#1238` 没有覆盖到(2026-09-07 实读,REQ-156)
+
+`#1238` 落的判据是「`provider.options.baseURL` 逐字 == `ALPHA_BASE_URL` ⇒ 不发 `max_tokens`,
+由网关按 route 上限填」。**直连 BYOK 节点没有网关**,没人替它填,于是 §1.1 那个 `32000`
+在它身上原封不动地留着 —— `platform-output-cap.test.ts` 里判「直连节点仍是上游 32000」的那条用例
+正是把这个状态钉住的断言(REQ-156 同批把它改题为「直连 BYOK 节点:本模块不省略;无读数时仍是
+上游的 32000」)。
+
+这不是 `#1238` 的缺陷:aw#94 的 Scope 写的就是「route 上限」,Non-goals 明写「不做任何需要
+provider 凭据的实调验证」,而「直连腿真实受理上限(本机无 key)」当时列在 §6.3 的未验前提里。
+**当时没钥匙。现在有了。**
+
+三点探针(非法值取自报区间 → 顶格实测受理 → 自报值 +1 必拒)的完整原始输出见
+[`docs/verification/2026-09-07-byok-output-cap/`](../verification/2026-09-07-byok-output-cap/)。
+
+| 引擎 provider | 模型 | 上游自报 & 实测受理 | `#1238` 后仍实发 | 倍数 |
+| --- | --- | --- | --- | --- |
+| `zhipuai-byok` | `glm-5.2` | 131072 | 32000 | 4.1× |
+| `zhipuai-byok` | `glm-4.5-air` | **98304** | 32000 | 3.07× |
+| `deepseek-byok` | `deepseek-v4-flash` | **393216** | 32000 | 12.3× |
+| `deepseek-byok` | `deepseek-v4-pro` | **393216** | 32000 | 12.3× |
+
+两条读数直接决定了修法形状:
+
+- **`glm-4.5-air` 的 98304 ≠ 同 provider 下 `glm-5.2` 的 131072** ⇒ 任何「按 provider 发一个数」
+  的修法都会在 air 上打出硬 400。**必须逐模型。**
+- **DeepSeek 端点自报 393216,而 §1.2 表里是 384000** ⇒ 二手读数(vendor 页口语值「384K」、
+  OpenRouter 目录)比端点自报低。**端点自报是更高一级的权威**;gateway 那两条 route 因此还差
+  一次复签,已另开票(不属本仓)。
+
+**落点:与 `#1238` 同一条缝,不是新机制。** `chat.params` 跑在 transform 之后,逐模型查实读表:
+查得到就抬到那个数,查不到一个字节都不改。两条被否决的替代:
+
+- **config `provider.<id>.models.<id>.limit.output`** —— §1.1 实测过:`Math.min(limit.output, cap)`,
+  写 131072 仍得 32000。**config 只能往低调,结构上抬不上去。**
+- **全局 env `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX`** —— 它是全局的:`Math.min(0, env) || env`
+  会把 env 值发给**每一个**没声明 `limit.output` 的 config 模型,包括本表没有读数的 6 个 BYOK id
+  和用户自己加的自定义节点。**给没量过的模型发没验过的数,而上游对超限是硬 400** —— 方向不安全;
+  它还会改 `session/overflow.ts` 的 compaction 算术。
+
+**不变量(实现必须守住,已由 `byok-output-cap.test.ts` 逐条钉住):**
+
+1. **逐模型**,不按 provider,不按全表最大值。
+2. **fail-closed**:表里没有这个 `(engineProviderID, api.id)` ⇒ 不写。少发不会错,多发是 400。
+3. **baseURL 逐字参与判据**:目录里那个 provider 的 baseURL 变了,读数就不再适用于它。
+4. **只抬不降**:`current` 已 ≥ 读数、或不是有限数(别的插件已置空)时不动。
+5. **双向漂移锁**:实读表 ↔ 出货 `alpha-models.json`,两个方向都红(`#1265` 的教训 ——
+   只锁一个方向等于没锁)。目录新增一个 BYOK 模型而没人量它,测试当场红。
+
 ## 2. 选定方案与被否决的替代
 
 ### 2.1 被否决:直接修改上游文件
@@ -375,8 +424,12 @@ config `provider.<id>.models` 的 **KEY**(`provider.ts:1433`),alpha 注入时不
 2. **GLM 的 thinking token 是否计入其 `max_tokens`** —— 仓内零勘破。若计入,T2/T3 的
    实际收益要打折。anthropic 腿计入是有据的
    (`docs/architecture/anthropic-messages-request-surface.md:144` 引官方)。
-3. **直连腿真实受理上限** —— 本机无 key,结构性探不了(要一把 `ZHIPU_API_KEY`,
-   `max_tokens=131072` 最小请求,费用上限 ~$0.31/次)。
+3. ~~**直连腿真实受理上限** —— 本机无 key,结构性探不了~~
+   **2026-09-07 已证伪并实读(REQ-156,见 §1.9)**:本机 `alpha-secrets/` 里有 `ZHIPU_API_KEY`
+   与 `DEEPSEEK_API_KEY` 两把真实凭据,四个模型三点探针全部跑完,总生成 69 个 output token。
+   顺带推翻了本基线 §1.2 的一条**二手读数**:DeepSeek 端点自报 `393216`,而 §1.2 表里那个
+   `384000` 抄自 vendor 定价页的「384K」与 OpenRouter 目录 —— 少了 9216。
+   余下 6 个 BYOK 模型(MiniMax / 通义三个 / Kimi 两个)仍无凭据,**保持未验**。
 4. **gateway 收到 `reasoning_effort` 转成什么、zhipuai 端点收到 `thinking:{enabled}`
    吐不吐** —— 未测,属 gateway 侧勘破。
 5. **picker(V2 catalog)与引擎(v1)两份 variants 是否一致** —— 两份不是同一份

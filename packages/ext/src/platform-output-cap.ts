@@ -26,7 +26,11 @@
 //   `options.baseURL` **逐字**写成该 env 值;`ALPHA_BASE_URL` 在 sidecar env 白名单内(`sidecar-env.ts`)。
 //   于是「provider.options.baseURL === ALPHA_BASE_URL」与注入侧是同一个事实,不需要第二份 id 清单。
 //   严格相等(不 normalize 尾斜杠):两边写的是同一个字符串,normalize 只会引入一格「看起来相等其实
-//   不是同一节点」的判断。直连 BYOK / 用户自定义节点 baseURL 不同 ⇒ 保持上游行为(仍发 32000)。
+//   不是同一节点」的判断。直连 BYOK / 用户自定义节点 baseURL 不同 ⇒ 本模块不省略。
+//
+//   ⚠️ 本模块**不是**输出上限的全部:直连 BYOK 节点自 REQ-156 起由 `byok-output-cap.ts` 按逐模型
+//   实读上限接手(它没有网关替它填 `max_tokens`)。本模块的 `omit:false` 只表示「不走网关那条路」,
+//   **不**表示「这次一定发 32000」—— 同一个 `chat.params` 里紧接着还有 BYOK 那一问。
 
 export type PlatformOutputCapInput = {
   /** `input.provider.options.baseURL`(chat.params 钩子拿到的 provider 配置)。 */
