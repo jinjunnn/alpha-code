@@ -153,6 +153,7 @@ export function createWorkspaceTerminalSession(
   scope: ServerScopeValue,
   legacySessionID?: string,
 ) {
+  const location = { directory: sdk.directory }
   const legacy = scope === ServerScope.local ? getLegacyTerminalStorageKeys(dir, legacySessionID) : []
 
   const [store, setStore, _, ready] = persisted(
@@ -244,51 +245,67 @@ export function createWorkspaceTerminalSession(
   })
   onCleanup(unsub)
 
-  const update = (client: DirectorySDK["client"], pty: Partial<LocalPTY> & { id: string }) => {
+  const update = (pty: Partial<LocalPTY> & { id: string }) => {
     const index = store.all.findIndex((x) => x.id === pty.id)
     const previous = index >= 0 ? store.all[index] : undefined
     if (index >= 0) {
       setStore("all", index, (item) => ({ ...item, ...pty }))
     }
-    client.pty
-      .update({
-        ptyID: pty.id,
-        title: pty.title,
-        size: pty.cols && pty.rows ? { rows: pty.rows, cols: pty.cols } : undefined,
-      })
-      .catch((error: unknown) => {
-        if (previous) {
-          const currentIndex = store.all.findIndex((item) => item.id === pty.id)
-          if (currentIndex >= 0) setStore("all", currentIndex, previous)
-        }
-        console.error("Failed to update terminal", error)
-      })
+    const doUpdate = async () => {
+      if ((await sdk.protocol) === "v1") {
+        await sdk.client.pty.update({
+          ptyID: pty.id,
+          title: pty.title,
+          size: pty.cols && pty.rows ? { rows: pty.rows, cols: pty.cols } : undefined,
+        })
+      } else {
+        await sdk.api.pty.update({
+          ptyID: pty.id,
+          location,
+          title: pty.title,
+          size: pty.cols && pty.rows ? { rows: pty.rows, cols: pty.cols } : undefined,
+        })
+      }
+    }
+    doUpdate().catch((error: unknown) => {
+      if (previous) {
+        const currentIndex = store.all.findIndex((item) => item.id === pty.id)
+        if (currentIndex >= 0) setStore("all", currentIndex, previous)
+      }
+      console.error("Failed to update terminal", error)
+    })
   }
 
-  const clone = async (client: DirectorySDK["client"], id: string) => {
+  const clone = async (id: string) => {
     const index = store.all.findIndex((x) => x.id === id)
     const pty = store.all[index]
     if (!pty) return
-    const next = await client.pty
-      .create({
-        title: pty.title,
-      })
-      .catch((error: unknown) => {
-        console.error("Failed to clone terminal", error)
-        return undefined
-      })
-    if (!next?.data) return
+    const data = await (async () => {
+      if ((await sdk.protocol) === "v1") {
+        return (await sdk.client.pty.create({ title: pty.title })).data
+      }
+      return (
+        await sdk.api.pty.create({
+          location,
+          title: pty.title,
+        })
+      ).data
+    })().catch((error: unknown) => {
+      console.error("Failed to clone terminal", error)
+      return undefined
+    })
+    if (!data?.id) return
 
     const active = store.active === pty.id
 
     batch(() => {
       setStore("all", index, {
-        id: next.data.id,
-        title: next.data.title ?? pty.title,
+        id: data.id,
+        title: data.title ?? pty.title,
         titleNumber: pty.titleNumber,
         // setStore merges shallowly: without an explicit write the replaced tab would keep
         // the *previous* PTY's shell name. Mirror whatever the server reports for the new one.
-        command: next.data.command,
+        command: data.command,
         buffer: undefined,
         cursor: undefined,
         scrollY: undefined,
@@ -296,7 +313,7 @@ export function createWorkspaceTerminalSession(
         cols: undefined,
       })
       if (active) {
-        setStore("active", next.data.id)
+        setStore("active", data.id)
       }
     })
   }
@@ -315,18 +332,23 @@ export function createWorkspaceTerminalSession(
       const nextNumber = pickNextTerminalNumber()
       const focusRequest = options?.focus ? requestFocus(undefined, true) : undefined
 
-      sdk.client.pty
-        .create({ title: defaultTitle(nextNumber) })
-        .then((pty: { data?: { id?: string; title?: string; command?: string } }) => {
-          const id = pty.data?.id
+      const doCreate = async () => {
+        if ((await sdk.protocol) === "v1") {
+          return (await sdk.client.pty.create({ title: defaultTitle(nextNumber) })).data
+        }
+        return (await sdk.api.pty.create({ location, title: defaultTitle(nextNumber) })).data
+      }
+      doCreate()
+        .then((data) => {
+          const id = data?.id
           if (!id) {
             if (focusRequest !== undefined) cancelFocus(focusRequest)
             return
           }
-          const command = pty.data?.command
+          const command = data?.command
           const newTerminal = {
             id,
-            title: pty.data?.title ?? defaultTitle(nextNumber),
+            title: data?.title ?? defaultTitle(nextNumber),
             titleNumber: nextNumber,
             ...(command !== undefined ? { command } : {}),
           }
@@ -344,7 +366,7 @@ export function createWorkspaceTerminalSession(
         })
     },
     update(pty: Partial<LocalPTY> & { id: string }) {
-      update(sdk.client, pty)
+      update(pty)
     },
     trim(id: string) {
       const index = store.all.findIndex((x) => x.id === id)
@@ -359,10 +381,9 @@ export function createWorkspaceTerminalSession(
       })
     },
     async clone(id: string) {
-      await clone(sdk.client, id)
+      await clone(id)
     },
     bind() {
-      const client = sdk.client
       return {
         trim(id: string) {
           const index = store.all.findIndex((x) => x.id === id)
@@ -370,10 +391,10 @@ export function createWorkspaceTerminalSession(
           setStore("all", index, (pty) => trimTerminal(pty))
         },
         update(pty: Partial<LocalPTY> & { id: string }) {
-          update(client, pty)
+          update(pty)
         },
         async clone(id: string) {
-          await clone(client, id)
+          await clone(id)
         },
       }
     },
@@ -421,7 +442,11 @@ export function createWorkspaceTerminalSession(
         })
       }
 
-      await sdk.client.pty.remove({ ptyID: id }).catch((error: unknown) => {
+      const removePromise =
+        (await sdk.protocol) === "v1"
+          ? sdk.client.pty.remove({ ptyID: id })
+          : sdk.api.pty.remove({ ptyID: id, location })
+      await removePromise.catch((error: unknown) => {
         console.error("Failed to close terminal", error)
       })
     },
