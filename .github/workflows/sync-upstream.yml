@@ -173,10 +173,29 @@ jobs:
               git checkout "$PIN_RES" -- packages/app packages/ui
               git add packages/app packages/ui
             fi
-            bun install
+            # `#1272`:**顺序是判据的一部分**。走到这里时 packages/{app,ui} 还是**纯 pin** —— alpha 的
+            # SOT 补丁尚未重贴,而 packages/session-ui 以 `file:../app/vendor/*.tgz` 直接依赖的那个
+            # 二进制**只存在于补丁里**(pin 里没有 packages/app/vendor;2026-09-06 实测
+            # `git ls-tree 849c2598 packages/app/vendor` 输出为空)。所以在这一格 `bun install` 必然
+            # `failed to resolve`(2026-09-06 手工复演 ac#1248 实锤,原文
+            # `@opencode-ai/client@file:../app/vendor/opencode-ai-client-1.17.13-v2.tgz failed to resolve`),
+            # 而那句话不告诉任何人该做什么 —— 上面 apply_alpha_frontend_delta 里的 VENDORED 判据
+            # **正是为这一格写的**(它会说「须用 git diff --binary 重生」),却永远来不及打印。
+            # 顺序因此必须是:结束合并 → 重贴补丁(vendored 资产就位;真漂移时那条判据在这里
+            # 响亮失败)→ **最后**才 install,那时 lockfile 才是照着最终这棵树生成的。
+            # 行为闸:packages/ui-mac/src/main/sync-upstream-merge-order.test.ts —— 它从本文件解析出
+            # 这一步的 run 体、在真 git 仓上跑它本体,并把下面这两行换回旧顺序证明它当场变红。
             git add -A
             git commit --no-edit
             apply_alpha_frontend_delta
+            bun install
+            # 上面 `--theirs` 取的是上游的 bun.lock,它不含 alpha 的 workspace 包 —— 只有跑在补丁
+            # 重贴之后的这次 install 才按最终这棵树重生它。变了就单独落一个提交,否则这次 sync
+            # 会把一份对不上的 lockfile 推上 alpha。
+            if ! git diff --quiet -- bun.lock; then
+              git add bun.lock
+              git commit -m "chore(sync): regenerate bun.lock after conflict resolution (B: pin+patch)"
+            fi
           else
             echo "::error::Unexpected merge conflicts — the only-add discipline was broken:"
             echo "$unexpected"
