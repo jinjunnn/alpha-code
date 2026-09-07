@@ -74,19 +74,22 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
     // REQ-153 #1266:`variants`(档位 → 引擎 options)与 picker 的 BYOK 行同一份派生(byokModelMeta),
     // 引擎侧 provider.ts:1503-1507 把它与自己按 npm 派生的档位表 mergeDeep —— 桌面 chip 列出的每个
     // 标签,引擎 `model.variants[variant]` 都查得到。
+    // REQ-153 #1267:BYOK-only id(平台无同名条目)的徽标 / 档位来自目录自己的 `modelMeta` 槽,仍经同一个
+    // byokModelMeta 派生 —— 上游 transform.options() 对 zhipuai* 无条件写 thinking:enabled,`关` 档
+    // (`thinking: { type: "disabled" }`)是用户关掉它的唯一途径,而它要能被引擎查到,就必须从这里注入。
+    // Inject under a non-models.dev engine id (`<id>-byok`) so opencode's availability gate doesn't
+    // filter these out via the models.dev integration collision (see byokEngineId). Display id, key
+    // status, gateway allowlist and the key store all keep the plain `p.id`.
+    const engineId = byokEngineId(p.id)
     const models: Record<string, { name: string; reasoning?: boolean; variants?: Record<string, Record<string, unknown>> }> = {}
     for (const m of p.models) {
-      const meta = byokModelMeta(platformModels, m)
+      const meta = byokModelMeta({ platformModels, byokProviders: CATALOG.byokProviders }, engineId, m)
       models[m] = {
         name: m,
         ...(meta.reasoning ? { reasoning: true } : {}),
         ...(meta.variants ? { variants: meta.variants } : {}),
       }
     }
-    // Inject under a non-models.dev engine id (`<id>-byok`) so opencode's availability gate doesn't
-    // filter these out via the models.dev integration collision (see byokEngineId). Display id, key
-    // status, gateway allowlist and the key store all keep the plain `p.id`.
-    const engineId = byokEngineId(p.id)
     provider[engineId] = {
       npm,
       name: p.name,

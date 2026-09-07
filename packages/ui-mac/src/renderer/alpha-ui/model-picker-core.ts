@@ -66,7 +66,7 @@ export function composerModelFromRef(ref: ModelRef, catalog: EffectiveCatalog | 
       : undefined
   // REQ-153 #1266:直连 BYOK 节点的档位与 picker 行 / sidecar 注入同一份派生 —— 会话投影回来的 BYOK
   // 模型此前恒 `variants: []`,进会话后档位 chip 又变回「不支持」。
-  const byok = catalog && isByokEngineId(ref.providerID) ? byokModelMeta(catalog.platformModels, ref.id) : undefined
+  const byok = catalog && isByokEngineId(ref.providerID) ? byokModelMeta(catalog, ref.providerID, ref.id) : undefined
   return {
     ...ref,
     name: platform?.name ?? ref.id,
@@ -161,11 +161,13 @@ export function buildModelPickerRows(input: {
       // 亮 ⇔ 引擎 capabilities.reasoning === true。
       // REQ-153 #1266:variants 同源 —— 此前这里写死 `[]`,直连 deepseek-v4-pro / glm-5.2 亮着徽标
       // 却一档都选不到,默认发出的请求零推理参数。
-      const meta = byokModelMeta(input.catalog.platformModels, id)
+      // REQ-153 #1267:BYOK-only id(如 glm-4.5-air)的徽标 / 档位来自目录自己的 `modelMeta` 槽,同一函数派生。
+      const engineID = byokEngineId(provider.id)
+      const meta = byokModelMeta(input.catalog, engineID, id)
       return {
         key: `${provider.id}:${id}`,
         group: "byok",
-        model: { id, providerID: byokEngineId(provider.id), name: meta.name, variants: Object.keys(meta.variants ?? {}) },
+        model: { id, providerID: engineID, name: meta.name, variants: Object.keys(meta.variants ?? {}) },
         providerName: provider.name,
         pico: provider.pico,
         reasoning: meta.reasoning,

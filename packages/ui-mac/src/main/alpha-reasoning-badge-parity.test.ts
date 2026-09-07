@@ -9,8 +9,11 @@
 // 两个方向单独锁任何一边都看不见另一边,所以这里一次判两边。
 //
 // 判据形状(每一行 picker 行都过):
-//   有徽标 ⇒ chip 列出 ≥1 档;**每一档**经真引擎发出的主请求体带推理控制参数,且档位声明的
-//           `reasoningEffort` 值逐字落到 `reasoning_effort` 上;桌面提交层 buildPromptRequest 真的带上它。
+//   有徽标 ⇒ chip 列出 ≥1 档;**每一档**经真引擎发出的主请求体与档位声明逐字对上:声明 `reasoningEffort: x`
+//           ⇒ 请求体 `reasoning_effort === x`;声明 `thinking: { type: t }` ⇒ 请求体 `thinking.type === t`;
+//           除显式关闭档(`t === "disabled"`,#1267)外每一档都必须真的带推理控制参数,而显式关闭档必须
+//           **零**推理控制参数且 `thinking.type` 逐字是 `disabled`(智谱实打:`type` 写错会被上游静默忽略并继续
+//           思考,见 docs/architecture/2026-09-06-model-variant-reachability.md)。桌面提交层 buildPromptRequest 真的带上它。
 //   无徽标 ⇒ chip 零档;默认发出的主请求体**不带**任何推理控制参数。
 //
 // 「真引擎」= 本仓 `packages/opencode/src/index.ts run`(与打包 sidecar 同一份 v1 请求装配:
@@ -21,12 +24,22 @@
 // 用生产函数直接判。
 //
 // 手段自证先于矩阵:①假上游先吃一个探针请求证明捕获不是恒空;②`alpha/glm-5-turbo --variant high`
-// (目录未标 reasoning、上游黑名单)必须**不**带参数 —— 判据会红,不是恒真。
+// (目录未标 reasoning、上游黑名单)必须**不**带参数 —— 判据会红,不是恒真;③`zhipuai-byok/glm-4.5-air`
+// 硬塞一个目录里不存在的档 ⇒ 上游 `transform.options()` 的无条件 `thinking: enabled` 原样出现,把这个请求体
+// 交给「关」档的判据必须红 —— 证明显式关闭档的判据测得出已知的坏(#1267)。
 //
-// 已知不修(#1267 的另一半):`zhipuai-byok/glm-4.5-air`。它是 BYOK-only 的 id(平台目录没有同名条目),
-// 而 BYOK 目录 `models` 是 `string[]`,没有逐模型元数据槽 —— 要给它打徽标 / 给档位是 schema 扩面,
-// 超出 #1266/#1267 边界。KNOWN_UNFIXED 里的行只断言「仍然无徽标且仍然带参数」:一旦有人补了槽,
-// 这条登记自己会红,必须删掉。
+// #1267(2026-09-06 已修):`zhipuai-byok/glm-4.5-air` 是 BYOK-only 的 id(平台目录没有同名条目),此前无徽标却带
+// `thinking: enabled`。修法是 BYOK 目录的逐模型元数据槽(`byokProviders[].modelMeta`,shared/alpha-model-types.ts):
+// 徽标 + 开/关两档,同一个 byokModelMeta 派生进 picker 行与 sidecar 注入。原先登记它的 KNOWN_UNFIXED 已按其
+// 自带的过期断言删除;本文件不再有任何已知不修的行。
+//
+// #1237(2026-09-06):上游黑名单族里 wire 形状已实打的三个平台模型拿到档位 —— `alpha/glm-5-turbo` 走 zhipu 直连腿的
+// `thinking:{type}` 开/关(直连对 reasoning_effort accepted-and-ignored,网关拒转),`alpha/qwen3.7-max|plus` 走 OR 腿的
+// `reasoning_effort` 关(none,0 reasoning tokens)/ 开(medium)。形状与出处钉在 alpha-models.test.ts 的 #1237 节;本文件
+// 负责两件只有真引擎能证的事:①每一档的主请求体逐字带上那条腿的形状(矩阵原有判据自动覆盖新行);②上游
+// `transform.smallOptions()` 把档位表**第一项**喂给标题等辅助调用(`request.ts:88-89`,基线 §3.8a)—— 有徽标的每一行,
+// 默认那次 run 捕到的标题请求体必须与第一档声明逐字对上;目录把「关」放第一位正是为了让辅助调用不思考。
+// 手段自证的「已知的坏」随之换成 `minimax-byok/MiniMax-M2`(仍是黑名单族、目录未标 reasoning、本机无凭据 ⇒ #1237 钉在无档)。
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
@@ -36,6 +49,7 @@ import type { ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { EffectiveCatalog } from "../shared/alpha-model-types"
 import { buildModelPickerRows, type ModelPickerRow } from "../renderer/alpha-ui/model-picker-core"
 import { buildPromptRequest } from "../renderer/alpha-ui/composer-state"
+import { byokModelMeta, isByokEngineId } from "../shared/alpha-model-types"
 import { buildAlphaModelConfig, getModelCatalog } from "./alpha-models"
 import { secretFilePath } from "./alpha-secret-files"
 
@@ -61,12 +75,6 @@ const REASONING_KEYS = [
   "thinkingConfig",
   "reasoning_summary",
 ] as const
-
-/** 已知不修:行键 → 理由。登记的行必须**仍然**无徽标且**仍然**带参数,否则这条登记过期,当场红。 */
-const KNOWN_UNFIXED: Record<string, string> = {
-  "zhipuai-byok:glm-4.5-air":
-    "BYOK-only id,平台目录无同名条目可派生徽标/档位;BYOK 目录 models 是 string[] 无逐模型元数据槽(schema 扩面,超出 #1266/#1267 边界)。上游 transform.options() 对 zhipuai* 无条件写 thinking:enabled。",
-}
 
 function reasoningControls(body: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -176,11 +184,14 @@ function configFor(tag: string) {
   return cfg
 }
 
-type RunResult = { tag: string; rc: number; main: Record<string, unknown> | null; posts: number; log: string }
+type RunResult = { tag: string; rc: number; main: Record<string, unknown> | null; title: Record<string, unknown> | null; posts: number; log: string }
 
 /** 一次真引擎 `run`:隔离 HOME/XDG/DB,stdin 关死(打开不关的管道会让 run 在 session 建立前无限挂住)。 */
 async function engineRun(providerID: string, id: string, variant?: string): Promise<RunResult> {
   const tag = tagOf(providerID, id, variant)
+  // #1237:同一 (provider, model, variant) 可能跑两次(手段自证 + 矩阵)。捕获桶按 tag 累加,不清空的话第二次
+  // 会看到 4 条 POST / 2 条主请求 ⇒ main=null ⇒ 「测量作废」—— 那是判据自己的坑,不是引擎的。每次 run 从空桶开始。
+  captures.delete(tag)
   const dir = path.join(root, "runs", tag)
   for (const sub of ["home", "xdg-config", "xdg-data", "xdg-cache", "xdg-state", "proj"]) fs.mkdirSync(path.join(dir, sub), { recursive: true })
   const configPath = path.join(dir, "config.json")
@@ -235,10 +246,13 @@ async function engineRun(providerID: string, id: string, variant?: string): Prom
       (message) => message.role === "system" && String(message.content).slice(0, 200).includes("title generator"),
     )
   const mains = posts.filter((entry) => !isTitle(entry.body))
+  // #1237:标题那条也留下 —— 它走 smallOptions(),带的是档位表第一项,与用户选档无关。
+  const titles = posts.filter((entry) => isTitle(entry.body))
   return {
     tag,
     rc,
     main: mains.length === 1 ? mains[0]!.body : null,
+    title: titles.length === 1 ? titles[0]!.body : null,
     posts: posts.length,
     log: `${stdout}\n${stderr}`.slice(-1200),
   }
@@ -297,11 +311,72 @@ function pickerRows(): ModelPickerRow[] {
   })
 }
 
-/** 目录里该档位声明的 wire 值(`reasoningEffort: x` → 请求体 `reasoning_effort: x`;其它形状只判「有参数」)。 */
-function declaredEffort(row: ModelPickerRow, variant: string): string | undefined {
-  const platform = getModelCatalog().platformModels.find((model) => model.id === row.model.id)
-  const declared = platform?.variants?.[variant]
-  return typeof declared?.reasoningEffort === "string" ? declared.reasoningEffort : undefined
+/** 目录里该档位声明的 wire 值,与生产同一份派生:平台行读平台条目;BYOK 行经 byokModelMeta(平台同名条目或
+ *  `modelMeta` 槽,#1267)。`reasoningEffort: x` → 请求体 `reasoning_effort: x`;`thinking: { type: t }` → 请求体
+ *  `thinking.type: t`(openai-compatible 原样透传,#1239 捕获实证);其它形状只判「有参数」。 */
+function declaredControl(row: ModelPickerRow, variant: string): { reasoningEffort?: string; thinkingType?: string } {
+  const catalog = getModelCatalog()
+  const declared = isByokEngineId(row.model.providerID)
+    ? byokModelMeta(catalog, row.model.providerID, row.model.id).variants?.[variant]
+    : catalog.platformModels.find((model) => model.id === row.model.id)?.variants?.[variant]
+  const thinking = declared?.thinking as { type?: unknown } | undefined
+  return {
+    ...(typeof declared?.reasoningEffort === "string" ? { reasoningEffort: declared.reasoningEffort } : {}),
+    ...(typeof thinking?.type === "string" ? { thinkingType: thinking.type } : {}),
+  }
+}
+
+/** 一格的判据(纯函数,手段自证与矩阵共用)。返回失败文案;空数组 = 这一格通过。 */
+function judge(row: ModelPickerRow, variant: string | undefined, body: Record<string, unknown>): string[] {
+  const key = rowKey(row)
+  const label = variant ? `${key}@${variant}` : `${key}(默认)`
+  const controls = reasoningControls(body)
+  const carried = Object.keys(controls).length > 0
+  const failures: string[] = []
+  if (row.reasoning) {
+    if (variant === undefined) {
+      if (row.model.variants.length === 0) failures.push(`${label}: 有徽标但档位 chip 一档都没有(#1266)`)
+      return failures
+    }
+    const declared = declaredControl(row, variant)
+    const wireThinking = (body.thinking as { type?: unknown } | undefined)?.type
+    if (declared.thinkingType === "disabled") {
+      // 显式关闭档(#1267):必须逐字 disabled 落到请求体,且零推理控制参数 —— 上游会静默忽略写错的 type 并继续思考。
+      if (wireThinking !== "disabled") failures.push(`${label}: 档位声明 thinking.type=disabled,请求体 thinking.type=${String(wireThinking)}`)
+      if (carried) failures.push(`${label}: 显式关闭档的请求体却带 ${JSON.stringify(controls)}(#1267)`)
+      return failures
+    }
+    if (!carried) failures.push(`${label}: 有徽标、选了档,主请求体却零推理参数(#1266)`)
+    if (declared.reasoningEffort !== undefined && body.reasoning_effort !== declared.reasoningEffort)
+      failures.push(`${label}: 档位声明 reasoningEffort=${declared.reasoningEffort},请求体 reasoning_effort=${String(body.reasoning_effort)}`)
+    if (declared.thinkingType !== undefined && wireThinking !== declared.thinkingType)
+      failures.push(`${label}: 档位声明 thinking.type=${declared.thinkingType},请求体 thinking.type=${String(wireThinking)}`)
+    return failures
+  }
+  if (variant !== undefined) failures.push(`${label}: 无徽标却列出了档位`)
+  else if (carried) failures.push(`${label}: 无徽标,默认请求却带 ${JSON.stringify(controls)}(#1267)`)
+  return failures
+}
+
+/** #1237:辅助调用(标题)的判据 —— 上游 smallOptions() 取档位表第一项,所以标题请求体必须与**第一档**的声明逐字对上。
+ *  这条把「目录把关放第一位」从散文变成机制事实:第一档是关 ⇒ 标题调用不思考。 */
+function judgeAux(row: ModelPickerRow, title: Record<string, unknown>): string[] {
+  const key = rowKey(row)
+  const first = row.model.variants[0]
+  if (!row.reasoning || first === undefined) return []
+  const declared = declaredControl(row, first)
+  const controls = reasoningControls(title)
+  const wireThinking = (title.thinking as { type?: unknown } | undefined)?.type
+  const failures: string[] = []
+  if (declared.reasoningEffort !== undefined && title.reasoning_effort !== declared.reasoningEffort)
+    failures.push(`${key}(标题辅助调用): 第一档 ${first} 声明 reasoningEffort=${declared.reasoningEffort},标题请求体 reasoning_effort=${String(title.reasoning_effort)}`)
+  if (declared.thinkingType !== undefined && wireThinking !== declared.thinkingType)
+    failures.push(`${key}(标题辅助调用): 第一档 ${first} 声明 thinking.type=${declared.thinkingType},标题请求体 thinking.type=${String(wireThinking)}`)
+  if (declared.thinkingType === "disabled" && Object.keys(controls).length > 0)
+    failures.push(`${key}(标题辅助调用): 第一档是显式关闭,标题请求体却带 ${JSON.stringify(controls)}`)
+  if (declared.reasoningEffort === undefined && declared.thinkingType === undefined && Object.keys(controls).length === 0)
+    failures.push(`${key}(标题辅助调用): 第一档 ${first} 应带推理参数,标题请求体却零推理参数`)
+  return failures
 }
 
 describe("REQ-153 #1266/#1267:徽标集合 == 引擎实际带推理参数的集合(真引擎 · 假上游 · 双向)", () => {
@@ -313,11 +388,35 @@ describe("REQ-153 #1266/#1267:徽标集合 == 引擎实际带推理参数的集�
     expect(probe.ok).toBe(true)
     expect(captures.get("__probe__")?.[0]?.body.probe).toBe("KNOWN-GOOD")
 
-    // 已知的坏:目录未标 reasoning 的 glm-5-turbo(上游黑名单族)硬塞 --variant high ⇒ 主请求体零推理键。
-    const control = await engineRun("alpha", "glm-5-turbo", "high")
+    // 已知的坏:目录未标 reasoning 的 MiniMax-M2(上游黑名单族;本机无凭据未实打 ⇒ #1237 钉在无档)硬塞 --variant high
+    // ⇒ 主请求体零推理键。(#1237 前这一格用的是 alpha/glm-5-turbo,它现在有档了。)
+    const control = await engineRun("minimax-byok", "MiniMax-M2", "high")
     expect({ rc: control.rc, main: control.main !== null, log: control.main ? "" : control.log }).toEqual({ rc: 0, main: true, log: "" })
     expect(reasoningControls(control.main!)).toEqual({})
-  }, 120_000)
+
+    // 已知的坏(#1237 方向):把 qwen3.7-max「开」档(reasoning_effort=medium)那次 run 的**主**请求体冒充标题请求体交给
+    // judgeAux —— 第一档是「关」(none),判据必须点名 medium ≠ none。证明「标题调用取第一档」的判据测得出错档。
+    const qwen = pickerRows().find((row) => rowKey(row) === "alpha:qwen3.7-max")
+    expect({ found: qwen !== undefined, badge: qwen?.reasoning, chip: qwen?.model.variants }).toEqual({ found: true, badge: true, chip: ["关", "开"] })
+    const on = await engineRun("alpha", "qwen3.7-max", "开")
+    expect({ rc: on.rc, main: on.main !== null, title: on.title !== null, log: on.main ? "" : on.log }).toEqual({ rc: 0, main: true, title: true, log: "" })
+    expect(on.main!.reasoning_effort).toBe("medium")
+    expect(judgeAux(qwen!, on.main!)).toEqual(["alpha:qwen3.7-max(标题辅助调用): 第一档 关 声明 reasoningEffort=none,标题请求体 reasoning_effort=medium"])
+    // 而真正的标题请求体带的是第一档(关):这一格同时是 #1237 对基线 §3.8a 的实证。
+    expect(judgeAux(qwen!, on.title!)).toEqual([])
+
+    // 已知的坏(#1267 方向):glm-4.5-air 硬塞一个目录里没有的档 ⇒ 引擎查不到 variant、只剩上游无条件写的
+    // thinking:enabled(#1267 票面缺陷的原样)。把这个请求体交给「关」档的判据,必须点名 thinking.type 不对。
+    const air = pickerRows().find((row) => rowKey(row) === "zhipuai-byok:glm-4.5-air")
+    expect({ found: air !== undefined, badge: air?.reasoning, chip: air?.model.variants }).toEqual({ found: true, badge: true, chip: ["关", "开"] }) // #1237:关调到第一位(smallOptions 取第一项)
+    const stuck = await engineRun("zhipuai-byok", "glm-4.5-air", "x-not-a-tier")
+    expect({ rc: stuck.rc, main: stuck.main !== null, log: stuck.main ? "" : stuck.log }).toEqual({ rc: 0, main: true, log: "" })
+    expect((stuck.main!.thinking as { type?: unknown } | undefined)?.type).toBe("enabled")
+    expect(judge(air!, "关", stuck.main!)).toEqual([
+      "zhipuai-byok:glm-4.5-air@关: 档位声明 thinking.type=disabled,请求体 thinking.type=enabled",
+      'zhipuai-byok:glm-4.5-air@关: 显式关闭档的请求体却带 {"thinking":{"type":"enabled","clear_thinking":false}}(#1267)',
+    ])
+  }, 180_000)
 
   test("桌面提交层:chip 列出的每一档,buildPromptRequest 都真的带上 variant(C28 不把它当未知档丢掉)", () => {
     const rows = pickerRows()
@@ -354,27 +453,18 @@ describe("REQ-153 #1266/#1267:徽标集合 == 引擎实际带推理参数的集�
         harness.push(`${label}: 引擎 rc=${result.rc} 主请求=${result.main ? 1 : 0} posts=${result.posts}\n${result.log}`)
         continue
       }
-      const controls = reasoningControls(result.main)
-      const carried = Object.keys(controls).length > 0
-      verdicts.push(`${label} badge=${row.reasoning} chip=[${row.model.variants.join("|")}] request=${JSON.stringify(controls)}`)
-      if (KNOWN_UNFIXED[key]) {
-        // 已知不修的行只登记现状:仍无徽标、仍带参数。任一条不再成立 ⇒ 登记过期,删掉它。
-        if (variant !== undefined) failures.push(`${label}: 已知不修的行不该有档位`)
-        if (row.reasoning || !carried) failures.push(`${label}: KNOWN_UNFIXED 登记已过期(badge=${row.reasoning} carried=${carried})—— 删掉登记`)
-        continue
-      }
-      if (row.reasoning) {
-        if (variant === undefined) {
-          if (row.model.variants.length === 0) failures.push(`${label}: 有徽标但档位 chip 一档都没有(#1266)`)
-          continue
+      // 逐格结论里同时记「算作推理控制的键」与 `thinking` 原文 —— 显式关闭档在前者里是空,后者才看得见它落没落地。
+      verdicts.push(
+        `${label} badge=${row.reasoning} chip=[${row.model.variants.join("|")}] request=${JSON.stringify(reasoningControls(result.main))} thinking=${JSON.stringify(result.main.thinking ?? null)}`,
+      )
+      failures.push(...judge(row, variant, result.main))
+      // #1237:有档位的行,默认那次 run 的标题辅助调用必须带第一档 —— 没捕到标题请求 = 本格测量作废,不是通过。
+      if (variant === undefined && row.reasoning && row.model.variants.length > 0) {
+        if (!result.title) harness.push(`${label}: 标题辅助调用未捕获(posts=${result.posts})—— 第一档判据本格作废`)
+        else {
+          verdicts.push(`${label} title=${JSON.stringify(reasoningControls(result.title))} title.thinking=${JSON.stringify(result.title.thinking ?? null)}`)
+          failures.push(...judgeAux(row, result.title))
         }
-        if (!carried) failures.push(`${label}: 有徽标、选了档,主请求体却零推理参数(#1266)`)
-        const expected = declaredEffort(row, variant)
-        if (expected !== undefined && result.main.reasoning_effort !== expected)
-          failures.push(`${label}: 档位声明 reasoningEffort=${expected},请求体 reasoning_effort=${String(result.main.reasoning_effort)}`)
-      } else {
-        if (variant !== undefined) failures.push(`${label}: 无徽标却列出了档位`)
-        else if (carried) failures.push(`${label}: 无徽标,默认请求却带 ${JSON.stringify(controls)}(#1267)`)
       }
     }
     // 引擎没跑起来 / 没捕到主请求 = 本次测量作废,不是通过也不是红 —— 单独报,先于判据。

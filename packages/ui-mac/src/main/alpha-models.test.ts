@@ -348,31 +348,75 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     expect(deepseek["deepseek-v4-pro"]).toMatchObject({ name: "deepseek-v4-pro", reasoning: true })
     expect(deepseek["deepseek-v4-flash"]).toEqual({ name: "deepseek-v4-flash" })
     expect(zhipu["glm-5.2"]).toMatchObject({ name: "glm-5.2", reasoning: true })
-    expect(zhipu["glm-4.5-air"]).toEqual({ name: "glm-4.5-air" })
+    // #1267:BYOK-only 的 glm-4.5-air 没有平台同名条目,徽标来自目录自己的 modelMeta 槽(下一节逐字判)。
+    expect(zhipu["glm-4.5-air"]).toMatchObject({ name: "glm-4.5-air", reasoning: true })
   })
 
   // REQ-153 #1266:BYOK 段的 `variants` 与平台同名条目逐字相同,且与 picker BYOK 行的档位列表同源。
   // 此前注入不写 variants、picker 写死 `[]` ⇒ 直连 deepseek-v4-pro / glm-5.2 亮着徽标一档都选不到。
   // 档位表的 wire 形状按平台 provider 的 npm 写,直连节点能复用的前提是每个 BYOK provider 都是
   // openai-compat(上面「every catalog BYOK provider is openai-compat」那条钉着)——这里再钉 npm 逐字相等。
-  test("BYOK 段:同名平台条目的 variants 逐字注入;无同名条目的 BYOK-only id 一无所有;npm 与平台 provider 相同", () => {
+  test("BYOK 段:同名平台条目的 variants 逐字注入;无同名条目的 BYOK-only id 只从自己的 modelMeta 槽拿;npm 与平台 provider 相同", () => {
     keyEverything()
     const cfg = buildAlphaModelConfig(userData)!
     const platform = getModelCatalog().platformModels
     const platformNpm = getModelCatalog().platformProvider.npm
     let derived = 0
+    let own = 0
     for (const provider of getModelCatalog().byokProviders) {
       const injected = cfg.provider[`${provider.id}-byok`] as { npm: string; models: Record<string, { variants?: unknown }> }
       expect({ provider: provider.id, npm: injected.npm }).toEqual({ provider: provider.id, npm: platformNpm })
       for (const id of provider.models) {
+        const slot = provider.modelMeta?.[id]
         const twin = platform.find((model) => model.id === id)
-        expect({ provider: provider.id, id, variants: injected.models[id]?.variants }).toEqual({ provider: provider.id, id, variants: twin?.variants })
-        if (twin?.variants) derived++
+        const expected = slot ? slot.variants : twin?.variants
+        expect({ provider: provider.id, id, variants: injected.models[id]?.variants }).toEqual({ provider: provider.id, id, variants: expected })
+        if (slot?.variants) own++
+        else if (twin?.variants) derived++
       }
     }
-    // 空集会让上面的逐项断言空转:至少两个直连模型真的派生到了档位,且 BYOK-only 的 glm-4.5-air 没有。
+    // 空集会让上面的逐项断言空转:至少两个直连模型真的从平台同名条目派生到了档位,至少一个从自己的槽拿到。
     expect(derived).toBeGreaterThanOrEqual(2)
-    expect((cfg.provider["zhipuai-byok"] as { models: Record<string, { variants?: unknown }> }).models["glm-4.5-air"]?.variants).toBeUndefined()
+    expect(own).toBeGreaterThanOrEqual(1)
+  })
+
+  // REQ-153 #1267:BYOK-only id(平台无同名条目)的徽标 / 档位来自 `byokProviders[].modelMeta` 槽。上游
+  // transform.options() 对 zhipuai* + openai-compatible 无条件写 thinking:enabled,此前 glm-4.5-air 无徽标、
+  // 零档,请求却锁在思考档;`关` 档(thinking.type=disabled)是用户关掉它的唯一途径,而它要被引擎查到就必须
+  // 从这里逐字注入(engine provider.ts:1507 把 config variants 与自己派生的表 mergeDeep)。
+  // 槽的形状纪律(读它的只有 byokModelMeta,所以这里必须替它把关):
+  //   · 键 ∈ 该 provider 的 models —— 打错 id 的槽是静默 no-op,徽标不亮、档位不出、无人变红;
+  //   · 键不得与平台同名条目重叠 —— 一个 id 两处元数据 = 两份判据,「显式优先」不该在出货目录上被触发;
+  //   · 显式关闭档的 wire 值必须逐字 `disabled`:智谱 2026-09-06 实打,`type` 写错会被上游静默忽略并继续思考(HTTP 仍 200)。
+  test("#1267:glm-4.5-air 的 modelMeta 槽逐字注入(reasoning:true + 开/关);槽键 ∈ models 且不与平台同名条目重叠;关档 wire 值逐字 disabled", () => {
+    keyEverything()
+    const cfg = buildAlphaModelConfig(userData)!
+    const catalog = getModelCatalog()
+    const zhipu = (cfg.provider["zhipuai-byok"] as { models: Record<string, { name: string; reasoning?: boolean; variants?: Record<string, Record<string, unknown>> }> }).models
+    const slot = catalog.byokProviders.find((provider) => provider.id === "zhipuai")!.modelMeta!["glm-4.5-air"]!
+    expect(slot).toEqual({
+      name: "GLM-4.5-Air",
+      reasoning: true,
+      variants: { 开: { thinking: { type: "enabled" } }, 关: { thinking: { type: "disabled" } } },
+    })
+    expect(zhipu["glm-4.5-air"]).toEqual({ name: "glm-4.5-air", reasoning: true, variants: slot.variants })
+
+    const platformIds = new Set(catalog.platformModels.map((model) => model.id))
+    let slots = 0
+    for (const provider of catalog.byokProviders) {
+      for (const [id, meta] of Object.entries(provider.modelMeta ?? {})) {
+        slots++
+        expect({ provider: provider.id, id, listed: provider.models.includes(id) }).toEqual({ provider: provider.id, id, listed: true })
+        expect({ provider: provider.id, id, overlapsPlatform: platformIds.has(id) }).toEqual({ provider: provider.id, id, overlapsPlatform: false })
+        // 徽标 ⇒ 有档(#1266 的不变量对槽同样成立);每个显式关闭档的值逐字是 disabled。
+        expect({ provider: provider.id, id, badgeImpliesVariants: !meta.reasoning || Object.keys(meta.variants ?? {}).length > 0 }).toEqual({ provider: provider.id, id, badgeImpliesVariants: true })
+        for (const [label, options] of Object.entries(meta.variants ?? {})) {
+          const thinking = (options as { thinking?: { type?: unknown } }).thinking
+          if (thinking) expect({ provider: provider.id, id, label, type: thinking.type }).toEqual({ provider: provider.id, id, label, type: ["enabled", "disabled"].includes(String(thinking.type)) ? thinking.type : "<enabled|disabled>" })
+        }
+      }
+    }
+    expect(slots).toBeGreaterThanOrEqual(1) // 零个槽会让上面的逐项断言空转
   })
 
   test("徽标集合 == 引擎注入 reasoning 集合 —— 同一份目录、同一份 live 快照,两边必须走同一投影", () => {
@@ -419,5 +463,202 @@ describe("REQ-153 #1236:目录 `reasoning` 转发进引擎配置,徽标与引擎
     expect(badged).not.toContain("deepseek-byok:deepseek-v4-flash")
     expect(badged).toContain("alpha:glm-5.2")
     expect(badged).toContain("zhipuai-byok:glm-5.2")
+    // #1267:BYOK-only 的槽也在同一集合里 —— 平台快照收窄不影响它(它根本不从平台派生)。
+    expect(badged).toContain("zhipuai-byok:glm-4.5-air")
+  })
+})
+
+// REQ-153 #1237:档位**形状**逐腿取自实打表;没实打过的 (引擎 provider, model) 钉在无档。
+// v1 作废的原因(票面正文):它假设「config 声明 ⇒ 发到上游 ⇒ 生效」,而两个环节实测都断过 ——
+// 网关曾整个丢掉推理字段(alpha-platform#423,已修),智谱直连对非 5.2 的 GLM 压根不校验 `reasoning_effort`
+// (`bogus-value` 照样 200、`none` 仍满额思考)。**受理 ≠ 有效**,且**同一模型经直连与经 OpenRouter 形状不同**。
+// 所以这里的判据不是「有没有档位」,是「每一个注入引擎的档位表,逐字等于那条腿实打出来的表」:
+//   · 表的键是**引擎侧** `<providerID>:<modelID>`,不是目录条目 —— byokModelMeta 会把平台同名条目的档位派生进
+//     直连节点,派生出来的那份走的是另一条腿(直连),必须单独入表;
+//   · 每行的 evidence 只写读数支持的部分(alpha-platform docs/architecture/openai-wire-reasoning-controls.md §3
+//     的逐格读数;本票对 qwen 经 OR 的 N=3 复打记在 docs/architecture/2026-09-06-model-variant-reachability.md §8);
+//   · 本机无凭据、一格没打成的模型(qwen / kimi / minimax 直连)**显式**列入无档清单并断言它真的被注入且无档 ——
+//     否则下一个人会顺手照 models.dev 文案给它们补上,那正是 v1 作废的形态;
+//   · 上游 `transform.smallOptions()` 把档位表**第一项**喂给标题等辅助调用(`request.ts:88-89`,基线 §3.8a),
+//     所以凡有显式关闭档的模型,「关」必须排第一 —— 判据在这里,机制本身由 alpha-reasoning-badge-parity 用真引擎证。
+// 判官是纯函数,先用已知的坏证明它会红(v1 的 GLM 形状、给未验模型补档、关闭档写错值、关档不在第一位、
+// 实打表登记的档位从注入里消失),再判出货目录。
+describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉在无档", () => {
+  type Tiers = Record<string, Record<string, unknown>>
+  type InjectedModel = { name: string; reasoning?: boolean; variants?: Tiers }
+  type Injected = { provider: Record<string, { models: Record<string, InjectedModel> }> }
+  const DOC = "alpha-platform docs/architecture/openai-wire-reasoning-controls.md"
+  const REACH = "docs/architecture/2026-09-06-model-variant-reachability.md"
+  const effort = (...tiers: [string, string][]): Tiers => Object.fromEntries(tiers.map(([label, value]) => [label, { reasoningEffort: value }]))
+  const orEffort = (...tiers: [string, string][]): Tiers => Object.fromEntries(tiers.map(([label, value]) => [label, { reasoning: { effort: value } }]))
+  const thinking = (...tiers: [string, "enabled" | "disabled"][]): Tiers => Object.fromEntries(tiers.map(([label, type]) => [label, { thinking: { type } }]))
+
+  /** 引擎 `<providerID>:<modelID>` → 该腿实打过的档位表(逐字)与出处。改这张表 = 先照 DOC §3 的方法对真实端点打一轮。 */
+  const VERIFIED_TIERS: Record<string, { leg: string; variants: Tiers; evidence: string }> = {
+    "alpha:claude-opus-4.8": {
+      leg: "openrouter:anthropic/claude-opus-4.8(anthropic-wire;anthropic 直连腿未验 ⇒ 网关剔除)",
+      variants: orEffort(["低", "low"], ["中", "medium"], ["高", "high"]),
+      evidence: `${DOC} §3.5:reasoning.effort 写成 output_config.effort,low/medium/high/xhigh/max → 200,none/minimal/bogus → 400;opus 各档 0 个 thinking 块 —— 受理是事实,效果不可观测(#1266 前已声明,本票不动)`,
+    },
+    "alpha:gpt-5.4-mini": {
+      leg: "openrouter:openai/gpt-5.4-mini(openai 直连腿本机 TLS 不可达 ⇒ 未验 ⇒ 网关剔除)",
+      variants: effort(["低", "low"], ["中", "medium"], ["高", "high"]),
+      evidence: `${DOC} §3.4:bogus-value → 400;none=0 / low=36 / medium=51 / high=78 reasoning_tokens(单样本,效果可观测)`,
+    },
+    "alpha:gpt-5.4-nano": {
+      leg: "openrouter:openai/gpt-5.4-nano(同上)",
+      variants: effort(["低", "low"], ["中", "medium"], ["高", "high"]),
+      evidence: `${DOC} §3.4:bogus-value → 400;none…high 均 0,xhigh=80 / max=90 —— 受理是事实,低档效果不可观测(#1266 已声明,本票不动)`,
+    },
+    "alpha:deepseek-v4-pro": {
+      leg: "deepseek:deepseek-v4-pro + openrouter:deepseek/deepseek-v4-pro(两腿都受理 reasoning_effort 七值)",
+      variants: effort(["低", "low"], ["中", "medium"], ["高", "high"], ["最高", "max"]),
+      evidence: `${DOC} §3.3 直连:bogus-value → 400,none → completion=3 无 reasoning 桶(真关);§3.4 OR:bogus → 400,none=0;其余六值单样本无单调差别(#1266 已声明,本票不动)`,
+    },
+    "alpha:glm-5.2": {
+      leg: "zhipu:glm-5.2 + openrouter:z-ai/glm-5.2(两腿都受理 reasoning_effort 七值)",
+      variants: effort(["高", "high"], ["最高", "max"]),
+      evidence: `${DOC} §3.1 直连:bogus-value → 400 code 1210(七值校验),但 none 仍 171 reasoning_tokens、max=307 非单调 —— 受理是事实、效果未证;§3.4 OR:none=0(#1266 已声明,本票不动)`,
+    },
+    "alpha:glm-5-turbo": {
+      leg: "zhipu:glm-5-turbo(models.config.json 首腿;OR 腿不认 thinking 形状 ⇒ 声明档位时被网关剔除,不换路)",
+      variants: thinking(["关", "disabled"], ["开", "enabled"]),
+      evidence: `${DOC} §3.2:thinking.type=disabled → reasoning_tokens 0(非流式 completion=4;流式 4 帧无 reasoning delta),enabled → 182;reasoning_effort 在此腿 accepted-and-ignored(bogus-value → 200,none 仍 224)⇒ 网关拒转 ⇒ 桌面不用它(v1 的形状)`,
+    },
+    "alpha:qwen3.7-max": {
+      leg: "openrouter:qwen/qwen3.7-max(唯一腿)",
+      variants: effort(["关", "none"], ["开", "medium"]),
+      evidence: `${DOC} §3.4 + ${REACH} §8(本票 2026-09-06 复打 N=3,max_tokens 2048,与引擎同发 top_p:1):bogus-value → 400;none → reasoning_tokens 0(3/3);low/medium/high/max 248–308 与 baseline 252–288 无差别 ⇒ 只声明开/关,开取 OR 校验域内的 medium`,
+    },
+    "alpha:qwen3.7-plus": {
+      leg: "openrouter:qwen/qwen3.7-plus(唯一腿)",
+      variants: effort(["关", "none"], ["开", "medium"]),
+      evidence: `${DOC} §3.4 + ${REACH} §8(同上):bogus-value → 400;none → 0(3/3);low/medium/high/max 268–347 与 baseline 315–340 无差别 ⇒ 只声明开/关`,
+    },
+    "deepseek-byok:deepseek-v4-pro": {
+      leg: "deepseek 直连(经平台同名条目派生,byokModelMeta)",
+      variants: effort(["低", "low"], ["中", "medium"], ["高", "high"], ["最高", "max"]),
+      evidence: `${DOC} §3.3:直连 bogus-value → 400、none 真关(与 alpha:deepseek-v4-pro 的直连腿同一格读数)`,
+    },
+    "zhipuai-byok:glm-5.2": {
+      leg: "zhipu 直连(经平台同名条目派生,byokModelMeta)",
+      variants: effort(["高", "high"], ["最高", "max"]),
+      evidence: `${DOC} §3.1:直连 bogus-value → 400(受理已验),none 仍思考、七值非单调(效果未证)—— #1266 已声明,本票不动;见 ${REACH} §8`,
+    },
+    "zhipuai-byok:glm-4.5-air": {
+      leg: "zhipu 直连(目录 modelMeta 槽,#1267)",
+      variants: thinking(["关", "disabled"], ["开", "enabled"]),
+      evidence: `${REACH} §5:disabled → 无 reasoning_content、completion 128 → 4;type 写错 → 200 且照常思考(上游不校验)。#1237 把「关」调到第一位:此前「开」在前 ⇒ 标题辅助调用带 thinking:enabled(本判官在未调序的目录上当场点名)`,
+    },
+  }
+  /** 本机无凭据、一格没打成 ⇒ 显式无档。键同样是引擎侧 id;值 = 为什么没验(不是文法结论,是可达性)。 */
+  const UNVERIFIED_TIERLESS: Record<string, string> = {
+    "minimax-byok:MiniMax-M2": "MINIMAX_API_KEY 本机无(alpha-platform .env 与 owner 提供的 key 都没有);上游黑名单族(transform.ts variants() 的 minimax),一格没打",
+    "alibaba-byok:qwen3.8-max-preview": "DASHSCOPE_API_KEY 本机无;且上游 enable_thinking 只对 providerID === \"alibaba-cn\" 严格等号写,alibaba-byok 永不匹配 —— 猜 enable_thinking 会让整个节点报错(票面 Out of scope)",
+    "alibaba-byok:qwen-plus": "同 qwen3.8-max-preview",
+    "alibaba-byok:qwen3-coder-plus": "同 qwen3.8-max-preview",
+    "moonshot-byok:kimi-k2": "MOONSHOT_API_KEY 本机无;上游黑名单族(kimi),一格没打",
+    "moonshot-byok:moonshot-v1-128k": "MOONSHOT_API_KEY 本机无",
+  }
+  const isOffTier = (options: Record<string, unknown>) =>
+    (options.thinking as { type?: unknown } | undefined)?.type === "disabled" || options.reasoningEffort === "none"
+
+  /** 纯函数判官:返回失败文案;空数组 = 通过。 */
+  function judgeTierProvenance(cfg: Injected): string[] {
+    const failures: string[] = []
+    const seen = new Set<string>()
+    for (const [providerID, provider] of Object.entries(cfg.provider)) {
+      for (const [modelID, model] of Object.entries(provider.models)) {
+        const key = `${providerID}:${modelID}`
+        seen.add(key)
+        const verified = VERIFIED_TIERS[key]
+        if (model.variants) {
+          if (!verified) failures.push(`${key}: 声明了档位 ${JSON.stringify(model.variants)},但这条腿没有实打记录 —— 先照 ${DOC} §3 打一轮再入表`)
+          else if (JSON.stringify(model.variants) !== JSON.stringify(verified.variants))
+            failures.push(`${key}: 注入的档位表 ${JSON.stringify(model.variants)} ≠ 实打表 ${JSON.stringify(verified.variants)}(${verified.leg})`)
+          const labels = Object.keys(model.variants)
+          const off = labels.filter((label) => isOffTier(model.variants![label]!))
+          if (off.length > 0 && !isOffTier(model.variants[labels[0]!]!))
+            failures.push(`${key}: 有显式关闭档 ${JSON.stringify(off)} 却把 ${JSON.stringify(labels[0])} 排在第一位 —— 上游 smallOptions() 会把它喂给标题等辅助调用(基线 §3.8a)`)
+        } else if (verified) {
+          failures.push(`${key}: 实打表登记了档位 ${JSON.stringify(verified.variants)},注入配置里却没有 variants`)
+        }
+        if (key in UNVERIFIED_TIERLESS && (model.reasoning || model.variants))
+          failures.push(`${key}: 本机未实打(${UNVERIFIED_TIERLESS[key]}),却带 reasoning=${String(model.reasoning)} variants=${JSON.stringify(model.variants)}`)
+      }
+    }
+    for (const key of Object.keys(VERIFIED_TIERS)) if (!seen.has(key)) failures.push(`${key}: 实打表登记的模型不在注入配置里(表过期?)`)
+    for (const key of Object.keys(UNVERIFIED_TIERLESS)) if (!seen.has(key)) failures.push(`${key}: 无档清单登记的模型不在注入配置里 —— 「它无档」这句话没有被测对象`)
+    return failures
+  }
+  const keyEverything = () => {
+    for (const p of getModelCatalog().byokProviders) plantSecret(p.keyEnv, `sk-${p.id}`)
+    process.env.ALPHA_BASE_URL = "https://gw.example/v1"
+    plantSecret("ALPHA_API_KEY", "jwt")
+  }
+  const clone = (cfg: Injected): Injected => JSON.parse(JSON.stringify(cfg)) as Injected
+
+  test("出货目录:每个注入引擎的档位表逐字等于该腿的实打表;三个黑名单模型按各自那条腿的形状拿到开/关且关在第一位", () => {
+    keyEverything()
+    const cfg = buildAlphaModelConfig(userData)! as unknown as Injected
+    expect(judgeTierProvenance(cfg)).toEqual([])
+    // 空表会让上面的判据空转:实打表至少覆盖本票三个模型 + #1266/#1267 已声明的那些。
+    expect(Object.keys(VERIFIED_TIERS).length).toBeGreaterThanOrEqual(11)
+    const alpha = cfg.provider.alpha!.models
+    expect(alpha["glm-5-turbo"]).toEqual({ name: "GLM-5 Turbo", reasoning: true, variants: { 关: { thinking: { type: "disabled" } }, 开: { thinking: { type: "enabled" } } } })
+    expect(alpha["qwen3.7-max"]).toEqual({ name: "Qwen3.7 Max", reasoning: true, variants: { 关: { reasoningEffort: "none" }, 开: { reasoningEffort: "medium" } } })
+    expect(alpha["qwen3.7-plus"]).toEqual({ name: "Qwen3.7 Plus", reasoning: true, variants: { 关: { reasoningEffort: "none" }, 开: { reasoningEffort: "medium" } } })
+    // 同一模型经不同腿形状不同:GLM 直连只认 thinking,qwen 经 OR 只走 reasoning_effort —— 两者不得互换。
+    expect(Object.keys(alpha["glm-5-turbo"]!.variants!)).toEqual(["关", "开"])
+    expect(Object.keys(alpha["qwen3.7-max"]!.variants!)).toEqual(["关", "开"])
+  })
+
+  test("未实打的直连模型(qwen / kimi / minimax)真的被注入、且无徽标无档 —— 「无档」有被测对象,不是空集", () => {
+    keyEverything()
+    const cfg = buildAlphaModelConfig(userData)! as unknown as Injected
+    let pinned = 0
+    for (const key of Object.keys(UNVERIFIED_TIERLESS)) {
+      const [providerID, modelID] = key.split(":") as [string, string]
+      const model = cfg.provider[providerID]?.models[modelID]
+      expect({ key, injected: model !== undefined }).toEqual({ key, injected: true })
+      expect({ key, reasoning: model?.reasoning, variants: model?.variants }).toEqual({ key, reasoning: undefined, variants: undefined })
+      pinned++
+    }
+    expect(pinned).toBe(6)
+    // 平台侧 qwen3.7-* 经 OR 有档,直连 alibaba-byok 的是另一组 id(qwen3.8-max-preview / qwen-plus / qwen3-coder-plus),
+    // 不存在同名派生;这里钉住「平台的 qwen 档位没有漏进 alibaba 直连节点」这条不变量。
+    for (const model of Object.values(cfg.provider["alibaba-byok"]!.models)) expect(model.variants).toBeUndefined()
+  })
+
+  test("手段自证:五种已知的坏各自变红并点名(v1 的 GLM 形状 / 给未验模型补档 / 关档写错值 / 关档不在第一位 / 实打表的档位从注入里消失)", () => {
+    keyEverything()
+    const base = buildAlphaModelConfig(userData)! as unknown as Injected
+    expect(judgeTierProvenance(base)).toEqual([])
+
+    const v1 = clone(base) // v1 票面的形状:按 reasoningEffort 给 GLM turbo 声明档位 —— 直连腿 accepted-and-ignored
+    v1.provider.alpha!.models["glm-5-turbo"]!.variants = { 高: { reasoningEffort: "high" }, 最高: { reasoningEffort: "max" } }
+    expect(judgeTierProvenance(v1).map((line) => line.split(":").slice(0, 2).join(":"))).toEqual(["alpha:glm-5-turbo"])
+    expect(judgeTierProvenance(v1)[0]).toContain("≠ 实打表")
+
+    const guessed = clone(base) // 照 models.dev 文案给 MiniMax 直连补档
+    guessed.provider["minimax-byok"]!.models["MiniMax-M2"] = { name: "MiniMax-M2", reasoning: true, variants: { 开: { thinking: { type: "enabled" } } } }
+    const guessedFailures = judgeTierProvenance(guessed)
+    expect(guessedFailures.map((line) => line.split(":").slice(0, 2).join(":"))).toEqual(["minimax-byok:MiniMax-M2", "minimax-byok:MiniMax-M2"])
+    expect(guessedFailures.some((line) => line.includes("没有实打记录"))).toBe(true)
+    expect(guessedFailures.some((line) => line.includes("本机未实打"))).toBe(true)
+
+    const typo = clone(base) // 关档值写错:OR 的校验域里没有 "off"(bogus → 400),实打表逐字比对当场红
+    typo.provider.alpha!.models["qwen3.7-max"]!.variants = { 关: { reasoningEffort: "off" }, 开: { reasoningEffort: "medium" } }
+    expect(judgeTierProvenance(typo).map((line) => line.split(":").slice(0, 2).join(":"))).toEqual(["alpha:qwen3.7-max"])
+
+    const reordered = clone(base) // 开排第一 ⇒ 标题辅助调用会带 thinking:enabled
+    reordered.provider.alpha!.models["glm-5-turbo"]!.variants = { 开: { thinking: { type: "enabled" } }, 关: { thinking: { type: "disabled" } } }
+    const reorderedFailures = judgeTierProvenance(reordered)
+    expect(reorderedFailures.length).toBe(2) // 逐字不等(顺序也是表的一部分)+ 关档不在第一位
+    expect(reorderedFailures.some((line) => line.includes("smallOptions"))).toBe(true)
+
+    const dropped = clone(base) // 实打表登记了档位,注入却没有 —— 目录被人退回无档
+    delete dropped.provider.alpha!.models["qwen3.7-plus"]!.variants
+    expect(judgeTierProvenance(dropped)).toEqual([`alpha:qwen3.7-plus: 实打表登记了档位 ${JSON.stringify(VERIFIED_TIERS["alpha:qwen3.7-plus"]!.variants)},注入配置里却没有 variants`])
   })
 })

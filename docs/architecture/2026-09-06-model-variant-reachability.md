@@ -129,9 +129,126 @@ packages/opencode/src/session/llm/request.ts:84-87
   `packages/opencode/src/index.ts run`(与打包 sidecar 同一份 v1 装配)打到测试进程里的假上游:
   有徽标 ⇒ chip 每一档的主请求体带推理参数且 `reasoning_effort` 值逐字对上;无徽标 ⇒ 零档且默认
   请求不带。未修的树上它点名 5 行红(见 PR `#1266` 正文的变异输出)。
-- **已知不修**:`zhipuai-byok/glm-4.5-air` 仍是「无徽标却带 `thinking: enabled`」—— 它是 BYOK-only 的
-  id,平台目录没有同名条目可派生,而 BYOK 目录 `models` 是 `string[]`,**没有逐模型元数据槽**;补槽是
-  目录 schema 扩面,不在 `#1266`/`#1267` 边界内,由父需求 jinjunnn/alpha-work#94 裁。判据里以
-  `KNOWN_UNFIXED` 登记,且登记自带过期断言(一旦有人补了槽让它亮徽标,登记本身会红)。
+- **`zhipuai-byok/glm-4.5-air`(`#1267`,2026-09-06 已修)**:它是 BYOK-only 的 id,平台目录没有同名
+  条目可派生,而 BYOK 目录 `models` 曾是纯 `string[]`,没有逐模型元数据槽 ⇒ 无徽标、零档,而上游
+  `transform.options()`(`transform.ts:1184-1192`)对 `providerID` 含 `zhipuai` + `@ai-sdk/openai-compatible`
+  **无条件**写 `thinking: { type: "enabled", clear_thinking: false }`。修法是目录 schema 扩面:
+  `byokProviders[].modelMeta[<id>]`(`shared/alpha-model-types.ts` `ByokModelMeta`),仍由同一个
+  `byokModelMeta` 派生(显式槽优先于平台同名条目;两者不得同时存在,alpha-models 套件钉着)。glm-4.5-air
+  现在标徽标并给 `开` / `关` 两档:`开 = { thinking: { type: "enabled" } }`、`关 = { thinking: { type: "disabled" } }`,
+  经 `request.ts:95` 的 mergeDeep 与上游默认合成 `{ type, clear_thinking: false }` 原样进请求体(假上游捕获实证)。
+  原先 `KNOWN_UNFIXED` 登记已按其过期断言删除;判据扩为「显式关闭档 ⇒ 请求体 `thinking.type` 逐字 `disabled`
+  且零推理控制参数」,并新增一条手段自证:硬塞不存在的档 ⇒ 上游默认 `enabled` 原样出现,交给「关」档判据必红。
+
+## 5. 智谱直连对 `thinking.type` 的真实受理(2026-09-06 实打,`glm-4.5-air`)
+
+`#1267` 的两条修法都要把 `thinking: { type: "disabled" }` 这个**上游 wire 形状**写进 alpha 自有文件;本 portfolio
+记录在案最贵的返工形态就是「手写一个别人文法的替身」,所以先实打再落笔。`POST https://open.bigmodel.cn/api/paas/v4/chat/completions`,
+`model: glm-4.5-air`,`max_tokens: 128`,同一句提问,只变 `thinking`(`clear_thinking: false` 随行,与引擎实际发出的一致):
+
+| 发出的 `thinking` | HTTP | `message` 键 | `reasoning_content` | `completion_tokens` | `finish_reason` |
+| --- | --- | --- | --- | --- | --- |
+| `{ type: "enabled", clear_thinking: false }` | 200 | content / reasoning_content / role | 249 字 | 128 | `length`(全花在思考上,正文为空) |
+| `{ type: "disabled", clear_thinking: false }` | 200 | content / role | **无** | 4 | `stop`(正文「等于2。」) |
+| `{ type: "bogus", clear_thinking: false }`(已知的坏) | **200** | content / reasoning_content / role | 260 字 | 128 | `length` |
+
+三条结论:①`disabled` **真的**关掉思考(无 `reasoning_content`,token 128 → 4);②`type` 写错**不报错**,上游静默
+回落到思考 —— **HTTP 200 不是受理证据**,`reasoning_content` 有没有才是;③因此目录里的关闭档值必须逐字 `disabled`,
+alpha-models 套件钉住每个 `thinking.type ∈ {enabled, disabled}`(变异实测:写成 `disable` 当场红)。
+端到端复核:用生产 `buildAlphaModelConfig` 的配置起本仓引擎 `run --model zhipuai-byok/glm-4.5-air`,默认 / `--variant 开` /
+`--variant 关` 三次都 rc=0 并拿到回答(3.5 s / 3.0 s / 2.4 s)—— 引擎实际发出的三种请求体上游都受理。
 - **未验**:`deepseek-v4-pro` 直连与平台节点收到 `reasoning_effort: max` 的真实受理情况(无凭据;
   `#1239` 只对智谱回放过 `max`)。
+
+## 8. 追记(2026-09-06 同日,`#1237`):黑名单模型的档位 —— 形状逐腿取自实打表,未实打的钉在无档
+
+§7 说「档位的唯一 alpha 侧来源是 `alpha-models.json` 的 `variants`」。`#1237` 给上游黑名单族
+(`transform.ts` `variants()` 的 `glm && !glm52` / `qwen`)里的三个平台模型补上档位,但**形状不是照
+`reasoningEffort` 套的** —— 本票 v1 正是那样写的,被两条实测推翻后作废重写:网关曾整个丢掉推理字段
+(`alpha-platform#423`,已修),智谱直连对非 5.2 的 GLM **不校验** `reasoning_effort`(`bogus-value`
+照样 200,`none` 仍满额思考)。**受理 ≠ 有效**,且**同一模型经直连与经 OpenRouter 的受理面不同**。
+逐格读数与网关的判定表(`VERIFIED_REASONING_WIRE`)都在
+`alpha-platform/docs/architecture/openai-wire-reasoning-controls.md`(下称 DOC);这里只记桌面侧
+据此做的决定。
+
+### 8.1 桌面侧档位表(引擎 `<providerID>:<modelID>` → 形状 → 出处)
+
+| 引擎 id | 走哪条腿 | 档位(逐字) | 出处与效果 |
+| --- | --- | --- | --- |
+| `alpha:glm-5-turbo` | `zhipu:glm-5-turbo`(`models.config.json` 首腿;OR 腿不认 `thinking` 形状 ⇒ 声明档位时被网关剔除,不换路) | `关 = {thinking:{type:"disabled"}}` · `开 = {thinking:{type:"enabled"}}` | DOC §3.2:`disabled` → reasoning_tokens **0**(非流式 completion=4;流式 4 帧无 reasoning delta),`enabled` → 182;`reasoning_effort` 在此腿 accepted-and-ignored(`bogus-value` → 200,`none` 仍 224)⇒ 网关拒转 ⇒ 桌面不用它 |
+| `alpha:qwen3.7-max` | `openrouter:qwen/qwen3.7-max`(唯一腿) | `关 = {reasoningEffort:"none"}` · `开 = {reasoningEffort:"medium"}` | DOC §3.4 + §8.2:`bogus-value` → 400(OR 真校验);`none` → **0**(3/3);low/medium/high/max 与 baseline 无差别 ⇒ 只声明开/关 |
+| `alpha:qwen3.7-plus` | `openrouter:qwen/qwen3.7-plus`(唯一腿) | 同上 | 同上 |
+| `zhipuai-byok:glm-4.5-air` | zhipu 直连(`modelMeta` 槽,§5 / `#1267`) | **顺序改为** `关` / `开`(值不变) | 见 §8.3:上游把档位表第一项喂给辅助调用 |
+
+不动的行(`#1266` 已声明,出处同 DOC):`alpha:claude-opus-4.8`(OR anthropic-wire `reasoning.effort`
+低/中/高)、`alpha:gpt-5.4-mini|nano`(OR `reasoning_effort` 低/中/高)、`alpha:deepseek-v4-pro` 与其直连派生
+`deepseek-byok:deepseek-v4-pro`(两腿 `reasoning_effort` 七值校验,`none` 真关)、`alpha:glm-5.2` 与其直连派生
+`zhipuai-byok:glm-5.2`(`reasoning_effort` 高/最高:直连**受理已验、效果未证** —— DOC §3.1 `none` 仍 171、`max`=307
+非单调;OR 腿 `none`=0)。**`zhipuai-byok:glm-5.2` 的高/最高在直连上是一份被受理但未证有效的表**,本票不改它,
+记在这里等 owner 裁决要不要像 turbo 一样换成 `thinking` 开/关。
+
+### 8.2 qwen 经 OpenRouter 的复打(本票,2026-09-06,N=3)
+
+DOC §3.4 对 qwen 每档只有单样本且 `high`/`medium`/`max` 撞到 256 上限。本票用仓内 `OPENROUTER_API_KEY`
+(owner 授权)复打:`max_tokens` 2048、同一道需要推理的题(三管注水,答 `36/7`)、**每发都带 `top_p: 1`**
+(引擎对 qwen 实际就发这个,基线 §3.8b 要验的组合)、并发 3。先自检:坏 key → 401「User not found」,
+`bogus-value` → 400「reasoning_effort: Invalid option: expected one of "max"|"xhigh"|…」(两模型文案逐字同)。
+
+| model | effort | reasoning_tokens ×3 | completion ×3 | finish | 答对 |
+| --- | --- | --- | --- | --- | --- |
+| `qwen/qwen3.7-max` | (none) | 252 / 281 / 288 | 259 / 288 / 295 | stop | 3/3 |
+| `qwen/qwen3.7-max` | `none` | **0 / 0 / 0** | 4 / 5 / 4 | stop | 2/3(一次答 36/17) |
+| `qwen/qwen3.7-max` | `low` | 289 / 284 / 308 | 296 / 291 / 315 | stop | 3/3 |
+| `qwen/qwen3.7-max` | `medium` | 277 / 248 / 301 | 284 / 255 / 308 | stop | 3/3 |
+| `qwen/qwen3.7-max` | `high` | 279 / 266 / 282 | 286 / 273 / 289 | stop | 3/3 |
+| `qwen/qwen3.7-max` | `max` | 296 / 255 / 252 | 303 / 262 / 259 | stop | 3/3 |
+| `qwen/qwen3.7-plus` | (none) | 340 / 315 / 325 | 347 / 322 / 332 | stop | 3/3 |
+| `qwen/qwen3.7-plus` | `none` | **0 / 0 / 0** | 4 / 4 / 4 | stop | 0/3(三次答 36/5) |
+| `qwen/qwen3.7-plus` | `low` | 332 / 294 / 270 | 339 / 301 / 277 | stop | 3/3 |
+| `qwen/qwen3.7-plus` | `medium` | 322 / 347 / 268 | 329 / 354 / 275 | stop | 3/3 |
+| `qwen/qwen3.7-plus` | `high` | 323 / 347 / 333 | 330 / 354 / 340 | stop | 3/3 |
+| `qwen/qwen3.7-plus` | `max` | 328 / 329 / 290 | 335 / 336 / 297 | stop | 3/3 |
+
+结论(只写读数支持的部分):①`reasoning_effort` + `top_p:1` 30/30 受理(§3.8b 那格对 qwen 关闭);
+②`none` 真关,而且关掉之后**答案质量可见地掉**(plus 3/3 答错)—— 这是用户选「关」时该知道的代价;
+③其余四档与 baseline 在 N=3 下无可分辨差别 ⇒ **不声明 低/中/高**,只声明 关/开;`开` 取 OR 校验域内的
+`medium` —— 它与其它三档、与不带字段在观察上等价,选它只是为了让「开」是一个显式的、被校验过的值,
+不是在断言 medium 比 low 更努力。原始 JSONL 在本机取证目录,不含 key。
+
+### 8.3 辅助调用取档位表第一项 —— 「关」必须排第一(基线 §3.8a 的实证)
+
+`session/llm/request.ts:88-89` 对 `input.small` 的辅助调用(标题)走 `transform.smallOptions()`,首行
+`Object.values(model.variants ?? {})[0]` —— **取档位表第一项,与用户选档无关**。用生产 `buildAlphaModelConfig`
+起本仓引擎打到假上游,每次 run 捕到两条 POST(主请求 + 标题),8/8 次都捕到:
+
+| run | 主请求体 | 标题请求体 |
+| --- | --- | --- |
+| `alpha/glm-5-turbo`(默认) | 零推理键 | `thinking:{type:"disabled"}` |
+| `alpha/glm-5-turbo@关` / `@开` | `thinking.type` = `disabled` / `enabled` | `thinking:{type:"disabled"}` |
+| `alpha/qwen3.7-max`(默认) | 零推理键,`top_p:1` | `reasoning_effort:"none"`,`top_p:1` |
+| `alpha/qwen3.7-max@关` / `@开` | `reasoning_effort` = `none` / `medium` | `reasoning_effort:"none"` |
+
+所以目录里凡有显式关闭档的模型,「关」一律放第一位:标题不思考。`#1267` 的 `glm-4.5-air` 原来是 `开`/`关`
+⇒ 标题调用带 `thinking:enabled`(与上游对 zhipuai 的无条件默认相同,所以此前没有可观察的退化);本票调成
+`关`/`开`,chip 顺序随之变。`alpha:glm-5.2`(高/最高)没有关闭档,标题调用带 `reasoning_effort:high` ——
+基线 §3.8a 表里的 ❌ 行**仍在**,本票不动(要动就是给 5.2 加关闭档,那是另一张票的形状决定)。
+
+### 8.4 未实打 ⇒ 显式无档(不是「没顾上」)
+
+`minimax-byok:MiniMax-M2`、`alibaba-byok:{qwen3.8-max-preview, qwen-plus, qwen3-coder-plus}`、
+`moonshot-byok:{kimi-k2, moonshot-v1-128k}`:本机没有 `MINIMAX_API_KEY` / `DASHSCOPE_API_KEY` /
+`MOONSHOT_API_KEY`(alpha-platform `.env` 与 owner 本轮提供的 key 里都没有),一格没打。**不凭 models.dev 或
+官网文案推断** —— 那正是 v1 作废的形态。alibaba 还有第二层:上游 `enable_thinking` 只对
+`providerID === "alibaba-cn"` 严格等号写,`alibaba-byok` 永不匹配,猜着发会让整个节点报错(票面 Out of scope)。
+换一台有 key 的机器照 DOC §3 的方法打一轮即可补表。
+
+### 8.5 判据
+
+- `packages/ui-mac/src/main/alpha-models.test.ts` 的 `#1237` 节:`VERIFIED_TIERS`(键 = 引擎侧 id,值 = 逐字档位表
+  + 腿 + 出处)与 `UNVERIFIED_TIERLESS`;判官是纯函数,对生产 `buildAlphaModelConfig` 的产物判 ——
+  表外声明即红、注入与表不逐字相等即红、无档清单里的模型必须**真的被注入且**无徽标无档(空集不算)、
+  有关闭档而关不在第一位即红、表登记的档位从注入里消失即红。手段自证五种已知的坏各自点名(v1 的 GLM
+  `reasoningEffort` 形状 / 给 MiniMax 补档 / 关档值写成 `off` / 开排第一 / 退回无档)。
+- `alpha-reasoning-badge-parity.test.ts`:新三行由矩阵原判据逐档覆盖(主请求体 `thinking.type` /
+  `reasoning_effort` 逐字对上);新增**标题辅助调用**判据 —— 有徽标的每一行,默认 run 的标题体必须带第一档;
+  手段自证把 qwen「开」档的主请求体冒充标题体 ⇒ 点名 `medium ≠ none`。

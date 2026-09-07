@@ -160,21 +160,34 @@ describe("真实 alpha-models.json → picker 两组", () => {
 
 // REQ-153 #1266:BYOK 行的档位与 sidecar 注入同一派生(byokModelMeta 取平台同名条目的 variants 键)。
 // 此前这里写死 `variants: []` —— 直连 deepseek-v4-pro / glm-5.2 亮着徽标却一档都选不到。
-describe("BYOK 行的推理档位从平台同名条目派生(#1266)", () => {
-  test("有徽标的直连模型列出平台同名条目的档位;无同名条目 / 未标推理的直连模型零档", () => {
+// REQ-153 #1267:没有平台同名条目的 BYOK-only id(glm-4.5-air)从目录自己的 `modelMeta` 槽拿徽标 / 档位 / 展示名。
+describe("BYOK 行的推理档位从平台同名条目或自己的 modelMeta 槽派生(#1266 / #1267)", () => {
+  test("有徽标的直连模型列出平台同名条目的档位;BYOK-only id 列出槽里的档位;未标推理的直连模型零档", () => {
     const actual = rows({
       keyStatus: Object.fromEntries(catalog.byokProviders.map((provider) => [provider.id, { configured: true, source: "keychain" as const }])),
     }).filter((row) => row.group === "byok")
     const twin = (id: string) => Object.keys(catalog.platformModels.find((model) => model.id === id)?.variants ?? {})
+    const slot = (key: string) => {
+      const [providerID, id] = key.split(":")
+      return catalog.byokProviders.find((provider) => provider.id === providerID)?.modelMeta?.[id!]
+    }
     expect(twin("deepseek-v4-pro").length).toBeGreaterThan(0) // 夹具自证:平台条目真有档位,否则下面空对空
+    expect(Object.keys(slot("zhipuai:glm-4.5-air")?.variants ?? {}).length).toBeGreaterThan(0) // 夹具自证:槽真有档位
     for (const row of actual) {
-      expect({ key: row.key, variants: row.model.variants }).toEqual({ key: row.key, variants: twin(row.model.id) })
+      const expected = slot(row.key) ? Object.keys(slot(row.key)!.variants ?? {}) : twin(row.model.id)
+      expect({ key: row.key, variants: row.model.variants }).toEqual({ key: row.key, variants: expected })
       // 徽标 ⇒ 有档;无档 ⇒ 无徽标(目录里徽标与档位同一个条目给出)。
       expect({ key: row.key, badgeImpliesVariants: !row.reasoning || row.model.variants.length > 0 }).toEqual({ key: row.key, badgeImpliesVariants: true })
     }
     expect(actual.find((row) => row.key === "deepseek:deepseek-v4-pro")?.model.variants).toEqual(twin("deepseek-v4-pro"))
     expect(actual.find((row) => row.key === "deepseek:deepseek-v4-flash")?.model.variants).toEqual([])
-    expect(actual.find((row) => row.key === "zhipuai:glm-4.5-air")?.model.variants).toEqual([])
+    const air = actual.find((row) => row.key === "zhipuai:glm-4.5-air")!
+    expect({ reasoning: air.reasoning, name: air.model.name, variants: air.model.variants, providerID: air.model.providerID }).toEqual({
+      reasoning: true,
+      name: "GLM-4.5-Air",
+      variants: ["关", "开"], // #1237:关在第一位 —— 上游 smallOptions() 把档位表第一项喂给标题辅助调用
+      providerID: byokEngineId("zhipuai"),
+    })
   })
 
   test("会话投影(composerModelFromRef)对直连 BYOK ref 给出同一份档位,不再回到「不支持」", () => {
@@ -184,6 +197,12 @@ describe("BYOK 行的推理档位从平台同名条目派生(#1266)", () => {
     expect(withModelVariant(projected, "不存在").variant).toBeUndefined()
     // 无目录(冷启动首次投影)时仍是空档,不发明。
     expect(composerModelFromRef({ providerID: byokEngineId("deepseek"), id: "deepseek-v4-pro" }, null).variants).toEqual([])
+    // #1267:BYOK-only id 的会话投影从槽拿档位与展示名 —— 否则进会话后 chip 又变回「不支持」。
+    expect(composerModelFromRef({ providerID: byokEngineId("zhipuai"), id: "glm-4.5-air", variant: "关" }, catalog)).toMatchObject({
+      name: "glm-4.5-air",
+      variants: ["关", "开"], // #1237:关在第一位 —— 上游 smallOptions() 把档位表第一项喂给标题辅助调用
+      variant: "关",
+    })
   })
 })
 

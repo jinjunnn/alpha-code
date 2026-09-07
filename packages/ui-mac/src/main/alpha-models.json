@@ -1,7 +1,8 @@
 {
-  "version": "2026-07-30.1",
+  "version": "2026-09-06.2",
   "_byokNote": "BYOK 目录一律用 OpenAI 兼容端点(compat:openai)。引擎机制(provider.ts apiNpm 链,S34 真机实锤):models.dev 合并进来的模型保留 models.dev 的 npm(@ai-sdk/openai-compatible),只有本目录 declared 的模型用我们的 npm——若目录配 anthropic 端点,合并模型会以 openai 拼法打 anthropic baseURL(四不像 URL)。anthropic compat 仅供用户自定义节点(自担模型清单)。",
   "_note": "Single source of truth for alpha's model catalog (ADR-014 config-driven). Edit here to add/retire models, retune 展示元数据(显示名 / reasoning / web / variants), or change presets — no code change. Consumed by main/alpha-models.ts (opencode config injection) and the renderer model picker (via window.api.models.catalog). REQ-127 #679:平台代理的计价倍数由网关 GET /v1/models 下发(ADR-039),本文件不得出现任何价格主张。",
+  "_variantsNote": "REQ-153 #1237:`variants` 只给 wire 形状**实打过**的 (引擎 provider, model) 声明,形状**逐腿**取自 alpha-platform docs/architecture/openai-wire-reasoning-controls.md(网关 VERIFIED_REASONING_WIRE 的对照物)与本仓 docs/architecture/2026-09-06-model-variant-reachability.md §8;同一模型经直连与经 OpenRouter 形状不同,不得跨腿套用。受理 ≠ 有效:每个档位都要对应一个实打观察到的上游行为。上游 smallOptions() 把档位表**第一项**喂给标题等辅助调用,所以有关闭档的模型一律把「关」放第一位。未实打的模型(qwen/kimi/minimax 直连:本机无凭据)显式保持无档;alpha-models.test.ts 的 #1237 节把已验表与无档清单都钉死 —— 想加一档,先照那份文档的方法实打,再把出处写进那张表。",
   "defaultModel": null,
   "defaultPlatformModel": "deepseek-v4-flash",
   "platformProvider": {
@@ -122,15 +123,46 @@
     },
     {
       "id": "glm-5-turbo",
-      "name": "GLM-5 Turbo"
+      "name": "GLM-5 Turbo",
+      "reasoning": true,
+      "variants": {
+        "关": {
+          "thinking": {
+            "type": "disabled"
+          }
+        },
+        "开": {
+          "thinking": {
+            "type": "enabled"
+          }
+        }
+      }
     },
     {
       "id": "qwen3.7-max",
-      "name": "Qwen3.7 Max"
+      "name": "Qwen3.7 Max",
+      "reasoning": true,
+      "variants": {
+        "关": {
+          "reasoningEffort": "none"
+        },
+        "开": {
+          "reasoningEffort": "medium"
+        }
+      }
     },
     {
       "id": "qwen3.7-plus",
-      "name": "Qwen3.7 Plus"
+      "name": "Qwen3.7 Plus",
+      "reasoning": true,
+      "variants": {
+        "关": {
+          "reasoningEffort": "none"
+        },
+        "开": {
+          "reasoningEffort": "medium"
+        }
+      }
     }
   ],
   "byokProviders": [
@@ -166,7 +198,25 @@
       "models": [
         "glm-5.2",
         "glm-4.5-air"
-      ]
+      ],
+      "modelMeta": {
+        "glm-4.5-air": {
+          "name": "GLM-4.5-Air",
+          "reasoning": true,
+          "variants": {
+            "关": {
+              "thinking": {
+                "type": "disabled"
+              }
+            },
+            "开": {
+              "thinking": {
+                "type": "enabled"
+              }
+            }
+          }
+        }
+      }
     },
     {
       "id": "minimax",
