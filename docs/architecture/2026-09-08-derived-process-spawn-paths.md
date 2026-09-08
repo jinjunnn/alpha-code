@@ -293,7 +293,7 @@ CLI-only 与构建脚本单列。
 | 3 | command 模板里的 `!`…`!` 展开 | `session/prompt.ts:1446` → `Process.text` → cross-spawn | **是**(`:1442` 读 `cfg.shell`) | 是 |
 | 4 | **MCP stdio(local)** | `mcp/index.ts:381` → MCP SDK → cross-spawn | **否**(§2.2) | 是(配置 + `POST /mcp`) |
 | 5 | **LSP server** | `lsp/launch.ts:11` → `util/process.ts:63` → cross-spawn | **否**(§2.3) | 是(打开文件即触发) |
-| 6 | **PTY 终端(缺省)** | `core/src/pty.ts:183` → `#pty`(node-pty / bun-pty) | **是**(§2.4 ARM A/C) | 是(终端面板) |
+| 6 | **PTY 终端(缺省)** | `core/src/pty.ts:183` → `#pty`(node-pty / bun-pty) | ~~**是**(§2.4 ARM A/C)~~ → **否**,见 **§7.7**(§2.4 证到的是结构条件,真实产品接线下 PTY 读不到插件改写的 `cfg.shell`) | 是(终端面板) |
 | 7 | **PTY 终端(`input.command`)** | 同上 | **否**(§2.4 ARM B) | 是(`POST /pty` payload) |
 | 8 | **formatter** | `format/index.ts:86` → `AppProcess` → `ChildProcessSpawner` | **否**(直接 exec 二进制,不经 shell) | 是(write/edit 之后自动跑) |
 | 9 | ripgrep(grep/glob 工具) | `core/src/ripgrep.ts:109`、`ripgrep/binary.ts:39` → `ChildProcessSpawner` | 否(固定二进制,只读用途) | 是 |
@@ -672,6 +672,8 @@ v0.1.11 的一次真实启动):同一个 sidecar 同时挂着两组 Office MCP �
 - **隔离家目录不是生产路径。** 本轮用 `$H/home` + 四个 XDG 变量模拟用户家目录;生产里 sidecar
   只把 `XDG_STATE_HOME` 指向 `userDataPath`,data/cache/config 仍在真 `~/.local/share`、`~/.cache`、
   `~/.config`。**形状**一致(工作区之外的固定应用目录),**绝对路径**不同。
+- **~~alpha 自己那部分写入集没有枚举完~~ —— 已在 §7 跑完(第三轮,2026-09-08),分上下界两级。以 §7.6 为准。**
+  (以下为第二轮原文,保留以便追溯)
 - **alpha 自己那部分写入集没有枚举完。** 本轮跑的是 `bun … serve` 的上游引擎,**没有**装载
   `@alpha-code/ext`、没有 `injectAlphaConfig`。静态实读可见 ext 插件在 sidecar 里还会写
   `<alphaGlobalRoot>/sandbox/`、`<alphaGlobalRoot>/bin/`(`shell-sandbox.ts:201-216`)与项目级
@@ -692,7 +694,371 @@ v0.1.11 的一次真实启动):同一个 sidecar 同时挂着两组 Office MCP �
 | 派工书前提「整进程围栏若成立,两层会叠加」 | **不会叠加,会互斥**:嵌套异策略 ⇒ exit 71 零执行(§6.5) |
 | 第一轮 §5「node-pty 对 wrapper 的 exec 行为未验证」 | 已在 node 上验:与 bun-pty 行为一致,且暴露出生产 profile 缺 `/dev/ptmx` `^/dev/ttys`(§6.4) |
 
-## 7. 用法
+## 7. 第三轮勘破:alpha 自己在 sidecar 进程里的写入面(2026-09-08)
+
+第二轮把这一条明确记为**没跑**(§6.8 第三条):「本轮跑的是 `bun … serve` 的上游引擎,**没有**装载
+`@alpha-code/ext`……P1/P2 落地前必须把这一段补齐,漏一条 ⇒ sidecar 起不来」。本节把它跑了。
+
+一句话结论:**alpha 自己的写入面收得住**,而且**只有一条前缀随工作区变化**(`<workspace>/`);
+但这份枚举有**上下界两级**,写围栏时必须按上界写,除非逐条证明够不着(§7.6 B 段)。
+
+### 7.0 测量口径(第三轮)
+
+| | |
+| --- | --- |
+| 仓 | `alpha-code@3089f8ce8`(= `origin/alpha`),worktree `.worktrees/ac-1286-writes`,由 `bash scripts/worktree-bootstrap.sh ac-1286-writes -b recon/1286-alpha-write-surface --base origin/alpha` 建(`4729 packages installed [10.56s]`) |
+| 宿主 | macOS **26.3.1**,Darwin 25.3.0 arm64 |
+| 运行时 | bun **1.3.14**(dev 引擎);node **v22.22.3** |
+| 被测的 alpha 产物 | `packages/ext/dist/plugin.js`(`bun run --cwd packages/ext build`,828 655 B,未压缩);`packages/ui-mac/out/main/sidecar.js` + 它 import 的 `chunks/ext-bundle-lock-*.js`、`chunks/sidecar-stop-*.js`(`bun run --cwd packages/ui-mac build`) |
+| 出货二进制 | `/Applications/Code Puppy.app` v**0.1.11**(§7.5 冷启动交叉验证) |
+| 观测面 | **两台仪器**:① 内核 seatbelt 报告面(`(allow file-write* (with report))` + `log stream`)——每一次写操作一条带全路径的内核日志;② 盘上快照(`find`)。两者交叉,任一单用都会骗人(§7.2) |
+| 判据 | 路径**实际被写**(内核报告)+ 文件**实际在盘上**。源码推断只用于归属,不用于判定 |
+| 日期 | 2026-09-08 |
+
+取证脚本一次性,不入仓;下面贴的是原始输出。
+
+### 7.1 四问,各一句
+
+1. **alpha 自己在 sidecar 里写哪些地方?** 冷启动 + 真实工作负载实跑落盘 **13 条**(§7.6 A 段),
+   全部落在三个固定根(`<alphaGlobalRoot>`、`<userDataPath>`、`<workspace>/.code-puppy`)之下。
+2. **哪些随工作区变化?** alpha 自己只有 `<workspace>/.code-puppy/**` 一处;算上上游引擎与工具,
+   随工作区变化的全部路径都在 **`<workspace>/` 这一条前缀**之下 ⇒ 围栏每多服务一个工作区
+   只需要多一条 `(subpath <workspace>)`。
+3. **这份清单能不能从代码里长出来?** 能,而且必须从**出货产物**长(§7.3)。源码侧手写扫描
+   本轮当场漏了一个模块(多行 import 没被正则吃到,漏 `alpha-mcp-secrets.ts` 的 19 处写盘);
+   产物侧派生 + 反向臂四条,新增/改名一处写盘都判红。
+4. **有没有推翻前两轮的东西?** 有一条,而且是**减覆盖**方向:§3 表第 6 行「PTY 缺省已被
+   REQ-138 罩住」在**真实产品接线下不成立**(§7.7)。
+
+### 7.2 观测手段先自证:它有两处会骗你
+
+**手段本身。** seatbelt 的 `(allow file-write* (with report))` 让内核为**每一次**写操作打一条带完整
+路径的日志。它不改变行为(全放行),因此可以罩着真实工作负载跑。反向的 `(deny … (with report))`
+**不合法**,sandbox-exec 当场拒:
+
+```
+$ /usr/bin/sandbox-exec -f deny-with-report.sb /bin/sh -c 'echo hi > /private/tmp/x'
+sandbox-exec: report modifier does not apply to deny action
+```
+
+规则是**后匹配优先**,所以可以把已知的高噪音子树静音(实测:`(allow file-write* (with report))`
+之后再写一条 `(allow file-write* (subpath "<quiet>"))`,`<quiet>` 下的写**零报告**、其它照常报告)。
+
+**骗你的第一处:`log show` 只看得到持久化那一份,而这些是 Debug 级消息。** 正样本臂——
+在一个 sandbox 里写 800 个**互不相同**的文件:
+
+```
+盘上:800   log show 捞到:161   log stream --level debug 捞到:795
+stream 自己打了一行:=== Messages dropped during live streaming (use `log show` to see what they were)
+```
+
+⇒ 必须用 `log stream --level debug`,**并且必须读那行 dropped 标记**(它是这台仪器唯一会
+自己承认丢数据的地方)。
+
+**骗你的第二处:同一时刻,同一条命令,换个可执行文件就整个不报告。** 同一窗口、同一 profile、
+各写 5 个新文件:
+
+```
+bun  报告 0 / 落盘 5
+node 报告 5 / 落盘 5
+sh   报告 5 / 落盘 5
+```
+
+同一台机器稍后再测,`bun` 又变成 5/5(原 binary、拷贝的 binary、`bun run` 三种形态都 5/5)。
+即 **报告面会静默漏,漏法随时间变**。这正是《本机验证陷阱》里「空输出 / 零命中 —— 观测手段
+自己瞎了」那一类,而它**不会**给你 dropped 标记。
+
+**所以配第二台仪器。** 本轮主实跑结束后,把隔离树整棵列出来与报告面对账:
+
+```
+盘上条目 8441   报告面覆盖 8382   盘上有、报告面没有 59
+```
+
+59 条里 57 条是**本次跑之前**就存在的(我自己 `git init` 的 `.git/**`、预建的目录);真正在窗口内
+被漏掉的是 2 条,都由 MCP 子进程(bun)写出:`<ws>/mcp-child-inside.txt`、
+`<HOME>/alpha1286-mcp-escape.txt`。**两条都落在已经枚举到的桶里,所以桶级枚举不受影响** ——
+但「报告面 = 全集」这个说法是假的,本节所有「它不写这里」的话都只在两台仪器都没看见时才说。
+
+### 7.3 单一权威:从**出货产物**派生写盘调用点(AC1 的形状)
+
+**为什么不能是源码清单。** 本轮先写了一个源码侧的 import 闭包扫描器,它给出 79 个文件 / 140 处
+写盘。把它的 import 正则从「`import … from` 必须同一行」改成「任何 `from "…"`」之后,
+**同一棵树变成 99 个文件 / 186 处** —— 多出来的里就有 `alpha-mcp-secrets.ts`(19 处写盘,
+目标是 `<userDataPath>/alpha-mcp-secrets/<server>/<verId>/<VAR>`),它被漏掉的唯一原因是
+`ext-config.ts:27` 用了**多行** import。**这是「手写一个别人文法的替身」的又一例**,而它是靠
+比对出货产物才暴露的:产物里明明有 `fs.rmSync(serverDir(userDataPath, server), …)`。
+
+**判据键在写原语上,不在文件清单上。** 工具做三件事:
+
+1. 在每个产物里解析 `node:fs` / `node:fs/promises` 的 import,拿到**本地绑定名**
+   (bundler 会改名,产物里实测有 `readFileSync as readFileSync3`、`join as join4`),
+   namespace import(`import * as fs`)一并处理;
+2. 只用这些绑定名找调用点(所以「把 `writeFileSync` 改名再调」抓得到,朴素 grep 抓不到);
+3. 与登记簿(TSV:`次数 / 产物 / fs API / 归一化后的调用行`)逐条比对,多一条少一条都 exit 1。
+
+**输入 = alpha 自己在 sidecar 里的四个产物**,`sidecar.js` 的相对 import 自动跟进:
+
+```
+packages/ext/dist/plugin.js                       ← 引擎装载的 ext bundle
+packages/ui-mac/out/main/sidecar.js               ← utilityProcess 的入口
+packages/ui-mac/out/main/chunks/ext-bundle-lock-*.js
+packages/ui-mac/out/main/chunks/sidecar-stop-*.js
+  · 显式豁免(上游引擎 bundle,非 alpha 写入面):node-CcYBHQH2.js
+```
+
+那条豁免是 AC1 要求的「在闸上被显式点名并写明理由」:`chunks/node-*.js` 33 MB,就是
+`virtual:opencode-server`(上游引擎自己),它的派生与写入通路在 §3 表里,不在 alpha 的写入面。
+
+**当前读数:70 条签名 / 85 个调用点。**
+
+| 产物 | 签名 | 调用点 |
+| --- | --- | --- |
+| `plugin.js`(ext) | 6 | 6 |
+| `sidecar.js` | 10 | 10 |
+| `chunks/ext-bundle-lock.js` | 15 | 18 |
+| `chunks/sidecar-stop.js` | 39 | 51 |
+
+**四臂(正反都跑):**
+
+| 臂 | 做了什么 | 结果 |
+| --- | --- | --- |
+| A | 干净树比对 | `✓ … 一致(70 条签名 / 85 个调用点)` **exit 0** |
+| B | **不改代码**重建 `packages/ext/dist/plugin.js` 再比对 | **exit 0** —— 签名跨构建稳定(不键在行号 / chunk hash 上) |
+| C | 在 `shell-sandbox.ts` 加一处 `appendFileSync(...)`,重建 | **exit 1**:`✗ 未登记的写盘调用点: 1 plugin.js appendFileSync appendFileSync(join(globalRoot, …))` |
+| D | 把 `writeFileSync` **改名**成 `sneaky` 再调用(= bundler 别名的同形态),重建 | **exit 1** 并点名;而同一产物里 `grep -c "writeFileSync("` **读数不变(5)** ⇒ 朴素 grep 会漏,本判据不会 |
+| — | 还原 C/D 后重建 | 回到 **exit 0** |
+
+**两条已知缺陷,留给实现票:**
+
+- 签名归一化会把标识符尾部的数字剥掉(为了吃掉 bundler 的 `join4`),**字符串字面量里的数字
+  也一起被剥**。不影响判红,但签名是有损的(ARM C 的输出里 `alpha1286-new-write-point.log`
+  被显示成 `alpha-new-write-point.log`)。
+- **本轮这套判据没有入仓、没有接进 `scripts/alpha-check.sh`。** 只入仓不接闸 = 安慰剂闸
+  (`#1292` 的形态),所以这里只交出「它成立、四臂都验过」,落地形态归实现票。
+
+### 7.4 实跑:装了 `@alpha-code/ext` 的 sidecar,冷启动 + 真实工作负载
+
+按 `sidecar.ts` 的真实顺序驱动:先 `injectAlphaConfig(userDataPath, extPluginPath, "dev")`
+(它自己就落盘),再起引擎;整条链跑在 `sandbox-exec -f trace.sb` 里,报告面全程 `log stream`。
+
+```
+HOME=<ISO>/home  XDG_{CONFIG,DATA,CACHE,STATE}_HOME=<ISO>/home/…  ALPHA_GLOBAL_DIR=<ISO>/alpha-state/env/dev
+cd packages/ui-mac && /usr/bin/sandbox-exec -f trace.sb "$(which bun)" run ./alpha1286-driver.ts
+  → ALPHA1286-INJECT {"ok":true}
+  → ALPHA1286-OPENCODE_CONFIG <ISO>/alpha-state/env/dev/alpha.jsonc
+  → ALPHA1286-CONTENT-PLUGIN [".../packages/ext/dist/plugin.js"]
+  → opencode server listening on http://127.0.0.1:43290
+  → [@alpha-code/ext] engine shell fenced: cfg.shell=<ISO>/alpha-state/env/dev/bin/zsh
+       real=/bin/zsh profile=<ISO>/alpha-state/env/dev/sandbox/alpha-shell.sb
+```
+
+工作负载,逐条:
+
+| 动作 | 结果 |
+| --- | --- |
+| `GET /global/health` | `HTTP=200` |
+| `GET /project/current` | 200,`worktree=<ISO>/ws`,`vcs:"git"` |
+| `POST /session` | 200,`ses_f7febb2d8ffeAT7rwxUnEvo8DH` |
+| `POST /mcp`(**装一个连接器**) | 200,`{"alpha1286probe":{"status":"connected"}}`,子进程真起来并真写盘 |
+| `POST /pty`(**开一个终端**) | 200,`status:"running"`,`pid:44246` |
+| `alpha_register` 工具(**写一次 `alpha.jsonc`**) | `command "alpha1286probe" registered in .code-puppy/alpha.jsonc`,文件真落盘 |
+| `POST /session/{id}/shell`(**跑一次 shell 工具**) | **没跑成** —— `HTTP=500`,引擎日志 `ProviderNoProvidersError: No providers are available`(隔离家目录里没有任何凭据)。**与围栏无关,如实记账**;这一格未闭合 |
+
+`alpha_register` 那条走的是**直接装载出货 bundle 真执行**(`import(packages/ext/dist/plugin.js)` →
+`hooks.tool.alpha_register.execute(...)`),因为它需要模型回合才会经会话触发。落盘实证:
+
+```
+<ISO>/ws/.code-puppy/alpha.jsonc    { "command": { "alpha1286probe": { "template": "echo hi" } } }
+报告面同时记到:  <WS>/.code-puppy  、 <WS>/.code-puppy/alpha.jsonc.tmp 、 <WS>/.code-puppy/alpha.jsonc
+```
+
+**报告面按桶折叠(8 627 条唯一路径):**
+
+```
+  3933  <userDataPath>/*                     e.g. alpha-identity.md / alpha-engine-config/…
+  3923  <XDG_CONFIG>/opencode/node_modules/** 运行时装 provider 包
+   556  $HOME/.npm/**                        npm cacache(不随 XDG)
+   138  <XDG_CACHE>/bun/**                   bun 运行时(出货 node sidecar 不需要)
+    34  <isolated HOME>/… 其它                .zsh_history / .zsh_sessions / Library/Caches/bun
+    11  <XDG_STATE>/opencode/*               locks
+     8  <XDG_DATA>/opencode/*                log / *.db / -wal / -shm / repos
+     4  <XDG_CACHE>/opencode/*               bin / models.json
+     4  <XDG_CONFIG>/opencode/*              .gitignore / package.json / package-lock.json
+     3  <workspace>/.code-puppy/*
+     2  <alphaGlobalRoot>/bin/*
+     2  <alphaGlobalRoot>/sandbox/*
+     2  $TMPDIR(/private/var/folders)/**
+     1  <alphaGlobalRoot>/alpha.jsonc
+     1  <workspace>/.git/**                  .git/opencode
+     1  <ISO>/positive-control.txt           ← 正样本臂(证明这台仪器这一刻是活的)
+```
+
+**两处反直觉、且会直接弄死产品的:**
+
+1. **provider 包被装了两份。** 第二轮跑裸引擎时只看到 `<XDG_CONFIG>/opencode/node_modules`;
+   装了 alpha 之后 `injectAlphaConfig` 把 `OPENCODE_CONFIG_DIR` 指到
+   `<userDataPath>/alpha-engine-config`,于是**两处各装一份**,实测各 26 个顶层包 / 61 MB
+   (`du -sh` 两处都是 61M)。真机同样两处都在(`~/.config/opencode/node_modules` 24 个、
+   `~/Library/Application Support/ai.opencode.desktop/alpha-engine-config/node_modules` 26 个)。
+   **围栏漏掉任一处 ⇒ provider 装不上。**
+2. **`POST /pty` 起的是登录 shell(`-l`),它会写 `$HOME/.zsh_history`、`$HOME/.zsh_history.LOCK`
+   与 `$HOME/.zsh_sessions/**`。** 这几条在家目录里、不在任何应用目录下,漏掉的后果不是少拦
+   一个坏输入,是**终端面板一开就报错**。
+
+**顺带把 §6.5 的互斥在真实产品接线上重跑了一遍**(profile 与 wrapper 都是本次 ext 运行时**自己
+写出来的**那两个文件,不是手抄的复制品):
+
+```
+ARM 1 控制臂(只有 REQ-138 wrapper,= 今天的生产形态):
+  <root>/bin/zsh -c 'echo IN > <ws>/wrap-in.txt; echo ESCAPE > ~/alpha1286-escape-probe.txt'
+  → zsh:1: operation not permitted: /Users/tide/alpha1286-escape-probe.txt   exit=1
+  → in=landed  escape=no                     ← 围栏今天是好的
+
+ARM 2(外层整进程围栏 + 内层 REQ-138 wrapper,= 路一的形态):
+  /usr/bin/sandbox-exec -f trace.sb <root>/bin/zsh -c 'echo IN > <ws>/wrap-in.txt'
+  → sandbox-exec: sandbox_apply: Operation not permitted   exit=71
+  → in=no                                    ← 零执行
+```
+
+(第一次跑 ARM 1 时探针写的是 `<ISO>/home/…`,而 `<ISO>` 在 `/private/tmp` 下、正好落在
+生产 profile 的 `(subpath "/private/tmp")` 放行段里 —— 那次的「escape landed」是我的布局问题,
+不是围栏缺陷。换成真实 `$HOME` 下的路径后结论如上。记在这里以免下一个人误读。)
+
+### 7.5 出货形态交叉验证:打包 app 的真 sidecar(node / utilityProcess)
+
+同一台仪器罩着**出货二进制**跑一次冷启动:
+
+```
+/usr/bin/sandbox-exec -f trace.sb "/Applications/Code Puppy.app/Contents/MacOS/Code Puppy"
+ps → 52489 52441 …/Code Puppy Helper --type=utility --utility-sub-type=node.mojom.NodeService …
+```
+
+该 sidecar pid 的报告(全部 19 条,已折叠;整窗口有 **34 次 dropped**,所以这份**不完整**):
+
+```
+~/Library/Application Support/ai.opencode.desktop/alpha-identity.md
+~/Library/Application Support/ai.opencode.desktop/alpha-behavior.md
+~/Library/Application Support/ai.opencode.desktop/alpha-engine-config/opencode.json   (data/mode/owner)
+~/Library/Application Support/ai.opencode.desktop/alpha-engine-config/opencode.jsonc
+~/Library/Application Support/ai.opencode.desktop/opencode/locks/<hash>.lock/{heartbeat,meta.json}
+~/.local/share/opencode/log/opencode.log
+~/.local/share/opencode/opencode.db{,-wal,-shm}
+```
+
+三件由此**确定下来的生产坐标**(第二轮 §6.8 记的「隔离家目录不是生产路径」这一条到此闭合):
+
+- `userDataPath` = `~/Library/Application Support/**ai.opencode.desktop**`(不是 `Code Puppy`);
+- `XDG_STATE_HOME` 被 `sidecar.ts:166` 指向 `userDataPath` ⇒ locks 落在 userData 之下;
+- `XDG_DATA` / `XDG_CACHE` / `XDG_CONFIG` **仍是真家目录**(`~/.local/share`、`~/.cache`、`~/.config`)。
+
+第二台仪器(`find -newermt <窗口起点>`)在同一窗口补到的 alpha 状态根:
+
+```
+~/Library/Application Support/alpha-code-state/env/prod/{skills-enabled.json, ext-tx/}
+~/Library/Application Support/ai.opencode.desktop/{alpha-live-models.json, alpha-shell-env.json,
+      alpha-secrets/ZHIPU_API_KEY, catalog-channel-state.json, logs/<ts>/, alpha-engine-config/…}
+```
+
+生产 `alphaGlobalRoot`(`env/prod`)的实况目录清单:
+
+```
+alpha.jsonc  bin/zsh  sandbox/alpha-shell.sb  ext-store/  ext-tx/
+installs.json  skills-enabled.json  ecosystem-import.json
+```
+
+`bin/zsh` 与 `sandbox/alpha-shell.sb` 的 mtime 是 2026-09-07(上一次真正开过会话时写的),
+本次冷启动没有重写它们 —— **ext 的 `config` 钩子要到某个实例真的加载配置时才跑**,
+只启动不开工作区不会碰这两个文件。
+
+### 7.6 写入面枚举表
+
+**A 段 —— 本轮实跑真的落盘(下界)。** 「谁写的」给 `file:line`;`<…>` 是根变量,生产取值见 §7.5。
+
+| # | 路径 | 谁写的 | 什么时机 | 随工作区变化 |
+| --- | --- | --- | --- | --- |
+| 1 | `<alphaGlobalRoot>/alpha.jsonc` | `ui-mac/src/main/alpha-config-injection.ts:80,82`(sidecar 进程 start 第一步) | 每次 start;缺失才 seed | 否 |
+| 2 | `<userDataPath>/alpha-identity.md` | 同上 `:111,115` | 每次 start | 否 |
+| 3 | `<userDataPath>/alpha-behavior.md` | 同上 `:111,115` | 每次 start | 否 |
+| 4 | `<userDataPath>/alpha-engine-config/`(mkdir `0700`) | 同上 `:513` | 每次 start | 否 |
+| 5 | `<userDataPath>/alpha-engine-config/opencode.jsonc`(`0600`) | 同上 `:537` | 每次 start | 否 |
+| 6 | `<userDataPath>/alpha-engine-config/opencode.json` | 同上 `:516`(拷 `alpha.jsonc`)/ `:518`(清陈尸) | 每次 start | 否 |
+| 7 | `<userDataPath>/alpha-engine-config/models.json`(`0600`) | 同上 `:557` / `:560` | 每次 start | 否 |
+| 8 | `<userDataPath>/alpha-engine-config/{package.json,package-lock.json,node_modules/**}` | 上游引擎的运行时 npm;**落点由 alpha 的 `OPENCODE_CONFIG_DIR` 决定** | 首次 / 缺包(实测 26 包 61 MB) | 否 |
+| 9 | `<alphaGlobalRoot>/sandbox/alpha-shell.sb` | `ext/src/shell-sandbox.ts:201-202`(`config` 钩子) | **每次配置加载**(每实例、每次 dispose 重建) | 否 |
+| 10 | `<alphaGlobalRoot>/bin/<真 shell 的 basename>`(+`chmod 0755`) | `ext/src/shell-sandbox.ts:203-205` | 同上 | 否 |
+| 11 | `<workspace>/.code-puppy/`(mkdir) | `ext/src/plugin.ts:316` | `alpha_register` 工具 | **是** |
+| 12 | `<workspace>/.code-puppy/alpha.jsonc.tmp` | `ext/src/plugin.ts:320` | 同上 | **是** |
+| 13 | `<workspace>/.code-puppy/alpha.jsonc`(rename) | `ext/src/plugin.ts:325` | 同上 | **是** |
+
+**同一个进程里,上游引擎与它派生的进程还会写这些 —— 围栏同样必须放行,漏一条同样起不来:**
+
+| # | 路径 | 谁写的 | 什么时机 | 随工作区变化 |
+| --- | --- | --- | --- | --- |
+| 14 | `<XDG_DATA>/opencode/{log/,*.db,*-wal,*-shm,repos/}`(生产 = 真 `~/.local/share`) | 上游引擎 | 常驻 | 否 |
+| 15 | `<XDG_STATE>/opencode/locks/**`(生产 = `<userDataPath>/opencode/locks`) | 上游引擎 | 常驻 | 否 |
+| 16 | `<XDG_CACHE>/opencode/{bin/,models.json}` | 上游引擎 | 启动 | 否 |
+| 17 | `<XDG_CONFIG>/opencode/{package.json,package-lock.json,node_modules/**}` | 上游 npm(**第二份** 26 包 61 MB) | 首次 / 缺包 | 否 |
+| 18 | `$HOME/.npm/_cacache/**` | `@npmcli/arborist`,按 `os.homedir()` 解析,**不随 XDG**(真机 17 GB) | 装包时 | 否 |
+| 19 | `$TMPDIR/**`(`/private/var/folders/…`) | 上游 + 各子进程 | 常驻 | 否 |
+| 20 | `<workspace>/.git/opencode` | 上游 project 探测 | 打开工作区 | **是** |
+| 21 | `<workspace>/**` | shell / write / edit 工具(= 用户意图,REQ-138 的 `WORKDIR`) | 会话中 | **是** |
+| 22 | `$HOME/.zsh_history`、`$HOME/.zsh_history.LOCK`、`$HOME/.zsh_sessions/**` | `POST /pty` 起的**登录** shell(`-l`) | 开终端 | 否 |
+| 23 | `<XDG_CACHE>/bun/**`、`$HOME/Library/Caches/bun/**` | bun 运行时 —— **dev 独有**,出货 node sidecar 不需要 | 常驻 | 否 |
+
+**B 段 —— 出货产物里可达、但本轮没跑到(上界)。** 这些写盘调用点**链接进了** sidecar 的出货
+bundle(§7.3 的 70 条签名里),只是这次工作负载没走到。围栏要么放行它们,要么逐条证明
+「走我们自己的代码和 runbook 到不了」——**本轮没有做这个证明**。
+
+| 额外的写入根 | 来源模块(产物里可达) |
+| --- | --- |
+| `<alphaGlobalRoot>/bin/alpha-shell-denied`(+`chmod 0755`) | `ext/src/shell-sandbox.ts:215-217` —— 围栏装不上时的 fail-closed 分支;根与 A 段第 10 行相同,所以不额外扩大可写集 |
+| `<userDataPath>/alpha-secrets/**`(`0700`/`0600`) | `alpha-secret-files.ts` |
+| `<userDataPath>/alpha-mcp-secrets/<server>/<verId>/<VAR>` | `alpha-mcp-secrets.ts`(源码侧 19 处) |
+| `<userDataPath>/catalog-channel-state.json` | `catalog-channels.ts` |
+| `<userDataPath>/`(远端 catalog 缓存) | `remote-catalog.ts` |
+| `<alphaGlobalRoot>/{ext-store,ext-tx}/**` | `ext-receipt-v2.ts` / `ext-transaction.ts` / `ext-bundle-lock.ts` / `ext-atomic-fs.ts` / `ext-cas.ts` / `ext-file-tx.ts` / `ext-config-tx.ts` |
+| `<alphaGlobalRoot>/alpha.jsonc` + `*.alpha-bak-*` | `ext-config.ts`(真机 `~/.config/opencode/opencode.jsonc.alpha-bak-*` 是同族历史产物) |
+| `<alphaGlobalRoot>/{installs.json,skills-enabled.json,ecosystem-import.json}` | `alpha-installs.ts` 等 |
+| `~/.opencode/**`(桥的 unbridge 一侧) | `alpha-bridge.ts` |
+| `<workspace>/.code-puppy/{.gitignore,runs/**,artifacts/**}` | `alpha-workdir.ts` —— **随工作区变化** |
+
+**⇒ 随工作区变化的全部路径(A 段 11–13、20–21,B 段最后一行)都在 `<workspace>/` 这一条前缀
+之下。** 对第二块地基(一个 sidecar 服多工作区)的直接含义:围栏每多服务一个工作区只需要多一条
+`(subpath <workspace>)`,**不需要**为每个工作区复制一整套应用目录规则。难的仍然是 §6.5 那条:
+围栏装上之后**不能加宽**,所以「打开新目录」要么 respawn,要么在 apply 之前就把这一代的工作区
+集合定好。
+
+### 7.7 与前两轮的冲突记录(补进 §6.9)
+
+| 前两轮的说法 | 第三轮实测 |
+| --- | --- |
+| §3 表第 6 行:「**PTY 终端(缺省)** …… 今天被 C1(`cfg.shell` wrapper)罩住 = **是**」 | **在真实产品接线下不成立。** 同一个引擎、同一时刻:`GET /config` 返回 `shell = <alphaGlobalRoot>/bin/zsh`(= ext 的 wrapper),而 `POST /pty` 返回 `command:"/bin/zsh"`、`args:["-l"]`,`ps -p 44246` 也是 `/bin/zsh -l`。机理:ext 的 `config` 钩子改的是 **opencode 侧**合并出来的那个对象(`plugin/index.ts:254` 把 `cfg` 递给钩子),而 `packages/core/src/pty.ts:167` 读的是 **packages/core 的** `Config.Service.entries()` —— 它返回 layer 构造时**从磁盘读到的** `configs` 数组(`packages/core/src/config.ts:214-216`),插件的内存改写它看不见;`Shell.preferred(undefined)` 于是退到 `process.env.SHELL`。第一轮 §2.4 ARM A 是把 `cfg.shell` 直接放进 core 的那份 config 测的,所以它证到的是**结构条件成立**,不是产品接线成立 |
+| 第二轮 §6.3.1 的写入集(裸引擎) | 装了 ext 之后**多一份 provider 安装**:`<userDataPath>/alpha-engine-config/node_modules`(26 包 61 MB),与 `<XDG_CONFIG>/opencode/node_modules` 并存 |
+| 第二轮 §6.8「alpha 自己那部分写入集没有枚举完」 | 本节闭合,分上下界两级(§7.6) |
+
+第一条的后果要说清楚:**今天 REQ-138 罩住的通路比 §3 表少一行**(终端面板缺省那一支实际未被罩)。
+它不改变本票的走向(路一把 PTY 一并罩住,§6.2 已实测),但它是 REQ-138 覆盖面的**独立缺陷**,
+应当单独开票,而不是混在本票里顺手改。
+
+### 7.8 第三轮的未验证(如实记账)
+
+- **没有把「装了 ext 的引擎」整个塞进外层围栏跑一遍。** 本轮跑的是两条各自成立的臂:
+  ① 装了 ext、**不套**外层围栏的真引擎(§7.4);② 套了外层围栏的 REQ-138 wrapper(§7.4 ARM 2)。
+  合成一次(外层围栏 + ext + 真工作负载)**没跑** —— 它需要先按 §7.6 写出候选可写集,
+  而那属于方案基线之后的事。
+- **shell 工具经会话那条路没跑成**(`ProviderNoProvidersError`,隔离家目录无凭据)。
+  §7.4 ARM 1/2 直接执行 wrapper 覆盖了围栏语义,但「引擎 → 工具 → wrapper」整条链在本轮是断的。
+- **打包 app 只做了冷启动**:没有装连接器、没开终端、没写 `alpha.jsonc`;而且它那一窗口有
+  34 次 dropped ⇒ §7.5 的 19 条是**下界的下界**。
+- **上界(85 个调用点)里哪些在 sidecar 里真的到得了,没有逐条证明。** 本轮只证明了它们
+  **链接进了出货产物**(rollup 的 tree-shaking 已经删掉一批:例如 `alpha-bridge.ts` 的
+  `symlinkSync` 分支不在产物里,`unlinkSync` 在)。逐条可达性是实现票的活。
+- **多工作区没测**(§6.7 那一问仍然开着)。本节只回答了「随工作区变化的是哪些路径」。
+- **`~/.npm` 与 `<XDG_CONFIG>/opencode` 能不能收窄**(改 `npm_config_cache`、把 config 文件挪出
+  可写目录)本轮**没测** —— 与第二轮 §6.3.3 同一条,未闭合。
+- **非 darwin 未测**(与前两轮同)。
+
+## 8. 用法
 
 本文档是 REQ-159 方案基线(`docs/design/`)与其实现票**开工前**的对照物。三条纪律:
 
@@ -700,4 +1066,5 @@ v0.1.11 的一次真实启动):同一个 sidecar 同时挂着两组 Office MCP �
 2. §1 里那条更正(MCP 不经 `ChildProcessSpawner`)推翻了票面的现状坐标 —— 基线里凡是从
    「C3 一次罩住两条」推出来的选项,前提已不成立。
 3. §5 与 §6.8 的每一条,在实现票里必须变成实跑结论或显式的风险接受。
-4. §6.9 是本文档内部的冲突台账:凡与 §6 冲突的旧断言,以 §6 为准。
+4. §6.9 与 §7.7 是本文档内部的冲突台账:凡与 §6 冲突的旧断言以 §6 为准,凡与 §7 冲突的以 §7 为准。
+   §7.7 第一行是**减覆盖**方向的更正(PTY 缺省今天并未被 REQ-138 罩住),不要照 §3 表原文立闸。
