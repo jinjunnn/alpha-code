@@ -198,6 +198,11 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
  * `.cases.ts` 键豁免:它们不进整包计数,由第 ④ 层反向那半(每个 cases 文件必须被一个已登记宿主跑到)兜住。
  */
 export const KEPT_SOURCE_TEXT_READS: Record<string, SourceTextEntry> = {
+  "packages/ui-mac/src/main/agent-injection-throat.test.ts": {
+    why: "REQ-157 #1299 ui-mac agent 咽喉的 drift 锁:判官把 cfg.agent 下 mode / permission.** 槽里的值按引擎的声明式字面量(packages/core/src/v1/config/permission.ts 的 Literals([\"ask\", \"allow\", \"deny\"])、packages/opencode/src/agent/agent.ts 的 Literals([\"subagent\", \"primary\", \"all\"]))判成动词,其余当成字点名。主语就是那两段字面量文本本身 —— 引擎哪天加一个动词而这里没跟,生产写出的合法新动词会被判官当成未登记的字(fail-closed,红而不是假绿),这两行读取让「没跟上」在引擎源码改动的同一次 diff 里就红。两个引擎模块在 bun 侧 import 会把 effect Schema 拉进来,值断言没有更便宜的入口。守不住:引擎在别处又定义一套同义动词而这两处字面量不动 —— 那时判官仍按旧集合判,新动词照样被点名,仍是红。",
+    evidence: "#1299",
+    lines: 2,
+  },
   "packages/ui-mac/src/main/boot-dangling-onboarding-wiring.test.ts": {
     why: "主语是负全称加唯一性:index.ts 每个 `if (!TEST_ONBOARDING)` 块不得包含 boot dangling sweep;REQ-059/065/104 与 ecosystem gate 必须仍在该守卫内;runBootDanglingSweep 恰好一次且排在首个 spawnLocalServer 之前。index.ts 结构上进不了 bun,这份布局就是接线契约。删掉 sweep 调用会由 boot-dangling-sweep.test.ts 的可执行闸变红,本条守的是「调用点不在 skip 里」。第 2 处(#1036,REQ-053 A2)锚 bootEnforcementGap 分支里 TEST_ONBOARDING 早退(app.exit(1))先于 dialog.showErrorBox 的下标先后 —— 按本分类法它是位置锚:把早退包进恒假条件、或把 app.exit(1) 换成只写日志,被比的文本仍在,断言照绿;A2 的行为真相在打包 VERIFY(#1034)。文件主判据仍是上面的负全称+唯一性文本闸,照 websearch-copies 先例如实登记混合、不整体降级(整体降级会把 #1031 那道真文本闸一并逐出 gate-files.tsv 的删除保护)。",
     evidence: "#1031",
@@ -209,9 +214,9 @@ export const KEPT_SOURCE_TEXT_READS: Record<string, SourceTextEntry> = {
     lines: 2,
   },
   "packages/ui-mac/src/main/brand-guard.test.ts": {
-    why: "ac#1160 REQ-139 品牌守卫,两半主语都是文本本身:①AC5 身份面五组字面量(APP_IDS/APP_NAMES+setName/bundle id/更新 feed/URL schemes+CLIENT_ID)的**逐字冻结** —— 被守的正是「声明文本一个字符都没变」(变了 = 钥匙串项名/userData 目录/OAuth wire 标识换名,存量破坏),值断言表达不了「连写法都不许动」;index.ts/electron-builder.config.ts 在 bun 侧也结构上 import 不了。②AC1/AC3 展示面有限坐标清单的声明式字面量(productName/i18n 品牌键/窗口标题/提示词 to 串),以及 REQ-148 的安装器协议描述、钥匙串清理指引、生态迁移对话框与扩展工具说明,逐点断言只展示 Code Puppy —— 显示串就是声明,文本即产物。守不住:文本在而消费链断掉(如 wordmark 键没人读)不红,那一半由 L2 packaged 视觉取证(REQ-139 VERIFY 票)兜。第 25 处([ac#1198])是同型展示面文本闸:zht.ts updater 两句的值断言(REQ-139 zht 漏网,与 zh/en 同句同型);REQ-148 新增四处同型文本读取,精确计数随之升至 29。第 30 处([ac#1211])是安装器展示名文本闸:install-local.ts 的 PRODUCT_NAMES 声明与 Cmd+Space 提示逐字断言,配同形态负断言堵旧名 —— 该脚本只在本机装机路径上跑,不进发布件,值断言够不着它(没有可 import 的运行时导出),而装出来的 bundle 名一旦回退旧名,Finder/Spotlight 里就又叫 alpha-code。守不住:脚本文本对而 electron-builder 的 productName 另行漂移不红,那一半由本文件既有的 AC5 身份面冻结兜。",
+    why: "ac#1160 REQ-139 品牌守卫,两半主语都是文本本身:①AC5 身份面五组字面量(APP_IDS/APP_NAMES+setName/bundle id/更新 feed/URL schemes+CLIENT_ID)的**逐字冻结** —— 被守的正是「声明文本一个字符都没变」(变了 = 钥匙串项名/userData 目录/OAuth wire 标识换名,存量破坏),值断言表达不了「连写法都不许动」;index.ts/electron-builder.config.ts 在 bun 侧也结构上 import 不了。②AC1/AC3 展示面有限坐标清单的声明式字面量(productName/i18n 品牌键/窗口标题/提示词 to 串),以及 REQ-148 的安装器协议描述、钥匙串清理指引、生态迁移对话框与扩展工具说明,逐点断言只展示 Code Puppy —— 显示串就是声明,文本即产物。守不住:文本在而消费链断掉(如 wordmark 键没人读)不红,那一半由 L2 packaged 视觉取证(REQ-139 VERIFY 票)兜。第 25 处([ac#1198])是同型展示面文本闸:zht.ts updater 两句的值断言(REQ-139 zht 漏网,与 zh/en 同句同型);REQ-148 新增四处同型文本读取,精确计数随之升至 29。第 30 处([ac#1211])是安装器展示名文本闸:install-local.ts 的 PRODUCT_NAMES 声明与 Cmd+Space 提示逐字断言,配同形态负断言堵旧名 —— 该脚本只在本机装机路径上跑,不进发布件,值断言够不着它(没有可 import 的运行时导出),而装出来的 bundle 名一旦回退旧名,Finder/Spotlight 里就又叫 alpha-code。守不住:脚本文本对而 electron-builder 的 productName 另行漂移不红,那一半由本文件既有的 AC5 身份面冻结兜。第 31 处([ac#1299])是 AC3 自动化执行器 prompt 那条的坐标搬家:三个 alpha agent 的 prompt/description 从 alpha-config-injection.ts 抽进零依赖的 alpha-agents.ts(登记簿 import 它),原来的 2 处计数改读新文件,并加一条同形态负断言钉住生产文件里 0 处 —— 主语仍是「品牌串住在哪份文本里」,与既有 AC3 各条同型。",
     evidence: "#1160",
-    lines: 30,
+    lines: 31,
   },
   "packages/ui-mac/src/main/catalog-channels.test.ts": {
     why: "ac#1132 AC2 域名棘轮:主语是声明本身与负全称 —— catalog-channels.ts 的 CHANNEL_BASE_URL 声明必须逐字是新域字面量,且不得存在旧域声明。值断言(toBe)骗得过「常量对、声明被第二处覆盖」这类漂移,声明文本正是正确粒度。同测试对两个 sync 脚本的负全称(.mjs 读取,不在本谓词命中集内)属同一条棘轮。守不住:base 若改由运行时拼装绕开该常量,文本闸不红 —— 那一半由同文件的值断言与 remote-catalog.test.ts 的独立字面量兜住。",

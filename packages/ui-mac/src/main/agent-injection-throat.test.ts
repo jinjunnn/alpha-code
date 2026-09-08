@@ -87,13 +87,13 @@ afterEach(() => {
 })
 
 // ── 引擎动词(不是字):集合与引擎源码逐字锁死,漂了就红 ──────────────────────────────────
+// 这两处是**源码文本读取**(第 ⑤ 层,source-text-anchors.ts 的 KEPT_SOURCE_TEXT_READS 登记 2 行):主语是
+// 引擎的声明式字面量本身 —— 判官只认这两个集合里的动词,集合若与引擎漂开,槽里合法的新动词会被当成字点名(fail-closed)。
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..", "..")
 /** `packages/core/src/v1/config/permission.ts:5` `Schema.Literals(["ask", "allow", "deny"])` */
 const PERMISSION_VERBS = ["ask", "allow", "deny"] as const
-const PERMISSION_VERBS_SOURCE = path.join(REPO_ROOT, "packages", "core", "src", "v1", "config", "permission.ts")
 /** `packages/opencode/src/agent/agent.ts:38` `Schema.Literals(["subagent", "primary", "all"])` */
 const MODE_VERBS = ["subagent", "primary", "all"] as const
-const MODE_VERBS_SOURCE = path.join(REPO_ROOT, "packages", "opencode", "src", "agent", "agent.ts")
 const literals = (xs: readonly string[]) => `Literals([${xs.map((x) => JSON.stringify(x)).join(", ")}])`
 
 type Leaf = { pointer: string; value: string }
@@ -163,10 +163,13 @@ const idsOf = (names: readonly string[]) =>
 
 describe("ui-mac agent 咽喉:injectAlphaConfig 写进 cfg.agent 的每个字符串叶子都必须由登记簿解释或是引擎动词", () => {
   test("动词集合与引擎源码逐字一致(drift 锁):permission 动词 / agent mode —— 引擎改了字面量而这里没跟,即红", () => {
-    expect(fs.readFileSync(PERMISSION_VERBS_SOURCE, "utf8")).toContain(literals(PERMISSION_VERBS))
-    expect(fs.readFileSync(MODE_VERBS_SOURCE, "utf8")).toContain(literals(MODE_VERBS))
+    const permissionSource = fs.readFileSync(path.join(REPO_ROOT, "packages/core/src/v1/config/permission.ts"), "utf8")
+    const agentSource = fs.readFileSync(path.join(REPO_ROOT, "packages/opencode/src/agent/agent.ts"), "utf8")
+    expect(permissionSource).toContain(literals(PERMISSION_VERBS))
+    expect(agentSource).toContain(literals(MODE_VERBS))
     // 先证明手段能测出已知的坏:少一个动词的字面量在源码里找不到
-    expect(fs.readFileSync(PERMISSION_VERBS_SOURCE, "utf8")).not.toContain(literals(["allow", "deny"]))
+    expect(permissionSource).not.toContain(literals(["allow", "deny"]))
+    expect(agentSource).not.toContain(literals(["primary", "all"]))
   })
 
   test("默认 env:三个 agent 真进 cfg.agent、零无解释;解释出的 id 集合 == 登记簿的六条(双向);其余字符串叶子全是引擎动词", () => {
