@@ -1,42 +1,48 @@
-Alpha context injections (packages/ext) — unit: UTF-8 bytes; limit enforced at registration, over-limit throws (never truncates)
-id                                  kind      sink                   bytes   limit  used
-agent.docs.description              text      agent-description        131    1024   13%
-agent.docs.prompt                   text      system                  3344    8192   41%
-agent.explore.prompt                text      system                  1137    8192   14%
-agent.general.prompt                text      system                  1199    8192   15%
-command.factory-denied.description  text      command-description       51    1024    5%
-command.init.description            text      command-description       22    1024    2%
-command.init.template               text      command-template        3484    8192   43%
-command.review.description          text      command-description       58    1024    6%
-command.review.template             text      command-template        4672    8192   57%
-tool.alpha_echo.args.shout          text      tool-arg-description      25    1024    2%
-tool.alpha_echo.args.text           text      tool-arg-description      21    1024    2%
-tool.alpha_echo.description         text      tool-description         121    1024   12%
-tool.alpha_ping.args.note           text      tool-arg-description      39    1024    4%
-tool.alpha_ping.description         text      tool-description         108    1024   11%
-tool.alpha_register.args.entry      text      tool-arg-description      98    1024   10%
-tool.alpha_register.args.name       text      tool-arg-description      70    1024    7%
-tool.alpha_register.args.type       text      tool-arg-description      26    1024    3%
-tool.alpha_register.description     text      tool-description         776    1024   76%
-tool.alpha_reload.args.reason       text      tool-arg-description      43    1024    4%
-tool.alpha_reload.description       text      tool-description         368    1024   36%
-command.factory-denied.template     template  command-template         251    1024   25%
-rebrand.docs-guidance-anthropic     rebrand   system                   302     512   59%
-rebrand.docs-guidance-default       rebrand   system                   237     512   46%
-rebrand.help-feedback-anthropic     rebrand   system                     0     512    0%
-rebrand.help-feedback-default       rebrand   system                     0     512    0%
-rebrand.identity-anthropic-codex    rebrand   system                    56     512   11%
-rebrand.identity-beast              rebrand   system                    48     512    9%
-rebrand.identity-copilot            rebrand   system                    23     512    4%
-rebrand.identity-default-trinity    rebrand   system                    97     512   19%
-rebrand.identity-gemini             rebrand   system                    91     512   18%
-rebrand.identity-gpt                rebrand   system                    61     512   12%
-rebrand.identity-kimi               rebrand   system                    81     512   16%
-rebrand.objectivity-anthropic       rebrand   system                    82     512   16%
-fragments: 33; injected bytes: 17122; declared limits total: 63488
+Alpha context injections (packages/ext + packages/ui-mac) — unit: UTF-8 bytes; limit enforced at registration, over-limit throws (never truncates)
+id                                                  kind      sink                   bytes   limit  used
+agent.docs.description                              text      agent-description        131    1024   13%
+agent.docs.prompt                                   text      system                  3344    8192   41%
+agent.explore.prompt                                text      system                  1137    8192   14%
+agent.general.prompt                                text      system                  1199    8192   15%
+command.factory-denied.description                  text      command-description       51    1024    5%
+command.init.description                            text      command-description       22    1024    2%
+command.init.template                               text      command-template        3484    8192   43%
+command.review.description                          text      command-description       58    1024    6%
+command.review.template                             text      command-template        4672    8192   57%
+instruction.alpha-behavior                          text      instruction             2757    8192   34%
+instruction.alpha-identity                          text      instruction              327    1024   32%
+instruction.alpha-identity+cloudDispatch            text      instruction              573    1024   56%
+instruction.alpha-identity+websearch                text      instruction              523    1024   51%
+instruction.alpha-identity+websearch+cloudDispatch  text      instruction              729    1024   71%
+tool.alpha_echo.args.shout                          text      tool-arg-description      25    1024    2%
+tool.alpha_echo.args.text                           text      tool-arg-description      21    1024    2%
+tool.alpha_echo.description                         text      tool-description         121    1024   12%
+tool.alpha_ping.args.note                           text      tool-arg-description      39    1024    4%
+tool.alpha_ping.description                         text      tool-description         108    1024   11%
+tool.alpha_register.args.entry                      text      tool-arg-description      98    1024   10%
+tool.alpha_register.args.name                       text      tool-arg-description      70    1024    7%
+tool.alpha_register.args.type                       text      tool-arg-description      26    1024    3%
+tool.alpha_register.description                     text      tool-description         776    1024   76%
+tool.alpha_reload.args.reason                       text      tool-arg-description      43    1024    4%
+tool.alpha_reload.description                       text      tool-description         368    1024   36%
+command.factory-denied.template                     template  command-template         251    1024   25%
+rebrand.docs-guidance-anthropic                     rebrand   system                   302     512   59%
+rebrand.docs-guidance-default                       rebrand   system                   237     512   46%
+rebrand.help-feedback-anthropic                     rebrand   system                     0     512    0%
+rebrand.help-feedback-default                       rebrand   system                     0     512    0%
+rebrand.identity-anthropic-codex                    rebrand   system                    56     512   11%
+rebrand.identity-beast                              rebrand   system                    48     512    9%
+rebrand.identity-copilot                            rebrand   system                    23     512    4%
+rebrand.identity-default-trinity                    rebrand   system                    97     512   19%
+rebrand.identity-gemini                             rebrand   system                    91     512   18%
+rebrand.identity-gpt                                rebrand   system                    61     512   12%
+rebrand.identity-kimi                               rebrand   system                    81     512   16%
+rebrand.objectivity-anthropic                       rebrand   system                    82     512   16%
+fragments: 38; injected bytes: 22031; declared limits total: 75776
 references (paths / verbs / definitions supplied by others — carry no Alpha text, not counted):
   ref.shell              /shell             REQ-138 引擎 shell 围栏 wrapper 路径(shell-sandbox.ts)
   ref.skills.paths       /skills/paths      出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字
   ref.permission.skill   /permission/skill  REQ-067 出厂禁项的 "deny" 动词(factory-deny.ts)
   ref.mcp                /mcp               云 MCP server 定义,main 经 env 交来(cloud-websearch-kill.ts);工具表是远端 server 的字
 context-bearing plugin hooks (from packages/plugin Hooks): config, tool, chat.message, command.execute.before, tool.execute.after, experimental.chat.messages.transform, experimental.chat.system.transform, experimental.session.compacting, experimental.text.complete, tool.definition
+instruction files (ui-mac main writes them into cfg.instructions; engine session/instruction.ts reads them into the system segment; identity has one row per reachable capability shape): instruction.alpha-behavior, instruction.alpha-identity, instruction.alpha-identity+cloudDispatch, instruction.alpha-identity+websearch, instruction.alpha-identity+websearch+cloudDispatch

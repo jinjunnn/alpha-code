@@ -30,11 +30,24 @@
 // 装进来的内容是用户/出厂技能/远端 server 的,预算归上游,不归本登记簿。它们仍然**必须**在这里
 // 声明,否则 config 咽喉会把它们当成解释不了的叶子拦下 —— 声明的意义是「我知道这条通路存在」。
 //
-// 不在本登记簿里、也不该在:ui-mac 经 `cfg.instructions` 注入的 `alpha-identity.md` / `alpha-behavior.md`
-// (`packages/ui-mac/src/main/alpha-config-injection.ts:108-131`,实测 327–729 B + 2757 B)——
-// 那是另一个包、另一条通路,票面边界是 `packages/ext/src`;项目自己的 `.code-puppy/plugins/*.js`
-// 与 `alpha.jsonc`(用户的字,不是 alpha 的);skills 正文与 MCP 工具表(别人的字)。
+// 第五处不在 ext(`#1296`,REQ-157 的另一半):ui-mac 主进程经 `cfg.instructions` 注入的
+// `alpha-identity.md` / `alpha-behavior.md`(`packages/ui-mac/src/main/alpha-config-injection.ts` 的
+// `addInstruction` 两处)。引擎 `session/instruction.ts:135-150` 按路径读盘、`Instruction.system()` 给每份加一行
+// `Instructions from: <path>` 后交给 `llm/request.ts:63-70` 拼进 system 段 —— 与 agent prompt 同一格。
+// 登记簿是**同一份**(票面明令不造第二本):这里直接 import ui-mac 那两个**零依赖**的内容模块
+// (`alpha-behavior.ts` 是一个字符串,`alpha-identity.ts` 是两个纯函数;测试钉住它们保持零 import ——
+// 否则 ext 的自包含 bundle 会把 main 世界拖进引擎,ADR-006)。ui-mac 生产代码不 import 本登记簿:
+// 它写自己的常量,咽喉在 `packages/ui-mac/src/main/instruction-injection-throat.test.ts` 跑真注入后逐字比对。
+// identity 随能力探测变长(4 种形状,327–729 B):对 `AlphaCapabilities` 的每个布尔组合跑**生产**
+// `buildAlphaIdentity` 各登记一条 —— 域常量按接口键集类型锁死,加一个能力字段而没扩域即 typecheck 红。
+//
+// 仍不在本登记簿里、也不该在:项目自己的 `.code-puppy/plugins/*.js` 与 `alpha.jsonc`(用户的字,不是
+// alpha 的);REQ-063 用户经导入门放进 `<alpha-root>/instructions/*.md` 的字(用户的);skills 正文与
+// MCP 工具表(别人的字)。ui-mac 写进 `cfg.agent.*` 的三个 alpha agent 的 prompt/description(1,427 B)
+// 是另一条 ui-mac 通路,`#1296` 票面只覆盖 instructions,见该票回报。
 
+import { ALPHA_BEHAVIOR_MD } from "../../ui-mac/src/main/alpha-behavior"
+import { buildAlphaIdentity, type AlphaCapabilities } from "../../ui-mac/src/main/alpha-identity"
 import {
   ALPHA_DOCS_DESCRIPTION,
   ALPHA_DOCS_PROMPT,
@@ -60,6 +73,7 @@ export type ContextSink =
   | "command-description" // 斜杠菜单
   | "tool-description" // 每次请求的工具表(tool/registry.ts:161)
   | "tool-arg-description" // 同上,参数 schema 的 description
+  | "instruction" // ui-mac 写进 cfg.instructions 的文件:引擎 session/instruction.ts:135-150 读盘,request.ts:63-70 拼进 system 段
 
 export type TextFragment = {
   readonly kind: "text"
@@ -150,6 +164,47 @@ export function defineReference(input: { id: string; pointer: string; note: stri
 const CAP_REBRAND = 512
 const CAP_DESCRIPTION = 1024
 const CAP_BODY = 8192
+// `#1296`:identity 说明(产品名 + 本会话能力事实)按设计要小,且每个会话、每个模型都带 —— 1 KiB 顶。
+// 2026-09-08 实测最大形状(两项能力全开)729 B = 71%;再加一行能力事实(~150 B)仍在顶内。
+const CAP_IDENTITY = 1024
+
+// ── ui-mac instructions 通路(`#1296`)────────────────────────────────────────────
+// identity 正文是 caps 的函数。域 = `AlphaCapabilities` 的键集(**类型锁**:`Record<keyof Required<…>, true>`
+// 要求接口每个键都在此列出 —— ui-mac 明天加一个能力字段而这里没扩域,ext typecheck 当场红),
+// 每个布尔组合跑一次**生产** `buildAlphaIdentity`,各登记一条;id 后缀列出打开的能力键。
+// 「登记的形状集合 == 生产真能写出的形状集合」的双向锁在 ui-mac 那边的咽喉测试(跑真 injectAlphaConfig
+// 的 8 组 env 矩阵),不在这里 —— 这里若只对着自己算一遍,就是与被测对象同源的自指等价链。
+const IDENTITY_CAPS_DOMAIN: Record<keyof Required<AlphaCapabilities>, true> = Object.freeze({
+  websearch: true,
+  cloudDispatch: true,
+})
+export const IDENTITY_FRAGMENT_ID = "instruction.alpha-identity"
+export const BEHAVIOR_FRAGMENT_ID = "instruction.alpha-behavior"
+
+/** 由 identity 变体 id 反推它登记时用的 caps(咽喉测试用它把「解释出的 id」翻回能力事实)。 */
+export function identityCapsFromId(id: string): AlphaCapabilities | undefined {
+  if (id !== IDENTITY_FRAGMENT_ID && !id.startsWith(IDENTITY_FRAGMENT_ID + "+")) return undefined
+  const on = new Set(id === IDENTITY_FRAGMENT_ID ? [] : id.slice(IDENTITY_FRAGMENT_ID.length + 1).split("+"))
+  const caps: Record<string, boolean> = {}
+  for (const k of Object.keys(IDENTITY_CAPS_DOMAIN)) caps[k] = on.has(k)
+  return caps as AlphaCapabilities
+}
+
+function identityFragments(): TextFragment[] {
+  const keys = Object.keys(IDENTITY_CAPS_DOMAIN) as (keyof AlphaCapabilities)[]
+  const out: TextFragment[] = []
+  for (let mask = 0; mask < 1 << keys.length; mask++) {
+    const caps: Record<string, boolean> = {}
+    const on: string[] = []
+    keys.forEach((k, i) => {
+      caps[k] = Boolean(mask & (1 << i))
+      if (caps[k]) on.push(k)
+    })
+    const id = on.length ? `${IDENTITY_FRAGMENT_ID}+${on.join("+")}` : IDENTITY_FRAGMENT_ID
+    out.push(defineText({ id, sink: "instruction", text: buildAlphaIdentity(caps as AlphaCapabilities), maxBytes: CAP_IDENTITY }))
+  }
+  return out
+}
 
 /** 工具表文字(`plugin.ts` 的 `tool()` 从这里取,不再内联字面量)。 */
 export const TOOL_TEXT = {
@@ -222,6 +277,9 @@ export const CONTEXT_INJECTIONS: readonly ContextInjection[] = Object.freeze([
   ...toolFragments(),
   // ── prompt-rebrand.ts:system.transform 子串替换 ────────────────────────────────
   ...rebrandFragments(),
+  // ── ui-mac alpha-config-injection.ts:cfg.instructions 文件(`#1296`)────────────────
+  defineText({ id: BEHAVIOR_FRAGMENT_ID, sink: "instruction", text: ALPHA_BEHAVIOR_MD, maxBytes: CAP_BODY }),
+  ...identityFragments(),
   // ── 引用(无 alpha 文字;声明是为了 config 咽喉能认出它们)──────────────────────
   defineReference({ id: "ref.shell", pointer: "/shell", note: "REQ-138 引擎 shell 围栏 wrapper 路径(shell-sandbox.ts)" }),
   defineReference({ id: "ref.skills.paths", pointer: "/skills/paths", note: "出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字" }),
@@ -269,6 +327,18 @@ export function explainConfigString(pointer: string, value: string): Explanation
     }
     if (f.kind === "reference" && (pointer === f.pointer || pointer.startsWith(f.pointer + "/"))) return { ok: true, id: f.id, kind: f.kind }
   }
+  return { ok: false }
+}
+
+/**
+ * instructions 咽喉的判官(`#1296`):一份落盘 instruction 文件的正文,能不能由登记簿解释 ——
+ * 只有一种解释:逐字等于某条 sink=instruction 的登记文字(identity 的 4 种形状各是一条)。
+ * 不按 pointer 放行(`/instructions` 不是引用:ext 的 config 咽喉把往这个键塞东西当已知的坏);
+ * 用户自己的字(继承的 instructions、REQ-063 导入目录)由 ui-mac 咽喉按来源排除,不进这里。
+ */
+export function explainInstructionBody(body: string): Explanation {
+  for (const f of CONTEXT_INJECTIONS)
+    if (f.kind === "text" && f.sink === "instruction" && f.text === body) return { ok: true, id: f.id, kind: f.kind }
   return { ok: false }
 }
 
@@ -332,7 +402,7 @@ export function renderInventory(): string {
   const idW = Math.max(...rows.map((r) => r.id.length), 2)
   const sinkW = Math.max(...rows.map((r) => r.sink.length), 4)
   const lines: string[] = []
-  lines.push("Alpha context injections (packages/ext) — unit: UTF-8 bytes; limit enforced at registration, over-limit throws (never truncates)")
+  lines.push("Alpha context injections (packages/ext + packages/ui-mac) — unit: UTF-8 bytes; limit enforced at registration, over-limit throws (never truncates)")
   lines.push(`${"id".padEnd(idW)}  ${"kind".padEnd(8)}  ${"sink".padEnd(sinkW)}  ${"bytes".padStart(6)}  ${"limit".padStart(6)}  used`)
   let total = 0
   let totalCap = 0
@@ -349,5 +419,9 @@ export function renderInventory(): string {
     .filter(([, c]) => c === "context")
     .map(([k]) => k)
   lines.push(`context-bearing plugin hooks (from packages/plugin Hooks): ${ctx.join(", ")}`)
+  const instr = rows.filter((r) => r.sink === "instruction").map((r) => r.id)
+  lines.push(
+    `instruction files (ui-mac main writes them into cfg.instructions; engine session/instruction.ts reads them into the system segment; identity has one row per reachable capability shape): ${instr.join(", ")}`,
+  )
   return lines.join("\n") + "\n"
 }

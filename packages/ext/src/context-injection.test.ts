@@ -8,8 +8,9 @@
 //   ③ 每个咽喉:跑**真钩子**,把它送出去的每一个字符串与登记簿比对;并在同一测试里用一个
 //      **已知的坏**(包一层真钩子再多塞一段)证明判官看得见 —— 「先证明手段能测出已知的坏」。
 //
-// 已知不覆盖(与登记簿抬头同一份清单):ui-mac 经 cfg.instructions 注入的两份 .md(另一个包);
-// 项目自己的 plugins / alpha.jsonc(用户的字);skills 正文与 MCP 工具表(别人的字)。
+// ui-mac 经 cfg.instructions 写的两份 .md(`#1296`)也在同一份登记簿里;它们的咽喉(跑真 injectAlphaConfig)
+// 在 packages/ui-mac/src/main/instruction-injection-throat.test.ts,本文件只钉登记形状、判官与跨包前提(③e)。
+// 已知不覆盖:项目自己的 plugins / alpha.jsonc(用户的字);skills 正文与 MCP 工具表(别人的字)。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs"
@@ -17,20 +18,27 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import {
   applyRegisteredRebrands,
+  BEHAVIOR_FRAGMENT_ID,
   CONTEXT_INJECTIONS,
   ContextBudgetError,
   contextBytes,
+  contextText,
   defineRebrand,
   defineTemplate,
   defineText,
   explainConfigString,
+  explainInstructionBody,
   HOOK_CONTEXT_CLASS,
+  IDENTITY_FRAGMENT_ID,
+  identityCapsFromId,
   inventory,
   renderInventory,
   renderTemplate,
   TOOL_TEXT,
 } from "./context-injection"
 import { REBRAND_RULES } from "./prompt-rebrand"
+import { ALPHA_BEHAVIOR_MD } from "../../ui-mac/src/main/alpha-behavior"
+import { buildAlphaIdentity } from "../../ui-mac/src/main/alpha-identity"
 import { CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV } from "./cloud-websearch-kill"
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..")
@@ -343,6 +351,57 @@ describe("③d tool.execute.after 咽喉:工具结果回模型的路上,alpha �
     const o2 = { title: "t", output: "tool said this", metadata: {} }
     await rogue({ tool: "bash", sessionID: "s", callID: "c", args: {} }, o2)
     expect(o2.output).not.toBe("tool said this")
+  })
+})
+
+// ── ③e instructions 通路(`#1296`):ui-mac 写 cfg.instructions 的两份文件 ────────────────
+// 真注入的咽喉在 ui-mac 那边(instruction-injection-throat.test.ts 跑真 injectAlphaConfig,8 组 env 矩阵
+// 与这里登记的形状集合双向比对)。这里钉三件登记簿自己的事:登记形状、判官能测出已知的坏、
+// 跨包 import 的前提(ui-mac 那两个内容模块零依赖)仍然成立。
+
+const DEPENDENCY_LINE = /^\s*import\b|\brequire\(|^\s*export\s.*\sfrom\s/
+
+describe("③e instructions 通路:登记形状 + 判官 + 跨包前提", () => {
+  test("登记了 behavior 1 条 + identity 2^|AlphaCapabilities| 条,全在 sink=instruction;变体 id 可反推 caps、正文 = 生产 buildAlphaIdentity(caps)、两两不同", () => {
+    const rows = CONTEXT_INJECTIONS.filter((f): f is Extract<typeof f, { kind: "text" }> => f.kind === "text" && f.sink === "instruction")
+    const behavior = rows.find((f) => f.id === BEHAVIOR_FRAGMENT_ID)
+    expect(behavior?.text).toBe(ALPHA_BEHAVIOR_MD)
+    const identity = rows.filter((f) => f.id.startsWith(IDENTITY_FRAGMENT_ID))
+    const capKeys = Object.keys(identityCapsFromId(IDENTITY_FRAGMENT_ID) ?? {})
+    expect(capKeys.length).toBeGreaterThanOrEqual(2)
+    expect(identity.length).toBe(2 ** capKeys.length)
+    for (const f of identity) {
+      const caps = identityCapsFromId(f.id)
+      expect(caps, f.id).toBeDefined()
+      expect(f.text, f.id).toBe(buildAlphaIdentity(caps))
+    }
+    expect(new Set(identity.map((f) => f.text)).size).toBe(identity.length)
+    expect(rows.length).toBe(identity.length + 1)
+  })
+  test("判官 explainInstructionBody:逐字命中;已知的坏 —— 一字节之差 / 少一字节 / 其它 sink 的登记文字 / 空串 都不解释", () => {
+    expect(explainInstructionBody(ALPHA_BEHAVIOR_MD)).toEqual({ ok: true, id: BEHAVIOR_FRAGMENT_ID, kind: "text" })
+    expect(explainInstructionBody(buildAlphaIdentity({ websearch: true, cloudDispatch: false }))).toEqual({
+      ok: true,
+      id: `${IDENTITY_FRAGMENT_ID}+websearch`,
+      kind: "text",
+    })
+    expect(explainInstructionBody(ALPHA_BEHAVIOR_MD + "!").ok).toBe(false)
+    expect(explainInstructionBody(ALPHA_BEHAVIOR_MD.slice(0, -1)).ok).toBe(false)
+    // agent prompt 是登记过的字,但它的 sink 是 system(顶替底座),不是 instruction 文件 —— 不许串格解释
+    expect(explainInstructionBody(contextText("agent.general.prompt")).ok).toBe(false)
+    expect(explainInstructionBody("").ok).toBe(false)
+    expect(identityCapsFromId("agent.general.prompt")).toBeUndefined()
+    expect(identityCapsFromId(`${IDENTITY_FRAGMENT_ID}+cloudDispatch`)).toEqual({ websearch: false, cloudDispatch: true })
+  })
+  test("跨包前提:ui-mac 那两个内容模块保持零 import / require(否则 ext 自包含 bundle 会把 main 世界拖进引擎,ADR-006)", () => {
+    // 先证明手段能测出已知的坏:三种依赖写法各抓一行,普通 export 不误抓
+    expect(['import * as fs from "node:fs"', 'const x = require("electron")', 'export { a } from "./b"'].filter((l) => DEPENDENCY_LINE.test(l))).toHaveLength(3)
+    expect(["export function f() {}", "export const X = 1", 'const s = "from here"'].filter((l) => DEPENDENCY_LINE.test(l))).toHaveLength(0)
+    for (const f of ["alpha-behavior.ts", "alpha-identity.ts"]) {
+      const src = readFileSync(join(REPO_ROOT, "packages", "ui-mac", "src", "main", f), "utf8")
+      expect(src.length).toBeGreaterThan(100)
+      expect(src.split("\n").filter((l) => DEPENDENCY_LINE.test(l)), `${f} 引入了依赖`).toEqual([])
+    }
   })
 })
 

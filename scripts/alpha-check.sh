@@ -282,16 +282,21 @@ case "$byok_catalog_rc" in
 esac
 unset byok_catalog_rc
 
-echo "▶ [12/12] alpha 注入模型上下文的库存(REQ-157 #1284:每段字的实测字节 / 上限,与快照逐字节比对)"
+echo "▶ [12/12] alpha 注入模型上下文的库存(REQ-157 #1284/#1296:ext 四处 + ui-mac 两份 instruction 文件,每段实测字节 / 上限,与快照逐字节比对)"
 # 这一步在 alpha-ci 里**没有对应的独立步**(判据本身 —— 快照测试与咽喉测试 —— 已在 `bun test (ext)`
-# 里跑,那一步是 MIRRORED 的),所以它不进 CI_STEPS。它存在的理由是 AC3 的后半句「并随本地闸打印」:
-# 把「Alpha 今天往每次对话里塞了什么、各多大、上限多少」打在每次 push 前的屏幕上,让「每加一段
-# 说明都在无声地吃掉用户的对话长度」这件事**有人看得见**。
+# 与 `bun test (ui-mac)` 里跑,那两步是 MIRRORED 的),所以它不进 CI_STEPS。它存在的理由是 AC3 的后半句
+# 「并随本地闸打印」:把「Alpha 今天往每次对话里塞了什么、各多大、上限多少」打在每次 push 前的屏幕上,
+# 让「每加一段说明都在无声地吃掉用户的对话长度」这件事**有人看得见**。
+#
+# 库存是**一份**:packages/ext 的四处(`#1295`)与 ui-mac 主进程经 cfg.instructions 写的
+# alpha-identity.md(4 种能力形状各一行)/ alpha-behavior.md(`#1296`)—— 登记簿直接 import ui-mac
+# 那两个零依赖的内容模块,ui-mac 侧的咽喉在 packages/ui-mac/src/main/instruction-injection-throat.test.ts。
 #
 # 两种红,都不是「跑过了都绿」能盖住的:① 登记簿在 import 时就抛(某片段超过声明上限,
 # ContextBudgetError,消息里有 id / 实测 / 上限)—— 库存打不出来,退出码非零;② 库存与仓内快照
 # 不一致(改了片段 / 上限而没重生快照)—— 打出逐行 diff,exit 1。已知的坏两种都实测过会红
-# (`#1284` PR 正文)。判据本体:packages/ext/src/context-injection.ts 与它的 .test.ts;
+# (`#1284` / `#1296` PR 正文;后者含 behavior 撑过 8 KiB 与生产多加一行 addInstruction 两个变异)。
+# 判据本体:packages/ext/src/context-injection.ts 与它的 .test.ts;
 # 快照:packages/ext/src/context-injection-inventory.snapshot.txt;重生:同一脚本加 --write。
 if bun packages/ext/scripts/context-injection-inventory.ts --check; then
   echo "    ✓ context injection inventory matches snapshot"
