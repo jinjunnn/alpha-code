@@ -279,6 +279,10 @@ You are not running the terse command-line assistant prompt. Length here follows
 - State the real limits of the format instead of implying styling you did not apply. If the writer you used cannot set fonts, page size, or table formatting, say so rather than describing the file as styled.
 `
 
+/** T3:两个接管 command 的斜杠菜单描述(REQ-157 `#1284`:与模板一样是 alpha 的字,进 context-injection 登记簿)。 */
+export const ALPHA_INIT_DESCRIPTION = "guided AGENTS.md setup"
+export const ALPHA_REVIEW_DESCRIPTION = "review changes [commit|branch|pr], defaults to uncommitted"
+
 export type PromptTakeoverResult = { applied: string[] }
 
 /**
@@ -293,12 +297,12 @@ export function applyPromptTakeover(cfg: Record<string, unknown>): PromptTakeove
     unknown
   >
   if (!command.init) {
-    command.init = { template: ALPHA_INIT_TEMPLATE, description: "guided AGENTS.md setup" }
+    command.init = { template: ALPHA_INIT_TEMPLATE, description: ALPHA_INIT_DESCRIPTION }
     applied.push("command.init")
   }
   if (!command.review) {
     // subtask:与上游内置 review 行为对齐(在子任务中执行,不占当前会话主线)
-    command.review = { template: ALPHA_REVIEW_TEMPLATE, description: "review changes [commit|branch|pr], defaults to uncommitted", subtask: true }
+    command.review = { template: ALPHA_REVIEW_TEMPLATE, description: ALPHA_REVIEW_DESCRIPTION, subtask: true }
     applied.push("command.review")
   }
 
