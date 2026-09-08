@@ -337,8 +337,9 @@ CLI-only 与构建脚本单列。
 | C8 | `format/index.ts:86` | 8 | **+1 ADR** | 本票 out of scope,但属同一族 |
 
 一条随之而来的观察:**没有任何一个单点能同时罩住 4/5/6/7** —— 它们分别经 MCP SDK、cross-spawn、
-node-pty 三种互不相干的创建原语。所以「一次罩住」不是选项,方案基线只能在
-「逐条收编」与「换一层更低的机制(profile 级 / 进程级)」之间选,而后者本文档**没有勘破**。
+node-pty 三种互不相干的创建原语。所以在**这一层**上「一次罩住」不是选项,方案基线只能在
+「逐条收编」与「换一层更低的机制(profile 级 / 进程级)」之间选。**后者已在 §6 勘破**
+(第二轮,2026-09-08):它确实一次罩住全部通路,代价换成了「落点」与「与 REQ-138 互斥」两件事。
 
 ## 5. 未验证 / 残余风险
 
@@ -355,16 +356,348 @@ node-pty 三种互不相干的创建原语。所以「一次罩住」不是选�
   `ConfigMCPV1.Info` 允许 `cwd`,围栏的 `-D WORKDIR` 取哪个值没有勘破。
 - **未验证:非 darwin。** 本文档全部测量在 macOS 上;`sandbox-exec` 只有 darwin 有(AC4 要求的是
   「如实声明」,不是等价围栏)。
-- **未勘破:比逐条收编更低的那一层。** 例如给整个 sidecar 进程套一层 seatbelt、或用 profile 级
-  继承让子进程自动受限。它可能一次解决 4/5/7/8,也可能连引擎自己都起不来(REQ-138 §5 已记
-  set-ID exec 那一类固有代价)。**本文档没有跑过它,不要拿这段当依据。**
+- **~~未勘破~~:比逐条收编更低的那一层 —— 已在 §6 跑完(2026-09-08 第二轮)。** 结论:seatbelt
+  **由子进程继承**,一次罩住 §3 表全部 15 行,而且引擎在围栏下起得来、真实工作负载跑得通;
+  但落点不是票面写的 `sidecar.ts`,`utilityProcess.fork` 无法被 `sandbox-exec` 前缀(§6.6),
+  且它与 REQ-138 的 `cfg.shell` 层**互斥而非叠加**(§6.5)。**以 §6 为准,不要再引用本条旧文。**
 - `sandbox-exec` 仍被 Apple 标记 deprecated(与 REQ-138 同一条残余风险)。
 
-## 6. 用法
+## 6. 第二轮勘破:整进程围栏 / profile 继承(2026-09-08)
+
+第一轮把「比逐条收编更低的那一层」明确记为**没跑**(旧 §5 倒数第二条)。本节把它跑了。
+结论分两半,必须一起读:
+
+- **机制这一半全部成立** —— seatbelt 由子进程继承,MCP / LSP / PTY / shell / formatter
+  **一次全被罩住**,而且引擎在围栏下能正常起来、能跑真实工作负载;
+- **落点这一半不成立于票面所写的那个位置** —— sidecar **不是**被 `sidecar.ts` 启动的,
+  它由 `packages/ui-mac/src/main/server.ts:295` 的 `utilityProcess.fork` 起,而
+  `utilityProcess.fork` 的 `ForkOptions` **没有任何指定可执行文件的字段**,所以
+  「在启动点前面加一个 `sandbox-exec`」这条最省事的路**结构上不存在**(§6.6)。
+
+### 6.0 测量口径(第二轮)
+
+| | |
+| --- | --- |
+| worktree | `.worktrees/ac-1286-fence`,由 `bash scripts/worktree-bootstrap.sh ac-1286-fence -b recon/1286-process-fence --base origin/recon/1286-spawn-seam` 建(`4729 packages installed [9.02s]`) |
+| 宿主 | macOS 26.3.1(build 25D2128),Darwin 25.3.0 arm64,xnu-12377.91.3 |
+| 运行时 | node **v22.22.3**;bun **1.3.14**;Electron **42.3.3**(其内 node v24.15.0) |
+| PTY | `@lydell/node-pty` **1.2.0-beta.12**(prebuild `darwin-arm64`);`bun-pty` **0.4.8** |
+| 其它包 | `cross-spawn` **7.0.6**;`@modelcontextprotocol/sdk` **1.29.0** |
+| 出货二进制 | `/Applications/Code Puppy.app` v**0.1.11**,`Identifier=com.tide.alphacode`,`flags=0x10000(runtime)`,`TeamIdentifier=RQX6X6A635` |
+| profile | 逐字取自 `packages/ext/src/shell-sandbox.ts` 的 `SEATBELT_PROFILE`,`sha256 b0e86694ffa71d250835c439f3ff659581194c9a8e746fc3e62c9010ed6b323d` |
+| 判据 | **探针文件到底落没落盘**。exit code / stderr 只作旁证 |
+| 对照臂 | 每一条「没落盘」的结论都配一条**同一探针、同一路径、只去掉 `sandbox-exec` 那一段**的正样本臂 |
+
+取证脚本一次性,不入仓;下面贴的是原始输出。
+
+### 6.1 四问,各一句
+
+1. **继承成不成立?** 成立,而且比预期宽:cross-spawn / `node:child_process.spawn` / 孙进程(深度 2)/
+   `detached` 新会话组 / node-pty **五条全部继承**(§6.2)。
+2. **引擎在围栏下还能不能工作?** 能 —— 冷启动、真实工作负载(会话、bash 工具派生、MCP 连上、
+   LSP 派生、PTY 起、运行时 npm 装 26 个 provider 包 61MB)在围栏里全部跑通,同一批越界写全部
+   落不了盘(§6.3)。**但可写集合必须含 `~/.npm` 与 `<XDG_CONFIG>/opencode`,后者装着引擎自己的
+   config 文件 —— 这是一个尚未收窄的自洞。**
+3. **出货形态(node + `@lydell/node-pty`)?** 已在 node 上取到:**用现行生产 profile 时 PTY
+   根本创建不出来**(`posix_openpt failed: Operation not permitted`),要加 `/dev/ptmx` 与
+   `^/dev/ttys` 两条才活;加上之后 PTY 正常且受围栏(§6.4)。bun-pty 同样失败,两条运行时一致。
+4. **与既有围栏的关系?** **只能替换,不能叠加。** 嵌套 `sandbox-exec` 只在**编译后策略完全相同**
+   时通过;策略只要不同(哪怕更松或只差两行),内层直接 `sandbox_apply: Operation not permitted`
+   / exit 71 / **零执行**(§6.5)。REQ-138 的 wrapper 每次带 `-D WORKDIR="$(pwd)"`,一般与外层
+   不同 ⇒ 外层围栏一旦存在,**每一次 shell 工具调用都会 exit 71**。
+
+### 6.2 Q1:围栏由子进程继承(五条原语,正反两臂)
+
+探针 `packages/core/alpha1286-runner.mjs`(放在 `packages/core/` 以解析到该包的
+`cross-spawn@7.0.6` 与 `@lydell/node-pty@1.2.0-beta.12`),对每条原语做两次写:
+一次写 `$HOME/alpha1286-fence/escape/`(**越界**,既不在 WORKDIR 也不在 `/private/tmp`
+或 `/private/var/folders`),一次写 WORKDIR。
+
+```
+# 反向臂(正样本):同一条命令,不带 sandbox-exec
+cd packages/core && node alpha1286-runner.mjs bare  "$ESC" "$WORK"
+# 围栏臂:同一条命令,只在最前面加 sandbox-exec
+cd packages/core && /usr/bin/sandbox-exec -f "$PROFILE" -D WORKDIR="$WORK" \
+    "$(which node)" alpha1286-runner.mjs fenced "$ESC" "$WORK"
+```
+
+| 创建原语 | 无围栏 escapeLanded | 围栏 escapeLanded | 围栏 insideLanded | 围栏下的错误 |
+| --- | --- | --- | --- | --- |
+| 进程自身 `fs.writeFileSync` | **true** | **false** | true | `EPERM` |
+| `cross-spawn@7.0.6`(MCP SDK / `util/process.ts` / effect spawner 共用) | **true** | **false** | true | `sh: …: Operation not permitted` |
+| `node:child_process.spawn` | **true** | **false** | true | 同上 |
+| 孙进程(cross-spawn → sh → sh,深度 2) | **true** | **false** | true | 同上 |
+| `detached:true`(新会话组) | **true** | **false** | true | 同上 |
+| `@lydell/node-pty`(node 运行时) | **true** | **false** | **false** | `posix_openpt failed: Operation not permitted` ⇒ 见 §6.4 |
+
+反向臂原始输出(节选,`tag:"bare"`):`"crossspawn":{"escapeLanded":true,…}`、
+`"grandchild":{"escapeLanded":true,…}`、`"detached":{"escapeLanded":true,…}`、
+`"nodepty":{"escapeLanded":true,…}` —— **六条全落盘**,证明探针抓得到已知的正样本。
+围栏臂同一批全部 `escapeLanded:false`,`ls escape/` 为空目录。
+
+**这一条一次性覆盖第一轮 §3 表的全部 15 行**:表右列里除 PTY 之外的每一条,底层要么是
+cross-spawn、要么是 `node:child_process`,两者都已在上表证明继承。
+
+### 6.3 Q2:引擎在围栏下能不能工作(本轮最贵的一问)
+
+#### 6.3.1 先枚举:引擎在一次真实工作负载里合法写了哪里
+
+隔离一个模拟用户家目录(`$H/home`,四个 XDG 变量全指进去)与一个工作区(`$H/ws`,真 git 仓),
+**无围栏**冷启动引擎并跑一遍工作负载,然后列出它创建的一切:
+
+```
+cd packages/opencode && bun run --conditions=browser ./src/index.ts serve --port 43186 --hostname 127.0.0.1
+→ opencode server listening on http://127.0.0.1:43186
+→ GET /global/health  {"healthy":true,"version":"local"}   HTTP=200
+```
+
+工作负载(全部 HTTP 200):`GET /project/current` → `POST /session` → `POST /session/{id}/shell`
+(真派生 bash,写工作区内文件)→ `GET /file?path=.` → `POST /pty`(返回真 pid)。
+
+写入集(排除 bun 自身的 transpiler 缓存;`node_modules` 折成一行):
+
+```
+<ISOHOME>/.cache/opencode/bin
+<ISOHOME>/.cache/opencode/models.json
+<ISOHOME>/.config/opencode/.gitignore
+<ISOHOME>/.config/opencode/opencode.jsonc
+<ISOHOME>/.config/opencode/package.json
+<ISOHOME>/.config/opencode/package-lock.json
+<ISOHOME>/.config/opencode/node_modules/          ← 26 个顶层包 / 61M(运行时真装)
+<ISOHOME>/.local/share/opencode/log/opencode.log
+<ISOHOME>/.local/share/opencode/opencode-local.db
+<ISOHOME>/.local/share/opencode/opencode-local.db-shm
+<ISOHOME>/.local/share/opencode/opencode-local.db-wal
+<ISOHOME>/.local/share/opencode/repos
+<ISOHOME>/.local/state/opencode/locks
+$TMPDIR/opencode/
+$HOME/.npm/_cacache/                              ← @npmcli/arborist 的包缓存(不受 XDG 影响)
+```
+
+三件反直觉、但**决定 profile 能不能写对**的事:
+
+1. **引擎在运行时真的装包。** `core/src/npm.ts` 用**进程内**的 `@npmcli/arborist`(不派生 npm)
+   把 provider SDK 装进 `<XDG_CONFIG>/opencode/node_modules`,本次 26 个包 61MB,
+   同时写 `$HOME/.npm/_cacache`。这两处不放行 ⇒ provider 装不上。
+2. **`~/.npm` 不随 XDG 走。** 它按真实 `os.homedir()` 解析,所以它**不在**任何 XDG 隔离里。
+3. **围栏建不出自己的父目录。** `(subpath "<X>/.local/share/opencode")` 放行的是该目录**之下**;
+   若 `<X>/.local/share` 还不存在,fenced 进程 `mkdir -p` 会在父层 EPERM。
+   ⇒ **父目录必须由未被围栏的一方(main 进程)预先建好。**
+
+#### 6.3.2 再实测:同一条路径,只在最前面加 `sandbox-exec`
+
+候选 profile(生产 `SEATBELT_PROFILE` + 上面枚举出的位置 + `/dev/ptmx` `^/dev/ttys`):
+
+```
+(version 1)
+(allow default)
+(deny file-write*)
+(allow file-write*
+  (subpath (param "WORKDIR"))
+  (subpath "<ISOHOME>/.local/share/opencode")
+  (subpath "<ISOHOME>/.local/state/opencode")
+  (subpath "<ISOHOME>/.cache/opencode")
+  (subpath "<ISOHOME>/.config/opencode")
+  (subpath "<ISOHOME>/.cache/bun")          ; bun 运行时产物,出货的 node sidecar 不需要
+  (subpath "$HOME/.npm")
+  (subpath "/private/tmp")
+  (subpath "/private/var/folders")
+  (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr")
+  (literal "/dev/tty") (regex #"^/dev/fd/")
+  (literal "/dev/ptmx") (regex #"^/dev/ttys")
+)
+```
+
+**冷启动**(隔离家目录先 `rm -rf`,只预建四个 XDG 父目录):
+
+```
+/usr/bin/sandbox-exec -f engine-fence.sb -D WORKDIR="$WS" "$(which bun)" \
+  run --conditions=browser ./src/index.ts serve --port 43187 --hostname 127.0.0.1
+→ opencode server listening on http://127.0.0.1:43187
+→ GET /global/health  {"healthy":true,"version":"local"}   HTTP=200
+```
+
+围栏下的真实工作负载,逐条:
+
+| 动作 | 结果 |
+| --- | --- |
+| `GET /project/current` | 200,`worktree` 正确,`vcs:"git"` |
+| `POST /session` | 200,`ses_f8060e343ffeZf64pMq7arSUGJ` |
+| `POST /session/{id}/shell` 写**工作区内** | `output:"rc=0"`,`ws/fenced-in.txt` **落盘** |
+| `POST /session/{id}/shell` 写**工作区外** | `output:"(eval):1: operation not permitted: …/escape/…"`,**未落盘** |
+| `POST /pty` | 200,`status:"running"`,`pid:71360` |
+| 运行时 npm 安装 | **在围栏里完成**,`node_modules` 顶层 26 个包 |
+| `<ISOHOME>/.local/share/opencode/log/opencode.log` | 无 `EPERM/EACCES/not permitted/ENOENT` |
+
+**MCP,正反两臂**(探针 server 起来第一件事就是各写一次界内界外,再把结果经 tool description 报回):
+
+```
+# 围栏臂(引擎跑在 sandbox-exec 里)
+POST /mcp {"name":"alpha1286probe","config":{"type":"local","command":["<node>","…/alpha1286-mcp-probe.mjs"],…}}
+→ {"alpha1286probe":{"status":"connected"}}   HTTP=200
+   ws/fenced-mcp-inside.txt   落盘
+   escape/fenced-mcp-escape.txt  **未落盘**
+
+# 反向臂(同一 payload、同一探针,引擎不带 sandbox-exec)
+→ {"alpha1286probe":{"status":"connected"}}   HTTP=200
+   escape/bare-mcp-escape.txt **落盘**
+```
+
+**LSP,正反两臂**(用 `cfg.lsp` 注册一个自定义 server,`extensions:[".txt"]`,经真
+`lsp/launch.ts` 派生;触发器是 `debug lsp diagnostics <file>`):
+
+```
+# 反向臂
+(. env; OPENCODE_CONFIG_CONTENT=…; bun … src/index.ts debug lsp diagnostics "$WS/probe.txt")
+   escape/bare-lsp-escape.txt  **落盘**;ws/bare-lsp-inside.txt 落盘
+
+# 围栏臂(同一条命令,只在最前面加 sandbox-exec)
+/usr/bin/sandbox-exec -f engine-fence.sb -D WORKDIR="$WS" "$(which bun)" … debug lsp diagnostics …
+   escape/fenced-lsp-escape.txt **未落盘**;ws/fenced-lsp-inside.txt **落盘**(证明 LSP 子进程真起来了)
+```
+
+⇒ **AC2 与 AC3 的形态,在整进程围栏下同时成立,且上游 0 行改动。**
+
+#### 6.3.3 这一问答出来的两个新坑
+
+- **`<XDG_CONFIG>/opencode` 必须可写,而引擎自己的 config 文件就住在那里**
+  (`opencode.jsonc` 与 `node_modules` 同目录)。被围栏的 MCP/LSP 子进程因此**能改引擎的配置**。
+  只放行 `node_modules` + `package*.json`、把 config 文件挪出去,**本轮没测**。
+- **`~/.npm` 是家目录下的一个通用缓存**,放行它等于给子进程开了一个家目录内的可写口子。
+  能否改成 `npm_config_cache` 指进 app 数据目录,**本轮没测**。
+
+### 6.4 Q3:出货形态(node)上的 PTY
+
+驱动的是出货那一支本身 —— `packages/core/src/pty/pty.node.ts`(`#pty` 的 node 分支 →
+`@lydell/node-pty@1.2.0-beta.12`),用 `node --experimental-strip-types` 真执行:
+
+| 臂 | 结果 |
+| --- | --- |
+| node,无围栏 | `{"spawnError":null,"escapeLanded":true,"insideLanded":true}` ← 正样本 |
+| node,**现行生产 profile**(`SEATBELT_PROFILE` 原文) | `{"spawnError":"posix_openpt failed: Operation not permitted","escapeLanded":false,"insideLanded":false}` |
+| node,生产 profile **+ `/dev/ptmx` + `^/dev/ttys`** | `{"spawnError":null,"escapeLanded":false,"insideLanded":true}` |
+| bun(`pty.bun.ts` / bun-pty 0.4.8),无围栏 | `{"spawnError":null,"escapeLanded":true,…}` |
+| bun,**现行生产 profile** | `{"spawnError":"PTY spawn failed","escapeLanded":false,"insideLanded":false}` |
+
+两条运行时**行为一致**:第一轮 §5 记的「node-pty 与 bun-pty 是否逐格一致」这条残余风险,
+**在整进程围栏这个用法下已闭合**;而 §6.3.2 里围栏引擎的 `POST /pty` 返回 `running`,是同一结论
+在真引擎上的第三次交叉。
+
+**这一格如果漏掉,后果不是少拦一个坏输入,是终端面板整个不可用** —— 与 CLAUDE.md 记的
+「前提为假的闸门比没有闸门更贵」同一形态。
+
+### 6.5 Q4:与 REQ-138 既有围栏的关系 —— 只能替换,不能叠加
+
+嵌套 `sandbox-exec`(`/usr/bin/sandbox-exec` 本身 `-rwxr-xr-x root:wheel`,非 set-ID):
+
+| # | 外层 profile | 内层 profile | 结果 |
+| --- | --- | --- | --- |
+| 1 | 生产+pty,`WORKDIR=A` | 同一文件,`WORKDIR=B` | `sandbox_apply: Operation not permitted`,**exit 71,内层零执行** |
+| 2 | 纯 `(allow default)` | 生产+pty,`WORKDIR=B` | 同上(内层更**紧**也照样拒) |
+| 3 | 生产+pty,`WORKDIR=A` | 同一文件,`WORKDIR=A` | **通过**,内层写 A 成功 |
+| 5 | 纯 `(allow default)` | 纯 `(allow default)` | **通过** |
+| 6 | 生产+pty,`WORKDIR=A` | 纯 `(allow default)`(更松) | 拒,exit 71 |
+| 7 | 生产+pty,`WORKDIR=A` | **另一份同内容拷贝**,`WORKDIR=A` | **通过** |
+| 8 | 生产+pty,`WORKDIR=A` | 生产原版(少两行 pty 节点),`WORKDIR=A` | 拒,exit 71 |
+| 9 | 生产+pty,`WORKDIR=A` | 同语义**多一行注释**,`WORKDIR=A` | **通过** |
+| 10 | 生产+pty,`WORKDIR=A` ×3 层 | 同上 | **通过**,三层深仍可写 A |
+
+规律(实测归纳,非文档推断):**嵌套只在「编译后的策略完全相同」时放行**(注释被剥离不算差异,
+参数代入后不同就算差异);其余一律 `sandbox_apply: Operation not permitted` + exit 71 + 零执行。
+**由此还得到一条设计上的硬约束:围栏一旦套上就不能再加宽** —— 想扩可写集只能换新进程。
+
+**对本票的直接后果:** REQ-138 的 wrapper 是
+`exec /usr/bin/sandbox-exec -f "$ALPHA_SB_PROFILE" -D WORKDIR="$(pwd)" "$ALPHA_REAL_SHELL" "$@"`。
+外层若已有整进程围栏,`$(pwd)` 逐次不同 ⇒ 命中第 1 行 ⇒ **每一次 shell 工具调用 exit 71、零执行**。
+整进程围栏与 REQ-138 的 `cfg.shell` 层**互斥**:选前者就要把后者拆掉(`wrapEngineShell` 不再包
+`cfg.shell`),而不是两层并存。
+
+### 6.6 落点:`sidecar.ts` 不是启动点,`utilityProcess.fork` 也接不上 `sandbox-exec`
+
+派工书里的前提是「引擎 sidecar 的启动点在 `packages/ui-mac/src/main/sidecar.ts`」。
+**实读推翻它**:`sidecar.ts` 是**被 fork 出来的那个进程自己跑的入口模块**(顶层就
+`getParentPort()`);真正的创建点是 `packages/ui-mac/src/main/server.ts:295`:
+
+```ts
+const child = (options.fork ?? utilityProcess.fork)(sidecar, [], {
+  cwd: ensureEngineScratchCwd(options.userDataPath),
+  env: createSidecarEnv(),
+  serviceName: SIDECAR_SERVICE_NAME,
+  stdio: "pipe",
+})
+```
+
+`electron@42.3.3` 的 `ForkOptions` 全字段实读(`electron.d.ts:21353`):
+`env` / `execArgv` / `cwd` / `session` / `partition` / `stdio` / `serviceName` /
+`allowLoadingUnsignedLibraries` / `respondToAuthRequestsFromMainProcess`。
+**没有 `execPath`,没有任何指定可执行文件的字段** —— utilityProcess 由浏览器进程经 Mojo 拉起
+Electron 自己的 helper,`sandbox-exec` 插不进去。出货进程的实况(2026-09-08 实机 `pgrep`):
+
+```
+Code Puppy Helper.app/…/Code Puppy Helper --type=utility \
+  --utility-sub-type=node.mojom.NodeService --service-sandbox-type=none …
+```
+
+于是「零收编」要落地,只剩三条路,逐条定价(全部在 alpha 自有文件里,north-star 守卫**实测 exit 0**,
+控制臂 `packages/opencode/src/lsp/launch.ts` **exit 1** 并被点名):
+
+| | 做法 | 实测证据 | 代价 |
+| --- | --- | --- | --- |
+| **P1** | **进程内自打沙箱**:`sidecar.ts` 在 `import("virtual:opencode-server")` **之前**调 `sandbox_init_with_parameters()`(`sandbox-exec` 自己用的那条 SPI) | **跑通了。** 用 bun:ffi 直连真 `/usr/lib/libsandbox.1.dylib`:`rc=0`,随后本进程越界写 `EPERM`、界内写成功,**且 `spawnSync` 出的子进程同样界外落不了盘、界内落得了盘**。控制臂(同一脚本、不调该函数)六项全落盘 | node **没有内置 FFI** ⇒ 需要一个原生 `.node` 附加模块(约 20 行)。**打包链已经在处理原生模块**:出货包里已带 `pty.node` / `watcher.node` / `msgpackr` 三个 prebuild。`sandbox_init*` 是 Apple 标记 deprecated 的 SPI(与 REQ-138 同一条既有风险) |
+| **P2** | 改用普通 `child_process` 拉起 `ELECTRON_RUN_AS_NODE=1` 的 Electron 二进制,前面加 `sandbox-exec` | 开发版 Electron 上**跑通**(围栏臂 escape `EPERM`、界内落盘;反向臂落盘)。**出货二进制上跑不通** —— 实测它忽略 `ELECTRON_RUN_AS_NODE` 直接把整个 app 起了起来 | `electron-builder.config.ts:140` 的 C27 决定 `runAsNode:false`(与 `enableNodeOptions*` / `enableNodeCliInspect*` 一起关的注入原语)。P2 = **反转一条既有安全决定**,且要把 `parentPort` IPC 换掉 |
+| **P3** | 逐条收编(第一轮 §4 的 C5/C6/C7/C8) | 第一轮已定价 | MCP 0 ADR;LSP/PTY/formatter 各 +1 ADR |
+
+### 6.7 一个 sidecar 服务 N 个工作区 —— 围栏的 WORKDIR 装不下
+
+引擎按请求头 `x-opencode-directory` 分实例;`spawnLocalServer` 的 respawn 触发条件是登录/登出、
+代理开关、崩溃自愈、runaway,**不含「用户打开了另一个文件夹」**。实机佐证(2026-09-08,出货
+v0.1.11 的一次真实启动):同一个 sidecar 同时挂着两组 Office MCP 子进程,cwd 分别是
+
+```
+/Applications/Code Puppy.app/Contents/Resources/office-mcp/server.py word  /Users/tide/code-puppy
+/Applications/Code Puppy.app/Contents/Resources/office-mcp/server.py word  /Users/tide/app/alpha-code
+```
+
+而 REQ-138 的 wrapper 是**每次调用**取 `-D WORKDIR="$(pwd)"`,天然跟着实例走。
+整进程围栏只有**一份**可写集,且 §6.5 证明**装上之后不能加宽**。所以 P1/P2 还要回答:
+可写集取「本次 generation 已知的全部工作区之并」,还是「打开新目录就 respawn sidecar」?
+**这一问本轮没有实测**,它是 P1/P2 落地前必须先跑的一格。
+
+### 6.8 第二轮的未验证(如实记账)
+
+- **围栏下的一次真正的模型往返没有跑。** 本轮跑通的是会话、工具派生、MCP、LSP、PTY、
+  运行时装包与 DB/WAL 落盘;**没有**用真凭据发一次 LLM 请求(隔离家目录里没有 auth,且不愿花
+  owner 的额度)。网络在 `(allow default)` 下不受限,provider 包的安装路径也已实跑,残余风险小,
+  但**它是没跑的**。
+- **隔离家目录不是生产路径。** 本轮用 `$H/home` + 四个 XDG 变量模拟用户家目录;生产里 sidecar
+  只把 `XDG_STATE_HOME` 指向 `userDataPath`,data/cache/config 仍在真 `~/.local/share`、`~/.cache`、
+  `~/.config`。**形状**一致(工作区之外的固定应用目录),**绝对路径**不同。
+- **alpha 自己那部分写入集没有枚举完。** 本轮跑的是 `bun … serve` 的上游引擎,**没有**装载
+  `@alpha-code/ext`、没有 `injectAlphaConfig`。静态实读可见 ext 插件在 sidecar 里还会写
+  `<alphaGlobalRoot>/sandbox/`、`<alphaGlobalRoot>/bin/`(`shell-sandbox.ts:201-216`)与项目级
+  `alpha.jsonc`(`plugin.ts:320-329`);catalog / 模型缓存 / ext-store / ext-tx 未逐条实跑。
+  **P1/P2 落地前必须把这一段补齐**,漏一条 ⇒ sidecar 起不来。
+- **P1 只在 bun:ffi 上验过机制,没有写原生附加模块**,因此「node 侧真能调通 + 能签名 + 能在
+  hardened runtime 下加载」是**推断**(依据:出货包已带三个 prebuild `.node`),不是实测。
+- **出货 sidecar 的 node 运行时没有跑过整进程围栏下的引擎。** §6.3 的引擎跑在 bun;§6.4 的 PTY
+  跑在 node。两者未合成一次「node 运行时 + 打包产物 + 围栏」的实跑。
+- **非 darwin 仍未测**(与第一轮同)。`sandbox_init*` 与 `sandbox-exec` 同属 Apple 标记 deprecated。
+
+### 6.9 与第一轮的冲突记录
+
+| 第一轮/票面的说法 | 本轮实测 |
+| --- | --- |
+| 旧 §5「未勘破:比逐条收编更低的那一层……可能连引擎自己都起不来」 | 引擎**起得来**,且真实工作负载跑通(§6.3)。这条已闭合 |
+| 派工书前提「引擎 sidecar 的启动点在 `sidecar.ts`(alpha 自有,245 行)」 | `sidecar.ts` 是被 fork 的子进程入口;创建点在 `server.ts:295` 的 `utilityProcess.fork`,而它**无法指定可执行文件**(§6.6) |
+| 派工书前提「整进程围栏若成立,两层会叠加」 | **不会叠加,会互斥**:嵌套异策略 ⇒ exit 71 零执行(§6.5) |
+| 第一轮 §5「node-pty 对 wrapper 的 exec 行为未验证」 | 已在 node 上验:与 bun-pty 行为一致,且暴露出生产 profile 缺 `/dev/ptmx` `^/dev/ttys`(§6.4) |
+
+## 7. 用法
 
 本文档是 REQ-159 方案基线(`docs/design/`)与其实现票**开工前**的对照物。三条纪律:
 
 1. §2 是基准。任何与它冲突的断言,**先复跑再改文档**,不要改实现去迁就散文。
 2. §1 里那条更正(MCP 不经 `ChildProcessSpawner`)推翻了票面的现状坐标 —— 基线里凡是从
    「C3 一次罩住两条」推出来的选项,前提已不成立。
-3. §5 的每一条,在实现票里必须变成实跑结论或显式的风险接受。
+3. §5 与 §6.8 的每一条,在实现票里必须变成实跑结论或显式的风险接受。
+4. §6.9 是本文档内部的冲突台账:凡与 §6 冲突的旧断言,以 §6 为准。
