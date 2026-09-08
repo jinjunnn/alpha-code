@@ -21,6 +21,7 @@
 | `#777`-A | `bun test` 的 31 条 host 用例 | 「机器快到 5 秒内能跑完一整套子 suite」 | 慢一点就超时 ⇒ 红,而红的理由与被验的行为无关 |
 | `#777`-B | 生产安装闸的组件测试 | 「跑在本产品发布的平台上」 | ubuntu runner ⇒ 写盘前直接拒 ⇒ 门跑不起来 |
 | `#916` | 本地 `alpha-check` 的 typecheck / 测试 | 「跑门的这棵树装着依赖」 | 全新 worktree 一个 `node_modules` 都没有 ⇒ **11627 条假红** ⇒ 唯一出路是去动**共享**主 checkout ⇒ 并行 lane 互相污染彼此的门测量 |
+| `#1294` | `bun test src` 里的子进程宿主 | 「子进程里那一跳 loopback HTTP 每次都能形成响应」 | 满载时形不成 ⇒ 宿主间歇红,而它不在 `known-fails.tsv` 里 ⇒ 拦下一个**没碰过相关代码**的 PR ⇒ 最省事的动作是 `--no-verify`(见 3.12) |
 
 **咽喉的形状因此是确定的:让门的环境需求变成一处显式声明,新增的门默认拿到它,缺失时显式降级并自陈。**
 枚举对新成员默认放行,咽喉对新成员默认拒绝 —— 优先咽喉。
@@ -470,6 +471,46 @@ tsgo 的项目单位就是 tsconfig,而那个 tsconfig 是上游的、不能改�
 会让这一步红在与 PR 无关的地方(`#754` 形态)。今天不成立(修完本票该包 exit 0 / 0 条),所以
 **不预先造逃生门**;真撞上时的处置是给它一份像 `scripts/known-fails.tsv` 那样的静态放行清单,
 或退回只跑 alpha 文件的独立 tsconfig,而不是把这一步删掉。
+
+### 3.12 子进程宿主里那一跳 loopback HTTP —— 满载时形不成响应的那一格(`#1294`)
+
+3.4 管的是这批 host 的**超时**声明。这一格是同一批 host 的**另一个**从没被声明过的环境前提:
+判据跑在子进程里,而子进程里那一跳 `http://127.0.0.1:<port>` **每次都能形成响应**。满载时它形不成。
+
+**实测(2026-09-08,`.worktrees/ac-1286-recon@94ade5e68`,一次 docs-only 改动的 pre-push)**:
+`bun test src` **4799 pass / 1 fail / Ran 4800 tests across 340 files [245.68s]**,唯一那条红是
+`src/main/cloud-result-scrub.test.ts`;同一个 sha 直接跑 `scripts/alpha-check.sh` 是**绿**的。
+日志里子进程**跑起来了**:`1 pass / 2 fail / 5 expect() calls / Ran 3 tests across 1 file [45.00ms]`
+—— 纯函数那条(扫描器标定)照常 pass,两条走真 HTTP 的停在
+`expect(status.job_id).toBe("job_scrub1113a")  Received: undefined`。
+当时的归因是「4800 条大套件的负载下**派生子进程失败**」。**那是猜的:派生成功了。**
+
+**正向指认(不是排除法收尾)**:把 cases 文件里那个 `Bun.serve` origin 提前 `stop(true)`
+—— 人为让响应形不成 —— 复跑的签名逐项吻合:`1 pass / 2 fail / 5 expect() calls`、两条停在
+同一个断言、耗时 **8.79ms / 0.57ms**(红那次 10.33ms / 0.49ms)。随后给 cases 补上
+「先断言错误信封」再跑同一注入,直接打出 `expect(received).toBeNull()  Received: "network"` ——
+即 `alpha-cloud-jobs.ts` 的 `authed()` 落进 catch 分支。状态读那一跳生产里就是
+`maxAttempts = 1`(`alpha-cloud-jobs.ts:100`,只有 dispatch 有 3 次有界重试),
+**一次瞬态失败即定案**。
+
+**为什么这一格比「慢一点就超时」更贵**:它不在 `scripts/known-fails.tsv` 里(棘轮的行为是**对的**,
+缺陷不在棘轮),于是它拦下的是一个**完全没碰过相关代码**的 PR;被拦的人查不出原因,最省事的
+动作是 `--no-verify` —— 正是 `#754` 那条路。而登记进 `known-fails.tsv` 不是修复,是把一道真闸
+对这条调成恒绿(`#1094` AC3/AC4 已把这个形态写成禁止项)。
+
+**咽喉的形状**:host 对**子进程整体**做有界重试(上限硬编码 3,不是「跑到绿为止」),
+每一次失败把退出码 / 信号 / 耗时 / 子进程自陈输出**整段**打出来,最终绿的那次再打一行
+「第 N 次才绿」—— 重试发生过这件事必须留在日志里,否则这不是修好 flake,是把它藏进绿色。
+
+| 想让它红的东西 | 谁判红 |
+| --- | --- |
+| 接线被摘(`scrubInlineContent` 去掉两处) | 三次尝试全败,宿主红。2026-09-08 摘线实测:`1 pass / 1 fail`,抛出的消息逐条点名 `── 第 1/3 次 ──`…`── 第 3/3 次 ──`,每次都带子进程自陈的 `content-bearing-key` / `data-url` 发现 |
+| 有人把重试改成「跑到绿为止」/ 把失败原因吞掉 | 同文件第 2 条 test 的三条臂(恒定坏 / 派生失败 / 瞬态坏),全部用真 `Bun.spawnSync`:恒定坏必须三次全败并逐次点名;派生失败(`ENOENT ... posix_spawn`)必须以可辨识的原因红,不是静默绿;瞬态坏必须回绿**且**把那一次失败留痕 |
+
+**诚实边界(不假装闭合)**:仓内同形态的子进程宿主今天有 **51 个**(50 个在 `packages/ui-mac`;
+判据 = 代码里同时出现 `Bun.spawn(Sync)?(` 与 `process.execPath, "test"`,即
+`gate-file-registry.test.ts` 的那条谓词)。本次只改了出事的**那一个** —— 其余 50 个是否要同款
+处理、要不要抽成公共 helper,是另一张票;在没有第二个实例出事之前,**不预先抽象**。
 
 ## 4. 咽喉:两处声明,覆盖仓内真实存在的两种运行形状
 
