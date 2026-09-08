@@ -26,6 +26,7 @@ import {
   defineRebrand,
   defineTemplate,
   defineText,
+  explainAgentText,
   explainConfigString,
   explainInstructionBody,
   HOOK_CONTEXT_CLASS,
@@ -35,8 +36,11 @@ import {
   renderInventory,
   renderTemplate,
   TOOL_TEXT,
+  UI_MAC_AGENT_NAMES,
+  uiMacAgentFragmentId,
 } from "./context-injection"
 import { REBRAND_RULES } from "./prompt-rebrand"
+import { ALPHA_AGENT_TEXT } from "../../ui-mac/src/main/alpha-agents"
 import { ALPHA_BEHAVIOR_MD } from "../../ui-mac/src/main/alpha-behavior"
 import { buildAlphaIdentity } from "../../ui-mac/src/main/alpha-identity"
 import { CLOUD_MCP_ARM_ENV, CLOUD_MCP_DEF_ENV } from "./cloud-websearch-kill"
@@ -393,15 +397,59 @@ describe("③e instructions 通路:登记形状 + 判官 + 跨包前提", () => 
     expect(identityCapsFromId("agent.general.prompt")).toBeUndefined()
     expect(identityCapsFromId(`${IDENTITY_FRAGMENT_ID}+cloudDispatch`)).toEqual({ websearch: false, cloudDispatch: true })
   })
-  test("跨包前提:ui-mac 那两个内容模块保持零 import / require(否则 ext 自包含 bundle 会把 main 世界拖进引擎,ADR-006)", () => {
+  test("跨包前提:ui-mac 那三个内容模块保持零 import / require(否则 ext 自包含 bundle 会把 main 世界拖进引擎,ADR-006)", () => {
     // 先证明手段能测出已知的坏:三种依赖写法各抓一行,普通 export 不误抓
     expect(['import * as fs from "node:fs"', 'const x = require("electron")', 'export { a } from "./b"'].filter((l) => DEPENDENCY_LINE.test(l))).toHaveLength(3)
     expect(["export function f() {}", "export const X = 1", 'const s = "from here"'].filter((l) => DEPENDENCY_LINE.test(l))).toHaveLength(0)
-    for (const f of ["alpha-behavior.ts", "alpha-identity.ts"]) {
+    for (const f of ["alpha-behavior.ts", "alpha-identity.ts", "alpha-agents.ts"]) {
       const src = readFileSync(join(REPO_ROOT, "packages", "ui-mac", "src", "main", f), "utf8")
       expect(src.length).toBeGreaterThan(100)
       expect(src.split("\n").filter((l) => DEPENDENCY_LINE.test(l)), `${f} 引入了依赖`).toEqual([])
     }
+  })
+})
+
+// ── ③f agent 通路(`#1299`):ui-mac 写 cfg.agent.<name>.{prompt,description} 的三个 alpha agent ──────
+// 真注入的咽喉在 ui-mac 那边(agent-injection-throat.test.ts 跑真 injectAlphaConfig,cfg.agent 下每个新写入的
+// 字符串叶子过判官,并与这里的登记集合双向比对)。这里只钉登记形状与判官 explainAgentText 的已知的坏。
+
+describe("③f agent 通路:登记形状 + 判官 explainAgentText", () => {
+  test("ui-mac 的每个 agent 各登记 prompt(sink=system)+ description(sink=agent-description),正文 = ALPHA_AGENT_TEXT 逐字;名字集合 = 内容模块键集", () => {
+    expect([...UI_MAC_AGENT_NAMES].sort()).toEqual(Object.keys(ALPHA_AGENT_TEXT).sort())
+    expect(UI_MAC_AGENT_NAMES.length).toBeGreaterThanOrEqual(3)
+    for (const name of UI_MAC_AGENT_NAMES) {
+      const prompt = CONTEXT_INJECTIONS.find((f) => f.id === uiMacAgentFragmentId(name, "prompt"))
+      const description = CONTEXT_INJECTIONS.find((f) => f.id === uiMacAgentFragmentId(name, "description"))
+      expect(prompt?.kind, name).toBe("text")
+      expect(description?.kind, name).toBe("text")
+      if (prompt?.kind !== "text" || description?.kind !== "text") throw new Error("unreachable")
+      expect(prompt.sink).toBe("system")
+      expect(description.sink).toBe("agent-description")
+      expect(prompt.text).toBe(ALPHA_AGENT_TEXT[name].prompt)
+      expect(description.text).toBe(ALPHA_AGENT_TEXT[name].description)
+      expect(prompt.bytes).toBe(contextBytes(ALPHA_AGENT_TEXT[name].prompt))
+    }
+    // 六段字两两不同(否则「集合相等」可能是同一段字登记了六次)
+    const texts = UI_MAC_AGENT_NAMES.flatMap((n) => [ALPHA_AGENT_TEXT[n].prompt, ALPHA_AGENT_TEXT[n].description])
+    expect(new Set(texts).size).toBe(texts.length)
+  })
+  test("判官 explainAgentText:逐字命中对应 sink;已知的坏 —— 一字节之差 / 串格(description 当 prompt、instruction 文件当 prompt)/ 空串 都不解释", () => {
+    const name = UI_MAC_AGENT_NAMES[0]!
+    expect(explainAgentText("prompt", ALPHA_AGENT_TEXT[name].prompt)).toEqual({ ok: true, id: uiMacAgentFragmentId(name, "prompt"), kind: "text" })
+    expect(explainAgentText("description", ALPHA_AGENT_TEXT[name].description)).toEqual({
+      ok: true,
+      id: uiMacAgentFragmentId(name, "description"),
+      kind: "text",
+    })
+    // ext 自己的 agent prompt 也是 sink=system 的登记文字 —— 同一格,判官同样认(不是按 id 前缀认的)
+    expect(explainAgentText("prompt", contextText("agent.general.prompt"))).toEqual({ ok: true, id: "agent.general.prompt", kind: "text" })
+    expect(explainAgentText("prompt", ALPHA_AGENT_TEXT[name].prompt + "!").ok).toBe(false)
+    expect(explainAgentText("prompt", ALPHA_AGENT_TEXT[name].prompt.slice(0, -1)).ok).toBe(false)
+    expect(explainAgentText("prompt", ALPHA_AGENT_TEXT[name].description).ok).toBe(false)
+    expect(explainAgentText("description", ALPHA_AGENT_TEXT[name].prompt).ok).toBe(false)
+    expect(explainAgentText("prompt", ALPHA_BEHAVIOR_MD).ok).toBe(false)
+    expect(explainAgentText("prompt", "").ok).toBe(false)
+    expect(explainAgentText("description", "").ok).toBe(false)
   })
 })
 

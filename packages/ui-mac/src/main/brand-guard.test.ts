@@ -166,8 +166,11 @@ describe("AC3 提示词与技能文案 — 模型上下文里的品牌串", () =
   })
   test("行为指引 + 自动化执行器 prompt", () => {
     expect(read("packages/ui-mac/src/main/alpha-behavior.ts")).toContain("# Code Puppy response guidance")
-    const inj = read("packages/ui-mac/src/main/alpha-config-injection.ts")
-    expect(inj.split("你是 Code Puppy 的自动化任务执行器").length - 1).toBe(2)
+    // REQ-157 `#1299`:三个 alpha agent 的 prompt/description 从 alpha-config-injection.ts 抽进零依赖的 alpha-agents.ts
+    // (登记簿 import 它声明上限),坐标跟着搬;生产文件里不再内联这段字(0 处),字只住内容模块(2 处)。
+    const agents = read("packages/ui-mac/src/main/alpha-agents.ts")
+    expect(agents.split("你是 Code Puppy 的自动化任务执行器").length - 1).toBe(2)
+    expect(read("packages/ui-mac/src/main/alpha-config-injection.ts").split("你是 Code Puppy 的自动化任务执行器").length - 1).toBe(0)
   })
   test("子代理提示词(ext/alpha-prompts.ts 四处)", () => {
     const src = read("packages/ext/src/alpha-prompts.ts")
