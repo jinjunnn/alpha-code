@@ -8,6 +8,12 @@
 //   - `permission.skill.<n> = "deny"`(set-if-absent:用户任何层显式配了该键 → 让位);
 //   - 同名占位 command(键入兜底,诚实说明 + 指路 /customize-alpha;set-if-absent)。
 // 斜杠菜单的隐藏由 renderer 读 gov-read 的 factoryDenied 完成(REQ-066 过滤同源)。
+//
+// REQ-157 `#1284`:占位 command 的 description / template 是 alpha 的字、会进模型上下文(template 在用户
+// 敲到该 command 时成为用户回合),所以文字本体与上限住在 context-injection.ts;这里只取用。渲染结果
+// 超限由 renderTemplate 抛出(不裁剪),plugin.ts 的 config hook 外层 catch 会 loud 记录并 fail-closed。
+
+import { contextText, renderTemplate } from "./context-injection"
 
 export function applyFactoryDeny(cfg: Record<string, unknown>, deniedJson: string | undefined): string[] {
   if (!deniedJson) return []
@@ -41,8 +47,8 @@ export function applyFactoryDeny(cfg: Record<string, unknown>, deniedJson: strin
     }
     if (!(n in command)) {
       command[n] = {
-        description: "(已禁用)该技能已由 alpha 出厂默认禁用",
-        template: `该技能(${n})已由 alpha 出厂默认禁用。请告知用户:此技能不可用;定制 Code Puppy 请改用 /customize-alpha;如需恢复,到 定制中心 → 已安装 → 内置(上游) 解除禁用。不要尝试其它方式执行该技能。`,
+        description: contextText("command.factory-denied.description"),
+        template: renderTemplate("command.factory-denied.template", { name: n }),
       }
     }
   }

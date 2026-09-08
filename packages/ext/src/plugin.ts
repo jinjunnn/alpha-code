@@ -15,6 +15,10 @@ import { rebrandSystem } from "./prompt-rebrand"
 import { validateCloudToolInput, validateCloudToolOutput } from "./cloud-contract-hook"
 import { platformOutputCap } from "./platform-output-cap"
 import { byokOutputCap } from "./byok-output-cap"
+// REQ-157 `#1284`:alpha 送进模型上下文的每段字都在 context-injection.ts 登记并声明上限。import 本身就是
+// 一道闸 —— 任何片段超限,登记簿在模块装载时抛出,ext 整个装不上(上游记 failed to load plugin),
+// 而不是悄悄截一段发出去。工具表文字从这里取,不再内联字面量(内联 = 绕过登记簿,咽喉测试当场红)。
+import { TOOL_TEXT, renderInventory } from "./context-injection"
 import {
   assertWebSearchToolAllowed,
   computeMcpOwnership,
@@ -50,6 +54,8 @@ export const AlphaExt: Plugin = async (input) => {
   const STALE_MS = 5 * 60 * 1000
   // REQ-062 T1:转写残留 warning 去重(每进程每签名一次)
   const rebrandWarned = new Set<string>()
+  // REQ-157 `#1284`:装载回执 —— 登记簿在 import 时已按上限校验过;这里只在 VERBOSE 下把库存打出来。
+  if (process.env.ALPHA_EXT_VERBOSE) console.log(`[@alpha-code/ext] context injections:\n${renderInventory()}`)
 
   // sidecar 初始化批次先复验 main 派生 root 的 canonical 身份；缺失、相对、退休根或 alias 都拒绝。
   const globalAlphaRoot = requireAlphaGlobalRoot()
@@ -252,10 +258,9 @@ export const AlphaExt: Plugin = async (input) => {
     // tool map: key === final tool id verbatim (no namespace prefix).
     tool: {
       alpha_reload: tool({
-        description:
-          "Schedule a reload of the opencode engine's extension registry (skills / agents / commands / plugins) without restarting the app. Call this after creating or editing a skill or agent on disk. The reload runs right after the current reply finishes (an immediate reload would cut this reply off), so the new skill/agent is available from the NEXT message in this session.",
+        description: TOOL_TEXT.alpha_reload.description,
         args: {
-          reason: tool.schema.string().describe("What was created/changed (for the tool log)").default(""),
+          reason: tool.schema.string().describe(TOOL_TEXT.alpha_reload.args.reason).default(""),
         },
         async execute(args, ctx) {
           pendingReloads.set(ctx.sessionID ?? "", { reason: args.reason, at: Date.now() })
@@ -269,20 +274,11 @@ export const AlphaExt: Plugin = async (input) => {
         },
       }),
       alpha_register: tool({
-        description:
-          "Register a project-scoped extension entry into <project>/.code-puppy/alpha.jsonc (the ONLY alpha directory in a project — never create .opencode). " +
-          "Use type=agent|command with an entry object (agent: {description,prompt,mode,...}; command: {template,description,...}); " +
-          "type=mcp with the connector config (loading executable connectors additionally requires the user's per-project consent dialog); " +
-          "type=skill takes no entry — it registers the ./.code-puppy/skills path; write the skill itself to .code-puppy/skills/<name>/SKILL.md. " +
-          "Plugins are NOT registered here: drop a self-contained ESM .js into .code-puppy/plugins/ (raw TypeScript is rejected). " +
-          "The change is validated, written atomically, and auto-reloaded after this reply finishes (available from the NEXT message).",
+        description: TOOL_TEXT.alpha_register.description,
         args: {
-          type: tool.schema.enum(["mcp", "agent", "command", "skill"]).describe("Extension kind to register"),
-          name: tool.schema.string().describe("Entry name (letters/digits/._- , max 64 chars); ignored for type=skill").default(""),
-          entry: tool.schema
-            .string()
-            .describe("The entry as a JSON object string, e.g. {\"description\":\"...\",\"prompt\":\"...\"}; empty for type=skill")
-            .default(""),
+          type: tool.schema.enum(["mcp", "agent", "command", "skill"]).describe(TOOL_TEXT.alpha_register.args.type),
+          name: tool.schema.string().describe(TOOL_TEXT.alpha_register.args.name).default(""),
+          entry: tool.schema.string().describe(TOOL_TEXT.alpha_register.args.entry).default(""),
         },
         async execute(args, ctx) {
           const project = projectRootFor(ctx.directory)
@@ -350,11 +346,10 @@ export const AlphaExt: Plugin = async (input) => {
         },
       }),
       alpha_echo: tool({
-        description:
-          "Echo back the provided text. Proof that a Code Puppy plugin-registered tool is available with zero opencode source edits.",
+        description: TOOL_TEXT.alpha_echo.description,
         args: {
-          text: tool.schema.string().describe("The text to echo back"),
-          shout: tool.schema.boolean().describe("Uppercase the echoed text").default(false),
+          text: tool.schema.string().describe(TOOL_TEXT.alpha_echo.args.text),
+          shout: tool.schema.boolean().describe(TOOL_TEXT.alpha_echo.args.shout).default(false),
         },
         async execute(args, ctx) {
           const echoed = args.shout ? args.text.toUpperCase() : args.text
@@ -366,10 +361,9 @@ export const AlphaExt: Plugin = async (input) => {
         },
       }),
       alpha_ping: tool({
-        description:
-          "Health-check tool: returns 'pong' plus the session directory. Proof that the Code Puppy extension is loaded.",
+        description: TOOL_TEXT.alpha_ping.description,
         args: {
-          note: tool.schema.string().describe("Optional note echoed back with the pong").default(""),
+          note: tool.schema.string().describe(TOOL_TEXT.alpha_ping.args.note).default(""),
         },
         async execute(args, ctx) {
           const suffix = args.note ? ` (${args.note})` : ""
