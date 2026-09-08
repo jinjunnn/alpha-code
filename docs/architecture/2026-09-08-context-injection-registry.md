@@ -209,6 +209,11 @@ prompt 多一个字节(只点那一条,其余五段照常解释)、串格、`mod
 不自行扩大」;按键的咽喉先把已知的三条钉死。
 
 **变异实证**(2026-09-08,每次都还原并复绿;完整输出在 `#1299` PR 正文):
-- M1:生产 `alpha-config-injection.ts` 多加一处 `config.agent = { …, "alpha-sneaky": { prompt, description } }`
-  ⇒ 咽喉 7 条里跑真注入的 6 条全红(drift 锁那条不跑注入,照常绿),点名
-  `/agent/alpha-sneaky/prompt` `/agent/alpha-sneaky/description` `text not registered`;`git checkout --` 还原 ⇒ 7/0。
+- M1:生产 `alpha-config-injection.ts` 多加一处 `config.agent = { …, "alpha-sneaky": { description, hidden, mode, prompt } }`
+  ⇒ 咽喉 **1 pass / 6 fail**(跑真注入的 6 条全红;drift 锁那条不跑注入,照常绿),输出里
+  `"pointer": "/agent/alpha-sneaky/prompt"` ×4、`"pointer": "/agent/alpha-sneaky/description"` ×4、
+  `"reason": "text not registered"` ×8;同一时刻 `--check` 仍 rc 0(登记簿没动,库存不该红 —— 抓这条的是咽喉,
+  与 `#1296` 的分工相同);`git checkout --` 还原 ⇒ 7 pass / 0 fail。
+- M2:`alpha-agents.ts` 把 `alpha-readonly` 的 prompt 撑到 8,296 B ⇒ `--check` rc 1:
+  `context injection "agent.alpha-readonly.prompt" is 8296 bytes, over its declared limit of 8192 bytes`;
+  ext 单测 0 pass / 1 fail、ui-mac agent 咽喉 0 pass / 1 fail(均在 import 时 `ContextBudgetError`);还原 ⇒ rc 0。
