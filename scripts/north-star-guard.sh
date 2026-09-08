@@ -10,6 +10,17 @@
 # 照样绿。抽成文件的唯一目的,是让 packages/ui-mac/src/main/north-star-guard.test.ts 能起
 # 真 git 仓、造真的上游改动、跑**生产的这一份**,断言它**真的点名了那个文件**。
 #
+# ── 这道门**只回答一半**,另一半在第 [13/14] 步(`#1288`)────────────────────────────
+# 本门回答的是「**这个 PR 自己**有没有新增偏离」(基准 = origin/alpha,理由见下一节)。它按设计
+# 答不了另外两个问题,而且这两个「答不了」都是结构性的、不是实现缺陷:
+#   · 「我们今天**总共**偏离了多少」—— 下面 UPSTREAM_EXCLUDES 里的每一条都是一次**有意的收编**,
+#     本门放行它们;放行是判决,不是「不存在」,于是白名单背后那堆行数对本门永远不可见。
+#   · 「上一次跟上游对齐是多久以前」—— 本门只拿 origin/dev 判「这条路径是不是上游的」,从不看它的日期。
+# 这两个量由 scripts/north-star-drift-metrics.sh(alpha-check 第 [13/14] 步)每次本地闸打印,
+# **只量不拦**(先量后闸,不设阈值)。它消费本文件的 `--print-jurisdiction`,不另抄一份清单。
+# CLAUDE.md 的北极星那一段与本段说的是同一件事 —— 两处措辞不一致本身就是缺陷(`#1288` 退出条件 3)。
+# 一句话:**这道门今天绿 ≠ 我们没有偏离。**
+#
 # ── 比较基准 = `origin/alpha`,不是 `origin/dev`(`#889`)──────────────────────────
 # 这道门要回答的是「**这个 PR 自己**改了上游文件吗」,所以基准只能是它的目标分支 ——
 # alpha-ci 的 `on: push/pull_request: branches: [alpha]`,分支保护也挂在 alpha 上。
@@ -18,9 +29,15 @@
 #   · 实测(2026-08-10):`origin/dev` 与 `origin/alpha` 的 merge-base 停在 `347510a73`
 #     (2026-07-23),alpha 领先 289 个提交、dev 领先 261 个且仍在动 ⇒ `origin/dev...HEAD`
 #     的窗口是 550 commits / 2467 文件,而不是这个 PR 改了什么。
-#   · 它是 `origin/alpha...HEAD` 的**超集窗口** ⇒ 不漏报真违规,但会**过报**:那个窗口里
-#     点名 47 个上游文件,全靠下面 44 条 UPSTREAM_EXCLUDES(本意是登记**有意的收编**)
-#     恰好吸收掉,才在今天给出与 alpha 基准相同的结论(两种基准当天都是 0)。
+#   · 它是 `origin/alpha...HEAD` 的**超集窗口** ⇒ 不漏报真违规,但会**过报**:那个窗口当天
+#     点名 47 个上游文件,全靠下面那张 UPSTREAM_EXCLUDES(本意是登记**有意的收编**)恰好
+#     吸收掉,才在当天给出与 alpha 基准相同的结论(两种基准当天都是 0)。
+#     ⚠️ 这一句刻意**不写**白名单有多少条(`#1288`)。原文写的是「44 条」,而 2026-09-08 实测
+#     `grep -c "^  ':(exclude)" scripts/north-star-guard.sh` → **48** —— 散文里的计数会随下面
+#     那张表每加一条就烂一次,而没有任何东西会因此变红(这一处是 `#1290` 的实现方核出来的)。
+#     那个数唯一的活来源是本文件自己的 `${#UPSTREAM_EXCLUDES[@]}`:它经下面的
+#     `--print-jurisdiction` 交给 scripts/north-star-drift-metrics.sh,每次本地闸第 [13/14] 步
+#     以「收编面」打印出来。要知道今天有多少条就去看那一行,**不要在散文里再养一个副本**。
 #   · ⇒ 任何一次不在 exclude 表里的**合法**上游改动(fork-sync、收编前的上游变更),
 #     都会让这道门在**每个 PR** 上恒红 —— 包括没碰它的 PR。本文件下面那句
 #     「Drift here is worse than no gate: a permanently-red local guard trains you to ignore it」
@@ -30,6 +47,21 @@
 # 的上游改动,断言守卫**不**点名它 —— 把基准还原成 origin/dev,那一条当场红。
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
+
+# ── `#1288`:只读模式 `--print-jurisdiction` —— 把辖区说出来,而不是让别人再抄一份 ────
+# 漂移度量步(alpha-check 第 [13/14] 步,scripts/north-star-drift-metrics.sh)要回答的是
+# 「我们现在**总共**偏离上游多少」。它需要的四样东西 —— 辖区、两张 carve-out、上游镜像 ref、
+# 收编白名单有多长 —— 全都住在本文件里,而本文件是它们的**唯一真源**(`#889`)。
+# 让度量步自己再写一份 = `#637` 那个已经咬过我们一次的形状:两份清单各自漂移,而没有任何
+# 东西会变红。所以这里开一个只读模式:打印这些值然后退出,**一个 git 命令都不跑、一个字节
+# 都不判**。无参数时的行为逐字不变(CI 与 alpha-check 都不带参数)。
+GUARD_MODE=guard
+case "${1:-}" in
+  '') ;;
+  --print-jurisdiction) GUARD_MODE=print-jurisdiction; shift ;;
+  *) echo "✗ 未知参数:$1(本脚本只接受 --print-jurisdiction)" >&2; exit 2 ;;
+esac
+[ "$#" -eq 0 ] || { echo "✗ 多余参数:$*" >&2; exit 2; }
 
 # ── 辖区 = `packages/` 全树 −(两张显式 carve-out)。ADR-044 / `#1247` ────────────────
 #
@@ -187,6 +219,19 @@ UPSTREAM_EXCLUDES=(
 #   · 谓词判的是**路径**,不是内容:它回答「这条路径是不是上游的」,不回答「这次改动对不对」。
 UPSTREAM_MIRROR="origin/dev"
 ALPHA_OWNED_MARKER="north-star:alpha-owned"
+
+# `#1288` 只读模式的落点:上面五个值全部定义完、而**任何** git 命令都还没跑。放在这里是判据
+# 的一部分 —— 度量步在拿不到 origin/dev 时要自己判「未测量」,它不能先被守卫的 fetch/降级
+# 逻辑改写状态。行为判据在 packages/ui-mac/src/main/north-star-drift-metrics.test.ts:那里把
+# 本脚本复制一份、只删掉三条 exclude,断言度量步打印的条数**跟着变**(杀掉「印一个写死的数」)。
+if [ "$GUARD_MODE" = print-jurisdiction ]; then
+  printf 'UPSTREAM_PATHS\t%s\n' "$UPSTREAM_PATHS"
+  printf 'ALPHA_OWNED_PACKAGES\t%s\n' "$ALPHA_OWNED_PACKAGES"
+  printf 'ROUNDTRIP_PACKAGES\t%s\n' "$ROUNDTRIP_PACKAGES"
+  printf 'UPSTREAM_MIRROR\t%s\n' "$UPSTREAM_MIRROR"
+  printf 'UPSTREAM_EXCLUDES_COUNT\t%s\n' "${#UPSTREAM_EXCLUDES[@]}"
+  exit 0
+fi
 
 # 因子①:上游镜像里有没有这条路径。
 mirror_has() { git cat-file -e "${UPSTREAM_MIRROR}:$1" 2>/dev/null; }

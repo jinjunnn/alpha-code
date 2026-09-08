@@ -9,20 +9,20 @@
 bash scripts/alpha-check.sh
 ```
 
-绿了再 push。它跑的是 `alpha-ci` 的**全部 18 个代码步**,并在末尾打印一张逐步对照表
+绿了再 push。它跑的是 `alpha-ci` 的**全部 21 个代码步**,并在末尾打印一张逐步对照表
 (`MIRRORED` / `SUPERSET:<理由>` / `DEGRADED:<理由>`)。
 
-> 再加**两步** CI **结构上跑不了**的。
+> 再加**六步** CI 结构上跑不了、或按裁决不该占一个 required context 的(`[9/14]` worktree bootstrap 能力、`[10/14]` required contexts 对真源、`[11/14]` BYOK 目录 id、`[12/14]` 注入库存、`[13/14]` north-star 漂移度量、`[14/14]` 模块体积)。下面先说最早的两步。
 >
-> 一步是 `#916` 的第 `[9/10]` 步:`scripts/assert-worktree-bootstrap.sh` —— 真建一棵全新
+> 一步是 `#916` 的第 `[9/14]` 步:`scripts/assert-worktree-bootstrap.sh` —— 真建一棵全新
 > worktree、在里面跑真的 typecheck,断言它**自己**就能给出可信结论。CI 的每个 job 都是一次
 > 全新 `actions/checkout` + `bun install`,**结构上不存在 worktree**,所以这条能力只能在本地判。
 > 它守的是多 lane 并行:worktree 里拿不到真 typecheck ⇒ 每条 lane 都得去动**共享**主 checkout
 > ⇒ 谁先跑谁量到别人的树。本机实测约 50s。
-> 这一步也有**三档**结局(与 `[10/10]` 同形):已验证 / **真失守**(红,拦住)/ **未验证**
+> 这一步也有**三档**结局(与 `[10/14]` 同形):已验证 / **真失守**(红,拦住)/ **未验证**
 > —— `bun install` 依赖网络,registry 不可达时它什么都证明不了,这时**不拦 push**但也**不报绿**。
 >
-> 另一步是 `#890` 的第 `[10/10]` 步:把 `.github/required-contexts.txt`
+> 另一步是 `#890` 的第 `[10/14]` 步:把 `.github/required-contexts.txt`
 > 与 GitHub 分支保护里那份真的 required status checks 比一次。读分支保护要带令牌,而 alpha-ci
 > 触发在 `pull_request` —— fork PR 拿不到 secrets,所以它只能落在有鉴权的开发机上。
 > 这一步有**三档**结局:一致 / 漂移(红,点名差在哪条)/ **未比对**(没装 `gh`、没登录、
@@ -45,21 +45,23 @@ bash scripts/alpha-check.sh
 - **CI 的真正职责**是①**强制门禁**(branch protection:不绿不让 merge,挡手滑)②**中立环境兜底**(抓"在我机器上是好的"那类环境差异)——不是给你当调试台用的。
 - 所以顺序永远是:**本地 `alpha-check` 绿 → push → CI 复核 → merge**。
 
-## 2. 十关是什么(逐步对照见 `alpha-check.sh` 的 `CI_STEPS`)
+## 2. 十四关是什么(逐步对照见 `alpha-check.sh` 的 `CI_STEPS`)
 
 | 关 | 本地步骤 | CI job | 失败含义 |
 |---|---|---|---|
-| **北极星守卫**(零改上游) | `[1/10]` `scripts/north-star-guard.sh`;等价 `git diff --no-renames --diff-filter=DMR --name-only origin/alpha...HEAD -- <上游 8 包>` 去掉 ADR-043 判为 alpha 自有的路径之后必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
-| **前端 SOT round-trip**(`#976`) | `[2/10]` `scripts/assert-frontend-patch-roundtrip.sh`:临时 index → `read-tree <pin>` → `apply --cached --binary` SOT 补丁 → `write-tree`,判 `packages/{app,ui}` 的 **tree sha** 是否逐字等于 `HEAD` 的 | 同上 job(`Assert packages/app + packages/ui == pinned upstream + SOT patch (#976)`;落在这个 job 是因为它 `fetch-depth: 0`,test job 是浅 checkout 取不到 pin) | `packages/{app,ui}` 的改动没进 `frontend/alpha-patches/alpha-frontend.patch` ⇒ **下一次 sync-upstream 或月更 bump 会把它静默删掉**(不是报错)。ADR-034 起那两个包是「pin + 补丁」的投影,sync 的 `apply_alpha_frontend_delta` 会 `rm -rf` 后按补丁重建。已发生过:`f420fe2bb`…`7281627ed` 四个提交补丁缺 vendored `.tgz` 而树里有,存活两天零变红。**修法**:按 [`frontend/README.md`](../../frontend/README.md) 块 4 重生补丁,并与源码改动放进**同一个提交**(判据锚在 HEAD,未提交的改动只会被列成 dirty 清单,不参与判决)。**三档结局**:一致 / 漂移或测量作废(红,点名到具体路径)/ **未比对**(本地浅克隆取不到 pin 对象 ⇒ exit 2,不拦 push 但不报绿;CI 侧 `ROUNDTRIP_REQUIRE_PIN=1` 没有这一档) |
-| **NUL 字节闸** | `[3/10]` `scripts/assert-no-nul-bytes.py` | 同上 job | 字面 NUL 让 `grep` 对整个文件静默失明(`#760`) |
-| **typecheck**(三个 alpha 包) | `[4/10]` contracts-consumer + ext + ui-mac | `typecheck (alpha packages)` | 类型不过 |
-| **契约锁 + 单元测试** | `[5/10]` `check:vendor` + `bun-test-floor.sh` × 3(15 / 100 / 3000)+ `bun-test-app.sh`;其中 ui-mac 全量带 **base fail-set 棘轮**(`#1086`):`ALPHA_KNOWN_FAILS_FILE=scripts/known-fails.tsv` ⇒ [`scripts/known-fails.tsv`](../../scripts/known-fails.tsv) 里逐测试点名的已知红放行(逐条打出理由),**清单外的红拦住并点名**,无法逐测试归因的失败(如模块加载崩溃)一律拦住。失败名的权威是外层 junit 报告(host 回显的子进程 `(fail)` 行不算),并与 console 双轴交叉,轴打架即测量作废 —— 判官在 [`scripts/known-fails-compare.py`](../../scripts/known-fails-compare.py)。清单是**静态文件**:没有 --update、没有运行时写回,加长只能发生在人手写的 diff 里;某行的红修绿后判官提示「清单可缩短」,删行即收紧。行为闸(双向,含「清单外必须拦」)= `packages/ui-mac/src/main/known-fails-ratchet.test.ts`。注意清单只罩这一条全量;`[6/10]` 登记簿的逐文件精确点名**不**吸收已知红(`#946`:滚动 pin 的 packages/app 以 CI=1 钉上游 CI 口径 —— pin 自带的 i18n parity 红被上游自己的 skipIf 治住、新红默认拒;另把 alpha-frontend.patch 里的 alpha 判据文件逐个点名重跑、逐文件判**精确条数**(登记在脚本内,与 CI=1 钉在同一处)—— 删文件/删用例/skipIf 包住都当场红) | `unit tests (alpha packages)` | vendored hash、producer/consumer fixture 或运行时守卫回归;packages/app 半场 = alpha 改动打穿了随 pin 而来的上游测试(#933 形态)或 alpha 判据文件消失 |
-| **闸门文件点名** | `[6/10]` `scripts/assert-gate-files.sh`(全量见 `scripts/gate-files.tsv`) | 同上 job | 某个闸门文件被删/被清空/条数偏离登记 —— 整包地板抓不到。`#844` 起逐条判**精确条数**(少=删了用例,多=新增未登记);改动闸门文件后跑 `bash scripts/assert-gate-files.sh --update` 从实测写回登记簿(all-or-nothing、幂等),例外语法与理由要求见 TSV 抬头或脚本 `--help`。**平台条件闸**(`#1153`):guarantee 列逐字 `[平台:darwin]`/`[平台:linux]` = 该行只在那个平台适用 —— 适用平台照常精确条数;不适用平台**仍真跑该文件**并要求它自报 0 条(标注不是免检牌:该跑的文件被误标 ⇒ >0 条当场红,文件被删也当场红)。**三档结局**(与 `[2/10]`/`[9/10]`/`[10/10]` 同形):全部适用行已验证 / 真失守(红,拦住)/ **存在「本平台不适用」行**(exit 2 —— 门绿但那几行的保证本次未被验证;本地 `[6/10]` 与 CI 的 assert gate files 步都记「未验证」不拦,恒红只会训练人把 darwin-only 判据摘出登记簿) |
-| **seed assets** | `[7/10]` `scripts/assert-seed-assets.sh` | `seed assets present` | 打包资源被静默删除(B7/B15) |
-| **docs gate** | `[8/10]` `scripts/check-doc-links.py <改动的 md>` | `docs gate` | Markdown 相对链接断了 |
-| **worktree bootstrap 能力**(`#916`) | `[9/10]` `scripts/assert-worktree-bootstrap.sh` | **无 —— CI 结构上没有 worktree**(每个 job 都是全新 checkout + `bun install`) | 新建的 worktree 里跑不出可信 typecheck ⇒ 每条 lane 为了下结论都得去动**共享**主 checkout ⇒ 并行时互相污染彼此的门测量(2026-08-02 把一道真闸门误诊成「1/5 间歇性 flaky」是同一形态)。判据是**能力**不是产物:真建 worktree、真跑 typecheck,并且**先证明没 bootstrap 的树确实会红**,再判 bootstrap 过的树绿。**三档结局**:已验证 / 真失守(红,拦住)/ **未验证**(registry 不可达 ⇒ `bun install` 装不上 ⇒ 本跑什么都没证明;不拦 push,但不报绿)|
-| **Alpha 注入模型上下文的库存**(`#1284` / `#1296` / `#1299`) | `[12/12]` `bun packages/ext/scripts/context-injection-inventory.ts --check`:打印每段 alpha 注入(ext 四处 + ui-mac 两份 instruction 文件(identity 每种能力形状一行)+ ui-mac 三个 agent 的 prompt / description)的 id / 落点 / 实测字节 / 上限,并与 [`packages/ext/src/context-injection-inventory.snapshot.txt`](../../packages/ext/src/context-injection-inventory.snapshot.txt) 逐字节比对 | **无独立步** —— 判据在 `bun test (ext)`(登记簿咽喉 + 快照测试)与 `bun test (ui-mac)`(instructions 咽喉 + agent 咽喉,都跑真 injectAlphaConfig)里跑;本地这一步是 AC3「随本地闸打印」 | ① 某段注入超过声明上限(登记簿 import 即抛,ext 整个装不上);② 改了片段 / 上限没重生快照(`--write` 重生,让评审读快照 diff)。勘破与派生链见 [`../architecture/2026-09-08-context-injection-registry.md`](../architecture/2026-09-08-context-injection-registry.md) |
-| **required contexts 对真源**(`#890`) | `[10/10]` `scripts/assert-required-contexts.sh` | **无 —— CI 结构上跑不了**(读分支保护要令牌,fork PR 拿不到 secrets) | 仓内 [`.github/required-contexts.txt`](../../.github/required-contexts.txt) 与 GitHub 分支保护里那份真的对不上:漏一条 ⇒ 那道检查其实不必需(红着也能合),而仓内测试全绿。三档结局:一致 / 漂移(红,点名差在哪条,含「分支保护被整个关掉」)/ **未比对**(没 `gh`、没登录、网络不通 —— 不拦 push,但总结行不再说「全绿」) |
+| **北极星守卫**(零改上游) | `[1/14]` `scripts/north-star-guard.sh`;等价 `git diff --no-renames --diff-filter=DMR --name-only origin/alpha...HEAD -- <上游 8 包>` 去掉 ADR-043 判为 alpha 自有的路径之后必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
+| **前端 SOT round-trip**(`#976`) | `[2/14]` `scripts/assert-frontend-patch-roundtrip.sh`:临时 index → `read-tree <pin>` → `apply --cached --binary` SOT 补丁 → `write-tree`,判 `packages/{app,ui}` 的 **tree sha** 是否逐字等于 `HEAD` 的 | 同上 job(`Assert packages/app + packages/ui == pinned upstream + SOT patch (#976)`;落在这个 job 是因为它 `fetch-depth: 0`,test job 是浅 checkout 取不到 pin) | `packages/{app,ui}` 的改动没进 `frontend/alpha-patches/alpha-frontend.patch` ⇒ **下一次 sync-upstream 或月更 bump 会把它静默删掉**(不是报错)。ADR-034 起那两个包是「pin + 补丁」的投影,sync 的 `apply_alpha_frontend_delta` 会 `rm -rf` 后按补丁重建。已发生过:`f420fe2bb`…`7281627ed` 四个提交补丁缺 vendored `.tgz` 而树里有,存活两天零变红。**修法**:按 [`frontend/README.md`](../../frontend/README.md) 块 4 重生补丁,并与源码改动放进**同一个提交**(判据锚在 HEAD,未提交的改动只会被列成 dirty 清单,不参与判决)。**三档结局**:一致 / 漂移或测量作废(红,点名到具体路径)/ **未比对**(本地浅克隆取不到 pin 对象 ⇒ exit 2,不拦 push 但不报绿;CI 侧 `ROUNDTRIP_REQUIRE_PIN=1` 没有这一档) |
+| **NUL 字节闸** | `[3/14]` `scripts/assert-no-nul-bytes.py` | 同上 job | 字面 NUL 让 `grep` 对整个文件静默失明(`#760`) |
+| **typecheck**(三个 alpha 包) | `[4/14]` contracts-consumer + ext + ui-mac | `typecheck (alpha packages)` | 类型不过 |
+| **契约锁 + 单元测试** | `[5/14]` `check:vendor` + `bun-test-floor.sh` × 3(15 / 100 / 3000)+ `bun-test-app.sh`;其中 ui-mac 全量带 **base fail-set 棘轮**(`#1086`):`ALPHA_KNOWN_FAILS_FILE=scripts/known-fails.tsv` ⇒ [`scripts/known-fails.tsv`](../../scripts/known-fails.tsv) 里逐测试点名的已知红放行(逐条打出理由),**清单外的红拦住并点名**,无法逐测试归因的失败(如模块加载崩溃)一律拦住。失败名的权威是外层 junit 报告(host 回显的子进程 `(fail)` 行不算),并与 console 双轴交叉,轴打架即测量作废 —— 判官在 [`scripts/known-fails-compare.py`](../../scripts/known-fails-compare.py)。清单是**静态文件**:没有 --update、没有运行时写回,加长只能发生在人手写的 diff 里;某行的红修绿后判官提示「清单可缩短」,删行即收紧。行为闸(双向,含「清单外必须拦」)= `packages/ui-mac/src/main/known-fails-ratchet.test.ts`。注意清单只罩这一条全量;`[6/14]` 登记簿的逐文件精确点名**不**吸收已知红(`#946`:滚动 pin 的 packages/app 以 CI=1 钉上游 CI 口径 —— pin 自带的 i18n parity 红被上游自己的 skipIf 治住、新红默认拒;另把 alpha-frontend.patch 里的 alpha 判据文件逐个点名重跑、逐文件判**精确条数**(登记在脚本内,与 CI=1 钉在同一处)—— 删文件/删用例/skipIf 包住都当场红) | `unit tests (alpha packages)` | vendored hash、producer/consumer fixture 或运行时守卫回归;packages/app 半场 = alpha 改动打穿了随 pin 而来的上游测试(#933 形态)或 alpha 判据文件消失 |
+| **闸门文件点名** | `[6/14]` `scripts/assert-gate-files.sh`(全量见 `scripts/gate-files.tsv`) | 同上 job | 某个闸门文件被删/被清空/条数偏离登记 —— 整包地板抓不到。`#844` 起逐条判**精确条数**(少=删了用例,多=新增未登记);改动闸门文件后跑 `bash scripts/assert-gate-files.sh --update` 从实测写回登记簿(all-or-nothing、幂等),例外语法与理由要求见 TSV 抬头或脚本 `--help`。**平台条件闸**(`#1153`):guarantee 列逐字 `[平台:darwin]`/`[平台:linux]` = 该行只在那个平台适用 —— 适用平台照常精确条数;不适用平台**仍真跑该文件**并要求它自报 0 条(标注不是免检牌:该跑的文件被误标 ⇒ >0 条当场红,文件被删也当场红)。**三档结局**(与 `[2/14]`/`[9/14]`/`[10/14]` 同形):全部适用行已验证 / 真失守(红,拦住)/ **存在「本平台不适用」行**(exit 2 —— 门绿但那几行的保证本次未被验证;本地 `[6/14]` 与 CI 的 assert gate files 步都记「未验证」不拦,恒红只会训练人把 darwin-only 判据摘出登记簿) |
+| **seed assets** | `[7/14]` `scripts/assert-seed-assets.sh` | `seed assets present` | 打包资源被静默删除(B7/B15) |
+| **docs gate** | `[8/14]` `scripts/check-doc-links.py <改动的 md>` | `docs gate` | Markdown 相对链接断了 |
+| **worktree bootstrap 能力**(`#916`) | `[9/14]` `scripts/assert-worktree-bootstrap.sh` | **无 —— CI 结构上没有 worktree**(每个 job 都是全新 checkout + `bun install`) | 新建的 worktree 里跑不出可信 typecheck ⇒ 每条 lane 为了下结论都得去动**共享**主 checkout ⇒ 并行时互相污染彼此的门测量(2026-08-02 把一道真闸门误诊成「1/5 间歇性 flaky」是同一形态)。判据是**能力**不是产物:真建 worktree、真跑 typecheck,并且**先证明没 bootstrap 的树确实会红**,再判 bootstrap 过的树绿。**三档结局**:已验证 / 真失守(红,拦住)/ **未验证**(registry 不可达 ⇒ `bun install` 装不上 ⇒ 本跑什么都没证明;不拦 push,但不报绿)|
+| **Alpha 注入模型上下文的库存**(`#1284` / `#1296` / `#1299`) | `[12/14]` `bun packages/ext/scripts/context-injection-inventory.ts --check`:打印每段 alpha 注入(ext 四处 + ui-mac 两份 instruction 文件(identity 每种能力形状一行)+ ui-mac 三个 agent 的 prompt / description)的 id / 落点 / 实测字节 / 上限,并与 [`packages/ext/src/context-injection-inventory.snapshot.txt`](../../packages/ext/src/context-injection-inventory.snapshot.txt) 逐字节比对 | **无独立步** —— 判据在 `bun test (ext)`(登记簿咽喉 + 快照测试)与 `bun test (ui-mac)`(instructions 咽喉 + agent 咽喉,都跑真 injectAlphaConfig)里跑;本地这一步是 AC3「随本地闸打印」 | ① 某段注入超过声明上限(登记簿 import 即抛,ext 整个装不上);② 改了片段 / 上限没重生快照(`--write` 重生,让评审读快照 diff)。勘破与派生链见 [`../architecture/2026-09-08-context-injection-registry.md`](../architecture/2026-09-08-context-injection-registry.md) |
+| **required contexts 对真源**(`#890`) | `[10/14]` `scripts/assert-required-contexts.sh` | **无 —— CI 结构上跑不了**(读分支保护要令牌,fork PR 拿不到 secrets) | 仓内 [`.github/required-contexts.txt`](../../.github/required-contexts.txt) 与 GitHub 分支保护里那份真的对不上:漏一条 ⇒ 那道检查其实不必需(红着也能合),而仓内测试全绿。三档结局:一致 / 漂移(红,点名差在哪条,含「分支保护被整个关掉」)/ **未比对**(没 `gh`、没登录、网络不通 —— 不拦 push,但总结行不再说「全绿」) |
+| **north-star 漂移度量**(`#1288`) | `[13/14]` `scripts/north-star-drift-metrics.sh`:每次本地闸打印三个量 —— **收编面**(守卫 `UPSTREAM_EXCLUDES` 的条目数)/ **上游漂移**(`merge-base(origin/dev, HEAD)` → `HEAD`,辖区内被改/删的上游文件数与行数,`--diff-filter=DMR --no-renames`,**收编白名单里的文件照样计入**)/ **merge-base 年龄**(天)。辖区与白名单长度由 `north-star-guard.sh --print-jurisdiction` 给出,本步一个字都不解释(抄一份就是 `#637` 那个形状) | **无 —— 它不判任何东西**,不该占一个 required context | 第 `[1/14]` 步的守卫基准是 `origin/alpha`,只回答「**这个 PR 自己**有没有新增偏离」;白名单里的每一条它都按设计放行,`origin/dev` 的日期它连问都没问过。于是偏离一点一点长大而没有任何一次 push 提示过 —— 账在某一次 sync 时一次性付(2026-08 那次积到四周 / 375 个提交 ⇒ `#1248`)。**只量不拦**(先量后闸,`#1288` out of scope 明写不新设阈值闸)。三档:0 三个量都量到 / **2 未测量**(取不到 `origin/dev` —— 明说「未测量」并**拒绝打印 0**,给 0 会被读成「零漂移」)/ 1 脚本自己坏了。行为闸 = `packages/ui-mac/src/main/north-star-drift-metrics.test.ts` |
+| **模块体积棘轮 + 阈值告警**(`#1289`) | `[14/14]` `scripts/assert-module-size.sh`:① 棘轮 —— [`scripts/module-size-ratchet.tsv`](../../scripts/module-size-ratchet.tsv) 点名的文件/目录**只许降不许升**(目录那一行是关键:只钉单文件的话,把行搬进一个新文件就能全绿);② 阈值告警 —— 本分支新增/修改的非测试 `.ts`/`.tsx` 超过 800 行就点名(codex harness 口径:目标 <500,超 800 必须新开模块),辖区取守卫的 `ALPHA_OWNED_PACKAGES` | **无 —— 按裁决不拦**,做成 required context 只会是一格永远绿的装饰 | 2026-09-08 实测 `packages/ui-mac/src/main` 非测试 TS **53,539 行**,`ext-install-planner.ts` **3,525**、`ext-transaction.ts` **2,825**,而没有任何东西会在它们继续变大时说一句话。**不硬红**(`#1289` out of scope 明写;今天全仓 27 个非测试文件超过 800 行,硬红 = 开局恒红 ⇒ `--no-verify` ⇒ 十几道门一起关掉,`#754` 形态)。约束力不在退出码,在**登记簿是静态的**:没有 `--update`、没有运行时写回,抬高基线只能发生在人手写的 diff 里(与 `known-fails.tsv` 同一条纪律)。三档:0 都在基线内 / **2 闸响了**(不拦,但总结行不许再说「全绿」)/ 1 登记簿或度量自己坏了。行为闸 = `packages/ui-mac/src/main/module-size-ratchet.test.ts`,含反向用例(把登记文件加长到超基线,闸必须响并点名)|
 
 - **写了一个起子进程跑 `bun test` 的测试(仓内惯例 `*.cases.ts`)?必须把宿主登记进
   `scripts/gate-files.tsv`。** `#893` 起这是**默认拒**:不登记,
@@ -202,7 +204,7 @@ bundle(逐字比对提交 sha,防篡改),推送凭据仅在最后一步临时配
   `name:`」+「每个 job 要么在记录里、要么显式登记为不必需」。
 - **手抄件与真源之间现在有判据了**(`#890`,2026-08-11)。上一条那两个断言只把手抄件与 workflow
   的 job 名对齐 —— 两边一起错就一起自洽,而真正决定「PR 能不能合」的那份清单在 GitHub 的分支保护
-  设置里,此前没有任何东西比对它。现在 `alpha-check.sh` 第 `[10/10]` 步跑
+  设置里,此前没有任何东西比对它。现在 `alpha-check.sh` 第 `[10/14]` 步跑
   [`scripts/assert-required-contexts.sh`](../../scripts/assert-required-contexts.sh),
   把两者逐条比一次,不一致就点名差在哪条。**边界照旧诚实**:CI 里跑不了(fork PR 拿不到
   secrets),没鉴权的那次 push 也跑不了 —— 那时它报「未比对」而不是静默放行。
@@ -274,7 +276,7 @@ linked worktree 的 `git push` 会把 `GIT_DIR` 注入钩子,而它压过测试�
   **在 worktree 里跑 `bun install` 更糟一格(`#916` 实测)**:`core.hooksPath` 是 repository-local 的,
   所以那次写落在**所有 worktree 共享的** `.git/config` 上 —— 受害的不是你,是下一个在别的 lane 里
   `git push` 的人。`scripts/worktree-bootstrap.sh` 在 install 前后夹住并还原这个值,把 worktree 这半边
-  的窗口关掉;第 `[9/10]` 步的 `[3/5]` 条断言它真的关着(先把值设成 `.githooks` 再跑,
+  的窗口关掉;第 `[9/14]` 步的 `[3/5]` 条断言它真的关着(先把值设成 `.githooks` 再跑,
   否则机器上本来就漂成 `.husky/_` 时「前后相等」会恒真)。
   **被打断也关着(`#945` 实测)**:还原走 EXIT trap(TERM/INT/HUP 与失败路径都还原),且两层脚本在
   还原**之前**都先收割自己仍在飞行的子进程组 —— bash 3.2 收到未 trap 的 TERM 时 EXIT trap 立即跑、
@@ -326,7 +328,7 @@ bash scripts/worktree-bootstrap.sh 916-worktree-bootstrap -b feat/916-worktree-b
 `node_modules/.bin`。所以**没装依赖的 worktree 照样能跑起 `tsgo`** —— 借的是**共享主 checkout**
 那一份。它报出来的是成千上万条 `Cannot find module`,而不是 `command not found`:
 看起来像「代码坏了」,实际是「依赖没装」,而且这一跑还悄悄用了别人的工具链。
-第 `[9/10]` 步的 `[1/5]` 条正是拿这个指纹当**反向**判据 —— 先证明未 bootstrap 的树确实会红,
+第 `[9/14]` 步的 `[1/5]` 条正是拿这个指纹当**反向**判据 —— 先证明未 bootstrap 的树确实会红,
 否则「bootstrap 过的树是绿的」这句话空对空。
 
 ### 失败时的约定
@@ -340,7 +342,7 @@ bash scripts/worktree-bootstrap.sh 916-worktree-bootstrap -b feat/916-worktree-b
 ### 装不上依赖的时候:三档,不是两档(`#916` R2,owner 裁决)
 
 `bun install` **依赖网络**。实测(2026-08-11):把 registry 指向不可达地址,**连已经装好的树**
-也会 `failed to resolve` / exit 1(3s)。而 `[9/10]` 每次 push 都跑 ⇒ 若把「装不上」一律判红,
+也会 `failed to resolve` / exit 1(3s)。而 `[9/14]` 每次 push 都跑 ⇒ 若把「装不上」一律判红,
 **网络一抖就拦住 push**,理由与本次改动无关 ⇒ 人会 `--no-verify` ⇒ **十道门一起关掉**。
 这正是 `#890` 那条 lane 推理过并特意避开的形态,所以两处取同一个形状:
 

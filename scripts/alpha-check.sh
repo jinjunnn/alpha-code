@@ -69,10 +69,14 @@ if [ "${ALPHA_HOOKS_DISABLE:-}" != "1" ]; then
 fi
 
 fail=0
-# `#890`:「本次没能比对真源」是**第三种**结局,不是绿也不是红 —— 见第 [10/12] 步。
+# `#890`:「本次没能比对真源」是**第三种**结局,不是绿也不是红 —— 见第 [10/14] 步。
 unverified=0
+# `#1289`:「量到了,而且闸响了,但按票面裁决**不拦**」是**第四种**结局。它与 unverified 不是
+# 一回事,所以不许共用一个变量:unverified 说的是「这一步这次没验成」,warned 说的是「验成了,
+# 结果不好看」。把后者塞进前者会让总结行说出一句假话(「没检查」vs「检查了,超了」)。
+warned=0
 
-echo "▶ [1/12] north-star guard (zero upstream edits)"
+echo "▶ [1/14] north-star guard (zero upstream edits)"
 # `#889`:守卫本体住在 scripts/north-star-guard.sh —— 内联时它一个判据都没有(断言 shell
 # 源码文本按本仓定义是假闸门:守卫被整段注释掉时那种断言照样绿)。真判据 =
 # packages/ui-mac/src/main/north-star-guard.test.ts,它起真 git 仓、造真的上游改动、跑
@@ -84,7 +88,7 @@ else
   fail=1
 fi
 
-echo "▶ [2/12] packages/{app,ui} == pin + SOT 补丁(round-trip,#976)"
+echo "▶ [2/14] packages/{app,ui} == pin + SOT 补丁(round-trip,#976)"
 # `#976`:ADR-034 起 packages/{app,ui} 是「上游 pin + frontend/alpha-patches/alpha-frontend.patch」
 # 的投影。sync-upstream 的还原步(`rm -rf` → `checkout $PIN --` → `git apply`)与月更 bump 的
 # 第一块都会**据此重写那两个目录** ⇒ 改了它们而没重生补丁,改动会被**静默删除**(不是报错)。
@@ -96,7 +100,7 @@ echo "▶ [2/12] packages/{app,ui} == pin + SOT 补丁(round-trip,#976)"
 # 名字集比较对内容漂移结构性失明(实测:改一行 packages/app 源码不重生补丁,bun-test-app.sh
 # 的两轴交叉 5 == 5 绿,扩到全部文件 46 == 46 仍绿)。行为判据 =
 # packages/ui-mac/src/main/frontend-patch-roundtrip.test.ts(起真 git 仓、造真的漂移、跑那个脚本本体)。
-# 三档结局(与 [9/12]/[10/12] 同形):0 一致 / 1 真漂移或测量作废(拦住)/ 2 未比对(浅克隆
+# 三档结局(与 [9/14]/[10/14] 同形):0 一致 / 1 真漂移或测量作废(拦住)/ 2 未比对(浅克隆
 # 取不到 pin —— 不拦 push,但总结行不许再说「全绿」)。实测 0.2s。
 bash scripts/assert-frontend-patch-roundtrip.sh
 frontend_roundtrip_rc=$?
@@ -107,7 +111,7 @@ case "$frontend_roundtrip_rc" in
 esac
 unset frontend_roundtrip_rc
 
-echo "▶ [3/12] no literal NUL bytes in version-controlled files"
+echo "▶ [3/14] no literal NUL bytes in version-controlled files"
 # #760:字面 NUL 不会让运行时出错,它坏的是**验证手段** —— BSD grep / rg / file(1) 看到 NUL 就把
 # 整个文件判成二进制并静默返回空,于是「我 grep 过了,没有」变成假话。本仓 CLAUDE.md 要求
 # 「大文件 Edit 后 grep + git show 双验」,而在这些文件上 grep 会安静地说「没有」。
@@ -119,7 +123,7 @@ else
   echo "    ✗ literal NUL bytes found"; fail=1
 fi
 
-echo "▶ [4/12] typecheck (alpha packages: contracts-consumer + ext + ui-mac + opencode + core + schema)"
+echo "▶ [4/14] typecheck (alpha packages: contracts-consumer + ext + ui-mac + opencode + core + schema)"
 # REQ-027:flag 必须在 `run` 之后 —— `bun --cwd X run Y` 在 bun 1.3.x 打印 usage 后静默退出 0(不执行脚本)。
 # `#1134`:opencode 也在这里。它是上游包,但 alpha 自有的判据文件(ADR-043 谓词:不在 origin/dev
 # 里 ∧ 自报家门)住在它的 test/ 下,而该包的 tsconfig **不排除** *.test.ts / *.cases.ts ⇒ 那些文件
@@ -139,7 +143,7 @@ else
   echo "    ✗ typecheck failed"; fail=1
 fi
 
-echo "▶ [5/12] contract lock + unit tests (contracts-consumer + ext + ui-mac + app)"
+echo "▶ [5/14] contract lock + unit tests (contracts-consumer + ext + ui-mac + app)"
 # REQ-062:ext 测试入门 —— 其中 prompt-rebrand drift 锁逐条断言转写子串仍在上游底座原文,
 # 上游 sync 改写底座即红(ADR-015 合并验证的机械化)。
 #
@@ -158,7 +162,7 @@ echo "▶ [5/12] contract lock + unit tests (contracts-consumer + ext + ui-mac +
 # (判官 = scripts/known-fails-compare.py;junit 为权威、console 双轴交叉,轴打架即测量作废)。
 # 此前这里对「基线既有红」一票否决 ⇒ 每条 lane 只能手工重导基线,不导的默认动作是
 # `--no-verify`(一次关掉全部十道门,#754 演过)。与 CI 的 `bun test (ui-mac)` 同一条命令、
-# 同一份清单。注意清单只罩这一条全量;[6/12] 登记簿的逐文件精确点名**不**吸收已知红。
+# 同一份清单。注意清单只罩这一条全量;[6/14] 登记簿的逐文件精确点名**不**吸收已知红。
 if bun run --cwd packages/alpha-contracts-consumer check:vendor \
   && bash scripts/bun-test-floor.sh 15 packages/alpha-contracts-consumer \
   && bash scripts/bun-test-floor.sh 100 packages/ext \
@@ -169,10 +173,10 @@ else
   echo "    ✗ tests failed"; fail=1
 fi
 
-# `#777`:下面三步此前**本地完全没有**,而 CI 有。缺 [6/12] 尤其贵 —— 登记闸门里
+# `#777`:下面三步此前**本地完全没有**,而 CI 有。缺 [6/14] 尤其贵 —— 登记闸门里
 # llm / core / opencode 那几个只在这一步执行,别的步骤一条都不覆盖它们。
-echo "▶ [6/12] assert gate files (逐个点名;整包地板抓不到单个闸门文件消失)"
-# `#1153`:三档结局(与 [2/12]/[9/12]/[10/12] 同形):0 全部适用行已验证 / 1 真失守拦住 /
+echo "▶ [6/14] assert gate files (逐个点名;整包地板抓不到单个闸门文件消失)"
+# `#1153`:三档结局(与 [2/14]/[9/14]/[10/14] 同形):0 全部适用行已验证 / 1 真失守拦住 /
 # 2 门绿但存在「本平台不适用」的平台条件行(darwin-only 的 sandbox-exec 语料在非 darwin 上
 # 自报 0 条,登记簿验证标注相符后记「未验证」)。本机是 darwin 而今天登记的平台条件行全是
 # darwin ⇒ 本地到不了第 2 档;到得了的是 CI(ubuntu),那边同一脚本同样按三档消费。
@@ -185,14 +189,14 @@ case "$gate_files_rc" in
 esac
 unset gate_files_rc
 
-echo "▶ [7/12] seed assets present (B7)"
+echo "▶ [7/14] seed assets present (B7)"
 if bash scripts/assert-seed-assets.sh; then
   echo "    ✓ seed assets"
 else
   echo "    ✗ seed assets missing"; fail=1
 fi
 
-echo "▶ [8/12] docs gate (relative-link validity in changed Markdown)"
+echo "▶ [8/14] docs gate (relative-link validity in changed Markdown)"
 # CI 只查**这次改动过的** Markdown(detect job 收集)。本地口径同构:相对 origin/alpha 的
 # 提交 delta ∪ 未提交工作树改动,再滤成 *.md。一个都没有 ⇒ 与 CI 一样是 no-op。
 md_committed="$(git diff --name-only --diff-filter=d origin/alpha...HEAD -- '*.md' 2>/dev/null || true)"
@@ -210,9 +214,9 @@ else
   fi
 fi
 
-echo "▶ [9/12] worktree bootstrap 能力(新建 worktree 自己就能跑出可信 typecheck)(#916)"
+echo "▶ [9/14] worktree bootstrap 能力(新建 worktree 自己就能跑出可信 typecheck)(#916)"
 # 这一步在 alpha-ci 里**没有对应**,所以它不进 CI_STEPS(那张表是 CI 步骤的对照表)——
-# 与第 [10/12] 步同为「只能落在本地」的门,但理由不同:CI 的每个 job 都是一次全新
+# 与第 [10/14] 步同为「只能落在本地」的门,但理由不同:CI 的每个 job 都是一次全新
 # `actions/checkout` + `bun install`,**结构上不存在 worktree**;这道门守的是本机多 lane
 # 并行时的那条能力。缺了它的世界长这样(`#916` 票面记录的实证):worktree 里拿不到真
 # typecheck ⇒ 每条 lane 为了下结论都得去动**共享**主 checkout ⇒ 谁先跑谁量到别人的树。
@@ -222,7 +226,7 @@ echo "▶ [9/12] worktree bootstrap 能力(新建 worktree 自己就能跑出可
 # 「文件里写着 bun install」(按本仓定义那是假闸门),而是真建 worktree、真跑 typecheck,
 # 并且**先证明没 bootstrap 的树确实会红**,再用同一个探针判 bootstrap 过的树绿。
 # 代价:本机实测约 40s(3 棵探针树 + 一次 `bun install` 9.5s + 三次 ui-mac typecheck)。
-# 退出码三档(与第 [10/12] 步同形):0 已验证 / 1 真失守拦住 / 2 本次未验证不拦。
+# 退出码三档(与第 [10/14] 步同形):0 已验证 / 1 真失守拦住 / 2 本次未验证不拦。
 # 第 2 档的理由(owner 裁决,`#916` R2):`bun install` **依赖网络**(实测:已装好的树指向
 # 不可达 registry 也会 `failed to resolve` / exit 1),而这一步每次 push 都跑 ⇒ 不给豁免的话
 # 网络一抖就拦住 push,理由与本次改动无关 ⇒ 人会 `--no-verify` ⇒ **十道门一起关掉**。
@@ -238,7 +242,7 @@ case "$worktree_bootstrap_rc" in
 esac
 unset worktree_bootstrap_rc
 
-echo "▶ [10/12] required contexts vs GitHub 分支保护真源 (#890)"
+echo "▶ [10/14] required contexts vs GitHub 分支保护真源 (#890)"
 # 这一步在 alpha-ci 里**没有对应**,所以它不进 CI_STEPS(那张表是 CI 步骤的对照表)。
 # 理由:读分支保护要带令牌,而 alpha-ci 触发在 `pull_request` —— fork PR 结构上拿不到
 # secrets。有鉴权的地方是这台机器,所以这道门只能落在本地。放最后,因为它是九步真闸门跑完
@@ -257,7 +261,7 @@ case "$required_contexts_rc" in
 esac
 unset required_contexts_rc
 
-echo "▶ [11/12] BYOK 目录 id 上游还在不在 (#1281)"
+echo "▶ [11/14] BYOK 目录 id 上游还在不在 (#1281)"
 # 这一步在 alpha-ci 里**没有对应**(要 provider key,而 CI 结构上没有),与第 [9]/[10] 步同为
 # 「只能落在本地」的门,故不进 CI_STEPS。
 #
@@ -282,7 +286,7 @@ case "$byok_catalog_rc" in
 esac
 unset byok_catalog_rc
 
-echo "▶ [12/12] alpha 注入模型上下文的库存(REQ-157 #1284/#1296/#1299:ext 四处 + ui-mac 两份 instruction 文件 + ui-mac 三个 agent 的 prompt/description,每段实测字节 / 上限,与快照逐字节比对)"
+echo "▶ [12/14] alpha 注入模型上下文的库存(REQ-157 #1284/#1296/#1299:ext 四处 + ui-mac 两份 instruction 文件 + ui-mac 三个 agent 的 prompt/description,每段实测字节 / 上限,与快照逐字节比对)"
 # 这一步在 alpha-ci 里**没有对应的独立步**(判据本身 —— 快照测试与咽喉测试 —— 已在 `bun test (ext)`
 # 与 `bun test (ui-mac)` 里跑,那两步是 MIRRORED 的),所以它不进 CI_STEPS。它存在的理由是 AC3 的后半句
 # 「并随本地闸打印」:把「Alpha 今天往每次对话里塞了什么、各多大、上限多少」打在每次 push 前的屏幕上,
@@ -305,6 +309,60 @@ else
   echo "    ✗ context injection inventory 失守 —— 某段 alpha 注入超过上限,或改了片段没重生快照(见上)"; fail=1
 fi
 
+echo "▶ [13/14] north-star 漂移度量(收编面 / 上游漂移 / merge-base 年龄,#1288)"
+# 这一步在 alpha-ci 里**没有对应**(它不判任何东西,不该占一个 required context),与第
+# [9]/[10]/[11]/[12] 步同为「只落在本地」的那一类,故不进 CI_STEPS。
+#
+# 它补的是第 [1/14] 步结构上答不了的两个问题。守卫的基准是 `origin/alpha`(`#889` 的既定裁决,
+# 本步**不动**它),于是它只回答「**这个 PR 自己**有没有新增偏离」;而
+#   · 收编白名单里的每一条,守卫都按设计**放行** ⇒ 白名单背后那堆行数对它永远不可见;
+#   · 「上一次跟上游对齐是多久以前」它连问都没问过。
+# 后果是那种「每次只多一点点」的债:偏离一点一点长大,而没有任何一次 push 提示过。账在某一次
+# sync 时一次性付 —— 2026-08 那次积到四周 / 375 个提交,冲突面直接变成一张大票(`#1248`)。
+#
+# **只量,不拦**(先量后闸,`#1288` out of scope 明写不新设阈值闸)。退出码两档 + 一档坏:
+# 0 三个量都量到 / 2 上游镜像取不到 ⇒ **未测量**(不是 0,更不是「零漂移」)/ 1 脚本自己坏了。
+# 辖区与白名单长度由 `north-star-guard.sh --print-jurisdiction` 给出 —— 本步一个字都不解释,
+# 抄一份就是 `#637` 那个已经咬过我们一次的形状。
+# 判据本体:packages/ui-mac/src/main/north-star-drift-metrics.test.ts(起真 git 仓、造已知的
+# 漂移与已知的年龄,断言三个量各自**跟着树变**;每个量各带一个杀「印写死的数」的控制组)。
+bash scripts/north-star-drift-metrics.sh
+drift_metrics_rc=$?
+case "$drift_metrics_rc" in
+0) ;; # 脚本自己把三个量打出来了
+2) unverified=1 ;; # 脚本自己打了「未测量」;不拦 push,但总结行不许再说「全绿」
+*) echo "    ✗ 漂移度量作废 —— 守卫辖区读不出来或 git diff 算不出来(见上);这不是「零漂移」"; fail=1 ;;
+esac
+unset drift_metrics_rc
+
+echo "▶ [14/14] 模块体积棘轮 + 阈值告警 (#1289)"
+# 这一步在 alpha-ci 里**没有对应**(它按裁决不拦,做成 required context 只会是一格永远绿的
+# 装饰),故不进 CI_STEPS。
+#
+# 缺陷:2026-09-08 实测 packages/ui-mac/src/main 非测试 TS **53,539 行**,其中
+# ext-install-planner.ts **3,525**、ext-transaction.ts **2,825** —— 而没有任何东西会在它们继续
+# 变大时说一句话。这种债每次只多一点点,等到必须拆的时候,拆的成本已经比当初拦住它贵很多倍。
+#
+# 两半:① 棘轮 —— scripts/module-size-ratchet.tsv 点名的文件/目录只许降不许升(目录那一行是
+# 关键:只钉单文件的话,把行搬进新文件就能全绿);② 阈值告警 —— 本分支新增/修改的非测试
+# .ts/.tsx 超过 800 行(codex harness 口径)就点名,要求票面写理由。
+#
+# **不硬红**(`#1289` out of scope 明写)。今天全仓有 27 个非测试文件超过 800 行,做成硬红等于
+# 开局恒红,而本仓已经演过一遍那个结局(`#754`:门红 ⇒ `--no-verify` ⇒ 十几道门一起关掉)。
+# 棘轮的约束力不在退出码,在**登记簿是静态的**:没有 --update、没有运行时写回,抬高基线只能
+# 发生在人手写的 diff 里(与 scripts/known-fails.tsv 同一条纪律)。
+# 退出码:0 都在基线内 / 2 闸响了(不拦,但总结行换话)/ 1 登记簿或度量自己坏了。
+# 判据本体:packages/ui-mac/src/main/module-size-ratchet.test.ts(反向用例:把登记文件加长到
+# 超基线,闸必须响并点名;每条都带控制组证明夹具测得出已知的坏)。
+bash scripts/assert-module-size.sh
+module_size_rc=$?
+case "$module_size_rc" in
+0) echo "    ✓ 模块体积:棘轮全部在基线内,本分支改动里没有超阈值的文件" ;;
+2) warned=1 ;; # 脚本自己点名了;不拦 push,但总结行不许再说「全绿」
+*) echo "    ✗ 模块体积登记簿/度量作废 —— 登记的路径不存在、行格式非法或数不出行数(见上)"; fail=1 ;;
+esac
+unset module_size_rc
+
 # ── 覆盖自陈(`#777`)──────────────────────────────────────────────────────────
 # 「和 CI 1:1」以前是散文。现在这张表由脚本自己打出来,并由
 # packages/ui-mac/src/main/local-gate-parity.test.ts 反向核对(CI 加了步而这里没登记即红)。
@@ -318,14 +376,21 @@ echo "   注:MIRRORED = 同一条命令;SUPERSET = 本地还多验了;DEGRADED =
 echo
 if [ "$fail" -ne 0 ]; then
   echo "❌ local gates failed — fix before pushing (alpha-ci would fail the same way)."
-elif [ "$unverified" -ne 0 ]; then
-  # `#890`:门都绿了,但**有一步这次没验成**(第 [9/12] 的 registry 不可达,或第 [10/12] 的
+elif [ "$unverified" -ne 0 ] || [ "$warned" -ne 0 ]; then
+  # `#890`:门都绿了,但**有一步这次没验成**(第 [9/14] 的 registry 不可达,或第 [10/14] 的
   # 分支保护真源读不到)。说「全绿」会把
   # 「没检查」读成「检查过了」—— 那正是这道门要消掉的形态,所以这里换一句话。
   echo "⚠️  local gates passed, but **有一步这次没验成**(见上面标了「未验证 / 未比对」的那一步)。"
-  echo "    可以 push;但本次运行不构成那一步的证据 —— 第 [9/12] 未验证 = worktree bootstrap 能力"
-  echo "    这次没被验证(registry 不可达);第 [10/12] 未比对 = 仓内记录与 alpha 分支保护是否一致没读到真源;"
-  echo "    第 [11/12] 未验证 = 有 BYOK provider 没 key,它那几个目录 id 上游还在不在这次没问到(逐条点名在上面)。"
+  echo "    可以 push;但本次运行不构成那一步的证据 —— 第 [9/14] 未验证 = worktree bootstrap 能力"
+  echo "    这次没被验证(registry 不可达);第 [10/14] 未比对 = 仓内记录与 alpha 分支保护是否一致没读到真源;"
+  echo "    第 [11/14] 未验证 = 有 BYOK provider 没 key,它那几个目录 id 上游还在不在这次没问到(逐条点名在上面)。"
+  echo "    第 [13/14] 未测量 = 取不到上游镜像 origin/dev,收编面总量与 merge-base 年龄这次没算(不是 0)。"
+  # `#1289`:第四种结局 —— 量成了,而且超了,但按裁决不拦。它与「没验成」必须分开说,否则
+  # 总结行会把「检查了,超了」讲成「没检查」。
+  if [ "$warned" -ne 0 ]; then
+    echo "    第 [14/14] **闸响了**(不是没验成):模块体积超基线/超阈值,逐条点名在上面 ——"
+    echo "    要么这一次拆小它,要么在票面写明理由并在同一个 PR 里人手改 scripts/module-size-ratchet.tsv。"
+  fi
 else
   echo "✅ all local gates green — safe to push (alpha-ci will mirror this)."
 fi
