@@ -36,7 +36,7 @@ describe("byokOutputCap —— 判据形状域", () => {
   })
 
   test("表里没有这个模型 ⇒ 一个字节都不改(fail-closed,保持上游 32000)", () => {
-    expect(byokOutputCap({ ...base, apiModelID: "kimi-k2" })).toEqual({ raise: false, reason: "no-reading" })
+    expect(byokOutputCap({ ...base, apiModelID: "kimi-k3" })).toEqual({ raise: false, reason: "no-reading" })
     expect(byokOutputCap({ ...base, engineProviderID: "moonshot-byok" })).toEqual({ raise: false, reason: "no-reading" })
     expect(byokOutputCap({ ...base, engineProviderID: undefined })).toEqual({ raise: false, reason: "no-reading" })
   })
@@ -121,7 +121,7 @@ describe("真 AlphaExt 的 chat.params 钩子", () => {
 
   test("无读数的 BYOK 模型 / 用户自定义节点:仍是上游的 32000", async () => {
     const hook = await load()
-    expect((await call(hook, "moonshot-byok", "kimi-k2", "https://api.moonshot.cn/v1")).maxOutputTokens).toBe(32000)
+    expect((await call(hook, "moonshot-byok", "kimi-k3", "https://api.moonshot.cn/v1")).maxOutputTokens).toBe(32000)
     expect((await call(hook, "my-own", "glm-5.2", "https://my.proxy.example/v1")).maxOutputTokens).toBe(32000)
   })
 

@@ -235,8 +235,8 @@ DOC §3.4 对 qwen 每档只有单样本且 `high`/`medium`/`max` 撞到 256 上
 
 ### 8.4 未实打 ⇒ 显式无档(不是「没顾上」)
 
-`minimax-byok:MiniMax-M2`、`alibaba-byok:{qwen3.8-max-preview, qwen-plus, qwen3-coder-plus}`、
-`moonshot-byok:{kimi-k2, moonshot-v1-128k}`:本机没有 `MINIMAX_API_KEY` / `DASHSCOPE_API_KEY` /
+`minimax-byok:MiniMax-M2`、`alibaba-byok:{qwen3.8-max, qwen-plus, qwen3-coder-plus}`、
+`moonshot-byok:{kimi-k3, kimi-k2.6}`(#1281:原 kimi-k2 / moonshot-v1-128k 上游已退役):本机没有 `MINIMAX_API_KEY` / `DASHSCOPE_API_KEY` /
 `MOONSHOT_API_KEY`(alpha-platform `.env` 与 owner 本轮提供的 key 里都没有),一格没打。**不凭 models.dev 或
 官网文案推断** —— 那正是 v1 作废的形态。alibaba 还有第二层:上游 `enable_thinking` 只对
 `providerID === "alibaba-cn"` 严格等号写,`alibaba-byok` 永不匹配,猜着发会让整个节点报错(票面 Out of scope)。

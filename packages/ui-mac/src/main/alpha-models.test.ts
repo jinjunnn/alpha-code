@@ -554,11 +554,11 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
   /** 本机无凭据、一格没打成 ⇒ 显式无档。键同样是引擎侧 id;值 = 为什么没验(不是文法结论,是可达性)。 */
   const UNVERIFIED_TIERLESS: Record<string, string> = {
     "minimax-byok:MiniMax-M2": "MINIMAX_API_KEY 本机无(alpha-platform .env 与 owner 提供的 key 都没有);上游黑名单族(transform.ts variants() 的 minimax),一格没打",
-    "alibaba-byok:qwen3.8-max-preview": "DASHSCOPE_API_KEY 本机无;且上游 enable_thinking 只对 providerID === \"alibaba-cn\" 严格等号写,alibaba-byok 永不匹配 —— 猜 enable_thinking 会让整个节点报错(票面 Out of scope)",
-    "alibaba-byok:qwen-plus": "同 qwen3.8-max-preview",
-    "alibaba-byok:qwen3-coder-plus": "同 qwen3.8-max-preview",
-    "moonshot-byok:kimi-k2": "MOONSHOT_API_KEY 本机无;上游黑名单族(kimi),一格没打",
-    "moonshot-byok:moonshot-v1-128k": "MOONSHOT_API_KEY 本机无",
+    "alibaba-byok:qwen3.8-max": "DASHSCOPE_API_KEY 本机无;且上游 enable_thinking 只对 providerID === \"alibaba-cn\" 严格等号写,alibaba-byok 永不匹配 —— 猜 enable_thinking 会让整个节点报错(票面 Out of scope)",
+    "alibaba-byok:qwen-plus": "同 qwen3.8-max",
+    "alibaba-byok:qwen3-coder-plus": "同 qwen3.8-max",
+    "moonshot-byok:kimi-k3": "MOONSHOT_API_KEY 本机无;上游黑名单族(kimi),一格没打。#1281 起由 kimi-k2 换来 —— 后者上游 2026-05-25 已停用",
+    "moonshot-byok:kimi-k2.6": "MOONSHOT_API_KEY 本机无。#1281 起由 moonshot-v1-128k 换来 —— 后者上游 2026-08-31 已退役",
   }
   const isOffTier = (options: Record<string, unknown>) =>
     (options.thinking as { type?: unknown } | undefined)?.type === "disabled" || options.reasoningEffort === "none"
@@ -625,7 +625,7 @@ describe("REQ-153 #1237:档位形状逐腿取自实打表;未实打的模型钉�
       pinned++
     }
     expect(pinned).toBe(6)
-    // 平台侧 qwen3.7-* 经 OR 有档,直连 alibaba-byok 的是另一组 id(qwen3.8-max-preview / qwen-plus / qwen3-coder-plus),
+    // 平台侧 qwen3.7-* 经 OR 有档,直连 alibaba-byok 的是另一组 id(qwen3.8-max / qwen-plus / qwen3-coder-plus),
     // 不存在同名派生;这里钉住「平台的 qwen 档位没有漏进 alibaba 直连节点」这条不变量。
     for (const model of Object.values(cfg.provider["alibaba-byok"]!.models)) expect(model.variants).toBeUndefined()
   })
