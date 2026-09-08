@@ -1011,6 +1011,7 @@ bundle(§7.3 的 70 条签名里),只是这次工作负载没走到。围栏要�
 
 | 额外的写入根 | 来源模块(产物里可达) |
 | --- | --- |
+| `<alphaGlobalRoot>/bin/alpha-shell-denied`(+`chmod 0755`) | `ext/src/shell-sandbox.ts:215-217` —— 围栏装不上时的 fail-closed 分支;根与 A 段第 10 行相同,所以不额外扩大可写集 |
 | `<userDataPath>/alpha-secrets/**`(`0700`/`0600`) | `alpha-secret-files.ts` |
 | `<userDataPath>/alpha-mcp-secrets/<server>/<verId>/<VAR>` | `alpha-mcp-secrets.ts`(源码侧 19 处) |
 | `<userDataPath>/catalog-channel-state.json` | `catalog-channels.ts` |
