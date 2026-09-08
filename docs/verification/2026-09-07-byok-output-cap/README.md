@@ -86,7 +86,7 @@ DeepSeek 侧不存在这个问题:它的上下文是 1048576,393216 装得下(�
 
 ## 没量到的 6 个
 
-`MiniMax-M2`、`qwen3.8-max-preview`、`qwen-plus`、`qwen3-coder-plus`、`kimi-k2`、`moonshot-v1-128k`
+`MiniMax-M2`、`qwen3.8-max`、`qwen-plus`、`qwen3-coder-plus`、`kimi-k3`、`kimi-k2.6`
 —— 本机没有这三家的凭据,探不了。它们**保持 32000 不动**(少发不会错,多发是硬 400),并显式登记在
 `byok-output-cap.ts` 的 `BYOK_OUTPUT_CAP_UNREAD` 里。要抬它们,需要 owner 提供对应的 key,
 之后照本文档同一套三点探针重跑即可。
@@ -119,6 +119,20 @@ OpenRouter 要跨多家 provider 路由,公布的是**取底**后的值,结构�
 方向对我们有利。
 
 拿到 `MINIMAX_API_KEY` 后照 [`probe.py`](probe.py) 跑三点探针,升级成 `probed`。
+
+## 后续(2026-09-08,owner 裁决 #1281)
+
+两个上游已退役的 id 已按 owner 裁决**替换成继任 id**(不下架):`kimi-k2` → `kimi-k3`、
+`moonshot-v1-128k` → `kimi-k2.6`;`qwen3.8-max-preview` → `qwen3.8-max`(证据弱一档:只是
+「当前清单里没有」,不是明文退役)。
+
+并立了一道**持续判据**,让下次不必再靠人肉网查:`packages/ui-mac/scripts/verify-byok-catalog.ts`
+(`alpha-check` 第 [11/11] 步)对**有 key 的** provider 拉 `GET <baseURL>/models`,断言目录里每个
+id 都在上游在册清单中。三档结局照本仓 `#890` 形状:`0 已验证 / 1 真失守拦住 / 2 本次未验证不拦`,
+未验证的 provider 与其每个 id 逐条点名。
+
+可行性是勘破出来的,不是设想:2026-09-08 实打,智谱 / DeepSeek 的 `/models` 带 key 均回 200 并列出
+真实 id。**替换后新 id 仍未被验证** —— 它们要等对应的 key 出现,那道判据当场给答案。
 
 ## 顺带的发现(不属于本仓)
 

@@ -26,7 +26,7 @@ review_after: 2026-10-30
 
 1. **至少一条可路由的 route**:平台持有该家原生 key,或 OpenRouter 已上架该
    模型(千问系截至 2026-07-23 无原生 key、纯 OpenRouter 兜底 ——
-   qwen3.8-max-preview 因 OpenRouter 未上架而无法上代理节点,就是这个卡点)。
+   qwen3.8-max 因 OpenRouter 未上架同名条目而无法上代理节点,就是这个卡点)。
 2. **真实定价**:`routes[].pricing`(USD/Mtok)直接驱动 ledger 计价,必须与
    上游实价一致,不许估。
 
@@ -61,7 +61,9 @@ review_after: 2026-10-30
 
 1. `packages/ui-mac/src/main/alpha-models.json`:
    - 已有 provider 加模型:`byokProviders[].models` 数组加 registry 真实
-     model id(如 alibaba 加 `qwen3.8-max-preview`)。
+     model id(如 alibaba 加 `qwen3.8-max`)。
+   **加完跑一次 `bun packages/ui-mac/scripts/verify-byok-catalog.ts`**(#1281):有该家 key 时它会当场
+   告诉你这个 id 上游认不认;没 key 时它会把这个 id 列进「本次未验证」,不会假装绿。
    - 新 provider:整段新增 `{ id, name, compat(openai|anthropic), baseURL,
      keyEnv, pico, models }`;要出现在「添加节点」快捷卡加 `preset: true` +
      `presetIds`。**同时**去 alpha-platform 把 id 加进 edition 白名单

@@ -116,30 +116,29 @@ export const BYOK_OUTPUT_CAP_READINGS: readonly ByokOutputCapReading[] = [
  *  这不是"以后再说"的清单,是漂移锁的另一半:目录新增一个 id 而两边都没登记 ⇒ 测试红,
  *  逼一次显式选择(量它,或者写进这里说明为什么量不了)。 */
 export const BYOK_OUTPUT_CAP_UNREAD: readonly { apiModelID: string; why: string }[] = [
-  // 2026-09-07 网查(owner 授权:本机没有这三家凭据,BYOK 是给第三方用的)。「没量」不是同一个原因,
-  // 分成三类写清楚,才知道各自缺什么:
-  //   ① 有目录读数 → 已进 READINGS(MiniMax-M2,catalog 级);
-  //   ② 上游已退役 → 不需要上限,需要的是从目录里拿掉(#1281);
-  //   ③ 文档只给上下文不给最大输出、目录也无同名条目 → 只能等凭据。
+  // 2026-09-07 网查 + 2026-09-08 owner 裁决(#1281:替换成继任 id,不下架)。目录里两个上游已退役的
+  // id 已换掉,所以这里剩下的全是**同一个原因**:本机没有该家凭据。这些 id 上游还在不在,由
+  // `packages/ui-mac/scripts/verify-byok-catalog.ts`(alpha-check 第 [11/11] 步)在有 key 时给出答案 ——
+  // 不再靠人肉网查。
   {
-    apiModelID: "kimi-k2",
-    why: "上游已退役:platform.kimi.ai/docs/models 明文「kimi-k2 系列 2026-05-25 停用」,调用返回 404。不需要上限,需要从目录拿掉 —— 见 #1281",
-  },
-  {
-    apiModelID: "moonshot-v1-128k",
-    why: "上游已退役:同页「moonshot-v1 系列 2026-08-31 退役」,调用返回 404「模型不存在」。同 #1281",
-  },
-  {
-    apiModelID: "qwen3.8-max-preview",
-    why: "阿里当前模型清单未列出该 id(在列的是 qwen3.8-max,无 -preview 后缀);id 本身待核实(#1281)。核实前不填上限",
+    apiModelID: "qwen3.8-max",
+    why: "阿里文档只给上下文,未公布最大输出;OpenRouter 目录里的是 qwen3.8-max-0902,非同名。无 DASHSCOPE_API_KEY,探不了。(#1281 起由 qwen3.8-max-preview 换来 —— 后者不在阿里当前清单里)",
   },
   {
     apiModelID: "qwen-plus",
-    why: "阿里文档只给上下文(1M),未公布最大输出;OpenRouter 目录无同名条目(qwen-plus 是滚动别名,当代指向未知)。无 DASHSCOPE_API_KEY,探不了",
+    why: "同 qwen3.8-max:文档只给上下文(1M),未公布最大输出;目录无同名条目(滚动别名,当代指向未知)",
   },
   {
     apiModelID: "qwen3-coder-plus",
-    why: "同 qwen-plus:文档只给上下文(1M),未公布最大输出,目录无同名条目。无 DASHSCOPE_API_KEY,探不了",
+    why: "同 qwen3.8-max:文档只给上下文(1M),未公布最大输出,目录无同名条目",
+  },
+  {
+    apiModelID: "kimi-k3",
+    why: "Moonshot 当代旗舰(1M 上下文),#1281 起由已退役的 kimi-k2 换来。文档未公布 max_tokens 上限;无 MOONSHOT_API_KEY,探不了",
+  },
+  {
+    apiModelID: "kimi-k2.6",
+    why: "Moonshot 当代通用型(256k 上下文),#1281 起由已退役的 moonshot-v1-128k 换来。文档未公布 max_tokens 上限;无 MOONSHOT_API_KEY,探不了",
   },
 ]
 
