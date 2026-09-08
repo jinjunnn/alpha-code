@@ -198,9 +198,9 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
  * `.cases.ts` 键豁免:它们不进整包计数,由第 ④ 层反向那半(每个 cases 文件必须被一个已登记宿主跑到)兜住。
  */
 export const KEPT_SOURCE_TEXT_READS: Record<string, SourceTextEntry> = {
-  "packages/ui-mac/src/main/agent-injection-throat.test.ts": {
-    why: "REQ-157 #1299 ui-mac agent 咽喉的 drift 锁:判官把 cfg.agent 下 mode / permission.** 槽里的值按引擎的声明式字面量(packages/core/src/v1/config/permission.ts 的 Literals([\"ask\", \"allow\", \"deny\"])、packages/opencode/src/agent/agent.ts 的 Literals([\"subagent\", \"primary\", \"all\"]))判成动词,其余当成字点名。主语就是那两段字面量文本本身 —— 引擎哪天加一个动词而这里没跟,生产写出的合法新动词会被判官当成未登记的字(fail-closed,红而不是假绿),这两行读取让「没跟上」在引擎源码改动的同一次 diff 里就红。两个引擎模块在 bun 侧 import 会把 effect Schema 拉进来,值断言没有更便宜的入口。守不住:引擎在别处又定义一套同义动词而这两处字面量不动 —— 那时判官仍按旧集合判,新动词照样被点名,仍是红。",
-    evidence: "#1299",
+  "packages/ui-mac/src/main/config-injection-throat.test.ts": {
+    why: "REQ-157 #1305 ui-mac 整份 config 咽喉的 drift 锁(#1299 的 agent 咽喉并入后同一份):判官把 cfg.agent.<name>.mode / cfg.agent.<name>.permission.** / 顶层 cfg.permission.** 槽里的值按引擎的声明式字面量(packages/core/src/v1/config/permission.ts 的 Literals([\"ask\", \"allow\", \"deny\"])、packages/opencode/src/agent/agent.ts 的 Literals([\"subagent\", \"primary\", \"all\"]))判成动词,其余当成字点名。主语就是那两段字面量文本本身 —— 引擎哪天加一个动词而这里没跟,生产写出的合法新动词会被判官当成未登记的字(fail-closed,红而不是假绿),这两行读取让「没跟上」在引擎源码改动的同一次 diff 里就红。两个引擎模块在 bun 侧 import 会把 effect Schema 拉进来,值断言没有更便宜的入口。路径字面量必须与读调用同一行(#1304 踩过:放进 const 让本层谓词零命中)。守不住:引擎在别处又定义一套同义动词而这两处字面量不动 —— 那时判官仍按旧集合判,新动词照样被点名,仍是红。",
+    evidence: "#1305",
     lines: 2,
   },
   "packages/ui-mac/src/main/boot-dangling-onboarding-wiring.test.ts": {

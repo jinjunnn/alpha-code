@@ -291,7 +291,7 @@ echo "▶ [12/12] alpha 注入模型上下文的库存(REQ-157 #1284/#1296/#1299
 # 库存是**一份**:packages/ext 的四处(`#1295`)、ui-mac 主进程经 cfg.instructions 写的
 # alpha-identity.md(4 种能力形状各一行)/ alpha-behavior.md(`#1296`),以及 ui-mac 经 cfg.agent.* 写的
 # 三个 alpha agent 的 prompt / description(`#1299`)—— 登记簿直接 import ui-mac 那三个零依赖的内容模块,
-# ui-mac 侧的咽喉在 packages/ui-mac/src/main/instruction-injection-throat.test.ts 与 agent-injection-throat.test.ts。
+# ui-mac 侧的咽喉是一道、罩整份 config:packages/ui-mac/src/main/config-injection-throat.test.ts(`#1305`)。
 #
 # 两种红,都不是「跑过了都绿」能盖住的:① 登记簿在 import 时就抛(某片段超过声明上限,
 # ContextBudgetError,消息里有 id / 实测 / 上限)—— 库存打不出来,退出码非零;② 库存与仓内快照

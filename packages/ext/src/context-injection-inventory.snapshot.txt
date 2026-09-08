@@ -49,7 +49,12 @@ references (paths / verbs / definitions supplied by others — carry no Alpha te
   ref.shell              /shell             REQ-138 引擎 shell 围栏 wrapper 路径(shell-sandbox.ts)
   ref.skills.paths       /skills/paths      出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字
   ref.permission.skill   /permission/skill  REQ-067 出厂禁项的 "deny" 动词(factory-deny.ts)
-  ref.mcp                /mcp               云 MCP server 定义,main 经 env 交来(cloud-websearch-kill.ts);工具表是远端 server 的字
+  ref.mcp                /mcp               云 MCP server 定义(type / url / enabled / oauth / headers.Authorization = {file:} 引用):ext 经 env 装(cloud-websearch-kill.ts),ui-mac 主进程直写并对用户全局 MCP 钉 enabled:false(alpha-config-injection.ts / cloud-sidecar-config.ts / mcp-default-deny.ts / ext-disabled-injection.ts);工具表是远端 server 的字
+  ref.schema             /$schema           ui-mac 无继承 config 时种下的 JSON Schema URL(alpha-config-injection.ts:91)
+  ref.plugin             /plugin            @alpha-code/ext 自包含 bundle 的绝对路径(alpha-config-injection.ts:105-109);bundle 里 alpha 的字各自登记在本簿
+  ref.enabled_providers  /enabled_providers provider 白名单 id(alpha-models.ts,含用户 opencode.jsonc 里的 id);不进模型上下文
+  ref.model              /model             默认模型 <providerID>/<modelID>(alpha-models.ts);引擎把选中模型的 id 原样写进 environment 段(session/system.ts:74),那是 catalog / 上游厂商的 id,不是 alpha 的字
+  ref.provider           /provider          模型菜单:npm / 展示名 / baseURL / {file:} 密钥引用 / 档位 options(alpha-models.ts,数据在 alpha-models.json);展示名只进 picker,不进模型上下文
 context-bearing plugin hooks (from packages/plugin Hooks): config, tool, chat.message, command.execute.before, tool.execute.after, experimental.chat.messages.transform, experimental.chat.system.transform, experimental.session.compacting, experimental.text.complete, tool.definition
 instruction files (ui-mac main writes them into cfg.instructions; engine session/instruction.ts reads them into the system segment; identity has one row per reachable capability shape): instruction.alpha-behavior, instruction.alpha-identity, instruction.alpha-identity+cloudDispatch, instruction.alpha-identity+websearch, instruction.alpha-identity+websearch+cloudDispatch
 ui-mac agents (main writes cfg.agent.<name>.{prompt,description}; prompt replaces the base system prompt at llm/request.ts:64, description enters the subagent list): agent.alpha-automation.prompt, agent.alpha-automation.description, agent.alpha-readonly.prompt, agent.alpha-readonly.description, agent.alpha-automation-standard.prompt, agent.alpha-automation-standard.description
