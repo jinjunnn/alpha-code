@@ -20,9 +20,9 @@ review_after: 2027-03-08
 - `packages/ext` 往模型上下文送 alpha 自己写的字,通路有**四处**,不是票面实读时说的三处 ——
   `factory-deny.ts` 的占位 command(description + 含技能名的 template)是 grep
   `maxTokens|maxLength|byteLength|truncat|budget` 抓不到的第四处。加上 ui-mac 经 `cfg.instructions`
-  的第五处(`#1296`,§8),五处现在全部经**同一份** `context-injection.ts` 登记:**38 个片段,合计
-  22,031 B**(2026-09-08 实测,见快照;其中 ext 33 条 17,122 B,ui-mac 5 条 4,909 B),每条声明自己的
-  上限,超限在**登记时抛出**,不裁剪。
+  的第五处(`#1296`,§8)与 ui-mac 经 `cfg.agent.*` 的第六处(`#1299`,§9),六处现在全部经**同一份**
+  `context-injection.ts` 登记:**44 个片段,合计 23,458 B**(2026-09-08 实测,见快照;其中 ext 33 条
+  17,122 B,ui-mac 11 条 6,336 B),每条声明自己的上限,超限在**登记时抛出**,不裁剪。
 - 「唯一通路」不靠散文清单,靠一条每环都可执行的派生链(§1):上游 `Hooks` 接口 → 逐键分类 →
   真插件实现集 → 每个载上下文的钩子一个咽喉 → 每个咽喉带一个已知的坏。
 - 计量单位是 **UTF-8 字节**,只此一种;字节 → token 的换算与编码器有关,仓内没有分词器,**未实测**,
@@ -30,8 +30,10 @@ review_after: 2027-03-08
 - ui-mac 经 `cfg.instructions` 写进的两份 `.md` 在同一份登记簿里(`#1296`,§8):登记簿直接 import ui-mac
   那两个**零依赖**的内容模块;identity 随能力探测变长,对 `AlphaCapabilities` 的每个布尔组合跑生产
   `buildAlphaIdentity` 各登记一行(4 行,327–729 B),behavior 一行(2,757 B);ui-mac 侧的咽喉跑真
-  `injectAlphaConfig`。ui-mac 还有一条写 `cfg.agent.*` 的通路(三个 alpha agent 的 prompt/description,
-  1,427 B)仍在登记簿之外(§6/§7)。
+  `injectAlphaConfig`。
+- ui-mac 经 `cfg.agent.<name>.{prompt,description}` 写进的三个 alpha agent 的字(`#1299`,§9)同样在同一份
+  登记簿里(6 行,1,427 B):同一个方向(ext import ui-mac 的零依赖内容模块 `alpha-agents.ts`),ui-mac 侧的
+  咽喉跑真 `injectAlphaConfig`,把 `cfg.agent` 下每个新写入的字符串叶子分成「登记文字」「引擎动词」「点名」三类。
 
 ## 1. 通路枚举:单一权威与派生链
 
@@ -55,11 +57,12 @@ review_after: 2027-03-08
 往登记簿从没声明过的 `cfg.instructions` 塞一条(证明判官不是 pointer 白名单)、把登记文字改一个字节、
 往 system 多推一段、多接几个字、多一个未登记的工具、改一个 description、登记簿多一条陈旧项。
 
-## 2. 五处注入的实读坐标(ext 四处 + ui-mac 一处)
+## 2. 六处注入的实读坐标(ext 四处 + ui-mac 两处)
 
 | 写入点 | cfg 键 / hook 输出 | 引擎消费点 | 登记项 |
 | --- | --- | --- | --- |
 | ui-mac [`alpha-config-injection.ts`](../../packages/ui-mac/src/main/alpha-config-injection.ts) 的 `addInstruction`(主进程写引擎配置,`#1296`) | `cfg.instructions[]`(两份落盘文件 `alpha-identity.md` / `alpha-behavior.md` 的绝对路径) | `session/instruction.ts:135-150` 按路径读盘 → `Instruction.system()` 每份加一行 `Instructions from: <path>` → `llm/request.ts:63-70` 与底座 / agent prompt 拼成同一个 system 串 | 1 条 text(behavior)+ 4 条 text(identity 每种能力形状一条) |
+| ui-mac [`alpha-config-injection.ts`](../../packages/ui-mac/src/main/alpha-config-injection.ts) 的三处 `config.agent = { …(config.agent ?? {}), … }`(主进程写引擎配置,`#1299`;字住 [`alpha-agents.ts`](../../packages/ui-mac/src/main/alpha-agents.ts)) | `cfg.agent.alpha-automation\|alpha-readonly\|alpha-automation-standard.{prompt,description}`(同一对象里的 `mode` / `permission` / `hidden` 是动词与布尔,不是字) | prompt:`agent/agent.ts:277-278` → `llm/request.ts:64` **整段顶替**底座(与 ext 的 `agent.general\|explore\|docs.prompt` 同一格);description:task 工具的 subagent 清单(三个都 `hidden:true`,只影响可见列表) | 3 条 text(prompt,sink=system)+ 3 条 text(description,sink=agent-description) |
 | [`alpha-prompts.ts`](../../packages/ext/src/alpha-prompts.ts) `applyPromptTakeover` | `cfg.command.init|review.{template,description}`、`cfg.agent.general|explore|docs.prompt`、`cfg.agent.docs.description` | `command/index.ts:98`(template 成为用户回合);`agent/agent.ts:277-278` → `llm/request.ts:64`(agent prompt **整段顶替**底座);task 工具的 subagent 清单读 description | 8 条 text |
 | [`prompt-rebrand.ts`](../../packages/ext/src/prompt-rebrand.ts) `rebrandSystem`,经 `plugin.ts` 的 `experimental.chat.system.transform` | `output.system[]` 子串替换 | `llm/request.ts:62-70`(底座 + environment + instructions 已 join 成一串再触发本钩子) | 12 条 rebrand(量 `to`,`from` 是上游原文不计) |
 | [`factory-deny.ts`](../../packages/ext/src/factory-deny.ts) `applyFactoryDeny` | `cfg.command[<被禁技能>].{description,template}` | 同 command | 1 条 text + 1 条 template(`{name}` 单占位符) |
@@ -81,10 +84,10 @@ server 定义,main 经 env 交来)。它们让引擎去别处装东西,装进来
   729 B = 71%,再加一行能力事实仍在顶内)。2026-09-08 最满的是 `tool.alpha_register.description` 776 B(76%)、
   `instruction.alpha-identity+websearch+cloudDispatch` 729 B(71%)与 `command.review.template` 4,672 B(57%)。
 - 文字住哪里:大段 prose 留在各自的内容模块(`alpha-prompts.ts`、`prompt-rebrand.ts` 的 `REBRAND_RULES`,
-  以及 ui-mac 的 `alpha-behavior.ts` / `alpha-identity.ts`),登记簿 import 它们并声明上限;短的操作性文字
-  (工具表、被禁技能占位)住在登记簿里,`plugin.ts` / `factory-deny.ts` 从登记簿取。规则:**登记簿只 import
-  内容模块,消费者只 import 登记簿**,没有环。`REBRAND_RULES` 与登记簿的 rebrand 集合 1:1 由测试钉住
-  (多一条少一条都红);ui-mac 那两个内容模块必须保持**零 import / require**,也由测试钉住(§8)。
+  以及 ui-mac 的 `alpha-behavior.ts` / `alpha-identity.ts` / `alpha-agents.ts`),登记簿 import 它们并声明上限;
+  短的操作性文字(工具表、被禁技能占位)住在登记簿里,`plugin.ts` / `factory-deny.ts` 从登记簿取。规则:
+  **登记簿只 import 内容模块,消费者只 import 登记簿**,没有环。`REBRAND_RULES` 与登记簿的 rebrand 集合 1:1
+  由测试钉住(多一条少一条都红);ui-mac 那三个内容模块必须保持**零 import / require**,也由测试钉住(§8)。
 
 ## 4. 上限与失败语义
 
@@ -111,19 +114,21 @@ alpha-check 第 [12/12] 步跑它(本地专属,不进 `CI_STEPS`;判据在 CI �
 | 通路 | 为什么不在 | 实测 |
 | --- | --- | --- |
 | REQ-063:用户经导入门放进 `<alpha-root>/instructions/*.md` 的字,ui-mac 同样推进 `cfg.instructions` | 用户的字,不是 alpha 的。ui-mac 咽喉按**文件所在目录**排除,不按 pointer 放行 —— `/instructions` 若成为登记簿的 pointer 引用,ext 那边「往 instructions 塞东西即红」的已知的坏就失效 | — |
-| ui-mac `alpha-config-injection.ts` 写进 `cfg.agent.*` 的三个 alpha agent(`alpha-automation` / `alpha-readonly` / `alpha-automation-standard`)的 `prompt` 与 `description` | alpha 的字、经另一条 ui-mac 通路到达同一格(agent prompt 在 `request.ts:64` 顶替底座)。`#1296` 票面只覆盖 `cfg.instructions`,本轮实读后报出、**未登记**(§7) | 2026-09-08 跑真 `injectAlphaConfig` 实测合计 **1,427 B**:prompt 391 / 296 / 441,description 93 / 108 / 98 |
+| ui-mac 写进 `cfg.agent.<name>` 的 `mode` / `permission.**` / `hidden`,以及 `applyWebSearchDenies` 往每个 agent 钉的 `websearch: "deny"`、`injectDisabledOverrides` 写的 `disable: true` | 引擎动词(`ask\|allow\|deny`、`subagent\|primary\|all`)与布尔,不是字。ui-mac agent 咽喉把它们与字分开判:动词集合与引擎源码字面量逐字锁死,槽里出现不是动词的字符串即点名(§9) | 2026-09-08 跑真 `injectAlphaConfig`(默认 env):`cfg.agent` 下 78 个叶子 = 字 6 + `mode` 3 + `permission.**` 66 + 布尔 3;动词值只有 `primary` / `allow` / `deny` |
 | 项目 `.code-puppy/plugins/*.js` 与 `alpha.jsonc` 合并进的 agent/command/mcp | 用户的字,不是 alpha 的;config 咽喉只看 hook **新写入**的叶子 | — |
+| ui-mac 写进 `cfg.mcp` / `cfg.provider` / `cfg.enabled_providers` / `cfg.model` / `cfg.plugin` / `cfg.permission` / `cfg.skills` 的东西(`alpha-config-injection.ts`、`mcp-default-deny.ts`、`ext-disabled-injection.ts`、`cloud-web-search.ts`、`engine-config-truth.ts`) | server 定义 / 模型菜单 / bundle 路径 / 动词 / 目录 —— 与 ext 的四类引用同性质,不带 alpha 的字;ui-mac 侧没有像 ext 那样的全 config 咽喉(§7) | 2026-09-08 `grep` ui-mac `src/main` 非测试文件里所有 `config.<key> =` 写入点,逐个实读(`#1299` 回报) |
 | skills 正文、MCP 工具表 | 别人的字;alpha 只注入路径 / server 定义(§2 引用) | — |
 | `experimental.session.compacting` | 分类为 context,alpha 未实现;票面 out of scope | — |
 
 ## 7. 还开着的
 
-- ui-mac 的「唯一通路」只对 `cfg.instructions` 成立(`#1296` 的咽喉只判这一个键)。§6 第二行 —— 三个
-  alpha agent 的 prompt / description(1,427 B)—— 经 `cfg.agent.*` 到达同一格,仍在登记簿之外。要让
-  ui-mac 像 ext 那样对**整个** config 成立,需要一个 ui-mac 侧的 config 咽喉(判 `injectAlphaConfig`
-  新写入的每个字符串叶子,并把 `cfg.mcp` / `cfg.provider` / `cfg.permission` 等声明成引用)并把那三段
-  登记进来 —— 另一张票的事。
-- 只有逐片段上限,没有总量上限;库存打印总量(22,031 B)供人看。
+- ui-mac 的咽喉是**按键**的两道(`cfg.instructions`,`#1296`;`cfg.agent.*`,`#1299`),不是像 ext 那样对
+  **整个** config 的一道。ui-mac 写进别的键的东西(§6 最后一行)今天实读全是 server 定义 / 模型菜单 /
+  路径 / 动词,不带 alpha 的字;但「明天有人往 `cfg.command.*` 或 `cfg.mcp.*.headers` 里写一段 alpha prose」
+  在 ui-mac 侧没有测试会红。要补的是一个 ui-mac 侧的全 config 咽喉(判 `injectAlphaConfig` 新写入的每个
+  字符串叶子,并把 `cfg.mcp` / `cfg.provider` / `cfg.permission` 等声明成引用)—— 另一张票的事,不在
+  REQ-157 三张子票的范围里。
+- 只有逐片段上限,没有总量上限;库存打印总量(23,458 B)供人看。
 - [`docs/runbooks/ci.md`](../runbooks/ci.md) §2 的表仍写「十关」与 `[N/10]`(`#1281` 加第 11 步时也未更新);
   `#1295` 只加了第 [12/12] 一行,`#1296` 只改了那一行的措辞,编号未整体重排。
 
@@ -165,3 +170,45 @@ ui-mac 加一个能力字段而这里没扩域,ext typecheck 当场红(变异实
 **失败语义的代价**:ui-mac 生产路径本身不量字节;某段超限时先红的是三道门(ext 单测、快照、`[12/12]`)
 与 ui-mac 咽喉,出货代码到不了那个状态 —— 与 §4 对 ext 片段的论证同形。若真到了,症状是 ext 整个装不上
 (围栏、websearch 主权一起缺席),不是 ui-mac 少写一份文件。
+
+## 9. ui-mac agent 通路怎么进同一份登记簿(`#1299`)
+
+**通路**:[`alpha-config-injection.ts`](../../packages/ui-mac/src/main/alpha-config-injection.ts) 三处
+`config.agent = { …(config.agent ?? {}), "<name>": { description, hidden, mode, prompt, permission } }`
+(`alpha-automation` / `alpha-readonly` / `alpha-automation-standard`;前两者受 `ALPHA_AUTOMATION_DISABLE`,
+中间那个受 `ALPHA_READONLY_DISABLE`)。prompt 在 `llm/request.ts:64` **整段顶替**底座提示词 —— 与 ext 的
+`agent.general|explore|docs.prompt` 同一格,description 进 subagent 清单。2026-09-08 跑真 `injectAlphaConfig`
+实测 **1,427 B**:prompt 391 / 296 / 441,description 93 / 108 / 98(把字面量抽进内容模块前后各量一次,逐字节相同)。
+
+**共享方式**:与 §8 同一个方向。六段字从 `alpha-config-injection.ts` 的内联字面量抽进零依赖的
+[`alpha-agents.ts`](../../packages/ui-mac/src/main/alpha-agents.ts)(一个 `as const` 对象 `ALPHA_AGENT_TEXT`),
+生产代码只取常量、不 import ext;登记簿 import 它,按名字各登记 `agent.<name>.prompt`(sink=system,8 KiB)与
+`agent.<name>.description`(sink=agent-description,1 KiB)。③e 的零依赖钉子扩到第三个文件;实测 ext bundle
+`dist/plugin.js` 836,505 B(`#1296` 时 833,824 B),含 agent prompt 首句 2 处、readonly 首句 1 处、`electron` 0 处、
+假针 0 处、NUL 0 个(grep 没被 NUL 弄瞎)。permission / mode / hidden 仍留在 `alpha-config-injection.ts` —— 它们不是字。
+
+**咽喉**([`agent-injection-throat.test.ts`](../../packages/ui-mac/src/main/agent-injection-throat.test.ts),7 条):
+跑真 `injectAlphaConfig`,取 `OPENCODE_CONFIG_CONTENT.agent` 下 hook **新写入或改动**的每个字符串叶子
+(JSON Pointer,`/` 与 `~` 按 RFC 6901 转义 —— `permission.bash["*/rm *"]` 的 pointer 是 `…/bash/*~1rm *`),分三类:
+
+| 叶子 | 判据 | 解释不了时 |
+| --- | --- | --- |
+| `/agent/<name>/prompt`、`/agent/<name>/description` | `explainAgentText(field, value)`:逐字等于登记簿**对应 sink** 的一条文字(prompt ↔ `system`,description ↔ `agent-description`);把 description 的字写进 prompt、把 instruction 文件的字写进 prompt 都不解释 | `text not registered` |
+| `/agent/<name>/mode`、`/agent/<name>/permission/**` | 值 ∈ 引擎动词字面量:`["subagent", "primary", "all"]`(`packages/opencode/src/agent/agent.ts:38`)、`["ask", "allow", "deny"]`(`packages/core/src/v1/config/permission.ts:5`)。集合与引擎源码**逐字锁死**(测试读源码 `toContain` 那行字面量,并先证明少一个动词的字面量找不到)—— 引擎改了字面量而这里没跟,即红 | `not an engine verb` |
+| 其它任何字符串叶子 | 一律点名 —— 不是 pointer 白名单 | `unexpected string leaf` |
+
+用户的字不判:继承的 `OPENCODE_CONFIG_CONTENT.agent` 里没被 hook 动过的叶子不看;被生产动过的(kill-switch 下
+`applyWebSearchDenies` 往每个 agent 钉的 `websearch: "deny"`)走动词那条路。双向锁:生产写出的 agent 名集合 ==
+`ALPHA_AGENT_TEXT` 键集(默认 env),解释出的 id 集合 == 登记簿的六条;两个逃生门各拿掉对应 agent 后仍零无解释。
+每个判据带已知的坏:多一个未登记 agent(点名 prompt 与 description 两条)、已登记 agent 多一个未登记字段、登记的
+prompt 多一个字节(只点那一条,其余五段照常解释)、串格、`mode` / `permission.edit` / 嵌套 `permission.bash["*/rm *"]`
+里塞字(三条一起点名)。
+
+**没选的路**:给 ui-mac 做一道全 config 咽喉(§7 第一条)—— 要把 `cfg.mcp` / `cfg.provider` / `cfg.permission` /
+`cfg.skills` / `cfg.plugin` 全部声明成引用,面比本票大一圈,且 `#1299` 票面写死「发现第四条通路就停下来报告,
+不自行扩大」;按键的咽喉先把已知的三条钉死。
+
+**变异实证**(2026-09-08,每次都还原并复绿;完整输出在 `#1299` PR 正文):
+- M1:生产 `alpha-config-injection.ts` 多加一处 `config.agent = { …, "alpha-sneaky": { prompt, description } }`
+  ⇒ 咽喉 7 条里跑真注入的 6 条全红(drift 锁那条不跑注入,照常绿),点名
+  `/agent/alpha-sneaky/prompt` `/agent/alpha-sneaky/description` `text not registered`;`git checkout --` 还原 ⇒ 7/0。

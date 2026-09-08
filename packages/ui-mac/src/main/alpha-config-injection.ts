@@ -14,6 +14,9 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
+// `#1299`(REQ-157):三个 alpha agent 的 description / prompt 是 alpha 的字,住在零依赖的
+// alpha-agents.ts,由 packages/ext 的登记簿 import 并声明上限;这里只取,不再内联字面量。
+import { ALPHA_AGENT_TEXT } from "./alpha-agents"
 import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { buildAlphaCapabilities, buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
@@ -169,15 +172,11 @@ export function injectAlphaConfig(
       config.agent = {
         ...(config.agent ?? {}),
         "alpha-automation": {
-          description: "alpha 自动化定时任务专用只读 agent(无人值守;不能改文件、不能跑命令)",
+          description: ALPHA_AGENT_TEXT["alpha-automation"].description,
           // REQ-055:对选择器隐藏(上游 agent.ts 原生 hidden 字段,仅影响可见列表;调度器按名 prompt 不受影响)
           hidden: true,
           mode: "primary",
-          prompt:
-            "你是 Code Puppy 的自动化任务执行器,在无人值守的定时任务里运行。" +
-            "只读环境:你不能修改文件、不能执行 shell 命令;需要变更时,把建议写进最终答复。" +
-            "没有人会回答追问——绝不提问,基于可得信息直接完成任务。" +
-            "最终答复即任务报告:用 Markdown,先一行结论,再列依据与建议;如实标注做不到的部分。",
+          prompt: ALPHA_AGENT_TEXT["alpha-automation"].prompt,
           permission: {
             read: { "*": "allow", "*.env*": "deny" },
             glob: "allow",
@@ -205,14 +204,11 @@ export function injectAlphaConfig(
       config.agent = {
         ...(config.agent ?? {}),
         "alpha-readonly": {
-          description: "只读模式:可读取/检索/联网,不能修改文件、不能执行命令(composer 权限档「只读」)",
+          description: ALPHA_AGENT_TEXT["alpha-readonly"].description,
           // REQ-055:对选择器隐藏;AlphaComposer 只读档改为提交时 agent 参数,不再依赖可见列表轮转
           hidden: true,
           mode: "primary",
-          prompt:
-            "当前处于用户选择的只读模式:你不能修改文件、不能执行 shell 命令。" +
-            "可以读取、检索、联网调研与分析;需要变更时,给出明确的修改建议(含文件与位置),由用户切回可写模式执行。" +
-            "不要尝试绕过限制;做不到的部分如实说明。",
+          prompt: ALPHA_AGENT_TEXT["alpha-readonly"].prompt,
           permission: {
             read: { "*": "allow", "*.env*": "deny" },
             glob: "allow",
@@ -236,15 +232,11 @@ export function injectAlphaConfig(
       config.agent = {
         ...(config.agent ?? {}),
         "alpha-automation-standard": {
-          description: "alpha 自动化 standard 档(可写:能改文件、能执行常规命令;破坏类命令仍被拦)",
+          description: ALPHA_AGENT_TEXT["alpha-automation-standard"].description,
           // REQ-055:对选择器隐藏(同 alpha-automation)
           hidden: true,
           mode: "primary",
-          prompt:
-            "你是 Code Puppy 的自动化任务执行器,在无人值守的定时任务里运行(可写档)。" +
-            "可以修改文件与执行常规命令;破坏性操作(删除大量文件、系统级变更、对外发布)被权限拦截,也不要尝试。" +
-            "没有人会回答追问——绝不提问,基于可得信息直接完成任务。" +
-            "最终答复即任务报告:用 Markdown,先一行结论,再列所做变更与依据;如实标注做不到的部分。",
+          prompt: ALPHA_AGENT_TEXT["alpha-automation-standard"].prompt,
           permission: {
             read: { "*": "allow", "*.env*": "deny" },
             glob: "allow",

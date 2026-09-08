@@ -41,11 +41,19 @@
 // identity 随能力探测变长(4 种形状,327–729 B):对 `AlphaCapabilities` 的每个布尔组合跑**生产**
 // `buildAlphaIdentity` 各登记一条 —— 域常量按接口键集类型锁死,加一个能力字段而没扩域即 typecheck 红。
 //
+// 第六处也在 ui-mac(`#1299`,REQ-157 的最后一块):主进程经 `cfg.agent.<name>.{prompt,description}` 写进三个
+// alpha agent(`alpha-automation` / `alpha-readonly` / `alpha-automation-standard`)的字 —— 与 ext 自己的
+// `agent.general|explore|docs` 同一格(prompt 在 `request.ts:64` 整段顶替底座,description 进 subagent 清单),
+// 2026-09-08 跑真 `injectAlphaConfig` 实测 1,427 B。同一份登记簿,同一个方向:import ui-mac 的零依赖内容模块
+// `alpha-agents.ts`(一个 `as const` 对象),ui-mac 生产代码只取常量、不 import 本登记簿;咽喉在
+// `packages/ui-mac/src/main/agent-injection-throat.test.ts`(跑真注入,cfg.agent 下每个新写入的字符串叶子
+// 要么是本登记簿在对应 sink 的登记文字,要么是引擎的 permission / mode 动词,其它一律点名)。
+//
 // 仍不在本登记簿里、也不该在:项目自己的 `.code-puppy/plugins/*.js` 与 `alpha.jsonc`(用户的字,不是
 // alpha 的);REQ-063 用户经导入门放进 `<alpha-root>/instructions/*.md` 的字(用户的);skills 正文与
-// MCP 工具表(别人的字)。ui-mac 写进 `cfg.agent.*` 的三个 alpha agent 的 prompt/description(1,427 B)
-// 是另一条 ui-mac 通路,`#1296` 票面只覆盖 instructions,见该票回报。
+// MCP 工具表(别人的字);ui-mac 写进 agent 的 permission / mode / hidden(动词与布尔,不是字)。
 
+import { ALPHA_AGENT_TEXT } from "../../ui-mac/src/main/alpha-agents"
 import { ALPHA_BEHAVIOR_MD } from "../../ui-mac/src/main/alpha-behavior"
 import { buildAlphaIdentity, type AlphaCapabilities } from "../../ui-mac/src/main/alpha-identity"
 import {
@@ -206,6 +214,25 @@ function identityFragments(): TextFragment[] {
   return out
 }
 
+// ── ui-mac agent 通路(`#1299`)─────────────────────────────────────────────────────
+// 三个 alpha agent 的 prompt / description 从 ui-mac 的零依赖内容模块取。id 形状与 ext 自己的 agent 片段
+// 同形(`agent.<name>.prompt|description`);名字集合 = `ALPHA_AGENT_TEXT` 的键集,与生产写出的
+// `cfg.agent` 键集的双向相等由 ui-mac 咽喉(跑真 injectAlphaConfig)钉住,这里不自算。
+export const UI_MAC_AGENT_NAMES = Object.freeze(Object.keys(ALPHA_AGENT_TEXT)) as readonly (keyof typeof ALPHA_AGENT_TEXT)[]
+export function uiMacAgentFragmentId(name: keyof typeof ALPHA_AGENT_TEXT, field: "prompt" | "description"): string {
+  return `agent.${name}.${field}`
+}
+function uiMacAgentFragments(): TextFragment[] {
+  const out: TextFragment[] = []
+  for (const name of UI_MAC_AGENT_NAMES) {
+    out.push(defineText({ id: uiMacAgentFragmentId(name, "prompt"), sink: "system", text: ALPHA_AGENT_TEXT[name].prompt, maxBytes: CAP_BODY }))
+    out.push(
+      defineText({ id: uiMacAgentFragmentId(name, "description"), sink: "agent-description", text: ALPHA_AGENT_TEXT[name].description, maxBytes: CAP_DESCRIPTION }),
+    )
+  }
+  return out
+}
+
 /** 工具表文字(`plugin.ts` 的 `tool()` 从这里取,不再内联字面量)。 */
 export const TOOL_TEXT = {
   alpha_reload: {
@@ -280,6 +307,8 @@ export const CONTEXT_INJECTIONS: readonly ContextInjection[] = Object.freeze([
   // ── ui-mac alpha-config-injection.ts:cfg.instructions 文件(`#1296`)────────────────
   defineText({ id: BEHAVIOR_FRAGMENT_ID, sink: "instruction", text: ALPHA_BEHAVIOR_MD, maxBytes: CAP_BODY }),
   ...identityFragments(),
+  // ── ui-mac alpha-config-injection.ts:cfg.agent.<name>.{prompt,description}(`#1299`)──
+  ...uiMacAgentFragments(),
   // ── 引用(无 alpha 文字;声明是为了 config 咽喉能认出它们)──────────────────────
   defineReference({ id: "ref.shell", pointer: "/shell", note: "REQ-138 引擎 shell 围栏 wrapper 路径(shell-sandbox.ts)" }),
   defineReference({ id: "ref.skills.paths", pointer: "/skills/paths", note: "出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字" }),
@@ -339,6 +368,18 @@ export function explainConfigString(pointer: string, value: string): Explanation
 export function explainInstructionBody(body: string): Explanation {
   for (const f of CONTEXT_INJECTIONS)
     if (f.kind === "text" && f.sink === "instruction" && f.text === body) return { ok: true, id: f.id, kind: f.kind }
+  return { ok: false }
+}
+
+/**
+ * agent 咽喉的判官(`#1299`):写进 `cfg.agent.<name>.prompt` / `.description` 的一段字,能不能由登记簿解释 ——
+ * 只有一种解释:逐字等于某条**对应 sink** 的登记文字(prompt ↔ `system`,description ↔ `agent-description`)。
+ * 不串格:把 description 的字写进 prompt、把 instruction 文件的字写进 prompt,都不解释 —— 一段字登记时
+ * 声明的是它在**哪一格**的上限,换格就不是同一笔账。
+ */
+export function explainAgentText(field: "prompt" | "description", value: string): Explanation {
+  const sink: ContextSink = field === "prompt" ? "system" : "agent-description"
+  for (const f of CONTEXT_INJECTIONS) if (f.kind === "text" && f.sink === sink && f.text === value) return { ok: true, id: f.id, kind: f.kind }
   return { ok: false }
 }
 
@@ -422,6 +463,10 @@ export function renderInventory(): string {
   const instr = rows.filter((r) => r.sink === "instruction").map((r) => r.id)
   lines.push(
     `instruction files (ui-mac main writes them into cfg.instructions; engine session/instruction.ts reads them into the system segment; identity has one row per reachable capability shape): ${instr.join(", ")}`,
+  )
+  const agents = UI_MAC_AGENT_NAMES.flatMap((n) => [uiMacAgentFragmentId(n, "prompt"), uiMacAgentFragmentId(n, "description")])
+  lines.push(
+    `ui-mac agents (main writes cfg.agent.<name>.{prompt,description}; prompt replaces the base system prompt at llm/request.ts:64, description enters the subagent list): ${agents.join(", ")}`,
   )
   return lines.join("\n") + "\n"
 }
