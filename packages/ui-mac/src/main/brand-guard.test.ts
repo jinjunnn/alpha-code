@@ -139,10 +139,12 @@ describe("AC1 展示面坐标 — ui-mac 自有面显示 Code Puppy", () => {
     expect(ecosystem).not.toMatch(/alpha-code|alpha 原生|alpha 环境/)
 
     const shell = read("packages/ext/src/shell-sandbox.ts")
-    const plugin = read("packages/ext/src/plugin.ts")
+    // REQ-157 `#1284`:工具表文字从 plugin.ts 的内联字面量搬进 context-injection 登记簿(plugin.ts 只取用);
+    // 品牌串本身逐字未变,坐标跟着搬 —— 它到达模型的事实由 packages/ext/src/context-injection.test.ts 的工具表咽喉判。
+    const injection = read("packages/ext/src/context-injection.ts")
     expect(shell).toContain('echo "Code Puppy: shell sandbox unavailable')
-    expect(plugin).toContain("Proof that a Code Puppy plugin-registered tool")
-    expect(plugin).toContain("Proof that the Code Puppy extension is loaded")
+    expect(injection).toContain("Proof that a Code Puppy plugin-registered tool")
+    expect(injection).toContain("Proof that the Code Puppy extension is loaded")
   })
 })
 
@@ -176,7 +178,8 @@ describe("AC3 提示词与技能文案 — 模型上下文里的品牌串", () =
   })
   test("拒答模板两处", () => {
     expect(read("packages/ui-mac/src/main/alpha-builtin-policy.ts")).toContain("定制 Code Puppy 请改用 /customize-alpha")
-    expect(read("packages/ext/src/factory-deny.ts")).toContain("定制 Code Puppy 请改用 /customize-alpha")
+    // REQ-157 `#1284`:ext 侧拒答模板搬进 context-injection 登记簿(factory-deny.ts 经 renderTemplate 取用),坐标跟着搬。
+    expect(read("packages/ext/src/context-injection.ts")).toContain("定制 Code Puppy 请改用 /customize-alpha")
   })
   test("出厂技能六份 + upstream-sync 文案", () => {
     for (const f of [
