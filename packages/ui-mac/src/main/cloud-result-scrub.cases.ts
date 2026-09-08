@@ -136,6 +136,10 @@ test("cloud-status: inline content smuggled via the open result field never reac
     error?: unknown
   }
   // ① renderer 可见面零发现(不是 { error } 信封 —— 清洗不许把合法 status 变成拒绝)。
+  // `#1294`:错误信封先于 job_id 断言 —— 否则任何一种失败都只说 `job_id: undefined`,
+  // 而 network / http-4xx / contract-incompatible 是三种完全不同的病(实测代价:一次满载
+  // 间歇红的归因,只能靠排除法收口)。这里判的是**同一件事的更细一格**,不是新增的宽容。
+  expect(status.error ?? null).toBeNull()
   expect(status.job_id).toBe(JOB_STATUS)
   expect(scan(status)).toEqual([])
   // ② 剥键是移除:report 下两个内容承载键连值一起消失;data URL 整串换占位符。
@@ -180,8 +184,11 @@ test("cloud-artifacts: a data-URL result is replaced while the descriptor face s
   const list = (await handlers.get("cloud-artifacts")!({} as never, JOB_LIST)) as {
     job_id?: string
     result?: unknown
+    error?: unknown
     artifacts?: Array<Record<string, unknown>>
   }
+  // `#1294`:同上 —— 先让错误信封自己说话。
+  expect(list.error ?? null).toBeNull()
   expect(list.job_id).toBe(JOB_LIST)
   expect(scan(list)).toEqual([])
   expect(list.result).toBe(PLACEHOLDER)
