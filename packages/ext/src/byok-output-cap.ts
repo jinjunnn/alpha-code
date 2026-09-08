@@ -43,8 +43,17 @@ export type ByokOutputCapReading = {
   value: number
   /** 实读日期(ISO)。 */
   readOn: string
-  /** 上游自报区间的原文片段 —— 留着,下次复读时对得上才算没漂。 */
+  /** 上游自报区间的原文片段(`probed`),或目录/文档读数的出处(`catalog`)—— 下次复读对得上才算没漂。 */
   selfReported: string
+  /**
+   * 证据分级。**两级不是同一种东西,不要混着读:**
+   * · `probed` —— 拿真凭据打过这个端点:非法值取自报区间 → 顶格 200 → +1 必拒。三点齐全。
+   * · `catalog` —— 只有第三方目录 / vendor 文档的读数,**没打过这个端点**。用它是因为本机没有该家
+   *   凭据(BYOK 是给第三方用的,凭据本来就不在我们手上),owner 2026-09-07 裁决按网查结论填。
+   *   风险是**单向**的:目录值若高于端点真实上限 ⇒ 该模型每一发都是硬 400。所以只在目录值有
+   *   结构性理由**不高于**直连值时才用 —— 见 MiniMax 那条的理由。
+   */
+  grade: "probed" | "catalog"
 }
 
 /** 实读表。**只增实打过的**;改动必须同批更新 `docs/verification/2026-09-07-byok-output-cap/`。 */
@@ -56,6 +65,7 @@ export const BYOK_OUTPUT_CAP_READINGS: readonly ByokOutputCapReading[] = [
     value: 131072,
     readOn: "2026-09-07",
     selfReported: "max_tokens参数非法：限制数值范围[1,131072]",
+    grade: "probed",
   },
   {
     engineProviderID: "zhipuai-byok",
@@ -64,6 +74,7 @@ export const BYOK_OUTPUT_CAP_READINGS: readonly ByokOutputCapReading[] = [
     value: 98304,
     readOn: "2026-09-07",
     selfReported: "max_tokens参数非法：限制数值范围[1,98304]",
+    grade: "probed",
   },
   {
     engineProviderID: "deepseek-byok",
@@ -72,6 +83,7 @@ export const BYOK_OUTPUT_CAP_READINGS: readonly ByokOutputCapReading[] = [
     value: 393216,
     readOn: "2026-09-07",
     selfReported: "Invalid max_tokens value, the valid range of max_tokens is [1, 393216]",
+    grade: "probed",
   },
   {
     engineProviderID: "deepseek-byok",
@@ -80,19 +92,55 @@ export const BYOK_OUTPUT_CAP_READINGS: readonly ByokOutputCapReading[] = [
     value: 393216,
     readOn: "2026-09-07",
     selfReported: "Invalid max_tokens value, the valid range of max_tokens is [1, 393216]",
+    grade: "probed",
+  },
+  {
+    // ⚠️ **catalog 级,没打过这个端点。** 本机无 MINIMAX_API_KEY,而 BYOK 是给第三方用的 ——
+    // 凭据本来就不在我们手上(owner 2026-09-07:「你可以联网查一下吧,我没有全部的 key」)。
+    // 用 OpenRouter 目录读数而不是 vendor 文档页,理由来自 deepseek 那一课(ap#426):vendor 页给的是
+    // 口语值(「384K」),目录给精确整数;而目录值**低于**端点自报(384000 < 393216)。方向对我们有利 ——
+    // OpenRouter 要跨多家 provider 路由,公布的是**取底**后的值,结构上不会高于单一直连端点。
+    // 填低只是输出短,填高才是硬 400。拿到 MINIMAX_API_KEY 后照
+    // docs/verification/2026-09-07-byok-output-cap/probe.py 跑三点探针,升级成 probed 并换成实测原文。
+    engineProviderID: "minimax-byok",
+    apiModelID: "MiniMax-M2",
+    baseURL: "https://api.minimaxi.com/v1",
+    value: 131072,
+    readOn: "2026-09-07",
+    selfReported: "openrouter 目录 minimax/minimax-m2 top_provider.max_completion_tokens=131072(context_length=204800),2026-09-07 实读 /api/v1/models",
+    grade: "catalog",
   },
 ]
 
-/** 目录里**有**、但本机没有凭据因而**没量**的 BYOK 模型。它们保持上游 32000。
+/** 目录里**有**、但**还没有可用读数**的 BYOK 模型。它们保持上游 32000。
  *  这不是"以后再说"的清单,是漂移锁的另一半:目录新增一个 id 而两边都没登记 ⇒ 测试红,
  *  逼一次显式选择(量它,或者写进这里说明为什么量不了)。 */
 export const BYOK_OUTPUT_CAP_UNREAD: readonly { apiModelID: string; why: string }[] = [
-  { apiModelID: "MiniMax-M2", why: "本机无 MINIMAX_API_KEY,探不了受理上限" },
-  { apiModelID: "qwen3.8-max-preview", why: "本机无 DASHSCOPE_API_KEY,探不了受理上限" },
-  { apiModelID: "qwen-plus", why: "本机无 DASHSCOPE_API_KEY,探不了受理上限" },
-  { apiModelID: "qwen3-coder-plus", why: "本机无 DASHSCOPE_API_KEY,探不了受理上限" },
-  { apiModelID: "kimi-k2", why: "本机无 MOONSHOT_API_KEY,探不了受理上限" },
-  { apiModelID: "moonshot-v1-128k", why: "本机无 MOONSHOT_API_KEY,探不了受理上限" },
+  // 2026-09-07 网查(owner 授权:本机没有这三家凭据,BYOK 是给第三方用的)。「没量」不是同一个原因,
+  // 分成三类写清楚,才知道各自缺什么:
+  //   ① 有目录读数 → 已进 READINGS(MiniMax-M2,catalog 级);
+  //   ② 上游已退役 → 不需要上限,需要的是从目录里拿掉(#1281);
+  //   ③ 文档只给上下文不给最大输出、目录也无同名条目 → 只能等凭据。
+  {
+    apiModelID: "kimi-k2",
+    why: "上游已退役:platform.kimi.ai/docs/models 明文「kimi-k2 系列 2026-05-25 停用」,调用返回 404。不需要上限,需要从目录拿掉 —— 见 #1281",
+  },
+  {
+    apiModelID: "moonshot-v1-128k",
+    why: "上游已退役:同页「moonshot-v1 系列 2026-08-31 退役」,调用返回 404「模型不存在」。同 #1281",
+  },
+  {
+    apiModelID: "qwen3.8-max-preview",
+    why: "阿里当前模型清单未列出该 id(在列的是 qwen3.8-max,无 -preview 后缀);id 本身待核实(#1281)。核实前不填上限",
+  },
+  {
+    apiModelID: "qwen-plus",
+    why: "阿里文档只给上下文(1M),未公布最大输出;OpenRouter 目录无同名条目(qwen-plus 是滚动别名,当代指向未知)。无 DASHSCOPE_API_KEY,探不了",
+  },
+  {
+    apiModelID: "qwen3-coder-plus",
+    why: "同 qwen-plus:文档只给上下文(1M),未公布最大输出,目录无同名条目。无 DASHSCOPE_API_KEY,探不了",
+  },
 ]
 
 export type ByokOutputCapInput = {
