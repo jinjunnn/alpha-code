@@ -178,11 +178,31 @@ describe("双向漂移锁:实读表 ↔ 出货目录 alpha-models.json", () => {
     }
   })
 
-  test("每条读数带日期与上游自报原文,且值是正整数(留着下次复读对照)", () => {
+  test("每条读数带日期与出处原文,且值是正整数(留着下次复读对照)", () => {
     for (const r of BYOK_OUTPUT_CAP_READINGS) {
       expect(r.readOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
       expect(Number.isInteger(r.value) && r.value > 32000).toBe(true)
       expect(r.selfReported).toContain(String(r.value))
+      expect(["probed", "catalog"]).toContain(r.grade)
     }
+  })
+
+  // 两级证据不是同一种东西。`probed` 的出处必须是**端点自己说的话**(区间原文),`catalog` 的出处
+  // 必须点名那个目录 —— 否则一条网查来的数字可以悄悄穿上 probed 的外衣,而它们的风险完全不同
+  // (catalog 值若高于端点真实上限 ⇒ 该模型每一发硬 400)。
+  test("probed 的出处是端点自报原文;catalog 的出处点名目录且不得冒充实打", () => {
+    for (const r of BYOK_OUTPUT_CAP_READINGS) {
+      if (r.grade === "probed") {
+        expect(r.selfReported).toMatch(/max_tokens/)
+        expect(r.selfReported).not.toMatch(/openrouter|目录|文档/)
+      } else {
+        expect(r.selfReported).toMatch(/openrouter|目录|文档/)
+      }
+    }
+  })
+
+  test("实打过的那四个仍是 probed —— 把它们降级或把 catalog 冒充成 probed,这里都红", () => {
+    const probed = BYOK_OUTPUT_CAP_READINGS.filter((r) => r.grade === "probed").map((r) => r.apiModelID).sort()
+    expect(probed).toEqual(["deepseek-v4-flash", "deepseek-v4-pro", "glm-4.5-air", "glm-5.2"])
   })
 })
