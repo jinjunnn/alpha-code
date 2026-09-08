@@ -8,8 +8,9 @@
 //   ③ 每个咽喉:跑**真钩子**,把它送出去的每一个字符串与登记簿比对;并在同一测试里用一个
 //      **已知的坏**(包一层真钩子再多塞一段)证明判官看得见 —— 「先证明手段能测出已知的坏」。
 //
-// ui-mac 经 cfg.instructions 写的两份 .md(`#1296`)也在同一份登记簿里;它们的咽喉(跑真 injectAlphaConfig)
-// 在 packages/ui-mac/src/main/instruction-injection-throat.test.ts,本文件只钉登记形状、判官与跨包前提(③e)。
+// ui-mac 经 cfg.instructions 写的两份 .md(`#1296`)与经 cfg.agent.* 写的三个 agent 的字(`#1299`)也在同一份登记簿里;
+// ui-mac 侧的咽喉(跑真 injectAlphaConfig、罩整份 config)在 packages/ui-mac/src/main/config-injection-throat.test.ts(`#1305`),
+// 本文件只钉登记形状、判官与跨包前提(③e / ③f)。
 // 已知不覆盖:项目自己的 plugins / alpha.jsonc(用户的字);skills 正文与 MCP 工具表(别人的字)。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
@@ -27,6 +28,7 @@ import {
   defineTemplate,
   defineText,
   explainAgentText,
+  explainConfigReference,
   explainConfigString,
   explainInstructionBody,
   HOOK_CONTEXT_CLASS,
@@ -225,6 +227,16 @@ describe("③a config 咽喉:hook 写进 cfg 的每个字符串都必须由登�
     expect(explainConfigString("/command/x/template", good + " and more").ok).toBe(false)
     expect(explainConfigString("/command/x/template", "prefix " + good).ok).toBe(false)
   })
+  test("已知的坏 ⑤(`#1305`):explainConfigReference 只认引用 —— ui-mac 六条引用子树解释得通;登记过的文字放在没登记 sink 的位置不由它放行;/instructions 仍不是引用;段边界精确", () => {
+    for (const p of ["/$schema", "/plugin/0", "/enabled_providers/1", "/model", "/provider/alpha/models/x/variants/高/reasoning/effort", "/mcp/cloud/headers/Authorization"])
+      expect(explainConfigReference(p).ok, p).toBe(true)
+    expect(explainConfigReference("/provider")).toEqual({ ok: true, id: "ref.provider", kind: "reference" })
+    for (const p of ["/command/x/template", "/instructions/0", "/agent/x/prompt", "/providers/x", "/provider_extra", "/models", "/permission/websearch", ""])
+      expect(explainConfigReference(p).ok, p).toBe(false)
+    // 与 explainConfigString 的分工:后者还认文字与模板,前者只认引用 —— 同一段登记文字放在 /command/x/template 上,两者结论不同
+    expect(explainConfigString("/command/x/template", contextText("command.init.template")).ok).toBe(true)
+    expect(explainConfigReference("/command/x/template").ok).toBe(false)
+  })
 })
 
 // ── ③b system.transform 咽喉 ────────────────────────────────────────────────────
@@ -359,7 +371,7 @@ describe("③d tool.execute.after 咽喉:工具结果回模型的路上,alpha �
 })
 
 // ── ③e instructions 通路(`#1296`):ui-mac 写 cfg.instructions 的两份文件 ────────────────
-// 真注入的咽喉在 ui-mac 那边(instruction-injection-throat.test.ts 跑真 injectAlphaConfig,8 组 env 矩阵
+// 真注入的咽喉在 ui-mac 那边(config-injection-throat.test.ts 跑真 injectAlphaConfig,8 组 env 矩阵
 // 与这里登记的形状集合双向比对)。这里钉三件登记簿自己的事:登记形状、判官能测出已知的坏、
 // 跨包 import 的前提(ui-mac 那两个内容模块零依赖)仍然成立。
 
@@ -410,7 +422,7 @@ describe("③e instructions 通路:登记形状 + 判官 + 跨包前提", () => 
 })
 
 // ── ③f agent 通路(`#1299`):ui-mac 写 cfg.agent.<name>.{prompt,description} 的三个 alpha agent ──────
-// 真注入的咽喉在 ui-mac 那边(agent-injection-throat.test.ts 跑真 injectAlphaConfig,cfg.agent 下每个新写入的
+// 真注入的咽喉在 ui-mac 那边(config-injection-throat.test.ts 跑真 injectAlphaConfig,cfg.agent 下每个新写入的
 // 字符串叶子过判官,并与这里的登记集合双向比对)。这里只钉登记形状与判官 explainAgentText 的已知的坏。
 
 describe("③f agent 通路:登记形状 + 判官 explainAgentText", () => {

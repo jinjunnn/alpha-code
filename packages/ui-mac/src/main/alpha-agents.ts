@@ -10,7 +10,7 @@
 // 引擎侧,一行 import 就把 main 世界拖进引擎 —— context-injection.test.ts ③e 钉住这一点。
 //
 // 改这里的字 = 改库存:ext 单测的快照比对与 alpha-check [12/12] 会红,`--write` 重生快照让评审读 diff。
-// 咽喉(跑真 injectAlphaConfig、逐字比对)在 packages/ui-mac/src/main/agent-injection-throat.test.ts。
+// 咽喉(跑真 injectAlphaConfig、逐字比对)在 packages/ui-mac/src/main/config-injection-throat.test.ts(`#1305` 起罩整份 config)。
 // 每个 agent 的 permission / mode / hidden 不是字,仍住在 alpha-config-injection.ts。
 
 export const ALPHA_AGENT_TEXT = {

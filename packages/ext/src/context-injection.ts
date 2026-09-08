@@ -37,7 +37,7 @@
 // 登记簿是**同一份**(票面明令不造第二本):这里直接 import ui-mac 那两个**零依赖**的内容模块
 // (`alpha-behavior.ts` 是一个字符串,`alpha-identity.ts` 是两个纯函数;测试钉住它们保持零 import ——
 // 否则 ext 的自包含 bundle 会把 main 世界拖进引擎,ADR-006)。ui-mac 生产代码不 import 本登记簿:
-// 它写自己的常量,咽喉在 `packages/ui-mac/src/main/instruction-injection-throat.test.ts` 跑真注入后逐字比对。
+// 它写自己的常量,咽喉在 ui-mac 那边跑真注入后逐字比对(`#1305` 起是整份 config 的一道,见下)。
 // identity 随能力探测变长(4 种形状,327–729 B):对 `AlphaCapabilities` 的每个布尔组合跑**生产**
 // `buildAlphaIdentity` 各登记一条 —— 域常量按接口键集类型锁死,加一个能力字段而没扩域即 typecheck 红。
 //
@@ -45,13 +45,17 @@
 // alpha agent(`alpha-automation` / `alpha-readonly` / `alpha-automation-standard`)的字 —— 与 ext 自己的
 // `agent.general|explore|docs` 同一格(prompt 在 `request.ts:64` 整段顶替底座,description 进 subagent 清单),
 // 2026-09-08 跑真 `injectAlphaConfig` 实测 1,427 B。同一份登记簿,同一个方向:import ui-mac 的零依赖内容模块
-// `alpha-agents.ts`(一个 `as const` 对象),ui-mac 生产代码只取常量、不 import 本登记簿;咽喉在
-// `packages/ui-mac/src/main/agent-injection-throat.test.ts`(跑真注入,cfg.agent 下每个新写入的字符串叶子
-// 要么是本登记簿在对应 sink 的登记文字,要么是引擎的 permission / mode 动词,其它一律点名)。
+// `alpha-agents.ts`(一个 `as const` 对象),ui-mac 生产代码只取常量、不 import 本登记簿。
+//
+// ui-mac 侧的咽喉(`#1305`,REQ-157 的收口)是**一道**,罩**整份** OPENCODE_CONFIG_CONTENT:
+// `packages/ui-mac/src/main/config-injection-throat.test.ts` 跑真 `injectAlphaConfig`,把 hook 之后新写入 / 改动的每个
+// 字符串叶子分成三类 —— 本登记簿的登记文字(instruction 文件正文 / agent prompt|description,按 sink)、本登记簿**声明过的
+// 引用**(`explainConfigReference`:`/$schema` `/plugin` `/enabled_providers` `/model` `/provider` `/mcp`)、引擎的
+// permission / mode 动词 —— 其它一律点名;用户的字按来源排除。`#1296` / `#1299` 那两道按键的判据已并入它。
 //
 // 仍不在本登记簿里、也不该在:项目自己的 `.code-puppy/plugins/*.js` 与 `alpha.jsonc`(用户的字,不是
 // alpha 的);REQ-063 用户经导入门放进 `<alpha-root>/instructions/*.md` 的字(用户的);skills 正文与
-// MCP 工具表(别人的字);ui-mac 写进 agent 的 permission / mode / hidden(动词与布尔,不是字)。
+// MCP 工具表(别人的字);ui-mac 写进 agent 与顶层 permission 的动词、`hidden` / `disable` / `enabled` 布尔(不是字)。
 
 import { ALPHA_AGENT_TEXT } from "../../ui-mac/src/main/alpha-agents"
 import { ALPHA_BEHAVIOR_MD } from "../../ui-mac/src/main/alpha-behavior"
@@ -310,10 +314,25 @@ export const CONTEXT_INJECTIONS: readonly ContextInjection[] = Object.freeze([
   // ── ui-mac alpha-config-injection.ts:cfg.agent.<name>.{prompt,description}(`#1299`)──
   ...uiMacAgentFragments(),
   // ── 引用(无 alpha 文字;声明是为了 config 咽喉能认出它们)──────────────────────
+  // 引用是**整棵子树**的声明(与 pointer 相等或以 `<pointer>/` 开头都算),粒度与 ext 既有的 `/mcp` 相同 —— 子树里
+  // 的字符串是路径 / id / server 定义 / `{file:}` 密钥引用 / 请求参数,没有一条通往模型上下文;唯一进 prompt 的是
+  // 引擎自己把选中模型的 **id**(不是展示名)写进 environment 段(`session/system.ts:74`),那是 catalog / 上游厂商的 id。
+  // ext config hook 写的四类(`#1295`):
   defineReference({ id: "ref.shell", pointer: "/shell", note: "REQ-138 引擎 shell 围栏 wrapper 路径(shell-sandbox.ts)" }),
   defineReference({ id: "ref.skills.paths", pointer: "/skills/paths", note: "出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字" }),
   defineReference({ id: "ref.permission.skill", pointer: "/permission/skill", note: "REQ-067 出厂禁项的 \"deny\" 动词(factory-deny.ts)" }),
-  defineReference({ id: "ref.mcp", pointer: "/mcp", note: "云 MCP server 定义,main 经 env 交来(cloud-websearch-kill.ts);工具表是远端 server 的字" }),
+  // ext 与 ui-mac 主进程都写的一类:
+  defineReference({
+    id: "ref.mcp",
+    pointer: "/mcp",
+    note: "云 MCP server 定义(type / url / enabled / oauth / headers.Authorization = {file:} 引用):ext 经 env 装(cloud-websearch-kill.ts),ui-mac 主进程直写并对用户全局 MCP 钉 enabled:false(alpha-config-injection.ts / cloud-sidecar-config.ts / mcp-default-deny.ts / ext-disabled-injection.ts);工具表是远端 server 的字",
+  }),
+  // ui-mac 主进程写的五类(`#1305`,整份 config 咽喉;ui-mac 写进顶层 /permission 与 agent 的动词不是引用,由咽喉按引擎字面量判):
+  defineReference({ id: "ref.schema", pointer: "/$schema", note: "ui-mac 无继承 config 时种下的 JSON Schema URL(alpha-config-injection.ts:91)" }),
+  defineReference({ id: "ref.plugin", pointer: "/plugin", note: "@alpha-code/ext 自包含 bundle 的绝对路径(alpha-config-injection.ts:105-109);bundle 里 alpha 的字各自登记在本簿" }),
+  defineReference({ id: "ref.enabled_providers", pointer: "/enabled_providers", note: "provider 白名单 id(alpha-models.ts,含用户 opencode.jsonc 里的 id);不进模型上下文" }),
+  defineReference({ id: "ref.model", pointer: "/model", note: "默认模型 <providerID>/<modelID>(alpha-models.ts);引擎把选中模型的 id 原样写进 environment 段(session/system.ts:74),那是 catalog / 上游厂商的 id,不是 alpha 的字" }),
+  defineReference({ id: "ref.provider", pointer: "/provider", note: "模型菜单:npm / 展示名 / baseURL / {file:} 密钥引用 / 档位 options(alpha-models.ts,数据在 alpha-models.json);展示名只进 picker,不进模型上下文" }),
 ])
 
 const BY_ID: ReadonlyMap<string, ContextInjection> = new Map(CONTEXT_INJECTIONS.map((f) => [f.id, f]))
@@ -354,8 +373,18 @@ export function explainConfigString(pointer: string, value: string): Explanation
       const [head, tail] = f.template.split(TEMPLATE_PARAM)
       if (value.length >= head.length + tail.length && value.startsWith(head) && value.endsWith(tail)) return { ok: true, id: f.id, kind: f.kind }
     }
-    if (f.kind === "reference" && (pointer === f.pointer || pointer.startsWith(f.pointer + "/"))) return { ok: true, id: f.id, kind: f.kind }
   }
+  return explainConfigReference(pointer)
+}
+
+/**
+ * 整份 config 咽喉的第三条解释(`#1305`,ui-mac):pointer 落在某条**声明过的引用**的子树里(与 pointer 相等,或以
+ * `<pointer>/` 开头 —— 段边界精确,`/providers/x` 不算 `/provider` 的子树)。**只认引用,不认文字**:一段登记过的字出现在
+ * 没登记 sink 的位置(`cfg.command.*`、`cfg.mcp.*.headers.*`……)不由这条路放行 —— 一段字登记时声明的是它在哪一格的上限。
+ */
+export function explainConfigReference(pointer: string): Explanation {
+  for (const f of CONTEXT_INJECTIONS)
+    if (f.kind === "reference" && (pointer === f.pointer || pointer.startsWith(f.pointer + "/"))) return { ok: true, id: f.id, kind: f.kind }
   return { ok: false }
 }
 

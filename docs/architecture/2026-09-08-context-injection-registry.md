@@ -13,6 +13,7 @@ review_after: 2027-03-08
 来源:[`alpha-code#1284`](https://github.com/jinjunnn/alpha-code/issues/1284)。判据本体:
 [`packages/ext/src/context-injection.ts`](../../packages/ext/src/context-injection.ts) 与
 [`packages/ext/src/context-injection.test.ts`](../../packages/ext/src/context-injection.test.ts);
+ui-mac 侧咽喉:[`packages/ui-mac/src/main/config-injection-throat.test.ts`](../../packages/ui-mac/src/main/config-injection-throat.test.ts);
 库存快照:[`packages/ext/src/context-injection-inventory.snapshot.txt`](../../packages/ext/src/context-injection-inventory.snapshot.txt)。
 
 ## 结论
@@ -34,6 +35,11 @@ review_after: 2027-03-08
 - ui-mac 经 `cfg.agent.<name>.{prompt,description}` 写进的三个 alpha agent 的字(`#1299`,§9)同样在同一份
   登记簿里(6 行,1,427 B):同一个方向(ext import ui-mac 的零依赖内容模块 `alpha-agents.ts`),ui-mac 侧的
   咽喉跑真 `injectAlphaConfig`,把 `cfg.agent` 下每个新写入的字符串叶子分成「登记文字」「引擎动词」「点名」三类。
+- ui-mac 侧的咽喉自 `#1305` 起是**一道**,罩**整份** `OPENCODE_CONFIG_CONTENT`(§10):跑真 `injectAlphaConfig`,
+  hook 之后新写入 / 改动的每个字符串叶子按来源排除用户的字之后,必须是登记文字 / 登记簿声明的引用 / 引擎动词三者之一,
+  其余点名 —— 判据从「盯住已知的 N 个键」换成「咽喉在不在、对未知默认拒不拒」;`#1296` / `#1299` 那两道按键的判据已并入。
+  ui-mac 写进 `cfg.$schema` / `plugin` / `enabled_providers` / `model` / `provider` / `mcp` 的东西在登记簿里**声明为引用**
+  (引用共 9 条:ext 4 + ui-mac 5,`/mcp` 两边都写)。
 
 ## 1. 通路枚举:单一权威与派生链
 
@@ -114,20 +120,16 @@ alpha-check 第 [12/12] 步跑它(本地专属,不进 `CI_STEPS`;判据在 CI �
 | 通路 | 为什么不在 | 实测 |
 | --- | --- | --- |
 | REQ-063:用户经导入门放进 `<alpha-root>/instructions/*.md` 的字,ui-mac 同样推进 `cfg.instructions` | 用户的字,不是 alpha 的。ui-mac 咽喉按**文件所在目录**排除,不按 pointer 放行 —— `/instructions` 若成为登记簿的 pointer 引用,ext 那边「往 instructions 塞东西即红」的已知的坏就失效 | — |
-| ui-mac 写进 `cfg.agent.<name>` 的 `mode` / `permission.**` / `hidden`,以及 `applyWebSearchDenies` 往每个 agent 钉的 `websearch: "deny"`、`injectDisabledOverrides` 写的 `disable: true` | 引擎动词(`ask\|allow\|deny`、`subagent\|primary\|all`)与布尔,不是字。ui-mac agent 咽喉把它们与字分开判:动词集合与引擎源码字面量逐字锁死,槽里出现不是动词的字符串即点名(§9) | 2026-09-08 跑真 `injectAlphaConfig`(默认 env):`cfg.agent` 下 78 个叶子 = 字 6 + `mode` 3 + `permission.**` 66 + 布尔 3;动词值只有 `primary` / `allow` / `deny` |
+| ui-mac 写进 `cfg.agent.<name>` 的 `mode` / `permission.**` / `hidden`,以及 `applyWebSearchDenies` 往每个 agent 钉的 `websearch: "deny"`、`injectDisabledOverrides` 写的 `disable: true` | 引擎动词(`ask\|allow\|deny`、`subagent\|primary\|all`)与布尔,不是字。ui-mac 整份 config 咽喉把它们与字分开判(顶层 `cfg.permission.**` 同此):动词集合与引擎源码字面量逐字锁死,槽里出现不是动词的字符串即点名(§9 / §10) | 2026-09-08 跑真 `injectAlphaConfig`(默认 env):`cfg.agent` 下 78 个叶子 = 字 6 + `mode` 3 + `permission.**` 66 + 布尔 3;动词值只有 `primary` / `allow` / `deny` |
 | 项目 `.code-puppy/plugins/*.js` 与 `alpha.jsonc` 合并进的 agent/command/mcp | 用户的字,不是 alpha 的;config 咽喉只看 hook **新写入**的叶子 | — |
-| ui-mac 写进 `cfg.mcp` / `cfg.provider` / `cfg.enabled_providers` / `cfg.model` / `cfg.plugin` / `cfg.permission` / `cfg.skills` 的东西(`alpha-config-injection.ts`、`mcp-default-deny.ts`、`ext-disabled-injection.ts`、`cloud-web-search.ts`、`engine-config-truth.ts`) | server 定义 / 模型菜单 / bundle 路径 / 动词 / 目录 —— 与 ext 的四类引用同性质,不带 alpha 的字;ui-mac 侧没有像 ext 那样的全 config 咽喉(§7) | 2026-09-08 `grep` ui-mac `src/main` 非测试文件里所有 `config.<key> =` 写入点,逐个实读(`#1299` 回报) |
+| ui-mac 写进 `cfg.$schema` / `cfg.plugin` / `cfg.enabled_providers` / `cfg.model` / `cfg.provider` / `cfg.mcp` 的东西(`alpha-config-injection.ts`、`alpha-models.ts`、`cloud-sidecar-config.ts`、`mcp-default-deny.ts`、`ext-disabled-injection.ts`) | schema URL / bundle 路径 / 模型菜单 / server 定义 / `{file:}` 密钥引用 —— 与 ext 的四类引用同性质,不带 alpha 的字。`#1305` 起在登记簿里**声明为引用**(`ref.schema` / `ref.plugin` / `ref.enabled_providers` / `ref.model` / `ref.provider` / `ref.mcp`),ui-mac 整份 config 咽喉按引用子树放行、其余点名(§10)。`cfg.permission` 下 ui-mac 写的只有动词(`applyWebSearchDenies`),按上一行判;`cfg.skills` 由 `engine-config-truth.ts` 写进 **`alpha.jsonc` 文件通道**,不进 `OPENCODE_CONFIG_CONTENT` | 2026-09-08 两轴交叉枚举 ui-mac `src/main` 非测试文件:所有 `config.<key> =` / `config[<k>] =` 写入点 + 所有接 `config` 形参的导出函数(`#1305` 回报);全栈 env 跑真注入,九个顶层键全部被写到、零点名 |
 | skills 正文、MCP 工具表 | 别人的字;alpha 只注入路径 / server 定义(§2 引用) | — |
 | `experimental.session.compacting` | 分类为 context,alpha 未实现;票面 out of scope | — |
 
 ## 7. 还开着的
 
-- ui-mac 的咽喉是**按键**的两道(`cfg.instructions`,`#1296`;`cfg.agent.*`,`#1299`),不是像 ext 那样对
-  **整个** config 的一道。ui-mac 写进别的键的东西(§6 最后一行)今天实读全是 server 定义 / 模型菜单 /
-  路径 / 动词,不带 alpha 的字;但「明天有人往 `cfg.command.*` 或 `cfg.mcp.*.headers` 里写一段 alpha prose」
-  在 ui-mac 侧没有测试会红。要补的是一个 ui-mac 侧的全 config 咽喉(判 `injectAlphaConfig` 新写入的每个
-  字符串叶子,并把 `cfg.mcp` / `cfg.provider` / `cfg.permission` 等声明成引用)—— 另一张票的事,不在
-  REQ-157 三张子票的范围里。
+- (`#1305` 已关:ui-mac 的咽喉从按键的两道改成罩整份 config 的一道,见 §10。仍成立的边界:引用是整棵子树,
+  `cfg.mcp.*.headers.*` / `cfg.provider.*.name` 这类**到不了模型**的位置写 prose 不会红 —— 见 §10「引用的粒度」。)
 - 只有逐片段上限,没有总量上限;库存打印总量(23,458 B)供人看。
 - [`docs/runbooks/ci.md`](../runbooks/ci.md) §2 的表仍写「十关」与 `[N/10]`(`#1281` 加第 11 步时也未更新);
   `#1295` 只加了第 [12/12] 一行,`#1296` 只改了那一行的措辞,编号未整体重排。
@@ -153,8 +155,8 @@ ui-mac 加一个能力字段而这里没扩域,ext typecheck 当场红(变异实
 ⇒ `error TS2741 … required in type 'Record<keyof AlphaCapabilities, true>'`)。每个布尔组合跑一次**生产**
 `buildAlphaIdentity`,各登记一条 `text`,id 后缀列出打开的能力键(`instruction.alpha-identity+websearch+cloudDispatch`)。
 
-**咽喉**([`instruction-injection-throat.test.ts`](../../packages/ui-mac/src/main/instruction-injection-throat.test.ts)):
-跑真 `injectAlphaConfig`,取 `OPENCODE_CONFIG_CONTENT.instructions[]` 里 hook **新推进**的每个路径,读盘,
+**咽喉**(`#1305` 起并入 [`config-injection-throat.test.ts`](../../packages/ui-mac/src/main/config-injection-throat.test.ts),§10;
+对 `/instructions/<i>` 的判法不变):跑真 `injectAlphaConfig`,取 `OPENCODE_CONFIG_CONTENT.instructions[]` 里 hook **新推进**的每个路径,读盘,
 正文必须逐字等于某条 `sink=instruction` 的登记文字(`explainInstructionBody`)。用户的字按**来源**排除:
 继承的 instructions 不判、REQ-063 导入目录按文件所在目录放行。8 组 env(`ALPHA_WEBSEARCH_DISABLE` ×
 `OPENCODE_ENABLE_EXA` × 代付)跑出的 identity 形状集合与登记簿变体集合**双向**相等、正文逐字 ——
@@ -187,15 +189,15 @@ ui-mac 加一个能力字段而这里没扩域,ext typecheck 当场红(变异实
 `dist/plugin.js` 836,505 B(`#1296` 时 833,824 B),含 agent prompt 首句 2 处、readonly 首句 1 处、`electron` 0 处、
 假针 0 处、NUL 0 个(grep 没被 NUL 弄瞎)。permission / mode / hidden 仍留在 `alpha-config-injection.ts` —— 它们不是字。
 
-**咽喉**([`agent-injection-throat.test.ts`](../../packages/ui-mac/src/main/agent-injection-throat.test.ts),7 条):
-跑真 `injectAlphaConfig`,取 `OPENCODE_CONFIG_CONTENT.agent` 下 hook **新写入或改动**的每个字符串叶子
+**咽喉**(`#1305` 起并入 [`config-injection-throat.test.ts`](../../packages/ui-mac/src/main/config-injection-throat.test.ts),§10;
+对 `cfg.agent` 叶子的判法不变):跑真 `injectAlphaConfig`,取 `OPENCODE_CONFIG_CONTENT.agent` 下 hook **新写入或改动**的每个字符串叶子
 (JSON Pointer,`/` 与 `~` 按 RFC 6901 转义 —— `permission.bash["*/rm *"]` 的 pointer 是 `…/bash/*~1rm *`),分三类:
 
 | 叶子 | 判据 | 解释不了时 |
 | --- | --- | --- |
 | `/agent/<name>/prompt`、`/agent/<name>/description` | `explainAgentText(field, value)`:逐字等于登记簿**对应 sink** 的一条文字(prompt ↔ `system`,description ↔ `agent-description`);把 description 的字写进 prompt、把 instruction 文件的字写进 prompt 都不解释 | `text not registered` |
 | `/agent/<name>/mode`、`/agent/<name>/permission/**` | 值 ∈ 引擎动词字面量:`["subagent", "primary", "all"]`(`packages/opencode/src/agent/agent.ts:38`)、`["ask", "allow", "deny"]`(`packages/core/src/v1/config/permission.ts:5`)。集合与引擎源码**逐字锁死**(测试读源码 `toContain` 那行字面量,并先证明少一个动词的字面量找不到)—— 引擎改了字面量而这里没跟,即红 | `not an engine verb` |
-| 其它任何字符串叶子 | 一律点名 —— 不是 pointer 白名单 | `unexpected string leaf` |
+| 其它任何字符串叶子 | 一律点名 —— 不是 pointer 白名单(`#1305` 起这条落到整份 config 咽喉的最后一条:先查登记簿声明的引用子树,查不到才点名) | `unexplained string leaf` |
 
 用户的字不判:继承的 `OPENCODE_CONFIG_CONTENT.agent` 里没被 hook 动过的叶子不看;被生产动过的(kill-switch 下
 `applyWebSearchDenies` 往每个 agent 钉的 `websearch: "deny"`)走动词那条路。双向锁:生产写出的 agent 名集合 ==
@@ -204,9 +206,8 @@ ui-mac 加一个能力字段而这里没扩域,ext typecheck 当场红(变异实
 prompt 多一个字节(只点那一条,其余五段照常解释)、串格、`mode` / `permission.edit` / 嵌套 `permission.bash["*/rm *"]`
 里塞字(三条一起点名)。
 
-**没选的路**:给 ui-mac 做一道全 config 咽喉(§7 第一条)—— 要把 `cfg.mcp` / `cfg.provider` / `cfg.permission` /
-`cfg.skills` / `cfg.plugin` 全部声明成引用,面比本票大一圈,且 `#1299` 票面写死「发现第四条通路就停下来报告,
-不自行扩大」;按键的咽喉先把已知的三条钉死。
+**`#1299` 没选的路**(给 ui-mac 做一道全 config 咽喉)由 `#1305` 走通(§10):`#1299` 票面写死「发现第四条通路就停下来报告,
+不自行扩大」,按键的咽喉先把已知的三条钉死,再由收口票换判据形态。
 
 **变异实证**(2026-09-08,每次都还原并复绿;完整输出在 `#1299` PR 正文):
 - M1:生产 `alpha-config-injection.ts` 多加一处 `config.agent = { …, "alpha-sneaky": { description, hidden, mode, prompt } }`
@@ -217,3 +218,58 @@ prompt 多一个字节(只点那一条,其余五段照常解释)、串格、`mod
 - M2:`alpha-agents.ts` 把 `alpha-readonly` 的 prompt 撑到 8,296 B ⇒ `--check` rc 1:
   `context injection "agent.alpha-readonly.prompt" is 8296 bytes, over its declared limit of 8192 bytes`;
   ext 单测 0 pass / 1 fail、ui-mac agent 咽喉 0 pass / 1 fail(均在 import 时 `ContextBudgetError`);还原 ⇒ rc 0。
+
+## 10. ui-mac 整份 config 的一道咽喉(`#1305`,REQ-157 的收口)
+
+**为什么**:§8 / §9 是按键的两道 —— 各自只看自己那个键,对 `command` / `mcp` / `provider` / `model` / `plugin` 零命中,
+往第三个键写一段 alpha 的字不会有任何测试红。父票 AC1 是一句全称否定(「不经登记簿的注入在闸上响亮失败」),按键判据没有
+有限证据集(本 REQ 已经连补三处)。判据换成咽喉形态:**整份** `OPENCODE_CONFIG_CONTENT` 过一道判官,每个字符串叶子分三类,
+其余点名 —— 「你还能找到别的绕法吗」(无限)变成「咽喉在不在、对未知默认拒不拒」(有限,一次变异判完)。
+
+**判官**([`config-injection-throat.test.ts`](../../packages/ui-mac/src/main/config-injection-throat.test.ts),13 条,
+`#1296` 的 6 条与 `#1299` 的 7 条已并入、原文件删除):跑真 `injectAlphaConfig`(生产 composition,零模块 mock,真临时盘),
+取 hook 之后**新写入或改动**的每个字符串叶子(JSON Pointer,RFC 6901 转义),按下表顺序判:
+
+| 叶子 | 单一权威 | 解释不了时 |
+| --- | --- | --- |
+| 用户的字(按**来源**) | 继承的 `OPENCODE_CONFIG_CONTENT` 里没被 hook 动过的叶子不看(被动过的照判);REQ-063 导入目录里的 instruction 文件按**目录**放行,不按 pointer | —(不判) |
+| `/instructions/<i>` | 值是路径 → 读盘 → 正文逐字等于某条 sink=instruction 的登记文字(`explainInstructionBody`) | `body not registered` / `unreadable` |
+| `/agent/<name>/prompt\|description` | 逐字等于**对应 sink** 的登记文字(`explainAgentText`;串格不解释) | `text not registered` |
+| `/agent/<name>/mode` | `packages/opencode/src/agent/agent.ts:38` `Literals(["subagent", "primary", "all"])` | `not an engine verb` |
+| `/agent/<name>/permission/**`、顶层 `/permission/**` | `packages/core/src/v1/config/permission.ts:5` `Literals(["ask", "allow", "deny"])`(两处源码文本读取,第 ⑤ 层 `KEPT_SOURCE_TEXT_READS` 登记 2 行;路径字面量与读调用同一行,否则该层谓词零命中 —— `#1304` 踩过) | `not an engine verb` |
+| 其它任何 pointer | 落在登记簿**声明过的引用**子树里(`explainConfigReference`:`/$schema` `/plugin` `/enabled_providers` `/model` `/provider` `/mcp`)。**只认引用不认文字**:登记过的字出现在没登记 sink 的位置同样点名 | `unexplained string leaf` |
+
+三类边界各有单一权威,不是散文枚举:alpha 的字来自登记簿(文字按 sink 逐字,引用按 pointer 子树);引擎动词锁死到引擎源码字面量;
+用户的字按来源排除。
+
+**引用的粒度**:整棵子树(与 pointer 相等或以 `<pointer>/` 开头都算;段边界精确,`/providers/x` 不算 `/provider` 的子树),与 ext
+既有的 `/mcp` 相同。子树里的字符串是路径 / id / server 定义 / `{file:}` 密钥引用 / 请求参数,没有一条通往模型上下文;唯一进 prompt
+的是引擎自己把选中模型的 **id**(不是展示名)写进 environment 段(`packages/opencode/src/session/system.ts:74`),那是 catalog /
+上游厂商的 id。**这条边界要说清**:往 `cfg.mcp.*.headers.*` 或 `cfg.provider.*.name` 写 prose 不会红 —— 它们到不了模型;
+写进模型看得见的任何位置(包括判官从没见过的键)都会。
+
+**双向锁**:全栈 env(ext bundle 路径 + 平台 / BYOK 密钥文件 + 默认模型 + 云 MCP 代付)下九个顶层键(`$schema` `agent`
+`enabled_providers` `instructions` `mcp` `model` `permission` `plugin` `provider`)全部真被写到、零点名,生产走到的引用集合 ==
+测试用独立字面量点名的六条 ui-mac 引用(登记簿多一条生产走不到的 ui-mac 引用 = 死引用,红);8 组 env 的 identity 形状集合 ==
+登记簿变体集合;生产写出的 agent 名集合 == 登记簿 ui-mac agent 名集合;解释出的 id 集合 == 登记簿对应条目。
+
+**已知的坏**(每条判据各带一个,先证明判官看得见):最要紧的一条打在**判官从没见过的键**上 —— 往 `cfg.command.*.template` 写
+登记过的 behavior 正文、往 `cfg.command.*.description` 写一句 prose、再加一个没人声明的顶层键,三处各点名 `unexplained string leaf`,
+其余照常解释;其它:instructions 多推一个未登记文件 / 路径不存在、behavior 落盘多一字节、未登记 agent / 已登记 agent 多一个字段、
+prompt 多一字节 / 串格、动词槽塞字(agent mode / permission.edit / 嵌套 `bash["*/rm *"]` / 顶层 `permission.websearch`)。
+
+**变异实证**(2026-09-08,每次都还原并复绿;完整输出在 `#1305` PR 正文):
+- M1(对未知默认拒):生产 `alpha-config-injection.ts` 在写出 `OPENCODE_CONFIG_CONTENT` 之前多写一处
+  `config.command = { …, "alpha-sneaky": { template: <prose>, description: ALPHA_BEHAVIOR_MD } }` —— 判官从没见过的键
+  ⇒ 咽喉 **2 pass / 11 fail**:跑真注入的 11 条全部点名 `/command/alpha-sneaky/template` 与 `/command/alpha-sneaky/description`
+  (`unexplained string leaf`,登记过的 behavior 正文也不放行);只剩 drift 锁与「已知的坏 ⓪」两条不受影响;还原 ⇒ 13 pass / 0 fail。
+- M2(引用漂移):登记簿抹掉 `ref.provider` ⇒ **12 pass / 1 fail**,全栈 env 那条点名 **47 个**叶子,全部在 `/provider/**` 下
+  (`/provider/alpha/name`、`/provider/deepseek-byok/options/apiKey`、`…/models/deepseek-v4-pro/variants/高/reasoningEffort` …);
+  其余 12 条(默认 env 不写 provider)照常绿;还原 ⇒ 13 / 0。
+- M3(引擎动词漂移):`permission.ts:5` 的字面量改成 `["ask", "allow", "deny", "defer"]` ⇒ drift 锁当场红
+  (`Expected to contain: "Literals([\"ask\", \"allow\", \"deny\"])"`),**12 pass / 1 fail**;还原 ⇒ 13 / 0。
+
+**不判的**(如实):`materializeV2EngineConfig` 写给 picker 的 v2 目录(`<userData>/alpha-engine-config/opencode.jsonc` /
+`models.json`)是同一对象的投影(`$schema` / `model` / `provider` 剥掉 apiKey)外加固定的 readiness marker
+(`name: "Alpha catalog readiness marker"`、`release_date: "1970-01-01"`),只供 `/api/model` 列目录,不进模型上下文。
+`alpha.jsonc` 文件通道(`OPENCODE_CONFIG`)是用户 / ext 安装面写的,不是 ui-mac 主进程往对话里塞的字。
