@@ -4,7 +4,7 @@ kind: architecture
 status: active
 owners:
   - alpha-code desktop maintainers
-last_reviewed: 2026-09-08
+last_reviewed: 2026-09-09
 review_after: 2026-12-08
 ---
 
@@ -27,6 +27,11 @@ review_after: 2026-12-08
 (`packages/opencode/src/permission/index.ts:158`)—— 它是 v1 侧 `PermissionV1.Request` 的
 **唯一构造点**(`:182`)与 `permission.asked` 的**唯一发布点**(`:195`,全仓 grep 实测)。
 它已由 [ADR-038](../../.claude/rules/adrs/ADR-038-v1-permission-ask-deadline.md) 收编进 `UPSTREAM_EXCLUDES`,改它 **north-star 零成本、零新 ADR**(§4 实测)。
+
+**v2 那一条通道呢?** 2026-09-09 补测(§9):**今天的桌面产品到不了它** —— 产品源码零 v2 会话发送、
+零 v2 审批建单,而共享渲染层那个运行时代次开关对 alpha 自己的引擎实测判 `v1`。所以 AC1 的「每个」
+**今天**由 `Permission.ask` 一处覆盖是完整的;但那是一条被 ADR-036 选出来的**选择**,不是结构性
+不可能(v2 的路由挂着、引擎会弹),因此闸门必须把这条前提一起守住(§9.7)。
 
 **但它也不是免费的:今天的远端 MCP 工具提示上,目的地和载荷一个字都没有**(§2.5 实测:
 `patterns: ["*"]`、`metadata: {}`)。分类要看得见「往哪发、发什么」,就必须有人把参数
@@ -229,10 +234,16 @@ MCP call count (must be 0)  = 0
 ⇒ **`gateToolExecution` 结构上不是「每一次授权提示」的必经点**,而 `Permission.ask` 是。
 
 另有一套**独立的 v2 引擎**(`packages/core/src/permission.ts`,`PermissionV2`),它自己有两个
-`Event.Asked` 发布点(`:337` / `:378`),已知调用方两处(`core/src/tool/question.ts:75`、
-`server/src/handlers/permission.ts:33`)。审批呈现面按 `#668` 的裁决**同时订阅两条通道**
-(`permission-v1-adapter.ts` 的模块头写明)。**v2 在桌面产品的真实可达性本轮未测**,
-登记在 §7。
+`Event.Asked` 发布点(`:337` / `:378`)。审批呈现面按 `#668` 的裁决**同时订阅两条通道**
+(`permission-v1-adapter.ts` 的模块头写明)。
+
+> **2026-09-09 订正 + 闭合(§9)。** 本段原写「已知调用方两处(`core/src/tool/question.ts:75`、
+> `server/src/handlers/permission.ts:33`)」—— **数错了**:`packages/core/src/tool/` 下有
+> **12 个** v2 工具在调 `permission.assert`(apply-patch / bash / edit / glob / grep / question /
+> read / skill / todowrite / webfetch / websearch / write),加上那个 HTTP 建单端点。
+> 这不改变结论,反而把它加强了 —— 入口更多,而**产品里一个都调不到**(§9.3/§9.4)。
+> 「v2 在桌面产品的真实可达性本轮未测」这一条已由 **§9** 闭合:**今天不可达**,
+> 结构性理由见 §9.6。
 
 ---
 
@@ -341,10 +352,10 @@ $ # 再往 11 个候选文件各加一行之后
 
 ## 7. 未验证 / 残余风险(诚实登记,不谎称穷尽)
 
-1. **v2 审批引擎(`PermissionV2`)在桌面产品里的真实可达性未测。** 已知它有自己的两个
-   `Event.Asked` 发布点与两个调用方(§3),呈现面按 `#668` 同时订阅两条通道。若 v2 在产品里
-   真的会弹框,AC1 的「每个」需要第二处接缝。**这是本轮最大的未闭合项**,应在实现前用与 §2 同型的
-   探针补一轮(判据:真实桌面会话里 v2 通道有没有产生过 `asked`)。
+1. ~~**v2 审批引擎(`PermissionV2`)在桌面产品里的真实可达性未测。**~~ **2026-09-09 已闭合,见 §9。**
+   结论:**今天不可达**(产品源码零 v2 会话发送、零 v2 审批建单;共享渲染层那个运行时代次开关
+   对 alpha 自己的引擎实测判 `v1`),但**不是结构性不可能** —— v2 的路由挂着、引擎会弹、呈现面
+   也订阅着那条通道。§9 给了随之而来的两条实现约束。
 2. **`read` / `external_directory` / `websearch` / `glob` / `grep` / `lsp` / `skill` / `task` /
    `todo` 的 ask 载荷是源码读数,本轮未实跑**(§2.4 表已逐行标注)。已实跑的是 write / webfetch /
    bash / 远端 MCP 四类。
@@ -379,6 +390,248 @@ bash scripts/worktree-bootstrap.sh ac-1285-seam -b recon/1285-classification-sea
 (仓根跑 `bun test` 会撞 `do-not-run-tests-from-root`)。
 
 本轮 7 条用例全绿(`7 pass / 0 fail / 13 expect() / 3.17s`);四条反向/变异臂逐条实测转红(§2.1)。
+
+---
+
+## 9. v2 审批引擎在桌面产品里的真实可达性(2026-09-09 补测,闭合 §7-1)
+
+> **一句话:v2 在今天的桌面产品里不可达 —— 但这是一条被 ADR-036 选出来、由闸门守着的
+> *选择*,不是结构性不可能。** 所以 AC1 只挂 `Permission.ask` 今天是完整的,而这份完整性
+> **有前提**,前提必须有人守(§9.7)。
+
+### 9.0 本节测量口径
+
+| | |
+| --- | --- |
+| 仓 | `alpha-code@842c374a7`(= `origin/alpha`,worktree `.worktrees/ac-1285-v2`,由 `scripts/worktree-bootstrap.sh` 建;`packages/core` typecheck RC=0 / 零 `Cannot find module`,先证明这棵树可信) |
+| 运行时 | bun **1.3.14**;宿主 Darwin 25.3.0 arm64 |
+| 观测面 | 两条通道各自的**源码探针**(v1 `opencode/src/permission/index.ts` 的 `Event.Asked` 发布点;v2 `core/src/permission.ts` 的 `:337` / `:378` 两个发布点 + `ask`/`assert` 入口),全部写进 `globalThis.__P1285V2`;外加真 HTTP 服务器、生产 SDK、生产协议探测函数 |
+| 日期 | 2026-09-09 |
+
+探针与取证测试一次性,**跑完即删、未提交**(与 §0 同一做法);逐字复现见 §9.8。
+
+### 9.1 v2 引擎自己会不会弹 —— 会,而且探针抓得到(B 臂)
+
+真的 `PermissionV2.Service`(真 `Database` / `EventV2` / `SessionStore` / `PermissionSaved` /
+`AgentV2`),agent ruleset `[{action:"*",resource:"*",effect:"ask"}]`,调 `assert({action:"edit",…})`。
+探针轨迹逐条:
+
+```
+core/permission.ts:assert(entry)
+core/permission.ts:378(fresh)   action="edit" resources=["src/index.ts"] metadataKeys=["diff","filepath"]
+```
+
+真正广播出去的那条 `Event.Asked` 载荷(逐字):
+
+```json
+{"id":"per_084fa51aa00130g696RjIa7PnG",
+ "fingerprint":"ead6062dda5515b3a29a136d5dd405d87aabfb95b02120126f0a7f202acc7d65",
+ "sessionID":"ses_p1285v2","subject":{"kind":"agent","id":"p1285agent"},
+ "action":"edit","resources":["src/index.ts"],
+ "scope":{"kind":"session","sessionID":"ses_p1285v2"},"expiresAt":null,
+ "save":["*"],"metadata":{"filepath":"src/index.ts","diff":"Index: src/index.ts\n+X\n"},
+ "source":{"type":"tool","messageID":"msg_p1285","callID":"b1"}}
+```
+
+**反向臂(必须先证明这个观测面测得出已知的坏)**:把 v2 的三个探针改成写一个不存在的全局
+⇒ B 臂当场红(`expect(v2.map(site)).toEqual([...])`,`Expected -4 / Received +1`)。
+
+### 9.2 v1 生产工具路径碰不碰 v2 —— 零(A 臂,与 B 臂同一个进程)
+
+生产入口 `SessionTools.resolve()` 返回对象的 `.execute()`,`write` 工具,ruleset
+`[allow *, ask edit]`。同一进程内探针轨迹:
+
+| 通道 | 条数 | 内容 |
+| --- | --- | --- |
+| v1 | **1** | `permission="edit"`,`patterns=["private/var/…/P1285V2-A.txt"]`(去前导 `/` 的相对形态),`metadata={filepath(绝对), diff}` |
+| v2 | **0** | —— |
+
+`Permission.list()` 里那条真实 pending 请求与探针一致。
+
+**变异臂(证明那个 0 不是空转)**:在 A 臂断言前人为往轨迹里塞一条 v2 记录
+⇒ `expect(v2).toEqual([])` 当场红,报文里印出 `MUTANT_v2_touch_in_v1_path`。
+
+**结构面同向**:`packages/opencode/src` 对 `@opencode-ai/core/tool` **零 import**;
+对 `@opencode-ai/core/permission` 只有一处 —— `server/routes/instance/httpapi/server.ts:60`
+的 `permission/saved`(装配层)。⇒ 一次 v1 工具执行**结构上**进不了 v2 的 ask。
+
+### 9.3 进入 v2 ask 的全部入口只有两族
+
+全仓 grep(非测试),`PermissionV2.Service` 的消费者一个不漏:
+
+| 入口 | 是什么 | 产品里谁在调 |
+| --- | --- | --- |
+| `packages/core/src/tool/*.ts` 的 12 个 v2 工具 `permission.assert`(apply-patch / bash / edit / glob / grep / question / read / skill / todowrite / webfetch / websearch / write) | 只在**一次 v2 会话执行**里跑 | 见 §9.4 |
+| `packages/server/src/handlers/permission.ts:28` `session.permission.create` → `PermissionV2.ask` | HTTP `POST /api/session/:sessionID/permission` | **零**(全仓非测试源码 `v2.session.permission.create(` 命中 0) |
+
+### 9.4 v2 会话执行的唯一触发点,以及它在产品里的调用数
+
+- `SessionV2.prompt`(`core/src/session.ts:382`,`execution.wake`)是唯一能起一次 v2 回合的地方;
+  它的唯一 HTTP 入口是 `POST /api/session/:sessionID/prompt`(`protocol/src/groups/session.ts:205`)。
+- `SessionV2.resume`(`core/src/session.ts:426`)在接口上存在,但**没有任何调用方**
+  (`grep -rn '\.resume('` 在 server / opencode / ui-mac / app / core 五处源码里只命中它自己的定义
+  与三处 UI 的 `autoScroll.resume()`),协议里也**没有** `session.resume` 端点。
+  ⇒ **不存在「开机自动 resume 把 ADR-036 留下的孤儿 durable 行跑起来」这条路。**
+- 产品源码里 `v2.session.prompt(` 的调用数:
+
+| 目录 | `v2.session.prompt(` | `v2.session.permission.create(` | `session.promptAsync(` |
+| --- | --- | --- | --- |
+| `packages/ui-mac/src`(出货的 Mac 壳) | **0** | **0** | 2 |
+| `packages/app/src`(共享渲染层) | **0** | **0** | 1 |
+| `packages/ui/src` | 0 | 0 | 0 |
+| `packages/desktop/src`(上游壳) | 0 | 0 | 0 |
+
+全仓非测试源码里 `v2.session.prompt(` 的唯一命中是本轮那份一次性探针脚本本身。
+
+### 9.5 线上实测:产品那两个动词各落在哪条 URL
+
+用**生产的** SDK(`createOpencodeClient` from `@opencode-ai/sdk/v2/client`)+ 记录型 `fetch`:
+
+```
+PRODUCT  client.session.promptAsync            -> POST /session/ses_x/prompt_async
+V2       client.v2.session.prompt              -> POST /api/session/ses_x/prompt
+V2       client.v2.session.permission.create   -> POST /api/session/ses_x/permission
+SURFACE  client.permission.list (v1)           -> GET  /permission
+SURFACE  client.v2.session.permission.list     -> GET  /api/session/ses_x/permission
+```
+
+两族 URL 完全不相交,产品发送口只出现在第一行那条。
+
+### 9.6 谁在选 v1/v2 —— 有一个**运行时**开关,实测它对 alpha 自己的引擎判 `v1`
+
+`packages/app/src/utils/server-compat.ts:86` 的 `createCompatibleApi` 按
+`detectServerProtocol()` 的结果二选一:判 `v1` 就返回降级壳(`session.prompt` → `promptAsync`),
+否则直接用 v2 API。**这是本节唯一一个真正的代次开关,所以必须实测,不能读源码。**
+
+真起一份生产引擎(`packages/opencode` 的 `serve`,`127.0.0.1:47285`):
+
+```
+GET /global/health -> HTTP 200 application/json  {"healthy":true,"version":"local"}
+GET /api/health    -> HTTP 200 application/json  {"healthy":true}          ← 没有 pid
+```
+
+把**生产的** `detectServerProtocol` 打上去:
+
+```
+detectServerProtocol(alpha 自己的引擎)                    = v1
+detectServerProtocol(只有 /api/health + pid 的假引擎)      = v2   ← 正样本臂
+```
+
+⇒ 共享渲染层拿到的是 **v1 降级壳**;那个开关不是恒返回 `v1`(正样本臂证明),它是**被 alpha 引擎
+自己的 `/global/health` 判到 v1 的**。
+
+**同一台服务器上,v2 的路由确实挂着**(所以「不可达」是「没人调」,不是「路由不存在」):
+
+| 请求 | 结果 |
+| --- | --- |
+| `POST /api/session/ses_nope/prompt` | HTTP 404,body `{"_tag":"SessionNotFoundError",…}` ← **到了 handler** |
+| `POST /api/session/ses_nope/permission` | HTTP 404,同形 |
+| `GET /api/definitely-not-a-route`(对照) | HTTP **200 text/html** ← SPA 兜底 |
+| `GET /global/definitely-not-a-route`(对照) | HTTP **200 text/html** ← SPA 兜底 |
+
+**治理与闸门面(选择恒不恒定)**:
+
+- [[ADR-036]] 把会话发送锁在 v1;[[ADR-037]] 规定任何代次切换必须独立成票/独立 PR/独立 ADR/独立行为闸。
+- ADR-036 §决策 3 的三条准入判据**今天仍不成立**(本轮实跑):
+  `git grep -l "@modelcontextprotocol" -- packages/core/src` → **0**(同命令在 `packages/opencode/src` → 5);
+  `git grep -n "tool.execute.before\|experimental.chat.system.transform" -- packages/core/src` → 只命中
+  `packages/core/src/plugin/skill/customize-opencode.md` 一份 markdown。
+- 守着这条选择的是登记在 `scripts/gate-files.tsv:131` 的 `#652 单一代次棘轮`
+  (`takeover-adapter-coexistence.test.ts`,委派到行为闸 `session-second-send.test.ts`)与
+  `permission-dual-channel.test.ts`(#668 双通道)。本轮实跑三份:**29 pass / 0 fail**。
+
+### 9.7 结论与随之而来的两条实现约束
+
+**结论:v2 在今天的桌面产品里不可达。** 不是「这一次没触发到」——
+①产品源码里没有任何一处能启动 v2 会话(§9.4)或直接建 v2 审批请求(§9.3);
+②唯一的运行时代次开关对 alpha 自己的引擎判 `v1`,且这个判定来自引擎自己应答的 `/global/health`(§9.6);
+③v1 的工具执行结构上进不了 v2 的 ask(§9.2)。
+⇒ **AC1 的「每个」今天由 `Permission.ask` 一处覆盖是完整的,不需要第二处接缝。**
+
+**但这份完整性是有前提的**,前提是 ADR-036 那条选择:v2 的路由挂着、引擎会弹(§9.1)、
+呈现面还订阅着那条通道。所以:
+
+1. **AC1 的闸门必须把这条前提一起守住。** 最省的形态:把本票的分类闸与 `#652 单一代次棘轮`
+   在 `scripts/gate-files.tsv` 的 `delegates_to` 上显式关联,或者在分类闸里直接断言产品源码
+   零 `v2.session.prompt(`。**不加这条,分类闸就是一道「有条件正确」而无人守条件的闸** ——
+   本票已经因为「前提没验证」翻过两次车。
+2. **若将来代次真的切走(按 ADR-037 独立成票),第二处接缝已经定位好:**
+   `core/src/permission.ts` 的 `admission()` 两个 `Event.Asked` 发布点(`:337` readmit / `:378` fresh)
+   —— 全仓 grep 实测 v2 侧 `Event.Asked` 只有这两处。**north-star 零成本**(本轮实测:探针同时改了
+   `packages/core/src/permission.ts` 与 `packages/opencode/src/permission/index.ts`,
+   `scripts/north-star-guard.sh` **RC=0**;控制臂往 `packages/core/src/tool/write.ts` 加一行注释
+   ⇒ 当场 **RC=1 并点名该文件**)。`core/src/permission.ts` 已由 [[ADR-033]] 收编进守卫 excludes
+   (`scripts/north-star-guard.sh:117-118`)。
+
+**但要注意:切到 v2 之后分类可用的事实比今天更少,不是更多。** 真 v2 工具代码 + 真
+`ToolRegistry` + 记录型审批层实测,v2 交给审批层的 input:
+
+| 工具 | v2 实测 input | v1 同名那一问(§2.4 + 本轮 A 臂) |
+| --- | --- | --- |
+| `write` | `{action:"edit", resources:["src/new.txt"], save:["*"], sessionID, agent, source}` —— **无 `metadata`** | `permission:"edit"`,`patterns:[绝对路径]`,`metadata:{filepath, diff}` |
+| `edit` | `{action:"edit", resources:["existing.txt"], save:["*"], sessionID, agent, source}` —— **无 `metadata`** | 同上 |
+
+字段映射:v1 `permission`↔v2 `action`;v1 `patterns`↔v2 `resources`;v1 `always`↔v2 `save`;
+v1 `tool`↔v2 `source`;v2 另有 `subject`(agent)/ `scope` / `expiresAt` / `fingerprint`。
+
+其余 v2 工具的 input 为**源码读数,本轮未实跑**(逐条标注):`webfetch` 带
+`metadata: input`(即 `{url, format}`)、`resources:[input.url]`;`websearch` 带
+`metadata:{...input, provider}`;`glob` / `grep` 带 `metadata:{root, path, …}`;
+`bash` `resources:[input.command]` **无 metadata**;`read` / `apply-patch` / `skill` /
+`todowrite` / `question` **无 metadata**。
+
+### 9.8 复现
+
+```bash
+bash scripts/worktree-bootstrap.sh ac-1285-v2 -b recon/1285-v2-reachability --base origin/alpha
+bun run --cwd packages/core typecheck          # 先证明这棵树可信:RC=0,零 Cannot find module
+```
+
+四处**临时**探针(跑完 `git checkout --` 还原),一律写成
+`;(globalThis as any).__P1285V2?.push({...})`(未初始化时是 no-op,不改变任何生产路径):
+
+| 文件 | 插在哪 | 记什么 |
+| --- | --- | --- |
+| `packages/opencode/src/permission/index.ts` | `yield* events.publish(Event.Asked, info)` 之前 | `info` 的键集 / `permission` / `patterns` / `metadata` |
+| `packages/core/src/permission.ts` | `:337` readmit 发布点之前 | `item.request` 的键集 / `action` / `resources` / `metadata` |
+| `packages/core/src/permission.ts` | `:378` fresh 发布点之前 | `value` 同上 |
+| `packages/core/src/permission.ts` | `ask` 与 `assert` 函数体首行 | 入口 `action` |
+
+A/B 两臂放同一个测试文件(同一进程,`beforeEach` 清轨迹),
+`cd packages/opencode && bun test test/permission/<file>`;A 臂夹具形状照抄
+`test/tool/alpha-tool-policy-execution-gate.test.ts`(真 `SessionTools.resolve()`),
+B 臂层照抄 `packages/core/test/permission.test.ts`。**2 pass / 0 fail / 13 expect() / 1.96s**;
+两条变异臂(§9.1 / §9.2)逐条实测转红。
+
+§9.7 的 v2 载荷表:`packages/core/test/` 下一份一次性用例,真 `ToolRegistry` + 真
+`WriteTool`/`EditTool`,`PermissionV2.Service` 换成只记不判的记录层
+(形状照抄 `packages/core/test/tool-write.test.ts`),`cd packages/core && bun test <file>`
+—— **1 pass / 0 fail / 7 expect()**。
+
+§9.5 / §9.6 的线上臂:
+
+```bash
+cd packages/opencode && OPENCODE_DISABLE_MODELS_FETCH=true \
+  bun run --conditions=browser ./src/index.ts serve --port 47285 --hostname 127.0.0.1
+curl -s http://127.0.0.1:47285/global/health   # {"healthy":true,"version":"local"}
+curl -s http://127.0.0.1:47285/api/health      # {"healthy":true}
+```
+
+再在 `packages/app` 里跑一份一次性脚本,`import { detectServerProtocol } from "@/utils/server-protocol"`,
+分别打真引擎与「只应答 `/api/health` 且带 `pid`」的假引擎(正样本臂)。
+URL 归属表(§9.5)用 `createOpencodeClient({ fetch: 记录型 })` 在 `packages/ui-mac` 里跑。
+
+治理与闸门臂:
+
+```bash
+git grep -l "@modelcontextprotocol" -- packages/core/src            # 0
+git grep -n "tool.execute.before\|experimental.chat.system.transform" -- packages/core/src
+cd packages/ui-mac && bun test \
+  src/renderer/alpha-ui/takeover-adapter-coexistence.test.ts \
+  src/renderer/alpha-ui/session-workspace/session-second-send.test.ts \
+  src/renderer/alpha-ui/permission-dual-channel.test.ts             # 29 pass / 0 fail
+bash scripts/north-star-guard.sh                                     # 带探针 RC=0;控制臂改 core/src/tool/write.ts ⇒ RC=1
+```
 
 ## 来源
 
