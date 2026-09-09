@@ -35,6 +35,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | REQ-158 授权提示的风险分类:每条 v1 授权请求的 `metadata.alphaRisk` 形状、档位/类别词表、规则表、事实来源(只消费上游派生事实,探针 raise-only)、兜底 critical/unknown、远端 MCP 身份轴的 args/transport 供数、以及「产品仍在 v1」这条前提由谁守 | [`contracts/permission-risk-classification.md`](contracts/permission-risk-classification.md) |
 | Build, distribution, CI, uninstall, and Settings recovery operations | [`runbooks/`](runbooks/)                                             |
 | Product and visual design assets                                     | [`design/README.md`](design/README.md)                               |
+| REQ-159 引擎进程自打沙箱的方案基线:选定方案与三条被否决的替代、五条安全不变量(可写集只能收紧 · 装外层与拆 REQ-138 必须同一次变更 · 按文件放行≠按目录放行且失败静默 · 披露要有判据 · set-ID 辖区扩到整进程)、三项**显式未闭合**地基与子票切分 | [`design/2026-09-09-req159-process-fence-baseline.md`](design/2026-09-09-req159-process-fence-baseline.md) |
 | Point-in-time audits and screenshots                                 | [`audits/README.md`](audits/README.md)                               |
 | Focused verification records                                         | [`verification/`](verification/)                                     |
 | REQ-128 桌面端对公网 stable 的 `package:alpha-first` 浏览/详情/安装取证(四条 AC 全 PASS;目录安装落 `disabled` 是既定策略) | [`verification/2026-08-26-req128-163-desktop-live-package/README.md`](verification/2026-08-26-req128-163-desktop-live-package/README.md) |
