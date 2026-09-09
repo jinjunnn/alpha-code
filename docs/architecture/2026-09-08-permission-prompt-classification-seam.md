@@ -321,6 +321,13 @@ $ # 再往 11 个候选文件各加一行之后
 
 ## 6. 推荐(接缝选型)
 
+> **已落地(2026-09-09,[`#1285`](https://github.com/jinjunnn/alpha-code/issues/1285) 实现票)。**
+> 按本节推荐实现:分类在 `Permission.ask` 产生并写进 `metadata.alphaRisk`;`gateToolExecution` 的
+> `GateInput` 新增 `args`,主体带 `transport`(远端 MCP 的目的地),两者随身份轴那一问一起进 `metadata`;
+> 分类模块落 `packages/opencode/src/permission/alpha-risk-classification.ts`。契约(形状、规则表、
+> 前提由谁守)见 [`../contracts/permission-risk-classification.md`](../contracts/permission-risk-classification.md)。
+> 本节以下是勘破时的推荐原文,保留作对照。
+
 **主接缝:`Permission.ask`**(`packages/opencode/src/permission/index.ts:158`),
 分类结论随 `info`(`:182`)一起落在**唯一**的 `permission.asked` 发布点(`:195`)上。理由三条,
 每条都有实测支撑:①它是 v1 侧唯一的请求构造点与唯一的事件发布点 ⇒ AC1 的「每个」是**结构性**的,

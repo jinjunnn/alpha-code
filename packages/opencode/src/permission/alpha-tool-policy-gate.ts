@@ -31,9 +31,11 @@
 // 已有的句柄递进来,subject 的派生(mcp / plugin / builtin)也由调用方用自己的句柄完成。
 import { Effect } from "effect"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import type { ConfigMCPV1 } from "@opencode-ai/core/v1/config/mcp"
 import { canonicalToolIdentity, type ToolAuthority, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
 import type { ToolPolicySubject } from "@opencode-ai/schema/alpha-tool-policy"
 import { Permission } from "./index"
+import type { ToolTransportFact } from "./alpha-risk-classification"
 import {
   AlphaToolPolicy,
   resolveToolPolicy,
@@ -120,15 +122,37 @@ function namedDeny(identity: ToolIdentity, effective: EffectiveToolPolicy): Perm
   })
 }
 
+/**
+ * 主体 + 它当前的传输事实(#1285 供数)。`transport` 只对 MCP 有意义:远端 = 目的地 URL,
+ * 本地 = 起的命令;**去秘密**(不含 headers / environment / oauth)。builtin / plugin / host 不带。
+ */
+export interface GateSubject extends ToolPolicySubject {
+  readonly transport?: ToolTransportFact
+}
+
+/** 从**生效的** MCP 配置 entry 派生传输事实(与 `mcpBindingEvidence` 同一去秘密口径)。 */
+export function mcpTransportFact(entry: ConfigMCPV1.Info | undefined): ToolTransportFact | undefined {
+  if (!entry) return undefined
+  if (entry.type === "remote") return { kind: "mcp-remote", url: entry.url }
+  return { kind: "mcp-local", command: [...entry.command] }
+}
+
 export interface GateInput<R> {
   readonly policy: AlphaToolPolicy.Interface
   readonly permission: Permission.Interface
   /** 调用方派生的**当前**主体(mcp 当前 entry digest / plugin loader digest / builtin 常量)。 */
-  readonly subject: Effect.Effect<ToolPolicySubject, never, R>
+  readonly subject: Effect.Effect<GateSubject, never, R>
   readonly ruleset: PermissionV1.Ruleset
   readonly sessionID: PermissionV1.AskInput["sessionID"]
   readonly tool?: { messageID: string; callID: string }
   readonly metadata?: Record<string, unknown>
+  /**
+   * #1285 / REQ-158 供数:模型交给这个工具的**原始参数**。它一直在调用方的词法作用域里
+   * (`session/tools.ts` 的 `execute(args, …)`、`code-mode.ts` 的 `input.args`),此前没进这一问 ——
+   * 于是远端 MCP 的授权提示上目的地与载荷一个字都没有(勘破 §2.5 实测 `patterns:["*"]` / `metadata:{}`)。
+   * 只做供数,不在这里分类;分类在 `Permission.ask`(唯一的 Request 构造点)。
+   */
+  readonly args?: unknown
 }
 
 /**
@@ -149,7 +173,15 @@ export const gateToolExecution = <R>(input: GateInput<R>): Effect.Effect<void, P
     yield* input.permission.ask({
       permission: canonical,
       sessionID: input.sessionID,
-      metadata: input.metadata ?? {},
+      // #1285:身份轴那一问带上分类需要的全部事实 —— identity / authority(受信目的地判定)/
+      // transport(远端 MCP 的目的地)/ args(载荷)。调用方给的 metadata 保留,这几个键由本闸写。
+      metadata: {
+        ...(input.metadata ?? {}),
+        identity: subject.identity,
+        authority: subject.authority,
+        ...(subject.transport ? { transport: subject.transport } : {}),
+        ...(input.args !== undefined ? { args: input.args } : {}),
+      },
       patterns: ["*"],
       always: ["*"],
       tool: input.tool,

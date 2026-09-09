@@ -163,12 +163,16 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
         identity,
         authority: facts?.authority ?? ({ kind: "not-asserted" } as const),
         bindingDigest: facts?.entry ? mcpBindingDigest(identity.origin, facts.entry) : undefined,
+        // #1285:子工具全是 MCP —— 目的地(transport)随身份轴那一问供数。
+        transport: AlphaToolPolicyGate.mcpTransportFact(facts?.entry),
       }
     }),
     ruleset: input.ruleset,
     sessionID: input.ctx.sessionID,
     tool: { messageID: input.ctx.messageID, callID: input.callID },
     metadata: {},
+    // #1285:载荷供数(与 E1-E3 同一口径)。
+    args: input.args,
   }).pipe(Effect.orDie)
   yield* input.plugin.trigger(
     "tool.execute.before",
