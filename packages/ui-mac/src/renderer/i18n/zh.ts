@@ -1351,6 +1351,10 @@ export const dict = {
   "alpha.session.revertDetail": "发送后将丢弃此后 {{count}} 条消息。",
   "alpha.session.childTitle": "子会话",
   "alpha.session.childBackToParent": "返回父会话",
+  // [ac#1225] AC1 —— 《人工智能生成合成内容标识办法》要求的显式标识。文案由 owner 2026-09-09 逐字给定,
+  // 不许改写:改一个字就不再是他批的那句。落点在会话页 composer 正下方(session-composer-dock.tsx),
+  // 判据在 test-component/new-session-workspace.cases.ts(真 DOM,删掉这行文案当场红)。
+  "alpha.session.aiDisclaimer": "内容由AI生成,仅供参考",
   "alpha.session.crossServerTitle": "此会话不属于当前连接的服务器",
   "alpha.session.crossServerDetail": "Code Puppy 侧栏固定显示本地引擎的会话;当前窗口已切换到其他服务器,无法在这里打开它。请返回首页后重新选择本地会话。",
   "alpha.session.backHome": "返回首页",
