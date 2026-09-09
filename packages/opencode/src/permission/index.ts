@@ -7,6 +7,7 @@ import os from "os"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { canonicalToolIdentity, type ToolIdentity } from "@opencode-ai/schema/tool-identity"
+import { classifyPermissionRequest, withRiskClassification } from "./alpha-risk-classification"
 
 export const Event = PermissionV1.Event
 
@@ -179,16 +180,31 @@ const layer = Layer.effect(
       if (!needsAsk) return
 
       const id = request.id ?? PermissionV1.ID.ascending()
+      // #1285 / REQ-158:风险分类在**这里**产生 —— 本函数是 v1 Request 的唯一构造点、`permission.asked`
+      // 的唯一发布点,且此处在 `Deferred.await` 之前(动作被放行之前)。分类只写 `metadata.alphaRisk`,
+      // 不参与上面的 evaluate()(deny/allow/ask 的判定与它无关;`#1291` 决定书 §2.2)。
+      // `withRiskClassification` 覆盖入参里的同名键:工具/MCP 自报的分类不算数。
+      const risk = classifyPermissionRequest({
+        permission: request.permission,
+        patterns: request.patterns,
+        always: request.always,
+        metadata: request.metadata,
+      })
       const info: PermissionV1.Request = {
         id,
         sessionID: request.sessionID,
         permission: request.permission,
         patterns: request.patterns,
-        metadata: request.metadata,
+        metadata: withRiskClassification(request.metadata, risk),
         always: request.always,
         tool: request.tool,
       }
-      yield* Effect.logInfo("asking", { id, permission: info.permission, patterns: info.patterns })
+      yield* Effect.logInfo("asking", {
+        id,
+        permission: info.permission,
+        patterns: info.patterns,
+        risk: { level: risk.level, kind: risk.kind },
+      })
 
       const deferred = yield* Deferred.make<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>()
       pending.set(id, { info, deferred })

@@ -25,7 +25,6 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ToolAliasLedger, type ToolDisplaySnapshotV1 } from "@opencode-ai/schema/tool-identity"
-import type { ToolPolicySubject } from "@opencode-ai/schema/alpha-tool-policy"
 import { AlphaToolPolicy, mcpBindingDigest } from "@/permission/alpha-tool-policy"
 import { AlphaToolPolicyGate } from "@/permission/alpha-tool-policy-gate"
 import { attachToolDisplay } from "./tool-display"
@@ -79,7 +78,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   // 当前 binding(§5)也在调用时重新派生:mcp = 生效配置 entry 的去秘密 digest
   // (rebind 后与记录里的 digest 不等 ⇒ enabled 降回 ask),plugin = 本装载代 digest,
   // builtin/host = 应用常量。
-  const currentSubject = (display: ToolDisplaySnapshotV1): Effect.Effect<ToolPolicySubject> =>
+  const currentSubject = (display: ToolDisplaySnapshotV1): Effect.Effect<AlphaToolPolicyGate.GateSubject> =>
     Effect.gen(function* () {
       const identity = display.identity
       if (identity.source === "mcp") {
@@ -88,6 +87,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           identity,
           authority: facts?.authority ?? { kind: "not-asserted" as const },
           bindingDigest: facts?.entry ? mcpBindingDigest(identity.origin, facts.entry) : undefined,
+          // #1285:远端 MCP 的目的地就是它的 transport(去秘密),随身份轴那一问一起送到审批面。
+          transport: AlphaToolPolicyGate.mcpTransportFact(facts?.entry),
         }
       }
       if (identity.source === "plugin") {
@@ -111,6 +112,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               sessionID: input.session.id,
               tool: { messageID: input.processor.message.id, callID: options.toolCallId },
               metadata: {},
+              // #1285:载荷供数 —— 模型给这个工具的原始参数,此前这一问上没有它。
+              args,
             }).pipe(Effect.orDie),
           )
           .then(() => execute.call(value, args, options)),

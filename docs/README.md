@@ -32,6 +32,7 @@ accepted contracts. Follow the [Alpha Documentation Contract](https://github.com
 | Platform and endpoint integration                                    | [`contracts/`](contracts/)                                           |
 | Session tool permission DTOs and decision receipts                   | [`contracts/session-permission.md`](contracts/session-permission.md) |
 | REQ-131 分层工具策略:三态/四类/selector、cap 合成、binding guard、分区持久化与 V1 session grant 语义 | [`contracts/tool-policy.md`](contracts/tool-policy.md)               |
+| REQ-158 授权提示的风险分类:每条 v1 授权请求的 `metadata.alphaRisk` 形状、档位/类别词表、规则表、事实来源(只消费上游派生事实,探针 raise-only)、兜底 critical/unknown、远端 MCP 身份轴的 args/transport 供数、以及「产品仍在 v1」这条前提由谁守 | [`contracts/permission-risk-classification.md`](contracts/permission-risk-classification.md) |
 | Build, distribution, CI, uninstall, and Settings recovery operations | [`runbooks/`](runbooks/)                                             |
 | Product and visual design assets                                     | [`design/README.md`](design/README.md)                               |
 | Point-in-time audits and screenshots                                 | [`audits/README.md`](audits/README.md)                               |

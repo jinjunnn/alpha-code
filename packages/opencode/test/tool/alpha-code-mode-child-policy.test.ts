@@ -107,7 +107,8 @@ type Probe = {
 
 async function buildTool(input: {
   probe: Probe
-  ask: (permission: string) => Effect.Effect<void>
+  /** 第二参是 gate 送进 Permission.ask 的完整请求(#1285 供数判据读它的 metadata)。 */
+  ask: (permission: string, request: PermissionV1.AskInput) => Effect.Effect<void>
   ruleset?: PermissionV1.Rule[]
   /** 文档轴用户记录(可变引用 —— 重读判据靠调用后改它)。缺省为空 ⇒ 四类默认。 */
   records?: ToolPolicyRecord[]
@@ -142,10 +143,10 @@ async function buildTool(input: {
     // #1129:E4 的 identity 闸经 gateToolExecution 走 **Permission.Service**(不再经 ctx.ask);
     // ask 探头随之移到这里 —— 事件名与断言不变。
     Layer.mock(Permission.Service, {
-      ask: ((req: { permission: string }) =>
+      ask: ((req: PermissionV1.AskInput) =>
         Effect.suspend(() => {
           input.probe.events.push(`ask:${req.permission}`)
-          return input.ask(req.permission)
+          return input.ask(req.permission, req)
         })) as Permission.Interface["ask"],
     }),
     inMemoryToolPolicyLayer(records),
@@ -179,7 +180,7 @@ async function buildTool(input: {
     ask: (req) =>
       Effect.suspend(() => {
         input.probe.events.push(`ask:${req.permission}`)
-        return input.ask(req.permission)
+        return input.ask(req.permission, { ...req, sessionID: SessionID.make("ses_alpha_1129_e4"), ruleset })
       }),
   }
 
@@ -310,5 +311,29 @@ describe("#1129 E4:code-mode child 的 identity 闸在 hook 之前、传输之�
     records.pop()
     await Effect.runPromise(built.tool.execute({ code: "return await tools.fixtures.get_text({ name: 'w2' })" }, built.ctx))
     expect(p.transport["get_text"]).toBe(2)
+  })
+
+  // ── #1285(REQ-158)供数:E4 的身份轴那一问必须带上模型给子工具的 args 与 identity ──────────
+  test("#1285 供数:child 的 identity ask 请求 metadata 带 args(载荷)与 identity;摘掉 code-mode.ts 传的 args 当场红", async () => {
+    const p = probe()
+    const asked: PermissionV1.AskInput[] = []
+    const built = await buildTool({
+      probe: p,
+      ask: (_permission, request) => {
+        asked.push(request)
+        return Effect.void
+      },
+    })
+    await Effect.runPromise(
+      built.tool.execute({ code: "return await tools.fixtures.get_text({ name: 'P1285' })" }, built.ctx),
+    )
+    const identityAsk = asked.find((request) => request.permission === ID_CHILD_GET_TEXT)
+    expect(identityAsk).toBeDefined()
+    expect(identityAsk!.metadata["args"]).toEqual({ name: "P1285" })
+    expect(identityAsk!.metadata["identity"]).toEqual({ source: "mcp", origin: SERVER, name: "get_text" })
+    expect(identityAsk!.metadata["authority"]).toEqual({ kind: "not-asserted" })
+    // 这个 rig 的 MCP mock 没有 bindingFacts entry ⇒ transport 不可知 ⇒ 键必须**缺席**(不许编一个)。
+    expect("transport" in identityAsk!.metadata).toBe(false)
+    expect(p.transport["get_text"]).toBe(1)
   })
 })
