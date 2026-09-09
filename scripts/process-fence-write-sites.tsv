@@ -1,0 +1,82 @@
+# REQ-159 (`#1321`) · AC3 —— alpha 在 sidecar 进程里的写盘调用点登记簿。
+# 四列 TAB:<文件> <fs API> <第一个实参(归一化)> <根>。根 = process-fence-profile.ts 的 W-id(可 `+` 连多个)、
+# `arg`(路径来自调用方;具体根登记在调用方那一行)、或 `main-only`(在闭包里但只有 main 进程执行到,见 isValidRoot)。
+# 新行由 --write 生成时根填 TODO —— 评审必须改成真根;
+# 点不出根 = 新的写入根 = 要么给可写集加行(带实测),要么改代码。判据:process-fence-write-sites.test.ts。
+# 重生:bun packages/ui-mac/scripts/process-fence-write-sites.ts --write(只写签名,不改已填的根)。
+packages/ext/src/plugin.ts	mkdirSync	root	W1
+packages/ext/src/plugin.ts	renameSync	join(root, "alpha.jsonc.tmp")	W1
+packages/ext/src/plugin.ts	writeFileSync	join(root, "alpha.jsonc.tmp")	W1
+packages/ui-mac/src/main/alpha-bridge.ts	mkdirSync	opencodeDir	W16
+packages/ui-mac/src/main/alpha-bridge.ts	mkdirSync	truthDir	W2
+packages/ui-mac/src/main/alpha-bridge.ts	symlinkSync	itemTruth	W16
+packages/ui-mac/src/main/alpha-bridge.ts	symlinkSync	truthDir	W16
+packages/ui-mac/src/main/alpha-bridge.ts	unlinkSync	itemLink	W16
+packages/ui-mac/src/main/alpha-config-injection.ts	copyFileSync	alphaJsoncPath()	W3
+packages/ui-mac/src/main/alpha-config-injection.ts	mkdirSync	dir	W3
+packages/ui-mac/src/main/alpha-config-injection.ts	mkdirSync	path.dirname(truth)	W2
+packages/ui-mac/src/main/alpha-config-injection.ts	mkdirSync	userDataPath	W3
+packages/ui-mac/src/main/alpha-config-injection.ts	rmSync	modelsPath	W3
+packages/ui-mac/src/main/alpha-config-injection.ts	rmSync	userCopy	W3
+packages/ui-mac/src/main/alpha-config-injection.ts	writeFileSync	file	W3
+packages/ui-mac/src/main/alpha-config-injection.ts	writeFileSync	modelsPath	W3
+packages/ui-mac/src/main/alpha-config-injection.ts	writeFileSync	path.join(dir, "opencode.jsonc")	W3
+packages/ui-mac/src/main/alpha-config-injection.ts	writeFileSync	truth	W2
+packages/ui-mac/src/main/alpha-environment.ts	mkdirSync	directory	main-only
+packages/ui-mac/src/main/alpha-environment.ts	rmdirSync	directory	main-only
+packages/ui-mac/src/main/alpha-installs.ts	mkdirSync	root	W2
+packages/ui-mac/src/main/alpha-installs.ts	renameSync	file	W2
+packages/ui-mac/src/main/alpha-live-allowlist.ts	mkdirSync	userDataPath	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	chmodSync	dir	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	chmodSync	file	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	chmodSync	tmp	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	mkdirSync	dir	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	mkdirSync	path.join(sDir, verId)	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	renameSync	tmp	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	rmSync	bak	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	rmSync	full	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	rmSync	path.join(serverDir(userDataPath, server), verId)	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	rmSync	serverDir(userDataPath, server)	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	rmSync	tmp	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	writeFileSync	file	W3
+packages/ui-mac/src/main/alpha-mcp-secrets.ts	writeFileSync	tmp	W3
+packages/ui-mac/src/main/alpha-secret-files.ts	chmodSync	dir	W3
+packages/ui-mac/src/main/alpha-secret-files.ts	chmodSync	file	W3
+packages/ui-mac/src/main/alpha-secret-files.ts	mkdirSync	dir	W3
+packages/ui-mac/src/main/alpha-secret-files.ts	rmSync	file	W3
+packages/ui-mac/src/main/alpha-secret-files.ts	rmSync	path.join(dir, leftover)	W3
+packages/ui-mac/src/main/alpha-secret-files.ts	writeFileSync	file	W3
+packages/ui-mac/src/main/alpha-workdir.ts	mkdirSync	artifactsDir	W1
+packages/ui-mac/src/main/alpha-workdir.ts	mkdirSync	dir	W1
+packages/ui-mac/src/main/alpha-workdir.ts	mkdirSync	root	W1
+packages/ui-mac/src/main/alpha-workdir.ts	renameSync	tmp	W1
+packages/ui-mac/src/main/alpha-workdir.ts	writeFileSync	tmp	W1
+packages/ui-mac/src/main/catalog-channels.ts	mkdirSync	userDataPath	W3
+packages/ui-mac/src/main/catalog-channels.ts	renameSync	tmp	W3
+packages/ui-mac/src/main/catalog-channels.ts	writeFileSync	tmp	W3
+packages/ui-mac/src/main/ext-atomic-fs.ts	mkdirSync	dir	arg
+packages/ui-mac/src/main/ext-atomic-fs.ts	mkdirSync	path.dirname(to)	arg
+packages/ui-mac/src/main/ext-atomic-fs.ts	openSync	dir	arg
+packages/ui-mac/src/main/ext-atomic-fs.ts	openSync	file	arg
+packages/ui-mac/src/main/ext-atomic-fs.ts	renameSync	from	arg
+packages/ui-mac/src/main/ext-atomic-fs.ts	renameSync	tmp	arg
+packages/ui-mac/src/main/ext-atomic-fs.ts	writeFileSync	tmp	arg
+packages/ui-mac/src/main/ext-bundle-lock.ts	mkdirSync	path.dirname(file)	W2
+packages/ui-mac/src/main/ext-bundle-lock.ts	mkdirSync	path.dirname(movedTo)	W2
+packages/ui-mac/src/main/ext-bundle-lock.ts	renameSync	file	W2
+packages/ui-mac/src/main/ext-bundle-lock.ts	unlinkSync	file	W2
+packages/ui-mac/src/main/ext-bundle-lock.ts	writeFileSync	file	W2
+packages/ui-mac/src/main/ext-config.ts	mkdirSync	path.dirname(target)	W2+W6+W1
+packages/ui-mac/src/main/ext-config.ts	renameSync	tmp	W2+W6+W1
+packages/ui-mac/src/main/ext-config.ts	unlinkSync	bak	W2+W6+W1
+packages/ui-mac/src/main/ext-config.ts	unlinkSync	tmp	W2+W6+W1
+packages/ui-mac/src/main/ext-config.ts	writeFileSync	bak	W2+W6+W1
+packages/ui-mac/src/main/ext-config.ts	writeFileSync	tmp	W2+W6+W1
+packages/ui-mac/src/main/ext-receipt-v2.ts	mkdirSync	root	W2
+packages/ui-mac/src/main/ext-receipt-v2.ts	renameSync	file	W2
+packages/ui-mac/src/main/ext-receipt-v2.ts	unlinkSync	file	W2
+packages/ui-mac/src/main/ext-receipt-v2.ts	writeFileSync	evidence	W2
+packages/ui-mac/src/main/process-fence-apply.ts	rmSync	p	W3
+packages/ui-mac/src/main/process-fence-apply.ts	writeFileSync	p	W3
+packages/ui-mac/src/main/remote-catalog.ts	mkdirSync	userDataPath	W3
+packages/ui-mac/src/main/remote-catalog.ts	writeFileSync	cachePath(userDataPath)	W3

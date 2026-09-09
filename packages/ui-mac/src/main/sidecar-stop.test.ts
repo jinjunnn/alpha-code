@@ -141,6 +141,8 @@ async function spawn(child: SidecarChild | DeafChild, port: number) {
     userDataPath,
     healthCheck: async () => true,
     fork: (() => child) as unknown as typeof import("electron").utilityProcess.fork,
+    // REQ-159 `#1321`:围栏计划替身(本文件的假子进程不跑 sidecar.ts;围栏判据在 process-fence-*.test.ts)。
+    planFence: () => ({ profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/nonexistent/alpha_fence.node" }),
   })
   await result.health.wait
   return result

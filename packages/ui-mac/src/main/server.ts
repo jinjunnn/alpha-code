@@ -23,6 +23,16 @@ import { markStartupTimeline } from "./startup-timeline"
 import { alphaUserWorkspaceDir } from "./alpha-user-workspace"
 import { buildSidecarStopCommand, type SidecarStopMode } from "./sidecar-stop"
 import { consumeDanglingSweepCredit } from "./dangling-sweep-latch"
+// REQ-159 `#1321`:进程围栏计划 —— fork 之前渲染 + 试编译可写集、解析原生模块路径,经 StartCommand 交给
+// sidecar 在 import 引擎之前 apply。计划做不出来 = 拒绝 fork(fail-closed,原因可读),不静默无围栏。
+import { planProcessFence, type ProcessFencePlan } from "./process-fence-plan"
+import { trialCompileProfile } from "./process-fence-compile"
+import type { ProcessFenceStartInput } from "./process-fence-apply"
+import { alphaGlobalRoot } from "./engine-config-truth"
+import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
+import { GLOBAL_RENDERER_STORE, TABS_INFO_KEY, TABS_KEY, TABS_RECENT_KEY } from "./tabs-preclean"
+import { homedir } from "node:os"
+import { mkdirSync, statSync } from "node:fs"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -66,6 +76,45 @@ type SpawnLocalServerOptions = {
   healthCheck?: typeof checkHealth
   fork?: typeof utilityProcess.fork
   timelineContext?: "boot" | "respawn"
+  /**
+   * REQ-159 `#1321`:围栏计划器。缺省 = 生产计划器(store 并集 + 真 sandbox-exec 试编译 + 原生模块解析);
+   * 测试用假子进程时注入替身。返回 undefined 只允许在非 darwin(那里没有 seatbelt);darwin 上
+   * 生产计划器要么给出计划、要么抛出 —— 抛出 = 这一代 fork 被拒(与 alpha-secrets sync 失败同一条路)。
+   */
+  planFence?: (input: { userDataPath: string; sidecarEnv: Record<string, string> }) => ProcessFenceStartInput | undefined
+}
+
+/** 生产计划器:把 electron / store / fs 接进 electron-free 的 planProcessFence。 */
+function planProductionFence(input: { userDataPath: string; sidecarEnv: Record<string, string> }): ProcessFencePlan | undefined {
+  if (process.platform !== "darwin") return undefined
+  const moduleDir = dirname(fileURLToPath(import.meta.url))
+  return planProcessFence(
+    {
+      userDataPath: input.userDataPath,
+      sidecarEnv: input.sidecarEnv,
+      addon: { packaged: app.isPackaged, resourcesPath: process.resourcesPath, moduleDir, exists: existsSync },
+    },
+    {
+      homeDir: homedir,
+      alphaGlobalRoot,
+      // `~/code-puppy` 是唯一允许 lazy 代建的目录(ADR-025);建不出来就让并集判它不存在 ⇒ planner 拒 fork。
+      defaultWorkspace: () => ensureUserWorkspaceDir() ?? alphaUserWorkspaceDir(),
+      readStore: () => {
+        const store = getStore(GLOBAL_RENDERER_STORE)
+        return { tabs: store.get(TABS_KEY), recent: store.get(TABS_RECENT_KEY), info: store.get(TABS_INFO_KEY) }
+      },
+      isDirectory: (p) => {
+        try {
+          return statSync(p).isDirectory()
+        } catch {
+          return false
+        }
+      },
+      mkdirp: (p) => void mkdirSync(p, { recursive: true }),
+      compile: trialCompileProfile,
+      log: (line) => getLogger()?.log(line),
+    },
+  )
 }
 
 export function getDefaultServerUrl(): string | null {
@@ -290,11 +339,25 @@ export async function spawnLocalServer(
   // REQ-065:出厂技能 reconcile 已上移至 boot(index.ts,truth reconcile 之前)—— skills.paths
   // 直指 app 资源、alphaGlobalRoot() 不再落出厂链;fork 前无需重复(app 路径仅跨重启变化)。
 
+  // REQ-159:围栏计划在 fork **之前**做(试编译失败 / 模块缺失 / 默认工作区不在 ⇒ 抛 ⇒ 这一代被拒,
+  // 与上面 alpha-secrets sync 失败同一条 fail-closed 路径)。env 先算好:计划要读的 XDG_* / HOME
+  // 必须是 sidecar 将拿到的那一份,不是 main 自己的 process.env。
+  const sidecarEnv = createSidecarEnv()
+  let fence: ProcessFenceStartInput | undefined
+  try {
+    fence = (options.planFence ?? planProductionFence)({ userDataPath: options.userDataPath, sidecarEnv })
+  } catch (error) {
+    getLogger()?.error("process fence plan FAILED — refusing to fork the sidecar (fail closed; an unfenced engine must not start)", error)
+    throw new Error(`process fence plan failed — sidecar fork refused: ${serializeError(error).message}`)
+  }
+  if (!fence && process.platform === "darwin")
+    throw new Error("process fence plan returned nothing on darwin — sidecar fork refused (an unfenced engine must not start)")
+
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   rotateServerLogs()
   const child = (options.fork ?? utilityProcess.fork)(sidecar, [], {
     cwd: ensureEngineScratchCwd(options.userDataPath),
-    env: createSidecarEnv(),
+    env: sidecarEnv,
     serviceName: SIDECAR_SERVICE_NAME,
     stdio: "pipe",
   })
@@ -393,6 +456,8 @@ export async function spawnLocalServer(
       initialDirectory: alphaUserWorkspaceDir(),
       extPluginPath: ext.path,
       registryChannel,
+      // REQ-159:profile 全文 + 模块路径。sidecar 在 import 引擎之前 apply;缺席(darwin)即拒绝启动。
+      ...(fence ? { fence: { profile: fence.profile, addonPath: fence.addonPath } } : {}),
     })
   }).catch((error) => {
     if (!exited) child.kill()

@@ -53,6 +53,9 @@ mock.module("../src/main/store", () => ({
 }))
 
 const { spawnLocalServer } = await import("../src/main/server")
+// REQ-159 `#1321`:生产 spawnLocalServer 在 fork 前做围栏计划(真 store / 真 sandbox-exec / 真原生模块路径);
+// 本文件的假子进程不跑 sidecar.ts,注入一个替身计划 —— 围栏本身的判据在 src/main/process-fence-*.test.ts。
+const fakePlanFence = () => ({ profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/nonexistent/alpha_fence.node" })
 const { serverLogRoots } = await import("../src/main/logging")
 const { creditDanglingSweepForSpawn, resetDanglingSweepLatchForTests } = await import(
   "../src/main/dangling-sweep-latch"
@@ -152,6 +155,7 @@ async function forkAndObserve() {
   const result = await spawnLocalServer("127.0.0.1", 4096, "password", {
     userDataPath,
     healthCheck: async () => true,
+    planFence: fakePlanFence,
     fork: fakeFork,
   })
   await result.health.wait

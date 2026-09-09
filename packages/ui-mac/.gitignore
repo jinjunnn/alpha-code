@@ -17,3 +17,7 @@ __pycache__/
 # 每次非 dev 的 packaged 构建改脏 43 个被追踪文件,而一次 git add -A 就能把整仓图标翻频道
 # 且没有任何闸会红。刻意**不带**结尾斜杠(与 packages/desktop 逐字相同):目录与同名文件都罩住。
 resources/icons
+
+# 构建产物:REQ-159 进程围栏的原生模块(scripts/build-fence-addon.ts 编出的 fat .node)。源码在
+# native/alpha-fence/alpha_fence.c(追踪);产物随 prebuild/predev 重编,经 extraResources 进包。
+native/alpha-fence/build/

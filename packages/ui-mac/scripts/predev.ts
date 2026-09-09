@@ -2,6 +2,9 @@ import { $ } from "bun"
 
 await $`bun ./scripts/copy-icons.ts ${process.env.OPENCODE_CHANNEL ?? "dev"}`
 
+// REQ-159(`#1321`):进程围栏的原生模块(dev 下 sidecar 从 native/alpha-fence/build/ 加载;没有它引擎不起)。
+await $`bun ./scripts/build-fence-addon.ts`
+
 // Bundle @alpha-code/ext to self-contained ESM so the embedded Node server can load it
 // without resolving raw TS at runtime (see .claude/rules/DECISIONS.md ADR-006).
 await $`cd ../ext && bun run build`
