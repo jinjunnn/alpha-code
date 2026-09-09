@@ -4,8 +4,8 @@ kind: architecture
 status: active
 owners:
   - alpha-code desktop maintainers
-last_reviewed: 2026-09-08
-review_after: 2026-12-08
+last_reviewed: 2026-09-09
+review_after: 2026-12-09
 ---
 
 # 票面写的两条路里,有一条的机理是错的
@@ -1058,7 +1058,339 @@ bundle(§7.3 的 70 条签名里),只是这次工作负载没走到。围栏要�
   可写目录)本轮**没测** —— 与第二轮 §6.3.3 同一条,未闭合。
 - **非 darwin 未测**(与前两轮同)。
 
-## 8. 用法
+## 8. 第四轮勘破:候选可写集 + 「装了 ext 的引擎整个塞进围栏」合成一跑(2026-09-09)
+
+§7.8 把这一条明确记为**没跑**:「本轮跑的是两条各自成立的臂……合成一次(外层围栏 + ext +
+真工作负载)**没跑** —— 它需要先按 §7.6 写出候选可写集」。本节先写出那份可写集,再把合成那一跑
+跑了。
+
+一句话结论:**路一活着。** 五步工作负载(冷启动 → 装连接器 → 开终端 → 跑 shell 工具 →
+写 `alpha.jsonc`)在围栏里全部通过,四条越界探针一条都没落盘,而同一批探针在去掉围栏的那条臂上
+全部落盘。**但候选可写集比 §7.6 的枚举多两条**,两条都只有实跑才冒得出来,其中一条(`§8.5` 第二条)
+**加进可写集也修不好**。
+
+### 8.0 测量口径(第四轮)
+
+| | |
+| --- | --- |
+| 仓 | `alpha-code@842c374a7`(= 当时的 `origin/alpha`),worktree `.worktrees/ac-1286-synth`,由 `bash scripts/worktree-bootstrap.sh ac-1286-synth -b recon/1286-fenced-ext-synthesis --base origin/alpha` 建(`4729 packages installed [13.01s]`;随后 `bun run --cwd packages/ext typecheck` **exit 0 / 0 条 `error TS` / 0 条 `Cannot find module`**,证明这棵树的结论可信) |
+| 宿主 | macOS **26.3.1**(build 25D2128),Darwin 25.3.0 arm64,xnu-12377.91.3 |
+| 运行时 | bun **1.3.14**(驱动与引擎);node **v22.22.3**(MCP 探针 server 与 PTY 探针) |
+| 包 | `cross-spawn` **7.0.6**;`@modelcontextprotocol/sdk` **1.29.0**;`@lydell/node-pty` **1.2.0-beta.12**;`bun-pty` **0.4.8**;`electron` **42.3.3** |
+| 被测 alpha 产物 | `packages/ext/dist/plugin.js`,`bun run --cwd packages/ext build`:出货形态 **837 792 B**;勘破对照臂 **837 963 B**(只多一个 env gate,见下) |
+| 出货二进制 | `/Applications/Code Puppy.app` v**0.1.11**,`Identifier=com.tide.alphacode`,`TeamIdentifier=RQX6X6A635`,`flags=0x10000(runtime)` |
+| 判据 | **探针文件到底落没落盘**(`find` / `ls` 实读)。HTTP 码、exit code、stderr 只作旁证 |
+| 对照臂 | 每一条「没落盘」都配一条**同一探针、同一路径、只去掉 `sandbox-exec` 那一段**的正样本臂;每一条可写集的行都配一条**只去掉这一行**的消融臂 |
+| 隔离 | 隔离家目录落在 `/Users/tide/alpha1286s/run-*`(**不在** `/private/tmp` 下 —— §7.4 括注里那个「escape landed 其实是布局问题」的坑,本轮从布局上避开) |
+| 日期 | 2026-09-09 |
+
+取证脚本一次性,不入仓;下面贴的是原始输出。
+
+**一处必须先说清的勘破改动(合入前必须删):** §6.5 已证外层整进程围栏与 REQ-138 的
+`cfg.shell` wrapper **互斥**,所以「路一的形态」在今天的代码里不存在 —— 要跑它就得让
+`wrapEngineShell` 不生效。本轮在 `packages/ext/src/shell-sandbox.ts` 的 `wrapEngineShell`
+开头加了**四行、只读一个环境变量**的对照臂开关,构建成第二份 bundle;随后
+`git checkout -- packages/ext/src/shell-sandbox.ts` 还原并重建出货形态那份(`grep -c` 实证:
+对照臂 bundle 含该变量名 **1** 次,出货形态那份 **0** 次)。**它不是围栏实现,也不是提案的接线方式** ——
+真正的实现要拆掉 REQ-138 那一层,不是用环境变量绕过它。
+
+> 副作用,免得下一个人误读:该 gate 走的是 `wrapEngineShell` 的「没围成」返回路径,于是
+> `plugin.ts:158` 会打印 `engine shell sandbox FAILED to install (...) — cfg.shell forced to a
+> deny stub ()`。**这行日志在本轮是假的** —— deny stub 的赋值发生在 `wrapEngineShell` 的
+> `catch` 里,提前 return 不经过它;实测 `GET /config` 里 `shell` 键**整个不存在**,
+> 引擎因此走 `Shell.preferred(undefined)` 落到 `/bin/zsh`,shell 工具照常执行。
+
+### 8.1 五问,各一句
+
+1. **候选可写集长什么样、有多少条?** 19 条(§8.2)。其中 **7 条不放行就出人命**:6 条让引擎/注入
+   直接死,1 条让 provider 静默装不上。
+2. **装了 ext 的引擎整个塞进围栏,活不活?** **活。** 五步工作负载全过,四条越界探针 0 落盘,
+   正样本臂 4/4 落盘(§8.3)。
+3. **今天直接在外面套一层会怎样?** **每一次 shell 工具调用零执行** ——
+   `sandbox-exec: sandbox_apply: Operation not permitted`,而且这次是**经真引擎 → 真工具 → 真 wrapper**
+   量到的,不是手工拼的命令(§8.4)。这条闭合了 §7.8 记的「引擎 → 工具 → wrapper 整条链在本轮是断的」。
+2'. **§7.6 的枚举够不够直接当 profile?** **不够**,差两条,见 §8.5;其中一条说明
+   「按文件放行」与「按目录放行」**语义不等价**,这一条会影响可写集的整体形状。
+5. **另两块地基有没有顺带读数?** 有,但都**不闭合**(§8.7)。
+
+### 8.2 候选可写集(19 行)与逐行消融
+
+profile 由一个生成器按根变量展开(`WORKDIR` / `<alphaGlobalRoot>` / `<userDataPath>` / `HOME`),
+每行带一个 id,消融臂 = 只去掉那一行、其余逐字不变。F2 那一跑的实际 profile(隔离路径已保留原样):
+
+```
+(version 1)
+(allow default)
+(deny file-write*)
+(allow file-write*
+  (subpath "<WORKDIR>")                                  ; W1  每个工作区一条
+  (subpath "<alphaGlobalRoot>")                          ; W2  = <appData>/alpha-code-state/env/<env>
+  (subpath "<userDataPath>")                             ; W3  含 alpha-engine-config/**、opencode/locks/**
+  (subpath "<HOME>/.local/share/opencode")               ; W4  上游引擎 log / *.db / -wal / -shm / repos
+  (subpath "<HOME>/.cache/opencode")                     ; W5  bin / models.json
+  (subpath "<HOME>/.config/opencode")                    ; W6  第二份 provider 安装(见 §7.4 坑一)
+  (subpath "<HOME>/.npm")                                ; W7  @npmcli/arborist 的 cacache,不随 XDG
+  (regex #"^<HOME>/\.zsh_history")                       ; W8  登录 shell(见 §8.5 坑一)
+  (subpath "<HOME>/.zsh_sessions")                       ; W10 见 §8.6 —— 生产路径上到不了
+  (regex #"^<HOME>/\.zcompdump")                         ; W19 加了也没用,见 §8.5 坑二
+  (subpath "/private/tmp")                               ; W11
+  (subpath "/private/var/folders")                       ; W12 $TMPDIR
+  (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr")   ; W13
+  (literal "/dev/tty") (regex #"^/dev/fd/")              ; W14
+  (literal "/dev/ptmx") (regex #"^/dev/ttys")            ; W15 §6.4 那两条,PTY 靠它
+  (subpath "<HOME>/.opencode")                           ; W16 §7.6 B 段的桥
+  (subpath "<HOME>/Library/Caches/bun")                  ; W17 dev-only
+  (subpath "<HOME>/.cache/bun")                          ; W18 dev-only
+)
+```
+
+**逐行消融(全部 fenced、全部冷启动、全部与 F2 同一条命令,只少一行):**
+
+| id | 内容 | 去掉之后实测 | 定级 |
+| --- | --- | --- | --- |
+| **W3** | `<userDataPath>` | **`/global/health` 从头到尾拿不到 200**(90 s 超时);`injectAlphaConfig` = `{ok:false, EPERM ...}` | **起不来** |
+| **W4** | `<HOME>/.local/share/opencode` | **health 恒 0** | **起不来** |
+| **W5** | `<HOME>/.cache/opencode` | **health 恒 0** | **起不来** |
+| **W6** | `<HOME>/.config/opencode` | **health 恒 0** | **起不来** |
+| **W15** | `/dev/ptmx` + `^/dev/ttys` | 引擎正常、MCP 连上,但 **`POST /pty` = HTTP 500**,PTY 探针不落盘 | **终端面板整个不可用** |
+| **W2** | `<alphaGlobalRoot>` | 引擎 health 200,但 `injectAlphaConfig` = `{ok:false, EPERM}`;`<alphaGlobalRoot>/alpha.jsonc` **未落盘**,`<userDataPath>/alpha-engine-config` **不存在** | **注入整份丢失** = `alpha-config-injection.ts` 头注里 `#613` 记的「模型全灰」 |
+| **W7** | `<HOME>/.npm` | 引擎 health 200、MCP 连上、PTY 200、shell 工具正常 —— 但**两处 `node_modules` 都不存在**;`opencode.log` 里两条 `level=WARN … "background dependency install failed" … NpmInstallFailedError`,各对应一个 provider 目录 | **静默:provider 一个都装不上**(health 仍 200,这是最难诊断的一档) |
+| **W8** | `\.zsh_history` 家族 | 引擎与 PTY 都正常,但终端里出现 `zsh: locking failed for <HOME>/.zsh_history: operation not permitted`;`.zsh_history` 不落盘 | **用户每开一次终端看一条报错** |
+| W1 | `<WORKDIR>` | health 200、MCP `connected`、`POST /pty` 200 —— 但**工作区里一个字节都写不进去**:self / mcp / pty / shelltool / `.code-puppy/alpha.jsonc` 五条界内探针**全部不落盘** | 起得来、连得上、**一件活也干不了** |
+| W11 | `/private/tmp` | 五步工作负载全过,探针表与 F2 逐格相同 | 本轮**未证伪** |
+| W12 | `/private/var/folders`($TMPDIR) | 同上 | 本轮**未证伪** |
+| W13 | `/dev/null` `/dev/stdout` `/dev/stderr` | 同上 | 本轮**未证伪** |
+| W14 | `/dev/tty` `^/dev/fd/` | 同上 | 本轮**未证伪** |
+| W16 | `<HOME>/.opencode` | 同上 | 本轮**未证伪**(§7.6 B 段那条桥没走到) |
+| W17+W18 | 两处 bun 缓存 | 同上 —— **连 dev 引擎跑在 bun 上都没用到** | dev-only,且本轮**未证伪** |
+| W10 | `.zsh_sessions` | **本轮没有单独消融**;见 §8.6 —— 生产接线上到不了它 | 见 §8.6 |
+| W19 | `\.zcompdump` | **加不加都一样**,见 §8.5 坑二 | 见 §8.5 |
+
+**「未证伪」不等于「可以删」。** 上面六行只说明**这一条工作负载**没走到它们;`/dev/null` 是
+REQ-138 spike 里已知必需的(重定向),`$TMPDIR` 在 §7.4 的报告面里有 2 条命中。它们要么保留,
+要么各自补一条能走到它的用例再删 —— 本轮不做这个判定。
+
+### 8.3 合成一跑:三条臂,同一条命令只差一段
+
+三条臂用的是**同一个驱动、同一份工作负载、同一批探针**,差别只有两处:外层要不要
+`sandbox-exec`,以及装哪一份 ext bundle。
+
+```
+# B1 正样本臂:不套围栏
+cd packages/ui-mac && bun run ./alpha1286s-driver.ts
+# F1:套围栏 + 出货形态的 ext(= 今天的代码直接加一层)
+cd packages/ui-mac && /usr/bin/sandbox-exec -f <ISO>/fence.sb "$(which bun)" run ./alpha1286s-driver.ts
+# F2:套围栏 + 拆掉 REQ-138 那层的 ext(= 路一的形态)
+同上,只换 ALPHA1286_EXT 指向的 bundle
+```
+
+驱动本身就是被围栏的那个进程(与生产里「sidecar 自打沙箱之后再 import 引擎」同形),
+它先跑 `injectAlphaConfig(userDataPath, extPluginPath, "dev")`,再把引擎作为**子进程**拉起来。
+
+**探针落盘表(第二台仪器:跑完 `ls` 实读,不看进程自报):**
+
+| 探针 | 谁写的 | B1(无围栏) | F1(围栏 + 出货 ext) | F2(围栏 + 路一形态) |
+| --- | --- | --- | --- | --- |
+| `<ws>/self-in.txt` | 被围栏进程自身 | **落盘** | **落盘** | **落盘** |
+| `<esc>/self-esc.txt` | 同上 | **落盘** | 不落盘 | 不落盘 |
+| `<ws>/mcp-in.txt` | MCP stdio 子进程(node,经 SDK 自带 cross-spawn) | **落盘** | **落盘** | **落盘** |
+| `<esc>/mcp-esc.txt` | 同上 | **落盘** | 不落盘 | 不落盘 |
+| `<ws>/pty-in.txt` | `POST /pty` 派生的真 PTY | **落盘** | **落盘** | **落盘** |
+| `<esc>/pty-esc.txt` | 同上 | **落盘** | 不落盘 | 不落盘 |
+| `<ws>/shelltool-in.txt` | `POST /session/:id/shell` → `cfg.shell` | **落盘** | **不落盘(零执行)** | **落盘** |
+| `<esc>/shelltool-esc.txt` | 同上 | **落盘** | 不落盘 | 不落盘 |
+| `<ws>/.code-puppy/alpha.jsonc` | ext 的 `alpha_register` | **落盘** | **落盘** | **落盘** |
+| `<alphaGlobalRoot>/alpha.jsonc` | `injectAlphaConfig` | **落盘** | **落盘** | **落盘** |
+| `<HOME>/.zsh_history` | `POST /pty` 起的登录 shell | **落盘** | **落盘** | **落盘** |
+| **escape 目录条目数** | | **4** | **0** | **0** |
+
+`escape/` 在 F1/F2 两臂都是空目录(`ls -A` count=0),而 B1 是 4 个文件 ——
+**正样本臂非空**,这台仪器这一刻是活的。
+
+**F2 的工作负载逐条(全部真调用,原始响应):**
+
+| 动作 | 结果 |
+| --- | --- |
+| `GET /global/health` | `200 {"healthy":true,"version":"local"}` |
+| `GET /project/current` | `200`,`worktree` 正确,`vcs:"git"` |
+| `POST /session` | `200` |
+| **装一个连接器** `POST /mcp` | `200 {"alpha1286probe":{"status":"connected"}}` —— 探针 server 真起来、真写了盘 |
+| **开一个终端** `POST /pty`(缺省) | `200`,`command:"/bin/zsh"`,`args:["-l"]` |
+| `POST /pty`(带 `command`/`args`) | `200`,PTY 探针界内落盘、界外不落盘 |
+| **跑一次 shell 工具** `POST /session/:id/shell` | `200`;工具输出 = `(eval):1: operation not permitted: <esc>/shelltool-esc.txt` + `rc=0`;界内那条**落盘** |
+| **写一次 `alpha.jsonc`** `alpha_register` | `command "alpha1286probe" registered in .code-puppy/alpha.jsonc`,文件真落盘 |
+| 运行时 npm 安装 | **在围栏里完成**,两处各 **28 个顶层包 / 61 MB**,`<HOME>/.npm` 93 MB(§7.4 记的是 26 包,本轮 28 —— 依赖推进,**两份并存这一条不变**) |
+| `GET /experimental/tool/ids` | 含 `alpha_reload` / `alpha_register` / `alpha_echo` / `alpha_ping` ⇒ ext 确实装进了这台被围栏的引擎 |
+
+⇒ **AC2(MCP)、AC3(LSP 同族)、PTY、shell 工具四条通路的越界写,在整进程围栏下同时失败;
+上游 0 行改动。** 与 §6.3.2 的区别是:那一轮跑的是**裸引擎**,这一轮是**装了 `@alpha-code/ext`
+的引擎跑完一整套工作负载**。
+
+**一条口径上的诚实话:`alpha_register` 是直接装载出货 bundle 执行的**(`import(dist/plugin.js)`
+→ `hooks.tool.alpha_register.execute(...)`),因为它要模型回合才会经会话触发,而隔离家目录里没有凭据。
+执行它的进程**就是被围栏的那个进程**,所以「这条写入通路在围栏下通不通」是实测的;
+「引擎 → 模型 → 工具」那一段仍然**没跑**(与 §7.4 同一条,未闭合)。同样地,
+`shell` 端点这次能跑通,是因为 payload 里显式给了 `model`,绕开了 §7.4 撞到的
+`ProviderNoProvidersError`(`prompt.ts:505` 的 `input.model ?? agent.model ?? currentModel(...)`);
+`shellImpl` 本身不发 LLM 请求,所以这一步量到的是真的工具派生路径。
+
+### 8.4 F1 —— 今天照原样加一层外层围栏会发生什么
+
+| | |
+| --- | --- |
+| 命令 | 与 F2 逐字相同,只把 ext bundle 换成出货形态那一份 |
+| `GET /config` 的 `shell` | `<alphaGlobalRoot>/bin/zsh`(= ext 的 wrapper,REQ-138 那层还在) |
+| `POST /session/:id/shell` | HTTP **200**,但工具输出 = **`sandbox-exec: sandbox_apply: Operation not permitted`** |
+| 落盘 | 界内 **和** 界外**都不落盘** ⇒ **零执行** |
+| 其余 | health / MCP / PTY / `alpha_register` / 两处 provider 安装**全部正常** |
+
+⇒ §6.5 的互斥结论,现在有了**经真引擎、真会话、真工具调用**量到的版本。§7.4 ARM 2 是手工执行
+wrapper 量的,§7.8 把「引擎 → 工具 → wrapper 整条链」记为断的 —— **这一格闭合**。
+
+**它同时说明路一的落地顺序不能反:** 先装外层围栏、后拆 REQ-138 ⇒ 中间那一刻**每一次 shell 工具
+调用都零执行**,而 HTTP 仍然回 200。两件事必须是同一次变更,或者先拆后装。
+
+### 8.5 两条只有实跑才冒出来的坑
+
+**坑一:`.zsh_history` 不止一个文件 —— §7.6 第 22 行按原文立闸会当场报错。**
+§7.6 写的是 `$HOME/.zsh_history`、`$HOME/.zsh_history.LOCK`、`$HOME/.zsh_sessions/**`。
+按这三条写成 `(literal ...)` 之后,登录 shell 退出时终端里出现:
+
+```
+zsh: failed to write history file <HOME>/.zsh_history.new: operation not permitted
+```
+
+zsh 存历史是**写 `.zsh_history.new` 再改名**,那个中间名不在枚举里。改成
+`(regex #"^<HOME>/\.zsh_history")` 之后同一条命令**零报错**;去掉这一行则变成另一条报错
+`zsh: locking failed for <HOME>/.zsh_history: operation not permitted`。三臂都用**真 PTY 起真登录 shell**
+(`@lydell/node-pty` 起 `/bin/zsh -l`,交互,发 `echo`/`exit`)量的,判据是终端里那串字节 + 家目录落盘。
+
+判据本身也验过正反:同一条 regex 下 `/bin/sh` 写 `.zsh_history` / `.zsh_history.new` /
+`.zsh_history.LOCK` **三个都成功**,同一条命令里写 `other.txt` **失败**(`Operation not permitted`)。
+
+**坑二:按文件放行 ≠ 按目录放行 —— 会让「先检查目录可写」的程序静默走进失败分支。**
+用户 `.zshrc` 里一句很常见的 `autoload -Uz compinit && compinit`,在围栏下**不生成 `~/.zcompdump`,
+而且一个字都不报**:
+
+```
+# 同一份 .zshrc / .zprofile(从真实家目录拷进隔离家目录),同一条 PTY 命令
+无围栏 :  家目录落盘 = .zcompdump .zprofile .zsh_history .zshrc
+有围栏 :  家目录落盘 = .zprofile .zsh_history .zshrc          ← 少了 .zcompdump,终端零报错
+```
+
+**把 `(regex #"^<HOME>/\.zcompdump")` 加进可写集,它依然不生成。** 机理实读
+`/usr/share/zsh/5.9/functions/compdump:22`:
+
+```zsh
+[[ -w ${_d_file:h} ]] || return 1
+```
+
+它先问「**这个目录**可写吗」。围栏里 `<HOME>` 本身不在可写集(只有它下面几个具名文件在),
+于是 `access(2)` 答不可写,compdump 直接 `return 1`。实测三行并排:
+
+```
+围栏内:  [ -w $HOME ] → NO
+         echo probe > $HOME/.zcompdump  → OK      ← 文件写得进去
+         echo probe > $HOME/other.txt   → FAILED
+```
+
+`compinit` 返回 0,`compaudit` 也返回 0,**没有任何一层报错** —— 唯一可观察的是每次开终端
+重扫补全(慢),以及 dump 永远建不出来。
+
+这一条比它自己重要:**可写集里凡是「只放行某个目录下的几个具体文件」的写法,对任何用
+`access(W_OK)` 预检目录的消费方等价于「整个目录不可写」**,而那些消费方通常安静地降级。
+`<HOME>` 这一层还有一个结构性问题:**登录 shell 执行的是用户自己的 rc 文件**,它们的写入面
+不由我们的产物决定,**永远不可能从出货 bundle 派生出来**(§7.3 那套单一权威覆盖不到这里)。
+
+### 8.6 §7.4 的一条更正:`.zsh_sessions` 是夹具带进来的
+
+§7.4 把 `$HOME/.zsh_sessions/**` 与 `.zsh_history` 并列成「`POST /pty` 会写」。
+本轮实测**它在生产接线上到不了**:
+
+- `/etc/zshrc_Apple_Terminal:102` 才是写 `.zsh_sessions` 的地方,而它整段由
+  `TERM_PROGRAM = Apple_Terminal` 守着;
+- `Pty.create` 传下去的 env 是 `{...process.env, TERM, OPENCODE_TERMINAL}`,而 sidecar 的
+  `process.env` 由 `sidecar-env.ts` 的 **allowlist** 产生:`EXACT` 表里没有 `TERM_PROGRAM`,
+  `PREFIXES` 只有 `OPENCODE_` / `XDG_` / `LC_` / `ELECTRON_`;
+- 真机 `~/Library/Application Support/ai.opencode.desktop/alpha-shell-env.json` 实读 **3 个键,
+  不含 `TERM_PROGRAM`**;
+- 实测复现:同一条 PTY 命令,`TERM_PROGRAM` 缺席时家目录只出 `.zsh_history`;把
+  `TERM_PROGRAM=Apple_Terminal` 加回去才出 `.zsh_sessions/*.session`。
+
+§7.4 那次驱动是从开发者的终端里起的,**`TERM_PROGRAM=Apple_Terminal` 顺着环境继承进了引擎** ——
+这是《本机验证陷阱》里「夹具顶替了供数方」的又一例,与 §7.7 第一行同源。
+可写集里这一行**留着无害**(生产走不到),但**不要拿它当已知写入面**。
+
+### 8.7 顺带取得的另两块地基读数(都**不闭合**)
+
+**地基二(原生模块在签名包内能否加载)—— 只把地面真相收窄了,没有实测。**
+
+| 事实 | 实读 |
+| --- | --- |
+| 出货包已带的原生模块 | 三个:`@parcel/watcher-darwin-arm64/watcher.node`、`@msgpackr-extract/.../node.napi.glibc.node`、`@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/pty.node` |
+| 它们的签名 | `pty.node`:`TeamIdentifier=RQX6X6A635`,`flags=0x10000(runtime)` —— **与 app 同一个 Team**,且今天在 hardened runtime 下正常加载 |
+| app 的 entitlements | 只有 `cs.allow-jit`、`cs.allow-unsigned-executable-memory`、`device.audio-input`;**没有** `cs.disable-library-validation` ⇒ 库校验开着,只能加载同 Team 签名的库或系统库 |
+| `libsandbox` | `/usr/lib/libsandbox.1.dylib` **在盘上不存在**(dyld 共享缓存),但 `dlopen` 三种写法都成功,`sandbox_init` / `sandbox_init_with_parameters` / `sandbox_free_error` 三个符号都解析得到 |
+
+⇒ 需要的那个附加模块所依赖的库是 **Apple 系统库**(不受库校验限制),而它自己会被同一条流水线
+用同一个 Team 签名 —— 与三个已在出货的 `.node` 同形。**但这仍然是推断:本轮没有写、没有签、
+没有在打包 app 里加载过任何新的 `.node`。**(§6.6 P1 的原文口径不变。)顺带更正一处坐标:
+§6.6 写的 `/usr/lib/libsandbox.1.dylib` 不是盘上文件,是共享缓存里的名字。
+
+**地基三(一个 sidecar 服 N 个工作区 vs 可写集不能加宽)—— 形状实测出来了,矛盾没解。**
+
+| 臂 | profile | 实测 |
+| --- | --- | --- |
+| M1 | 可写集含 **两个**工作区(`(subpath ws1)` + `(subpath ws2)`) | 同一个被围栏的 sidecar,`GET /project/current?directory=ws2` **200**、`POST /session` **200**、shell 工具在 **ws2 里写文件成功**(`ws2/ws2-in.txt` 落盘),同时越界探针仍然 0 落盘 |
+| M2 | 可写集**只含 ws1**(= 用户打开了新目录而 sidecar 没 respawn) | `GET /project/current?directory=ws2` 仍 **200**、session 建得出来、**读**没问题 —— 但 shell 工具输出 `(eval):1: operation not permitted: <ws2>/ws2-in.txt`,**文件不落盘** |
+
+⇒ **「可写集取本代已知工作区之并」这条路在机制上成立**(M1 实测),§7.6 那句「多一个工作区只多
+一条 `(subpath <workspace>)`」得到确认。**而 M2 就是不解决它的代价形状:项目打得开、看得见、读得了,
+一写就失败**,并且失败点在工具输出里、不在任何启动日志里。**「打开新目录 ⇒ respawn sidecar」
+本轮没有实现也没有实测**(§6.7 那一问仍然开着)。
+
+**顺带一条会咬人的:K1(围栏内不能 exec set-ID 二进制)在路一下从「shell 工具」扩大到「整个引擎进程」。**
+实测 `/bin/ps` 是 `-rwsr-xr-x root:wheel`,围栏内 `execvp() of '/bin/ps' failed: Operation not permitted`;
+F1/F2 两臂里驱动想用 `ps -p <pid>` 读 PTY 的进程名,拿到的都是空串(B1 无围栏时是 `/bin/zsh -l`)。
+`/usr/bin/top`、`/usr/bin/su`、`/usr/bin/login`、`/usr/bin/newgrp`、`/usr/bin/quota` 同为 set-ID。
+反面对照:`/usr/bin/pgrep` **不是** set-ID,围栏内外行为一致(两臂同为 rc=1)——
+所以 `mcp/index.ts:459` 那条 `pgrep` 不受影响。`#1149` 已登记的这条代价,其**爆炸半径在路一下变大**,
+需要在方案基线里重新定价。
+
+### 8.8 第四轮的未验证(如实记账)
+
+- **出货形态(node + 打包产物 + 围栏)仍然没有合成过。** 本轮引擎跑在 **bun**(dev 树),
+  PTY 探针跑在 **node**。`sidecar.js` 的入口顶层就 `getParentPort()`,脱离 `utilityProcess`
+  跑不起来 ⇒ 要在出货形态上复跑这一节,得先有 §6.6 P1 那个附加模块。
+- **围栏下没有发过一次真的模型请求**(与 §6.8 同一条,隔离家目录无凭据,也不愿花 owner 额度)。
+  `shell` 端点这次是靠显式 `model` 绕开 provider 解析跑通的。
+- **`alpha_register` 仍是直接装载 bundle 执行**,不是经模型回合触发(与 §7.4 同一条)。
+- **消融表里 6 行「未证伪」不是「可删」**(§8.2 末尾),它们各自缺一条能走到自己的用例。
+- **`W10`(`.zsh_sessions`)没有单独消融**;§8.6 只证明生产接线上到不了它。
+- **用户 rc 文件的写入面没有边界。** 本轮只用了我自己的 `.zshrc` / `.zprofile` 一份样本
+  (它触发了 `compinit`)。别人的 rc 会写什么,**结构上枚举不了** —— 这是路一必须在基线里
+  正面回答的一条,不是残余风险。
+- **§7.6 B 段(出货产物里可达、本轮没跑到)仍然没有逐条可达性证明**,与第三轮同。
+- **`(with report)` 那台仪器本轮再次瞎给我看了。** 用 `(allow file-write* (with report))` 罩住
+  compinit 想抓它写了哪些路径:`log stream --level debug` 里**与本次隔离树相关的路径 0 条**,
+  **连同一窗口里的 positive-control 写入也 0 条**,且**没有 dropped 标记**。
+  这正是 §7.2「换个可执行文件就整个不报告,且不会给你 dropped 标记」那一类。
+  本节所有结论因此都只用**盘上快照**判定,报告面一条也没用。
+- **非 darwin 未测**(与前三轮同)。
+
+### 8.9 与前三轮的冲突记录(接 §6.9 / §7.7)
+
+| 前三轮的说法 | 第四轮实测 |
+| --- | --- |
+| §7.6 第 22 行:`POST /pty` 写 `$HOME/.zsh_history`、`.zsh_history.LOCK`、`.zsh_sessions/**` | `.zsh_history` **对**,但少了改名用的 **`.zsh_history.new`** —— 按原文立闸,用户每次开终端看一条 `failed to write history file` (§8.5);`.zsh_sessions` **在生产接线上到不了**,是夹具带进来的(§8.6) |
+| §7.8 第一条「合成一次(外层围栏 + ext + 真工作负载)没跑」 | 本节跑了(§8.3),**五步全过、越界 0 落盘、正样本臂 4/4 落盘** |
+| §7.8 第二条「引擎 → 工具 → wrapper 整条链在本轮是断的」 | 闭合(§8.4):经真会话调 shell 工具,拿到 `sandbox_apply: Operation not permitted` 且**零执行** |
+| §6.6 「bun:ffi 直连真 `/usr/lib/libsandbox.1.dylib`」 | 该路径**在盘上不存在**(dyld 共享缓存);`dlopen` 用它、用 `/usr/lib/libsandbox.dylib`、用裸名字都成功,三个符号都在(§8.7) |
+| §7.4 「两处各装 26 包 / 61 MB」 | 本轮 **28 包 / 61 MB**(依赖推进);**「两处并存」这一条不变**,是可写集里 W3+W6 两行都不能少的直接理由 |
+| `#1149` K1「围栏内 set-ID 不可 exec」= 一条 shell 工具的已知代价 | 路一下它是**整个引擎进程**的代价:`/bin/ps`、`/usr/bin/top` 等在围栏内 `execvp` 直接失败(§8.7) |
+
+
+## 9. 用法
 
 本文档是 REQ-159 方案基线(`docs/design/`)与其实现票**开工前**的对照物。三条纪律:
 
@@ -1068,3 +1400,6 @@ bundle(§7.3 的 70 条签名里),只是这次工作负载没走到。围栏要�
 3. §5 与 §6.8 的每一条,在实现票里必须变成实跑结论或显式的风险接受。
 4. §6.9 与 §7.7 是本文档内部的冲突台账:凡与 §6 冲突的旧断言以 §6 为准,凡与 §7 冲突的以 §7 为准。
    §7.7 第一行是**减覆盖**方向的更正(PTY 缺省今天并未被 REQ-138 罩住),不要照 §3 表原文立闸。
+5. **可写集以 §8.2 为准,不要照 §7.6 的枚举原文立闸** —— §7.6 是「写入面枚举」,§8.2 是
+   「跑通过的 profile」,两者差两条(§8.5),其中一条改的是可写集的**形状**(按文件放行
+   对预检目录的消费方等价于不可写)。§8.9 是第四轮的冲突台账,与它冲突的旧断言以 §8 为准。
