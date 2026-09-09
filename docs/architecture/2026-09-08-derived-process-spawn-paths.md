@@ -1333,8 +1333,14 @@ zsh 存历史是**写 `.zsh_history.new` 再改名**,那个中间名不在枚举
 | `libsandbox` | `/usr/lib/libsandbox.1.dylib` **在盘上不存在**(dyld 共享缓存),但 `dlopen` 三种写法都成功,`sandbox_init` / `sandbox_init_with_parameters` / `sandbox_free_error` 三个符号都解析得到 |
 
 ⇒ 需要的那个附加模块所依赖的库是 **Apple 系统库**(不受库校验限制),而它自己会被同一条流水线
-用同一个 Team 签名 —— 与三个已在出货的 `.node` 同形。**但这仍然是推断:本轮没有写、没有签、
-没有在打包 app 里加载过任何新的 `.node`。**(§6.6 P1 的原文口径不变。)顺带更正一处坐标:
+用同一个 Team 签名 —— 与三个已在出货的 `.node` 同形。**本轮这仍然是推断:本轮没有写、没有签、
+没有在打包 app 里加载过任何新的 `.node`。**
+
+> **2026-09-09 更正:这条推断已被实测证实,不再是推断。** `#1316` 写了一个最小 N-API 模块、
+> 由发版那条命令自己签、放进真的打包产物,在**引擎 sidecar 进程**与主进程各 `dlopen` 成功一次,
+> 三个符号全解析到;ad-hoc / 别的 Team / 去签名三条反例臂在同一进程里被库校验按 Team 拒掉。
+> 同一个模块在出货 sidecar 里调 `sandbox_init_with_parameters` 实测 `rc=0` 且围栏真生效。
+> 全部读数与未测项见 [`2026-09-09-req159-u1-native-addon-signed-load.md`](2026-09-09-req159-u1-native-addon-signed-load.md)。(§6.6 P1 的原文口径不变。)顺带更正一处坐标:
 §6.6 写的 `/usr/lib/libsandbox.1.dylib` 不是盘上文件,是共享缓存里的名字。
 
 **地基三(一个 sidecar 服 N 个工作区 vs 可写集不能加宽)—— 形状实测出来了,矛盾没解。**
