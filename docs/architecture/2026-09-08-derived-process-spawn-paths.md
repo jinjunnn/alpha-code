@@ -663,6 +663,10 @@ v0.1.11 的一次真实启动):同一个 sidecar 同时挂着两组 Office MCP �
 可写集取「本次 generation 已知的全部工作区之并」,还是「打开新目录就 respawn sidecar」?
 **这一问本轮没有实测**,它是 P1/P2 落地前必须先跑的一格。
 
+> **已裁决(2026-09-09,`#1317`):取启动时并集,不把「打开新目录」接成 respawn 触发器。**
+> 定价、五工作区实跑、65 535 那道硬天花板、respawn 的 10.087 s 与三条在途损失,见
+> [`2026-09-09-multi-workspace-fence-decision.md`](2026-09-09-multi-workspace-fence-decision.md)。
+
 ### 6.8 第二轮的未验证(如实记账)
 
 - **围栏下的一次真正的模型往返没有跑。** 本轮跑通的是会话、工具派生、MCP、LSP、PTY、
@@ -1354,6 +1358,10 @@ zsh 存历史是**写 `.zsh_history.new` 再改名**,那个中间名不在枚举
 一条 `(subpath <workspace>)`」得到确认。**而 M2 就是不解决它的代价形状:项目打得开、看得见、读得了,
 一写就失败**,并且失败点在工具输出里、不在任何启动日志里。**「打开新目录 ⇒ respawn sidecar」
 本轮没有实现也没有实测**(§6.7 那一问仍然开着)。
+
+> **已裁决(2026-09-09,`#1317`):取启动时并集,不把「打开新目录」接成 respawn 触发器。**
+> 定价、五工作区实跑、65 535 那道硬天花板、respawn 的 10.087 s 与三条在途损失,见
+> [`2026-09-09-multi-workspace-fence-decision.md`](2026-09-09-multi-workspace-fence-decision.md)。
 
 **顺带一条会咬人的:K1(围栏内不能 exec set-ID 二进制)在路一下从「shell 工具」扩大到「整个引擎进程」。**
 实测 `/bin/ps` 是 `-rwsr-xr-x root:wheel`,围栏内 `execvp() of '/bin/ps' failed: Operation not permitted`;
