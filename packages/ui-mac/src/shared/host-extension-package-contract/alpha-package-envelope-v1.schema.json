@@ -56,6 +56,9 @@
         }
       }
     },
+    "listing": {
+      "$ref": "#/$defs/listing"
+    },
     "root": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,31}:[a-z0-9][a-z0-9._-]{0,127}$",
@@ -120,6 +123,67 @@
     }
   },
   "$defs": {
+    "listing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "brandColor": { "$ref": "#/$defs/listingColor" },
+        "category": { "$ref": "#/$defs/listingSlug" },
+        "defaultPrompt": { "$ref": "#/$defs/listingPromptList" },
+        "developerName": { "$ref": "#/$defs/listingLine" },
+        "logo": { "$ref": "#/$defs/listingUrl" },
+        "logoDark": { "$ref": "#/$defs/listingUrl" },
+        "longDescription": { "$ref": "#/$defs/listingProse" },
+        "privacyPolicyUrl": { "$ref": "#/$defs/listingUrl" },
+        "screenshots": { "$ref": "#/$defs/listingUrlList" },
+        "termsOfServiceUrl": { "$ref": "#/$defs/listingUrl" },
+        "websiteUrl": { "$ref": "#/$defs/listingUrl" }
+      }
+    },
+    "listingColor": {
+      "type": "string",
+      "minLength": 7,
+      "maxLength": 7,
+      "pattern": "^#[0-9a-f]{6}$"
+    },
+    "listingLine": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "listingProse": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "listingPrompt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "listingPromptList": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/listingPrompt" }
+    },
+    "listingSlug": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "listingUrl": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^https://",
+      "format": "alpha-canonical-https-url"
+    },
+    "listingUrlList": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/listingUrl" }
+    },
     "capabilities": {
       "type": "array",
       "maxItems": 16,

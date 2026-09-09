@@ -6,6 +6,7 @@ import {
   decodePackageProfilePayloadV1,
   derivePayloadCapabilitiesV1,
   PACKAGE_COMPONENT_SKIP_REASONS_V1,
+  PACKAGE_LISTING_FIELDS_V1,
   type PackageProfilePayloadV1,
 } from "./decoder"
 import { HOST_EXTENSION_PACKAGE_CORPUS } from "./generate-artifact"
@@ -753,6 +754,9 @@ describe("AlphaPackageEnvelopeV1 synthetic decoder corpus", () => {
       "mcp-remote-v1",
       "mcp-remote-oauth-v1",
       "mcp-remote-connection-v1",
+      // `#1287`:唯一带 `listing` 的正向语料。它进这张 exact-set,是为了让「上架呈现段
+      // 让整包装不上了」这种回归当场红,而不是只在某条专用用例里红。
+      "listing-full-v1",
       "bundle-optional-unsupported-profile",
       "bundle-optional-unsupported-capability",
       "bundle-optional-media-type-mismatch",
@@ -1314,3 +1318,100 @@ function skillFilesOf(payload: Record<string, unknown>): Array<Record<string, un
 function errorsOf(result: ReturnType<typeof decodePackageEnvelopeHeaderV1>): string {
   return result.ok ? "" : result.errors.join("\n")
 }
+
+describe("AlphaPackageEnvelopeV1 listing section", () => {
+  /**
+   * `#1287` AC2:**缺这一段的既有条目仍可解码、仍可安装。**
+   *
+   * 判据不是一条散文承诺,而是语料本身:本票落地时 `decoder-corpus.v1.json` 的 diff 是
+   * **+72 / −0** —— 17 条既有语料的信封一个字节都没动,它们全都没有 `listing`,而那正是
+   * 今天每一个已发布条目的形状。这条用例把「没动过」变成常驻判据:哪天有人给既有语料补上
+   * 一段 listing,AC2 就不再有夹具了,这里当场红。
+   *
+   * 「仍可安装」由本文件既有的两条语料闸负责(每条 accepted 语料都真的走完
+   * fetch → payload decoder → secret → planner,每条 blocked 语料都在下游调用之前停住);
+   * 这里补的是它们数不到的那一面:**解出来的信封上没有 listing,而不是有一个空对象**。
+   */
+  test("every published envelope shape carries no listing and decodes unchanged", async () => {
+    const withoutListing = corpus.cases.filter((item) => !("listing" in item.envelope))
+    const withListing = corpus.cases.filter((item) => "listing" in item.envelope)
+    expect(withListing.map((item) => item.name)).toEqual(["listing-full-v1"])
+    // 下界式的 `> 0` 会在有人把语料删剩一条时仍然绿。数出真实条数。
+    expect(withoutListing.length).toBe(17)
+
+    for (const item of withoutListing) {
+      const decoded = decodePackageEnvelopeHeaderV1(jsonBytes(item.envelope))
+      expect(decoded.status, item.name).toBe(item.expect === "accepted" ? "accepted" : "blocked")
+      if (!decoded.ok) continue
+      expect(decoded.envelope.listing, item.name).toBeUndefined()
+      expect("listing" in decoded.envelope, item.name).toBe(false)
+    }
+  })
+
+  test("an envelope that declares the section keeps every value verbatim", () => {
+    const item = caseNamed("listing-full-v1")
+    const decoded = decodePackageEnvelopeHeaderV1(jsonBytes(item.envelope))
+    expect(errorsOf(decoded)).toBe("")
+    if (!decoded.ok) return
+    expect(decoded.envelope.listing).toEqual(item.envelope.listing as never)
+  })
+
+  /**
+   * 这一段的值会变成渲染层的 `<img src>`、`<a href>` 与一个 CSS 颜色。发布端 schema 的
+   * `^https://` 只是**下界**(与 `payloadRef.url` 同一惯例):宿主这一侧走 `decodeHttpsUrl`,
+   * 带凭据的、非规范化的、非 https 的一律拒。少了这一条,「schema 过了」就等于「宿主收下了」。
+   */
+  test.each([
+    ["websiteUrl", "http://example.invalid/", "non-https scheme"],
+    ["websiteUrl", "https://user:pw@example.invalid/", "embedded credentials"],
+    ["websiteUrl", "https://EXAMPLE.invalid/", "non-canonical host casing"],
+    ["logo", "javascript:alert(1)", "script scheme"],
+    ["brandColor", "red", "css keyword instead of a hex triplet"],
+    ["brandColor", "#3B5BDB", "uppercase hex"],
+    ["category", "Productivity", "uppercase category"],
+    ["developerName", "", "empty developer"],
+  ])("listing.%s refuses %s (%s)", (field, value) => {
+    const item = caseNamed("listing-full-v1")
+    ;(item.envelope.listing as Record<string, unknown>)[field] = value
+    const decoded = decodePackageEnvelopeHeaderV1(jsonBytes(item.envelope))
+    expect(decoded.ok).toBe(false)
+    expect(errorsOf(decoded)).toContain(`envelope.listing.${field}`)
+  })
+
+  test("the section refuses an unknown key, a non-object, and an over-long list", () => {
+    const unknown = caseNamed("listing-full-v1")
+    ;(unknown.envelope.listing as Record<string, unknown>).tagline = "not a published field"
+    expect(errorsOf(decodePackageEnvelopeHeaderV1(jsonBytes(unknown.envelope)))).toContain(
+      'envelope.listing: unknown key "tagline"',
+    )
+
+    const scalar = caseNamed("listing-full-v1")
+    scalar.envelope.listing = "a string"
+    expect(errorsOf(decodePackageEnvelopeHeaderV1(jsonBytes(scalar.envelope)))).toContain(
+      "envelope.listing: optional object",
+    )
+
+    const wide = caseNamed("listing-full-v1")
+    ;(wide.envelope.listing as Record<string, unknown>).screenshots = Array.from(
+      { length: 9 },
+      (_, index) => `https://example.invalid/listing/shot-${index}.png`,
+    )
+    expect(errorsOf(decodePackageEnvelopeHeaderV1(jsonBytes(wide.envelope)))).toContain(
+      "envelope.listing.screenshots: requires 1..8 items",
+    )
+  })
+
+  /**
+   * 这一段吃的是 `maxHeaderNodes` 的同一份预算。满宽包 + 满字段 listing 是**能同时到达**的
+   * 状态(发布端不会替我们拦),所以它必须有一条用例;没有它,「加了展示段之后宽包装不上了」
+   * 只会在真实发布时才被发现。
+   */
+  test("a maximum-width package still decodes with a fully populated listing", () => {
+    const wide = widenSkillCase(HOST_EXTENSION_PACKAGE_LIMITS_V1.maxComponents - 1)
+    wide.envelope.listing = caseNamed("listing-full-v1").envelope.listing
+    expect(Object.keys(wide.envelope.listing as Record<string, unknown>).sort()).toEqual(
+      [...PACKAGE_LISTING_FIELDS_V1].sort(),
+    )
+    expect(errorsOf(decodePackageEnvelopeHeaderV1(jsonBytes(wide.envelope)))).toBe("")
+  })
+})

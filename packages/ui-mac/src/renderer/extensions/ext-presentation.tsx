@@ -3,8 +3,11 @@
 // detail page (extension-detail.tsx) can reuse them without a hub ↔ detail import cycle.
 // Pure presentation: no store access, no IPC.
 
+import { Show } from "solid-js"
 import type { CatalogEntry, CatalogSource } from "./catalog-types"
 import type { InstallReceiptType } from "../../preload/types"
+import type { PackageListingV1 } from "../../shared/host-extension-package-contract/decoder"
+import { packageListingTextV1 } from "../../shared/host-extension-package-contract/decoder"
 import { t } from "../i18n"
 
 // Presentational only — the catalog carries no icon glyph/color. Keyed by id, falling back to the
@@ -108,3 +111,43 @@ export const LockIc = () => (
     <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" stroke-width="1.7" />
   </svg>
 )
+
+/**
+ * `#1287`:签名扩展包的方形图标 —— 卡片与详情页共用这一份。
+ *
+ * 发布者没给 `logo` 时回落到首字母,**那是常态**:今天已发布的条目一个 `listing` 都没有。
+ * `logoDark` 的切换交给 CSS(`extension-hub.css` 里那一组选择器逐字取自 `tokens.css` 的
+ * 深色判据),而不是在 JS 里再实现一遍「现在算不算深色」—— 那会是同一条规则的第二个真源,
+ * 且不会跟着用户中途换主题而更新。
+ */
+export function PackageLogo(p: { listing: PackageListingV1 | undefined; fallback: string }) {
+  const logo = () => packageListingTextV1(p.listing, "logo")
+  const logoDark = () => packageListingTextV1(p.listing, "logoDark")
+  return (
+    <Show when={logo()} fallback={(p.fallback[0] ?? "?").toUpperCase()}>
+      {(light) => (
+        <>
+          <img
+            class="alpha-ext-logo"
+            data-package-logo="light"
+            data-has-dark={logoDark() ? "" : undefined}
+            src={light()}
+            alt=""
+            loading="lazy"
+          />
+          <Show when={logoDark()}>
+            {(dark) => (
+              <img
+                class="alpha-ext-logo"
+                data-package-logo="dark"
+                src={dark()}
+                alt=""
+                loading="lazy"
+              />
+            )}
+          </Show>
+        </>
+      )}
+    </Show>
+  )
+}

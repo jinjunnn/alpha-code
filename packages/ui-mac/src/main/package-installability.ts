@@ -13,6 +13,7 @@ import {
   HOST_EXTENSION_PACKAGE_SCHEMA_V1,
   type AlphaPackageEnvelopeV1,
   type PackageComponentDecodeV1,
+  type PackageListingV1,
   type PackagePayloadRefV1,
   type PackageProfilePayloadV1,
   type PackageSupportedComponentV1,
@@ -245,7 +246,14 @@ export async function evaluatePackageForHost(
   const header = decodePackageEnvelopeHeaderV1(bytes)
   if (!header.ok) {
     if (header.stage === "support")
-      return view(prelude.prelude, "update-required", "package-host-update-required", [], header.presentation)
+      return view(
+        prelude.prelude,
+        "update-required",
+        "package-host-update-required",
+        [],
+        header.presentation,
+        header.listing,
+      )
     return blockedView(prelude.prelude, "package-invalid")
   }
 
@@ -255,7 +263,7 @@ export async function evaluatePackageForHost(
   }
   const componentViews = safeComponentViews(header.components)
   const refuse = (reason: Exclude<CatalogPackageReasonCodeV1, "package-compatible" | "package-prerequisite-required" | "package-host-update-required">) =>
-    blockedView(header.envelope.prelude, reason, componentViews, presentation)
+    blockedView(header.envelope.prelude, reason, componentViews, presentation, header.envelope.listing)
 
   const rootEntry = header.components.find((entry) => entry.role === "root")
   // §4.1 条件 1 已经在 decoder 里把 non-required root 判成 header 失败;这里保留原来的单组件
@@ -508,6 +516,9 @@ function compatibleView(
       description: envelope.presentation.description,
       version: envelope.prelude.version,
     },
+    // `#1287`:逐字转发 decoder 已经判过的那一段。这里**不**补默认值、不拼接、不改写 ——
+    // 它是发布者签名过的事实,宿主只负责不让它决定 verdict/action。
+    ...(envelope.listing ? { listing: envelope.listing } : {}),
   }
 }
 
@@ -519,8 +530,9 @@ function blockedView(
   >,
   components: CatalogPackageComponentV1[] = [],
   presentation?: { displayName: string; description: string },
+  listing?: PackageListingV1,
 ) {
-  return view(prelude, "blocked", reason, components, presentation)
+  return view(prelude, "blocked", reason, components, presentation, listing)
 }
 
 function view(
@@ -529,6 +541,7 @@ function view(
   reason: CatalogPackageReasonCodeV1,
   components: CatalogPackageComponentV1[],
   presentation?: { displayName: string; description: string },
+  listing?: PackageListingV1,
 ): CatalogPackageViewV1 {
   return {
     catalogId: prelude.packageId,
@@ -541,6 +554,7 @@ function view(
       description: presentation?.description ?? "",
       version: prelude.version,
     },
+    ...(listing ? { listing } : {}),
   }
 }
 

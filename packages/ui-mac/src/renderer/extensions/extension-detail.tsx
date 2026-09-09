@@ -11,7 +11,7 @@ import type { CatalogEntry, CloudPipelineSpec, McpInstallSpec, PluginInstallSpec
 import type { InstallReceipt, ExtInventory } from "../../preload/types"
 import type { ExtensionsApi, HubAgent } from "./use-extensions"
 import { CloudDispatchBox } from "./cloud-dispatch-box"
-import { catalogDescription, iconFor, iconForRow, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
+import { catalogDescription, iconFor, iconForRow, PackageLogo, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
 import { ExtGrantedCapRow } from "./ext-authz"
 import { inventoryRowFor, inventoryInstallRow, ownershipRows, trustRows, runtimeSurfaceLabelKey, supportTierLabelKey, type PresentRow } from "./ext-inventory-present"
 import { derivePackFacts, formatPackBytes } from "./ext-pack-facts"
@@ -23,6 +23,7 @@ import type { SessionToggleView } from "./ext-session-toggle"
 import type { CurationStatus } from "../../shared/catalog-curation"
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
 import { packageComponentPresentation, packagePresentation, packageRetainedReasonKey } from "./ext-package-presentation"
+import { packageListingListV1, packageListingTextV1 } from "../../shared/host-extension-package-contract/decoder"
 import { extIpc } from "./ext-ipc"
 
 /** What the detail page shows: a legacy catalog entry, a host-projected package, an engine agent
@@ -194,6 +195,23 @@ export function ExtensionDetail(props: {
         setRemoving(false)
       }
     }
+    // `#1287`:两个取值器把「schema 派生的联合类型」在一个地方收敛掉,渲染处不出现任何 `as`。
+    const listingText = (field: Parameters<typeof packageListingTextV1>[1]) =>
+      packageListingTextV1(view().listing, field)
+    const listingList = (field: Parameters<typeof packageListingListV1>[1]) =>
+      packageListingListV1(view().listing, field)
+    /** 政策链接:字段名 → 文案 key 的对应住在这一处,渲染处只跟着数组走。 */
+    const listingLinks = () =>
+      (
+        [
+          ["websiteUrl", "alpha.ext.packageWebsite"],
+          ["privacyPolicyUrl", "alpha.ext.packagePrivacyPolicy"],
+          ["termsOfServiceUrl", "alpha.ext.packageTerms"],
+        ] as const
+      ).flatMap(([field, labelKey]) => {
+        const href = listingText(field)
+        return href ? [{ field, labelKey, href }] : []
+      })
     const runAction = async () => {
       const latest = await props.onPackageAction(view())
       if (latest) setPackageDetail(latest)
@@ -214,8 +232,13 @@ export function ExtensionDetail(props: {
         </nav>
 
         <header class="alpha-ext-dhead">
-          <span class="alpha-ext-dhead-ic" style={{ background: "var(--a-accent-solid)" }}>
-            {(view().presentation.displayName[0] ?? "?").toUpperCase()}
+          {/* `#1287`:发布者签名的 logo 与品牌色。两者都缺时回落到原来的首字母 + 主题色 ——
+              **回落是常态**,已发布的条目一个 listing 都没有。 */}
+          <span
+            class="alpha-ext-dhead-ic"
+            style={{ background: listingText("brandColor") ?? "var(--a-accent-solid)" }}
+          >
+            <PackageLogo listing={view().listing} fallback={view().presentation.displayName} />
           </span>
           <div class="alpha-ext-dhead-body">
             <div class="alpha-ext-dhead-t">
@@ -228,13 +251,85 @@ export function ExtensionDetail(props: {
               <span>
                 {t("alpha.ext.detailVersion")} {view().presentation.version}
               </span>
+              <Show when={listingText("developerName")}>
+                {(developer) => (
+                  <span data-package-developer="">
+                    {t("alpha.ext.packageDeveloper")} {developer()}
+                  </span>
+                )}
+              </Show>
+              <Show when={listingText("category")}>
+                {(category) => (
+                  <span data-package-category="">
+                    {t("alpha.ext.packageCategory")} {category()}
+                  </span>
+                )}
+              </Show>
             </div>
           </div>
         </header>
 
         <Section title={t("alpha.ext.detailAbout")}>
           <p class="alpha-ext-dabout">{view().presentation.description}</p>
+          <Show when={listingText("longDescription")}>
+            {(long) => (
+              <p class="alpha-ext-dabout" data-package-long-description="">
+                {long()}
+              </p>
+            )}
+          </Show>
         </Section>
+
+        {/* `#1287`:截图 / 用法示例 / 政策链接。每一段都只在发布者真的填了的时候出现 ——
+            空段位比没有更糟(用户读到一个「暂无」也要花一次注意力)。 */}
+        <Show when={listingList("screenshots").length > 0}>
+          <Section title={t("alpha.ext.packageScreenshots")}>
+            <div class="alpha-ext-package-shots">
+              <For each={listingList("screenshots")}>
+                {(shot) => (
+                  <img
+                    class="alpha-ext-package-shot"
+                    data-package-screenshot=""
+                    src={shot}
+                    alt=""
+                    loading="lazy"
+                  />
+                )}
+              </For>
+            </div>
+          </Section>
+        </Show>
+
+        <Show when={listingList("defaultPrompt").length > 0}>
+          <Section title={t("alpha.ext.packagePrompts")}>
+            <div class="alpha-ext-dtools">
+              <For each={listingList("defaultPrompt")}>
+                {(prompt) => (
+                  <div class="alpha-ext-dtool" data-package-prompt="">
+                    <code>{prompt}</code>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Section>
+        </Show>
+
+        <Show when={listingLinks().length > 0}>
+          <Section title={t("alpha.ext.packageLinks")}>
+            <For each={listingLinks()}>
+              {(link) => (
+                <FactRow label={t(link.labelKey)}>
+                  {/* `external-link` 是本应用唯一的外链出口:renderer/index.tsx 的全局
+                      click 拦截把它交给 main 的 shell.openExternal(scheme 白名单),
+                      而不是让这个窗口自己导航走。 */}
+                  <a class="external-link" data-package-link={link.field} href={link.href}>
+                    {link.href}
+                  </a>
+                </FactRow>
+              )}
+            </For>
+          </Section>
+        </Show>
 
         <Section title={t("alpha.ext.packageInstallability")}>
           <FactRow label={t("alpha.ext.packageInstallability")}>

@@ -1,4 +1,7 @@
-import type { PackageComponentSkipReasonV1 } from "./host-extension-package-contract/decoder"
+import type {
+  PackageComponentSkipReasonV1,
+  PackageListingV1,
+} from "./host-extension-package-contract/decoder"
 
 export const CATALOG_PACKAGE_REASON_CODES = [
   "package-compatible",
@@ -54,4 +57,10 @@ export type CatalogPackageViewV1 = {
     description: string
     version: string
   }
+  /**
+   * `#1287`:签名信封里的上架呈现段,**逐字转发**。字段集的唯一权威是
+   * `alpha-package-envelope-v1.schema.json`,所以这里不重列一遍 —— 加字段只改那个 JSON。
+   * 缺席是常态(已发布的条目一个都没有),消费端必须当可选处理。
+   */
+  listing?: PackageListingV1
 }
