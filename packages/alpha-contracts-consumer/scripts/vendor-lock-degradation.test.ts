@@ -91,7 +91,7 @@ describe("#769 · check:vendor degrades without a producer checkout instead of b
     // Naming the pin is the point: "provenance unverified" without saying *which* commit went
     // unproven is not a usable statement.
     expect(clean.stdout).toContain("PROVENANCE NOT VERIFIED this run")
-    expect(clean.stdout).toContain("no staged checkout of jinjunnn/alpha-web@3ebca3c95a5f5e37f6c9ea0598fff5676c60ea84")
+    expect(clean.stdout).toContain("no staged checkout of jinjunnn/alpha-web@cdaed4949dfd5457f9283a40a9c494960716c1de")
     expect(clean.stdout).not.toContain("verified 36 contract artifacts from")
   })
 

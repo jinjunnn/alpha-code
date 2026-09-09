@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code
-last_reviewed: 2026-08-03
+last_reviewed: 2026-09-09
 review_after: 2027-01-26
 ---
 
@@ -45,6 +45,59 @@ whitespace, and one trailing LF:
 ```text
 {"packageId":"<packageId>","version":"<version>"}\n
 ```
+
+## Listing (`#1287`)
+
+`listing` is an optional envelope section carrying what a storefront needs to
+show before someone installs: who publishes this, what it does at length, what
+it looks like, and where its policies live. **Its field set is defined once, in
+`$defs.listing` of `alpha-package-envelope-v1.schema.json`, and nowhere else.**
+The decoder imports that schema and derives its rule table from it at load time,
+so this document deliberately does not restate the field list — a prose copy
+would be the second authority the schema exists to prevent. Adding a field is a
+one-line schema edit; the decoder needs no change.
+
+That derivation is fail-closed rather than best-effort: the builder **throws** on
+any schema keyword, `type`, `format`, or `$ref` it cannot enforce, and on any
+`maxLength` large enough that a conforming value could still be refused by
+`maxStringBytes`. Silently ignoring a declared constraint would mean the
+published schema promises a bound the host never checks — the "contract that
+lies" failure the capability-grammar gate already exists to prevent, with the
+degradation pointing the other way.
+
+The section is **optional, and its absence is the norm**: every envelope
+published before it existed omits it, and omission is neither an error nor a
+change in installability. It is not folded into `presentation` for exactly that
+reason — `presentation` is the required minimum the host needs to render any
+card at all, and the two have different obligations.
+
+URL-bearing fields declare `pattern: "^https://"` in the published schema, which
+is a **floor**. The host requires a canonical HTTPS URL without userinfo
+credentials, exactly as it already does for `payloadRef.url`: canonicalization
+is the producer's responsibility, and a value that passes the schema may still
+be refused here.
+
+**Listing media is not content-addressed, and that is a registered downgrade.**
+`logo`, `logoDark`, and `screenshots` are URLs the renderer loads directly under
+the packaged CSP's `img-src … https:`; no `sha256` is declared and none is
+verified, so a publisher can change those bytes after signing. The alternative
+considered was copying the `{sha256, bytes, url}` shape used by payloads — that
+would declare a digest nothing on this path checks, which is strictly worse than
+declaring none. What the section can never do is influence a verdict: the host
+carries these values verbatim into the safe view and decides installability
+without reading them.
+
+Three fields of codex's `PluginManifestInterface` are deliberately **not** here.
+`display_name` and `short_description` already exist as the required
+`presentation.displayName` / `presentation.description`; adding second spellings
+would leave a producer guessing which one a host reads. `capabilities` is
+compiler-derived here and stricter than an author declaration (see above).
+`composer_icon` has no host surface that consumes it, and a signed field nothing
+reads is a claim no one can check. Spelling follows this envelope's camelCase
+(`logoDark`), not the source manifest's snake_case.
+
+ADR-040 is untouched: every value in this section is text or a link the host
+renders, never code the engine evaluates in its own process.
 
 ## Component graph
 

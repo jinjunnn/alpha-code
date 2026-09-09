@@ -13,10 +13,10 @@
         ],
         "id": "agent:generic-bundle-agent",
         "payloadRef": {
-          "bytes": 376,
+          "bytes": 372,
           "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
-          "sha256": "70710a3be9d619a66b05d1d368ffdca8d0c6f89fd2c864f6fdcd6c2f671f20e1",
-          "url": "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/70710a3be9d619a66b05d1d368ffdca8d0c6f89fd2c864f6fdcd6c2f671f20e1.json"
+          "sha256": "ce9471b75505ed5580b6d3ca35258b875469677ff90085622f371976838a11e8",
+          "url": "https://codepuppy.cn/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/ce9471b75505ed5580b6d3ca35258b875469677ff90085622f371976838a11e8.json"
         },
         "profileId": "agent",
         "profileVersion": 1,
@@ -27,10 +27,10 @@
         "dependencies": [],
         "id": "skill:generic-bundle-skill",
         "payloadRef": {
-          "bytes": 390,
+          "bytes": 386,
           "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-          "sha256": "e99309b86d266280532b997b3c57f596418475a20c35b94fed20024767bbab2b",
-          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/e99309b86d266280532b997b3c57f596418475a20c35b94fed20024767bbab2b.json"
+          "sha256": "dea63e871ee08b9e6c14aa1861da9b92363b756bfa9a1a6f11aeb83dd02a17c4",
+          "url": "https://codepuppy.cn/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/dea63e871ee08b9e6c14aa1861da9b92363b756bfa9a1a6f11aeb83dd02a17c4.json"
         },
         "profileId": "skill",
         "profileVersion": 1,
@@ -46,7 +46,7 @@
           "bytes": 270,
           "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
           "sha256": "0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961",
-          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-bundle-remote/1.0.0/alpha-package/0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961.json"
+          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-bundle-remote/1.0.0/alpha-package/0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961.json"
         },
         "profileId": "mcp-remote",
         "profileVersion": 1,
@@ -57,10 +57,10 @@
         "dependencies": [],
         "id": "command:generic-bundle-command",
         "payloadRef": {
-          "bytes": 420,
+          "bytes": 416,
           "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
-          "sha256": "08656efbe6e8afe2b6cbe6c836f0b1e268fb82492ccb2a3573f7cbec663e326e",
-          "url": "https://alphacodeone.com/catalog/assets/command.generic-bundle-command/1.0.0/alpha-package/08656efbe6e8afe2b6cbe6c836f0b1e268fb82492ccb2a3573f7cbec663e326e.json"
+          "sha256": "a15c7e4ed0f6eea68df51641fe32ee7a0c25f3abf85995f46f21095bc6bcfb68",
+          "url": "https://codepuppy.cn/catalog/assets/command.generic-bundle-command/1.0.0/alpha-package/a15c7e4ed0f6eea68df51641fe32ee7a0c25f3abf85995f46f21095bc6bcfb68.json"
         },
         "profileId": "command",
         "profileVersion": 1,
@@ -91,10 +91,10 @@
         ],
         "id": "agent:generic-bundle-agent",
         "payloadRef": {
-          "bytes": 376,
+          "bytes": 372,
           "mediaType": "application/vnd.alpha.host-extension-package.agent.v1+json",
-          "sha256": "70710a3be9d619a66b05d1d368ffdca8d0c6f89fd2c864f6fdcd6c2f671f20e1",
-          "url": "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/70710a3be9d619a66b05d1d368ffdca8d0c6f89fd2c864f6fdcd6c2f671f20e1.json"
+          "sha256": "ce9471b75505ed5580b6d3ca35258b875469677ff90085622f371976838a11e8",
+          "url": "https://codepuppy.cn/catalog/assets/agent.generic-bundle-agent/1.0.0/alpha-package/ce9471b75505ed5580b6d3ca35258b875469677ff90085622f371976838a11e8.json"
         },
         "profileId": "agent",
         "profileVersion": 1,
@@ -108,10 +108,10 @@
         "dependencies": [],
         "id": "skill:generic-bundle-skill",
         "payloadRef": {
-          "bytes": 390,
+          "bytes": 386,
           "mediaType": "application/vnd.alpha.host-extension-package.skill.v1+json",
-          "sha256": "e99309b86d266280532b997b3c57f596418475a20c35b94fed20024767bbab2b",
-          "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/e99309b86d266280532b997b3c57f596418475a20c35b94fed20024767bbab2b.json"
+          "sha256": "dea63e871ee08b9e6c14aa1861da9b92363b756bfa9a1a6f11aeb83dd02a17c4",
+          "url": "https://codepuppy.cn/catalog/assets/skill.generic-bundle-skill/1.0.0/alpha-package/dea63e871ee08b9e6c14aa1861da9b92363b756bfa9a1a6f11aeb83dd02a17c4.json"
         },
         "profileId": "skill",
         "profileVersion": 1,
@@ -130,7 +130,7 @@
           "bytes": 270,
           "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
           "sha256": "0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961",
-          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-bundle-remote/1.0.0/alpha-package/0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961.json"
+          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-bundle-remote/1.0.0/alpha-package/0ea65345f9feb8ab829393b92999c4d44c47de147367c7031fc9466761d68961.json"
         },
         "profileId": "mcp-remote",
         "profileVersion": 1,
@@ -144,10 +144,10 @@
         "dependencies": [],
         "id": "command:generic-bundle-command",
         "payloadRef": {
-          "bytes": 420,
+          "bytes": 416,
           "mediaType": "application/vnd.alpha.host-extension-package.command.v1+json",
-          "sha256": "08656efbe6e8afe2b6cbe6c836f0b1e268fb82492ccb2a3573f7cbec663e326e",
-          "url": "https://alphacodeone.com/catalog/assets/command.generic-bundle-command/1.0.0/alpha-package/08656efbe6e8afe2b6cbe6c836f0b1e268fb82492ccb2a3573f7cbec663e326e.json"
+          "sha256": "a15c7e4ed0f6eea68df51641fe32ee7a0c25f3abf85995f46f21095bc6bcfb68",
+          "url": "https://codepuppy.cn/catalog/assets/command.generic-bundle-command/1.0.0/alpha-package/a15c7e4ed0f6eea68df51641fe32ee7a0c25f3abf85995f46f21095bc6bcfb68.json"
         },
         "profileId": "command",
         "profileVersion": 1,
@@ -157,7 +157,7 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "5f6c2fc11800ef3e5f45352763252a5ed475eb899f0e27b07ebd943104b13c83",
+        "reportSha256": "ca00de49722a4dc866215ff3b93c61775a7ae85c588632f0cf842a464a6227b4",
         "verdict": "compatible"
       },
       "componentId": "agent:generic-bundle-agent",
@@ -183,7 +183,7 @@
           "bytes": 118,
           "mediaType": "text/markdown",
           "sha256": "f2a5576d98928e8df98f4608ac8521cabd95b17875a474317193836584683c65",
-          "url": "https://alphacodeone.com/catalog/assets/agent.generic-bundle-agent/1.0.0/AGENT.md"
+          "url": "https://codepuppy.cn/catalog/assets/agent.generic-bundle-agent/1.0.0/AGENT.md"
         },
         "targetDir": "alpha-agents"
       },
@@ -197,7 +197,7 @@
           "bytes": 86,
           "mediaType": "text/markdown",
           "sha256": "6af33a90b83e8d1b6eda01c4a6a195be850027aba95ecf2b245a45d2ef65f9d9",
-          "url": "https://alphacodeone.com/catalog/assets/command.generic-bundle-command/1.0.0/COMMAND.md"
+          "url": "https://codepuppy.cn/catalog/assets/command.generic-bundle-command/1.0.0/COMMAND.md"
         }
       },
       "schema": "alpha.host-extension-package.payload.command.v1"
@@ -222,7 +222,7 @@
             "bytes": 103,
             "path": "SKILL.md",
             "sha256": "4e62da1a8bc554708127ec4aa749e77850462478efd378338c56da6f348ba38e",
-            "url": "https://alphacodeone.com/catalog/assets/skill.generic-bundle-skill/1.0.0/SKILL.md"
+            "url": "https://codepuppy.cn/catalog/assets/skill.generic-bundle-skill/1.0.0/SKILL.md"
           }
         ],
         "targetDir": "alpha-skills"

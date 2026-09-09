@@ -1,3 +1,4 @@
+import envelopeSchemaJson from "./alpha-package-envelope-v1.schema.json"
 import {
   HOST_EXTENSION_PACKAGE_LIMITS_V1,
   findPackageProfileV1,
@@ -39,10 +40,154 @@ export type PackageSupportedComponentV1 = PackageComponentV1 & {
   capabilities: PackageCapabilityV1[]
 }
 
+/**
+ * `#1287`:上架呈现段。**字段集不在这里,也不在任何散文里** —— 唯一权威是
+ * `alpha-package-envelope-v1.schema.json` 的 `$defs.listing.properties`,本文件在装载期把它读成
+ * 下面的规则表。加一个展示字段 = 改那一个 JSON,decoder 不需要动;而这条约束不是靠人记得,是靠
+ * `buildPackageListingRulesV1` 对**不认识的 schema 关键字直接抛**(见该函数)。
+ *
+ * 为什么不是往 `presentation` 里加可选键:`presentation` 是宿主渲染**任何**卡片都必须有的最小必填
+ * 身份(`blockedView` 在拿不到它时还要回落到 packageId),而这一段整段可缺 —— 已发布的信封一个
+ * `listing` 都没有,它们必须继续解码、继续可装(AC2)。两件事的必填性不同,就不该住在同一个对象里。
+ */
+export type PackageListingFieldV1 = keyof typeof envelopeSchemaJson.$defs.listing.properties & string
+
+/**
+ * 值类型是 `string | readonly string[]` 的并,而不是逐字段窄化 —— 因为**键集是从 schema 派生的**,
+ * TS 拿不到每个 `$ref` 的字面量。消费方不要自己 `as`:用 `packageListingTextV1` /
+ * `packageListingListV1` 两个取值器,它们把并集在一个地方收敛掉。
+ */
+export type PackageListingV1 = {
+  readonly [K in PackageListingFieldV1]?: string | readonly string[]
+}
+
+type ListingStringRuleV1 = {
+  kind: "string"
+  minLength: number
+  maxLength: number
+  pattern?: RegExp
+  canonicalHttpsUrl: boolean
+}
+
+type ListingRuleV1 = ListingStringRuleV1 | { kind: "array"; maxItems: number; item: ListingStringRuleV1 }
+
+/** 本 decoder 认识的全部 schema 关键字。schema 里出现别的 ⇒ 抛,不是忽略。 */
+const LISTING_SCHEMA_KEYWORDS = new Set([
+  "$ref",
+  "format",
+  "items",
+  "maxItems",
+  "maxLength",
+  "minLength",
+  "pattern",
+  "type",
+])
+/** 本 decoder 实现了的全部 `format` 值。schema 里出现别的 ⇒ 抛。 */
+const LISTING_CANONICAL_HTTPS_URL_FORMAT = "alpha-canonical-https-url"
+
+/**
+ * 把 schema 的 `$defs.listing` 读成规则表。
+ *
+ * **对不认识的东西一律抛**,而不是忽略:忽略一个没实现的关键字 = 发布端 schema 说「这个值受限」
+ * 而宿主根本不查 —— 那正是本仓反复付过学费的「手写一个别人文法的替身」,只不过退化方向是放行。
+ * 抛的方向是 fail-closed,且因为 schema 是本目录里被 artifact manifest 逐字节钉住的静态文件,
+ * 它抛不出「拒载真实配置」那种事故:要让它抛,得先有人改这个 JSON,而那一刻测试就红了。
+ *
+ * 参数化(而不是直接读模块级常量)是为了让判据能喂一份**故意坏掉的** `$defs` 进来,证明它真的抛 ——
+ * 「先证明这个手段能测出已知的坏,再用它判未知的好」。
+ */
+export function buildPackageListingRulesV1(
+  defs: Record<string, unknown>,
+): ReadonlyMap<string, ListingRuleV1> {
+  const listing = defs.listing
+  if (!isObject(listing) || !isObject(listing.properties))
+    throw new Error("envelope schema: $defs.listing must declare an object with properties")
+  const resolve = (node: unknown, at: string): Record<string, unknown> => {
+    if (!isObject(node)) throw new Error(`envelope schema: ${at} must be an object`)
+    for (const key of Object.keys(node))
+      if (!LISTING_SCHEMA_KEYWORDS.has(key))
+        throw new Error(`envelope schema: ${at} declares unsupported keyword "${key}"`)
+    if (typeof node.$ref !== "string") return node
+    if (Object.keys(node).length !== 1)
+      throw new Error(`envelope schema: ${at} must be a bare $ref`)
+    const name = node.$ref.startsWith("#/$defs/") ? node.$ref.slice("#/$defs/".length) : ""
+    const target = name ? defs[name] : undefined
+    if (!isObject(target)) throw new Error(`envelope schema: ${at} points at unknown ${node.$ref}`)
+    return resolve(target, `${at} -> ${node.$ref}`)
+  }
+  const stringRule = (node: Record<string, unknown>, at: string): ListingStringRuleV1 => {
+    if (node.type !== "string") throw new Error(`envelope schema: ${at} must declare type "string"`)
+    if (typeof node.minLength !== "number" || typeof node.maxLength !== "number")
+      throw new Error(`envelope schema: ${at} must declare minLength and maxLength`)
+    if (node.maxLength * 3 > HOST_EXTENSION_PACKAGE_LIMITS_V1.maxStringBytes)
+      throw new Error(
+        `envelope schema: ${at} maxLength ${node.maxLength} can exceed maxStringBytes ${HOST_EXTENSION_PACKAGE_LIMITS_V1.maxStringBytes}`,
+      )
+    if (node.pattern !== undefined && typeof node.pattern !== "string")
+      throw new Error(`envelope schema: ${at} pattern must be a string`)
+    if (node.format !== undefined && node.format !== LISTING_CANONICAL_HTTPS_URL_FORMAT)
+      throw new Error(`envelope schema: ${at} declares unsupported format ${JSON.stringify(node.format)}`)
+    return {
+      kind: "string",
+      minLength: node.minLength,
+      maxLength: node.maxLength,
+      ...(typeof node.pattern === "string" ? { pattern: new RegExp(node.pattern) } : {}),
+      canonicalHttpsUrl: node.format === LISTING_CANONICAL_HTTPS_URL_FORMAT,
+    }
+  }
+  return new Map(
+    Object.entries(listing.properties).map(([field, declared]): [string, ListingRuleV1] => {
+      const at = `$defs.listing.properties.${field}`
+      const node = resolve(declared, at)
+      if (node.type !== "array") return [field, stringRule(node, at)]
+      if (typeof node.maxItems !== "number")
+        throw new Error(`envelope schema: ${at} must declare maxItems`)
+      return [
+        field,
+        {
+          kind: "array",
+          maxItems: node.maxItems,
+          item: stringRule(resolve(node.items, `${at}.items`), `${at}.items`),
+        },
+      ]
+    }),
+  )
+}
+
+/** 装载期从**发布出去的那份 schema** 派生的规则表。它就是本 decoder 的字段集。 */
+export const PACKAGE_LISTING_RULES_V1 = buildPackageListingRulesV1(
+  envelopeSchemaJson.$defs as unknown as Record<string, unknown>,
+)
+
+/** 字段集(排序按 schema 里的声明序)。消费端与判据都读这一个,不各自抄一份。 */
+export const PACKAGE_LISTING_FIELDS_V1: readonly PackageListingFieldV1[] = [
+  ...PACKAGE_LISTING_RULES_V1.keys(),
+] as PackageListingFieldV1[]
+
+/** 单值字段的取值器。schema 声明为数组的字段在这里返回 `undefined`,不返回 `"a,b"` 一类的拼接。 */
+export function packageListingTextV1(
+  listing: PackageListingV1 | undefined,
+  field: PackageListingFieldV1,
+): string | undefined {
+  const value = listing?.[field]
+  return typeof value === "string" ? value : undefined
+}
+
+/** 列表字段的取值器。缺席、或 schema 声明为单值的字段,一律返回空数组(渲染层无需再判空)。 */
+export function packageListingListV1(
+  listing: PackageListingV1 | undefined,
+  field: PackageListingFieldV1,
+): readonly string[] {
+  const value = listing?.[field]
+  return Array.isArray(value) ? value : []
+}
+
 export type AlphaPackageEnvelopeV1 = {
   schema: typeof HOST_EXTENSION_PACKAGE_SCHEMA_V1
   prelude: { packageId: string; version: string }
   presentation: { displayName: string; description: string }
+  /** `#1287`:整段可缺。已发布的信封一个都没有 —— 缺席**不是**错误,而是它们的常态。 */
+  listing?: PackageListingV1
   root: string
   components: PackageComponentV1[]
   /**
@@ -217,6 +362,7 @@ export type PackageEnvelopeHeaderDecodeV1 =
       stage: "header" | "support"
       errors: string[]
       presentation?: AlphaPackageEnvelopeV1["presentation"]
+      listing?: AlphaPackageEnvelopeV1["listing"]
     }
 
 export type PackageProfilePayloadDecodeV1 =
@@ -227,12 +373,15 @@ const ENVELOPE_KEYS = new Set([
   "schema",
   "prelude",
   "presentation",
+  "listing",
   "root",
   "components",
   "capabilities",
 ])
 const PRELUDE_KEYS = new Set(["packageId", "version"])
 const PRESENTATION_KEYS = new Set(["displayName", "description"])
+/** `#1287`:**派生自 schema**,不是第二份枚举。见 `PACKAGE_LISTING_RULES_V1`。 */
+const LISTING_KEYS = new Set<string>(PACKAGE_LISTING_FIELDS_V1)
 const COMPONENT_KEYS = new Set([
   "id",
   "required",
@@ -409,6 +558,7 @@ function decodeEnvelopeObject(value: unknown): PackageEnvelopeHeaderDecodeV1 {
   rejectUnknownKeys(value, ENVELOPE_KEYS, "envelope", errors)
   const prelude = decodePrelude(value.prelude, errors)
   const presentation = decodePresentation(value.presentation, errors)
+  const listing = decodeListing(value.listing, errors)
   const root = decodeString(value.root, "envelope.root", errors, {
     max: 160,
     pattern: PACKAGE_ID_RE,
@@ -455,6 +605,7 @@ function decodeEnvelopeObject(value: unknown): PackageEnvelopeHeaderDecodeV1 {
       stage: "support",
       errors: supportErrors,
       presentation,
+      ...(listing ? { listing } : {}),
     }
 
   const rootDecoded = decoded.find((entry) => entry.role === "root")
@@ -465,6 +616,7 @@ function decodeEnvelopeObject(value: unknown): PackageEnvelopeHeaderDecodeV1 {
       stage: "support",
       errors: [`envelope.root: the root component "${root}" must be supported`],
       presentation,
+      ...(listing ? { listing } : {}),
     }
 
   return {
@@ -476,6 +628,7 @@ function decodeEnvelopeObject(value: unknown): PackageEnvelopeHeaderDecodeV1 {
       schema: HOST_EXTENSION_PACKAGE_SCHEMA_V1,
       prelude,
       presentation,
+      ...(listing ? { listing } : {}),
       root,
       components: decoded.map((entry) => entry.component),
       capabilities,
@@ -568,6 +721,71 @@ function decodePresentation(
     max: 500,
   })
   if (displayName && description) return { displayName, description }
+}
+
+/**
+ * `#1287`:上架呈现段。**缺席不是错误** —— 每一个已发布的信封都没有这一段,拒掉它们就是本票
+ * AC2 明确禁止的回归。存在时逐字段按 `PACKAGE_LISTING_RULES_V1`(= 发布出去的那份 schema)判。
+ *
+ * URL 字段走 `decodeHttpsUrl` 而不是只判 schema 的 `^https://` 前缀:这些值会变成渲染层的
+ * `<img src>` 与 `<a href>`,而前缀谓词放得进 `https://user:pw@host` 这类带凭据的写法。
+ * schema 的 pattern 在此是**下界**(与 `payloadRef.url` 同一惯例,CONTRACT.md 已登记),
+ * 宿主更严。
+ */
+function decodeListing(value: unknown, errors: string[]): PackageListingV1 | undefined {
+  if (value === undefined) return
+  if (!isObject(value)) {
+    errors.push("envelope.listing: optional object")
+    return
+  }
+  rejectUnknownKeys(value, LISTING_KEYS, "envelope.listing", errors)
+  const decoded: Record<string, string | string[]> = {}
+  for (const [field, rule] of PACKAGE_LISTING_RULES_V1) {
+    if (!Object.hasOwn(value, field)) continue
+    const at = `envelope.listing.${field}`
+    if (rule.kind === "string") {
+      const item = decodeListingString(value[field], at, rule, errors)
+      if (item !== undefined) decoded[field] = item
+      continue
+    }
+    const raw = value[field]
+    if (!Array.isArray(raw)) {
+      errors.push(`${at}: required array`)
+      continue
+    }
+    if (raw.length < 1 || raw.length > rule.maxItems) {
+      errors.push(`${at}: requires 1..${rule.maxItems} items`)
+      continue
+    }
+    const items = raw.map((item, index) =>
+      decodeListingString(item, `${at}[${index}]`, rule.item, errors),
+    )
+    if (items.every((item): item is string => item !== undefined)) decoded[field] = items
+  }
+  return decoded as PackageListingV1
+}
+
+function decodeListingString(
+  value: unknown,
+  at: string,
+  rule: { minLength: number; maxLength: number; pattern?: RegExp; canonicalHttpsUrl: boolean },
+  errors: string[],
+): string | undefined {
+  const decoded = rule.canonicalHttpsUrl
+    ? decodeHttpsUrl(value, at, errors, rule.maxLength)
+    : decodeString(value, at, errors, { max: rule.maxLength, pattern: rule.pattern })
+  if (decoded === undefined) return
+  if (decoded.length < rule.minLength) {
+    errors.push(`${at}: requires at least ${rule.minLength} characters`)
+    return
+  }
+  // canonical-URL 字段的 pattern 在 decodeHttpsUrl 里没被用过,这里补判 —— 否则 schema 声明的
+  // 前缀约束在宿主侧**完全没人查**,而那正是「发布端 schema 说的话宿主不认」的合同说谎形态。
+  if (rule.pattern && !rule.pattern.test(decoded)) {
+    errors.push(`${at}: invalid format`)
+    return
+  }
+  return decoded
 }
 
 type DecodedComponent = PackageComponentV1
@@ -1254,8 +1472,8 @@ function decodeString(
   return value
 }
 
-function decodeHttpsUrl(value: unknown, at: string, errors: string[]): string | undefined {
-  const decoded = decodeString(value, at, errors, { max: 2048 })
+function decodeHttpsUrl(value: unknown, at: string, errors: string[], max = 2048): string | undefined {
+  const decoded = decodeString(value, at, errors, { max })
   if (!decoded) return
   try {
     const url = new URL(decoded)

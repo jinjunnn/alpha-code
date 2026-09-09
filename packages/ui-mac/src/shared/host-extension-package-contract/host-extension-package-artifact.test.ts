@@ -5,8 +5,14 @@ import { resolve } from "node:path"
 import { afterAll, describe, expect, test } from "bun:test"
 import {
   PACKAGE_CAPABILITY_GRAMMAR_V1,
+  PACKAGE_LISTING_FIELDS_V1,
+  PACKAGE_LISTING_RULES_V1,
+  buildPackageListingRulesV1,
   canonicalPackagePreludeBytesV1,
+  decodePackageEnvelopeHeaderV1,
   derivePayloadCapabilitiesV1,
+  packageListingListV1,
+  packageListingTextV1,
   type PackageProfilePayloadV1,
 } from "./decoder"
 import {
@@ -336,5 +342,115 @@ describe("HostExtensionPackageV1 artifact", () => {
     await expect(checkHostExtensionPackageArtifact(driftRoot)).rejects.toThrow(
       "path/SHA drift detected",
     )
+  })
+
+  /**
+   * `#1287` AC1:**上架呈现段的字段集只有一个权威 —— 发布出去的那份 schema。**
+   *
+   * 这条断言的两侧刻意不同源:左边是从磁盘上那个 JSON **逐字读**出来的键,右边是 decoder 在
+   * 装载期自己派生的规则表。本仓已经为「两份手写枚举悄悄漂开」付过学费(capability 文法那条),
+   * 区别在于这次不是「两边同步改」,而是**根本只有一处可改**:decoder 里没有字段名字面量,
+   * 加一个展示字段只需要动那个 JSON。这条用例存在的意义是让「有人在 decoder 里悄悄补一张
+   * 手写表」当场红。
+   */
+  test("the listing field set comes from the published schema and nowhere else", async () => {
+    const envelope = (await Bun.file(
+      resolve(import.meta.dir, "alpha-package-envelope-v1.schema.json"),
+    ).json()) as {
+      required: string[]
+      properties: Record<string, { $ref?: string }>
+      $defs: Record<string, { properties?: Record<string, unknown> }>
+    }
+    // 整段可缺 —— 这是 AC2 的**结构性**前提,不是消费端的好心。
+    expect(envelope.required).not.toContain("listing")
+    expect(envelope.properties.listing?.$ref).toBe("#/$defs/listing")
+
+    const published = Object.keys(envelope.$defs.listing?.properties ?? {})
+    expect(published).toEqual([...PACKAGE_LISTING_FIELDS_V1])
+    // 11 项来自 codex `PluginManifestInterface` 的上架呈现子集;`display_name` 与
+    // `short_description` 不在其中,因为它们早就是必填的 `presentation.{displayName,description}`。
+    expect(published).toEqual([
+      "brandColor",
+      "category",
+      "defaultPrompt",
+      "developerName",
+      "logo",
+      "logoDark",
+      "longDescription",
+      "privacyPolicyUrl",
+      "screenshots",
+      "termsOfServiceUrl",
+      "websiteUrl",
+    ])
+  })
+
+  /**
+   * 「先证明这个手段能测出已知的坏,再用它判未知的好」。
+   *
+   * 上面那条只说明两侧今天相等。真正让 schema 当得起权威的是:decoder 对它**读不懂的东西一律
+   * 抛**,而不是悄悄忽略。忽略一个没实现的关键字 = 发布端 schema 声明了一条约束、宿主根本不查,
+   * 那是本仓点名过的「手写一个别人文法的替身」,只不过退化方向是放行。
+   */
+  test("the listing rule builder refuses a schema keyword it does not implement", () => {
+    const defs = () =>
+      JSON.parse(
+        JSON.stringify({
+          listing: { type: "object", properties: { probe: { $ref: "#/$defs/probeString" } } },
+          probeString: { type: "string", minLength: 1, maxLength: 64 },
+        }),
+      ) as Record<string, Record<string, unknown>>
+    // 正样本:这份最小 schema 本身是读得懂的,所以下面每一条红都确实来自那一处改动。
+    expect([...buildPackageListingRulesV1(defs()).keys()]).toEqual(["probe"])
+
+    const cases: Array<[string, (value: Record<string, Record<string, unknown>>) => void]> = [
+      ["unsupported keyword", (v) => ((v.probeString as Record<string, unknown>).enum = ["a"])],
+      ["unsupported format", (v) => (v.probeString.format = "email")],
+      ["missing bound", (v) => delete v.probeString.maxLength],
+      ["unknown $ref", (v) => ((v.listing.properties as Record<string, unknown>).probe = { $ref: "#/$defs/absent" })],
+      ["array without maxItems", (v) => (v.probeString = { type: "array", items: { $ref: "#/$defs/probeString" } })],
+      ["type the decoder cannot enforce", (v) => (v.probeString.type = "integer")],
+      // maxLength × 3 字节要能超过 maxStringBytes 的话,发布端 schema 收得下的值会被 header
+      // 界当场拒掉 —— 那是「过了 schema 却被宿主拒」的合同说谎,必须在装载期就红。
+      ["maxLength beyond maxStringBytes", (v) => (v.probeString.maxLength = 4096)],
+    ]
+    for (const [label, mutate] of cases) {
+      const doctored = defs()
+      mutate(doctored)
+      expect(() => buildPackageListingRulesV1(doctored), label).toThrow()
+    }
+  })
+
+  /**
+   * 字段不能只活在 JSON 里。这条把 schema 声明的每一个字段与**真的走完一遍 decoder** 绑在一起:
+   * 语料里那条 `listing-full-v1` 必须逐字段都带上值,而 decoder 必须逐字段都把它交出来。
+   * 没有这一条,往 schema 里加一个 decoder 走不通的字段会全绿。
+   */
+  test("every published listing field survives a real decode and reaches exactly one accessor", async () => {
+    const corpus = (await Bun.file(resolve(import.meta.dir, HOST_EXTENSION_PACKAGE_CORPUS)).json()) as {
+      cases: Array<{ name: string; envelope: Record<string, unknown> }>
+    }
+    const item = corpus.cases.find((entry) => entry.name === "listing-full-v1")
+    expect(item, "corpus must publish one fully-populated listing case").toBeDefined()
+    const declared = item!.envelope.listing as Record<string, unknown>
+    expect(Object.keys(declared).sort()).toEqual([...PACKAGE_LISTING_FIELDS_V1].sort())
+
+    const decoded = decodePackageEnvelopeHeaderV1(
+      new TextEncoder().encode(`${JSON.stringify(item!.envelope, null, 2)}\n`),
+    )
+    expect(decoded.ok).toBe(true)
+    if (!decoded.ok) return
+    expect(decoded.envelope.listing).toEqual(declared as never)
+
+    for (const field of PACKAGE_LISTING_FIELDS_V1) {
+      const rule = PACKAGE_LISTING_RULES_V1.get(field)!
+      const text = packageListingTextV1(decoded.envelope.listing, field)
+      const list = packageListingListV1(decoded.envelope.listing, field)
+      // 恰好一个取值器给出值 —— 两个都给或都不给,渲染层就会开始自己 `as`。
+      expect([text !== undefined, list.length > 0], field).toEqual([
+        rule.kind === "string",
+        rule.kind === "array",
+      ])
+      expect(text ?? list, field).toEqual(declared[field] as never)
+    }
   })
 })

@@ -224,6 +224,12 @@ export function decoderCorpusBytesV1(): Uint8Array {
         label: "Alpha Example Connection",
       }),
     ),
+    // `#1287`:**唯一**一条带 `listing` 的语料,而且刻意是**新加的一条** —— 其余每一条的信封
+    // 都保持一字不动地没有这一段。那不是省事,那就是 AC2 的判据本体:已发布的条目全长这样,
+    // `package-envelope-v1.test.ts` 的「listing-free 语料不回归」用例数的就是它们。
+    // 字段**取全集**:消费方据此知道这一段今天能表达什么,而 artifact 测试反过来用它证明
+    // schema 声明的 11 个字段每一个都真的走通了 decoder(没有哪个字段是只写在 JSON 里的死字)。
+    listingCase(),
   ]
 
   // 单组件负向:profile / capability / 缺 profileId。
@@ -415,6 +421,39 @@ function single(
   return bundle(name, id, [{ id, profileId, required: true, capabilities, payload }], [])
 }
 
+/**
+ * `#1287`:带完整上架呈现段的正向语料。字段值全部取自**发布出去的那份 schema 的边界之内**,
+ * 且 URL 都是规范 HTTPS(`new URL(x).href === x`)—— decoder 对这一段比 schema 的 `^https://`
+ * 前缀更严,语料必须过得了严的那一侧,否则它证明不了任何事。
+ */
+function listingCase(): CorpusCase {
+  const name = "listing-full-v1"
+  const id = `skill:${name}`
+  return bundle(
+    name,
+    id,
+    [{ id, profileId: "skill", required: true, capabilities: [], payload: skillPayload(name) }],
+    [],
+    {
+      brandColor: "#3b5bdb",
+      category: "productivity",
+      defaultPrompt: ["Summarise this document", "Draft a reply to the latest thread"],
+      developerName: "Example Publisher Ltd.",
+      logo: "https://example.invalid/listing/logo.png",
+      logoDark: "https://example.invalid/listing/logo-dark.png",
+      longDescription:
+        "A synthetic listing that exercises every published presentation field: what the package does, who publishes it, and where its policies live.",
+      privacyPolicyUrl: "https://example.invalid/listing/privacy",
+      screenshots: [
+        "https://example.invalid/listing/shot-1.png",
+        "https://example.invalid/listing/shot-2.png",
+      ],
+      termsOfServiceUrl: "https://example.invalid/listing/terms",
+      websiteUrl: "https://example.invalid/listing/",
+    },
+  )
+}
+
 function blocked(name: string, specs: ComponentSpec[]): CorpusCase {
   const item = bundle(name, specs[0]!.id, specs, [])
   item.expect = "blocked"
@@ -426,6 +465,7 @@ function bundle(
   rootId: string,
   specs: ComponentSpec[],
   skipped: string[],
+  listing?: Record<string, unknown>,
 ): CorpusCase {
   const components = specs.map((spec) => {
     const registered = PROFILE_REGISTRY_V1.find((entry) => entry.profileId === spec.profileId)
@@ -457,6 +497,7 @@ function bundle(
       schema: "alpha.host-extension-package.v1",
       prelude: { packageId: `package:${name}`, version: "1.0.0" },
       presentation: { displayName: name, description: `Synthetic ${name} decoder case` },
+      ...(listing ? { listing } : {}),
       root: rootId,
       components,
       capabilities: [...new Set(specs.flatMap((spec) => spec.capabilities))].sort(),

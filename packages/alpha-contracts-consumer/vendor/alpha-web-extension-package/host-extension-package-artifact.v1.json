@@ -1,26 +1,26 @@
 {
   "artifactPath": "packages/ui-mac/src/shared/host-extension-package-contract",
-  "artifactSha256": "deaa72dee3958694e3f7ea20985c841160676dab974a1aa1a2c21028d822eb26",
+  "artifactSha256": "369b73f0ae139ae8fa90b9f1c8a8ab1f379f822aca9cae394ef7f0678e52c4eb",
   "files": [
     {
-      "bytes": 13504,
+      "bytes": 16719,
       "path": "CONTRACT.md",
-      "sha256": "2768b336d066b500e26aaec343938f198ba726c8c30719fd6b97feddd021844a"
+      "sha256": "dc7569e936bb2f850b7e74a9a5c7b7d485933cc7d5efd262aff12ae4f95814fa"
     },
     {
-      "bytes": 3903,
+      "bytes": 5710,
       "path": "alpha-package-envelope-v1.schema.json",
-      "sha256": "657449a9072db25a8ddd9a05ab103d4b2209d2e11bd9145ba9eb64b45d78997d"
+      "sha256": "6a4dd390df49ad3fcc991a33d41d4383c9836d6fa3106b99df592164f68400d5"
     },
     {
-      "bytes": 50747,
+      "bytes": 61004,
       "path": "decoder.ts",
-      "sha256": "08defdebee0925afb0cd0deae132be80afd0bf2499ab6419a3275618814a7d76"
+      "sha256": "934063df6ab21254a32f15d280ae85f404f288884590e569842a2020389a1ecd"
     },
     {
-      "bytes": 16901,
+      "bytes": 18995,
       "path": "generate-artifact.ts",
-      "sha256": "297918cd3b6965035d9b787d77d83cfc3daa3f4caeacdd4390a60a99f703c5ce"
+      "sha256": "63ae0f1c406ef7db0d00adaadbe0e5818ee4825a1078c14d023f3a32b71b3516"
     },
     {
       "bytes": 2041,
@@ -63,9 +63,9 @@
       "sha256": "5467137d1225b1b550b0165f523d7dabd833dc49137365f3b4020b7da260b662"
     },
     {
-      "bytes": 33653,
+      "bytes": 36311,
       "path": "testvectors/decoder-corpus.v1.json",
-      "sha256": "ae185ea46fcf0d15cb301b8762c40ef4163e18051571fc8bbef35884d6f802a3"
+      "sha256": "605b256128f49d320a4c085abdd61951053393cd5b874b11981dbc8578bc073d"
     }
   ],
   "schema": "alpha.host-extension-package.artifact.v1"

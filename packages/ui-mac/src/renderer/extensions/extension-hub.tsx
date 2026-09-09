@@ -51,7 +51,7 @@ import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../sh
 import type { Catalog, CatalogEntry, InstalledState } from "./catalog-types"
 import type { AuthState, InstallReceipt, InstallReceiptType, ProvenanceRequest } from "../../preload/types"
 import { hubSection, setHubSection, type HubSection } from "./ext-hub-state"
-import { catalogDescription, iconFor, iconForRow, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
+import { catalogDescription, iconFor, iconForRow, PackageLogo, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
 import { inventoryInstallRow, healthPresentation } from "./ext-inventory-present"
 import { ExtensionDetail, type DetailTarget } from "./extension-detail"
 import { officeAdvisoryFor, retiredCommunityOfficeFor } from "../../shared/office-advisories"
@@ -76,6 +76,7 @@ import { curationActivationFacts, type Curation, type CurationStatus } from "../
 import type { CatalogPackageViewV1 } from "../../shared/catalog-package-view"
 import type { PackageAdmissionPreviewV1 } from "../../shared/package-admission"
 import { packagePresentation, packageRetainedReasonKey, packageSkipReasonKey } from "./ext-package-presentation"
+import { packageListingTextV1 } from "../../shared/host-extension-package-contract/decoder"
 import { extIpc } from "./ext-ipc"
 import "./extension-hub.css"
 
@@ -877,7 +878,7 @@ export function ExtensionHub(props: {
   const matchesPackage = (view: CatalogPackageViewV1) => {
     const q = query().trim().toLowerCase()
     if (!q) return true
-    return `${view.presentation.displayName} ${view.catalogId} ${view.presentation.description}`
+    return `${view.presentation.displayName} ${view.catalogId} ${view.presentation.description} ${packageListingTextV1(view.listing, "developerName") ?? ""}`
       .toLowerCase()
       .includes(q)
   }
@@ -1793,14 +1794,29 @@ export function ExtensionHub(props: {
         onClick={() => openPackageDetail(view())}
       >
         <div class="alpha-ext-card-top">
-          <span class="alpha-ext-card-ic" style={{ background: "var(--a-accent-solid)" }}>
-            {(view().presentation.displayName[0] ?? "?").toUpperCase()}
+          {/* `#1287`:发布者签名的 logo 与品牌色;两者都缺就是今天的样子(首字母 + 主题色)。 */}
+          <span
+            class="alpha-ext-card-ic"
+            style={{
+              background:
+                packageListingTextV1(view().listing, "brandColor") ?? "var(--a-accent-solid)",
+            }}
+          >
+            <PackageLogo listing={view().listing} fallback={view().presentation.displayName} />
           </span>
           <div class="alpha-ext-card-hd">
             <div class="alpha-ext-card-name">
               <b title={view().catalogId}>{view().presentation.displayName}</b>
               <span class="alpha-ext-chip" data-source="alpha">{t(sourceKey())}</span>
             </div>
+            {/* 「这是谁做的」是装之前最该看见的一行,所以它在卡片上,不只在详情页。 */}
+            <Show when={packageListingTextV1(view().listing, "developerName")}>
+              {(developer) => (
+                <span class="alpha-ext-card-sub" data-package-developer="">
+                  {developer()}
+                </span>
+              )}
+            </Show>
           </div>
         </div>
         <p class="alpha-ext-card-desc">{view().presentation.description}</p>

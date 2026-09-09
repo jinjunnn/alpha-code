@@ -373,6 +373,77 @@ describe("package installability authority", () => {
     expect(JSON.stringify(result)).not.toContain("https://")
   })
 
+  /**
+   * `#1287`:上架呈现段从签名信封走到安全视图。两件事一起钉:
+   *   ① **缺席仍可安装** —— 今天每一个已发布条目都没有这一段,它们的 verdict/action 一字不变,
+   *      而且安全视图上**没有** `listing` 键(不是一个空对象:空对象会让渲染层开始判「有没有内容」);
+   *   ② **在场时逐字转发** —— 值不能被改写、拼接或补默认。
+   * 另外补一条:这一段确实把 https URL 带上了 wire(logo/截图/政策链接就是链接),所以这里
+   * 单独钉住真正的不变量 —— **载荷传输 URL 一个都不许过来**。它比「安全视图里不许出现 https://」
+   * 精确一格,而后者从本票起对带 listing 的包会假红。
+   */
+  test("the signed listing crosses to the safe view verbatim, and its absence is not an empty object", async () => {
+    const listing = {
+      brandColor: "#3b5bdb",
+      category: "productivity",
+      defaultPrompt: ["Summarise the latest thread"],
+      developerName: "Example Publisher Ltd.",
+      logo: "https://example.invalid/listing/logo.png",
+      logoDark: "https://example.invalid/listing/logo-dark.png",
+      longDescription: "A listing that must survive the host boundary without being rewritten.",
+      privacyPolicyUrl: "https://example.invalid/listing/privacy",
+      screenshots: ["https://example.invalid/listing/shot-1.png"],
+      termsOfServiceUrl: "https://example.invalid/listing/terms",
+      websiteUrl: "https://example.invalid/listing/",
+    }
+
+    const bare = await corpus()
+    if (bare.payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+      throw new Error("producer corpus profile drifted")
+    bare.payload.behavior.requiredSecrets = []
+    bare.payload.behavior.headersTemplate = {}
+    bare.envelope.capabilities = []
+    bare.envelope.components[0]!.capabilities = []
+    const bareBytes = bindPayload(bare.envelope, bare.payload)
+    const without = await evaluatePackageForHost(bare.envelope, { fetchPayload: async () => bareBytes })
+    expect(without.verdict).toBe("compatible")
+    expect(without.action.enabled).toBe(true)
+    expect("listing" in without).toBe(false)
+
+    const rich = await corpus()
+    if (rich.payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
+      throw new Error("producer corpus profile drifted")
+    rich.payload.behavior.requiredSecrets = []
+    rich.payload.behavior.headersTemplate = {}
+    rich.envelope.capabilities = []
+    rich.envelope.components[0]!.capabilities = []
+    rich.envelope.listing = listing
+    const richBytes = bindPayload(rich.envelope, rich.payload)
+    const with_ = await evaluatePackageForHost(rich.envelope, { fetchPayload: async () => richBytes })
+    expect(with_.listing).toEqual(listing)
+    // 呈现段不许影响判定 —— 与既有的「remote presentation cannot choose the verdict」同一条纪律。
+    expect({ verdict: with_.verdict, action: with_.action }).toEqual({
+      verdict: without.verdict,
+      action: without.action,
+    })
+    // 真正的不变量:载荷传输 URL 不过 wire。listing 里的展示链接过,而且只有它们过。
+    const wire = JSON.stringify(with_)
+    expect(wire).not.toContain(bare.envelope.components[0]!.payloadRef.url)
+    expect(wire).not.toContain("headersTemplate")
+    expect(
+      [...wire.matchAll(/https:\/\/[^"]+/g)].map((match) => match[0]).sort(),
+    ).toEqual(
+      [
+        listing.logo,
+        listing.logoDark,
+        listing.privacyPolicyUrl,
+        ...listing.screenshots,
+        listing.termsOfServiceUrl,
+        listing.websiteUrl,
+      ].sort(),
+    )
+  })
+
   test("compatible package without prerequisites exposes the install action", async () => {
     const { envelope, payload } = await corpus()
     if (payload.schema !== "alpha.host-extension-package.payload.mcp-remote.v1")
