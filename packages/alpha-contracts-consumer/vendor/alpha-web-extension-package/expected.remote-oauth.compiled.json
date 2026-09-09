@@ -16,7 +16,7 @@
           "bytes": 416,
           "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
           "sha256": "a1283973d0ec8348984a5a09152b3d0586298045b21ace798b0b855de943bcbf",
-          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote-oauth/1.0.0/alpha-package/a1283973d0ec8348984a5a09152b3d0586298045b21ace798b0b855de943bcbf.json"
+          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-remote-oauth/1.0.0/alpha-package/a1283973d0ec8348984a5a09152b3d0586298045b21ace798b0b855de943bcbf.json"
         },
         "profileId": "mcp-remote",
         "profileVersion": 1,
@@ -49,7 +49,7 @@
           "bytes": 416,
           "mediaType": "application/vnd.alpha.host-extension-package.mcp-remote.v1+json",
           "sha256": "a1283973d0ec8348984a5a09152b3d0586298045b21ace798b0b855de943bcbf",
-          "url": "https://alphacodeone.com/catalog/assets/mcp.generic-remote-oauth/1.0.0/alpha-package/a1283973d0ec8348984a5a09152b3d0586298045b21ace798b0b855de943bcbf.json"
+          "url": "https://codepuppy.cn/catalog/assets/mcp.generic-remote-oauth/1.0.0/alpha-package/a1283973d0ec8348984a5a09152b3d0586298045b21ace798b0b855de943bcbf.json"
         },
         "profileId": "mcp-remote",
         "profileVersion": 1,
@@ -59,7 +59,7 @@
     ],
     "root": {
       "compatibility": {
-        "reportSha256": "2056ebd605a2a53a8a43aaba4e0d482ad9e754703d7acb7e593b9a13dd712140",
+        "reportSha256": "45f2616139e9207c04255dd904a2e68f98def220b8afb514297885bb7f2df679",
         "verdict": "compatible"
       },
       "componentId": "mcp:generic-remote-oauth",

@@ -45,9 +45,9 @@ describe("alpha-web extension package producer artifact pin", () => {
 
     expect(lock).toMatchObject({
       repo: "jinjunnn/alpha-web",
-      commit: "3ebca3c95a5f5e37f6c9ea0598fff5676c60ea84",
+      commit: "eb2205b37d5afd6ef070e80b956b152a978fd0b8",
       artifactPath: "contracts/extension-package/artifact",
-      artifactSha256: "ec555a1dc7c4435ec8cea965e9c12e1e2c8d55273249a898b47ceed26693b33d",
+      artifactSha256: "432ca3ef3b96ed271c0dda392b49129eec1d21cf9956b7ec7aded3afcffc289a",
     })
     // 固定条数,不留余量:上游悄悄少发一个语料文件时,只比对「lock ↔ manifest 两边一致」是
     // 抓不到的 —— 两边会一起变小并保持自洽。
@@ -55,6 +55,7 @@ describe("alpha-web extension package producer artifact pin", () => {
     // 自己的哈希(`producerCommit.embedded: false` 是同一个理由的另一半)。这个「差一」不写成
     // 第二个常数,而由下一条 `toEqual` 把 manifest 清单 ∪ {manifest 自己} 与 lock 清单对死。
     // `#853` / alpha-web#98:36 → 40,增补的是 command 资产、Claude 发布端规则与两份负例。
+    // `#1287` / alpha-web#194:40 → 40,只换 hostContract 自述与 republish 的宿主副本,不增不撤。
     expect(lock.files.length).toBe(40)
     expect(lock.files.map((file) => file.path).sort()).toEqual(
       [...manifest.files.map((file) => file.path), "extension-package-producer-artifact.v1.json"].sort(),

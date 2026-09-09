@@ -118,7 +118,7 @@ const UPSTREAMS = [
     // older optional staged fixtures above, an unavailable checkout or missing commit is a hard
     // failure:provenance cannot be proved by a self-consistent replacement lock.
     repo: "jinjunnn/alpha-web",
-    commit: "3ebca3c95a5f5e37f6c9ea0598fff5676c60ea84",
+    commit: "eb2205b37d5afd6ef070e80b956b152a978fd0b8",
     lock: "alpha-web-extension-package.lock.json",
     vendor: "vendor/alpha-web-extension-package",
     sourceEnv: "ALPHA_WEB_EXTENSION_PACKAGE_SOURCE",
@@ -126,7 +126,7 @@ const UPSTREAMS = [
     sourceFallback: "../../../alpha-web",
     sourcePrefix: "contracts/extension-package/artifact",
     artifactPath: "contracts/extension-package/artifact",
-    artifactSha256: "ec555a1dc7c4435ec8cea965e9c12e1e2c8d55273249a898b47ceed26693b33d",
+    artifactSha256: "432ca3ef3b96ed271c0dda392b49129eec1d21cf9956b7ec7aded3afcffc289a",
     commitBound: true,
     // #759 / alpha-web#109:producer 追平宿主合同 v2。语料从 22 个文件长到 36 个 —— 新增的是
     // flat Bundle 正/负向、OAuth 与 Alpha Connection 的正向语料(旧的 `input.remote-oauth.invalid.json`
@@ -152,6 +152,13 @@ const UPSTREAMS = [
     // `#853` / alpha-web#98:发布端按 #840 的不可变 A checkpoint 增补 `command@1` 与
     // `claude-code.v1` 纯库规则产物,语料 36 → 40。新增 command markdown 资产、发布端规则
     // 以及 reserved-name / variant 两份负例;没有撤文件,所以本跳同样只做机械 re-vendor。
+    //
+    // `#1287` / PR #1312(alpha-web#194):宿主信封新增可选 `listing` 段,发布端按 #1312 的
+    // checkpoint 96eee4c1 升 pin(带过渡对,与 alpha-web#98 同形)并重生 artifact,语料 40 → 40:
+    // 没有新增或撤掉文件;13 份带 hostContract 自述的文件换了 commit / aggregate,发布端 republish
+    // 的宿主副本 host-extension-package-artifact.v1.json 追平本仓 live(253aa607…)。本跳同样只做
+    // 机械 re-vendor。顺带吞下 alpha-web 在 3ebca3c 之后从未被 re-vendor 的两次产物变更
+    // (alpha-web#148 关窗 re-pin、#166 品牌域名切换)。
     files: [
       "alpha-package-compatibility-report-v1.schema.json",
       "alpha-package-declaration-v1.schema.json",
