@@ -173,6 +173,16 @@ https://1.1.1.1/             → 301   ← 纯 raw-IP,无 DNS 也通
 放行集里**没有一项能用「端口 ≠ 443」区分开** —— 全部是 443(加可选的 22)。
 §1.5 的 host-blind 事实因此直接命中:**seatbelt 单独做不出这张表的任何一行。**
 
+> **落地记录(2026-09-10,`#1336`)。** 这张表是测量时刻的勘破快照;**授权目的地的权威是代码里的
+> 注册表** `packages/ui-mac/src/main/network-egress-registry.ts`(REQ-137 AC2 的「单一权威」),本表
+> 不再是第二份清单。落地时逐条对着当天的代码坐标复核,三处与上表原文不同,均以代码为准并在注册表
+> 抬头写明出处:①模型目录默认源今天是 `models.opencode.ai:443`(`packages/core/src/models-dev.ts:160`),
+> 不是 `models.dev`;②平台族已迁域,注册表从 `shared/alpha-config.ts` 的 `ALPHA_ENDPOINTS` 派生
+> (web / platform / account / cloud 四条),不自持域名;③LSP 静态枚举多出 `www.eclipse.org:443`
+> (`lsp/server.ts:1207`)。动态类别(BYOK baseURL、远程 MCP URL)与 ssh `*:22` **不在**初值里;
+> `#1334` Q4 拍到的 `release-assets.githubusercontent.com` 与 Q3 语料的 `example.com` 也不在 ——
+> 加不加归 `#1073` 裁。判据:`network-egress-registry.test.ts`(独立字面量锚)。
+
 ## 3. 咽喉点在不在(勘破 3)
 
 出网路径分三类。答案:**A 与 B 可以合并到同一个咽喉;C 只有一半自愿汇入。**
@@ -286,7 +296,10 @@ fail-closed、且孙进程继承的原语 —— 它做不了策略,但能逼所
   (§1.3 的失效组合);DNS 默认不放行 —— 走代理的客户端由代理解析,试图直连的
   客户端死在解析这一步,更早更响。
 - 策略层:loopback CONNECT 代理,按「host:port ∈ 注册表」放行/403;注册表是代码里
-  单一权威,首轮默认集 = §2.2 清单。
+  单一权威,首轮默认集 = §2.2 清单。**已落地(`#1336`)**:`packages/ui-mac/src/main/network-egress-proxy.ts`
+  (只认 CONNECT,解析 authority → 查注册表 → 才拨号;未登记的名字零 DNS;DNS 在 main 进程侧由
+  `net.connect` 按名字解析;403 / 400 / 405 / 502 各带 reason 的结构化记录,拒绝体带可识别前缀)+
+  `network-egress-registry.ts`。强制层接线(profile 网络行、sidecar env 的 `HTTP(S)_PROXY`)归 `#1337`。
 - 引擎汇入:sidecar env 的 `HTTP(S)_PROXY` 指向同一 `<chokePort>`(接线已存在,§3.1)。
 
 ## 6. 本咽喉结构上管不到的面
