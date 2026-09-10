@@ -19,6 +19,11 @@ import {
 } from "./sidecar-stop"
 import type { ChannelName } from "./catalog-channels"
 import { prewarmInitialLocation } from "./sidecar-location-prewarm"
+// REQ-159 `#1321`:进程围栏。本进程在 import 引擎之前把自己关进 seatbelt,之后派生的一切继承。
+// profile 由 main 渲染 + 试编译(process-fence-plan.ts),这里原样 apply;装不上 = 本进程不起
+// (fail-closed,原因经 error IPC 报给 main)。判据在 process-fence-apply.test.ts(真 .node / 真 seatbelt /
+// Electron 的 node);本文件顶层的 registerHooks / getParentPort() 让它无法被 import,接线只能锚源码。
+import { applyProcessFence, type ProcessFenceStartInput } from "./process-fence-apply"
 
 // ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
 // raw-TS tools (.opencode/tool/*.ts), and packages whose TS entry does `import "./x.js"` (e.g.
@@ -70,6 +75,11 @@ type StartCommand = {
   registryChannel?: ChannelName
   /** #857:the renderer home model contract's exact initial location (`~/Alpha`). */
   initialDirectory: string
+  /**
+   * REQ-159 `#1321`:进程围栏 —— main 已试编译通过的 profile 全文 + 原生模块绝对路径。
+   * darwin 上**必须**在场:缺席即拒绝启动(没有围栏的引擎不许起)。非 darwin 没有 seatbelt,不带。
+   */
+  fence?: ProcessFenceStartInput
 }
 
 type StopCommand = SidecarStopCommand
@@ -104,6 +114,9 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
+    // REQ-159:第一步就是把本进程关进围栏 —— 在写任何文件、import 引擎之前。装不上直接抛,
+    // 走下面的 catch:error IPC + exit(1),main 据此宣告这一代失败(响亮,不静默降级成无围栏服务)。
+    installProcessFence(command)
     // #613:注入结果必须捕获并随 ready 上报 —— 注入失败 = 引擎起来了但整份 alpha 配置丢失
     // (模型全灰),不上报则 main/renderer 无从与「引擎未就绪」区分。
     const injection = prepareSidecarEnv(
@@ -152,6 +165,23 @@ async function stop(command: StopCommand) {
     parentPort.postMessage({ type: "stopped" })
     setImmediate(() => process.exit(0))
   }
+}
+
+/**
+ * REQ-159 `#1321`:darwin 上没有 fence 计划 = 拒绝启动;有则原样 apply(process-fence-apply.ts 会双向
+ * 自证:集合外写不进、cwd 写得进)。非 darwin 没有 seatbelt,如实不装(基线:「如实声明」,不是等价围栏)。
+ */
+function installProcessFence(command: StartCommand) {
+  if (process.platform !== "darwin") {
+    console.warn(`process fence: not available on ${process.platform} — engine-derived processes run unfenced on this platform`)
+    return
+  }
+  if (!command.fence)
+    throw new Error("process fence missing from the start command on darwin — refusing to start the engine unfenced (REQ-159)")
+  const applied = applyProcessFence(command.fence)
+  console.log(
+    `process fence applied: addon=${applied.buildId} libsandbox=${applied.libsandbox} profile=${applied.profileBytes}B — every process this engine spawns inherits it`,
+  )
 }
 
 function prepareSidecarEnv(
@@ -217,6 +247,7 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
   if (typeof command.password !== "string") return
   if (typeof command.userDataPath !== "string") return
   if (typeof command.initialDirectory !== "string") return
+  const fence = parseFence(command.fence)
   return {
     type: "start",
     hostname: command.hostname,
@@ -224,6 +255,7 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
     password: command.password,
     userDataPath: command.userDataPath,
     initialDirectory: command.initialDirectory,
+    ...(fence ? { fence } : {}),
     ...(typeof command.extPluginPath === "string" ? { extPluginPath: command.extPluginPath } : {}),
     ...(command.registryChannel === "stable" ||
     command.registryChannel === "preview" ||
@@ -231,6 +263,14 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
       ? { registryChannel: command.registryChannel }
       : {}),
   }
+}
+
+/** 形状不对就当没有(darwin 上随后被 installProcessFence 拒掉,而不是带着半个计划去 apply)。 */
+function parseFence(value: unknown): ProcessFenceStartInput | undefined {
+  if (!value || typeof value !== "object") return
+  const fence = value as Partial<ProcessFenceStartInput>
+  if (typeof fence.profile !== "string" || typeof fence.addonPath !== "string") return
+  return { profile: fence.profile, addonPath: fence.addonPath }
 }
 
 function serializeError(error: unknown) {

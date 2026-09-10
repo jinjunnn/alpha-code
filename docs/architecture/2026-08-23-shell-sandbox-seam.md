@@ -1,12 +1,20 @@
 ---
 title: 工具执行要在哪一层围起来（勘破）
 kind: architecture
-status: active
+status: superseded
+superseded_by: 2026-09-09-req159-process-fence.md
 owners:
   - alpha-code desktop maintainers
-last_reviewed: 2026-08-26
+last_reviewed: 2026-09-09
 review_after: 2026-11-26
 ---
+
+> **已被取代(2026-09-09,REQ-159 `#1321`)。** 本文选定的 C1 接缝(`cfg.shell` → `sandbox-exec` wrapper)
+> 只罩住 shell 工具一类;整进程围栏(引擎 sidecar 在 import 引擎前自打 seatbelt)一次罩住全部派生原语,
+> 且与 C1 **互斥**(嵌套异策略 ⇒ `sandbox_apply: Operation not permitted`、零执行),所以 C1 已连同
+> `packages/ext/src/shell-sandbox.ts` 一起拆掉。落地形状见
+> [`2026-09-09-req159-process-fence.md`](2026-09-09-req159-process-fence.md);本文保留作勘破证据
+> (§2 的实测仍然成立,只是接缝换了一层)。
 
 # 三个候选接缝，只有一个不用收编上游
 

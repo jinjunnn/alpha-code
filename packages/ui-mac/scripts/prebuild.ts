@@ -15,6 +15,10 @@ await $`bun ./scripts/gen-db-expected.ts`
 await $`bun ./scripts/build-office-preview.ts`
 
 
+// REQ-159(`#1321`):引擎进程围栏的原生模块 —— fat(arm64 + x86_64)N-API .node,darwin-only;
+// 缺片 / 空壳片脚本自己红。extraResources 把它带进包(alpha-fence/),sidecar 在 import 引擎前 dlopen。
+await $`bun ./scripts/build-fence-addon.ts`
+
 // Bundle @alpha-code/ext to self-contained ESM so the embedded Node server can load it
 // without resolving raw TS at runtime (see .claude/rules/DECISIONS.md ADR-006).
 await $`cd ../ext && bun run build`

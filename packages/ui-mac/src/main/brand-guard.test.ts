@@ -138,11 +138,11 @@ describe("AC1 展示面坐标 — ui-mac 自有面显示 Code Puppy", () => {
     expect(ecosystem).toContain("导入到 Code Puppy")
     expect(ecosystem).not.toMatch(/alpha-code|alpha 原生|alpha 环境/)
 
-    const shell = read("packages/ext/src/shell-sandbox.ts")
     // REQ-157 `#1284`:工具表文字从 plugin.ts 的内联字面量搬进 context-injection 登记簿(plugin.ts 只取用);
     // 品牌串本身逐字未变,坐标跟着搬 —— 它到达模型的事实由 packages/ext/src/context-injection.test.ts 的工具表咽喉判。
+    // (REQ-159 `#1321`:REQ-138 的 shell-sandbox.ts 连同它的 deny stub 文案一起拆掉了 —— 围栏上移到引擎进程,
+    // 装不上时是引擎不起而不是一条 shell 提示,所以这里不再有那条品牌串可锚。)
     const injection = read("packages/ext/src/context-injection.ts")
-    expect(shell).toContain('echo "Code Puppy: shell sandbox unavailable')
     expect(injection).toContain("Proof that a Code Puppy plugin-registered tool")
     expect(injection).toContain("Proof that the Code Puppy extension is loaded")
   })

@@ -4,7 +4,7 @@ kind: runbook
 status: active
 owners:
   - Code Puppy maintainers
-last_reviewed: 2026-07-22
+last_reviewed: 2026-09-09
 review_after: 2026-10-14
 ---
 
@@ -107,6 +107,14 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 ## 2. 只 Apple Silicon(arm64)
 当前只出 `mac-arm64`。要 Intel(x64)/universal:electron-builder 加 `--x64`/`--universal`(未验证,首个 Intel 包需实测)。
 
+**进程围栏的原生模块不需要为 x64 多做任何事**(REQ-159 `#1321`):`prebuild` 里的
+`scripts/build-fence-addon.ts` 一次编出 **fat** 的 `native/alpha-fence/build/alpha_fence.node`(arm64 + x86_64
+同一个文件),编完逐片判 —— `lipo -archs` 缺任一片、或某一片没有 N-API 入口 ⇒ 删产物、构建红。它经
+`extraResources` 落到 `Contents/Resources/alpha-fence/alpha_fence.node`,由流水线深签(与 `pty.node` 同 Team)。
+漏了它的包**起不了引擎**(main 拒 fork / sidecar 拒启动,原因可读),不会静默无围栏。
+未验证:x86_64 那一片没有被执行过(本机只有 arm64 运行时);首个 Intel 包要在 Intel 机上跑一次
+`packages/ui-mac/src/main/process-fence-apply.test.ts` 或等价的打包验证。
+
 ## 3. 排障 / 已知项
 - **打包时弹「codesign 想访问密钥」**:点「**始终允许**」+ 输 Mac 登录密码(不是「允许」——那样每个文件都弹)。授权后长期免弹。若换机后又弹:`security import ~/.alpha-code-signing/devid-backup.p12`(口令 README)。
 - **公证失败**:多为凭证/网络。`signing.env` 的 `APPLE_API_*` 是否正确;`.p8` 文件在否;换机后重新 source。API key 是 `开发者` 角色即够公证。
@@ -127,7 +135,16 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 - **Electron fuses**(`electron-builder.config.ts` electronFuses):`RunAsNode` / `NODE_OPTIONS` / node-inspect 三注入原语关闭;`EmbeddedAsarIntegrityValidation` + `OnlyLoadAppFromAsar` + `CookieEncryption` 开启。sidecar 走 utilityProcess 不受影响;全仓无 `ELECTRON_RUN_AS_NODE` 用法。
 - **entitlements 收紧**(`resources/entitlements.plist`):移除 `disable-executable-page-protection`、`allow-dyld-environment-variables`、`disable-library-validation`(dylib 注入组合);保留 `allow-jit`/`allow-unsigned-executable-memory`(V8)+ `audio-input`。**若签名包 native 模块(node-pty/ghostty)加载失败 → 仅回补 `disable-library-validation` 一项并在此记账。**
 - **打包态 CSP + 回环-only CORS**(C24,`renderer-security.ts`):排障逃生 `ALPHA_CSP_DISABLE=1`。
-- 验证清单(每次签名发版):stapler validate + spctl ✓ → 启动 → 终端(WASM+PTY)→ diff → 流式会话 → 定制中心 → 登录/账户 → 更新器检查。
+- **引擎进程围栏**(REQ-159 `#1321`,2026-09-09):引擎 sidecar 在 import 引擎前用自己的 N-API 模块
+  `sandbox_init` 把整个进程关进 seatbelt,派生的 shell / MCP / LSP / PTY 全部继承;可写集 = 工作区并集 +
+  应用目录 + 引擎缓存根(`packages/ui-mac/src/main/process-fence-profile.ts`,唯一权威)。
+  **失败形态是「引擎起不来 + 可读原因」,不是「没有围栏但照常服务」**:main 日志 `process fence plan FAILED …`
+  或 sidecar 的 `process fence: …` 就是它。排障:①`Contents/Resources/alpha-fence/alpha_fence.node` 在不在、
+  `lipo -archs` 两片、`codesign -dv` 同 Team;②`~/code-puppy` 是不是目录;③日志里 `process fence planned:` 那行
+  的 dropped / excluded。用户可见代价(如实披露,基线 §五 子票 4):围栏内 set-ID 二进制(`ps` / `top` …)
+  不可 exec;登录 shell 写 `$HOME` 下 rc 产物(`.zcompdump` 等)会静默不落盘;非 zsh 用户的 history 文件不在可写集。
+  用户打开的**新**文件夹要到下次启动才可写(启动时取并集,U2 裁决)。
+- 验证清单(每次签名发版):stapler validate + spctl ✓ → 启动 → 终端(WASM+PTY)→ diff → 流式会话 → 定制中心 → 登录/账户 → 更新器检查 → **进程围栏**(引擎起来 = 围栏装上了;在项目外写一个文件必须 `operation not permitted`,项目内落盘)。
 - Alpha 契约 RC-L3:`packaged app rejects a token whose purpose does not match the route as a visible auth failure`。本项须在真实 packaged executable 上执行并把证据落 `docs/verification/`;#224 只提供 fixture、运行时断言与持久 `role=alert` 边界,不代跑打包。
 - **CAS GC worker(REQ-102 #367,L3 项;裁决 Q6 —— bench 总耗时不能证明 main 占用,须按下列五步)**:
   1. 确认 `app.asar/out/main/ext-cas-gc-worker.js` 存在(`npx @electron/asar list <app>/Contents/Resources/app.asar | grep ext-cas-gc-worker`);

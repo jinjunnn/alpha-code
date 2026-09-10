@@ -49,6 +49,9 @@ mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {
 const { hasSecretFile } = await import("./alpha-secret-files")
 const { writeShellEnvCache } = await import("./shell-env-cache")
 const { preferAppEnv, spawnLocalServer } = await import("./server")
+// REQ-159 `#1321`:生产 spawnLocalServer 在 fork 前做围栏计划(真 store / 真 sandbox-exec / 真原生模块路径);
+// 本文件的假子进程不跑 sidecar.ts,注入一个替身计划 —— 围栏本身的判据在 process-fence-*.test.ts。
+const fakePlanFence = () => ({ profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/nonexistent/alpha_fence.node" })
 const { creditDanglingSweepForSpawn, resetDanglingSweepLatchForTests } = await import("./dangling-sweep-latch")
 
 let userDataPath = ""
@@ -104,6 +107,7 @@ async function forkSidecar() {
   const result = await spawnLocalServer("127.0.0.1", 4096, "password", {
     userDataPath,
     healthCheck: async () => true,
+    planFence: fakePlanFence,
     fork: fakeFork,
   })
   await result.health.wait
@@ -370,6 +374,7 @@ describe("spawnLocalServer", () => {
       const result = await spawnLocalServer("127.0.0.1", 4098, "password", {
         userDataPath,
         healthCheck: async () => true,
+        planFence: fakePlanFence,
         fork: (() => child) as unknown as typeof import("electron").utilityProcess.fork,
       })
       await result.health.wait
@@ -404,6 +409,7 @@ describe("spawnLocalServer", () => {
       spawnLocalServer("127.0.0.1", 4096, "password", {
         userDataPath: brokenUserData,
         healthCheck: async () => true,
+        planFence: fakePlanFence,
         fork: fakeFork,
       }),
     ).rejects.toThrow(/alpha-secrets sync failed/)
@@ -414,6 +420,7 @@ describe("spawnLocalServer", () => {
     const result = await spawnLocalServer("127.0.0.1", 4096, "password", {
       userDataPath,
       healthCheck: async () => true,
+      planFence: fakePlanFence,
       fork: fakeFork,
     })
     await result.health.wait
@@ -446,6 +453,7 @@ describe("spawnLocalServer", () => {
     const result = await spawnLocalServer("127.0.0.1", 4097, "password", {
       userDataPath,
       healthCheck: async () => true,
+      planFence: fakePlanFence,
       fork: (() => new InjectionFailedChild()) as unknown as typeof import("electron").utilityProcess.fork,
     })
     await result.health.wait

@@ -132,6 +132,20 @@ const getBase = (appId: string): Configuration => ({
       from: "resources/db-expected-migrations.json",
       to: "db-expected-migrations.json",
     },
+    // REQ-159(`#1321`):引擎进程围栏的原生模块(prebuild 里 scripts/build-fence-addon.ts 编出的 **fat**
+    // .node,arm64 + x86_64 同一个文件;缺任一片构建本身就红)。落点 <resources>/alpha-fence/alpha_fence.node,
+    // 与 U1(`#1316`)实测加载得了的 extraResources 路径同形;electron-builder 深签时把它签成与 pty.node 同 Team。
+    // sidecar 起不来而不是静默无围栏:文件缺席 ⇒ main 拒 fork(process-fence-plan.ts)。只在 darwin 声明 ——
+    // 别的平台没有 seatbelt,不带这条(否则 `from` 不存在会炸 win/linux 打包)。
+    ...(process.platform === "darwin"
+      ? [
+          {
+            from: "native/alpha-fence/build/",
+            to: "alpha-fence/",
+            filter: ["alpha_fence.node"],
+          },
+        ]
+      : []),
   ],
   // C27:Electron fuses 纵深防御。RunAsNode/NODE_OPTIONS/inspect 三个注入原语全关(全仓无
   // ELECTRON_RUN_AS_NODE 用法,sidecar 走 utilityProcess 不受影响;preload 的 install-cli 为无

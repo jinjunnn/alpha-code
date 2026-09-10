@@ -317,8 +317,8 @@ export const CONTEXT_INJECTIONS: readonly ContextInjection[] = Object.freeze([
   // 引用是**整棵子树**的声明(与 pointer 相等或以 `<pointer>/` 开头都算),粒度与 ext 既有的 `/mcp` 相同 —— 子树里
   // 的字符串是路径 / id / server 定义 / `{file:}` 密钥引用 / 请求参数,没有一条通往模型上下文;唯一进 prompt 的是
   // 引擎自己把选中模型的 **id**(不是展示名)写进 environment 段(`session/system.ts:74`),那是 catalog / 上游厂商的 id。
-  // ext config hook 写的四类(`#1295`):
-  defineReference({ id: "ref.shell", pointer: "/shell", note: "REQ-138 引擎 shell 围栏 wrapper 路径(shell-sandbox.ts)" }),
+  // ext config hook 写的三类(`#1295` 时是四类;REQ-159 `#1321` 把 REQ-138 的 `/shell` 引用拆掉了 —— 围栏上移到
+  // 引擎进程本身,ext 不再写 cfg.shell):
   defineReference({ id: "ref.skills.paths", pointer: "/skills/paths", note: "出厂技能目录 + skill generation live 目录(factory-paths.ts / gen-skill-paths.ts);技能正文是别人的字" }),
   defineReference({ id: "ref.permission.skill", pointer: "/permission/skill", note: "REQ-067 出厂禁项的 \"deny\" 动词(factory-deny.ts)" }),
   // ext 与 ui-mac 主进程都写的一类:

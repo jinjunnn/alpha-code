@@ -189,6 +189,11 @@ export const DOWNGRADED_ANCHORS: Record<string, SourceTextEntry> = {
     evidence: "#911",
     lines: 1,
   },
+  "packages/ui-mac/src/main/process-fence-wiring.test.ts": {
+    why: "REQ-159 `#1321`:锚 sidecar.ts 里 installProcessFence(command) 的位置(早于 prepareSidecarEnv 与 import 引擎)与 darwin 缺席即抛那句话。两个不会让它变红的变异:①把 installProcessFence 的函数体改成直接 return(调用行文本一字不变);②把 applyProcessFence 的结果丢掉、把 throw 包进恒假条件(那两行字面量仍在)。sidecar.ts 顶层 registerHooks/getParentPort 让它 import 不得;真行为判据在 process-fence-apply.test.ts 的 C1–C5(真 .node / 真 seatbelt,五种失败各自抛)与本文件前三条(计划 → start 命令 → 拒 fork),这一条只保证生产真的把那一步接在 start() 第一句上。",
+    evidence: "#1321",
+    lines: 1,
+  },
 }
 
 /**
@@ -214,9 +219,9 @@ export const KEPT_SOURCE_TEXT_READS: Record<string, SourceTextEntry> = {
     lines: 2,
   },
   "packages/ui-mac/src/main/brand-guard.test.ts": {
-    why: "ac#1160 REQ-139 品牌守卫,两半主语都是文本本身:①AC5 身份面五组字面量(APP_IDS/APP_NAMES+setName/bundle id/更新 feed/URL schemes+CLIENT_ID)的**逐字冻结** —— 被守的正是「声明文本一个字符都没变」(变了 = 钥匙串项名/userData 目录/OAuth wire 标识换名,存量破坏),值断言表达不了「连写法都不许动」;index.ts/electron-builder.config.ts 在 bun 侧也结构上 import 不了。②AC1/AC3 展示面有限坐标清单的声明式字面量(productName/i18n 品牌键/窗口标题/提示词 to 串),以及 REQ-148 的安装器协议描述、钥匙串清理指引、生态迁移对话框与扩展工具说明,逐点断言只展示 Code Puppy —— 显示串就是声明,文本即产物。守不住:文本在而消费链断掉(如 wordmark 键没人读)不红,那一半由 L2 packaged 视觉取证(REQ-139 VERIFY 票)兜。第 25 处([ac#1198])是同型展示面文本闸:zht.ts updater 两句的值断言(REQ-139 zht 漏网,与 zh/en 同句同型);REQ-148 新增四处同型文本读取,精确计数随之升至 29。第 30 处([ac#1211])是安装器展示名文本闸:install-local.ts 的 PRODUCT_NAMES 声明与 Cmd+Space 提示逐字断言,配同形态负断言堵旧名 —— 该脚本只在本机装机路径上跑,不进发布件,值断言够不着它(没有可 import 的运行时导出),而装出来的 bundle 名一旦回退旧名,Finder/Spotlight 里就又叫 alpha-code。守不住:脚本文本对而 electron-builder 的 productName 另行漂移不红,那一半由本文件既有的 AC5 身份面冻结兜。第 31 处([ac#1299])是 AC3 自动化执行器 prompt 那条的坐标搬家:三个 alpha agent 的 prompt/description 从 alpha-config-injection.ts 抽进零依赖的 alpha-agents.ts(登记簿 import 它),原来的 2 处计数改读新文件,并加一条同形态负断言钉住生产文件里 0 处 —— 主语仍是「品牌串住在哪份文本里」,与既有 AC3 各条同型。",
+    why: "ac#1160 REQ-139 品牌守卫,两半主语都是文本本身:①AC5 身份面五组字面量(APP_IDS/APP_NAMES+setName/bundle id/更新 feed/URL schemes+CLIENT_ID)的**逐字冻结** —— 被守的正是「声明文本一个字符都没变」(变了 = 钥匙串项名/userData 目录/OAuth wire 标识换名,存量破坏),值断言表达不了「连写法都不许动」;index.ts/electron-builder.config.ts 在 bun 侧也结构上 import 不了。②AC1/AC3 展示面有限坐标清单的声明式字面量(productName/i18n 品牌键/窗口标题/提示词 to 串),以及 REQ-148 的安装器协议描述、钥匙串清理指引、生态迁移对话框与扩展工具说明,逐点断言只展示 Code Puppy —— 显示串就是声明,文本即产物。守不住:文本在而消费链断掉(如 wordmark 键没人读)不红,那一半由 L2 packaged 视觉取证(REQ-139 VERIFY 票)兜。第 25 处([ac#1198])是同型展示面文本闸:zht.ts updater 两句的值断言(REQ-139 zht 漏网,与 zh/en 同句同型);REQ-148 新增四处同型文本读取,精确计数随之升至 29。第 30 处([ac#1211])是安装器展示名文本闸:install-local.ts 的 PRODUCT_NAMES 声明与 Cmd+Space 提示逐字断言,配同形态负断言堵旧名 —— 该脚本只在本机装机路径上跑,不进发布件,值断言够不着它(没有可 import 的运行时导出),而装出来的 bundle 名一旦回退旧名,Finder/Spotlight 里就又叫 alpha-code。守不住:脚本文本对而 electron-builder 的 productName 另行漂移不红,那一半由本文件既有的 AC5 身份面冻结兜。第 31 处([ac#1299])是 AC3 自动化执行器 prompt 那条的坐标搬家:三个 alpha agent 的 prompt/description 从 alpha-config-injection.ts 抽进零依赖的 alpha-agents.ts(登记簿 import 它),原来的 2 处计数改读新文件,并加一条同形态负断言钉住生产文件里 0 处 —— 主语仍是「品牌串住在哪份文本里」,与既有 AC3 各条同型。[ac#1321] 减 1 处(31 → 30):REQ-138 的 shell-sandbox.ts 连同它 deny stub 里那句 `Code Puppy: shell sandbox unavailable` 一起拆掉了(围栏上移到引擎进程,装不上是引擎不起而不是一条 shell 提示),那一处品牌串读取随文件消失,不是漏掉。",
     evidence: "#1160",
-    lines: 31,
+    lines: 30,
   },
   "packages/ui-mac/src/main/catalog-channels.test.ts": {
     why: "ac#1132 AC2 域名棘轮:主语是声明本身与负全称 —— catalog-channels.ts 的 CHANNEL_BASE_URL 声明必须逐字是新域字面量,且不得存在旧域声明。值断言(toBe)骗得过「常量对、声明被第二处覆盖」这类漂移,声明文本正是正确粒度。同测试对两个 sync 脚本的负全称(.mjs 读取,不在本谓词命中集内)属同一条棘轮。守不住:base 若改由运行时拼装绕开该常量,文本闸不红 —— 那一半由同文件的值断言与 remote-catalog.test.ts 的独立字面量兜住。",
