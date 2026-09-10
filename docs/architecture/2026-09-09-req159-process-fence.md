@@ -127,6 +127,11 @@ U1 只出了 arm64,并明写将来出 Intel / universal 时若漏第二份,x64 �
   那里还记着一条给下一个打包验证的人的坑:**给 app 设 `HOME` 隔离不了它** —— Electron 的 appData 不看 `$HOME`,而 `preferAppEnv`
   会用登录 shell env 缓存把 `HOME` 改回去。
 - **围栏下没有发过一次真的模型请求**(与四轮勘破同一条)。
+- **网络轴另算,而且老裁决对不上这个接缝**:本围栏今天是 `(allow default)` 的网络面。往它上面加
+  「只连授权目的地」的重勘破在 [`2026-09-10-network-egress-on-process-fence.md`](2026-09-10-network-egress-on-process-fence.md)
+  (`#1334`)—— 关键一条:2026-08-25 勘破 §5 写下的那个 profile 形状照抄过来会让**引擎起不来**
+  (sidecar 是 HTTP 服务器,`(deny network*)` 连 `listen()` 一起拦),而围栏自己会照常报
+  `process fence applied`,失败在今天是哑的。
 - **x86_64 片没有被执行过**(§5)。
 - **公证 / staple 没做**(U1 §4 同一条;发版 runbook §1 ③ 已要求核对)。
 - **`~/.bash_history`** 不在可写集(§2);终端配置降级的披露面已落地(§8,`#1322`),但它只是**告知**,

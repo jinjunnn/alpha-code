@@ -4,11 +4,20 @@ kind: architecture
 status: active
 owners:
   - alpha-code desktop maintainers
-last_reviewed: 2026-08-25
-review_after: 2026-11-25
+last_reviewed: 2026-09-10
+review_after: 2026-12-10
+superseded_in_part_by:
+  - 2026-09-10-network-egress-on-process-fence.md
 ---
 
 # 网络轴:seatbelt 表达不了目的地,代理没有强制力,咽喉点是两者的组合
+
+> **2026-09-10 部分被推翻。** 本文是对着 REQ-138 的 `cfg.shell` wrapper(一棵**叶子**进程树)做的;
+> `#1321` 之后围栏装在**引擎 sidecar 自己**身上,而 sidecar 就是那个 HTTP 服务器。
+> **§5 的汇流层 profile 照抄到新接缝上会让引擎起不来**(`listen()` EPERM),§3.2 的落点与 §6 的覆盖面
+> 也要重画,§7 的两条未验项已闭合。§1 / §2 / §4 与 §5 的写法纪律照旧成立。
+> 逐条见 [`2026-09-10-network-egress-on-process-fence.md`](2026-09-10-network-egress-on-process-fence.md)
+> (`#1334`),读本文前先读那份的《老结论分档》。
 
 这是文件轴勘破([`2026-08-23-shell-sandbox-seam.md`](2026-08-23-shell-sandbox-seam.md))
 的姊妹篇。那份文档的 §4 明确写着:该接缝的 profile 是 `(allow default)`,**网络不在
