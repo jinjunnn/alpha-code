@@ -27,7 +27,7 @@ export function commitForkedTokenGeneration(current: number, forked: number, hea
 export function armRespawnGenerationTerminal(opts: {
   generation: number
   reason: SidecarRespawnReason
-  spawning: Promise<{ health: { wait: Promise<unknown> }; injectionFailure?: { message: string } }>
+  spawning: Promise<{ health: { wait: Promise<unknown> }; injectionFailure?: { message: string }; fence?: "applied" }>
   timeoutMs: number
   publish: (state: SidecarGenerationState) => void
   logError: (message: string) => void
@@ -38,12 +38,14 @@ export function armRespawnGenerationTerminal(opts: {
   // #613:健康通过但注入失败 → 终态 "injection-failed"(与 boot 侧 settleBootHealth 同构,
   // 同代仍恰好一个终态)。返回值保持「健康线是否通过」:sidecar 真实可达、token 已随 fork
   // 物化({file:} 通道不经注入),reload/token 记账语义不因注入丢失改变 —— 区分呈现归 renderer。
-  const settle = (healthy: boolean, injectionFailure?: { message: string }) => {
+  const settle = (healthy: boolean, injectionFailure?: { message: string }, fence?: "applied") => {
     try {
       opts.publish({
         status: healthy ? (injectionFailure ? "injection-failed" : "ready") : "failed",
         generation: opts.generation,
         reason: opts.reason,
+        // REQ-159 `#1322`:围栏字段只随引擎在线的终态上车(与 boot 侧 settleBootHealth 同构)。
+        ...(healthy && fence ? { fence } : {}),
       })
     } catch (error) {
       opts.logError(`sidecar generation terminal publish failed: ${String(error)}`)
@@ -51,7 +53,7 @@ export function armRespawnGenerationTerminal(opts: {
     return healthy
   }
   return opts.spawning.then(
-    async ({ health, injectionFailure }) => {
+    async ({ health, injectionFailure, fence }) => {
       let timer: ReturnType<typeof setTimeout> | undefined
       const healthy = await Promise.race([
         health.wait.then(
@@ -69,7 +71,7 @@ export function armRespawnGenerationTerminal(opts: {
         opts.logError(
           `alpha config injection failed — sidecar respawned WITHOUT alpha config: ${injectionFailure.message}`,
         )
-      return settle(healthy, injectionFailure)
+      return settle(healthy, injectionFailure, fence)
     },
     () => {
       opts.logError("sidecar respawn failed before the health handshake")

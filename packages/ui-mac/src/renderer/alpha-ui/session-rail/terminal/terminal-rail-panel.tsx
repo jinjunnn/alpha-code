@@ -1,7 +1,14 @@
 // REQ-125 C3-term(#550)—— 右栏终端面板外壳(已批稿 session-workspace §终端)。
 // alpha 自持:实例页签条(白卡浮起 + 运行呼吸点 + 新建/关闭)、圆角深底输出区外框
-// (双主题恒深底)、脚条(运行状态 · 环境 · 尺寸)。输出区内容由引擎经
+// (双主题恒深底)、脚条(运行状态 · 环境 · 沙箱 · 尺寸)。输出区内容由引擎经
 // `AlphaTerminalEngineChannel` 渲染;channel 缺席或未就绪 → fail-closed 空态。
+//
+// REQ-159 `#1322`(AC1):沙箱开启时脚条多一项、空态多一行 —— 「你的部分终端配置可能不生效」。
+// 出现条件只认 `props.sandbox`(引擎自报,宿主经 sandbox-state 投影后用 props 递进来;本文件 I1 棘轮禁
+// window.api,所以不自己去问)。缺席 / false ⇒ 一个字都不出现:没有围栏就不说有。常驻、不可关闭、
+// 不弹窗 —— 与「zsh」同级的环境事实;整句解释在悬停层(title 兜底 + 非模态卡),窄于 360px 只留「沙箱开启」
+// (容器查询,见 terminal-rail.css)。判据钩子:`data-alpha-terminal-foot-sandbox` / `data-alpha-terminal-empty-sandbox`
+// (设计稿 2026-09-10-req159-sandbox-disclosure §3.1;反向用例 = 删掉脚条项必红,terminal-rail.cases.ts)。
 import { For, Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { t } from "../../../i18n"
 import { rovingKey, rovingTabIndex } from "../../roving-focus"
@@ -27,10 +34,20 @@ function PlusIcon() {
   )
 }
 
+function ShieldIcon() {
+  return (
+    <svg class="a-term-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z" />
+    </svg>
+  )
+}
+
 export function TerminalRailPanel(props: {
   channel?: AlphaTerminalEngineChannel
   /** C1 live 上下文的身份校验(`live.accepts`);缺席 = fail-closed,channel 视为不存在。 */
   accepts?: (identity: AlphaSessionIdentity) => boolean
+  /** REQ-159:这一代引擎装上了进程围栏(引擎自报,经宿主投影);缺席 = 没装 = 不告知。 */
+  sandbox?: () => boolean
 }) {
   // I8:channel 必须携带被当前会话接受的三元身份,且 ready;任一不满足即落空态。
   const engine = () => {
@@ -112,6 +129,12 @@ export function TerminalRailPanel(props: {
             </span>
             <b>{t("alpha.terminal.emptyTitle")}</b>
             <p>{t("alpha.terminal.emptyBody")}</p>
+            <Show when={props.sandbox?.()}>
+              <p class="a-term-empty-sandbox" data-alpha-terminal-empty-sandbox>
+                <ShieldIcon />
+                <span>{t("alpha.terminal.sandboxEmpty")}</span>
+              </p>
+            </Show>
             <button
               ref={(element) => (emptyNewButton = element)}
               type="button"
@@ -215,6 +238,26 @@ export function TerminalRailPanel(props: {
                           <span data-alpha-terminal-foot-env>{shell()}</span>
                         </>
                       )}
+                    </Show>
+                    <Show when={props.sandbox?.()}>
+                      <span class="a-term-foot-sep" aria-hidden="true">
+                        ·
+                      </span>
+                      <span
+                        class="a-term-foot-sandbox"
+                        data-alpha-terminal-foot-sandbox
+                        tabIndex={0}
+                        title={t("alpha.terminal.sandboxHoverBody")}
+                        aria-describedby="alpha-terminal-foot-sandbox-card"
+                      >
+                        <ShieldIcon />
+                        <span class="a-term-foot-sandbox-full">{t("alpha.terminal.sandboxFoot")}</span>
+                        <span class="a-term-foot-sandbox-short">{t("alpha.terminal.sandboxFootShort")}</span>
+                        <span class="a-term-foot-sandbox-card" id="alpha-terminal-foot-sandbox-card" role="tooltip">
+                          <b>{t("alpha.terminal.sandboxHoverTitle")}</b>
+                          {t("alpha.terminal.sandboxHoverBody")}
+                        </span>
+                      </span>
                     </Show>
                     <Show when={formatTerminalSize(status().cols, status().rows)}>
                       {(size) => <span class="a-term-foot-size">{size()}</span>}

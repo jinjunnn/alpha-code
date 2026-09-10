@@ -12,7 +12,9 @@ import { turnDiffsOf } from "../session-rail/review/review-turn-diffs"
 import { SessionRailReviewPanel } from "../session-rail/review/review-panel"
 import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-engine-adapter"
 import { AlphaSessionTimeline } from "../session-timeline/session-timeline"
+import { sandboxApplied } from "../sandbox-state"
 import { SurfaceBoundary } from "../surface-boundary"
+import { useWorkspaceWritable } from "../workspace-writable"
 import { SessionComposerDock } from "./session-composer-dock"
 import type { SessionComposerEditRequest } from "./session-composer-mount"
 import {
@@ -77,6 +79,9 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
   // #554:真引擎 channel(I8 三元身份铸造)。TerminalProvider 随上游 SessionProviders 包住
   // 本叶,适配器可直接消费;引擎或会话身份缺席时为 undefined,面板 fail-closed 空态。
   const terminalChannel = useAlphaTerminalEngineChannel(current)
+  // REQ-159 `#1322`:「这个目录成为当前工作区」在会话页的唯一咽喉 = live 身份里的 directory(deep link /
+  // 侧栏 draft 晋升 / 直接导航都落在这里)。探针由被围栏的引擎执行;只有它明确回报写被拒才为 true。
+  const workspaceReadonly = useWorkspaceWritable(() => current()?.identity.directory)
 
   // Review tab badge = changed-file count from the same turn-level projection the review
   // panel consumes (REQ-142: `turnDiffsOf` over the synced message store), through the same
@@ -118,6 +123,9 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
           }}
           railMeta={{ reviewCount }}
           terminalChannel={terminalChannel}
+          sandbox={sandboxApplied}
+          workspaceReadonly={workspaceReadonly}
+          relaunch={() => window.api.relaunch()}
         />
       </SessionLiveProvider>
     </SurfaceBoundary>

@@ -12,6 +12,7 @@ import type {
   ServerReadyData,
   SidecarGenerationState,
   TitlebarTheme,
+  WorkspaceWriteProbeResult,
 } from "../preload/types"
 import type { DeepLinkBatch } from "./deep-link-queue"
 import { getAlphaEnvironment } from "./alpha-environment"
@@ -39,6 +40,8 @@ export const pickedFiles = createPickedFileAuthorizations() // REQ-033:agent 导
 type Deps = {
   killSidecar: () => Promise<void> | void
   sidecarGenerationState: () => SidecarGenerationState
+  /** REQ-159 `#1322`:转给当前 sidecar 的写探针;没有活着的 sidecar 时答 unknown。 */
+  probeWorkspaceWrite: (directory: string) => Promise<WorkspaceWriteProbeResult>
   relaunch: () => void
   awaitInitialization: () => Promise<ServerReadyData>
   /** `rendererId` is the invoking webContents id: deep-link ownership is keyed on that identity. */
@@ -78,6 +81,12 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("alpha-environment", () => getAlphaEnvironment())
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("sidecar-generation-state", () => deps.sidecarGenerationState())
+  // REQ-159 `#1322`:目录来自 renderer(untrusted):不是非空字符串就答 unknown,不猜、不 throw。
+  ipcMain.handle("workspace-write-probe", (_event: IpcMainInvokeEvent, directory: unknown) =>
+    typeof directory === "string" && directory.length > 0
+      ? deps.probeWorkspaceWrite(directory)
+      : ({ outcome: "unknown", detail: "invalid directory" } satisfies WorkspaceWriteProbeResult),
+  )
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
   ipcMain.handle("consume-initial-deep-links", (event: IpcMainInvokeEvent) =>
     deps.consumeInitialDeepLinks(event.sender.id),

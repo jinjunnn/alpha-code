@@ -31,6 +31,8 @@ export async function settleBootHealth(opts: {
   timeoutMs: number
   /** #613:sidecar ready IPC 带回的注入失败(spawnLocalServer 透传)。 */
   injectionFailure?: { message: string }
+  /** REQ-159 `#1322`:围栏装上了(spawnLocalServer 透传);只随引擎在线的终态上车。 */
+  fence?: "applied"
   publish: (state: SidecarGenerationState) => void
   log: (message: string) => void
   logError: (message: string) => void
@@ -46,11 +48,13 @@ export async function settleBootHealth(opts: {
     }),
   ])
   clearTimeout(timer)
+  // REQ-159 `#1322`:围栏字段只跟着「引擎在线」的两种终态走;failed 那一支没有引擎,也就没有围栏可言。
+  const fence = opts.fence ? { fence: opts.fence } : {}
   if (healthy && opts.injectionFailure) {
     opts.logError(`alpha config injection failed — engine is up WITHOUT alpha config: ${opts.injectionFailure.message}`)
-    opts.publish({ status: "injection-failed", generation: opts.generation, reason: "boot" })
+    opts.publish({ status: "injection-failed", generation: opts.generation, reason: "boot", ...fence })
   } else if (healthy) {
-    opts.publish({ status: "ready", generation: opts.generation, reason: "boot" })
+    opts.publish({ status: "ready", generation: opts.generation, reason: "boot", ...fence })
   } else {
     opts.logError("sidecar health check failed")
     opts.publish({ status: "failed", generation: opts.generation, reason: "boot" })
@@ -67,19 +71,20 @@ export async function settleBootHealth(opts: {
 // ② 健康通过 → ready;③ 健康失败/超时 → failed(settleBootHealth,含日志指纹)。
 export function armBootGenerationTerminal(opts: {
   generation: number
-  spawning: Promise<{ health: { wait: Promise<unknown> }; injectionFailure?: { message: string } }>
+  spawning: Promise<{ health: { wait: Promise<unknown> }; injectionFailure?: { message: string }; fence?: "applied" }>
   timeoutMs: number
   publish: (state: SidecarGenerationState) => void
   log: (message: string) => void
   logError: (message: string) => void
 }): Promise<"ready" | "failed" | "injection-failed"> {
   return opts.spawning.then(
-    ({ health, injectionFailure }) =>
+    ({ health, injectionFailure, fence }) =>
       settleBootHealth({
         generation: opts.generation,
         healthWait: health.wait,
         timeoutMs: opts.timeoutMs,
         injectionFailure,
+        fence,
         publish: opts.publish,
         log: opts.log,
         logError: opts.logError,

@@ -24,6 +24,15 @@ import { prewarmInitialLocation } from "./sidecar-location-prewarm"
 // (fail-closed,原因经 error IPC 报给 main)。判据在 process-fence-apply.test.ts(真 .node / 真 seatbelt /
 // Electron 的 node);本文件顶层的 registerHooks / getParentPort() 让它无法被 import,接线只能锚源码。
 import { applyProcessFence, type ProcessFenceStartInput } from "./process-fence-apply"
+// REQ-159 `#1322`:工作区写探针 —— renderer 问「这个目录现在写得进去吗」,答案只能由**本进程**(被围栏的那一个)
+// 真写一次给出;main 没有被围栏,在那里探恒答可写。合同与执行都在 workspace-write-probe.ts。
+import {
+  buildWriteProbeReply,
+  parseWriteProbeCommand,
+  runWorkspaceWriteProbe,
+  type WorkspaceWriteProbeCommand,
+  type WorkspaceWriteProbeReply,
+} from "./workspace-write-probe"
 
 // ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
 // raw-TS tools (.opencode/tool/*.ts), and packages whose TS entry does `import "./x.js"` (e.g.
@@ -83,7 +92,7 @@ type StartCommand = {
 }
 
 type StopCommand = SidecarStopCommand
-type SidecarCommand = StartCommand | StopCommand
+type SidecarCommand = StartCommand | StopCommand | WorkspaceWriteProbeCommand
 
 // #613:注入失败随 ready 上报(server.ts 持有同构镜像)——引擎照常起,但 main 必须知情。
 // ready 变体的形状与构造住在 sidecar-ready-message.ts(那里有真运行时闸门)。
@@ -91,6 +100,7 @@ type SidecarMessage =
   | SidecarReadyMessage
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
+  | WorkspaceWriteProbeReply
 
 type ParentPort = {
   postMessage(message: SidecarMessage): void
@@ -107,6 +117,11 @@ parentPort.on("message", (event) => {
   if (!command) return
   if (command.type === "stop") {
     void stop(command)
+    return
+  }
+  if (command.type === "write-probe") {
+    // 同步、不等引擎:探针只依赖本进程的围栏,而围栏在 start() 第一句就装好了。
+    parentPort.postMessage(buildWriteProbeReply(command.id, runWorkspaceWriteProbe(command.directory)))
     return
   }
   void start(command)
@@ -239,8 +254,9 @@ function useEnvProxy() {
 
 function parseCommand(value: unknown): SidecarCommand | undefined {
   if (!value || typeof value !== "object") return
-  const command = value as Partial<StartCommand | StopCommand>
+  const command = value as Partial<StartCommand | StopCommand | WorkspaceWriteProbeCommand>
   if (command.type === "stop") return parseSidecarStopCommand(value)
+  if (command.type === "write-probe") return parseWriteProbeCommand(value)
   if (command.type !== "start") return
   if (typeof command.hostname !== "string") return
   if (typeof command.port !== "number") return

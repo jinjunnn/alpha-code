@@ -47,10 +47,18 @@ class RecordingChild extends EventEmitter {
   stdout = new EventEmitter()
   stderr = new EventEmitter()
   wire: unknown[] = []
+  /** `#1322`:假 sidecar 对 write-probe 的回答;undefined = 不回(让 main 侧超时)。 */
+  probeAnswer: ((directory: string) => { outcome: "writable" | "denied" | "unknown"; detail?: string }) | undefined = (directory) =>
+    directory.startsWith("/inside") ? { outcome: "writable" } : { outcome: "denied", detail: "write EPERM: operation not permitted" }
   postMessage(message: unknown) {
     this.wire.push(message)
     if ((message as { type?: unknown }).type === "start") queueMicrotask(() => this.emit("message", { type: "ready" }))
     if ((message as { type?: unknown }).type === "stop") queueMicrotask(() => this.emit("exit", 0))
+    if ((message as { type?: unknown }).type === "write-probe" && this.probeAnswer) {
+      const { id, directory } = message as { id: number; directory: string }
+      const answer = this.probeAnswer(directory)
+      queueMicrotask(() => this.emit("message", { type: "write-probe-result", id, ...answer }))
+    }
   }
   kill() {
     queueMicrotask(() => this.emit("exit", 0))
@@ -105,7 +113,30 @@ describe("REQ-159 main 侧接线:计划 → start 命令 → 拒 fork", () => {
     expect(forks).toBe(1)
     const start = child.wire.find((m) => (m as { type?: string }).type === "start") as { fence?: unknown }
     expect(start.fence).toEqual(plan)
+    // `#1322`:计划进了 start 命令 + sidecar 发了 ready ⇒ 这一代对外自报「围栏装上了」(renderer 沙箱告知的唯一信号源)。
+    expect(result.fence).toBe("applied")
     await result.listener.stop()
+  })
+
+  test("#1322 写探针经 listener.probeWrite 走线上 write-probe 命令,应答按 id 对号;两个目录两种答案", async () => {
+    const child = new RecordingChild()
+    creditDanglingSweepForSpawn()
+    const result = await spawnLocalServer("127.0.0.1", 4314, "password", {
+      userDataPath,
+      healthCheck: async () => true,
+      fork: (() => child) as unknown as typeof import("electron").utilityProcess.fork,
+      planFence: () => ({ profile: "(version 1)\n(allow default)\n(deny file-write*)\n", addonPath: "/x/alpha_fence.node" }),
+    })
+    await result.health.wait
+    const [inside, outside] = await Promise.all([result.listener.probeWrite("/inside/ws"), result.listener.probeWrite("/outside/ws")])
+    expect(inside).toEqual({ outcome: "writable" })
+    expect(outside).toEqual({ outcome: "denied", detail: "write EPERM: operation not permitted" })
+    const probes = child.wire.filter((m) => (m as { type?: string }).type === "write-probe") as Array<{ id: number; directory: string }>
+    expect(probes.map((p) => p.directory)).toEqual(["/inside/ws", "/outside/ws"])
+    expect(new Set(probes.map((p) => p.id)).size).toBe(2)
+    await result.listener.stop()
+    // 停了之后再问:不猜、答 unknown
+    expect((await result.listener.probeWrite("/inside/ws")).outcome).toBe("unknown")
   })
 
   test("计划器抛出 ⇒ spawn 拒绝,消息带原因,fork 一次都不发生", async () => {

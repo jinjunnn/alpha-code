@@ -129,7 +129,54 @@ U1 只出了 arm64,并明写将来出 Intel / universal 时若漏第二份,x64 �
 - **围栏下没有发过一次真的模型请求**(与四轮勘破同一条)。
 - **x86_64 片没有被执行过**(§5)。
 - **公证 / staple 没做**(U1 §4 同一条;发版 runbook §1 ③ 已要求核对)。
-- **`~/.bash_history`** 不在可写集(§2);终端配置降级的披露面是基线 §五 子票 4。
+- **`~/.bash_history`** 不在可写集(§2);终端配置降级的披露面已落地(§8,`#1322`),但它只是**告知**,
+  不是修复:登录 shell 的写入面仍然结构上枚举不了(基线 I3)。
 - 用户打开集合外的新文件夹:打得开、读得了、一写就 `operation not permitted`,**下次启动即在集合里**(U2 §2.4);
-  可观察面归子票 4。
-- 非 darwin:不装围栏,sidecar 打一行 warn(基线「如实声明」)。
+  工作区层面的只读告知已落地(§8,`#1322`)。
+- 非 darwin:不装围栏,sidecar 打一行 warn(基线「如实声明」);§8 的两处告知随之**不出现**(没有围栏就不说有)。
+
+## 8. 披露面:两句实话怎么到用户眼前(`#1322`)
+
+owner 2026-09-09 裁决(`#1286`):终端配置降级与集合外工作区都**不放宽、不改行为,改为如实告知**。
+设计稿 `docs/design/2026-09-10-req159-sandbox-disclosure/design.md`(§3 是 AC 字面量锚点;随 PR #1329 并入活稿,
+本文刻意不用相对链接 —— 两条线并行合入时链接目标可能还不在树上);本节只写落地形状。
+
+### 8.1 「沙箱开启」—— 信号从哪来
+
+| 环节 | 文件 | 事实 |
+| --- | --- | --- |
+| main | `server.ts` `spawnLocalServer` 返回值 | `fence: "applied"` **只在两个事实同时成立时**出现:本进程把计划放进了 start 命令(darwin 上没有计划走不到这里),且 sidecar 发了 `ready` —— 而 sidecar.ts 的 `start()` 第一句就是 `installProcessFence`,apply 失败 ⇒ error IPC + exit(1),永远发不出 ready(接线锚 `process-fence-wiring.test.ts`) |
+| main | `sidecar-generation.ts` / `sidecar-lifecycle.ts` | 终态生产者把它挂到**引擎在线**的终态上(`ready` / `injection-failed`);`failed` 不带 —— 没有引擎就没有围栏可言。经既有的 `sidecar-generation` IPC 到 renderer |
+| renderer | `alpha-ui/sandbox-state.ts` | 订阅既有的 runtime-recovery 通道,投影成 `sandboxApplied()`:在线 **且** `fence === "applied"`。缺席 / 不在线 / 字段不在 ⇒ false |
+| renderer | `session-workspace-shell.tsx` → `terminal-rail-panel.tsx` | 经 props 递进终端面板(面板的 I1 棘轮禁 window.api);脚条第三项(env 之后、size 之前,窄于 360px 只留「沙箱开启」)+ 空态一行 + 悬停层。钩子 `data-alpha-terminal-foot-sandbox` / `data-alpha-terminal-empty-sandbox` |
+
+非 darwin:计划为 `undefined` ⇒ 返回值不带 `fence` ⇒ 一路缺席 ⇒ 不出现。
+
+### 8.2 「只读」—— 探针在哪跑
+
+字符串比较四种形状必错(U2:`ws1extra` / 软链出集合 / 软链进集合 / APFS 大小写),所以判据只能是**由被围栏的进程真写一次再删**:
+
+| 环节 | 文件 | 事实 |
+| --- | --- | --- |
+| 合同 | `workspace-write-probe.ts` | main → sidecar `{type:"write-probe", id, directory}`,sidecar → main `{type:"write-probe-result", id, outcome, detail?}`;形状不对就当没有。`outcome` 三种:`writable`(写-删成功)/ `denied`(**EPERM** —— seatbelt 的拒绝就是这个码,`process-fence-apply.test.ts` B2 实测)/ `unknown`(其它一切:ENOENT、ENOTDIR、EACCES 是文件系统自己的权限位而不是围栏、超时、引擎不在) |
+| sidecar | `sidecar.ts` 消息循环 | 收到命令即同步在目标目录写一个 `.alpha-write-probe-<戳>`(`wx`,永不覆盖用户文件)再删,回一条应答。写入点登记在 `scripts/process-fence-write-sites.tsv`(根 W1 = 它**该**落的根;落不进正是它要报告的) |
+| main | `server.ts` `listener.probeWrite` → `ipc.ts` `workspace-write-probe` → preload `workspaceWriteProbe` | 请求簿按 id 对号;超时 5 s / 子进程退出 / 没有活着的 sidecar ⇒ `unknown` |
+| renderer | `alpha-ui/workspace-writable.ts`(核 `workspace-writable-core.ts`) | 「这个目录成为当前工作区」的单一咽喉:两个宿主各挂一次 `useWorkspaceWritable(dir)` —— 会话页是 `live.current().identity.directory`(deep link / draft 晋升都落这里),新对话页与首页是 chip 的 `activeWs`(chip 选目录 / 侧栏 draft 目标解析都落这里)。只在 `sandboxApplied()` 时才探;答案按「引擎代 + 目录」缓存(respawn 换代重问);四态里只有 `denied` 标记 |
+| renderer | `session-workspace-shell.tsx`(顶栏胶囊 + 弹层,动作 = 既有 `window.api.relaunch`)/ `workspace-chip.tsx`(尾标) | 钩子 `data-alpha-workspace-readonly` / `data-alpha-workspace-chip-readonly` |
+
+**为什么不在 main 里探**:main 没有被围栏,`fs.writeFile` 在那里恒答可写。`workspace-write-probe-fence.test.ts` 的 bare 臂
+就是这个形态的实测(集合外也答 writable),AC3 的判据(`workspace-write-probe-judge.ts`)把它当假探针拒掉;
+同一个判据也拒掉恒答「不可写」的替身(它会把每个项目都标成只读)。
+
+### 8.3 判据地图(补 §6)
+
+| 文件 | 跑在哪 | 守什么 |
+| --- | --- | --- |
+| `workspace-write-probe.test.ts` | 全平台 | 合同形状 fail-closed;errno 分类;真文件系统写-删不留残;请求簿三种 unknown;AC3 判据自证(两个替身各被拒在一边) |
+| `workspace-write-probe-fence.test.ts` | darwin | 真 .node / 真 seatbelt / 真子进程:围栏臂集合内 writable、集合外 denied(EPERM);bare 臂(= main)集合外 writable ⇒ 拒 |
+| `process-fence-wiring.test.ts` | 全平台 | `spawnLocalServer` 返回 `fence:"applied"`;`listener.probeWrite` 走线上命令、按 id 对号、停后答 unknown |
+| `sidecar-generation.test.ts` / `sidecar-lifecycle.test.ts` | 全平台 | 围栏字段只随在线终态上车,failed 不带 |
+| `test-component/terminal-rail.cases.ts`(宿主 `terminal-rail.test.ts`) | 全平台 | AC1:脚条第三项位置、空态一行、悬停层;反向臂 = 信号关 / prop 缺席 ⇒ 两个钩子都不在 |
+| `test-component/session-workspace.cases.ts`(宿主 `alpha-session-workspace.test.ts`) | 全平台 | AC2 顶栏两臂:集合内无胶囊;集合外胶囊紧跟状态胶囊、role=status、悬停/点击开弹层、重启动作、Esc 关 |
+| `test-component/new-session-workspace.cases.ts`(宿主 `new-session-workspace.component.test.ts`) | 全平台 | AC2 chip 两臂 + 四态:denied 才有尾标;unknown / 出错 / 桥缺席 无标记;沙箱没装一次都不探 |
+| `workspace-writable-core.test.ts` / `sandbox-state.test.ts` | 全平台 | 状态机四态、分代缓存、同代只探一次;沙箱投影只认在线 + fence 字段 |

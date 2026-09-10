@@ -335,3 +335,83 @@ describe("REQ-125 terminal rail panel real Solid mount", () => {
     expect(host.querySelectorAll("[data-alpha-terminal-tab]")).toHaveLength(2)
   })
 })
+
+// ── REQ-159 `#1322` AC1:沙箱开启时终端面有一处如实告知,且位置与存在有判据守着(基线 I4)────
+// 期望值全部是**独立字面量**(设计稿文案表),不从 i18n dict 读回来 —— 自指等价链一起改错就一起自洽。
+describe("REQ-159 #1322 sandbox disclosure on the terminal face (AC1)", () => {
+  test("sandbox on: the foot carries a third item after env and before size; title + hover card carry the full explanation", async () => {
+    runtime.setTerminalSandbox(true)
+    const host = mount(() => runtime.TerminalRailHarness())
+    await flush()
+
+    const foot = host.querySelector<HTMLElement>("[data-alpha-terminal-foot]")!
+    const item = foot.querySelector<HTMLElement>("[data-alpha-terminal-foot-sandbox]")
+    expect(item).not.toBeNull()
+    // 位置:env 之后、size 之前(设计 §3.1)。按脚条直接子元素的顺序判,不按字符串。
+    const children = [...foot.children]
+    const env = children.findIndex((el) => el.hasAttribute("data-alpha-terminal-foot-env"))
+    const sandbox = children.findIndex((el) => el.hasAttribute("data-alpha-terminal-foot-sandbox"))
+    const size = children.findIndex((el) => el.classList.contains("a-term-foot-size"))
+    expect(env).toBeGreaterThanOrEqual(0)
+    expect(sandbox).toBeGreaterThan(env)
+    expect(size).toBeGreaterThan(sandbox)
+    // 整句与窄版都在 DOM 里(哪一个可见由容器查询决定);整句解释走 title 兜底 + 非模态卡。
+    expect(item!.querySelector(".a-term-foot-sandbox-full")?.textContent).toBe("沙箱开启 · 你的部分终端配置可能不生效")
+    expect(item!.querySelector(".a-term-foot-sandbox-short")?.textContent).toBe("沙箱开启")
+    expect(item!.getAttribute("title")).toContain("终端只能写入当前项目和 Code Puppy 自己的目录")
+    const card = item!.querySelector("[role='tooltip']")
+    expect(card?.querySelector("b")?.textContent).toBe("沙箱开启")
+    expect(card?.textContent).toContain("例如补全缓存")
+    expect(card?.textContent).toContain("不写文件的设置(别名、提示符、PATH)照常生效")
+    // 键盘可达(悬停层也能用 focus 打开)。
+    expect(item!.getAttribute("tabindex")).toBe("0")
+  })
+
+  test("sandbox on: the empty state carries the one-line notice below the body and above the create button", async () => {
+    runtime.setTerminalSandbox(true)
+    runtime.setTerminalInstances([])
+    runtime.setTerminalActiveID(undefined)
+    const host = mount(() => runtime.TerminalRailHarness())
+    await flush()
+
+    const empty = host.querySelector<HTMLElement>("[data-alpha-terminal-empty]")!
+    const notice = empty.querySelector<HTMLElement>("[data-alpha-terminal-empty-sandbox]")
+    expect(notice).not.toBeNull()
+    expect(notice!.textContent).toContain("沙箱已开启 —— 终端里你自己的配置可能有一部分不生效。")
+    const children = [...empty.children]
+    const body = children.findIndex((el) => el.tagName === "P" && !el.hasAttribute("data-alpha-terminal-empty-sandbox"))
+    const line = children.findIndex((el) => el.hasAttribute("data-alpha-terminal-empty-sandbox"))
+    const button = children.findIndex((el) => el.hasAttribute("data-alpha-terminal-new"))
+    expect(line).toBeGreaterThan(body)
+    expect(button).toBeGreaterThan(line)
+  })
+
+  test("reverse arm: sandbox off — and the prop absent (today's mount) — renders neither hook; the item follows the signal live", async () => {
+    // 没装:一个字都不出现(没有围栏就不说有)。
+    runtime.setTerminalSandbox(false)
+    const host = mount(() => runtime.TerminalRailHarness())
+    await flush()
+    expect(host.querySelector("[data-alpha-terminal-foot]")).not.toBeNull()
+    expect(host.querySelector("[data-alpha-terminal-foot-sandbox]")).toBeNull()
+    expect(host.querySelector("[data-alpha-terminal-empty-sandbox]")).toBeNull()
+
+    // 状态驱动,不是一次性渲染:信号翻真即出现、翻假即消失。
+    runtime.setTerminalSandbox(true)
+    await flush()
+    expect(host.querySelector("[data-alpha-terminal-foot-sandbox]")).not.toBeNull()
+    runtime.setTerminalSandbox(false)
+    await flush()
+    expect(host.querySelector("[data-alpha-terminal-foot-sandbox]")).toBeNull()
+
+    // prop 缺席(与 sandbox 未接线的宿主同形):同样不出现 —— 空态与脚条两处都是。
+    const bare = mount(() => runtime.TerminalRailHarnessWithoutSandboxProp())
+    await flush()
+    expect(bare.querySelector("[data-alpha-terminal-foot]")).not.toBeNull()
+    expect(bare.querySelector("[data-alpha-terminal-foot-sandbox]")).toBeNull()
+    runtime.setTerminalInstances([])
+    runtime.setTerminalActiveID(undefined)
+    await flush()
+    expect(bare.querySelector("[data-alpha-terminal-empty]")).not.toBeNull()
+    expect(bare.querySelector("[data-alpha-terminal-empty-sandbox]")).toBeNull()
+  })
+})

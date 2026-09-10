@@ -19,6 +19,7 @@ import { AlphaComposer } from "./alpha-composer"
 import { createDefaultWorkspaceDir } from "./default-workspace"
 import { newSessionDraftStash } from "./new-session-draft-stash"
 import { AlphaWorkspaceChip, visibleWorkspaces, workspaceLabel } from "./workspace-chip"
+import { useWorkspaceWritable } from "./workspace-writable"
 import { Banner } from "./Banner"
 import { pushToast } from "./Toast"
 import { t } from "../i18n"
@@ -68,6 +69,8 @@ export function AlphaNewSession(props: {
   const defaultWs = createDefaultWorkspaceDir()
   const activeWs = createMemo(() => directory() || defaultWs())
   const wsLabel = createMemo(() => (activeWs() ? workspaceLabel(projects(), activeWs()) : ""))
+  // REQ-159 `#1322`:chip 选目录 / 侧栏 draft 目标解析都落在 draft 的 directory 上 —— 这里就是新对话页的咽喉。
+  const wsReadonly = useWorkspaceWritable(activeWs)
   const [wsOpen, setWsOpen] = createSignal(false)
   const [attachmentReadPending, setAttachmentReadPending] = createSignal(false)
 
@@ -157,6 +160,7 @@ export function AlphaNewSession(props: {
             open={wsOpen()}
             onOpenChange={setWsOpen}
             onSelect={selectWorkspace}
+            readonly={wsReadonly()}
           />
         </div>
       </div>

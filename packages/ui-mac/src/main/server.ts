@@ -28,6 +28,8 @@ import { consumeDanglingSweepCredit } from "./dangling-sweep-latch"
 import { planProcessFence, type ProcessFencePlan } from "./process-fence-plan"
 import { trialCompileProfile } from "./process-fence-compile"
 import type { ProcessFenceStartInput } from "./process-fence-apply"
+// REQ-159 `#1322`:工作区写探针的 main 半场 —— 请求/应答簿记住在 workspace-write-probe.ts,这里只接线到子进程。
+import { createWriteProbeRequester, type WorkspaceWriteProbeResult } from "./workspace-write-probe"
 import { alphaGlobalRoot } from "./engine-config-truth"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { GLOBAL_RENDERER_STORE, TABS_INFO_KEY, TABS_KEY, TABS_RECENT_KEY } from "./tabs-preclean"
@@ -53,7 +55,15 @@ type SidecarMessage =
 // 形状与两侧的读写都住在 ./sidecar-stop(sidecar.ts 消费同一份);此处只做再导出,
 // 让既有 `import { SidecarStopMode } from "./server"` 的调用点不必改。
 export type { SidecarStopMode }
-export type SidecarListener = { stop: (mode?: SidecarStopMode) => Promise<void>; kill: () => void }
+export type SidecarListener = {
+  stop: (mode?: SidecarStopMode) => Promise<void>
+  kill: () => void
+  /**
+   * REQ-159 `#1322`:让**被围栏的 sidecar** 在 `directory` 真写一次再删,回答 writable / denied / unknown。
+   * 超时、进程已退出、应答形状不对 ⇒ unknown(呈现层 unknown = 无标记,不猜)。
+   */
+  probeWrite: (directory: string) => Promise<WorkspaceWriteProbeResult>
+}
 
 const SIDECAR_SERVICE_NAME = "opencode server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
@@ -373,9 +383,14 @@ export async function spawnLocalServer(
   }
 
   app.on("child-process-gone", onProcessGone)
+  // REQ-159 `#1322`:探针请求簿。sidecar 收到 write-probe 命令即同步回一条 write-probe-result;这里按 id 对号。
+  // 子进程退出 ⇒ 在途请求全部答 unknown(不是「拒绝」,也不是「可写」)。
+  const writeProbes = createWriteProbeRequester((command) => child.postMessage(command))
+  child.on("message", (message: unknown) => void writeProbes.receive(message))
   child.once("exit", (code) => {
     exited = true
     app.off("child-process-gone", onProcessGone)
+    writeProbes.close(`sidecar exited with code ${code}`)
     options.onExit?.(code)
     exit.resolve(code)
   })
@@ -489,6 +504,7 @@ export async function spawnLocalServer(
       kill: () => {
         if (!exited) child.kill()
       },
+      probeWrite: (directory: string) => writeProbes.request(directory),
       stop: (mode: SidecarStopMode = "graceful") => {
         if (stopping) return stopping
         if (exited) return Promise.resolve()
@@ -507,6 +523,11 @@ export async function spawnLocalServer(
     },
     health: { wait },
     injectionFailure,
+    // REQ-159 `#1322`:「围栏装上了」的信号,由**两个事实**共同给出 —— 本进程把计划放进了 start 命令
+    // (darwin 上没有计划就不会走到这里),且 sidecar 发了 ready;而 sidecar.ts 的 start() 第一句就是
+    // installProcessFence(apply 失败 ⇒ error IPC + exit(1),永远发不出 ready;接线锚在
+    // process-fence-wiring.test.ts)。非 darwin 没有计划 ⇒ 不带这个字段 ⇒ 披露面不出现(没有围栏就不说有)。
+    ...(fence ? { fence: "applied" as const } : {}),
   }
 }
 

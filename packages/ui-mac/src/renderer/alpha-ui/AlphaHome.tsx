@@ -14,6 +14,7 @@ import { noteHomeComposerUnmountDraft } from "./home-draft-discard-notice"
 import { launchDraftPending } from "./launch-draft-handoff"
 import { createDefaultWorkspaceDir } from "./default-workspace"
 import { AlphaWorkspaceChip, visibleWorkspaces } from "./workspace-chip"
+import { useWorkspaceWritable } from "./workspace-writable"
 import { pushToast } from "./Toast"
 import { Banner } from "./Banner"
 import { useConfigHealth } from "./use-config-health"
@@ -66,6 +67,8 @@ export function AlphaHome(props: {
   const activeWs = createMemo(() =>
     chosenWs() ?? (defaultWs.loading ? undefined : (defaultWs() ?? visibleProjects()[0]?.worktree)),
   )
+  // REQ-159 `#1322`:首页 chip 是只读状态的第二宿主(与新对话页同源);咽喉同样是「当前生效目录」。
+  const wsReadonly = useWorkspaceWritable(activeWs)
   const activeWsSource = createMemo<"chosen" | "project" | "default" | "none">(() =>
     chosenWs()
       ? "chosen"
@@ -184,6 +187,7 @@ export function AlphaHome(props: {
             open={wsOpen()}
             onOpenChange={setWsOpen}
             onSelect={setChosenWs}
+            readonly={wsReadonly()}
           />
         </div>
       </div>

@@ -162,8 +162,9 @@ describe("REQ-125 C3-term I1/I5 static ratchets", () => {
     expect(shell).toContain(`import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"`)
     // Panels seam (C3/C4): the built-in terminal renderer is the fallback for the terminal
     // slot only, fed by the #554 channel projection and the live.accepts identity gate.
+    // `#1322`:沙箱告知的信号经 shell 的 sandbox prop 递进面板(面板 I1 棘轮禁 window.api,只能这样进)。
     expect(shell).toMatch(
-      /kind === "terminal"[\s\S]{0,300}<TerminalRailPanel channel=\{props\.terminalChannel\?\.\(\)\} accepts=\{props\.live\.accepts\} \/>/,
+      /kind === "terminal"[\s\S]{0,300}<TerminalRailPanel channel=\{props\.terminalChannel\?\.\(\)\} accepts=\{props\.live\.accepts\} sandbox=\{props\.sandbox\} \/>/,
     )
   })
 })

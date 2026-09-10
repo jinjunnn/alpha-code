@@ -315,3 +315,115 @@
     transition: none;
   }
 }
+
+/* ── REQ-159 `#1322` · 沙箱告知(脚条第三项 + 空态一行 + 悬停层)────────────
+   只在引擎自报装上围栏时渲染(面板 props.sandbox)。脚条项与「zsh」同级:同一号 mono 小字、
+   胶囊描边、恒深底的浅字;窄于 360px 用容器查询只留「沙箱开启」四个字,整句进 title / 悬停层。
+   悬停层是抬起的表面(全局 --a-surface-raised / --a-shadow-lg),不随输出区恒深底。 */
+
+.a-term-panel {
+  container-type: inline-size;
+}
+
+.a-term-foot-sandbox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--a-term-stage-border);
+  border-radius: var(--a-radius-full);
+  color: var(--a-term-stage-text-dim);
+  white-space: nowrap;
+  cursor: default;
+  outline: none;
+}
+
+.a-term-foot-sandbox .a-term-icon {
+  width: 10px;
+  height: 10px;
+}
+
+.a-term-foot-sandbox:focus-visible {
+  box-shadow: var(--a-ring-focus);
+}
+
+.a-term-foot-sandbox-short {
+  display: none;
+}
+
+@container (max-width: 359px) {
+  .a-term-foot-sandbox-full {
+    display: none;
+  }
+
+  .a-term-foot-sandbox-short {
+    display: inline;
+  }
+}
+
+.a-term-foot-sandbox-card {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 5;
+  display: none;
+  width: 300px;
+  max-width: 80cqw;
+  padding: 10px 12px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface-raised);
+  box-shadow: var(--a-shadow-lg);
+  color: var(--a-text-secondary);
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-xs);
+  line-height: var(--a-leading-normal);
+  white-space: normal;
+  text-align: left;
+}
+
+.a-term-foot-sandbox-card b {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+}
+
+.a-term-foot-sandbox-card::after {
+  content: "";
+  position: absolute;
+  left: 18px;
+  bottom: -6px;
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid var(--a-border);
+  border-bottom: 1px solid var(--a-border);
+  background: var(--a-surface-raised);
+  transform: rotate(45deg);
+}
+
+.a-term-foot-sandbox:hover .a-term-foot-sandbox-card,
+.a-term-foot-sandbox:focus-visible .a-term-foot-sandbox-card {
+  display: block;
+}
+
+.a-term-empty-sandbox {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  max-width: 34ch;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  line-height: var(--a-leading-snug);
+  text-align: left;
+}
+
+.a-term-empty-sandbox .a-term-icon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+}

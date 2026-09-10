@@ -76,6 +76,12 @@ export type ServerReadyData = {
 }
 
 export type SidecarGenerationReason = "boot" | "token-only" | "structural"
+
+/** REQ-159 `#1322`:工作区写探针的回答(合同本体在 main/workspace-write-probe.ts,这里是 renderer 可见的形状)。 */
+export type WorkspaceWriteProbeResult = {
+  outcome: "writable" | "denied" | "unknown"
+  detail?: string
+}
 // #577:"failed" 是健康探测失败/超时的终态 —— consumer 拿到事实后自证(有界自探),
 // 而不是永远等一个不会再来的 "ready"。
 // #613:"injection-failed" 是与其并列的第三终态 —— 引擎就绪(健康线已过)但 alpha 配置注入
@@ -84,6 +90,12 @@ export type SidecarGenerationState = {
   status: "recovering" | "ready" | "failed" | "injection-failed"
   generation: number
   reason: SidecarGenerationReason
+  /**
+   * REQ-159 `#1322`:这一代引擎**装上了进程围栏**(sidecar 自报:darwin 上 fence 计划进了 start 命令,
+   * 且 sidecar 在 apply 成功之后才发 ready)。只随引擎在线的终态(ready / injection-failed)上车;
+   * 缺席 = 没装(非 darwin)或引擎不在 —— 披露面据此**不出现**,没有围栏就不说有。
+   */
+  fence?: "applied"
 }
 
 export const STARTUP_TIMELINE_CHANNEL = "startup-timeline-mark"
@@ -703,6 +715,11 @@ export type ElectronAPI = {
   workspaceDefaultDir: () => Promise<string>
   /** lazy 供给:dir 省略或等于默认工作目录时创建并返回;其他路径 no-op(ok:false)。 */
   workspaceEnsureDefault: (dir?: string) => Promise<{ ok: boolean; dir?: string }>
+  /**
+   * REQ-159 `#1322`:「这个目录现在写得进去吗」—— 由**被围栏的引擎进程**在该目录真写一次再删。
+   * writable / denied(围栏 EPERM)/ unknown(引擎不在 / 超时 / 别的失败)。呈现层只在 denied 时标记。
+   */
+  workspaceWriteProbe: (directory: string) => Promise<WorkspaceWriteProbeResult>
   openFilePicker: (opts?: {
     multiple?: boolean
     title?: string
