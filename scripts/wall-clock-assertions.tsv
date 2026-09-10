@@ -1,0 +1,66 @@
+# `#1300` —— 墙钟上界断言登记簿。判官 = packages/ui-mac/src/main/wall-clock-assertions.test.ts
+# (跑在 `bun test src`,即 alpha-check 第 [5/14] 步;并登记在 scripts/gate-files.tsv,第 [6/14] 步逐条点名)。
+# 扫描器 = packages/ui-mac/src/main/wall-clock-assertions.ts(TypeScript AST,三条互相独立的检索轴,
+# 每轴各有控制臂);CLI = packages/ui-mac/scripts/wall-clock-assertions.ts(--check / --list / --write)。
+#
+# ── 这一类是什么,为什么要登记 ──────────────────────────────────────────────────────
+# `expect(<一段真实耗时>).toBeLessThan(<上界>)` 断的不是被测对象对不对,是机器当时有多闲。单跑恒真,
+# 满载(同机 31 个 bun test 并跑)时是掷骰子:2026-09-08 artifact-quota.test.ts 的 100ms 上界收到 156ms,
+# 拦下的是一个纯文档 PR。被拦的人查不出原因,最省事的动作就是 `--no-verify`。
+# 本登记簿 = 仓里**现存**的每一条这类断言 + 它的处置。新增一条不登记 ⇒ 判官红并点名 file:line;
+# 登记簿里有、代码里没了 ⇒ 也红(登记簿不许长成尸体)。
+#
+# ── 五列 TAB ────────────────────────────────────────────────────────────────────────
+#   <文件> <所在 test 标题("-" = 不在 test 里)> <整条断言语句(空白折叠)> <处置> <理由>
+#
+# ── 处置(默认拒;判官 dispositionError 逐条校验)────────────────────────────────────
+#   keep            真正在测性能/时序契约。理由 ≥ 40 字符:写清余量倍数与它守住的失败签名。
+#   load-sensitive  负载敏感档:显式声明它依赖机器闲忙,**只许**给不在每 PR 套件里的文件
+#                   (PER_PR_GATE_PREFIXES 之外且不在 gate-files.tsv 里,如 test-live/,由单独命令跑)。
+#   upstream        上游文件(north-star:本仓不改)。**只许**给不是 alpha 自有的文件。
+#   not-elapsed     扫描器过报:被约束的不是耗时。理由 ≥ 20 字符,写清它是什么。
+#   rewrite 不是合法登记值:改写 = 那条断言不再存在 = 不该有这一行。改写的留痕写在下面。
+#
+# ── 明确不接受的处置(票面原文)────────────────────────────────────────────────────────
+#   不许登记进 scripts/known-fails.tsv(#1094 AC3/AC4 已禁);不许把上界放宽成更大的数当作修好。
+#
+# ── 2026-09-09 `#1300` 首轮枚举:34 处命中(扫描器 v2;v1 43 处,含 9 处 bound-name 轴过报,已收窄)──
+# 其中 alpha 自有 17 处已改写(不再命中,列在这里留痕),其余登记在下方正文。
+#   packages/ui-mac/src/main/artifact-quota.test.ts ×5(:649/:683/:717/:747/:775,
+#     `expect(Date.now() - startedAt).toBeLessThan(100|150)`)
+#     → 冻住 Date.now(产品的期限/预算全部读它),到期由钩子把时钟拨过去或由永不返回的钩子逼期限计时器
+#       收尾;断言改为「钩子被触到 + 结果是 retryable + 扫描恰好停在第 N 条 + 让出过事件循环」。
+#   packages/ui-mac/src/main/sidecar-location-prewarm.test.ts ×2(:164/:181 `durationMs < 1_000`)
+#     → prewarmInitialLocation 新增可注入 `now`,夹具在请求里推进时钟,判据改为精确 `toBe(20)` / `toBe(80)`。
+#   packages/ui-mac/src/renderer/alpha-ui/model-contract.test.ts ×2(:819/:867 `< ENGINE_FETCH_TIMEOUT_MS / 5`)
+#     → 删除。#1083 之后链级预算已不在探针取消面上;「是谁掐的探针」由 `wake: "timeout"` / `attempts == []`
+#       结构性钉住(别的来源掐 ⇒ 屏障按真实故障抛 ⇒ 当场红;期限被摘 ⇒ 探针永不返回 ⇒ 套件超时红)。
+#   packages/ui-mac/src/renderer/surface-remount.test.ts ×5(:455/:456/:467/:468/:469 `< ATTRIBUTED_FLOOR_MS`)
+#     → 用例把 `performance.now` 换成只由夹具推进的时钟(runtime 新增 setClockAdvance),
+#       归因判据改为精确相等:注入的那一步 == 200,其余 == 0。
+#   packages/ui-mac/src/main/alpha-auth.cases.ts ×1(:1009 `waited < 30_000`)
+#     → 删除。有界的结构性证据是 refreshTokens 落定且 applied:false 而换血仍悬着;无界 ⇒ 用例超时红。
+#   packages/opencode/test/tool/alpha-websearch-failure.test.ts ×1(:161 `Date.now() - started < 5_000`)
+#     → Effect TestClock:拨到 99ms 仍悬着、再拨 1ms 必须以 timeout 落定(配置值被采纳的精确证据)。
+#
+# ── 邻类(不在本登记簿里,诚实登记)────────────────────────────────────────────────────
+#   轮询助手里的 `if (Date.now() - start > timeoutMs) throw`(等待条件的墙钟超时)与套件级 `--timeout`
+#   同性质,本票不枚举;若它开始咬人,另立票把它并进扫描器。
+packages/codemode/test/codemode.test.ts	the timeout interrupts a busy loop without any operation budget	expect(elapsedMs).toBeLessThan(3_000)	upstream	上游文件(origin/dev 有,不带 alpha- 前缀/marker),north-star 不改。忙循环被 timeout 打断的 3s 上界。
+packages/core/test/effect/cross-spawn-spawner.test.ts	-	expect(Date.now() - started).toBeLessThan(1_000)	upstream	上游文件,north-star 不改。子进程 kill 后 1s 内返回的上界。
+packages/opencode/test/account/service.test.ts	token refresh persists the new token	expect(value.token_expiry).toBeGreaterThan(Date.now())	upstream	上游文件,north-star 不改。token_expiry 必须晚于「现在」—— 时钟读数在小于号一侧,形态上属本类。
+packages/opencode/test/cli/run/run-process.test.ts	-	expect(result.durationMs).toBeLessThan(15_000)	upstream	上游文件,north-star 不改。run 子进程 durationMs 的 15s 上界。
+packages/opencode/test/cli/run/run-process.test.ts	-	expect(result.durationMs).toBeLessThan(30_000)	upstream	上游文件,north-star 不改。run 子进程 durationMs 的 30s 上界。
+packages/opencode/test/lsp/client.test.ts	document mode accepts matching push diagnostics published before waiting	expect(Date.now() - started).toBeLessThan(1_000)	upstream	上游文件,north-star 不改。LSP 诊断等待 1s 上界。
+packages/opencode/test/lsp/client.test.ts	document mode does not wait for the slowest pull identifier after current-file diagnostics arrive	expect(Date.now() - started).toBeLessThan(1_000)	upstream	上游文件,north-star 不改。LSP 诊断等待 1s 上界。
+packages/opencode/test/lsp/client.test.ts	full mode treats an empty workspace pull response as handled	expect(Date.now() - started).toBeLessThan(1_000)	upstream	上游文件,north-star 不改。LSP 诊断等待 1s 上界。
+packages/opencode/test/server/worktree-endpoint-repro.test.ts	-	expect(Date.now() - started).toBeLessThan(1_500)	upstream	上游文件,north-star 不改。worktree 端点 1.5s 上界。
+packages/opencode/test/session/compaction.test.ts	-	expect(Date.now() - start).toBeLessThan(250)	upstream	上游文件(REQ-134 收编进 UPSTREAM_EXCLUDES,但仍是上游来源),本票不改。250ms 上界。
+packages/opencode/test/session/processor-effect.test.ts	session.processor effect tests preserve text start time	expect(text.time.start).toBeLessThan(text.time.end)	upstream	上游文件,north-star 不改。start < end 两个时钟读数相比,形态上属本类。
+packages/opencode/test/session/retry.test.ts	accepts http-date retry-after values	expect(d).toBeLessThanOrEqual(20000)	upstream	上游文件,north-star 不改。由 Date.now 算出的 retry-after 延迟 ≤ 20s。
+packages/opencode/test/util/process.test.ts	aborts a running process	expect(Date.now() - started).toBeLessThan(1000)	upstream	上游文件,north-star 不改。abort 后 1s 内返回的上界。
+packages/opencode/test/util/process.test.ts	kills after timeout when process ignores terminate signal	expect(Date.now() - started).toBeLessThan(1000)	upstream	上游文件,north-star 不改。kill 后 1s 内返回的上界。
+packages/ui-mac/src/main/worktree-probe-sweep.test.ts	`#1156` 判据②:200 次直读比 2 次 git 子进程还快 —— 采样率不随负载塌陷	expect(fastMs).toBeLessThan(spawnMs)	keep	真性能契约(相对量):200 次直读 vs 2 次 git 子进程,两边同机同负载下量,判的是数量级(直读 µs 级、spawn ms 级,余量 ≥ 100×),负载同向作用于两边不改变相对序;守住的失败签名 = 有人把布防轮询换回子进程 ⇒ 200 次 spawn ≫ 2 次 spawn 当场红。
+packages/ui-mac/src/renderer/alpha-ui/model-picker-logic.test.ts	超时必须严格大于任何退避间隔 —— 保证「悬挂 → 超时 → 退避 → 重试」链不重叠不空转	expect(ENGINE_FETCH_TIMEOUT_MS).toBeGreaterThan(nextEngineRetryDelay(attempt))	not-elapsed	被约束的是 nextEngineRetryDelay(attempt) —— 由 attempt 算出的退避间隔,不是量出来的耗时;bound-name 轴因上界 ENGINE_FETCH_TIMEOUT_MS 过报。取值纪律,不依赖机器闲忙。
+packages/ui-mac/src/renderer/alpha-ui/session-timeline/cards/tool-card-provenance-gates.test.ts	hex / 关键词密集 / 64k 单行 diff 三种对抗形状,经生产投影路径合计 < 2000ms 且内容不失真	expect({ linearBudgetMs: 2000, withinBudget: elapsed < 2000 }).toEqual({ linearBudgetMs: 2000, withinBudget: true, })	keep	真性能契约(复杂度):共享 redactor 对 hex / 关键词密集 / 64k 单行 diff 三个形状必须线性 —— 线性实现 ms 级,二次实现在 64k 上是分钟级,2000ms 预算余量 ≥ 20×;守住的失败签名 = 有人把逐字符扫描写成 O(n²)(渲染进程冻结)。
+packages/ui-mac/test-live/req087/req087-live-characterization.test.ts	streaming / steer / queue / abort / tool card / file-review panel 焦点返回 characterization	expect(Date.now() - abortStart).toBeLessThan(12000)	load-sensitive	test-live 特征化套件,不进每 PR 门(package.json 的 test:live:req087 单独跑,--timeout 300000);12s 上界是「Escape 真中断了 60×250ms 的流」的证据,本来就依赖真机时序。

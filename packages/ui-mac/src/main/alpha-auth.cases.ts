@@ -1000,13 +1000,13 @@ describe("the rotation wait is bounded", () => {
         expires_in: 3600,
       })) as typeof fetch
 
-    const started = Date.now()
     const result = await refreshTokens()
-    const waited = Date.now() - started
 
     expect(rotationStarted).toBe(true)
+    // 「有界」的结构性证据就是这一行落定了、且换血仍悬着(onRenewed 永不返回):等待若无界,
+    // refreshTokens 永不返回,由用例自己的 40s 超时判红。不再另断 `waited < 30_000`(`#1300`:
+    // 那是墙钟上界,满载下会假红,而它只多排除「ROTATION_WAIT_MS 被改到 30s–40s 之间」这一格)。
     expect(result).toMatchObject({ outcome: "refreshed", applied: false })
-    expect(waited).toBeLessThan(30_000)
     // 超时不是 ready:换血还没落定,平台面继续恢复中。
     expect(getAuthState().platformStatus).toBe("recovering")
   }, 40_000)

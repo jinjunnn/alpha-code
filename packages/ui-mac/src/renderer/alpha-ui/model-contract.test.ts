@@ -769,7 +769,9 @@ describe("#1083 屏障单探针期限:没答 ≠ 故障", () => {
 
   test("首轮探针永不答:屏障自己重探并就绪,不掀链、不喂退避", async () => {
     let probes = 0
-    const abortedProbes: boolean[] = []
+    // 记下**是谁**掐的探针:`deadline.abort()`(屏障自己的 controller,无 reason)⇒ 规范规定的 AbortError;
+    // 链级预算 `AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS)` ⇒ TimeoutError。AbortSignal.any 原样转发来源的 reason。
+    const abortedProbes: string[] = []
     const facts: CatalogReadyFact[] = []
     const contract = createModelContract(
       () =>
@@ -785,7 +787,7 @@ describe("#1083 屏障单探针期限:没答 ≠ 故障", () => {
                   options?.signal?.addEventListener(
                     "abort",
                     () => {
-                      abortedProbes.push(true)
+                      abortedProbes.push(String((options.signal?.reason as { name?: string } | undefined)?.name))
                       resolve({ error: options.signal?.reason })
                     },
                     { once: true },
@@ -805,18 +807,17 @@ describe("#1083 屏障单探针期限:没答 ≠ 故障", () => {
       },
     )
 
-    const startedAt = performance.now()
     expect(await contract.list("/wedged-first-probe")).toEqual([model])
-    const elapsed = performance.now() - startedAt
     expect(probes).toBe(2)
     // 到期必须**取消在途请求**,否则那条死连接会留在 Chromium 连接池里被复用
     // (与 ENGINE_FETCH_TIMEOUT_MS 同款理由,model-picker-logic.ts 抬头已写明)。
-    expect(abortedProbes).toEqual([true])
-    // 而且必须是**屏障自己的**期限点的火。把 `deadline.signal` 从探针的取消面上摘掉,这条链
-    // 照样能就绪 —— 只是要等 10s 的链级预算来收尸。实测:摘掉后本用例仍绿、耗时从 65ms 涨到
-    // 40s(四轮 × 10s)。**一个只会变慢的闸不是闸**,所以判据钉在时间上:注入的期限是 5ms,
-    // 真跑完两轮应在毫秒量级,与 `ENGINE_FETCH_TIMEOUT_MS` 差两个数量级。
-    expect(elapsed).toBeLessThan(ENGINE_FETCH_TIMEOUT_MS / 5)
+    // 而且必须是**屏障自己的**期限点的火,不是 10s 的链级预算。`#1300` 前这里量墙钟
+    // (`elapsed < ENGINE_FETCH_TIMEOUT_MS / 5`),满载下会假红;而且它对「谁掐的」只有间接分辨力。
+    // 现在直接看 abort reason 的来源(2026-09-09 变异实测):
+    //   · 把取消面换成链级预算(`anySignal(signal, round.signal, requestBudget())`)⇒ 探针 10s 后被
+    //     TimeoutError 掐掉,而 `deadline.signal.aborted` 早已为真 ⇒ `wake: "timeout"` 照样成立 —— 只有这一行红;
+    //   · 把 `deadline.signal` 从取消面摘掉 ⇒ 探针永不返回 ⇒ `list()` 永不落定 ⇒ 上面那行由套件超时判红。
+    expect(abortedProbes).toEqual(["AbortError"])
     // 分项如实:没答的那一轮记 probeTimeouts,不记 pollWaits(它没走满兜底周期),
     // 也不冒充 event 唤醒。
     expect(facts).toHaveLength(1)
@@ -827,6 +828,7 @@ describe("#1083 屏障单探针期限:没答 ≠ 故障", () => {
     // 上一条断的是「最终能就绪」;这一条断的是**中途没有失败被抛出去** —— #1080 的代价不是
     // 「最终没好」,是每一轮不答都被翻译成一次 `error:request`,交给 1/2/4/8s 退避空转。
     let probes = 0
+    const abortedProbes: string[] = []
     const contract = createModelContract(
       () =>
         ({
@@ -836,9 +838,14 @@ describe("#1083 屏障单探针期限:没答 ≠ 故障", () => {
                 const round = ++probes
                 if (round > 3) return Promise.resolve({ data: { data: { id: ALPHA_V2_CATALOG_READY_PROVIDER_ID } } })
                 return new Promise((resolve) => {
-                  options?.signal?.addEventListener("abort", () => resolve({ error: options.signal?.reason }), {
-                    once: true,
-                  })
+                  options?.signal?.addEventListener(
+                    "abort",
+                    () => {
+                      abortedProbes.push(String((options.signal?.reason as { name?: string } | undefined)?.name))
+                      resolve({ error: options.signal?.reason })
+                    },
+                    { once: true },
+                  )
                 })
               },
             },
@@ -850,7 +857,6 @@ describe("#1083 屏障单探针期限:没答 ≠ 故障", () => {
 
     // 连着三轮不答,屏障必须自己走完三轮再就绪 —— 期间 `list()` 不得 reject 一次。
     const attempts: unknown[] = []
-    const startedAt = performance.now()
     const listed = await loadEngineModelsWithRetry({
       initial: contract.list("/wedged-three-probes"),
       read: () => contract.list("/wedged-three-probes"),
@@ -863,8 +869,9 @@ describe("#1083 屏障单探针期限:没答 ≠ 故障", () => {
 
     expect(listed.status).toBe("loaded")
     expect(probes).toBe(4)
-    // 同上:三轮都必须由 5ms 的屏障期限推进,不是由 10s 链级预算兜底。
-    expect(performance.now() - startedAt).toBeLessThan(ENGINE_FETCH_TIMEOUT_MS / 5)
+    // 同上:三轮都必须由屏障自己的期限(AbortError)推进,不是由 10s 链级预算(TimeoutError)兜底。
+    // 不量墙钟(`#1300`;理由与上一条相同)。
+    expect(abortedProbes).toEqual(["AbortError", "AbortError", "AbortError"])
     // 生产的恢复链一次都没被惊动:没有 recovering、没有退避 tick。
     expect(attempts).toEqual([])
   })

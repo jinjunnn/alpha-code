@@ -100,6 +100,26 @@ bash scripts/alpha-check.sh
   递归枚举后逐个 `readFileSync(join(dir, f))`,行内没有路径字面量),今天的活实例是
   [`platform-error-code-gate.test.ts`](../../packages/ui-mac/src/main/platform-error-code-gate.test.ts)。
   两支都不靠放宽正则修(实测会把精度打崩)。
+- **写了一条「断言一段真实耗时 < 上界」的判据(`expect(Date.now() - t0).toBeLessThan(100)` 及其变体)?
+  默认动作是改写,不是登记。** `#1300` 起这是**默认拒**:
+  [`wall-clock-assertions.test.ts`](../../packages/ui-mac/src/main/wall-clock-assertions.test.ts)
+  用 TypeScript AST 扫全仓测试文件(`*.test.ts(x)` / `*.spec.ts` / `*.cases.ts`;三条互相独立的检索轴:
+  被约束一侧的数据流里有 `Date.now()` / `performance.now()` / `hrtime` / 无参 `new Date()`;被约束一侧
+  带 elapsed / duration / latency / took / waited / spent 命名;上界是 `…_MS` / TIMEOUT / DEADLINE / BUDGET
+  的 UPPER_SNAKE 常量),每一条都必须在
+  [`scripts/wall-clock-assertions.tsv`](../../scripts/wall-clock-assertions.tsv) 里有处置,否则当场红并点名
+  file:line。理由:它断的不是被测对象对不对,是**机器当时有多闲** —— 单跑恒真,满载(同机 31 个
+  `bun test` 并跑)时是掷骰子,2026-09-08 一条 100ms 上界收到 156ms,拦下的是一个纯文档 PR,而被拦的人
+  最省事的动作是 `--no-verify`。
+  改写的形状(先例都在登记簿抬头):冻住 `Date.now` 让到期由钩子触发 / 永不返回的钩子逼期限计时器收尾
+  (artifact-quota)、给生产注入 `now` 把耗时钉成精确值(sidecar-location-prewarm)、看 abort reason 的来源
+  而不是量时间(model-contract)、把 `performance.now` 换成只由夹具推进的时钟让归因成为精确相等
+  (surface-remount)、Effect `TestClock`(alpha-websearch-failure)。
+  实在要留,四种处置默认拒:`keep` 只给真性能/时序契约(理由 ≥ 40 字符,写清余量与失败签名)、
+  `load-sensitive` 只给每 PR 套件之外的文件(如 `test-live/`,单独命令跑)、`upstream` 只给非 alpha 文件、
+  `not-elapsed` 只给扫描器过报。**不许**登记进 `scripts/known-fails.tsv`(`#1094` AC3/AC4),**不许**把上界
+  放宽成更大的数(形态不变,只是掷骰子的赢面大了)。
+  `bun packages/ui-mac/scripts/wall-clock-assertions.ts --list` 打印全部命中与轴;`--write` 重生签名(新行 TODO)。
 - **同一个路径不得同时出现在 `scripts/gate-files.tsv` 和 `NOT_GATES` 里。** 两张表互斥(`#893`)。
   此前它们在代码里从不相遇,于是一个路径可以同时被登记为闸门、又被写明「不是闸门」而无人吭声。
 - **上游包** = `packages/{opencode,core,server,tui,sdk,protocol,schema,client}`(**8 个**;`app`/`ui`

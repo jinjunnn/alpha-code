@@ -22,6 +22,7 @@
 | `#777`-B | 生产安装闸的组件测试 | 「跑在本产品发布的平台上」 | ubuntu runner ⇒ 写盘前直接拒 ⇒ 门跑不起来 |
 | `#916` | 本地 `alpha-check` 的 typecheck / 测试 | 「跑门的这棵树装着依赖」 | 全新 worktree 一个 `node_modules` 都没有 ⇒ **11627 条假红** ⇒ 唯一出路是去动**共享**主 checkout ⇒ 并行 lane 互相污染彼此的门测量 |
 | `#1294` | `bun test src` 里的子进程宿主 | 「子进程里那一跳 loopback HTTP 每次都能形成响应」 | 满载时形不成 ⇒ 宿主间歇红,而它不在 `known-fails.tsv` 里 ⇒ 拦下一个**没碰过相关代码**的 PR ⇒ 最省事的动作是 `--no-verify`(见 3.12) |
+| `#1300` | `bun test src` 里的墙钟上界断言(`expect(Date.now() - t0).toBeLessThan(100)` 一类,首轮枚举 34 处) | 「这条路径 100ms 内返回」= 「机器此刻够闲」 | 同机 31 个 `bun test` 并跑时 100ms 收到 156ms ⇒ 拦下一个纯文档 PR ⇒ `--no-verify`(见 3.13) |
 
 **咽喉的形状因此是确定的:让门的环境需求变成一处显式声明,新增的门默认拿到它,缺失时显式降级并自陈。**
 枚举对新成员默认放行,咽喉对新成员默认拒绝 —— 优先咽喉。
@@ -511,6 +512,61 @@ tsgo 的项目单位就是 tsconfig,而那个 tsconfig 是上游的、不能改�
 判据 = 代码里同时出现 `Bun.spawn(Sync)?(` 与 `process.execPath, "test"`,即
 `gate-file-registry.test.ts` 的那条谓词)。本次只改了出事的**那一个** —— 其余 50 个是否要同款
 处理、要不要抽成公共 helper,是另一张票;在没有第二个实例出事之前,**不预先抽象**。
+
+### 3.13 墙钟上界断言 —— 「这条路径 100ms 内返回」那一格(`#1300`)
+
+3.12 是「子进程里那一跳每次都能形成响应」;这一格是同一批套件里另一个从没被声明过的环境前提:
+**机器此刻够闲**。`expect(Date.now() - startedAt).toBeLessThan(100)` 断的不是被测对象对不对,是机器当时
+有多闲 —— 单跑恒真,满载时是掷骰子。
+
+**实测(2026-09-08)**:`packages/ui-mac/src/main/artifact-quota.test.ts:747` 的 100ms 上界在同机 31 个
+`bun test` 并跑时收到 **156ms**;隔离跑 26/26 绿。拦下的改动与它毫无关系(纯文档)。与 3.12 同一条结局:
+它不在 `known-fails.tsv` 里(棘轮的行为是对的),被拦的人查不出原因,最省事的动作是 `--no-verify`。
+
+**为什么不逐条打补丁**:立票时以为只有 1 条。2026-09-09 用 TypeScript AST 扫全仓测试文件
+(`*.test.ts(x)` / `*.spec.ts` / `*.cases.ts`,1178 个文件,0.8s),**34 处命中**(扫描器 v1 43 处,其中
+9 处是 `bound-name` 轴把 `expect(x.durationMs).toBeGreaterThanOrEqual(0)` 这种**下界**与常量对常量的
+取值纪律误报进来,收窄后 34)。散文枚举漏掉的永远是最近新增的那一条 —— 所以枚举派生自可检索的单一权威,
+三条互相独立的检索轴各带控制臂:
+
+| 轴 | 抓什么 | 例 |
+| --- | --- | --- |
+| clock | 被约束一侧的数据流里含时钟读数,经同文件 `const`/赋值传递解析 | `const elapsed = Date.now() - t0; expect(elapsed)…` |
+| name | 被约束一侧带耗时命名(含属性名 —— 生产量出来的耗时,测试里只看得见名字) | `expect(result.durationMs).toBeLessThan(15_000)` |
+| bound-name | 上界是 UPPER_SNAKE 时间常量,且被约束一侧不是常量 | `expect(gapBetween(a, b)).toBeLessThan(ATTRIBUTED_FLOOR_MS)` |
+
+识别的形状:`toBeLessThan` / `toBeLessThanOrEqual` / `.not.toBeGreaterThan…` / 方向反过来的
+`expect(BUDGET).toBeGreaterThan(耗时)` / `expect(...)` 实参里任何位置的比较表达式。**不算**:耗时的下界
+(满载只会让它更真)。
+
+**处置(逐条,留痕在 `scripts/wall-clock-assertions.tsv`)**:
+
+| 处置 | 条数 | 落点 |
+| --- | --- | --- |
+| 改写(不再命中,留痕在登记簿抬头) | 17 | artifact-quota ×5(冻住 `Date.now`,到期由钩子拨时钟 / 永不返回的钩子逼期限计时器收尾,断言改为「钩子被触到 + 扫描恰好停在第 N 条 + 让出过事件循环」)· sidecar-location-prewarm ×2(生产注入 `now`,判据精确 `toBe(20)` / `toBe(80)`)· model-contract ×2(看 abort reason 的来源:屏障自己的 controller ⇒ `AbortError`,链级预算 ⇒ `TimeoutError`)· surface-remount ×5(`performance.now` 换成只由夹具推进的时钟,归因精确相等)· alpha-auth.cases ×1(删:有界的结构性证据是落定且 `applied:false`)· alpha-websearch-failure ×1(Effect `TestClock`:99ms 悬着、100ms 落定) |
+| `upstream`(north-star 不改) | 14 | codemode / core / opencode 的 12 个上游测试文件 |
+| `keep`(真性能契约,写清余量与失败签名) | 2 | worktree-probe-sweep(200 次直读 vs 2 次 spawn,相对量,余量 ≥ 100×)· tool-card-provenance-gates(redactor 线性,2000ms 预算余量 ≥ 20×) |
+| `load-sensitive`(只许门外文件) | 1 | `test-live/req087`(不进每 PR 门,单独命令跑) |
+| `not-elapsed`(扫描器过报) | 1 | model-picker-logic(被约束的是由 attempt 算出的退避间隔) |
+
+改写不是「把 100 放宽成 1000」(票面明禁:形态不变,只是掷骰子的赢面大了),也不是登记进
+`known-fails.tsv`(`#1094` AC3/AC4)。每一处改写都做了**变异实验**证明它仍抓得住原来守的缺陷
+(2026-09-09):artifact-service 的扫描预算去掉到期判据 ⇒ `slowEntries` 53 ≠ 2 红;返回路径/重读的期限
+计时器去掉 ⇒ 三条用例挂到套件超时红;model-contract 把链级预算加回探针取消面 ⇒ `TimeoutError` ≠
+`AbortError` 红(**原来的墙钟上界能抓到这一变异,而只看 `wake: "timeout"` 抓不到** —— 期限计时器照样在 5ms
+时把 `deadline.signal.aborted` 置真,第一版改写差点把这一格丢掉);alpha-sidebar 逐步记时忘记推进步起点 ⇒
+`new_draft` 200 ≠ 0 红;websearch 先拨 100ms 再看「仍悬着」⇒ 红。
+
+**棘轮**:`wall-clock-assertions.test.ts`(登记进 `gate-files.tsv`,跑在 `bun test src` ⇒ 每 PR)。新增一条
+不登记 ⇒ 红并点名 file:line;登记簿里有、代码里没了 ⇒ 红;处置不合法(`rewrite` / 门内文件的
+`load-sensitive` / alpha 自有文件的 `upstream` / 没写理由)⇒ 红。反向夹具:临时目录里新增一条,必须被点名。
+
+**诚实边界**:
+- 三轴都不沾的形状测不到(生产量出的耗时用了别的名字、上界是裸数字):登记簿仍是显式清单。
+- 轮询助手里的 `if (Date.now() - start > timeoutMs) throw`(等待条件的墙钟超时)是**邻类**,与套件级
+  `--timeout` 同性质,本票不枚举;它开始咬人时另立票并进扫描器。
+- `upstream` 判据是守卫谓词不需要 git 的那一半(整包 carve-out + `alpha-` 前缀 + marker),不查 `origin/dev`;
+  方向是过报(不会把真上游文件误判成 alpha 自有)。
 
 ## 4. 咽喉:两处声明,覆盖仓内真实存在的两种运行形状
 

@@ -142,6 +142,10 @@ describe("sidecar initial location prewarm", () => {
   })
 
   test("#881 硬顶到期与『请求自己炸了』是两个可观察结局,且每格都带实测耗时", async () => {
+    // `#1300`:耗时用**注入的时钟**量,判据是精确值,不再是墙钟上下界(原上界 1_000ms 在满载下会
+    // 假红;原下界只证得了「不是写死 0」)。夹具在请求里推进时钟 ⇒ 写死 0 / 写死大常量 / 量错区间都红。
+    let clock = 0
+    const now = () => clock
     // ① 是**我们自己的硬顶**把它掐了。旧实现把这一格折进 `{outcome:"failed", error:"…timed out"}`
     //    的自由文本 ⇒ 打包证据里「ready 是等满硬顶照发的」不可判,而那是归因要问的第一个问题。
     const timedOut = await prewarmInitialLocation(
@@ -149,35 +153,41 @@ describe("sidecar initial location prewarm", () => {
         request(input) {
           const signal = (input as Request).signal
           return new Promise<Response>((_, reject) => {
-            signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+            signal.addEventListener(
+              "abort",
+              () => {
+                clock += 20
+                reject(signal.reason)
+              },
+              { once: true },
+            )
           })
         },
       },
       "/Users/example/Alpha",
-      { password: "synthetic-password", timeoutMs: 20 },
+      { password: "synthetic-password", timeoutMs: 20, now },
     )
     expect(timedOut.outcome).toBe("timed-out")
     // 折回 failed 的实现在这里红两次:outcome 变了,而且它会带上自由文本 error。
     expect("error" in timedOut).toBe(false)
-    // 耗时是**真量出来的**:写死 0 过不了下界,写死一个大常量过不了上界。
-    expect(timedOut.durationMs).toBeGreaterThanOrEqual(20)
-    expect(timedOut.durationMs).toBeLessThan(1_000)
+    // 耗时是从注入时钟量出来的:硬顶那一刻时钟推进了 20 ⇒ 恰好 20。
+    expect(timedOut.durationMs).toBe(20)
 
     // ② 成功路径同样带耗时 —— 只在失败时带,打包全绿那一次反而无从归因(T7 样本 1 正是那格:
     //    prewarm 早早收场、ready 照发,目录再过 13.8s 才收敛)。
+    clock = 0
     const readyAt = await prewarmInitialLocation(
       {
         async request() {
-          await new Promise((resolve) => setTimeout(resolve, 40))
+          clock += 40
           return new Response(null, { status: 200 })
         },
       },
       "/Users/example/Alpha",
-      { password: "synthetic-password" },
+      { password: "synthetic-password", now },
     )
     expect(readyAt.outcome).toBe("ready")
-    // marker + model 两次请求各睡 40ms ⇒ 恒量 durationMs=0 的实现在这里红。
-    expect(readyAt.durationMs).toBeGreaterThanOrEqual(70)
-    expect(readyAt.durationMs).toBeLessThan(1_000)
+    // marker + model 两次请求各推进 40 ⇒ 恰好 80;恒量 durationMs=0 或写死常量的实现在这里红。
+    expect(readyAt.durationMs).toBe(80)
   })
 })

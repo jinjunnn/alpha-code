@@ -10,7 +10,8 @@
 // 预置中间状态;②每条断言对应一个动态复现过的缺陷;③禁伪成功。
 
 import { describe, expect, test } from "bun:test"
-import { Cause, ConfigProvider, type Duration, Effect, Layer, Schema } from "effect"
+import { Cause, ConfigProvider, type Duration, Effect, Fiber, Layer, Schema } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import {
@@ -153,12 +154,28 @@ describe("websearch transport bounds (#223 Major 6)", () => {
   test("a response whose body never ends still times out loudly", async () => {
     // headers 立刻到手,body 永不结束 —— 修复前 `response.text` 会无限等待,50ms 的 timeout
     // 早已退出,探针 250ms 后仍 pending 且没有任何失败。
+    // `#1300`:timeout 是 Effect 的 `timeoutOrElse`,所以用 TestClock 把「配置的 100ms 到了」变成
+    // 一个确定性事件:拨到 99ms 仍悬着,再拨 1ms 就必须以 timeout 落定 —— 不再量墙钟
+    // (原判据 `Date.now() - started < 5_000`,满载下会假红,而它对「配置值是否被采纳」的分辨力只有
+    // 「不超过 5s」)。
     const stalled = new ReadableStream<Uint8Array>({ start() {} })
-    const started = Date.now()
-    const failure = await searchFailure(clientReturning(new Response(stalled, { status: 200 })), "100 millis")
+    const failure = await Effect.runPromise(
+      Effect.gen(function* () {
+        let settled = false
+        const fiber = yield* Effect.flip(search(clientReturning(new Response(stalled, { status: 200 })), "100 millis")).pipe(
+          Effect.tap(() => Effect.sync(() => (settled = true))),
+          Effect.forkChild,
+        )
+        yield* TestClock.adjust("99 millis")
+        // 99ms 时还悬着(配置值若被换成更小的默认值,这里已经落定 ⇒ 红)。
+        expect(settled).toBe(false)
+        yield* TestClock.adjust("1 millis")
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(TestClock.layer())),
+    )
 
     expect(failure.kind).toBe("timeout")
-    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(failure.detail).toContain("100 millis")
   })
 
   // R2(2026-07-25)动态复现:实现先整块 `push(chunk)` 再判越界,喂入**单个** 3 MiB chunk 时

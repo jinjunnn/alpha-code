@@ -123,6 +123,12 @@ let ensureDefaultWorkspaceDelayMs = 0
 export const setEnsureDefaultWorkspaceDelayMs = (ms: number) => {
   ensureDefaultWorkspaceDelayMs = ms
 }
+// `#1300`:归因判据不量墙钟。用例把 `performance.now` 换成自己推进的时钟,注入延迟时由这里
+// 把时钟推进**恰好**注入的毫秒数 —— 于是「这段延迟落在哪一步」是精确相等,不是「别处 < 150ms」。
+let advanceClock: (ms: number) => void = () => {}
+export const setClockAdvance = (advance: (ms: number) => void) => {
+  advanceClock = advance
+}
 
 // —— 默认服务器(index.tsx 里 platform.getDefaultServer 的等价供给,挂载前配置)——————
 let defaultServerChoice = "sidecar"
@@ -298,8 +304,10 @@ export function installPreloadStub() {
     // 侧栏的启动 draft 在建 draft 之前必须真的供给成功(ADR-025 不变量 5);
     // 缺省 Proxy 回 undefined ⇒ `result?.ok === true` 为假 ⇒ 只弹一句失败 toast,不会导航。
     workspaceEnsureDefault: async () => {
-      if (ensureDefaultWorkspaceDelayMs > 0)
+      if (ensureDefaultWorkspaceDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, ensureDefaultWorkspaceDelayMs))
+        advanceClock(ensureDefaultWorkspaceDelayMs)
+      }
       return { ok: ensureDefaultWorkspaceOk }
     },
     "models.catalog": async () => ({
@@ -364,6 +372,7 @@ export function resetHarness() {
   sidebarMounted = false
   ensureDefaultWorkspaceOk = true
   ensureDefaultWorkspaceDelayMs = 0
+  advanceClock = () => {}
   resetHandoff()
   defaultServerChoice = "sidecar"
   wslState = emptyWslState

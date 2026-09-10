@@ -68,11 +68,13 @@ export function initialModelPrewarmRequest(
 export async function prewarmInitialLocation(
   app: ServerApp,
   directory: string,
-  options: { password: string; timeoutMs?: number },
+  /** `now`:耗时用的时钟。生产用 `performance.now`;用例注入以把 durationMs 钉成精确值(`#1300`)。 */
+  options: { password: string; timeoutMs?: number; now?: () => number },
 ): Promise<LocationPrewarmResult> {
   const timeoutMs = options.timeoutMs ?? INITIAL_LOCATION_PREWARM_TIMEOUT_MS
-  const startedAt = performance.now()
-  const durationMs = () => performance.now() - startedAt
+  const now = options.now ?? (() => performance.now())
+  const startedAt = now()
+  const durationMs = () => now() - startedAt
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(new Error("initial location prewarm timed out")), timeoutMs)
   timer.unref?.()
