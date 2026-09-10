@@ -79,11 +79,11 @@ review_after: 2026-12-09
 |---|---|---|
 | U1 | 原生模块在**签名包内**能否加载 | **已闭合(2026-09-09,`#1316`)= 能加载。** 自己写的最小 N-API 模块由发版命令自己签,在出货包的引擎 sidecar 与主进程各加载成功、三个符号全解析到;三条反例臂(ad-hoc / 别的 Team / 去签名)在同一进程里被库校验拒掉。不需要开 `cs.disable-library-validation`。读数与未测项见 [`../architecture/2026-09-09-req159-u1-native-addon-signed-load.md`](../architecture/2026-09-09-req159-u1-native-addon-signed-load.md) |
 | U2 | 多工作区 vs 可写集不能加宽 | **已闭合(2026-09-09,`#1317`)= 取启动时并集,不把「打开新目录」接成 respawn 触发器。** 真引擎实跑 5 个工作区全可写、集合外 0 落盘;并集有一道 `data object length …(65535)` 硬天花板 ⇒ **必须封顶,且封字节不封条数**;集合来源是 `opencode.global.dat` 的 `tabs`/`tabs.info`(main 今天就在读,零新增 IPC)。respawn 被否决的是**方向**不是耗时:重载后的落地点恒是默认工作区 ⇒ 「打开新文件夹」会把用户弹回 `~/Alpha`;附带代价是终端全灭 + 工具子进程变孤儿 + 会话永远 `running`。定价、可观察面设计与未测项见 [`../architecture/2026-09-09-multi-workspace-fence-decision.md`](../architecture/2026-09-09-multi-workspace-fence-decision.md) |
-| U3 | 出货形态(node + 打包产物 + 围栏)未合成 | `sidecar.js` 顶层即 `getParentPort()`,脱离 `utilityProcess` 起不来 ⇒ **与 U1 互锁**。`#1321` 之后**仍未闭合**:围栏在 Electron 内嵌 node(= utilityProcess 的运行时)里验了 dlopen + apply + 四类原语,在 bun 上验了真引擎 + 真 ext,打包产物里也带上了 fat `.node` —— 但没有起过一次出货 `.app` 跑工作负载 |
+| U3 | 出货形态(node + 打包产物 + 围栏)未合成 | **已闭合(2026-09-10,`#1323`)= 装上 §8.2 全量可写集,出货 `.app` 的引擎活着。** 本机用发版命令打出的 Developer ID + hardened runtime 签名包(`flags=0x10000(runtime)`,`RQX6X6A635`,fat `.node`),sidecar 日志 `process fence applied: addon=fence-… profile=2068B`;六格(冷启动 / 装连接器含两处 provider 目录真装出 26 包 / 开终端 / shell 工具 / 写配置 / 三工作区并集)正向臂界内全落盘、集合外 0 落盘,同签名对照包同一探针全落盘。没测的:真模型请求、公证、x86_64 片、W4 的 sqlite 文件(`:memory:`)。读数与布局的坑见 [`../verification/2026-09-10-req159-1323-packaged-fence/README.md`](../verification/2026-09-10-req159-1323-packaged-fence/README.md) |
 
 U1 已于 2026-09-09 闭合(`#1316`),U2 已于 2026-09-09 闭合(`#1317`)⇒ 子票 3(围栏落地)的两条前置都已解除。
-**U3 不随 U1 自动闭合** —— `#1316` 只证明「模块加载得了、SPI 调得动、一条窄 deny 真生效」,
-U3 要的是 node 运行时 + 打包产物 + §8.2 全量可写集 + 真实工作负载合成一次跑通,仍是独立的 VERIFY 票。
+U3 已于 2026-09-10 闭合(`#1323`):`#1316` 只证明「模块加载得了、SPI 调得动、一条窄 deny 真生效」,
+`#1323` 才把 node 运行时 + 打包产物 + §8.2 全量可写集 + 真实工作负载合成一次跑通(正反两臂)。
 
 ## 五、子票切分
 

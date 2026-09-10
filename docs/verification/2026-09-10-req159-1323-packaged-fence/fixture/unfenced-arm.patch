@@ -1,0 +1,15 @@
+diff --git a/packages/ui-mac/src/main/sidecar.ts b/packages/ui-mac/src/main/sidecar.ts
+index 4a3691373..6b7249ff5 100644
+--- a/packages/ui-mac/src/main/sidecar.ts
++++ b/packages/ui-mac/src/main/sidecar.ts
+@@ -172,6 +172,10 @@ async function stop(command: StopCommand) {
+  * 自证:集合外写不进、cwd 写得进)。非 darwin 没有 seatbelt,如实不装(基线:「如实声明」,不是等价围栏)。
+  */
+ function installProcessFence(command: StartCommand) {
++  // AC1323 reverse arm — EXPERIMENTAL BRANCH ONLY, NEVER MERGED. The fence is deliberately NOT applied so the
++  // same driver / workload / probes can first prove the instrument sees writes land (docs/verification/2026-09-10-req159-1323-packaged-fence).
++  console.warn("AC1323-UNFENCED: process fence deliberately skipped (experimental reverse arm, not shipped)")
++  return
+   if (process.platform !== "darwin") {
+     console.warn(`process fence: not available on ${process.platform} — engine-derived processes run unfenced on this platform`)
+     return
