@@ -125,6 +125,9 @@ const { parseRoute } = await import("../src/shared/route-manifest")
 const { newSessionDraftStash } = await import("../src/renderer/alpha-ui/new-session-draft-stash")
 const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
 const { dict: zh } = await import("../src/renderer/i18n/zh")
+// [ac#1225] AI 生成标识的中英两条文案要在**同一个生产节点**上各验一次,所以要能真的切 locale。
+// (本包 bunfig 的 preload 把每个 bun test 进程钉在 ALPHA_UI_LOCALE=zh —— 默认渲染的是中文那条。)
+const { setLocale } = await import("../src/renderer/i18n")
 const {
   resetComposerAgentScopesForTests,
   resetComposerModelProjection,
@@ -1319,5 +1322,78 @@ describe("#582 斜杠 source 生产接线:composer 发送 → 真 dock 捕获 �
     expect(Object.hasOwn(origins[0]!, "source")).toBe(false)
     expect(Object.hasOwn(origins[1]!, "source")).toBe(false)
     dock.dispose()
+  })
+})
+
+/* ── [ac#1225] AC1:会话页 composer 正下方的 AI 生成内容标识 ────────────────────────────
+   《人工智能生成合成内容标识办法》要求生成结果面带显式标识。这类文案的典型死法不是写错,
+   是**下一次改 UI 时被顺手删掉而没人知道** —— 它没有任何行为依赖它,删掉之后所有别的用例照绿。
+   所以判据挂在**真 DOM** 上,而不是挂在字典里:挂真 dock(生产 SessionComposerDock,内含生产
+   SessionComposerMount 与 AlphaComposer),看渲染出来的节点在哪、写着什么。
+   期望值是**测试里的字面量**(owner 2026-09-09 逐字给定的那句),不是从字典读回来的 ——
+   期望值与被测对象同源的话,把字典改成任意别的话它照样绿。
+   本节**不**覆盖 AC2(全部生成结果呈现面 + 单一权威清单)与 AC3(复制/导出不丢标识):
+   `#1225` 因此保持 open。 */
+describe("#1225 AI 生成内容标识:会话页输入框下方一行小字", () => {
+  const IDENTITY = { serverKey: STORE_SERVER_KEY, directory: DEFAULT_WORKSPACE, sessionID: "session-1225" }
+
+  function mountDock() {
+    return mountDisposable(() =>
+      createComponent(SessionComposerDock, {
+        live: {
+          current: () => ({ identity: IDENTITY, project: "alpha-code", title: "会话", activity: "idle" }),
+          accepts: (candidate: typeof IDENTITY) =>
+            candidate.serverKey === IDENTITY.serverKey &&
+            candidate.directory === IDENTITY.directory &&
+            candidate.sessionID === IDENTITY.sessionID,
+        },
+        projects: projectsApi([project("alpha-code", "/ws/a")]),
+      } as never),
+    )
+  }
+
+  async function mountedDock() {
+    const mounted = mountDock()
+    for (let i = 0; i < 20 && !textarea(mounted.host); i++) await flush()
+    expect(textarea(mounted.host), "composer 没挂起来 —— 本次测量作废,不是标识不见了").toBeTruthy()
+    return mounted
+  }
+
+  test("标识就在 composer 下方,恰好一处,文案与 owner 给定的逐字相同", async () => {
+    const mounted = await mountedDock()
+    try {
+      const dockRoot = mounted.host.querySelector("[data-alpha-session-dock]")!
+      expect(dockRoot).toBeTruthy()
+
+      const lines = dockRoot.querySelectorAll("[data-alpha-ai-disclaimer]")
+      expect(lines).toHaveLength(1)
+      expect(lines[0]!.textContent?.trim()).toBe("内容由AI生成,仅供参考")
+
+      // 「下方」是可观察的 DOM 次序,不是散文:composer 与标识都是 dock 的直接子节点。
+      const kids = Array.from(dockRoot.children)
+      const composerIndex = kids.findIndex((el) => el.hasAttribute("data-alpha-composer"))
+      const disclaimerIndex = kids.findIndex((el) => el.hasAttribute("data-alpha-ai-disclaimer"))
+      expect(composerIndex).toBeGreaterThanOrEqual(0)
+      expect(disclaimerIndex).toBeGreaterThan(composerIndex)
+      // 它是 dock 的最后一件东西 —— 有人把别的卡片塞到 composer 与标识之间时也要红。
+      expect(disclaimerIndex).toBe(kids.length - 1)
+    } finally {
+      mounted.dispose()
+    }
+  })
+
+  test("同一个生产节点在 en 下给出等义英文,而不是回落成中文或裸 key", async () => {
+    const mounted = await mountedDock()
+    try {
+      const line = mounted.host.querySelector("[data-alpha-ai-disclaimer]")!
+      expect(line.textContent?.trim()).toBe("内容由AI生成,仅供参考")
+
+      setLocale("en")
+      await flush()
+      expect(line.textContent?.trim()).toBe("AI-generated content — double-check anything important.")
+    } finally {
+      setLocale("zh")
+      mounted.dispose()
+    }
   })
 })

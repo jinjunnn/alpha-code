@@ -245,6 +245,16 @@ export function SessionComposerDock(props: {
           />
         )}
       </Show>
+      {/* [ac#1225] AC1:AI 生成内容的显式标识(《人工智能生成合成内容标识办法》)。
+          位置 = composer 正下方,且是 dock 的最后一个子节点 —— 上面那个 <Show> 两个分支
+          (可发送 composer / 子会话条)哪一个渲染,这行都在它下面,所以标识与"这一页在给你
+          AI 生成的东西"这件事绑定,而不是与某一个分支绑定。
+          分量按仓内既有的次要提示(.a-mpa-note:--a-text-2xs + --a-text-tertiary),不新造语汇。
+          删掉这行 ⇒ test-component/new-session-workspace.cases.ts 的
+          「#1225 AI 生成标识」一节当场红(真 DOM,已实测)。 */}
+      <p class="a-swk-ai-disclaimer" data-alpha-ai-disclaimer>
+        {t("alpha.session.aiDisclaimer")}
+      </p>
     </div>
   )
 }

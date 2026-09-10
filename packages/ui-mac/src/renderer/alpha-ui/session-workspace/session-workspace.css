@@ -202,6 +202,21 @@
   gap: 10px;
 }
 
+/* alpha-code issue 1225(此处刻意不写 `#` + 数字 —— 那个形状会被本文件的
+   「只许 --a-* 令牌、不许字面颜色」棘轮当成十六进制色值,实测当场红,与上面
+   `REQ-125 issue 574` 那条注释躲的是同一个坑)。
+   AI 生成内容标识 —— composer 正下方的一行小字。
+   分量刻意等同仓内既有的次要脚注(alpha-composer.css 的 .a-mpa-note):最小字号 + 三级文字色,
+   不新造设计语汇(本票豁免设计稿,所以只许复用既有 token)。 */
+.a-swk-ai-disclaimer {
+  margin: 0;
+  padding: 0 2px;
+  text-align: center;
+  font-size: var(--a-text-2xs);
+  line-height: 1.45;
+  color: var(--a-text-tertiary);
+}
+
 .a-swk-card {
   border: 1px solid var(--a-border-faint);
   border-radius: var(--a-radius-lg);
