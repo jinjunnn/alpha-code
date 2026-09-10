@@ -1,0 +1,1030 @@
+{
+  "ticket": "alpha-code#1334",
+  "arm": "open",
+  "identity": {
+    "ticket": "alpha-code#1334",
+    "arm": "open",
+    "app": "packages/ui-mac/dist/mac-arm64/Code Puppy.app",
+    "bundleId": "com.tide.alphacode",
+    "version": "0.1.12",
+    "codesignApp": [
+      "Identifier=com.tide.alphacode",
+      "CodeDirectory v=20500 size=446 flags=0x10000(runtime) hashes=3+7 location=embedded",
+      "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+      "Authority=Developer ID Certification Authority",
+      "TeamIdentifier=RQX6X6A635"
+    ],
+    "codesignAddon": [
+      "Identifier=alpha_fence",
+      "CodeDirectory v=20500 size=311 flags=0x10000(runtime) hashes=4+2 location=embedded",
+      "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+      "Authority=Developer ID Certification Authority",
+      "TeamIdentifier=RQX6X6A635"
+    ],
+    "lipoAddon": "x86_64 arm64",
+    "verifyDeepStrictExit": 0,
+    "addonBuildId": [
+      "fence-20260910T071823160Z"
+    ],
+    "addonSha256": "00b4ab3bf0c98b0e5aea199744b95d12e7304803adf8e4986456bd0f3fc4b466",
+    "asarMarkers": {
+      "ALPHA_AC1334_NETWORK": 1,
+      "process fence applied": 1,
+      "AC1334-NONEXISTENT-NEEDLE(control)": 0
+    },
+    "orphansBefore": [],
+    "ownerAppPidsUntouched": [],
+    "iso": "<ISO>",
+    "home": "<ISO>/home",
+    "launchTmp": "<ISO>/tmp",
+    "defaultWorkspace": "<ISO>/home/code-puppy",
+    "wsA": "<ISO>/ws-a",
+    "wsB": "<ISO>/ws-b",
+    "wsC": "<ISO>/ws-c",
+    "esc": "<ISO>/esc",
+    "realTmpdir": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/",
+    "chokePort": 58999,
+    "launchEnvSubset": {
+      "HOMEBREW_PREFIX": "/opt/homebrew",
+      "HOMEBREW_CELLAR": "/opt/homebrew/Cellar",
+      "HOMEBREW_REPOSITORY": "/opt/homebrew",
+      "HOME": "<ISO>/home",
+      "TMPDIR": "<ISO>/tmp",
+      "OPENCODE_TEST_ONBOARDING": "1",
+      "OPENCODE_PORT": "59000"
+    },
+    "appPid": 3273,
+    "ports": {
+      "engine": 59000,
+      "cdp": 59001,
+      "choke": 58999
+    },
+    "onboardingRoot": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3",
+    "userData": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop",
+    "alphaGlobalRoot": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/alpha-code-state/env/prod",
+    "xdgConfig": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/config",
+    "xdgData": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/data",
+    "xdgCache": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/cache",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) alpha-code/0.1.12 Chrome/148.0.7778.218 Electron/42.3.3 Safari/537.36",
+    "logRun": "20260910T072432",
+    "appStartingLine": "[2026-09-10 03:24:32.644] [info]          app starting { version: '0.1.12', packaged: true, onboardingTest: true }",
+    "fenceMainLines": [
+      "[2026-09-10 03:24:32.663] [info]          [server] Loaded shell environment with -il (12 vars)",
+      "[2026-09-10 03:24:32.663] [info]  (main)  req047: rebuilt shell env cache after successful probe",
+      "[2026-09-10 03:24:32.800] [info]                     spawning sidecar { url: 'http://127.0.0.1:59000' }",
+      "[2026-09-10 03:24:32.811] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), profile=2040B, compile attempts=1"
+    ],
+    "fenceServerLines": [
+      "  message: 'process fence applied: addon=fence-20260910T071823160Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2040B — every process this engine spawns inherits it'"
+    ],
+    "engineUrl": "http://127.0.0.1:59000",
+    "agent": "build"
+  },
+  "escapeDirListing": [],
+  "launchTmpListing": [
+    "opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3"
+  ],
+  "defaultWsListing": [
+    "d1",
+    "fp-git",
+    "g.txt",
+    "inside.txt",
+    "mcp-open.txt",
+    "multi-open.txt",
+    "pty-default-open.txt",
+    "shelltool-open.txt"
+  ],
+  "wsAListing": [
+    "multi-open.txt"
+  ],
+  "wsBListing": [
+    "multi-open.txt"
+  ],
+  "wsCListing": [],
+  "proxyLog": [],
+  "sandboxDenyLines": [
+    "2026-09-10 03:24:31.465 E  kernel[0:48d651b] (Sandbox) 29 duplicate reports for Sandbox: discover(87997) deny(1) mach-lookup com.apple.networking.captivenetworksupport",
+    "2026-09-10 03:24:32.642 E  kernel[0:4839005] (Sandbox) Sandbox: logd_helper(82563) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1334/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/pty.node",
+    "2026-09-10 03:24:32.683 E  kernel[0:48d4be5] (Sandbox) Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 03:24:32.811 E  kernel[0:48d6619] (Sandbox) 31 duplicate reports for Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 03:24:32.811 E  kernel[0:48d6619] (Sandbox) Sandbox: true(3286) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:33.054 E  kernel[0:48d4be5] (Sandbox) Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 03:24:33.189 E  kernel[0:48d62a7] (Sandbox) 31 duplicate reports for Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 03:24:33.189 E  kernel[0:48d62a7] (Sandbox) Sandbox: nsattributedstringagent(89799) deny(1) mach-lookup com.apple.CARenderServer",
+    "2026-09-10 03:24:33.399 E  kernel[0:48d561f] (Sandbox) Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 03:24:33.790 E  kernel[0:48ceeb0] (Sandbox) 31 duplicate reports for Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 03:24:34.988 E  kernel[0:48d66d9] (Sandbox) Sandbox: bsdtar(3291) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:36.337 E  kernel[0:48d0dde] (Sandbox) Sandbox: siriknowledged(71702) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1334/packages/ui-mac/dist/mac-arm64/Code Puppy.app",
+    "2026-09-10 03:24:36.357 E  kernel[0:48d6700] (Sandbox) 4 duplicate reports for Sandbox: siriknowledged(71702) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1334/packages/ui-mac/dist/mac-arm64/Code Puppy.app",
+    "2026-09-10 03:24:36.357 E  kernel[0:48d6700] (Sandbox) Sandbox: biomesyncd(3304) deny(1) iokit-open-user-client RootDomainUserClient",
+    "2026-09-10 03:24:41.684 E  kernel[0:48d0dde] (Sandbox) Sandbox: siriknowledged(71702) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1334/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Frameworks/Code Puppy Helper.app",
+    "2026-09-10 03:24:43.427 E  kernel[0:48d561f] (Sandbox) 4 duplicate reports for Sandbox: siriknowledged(71702) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1334/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Frameworks/Code Puppy Helper.app",
+    "2026-09-10 03:24:43.427 E  kernel[0:48d561f] (Sandbox) Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 03:24:43.662 E  kernel[0:48d67b6] (Sandbox) 31 duplicate reports for Sandbox: sharingd(783) deny(1) syscall-unix 545",
+    "2026-09-10 03:24:43.662 E  kernel[0:48d67b6] (Sandbox) Sandbox: zsh(3331) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:43.668 E  kernel[0:48d67b8] (Sandbox) Sandbox: path_helper(3332) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:45.770 E  kernel[0:48d686d] (Sandbox) Sandbox: rg(3357) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:45.786 E  kernel[0:48d687b] (Sandbox) Sandbox: spawn-helper(3358) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:45.790 E  kernel[0:48d687e] (Sandbox) Sandbox: zsh(3358) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:45.795 E  kernel[0:48d6880] (Sandbox) Sandbox: path_helper(3359) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:45.798 E  kernel[0:48d6882] (Sandbox) Sandbox: locale(3360) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:48.300 E  kernel[0:48d687e] (Sandbox) Sandbox: zsh(3358) deny(1) file-write-create <ISO>/esc/pty-default-open.txt",
+    "2026-09-10 03:24:52.260 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.260 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.261 E  kernel[0:48d6757] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.261 E  kernel[0:48d6757] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.266 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.267 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.267 E  kernel[0:48d6757] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.267 E  kernel[0:48d6757] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.269 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.269 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.269 E  kernel[0:48d696a] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.269 E  kernel[0:48d696a] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.270 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.270 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.270 E  kernel[0:48d6757] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.270 E  kernel[0:48d6757] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.272 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.272 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.272 E  kernel[0:48d696a] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.272 E  kernel[0:48d696a] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.274 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.274 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.274 E  kernel[0:48d696a] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.274 E  kernel[0:48d696a] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.276 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.276 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.276 E  kernel[0:48d696a] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.276 E  kernel[0:48d696a] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.279 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.280 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.281 E  kernel[0:48d696a] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.281 E  kernel[0:48d696a] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.285 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.285 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.286 E  kernel[0:48d696a] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.286 E  kernel[0:48d696a] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.288 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.288 E  kernel[0:48d6757] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.289 E  kernel[0:48d6757] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.295 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.297 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.298 E  kernel[0:48d6757] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.298 E  kernel[0:48d6757] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.303 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.303 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.304 E  kernel[0:48d696a] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.304 E  kernel[0:48d696a] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.307 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Documents",
+    "2026-09-10 03:24:52.307 E  kernel[0:48d6724] (Sandbox) Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.308 E  kernel[0:48d696a] (Sandbox) 1 duplicate report for Sandbox: duetexpertd(65089) deny(1) file-read-xattr <REAL_HOME>/Library/Mobile Documents",
+    "2026-09-10 03:24:52.308 E  kernel[0:48d696a] (Sandbox) Sandbox: duetexpertd(65089) deny(1) mach-lookup com.apple.FileProvider",
+    "2026-09-10 03:24:52.331 E  kernel[0:48d69bf] (Sandbox) Sandbox: BackgroundShortcutRunner(3451) deny(1) file-read-data /private/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/C/com.apple.WorkflowKit.BackgroundShortcutRunner.ShortcutsSandboxCache",
+    "2026-09-10 03:24:53.318 E  kernel[0:48d6a04] (Sandbox) Sandbox: zsh(3474) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:53.323 E  kernel[0:48d6a06] (Sandbox) Sandbox: path_helper(3475) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:53.325 E  kernel[0:48d6a04] (Sandbox) Sandbox: zsh(3474) deny(1) file-write-create <ISO>/esc/shelltool-open.txt",
+    "2026-09-10 03:24:53.325 E  kernel[0:48d6a04] (Sandbox) Sandbox: zsh(3474) deny(1) file-write-create <ISO>/tmp/outside-root-open.txt",
+    "2026-09-10 03:24:53.409 E  kernel[0:4839005] (Sandbox) Sandbox: logd_helper(82563) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1334/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/pty.node",
+    "2026-09-10 03:24:53.409 E  kernel[0:4839005] (Sandbox) Sandbox: logd_helper(82563) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1334/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Resources/app.asar.unpacked/node_modules/@parcel/watcher-darwin-arm64/watcher.node",
+    "2026-09-10 03:24:55.188 E  kernel[0:48d6a33] (Sandbox) Sandbox: true(3487) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:55.287 E  kernel[0:48d6a36] (Sandbox) Sandbox: Code Puppy Helper(3489) deny(1) file-write-create /private/var/tmp/alpha-fence-probe-3489-1789025095287-inf6ho",
+    "2026-09-10 03:24:55.829 E  kernel[0:48d6a4f] (Sandbox) Sandbox: rg(3490) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:55.858 E  kernel[0:48d6a63] (Sandbox) Sandbox: git(3493) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:55.996 E  kernel[0:48d6a64] (Sandbox) Sandbox: xcodebuild(3494) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.105 E  kernel[0:48d6a8b] (Sandbox) Sandbox: git(3493) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.108 E  kernel[0:48d6a8e] (Sandbox) Sandbox: git(3497) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.118 E  kernel[0:48d6a92] (Sandbox) 1 duplicate report for Sandbox: git(3497) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.118 E  kernel[0:48d6a92] (Sandbox) Sandbox: git(3500) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.129 E  kernel[0:48d6a96] (Sandbox) 1 duplicate report for Sandbox: git(3500) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.129 E  kernel[0:48d6a96] (Sandbox) Sandbox: git(3503) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.140 E  kernel[0:48d6a9a] (Sandbox) 1 duplicate report for Sandbox: git(3503) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.140 E  kernel[0:48d6a9a] (Sandbox) Sandbox: git(3506) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.152 E  kernel[0:48d6a9c] (Sandbox) 1 duplicate report for Sandbox: git(3506) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.159 E  kernel[0:48d6aaf] (Sandbox) Sandbox: git(3510) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.170 E  kernel[0:48d6ab3] (Sandbox) 1 duplicate report for Sandbox: git(3510) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.170 E  kernel[0:48d6ab3] (Sandbox) Sandbox: git(3514) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.180 E  kernel[0:48d6ab7] (Sandbox) 1 duplicate report for Sandbox: git(3514) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.180 E  kernel[0:48d6ab7] (Sandbox) Sandbox: git(3518) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.193 E  kernel[0:48d6abc] (Sandbox) 1 duplicate report for Sandbox: git(3518) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.193 E  kernel[0:48d6abc] (Sandbox) Sandbox: git(3521) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.202 E  kernel[0:48d6ac1] (Sandbox) 1 duplicate report for Sandbox: git(3521) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.202 E  kernel[0:48d6ac1] (Sandbox) Sandbox: git(3525) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.211 E  kernel[0:48d6ac6] (Sandbox) 1 duplicate report for Sandbox: git(3525) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:56.211 E  kernel[0:48d6ac6] (Sandbox) Sandbox: git(3528) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.439 E  kernel[0:48d6b00] (Sandbox) 1 duplicate report for Sandbox: git(3528) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.439 E  kernel[0:48d6b00] (Sandbox) Sandbox: git(3551) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.458 E  kernel[0:48d6b04] (Sandbox) 1 duplicate report for Sandbox: git(3551) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.458 E  kernel[0:48d6b04] (Sandbox) Sandbox: git(3554) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.472 E  kernel[0:48d6b08] (Sandbox) 1 duplicate report for Sandbox: git(3554) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.472 E  kernel[0:48d6b08] (Sandbox) Sandbox: git(3557) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.484 E  kernel[0:48d6b0c] (Sandbox) 1 duplicate report for Sandbox: git(3557) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.484 E  kernel[0:48d6b0c] (Sandbox) Sandbox: git(3560) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.495 E  kernel[0:48d6b10] (Sandbox) 1 duplicate report for Sandbox: git(3560) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.495 E  kernel[0:48d6b10] (Sandbox) Sandbox: git(3563) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.515 E  kernel[0:48d6b15] (Sandbox) 1 duplicate report for Sandbox: git(3563) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.515 E  kernel[0:48d6b15] (Sandbox) Sandbox: git(3566) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.515 E  kernel[0:48d6b19] (Sandbox) Sandbox: git(3569) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.522 E  kernel[0:48d6b1a] (Sandbox) Sandbox: zsh(3570) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.524 E  kernel[0:48d6b1b] (Sandbox) Sandbox: git(3569) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.524 E  kernel[0:48d6b1c] (Sandbox) Sandbox: git(3566) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.525 E  kernel[0:48d6b1e] (Sandbox) Sandbox: path_helper(3571) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.526 E  kernel[0:48d6b1a] (Sandbox) Sandbox: zsh(3570) deny(1) file-write-create <ISO>/ws-c/multi-open.txt",
+    "2026-09-10 03:24:58.529 E  kernel[0:48d6b21] (Sandbox) Sandbox: git(3574) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.537 E  kernel[0:48d6b22] (Sandbox) Sandbox: zsh(3575) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.538 E  kernel[0:48d6b23] (Sandbox) Sandbox: git(3574) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.540 E  kernel[0:48d6b25] (Sandbox) Sandbox: path_helper(3576) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.542 E  kernel[0:48d6b28] (Sandbox) Sandbox: git(3579) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.543 E  kernel[0:48d6b2a] (Sandbox) Sandbox: ls(3580) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.550 E  kernel[0:48d6b2b] (Sandbox) Sandbox: git(3579) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.553 E  kernel[0:48d6b2f] (Sandbox) Sandbox: zsh(3581) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.558 E  kernel[0:48d6b33] (Sandbox) Sandbox: git(3584) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.560 E  kernel[0:48d6b37] (Sandbox) Sandbox: path_helper(3585) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.566 E  kernel[0:48d6b39] (Sandbox) Sandbox: git(3584) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.568 E  kernel[0:48d6b3a] (Sandbox) Sandbox: zsh(3586) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.572 E  kernel[0:48d6b3c] (Sandbox) Sandbox: path_helper(3587) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.573 E  kernel[0:48d6b3f] (Sandbox) Sandbox: git(3590) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.574 E  kernel[0:48d6b41] (Sandbox) Sandbox: mkdir(3591) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.576 E  kernel[0:48d6b43] (Sandbox) Sandbox: git(3592) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.581 E  kernel[0:48d6b44] (Sandbox) Sandbox: git(3590) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.584 E  kernel[0:48d6b45] (Sandbox) Sandbox: git(3592) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.584 E  kernel[0:48d6b48] (Sandbox) Sandbox: git(3595) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.591 E  kernel[0:48d6b4b] (Sandbox) Sandbox: git(3596) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.592 E  kernel[0:48d6b4a] (Sandbox) Sandbox: git(3595) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.595 E  kernel[0:48d6b4e] (Sandbox) Sandbox: git(3599) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.598 E  kernel[0:48d6b4f] (Sandbox) Sandbox: git(3596) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.601 E  kernel[0:48d6b50] (Sandbox) Sandbox: git(3599) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.602 E  kernel[0:48d6b52] (Sandbox) Sandbox: git(3600) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.604 E  kernel[0:48d6b55] (Sandbox) Sandbox: git(3603) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.609 E  kernel[0:48d6b56] (Sandbox) Sandbox: git(3600) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.610 E  kernel[0:48d6b57] (Sandbox) Sandbox: git(3603) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.615 E  kernel[0:48d6b58] (Sandbox) Sandbox: rg(3604) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.615 E  kernel[0:48d6b5b] (Sandbox) Sandbox: git(3605) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.620 E  kernel[0:48d6b6c] (Sandbox) Sandbox: git(3607) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.621 E  kernel[0:48d6b6f] (Sandbox) Sandbox: git(3610) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.627 E  kernel[0:48d6b70] (Sandbox) Sandbox: git(3607) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.628 E  kernel[0:48d6b71] (Sandbox) Sandbox: git(3610) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.632 E  kernel[0:48d6b74] (Sandbox) Sandbox: git(3613) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.636 E  kernel[0:48d6b75] (Sandbox) Sandbox: zsh(3614) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.639 E  kernel[0:48d6b77] (Sandbox) Sandbox: path_helper(3615) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.640 E  kernel[0:48d6b78] (Sandbox) Sandbox: git(3613) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.642 E  kernel[0:48d6b7d] (Sandbox) Sandbox: git(3619) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.655 E  kernel[0:48d6b82] (Sandbox) 1 duplicate report for Sandbox: git(3619) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.655 E  kernel[0:48d6b82] (Sandbox) Sandbox: git(3622) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.662 E  kernel[0:48d6b7a] (Sandbox) 1 duplicate report for Sandbox: git(3622) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.662 E  kernel[0:48d6b7a] (Sandbox) Sandbox: node(3616) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.664 E  kernel[0:48d6b86] (Sandbox) Sandbox: git(3625) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.674 E  kernel[0:48d6b8a] (Sandbox) 1 duplicate report for Sandbox: git(3625) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.674 E  kernel[0:48d6b8a] (Sandbox) Sandbox: git(3628) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.780 E  kernel[0:48d6b92] (Sandbox) 1 duplicate report for Sandbox: git(3628) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.780 E  kernel[0:48d6b92] (Sandbox) Sandbox: zsh(3629) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.784 E  kernel[0:48d6b94] (Sandbox) Sandbox: path_helper(3630) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.786 E  kernel[0:48d6b96] (Sandbox) Sandbox: head(3631) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.793 E  kernel[0:48d6b97] (Sandbox) Sandbox: zsh(3632) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.797 E  kernel[0:48d6b99] (Sandbox) Sandbox: path_helper(3633) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:58.799 E  kernel[0:48d6b9b] (Sandbox) Sandbox: curl(3634) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.168 E  kernel[0:48d6b9f] (Sandbox) Sandbox: zsh(3635) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.173 E  kernel[0:48d6ba1] (Sandbox) Sandbox: path_helper(3636) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.176 E  kernel[0:48d6ba3] (Sandbox) Sandbox: mkdir(3637) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.187 E  kernel[0:48d6ba4] (Sandbox) Sandbox: zsh(3638) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.192 E  kernel[0:48d6ba6] (Sandbox) Sandbox: path_helper(3639) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.195 E  kernel[0:48d6ba8] (Sandbox) Sandbox: grep(3640) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.203 E  kernel[0:48d6ba9] (Sandbox) Sandbox: zsh(3641) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.207 E  kernel[0:48d6bab] (Sandbox) Sandbox: path_helper(3642) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.215 E  kernel[0:48d6bac] (Sandbox) Sandbox: zsh(3643) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.220 E  kernel[0:48d6bae] (Sandbox) Sandbox: path_helper(3644) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.222 E  kernel[0:48d6bb1] (Sandbox) Sandbox: tail(3646) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.333 E  kernel[0:48d6bb2] (Sandbox) Sandbox: env(3645) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.351 E  kernel[0:48d6bc0] (Sandbox) Sandbox: node(3645) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:24:59.401 E  kernel[0:48ceeb0] (Sandbox) Sandbox: discover(87997) deny(1) sysctl-read kern.willshutdown",
+    "2026-09-10 03:25:00.255 E  kernel[0:48d6c27] (Sandbox) 23 duplicate reports for Sandbox: discover(87997) deny(1) sysctl-read kern.willshutdown",
+    "2026-09-10 03:25:00.255 E  kernel[0:48d6c27] (Sandbox) Sandbox: zsh(3648) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:25:00.259 E  kernel[0:48d6c29] (Sandbox) Sandbox: path_helper(3649) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:25:00.261 E  kernel[0:48d6c2b] (Sandbox) Sandbox: git(3650) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:25:00.261 E  kernel[0:48d6c2d] (Sandbox) Sandbox: tail(3651) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:25:00.269 E  kernel[0:48d6c2e] (Sandbox) Sandbox: git(3650) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:25:00.272 E  kernel[0:48d6c30] (Sandbox) Sandbox: git(3652) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:25:00.276 E  kernel[0:48d6c32] (Sandbox) Sandbox: git-remote-http(3653) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:25:01.439 E  kernel[0:48d6c46] (Sandbox) Sandbox: zsh(3660) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:25:01.443 E  kernel[0:48d6c48] (Sandbox) Sandbox: path_helper(3661) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:25:01.457 E  kernel[0:48d6c4a] (Sandbox) Sandbox: node(3662) deny(1) file-write-data /dev/dtracehelper",
+    "2026-09-10 03:25:03.631 E  kernel[0:48d663d] (Sandbox) Sandbox: swcd(71214) deny(1) system-fsctl (_IO \"h\" 47)",
+    "2026-09-10 03:25:05.685 E  kernel[0:4839005] (Sandbox) Sandbox: logd_helper(82563) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1334/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/pty.node",
+    "2026-09-10 03:25:05.685 E  kernel[0:4839005] (Sandbox) Sandbox: logd_helper(82563) deny(1) file-read-data <REAL_HOME>/app/alpha-code/.worktrees/ac-1334/packages/ui-mac/dist/mac-arm64/Code Puppy.app/Contents/Resources/app.asar.unpacked/node_modules/@parcel/watcher-darwin-arm64/watcher.node",
+    "2026-09-10 03:25:05.739 E  kernel[0:48d6afc] (Sandbox) 1 duplicate report for Sandbox: discover(87997) deny(1) sysctl-read kern.willshutdown",
+    "2026-09-10 03:25:05.776 E  kernel[0:48ceeb0] (Sandbox) Sandbox: discover(87997) deny(1) sysctl-read kern.willshutdown",
+    "2026-09-10 03:25:05.791 E  kernel[0:48d67a1] (Sandbox) 4 duplicate reports for Sandbox: discover(87997) deny(1) sysctl-read kern.willshutdown",
+    "2026-09-10 03:25:06.284 E  kernel[0:48d696a] (Sandbox) Sandbox: nsattributedstringagent(89799) deny(1) mach-lookup com.apple.CARenderServer"
+  ],
+  "probes": [
+    {
+      "id": "identity.shippingForm",
+      "grid": "g0",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "codesignApp": [
+          "Identifier=com.tide.alphacode",
+          "CodeDirectory v=20500 size=446 flags=0x10000(runtime) hashes=3+7 location=embedded",
+          "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+          "Authority=Developer ID Certification Authority",
+          "TeamIdentifier=RQX6X6A635"
+        ],
+        "codesignAddon": [
+          "Identifier=alpha_fence",
+          "CodeDirectory v=20500 size=311 flags=0x10000(runtime) hashes=4+2 location=embedded",
+          "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+          "Authority=Developer ID Certification Authority",
+          "TeamIdentifier=RQX6X6A635"
+        ],
+        "lipo": "x86_64 arm64",
+        "verifyExit": 0,
+        "markers": {
+          "ALPHA_AC1334_NETWORK": 1,
+          "process fence applied": 1,
+          "AC1334-NONEXISTENT-NEEDLE(control)": 0
+        }
+      }
+    },
+    {
+      "id": "g1.fencePlannedAndApplied",
+      "grid": "g1",
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "planned": "[2026-09-10 03:24:32.811] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), profile=2040B, compile attempts=1",
+        "applied": "  message: 'process fence applied: addon=fence-20260910T071823160Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2040B — every process this engine spawns inherits it'",
+        "profileBytesPlanned": "2040",
+        "profileBytesApplied": "2040"
+      }
+    },
+    {
+      "id": "layout.rootsOutsideW11W12+sidecarEnv",
+      "grid": "g0",
+      "kind": "identity",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "root": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3",
+        "sidecarSees": {
+          "HOME": "<ISO>/home",
+          "TMPDIR": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/",
+          "XDG_CONFIG_HOME": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/config",
+          "HTTPS_PROXY": "",
+          "NO_PROXY": "127.0.0.1,localhost,::1"
+        },
+        "appStartingLine": "[2026-09-10 03:24:32.644] [info]          app starting { version: '0.1.12', packaged: true, onboardingTest: true }"
+      }
+    },
+    {
+      "id": "g1.coldStart.health200",
+      "grid": "g1",
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "health": 200
+      }
+    },
+    {
+      "id": "g1.coldStart.configReadable",
+      "grid": "g1",
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "shell": null
+      }
+    },
+    {
+      "id": "gN.modelsDev.providerListSize",
+      "grid": "gN",
+      "kind": "net",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "status": 200,
+        "providerCount": 0,
+        "providerIds": [],
+        "modelsCacheFile": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/cache/opencode/models.json",
+        "modelsCacheExists": false,
+        "modelsCacheBytes": 0
+      }
+    },
+    {
+      "id": "g2.mcp.connected",
+      "grid": "g2",
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "ac1334probe": {
+            "status": "connected"
+          }
+        }
+      }
+    },
+    {
+      "id": "g2.mcp.inside(W1 default ws)",
+      "grid": "g2",
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/mcp-open.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g2.mcp.escape",
+      "grid": "g2",
+      "kind": "escape",
+      "path": "<ISO>/esc/mcp-open.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g2.providerInstall.bothDirsPopulated(W6/W3)+npmCache(W7)",
+      "grid": "g2",
+      "kind": "net",
+      "processStarted": null,
+      "landed": true,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "dirs": [
+          {
+            "dir": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/config/opencode/node_modules",
+            "pluginInstalled": true,
+            "topLevel": 26,
+            "sizeKB": 62636
+          },
+          {
+            "dir": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/node_modules",
+            "pluginInstalled": true,
+            "topLevel": 26,
+            "sizeKB": 62636
+          }
+        ],
+        "npmCacache": true,
+        "npmFailLines": []
+      }
+    },
+    {
+      "id": "g3.pty.default200(W15)",
+      "grid": "g3",
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "id": "pty_08a346953001DwsKcbYm8V6D9Q",
+          "title": "ac1334",
+          "command": "/bin/zsh",
+          "args": [
+            "-l"
+          ],
+          "cwd": "<ISO>/home/code-puppy",
+          "status": "running",
+          "pid": 3358
+        }
+      }
+    },
+    {
+      "id": "g3.pty.defaultLoginShellRanACommand",
+      "grid": "g3",
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "output": "<meta {\"cursor\":0}>\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jtide@tidedeMac-mini code-puppy % \u001b[K\u001b[?2004he\becho AC1334-STARTED; echo x > \"<REAL_HOME>/.ac1 \r\u001b[K3\r334-open-6z5XwB/home/code-puppy/pty-default-open.txt\"; echo x > \"<REAL_HOME>/.ac \r\u001b[K1\r1334-open-6z5XwB/esc/pty-default-open.txt\"; echo AC1334-PTY-DONE\u001b[?2004l\r\r\nAC1334-STARTED\r\nzsh: operation not permitted: <ISO>/esc/pty-default-open.txt\r\nAC1334-PTY-DONE\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jtide@tidedeMac-mini code-puppy % \u001b[K\u001b[?2004he\bexit\u001b[?2004l\r\r\n"
+      }
+    },
+    {
+      "id": "g3.pty.default.inside",
+      "grid": "g3",
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/pty-default-open.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g3.pty.default.escape",
+      "grid": "g3",
+      "kind": "escape",
+      "path": "<ISO>/esc/pty-default-open.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g4.shellTool.ranToCompletion",
+      "grid": "g4",
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1334-STARTED\ndone\n(eval):1: operation not permitted: <ISO>/esc/shelltool-open.txt\n(eval):1: operation not permitted: <ISO>/tmp/outside-root-open.txt\n"
+      }
+    },
+    {
+      "id": "g4.shellTool.inside(W1)",
+      "grid": "g4",
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/shelltool-open.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g4.shellTool.escape",
+      "grid": "g4",
+      "kind": "escape",
+      "path": "<ISO>/esc/shelltool-open.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g4.shellTool.escape.siblingOfOnboardingRoot",
+      "grid": "g4",
+      "kind": "escape",
+      "path": "<ISO>/tmp/outside-root-open.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g5.injection.alphaGlobalRoot(W2)+engineConfig(W3)",
+      "grid": "g5",
+      "kind": "inside",
+      "path": "<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/alpha-code-state/env/prod/alpha.jsonc",
+      "processStarted": null,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "alphaJsoncMtimeAfterLaunch": true,
+        "engineConfigEntries": [
+          ".gitignore",
+          "models.json",
+          "node_modules",
+          "opencode.json",
+          "opencode.jsonc",
+          "package-lock.json",
+          "package.json"
+        ],
+        "injectionLines": []
+      }
+    },
+    {
+      "id": "g5.extLoadedInSidecar(alpha_register present)",
+      "grid": "g5",
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "alphaTools": [
+          "alpha_reload",
+          "alpha_register",
+          "alpha_echo",
+          "alpha_ping"
+        ]
+      }
+    },
+    {
+      "id": "g6.union.selfHealRespawnRePlannedThree",
+      "grid": "g6",
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "gen1Pids": [
+          3287
+        ],
+        "plannedAll": [
+          "[2026-09-10 03:24:32.811] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), profile=2040B, compile attempts=1",
+          "[2026-09-10 03:24:55.189] [info]                     process fence planned: workspaces=3 (candidates=3, excluded=0, dropped=0), profile=2218B, compile attempts=1"
+        ],
+        "appliedAll": [
+          "  message: 'process fence applied: addon=fence-20260910T071823160Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2040B — every process this engine spawns inherits it'",
+          "  message: 'process fence applied: addon=fence-20260910T071823160Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2218B — every process this engine spawns inherits it'"
+        ],
+        "profileBytesGen2": "2218"
+      }
+    },
+    {
+      "id": "g6.union.wsB.inside",
+      "grid": "g6",
+      "kind": "inside",
+      "path": "<ISO>/ws-b/multi-open.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g6.union.wsA.inside",
+      "grid": "g6",
+      "kind": "inside",
+      "path": "<ISO>/ws-a/multi-open.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g6.union.defaultWorkspace.inside",
+      "grid": "g6",
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/multi-open.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g6.union.wsC.outsideStore",
+      "grid": "g6",
+      "kind": "escape",
+      "path": "<ISO>/ws-c/multi-open.txt",
+      "processStarted": true,
+      "landed": false,
+      "expectLanded": false,
+      "ok": true,
+      "detail": {
+        "output": "AC1334-STARTED\ndone\n(eval):1: operation not permitted: <ISO>/ws-c/multi-open.txt\n"
+      }
+    },
+    {
+      "id": "q3.benign/workspace write (WORKDIR)",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1334-STARTED\ninside.txt\n"
+      }
+    },
+    {
+      "id": "q3.benign//private/tmp write",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1334-STARTED\n"
+      }
+    },
+    {
+      "id": "q3.benign/git init + commit",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "sha40": true,
+        "output": "AC1334-STARTED\n850bbdedb331c9d1d5cf3ab807abcd00dbb9f42f\n"
+      }
+    },
+    {
+      "id": "q3.benign/node writes TMPDIR",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "path": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/ac1334-node-3616.txt",
+        "output": "AC1334-STARTED\nNODEWROTE=/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/ac1334-node-3616.txt\n"
+      }
+    },
+    {
+      "id": "q3.benign/read repo file",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1334-STARTED\n{\n  \"$schema\": \"https://json.schemastore"
+      }
+    },
+    {
+      "id": "q3.benign/curl https://example.com",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "status": 200,
+        "code": "200",
+        "tail": "AC1334-STARTED\nCURL=200\ncurl_exit=0\n",
+        "output": "AC1334-STARTED\nCURL=200\ncurl_exit=0\n"
+      }
+    },
+    {
+      "id": "q3.benign/mkdir -p deep",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1334-STARTED\nMKDIR-OK\n"
+      }
+    },
+    {
+      "id": "q3.benign/grep",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1334-STARTED\n1\n"
+      }
+    },
+    {
+      "id": "q3.benign/which git node",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "out": "AC1334-STARTED\n/usr/bin/git\n/opt/homebrew/bin/node\n",
+        "output": "AC1334-STARTED\n/usr/bin/git\n/opt/homebrew/bin/node\n"
+      }
+    },
+    {
+      "id": "q3.benign/npm view (registry)",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "status": 200,
+        "tail": "AC1334-STARTED\n7.8.5\nnpm_exit=0\n",
+        "output": "AC1334-STARTED\n7.8.5\nnpm_exit=0\n"
+      }
+    },
+    {
+      "id": "q3.benign/git ls-remote (https)",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "status": 200,
+        "tail": "AC1334-STARTED\nb8242b093d9e941a34460d715e3ce616a34ac3fe\tHEAD\ngit_exit=0\n",
+        "output": "AC1334-STARTED\nb8242b093d9e941a34460d715e3ce616a34ac3fe\tHEAD\ngit_exit=0\n"
+      }
+    },
+    {
+      "id": "q3.benign/dns only (getent-ish)",
+      "grid": "q3",
+      "kind": "benign",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "status": 200,
+        "dns": "198.18.7.158",
+        "output": "AC1334-STARTED\nDNS=198.18.7.158\n"
+      }
+    },
+    {
+      "id": "q4.remoteMcp.viaEnvProxy",
+      "grid": "q4",
+      "kind": "net",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "status": 200,
+        "body": "{\"ac1334remote\":{\"status\":\"failed\",\"error\":\"SSE error: TypeError: fetch failed: getaddrinfo ENOTFOUND ac1334-probe.invalid\"}}",
+        "proxyEventsForTarget": [],
+        "proxyEventsTotalSince": 0
+      }
+    },
+    {
+      "id": "identity.realHomeUntouched",
+      "grid": "g0",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "before": {
+          "<REAL_HOME>/Library/Application Support/ai.opencode.desktop": 1789008056887.3994,
+          "<REAL_HOME>/Library/Application Support/alpha-code-state/env/prod": 1789007489376.096,
+          "<REAL_HOME>/.npm": 1782212156775.9814,
+          "<REAL_HOME>/.config/opencode": 1784863576481.5188,
+          "<REAL_HOME>/.local/share/opencode": 1789023731354.3723,
+          "<REAL_HOME>/code-puppy": 1789023529280.0942
+        },
+        "after": {
+          "<REAL_HOME>/Library/Application Support/ai.opencode.desktop": 1789008056887.3994,
+          "<REAL_HOME>/Library/Application Support/alpha-code-state/env/prod": 1789007489376.096,
+          "<REAL_HOME>/.npm": 1782212156775.9814,
+          "<REAL_HOME>/.config/opencode": 1784863576481.5188,
+          "<REAL_HOME>/.local/share/opencode": 1789023731354.3723,
+          "<REAL_HOME>/code-puppy": 1789023529280.0942
+        }
+      }
+    },
+    {
+      "id": "identity.zeroResidualProcesses",
+      "grid": "g0",
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "residual": []
+      }
+    },
+    {
+      "id": "gN.chokeProxyLog",
+      "grid": "gN",
+      "kind": "net",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "events": 0,
+        "byTarget": []
+      }
+    }
+  ],
+  "summary": {
+    "total": 41,
+    "pass": 32,
+    "fail": 0,
+    "observational": 9
+  },
+  "logs": {
+    "main": [
+      "[2026-09-10 03:24:32.644] [info]          app starting { version: '0.1.12', packaged: true, onboardingTest: true }",
+      "[2026-09-10 03:24:32.663] [info]          [server] Loaded shell environment with -il (12 vars)",
+      "[2026-09-10 03:24:32.663] [info]  (main)  req047: rebuilt shell env cache after successful probe",
+      "[2026-09-10 03:24:32.800] [info]                     spawning sidecar { url: 'http://127.0.0.1:59000' }",
+      "[2026-09-10 03:24:32.811] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), profile=2040B, compile attempts=1",
+      "[2026-09-10 03:24:54.420] [info]                     respawning sidecar { reason: 'structural' }",
+      "[2026-09-10 03:24:55.189] [info]                     process fence planned: workspaces=3 (candidates=3, excluded=0, dropped=0), profile=2218B, compile attempts=1",
+      "[2026-09-10 03:24:55.853] [info]                     sidecar respawned + renderer reloaded"
+    ],
+    "server": [
+      "  message: 'process fence applied: addon=fence-20260910T071823160Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2040B — every process this engine spawns inherits it'",
+      "  message: 'process fence applied: addon=fence-20260910T071823160Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2218B — every process this engine spawns inherits it'"
+    ],
+    "engine": [
+      "timestamp=2026-09-10T07:24:33.507Z level=INFO run=2bbeb842 message=\"watcher backend\" directory=<ISO>/home/code-puppy platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T07:24:33.519Z level=INFO run=2bbeb842 message=\"booting location services\" directory=<ISO>/home/code-puppy workspaceID=undefined",
+      "timestamp=2026-09-10T07:24:33.861Z level=INFO run=2bbeb842 message=\"creating instance\" directory=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T07:24:33.861Z level=INFO run=2bbeb842 message=fromDirectory directory=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T07:24:33.864Z level=INFO run=2bbeb842 message=bootstrapping directory=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T07:24:33.865Z level=INFO run=2bbeb842 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/config.json",
+      "timestamp=2026-09-10T07:24:33.866Z level=INFO run=2bbeb842 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T07:24:33.866Z level=INFO run=2bbeb842 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T07:24:33.867Z level=INFO run=2bbeb842 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T07:24:33.875Z level=INFO run=2bbeb842 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T07:24:33.875Z level=INFO run=2bbeb842 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T07:24:33.913Z level=INFO run=2bbeb842 message=\"creating instance\" directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T07:24:33.913Z level=INFO run=2bbeb842 message=fromDirectory directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T07:24:33.916Z level=INFO run=2bbeb842 message=bootstrapping directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T07:24:33.916Z level=INFO run=2bbeb842 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T07:24:33.936Z level=INFO run=2bbeb842 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T07:24:33.938Z level=INFO run=2bbeb842 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T07:24:43.647Z level=INFO run=2bbeb842 message=created id=ses_f75cb9f00ffe7ShmmR6121mlMD slug=hidden-rocket version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025083647 time.updated=1789025083647",
+      "timestamp=2026-09-10T07:24:45.771Z level=INFO run=2bbeb842 message=\"watcher backend\" directory=<ISO>/home/code-puppy platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T07:24:45.779Z level=INFO run=2bbeb842 message=\"booting location services\" directory=<ISO>/home/code-puppy workspaceID=undefined",
+      "timestamp=2026-09-10T07:24:45.779Z level=INFO run=2bbeb842 message=\"creating session\" id=pty_08a346953001DwsKcbYm8V6D9Q cmd=/bin/zsh args=\"[\\\"-l\\\"]\" cwd=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T07:24:45.792Z level=INFO run=2bbeb842 message=\"client attached to session\" id=pty_08a346953001DwsKcbYm8V6D9Q directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T07:24:53.307Z level=INFO run=2bbeb842 message=created id=ses_f75cb7944ffewEiEB67dKpMRYs slug=swift-river version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025093307 time.updated=1789025093307",
+      "timestamp=2026-09-10T07:24:55.833Z level=INFO run=7cc7b666 message=\"watcher backend\" directory=<ISO>/home/code-puppy platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T07:24:55.845Z level=INFO run=7cc7b666 message=\"booting location services\" directory=<ISO>/home/code-puppy workspaceID=undefined",
+      "timestamp=2026-09-10T07:24:55.884Z level=INFO run=7cc7b666 message=\"creating instance\" directory=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T07:24:55.884Z level=INFO run=7cc7b666 message=fromDirectory directory=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T07:24:55.885Z level=INFO run=7cc7b666 message=bootstrapping directory=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T07:24:55.886Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/config.json",
+      "timestamp=2026-09-10T07:24:55.887Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T07:24:55.887Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T07:24:55.888Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T07:24:55.890Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T07:24:55.890Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T07:24:55.983Z level=INFO run=7cc7b666 message=\"creating instance\" directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T07:24:55.983Z level=INFO run=7cc7b666 message=fromDirectory directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T07:24:55.985Z level=INFO run=7cc7b666 message=bootstrapping directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T07:24:55.986Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T07:24:55.989Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T07:24:55.989Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T07:24:56.152Z level=INFO run=7cc7b666 message=\"watcher backend\" directory=<ISO>/ws-a platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T07:24:56.219Z level=INFO run=7cc7b666 message=\"booting location services\" directory=<ISO>/ws-a workspaceID=undefined",
+      "timestamp=2026-09-10T07:24:58.433Z level=INFO run=7cc7b666 message=\"creating instance\" directory=<ISO>/ws-b",
+      "timestamp=2026-09-10T07:24:58.434Z level=INFO run=7cc7b666 message=fromDirectory directory=<ISO>/ws-b",
+      "timestamp=2026-09-10T07:24:58.504Z level=INFO run=7cc7b666 message=bootstrapping directory=<ISO>/ws-b",
+      "timestamp=2026-09-10T07:24:58.504Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T07:24:58.507Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T07:24:58.507Z level=INFO run=7cc7b666 message=loading path=<ISO>/tmp/opencode-onboarding-10d7541a-d0e4-498b-bb5f-95e23496d8d3/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T07:24:58.511Z level=INFO run=7cc7b666 message=created id=ses_f75cb64f0ffecqe5kRvb9Dt4Sm slug=curious-rocket version=1.17.13 projectID=global directory=<ISO>/ws-b path=\"\" workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025098511 time.updated=1789025098511",
+      "timestamp=2026-09-10T07:24:58.531Z level=INFO run=7cc7b666 message=created id=ses_f75cb64dcffdg7TS3kYTwPzk8N slug=eager-harbor version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025098531 time.updated=1789025098531",
+      "timestamp=2026-09-10T07:24:58.549Z level=INFO run=7cc7b666 message=created id=ses_f75cb64caffeqyWOuDtJFfGmsh slug=proud-panda version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025098549 time.updated=1789025098549",
+      "timestamp=2026-09-10T07:24:58.564Z level=INFO run=7cc7b666 message=created id=ses_f75cb64bbffelyWMH86X8QzJ3a slug=witty-star version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025098564 time.updated=1789025098564",
+      "timestamp=2026-09-10T07:24:58.615Z level=INFO run=7cc7b666 message=\"watcher backend\" directory=<ISO>/ws-b platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T07:24:58.632Z level=INFO run=7cc7b666 message=created id=ses_f75cb6477ffeLh4vbkwiwPteux slug=witty-forest version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025098632 time.updated=1789025098632",
+      "timestamp=2026-09-10T07:24:58.683Z level=INFO run=7cc7b666 message=\"booting location services\" directory=<ISO>/ws-b workspaceID=undefined",
+      "timestamp=2026-09-10T07:24:58.775Z level=INFO run=7cc7b666 message=created id=ses_f75cb63e8ffeCFLfHWzI3CtxIQ slug=playful-forest version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025098775 time.updated=1789025098775",
+      "timestamp=2026-09-10T07:24:58.789Z level=INFO run=7cc7b666 message=created id=ses_f75cb63daffe0Zm6t4frh2W6Eb slug=silent-pixel version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025098789 time.updated=1789025098789",
+      "timestamp=2026-09-10T07:24:59.159Z level=INFO run=7cc7b666 message=created id=ses_f75cb6268ffeHqwIDYIPTXc5E2 slug=happy-cactus version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025099159 time.updated=1789025099159",
+      "timestamp=2026-09-10T07:24:59.181Z level=INFO run=7cc7b666 message=created id=ses_f75cb6252ffe4SSvjf0z86rhN9 slug=proud-cabin version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025099181 time.updated=1789025099181",
+      "timestamp=2026-09-10T07:24:59.198Z level=INFO run=7cc7b666 message=created id=ses_f75cb6241ffeOybc78Qk4HNDAu slug=kind-panda version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025099198 time.updated=1789025099198",
+      "timestamp=2026-09-10T07:24:59.211Z level=INFO run=7cc7b666 message=created id=ses_f75cb6234ffelPKIhn9M6W3OkC slug=stellar-sailor version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025099211 time.updated=1789025099211",
+      "timestamp=2026-09-10T07:25:00.250Z level=INFO run=7cc7b666 message=created id=ses_f75cb5e25ffenHsE5puGQ76m0K slug=neon-falcon version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025100250 time.updated=1789025100250",
+      "timestamp=2026-09-10T07:25:01.434Z level=INFO run=7cc7b666 message=created id=ses_f75cb5985ffe1Z3aDJdVYJ02c8 slug=swift-panda version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=<ISO-NOSLASH>/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1334 open\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789025101434 time.updated=1789025101434",
+      "timestamp=2026-09-10T07:25:01.521Z level=WARN run=7cc7b666 message=\"server unavailable\" key=ac1334remote type=remote status=failed"
+    ],
+    "appStderrTail": "› {\"seq\":53,\"name\":\"renderer.sidecar.generation.received\",\"t\":23265.290291999998,\"generation\":2,\"phase\":\"ready\",\"reason\":\"structural\",\"source\":\"renderer\",\"rendererNow\":27.899999856948853,\"occurrence\":4}\n03:24:55.881 (startup-timeline) › {\"seq\":54,\"name\":\"renderer.projects.connect\",\"t\":23265.358917,\"reason\":\"generation-event\",\"generation\":2,\"source\":\"renderer\",\"rendererNow\":28,\"occurrence\":3}\n03:24:55.882 (startup-timeline) › {\"seq\":55,\"name\":\"renderer.shell.resource.settled\",\"t\":23266.860625,\"resource\":\"locale\",\"durationMs\":5.599999904632568,\"outcome\":\"ok\",\"source\":\"renderer\",\"rendererNow\":29.799999952316284,\"occurrence\":8}\n03:24:55.882 (startup-timeline) › {\"seq\":56,\"name\":\"renderer.shell.ready\",\"t\":23267.006666999998,\"durationMs\":5.599999904632568,\"resources\":4,\"source\":\"renderer\",\"rendererNow\":29.799999952316284,\"occurrence\":2}\n03:24:55.909 (startup-timeline) › {\"seq\":57,\"name\":\"renderer.projects.store_ready\",\"t\":23293.895958,\"projects\":1,\"source\":\"renderer\",\"rendererNow\":56.700000047683716,\"occurrence\":2}\n03:24:55.911 (startup-timeline) › {\"seq\":58,\"name\":\"renderer.sidebar.setup\",\"t\":23295.5975,\"source\":\"renderer\",\"rendererNow\":58.39999985694885,\"occurrence\":2}\n03:24:55.932 (startup-timeline) › {\"seq\":59,\"name\":\"renderer.home.surface.setup\",\"t\":23316.4905,\"composerPending\":true,\"source\":\"renderer\",\"rendererNow\":60.89999985694885,\"occurrence\":2}\n03:24:55.932 (startup-timeline) › {\"seq\":60,\"name\":\"renderer.launch_draft.start\",\"t\":23316.905208,\"trigger\":\"launch\",\"source\":\"renderer\",\"rendererNow\":65.79999995231628,\"occurrence\":2}\n03:24:55.954 (startup-timeline) › {\"seq\":61,\"name\":\"renderer.launch_draft.step\",\"t\":23338.083625,\"step\":\"tabs_ready\",\"outcome\":\"ok\",\"durationMs\":21.299999952316284,\"source\":\"renderer\",\"rendererNow\":87.09999990463257,\"occurrence\":5}\n03:24:55.954 (startup-timeline) › {\"seq\":62,\"name\":\"renderer.launch_draft.step\",\"t\":23338.287083,\"step\":\"resolve_target\",\"outcome\":\"default-workspace\",\"durationMs\":0.10000014305114746,\"source\":\"renderer\",\"rendererNow\":87.20000004768372,\"occurrence\":6}\n03:24:55.957 (startup-timeline) › {\"seq\":63,\"name\":\"renderer.launch_draft.step\",\"t\":23341.3005,\"step\":\"ensure_workspace\",\"outcome\":\"ok\",\"durationMs\":14.5,\"source\":\"renderer\",\"rendererNow\":101.70000004768372,\"occurrence\":7}\n03:24:55.964 (startup-timeline) › {\"seq\":64,\"name\":\"renderer.new_session.surface.setup\",\"t\":23348.232708,\"source\":\"renderer\",\"rendererNow\":104.20000004768372,\"occurrence\":2}\n03:24:55.976 (startup-timeline) › {\"seq\":65,\"name\":\"renderer.launch_draft.step\",\"t\":23360.269292,\"step\":\"new_draft\",\"outcome\":\"ok\",\"durationMs\":11.5,\"source\":\"renderer\",\"rendererNow\":113.29999995231628,\"occurrence\":8}\n03:24:55.976 (startup-timeline) › {\"seq\":66,\"name\":\"renderer.launch_draft.end\",\"t\":23360.558958,\"trigger\":\"launch\",\"outcome\":\"navigated\",\"durationMs\":47.5,\"source\":\"renderer\",\"rendererNow\":113.29999995231628,\"occurrence\":2}\n03:24:56.008 (startup-timeline) › {\"seq\":67,\"name\":\"renderer.composer.mount\",\"t\":23392.075833,\"mode\":\"home\",\"source\":\"renderer\",\"rendererNow\":155,\"occurrence\":2}\n03:24:56.008 (startup-timeline) › {\"seq\":68,\"name\":\"renderer.home.model_list.start\",\"t\":23392.597708,\"attempt\":1,\"chain\":1,\"source\":\"renderer\",\"rendererNow\":155.09999990463257,\"occurrence\":4}\n03:24:56.018 (startup-timeline) › {\"seq\":69,\"name\":\"renderer.home.catalog_ready\",\"t\":23402.37325,\"barrierMs\":10.100000143051147,\"probes\":1,\"pollWaits\":0,\"probeTimeouts\":0,\"wake\":\"first\",\"source\":\"renderer\",\"rendererNow\":165.20000004768372,\"occurrence\":2}\n03:24:56.024 (startup-timeline) › {\"seq\":70,\"name\":\"renderer.home.model_list.end\",\"t\":23408.841875,\"attempt\":1,\"chain\":1,\"count\":0,\"durationMs\":16.700000047683716,\"outcome\":\"ok\",\"source\":\"renderer\",\"rendererNow\":171.79999995231628,\"occurrence\":3}\n03:24:56.220 (startup-timeline) › {\"seq\":71,\"name\":\"main.sidecar.catalog_liveness.confirmed\",\"t\":23604.755917,\"generation\":2,\"directory\":\"<ISO>/ws-a\",\"elapsedMs\":369,\"probes\":1}\n03:25:05.662 (utility)          › sidecar exited { code: 0 }\n"
+  },
+  "finishedAt": "2026-09-10T07:25:08.682Z"
+}

@@ -1,0 +1,25 @@
+diff --git a/packages/ui-mac/src/main/process-fence-profile.ts b/packages/ui-mac/src/main/process-fence-profile.ts
+index 611c6a87b..322351f6e 100644
+--- a/packages/ui-mac/src/main/process-fence-profile.ts
++++ b/packages/ui-mac/src/main/process-fence-profile.ts
+@@ -150,6 +150,20 @@ export function renderProcessFenceProfile(input: ProcessFenceProfileInput): stri
+     `  (subpath "${join(home, ".cache", "bun")}")                       ; W18`,
+     ")",
+   ]
++  // ── AC1334 EXPERIMENTAL ARM — NEVER MERGED ────────────────────────────────────────
++  // 网络轴重勘破(alpha-code#1334)。同一份签名包按 env 摆出三种网络形状,unset = 出货形状(一个字节不变)。
++  // 判据与读数在 docs/verification/2026-09-10-req159-1334-packaged-network-fence/。
++  const ac1334 = process.env.ALPHA_AC1334_NETWORK
++  if (ac1334) {
++    const port = process.env.ALPHA_AC1334_CHOKE_PORT ?? "0"
++    lines.push("(deny network*)                                          ; AC1334")
++    if (ac1334 !== "sec5-min") {
++      lines.push('(allow network-bind (local ip "localhost:*"))             ; AC1334')
++      lines.push('(allow network-inbound (local ip "localhost:*"))          ; AC1334')
++    }
++    lines.push(`(allow network-outbound (remote ip "localhost:${port}"))     ; AC1334`)
++    if (ac1334 === "dns" || ac1334 === "choke-dns") lines.push('(allow network-outbound (literal "/private/var/run/mDNSResponder")) ; AC1334')
++  }
+   return lines.join("\n") + "\n"
+ }
+ 
