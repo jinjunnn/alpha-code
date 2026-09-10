@@ -34,6 +34,12 @@ export function AlphaWorkspaceChip(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSelect: (directory: string) => void
+  /**
+   * REQ-159 `#1322`(AC2):当前目录写不进去(被围栏的引擎明确回报)。true ⇒ 目录名与折叠箭头之间一枚「只读」
+   * 尾标(与顶栏胶囊同一个状态的第二宿主,悬停给同一段解释);缺席 / false ⇒ 无标记。
+   * 判据钩子:`data-alpha-workspace-chip-readonly`。
+   */
+  readonly?: boolean
 }) {
   const onDoc = (e: MouseEvent) => {
     const target = e.target as Element | null
@@ -59,6 +65,16 @@ export function AlphaWorkspaceChip(props: {
           }}
         >
           <FolderIcon /> {workspaceLabel(props.projects, props.value)}
+          <Show when={props.readonly}>
+            <span
+              class="a-ws-chip-readonly"
+              data-alpha-workspace-chip-readonly
+              title={`${t("alpha.workspace.readonlyTitle")}\n${t("alpha.workspace.readonlyBody")}`}
+            >
+              <LockIcon />
+              {t("alpha.workspace.readonly")}
+            </span>
+          </Show>
           <Chevron />
         </button>
         <Show when={props.open}>
@@ -131,6 +147,12 @@ const Plus = () => (
 const Chevron = () => (
   <svg class="a-ic a-chev" viewBox={ico}>
     <path d="M6 9l6 6 6-6" />
+  </svg>
+)
+const LockIcon = () => (
+  <svg class="a-ic" viewBox={ico}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
   </svg>
 )
 const FolderIcon = () => (

@@ -195,6 +195,54 @@ test("#613 冷启动:健康失败 + 注入失败 → 仍是恰好一个 failed �
 // ④ 位置:spawn promise 创建 → 武装 → 交回 fiber(`return spawning`),顺序不得错;
 // ⑤ 武装调用确实拿到了那个 spawn promise(`spawning,`),而不是别的东西。
 // 分类与「这处锚守不住什么」登记在 ./source-text-anchors.ts(`#968` 第 ⑤ 层机械校验)。
+// REQ-159 `#1322`(AC1 的信号源):spawnLocalServer 只在「fence 计划进了 start 命令 + sidecar 发了 ready」时
+// 返回 fence:"applied";boot 终态生产者必须把它原样挂到**引擎在线**的终态上(ready / injection-failed),
+// failed 不带 —— renderer 的沙箱告知只认这个字段。把 settleBootHealth 里的 `...fence` 删掉,本用例转红。
+test("#1322 boot 终态:spawning 带 fence:applied ⇒ ready 终态带 fence;注入失败的终态同样带;不带的 spawning 不凭空长出来", async () => {
+  const published: SidecarGenerationState[] = []
+  const sink = { publish: (state: SidecarGenerationState) => published.push(state), log: () => {}, logError: () => {} }
+
+  await armBootGenerationTerminal({
+    generation: 5,
+    spawning: Promise.resolve({ health: { wait: Promise.resolve() }, fence: "applied" as const }),
+    timeoutMs: 1_000,
+    ...sink,
+  })
+  await armBootGenerationTerminal({
+    generation: 6,
+    spawning: Promise.resolve({ health: { wait: Promise.resolve() }, injectionFailure: { message: "ENOSPC" }, fence: "applied" as const }),
+    timeoutMs: 1_000,
+    ...sink,
+  })
+  await armBootGenerationTerminal({
+    generation: 7,
+    spawning: Promise.resolve({ health: { wait: Promise.resolve() } }),
+    timeoutMs: 1_000,
+    ...sink,
+  })
+  expect(published).toEqual([
+    { status: "ready", generation: 5, reason: "boot", fence: "applied" },
+    { status: "injection-failed", generation: 6, reason: "boot", fence: "applied" },
+    { status: "ready", generation: 7, reason: "boot" },
+  ])
+  // toEqual 把「键缺失」与「键=undefined」视为相等 —— 补属性级断言:没装就不能有这个键。
+  expect("fence" in published[2]!).toBe(false)
+})
+
+test("#1322 boot 终态:健康失败 ⇒ failed 不带 fence(没有引擎就没有围栏可言)", async () => {
+  const published: SidecarGenerationState[] = []
+  await armBootGenerationTerminal({
+    generation: 8,
+    spawning: Promise.resolve({ health: { wait: Promise.reject(new Error("dead")) }, fence: "applied" as const }),
+    timeoutMs: 1_000,
+    publish: (state) => published.push(state),
+    log: () => {},
+    logError: () => {},
+  })
+  expect(published).toEqual([{ status: "failed", generation: 8, reason: "boot" }])
+  expect("fence" in published[0]!).toBe(false)
+})
+
 test("ANCHOR (not a gate): #577 终态生产者必须在 spawn promise 交回 fiber 之前 detached 武装", () => {
   const source = readFileSync(join(import.meta.dir, "index.ts"), "utf8")
 

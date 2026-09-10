@@ -1469,6 +1469,19 @@ export const dict = {
   "alpha.terminal.emptyBody": "新建一个,或在输入框里让助手替你跑命令。",
   "alpha.terminal.footRunning": "运行中",
   "alpha.terminal.footIdle": "空闲",
+  // REQ-159 `#1322`:沙箱告知(设计稿 2026-09-10-req159-sandbox-disclosure 文案表逐字;品牌按 alpha.brand 口径)
+  "alpha.terminal.sandboxFoot": "沙箱开启 · 你的部分终端配置可能不生效",
+  "alpha.terminal.sandboxFootShort": "沙箱开启",
+  "alpha.terminal.sandboxHoverTitle": "沙箱开启",
+  "alpha.terminal.sandboxHoverBody":
+    "终端只能写入当前项目和 Code Puppy 自己的目录。你的 shell 配置里凡是要往主目录写缓存的步骤(例如补全缓存)会被拦下,而且不会报错 —— 表现通常是补全变慢或不灵。不写文件的设置(别名、提示符、PATH)照常生效。",
+  "alpha.terminal.sandboxEmpty": "沙箱已开启 —— 终端里你自己的配置可能有一部分不生效。",
+  "alpha.workspace.readonly": "只读",
+  "alpha.workspace.readonlyTitle": "这个项目现在写不进去",
+  "alpha.workspace.readonlyBody":
+    "沙箱允许写入的项目在 Code Puppy 启动时就定下了;这个项目是之后打开的 —— 打得开、读得了,但助手和终端都改不了它里面的文件。重新启动 Code Puppy 后,它就会被算进去。",
+  "alpha.workspace.readonlyFootnote": "能正常写入的项目不会有这个标记。",
+  "alpha.workspace.readonlyRestart": "重新启动 Code Puppy",
   "alpha.review.panelLabel": "审查面板",
   "alpha.review.title": "本回合变更",
   "alpha.review.viewMode": "对照视图",

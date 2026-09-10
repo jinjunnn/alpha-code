@@ -148,6 +148,10 @@ const { createComposerDraftStash } = await import(
 const { SessionComposerDock } = await import(
   "../src/renderer/alpha-ui/session-workspace/session-composer-dock"
 )
+// REQ-159 `#1322`:chip 尾标的两个数据源 —— 沙箱状态(引擎自报,测试直接灌)与写探针(测试给替身,
+// 生产是 preload 桥背后被围栏的 sidecar)。
+const { setSandboxStateForTests } = await import("../src/renderer/alpha-ui/sandbox-state")
+const { resetWorkspaceWritableForTests } = await import("../src/renderer/alpha-ui/workspace-writable")
 const { resetSessionSlashOrigins, sessionSlashOriginsFor } = await import(
   "../src/renderer/alpha-ui/session-workspace/session-slash-origin"
 )
@@ -415,6 +419,8 @@ beforeEach(() => {
   setLiveDrafts(["draft-1"])
   setDraft({ server: STORE_SERVER_KEY, directory: "/ws/a" })
   promoteCalls.splice(0)
+  setSandboxStateForTests(undefined)
+  resetWorkspaceWritableForTests()
   document.body.replaceChildren()
 })
 
@@ -1395,5 +1401,104 @@ describe("#1225 AI 生成内容标识:会话页输入框下方一行小字", () 
       setLocale("zh")
       mounted.dispose()
     }
+  })
+})
+
+// ── REQ-159 `#1322` AC2:新对话页 / 首页 chip 的「只读」尾标(顶栏胶囊的第二宿主)────
+// 四态:探针未答 / 可写 / 未知 ⇒ 无标记;只有引擎明确回报 denied ⇒ 标记。沙箱没装 ⇒ 探针一次都不发。
+describe("REQ-159 #1322 workspace read-only tag on the chip (AC2)", () => {
+  const tag = (host: HTMLElement) => host.querySelector<HTMLElement>("[data-alpha-workspace-chip-readonly]")
+  const sandboxOn = () => setSandboxStateForTests({ status: "ready", generation: 1, reason: "boot", fence: "applied" })
+  /** 可控探针:按目录给答案,并记下问过谁。 */
+  const probeStub = (answers: Record<string, "writable" | "denied" | "unknown">) => {
+    const asked: string[] = []
+    resetWorkspaceWritableForTests(async (directory: string) => {
+      asked.push(directory)
+      return { outcome: answers[directory] ?? "unknown" }
+    })
+    return asked
+  }
+
+  test("new-session page: the tag appears only after the fenced engine answers denied, sits between the label and the chevron, and follows the chip selection", async () => {
+    sandboxOn()
+    const asked = probeStub({ "/ws/a": "writable", "/ws/b": "denied" })
+    const host = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]) }))
+    await flush()
+    await flush()
+    // 集合内工作区:探过、答 writable、无标记。
+    expect(asked).toEqual(["/ws/a"])
+    expect(tag(host)).toBeNull()
+
+    // 选到集合外的目录(chip 选目录 → onSelect → draft.directory):探针回报 denied ⇒ 尾标当场出现。
+    await openChipAndPick(host, "beta")
+    await flush()
+    expect(asked).toEqual(["/ws/a", "/ws/b"])
+    const badge = tag(host)
+    expect(badge).not.toBeNull()
+    expect(badge!.textContent?.trim()).toBe("只读")
+    expect(badge!.getAttribute("title")).toContain("这个项目现在写不进去")
+    expect(badge!.getAttribute("title")).toContain("重新启动 Code Puppy 后,它就会被算进去")
+    // 位置:目录名与折叠箭头之间(同一个 chip 按钮里,尾标在箭头之前)。
+    const chip = chipButton(host)
+    expect(chip.contains(badge!)).toBe(true)
+    const nodes = [...chip.children]
+    expect(nodes.indexOf(badge!)).toBeLessThan(nodes.findIndex((el) => el.classList.contains("a-chev")))
+    expect(chip.textContent).toContain("beta")
+
+    // 切回集合内:无标记,且同代同目录不重复探。
+    await openChipAndPick(host, "alpha-code")
+    await flush()
+    expect(tag(host)).toBeNull()
+    expect(asked).toEqual(["/ws/a", "/ws/b"])
+  })
+
+  test("unknown is not read-only: probe error / unknown answer / bridge absent all render no tag; with the sandbox off the probe is never asked", async () => {
+    // 未知 ⇒ 无标记
+    sandboxOn()
+    probeStub({ "/ws/a": "unknown" })
+    const odd = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    await flush()
+    await flush()
+    expect(tag(odd)).toBeNull()
+
+    // 探针出错 ⇒ 无标记
+    resetWorkspaceWritableForTests(async () => {
+      throw new Error("bridge down")
+    })
+    const broken = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    await flush()
+    await flush()
+    expect(tag(broken)).toBeNull()
+
+    // 桥缺席(installApi 没给 workspaceWriteProbe)⇒ unknown ⇒ 无标记
+    resetWorkspaceWritableForTests()
+    const bare = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    await flush()
+    await flush()
+    expect(tag(bare)).toBeNull()
+
+    // 沙箱没装 ⇒ 一次都不探(非 darwin / 引擎没自报),自然无标记
+    setSandboxStateForTests({ status: "ready", generation: 2, reason: "boot" })
+    const asked = probeStub({ "/ws/a": "denied" })
+    const off = mount(() => createComponent(DraftLeaf, { projects: projectsApi([project("alpha-code", "/ws/a")]) }))
+    await flush()
+    await flush()
+    expect(asked).toEqual([])
+    expect(tag(off)).toBeNull()
+  })
+
+  test("home page: the chip is the same host — denied on the chosen directory shows the tag", async () => {
+    sandboxOn()
+    const asked = probeStub({ [DEFAULT_WORKSPACE]: "writable", "/ws/b": "denied" })
+    const host = mount(() => createComponent(AlphaHome, { projects: projectsApi([project("alpha-code", "/ws/a"), project("beta", "/ws/b")]), serverKey: () => STORE_SERVER_KEY }))
+    await flush()
+    await flush()
+    expect(asked).toEqual([DEFAULT_WORKSPACE])
+    expect(tag(host)).toBeNull()
+    await openChipAndPick(host, "beta")
+    await flush()
+    expect(asked).toEqual([DEFAULT_WORKSPACE, "/ws/b"])
+    expect(tag(host)).not.toBeNull()
+    expect(chipButton(host).contains(tag(host)!)).toBe(true)
   })
 })

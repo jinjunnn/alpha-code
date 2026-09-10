@@ -24,6 +24,10 @@ const initial: AlphaSessionLiveSnapshot = {
 const [snapshot, setSnapshot] = createSignal<AlphaSessionLiveSnapshot | undefined>(initial)
 const [reviewCount, setReviewCount] = createSignal<number | undefined>(undefined)
 const [terminalRunning, setTerminalRunning] = createSignal(false)
+// `#1322`:只读状态(生产由 workspace-writable 投影:只有被围栏的引擎明确回报 denied 才为 true)。
+const [workspaceReadonly, setWorkspaceReadonly] = createSignal(false)
+/** `#1322`:只读弹层「重新启动」按钮真的调了宿主给的 relaunch 几次。 */
+export const relaunchCalls: number[] = []
 
 export { render }
 
@@ -68,6 +72,8 @@ export function SessionWorkspaceHarness() {
       panels={panels}
       railMeta={{ reviewCount, terminalRunning }}
       terminalChannel={() => terminalChannel}
+      workspaceReadonly={workspaceReadonly}
+      relaunch={() => void relaunchCalls.push(1)}
     />
   )
 }
@@ -113,9 +119,15 @@ export function setSessionWorkspaceTerminalRunning(next: boolean) {
   setTerminalRunning(next)
 }
 
+export function setSessionWorkspaceReadonly(next: boolean) {
+  setWorkspaceReadonly(next)
+}
+
 export function resetSessionWorkspaceSnapshot() {
   setSnapshot(initial)
   setReviewCount(undefined)
   setTerminalRunning(false)
+  setWorkspaceReadonly(false)
+  relaunchCalls.splice(0)
   terminalChannelCalls.splice(0)
 }

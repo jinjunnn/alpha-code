@@ -552,3 +552,71 @@ describe("REQ-125 session workspace real Solid mount", () => {
     expect(composerStub()).toBe(composerBefore)
   })
 })
+
+// ── REQ-159 `#1322` AC2:当前工作区写不进去时,在工作区层面告知(顶栏只读胶囊 + 弹层)────
+// 两臂:集合内工作区(readonly=false,今天的样子)无标记;集合外(被围栏的引擎明确回报写被拒)有标记。
+// 期望文案是设计稿文案表的**独立字面量**,不从 i18n dict 读回来。
+describe("REQ-159 #1322 workspace read-only disclosure on the topbar (AC2)", () => {
+  const pill = (host: HTMLElement) => host.querySelector<HTMLElement>("[data-alpha-workspace-readonly]")
+  const pop = (host: HTMLElement) => host.querySelector<HTMLElement>("[data-alpha-workspace-readonly-pop]")
+
+  test("inside the writable set (today's default): no pill, no popover", async () => {
+    const host = mount()
+    await flush()
+    expect(host.querySelector("[data-alpha-session-status]")).not.toBeNull()
+    expect(pill(host)).toBeNull()
+    expect(pop(host)).toBeNull()
+  })
+
+  test("outside the writable set: a 只读 pill sits right after the status pill (role=status); hover and click open the popover; restart calls the host relaunch; Esc closes; state-driven", async () => {
+    const host = mount()
+    await flush()
+    runtime.setSessionWorkspaceReadonly(true)
+    await flush()
+
+    const status = host.querySelector<HTMLElement>("[data-alpha-session-status]")!
+    const badge = pill(host)
+    expect(badge).not.toBeNull()
+    expect(badge!.getAttribute("role")).toBe("status")
+    expect(badge!.textContent?.trim()).toBe("只读")
+    // 位置:状态胶囊之后、紧跟其后(同一个 header 里,状态胶囊的下一个兄弟就是它的宿主)。
+    expect(status.nextElementSibling?.contains(badge!)).toBe(true)
+    expect(badge!.closest("header")?.hasAttribute("data-alpha-session-workspace-topbar")).toBe(true)
+    // 未开:弹层不在。
+    expect(pop(host)).toBeNull()
+
+    // 悬停开
+    badge!.parentElement!.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }))
+    await flush()
+    expect(pop(host)).not.toBeNull()
+    expect(pop(host)!.getAttribute("aria-describedby")).toBe(badge!.id)
+    expect(pop(host)!.querySelector("b")?.textContent).toBe("这个项目现在写不进去")
+    expect(pop(host)!.textContent).toContain("这个项目是之后打开的 —— 打得开、读得了")
+    expect(pop(host)!.textContent).toContain("能正常写入的项目不会有这个标记。")
+    badge!.parentElement!.dispatchEvent(new MouseEvent("mouseleave", { bubbles: false }))
+    await flush()
+    expect(pop(host)).toBeNull()
+
+    // 点击开;唯一的动作「重新启动」真的调了宿主的 relaunch(生产 = window.api.relaunch)。
+    badge!.click()
+    await flush()
+    expect(pop(host)).not.toBeNull()
+    const restart = pop(host)!.querySelector<HTMLButtonElement>("[data-alpha-workspace-readonly-restart]")!
+    expect(restart.textContent?.trim()).toBe("重新启动 Code Puppy")
+    expect(runtime.relaunchCalls).toHaveLength(0)
+    restart.click()
+    await flush()
+    expect(runtime.relaunchCalls).toHaveLength(1)
+
+    // Esc 关
+    badge!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+    await flush()
+    expect(pop(host)).toBeNull()
+
+    // 切回可写(切换工作区 / 重启后):胶囊与弹层一起消失。
+    runtime.setSessionWorkspaceReadonly(false)
+    await flush()
+    expect(pill(host)).toBeNull()
+    expect(pop(host)).toBeNull()
+  })
+})

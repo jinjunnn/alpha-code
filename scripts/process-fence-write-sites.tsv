@@ -80,3 +80,7 @@ packages/ui-mac/src/main/process-fence-apply.ts	rmSync	p	W3
 packages/ui-mac/src/main/process-fence-apply.ts	writeFileSync	p	W3
 packages/ui-mac/src/main/remote-catalog.ts	mkdirSync	userDataPath	W3
 packages/ui-mac/src/main/remote-catalog.ts	writeFileSync	cachePath(userDataPath)	W3
+# `#1322` workspace-write-probe.ts:工作区写探针(sidecar 进程里执行)。登记 W1 = 它**该**落的根(当前工作区);
+# 「落不进(EPERM)」正是它要回报的事实,不是登记簿要掩盖的事实 —— 与 process-fence-apply.ts 的自证探针同一口径。
+packages/ui-mac/src/main/workspace-write-probe.ts	rmSync	p	W1
+packages/ui-mac/src/main/workspace-write-probe.ts	writeFileSync	p	W1

@@ -111,15 +111,26 @@ function makeChannel(identity: AlphaSessionIdentity): AlphaTerminalEngineChannel
 }
 
 const [channel, setChannel] = createSignal<AlphaTerminalEngineChannel>(makeChannel(identityOf("ses_a")))
+// `#1322`:沙箱信号(生产由 sandbox-state 投影、经 shell 的 sandbox prop 递进面板);默认关 = 今天的样子。
+const [sandbox, setSandbox] = createSignal(false)
 
 const accepts = (identity: AlphaSessionIdentity) => sameSessionIdentity(identity, liveIdentity())
 
 export function TerminalRailHarness() {
-  return <TerminalRailPanel channel={channel()} accepts={accepts} />
+  return <TerminalRailPanel channel={channel()} accepts={accepts} sandbox={sandbox} />
 }
 
 export function TerminalRailHarnessWithoutEngine() {
-  return <TerminalRailPanel accepts={accepts} />
+  return <TerminalRailPanel accepts={accepts} sandbox={sandbox} />
+}
+
+/** `#1322`:与生产完全同形、但**不传** sandbox 的挂法(缺席 = 没装 = 不告知)。 */
+export function TerminalRailHarnessWithoutSandboxProp() {
+  return <TerminalRailPanel channel={channel()} accepts={accepts} />
+}
+
+export function setTerminalSandbox(next: boolean) {
+  setSandbox(next)
 }
 
 /** 同 workspace 切会话:只换 live 三元组的 sessionID(serverKey+directory 不变)。 */
@@ -148,6 +159,7 @@ export function resetTerminalRailHarness() {
   setInstances(initialInstances)
   setActiveID("pty_1")
   setReady(true)
+  setSandbox(false)
   setLiveIdentity(identityOf("ses_a"))
   setFocusRequest(undefined)
   setChannel(makeChannel(identityOf("ses_a")))

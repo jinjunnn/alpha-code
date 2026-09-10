@@ -160,6 +160,32 @@ describe("respawn generation terminal", () => {
     expect(sink.errors).toEqual([])
   })
 
+  // REQ-159 `#1322`:respawn 半场与 boot 同构 —— 围栏字段只随引擎在线的终态上车。
+  test("#1322 respawn 终态:spawning 带 fence:applied ⇒ ready 带 fence;健康失败的 failed 不带", async () => {
+    const ready = collect()
+    await armRespawnGenerationTerminal({
+      generation: 21,
+      reason: "structural",
+      spawning: Promise.resolve({ health: { wait: Promise.resolve("ok") }, fence: "applied" as const }),
+      timeoutMs: 10,
+      publish: ready.publish,
+      logError: ready.logError,
+    })
+    expect(ready.published).toEqual([{ status: "ready", generation: 21, reason: "structural", fence: "applied" }])
+
+    const failed = collect()
+    await armRespawnGenerationTerminal({
+      generation: 22,
+      reason: "token-only",
+      spawning: Promise.resolve({ health: { wait: Promise.reject(new Error("dead")) }, fence: "applied" as const }),
+      timeoutMs: 10,
+      publish: failed.publish,
+      logError: failed.logError,
+    })
+    expect(failed.published).toEqual([{ status: "failed", generation: 22, reason: "token-only" }])
+    expect("fence" in failed.published[0]!).toBe(false)
+  })
+
   // #613 反向闸门(respawn 半场):健康通过但注入失败 → 终态必须是 injection-failed 而非 ready,
   // 且 main 侧 error 出声;返回值保持「健康线通过」(reload/token 记账语义不变,sidecar 真实可达)。
   // 把 settle 的 injectionFailure 分支删掉(回退成一律 ready),本用例转红。

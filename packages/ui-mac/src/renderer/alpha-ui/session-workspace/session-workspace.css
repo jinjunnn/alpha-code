@@ -718,3 +718,115 @@
     transition: none;
   }
 }
+
+/* ── REQ-159 issue 1322(此处刻意不写 `#` + 数字,同上面 issue 1225 那条)· 顶栏只读胶囊 + 弹层 ─────────────────────────────────
+   与状态胶囊完全同款尺寸(24px 高、圆角胶囊、xs 字号),暖色淡底 + 暖色字;紧跟状态胶囊之后。
+   弹层是抬起的卡(surface-raised + shadow-lg),箭头指回胶囊。只在引擎明确回报写被拒时渲染。 */
+
+.a-swk-readonly-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.a-swk-readonly {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 24px;
+  margin-left: 6px;
+  padding: 0 9px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  cursor: default;
+  outline: none;
+}
+
+.a-swk-readonly svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-swk-readonly:focus-visible {
+  box-shadow: var(--a-ring-focus);
+}
+
+.a-swk-readonly-pop {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 30;
+  width: 320px;
+  padding: 12px 14px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface-raised);
+  box-shadow: var(--a-shadow-lg);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+  line-height: var(--a-leading-normal);
+  app-region: no-drag;
+}
+
+.a-swk-readonly-pop::before {
+  content: "";
+  position: absolute;
+  left: 28px;
+  top: -6px;
+  width: 10px;
+  height: 10px;
+  border-left: 1px solid var(--a-border);
+  border-top: 1px solid var(--a-border);
+  background: var(--a-surface-raised);
+  transform: rotate(45deg);
+}
+
+.a-swk-readonly-pop b {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+}
+
+.a-swk-readonly-pop p {
+  margin: 0;
+}
+
+.a-swk-readonly-footnote {
+  margin-top: 6px;
+  color: var(--a-text-tertiary);
+}
+
+.a-swk-readonly-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.a-swk-readonly-restart {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  background: var(--a-surface);
+  color: var(--a-text);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+}
+
+.a-swk-readonly-restart:hover {
+  background: var(--a-bg-muted);
+}

@@ -99,12 +99,102 @@ function railPanelBoundaryName(panel: SessionRailPanel) {
   return "SessionPanelArtifacts"
 }
 
+const READONLY_PILL_ID = "alpha-workspace-readonly-pill"
+const READONLY_POP_ID = "alpha-workspace-readonly-pop"
+
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  )
+}
+
+/**
+ * REQ-159 `#1322`(AC2):当前工作区**写不进去**时的只读胶囊 + 弹层。只读是工作区状态不是会话状态,
+ * 所以是状态胶囊之后的另一枚胶囊,不是第三态。出现条件只认 `readonly()`(宿主经 workspace-writable 投影:
+ * 只有被围栏的引擎明确回报写被拒才为 true;未答 / 可写 / 未知都是 false —— 未知 ≠ 只读)。
+ * 悬停与点击都能开弹层;Esc / 再点 / 失焦关。弹层唯一的动作「重新启动」走宿主给的 relaunch(main 既有能力)。
+ * 判据钩子:`data-alpha-workspace-readonly`(设计稿 2026-09-10-req159-sandbox-disclosure §3.2)。
+ */
+function WorkspaceReadonlyPill(props: { readonly: Accessor<boolean>; relaunch?: () => void }) {
+  const [open, setOpen] = createSignal(false)
+  const [hover, setHover] = createSignal(false)
+  const visible = () => open() || hover()
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      setOpen(false)
+      setHover(false)
+      return
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      setOpen((current) => !current)
+    }
+  }
+  return (
+    <Show when={props.readonly()}>
+      <span
+        class="a-swk-readonly-wrap"
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onFocusOut={(event) => {
+          const next = event.relatedTarget
+          if (next instanceof Node && event.currentTarget.contains(next)) return
+          setOpen(false)
+        }}
+      >
+        <span
+          id={READONLY_PILL_ID}
+          class="a-swk-readonly"
+          data-alpha-workspace-readonly
+          role="status"
+          tabIndex={0}
+          onClick={() => setOpen((current) => !current)}
+          onKeyDown={onKey}
+        >
+          <LockIcon />
+          {t("alpha.workspace.readonly")}
+        </span>
+        <Show when={visible()}>
+          <div
+            id={READONLY_POP_ID}
+            class="a-swk-readonly-pop"
+            data-alpha-workspace-readonly-pop
+            role="note"
+            aria-describedby={READONLY_PILL_ID}
+            onKeyDown={onKey}
+          >
+            <b>{t("alpha.workspace.readonlyTitle")}</b>
+            <p>{t("alpha.workspace.readonlyBody")}</p>
+            <p class="a-swk-readonly-footnote">{t("alpha.workspace.readonlyFootnote")}</p>
+            <div class="a-swk-readonly-actions">
+              <button
+                type="button"
+                class="a-swk-readonly-restart"
+                data-alpha-workspace-readonly-restart
+                onClick={() => props.relaunch?.()}
+              >
+                {t("alpha.workspace.readonlyRestart")}
+              </button>
+            </div>
+          </div>
+        </Show>
+      </span>
+    </Show>
+  )
+}
+
 function WorkspaceTopbar(props: {
   live: AlphaSessionLiveContext
   panel: Accessor<SessionRailPanel | undefined>
   terminalAvailable: boolean
   toggleRail: () => void
   toggleTerminal: () => void
+  /** REQ-159:当前工作区写不进去(引擎明确回报);缺席 = 无标记。 */
+  workspaceReadonly?: Accessor<boolean>
+  relaunch?: () => void
 }) {
   const snapshot = () => props.live.current()
   const running = () => snapshot()?.activity === "running"
@@ -131,6 +221,7 @@ function WorkspaceTopbar(props: {
         <span class="a-swk-status-dot" aria-hidden="true" />
         {running() ? t("alpha.session.statusRunning") : t("alpha.session.statusIdle")}
       </span>
+      <WorkspaceReadonlyPill readonly={() => props.workspaceReadonly?.() === true} relaunch={props.relaunch} />
       <span class="a-swk-grow" aria-hidden="true" />
       <button
         type="button"
@@ -179,6 +270,12 @@ export function SessionWorkspaceShell(props: {
   railMeta?: SessionRailMeta
   /** 真引擎 channel(#554 适配器投影;缺席 = 终端面板 fail-closed 空态)。 */
   terminalChannel?: Accessor<AlphaTerminalEngineChannel | undefined>
+  /** REQ-159 `#1322`:这一代引擎装上了进程围栏(引擎自报,宿主经 sandbox-state 投影);缺席 = 终端面不告知。 */
+  sandbox?: Accessor<boolean>
+  /** REQ-159 `#1322`:当前工作区写不进去(被围栏的引擎明确回报);缺席 = 无只读胶囊。 */
+  workspaceReadonly?: Accessor<boolean>
+  /** 只读弹层唯一的动作:重新启动(main 既有 relaunch);缺席 = 按钮无动作(harness)。 */
+  relaunch?: () => void
 }) {
   // Panel renderers: injected slot first; terminal falls back to the shell-built-in
   // C550 panel fed by the #554 engine-channel projection (absent = fail-closed empty
@@ -188,7 +285,9 @@ export function SessionWorkspaceShell(props: {
     const injected = props.panels?.[kind]
     if (injected) return injected
     if (kind === "terminal")
-      return () => <TerminalRailPanel channel={props.terminalChannel?.()} accepts={props.live.accepts} />
+      return () => (
+        <TerminalRailPanel channel={props.terminalChannel?.()} accepts={props.live.accepts} sandbox={props.sandbox} />
+      )
     return undefined
   }
   const available = (kind: SessionRailPanel) => rendererFor(kind) !== undefined
@@ -359,6 +458,8 @@ export function SessionWorkspaceShell(props: {
           terminalAvailable={available("terminal")}
           toggleRail={toggleRail}
           toggleTerminal={toggleTerminal}
+          workspaceReadonly={props.workspaceReadonly}
+          relaunch={props.relaunch}
         />
         <section
           class="a-swk-timeline-host"

@@ -883,6 +883,9 @@ const main = Effect.gen(function* () {
     tabsPrecleanDone: tabsPreclean.done,
     killSidecar: () => killSidecar(),
     sidecarGenerationState: () => sidecarGeneration.get(),
+    // REQ-159 `#1322`:探针必须在被围栏的 sidecar 里跑;没有活着的 sidecar 就如实答 unknown。
+    probeWorkspaceWrite: (directory) =>
+      server ? server.probeWrite(directory) : Promise.resolve({ outcome: "unknown", detail: "engine not running" }),
     relaunch,
     awaitInitialization: Effect.fnUntraced(
       function* () {

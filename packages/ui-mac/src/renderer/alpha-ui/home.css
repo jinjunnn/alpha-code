@@ -594,3 +594,22 @@ body[data-alpha-sidebar="open"] .a-home--page {
   height: 12px;
   opacity: 0.6;
 }
+
+/* REQ-159 `#1322`:工作区 chip 的「只读」尾标(顶栏只读胶囊的第二宿主,同色更小,嵌在目录名与折叠箭头之间)。 */
+.a-ws-chip-readonly {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+}
+.a-ws-chip-readonly .a-ic {
+  width: 9px;
+  height: 9px;
+  color: inherit;
+}

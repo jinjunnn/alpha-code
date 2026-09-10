@@ -1500,6 +1500,19 @@ export const dict = {
   "alpha.terminal.emptyBody": "Create one, or ask the assistant to run commands for you from the composer.",
   "alpha.terminal.footRunning": "Running",
   "alpha.terminal.footIdle": "Idle",
+  // REQ-159 `#1322`: sandbox disclosure (copy table in 2026-09-10-req159-sandbox-disclosure, brand per alpha.brand)
+  "alpha.terminal.sandboxFoot": "Sandbox on · some of your shell config may not apply",
+  "alpha.terminal.sandboxFootShort": "Sandbox on",
+  "alpha.terminal.sandboxHoverTitle": "Sandbox on",
+  "alpha.terminal.sandboxHoverBody":
+    "The terminal can only write inside the current project and Code Puppy's own folders. Steps in your shell config that write caches to your home folder (completion caches, for example) are blocked silently — completion may feel slow or stop working. Settings that don't write files (aliases, prompt, PATH) work as usual.",
+  "alpha.terminal.sandboxEmpty": "Sandbox is on — some of your own shell config may not apply in here.",
+  "alpha.workspace.readonly": "Read-only",
+  "alpha.workspace.readonlyTitle": "This project can't be written to right now",
+  "alpha.workspace.readonlyBody":
+    "The sandbox fixed which projects can be written to when Code Puppy started; this one was opened later — you can open and read it, but neither the assistant nor the terminal can change its files. Restart Code Puppy and it will be included.",
+  "alpha.workspace.readonlyFootnote": "Projects that can be written to normally don't show this badge.",
+  "alpha.workspace.readonlyRestart": "Restart Code Puppy",
   "alpha.review.panelLabel": "Review panel",
   "alpha.review.title": "Changes this turn",
   "alpha.review.viewMode": "Diff view",
