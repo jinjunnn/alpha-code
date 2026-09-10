@@ -1,0 +1,707 @@
+{
+  "ticket": "alpha-code#1323",
+  "arm": "unfenced",
+  "identity": {
+    "ticket": "alpha-code#1323",
+    "arm": "unfenced",
+    "app": "packages/ui-mac/dist-unfenced/mac-arm64/Code Puppy.app",
+    "bundleId": "com.tide.alphacode",
+    "version": "0.1.11",
+    "codesignApp": [
+      "Identifier=com.tide.alphacode",
+      "CodeDirectory v=20500 size=446 flags=0x10000(runtime) hashes=3+7 location=embedded",
+      "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+      "Authority=Developer ID Certification Authority",
+      "Timestamp=9 Sep 2026 at 10:30:56 PM",
+      "TeamIdentifier=RQX6X6A635"
+    ],
+    "codesignAddon": [
+      "Identifier=alpha_fence",
+      "CodeDirectory v=20500 size=311 flags=0x10000(runtime) hashes=4+2 location=embedded",
+      "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+      "Authority=Developer ID Certification Authority",
+      "Timestamp=9 Sep 2026 at 10:30:51 PM",
+      "TeamIdentifier=RQX6X6A635"
+    ],
+    "lipoAddon": "x86_64 arm64",
+    "verifyDeepStrictExit": 0,
+    "verifyDeepStrictOut": [
+      "packages/ui-mac/dist-unfenced/mac-arm64/Code Puppy.app: valid on disk",
+      "packages/ui-mac/dist-unfenced/mac-arm64/Code Puppy.app: satisfies its Designated Requirement"
+    ],
+    "addonBuildId": [
+      "fence-20260910T022549262Z"
+    ],
+    "addonSha256": "d878df243638c68aeb17aba4f85a14598bba4cc61f76c9da1e8a939af03a5c13",
+    "extSha256": "458fe90a97c17de97fa38caf8fb2f3e67b034361e10dada6a36e579e90e66c4c",
+    "asarMarkers": {
+      "process fence applied": 0,
+      "process fence plan FAILED": 1,
+      "AC1323-UNFENCED": 1,
+      "AC1323-NONEXISTENT-NEEDLE(control)": 0
+    },
+    "orphansBefore": [],
+    "ownerAppPidsUntouched": [],
+    "iso": "<ISO>",
+    "home": "<ISO>/home",
+    "launchTmp": "<ISO>/tmp",
+    "defaultWorkspace": "<ISO>/home/code-puppy",
+    "wsA": "<ISO>/ws-a",
+    "wsB": "<ISO>/ws-b",
+    "wsC": "<ISO>/ws-c",
+    "esc": "<ISO>/esc",
+    "realTmpdir": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/",
+    "appPid": 64418,
+    "ports": {
+      "engine": 53452,
+      "cdp": 53453
+    },
+    "onboardingRoot": "<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff",
+    "userData": "<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop",
+    "alphaGlobalRoot": "<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/alpha-code-state/env/prod",
+    "xdgConfig": "<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/config",
+    "xdgData": "<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/data",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) alpha-code/0.1.11 Chrome/148.0.7778.218 Electron/42.3.3 Safari/537.36",
+    "logRun": "20260910T024521",
+    "appStartingLine": "[2026-09-09 22:45:21.524] [info]          app starting { version: '0.1.11', packaged: true, onboardingTest: true }",
+    "fenceMainLines": [
+      "[2026-09-09 22:45:21.554] [info]          [server] Loaded shell environment with -il (12 vars)",
+      "[2026-09-09 22:45:21.555] [info]  (main)  req047: rebuilt shell env cache after successful probe",
+      "[2026-09-09 22:45:21.733] [info]                     spawning sidecar { url: 'http://127.0.0.1:53452' }",
+      "[2026-09-09 22:45:21.744] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), profile=2096B, compile attempts=1"
+    ],
+    "fenceServerLines": [
+      "  message: 'AC1323-UNFENCED: process fence deliberately skipped (experimental reverse arm, not shipped)'"
+    ],
+    "engineUrl": "http://127.0.0.1:53452",
+    "agent": "build"
+  },
+  "escapeDirListing": [
+    "mcp-unfenced.txt",
+    "pty-cmd-unfenced.txt",
+    "pty-default-unfenced.txt",
+    "shelltool-unfenced.txt"
+  ],
+  "launchTmpListing": [
+    "opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff",
+    "outside-root-unfenced.txt"
+  ],
+  "defaultWsListing": [
+    "mcp-unfenced.txt",
+    "multi-unfenced.txt",
+    "pty-cmd-unfenced.txt",
+    "pty-default-unfenced.txt",
+    "shelltool-unfenced.txt"
+  ],
+  "wsAListing": [
+    "multi-unfenced.txt"
+  ],
+  "wsBListing": [
+    "multi-unfenced.txt"
+  ],
+  "wsCListing": [
+    "multi-cwd-unfenced.txt",
+    "multi-unfenced.txt"
+  ],
+  "probes": [
+    {
+      "id": "identity.shippingForm",
+      "grid": 0,
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "codesignApp": [
+          "Identifier=com.tide.alphacode",
+          "CodeDirectory v=20500 size=446 flags=0x10000(runtime) hashes=3+7 location=embedded",
+          "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+          "Authority=Developer ID Certification Authority",
+          "Timestamp=9 Sep 2026 at 10:30:56 PM",
+          "TeamIdentifier=RQX6X6A635"
+        ],
+        "codesignAddon": [
+          "Identifier=alpha_fence",
+          "CodeDirectory v=20500 size=311 flags=0x10000(runtime) hashes=4+2 location=embedded",
+          "Authority=Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)",
+          "Authority=Developer ID Certification Authority",
+          "Timestamp=9 Sep 2026 at 10:30:51 PM",
+          "TeamIdentifier=RQX6X6A635"
+        ],
+        "lipo": "x86_64 arm64",
+        "verifyExit": 0
+      }
+    },
+    {
+      "id": "identity.armMatchesBundle",
+      "grid": 0,
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "process fence applied": 0,
+        "process fence plan FAILED": 1,
+        "AC1323-UNFENCED": 1,
+        "AC1323-NONEXISTENT-NEEDLE(control)": 0
+      }
+    },
+    {
+      "id": "layout.rootsOutsideW11W12+sidecarEnv",
+      "grid": 0,
+      "kind": "identity",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "root": "<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff",
+        "isolatedLogs": true,
+        "defaultWorkspaceCreatedByProduct": true,
+        "sidecarSees": {
+          "HOME": "<ISO>/home",
+          "TMPDIR": "/var/folders/9m/lxt29cf574n04rxx3t6s3gs00000gn/T/",
+          "XDG_CONFIG_HOME": "<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/config"
+        },
+        "appStartingLine": "[2026-09-09 22:45:21.524] [info]          app starting { version: '0.1.11', packaged: true, onboardingTest: true }"
+      }
+    },
+    {
+      "id": "g1.coldStart.health200",
+      "grid": 1,
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "health": 200,
+        "planned": "[2026-09-09 22:45:21.744] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), profile=2096B, compile attempts=1",
+        "planFailed": ""
+      }
+    },
+    {
+      "id": "g1.coldStart.fenceInstalledInSidecar",
+      "grid": 1,
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "applied": "",
+        "unfencedLine": "  message: 'AC1323-UNFENCED: process fence deliberately skipped (experimental reverse arm, not shipped)'",
+        "workspacesPlanned": "1",
+        "profileBytes": "2096"
+      }
+    },
+    {
+      "id": "g1.coldStart.cfgShellNotReq138Wrapper",
+      "grid": 1,
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "shell": null
+      }
+    },
+    {
+      "id": "g2.mcp.connected",
+      "grid": 2,
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "ac1323probe": {
+            "status": "connected"
+          }
+        }
+      }
+    },
+    {
+      "id": "g2.mcp.inside(W1 default ws)",
+      "grid": 2,
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/mcp-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g2.mcp.escape",
+      "grid": 2,
+      "kind": "inside",
+      "path": "<ISO>/esc/mcp-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g2.providerInstall.bothDirsPopulated(W6/W3)+npmCache(W7)",
+      "grid": 2,
+      "kind": "inside",
+      "processStarted": null,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "dirs": [
+          {
+            "dir": "<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/config/opencode/node_modules",
+            "pluginInstalled": true,
+            "topLevel": 26,
+            "sizeKB": 62636
+          },
+          {
+            "dir": "<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/node_modules",
+            "pluginInstalled": true,
+            "topLevel": 26,
+            "sizeKB": 62636
+          }
+        ],
+        "npmCacache": true,
+        "npmFailLines": []
+      }
+    },
+    {
+      "id": "g3.pty.default200(W15)",
+      "grid": 3,
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "id": "pty_08934d7ab001lejd8I8SPYimAL",
+          "title": "ac1323",
+          "command": "/bin/zsh",
+          "args": [
+            "-l"
+          ],
+          "cwd": "<ISO>/home/code-puppy",
+          "status": "running",
+          "pid": 64653
+        }
+      }
+    },
+    {
+      "id": "g3.pty.defaultLoginShellRanACommand",
+      "grid": 3,
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "ticketStatus": 200,
+        "output": "<meta {\"cursor\":0}>\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jtide@tidedeMac-mini code-puppy % \u001b[K\u001b[?2004he\becho AC1323-STARTED; echo x > \"<REAL_HOME>/.ac1 \r\u001b[K3\r323-unfenced-C2sRMD/home/code-puppy/pty-default-unfenced.txt\"; echo x > \"/Users/ \r\u001b[Kt\rtide/.ac1323-unfenced-C2sRMD/esc/pty-default-unfenced.txt\"; echo AC1323-PTY-DONE \r\u001b[K\u001b[K\u001b[?2004l\r\r\nAC1323-STARTED\r\nAC1323-PTY-DONE\r\n\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                               \r \r\r\u001b[0m\u001b[27m\u001b[24m\u001b[Jtide@tidedeMac-mini code-puppy % \u001b[K\u001b[?2004he\bexit\u001b[?2004l\r\r\n"
+      }
+    },
+    {
+      "id": "g3.pty.default.inside",
+      "grid": 3,
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/pty-default-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g3.pty.default.escape",
+      "grid": 3,
+      "kind": "inside",
+      "path": "<ISO>/esc/pty-default-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g3.pty.loginShellHistory(W8 obs)",
+      "grid": 3,
+      "kind": "obs",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": null,
+      "ok": null,
+      "detail": {
+        "zshHistory": true,
+        "lockingFailedOrEperm": false,
+        "homeEntries": [
+          ".npm",
+          ".zsh_history",
+          ".zshrc",
+          "code-puppy"
+        ]
+      }
+    },
+    {
+      "id": "g3.pty.withCommand200",
+      "grid": 3,
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "id": "pty_08934f50e001G4PxmIwr0XQSMq",
+          "title": "Terminal QSMq",
+          "command": "/bin/sh",
+          "args": [
+            "-c",
+            "echo x > \"<ISO>/home/code-puppy/pty-cmd-unfenced.txt\"; echo x > \"<ISO>/esc/pty-cmd-unfenced.txt\"; exit 0",
+            "-l"
+          ],
+          "cwd": "<ISO>/home/code-puppy",
+          "status": "running",
+          "pid": 64688
+        }
+      }
+    },
+    {
+      "id": "g3.pty.command.inside",
+      "grid": 3,
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/pty-cmd-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g3.pty.command.escape",
+      "grid": 3,
+      "kind": "inside",
+      "path": "<ISO>/esc/pty-cmd-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g4.shellTool.ranToCompletion(AC2: zsh's own EPERM, not sandbox_apply exit 71)",
+      "grid": 4,
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1323-STARTED\ndone\n"
+      }
+    },
+    {
+      "id": "g4.shellTool.inside(W1)",
+      "grid": 4,
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/shelltool-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g4.shellTool.escape",
+      "grid": 4,
+      "kind": "inside",
+      "path": "<ISO>/esc/shelltool-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g4.shellTool.escape.siblingOfOnboardingRoot(W2/W3 not via W12)",
+      "grid": 4,
+      "kind": "inside",
+      "path": "<ISO>/tmp/outside-root-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g5.injection.alphaGlobalRoot(W2)+engineConfig(W3)",
+      "grid": 5,
+      "kind": "inside",
+      "path": "<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/alpha-code-state/env/prod/alpha.jsonc",
+      "processStarted": null,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "alphaJsoncMtimeAfterLaunch": true,
+        "engineConfigEntries": [
+          ".gitignore",
+          "models.json",
+          "node_modules",
+          "opencode.json",
+          "opencode.jsonc",
+          "package-lock.json",
+          "package.json"
+        ],
+        "injectionLines": []
+      }
+    },
+    {
+      "id": "g5.extLoadedInSidecar(alpha_register present)",
+      "grid": 5,
+      "kind": "obs",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "alphaTools": [
+          "alpha_reload",
+          "alpha_register",
+          "alpha_echo",
+          "alpha_ping"
+        ]
+      }
+    },
+    {
+      "id": "g5.workspaceDotCodePuppy(W1, via shell tool — not alpha_register)",
+      "grid": 5,
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/.code-puppy/ac1323-unfenced.json",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "output": "AC1323-STARTED\ndone\n"
+      }
+    },
+    {
+      "id": "g6.union.selfHealRespawnRePlannedThree",
+      "grid": 6,
+      "kind": "obs",
+      "processStarted": true,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "gen1Pids": [
+          64442
+        ],
+        "tabsReadBack": "[{\"type\":\"draft\",\"draftID\":\"ac1323-a\",\"server\":\"sidecar\",\"directory\":\"<ISO>/ws-a\"},{\"type\":\"draft\",\"draftID\":\"ac1323-b\",\"server\":\"sidecar\",\"directory\":\"<ISO>/ws-b\"}]",
+        "plannedAll": [
+          "[2026-09-09 22:45:21.744] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), profile=2096B, compile attempts=1",
+          "[2026-09-09 22:45:48.278] [info]                     process fence planned: workspaces=3 (candidates=3, excluded=0, dropped=0), profile=2282B, compile attempts=1"
+        ],
+        "respawnLines": [
+          "[2026-09-09 22:45:21.733] [info]                     spawning sidecar { url: 'http://127.0.0.1:53452' }",
+          "[2026-09-09 22:45:21.744] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), profile=2096B, compile attempts=1",
+          "[2026-09-09 22:45:47.481] [info]                     respawning sidecar { reason: 'structural' }",
+          "[2026-09-09 22:45:48.278] [info]                     process fence planned: workspaces=3 (candidates=3, excluded=0, dropped=0), profile=2282B, compile attempts=1",
+          "[2026-09-09 22:45:48.955] [info]                     sidecar respawned + renderer reloaded"
+        ],
+        "fenceLinesAfter": [
+          "  message: 'AC1323-UNFENCED: process fence deliberately skipped (experimental reverse arm, not shipped)'",
+          "  message: 'AC1323-UNFENCED: process fence deliberately skipped (experimental reverse arm, not shipped)'"
+        ]
+      }
+    },
+    {
+      "id": "g6.union.wsB.inside",
+      "grid": 6,
+      "kind": "inside",
+      "path": "<ISO>/ws-b/multi-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g6.union.wsA.inside",
+      "grid": 6,
+      "kind": "inside",
+      "path": "<ISO>/ws-a/multi-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g6.union.defaultWorkspace.inside",
+      "grid": 6,
+      "kind": "inside",
+      "path": "<ISO>/home/code-puppy/multi-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "id": "g6.union.wsC.outsideStore",
+      "grid": 6,
+      "kind": "inside",
+      "path": "<ISO>/ws-c/multi-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1323-STARTED\ndone\n"
+      }
+    },
+    {
+      "id": "g6.union.wsC.asSessionCwd",
+      "grid": 6,
+      "kind": "inside",
+      "path": "<ISO>/ws-c/multi-cwd-unfenced.txt",
+      "processStarted": true,
+      "landed": true,
+      "expectLanded": true,
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "output": "AC1323-STARTED\ndone\n"
+      }
+    },
+    {
+      "id": "identity.realHomeUntouched",
+      "grid": 0,
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "before": {
+          "<REAL_HOME>/Library/Application Support/ai.opencode.desktop": 1789008056887.3994,
+          "<REAL_HOME>/Library/Application Support/alpha-code-state/env/prod": 1789007489376.096,
+          "<REAL_HOME>/.npm": 1782212156775.9814,
+          "<REAL_HOME>/.config/opencode": 1784863576481.5188,
+          "<REAL_HOME>/.local/share/opencode": 1789007749140.4753,
+          "<REAL_HOME>/code-puppy": 1788763753691.966
+        },
+        "after": {
+          "<REAL_HOME>/Library/Application Support/ai.opencode.desktop": 1789008056887.3994,
+          "<REAL_HOME>/Library/Application Support/alpha-code-state/env/prod": 1789007489376.096,
+          "<REAL_HOME>/.npm": 1782212156775.9814,
+          "<REAL_HOME>/.config/opencode": 1784863576481.5188,
+          "<REAL_HOME>/.local/share/opencode": 1789007749140.4753,
+          "<REAL_HOME>/code-puppy": 1788763753691.966
+        }
+      }
+    },
+    {
+      "id": "identity.zeroResidualProcesses",
+      "grid": 0,
+      "kind": "identity",
+      "processStarted": null,
+      "landed": null,
+      "expectLanded": null,
+      "ok": true,
+      "detail": {
+        "residual": []
+      }
+    }
+  ],
+  "summary": {
+    "total": 33,
+    "pass": 32,
+    "fail": 0,
+    "observational": 1
+  },
+  "logs": {
+    "main": [
+      "[2026-09-09 22:45:21.524] [info]          app starting { version: '0.1.11', packaged: true, onboardingTest: true }",
+      "[2026-09-09 22:45:21.554] [info]          [server] Loaded shell environment with -il (12 vars)",
+      "[2026-09-09 22:45:21.555] [info]  (main)  req047: rebuilt shell env cache after successful probe",
+      "[2026-09-09 22:45:21.733] [info]                     spawning sidecar { url: 'http://127.0.0.1:53452' }",
+      "[2026-09-09 22:45:21.734] [info]                     alpha-ext: loading plugin bundle {",
+      "  path: '<REAL_HOME>/app/alpha-code/.worktrees/ac-1323/packages/ui-mac/dist-unfenced/mac-arm64/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js'",
+      "[2026-09-09 22:45:21.744] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), profile=2096B, compile attempts=1",
+      "[2026-09-09 22:45:47.481] [info]                     respawning sidecar { reason: 'structural' }",
+      "[2026-09-09 22:45:48.259] [info]                     alpha-ext: loading plugin bundle {",
+      "  path: '<REAL_HOME>/app/alpha-code/.worktrees/ac-1323/packages/ui-mac/dist-unfenced/mac-arm64/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js'",
+      "[2026-09-09 22:45:48.278] [info]                     process fence planned: workspaces=3 (candidates=3, excluded=0, dropped=0), profile=2282B, compile attempts=1",
+      "[2026-09-09 22:45:48.955] [info]                     sidecar respawned + renderer reloaded"
+    ],
+    "server": [
+      "  message: 'AC1323-UNFENCED: process fence deliberately skipped (experimental reverse arm, not shipped)'",
+      "  message: 'AC1323-UNFENCED: process fence deliberately skipped (experimental reverse arm, not shipped)'"
+    ],
+    "engine": [
+      "timestamp=2026-09-10T02:45:22.400Z level=INFO run=622495ba message=\"watcher backend\" directory=<ISO>/home/code-puppy platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T02:45:22.413Z level=INFO run=622495ba message=\"booting location services\" directory=<ISO>/home/code-puppy workspaceID=undefined",
+      "timestamp=2026-09-10T02:45:22.781Z level=INFO run=622495ba message=\"creating instance\" directory=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T02:45:22.782Z level=INFO run=622495ba message=fromDirectory directory=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T02:45:22.784Z level=INFO run=622495ba message=\"creating instance\" directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T02:45:22.784Z level=INFO run=622495ba message=fromDirectory directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T02:45:22.786Z level=INFO run=622495ba message=bootstrapping directory=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T02:45:22.787Z level=INFO run=622495ba message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/config.json",
+      "timestamp=2026-09-10T02:45:22.788Z level=INFO run=622495ba message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T02:45:22.789Z level=INFO run=622495ba message=bootstrapping directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T02:45:22.789Z level=INFO run=622495ba message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T02:45:22.790Z level=INFO run=622495ba message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T02:45:22.790Z level=INFO run=622495ba message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T02:45:22.795Z level=INFO run=622495ba message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T02:45:22.795Z level=INFO run=622495ba message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T02:45:22.795Z level=INFO run=622495ba message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T02:45:22.795Z level=INFO run=622495ba message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T02:45:34.663Z level=INFO run=622495ba message=created id=ses_f76cb30b8ffeL7T70Mvm8mwX9y slug=witty-harbor version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1323-unfenced-C2sRMD/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1323 unfenced\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789008334663 time.updated=1789008334663",
+      "timestamp=2026-09-10T02:45:36.803Z level=INFO run=622495ba message=\"watcher backend\" directory=<ISO>/home/code-puppy platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T02:45:36.811Z level=INFO run=622495ba message=\"booting location services\" directory=<ISO>/home/code-puppy workspaceID=undefined",
+      "timestamp=2026-09-10T02:45:36.811Z level=INFO run=622495ba message=\"creating session\" id=pty_08934d7ab001lejd8I8SPYimAL cmd=/bin/zsh args=\"[\\\"-l\\\"]\" cwd=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T02:45:36.820Z level=INFO run=622495ba message=\"client attached to session\" id=pty_08934d7ab001lejd8I8SPYimAL directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T02:45:44.335Z level=INFO run=622495ba message=\"creating session\" id=pty_08934f50e001G4PxmIwr0XQSMq cmd=/bin/sh args=\"[\\\"-c\\\",\\\"echo x > \\\\\\\"<ISO>/home/code-puppy/pty-cmd-unfenced.txt\\\\\\\"; echo x > \\\\\\\"<ISO>/esc/pty-cmd-unfenced.txt\\\\\\\"; exit 0\\\",\\\"-l\\\"]\" cwd=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T02:45:46.341Z level=INFO run=622495ba message=created id=ses_f76cb031affeFhRw4OY9gtSed8 slug=cosmic-falcon version=1.17.13 projectID=global directory=<ISO>/home/code-puppy path=Users/tide/.ac1323-unfenced-C2sRMD/home/code-puppy workspaceID=undefined parentID=undefined title=\"ac1323 unfenced\" agent=undefined model=undefined metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1789008346341 time.updated=1789008346341",
+      "timestamp=2026-09-10T02:45:48.934Z level=INFO run=cb370993 message=\"watcher backend\" directory=<ISO>/home/code-puppy platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T02:45:48.947Z level=INFO run=cb370993 message=\"booting location services\" directory=<ISO>/home/code-puppy workspaceID=undefined",
+      "timestamp=2026-09-10T02:45:48.961Z level=INFO run=cb370993 message=\"creating instance\" directory=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T02:45:48.961Z level=INFO run=cb370993 message=fromDirectory directory=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T02:45:48.966Z level=INFO run=cb370993 message=bootstrapping directory=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/engine-scratch-cwd",
+      "timestamp=2026-09-10T02:45:48.966Z level=INFO run=cb370993 message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/config.json",
+      "timestamp=2026-09-10T02:45:48.967Z level=INFO run=cb370993 message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T02:45:48.967Z level=INFO run=cb370993 message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T02:45:48.967Z level=INFO run=cb370993 message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T02:45:48.970Z level=INFO run=cb370993 message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T02:45:48.970Z level=INFO run=cb370993 message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T02:45:49.080Z level=INFO run=cb370993 message=\"creating instance\" directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T02:45:49.080Z level=INFO run=cb370993 message=fromDirectory directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T02:45:49.081Z level=INFO run=cb370993 message=bootstrapping directory=<ISO>/home/code-puppy",
+      "timestamp=2026-09-10T02:45:49.082Z level=INFO run=cb370993 message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/alpha-code-state/env/prod/alpha.jsonc",
+      "timestamp=2026-09-10T02:45:49.088Z level=INFO run=cb370993 message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.json",
+      "timestamp=2026-09-10T02:45:49.088Z level=INFO run=cb370993 message=loading path=<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/desktop/alpha-engine-config/opencode.jsonc",
+      "timestamp=2026-09-10T02:45:49.294Z level=INFO run=cb370993 message=\"watcher backend\" directory=<ISO>/ws-a platform=darwin backend=fs-events",
+      "timestamp=2026-09-10T02:45:49.361Z level=INFO run=cb370993 message=\"booting location services\" directory=<ISO>/ws-a workspaceID=undefined"
+    ],
+    "appStderrTail": "1,\"name\":\"renderer.sidebar.setup\",\"t\":27521.322417000003,\"source\":\"renderer\",\"rendererNow\":39.59999990463257,\"occurrence\":2}\n22:45:49.026 (startup-timeline) › {\"seq\":62,\"name\":\"renderer.home.surface.setup\",\"t\":27540.806834000003,\"composerPending\":true,\"source\":\"renderer\",\"rendererNow\":41.89999985694885,\"occurrence\":2}\n22:45:49.027 (startup-timeline) › {\"seq\":63,\"name\":\"renderer.launch_draft.start\",\"t\":27541.181834000003,\"trigger\":\"launch\",\"source\":\"renderer\",\"rendererNow\":46.59999990463257,\"occurrence\":2}\n22:45:49.056 (startup-timeline) › {\"seq\":64,\"name\":\"renderer.launch_draft.step\",\"t\":27570.838709000003,\"step\":\"tabs_ready\",\"outcome\":\"ok\",\"durationMs\":33.90000009536743,\"source\":\"renderer\",\"rendererNow\":80.5,\"occurrence\":5}\n22:45:49.057 (startup-timeline) › {\"seq\":65,\"name\":\"renderer.launch_draft.step\",\"t\":27571.062209,\"step\":\"resolve_target\",\"outcome\":\"default-workspace\",\"durationMs\":0,\"source\":\"renderer\",\"rendererNow\":80.5,\"occurrence\":6}\n22:45:49.057 (startup-timeline) › {\"seq\":66,\"name\":\"renderer.launch_draft.step\",\"t\":27571.479167,\"step\":\"ensure_workspace\",\"outcome\":\"ok\",\"durationMs\":21.899999856948853,\"source\":\"renderer\",\"rendererNow\":102.39999985694885,\"occurrence\":7}\n22:45:49.063 (startup-timeline) › {\"seq\":67,\"name\":\"renderer.new_session.surface.setup\",\"t\":27577.833125,\"source\":\"renderer\",\"rendererNow\":104.79999995231628,\"occurrence\":2}\n22:45:49.075 (startup-timeline) › {\"seq\":68,\"name\":\"renderer.launch_draft.step\",\"t\":27589.052959,\"step\":\"new_draft\",\"outcome\":\"ok\",\"durationMs\":8.299999952316284,\"source\":\"renderer\",\"rendererNow\":110.69999980926514,\"occurrence\":8}\n22:45:49.075 (startup-timeline) › {\"seq\":69,\"name\":\"renderer.launch_draft.end\",\"t\":27589.259000000002,\"trigger\":\"launch\",\"outcome\":\"navigated\",\"durationMs\":64.09999990463257,\"source\":\"renderer\",\"rendererNow\":110.69999980926514,\"occurrence\":2}\n22:45:49.106 (startup-timeline) › {\"seq\":70,\"name\":\"renderer.composer.mount\",\"t\":27620.510334000002,\"mode\":\"home\",\"source\":\"renderer\",\"rendererNow\":151.29999995231628,\"occurrence\":3}\n22:45:49.107 (startup-timeline) › {\"seq\":71,\"name\":\"renderer.home.model_list.start\",\"t\":27620.975417,\"attempt\":1,\"chain\":1,\"source\":\"renderer\",\"rendererNow\":151.39999985694885,\"occurrence\":5}\n22:45:49.108 (startup-timeline) › {\"seq\":72,\"name\":\"renderer.home.catalog_ready\",\"t\":27622.790709,\"barrierMs\":2.299999952316284,\"probes\":1,\"pollWaits\":0,\"probeTimeouts\":0,\"wake\":\"first\",\"source\":\"renderer\",\"rendererNow\":153.69999980926514,\"occurrence\":2}\n22:45:49.114 (startup-timeline) › {\"seq\":73,\"name\":\"renderer.home.model_list.end\",\"t\":27627.960750000002,\"attempt\":1,\"chain\":1,\"count\":0,\"durationMs\":7.400000095367432,\"outcome\":\"ok\",\"source\":\"renderer\",\"rendererNow\":158.79999995231628,\"occurrence\":4}\n22:45:49.361 (startup-timeline) › {\"seq\":74,\"name\":\"main.sidecar.catalog_liveness.confirmed\",\"t\":27875.797292000003,\"generation\":2,\"directory\":\"<ISO>/ws-a\",\"elapsedMs\":408,\"probes\":1}\n22:45:51.306 (utility)          › sidecar exited { code: 0 }\n"
+  },
+  "finishedAt": "2026-09-10T02:45:53.017Z"
+}

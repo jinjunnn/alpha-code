@@ -1,0 +1,12 @@
+[2026-09-09 22:46:48.430] [warn]  (utility)          sidecar exited { code: 9 }
+[2026-09-09 22:46:48.430] [warn]  (utility)          sidecar self-heal scheduled { delayMs: 1000, attempt: 1 }
+[2026-09-09 22:46:48.431] [error] (utility)          child process gone {
+  details: {
+    type: 'Utility',
+    reason: 'killed',
+    exitCode: 9,
+    serviceName: 'node.mojom.NodeService',
+    name: 'opencode server'
+  }
+}
+[2026-09-09 22:46:53.256] [warn]  (utility)          sidecar exited { code: 0 }

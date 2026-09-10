@@ -1,0 +1,11 @@
+[2026-09-09 22:46:26.490] [info]  (server)           stdout {
+  message: 'process fence applied: addon=fence-20260910T021625526Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2068B — every process this engine spawns inherits it'
+}
+[2026-09-09 22:46:26.493] [warn]  (server)           stderr {
+  message: '[req104-397] session-grant determination unavailable in injection (no verified channel LKG and no verified v1 catalog cache — remote curation state is unknown) — forcing only the bundled-recognizable subset (boot reconcile holds the fail-closed gate)'
+}
+[2026-09-09 22:46:27.087] [info]  (server)           stdout { message: 'initial governed catalog location prewarmed' }
+[2026-09-09 22:46:50.342] [info]  (server)           stdout {
+  message: 'process fence applied: addon=fence-20260910T021625526Z libsandbox=/usr/lib/libsandbox.1.dylib profile=2250B — every process this engine spawns inherits it'
+}
+[2026-09-09 22:46:50.899] [info]  (server)           stdout { message: 'initial governed catalog location prewarmed' }

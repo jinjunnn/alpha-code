@@ -120,8 +120,12 @@ U1 只出了 arm64,并明写将来出 Intel / universal 时若漏第二份,x64 �
 
 ## 7. 没做的(如实)
 
-- **出货形态(node sidecar + 打包产物 + 围栏)没有合成过** —— U3,VERIFY 票。本票在 Electron 内嵌 node 里
-  验了 dlopen + apply + 四类原语,在 bun 上验了真引擎 + 真 ext;两者都不是出货的那份字节。
+- **出货形态(node sidecar + 打包产物 + 围栏)已于 2026-09-10 合成一次跑通**(U3,`#1323`):本机发版命令打出的签名包上,
+  六格正反两臂各 32/32,sidecar 自报 `process fence applied: addon=fence-… profile=2068B`,集合外 0 落盘。本票自己在 Electron 内嵌 node 里
+  验的 dlopen + apply + 四类原语、在 bun 上验的真引擎 + 真 ext,都不是出货的那份字节;出货那份的读数在
+  [`../verification/2026-09-10-req159-1323-packaged-fence/README.md`](../verification/2026-09-10-req159-1323-packaged-fence/README.md)。
+  那里还记着一条给下一个打包验证的人的坑:**给 app 设 `HOME` 隔离不了它** —— Electron 的 appData 不看 `$HOME`,而 `preferAppEnv`
+  会用登录 shell env 缓存把 `HOME` 改回去。
 - **围栏下没有发过一次真的模型请求**(与四轮勘破同一条)。
 - **x86_64 片没有被执行过**(§5)。
 - **公证 / staple 没做**(U1 §4 同一条;发版 runbook §1 ③ 已要求核对)。

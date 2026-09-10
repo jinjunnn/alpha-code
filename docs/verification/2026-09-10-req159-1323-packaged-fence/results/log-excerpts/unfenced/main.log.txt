@@ -1,0 +1,48 @@
+[2026-09-09 22:45:21.524] [info]          app starting { version: '0.1.11', packaged: true, onboardingTest: true }
+[2026-09-09 22:45:21.554] [info]          [server] Loaded shell environment with -il (12 vars)
+[2026-09-09 22:45:21.555] [info]  (main)  req047: rebuilt shell env cache after successful probe
+[2026-09-09 22:45:21.556] [info]          alpha environment resolved {
+  environment: 'prod',
+  registryChannel: 'stable',
+  mutableRoot: '<ISO>/tmp/opencode-onboarding-dd87135e-cafb-4401-841b-fc0ed8058cff/alpha-code-state/env/prod',
+  rootOverridden: true
+}
+[2026-09-09 22:45:21.691] [info]                     alpha: seeded new layout (newLayoutDesigns=true)
+[2026-09-09 22:45:21.709] [info]                     alpha: seeded custom agents visibility (showCustomAgents=true)
+[2026-09-09 22:45:21.727] [info]                     auto updater configured {
+  environment: 'prod',
+  channel: 'latest',
+  enabled: true,
+  allowPrerelease: false,
+  allowDowngrade: false,
+  currentVersion: '0.1.11'
+}
+[2026-09-09 22:45:21.730] [info]                     [req102-seed] bundled seed 2026-08-31.2: 5 assets, 5693155B (browse-only, not installed)
+[2026-09-09 22:45:21.732] [info]                     updater state changed { from: 'idle', to: 'checking' }
+[2026-09-09 22:45:21.732] [info]                     Checking for update
+[2026-09-09 22:45:21.733] [info]                     sidecar connection started { url: 'http://127.0.0.1:53452' }
+[2026-09-09 22:45:21.733] [info]                     db-safety: skip — OPENCODE_DB=:memory:(测试态)
+[2026-09-09 22:45:21.733] [info]                     spawning sidecar { url: 'http://127.0.0.1:53452' }
+[2026-09-09 22:45:21.733] [info]                     alpha-secrets sync: wrote [] removed []
+[2026-09-09 22:45:21.734] [info]                     alpha-ext: loading plugin bundle {
+  path: '<REAL_HOME>/app/alpha-code/.worktrees/ac-1323/packages/ui-mac/dist-unfenced/mac-arm64/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js'
+}
+[2026-09-09 22:45:21.744] [info]                     process fence planned: workspaces=1 (candidates=1, excluded=0, dropped=0), profile=2096B, compile attempts=1
+[2026-09-09 22:45:21.754] [error]                    Error: Error: ENOENT: no such file or directory, open '<REAL_HOME>/app/alpha-code/.worktrees/ac-1323/packages/ui-mac/dist-unfenced/mac-arm64/Code Puppy.app/Contents/Resources/app-update.yml'
+[2026-09-09 22:45:21.754] [info]                     updater state changed { from: 'checking', to: 'error' }
+[2026-09-09 22:45:22.417] [info]                     alpha-platform-models: catalog snapshot synced { edition: 'cn', models: 6, pricingBasisModelId: 'deepseek-v4-flash' }
+[2026-09-09 22:45:22.482] [info]                     loading task finished
+[2026-09-09 22:45:22.692] [info]                     awaiting server ready
+[2026-09-09 22:45:22.693] [info]                     server ready { url: 'http://127.0.0.1:53452' }
+[2026-09-09 22:45:22.781] [info]                     awaiting server ready
+[2026-09-09 22:45:22.781] [info]                     server ready { url: 'http://127.0.0.1:53452' }
+[2026-09-09 22:45:47.481] [info]                     respawning sidecar { reason: 'structural' }
+[2026-09-09 22:45:48.251] [info]                     alpha-platform-models: catalog snapshot synced { edition: 'cn', models: 6, pricingBasisModelId: 'deepseek-v4-flash' }
+[2026-09-09 22:45:48.259] [info]                     alpha-secrets sync: wrote [] removed []
+[2026-09-09 22:45:48.259] [info]                     alpha-ext: loading plugin bundle {
+  path: '<REAL_HOME>/app/alpha-code/.worktrees/ac-1323/packages/ui-mac/dist-unfenced/mac-arm64/Code Puppy.app/Contents/Resources/alpha-ext/plugin.js'
+}
+[2026-09-09 22:45:48.278] [info]                     process fence planned: workspaces=3 (candidates=3, excluded=0, dropped=0), profile=2282B, compile attempts=1
+[2026-09-09 22:45:48.955] [info]                     sidecar respawned + renderer reloaded
+[2026-09-09 22:45:48.984] [info]                     awaiting server ready
+[2026-09-09 22:45:48.984] [info]                     server ready { url: 'http://127.0.0.1:53452' }

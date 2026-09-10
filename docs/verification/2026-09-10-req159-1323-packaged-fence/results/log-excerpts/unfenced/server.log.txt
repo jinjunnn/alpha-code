@@ -1,0 +1,11 @@
+[2026-09-09 22:45:21.844] [warn]  (server)           stderr {
+  message: 'AC1323-UNFENCED: process fence deliberately skipped (experimental reverse arm, not shipped)'
+}
+[2026-09-09 22:45:21.848] [warn]  (server)           stderr {
+  message: '[req104-397] session-grant determination unavailable in injection (no verified channel LKG and no verified v1 catalog cache — remote curation state is unknown) — forcing only the bundled-recognizable subset (boot reconcile holds the fail-closed gate)'
+}
+[2026-09-09 22:45:22.479] [info]  (server)           stdout { message: 'initial governed catalog location prewarmed' }
+[2026-09-09 22:45:48.388] [warn]  (server)           stderr {
+  message: 'AC1323-UNFENCED: process fence deliberately skipped (experimental reverse arm, not shipped)'
+}
+[2026-09-09 22:45:48.949] [info]  (server)           stdout { message: 'initial governed catalog location prewarmed' }
