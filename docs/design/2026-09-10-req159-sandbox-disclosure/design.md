@@ -2,13 +2,15 @@
 type: design
 slug: req159-sandbox-disclosure
 date: 2026-09-10
-status: proposed
+status: accepted
 relates:
   - jinjunnn/alpha-code#1322(REQ-159 子票 4,本增量是其 Ready 门)
   - docs/design/2026-09-09-req159-process-fence-baseline.md §三 I3 / I4
 ---
 
 # 沙箱下的两处如实告知 —— 终端脚条一项,工作区一枚只读胶囊
+
+**批准**:owner 2026-09-10,保留弹层里的「重新启动 Alpha」按钮。本目录自此冻结。
 
 > 帧见同目录 [`frame.html`](frame.html)(终端面板常态 / 悬停 / 窄右栏 / 空态;顶栏可写 / 只读 /
 > 弹层;首页 chip 两态;状态表;中英文案)。批准后并入
