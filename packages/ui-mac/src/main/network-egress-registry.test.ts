@@ -24,6 +24,8 @@ const EXPECTED_INITIAL_SET = [
   "models.opencode.ai:443",
   "pypi.org:443",
   "registry.npmjs.org:443",
+  // `#1337`:#1073 owner 裁决二 —— #1334 Q4 实拍的真实开发流量(shell 工具子进程下载 release 资产)
+  "release-assets.githubusercontent.com:443",
   "www.eclipse.org:443",
 ]
 

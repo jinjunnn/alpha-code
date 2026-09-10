@@ -39,6 +39,7 @@ function harness(overrides: Partial<PlanProcessFenceDeps> = {}, existing = new S
     userDataPath: USER_DATA,
     sidecarEnv: { HOME },
     addon: { packaged: true, resourcesPath: "/App/Contents/Resources", moduleDir: "/unused", exists: (p) => existing.has(p) },
+    egressProxyPort: 4443,
   }
   return { deps, input, made, logs }
 }
@@ -53,7 +54,10 @@ describeDarwin("planProcessFence", () => {
     expect(plan.attempts).toBe(1)
     expect(plan.profileBytes).toBe(Buffer.byteLength(plan.profile))
     expect(h.made).toEqual([`${HOME}/.local/share/opencode`, `${HOME}/.cache/opencode`, `${HOME}/.config/opencode`, `${HOME}/.npm`])
-    expect(h.logs.some((l) => /process fence planned: workspaces=3 \(candidates=3, excluded=0, dropped=0\)/.test(l))).toBe(true)
+    expect(h.logs.some((l) => /process fence planned: workspaces=3 \(candidates=3, excluded=0, dropped=0\), egressProxyPort=4443/.test(l))).toBe(true)
+    // `#1337`:计划里的 profile 带着那扇门(N4 = 传入的代理端口),不是别的端口
+    expect(plan.profile).toContain('(allow network-outbound (remote ip "localhost:4443"))')
+    expect(plan.profile).toContain("(deny network*)")
     // W16 / W10 / W17 / W18 刻意不建
     expect(h.made.some((d) => d.endsWith("/.opencode") || d.endsWith("/.zsh_sessions") || d.includes("bun"))).toBe(false)
   })
@@ -90,9 +94,22 @@ describeDarwin("planProcessFence", () => {
     expect(h.logs.some((l) => l.includes("dropped=1") && l.includes(`${HOME}/proj-a`) && l.includes("exceeds maximum"))).toBe(true)
   })
 
-  test("fail-closed ①:最小集也编不过 ⇒ 抛,原因原文可读", () => {
-    const h = harness({ compile: () => ({ ok: false, reason: "profile compilation failed" }) })
-    expect(() => planProcessFence(h.input, h.deps)).toThrow(/minimum writable set.*profile compilation failed/)
+  test("fail-closed ①:字节墙之外的编译失败 ⇒ 一个工作区都不丢就抛,原因原文可读,且点名「不是并集大小」(`#1337` 归因)", () => {
+    const h = harness({ compile: () => ({ ok: false, reason: "sandbox-exec: unbound variable: host … line 25, column 33" }) })
+    expect(() => planProcessFence(h.input, h.deps)).toThrow(/not the 65535-byte data-object wall.*none were dropped \(3 workspaces, 0 dropped, 1 attempt\): sandbox-exec: unbound variable: host/)
+  })
+
+  test("fail-closed ①′:字节墙丢到只剩默认工作区仍编不过 ⇒ 抛「最小可写集」,账目可读", () => {
+    const h = harness({ compile: () => ({ ok: false, reason: "sandbox-exec: data object length 70173 exceeds maximum (65535)" }) })
+    expect(() => planProcessFence(h.input, h.deps)).toThrow(/minimum writable set \(1 workspace, 2 dropped, 3 attempts\): .*exceeds maximum/)
+  })
+
+  test("fail-closed ④(`#1337`):代理端口不合法 ⇒ 不产计划(围栏没有那扇门就不许装)", () => {
+    const h = harness()
+    for (const bad of [0, 65536, 1.5, Number.NaN]) {
+      h.input.egressProxyPort = bad
+      expect(() => planProcessFence(h.input, h.deps), String(bad)).toThrow(/egress proxy port must be an integer in 1\.\.65535/)
+    }
   })
 
   test("fail-closed ②:原生模块不在 ⇒ 抛并点名路径(打包漏了 extraResources 就是这一格)", () => {

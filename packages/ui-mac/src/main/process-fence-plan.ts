@@ -46,6 +46,11 @@ export type PlanProcessFenceInput = {
   /** createSidecarEnv() 的输出 —— XDG_* / HOME 从**这一份**取,它才是引擎将看到的 env。 */
   sidecarEnv: Record<string, string | undefined>
   addon: FenceAddonResolveInput
+  /**
+   * REQ-137 `#1337`:main 进程内策略代理**已经在听**的 loopback 端口(server.ts 在调用本函数之前起好)。
+   * 渲染进 profile 的 N4 行;没有它就没有计划(fail-closed)。
+   */
+  egressProxyPort: number
 }
 
 export type PlanProcessFenceDeps = {
@@ -98,7 +103,7 @@ export function planProcessFence(input: PlanProcessFenceInput, deps: PlanProcess
     throw new Error("process fence: the default workspace is not a directory on disk — refusing to fork an engine that could not write anywhere a user expects")
 
   const trimmed = trimUntilCompiles(
-    { workspaces: union.selected, alphaGlobalRoot, userDataPath: input.userDataPath, roots, stateHome },
+    { workspaces: union.selected, alphaGlobalRoot, userDataPath: input.userDataPath, roots, stateHome, egressProxyPort: input.egressProxyPort },
     deps.compile,
   )
   const addonPath = resolveFenceAddonPath(input.addon)
@@ -113,7 +118,7 @@ export function planProcessFence(input: PlanProcessFenceInput, deps: PlanProcess
     roots: { ...roots, alphaGlobalRoot, userDataPath: input.userDataPath, stateHome },
   }
   deps.log(
-    `process fence planned: workspaces=${plan.workspaces.length} (candidates=${union.candidates}, excluded=${plan.excluded.length}, dropped=${plan.dropped.length}), profile=${plan.profileBytes}B, compile attempts=${plan.attempts}` +
+    `process fence planned: workspaces=${plan.workspaces.length} (candidates=${union.candidates}, excluded=${plan.excluded.length}, dropped=${plan.dropped.length}), egressProxyPort=${input.egressProxyPort}, profile=${plan.profileBytes}B, compile attempts=${plan.attempts}` +
       (plan.dropped.length ? ` — dropped (oldest first): ${[...plan.dropped].reverse().join(", ")}; last compiler error: ${trimmed.lastFailure}` : "") +
       (plan.excluded.length ? ` — excluded: ${plan.excluded.map((e) => `${e.directory} (${e.reason})`).join("; ")}` : ""),
   )

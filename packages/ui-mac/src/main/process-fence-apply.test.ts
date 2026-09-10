@@ -64,6 +64,8 @@ describeDarwin("REQ-159 process fence —— 真 .node / 真 seatbelt / Electron
       userDataPath: userData,
       stateHome: userData,
       roots: resolveEngineRoots({}, homedir()),
+      // `#1337`:生产 profile 含网络行;本文件只判文件轴,给一个没人听的端口即可(网络轴判据在 network-egress-fence.test.ts)。
+      egressProxyPort: 4443,
     })
     profileFile = join(scratch, "fence.sb")
     writeFileSync(profileFile, profile)
@@ -176,7 +178,7 @@ describeDarwin("REQ-159 process fence —— 真 .node / 真 seatbelt / Electron
     if (!line) throw new Error(`apply-driver printed nothing (status ${res.status}); stderr: ${res.stderr}`)
     return { status: res.status, out: JSON.parse(line) as { ok: boolean; name?: string; message?: string; result?: { buildId: string; libsandbox: string; profileBytes: number } } }
   }
-  const goodProfile = () => renderProcessFenceProfile({ workspaces: [ws], alphaGlobalRoot: globalRoot, userDataPath: userData, stateHome: userData, roots: resolveEngineRoots({}, homedir()) })
+  const goodProfile = () => renderProcessFenceProfile({ workspaces: [ws], alphaGlobalRoot: globalRoot, userDataPath: userData, stateHome: userData, roots: resolveEngineRoots({}, homedir()), egressProxyPort: 4443 })
 
   test("D 正向:生产 profile ⇒ ok,回报 buildId / libsandbox / 字节数,进程退出 0", () => {
     const r = runApply(goodProfile())

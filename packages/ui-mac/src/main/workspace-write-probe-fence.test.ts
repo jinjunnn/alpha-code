@@ -58,7 +58,8 @@ describeDarwin("AC3 真探针在真围栏下(真 .node / 真 seatbelt / 真子�
     profileFile = join(scratch, "fence.sb")
     writeFileSync(
       profileFile,
-      renderProcessFenceProfile({ workspaces: [ws], alphaGlobalRoot: globalRoot, userDataPath: userData, stateHome: userData, roots: resolveEngineRoots({}, homedir()) }),
+      // `#1337`:生产 profile 含网络行;写探针不出网,给一个没人听的端口即可。
+      renderProcessFenceProfile({ workspaces: [ws], alphaGlobalRoot: globalRoot, userDataPath: userData, stateHome: userData, roots: resolveEngineRoots({}, homedir()), egressProxyPort: 4443 }),
     )
   })
 

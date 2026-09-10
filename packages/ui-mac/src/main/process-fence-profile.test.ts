@@ -10,8 +10,10 @@ import { spawnSync } from "node:child_process"
 import { createRequire } from "node:module"
 import { join, resolve } from "node:path"
 import {
+  COMPILE_BYTE_WALL,
   MAX_WORKSPACES,
   WRITABLE_ROOT_IDS,
+  assertEgressProxyPort,
   assertSeatbeltSafePath,
   renderProcessFenceProfile,
   resolveEngineRoots,
@@ -29,7 +31,16 @@ const base: ProcessFenceProfileInput = {
   userDataPath: `${HOME}/Library/Application Support/ai.opencode.desktop`,
   stateHome: `${HOME}/Library/Application Support/ai.opencode.desktop`,
   roots,
+  egressProxyPort: 4443,
 }
+
+/** `#1334` Q1.2 的四行(逐字,独立字面量 —— 不从渲染器取);端口是唯一的参数。 */
+const NETWORK_LINES = (port: number) => [
+  "(deny network*)",
+  '(allow network-bind (local ip "localhost:*"))',
+  '(allow network-inbound (local ip "localhost:*"))',
+  `(allow network-outbound (remote ip "localhost:${port}"))`,
+]
 
 /** 去掉每行的 `; Wn` 注释与多余空白,只比策略 token —— 注释在编译期被剥离(勘破 §6.5 第 9 行)。 */
 const tokens = (profile: string) =>
@@ -65,7 +76,26 @@ describe("renderProcessFenceProfile —— 勘破 §8.2 的 19 行,逐行全等"
       `(subpath "${HOME}/Library/Caches/bun")`,
       `(subpath "${HOME}/.cache/bun")`,
       ")",
+      ...NETWORK_LINES(4443),
     ])
+  })
+
+  test("`#1337` 网络行:Q1.2 四行逐字、顺序不变、deny 在前 allow 在后、N4 的端口就是传入的代理端口;只写加法(没有第二条 deny)", () => {
+    const out = tokens(renderProcessFenceProfile({ ...base, egressProxyPort: 61234 }))
+    expect(out.slice(-4)).toEqual(NETWORK_LINES(61234))
+    expect(out.filter((l) => l.startsWith("(deny "))).toEqual(["(deny file-write*)", "(deny network*)"])
+    expect(out.filter((l) => /network-outbound/.test(l))).toEqual([`(allow network-outbound (remote ip "localhost:61234"))`])
+    // DNS 刻意不放行:没有 mDNSResponder 那一行(`#1334` Q3:解析搬到代理那一侧)
+    expect(renderProcessFenceProfile(base)).not.toContain("mDNSResponder")
+  })
+
+  test("`#1337` fail-closed:代理端口不是 1..65535 的整数 ⇒ 拒绝渲染(没有那扇门就没有 profile)", () => {
+    for (const bad of [0, 65536, -1, 1.5, Number.NaN, "4443", undefined, null]) {
+      expect(() => assertEgressProxyPort(bad), String(bad)).toThrow(/egress proxy port must be an integer in 1\.\.65535/)
+      expect(() => renderProcessFenceProfile({ ...base, egressProxyPort: bad as number }), String(bad)).toThrow(/egress proxy port/)
+    }
+    expect(assertEgressProxyPort(1)).toBe(1)
+    expect(assertEgressProxyPort(65535)).toBe(65535)
   })
 
   test("每一行都带 §8.2 的 id 注释,且 id 集合 = WRITABLE_ROOT_IDS 的键(登记簿只能点名存在的行)", () => {
@@ -252,10 +282,26 @@ describe("trimUntilCompiles —— 试编译封顶,从尾部丢,丢到底仍失�
     expect(tokens(r.profile)).not.toContain(`(subpath "/Users/alpha/b")`)
   })
 
-  test("默认工作区不可丢:只剩 1 个仍失败 ⇒ 抛,消息带编译器原文与账目(fail-closed 到「引擎不起」)", () => {
-    expect(() => trimUntilCompiles({ ...base, workspaces: ws }, compileAllowing(0, "profile compilation failed"))).toThrow(
-      /minimum writable set \(1 workspace, 3 dropped, 4 attempts\): profile compilation failed/,
+  test("默认工作区不可丢:字节墙丢到只剩 1 个仍失败 ⇒ 抛,消息带编译器原文与账目(fail-closed 到「引擎不起」)", () => {
+    expect(() => trimUntilCompiles({ ...base, workspaces: ws }, compileAllowing(0))).toThrow(
+      /minimum writable set \(1 workspace, 3 dropped, 4 attempts\): sandbox-exec: data object length 70173 exceeds maximum \(65535\)/,
     )
+  })
+
+  test("`#1337` 归因:失败原因不是字节墙(语法坏 / unbound variable)⇒ 一个工作区都不丢、attempts=1 即抛,消息点名「丢工作区救不了」", () => {
+    const seen: number[] = []
+    const syntaxBad = (profile: string) => {
+      seen.push(profile.match(/; W1$/gm)?.length ?? 0)
+      return { ok: false as const, reason: "sandbox-exec: unbound variable: host … line 25, column 33" }
+    }
+    expect(() => trimUntilCompiles({ ...base, workspaces: ws }, syntaxBad)).toThrow(
+      /not the 65535-byte data-object wall — dropping workspaces cannot fix it, so none were dropped \(4 workspaces, 0 dropped, 1 attempt\): sandbox-exec: unbound variable: host/,
+    )
+    expect(seen).toEqual([4]) // 只试编了一次,而且是全并集
+    // 字节墙的原文由 process-fence-compile.test.ts 对真编译器钉住;这里只核对判别式认得它、不认别的
+    expect(COMPILE_BYTE_WALL.test("sandbox-exec: data object length 65574 exceeds maximum (65535)")).toBe(true)
+    expect(COMPILE_BYTE_WALL.test("sandbox-exec: unbound variable: host")).toBe(false)
+    expect(COMPILE_BYTE_WALL.test("profile compilation failed")).toBe(false)
   })
 })
 
@@ -263,6 +309,13 @@ describe("控制组:判据能测出已知的坏", () => {
   test("少一行(去掉 W15)⇒ 逐行全等判据红", () => {
     const rendered = tokens(renderProcessFenceProfile(base)).filter((l) => !l.includes("/dev/ptmx"))
     expect(rendered).not.toEqual(tokens(renderProcessFenceProfile(base)))
+  })
+  test("`#1337` 少 N3(inbound)或多一条减法 deny ⇒ 网络行判据红(老勘破 §5 那两行 / 减法组合正是 `#1334` 实测的两种坏)", () => {
+    const good = tokens(renderProcessFenceProfile(base))
+    const sec5 = good.filter((l) => !l.includes("network-inbound"))
+    expect(sec5.slice(-4)).not.toEqual(NETWORK_LINES(4443))
+    const subtractive = [...good, '(deny network-outbound (remote ip "localhost:1234"))']
+    expect(subtractive.filter((l) => l.startsWith("(deny "))).not.toEqual(["(deny file-write*)", "(deny network*)"])
   })
   test("放宽一行(HOME 整个进 subpath)⇒ 并集规则红", () => {
     const union = selectWorkspaceUnion({

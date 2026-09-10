@@ -1504,8 +1504,11 @@ export const dict = {
   "alpha.terminal.sandboxFoot": "Sandbox on · some of your shell config may not apply",
   "alpha.terminal.sandboxFootShort": "Sandbox on",
   "alpha.terminal.sandboxHoverTitle": "Sandbox on",
+  // REQ-137 `#1337` (AC5 coverage disclosure): the fourth sentence is about the network — the sandbox covers only the assistant
+  // engine's process tree (terminal and the commands it spawns included); Code Puppy's own traffic (model catalog, sign-in,
+  // update checks) is NOT covered. Guarded by src/main/network-egress-disclosure.test.ts.
   "alpha.terminal.sandboxHoverBody":
-    "The terminal can only write inside the current project and Code Puppy's own folders. Steps in your shell config that write caches to your home folder (completion caches, for example) are blocked silently — completion may feel slow or stop working. Settings that don't write files (aliases, prompt, PATH) work as usual.",
+    "The terminal can only write inside the current project and Code Puppy's own folders. Steps in your shell config that write caches to your home folder (completion caches, for example) are blocked silently — completion may feel slow or stop working. Settings that don't write files (aliases, prompt, PATH) work as usual. Network access works the same way: the assistant and the terminal can only reach registered addresses through Code Puppy's egress gate; anything else is refused and logged. Code Puppy's own traffic (model catalog, sign-in, update checks) is outside this sandbox and connects as before.",
   "alpha.terminal.sandboxEmpty": "Sandbox is on — some of your own shell config may not apply in here.",
   "alpha.workspace.readonly": "Read-only",
   "alpha.workspace.readonlyTitle": "This project can't be written to right now",

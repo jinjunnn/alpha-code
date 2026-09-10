@@ -28,6 +28,10 @@ import { join, resolve } from "node:path"
 import { buildFenceAddon } from "../../scripts/build-fence-addon"
 import { trialCompileProfile } from "./process-fence-compile"
 import { planProcessFence } from "./process-fence-plan"
+// `#1337`:真引擎在围栏下的出网只剩策略代理那一扇门 —— 这里起**生产的**代理(默认接线 = 注册表)并按生产
+// sidecarEgressProxyEnv 给引擎 env,与出货形态同一条路;判据仍只看文件轴(网络轴在 network-egress-fence.test.ts)。
+import { startEgressPolicyProxy, type EgressProxyHandle } from "./network-egress-proxy"
+import { sidecarEgressProxyEnv } from "./sidecar-env"
 
 const describeDarwin = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec") ? describe : describe.skip
 const repoRoot = resolve(import.meta.dir, "../../../..")
@@ -49,10 +53,12 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
   let addon = ""
   let profileFile = ""
   let planLog: string[] = []
+  let egressProxy: EgressProxyHandle | undefined
   const engines: Engine[] = []
   const landed = (dir: string) => readdirSync(dir).sort()
 
-  beforeAll(() => {
+  beforeAll(async () => {
+    egressProxy = await startEgressPolicyProxy({ log: () => {} })
     // ① ext bundle:本树的 ext(不是别的 worktree 的),现编。
     const ext = spawnSync(process.execPath, ["run", "build"], { cwd: join(repoRoot, "packages", "ext"), encoding: "utf8", timeout: 120_000 })
     if (ext.status !== 0 || !existsSync(extBundle)) throw new Error(`ext build failed (本次测量作废): ${ext.stderr}`)
@@ -72,6 +78,7 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
         userDataPath: userData,
         sidecarEnv: { HOME: home, XDG_DATA_HOME: join(home, ".local", "share"), XDG_CACHE_HOME: join(home, ".cache"), XDG_CONFIG_HOME: join(home, ".config"), XDG_STATE_HOME: userData },
         addon: { packaged: true, resourcesPath: join(iso, "resources"), moduleDir: "/unused", exists: existsSync },
+        egressProxyPort: egressProxy.port,
       },
       {
         homeDir: () => home,
@@ -97,6 +104,7 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
   })
 
   afterAll(async () => {
+    await egressProxy?.close()
     for (const e of engines) {
       try {
         e.proc.kill("SIGTERM")
@@ -125,8 +133,8 @@ describeDarwin("REQ-159 真引擎 + 真 ext 在进程围栏下:四类真消费�
       XDG_CONFIG_HOME: join(home, ".config"),
       XDG_STATE_HOME: userData,
       TMPDIR: process.env.TMPDIR ?? "/tmp",
-      NO_PROXY: "127.0.0.1,localhost",
-      no_proxy: "127.0.0.1,localhost",
+      // `#1337`:与出货 sidecar 同一份代理栈(HTTP(S)_PROXY → 策略代理;NO_PROXY = loopback)。
+      ...sidecarEgressProxyEnv(egressProxy!.port),
       NO_COLOR: "1",
       OPENCODE_SERVER_USERNAME: "opencode",
       OPENCODE_SERVER_PASSWORD: PASSWORD,

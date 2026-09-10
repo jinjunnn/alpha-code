@@ -264,3 +264,33 @@ export function createSidecarEnv(source: NodeJS.ProcessEnv = process.env): Recor
   }
   return env
 }
+
+// ── REQ-137 (`#1337`):sidecar 的代理栈由策略代理**独占**决定 ─────────────────────────────
+// 围栏(process-fence-profile.ts 的 N1–N4)把 sidecar 那棵树的 TCP/UDP 出网收成一条:loopback 上 main 进程内的
+// 策略代理(network-egress-proxy.ts)。env 是「汇到哪」的另一半(`#1334` Q4:没有代理 env,seatbelt 只会把流量
+// 掐死,不会把它汇到任何地方)—— 所以八个代理变量在这里**整份改写**,不与用户导出的值合并:
+//   · 用户自己的 HTTP(S)_PROXY(比如本机 7897 的系统代理)不能留:围栏只放行策略代理那一个端口,指向别处的
+//     代理只会让每一条出网 EPERM,而且 NO_PROXY 也不能带用户的名单 —— 名单里的目的地会绕开代理直连,直连在
+//     围栏里死在 DNS 这一步,表现是 ENOTFOUND 而不是策略拒绝(归因错误)。唯一通路就是唯一通路。
+//   · NO_PROXY 只留 loopback 三个名字:sidecar 自己的 HTTP 服务器、本机 ollama 一类 loopback 目的地不经代理
+//     (sidecar.ts ensureLoopbackNoProxy 对同一份值幂等)。
+//   · ALL_PROXY 一并设(curl / git 认它;node 不认,无害),scheme 显式 http://。
+// createSidecarEnv 的白名单里这八个名字本来就放行(上面 EXACT 的 proxy stack 段),这里改写的是**值**。
+
+export const SIDECAR_EGRESS_NO_PROXY = "127.0.0.1,localhost,::1"
+
+/** 给定策略代理端口,返回要**覆盖**进 sidecar env 的八个代理变量(纯函数;server.ts 在 fork 前 Object.assign)。 */
+export function sidecarEgressProxyEnv(port: number): Record<string, string> {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`sidecar egress proxy env: port must be an integer in 1..65535, got ${JSON.stringify(port)}`)
+  const url = `http://127.0.0.1:${port}`
+  return {
+    HTTP_PROXY: url,
+    HTTPS_PROXY: url,
+    ALL_PROXY: url,
+    http_proxy: url,
+    https_proxy: url,
+    all_proxy: url,
+    NO_PROXY: SIDECAR_EGRESS_NO_PROXY,
+    no_proxy: SIDECAR_EGRESS_NO_PROXY,
+  }
+}

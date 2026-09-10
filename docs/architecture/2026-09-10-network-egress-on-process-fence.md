@@ -306,6 +306,34 @@ process fence profile does not compile even with the minimum writable set
   按《时序门需 ≥3 轮采样》**不构成结论**。
 - 公证 / staple;x86_64 那一片没有被执行过;单机单配置单拓扑。
 
+## 落地(`#1337`,2026-09-10)
+
+上面的读数在 `#1337` 里变成了代码。落地形状,每一行都能在树上指到:
+
+| 层 | 文件 | 事实 |
+| --- | --- | --- |
+| 强制层(profile) | `packages/ui-mac/src/main/process-fence-profile.ts` N1–N4 | 可写集之后追加 §Q1.2 那四行**逐字**:`(deny network*)` + loopback `network-bind` / `network-inbound` + 只放行 `localhost:<代理端口>` 出网。只写加法;DNS 刻意不放行。端口不是 1..65535 的整数 ⇒ 拒绝渲染 |
+| 策略层(代理) | `packages/ui-mac/src/main/server.ts` `ensureEgressPolicyProxy` → `network-egress-proxy.ts` | 代理跑在 **Electron main 进程内**(围栏外,`#1073` 裁决三:`(deny network*)` 连带拦 DNS,解析只能在围栏外做),第一次 fork 之前起、跨 respawn 复用;起不来 ⇒ 拒 fork。授权只问 `network-egress-registry.ts` |
+| 汇流(env) | `sidecar-env.ts` `sidecarEgressProxyEnv` | fork 之前把 sidecar 的八个代理变量**整份改写**:`HTTP(S)_PROXY` / `ALL_PROXY`(大小写)指向代理,`NO_PROXY` 只留 loopback —— 用户自己的代理与 NO_PROXY 名单不存活(唯一通路)。main 自己的 `process.env` 一个字不动 |
+| 归因 | `process-fence-profile.ts` `trimUntilCompiles` | 编译失败若不是 `exceeds maximum` 那道字节墙 ⇒ 一个工作区都不丢就抛,消息点名「丢工作区救不了」(§Q5 末节) |
+| 判据 | `network-egress-fence.test.ts`(Electron 的 node + 真 .node + 真 seatbelt + 真代理)· `process-fence-wiring.test.ts` · `process-fence-profile.test.ts` · `sidecar-env.test.ts` · `network-egress-disclosure.test.ts` | 逃逸语料(绕代理直连 / raw-IP:443 / UDP / `[::1]` 其它端口 / DNS)逐条 EPERM 而唯一那扇门通、外面连得进被围栏的监听者;代理关掉后 fetch / CONNECT **立刻** `ECONNREFUSED` 并点名代理地址(不是挂到超时),直连仍 EPERM;控制臂(不套围栏)对同一判据必红 |
+| 出货形态 | [`../verification/2026-09-10-req137-1337-packaged-egress/README.md`](../verification/2026-09-10-req137-1337-packaged-egress/README.md) | 六格 + 误伤语料 + 逃逸语料在签名包上的读数(两处 provider 目录实读包数) |
+
+**没有改的**:代理本体与注册表(`#1336`)、可写集的文件规则、并集裁剪规则、main / renderer 的出网。非 darwin 没有围栏,
+也不装策略层(那里的引擎本来就没有围栏,不假装有一半)。
+
+### 覆盖面声明(AC5)
+
+<!-- egress-coverage-statement:begin -->
+**这道网络围栏只罩引擎 sidecar 那棵进程树**(引擎自己的模型请求、模型目录、远程 MCP、两处 provider 的 npm 安装,
+以及它派生的 shell 工具 / `!command` / MCP stdio / LSP / PTY 终端)。**Electron main**(平台模型目录拉取、登录 / token、
+自动更新)**与 renderer 的出网不在覆盖内**,装上策略层之后其行为一点没变(§Q1.4 实测)。不得宣称比这更大的保护面。
+<!-- egress-coverage-statement:end -->
+
+用户眼前的同一句话在终端「沙箱开启」悬停卡的第四句(`packages/ui-mac/src/renderer/i18n/{zh,en}.ts`
+`alpha.terminal.sandboxHoverBody`)。上面这段与那两句文案都由 `packages/ui-mac/src/main/network-egress-disclosure.test.ts`
+守着存在与内容:删掉、或改成「全部出网都被限制」一类的过度声明,判据当场红。
+
 ## 用法
 
 本文与老勘破一起,是 `#1073`(REQ-137)AC 与实现票的对照物。三条直接约束:
