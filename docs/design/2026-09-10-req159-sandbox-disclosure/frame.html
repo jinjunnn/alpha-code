@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>沙箱下的两处如实告知 · 终端脚条 + 工作区只读胶囊</title>
+<link rel="stylesheet" href="../current/session-workspace/design.css" />
+<style>
+/* 本稿自有类一律 sd- 前缀;基础样式与 --a-* token 来自链接的 session-workspace/design.css。 */
+body{padding:0 0 72px}
+.sd-bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--a-border);background:color-mix(in srgb,var(--a-bg-canvas) 94%,transparent);backdrop-filter:blur(14px)}
+.sd-bar b{font-size:var(--a-text-sm)}.sd-bar span{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}.sd-grow{flex:1}
+.sd-wrap{max-width:1060px;margin:0 auto;padding:26px 24px 0}
+.sd-intro h1{margin:0 0 8px;font-size:24px}
+.sd-intro p{margin:0;color:var(--a-text-secondary);line-height:1.65;max-width:780px}
+.sd-frames{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+
+/* ── 终端脚条里的沙箱项(输出区恒深底,脚条随之用浅字)── */
+.sd-sbx{display:inline-flex;align-items:center;gap:5px;height:18px;padding:0 7px;border-radius:var(--a-radius-full);border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#a1a1aa;white-space:nowrap;cursor:default}
+.sd-sbx svg{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sd-stage-rel{position:relative}
+.sd-tip{position:absolute;left:12px;right:12px;bottom:40px;padding:10px 12px;background:var(--a-surface-raised);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-lg);font-size:var(--a-text-xs);line-height:1.6;color:var(--a-text-secondary)}
+.sd-tip b{display:block;margin-bottom:3px;color:var(--a-text);font-size:var(--a-text-sm)}
+.sd-tip::after{content:"";position:absolute;left:78px;bottom:-6px;width:10px;height:10px;background:var(--a-surface-raised);border-right:1px solid var(--a-border);border-bottom:1px solid var(--a-border);transform:rotate(45deg)}
+
+/* ── 终端空态 ── */
+.sd-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;margin:8px 10px 10px;padding:24px 18px;border:1px dashed var(--a-border);border-radius:var(--a-radius-lg);text-align:center;background:var(--a-bg-canvas)}
+.sd-empty .ic{width:22px;height:22px;color:var(--a-text-tertiary);margin-bottom:4px}
+.sd-empty b{font-size:var(--a-text-base);color:var(--a-text)}
+.sd-empty p{margin:0;font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:1.55}
+.sd-empty .sbx{display:inline-flex;align-items:flex-start;gap:6px;margin-top:6px;font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:1.5;text-align:left}
+.sd-empty .sbx svg{flex:none;width:12px;height:12px;margin-top:2px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sd-empty .btn{margin-top:10px;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-surface);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text)}
+
+/* ── 顶栏只读胶囊 + 弹层 ── */
+.sd-ro{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;margin-left:6px;border-radius:var(--a-radius-full);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);color:var(--a-warning);background:var(--a-warning-subtle);cursor:default}
+.sd-ro svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sd-strip-rel{position:relative;overflow:visible}
+.sd-pop{position:absolute;top:50px;left:258px;width:320px;padding:12px 14px;background:var(--a-surface-raised);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-lg);font-size:var(--a-text-xs);line-height:1.6;color:var(--a-text-secondary);z-index:3}
+.sd-pop b{display:block;margin-bottom:4px;color:var(--a-text);font-size:var(--a-text-sm)}
+.sd-pop .fn{margin-top:6px;color:var(--a-text-tertiary)}
+.sd-pop .row{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.sd-btn{display:inline-flex;align-items:center;height:28px;padding:0 11px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-surface);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);color:var(--a-text)}
+.sd-pop::before{content:"";position:absolute;left:28px;top:-6px;width:10px;height:10px;background:var(--a-surface-raised);border-left:1px solid var(--a-border);border-top:1px solid var(--a-border);transform:rotate(45deg)}
+.sd-popspace{height:150px}
+
+/* ── 首页 / 新对话页的工作区 chip ── */
+.sd-chipline{display:flex;align-items:center;gap:10px;padding:16px 18px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-bg-canvas)}
+.sd-chipline .lbl{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.sd-chip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 10px 0 9px;border:1px solid var(--a-border);border-radius:var(--a-radius-full);background:var(--a-surface);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.sd-chip svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--a-text-tertiary)}
+.sd-chip .ro{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 6px;border-radius:var(--a-radius-full);font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);color:var(--a-warning);background:var(--a-warning-subtle)}
+.sd-chip .ro svg{width:9px;height:9px;color:inherit}
+</style>
+</head>
+<body>
+<div class="sd-bar"><b>会话工作区 · 沙箱告知</b><span>组件增量 · 终端脚条一项 + 空态一行 · 顶栏只读胶囊 + chip 尾标</span><div class="sd-grow"></div>
+  <div class="seg" id="themeSeg"><button data-theme="light">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="sd-wrap">
+  <div class="sd-intro">
+    <h1>沙箱开着的时候,把两件用户自己看不出原因的事说清楚</h1>
+    <p>沙箱只允许终端和助手写入当前项目与 Alpha 自己的目录。由此用户会碰到两件事:终端里自己的配置有一部分静默失效;启动后才打开的项目写不进去,而失败只藏在某一次工具输出里。本稿在两处既有位置各加一句实话,不放宽任何东西,也不改任何行为。</p>
+  </div>
+
+  <!-- ═══ 与上一稿的关系 ═══ -->
+  <section class="sec" id="lineage">
+    <div class="sec-kicker">与上一稿的关系</div>
+    <h2 class="t">继承会话工作区现行稿的终端面板与顶栏,各加一处</h2>
+    <table class="spec">
+      <tr><th>项</th><th>内容</th></tr>
+      <tr><td>继承(不动)</td><td>终端面板整体(面板页签、深底输出区、脚条「运行状态 · 环境 · 尺寸」、空态形态);顶栏整体(项目胶囊 › 会话名 · 状态胶囊 · 两个开关);首页 / 新对话页的工作区 chip 形态。</td></tr>
+      <tr><td>新增</td><td>① 终端脚条多一项「沙箱开启」(悬停给完整解释),空态多一行同义提示;② 顶栏状态胶囊之后多一枚「只读」胶囊(悬停 / 点击给解释),chip 多一个「只读」尾标 —— 只在探针实测写不进去时出现。</td></tr>
+      <tr><td>取代</td><td>无。「状态胶囊只有两态」那句仍成立:只读不是会话状态,是工作区状态,所以是另一枚胶囊而不是第三态。</td></tr>
+      <tr><td>为什么</td><td>沙箱下这两件事今天零告知。用户看到的是「补全不灵」和「改不了文件」,会当成 Alpha 坏了。裁决是不放宽沙箱、不改终端行为,改为说实话 —— 那句实话就得有个固定的家。</td></tr>
+    </table>
+  </section>
+
+  <!-- ═══ A. 终端面板 ═══ -->
+  <section class="sec" id="term-sandbox">
+    <div class="sec-kicker">增量 A · 右栏面板 ③ 终端 · 脚条一项 + 空态一行</div>
+    <h2 class="t">终端:脚条里多一项「沙箱开启」,悬停说明哪些配置会不生效</h2>
+    <p class="lede">脚条今天列的是环境事实:运行状态、shell、尺寸。「沙箱开启」是同一类事实,放在同一条里;它常驻、不可关闭、不弹窗 —— 与「zsh」「80×24」一样只是陈述。完整解释放在悬停层,因为脚条一行放不下,而需要它的人正是「补全怎么不灵了」那一刻会去看脚条的人。</p>
+
+    <div class="sd-frames">
+      <!-- A1 常态 -->
+      <div class="panelframe" style="height:420px">
+        <div class="rr-tabs">
+          <button class="rr-tab">审查 <span class="n">3</span></button>
+          <button class="rr-tab">文件</button>
+          <button class="rr-tab on"><span class="rundot"></span>终端</button>
+          <button class="rr-tab">产物 <span class="n">1</span></button>
+          <button class="rr-close"><svg class="ic sm" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+        </div>
+        <div class="tm-tabs">
+          <button class="tm-tab on"><span class="rundot"></span>终端 1</button>
+          <button class="tm-add" title="新建终端"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="tm-stage">
+          <div class="tm-out">
+            <div><span class="host">libiao@mac</span> <span class="dir">~/app/workspace</span></div>
+            <div><span class="pmt">$</span> bun run dev</div>
+            <div class="dim">▸ 服务已就绪 · 412ms · http://localhost:5173</div>
+            <div><span class="pmt">$</span> <span class="tm-cursor"></span></div>
+          </div>
+          <div class="tm-foot"><span class="st"><i></i>运行中</span><span>·</span><span>zsh</span><span>·</span><span class="sd-sbx"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>沙箱开启 · 你的部分终端配置可能不生效</span><span style="margin-left:auto">80×24</span></div>
+        </div>
+      </div>
+
+      <!-- A2 悬停 -->
+      <div class="panelframe" style="height:420px">
+        <div class="rr-tabs">
+          <button class="rr-tab">审查 <span class="n">3</span></button>
+          <button class="rr-tab">文件</button>
+          <button class="rr-tab on">终端</button>
+          <button class="rr-tab">产物 <span class="n">1</span></button>
+          <button class="rr-close"><svg class="ic sm" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+        </div>
+        <div class="tm-tabs">
+          <button class="tm-tab on">终端 1</button>
+          <button class="tm-add" title="新建终端"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="tm-stage sd-stage-rel">
+          <div class="tm-out">
+            <div><span class="host">libiao@mac</span> <span class="dir">~/app/workspace</span></div>
+            <div><span class="pmt">$</span> <span class="tm-cursor"></span></div>
+          </div>
+          <div class="sd-tip"><b>沙箱开启</b>终端只能写入当前项目和 Alpha 自己的目录。你的 shell 配置里凡是要往主目录写缓存的步骤(例如补全缓存)会被拦下,而且不会报错 —— 表现通常是补全变慢或不灵。不写文件的设置(别名、提示符、PATH)照常生效。</div>
+          <div class="tm-foot"><span class="st" style="color:#71727a"><i style="background:#71727a;animation:none"></i>空闲</span><span>·</span><span>zsh</span><span>·</span><span class="sd-sbx" style="color:#e4e4e7;border-color:rgba(255,255,255,.22)"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>沙箱开启 · 你的部分终端配置可能不生效</span><span style="margin-left:auto">80×24</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="label">窄右栏(320px)· 空态</div>
+    <div class="sd-frames">
+      <!-- A3 窄 -->
+      <div class="panelframe" style="width:320px;height:250px">
+        <div class="tm-tabs">
+          <button class="tm-tab on">终端 1</button>
+          <button class="tm-add" title="新建终端"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="tm-stage">
+          <div class="tm-out">
+            <div><span class="pmt">$</span> <span class="tm-cursor"></span></div>
+          </div>
+          <div class="tm-foot"><span class="st" style="color:#71727a"><i style="background:#71727a;animation:none"></i>空闲</span><span>·</span><span>zsh</span><span>·</span><span class="sd-sbx" title="沙箱开启 · 你的部分终端配置可能不生效"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>沙箱开启</span><span style="margin-left:auto">64×18</span></div>
+        </div>
+      </div>
+
+      <!-- A4 空态 -->
+      <div class="panelframe" style="height:250px">
+        <div class="sd-empty">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+          <b>还没有终端</b>
+          <p>新建一个,或在输入框里让助手替你跑命令。</p>
+          <span class="sbx"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>沙箱已开启 —— 终端里你自己的配置可能有一部分不生效。</span>
+          <button class="btn"><svg class="ic sm" viewBox="0 0 24 24" style="width:12px;height:12px;margin:0"><path d="M12 5v14M5 12h14"/></svg>新建终端</button>
+        </div>
+      </div>
+
+      <div class="aside">
+        <div class="note"><b>元素解剖</b>:脚条项 = 盾形小图标 + 一句话,胶囊描边、与脚条同一号 mono 小字、同一灰度;窄于 360px 时只留「沙箱开启」四个字,整句进悬停。悬停层 = 抬起的浅色卡(深色主题下同样是抬起的表面),标题一行 + 三句正文,箭头指回脚条项。</div>
+        <div class="note"><b>什么时候出现</b>:只在沙箱真的装上时(引擎自报)。没装上的平台不出现这一项 —— 没有围栏就不说有。它不可关闭:与「zsh」一样是环境事实,不是通知。</div>
+        <div class="note"><b>空态那一行</b>:同一句话的短版,放在「新建一个……」之下、按钮之上,三级灰。用户在开第一个终端之前就已经看过一次。</div>
+        <div class="note"><b>为什么不写进输出区</b>:输出区归终端引擎,内容会被用户自己的 rc 输出冲走;脚条常驻,补全不灵的那一刻低头就能看到。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ B. 工作区只读 ═══ -->
+  <section class="sec" id="wtop-readonly">
+    <div class="sec-kicker">增量 B · 顶栏状态胶囊之后 · 一枚「只读」胶囊;首页 / 新对话页 chip 一个尾标</div>
+    <h2 class="t">工作区:这个项目写不进去时,在项目层面说出来</h2>
+    <p class="lede">沙箱允许写入的项目在启动那一刻就定下了。之后才打开的项目打得开、读得了,一写就失败,而失败只出现在某一次工具输出里。本稿把它提到项目层面:顶栏状态胶囊旁边一枚暖色「只读」胶囊,悬停 / 点击说明原因与出路;新对话页没有顶栏,同一信息落在工作区 chip 的尾标上。</p>
+
+    <div class="label">顶栏 · 项目可写(今天的样子,不变)</div>
+    <div class="strip"><div class="wtop">
+      <span class="crumb-proj"><span class="pav" style="background:#16a34a">W</span>workspace</span>
+      <span class="sep">›</span>
+      <span class="sesstitle">整理架构说明</span>
+      <span class="wstate"><span class="d"></span>空闲</span>
+      <span class="grow"></span>
+      <button class="wbtn" title="终端"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg></button>
+      <span class="vsep"></span>
+      <button class="wbtn on" title="收起右栏"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+    </div></div>
+
+    <div class="label">顶栏 · 项目只读</div>
+    <div class="strip"><div class="wtop">
+      <span class="crumb-proj"><span class="pav" style="background:#d97706">R</span>reports-2026</span>
+      <span class="sep">›</span>
+      <span class="sesstitle">季度报告初稿</span>
+      <span class="wstate"><span class="d"></span>空闲</span>
+      <span class="sd-ro"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>只读</span>
+      <span class="grow"></span>
+      <button class="wbtn" title="终端"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg></button>
+      <span class="vsep"></span>
+      <button class="wbtn on" title="收起右栏"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+    </div></div>
+
+    <div class="label">顶栏 · 悬停 / 点击「只读」</div>
+    <div class="strip sd-strip-rel"><div class="wtop">
+      <span class="crumb-proj"><span class="pav" style="background:#d97706">R</span>reports-2026</span>
+      <span class="sep">›</span>
+      <span class="sesstitle">季度报告初稿</span>
+      <span class="wstate"><span class="d"></span>空闲</span>
+      <span class="sd-ro" style="box-shadow:0 0 0 2px var(--a-warning-subtle)"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>只读</span>
+      <span class="grow"></span>
+      <button class="wbtn" title="终端"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg></button>
+      <span class="vsep"></span>
+      <button class="wbtn on" title="收起右栏"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+    </div>
+      <div class="sd-pop"><b>这个项目现在写不进去</b>沙箱允许写入的项目在 Alpha 启动时就定下了;这个项目是之后打开的 —— 打得开、读得了,但助手和终端都改不了它里面的文件。重新启动 Alpha 后,它就会被算进去。<div class="fn">能正常写入的项目不会有这个标记。</div><div class="row"><button class="sd-btn">重新启动 Alpha</button></div></div>
+    </div>
+    <div class="sd-popspace"></div>
+
+    <div class="label">首页 / 新对话页 · 工作区 chip</div>
+    <div class="sd-frames">
+      <div class="sd-chipline"><span class="lbl">可写</span><span class="sd-chip"><svg viewBox="0 0 24 24"><path d="M3 7l2-3h5l2 3h7a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg>workspace<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span></div>
+      <div class="sd-chipline"><span class="lbl">只读</span><span class="sd-chip"><svg viewBox="0 0 24 24"><path d="M3 7l2-3h5l2 3h7a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg>reports-2026<span class="ro"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>只读</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span></div>
+    </div>
+    <p class="cap"><span class="tag info">同一信息</span>chip 尾标与顶栏胶囊是同一个状态的两个宿主,悬停给同一段解释。选完目录、探针回报写不进去,尾标当场出现;进入会话后由顶栏胶囊接手。</p>
+
+    <table class="spec" style="margin-top:14px">
+      <tr><th>状态</th><th>什么时候</th><th>呈现</th></tr>
+      <tr><td>探针未答</td><td>目录刚成为当前工作区,真写一次的探针还没回来</td><td>无标记。不预告、不闪现,答案回来之前什么都不说。</td></tr>
+      <tr><td>可写</td><td>探针在该目录写入并删除成功</td><td>无标记(今天的样子)。</td></tr>
+      <tr><td>只读</td><td>被沙箱围住的引擎回报写入被拒</td><td>胶囊 / 尾标出现,悬停 / 点击给解释;直到切换工作区或重新启动。</td></tr>
+      <tr><td>未知</td><td>引擎不在、探针出错、或该平台没有沙箱</td><td>无标记。未知不等于只读,不吓人。</td></tr>
+    </table>
+
+    <div class="sd-frames" style="margin-top:14px">
+      <div class="aside">
+        <div class="note"><b>元素解剖</b>:胶囊 = 锁形小图标 + 「只读」两字,暖色淡底 + 暖色字,尺寸与状态胶囊完全同款、紧跟其后;悬停 / 点击弹层 = 抬起的卡,标题 + 三句正文 + 一行脚注 + 一个动作。chip 尾标 = 同色更小的一枚,嵌在目录名与折叠箭头之间。</div>
+        <div class="note"><b>为什么不是 toast</b>:toast 会消失,而只读会持续到重启。用户需要的是回到这个项目时随时能看到的状态,不是一次性的提醒。</div>
+        <div class="note"><b>为什么不放左栏项目行</b>:左栏列的是全部项目;只读描述的是「这个项目 vs 这次启动」的关系,只对当前工作区成立,所以挂在当前工作区的身份旁边。</div>
+        <div class="note"><b>判断只能靠真写一次</b>(帧外):用路径字符串比较会在四种形状上出错(前缀相同但不是路径分段、软链进出集合、大小写不同的同一目录),所以标记只在被围住的引擎真的写失败之后才出现,而且探针必须先在可写项目上答过「可写」才算数。</div>
+        <div class="note"><b>「重新启动 Alpha」按钮</b>(帧外):这是本稿里唯一超出「只呈现」的动作。没有它,弹层只告诉用户出路却让他自己去菜单里找;留着它是一个新动作。owner 可划掉 —— 划掉后弹层只留文字。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 文案 ═══ -->
+  <section class="sec" id="copy">
+    <div class="sec-kicker">文案 · 中英一对一</div>
+    <h2 class="t">措辞</h2>
+    <table class="spec">
+      <tr><th>位置</th><th>中文</th><th>English</th></tr>
+      <tr><td>终端脚条项(整句)</td><td>沙箱开启 · 你的部分终端配置可能不生效</td><td>Sandbox on · some of your shell config may not apply</td></tr>
+      <tr><td>终端脚条项(窄)</td><td>沙箱开启</td><td>Sandbox on</td></tr>
+      <tr><td>脚条悬停 · 标题</td><td>沙箱开启</td><td>Sandbox on</td></tr>
+      <tr><td>脚条悬停 · 正文</td><td>终端只能写入当前项目和 Alpha 自己的目录。你的 shell 配置里凡是要往主目录写缓存的步骤(例如补全缓存)会被拦下,而且不会报错 —— 表现通常是补全变慢或不灵。不写文件的设置(别名、提示符、PATH)照常生效。</td><td>The terminal can only write inside the current project and Alpha's own folders. Steps in your shell config that write caches to your home folder (completion caches, for example) are blocked silently — completion may feel slow or stop working. Settings that don't write files (aliases, prompt, PATH) work as usual.</td></tr>
+      <tr><td>终端空态 · 第三行</td><td>沙箱已开启 —— 终端里你自己的配置可能有一部分不生效。</td><td>Sandbox is on — some of your own shell config may not apply in here.</td></tr>
+      <tr><td>顶栏胶囊 / chip 尾标</td><td>只读</td><td>Read-only</td></tr>
+      <tr><td>只读弹层 · 标题</td><td>这个项目现在写不进去</td><td>This project can't be written to right now</td></tr>
+      <tr><td>只读弹层 · 正文</td><td>沙箱允许写入的项目在 Alpha 启动时就定下了;这个项目是之后打开的 —— 打得开、读得了,但助手和终端都改不了它里面的文件。重新启动 Alpha 后,它就会被算进去。</td><td>The sandbox fixed which projects can be written to when Alpha started; this one was opened later — you can open and read it, but neither the assistant nor the terminal can change its files. Restart Alpha and it will be included.</td></tr>
+      <tr><td>只读弹层 · 脚注</td><td>能正常写入的项目不会有这个标记。</td><td>Projects that can be written to normally don't show this badge.</td></tr>
+      <tr><td>只读弹层 · 动作</td><td>重新启动 Alpha</td><td>Restart Alpha</td></tr>
+    </table>
+  </section>
+</div>
+
+<script>
+(function(){
+  var seg=document.getElementById('themeSeg');
+  var mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function mark(t){seg.querySelectorAll('button').forEach(function(b){b.classList.toggle('on',b.dataset.theme===t)});}
+  mark(mq.matches?'dark':'light');
+  seg.querySelectorAll('button').forEach(function(b){b.onclick=function(){document.documentElement.setAttribute('data-theme',b.dataset.theme);mark(b.dataset.theme);};});
+})();
+</script>
+</body>
+</html>
