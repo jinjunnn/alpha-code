@@ -347,8 +347,23 @@ describe("#1099 启动窗口不再是一段空白(REQ-109 观测闸)", () => {
   //      只在窗口两端记时的粗实现能满足 ①,满足不了 ②。
 
   const INJECTED_DELAY_MS = 200
-  /** 归因下限取得比注入值低一截:判的是「这段延迟落在这一步」,不是计时器精度。 */
-  const ATTRIBUTED_FLOOR_MS = 150
+
+  // `#1300`:归因判据不量墙钟。renderer 的每个交接点都读 `performance.now()`(startup-timeline.ts
+  // 默认时钟、alpha-sidebar.tsx 的逐步记时、shell-boot-timeline.ts),bun 里它可写。这里把它换成一个
+  // **只由夹具推进**的时钟:注入 200ms 延迟的那一处同时把时钟推进 200,其余处一律不动 ⇒
+  // 「延迟落在哪一步」是精确相等(200 / 0),不再是「别处 < 150ms」—— 后者在满载下是掷骰子。
+  let fakeNow = 0
+  const realPerformanceNow = performance.now
+  beforeEach(() => {
+    fakeNow = 0
+    performance.now = () => fakeNow
+    runtime.setClockAdvance((ms) => {
+      fakeNow += ms
+    })
+  })
+  afterEach(() => {
+    performance.now = realPerformanceNow
+  })
 
   const marks = () => runtime.timelineMarks()
   const markNames = () => marks().map((mark) => mark.name)
@@ -443,36 +458,33 @@ describe("#1099 启动窗口不再是一段空白(REQ-109 观测闸)", () => {
     runtime.holdProjectList()
     await bootFullStartup()
     await waitFor(() => markNames().includes("renderer.projects.connect"), "数据层连上引擎")
-    // 引擎已连、首拉在途:此刻按住的正是 connect 与 store_ready 之间那一段。
-    await new Promise((resolve) => setTimeout(resolve, INJECTED_DELAY_MS))
+    // 引擎已连、首拉在途:此刻按住的正是 connect 与 store_ready 之间那一段 —— 时钟只在这里推进。
+    fakeNow += INJECTED_DELAY_MS
     runtime.releaseProjectList()
     await waitFor(() => runtime.composerMountCount() === 1, "释放后启动 draft 走完")
 
-    const held = gapBetween("renderer.projects.connect", "renderer.projects.store_ready")
-    expect(held).toBeGreaterThanOrEqual(ATTRIBUTED_FLOOR_MS)
+    expect(gapBetween("renderer.projects.connect", "renderer.projects.store_ready")).toBe(INJECTED_DELAY_MS)
     // 而启动 draft 的每一步都没有被这段延迟污染 —— 「慢在哪一步」答得出来,不是「总共慢了」。
-    for (const mark of marks().filter((m) => m.name === "renderer.launch_draft.step"))
-      expect(Number(mark.extra?.durationMs)).toBeLessThan(ATTRIBUTED_FLOOR_MS)
-    expect(gapBetween("renderer.shell.ready", "renderer.sidebar.setup")).toBeLessThan(ATTRIBUTED_FLOOR_MS)
+    const steps = marks().filter((m) => m.name === "renderer.launch_draft.step")
+    expect(steps.length).toBeGreaterThan(0)
+    for (const mark of steps) expect(Number(mark.extra?.durationMs)).toBe(0)
+    expect(gapBetween("renderer.shell.ready", "renderer.sidebar.setup")).toBe(0)
   })
 
   test("归因之二:默认目录供给 IPC 被拖慢 ⇒ 这段延迟落在 launch_draft 的 ensure_workspace 那一步", async () => {
     runtime.setEnsureDefaultWorkspaceDelayMs(INJECTED_DELAY_MS)
     await bootFullStartup()
-    await new Promise((resolve) => setTimeout(resolve, INJECTED_DELAY_MS + 60))
     await waitFor(() => runtime.composerMountCount() === 1, "启动 draft 走完(供给 IPC 慢了一拍)")
 
     // 注入点换了一个,记录跟着换了一步 —— 这是「粒度不比缺陷粗一格」的判据。
-    expect(Number(stepMark("ensure_workspace")?.extra?.durationMs)).toBeGreaterThanOrEqual(ATTRIBUTED_FLOOR_MS)
-    expect(Number(stepMark("tabs_ready")?.extra?.durationMs)).toBeLessThan(ATTRIBUTED_FLOOR_MS)
-    expect(Number(stepMark("resolve_target")?.extra?.durationMs)).toBeLessThan(ATTRIBUTED_FLOOR_MS)
-    expect(gapBetween("renderer.projects.connect", "renderer.projects.store_ready")).toBeLessThan(
-      ATTRIBUTED_FLOOR_MS,
-    )
+    expect(Number(stepMark("ensure_workspace")?.extra?.durationMs)).toBe(INJECTED_DELAY_MS)
+    expect(Number(stepMark("tabs_ready")?.extra?.durationMs)).toBe(0)
+    expect(Number(stepMark("resolve_target")?.extra?.durationMs)).toBe(0)
+    // 也没有**往后**抹:逐步记时若忘了把步起点推进(每步记的是累计值),这一步会跟着变成 200。
+    expect(Number(stepMark("new_draft")?.extra?.durationMs)).toBe(0)
+    expect(gapBetween("renderer.projects.connect", "renderer.projects.store_ready")).toBe(0)
     // 整段窗口的总耗时仍然包含这 200ms —— 分项加起来对得上总数,不是两套互不相干的数字。
-    expect(Number(firstMark("renderer.launch_draft.end")?.extra?.durationMs)).toBeGreaterThanOrEqual(
-      ATTRIBUTED_FLOOR_MS,
-    )
+    expect(Number(firstMark("renderer.launch_draft.end")?.extra?.durationMs)).toBe(INJECTED_DELAY_MS)
   })
 
   test("启动 draft 如实失败时,记录指名是哪一步失败的(不是只剩一个「没成」)", async () => {

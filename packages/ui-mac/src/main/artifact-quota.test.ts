@@ -36,6 +36,44 @@ if (!Number.isSafeInteger(RACE_ROUNDS) || RACE_ROUNDS <= 0)
 const RACE_TEST_TIMEOUT = Math.max(20_000, RACE_ROUNDS * 1_000)
 const RACE_STARTED_AT = Date.parse("2026-07-20T12:00:00.000Z")
 
+/**
+ * `#1300`:期限判据不再量墙钟。产品里的期限/预算全部读 `Date.now()`(注入的 `now` 只管预约时间戳),
+ * 所以把 `Date.now` 冻住:循环里「到期了没」在钩子把时钟拨过去之前恒为「没到」—— 满载时也不会在
+ * 钩子被触到之前先自行到期。真计时器(setTimeout)不受影响,于是「钩子永不返回 ⇒ 只能由期限计时器
+ * 收尾」这一形状仍然成立,且与机器闲忙无关。原判据 `expect(Date.now() - startedAt).toBeLessThan(100)`
+ * 在同机 31 个 bun test 并跑时收到 156ms,拦下一个纯文档 PR。
+ */
+function freezeClock() {
+  const real = Date.now
+  let frozen = real()
+  Date.now = () => frozen
+  return {
+    advance: (ms: number) => {
+      frozen += ms
+    },
+    restore: () => {
+      Date.now = real
+    },
+  }
+}
+
+async function withFrozenClock<T>(run: (advance: (ms: number) => void) => Promise<T>): Promise<T> {
+  const clock = freezeClock()
+  try {
+    return await run(clock.advance)
+  } finally {
+    clock.restore()
+  }
+}
+
+/** 永不返回的钩子:被触到即记下,然后把收尾交给期限计时器。 */
+function hang(onEntered: () => void) {
+  return () => {
+    onEntered()
+    return new Promise<void>(() => {})
+  }
+}
+
 let projectDir: string
 let reservationCounter: number
 let machineId: string
@@ -617,38 +655,47 @@ describe("finalizeArtifactWithQuota", () => {
       startedAt: String((RACE_STARTED_AT + 1_000) * 1_000),
     })
     let slowScan = false
-    let eventLoopTicks = 0
+    let slowEntries = 0
     let yieldedChunks = 0
-    const ticker = setInterval(() => (eventLoopTicks += 1), 1)
-    const startedAt = Date.now()
-    const result = await write("slow-deadline.bin", "x", {
-      limits: limits({ runMaxBytes: 49, runMaxCount: 100, projectMaxBytes: 49 }),
-      now: () => new Date(RACE_STARTED_AT),
-      pidAlive: () => true,
-      testHooks: {
-        afterQuotaScan() {
-          slowScan = true
+    // 事件循环转过没有:比扫描先排队的一个 0ms 计时器。扫描每处理一条就 `delay(0)` 让出一次,
+    // 一让出,这个更早排队的计时器必然先跑 —— 与机器快慢无关(原判据是 1ms ticker 的计数)。
+    let loopTurned = false
+    setTimeout(() => {
+      loopTurned = true
+    }, 0)
+    const result = await withFrozenClock((advance) =>
+      write("slow-deadline.bin", "x", {
+        limits: limits({ runMaxBytes: 49, runMaxCount: 100, projectMaxBytes: 49 }),
+        now: () => new Date(RACE_STARTED_AT),
+        pidAlive: () => true,
+        testHooks: {
+          afterQuotaScan() {
+            slowScan = true
+          },
+          // 期限取大:真计时器不许先于钩子收尾;到期由第二条慢条目把冻结的时钟拨过去触发。
+          waitPolicy: { deadlineMs: 5_000, maxRounds: 250, intervalMs: 1 },
+          scanPolicy: { maxEntries: 1_000, yieldEvery: 1 },
+          async beforeScanEntry() {
+            if (!slowScan) return
+            slowEntries += 1
+            if (slowEntries === 2) advance(60_000)
+          },
+          afterScanYield() {
+            if (slowScan) yieldedChunks += 1
+          },
         },
-        waitPolicy: { deadlineMs: 20, maxRounds: 250, intervalMs: 1 },
-        scanPolicy: { maxEntries: 1_000, yieldEvery: 1 },
-        async beforeScanEntry() {
-          if (slowScan) await Bun.sleep(2)
-        },
-        afterScanYield() {
-          if (slowScan) yieldedChunks += 1
-        },
-      },
-    })
-    clearInterval(ticker)
+      }),
+    )
 
     expect(result).toEqual({
       ok: false,
       error: "retryable",
       detail: "artifact quota admission retry required (reservation convergence timed out)",
     })
-    expect(Date.now() - startedAt).toBeLessThan(150)
-    expect(eventLoopTicks).toBeGreaterThan(0)
-    expect(yieldedChunks).toBeGreaterThan(0)
+    // 慢扫描恰好在第二条上被预算掐断(不是把 48 条扫完);第一条之后让出过至少一次事件循环。
+    expect(slowEntries).toBe(2)
+    expect(yieldedChunks).toBeGreaterThanOrEqual(1)
+    expect(loopTurned).toBe(true)
     expect(existsSync(target("slow-deadline.bin"))).toBe(false)
     expect(reservations()).toHaveLength(1)
     expect(stagingResidue()).toEqual([])
@@ -661,18 +708,21 @@ describe("finalizeArtifactWithQuota", () => {
     })
     let eventLoopTicks = 0
     const ticker = setInterval(() => (eventLoopTicks += 1), 1)
-    const startedAt = Date.now()
-    const result = await write("slow-reservation-read.bin", "x", {
-      limits: limits({ runMaxBytes: 1, projectMaxBytes: 1 }),
-      now: () => new Date(RACE_STARTED_AT),
-      pidAlive: () => true,
-      testHooks: {
-        waitPolicy: { deadlineMs: 20, maxRounds: 250, intervalMs: 1 },
-        async beforeOwnReservationRead() {
-          await Bun.sleep(250)
+    let readEntered = false
+    const result = await withFrozenClock(() =>
+      write("slow-reservation-read.bin", "x", {
+        limits: limits({ runMaxBytes: 1, projectMaxBytes: 1 }),
+        now: () => new Date(RACE_STARTED_AT),
+        pidAlive: () => true,
+        testHooks: {
+          waitPolicy: { deadlineMs: 20, maxRounds: 250, intervalMs: 1 },
+          // 读永不返回 ⇒ 唯一能收尾的是 20ms 的期限计时器;时钟冻住 ⇒ 循环不会在触到这里之前先到期。
+          beforeOwnReservationRead: hang(() => {
+            readEntered = true
+          }),
         },
-      },
-    })
+      }),
+    )
     clearInterval(ticker)
 
     expect(result).toEqual({
@@ -680,7 +730,7 @@ describe("finalizeArtifactWithQuota", () => {
       error: "retryable",
       detail: "artifact quota admission retry required (reservation convergence timed out)",
     })
-    expect(Date.now() - startedAt).toBeLessThan(150)
+    expect(readEntered).toBe(true)
     expect(eventLoopTicks).toBeGreaterThan(0)
     expect(existsSync(target("slow-reservation-read.bin"))).toBe(false)
     expect(reservations()).toHaveLength(1)
@@ -692,7 +742,8 @@ describe("finalizeArtifactWithQuota", () => {
       declaredBytes: 1,
       startedAt: String((RACE_STARTED_AT + 1_000) * 1_000),
     })
-    const startedAt = Date.now()
+    let rereadEntered = false
+    let closeEntered = false
     const result = await write("bounded-return.bin", "x", {
       limits: limits({ runMaxBytes: 1, projectMaxBytes: 1 }),
       now: () => new Date(RACE_STARTED_AT),
@@ -700,12 +751,15 @@ describe("finalizeArtifactWithQuota", () => {
       testHooks: {
         waitPolicy: { deadlineMs: 10, maxRounds: 250, intervalMs: 1 },
         returnPolicy: { reservationDeadlineMs: 10, stagedCloseDeadlineMs: 10 },
-        async beforeReservationCleanupRead() {
-          await Bun.sleep(100)
-        },
-        async beforeStagedHandleClose() {
-          await Bun.sleep(100)
-        },
+        // 两个钩子都永不返回:返回路径若真的等它们,本用例不会结束(由套件超时判红);
+        // 它结束了 ⇒ 两段各自的期限计时器收了尾,而且是在钩子被触到之后。这里不冻时钟:
+        // 两段各自在武装计时器之后第一件事就是触钩子,中间没有能先到期的复核。
+        beforeReservationCleanupRead: hang(() => {
+          rereadEntered = true
+        }),
+        beforeStagedHandleClose: hang(() => {
+          closeEntered = true
+        }),
       },
     })
 
@@ -714,7 +768,8 @@ describe("finalizeArtifactWithQuota", () => {
       error: "retryable",
       detail: "artifact quota admission retry required (reservation convergence timed out)",
     })
-    expect(Date.now() - startedAt).toBeLessThan(100)
+    expect(rereadEntered).toBe(true)
+    expect(closeEntered).toBe(true)
     expect(existsSync(target("bounded-return.bin"))).toBe(false)
     expect(reservations()).toHaveLength(2)
     expect(stagingResidue()).toEqual([])
@@ -725,26 +780,38 @@ describe("finalizeArtifactWithQuota", () => {
       declaredBytes: 1,
       startedAt: String((RACE_STARTED_AT + 1_000) * 1_000),
     })
-    const startedAt = Date.now()
-    const result = await write("bounded-delete.bin", "x", {
-      limits: limits({ runMaxBytes: 1, projectMaxBytes: 1 }),
-      now: () => new Date(RACE_STARTED_AT),
-      pidAlive: () => true,
-      testHooks: {
-        waitPolicy: { deadlineMs: 10, maxRounds: 250, intervalMs: 1 },
-        returnPolicy: { reservationDeadlineMs: 10, stagedCloseDeadlineMs: 10 },
-        async beforeReservationCleanupDelete() {
-          await Bun.sleep(100)
+    let deleteEntered = false
+    let clock: ReturnType<typeof freezeClock> | undefined
+    let result: Awaited<ReturnType<typeof write>>
+    try {
+      result = await write("bounded-delete.bin", "x", {
+        limits: limits({ runMaxBytes: 1, projectMaxBytes: 1 }),
+        now: () => new Date(RACE_STARTED_AT),
+        pidAlive: () => true,
+        testHooks: {
+          waitPolicy: { deadlineMs: 10, maxRounds: 250, intervalMs: 1 },
+          returnPolicy: { reservationDeadlineMs: 10, stagedCloseDeadlineMs: 10 },
+          // 清理段一进来就冻住时钟(计时器已在此前武装):重读与删除之间那一次到期复核不会先于删除钩子。
+          // 等待段仍走真时钟 —— 它是前置,满载只会让它更早到期。
+          beforeReservationCleanupRead() {
+            clock = freezeClock()
+          },
+          // 删除永不返回 ⇒ 由 10ms 的清理期限计时器收尾。
+          beforeReservationCleanupDelete: hang(() => {
+            deleteEntered = true
+          }),
         },
-      },
-    })
+      })
+    } finally {
+      clock?.restore()
+    }
 
     expect(result).toEqual({
       ok: false,
       error: "retryable",
       detail: "artifact quota admission retry required (reservation convergence timed out)",
     })
-    expect(Date.now() - startedAt).toBeLessThan(100)
+    expect(deleteEntered).toBe(true)
     expect(existsSync(target("bounded-delete.bin"))).toBe(false)
     expect(reservations()).toHaveLength(2)
     expect(stagingResidue()).toEqual([])
@@ -752,28 +819,34 @@ describe("finalizeArtifactWithQuota", () => {
 
   test("initial admission scan has a retryable wall-clock deadline", async () => {
     Array.from({ length: 48 }, (_, index) => writeFileSync(target(`initial-slow-${index}.bin`), "x"))
-    let eventLoopTicks = 0
-    const ticker = setInterval(() => (eventLoopTicks += 1), 1)
-    const startedAt = Date.now()
-    const result = await write("initial-deadline.bin", "x", {
-      limits: limits({ runMaxBytes: 100, runMaxCount: 100, projectMaxBytes: 100 }),
-      testHooks: {
-        initialScanDeadlineMs: 20,
-        scanPolicy: { maxEntries: 1_000, yieldEvery: 1 },
-        async beforeScanEntry() {
-          await Bun.sleep(2)
+    let entries = 0
+    let loopTurned = false
+    setTimeout(() => {
+      loopTurned = true
+    }, 0)
+    const result = await withFrozenClock((advance) =>
+      write("initial-deadline.bin", "x", {
+        limits: limits({ runMaxBytes: 100, runMaxCount: 100, projectMaxBytes: 100 }),
+        testHooks: {
+          // 期限取大:真计时器不许先收尾;到期由第三条条目把冻结的时钟拨过去触发。
+          initialScanDeadlineMs: 60_000,
+          scanPolicy: { maxEntries: 1_000, yieldEvery: 1 },
+          async beforeScanEntry() {
+            entries += 1
+            if (entries === 3) advance(120_000)
+          },
         },
-      },
-    })
-    clearInterval(ticker)
+      }),
+    )
 
     expect(result).toEqual({
       ok: false,
       error: "retryable",
       detail: "artifact quota admission retry required (quota scan timed out)",
     })
-    expect(Date.now() - startedAt).toBeLessThan(150)
-    expect(eventLoopTicks).toBeGreaterThan(0)
+    // 恰好扫到第三条就停(预算在每条之后复核),没有把 48 条扫完;前两条之间让出过事件循环。
+    expect(entries).toBe(3)
+    expect(loopTurned).toBe(true)
     expect(existsSync(target("initial-deadline.bin"))).toBe(false)
     expect(reservations()).toEqual([])
     expect(stagingResidue()).toEqual([])
